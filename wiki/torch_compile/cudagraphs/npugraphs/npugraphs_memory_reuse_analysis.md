@@ -1502,3 +1502,9 @@ flowchart TB
 - 相关文档：
   - [PyTorch CUDA Graphs](https://pytorch.org/docs/stable/cuda.html#cuda-graphs)
   - [Ascend ACL 文档](https://www.hiascend.com/document)
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[npugraphs_memory_management_analysis]]
+- [[torch_compile_npugraphs_deep_dive]]

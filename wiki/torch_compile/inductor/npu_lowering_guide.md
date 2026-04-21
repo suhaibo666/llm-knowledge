@@ -789,3 +789,9 @@ torch_npu 的 lowering 策略可以概括为**"保守 codegen，激进 fallback"
 | inplace op 全 fallback | 优化器 step 性能受限 | 支持 inplace lowering |
 | prims 全 fallback | decomposition 后的 op 无法 codegen | 逐步支持 prims codegen |
 | view/as_strided fallback | 部分 zero-copy 机会损失 | 扩展 view 类 op 支持 |
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[NPU_Inductor_Backend_Analysis]]
+- [[lowering_analysis]]

@@ -789,3 +789,9 @@ for epoch in range(num_epochs):
 | `torch/_dynamo/backends/inductor.py` | `inductor` 后端注册 | 不涉及 |
 | `torch_npu/utils/_graph_tree.py` | `npugraphify` (monkey-patch) + `npugraphs` 后端注册 | `NpugraphsBackend` + `npugraphs()` 函数 |
 | `torch_npu/npu/_graph_tree.py` | NPU Graph Tree 核心（共享） | NPU Graph Tree 核心（共享） |
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[torch_compile_npugraphs_deep_dive]]
+- [[torch_compile_architecture]]

@@ -230,3 +230,9 @@ Inductor 的 **codegen 是其编译流程的最终执行环节**，承担着将�
 - **功能上**：它同时生成 kernel 代码（Triton/C++）和 host wrapper 代码，管理内存生命周期，并支持 AOT 编译。
 - **存在原因**：它是图编译器与底层硬件之间的桥梁，消除了 eager mode 的 Python 调度开销，并通过 kernel fusion 和内存规划实现极致性能。
 - **实现方式**：采用 "Scheduler 遍历 → Backend 分发 → Kernel 生成 → Wrapper 组装 → 动态/静态编译" 的流水线，模块化地支持多后端（GPU/CPU/MPS）和多模式（JIT/AOT）。
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[PyTorch_Inductor_Technical_Analysis]]
+- [[scheduler_analysis]]

@@ -761,3 +761,9 @@ Post-Grad Passes 是 PyTorch Inductor 编译器的关键阶段，专注于：
 - **Joint Graph** 关注前向/反向联合优化、自动分块
 
 两者配合，形成完整的 PyTorch 2.0 编译优化流水线。
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[pre_grad_passes_guide]]
+- [[joint_graph_passes_guide]]

@@ -790,3 +790,9 @@ Pre-Grad Passes 是 PyTorch Inductor 编译流程中的**早期优化阶段**，
 - 正确处理未规范化的参数变体
 - 维护 `example_value` 元数据
 - 注意别名和变异的安全性
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[post_grad_passes_guide]]
+- [[joint_graph_passes_guide]]

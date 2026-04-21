@@ -365,3 +365,9 @@ flowchart LR
 - `lowering.py` 对 complex tensor 的支持不完整（L2206 警告），需要研究后续改进计划
 - 动态 shape（unbacked symbols）的 slice/select lowering 逻辑较复杂（L1349），值得单独深入分析
 - OnlineSoftmax 目前不支持 split reduction（L7801），在推理场景可能需要补全
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[PyTorch_Inductor_Technical_Analysis]]
+- [[inductor_codegen_analysis]]

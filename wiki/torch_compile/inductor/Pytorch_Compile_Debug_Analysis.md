@@ -889,3 +889,9 @@ echo "NPU artifacts archived to ${OUTDIR}.tgz"
 7. **算子 dump**：特定算子问题使用 `torch_npu.npu_config.init_dump()` 精准定位
 
 ---
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[PyTorch_Dynamo_Technical_Analysis]]
+- [[PyTorch_Inductor_Technical_Analysis]]

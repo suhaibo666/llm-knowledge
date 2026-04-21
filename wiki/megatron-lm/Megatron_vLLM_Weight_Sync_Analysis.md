@@ -175,3 +175,8 @@ async def update_weights(self, weights: Generator, ...):
 *   **优点:** 解耦了 Megatron 的并行策略（TP/PP/DP）与 vLLM 的并行策略（TP）。它们不需要匹配的拓扑结构。
 *   **缺点:** 通信开销高（Megatron 分片 -> 完整张量 -> vLLM 分片），导致全量微调时 `rollout_mode` 切换出现显著延迟。
 *   **未来改进:** 如果拓扑匹配，直接 P2P 传输或共享内存方法（避免完整张量重构）将大幅提高性能。
+
+## Related Pages
+
+- [[megatron-lm/overview]]
+- [[torch_compile/overview]]

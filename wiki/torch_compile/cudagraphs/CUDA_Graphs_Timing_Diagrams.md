@@ -770,3 +770,9 @@ Level 5: 混合优化
 3. **高级用户**: 使用 `torch.cuda.graph()`
 4. **多函数**: 使用 `make_graphed_callables`
 5. **实验性**: 使用 `experimental` 参数
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[PyTorch_CUDA_Graphs_Complete_Guide]]
+- [[SUMMARY]]

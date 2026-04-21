@@ -1630,3 +1630,9 @@ def _dvm_can_fuse_vertical(self, node1, node2):
 - [昇腾CANN文档](https://www.hiascend.com/zh/document/)
 - [MLIR规范](https://mlir.llvm.org/)
 - [AKG文档](https://www.hiascend.com/zh/document/)
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[NPU_Inductor_Backend_Mechanism]]
+- [[npu_lowering_guide]]

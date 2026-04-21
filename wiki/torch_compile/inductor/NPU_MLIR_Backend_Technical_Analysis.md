@@ -1053,3 +1053,9 @@ torch_npu/
 *作者: AI Assistant*
 *基于: torch_npu Inductor MLIR后端代码分析*
 *变更: v2.0 - 修正IR扩展机制描述、Fallback策略、行号引用、自动调优组合数；补充缺失组件、Monkey Patch完整清单、编译模式状态机、依赖关系、初学者总结等章节*
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[NPU_Inductor_Backend_Mechanism]]
+- [[npu_compile]]

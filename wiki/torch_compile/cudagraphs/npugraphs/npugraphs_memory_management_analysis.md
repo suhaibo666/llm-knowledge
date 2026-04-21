@@ -771,3 +771,9 @@ class NPUGraphNode:
 - [PyTorch CUDA Graphs Documentation](https://pytorch.org/docs/stable/cuda.html#cuda-graphs)
 - [ACL (Ascend Computing Language) Documentation](https://www.hiascend.com/document)
 - [torch_npu Source Code](https://gitee.com/ascend/pytorch)
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[npugraphs_memory_reuse_analysis]]
+- [[torch_compile_npugraphs_deep_dive]]

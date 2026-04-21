@@ -661,3 +661,9 @@ check_memory_pool(
 `make_graphed_callables` 通过「预热 → 捕获前向图 → 捕获反向图 → 包装为 autograd Function」的流程，将 callable 的前向和反向计算**一次性录制**成 NPU Graph。回放时通过 `copy_` + `replay()` 模式，以**固定内存布局、零 malloc、一次性提交**的方式执行，显著降低了 CPU 侧的算子调度开销和内存分配开销。
 
 其内存管理的核心是**私有内存池 + 地址固化 + 生命周期复用**：所有图共享一个 mempool，捕获时记录的内存分配/释放时序在回放时被严格重放，使得不同图、不同生命周期的张量可以安全地复用同一块设备内存。
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[npugraphs_memory_management_analysis]]
+- [[torch_compile_npugraphs_deep_dive]]

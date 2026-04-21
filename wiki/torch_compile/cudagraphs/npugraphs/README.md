@@ -117,3 +117,9 @@ output = compiled_model(input_tensor)
 - [torch_npu 文档](../torch_npu/README.md)
 - [华为 ACL 文档](https://www.hiascend.com/document)
 - [CUDA Graphs 指南](../cudagraphs_usage_guide.py)
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[aclgraph]]
+- [[comparison]]

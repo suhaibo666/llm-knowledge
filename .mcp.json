@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "e:\\97-codes\\torch_parallel\\llm-knowledge\\wiki",
+        "e:\\97-codes\\torch_parallel\\llm-knowledge\\raw"
+      ]
+    },
+    "qmd": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "node",
+        "C:\\Users\\suhaibo\\AppData\\Roaming\\npm\\node_modules\\@tobilu\\qmd\\dist\\cli\\qmd.js",
+        "mcp"
+      ],
+      "cwd": "e:\\97-codes\\torch_parallel\\llm-knowledge"
+    }
+  }
+}

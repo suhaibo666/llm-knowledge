@@ -947,3 +947,8 @@ Megatron-LM 支持 `--pipeline-model-parallel-layout "Et*3|(tt|)*29,m|L"` 这样
 - **Optimizer States**: $8N$ (Adam FP32) 或 $4N$ (BF16 optimizer states)
 - **Activations**: 与 $bs \cdot seq \cdot h \cdot layers$ 成正比，checkpointing 可大幅降低
 
+## Related Pages
+
+- [[megatron-lm/overview]]
+- [[Megatron-LM_MoE_Zero_Redundancy_Analysis]]
+- [[Megatron_LM_TFLOPS_Analysis]]

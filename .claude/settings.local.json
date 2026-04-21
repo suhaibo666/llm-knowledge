@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__filesystem__directory_tree",
+      "mcp__filesystem__read_multiple_files",
+      "Bash(find *)",
+      "mcp__filesystem__read_text_file",
+      "Bash(python *)",
+      "Bash(pip install *)",
+      "mcp__filesystem__write_file",
+      "mcp__filesystem__edit_file",
+      "mcp__filesystem__list_directory",
+      "mcp__filesystem__search_files",
+      "mcp__filesystem__create_directory",
+      "mcp__qmd__query",
+      "mcp__qmd__status",
+      "mcp__qmd__get"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "filesystem",
+    "qmd"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -ExecutionPolicy Bypass -File \"$CLAUDE_PROJECT_DIR\\.claude\\hooks\\check-raw.ps1\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

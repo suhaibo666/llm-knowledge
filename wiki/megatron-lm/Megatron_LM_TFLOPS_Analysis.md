@@ -115,3 +115,8 @@ Megatron-LM 的 TFLOPS 报告器是一个**静态估算器**，而非动态分�
 1.  它非常适合用于追踪相对性能提升和进行回归测试。
 2.  对于 Dense 模型和 Dropless MoE 模型，其结果是准确的。
 3.  **注意**：在解读存在大量 Token 丢弃的 MoE 模型训练日志时，需意识到 TFLOPS 数值是**被高估**的，它不能代表 GPU 的实际 FP 运算负载。
+
+## Related Pages
+
+- [[megatron-lm/overview]]
+- [[Megatron-LM_Distributed_Parallel_Exam]]

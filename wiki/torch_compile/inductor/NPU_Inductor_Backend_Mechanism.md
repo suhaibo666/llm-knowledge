@@ -853,3 +853,9 @@ NPU Inductor **完全支持后端混合使用**，通过以下机制实现：
 - `CATLASS_EPILOGUE_FUSION`: 启用Epilogue Fusion
 - `TRITON_PROLOGUE_FUSION`: 启用Prologue Fusion
 - `max-autotune`: 启用MultiTemplateBuffer自动调优
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[NPU_Inductor_Backend_Analysis]]
+- [[NPU_MLIR_Backend_Technical_Analysis]]

@@ -758,3 +758,9 @@ Scheduler 就是一个"智能排课系统"——它把所有要执行的计算�
 | `config.py:301` | `_pre_fusion_custom_pass` |
 | `config.py:311` | `_post_fusion_custom_pass` |
 | `codegen/common.py:408` | `register_backend_for_device()` |
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[PyTorch_Inductor_Technical_Analysis]]
+- [[inductor_codegen_analysis]]

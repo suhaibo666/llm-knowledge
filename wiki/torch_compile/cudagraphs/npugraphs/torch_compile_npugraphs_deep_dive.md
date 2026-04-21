@@ -1628,3 +1628,9 @@ with torch.no_grad():
 - `torch_npu/npu/graphs.py`: 底层 `make_graphed_callables` 实现
 
 与直接使用 `make_graphed_callables` 相比，`torch.compile(backend="npugraphs")` 通过 Graph Tree 提供了更高级的运行时管理能力，能自动应对动态形状、多子图协调、路径分支等复杂场景。
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[torch_compile_mode_reduce_overhead_vs_backend_npugraphs]]
+- [[npugraphs_memory_management_analysis]]

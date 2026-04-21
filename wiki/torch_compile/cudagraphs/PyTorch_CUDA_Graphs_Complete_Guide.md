@@ -1905,3 +1905,9 @@ PyTorch 提供了多种使用 CUDA Graphs 的方式，每种方式都有其适�
 - 如果想探索最新技术，选择 experimental 参数
 
 希望这份指南能帮助您更好地理解和使用 PyTorch 中的 CUDA Graphs！
+
+## Related Pages
+
+- [[torch_compile/overview]]
+- [[CUDA_Graphs_Timing_Diagrams]]
+- [[comparison]]
