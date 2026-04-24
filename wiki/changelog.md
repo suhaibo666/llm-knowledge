@@ -4,6 +4,28 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-04-24: Wiki Directory Restructure
+
+**Type**: Infrastructure
+
+Restructured `wiki/llm/` to mirror `raw/` classification (01-08), consolidating related content:
+
+- **Created** subdirectories under `wiki/llm/`:
+  - `01_architecture/` — Transformer, scaling laws, memory architectures
+  - `02_training/` — Optimizers, initialization, training precision
+  - `03_alignment/` — RLHF, DPO, GRPO, PPO, and related methods
+  - `04_reasoning_and_retrieval/` — Reserved for CoT, verification, RAG
+  - `05_model_families/deepseek/` — All DeepSeek model analyses
+  - `06_infra/megatron-lm/` — Distributed training, MoE infrastructure
+  - `07_multimodal/` — Reserved for vision-language, audio-language
+  - `08_agents/` — Reserved for agentic AI, tool use
+- **Moved** `wiki/torch_compile/` → `wiki/llm/02_training/torch_compile/`
+- **Moved** `wiki/megatron-lm/` → `wiki/llm/06_infra/megatron-lm/`
+- **Moved** `mHC.md` → `wiki/llm/05_model_families/deepseek/mHC.md`
+- **Updated** all path-based wiki links across the entire wiki
+
+---
+
 ## 2026-04-16: Wiki Schema & Structure Initialization
 
 **Type**: Infrastructure
@@ -87,6 +109,20 @@ The following pages were created before the changelog was established. Dates are
 
 ---
 
+## 2026-04-24: DeepSeek-V4 Source Ingestion
+
+**Type**: Source Ingestion
+
+- **Source**: `raw/05_model_families/deepseek/DeepSeek_V4.pdf` (DeepSeek-AI, 2025)
+- **Created**: `wiki/llm/deepseek_v4_analysis.md` — DeepSeek-V4 analysis (in Chinese)
+- **Updated**: `wiki/llm/overview.md` — Added V4 to DeepSeek model family section
+- **Updated**: `wiki/llm/deepseek_v3_analysis.md` — Added backlink to V4
+- **Updated**: `wiki/llm/deepseek_v2_analysis.md` — Added backlink to V4
+- **Cross-referenced**: `mHC.md`, `muon_analysis.md`, `deepseek_v3_analysis.md`, `deepseek_v2_analysis.md`
+- **Key topics**: CSA (Compressed Sparse Attention), HCA (Heavily Compressed Attention), hybrid attention architecture, DSA (DeepSeek Sparse Attention), Lightning Indexer, million-token context, mHC integration, Muon optimizer, Anticipatory Routing, SwiGLU clamping, wave-based EP overlap, TileLang kernels, FP4 QAT, heterogeneous KV cache management, on-disk KV cache storage
+
+---
+
 ## 2026-04-21: DeepSeek Model Family Batch Ingestion (Part 2/4)
 
 **Type**: Source Ingestion
@@ -119,8 +155,91 @@ The following pages were created before the changelog was established. Dates are
 
 **Remaining**: None (DeepSeek model family complete)
 
+---
+
+## 2026-04-21: Architecture Foundations & Alignment Methods Batch Ingestion
+
+**Type**: Source Ingestion
+
+### Architecture Foundations (01_architecture/)
+
+- **Source**: `raw/01_architecture/Attention_Is_All_You_Need-1706.03762.pdf` (Vaswani et al., Google, NIPS 2017)
+- **Created**: `wiki/llm/attention_is_all_you_need_analysis.md` — Transformer architecture analysis
+- **Key topics**: scaled dot-product attention, multi-head attention, positional encoding, encoder-decoder structure, self-attention vs RNN/CNN complexity, O(1) path length
+
+- **Source**: `raw/01_architecture/Scaling_Laws_for_Neural_Language_Models-2001.08361.pdf` (Kaplan et al., OpenAI, 2020)
+- **Created**: `wiki/llm/scaling_laws_analysis.md` — Neural scaling laws analysis
+- **Key topics**: power-law scaling (L ~ N^-0.076, D^-0.095, C^-0.050), compute-optimal training (N~C^0.73), sub-linear data scaling (D~N^0.74), early stopping, critical batch size, architecture independence
+
+- **Source**: `raw/01_architecture/Long_Context_Scaling_Law-2503.04725.pdf` (Chen et al., MIT, NeurIPS 2025)
+- **Created**: `wiki/llm/long_context_scaling_law_analysis.md` — Long-context mutual information scaling
+- **Key topics**: bipartite mutual information (I_BP ~ L^beta), L2M condition, history state requirements, Transformer vs SSM long-context capability
+
+- **Skipped**: `raw/01_architecture/Scaling_Laws_for_Transfer-2002.05102.pdf` — PDF contains unrelated mathematics paper (Hurwitz actions on reflection groups)
+
+### Alignment & Preference Optimization (03_alignment/)
+
+- **Source**: `raw/03_alignment/PPO_Proximal_Policy_Optimization-1707.06347.pdf` (Schulman et al., OpenAI, 2017)
+- **Created**: `wiki/llm/ppo_analysis.md` — PPO algorithm analysis
+- **Key topics**: PPO-Clip objective, surrogate loss, multiple epochs on same data, GAE advantage estimation, KL constraint
+
+- **Source**: `raw/03_alignment/InstructGPT_RLHF-2203.02155.pdf` (Ouyang et al., OpenAI, 2022)
+- **Created**: `wiki/llm/instructgpt_rlhf_analysis.md` — RLHF pipeline analysis
+- **Key topics**: three-step RLHF (SFT→RM→PPO), KL penalty against SFT, 1.3B > 175B GPT-3, helpful/honest/harmless criteria
+
+- **Source**: `raw/03_alignment/DPO_Direct_Preference_Optimization-2305.18290.pdf` (Rafailov et al., Stanford, 2023)
+- **Created**: `wiki/llm/dpo_analysis.md` — DPO algorithm analysis
+- **Key topics**: closed-form policy-reward relationship, binary cross-entropy replaces RLHF, no sampling during training
+
+- **Created**: `wiki/llm/preference_optimization_analysis.md` — DPO family comparison
+- **Covers**: IPO (squared loss), SimPO (no ref model, length-normalized), ORPO (monolithic), KTO (binary labels, prospect theory), MODPO (multi-objective)
+
+- **Source**: `raw/03_alignment/DeepSeek_R1_Reasoning_via_RL-2501.12948.pdf` (DeepSeek-AI, 2025)
+- **Created**: `wiki/llm/grpo_analysis.md` — GRPO algorithm analysis
+- **Key topics**: group-relative advantages, no value function, pure RL for reasoning, DeepSeek-R1-Zero emergent behaviors
+
+**Updated**: `wiki/llm/overview.md` — Added Architecture Foundations, Scaling Laws, and Alignment sections
+
+---
+
+## 2026-04-21: Alignment Methods Batch Ingestion (Part 2)
+
+**Type**: Source Ingestion
+
+### Advanced RL Algorithms
+
+- **Source**: `raw/03_alignment/DAPO_Decoupled_Clip_Dynamic_Sampling-2503.14476.pdf` (ByteDance Seed, Tsinghua AIR, 2025)
+- **Created**: `wiki/llm/dapo_analysis.md` — DAPO algorithm analysis
+- **Key topics**: decoupled clipping (eps_low=0.2, eps_high=0.28), dynamic sampling (filter accuracy 0/1), token-level policy gradient loss, soft overlong punishment, AIME 50 with Qwen2.5-32B, open-source RL system
+
+- **Source**: `raw/03_alignment/GSPO_Group_Sequence_Policy_Optimization-2507.18071.pdf` (Qwen Team, Alibaba, 2025)
+- **Created**: `wiki/llm/gspo_analysis.md` — GSPO algorithm analysis
+- **Key topics**: sequence-level importance ratio, fixes GRPO's token-level instability, length-normalized sequence likelihood, stabilizes MoE RL training, Qwen3 improvements
+
+- **Source**: `raw/03_alignment/RLOO_REINFORCE_Leave_One_Out-2402.14740.pdf` (Cohere For AI, 2024)
+- **Created**: `wiki/llm/rloo_analysis.md` — RLOO algorithm analysis
+- **Key topics**: REINFORCE with leave-one-out baseline, no value function needed, theoretical foundation for GRPO, 2.5x faster than PPO
+
+- **Source**: `raw/03_alignment/VAPO_Value_Augmented_Proximal_Policy_Optimization-2504.05118.pdf` (ByteDance Seed, 2025)
+- **Created**: `wiki/llm/vapo_analysis.md` — VAPO framework analysis
+- **Key topics**: value-model-based RL, AIME 60.4 (SOTA), addresses value bias/length heterogeneity/reward sparsity, 5000 steps to SOTA, zero crashes
+
+### RLHF Foundations & Advanced Methods
+
+- **Created**: `wiki/llm/rlhf_foundations_analysis.md` — Comprehensive coverage of:
+  - **ReMax** (arXiv:2310.10505): Simplified RLHF using REINFORCE, exploits fast simulation/deterministic transitions/trajectory rewards
+  - **Weak-to-Strong Generalization** (OpenAI, arXiv:2312.09390): Can weak model supervision elicit strong model capabilities? Analogy to superhuman alignment
+  - **Scaling Laws for RM Overoptimization** (OpenAI, arXiv:2210.10760): Goodhart's Law in RLHF, predictable scaling of overoptimization, best-of-n vs RL
+  - **Learning to Summarize** (OpenAI, arXiv:2009.01325): First RLHF for summarization, precursor to InstructGPT
+  - **Fine-Tuning from Human Preferences** (OpenAI, arXiv:1909.08593): Earliest RLHF work, stylistic control and summarization
+  - **RigorLLM** (arXiv:2403.13031): Resilient guardrails against adversarial attacks, energy-based data generation, minimax optimization
+
+**Updated**: `wiki/llm/overview.md` — Added DAPO, GSPO, RLOO, VAPO, and RLHF Foundations entries
+
+**Digestion progress**: 3/4 architecture papers, **20/20 alignment papers digested** (complete)
+
 ## Related Pages
 
 - [[llm/overview]]
-- [[megatron-lm/overview]]
-- [[torch_compile/overview]]
+- [[llm/06_infra/megatron-lm/overview]]
+- [[llm/02_training/torch_compile/overview]]
