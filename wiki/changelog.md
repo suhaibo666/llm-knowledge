@@ -4,6 +4,24 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-04-29: LLM 并行计算依赖分析（HTML）
+
+**Type**: Knowledge Synthesis（Megatron-LM 源码验证）
+
+- **Created**: `wiki/llm/06_infra/llm_parallelism_analysis.html` — LLM 正反向计算依赖 + 并行策略通信分析（中文）
+- **Updated**: `wiki/llm/06_infra/megatron-lm/overview.md` — Distributed Parallelism 表格新增条目 + Knowledge Gaps 更新
+- **Key topics**:
+  - 单层 Transformer Decoder 前向/反向算子 DAG（SVG 依赖图 + 关系表）
+  - Megatron-LM 源码级验证: `ColumnParallelLinear` / `RowParallelLinear` / `LinearWithGradAccumulationAndAsyncCommunication`
+  - TP (Tensor Parallelism) f/g 算子通信模式、SP (Sequence Parallelism) AG+RS 数据流
+  - EP (Expert Parallelism) AllToAll dispatch/combine + 内部 TP 通信
+  - CP (Context Parallelism) Ring Attention vs Ulysses 对比
+  - 组合并行 (TP+SP+CP+EP+PP) 完整前向执行顺序表
+  - 计算通信重叠: async grad AllReduce, Ring Attention P2P overlap, DDP bucket overlap
+  - CSS `white-space: pre` 修复, 12 代码块 Python 格式化 + 语法高亮
+
+---
+
 ## 2026-04-29: DeepSeek-V4 Raw → Wiki 知识整合
 
 **Type**: Knowledge Integration（Raw MD 文件与 Wiki 合并/去重）
