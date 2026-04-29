@@ -4,6 +4,68 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-04-29: DeepSeek-V4 Raw → Wiki 知识整合
+
+**Type**: Knowledge Integration（Raw MD 文件与 Wiki 合并/去重）
+
+将 `raw/05_model_families/deepseek/` 下 9 个 V4 相关 MD 文件与 Wiki 现有内容整合：
+
+- **Created**: `wiki/llm/05_model_families/deepseek/deepseek_v4_fp4_qat_analysis.md` — FP4 QAT 完整分析（全新主题）
+- **Moved (3 files)**:
+  - `deepseek_v4_architecture_diagrams.md` — V4 架构 ASCII 结构图（50KB 补充参考）
+  - `deepseek_v4_implementation_details.md` — V4 核心组件伪代码实现（34KB 补充参考）
+  - `deepseek_v4_technical_deep_dive.md` — CSA/HCA/DSA/MLA 对比深度解析（42KB 补充参考）
+- **Updated (merged unique content)**:
+  - `deepseek_v4_analysis.md` — 新增 §Compressed KV 数值示例、DualPath 推理框架、Think Modes、Pro-Max 评测
+  - `mHC.md` — 扩展 §动态与静态系数（完整公式 3-8、对比表、训练细节）
+  - `deepseek_v4_cp_analysis.md` — 新增 §9 实现细节（Fused Select-and-Pad、Top-K Selector、传统 CP 对比表）
+- **Cross-references**: 所有新/更新页面双向链接已更新
+
+---
+
+## 2026-04-29: Activation Checkpointing（重计算）完整分析
+
+**Type**: Knowledge Synthesis（PyTorch autograd 机制 + Megatron-LM 源码分析）
+
+- **Created**: `wiki/llm/02_training/activation_checkpointing_analysis.md` — 激活重计算完整分析（中文）
+- **Updated**: `wiki/llm/overview.md` — Optimizers & Training Algorithms 表格新增条目
+- **Updated**: `wiki/llm/06_infra/megatron-lm/Megatron-LM_Distributed_Parallel_Exam.md` — Q12 考点添加交叉引用
+- **Key topics**:
+  - autograd `ctx.save_for_backward` 机制与 `torch.no_grad` 干预原理
+  - ctx 中 tensor 激活值 vs 元信息的二分法（重计算只消除前者）
+  - View/Cast/Slice 算子的反向机制：仅依赖元信息，ctx 不存储 tensor
+  - View chain 问题与 Megatron `make_viewless_tensor` 的切断方案
+  - Megatron 三层 checkpoint 架构：CheckpointFunction → CheckpointWithoutOutput/te_checkpoint → TransformerBlock 调度
+  - `distribute_saved_activations` 的 TP 切分/聚合机制
+  - `CheckpointWithoutOutput` 的 zero-copy storage sharing 和 `CheckpointManager`
+  - Uniform vs Block 调度策略、逐层 checkpoint 的必要性（vs 整 model 一层）
+  - Selective recomputation 的子模块级选择依据与 Decoder 层激活值依赖全景
+  - 理论激活值开销公式与估算范例
+
+---
+
+## 2026-04-28: DeepSeek-V4 CP 深度分析
+
+---
+
+## 2026-04-28: DeepSeek-V4 CP 深度分析
+
+**Type**: Source Ingestion (扩展已有 V4 分析)
+
+- **Source**: `raw/05_model_families/deepseek/DeepSeek_V4.pdf` §3.5.3, §3.6, §4.1
+- **Created**: `wiki/llm/05_model_families/deepseek/deepseek_v4_cp_analysis.md` — DeepSeek-V4 Context Parallelism 深度分析（中文）
+- **Updated**: `wiki/llm/05_model_families/deepseek/deepseek_v4_analysis.md` — CP 节扩展并添加指向新页面链接
+- **Key topics**:
+  - Packed sequences 数据格式与 CP 的三个矛盾（跨 rank 文档切断、压缩窗口跨边界、压缩输出长度不可预测）
+  - 两阶段通信协议形式化描述（Stage 1 P2P O(c) 常数通信 + Stage 2 All-Gather 压缩 KV）
+  - 通信量开销公式推导与数值估算（CSA ~51× 减少, HCA ~2048× 减少 vs 标准 CP）
+  - 三层 sample 可见性控制（sample-level attention mask → block-level causal → precomputed rules / Top-K selector）
+  - 训练 vs 推理尾部 token 处理策略对比（丢弃 vs State Cache vs 重计算）
+  - CSA 重叠窗口对 CP 边界的额外影响
+  - 完整 packed sequences × CP × 压缩的数值示例
+
+---
+
 ## 2026-04-24: Wiki Directory Restructure
 
 **Type**: Infrastructure

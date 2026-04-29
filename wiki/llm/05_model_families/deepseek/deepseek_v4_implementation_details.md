@@ -1,5 +1,11 @@
 # DeepSeek-V4 技术实现要点
 
+> **来源**: `raw/05_model_families/deepseek/DeepSeek_V4_Implementation_Details.md` (AI 辅助分析生成)  
+> **移至 Wiki**: 2026-04-29  
+> **说明**: 本文为 DeepSeek-V4 核心组件的伪代码实现分析，作为 [[deepseek_v4_analysis]] 的补充参考。
+
+---
+
 ## 一、核心架构实现细节
 
 ### 1.1 MoE 专家路由实现
@@ -1082,3 +1088,15 @@ DeepSeek-V4 的核心创新点：
 4. **MoE 路由 v2**: 动态调整激活专家，推理成本降低 40%
 
 这些创新点共同实现了 DeepSeek-V4 的高效性和可扩展性，使其能够在 1M 上下文长度下保持高性能推理。
+
+---
+
+## 相关页面
+
+- [[deepseek_v4_analysis]] — V4 整体架构分析
+- [[deepseek_v4_architecture_diagrams]] — V4 架构结构图
+- [[deepseek_v4_technical_deep_dive]] — CSA/HCA/DSA/MLA 对比
+- [[deepseek_v4_fp4_qat_analysis]] — FP4 QAT 分析
+- [[deepseek_v4_cp_analysis]] — Context Parallelism 深度分析
+- [[mHC]] — 流形约束超连接
+- [[deepseek_v3_analysis]] — V3 架构

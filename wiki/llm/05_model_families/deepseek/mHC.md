@@ -79,14 +79,81 @@ $$
 
 ### 动态与静态系数
 
-与 HC 类似，mHC 的映射由动态（输入相关）和静态（全局可学习）两部分组成：
+> 本节结合 DeepSeek-V4 论文 §2.2 的完整公式展开。V4 中使用 $A_l, B_l, C_l$ 分别对应 mHC 原文中的 $H^{pre}_l, H^{res}_l, H^{post}_l$。
 
-- 先将 $x_l \in \mathbb{R}^{n \times C}$ 展平为 $\vec{x}_l \in \mathbb{R}^{1 \times nC}$
-- 动态部分：$\tilde{H}^{pre}_l = \alpha^{pre}_l \cdot (\vec{x}'_l \varphi^{pre}_l) + b^{pre}_l$（post 和 res 同理）
-- 最终约束：
-  $$
-  H^{pre}_l = \sigma(\tilde{H}^{pre}_l), \quad H^{post}_l = 2\sigma(\tilde{H}^{post}_l), \quad H^{res}_l = \text{Sinkhorn-Knopp}(\tilde{H}^{res}_l)
-  $$
+mHC 的映射参数由**动态**（输入相关）和**静态**（全局可学习）两部分组合而成。设计动机：动态部分使参数能根据输入调整（增强表达力），静态部分提供先验基础（增强稳定性）。
+
+#### 输入预处理
+
+给定输入 $X_l \in \mathbb{R}^{n_{hc} \times d}$：
+
+$$
+\hat{X}_l = \text{RMSNorm}(\text{vec}(X_l)) \in \mathbb{R}^{1 \times n_{hc}d}
+$$
+
+#### 三个参数生成方程
+
+**输入映射（pre）** $A_l \in \mathbb{R}^{1 \times n_{hc}}$：
+
+$$
+\tilde{A}_l = \alpha^{\text{pre}}_l \cdot (\hat{X}_l W^{\text{pre}}_l) + S^{\text{pre}}_l \tag{3}
+$$
+
+- $W^{\text{pre}}_l \in \mathbb{R}^{n_{hc}d \times n_{hc}}$：动态组件的可学习权重
+- $S^{\text{pre}}_l \in \mathbb{R}^{1 \times n_{hc}}$：可学习静态偏置
+- $\alpha^{\text{pre}}_l \in \mathbb{R}$：可学习门控因子（初始化为小值）
+
+**残差映射（res）** $B_l \in \mathbb{R}^{n_{hc} \times n_{hc}}$：
+
+$$
+\tilde{B}_l = \alpha^{\text{res}}_l \cdot \text{Mat}(\hat{X}_l W^{\text{res}}_l) + S^{\text{res}}_l \tag{4}
+$$
+
+- $W^{\text{res}}_l \in \mathbb{R}^{n_{hc}d \times n_{hc}^2}$：将输入投影到 $n_{hc}^2$ 维
+- $\text{Mat}(\cdot)$：将向量重塑为 $n_{hc} \times n_{hc}$ 矩阵
+- $S^{\text{res}}_l \in \mathbb{R}^{n_{hc} \times n_{hc}}$：可学习静态偏置
+
+**输出映射（post）** $C_l \in \mathbb{R}^{n_{hc} \times 1}$：
+
+$$
+\tilde{C}_l = \alpha^{\text{post}}_l \cdot (\hat{X}_l W^{\text{post}}_l)^T + S^{\text{post}}_l \tag{5}
+$$
+
+- $W^{\text{post}}_l \in \mathbb{R}^{n_{hc}d \times n_{hc}}$：动态组件的可学习权重
+- $S^{\text{post}}_l \in \mathbb{R}^{n_{hc} \times 1}$：可学习静态偏置
+
+#### 参数约束
+
+生成原始参数后，分别施加约束：
+
+$$
+A_l = \sigma(\tilde{A}_l) \tag{6}
+$$
+
+$$
+C_l = 2\sigma(\tilde{C}_l) \tag{7}
+$$
+
+- Sigmoid 确保非负性和有界性
+- $C_l$ 乘以 2 获得 $[0, 2]$ 范围（允许放大输出信号）
+
+$$
+B_l = \text{Sinkhorn-Knopp}(\tilde{B}_l) \tag{8}
+$$
+
+- 先取指数保证正性：$M^{(0)} = \exp(\tilde{B}_l)$
+- 迭代行/列归一化 $t_{max}=20$ 次收敛到双随机矩阵
+
+#### 对比传统方法
+
+| 特性 | 传统残差连接 | Hyper-Connections (HC) | mHC + Dynamic Parameterization |
+|------|-------------|----------------------|----------------------------------|
+| 参数生成 | 固定 | 输入相关 | 输入相关 + 静态先验 |
+| 约束 | 无 | 部分约束 | 流形约束（双随机矩阵） |
+| 稳定性 | 好 | 可能不稳定（信号放大~3000×） | 理论保证稳定（信号放大~1.6×） |
+| 灵活性 | 低 | 中 | 高 |
+
+**训练细节**：所有参数（动态权重 $W$、静态偏置 $S$、门控 $\alpha$）端到端可微训练。Sinkhorn-Knopp 迭代可微，梯度通过自定义 backward kernel 片上重计算，避免存储中间迭代结果。门控因子 $\alpha$ 初始化为小值，训练中自动学习合适缩放。
 
 ---
 
@@ -186,3 +253,4 @@ mHC 通过**流形约束**解决了 HC 的核心痛点：
 - [[llm_initiliaze_analysis]]
 - [[Megatron-LM_MoE_Zero_Redundancy_Analysis]]
 - [[muon_analysis]]
+- [[activation_checkpointing_analysis]]

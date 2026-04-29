@@ -48,6 +48,8 @@ tp_comm_overlap_rs: bool = True
 """Controls Reduce-Scatter overlap with GEMM by pipelining."""
 ```
 
+![alt text](image.png)
+
 ### 2.2 User Buffer 初始化
 
 TP 掩盖依赖 Transformer Engine (TE) 预分配的静态 user buffer，在训练初始化时注册：
@@ -93,25 +95,20 @@ if self.config.tp_comm_overlap and parallel_mode != "duplicated":
 
 **实现**：TE 将 AllGather / ReduceScatter 拆分为多步 ring-exchange，每步只传一个 chunk。GEMM 可以"流式"消费已到达的数据，无需等待整个张量通信完成。
 
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e1f5fe', 'primaryTextColor': '#01579b', 'primaryBorderColor': '#0288d1', 'lineColor': '#0288d1', 'secondaryColor': '#fff3e0', 'tertiaryColor': '#e8f5e9'}}}%%
-gantt
-    title Pipelined TP Overlap（AG + GEMM）
-    dateFormat X
-    axisFormat %s
-    section 无重叠
-    AG(完整)         :ag0, 0, 4
-    GEMM计算         :gemm0, after ag0, 4
-    section Pipelined重叠
-    AG-chunk0        :ag1, 0, 1
-    AG-chunk1        :ag2, 1, 2
-    AG-chunk2        :ag3, 2, 3
-    AG-chunk3        :ag4, 3, 4
-    GEMM-chunk0      :gemm1, 1, 2
-    GEMM-chunk1      :gemm2, 2, 3
-    GEMM-chunk2      :gemm3, 3, 4
-    GEMM-chunk3      :gemm4, 4, 5
+```text
+串行 (total=8):
+      0 1 2 3 4 5 6 7 8
+ 计算 □ □ □ □ ■ ■ ■ ■ □  GEMM(4→8)
+ 通信 ■ ■ ■ ■ □ □ □ □ □  AG(0→4)
+     无重叠
+
+重叠 (total=5):
+      0 1 2 3 4 5
+ 计算 □ ■ ■ ■ ■ □  GEMM chunk流式(1→5)
+ 通信 ■ ■ ■ ■ □ □  AG chunk流式(0→4)
+      ├──3u──┤
 ```
+> 通信chunk0完成(t=1)后GEMM即可启动消费,后续chunks流式到达,重叠3个时间单位。
 
 **关键代码**：`ub_overlap_ag` / `ub_overlap_rs` 由 TE 底层实现，Megatron 仅传递开关。
 
@@ -121,7 +118,15 @@ Bulk 掩盖处理的是**反向传播中通信与计算无数据依赖**的场�
 
 #### 2.5.1 `ub_bulk_wgrad`：AllGather 与 DGRAD GEMM 重叠
 
-**物理场景**：RowParallelLinear（如 `proj`、`fc2`）反向时，计算 dX（dgrad）**不需要完整的输入 X**，但计算 dW（wgrad）**需要**。因此先启动 `AllGather(X)`，同时立刻计算 `dgrad GEMM`。
+**物理场景**：RowParallelLinear（如 `proj`、`fc2`）反向时的数据依赖：
+
+```
+RowParallelLinear 反向:
+  dgrad = grad_output @ W_shard       ← 纯本地! grad_output(上游) + W_shard(本地分片)
+  wgrad = X_full.T @ grad_output      ← 需要完整X! 各rank只有X分片
+```
+
+关键洞察：**dgrad 不需要 X**，它只消费 `grad_output`（从上游反向传来）和本地 `W_shard`。但 **wgrad 需要完整 X**（`X_full`），而各 rank 只有 X 的 TP 分片，必须通过 AllGather 拼出完整 X。因此可以趁 AG(X) 异步传输的同时，顺手把 dgrad 算了。
 
 **代码验证**：Legacy 层实现（`async_op=True` 的 AG 与 dgrad 并行）
 
@@ -135,27 +140,41 @@ handle = dist_all_gather_func(
 )
 # 立刻计算 dgrad —— 不依赖 all_gather_buffer！
 grad_input = grad_output.matmul(weight)
+# ... dgrad 算完后 ...
+handle.wait()                            # 等 AG 完成,all_gather_buffer 此时有完整 X
+# wgrad 现在拿着完整 X 计算 X_full^T @ grad_output
 ```
 
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e1f5fe', 'primaryTextColor': '#01579b', 'primaryBorderColor': '#0288d1', 'lineColor': '#0288d1', 'secondaryColor': '#fff3e0', 'tertiaryColor': '#e8f5e9'}}}%%
-gantt
-    title Bulk Overlap：ub_bulk_wgrad（AG || dgrad）
-    dateFormat X
-    axisFormat %s
-    section 串行执行
-    AG(X)            :a0, 0, 4
-    dgrad GEMM       :d0, after a0, 3
-    wgrad GEMM       :w0, after d0, 4
-    section Bulk重叠
-    Comm Stream:AG(X) :a1, 0, 4
-    Comp Stream:dgrad :d1, 0, 3
-    Comp Stream:wgrad :w1, 3, 7
+```text
+数据依赖关系:
+  dgrad ← grad_output + W_shard (纯本地,无依赖)
+  wgrad ← X_full = AG(X_shard) (依赖通信结果)
+
+串行 (total=11):
+      0 1 2 3 4 5 6 7 8 9 10 11
+ 计算 □ □ □ □ ■ ■ ■ □ ■ ■ ■  ■ □   dgrad(4→7),wgrad(7→11)
+ 通信 ■ ■ ■ ■ □ □ □ □ □ □ □  □   AG(X)(0→4)
+     无重叠
+
+重叠 (total=8):
+      0 1 2 3 4 5 6 7 8
+ 计算 ■ ■ ■ □ ■ ■ ■ ■ □   dgrad(0→3),wgrad(4→8)
+ 通信 ■ ■ ■ ■ □ □ □ □ □   AG(X)(0→4)
+      ├──3u──┤    ↑ wgrad等AG结束(t=4)才启动
 ```
+> dgrad 与 AG 并行(0→3),两者无依赖;AG 在 t=4 完成后 wgrad 才启动(4→8)。受益 = AG 时间被 dgrad 吸收 3u,total 从 11 降至 8。
 
 #### 2.5.2 `ub_bulk_dgrad`：ReduceScatter 与 WGRAD GEMM 重叠
 
-**物理场景**：ColumnParallelLinear（如 QKV、FC1）反向时，dX 算完后需要 `ReduceScatter` 分发回各 rank。但 `wgrad GEMM`（`X.T @ dout`）与 RS 操作**内存对象完全不同**，可并行。
+**物理场景**：ColumnParallelLinear（如 QKV、FC1）反向时的数据依赖：
+
+```
+ColumnParallelLinear 反向:
+  dgrad = grad_output @ W_full.T     ← 需完整W,各rank做local GEMM后ReduceScatter汇总dX
+  wgrad = X_shard.T @ grad_output    ← 纯本地! X_shard(本地) + grad_output(下游分片)
+```
+
+关键洞察：**wgrad 与 RS(dX) 操作不同内存对象**。dgrad 算完后得到局部 dX（各 rank 各自的片段），需要 RS 拼成完整 dX 分发回去。但 wgrad = `X_shard^T @ grad_output` 用的都是本地已存在的 tensor——与 RS 的输出/输入毫无关系，可以直接并行。
 
 **代码验证**：
 
@@ -164,30 +183,40 @@ gantt
 
 ```python
 # layers.py:552-558
-# 异步启动 ReduceScatter(dX)
+# dgrad GEMM 完成后,异步启动 ReduceScatter(dX)
 handle = dist_reduce_scatter_func(
     sub_grad_input, grad_input, group=tp_group, async_op=True
 )
-# 立刻计算 wgrad —— 不依赖 sub_grad_input！
+# 立刻计算 wgrad —— 只依赖 X_shard 和 grad_output,不碰 RS 的 buffer！
 ```
 
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e1f5fe', 'primaryTextColor': '#01579b', 'primaryBorderColor': '#0288d1', 'lineColor': '#0288d1', 'secondaryColor': '#fff3e0', 'tertiaryColor': '#e8f5e9'}}}%%
-gantt
-    title Bulk Overlap：ub_bulk_dgrad（RS || wgrad）
-    dateFormat X
-    axisFormat %s
-    section 串行执行
-    dgrad GEMM       :dg0, 0, 3
-    RS(dX)           :r0, after dg0, 4
-    wgrad GEMM       :wg0, after r0, 4
-    section Bulk重叠
-    Comp Stream:dgrad :dg1, 0, 3
-    Comm Stream:RS    :r1, 3, 7
-    Comp Stream:wgrad :wg1, 3, 7
-```
+```text
+数据依赖关系:
+  RS(dX) ← dgrad结果 (需通信汇总)
+  wgrad  ← X_shard + grad_output (纯本地,与RS无任何数据依赖)
 
-**收益来源**：将通信时间从"阻塞串行"变为"与独立 GEMM 并发"，当通信与 GEMM 耗时相当时，可省掉约一半反向通信暴露时间。
+串行 (total=11):
+      0 1 2 3 4 5 6 7 8 9 10 11
+ 计算 ■ ■ ■ □ □ □ □ □ ■ ■ ■  ■ □   dgrad(0→3),wgrad(7→11)
+ 通信 □ □ □ ■ ■ ■ ■ □ □ □ □  □   RS(dX)(3→7)
+     无重叠
+
+重叠 (total=7):
+      0 1 2 3 4 5 6 7
+ 计算 ■ ■ ■ □ ■ ■ ■ ■   dgrad(0→3),wgrad(3→7)
+ 通信 □ □ □ ■ ■ ■ ■ □   RS(dX)(3→7)
+          ├──4u──┤
+```
+> RS(dX) 与 wgrad 操作不同内存对象,无数据依赖,可完全并行;4单位通信全部隐藏在 wgrad 计算中。
+
+**收益来源**：
+
+| 优化 | 依赖关系 | 重叠模式 | 收益 |
+|------|---------|---------|------|
+| `ub_bulk_wgrad` | dgrad ⇌ AG (无依赖) / wgrad → AG (有依赖) | dgrad∥AG, wgrad 等 AG 完 | AG 前段被 dgrad 吸收 |
+| `ub_bulk_dgrad` | wgrad ⇌ RS (无依赖) | wgrad∥RS,完全并行 | RS 全部被 wgrad 隐藏 |
+
+核心思想：利用反向传播中**部分 GEMM 不依赖通信结果**这一事实,将通信从关键路径上剥离。
 
 ---
 
@@ -232,27 +261,20 @@ with _coalescing_manager(communication_group, async_ops=async_op) as cm:
             )
 ```
 
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e1f5fe', 'primaryTextColor': '#01579b', 'primaryBorderColor': '#0288d1', 'lineColor': '#0288d1', 'secondaryColor': '#fff3e0', 'tertiaryColor': '#e8f5e9'}}}%%
-gantt
-    title DP 梯度掩盖：Bucket 级异步 ReduceScatter
-    dateFormat X
-    axisFormat %s
-    section 无重叠
-    Layer4反向       :l4, 0, 2
-    Layer3反向       :l3, 2, 4
-    Layer2反向       :l2, 4, 6
-    Layer1反向       :l1, 6, 8
-    RS全部梯度       :rs, 8, 12
-    section 有重叠
-    Layer4反向       :ll4, 0, 2
-    Layer3反向       :ll3, 2, 4
-    Layer2反向       :ll2, 4, 6
-    Layer1反向       :ll1, 6, 8
-    RS(bucket1)      :rs1, 2, 5
-    RS(bucket2)      :rs2, 4, 7
-    RS(bucket3)      :rs3, 6, 9
+```text
+无重叠 (total=12):
+      0 1 2 3 4 5 6 7 8 9 10 11 12
+ 计算 ■ ■ ■ ■ ■ ■ ■ ■ □ □ □  □  □   L4→1反向传播(0→8)
+ 通信 □ □ □ □ □ □ □ □ ■ ■ ■  ■  □   RS全部梯度(8→12)
+     无重叠
+
+重叠 (total=9):
+      0 1 2 3 4 5 6 7 8 9
+ 计算 ■ ■ ■ ■ ■ ■ ■ ■ □ □   L4→1反向传播(0→8)
+ 通信 □ □ ■ ■ ■ ■ ■ ■ ■ □   RS bucket(2→9)
+        ├─────6u─────┤
 ```
+> bucket梯度就绪即异步通信,与后续层反向计算重叠;收益 ≈ sum(backward) + last_RS_tail。
 
 **关键收益**：通信被隐藏在所有后续层的反向计算时间内，总时间 ≈ `sum(backward) + last_RS_tail`。
 
@@ -298,20 +320,13 @@ def start_param_sync(self, force_sync=False):
         dist_all_gather_func(bucket.param_data, local_data_view, ... async_op=async_op)
 ```
 
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e1f5fe', 'primaryTextColor': '#01579b', 'primaryBorderColor': '#0288d1', 'lineColor': '#0288d1', 'secondaryColor': '#fff3e0', 'tertiaryColor': '#e8f5e9'}}}%%
-gantt
-    title DP 参数掩盖：异步 Prefetch AllGather
-    dateFormat X
-    axisFormat %s
-    section 有重叠
-    Prefetch bucket2   :p2, 0, 3
-    Layer1 前向        :l1, 0, 3
-    Prefetch bucket3   :p3, 3, 6
-    Layer2 前向        :l2, 3, 6
-    Prefetch bucket4   :p4, 6, 9
-    Layer3 前向        :l3, 6, 9
+```text
+      0 1 2 3 4 5 6 7 8 9
+ 计算 ■ ■ ■ ■ ■ ■ ■ ■ ■ □   L1→3前向(0→9)
+ 通信 ■ ■ ■ ■ ■ ■ ■ ■ ■ □   Prefetch bucket(0→9)
+      ├──── 全重叠 ────┤
 ```
+> forward pre-hook: wait当前bucket → 立即派发下一bucket异步AG → 通信完全隐藏在前向计算中。
 
 **关键收益**：AllGather 通信与前向计算流水化，消除参数同步的显式等待。
 
@@ -373,21 +388,13 @@ else:
 
 - **文件**：[`megatron/core/pipeline_parallel/schedules.py`](Megatron-LM/megatron/core/pipeline_parallel/schedules.py)
 
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e1f5fe', 'primaryTextColor': '#01579b', 'primaryBorderColor': '#0288d1', 'lineColor': '#0288d1', 'secondaryColor': '#fff3e0', 'tertiaryColor': '#e8f5e9'}}}%%
-gantt
-    title PP P2P Overlap in 1F1B Steady State
-    dateFormat X
-    axisFormat %s
-    section Stage N 计算
-    FWD compute      :fwd, 0, 3
-    BWD compute      :bwd, 3, 6
-    section Stage N P2P
-    recv_prev (async):rp, 0, 1
-    send_next (async):sn, 0, 1
-    recv_next (async):rn, 3, 4
-    send_prev (async):sp, 3, 4
+```text
+      0 1 2 3 4 5 6
+ 计算 ■ ■ ■ □ ■ ■ ■   FWD(0→3),BWD(3→6)
+ 通信 ■ □ □ □ ■ □ □   recv/send(0→1),(3→4)
+      ├1┤   ├1┤
 ```
+> P2P通信在FWD/BWD启动时异步发起,随即与计算重叠;even/odd rank分组实现真并发。
 
 ---
 
@@ -439,24 +446,25 @@ def combined_1f1b_schedule_for_no_pipelining(...):
 # comp_stream: attn_fwd    | mlp_bwd -> mlp_bwd_dw -> mlp_fwd | attn_bwd
 ```
 
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e1f5fe', 'primaryTextColor': '#01579b', 'primaryBorderColor': '#0288d1', 'lineColor': '#0288d1', 'secondaryColor': '#fff3e0', 'tertiaryColor': '#e8f5e9'}}}%%
-gantt
-    title EP 1F1B A2A Overlap：层级别双 Stream 调度
-    dateFormat X
-    axisFormat %s
-    section MB N+1 Forward
-    attn_fwd N+1      :af, 0, 2
-    dispatch_fwd N+1  :df, 2, 3
-    mlp_fwd N+1       :mf, 3, 5
-    combine_fwd N+1   :cf, 5, 6
-    section MB N Backward
-    combine_bwd N     :cb, 0, 2
-    mlp_bwd N         :mb, 2, 4
-    mlp_bwd_dw N      :md, 4, 5
-    dispatch_bwd N    :db, 5, 6
-    attn_bwd N        :ab, 6, 8
+```text
+      0 1 2 3 4 5 6 7 8
+ 计算 ■ ■ ■ ■ ■ □ ■ ■ □
+ 通信 ■ ■ ■ □ □ ■ □ □ □
+      ├─3u─┤     (t=5仅通信)
+
+计算任务:
+  attn_fwd(N+1)=[0→2)  mlp_bwd(N)=[2→4)  mlp_fwd(N+1)=[3→5)
+  mlp_bwd_dw(N)=[4→5)  attn_bwd(N)=[6→8)
+
+通信任务:
+  combine_bwd(N)=[0→2)  dispatch_fwd(N+1)=[2→3)
+  dispatch_bwd(N)+combine_fwd(N+1)=[5→6)
+
+重叠区:
+  t=0→2: attn_fwd(N+1) ∥ combine_bwd(N)     (2u)
+  t=2→3: mlp_bwd(N)    ∥ dispatch_fwd(N+1)   (1u)
 ```
+> MB N+1 前向的 attn_fwd 与 MB N 反向的 combine_bwd 完全重叠(2u),mlp_bwd 启动后与 dispatch_fwd 重叠(1u),t=5 处仅通信无计算可被 delay-wgrad 填补。
 
 ### 5.4 delay-wgrad-compute 的详细流水线
 
@@ -489,26 +497,26 @@ class TransformerLayerNode(ScheduleNode):
 
 #### 5.4.2 三层对比图
 
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e1f5fe', 'primaryTextColor': '#01579b', 'primaryBorderColor': '#0288d1', 'lineColor': '#0288d1', 'secondaryColor': '#fff3e0', 'tertiaryColor': '#e8f5e9'}}}%%
-gantt
-    title Delay-WGrad 效果对比
-    dateFormat X
-    axisFormat %s
-    section A: 无 delay-wgrad
-    mlp_bwd(dX)       :a1, 0, 2
-    mlp_bwd_dw(dW)    :a2, 2, 4
-    A2A_wait          :a3, 4, 7
-    section B: 无 delay-wgrad + EP Overlap
-    mlp_bwd(dX+dW)    :b1, 0, 4
-    attn_bwd          :b2, 4, 7
-    dispatch_bwd      :b3, 4, 7
-    section C: 有 delay-wgrad + EP Overlap
-    mlp_bwd(dX)       :c1, 0, 2
-    attn_bwd          :c2, 2, 5
-    mlp_bwd_dw(dW)    :c3, 5, 7
-    dispatch_bwd      :c4, 2, 5
+```text
+A: 无 delay-wgrad (total=7):
+      0 1 2 3 4 5 6 7
+ 计算 ■ ■ ■ ■ □ □ □ □   mlp_bwd(dX)(0→2)+mlp_bwd_dw(dW)(2→4)
+ 通信 □ □ □ □ ■ ■ ■ □   A2A_wait(4→7)
+     无重叠
+
+B: 无 delay-wgrad + EP Overlap (total=7):
+      0 1 2 3 4 5 6 7
+ 计算 ■ ■ ■ ■ □ ■ ■ ■   mlp_bwd(dX+dW)(0→4) attn_bwd(4→7)
+ 通信 □ □ □ □ ■ ■ ■ □   dispatch_bwd(4→7)
+              ├3u┤
+
+C: 有 delay-wgrad + EP Overlap (total=7):
+      0 1 2 3 4 5 6 7
+ 计算 ■ ■ ■ ■ ■ ■ ■ □   mlp_bwd(dX)(0→2) attn_bwd(2→5) mlp_bwd_dw(5→7)
+ 通信 □ □ ■ ■ ■ □ □ □   dispatch_bwd(2→5)
+          ├──3u──┤
 ```
+> A: dX结束后dW仍阻塞,通信完全暴露(3u); B: dX+dW整体计算,通信与attn_bwd重叠(3u); C: dX分离后A2A提前到t=2,与attn_bwd大面积重叠(3u),dW推迟到t=5填充通信尾部空隙。
 
 **图 C 的收益**：
 - `mlp_bwd(dX)` 缩短到 2 单位，A2A (`dispatch_bwd`) 可以提前到 Time=2 开始
@@ -517,34 +525,22 @@ gantt
 
 #### 5.4.3 多层全局流水线
 
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e1f5fe', 'primaryTextColor': '#01579b', 'primaryBorderColor': '#0288d1', 'lineColor': '#0288d1', 'secondaryColor': '#fff3e0', 'tertiaryColor': '#e8f5e9'}}}%%
-gantt
-    title 多层全局流水线：delay-wgrad 隐藏 A2A 气泡
-    dateFormat X
-    axisFormat %s
-    section 无 delay-wgrad
-    Layer4 dX+dW     :n4, 0, 2
-    A2A_wait4        :a4, 2, 4
-    Layer3 dX+dW     :n3, 4, 6
-    A2A_wait3        :a3, 6, 8
-    Layer2 dX+dW     :n2, 8, 10
-    A2A_wait2        :a2, 10, 12
-    Layer1 dX+dW     :n1, 12, 14
-    section 有 delay-wgrad
-    Layer4 dX        :d4, 0, 1
-    A2A_wait4        :aw4, 1, 3
-    Layer3 dX        :d3, 3, 4
-    A2A_wait3        :aw3, 4, 6
-    Layer2 dX        :d2, 6, 7
-    A2A_wait2        :aw2, 7, 9
-    Layer1 dX        :d1, 9, 10
-    A2A_wait1        :aw1, 10, 12
-    delayed dW4      :dw4, 3, 5
-    delayed dW3      :dw3, 6, 8
-    delayed dW2      :dw2, 9, 11
-    delayed dW1      :dw1, 12, 14
+```text
+无 delay-wgrad (total=14):
+      0 1 2 3 4 5 6 7 8 9 10 11 12 13 14
+ 计算 ■ ■ □ □ ■ ■ □ □ ■ ■ □  □  ■  ■  □   L4(0→2) L3(4→6) L2(8→10) L1(12→14)
+ 通信 □ □ ■ ■ □ □ ■ ■ □ □ ■  ■  □  □  □   A2A(2→12,各层间歇)
+     完全串行,无重叠
+
+有 delay-wgrad (total=14):
+      0 1 2 3 4 5 6 7 8 9 10 11 12 13 14
+ 计算 ■ □ □ ■ ■ □ ■ ■ □ ■ ■  □  ■  ■  □
+ 通信 □ ■ ■ □ ■ ■ □ ■ ■ □ □  ■  □  □  □
+             ├1┤   ├1┤   ├1┤
+ 计算: L4dX(0→1) L3dX+dW4(3→5) L2dX+dW3(6→8) L1dX+dW2(9→11) dW1(12→14)
+ 通信: A2A4(1→3) A2A3(4→6) A2A2(7→9) A2A1(10→12)
 ```
+> 无delay时计算与通信完全串行交替;有delay后dX缩短使A2A提前,dW延后填充通信气泡,在t=4,7,10各产生1u重叠窗口。
 
 ### 5.5 dw 与 dx 的通信依赖关系（关键澄清）
 
@@ -641,22 +637,13 @@ for i in range(0, nheads_k, heads_k_stride):
 
 ### 6.3 图示
 
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e1f5fe', 'primaryTextColor': '#01579b', 'primaryBorderColor': '#0288d1', 'lineColor': '#0288d1', 'secondaryColor': '#fff3e0', 'tertiaryColor': '#e8f5e9'}}}%%
-gantt
-    title CP Attention Overlap（Forward）
-    dateFormat X
-    axisFormat %s
-    section Head Chunk 0
-    AG KV₀           :ag0, 0, 2
-    wait + Attn₀     :a0, 2, 4
-    section Head Chunk 1
-    AG KV₁           :ag1, 2, 4
-    wait + Attn₁     :a1, 4, 6
-    section Head Chunk 2
-    AG KV₂           :ag2, 4, 6
-    wait + Attn₂     :a2, 6, 8
+```text
+      0 1 2 3 4 5 6 7 8
+ 计算 □ □ ■ ■ ■ ■ ■ ■ □   Attn(head₀→₂)(2→8)
+ 通信 ■ ■ ■ ■ ■ ■ □ □ □   AG KV(head₀→₂)(0→6)
+        ├─4u overlap─┤
 ```
+> AG KV₁ 启动(2→4)与 Attn₀(2→4)重叠,AG KV₂(4→6)与 Attn₁(4→6)重叠;head级流水线使通信隐藏在注意力计算中。
 
 ---
 

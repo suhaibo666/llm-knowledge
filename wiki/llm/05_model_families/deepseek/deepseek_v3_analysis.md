@@ -308,3 +308,4 @@ With only **37B activated parameters** (vs 405B dense), V3-Base surpasses LLaMA-
 - [[deepseek_moe_analysis]] — MoE architecture and routing analysis
 - [[mHC]] — Manifold-Constrained Hyper-Connections (related DeepSeek architecture research)
 - [[Megatron-LM_MoE_Zero_Redundancy_Analysis]] — Expert parallelism infrastructure
+- [[activation_checkpointing_analysis]] — V3 backward 中重计算 RMSNorm 和 MLA up-projections 的实现原理

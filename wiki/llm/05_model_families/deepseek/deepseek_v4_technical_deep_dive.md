@@ -1,5 +1,11 @@
 # DeepSeek-V4 核心技术深度解析
 
+> **来源**: `raw/05_model_families/deepseek/DeepSeek_V4_Technical_Deep_Dive.md` (AI 辅助分析生成)  
+> **移至 Wiki**: 2026-04-29  
+> **说明**: 本文为 CSA/HCA/DSA/MLA 注意力机制的详细对比分析，作为 [[deepseek_v4_analysis]] 的补充参考。
+
+---
+
 ## 一、CSA、HCA、DSA 和 MLA 的区别
 
 ### 1.1 各种注意力机制的对比
@@ -564,3 +570,16 @@ class RouterNetwork(nn.Module):
 1. mHC: Manifold-Constrained Hyper-Connections - arXiv:2512.24880
 2. DualPath: Breaking the Storage Bandwidth Bottleneck - arXiv:2602.21548
 3. DeepSeekMath: DeepSeek-GRPO - arXiv:2402.03300
+
+---
+
+## 相关页面
+
+- [[deepseek_v4_analysis]] — V4 整体架构分析
+- [[deepseek_v4_architecture_diagrams]] — V4 架构结构图
+- [[deepseek_v4_implementation_details]] — 技术实现要点
+- [[deepseek_v4_fp4_qat_analysis]] — FP4 QAT 分析
+- [[deepseek_v4_cp_analysis]] — Context Parallelism 深度分析
+- [[mHC]] — 流形约束超连接
+- [[deepseek_v2_analysis]] — MLA 起源
+- [[deepseek_v3_analysis]] — V3/V4 注意力对比参照

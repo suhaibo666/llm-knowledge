@@ -1,5 +1,11 @@
 # DeepSeek-V4 模型结构图
 
+> **来源**: `raw/05_model_families/deepseek/DeepSeek_V4_Architecture_Diagram.md` (AI 辅助分析生成)  
+> **移至 Wiki**: 2026-04-29  
+> **说明**: 本文为 DeepSeek-V4 架构的详细 ASCII 结构图，作为 [[deepseek_v4_analysis]] 的补充参考。
+
+---
+
 ## 一、整体架构流程图
 
 ```
@@ -313,3 +319,15 @@
 | **注意力层** | CSA + HCA (DSA) | O(n log n) 复杂度，百万上下文高效处理 |
 | **系统层** | DualPath | 双路径 KV-Cache 加载，I/O 吞吐翻倍 |
 | **训练层** | Muon + GRPO | 加速收敛，提升推理能力 |
+
+---
+
+## 相关页面
+
+- [[deepseek_v4_analysis]] — V4 整体架构分析
+- [[deepseek_v4_cp_analysis]] — Context Parallelism 深度分析
+- [[deepseek_v4_fp4_qat_analysis]] — FP4 QAT 分析
+- [[deepseek_v4_technical_deep_dive]] — CSA/HCA/DSA/MLA 对比深度解析
+- [[deepseek_v4_implementation_details]] — 技术实现要点
+- [[mHC]] — 流形约束超连接
+- [[deepseek_v3_analysis]] — V3 架构（MLA, FP8, DualPipe）

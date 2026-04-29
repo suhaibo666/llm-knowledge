@@ -38,6 +38,7 @@ This domain covers large language model training algorithms, optimization techni
 |------|-------------|
 | [[muon_analysis]] | Muon optimizer, Newton-Schulz iteration, spectral norm orthogonalization, ZeRO incompatibility, Megatron-LM layer-wise partitioning |
 | [[llm_initiliaze_analysis]] | Weight initialization (Xavier/He/Kaiming), residual scaling, pre-LN, MoE expert & router initialization, meta-device lazy init |
+| [[activation_checkpointing_analysis]] | 激活重计算完整分析：autograd ctx 保存机制 → CheckpointFunction 源码 → Full/Selective 策略 → view/cast/slice 的 ctx 特性 → 理论显存评估 |
 
 ### Model Architecture Innovations
 
@@ -54,6 +55,12 @@ This domain covers large language model training algorithms, optimization techni
 | [[deepseek_v2_analysis]] | DeepSeek-V2, MLA (Multi-head Latent Attention), DeepSeekMoE, 236B total / 21B active |
 | [[deepseek_v3_analysis]] | DeepSeek-V3, FP8 training, 671B MoE, dual-pipeline parallelism, MTP |
 | [[deepseek_v4_analysis]] | DeepSeek-V4, CSA/HCA hybrid attention, million-token context, mHC, Muon, 1.6T MoE |
+| [[deepseek_v4_cp_analysis]] | V4 Context Parallelism 适配 packed sequences 的两阶段通信方案 |
+| [[deepseek_v4_fp4_qat_analysis]] | V4 FP4 量化感知训练（MoE 专家权重、CSA QK path、index scores） |
+| [[deepseek_v4_architecture_diagrams]] | V4 架构 ASCII 结构图（补充参考） |
+| [[deepseek_v4_implementation_details]] | V4 核心组件伪代码实现（补充参考） |
+| [[deepseek_v4_technical_deep_dive]] | V4 CSA/HCA/DSA/MLA 对比深度解析（补充参考） |
+| [[mHC]] | 流形约束超连接（V4 残差连接改进核心） |
 | [[deepseek_r1_analysis]] | DeepSeek-R1, pure RL reasoning, GRPO, cold start, distillation |
 | [[deepseek_coder_analysis]] | DeepSeek-Coder, code-specific pre-training, 2T tokens, project-level FIM |
 | [[deepseek_coder_v2_analysis]] | DeepSeek-Coder-V2, MoE code model, 338 languages, 128K context, GRPO alignment |

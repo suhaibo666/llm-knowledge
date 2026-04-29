@@ -328,6 +328,8 @@ Megatron-LM 支持 `recompute_granularity='full'` 和 `'selective'`。
    - 使用了未 fuse 的 recompute kernel（如 `torch.utils.checkpoint` 而非 Megatron 自定义的 `checkpoint`），导致额外的 CPU launch overhead 或 kernel gap。
    - 显存虽然下降了一点，但 batch size 没有相应调大，所以效率没有提升。
 
+> [!note] [[activation_checkpointing_analysis]] 从 autograd ctx 保存机制到 Megatron CheckpointFunction 源码的完整分析——包括 view/cast/slice 为何不需要重计算、`make_viewless_tensor`、`distribute_saved_activations`、CheckpointWithoutOutput 等。
+
 </details>
 
 ---
@@ -952,3 +954,4 @@ Megatron-LM 支持 `--pipeline-model-parallel-layout "Et*3|(tt|)*29,m|L"` 这样
 - [[llm/06_infra/megatron-lm/overview]]
 - [[Megatron-LM_MoE_Zero_Redundancy_Analysis]]
 - [[Megatron_LM_TFLOPS_Analysis]]
+- [[activation_checkpointing_analysis]]

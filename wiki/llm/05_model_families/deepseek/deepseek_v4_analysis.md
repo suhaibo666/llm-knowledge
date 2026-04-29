@@ -71,6 +71,23 @@ $$
 
 **关键特性**：序列长度被压缩到 $\frac{1}{m}$，但通过重叠窗口，每个压缩 entry 融入了相邻块的信息，缓解了块边界的信息损失。
 
+**数值示例**（$n=16, m=4, c=512$）：
+
+```
+Token:  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+        ├── Comp[0] ──┤  (tokens 0-3 via C_a)
+           ├── Comp[1] ──┤  (tokens 4-7 via C_a + tokens 0-3 via C_b, 重叠!)
+              ├── Comp[2] ──┤  (tokens 8-11 via C_a + tokens 4-7 via C_b)
+                 ├── Comp[3] ──┤  (tokens 12-15 via C_a + tokens 8-11 via C_b)
+
+C_Comp[1] = Σ_{j=4}^{7}  S_a[j]⊙C_a[j] + Σ_{j=0}^{3}  S_b[j]⊙C_b[j]
+            ↑ 当前块 (C_a)           ↑ 重叠块 (C_b,与 Comp[0] 共享)
+```
+
+重叠压缩使每个压缩 entry 融入了 $2m$ 个原始 token 的信息（$C_a$ 当前块 + $C_b$ 前一块），避免了硬边界的信息丢失。16 个 token 最终压缩为 $\lfloor 16/4 \rfloor = 4$ 个 entry，KV 内存减少 75%。
+
+> 完整压缩算法伪代码与 CSA/HCA 对比表见 `raw/05_model_families/deepseek/DeepSeek_V4_Compressed_KV_Entries.md`。
+
 #### 1.2 Lightning Indexer（DSA 稀疏选择）
 
 压缩后，CSA 使用低秩索引器为每个 query token 选择 top-$k$ 个压缩 KV entry：
@@ -219,10 +236,16 @@ V4 对大部分模块采用 [[muon_analysis]]：
 
 ### 面向 CSA/HCA 的上下文并行（Contextual Parallelism）
 
-两阶段通信处理跨 CP rank 边界的压缩：
+由于训练数据使用 **packed sequences**（多条文档拼接），各文档独立压缩（尾部不足 $c$ 个 token 直接丢弃），标准 CP 面临三个矛盾：跨 rank 文档切断、压缩窗口跨 CP 边界、各 rank 压缩输出长度不可预测。
 
-1. **第一阶段**：Rank $i$ 将最后 $m$ 个未压缩 KV entry 发送给 rank $i+1$。Rank $i+1$ 将收到的 entry 与本地 token 一起压缩为固定长度的压缩块。
-2. **第二阶段**：all-gather 收集所有本地压缩 KV，通过融合 select-and-pad 算子重组为全局压缩 KV。
+两阶段通信方案解决：
+
+1. **Stage 1（P2P 邻接交换）**：Rank $i$ 将最后 $c$ 个未压缩 KV entry 发送给 rank $i+1$。Rank $i+1$ 将收到的 entry 与本地前 $c$ 个 entry 合并压缩为 $(c+1)$ 个固定长度 compressed block。通信量 $O(c \cdot n_{kv} \cdot d_h)$——与序列长度 $S$ 无关。
+2. **Stage 2（All-Gather）**：收集所有本地压缩 KV，通过 fused select-and-pad 算子重组为全局压缩 KV（总长 $P \times c$）。
+
+通信节省：All-gather 传输的是**压缩后 KV**，相比标准 CP（传输未压缩 KV），CSA 层节省约 **51×**，HCA 层节省约 **2048×**。
+
+> 完整分析见 [[deepseek_v4_cp_analysis]]，涵盖 packed sequences 数据格式、三层可见性控制（sample-level mask → block causal → precomputed rules/Top-K selector）、训练/推理尾部 token 处理差异、通信量公式推导和数值示例。
 
 ### 训练稳定性
 
@@ -268,6 +291,31 @@ V4 的混合注意力因 cache 策略多样和对齐约束，无法直接使用 
 | 推理 FLOPs | 27% | 10% |
 | KV Cache 大小 | 10% | 7% |
 
+### DualPath 推理框架
+
+V4 引入 DualPath 解决大规模推理中的**存储带宽瓶颈**——所有 KV Cache 都通过 Prefill 节点的存储网卡（SNIC）加载，Decode 节点的网卡（CNIC）闲置。
+
+```
+传统架构:  存储 → Prefill SNIC → GPU → Decode (Decode SNIC 闲置)
+DualPath:  路径A: 存储 → Prefill SNIC → GPU → Decode
+           路径B: 存储 → Decode SNIC → RDMA → Prefill GPU (利用闲置带宽)
+           动态调度器: 根据实时负载在两路径间负载均衡
+```
+
+**性能提升**：
+- 离线推理吞吐量提升 **1.87×**
+- 在线服务吞吐量提升 **1.96×**
+
+### 推理模式（Think Modes）
+
+V4 支持三级推理强度：
+
+| 模式 | 说明 | 适用场景 |
+|------|------|----------|
+| Non-Think | 快速响应，跳过反思链 | 简单查询、翻译 |
+| Think High | 中等推理强度 | 复杂任务、分析 |
+| Think Max | 最大推理强度（多轮反思+验证） | Agent 场景、高难度推理 |
+
 ---
 
 ## MoE 架构
@@ -289,7 +337,7 @@ V4 的混合注意力因 cache 策略多样和对齐约束，无法直接使用 
 1. **细粒度 EP 重叠**：基于 wave 的专家调度，一般推理加速 1.50~1.73 倍（RL rollout 等延迟敏感场景高达 1.96 倍）
 2. **TileLang 内核**：融合算子替代数百个 ATen 算子；Host Codegen 将 CPU 开销降至 <1μs；Z3 SMT 求解器辅助整数分析
 3. **批次不变性与确定性内核**：双内核 attention 策略、DeepGEMM 替代 cuBLAS、MoE 反向传播隔离累加缓冲区
-4. **FP4 量化感知训练（QAT）**：MoE 专家权重 + CSA indexer QK 路径使用 FP4；FP4→FP8 反量化**无损**（E4M3 比 FP4 多 2 个指数位）
+4. **FP4 量化感知训练（QAT）**：MoE 专家权重 + CSA indexer QK 路径使用 FP4；FP4→FP8 反量化**无损**（E4M3 比 FP4 多 2 个指数位）。详见 [[deepseek_v4_fp4_qat_analysis]]
 
 ---
 
@@ -307,6 +355,17 @@ V4 的混合注意力因 cache 策略多样和对齐约束，无法直接使用 
 
 V4-Flash-Base 尽管激活参数更小（13B vs 37B），仍在大多数基准上超越 V3.2-Base。V4-Pro-Base 实现近乎全面的领先。
 
+### V4-Pro-Max（后训练旗舰，Think Max 模式）
+
+| 基准测试 | 得分 | 说明 |
+|---------|------|------|
+| LiveCodeBench | 93.5% | 开源模型第一 |
+| Codeforces | 3206 | 超越 Gemini-3.1-Pro、Claude Opus-4.6 |
+| IMO-AnswerBench | 89.8% | 数学推理顶尖 |
+| HMMT 2026 | 95.2% | 数学竞赛顶尖 |
+| SWE-bench Verified | 80.6% | 软件工程顶尖 |
+| MRCR (长上下文) | 83.5% | 百万 Token 顶尖 |
+
 ### 后训练
 
 两阶段流水线：
@@ -319,10 +378,15 @@ V4-Flash-Base 尽管激活参数更小（13B vs 37B），仍在大多数基准�
 
 ## 相关页面
 
+- [[deepseek_v4_cp_analysis]] — Context Parallelism 深度分析（packed sequences 适配、通信量、可见性控制）
+- [[deepseek_v4_fp4_qat_analysis]] — FP4 量化感知训练分析
 - [[deepseek_v3_analysis]] — 前代模型，MLA、FP8 训练、DualPipe
 - [[deepseek_v2_analysis]] — MLA 起源、DeepSeekMoE 引入
 - [[mHC]] — 流形约束超连接深度解析
 - [[muon_analysis]] — Muon 优化器原理与分布式实现
 - [[deepseek_r1_analysis]] — GRPO 与推理流水线
 - [[deepseek_moe_analysis]] — MoE 路由与负载均衡
+- [[deepseek_v4_architecture_diagrams]] — V4 架构结构图（补充参考）
+- [[deepseek_v4_implementation_details]] — V4 技术实现伪代码（补充参考）
+- [[deepseek_v4_technical_deep_dive]] — CSA/HCA/DSA/MLA 对比深度解析（补充参考）
 - [[attention_is_all_you_need_analysis]] — 原始 Transformer 注意力
