@@ -1,7 +1,7 @@
 # DeepSeek-V4 核心技术深度解析
 
-> **来源**: `raw/05_model_families/deepseek/DeepSeek_V4_Technical_Deep_Dive.md` (AI 辅助分析生成)  
-> **移至 Wiki**: 2026-04-29  
+> **来源**: `raw/05_model_families/deepseek/DeepSeek_V4_Technical_Deep_Dive.md` (AI 辅助分析生成)
+> **移至 Wiki**: 2026-04-29
 > **说明**: 本文为 CSA/HCA/DSA/MLA 注意力机制的详细对比分析，作为 [[deepseek_v4_analysis]] 的补充参考。
 
 ---
@@ -178,52 +178,52 @@ class CompressedSparseAttention(nn.Module):
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.compression_ratio = compression_ratio  # 25%
-        
+
         # QKV 投影
         self.q_proj = nn.Linear(hidden_size, hidden_size)
         self.k_proj = nn.Linear(hidden_size, hidden_size)
         self.v_proj = nn.Linear(hidden_size, hidden_size)
         self.o_proj = nn.Linear(hidden_size, hidden_size)
-        
+
         # 压缩采样器
         self.sampler = CompressedSampler(compression_ratio)
-    
+
     def forward(self, hidden_states, attention_mask=None):
         batch_size, seq_len, _ = hidden_states.shape
-        
+
         # QKV 投影
         query = self.q_proj(hidden_states)
         key = self.k_proj(hidden_states)
         value = self.v_proj(hidden_states)
-        
+
         # 压缩采样 (仅选择 25% 的关键 token)
         compressed_query, compressed_indices = self.sampler(query)
         compressed_key = key[:, compressed_indices, :]
         compressed_value = value[:, compressed_indices, :]
-        
+
         # 重塑为多头格式
         query = self.reshape_to_heads(compressed_query)
         key = self.reshape_to_heads(compressed_key)
         value = self.reshape_to_heads(compressed_value)
-        
+
         # 注意力计算 (仅在压缩后的 token 之间)
         attention_weights = torch.matmul(query, key.transpose(-2, -1))
         attention_weights = attention_weights / math.sqrt(self.hidden_size // self.num_heads)
-        
+
         if attention_mask is not None:
             attention_weights = attention_weights + attention_mask
-        
+
         attention_weights = F.softmax(attention_weights, dim=-1)
-        
+
         # 注意力加权求和
         attention_output = torch.matmul(attention_weights, value)
-        
+
         # 重塑回原始格式
         attention_output = self.reshape_from_heads(attention_output)
-        
+
         # 输出投影
         output = self.o_proj(attention_output)
-        
+
         return output
 ```
 
@@ -237,41 +237,41 @@ class HighlyCompressedAttention(nn.Module):
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.compression_ratio = compression_ratio  # 10%
-        
+
         # QKV 投影
         self.q_proj = nn.Linear(hidden_size, hidden_size)
         self.k_proj = nn.Linear(hidden_size, hidden_size)
         self.v_proj = nn.Linear(hidden_size, hidden_size)
         self.o_proj = nn.Linear(hidden_size, hidden_size)
-        
+
         # 高度压缩采样器
         self.sampler = HighlyCompressedSampler(compression_ratio)
-    
+
     def forward(self, hidden_states, attention_mask=None):
         batch_size, seq_len, _ = hidden_states.shape
-        
+
         # QKV 投影
         query = self.q_proj(hidden_states)
         key = self.k_proj(hidden_states)
         value = self.v_proj(hidden_states)
-        
+
         # 高度压缩采样 (仅选择 10% 的关键 token)
         compressed_query, compressed_indices = self.sampler(query)
         compressed_key = key[:, compressed_indices, :]
         compressed_value = value[:, compressed_indices, :]
-        
+
         # 注意力计算 (仅在压缩后的 token 之间)
         attention_weights = torch.matmul(query, compressed_key.transpose(-2, -1))
         attention_weights = attention_weights / math.sqrt(self.hidden_size // self.num_heads)
-        
+
         attention_weights = F.softmax(attention_weights, dim=-1)
-        
+
         # 注意力加权求和
         attention_output = torch.matmul(attention_weights, compressed_value)
-        
+
         # 输出投影
         output = self.o_proj(attention_output)
-        
+
         return output
 ```
 
@@ -372,11 +372,11 @@ class SinkhornKnoppAlgorithm:
     def __init__(self, max_iter=100, epsilon=1e-6):
         self.max_iter = max_iter
         self.epsilon = epsilon
-    
+
     def project_to_manifold(self, matrix):
         """
         将连接矩阵投影到数学流形上
-        
+
         约束条件:
         - 行和 = 1 (概率分布)
         - 列和 = 1 (概率分布)
@@ -384,22 +384,22 @@ class SinkhornKnoppAlgorithm:
         """
         # 确保非负
         matrix = torch.clamp(matrix, min=0)
-        
+
         # 迭代投影
         for _ in range(self.max_iter):
             # 行归一化
             row_sum = torch.sum(matrix, dim=1, keepdim=True)
             matrix = matrix / (row_sum + self.epsilon)
-            
+
             # 列归一化
             col_sum = torch.sum(matrix, dim=0, keepdim=True)
             matrix = matrix / (col_sum + self.epsilon)
-            
+
             # 检查收敛
             if torch.max(torch.abs(torch.sum(matrix, dim=1) - 1)) < self.epsilon:
                 if torch.max(torch.abs(torch.sum(matrix, dim=0) - 1)) < self.epsilon:
                     break
-        
+
         return matrix
 ```
 
@@ -450,21 +450,21 @@ class DualPathInference:
     def __init__(self, num_decode_nodes, num_prefill_nodes):
         self.num_decode_nodes = num_decode_nodes
         self.num_prefill_nodes = num_prefill_nodes
-        
+
         # 路径 A: 传统路径
         self.path_a = TraditionalPath()
-        
+
         # 路径 B: 新增路径
         self.path_b = EnhancedPath()
-        
+
         # 动态调度器
         self.scheduler = DynamicScheduler()
-    
+
     def load_kv_cache(self, kv_cache_requests):
         """加载 KV-Cache"""
         # 动态选择最优路径
         selected_path = self.scheduler.select_path(kv_cache_requests)
-        
+
         if selected_path == "path_a":
             return self.path_a.load(kv_cache_requests)
         else:
@@ -513,18 +513,18 @@ class RouterNetwork(nn.Module):
         self.hidden_size = hidden_size
         self.num_experts = num_experts
         self.top_k = top_k
-        
+
         # 路由层
         self.router = nn.Linear(hidden_size, num_experts, bias=False)
-        
+
         # 任务类型分类器 (用于动态调整激活专家)
         self.task_classifier = nn.Linear(hidden_size, 3)  # simple, moderate, complex
-    
+
     def forward(self, hidden_states):
         # 1. 任务类型判断
         task_logits = self.task_classifier(torch.mean(hidden_states, dim=1))
         task_type = torch.argmax(task_logits, dim=-1)
-        
+
         # 2. 根据任务类型调整激活专家数量
         if task_type == 0:  # 简单任务
             k = max(1, self.num_experts // 20)  # 5% 参数
@@ -532,14 +532,14 @@ class RouterNetwork(nn.Module):
             k = max(4, self.num_experts // 10)  # 10% 参数
         else:  # 复杂推理
             k = max(8, self.num_experts // 4)  # 25% 参数
-        
+
         # 3. 计算路由权重
         routing_logits = self.router(hidden_states)
-        
+
         # 4. Top-K 选择
         routing_weights = F.softmax(routing_logits, dim=-1)
         top_k_weights, top_k_indices = torch.topk(routing_weights, k=k, dim=-1)
-        
+
         return top_k_weights, top_k_indices, task_type
 ```
 
