@@ -22,6 +22,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 | Page | Key Concepts |
 |------|-------------|
 | [[Megatron_LM_TFLOPS_Analysis]] | Theoretical FLOPS estimation, forward/backward FLOP counting, MoE dropless vs dropout accuracy, throughput calculation formula |
+| [[megatron_comm_overlap_analysis]] | 6-dimension communication-computation overlap (TP/DP/PP/EP/CP), bulk & pipelined overlap, delay-wgrad, DeepEP/HybridEP |
 
 ### Training-Inference Integration
 
@@ -35,13 +36,15 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 - MoE zero-redundancy dispatch relates to [[llm_initiliaze_analysis]] (MoE expert initialization)
 - CUDA Graphs usage in Megatron connects to [[SUMMARY]] in the CUDA Graphs sub-domain
 - Weight sync patterns relate to inference optimization topics in the torch_compile domain
+- FP8/low-precision training connects to [[low_precision_training_analysis]] and [[transformer_engine_analysis]] in the training domain
 
 ## Knowledge Gaps
 
 These topics are referenced but lack dedicated wiki pages:
 
 - **Context Parallelism deep dive** — ~~mentioned in the exam but no standalone analysis~~ → partially addressed by [[llm_parallelism_analysis]]
-- **TransformerEngine integration** — referenced but not documented
+- **TransformerEngine integration** — ~~referenced but not documented~~ → addressed by [[transformer_engine_analysis]]
+- **Low-precision training** — ~~FP8/FP4 scattered across exam and V4 pages~~ → consolidated in [[low_precision_training_analysis]]
 - **Megatron-LM checkpoint format** — important for weight sync understanding
 - **Sequence Parallelism implementation details** — ~~distinct from TP but not yet covered~~ → addressed by [[llm_parallelism_analysis]] and [[megatron_comm_overlap_analysis]]
 
@@ -50,4 +53,4 @@ These topics are referenced but lack dedicated wiki pages:
 - [[Megatron-LM_Distributed_Parallel_Exam]]
 - [[Megatron-LM_MoE_Zero_Redundancy_Analysis]]
 - [[llm_parallelism_analysis]]
-- [[llm/02_training/torch_compile/overview]]
+- [[torch_compile/overview]]

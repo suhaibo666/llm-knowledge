@@ -16,7 +16,15 @@
       "mcp__qmd__status",
       "mcp__qmd__get",
       "Bash(python3 -c \"import fitz; doc = fitz.open\\('E:/97-codes/torch_parallel/llm-knowledge/raw/05_model_families/deepseek/DeepSeek_V4.pdf'\\); print\\(doc[0].get_text\\(\\)[:3000]\\)\")",
-      "Bash(git mv *)"
+      "Bash(git mv *)",
+      "Bash(pip show *)",
+      "Bash(grep -i \"\\\\.md$\")",
+      "Bash(grep \"\\\\.md$\")",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(xargs sed *)"
     ]
   },
   "enabledMcpjsonServers": [

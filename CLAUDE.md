@@ -32,19 +32,29 @@ llm-knowledge/
 │   │   └── anthropic/
 │   ├── 06_moe_and_distributed/  # MoE, distributed training systems
 │   ├── 07_multimodal/           # Vision-language, audio-language
-│   └── 08_agents/               # Agentic AI, tool use
+│   ├── 08_agents/               # Agentic AI, tool use
+│   └── 09_pytorch/              # PyTorch internal source analysis (diagrams)
+│       └── 00_compile/          # Dynamo, AOTAutograd, Inductor lowering
 ├── wiki/
 │   ├── changelog.md             # Ingest log — every source addition recorded here
 │   ├── llm/                     # LLM training & optimization
 │   │   ├── overview.md          # Domain overview & knowledge map
-│   │   └── *_analysis.md       # Deep-dive analysis pages
-│   ├── megatron-lm/             # Megatron-LM distributed training
-│   │   ├── overview.md          # Domain overview & knowledge map
-│   │   └── *.md
-│   └── torch_compile/           # PyTorch compilation stack
-│       ├── overview.md          # Domain overview & knowledge map
-│       ├── cudagraphs/          # CUDA/NPU Graphs sub-domain
-│       └── inductor/            # TorchInductor sub-domain
+│   │   ├── 01_architecture/     # Transformer, scaling laws
+│   │   ├── 02_training/         # Optimizers, init, precision
+│   │   ├── 03_alignment/        # RLHF, DPO, GRPO, PPO
+│   │   ├── 04_reasoning_and_retrieval/
+│   │   ├── 05_model_families/   # Model analyses by org
+│   │   │   └── deepseek/
+│   │   ├── 06_infra/            # Distributed training infrastructure
+│   │   │   ├── megatron-lm/     # Megatron-LM distributed training
+│   │   │   │   └── overview.md
+│   │   │   └── *.md / *.html
+│   │   ├── 07_multimodal/
+│   │   └── 08_agents/
+│   ├── torch_compile/           # PyTorch compilation stack (matches raw/09_pytorch)
+│   │   ├── overview.md
+│   │   ├── cudagraphs/          # CUDA/NPU Graphs sub-domain
+│   │   └── inductor/            # TorchInductor sub-domain
 └── .obsidian/                   # Obsidian config (do not modify)
 ```
 

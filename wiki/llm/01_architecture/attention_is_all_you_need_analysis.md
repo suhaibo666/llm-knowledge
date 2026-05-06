@@ -150,4 +150,4 @@ This paper is the foundation of all modern LLMs. Every subsequent model (GPT, BE
 - [[llm/overview]]
 - [[deepseek_v2_analysis]] — MLA (Multi-head Latent Attention) is a direct descendant
 - [[Engram_Analysis]] — extends attention with memory mechanisms
-- [[llm/02_training/torch_compile/overview]] — attention kernel optimization via torch.compile
+- [[torch_compile/overview]] — attention kernel optimization via torch.compile

@@ -39,6 +39,9 @@ This domain covers large language model training algorithms, optimization techni
 | [[muon_analysis]] | Muon optimizer, Newton-Schulz iteration, spectral norm orthogonalization, ZeRO incompatibility, Megatron-LM layer-wise partitioning |
 | [[llm_initiliaze_analysis]] | Weight initialization (Xavier/He/Kaiming), residual scaling, pre-LN, MoE expert & router initialization, meta-device lazy init |
 | [[activation_checkpointing_analysis]] | 激活重计算完整分析：autograd ctx 保存机制 → CheckpointFunction 源码 → Full/Selective 策略 → view/cast/slice 的 ctx 特性 → 理论显存评估 |
+| [[low_precision_training_analysis]] | Megatron 低精度训练全栈：FP8 五种 Recipe、FP8 Primary Weights、FP4 QAT、MoE+低精度、Scaling MoE 论文精度实践 |
+| [[transformer_engine_analysis]] | Transformer Engine 架构分析：两层架构、精度格式矩阵、Recipe/Quantizer 体系、FP8GlobalStateManager、C++ Kernel 层、CommOverlap、Megatron 集成桥接 |
+| [[RL_Training_Inference_Precision_Analysis]] | TorchTitan + vLLM RL 训练推理数值精度一致性：确定性 Forward、Bitwise Identical、FlashAttention num_splits=1 |
 
 ### Model Architecture Innovations
 

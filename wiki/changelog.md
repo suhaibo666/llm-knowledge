@@ -4,6 +4,66 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-06: 低精度训练与 Transformer Engine 知识整合
+
+**Type**: Knowledge Synthesis（Megatron-LM 源码 + TE GitHub 仓库 + DeepSeek-V4 FP4 QAT）
+
+- **Created**: `wiki/llm/02_training/low_precision_training_analysis.md` — Megatron 低精度训练全栈分析（中文）
+- **Created**: `wiki/llm/02_training/transformer_engine_analysis.md` — NVIDIA Transformer Engine 技术分析（中文）
+- **Updated**: `wiki/llm/overview.md` — Optimizers & Training Algorithms 表格新增 3 条目
+- **Updated**: `wiki/llm/06_infra/megatron-lm/overview.md` — Knowledge Gaps 更新（TE 集成、低精度训练标记为已解决），Cross-Domain Links 扩展
+
+**Key topics (low_precision_training_analysis)**:
+  - 精度格式全览（FP32 → BF16 → FP16 → FP8 → MXFP8 → FP4）
+  - 五种 FP8 Recipe（tensorwise/delayed/blockwise/mxfp8/custom）及对比
+  - FP8 Primary Weights（fp8_param_gather）显存节省分析（6N → 5N bytes）
+  - first_last_layers_bf16 首末层 BF16 保护机制
+  - TP 通信与 FP8 协同（User Buffer, Pipelined/Bulk Overlap）
+  - FP4 QAT（DeepSeek-V4 方案）：无损反量化原理、STE 训练、推理部署
+  - MoE + 低精度（Grouped GEMM FP8, Router Fusion, DeepEP A2A）
+  - Scaling MoE 论文精度实践总结
+  - 配置速查表
+
+**Key topics (transformer_engine_analysis)**:
+  - TE 两层架构（Python API + C++/CUDA Kernel）
+  - 精度格式矩阵：FP8(E4M3/E5M2/HYBRID) / MXFP8 / NVFP4 / BF16/FP16
+  - Recipe 系统（DelayedScaling → Float8CurrentScaling → MXFP8BlockScaling → NVFP4BlockScaling2D）
+  - Quantizer 体系（Float8CurrentScalingQuantizer / Float8Quantizer / MXFP8Quantizer）
+  - Scale 计算核心公式 + 边界情况处理
+  - FP8GlobalStateManager：全局 buffer 批量 amax reduce + 激活重计算支持
+  - C++ Kernel 层（quantize/dequantize/gemm/grouped_gemm/融合算子）
+  - CommOverlap 体系（CommOverlapHelper/CommOverlap/CommOverlapP2P + NVSHMEM）
+  - Megatron 集成桥接（TELinear/TELayerNormColumnParallelLinear/TENorm + FP8 recipe 映射）
+  - CUDA Graphs + FP8 协同
+  - 环境变量与调试指南
+
+---
+
+## 2026-05-06: Wiki 目录重组 — torch_compile 独立为顶级域
+
+**Type**: Infrastructure
+
+- **Moved** `wiki/llm/02_training/torch_compile/` → `wiki/torch_compile/`
+- **Rationale**: 与 `raw/09_pytorch/00_compile/` 对齐，torch_compile 作为独立领域不再嵌套在 LLM training 下
+- **Updated** all cross-references (~35 files): `llm/02_training/torch_compile/` → `torch_compile/`
+- **Updated** `CLAUDE.md` — Directory Layout 反映新结构
+
+---
+
+## 2026-05-06: Raw 目录结构更新 — 新增 09_pytorch
+
+**Type**: Infrastructure
+
+- **Added** `raw/09_pytorch/00_compile/` — 5 PyTorch compile 内部源码分析图（.eddx 格式）：
+  - `torch.compile.eddx` — torch.compile 整体架构
+  - `dynamo.eddx` — Dynamo 图捕获
+  - `AOTautograd.eddx` — AOT Autograd 前向/反向分离
+  - `inductor-lowering.eddx` — Inductor IR Lowering 流程
+  - `aoteager精度比对.eddx` — AOT Eager 精度对比
+- **Updated** `CLAUDE.md` — Directory Layout 同步更新（raw/ 新增 09_pytorch, wiki/ 反映实际重组后的结构）
+
+---
+
 ## 2026-04-29: LLM 并行计算依赖分析（HTML）
 
 **Type**: Knowledge Synthesis（Megatron-LM 源码验证）
@@ -99,7 +159,7 @@ Restructured `wiki/llm/` to mirror `raw/` classification (01-08), consolidating 
   - `06_infra/megatron-lm/` — Distributed training, MoE infrastructure
   - `07_multimodal/` — Reserved for vision-language, audio-language
   - `08_agents/` — Reserved for agentic AI, tool use
-- **Moved** `wiki/torch_compile/` → `wiki/llm/02_training/torch_compile/`
+- **Moved** `wiki/torch_compile/` → `wiki/torch_compile/`
 - **Moved** `wiki/megatron-lm/` → `wiki/llm/06_infra/megatron-lm/`
 - **Moved** `mHC.md` → `wiki/llm/05_model_families/deepseek/mHC.md`
 - **Updated** all path-based wiki links across the entire wiki
@@ -322,4 +382,4 @@ The following pages were created before the changelog was established. Dates are
 
 - [[llm/overview]]
 - [[llm/06_infra/megatron-lm/overview]]
-- [[llm/02_training/torch_compile/overview]]
+- [[torch_compile/overview]]
