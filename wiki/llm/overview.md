@@ -49,6 +49,23 @@ This domain covers large language model training algorithms, optimization techni
 |------|-------------|
 | [[Engram_Analysis]] | DeepSeek Engram, memory sparsity, conditional memory, static N-gram lookup, deterministic multi-head hashing, U-type scaling law, compute-memory tradeoff |
 | [[mHC]] | Manifold-Constrained Hyper-Connections, doubly stochastic matrix, Sinkhorn-Knopp projection, residual stream expansion, DeepSeek-V3 MoE |
+| [[moba_analysis]] | MoBA: Mixture of Block Attention, MoE 原理应用于注意力，动态 top-k 块选择，1M 序列 6.5x 加速 |
+| [[kimi_linear_analysis]] | Kimi Linear/KDA: 通道级细粒度遗忘门，3:1 KDA-MLA 混合，KV Cache 减少 75%，1M 解码 6x 加速 |
+
+### Kimi/Moonshot AI Model Family
+
+| Page | Key Concepts |
+|------|-------------|
+| [[moonshot_kimi/kimi_overview]] | Kimi 技术路线总览，模型家族，时间线，技术栈全景 |
+| [[kimi_k1.5_analysis]] | k1.5: RL 缩放定律，在线镜像下降变体，128K 上下文 RL，Long2Short 蒸馏 |
+
+### GLM/Zhipu AI Model Family
+
+| Page | Key Concepts |
+|------|-------------|
+| [[zhipu_glm/glm_overview]] | GLM 技术路线总览，模型家族，时间线，技术栈全景 |
+| [[zhipu_glm/glm_5_analysis]] | GLM-5: 744B/40B MoE, Muon Split, DSA 稀疏注意力, 异步 RL, 28.5T tokens |
+| [[zhipu_glm/glm_5v_turbo_analysis]] | GLM-5V-Turbo: CogViT 视觉编码器, MMTP, 30+ 任务联合 RL, 原生多模态 Agent |
 
 ### DeepSeek Model Family
 

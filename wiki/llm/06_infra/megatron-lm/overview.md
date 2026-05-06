@@ -29,6 +29,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 | Page | Key Concepts |
 |------|-------------|
 | [[Megatron_vLLM_Weight_Sync_Analysis]] | verl framework, Megatron-to-vLLM weight synchronization, Gather-Broadcast-Load pattern, colocation scenario, HuggingFace format reassembly |
+| [[mooncake_analysis]] | Mooncake: KVCache 中心化分离式服务架构，Prefill/Decode 池分离，缓存感知调度，Moonshot AI 推理基础设施 |
 
 ## Cross-Domain Links
 

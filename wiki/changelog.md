@@ -4,6 +4,129 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-06: GLM/GLM-5 技术路线摄入
+
+**Type**: Source Ingestion (GLM Series)
+
+### 下载的新 Raw 文件
+
+- `raw/05_model_families/zhipu_glm/GLM-5_Vibe_Coding_to_Agentic_Engineering-2602.15763.pdf`
+
+### 创建的 Wiki 页面
+
+- **Created**: `wiki/llm/05_model_families/zhipu_glm/glm_5_analysis.md` — GLM-5 Vibe Coding 到 Agentic Engineering（中文）
+- **Created**: `wiki/llm/05_model_families/zhipu_glm/glm_5v_turbo_analysis.md` — GLM-5V-Turbo 原生多模态 Agent（中文）
+- **Created**: `wiki/llm/05_model_families/zhipu_glm/glm_overview.md` — GLM 技术路线总览
+
+**Key topics (glm_5_analysis)**:
+  - 744B/40B MoE (256 专家，8 激活)，80 层
+  - Muon Split: per-head 独立正交化，MLA 匹配 GQA-8 性能
+  - MLA-256: head dim 192→256，头数减少 1/3，解码计算降低
+  - MTP 参数共享 (3 层)，Accept Length 2.76
+  - DSA 稀疏注意力：20B tokens 适配，计算减少 1.5-2×，无损
+  - 28.5T tokens 预训练，200K 上下文 mid-training
+  - 异步 RL 基础设施：TITO gateway + Direct Double-sided Importance Sampling
+  - Reasoning RL: GRPO + IcePop，训练-推理不匹配缓解
+  - Agentic RL: 10K+ SWE + Terminal + Search 环境
+  - 国产 GPU 全栈适配 (7 大平台)
+  - SWE-bench ~65, τ²-Bench ~60, HLE ~30
+
+**Key topics (glm_5v_turbo_analysis)**:
+  - CogViT 视觉编码器：两阶段预训练 (蒸馏 MIM + 对比图文)
+  - NaFlex 可变分辨率，64K batch, 80 亿中英图文对
+  - MMTP 多模态 MTP：`<|image|>` 共享 token 方案
+  - 30+ 任务联合 RL：感知/推理/Agent 全面提升
+  - 大规模多模态 RL 基础设施：四维重新设计
+  - ImageMining 基准：30.7 分
+  - Design2Code 94.8, BrowseComp-VL 51.9, OSWorld 62.3
+  - 纯文本编码能力保持 (CC-Backend 22.8, CC-Frontend 68.4)
+
+---
+
+## 2026-05-06: Kimi K2 & K2.5 技术路线摄入
+
+**Type**: Source Ingestion (Kimi K2/K2.5)
+
+### 创建的 Wiki 页面
+
+- **Created**: `wiki/llm/05_model_families/moonshot_kimi/kimi_k2_analysis.md` — Kimi K2 开放 Agent 智能（中文）
+- **Created**: `wiki/llm/05_model_families/moonshot_kimi/kimi_k2.5_analysis.md` — Kimi K2.5 视觉 Agent 智能（中文）
+- **Updated**: `wiki/llm/05_model_families/moonshot_kimi/kimi_overview.md` — 论文索引更新，K2/K2.5 标记为已摄入
+
+**Key topics (kimi_k2_analysis)**:
+  - 1.04T/32.6B MoE，384 专家 (sparsity=48)，64 注意力头
+  - MuonClip 优化器：QK-Clip 解决 logits 爆炸，15.5T token 零 loss spike
+  - 稀疏度扩展定律：sparsity 48 vs 8 节省 1.69× FLOPs
+  - 大规模 Agentic 数据合成：23,000+ 工具，模拟+真实沙盒
+  - RL 框架：RLVR + 自批评 Rubric 奖励，覆盖可验证和主观任务
+  - SWE-bench 65.8、τ²-Bench 66.1、AIME 2024 69.6
+  - Agent 能力超越 Claude Opus 4 和 GPT-4.1
+
+**Key topics (kimi_k2.5_analysis)**:
+  - MoonViT-3D 视觉编码器：原生分辨率，3D 时空编码，4× 时间压缩
+  - 早期融合 + 低视觉比例 (10%:90%) 优于晚期融合
+  - Zero-Vision SFT：仅用文本 SFT 激活视觉能力
+  - 联合多模态 RL：视觉 RL 提升文本性能 (MMLU-Pro +1.7%)
+  - Agent Swarm：可训练编排器 + 冻结子智能体，BrowseComp 60.6%→78.4%
+  - Toggle 算法：token 减少 25-30%，性能影响可忽略
+  - DEP 训练基础设施：多模态训练效率达纯文本 90%
+  - LVBench 75.9%、OCRBench 92.3%、BrowseComp 78.4%
+
+---
+
+## 2026-05-06: Kimi/Moonshot AI 技术路线批量摄入 (4 篇核心论文)
+
+**Type**: Source Ingestion (Kimi 技术路线)
+
+### 下载的新 Raw 文件
+
+- `raw/05_model_families/moonshot_kimi/Kimi_k1.5_Scaling_RL-2501.12599.pdf`
+- `raw/05_model_families/moonshot_kimi/Mooncake_KVCache_Disaggregated-2407.00079.pdf`
+- `raw/05_model_families/moonshot_kimi/MoBA_Mixture_of_Block_Attention-2502.13189.pdf`
+- `raw/05_model_families/moonshot_kimi/Kimi_Linear_Attention-2510.26692.pdf`
+
+### 创建的 Wiki 页面
+
+- **Created**: `wiki/llm/06_infra/mooncake_analysis.md` — Mooncake KVCache 中心化分离式服务架构（中文）
+- **Created**: `wiki/llm/01_architecture/moba_analysis.md` — MoBA 混合块注意力机制（中文）
+- **Created**: `wiki/llm/01_architecture/kimi_linear_analysis.md` — Kimi Linear/KDA 线性注意力架构（中文）
+- **Created**: `wiki/llm/03_alignment/kimi_k1.5_analysis.md` — Kimi k1.5 RL 缩放定律（中文）
+- **Created**: `wiki/llm/05_model_families/moonshot_kimi/kimi_overview.md` — Kimi 技术路线总览
+
+**Key topics (mooncake_analysis)**:
+  - Prefill/Decode/KVCache 三池分离架构
+  - Chunked Pipeline Parallelism (CPP) 替代跨节点 SP
+  - Layer-wise Prefill：KVCache 传输与计算重叠
+  - 缓存感知全局调度 + 热点块迁移
+  - 预测性早期拒绝解决负载波动
+  - 真实负载吞吐量提升 75%，模拟场景 525%
+
+**Key topics (moba_analysis)**:
+  - 将 MoE 原理应用于注意力机制
+  - Query 动态路由到 KV Block (top-k 选择)
+  - 块路由：mean_pool(K) 亲和度 + 因果掩码
+  - MoBA/Full 混合预训练 (90%/10%)
+  - 1M 序列 6.5x 加速，10M 序列 16x 加速
+  - 已部署支持 Kimi 长上下文请求
+
+**Key topics (kimi_linear_analysis)**:
+  - KDA: Kimi Delta Attention (通道级细粒度遗忘门)
+  - 约束 DPLR 结构，消除数值不稳定，Kernel 速度 ~2x
+  - 3:1 KDA-MLA 混合架构，MLA 层使用 NoPE
+  - KV Cache 减少 75%，1M 解码 6x 加速
+  - 在预训练/SFT/长上下文/RL 场景下均超越全注意力
+  - 开源 KDA Kernel + vLLM 集成 + Checkpoints
+
+**Key topics (kimi_k1.5_analysis)**:
+  - 在线镜像下降变体 (类似 GRPO，理论来源不同)
+  - 128K 上下文 RL 训练，上下文长度是关键扩展维度
+  - Partial Rollout + 混合部署 (Megatron ↔ vLLM via Mooncake)
+  - Long2Short 蒸馏 (模型合并/拒绝采样/DPO/RL)
+  - 长度惩罚渐进式引入，防止过度思考
+  - AIME 77.5、MATH-500 96.2、Codeforces 94th percentile
+
+---
+
 ## 2026-05-06: 低精度训练与 Transformer Engine 知识整合
 
 **Type**: Knowledge Synthesis（Megatron-LM 源码 + TE GitHub 仓库 + DeepSeek-V4 FP4 QAT）
