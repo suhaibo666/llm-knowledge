@@ -2520,6 +2520,6 @@ def forward(arg0: torch.Tensor):
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[lowering_analysis]]
 - [[inductor_codegen_analysis]]

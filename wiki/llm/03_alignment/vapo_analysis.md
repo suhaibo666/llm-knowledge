@@ -69,4 +69,4 @@ VAPO demonstrates that **value-model-based methods are not dead** — with prope
 - [[dapo_analysis]] — DAPO (value-model-free baseline)
 - [[ppo_analysis]] — PPO foundation
 - [[grpo_analysis]] — GRPO (value-model-free)
-- [[llm/overview]]
+- [[llm/index]]

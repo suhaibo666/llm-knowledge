@@ -856,6 +856,6 @@ NPU Inductor **完全支持后端混合使用**，通过以下机制实现：
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[NPU_Inductor_Backend_Analysis]]
 - [[NPU_MLIR_Backend_Technical_Analysis]]

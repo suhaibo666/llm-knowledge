@@ -141,6 +141,6 @@ This paper is the **theoretical foundation for the scaling race** in LLM develop
 ## Related Pages
 
 - [[attention_is_all_you_need_analysis]] — Transformer architecture that these scaling laws apply to
-- [[llm/overview]]
+- [[llm/index]]
 - [[long_context_scaling_law_analysis]] — extends scaling laws to context length
 - [[scaling_laws_for_transfer_analysis]] — scaling laws for transfer learning

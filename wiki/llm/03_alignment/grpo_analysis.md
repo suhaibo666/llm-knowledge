@@ -159,4 +159,4 @@ GRPO demonstrated that:
 - [[deepseek_r1_analysis]] — DeepSeek-R1 training details
 - [[deepseek_math_analysis]] — DeepSeekMath where GRPO was first proposed
 - [[preference_optimization_analysis]] — DPO family (offline alternative)
-- [[llm/overview]]
+- [[llm/index]]

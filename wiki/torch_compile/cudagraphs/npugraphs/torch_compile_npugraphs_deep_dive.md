@@ -1631,6 +1631,6 @@ with torch.no_grad():
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[torch_compile_mode_reduce_overhead_vs_backend_npugraphs]]
 - [[npugraphs_memory_management_analysis]]

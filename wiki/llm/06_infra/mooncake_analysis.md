@@ -214,6 +214,6 @@ $$\text{Occupation Cost} = S \times T$$
 
 ## Related Pages
 
-- [[llm/overview]]
-- [[llm/06_infra/megatron-lm/overview]]
-- [[torch_compile/overview]]
+- [[llm/index]]
+- [[llm/06_infra/megatron-lm/index]]
+- [[torch_compile/index]]

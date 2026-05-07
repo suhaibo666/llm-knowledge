@@ -178,5 +178,5 @@ async def update_weights(self, weights: Generator, ...):
 
 ## Related Pages
 
-- [[llm/06_infra/megatron-lm/overview]]
-- [[torch_compile/overview]]
+- [[llm/06_infra/megatron-lm/index]]
+- [[torch_compile/index]]

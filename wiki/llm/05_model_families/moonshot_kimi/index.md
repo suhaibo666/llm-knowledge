@@ -206,7 +206,7 @@ k1.5 RL 框架 (2025.01)
 
 ## Related Pages
 
-- [[llm/overview]]
+- [[llm/index]]
 - [[llm/01_architecture/attention_is_all_you_need_analysis]]
 - [[llm/03_alignment/grpo_analysis]]
-- [[llm/06_infra/megatron-lm/overview]]
+- [[llm/06_infra/megatron-lm/index]]

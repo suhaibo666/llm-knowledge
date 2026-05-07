@@ -301,6 +301,6 @@ GLM-5V-Turbo (2604) → 多模态 Agent, CogViT
 
 ## Related Pages
 
-- [[llm/overview]]
-- [[llm/06_infra/megatron-lm/overview]]
-- [[zhipu_glm/glm_overview]]
+- [[llm/index]]
+- [[llm/06_infra/megatron-lm/index]]
+- [[zhipu_glm/index]]

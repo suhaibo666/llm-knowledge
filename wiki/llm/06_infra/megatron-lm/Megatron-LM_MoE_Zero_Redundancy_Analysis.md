@@ -631,7 +631,7 @@ Megatron-LM的MoE零冗余通信实现通过以下技术实现了显存和通信
 
 ## Related Pages
 
-- [[llm/06_infra/megatron-lm/overview]]
+- [[llm/06_infra/megatron-lm/index]]
 - [[Megatron-LM_Distributed_Parallel_Exam]]
 - [[llm_initiliaze_analysis]]
 - [[mHC]]

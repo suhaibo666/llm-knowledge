@@ -159,4 +159,4 @@ DPO became the **most popular alternative to RLHF** due to its simplicity:
 
 - [[instructgpt_rlhf_analysis]] — Original RLHF pipeline that DPO replaces
 - [[ppo_analysis]] — PPO algorithm that DPO replaces
-- [[llm/overview]]
+- [[llm/index]]

@@ -192,7 +192,7 @@ FP8 (E4M3) 比 FP4 (E2M1) 多 2 个指数位，动态范围更大。FP8 量化�
 
 ## 7. 相关页面
 
-- [[llm/06_infra/megatron-lm/overview]] — Megatron-LM 知识地图
+- [[llm/06_infra/megatron-lm/index]] — Megatron-LM 知识地图
 - [[llm/06_infra/megatron-lm/Megatron-LM_Distributed_Parallel_Exam]] — Q15 FP8 考核题
 - [[llm/06_infra/megatron-lm/megatron_comm_overlap_analysis]] — 通信掩盖中的 FP8 支持
 - [[llm/02_training/transformer_engine_analysis]] — Transformer Engine 技术分析

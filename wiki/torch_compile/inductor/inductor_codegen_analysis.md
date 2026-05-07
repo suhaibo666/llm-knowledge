@@ -236,6 +236,6 @@ Inductor 的 **codegen 是其编译流程的最终执行环节**，承担着将�
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[PyTorch_Inductor_Technical_Analysis]]
 - [[scheduler_analysis]]

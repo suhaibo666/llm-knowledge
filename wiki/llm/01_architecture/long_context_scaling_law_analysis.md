@@ -134,4 +134,4 @@ These are **complementary**: Kaplan tells you how to scale model/data/compute; L
 
 - [[scaling_laws_analysis]] — Kaplan et al. scaling laws (complementary perspective)
 - [[attention_is_all_you_need_analysis]] — Transformer architecture foundation
-- [[llm/overview]]
+- [[llm/index]]

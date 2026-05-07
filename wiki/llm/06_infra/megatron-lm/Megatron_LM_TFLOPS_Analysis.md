@@ -118,5 +118,5 @@ Megatron-LM 的 TFLOPS 报告器是一个**静态估算器**，而非动态分�
 
 ## Related Pages
 
-- [[llm/06_infra/megatron-lm/overview]]
+- [[llm/06_infra/megatron-lm/index]]
 - [[Megatron-LM_Distributed_Parallel_Exam]]

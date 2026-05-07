@@ -631,6 +631,6 @@ output = graphed_model(input_tensor)
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[PyTorch_CUDA_Graphs_Complete_Guide]]
 - [[aclgraph]]

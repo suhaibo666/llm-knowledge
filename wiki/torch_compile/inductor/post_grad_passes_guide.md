@@ -764,6 +764,6 @@ Post-Grad Passes 是 PyTorch Inductor 编译器的关键阶段，专注于：
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[pre_grad_passes_guide]]
 - [[joint_graph_passes_guide]]

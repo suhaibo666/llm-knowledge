@@ -261,7 +261,7 @@ GPT-4.1:     ██████████████░░░░░░░  (A
 
 ## Related Pages
 
-- [[llm/overview]]
-- [[moonshot_kimi/kimi_overview]]
+- [[llm/index]]
+- [[moonshot_kimi/index]]
 - [[moonshot_kimi/kimi_k2.5_analysis]]
 - [[llm/03_alignment/kimi_k1.5_analysis]]

@@ -315,7 +315,7 @@ $$\tilde{r}(x,y) = \begin{cases} r(x,y) \cdot I\{ \frac{1}{K}\sum_i r(x,y_i) < \
 
 ## Related Pages
 
-- [[llm/overview]]
-- [[moonshot_kimi/kimi_overview]]
+- [[llm/index]]
+- [[moonshot_kimi/index]]
 - [[moonshot_kimi/kimi_k2_analysis]]
 - [[llm/07_multimodal]]

@@ -1105,7 +1105,7 @@ AOTAutograd 在 PyTorch 编译栈中提供了以下核心功能：
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[torch_compile_architecture]]
 - [[PyTorch_Dynamo_Technical_Analysis]]
 - [[activation_checkpointing_analysis]]

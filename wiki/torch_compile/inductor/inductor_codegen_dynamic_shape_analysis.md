@@ -246,6 +246,6 @@ Inductor 的 codegen 对 dynamic shape 的处理是一个**贯穿 kernel 生成�
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[inductor_codegen_analysis]]
 - [[lowering_analysis]]

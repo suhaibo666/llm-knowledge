@@ -127,4 +127,4 @@ GSPO was tested on Qwen3-30B-A3B-Base (MoE model):
 - [[grpo_analysis]] — GRPO algorithm that GSPO fixes
 - [[dapo_analysis]] — DAPO improvements to GRPO
 - [[ppo_analysis]] — PPO foundation
-- [[llm/overview]]
+- [[llm/index]]

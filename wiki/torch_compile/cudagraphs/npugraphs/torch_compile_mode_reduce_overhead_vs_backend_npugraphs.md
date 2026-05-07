@@ -792,6 +792,6 @@ for epoch in range(num_epochs):
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[torch_compile_npugraphs_deep_dive]]
 - [[torch_compile_architecture]]

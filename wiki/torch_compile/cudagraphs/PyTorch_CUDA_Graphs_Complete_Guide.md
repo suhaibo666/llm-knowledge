@@ -1908,6 +1908,6 @@ PyTorch 提供了多种使用 CUDA Graphs 的方式，每种方式都有其适�
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[CUDA_Graphs_Timing_Diagrams]]
 - [[comparison]]

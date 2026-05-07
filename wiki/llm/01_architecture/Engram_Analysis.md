@@ -171,5 +171,5 @@ Engram 的训练是**端到端 (End-to-End)** 的，不需要分阶段训练。
 
 ## Related Pages
 
-- [[llm/overview]]
+- [[llm/index]]
 - [[deepseek_math_v2]]

@@ -236,6 +236,6 @@ GLM-5 RL 框架:
 
 ## Related Pages
 
-- [[llm/overview]]
-- [[llm/05_model_families/moonshot_kimi/kimi_overview]]
-- [[llm/06_infra/megatron-lm/overview]]
+- [[llm/index]]
+- [[llm/05_model_families/moonshot_kimi/index]]
+- [[llm/06_infra/megatron-lm/index]]

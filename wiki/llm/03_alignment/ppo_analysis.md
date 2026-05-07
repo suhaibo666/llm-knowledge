@@ -135,4 +135,4 @@ PPO became the **standard algorithm for RLHF** (Reinforcement Learning from Huma
 
 - [[deepseek_r1_analysis]] — GRPO replaced PPO for reasoning training
 - [[ppo_analysis]] — this page
-- [[llm/overview]]
+- [[llm/index]]

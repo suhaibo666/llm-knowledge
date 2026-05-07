@@ -190,6 +190,6 @@ Kimi 长上下文技术栈:
 
 ## Related Pages
 
-- [[llm/overview]]
+- [[llm/index]]
 - [[llm/01_architecture/attention_is_all_you_need_analysis]]
 - [[llm/06_infra/mooncake_analysis]]

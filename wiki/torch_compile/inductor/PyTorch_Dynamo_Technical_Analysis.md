@@ -2008,6 +2008,6 @@ Dynamo在PyTorch生态中发挥着重要作用，提供了零代码修改的性�
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[torch_compile_architecture]]
 - [[aotautograd_analysis]]

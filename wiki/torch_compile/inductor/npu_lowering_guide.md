@@ -792,6 +792,6 @@ torch_npu 的 lowering 策略可以概括为**"保守 codegen，激进 fallback"
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[NPU_Inductor_Backend_Analysis]]
 - [[lowering_analysis]]

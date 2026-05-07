@@ -1633,6 +1633,6 @@ def _dvm_can_fuse_vertical(self, node1, node2):
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[NPU_Inductor_Backend_Mechanism]]
 - [[npu_lowering_guide]]

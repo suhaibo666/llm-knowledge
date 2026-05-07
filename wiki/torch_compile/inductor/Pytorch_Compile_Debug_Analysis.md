@@ -892,6 +892,6 @@ echo "NPU artifacts archived to ${OUTDIR}.tgz"
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[PyTorch_Dynamo_Technical_Analysis]]
 - [[PyTorch_Inductor_Technical_Analysis]]

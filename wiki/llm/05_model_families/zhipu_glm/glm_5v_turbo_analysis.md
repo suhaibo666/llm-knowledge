@@ -277,7 +277,7 @@ GUI Agent 分层任务层次:
 
 ## Related Pages
 
-- [[llm/overview]]
-- [[zhipu_glm/glm_overview]]
+- [[llm/index]]
+- [[zhipu_glm/index]]
 - [[zhipu_glm/glm_5_analysis]]
 - [[llm/07_multimodal]]

@@ -124,7 +124,7 @@ sequenceDiagram
 
 ## Related Pages
 
-- [[llm/overview]]
+- [[llm/index]]
 - [[llm_initiliaze_analysis]]
 - [[Megatron-LM_Distributed_Parallel_Exam]]
 - [[mHC]]

@@ -471,7 +471,7 @@ MAX_JOBS=16                         # 并行编译线程数
 ## 12. 相关页面
 
 - [[llm/02_training/low_precision_training_analysis]] — Megatron 低精度训练全栈
-- [[llm/06_infra/megatron-lm/overview]] — Megatron-LM 知识地图
+- [[llm/06_infra/megatron-lm/index]] — Megatron-LM 知识地图
 - [[llm/06_infra/megatron-lm/megatron_comm_overlap_analysis]] — TP 通信重叠中的 TE User Buffer
 - [[llm/06_infra/megatron-lm/Megatron-LM_Distributed_Parallel_Exam]] — Q14 CUDA Graphs + Q15 FP8
 - [[llm/05_model_families/deepseek/deepseek_v4_fp4_qat_analysis]] — FP4 QAT 实现

@@ -209,4 +209,4 @@ Multi-faceted approach:
 - [[ppo_analysis]] — PPO algorithm used in RLHF
 - [[dpo_analysis]] — DPO (alternative to RLHF)
 - [[preference_optimization_analysis]] — DPO family comparison
-- [[llm/overview]]
+- [[llm/index]]

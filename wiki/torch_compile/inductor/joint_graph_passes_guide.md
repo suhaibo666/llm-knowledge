@@ -955,6 +955,6 @@ Joint Graph Passes 是 PyTorch Inductor 优化的核心阶段，通过系统化�
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[pre_grad_passes_guide]]
 - [[post_grad_passes_guide]]

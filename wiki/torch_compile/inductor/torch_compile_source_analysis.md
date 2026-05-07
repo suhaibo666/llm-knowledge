@@ -588,6 +588,6 @@ compiled_model = torch.compile(model, disable=True)  # no-op
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[torch_compile_architecture]]
 - [[PyTorch_Dynamo_Technical_Analysis]]

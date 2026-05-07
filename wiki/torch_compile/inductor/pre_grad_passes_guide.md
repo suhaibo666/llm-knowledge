@@ -793,6 +793,6 @@ Pre-Grad Passes 是 PyTorch Inductor 编译流程中的**早期优化阶段**，
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[post_grad_passes_guide]]
 - [[joint_graph_passes_guide]]

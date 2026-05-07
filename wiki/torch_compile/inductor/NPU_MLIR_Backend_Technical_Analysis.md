@@ -1056,6 +1056,6 @@ torch_npu/
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[NPU_Inductor_Backend_Mechanism]]
 - [[npu_compile]]

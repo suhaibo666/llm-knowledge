@@ -543,7 +543,7 @@ y = W x,\quad W\in\mathbb{R}^{n_\text{out}\times n_\text{in}},
 
 ## Related Pages
 
-- [[llm/overview]]
+- [[llm/index]]
 - [[muon_analysis]]
 - [[Megatron-LM_MoE_Zero_Redundancy_Analysis]]
 - [[mHC]]

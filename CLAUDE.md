@@ -36,25 +36,43 @@ llm-knowledge/
 │   └── 09_pytorch/              # PyTorch internal source analysis (diagrams)
 │       └── 00_compile/          # Dynamo, AOTAutograd, Inductor lowering
 ├── wiki/
+│   ├── index.md                 # 知识库总索引 — 按入口
 │   ├── changelog.md             # Ingest log — every source addition recorded here
 │   ├── llm/                     # LLM training & optimization
-│   │   ├── overview.md          # Domain overview & knowledge map
+│   │   ├── index.md             # LLM 领域索引
 │   │   ├── 01_architecture/     # Transformer, scaling laws
+│   │   │   └── index.md
 │   │   ├── 02_training/         # Optimizers, init, precision
+│   │   │   └── index.md
 │   │   ├── 03_alignment/        # RLHF, DPO, GRPO, PPO
+│   │   │   └── index.md
 │   │   ├── 04_reasoning_and_retrieval/
+│   │   │   └── index.md
 │   │   ├── 05_model_families/   # Model analyses by org
-│   │   │   └── deepseek/
+│   │   │   ├── index.md
+│   │   │   ├── deepseek/
+│   │   │   │   └── index.md
+│   │   │   ├── moonshot_kimi/
+│   │   │   │   └── index.md
+│   │   │   └── zhipu_glm/
+│   │   │       └── index.md
 │   │   ├── 06_infra/            # Distributed training infrastructure
+│   │   │   ├── index.md
 │   │   │   ├── megatron-lm/     # Megatron-LM distributed training
-│   │   │   │   └── overview.md
+│   │   │   │   └── index.md
 │   │   │   └── *.md / *.html
 │   │   ├── 07_multimodal/
+│   │   │   └── index.md
 │   │   └── 08_agents/
+│   │       └── index.md
 │   ├── torch_compile/           # PyTorch compilation stack (matches raw/09_pytorch)
-│   │   ├── overview.md
+│   │   ├── index.md
 │   │   ├── cudagraphs/          # CUDA/NPU Graphs sub-domain
+│   │   │   ├── index.md
+│   │   │   └── npugraphs/       # NPU Graphs sub-domain
+│   │   │       └── index.md
 │   │   └── inductor/            # TorchInductor sub-domain
+│   │       └── index.md
 └── .obsidian/                   # Obsidian config (do not modify)
 ```
 
@@ -62,7 +80,7 @@ llm-knowledge/
 
 | Type | Suffix | Purpose | Example |
 |------|--------|---------|---------|
-| Overview | `overview.md` | Domain knowledge map, links to all pages in the domain | `llm/overview.md` |
+| Index | `index.md` | Domain entry point, directory contents & link map | `llm/index.md` |
 | Entity | `*_analysis.md` | Deep analysis of a specific paper/technology | `muon_analysis.md` |
 | Guide | `*_guide.md` | How-to or implementation walkthrough | `npu_lowering_guide.md` |
 | Comparison | `comparison.md` | Side-by-side comparison of approaches | `npugraphs/comparison.md` |
@@ -73,7 +91,7 @@ llm-knowledge/
 - File names use `snake_case`
 - Analysis pages end with `_analysis`
 - Guide pages end with `_guide`
-- Overview pages are always named `overview.md`
+- Index pages are always named `index.md`（每目录一个，作为入口）
 - One concept per page; prefer splitting over merging
 
 ## Ingest Workflow
@@ -83,7 +101,7 @@ When a new source is added to `raw/`, follow this sequence:
 1. **Read** the source document thoroughly
 2. **Discuss** key takeaways with the user before writing
 3. **Create** a new wiki page (or update an existing one if the topic is already covered)
-4. **Update** the domain `overview.md` to include the new page
+4. **Update** the domain `index.md` to include the new page
 5. **Cross-reference**: Add `[[wiki links]]` to and from all related existing pages
 6. **Append** an entry to `wiki/changelog.md` documenting what was added/updated
 7. **Flag contradictions**: If new information contradicts existing wiki content, preserve both claims and add a `> [!contradiction]` callout
@@ -127,20 +145,20 @@ When to use which:
 When the user asks a question:
 
 1. **Search wiki first**: Use `qmd search` to find wiki pages matching relevant keywords
-2. **Navigate the graph**: Check the relevant `overview.md` to understand the domain landscape and follow `[[wiki links]]`
+2. **Navigate the graph**: Check the relevant `index.md` to understand the domain landscape and follow `[[wiki links]]`
 3. **Read the pages**: Use filesystem `read_file` to read the full content of the most relevant pages
 4. **Synthesize**: If the answer requires synthesizing multiple pages, do so and note which pages contributed
 5. **Check raw sources on gap**: If the answer is NOT in the wiki, do NOT just say "not found". Instead:
    - Scan `raw/` for relevant source documents (check filenames for topic keywords)
    - If a relevant source exists in `raw/`, **automatically ingest it** following the Ingest Workflow, then answer the question from the newly created wiki content
    - If no relevant source exists in `raw/`, say so and offer to create a stub wiki page to track this knowledge gap
-6. **Grow the wiki**: Every query that reveals a gap should result in either a new wiki page or a note in the relevant overview.md under Knowledge Gaps
+6. **Grow the wiki**: Every query that reveals a gap should result in either a new wiki page or a note in the relevant index.md under Knowledge Gaps
 
 ## Maintenance Workflow
 
 Periodically (or when the user requests):
 
 1. **Consistency check**: Verify all `[[wiki links]]` point to existing pages
-2. **Orphan check**: Find pages not linked from any `overview.md` and integrate them
+2. **Orphan check**: Find pages not linked from any `index.md` and integrate them
 3. **Contradiction review**: Scan for `> [!contradiction]` callouts and propose resolutions
 4. **Staleness review**: Flag pages that haven't been updated in >30 days for review

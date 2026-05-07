@@ -327,5 +327,5 @@ DeepSeekMath-V2 所代表的，不仅是一种性能 / benchmark 分数上的提
 
 ## Related Pages
 
-- [[llm/overview]]
+- [[llm/index]]
 - [[Engram_Analysis]]

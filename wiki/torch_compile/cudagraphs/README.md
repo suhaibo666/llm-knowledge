@@ -444,6 +444,6 @@ CPU → Replay Graph → GPU (执行所有操作)
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[PyTorch_CUDA_Graphs_Complete_Guide]]
 - [[SUMMARY]]

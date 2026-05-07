@@ -16,7 +16,7 @@ All source ingestions and significant wiki updates are logged here.
 
 - **Created**: `wiki/llm/05_model_families/zhipu_glm/glm_5_analysis.md` — GLM-5 Vibe Coding 到 Agentic Engineering（中文）
 - **Created**: `wiki/llm/05_model_families/zhipu_glm/glm_5v_turbo_analysis.md` — GLM-5V-Turbo 原生多模态 Agent（中文）
-- **Created**: `wiki/llm/05_model_families/zhipu_glm/glm_overview.md` — GLM 技术路线总览
+- **Created**: `wiki/llm/05_model_families/zhipu_glm/index.md` — GLM 技术路线总览
 
 **Key topics (glm_5_analysis)**:
   - 744B/40B MoE (256 专家，8 激活)，80 层
@@ -51,7 +51,7 @@ All source ingestions and significant wiki updates are logged here.
 
 - **Created**: `wiki/llm/05_model_families/moonshot_kimi/kimi_k2_analysis.md` — Kimi K2 开放 Agent 智能（中文）
 - **Created**: `wiki/llm/05_model_families/moonshot_kimi/kimi_k2.5_analysis.md` — Kimi K2.5 视觉 Agent 智能（中文）
-- **Updated**: `wiki/llm/05_model_families/moonshot_kimi/kimi_overview.md` — 论文索引更新，K2/K2.5 标记为已摄入
+- **Updated**: `wiki/llm/05_model_families/moonshot_kimi/index.md` — 论文索引更新，K2/K2.5 标记为已摄入
 
 **Key topics (kimi_k2_analysis)**:
   - 1.04T/32.6B MoE，384 专家 (sparsity=48)，64 注意力头
@@ -91,7 +91,7 @@ All source ingestions and significant wiki updates are logged here.
 - **Created**: `wiki/llm/01_architecture/moba_analysis.md` — MoBA 混合块注意力机制（中文）
 - **Created**: `wiki/llm/01_architecture/kimi_linear_analysis.md` — Kimi Linear/KDA 线性注意力架构（中文）
 - **Created**: `wiki/llm/03_alignment/kimi_k1.5_analysis.md` — Kimi k1.5 RL 缩放定律（中文）
-- **Created**: `wiki/llm/05_model_families/moonshot_kimi/kimi_overview.md` — Kimi 技术路线总览
+- **Created**: `wiki/llm/05_model_families/moonshot_kimi/index.md` — Kimi 技术路线总览
 
 **Key topics (mooncake_analysis)**:
   - Prefill/Decode/KVCache 三池分离架构
@@ -133,8 +133,8 @@ All source ingestions and significant wiki updates are logged here.
 
 - **Created**: `wiki/llm/02_training/low_precision_training_analysis.md` — Megatron 低精度训练全栈分析（中文）
 - **Created**: `wiki/llm/02_training/transformer_engine_analysis.md` — NVIDIA Transformer Engine 技术分析（中文）
-- **Updated**: `wiki/llm/overview.md` — Optimizers & Training Algorithms 表格新增 3 条目
-- **Updated**: `wiki/llm/06_infra/megatron-lm/overview.md` — Knowledge Gaps 更新（TE 集成、低精度训练标记为已解决），Cross-Domain Links 扩展
+- **Updated**: `wiki/llm/index.md` — Optimizers & Training Algorithms 表格新增 3 条目
+- **Updated**: `wiki/llm/06_infra/megatron-lm/index.md` — Knowledge Gaps 更新（TE 集成、低精度训练标记为已解决），Cross-Domain Links 扩展
 
 **Key topics (low_precision_training_analysis)**:
   - 精度格式全览（FP32 → BF16 → FP16 → FP8 → MXFP8 → FP4）
@@ -159,6 +159,23 @@ All source ingestions and significant wiki updates are logged here.
   - Megatron 集成桥接（TELinear/TELayerNormColumnParallelLinear/TENorm + FP8 recipe 映射）
   - CUDA Graphs + FP8 协同
   - 环境变量与调试指南
+
+---
+
+## 2026-05-07: 知识库索引体系重构 — overview.md → index.md
+
+**Type**: Infrastructure
+
+- **Renamed** all `overview.md` → `index.md`: `llm/`, `llm/06_infra/megatron-lm/`, `torch_compile/`
+- **Renamed** `*_overview.md` → `index.md`: `moonshot_kimi/kimi_overview.md`, `zhipu_glm/glm_overview.md`
+- **Created** 13 new `index.md` files for directories lacking one:
+  - `wiki/index.md` — 知识库总索引（全新）
+  - `llm/01_architecture/index.md`, `llm/02_training/index.md`, `llm/03_alignment/index.md`
+  - `llm/04_reasoning_and_retrieval/index.md` (stub), `llm/05_model_families/index.md`, `llm/05_model_families/deepseek/index.md`
+  - `llm/06_infra/index.md`, `llm/07_multimodal/index.md` (stub), `llm/08_agents/index.md` (stub)
+  - `torch_compile/cudagraphs/index.md`, `torch_compile/cudagraphs/npugraphs/index.md`, `torch_compile/inductor/index.md`
+- **Updated** all cross-references (~50 files): `overview` → `index`, `kimi_overview` → `index`, `glm_overview` → `index`
+- **Updated** `CLAUDE.md` — Page Types, Naming Conventions, Directory Layout, all workflows
 
 ---
 
@@ -192,7 +209,7 @@ All source ingestions and significant wiki updates are logged here.
 **Type**: Knowledge Synthesis（Megatron-LM 源码验证）
 
 - **Created**: `wiki/llm/06_infra/llm_parallelism_analysis.html` — LLM 正反向计算依赖 + 并行策略通信分析（中文）
-- **Updated**: `wiki/llm/06_infra/megatron-lm/overview.md` — Distributed Parallelism 表格新增条目 + Knowledge Gaps 更新
+- **Updated**: `wiki/llm/06_infra/megatron-lm/index.md` — Distributed Parallelism 表格新增条目 + Knowledge Gaps 更新
 - **Key topics**:
   - 单层 Transformer Decoder 前向/反向算子 DAG（SVG 依赖图 + 关系表）
   - Megatron-LM 源码级验证: `ColumnParallelLinear` / `RowParallelLinear` / `LinearWithGradAccumulationAndAsyncCommunication`
@@ -229,7 +246,7 @@ All source ingestions and significant wiki updates are logged here.
 **Type**: Knowledge Synthesis（PyTorch autograd 机制 + Megatron-LM 源码分析）
 
 - **Created**: `wiki/llm/02_training/activation_checkpointing_analysis.md` — 激活重计算完整分析（中文）
-- **Updated**: `wiki/llm/overview.md` — Optimizers & Training Algorithms 表格新增条目
+- **Updated**: `wiki/llm/index.md` — Optimizers & Training Algorithms 表格新增条目
 - **Updated**: `wiki/llm/06_infra/megatron-lm/Megatron-LM_Distributed_Parallel_Exam.md` — Q12 考点添加交叉引用
 - **Key topics**:
   - autograd `ctx.save_for_backward` 机制与 `torch.no_grad` 干预原理
@@ -296,9 +313,9 @@ Restructured `wiki/llm/` to mirror `raw/` classification (01-08), consolidating 
 Created the wiki schema and structural pages:
 
 - Created `CLAUDE.md` — wiki maintenance schema and rules
-- Created `wiki/llm/overview.md` — LLM domain knowledge map
+- Created `wiki/llm/index.md` — LLM domain knowledge map
 - Created `wiki/megatron-lm/overview.md` — Megatron-LM domain knowledge map
-- Created `wiki/torch_compile/overview.md` — torch compile domain knowledge map
+- Created `wiki/torch_compile/index.md` — torch compile domain knowledge map
 - Created `wiki/changelog.md` — this file
 
 ---
@@ -334,7 +351,7 @@ The following pages were created before the changelog was established. Dates are
 
 - **Source**: `raw/mHC-2512.24880v2.pdf` (DeepSeek-AI, arXiv:2512.24880v2)
 - **Created**: `wiki/llm/mHC.md` — Manifold-Constrained Hyper-Connections analysis (in Chinese)
-- **Updated**: `wiki/llm/overview.md` — Added mHC entry and cross-domain links
+- **Updated**: `wiki/llm/index.md` — Added mHC entry and cross-domain links
 - **Cross-referenced**: Added backlinks to `muon_analysis.md`, `llm_initiliaze_analysis.md`, `Megatron-LM_MoE_Zero_Redundancy_Analysis.md`
 - **Key topics**: doubly stochastic matrix, Sinkhorn-Knopp projection, residual stream expansion, DeepSeek-V3 MoE, kernel fusion, selective recomputing
 
@@ -353,7 +370,7 @@ The following pages were created before the changelog was established. Dates are
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_LLM-2401.02954.pdf` (DeepSeek-AI, arXiv:2401.02954)
 - **Created**: `wiki/llm/deepseek_llm_analysis.md` — DeepSeek LLM analysis
-- **Updated**: `wiki/llm/overview.md` — Added DeepSeek model family section
+- **Updated**: `wiki/llm/index.md` — Added DeepSeek model family section
 - **Key topics**: scaling laws with non-embedding FLOPs/token representation, data quality impact on model/data allocation, multi-step LR scheduler, GQA, bilingual pre-training, SFT+DPO alignment
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_V2-2405.04434.pdf` (DeepSeek-AI, arXiv:2405.04434)
@@ -378,7 +395,7 @@ The following pages were created before the changelog was established. Dates are
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_V4.pdf` (DeepSeek-AI, 2025)
 - **Created**: `wiki/llm/deepseek_v4_analysis.md` — DeepSeek-V4 analysis (in Chinese)
-- **Updated**: `wiki/llm/overview.md` — Added V4 to DeepSeek model family section
+- **Updated**: `wiki/llm/index.md` — Added V4 to DeepSeek model family section
 - **Updated**: `wiki/llm/deepseek_v3_analysis.md` — Added backlink to V4
 - **Updated**: `wiki/llm/deepseek_v2_analysis.md` — Added backlink to V4
 - **Cross-referenced**: `mHC.md`, `muon_analysis.md`, `deepseek_v3_analysis.md`, `deepseek_v2_analysis.md`
@@ -461,7 +478,7 @@ The following pages were created before the changelog was established. Dates are
 - **Created**: `wiki/llm/grpo_analysis.md` — GRPO algorithm analysis
 - **Key topics**: group-relative advantages, no value function, pure RL for reasoning, DeepSeek-R1-Zero emergent behaviors
 
-**Updated**: `wiki/llm/overview.md` — Added Architecture Foundations, Scaling Laws, and Alignment sections
+**Updated**: `wiki/llm/index.md` — Added Architecture Foundations, Scaling Laws, and Alignment sections
 
 ---
 
@@ -497,12 +514,12 @@ The following pages were created before the changelog was established. Dates are
   - **Fine-Tuning from Human Preferences** (OpenAI, arXiv:1909.08593): Earliest RLHF work, stylistic control and summarization
   - **RigorLLM** (arXiv:2403.13031): Resilient guardrails against adversarial attacks, energy-based data generation, minimax optimization
 
-**Updated**: `wiki/llm/overview.md` — Added DAPO, GSPO, RLOO, VAPO, and RLHF Foundations entries
+**Updated**: `wiki/llm/index.md` — Added DAPO, GSPO, RLOO, VAPO, and RLHF Foundations entries
 
 **Digestion progress**: 3/4 architecture papers, **20/20 alignment papers digested** (complete)
 
 ## Related Pages
 
-- [[llm/overview]]
-- [[llm/06_infra/megatron-lm/overview]]
-- [[torch_compile/overview]]
+- [[llm/index]]
+- [[llm/06_infra/megatron-lm/index]]
+- [[torch_compile/index]]

@@ -224,6 +224,6 @@ k1.5 为后续模型奠定的基础：
 
 ## Related Pages
 
-- [[llm/overview]]
+- [[llm/index]]
 - [[llm/03_alignment/grpo_analysis]]
 - [[llm/03_alignment/deepseek_r1_analysis]]

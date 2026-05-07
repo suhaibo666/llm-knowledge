@@ -181,4 +181,4 @@ DAPO is the **first fully open-source** large-scale RL system for LLM reasoning 
 - [[grpo_analysis]] — GRPO algorithm that DAPO improves upon
 - [[ppo_analysis]] — PPO foundation
 - [[deepseek_r1_analysis]] — DeepSeek-R1 comparison
-- [[llm/overview]]
+- [[llm/index]]

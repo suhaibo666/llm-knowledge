@@ -951,7 +951,7 @@ Megatron-LM 支持 `--pipeline-model-parallel-layout "Et*3|(tt|)*29,m|L"` 这样
 
 ## Related Pages
 
-- [[llm/06_infra/megatron-lm/overview]]
+- [[llm/06_infra/megatron-lm/index]]
 - [[Megatron-LM_MoE_Zero_Redundancy_Analysis]]
 - [[Megatron_LM_TFLOPS_Analysis]]
 - [[activation_checkpointing_analysis]]

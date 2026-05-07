@@ -664,6 +664,6 @@ check_memory_pool(
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[npugraphs_memory_management_analysis]]
 - [[torch_compile_npugraphs_deep_dive]]

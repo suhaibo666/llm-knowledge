@@ -56,14 +56,14 @@ This domain covers large language model training algorithms, optimization techni
 
 | Page | Key Concepts |
 |------|-------------|
-| [[moonshot_kimi/kimi_overview]] | Kimi 技术路线总览，模型家族，时间线，技术栈全景 |
+| [[moonshot_kimi/index]] | Kimi 技术路线总览，模型家族，时间线，技术栈全景 |
 | [[kimi_k1.5_analysis]] | k1.5: RL 缩放定律，在线镜像下降变体，128K 上下文 RL，Long2Short 蒸馏 |
 
 ### GLM/Zhipu AI Model Family
 
 | Page | Key Concepts |
 |------|-------------|
-| [[zhipu_glm/glm_overview]] | GLM 技术路线总览，模型家族，时间线，技术栈全景 |
+| [[zhipu_glm/index]] | GLM 技术路线总览，模型家族，时间线，技术栈全景 |
 | [[zhipu_glm/glm_5_analysis]] | GLM-5: 744B/40B MoE, Muon Split, DSA 稀疏注意力, 异步 RL, 28.5T tokens |
 | [[zhipu_glm/glm_5v_turbo_analysis]] | GLM-5V-Turbo: CogViT 视觉编码器, MMTP, 30+ 任务联合 RL, 原生多模态 Agent |
 
@@ -115,4 +115,4 @@ These topics are referenced but lack dedicated wiki pages:
 
 - [[muon_analysis]]
 - [[llm_initiliaze_analysis]]
-- [[llm/06_infra/megatron-lm/overview]]
+- [[llm/06_infra/megatron-lm/index]]

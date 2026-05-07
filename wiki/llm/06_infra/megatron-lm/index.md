@@ -54,4 +54,4 @@ These topics are referenced but lack dedicated wiki pages:
 - [[Megatron-LM_Distributed_Parallel_Exam]]
 - [[Megatron-LM_MoE_Zero_Redundancy_Analysis]]
 - [[llm_parallelism_analysis]]
-- [[torch_compile/overview]]
+- [[torch_compile/index]]

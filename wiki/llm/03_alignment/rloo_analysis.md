@@ -84,4 +84,4 @@ RLOO demonstrated that **simple REINFORCE with a good baseline** is sufficient f
 - [[grpo_analysis]] — GRPO builds on RLOO's insight
 - [[ppo_analysis]] — PPO that RLOO replaces
 - [[dapo_analysis]] — DAPO further improvements
-- [[llm/overview]]
+- [[llm/index]]

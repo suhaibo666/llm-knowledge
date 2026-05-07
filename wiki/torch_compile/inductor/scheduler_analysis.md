@@ -761,6 +761,6 @@ Scheduler 就是一个"智能排课系统"——它把所有要执行的计算�
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[PyTorch_Inductor_Technical_Analysis]]
 - [[inductor_codegen_analysis]]

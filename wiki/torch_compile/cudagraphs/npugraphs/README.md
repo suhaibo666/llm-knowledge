@@ -120,6 +120,6 @@ output = compiled_model(input_tensor)
 
 ## Related Pages
 
-- [[torch_compile/overview]]
+- [[torch_compile/index]]
 - [[aclgraph]]
 - [[comparison]]
