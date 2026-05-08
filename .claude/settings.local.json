@@ -24,7 +24,11 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:api.github.com)",
-      "Bash(xargs sed *)"
+      "Bash(xargs sed *)",
+      "Bash(curl -s \"https://api.github.com/search/repositories?q=claude+code+skills&sort=stars&per_page=20\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(f\\\\\"{i['full_name']} ⭐{i['stargazers_count']} — {i['description'][:100] if i['description'] else 'N/A'}\\\\\"\\) for i in data.get\\('items',[]\\)]\")",
+      "Bash(curl -s \"https://api.github.com/search/repositories?q=claude-code+skills+awesome&sort=stars&per_page=10\")",
+      "Bash(curl -s \"https://api.github.com/repos/anthropics/skills\")"
     ]
   },
   "enabledMcpjsonServers": [

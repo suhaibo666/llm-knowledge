@@ -34,7 +34,11 @@ wiki/
 │   │       └── index.md
 │   ├── 07_multimodal/          # 多模态 (待建设)
 │   │   └── index.md
-│   └── 08_agents/              # Agent (待建设)
+│   ├── 08_agents/              # Agent (待建设)
+│   │   └── index.md
+│   ├── 10_train_framework/     # 训练框架架构 (待建设)
+│   │   └── index.md
+│   └── 11_infer_framework/     # 推理框架架构 (待建设)
 │       └── index.md
 ├── torch_compile/              # PyTorch 编译栈
 │   ├── index.md
@@ -66,6 +70,8 @@ wiki/
 | │  └─ Megatron-LM | [[llm/06_infra/megatron-lm/index]] | 6 | 活跃 |
 | ├─ 多模态 | [[llm/07_multimodal/index]] | 0 | 待建设 |
 | └─ Agent | [[llm/08_agents/index]] | 0 | 待建设 |
+| ├─ 训练框架 | [[llm/10_train_framework/index]] | 0 | 待建设 |
+| └─ 推理框架 | [[llm/11_infer_framework/index]] | 0 | 待建设 |
 | **PyTorch 编译栈** | [[torch_compile/index]] | 30+ | 活跃 |
 | ├─ CUDA/NPU Graphs | [[torch_compile/cudagraphs/index]] | 10 | 活跃 |
 | │  └─ NPU Graphs | [[torch_compile/cudagraphs/npugraphs/index]] | 8 | 活跃 |
@@ -96,6 +102,7 @@ wiki/
 | 来源类型 | 位置 |
 |---------|------|
 | **学术论文** | `raw/01_architecture/` ~ `raw/08_agents/` |
+| **训练/推理框架图表** (.eddx) | `raw/10_train_framework/`, `raw/11_infer_framework/` |
 | **PyTorch 内部图表** (.eddx) | `raw/09_pytorch/00_compile/` |
 | **NVIDIA Megatron/TE** | `raw/06_moe_and_distributed/` |
 

@@ -24,6 +24,7 @@
 | [[inductor_codegen_analysis]] | 代码生成策略, kernel 融合 |
 | [[inductor_codegen_dynamic_shape_analysis]] | 代码生成中动态形状处理 |
 | [[scheduler_analysis]] | 算子调度器, 融合决策 |
+| [[scheduler_fusion_strategies]] | 调度器融合策略与自定义 Pass |
 | [[pre_grad_passes_guide]] | 预梯度优化 passes |
 | [[post_grad_passes_guide]] | 后梯度优化 passes |
 | [[joint_graph_passes_guide]] | 联合图优化 passes |

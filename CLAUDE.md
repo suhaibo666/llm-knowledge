@@ -12,69 +12,7 @@ This wiki has three layers:
 
 ## Directory Layout
 
-```
-llm-knowledge/
-├── CLAUDE.md                    # This file — the schema
-├── raw/                         # Immutable source documents (categorized)
-│   ├── 01_architecture/         # Transformer, scaling laws, memory architectures
-│   ├── 02_training/             # Training techniques, optimizers, fine-tuning
-│   ├── 03_alignment/            # RLHF, DPO, safety guardrails
-│   ├── 04_reasoning_and_retrieval/ # CoT, RAG
-│   ├── 05_model_families/       # Model technical reports by org
-│   │   ├── openai/
-│   │   ├── google/
-│   │   ├── alibaba_qwen/
-│   │   ├── deepseek/
-│   │   ├── moonshot_kimi/
-│   │   ├── zhipu_glm/
-│   │   ├── meta_llama/
-│   │   ├── minimax/
-│   │   └── anthropic/
-│   ├── 06_moe_and_distributed/  # MoE, distributed training systems
-│   ├── 07_multimodal/           # Vision-language, audio-language
-│   ├── 08_agents/               # Agentic AI, tool use
-│   └── 09_pytorch/              # PyTorch internal source analysis (diagrams)
-│       └── 00_compile/          # Dynamo, AOTAutograd, Inductor lowering
-├── wiki/
-│   ├── index.md                 # 知识库总索引 — 按入口
-│   ├── changelog.md             # Ingest log — every source addition recorded here
-│   ├── llm/                     # LLM training & optimization
-│   │   ├── index.md             # LLM 领域索引
-│   │   ├── 01_architecture/     # Transformer, scaling laws
-│   │   │   └── index.md
-│   │   ├── 02_training/         # Optimizers, init, precision
-│   │   │   └── index.md
-│   │   ├── 03_alignment/        # RLHF, DPO, GRPO, PPO
-│   │   │   └── index.md
-│   │   ├── 04_reasoning_and_retrieval/
-│   │   │   └── index.md
-│   │   ├── 05_model_families/   # Model analyses by org
-│   │   │   ├── index.md
-│   │   │   ├── deepseek/
-│   │   │   │   └── index.md
-│   │   │   ├── moonshot_kimi/
-│   │   │   │   └── index.md
-│   │   │   └── zhipu_glm/
-│   │   │       └── index.md
-│   │   ├── 06_infra/            # Distributed training infrastructure
-│   │   │   ├── index.md
-│   │   │   ├── megatron-lm/     # Megatron-LM distributed training
-│   │   │   │   └── index.md
-│   │   │   └── *.md / *.html
-│   │   ├── 07_multimodal/
-│   │   │   └── index.md
-│   │   └── 08_agents/
-│   │       └── index.md
-│   ├── torch_compile/           # PyTorch compilation stack (matches raw/09_pytorch)
-│   │   ├── index.md
-│   │   ├── cudagraphs/          # CUDA/NPU Graphs sub-domain
-│   │   │   ├── index.md
-│   │   │   └── npugraphs/       # NPU Graphs sub-domain
-│   │   │       └── index.md
-│   │   └── inductor/            # TorchInductor sub-domain
-│   │       └── index.md
-└── .obsidian/                   # Obsidian config (do not modify)
-```
+完整的 raw/ 和 wiki/ 目录结构分别由各层级的 `index.md` 维护，详见 [[index]]（总索引）和各领域入口。
 
 ## Page Types
 

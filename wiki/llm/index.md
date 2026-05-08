@@ -96,6 +96,13 @@ This domain covers large language model training algorithms, optimization techni
 |------|-------------|
 | [[deepseek_math_v2]] | DeepSeekMath-V2, self-verification, Generator-Verifier loop, proof generation, proof refinement, RL fine-tuning for math |
 
+### Training & Inference Frameworks
+
+| Page | Key Concepts |
+|------|-------------|
+| [[10_train_framework/index]] | 训练框架架构：Megatron (eddx), MindFormers (eddx) — 待建设 |
+| [[11_infer_framework/index]] | 推理框架架构：vLLM, TRT-LLM — 待建设 |
+
 ## Cross-Domain Links
 
 - Muon optimizer's distributed training challenges relate directly to [[Megatron-LM_Distributed_Parallel_Exam]] in the Megatron-LM domain

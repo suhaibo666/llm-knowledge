@@ -4,6 +4,12 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-08: 训练/推理框架目录页创建
+
+- 新建 `wiki/llm/10_train_framework/index.md`（对应 `raw/10_train_framework/`：megatron.eddx, mindformers.eddx）
+- 新建 `wiki/llm/11_infer_framework/index.md`（对应 `raw/11_infer_framework/`，当前为空）
+- 更新 `wiki/llm/index.md`、`wiki/index.md`、`CLAUDE.md` 目录结构
+
 ## 2026-05-06: GLM/GLM-5 技术路线摄入
 
 **Type**: Source Ingestion (GLM Series)
