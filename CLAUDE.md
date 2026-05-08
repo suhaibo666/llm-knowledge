@@ -18,7 +18,7 @@ This wiki has three layers:
 
 | Type | Suffix | Purpose | Example |
 |------|--------|---------|---------|
-| Index | `index.md` | Domain entry point, directory contents & link map | `llm/index.md` |
+| Index | `index.md` | Domain entry point, directory contents & link map | `01_theory/index.md` |
 | Entity | `*_analysis.md` | Deep analysis of a specific paper/technology | `muon_analysis.md` |
 | Guide | `*_guide.md` | How-to or implementation walkthrough | `npu_lowering_guide.md` |
 | Comparison | `comparison.md` | Side-by-side comparison of approaches | `npugraphs/comparison.md` |

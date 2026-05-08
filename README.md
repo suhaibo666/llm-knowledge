@@ -10,32 +10,18 @@ LLM 训练与推理技术知识库，由 Claude Code Agent 维护。
 ## 结构
 
 ```
-raw/                          # 原始论文（只读）
-├── 01_architecture/          # Transformer、Scaling Laws
-├── 02_training/              # 优化器、训练技巧
-├── 03_alignment/             # RLHF、DPO、GRPO
-├── 04_reasoning_and_retrieval/ # CoT、RAG
-├── 05_model_families/        # 各厂商模型技术报告
-├── 06_moe_and_distributed/   # MoE、分布式训练
-├── 07_multimodal/            # 视觉-语言、音频-语言
-├── 08_agents/                # Agent、工具使用
-└── 09_pytorch/               # PyTorch 源码分析
-
-wiki/                         # Agent 生成的知识页面
-├── index.md                  # 总索引
-├── changelog.md              # 收录日志
-├── llm/                      # LLM 训练与优化
-│   ├── 01_architecture/
-│   ├── 02_training/
-│   ├── 03_alignment/
-│   ├── 04_reasoning_and_retrieval/
-│   ├── 05_model_families/    # DeepSeek / Kimi / GLM
-│   ├── 06_infra/             # Megatron-LM 等
-│   ├── 07_multimodal/
-│   └── 08_agents/
-└── torch_compile/            # PyTorch 编译栈
-    ├── cudagraphs/           # CUDA/NPU Graphs
-    └── inductor/             # TorchInductor
+raw/  和  wiki/  目录镜像
+├── 01_theory/                  # 理论研究
+│   ├── 01_models/              # 模型架构 + 模型家族 (DeepSeek/Kimi/GLM)
+│   ├── 02_pretraining/         # 预训练：优化器、低精度、初始化
+│   ├── 03_sft/                 # SFT + 低参微调 (LoRA/PEFT)
+│   ├── 04_posttraining/        # 后训练对齐：RLHF、DPO、GRPO
+│   └── 05_inference/           # 推理技术：CoT、RAG、Agent
+└── 02_engineering/             # 工程实现
+    ├── 01_ai_frameworks/       # AI框架：PyTorch compile、CUDA Graphs
+    ├── 02_train_frameworks/    # 训练框架：Megatron-LM、分布式
+    ├── 03_infer_frameworks/    # 推理框架：vLLM、TRT-LLM
+    └── 04_posttrain_frameworks/ # 后训练框架 (预留)
 ```
 
 ## 使用

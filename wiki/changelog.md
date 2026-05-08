@@ -4,6 +4,35 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-08: 知识库目录结构重构
+
+**Type**: Infrastructure — 从旧编号体系迁移至 Theory/Engineering 双层结构
+
+### 新结构
+
+```
+raw/ & wiki/ 镜像
+├── 01_theory/           # 理论研究 (原 llm/ 域 + 模型家族)
+│   ├── 01_models/       # 模型架构 + 模型家族 (原 01_architecture + 05_model_families + 07_multimodal)
+│   ├── 02_pretraining/  # 预训练技术 (原 02_training)
+│   ├── 03_sft/          # SFT + 低参微调 (新建，预留)
+│   ├── 04_posttraining/ # 后训练对齐 (原 03_alignment)
+│   └── 05_inference/    # 推理技术 (原 04_reasoning + 08_agents)
+└── 02_engineering/      # 工程实现 (原 torch_compile/ + 06_infra + 10/11)
+    ├── 01_ai_frameworks/    # AI框架 (原 torch_compile/)
+    ├── 02_train_frameworks/ # 训练框架 (原 06_infra + 10_train_framework)
+    ├── 03_infer_frameworks/ # 推理框架 (原 11_infer_framework)
+    └── 04_posttrain_frameworks/ # 后训练框架 (新建，预留)
+```
+
+### 变更内容
+
+- 迁移 ~99 raw PDFs + ~102 wiki 页面至新结构
+- 80 个文件中的 `[[wiki links]]` 路径批量更新（Python 脚本）
+- 新建 5 个 index.md；重写 wiki/index.md 和 7 个领域 index
+- 更新 CLAUDE.md、README.md
+- 旧编号体系 (01-11) 完全废弃
+
 ## 2026-05-08: 训练/推理框架目录页创建
 
 - 新建 `wiki/llm/10_train_framework/index.md`（对应 `raw/10_train_framework/`：megatron.eddx, mindformers.eddx）
@@ -526,6 +555,6 @@ The following pages were created before the changelog was established. Dates are
 
 ## Related Pages
 
-- [[llm/index]]
-- [[llm/06_infra/megatron-lm/index]]
-- [[torch_compile/index]]
+- [[01_theory/index]]
+- [[02_engineering/02_train_frameworks/megatron-lm/index]]
+- [[02_engineering/01_ai_frameworks/index]]
