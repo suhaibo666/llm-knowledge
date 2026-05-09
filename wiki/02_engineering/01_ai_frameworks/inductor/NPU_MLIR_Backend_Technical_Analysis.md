@@ -1057,5 +1057,8 @@ torch_npu/
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
+- [[mlir_core_concepts]]
+- [[triton_vs_mlir_backend_analysis]]
+- [[npu_mlir_pipeline_analysis]]
 - [[NPU_Inductor_Backend_Mechanism]]
 - [[npu_compile]]

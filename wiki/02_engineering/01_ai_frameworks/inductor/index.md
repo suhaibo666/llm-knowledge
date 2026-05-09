@@ -34,10 +34,13 @@
 | 页面 | 核心主题 |
 |------|---------|
 | [[npu_lowering_guide]] | NPU 特定 lowering 步骤与算子映射 |
-| [[npu_compile]] | NPU 编译工作流 |
+| [[npu_compile]] | NPU 编译工作流、Autotune、精度校验 |
+| [[npu_mlir_pipeline_analysis]] | NPU MLIR 六阶段适配全景: 三层 Pass、15 个 Monkey Patch |
 | [[NPU_Inductor_Backend_Analysis]] | NPU Inductor 后端集成架构分析 |
 | [[NPU_Inductor_Backend_Mechanism]] | NPU 后端内部实现机制 |
 | [[NPU_MLIR_Backend_Technical_Analysis]] | 基于 MLIR 的 NPU 后端技术分析 |
+| [[triton_vs_mlir_backend_analysis]] | Triton vs Torch-MLIR 后端: 六阶段概念对等映射 |
+| [[mlir_core_concepts]] | MLIR 基础: Dialect、Pass、IR 注册、递降原理 |
 
 ### 调试与诊断
 

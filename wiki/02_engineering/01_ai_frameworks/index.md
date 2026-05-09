@@ -41,6 +41,8 @@ User Code → @torch.compile
 |------|---------|
 | [[torch_compile_source_analysis]] | 源码结构, 模块组织 |
 | [[torch_compile_architecture]] | 端到端流水线: Dynamo → AOT Autograd → Inductor |
+| [[triton_vs_mlir_backend_analysis]] | Triton vs Torch-MLIR: 六阶段概念对等映射, 优劣势分析 |
+| [[mlir_core_concepts]] | MLIR 基础: Dialect、Pass、IR 注册、递降原理 |
 | [[PyTorch_Dynamo_Technical_Analysis]] | 帧评估 API, 字节码符号执行, guard 生成 |
 | [[PyTorch_Inductor_Technical_Analysis]] | Inductor IR, 调度, 代码生成后端 |
 | [[Pytorch_Compile_Debug_Analysis]] | 调试技巧, 日志解读 |
@@ -67,6 +69,8 @@ User Code → @torch.compile
 | [[NPU_Inductor_Backend_Analysis]] | NPU 后端集成架构 |
 | [[NPU_Inductor_Backend_Mechanism]] | NPU 后端内部机制 |
 | [[NPU_MLIR_Backend_Technical_Analysis]] | MLIR 基 NPU 后端 |
+| [[npu_mlir_pipeline_analysis]] | NPU MLIR 六阶段适配全景: GPU vs NPU 逐阶段对比 |
+| [[mlir_core_concepts]] | MLIR 基础: Dialect、Pass、IR 注册 |
 
 ### CUDA/NPU Graphs
 

@@ -4,6 +4,15 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-09: NPU MLIR 编译流水线深度分析 + 编译工作流重写
+
+- 新建 `wiki/02_engineering/01_ai_frameworks/inductor/npu_mlir_pipeline_analysis.md`
+  — NPU MLIR 六阶段适配全景 (Dynamo→AOT→Decomp→Lowering→Scheduler→Codegen)，GPU Triton vs NPU MLIR 逐阶段对比。"改了什么、为什么在这一层、怎么改的"。
+  核心内容: 三层 Pass 架构 (FX/Inductor/毕昇)、15 个 Monkey Patch 五组分类、编译模式状态机、Fallback 双通道、Autotune 60 配置
+- 重写 `wiki/02_engineering/01_ai_frameworks/inductor/npu_compile.md`（原为 10 行存根）
+  — 完整 NPU 编译工作流: 三种编译模式 (auto_fallback/default/complete_fallback)、毕昇编译器接口 (-enable-hfusion-compile 等)、60 维 Autotune、在线精度对比 (ANIR_ONLINE_ACC_COMP)、芯片感知 (910B1/310B1/910_9391)
+- 更新 `inductor/index.md`、`01_ai_frameworks/index.md`、`NPU_MLIR_Backend_Technical_Analysis.md`、`npu_lowering_guide.md` 交叉引用
+
 ## 2026-05-08: 知识库目录结构重构
 
 **Type**: Infrastructure — 从旧编号体系迁移至 Theory/Engineering 双层结构
@@ -32,6 +41,14 @@ raw/ & wiki/ 镜像
 - 新建 5 个 index.md；重写 wiki/index.md 和 7 个领域 index
 - 更新 CLAUDE.md、README.md
 - 旧编号体系 (01-11) 完全废弃
+
+## 2026-05-09: Triton vs Torch-MLIR 编译后端对比 + MLIR 基础概念
+
+- 新建 `wiki/02_engineering/01_ai_frameworks/triton_vs_mlir_backend_analysis.md`
+  — Triton 与 Torch-MLIR 在 Dynamo→AOT Eager→Decomposition→Lowering→Scheduler→Codegen 六个阶段的概念级对等映射表和优劣势分析
+- 新建 `wiki/02_engineering/01_ai_frameworks/mlir_core_concepts.md`
+  — MLIR 三核心机制: Dialect 词汇表、Pass 变换引擎、IR 注册链路 (TableGen→C++→MLIRContext)，含递降完整示例
+- 更新 `wiki/02_engineering/01_ai_frameworks/index.md`、`inductor/index.md` 和 `NPU_MLIR_Backend_Technical_Analysis.md` 的交叉引用
 
 ## 2026-05-08: 训练/推理框架目录页创建
 
