@@ -246,6 +246,7 @@ Inductor 的 codegen 对 dynamic shape 的处理是一个**贯穿 kernel 生成�
 
 ## Related Pages
 
+- [[dynamic_shapes_full_analysis]] — Dynamic Shape 全链路: 静态→符号化→Guard→渐进动态化 (ShapeEnv 源码分析)
 - [[02_engineering/01_ai_frameworks/index]]
 - [[inductor_codegen_analysis]]
 - [[lowering_analysis]]

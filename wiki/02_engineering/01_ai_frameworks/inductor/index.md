@@ -1,7 +1,7 @@
 # TorchInductor — 目录索引
 
 > 覆盖 PyTorch Inductor 后端全流程：IR lowering、代码生成、调度、NPU 适配
-> 最后更新: 2026-05-07
+> 最后更新: 2026-05-11
 
 ---
 
@@ -11,6 +11,7 @@
 
 | 页面 | 核心主题 |
 |------|---------|
+| [[inductor_compiler_pipeline_analysis]] | **端到端编译管线全景**：Eager→Dynamo→AOT Autograd→Decomposition→FX Passes→Lowering→Scheduler→CodeGen，逐阶段源码级分析 |
 | [[PyTorch_Inductor_Technical_Analysis]] | Inductor 总体架构, IR 设计, 后端代码生成 |
 | [[torch_compile_architecture]] | torch.compile 端到端流水线 |
 | [[torch_compile_source_analysis]] | 源码结构与模块组织 |
@@ -22,6 +23,7 @@
 | [[aotautograd_analysis]] | AOT Autograd 前向/反向图分解 |
 | [[lowering_analysis]] | FX → Inductor IR lowering |
 | [[inductor_codegen_analysis]] | 代码生成策略, kernel 融合 |
+| [[dynamic_shapes_full_analysis]] | **Dynamic Shape 全链路**: 静态特化→符号化→Guard→渐进动态化, ShapeEnv 源码分析 |
 | [[inductor_codegen_dynamic_shape_analysis]] | 代码生成中动态形状处理 |
 | [[scheduler_analysis]] | 算子调度器, 融合决策 |
 | [[scheduler_fusion_strategies]] | 调度器融合策略与自定义 Pass |

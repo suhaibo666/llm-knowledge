@@ -764,3 +764,4 @@ Scheduler 就是一个"智能排课系统"——它把所有要执行的计算�
 - [[02_engineering/01_ai_frameworks/index]]
 - [[PyTorch_Inductor_Technical_Analysis]]
 - [[inductor_codegen_analysis]]
+- [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景（本文 §6 Scheduler 阶段）

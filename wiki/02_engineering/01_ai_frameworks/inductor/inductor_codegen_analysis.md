@@ -239,3 +239,4 @@ Inductor 的 **codegen 是其编译流程的最终执行环节**，承担着将�
 - [[02_engineering/01_ai_frameworks/index]]
 - [[PyTorch_Inductor_Technical_Analysis]]
 - [[scheduler_analysis]]
+- [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景（本文 §7 CodeGen 阶段）

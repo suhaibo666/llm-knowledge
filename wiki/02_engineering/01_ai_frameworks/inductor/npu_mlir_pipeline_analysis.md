@@ -234,6 +234,56 @@ NPU (NpuMlirScheduling):
 | `FxImporter.import_stateless_graph` | `torch_mlir_patch.py:51-124` | 注入符号形状范围约束 `[128, 1024]` 到 symbolic guards |
 | `sympy_expr_to_semi_affine_expr` | `torch_mlir_patch.py:127-193` | 扩展对 `sympy.Pow` 和 `FloorDiv` 的 MLIR 仿射表达式转换支持 |
 
+### NPU Codegen 内部的 MLIR Pass 分解
+
+从 FX Graph 到 NPU kernel 二进制，codegen 阶段内部经历了四个 MLIR 子阶段（源码 `codegen/mlir.py`）:
+
+```
+Stage 6a: FX 重建
+  create_fx_from_snodes_by_traced_graph()
+    → merge_fx_graphs() 合并 traced_graph 碎片
+    → make_fx() 标准化
+    → view_to_reshape()  MLIR 兼容
+    → scalarize_tensor_ops_on_scalars()  标量化
+
+Stage 6b: FX → MLIR Torch Dialect (FxImporter, RAW 模式)
+  stateless_fx_import(gm, output_type=RAW)
+    → FxImporter.import_stateless_graph(gm.graph)  ← PATCHED
+    → 产出: MLIR Torch Dialect module (不经任何 pipeline)
+
+Stage 6c: MLIR Torch IR 简化
+  run_pipeline_with_repro_report(module,
+    "builtin.module(torch-lower-to-backend-contract)")
+    → LowerToBackendContract pass 内部运行简化管线:
+      Canonicalizer → RecomposeComplexOps → ReduceOpVariants
+      → Canonicalizer → MaximizeValueSemantics → Canonicalizer
+      → [可选 Decompose] → satisfiesBackendContract()
+    → 产出: 满足合约的 Torch Backend IR
+
+Stage 6d: Bisheng Torch → Named Op 降级
+  subprocess: bishengir-opt
+    --torch-backend-to-named-op-backend-pipeline
+    → 标准 Torch IR → Bisheng Named Op IR
+    → 隐式 broadcast 消除 (ensure-no-implicit-broadcast)
+
+Stage 6e: 毕昇编译
+  subprocess: bishengir-compile
+    → hfusion / ops_reorder / auto_multi_buffer / tiling
+    → 产出: NPU kernel .so
+```
+
+**Stage 6c 的具体 Pass 序列**（`torch-lower-to-backend-contract` 内部迭代执行，与上游 torch-mlir 共用代码）:
+
+| Pass | 在 NPU 场景中的作用 |
+|------|-------------------|
+| `Canonicalizer` | 清理 FxImporter 1:1 翻译产生的冗余 op |
+| `RecomposeComplexOps` | 重组结构性拆分 (split+copy→index_put) |
+| `ReduceOpVariants` | 规约可能残留的 non-value tensor 类型 |
+| `MaximizeValueSemantics` | 确保全部 value-semantic tensor |
+| `satisfiesBackendContract()` | 显式断言: 无非值语义类型、无 unranked tensor、无不合法 op |
+
+> NPU 路径中，Stage 6c 的 Shape/Dtype Refinement (12 Pass) 和 DecomposeComplexOps 默认不执行——因为 fake tensor 已在 Python 前端确定了所有 shape/dtype，`run_decompositions()` 已完成主力分解。
+
 ### 为什么在这一层
 
 这些改动是 NPU 硬件特有的编译需求。Inductor 的 codegen 是"最后一道门"——在这之前一切改动都是与 GPU 共享的，在这之后就是 NPU 专属的编译器栈。Torch-mlir 补丁的存在是因为上游 torch-mlir 不支持 PyTorch 2.x 的动态形状（SymInt）和部分 sympy 表达式。

@@ -1,7 +1,22 @@
 # Triton vs Torch-MLIR: 编译后端技术原理对比
 
 > 从 Dynamo → AOT Eager → Decomposition → Lowering → Scheduler → Codegen 六个阶段，逐阶段做概念级对等映射
-> 最后更新: 2026-05-09
+> 最后更新: 2026-05-11
+
+---
+
+## 社区活跃度 (2026-05)
+
+`llvm/torch-mlir` 是 LLVM 孵化器下的活跃项目。最后提交 2026-05-08，几乎每天有新 commit。当前维护方向：
+
+- **TorchToLinalg lowering** 持续补全（反向传播算子、激活函数、插值）
+- **FlexAttention / GQA** 支持
+- **Float8** 新数据类型 (Float8E8M0FNU)
+- **TorchToTosa** 路径
+- **FX Importer** 符号形状修复
+
+> [!note]
+> 部分文档引用 `nod-ai/SHARK-Turbine` 仓库。其 README 声明所有代码已迁出至上���项目（FX/ONNX 导入器 → `llvm/torch-mlir`，IREE Turbine → `iree-org/iree-turbine`），该仓库现在是 CI 协调的 staging 空壳，不再活跃开发。评估 torch-mlir 生态应以 `llvm/torch-mlir` 和 `iree-org/iree-turbine` 为准。
 
 ---
 

@@ -2523,3 +2523,4 @@ def forward(arg0: torch.Tensor):
 - [[02_engineering/01_ai_frameworks/index]]
 - [[lowering_analysis]]
 - [[inductor_codegen_analysis]]
+- [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景

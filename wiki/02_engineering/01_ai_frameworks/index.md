@@ -43,6 +43,7 @@ User Code → @torch.compile
 | [[torch_compile_architecture]] | 端到端流水线: Dynamo → AOT Autograd → Inductor |
 | [[triton_vs_mlir_backend_analysis]] | Triton vs Torch-MLIR: 六阶段概念对等映射, 优劣势分析 |
 | [[mlir_core_concepts]] | MLIR 基础: Dialect、Pass、IR 注册、递降原理 |
+| [[torch_mlir_pass_pipeline_analysis]] | torch-mlir Pass 管线: 按执行顺序的 34 个 Pass 完整分析 |
 | [[PyTorch_Dynamo_Technical_Analysis]] | 帧评估 API, 字节码符号执行, guard 生成 |
 | [[PyTorch_Inductor_Technical_Analysis]] | Inductor IR, 调度, 代码生成后端 |
 | [[Pytorch_Compile_Debug_Analysis]] | 调试技巧, 日志解读 |

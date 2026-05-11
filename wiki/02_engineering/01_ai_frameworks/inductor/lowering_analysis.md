@@ -371,3 +371,4 @@ flowchart LR
 - [[02_engineering/01_ai_frameworks/index]]
 - [[PyTorch_Inductor_Technical_Analysis]]
 - [[inductor_codegen_analysis]]
+- [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景（本文 §5 Lowering 阶段）

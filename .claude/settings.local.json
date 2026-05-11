@@ -50,7 +50,18 @@
       "Bash(git -C \"E:/97-codes/torch_parallel/llm-knowledge\" rm -r raw/11_infer_framework/)",
       "Bash(git -C \"E:/97-codes/torch_parallel/llm-knowledge\" rm -r wiki/llm/)",
       "Bash(git -C \"E:/97-codes/torch_parallel/llm-knowledge\" rm -r wiki/torch_compile/)",
-      "PowerShell(Remove-Item *)"
+      "PowerShell(Remove-Item *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(gh repo *)",
+      "Bash(gh api *)",
+      "Bash(curl -s \"https://api.github.com/repos/llvm/torch-mlir/contents/lib/Dialect/Torch/Transforms/\")",
+      "Bash(python3 -c \"import sys,json; files=json.load\\(sys.stdin\\); [print\\(f['name']\\) for f in files]\")",
+      "PowerShell(Invoke-RestMethod -Uri \"https://api.github.com/repos/llvm/torch-mlir/contents/lib/Dialect/Torch/Transforms\" | Select-Object -ExpandProperty name)",
+      "Bash(curl -s \"https://api.github.com/search/code?q=torch-backend-to-linalg-on-tensors-backend-pipeline+repo:llvm/torch-mlir&per_page=5\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(f\\\\\"{i['path']} \\({i['html_url']}\\)\\\\\"\\) for i in data.get\\('items',[]\\)]\")",
+      "Read(//e/97-codes/torch_parallel/pytorch/torch/fx/experimental/**)",
+      "Read(//e/97-codes/torch_parallel/pytorch/torch/_subclasses/**)"
     ]
   },
   "enabledMcpjsonServers": [

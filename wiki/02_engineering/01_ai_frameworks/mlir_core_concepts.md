@@ -1,7 +1,7 @@
 # MLIR 核心概念: Dialect、Pass、IR 注册
 
 > 从零理解 MLIR 编译器基础设施的三个核心机制：Dialect 词汇表、Pass 变换引擎、IR 注册链路
-> 最后更新: 2026-05-09
+> 最后更新: 2026-05-11
 
 ---
 
@@ -130,6 +130,49 @@ ModuleOp                          ← 顶层 module
 | **Function** | 以一个 `func.func` 为单位，pass 看到整个函数体 | `CSE` — 公共子表达式消除，函数范围内找重复计算 |
 | **Module** | 以顶层 `module` 为单位，pass 看到整个编译单元 | `Inline` — 跨函数边界内联 |
 
+### 四种 Pass 作用域的设计哲学
+
+**为什么需要四种作用域？** 本质原因：MLIR 的 IR 树是**多层异构嵌套**结构（同一棵树内混编 torch/linalg/gpu/scf 等不同 dialect），Pass 必须精确声明"我能看到什么、我能动什么"才能保证：
+
+1. **安全性**：`ConvertTorchToLinalg` 不该触碰已经被降级为 `gpu.launch` 的节点。Pass 作用域是"访问控制"——它保证每层 pass 只看到自己应该看到的抽象层级。
+2. **可组合性**：每个 Pass 做**一件事且只做一件事**。合并多个单功能 Pass 比写一个"超级 Pass"更灵活。新增优化只需插入一个新 Pass，不影响现有管线。
+3. **并行调度**：Function-scoped 的 Pass（如 CSE、canonicalize）可以**并行执行**在每多个 `func.func` 上——Pass Manager 自动利用多核。这是编译器工程中"数据并行"的经典运用。
+4. **测试与调试**：当 Pass 行为异常时，独立作用域让你可以单独运行一个 Pass（`mlir-opt --pass-pipeline="builtin.module(func.func(cse))"`），精确定位问题。
+
+**为什么不像 Triton 做全局优化？**
+
+这不是 MLIR 的缺陷，而是**IR 结构的根本差异**决定的：
+
+```
+Triton 的 IR 是"单层扁平":
+  Pointwise(add) → Pointwise(mul) → Reduction(sum)
+  所有节点都在同一个抽象层级 → Scheduler 全局可见 → 10 轮贪心融合
+
+MLIR 的 IR 是"多层嵌套":
+  torch.aten.add (高层框架语义)
+    ↓ ConvertTorchToLinalg
+  linalg.generic (中层线性代数语义)
+    ↓ LinalgFuseElementwise
+  linalg.generic (已融合)
+    ↓ ConvertLinalgToGPU
+  gpu.launch (低层并行语义)
+
+  每个层级之间不可直接比较、不可直接融合
+```
+
+Triton 之所以可以全局优化，是因为 Inductor 的 lowering **丢弃了高层语义**——`aten.add` 变成 `Pointwise(inner_fn=λ...)`，所有节点坍缩为两种 IR 节点（Pointwise/Reduction）。这是"牺牲信息换简单性"。MLIR **保留了每层的完整语义**，代价是"牺牲简单性换可组合性"——每层需要独立的 Pass 来处理该层级的优化。
+
+**与 Eager Mode 的概念对应**
+
+| MLIR Pass 作用域 | 操作对象 | Eager Mode 概念对等 | 对应程度 |
+|-----------------|---------|-------------------|---------|
+| **Op-specific** | 单个 `linalg.generic`、单个 `scf.for` | **单算子 dispatch**：`aten.add(x,y)` → 后端 kernel。Eager 的每次调用只处理一个 op | ★★★★ 最接近 |
+| **Dialect** | 某个命名空间下的所有 Op | **算子库切换**：把所有 `torch.ops.npu.*` 批量替换为 `torch.ops.ascend.*`。Eager 中通过 `__torch_dispatch__` 实现 | ★★★ 概念接近 |
+| **Function** | 一个 `func.func` 的 body | **`torch.jit.script` 的函数**：对单个函数做优化。Eager 中没有此概念 | ★★☆ 需要图模式 |
+| **Module** | 整个 `module`（跨函数） | **`torch.compile(Model())`**：整个模型的图级优化。Eager 本身没有，必须进入 compile 模式 | ★☆☆ 仅在编译模式 |
+
+> **关键洞察**：Eager Mode 的本质是"每步执行后立即忘记上下文"——它天然运行在 Op-specific 粒度。MLIR 的四种 Pass 作用域本质上是在**回补 Eager Mode 缺失的信息层级**：Function Pass 回补"这些 op 在同一个函数内"的边界信息，Module Pass 回补"这些函数属于同一个模型"的全局信息。
+
 ### 实际运作
 
 ```
@@ -182,6 +225,135 @@ pm.run(module);
 | `Scheduler.codegen()` → `TritonKernel.codegen_kernel()` | `ConvertLinalgToGPU` → `ConvertGPUToNVVM` → ... |
 | `compute_last_usage()` — 确定 buffer 最后读取位置 | Liveness analysis pass (标准编译器数据流分析) |
 | `reorder_for_peak_memory()` | `buffer-deallocation` + `buffer-hoisting` passes |
+
+### 实例: 上游 MLIR ElementwiseOpFusion 源码解析
+
+以 `mlir/lib/Dialect/Linalg/Transforms/ElementwiseOpFusion.cpp` 为例，这是一个 **Op-specific Pass**（只匹配 `linalg.generic`），功能等价于 Triton 的 `can_fuse_vertical` + `fuse_nodes()`。
+
+**合法性检查 `areElementwiseOpsFusable`**：
+
+```cpp
+bool areElementwiseOpsFusable(OpOperand *fusedOperand) {
+    auto producer = fusedOperand->get().getDefiningOp<GenericOp>();
+    auto consumer = dyn_cast<GenericOp>(fusedOperand->getOwner());
+
+    // ① 必须是两个 linalg.generic（对等 Triton 的 Pointwise+Pointwise）
+    if (!producer || !consumer) return false;
+
+    // ② Producer 必须全 parallel（对等 Triton 的 Pointwise 无 reduction）
+    if (producer.getNumParallelLoops() != producer.getNumLoops())
+        return false;
+
+    // ③ fused operand 必须是 consumer 输入（对等 Triton 的 unmet_deps 检查）
+    if (!consumer.isDpsInput(fusedOperand)) return false;
+
+    // ④ 索引维度匹配（对等 Triton 的 iteration domain 兼容检查）
+    AffineMap consumerIndexMap = consumer.getMatchingIndexingMap(fusedOperand);
+    if (consumerIndexMap.getNumResults() != producer.getNumLoops())
+        return false;
+
+    // ⑤ producer 的结果索引 map 必须是可逆排列
+    AffineMap producerResultIndexMap =
+        producer.getIndexingMapMatchingResult(producerResult);
+    if (!producerResultIndexMap.isPermutation()) return false;
+
+    return true;
+}
+```
+
+**融合执行 `fuseElementwiseOps`**：
+
+```cpp
+// 核心步骤：
+// 1. 收集 Consumer 在 fusedOperand 之前的输入
+// 2. 收集 Producer 全部输入（索引 map 重算到 fused 坐标系）
+// 3. 收集 Consumer 在 fusedOperand 之后的剩余输入
+// 4. 收集需要保留的 Producer 输出（被 consumer 外的用户使用）
+// 5. 创建新 fused GenericOp，调用 generateFusedElementwiseOpRegion 合并计算体
+
+auto fusedOp = GenericOp::create(
+    rewriter, consumer.getLoc(), fusedResultTypes,
+    fusedInputs, fusedOutputs,
+    rewriter.getAffineMapArrayAttr(fusedIndexMaps),
+    consumer.getIteratorTypes());
+
+// 验证 fused op 合法（循环边界计算）
+if (!fusedOp.getShapesToLoopsMap()) {
+    rewriter.eraseOp(fusedOp);  // 融合非法，回滚
+    return failure();
+}
+
+// 生成 fused region: 把 producer 和 consumer 的计算体拼接
+generateFusedElementwiseOpRegion(
+    rewriter, fusedOp, consumerToProducerLoopsMap,
+    fusedOperand, consumer.getNumLoops(), preservedProducerResults);
+```
+
+**融合前后的 IR 变化**：
+
+```mlir
+// 融合前：两个独立 linalg.generic，%add 的结果需要写回内存再被 %mul 读出
+// %0 = producer:
+//   linalg.generic { ... } ins(%x, %y) outs(%init0) {
+//     %add = arith.addf %a, %b  →  linalg.yield %add
+//   }
+// %1 = consumer:
+//   linalg.generic { ... } ins(%0, %z) outs(%init1) {
+//     %mul = arith.mulf %d, %e  →  linalg.yield %mul
+//   }
+
+// 融合后：单次 kernel launch，中间值 %add 走寄存器，不写回 HBM
+// %fused = linalg.generic { ... } ins(%x, %y, %z) outs(%init1) {
+//   %add = arith.addf %a, %b
+//   %mul = arith.mulf %add, %e  // d 被替换为 producer 的 %add
+//   linalg.yield %mul
+// }
+```
+
+**与 Triton 融合作检查项的一一对应**：
+
+| 检查项 | MLIR `areElementwiseOpsFusable` | Triton `can_fuse_vertical` |
+|--------|-------------------------------|---------------------------|
+| Op 类型 | producer/consumer 都是 `GenericOp` | node1/node2 都是 `BaseSchedulerNode` |
+| 迭代类型 | producer 全 parallel | node1 无 reduction (Pointwise) |
+| 数据依赖 | consumer 的 operand 来自 producer 的 result | node2 的 `unmet_deps` 由 node1 满足 |
+| 索引兼容 | affine map 可逆排列 | `shared_data_score` 计算内存重叠 |
+| 环检测 | SSA 天然无环 | `will_fusion_create_cycle()` 显式检查 |
+| 驱动方式 | `OpRewritePattern` 反复匹配至 fixpoint | 10 轮 `fuse_nodes_once()` 贪心迭代 |
+
+### torch-mlir 自有 Pass 实例: FuseQuantizedOps
+
+`torch-mlir/lib/Dialect/Torch/Transforms/FuseQuantizedOps.cpp` 是一个 **Dialect 级 Pass**，展示 torch-mlir 特有的优化模式：
+
+```cpp
+// 核心 Pattern: 将 quantize → dequantize → compute(float) 融合为 compute(int)
+class QuantizeOperandsPastCommutingOps : public OpRewritePattern<SrcOp> {
+    LogicalResult matchAndRewrite(SrcOp op, PatternRewriter &rewriter) const {
+        // 对每个需要量化的 operand:
+        for (auto operand : QuantInfo<SrcOp>::operandsToQuantize(op)) {
+            // 沿 def-use 链向上追溯:
+            //   Case 1: 遇到 commuting op (transpose/reshape/view/slice)
+            //     → 入栈，继续向上追溯
+            //   Case 2: 遇到 dequantize op
+            //     → 捕获上游 quantized tensor (int + scale + zero_point)
+            //   Case 3: 都不是 → 放弃融合
+        }
+        // 重写: 用整数类型重建 commuting 链 + 计算 op
+        // 在最外层重新附加 quantize/dequantize
+    }
+};
+```
+
+**关键设计差异**：
+
+| 维度 | MLIR `ElementwiseOpFusion` | torch-mlir `FuseQuantizedOps` | Triton Scheduler |
+|------|--------------------------|------------------------------|-----------------|
+| **层次** | Linalg dialect (中层 IR) | Torch dialect (高层 IR) | Inductor IR (单层) |
+| **Pass 类型** | Op-specific（只匹配 `linalg.generic`） | Op-specific（匹配量化链 ATen op） | 全局 Scheduler |
+| **实现语言** | C++ (链接 libMLIR) | C++ (链接 libTorchMLIR) | Python |
+| **需要编译** | 是 (mlir-opt 或动态库) | 是 (torch-mlir-opt 或动态库) | 否 |
+| **融合范围** | 单 producer→consumer 对 | 量化链 (q→dq→compute→q) | 全局依赖图 10 轮贪心 |
+| **驱动方式** | `OpRewritePattern` → fixpoint | `GreedyRewriteConfig` + depth 控制 | `fuse_nodes()` × 10 |
 
 ---
 
@@ -411,6 +583,7 @@ MLIRContext (全局上下文)
 
 ## Related Pages
 
+- [[torch_mlir_pass_pipeline_analysis]] — torch-mlir Pass 管线: 按执行顺序的 34 个 Pass 完整分析
 - [[triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR: 六阶段概念对等映射
 - [[NPU_MLIR_Backend_Technical_Analysis]] — NPU 上 MLIR 后端的完整实现 (TracedGraph、融合、编译)
 - [[npu_lowering_guide]] — NPU lowering 与 Triton lowering 架构对比

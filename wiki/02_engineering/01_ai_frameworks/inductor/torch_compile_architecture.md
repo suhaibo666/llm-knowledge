@@ -195,3 +195,4 @@ torch._inductor.compile_fx.compile_fx
 - [[02_engineering/01_ai_frameworks/index]]
 - [[PyTorch_Dynamo_Technical_Analysis]]
 - [[PyTorch_Inductor_Technical_Analysis]]
+- [[inductor_compiler_pipeline_analysis]] — Inductor 端到端编译管线全景

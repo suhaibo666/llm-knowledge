@@ -2011,3 +2011,4 @@ Dynamo在PyTorch生态中发挥着重要作用，提供了零代码修改的性�
 - [[02_engineering/01_ai_frameworks/index]]
 - [[torch_compile_architecture]]
 - [[aotautograd_analysis]]
+- [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景（本文 §1 Dynamo 阶段）
