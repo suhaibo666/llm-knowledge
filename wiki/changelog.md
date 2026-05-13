@@ -4,6 +4,161 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-13: torch_npu torch.compile 三条路径深度分析
+
+**Type**: Knowledge Synthesis（基于 torch_npu 源码级分析，新建 4 页 + 更新 3 页）
+
+**新建页面**:
+
+- `wiki/02_engineering/01_ai_frameworks/inductor/npu_compile_paths_overview.md`
+  - NPU torch.compile 路径总览：三条路径 (Triton/default、ACLGraph、MLIR) 全景对比
+  - 与社区 (CUDA/XPU) 的核心差异：monkey-patching 策略、fallback 机制、调度器继承
+  - 当前适配的收益：快速迭代、硬件特性直达、多路径冗余保障
+  - 演进路线：v2.7.1 (35+ patches) → v2.9.0 (~10) → master (~8)，`_compat.inductor` 兼容层、条件化 patch 管理
+
+- `wiki/02_engineering/01_ai_frameworks/inductor/npu_triton_backend_deep_analysis.md`
+  - Triton/Inductor default 路径深度分析（Path 1）
+  - Monkey Patch 五类分类：调度器重写、代码生成、wrapper 层、 lowering 规则、Triton 集成
+  - `NPUCombinedScheduling` 继承 `CUDACombinedScheduling`，组合 CATLASS + Triton + NoLinearTriton 三种调度器
+  - `golden_var_list` / `unified-axis` 逻辑：SIMD/SIMT 混合执行的统一轴选择机制
+  - `NPUIndexTritonKernel` 特殊索引 kernel、35+ monkey patches 逐版本演进
+  - `lowering_fallback_list.py`：859 aten ops + 135 prims ops 强制 fallback 到 ACLNN
+  - 与社区逻辑对比：继承为主、局部重写，演进方向是减少侵入式 patch
+
+- `wiki/02_engineering/01_ai_frameworks/cudagraphs/npugraphs/aclgraph_deep_analysis.md`
+  - ACLGraph 深度分析（Path 2）
+  - CANN `aclmdlRI*` API 图捕获/重放机制（`AclmdlRICaptureBegin`、`AclmdlRIExecuteAsync`）
+  - `NpuGraphOpHandler` 插件框架：FA3 等特殊融合算子在图捕获期的参数预分配
+  - Super Kernel (`AclskOptimize`)：CANN 特有的多 kernel 合并优化
+  - `StaticKernelCompiler`：预热期预编译 ACLNN kernel，确保捕获确定性
+  - 与社区 CUDAGraph 差异：ACLGraph 是 CANN 运行时原语，NPU Graphs 是 PyTorch 层封装
+  - 演进方向：统一 NPU Graphs/ACLGraph 接口，向社区 `torch.cuda.CUDAGraph` API 对齐
+
+- `wiki/02_engineering/01_ai_frameworks/inductor/npu_mlir_backend_deep_analysis.md`
+  - MLIR 路径深度分析（Path 3）
+  - `has_triton = False` 禁用 Triton，启用 MLIR codegen 路径
+  - IR 回溯机制：patch `ir.Loops.create` 附加 `traced_graph` 元数据，实现 FX Graph 重建
+  - Bisheng 编译器 (`bishengir-opt` + `bishengir-compile`)：华为私有编译器管线
+  - Scheduler patch：修改融合规则适应 MLIR 路径需求
+  - `auto_fallback` 模式：编译失败自动回退到 FX Graph，双通道容错
+  - 与社区逻辑差异：MLIR 路径在社区不存在，是 NPU 特有方案
+  - 演进方向：`torch_npu._compat.inductor` 兼容层、条件化 patch、社区 MLIR 接口标准化
+
+**更新页面**:
+
+- `wiki/02_engineering/01_ai_frameworks/inductor/index.md`
+  - 新增 2 个深度分析页面条目（npu_triton_backend_deep_analysis、npu_mlir_backend_deep_analysis）
+
+- `wiki/02_engineering/01_ai_frameworks/cudagraphs/npugraphs/index.md`
+  - 新增 1 个深度分析页面条目（aclgraph_deep_analysis）
+
+- `wiki/02_engineering/01_ai_frameworks/index.md`
+  - 新增 4 个页面条目（npu_compile_paths_overview、npu_triton_backend_deep_analysis、npu_mlir_backend_deep_analysis、aclgraph_deep_analysis）
+  - 更新知识空白（新增 3 项：monkey patch 演进追踪、CATLASS/CK 生态、IR 回溯通用性）
+
+- `wiki/changelog.md`（本条目）
+
+**知识来源**:
+  - `torch_npu` 源码：`torch_npu/_inductor/`（monkey-patch、lowering、codegen/triton.py、codegen/wrapper.py）
+  - `torch_npu` 源码：`torch_npu/utils/_graph_tree.py`（ACLGraph 捕获/重放）
+  - `torch_npu` 源码：`torch_npu/dynamo/__init__.py`（backend 注册）
+  - `torch_npu` 文档：`docs/torch_npu_compile_path_*.md`（三条路径原始分析报告）
+  - PyTorch 社区源码：`torch/_inductor/`（CUDA 参考实现）
+
+---
+
+## 2026-05-12: DL 编译优化趋势与通算融合知识补充
+
+**Type**: Knowledge Synthesis（基于社区分析 + DeepSeek V4 wiki 内容，新建 4 页 + 更新 3 页）
+
+**新建页面**:
+
+- `wiki/02_engineering/01_ai_frameworks/flex_attention_analysis.md`
+  - FlexAttention（PyTorch 2.4+）范式：从 Pattern Matching（_sfdp_init）到语义驱动代码生成
+  - BlockMask 机制：block 粒度稀疏结构编译时分析，FULL/PARTIAL/EMPTY 分类
+  - score_mod：内联注意力权重修改（ALiBi、Soft-cap、Temperature）
+  - 与 _sfdp_init 的详细对比，典型 LLM 模型映射表
+  - 局限与未来方向（torch.export AOT、NPU 支持）
+
+- `wiki/02_engineering/01_ai_frameworks/tilelang_analysis.md`
+  - TileLang 的定位：填补图 Pass（太高层）和 Kernel（太低层）之间的 Gap
+  - DeepSeek V4 mHC 融合 kernel：RMSNorm+Linear+Sinkhorn-Knopp 片上融合，读写量降 3×
+  - Host Codegen：<1μs kernel launch overhead（vs Python wrapper 的 5-20μs）
+  - Z3 SMT 求解器：整数约束的编译时自动验证
+  - TileLang vs Triton DSL 对比，tile-level IR 生态（FlexAttention/Linalg Tiling/CuTe）
+  - 对图 Pass 体系的影响：tile-level IR 作为图 Pass 与 Kernel 的解耦层
+
+- `wiki/02_engineering/01_ai_frameworks/comm_compute_fusion_guide.md`
+  - 通算融合四层次模型（手动→半自动→框架感知→全自动）
+  - **WaveEP（DeepSeek V4）**：wave-based 细粒度 EP 调度原理、CUDA Stream 架构、wave 粒度权衡
+  - 实测性能：一般推理 1.50-1.73×，RL rollout 高达 1.96×
+  - **DeepEP**：fine-grained SM control，FusedDispatch（Permute+A2A+Unpermute），HybridEP（NVLink/IB 异构）
+  - TP/PP/CP/DP 各维度通算重叠机制（Pipelined AG、DualPipe、Ring Attention 双缓冲）
+  - MLIR Mesh Dialect 的通算 IR 作用：async token + chunk-level 依赖
+  - WaveEP 编译化路径：wave IR 表示 → Cost Model → TileLang 绑定 → DTensor 集成
+
+- `wiki/02_engineering/01_ai_frameworks/mindspore_compiler_analysis.md`
+  - MindSpore 编译流水线：ANF 图 → MindCompiler → AKG → CANN 后端
+  - ANF（Administrative Normal Form）IR：函数式表示，高阶函数支持，vs FX Graph 对比
+  - MindCompiler Pass：代数化简、常量折叠、算子融合白名单匹配
+  - AKG Polyhedral 自动 Kernel 生成：loop tiling/vectorization/fusion，昇腾 NPU 特化
+  - **ParallelAuto**：DP 递归规划自动并行策略搜索，vs Alpa 对比
+  - MindSpore 2.x 动静统一（@jit 装饰器）
+  - 与 PyTorch Inductor 的 Pass 体系逐类对比，优劣评价
+
+**更新页面**:
+
+- `wiki/02_engineering/01_ai_frameworks/mlir_core_concepts.md`（新增"补充"章节）
+  - **MLIR Mesh Dialect**：通信作为 IR 一等公民，async token + chunk 依赖分析，对 WaveEP 编译化的意义
+  - **IREE**：Flow/Stream/HAL Dialect 三层架构，与 torch-mlir 的组合使用，vs torch.compile 对比
+  - **StableHLO**：跨框架稳定 IR 锚点，通信算子标准化，GSPMD 自动并行的 IR 基础
+  - **Triton 3.x MLIR 迁移**：Triton Dialect + TritonGPU Dialect，H100 TMA 异步 copy，与 Linalg Pass 的潜在集成
+
+- `wiki/02_engineering/01_ai_frameworks/index.md`
+  - 新增 3 个优化页面条目（flex_attention、tilelang、comm_compute_fusion）
+  - 新增 1 个架构页面条目（mindspore_compiler）
+  - 更新 mlir_core_concepts 描述（含新增内容）
+  - 更新知识空白（新增 3 项）
+
+- `wiki/changelog.md`（本条目）
+
+**知识来源**:
+  - PyTorch 官方文档（FlexAttention, DTensor, torch.export）
+  - `wiki/01_theory/01_models/deepseek/deepseek_v4_analysis.md`（WaveEP、TileLang、DeepEP）
+  - `wiki/02_engineering/02_train_frameworks/megatron-lm/moe_training_optimization_report.md`（DeepEP/HybridEP）
+  - `wiki/02_engineering/02_train_frameworks/megatron-lm/megatron_comm_overlap_analysis.md`（多维通算重叠）
+  - MLIR 官方文档（Mesh Dialect RFC，IREE，StableHLO）
+  - Triton GitHub（triton-lang/triton MLIR 迁移 PR）
+  - MindSpore 官方文档（ParallelAuto，AKG，ANF IR）
+
+---
+
+## 2026-05-12: Megatron-LM MoE 训练优化技术全景分析
+
+**Type**: Knowledge Synthesis + Research（源码级分析, 新建 3 个 Wiki 页面）
+
+- **Created**:
+  - `wiki/02_engineering/02_train_frameworks/megatron-lm/megatron_distributed_optimizer_analysis.md` — 分布式优化器深度分析（ZeRO-1/2 分片机制, Reduce-Scatter/All-Gather 通信, FP8/FP4 量化参数, CPU Offloading 双模式）
+  - `wiki/02_engineering/02_train_frameworks/megatron-lm/megatron_memory_optimization_analysis.md` — 显存优化全景分析（NCCL Pool, MoE Paged Stash 三级溢出, Fine-Grained Activation Offloading, Buffer 复用, FP8/FP4 精度, Resharding）
+  - `wiki/02_engineering/02_train_frameworks/megatron-lm/megatron_fusion_operators_analysis.md` — 融合算子优化分析（Bias+Activation 融合 6 种, Fused LayerNorm/Softmax, MoE 专用融合 4 种, Communication Fusion, FP8 Input Store, Triton/CUTLASS/cuTile kernel 层次）
+- **Updated**: `megatron-lm/index.md` — 新增 "Memory & Compute Optimization" 章节, 更新 Knowledge Gaps 和 Cross-Domain Links
+- **Supplemented**: FSDP2 适配分析 — Megatron 三种梯度/参数分片方案对比（`DistributedOptimizer` vs `TorchFullyShardedDataParallel` vs `MegatronFSDP`），FSDP Unit 机制, ZeRO 分片谱系, NCCL UserBuffer 优化, Delayed Wgrad Overlap, 与 EP/Activation Checkpointing/CUDA Graph 的协同
+- **Supplemented**: CP 源码分析 — Ring Attention with AllGather pipeline, zigzag mask conversion, KV buffer double buffering, CP 正反向通信量公式
+- **Supplemented**: 通信量/通信组全面分析（正反向） — 6 个并行维度（TP/PP/EP/CP/DP/DistOpt）的通信组层级关系图、通信原语映射、正反向通信量公式推导、通信时序图、Bucket 粒度与 NCCL 带宽、统一通信量总览表、671B MoE 典型通信量排序
+- **Removed**: `Megatron-LM_Distributed_Parallel_Exam.md` — 内容分发至各分析页面（SP/TP 边界、TP autograd Function、Dynamic CP、MoE Router/Folding、FSDP+TP/EP 拓扑、Layer-Wise Optimizer、Grouped GEMM、通信组具体示例）
+- **Updated**: `megatron-lm/index.md` — 移除已删除 exam 页面引用
+- **Design doc**: `docs/superpowers/specs/2026-05-12-moe-training-optimization-report-design.md`
+
+**Key sources analyzed**:
+  - `megatron/core/optimizer/distrib_optimizer.py` — 分布式优化器主类 (~2800 lines)
+  - `megatron/core/fusions/` — 13 个融合算子文件（@jit_fuser, Triton, CUTLASS/cuTile）
+  - `megatron/core/nccl_allocator.py`, `moe/paged_stash.py`, `fine_grained_activation_offload.py` — 显存优化
+  - `megatron/core/transformer/dot_product_attention_context_parallel.py` — CP Ring Attention
+  - `megatron/core/transformer/moe/fused_a2a.py` — DeepEP/HybridEP 通信融合
+  - `megatron/core/distributed/param_and_grad_buffer.py` — 参数/梯度 Buffer 管理
+
+---
+
 ## 2026-05-11: torch.compile Dynamic Shape 全链路技术分析
 
 **Type**: Knowledge Synthesis（PyTorch 主分支源码级调研）

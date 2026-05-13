@@ -41,6 +41,8 @@
 | [[NPU_Inductor_Backend_Analysis]] | NPU Inductor 后端集成架构分析 |
 | [[NPU_Inductor_Backend_Mechanism]] | NPU 后端内部实现机制 |
 | [[NPU_MLIR_Backend_Technical_Analysis]] | 基于 MLIR 的 NPU 后端技术分析 |
+| [[npu_mlir_backend_deep_analysis]] | **MLIR 路径深度分析**: IR 回溯、Bisheng 编译器、Scheduler patch、auto_fallback |
+| [[npu_triton_backend_deep_analysis]] | **Triton/Inductor default 路径深度分析**: golden_var_list、CATLASS/CK GEMM、35+ monkey patches、NPUIndexTritonKernel |
 | [[triton_vs_mlir_backend_analysis]] | Triton vs Torch-MLIR 后端: 六阶段概念对等映射 |
 | [[mlir_core_concepts]] | MLIR 基础: Dialect、Pass、IR 注册、递降原理 |
 

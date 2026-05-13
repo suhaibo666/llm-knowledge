@@ -1,7 +1,7 @@
 # NPU Graphs — 目录索引
 
 > 覆盖 NPU Graphs 的编译集成、内存管理、API 适配与使用指南
-> 最后更新: 2026-05-07
+> 最后更新: 2026-05-13
 
 ---
 
@@ -15,6 +15,7 @@
 | [[npugraphs_memory_reuse_analysis]] | 内存重用策略分析 |
 | [[torch_compile_mode_reduce_overhead_vs_backend_npugraphs]] | reduce_overhead 模式与 backend npugraphs 对比 |
 | [[aclgraph]] | ACL Graph (昇腾计算语言) 集成 |
+| [[aclgraph_deep_analysis]] | **ACLGraph 深度分析**: 图捕获/重放、Super Kernel、NpuGraphOpHandler、StaticKernelCompiler、与社区 CUDAGraph 差异及演进路径 |
 | [[comparison]] | CUDA Graphs vs NPU Graphs 特性对比 |
 | [[npugraphs_usage_guide.py]] | NPU Graphs 使用示例代码 |
 | [[README]] | 原始 README |

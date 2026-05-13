@@ -1,7 +1,7 @@
 # PyTorch Compilation Stack — 目录索引
 
 > 覆盖 PyTorch 编译流水线 (`torch.compile`): Dynamo 图捕获, AOT Autograd, Inductor 代码生成, CUDA/NPU Graphs
-> 最后更新: 2026-05-07
+> 最后更新: 2026-05-13
 
 ---
 
@@ -42,11 +42,12 @@ User Code → @torch.compile
 | [[torch_compile_source_analysis]] | 源码结构, 模块组织 |
 | [[torch_compile_architecture]] | 端到端流水线: Dynamo → AOT Autograd → Inductor |
 | [[triton_vs_mlir_backend_analysis]] | Triton vs Torch-MLIR: 六阶段概念对等映射, 优劣势分析 |
-| [[mlir_core_concepts]] | MLIR 基础: Dialect、Pass、IR 注册、递降原理 |
+| [[mlir_core_concepts]] | MLIR 基础: Dialect、Pass、IR 注册; Mesh Dialect、IREE、StableHLO、Triton 3.x |
 | [[torch_mlir_pass_pipeline_analysis]] | torch-mlir Pass 管线: 按执行顺序的 34 个 Pass 完整分析 |
 | [[PyTorch_Dynamo_Technical_Analysis]] | 帧评估 API, 字节码符号执行, guard 生成 |
 | [[PyTorch_Inductor_Technical_Analysis]] | Inductor IR, 调度, 代码生成后端 |
 | [[Pytorch_Compile_Debug_Analysis]] | 调试技巧, 日志解读 |
+| [[mindspore_compiler_analysis]] | MindSpore 编译器: ANF 图、MindCompiler Pass、AKG Polyhedral、ParallelAuto |
 
 ### 编译优化
 
@@ -60,6 +61,9 @@ User Code → @torch.compile
 | [[pre_grad_passes_guide]] | 预梯度优化 passes |
 | [[post_grad_passes_guide]] | 后梯度优化 passes |
 | [[joint_graph_passes_guide]] | 联合图优化 passes |
+| [[flex_attention_analysis]] | FlexAttention: 可组合注意力融合, BlockMask, score_mod, 语义驱动 codegen |
+| [[tilelang_analysis]] | TileLang: Tile-Level IR, Host Codegen, Z3 SMT 验证, 通算 wave 绑定 |
+| [[comm_compute_fusion_guide]] | 通算融合: WaveEP、DeepEP、TP/DP/PP/CP 各维度重叠, 自动化路线图 |
 
 ### NPU 后端
 
@@ -67,10 +71,13 @@ User Code → @torch.compile
 |------|---------|
 | [[npu_lowering_guide]] | NPU 特定 lowering |
 | [[npu_compile]] | NPU 编译工作流 |
+| [[npu_compile_paths_overview]] | **NPU torch.compile 路径总览**: 三条路径 (Triton/ACLGraph/MLIR) 差异、收益、演进路线 |
 | [[NPU_Inductor_Backend_Analysis]] | NPU 后端集成架构 |
 | [[NPU_Inductor_Backend_Mechanism]] | NPU 后端内部机制 |
 | [[NPU_MLIR_Backend_Technical_Analysis]] | MLIR 基 NPU 后端 |
 | [[npu_mlir_pipeline_analysis]] | NPU MLIR 六阶段适配全景: GPU vs NPU 逐阶段对比 |
+| [[npu_triton_backend_deep_analysis]] | **Triton/Inductor default 路径深度分析**: golden_var_list、CATLASS/CK GEMM、35+ monkey patches、NPUIndexTritonKernel |
+| [[npu_mlir_backend_deep_analysis]] | **MLIR 路径深度分析**: IR 回溯、Bisheng 编译器、Scheduler patch、auto_fallback |
 | [[mlir_core_concepts]] | MLIR 基础: Dialect、Pass、IR 注册 |
 
 ### CUDA/NPU Graphs
@@ -86,6 +93,7 @@ User Code → @torch.compile
 | [[npugraphs_memory_reuse_analysis]] | 内存重用 |
 | [[torch_compile_mode_reduce_overhead_vs_backend_npugraphs]] | reduce_overhead vs npugraphs |
 | [[aclgraph]] | ACL Graph 集成 |
+| [[aclgraph_deep_analysis]] | **ACLGraph 深度分析**: 图捕获/重放、Super Kernel、NpuGraphOpHandler、与社区 CUDAGraph 差异及演进路径 |
 | [[comparison]] | CUDA vs NPU Graphs 对比 |
 
 ---
@@ -95,7 +103,13 @@ User Code → @torch.compile
 - **TorchDynamo guard 失败调试** — 常见但未记录
 - **Inductor autotuning** — Triton kernel autotuning 策略
 - **动态形状支持完整性** — 已知限制未编目
-- **Multi-backend dispatch** — Inductor 在 CUDA/NPU 间选择逻辑
+- **NPU Monkey Patch 演进追踪** — v2.7.1 35+ → v2.9.0 ~10 → master ~8，每次 PyTorch 升级需人工对齐内部接口
+- **CATLASS/CK GEMM 模板库生态** — 社区 CUTLASS 与 NPU CATLASS 差异，CK 适配 Ascend 的完整机制未文档化
+- **IR 回溯机制通用性** — MLIR 路径的 FX Graph 重建仅适用于特定场景，泛化方案待探索
+- **Multi-backend dispatch** — Inductor 在 CUDA/NPU 间选择逻辑（部分覆盖，见 [[npu_compile_paths_overview]]）
+- **IREE 实际 Pass 细节** — Flow/Stream Dialect 的具体 Pass 列表未深入
+- **TileLang 源码分析** — DeepSeek V4 TileLang 实现未开源，当前分析基于论文描述
+- **Triton 3.x MLIR 迁移进度** — H100 TMA 以外的特性支持状态未跟踪
 
 ---
 

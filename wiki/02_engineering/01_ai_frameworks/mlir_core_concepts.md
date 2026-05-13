@@ -581,6 +581,183 @@ MLIRContext (全局上下文)
 
 ---
 
+## 补充：MLIR 生态的四个关键扩展
+
+> 最后更新: 2026-05-12
+
+### A. MLIR Mesh Dialect：通信作为一等公民
+
+**背景**：传统 ML 编译器（包括早期 MLIR）将集合通信（AllReduce、AllGather、All-to-All）视为"外部调用"——它们不出现在 IR 中，编译器 Pass 无法感知和优化通信。
+
+**Mesh Dialect 解法**：
+
+```mlir
+// 1. 声明分布式 mesh（设备拓扑）
+mesh.mesh @model_mesh<["tensor"=4, "data"=8]>  // 4-way TP × 8-way DP
+
+// 2. 通信算子作为普通 IR Op（可被 Pass 分析和重排）
+%ag_result, %token = mesh.all_gather %local_shard
+    on @model_mesh[<"tensor">]
+    async : tensor<256x512xf32> -> (tensor<1024x512xf32>, !mesh.token)
+
+// 3. async token 表达依赖关系（细粒度同步）
+%partial = mesh.wait_chunk %token, 0..256 : tensor<256x512xf32>
+%result = linalg.matmul %partial, %weight ...
+// → Pass 可以分析：matmul 只需要 all_gather 的前 256 行
+//   → 可以生成 WaveEP 风格的流水线：后续 chunk 与 matmul 并行
+```
+
+**对 Pass 体系的影响**：
+- 通信算子可以参与 `reorder_for_locality`（与计算节点重排）
+- `bucket_*` Pass 的等价操作可以在 Mesh Dialect 层实现
+- 未来：WaveEP 的 wave-level 流水线调度可以作为 Mesh Dialect Pass 自动生成
+
+**当前状态**（2026-05）：Mesh Dialect 已进入 MLIR 上游，但 Pass 体系（通信与计算的自动调度）仍在积极开发中。
+
+---
+
+### B. IREE：从 MLIR 到硬件的完整独立编译器
+
+**IREE（Internet Relay Execution Engine）** 是基于 MLIR 的完整 ML 部署编译器，目标是"一套代码，所有硬件"：
+
+```
+IREE 编译流水线：
+
+输入：StableHLO / MLIR Torch Dialect / TOSA
+        ↓
+┌─────────────────┐
+│  Flow Dialect    │  ← 数据流分析、算子分发策略
+│  Pass 重点:      │    workgroup 粒度决策
+│  - 算子分组      │    I/O 分析
+│  - 分发策略      │
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│  Stream Dialect  │  ← 异步执行模型、内存管理
+│  Pass 重点:      │    async execution + barrier 插入
+│  - 异步调度      │    buffer 生命周期
+│  - 内存规划      │
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│  HAL Dialect     │  ← 硬件抽象层（统一接口）
+│  后端:           │
+│  - CUDA (GPU)    │
+│  - Vulkan (GPU)  │
+│  - Metal (Apple) │
+│  - ROCm (AMD)    │
+│  - 昇腾 NPU      │
+└─────────────────┘
+```
+
+**IREE 的核心差异化**：
+
+| 特性 | IREE | torch.compile |
+|------|------|--------------|
+| 通信感知 | Stream Dialect 原生异步 | Post-Grad Pass 插入 |
+| 硬件无关 | ✅（HAL 统一接口）| ❌（Triton=CUDA, MLIR=NPU）|
+| AOT 部署 | ✅（生成独立二进制）| 部分（torch.export）|
+| 社区状态 | `iree-org/iree-turbine`（活跃）| `pytorch/pytorch`（主干）|
+
+**与 torch-mlir 的关系**：
+```
+torch-mlir（llvm/torch-mlir）:
+  FX Importer → Torch Dialect → Linalg → ...（到 LLVM 为止）
+  
+IREE（iree-org）:
+  接收 StableHLO/Linalg → Flow → Stream → HAL → 硬件二进制
+  
+组合使用：
+  torch.compile（FX Graph捕获）
+    → torch-mlir（Torch Dialect → Linalg）
+    → IREE（Linalg → HAL → 硬件）
+```
+
+---
+
+### C. StableHLO：跨框架的稳定 IR 锚点
+
+**背景**：XLA HLO（High-Level Optimizer）是 Google 内部的 ML IR，但版本不稳定，社区难以依赖。
+
+**StableHLO** 是从 HLO 提取的**稳定化公开版本**，作为跨框架的 IR 锚点：
+
+```
+框架层:
+  PyTorch (torch.export) ─┐
+  JAX                     ├──→ StableHLO IR（稳定、版本化）
+  TensorFlow              ─┘
+  
+后端层:
+  StableHLO ──→ XLA 执行（Google TPU/GPU）
+  StableHLO ──→ IREE（多硬件部署）
+  StableHLO ──→ 厂商自定义后端（接入 stablehlo-to-custom）
+```
+
+**StableHLO 提供的通信算子**：
+
+```mlir
+// 集合通信作为 StableHLO Op
+%result = stablehlo.all_reduce %input
+    replica_groups = [[0, 1, 2, 3]]
+    channel_handle = {}
+    : (tensor<8x8xf32>) -> tensor<8x8xf32>
+
+// all_gather、reduce_scatter、collective_permute 同理
+// → 后端可以将这些 Op 映射到 NCCL/DeepEP/自研通信库
+```
+
+**意义**：StableHLO 打通了"框架描述并行语义 → 编译器生成通信代码"的路径，是 GSPMD 等自动并行工具的 IR 基础。
+
+---
+
+### D. Triton 3.x：向 MLIR 后端迁移
+
+**Triton 2.x 的 IR 架构**（两层）：
+
+```
+Triton DSL → TritonGPU IR → LLVM IR → PTX
+```
+
+**Triton 3.x 的变化**：Triton 的内部编译器正在迁移为基于 MLIR 的多 Dialect 架构：
+
+```
+Triton DSL
+    ↓
+Triton Dialect（MLIR）    ← 新增：Triton 算子的 MLIR 表示
+    ↓
+TritonGPU Dialect（MLIR） ← 新增：GPU 分块/调度相关语义
+    ↓
+LLVM Dialect（MLIR）
+    ↓
+PTX
+```
+
+**迁移的动机**：
+1. **MLIR Pass 复用**：Triton 可以使用 MLIR 生态的标准变换（CSE、DCE、Canonicalization）
+2. **Linalg 融合**：Triton kernel 的 tile 操作可以被 MLIR Linalg Pass 进一步优化
+3. **TMA 支持**（H100 Tensor Memory Accelerator）：通过新的 Triton MLIR Dialect 描述异步 copy 语义
+4. **生态对接**：torch-mlir 的 FxImporter 可以直接生成 Triton Dialect，无需经过 Inductor
+
+**对 torch.compile 的影响**：
+
+```
+未来可能的路径：
+  FX Graph
+    ↓ FxImporter（今天 torch-mlir 做的事）
+    ↓ Torch Dialect → Linalg Dialect
+    ↓ Linalg Tiling + Fusion Pass
+    ↓ Triton Dialect（直接生成，跳过 Inductor）
+    ↓ TritonGPU Dialect（Triton 内部 MLIR）
+    ↓ PTX
+
+这条路径使得 Inductor Scheduler 的融合决策
+可以在 Linalg Pass 层做，享受 MLIR 的形式化保证。
+```
+
+**当前状态**（2026-05）：Triton 3.x MLIR 后端在 `triton-lang/triton` 的 `main` 分支上，H100 TMA 相关特性已可用，整体迁移仍在进行中。
+
+---
+
 ## Related Pages
 
 - [[torch_mlir_pass_pipeline_analysis]] — torch-mlir Pass 管线: 按执行顺序的 34 个 Pass 完整分析
@@ -589,3 +766,6 @@ MLIRContext (全局上下文)
 - [[npu_lowering_guide]] — NPU lowering 与 Triton lowering 架构对比
 - [[torch_compile_architecture]] — torch.compile 端到端流水线
 - [[PyTorch_Inductor_Technical_Analysis]] — Inductor IR 与 Triton 代码生成
+- [[comm_compute_fusion_guide]] — Mesh Dialect 在通算自动融合中的作用
+- [[tilelang_analysis]] — TileLang 与 Triton 3.x MLIR 的 tile-level 概念关系
+- [[mindspore_compiler_analysis]] — MindSpore ANF 图与 MLIR Dialect 的 IR 对比
