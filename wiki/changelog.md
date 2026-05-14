@@ -31,6 +31,25 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-15: 新增"为什么 V4 选择 TP=1"架构分析章节
+
+**Type**: Enhancement（在修正后的文档中新增深度分析章节）
+
+**更新文件**:
+
+- `wiki/02_engineering/02_train_frameworks/deepseek_v4_tensor_parallel_analysis.html`
+  - 新增章节 **"为什么 V4 选择 TP=1：架构与工程考量"**（位于"关键发现"与"Attention 层"之间）
+  - 从 5 个维度系统分析 TP=1 的深层原因：
+    1. 压缩操作的全局性（Compressor softmax 归约、Indexer Top-K 无法在 TP 边界分片）
+    2. q_down_proj 的 duplicated 设计（需要完整 hidden_states 同时供给 q 和 kv 压缩路径）
+    3. o_group_proj 的不可分性（Grouped LoRA einsum 需要完整 attention 输出）
+    4. 延续 V3 的"弱化 TP，强化 EP+DP"设计哲学
+    5. 通信开销与计算密度的权衡（长序列下 AG/RS 数据量远大于收益）
+  - 新增 V3 vs V4 并行策略对比表
+  - 阐明"接口预留、实现待定"的工程策略
+
+---
+
 ## 2026-05-14: DeepSeek-V4 Tensor Parallel 切分方案 HTML 深度分析
 
 **Type**: Knowledge Synthesis（基于 Megatron-LM dev 分支实现 + V4 架构特性，新建 HTML 深度分析）

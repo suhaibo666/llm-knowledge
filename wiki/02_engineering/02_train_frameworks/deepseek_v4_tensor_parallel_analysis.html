@@ -98,6 +98,7 @@ pre code{background:none;padding:0}
 <div class="toc"><h3>目录</h3>
 <ol>
 <li><a href="#s1">关键发现：V4 TP 的真实面貌</a></li>
+<li><a href="#s1-5">为什么 V4 选择 TP=1：架构与工程考量</a></li>
 <li><a href="#s2">Attention 层：TP size = 1 的设计约束</a></li>
 <li><a href="#s3">Compressor/Indexer：Duplicated 模式</a></li>
 <li><a href="#s4">mHC：非 TP-aware 的梯度同步方案</a></li>
@@ -136,6 +137,96 @@ pre code{background:none;padding:0}
 <tr><td>MoE Shared Expert</td><td>标准 TP 切分</td><td>标准 TP 切分 (pg_collection.tp)</td><td><code>shared_experts.py:118</code></td></tr>
 <tr><td>MoE Routed Expert (fused)</td><td>ETP 切分</td><td><strong>不支持 TP &gt; 1</strong></td><td><code>experts.py:328-329</code></td></tr>
 </table>
+
+<!-- SECTION 1.5 -->
+<h2 id="s1-5"><span class="sn">一.五</span>为什么 V4 选择 TP=1：架构与工程考量</h2>
+
+<p>TP=1 不是实现上的临时妥协，而是 V4 架构的<strong>结构性选择</strong>。从源码和架构两个维度分析，核心原因有五层：</p>
+
+<h3>1.1 压缩操作的全局性：无法在 TP 边界分片</h3>
+<p>CSA 的 <code>Compressor</code> 和 <code>Indexer</code> 是整个 Attention 路径中最关键也最特殊的操作，它们的计算特性决定了不适合 TP 切分。</p>
+
+<p><strong>Compressor</strong> 在序列维度执行 <code>softmax(score, dim=1).sum(dim=1)</code> 的归约（<code>csa.py:377</code>）。这个操作将 <code>ratio</code> 个 token 压缩为 1 个，涉及跨 token 的 softmax 和 weighted sum。如果按 head/output 维度 TP 切分，每个 rank 只能看到部分 score，需要额外的 AllGather 才能计算正确的 softmax 分母——这比标准 Attention 的 TP 同步更复杂。</p>
+
+<p><strong>CSAIndexer</strong> 的 Top-K 选择（<code>csa.py:532</code>）基于全局的 compressed KV 计算索引。若 KV 被 TP 切分，每个 rank 只能索引本地持有的 KV 子集，会丢失全局 Top-K 的准确性。</p>
+
+<p>源码直接通过 <code>parallel_mode="duplicated"</code> 规避了这个问题：</p>
+
+<pre><code>self.linear_wkv = build_module(..., parallel_mode="duplicated")   # csa.py:297
+self.linear_wgate = build_module(..., parallel_mode="duplicated") # csa.py:309
+self.linear_wq_b = build_module(..., parallel_mode="duplicated")  # csa.py:460</code></pre>
+<p class="src">来源：megatron/core/transformer/experimental_attention_variant/csa.py</p>
+
+<div class="callout ct"><strong>关键结论</strong>：即使 Attention 的其他部分（q_up_proj/kv_proj/output_proj）做了 TP 切分，<strong>Compressor 和 Indexer 仍需在每个 rank 上持有完整输入并重复计算</strong>。这会使得 TP 的收益大打折扣——线性层的 FLOPs 可以分摊，但压缩和索引的计算无法分摊。</div>
+
+<h3>1.2 q_down_proj 的 duplicated 设计：需要完整 hidden states 做压缩</h3>
+
+<pre><code>self.linear_q_down_proj = build_module(
+    ...,
+    tp_group=None,           # deepseek_v4_hybrid_attention.py:438
+    parallel_mode='duplicated',
+)</code></pre>
+<p class="src">来源：megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:427-439</p>
+
+<p><code>q_down_proj</code> 的输出维度是 <code>q_lora_rank</code>（通常远小于 hidden_size），但它的输入是完整的 <code>hidden_states</code>。更重要的是，<code>q_down_proj</code> 的输入 <code>hidden_states</code> 同时被 <code>kv_compressed = hidden_states</code> 直接复用（<code>deepseek_v4_hybrid_attention.py:558</code>），作为 KV 压缩的输入传入 <code>Compressor</code>。</p>
+
+<p>如果 <code>q_down_proj</code> 做 ColumnParallel，输入 <code>hidden_states</code> 需要先 AllGather（因为 RowParallel 的下一层需要完整输入），而 KV 压缩也需要完整的 <code>hidden_states</code>——这导致输入侧需要两次全量数据准备，通信收益被抵消。<code>tp_group=None</code> 的选择说明设计者认为：<strong>在压缩路径上保持完整输入比 TP 切分更划算</strong>。</p>
+
+<h3>1.3 o_group_proj 的不可分性：Grouped LoRA 结构</h3>
+
+<pre><code>_linear_o_group_proj = torch.empty(
+    group_proj_out_size, group_proj_in_size, ...
+)
+self.linear_o_group_proj = torch.nn.Parameter(_linear_o_group_proj)  # deepseek_v4_hybrid_attention.py:172-179</code></pre>
+<p class="src">来源：megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:172-179</p>
+
+<p>输出投影不是标准的线性层，而是 <code>o_groups</code> 个独立的 LoRA 投影（<code>einsum("...gd,grd->...gr", core_attn_out, wo_a_weight)</code>，<code>deepseek_v4_hybrid_attention.py:376</code>）。这个分组的 einsum 操作在 <code>o_groups</code> 维度上需要完整的注意力输出。</p>
+
+<p>如果强行 TP 切分，需要在 einsum 前 AllGather 完整的 attention 输出（跨越 head 维度），然后在 einsum 后再按 hidden_size 维度重新分片——这种复杂的通信模式使得标准 Column/Row Parallel 无法直接套用。<code>nn.Parameter</code> 的手动创建绕过了 Megatron 的 TP 切分基础设施。</p>
+
+<h3>1.4 延续 V3 的设计哲学：弱化 TP，强化 EP+DP</h3>
+
+<p>DeepSeek-V3 的训练 infra 明确声明 <strong>"No tensor parallelism needed"</strong>。V4 延续了这一哲学：</p>
+
+<table>
+<tr><th>维度</th><th>V3</th><th>V4 (当前实现)</th></tr>
+<tr><td>Attention</td><td>MLA, TP=1</td><td>MLA + CSA/HCA, <strong>TP=1</strong></td></tr>
+<tr><td>MoE</td><td>EP + DP</td><td>EP + DP, Routed Expert <strong>TP=1</strong></td></tr>
+<tr><td>主要通信</td><td>EP All-to-All</td><td>EP All-to-All + CP Ring-AG</td></tr>
+</table>
+
+<p>V3/V4 的每 token 激活参数量很小（V3 37B，V4 的 CSA/HCA 进一步降低了激活量），通过 <strong>EP（Expert Parallelism）</strong> 和 <strong>DP（Data Parallelism）</strong> 就能将模型分布到集群。TP 的收益前提是单 layer 的参数量或激活量足够大，以至于切分后每个 rank 的计算量显著减少。但 V4 的：</p>
+<ul>
+<li><strong>Attention 层</strong>：由于 MLA 的 KV 共享和 CSA 的压缩，Attention 的激活占用已经很小</li>
+<li><strong>MoE 层</strong>：Routed Expert 通过 EP 已经将 expert 分布到不同 GPU，TP 进一步切分 expert 的边际收益有限</li>
+</ul>
+
+<p>在 <code>experts.py:328-329</code> 中，<code>TEGroupedMLP</code> 明确拒绝 <code>TP &gt; 1</code>：</p>
+
+<pre><code>if self.tp_group.size() &gt; 1:
+    return _unsupported(f"expert TP &gt; 1 (tp_size={self.tp_group.size()})")</code></pre>
+<p class="src">来源：megatron/core/transformer/moe/experts.py:328-329</p>
+
+<div class="callout ct"><strong>这表明 NVIDIA/Megatron-LM 团队在 fused kernel 路径上也不认为 Expert TP 是当前 priority</strong>。</div>
+
+<h3>1.5 通信开销与计算密度的权衡</h3>
+<p>假设未来移除 <code>assert tp == 1</code>，V4 Attention 的 TP 通信量包括：</p>
+<ul>
+<li><code>q_up_proj</code> AllGather: <code>S·B·num_heads·q_head_dim × (T-1)/T</code></li>
+<li><code>kv_proj</code> AllGather: <code>S·B·v_head_dim × (T-1)/T</code></li>
+<li><code>output_proj</code> ReduceScatter: <code>S·B·H × (T-1)/T</code></li>
+</ul>
+
+<p>但注意这些通信的收益是：</p>
+<ul>
+<li><strong>线性层参数量分摊</strong>：<code>q_up_proj</code>、<code>kv_proj</code>、<code>output_proj</code> 的参数量被 T 除</li>
+<li><strong>Attention 核心计算不分摊</strong>：因为 <code>Compressor</code> 和 <code>Indexer</code> 是 duplicated，每个 rank 仍需执行完整的压缩和索引</li>
+<li><strong>o_group_proj 不分摊</strong>：这是 <code>nn.Parameter</code>，无法通过 TP 分片</li>
+</ul>
+
+<p>与标准 Dense Attention 相比，V4 的 TP 收益被压缩路径的 duplicated 计算抵消。设计者可能评估后认为：<strong>TP 节省的显存和线性层计算量，不足以覆盖额外的 AllGather/ReduceScatter 通信开销，尤其是在长序列（S=1M）场景下</strong>。</p>
+
+<div class="callout ca"><strong>接口预留的深意</strong>：ModuleSpec 层面保留了 Column/Row Parallel 接口（<code>backend.column_parallel_linear()</code> / <code>backend.row_parallel_linear()</code>），但 <code>__init__</code> 中加了 <code>assert tp == 1</code>——<strong>接口为未来预留，但当前实现选择不走 TP 路径</strong>。这是一种务实的工程策略：不阻塞未来的 TP 扩展，但也不在当前引入未经验证的复杂切分逻辑。</div>
 
 <!-- SECTION 2 -->
 <h2 id="s2"><span class="sn">二</span>Attention 层：TP size = 1 的设计约束</h2>
