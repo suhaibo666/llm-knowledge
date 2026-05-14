@@ -4,6 +4,49 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-15: DeepSeek-V4 Tensor Parallel 分析重大修正（基于 Megatron-LM dev 源码）
+
+**Type**: Correction / Rewrite（基于实际源码的全面重写，纠正此前推断性分析中的重大错误）
+
+**修正文件**:
+
+- `wiki/02_engineering/02_train_frameworks/deepseek_v4_tensor_parallel_analysis.html`
+  - **纠正 1**：DSv4 Hybrid Attention 实际强制 `TP size = 1`（`assert get_pg_size(self.pg_collection.tp) == 1`），此前错误推断为 Column+Row Parallel 切分
+  - **纠正 2**：`q_down_proj` 为 `tp_group=None` + `parallel_mode="duplicated"`，不是 ColumnParallel
+  - **纠正 3**：Compressor (`linear_wkv`, `linear_wgate`) 和 CSAIndexer (`linear_wq_b`, `linear_weights_proj`) 均为 `parallel_mode="duplicated"`，不产生 TP 通信
+  - **纠正 4**：mHC 使用原生 `nn.Linear`（非 TP-sharded），依赖 `sequence_parallel` 属性进行梯度同步，不是 Column+Row Parallel
+  - **纠正 5**：Routed Expert 的 fused `TEGroupedMLP` 不支持 `TP > 1`（`experts.py:328-329`），此前错误推断为 ETP 切分
+  - **修正 6**：通信量分析全面重写——当前实现下 Attention、mHC、Routed Expert 的 TP 通信均为 0，主要跨 rank 通信仅剩 EP All-to-All 和 CP Ring-AG
+  - 新增明确的源码引用（文件路径 + 行号）
+  - 新增 "关键发现对比表" 和 "Future Work" 章节
+
+**源码依据**:
+
+- `/Users/suhaibo/97-llm/Megatron-LM/megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:87-88, 172-195, 421-454`
+- `/Users/suhaibo/97-llm/Megatron-LM/megatron/core/transformer/experimental_attention_variant/csa.py:288-309, 451-474`
+- `/Users/suhaibo/97-llm/Megatron-LM/megatron/core/transformer/hyper_connection.py:150-151, 187-200`
+- `/Users/suhaibo/97-llm/Megatron-LM/megatron/core/transformer/moe/experts.py:328-329`
+- `/Users/suhaibo/97-llm/Megatron-LM/megatron/core/transformer/moe/shared_experts.py:112-159`
+- `/Users/suhaibo/97-llm/Megatron-LM/megatron/core/models/gpt/experimental_attention_variant_module_specs.py:183-196`
+
+---
+
+## 2026-05-14: DeepSeek-V4 Tensor Parallel 切分方案 HTML 深度分析
+
+**Type**: Knowledge Synthesis（基于 Megatron-LM dev 分支实现 + V4 架构特性，新建 HTML 深度分析）
+
+**入库文件**:
+
+- `wiki/02_engineering/02_train_frameworks/deepseek_v4_tensor_parallel_analysis.html`
+  - 8 节深度分析：V4 架构概览与 TP 必要性、CSA/HCA Attention 层 TP 列行并行策略、MoE ETP 切分（共享专家+路由专家）、mHC 流形约束超连接的切分特殊性、逐层通信量统一公式推导、TP Bulk vs Pipelined Overlap 掩盖方案、TP×EP×PP×CP 四维协同调度、配置决策树
+  - 含 5 幅 SVG 图表：CSA TP 数据流、MoE Expert ETP 切分、Bulk Overlap 原理、四维并行通信组拓扑、TP 配置决策树
+
+**交叉引用更新**:
+
+- `02_train_frameworks/index.md` — 页面列表新增 deepseek_v4_tensor_parallel_analysis.html 条目
+
+---
+
 ## 2026-05-14: 分布式优化器深度分析 HTML 入库
 
 **Type**: Ingestion（HTML 深度分析文档入库，无需新建 .md）
