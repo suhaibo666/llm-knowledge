@@ -4,6 +4,24 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-14: 分布式优化器深度分析 HTML 入库
+
+**Type**: Ingestion（HTML 深度分析文档入库，无需新建 .md）
+
+**入库文件**:
+
+- `wiki/02_engineering/02_train_frameworks/distributed_optimizer_deep_dive.html`
+  - 7 节深度分析：ZeRO 分片体系通信量等价性、梯度累积对 ZeRO-1/2 的差异化影响 (K×P)、FSDP2/Megatron/MindSpeed 三方对比、MindSpeed param 临时化与 zero-copy、Adam vs Muon 优化器内存估算 (18→14 bytes/param)、Muon Newton-Schulz 对 ZeRO 切分的根本性挑战、选型决策树
+  - 含 6 幅 SVG 图表：DDP vs ZeRO 通信量、梯度累积通信差异、Overlap 机制对比、MindSpeed 内存布局、Element-wise vs 矩阵运算、选型决策树
+
+**交叉引用更新**:
+
+- `megatron-lm/index.md` — Memory & Compute Optimization 节新增 HTML 文件条目
+- `megatron-lm/megatron_distributed_optimizer_analysis.md` — Related Pages 新增链接
+- `02_train_frameworks/index.md` — 页面列表新增条目
+
+---
+
 ## 2026-05-13: torch_npu torch.compile 三条路径深度分析
 
 **Type**: Knowledge Synthesis（基于 torch_npu 源码级分析，新建 4 页 + 更新 3 页）

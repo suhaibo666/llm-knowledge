@@ -28,6 +28,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 | Page | Key Concepts |
 |------|-------------|
 | [[megatron_distributed_optimizer_analysis]] | ZeRO-1/2 optimizer state sharding, Reduce-Scatter + All-Gather communication, FP8/FP4 quantized params, CPU offloading (HybridDeviceOptimizer, StateOffloader), precision-aware optimizer |
+| [[../distributed_optimizer_deep_dive.html\|distributed_optimizer_deep_dive]] | FSDP2/ZeRO/MindSpeed 三方对比, 梯度累积通信量 (K×P), param 临时化与 zero-copy, Adam vs Muon 内存估算 (18→14 bytes/param), Muon 对 ZeRO 切分的根本性挑战 |
 | [[megatron_memory_optimization_analysis]] | NCCL memory pool, MoE Paged Stash (3-tier overflow), fine-grained activation offloading, param/grad buffer reuse (MXFP8 shared, NVFP4 dual), FP8/FP4 parameter precision, CUDA graph buffer reuse, resharding |
 | [[megatron_fusion_operators_analysis]] | Bias+Activation fusion (GEGLU/SwiGLU/GELU), fused LayerNorm, fused Softmax, MoE-specific fusions (pad routing map, indices converter, weighted squared ReLU), fused Cross-Entropy, fused All-to-All (DeepEP/HybridEP), FP8 input store, Triton/CUTLASS/cuTile kernels |
 

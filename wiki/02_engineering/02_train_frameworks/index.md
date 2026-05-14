@@ -18,6 +18,7 @@
 | [[megatron-lm/index]] | Megatron-LM 源码 | 分布式并行、通信优化、MoE |
 | [[llm_parallelism_analysis]] | Megatron-LM 源码验证 | 正反向 DAG, TP/SP/EP/CP 通信依赖 |
 | [[mooncake_analysis]] | Mooncake (Kimi) | 分离式推理架构, 分布式 KV Cache, RDMA |
+| [[distributed_optimizer_deep_dive.html]] | 综合深度分析 | FSDP2/ZeRO/MindSpeed 对比, 梯度累积, Adam vs Muon |
 
 ---
 
