@@ -1,6 +1,6 @@
 # LLM Knowledge Wiki — 知识库总索引
 
-> 最后更新: 2026-05-08
+> 最后更新: 2026-05-15
 
 ---
 
@@ -23,7 +23,8 @@ wiki/
 └── 02_engineering/                    # 工程实现
     ├── 01_ai_frameworks/              # AI框架 (PyTorch compile)
     │   ├── cudagraphs/
-    │   └── inductor/
+    │   ├── inductor/
+    │   └── mlir/
     ├── 02_train_frameworks/           # 训练框架 (Megatron-LM)
     │   └── megatron-lm/
     ├── 03_infer_frameworks/           # 推理框架
@@ -38,9 +39,9 @@ wiki/
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| 模型 | [[01_theory/01_models/index]] | 32 | 活跃 |
-| └─ DeepSeek | [[01_theory/01_models/deepseek/index]] | 18 | 活跃 |
-| └─ Kimi | [[01_theory/01_models/moonshot_kimi/index]] | 4 | 活跃 |
+| 模型 | [[01_theory/01_models/index]] | 28 | 活跃 |
+| └─ DeepSeek | [[01_theory/01_models/deepseek/index]] | 19 | 活跃 |
+| └─ Kimi | [[01_theory/01_models/moonshot_kimi/index]] | 6 | 活跃 |
 | └─ GLM | [[01_theory/01_models/zhipu_glm/index]] | 3 | 活跃 |
 | 预训练 | [[01_theory/02_pretraining/index]] | 7 | 活跃 |
 | SFT & 低参微调 | [[01_theory/03_sft/index]] | 0 | 待建设 |
@@ -53,11 +54,12 @@ wiki/
 |------|------|--------|------|
 | AI框架 | [[02_engineering/01_ai_frameworks/index]] | 35 | 活跃 |
 | └─ CUDA/NPU Graphs | [[02_engineering/01_ai_frameworks/cudagraphs/index]] | 10 | 活跃 |
-| └─ TorchInductor | [[02_engineering/01_ai_frameworks/inductor/index]] | 17 | 活跃 |
+| └─ TorchInductor | [[02_engineering/01_ai_frameworks/inductor/index]] | 14 | 活跃 |
+| └─ MLIR | [[02_engineering/01_ai_frameworks/mlir/index]] | 6 | 新 |
 | 训练框架 | [[02_engineering/02_train_frameworks/index]] | 8 | 活跃 |
 | └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 6 | 活跃 |
-| 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 1 | 待建设 |
-| 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 0 | 预留 |
+| 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 2 | 活跃 |
+| 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 1 | 活跃 |
 
 ---
 

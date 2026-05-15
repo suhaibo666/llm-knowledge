@@ -12,10 +12,6 @@
 | [[attention_is_all_you_need_analysis]] | Attention Is All You Need | Transformer 架构、多头注意力、位置编码 |
 | [[scaling_laws_analysis]] | Scaling Laws | 幂律缩放、计算最优训练、临界批次大小 |
 | [[long_context_scaling_law_analysis]] | Long Context Scaling Law | 长上下文互信息缩放、Transformer vs SSM |
-| [[Engram_Analysis]] | DeepSeek Engram | 记忆稀疏性、条件记忆、N-gram 哈希 |
-| [[mHC]] | DeepSeek mHC | 流形约束超连接、Sinkhorn-Knopp 投影 |
-| [[moba_analysis]] | MoBA (Kimi) | MoE 块注意力、动态 top-k、1M 序列加速 |
-| [[kimi_linear_analysis]] | KDA (Kimi) | 通道级遗忘门、KV Cache 减少 75% |
 
 ## 模型家族
 

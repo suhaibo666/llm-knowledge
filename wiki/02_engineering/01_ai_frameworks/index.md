@@ -27,7 +27,8 @@ User Code → @torch.compile
 
 | 目录 | 核心主题 |
 |------|---------|
-| [[inductor/index]] | Inductor IR, lowering, codegen, scheduling, NPU 后端 (17 篇) |
+| [[inductor/index]] | Inductor IR, lowering, codegen, scheduling, NPU 后端 (14 篇) |
+| [[mlir/index]] | MLIR 核心概念、Torch-MLIR Pass 管线、Triton vs MLIR、NPU MLIR 后端 (6 篇) |
 | [[cudagraphs/index]] | CUDA Graphs 使用指南, NPU Graphs 对比 (10 篇) |
 | [[cudagraphs/npugraphs/index]] | NPU Graphs 深度分析 (8 篇) |
 
@@ -41,9 +42,6 @@ User Code → @torch.compile
 |------|---------|
 | [[torch_compile_source_analysis]] | 源码结构, 模块组织 |
 | [[torch_compile_architecture]] | 端到端流水线: Dynamo → AOT Autograd → Inductor |
-| [[triton_vs_mlir_backend_analysis]] | Triton vs Torch-MLIR: 六阶段概念对等映射, 优劣势分析 |
-| [[mlir_core_concepts]] | MLIR 基础: Dialect、Pass、IR 注册; Mesh Dialect、IREE、StableHLO、Triton 3.x |
-| [[torch_mlir_pass_pipeline_analysis]] | torch-mlir Pass 管线: 按执行顺序的 34 个 Pass 完整分析 |
 | [[PyTorch_Dynamo_Technical_Analysis]] | 帧评估 API, 字节码符号执行, guard 生成 |
 | [[PyTorch_Inductor_Technical_Analysis]] | Inductor IR, 调度, 代码生成后端 |
 | [[Pytorch_Compile_Debug_Analysis]] | 调试技巧, 日志解读 |
@@ -63,7 +61,6 @@ User Code → @torch.compile
 | [[joint_graph_passes_guide]] | 联合图优化 passes |
 | [[flex_attention_analysis]] | FlexAttention: 可组合注意力融合, BlockMask, score_mod, 语义驱动 codegen |
 | [[tilelang_analysis]] | TileLang: Tile-Level IR, Host Codegen, Z3 SMT 验证, 通算 wave 绑定 |
-| [[comm_compute_fusion_guide]] | 通算融合: WaveEP、DeepEP、TP/DP/PP/CP 各维度重叠, 自动化路线图 |
 
 ### NPU 后端
 
@@ -74,11 +71,7 @@ User Code → @torch.compile
 | [[npu_compile_paths_overview]] | **NPU torch.compile 路径总览**: 三条路径 (Triton/ACLGraph/MLIR) 差异、收益、演进路线 |
 | [[NPU_Inductor_Backend_Analysis]] | NPU 后端集成架构 |
 | [[NPU_Inductor_Backend_Mechanism]] | NPU 后端内部机制 |
-| [[NPU_MLIR_Backend_Technical_Analysis]] | MLIR 基 NPU 后端 |
-| [[npu_mlir_pipeline_analysis]] | NPU MLIR 六阶段适配全景: GPU vs NPU 逐阶段对比 |
 | [[npu_triton_backend_deep_analysis]] | **Triton/Inductor default 路径深度分析**: golden_var_list、CATLASS/CK GEMM、35+ monkey patches、NPUIndexTritonKernel |
-| [[npu_mlir_backend_deep_analysis]] | **MLIR 路径深度分析**: IR 回溯、Bisheng 编译器、Scheduler patch、auto_fallback |
-| [[mlir_core_concepts]] | MLIR 基础: Dialect、Pass、IR 注册 |
 
 ### CUDA/NPU Graphs
 

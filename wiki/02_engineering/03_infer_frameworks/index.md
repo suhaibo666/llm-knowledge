@@ -1,13 +1,15 @@
 # 推理框架 — 目录索引
 
-> 覆盖 LLM 推理框架的架构与实现（vLLM、TRT-LLM 等）
-> 最后更新: 2026-05-08
+> 覆盖 LLM 推理框架的架构与实现（vLLM、TRT-LLM、Mooncake 等）
+> 最后更新: 2026-05-15
 
 ---
 
-## 状态：待建设
+## 页面列表
 
-本目录尚未创建 wiki 页面。`raw/02_engineering/03_infer_frameworks/` 当前为空。
+| 页面 | 来源 | 核心主题 |
+|------|------|---------|
+| [[mooncake_analysis]] | Mooncake (Kimi) | 分离式推理架构, 分布式 KV Cache, Prefill/Decode 池分离, RDMA |
 
 ---
 
@@ -15,3 +17,4 @@
 
 - [[../02_train_frameworks/index]] — 训练框架
 - [[../01_ai_frameworks/index]] — AI 框架（推理图优化）
+- [[../../01_theory/05_inference/index]] — 推理技术理论

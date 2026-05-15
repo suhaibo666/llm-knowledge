@@ -17,7 +17,7 @@
 |------|------|---------|
 | [[megatron-lm/index]] | Megatron-LM 源码 | 分布式并行、通信优化、MoE |
 | [[llm_parallelism_analysis]] | Megatron-LM 源码验证 | 正反向 DAG, TP/SP/EP/CP 通信依赖 |
-| [[mooncake_analysis]] | Mooncake (Kimi) | 分离式推理架构, 分布式 KV Cache, RDMA |
+| [[comm_compute_fusion_guide]] | 综合深度分析 | 通算融合: WaveEP、DeepEP、TP/DP/PP/CP 各维度重叠, 自动化路线图 |
 | [[distributed_optimizer_deep_dive.html]] | 综合深度分析 | FSDP2/ZeRO/MindSpeed 对比, 梯度累积, Adam vs Muon |
 | [[deepseek_v4_tensor_parallel_analysis.html]] | Megatron-LM dev 源码 | DeepSeek-V4 TP 切分方案, CSA/HCA/MoE/mHC 通信量与 Overlap |
 

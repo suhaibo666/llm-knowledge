@@ -214,4 +214,4 @@ Kimi Linear 基于 **Moonlight** (K2 基础架构)，面向 K2.5 及后续模型
 
 - [[01_theory/index]]
 - [[01_theory/01_models/attention_is_all_you_need_analysis]]
-- [[01_theory/01_models/moba_analysis]]
+- [[moba_analysis]]

@@ -44,6 +44,7 @@
 | [[deepseek_moe_analysis]] | DeepSeek-MoE 架构, 细粒度专家, 负载均衡 |
 | [[deepseek_prover_analysis]] | DeepSeek-Prover-V1.5, Lean 4 定理证明 |
 | [[deepseek_vl_analysis]] | DeepSeek-VL, 视觉语言对齐 |
+| [[Engram_Analysis]] | 条件记忆, N-gram 哈希, 记忆稀疏性 |
 
 ---
 

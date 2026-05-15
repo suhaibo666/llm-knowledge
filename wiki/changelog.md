@@ -4,6 +4,24 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-15: 知识库目录结构重整
+
+**Type**: Reorganization
+
+**变更内容**:
+
+- **新建 `mlir/` 子目录** (`wiki/02_engineering/01_ai_frameworks/mlir/`)
+  - 从 `01_ai_frameworks/` 移入: `mlir_core_concepts.md`、`torch_mlir_pass_pipeline_analysis.md`、`triton_vs_mlir_backend_analysis.md`
+  - 从 `inductor/` 移入: `npu_mlir_backend_deep_analysis.md`、`npu_mlir_pipeline_analysis.md`、`NPU_MLIR_Backend_Technical_Analysis.md`
+- **模型论文归位**:
+  - `Engram_Analysis.md` → `deepseek/`
+  - `moba_analysis.md`、`kimi_linear_analysis.md` → `moonshot_kimi/`
+- **跨域移动**:
+  - `comm_compute_fusion_guide.md` → `02_train_frameworks/`
+  - `mooncake_analysis.md` → `03_infer_frameworks/`
+  - `batch_invariance_guide.md` → `04_posttrain_frameworks/`
+- **索引更新**: 所有受影响的 `index.md` 已同步更新
+
 ## 2026-05-15: DeepSeek-V4 Tensor Parallel 分析重大修正（基于 Megatron-LM dev 源码）
 
 **Type**: Correction / Rewrite（基于实际源码的全面重写，纠正此前推断性分析中的重大错误）

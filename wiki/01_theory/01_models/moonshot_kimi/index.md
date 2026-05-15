@@ -176,13 +176,13 @@ k1.5 RL 框架 (2025.01)
 
 | 论文 | arXiv | Wiki 页面 |
 |------|-------|----------|
-| Mooncake: KVCache-centric Disaggregated Architecture | 2407.00079 | [[02_engineering/02_train_frameworks/mooncake_analysis]] |
-| MoBA: Mixture of Block Attention | 2502.13189 | [[01_theory/01_models/moba_analysis]] |
+| Mooncake: KVCache-centric Disaggregated Architecture | 2407.00079 | [[02_engineering/03_infer_frameworks/mooncake_analysis]] |
+| MoBA: Mixture of Block Attention | 2502.13189 | [[moba_analysis]] |
 | Kimi k1.5: Scaling RL with LLMs | 2501.12599 | [[01_theory/04_posttraining/kimi_k1.5_analysis]] |
 | Kimi VL Technical Report | 2504.07491 | 待摄入 |
 | Kimi Audio Technical Report | 2504.18425 | 待摄入 |
 | Kimi K2: Open Agentic Intelligence | 2507.20534 | [[kimi_k2_analysis]] |
-| Kimi Linear: Expressive Efficient Attention | 2510.26692 | [[01_theory/01_models/kimi_linear_analysis]] |
+| Kimi Linear: Expressive Efficient Attention | 2510.26692 | [[kimi_linear_analysis]] |
 | Kimi K2.5: Visual Agentic Intelligence | 2602.02276 | [[kimi_k2.5_analysis]] |
 
 ---
