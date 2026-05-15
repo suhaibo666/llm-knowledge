@@ -68,6 +68,32 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-15: DeepSeek-V4 Context Parallelism 实现深度分析（基于 Megatron-LM dev 源码）
+
+**Type**: Knowledge Synthesis（基于 Megatron-LM dev 分支 CP 实现源码，新建 HTML 深度分析）
+
+**入库文件**:
+
+- `wiki/02_engineering/02_train_frameworks/deepseek_v4_context_parallel_analysis.html`
+  - 9 节深度分析：CP 进程组拓扑（含 Hierarchical CP）、4 种 CP 通信类型（p2p/all_gather/a2a/a2a+p2p）、Native CP 实现（AttentionFuncionWithContextParallel autograd.Function）、TransformerEngine CP 支持（cp_stream Ring Attention）、DSv4 CP 适配（RoPE cp_group、CSA p2p、Dynamic CP 限制）、通信量分析（MLA 使 CP 通信降低 ~128x）、Overlap 机制（TE P2P vs Native AllGather）、Dynamic CP 运行时机制、配置推荐
+  - 含 5 幅 SVG 图表：CP 进程组拓扑、4 种通信类型数据流、Native CP 前向/反向通信、TE CP Ring Attention 掩盖、DSv4 CP 适配架构
+
+**源码依据**:
+
+- `/Users/suhaibo/97-llm/Megatron-LM/megatron/core/transformer/dot_product_attention_context_parallel.py` — Native CP autograd.Function，AllGather/ReduceScatter 实现
+- `/Users/suhaibo/97-llm/Megatron-LM/megatron/core/extensions/transformer_engine.py` — TE CP 初始化，cp_stream，cp_comm_type 配置
+- `/Users/suhaibo/97-llm/Megatron-LM/megatron/core/parallel_state.py` — CP group 创建，Hierarchical CP `create_hierarchical_groups`
+- `/Users/suhaibo/97-llm/Megatron-LM/megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py` — DSv4 CP 集成，RoPE cp_group，Dynamic CP 不支持
+- `/Users/suhaibo/97-llm/Megatron-LM/megatron/core/transformer/experimental_attention_variant/csa.py` — CSA 默认 `cp_comm_type="p2p"`
+- `/Users/suhaibo/97-llm/Megatron-LM/megatron/core/transformer/transformer_config.py` — CP 通信类型定义与校验
+- `/Users/suhaibo/97-llm/Megatron-LM/megatron/core/model_parallel_config.py` — Dynamic CP 配置
+
+**交叉引用更新**:
+
+- `02_train_frameworks/index.md` — 页面列表新增 deepseek_v4_context_parallel_analysis.html 条目
+
+---
+
 ## 2026-05-14: DeepSeek-V4 Tensor Parallel 切分方案 HTML 深度分析
 
 **Type**: Knowledge Synthesis（基于 Megatron-LM dev 分支实现 + V4 架构特性，新建 HTML 深度分析）
