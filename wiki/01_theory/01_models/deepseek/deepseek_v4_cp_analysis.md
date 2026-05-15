@@ -1,6 +1,6 @@
 # DeepSeek-V4 Context Parallelism (CP) 深度分析
 
-> **来源**: `raw/05_model_families/deepseek/DeepSeek_V4.pdf` §3.5.3  
+> **来源**: `raw/01_theory/01_models/deepseek/DeepSeek_V4.pdf` §3.5.3  
 > **创建日期**: 2026-04-28  
 > **作者**: DeepSeek-AI  
 
@@ -108,8 +108,8 @@ Step 1 (Send):  rank_i 将其最后 c 个未压缩 KV entries 发送给 rank_{i+
 Step 2 (Recv):  rank_i 从 rank_{i-1} 接收 c 个未压缩 KV entries
 
 Step 3 (Compress): rank_i 将收到的 c 个 entries 与自己本地的前 c 个 entries
-                   合并压缩，产生 (c+1) 个固定长度的 compressed entries
-                   (含可能的 padding entries)
+                   合并压缩，产生 1（CSA 重叠窗口）或 2（HCA 无重叠）个
+                   boundary compressed entries
 ```
 
 **关键性质**：
@@ -125,7 +125,7 @@ Step 3 (Compress): rank_i 将收到的 c 个 entries 与自己本地的前 c 个
 
 ```
 All-Gather 输入:  每个 rank 的本地压缩 KV entries (~S/(P·c) 个)
-All-Gather 输出:  每个 rank 获得完整压缩 KV (总长度 = P × c)
+All-Gather 输出:  每个 rank 获得完整压缩 KV (总长度 ≈ S/c，即 P × S/(P·c))
 
 Fused Select-and-Pad 算子:
   - Select: 按 precomputed rules / sparse indices 筛选每个 query 的可见 entries

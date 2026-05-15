@@ -740,12 +740,12 @@ kv = _apply_rope(
 )</code></pre>
 <p class="src">来源：megatron/core/transformer/experimental_attention_variant/csa.py:574, 389</p>
 
-<div class="callout ca"><strong>CSA + CP 的特殊性</strong>：
+<div class="callout cc"><strong>CSA + CP 的特殊性（当前代码为功能降级版）</strong>：
 <ul>
 <li>Compressor 对输入 <code>x</code>（完整 local sequence）执行压缩，压缩后 KV 长度为 <code>S_local / compress_ratio</code></li>
-<li>由于每个 CP rank 独立压缩本地序列，压缩后的 KV 也需要在 CP 组内通信（如果 attention 需要跨 rank 的压缩 KV）</li>
-<li>但 <code>CompressedSparseAttention</code> 的当前实现中，压缩 KV 只参与本地 attention（通过 Indexer 选择本地压缩位置），因此压缩后的 KV 不需要额外的 CP 通信</li>
-<li>CSA 的 sliding window attention 天然只关注本地序列和压缩 KV，与 CP 的序列分片策略兼容</li>
+<li>论文设计要求两阶段通信（P2P 解决边界 + AllGather 收集跨 rank 压缩 KV），但当前代码均未实现（详见 §5.5）</li>
+<li>当前实现中，压缩 KV 只参与本地 attention，每个 rank 只能看到本地的 <code>S_local / compress_ratio</code> 个压缩 token，而非论文要求的全局 <code>S / compress_ratio</code> 个</li>
+<li>CSA 的边界压缩组（rank &gt; 0 的第 0 组）使用 fill_value 填充而非真实 token，压缩质量有所下降</li>
 </ul>
 </div>
 
@@ -840,7 +840,10 @@ if self.compressor is not None and self.compress_ratio > 1:
 
 <div class="formula">
 <b>P2P 数据量（per boundary）</b>：<br>
-ratio × hidden_size （ratio=4 时，约 4×7168 = 28K elements ≈ 56 KB fp16）<br><br>
+ratio × dim_per_token（dim 取决于 Compressor 的输入维度）<br>
+- 若 Compressor 接收原始 hidden states（dim=7168）：ratio=4 时，约 4×7168 = 28K elements ≈ 56 KB fp16<br>
+- 若 Compressor 接收 MLA 投影后的 KV（dim = n_kv_heads × head_dim，远小于 7168）：数据量更小<br>
+⚠️ 准确值需确认代码中 Compressor 输入 <code>x</code> 的实际维度<br><br>
 <b>掩盖策略</b>：<br>
 1. 在计算本 rank 第 1~n 组压缩的同时，异步 <code>irecv</code> 前一个 rank 的边界 token<br>
 2. 收到边界数据后，再计算第 0 组压缩<br>
@@ -904,7 +907,7 @@ ReduceScatter(dV): B × S × h<sub>k</sub> × d × (C-1)/C<br>
 <div class="formula">
 <b>MLA CP 通信量（per layer）:</b><br>
 KV 通信量（压缩后）: 4 × (C-1)/C × B × S × 1 × d<sub>v</sub><br>
-其中 h<sub>k</sub> = 1（MQA），d<sub>v</sub> = v_head_dim<br><br>
+其中 h<sub>k</sub> = 1（MLA 低秩潜变量压缩效果，通信量等效于 MQA），d<sub>v</sub> = v_head_dim<br><br>
 
 <b>对比 Standard MHA:</b><br>
 MHA: 4 × (C-1)/C × B × S × h<sub>k</sub> × d<br>
@@ -920,15 +923,16 @@ MLA: 4 × (C-1)/C × B × S × 1 × d<sub>v</sub><br>
 <p>CSA 层的 CP 通信量需要额外考虑压缩 KV 的处理：</p>
 
 <div class="formula">
-<b>CSA CP 通信量（per layer）:</b><br>
+<b>CSA CP 通信量（per layer）— 论文设计目标，当前代码未完全实现：</b><br>
 本地 KV（未压缩）: 4 × (C-1)/C × B × S × 1 × d<sub>v</sub><br>
-压缩 KV（compress_ratio=m=4）:<br>
+压缩 KV（compress_ratio=m=4，论文 Stage 2 AllGather）:<br>
 - 每个 rank 本地压缩，产生 S<sub>local</sub>/m 个压缩 token<br>
 - 若 attention 需要跨 rank 的压缩 KV（HCA 模式），需额外 AllGather<br>
 - 额外通信: 2 × (C-1)/C × B × (S/m) × d<sub>v</sub><br><br>
 
-<b>CSA 总通信量 ≈ 4 × (C-1)/C × B × S × d<sub>v</sub> × (1 + 1/(2m))</b><br>
-当 m=4 时，压缩 KV 的额外通信仅占 ~12.5%，开销可控。
+<b>论文设计总通信量 ≈ 4 × (C-1)/C × B × S × d<sub>v</sub> × (1 + 1/(2m))</b><br>
+当 m=4 时，压缩 KV 的额外通信仅占 ~12.5%，开销可控。<br>
+⚠️ <b>当前代码实际通信量</b>：仅含本地 KV 通信，压缩 KV 的 AllGather 尚未实现，CSA 层无跨 rank 压缩 KV 同步。
 </div>
 
 <div class="callout ct"><strong>关键结论</strong>：MLA 的 KV 压缩使得 V4 在 CP 场景下的通信量相比标准 MHA 降低两个数量级（~1/128）。这是 V4 能够支持超长序列（1M+）训练的核心原因之一——即使 CP size = 8，每层的 CP 通信量也仅为 <code>~4 × 7/8 × B × 1M × 64 bytes ≈ 224 MB × B</code>，在 NVLink 上可在毫秒级完成。</div>
@@ -1077,7 +1081,7 @@ self.pg_collection.cp = _orig_cp_group</code></pre>
 
 <div class="callout ct"><strong>特征 4：Dynamic CP 暂不支持 MLA/DSv4</strong> — 当前实现中，MLA 和 DSv4 Hybrid Attention 需要固定 CP size，无法根据序列长度动态调整。这是未来版本的重要优化方向。</div>
 
-<div class="callout ct"><strong>特征 5：CSA 压缩与 CP 天然兼容</strong> — CSA 的 sliding window + compressed KV 结构使得每个 CP rank 的 attention 计算基本本地完成，压缩 KV 的额外通信量仅占 ~12.5%（m=4 时）。</div>
+<div class="callout ca"><strong>特征 5：CSA 压缩与 CP 的兼容尚未完整实现</strong> — 论文设计中 CSA+CP 通过两阶段通信（P2P 边界 + AllGather 压缩 KV）可将额外通信量控制在 ~12.5%（m=4 时）。但当前 Megatron-LM 代码尚未实现该设计（压缩 KV AllGather 缺失、边界组使用 fill_value 填充），CSA 层实际 CP 通信量为 0 但功能不完整。完整实现是未来的重要工作项。</div>
 
 <h3>9.2 配置决策树</h3>
 <div class="diagram">
