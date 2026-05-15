@@ -4,6 +4,26 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-16: DeepSeek-V4 CP 分析报告准确性修正
+
+**Type**: Correction（对已有文档进行准确性审核并修正错误）
+
+**修正文件**:
+
+- `wiki/01_theory/01_models/deepseek/deepseek_v4_cp_analysis.md`
+  - **修正 1**：源文件路径错误 — `raw/05_model_families/deepseek/DeepSeek_V4.pdf` → `raw/01_theory/01_models/deepseek/DeepSeek_V4.pdf`
+  - **修正 2**：Stage 1 Step 3 压缩输出数量错误 — `(c+1) 个 compressed entries` → `1（CSA 重叠窗口）或 2（HCA 无重叠）个 boundary compressed entries`（原公式与 2c tokens / ratio c 的数学不一致）
+  - **修正 3**：Stage 2 All-Gather 输出长度公式错误 — `总长度 = P × c`（与 S 无关的常数，量级完全错误）→ `总长度 ≈ S/c，即 P × S/(P·c)`
+
+- `wiki/02_engineering/02_train_frameworks/deepseek_v4_context_parallel_analysis.html`
+  - **修正 1（§5.2 callout）**：删除误导性"CSA 与 CP 的序列分片策略兼容"表述，改为明确说明当前代码是功能降级版（AllGather 缺失、fill_value 边界填充）
+  - **修正 2（§6.3）**：`h_k = 1（MQA）` → `MLA 低秩潜变量压缩效果，通信量等效于 MQA`，避免将 MLA 误称为 MQA
+  - **修正 3（§6.4）**：CSA CP 通信量公式标注为"论文设计目标，当前代码未完全实现"，补充实际代码行为（CSA 层跨 rank 压缩 KV 通信量为 0）
+  - **修正 4（§5.5 Gap 4）**：P2P 数据量 `ratio × hidden_size` 改为按 Compressor 输入维度分情况讨论，加 ⚠️ 提示需确认实际维度
+  - **修正 5（§9.1 特征 5）**："CSA 压缩与 CP 天然兼容" → "CSA 压缩与 CP 的兼容尚未完整实现"，如实反映当前代码状态
+
+---
+
 ## 2026-05-15: 知识库目录结构重整
 
 **Type**: Reorganization
