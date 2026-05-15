@@ -76,7 +76,9 @@ All source ingestions and significant wiki updates are logged here.
 
 - `wiki/02_engineering/02_train_frameworks/deepseek_v4_context_parallel_analysis.html`
   - 9 节深度分析：CP 进程组拓扑（含 Hierarchical CP）、4 种 CP 通信类型（p2p/all_gather/a2a/a2a+p2p）、Native CP 实现（AttentionFuncionWithContextParallel autograd.Function）、TransformerEngine CP 支持（cp_stream Ring Attention）、DSv4 CP 适配（RoPE cp_group、CSA p2p、Dynamic CP 限制）、通信量分析（MLA 使 CP 通信降低 ~128x）、Overlap 机制（TE P2P vs Native AllGather）、Dynamic CP 运行时机制、配置推荐
-  - 含 5 幅 SVG 图表：CP 进程组拓扑、4 种通信类型数据流、Native CP 前向/反向通信、TE CP Ring Attention 掩盖、DSv4 CP 适配架构
+  - **新增 5.5 节**：CSA/HCA CP 论文设计与代码实现的 Gap 分析——基于 csa.py 源码审计，指出 `cp_comm_type` 参数未实际使用、`_overlap_transform` 跨 rank 依赖未解决（fill_value 填充边界）、压缩 KV 的 AllGather 缺失、P2P 与计算掩盖可行性分析
+  - **新增 2.4 节**：四种 CP 方法的 QKV 交互图示——4 幅 SVG 详细展示 p2p（Q 固定，K/V 轮转）、all_gather（聚合完整 K/V）、a2a（All-to-All 交换序列/Head 维度）、a2a+p2p（分层 NVLink A2A + IB P2P）的 token 收发细节与计算数据布局
+  - 含 9 幅 SVG 图表（新增 4 幅交互图示）
 
 **源码依据**:
 
