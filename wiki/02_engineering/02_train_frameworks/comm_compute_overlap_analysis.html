@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>计算通信掩盖机制深度对比：Megatron-LM vs torchtitan</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+:root {
+  --bg:#fafaf8;--bg2:#f2f1ed;--bg3:#e8e7e3;
+  --tx:#1a1a18;--tx2:#5f5e5a;--tx3:#888780;
+  --bd:rgba(0,0,0,0.1);--bd2:rgba(0,0,0,0.06);
+  --blue:#378ADD;--blue-bg:#E6F1FB;--blue-dk:#0C447C;
+  --teal:#1D9E75;--teal-bg:#E1F5EE;--teal-dk:#085041;
+  --purple:#7F77DD;--purple-bg:#EEEDFE;--purple-dk:#3C3489;
+  --amber:#EF9F27;--amber-bg:#FAEEDA;--amber-dk:#633806;
+  --coral:#D85A30;--coral-bg:#FAECE7;--coral-dk:#712B13;
+  --red:#E24B4A;--red-bg:#FCEBEB;--red-dk:#791F1F;
+  --gray-bg:#F1EFE8;--gray-dk:#444441;
+  --green:#639922;--green-bg:#EAF3DE;--green-dk:#27500A;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1a1a18;--bg2:#2c2c2a;--bg3:#3d3d3a;
+  --tx:#e8e7e3;--tx2:#b4b2a9;--tx3:#888780;
+  --bd:rgba(255,255,255,0.1);--bd2:rgba(255,255,255,0.06);
+  --blue-bg:#042C53;--blue-dk:#85B7EB;
+  --teal-bg:#04342C;--teal-dk:#5DCAA5;
+  --purple-bg:#26215C;--purple-dk:#AFA9EC;
+  --amber-bg:#412402;--amber-dk:#FAC775;
+  --coral-bg:#4A1B0C;--coral-dk:#F0997B;
+  --red-bg:#501313;--red-dk:#F09595;
+  --gray-bg:#2C2C2A;--gray-dk:#D3D1C7;
+  --green-bg:#173404;--green-dk:#97C459;
+}}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Noto Sans SC',system-ui,sans-serif;background:var(--bg);color:var(--tx);line-height:1.8;font-size:15px}
+.wrap{max-width:880px;margin:0 auto;padding:40px 24px 80px}
+h1{font-size:28px;font-weight:700;margin:0 0 8px;letter-spacing:-0.5px}
+h1 span{display:block;font-size:14px;font-weight:400;color:var(--tx2);margin-top:4px;letter-spacing:0}
+h2{font-size:20px;font-weight:700;margin:48px 0 16px;padding-bottom:8px;border-bottom:2px solid var(--bd)}
+h3{font-size:16px;font-weight:600;margin:32px 0 12px}
+p{margin:0 0 14px;color:var(--tx2)}
+.lead{font-size:16px;color:var(--tx2);margin:0 0 32px;padding:16px 20px;background:var(--bg2);border-radius:8px;border-left:3px solid var(--teal)}
+table{width:100%;border-collapse:collapse;margin:16px 0 24px;font-size:13px}
+th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--bd2)}
+th{font-weight:600;color:var(--tx);background:var(--bg2);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+td{color:var(--tx2)}
+tr:hover td{background:var(--bg2)}
+code{font-family:'JetBrains Mono',monospace;font-size:13px;background:var(--bg2);padding:2px 6px;border-radius:4px;color:var(--tx)}
+pre{background:var(--bg2);border-radius:8px;padding:16px 20px;margin:12px 0 20px;overflow-x:auto;font-size:13px;line-height:1.6;border:1px solid var(--bd2)}
+pre code{background:none;padding:0}
+.diagram{margin:24px 0;background:var(--bg);border:1px solid var(--bd);border-radius:12px;padding:20px;overflow:hidden}
+.diagram svg{width:100%;height:auto;display:block}
+.diagram-cap{font-size:12px;color:var(--tx3);text-align:center;margin-top:8px}
+.diagram svg text.th{font-family:'Noto Sans SC',system-ui,sans-serif;font-size:14px;font-weight:500;fill:var(--tx)}
+.diagram svg text.ts{font-family:'Noto Sans SC',system-ui,sans-serif;font-size:12px;fill:var(--tx2)}
+.diagram svg text.tm{font-family:'JetBrains Mono',monospace;font-size:12px;fill:var(--tx2)}
+.diagram svg .fb rect{fill:var(--blue-bg);stroke:var(--blue);stroke-width:.5}
+.diagram svg .fb text{fill:var(--blue-dk)}
+.diagram svg .ft rect{fill:var(--teal-bg);stroke:var(--teal);stroke-width:.5}
+.diagram svg .ft text{fill:var(--teal-dk)}
+.diagram svg .fp rect{fill:var(--purple-bg);stroke:var(--purple);stroke-width:.5}
+.diagram svg .fp text{fill:var(--purple-dk)}
+.diagram svg .fa rect{fill:var(--amber-bg);stroke:var(--amber);stroke-width:.5}
+.diagram svg .fa text{fill:var(--amber-dk)}
+.diagram svg .fc rect{fill:var(--coral-bg);stroke:var(--coral);stroke-width:.5}
+.diagram svg .fc text{fill:var(--coral-dk)}
+.diagram svg .fg rect{fill:var(--gray-bg);stroke:var(--tx3);stroke-width:.5}
+.diagram svg .fg text{fill:var(--gray-dk)}
+.callout{padding:14px 18px;border-radius:8px;margin:16px 0;font-size:14px}
+.ct{background:var(--teal-bg);border-left:3px solid var(--teal);color:var(--teal-dk)}
+.cc{background:var(--coral-bg);border-left:3px solid var(--coral);color:var(--coral-dk)}
+.cb{background:var(--blue-bg);border-left:3px solid var(--blue);color:var(--blue-dk)}
+.ca{background:var(--amber-bg);border-left:3px solid var(--amber);color:var(--amber-dk)}
+.formula{background:var(--bg2);border:1px solid var(--bd2);border-radius:8px;padding:14px 18px;margin:12px 0 20px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.8;color:var(--tx2)}
+.formula b{color:var(--tx);font-weight:500}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
+.bt{background:var(--teal-bg);color:var(--teal-dk)}
+.bc{background:var(--coral-bg);color:var(--coral-dk)}
+.bp{background:var(--purple-bg);color:var(--purple-dk)}
+.toc{background:var(--bg2);border-radius:8px;padding:20px 24px;margin:24px 0 40px}
+.toc h3{margin:0 0 12px;font-size:14px}
+.toc ol{padding-left:20px}
+.toc li{margin:4px 0;font-size:14px;color:var(--tx2)}
+.toc a{color:var(--blue);text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.sn{color:var(--teal);font-weight:700;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>计算通信掩盖机制深度对比<span>Megatron-LM combined_1f1b · torchtitan ZBV/DualPipe · DeepEP/HybridEP · EP+PP 交叉掩盖</span></h1>
+
+<p class="lead">基于对 Megatron-LM 和 torchtitan 两个分布式训练框架源码的系统分析，从 TP/EP/PP 三个并行维度梳理计算通信掩盖的实现机制，重点剖析 combined_1f1b 的 sub-layer 级调度逻辑与 ZBV/DualPipe 的 stage 级调度差异，以及为何通用的 PP 调度框架无法实现 sub-layer 级掩盖。</p>
+
+<div class="toc"><h3>目录</h3>
+<ol>
+<li><a href="#s1">掩盖机制的概念分层</a></li>
+<li><a href="#s2">Megatron-LM 掩盖机制全景</a></li>
+<li><a href="#s3">torchtitan 掩盖机制全景</a></li>
+<li><a href="#s4">combined_1f1b 调度逻辑深度剖析</a></li>
+<li><a href="#s5">ZBVZeroBubble 与 DualPipeV 上游实现</a></li>
+<li><a href="#s6">Sub-Layer 级掩盖为何无法被泛化</a></li>
+<li><a href="#s7">框架差异总结</a></li>
+</ol></div>
+
+<!-- ══════════ SECTION 1 ══════════ -->
+<h2 id="s1"><span class="sn">一</span>掩盖机制的概念分层</h2>
+
+<p>计算通信掩盖（Comm-Compute Overlap）在分布式训练中存在于多个粒度层次。理解这些层次，是理解两个框架差异的前提。</p>
+
+<div class="diagram">
+<svg viewBox="0 0 680 380">
+<text class="th" x="40" y="28">掩盖机制的三层金字塔</text>
+
+<g class="fb"><rect x="140" y="48" width="400" height="52" rx="8"/>
+<text class="th" x="340" y="68" text-anchor="middle" dominant-baseline="central">Layer 3：跨 micro-batch + 跨 parallel 维度</text>
+<text class="ts" x="340" y="88" text-anchor="middle" dominant-baseline="central">EP+PP 交叉：mb_A 的 dispatch 与 mb_B 的 mlp 并行</text></g>
+<text class="ts" x="560" y="78" style="fill:var(--blue-dk)">仅 Megatron</text>
+
+<g class="fp"><rect x="100" y="148" width="480" height="52" rx="8"/>
+<text class="th" x="340" y="168" text-anchor="middle" dominant-baseline="central">Layer 2：跨 micro-batch、stage 级</text>
+<text class="ts" x="340" y="188" text-anchor="middle" dominant-baseline="central">PP 调度：1F1B / ZBV / DualPipe / combined_1f1b</text></g>
+<text class="ts" x="600" y="178" style="fill:var(--purple-dk)">两者均有</text>
+
+<g class="ft"><rect x="60" y="248" width="560" height="52" rx="8"/>
+<text class="th" x="340" y="268" text-anchor="middle" dominant-baseline="central">Layer 1：同一 micro-batch 内</text>
+<text class="ts" x="340" y="288" text-anchor="middle" dominant-baseline="central">TP: GEMM-comm 微批量化 · EP: A2A + shared expert 重叠 · FSDP: AG/RS prefetch</text></g>
+<text class="ts" x="640" y="278" style="fill:var(--teal-dk)">两者均有</text>
+
+<text class="ts" x="40" y="328" style="fill:var(--tx3)">Layer 3 是 Megatron 独有能力——它要求框架在 sub-layer（attn/dispatch/mlp/combine）粒度上理解模型结构</text>
+<text class="ts" x="40" y="346" style="fill:var(--tx3)">Layer 1-2 两个框架都有，但实现哲学完全不同：Megatron 手动 stream 管理 vs torchtitan 依赖 PyTorch 上游机制</text>
+</svg>
+<div class="diagram-cap">图 1：掩盖机制的三层金字塔</div>
+</div>
+
+<!-- ══════════ SECTION 2 ══════════ -->
+<h2 id="s2"><span class="sn">二</span>Megatron-LM 掩盖机制全景</h2>
+
+<h3>2.1 总览</h3>
+
+<table>
+<tr><th>掩盖维度</th><th>配置开关</th><th>核心文件</th><th>机制简述</th></tr>
+<tr><td>TP GEMM-comm</td><td><code>tp_comm_overlap</code></td><td><code>tensor_parallel/layers.py</code></td><td>GEMM 拆为 micro-batch，与 AG/RS 流水线重叠</td></tr>
+<tr><td>EP A2A + Shared Expert</td><td><code>moe_shared_expert_overlap</code></td><td><code>transformer/moe/token_dispatcher.py</code><br><code>transformer/moe/shared_experts.py</code></td><td>Shared Expert 在独立 CUDA stream 上与 A2A 并发</td></tr>
+<tr><td>EP+PP 交叉掩盖</td><td><code>overlap_moe_expert_parallel_comm</code></td><td><code>pipeline_parallel/combined_1f1b.py</code><br><code>models/common/model_chunk_schedule_plan.py</code><br><code>models/gpt/fine_grained_callables.py</code></td><td>Layer 拆为 5 子节点，跨 mb 双 stream 交错</td></tr>
+<tr><td>Dispatch Bwd + Wgrad</td><td><code>overlap_dispatch_backward_with_experts_wgrad</code></td><td><code>transformer/moe/moe_layer.py</code></td><td>Expert wgrad 延迟到独立 stream 与 dispatch bwd 重叠</td></tr>
+<tr><td>PP P2P</td><td><code>overlap_p2p_comm</code><br><code>batch_p2p_comm</code></td><td><code>pipeline_parallel/schedules.py</code><br><code>pipeline_parallel/p2p_communication.py</code></td><td>异步 isend/irecv，warmup/1F1B/flush 全覆盖</td></tr>
+<tr><td>DeepEP/HybridEP</td><td><code>moe_flex_dispatcher_backend</code></td><td><code>transformer/moe/fused_a2a.py</code><br><code>transformer/moe/token_dispatcher.py</code></td><td>融合 permute + A2A 的单 kernel 通信</td></tr>
+<tr><td>DP Param Gather</td><td><code>overlap_param_gather</code></td><td><code>optimizer/layer_wise_optimizer.py</code></td><td>Layer-wise 场景 param AG 与 forward 重叠</td></tr>
+</table>
+
+<h3>2.2 TP 通信掩盖</h3>
+
+<p>将 TP Linear 层的 GEMM 与 AllGather/ReduceScatter 通信进行<strong>微批量化流水线重叠</strong>。提供逐层细粒度禁用控制。</p>
+
+<pre><code># model_parallel_config.py
+tp_comm_overlap: bool = False           # 总开关
+tp_comm_overlap_ag: bool = True          # AG 与 GEMM overlap
+tp_comm_overlap_rs: bool = True          # RS 与 GEMM overlap
+tp_comm_overlap_rs_dgrad: bool = False   # RS 与 DGRAD GEMM overlap
+tp_comm_overlap_disable_qkv: bool = False # 禁用 QKV overlap（保护 attention 局部性）
+tp_comm_overlap_disable_fc1: bool = False # 禁用 FC1 overlap</code></pre>
+
+<h3>2.3 EP 掩盖：Shared Expert + A2A 流水线</h3>
+
+<p>Shared Expert MLP 在独立 CUDA stream 上运行，通过状态机与 token dispatch/combine 的 AlltoAll 流水线交错：</p>
+
+<div class="diagram">
+<svg viewBox="0 0 680 240">
+<text class="th" x="40" y="28">AlltoAll Dispatcher 中的 Shared Expert Overlap</text>
+
+<text class="ts" x="38" y="62" text-anchor="end">comm stream</text>
+<text class="ts" x="38" y="94" text-anchor="end">comp stream</text>
+<text class="ts" x="38" y="126" text-anchor="end">side stream</text>
+
+<!-- token_dispatch phase -->
+<g class="fa"><rect x="130" y="48" width="95" height="26" rx="4"/><text class="ts" x="177" y="61" text-anchor="middle" dominant-baseline="central">tokens A2A</text></g>
+<g class="fa"><rect x="348" y="48" width="95" height="26" rx="4"/><text class="ts" x="395" y="61" text-anchor="middle" dominant-baseline="central">probs A2A</text></g>
+
+<g class="fp"><rect x="240" y="80" width="95" height="26" rx="4"/><text class="ts" x="287" y="93" text-anchor="middle" dominant-baseline="central">shared_expert fc1</text></g>
+
+<!-- token_combine phase -->
+<text class="ts" x="38" y="176" text-anchor="end">comm stream</text>
+<text class="ts" x="38" y="208" text-anchor="end">side stream</text>
+
+<g class="fa"><rect x="130" y="164" width="95" height="26" rx="4"/><text class="ts" x="177" y="177" text-anchor="middle" dominant-baseline="central">tokens A2A</text></g>
+<g class="fp"><rect x="240" y="194" width="95" height="26" rx="4"/><text class="ts" x="287" y="207" text-anchor="middle" dominant-baseline="central">shared_expert fc2</text></g>
+
+<text class="ts" x="130" y="234" style="fill:var(--tx3)">forward 顺序: tokens A2A → fc1 → probs A2A → [experts] → tokens A2A → fc2 → 输出合并</text>
+</svg>
+<div class="diagram-cap">图 2：Shared Expert 通过专属 stream 与 A2A 通信交错</div>
+</div>
+
+<p>Shared Expert 使用<strong>状态机</strong>管理调用顺序：<code>IDLE → PRE_FORWARD_COMM_DONE → FC1_FORWARD_DONE → FC2_FORWARD_DONE → POST_FORWARD_COMM_DONE → IDLE</code>，确保在不同 dispatcher 类型下正确同步。</p>
+
+<h3>2.4 DeepEP / HybridEP 融合 Kernel</h3>
+
+<p>通过 <code>MoEFlexTokenDispatcher</code> 抽象层集成 DeepSeek 的两种 EP 通信 kernel：</p>
+
+<table>
+<tr><th>Backend</th><th>硬件</th><th>机制</th><th>核心函数</th></tr>
+<tr><td><code>deepep</code></td><td>H100 / NVLink Switch</td><td>融合 permute + AlltoAll 为单 kernel</td><td><code>fused_dispatch</code> / <code>fused_combine</code></td></tr>
+<tr><td><code>hybridep</code></td><td>GB200 / NVLink72</td><td>更激进融合，GPU-side overflow flag</td><td><code>hybrid_ep_dispatch</code> / <code>hybrid_ep_combine</code></td></tr>
+</table>
+
+<div class="callout ct"><strong>Kernel 级掩盖</strong>：这些 kernel 将 token permute（排列）和 A2A（通信）融合为单个 GPU kernel 调用，消除了中间的内存搬运和 kernel launch 开销。这不是传统意义的"掩盖"，而是通过融合避免了通信暴露。</div>
+
+<!-- ══════════ SECTION 3 ══════════ -->
+<h2 id="s3"><span class="sn">三</span>torchtitan 掩盖机制全景</h2>
+
+<h3>3.1 总览</h3>
+
+<table>
+<tr><th>掩盖维度</th><th>配置</th><th>核心文件</th><th>机制简述</th></tr>
+<tr><td>EP A2A + Shared Expert</td><td>EP &gt; 1 自动</td><td><code>models/common/token_dispatcher.py</code></td><td><code>AsyncCollectiveTensor</code>：A2A 在 NCCL stream 异步，shared expert 并行</td></tr>
+<tr><td>DeepEP / HybridEP</td><td><code>comm_backend</code></td><td><code>distributed/deepep/</code><br><code>models/common/token_dispatcher.py</code></td><td>异步 combine + shared expert + <code>sync_combine()</code></td></tr>
+<tr><td>PP Zero-Bubble</td><td><code>pipeline_parallel_schedule</code></td><td>PyTorch 上游<br><code>distributed/pipeline_parallel.py</code></td><td><code>ScheduleZBVZeroBubble</code>：backward 拆 I/W 填 bubble</td></tr>
+<tr><td>PP DualPipe</td><td><code>pipeline_parallel_schedule</code></td><td>PyTorch 上游<br><code>distributed/pipeline_parallel.py</code></td><td><code>ScheduleDualPipeV</code>：V 型映射 + OVERLAP_F_B 打包</td></tr>
+<tr><td>Async TP</td><td><code>enable_async_tensor_parallel</code></td><td>PyTorch 上游<br><code>distributed/tensor_parallel.py</code></td><td>Inductor micro-pipeline TP（需 torch.compile）</td></tr>
+<tr><td>FSDP AG/RS overlap</td><td>Graph Trainer 实验</td><td><code>experiments/graph_trainer/fsdp_passes.py</code></td><td>Inductor 级 AG/RS 重排 + 额外 NCCL PG 实现并发</td></tr>
+</table>
+
+<h3>3.2 EP 掩盖：AsyncCollectiveTensor 机制</h3>
+
+<p>torchtitan 不管理 CUDA stream，而是利用 <code>all_to_all_single_autograd</code> 返回 <code>AsyncCollectiveTensor</code>：</p>
+
+<pre><code># AllToAllTokenDispatcher.combine()
+routed_output = all_to_all_single_autograd(  # → AsyncCollectiveTensor
+    routed_output, input_splits, output_splits, self.ep_mesh
+)
+out = shared_experts(x)                       # 并行计算
+out = deterministic_scatter_add(out, ..., routed_output)  # 访问 routed_output → 隐式同步</code></pre>
+
+<div class="callout cb"><strong>与 Megatron 的关键区别</strong>：Megatron 显式管理 CUDA stream + event 同步；torchtitan 依赖 PyTorch 的 <code>AsyncCollectiveTensor</code> 惰性物化机制。前者控制力强但代码复杂，后者代码简洁但受限于上游机制。</div>
+
+<h3>3.3 DeepEP 异步 Combine</h3>
+
+<pre><code># DeepEPTokenDispatcher.combine()
+routed_output = combine_tokens(routed_output, state)  # async_finish=True，立即返回
+shared_out = shared_experts(x)                        # 与 combine 通信并行
+sync_combine()                                        # 显式 CUDA stream wait
+routed_output = routed_output + shared_out            # 安全合并</code></pre>
+
+<!-- ══════════ SECTION 4 ══════════ -->
+<h2 id="s4"><span class="sn">四</span>combined_1f1b 调度逻辑深度剖析</h2>
+
+<p>这是 Megatron 最核心的独有能力——将 EP 通信掩盖与 PP 1F1B 调度打通，实现跨 micro-batch + sub-layer 级的真正并发。</p>
+
+<h3>4.1 模型层改造：Layer → 5 子节点</h3>
+
+<p><code>fine_grained_callables.py:466-707</code> 的 <code>build_transformer_layer_callables()</code> 将每个 TransformerLayer 手工拆解：</p>
+
+<div class="diagram">
+<svg viewBox="0 0 680 300">
+<text class="th" x="40" y="28">Layer 拆分：5 子节点 × 2 CUDA Streams</text>
+
+<!-- Original forward -->
+<g class="fg"><rect x="40" y="46" width="600" height="26" rx="4"/><text class="ts" x="340" y="59" text-anchor="middle" dominant-baseline="central">原始 forward: attn → pre_mlp_ln → router → dispatch → experts → combine → mlp_bda</text></g>
+
+<!-- Split -->
+<text class="ts" x="38" y="96" text-anchor="end">comp_stream</text>
+<g class="fc"><rect x="130" y="82" width="130" height="26" rx="4"/><text class="ts" x="195" y="95" text-anchor="middle" dominant-baseline="central">① attn</text></g>
+<text class="tm" x="270" y="95">→</text>
+<g class="fc"><rect x="280" y="82" width="130" height="26" rx="4"/><text class="ts" x="345" y="95" text-anchor="middle" dominant-baseline="central">③ mlp</text></g>
+<text class="tm" x="420" y="95">→</text>
+
+<g class="fc"><rect x="430" y="114" width="130" height="26" rx="4"/><text class="ts" x="495" y="127" text-anchor="middle" dominant-baseline="central">⑤ attn_bwd</text></g>
+
+<text class="ts" x="38" y="136" text-anchor="end">comm_stream</text>
+<g class="fb"><rect x="130" y="122" width="130" height="26" rx="4"/><text class="ts" x="195" y="135" text-anchor="middle" dominant-baseline="central">② moe_dispatch</text></g>
+<text class="tm" x="270" y="135">→</text>
+<g class="fb"><rect x="280" y="122" width="130" height="26" rx="4"/><text class="ts" x="345" y="135" text-anchor="middle" dominant-baseline="central">④ moe_combine</text></g>
+
+<!-- Node contents -->
+<line x1="40" y1="170" x2="640" y2="170" stroke="var(--bd)" stroke-width="0.5"/>
+
+<text class="ts" x="56" y="194">① attn 节点内容：self_attn + pre_mlp_layernorm + router + dispatch_preprocess + shared_experts_compute</text>
+<text class="ts" x="56" y="216">② moe_dispatch：token AlltoAll（EP 通信）</text>
+<text class="ts" x="56" y="238">③ mlp：dispatch_postprocess + experts compute + combine_preprocess</text>
+<text class="ts" x="56" y="260">④ moe_combine：token AlltoAll（EP 通信）+ postprocess + mlp_bda</text>
+<text class="ts" x="56" y="282" style="fill:var(--tx3)">Dense 层：② ④ 退化为 NoopScheduleNode</text>
+</svg>
+<div class="diagram-cap">图 3：TransformerLayer 的 5 子节点拆解</div>
+</div>
+
+<h3>4.2 层级调度：TransformerLayerSchedulePlan.run()</h3>
+
+<p>这是 <strong>最核心的调度函数</strong>（<code>model_chunk_schedule_plan.py:229-297</code>），将一个 f_layer（forward）和一个 b_layer（backward）在两个 stream 上交错：</p>
+
+<div class="diagram">
+<svg viewBox="0 0 680 260">
+<defs><marker id="a4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<text class="th" x="40" y="28">单层 1F1B 交错（f_layer[mb_i] + b_layer[mb_j]）</text>
+
+<text class="ts" x="38" y="62" text-anchor="end">comm_stream</text>
+<text class="ts" x="38" y="98" text-anchor="end">comp_stream</text>
+
+<!-- Phase 1 -->
+<g class="fb"><rect x="130" y="48" width="95" height="26" rx="4"/><text class="ts" x="177" y="61" text-anchor="middle" dominant-baseline="central">combine_bwd</text></g>
+<g class="fc"><rect x="130" y="84" width="95" height="26" rx="4"/><text class="ts" x="177" y="97" text-anchor="middle" dominant-baseline="central">attn_fwd</text></g>
+
+<!-- Phase 2 -->
+<g class="fb"><rect x="240" y="48" width="95" height="26" rx="4"/><text class="ts" x="287" y="61" text-anchor="middle" dominant-baseline="central">dispatch_fwd</text></g>
+<g class="fc"><rect x="240" y="84" width="95" height="26" rx="4"/><text class="ts" x="287" y="97" text-anchor="middle" dominant-baseline="central">mlp_bwd</text></g>
+
+<!-- Phase 3 -->
+<g class="fb"><rect x="350" y="48" width="110" height="26" rx="4"/><text class="ts" x="405" y="61" text-anchor="middle" dominant-baseline="central">dispatch_bwd</text></g>
+<g class="fc"><rect x="350" y="84" width="110" height="26" rx="4"/><text class="ts" x="405" y="97" text-anchor="middle" dominant-baseline="central">mlp_wgrad</text></g>
+
+<!-- Phase 4 -->
+<g class="fb"><rect x="475" y="48" width="95" height="26" rx="4"/><text class="ts" x="522" y="61" text-anchor="middle" dominant-baseline="central">combine_fwd</text></g>
+<g class="fc"><rect x="475" y="84" width="95" height="26" rx="4"/><text class="ts" x="522" y="97" text-anchor="middle" dominant-baseline="central">mlp_fwd</text></g>
+
+<!-- Phase 5 -->
+<g class="fc"><rect x="585" y="84" width="95" height="26" rx="4"/><text class="ts" x="632" y="97" text-anchor="middle" dominant-baseline="central">attn_bwd</text></g>
+
+<text class="ts" x="130" y="136" style="fill:var(--tx3)">每个阶段：不同 stream 上的节点真正并发执行，通过共享 torch.cuda.Event 同步</text>
+
+<line x1="40" y1="160" x2="640" y2="160" stroke="var(--bd)" stroke-width="0.5"/>
+
+<text class="th" x="40" y="184">执行顺序伪代码</text>
+<text class="tm" x="56" y="208"># Phase 1: b_combine(bwd, comm) ‖ f_attn(fwd, comp)</text>
+<text class="tm" x="56" y="228"># Phase 2: f_dispatch(fwd, comm)  ‖ b_mlp(bwd, comp)</text>
+<text class="tm" x="56" y="248"># Phase 3: b_dispatch(bwd, comm)  ‖ b_wgrad(comp)</text>
+<text class="tm" x="56" y="268"># Phase 4: f_combine(fwd, comm)   ‖ f_mlp(fwd, comp)</text>
+<text class="tm" x="56" y="288"># Phase 5: b_attn(bwd, comp)</text>
+</svg>
+<div class="diagram-cap">图 4：单层 f_layer + b_layer 的双 stream 交错调度</div>
+</div>
+
+<p>每个节点的 stream 上下文通过 <code>ScheduleNode.stream_acquire_context()</code> 实现：</p>
+<pre><code>def stream_acquire_context(self, name):
+    self.event.wait(self.stream)          # 等待 event → 确保前序完成
+    with torch.cuda.stream(self.stream):  # 切换到目标 stream
+        yield
+    self.event.record(self.stream)        # 记录完成 → 后续节点 wait 此 event</code></pre>
+
+<h3>4.3 Model Chunk 级调度：镜像层配对</h3>
+
+<p><code>TransformerModelChunkSchedulePlan.run()</code> 将 forward 层和 backward 层按<strong>镜像位置</strong>配对：</p>
+
+<div class="diagram">
+<svg viewBox="0 0 680 200">
+<text class="th" x="40" y="28">Chunk 级调度：forward_layer[i] + backward_layer[n-1-i]</text>
+
+<text class="ts" x="38" y="62" text-anchor="end">Phase 1</text>
+<g class="fc"><rect x="130" y="48" width="110" height="22" rx="3"/><text class="ts" x="185" y="59" text-anchor="middle" dominant-baseline="central">fwd layer[0]</text></g>
+<text class="tm" x="250" y="59">+</text>
+<g class="fb"><rect x="266" y="48" width="110" height="22" rx="3"/><text class="ts" x="321" y="59" text-anchor="middle" dominant-baseline="central">bwd layer[3]</text></g>
+<text class="ts" x="390" y="59" style="fill:var(--tx3)">← 镜像配对</text>
+
+<text class="ts" x="38" y="94" text-anchor="end">Phase 2</text>
+<g class="fc"><rect x="130" y="80" width="110" height="22" rx="3"/><text class="ts" x="185" y="91" text-anchor="middle" dominant-baseline="central">fwd layer[1]</text></g>
+<text class="tm" x="250" y="91">+</text>
+<g class="fb"><rect x="266" y="80" width="110" height="22" rx="3"/><text class="ts" x="321" y="91" text-anchor="middle" dominant-baseline="central">bwd layer[2]</text></g>
+
+<text class="ts" x="38" y="126" text-anchor="end">Phase 3</text>
+<g class="fc"><rect x="130" y="112" width="110" height="22" rx="3"/><text class="ts" x="185" y="123" text-anchor="middle" dominant-baseline="central">fwd layer[2]</text></g>
+<text class="tm" x="250" y="123">+</text>
+<g class="fb"><rect x="266" y="112" width="110" height="22" rx="3"/><text class="ts" x="321" y="123" text-anchor="middle" dominant-baseline="central">bwd layer[1]</text></g>
+
+<text class="ts" x="38" y="158" text-anchor="end">Phase 4</text>
+<g class="fc"><rect x="130" y="144" width="110" height="22" rx="3"/><text class="ts" x="185" y="155" text-anchor="middle" dominant-baseline="central">fwd layer[3]</text></g>
+<text class="tm" x="250" y="155">+</text>
+<g class="fb"><rect x="266" y="144" width="110" height="22" rx="3"/><text class="ts" x="321" y="155" text-anchor="middle" dominant-baseline="central">bwd layer[0]</text></g>
+
+<text class="ts" x="56" y="182" style="fill:var(--tx3)">bwd 侧用 pop_layer()（FILO），确保 layer 0 的 bwd 在最后（P2P 掩盖联动）</text>
+</svg>
+<div class="diagram-cap">图 5：Chunk 内的镜像层配对调度</div>
+</div>
+
+<div class="callout ca"><strong>P2P 掩盖联动</strong>：PP 的 forward send 放在 comm_stream（与 attn_bwd 重叠），backward send 放在 comp_stream（与 attn_wgrad 重叠）。最后一层 attn 的 wgrad 被延迟到 P2P backward send 之后才执行，最大化掩盖。</div>
+
+<!-- ══════════ SECTION 5 ══════════ -->
+<h2 id="s5"><span class="sn">五</span>ZBVZeroBubble 与 DualPipeV 上游实现</h2>
+
+<h3>5.1 Backward 拆分：I/W 的 autograd 级实现</h3>
+
+<p>PyTorch 的 backward 拆分完全在 <strong>autograd 图级别</strong>，不知道模型内部结构：</p>
+
+<pre><code># torch/distributed/pipelining/_backward.py
+
+def stage_backward_input(stage_outputs, output_grads, input_values, weights):
+    """只算 input gradients，停在 weight grad accumulators"""
+    # 1. 分析 autograd graph: inputs → ... → intermediates → ... → weights
+    # 2. 从 stage_output 反传到 inputs，算出 dInputs（retain_graph=True）
+    # 3. 保存 intermediates（input→weight 之间的中间节点）为 param_groups
+    # 4. detach stage_outputs 释放显存
+    dinputs = autograd.grad(stage_outputs, input_values, retain_graph=True)
+    return dinputs, param_groups
+
+def stage_backward_weight(weights, param_groups):
+    """从中间节点算 weight gradients"""
+    # 用之前存的 intermediates → autograd.grad 到 weights
+    dweights = autograd.grad(intermediates, weights)
+    return dweights</code></pre>
+
+<div class="callout cc"><strong>I/W 拆分的本质</strong>：不是按模型结构（attn vs mlp vs moe_dispatch）拆分，而是按 <strong>autograd 的计算目标</strong>（dInput vs dWeight）拆分。一个 stage 可能包含多层 Transformer，但 I 统一是所有层的 dInput，W 统一是所有层的 dWeight。</div>
+
+<h3>5.2 ZBVZeroBubble 调度模式</h3>
+
+<p>每个 rank 持有 2 个 stage chunk（V 形映射），稳态阶段模式：</p>
+
+<div class="diagram">
+<svg viewBox="0 0 680 200">
+<text class="th" x="40" y="28">ZBVZeroBubble 稳态调度（单 rank 视角，2 chunks）</text>
+
+<text class="ts" x="38" y="62" text-anchor="end">chunk0</text>
+<g class="fc"><rect x="130" y="48" width="44" height="22" rx="3"/><text class="ts" x="152" y="59" text-anchor="middle" dominant-baseline="central">F</text></g>
+<g class="fp"><rect x="180" y="48" width="44" height="22" rx="3"/><text class="ts" x="202" y="59" text-anchor="middle" dominant-baseline="central">I</text></g>
+<g class="fa"><rect x="230" y="48" width="44" height="22" rx="3"/><text class="ts" x="252" y="59" text-anchor="middle" dominant-baseline="central">W</text></g>
+
+<text class="ts" x="38" y="100" text-anchor="end">chunk1</text>
+<g class="fc"><rect x="290" y="86" width="44" height="22" rx="3"/><text class="ts" x="312" y="97" text-anchor="middle" dominant-baseline="central">F</text></g>
+<g class="fp"><rect x="340" y="86" width="44" height="22" rx="3"/><text class="ts" x="362" y="97" text-anchor="middle" dominant-baseline="central">I</text></g>
+<g class="fa"><rect x="390" y="86" width="44" height="22" rx="3"/><text class="ts" x="412" y="97" text-anchor="middle" dominant-baseline="central">W</text></g>
+
+<line x1="176" y1="110" x2="176" y2="140" stroke="var(--tx3)" stroke-width="1" marker-end="url(#a4)"/>
+
+<text class="ts" x="56" y="134">实际执行序列（同一 rank 上串行）：</text>
+<text class="tm" x="56" y="158">F(ch0)→I(ch0)→W(ch0)→F(ch1)→I(ch1)→W(ch1)→F(ch0)→I(ch0)→W(ch0)→...</text>
+<text class="ts" x="56" y="180" style="fill:var(--tx3)">每个 F/I/W 是整个 stage（多层 layer）的完整 forward/backward_input/backward_weight</text>
+</svg>
+<div class="diagram-cap">图 6：ZBVZeroBubble 调度——stage 级操作，无 sub-layer 分解</div>
+</div>
+
+<h3>5.3 DualPipeV 调度模式</h3>
+
+<p>DualPipeV 的调度分 8 个阶段（<code>schedules.py:3387-3545</code>），核心创新在 Step 4 的 <code>OVERLAP_F_B</code>：</p>
+
+<pre><code># Step 4 (稳态): F0B1 - F1B0
+for i in range(num_chunks - num_ranks * 2 + rank + 1):
+    add_overlap_f_b(F(stage0), B(stage1))   # chunk0 forward + chunk1 backward
+    add_overlap_f_b(F(stage1), B(stage0))   # chunk1 forward + chunk0 backward
+
+# OVERLAP_F_B 的内部构造：
+def add_overlap_f_b(actions, forward_stage, backward_stage):
+    sub_actions = (
+        _Action(forward_stage,  FORWARD,        f_mb),
+        _Action(backward_stage, FULL_BACKWARD,   b_mb),
+    )
+    actions.append(_Action(-1, OVERLAP_F_B, None, sub_actions))</code></pre>
+
+<div class="callout cc"><strong>OVERLAP_F_B 不是真正的并发</strong>：执行时两个子 action <strong>串行</strong>执行（先 F 后 B），并非不同 CUDA stream 上的并发。"overlap" 来源于不同 rank 之间的 P2P 异步通信——当 rank 0 在做 B(stage1) 时，rank 1 正在做 F(stage0)，两者的通信可以重叠。</div>
+
+<!-- ══════════ SECTION 6 ══════════ -->
+<h2 id="s6"><span class="sn">六</span>Sub-Layer 级掩盖为何无法被泛化</h2>
+
+<h3>6.1 根本原因：计算-通信边界是模型架构决定的</h3>
+
+<p>要在不同 micro-batch 之间交错 sub-layer 操作，框架<strong>必须知道</strong>：</p>
+
+<ol>
+<li style="margin:8px 0;color:var(--tx2)">哪些是<strong>纯计算</strong>（attention GEMM、MLP GEMM、layernorm）</li>
+<li style="margin:8px 0;color:var(--tx2)">哪些是<strong>纯通信</strong>（MoE dispatch AlltoAll、combine AlltoAll、TP AG/RS）</li>
+<li style="margin:8px 0;color:var(--tx2)">这些操作在<strong>单个 layer 内的执行顺序</strong>（先 attn → 再 dispatch → 再 mlp → 再 combine）</li>
+<li style="margin:8px 0;color:var(--tx2)">哪些中间 tensor 需要跨 stream 传递（residual、shared_expert_output）</li>
+</ol>
+
+<p>这些信息<strong>不属于任何通用的 IR</strong>——既不在 PyTorch autograd graph 里（autograd 只知道 tensor 依赖），也不在 PipeSchedule 的 stage 定义里（stage 只是一个 nn.Module 切片）。</p>
+
+<h3>6.2 Megatron 的代价：硬编码模型结构</h3>
+
+<div class="diagram">
+<svg viewBox="0 0 680 240">
+<text class="th" x="40" y="28">Megatron 为 combined_1f1b 硬编码的知识</text>
+
+<g class="fc"><rect x="40" y="50" width="600" height="26" rx="4"/>
+<text class="ts" x="340" y="63" text-anchor="middle" dominant-baseline="central">1. 知道 TransformerLayer 的 forward 是: attn → pre_mlp_ln → router → dispatch → mlp → combine → mlp_bda</text></g>
+
+<g class="fc"><rect x="40" y="80" width="600" height="26" rx="4"/>
+<text class="ts" x="340" y="93" text-anchor="middle" dominant-baseline="central">2. 知道 dispatch/combine 是"可以移到 comm_stream 上的通信操作"</text></g>
+
+<g class="fc"><rect x="40" y="110" width="600" height="26" rx="4"/>
+<text class="ts" x="340" y="123" text-anchor="middle" dominant-baseline="central">3. 知道 residual 和 shared_expert_output 需要 detach + record_stream</text></g>
+
+<g class="fc"><rect x="40" y="140" width="600" height="26" rx="4"/>
+<text class="ts" x="340" y="153" text-anchor="middle" dominant-baseline="central">4. 知道 Dense 层 → moe_dispatch/moe_combine 退化为 NoopScheduleNode</text></g>
+
+<g class="fc"><rect x="40" y="170" width="600" height="26" rx="4"/>
+<text class="ts" x="340" y="183" text-anchor="middle" dominant-baseline="central">5. 只支持 GPTModel（assert isinstance(unwrapped_model, GPTModel)）</text></g>
+
+<text class="ts" x="40" y="218" style="fill:var(--coral-dk)">代价：每个新模型架构需要维护对应的 build_layer_callables；不支持非 GPT 模型；与 CUDA Graph 冲突</text>
+</svg>
+<div class="diagram-cap">图 7：combined_1f1b 需要的硬编码知识</div>
+</div>
+
+<h3>6.3 三层掩盖能力的可达性矩阵</h3>
+
+<table>
+<tr><th></th><th>Megatron combined_1f1b</th><th>torchtitan ZBV/DualPipe</th><th>torchtitan TokenDispatcher</th></tr>
+<tr><td>同一 mb 内 EP 掩盖</td><td><span class="badge bt">✓</span> shared expert side stream</td><td><span class="badge bc">✗</span> PP 调度不涉及</td><td><span class="badge bt">✓</span> AsyncCollectiveTensor</td></tr>
+<tr><td>跨 mb 的 stage 级交错</td><td><span class="badge bt">✓</span> combined_1f1b</td><td><span class="badge bt">✓</span> ZBV/DualPipe (F/I/W)</td><td><span class="badge bc">✗</span></td></tr>
+<tr><td>跨 mb + sub-layer 级交错</td><td><span class="badge bt">✓</span> dispatch vs mlp 混排</td><td><span class="badge bc">✗</span> F 对 stage 是原子操作</td><td><span class="badge bc">✗</span></td></tr>
+<tr><td>跨 mb + EP+PP 打通</td><td><span class="badge bt">✓</span> 独有</td><td><span class="badge bc">✗</span></td><td><span class="badge bc">✗</span></td></tr>
+</table>
+
+<div class="callout ca"><strong>结论</strong>：torchtitan 的掩盖停留在两个独立层次——TokenDispatcher 的 mb 内掩盖 + ZBV/DualPipe 的 stage 级跨 mb 掩盖。两者没有打通。Megatron 通过硬编码模型结构，将这两层打通，在 sub-layer 粒度实现了跨 mb 的真正并发。</div>
+
+<!-- ══════════ SECTION 7 ══════════ -->
+<h2 id="s7"><span class="sn">七</span>框架差异总结</h2>
+
+<h3>7.1 架构哲学对比</h3>
+
+<table>
+<tr><th>维度</th><th>Megatron-LM</th><th>torchtitan</th></tr>
+<tr><td>Stream 管理</td><td>手动 CUDA stream + Event 同步</td><td>依赖 <code>AsyncCollectiveTensor</code> + NCCL stream</td></tr>
+<tr><td>调度粒度</td><td>Layer 内 sub-node 级（5 节点）</td><td>Stage 级（F/I/W）</td></tr>
+<tr><td>模型感知</td><td>硬编码 layer 内部结构</td><td>零感知（autograd graph 级）</td></tr>
+<tr><td>EP+PP 交叉</td><td><span class="badge bt">✓</span> combined_1f1b</td><td><span class="badge bc">✗</span></td></tr>
+<tr><td>PP bubble 消除</td><td>传统 1F1B + P2P overlap</td><td><span class="badge bt">✓</span> ZBV / DualPipe（更先进）</td></tr>
+<tr><td>模型支持</td><td>GPTModel（含 MTP）</td><td>llama3/4, qwen3, deepseek_v3, gpt_oss, flux</td></tr>
+<tr><td>代码复杂度</td><td>高（~1200 行调度 + 模型改造）</td><td>低（调度在上游，模型无改造）</td></tr>
+<tr><td>与 compile 兼容</td><td>部分冲突（CUDA Graph 禁用）</td><td><span class="badge bt">✓</span>（co-design）</td></tr>
+</table>
+
+<h3>7.2 适用场景</h3>
+
+<div class="callout ct"><strong>Megatron combined_1f1b 适合</strong>：千卡以上 MoE 训练，EP 通信延迟是瓶颈。需要将 EP A2A 通信与 PP 1F1B 打通才能最大化 MFU。典型场景：DeepSeek-V3 风格 MoE 在 GB200/H100 集群上训练。</div>
+
+<div class="callout cb"><strong>torchtitan ZBV/DualPipe 适合</strong>：中等规模训练，PP bubble 是主要瓶颈。利用上游 PyTorch 的先进调度（ZB/DualPipe），代码简洁，模型零侵入。典型场景：Dense 模型 PP 训练，或 MoE 模型在 EP 通信不构成主要瓶颈时。</div>
+
+<h3>7.3 一句话总结</h3>
+
+<div class="callout ct"><strong>Megatron 做的是 sub-layer 级跨 micro-batch 的 EP+PP 打通，torchtitan 做的是 stage 级跨 micro-batch 的 PP 调度优化。</strong>ZBV/DualPipe 的 I/W 拆分解决的是"如何用 weight gradient 计算填满 PP bubble"，而不是"如何将 EP AlltoAll 通信与另一个 micro-batch 的 attention 计算重叠"。后者需要框架知道模型内部结构——这是通用的 PP 调度框架做不到的，也是 Megatron combined_1f1b 硬编码模型知识才能实现的能力。</div>
+
+</div>
+</body>
+</html>
