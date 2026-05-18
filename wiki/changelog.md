@@ -4,6 +4,26 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-17: Megatron-LM Pipeline Parallelism 分析报告
+
+**Type**: New Page
+
+**新增文件**:
+
+- `wiki/02_engineering/02_train_frameworks/megatron_pp_parallelism_analysis.html`
+  - **§1**: PP 进程组与拓扑 (`parallel_state.py`) — 4 类进程组、UCC/NCCL 双后端、辅助通信组
+  - **§2**: 4 种调度策略总览 — Non-Interleaved 1F1B / Interleaved 1F1B (VPP) / Combined 1F1B / No-Pipelining
+  - **§3**: Non-Interleaved 1F1B 详细执行流 — Warmup/Steady/Cooldown 三阶段公式、SVG 流水线时序图
+  - **§4**: Interleaved 1F1B (VPP) — 微批量到 Chunk 的映射表、Bubble 验证与计算并行度提升
+  - **§5**: P2P 通信原语 — `isend/irecv` vs `batch_isend_irecv`、交替组策略 (PP=2 优化)、`P2PCommunicator` 封装
+  - **§6**: Combined 1F1B (EP 通算重叠) — `AbstractSchedulePlan` 层级别交错、AllGather/ReduceScatter 重叠
+  - **§7**: Bubble 分析与通信量公式 — 气泡比推导、非交错 vs 交错对比、P2P 通信量公式
+  - **§8**: 激活检查点与内存优化 — Partial AC、Deallocate Pipeline Outputs、Defer Embedding Wgrad
+  - **§9**: 细粒度激活卸载 — `PipelineOffloadManager`、D2H/H2D 双流、`post_warmup_callback` 自适应调参
+  - **§10**: 配置推荐与决策树 — 4 种典型场景配置速查表
+
+---
+
 ## 2026-05-16: DeepSeek-V4 CP 分析报告准确性修正
 
 **Type**: Correction（对已有文档进行准确性审核并修正错误）

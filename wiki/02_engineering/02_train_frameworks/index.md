@@ -21,6 +21,7 @@
 | [[distributed_optimizer_deep_dive.html]] | 综合深度分析 | FSDP2/ZeRO/MindSpeed 对比, 梯度累积, Adam vs Muon |
 | [[deepseek_v4_tensor_parallel_analysis.html]] | Megatron-LM dev 源码 | DeepSeek-V4 TP 切分方案, CSA/HCA/MoE/mHC 通信量与 Overlap |
 | [[deepseek_v4_context_parallel_analysis.html]] | Megatron-LM dev 源码 | DeepSeek-V4 CP 实现, 4 种通信类型, Native/TE CP, Dynamic CP, MLA 通信量优化 |
+| [[megatron_pp_parallelism_analysis.html]] | Megatron-LM 源码 | PP 并行: 1F1B/VPP/Combined 调度, P2P 通信, Bubble 分析, 激活优化与卸载 |
 
 ---
 

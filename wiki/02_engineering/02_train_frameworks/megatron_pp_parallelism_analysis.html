@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Megatron-LM Pipeline Parallelism 实现深度解析</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+:root {
+  --bg:#fafaf8;--bg2:#f2f1ed;--bg3:#e8e7e3;
+  --tx:#1a1a18;--tx2:#5f5e5a;--tx3:#888780;
+  --bd:rgba(0,0,0,0.1);--bd2:rgba(0,0,0,0.06);
+  --blue:#378ADD;--blue-bg:#E6F1FB;--blue-dk:#0C447C;
+  --teal:#1D9E75;--teal-bg:#E1F5EE;--teal-dk:#085041;
+  --purple:#7F77DD;--purple-bg:#EEEDFE;--purple-dk:#3C3489;
+  --amber:#EF9F27;--amber-bg:#FAEEDA;--amber-dk:#633806;
+  --coral:#D85A30;--coral-bg:#FAECE7;--coral-dk:#712B13;
+  --red:#E24B4A;--red-bg:#FCEBEB;--red-dk:#791F1F;
+  --gray-bg:#F1EFE8;--gray-dk:#444441;
+  --green:#639922;--green-bg:#EAF3DE;--green-dk:#27500A;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1a1a18;--bg2:#2c2c2a;--bg3:#3d3d3a;
+  --tx:#e8e7e3;--tx2:#b4b2a9;--tx3:#888780;
+  --bd:rgba(255,255,255,0.1);--bd2:rgba(255,255,255,0.06);
+  --blue-bg:#042C53;--blue-dk:#85B7EB;
+  --teal-bg:#04342C;--teal-dk:#5DCAA5;
+  --purple-bg:#26215C;--purple-dk:#AFA9EC;
+  --amber-bg:#412402;--amber-dk:#FAC775;
+  --coral-bg:#4A1B0C;--coral-dk:#F0997B;
+  --red-bg:#501313;--red-dk:#F09595;
+  --gray-bg:#2C2C2A;--gray-dk:#D3D1C7;
+  --green-bg:#173404;--green-dk:#97C459;
+}}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Noto Sans SC',system-ui,sans-serif;background:var(--bg);color:var(--tx);line-height:1.8;font-size:15px}
+.wrap{max-width:880px;margin:0 auto;padding:40px 24px 80px}
+h1{font-size:28px;font-weight:700;margin:0 0 8px;letter-spacing:-0.5px}
+h1 span{display:block;font-size:14px;font-weight:400;color:var(--tx2);margin-top:4px;letter-spacing:0}
+h2{font-size:20px;font-weight:700;margin:48px 0 16px;padding-bottom:8px;border-bottom:2px solid var(--bd)}
+h3{font-size:16px;font-weight:600;margin:32px 0 12px}
+p{margin:0 0 14px;color:var(--tx2)}
+.lead{font-size:16px;color:var(--tx2);margin:0 0 32px;padding:16px 20px;background:var(--bg2);border-radius:8px;border-left:3px solid var(--teal)}
+table{width:100%;border-collapse:collapse;margin:16px 0 24px;font-size:13px}
+th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--bd2)}
+th{font-weight:600;color:var(--tx);background:var(--bg2);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+td{color:var(--tx2)}
+tr:hover td{background:var(--bg2)}
+code{font-family:'JetBrains Mono',monospace;font-size:13px;background:var(--bg2);padding:2px 6px;border-radius:4px;color:var(--tx)}
+pre{background:var(--bg2);border-radius:8px;padding:16px 20px;margin:12px 0 20px;overflow-x:auto;font-size:13px;line-height:1.6;border:1px solid var(--bd2)}
+pre code{background:none;padding:0}
+.diagram{margin:24px 0;background:var(--bg);border:1px solid var(--bd);border-radius:12px;padding:20px;overflow:hidden}
+.diagram svg{width:100%;height:auto;display:block}
+.diagram-cap{font-size:12px;color:var(--tx3);text-align:center;margin-top:8px}
+.diagram svg text.th{font-family:'Noto Sans SC',system-ui,sans-serif;font-size:14px;font-weight:500;fill:var(--tx)}
+.diagram svg text.ts{font-family:'Noto Sans SC',system-ui,sans-serif;font-size:12px;fill:var(--tx2)}
+.diagram svg text.tm{font-family:'JetBrains Mono',monospace;font-size:12px;fill:var(--tx2)}
+.diagram svg .fb rect{fill:var(--blue-bg);stroke:var(--blue);stroke-width:.5}
+.diagram svg .fb text{fill:var(--blue-dk)}
+.diagram svg .ft rect{fill:var(--teal-bg);stroke:var(--teal);stroke-width:.5}
+.diagram svg .ft text{fill:var(--teal-dk)}
+.diagram svg .fp rect{fill:var(--purple-bg);stroke:var(--purple);stroke-width:.5}
+.diagram svg .fp text{fill:var(--purple-dk)}
+.diagram svg .fa rect{fill:var(--amber-bg);stroke:var(--amber);stroke-width:.5}
+.diagram svg .fa text{fill:var(--amber-dk)}
+.diagram svg .fc rect{fill:var(--coral-bg);stroke:var(--coral);stroke-width:.5}
+.diagram svg .fc text{fill:var(--coral-dk)}
+.diagram svg .fg rect{fill:var(--gray-bg);stroke:var(--tx3);stroke-width:.5}
+.diagram svg .fg text{fill:var(--gray-dk)}
+.callout{padding:14px 18px;border-radius:8px;margin:16px 0;font-size:14px}
+.ct{background:var(--teal-bg);border-left:3px solid var(--teal);color:var(--teal-dk)}
+.cc{background:var(--coral-bg);border-left:3px solid var(--coral);color:var(--coral-dk)}
+.cb{background:var(--blue-bg);border-left:3px solid var(--blue);color:var(--blue-dk)}
+.ca{background:var(--amber-bg);border-left:3px solid var(--amber);color:var(--amber-dk)}
+.cr{background:var(--red-bg);border-left:3px solid var(--red);color:var(--red-dk)}
+.formula{background:var(--bg2);border:1px solid var(--bd2);border-radius:8px;padding:14px 18px;margin:12px 0 20px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.8;color:var(--tx2)}
+.formula b{color:var(--tx);font-weight:500}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
+.bt{background:var(--teal-bg);color:var(--teal-dk)}
+.bc{background:var(--coral-bg);color:var(--coral-dk)}
+.toc{background:var(--bg2);border-radius:8px;padding:20px 24px;margin:24px 0 40px}
+.toc h3{margin:0 0 12px;font-size:14px}
+.toc ol{padding-left:20px}
+.toc li{margin:4px 0;font-size:14px}
+.toc a{color:var(--blue);text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.sn{color:var(--teal);font-weight:700;margin-right:6px}
+.src{font-size:12px;color:var(--tx3);margin-top:4px;font-style:italic}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Megatron-LM Pipeline Parallelism 实现深度解析<span>基于 Megatron-LM dev 分支源码 · 1F1B / Interleaved 1F1B / Combined 1F1B · P2P 通信 · VPP · Bubble 分析 · Activation Offload</span></h1>
+
+<p class="lead">本报告基于 Megatron-LM dev 分支的源码实现，系统分析 Pipeline Parallelism（PP）机制。涵盖 PP 进程组拓扑、四种调度策略（No-Pipelining / Non-Interleaved 1F1B / Interleaved 1F1B / Combined 1F1B）、P2P 通信原语、Virtual Pipeline Parallelism 层分布、Bubble 公式推导、Combined 1F1B 与 EP 重叠、Activation Checkpointing 与显存优化、以及 Fine-Grained Activation Offload。</p>
+
+<div class="toc"><h3>目录</h3>
+<ol>
+<li><a href="#s1">PP 进程组与拓扑结构</a></li>
+<li><a href="#s2">PP 调度策略总览</a></li>
+<li><a href="#s3">Non-Interleaved 1F1B：标准流水线</a></li>
+<li><a href="#s4">Interleaved 1F1B：虚拟流水线</a></li>
+<li><a href="#s5">P2P 通信机制</a></li>
+<li><a href="#s6">Combined 1F1B：PP 与 EP 重叠</a></li>
+<li><a href="#s7">Bubble 分析与通信量</a></li>
+<li><a href="#s8">Activation Checkpointing 与显存优化</a></li>
+<li><a href="#s9">Fine-Grained Activation Offload</a></li>
+<li><a href="#s10">结论与配置建议</a></li>
+</ol></div>
+
+<!-- SECTION 1 -->
+<h2 id="s1"><span class="sn">一</span>PP 进程组与拓扑结构</h2>
+
+<h3>1.1 进程组创建</h3>
+<p>PP 进程组在 <code>parallel_state.py</code> 的 <code>initialize_model_parallel</code> 函数中创建，通过 <code>decoder_rank_generator.get_ranks('pp')</code> 生成 PP 组内的 rank 列表：</p>
+
+<pre><code># parallel_state.py:1094-1110
+for ranks in decoder_rank_generator.get_ranks('pp'):
+    group = create_group(
+        ranks,
+        timeout=timeout,
+        backend=pipeline_model_parallel_comm_backend,
+        pg_options=(
+            None
+            if pipeline_model_parallel_comm_backend == "ucc"
+            else get_nccl_options("pp", nccl_comm_cfgs)
+        ),
+        group_desc="PIPELINE_MODEL_PARALLEL_GROUP",
+    )
+    assert (
+        pipeline_model_parallel_comm_backend == None
+        or pipeline_model_parallel_comm_backend == "nccl"
+        or pipeline_model_parallel_comm_backend == "ucc"
+    )
+    if rank in ranks:
+        if _PIPELINE_MODEL_PARALLEL_GROUP is None:
+            _PIPELINE_MODEL_PARALLEL_GROUP = group
+            _PIPELINE_GLOBAL_RANKS = ranks
+        elif isinstance(_PIPELINE_GLOBAL_RANKS[0], list):
+            _PIPELINE_MODEL_PARALLEL_GROUP.append(group)
+            _PIPELINE_GLOBAL_RANKS.append(ranks)
+        else:
+            _PIPELINE_MODEL_PARALLEL_GROUP = [_PIPELINE_MODEL_PARALLEL_GROUP, group]
+            _PIPELINE_GLOBAL_RANKS = [_PIPELINE_GLOBAL_RANKS, ranks]</code></pre>
+<p class="src">来源：megatron/core/parallel_state.py:1094-1122</p>
+
+<p>PP 进程组支持三种后端：</p>
+<table>
+<tr><th>后端</th><th>说明</th><th>适用场景</th></tr>
+<tr><td><code>None</code>（默认）</td><td>使用 PyTorch 默认 NCCL 后端</td><td>大多数场景</td></tr>
+<tr><td><code>nccl</code></td><td>显式指定 NCCL，启用 NCCL 选项优化</td><td>需要自定义 NCCL 调参</td></tr>
+<tr><td><code>ucc</code></td><td>使用 UCC（Unified Collective Communication）后端</td><td>需要设置 <code>CUDA_DEVICE_MAX_CONNECTIONS &gt; 1</code></td></tr>
+</table>
+
+<div class="callout ct"><strong>UCC 后端</strong>：当 <code>pipeline_model_parallel_comm_backend="ucc"</code> 时，会设置 UCX/UCC 环境变量（<code>UCX_RNDV_THRESH=0</code>、<code>UCC_CL_BASIC_TLS=^sharp,nccl</code>），利用 UCC 的通用通信层实现跨平台优化。</div>
+
+<h3>1.2 Embedding 与 Position Embedding 组</h3>
+<p>PP 创建时还会额外创建两个辅助进程组：</p>
+
+<pre><code>embedding_ranks = get_embedding_ranks(ranks)
+group = create_group(
+    embedding_ranks, timeout=timeout,
+    pg_options=get_nccl_options("embd", nccl_comm_cfgs),
+    group_desc="EMBEDDING_GROUP",
+)
+
+position_embedding_ranks = get_position_embedding_ranks(ranks)
+group = create_group(
+    position_embedding_ranks, timeout=timeout,
+    pg_options=get_nccl_options("pos_embd", nccl_comm_cfgs),
+    group_desc="POSITION_EMBEDDING_GROUP",
+)</code></pre>
+<p class="src">来源：megatron/core/parallel_state.py:1123-1143</p>
+
+<p>这两个组用于在 PP 边界上同步 embedding 和 position embedding 的梯度。当 <code>defer_embedding_wgrad_compute=True</code> 时，embedding 的权重梯度计算会被推迟到 pipeline flush 阶段，利用 pipeline bubble 隐藏计算延迟。</p>
+
+<h3>1.3 PP 与其他并行维度的关系</h3>
+<table>
+<tr><th>并行维度</th><th>通信组</th><th>物理链路</th><th>与 PP 的交互</th></tr>
+<tr><td>TP</td><td>tp_group</td><td>NVLink</td><td>TP 在 PP stage 内切分 head；PP 在 stage 边界通信</td></tr>
+<tr><td>DP</td><td>dp_group</td><td>IB / NVLink</td><td>梯度同步在 PP 的 backward flush 后进行</td></tr>
+<tr><td>CP</td><td>cp_group</td><td>NVLink / IB</td><td>CP 切分 seq 后，PP 的 P2P 通信数据量降低 CP 倍</td></tr>
+<tr><td>EP</td><td>ep_group</td><td>IB All-to-All</td><td>MoE 层 EP A2A 可与 PP 1F1B 重叠（Combined 1F1B）</td></tr>
+<tr><td>PP</td><td>pp_group</td><td>NVLink / IB P2P</td><td>层间切分，stage 间 send/recv 激活值</td></tr>
+</table>
+
+<!-- SECTION 2 -->
+<h2 id="s2"><span class="sn">二</span>PP 调度策略总览</h2>
+
+<h3>2.1 调度策略选择器</h3>
+<p>Megatron-LM 的调度入口是 <code>get_forward_backward_func</code>，根据 <code>pp_size</code> 和 <code>vp_size</code> 自动选择调度策略：</p>
+
+<pre><code># schedules.py:147-153
+if pp_size > 1:
+    if vp_size is not None:
+        forward_backward_func = forward_backward_pipelining_with_interleaving
+    else:
+        forward_backward_func = forward_backward_pipelining_without_interleaving
+else:
+    forward_backward_func = forward_backward_no_pipelining</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/schedules.py:147-153</p>
+
+<table>
+<tr><th>调度策略</th><th>触发条件</th><th>核心特征</th><th>适用场景</th></tr>
+<tr><td><code>forward_backward_no_pipelining</code></td><td><code>pp_size == 1</code></td><td>无流水线，顺序执行 microbatch</td><td>单节点小模型、CUDA Graph 捕获</td></tr>
+<tr><td><code>forward_backward_pipelining_without_interleaving</code></td><td><code>pp_size &gt; 1, vp_size is None</code></td><td>标准 1F1B，每个 stage 一个 model chunk</td><td>通用场景，PP=4~16</td></tr>
+<tr><td><code>forward_backward_pipelining_with_interleaving</code></td><td><code>pp_size &gt; 1, vp_size is not None</code></td><td>Interleaved 1F1B，每个 GPU 多个 virtual stages</td><td>大模型，需要减少 bubble</td></tr>
+<tr><td><code>combined_1f1b_schedule</code></td><td><code>overlap_moe_expert_parallel_comm=True</code></td><td>前向/反向合并调度，隐藏 EP A2A</td><td>MoE 模型（如 V4）</td></tr>
+</table>
+
+<h3>2.2 四种策略的对比</h3>
+
+<div class="diagram">
+<svg viewBox="0 0 720 320">
+<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<text class="th" x="40" y="28">PP 调度策略对比</text>
+
+<text class="ts" x="40" y="56" font-weight="600">No Pipelining（PP=1）</text>
+<g class="fb"><rect x="40" y="64" width="80" height="22" rx="4"/><text class="ts" x="80" y="75" text-anchor="middle" dominant-baseline="central">FWD0</text></g>
+<g class="fb"><rect x="126" y="64" width="80" height="22" rx="4"/><text class="ts" x="166" y="75" text-anchor="middle" dominant-baseline="central">FWD1</text></g>
+<g class="fb"><rect x="212" y="64" width="80" height="22" rx="4"/><text class="ts" x="252" y="75" text-anchor="middle" dominant-baseline="central">FWD2</text></g>
+<g class="fb"><rect x="298" y="64" width="80" height="22" rx="4"/><text class="ts" x="338" y="75" text-anchor="middle" dominant-baseline="central">FWD3</text></g>
+<g class="ft"><rect x="40" y="90" width="80" height="22" rx="4"/><text class="ts" x="80" y="101" text-anchor="middle" dominant-baseline="central">BWD3</text></g>
+<g class="ft"><rect x="126" y="90" width="80" height="22" rx="4"/><text class="ts" x="166" y="101" text-anchor="middle" dominant-baseline="central">BWD2</text></g>
+<g class="ft"><rect x="212" y="90" width="80" height="22" rx="4"/><text class="ts" x="252" y="101" text-anchor="middle" dominant-baseline="central">BWD1</text></g>
+<g class="ft"><rect x="298" y="90" width="80" height="22" rx="4"/><text class="ts" x="338" y="101" text-anchor="middle" dominant-baseline="central">BWD0</text></g>
+
+<text class="ts" x="40" y="132" font-weight="600">Non-Interleaved 1F1B（PP=4）</text>
+<g class="fb"><rect x="40" y="140" width="60" height="22" rx="4"/><text class="ts" x="70" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:10px">FWD0</text></g>
+<g class="fb"><rect x="104" y="140" width="60" height="22" rx="4"/><text class="ts" x="134" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:10px">FWD1</text></g>
+<g class="fb"><rect x="168" y="140" width="60" height="22" rx="4"/><text class="ts" x="198" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:10px">FWD2</text></g>
+<g class="fa"><rect x="232" y="140" width="60" height="22" rx="4"/><text class="ts" x="262" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:10px">1F1B</text></g>
+<g class="fa"><rect x="296" y="140" width="60" height="22" rx="4"/><text class="ts" x="326" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:10px">1F1B</text></g>
+<g class="ft"><rect x="360" y="140" width="60" height="22" rx="4"/><text class="ts" x="390" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:10px">BWD1</text></g>
+<g class="ft"><rect x="424" y="140" width="60" height="22" rx="4"/><text class="ts" x="454" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:10px">BWD0</text></g>
+
+<text class="ts" x="40" y="184" font-weight="600">Interleaved 1F1B（PP=4, VP=2）</text>
+<g class="fb"><rect x="40" y="192" width="50" height="22" rx="4"/><text class="ts" x="65" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F0_c0</text></g>
+<g class="fb"><rect x="94" y="192" width="50" height="22" rx="4"/><text class="ts" x="119" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F1_c0</text></g>
+<g class="fb"><rect x="148" y="192" width="50" height="22" rx="4"/><text class="ts" x="173" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F2_c0</text></g>
+<g class="fb"><rect x="202" y="192" width="50" height="22" rx="4"/><text class="ts" x="227" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F0_c1</text></g>
+<g class="fa"><rect x="256" y="192" width="50" height="22" rx="4"/><text class="ts" x="281" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">1F1B</text></g>
+<g class="fa"><rect x="310" y="192" width="50" height="22" rx="4"/><text class="ts" x="335" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">1F1B</text></g>
+<g class="ft"><rect x="364" y="192" width="50" height="22" rx="4"/><text class="ts" x="389" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B0_c1</text></g>
+<g class="ft"><rect x="418" y="192" width="50" height="22" rx="4"/><text class="ts" x="443" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B1_c0</text></g>
+<g class="ft"><rect x="472" y="192" width="50" height="22" rx="4"/><text class="ts" x="497" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B2_c0</text></g>
+
+<text class="ts" x="40" y="236" font-weight="600">Combined 1F1B（EP Overlap）</text>
+<g class="fb"><rect x="40" y="244" width="60" height="22" rx="4"/><text class="ts" x="70" y="255" text-anchor="middle" dominant-baseline="central" style="font-size:10px">FWD0</text></g>
+<g class="fc"><rect x="104" y="244" width="80" height="22" rx="4"/><text class="ts" x="144" y="255" text-anchor="middle" dominant-baseline="central" style="font-size:10px">BWD0+FWD1</text></g>
+<g class="fc"><rect x="188" y="244" width="80" height="22" rx="4"/><text class="ts" x="228" y="255" text-anchor="middle" dominant-baseline="central" style="font-size:10px">BWD1+FWD2</text></g>
+<g class="fc"><rect x="272" y="244" width="80" height="22" rx="4"/><text class="ts" x="312" y="255" text-anchor="middle" dominant-baseline="central" style="font-size:10px">BWD2+FWD3</text></g>
+<g class="ft"><rect x="356" y="244" width="60" height="22" rx="4"/><text class="ts" x="386" y="255" text-anchor="middle" dominant-baseline="central" style="font-size:10px">BWD3</text></g>
+
+<text class="ts" x="40" y="290" font-size="11">F = Forward, B = Backward, c0/c1 = model chunk id, 1F1B = one-forward-one-backward steady state</text>
+</svg>
+<div class="diagram-cap">图 1：四种 PP 调度策略的时间线对比</div>
+</div>
+
+<!-- SECTION 3 -->
+<h2 id="s3"><span class="sn">三</span>Non-Interleaved 1F1B：标准流水线</h2>
+
+<h3>3.1 三阶段结构</h3>
+<p>Non-Interleaved 1F1B 将每个迭代分为三个阶段：<strong>Warmup</strong>、<strong>Steady State</strong>、<strong>Cooldown</strong>。</p>
+
+<h4>Warmup 阶段</h4>
+<p>Warmup microbatch 数量由当前 stage 在 pipeline 中的位置决定：</p>
+
+<pre><code># schedules.py:2320
+num_warmup_microbatches = (
+    p2p_communicator.total_stages - p2p_communicator.current_stage - 1
+)
+num_warmup_microbatches = min(num_warmup_microbatches, num_microbatches)</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/schedules.py:2319-2322</p>
+
+<div class="callout ct"><strong>Warmup 示例（PP=4）</strong>：
+<ul>
+<li>Stage 0（rank 0）：warmup = 4 - 0 - 1 = <strong>3</strong> 个 forward microbatches</li>
+<li>Stage 1（rank 1）：warmup = 4 - 1 - 1 = <strong>2</strong> 个 forward microbatches</li>
+<li>Stage 2（rank 2）：warmup = 4 - 2 - 1 = <strong>1</strong> 个 forward microbatch</li>
+<li>Stage 3（rank 3）：warmup = 4 - 3 - 1 = <strong>0</strong>，直接进入 1F1B</li>
+</ul>
+</div>
+
+<p>Warmup 阶段每个 microbatch 的执行流程：</p>
+<ol>
+<li><code>recv_forward</code>：从上一个 stage 接收输入激活值</li>
+<li><code>forward_step</code>：执行当前 stage 的前向计算</li>
+<li><code>send_forward</code>：将输出激活值发送给下一个 stage</li>
+<li>保存 <code>input_tensor</code> 和 <code>output_tensor</code> 供后续 backward 使用</li>
+</ol>
+
+<h4>Steady State 阶段</h4>
+<p>Steady state 是真正的 1F1B 阶段，每个迭代执行一个 forward 和一个 backward：</p>
+
+<pre><code># schedules.py:2426-2508（核心逻辑）
+for i in range(num_microbatches_remaining):
+    # Forward
+    output_tensor, num_tokens = forward_step(...)
+    total_num_tokens += num_tokens
+
+    # Send forward output + receive backward gradient
+    output_tensor_grad = p2p_communicator.send_forward_recv_backward(
+        output_tensor, send_tensor_shapes, p2p_communicator.is_pp_last_stage
+    )
+
+    # Save tensors for backward
+    input_tensors.append(input_tensor)
+    output_tensors.append(output_tensor)
+
+    # Pop oldest for backward
+    input_tensor = input_tensors.pop(0)
+    output_tensor = output_tensors.pop(0)
+
+    # Backward
+    input_tensor_grad = backward_step(
+        input_tensor, output_tensor, output_tensor_grad, config
+    )
+
+    # Send backward gradient + receive next forward input
+    if last_iteration:
+        p2p_communicator.send_backward(input_tensor_grad, ...)
+    else:
+        input_tensor = p2p_communicator.send_backward_recv_forward(
+            input_tensor_grad, recv_tensor_shapes, ...
+        )</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/schedules.py:2426-2508</p>
+
+<div class="callout ca"><strong>1F1B 的核心约束</strong>：在 steady state 中，当前 stage 必须先完成 forward 并发送输出，然后才能从下一个 stage 接收 backward gradient。这形成了一个<strong>生产-消费流水线</strong>——stage i 的 forward 生产激活值，stage i+1 消费后返回梯度。</div>
+
+<h4>Cooldown 阶段</h4>
+<p>当所有 microbatches 的 forward 完成后，进入 cooldown 阶段，依次完成剩余的 backward passes。Cooldown 的 microbatch 数量等于 warmup 阶段保存的 tensor 对数。</p>
+
+<h3>3.2 完整时间线（PP=4, M=8）</h3>
+
+<div class="diagram">
+<svg viewBox="0 0 760 400">
+<defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="var(--teal)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<text class="th" x="40" y="28">Non-Interleaved 1F1B 时间线（PP=4, M=8 microbatches）</text>
+
+<text class="ts" x="40" y="56" font-weight="600">Stage 0</text>
+<g class="fb"><rect x="40" y="64" width="50" height="22" rx="4"/><text class="ts" x="65" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F0</text></g>
+<g class="fb"><rect x="94" y="64" width="50" height="22" rx="4"/><text class="ts" x="119" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F1</text></g>
+<g class="fb"><rect x="148" y="64" width="50" height="22" rx="4"/><text class="ts" x="173" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F2</text></g>
+<g class="fa"><rect x="202" y="64" width="50" height="22" rx="4"/><text class="ts" x="227" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F3</text></g>
+<g class="fa"><rect x="256" y="64" width="50" height="22" rx="4"/><text class="ts" x="281" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B0</text></g>
+<g class="fa"><rect x="310" y="64" width="50" height="22" rx="4"/><text class="ts" x="335" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B1</text></g>
+<g class="ft"><rect x="364" y="64" width="50" height="22" rx="4"/><text class="ts" x="389" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B2</text></g>
+<g class="ft"><rect x="418" y="64" width="50" height="22" rx="4"/><text class="ts" x="443" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B3</text></g>
+<g class="ft"><rect x="472" y="64" width="50" height="22" rx="4"/><text class="ts" x="497" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B4</text></g>
+<g class="ft"><rect x="526" y="64" width="50" height="22" rx="4"/><text class="ts" x="551" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B5</text></g>
+<g class="ft"><rect x="580" y="64" width="50" height="22" rx="4"/><text class="ts" x="605" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B6</text></g>
+<g class="ft"><rect x="634" y="64" width="50" height="22" rx="4"/><text class="ts" x="659" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B7</text></g>
+
+<text class="ts" x="40" y="108" font-weight="600">Stage 1</text>
+<g class="fg"><rect x="40" y="116" width="50" height="22" rx="4"/><text class="ts" x="65" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">idle</text></g>
+<g class="fb"><rect x="94" y="116" width="50" height="22" rx="4"/><text class="ts" x="119" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F0</text></g>
+<g class="fb"><rect x="148" y="116" width="50" height="22" rx="4"/><text class="ts" x="173" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F1</text></g>
+<g class="fb"><rect x="202" y="116" width="50" height="22" rx="4"/><text class="ts" x="227" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F2</text></g>
+<g class="fa"><rect x="256" y="116" width="50" height="22" rx="4"/><text class="ts" x="281" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F3</text></g>
+<g class="fa"><rect x="310" y="116" width="50" height="22" rx="4"/><text class="ts" x="335" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B0</text></g>
+<g class="fa"><rect x="364" y="116" width="50" height="22" rx="4"/><text class="ts" x="389" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B1</text></g>
+<g class="ft"><rect x="418" y="116" width="50" height="22" rx="4"/><text class="ts" x="443" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B2</text></g>
+<g class="ft"><rect x="472" y="116" width="50" height="22" rx="4"/><text class="ts" x="497" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B3</text></g>
+<g class="ft"><rect x="526" y="116" width="50" height="22" rx="4"/><text class="ts" x="551" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B4</text></g>
+<g class="ft"><rect x="580" y="116" width="50" height="22" rx="4"/><text class="ts" x="605" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B5</text></g>
+<g class="ft"><rect x="634" y="116" width="50" height="22" rx="4"/><text class="ts" x="659" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B6</text></g>
+
+<text class="ts" x="40" y="160" font-weight="600">Stage 2</text>
+<g class="fg"><rect x="40" y="168" width="50" height="22" rx="4"/><text class="ts" x="65" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">idle</text></g>
+<g class="fg"><rect x="94" y="168" width="50" height="22" rx="4"/><text class="ts" x="119" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">idle</text></g>
+<g class="fb"><rect x="148" y="168" width="50" height="22" rx="4"/><text class="ts" x="173" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F0</text></g>
+<g class="fb"><rect x="202" y="168" width="50" height="22" rx="4"/><text class="ts" x="227" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F1</text></g>
+<g class="fb"><rect x="256" y="168" width="50" height="22" rx="4"/><text class="ts" x="281" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F2</text></g>
+<g class="fa"><rect x="310" y="168" width="50" height="22" rx="4"/><text class="ts" x="335" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F3</text></g>
+<g class="fa"><rect x="364" y="168" width="50" height="22" rx="4"/><text class="ts" x="389" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B0</text></g>
+<g class="fa"><rect x="418" y="168" width="50" height="22" rx="4"/><text class="ts" x="443" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B1</text></g>
+<g class="ft"><rect x="472" y="168" width="50" height="22" rx="4"/><text class="ts" x="497" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B2</text></g>
+<g class="ft"><rect x="526" y="168" width="50" height="22" rx="4"/><text class="ts" x="551" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B3</text></g>
+<g class="ft"><rect x="580" y="168" width="50" height="22" rx="4"/><text class="ts" x="605" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B4</text></g>
+
+<text class="ts" x="40" y="212" font-weight="600">Stage 3</text>
+<g class="fg"><rect x="40" y="220" width="50" height="22" rx="4"/><text class="ts" x="65" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">idle</text></g>
+<g class="fg"><rect x="94" y="220" width="50" height="22" rx="4"/><text class="ts" x="119" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">idle</text></g>
+<g class="fg"><rect x="148" y="220" width="50" height="22" rx="4"/><text class="ts" x="173" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">idle</text></g>
+<g class="fb"><rect x="202" y="220" width="50" height="22" rx="4"/><text class="ts" x="227" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F0</text></g>
+<g class="fb"><rect x="256" y="220" width="50" height="22" rx="4"/><text class="ts" x="281" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F1</text></g>
+<g class="fb"><rect x="310" y="220" width="50" height="22" rx="4"/><text class="ts" x="335" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F2</text></g>
+<g class="fb"><rect x="364" y="220" width="50" height="22" rx="4"/><text class="ts" x="389" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F3</text></g>
+<g class="fa"><rect x="418" y="220" width="50" height="22" rx="4"/><text class="ts" x="443" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B0</text></g>
+<g class="fa"><rect x="472" y="220" width="50" height="22" rx="4"/><text class="ts" x="497" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B1</text></g>
+<g class="fa"><rect x="526" y="220" width="50" height="22" rx="4"/><text class="ts" x="551" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B2</text></g>
+
+<line x1="40" y1="270" x2="720" y2="270" stroke="var(--bd)" stroke-width="0.5"/>
+
+<text class="ts" x="40" y="296">蓝色 = Warmup Forward（无 backward 可以执行）</text>
+<text class="ts" x="40" y="314">琥珀色 = 1F1B Steady State（Forward + Backward 交替）</text>
+<text class="ts" x="40" y="332">青色 = Cooldown Backward（无 forward 可以执行）</text>
+<text class="ts" x="40" y="350">灰色 = Pipeline Bubble（空闲等待）</text>
+<text class="ts" x="40" y="374">Bubble 比例 ≈ (PP-1) / M = 3/8 = 37.5%（理论值，实际更低 due to overlap）</text>
+</svg>
+<div class="diagram-cap">图 2：Non-Interleaved 1F1B 完整时间线（PP=4, M=8）</div>
+</div>
+
+<h3>3.3 Grad Sync 与 Pipeline Bubble 的利用</h3>
+<p>在 1F1B 的 steady state 中，梯度同步（DP AllReduce）默认被禁用（通过 <code>no_sync_func</code>），直到最后一个 microbatch 的 backward 完成后才启用。但代码中有特殊处理：</p>
+
+<pre><code># schedules.py:2501-2508
+# Note: If grad sync function is provided, only enable
+# async grad reduction in first pipeline stage. Other
+# pipeline stages do grad reduction during pipeline bubble.
+if grad_sync_func is not None:
+    enable_grad_sync()</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/schedules.py:2501-2508</p>
+
+<div class="callout ca"><strong>关键洞察</strong>：非首 stage 的 GPU 在 pipeline bubble（cooldown 阶段）期间执行梯度 AllReduce，将通信开销隐藏在 idle time 中。首 stage 由于最早进入 cooldown，梯度同步在 flush 时完成。</div>
+
+<!-- SECTION 4 -->
+<h2 id="s4"><span class="sn">四</span>Interleaved 1F1B：虚拟流水线</h2>
+
+<h3>4.1 Virtual Pipeline Parallelism 概念</h3>
+<p>Virtual Pipeline Parallelism（VPP）将模型切分为更多的 virtual stages，每个物理 GPU 持有多个不连续的 model chunks。例如 PP=4, VP=2, 16 layers：</p>
+
+<table>
+<tr><th>物理 GPU</th><th>VPP Stage 0</th><th>VPP Stage 1</th></tr>
+<tr><td>GPU 0</td><td>layers 1-2</td><td>layers 9-10</td></tr>
+<tr><td>GPU 1</td><td>layers 3-4</td><td>layers 11-12</td></tr>
+<tr><td>GPU 2</td><td>layers 5-6</td><td>layers 13-14</td></tr>
+<tr><td>GPU 3</td><td>layers 7-8</td><td>layers 15-16</td></tr>
+</table>
+
+<p>这种交错放置使得 pipeline bubble 可以被打得更碎，因为每个 physical stage 内部有多个独立的 forward/backward 流可以交替执行。</p>
+
+<h3>4.2 Schedule Table 与 Microbatch 分组</h3>
+<p>VPP 使用 <code>schedule_table</code> 将 virtual microbatch ID 映射到 <code>(microbatch_id, model_chunk_id)</code>：</p>
+
+<pre><code># schedules.py:847-874
+def get_schedule_table(num_microbatches, num_model_chunks, microbatch_group_size_per_vp_stage):
+    schedule_table = []
+    for min_microbatch_id_in_group in range(
+        0, num_microbatches, microbatch_group_size_per_vp_stage
+    ):
+        if min_microbatch_id_in_group + microbatch_group_size_per_vp_stage >= num_microbatches:
+            # Last group
+            schedule_table.extend([
+                (microbatch_id, model_chunk_id)
+                for model_chunk_id in range(num_model_chunks)
+                for microbatch_id in range(min_microbatch_id_in_group, num_microbatches)
+            ])
+        else:
+            schedule_table.extend([
+                (microbatch_id, model_chunk_id)
+                for model_chunk_id in range(num_model_chunks)
+                for microbatch_id in range(
+                    min_microbatch_id_in_group,
+                    min_microbatch_id_in_group + microbatch_group_size_per_vp_stage,
+                )
+            ])
+    return schedule_table</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/schedules.py:847-874</p>
+
+<div class="callout ct"><strong>Schedule Table 示例</strong>（PP=2, VP=2, M=5, group_size=3）：
+<pre style="margin:8px 0">virtual_microbatch_id | 0  1  2  3  4  5  6  7  8  9
+microbatch_id         | 0  1  2  0  1  2  3  4  3  4
+model_chunk_id        | 0  0  0  1  1  1  0  0  1  1</pre>
+这意味着先执行 chunk 0 的 microbatch 0-2，再执行 chunk 1 的 microbatch 0-2，然后 chunk 0 的 3-4，最后 chunk 1 的 3-4。这种<strong>深度优先</strong>策略减少了 chunk 切换开销。
+</div>
+
+<h3>4.3 Warmup Microbatch 计算</h3>
+<p>VPP 的 warmup 公式比非交错版本更复杂：</p>
+
+<pre><code># schedules.py:816-828
+num_warmup_microbatches = (pipeline_parallel_size - pipeline_parallel_rank - 1) * 2
+num_warmup_microbatches += (num_model_chunks - 1) * microbatch_group_size_per_vp_stage
+if overlap_moe_expert_parallel_comm:
+    num_warmup_microbatches = num_warmup_microbatches + 1</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/schedules.py:816-828</p>
+
+<div class="formula">
+<b>VPP Warmup 公式</b>：<br>
+W = (P - rank - 1) × 2 + (C - 1) × G + δ<br>
+其中 P = PP size, C = num_model_chunks (VP size), G = microbatch_group_size_per_vp_stage, δ = 1（if EP overlap else 0）<br><br>
+<b>示例</b>（PP=4, rank=0, VP=2, G=3）:<br>
+W = (4 - 0 - 1) × 2 + (2 - 1) × 3 = 6 + 3 = <b>9</b> 个 virtual microbatches
+</div>
+
+<h3>4.4 Dependency Bubble 校验</h3>
+<p>VPP 有一个关键的校验条件：最后一个 microbatch group 的大小必须不小于 PP size，否则会引入 dependency bubble：</p>
+
+<pre><code># schedules.py:1170-1180
+final_microbatch_group_size = num_microbatches % config.microbatch_group_size_per_vp_stage
+if 0 < final_microbatch_group_size < pipeline_parallel_size:
+    raise RuntimeError(
+        'The remainder of M (the total micro-batches) divided by N '
+        '(the microbatch group size per VP stage) introduces dependency '
+        'bubbles in the pipeline and reduces throughput.'
+    )</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/schedules.py:1170-1180</p>
+
+<div class="callout cr"><strong>Dependency Bubble 含义</strong>：如果最后一个 group 的 microbatch 数量少于 PP size，某些 stage 会在 forward 完成后没有对应的 backward 可以执行（因为后面的 stage 还在处理前面的 microbatch），导致额外的空闲时间。这不同于标准的 pipeline bubble，它是 VPP 特有的调度约束。</div>
+
+<!-- SECTION 5 -->
+<h2 id="s5"><span class="sn">五</span>P2P 通信机制</h2>
+
+<h3>5.1 通信原语</h3>
+<p>Megatron-LM 提供两种 P2P 通信原语：</p>
+
+<table>
+<tr><th>原语</th><th>实现</th><th>适用场景</th></tr>
+<tr><td><code>_p2p_ops</code></td><td>独立的 <code>isend/irecv</code>，支持交替 group 策略</td><td><code>batch_p2p_comm=False</code>，需要 overlap</td></tr>
+<tr><td><code>_batched_p2p_ops</code></td><td><code>torch.distributed.batch_isend_irecv</code></td><td><code>batch_p2p_comm=True</code>（默认）</td></tr>
+</table>
+
+<pre><code># p2p_communication.py:55-80
+def _p2p_ops(...):
+    even_send_odd_recv_group = group
+    if group.size() == 2 and torch.distributed.get_backend(group) != 'ucc':
+        # Use global process group for one of two p2p communications
+        # to allow overlap of independent communications
+        even_recv_odd_send_group = torch.distributed.group.WORLD
+    else:
+        even_recv_odd_send_group = group
+
+    if group.rank() % 2 == 0:
+        if tensor_send_next is not None:
+            reqs['send_next'] = dist.isend(tensor_send_next, next_pipeline_rank, even_send_odd_recv_group)
+        if tensor_recv_prev is not None:
+            reqs['recv_prev'] = dist.irecv(tensor_recv_prev, prev_pipeline_rank, even_recv_odd_send_group)
+    else:
+        if tensor_recv_prev is not None:
+            reqs['recv_prev'] = dist.irecv(tensor_recv_prev, prev_pipeline_rank, even_recv_odd_send_group)
+        if tensor_send_next is not None:
+            reqs['send_next'] = dist.isend(tensor_send_next, next_pipeline_rank, even_send_odd_recv_group)</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/p2p_communication.py:55-80</p>
+
+<div class="callout ct"><strong>交替 Group 策略</strong>：当 PP=2 且不使用 UCC 后端时，偶数 rank 在 <code>pp_group</code> 上发送、在 <code>WORLD</code> group 上接收；奇数 rank 相反。这使得 send 和 recv 可以使用不同的 NCCL communicator，从而实现双向通信的<strong>真正并行</strong>（避免 NCCL 内部串行化）。</div>
+
+<h3>5.2 P2PCommunicator 类</h3>
+<p><code>P2PCommunicator</code> 封装了所有 stage 间通信操作：</p>
+
+<table>
+<tr><th>方法</th><th>方向</th><th>通信内容</th><th>边界处理</th></tr>
+<tr><td><code>recv_forward</code></td><td>prev → current</td><td>输入激活值 <code>[S, B, H]</code></td><td>首 stage 返回 None</td></tr>
+<tr><td><code>recv_backward</code></td><td>next → current</td><td>输出梯度 <code>[S, B, H]</code></td><td>末 stage 返回 None</td></tr>
+<tr><td><code>send_forward</code></td><td>current → next</td><td>输出激活值 <code>[S, B, H]</code></td><td>末 stage 跳过</td></tr>
+<tr><td><code>send_backward</code></td><td>current → prev</td><td>输入梯度 <code>[S, B, H]</code></td><td>首 stage 跳过</td></tr>
+<tr><td><code>send_forward_recv_backward</code></td><td>双向</td><td>发激活 + 收梯度</td><td>steady state 核心</td></tr>
+<tr><td><code>send_backward_recv_forward</code></td><td>双向</td><td>发梯度 + 收激活</td><td>steady state 核心</td></tr>
+<tr><td><code>send_forward_recv_forward</code></td><td>双向</td><td>发激活 + 收激活</td><td>warmup/cooldown</td></tr>
+<tr><td><code>send_backward_recv_backward</code></td><td>双向</td><td>发梯度 + 收梯度</td><td>cooldown</td></tr>
+<tr><td><code>send_forward_backward_recv_forward_backward</code></td><td>四向</td><td>同时收发激活和梯度</td><td>overlap 优化</td></tr>
+</table>
+
+<h3>5.3 Tensor Shape 与动态序列长度</h3>
+<p>P2P 通信的 tensor shape 由 <code>get_tensor_shapes</code> 计算：</p>
+
+<pre><code># schedules.py:2123-2182
+def get_tensor_shapes(
+    *, seq_length, micro_batch_size, decoder_seq_length,
+    config, tp_group=None, cp_group=None, pp_group=None, is_recv=True
+):
+    if config.variable_seq_lengths:
+        return [()]  # 动态形状，运行时交换
+
+    effective_seq_length = seq_length
+    if cp_group is not None:
+        effective_seq_length //= cp_group.size()
+    if config.sequence_parallel and tp_group is not None:
+        effective_seq_length //= tp_group.size()
+
+    tensor_shape = [effective_seq_length, micro_batch_size, config.hidden_size]
+
+    # Hyper connections: intermediate stages use hidden_size * num_residual_streams
+    if config.enable_hyper_connections and pp_group is not None:
+        ...
+
+    return [tensor_shape]</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/schedules.py:2123-2182</p>
+
+<div class="callout ca"><strong>Hyper Connections 的影响</strong>：当 <code>enable_hyper_connections=True</code> 时，中间 stage 的 P2P tensor shape 变为 <code>[S, B, hidden_size * num_residual_streams]</code>，因为 hyper connection 模块会扩展残差流的数量。这增加了 stage 间通信量，但只在中间 stage 生效（首/末 stage 保持标准 hidden_size）。</div>
+
+<h3>5.4 Variable Sequence Length 支持</h3>
+<p>当 <code>config.variable_seq_lengths=True</code> 时，每个 microbatch 的序列长度可能不同。此时 P2P 通信分为两个阶段：</p>
+<ol>
+<li><strong>Shape 交换</strong>：先发送/接收 3 元素 int64 tensor（形状元数据）</li>
+<li><strong>Tensor 交换</strong>：根据接收到的形状分配 buffer，再发送/接收实际数据</li>
+</ol>
+
+<pre><code># p2p_communication.py:186-259
+def _communicate_shapes(self, tensor_send_next, tensor_send_prev, recv_prev, recv_next):
+    recv_prev_shape_tensor = torch.empty((3,), device="cuda", dtype=torch.int64)
+    recv_next_shape_tensor = torch.empty((3,), device="cuda", dtype=torch.int64)
+    send_prev_shape_tensor = torch.tensor(tensor_send_prev.size(), device="cuda", dtype=torch.int64)
+    send_next_shape_tensor = torch.tensor(tensor_send_next.size(), device="cuda", dtype=torch.int64)
+    # batch_isend_irecv for shape tensors
+    ...</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/p2p_communication.py:186-259</p>
+
+<!-- SECTION 6 -->
+<h2 id="s6"><span class="sn">六</span>Combined 1F1B：PP 与 EP 重叠</h2>
+
+<h3>6.1 设计动机</h3>
+<p>在 MoE 模型（如 DeepSeek-V4）中，Expert Parallelism（EP）的 All-to-All 通信量巨大。Combined 1F1B 通过<strong>将 forward 和 backward 的层计算交错调度</strong>，使得 EP A2A 通信可以被相反方向的计算隐藏：</p>
+
+<div class="callout ct"><strong>核心思想</strong>：Forward 路径中 MoE 层的 EP dispatch A2A 可以被 Backward 路径中 Attention/MLP 的计算掩盖；反之，Backward 中 MoE 层的 EP combine A2A 可以被 Forward 的计算掩盖。</div>
+
+<h3>6.2 No-Pipelining Combined Schedule</h3>
+<p>对于 PP=1 的情况，Combined 1F1B 的调度如下：</p>
+
+<pre><code># combined_1f1b.py:48-54
+# Phases 0: 1st microbatch forward
+# Phases 1: 1st microbatch backward + 2nd microbatch forward
+# Phases 2: 2nd microbatch backward + 3rd microbatch forward
+# Phases 3: 3rd microbatch backward + 4th microbatch forward
+# Phases 4: 4th microbatch backward</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/combined_1f1b.py:48-54</p>
+
+<div class="diagram">
+<svg viewBox="0 0 720 160">
+<text class="th" x="40" y="28">Combined 1F1B（No Pipelining, 4 microbatches）</text>
+
+<text class="ts" x="40" y="56" font-weight="600">Time →</text>
+
+<g class="fb"><rect x="40" y="64" width="80" height="28" rx="4"/><text class="ts" x="80" y="78" text-anchor="middle" dominant-baseline="central">FWD0</text></g>
+<g class="fc"><rect x="124" y="64" width="120" height="28" rx="4"/><text class="ts" x="184" y="78" text-anchor="middle" dominant-baseline="central">BWD0 + FWD1</text></g>
+<g class="fc"><rect x="248" y="64" width="120" height="28" rx="4"/><text class="ts" x="308" y="78" text-anchor="middle" dominant-baseline="central">BWD1 + FWD2</text></g>
+<g class="fc"><rect x="372" y="64" width="120" height="28" rx="4"/><text class="ts" x="432" y="78" text-anchor="middle" dominant-baseline="central">BWD2 + FWD3</text></g>
+<g class="ft"><rect x="496" y="64" width="80" height="28" rx="4"/><text class="ts" x="536" y="78" text-anchor="middle" dominant-baseline="central">BWD3</text></g>
+
+<text class="ts" x="40" y="120">Forward MoE A2A 被 Backward 计算掩盖 | Backward MoE A2A 被 Forward 计算掩盖</text>
+</svg>
+<div class="diagram-cap">图 3：Combined 1F1B 时间线（No Pipelining）</div>
+</div>
+
+<h3>6.3 Interleaved Combined Schedule</h3>
+<p>对于 PP > 1 且 VP > 1 的情况，Combined 1F1B 将 <code>forward_step_helper</code> 和 <code>backward_step_helper</code> 合并为统一的 <code>combined_forward_backward_step</code>：</p>
+
+<pre><code># combined_1f1b.py:446-456
+with context_manager and outer_fp8_context:
+    output_tensor = type(f_schedule_plan or b_schedule_plan).run(
+        f_schedule_plan,
+        b_schedule_plan,
+        b_grad=b_grad,
+        pre_forward=pre_forward,
+        pre_backward=pre_backward,
+        post_forward=post_forward,
+        post_backward=post_backward,
+    )</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/combined_1f1b.py:446-456</p>
+
+<div class="callout cb"><strong>SchedulePlan 机制</strong>：
+<ol>
+<li>Forward 路径调用 <code>forward_step_func(return_schedule_plan=True)</code> 返回 <code>AbstractSchedulePlan</code>，而不是立即执行</li>
+<li>Backward 路径从 <code>b_output_tensor[0].schedule_plan</code> 获取之前存储的 plan</li>
+<li><code>SchedulePlan.run()</code> 按层交错执行 forward 和 backward 计算</li>
+<li>在 MoE 层的 A2A 通信期间，执行另一方向的非 MoE 层计算</li>
+</ol>
+这种<strong>计划-执行分离</strong>的设计使得调度器可以在 layer 粒度上精确控制计算和通信的交错。
+</div>
+
+<h3>6.4 FSDP 与 FP8 支持</h3>
+<p>Combined 1F1B 对 FSDP 和 FP8 有特殊处理：</p>
+
+<pre><code># combined_1f1b.py:338-403
+if fsdp_wrapper is not None:
+    fsdp_wrapper._replace_param_with_raw_if_needed()
+    # Wires explicit FSDP reshard hooks per layer
+    ...
+
+# FP8 handling
+use_outer_fp8_context = config.fp8 and config.fp8_recipe == Fp8Recipe.delayed
+outer_fp8_context = get_fp8_context(config) if use_outer_fp8_context else nullcontext()</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/combined_1f1b.py:338-403, 441-442</p>
+
+<div class="callout cc"><strong>限制</strong>：Interleaved Combined Schedule 不支持 FSDP（<code>combined_1f1b.py:197-203</code>）。因为 FSDP 的参数换入换出与 VPP 的多 model chunk 切换冲突，实现复杂度极高。</div>
+
+<!-- SECTION 7 -->
+<h2 id="s7"><span class="sn">七</span>Bubble 分析与通信量</h2>
+
+<h3>7.1 Bubble 定义与公式</h3>
+<p>Pipeline bubble 是指 GPU 处于 idle 状态等待数据到达的时间。对于 1F1B 调度：</p>
+
+<div class="formula">
+<b>Non-Interleaved 1F1B Bubble</b>：<br>
+Bubble_ratio = (P - 1) / M<br>
+其中 P = pipeline_parallel_size, M = num_microbatches<br><br>
+<b>示例</b>：PP=4, M=8 → Bubble = 3/8 = <b>37.5%</b><br>
+PP=4, M=32 → Bubble = 3/32 = <b>9.4%</b><br><br>
+<b>Interleaved 1F1B Bubble</b>：<br>
+Bubble_ratio ≈ (P - 1) / (M × C)<br>
+其中 C = virtual_pipeline_model_parallel_size<br><br>
+<b>示例</b>：PP=4, VP=2, M=8 → Bubble = 3/(8×2) = <b>18.75%</b>
+</div>
+
+<div class="callout ct"><strong>Bubble 与 Microbatch 数量的关系</strong>：增加 microbatch 数量 M 是减少 bubble 的最有效手段。但 M 受显存限制——每个 stage 需要保存 M 个 input/output tensor 对。在显存允许的情况下，M ≥ 4×P 是工程上的经验法则。</div>
+
+<h3>7.2 P2P 通信量分析</h3>
+<p>每个 microbatch 在 stage 间的通信量：</p>
+
+<div class="formula">
+<b>单 microbatch P2P 通信量（per stage boundary）</b>：<br>
+Forward: S × B × H × sizeof(dtype)<br>
+Backward: S × B × H × sizeof(dtype)<br>
+<b>Total per boundary per iteration</b>: 2 × S × B × H × sizeof(dtype)<br><br>
+<b>全 Pipeline 总通信量（per layer group per iteration）</b>：<br>
+= (P - 1) × 2 × S × B × H × sizeof(dtype) × M<br><br>
+<b>考虑 CP 和 SP</b>：<br>
+S_effective = S / (CP_size × SP_size)<br>
+Total = (P - 1) × 2 × S_effective × B × H × sizeof(dtype) × M
+</div>
+
+<h3>7.3 与 EP 通信的竞争</h3>
+<p>在 MoE 层，PP 的 P2P 通信与 EP 的 All-to-All 通信可能在同一时间发生：</p>
+
+<table>
+<tr><th>场景</th><th>PP 通信</th><th>EP 通信</th><th>竞争分析</th></tr>
+<tr><td>标准 1F1B</td><td>P2P send/recv 激活值</td><td>A2A dispatch/combine</td><td>竞争 NVLink/IB 带宽</td></tr>
+<tr><td>Combined 1F1B</td><td>P2P 与计算交错</td><td>A2A 被反向计算掩盖</td><td>理想情况下无竞争</td></tr>
+<tr><td>首/末 stage</td><td>单向 P2P</td><td>全量 A2A</td><td>首 stage 无 backward P2P，可专注 EP</td></tr>
+</table>
+
+<div class="callout ca"><strong>缓解策略</strong>：
+<ul>
+<li>PP P2P 使用独立 CUDA stream（通过 <code>overlap_p2p_comm</code>），与 EP A2A 的 stream 分离</li>
+<li>Combined 1F1B 通过 layer 级交错，使 EP A2A 发生在计算密集阶段</li>
+<li>对于非 MoE 层（如 Attention-only 层），PP P2P 是唯一的跨 rank 通信</li>
+</ul>
+</div>
+
+<!-- SECTION 8 -->
+<h2 id="s8"><span class="sn">八</span>Activation Checkpointing 与显存优化</h2>
+
+<h3>8.1 Partial Activation Checkpointing</h3>
+<p>Megatron-LM 支持在 pipeline 的特定 microbatch 上启用部分层的 activation checkpointing：</p>
+
+<pre><code># schedules.py:2324-2334
+if config.num_microbatches_with_partial_activation_checkpoints is not None:
+    max_outstanding_backprops = num_warmup_microbatches + 1
+
+# 在 forward step 中决定是否 checkpoint
+checkpoint_activations_microbatch = (
+    i % max_outstanding_backprops
+    >= config.num_microbatches_with_partial_activation_checkpoints
+)</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/schedules.py:2324-2334, 2383-2387</p>
+
+<div class="callout cb"><strong>原理</strong>：在 warmup 阶段，outstanding backpropagation 的数量逐渐增加（最多 <code>num_warmup + 1</code>）。前 <code>num_microbatches_with_partial_activation_checkpoints</code> 个 microbatch 在 window 内不 checkpoint 所有层（或跳过 checkpointing），以减少 recompute 开销；window 外的 microbatch 则 full checkpointing。这种<strong>自适应窗口策略</strong>平衡了显存和计算。</div>
+
+<h3>8.2 Deallocate Pipeline Outputs</h3>
+<p>当 <code>config.deallocate_pipeline_outputs=True</code> 时，output tensor 在 send 后立即释放：</p>
+
+<pre><code># schedules.py:2415
+deallocate_output_tensor(output_tensor, config.deallocate_pipeline_outputs)
+
+# schedules.py:159-165
+def deallocate_output_tensor(out, deallocate_pipeline_outputs=False):
+    if deallocate_pipeline_outputs:
+        out.data = torch.empty(
+            (1,), device=out.device, dtype=out.dtype,
+        )</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/schedules.py:2415, 159-165</p>
+
+<div class="callout ct"><strong>效果</strong>：将 output tensor 的数据替换为 1-element 空 tensor，立即释放显存。但这要求 backward 中通过 <code>custom_backward</code>（C++ autograd 引擎）而不是 <code>torch.autograd.backward</code> 来执行，因为 Python 端的 backward 需要保留 output tensor 的引用。</div>
+
+<h3>8.3 Defer Embedding WGrad</h3>
+<p>当 <code>config.defer_embedding_wgrad_compute=True</code> 时，embedding 层的权重梯度计算被推迟到 pipeline flush 阶段：</p>
+
+<pre><code># schedules.py:772-784
+def drain_embedding_wgrad_compute(config, embedding_activation_buffer, grad_output_buffer, weight, tp_group):
+    if config.defer_embedding_wgrad_compute:
+        # Execute deferred wgrad GEMMs during pipeline flush
+        ...</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/schedules.py:772-784</p>
+
+<div class="callout ca"><strong>动机</strong>：Embedding WGrad 是大型 GEMM（vocab_size × hidden_size，通常 vocab_size = 128K），计算耗时但不需要立即完成。将其推迟到 pipeline bubble（cooldown/flush）期间执行，可以隐藏这部分计算延迟。</div>
+
+<!-- SECTION 9 -->
+<h2 id="s9"><span class="sn">九</span>Fine-Grained Activation Offload</h2>
+
+<h3>9.1 PipelineOffloadManager 架构</h3>
+<p><code>PipelineOffloadManager</code> 是一个单例管理器，负责在 pipeline 执行过程中将激活值异步卸载到 CPU pinned memory：</p>
+
+<pre><code># fine_grained_activation_offload.py:384-795
+class PipelineOffloadManager:
+    def __init__(self):
+        self._d2h_stream = torch.cuda.Stream()  # GPU→CPU
+        self._h2d_stream = torch.cuda.Stream()  # CPU→GPU
+        self._cpu_tensor_pool = OffloadTensorPool()  # 复用 pinned CPU buffer
+        self._is_warmup = True
+        self._offload_margin = 0  # 保留在 GPU 上的 group 数</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/fine_grained_activation_offload.py:384-420</p>
+
+<h3>9.2 工作机制</h3>
+<p>Fine-Grained Activation Offload 通过 <code>saved_tensors_hooks</code> 拦截 autograd 的 save/retrieve 操作：</p>
+
+<ol>
+<li><strong>Forward 阶段</strong>：<code>on_save_for_backward(tensor)</code> 将 tensor 推入当前 forward chunk；当 layer group 完成时，<code>bulk_offload_group</code> 在 <code>_d2h_stream</code> 上执行异步 D2H 拷贝</li>
+<li><strong>Backward 阶段</strong>：<code>on_get_saved_tensor(saved_state)</code> 从当前 backward chunk 弹出 tensor；如果已被 offload，<code>bulk_reload_group</code> 在 <code>_h2d_stream</code> 上执行异步 H2D 拷贝</li>
+</ol>
+
+<pre><code># fine_grained_activation_offload.py:916-1011
+def tensor_push(self, tensor):
+    tag = self._next_tag
+    self._current_group.append((tag, tensor))
+    return tag
+
+def tensor_pop(self, tensor_tag):
+    _, saved = self._groups[tensor_tag].pop(0)
+    if isinstance(saved, tuple):  # offloaded
+        return self.reload(saved)
+    return saved
+
+def bulk_offload_group(self, group_to_offload):
+    for tag, tensor in group_to_offload:
+        cpu_tensor = self._cpu_tensor_pool.allocate(tensor.shape, tensor.dtype)
+        cpu_tensor.copy_(tensor, non_blocking=True)
+        ...
+
+def bulk_reload_group(self):
+    for tag, (cpu_tensor, event) in self._pending_reload.items():
+        gpu_tensor = torch.empty_like(cpu_tensor, device="cuda")
+        gpu_tensor.copy_(cpu_tensor, non_blocking=True)
+        ...</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/fine_grained_activation_offload.py:916-1011</p>
+
+<h3>9.3 Warmup 后的自适应调优</h3>
+<p>在第一个 iteration（warmup）完成后，<code>post_warmup_callback</code> 根据实际观测到的 tensor 大小和 group 分布，计算最优的 offload 策略：</p>
+
+<pre><code># fine_grained_activation_offload.py:543-624
+def post_warmup_callback(self):
+    self._is_warmup = False
+    # 计算 _offload_margin：保留在 GPU 上的 group 数，避免 reload 阻塞 compute stream
+    self._offload_margin = max_deduplicated_groups
+    # 平衡各 PP rank 的 offload bytes
+    keep_on_gpu_bytes = total_bytes * activation_offload_fraction
+    # 禁用最后几个同名 group 的 offloading（防止 reload 阻塞）</code></pre>
+<p class="src">来源：megatron/core/pipeline_parallel/fine_grained_activation_offload.py:543-624</p>
+
+<div class="callout ct"><strong>关键参数</strong>：
+<ul>
+<li><code>_offload_margin</code>：保留在 GPU 上的 group 数量，确保 backward 立即可用最近几个 group 的激活值，无需等待 H2D</li>
+<li><code>activation_offload_fraction</code>：控制 offload 的比例，0 = 全 offload，1 = 全保留</li>
+<li><code>max_inflight_offloads</code>：限制每组同时进行的 D2H 拷贝数量，避免压垮 PCIe/NVLink</li>
+</ul>
+</div>
+
+<!-- SECTION 10 -->
+<h2 id="s10"><span class="sn">十</span>结论与配置建议</h2>
+
+<h3>10.1 PP 核心特征总结</h3>
+
+<div class="callout ct"><strong>特征 1：1F1B 是默认且最优的 PP 调度</strong> — Non-Interleaved 1F1B 通过 warmup-steady-cooldown 三阶段结构，在显存和 bubble 之间取得了最佳平衡。VPP 进一步将 bubble 降低 VP 倍，但增加了调度复杂度。</div>
+
+<div class="callout ct"><strong>特征 2：P2P 通信支持丰富的 overlap 策略</strong> — <code>overlap_p2p_comm</code>、<code>batch_p2p_comm</code>、<code>batch_p2p_sync</code>、交替 group 策略等，使得 PP 的通信开销可以被计算有效隐藏。PP=2 时的 WORLD group 交替策略是一个精妙的工程细节。</div>
+
+<div class="callout ct"><strong>特征 3：Combined 1F1B 专为 MoE 优化</strong> — 通过 layer 级前向/反向交错，将 EP A2A 通信隐藏在相反方向的计算中。这是 DeepSeek-V4 等 MoE 大模型训练的关键优化。</div>
+
+<div class="callout ct"><strong>特征 4：显存优化手段丰富</strong> — Partial activation checkpointing、deallocate pipeline outputs、defer embedding wgrad、fine-grained activation offload 四层手段叠加，使得 PP=16 时仍可训练超大规模模型。</div>
+
+<h3>10.2 配置决策树</h3>
+<div class="diagram">
+<svg viewBox="0 0 680 340">
+<defs><marker id="a8" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<text class="th" x="40" y="28">Megatron-LM PP 配置决策</text>
+<g class="fg"><rect x="180" y="44" width="320" height="36" rx="8"/><text class="th" x="340" y="62" text-anchor="middle" dominant-baseline="central">模型大小 / 序列长度 / 是否 MoE?</text></g>
+
+<line x1="260" y1="80" x2="120" y2="120" stroke="var(--tx3)" stroke-width="1" marker-end="url(#a8)"/>
+<text class="ts" x="160" y="98" style="fill:var(--tx3)">≤ 70B, 非 MoE</text>
+<g class="fp"><rect x="40" y="120" width="160" height="48" rx="8"/><text class="th" x="120" y="138" text-anchor="middle" dominant-baseline="central">PP=1</text><text class="ts" x="120" y="156" text-anchor="middle" dominant-baseline="central">无需 PP，TP+DP 足够</text></g>
+
+<line x1="340" y1="80" x2="340" y2="120" stroke="var(--tx3)" stroke-width="1" marker-end="url(#a8)"/>
+<text class="ts" x="356" y="98" style="fill:var(--tx3)">70B~300B, 非 MoE</text>
+<g class="fb"><rect x="260" y="120" width="160" height="48" rx="8"/><text class="th" x="340" y="138" text-anchor="middle" dominant-baseline="central">PP=4~8, 1F1B</text><text class="ts" x="340" y="156" text-anchor="middle" dominant-baseline="central">M ≥ 4×PP, overlap_p2p=True</text></g>
+
+<line x1="420" y1="80" x2="560" y2="120" stroke="var(--tx3)" stroke-width="1" marker-end="url(#a8)"/>
+<text class="ts" x="500" y="98" style="fill:var(--tx3)">≥ 300B 或 MoE</text>
+<g class="ft"><rect x="480" y="120" width="160" height="48" rx="8"/><text class="th" x="560" y="138" text-anchor="middle" dominant-baseline="central">PP=8~16, VPP=2+</text><text class="ts" x="560" y="156" text-anchor="middle" dominant-baseline="central">Combined 1F1B if MoE</text></g>
+
+<line x1="40" y1="190" x2="640" y2="190" stroke="var(--bd)" stroke-width="0.5"/>
+
+<text class="th" x="40" y="216">推荐配置 (V4-Pro, 512 GPUs, S=1M)</text>
+<text class="ts" x="56" y="240">• PP=16: 每 stage 约 3 层，激活显存降 16x</text>
+<text class="ts" x="56" y="262">• VP=2: Bubble 从 15/M 降至 15/(2M)，M=32 时 bubble ≈ 23%</text>
+<text class="ts" x="56" y="284">• overlap_p2p_comm=True, batch_p2p_comm=False: 启用 stream-level overlap</text>
+<text class="ts" x="56" y="306">• Combined 1F1B: MoE 层 EP A2A 与反向计算重叠</text>
+</svg>
+<div class="diagram-cap">图 4：Megatron-LM PP 配置决策树</div>
+</div>
+
+<h3>10.3 PP 关键配置速查表</h3>
+<table>
+<tr><th>配置项</th><th>推荐值</th><th>说明</th></tr>
+<tr><td><code>pipeline_model_parallel_size</code></td><td>4~16</td><td>根据模型层数和显存确定</td></tr>
+<tr><td><code>virtual_pipeline_model_parallel_size</code></td><td>2~4</td><td>大模型用 VP 减少 bubble</td></tr>
+<tr><td><code>num_microbatches</code></td><td>≥ 4 × PP</td><td>保证 bubble &lt; 25%</td></tr>
+<tr><td><code>microbatch_group_size_per_vp_stage</code></td><td>默认 = PP size</td><td>深度优先策略</td></tr>
+<tr><td><code>overlap_p2p_comm</code></td><td>True</td><td>启用 P2P 与计算 overlap</td></tr>
+<tr><td><code>batch_p2p_comm</code></td><td>False（if overlap）</td><td>overlap 要求 batch_p2p=False</td></tr>
+<tr><td><code>deallocate_pipeline_outputs</code></td><td>True</td><td>释放 output 显存</td></tr>
+<tr><td><code>pipeline_dtype</code></td><td>与模型一致</td><td>PP &gt; 1 时必填</td></tr>
+<tr><td><code>overlap_moe_expert_parallel_comm</code></td><td>True（MoE）</td><td>启用 Combined 1F1B</td></tr>
+<tr><td><code>fine_grained_activation_offloading</code></td><td>True（超大规模）</td><td>异步 offload 激活值到 CPU</td></tr>
+</table>
+
+<h3>10.4 一句话总结</h3>
+<div class="callout ct"><strong>总结</strong>：Megatron-LM 的 Pipeline Parallelism 通过 1F1B 调度、Virtual Pipeline Parallelism、P2P 通信 overlap、Combined 1F1B 与 EP 重叠、以及多层显存优化手段，实现了在大规模集群上高效训练百亿到千亿参数模型的能力。核心设计哲学是"用调度隐藏通信"——通过精细的 microbatch 编排和 layer 级计算交错，将 pipeline bubble 和通信开销压缩到总时间的 20% 以内。对于 DeepSeek-V4 这样的 MoE 大模型，Combined 1F1B 配合 VP=2、PP=16 是推荐配置，可将 EP A2A 通信完全隐藏在反向计算中。</div>
+
+</div>
+</body>
+</html>
