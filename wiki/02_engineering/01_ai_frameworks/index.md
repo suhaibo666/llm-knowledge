@@ -61,6 +61,7 @@ User Code → @torch.compile
 | [[joint_graph_passes_guide]] | 联合图优化 passes |
 | [[flex_attention_analysis]] | FlexAttention: 可组合注意力融合, BlockMask, score_mod, 语义驱动 codegen |
 | [[tilelang_analysis]] | TileLang: Tile-Level IR, Host Codegen, Z3 SMT 验证, 通算 wave 绑定 |
+| [[operator_optimization_guide]] | GPU/NPU 算子调优体系：Roofline、Memory/Compute Bound 优化、AscendC、融合策略 |
 
 ### NPU 后端
 

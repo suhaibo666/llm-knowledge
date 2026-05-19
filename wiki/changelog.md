@@ -4,6 +4,28 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-19: 算子调优体系指南入库
+
+**Type**: User Contribution（手动入库，算子开发与性能优化指南）
+
+**入库文件**:
+
+- `wiki/02_engineering/01_ai_frameworks/operator_optimization_guide.md`
+  - **§1**: 算子编程体系概览（GPU: CUDA/CUTLASS/Triton/TileLang/TVM + NPU: AscendC/TBE/CANN）
+  - **§2**: Roofline 性能分析模型（A100/H100/910B Ridge Point、Nsight/msprof Profiling 指标）
+  - **§3**: GPU Memory Bound 优化（融合、算法变形、向量化访存）与 Compute Bound 优化（Tiling、软件流水线、Tensor Core）
+  - **§4**: 融合算子识别与设计（决策矩阵、常见 Pattern、FX Graph 替换）
+  - **§5**: 等价替换寻找方法（数学变形、算法层替换、AutoTuning）
+  - **§6**: 昇腾 NPU 优化路径（Da Vinci 架构、AscendC 三段流水、GPU 经验适配表）
+  - **§7**: 与 torch.compile 的关系（各框架接入方式、Custom Op 注册）
+  - **§8**: GPU/NPU 完整优化工作流（Profile → Roofline → 优化 → 注册 → 验证）
+
+**交叉引用更新**:
+
+- `01_ai_frameworks/index.md` — 编译优化表格新增条目
+
+---
+
 ## 2026-05-19: Pin Memory 与内存语义通信分析入库
 
 **Type**: User Contribution（手动入库，综合深度分析）
