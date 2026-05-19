@@ -23,6 +23,7 @@
 | [[deepseek_v4_context_parallel_analysis.html]] | Megatron-LM dev 源码 | DeepSeek-V4 CP 实现, 4 种通信类型, Native/TE CP, Dynamic CP, MLA 通信量优化 |
 | [[megatron_pp_parallelism_analysis.html]] | Megatron-LM 源码 | PP 并行: 1F1B/VPP/Combined 调度, P2P 通信, Bubble 分析, 激活优化与卸载 |
 | [[comm_compute_overlap_analysis.html]] | Megatron-LM / torchtitan 源码 | 计算通信掩盖: combined_1f1b vs ZBV/DualPipe, sub-layer 级调度, DeepEP/HybridEP |
+| [[async_collective_tensor_deep_dive.html]] | PyTorch 源码 (_functional_collectives.py) | ACT 源码追踪: __torch_dispatch__, wait_tensor, stream 级执行过程, 与 Megatron 手动 stream 对比 |
 | [[muon_sharded_hsdp_report.html]] | Cursor Composer 2.5 博客 | 分片 Muon + 双网格 HSDP: all-to-all N-S、EP/CP 解耦、异步流水线、非专家分工优化 |
 
 ---

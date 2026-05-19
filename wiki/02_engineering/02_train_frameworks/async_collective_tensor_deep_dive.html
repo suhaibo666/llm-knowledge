@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AsyncCollectiveTensor 机制深度解析</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+:root {
+  --bg:#fafaf8;--bg2:#f2f1ed;--bg3:#e8e7e3;
+  --tx:#1a1a18;--tx2:#5f5e5a;--tx3:#888780;
+  --bd:rgba(0,0,0,0.1);--bd2:rgba(0,0,0,0.06);
+  --blue:#378ADD;--blue-bg:#E6F1FB;--blue-dk:#0C447C;
+  --teal:#1D9E75;--teal-bg:#E1F5EE;--teal-dk:#085041;
+  --purple:#7F77DD;--purple-bg:#EEEDFE;--purple-dk:#3C3489;
+  --amber:#EF9F27;--amber-bg:#FAEEDA;--amber-dk:#633806;
+  --coral:#D85A30;--coral-bg:#FAECE7;--coral-dk:#712B13;
+  --red:#E24B4A;--red-bg:#FCEBEB;--red-dk:#791F1F;
+  --gray-bg:#F1EFE8;--gray-dk:#444441;
+  --green:#639922;--green-bg:#EAF3DE;--green-dk:#27500A;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1a1a18;--bg2:#2c2c2a;--bg3:#3d3d3a;
+  --tx:#e8e7e3;--tx2:#b4b2a9;--tx3:#888780;
+  --bd:rgba(255,255,255,0.1);--bd2:rgba(255,255,255,0.06);
+  --blue-bg:#042C53;--blue-dk:#85B7EB;
+  --teal-bg:#04342C;--teal-dk:#5DCAA5;
+  --purple-bg:#26215C;--purple-dk:#AFA9EC;
+  --amber-bg:#412402;--amber-dk:#FAC775;
+  --coral-bg:#4A1B0C;--coral-dk:#F0997B;
+  --red-bg:#501313;--red-dk:#F09595;
+  --gray-bg:#2C2C2A;--gray-dk:#D3D1C7;
+  --green-bg:#173404;--green-dk:#97C459;
+}}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Noto Sans SC',system-ui,sans-serif;background:var(--bg);color:var(--tx);line-height:1.8;font-size:15px}
+.wrap{max-width:880px;margin:0 auto;padding:40px 24px 80px}
+h1{font-size:28px;font-weight:700;margin:0 0 8px;letter-spacing:-0.5px}
+h1 span{display:block;font-size:14px;font-weight:400;color:var(--tx2);margin-top:4px;letter-spacing:0}
+h2{font-size:20px;font-weight:700;margin:48px 0 16px;padding-bottom:8px;border-bottom:2px solid var(--bd)}
+h3{font-size:16px;font-weight:600;margin:32px 0 12px}
+p{margin:0 0 14px;color:var(--tx2)}
+.lead{font-size:16px;color:var(--tx2);margin:0 0 32px;padding:16px 20px;background:var(--bg2);border-radius:8px;border-left:3px solid var(--teal)}
+table{width:100%;border-collapse:collapse;margin:16px 0 24px;font-size:13px}
+th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--bd2)}
+th{font-weight:600;color:var(--tx);background:var(--bg2);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+td{color:var(--tx2)}
+tr:hover td{background:var(--bg2)}
+code{font-family:'JetBrains Mono',monospace;font-size:13px;background:var(--bg2);padding:2px 6px;border-radius:4px;color:var(--tx)}
+pre{background:var(--bg2);border-radius:8px;padding:16px 20px;margin:12px 0 20px;overflow-x:auto;font-size:13px;line-height:1.6;border:1px solid var(--bd2)}
+pre code{background:none;padding:0}
+.diagram{margin:24px 0;background:var(--bg);border:1px solid var(--bd);border-radius:12px;padding:20px;overflow:hidden}
+.diagram svg{width:100%;height:auto;display:block}
+.diagram-cap{font-size:12px;color:var(--tx3);text-align:center;margin-top:8px}
+.diagram svg text.th{font-family:'Noto Sans SC',system-ui,sans-serif;font-size:14px;font-weight:500;fill:var(--tx)}
+.diagram svg text.ts{font-family:'Noto Sans SC',system-ui,sans-serif;font-size:12px;fill:var(--tx2)}
+.diagram svg text.tm{font-family:'JetBrains Mono',monospace;font-size:12px;fill:var(--tx2)}
+.diagram svg .fb rect{fill:var(--blue-bg);stroke:var(--blue);stroke-width:.5}
+.diagram svg .fb text{fill:var(--blue-dk)}
+.diagram svg .ft rect{fill:var(--teal-bg);stroke:var(--teal);stroke-width:.5}
+.diagram svg .ft text{fill:var(--teal-dk)}
+.diagram svg .fp rect{fill:var(--purple-bg);stroke:var(--purple);stroke-width:.5}
+.diagram svg .fp text{fill:var(--purple-dk)}
+.diagram svg .fa rect{fill:var(--amber-bg);stroke:var(--amber);stroke-width:.5}
+.diagram svg .fa text{fill:var(--amber-dk)}
+.diagram svg .fc rect{fill:var(--coral-bg);stroke:var(--coral);stroke-width:.5}
+.diagram svg .fc text{fill:var(--coral-dk)}
+.diagram svg .fg rect{fill:var(--gray-bg);stroke:var(--tx3);stroke-width:.5}
+.diagram svg .fg text{fill:var(--gray-dk)}
+.callout{padding:14px 18px;border-radius:8px;margin:16px 0;font-size:14px}
+.ct{background:var(--teal-bg);border-left:3px solid var(--teal);color:var(--teal-dk)}
+.cc{background:var(--coral-bg);border-left:3px solid var(--coral);color:var(--coral-dk)}
+.cb{background:var(--blue-bg);border-left:3px solid var(--blue);color:var(--blue-dk)}
+.ca{background:var(--amber-bg);border-left:3px solid var(--amber);color:var(--amber-dk)}
+.formula{background:var(--bg2);border:1px solid var(--bd2);border-radius:8px;padding:14px 18px;margin:12px 0 20px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.8;color:var(--tx2)}
+.formula b{color:var(--tx);font-weight:500}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
+.bt{background:var(--teal-bg);color:var(--teal-dk)}
+.bc{background:var(--coral-bg);color:var(--coral-dk)}
+.toc{background:var(--bg2);border-radius:8px;padding:20px 24px;margin:24px 0 40px}
+.toc h3{margin:0 0 12px;font-size:14px}
+.toc ol{padding-left:20px}
+.toc li{margin:4px 0;font-size:14px;color:var(--tx2)}
+.toc a{color:var(--blue);text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.sn{color:var(--teal);font-weight:700;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>AsyncCollectiveTensor 机制深度解析<span>源码追踪 · CUDA Stream 级执行过程 · 能做什么/不能做什么</span></h1>
+
+<p class="lead">以 torchtitan 的 <code>AllToAllTokenDispatcher.combine()</code> 为具体例子，逐行追踪从 Python 到 CUDA stream 的完整执行链路，解释 AsyncCollectiveTensor 为什么能在同一个 forward 内部实现通信掩盖，却无法在不同 micro-batch 间实现 Megatron combined_1f1b 那样的 sub-layer 级交错掩盖。</p>
+
+<div class="toc"><h3>目录</h3>
+<ol>
+<li><a href="#s1">代码走读：combine() 的完整执行链路</a></li>
+<li><a href="#s2">AsyncCollectiveTensor 的三层机制</a></li>
+<li><a href="#s3">Stream 视角：同一 mb 内的掩盖是如何发生的</a></li>
+<li><a href="#s4">边界：为什么 ACT 无法跨 micro-batch</a></li>
+<li><a href="#s5">对比：Megatron 如何绕过 ACT 的限制</a></li>
+</ol></div>
+
+<!-- ══════════ SECTION 1 ══════════ -->
+<h2 id="s1"><span class="sn">一</span>代码走读：combine() 的完整执行链路</h2>
+
+<p>以 torchtitan 的 <code>AllToAllTokenDispatcher.combine()</code>（<code>token_dispatcher.py:399-478</code>）为例，逐行追踪。</p>
+
+<h3>Step 1：发起反向 All-to-All 通信</h3>
+
+<pre><code># token_dispatcher.py L432-438
+# 1) 反向 permute：expert-major → rank-major
+routed_output = self._unpermute(
+    routed_output, metadata.input_shape, metadata.permuted_indices
+)
+
+# 2) 发起反向 All-to-All 通信
+routed_output = all_to_all_single_autograd(
+    routed_output,
+    metadata.input_splits,   # 发送给每个 rank 的 token 数
+    metadata.output_splits,  # 从每个 rank 接收的 token 数
+    self.ep_mesh,            # 包含 NCCL ProcessGroup
+)
+
+# 3) ← 此时 routed_output 已经是 AsyncCollectiveTensor！
+#    A2A 已在 NCCL stream 上启动，但 compute stream 不等待</code></pre>
+
+<p><code>all_to_all_single_autograd()</code> 内部发生了以下事情：</p>
+
+<pre><code># _functional_collectives.py L554-560
+def all_to_all_single_autograd(self, output_split_sizes, input_split_sizes, group, tag=""):
+    # ① 调用底层 NCCL collective kernel
+    tensor = torch.ops._c10d_functional_autograd.all_to_all_single(
+        self, output_split_sizes, input_split_sizes, _group_or_group_name(group),
+    )
+    #    ↑ 这里会在 NCCL stream 上启动 AlltoAll，立即返回一个 raw tensor
+    #      实际数据还没到位——通信正在 NCCL stream 上异步进行
+
+    # ② 包装为 AsyncCollectiveTensor
+    return _FromTorchTensor.apply(tensor)
+    #    ↓ 调用 _maybe_wrap_tensor → _wrap_tensor_autograd → AsyncCollectiveTensor(tensor)</code></pre>
+
+<h3>Step 2：在通信进行的同时执行 Shared Expert 计算</h3>
+
+<pre><code># token_dispatcher.py L443
+# routed_output 是 ACT，只是一个"占位符"，数据还没到
+# 但 shared_experts(x) 不需要 routed_output 的数据！
+# 所以它可以立即在 compute stream 上开始执行
+out = shared_experts(x) if shared_experts is not None else torch.zeros_like(x)</code></pre>
+
+<h3>Step 3：访问 ACT 时触发隐式同步</h3>
+
+<pre><code># token_dispatcher.py L448-449 (scoring + scatter_add)
+if not self.score_before_experts:
+    routed_output = (routed_output.to(torch.float32)    # ← .to() 是 non-view op
+        * metadata.top_scores_experts_sorted.reshape(-1, 1)  # ← mul 是 non-view op
+    ).to(routed_output.dtype)
+
+# L473-477
+out = deterministic_scatter_add(
+    out,
+    token_indices_experts_sorted.reshape(-1, 1).expand(-1, x.shape[-1]),
+    routed_output,  # ← scatter_add 是 non-view op → 触发 trigger_wait()！
+)</code></pre>
+
+<h3>Step 4：trigger_wait() 的完整路径</h3>
+
+<pre><code># AsyncCollectiveTensor.__torch_dispatch__ (L1066-1102)
+# 当 scatter_add 访问 routed_output 时触发：
+#   1. _is_view_op(scatter_add) → False（scatter_add 会修改数据）
+#   2. unwrap(routed_output) → routed_output.trigger_wait()
+#      → wait_tensor(self.elem)
+#      → torch.ops._c10d_functional.wait_tensor(tensor)
+#      → 在 CUDA 上：插入 NCCL stream → compute stream 的同步点
+
+# 核心：wait_tensor 在 compute stream 上插入一个 NCCL stream 的 wait
+# NCCL stream:   [========= A2A 通信 =========]
+#                                          ↓ event
+# Compute stream:[sfc1→...→scatter_add] → [wait] → [继续 scatter_add]
+#                                          ↑ 此时 A2A 保证已完成</code></pre>
+
+<div class="diagram">
+<svg viewBox="0 0 680 360">
+<text class="th" x="40" y="28">Step 1-4 的 CUDA Stream 时间线</text>
+
+<text class="ts" x="38" y="60" text-anchor="end">NCCL stream</text>
+<g class="fa"><rect x="130" y="44" width="380" height="26" rx="4"/><text class="ts" x="320" y="57" text-anchor="middle" dominant-baseline="central">AlltoAll (反向 combine): 发送/接收 expert outputs</text></g>
+
+<text class="ts" x="38" y="100" text-anchor="end">Compute stream</text>
+
+<g class="fg"><rect x="130" y="84" width="190" height="26" rx="4"/><text class="ts" x="225" y="97" text-anchor="middle" dominant-baseline="central">_unpermute (expert→rank-major)</text></g>
+
+<text class="tm" x="330" y="97">→</text>
+
+<!-- Launch A2A marker -->
+<g class="fc"><rect x="340" y="84" width="170" height="26" rx="4"/><text class="ts" x="425" y="97" text-anchor="middle" dominant-baseline="central">launch A2A → ACT 返回</text></g>
+
+<text class="tm" x="520" y="108" style="fill:var(--coral-dk)">mb₁</text>
+
+<!-- shared_experts -->
+<g class="fp"><rect x="130" y="130" width="190" height="26" rx="4"/><text class="ts" x="225" y="143" text-anchor="middle" dominant-baseline="central">shared_experts(x) ← 并行!</text></g>
+
+<text class="tm" x="330" y="143">→</text>
+
+<g class="fp"><rect x="340" y="130" width="170" height="26" rx="4"/><text class="ts" x="425" y="143" text-anchor="middle" dominant-baseline="central">score apply (mul)</text></g>
+
+<text class="tm" x="520" y="143">→ trigger_wait() !</text>
+
+<!-- Wait + scatter -->
+<g class="ft"><rect x="130" y="176" width="380" height="26" rx="4"/><text class="ts" x="320" y="189" text-anchor="middle" dominant-baseline="central">同步 ← wait_tensor → scatter_add(routed_output) [A2A 保证完成]</text></g>
+
+<!-- Stream sync arrow -->
+<line x1="480" y1="158" x2="480" y2="175" stroke="var(--coral)" stroke-width="1.5" stroke-dasharray="4 2"/>
+<text class="ts" x="490" y="168" style="fill:var(--coral-dk)">sync</text>
+
+<line x1="40" y1="222" x2="640" y2="222" stroke="var(--bd)" stroke-width="0.5"/>
+
+<text class="th" x="40" y="248">掩盖效果</text>
+<g class="ft"><rect x="40" y="262" width="600" height="30" rx="4"/><text class="ts" x="340" y="277" text-anchor="middle" dominant-baseline="central">shared_experts 的 GEMM 计算 ≈ A2A 通信耗时 → 通信几乎被完全掩盖</text></g>
+
+<text class="ts" x="40" y="312" style="fill:var(--tx3)">关键前提：shared_experts(x) 和 routed_output 之间没有数据依赖 → 可以在 ACT 等待期间执行</text>
+<text class="ts" x="40" y="332" style="fill:var(--tx3)">关键限制：整个流程在单个 combine() 调用栈内，由同一个 forward 线程顺序执行</text>
+</svg>
+<div class="diagram-cap">图 1：combine() 的双 Stream 时间线——ACT 实现的同一 mb 内掩盖</div>
+</div>
+
+<!-- ══════════ SECTION 2 ══════════ -->
+<h2 id="s2"><span class="sn">二</span>AsyncCollectiveTensor 的三层机制</h2>
+
+<h3>2.1 Layer 1：Tensor Subclass —— 身份伪装</h3>
+
+<pre><code>class AsyncCollectiveTensor(torch.Tensor):
+    elem: torch.Tensor       # 底层的 raw tensor（通信结果，可能还没就绪）
+    completed: bool           # 是否已经 wait 过
+
+    def __new__(cls, elem):
+        # 创建一个 metadata 完全相同但数据指向 elem 的"影子 tensor"
+        r = torch.Tensor._make_wrapper_subclass(
+            cls,
+            elem.size(), strides=elem.stride(),
+            dtype=elem.dtype, device=elem.device, ...
+        )
+        r.elem = elem          # 保存对 raw tensor 的引用
+        r.completed = False    # 标记为"尚未同步"
+        return r</code></pre>
+
+<p>ACT 本质上是一个 <strong>metadata 替身</strong>。对 Python 来说它长得像一个正常 tensor（有 shape、dtype、device），但数据还没到——真正的 tensor 数据正在 NCCL stream 上传输。</p>
+
+<h3>2.2 Layer 2：__torch_dispatch__ —— 拦截所有 tensor 操作</h3>
+
+<pre><code>@classmethod
+def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
+    is_view_op = _is_view_op(func)
+
+    def unwrap(e):
+        if not is_view_op:
+            return e.trigger_wait()   # 非 view 操作 → 同步!
+        return e.elem                  # view 操作 → 直接用 raw tensor，不等待
+
+    # 递归展开所有 ACT 参数
+    unwrapped_args = tree_map_only(AsyncCollectiveTensor, unwrap, args)
+
+    # 执行真正的 op
+    out = func(*unwrapped_args, **unwrapped_kwargs)
+
+    # view 操作 → 重新包装输出，继续推迟同步
+    if is_view_op:
+        out = tree_map_only(torch.Tensor, wrap, out)
+
+    return out</code></pre>
+
+<div class="callout cb"><strong>_is_view_op 的判断逻辑</strong>：检查 op schema 的第一个参数的 alias_info——如果是非写入的别名操作（只看不改），就是 view。也就是说：reshape、transpose、view、slice → view op（不触发 sync）；add、mul、matmul、scatter_add → 非 view op（触发 sync）。</div>
+
+<h3>2.3 Layer 3：wait_tensor —— CUDA Stream 同步</h3>
+
+<pre><code>def wait_tensor(tensor):
+    """Waiting follows device semantics, which means blocking on CPU
+       and synchronizing streams on CUDA."""
+    return torch.ops._c10d_functional.wait_tensor(tensor)
+    # 底层 C++ 实现：
+    #   1. 找到 tensor 关联的 NCCL Work 对象（通过全局 ptr→Work 映射表）
+    #   2. Work.wait()  → 在 compute stream 上插入 NCCL stream 的同步
+    #   3. 流同步完成 → tensor 的数据可用</code></pre>
+
+<!-- ══════════ SECTION 3 ══════════ -->
+<h2 id="s3"><span class="sn">三</span>Stream 视角：同一 mb 内的掩盖是如何发生的</h2>
+
+<p>用一个具体的 micro-batch 来展示整个过程。假设 EP=4，一个 micro-batch mb₀ 的 MoE layer 进入 <code>grouped_expert.forward()</code>：</p>
+
+<div class="diagram">
+<svg viewBox="0 0 680 480">
+<defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<text class="th" x="40" y="28">mb₀ 的 MoE forward 完整 Stream 时间线</text>
+
+<text class="ts" x="32" y="60" text-anchor="end">NCCL</text>
+<text class="ts" x="32" y="180" text-anchor="end">Compute</text>
+
+<!-- NCCL stream row -->
+<g class="fa"><rect x="130" y="48" width="110" height="24" rx="3"/><text class="ts" x="185" y="60" text-anchor="middle" dominant-baseline="central">A2A dispatch</text></g>
+<g class="fa"><rect x="350" y="48" width="110" height="24" rx="3"/><text class="ts" x="405" y="60" text-anchor="middle" dominant-baseline="central">A2A combine</text></g>
+
+<!-- Compute stream row -->
+<g class="fg"><rect x="68" y="168" width="50" height="24" rx="3"/><text class="ts" x="93" y="180" text-anchor="middle" dominant-baseline="central">router</text></g>
+<g class="fg"><rect x="130" y="168" width="80" height="24" rx="3"/><text class="ts" x="170" y="180" text-anchor="middle" dominant-baseline="central">permute</text></g>
+<g class="fc"><rect x="222" y="168" width="50" height="24" rx="3"/><text class="ts" x="247" y="180" text-anchor="middle" dominant-baseline="central">launch</text></g>
+
+<!-- Marker line from compute launch to NCCL -->
+<line x1="270" y1="192" x2="240" y2="72" stroke="var(--coral)" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#a3)"/>
+<text class="ts" x="275" y="148" style="fill:var(--coral-dk)">发起</text>
+
+<!-- Compute continues -->
+<g class="ft"><rect x="286" y="168" width="180" height="24" rx="3"/><text class="ts" x="376" y="180" text-anchor="middle" dominant-baseline="central">routed experts compute ← 并行!</text></g>
+<text class="tm" x="476" y="180">→</text>
+
+<!-- permute + launch combine -->
+<g class="fg"><rect x="486" y="168" width="60" height="24" rx="3"/><text class="ts" x="516" y="180" text-anchor="middle" dominant-baseline="central">permute</text></g>
+<g class="fc"><rect x="558" y="168" width="50" height="24" rx="3"/><text class="ts" x="583" y="180" text-anchor="middle" dominant-baseline="central">launch</text></g>
+
+<!-- Marker from compute to NCCL combine -->
+<line x1="608" y1="192" x2="460" y2="72" stroke="var(--coral)" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#a3)"/>
+<text class="ts" x="615" y="148" style="fill:var(--coral-dk)">发起</text>
+
+<!-- shared expert + sync -->
+<g class="fp"><rect x="68" y="208" width="540" height="24" rx="3"/><text class="ts" x="338" y="220" text-anchor="middle" dominant-baseline="central">shared_experts(x) + score apply (与 A2A combine 并行)</text></g>
+<g class="fb"><rect x="68" y="244" width="540" height="24" rx="3"/><text class="ts" x="338" y="256" text-anchor="middle" dominant-baseline="central">wait_tensor → scatter_add (A2A combine 结果同步后使用)</text></g>
+
+<!-- Legend -->
+<line x1="40" y1="290" x2="640" y2="290" stroke="var(--bd)" stroke-width="0.5"/>
+
+<text class="th" x="40" y="316">发生了什么</text>
+
+<text class="ts" x="56" y="342">① dispatch A2A 被 launch 到 NCCL stream → compute stream 立即继续，不做等待</text>
+<text class="ts" x="56" y="364">② routed experts 的 GroupedGEMM 在 compute stream 上与 dispatch A2A <strong>并行</strong></text>
+<text class="ts" x="56" y="386">③ 当 dispatch A2A 的结果被消费时（dispatch_postprocess → experts），ACT 触发 wait_tensor</text>
+<text class="ts" x="56" y="408">④ 同理，combine A2A 被 launch → shared_experts 在 compute stream 上并行 → scatter_add 时 wait</text>
+
+<text class="ts" x="56" y="438" style="fill:var(--teal-dk)">掩盖效果：dispatch 通信 ≈ expert compute 耗时；combine 通信 ≈ shared_expert compute 耗时</text>
+<text class="ts" x="56" y="458" style="fill:var(--tx3)">全部在同一个 forward 调用内完成——ACT 只是一个"不要过早阻塞 compute stream"的惰性机制</text>
+</svg>
+<div class="diagram-cap">图 2：单个 mb 内 MoE forward 的完整双 Stream 执行过程</div>
+</div>
+
+<!-- ══════════ SECTION 4 ══════════ -->
+<h2 id="s4"><span class="sn">四</span>边界：为什么 ACT 无法跨 micro-batch</h2>
+
+<h3>4.1 ACT 掩盖的前提条件</h3>
+
+<div class="formula">
+ACT 掩盖需要同时满足三个条件：<br>
+① <b>通信发起</b> 和 <b>掩盖计算</b> 在 <b>同一个 forward 调用栈</b> 内<br>
+② 掩盖计算与通信结果 <b>没有数据依赖</b>（如 shared_expert 不依赖 routed_expert 的输出）<br>
+③ 掩盖计算在 <b>通信发起之后、结果消费之前</b> 执行
+</div>
+
+<h3>4.2 跨 micro-batch 需要什么？</h3>
+
+<p>假设你想做 Megatron 式的编排——mb₀ 的 dispatch 和 mb₁ 的 attention 并行：</p>
+
+<pre><code># 理想中的跨 mb 编排（torchtitan 做不到）：
+#   时刻 T₁: launch mb₀.moe_dispatch → 返回 ACT(dispatch_output_of_mb0)
+#   时刻 T₂: 不等待 ACT，切换到 mb₁
+#   时刻 T₂: 执行 mb₁.attn_forward        ← 这是另一个 micro-batch 的操作！
+#   时刻 T₃: 等 ACT 完成（mb₀ 的 dispatch 完成了）
+#   时刻 T₃: 继续 mb₀.mlp_forward(ACT 的结果)</code></pre>
+
+<p>这需要 <code>_step_microbatches()</code> 能够：</p>
+<ol>
+<li style="margin:4px 0;color:var(--tx2)">在一个 micro-batch 的 forward <strong>半途中</strong>暂停（dispatch 完成，mlp 还没做）</li>
+<li style="margin:4px 0;color:var(--tx2)">切换到另一个 micro-batch 的某个操作（attn_backward）</li>
+<li style="margin:4px 0;color:var(--tx2)">再切回来继续</li>
+</ol>
+
+<p>但 PyTorch 的 <code>_PipelineStageBase</code> 只提供一个原子接口：</p>
+
+<div class="diagram">
+<svg viewBox="0 0 680 260">
+<defs><marker id="a4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<text class="th" x="40" y="28">ACT 能做什么 vs 需要什么</text>
+
+<text class="ts" x="56" y="58">ACT 能做的（mb 内掩盖）：</text>
+<g class="ft"><rect x="56" y="68" width="568" height="40" rx="4"/><text class="ts" x="340" y="88" text-anchor="middle" dominant-baseline="central">forward_one_chunk(mb₀) 内部: dispatch → ACT → shared_expert(并行) → wait → mlp → combine → ACT → shared(并行) → wait</text></g>
+
+<text class="ts" x="56" y="134">Megatron combined_1f1b 需要做的（跨 mb + sub-layer 级掩盖）：</text>
+<g class="fc"><rect x="56" y="144" width="568" height="56" rx="4"/>
+<text class="ts" x="340" y="160" text-anchor="middle" dominant-baseline="central">mb₀.moe_dispatch(comm) ‖ mb₁.attn(comp)</text>
+<text class="ts" x="340" y="182" text-anchor="middle" dominant-baseline="central">mb₀.mlp(comp)           ‖ mb₁.moe_combine_bwd(comm)</text></g>
+
+<text class="ts" x="56" y="226" style="fill:var(--coral-dk)">核心差距：ACT 的调用栈是 forward_one_chunk(mb₀)→...→combine()，无法中途跳出到另一个 mb</text>
+<text class="ts" x="56" y="246" style="fill:var(--tx3)">需要外部 scheduler 在两个 micro-batch 的半途中来回切换——ACT 不提供这种调度能力</text>
+</svg>
+<div class="diagram-cap">图 3：ACT 的能力边界</div>
+</div>
+
+<div class="callout cc"><strong>根本原因</strong>：ACT 是一个<strong>惰性同步</strong>机制——它让"发起通信"和"等待通信完成"之间可以被其他计算填充。但这个填充的计算必须在<strong>同一个调用栈</strong>内、在等待点之前。跨 micro-batch 需要的是<strong>调度机制</strong>——一个外部控制器能在不同 micro-batch 的不同 sub-stage 之间来回切换，这是 ZBV/DualPipe/_step_microbatches 做不到的，因为它们的最小调度单元是 stage 级的 F/I/W。</div>
+
+<!-- ══════════ SECTION 5 ══════════ -->
+<h2 id="s5"><span class="sn">五</span>对比：Megatron 如何绕过 ACT 的限制</h2>
+
+<p>Megatron 不用 ACT。它直接管理 CUDA stream 和 event，以 <strong>sub-layer 节点</strong>为调度单元：</p>
+
+<div class="diagram">
+<svg viewBox="0 0 680 320">
+<text class="th" x="40" y="28">Megatron 的 sub-layer 级双 Stream 调度</text>
+
+<text class="ts" x="32" y="60" text-anchor="end">comm_stream</text>
+<text class="ts" x="32" y="160" text-anchor="end">comp_stream</text>
+
+<!-- Time axis top -->
+<text class="ts" x="130" y="46" style="fill:var(--tx3)">t₀</text>
+<text class="ts" x="240" y="46" style="fill:var(--tx3)">t₁</text>
+<text class="ts" x="355" y="46" style="fill:var(--tx3)">t₂</text>
+<text class="ts" x="470" y="46" style="fill:var(--tx3)">t₃</text>
+<text class="ts" x="580" y="46" style="fill:var(--tx3)">t₄</text>
+
+<!-- comm_stream time line -->
+<g class="fb"><rect x="130" y="52" width="100" height="26" rx="3"/><text class="ts" x="180" y="65" text-anchor="middle" dominant-baseline="central">combine_bwd</text></g>
+<text class="tm" x="238" y="65" style="fill:var(--tx3)">← mb₁</text>
+
+<g class="fb"><rect x="280" y="52" width="100" height="26" rx="3"/><text class="ts" x="330" y="65" text-anchor="middle" dominant-baseline="central">dispatch_fwd</text></g>
+<text class="tm" x="388" y="65" style="fill:var(--tx3)">← mb₀</text>
+
+<g class="fb"><rect x="430" y="52" width="100" height="26" rx="3"/><text class="ts" x="480" y="65" text-anchor="middle" dominant-baseline="central">dispatch_bwd</text></g>
+<text class="tm" x="538" y="65" style="fill:var(--tx3)">← mb₁</text>
+
+<g class="fb"><rect x="580" y="52" width="100" height="26" rx="3"/><text class="ts" x="630" y="65" text-anchor="middle" dominant-baseline="central">combine_fwd</text></g>
+<text class="tm" x="688" y="65" style="fill:var(--tx3)">← mb₀</text>
+
+<!-- comp_stream time line -->
+<g class="fc"><rect x="130" y="156" width="100" height="26" rx="3"/><text class="ts" x="180" y="169" text-anchor="middle" dominant-baseline="central">attn_fwd</text></g>
+
+<g class="fc"><rect x="280" y="156" width="100" height="26" rx="3"/><text class="ts" x="330" y="169" text-anchor="middle" dominant-baseline="central">mlp_bwd</text></g>
+
+<g class="fc"><rect x="430" y="156" width="100" height="26" rx="3"/><text class="ts" x="480" y="169" text-anchor="middle" dominant-baseline="central">mlp_wgrad</text></g>
+
+<g class="fc"><rect x="580" y="156" width="100" height="26" rx="3"/><text class="ts" x="630" y="169" text-anchor="middle" dominant-baseline="central">mlp_fwd</text></g>
+
+<g class="fc"><rect x="680" y="156" width="100" height="26" rx="3"/><text class="ts" x="730" y="169" text-anchor="middle" dominant-baseline="central">attn_bwd</text></g>
+
+<!-- Event sync between streams -->
+<line x1="230" y1="80" x2="230" y2="155" stroke="var(--tx3)" stroke-width="0.8" stroke-dasharray="3 2"/>
+<line x1="380" y1="80" x2="380" y2="155" stroke="var(--tx3)" stroke-width="0.8" stroke-dasharray="3 2"/>
+<line x1="530" y1="80" x2="530" y2="155" stroke="var(--tx3)" stroke-width="0.8" stroke-dasharray="3 2"/>
+
+<text class="ts" x="220" y="118" style="fill:var(--tx3);font-size:10px">event</text>
+<text class="ts" x="370" y="118" style="fill:var(--tx3);font-size:10px">event</text>
+<text class="ts" x="520" y="118" style="fill:var(--tx3);font-size:10px">event</text>
+
+<!-- Highlight the parallel pairs -->
+<rect x="122" y="48" width="216" height="34" rx="4" fill="none" stroke="var(--teal)" stroke-width="1" stroke-dasharray="4 3"/>
+<rect x="272" y="152" width="216" height="34" rx="4" fill="none" stroke="var(--teal)" stroke-width="1" stroke-dasharray="4 3"/>
+<text class="ts" x="340" y="228" style="fill:var(--teal-dk)">↑ t₀~t₁: mb₁ combine_bwd ‖ mb₀ attn_fwd（跨 mb + 跨维度）</text>
+
+<rect x="272" y="48" width="216" height="34" rx="4" fill="none" stroke="var(--blue)" stroke-width="1" stroke-dasharray="4 3"/>
+<rect x="422" y="152" width="216" height="34" rx="4" fill="none" stroke="var(--blue)" stroke-width="1" stroke-dasharray="4 3"/>
+<text class="ts" x="340" y="248" style="fill:var(--blue-dk)">↑ t₁~t₂: mb₀ dispatch_fwd ‖ mb₁ mlp_bwd（跨 mb + 跨维度）</text>
+
+<rect x="422" y="48" width="216" height="34" rx="4" fill="none" stroke="var(--purple)" stroke-width="1" stroke-dasharray="4 3"/>
+<rect x="572" y="152" width="216" height="34" rx="4" fill="none" stroke="var(--purple)" stroke-width="1" stroke-dasharray="4 3"/>
+<text class="ts" x="340" y="268" style="fill:var(--purple-dk)">↑ t₂~t₃: mb₁ dispatch_bwd ‖ mb₀ mlp_wgrad（跨 mb + 跨维度）</text>
+
+<line x1="40" y1="292" x2="640" y2="292" stroke="var(--bd)" stroke-width="0.5"/>
+<text class="ts" x="40" y="314" style="fill:var(--tx3)">所有节点通过共享 torch.cuda.Event 实现跨 stream 同步——不需要 ACT 的惰性触发机制</text>
+</svg>
+<div class="diagram-cap">图 4：Megatron 的跨 mb + sub-layer 双 stream 调度</div>
+</div>
+
+<p>Megatron 和 torchtitan 的差异，本质上是<strong>调度粒度</strong>的差异：</p>
+
+<table>
+<tr><th></th><th>torchtitan (ACT)</th><th>Megatron (手动 Stream)</th></tr>
+<tr><td>最小调度单元</td><td><code>forward_one_chunk(stage, mb)</code></td><td><code>ScheduleNode(layer, sub_op, mb)</code></td></tr>
+<tr><td>Stream 管理</td><td>NCCL stream + compute stream（系统默认）</td><td>显式 comp_stream + comm_stream + event</td></tr>
+<tr><td>掩盖范围</td><td>同一 mb，同一 forward/backward 内部</td><td>跨 mb，跨 forward/backward，跨并行维度</td></tr>
+<tr><td>对模型的感知</td><td>零——stage 是 nn.Module</td><td>全感知——layer 内部结构被硬编码拆分</td></tr>
+<tr><td>同步机制</td><td>惰性——访问 ACT 时触发 wait_tensor</td><td>主动——event.wait() + event.record() 编排</td></tr>
+</table>
+
+<div class="callout ct"><strong>一句话总结</strong>：AsyncCollectiveTensor 是一个"惰性同步"工具，它让通信和计算在同一个调用栈内并行。但要实现 Megatron 那样的跨 micro-batch sub-layer 级掩盖，你需要的是一个"外部调度器"——它能在不同 micro-batch 的半途中来回切换。ACT 解决不了调度粒度的问题，而 PyTorch 的 <code>_PipelineStageBase</code> 接口天然把调度粒度锁定在了整个 stage 级别。</div>
+
+</div>
+</body>
+</html>
