@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>分片 Muon 与双网格 HSDP 技术报告</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@300;400;500&display=swap');
+
+  :root {
+    --ink: #1a1a1a;
+    --ink2: #3d3d3a;
+    --ink3: #6b6b66;
+    --rule: #d4d2c8;
+    --rule2: #eae8e0;
+    --bg: #f9f7f2;
+    --surface: #ffffff;
+    --accent: #1a3a5c;
+    --accent2: #0f6e56;
+    --accent3: #7f77dd;
+    --warn: #ba7517;
+    --code-bg: #f0ede4;
+    --serif: 'Noto Serif SC', 'Songti SC', serif;
+    --sans: 'Noto Sans SC', 'PingFang SC', sans-serif;
+    --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.85;
+    font-weight: 300;
+  }
+
+  /* ── Cover ── */
+  .cover {
+    background: var(--accent);
+    color: #fff;
+    padding: 80px 64px 72px;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -80px;
+    width: 480px; height: 480px;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 50%;
+  }
+  .cover::after {
+    content: '';
+    position: absolute;
+    bottom: -120px; right: 40px;
+    width: 320px; height: 320px;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 50%;
+  }
+  .cover-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 28px;
+  }
+  .cover h1 {
+    font-family: var(--serif);
+    font-size: 36px;
+    font-weight: 600;
+    line-height: 1.3;
+    margin-bottom: 16px;
+    position: relative;
+  }
+  .cover-sub {
+    font-size: 15px;
+    color: rgba(255,255,255,0.65);
+    max-width: 560px;
+    line-height: 1.7;
+  }
+  .cover-meta {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255,255,255,0.12);
+    display: flex;
+    gap: 40px;
+    font-size: 12px;
+    color: rgba(255,255,255,0.45);
+    font-family: var(--mono);
+  }
+  .cover-meta span { display: flex; flex-direction: column; gap: 4px; }
+  .cover-meta strong { color: rgba(255,255,255,0.75); font-size: 13px; font-family: var(--sans); font-weight: 400; }
+
+  /* ── Layout ── */
+  .container {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 0 48px;
+  }
+
+  /* ── TOC ── */
+  .toc {
+    background: var(--surface);
+    border-left: 3px solid var(--accent);
+    padding: 32px 36px;
+    margin: 48px 0;
+  }
+  .toc-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink3);
+    margin-bottom: 16px;
+  }
+  .toc ol {
+    list-style: none;
+    counter-reset: toc;
+  }
+  .toc > ol > li {
+    counter-increment: toc;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--rule2);
+  }
+  .toc > ol > li:last-child { border-bottom: none; }
+  .toc > ol > li::before {
+    content: "0" counter(toc) " —";
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink3);
+    margin-right: 10px;
+  }
+  .toc a {
+    color: var(--ink2);
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .toc a:hover { color: var(--accent); }
+  .toc .sub {
+    list-style: none;
+    padding-left: 40px;
+    font-size: 13px;
+    color: var(--ink3);
+  }
+  .toc .sub li { padding: 2px 0; }
+
+  /* ── Sections ── */
+  section {
+    padding: 56px 0 16px;
+    border-top: 1px solid var(--rule);
+  }
+  section:first-of-type { border-top: none; }
+
+  h2 {
+    font-family: var(--serif);
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .h2-num {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink3);
+    letter-spacing: 0.1em;
+    flex-shrink: 0;
+  }
+  h3 {
+    font-family: var(--sans);
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--ink);
+    margin: 28px 0 10px;
+    padding-left: 12px;
+    border-left: 2px solid var(--accent2);
+  }
+  h4 {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink2);
+    margin: 20px 0 6px;
+  }
+
+  p { margin: 12px 0; color: var(--ink2); }
+  p + p { margin-top: 10px; }
+
+  /* ── Figure ── */
+  .figure {
+    margin: 32px 0;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .figure-body {
+    padding: 28px 24px 20px;
+    overflow-x: auto;
+  }
+  .figure-body svg {
+    display: block;
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
+  }
+  .figure-caption {
+    padding: 12px 24px;
+    background: var(--rule2);
+    font-size: 12px;
+    color: var(--ink3);
+    font-family: var(--mono);
+    border-top: 1px solid var(--rule);
+  }
+  .figure-caption strong { color: var(--ink2); }
+
+  /* SVG text styles (mirrors widget system) */
+  .figure-body svg text { font-family: var(--sans); fill: var(--ink2); }
+  .figure-body svg .th { font-size: 14px; font-weight: 500; fill: var(--ink); }
+  .figure-body svg .ts { font-size: 12px; fill: var(--ink3); }
+  .figure-body svg .t  { font-size: 14px; fill: var(--ink2); }
+
+  /* color ramps */
+  .figure-body svg .c-purple rect, .figure-body svg .c-purple ellipse { fill: #EEEDFE; stroke: #534AB7; }
+  .figure-body svg .c-purple .th { fill: #3C3489; }
+  .figure-body svg .c-purple .ts { fill: #534AB7; }
+
+  .figure-body svg .c-teal rect, .figure-body svg .c-teal ellipse { fill: #E1F5EE; stroke: #0F6E56; }
+  .figure-body svg .c-teal .th { fill: #085041; }
+  .figure-body svg .c-teal .ts { fill: #0F6E56; }
+
+  .figure-body svg .c-coral rect, .figure-body svg .c-coral ellipse { fill: #FAECE7; stroke: #993C1D; }
+  .figure-body svg .c-coral .th { fill: #712B13; }
+  .figure-body svg .c-coral .ts { fill: #993C1D; }
+
+  .figure-body svg .c-blue rect, .figure-body svg .c-blue ellipse { fill: #E6F1FB; stroke: #185FA5; }
+  .figure-body svg .c-blue .th { fill: #0C447C; }
+  .figure-body svg .c-blue .ts { fill: #185FA5; }
+
+  .figure-body svg .c-green rect, .figure-body svg .c-green ellipse { fill: #EAF3DE; stroke: #3B6D11; }
+  .figure-body svg .c-green .th { fill: #27500A; }
+  .figure-body svg .c-green .ts { fill: #3B6D11; }
+
+  .figure-body svg .c-amber rect, .figure-body svg .c-amber ellipse { fill: #FAEEDA; stroke: #854F0B; }
+  .figure-body svg .c-amber .th { fill: #633806; }
+  .figure-body svg .c-amber .ts { fill: #854F0B; }
+
+  .figure-body svg .arr { stroke: var(--ink3); stroke-width: 1.5; fill: none; }
+  .figure-body svg .leader { stroke: var(--ink3); stroke-width: 0.5; stroke-dasharray: 4 3; fill: none; }
+  .figure-body svg .box { fill: #f5f4ef; stroke: var(--rule); stroke-width: 0.5; }
+
+  /* ── Callout boxes ── */
+  .callout {
+    margin: 24px 0;
+    padding: 16px 20px;
+    border-radius: 3px;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .callout.info {
+    background: #e8f1fb;
+    border-left: 3px solid #185FA5;
+    color: #0C447C;
+  }
+  .callout.correct {
+    background: #e8f5ee;
+    border-left: 3px solid #0F6E56;
+    color: #085041;
+  }
+  .callout.warn {
+    background: #faeeda;
+    border-left: 3px solid #ba7517;
+    color: #633806;
+  }
+  .callout strong { font-weight: 500; }
+
+  /* ── Math / formula blocks ── */
+  .math-block {
+    margin: 20px 0;
+    padding: 18px 24px;
+    background: var(--code-bg);
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 2;
+    color: var(--ink);
+    overflow-x: auto;
+  }
+  .math-block .comment { color: var(--ink3); }
+
+  /* ── Code ── */
+  code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 2px;
+    color: var(--accent);
+  }
+
+  /* ── Tables ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    margin: 20px 0;
+  }
+  th {
+    background: var(--accent);
+    color: #fff;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 400;
+    font-size: 12px;
+    letter-spacing: 0.05em;
+  }
+  td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--rule2);
+    color: var(--ink2);
+  }
+  tr:hover td { background: var(--rule2); }
+  td.mono { font-family: var(--mono); font-size: 12px; }
+  td.good { color: var(--accent2); }
+  td.warn { color: var(--warn); }
+
+  /* ── Horizontal rule ── */
+  hr { border: none; border-top: 1px solid var(--rule); margin: 40px 0; }
+
+  /* ── Footer ── */
+  footer {
+    margin-top: 72px;
+    padding: 32px 0;
+    border-top: 1px solid var(--rule);
+    font-size: 12px;
+    color: var(--ink3);
+    font-family: var(--mono);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  @media print {
+    body { background: white; }
+    .cover { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    section { page-break-inside: avoid; }
+    .figure { page-break-inside: avoid; }
+  }
+
+  @media (max-width: 640px) {
+    .container { padding: 0 20px; }
+    .cover { padding: 48px 24px; }
+    .cover h1 { font-size: 26px; }
+    h2 { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════ COVER ══════════════════ -->
+<div class="cover">
+  <div class="container">
+    <div class="cover-tag">Technical Analysis Report · Distributed Optimizer</div>
+    <h1>分片 Muon 与双网格 HSDP<br>优化原理与工程实现分析</h1>
+    <p class="cover-sub">
+      基于 Cursor Composer 2.5 博客披露的技术方案，结合 Muon 算法数学基础，
+      分析其在 MoE 大模型分布式训练中的实现正确性、优化原理与社区方案对比，
+      并提出对非专家权重 N-S 计算的进一步优化方向。
+    </p>
+    <div class="cover-meta">
+      <span><strong>参考来源</strong>cursor.com/cn/blog/composer-2-5</span>
+      <span><strong>涉及系统</strong>Kimi K2 · FSDP · HSDP · MoE · Muon</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ BODY ══════════════════ -->
+<div class="container">
+
+  <!-- TOC -->
+  <nav class="toc">
+    <div class="toc-title">目录</div>
+    <ol>
+      <li><a href="#s1">Muon 算法核心原理</a></li>
+      <li><a href="#s2">分片 Muon 的挑战与 all-to-all 解法</a>
+        <ul class="sub">
+          <li>正交化粒度的数学依据</li>
+          <li>all-to-all gather → N-S → scatter 流程</li>
+          <li>与 Megatron-LM 社区方案对比</li>
+        </ul>
+      </li>
+      <li><a href="#s3">双网格 HSDP 设计</a>
+        <ul class="sub">
+          <li>EP 与 CP 维度解耦</li>
+          <li>非专家 vs 专家的不同并行网格</li>
+        </ul>
+      </li>
+      <li><a href="#s4">TP 场景的覆盖情况分析</a></li>
+      <li><a href="#s5">异步流水线：通信与计算重叠</a></li>
+      <li><a href="#s6">非专家权重分工 N-S 优化方案</a></li>
+      <li><a href="#s7">总结与对比</a></li>
+    </ol>
+  </nav>
+
+  <!-- ══ Section 1 ══ -->
+  <section id="s1">
+    <h2><span class="h2-num">01</span> Muon 算法核心原理</h2>
+    <p>
+      Muon（Momentum + Orthogonalization Update）由 Kosson 等人提出，
+      在 Nesterov 动量的基础上，对梯度矩阵施以 Newton-Schulz 迭代正交化，
+      使每步更新等价于在谱范数球面上做梯度下降。
+    </p>
+
+    <h3>算法步骤</h3>
+    <div class="math-block">
+<span class="comment">// Step 1：Nesterov 动量累积</span>
+m_t  = β · m_{t-1} + g_t
+ĝ_t  = β · m_t + g_t      <span class="comment">// lookahead</span>
+
+<span class="comment">// Step 2：Newton-Schulz 近似正交化（作用于 reshape 后的矩阵 G）</span>
+X₀        = G / ‖G‖_F
+X_{k+1}   = (a·X_k + b·X_k X_k^T X_k + c·(X_k X_k^T)² X_k)  <span class="comment">// 迭代 ~5 次</span>
+
+<span class="comment">// Step 3：以正交化结果 X* 更新参数</span>
+W_{t+1}   = W_t - η · X*
+    </div>
+
+    <h3>为什么有效</h3>
+    <p>
+      Adam 对每个参数标量独立归一化，会扭曲梯度的方向结构。
+      Muon 将整个参数矩阵视为一个几何对象，用正交矩阵 <code>U·Vᵀ</code>（SVD 的正交因子）
+      作为更新方向，使所有奇异方向上的有效步长均等，
+      实践中收敛更快且对学习率不敏感。
+    </p>
+
+    <div class="callout info">
+      <strong>关键约束：</strong>Newton-Schulz 必须作用在语义完整的矩阵上，而不是矩阵的任意切片。
+      这一点是分布式实现的核心挑战——在 FSDP/TP 环境下，每个 GPU 只持有参数分片，
+      直接对分片做 N-S 在数学上是错误的。
+    </div>
+  </section>
+
+  <!-- ══ Section 2 ══ -->
+  <section id="s2">
+    <h2><span class="h2-num">02</span> 分片 Muon 的挑战与 all-to-all 解法</h2>
+
+    <h3>正交化粒度的数学依据</h3>
+    <p>
+      Cursor 博客提到：注意力投影按每个注意力头处理，MoE 权重按每个专家处理。
+      这个粒度选择有严格的数学依据，而非任意工程决定：
+    </p>
+    <table>
+      <thead><tr><th>权重类型</th><th>正交化粒度</th><th>原因</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Multi-Head Attention Q/K/V</td>
+          <td class="mono">R^{d × (d/h)}，按 head</td>
+          <td>每个 head 是独立子空间投影，奇异值分布差异大；整体正交化会使主导 head 压制其他 head</td>
+        </tr>
+        <tr>
+          <td>MoE 专家 FFN</td>
+          <td class="mono">R^{d_ff × d_model}，按 expert</td>
+          <td>各专家语义完全独立，跨专家正交化会引入人为耦合</td>
+        </tr>
+        <tr>
+          <td>Embedding / LayerNorm</td>
+          <td>完整矩阵</td>
+          <td>无自然子结构，整体处理</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      注意力头的粒度选择与 Megatron-LM 的 Tensor Parallel 切分维度天然对齐
+      （TP 也按 head 切分 QKV），这为将来引入 TP 的适配提供了一定基础。
+    </p>
+
+    <h3>all-to-all gather → N-S → scatter 流程</h3>
+    <p>
+      在 FSDP 环境下，权重矩阵被展平后均匀切分到各 GPU。
+      以专家权重 <code>W ∈ R^{d_ff × d_model}</code>、EP=4 为例，
+      每个 GPU 仅持有 <code>R^{d_ff × (d_model/4)}</code> 的分片。
+      对此分片直接做 N-S 是错误的，必须先还原完整矩阵。
+    </p>
+
+    <div class="figure">
+      <div class="figure-body">
+<svg width="100%" viewBox="0 0 680 580" role="img">
+<title>分片 Muon：all-to-all + Newton-Schulz 流程</title>
+<desc>展示分片参数如何通过 all-to-all 聚合、Newton-Schulz 正交化后再 scatter 回原始分片</desc>
+<defs>
+  <marker id="arrow1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+<text class="th" x="340" y="28" text-anchor="middle">分片 Muon 执行流程（以 EP=4 为例）</text>
+<text class="ts" x="340" y="58" text-anchor="middle">Step 1 — 各 GPU 持有动量更新分片（m_t 已计算完毕）</text>
+<g class="c-purple">
+  <rect x="40" y="68" width="120" height="52" rx="6" stroke-width="0.5"/>
+  <text class="th" x="100" y="86" text-anchor="middle">GPU 0</text>
+  <text class="ts" x="100" y="106" text-anchor="middle">shard[:, 0:k]</text>
+</g>
+<g class="c-purple">
+  <rect x="193" y="68" width="120" height="52" rx="6" stroke-width="0.5"/>
+  <text class="th" x="253" y="86" text-anchor="middle">GPU 1</text>
+  <text class="ts" x="253" y="106" text-anchor="middle">shard[:, k:2k]</text>
+</g>
+<g class="c-purple">
+  <rect x="346" y="68" width="120" height="52" rx="6" stroke-width="0.5"/>
+  <text class="th" x="406" y="86" text-anchor="middle">GPU 2</text>
+  <text class="ts" x="406" y="106" text-anchor="middle">shard[:, 2k:3k]</text>
+</g>
+<g class="c-purple">
+  <rect x="499" y="68" width="120" height="52" rx="6" stroke-width="0.5"/>
+  <text class="th" x="559" y="86" text-anchor="middle">GPU 3</text>
+  <text class="ts" x="559" y="106" text-anchor="middle">shard[:, 3k:4k]</text>
+</g>
+<text class="ts" x="340" y="152" text-anchor="middle">Step 2 — all-to-all gather：每个 GPU 收集完整矩阵</text>
+<line x1="100" y1="120" x2="100" y2="170" stroke="#534AB7" stroke-width="1.5" marker-end="url(#arrow1)"/>
+<line x1="253" y1="120" x2="200" y2="170" stroke="#534AB7" stroke-width="1.5" marker-end="url(#arrow1)"/>
+<line x1="406" y1="120" x2="310" y2="170" stroke="#534AB7" stroke-width="1.5" marker-end="url(#arrow1)"/>
+<line x1="559" y1="120" x2="420" y2="170" stroke="#534AB7" stroke-width="1.5" marker-end="url(#arrow1)"/>
+<text class="ts" x="34" y="190" text-anchor="start">（同形状张量批量化，同批次一起处理）</text>
+<text class="ts" x="340" y="215" text-anchor="middle">Step 3 — 每个 GPU 本地持有完整矩阵，并行执行 Newton-Schulz</text>
+<g class="c-teal">
+  <rect x="40" y="225" width="140" height="64" rx="6" stroke-width="0.5"/>
+  <text class="th" x="110" y="243" text-anchor="middle">GPU 0</text>
+  <text class="ts" x="110" y="261" text-anchor="middle">完整矩阵 W</text>
+  <text class="ts" x="110" y="277" text-anchor="middle">Newton-Schulz</text>
+</g>
+<g class="c-teal">
+  <rect x="200" y="225" width="140" height="64" rx="6" stroke-width="0.5"/>
+  <text class="th" x="270" y="243" text-anchor="middle">GPU 1</text>
+  <text class="ts" x="270" y="261" text-anchor="middle">完整矩阵 W</text>
+  <text class="ts" x="270" y="277" text-anchor="middle">Newton-Schulz</text>
+</g>
+<g class="c-teal">
+  <rect x="360" y="225" width="140" height="64" rx="6" stroke-width="0.5"/>
+  <text class="th" x="430" y="243" text-anchor="middle">GPU 2</text>
+  <text class="ts" x="430" y="261" text-anchor="middle">完整矩阵 W</text>
+  <text class="ts" x="430" y="277" text-anchor="middle">Newton-Schulz</text>
+</g>
+<g class="c-teal">
+  <rect x="520" y="225" width="140" height="64" rx="6" stroke-width="0.5"/>
+  <text class="th" x="590" y="243" text-anchor="middle">GPU 3</text>
+  <text class="ts" x="590" y="261" text-anchor="middle">完整矩阵 W</text>
+  <text class="ts" x="590" y="277" text-anchor="middle">Newton-Schulz</text>
+</g>
+<text class="ts" x="340" y="310" text-anchor="middle">各 GPU 并行执行，无需等待彼此</text>
+<text class="ts" x="340" y="342" text-anchor="middle">Step 4 — all-to-all scatter：将正交化结果重新分片回各 GPU</text>
+<line x1="110" y1="355" x2="110" y2="400" stroke="#0F6E56" stroke-width="1.5" marker-end="url(#arrow1)"/>
+<line x1="270" y1="355" x2="256" y2="400" stroke="#0F6E56" stroke-width="1.5" marker-end="url(#arrow1)"/>
+<line x1="430" y1="355" x2="402" y2="400" stroke="#0F6E56" stroke-width="1.5" marker-end="url(#arrow1)"/>
+<line x1="590" y1="355" x2="548" y2="400" stroke="#0F6E56" stroke-width="1.5" marker-end="url(#arrow1)"/>
+<g class="c-green">
+  <rect x="40" y="402" width="120" height="52" rx="6" stroke-width="0.5"/>
+  <text class="th" x="100" y="420" text-anchor="middle">GPU 0</text>
+  <text class="ts" x="100" y="440" text-anchor="middle">正交分片[:, 0:k]</text>
+</g>
+<g class="c-green">
+  <rect x="193" y="402" width="120" height="52" rx="6" stroke-width="0.5"/>
+  <text class="th" x="253" y="420" text-anchor="middle">GPU 1</text>
+  <text class="ts" x="253" y="440" text-anchor="middle">正交分片[:, k:2k]</text>
+</g>
+<g class="c-green">
+  <rect x="346" y="402" width="120" height="52" rx="6" stroke-width="0.5"/>
+  <text class="th" x="406" y="420" text-anchor="middle">GPU 2</text>
+  <text class="ts" x="406" y="440" text-anchor="middle">正交分片[:, 2k:3k]</text>
+</g>
+<g class="c-green">
+  <rect x="499" y="402" width="120" height="52" rx="6" stroke-width="0.5"/>
+  <text class="th" x="559" y="420" text-anchor="middle">GPU 3</text>
+  <text class="ts" x="559" y="440" text-anchor="middle">正交分片[:, 3k:4k]</text>
+</g>
+<rect x="40" y="478" width="598" height="82" rx="8" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="5 3"/>
+<text class="th" x="340" y="500" text-anchor="middle">异步重叠优化</text>
+<text class="ts" x="340" y="520" text-anchor="middle">all-to-all 通信发出后不阻塞，优化器继续处理下一批同类型参数的 N-S 计算</text>
+<text class="ts" x="340" y="540" text-anchor="middle">通信等待期间 GPU 保持 compute 忙碌 → 实际开销在 1T 模型上仅约 0.2s/step</text>
+</svg>
+      </div>
+      <div class="figure-caption"><strong>图 1</strong> — 分片 Muon all-to-all gather → Newton-Schulz → all-to-all scatter 流程（EP=4）</div>
+    </div>
+
+    <h3>正确性分析</h3>
+    <p>
+      此设计等价于"完整矩阵 Muon"的原因：N-S 迭代的输入输出均为同一完整矩阵，
+      scatter 回的分片只是对同一正交化结果的切分，不改变数学语义。
+      每个 GPU 都对完整矩阵执行 N-S（存在内存冗余），
+      但通过批量化同形状张量摊薄通信开销，整体上是合算的。
+    </p>
+
+    <h3>与社区方案对比</h3>
+    <p>
+      单机或 DDP 训练中（nanoGPT-speedrun 等），参数完整存在于每张卡，
+      可直接对完整矩阵执行 N-S，无需任何通信。在 FSDP 环境下，
+      Moonshot（Kimi K1.5 Muon 工作）提出了"distributed Muon"，
+      思路与此一致：each rank all-gather 后执行 N-S。
+      Cursor 方案的工程改进在于：
+    </p>
+    <table>
+      <thead><tr><th>改进点</th><th>描述</th><th>效果</th></tr></thead>
+      <tbody>
+        <tr><td>批量化同形状张量</td><td>多个专家权重合并为一次 all-to-all</td><td class="good">减少 collective 调用次数，提升 NIC 带宽利用率</td></tr>
+        <tr><td>通信异步化</td><td>发出 all-to-all 后不阻塞，推进其他批次 N-S</td><td class="good">GPU 和网络并行，消除单向等待</td></tr>
+        <tr><td>双网格解耦</td><td>非专家与专家使用不同 FSDP 网格</td><td class="good">避免小参数量 all-reduce 扩展到宽网格</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ══ Section 3 ══ -->
+  <section id="s3">
+    <h2><span class="h2-num">03</span> 双网格 HSDP 设计</h2>
+    <p>
+      HSDP（Hybrid Sharding Data Parallel）= FSDP 分片 + 数据并行 all-reduce，
+      形成二维并行网格。Cursor 的关键创新是为非专家权重和专家权重分别维护一套网格，
+      并将 CP（Context Parallel）与 EP（Expert Parallel）维度解耦。
+    </p>
+
+    <div class="figure">
+      <div class="figure-body">
+<svg width="100%" viewBox="0 0 680 520" role="img">
+<title>双网格 HSDP 拓扑：非专家窄网格 vs 专家宽网格</title>
+<desc>对比非专家权重（窄FSDP组）和专家权重（宽EP分片组）的不同并行布局</desc>
+<defs>
+  <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+<text class="th" x="340" y="26" text-anchor="middle">双网格 HSDP：非专家 vs 专家的不同并行维度</text>
+<text class="th" x="155" y="55" text-anchor="middle">非专家权重</text>
+<text class="ts" x="155" y="73" text-anchor="middle">Attn / LayerNorm / Embed</text>
+<rect x="30" y="85" width="250" height="158" rx="10" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="5 3"/>
+<text class="ts" x="155" y="103" text-anchor="middle">FSDP group（单节点内）</text>
+<g class="c-blue">
+  <rect x="48" y="112" width="52" height="40" rx="5" stroke-width="0.5"/>
+  <text class="ts" x="74" y="135" text-anchor="middle">G0</text>
+</g>
+<g class="c-blue">
+  <rect x="113" y="112" width="52" height="40" rx="5" stroke-width="0.5"/>
+  <text class="ts" x="139" y="135" text-anchor="middle">G1</text>
+</g>
+<g class="c-blue">
+  <rect x="178" y="112" width="52" height="40" rx="5" stroke-width="0.5"/>
+  <text class="ts" x="204" y="135" text-anchor="middle">G2</text>
+</g>
+<g class="c-blue">
+  <rect x="243" y="112" width="52" height="40" rx="5" stroke-width="0.5"/>
+  <text class="ts" x="269" y="135" text-anchor="middle">G3</text>
+</g>
+<text class="ts" x="155" y="172" text-anchor="middle">FSDP 分片（节点内 NVLink）</text>
+<rect x="30" y="195" width="250" height="44" rx="10" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="5 3"/>
+<text class="ts" x="155" y="213" text-anchor="middle">FSDP group（另一个节点）</text>
+<g class="c-blue">
+  <rect x="48" y="220" width="52" height="12" rx="3" stroke-width="0.5"/>
+  <text class="ts" x="74" y="229" text-anchor="middle">G4</text>
+</g>
+<g class="c-blue">
+  <rect x="113" y="220" width="52" height="12" rx="3" stroke-width="0.5"/>
+  <text class="ts" x="139" y="229" text-anchor="middle">G5</text>
+</g>
+<g class="c-blue">
+  <rect x="178" y="220" width="52" height="12" rx="3" stroke-width="0.5"/>
+  <text class="ts" x="204" y="229" text-anchor="middle">G6</text>
+</g>
+<g class="c-blue">
+  <rect x="243" y="220" width="52" height="12" rx="3" stroke-width="0.5"/>
+  <text class="ts" x="269" y="229" text-anchor="middle">G7</text>
+</g>
+<line x1="155" y1="245" x2="155" y2="257" stroke="#185FA5" stroke-width="1.2" marker-end="url(#arrow2)"/>
+<line x1="155" y1="245" x2="155" y2="235" stroke="#185FA5" stroke-width="1.2" marker-end="url(#arrow2)"/>
+<text class="ts" x="155" y="272" text-anchor="middle">all-reduce（节点间，跨 IB 链路）</text>
+<rect x="30" y="284" width="250" height="52" rx="6" fill="none" stroke="#eae8e0" stroke-width="0.5"/>
+<text class="ts" x="155" y="302" text-anchor="middle">FSDP 组窄（仅节点内）</text>
+<text class="ts" x="155" y="320" text-anchor="middle">跨节点通信量小，NVLink 满速</text>
+<text class="th" x="510" y="55" text-anchor="middle">专家权重（MoE）</text>
+<text class="ts" x="510" y="73" text-anchor="middle">Expert FFN，参数量 >> 非专家</text>
+<rect x="385" y="85" width="260" height="158" rx="10" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="5 3"/>
+<text class="ts" x="515" y="103" text-anchor="middle">Expert FSDP group（跨多节点）</text>
+<g class="c-coral">
+  <rect x="400" y="112" width="40" height="38" rx="5" stroke-width="0.5"/>
+  <text class="ts" x="420" y="134" text-anchor="middle">G0</text>
+</g>
+<g class="c-coral">
+  <rect x="452" y="112" width="40" height="38" rx="5" stroke-width="0.5"/>
+  <text class="ts" x="472" y="134" text-anchor="middle">G1</text>
+</g>
+<g class="c-coral">
+  <rect x="504" y="112" width="40" height="38" rx="5" stroke-width="0.5"/>
+  <text class="ts" x="524" y="134" text-anchor="middle">G2</text>
+</g>
+<g class="c-coral">
+  <rect x="556" y="112" width="40" height="38" rx="5" stroke-width="0.5"/>
+  <text class="ts" x="576" y="134" text-anchor="middle">G3</text>
+</g>
+<g class="c-coral">
+  <rect x="608" y="112" width="40" height="38" rx="5" stroke-width="0.5"/>
+  <text class="ts" x="628" y="134" text-anchor="middle">G4</text>
+</g>
+<g class="c-coral">
+  <rect x="400" y="158" width="40" height="38" rx="5" stroke-width="0.5"/>
+  <text class="ts" x="420" y="180" text-anchor="middle">G5</text>
+</g>
+<g class="c-coral">
+  <rect x="452" y="158" width="40" height="38" rx="5" stroke-width="0.5"/>
+  <text class="ts" x="472" y="180" text-anchor="middle">G6</text>
+</g>
+<g class="c-coral">
+  <rect x="504" y="158" width="40" height="38" rx="5" stroke-width="0.5"/>
+  <text class="ts" x="524" y="180" text-anchor="middle">G7</text>
+</g>
+<text class="ts" x="590" y="187" text-anchor="middle">…EP=8</text>
+<text class="ts" x="515" y="214" text-anchor="middle">FSDP 分片跨节点（宽网格，IB）</text>
+<text class="ts" x="515" y="232" text-anchor="middle">all-to-all N-S 正交化跨此网格</text>
+<rect x="385" y="248" width="260" height="88" rx="6" fill="none" stroke="#eae8e0" stroke-width="0.5"/>
+<text class="ts" x="515" y="266" text-anchor="middle">EP 网格宽（跨节点多 GPU）</text>
+<text class="ts" x="515" y="284" text-anchor="middle">Muon N-S 分摊到更多 GPU</text>
+<text class="ts" x="515" y="302" text-anchor="middle">专家参数占大多数 → 优化器</text>
+<text class="ts" x="515" y="320" text-anchor="middle">算力利用率大幅提升</text>
+<rect x="30" y="360" width="620" height="140" rx="8" fill="none" stroke="#d4d2c8" stroke-width="0.5"/>
+<text class="th" x="340" y="382" text-anchor="middle">维度独立重叠的关键优势：CP=2, EP=8 → 8 GPU 而非 16</text>
+<rect x="50" y="395" width="260" height="88" rx="6" fill="none" stroke="#eae8e0" stroke-width="0.5"/>
+<text class="ts" x="180" y="413" text-anchor="middle">单一共享网格（次优）</text>
+<text class="ts" x="180" y="431" text-anchor="middle">CP=2 × EP=8 → 16 GPU/组</text>
+<text class="ts" x="180" y="449" text-anchor="middle">非专家 all-reduce 扩展到 16 GPU</text>
+<text class="ts" x="180" y="467" text-anchor="middle">带宽浪费 + 延迟增大</text>
+<rect x="370" y="395" width="260" height="88" rx="6" fill="none" stroke="#eae8e0" stroke-width="0.5"/>
+<text class="ts" x="500" y="413" text-anchor="middle">双独立网格（Cursor 方案）</text>
+<text class="ts" x="500" y="431" text-anchor="middle">CP 和 EP 维度完全解耦</text>
+<text class="ts" x="500" y="449" text-anchor="middle">非专家：CP=2（节点内 NVLink）</text>
+<text class="ts" x="500" y="467" text-anchor="middle">专家：EP=8（跨节点 IB）</text>
+<line x1="310" y1="439" x2="367" y2="439" stroke="#888" stroke-width="1" marker-end="url(#arrow2)"/>
+</svg>
+      </div>
+      <div class="figure-caption"><strong>图 2</strong> — 双网格 HSDP 拓扑：非专家窄网格（节点内 NVLink）vs 专家宽网格（跨节点 IB）</div>
+    </div>
+
+    <p>
+      CP（Context Parallel）用于长序列切分 attention，EP 是专家并行，两者本质无关，
+      不应绑定在同一网格维度。解耦后各自的通信模式（CP 的 ring-attention all-to-all
+      与 EP 的专家分发 all-to-all）互不干扰，也避免了非专家的小规模 all-reduce
+      被迫扩展到宽网格造成的带宽浪费。
+    </p>
+  </section>
+
+  <!-- ══ Section 4 ══ -->
+  <section id="s4">
+    <h2><span class="h2-num">04</span> TP 场景的覆盖情况分析</h2>
+
+    <div class="callout warn">
+      <strong>结论：</strong>Cursor 博客描述的方案仅覆盖 FSDP/HSDP 分片场景，未对 TP（Tensor Parallel）做显式适配。这是有意为之的架构选择，而非技术遗漏。
+    </div>
+
+    <p>
+      博客所述"分片"语义是 FSDP 的 flat shard——参数展平后均匀切块，gather 即还原完整矩阵。
+      TP 的分片性质完全不同：
+    </p>
+    <table>
+      <thead><tr><th>TP 切分类型</th><th>每卡持有</th><th>直接做 N-S</th><th>正确做法</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Column-parallel（W_q/k/v）</td>
+          <td class="mono">W[:, i·h : (i+1)·h]</td>
+          <td class="warn">错误（子矩阵奇异值结构不同）</td>
+          <td>若 TP 粒度 = head 边界，可按 head 各自 N-S，无需跨 TP 通信</td>
+        </tr>
+        <tr>
+          <td>Row-parallel（W_o）</td>
+          <td class="mono">W[i·d : (i+1)·d, :]</td>
+          <td class="warn">错误（行切片无法重建完整奇异值）</td>
+          <td>需在 TP group 内 all-gather 还原完整矩阵后做 N-S，社区暂无公开实现</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>
+      Kimi K2 采用 EP + FSDP/HSDP 为主的并行策略，不依赖 TP，原因在于：
+      MoE 模型专家权重占总参数绝大多数，EP 天然契合"按专家粒度正交化"的 Muon 需求；
+      引入 TP 会在 attention 层增加额外 all-reduce，进一步加重本已受带宽约束的通信压力。
+      因此在当前架构前提下，此 Muon 实现的覆盖范围是完备的。
+    </p>
+  </section>
+
+  <!-- ══ Section 5 ══ -->
+  <section id="s5">
+    <h2><span class="h2-num">05</span> 异步流水线：通信与计算重叠</h2>
+    <p>
+      每个"Muon 任务"是一批形状相同的分片张量（如所有专家 up-proj 权重）。
+      每个任务包含三步：all-to-all gather → Newton-Schulz → all-to-all scatter。
+      流水线的关键是：发出 all-to-all 后不阻塞，立刻推进上一批已聚合矩阵的 N-S 计算，
+      让网络传输与 GPU 计算同时进行。
+    </p>
+
+    <div class="figure">
+      <div class="figure-body">
+<svg width="100%" viewBox="0 0 680 358" role="img">
+<title>Muon 异步流水线：通信与计算重叠时间线</title>
+<desc>上半展示顺序执行（网络与GPU相互阻塞等待），下半展示异步流水线让通信与计算同时进行</desc>
+<defs>
+  <marker id="arrow3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+<text class="th" x="340" y="18" text-anchor="middle">顺序执行（网络与 GPU 相互阻塞等待）</text>
+<line x1="100" y1="29" x2="608" y2="29" stroke="#d4d2c8" stroke-width="0.5"/>
+<text class="ts" x="90" y="51" text-anchor="end" dominant-baseline="central">T1</text>
+<text class="ts" x="90" y="89" text-anchor="end" dominant-baseline="central">T2</text>
+<text class="ts" x="90" y="127" text-anchor="end" dominant-baseline="central">T3</text>
+<g class="c-purple"><rect x="100" y="37" width="45" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="122" y="51" text-anchor="middle" dominant-baseline="central">G</text></g>
+<g class="c-purple"><rect x="145" y="37" width="75" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="182" y="51" text-anchor="middle" dominant-baseline="central">N-S</text></g>
+<g class="c-purple"><rect x="220" y="37" width="45" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="242" y="51" text-anchor="middle" dominant-baseline="central">S</text></g>
+<rect x="265" y="37" width="330" height="28" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="4 3" rx="2"/>
+<text class="ts" x="430" y="51" text-anchor="middle" dominant-baseline="central">（空闲等待）</text>
+<rect x="100" y="75" width="165" height="28" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="4 3" rx="2"/>
+<g class="c-blue"><rect x="265" y="75" width="45" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="287" y="89" text-anchor="middle" dominant-baseline="central">G</text></g>
+<g class="c-blue"><rect x="310" y="75" width="75" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="347" y="89" text-anchor="middle" dominant-baseline="central">N-S</text></g>
+<g class="c-blue"><rect x="385" y="75" width="45" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="407" y="89" text-anchor="middle" dominant-baseline="central">S</text></g>
+<rect x="430" y="75" width="165" height="28" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="4 3" rx="2"/>
+<rect x="100" y="113" width="330" height="28" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="4 3" rx="2"/>
+<text class="ts" x="265" y="127" text-anchor="middle" dominant-baseline="central">（空闲等待）</text>
+<g class="c-coral"><rect x="430" y="113" width="45" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="452" y="127" text-anchor="middle" dominant-baseline="central">G</text></g>
+<g class="c-coral"><rect x="475" y="113" width="75" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="512" y="127" text-anchor="middle" dominant-baseline="central">N-S</text></g>
+<g class="c-coral"><rect x="550" y="113" width="45" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="572" y="127" text-anchor="middle" dominant-baseline="central">S</text></g>
+<line x1="595" y1="29" x2="595" y2="148" stroke="#d4d2c8" stroke-width="1.5"/>
+<text class="ts" x="599" y="42" dominant-baseline="central">T₁</text>
+<text class="ts" x="340" y="155" text-anchor="middle">网络与 GPU 各自约 55% 时间在等对方，两类资源无法同时满负荷</text>
+<line x1="40" y1="163" x2="640" y2="163" stroke="#d4d2c8" stroke-width="0.5"/>
+<text class="th" x="340" y="177" text-anchor="middle">异步流水线（发出 all-to-all 后立即推进下一批 N-S，通信与计算重叠）</text>
+<line x1="100" y1="187" x2="440" y2="187" stroke="#d4d2c8" stroke-width="0.5"/>
+<line x1="440" y1="187" x2="608" y2="187" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="4 3"/>
+<text class="ts" x="90" y="209" text-anchor="end" dominant-baseline="central">网络</text>
+<text class="ts" x="90" y="257" text-anchor="end" dominant-baseline="central">GPU</text>
+<rect x="145" y="194" width="45" height="76" fill="#FAEEDA" opacity="0.6"/>
+<rect x="220" y="194" width="75" height="76" fill="#FAEEDA" opacity="0.6"/>
+<rect x="310" y="194" width="45" height="76" fill="#FAEEDA" opacity="0.6"/>
+<g class="c-blue"><rect x="100" y="194" width="45" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="122" y="208" text-anchor="middle" dominant-baseline="central">T1-G</text></g>
+<g class="c-blue"><rect x="145" y="194" width="45" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="167" y="208" text-anchor="middle" dominant-baseline="central">T2-G</text></g>
+<rect x="190" y="194" width="30" height="28" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<text class="ts" x="205" y="208" text-anchor="middle" dominant-baseline="central">…</text>
+<g class="c-blue"><rect x="220" y="194" width="45" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="242" y="208" text-anchor="middle" dominant-baseline="central">T1-S</text></g>
+<g class="c-blue"><rect x="265" y="194" width="45" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="287" y="208" text-anchor="middle" dominant-baseline="central">T3-G</text></g>
+<g class="c-blue"><rect x="310" y="194" width="45" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="332" y="208" text-anchor="middle" dominant-baseline="central">T2-S</text></g>
+<rect x="355" y="194" width="30" height="28" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<text class="ts" x="370" y="208" text-anchor="middle" dominant-baseline="central">…</text>
+<g class="c-blue"><rect x="385" y="194" width="45" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="407" y="208" text-anchor="middle" dominant-baseline="central">T3-S</text></g>
+<rect x="100" y="242" width="45" height="28" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<text class="ts" x="122" y="256" text-anchor="middle" dominant-baseline="central">等</text>
+<g class="c-teal"><rect x="145" y="242" width="75" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="182" y="256" text-anchor="middle" dominant-baseline="central">T1 N-S</text></g>
+<g class="c-teal"><rect x="220" y="242" width="75" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="257" y="256" text-anchor="middle" dominant-baseline="central">T2 N-S</text></g>
+<rect x="295" y="242" width="15" height="28" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<g class="c-teal"><rect x="310" y="242" width="75" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="347" y="256" text-anchor="middle" dominant-baseline="central">T3 N-S</text></g>
+<rect x="385" y="242" width="45" height="28" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<text class="ts" x="407" y="256" text-anchor="middle" dominant-baseline="central">空闲</text>
+<line x1="145" y1="222" x2="145" y2="242" stroke="#888" stroke-width="1" marker-end="url(#arrow3)"/>
+<line x1="220" y1="242" x2="220" y2="222" stroke="#888" stroke-width="1" marker-end="url(#arrow3)"/>
+<line x1="310" y1="222" x2="310" y2="242" stroke="#888" stroke-width="1" marker-end="url(#arrow3)"/>
+<path d="M 190 222 L 190 232 L 220 232 L 220 242" fill="none" stroke="#d4d2c8" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#arrow3)"/>
+<line x1="430" y1="187" x2="430" y2="278" stroke="#1a1a1a" stroke-width="1.5"/>
+<text class="ts" x="434" y="200" dominant-baseline="central">T₂</text>
+<line x1="595" y1="187" x2="595" y2="278" stroke="#d4d2c8" stroke-width="1" stroke-dasharray="4 3"/>
+<text class="ts" x="599" y="200" dominant-baseline="central">T₁</text>
+<line x1="430" y1="283" x2="595" y2="283" stroke="#d4d2c8" stroke-width="0.5"/>
+<line x1="430" y1="279" x2="430" y2="287" stroke="#d4d2c8" stroke-width="0.5"/>
+<line x1="595" y1="279" x2="595" y2="287" stroke="#d4d2c8" stroke-width="0.5"/>
+<text class="ts" x="512" y="298" text-anchor="middle">节省约 33% 总耗时</text>
+<text class="ts" x="40" y="318" dominant-baseline="central">图例：</text>
+<g class="c-blue"><rect x="88" y="311" width="16" height="14" rx="3" stroke-width="0.5"/></g>
+<text class="ts" x="110" y="318" dominant-baseline="central">all-to-all 通信（G = gather, S = scatter）</text>
+<g class="c-teal"><rect x="88" y="333" width="16" height="14" rx="3" stroke-width="0.5"/></g>
+<text class="ts" x="110" y="340" dominant-baseline="central">Newton-Schulz 正交化（GPU 计算）</text>
+<rect x="390" y="311" width="16" height="14" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<text class="ts" x="412" y="318" dominant-baseline="central">同步等待</text>
+<rect x="390" y="333" width="16" height="14" fill="#FAEEDA" rx="2"/>
+<text class="ts" x="412" y="340" dominant-baseline="central">通信与计算同时进行区间</text>
+</svg>
+      </div>
+      <div class="figure-caption"><strong>图 3</strong> — Muon 异步流水线 Gantt 图：顺序执行（上）vs 通信计算重叠（下）</div>
+    </div>
+
+    <h3>三类重叠区间说明</h3>
+    <p>
+      <strong>区间 A</strong>（T2-G ∥ T1-NS）：T1 的 gather 完成后，GPU 立即跑 T1 的 N-S；
+      网络不等 GPU 算完，直接发出 T2 的 gather。两者无依赖，纯并行。
+    </p>
+    <p>
+      <strong>区间 B</strong>（T1-S + T3-G ∥ T2-NS）：T1-NS 算完后，scatter 发上网络；
+      GPU 立刻开始 T2-NS。T1-S 在网络传输期间，T2-NS 同时在 GPU 上运行。
+      T1-S 传完后，网络继续发 T3-G，GPU 仍在算 T2-NS，形成稳态流水。
+    </p>
+    <p>
+      <strong>唯一同步点</strong>：T2-G 完成后需等 T1-NS 结束才能开始 T2-NS（依赖 T1 占用 GPU）。
+      此等待窗口 = max(0, NS_time − G_time)。N-S 的矩阵乘计算时间通常远大于 gather 传输时间，
+      因此后续批次的 gather 可以填满此窗口，趋近零等待。
+    </p>
+  </section>
+
+  <!-- ══ Section 6 ══ -->
+  <section id="s6">
+    <h2><span class="h2-num">06</span> 非专家权重分工 N-S 优化方案</h2>
+    <p>
+      当前方案对非专家权重同样执行 all-to-all + N-S，FSDP 组内每张卡都对同一完整矩阵
+      执行一次 N-S，存在 k 倍计算冗余（k = FSDP group size）。
+      针对此问题，可引入"按参数形状分工"策略。
+    </p>
+
+    <h3>方案描述</h3>
+    <p>
+      在同一 FSDP 组内，按 N-S 计算代价（正比于矩阵大小 m×n）将参数矩阵分配给各 rank，
+      每个 rank 作为"owner"只负责所分配矩阵的 gather → N-S → scatter，
+      其余 rank 仅作为"sender"提供对应 shard。
+    </p>
+
+    <h3>通信量分析</h3>
+    <table>
+      <thead><tr><th>方案</th><th>每 rank 通信量（设总参数量 S，k 张卡）</th><th>计算量</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>当前（全员 gather）</td>
+          <td class="mono">2 · n · S · (k−1)/k</td>
+          <td class="warn">k 倍冗余，每卡跑全部 N-S</td>
+        </tr>
+        <tr>
+          <td>分工方案</td>
+          <td class="mono">≈ n · S · (k−1)/k（约减半）</td>
+          <td class="good">每卡仅跑 1/k 数量的 N-S</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="figure">
+      <div class="figure-body">
+<svg width="100%" viewBox="0 0 680 358" role="img">
+<title>非专家权重 Muon 优化：分散 N-S 计算 + 跨 GPU 并行流水线</title>
+<desc>上部展示当前方案（所有 GPU 冗余执行所有参数 N-S），下部展示优化方案（各 GPU 负责不同参数，并行 + 通信计算重叠）</desc>
+<defs>
+  <marker id="arrow4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+<text class="th" x="340" y="18" text-anchor="middle">当前方案：所有 GPU 重复执行全部参数的 N-S（k 倍冗余计算）</text>
+<line x1="100" y1="29" x2="552" y2="29" stroke="#d4d2c8" stroke-width="0.5"/>
+<text class="ts" x="155" y="33" text-anchor="middle">P1</text>
+<text class="ts" x="265" y="33" text-anchor="middle">P2</text>
+<text class="ts" x="375" y="33" text-anchor="middle">P3</text>
+<text class="ts" x="485" y="33" text-anchor="middle">P4</text>
+<text class="ts" x="90" y="49" text-anchor="end" dominant-baseline="central">全部 GPU</text>
+<g class="c-purple"><rect x="100" y="35" width="30" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="115" y="49" text-anchor="middle" dominant-baseline="central">G</text></g>
+<g class="c-purple"><rect x="130" y="35" width="50" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="155" y="49" text-anchor="middle" dominant-baseline="central">N-S</text></g>
+<g class="c-purple"><rect x="180" y="35" width="30" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="195" y="49" text-anchor="middle" dominant-baseline="central">S</text></g>
+<g class="c-purple"><rect x="210" y="35" width="30" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="225" y="49" text-anchor="middle" dominant-baseline="central">G</text></g>
+<g class="c-purple"><rect x="240" y="35" width="50" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="265" y="49" text-anchor="middle" dominant-baseline="central">N-S</text></g>
+<g class="c-purple"><rect x="290" y="35" width="30" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="305" y="49" text-anchor="middle" dominant-baseline="central">S</text></g>
+<g class="c-purple"><rect x="320" y="35" width="30" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="335" y="49" text-anchor="middle" dominant-baseline="central">G</text></g>
+<g class="c-purple"><rect x="350" y="35" width="50" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="375" y="49" text-anchor="middle" dominant-baseline="central">N-S</text></g>
+<g class="c-purple"><rect x="400" y="35" width="30" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="415" y="49" text-anchor="middle" dominant-baseline="central">S</text></g>
+<g class="c-purple"><rect x="430" y="35" width="30" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="445" y="49" text-anchor="middle" dominant-baseline="central">G</text></g>
+<g class="c-purple"><rect x="460" y="35" width="50" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="485" y="49" text-anchor="middle" dominant-baseline="central">N-S</text></g>
+<g class="c-purple"><rect x="510" y="35" width="30" height="28" rx="4" stroke-width="0.5"/><text class="ts" x="525" y="49" text-anchor="middle" dominant-baseline="central">S</text></g>
+<line x1="540" y1="29" x2="540" y2="72" stroke="#d4d2c8" stroke-width="1.5"/>
+<text class="ts" x="545" y="43" dominant-baseline="central">T₁</text>
+<text class="ts" x="320" y="76" text-anchor="middle">k 张 GPU 执行完全相同序列 → k 倍冗余计算，需全员参与同步 all-gather 屏障</text>
+<line x1="40" y1="85" x2="640" y2="85" stroke="#d4d2c8" stroke-width="0.5"/>
+<text class="th" x="340" y="99" text-anchor="middle">优化方案：按形状分配参数，各 GPU 独立 gather → N-S → scatter，并行 + 流水线</text>
+<line x1="100" y1="108" x2="270" y2="108" stroke="#d4d2c8" stroke-width="0.5"/>
+<line x1="270" y1="108" x2="550" y2="108" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="4 3"/>
+<rect x="130" y="109" width="30" height="60" fill="#FAEEDA" opacity="0.5"/>
+<rect x="180" y="109" width="30" height="60" fill="#FAEEDA" opacity="0.5"/>
+<text class="ts" x="90" y="121" text-anchor="end" dominant-baseline="central">GPU0 网络</text>
+<g class="c-blue"><rect x="100" y="109" width="30" height="24" rx="4" stroke-width="0.5"/><text class="ts" x="115" y="121" text-anchor="middle" dominant-baseline="central">P1-G</text></g>
+<g class="c-blue"><rect x="130" y="109" width="30" height="24" rx="4" stroke-width="0.5"/><text class="ts" x="145" y="121" text-anchor="middle" dominant-baseline="central">P2-G</text></g>
+<rect x="160" y="109" width="20" height="24" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<g class="c-blue"><rect x="180" y="109" width="30" height="24" rx="4" stroke-width="0.5"/><text class="ts" x="195" y="121" text-anchor="middle" dominant-baseline="central">P1-S</text></g>
+<rect x="210" y="109" width="20" height="24" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<g class="c-blue"><rect x="230" y="109" width="30" height="24" rx="4" stroke-width="0.5"/><text class="ts" x="245" y="121" text-anchor="middle" dominant-baseline="central">P2-S</text></g>
+<text class="ts" x="90" y="157" text-anchor="end" dominant-baseline="central">GPU0 计算</text>
+<rect x="100" y="145" width="30" height="24" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<text class="ts" x="115" y="157" text-anchor="middle" dominant-baseline="central">等</text>
+<g class="c-teal"><rect x="130" y="145" width="50" height="24" rx="4" stroke-width="0.5"/><text class="ts" x="155" y="157" text-anchor="middle" dominant-baseline="central">P1 N-S</text></g>
+<g class="c-teal"><rect x="180" y="145" width="50" height="24" rx="4" stroke-width="0.5"/><text class="ts" x="205" y="157" text-anchor="middle" dominant-baseline="central">P2 N-S</text></g>
+<rect x="230" y="145" width="30" height="24" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<line x1="130" y1="133" x2="130" y2="145" stroke="#888" stroke-width="1" marker-end="url(#arrow4)"/>
+<line x1="180" y1="145" x2="180" y2="133" stroke="#888" stroke-width="1" marker-end="url(#arrow4)"/>
+<path d="M 160 133 L 160 139 L 180 139 L 180 145" fill="none" stroke="#d4d2c8" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#arrow4)"/>
+<line x1="115" y1="133" x2="115" y2="141" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="2 2" marker-end="url(#arrow4)"/>
+<line x1="115" y1="191" x2="115" y2="183" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="2 2" marker-end="url(#arrow4)"/>
+<text class="ts" x="122" y="170" dominant-baseline="central">互传分片（NVLink 异步）</text>
+<rect x="130" y="191" width="30" height="60" fill="#FAEEDA" opacity="0.5"/>
+<rect x="180" y="191" width="30" height="60" fill="#FAEEDA" opacity="0.5"/>
+<text class="ts" x="90" y="203" text-anchor="end" dominant-baseline="central">GPU1 网络</text>
+<g class="c-blue"><rect x="100" y="191" width="30" height="24" rx="4" stroke-width="0.5"/><text class="ts" x="115" y="203" text-anchor="middle" dominant-baseline="central">P3-G</text></g>
+<g class="c-blue"><rect x="130" y="191" width="30" height="24" rx="4" stroke-width="0.5"/><text class="ts" x="145" y="203" text-anchor="middle" dominant-baseline="central">P4-G</text></g>
+<rect x="160" y="191" width="20" height="24" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<g class="c-blue"><rect x="180" y="191" width="30" height="24" rx="4" stroke-width="0.5"/><text class="ts" x="195" y="203" text-anchor="middle" dominant-baseline="central">P3-S</text></g>
+<rect x="210" y="191" width="20" height="24" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<g class="c-blue"><rect x="230" y="191" width="30" height="24" rx="4" stroke-width="0.5"/><text class="ts" x="245" y="203" text-anchor="middle" dominant-baseline="central">P4-S</text></g>
+<text class="ts" x="90" y="239" text-anchor="end" dominant-baseline="central">GPU1 计算</text>
+<rect x="100" y="227" width="30" height="24" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<text class="ts" x="115" y="239" text-anchor="middle" dominant-baseline="central">等</text>
+<g class="c-teal"><rect x="130" y="227" width="50" height="24" rx="4" stroke-width="0.5"/><text class="ts" x="155" y="239" text-anchor="middle" dominant-baseline="central">P3 N-S</text></g>
+<g class="c-teal"><rect x="180" y="227" width="50" height="24" rx="4" stroke-width="0.5"/><text class="ts" x="205" y="239" text-anchor="middle" dominant-baseline="central">P4 N-S</text></g>
+<rect x="230" y="227" width="30" height="24" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<line x1="130" y1="215" x2="130" y2="227" stroke="#888" stroke-width="1" marker-end="url(#arrow4)"/>
+<line x1="180" y1="227" x2="180" y2="215" stroke="#888" stroke-width="1" marker-end="url(#arrow4)"/>
+<path d="M 160 215 L 160 221 L 180 221 L 180 227" fill="none" stroke="#d4d2c8" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#arrow4)"/>
+<line x1="260" y1="108" x2="260" y2="258" stroke="#1a1a1a" stroke-width="1.5"/>
+<text class="ts" x="265" y="121" dominant-baseline="central">T₂</text>
+<line x1="540" y1="108" x2="540" y2="258" stroke="#d4d2c8" stroke-width="1" stroke-dasharray="4 3"/>
+<text class="ts" x="545" y="121" dominant-baseline="central">T₁</text>
+<line x1="260" y1="263" x2="540" y2="263" stroke="#d4d2c8" stroke-width="0.5"/>
+<line x1="260" y1="259" x2="260" y2="267" stroke="#d4d2c8" stroke-width="0.5"/>
+<line x1="540" y1="259" x2="540" y2="267" stroke="#d4d2c8" stroke-width="0.5"/>
+<text class="ts" x="400" y="278" text-anchor="middle">计算量 ↓k 倍 · 通信量 ↓约 2 倍 · 各 GPU wall time ≈ T₁/k（含流水线）</text>
+<text class="ts" x="40" y="296" dominant-baseline="central">图例：</text>
+<g class="c-blue"><rect x="78" y="289" width="16" height="14" rx="3" stroke-width="0.5"/></g>
+<text class="ts" x="100" y="296" dominant-baseline="central">gather / scatter（owner rank 主导）</text>
+<g class="c-teal"><rect x="78" y="311" width="16" height="14" rx="3" stroke-width="0.5"/></g>
+<text class="ts" x="100" y="318" dominant-baseline="central">N-S 正交化（仅负责本 rank 分配到的参数）</text>
+<rect x="390" y="289" width="16" height="14" fill="none" stroke="#d4d2c8" stroke-width="0.5" stroke-dasharray="3 2" rx="2"/>
+<text class="ts" x="412" y="296" dominant-baseline="central">同步等待</text>
+<rect x="390" y="311" width="16" height="14" fill="#FAEEDA" rx="2"/>
+<text class="ts" x="412" y="318" dominant-baseline="central">通信与计算同时进行区间</text>
+</svg>
+      </div>
+      <div class="figure-caption"><strong>图 4</strong> — 非专家权重分工 N-S 方案：各 GPU 负责不同参数，GPU 间并行 + 流水线重叠</div>
+    </div>
+
+    <h3>可行性与工程挑战</h3>
+
+    <div class="callout correct">
+      <strong>正确性：</strong>每个 rank 作为 owner 时，gather 得到完整矩阵，N-S 作用于完整矩阵后 scatter 回分片，数学上等价于完整矩阵 Muon。✓
+    </div>
+
+    <p>
+      主要工程挑战在于负载均衡。非专家权重形状差异显著——
+      embedding 层 <code>[V, d]</code>（V 可达数万）、attention 投影 <code>[d, d_h]</code>、
+      layer norm <code>[d]</code> 的 N-S 计算代价相差悬殊。
+      需按矩阵大小做贪心 bin-packing 分配，避免某 rank 成为瓶颈。
+      此外，non-owner rank 的参数更新必须等待 owner scatter 完成，
+      需用 CUDA event 或 <code>wait_tensor</code> 做细粒度同步，不能用全局 barrier。
+    </p>
+    <p>
+      此优化对非专家参数量较大时（embedding 层 <code>[V=128K, d=7168]</code> 等）效益最显著，
+      对参数量小的 layer norm 等收益有限。在实际部署中建议只对超过一定大小阈值的矩阵启用分工策略。
+    </p>
+  </section>
+
+  <!-- ══ Section 7 ══ -->
+  <section id="s7">
+    <h2><span class="h2-num">07</span> 总结与方案对比</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>维度</th>
+          <th>Cursor 方案（博客披露）</th>
+          <th>社区基线（nanoGPT-speedrun 等）</th>
+          <th>非专家分工优化（提案）</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>N-S 作用对象</td>
+          <td class="mono">完整矩阵（gather 后）</td>
+          <td class="mono">完整矩阵（无分片）</td>
+          <td class="mono">完整矩阵（各 rank 负责子集）</td>
+        </tr>
+        <tr>
+          <td>数学正确性</td>
+          <td class="good">✓ 等价</td>
+          <td class="good">✓ 原生正确</td>
+          <td class="good">✓ 等价</td>
+        </tr>
+        <tr>
+          <td>非专家计算冗余</td>
+          <td class="warn">k 倍（每卡跑全部）</td>
+          <td>无（单卡）</td>
+          <td class="good">消除（各卡分工 1/k）</td>
+        </tr>
+        <tr>
+          <td>通信量（非专家）</td>
+          <td>2·n·S·(k-1)/k</td>
+          <td>0</td>
+          <td class="good">约减半</td>
+        </tr>
+        <tr>
+          <td>EP 专家权重</td>
+          <td class="good">✓ all-to-all 批量化 + 异步</td>
+          <td>不适用（单机）</td>
+          <td class="good">沿用 Cursor 方案</td>
+        </tr>
+        <tr>
+          <td>TP 适配</td>
+          <td class="warn">未覆盖（有意，EP+FSDP 架构无需）</td>
+          <td>不适用</td>
+          <td class="warn">同左，Row-parallel 需额外设计</td>
+        </tr>
+        <tr>
+          <td>通信异步化</td>
+          <td class="good">✓ 流水线重叠</td>
+          <td>不适用</td>
+          <td class="good">✓ 可叠加异步重叠</td>
+        </tr>
+        <tr>
+          <td>工程复杂度</td>
+          <td>中等</td>
+          <td>低</td>
+          <td>高（负载均衡 + 细粒度同步）</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>核心结论</h3>
+    <p>
+      Cursor 的分片 Muon 方案在三个层面上做到了统一：
+      <strong>数学正确性</strong>（N-S 始终作用于完整矩阵）、
+      <strong>工程效率</strong>（批量化同形状张量 + 异步通信掩盖）、
+      <strong>系统架构</strong>（EP/CP 双网格解耦，匹配 MoE 大模型的参数分布特征）。
+      这是目前已知 MoE 大模型上 Muon 分布式实现最为完整的公开描述之一。
+    </p>
+    <p>
+      非专家权重的分工 N-S 优化在数学上同样可行，可进一步消除 k 倍计算冗余，
+      核心工程挑战在于不规则形状矩阵的负载均衡与细粒度同步控制，
+      对 embedding 等大矩阵的效益最为显著。
+    </p>
+
+    <div class="callout warn">
+      <strong>注：</strong>本报告分析基于 Cursor Composer 2.5 博客的公开披露内容，
+      结合 Muon 算法原始论文和 FSDP/Megatron 社区文档推导，
+      未披露的具体实现细节（如 all-to-all 的精确调度策略、负载均衡算法）
+      均为基于公开信息的合理推断。
+    </div>
+  </section>
+
+  <footer>
+    <span>分片 Muon 与双网格 HSDP 技术分析报告</span>
+    <span>参考来源：cursor.com/cn/blog/composer-2-5 · Muon 原始论文 · PyTorch FSDP 文档</span>
+  </footer>
+
+</div>
+</body>
+</html>

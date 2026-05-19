@@ -4,6 +4,29 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-19: 分片 Muon 与双网格 HSDP 技术报告入库
+
+**Type**: User Contribution（手动入库，分布式优化器技术分析报告）
+
+**入库文件**:
+
+- `wiki/02_engineering/02_train_frameworks/muon_sharded_hsdp_report.html`
+  - **§1**: Muon 算法核心原理（Nesterov 动量 + Newton-Schulz 正交化、按 head/expert 粒度）
+  - **§2**: 分片 Muon 的挑战与 all-to-all 解法（gather → N-S → scatter 流程、批量化同形状张量、通信异步化）
+  - **§3**: 双网格 HSDP 设计（非专家窄网格 FSDP + 专家宽网格 EP、CP/EP 维度解耦）
+  - **§4**: TP 场景覆盖情况分析（Column/Row-parallel 下 N-S 的正确性条件）
+  - **§5**: 异步流水线 Gantt 图（顺序执行 vs 通信计算重叠，约 33% 耗时节省）
+  - **§6**: 非专家权重分工 N-S 优化方案（消除 k 倍计算冗余，通信量约减半）
+  - **§7**: 方案对比总结表（Cursor vs nanoGPT-speedrun vs 分工优化提案）
+  - 含 4 幅 SVG 图表（all-to-all N-S 流程、双网格拓扑、异步流水线 Gantt、分工优化对比）
+
+**交叉引用更新**:
+
+- `02_train_frameworks/index.md` — 页面列表新增条目
+- `01_theory/02_pretraining/muon_analysis.md` — Related Pages 新增回链
+
+---
+
 ## 2026-05-19: 算子调优体系指南入库
 
 **Type**: User Contribution（手动入库，算子开发与性能优化指南）
