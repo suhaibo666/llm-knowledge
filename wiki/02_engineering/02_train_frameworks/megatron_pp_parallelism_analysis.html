@@ -212,7 +212,7 @@ else:
 <h3>2.2 四种策略的对比</h3>
 
 <div class="diagram">
-<svg viewBox="0 0 720 320">
+<svg viewBox="0 0 720 340">
 <defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
 
 <text class="th" x="40" y="28">PP 调度策略对比</text>
@@ -227,25 +227,31 @@ else:
 <g class="ft"><rect x="212" y="90" width="80" height="22" rx="4"/><text class="ts" x="252" y="101" text-anchor="middle" dominant-baseline="central">BWD1</text></g>
 <g class="ft"><rect x="298" y="90" width="80" height="22" rx="4"/><text class="ts" x="338" y="101" text-anchor="middle" dominant-baseline="central">BWD0</text></g>
 
-<text class="ts" x="40" y="132" font-weight="600">Non-Interleaved 1F1B（PP=4）</text>
-<g class="fb"><rect x="40" y="140" width="60" height="22" rx="4"/><text class="ts" x="70" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:10px">FWD0</text></g>
-<g class="fb"><rect x="104" y="140" width="60" height="22" rx="4"/><text class="ts" x="134" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:10px">FWD1</text></g>
-<g class="fb"><rect x="168" y="140" width="60" height="22" rx="4"/><text class="ts" x="198" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:10px">FWD2</text></g>
-<g class="fa"><rect x="232" y="140" width="60" height="22" rx="4"/><text class="ts" x="262" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:10px">1F1B</text></g>
-<g class="fa"><rect x="296" y="140" width="60" height="22" rx="4"/><text class="ts" x="326" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:10px">1F1B</text></g>
-<g class="ft"><rect x="360" y="140" width="60" height="22" rx="4"/><text class="ts" x="390" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:10px">BWD1</text></g>
-<g class="ft"><rect x="424" y="140" width="60" height="22" rx="4"/><text class="ts" x="454" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:10px">BWD0</text></g>
+<text class="ts" x="40" y="132" font-weight="600">Non-Interleaved 1F1B（PP=4, M=8）</text>
+<g class="fg"><rect x="40" y="140" width="36" height="22" rx="4"/><text class="ts" x="58" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:9px">·</text></g>
+<g class="fb"><rect x="78" y="140" width="36" height="22" rx="4"/><text class="ts" x="96" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F</text></g>
+<g class="fb"><rect x="116" y="140" width="36" height="22" rx="4"/><text class="ts" x="134" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F</text></g>
+<g class="fa"><rect x="154" y="140" width="36" height="22" rx="4"/><text class="ts" x="172" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F</text></g>
+<g class="fa"><rect x="192" y="140" width="36" height="22" rx="4"/><text class="ts" x="210" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F</text></g>
+<g class="fa"><rect x="230" y="140" width="36" height="22" rx="4"/><text class="ts" x="248" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F,B</text></g>
+<g class="fa"><rect x="268" y="140" width="36" height="22" rx="4"/><text class="ts" x="286" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F,B</text></g>
+<g class="fa"><rect x="306" y="140" width="36" height="22" rx="4"/><text class="ts" x="324" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F,B</text></g>
+<g class="fa"><rect x="344" y="140" width="36" height="22" rx="4"/><text class="ts" x="362" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F,B</text></g>
+<g class="ft"><rect x="382" y="140" width="36" height="22" rx="4"/><text class="ts" x="400" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B</text></g>
+<g class="ft"><rect x="420" y="140" width="36" height="22" rx="4"/><text class="ts" x="438" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B</text></g>
+<g class="ft"><rect x="458" y="140" width="36" height="22" rx="4"/><text class="ts" x="476" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B</text></g>
+<g class="fg"><rect x="496" y="140" width="36" height="22" rx="4"/><text class="ts" x="514" y="151" text-anchor="middle" dominant-baseline="central" style="font-size:9px">·</text></g>
 
 <text class="ts" x="40" y="184" font-weight="600">Interleaved 1F1B（PP=4, VP=2）</text>
-<g class="fb"><rect x="40" y="192" width="50" height="22" rx="4"/><text class="ts" x="65" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F0_c0</text></g>
-<g class="fb"><rect x="94" y="192" width="50" height="22" rx="4"/><text class="ts" x="119" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F1_c0</text></g>
-<g class="fb"><rect x="148" y="192" width="50" height="22" rx="4"/><text class="ts" x="173" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F2_c0</text></g>
-<g class="fb"><rect x="202" y="192" width="50" height="22" rx="4"/><text class="ts" x="227" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F0_c1</text></g>
-<g class="fa"><rect x="256" y="192" width="50" height="22" rx="4"/><text class="ts" x="281" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">1F1B</text></g>
-<g class="fa"><rect x="310" y="192" width="50" height="22" rx="4"/><text class="ts" x="335" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">1F1B</text></g>
-<g class="ft"><rect x="364" y="192" width="50" height="22" rx="4"/><text class="ts" x="389" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B0_c1</text></g>
-<g class="ft"><rect x="418" y="192" width="50" height="22" rx="4"/><text class="ts" x="443" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B1_c0</text></g>
-<g class="ft"><rect x="472" y="192" width="50" height="22" rx="4"/><text class="ts" x="497" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B2_c0</text></g>
+<g class="fb"><rect x="40" y="192" width="40" height="22" rx="4"/><text class="ts" x="60" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F0_c0</text></g>
+<g class="fb"><rect x="84" y="192" width="40" height="22" rx="4"/><text class="ts" x="104" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F1_c0</text></g>
+<g class="fb"><rect x="128" y="192" width="40" height="22" rx="4"/><text class="ts" x="148" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F2_c0</text></g>
+<g class="fb"><rect x="172" y="192" width="40" height="22" rx="4"/><text class="ts" x="192" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F0_c1</text></g>
+<g class="fa"><rect x="216" y="192" width="40" height="22" rx="4"/><text class="ts" x="236" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">1F1B</text></g>
+<g class="fa"><rect x="260" y="192" width="40" height="22" rx="4"/><text class="ts" x="280" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">1F1B</text></g>
+<g class="ft"><rect x="304" y="192" width="40" height="22" rx="4"/><text class="ts" x="324" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B0_c1</text></g>
+<g class="ft"><rect x="348" y="192" width="40" height="22" rx="4"/><text class="ts" x="368" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B1_c0</text></g>
+<g class="ft"><rect x="392" y="192" width="40" height="22" rx="4"/><text class="ts" x="412" y="203" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B2_c0</text></g>
 
 <text class="ts" x="40" y="236" font-weight="600">Combined 1F1B（EP Overlap）</text>
 <g class="fb"><rect x="40" y="244" width="60" height="22" rx="4"/><text class="ts" x="70" y="255" text-anchor="middle" dominant-baseline="central" style="font-size:10px">FWD0</text></g>
@@ -254,7 +260,8 @@ else:
 <g class="fc"><rect x="272" y="244" width="80" height="22" rx="4"/><text class="ts" x="312" y="255" text-anchor="middle" dominant-baseline="central" style="font-size:10px">BWD2+FWD3</text></g>
 <g class="ft"><rect x="356" y="244" width="60" height="22" rx="4"/><text class="ts" x="386" y="255" text-anchor="middle" dominant-baseline="central" style="font-size:10px">BWD3</text></g>
 
-<text class="ts" x="40" y="290" font-size="11">F = Forward, B = Backward, c0/c1 = model chunk id, 1F1B = one-forward-one-backward steady state</text>
+<text class="ts" x="40" y="290" font-size="11">蓝色=Warmup 琥珀=1F1B Steady 青色=Cooldown 灰色=Bubble ·=idle  F,B=同一槽内交替执行</text>
+<text class="ts" x="40" y="308" font-size="11">Non-Interleaved 示意单条 stage 的多槽时间线（t0–t14）：warmup → 1F1B pairs → cooldown 三段 + 两端 bubble</text>
 </svg>
 <div class="diagram-cap">图 1：四种 PP 调度策略的时间线对比</div>
 </div>
@@ -336,71 +343,124 @@ for i in range(num_microbatches_remaining):
 <h3>3.2 完整时间线（PP=4, M=8）</h3>
 
 <div class="diagram">
-<svg viewBox="0 0 760 400">
-<defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="var(--teal)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<svg viewBox="0 0 840 440">
 
-<text class="th" x="40" y="28">Non-Interleaved 1F1B 时间线（PP=4, M=8 microbatches）</text>
+<text class="th" x="52" y="28">Non-Interleaved 1F1B 时间线（PP=4, M=8 microbatches）</text>
 
-<text class="ts" x="40" y="56" font-weight="600">Stage 0</text>
-<g class="fb"><rect x="40" y="64" width="50" height="22" rx="4"/><text class="ts" x="65" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F0</text></g>
-<g class="fb"><rect x="94" y="64" width="50" height="22" rx="4"/><text class="ts" x="119" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F1</text></g>
-<g class="fb"><rect x="148" y="64" width="50" height="22" rx="4"/><text class="ts" x="173" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F2</text></g>
-<g class="fa"><rect x="202" y="64" width="50" height="22" rx="4"/><text class="ts" x="227" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F3</text></g>
-<g class="fa"><rect x="256" y="64" width="50" height="22" rx="4"/><text class="ts" x="281" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B0</text></g>
-<g class="fa"><rect x="310" y="64" width="50" height="22" rx="4"/><text class="ts" x="335" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B1</text></g>
-<g class="ft"><rect x="364" y="64" width="50" height="22" rx="4"/><text class="ts" x="389" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B2</text></g>
-<g class="ft"><rect x="418" y="64" width="50" height="22" rx="4"/><text class="ts" x="443" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B3</text></g>
-<g class="ft"><rect x="472" y="64" width="50" height="22" rx="4"/><text class="ts" x="497" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B4</text></g>
-<g class="ft"><rect x="526" y="64" width="50" height="22" rx="4"/><text class="ts" x="551" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B5</text></g>
-<g class="ft"><rect x="580" y="64" width="50" height="22" rx="4"/><text class="ts" x="605" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B6</text></g>
-<g class="ft"><rect x="634" y="64" width="50" height="22" rx="4"/><text class="ts" x="659" y="75" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B7</text></g>
+<!-- time axis -->
+<text class="ts" x="52" y="54" font-weight="600">时间槽</text>
+<g font-family="JetBrains Mono,monospace" font-size="9" fill="var(--tx3)" text-anchor="middle">
+  <text x="72" y="54">t0</text><text x="118" y="54">t1</text><text x="164" y="54">t2</text><text x="210" y="54">t3</text>
+  <text x="256" y="54">t4</text><text x="302" y="54">t5</text><text x="348" y="54">t6</text><text x="394" y="54">t7</text>
+  <text x="440" y="54">t8</text><text x="486" y="54">t9</text><text x="532" y="54">t10</text><text x="578" y="54">t11</text>
+  <text x="624" y="54">t12</text><text x="670" y="54">t13</text><text x="716" y="54">t14</text>
+</g>
 
-<text class="ts" x="40" y="108" font-weight="600">Stage 1</text>
-<g class="fg"><rect x="40" y="116" width="50" height="22" rx="4"/><text class="ts" x="65" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">idle</text></g>
-<g class="fb"><rect x="94" y="116" width="50" height="22" rx="4"/><text class="ts" x="119" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F0</text></g>
-<g class="fb"><rect x="148" y="116" width="50" height="22" rx="4"/><text class="ts" x="173" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F1</text></g>
-<g class="fb"><rect x="202" y="116" width="50" height="22" rx="4"/><text class="ts" x="227" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F2</text></g>
-<g class="fa"><rect x="256" y="116" width="50" height="22" rx="4"/><text class="ts" x="281" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F3</text></g>
-<g class="fa"><rect x="310" y="116" width="50" height="22" rx="4"/><text class="ts" x="335" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B0</text></g>
-<g class="fa"><rect x="364" y="116" width="50" height="22" rx="4"/><text class="ts" x="389" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B1</text></g>
-<g class="ft"><rect x="418" y="116" width="50" height="22" rx="4"/><text class="ts" x="443" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B2</text></g>
-<g class="ft"><rect x="472" y="116" width="50" height="22" rx="4"/><text class="ts" x="497" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B3</text></g>
-<g class="ft"><rect x="526" y="116" width="50" height="22" rx="4"/><text class="ts" x="551" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B4</text></g>
-<g class="ft"><rect x="580" y="116" width="50" height="22" rx="4"/><text class="ts" x="605" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B5</text></g>
-<g class="ft"><rect x="634" y="116" width="50" height="22" rx="4"/><text class="ts" x="659" y="127" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B6</text></g>
+<!-- phase separator lines -->
+<line x1="233" y1="38" x2="233" y2="356" stroke="var(--blue)" stroke-width="1" stroke-dasharray="4,3" opacity="0.4"/>
+<line x1="555" y1="38" x2="555" y2="356" stroke="var(--teal)" stroke-width="1" stroke-dasharray="4,3" opacity="0.4"/>
+<text class="ts" x="90" y="364" font-size="10" fill="var(--blue-dk)" font-weight="600">← Warmup (t0–t3) →</text>
+<text class="ts" x="300" y="364" font-size="10" fill="var(--amber-dk)" font-weight="600">← Steady State 1F1B (t4–t10) →</text>
+<text class="ts" x="588" y="364" font-size="10" fill="var(--teal-dk)" font-weight="600">← Cooldown (t11–t14) →</text>
 
-<text class="ts" x="40" y="160" font-weight="600">Stage 2</text>
-<g class="fg"><rect x="40" y="168" width="50" height="22" rx="4"/><text class="ts" x="65" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">idle</text></g>
-<g class="fg"><rect x="94" y="168" width="50" height="22" rx="4"/><text class="ts" x="119" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">idle</text></g>
-<g class="fb"><rect x="148" y="168" width="50" height="22" rx="4"/><text class="ts" x="173" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F0</text></g>
-<g class="fb"><rect x="202" y="168" width="50" height="22" rx="4"/><text class="ts" x="227" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F1</text></g>
-<g class="fb"><rect x="256" y="168" width="50" height="22" rx="4"/><text class="ts" x="281" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F2</text></g>
-<g class="fa"><rect x="310" y="168" width="50" height="22" rx="4"/><text class="ts" x="335" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F3</text></g>
-<g class="fa"><rect x="364" y="168" width="50" height="22" rx="4"/><text class="ts" x="389" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B0</text></g>
-<g class="fa"><rect x="418" y="168" width="50" height="22" rx="4"/><text class="ts" x="443" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B1</text></g>
-<g class="ft"><rect x="472" y="168" width="50" height="22" rx="4"/><text class="ts" x="497" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B2</text></g>
-<g class="ft"><rect x="526" y="168" width="50" height="22" rx="4"/><text class="ts" x="551" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B3</text></g>
-<g class="ft"><rect x="580" y="168" width="50" height="22" rx="4"/><text class="ts" x="605" y="179" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B4</text></g>
+<!-- Stage 0: warmup=3(F0,F1,F2), steady=5 iterations (F3..F7+B0..B4), cooldown=3(B5,B6,B7) -->
+<text class="ts" x="52" y="82" font-weight="600">Stage 0</text>
+<g class="fb"><rect x="52" y="90" width="40" height="22" rx="4"/><text class="ts" x="72" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F0</text></g>
+<g class="fb"><rect x="98" y="90" width="40" height="22" rx="4"/><text class="ts" x="118" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F1</text></g>
+<g class="fb"><rect x="144" y="90" width="40" height="22" rx="4"/><text class="ts" x="164" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F2</text></g>
+<g class="fa"><rect x="190" y="90" width="40" height="22" rx="4"/><text class="ts" x="210" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F3</text></g>
+<g class="fa"><rect x="236" y="90" width="40" height="22" rx="4"/><text class="ts" x="256" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F4</text></g>
+<g class="fa"><rect x="282" y="90" width="40" height="22" rx="4"/><text class="ts" x="302" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F5</text></g>
+<g class="fa"><rect x="328" y="90" width="40" height="22" rx="4"/><text class="ts" x="348" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F6</text></g>
+<g class="fa"><rect x="374" y="90" width="40" height="22" rx="4"/><text class="ts" x="394" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F7,B0</text></g>
+<g class="fa"><rect x="420" y="90" width="40" height="22" rx="4"/><text class="ts" x="440" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B1</text></g>
+<g class="fa"><rect x="466" y="90" width="40" height="22" rx="4"/><text class="ts" x="486" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B2</text></g>
+<g class="fa"><rect x="512" y="90" width="40" height="22" rx="4"/><text class="ts" x="532" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B3</text></g>
+<g class="fa"><rect x="558" y="90" width="40" height="22" rx="4"/><text class="ts" x="578" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B4</text></g>
+<g class="ft"><rect x="604" y="90" width="40" height="22" rx="4"/><text class="ts" x="624" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B5</text></g>
+<g class="ft"><rect x="650" y="90" width="40" height="22" rx="4"/><text class="ts" x="670" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B6</text></g>
+<g class="ft"><rect x="696" y="90" width="40" height="22" rx="4"/><text class="ts" x="716" y="101" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B7</text></g>
 
-<text class="ts" x="40" y="212" font-weight="600">Stage 3</text>
-<g class="fg"><rect x="40" y="220" width="50" height="22" rx="4"/><text class="ts" x="65" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">idle</text></g>
-<g class="fg"><rect x="94" y="220" width="50" height="22" rx="4"/><text class="ts" x="119" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">idle</text></g>
-<g class="fg"><rect x="148" y="220" width="50" height="22" rx="4"/><text class="ts" x="173" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">idle</text></g>
-<g class="fb"><rect x="202" y="220" width="50" height="22" rx="4"/><text class="ts" x="227" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F0</text></g>
-<g class="fb"><rect x="256" y="220" width="50" height="22" rx="4"/><text class="ts" x="281" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F1</text></g>
-<g class="fb"><rect x="310" y="220" width="50" height="22" rx="4"/><text class="ts" x="335" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F2</text></g>
-<g class="fb"><rect x="364" y="220" width="50" height="22" rx="4"/><text class="ts" x="389" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">F3</text></g>
-<g class="fa"><rect x="418" y="220" width="50" height="22" rx="4"/><text class="ts" x="443" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B0</text></g>
-<g class="fa"><rect x="472" y="220" width="50" height="22" rx="4"/><text class="ts" x="497" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B1</text></g>
-<g class="fa"><rect x="526" y="220" width="50" height="22" rx="4"/><text class="ts" x="551" y="231" text-anchor="middle" dominant-baseline="central" style="font-size:10px">B2</text></g>
+<!-- Stage 1: warmup=2(F0,F1), steady=6 iterations (F2..F7+B0..B5), cooldown=2(B6,B7) -->
+<text class="ts" x="52" y="128" font-weight="600">Stage 1</text>
+<g class="fg"><rect x="52" y="136" width="40" height="22" rx="4"/><text class="ts" x="72" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">·</text></g>
+<g class="fb"><rect x="98" y="136" width="40" height="22" rx="4"/><text class="ts" x="118" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F0</text></g>
+<g class="fb"><rect x="144" y="136" width="40" height="22" rx="4"/><text class="ts" x="164" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F1</text></g>
+<g class="fa"><rect x="190" y="136" width="40" height="22" rx="4"/><text class="ts" x="210" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F2</text></g>
+<g class="fa"><rect x="236" y="136" width="40" height="22" rx="4"/><text class="ts" x="256" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F3</text></g>
+<g class="fa"><rect x="282" y="136" width="40" height="22" rx="4"/><text class="ts" x="302" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F4</text></g>
+<g class="fa"><rect x="328" y="136" width="40" height="22" rx="4"/><text class="ts" x="348" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F5,B0</text></g>
+<g class="fa"><rect x="374" y="136" width="40" height="22" rx="4"/><text class="ts" x="394" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F6,B1</text></g>
+<g class="fa"><rect x="420" y="136" width="40" height="22" rx="4"/><text class="ts" x="440" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F7,B2</text></g>
+<g class="fa"><rect x="466" y="136" width="40" height="22" rx="4"/><text class="ts" x="486" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B3</text></g>
+<g class="fa"><rect x="512" y="136" width="40" height="22" rx="4"/><text class="ts" x="532" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B4</text></g>
+<g class="fa"><rect x="558" y="136" width="40" height="22" rx="4"/><text class="ts" x="578" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B5</text></g>
+<g class="ft"><rect x="604" y="136" width="40" height="22" rx="4"/><text class="ts" x="624" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B6</text></g>
+<g class="ft"><rect x="650" y="136" width="40" height="22" rx="4"/><text class="ts" x="670" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B7</text></g>
+<g class="fg"><rect x="696" y="136" width="40" height="22" rx="4"/><text class="ts" x="716" y="147" text-anchor="middle" dominant-baseline="central" style="font-size:9px">·</text></g>
 
-<line x1="40" y1="270" x2="720" y2="270" stroke="var(--bd)" stroke-width="0.5"/>
+<!-- Stage 2: warmup=1(F0), steady=7 iterations (F1..F7+B0..B6), cooldown=1(B7) -->
+<text class="ts" x="52" y="174" font-weight="600">Stage 2</text>
+<g class="fg"><rect x="52" y="182" width="40" height="22" rx="4"/><text class="ts" x="72" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">·</text></g>
+<g class="fg"><rect x="98" y="182" width="40" height="22" rx="4"/><text class="ts" x="118" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">·</text></g>
+<g class="fb"><rect x="144" y="182" width="40" height="22" rx="4"/><text class="ts" x="164" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F0</text></g>
+<g class="fa"><rect x="190" y="182" width="40" height="22" rx="4"/><text class="ts" x="210" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F1</text></g>
+<g class="fa"><rect x="236" y="182" width="40" height="22" rx="4"/><text class="ts" x="256" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F2</text></g>
+<g class="fa"><rect x="282" y="182" width="40" height="22" rx="4"/><text class="ts" x="302" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F3,B0</text></g>
+<g class="fa"><rect x="328" y="182" width="40" height="22" rx="4"/><text class="ts" x="348" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F4,B1</text></g>
+<g class="fa"><rect x="374" y="182" width="40" height="22" rx="4"/><text class="ts" x="394" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F5,B2</text></g>
+<g class="fa"><rect x="420" y="182" width="40" height="22" rx="4"/><text class="ts" x="440" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F6,B3</text></g>
+<g class="fa"><rect x="466" y="182" width="40" height="22" rx="4"/><text class="ts" x="486" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F7,B4</text></g>
+<g class="fa"><rect x="512" y="182" width="40" height="22" rx="4"/><text class="ts" x="532" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B5</text></g>
+<g class="fa"><rect x="558" y="182" width="40" height="22" rx="4"/><text class="ts" x="578" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B6</text></g>
+<g class="ft"><rect x="604" y="182" width="40" height="22" rx="4"/><text class="ts" x="624" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B7</text></g>
+<g class="fg"><rect x="650" y="182" width="40" height="22" rx="4"/><text class="ts" x="670" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">·</text></g>
+<g class="fg"><rect x="696" y="182" width="40" height="22" rx="4"/><text class="ts" x="716" y="193" text-anchor="middle" dominant-baseline="central" style="font-size:9px">·</text></g>
 
-<text class="ts" x="40" y="296">蓝色 = Warmup Forward（无 backward 可以执行）</text>
-<text class="ts" x="40" y="314">琥珀色 = 1F1B Steady State（Forward + Backward 交替）</text>
-<text class="ts" x="40" y="332">青色 = Cooldown Backward（无 forward 可以执行）</text>
-<text class="ts" x="40" y="350">灰色 = Pipeline Bubble（空闲等待）</text>
-<text class="ts" x="40" y="374">Bubble 比例 ≈ (PP-1) / M = 3/8 = 37.5%（理论值，实际更低 due to overlap）</text>
+<!-- Stage 3: warmup=0, steady=8 iterations (F0..F7+B0..B7), cooldown=0 -->
+<text class="ts" x="52" y="220" font-weight="600">Stage 3</text>
+<g class="fg"><rect x="52" y="228" width="40" height="22" rx="4"/><text class="ts" x="72" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">·</text></g>
+<g class="fg"><rect x="98" y="228" width="40" height="22" rx="4"/><text class="ts" x="118" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">·</text></g>
+<g class="fg"><rect x="144" y="228" width="40" height="22" rx="4"/><text class="ts" x="164" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">·</text></g>
+<g class="fa"><rect x="190" y="228" width="40" height="22" rx="4"/><text class="ts" x="210" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F0</text></g>
+<g class="fa"><rect x="236" y="228" width="40" height="22" rx="4"/><text class="ts" x="256" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F1,B0</text></g>
+<g class="fa"><rect x="282" y="228" width="40" height="22" rx="4"/><text class="ts" x="302" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F2,B1</text></g>
+<g class="fa"><rect x="328" y="228" width="40" height="22" rx="4"/><text class="ts" x="348" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F3,B2</text></g>
+<g class="fa"><rect x="374" y="228" width="40" height="22" rx="4"/><text class="ts" x="394" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F4,B3</text></g>
+<g class="fa"><rect x="420" y="228" width="40" height="22" rx="4"/><text class="ts" x="440" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F5,B4</text></g>
+<g class="fa"><rect x="466" y="228" width="40" height="22" rx="4"/><text class="ts" x="486" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F6,B5</text></g>
+<g class="fa"><rect x="512" y="228" width="40" height="22" rx="4"/><text class="ts" x="532" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">F7,B6</text></g>
+<g class="fa"><rect x="558" y="228" width="40" height="22" rx="4"/><text class="ts" x="578" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">B7</text></g>
+<g class="fg"><rect x="604" y="228" width="40" height="22" rx="4"/><text class="ts" x="624" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">·</text></g>
+<g class="fg"><rect x="650" y="228" width="40" height="22" rx="4"/><text class="ts" x="670" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">·</text></g>
+<g class="fg"><rect x="696" y="228" width="40" height="22" rx="4"/><text class="ts" x="716" y="239" text-anchor="middle" dominant-baseline="central" style="font-size:9px">·</text></g>
+
+<!-- warmup count annotations -->
+<text class="ts" x="756" y="101" font-size="9" fill="var(--blue-dk)">warm=3</text>
+<text class="ts" x="756" y="147" font-size="9" fill="var(--blue-dk)">warm=2</text>
+<text class="ts" x="756" y="193" font-size="9" fill="var(--blue-dk)">warm=1</text>
+<text class="ts" x="756" y="239" font-size="9" fill="var(--blue-dk)">warm=0</text>
+
+<!-- legend -->
+<line x1="52" y1="260" x2="760" y2="260" stroke="var(--bd)" stroke-width="0.5"/>
+
+<rect x="52" y="270" width="16" height="12" rx="2" fill="var(--blue-bg)" stroke="var(--blue)" stroke-width="0.5"/>
+<text class="ts" x="74" y="278" font-size="10">Warmup Forward (blue)</text>
+<rect x="240" y="270" width="16" height="12" rx="2" fill="var(--amber-bg)" stroke="var(--amber)" stroke-width="0.5"/>
+<text class="ts" x="262" y="278" font-size="10">1F1B Steady State (amber)</text>
+<rect x="430" y="270" width="16" height="12" rx="2" fill="var(--teal-bg)" stroke="var(--teal)" stroke-width="0.5"/>
+<text class="ts" x="452" y="278" font-size="10">Cooldown Backward (teal)</text>
+<rect x="600" y="270" width="16" height="12" rx="2" fill="var(--gray-bg)" stroke="var(--tx3)" stroke-width="0.5"/>
+<text class="ts" x="622" y="278" font-size="10">Bubble / Idle (gray)</text>
+
+<text class="ts" x="52" y="304" font-size="11">· Fk = forward of microbatch k（前向计算） | Bk = backward of microbatch k（反向计算）</text>
+<text class="ts" x="52" y="322" font-size="11">· Fk,Bj = 同一时间槽内交替执行 1 次 forward + 1 次 backward，是 1F1B 稳态的核心特征</text>
+<text class="ts" x="52" y="340" font-size="11">· warm = warmup count（= PP_size − stage_rank − 1）；Stage 3 的 warmup=0，接收首批数据后直接进入 1F1B 稳态</text>
+
+<text class="ts" x="52" y="370" font-weight="600">Bubble 分析</text>
+<text class="ts" x="52" y="390" font-size="11">· 空闲槽位（bubble slot）：S0=0, S1=2, S2=4, S3=6 → 合计 12 idle slots / 60 total = 20% slot-level idleness</text>
+<text class="ts" x="52" y="408" font-size="11">· Pipeline bubble ratio ≈ (P−1) / M = 3/8 = 37.5%（端到端时间增量相对有效计算的比例）</text>
+<text class="ts" x="52" y="426" font-size="11">· 总时钟周期 = M + 2(P−1) = 8 + 6 = 14；每 stage 执行 M 次 forward + M 次 backward = 16 ops，bubble = 2(P−1) = 6</text>
 </svg>
 <div class="diagram-cap">图 2：Non-Interleaved 1F1B 完整时间线（PP=4, M=8）</div>
 </div>
