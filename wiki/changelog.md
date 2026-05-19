@@ -4,6 +4,26 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-19: Pin Memory 与内存语义通信分析入库
+
+**Type**: User Contribution（手动入库，综合深度分析）
+
+**入库文件**:
+
+- `wiki/02_engineering/pin_memory_and_memory_semantics_analysis.md`
+  - **§1**: Pin Memory 与内存语义通信基础概念（DMA、RDMA Write/Read/Atomic、ibv_reg_mr）
+  - **§2**: 传统消息语义 vs 内存语义的局限性分析（NCCL 固定成员、P2P 内存拷贝开销、NIC 厂商碎片化）
+  - **§3**: Pin Memory 在 PyTorch DataLoader / DeepSpeed ZeRO-Offload / vLLM KV Offload 中的应用
+  - **§4**: 内存语义通信在 vLLM P/D 分离 / Mooncake TransferEngine / DeepSeek DeepEP / 3FS / RLHF 权重同步中的应用
+  - **§5**: 两种 Pin Memory 层次区分（CPU DRAM vs GPU HBM Registration）
+  - **§6**: 社区应用全景总结与核心趋势
+
+**交叉引用更新**:
+
+- `02_engineering/index.md` — 页面列表新增条目
+
+---
+
 ## 2026-05-17: Megatron-LM Pipeline Parallelism 分析报告
 
 **Type**: New Page
