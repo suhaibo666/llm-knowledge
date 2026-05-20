@@ -4,6 +4,27 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-20: Megatron Nonuniform Tensor Parallelism (NTP) 深度分析
+
+**Type**: Knowledge Synthesis（基于 Megatron-LM dev 分支源码分析）
+
+**新增文件**:
+
+- `wiki/02_engineering/02_train_frameworks/megatron-lm/megatron_nonuniform_tp_analysis.md`
+  - **§1**: NTP 概念——TP 组级 GPU 故障容错，不同 DP 副本使用不同大小 TP group
+  - **§2**: 设计动机——三种故障应对方案对比（全停重启 vs 全量降级 vs NTP），适用场景（硬件故障应急/异构拓扑部署）
+  - **§3**: 实现机制——通信组重配置（冷重启 + sys.exit(0)）、参数 split 元数据（ntp_map 仅设 send_splits/recv_splits、不动参数数据）、梯度同步三阶段流程（Spare→Core all-to-all → DP sync → Core→Extra post-sync reshard）、Buffer/Bucket 适配、Transformer Engine userbuffer 适配
+  - **§4**: 关键约束——不做参数 resharding、不做优化器状态转换、不做 checkpoint 转换、reduced 副本 OOM 风险、计算不均衡与尾延迟
+  - **§5**: 与 Megatron 主流程关系——完全 opt-in/non-intrusive，无侵入 pretrain_gpt/checkpointing/distrib_optimizer/transformer_config
+  - **§6**: 总结——NTP 是梯度级 DDP shim，只做通信组重建 + 两次 all-to-all + bucket group 时序控制
+  - 含 1 幅 Mermaid 序列图（三阶段梯度同步流程）
+
+**交叉引用更新**:
+
+- `megatron-lm/index.md` — Distributed Parallelism 表格新增条目，Knowledge Gaps 更新（fault tolerance 标记为已解决，NTP checkpoint 转换标记为新 gap），Cross-Domain Links 新增
+
+---
+
 ## 2026-05-19: 分片 Muon 与双网格 HSDP 技术报告入库
 
 **Type**: User Contribution（手动入库，分布式优化器技术分析报告）

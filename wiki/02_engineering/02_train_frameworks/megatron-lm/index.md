@@ -37,6 +37,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 | Page | Key Concepts |
 |------|-------------|
 | [[Megatron_LM_TFLOPS_Analysis]] | Theoretical FLOPS estimation, forward/backward FLOP counting, MoE dropless vs dropout accuracy, throughput calculation formula |
+| [[megatron_nonuniform_tp_analysis]] | GPU fault tolerance via mixed-size TP groups across DP replicas, spare→core→extra gradient all-to-all resharing, process group reconfiguration, cold-restart mechanism |
 | [[megatron_comm_overlap_analysis]] | 6-dimension communication-computation overlap (TP/DP/PP/EP/CP), bulk & pipelined overlap, delay-wgrad, DeepEP/HybridEP |
 
 ### Training-Inference Integration
@@ -56,6 +57,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 - Distributed optimizer state sharding relates to ZeRO strategies in [[megatron_distributed_optimizer_analysis]]
 - Memory optimization techniques coalesce around [[megatron_memory_optimization_analysis]]
 - Fusion operators complement communication overlap patterns in [[megatron_comm_overlap_analysis]] and [[megatron_fusion_operators_analysis]]
+- NTP fault tolerance connects to TP/DP/CP topology concepts in [[megatron_nonuniform_tp_analysis]]
 
 ## Knowledge Gaps
 
@@ -69,9 +71,12 @@ These topics are referenced but lack dedicated wiki pages:
 - ~~**Memory optimization panorama** — scattered across multiple pages~~ → addressed by [[megatron_memory_optimization_analysis]]
 - ~~**Fusion operators** — no dedicated page~~ → addressed by [[megatron_fusion_operators_analysis]]
 - **Sequence Parallelism implementation details** — ~~distinct from TP but not yet covered~~ → addressed by [[llm_parallelism_analysis]] and [[megatron_comm_overlap_analysis]]
+- ~~**Fault tolerance / GPU failure recovery** — not covered~~ → addressed by [[megatron_nonuniform_tp_analysis]]
+- **NTP checkpoint conversion tooling** — gradient resharing is implemented, but parameter/optimizer state resharding for checkpoint restore is not yet in the codebase
 
 ## Related Pages
 
 - [[Megatron-LM_MoE_Zero_Redundancy_Analysis]]
 - [[llm_parallelism_analysis]]
+- [[megatron_nonuniform_tp_analysis]]
 - [[02_engineering/01_ai_frameworks/index]]
