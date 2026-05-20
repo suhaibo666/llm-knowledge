@@ -23,6 +23,14 @@
     --serif: 'Noto Serif SC', 'Songti SC', serif;
     --sans: 'Noto Sans SC', 'PingFang SC', sans-serif;
     --mono: 'JetBrains Mono', 'Fira Code', monospace;
+    /* extended semantic tokens used in SVG */
+    --color-text-tertiary: #6b6b66;
+    --color-text-success: #0f6e56;
+    --color-text-danger: #993C1D;
+    --color-border-secondary: #d4d2c8;
+    --color-border-tertiary: #eae8e0;
+    --color-border-success: #0f6e56;
+    --color-border-danger: #993C1D;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -250,6 +258,11 @@
   .figure-body svg .c-amber .th { fill: #633806; }
   .figure-body svg .c-amber .ts { fill: #854F0B; }
 
+  /* gray — used for "before" state boxes */
+  .figure-body svg .c-gray rect, .figure-body svg .c-gray ellipse { fill: #f0ede4; stroke: #9a9890; }
+  .figure-body svg .c-gray .th { fill: #3d3d3a; }
+  .figure-body svg .c-gray .ts { fill: #6b6b66; }
+
   .figure-body svg .arr { stroke: var(--ink3); stroke-width: 1.5; fill: none; }
   .figure-body svg .leader { stroke: var(--ink3); stroke-width: 0.5; stroke-dasharray: 4 3; fill: none; }
   .figure-body svg .box { fill: #f5f4ef; stroke: var(--rule); stroke-width: 0.5; }
@@ -371,11 +384,13 @@
     <p class="cover-sub">
       基于 Cursor Composer 2.5 博客披露的技术方案，结合 Muon 算法数学基础，
       分析其在 MoE 大模型分布式训练中的实现正确性、优化原理与社区方案对比，
-      并提出对非专家权重 N-S 计算的进一步优化方向。
+      并提出对非专家权重 N-S 计算的进一步优化方向。补充分析分头 Muon 的算法语义、
+      FSDP 与 TP+FSDP 联合场景下的分头 N-S 流水线设计，
+      以及 W_o 与 FFN W_down 在 TP 切分下的关键区别。
     </p>
     <div class="cover-meta">
-      <span><strong>参考来源</strong>cursor.com/cn/blog/composer-2-5</span>
-      <span><strong>涉及系统</strong>Kimi K2 · FSDP · HSDP · MoE · Muon</span>
+      <span><strong>参考来源</strong>cursor.com/cn/blog/composer-2-5 · Megatron-LM 代码</span>
+      <span><strong>涉及系统</strong>Kimi K2 · FSDP · HSDP · MoE · Muon · TP</span>
     </div>
   </div>
 </div>
@@ -405,6 +420,27 @@
       <li><a href="#s5">异步流水线：通信与计算重叠</a></li>
       <li><a href="#s6">非专家权重分工 N-S 优化方案</a></li>
       <li><a href="#s7">总结与对比</a></li>
+      <li><a href="#s8">分头 Muon — 正交化粒度与架构语义对齐</a>
+        <ul class="sub">
+          <li>原始 Muon 的粒度问题</li>
+          <li>per-head N-S 的算法优势</li>
+          <li>MoE per-expert 与 per-head 的统一设计原则</li>
+        </ul>
+      </li>
+      <li><a href="#s9">分头 Muon FSDP 流水线</a>
+        <ul class="sub">
+          <li>flat shard → 头所有权 all-to-all → N-S → 还原</li>
+          <li>跨层通信计算重叠 Gantt</li>
+          <li>与非专家分工方案的对比</li>
+        </ul>
+      </li>
+      <li><a href="#s10">TP + FSDP 联合场景下的分头 Muon</a>
+        <ul class="sub">
+          <li>W_q / W_o（head 对齐）vs FFN W_down（无子结构）</li>
+          <li>跨 TP all-gather 的必要性分析</li>
+          <li>all-gather 后的 TP×FSDP 扩展组分工方案</li>
+        </ul>
+      </li>
     </ol>
   </nav>
 
@@ -1135,9 +1171,415 @@ W_{t+1}   = W_t - η · X*
     </div>
   </section>
 
+  <!-- ══ Section 8 ══ -->
+  <section id="s8">
+    <h2><span class="h2-num">08</span> 分头 Muon — 正交化粒度与架构语义对齐</h2>
+
+    <h3>原始 Muon 的粒度问题</h3>
+    <p>
+      原始 Muon 论文将整个参数矩阵视为 N-S 的操作单元。对 FFN 的 W_up/W_down 来说，
+      这完全合理——这些矩阵没有额外的语义子结构。但 Multi-Head Attention 的投影矩阵
+      <code>W_q ∈ R^{d × d}</code> 不是普通的 2D 矩阵，它在列维度上有结构：
+      每 d_h 列对应一个 head 的独立子空间投影。
+    </p>
+    <p>
+      对整个 W_q 做 SVD 时，主奇异向量可以是跨 head 的线性组合。N-S 正交化后，
+      会把不该耦合的 head 强行耦合在一起——某个 head 的主特征方向如果和其他 head 高度对齐，
+      整体 W_q 的 N-S 会把这种"巧合对齐"当作重要奇异方向来对待，影响所有 head 的更新幅度。
+    </p>
+
+    <h3>per-head N-S 的算法优势</h3>
+    <p>
+      对每个 head 独立做 N-S：
+    </p>
+    <div class="math-block">
+对 i = 1..h：
+    X_i* = NewtonSchulz(W_q^i)   <span class="comment">// W_q^i ∈ R^{d × d_h}</span>
+    </div>
+    <p>
+      每个 head 拥有自己独立的 SVD，自己独立的正交化更新，步长在本 head 的奇异方向上均等，
+      和其他 head 完全解耦。这才是真正符合 MHA 设计意图的更新方式。类比：
+      不会对 batch 里不同样本做 BatchNorm（不同样本分布独立），同理不同 head 的投影方向独立，
+      不应强行整体正交化。
+    </p>
+
+    <h3>MoE per-expert 与 per-head 的统一设计原则</h3>
+    <p>
+      Composer 2.5 对注意力层按 head 处理、对 MoE 层按 expert 处理，背后是同一个原则：
+    </p>
+    <div class="callout correct">
+      <strong>设计原则：</strong>N-S 的正交化粒度应与模型的语义独立单元对齐。
+      头之间独立 → per-head N-S；专家之间独立 → per-expert N-S；
+      FFN 无语义子结构 → 整体矩阵 N-S。
+    </div>
+    <p>
+      这是对原始 Muon 的一个有意义的算法层面扩展——不是分布式工程上的妥协，
+      而是将架构先验注入优化器的主动设计选择。
+    </p>
+
+    <table>
+      <thead><tr><th>权重</th><th>N-S 粒度</th><th>语义依据</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>W_q / W_k / W_v</td>
+          <td class="mono">R^{d × d_h}，按 head</td>
+          <td>每个 head 是独立子空间投影，奇异值分布各异，整体正交化会引入 head 间耦合</td>
+        </tr>
+        <tr>
+          <td>W_o（attention output）</td>
+          <td class="mono">R^{d_h × d_model}，按 head</td>
+          <td>每个 head 的输出投影独立参数化，梯度流仅通过本 head 的贡献，可按 head 独立 N-S</td>
+        </tr>
+        <tr>
+          <td>MoE 专家 FFN</td>
+          <td class="mono">R^{d_ff × d_model}，按 expert</td>
+          <td>各专家语义完全独立，跨专家正交化引入人为耦合</td>
+        </tr>
+        <tr>
+          <td>FFN W_up / W_down（dense）</td>
+          <td class="mono">整体矩阵</td>
+          <td>d_ff 神经元无语义子结构，整体 N-S 是正确的操作单元</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ══ Section 9 ══ -->
+  <section id="s9">
+    <h2><span class="h2-num">09</span> 分头 Muon FSDP 流水线</h2>
+    <p>
+      将 per-head 粒度和 FSDP 分布式环境结合，可以消除之前方案中每个 rank 冗余执行全部 head N-S 的问题。
+      核心思路：通过 all-to-all 将 flat FSDP shard 重组为"头所有权"布局，各 rank 独立执行所分配 head 的 N-S，
+      再 all-to-all 还原分片。
+    </p>
+
+    <h3>完整数据流与流水线</h3>
+
+    <div class="figure">
+      <div class="figure-body">
+<svg width="100%" viewBox="0 0 680 450" role="img">
+<title>Per-head Muon FSDP optimizer pipeline</title>
+<desc>流程图：flat shard 经 all-to-all 重组为 per-head ownership，各 rank 独立执行 N-S，再 all-to-all 还原。下方 Gantt 展示跨层流水线中通信与计算的重叠。</desc>
+<defs>
+  <marker id="arrow-s9" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+<text class="ts" x="340" y="20" text-anchor="middle">per-head Muon — FSDP optimizer step (h = 4 heads, k = 4 ranks)</text>
+<g class="c-gray"><rect x="110" y="28" width="100" height="46" rx="4" stroke-width="0.5"/>
+  <text class="th" x="160" y="45" text-anchor="middle" dominant-baseline="central">GPU 0</text>
+  <text class="ts" x="160" y="62" text-anchor="middle" dominant-baseline="central">flat shard</text></g>
+<g class="c-gray"><rect x="230" y="28" width="100" height="46" rx="4" stroke-width="0.5"/>
+  <text class="th" x="280" y="45" text-anchor="middle" dominant-baseline="central">GPU 1</text>
+  <text class="ts" x="280" y="62" text-anchor="middle" dominant-baseline="central">flat shard</text></g>
+<g class="c-gray"><rect x="350" y="28" width="100" height="46" rx="4" stroke-width="0.5"/>
+  <text class="th" x="400" y="45" text-anchor="middle" dominant-baseline="central">GPU 2</text>
+  <text class="ts" x="400" y="62" text-anchor="middle" dominant-baseline="central">flat shard</text></g>
+<g class="c-gray"><rect x="470" y="28" width="100" height="46" rx="4" stroke-width="0.5"/>
+  <text class="th" x="520" y="45" text-anchor="middle" dominant-baseline="central">GPU 3</text>
+  <text class="ts" x="520" y="62" text-anchor="middle" dominant-baseline="central">flat shard</text></g>
+<line x1="160" y1="74" x2="160" y2="86" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<line x1="280" y1="74" x2="280" y2="86" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<line x1="400" y1="74" x2="400" y2="86" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<line x1="520" y1="74" x2="520" y2="86" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<g class="c-blue"><rect x="110" y="86" width="460" height="22" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="340" y="97" text-anchor="middle" dominant-baseline="central">all-to-all: each rank gathers complete column data for its assigned head(s)</text></g>
+<line x1="160" y1="108" x2="160" y2="120" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<line x1="280" y1="108" x2="280" y2="120" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<line x1="400" y1="108" x2="400" y2="120" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<line x1="520" y1="108" x2="520" y2="120" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<g class="c-teal"><rect x="110" y="120" width="100" height="62" rx="4" stroke-width="0.5"/>
+  <text class="th" x="160" y="137" text-anchor="middle" dominant-baseline="central">GPU 0</text>
+  <text class="ts" x="160" y="153" text-anchor="middle" dominant-baseline="central">head 0</text>
+  <text class="ts" x="160" y="169" text-anchor="middle" dominant-baseline="central">→ N-S</text></g>
+<g class="c-purple"><rect x="230" y="120" width="100" height="62" rx="4" stroke-width="0.5"/>
+  <text class="th" x="280" y="137" text-anchor="middle" dominant-baseline="central">GPU 1</text>
+  <text class="ts" x="280" y="153" text-anchor="middle" dominant-baseline="central">head 1</text>
+  <text class="ts" x="280" y="169" text-anchor="middle" dominant-baseline="central">→ N-S</text></g>
+<g class="c-coral"><rect x="350" y="120" width="100" height="62" rx="4" stroke-width="0.5"/>
+  <text class="th" x="400" y="137" text-anchor="middle" dominant-baseline="central">GPU 2</text>
+  <text class="ts" x="400" y="153" text-anchor="middle" dominant-baseline="central">head 2</text>
+  <text class="ts" x="400" y="169" text-anchor="middle" dominant-baseline="central">→ N-S</text></g>
+<g class="c-amber"><rect x="470" y="120" width="100" height="62" rx="4" stroke-width="0.5"/>
+  <text class="th" x="520" y="137" text-anchor="middle" dominant-baseline="central">GPU 3</text>
+  <text class="ts" x="520" y="153" text-anchor="middle" dominant-baseline="central">head 3</text>
+  <text class="ts" x="520" y="169" text-anchor="middle" dominant-baseline="central">→ N-S</text></g>
+<line x1="160" y1="182" x2="160" y2="194" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<line x1="280" y1="182" x2="280" y2="194" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<line x1="400" y1="182" x2="400" y2="194" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<line x1="520" y1="182" x2="520" y2="194" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<g class="c-blue"><rect x="110" y="194" width="460" height="22" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="340" y="205" text-anchor="middle" dominant-baseline="central">all-to-all: restore flat FSDP shard layout</text></g>
+<line x1="160" y1="216" x2="160" y2="228" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<line x1="280" y1="216" x2="280" y2="228" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<line x1="400" y1="216" x2="400" y2="228" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<line x1="520" y1="216" x2="520" y2="228" style="stroke:var(--color-text-tertiary);stroke-width:0.5" marker-end="url(#arrow-s9)"/>
+<g class="c-green"><rect x="110" y="228" width="100" height="46" rx="4" stroke-width="0.5"/>
+  <text class="th" x="160" y="245" text-anchor="middle" dominant-baseline="central">GPU 0</text>
+  <text class="ts" x="160" y="262" text-anchor="middle" dominant-baseline="central">shard updated</text></g>
+<g class="c-green"><rect x="230" y="228" width="100" height="46" rx="4" stroke-width="0.5"/>
+  <text class="th" x="280" y="245" text-anchor="middle" dominant-baseline="central">GPU 1</text>
+  <text class="ts" x="280" y="262" text-anchor="middle" dominant-baseline="central">shard updated</text></g>
+<g class="c-green"><rect x="350" y="228" width="100" height="46" rx="4" stroke-width="0.5"/>
+  <text class="th" x="400" y="245" text-anchor="middle" dominant-baseline="central">GPU 2</text>
+  <text class="ts" x="400" y="262" text-anchor="middle" dominant-baseline="central">shard updated</text></g>
+<g class="c-green"><rect x="470" y="228" width="100" height="46" rx="4" stroke-width="0.5"/>
+  <text class="th" x="520" y="245" text-anchor="middle" dominant-baseline="central">GPU 3</text>
+  <text class="ts" x="520" y="262" text-anchor="middle" dominant-baseline="central">shard updated</text></g>
+<line x1="40" y1="286" x2="640" y2="286" style="stroke:var(--color-border-tertiary);stroke-width:0.5"/>
+<text class="ts" x="340" y="300" text-anchor="middle">pipeline — 3 attention layers: N-S compute overlaps with next layer's all-to-all</text>
+<text class="ts" x="116" y="330" text-anchor="end" dominant-baseline="central">network</text>
+<text class="ts" x="116" y="362" text-anchor="end" dominant-baseline="central">GPU ×4</text>
+<rect x="165" y="312" width="40" height="62" fill="#FAEEDA" opacity="0.55"/>
+<rect x="205" y="312" width="40" height="62" fill="#FAEEDA" opacity="0.55"/>
+<rect x="245" y="312" width="40" height="62" fill="#FAEEDA" opacity="0.55"/>
+<rect x="325" y="312" width="40" height="62" fill="#FAEEDA" opacity="0.55"/>
+<g class="c-blue"><rect x="125" y="320" width="40" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="145" y="330" text-anchor="middle" dominant-baseline="central">G·L1</text></g>
+<g class="c-blue"><rect x="165" y="320" width="40" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="185" y="330" text-anchor="middle" dominant-baseline="central">G·L2</text></g>
+<g class="c-blue"><rect x="205" y="320" width="40" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="225" y="330" text-anchor="middle" dominant-baseline="central">G·L3</text></g>
+<g class="c-blue"><rect x="245" y="320" width="40" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="265" y="330" text-anchor="middle" dominant-baseline="central">S·L1</text></g>
+<g class="c-blue"><rect x="325" y="320" width="40" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="345" y="330" text-anchor="middle" dominant-baseline="central">S·L2</text></g>
+<g class="c-blue"><rect x="405" y="320" width="40" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="425" y="330" text-anchor="middle" dominant-baseline="central">S·L3</text></g>
+<g class="c-teal"><rect x="165" y="352" width="80" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="205" y="362" text-anchor="middle" dominant-baseline="central">layer 1 · N-S</text></g>
+<g class="c-purple"><rect x="245" y="352" width="80" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="285" y="362" text-anchor="middle" dominant-baseline="central">layer 2 · N-S</text></g>
+<g class="c-coral"><rect x="325" y="352" width="80" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="365" y="362" text-anchor="middle" dominant-baseline="central">layer 3 · N-S</text></g>
+<line x1="125" y1="378" x2="445" y2="378" style="stroke:var(--color-border-secondary);stroke-width:0.5"/>
+<line x1="125" y1="374" x2="125" y2="382" style="stroke:var(--color-border-secondary);stroke-width:0.5"/>
+<line x1="445" y1="374" x2="445" y2="382" style="stroke:var(--color-border-secondary);stroke-width:0.5"/>
+<text class="ts" x="285" y="390" text-anchor="middle">pipelined (320 units)</text>
+<line x1="125" y1="396" x2="605" y2="396" style="stroke:var(--color-border-tertiary);stroke-width:0.5" stroke-dasharray="3 3"/>
+<line x1="125" y1="392" x2="125" y2="400" style="stroke:var(--color-border-tertiary);stroke-width:0.5"/>
+<line x1="605" y1="392" x2="605" y2="400" style="stroke:var(--color-border-tertiary);stroke-width:0.5"/>
+<text class="ts" x="365" y="408" text-anchor="middle" style="fill:var(--color-text-tertiary)">sequential (480 units) → 33% saved</text>
+<text class="ts" x="340" y="420" text-anchor="middle">▒ = comm ∥ compute overlap  ·  each rank does N-S on 1/k heads → k-fold parallel speedup</text>
+<g class="c-blue"><rect x="60" y="432" width="14" height="12" rx="2" stroke-width="0.5"/></g>
+<text class="ts" x="80" y="438" dominant-baseline="central">all-to-all gather / scatter</text>
+<g class="c-teal"><rect x="260" y="432" width="14" height="12" rx="2" stroke-width="0.5"/></g>
+<text class="ts" x="280" y="438" dominant-baseline="central">N-S (1 head per rank)</text>
+<rect x="460" y="432" width="14" height="12" fill="#FAEEDA" rx="2"/>
+<text class="ts" x="480" y="438" dominant-baseline="central">pipeline overlap</text>
+</svg>
+      </div>
+      <div class="figure-caption"><strong>图 5</strong> — 分头 Muon FSDP 流水线：flat shard → all-to-all → per-head N-S（并行）→ all-to-all → 更新分片；下部 Gantt 展示跨层通信计算重叠</div>
+    </div>
+
+    <h3>与之前非专家分工方案的对比</h3>
+    <p>
+      前文（第六节）提出的"按形状分配参数"方案，是在同一 FSDP 组内对不同矩阵（不同 layer 的权重）分工。
+      本节的分头方案是在同一矩阵内对不同 head 分工。两者可以叠加：
+      先按 head 分工（本节），再在跨层的批次间做异步流水线（第五节）。
+      叠加效果是计算量减少 k 倍 + 通信掩盖约 33%，对 attention 层 Muon 开销的降低最为显著。
+    </p>
+  </section>
+
+  <!-- ══ Section 10 ══ -->
+  <section id="s10">
+    <h2><span class="h2-num">10</span> TP + FSDP 联合场景下的分头 Muon</h2>
+
+    <h3>核心结论：W_o 与 W_q 对称，FFN W_down 才是真正的难点</h3>
+
+    <p>
+      基于 Megatron-LM 及 TGI/HuggingFace 代码分析，Transformer 中各权重在 TP 下的切分如下：
+    </p>
+
+    <div class="math-block">
+<span class="comment">// 代码来源：TGI RowParallelLinear / Megatron-LM attention</span>
+
+W_q/W_k/W_v : ColumnParallelLinear(embed_dim → embed_dim)
+  → 每 TP rank 持有：[embed_dim, embed_dim/TP] = [d_model, (h/TP)·d_h]
+  → h/TP 列块 = h/TP 个完整 head 的 Q/K/V 投影
+
+W_o (out_proj): RowParallelLinear(embed_dim → embed_dim)
+  → 每 TP rank 持有：[embed_dim/TP, embed_dim] = [(h/TP)·d_h, d_model]
+  → h/TP 行块 = h/TP 个完整 head 的输出投影   ← 同样是 head 对齐
+
+FFN W_down:    RowParallelLinear(4·embed_dim → embed_dim)
+  → 每 TP rank 持有：[4·embed_dim/TP, embed_dim]
+  → 行维度是 d_ff 神经元，无语义子结构         ← 无法按 head 分割
+    </div>
+
+    <div class="callout correct">
+      <strong>关键修正：</strong>W_o（attention output projection）与 W_q 对称，TP 行切分恰好沿 head 边界，
+      每个 TP rank 已持有完整的 h/TP 个 head 块。<strong>不需要跨 TP all-gather</strong>，
+      可以直接在 TP rank 内部做 per-head N-S（与列切分的 W_q 完全对称）。
+      需要跨 TP all-gather 的是 FFN W_down，而非 W_o。
+    </div>
+
+    <div class="figure">
+      <div class="figure-body">
+<svg width="100%" viewBox="0 0 680 420" role="img">
+<title>Per-head Muon with TP + FSDP: W_q vs W_o vs FFN W_down</title>
+<desc>左侧 W_q 列并行与 W_o 行并行：TP rank 天然拥有完整 head 块，FSDP all-to-all 仅在 TP rank 内部（NVLink）。右侧 FFN W_down 行并行：行切片无 head 对齐，需跨 TP all-gather（IB），代价显著更高。</desc>
+<defs>
+  <marker id="arrow-s10" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+<text class="th" x="168" y="18" text-anchor="middle">W_q &amp; W_o — head 对齐</text>
+<text class="th" x="502" y="18" text-anchor="middle">FFN W_down — 无子结构</text>
+<!-- LEFT: W_q & W_o -->
+<rect x="38" y="28" width="258" height="84" rx="8" fill="none" style="stroke:var(--color-border-secondary);stroke-width:0.5" stroke-dasharray="5 3"/>
+<text class="ts" x="167" y="42" text-anchor="middle">TP rank 0 · 列/行切分均 head 对齐</text>
+<g class="c-teal">
+  <rect x="48" y="50" width="104" height="52" rx="4" stroke-width="0.5"/>
+  <text class="th" x="100" y="68" text-anchor="middle" dominant-baseline="central">GPU 0</text>
+  <text class="ts" x="100" y="84" text-anchor="middle" dominant-baseline="central">head 0 · N-S</text>
+</g>
+<g class="c-purple">
+  <rect x="182" y="50" width="104" height="52" rx="4" stroke-width="0.5"/>
+  <text class="th" x="234" y="68" text-anchor="middle" dominant-baseline="central">GPU 1</text>
+  <text class="ts" x="234" y="84" text-anchor="middle" dominant-baseline="central">head 1 · N-S</text>
+</g>
+<line x1="152" y1="76" x2="180" y2="76" style="stroke:#185FA5;stroke-width:1" marker-end="url(#arrow-s10)" marker-start="url(#arrow-s10)"/>
+<text class="ts" x="166" y="104" text-anchor="middle">FSDP a2a (NVLink)</text>
+<text class="ts" x="167" y="126" text-anchor="middle" style="fill:var(--color-text-success)">✓ no cross-TP communication</text>
+<rect x="38" y="136" width="258" height="84" rx="8" fill="none" style="stroke:var(--color-border-secondary);stroke-width:0.5" stroke-dasharray="5 3"/>
+<text class="ts" x="167" y="150" text-anchor="middle">TP rank 1 · owns heads 2, 3</text>
+<g class="c-coral">
+  <rect x="48" y="158" width="104" height="52" rx="4" stroke-width="0.5"/>
+  <text class="th" x="100" y="176" text-anchor="middle" dominant-baseline="central">GPU 2</text>
+  <text class="ts" x="100" y="192" text-anchor="middle" dominant-baseline="central">head 2 · N-S</text>
+</g>
+<g class="c-amber">
+  <rect x="182" y="158" width="104" height="52" rx="4" stroke-width="0.5"/>
+  <text class="th" x="234" y="176" text-anchor="middle" dominant-baseline="central">GPU 3</text>
+  <text class="ts" x="234" y="192" text-anchor="middle" dominant-baseline="central">head 3 · N-S</text>
+</g>
+<line x1="152" y1="184" x2="180" y2="184" style="stroke:#185FA5;stroke-width:1" marker-end="url(#arrow-s10)" marker-start="url(#arrow-s10)"/>
+<text class="ts" x="166" y="212" text-anchor="middle">FSDP a2a (NVLink)</text>
+<rect x="38" y="226" width="258" height="30" rx="4" fill="none" style="stroke:var(--color-border-success);stroke-width:0.5"/>
+<text class="ts" x="167" y="241" text-anchor="middle" style="fill:var(--color-text-success)">W_q 列切分 &amp; W_o 行切分均 head 对齐，对称处理</text>
+<!-- Panel separator -->
+<line x1="335" y1="24" x2="335" y2="262" style="stroke:var(--color-border-tertiary);stroke-width:0.5" stroke-dasharray="4 3"/>
+<!-- RIGHT: FFN W_down -->
+<rect x="372" y="28" width="270" height="84" rx="8" fill="none" style="stroke:var(--color-border-secondary);stroke-width:0.5" stroke-dasharray="5 3"/>
+<text class="ts" x="507" y="42" text-anchor="middle">TP rank 0 · rows 0..d_ff/2</text>
+<g class="c-blue">
+  <rect x="382" y="50" width="110" height="52" rx="4" stroke-width="0.5"/>
+  <text class="th" x="437" y="68" text-anchor="middle" dominant-baseline="central">GPU 0</text>
+  <text class="ts" x="437" y="84" text-anchor="middle" dominant-baseline="central">rows 0..d_ff/2</text>
+</g>
+<g class="c-blue">
+  <rect x="520" y="50" width="110" height="52" rx="4" stroke-width="0.5"/>
+  <text class="th" x="575" y="68" text-anchor="middle" dominant-baseline="central">GPU 1</text>
+  <text class="ts" x="575" y="84" text-anchor="middle" dominant-baseline="central">rows 0..d_ff/2</text>
+</g>
+<line x1="437" y1="112" x2="437" y2="135" style="stroke:#993C1D;stroke-width:1.2" marker-end="url(#arrow-s10)" marker-start="url(#arrow-s10)"/>
+<line x1="575" y1="112" x2="575" y2="135" style="stroke:#993C1D;stroke-width:1.2" marker-end="url(#arrow-s10)" marker-start="url(#arrow-s10)"/>
+<text class="ts" x="507" y="126" text-anchor="middle" style="fill:#993C1D">cross-TP all-gather (IB — cross-node)</text>
+<rect x="372" y="136" width="270" height="84" rx="8" fill="none" style="stroke:var(--color-border-secondary);stroke-width:0.5" stroke-dasharray="5 3"/>
+<text class="ts" x="507" y="150" text-anchor="middle">TP rank 1 · rows d_ff/2..d_ff</text>
+<g class="c-purple">
+  <rect x="382" y="158" width="110" height="52" rx="4" stroke-width="0.5"/>
+  <text class="th" x="437" y="176" text-anchor="middle" dominant-baseline="central">GPU 2</text>
+  <text class="ts" x="437" y="192" text-anchor="middle" dominant-baseline="central">rows d_ff/2..d_ff</text>
+</g>
+<g class="c-purple">
+  <rect x="520" y="158" width="110" height="52" rx="4" stroke-width="0.5"/>
+  <text class="th" x="575" y="176" text-anchor="middle" dominant-baseline="central">GPU 3</text>
+  <text class="ts" x="575" y="192" text-anchor="middle" dominant-baseline="central">rows d_ff/2..d_ff</text>
+</g>
+<rect x="372" y="226" width="270" height="30" rx="4" fill="none" style="stroke:var(--color-border-danger);stroke-width:0.5"/>
+<text class="ts" x="507" y="234" text-anchor="middle" style="fill:var(--color-text-danger)">d_ff 无 head 结构，跨 TP all-gather 不可避免</text>
+<!-- Gantt comparison -->
+<line x1="40" y1="272" x2="640" y2="272" style="stroke:var(--color-border-tertiary);stroke-width:0.5"/>
+<text class="ts" x="340" y="285" text-anchor="middle">optimizer update wall time: W_q/W_o (NVLink only) vs FFN W_down (cross-TP IB all-gather)</text>
+<text class="ts" x="110" y="310" text-anchor="end" dominant-baseline="central">W_q/W_o</text>
+<text class="ts" x="110" y="344" text-anchor="end" dominant-baseline="central">W_down</text>
+<g class="c-blue"><rect x="118" y="300" width="36" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="136" y="310" text-anchor="middle" dominant-baseline="central">a2a</text></g>
+<g class="c-teal"><rect x="154" y="300" width="90" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="199" y="310" text-anchor="middle" dominant-baseline="central">N-S (1 head / rank)</text></g>
+<g class="c-blue"><rect x="244" y="300" width="36" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="262" y="310" text-anchor="middle" dominant-baseline="central">a2a</text></g>
+<line x1="118" y1="326" x2="280" y2="326" style="stroke:var(--color-border-secondary);stroke-width:0.5"/>
+<line x1="118" y1="322" x2="118" y2="330" style="stroke:var(--color-border-secondary);stroke-width:0.5"/>
+<line x1="280" y1="322" x2="280" y2="330" style="stroke:var(--color-border-secondary);stroke-width:0.5"/>
+<text class="ts" x="199" y="338" text-anchor="middle">fast (NVLink, small group)</text>
+<g class="c-coral"><rect x="118" y="346" width="100" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="168" y="356" text-anchor="middle" dominant-baseline="central">IB all-gather</text></g>
+<g class="c-purple"><rect x="218" y="346" width="160" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="298" y="356" text-anchor="middle" dominant-baseline="central">N-S (full W_down, block approx)</text></g>
+<g class="c-coral"><rect x="378" y="346" width="100" height="20" rx="3" stroke-width="0.5"/><text class="ts" x="428" y="356" text-anchor="middle" dominant-baseline="central">IB scatter</text></g>
+<line x1="118" y1="372" x2="478" y2="372" style="stroke:var(--color-border-danger);stroke-width:0.5"/>
+<line x1="118" y1="368" x2="118" y2="376" style="stroke:var(--color-border-danger);stroke-width:0.5"/>
+<line x1="478" y1="368" x2="478" y2="376" style="stroke:var(--color-border-danger);stroke-width:0.5"/>
+<text class="ts" x="298" y="384" text-anchor="middle" style="fill:var(--color-text-danger)">~3× slower: cross-node IB latency + full-matrix N-S per rank</text>
+<g class="c-blue"><rect x="60" y="400" width="14" height="12" rx="2" stroke-width="0.5"/></g>
+<text class="ts" x="80" y="406" dominant-baseline="central">FSDP all-to-all (NVLink, intra-TP-rank)</text>
+<g class="c-coral"><rect x="320" y="400" width="14" height="12" rx="2" stroke-width="0.5"/></g>
+<text class="ts" x="340" y="406" dominant-baseline="central">cross-TP all-gather (IB, cross-node)</text>
+</svg>
+      </div>
+      <div class="figure-caption"><strong>图 6</strong> — TP + FSDP 联合场景：W_q 与 W_o 均 head 对齐，无需跨 TP 通信；FFN W_down 无子结构，需要跨 TP IB all-gather</div>
+    </div>
+
+    <h3>FFN W_down 的 all-gather 后续方案</h3>
+    <p>
+      跨 TP all-gather 获得完整 W_down 后，可以沿用与分头 Muon 相同的 all-to-all 分工机制：
+    </p>
+
+    <div class="math-block">
+① cross-TP all-gather
+   → 全部 TP×FSDP GPU 拿到完整 W_down ∈ R^{d_ff × d_model}
+
+② 在 TP×FSDP 扩展组内 all-to-all 分配行块
+   → 每 GPU 负责 d_ff / (TP×FSDP) 行，独立 N-S（无通信）
+
+③ all-to-all 归还行块分片
+
+④ cross-TP scatter 还原 TP-local shard
+    </div>
+
+    <div class="callout warn">
+      <strong>数学注意：</strong>步骤②的行块 N-S 是<strong>块正交化近似</strong>，
+      不等价于对完整 W_down 做 N-S。完整矩阵的 SVD 奇异向量跨越整个 d_ff 维度，
+      切块后各块的奇异值结构与全局不同。对于有语义子结构的权重（W_q/W_o，按 head）这种近似是严格等价的；
+      对于 FFN W_down，则是工程上的妥协——实践中块正交化往往表现尚可，但理论上不等价于严格 Muon。
+    </div>
+
+    <h3>全场景三类权重总结</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>权重</th>
+          <th>TP 切分</th>
+          <th>行/列维度语义</th>
+          <th>跨 TP all-gather</th>
+          <th>N-S 方式</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>W_q / W_k / W_v</td>
+          <td class="mono">列并行</td>
+          <td>每 (h/TP) 列 = 一个 head</td>
+          <td class="good">不需要</td>
+          <td class="good">严格 per-head，TP rank 内 FSDP a2a</td>
+        </tr>
+        <tr>
+          <td>W_o（out_proj）</td>
+          <td class="mono">行并行</td>
+          <td>每 (h/TP)×d_h 行 = 一个 head 块，head 对齐</td>
+          <td class="good">不需要</td>
+          <td class="good">严格 per-head，与列切分对称</td>
+        </tr>
+        <tr>
+          <td>FFN W_down</td>
+          <td class="mono">行并行</td>
+          <td>d_ff/TP 神经元，无语义子结构</td>
+          <td class="warn">必须（严格 Muon）</td>
+          <td class="warn">all-gather 后扩展组内块 N-S（近似）</td>
+        </tr>
+        <tr>
+          <td>FFN W_up</td>
+          <td class="mono">列并行</td>
+          <td>d_ff/TP 神经元，无语义子结构</td>
+          <td class="warn">必须（严格 Muon）</td>
+          <td class="warn">all-gather 后扩展组内块 N-S（近似）</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
   <footer>
     <span>分片 Muon 与双网格 HSDP 技术分析报告</span>
-    <span>参考来源：cursor.com/cn/blog/composer-2-5 · Muon 原始论文 · PyTorch FSDP 文档</span>
+    <span>参考来源：cursor.com/cn/blog/composer-2-5 · Muon 原始论文 · Megatron-LM 代码 · PyTorch FSDP 文档</span>
   </footer>
 
 </div>
