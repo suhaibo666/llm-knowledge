@@ -367,6 +367,81 @@ torchair 的路径设计（Dynamo → FX Graph → Graph Compiler → Binary）�
 
 ---
 
+## 九、GPU vs NPU：Dynamic Shape 难易度对比
+
+> Dynamic shape 在 GPU 和 NPU 上的难度存在本质差异：GPU 是软件/编译层问题，NPU 是硬件架构层问题。
+
+### 9.1 GPU（CUDA + Triton）：Dynamic Shape 是"缓存命中率"问题
+
+GPU SIMT 执行模型天然参数化——Triton kernel 接受运行时整数 `xnumel`，通过 mask 处理边界：
+
+```triton
+@triton.jit
+def kernel(in_ptr, out_ptr, xnumel, XBLOCK: tl.constexpr):
+    xindex = tl.program_id(0) * XBLOCK + tl.arange(0, XBLOCK)
+    mask = xindex < xnumel      # 边界用 mask，无需 shape 固定
+    ...
+```
+
+PyTorch 的 SymInt + ShapeEnv 方案与 GPU 硬件特性完美匹配：
+- Dynamo 符号化变化的维度为 `s0`
+- Inductor wrapper 生成 `xnumel = s0 * 128`（运行时求值）
+- 同一个编译产物处理所有满足 guard 的 shape
+
+主要代价仅有两处：① CUDA Graph 不兼容（需退出静态图模式）；② autotune 候选集被编译期 hint 截断（见 [[inductor_codegen_dynamic_shape_analysis]] §9）。
+
+### 9.2 NPU（Ascend DSL）：Dynamic Shape 是"硬件架构"问题
+
+NPU 的 dynamic shape 困难来自三层结构性约束：
+
+**困难 1：硬件 tiling 的刚性对齐要求**
+
+Ascend Cube Core 要求矩阵运算输入满足特定对齐（如 16×16 tile）。shape 不满足时必须 padding，而 padding 规则与 CUDA 不同且复杂：
+
+```
+GPU:  任意 shape + mask → 边界 threads idle，性能轻微下降
+NPU:  shape 不对齐 → 必须 padding → 额外 reshape/pad kernel → 破坏 fusion 链
+```
+
+NPU 需要 disable 社区的 `comprehensive_padding`（通过 `patch_shape_handling`），因为 NPU 有自己独立的 padding 规则。
+
+**困难 2：ACLGraph 需要预知 shape**
+
+CUDA Graph 在 stream 级别透明录制 API call，对 shape 无感知。ACL Graph（CANN 的 `aclmdlRI`）在模型级别做 capture，某些融合 kernel 必须在 capture 时预知 shape：
+
+```python
+# FA3 fusion attention 的 handler（NPU 专有）
+def prepare_capture(cls, func, args, kwargs):
+    workspace = _npu_fusion_attention_v3_get_max_workspace(...)  # 必须预知 shape
+    attention_score = _npu_fusion_attention_v3_infer_output(...)  # 推断 output shape
+    kwargs["out"] = [attention_score, ...]   # 必须用 .out 变体
+```
+
+动态 shape 下 workspace 必须按最大可能 shape 预分配，且 captured graph 与具体 shape 绑定，不同 shape 无法复用同一 graph。
+
+**困难 3：大量算子 fallback 打断 fusion 链**
+
+GPU 几乎所有标准 aten op 都有 Triton lowering，dynamic shape 可端到端在 Inductor 管道内处理。NPU 有 859 个 aten op fallback 到 ACLNN，每个 fallback 点是一个硬边界，ACLNN 有自己的 shape 约束且**完全绕过 SymInt 体系**，无法参与 ShapeEnv 的符号推导。
+
+### 9.3 本质差异汇总
+
+| 维度 | GPU (CUDA+Triton) | NPU (Ascend DSL) |
+|------|-------------------|------------------|
+| 执行模型友好度 | 高（SIMT + mask 边界） | 低（Cube Core 需对齐 tiling） |
+| Graph Capture | 不兼容但可 fallback | 需预知 shape，结构性阻碍 |
+| Kernel 参数化 | Triton 天然支持（runtime xnumel） | CATLASS/CK 需 shape-specific tuning |
+| Fallback 算子 | 极少（大多数 op 有 lowering） | 859 op fallback，独立 shape 约束 |
+| 工程成熟度 | SymInt/ShapeEnv 成熟 | 多路径各有妥协，仍在演进 |
+| 核心问题定性 | 软件/编译层（可工程化解决） | 硬件架构层（需跨层协同解决） |
+
+### 9.4 实践建议（NPU + Dynamic Shape）
+
+1. **静态 shape 优先**：对 batch_size、seq_len 做 **bucketing**（预定义几组固定 shape），完全绕开 dynamic shape 复杂性
+2. **torchair 路径**：推理场景用 `torchair.get_npu_backend()`，为每个 shape profile 编译一次，是 NPU 上目前最成熟的替代方案
+3. **避免 dynamic=True + ACLGraph 组合**：两者是正交约束，同时启用几乎必然出问题
+
+---
+
 ## Related Pages
 
 - [[npu_triton_backend_deep_analysis]] — Triton/Inductor default 路径深度分析（本文的三条路径之一）
@@ -377,3 +452,5 @@ torchair 的路径设计（Dynamo → FX Graph → Graph Compiler → Binary）�
 - [[npu_compile]] — NPU 编译工作流与配置（已有页面）
 - [[npu_mlir_pipeline_analysis]] — NPU MLIR 六阶段适配全景（已有页面）
 - [[aclgraph]] — ACL Graph 基础集成（已有页面）
+- [[dynamic_shapes_full_analysis]] — PyTorch Dynamic Shape 全链路（GPU 侧参考）
+- [[inductor_codegen_dynamic_shape_analysis]] — Inductor codegen 的 XBLOCK 选择机制

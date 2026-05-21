@@ -231,22 +231,110 @@ Python 解释器在运行时求值 `s0`，因此动态分配是透明的。
 
 ---
 
-## 9. 总结
+## 9. XBLOCK 选择机制与 Dynamic Shape 的性能代价
+
+> 本节补充说明 Triton kernel 的 tiling 参数（XBLOCK）如何与 dynamic shape 交互，以及由此带来的性能代价。
+
+### 9.1 XBLOCK 候选值范围
+
+```python
+TRITON_MAX_BLOCK = {
+    "X": 4096,   # x 方向最大 block size
+    "R": 4096,   # reduction 方向最大
+    ...
+}
+```
+
+XBLOCK 候选值是 **2 的幂次序列**，范围 `[32, TRITON_MAX_BLOCK['X']]`。`pointwise()` decorator 的起点由 `size_hints` 决定：
+
+```python
+max_xblock = min(next_power_of_2(size_hints[0]), TRITON_MAX_BLOCK['X'])
+# 然后生成候选: [32, 64, ..., max_xblock]
+```
+
+不同 `size_hints` 对应的候选集：
+
+| size_hints | max_xblock | 候选 XBLOCK |
+|-----------|-----------|------------|
+| `[384]`   | 512       | 32, 64, 128, 256, 512 |
+| `[16384]` | 4096      | 256, 512, 1024, 2048, 4096 |
+| `[100]`   | 128       | 16, 32, 64, 128 |
+
+### 9.2 三种 XBLOCK 决策模式
+
+**模式 1：`triton.heuristics`（默认 pointwise）**
+
+```python
+@triton.heuristics(
+    values={'XBLOCK': lambda meta: min(next_power_of_2(meta['xnumel']),
+                                       TRITON_MAX_BLOCK['X'])}
+)
+@triton.jit
+def triton_poi_0(..., xnumel, XBLOCK: tl.constexpr):
+    ...
+```
+
+XBLOCK 在 **kernel launch 时**由 Python lambda 根据 `xnumel` 的实际运行时值计算。Triton JIT 为每个不同的 XBLOCK 值编译并缓存一个 `.ptx`。动态 shape 下 XBLOCK 自适应实际 xnumel，但每种新 XBLOCK 值第一次遇到需 JIT compile（约 0.1–0.5s）。
+
+**模式 2：`triton.autotune`（`max_autotune` 模式，需显式开启）**
+
+```python
+@triton.autotune(
+    configs=[
+        triton.Config({'XBLOCK': 256}, num_warps=4),
+        triton.Config({'XBLOCK': 512}, num_warps=4),
+        triton.Config({'XBLOCK': 1024}, num_warps=8),
+        triton.Config({'XBLOCK': 2048}, num_warps=8),
+    ],
+    key=['xnumel'],   # xnumel 变化时重新 benchmark
+)
+```
+
+`key=['xnumel']` 使得每个不同的运行时 xnumel 值都会触发一次 benchmark，选出对该 xnumel 最优的 XBLOCK。代价是首次遇到每个新 shape 时需完整跑 benchmark（数秒）。
+
+**关键限制**：configs 列表在编译期基于 `size_hints` 生成。若 hint 为 384，configs 里最大 XBLOCK 为 512；若运行时 xnumel=100000，最优的 XBLOCK=4096 根本不在候选列表里——这是 autotune 模式在 dynamic shape 下的根本短板。
+
+**模式 3：静态特化**
+
+shape 固定时，Inductor 使用精确 numel 生成候选，autotune 选出最优 XBLOCK 并常量折叠进 PTX。无运行时决策开销。
+
+### 9.3 Dynamic Shape 的 Tiling 代价对比
+
+| Op 类型 | Dynamic shape 对 tiling 的影响 | 原因 |
+|--------|-------------------------------|------|
+| **Pointwise** | 轻微（heuristics 模式基本最优） | 带宽受限，XBLOCK 影响有限；mask 边界开销可接受 |
+| **Reduction** | 中等 | RBLOCK 影响并行归约效率；split-K 策略无法针对 shape 优化 |
+| **GEMM/Matmul** | **严重**（autotune 候选集被 hint 截断） | BLOCK_M/N/K 对 GEMM 性能影响可达 2–5×；无法 shape-specific autotuning |
+
+### 9.4 为什么 XBLOCK 是 `tl.constexpr`
+
+Triton JIT 为每个不同的 `constexpr` 参数组合生成专用 PTX：
+
+```
+XBLOCK=256  → kernel_v256.ptx（循环展开 256 次，针对 256 的寄存器分配）
+XBLOCK=1024 → kernel_v1024.ptx（完全不同的指令序列）
+```
+
+`constexpr` 不只是优化手段，而是 Triton 代码生成模型的基础——每个不同的 XBLOCK 值确实是一个不同的 kernel binary，cached 后按需复用。
+
+---
+
+## 10. 总结
 
 Inductor 的 codegen 对 dynamic shape 的处理是一个**贯穿 kernel 生成、wrapper 生成、内存规划、运行时求值**的系统工程：
 
 1. **符号透明传递**：所有动态维度以 `sympy.Expr` 形式存在于 IR 中，通过 `SizeArg` 流入 kernel 签名和 wrapper 调用。
 2. **运行时求值**：复杂的 shape 表达式在 wrapper 中预计算为中间变量，避免 kernel 调用处表达式过于复杂。
 3. **动态 Grid**：通过 `GridExpr` 体系在运行时根据 `numel / BLOCK_SIZE` 动态计算 launch grid。
-4. **Unbacked Symbols**：从输出 tensor 的 shape/stride 中反向解析，在 wrapper 中显式声明。
+4. **Unbacked Symbols**：从输出 tensor 的 shape/stride 中反向解析，在 wrapper 中显式声明（详见 [[unbacked_symint_analysis]]）。
 5. **安全断言**：通过 `assert_size_stride` 在运行时验证输入 shape，确保编译假设成立。
 6. **内存复用保守化**：`buffer_reuse_key` 使用符号字符串而非 size hint 比较，防止不同符号但相同 hint 的 buffer 被错误复用。
-
-这些机制共同确保了 Inductor 在**完全动态 shape 的场景下**（如 LLM 的变长序列、数据依赖的 tensor 大小）仍能生成正确且高效的可执行代码。
+7. **XBLOCK 自适应**：默认 heuristics 模式根据运行时 xnumel 动态选 XBLOCK；autotune 模式受 hint 截断影响，对 GEMM 类 op 性能代价最大。
 
 ## Related Pages
 
 - [[dynamic_shapes_full_analysis]] — Dynamic Shape 全链路: 静态→符号化→Guard→渐进动态化 (ShapeEnv 源码分析)
+- [[unbacked_symint_analysis]] — Unbacked SymInt 深度分析：数据相关 shape 的处理机制
 - [[02_engineering/01_ai_frameworks/index]]
 - [[inductor_codegen_analysis]]
 - [[lowering_analysis]]

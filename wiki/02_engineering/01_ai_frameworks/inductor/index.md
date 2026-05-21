@@ -24,7 +24,8 @@
 | [[lowering_analysis]] | FX → Inductor IR lowering |
 | [[inductor_codegen_analysis]] | 代码生成策略, kernel 融合 |
 | [[dynamic_shapes_full_analysis]] | **Dynamic Shape 全链路**: 静态特化→符号化→Guard→渐进动态化, ShapeEnv 源码分析 |
-| [[inductor_codegen_dynamic_shape_analysis]] | 代码生成中动态形状处理 |
+| [[inductor_codegen_dynamic_shape_analysis]] | 代码生成中动态形状处理，**含 XBLOCK 三种选择模式与 Dynamic Shape 性能代价** |
+| [[unbacked_symint_analysis]] | **Unbacked SymInt 深度分析**: 数据相关 shape、deferred_runtime_asserts、GuardOnDataDependentSymNode、torch._check() |
 | [[scheduler_analysis]] | 算子调度器, 融合决策 |
 | [[scheduler_fusion_strategies]] | 调度器融合策略与自定义 Pass |
 | [[pre_grad_passes_guide]] | 预梯度优化 passes |
@@ -40,6 +41,7 @@
 | [[NPU_Inductor_Backend_Analysis]] | NPU Inductor 后端集成架构分析 |
 | [[NPU_Inductor_Backend_Mechanism]] | NPU 后端内部实现机制 |
 | [[npu_triton_backend_deep_analysis]] | **Triton/Inductor default 路径深度分析**: golden_var_list、CATLASS/CK GEMM、35+ monkey patches、NPUIndexTritonKernel |
+| [[npu_compile_paths_overview]] | **NPU compile 路径全景**，含 GPU vs NPU Dynamic Shape 难易度对比（§9） |
 
 ### 调试与诊断
 

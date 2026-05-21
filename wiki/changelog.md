@@ -4,6 +4,46 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-22: Dynamic Shape 体系补充：Unbacked SymInt、XBLOCK 选择机制、GPU vs NPU 对比
+
+**Type**: Knowledge Synthesis（对话探讨中发现的 wiki 空白，补充入库）
+
+**新增文件**:
+
+- `wiki/02_engineering/01_ai_frameworks/inductor/unbacked_symint_analysis.md`
+  - **§1**: Backed vs Unbacked 根本区别，产生 unbacked symbol 的 op 类型（nonzero/item/where/unique/masked_select 等）
+  - **§2**: 为什么 Guard 机制对 unbacked 无效（执行时机不同）
+  - **§3**: ShapeEnv 内部两类约束的存储——`var_to_range`（backed）vs `deferred_runtime_asserts`（unbacked），`guard_or_defer_runtime_assert` 分流逻辑
+  - **§4**: Inductor codegen 中 unbacked symbol 在 wrapper 的体现（`u0 = buf0.size(0)` 先读取，后断言）
+  - **§5**: `torch._check()` 的三种效果：值域细化、符号替换（消灭 unbacked）、条件记忆（解决控制流）
+  - **§6**: `GuardOnDataDependentSymNode` 错误的触发机制（`bool(u0 > 4)` 的调用链），与 backed symbol 的对比
+  - **§7**: 相关 API 速查表（`_check`、`_check_is_size`、`constrain_range`、`mark_unbacked`、`statically_known_true`、`guard_or_false`）
+  - **§8**: 常见误用与修法（Python 切片、item() 控制流、empty_strided + unbacked stride）
+  - **§9**: Backed vs Unbacked 全链路对比表
+
+**更新文件**:
+
+- `wiki/02_engineering/01_ai_frameworks/inductor/inductor_codegen_dynamic_shape_analysis.md`
+  - 新增 **§9 XBLOCK 选择机制与 Dynamic Shape 性能代价**：
+    - 候选值范围（32–4096，2 的幂次，`TRITON_MAX_BLOCK['X']=4096`）
+    - 三种模式对比：heuristics（运行时 lambda）、autotune（benchmark 候选集）、静态特化
+    - Dynamic shape 下 hint 截断问题：autotune 候选集基于编译期 hint 生成，运行时大 shape 的最优 XBLOCK 可能不在候选列表
+    - 不同 op 类型的影响程度（Pointwise 轻微 / Reduction 中等 / GEMM 严重）
+    - `tl.constexpr` 的本质：每个不同 XBLOCK 值对应一个独立 PTX kernel binary
+
+- `wiki/02_engineering/01_ai_frameworks/inductor/npu_compile_paths_overview.md`
+  - 新增 **§九 GPU vs NPU Dynamic Shape 难易度对比**：
+    - GPU：SIMT 天然参数化，SymInt+ShapeEnv 与硬件特性匹配，主要代价是 CUDA Graph 不兼容和 autotune hint 截断
+    - NPU 三层结构性困难：① Cube Core 刚性 tiling 对齐 → padding 破坏 fusion；② ACLGraph 需预知 shape → dynamic shape 下 graph 无法复用；③ 859 op fallback 绕过 SymInt 体系
+    - 本质定性：GPU 是软件/编译层问题，NPU 是硬件架构层问题
+    - NPU dynamic shape 实践建议（shape bucketing、torchair 路径、避免 dynamic+ACLGraph 组合）
+
+**索引更新**:
+
+- `wiki/02_engineering/01_ai_frameworks/inductor/index.md` — 新增 `unbacked_symint_analysis` 和 `npu_compile_paths_overview` 条目
+
+---
+
 ## 2026-05-20: Megatron Nonuniform Tensor Parallelism (NTP) 深度分析
 
 **Type**: Knowledge Synthesis（基于 Megatron-LM dev 分支源码分析）
