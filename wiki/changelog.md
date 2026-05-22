@@ -64,6 +64,32 @@ All source ingestions and significant wiki updates are logged here.
 - `megatron-lm/index.md` — Distributed Parallelism 表格新增条目，Knowledge Gaps 更新（fault tolerance 标记为已解决，NTP checkpoint 转换标记为新 gap），Cross-Domain Links 新增
 
 ---
+## 2026-05-22(修订): 分布式优化器字节数订正 + 全系列符号记号统一
+
+- **Fixed【矛盾点订正】**: 经源码二次核查,标准 bf16 训练每参数模型态为 **18 字节**(非原稿的 16):bf16 训练强制 fp32 梯度累积(`arguments.py:1296-1310`、`param_and_grad_buffer.py:812`),梯度 buffer 为 fp32(4 字节)。
+  - 影响并修正 4 篇:`ddp_optimizer_analysis`(重写,ZeRO 表重算:18Ψ / 6Ψ+12Ψ/dp / 2Ψ+16Ψ/dp / 18Ψ/dp)、`optimizer_internals_analysis`、`ep_analysis`、`pp_schedulers_analysis`。
+  - 与存量 `distributed_optimizer_deep_dive.html`(Adam 18 字节)一致,矛盾消除。
+- **Changed【符号记号统一】**: 全 18 篇统一记号:
+  - 并行度 → `tp`/`pp`/`cp`/`ep`/`dp`/`vp`/`etp`/`edp`(消除 `p`/`t`/`e`/`v`/`N` 单字母混用)
+  - 张量维 → `s`(序列)/`b`(批)/`h`(hidden)/`h_ffn`(FFN 中间维);消除 `S`/`H`/`B` 大写不一致与 `H` 一词二义
+  - 参数量统一 `Ψ`(原 `N_params` 并入)
+  - 保留:`B`=反向算子(PP F/B/W)、`B`=RowParallel 权重矩阵(TP)、`S`=loss scale(优化器)—— 不同概念,非重复记号
+- **Updated**: `ddp_optimizer_analysis.md` 加更正记录头注。
+
+## 2026-05-22: Megatron-LM 源码级系统分析系列(18 篇)入库
+
+- **Source**: Megatron-LM `dev` 分支 commit `ee3f1ff` 源码(代码分析,非 `raw/` 论文)
+- **Created**: `wiki/02_engineering/02_train_frameworks/megatron-lm/` 下新增 18 篇 `*_analysis.md`:
+  - 并行轴(5):`pp_schedulers_analysis`、`ep_analysis`、`tp_analysis`、`cp_analysis`、`ddp_optimizer_analysis`
+  - 编排与补遗(3):`parallelism_orchestration_analysis`、`pp_supplements_analysis`、`tp_fsdp_resharding_supplements_analysis`
+  - 性能基建(3):`recompute_analysis`、`optimizer_internals_analysis`、`precision_cudagraph_fusion_analysis`
+  - 系统专题(3):`training_stability_observability_analysis`、`rl_posttraining_consistency_analysis`、`inference_engine_analysis`
+  - 数据/模型/存档(4):`dataset_analysis`、`packed_dataset_dynamic_cp_analysis`、`model_structure_analysis`、`dist_checkpointing_analysis`
+- **Key topics**: PP 5 调度器与气泡推导、EP 3 dispatcher、TP/SP、CP 4 种 cp_comm_type、ZeRO 0-3、进程组编排、Megatron-FSDP、激活重计算、优化器内部、FP8/CUDA Graph/融合、RerunStateMachine(SDC 归因)、RL 训推一致性、推理引擎、序列打包与动态 CP、模型结构(MLA/MoE Router/Mamba)、分布式 checkpoint
+- **Companion artifact**: `_pp_sim.py` — PP 调度模拟器,逐 op 解算精确流水线时空图
+- **Updated**: `megatron-lm/index.md` — 新增"源码级系统分析系列"章节;Knowledge Gaps 中 Context Parallelism / checkpoint format / Sequence Parallelism 三项标记为已解决
+- **Updated**: `02_engineering/02_train_frameworks/index.md` — megatron-lm 子目录条目补注
+- **Note**: 18 篇互为 `[[wiki link]]` 交叉引用,自成体系;来源为源码而非论文;ASCII 时空图保留原始可验证形式(未转 Mermaid)
 
 ## 2026-05-19: 分片 Muon 与双网格 HSDP 技术报告入库
 

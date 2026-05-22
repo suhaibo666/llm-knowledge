@@ -1,7 +1,7 @@
 # 训练框架 — 目录索引
 
 > 覆盖分布式训练框架、并行策略、通信优化
-> 最后更新: 2026-05-08
+> 最后更新: 2026-05-22
 
 ---
 
@@ -9,7 +9,7 @@
 
 | 目录 | 核心主题 |
 |------|---------|
-| [[megatron-lm/index]] | NVIDIA Megatron-LM, 5D 并行, MoE, TFLOPS, 通信掩盖 |
+| [[megatron-lm/index]] | NVIDIA Megatron-LM, 5D 并行, MoE, TFLOPS, 通信掩盖;源码级系统分析 18 篇(`dev` ee3f1ff) |
 
 ## 页面列表
 
