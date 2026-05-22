@@ -4,6 +4,32 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-22: torchtitan 多维并行体系源码级分析(7 篇)
+
+**Type**: Knowledge Synthesis(基于 torchtitan `main` @ `cf3c4312` 与 PyTorch 2.9.1 FSDP2/DTensor/pipelining 内核的源码级分析)
+
+**新增目录**: `wiki/02_engineering/02_train_frameworks/torchtitan/`
+
+**新增文件**:
+
+- `torchtitan/index.md` — torchtitan 多维并行知识地图:设计哲学(一组 GPU 多重视图)、三张 DeviceMesh、并行施加管线、组合建议
+- `torchtitan/torchtitan_parallel_dims_analysis.md` — 并行基座:`ParallelDims` 维度约束、`build_mesh` 三张逻辑 mesh(dataloading/dense/sparse)、`fake` backend、mesh 查询接口
+- `torchtitan/torchtitan_fsdp_analysis.md` — **标杆篇** DP/FSDP2:`FSDPParam` 逐参数切分、`FSDPParamGroup` 分组、all-gather 预取(隐式/显式)、五条 CUDA stream 异步编排、reduce-scatter 梯度规约、反向钩子链
+- `torchtitan/torchtitan_tp_analysis.md` — TP:`distribute_tensor` 切分、`redistribute` 通信选择、列并行→行并行配对、Sequence Parallel、Async TP(`_micro_pipeline_tp` inductor pass)、Loss Parallel
+- `torchtitan/torchtitan_cp_analysis.md` — CP:`_context_parallel_shard` 序列切分、HeadTail/PTRR 负载均衡、Ring Attention K/V 环形轮转、在线 softmax 合并、通信掩盖
+- `torchtitan/torchtitan_pp_analysis.md` — PP:`_split_module` 模型切分、P2P send/recv、调度气泡对比(GPipe/1F1B/Interleaved/ZBV/DualPipeV)、action-based runtime、Zero Bubble(I/W 拆分)
+- `torchtitan/torchtitan_ep_analysis.md` — EP:`ExpertParallel` 专家权重 `Shard(0)`、token all-to-all dispatch/combine、`AsyncCollectiveTensor` 延迟 wait、shared_experts 通信掩盖、DeepEP/HybridEP、`edp_mesh` FSDP
+
+**统一分析粒度**: 每篇按 `fully_shard` 标杆粒度展开——参数/数据切分 → 通信原语 → 通信掩盖 → 异步实现 → 反向传播,带 `文件:行号` 引用与 ASCII 流程图。
+
+**索引更新**:
+
+- `wiki/02_engineering/02_train_frameworks/index.md` — 子目录表与页面列表加入 `torchtitan/index` 条目
+
+**交叉引用**: torchtitan 系列与 Megatron-LM 源码级系列([[tp_analysis]]/[[cp_analysis]]/[[ep_analysis]]/[[pp_schedulers_analysis]]/[[ddp_optimizer_analysis]])互为对照(PyTorch-native vs CUDA/Megatron 生态),并与 [[async_collective_tensor_deep_dive.html]]、[[comm_compute_overlap_analysis.html]] 等既有页交叉引用。
+
+---
+
 ## 2026-05-22: Dynamic Shape 体系补充：Unbacked SymInt、XBLOCK 选择机制、GPU vs NPU 对比
 
 **Type**: Knowledge Synthesis（对话探讨中发现的 wiki 空白，补充入库）

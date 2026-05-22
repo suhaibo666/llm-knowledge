@@ -10,12 +10,14 @@
 | 目录 | 核心主题 |
 |------|---------|
 | [[megatron-lm/index]] | NVIDIA Megatron-LM, 5D 并行, MoE, TFLOPS, 通信掩盖;源码级系统分析 18 篇(`dev` ee3f1ff) |
+| [[torchtitan/index]] | PyTorch-native 训练框架;DP/TP/CP/EP/PP 多维并行源码级机制分析 7 篇(`main` cf3c4312) |
 
 ## 页面列表
 
 | 页面 | 来源 | 核心主题 |
 |------|------|---------|
 | [[megatron-lm/index]] | Megatron-LM 源码 | 分布式并行、通信优化、MoE |
+| [[torchtitan/index]] | torchtitan 源码 | DP/TP/CP/EP/PP 多维并行机制级分析(参数切分/预取/通信掩盖/异步) |
 | [[llm_parallelism_analysis]] | Megatron-LM 源码验证 | 正反向 DAG, TP/SP/EP/CP 通信依赖 |
 | [[comm_compute_fusion_guide]] | 综合深度分析 | 通算融合: WaveEP、DeepEP、TP/DP/PP/CP 各维度重叠, 自动化路线图 |
 | [[distributed_optimizer_deep_dive.html]] | 综合深度分析 | FSDP2/ZeRO/MindSpeed 对比, 梯度累积, Adam vs Muon |
