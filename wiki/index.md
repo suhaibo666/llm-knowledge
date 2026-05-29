@@ -1,6 +1,6 @@
 # LLM Knowledge Wiki — 知识库总索引
 
-> 最后更新: 2026-05-15
+> 最后更新: 2026-05-24
 
 ---
 
@@ -45,7 +45,7 @@ wiki/
 | └─ GLM | [[01_theory/01_models/zhipu_glm/index]] | 3 | 活跃 |
 | 预训练 | [[01_theory/02_pretraining/index]] | 7 | 活跃 |
 | SFT & 低参微调 | [[01_theory/03_sft/index]] | 0 | 待建设 |
-| 后训练对齐 | [[01_theory/04_posttraining/index]] | 13 | 活跃 |
+| 后训练对齐 | [[01_theory/04_posttraining/index]] | 14 | 活跃 |
 | 推理技术 | [[01_theory/05_inference/index]] | 1 | 待建设 |
 
 ### 02 工程实现
@@ -59,7 +59,7 @@ wiki/
 | 训练框架 | [[02_engineering/02_train_frameworks/index]] | 8 | 活跃 |
 | └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 6 | 活跃 |
 | 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 2 | 活跃 |
-| 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 1 | 活跃 |
+| 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 3 | 活跃 |
 
 ---
 
@@ -80,6 +80,7 @@ wiki/
 | torch.compile | [[torch_compile_architecture]], [[PyTorch_Dynamo_Technical_Analysis]], [[PyTorch_Inductor_Technical_Analysis]] |
 | CUDA/NPU Graphs | [[PyTorch_CUDA_Graphs_Complete_Guide]], [[torch_compile_npugraphs_deep_dive]] |
 | PPO/GRPO RL 训练 | [[RL_PPO_Loss_and_GRPO_Analysis]], [[RL_Training_Inference_Precision_Analysis]] |
+| Coding RL「脏活」系列 | [[reward_hacking_defense_analysis]], [[rl_sandbox_design_analysis]], [[rl_infra_efficiency_analysis]] |
 
 ### 按原始来源
 

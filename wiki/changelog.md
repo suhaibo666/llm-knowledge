@@ -4,6 +4,29 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-05-24: Coding LLM RL「三块脏活」分析(3 篇)
+
+**Type**: Knowledge Synthesis（基于 Anthropic Claude 4.5 model card、Anthropic reward hacking 论文、RollArt/ProRL Agent/RollPacker 等 RL infra 论文及姚顺宇张小珺访谈的综合分析）
+
+**新增文件**:
+
+- `wiki/01_theory/04_posttraining/reward_hacking_defense_analysis.md` — Reward Hacking 防御四层体系：环境加固 / reward penalty / Inoculation Prompting（接种式提示）/ Post-RL agentic safety；含 Anthropic 2025-11 misalignment 泛化论文要点与 Claude 4.5 各档 hacking 率数据（Opus 4.5 18.2% > Sonnet 4.5 12.8% > Haiku 4.5 12.6%）
+- `wiki/02_engineering/04_posttrain_frameworks/rl_sandbox_design_analysis.md` — 生产级 RL Sandbox 设计：10 万级并发、Firecracker microVM 选型对比、Disaggregated 架构（training/inference/sandbox 三集群分离）、Rollout 三阶段（init/exec/eval）独立调度
+- `wiki/02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis.md` — RL Infra 效率五项核心优化：异步训练（off-policy staleness 权衡）、长尾治理（redundant rollouts / trajectory 调度 / 早停 / timeout）、硬件感知调度（H800 prefill / H20 decode）、in-flight reward、environment 池十万级；附「为什么 coding 是第一个起飞领域」整体行业判断
+
+**索引更新**:
+
+- `wiki/01_theory/04_posttraining/index.md` — 新增「对齐安全」小节，加入 reward_hacking_defense_analysis；最后更新日期改为 2026-05-24
+- `wiki/02_engineering/04_posttrain_frameworks/index.md` — 拆分为「数值与确定性」「Coding RL Sandbox 与 Infra」两小节，新增 rl_sandbox_design_analysis 与 rl_infra_efficiency_analysis；最后更新日期改为 2026-05-24
+- `wiki/index.md` — 后训练对齐页数 13→14、后训练框架页数 1→3；快速导航加入「Coding RL『脏活』系列」一行；最后更新日期改为 2026-05-24
+- `wiki/02_engineering/04_posttrain_frameworks/batch_invariance_guide.md` — 相关页面增加 RL Sandbox 与 Infra 两页 backlink
+
+**主线观点**: Coding 大模型训练的护城河来自三块「脏活」——Sandbox 决定能不能稳定跑、RL Infra 决定能跑多大多快、Reward Hacking 防御决定训出来的是不是你想要的。三者强耦合，单点短板即整体瓶颈；国内玩家真实差距在 infra 与 reward 体系而非算法。
+
+**交叉引用**: 三篇互链，并与 [[grpo_analysis]] / [[ppo_analysis]] / [[dapo_analysis]] / [[gspo_analysis]] / [[rlhf_foundations_analysis]] / [[kimi_k1.5_analysis]] / [[batch_invariance_guide]] / [[RL_PPO_Loss_and_GRPO_Analysis]] 等既有页交叉引用。
+
+---
+
 ## 2026-05-22: torchtitan 多维并行体系源码级分析(7 篇)
 
 **Type**: Knowledge Synthesis(基于 torchtitan `main` @ `cf3c4312` 与 PyTorch 2.9.1 FSDP2/DTensor/pipelining 内核的源码级分析)

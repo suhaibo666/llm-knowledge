@@ -1,7 +1,7 @@
 # LLM 对齐与偏好优化 — 目录索引
 
 > 覆盖 RLHF、DPO、GRPO、PPO 等对齐方法及相关前置研究
-> 最后更新: 2026-05-07
+> 最后更新: 2026-05-24
 
 ---
 
@@ -38,6 +38,12 @@
 | [[rlhf_foundations_analysis]] | 多篇综合 | ReMax, Weak-to-Strong, RM Overoptimization, RigorLLM |
 | [[RL_PPO_Loss_and_GRPO_Analysis]] | 源码分析 | PPO Loss 与 GRPO 的代码级对比 |
 | [[kimi_k1.5_analysis]] | Kimi K1.5 | 长上下文 RL 推理训练 |
+
+### 对齐安全
+
+| 页面 | 来源 | 核心主题 |
+|------|------|---------|
+| [[reward_hacking_defense_analysis]] | Anthropic 2025-11 + Claude 4.5 Model Card | Reward Hacking 四层防御（环境/penalty/inoculation prompting/agentic safety），misalignment 泛化机制 |
 
 ---
 
