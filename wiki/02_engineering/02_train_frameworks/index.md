@@ -1,7 +1,7 @@
 # 训练框架 — 目录索引
 
 > 覆盖分布式训练框架、并行策略、通信优化
-> 最后更新: 2026-05-22
+> 最后更新: 2026-06-06
 
 ---
 
@@ -27,6 +27,7 @@
 | [[comm_compute_overlap_analysis.html]] | Megatron-LM / torchtitan 源码 | 计算通信掩盖: combined_1f1b vs ZBV/DualPipe, sub-layer 级调度, DeepEP/HybridEP |
 | [[async_collective_tensor_deep_dive.html]] | PyTorch 源码 (_functional_collectives.py) | ACT 源码追踪: __torch_dispatch__, wait_tensor, stream 级执行过程, 与 Megatron 手动 stream 对比 |
 | [[muon_sharded_hsdp_report.html]] | Cursor Composer 2.5 博客 | 分片 Muon + 双网格 HSDP: all-to-all N-S、EP/CP 解耦、异步流水线、非专家分工优化 |
+| [[mindformers_moe_token_dispatcher_analysis.html]] | MindFormers master 源码 | MoE 去冗余 token dispatcher: oep/iep 两级 EP(跨机 AllGather + 机内 AlltoAllV)、mask+NonZero 去冗余、计数转置与 D2H overlap(Depend)、ReduceScatter top-k 求和与梯度反向 adjoint |
 
 ---
 

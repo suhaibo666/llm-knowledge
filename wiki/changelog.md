@@ -4,6 +4,24 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-06: MindFormers MoE 去冗余 Token Dispatcher 源码图解(HTML)
+
+**Type**: Knowledge Synthesis(基于 MindFormers `master` `mindformers/parallel_core/training_graph/transformer/moe/token_dispatcher.py` 中 `MoEAlltoAllDeredundencyTokenDispatcher` 的源码级图解,对照 torchtitan `token_dispatcher.py` 的 AllToAll/DeepEP 路径)
+
+**新增文件**:
+
+- `wiki/02_engineering/02_train_frameworks/mindformers_moe_token_dispatcher_analysis.html` — 7 张手绘 SVG + 逐行代码解读的深色报告。覆盖:两级专家并行布局(oep 跨机 / iep 机内 + 专家按节点分块 `[a,b)`)、一个 token 的两跳旅程、dispatch 全流程 6 个集合通信(3×AllGather + 3×AlltoAllV)、去冗余四步(sort→mask→NonZero→IndexSelect)、计数转置 `[B]` 与 D2H 为何免/需(`iepones` 常量 vs `exsl/exrl` 变长 + `Depend` overlap)、combine 的 `ReduceScatter` top-k 求和(零画板)、combine 梯度反向 adjoint(RS↔AG、scatter↔gather、`mul(probs)` 分叉出 dprobs 回流 router)
+
+**索引更新**:
+
+- `wiki/02_engineering/02_train_frameworks/index.md` — 页面列表新增 `mindformers_moe_token_dispatcher_analysis.html`;最后更新日期改为 2026-06-06
+
+**主线观点**: 两级 EP 的设计目标是把「不规则 + D2H」关进快的机内 NVLink(变长 AlltoAllV),跨机 IB 只走定形、免 D2H 的规则 collective(AllGather/ReduceScatter);去冗余 = 跨机全量 AllGather + 本地 mask 筛选,以通信冗余换取规则性与零 D2H。
+
+**交叉引用**: 与 [[torchtitan/torchtitan_ep_analysis]](token all-to-all dispatch/combine、DeepEP/HybridEP)、[[async_collective_tensor_deep_dive.html]](ACT 延迟 wait)、[[comm_compute_overlap_analysis.html]](DeepEP/HybridEP 通信掩盖)互为对照(MindSpore 静态图 vs PyTorch eager+compile)。
+
+---
+
 ## 2026-05-24: Coding LLM RL「三块脏活」分析(3 篇)
 
 **Type**: Knowledge Synthesis（基于 Anthropic Claude 4.5 model card、Anthropic reward hacking 论文、RollArt/ProRL Agent/RollPacker 等 RL infra 论文及姚顺宇张小珺访谈的综合分析）
