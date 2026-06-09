@@ -1,7 +1,7 @@
 # torchtitan 多维并行体系 — 知识地图
 
 > **代码基准**:torchtitan `main` @ `cf3c4312` · PyTorch `2.9.1`(FSDP2/DTensor/pipelining 内核)
-> **最后更新**:2026-05-22
+> **最后更新**:2026-06-09
 > 一套 7 篇 torchtitan 多维混合并行(DP/TP/CP/EP/PP)源码级机制分析。以 `fully_shard` 为标杆粒度——**参数怎么切、切完怎么取回、哪些通信能掩盖、异步怎么实现**——逐维度展开。torchtitan 是薄封装,真实机制深入到 PyTorch FSDP2 / DTensor / pipelining 内核。
 
 ---
@@ -89,10 +89,10 @@ torchtitan 的并行体系不是"5 套独立机制",而是**一套统一的 `Dev
 
 - [[tp_analysis]] / [[cp_analysis]] / [[ep_analysis]] / [[pp_schedulers_analysis]] / [[ddp_optimizer_analysis]] —— Megatron-LM 同维度源码级分析,可与本系列对照(CUDA/Megatron 生态 vs PyTorch-native)
 - [[parallelism_orchestration_analysis]] —— Megatron-LM 进程组编排,与 `ParallelDims` 同类
-- [[async_collective_tensor_deep_dive.html]] —— `AsyncCollectiveTensor` 源码追踪,是 TP/CP/EP 异步通信的共同底座
-- [[comm_compute_overlap_analysis.html]] —— 计算通信掩盖对比(含 torchtitan 源码)
+- [[async_collective_tensor_deep_dive]] —— `AsyncCollectiveTensor` 源码追踪,是 TP/CP/EP 异步通信的共同底座
+- [[comm_compute_overlap_analysis]] —— 计算通信掩盖对比(含 torchtitan 源码)
 - [[comm_compute_fusion_guide]] —— 通算融合路线图
-- [[distributed_optimizer_deep_dive.html]] —— FSDP2 / ZeRO / MindSpeed 三方对比
+- [[distributed_optimizer_deep_dive]] —— FSDP2 / ZeRO / MindSpeed 三方对比
 - [[llm_parallelism_analysis]] —— LLM 并行通信依赖 DAG
 
 ## Related Pages

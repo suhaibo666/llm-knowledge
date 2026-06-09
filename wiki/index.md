@@ -1,6 +1,6 @@
 # LLM Knowledge Wiki — 知识库总索引
 
-> 最后更新: 2026-05-24
+> 最后更新: 2026-06-09
 
 ---
 
@@ -25,10 +25,12 @@ wiki/
     │   ├── cudagraphs/
     │   ├── inductor/
     │   └── mlir/
-    ├── 02_train_frameworks/           # 训练框架 (Megatron-LM)
-    │   └── megatron-lm/
+    ├── 02_train_frameworks/           # 训练框架 (Megatron-LM / torchtitan)
+    │   ├── megatron-lm/
+    │   └── torchtitan/
     ├── 03_infer_frameworks/           # 推理框架
-    └── 04_posttrain_frameworks/       # 后训练框架 (预留)
+    ├── 04_posttrain_frameworks/       # 后训练框架
+    └── 05_gpu_kernel/                 # GPU/NPU Kernel 工程
 ```
 
 ---
@@ -58,8 +60,10 @@ wiki/
 | └─ MLIR | [[02_engineering/01_ai_frameworks/mlir/index]] | 6 | 新 |
 | 训练框架 | [[02_engineering/02_train_frameworks/index]] | 8 | 活跃 |
 | └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 6 | 活跃 |
+| └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 7 | 活跃 |
 | 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 2 | 活跃 |
 | 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 3 | 活跃 |
+| GPU Kernel | [[02_engineering/05_gpu_kernel/index]] | 1 | 活跃 |
 
 ---
 

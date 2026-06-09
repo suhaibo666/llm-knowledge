@@ -4,6 +4,29 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-09: HTML 报告转 Markdown 并替换原 HTML(SVG/CSS 图 → PNG)
+
+**Type**: 格式迁移 + 文件替换(为移动端阅读把 9 篇 HTML 报告转为 Markdown,图渲染为内嵌 PNG;转换验证无误后删除原 HTML,仓库只保留 Markdown)
+
+**转换方式**: 用无头 Edge(`puppeteer-core`)加载每页 → 强制 light 配色并禁用 reveal 滚动动画 → 对每个图形元素按元素截图为 2× PNG(完整保留 CSS 变量配色与字体)→ DOM 规范化(callout→blockquote、TOC→列表、`<pre>`/`white-space:pre` 容器→围栏代码块、标题副标题、figure→`<img>`)→ Turndown + GFM 转 Markdown。图片存于各目录 `assets/`。
+
+**新增文件**(9 篇 `.md` + 44 张 PNG,取代同名 `.html`):
+
+- `02_engineering/02_train_frameworks/`:`async_collective_tensor_deep_dive.md`(4图)、`comm_compute_overlap_analysis.md`(7)、`deepseek_v4_context_parallel_analysis.md`(6)、`deepseek_v4_tensor_parallel_analysis.md`(1)、`distributed_optimizer_deep_dive.md`(7)、`megatron_pp_parallelism_analysis.md`(4)、`mindformers_moe_token_dispatcher_analysis.md`(7)、`muon_sharded_hsdp_report.md`(6)
+- `02_engineering/05_gpu_kernel/`:`gpu_kernel_guide.md`(2,`tier-diagram` 与 FlashAttention `fa-flow` 两张 CSS 图)
+
+**删除文件**: 上述 9 篇对应的 `.html` 原件(`async_collective_tensor_deep_dive.html` 等 8 篇 + `gpu_kernel_guide.html`)。
+
+**索引与链接更新**:
+
+- 全库 Obsidian 维基链接统一从 `[[*.html]]`(及 `[[*.html|别名]]`)改写为 `[[*]]`,共 13 处,分布于:`02_engineering/index.md`、`02_train_frameworks/index.md`、`05_gpu_kernel/index.md`、`torchtitan/index.md`、`megatron-lm/index.md`,以及 torchtitan `cp/ep/fsdp/pp/tp` 五篇分析页与 `megatron_distributed_optimizer_analysis.md` 的交叉引用
+- `wiki/index.md`(总索引)— 目录树补入 `torchtitan/` 与 `05_gpu_kernel/`;领域总览表新增「torchtitan(7)」「GPU Kernel(1)」两行;去掉「后训练框架(预留)」过时标注
+- 相关 index 的「最后更新」统一改为 2026-06-09
+
+**说明**: 原 `.html` 已删除,仓库仅保留 Markdown(移动端阅读首选)。转换为忠实迁移——所有 SVG/CSS 图表已逐张校验为 PNG,代码块围栏完整,技术内容未改写。
+
+---
+
 ## 2026-06-06: MindFormers MoE 去冗余 Token Dispatcher 源码图解(HTML)
 
 **Type**: Knowledge Synthesis(基于 MindFormers `master` `mindformers/parallel_core/training_graph/transformer/moe/token_dispatcher.py` 中 `MoEAlltoAllDeredundencyTokenDispatcher` 的源码级图解,对照 torchtitan `token_dispatcher.py` 的 AllToAll/DeepEP 路径)
@@ -18,7 +41,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **主线观点**: 两级 EP 的设计目标是把「不规则 + D2H」关进快的机内 NVLink(变长 AlltoAllV),跨机 IB 只走定形、免 D2H 的规则 collective(AllGather/ReduceScatter);去冗余 = 跨机全量 AllGather + 本地 mask 筛选,以通信冗余换取规则性与零 D2H。
 
-**交叉引用**: 与 [[torchtitan/torchtitan_ep_analysis]](token all-to-all dispatch/combine、DeepEP/HybridEP)、[[async_collective_tensor_deep_dive.html]](ACT 延迟 wait)、[[comm_compute_overlap_analysis.html]](DeepEP/HybridEP 通信掩盖)互为对照(MindSpore 静态图 vs PyTorch eager+compile)。
+**交叉引用**: 与 [[torchtitan/torchtitan_ep_analysis]](token all-to-all dispatch/combine、DeepEP/HybridEP)、[[async_collective_tensor_deep_dive]](ACT 延迟 wait)、[[comm_compute_overlap_analysis]](DeepEP/HybridEP 通信掩盖)互为对照(MindSpore 静态图 vs PyTorch eager+compile)。
 
 ---
 
@@ -67,7 +90,7 @@ All source ingestions and significant wiki updates are logged here.
 
 - `wiki/02_engineering/02_train_frameworks/index.md` — 子目录表与页面列表加入 `torchtitan/index` 条目
 
-**交叉引用**: torchtitan 系列与 Megatron-LM 源码级系列([[tp_analysis]]/[[cp_analysis]]/[[ep_analysis]]/[[pp_schedulers_analysis]]/[[ddp_optimizer_analysis]])互为对照(PyTorch-native vs CUDA/Megatron 生态),并与 [[async_collective_tensor_deep_dive.html]]、[[comm_compute_overlap_analysis.html]] 等既有页交叉引用。
+**交叉引用**: torchtitan 系列与 Megatron-LM 源码级系列([[tp_analysis]]/[[cp_analysis]]/[[ep_analysis]]/[[pp_schedulers_analysis]]/[[ddp_optimizer_analysis]])互为对照(PyTorch-native vs CUDA/Megatron 生态),并与 [[async_collective_tensor_deep_dive]]、[[comm_compute_overlap_analysis]] 等既有页交叉引用。
 
 ---
 

@@ -472,5 +472,5 @@ optimizer.step():在分片参数(DTensor)上更新,优化器状态只占 1/N
 - [[torchtitan_tp_analysis]] —— FSDP 与 TP 在同一参数上叠加(DTensor 嵌套、`_StridedShard`)
 - [[torchtitan_ep_analysis]] —— MoE 专家的 `edp_mesh` FSDP 与显式预取
 - [[ddp_optimizer_analysis]] —— Megatron-LM 数据并行 + 分布式优化器(ZeRO-0/1/2/3 四阶段)
-- [[distributed_optimizer_deep_dive.html]] —— FSDP2 / ZeRO / MindSpeed 三方对比
+- [[distributed_optimizer_deep_dive]] —— FSDP2 / ZeRO / MindSpeed 三方对比
 - [[megatron_distributed_optimizer_analysis]] —— ZeRO 优化器状态分片、Reduce-Scatter + All-Gather

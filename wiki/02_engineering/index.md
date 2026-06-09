@@ -16,7 +16,7 @@
 
 | 页面 | 来源 | 核心主题 |
 |------|------|---------|
-| [[05_gpu_kernel/gpu_kernel_guide.html]] | 综合深度分析 | GPU Kernel: 执行层级、内存优化、Tensor Core/MMA、torch.compile、FlashAttention、NPU 差异 |
+| [[05_gpu_kernel/gpu_kernel_guide]] | 综合深度分析 | GPU Kernel: 执行层级、内存优化、Tensor Core/MMA、torch.compile、FlashAttention、NPU 差异 |
 | [[pin_memory_and_memory_semantics_analysis]] | 综合深度分析 | Pin Memory 与 RDMA 内存语义通信：PyTorch DataLoader、DeepSpeed ZeRO-Offload、vLLM KV Cache、Mooncake TransferEngine、DeepEP、3FS、NCCL 演进 |
 
 ## 关联域

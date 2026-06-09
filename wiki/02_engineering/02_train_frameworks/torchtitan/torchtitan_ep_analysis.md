@@ -341,5 +341,5 @@ a2a 的 backward = split 参数互换的 a2a;combine 反向 ≡ dispatch 正向
 - [[torchtitan_pp_analysis]] —— 相邻并行维度
 - [[ep_analysis]] —— Megatron-LM 专家并行(AllGather/AllToAll/Flex 三种 token dispatcher)
 - [[Megatron-LM_MoE_Zero_Redundancy_Analysis]] —— MoE 零冗余通信、AlltoAll token dispatch
-- [[async_collective_tensor_deep_dive.html]] —— `AsyncCollectiveTensor` 源码追踪
+- [[async_collective_tensor_deep_dive]] —— `AsyncCollectiveTensor` 源码追踪
 - [[comm_compute_fusion_guide]] —— 通算融合:WaveEP、DeepEP、各维度重叠

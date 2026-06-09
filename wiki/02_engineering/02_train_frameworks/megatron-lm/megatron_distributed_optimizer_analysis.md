@@ -262,7 +262,7 @@ Forward（参数 All-Gather 可与计算 overlap）
 - [[megatron_memory_optimization_analysis]]
 - [[low_precision_training_analysis]]
 - [[Megatron-LM_MoE_Zero_Redundancy_Analysis]]
-- [[../distributed_optimizer_deep_dive.html|distributed_optimizer_deep_dive]] — FSDP2/ZeRO/MindSpeed 三方对比, 梯度累积通信量分析, Adam vs Muon
+- [[../distributed_optimizer_deep_dive|distributed_optimizer_deep_dive]] — FSDP2/ZeRO/MindSpeed 三方对比, 梯度累积通信量分析, Adam vs Muon
 
 ---
 
