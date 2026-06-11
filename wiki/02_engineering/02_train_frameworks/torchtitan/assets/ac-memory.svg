@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="600" font-family="Microsoft YaHei, SimHei, Segoe UI, Arial, sans-serif">
+  <rect width="1180" height="600" fill="#ffffff"/>
+  <text x="30" y="38" font-size="24" font-weight="bold" fill="#212529">激活显存对照:无 AC / full AC / SAC(4 层,前向→反向)</text>
+  <text x="30" y="62" font-size="13.5" fill="#868e96">单层 A_full=层内全部激活,A_in=层边界激活(残差流,≪A_full)。横轴时间,纵轴激活显存。</text>
+
+  <!-- forward/backward regions -->
+  <rect x="190" y="130" width="370" height="410" fill="#f8f9fa"/>
+  <rect x="560" y="130" width="400" height="410" fill="#fff9f0"/>
+  <line x1="560" y1="130" x2="560" y2="540" stroke="#ced4da" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="375" y="150" font-size="13" text-anchor="middle" fill="#868e96">前向 L0→L1→L2→L3</text>
+  <text x="760" y="150" font-size="13" text-anchor="middle" fill="#b3801e">反向 L3→L2→L1→L0(逐层重算)</text>
+
+  <!-- axes -->
+  <line x1="190" y1="540" x2="970" y2="540" stroke="#343a40" stroke-width="1.5"/>
+  <line x1="190" y1="130" x2="190" y2="540" stroke="#343a40" stroke-width="1.5"/>
+  <text x="150" y="135" font-size="12" fill="#495057">显存</text>
+  <text x="940" y="560" font-size="12" fill="#495057">时间 →</text>
+
+  <!-- level guide lines -->
+  <line x1="190" y1="176" x2="970" y2="176" stroke="#fa5252" stroke-width="1" stroke-dasharray="5 4"/><text x="975" y="180" font-size="12" fill="#e03131">≈ L·A_full(峰值最高)</text>
+  <line x1="190" y1="301" x2="970" y2="301" stroke="#4dabf7" stroke-width="1" stroke-dasharray="5 4"/><text x="975" y="305" font-size="12" fill="#1c7ed6">SAC 峰值</text>
+  <line x1="190" y1="358" x2="970" y2="358" stroke="#69db7c" stroke-width="1" stroke-dasharray="5 4"/><text x="975" y="362" font-size="12" fill="#2f9e44">full AC 峰值 ≈ L·A_in + A_full</text>
+
+  <!-- No-AC (red triangle) -->
+  <polyline points="230,540 290,449 370,358 450,267 540,176 640,267 730,358 820,449 910,540"
+            fill="none" stroke="#e03131" stroke-width="2.6"/>
+  <!-- Full-AC (green: low forward + backward sawtooth) -->
+  <polyline points="230,540 290,517 370,495 450,472 540,449 575,358 640,472 675,381 730,495 765,404 820,517 855,426 910,540"
+            fill="none" stroke="#2f9e44" stroke-width="2.6"/>
+  <!-- SAC (blue: mid forward + small sawtooth) -->
+  <polyline points="230,540 290,489 370,438 450,387 540,335 575,301 640,387 675,353 730,438 765,404 820,489 855,455 910,540"
+            fill="none" stroke="#1c7ed6" stroke-width="2.6"/>
+
+  <!-- peak labels -->
+  <text x="540" y="168" font-size="12.5" fill="#e03131" text-anchor="middle" font-weight="bold">峰 16</text>
+  <text x="575" y="293" font-size="12" fill="#1c7ed6" text-anchor="middle" font-weight="bold">峰 ~10</text>
+  <text x="575" y="350" font-size="12" fill="#2f9e44" text-anchor="middle" font-weight="bold">峰 ~8</text>
+
+  <!-- annotations -->
+  <text x="600" y="230" font-size="12" fill="#e03131">无 AC:全部激活留到反向,峰值最高,但反向 0 重算</text>
+  <text x="600" y="420" font-size="12" fill="#2f9e44">full AC:前向只存边界(低),反向逐层重算(大锯齿)</text>
+  <text x="600" y="470" font-size="12" fill="#1c7ed6">SAC:前向存边界+贵算子输出(中),反向只重算便宜算子(小锯齿)</text>
+
+  <!-- legend -->
+  <rect x="210" y="200" width="16" height="4" fill="#e03131"/><text x="234" y="206" font-size="12" fill="#495057">无 AC</text>
+  <rect x="210" y="222" width="16" height="4" fill="#1c7ed6"/><text x="234" y="228" font-size="12" fill="#495057">SAC</text>
+  <rect x="210" y="244" width="16" height="4" fill="#2f9e44"/><text x="234" y="250" font-size="12" fill="#495057">full AC</text>
+
+  <!-- bottom takeaway -->
+  <line x1="30" y1="556" x2="1150" y2="556" stroke="#dee2e6"/>
+  <text x="30" y="580" font-size="13" fill="#495057">权衡:<tspan font-weight="bold">显存</tspan> 无AC &gt; SAC &gt; full AC;<tspan font-weight="bold">重算算力</tspan> full AC &gt; SAC &gt; 无AC(0)。反向重算逐层进行,瞬时只多一层 A_full,故 full AC 总峰值最低。预估:full AC≈L·A_in+max A_full;SAC 加总 save-op 输出;memory_budget 模式由编译器在 Pareto 前沿求最优。</text>
+</svg>

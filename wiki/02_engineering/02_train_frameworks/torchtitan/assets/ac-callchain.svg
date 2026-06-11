@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1140" height="640" font-family="Microsoft YaHei, SimHei, Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#495057"/></marker>
+  </defs>
+  <rect width="1140" height="640" fill="#ffffff"/>
+  <text x="30" y="38" font-size="23" font-weight="bold" fill="#212529">接口实现链路:checkpoint_wrapper → checkpoint → policy_fn</text>
+  <text x="30" y="62" font-size="13" fill="#868e96">module 定区域边界;context_fn 装着 policy_fn 定"逐算子存/算"。module 的真前向在"两次 next(gen) 之间"跑。</text>
+
+  <!-- vertical call stack (left), boxes width 560 centered x~330 -->
+  <rect x="50" y="84" width="560" height="44" rx="6" fill="#eef3ff" stroke="#5b8def"/>
+  <text x="330" y="111" font-size="14" text-anchor="middle" fill="#1c4fb3">CheckpointWrapper.forward(*args)</text>
+  <line x1="330" y1="128" x2="330" y2="150" stroke="#495057" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="340" y="144" font-size="11.5" fill="#868e96">:171  self.checkpoint_fn(module, *args)</text>
+
+  <rect x="50" y="150" width="560" height="44" rx="6" fill="#eef3ff" stroke="#5b8def"/>
+  <text x="330" y="177" font-size="13.5" text-anchor="middle" fill="#1c4fb3">checkpoint(module, *args, use_reentrant=False, context_fn)</text>
+  <line x1="330" y1="194" x2="330" y2="216" stroke="#495057" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="340" y="210" font-size="11.5" fill="#868e96">:498  gen = _checkpoint_without_reentrant_generator(...)</text>
+
+  <!-- 前置 box -->
+  <rect x="50" y="216" width="560" height="98" rx="6" fill="#f3eefc" stroke="#9b6dd6"/>
+  <text x="64" y="236" font-size="13.5" font-weight="bold" fill="#6741d9">next(gen) 前置(建图、装 hook)</text>
+  <text x="64" y="258" font-size="12.5" fill="#495057">· context_fn() → (CachingMode, CachedMode)  共享 policy_fn+storage  :1513</text>
+  <text x="64" y="278" font-size="12.5" fill="#495057">· input_saver = _NoopSaveInputs(块输入)  存"原料"  :1564</text>
+  <text x="64" y="298" font-size="12.5" fill="#495057">· 进入 with _checkpoint_hook(frame), CachingMode  :1571 → yield</text>
+  <line x1="330" y1="314" x2="330" y2="336" stroke="#495057" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <!-- module forward (highlighted) -->
+  <rect x="50" y="336" width="560" height="120" rx="8" fill="#e9f7ef" stroke="#2f9e44" stroke-width="2"/>
+  <text x="330" y="358" font-size="15" text-anchor="middle" font-weight="bold" fill="#1e7a4d">module(*args) —— 真前向在此跑(:503)</text>
+  <text x="64" y="382" font-size="12.5" fill="#343a40">每个 aten 算子前向时,被两个钩子各拦一次:</text>
+  <rect x="64" y="392" width="532" height="26" rx="4" fill="#e7f5ff" stroke="#5b8def"/>
+  <text x="74" y="409" font-size="12" fill="#1c4fb3">① dispatch:CachingMode.__torch_dispatch__ → policy_fn → MUST_SAVE? → storage.append</text>
+  <rect x="64" y="422" width="532" height="26" rx="4" fill="#ebfbee" stroke="#2f9e44"/>
+  <text x="74" y="439" font-size="12" fill="#1e7a4d">② autograd:_checkpoint_hook.pack_hook → 返回 Holder(存票,不存激活)</text>
+  <line x1="330" y1="456" x2="330" y2="478" stroke="#495057" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <rect x="50" y="478" width="560" height="40" rx="6" fill="#eef3ff" stroke="#5b8def"/>
+  <text x="330" y="503" font-size="13.5" text-anchor="middle" fill="#1c4fb3">next(gen) 后置:退出 context,forward_completed=True</text>
+
+  <!-- right: context_fn detail + backward -->
+  <rect x="650" y="216" width="460" height="98" rx="6" fill="#fffaf0" stroke="#f59f00"/>
+  <text x="664" y="236" font-size="13.5" font-weight="bold" fill="#b3801e">context_fn() 真身(:1444)</text>
+  <text x="664" y="258" font-size="12" fill="#495057">storage = defaultdict(list)</text>
+  <text x="664" y="278" font-size="12" fill="#495057">return ( _CachingMode(policy, storage),   # 前向缓存</text>
+  <text x="664" y="296" font-size="12" fill="#495057">         _CachedMode(policy, storage) )   # 反向回放</text>
+  <path d="M650,265 C630,265 625,265 612,265" fill="none" stroke="#f59f00" stroke-width="1.3" marker-end="url(#a)"/>
+
+  <rect x="650" y="336" width="460" height="182" rx="6" fill="#fff5f5" stroke="#fa5252"/>
+  <text x="664" y="358" font-size="13.5" font-weight="bold" fill="#c92a2a">反向(第一次 unpack 票)</text>
+  <text x="664" y="382" font-size="12.5" fill="#495057">_checkpoint_hook.unpack_hook(:1139)</text>
+  <text x="664" y="404" font-size="12.5" fill="#495057">→ recompute_fn 重跑整块(enable_grad,在</text>
+  <text x="664" y="422" font-size="12.5" fill="#495057">   CachedMode 下):</text>
+  <text x="680" y="444" font-size="12" fill="#1c4fb3">· MUST_SAVE 算子 → storage.pop 回放(不算)</text>
+  <text x="680" y="464" font-size="12" fill="#1e7a4d">· 其余算子 → 真重算</text>
+  <text x="680" y="484" font-size="12" fill="#6741d9">· _recomputation_hook 按下标绑回原票</text>
+  <text x="664" y="506" font-size="12.5" fill="#495057">→ unpack 返回 recomputed[票](:1169)</text>
+
+  <text x="50" y="548" font-size="12.5" fill="#868e96">关键:module 只圈"区域";"存哪些内容"完全由 policy_fn 逐算子决定(MUST_SAVE→存/回放,其余→重算)。</text>
+  <text x="50" y="570" font-size="12.5" fill="#868e96">两条保存线:① 票据机制(总在,存块输入+票) ② SAC storage(有 context_fn 才在,存选定 op 输出)。</text>
+  <text x="50" y="592" font-size="12.5" fill="#868e96">full AC = 只有①(块内全靠重算);SAC = ①+②(贵算子回放、便宜算子重算)。</text>
+</svg>

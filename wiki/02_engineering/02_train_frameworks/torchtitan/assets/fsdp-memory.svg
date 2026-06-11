@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="640" font-family="Microsoft YaHei, SimHei, Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="am" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#e03131"/></marker>
+  </defs>
+  <rect width="1180" height="640" fill="#ffffff"/>
+  <text x="30" y="38" font-size="24" font-weight="bold" fill="#212529">FSDP 前向:完整参数 buffer 为何始终 ≤ 2 份(不会到 3 份)</text>
+  <text x="30" y="62" font-size="14" fill="#868e96">每块 = 整组完整参数大小 p(bf16)。橙=扁平 AG buffer,绿=逐参数 buffer(=完整参数,unsharded 参数是它的 as_strided 视图)。虚线橙=延迟释放中。</text>
+
+  <!-- double-buffer banner -->
+  <rect x="40" y="86" width="1100" height="46" rx="6" fill="#f3f0ff" stroke="#b197fc" stroke-width="1.2"/>
+  <text x="56" y="105" font-size="13.5" font-weight="bold" fill="#5f3dc4">为什么 flat 生命周期长?—— flat 双缓冲(ping-pong):留 2 块扁平轮换</text>
+  <text x="56" y="124" font-size="12.5" fill="#6741d9">消费者(copy-out 读"旧块" flat(N))与生产者(copy-in / all-gather 写"新块" flat(N+1))各占一块,才能在不同流并行;若 copy-out 后立刻释放,flat(N+1) 会复用同一块 → 别名 → 重叠塌掉。这就是 flat 延迟到下一组才释放的原因。</text>
+  <!-- leader to col6 (where the two flat buffers coexist) -->
+  <line x1="870" y1="132" x2="870" y2="280" stroke="#7048e8" stroke-width="1.3" stroke-dasharray="4 3"/>
+
+  <!-- slot guide lines -->
+  <line x1="40" y1="282" x2="1095" y2="282" stroke="#e9ecef" stroke-width="1"/>
+  <line x1="40" y1="332" x2="1095" y2="332" stroke="#e9ecef" stroke-width="1"/>
+  <line x1="40" y1="382" x2="1095" y2="382" stroke="#adb5bd" stroke-width="1.5"/>
+  <text x="1100" y="312" font-size="12" fill="#868e96">← 上层槽</text>
+  <text x="1100" y="362" font-size="12" fill="#868e96">← 下层槽</text>
+
+  <!-- columns: centers 110 262 414 566 718 870 1022 ; block x=center-58 w=116 ; bottom 336..382 top 286..332 -->
+  <!-- helper: stage names y=274 ; count y=404 -->
+  <g text-anchor="middle">
+    <!-- Col1 CI(N) -->
+    <text x="110" y="274" font-size="13" fill="#343a40">CI(N)</text>
+    <rect x="52" y="336" width="116" height="46" rx="4" fill="#f4a259"/><text x="110" y="364" font-size="12.5" fill="#fff">扁平 N</text>
+    <text x="110" y="404" font-size="13" font-weight="bold" fill="#1971c2">= 1p</text>
+
+    <!-- Col2 AG(N) -->
+    <text x="262" y="274" font-size="13" fill="#343a40">AG(N)</text>
+    <rect x="204" y="336" width="116" height="46" rx="4" fill="#f4a259"/><text x="262" y="364" font-size="12.5" fill="#fff">扁平 N</text>
+    <text x="262" y="404" font-size="13" font-weight="bold" fill="#1971c2">= 1p  (AG 不另分配)</text>
+
+    <!-- Col3 CO(N) -->
+    <text x="414" y="274" font-size="13" fill="#343a40">CO(N)</text>
+    <rect x="356" y="286" width="116" height="46" rx="4" fill="#4caf82"/><text x="414" y="314" font-size="12.5" fill="#fff">逐参数 N</text>
+    <rect x="356" y="336" width="116" height="46" rx="4" fill="#f4a259"/><text x="414" y="364" font-size="12.5" fill="#fff">扁平 N</text>
+    <text x="414" y="404" font-size="13" font-weight="bold" fill="#c2255c">= 2p</text>
+
+    <!-- Col4 Cm(N) -->
+    <text x="566" y="274" font-size="13" fill="#343a40">Cm(N)</text>
+    <rect x="508" y="286" width="116" height="46" rx="4" fill="#4caf82"/><text x="566" y="314" font-size="12.5" fill="#fff">逐参数 N(算)</text>
+    <rect x="508" y="336" width="116" height="46" rx="4" fill="#f9c89a" stroke="#d9480f" stroke-width="1.5" stroke-dasharray="5 3"/><text x="566" y="364" font-size="11.5" fill="#d9480f">扁平 N(延迟)</text>
+    <text x="566" y="404" font-size="13" font-weight="bold" fill="#c2255c">= 2p</text>
+
+    <!-- Col5 reshard(N) -->
+    <text x="718" y="274" font-size="13" fill="#343a40">reshard(N)</text>
+    <rect x="660" y="286" width="116" height="46" rx="4" fill="none" stroke="#ced4da" stroke-width="1.3" stroke-dasharray="3 3"/><text x="718" y="314" font-size="12" fill="#868e96">✗ 释放 pp(N)</text>
+    <rect x="660" y="336" width="116" height="46" rx="4" fill="#f9c89a" stroke="#d9480f" stroke-width="1.5" stroke-dasharray="5 3"/><text x="718" y="364" font-size="11.5" fill="#d9480f">扁平 N(延迟)</text>
+    <text x="718" y="404" font-size="13" font-weight="bold" fill="#1971c2">= 1p</text>
+
+    <!-- Col6 CI/AG(N+1) -->
+    <text x="870" y="274" font-size="13" fill="#343a40">CI/AG(N+1)</text>
+    <rect x="812" y="286" width="116" height="46" rx="4" fill="#f4a259"/><text x="870" y="314" font-size="12.5" fill="#fff">扁平 N+1</text>
+    <rect x="812" y="336" width="116" height="46" rx="4" fill="#f9c89a" stroke="#d9480f" stroke-width="1.5" stroke-dasharray="5 3"/><text x="870" y="364" font-size="11.5" fill="#d9480f">扁平 N(延迟)</text>
+    <text x="870" y="404" font-size="13" font-weight="bold" fill="#c2255c">= 2p</text>
+
+    <!-- Col7 CO(N+1) -->
+    <text x="1022" y="274" font-size="13" fill="#343a40">CO(N+1)</text>
+    <rect x="964" y="286" width="116" height="46" rx="4" fill="#4caf82"/><text x="1022" y="314" font-size="12.5" fill="#fff">逐参数 N+1</text>
+    <rect x="964" y="336" width="116" height="46" rx="4" fill="#f4a259"/><text x="1022" y="364" font-size="12.5" fill="#fff">扁平 N+1</text>
+    <text x="1022" y="404" font-size="13" font-weight="bold" fill="#c2255c">= 2p</text>
+  </g>
+
+  <!-- double-buffer highlight on col6: flat(N) deferred + flat(N+1) coexist -->
+  <rect x="804" y="282" width="132" height="104" rx="7" fill="none" stroke="#7048e8" stroke-width="2.2" stroke-dasharray="3 2"/>
+  <text x="870" y="258" font-size="12.5" font-weight="bold" fill="#7048e8" text-anchor="middle">flat 双缓冲:2 块并存</text>
+
+  <!-- bottom-slot bracket: flat(N) persists col1..col6 -->
+  <path d="M52,392 L52,398 L928,398 L928,392" fill="none" stroke="#d9480f" stroke-width="1.4"/>
+  <text x="490" y="416" font-size="12.5" fill="#d9480f" text-anchor="middle">下层槽:flat(N) 同一块 buffer 一直活着 —— 延迟释放,直到 CI(N+1) 之后才放手(wait_for_unshard 释放上一组 all_gather_state)</text>
+
+  <!-- callouts -->
+  <text x="30" y="452" font-size="15" font-weight="bold" fill="#343a40">两条规则保证任意时刻 ≤ 2 份:</text>
+  <text x="40" y="476" font-size="13.5" fill="#495057">① <tspan fill="#c2255c" font-weight="bold">reshard(N) 先腾位</tspan>:post_forward(N) 调 reshard → to_sharded → free_unsharded_param 释放 pp(N)(_fsdp_param.py:539),</text>
+  <text x="56" y="496" font-size="13.5" fill="#495057">这一步在 pre_forward(N+1) 的 unshard 分配 flat(N+1) <tspan font-weight="bold">之前</tspan> —— 上层槽空出来,flat(N+1) 才进来。</text>
+  <text x="40" y="520" font-size="13.5" fill="#495057">② <tspan fill="#d9480f" font-weight="bold">CI(N+1) 不等 flat(N) 释放</tspan>:它另开 flat(N+1) 占上层槽,与 AG(N) 重叠;flat(N) 延迟到 CI(N+1) 之后才释放,</text>
+  <text x="56" y="540" font-size="13.5" fill="#495057">所以下层槽被 flat(N) 占着 —— 但因 pp(N) 已先走(规则①),两槽相加始终 = 2 份,<tspan fill="#c2255c" font-weight="bold">永不 3 份</tspan>。</text>
+
+  <text x="30" y="572" font-size="15" font-weight="bold" fill="#343a40">上层槽轮换:</text>
+  <text x="160" y="572" font-size="14" fill="#1864ab">pp(N) → 空(reshard) → flat(N+1) → pp(N+1)</text>
+  <text x="560" y="572" font-size="13.5" fill="#868e96">；下层槽:flat(N) → (释放) → flat(N+1) …</text>
+
+  <line x1="30" y1="588" x2="1150" y2="588" stroke="#dee2e6" stroke-width="1"/>
+  <text x="30" y="610" font-size="12" fill="#868e96">物理 caveat:pp(N) 被 resize_(0) 逻辑释放,但 GPU 上 Cm(N) 可能仍在读其存储,该块要等所在流的事件才可复用;若复用不及时,</text>
+  <text x="30" y="628" font-size="12" fill="#868e96">caching-allocator 的 reserved 显存可<tspan font-style="italic">瞬时</tspan>略超 2p。这是分配器复用时序问题,不是逻辑上多了第 3 份引用;延迟释放正是用 event 来界定复用安全点。</text>
+</svg>

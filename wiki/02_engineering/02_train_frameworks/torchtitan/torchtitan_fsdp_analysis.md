@@ -468,6 +468,7 @@ optimizer.step():在分片参数(DTensor)上更新,优化器状态只占 1/N
 
 ## Related Pages
 
+- [[torchtitan_fsdp_prefetch_overlap_memory_analysis]] —— **深挖伴篇**(配图):预取/掩盖时序、copy-in 三步与唯一跨流同步点、flat 双缓冲、完整参数 ≤2 份证明
 - [[torchtitan/index]] · [[torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
 - [[torchtitan_tp_analysis]] —— FSDP 与 TP 在同一参数上叠加(DTensor 嵌套、`_StridedShard`)
 - [[torchtitan_ep_analysis]] —— MoE 专家的 `edp_mesh` FSDP 与显式预取

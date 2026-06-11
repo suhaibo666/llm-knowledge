@@ -1,8 +1,8 @@
 # torchtitan 多维并行体系 — 知识地图
 
 > **代码基准**:torchtitan `main` @ `cf3c4312` · PyTorch `2.9.1`(FSDP2/DTensor/pipelining 内核)
-> **最后更新**:2026-06-09
-> 一套 7 篇 torchtitan 多维混合并行(DP/TP/CP/EP/PP)源码级机制分析。以 `fully_shard` 为标杆粒度——**参数怎么切、切完怎么取回、哪些通信能掩盖、异步怎么实现**——逐维度展开。torchtitan 是薄封装,真实机制深入到 PyTorch FSDP2 / DTensor / pipelining 内核。
+> **最后更新**:2026-06-11
+> 一套 9 篇 torchtitan 多维混合并行(DP/TP/CP/EP/PP)+ 训练机制(AC)源码级分析。以 `fully_shard` 为标杆粒度——**参数怎么切、切完怎么取回、哪些通信能掩盖、异步怎么实现**——逐维度展开。torchtitan 是薄封装,真实机制深入到 PyTorch FSDP2 / DTensor / pipelining 内核。
 
 ---
 
@@ -24,6 +24,13 @@ torchtitan 的并行体系不是"5 套独立机制",而是**一套统一的 `Dev
 | [[torchtitan_cp_analysis]] | **CP** | 序列维切分 + 负载均衡、Ring Attention K/V 环形轮转、`AsyncCollectiveTensor` 重叠 |
 | [[torchtitan_pp_analysis]] | **PP** | 模型按层切 stage、P2P send/recv、调度气泡(GPipe/1F1B/Interleaved/ZBV/DualPipeV)、Zero Bubble |
 | [[torchtitan_ep_analysis]] | **EP** | 专家权重 `Shard(0)`、token all-to-all dispatch/combine、`AsyncCollectiveTensor` 延迟 wait、DeepEP |
+
+### 深挖伴篇(2 篇,带 SVG→PNG 机制图)
+
+| 页面 | 主题 | 核心机制 |
+|------|------|---------|
+| [[torchtitan_fsdp_prefetch_overlap_memory_analysis]] | **DP 深挖** | 预取/掩盖时序对照图、copy-in 三步与唯一跨流同步点 `wait_event`、flat 双缓冲(ping-pong)、完整参数 ≤2 份的代码时序证明 |
+| [[torchtitan_ac_analysis]] | **AC** | `checkpoint_wrapper` 接口链路、票据机制(发票/重算绑票/兑票)、SAC 缓存回放 + attention 端到端走查、显存预估三法、横跨 autograd×dispatch 两核心 |
 
 ## 六个维度速览
 
@@ -67,7 +74,7 @@ torchtitan 的并行体系不是"5 套独立机制",而是**一套统一的 `Dev
 1. apply_cp_to_forward   CP:包裹 attention forward
 2. model.parallelize()   TP:按 ShardingConfig 切权重 + 包裹 forward
 3. apply_moe_ep_tp()     EP:专家权重 Shard(0) + 配置 token_dispatcher(仅 MoE)
-4. apply_ac()            激活重计算
+4. apply_ac()            激活重计算(见 [[torchtitan_ac_analysis]])
 5. apply_compile()       torch.compile(逐 TransformerBlock)
 6. apply_fsdp()          DP:fully_shard,最外层 SPMD 包装
 ```
@@ -98,5 +105,6 @@ torchtitan 的并行体系不是"5 套独立机制",而是**一套统一的 `Dev
 ## Related Pages
 
 - [[torchtitan_parallel_dims_analysis]] · [[torchtitan_fsdp_analysis]] · [[torchtitan_tp_analysis]] · [[torchtitan_cp_analysis]] · [[torchtitan_pp_analysis]] · [[torchtitan_ep_analysis]]
+- [[torchtitan_fsdp_prefetch_overlap_memory_analysis]] · [[torchtitan_ac_analysis]] —— 深挖伴篇(FSDP 预取/掩盖/显存、激活重计算)
 - [[megatron-lm/index]] —— Megatron-LM 知识地图(姊妹训练框架)
 - [[02_engineering/02_train_frameworks/index]] —— 训练框架目录索引

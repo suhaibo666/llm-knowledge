@@ -4,6 +4,23 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-11: torchtitan 系列新增两篇深挖伴篇(FSDP 预取/掩盖/显存、激活重计算 AC)
+
+**Type**: Knowledge Synthesis(源自 torchtitan `cf3c4312` + PyTorch 2.9.1 源码逐行核验的问答整理稿,配 SVG→PNG 机制图)
+
+**新增文件**(2 篇 `.md` + 16 个图文件,`torchtitan/assets/` 为新建目录):
+
+- `02_engineering/02_train_frameworks/torchtitan/torchtitan_fsdp_prefetch_overlap_memory_analysis.md` —— [[torchtitan_fsdp_analysis]] 的深挖伴篇(2 图):串行 vs 多流预取掩盖时序、唯一跨流同步点 `wait_event(_fsdp_collectives.py:361)`、copy-in 三步(narrow 视图巧思 + `_foreach_copy_` 方向)、flat 双缓冲 ping-pong(为何延迟释放)、"完整参数 ≤2 份不会 3 份"的 reshard-先于-unshard 时序证明、CI/AG/CO 各阶段显存账
+- `02_engineering/02_train_frameworks/torchtitan/torchtitan_ac_analysis.md` —— 激活重计算原理 + 代码解读(6 图):AC vs DCP 两种 checkpoint 区分、`checkpoint_wrapper` 接口链路(module 在两次 `next(gen)` 之间跑)、票据机制(`weak_holders`/`recomputed`/`recomp_counter` 下标对齐,发票→重算绑票→兑票)、SAC 双 dispatch mode 缓存回放 + torchtitan policy(奇偶 mm/SDPA/comm 恒存)+ attention 端到端走查、显存预估三法(full 手算 / SAC 加总 save-op / memory_budget Pareto)、粒度控制五法(含 config 驱动模块级方案)、横跨 autograd(`saved_tensors_hooks`)×dispatch(`TorchDispatchMode`)两核心、`ActivationCheckpointConfig` 全字段速查
+
+**索引与交叉引用**:
+
+- `torchtitan/index.md` —— 新增「深挖伴篇」表(2 行);系列篇数 7→9;并行施加管线 `apply_ac()` 挂链;Related Pages 补两页;最后更新 2026-06-11
+- `torchtitan_fsdp_analysis.md` —— Related Pages 首行新增深挖伴篇反链
+- `01_theory/02_pretraining/activation_checkpointing_analysis.md` —— Related Pages 首行新增 [[torchtitan_ac_analysis]](工程侧非重入/SAC,与该页 Megatron 重入路径互补)
+
+---
+
 ## 2026-06-09: HTML 报告转 Markdown 并替换原 HTML(SVG/CSS 图 → PNG)
 
 **Type**: 格式迁移 + 文件替换(为移动端阅读把 9 篇 HTML 报告转为 Markdown,图渲染为内嵌 PNG;转换验证无误后删除原 HTML,仓库只保留 Markdown)
