@@ -1,7 +1,7 @@
 # FSDP2 预取 · 计算通信掩盖 · 显存生命周期 —— 源码级专题
 
 > **代码基准**:torchtitan `main` @ `cf3c4312` · PyTorch `2.9.1`(FSDP2 内核 `torch/distributed/fsdp/_fully_shard/`)
-> **最后更新**:2026-06-11 · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
+> **最后更新**:2026-06-12(新增 §5.5 勘误与补充:分配≠新建,两层复用与社区机制) · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
 >
 > 本文是对 `fully_shard`(FSDP2)一系列追问的整理稿,**所有结论基于 PyTorch 2.9.1 源码逐条复核**。
 > 行号约定:torchtitan 以 `torchtitan/` 为根;PyTorch FSDP2 以 `[pt]` 前缀,根目录 `torch/distributed/fsdp/_fully_shard/`。
@@ -117,16 +117,18 @@ eager 模式下 `init_unsharded_param`(`[pt]_fsdp_param.py:501-502`):`unsharded_
 
 ### 5.2 各 buffer 与每阶段新增
 
-| buffer | 大小 | dtype | 分配点 | 释放点 |
+| buffer | 大小 | dtype | 占用出现点(分配行为见 §5.5) | 释放点 |
 |---|---|---|---|---|
 | 分片参数 `_sharded_param_data` | p/N | fp32 | 建模期,**常驻** | — |
-| 扁平 AG buffer `all_gather_output` | **p** | bf16 | **CI**(`[pt]_collectives.py:262`) | copy-out 后(前向延迟释放) |
-| 逐参数 buffer `all_gather_outputs` | **p** | bf16 | **CO**(`[pt]_param.py:445/648`) | reshard(`free_storage`,`:665`) |
+| 扁平 AG buffer `all_gather_output` | **p** | bf16 | **CI**:每次 unshard 新建**张量对象**(`[pt]_collectives.py:262`),物理块稳态来自 allocator 池命中 | copy-out 后(前向延迟释放) |
+| 逐参数 buffer `all_gather_outputs` | **p** | bf16 | **首迭代 CO 创建一次**(`[pt]_param.py:443-446` 早退守卫);此后每次 CO 仅 `alloc_storage` 把 storage resize 回满(`:648/866`) | reshard(`free_storage` = `resize_(0)`,`:665/872`) |
 | unsharded 参数本体 | **0** | — | `as_strided` 视图 | 随上行 |
 
-- **CI(N):+p**(扁平 buffer;copy-in 目标是它的 narrow 视图)
+- **CI(N):显存 +p**(扁平 buffer;copy-in 目标是它的 narrow 视图)
 - **AG(N-1):+0**(不分配,写进 CI(N-1) 已开好的扁平 buffer)
-- **CO(N):+p**(逐参数 buffer;拷贝瞬间扁平+逐参数并存 = **2p**);完整参数本体 +0(视图)
+- **CO(N):显存 +p**(逐参数 storage 回满;拷贝瞬间扁平+逐参数并存 = **2p**);完整参数本体 +0(视图)
+
+> 注意:本表的 "+p" 是**显存占用**的增量;它**不等于**"每次新分配"——逐参数 buffer 的张量对象只建一次、之后是 storage 缩放,扁平 buffer 的物理块稳态来自缓存池。详见 §5.5 勘误。
 
 ### 5.3 为什么完整参数 buffer 始终 ≤ 2 份(不会到 3 份)
 
@@ -156,6 +158,37 @@ eager 模式下 `init_unsharded_param`(`[pt]_fsdp_param.py:501-502`):`unsharded_
 - **稳定态峰值 ≈ 2 组完整参数(2p)**:算第 N 组(pp(N)=p,或延迟的 flat(N))时,下一组的扁平 buffer(p)已就位 → 2p;叠在常驻 `base`(分片参数 P/N(fp32)+ 分片梯度 + 优化器 2P/N + 激活)之上。
 - **多流的代价就是 +1 组完整参数**:串行版任意时刻只 1 组(省显存但 AG 全暴露),多流为掩盖须保留 2 组。bf16 让这部分每元素减半,通常远小于优化器/激活,故默认开多流。
 
+### 5.5 勘误与补充(2026-06-12):分配 ≠ 新建——两层复用与社区机制
+
+> [!deprecated] 勘误
+> 本文初版(§5.2 旧表述)把 CI/CO 写成"每次开出 +p 的 buffer",容易让人误以为**每次都全新分配、有显著 mem-alloc 开销与碎片**。这不准确——"FSDP 没做内存复用"的印象是错的。复用其实已存在于两层;FSDP 没做的只是"自管持久 ping-pong 通信池"这一种形态。
+
+**两层既有复用(源码已核)**:
+
+1. **对象级——CO 侧只分配一次,之后 storage 缩放**。`init_all_gather_outputs` 有早退守卫(`[pt]_fsdp_param.py:443-444`:`if not force_recreate and len(self.all_gather_outputs) > 0: return`)——逐参数 buffer 的**张量对象只在首迭代创建**;此后每层每迭代只是 `alloc_storage/free_storage`(`:866-874`)把**同一张量的 storage 在 0↔满之间 `resize_`**(即 [[torchtitan_fsdp_analysis]] §3.4 的 storage-resizing 技巧)。
+2. **物理级——caching allocator 池命中**。CI 的扁平 buffer 虽每次都是新 `torch.empty`(对象级新),但 `torch.empty` ≠ `cudaMalloc`:物理块来自 CUDA caching allocator 池。transformer 结构规整 → 每层 buffer 大小完全相同 → **稳态次次池命中,不触发 cudaMalloc**,分配只剩 µs 级池查找。
+
+**为什么 FSDP2 不自管持久池**:
+
+- caching allocator 已提供等效复用且通用;自管池要重新实现**跨流安全**(A 流释放、B 流复用须等 event)——allocator 的 per-stream 池已内建这套。FSDP 的哲学:语义层只管生命周期与事件(`AllGatherState` 延迟释放),物理复用交给 allocator。
+- 组尺寸不全齐(embedding 组 / norm+lm_head 组 / block 组各异),持久池须按 max 配,常驻更高;且私有池内存**无法与激活错峰共享**(激活峰值在反向早期、通信缓冲常驻),总 reserved 可能不降反升。
+- 跨流碎片这个真痛点,官方给的是开关而非池:`_set_unshard_async_op(True)` docstring 原话(`[pt]_fully_shard.py:602-610`)"allows the all-gather allocations to happen in the **default stream, avoiding inter-stream memory fragmentation**"——代价是 copy-in 不再与计算重叠、需显式预取。
+
+**社区已有的相关机制(全部本地源码核实)**:
+
+| 层级 | 机制 | 位置 |
+|---|---|---|
+| 对象级复用 | unsharded buffer 建一次 + storage resize 0↔满 | `[pt]_fsdp_param.py:443/866-874` |
+| 物理级复用 | caching allocator 池命中;`expandable_segments:True` 治碎片 | allocator 配置 |
+| 跨流碎片 | `_set_unshard_async_op(True)` 分配挪回默认流 | `[pt]_fully_shard.py:599-610` |
+| 自定义分配钩子 | `AllGather/ReduceScatter` 协议带 `allocate()`;`set_custom_all_gather/reduce_scatter` 注入("better control over communication **and memory usage**") | `[pt]_fsdp_collectives.py:52/67`、`[pt]_fully_shard.py:458-475` |
+| 通信缓冲注册 | `set_allocate_memory_from_process_group(enable)`——缓冲直接从 ProcessGroup 分配(NCCL 用户缓冲注册/NVLS 零拷贝路线,本质即"持久注册缓冲") | `[pt]_fully_shard.py:595-597` |
+| 专属内存池 | `torch.cuda.MemPool` / `use_mem_pool` | `torch/cuda/memory.py:1159/1212` |
+| 编译路线 | traceable FSDP2 下 inductor pass `remove_fsdp2_unsharded_param_graph_input_usage` 把 `resize_+copy_` 消除(unsharded param 直接 alias AG 输出,连 copy-out 都省);CUDAGraph 固定地址 = 极致复用 | `[pt]_fsdp_param.py:516-519` 注释 |
+| 引擎级先例(静态规划路线) | Megatron 经典 `param_and_grad_buffer.py` 持久大缓冲;Megatron-FSDP 的 bucket 化持久缓冲(`BucketingPolicy`) | `Megatron-LM/megatron/core/distributed/{,fsdp/src/megatron_fsdp/}param_and_grad_buffer.py` |
+
+**值不值得自建持久池——分场景**:PyTorch eager + CUDA 上净收益小(alloc 已池命中、碎片有 expandable_segments、跨流有 async_op 开关);**值得做**的场景:① 零拷贝集合通信(NVLS/对称内存,入口即 `set_custom_all_gather` 的 `allocate()` / `set_allocate_memory_from_process_group`);② compile/CUDAGraph;③ **非 CUDA-allocator 栈(NPU)**——分配器行为不同、碎片更痛时,Megatron 式静态持久缓冲(按 layer 模板预分配 + ping-pong)很可能净赚,实现时须自管"跨流 event 界定复用安全点"(`AllGatherState` 即教材)。
+
 ---
 
 ## 6. 反向(`reshard_after_forward=True`)要点
@@ -180,6 +213,11 @@ eager 模式下 `init_unsharded_param`(`[pt]_fsdp_param.py:501-502`):`unsharded_
 | free_unsharded_param 释放 | `[pt]_fsdp_param.py:665-672` | ✅ |
 | 先 reshard 再 RS | `[pt]_fsdp_param_group.py:494-495` | ✅ |
 | 关梯度除法 / reshard 策略 | `torchtitan/distributed/fsdp.py:11/28-48` | ✅ |
+| **逐参数 buffer 仅首迭代创建(早退守卫)** | `[pt]_fsdp_param.py:443-446` | ✅(§5.5 勘误依据) |
+| alloc/free_storage = storage `resize_` | `[pt]_fsdp_param.py:866-874` | ✅ |
+| async_op 挪默认流避免跨流碎片 | `[pt]_fully_shard.py:599-610` docstring | ✅ |
+| `set_custom_all_gather` + `allocate()` 钩子 | `[pt]_fully_shard.py:458-475`、`[pt]_fsdp_collectives.py:52/67` | ✅ |
+| `set_allocate_memory_from_process_group` | `[pt]_fully_shard.py:595-597` | ✅ |
 
 > 图源:`assets/fsdp-overlap.svg`、`assets/fsdp-memory.svg`(可用 `@resvg/resvg-js` 或任意 SVG 工具重新导出 PNG)。
 

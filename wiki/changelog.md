@@ -4,6 +4,16 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-12: FSDP 深挖篇勘误——"分配 ≠ 新建":两层复用与社区机制(§5.5)
+
+**Type**: Errata + Knowledge Synthesis(源码新核 5 处:`init_all_gather_outputs` 早退守卫、`alloc/free_storage`=`resize_`、`_set_unshard_async_op` 跨流碎片说明、`set_custom_all_gather`/`allocate()` 钩子、`set_allocate_memory_from_process_group`)
+
+**更新文件**:
+
+- `torchtitan/torchtitan_fsdp_prefetch_overlap_memory_analysis.md` —— ① §5.2 修正误导表述:"+p" 是显存占用增量而非"每次新分配"(逐参数 buffer 张量仅首迭代创建,此后 storage resize 0↔满;扁平 buffer 物理块稳态来自 caching allocator 池命中,无 cudaMalloc);② 新增 §5.5 勘误与补充:两层既有复用、FSDP 为何不自管持久池(allocator 等效/跨流 event/尺寸不齐/reserved 反升)、社区机制清单(storage-resize、expandable_segments、async_op 挪流、custom allocate 钩子、PG 缓冲注册、MemPool、compile 消 resize+copy、Megatron 持久缓冲先例)、自建持久池的场景判断(NPU 栈最值得);③ §7 复核表扩 5 行;页头日期更新
+
+---
+
 ## 2026-06-11: torchtitan 系列新增两篇深挖伴篇(FSDP 预取/掩盖/显存、激活重计算 AC)
 
 **Type**: Knowledge Synthesis(源自 torchtitan `cf3c4312` + PyTorch 2.9.1 源码逐行核验的问答整理稿,配 SVG→PNG 机制图)
