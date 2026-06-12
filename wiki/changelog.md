@@ -4,6 +4,21 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-13: 新增 PyTorch Dispatcher 算子分发机制深度分析
+
+**Type**: Knowledge Synthesis（源自 PyTorch 源码 `c10/` + `aten/` + `torch/csrc/` 的问答整理稿；本机未装 torch，§11 代码示例输出为手算预期值）
+
+**新增文件**：
+
+- `02_engineering/01_ai_frameworks/pytorch_dispatcher_analysis.md` —— 覆盖 Dispatcher 设计动机、核心数据结构（DispatchKey/DispatchKeySet/OperatorEntry/KernelFunction boxed-unboxed）、调用流程 + redispatch 洋葱、**深入①** requires_grad 算子 Python→CUDA 逐层调用栈、分发顺序四要素（枚举优先级 / TLS / fallthrough-fallback / alias key）、**深入②** native_functions.yaml + torchgen 代码生成、C++→Python 类关系、注册与调用接口、自定义分发（`__torch_function__` / `__torch_dispatch__` / `TorchDispatchMode` / 自定义后端 key）、**深入③** 三个可运行示例（FlopCounterMode / relu→gelu 替换 / LoggingTensor 子类）
+
+**索引与交叉引用**：
+
+- `02_engineering/01_ai_frameworks/index.md` —— 新增「核心运行时（Dispatcher）」子节；最后更新 2026-06-13
+- `02_engineering/01_ai_frameworks/inductor/aotautograd_analysis.md` —— Related Pages 新增反链（AOTAutograd 用 `__torch_dispatch__` 追踪联合图，是该机制的直接消费者）
+
+---
+
 ## 2026-06-12: FSDP 深挖篇勘误——"分配 ≠ 新建":两层复用与社区机制(§5.5)
 
 **Type**: Errata + Knowledge Synthesis(源码新核 5 处:`init_all_gather_outputs` 早退守卫、`alloc/free_storage`=`resize_`、`_set_unshard_async_op` 跨流碎片说明、`set_custom_all_gather`/`allocate()` 钩子、`set_allocate_memory_from_process_group`)

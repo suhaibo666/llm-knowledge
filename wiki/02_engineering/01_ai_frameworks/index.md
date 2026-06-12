@@ -1,7 +1,7 @@
 # PyTorch Compilation Stack — 目录索引
 
 > 覆盖 PyTorch 编译流水线 (`torch.compile`): Dynamo 图捕获, AOT Autograd, Inductor 代码生成, CUDA/NPU Graphs
-> 最后更新: 2026-05-13
+> 最后更新: 2026-06-13
 
 ---
 
@@ -35,6 +35,12 @@ User Code → @torch.compile
 ---
 
 ## 页面列表
+
+### 核心运行时（Dispatcher）
+
+| 页面 | 核心主题 |
+|------|---------|
+| [[pytorch_dispatcher_analysis]] | **算子分发机制**: DispatchKey/KeySet 优先级、redispatch 洋葱、boxed/unboxed、torchgen 代码生成、`__torch_dispatch__` 自定义分发 |
 
 ### 编译架构
 
