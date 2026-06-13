@@ -19,6 +19,44 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-12: 入图判别页勘误——§8.2 修正「Inductor 边界 vs Triton 语言上限」的归因
+
+**Type**: Errata(PyTorch 上游源码核查 `pytorch/torch/_inductor/`,逐条带 文件:行号):原表述把「只能降解为 loop IR」隐含归因到 Triton 语言能力,经核查应修正为 **TorchInductor 自动 lowering+codegen 的设计边界**——Triton 语言本身能手写 matmul/flash-attention(triton tutorials + PyTorch 的 `.jinja` 模板本身即手写 Triton);仅复数/稀疏/部分 fp8 那类才是真后端特性缺失
+
+**更新文件**:
+
+- `op_plugin/npu_operator_graph_eligibility_guide.md` §8.2 —— ① 开头改用 Inductor loop-level IR 的准确定义(`ir.py:989 class Loops` docstring;`Pointwise/Reduction/Scatter/Scan/Sort`)+ `make_fallback→FallbackKernel`(`ir.py:8765`)机制;② 新增两个 callout:「关键澄清:Inductor 边界 ≠ Triton 上限」(mm 模板即手写 Triton,`mm.py:85`+`triton_mm.py.jinja`)与「对 NPU 适配的含义」(fallback 多为工程投入问题,torch_npu `_inductor/lowering.py:227-994` 即在补 NPU lowering;第二关是「软」边界,区别于第一/三关的硬约束);③ 标注 sort/topk/conv-backward/cumsum 为**条件性** fallback(`ir.Sort`/`ir.Scan` 可 codegen),非无条件退回
+
+---
+
+## 2026-06-12: 入图判别页深化——补「三关硬性不变量(为什么进不去)」+「新算子前瞻判据」(§8/§9)
+
+**Type**: Knowledge Synthesis(机制根因核查,逐条带 文件:行号):aclop 不可 capture 的根因 = `aclopCompileAndExecute` 运行时编译+执行融合 + 释放 GIL(OpParamMaker.cpp:144 注释) + OOM 重试 host 控制流,而 aclnn 是两段式(GetWorkspaceSize 算 tiling / aclnnXxx 只塞预编译 kernel)纯异步 task;inductor FALLBACK_LIST 两类根因 = IR 表达力边界(TORCH_NATIVE,GPU 也 fallback) vs 昇腾 intrinsic 缺口(NPU_EXTRA,超越函数/位运算 GPU 当 pointwise 但 triton-ascend 缺 libdevice);dynamo = 输出元数据须可符号推导
+
+**更新文件**:
+
+- `op_plugin/npu_operator_graph_eligibility_guide.md` —— 新增 §8「三关的硬性不变量:为什么进不去」(不变量层层收紧:第一关形状可预测 / 第二关计算可表达 / 第三关执行可录制;aclnn-only 铁律的 `aclopCompileAndExecute` 根因;`allow_internal_format=False` 为何救场;TORCH_NATIVE vs NPU_EXTRA 的「通用限制 vs 昇腾待补齐」之分;A2/A3-SIMD vs A5-SIMT 间接访存硬件根因)+ §9「面向新算子的前瞻判据」(决策树 Mermaid + 三关自检 checklist);原速查表顺延为 §10;目录补两项;新增 [[unbacked_symint_analysis]] 交叉引用
+
+---
+
+## 2026-06-12: 新增 op-plugin 算子接入域(3 篇 + 目录)——配置分类 / 注册链路 / 入图判别
+
+**Type**: Knowledge Synthesis(源自 `E:\97-codes\pytorch\torch_npu` 当前 checkout 的多代理源码核查:op-plugin codegen、torchnpugen、_inductor、NPUGraph、_meta_registrations 等,逐条带 文件:行号 证据)
+
+**新增文件**(`02_engineering/01_ai_frameworks/op_plugin/` 为新建目录,4 篇 `.md`):
+
+- `op_plugin/index.md` —— 域入口:从 yaml 到入图的一图概览 + 三篇导航 + 「这一域回答什么」对照表
+- `op_plugin/op_plugin_config_and_classification_guide.md` —— config 五文件字段;official/custom/symint(正交维度纠正)/quant;acl_op(aclop) vs op_api(aclnn);gen_opapi 结构化 vs 手写适配(「过适配」澄清);看一条 func 配置就分类的四维速查表
+- `op_plugin/op_registration_pipeline_analysis.md` —— 两段 codegen 串联;生成产物(RegisterNPU.cpp/CustomRegisterSchema.cpp/custom_ops.py);**TORCH_LIBRARY=静态初始化「库加载即注册」**;编译期→加载期(import torch_npu 时 dlopen libtorch_npu.so 触发静态初始化)→运行期时间线;acl_op/op_api 运行时三层选择;official/custom 两条完整调用链
+- `op_plugin/npu_operator_graph_eligibility_guide.md` —— 入图四路线总览;非 torchair 三关递进流水线(dynamo meta / inductor lowering+fallback / aclgraph aclnn-only 铁律);每关判别命令(TORCH_LOGS、has_kernel_for_dispatch_key、lowering.fallbacks、allow_internal_format);op_api/acl_op 贯穿主线
+
+**索引与交叉引用**:
+
+- `01_ai_frameworks/index.md` —— 子目录表新增 [[op_plugin/index]];页面列表新增「op-plugin 算子接入」区(3 行);页头摘要与最后更新改 2026-06-12
+- 交叉引用:三篇互链,并 [[link]] 到既有 [[npu_compile_paths_overview]] / [[npu_triton_backend_deep_analysis]] / [[aclgraph_deep_analysis]] / [[PyTorch_Dynamo_Technical_Analysis]] / [[npu_lowering_guide]]。入图判别页明确定位为「判别视角」,与既有「路径实现全景」页互补、不重复
+
+---
+
 ## 2026-06-12: FSDP 深挖篇勘误——"分配 ≠ 新建":两层复用与社区机制(§5.5)
 
 **Type**: Errata + Knowledge Synthesis(源码新核 5 处:`init_all_gather_outputs` 早退守卫、`alloc/free_storage`=`resize_`、`_set_unshard_async_op` 跨流碎片说明、`set_custom_all_gather`/`allocate()` 钩子、`set_allocate_memory_from_process_group`)

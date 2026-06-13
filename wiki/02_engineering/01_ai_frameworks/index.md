@@ -1,6 +1,6 @@
 # PyTorch Compilation Stack — 目录索引
 
-> 覆盖 PyTorch 编译流水线 (`torch.compile`): Dynamo 图捕获, AOT Autograd, Inductor 代码生成, CUDA/NPU Graphs
+> 覆盖 PyTorch 编译流水线 (`torch.compile`): Dynamo 图捕获, AOT Autograd, Inductor 代码生成, CUDA/NPU Graphs；以及 op-plugin 算子接入（配置/注册/入图判别）
 > 最后更新: 2026-06-13
 
 ---
@@ -31,6 +31,7 @@ User Code → @torch.compile
 | [[mlir/index]] | MLIR 核心概念、Torch-MLIR Pass 管线、Triton vs MLIR、NPU MLIR 后端 (6 篇) |
 | [[cudagraphs/index]] | CUDA Graphs 使用指南, NPU Graphs 对比 (10 篇) |
 | [[cudagraphs/npugraphs/index]] | NPU Graphs 深度分析 (8 篇) |
+| [[op_plugin/index]] | **op-plugin 算子接入**：配置分类、yaml→dispatcher 注册链路与生效时机、入图判别 (3 篇) |
 
 ---
 
@@ -79,6 +80,14 @@ User Code → @torch.compile
 | [[NPU_Inductor_Backend_Analysis]] | NPU 后端集成架构 |
 | [[NPU_Inductor_Backend_Mechanism]] | NPU 后端内部机制 |
 | [[npu_triton_backend_deep_analysis]] | **Triton/Inductor default 路径深度分析**: golden_var_list、CATLASS/CK GEMM、35+ monkey patches、NPUIndexTritonKernel |
+
+### op-plugin 算子接入
+
+| 页面 | 核心主题 |
+|------|---------|
+| [[op_plugin_config_and_classification_guide]] | op-plugin config 字段、official/custom/symint/quant、acl_op(aclop) vs op_api(aclnn)、gen_opapi 结构化 vs 手写适配（「过适配」澄清）、四维分类速查表 |
+| [[op_registration_pipeline_analysis]] | yaml→两段 codegen→dispatcher：**TORCH_LIBRARY 静态初始化「库加载即注册」**、编译期→加载期→运行期时间线、acl_op/op_api 运行时三层选择、两条完整调用链 |
+| [[npu_operator_graph_eligibility_guide]] | 算子入图判别：dynamo/inductor+triton/aclgraph 三关判据与判别命令、aclnn-only 铁律、op_api/acl_op 贯穿主线 |
 
 ### CUDA/NPU Graphs
 
