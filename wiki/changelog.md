@@ -4,6 +4,16 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-13: 升级 NPU Inductor 优化思想页 —— 新增 §十二「实战：从源码看优化案例」
+
+**Type**: Source-Verified Augmentation（本地 `pta_suhaibo/torch_npu` checkout **v2.7.1** / commit `8bcbe1939` 逐行核验，可 `git grep` 对照；区别于 §一–§十一 基于来源文档的指示性行号）
+
+**更新文件**：
+
+- `inductor/npu_inductor_optimization_analysis.md` —— 新增 §十二「实战：从源码看优化案例」：① `mm`/`addmm`→CATLASS 全链路（decomposition 排除 → 连续守卫 → Cube 模板门控 → autotune → epilogue → ACLNN 兜底）；② 规约类（`mean` 全程 fp32 / `tile_generator` UB 公式 `max_numel_threshold = ub_size//ptr//dtype` / 何时关 persistent / `native_layer_norm` 条件退 ACLNN / cumsum int64→int32）；③ elementwise（`tl_math.*` 覆写 / `expm1` 分解）；④ 融合 pass 范式（`register_custom_pass` 二维注册表 + `is_inference_check` 门控 + `SHUT_DOWN_FX_PASS_LIST` 开关；14+ fold pass 清单；dtype_optimal int64→int32 / fold_sink_view / unfold_dual_reduction 三个范式）；⑤ 案例→硬件思想映射表。同步更新页首代码位置 note（§十二 行号已核验）。
+
+---
+
 ## 2026-06-13: 补充 inductor fallback 与 aclgraph 捕获门禁（当前源码 a6655d4 复核）
 
 **Type**: Source Re-verification（基于 torch_npu 当前源码 `a6655d4` + pytorch fork `9922478` 的逐行复核；非 `raw/` 源，行号以该 commit 为准；既有相关页多基于 2.7/2.7.1，故为「校正 + 补充」）

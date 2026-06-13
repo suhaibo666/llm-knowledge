@@ -6,7 +6,7 @@
 > 最后更新：2026-06-13
 
 > [!note] 代码位置说明
-> 本页 `file:line` 引用沿用来源文档体系的标注（torch_npu 2.7 分支），**文件名 + 函数名为准，行号为指示性**（不同版本/分支会漂移，本库 [[npu_triton_backend_deep_analysis]] 的同名逻辑行号即与此不同）。
+> §一–§十一 的 `file:line` 沿用来源文档体系的标注（torch_npu 2.7 分支），**文件名 + 函数名为准，行号为指示性**（不同版本/分支会漂移，本库 [[npu_triton_backend_deep_analysis]] 的同名逻辑行号即与此不同）。**§十二「实战」的行号已用本地 `pta_suhaibo/torch_npu` checkout（v2.7.1，commit `8bcbe1939`）逐一核验**，可直接 `git grep` 对照。
 
 ---
 
@@ -221,6 +221,126 @@ flowchart LR
 4. **多策略 fallback**——补上类似 cooperative reduction 的「正确但不最优」兜底。
 
 动态 shape 的逐算子退化链与改进方向，详见 [[inductor_codegen_dynamic_shape_analysis]] 与 [[dynamic_shapes_full_analysis]]。
+
+---
+
+## 十二、实战：从源码看优化案例（torch_npu v2.7.1 已核验行号）
+
+把 §一–§十一 的抽象思想落到**可点开、可 `git grep` 的真实源码**上。行号均经本地 `pta_suhaibo/torch_npu` checkout（**v2.7.1**，commit `8bcbe1939`）核验；路径前缀统一省略为 `torch_npu/_inductor/`。
+
+### 12.1 矩阵乘 `mm` / `addmm` —— 一个算子踩中几乎所有概念
+
+```python
+# 第 0 步：addmm 先被「禁止分解」（前提）—— trait F
+# decomposition.py:10  DECOMPOSITION_OVERLOAD_OP = [ ... aten.addmm(:17), aten.gelu(:18),
+#                       aten.native_layer_norm(:19), ... ]
+# decomposition.py:32  for op in overload_op_set: if op in decompositions: del decompositions[op]
+#   → GPU 把 addmm 拆成 mm+add 再融合；NPU 故意 del 掉，整体保留才能整块路由到 Cube/ACLNN
+#   （同文件 :46 native_dropout→npu._npu_dropout = 专用算子替代；:24 max_pool2d 仅 910_9391+ 排除 = 版本感知）
+
+# 第 2 步：连续访存守卫 —— trait C
+# kernel/mm.py:95  is_contiguous_input = is_contiguous_striding(mat1) and is_contiguous_striding(mat2)
+# kernel/mm.py:60  def is_contiguous_striding(...): row_major(stride[1]==1) or col_major(stride[0]==1)
+#   → 只有规整连续布局才允许走 CATLASS（Cube 的 L0A/L0B 喂数走 DMA，要求规整 layout）
+
+# 第 3 步：Cube 模板门控 + 入选 —— trait D
+# kernel/mm.py:99  if is_contiguous_input and is_nonzero and use_catlass_template("mm", layout, m, n, k):
+#                      CATLASS1xGemmTemplate.add_catlass_gemm_choices(choices, layout, [mat1, mat2])
+# utils.py:132  use_catlass_template = 白名单(默认 mm,addmm,bmm) + m*n*k≥min_gemm_size(:145) + dtype∈{fp16,bf16,fp32} + max_autotune
+#   → 小矩阵不上模板（上 Cube 模板有固定开销，不划算）
+
+# 第 4–5 步：多候选可信 autotune + 兜底 —— trait G/F
+# kernel/mm.py:90   choices = [ATen] (+CATLASS +CK +CppGemm)
+# kernel/mm.py:134  autotune_select_algorithm(...)            # AICore 实测选优
+# kernel/mm.py:135  except NoValidChoicesError: aten_mm...    # 退回 ATen → ACLNN
+
+# epilogue 融合（片上闭环）—— trait D
+# codegen/catlass/catlass_scheduling.py:230  _can_fuse_epilogue_impl（:253 不支持链式，:305 CatlassEVGCodegen 生成）
+#   → matmul 结果还在 L0C，把 bias/激活顺手做完再写回，省一次 GM 往返
+```
+
+### 12.2 规约类（reduction）
+
+```python
+# mean：全程 fp32 中间精度 —— trait E
+# lowering.py:257  output_dtype = x.get_dtype()
+# lowering.py:258  if output_dtype in (torch.float16, torch.bfloat16): x = to_dtype(x, torch.float)  # 升 fp32
+# lowering.py:260  sum_result = sum_(x, axis, keepdim)                                                # fp32 累加
+# lowering.py:264  return to_dtype(div(sum_result, denom), output_dtype)                             # 降回
+#   注释原文：# compute in higher-precision until end of mean lowering
+
+# persistent reduction 的 UB 公式（印证 §四二手公式）—— trait B + A
+# codegen/tile_generator.py:37  self.input_ptr_num = 3 if input_ptr_num==0 else min(input_ptr_num, 3)
+# codegen/tile_generator.py:39  local_mem_size = 128*1024 if SIMT_ONLY else config.ub_size
+# codegen/tile_generator.py:40  self.max_numel_threshold = local_mem_size // input_ptr_num // dtype_bytes   # ← UB 公式
+# codegen/tile_generator.py:41  self.stop_numel = min(max_numel_threshold, max_total_numel//(num_vector_core*dtype_bytes))//8
+#   → UB 容量 + 固定核数 num_vector_core 同框：一块规约能否塞进单核，按字节精算
+
+# 何时「关」persistent —— trait B
+# codegen/scheduling.py:612  # pure_simt_kernel, high dim reduction don't use persitent reduction
+# codegen/scheduling.py:613  if kernel.is_unified_simt_kernel() and kernel.reduction_dim()!=len(golden_var_list)-1:
+# codegen/scheduling.py:614      kernel.persistent_reduction = False     # ← 依赖 golden_var_list
+
+# native_layer_norm：不分解 + 自定义 lowering + 条件 fallback —— trait F + E
+# lowering.py:890  @register_lowering(aten.native_layer_norm)
+# lowering.py:899  if get_soc_version()>=250 and x.dtype in (bf16, fp16): return fallback_handler(...)  # 退回 ACLNN
+# lowering.py:913  否则 var_mean_helper_ → sub → rsqrt(var+eps) → mul → 仿射
+```
+其它：`cumsum` 整数输入 SoC<250 时 **int64→int32**（`lowering.py:266-270`）；`argmax/argmin` 用 `make_reduction(override_return_dtype=int64)`（`lowering.py:221-227`，`make_reduction` 覆写全局 `:159`）。
+
+### 12.3 Elementwise 类
+
+```python
+# 数学函数换 NPU 优化库 tl_math.* —— codegen
+# codegen/triton.py:99  class NPUTritonKernelOverrides(TritonKernelOverrides):
+#   :103 exp→tl_math.exp  :107 sqrt→tl_math.sqrt  :111 tanh→tl_math.tanh
+#   :115 rsqrt→tl.rsqrt(保留)  :119 floor  :123 erf  :127 ceil
+
+# expm1 自定义分解 —— decomposition.py:36
+#   return torch.exp(x) - torch.ones_like(x)     # expm1(x)=exp(x)-1，落到 NPU 高效 exp+减法
+```
+
+### 12.4 融合 / 图改写 pass 范式
+
+**注册范式**（框架本身值得学）
+```python
+# fx_passes/ascend_custom_passes/register_custom_pass.py:7
+#   ASCEND_CUSTOME_PASS_REGISTER = {ptype: {level: []}}        # 「类型 × 优先级」二维表
+# register_custom_pass.py:13  @register_custom_pass(PassType.PRE/POST, FxPassLevel.LEVELn)
+# register_custom_pass.py:17  SHUT_DOWN_FX_PASS_LIST 环境变量可单独/全部关 pass
+# ascend_custom_passes/__init__.py:15  仅 is_inference_check() 为真才执行；:16 按 sorted(FxPassLevel) 有序跑
+```
+
+**当前 pass 清单**（`ascend_custom_passes/ascend_graph_pass.py`）
+
+| 类别 | Pass | 位置 |
+|---|---|---|
+| 结构折叠 / 冗余消除（POST，14+） | `fold_cast/cat/clone/detach/expand/reduce/slice/squeeze/to_copy/where/redundant_ops` `view_fold_pass` `fold_four_op` `fold_sink_view` | :172–654 |
+| 结构折叠（PRE） | `cat_slice_cat_fold_pass` `pad_slice_fold` | :46 / :119 |
+| dtype 优化（PRE） | `dtype_optimal_pass` | :710 |
+| 反折叠 / 绕限制（POST） | `unfold_dual_reduction_pass` | :773 |
+
+- **范式①　dtype 优化 int64→int32**（`ascend_graph_pass.py:710`）：`arange(dtype=int64)` 静态范围塞得进 int32 → 改 int32（:750）；`x.to(int64)` 且源 dtype∈{fp32,int32,bool,int16,int8} → 改 int32（:758）。NPU 上 int32 索引/计算更省。
+- **范式②　view 下沉到激活之后**（`fold_sink_view:397`）：`x→view→act` 改写成 `x→act→view`，激活作用在原始（更连续）布局，view 后移更易合并/消除。
+- **范式③（诚实反例）　`unfold_dual_reduction_pass`**（`:773`）：注释 `inductor-ascend can not fully support all dual reduction`，主动把 `x.sum()` 拆成 `x.sum(dim=2).sum(dim=1).sum(dim=0)` 绕 `num_split` 限制，并标 `todo: remove num_split patch`。硬件/实现限制 → 用图改写打补丁。
+
+### 12.5 案例 → 硬件思想 映射
+
+| 案例 | 思想（trait） | 文件:行号（v2.7.1） |
+|---|---|---|
+| `addmm` 不分解 → CATLASS | 分解阶梯 + Cube (F/D) | `decomposition.py:17` · `kernel/mm.py:99` |
+| `mm` 连续守卫 | 连续访存 (C) | `kernel/mm.py:60-74, 95-98` |
+| CATLASS epilogue | 片上闭环 (D) | `codegen/catlass/catlass_scheduling.py:230` |
+| `mean` 全程 fp32 | fp32 中间精度 (E) | `lowering.py:250-264` |
+| UB 公式 `max_numel_threshold` | 塞满 UB + 固定核数 (B/A) | `codegen/tile_generator.py:37-41` |
+| 高维 SIMT 关 persistent | 单核 UB 闭环决策 (B) | `codegen/scheduling.py:612-614` |
+| layer_norm 低精度退 ACLNN | 能力门控 (F) | `lowering.py:890-901` |
+| `tl_math.*` | NPU 数学库 (codegen) | `codegen/triton.py:99-127` |
+| int64→int32 | 索引 dtype 优化 | `ascend_graph_pass.py:710` |
+| `fold_sink_view` | 结构重排利于融合 | `ascend_graph_pass.py:397` |
+
+> [!note] 版本提示
+> 以上为 **v2.7.1**；`config_fusion.py` 在本 checkout 不存在（来源文档基于的分支不同），本版自定义 pass 全走 `ascend_custom_passes` 注册框架，且**仅推理生效**（`is_inference_check()` 门控）。
 
 ---
 
