@@ -4,6 +4,44 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-13: 补充 inductor fallback 与 aclgraph 捕获门禁（当前源码 a6655d4 复核）
+
+**Type**: Source Re-verification（基于 torch_npu 当前源码 `a6655d4` + pytorch fork `9922478` 的逐行复核；非 `raw/` 源，行号以该 commit 为准；既有相关页多基于 2.7/2.7.1，故为「校正 + 补充」）
+
+**扩展既有页面（不新建、不删除原文）**：
+
+- `02_engineering/01_ai_frameworks/inductor/npu_lowering_guide.md` —— 新增 §9「当前源码复核（a6655d4）」：① 校正 `_register_npu_inductor_fallbacks` 当前为**纯黑名单**（白名单语义已移至 `ascend_npu_ir` 后端，两后端策略相反）② `FALLBACK_LIST` 两半（`TORCH_NATIVE` = GPU 也 fallback 的复杂算法 / `NPU_EXTRA` = 昇腾 triton 未支持）③ `TORCH_NATIVE` ↔ 上游 `make_fallback` **六分类**映射（含 `# 5) Impossible (missing triton features)`）④ 校正间接访存当前为 `INDIRECT_MEM_FALLBACK_LIST`**黑名单** + A2/A3 vs A5 ⑤ `embedding+sum` 融合收益**实测**（eager 440 / fallback 1209 / 融合 260 us，反驳「融合没收益」）⑥ `isnan` 疑似 bug（`:1011` 条件比错变量）
+- `02_engineering/01_ai_frameworks/cudagraphs/npugraphs/aclgraph_deep_analysis.md` —— 新增「差异 8：aclop/aclnn 捕获门禁」：只有 aclnn 能入图、aclop 因运行时 JIT 被禁（`OpCommand.cpp:135-139`）、internal_format 放大、`capture_begin` 前置（`TASK_QUEUE_ENABLE≠2` / 非默认流 / `IsCaptureSupported`）、RNG 捕获期禁用
+
+**交叉引用**：
+
+- `npu_lowering_guide` ↔ `aclgraph_deep_analysis` 互加 Related Pages —— aclnn/aclop 是 inductor fallback 关与 aclgraph 捕获关的**公共枢纽**（fallback 到 aclop 会同时破坏融合与捕获）；`npu_lowering_guide` 增链 `npu_inductor_optimization_analysis`
+
+**矛盾标注（保留双方）**：
+
+- `cudagraphs/npugraphs/comparison.md` 捕获时序图（`:236` `aclopExecute (记录到图)`、`:246` 独立 `aclmdlRIInstantiate()`）与源码不符：捕获期 aclop 被禁、`model_ri` 于 `capture_begin` 即创建（三级 API）——已在 `comparison.md` 与 `aclgraph_deep_analysis.md` 双向 `> [!contradiction]` 标注
+
+---
+
+## 2026-06-13: 新增 NPU Inductor 优化思想全景（硬件驱动）
+
+**Type**: Knowledge Synthesis（源自外部文档体系 GitCode `anyrenwei/Ascend-Related-Docs` 的 `ascend/torch_inductor/inductor/` 全系列，6 个并行子代理跨 02–09 + tiling-comparison/dynamic-shape/refactor-design 提取 80+ 优化点后综合；非 `raw/` 源，基于 torch_npu 2.7 分支；达芬奇架构为背景知识，行号指示性）
+
+**新增文件**：
+
+- `02_engineering/01_ai_frameworks/inductor/npu_inductor_optimization_analysis.md` —— 把抽象「优化思想」逐条落到达芬奇硬件特性上，按「**硬件特性 → 优化思想 → 实际案例**」组织、跨 Triton/MLIR/DVM 三后端：① 编译时驱动（两阶段 tiling/TileGenerator）② 塞满 UB·仅 persistent 规约（UB 公式 block + no-loop）③ 连续访存（golden_var_list + 显式 permute）④ Cube 专用模板（CATLASS + EVG epilogue）⑤ fp32 中间精度（sum/mean/tanh clamp/bf16 promote）⑥ 能力门控 + 分解阶梯（~635 fallback、decomp 13/9/45）⑦ 可信硬件度量（AICore profiler 计时）⑧（非硬件）工程优化（origin tracking O(n²)→O(n)）；收尾「动态 shape 是编译时驱动的反噬」+ 四改进方向。含 2 个 Mermaid（AI Core 结构 / 硬件→思想→案例映射）
+
+**索引与交叉引用**：
+
+- `inductor/index.md` —— NPU 后端节新增该页（标注「优化思想全景 why」，与既有「what/how」页互补）；最后更新 2026-06-13
+- `inductor/npu_triton_backend_deep_analysis.md` —— Related Pages 新增反链（本页「why」与该页「what/how」互补）
+
+**矛盾标注（保留双方）**：
+
+- fallback / patch 计数口径差异——本页（2.7 来源）fallback ~635 / patch 30+，本库 [[npu_triton_backend_deep_analysis]]（v2.7.1 源码核查）fallback 859 / patch 35+；已在页内 `> [!contradiction]` 标注，深入以 v2.7.1 源码页为准
+
+---
+
 ## 2026-06-13: 新增 PyTorch Dispatcher 算子分发机制深度分析
 
 **Type**: Knowledge Synthesis（源自 PyTorch 源码 `c10/` + `aten/` + `torch/csrc/` 的问答整理稿；本机未装 torch，§11 代码示例输出为手算预期值）

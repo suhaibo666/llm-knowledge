@@ -435,3 +435,4 @@ Inductor Triton 路径是 torch_npu 与社区差距**最大**的一条路径。�
 - [[npu_compile]] — NPU 编译工作流
 - [[inductor_compiler_pipeline_analysis]] — PyTorch Inductor 端到端编译管线
 - [[triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR 后端对比
+- [[npu_inductor_optimization_analysis]] — NPU Inductor 优化思想全景（硬件特性 → 思想 → 案例，本页「what/how」的「why」侧互补）

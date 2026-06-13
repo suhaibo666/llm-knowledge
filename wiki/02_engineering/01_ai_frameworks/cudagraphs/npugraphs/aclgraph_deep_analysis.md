@@ -504,6 +504,46 @@ ACLGraph 目前仅捕获**运行时算子调度序列**，不做图层面的优�
 
 ---
 
+#### 差异 8：aclop/aclnn 捕获门禁 — 只有 aclnn 算子能入图（2026-06-13 补，源码 a6655d4）
+
+**位置**：`torch_npu/csrc/framework/OpCommand.cpp:129-228`、`torch_npu/csrc/core/npu/NPUGraphsUtils.h:93-105`
+
+这是 ACLGraph **最关键、CUDA 完全没有**的一道捕获资格门禁。NPU 算子有两条执行路径，捕获期待遇相反：
+
+```cpp
+// OpCommand.cpp:129  aclop 路径
+void OpCommand::Run() {
+    if (aclCmd->CheckCustomHandlerNull()) {        // :132 真 aclop(无 opapi 自定义句柄)
+        at_npu::aclops::LazyInitAclops();           // :135
+        AclSetCompileopt(ACL_OP_JIT_COMPILE, ...);  // :137 运行时 JIT 编译!
+        c10_npu::assertNotCapturingAclop(...);      // :139 捕获中 → 直接报错
+    }
+    ...
+}
+// OpCommand.cpp:183  aclnn(opapi)路径 —— 无 assertNotCapturing，可入图
+void OpCommand::RunOpApi(...) { ... }
+```
+
+- **根因**：aclop 在执行期做**主机侧 JIT 编译**（`:135-137`），而 capture 只记录 device 任务下发，host 侧 JIT 行为无法被录制 → 必须禁止；aclnn 是预编译 kernel，纯下发，故可捕获。
+- **internal format 放大**：私有格式（NZ 等）常把算子打到 aclop 路径，故报错提示 `torch.npu.config.allow_internal_format = False`（`NPUGraphsUtils.h:100`），逼出 aclnn。
+- **官方口径**：`pytorch_compile_npugraph_desc.md:53` "仅支持 NN 算子：所有算子必须为 aclnn 算子方可入图"。
+- **与 fallback 关连通**：见 [[npu_lowering_guide]] §9——**一个 fallback 到 aclop 的算子，既破坏 inductor 融合，又会直接让 aclgraph 捕获报错**；走 aclnn 的 `ExternKernel` 则两关都安全。aclnn/aclop 是 inductor fallback 关与 aclgraph 捕获关的公共枢纽。
+
+**capture_begin 的其它硬前置**（`NPUGraph.cpp`，均无 CUDA 对应或语义不同）：
+
+| 门禁 | 行号 | 说明 |
+|---|---|---|
+| `TASK_QUEUE_ENABLE != 2` | :170-173 | NPU 二级流水 Level 2 与捕获不兼容，须 export 为 0/1（纯 NPU 概念） |
+| 非默认流 | :181-184 | 须在非默认流捕获（同 CUDA `cudaStreamCaptureModeGlobal`） |
+| 能力门 `IsCaptureSupported()` | NPUGraphsUtils.cpp:7 | CANN/硬件不支持时捕获状态恒 `None`，等于禁用 graph |
+
+此外 RNG 状态变更在捕获期也被禁（`NPUGeneratorImpl.cpp` 的 register_state / seed / set_offset / clone 等挂 `assertNotCapturing`，`:139/269/301/484/517`），须走 graph-safe RNG 协作（`NPUGraph.cpp:188-195` 注册 generator + `capture_prologue/epilogue`）。
+
+> [!contradiction] 与 [[comparison]] 捕获时序图的出入
+> [[comparison]] 的捕获时序图（`comparison.md:236`）画的是 `aclopExecute (记录到图)`，且 `:246` 另画了独立的 `aclmdlRIInstantiate()` 步骤。按当前源码两点不符：① **aclop 在捕获期是被禁止的**（`OpCommand.cpp:139`），真正入图的是 aclnn；② `model_ri` 在 `capture_begin` 即创建（本页三·差异 2），torch_npu 路径中**无独立 instantiate**。该时序图为简化示意，深入以源码为准。
+
+---
+
 ## 六、总结
 
 ACLGraph 是 torch_npu 与社区差异**中等但很关键**的一条路径。它的核心差异来源于 **CANN aclmdlRI API 与 CUDA Graph API 的本质不同**，而非 Inductor 层面的设计分歧。
@@ -524,3 +564,4 @@ ACLGraph 是 torch_npu 与社区差异**中等但很关键**的一条路径。�
 - [[torch_compile_npugraphs_deep_dive]] — NPU Graphs 与 torch.compile 集成深度分析
 - [[npugraphs_memory_management_analysis]] — NPU Graphs 内存管理
 - [[torch_compile_mode_reduce_overhead_vs_backend_npugraphs]] — reduce_overhead vs npugraphs
+- [[npu_lowering_guide]] — NPU lowering 与 fallback（§9）；差异 8 的 aclnn/aclop 把 fallback 关与捕获关连通

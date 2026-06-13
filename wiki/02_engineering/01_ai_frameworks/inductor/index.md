@@ -1,7 +1,7 @@
 # TorchInductor — 目录索引
 
 > 覆盖 PyTorch Inductor 后端全流程：IR lowering、代码生成、调度、NPU 适配
-> 最后更新: 2026-05-11
+> 最后更新: 2026-06-13
 
 ---
 
@@ -42,6 +42,7 @@
 | [[NPU_Inductor_Backend_Mechanism]] | NPU 后端内部实现机制 |
 | [[npu_triton_backend_deep_analysis]] | **Triton/Inductor default 路径深度分析**: golden_var_list、CATLASS/CK GEMM、35+ monkey patches、NPUIndexTritonKernel |
 | [[npu_compile_paths_overview]] | **NPU compile 路径全景**，含 GPU vs NPU Dynamic Shape 难易度对比（§9） |
+| [[npu_inductor_optimization_analysis]] | **优化思想全景（why）**：按「**硬件特性 → 优化思想 → 实际案例**」组织，跨 Triton/MLIR/DVM 三后端——编译时驱动、塞满 UB、连续访存、Cube 专用模板、fp32 中间精度、能力门控、可信度量；附动态 shape 反噬 |
 
 ### 调试与诊断
 

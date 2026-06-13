@@ -9,6 +9,7 @@
 6. [NPU 专有 IR 节点](#6-npu-专有-ir-节点)
 7. [配置体系](#7-配置体系)
 8. [调试与扩展指南](#8-调试与扩展指南)
+9. [当前源码复核（a6655d4）：两半 fallback、make_fallback 六分类、融合收益实测](#9-当前源码复核a6655d4两半-fallbackmake_fallback-六分类融合收益实测)
 
 ---
 
@@ -769,6 +770,89 @@ npu_config.force_fallback_kernel_id = 'all'        # 全部 fallback
 
 ---
 
+## 9. 当前源码复核（a6655d4）：两半 fallback、make_fallback 六分类、融合收益实测
+
+> 2026-06-13 基于 **当前 torch_npu 源码 `a6655d4`** 复核（本页 §1–§8 部分行号/机制源自较早版本）。本节是对前文的**校正 + 补充**，不删除原文。
+> 关联：[[npu_inductor_optimization_analysis]] §八（why 侧，2.7 口径）、[[aclgraph_deep_analysis]] 差异 8（aclnn/aclop 把本节的 fallback 关与捕获关连通）。
+
+### 9.1 校正：主 `_inductor` 后端当前是**纯黑名单**（无 soc A/B）
+
+> [!note] 与 §3.1 的版本差异
+> §3.1 描述的 `ENABLE_FALLBACK_LIST` 环境变量 + soc 门控的「策略 A 黑名单 / 策略 B 白名单」是**较早版本**。当前源码 `lowering.py:191-210` 的 `_register_npu_inductor_fallbacks` 已简化为**纯黑名单**：
+
+```python
+# torch_npu/_inductor/lowering.py:204-207 (a6655d4)
+for op in lowering.lowerings:                 # 继承上游全部 lowering
+    if op in FALLBACK_LIST and op not in decompositions and isinstance(op, (...)):
+        make_fallback(op)                     # 命中黑名单即降级覆盖
+```
+
+即：**先继承上游全量 lowering（默认尽量融），再把 `FALLBACK_LIST` 里的 op 逐个覆盖成 fallback**。`:205` 的 `op not in decompositions` 守卫：有 decomp 的 op 在 lowering 前已被拆掉，列了也不触发（冗余/防御性）。环境变量旁路改名为 `NPU_INDUCTOR_FALLBACK_LIST`（`config.py:111`）。
+
+白名单（GENERATE_LIST）语义已移到**另一个后端** `ascend_npu_ir`：`ascend_npu_ir/config.py:160-169` 的 `fallback_to_aten_mode` ∈ {off / include(黑名单) / exclude(白名单，默认) / all}，默认 `"exclude"` 下只融 `GENERATE_LIST`（POINTWISE + NON_POINTWISE 一小撮），其余全 fallback。**两个后端策略相反**：主 `_inductor` 黑名单（激进融），`ascend_npu_ir` 默认白名单（保守融）。
+
+### 9.2 `FALLBACK_LIST` 的两半
+
+`lowering_fallback_list.py:1009` `FALLBACK_LIST = TORCH_NATIVE_FALLBACK_LIST + NPU_EXTRA_FALLBACK_LIST`。头注释（`:2-5`）原文："will be fallbacked to AclNN op and will not be allowed to lowering and fusion. **After fixed and verified, it can be removed**"——即 fallback 是「还没支持/验证」的临时清单，不是「融合没收益」。
+
+| 子表 | 行号 | 性质 | 代表算子 |
+|---|---|---|---|
+| `TORCH_NATIVE_FALLBACK_LIST` | :658-1006 | **GPU 也 fallback 的复杂算法** | linalg 全家、SDPA、FFT、nonzero、sort/topk、special_* 多项式、随机 |
+| `NPU_EXTRA_FALLBACK_LIST` | :40-656 | **昇腾 triton 还没支持** | 超越函数(acos/bessel/lgamma)、位移/按位、卷积/池化、in-place、集合通信、scatter/index、大批 prims |
+
+### 9.3 `TORCH_NATIVE` ←→ 上游 `make_fallback` 六分类
+
+`TORCH_NATIVE_FALLBACK_LIST` 几乎是上游 `pytorch/torch/_inductor/lowering.py` make_fallback 清单的镜像。上游按难度注释成 6 类：
+
+| 上游分类（lowering.py 行号） | 代表算子 |
+|---|---|
+| `# 1) Easy`(:3537) | uniform / exponential / _pdist_forward / soft_margin_loss_backward |
+| `# 2) Medium`(:3557) | _trilinear |
+| `# 3) Difficult`(:3561) | segment_reduce / histc / addbmm / _cudnn_rnn / _embedding_bag |
+| `# 4) Backwards`(:3596) | 各类 *_backward(adaptive/fractional pool、replication_pad、upsample、grid_sampler) |
+| `# 5) Impossible (missing triton/CPU features)`(:3613) | **全部 linalg**、nonzero、randperm、resize_、_fft_r2c、sparse、special_* |
+| `# 6) Pattern-matched`(:3692) | SDPA(flash/efficient/cudnn attention) |
+
+关键：`# 5) Impossible (missing triton features)` 是上游**自认 triton 实现不了**的（数据依赖的 nonzero、需复数的 fft、整套数值线代分解）——GPU inductor 自己也 fallback，昇腾跟随，与昇腾无关。
+
+### 9.4 校正：间接访存当前是 `INDIRECT_MEM_FALLBACK_LIST`（黑名单）
+
+> [!note] 与 §4.2 的版本差异
+> §4.2 描述的是 `INDIRECT_MEM_GENERATE_LIST`（白名单，mode 开启时**加入** codegen）。当前源码反过来，用 `INDIRECT_MEM_FALLBACK_LIST`（黑名单，mode 关闭时**加入** fallback）：
+
+```python
+# lowering_fallback_list.py:1042-1043 (a6655d4)
+if not inductor_indirect_memory_mode:                 # A2/A3 恒 None
+    FALLBACK_LIST += INDIRECT_MEM_FALLBACK_LIST        # cat/embedding/gather/index/scatter/...
+```
+
+`inductor_indirect_memory_mode`（`config.py:190-204`）**仅 A5（soc ≥ Ascend950 = 260）** 才读环境变量（默认 `simd_simt_mix`）；A2/A3 恒为 `None` → 离散访存算子并入 fallback。官方约束印证：`docs/.../non_contiguous_accesses/INDUCTOR_INDIRECT_MEMORY_MODE.md:13` "A2、A3 不支持离散访存类算子的 inductor 融合，仅在 A5 上支持"。
+
+### 9.5 融合收益实测：fallback 时反而比 eager 慢（反驳「融合没收益」）
+
+`docs/.../non_contiguous_accesses/overview.md` 给的 `embedding + sum`（A5）实测三连：
+
+| 模式 | inductor 耗时 | 来源行 |
+|---|---|---|
+| eager 基线 | ~440 us | :153 |
+| `=fallback`（不融，embedding 退 `ExternKernel` 单独调） | **1209.80 us** | :154 |
+| `=simd_simt_mix`（融成单个 `triton_unk_fused_embedding_sum_0`） | **260.61 us** | :214 |
+
+**fallback 时 inductor 比 eager 还慢 ~2.7x（1209 vs 440）**，融合后才反超（260）。这是对「融合没收益」最硬的反证：fallback 多是**能力缺口**的症状，不是收益判断。
+
+### 9.6 顺带：`isnan` 一处疑似 bug
+
+`lowering_fallback_list.py:34` 同时 import 了 `inductor_indirect_memory_mode, inductor_ascend_linear_mode`，但唯一的条件（`:1011`）用错了变量：
+
+```python
+if inductor_indirect_memory_mode != 'linear':   # 取值域 {None, simt_*, simd_simt_mix}，恒 != 'linear'
+    FALLBACK_LIST += [aten.isnan]               # → aten.isnan 永远 fallback
+```
+
+`inductor_indirect_memory_mode` 永不等于 `'linear'`，故该条恒真、`aten.isnan` 任何情况都 fallback；而被 import 进来的 `inductor_ascend_linear_mode`（默认 `"linear"`，`config.py:246`）**从未被使用**。从「import 了 linear_mode 却比 indirect_mode」看，几乎可断定本意是 `inductor_ascend_linear_mode != 'linear'`，属复制粘贴写错变量。影响小（多退一个 isnan），但是真 bug，可纳入上游 patch 消减清单。
+
+---
+
 ## 总结
 
 ### 核心设计哲学
@@ -797,3 +881,5 @@ torch_npu 的 lowering 策略可以概括为**"保守 codegen，激进 fallback"
 - [[npu_mlir_pipeline_analysis]]
 - [[NPU_MLIR_Backend_Technical_Analysis]]
 - [[lowering_analysis]]
+- [[npu_inductor_optimization_analysis]] — NPU Inductor 优化思想全景（§9 fallback 的「why」侧，能力门控 §八）
+- [[aclgraph_deep_analysis]] — ACLGraph 捕获关（§9 的 aclnn/aclop 与捕获门禁连通：fallback 到 aclop 会同时破坏融合与捕获）
