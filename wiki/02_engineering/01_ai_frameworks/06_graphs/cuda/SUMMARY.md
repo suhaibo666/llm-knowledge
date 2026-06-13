@@ -465,4 +465,4 @@ CPU → Replay CUDA/NPU Graph → GPU/NPU (执行所有操作)
 
 - [[02_engineering/01_ai_frameworks/index]]
 - [[PyTorch_CUDA_Graphs_Complete_Guide]]
-- [[README]]
+- [[06_graphs/cuda/README]]

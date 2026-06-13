@@ -4,6 +4,20 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-13: 01_ai_frameworks 按 PyTorch 架构重组（功能目录 + 硬件子目录）
+
+**Type**: Structural Reorganization（目录重构，git mv 保留历史；内容不变）
+
+**动机**：原结构（cudagraphs/inductor/mlir/op_plugin + 根级散页）将通用机制与 CUDA/NPU 硬件特定内容混排。改为按 PyTorch 编译/运行时架构分功能目录，硬件特定内容下沉到各功能目录的 `npu/`、`cuda/` 子目录。
+
+**新结构**：`01_dispatcher_and_device/`、`02_dynamo/`、`03_aot_autograd/`、`04_inductor/`(+`npu/`)、`05_codegen_backends/mlir/`(+`npu/`)、`06_graphs/`(`cuda/`+`npu/`)、`07_op_registration/npu/`、`08_kernel_optimization/`、`09_other_frameworks/`。
+
+**迁移**：52 内容页 + 3 `.py` 经 `git mv` 迁移；重写 16 个 `index.md`（每目录一入口，含硬件分层约定）；裸 `[[index]]`→`[[01_ai_frameworks/index]]`（18 处）；修 `operator_optimization_guide` 相对/路径限定链接；更新 `wiki/index.md` 顶层入口与页数（52）；修 changelog 历史 `[[op_plugin/index]]`→新路径。
+
+**校验**：全库 wikilink 扫描，重组区零真实断链。
+
+---
+
 ## 2026-06-13: 升级 NPU Inductor 优化思想页 —— 新增 §十二「实战：从源码看优化案例」
 
 **Type**: Source-Verified Augmentation（本地 `pta_suhaibo/torch_npu` checkout **v2.7.1** / commit `8bcbe1939` 逐行核验，可 `git grep` 对照；区别于 §一–§十一 基于来源文档的指示性行号）
@@ -100,7 +114,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **索引与交叉引用**:
 
-- `01_ai_frameworks/index.md` —— 子目录表新增 [[op_plugin/index]];页面列表新增「op-plugin 算子接入」区(3 行);页头摘要与最后更新改 2026-06-12
+- `01_ai_frameworks/index.md` —— 子目录表新增 [[07_op_registration/npu/index]];页面列表新增「op-plugin 算子接入」区(3 行);页头摘要与最后更新改 2026-06-12
 - 交叉引用:三篇互链,并 [[link]] 到既有 [[npu_compile_paths_overview]] / [[npu_triton_backend_deep_analysis]] / [[aclgraph_deep_analysis]] / [[PyTorch_Dynamo_Technical_Analysis]] / [[npu_lowering_guide]]。入图判别页明确定位为「判别视角」,与既有「路径实现全景」页互补、不重复
 
 ---

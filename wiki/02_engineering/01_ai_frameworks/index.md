@@ -1,129 +1,71 @@
-# PyTorch Compilation Stack — 目录索引
+# PyTorch 编译与运行时架构 — 知识地图
 
-> 覆盖 PyTorch 编译流水线 (`torch.compile`): Dynamo 图捕获, AOT Autograd, Inductor 代码生成, CUDA/NPU Graphs；以及 op-plugin 算子接入（配置/注册/入图判别）
+> 本域(`01_ai_frameworks`)按 **PyTorch 编译/运行时架构**组织。每个功能目录下,**硬件无关的通用机制**置于该目录层级,**硬件特定实现**下沉到 `npu/`、`cuda/` 等硬件子目录。
 > 最后更新: 2026-06-13
 
 ---
 
-## 架构总览
+## 架构总览(torch.compile 流水线 + 运行时)
 
 ```
-User Code → @torch.compile
-              ↓
-         TorchDynamo (frame evaluation hook 图捕获)
-              ↓
-         AOT Autograd (前向/反向分解)
-              ↓
-         TorchInductor (IR lowering → codegen)
-              ↓
-         优化 Kernel 执行
+  算子供给侧                                                运行时分发
+(07_op_registration)                                    (01_dispatcher_and_device)
+      │                                                        ▲
+      ▼              @torch.compile                            │ aten 算子分发
+  User Code ──► TorchDynamo ──► AOTAutograd ──► TorchInductor ──► Kernel 执行
+                  (02)            (03)             (04)             │
+                图捕获/Guard    前/反向分解     lowering→调度→codegen │
+                                                     │              ▼
+                                            codegen 后端(05)   图捕获/回放(06)
+                                            Triton / MLIR      CUDA Graphs / NPU Graphs
 ```
 
-详见 [[torch_compile_architecture]] 完整流水线分析。
+详见 [[torch_compile_architecture]] 端到端流水线分析。
 
 ---
 
-## 子目录
+## 功能目录(按架构顺序)
 
-| 目录 | 核心主题 |
-|------|---------|
-| [[inductor/index]] | Inductor IR, lowering, codegen, scheduling, NPU 后端 (14 篇) |
-| [[mlir/index]] | MLIR 核心概念、Torch-MLIR Pass 管线、Triton vs MLIR、NPU MLIR 后端 (6 篇) |
-| [[cudagraphs/index]] | CUDA Graphs 使用指南, NPU Graphs 对比 (10 篇) |
-| [[cudagraphs/npugraphs/index]] | NPU Graphs 深度分析 (8 篇) |
-| [[op_plugin/index]] | **op-plugin 算子接入**：配置分类、yaml→dispatcher 注册链路与生效时机、入图判别 (3 篇) |
+| 目录 | 功能 | 硬件子目录 |
+|------|------|-----------|
+| [[01_dispatcher_and_device/index]] | 运行时:算子分发(Dispatcher)、PrivateUse1 设备接入 | 通用 |
+| [[02_dynamo/index]] | torch.compile 前端:帧评估图捕获、Guard | 通用 |
+| [[03_aot_autograd/index]] | 前/反向图分解、partition、functionalization | 通用 |
+| [[04_inductor/index]] | 编译后端核心:lowering、调度、codegen、FX passes、动态形状 | `npu/` NPU Inductor 后端 |
+| [[05_codegen_backends/index]] | codegen 后端:MLIR(及 Triton 对比) | `mlir/` + `mlir/npu/` |
+| [[06_graphs/index]] | 运行时图捕获:CUDA Graphs / NPU Graphs(ACLGraph) | `cuda/` + `npu/` |
+| [[07_op_registration/index]] | 算子接入供给侧:op-plugin 配置/注册/入图判别 | `npu/` |
+| [[08_kernel_optimization/index]] | 算子调优(GPU/NPU Roofline、融合)、TileLang | 通用 |
+| [[09_other_frameworks/index]] | 非 PyTorch 框架对照:MindSpore 编译器 | — |
 
 ---
 
-## 页面列表
+## 硬件分层约定
 
-### 核心运行时（Dispatcher）
-
-| 页面 | 核心主题 |
-|------|---------|
-| [[pytorch_dispatcher_analysis]] | **算子分发机制**: DispatchKey/KeySet 优先级、redispatch 洋葱、boxed/unboxed、torchgen 代码生成、`__torch_dispatch__` 自定义分发 |
-
-### 编译架构
-
-| 页面 | 核心主题 |
-|------|---------|
-| [[torch_compile_source_analysis]] | 源码结构, 模块组织 |
-| [[torch_compile_architecture]] | 端到端流水线: Dynamo → AOT Autograd → Inductor |
-| [[PyTorch_Dynamo_Technical_Analysis]] | 帧评估 API, 字节码符号执行, guard 生成 |
-| [[PyTorch_Inductor_Technical_Analysis]] | Inductor IR, 调度, 代码生成后端 |
-| [[Pytorch_Compile_Debug_Analysis]] | 调试技巧, 日志解读 |
-| [[mindspore_compiler_analysis]] | MindSpore 编译器: ANF 图、MindCompiler Pass、AKG Polyhedral、ParallelAuto |
-
-### 编译优化
-
-| 页面 | 核心主题 |
-|------|---------|
-| [[aotautograd_analysis]] | AOT Autograd 图分解, 联合图 passes |
-| [[lowering_analysis]] | FX → Inductor IR lowering |
-| [[inductor_codegen_analysis]] | 代码生成策略, kernel 融合 |
-| [[inductor_codegen_dynamic_shape_analysis]] | 代码生成中的动态形状 |
-| [[scheduler_analysis]] | 算子调度, 融合决策 |
-| [[pre_grad_passes_guide]] | 预梯度优化 passes |
-| [[post_grad_passes_guide]] | 后梯度优化 passes |
-| [[joint_graph_passes_guide]] | 联合图优化 passes |
-| [[flex_attention_analysis]] | FlexAttention: 可组合注意力融合, BlockMask, score_mod, 语义驱动 codegen |
-| [[tilelang_analysis]] | TileLang: Tile-Level IR, Host Codegen, Z3 SMT 验证, 通算 wave 绑定 |
-| [[operator_optimization_guide]] | GPU/NPU 算子调优体系：Roofline、Memory/Compute Bound 优化、AscendC、融合策略 |
-
-### NPU 后端
-
-| 页面 | 核心主题 |
-|------|---------|
-| [[npu_lowering_guide]] | NPU 特定 lowering |
-| [[npu_compile]] | NPU 编译工作流 |
-| [[npu_compile_paths_overview]] | **NPU torch.compile 路径总览**: 三条路径 (Triton/ACLGraph/MLIR) 差异、收益、演进路线 |
-| [[NPU_Inductor_Backend_Analysis]] | NPU 后端集成架构 |
-| [[NPU_Inductor_Backend_Mechanism]] | NPU 后端内部机制 |
-| [[npu_triton_backend_deep_analysis]] | **Triton/Inductor default 路径深度分析**: golden_var_list、CATLASS/CK GEMM、35+ monkey patches、NPUIndexTritonKernel |
-
-### op-plugin 算子接入
-
-| 页面 | 核心主题 |
-|------|---------|
-| [[op_plugin_config_and_classification_guide]] | op-plugin config 字段、official/custom/symint/quant、acl_op(aclop) vs op_api(aclnn)、gen_opapi 结构化 vs 手写适配（「过适配」澄清）、四维分类速查表 |
-| [[op_registration_pipeline_analysis]] | yaml→两段 codegen→dispatcher：**TORCH_LIBRARY 静态初始化「库加载即注册」**、编译期→加载期→运行期时间线、acl_op/op_api 运行时三层选择、两条完整调用链 |
-| [[npu_operator_graph_eligibility_guide]] | 算子入图判别：dynamo/inductor+triton/aclgraph 三关判据与判别命令、aclnn-only 铁律、op_api/acl_op 贯穿主线 |
-
-### CUDA/NPU Graphs
-
-| 页面 | 核心主题 |
-|------|---------|
-| [[SUMMARY]] | CUDA/NPU Graphs 文档索引 |
-| [[PyTorch_CUDA_Graphs_Complete_Guide]] | CUDA Graphs 完整指南 |
-| [[CUDA_Graphs_Timing_Diagrams]] | Graph 时序图 |
-| [[torch_compile_npugraphs_deep_dive]] | NPU Graphs + torch.compile |
-| [[npugraphs_make_graphed_callables_deep_dive]] | make_graphed_callables API |
-| [[npugraphs_memory_management_analysis]] | 内存管理 |
-| [[npugraphs_memory_reuse_analysis]] | 内存重用 |
-| [[torch_compile_mode_reduce_overhead_vs_backend_npugraphs]] | reduce_overhead vs npugraphs |
-| [[aclgraph]] | ACL Graph 集成 |
-| [[aclgraph_deep_analysis]] | **ACLGraph 深度分析**: 图捕获/重放、Super Kernel、NpuGraphOpHandler、与社区 CUDAGraph 差异及演进路径 |
-| [[comparison]] | CUDA vs NPU Graphs 对比 |
+- **通用页**(无硬件后缀)位于功能目录层级,描述 PyTorch 上游通用机制。
+- **NPU 特定页**位于 `<功能>/npu/`,基于 `torch_npu` / `op-plugin`(当前核验基准 = **v2.7.1.post5**)。
+- **CUDA 特定页**位于 `<功能>/cuda/`。
+- 跨硬件对比页(如 NPU vs CUDA Graphs)放硬件目录内并双向 backlink。
 
 ---
 
 ## 知识空白
 
-- **TorchDynamo guard 失败调试** — 常见但未记录
+- **TorchDynamo guard 失败调试** — 常见但未系统记录
 - **Inductor autotuning** — Triton kernel autotuning 策略
-- **动态形状支持完整性** — 已知限制未编目
-- **NPU Monkey Patch 演进追踪** — v2.7.1 35+ → v2.9.0 ~10 → master ~8，每次 PyTorch 升级需人工对齐内部接口
-- **CATLASS/CK GEMM 模板库生态** — 社区 CUTLASS 与 NPU CATLASS 差异，CK 适配 Ascend 的完整机制未文档化
-- **IR 回溯机制通用性** — MLIR 路径的 FX Graph 重建仅适用于特定场景，泛化方案待探索
-- **Multi-backend dispatch** — Inductor 在 CUDA/NPU 间选择逻辑（部分覆盖，见 [[npu_compile_paths_overview]]）
-- **IREE 实际 Pass 细节** — Flow/Stream Dialect 的具体 Pass 列表未深入
-- **TileLang 源码分析** — DeepSeek V4 TileLang 实现未开源，当前分析基于论文描述
-- **Triton 3.x MLIR 迁移进度** — H100 TMA 以外的特性支持状态未跟踪
+- **NPU Monkey Patch 演进追踪** — v2.7.1 → v2.9.0 → master,每次 PyTorch 升级需人工对齐内部接口
+- **CATLASS/CK GEMM 模板库生态** — 社区 CUTLASS 与 NPU CATLASS 差异
+- **IR 回溯机制通用性** — MLIR 路径 FX Graph 重建的泛化方案
+- **Multi-backend dispatch** — Inductor 在 CUDA/NPU 间选择逻辑(部分覆盖,见 [[npu_compile_paths_overview]])
+- **IREE 实际 Pass 细节** — Flow/Stream Dialect 具体 Pass 列表
+- **TileLang 源码分析** — 实现未开源,当前分析基于论文
+- **Triton 3.x MLIR 迁移进度** — TMA 以外特性支持状态
 
 ---
 
 ## 关联域
 
-- [[llm/06_infra/megatron-lm/index]] — Megatron-LM (CUDA Graphs 使用场景)
-- [[llm/02_training/low_precision_training_analysis]] — 低精度训练 + CUDA Graphs
-- [[llm/06_infra/llm_parallelism_analysis]] — 计算通信重叠
+- [[02_train_frameworks/megatron-lm/index]] — Megatron-LM(CUDA Graphs 使用场景)
+- [[05_gpu_kernel/index]] — GPU Kernel 开发(执行层级、内存优化、NPU 差异)
+- [[04_posttrain_frameworks/batch_invariance_guide]] — 批不变性与 torch.compile
+- [[01_theory/index]] — 理论研究

@@ -536,7 +536,7 @@ z = x + y * 2     # 预期打印: [dispatch] aten::mul  然后  [dispatch] aten:
 
 ## Related Pages
 
-- [[index]] — PyTorch Compilation Stack 目录索引
+- [[01_ai_frameworks/index]] — PyTorch Compilation Stack 目录索引
 - [[aotautograd_analysis]] — AOTAutograd 用 `__torch_dispatch__`（`Python` key）追踪联合图，是本页机制的直接消费者
 - [[torch_compile_architecture]] — torch.compile 端到端流水线建立在 dispatcher 之上
 - [[PyTorch_Dynamo_Technical_Analysis]] — Dynamo 在「帧/字节码」层捕获，与 dispatcher 在「算子」层分发互补

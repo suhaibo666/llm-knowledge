@@ -459,4 +459,4 @@ def call(args):
 - [[PyTorch_Dynamo_Technical_Analysis]] — Dynamo 帧捕获与符号执行
 - [[PyTorch_Inductor_Technical_Analysis]] — Inductor 后端技术全析
 - [[aotautograd_analysis]] — AOT Autograd 前向/反向图分解
-- [[index]] — AI 框架域总索引
+- [[01_ai_frameworks/index]] — AI 框架域总索引
