@@ -138,6 +138,26 @@ graph TD
 
 `gen_opapi` 的子字段（README `:303-391`）：`out`（输出，含 `size`/`dtype`/`name`，多输出用 `out0`/`out1`）、`new_params`（新增自定义变量）、`exec`（`EXEC_NPU_CMD` 的参数，可只填 aclnn 名）、`structured_inherit`（继承 `.out` 配置）。
 
+### 手写适配的九类原因（aclnn 算子为什么没被自动生成）
+
+`op_plugin/ops/opapi/` 下共约 352 个手写 `*KernelNpuOpApi.cpp`（另有 `sparse/` 子目录）。一个 aclnn 算子要被结构化自动生成，必须满足「**适配层零额外逻辑**」——输出 shape/dtype 直接照搬输入、参数原样转发、单次 `EXEC_NPU_CMD`（`abs` 即如此，所以无手写文件）。适配层只要多出下面任意一类逻辑，`gen_opapi` 的固定四步模板（`DO_COMPATIBILITY` → 算 size/dtype → `apply_tensor` → 一次 `EXEC_NPU_CMD`）就套不出来，只能手写。**拿到一个手写文件，扫这些「判别特征」即可定位它属于哪类、为什么不能自动生成：**
+
+| 原因类别 | 判别特征（先扫这个） | 典型例子 |
+|---------|-------------------|---------|
+| (a) 自定义 infershape | `*_npu_output_size`、`resize_`、`aclGetViewShape` | `CatKernelNpuOpApi.cpp:40-86`（拼接维累加+剔空）、`NonzeroKernelNpuOpApi.cpp:33-39`（输出行数运行期才知，同步执行再 resize） |
+| (b) dtype 提升/cast | `result_type` 被改写、`isFloatingType` 判断、`copy_scalar_to_device` | `DivKernelNpuOpApi.cpp:62-67`（整数除法升 float）、`BitwiseAndKernelNpuOpApi.cpp:100-101`（bool→Long） |
+| (c) 多次 aclnn/中间 tensor | 同函数 ≥2 个 `EXEC_NPU_CMD` + 中间 `apply_tensor` | `NativeDropoutKernelNpuOpApi.cpp:61,90`（GenMask + DoMask 两次 + RNG + 副流） |
+| (d) 条件分支 | `if(dim()==0)`、可选参数选不同 aclnn | `AddKernelNpuOpApi.cpp:50-67`、`DivKernelNpuOpApi.cpp:96-101`（`rounding_mode`） |
+| (e) 非连续/私有 format | `npu_format_cast`、`ACL_FORMAT_FRACTAL_NZ`、`contiguous()`、改 storage desc | `ConvertWeightToINT4PackKernelNpuOpApi.cpp:92-135`、`MaskedSelectKernelNpuOpApi.cpp:87-92` |
+| (f) inplace/out + resize | inplace 委托 out、`resize_` 后 `copy_` 回写 | `AddbmmKernelNpuOpApi.cpp:55-62`、`NonzeroKernelNpuOpApi.cpp:46-57` |
+| (g) 空/边界/标量特判 | 空 tensor 过滤、`p==0/1` 短路、全空返回 | `CatKernelNpuOpApi.cpp:31-34`、`NativeDropoutKernelNpuOpApi.cpp:110-118` |
+| (h) 版本差异 | `#if VERSION_BETWEEN(...)` 包整段（签名随版本变） | `RepeatInterLeaveKernelNpuOpApi.cpp:79,143`（opapi/ 下 40 个文件含此宏） |
+| (i) workspace/额外参数 | aclnn 比 aten 多入参、需 expand/占位组 TensorList | `AddbmmKernelNpuOpApi.cpp:33-34`（`cube_math_type`）、`IndexKernelNpuOpApi.cpp:26-40` |
+
+复杂算子常**多类叠加**。例如 `add`（`AddKernelNpuOpApi.cpp`）手写**不是因为 `alpha`**（`alpha` 直接透传给 `aclnnAdd`，`:66`），而是同时踩了 (d) 标量/张量三路分派（`aclnnAdds`/`aclnnAddV3`/`aclnnAdd`，`:50-67`）+ (b) type promotion（`:99`）+ (a) broadcast infershape（`:98`）+ (g) `alpha_check_npu` 特判（`:23-30`）。
+
+> **量级参考**：aclnn 侧约 **406 条走结构化自动生成 + 352 个手写**。「aclnn = 自动生成」只对语义与 aten 完全对齐的简单算子成立；`opapi/` 本质是「aclnn 算子里**适配层有活要干**的那批」。
+
 ---
 
 ## 6. 顶层分组：official / custom / symint / quant
