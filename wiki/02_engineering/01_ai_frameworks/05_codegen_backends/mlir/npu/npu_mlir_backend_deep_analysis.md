@@ -39,7 +39,7 @@ CANN Runtime → NPU 执行
 | 阶段 | 社区默认 Inductor | NPU MLIR 路径 | 差异程度 |
 |---|---|---|---|
 | Backend 注册 | `register_backend_for_device('cuda', TritonScheduling, PythonWrapperCodegen)` | `register_backend_for_device('npu', NpuMlirScheduling, NpuMlirWrapperCodeGen)` | 表面一致 |
-| Triton 支持 | `has_triton = True` | `has_triton = False`（强制禁用） | **极大** |
+| Triton codegen | 默认走 Triton | 改用 MLIR codegen（`has_triton` 仍返回 True，见 §2.1） | **极大** |
 | Lowering | Triton lowerings + extern kernel | 自定义 lowering + `traced_graph` 回溯 | **极大** |
 | Scheduler | `TritonScheduling` / `CUDACombinedScheduling` | `NpuMlirScheduling`（SIMDScheduling 子类） | 大 |
 | Codegen | Triton kernel / Cpp wrapper | `NpuMlirKernel.codegen_kernel`（torch-mlir + Bisheng） | **极大** |
@@ -144,13 +144,18 @@ flowchart TB
 
 ### 2.1 Triton 不可用的根本约束
 
-NPU 达芬奇架构不支持 Triton 的编程模型（block/thread/shared memory）。MLIR 路径在入口处就**彻底关闭了 Triton**：
+NPU 达芬奇架构与 Triton 的编程模型（block/thread/shared memory）不匹配，故 MLIR 后端**改用 MLIR codegen、不生成 Triton kernel**（**订正**：并非通过 `has_triton=False` 关闭——`patch_has_triton` 对 NPU 实际返回 True；旁路 Triton 是经后端选择实现）：
 
-**位置**：`torch_npu/_inductor/ascend_npu_ir/ascend_npu_ir/npu/npu_inductor_plugin.py:68-69`
+**位置**：真实的 triton 门控逻辑在 `torch_npu/_inductor/utils.py:25-63` 的 `patch_has_triton()`（由 `torch_npu/_inductor/__init__.py:23` 调用）。`npu_inductor_plugin.py:68-69` 实为 `atexit.register(shutdown_compile_workers)`，并非 triton 禁用代码。（triton 禁用/门控位置随版本变动，以当前源码为准）
 
 ```python
-_triton.has_triton = lambda: False
-_triton.has_triton_package = lambda: False
+# torch_npu/_inductor/utils.py:25-63
+def patch_has_triton():
+    @functools.lru_cache(None)
+    def has_triton() -> bool:
+        ...  # 按设备能力门控（npu 在 triton_supported_devices 中）
+    torch.utils._triton.has_triton = has_triton
+    torch._inductor.scheduler.has_triton = has_triton
 ```
 
 这导致默认 Inductor 的核心 codegen 路径（TritonScheduling → TritonKernel → Triton AST → ptx/cubin）**完全不可用**，必须从零构建替代路径。
@@ -427,7 +432,7 @@ MLIR 路径有自己的 `CustomAsyncCompile` 和 `MulitprocessCompileFuture`，�
 
 | 组件 | 打破方式 | 原因 |
 |---|---|---|
-| **Triton 禁用** | 强制 `_triton.has_triton = False` | NPU 不支持 Triton |
+| **Triton codegen 旁路** | MLIR 后端改用 MLIR codegen（`has_triton` 仍 True） | 达芬奇架构与 Triton block/thread 模型不匹配 |
 | **IR 回溯** | monkey-patch `ir.Loops.create` 附加 `traced_graph` | torch-mlir 需要 FX Graph 输入 |
 | **Scheduler 融合规则** | monkey-patch `Scheduler.can_fuse_vertical` 等 | Bisheng 编译器的融合偏好不同 |
 | **后端编译器** | `bishengir-opt` + `bishengir-compile` | 社区无昇腾后端 |

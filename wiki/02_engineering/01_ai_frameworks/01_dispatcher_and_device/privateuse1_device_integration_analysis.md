@@ -53,7 +53,7 @@ PrivateUse1 是 PyTorch 预留的一个**匿名设备 DispatchKey**（`c10/core/
 | 8 | **Distributed** | `c10d::Backend` 子类 + `Backend.register_backend(devices=[...])` | `ProcessGroupOCCL` + `distributed/init.cpp` | `ProcessGroupHCCL` |
 | 9 | **CI** | 接入 PyTorch CI 测试矩阵，保证机制不回退 | `ci.md` | — |
 
-> 运行时底层组件（Memory Allocator / Stream / Event / Generator / Host-pinned Allocator / Serialization）**没有各自单独成章**，而是承载在 device/guard/hooks 背后的 `csrc/runtime/` 里——OpenReg `csrc/runtime/` 正好 9 个文件（`OpenRegFunctions/Guard/Hooks/Generator/Stream/Event/DeviceAllocator/HostAllocator/Serialization`）。详见 §12。
+> 运行时底层组件（Memory Allocator / Stream / Event / Generator / Host-pinned Allocator / Serialization）**没有各自单独成章**，而是承载在 device/guard/hooks 背后的 `csrc/runtime/` 里——OpenReg `csrc/runtime/` 有 9 个运行时组件（对应 9 个 .cpp，不计 OpenRegEvent.cpp）：`OpenRegFunctions/Guard/Hooks/Generator/Stream/DeviceAllocator/HostAllocator/Serialization/Exception`（Event 组件仅头文件 `OpenRegEvent.h`、无 .cpp）。详见 §12。
 
 ---
 

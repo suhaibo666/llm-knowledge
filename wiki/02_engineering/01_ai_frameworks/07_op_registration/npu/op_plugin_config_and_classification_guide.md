@@ -108,7 +108,7 @@ at::Tensor& abs_out(const at::Tensor& self, at::Tensor& result) {
 
 运行时如何在 aclnn / aclop 间二选一（共三层），详见 [[op_registration_pipeline_analysis]] §7。
 
-**当前 checkout 量级**：仅 aclop ~173 条、仅 aclnn ~391 条、**两者都有 ~828 条（最多）**。手写文件：`aclops/*.cpp` 约 416 个、`opapi/*.cpp` 约 352 个。
+**当前 checkout 量级**：仅 aclop ~173 条、仅 aclnn ~391 条、**两者都有 ~828 条（最多）**。手写文件：`aclops/*.cpp` 约 416 个、`opapi/*.cpp` 约 356 个。
 
 ---
 
@@ -140,7 +140,7 @@ graph TD
 
 ### 手写适配的九类原因（aclnn 算子为什么没被自动生成）
 
-`op_plugin/ops/opapi/` 下共约 352 个手写 `*KernelNpuOpApi.cpp`（另有 `sparse/` 子目录）。一个 aclnn 算子要被结构化自动生成，必须满足「**适配层零额外逻辑**」——输出 shape/dtype 直接照搬输入、参数原样转发、单次 `EXEC_NPU_CMD`（`abs` 即如此，所以无手写文件）。适配层只要多出下面任意一类逻辑，`gen_opapi` 的固定四步模板（`DO_COMPATIBILITY` → 算 size/dtype → `apply_tensor` → 一次 `EXEC_NPU_CMD`）就套不出来，只能手写。**拿到一个手写文件，扫这些「判别特征」即可定位它属于哪类、为什么不能自动生成：**
+`op_plugin/ops/opapi/` 下共约 356（随版本演进）个手写适配 `.cpp`（含 `sparse/` 子目录与命名变体；严格按 `*KernelNpuOpApi.cpp` 命名约 300）。一个 aclnn 算子要被结构化自动生成，必须满足「**适配层零额外逻辑**」——输出 shape/dtype 直接照搬输入、参数原样转发、单次 `EXEC_NPU_CMD`（`abs` 即如此，所以无手写文件）。适配层只要多出下面任意一类逻辑，`gen_opapi` 的固定四步模板（`DO_COMPATIBILITY` → 算 size/dtype → `apply_tensor` → 一次 `EXEC_NPU_CMD`）就套不出来，只能手写。**拿到一个手写文件，扫这些「判别特征」即可定位它属于哪类、为什么不能自动生成：**
 
 | 原因类别 | 判别特征（先扫这个） | 典型例子 |
 |---------|-------------------|---------|
@@ -156,7 +156,7 @@ graph TD
 
 复杂算子常**多类叠加**。例如 `add`（`AddKernelNpuOpApi.cpp`）手写**不是因为 `alpha`**（`alpha` 直接透传给 `aclnnAdd`，`:66`），而是同时踩了 (d) 标量/张量三路分派（`aclnnAdds`/`aclnnAddV3`/`aclnnAdd`，`:50-67`）+ (b) type promotion（`:99`）+ (a) broadcast infershape（`:98`）+ (g) `alpha_check_npu` 特判（`:23-30`）。
 
-> **量级参考**：aclnn 侧约 **406 条走结构化自动生成 + 352 个手写**。「aclnn = 自动生成」只对语义与 aten 完全对齐的简单算子成立；`opapi/` 本质是「aclnn 算子里**适配层有活要干**的那批」。
+> **量级参考**：aclnn 侧约 **406 条走结构化自动生成 + 约 356 个手写**。「aclnn = 自动生成」只对语义与 aten 完全对齐的简单算子成立；`opapi/` 本质是「aclnn 算子里**适配层有活要干**的那批」。
 
 ---
 

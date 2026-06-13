@@ -1,6 +1,6 @@
 # PyTorch CUDA Graphs 代码调用流程时序图汇总
 
-本文档包含所有5种 CUDA Graphs 使用方式的详细 Mermaid 时序图。
+本文档包含所有4种 CUDA Graphs 使用方式的详细 Mermaid 时序图。
 
 ---
 
@@ -10,7 +10,6 @@
 2. [方式2: torch.compile(backend="inductor", mode="reduce-overhead")](#方式2-torchcompilebackendinductor-modereduce-overhead)
 3. [方式3: torch.cuda.graph() 上下文管理器](#方式3-torchcudagraph-上下文管理器)
 4. [方式4: torch.cuda.make_graphed_callables](#方式4-torchcudamake_graphed_callables)
-5. [方式5: experimental 参数](#方式5-experimental-参数)
 
 ---
 
@@ -555,148 +554,6 @@ sequenceDiagram
 
 ---
 
-## 方式5: experimental 参数
-
-### 完整时序图
-
-```mermaid
-sequenceDiagram
-    participant CPU as CPU (Python)
-    participant Inductor as Inductor + Experimental
-    participant GPU as GPU (CUDA)
-    
-    Note over CPU,GPU: 首次调用 (编译阶段)
-    
-    CPU->>Inductor: 调用 compiled_model(x)
-    Inductor->>Inductor: 检查编译缓存
-    Inductor->>Inductor: 缓存未命中，开始编译流程
-    
-    Note over Inductor: 步骤1: 导出 FX Graph
-    
-    Inductor->>Inductor: torch.fx.symbolic_trace
-    Inductor->>Inductor: 创建 FX Graph
-    
-    Note over Inductor: 步骤2: 分析 experimental 参数
-    
-    Inductor->>Inductor: 解析 experimental 配置
-    Note over Inductor: experimental: {enable_cuda_graph: True, cuda_graph_capture_steps: 3, cuda_graph_min_size: 10, cuda_graph_max_size: 100}
-    
-    Note over Inductor: 步骤3: 分析子图
-    
-    Inductor->>Inductor: 遍历 FX Graph 节点
-    Inductor->>Inductor: 节点分析: 节点类型、输入形状、输出形状、依赖关系
-    
-    Inductor->>Inductor: 识别静态子图
-    Note over Inductor: 静态子图1: 节点数=15, 形状固定, 无控制流 -> 可捕获
-    Note over Inductor: 动态子图1: 节点数=3, 形状不固定 -> 不可捕获
-    
-    Note over Inductor: 步骤4: 捕获静态子图
-    
-    par 对于每个可捕获子图
-        Inductor->>Inductor: 创建静态内存池
-        
-        Inductor->>GPU: cuStreamBeginCapture
-        activate GPU
-        GPU->>GPU: 捕获子图操作
-        deactivate GPU
-        GPU-->>Inductor: 已捕获
-        
-        Inductor->>GPU: cuStreamEndCapture
-        activate GPU
-        deactivate GPU
-        GPU-->>Inductor: graph 对象
-        
-        Inductor->>GPU: cuGraphInstantiate
-        activate GPU
-        GPU->>GPU: 分配资源
-        deactivate GPU
-        GPU-->>Inductor: graphExec 对象
-        
-        Inductor->>Inductor: 保存 graph 和静态池
-    end
-    
-    Note over Inductor: 步骤5: 编译动态部分
-    
-    Inductor->>Inductor: Lowering 到 Triton
-    Inductor->>GPU: NVRTC/Triton 编译
-    activate GPU
-    deactivate GPU
-    GPU-->>Inductor: 编译完成
-    
-    Note over Inductor: 步骤6: 创建混合执行函数
-    
-    Inductor->>Inductor: compiled_fn: 静态子图(CUDA Graphs) + 动态子图(Triton) + 内存管理(自动)
-    
-    Inductor->>Inductor: 保存到编译缓存
-    
-    Note over CPU,GPU: 后续调用 (执行阶段)
-    
-    CPU->>Inductor: 调用 compiled_model(x)
-    Inductor->>Inductor: 使用编译结果
-    
-    Note over Inductor: 执行动态子图
-    
-    Inductor->>GPU: cuLaunchKernel (Triton kernel)
-    activate GPU
-    deactivate GPU
-    GPU-->>Inductor: 完成
-    
-    Note over Inductor: 执行静态子图 (使用 CUDA Graphs)
-    
-    par 对于每个 graphed 子图
-        Inductor->>Inductor: 复制输入到静态内存
-        Inductor->>GPU: cudaMemcpyAsync
-        activate GPU
-        deactivate GPU
-        GPU-->>Inductor: 复制完成
-        
-        Inductor->>GPU: cuGraphLaunch
-        activate GPU
-        GPU->>GPU: Replay 子图
-        deactivate GPU
-        GPU-->>Inductor: 执行完成
-        
-        Inductor->>Inductor: 复制输出
-        Inductor->>GPU: cudaMemcpyAsync
-        activate GPU
-        deactivate GPU
-        GPU-->>Inductor: 复制完成
-    end
-    
-    Inductor-->>CPU: 返回结果
-    
-    Note over CPU,GPU: 优势: 智能捕获、混合执行、细粒度控制、实验性功能
-```
-
-### 优势总结
-
-**智能捕获:**
-- ✓✓ 自动识别可捕获子图
-- ✓✓ 分析子图大小和形状
-- ✓✓ 智能决策是否捕获
-
-**混合执行:**
-- ✓✓ 静态部分使用 CUDA Graphs
-- ✓✓ 动态部分使用常规执行
-- ✓✓ 最佳性能平衡
-
-**细粒度控制:**
-- ✓✓ 配置捕获步数
-- ✓✓ 配置最小/最大图大小
-- ✓✓ 调试选项
-
-**实验性功能:**
-- ✓✓ 访问最新优化技术
-- ✓✓ 探索性功能
-- ⚠️ API 可能不稳定
-
-**适用场景:**
-- ✓✓ 需要精细控制
-- ✓✓ 混合静态/动态模型
-- ✓✓ 实验性功能测试
-
----
-
 ## 总结
 
 ### 时序图对比
@@ -707,7 +564,6 @@ sequenceDiagram
 | backend="inductor" + reduce-overhead | 中 | 低 | 高 | 很高 |
 | torch.cuda.graph() | 高 | 中 | 很高 | 很高 |
 | make_graphed_callables | 中 | 低 | 中 | 高。 |
-| experimental 参数 | 中 | 低 | 很高 | 很高 |
 
 ### 关键执行流程对比
 
@@ -733,12 +589,6 @@ sequenceDiagram
 ```
 首次: 分析 → 创建静态池 → 捕获
 后续: 自动I/O → replay
-```
-
-**方式5 (experimental):**
-```
-首次: 分析子图 →) 智能捕获 → 混合编译
-后续: 动态部分 → 静态部分
 ```
 
 ### 性能优化层级
@@ -769,7 +619,6 @@ Level 5: 混合优化
 2. **生产环境**: 使用 `backend="inductor" + mode="reduce-overhead"`
 3. **高级用户**: 使用 `torch.cuda.graph()`
 4. **多函数**: 使用 `make_graphed_callables`
-5. **实验性**: 使用 `experimental` 参数
 
 ## Related Pages
 

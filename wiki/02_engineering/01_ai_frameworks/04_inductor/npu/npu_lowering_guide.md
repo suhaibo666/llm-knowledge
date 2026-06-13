@@ -793,12 +793,12 @@ for op in lowering.lowerings:                 # 继承上游全部 lowering
 
 ### 9.2 `FALLBACK_LIST` 的两半
 
-`lowering_fallback_list.py:1009` `FALLBACK_LIST = TORCH_NATIVE_FALLBACK_LIST + NPU_EXTRA_FALLBACK_LIST`。头注释（`:2-5`）原文："will be fallbacked to AclNN op and will not be allowed to lowering and fusion. **After fixed and verified, it can be removed**"——即 fallback 是「还没支持/验证」的临时清单，不是「融合没收益」。
+`lowering_fallback_list.py:1009` `FALLBACK_LIST = TORCH_NATIVE_FALLBACK_LIST + NPU_EXTRA_FALLBACK_LIST`。头注释（`:2-5`）原文："will be fallbacked to AclNN op and will not be allowed to lowering and fusion. **After fixed and verified, it can be removed**"——即 fallback 是「还没支持/验证」的临时清单，不是「融合没收益」。两表共约 963 项（348 native + 615 npu-extra，未计 `aten.isnan` 与 `INDIRECT_MEM_FALLBACK_LIST` 等条件 fallback；截至 v2.7.1）。
 
 | 子表 | 行号 | 性质 | 代表算子 |
 |---|---|---|---|
-| `TORCH_NATIVE_FALLBACK_LIST` | :658-1006 | **GPU 也 fallback 的复杂算法** | linalg 全家、SDPA、FFT、nonzero、sort/topk、special_* 多项式、随机 |
-| `NPU_EXTRA_FALLBACK_LIST` | :40-656 | **昇腾 triton 还没支持** | 超越函数(acos/bessel/lgamma)、位移/按位、卷积/池化、in-place、集合通信、scatter/index、大批 prims |
+| `TORCH_NATIVE_FALLBACK_LIST` | :658-1006（348 项）| **GPU 也 fallback 的复杂算法** | linalg 全家、SDPA、FFT、nonzero、sort/topk、special_* 多项式、随机 |
+| `NPU_EXTRA_FALLBACK_LIST` | :40-656（615 项）| **昇腾 triton 还没支持** | 超越函数(acos/bessel/lgamma)、位移/按位、卷积/池化、in-place、集合通信、scatter/index、大批 prims |
 
 ### 9.3 `TORCH_NATIVE` ←→ 上游 `make_fallback` 六分类
 

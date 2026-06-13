@@ -61,7 +61,7 @@ flowchart LR
     H3["访存偏好连续"] --> I3["连续访存优先"] --> C3["golden_var_list<br/>显式 permute/reshape"]
     H4["Cube 矩阵单元"] --> I4["矩阵专用模板"] --> C4["CATLASS + EVG epilogue"]
     H5["低精度算力"] --> I5["fp32 中间精度"] --> C5["sum/mean fp32 + tanh clamp"]
-    H6["ACLNN 手工库<br/>+ 硬件原生算子"] --> I6["能力门控<br/>分解阶梯"] --> C6["~635 fallback<br/>decomp 13/9/45"]
+    H6["ACLNN 手工库<br/>+ 硬件原生算子"] --> I6["能力门控<br/>分解阶梯"] --> C6["~963 fallback<br/>decomp 13/9/45"]
     H7["异步执行<br/>host 噪声"] --> I7["可信硬件度量"] --> C7["AICore profiler 计时"]
 ```
 
@@ -72,7 +72,7 @@ flowchart LR
 | 3 | 访存偏好连续 | 连续访存优先 | golden_var_list + 显式重排 | [五](#五访存偏好连续--连续访存优先) |
 | 4 | Cube 专用矩阵单元 | 矩阵走专用模板 | CATLASS + EVG epilogue | [六](#六cube-专用矩阵单元--矩阵走专用模板) |
 | 5 | 低精度算力 | fp32 中间精度 | sum/mean fp32、tanh clamp | [七](#七低精度算力--fp32-中间精度) |
-| 6 | ACLNN 手工库 + 原生算子 | 能力门控 + 分解阶梯 | ~635 fallback、decomp 13/9/45 | [八](#八aclnn-手工库--硬件原生算子--能力门控--分解阶梯) |
+| 6 | ACLNN 手工库 + 原生算子 | 能力门控 + 分解阶梯 | ~963 fallback、decomp 13/9/45 | [八](#八aclnn-手工库--硬件原生算子--能力门控--分解阶梯) |
 | 7 | 异步执行 + host 噪声 | 可信硬件度量 | AICore profiler 精确计时 | [九](#九异步执行--host-噪声--可信的硬件级度量) |
 | —（非硬件） | 集成方式带来的工程债 | 复用上游 / 渐进重构 | origin tracking O(n²)→O(n) | [十](#十非硬件集成方式--工程优化) |
 
@@ -160,8 +160,8 @@ flowchart LR
 
 **思想**：**别什么都强行 lowering 成 Triton——能用厂商手工库 / 原生算子的就直接用**；且「拆不拆算子」服从「哪种形态让目标后端跑得最快 / 能生成代码」。
 
-**案例一：~635 算子 fallback 走 ACLNN**（来源：`03-compile-flow §4.1`，`08 §4.3`）
-- `~635 = 289（原生 fallback）+ 346（NPU 额外）`，注册成 `ExternKernel` 直接调 ATen→ACLNN，**比生成 Triton 更快**；额外 fallback 集中在分布式通信 / 位运算 / 数学函数 / 池化等手工库强项区。fallback 清单的工程化管理见 [[npu_lowering_guide]]。
+**案例一：约 963 算子 fallback 走 ACLNN**（来源：`03-compile-flow §4.1`，`08 §4.3`；计数按 v2.7.1 源码订正）
+- `约 963 = 348（native fallback）+ 615（NPU 额外）`（截至 v2.7.1），注册成 `ExternKernel` 直接调 ATen→ACLNN，**比生成 Triton 更快**；额外 fallback 集中在分布式通信 / 位运算 / 数学函数 / 池化等手工库强项区。fallback 清单的工程化管理见 [[npu_lowering_guide]]。
 
 **案例二：阶梯式 decomposition**（来源：`08 §3.4`）
 - 排除分解的算子数：**`13（原生）→ 9（Triton）→ 45+（DVM）`**——**后端融合粒度越高，越不愿把算子打碎**（DVM 在 FX 图级整块融合，故最大限度保留原生算子）。
@@ -169,7 +169,7 @@ flowchart LR
 - **反向**：DVM/MLIR 又把 `sigmoid/gelu/tanh` **展开**成算术式（`06 §4.4`），因为 DVM 解释器 codegen 只认基础算术 op。**同一算子在不同后端「拆」或「不拆」完全相反，唯一标准是「目标后端能不能跑得更好」。**
 
 > [!contradiction] fallback / patch 计数因版本与口径而异
-> 本页采用来源文档体系（torch_npu 2.7 分支）口径：fallback **~635**（289+346）、Triton 路径 monkey-patch **30+**。本库 [[npu_triton_backend_deep_analysis]] / [[npu_compile_paths_overview]] 基于 **v2.7.1 源码核查**给出 fallback **859**、patch **35+**。差异主要来自版本漂移与统计口径（是否计入条件性 fallback / 是否按文件聚合），两者均保留，深入核查以本库 v2.7.1 源码页为准。
+> 本页采用来源文档体系（torch_npu 2.7 分支）口径：fallback **~635**（289+346）、Triton 路径 monkey-patch **30+**。本库 [[npu_triton_backend_deep_analysis]] / [[npu_compile_paths_overview]] 基于 **v2.7.1 源码核查**给出 fallback **约 963**（348 native + 615 npu-extra，截至 v2.7.1）、patch **35+**。差异主要来自版本漂移与统计口径（是否计入条件性 fallback / 是否按文件聚合），两者均保留，深入核查以本库 v2.7.1 源码页为准。
 
 ---
 

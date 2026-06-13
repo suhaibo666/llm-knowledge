@@ -6,9 +6,8 @@
 3. [方式2: torch.compile(backend="inductor", mode="reduce-overhead")](#方式2-torchcompilebackendinductor-modereduce-overhead)
 4. [方式3: torch.cuda.graph() 上下文管理器](#方式3-torchcudagraph-上下文管理器)
 5. [方式4: torch.cuda.make_graphed_callables](#方式4-torchcudamake_graphed_callables)
-6. [方式5: experimental 参数](#方式5-experimental-参数)
-7. [综合比较](#综合比较)
-8. [最佳实践](#最佳实践)
+6. [综合比较](#综合比较)
+7. [最佳实践](#最佳实践)
 
 ---
 
@@ -132,37 +131,38 @@ CUDAGraphsBackend 类
 **首次调用（Warmup）:**
 
 ```python
-# 伪代码
+# 伪代码（对应 torch.cuda.CUDAGraph 的 Python 方法）
 def first_call(model, input):
+    g = torch.cuda.CUDAGraph()
     # 1. Warmup 执行（验证操作序列）
     output = model(input)
     
     # 2. 开始捕获
-    cudaGraphCaptureBegin(stream, mode=captureModeGlobal)
+    g.capture_begin()
     
     # 3. 重放操作（记录到图中）
     output = model(input)
     
     # 4. 结束捕获
-    graph = cudaGraphCaptureEnd(stream)
+    g.capture_end()
     
     # 5. 实例化图（分配资源）
-    graphExec = cudaGraphInstantiate(graph)
+    g.instantiate()
     
-    # 6. 保存 graphExec 用于后续调用
-    return graphExec
+    # 6. 保存 graph 用于后续调用
+    return g
 ```
 
 **后续调用:**
 
 ```python
 # 伪代码
-def subsequent_call(graphExec, input, output):
+def subsequent_call(g, input, output):
     # 1. 复制输入到静态内存
     static_input.copy_(input)
     
     # 2. Replay CUDA Graph
-    cudaGraphLaunch(graphExec, stream)
+    g.replay()
     
     # 3. 从静态内存复制输出
     output.copy_(static_output)
@@ -1255,346 +1255,20 @@ graphed_model = torch.cuda.make_graphed_callables(
 
 ---
 
-## 方式5: experimental 参数
-
-### 完整示例代码
-
-```python
-import torch
-import torch.nn as nn
-import time
-
-class AdvancedModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.layers = nn.ModuleList([
-            nn.Linear(1024, 2048),
-            nn.ReLU(),
-            nn.Linear(2048, 1024),
-            nn.ReLU(),
-            nn.Linear(1024, 512),
-        ])
-    
-    def forward(self, x):
-        for layer in self.layers:
-            x = layer(x)
-        return x
-
-def example_experimental_cudagraphs():
-    device = torch.device("cuda")
-    model = AdvancedModel().to(device)
-    model.eval()
-    
-    # 准备输入数据
-    x = torch.randn(32, 1024, device=device)
-    
-    try:
-        # 使用 experimental 参数启用 CUDA Graphs
-        compiled_model = torch.compile(
-            model,
-            backend="inductor",
-            mode="reduce-overhead",
-            experimental={
-                "enable_cuda_graph": True,
-                "cuda_graph_capture_steps": 3,  # 捕获步数
-                "cuda_graph_min_size": 10,      # 最小图大小
-            }
-        )
-        
-        # Warmup
-        print("首次运行（触发编译）...")
-        with torch.no_grad():
-            output = compiled_model(x)
-        
-        # 性能测试
-        num_iterations = 100
-        
-        start_time = time.time()
-        with torch.no_grad():
-            for _ in range(num_iterations):
-                _ = model(x)
-        uncompiled_time = time.time() - start_time
-        
-        start_time = time.time()
-        with torch.no_grad():
-            for _ in range(num_iterations):
-                _ = compiled_model(x)
-        compiled_time = time.time() - start_time
-        
-        print(f"未编译: {uncompiled_time:.4f}s")
-        print(f"编译后 (experimental): {compiled_time:.4f}s")
-        print(f"加速比: {uncompiled_time / compiled_time:.2f}x")
-        
-        return compiled_model
-    except Exception as e:
-        print(f"experimental 参数可能不可用: {e}")
-        return None
-
-if __name__ == "__main__":
-    example_experimental_cudagraphs()
-```
-
-### 实现原理
-
-#### 1. experimental 参数架构
-
-```python
-# experimental 参数的处理流程
-def handle_experimental_params(model, config):
-    """
-    处理 experimental 参数
-    
-    Args:
-        model: 要编译的模型
-        config: experimental 配置字典
-    """
-    # 检查是否启用 CUDA Graphs
-    if config.get("enable_cuda_graph", False):
-        # 获取 CUDA Graphs 配置
-        capture_steps = config.get("cuda_graph_capture_steps", 1)
-        min_size = config.get("cuda_graph_min_size", 5)
-        max_size = config.get("cuda_graph_max_size", 100)
-        
-        # 创建 CUDA Graphs 策略
-        strategy = CUDAGraphsStrategy(
-            capture_steps=capture_steps,
-            min_size=min_size,
-            max_size=max_size
-        )
-        
-        # 应用策略到编译流程
-        apply_cuda_graphs_strategy(model, strategy)
-```
-
-#### 2. CUDA Graphs 策略
-
-```python
-class CUDAGraphsStrategy:
-    """CUDA Graphs 捕获策略"""
-    
-    def __init__(self, capture_steps=1, min_size=5, max_size=100):
-        self.capture_steps = capture_steps
-        self.min_size = min_size
-        self.max_size = max_size
-    
-    def should_capture(self, subgraph):
-        """判断是否应该捕获子图"""
-        # 检查子图大小
-        size = len(subgraph.nodes)
-        if size < self.min_size or size > self.max_size:
-            return False
-        
-        # 检查子图是否静态
-        if not is_static_subgraph(subgraph):
-            return False
-        
-        return True
-    
-    def capture_subgraph(self, subgraph):
-        """捕获子图为 CUDA Graph"""
-        # 创建静态内存池
-        static_pool = create_static_pool(subgraph)
-        
-        # 捕获图
-        graph = capture_cuda_graph(subgraph, static_pool)
-        
-        return graph, static_pool
-```
-
-#### 3. 子图分析
-
-```python
-def analyze_subgraphs(fx_graph):
-    """分析 FX 图，识别可捕获的子图"""
-    subgraphs = []
-    
-    # 遍历图中的节点
-    nodes = list(fx_graph.nodes)
-    
-    # 识别静态子图
-    current_subgraph = []
-    for node in nodes:
-        if is_static_node(node):
-            current_subgraph.append(node)
-        else:
-            if len(current_subgraph) >= 5:  # 最小大小
-                subgraphs.append(current_subgraph)
-            current_subgraph = []
-    
-    # 添加最后一个子图
-    if len(current_subgraph) >= 5:
-        subgraphs.append(current_subgraph)
-    
-    return subgraphs
-
-def is_static_node(node):
-    """判断节点是否是静态的"""
-    # 检查操作类型
-    if node.op in ["call_function", "call_method"]:
-        # 检查函数是否支持静态形状
-        func = get_function_from_node(node)
-        return supports_static_shapes(func)
-    
-    return False
-```
-
-### 代码调用流程时序图
-
-```
-时序图: torch.compile(experimental={"enable_cuda_graph": True})
-
-时间轴 →
-─────────────────────────────────────────────────────────────────────────────
-
-CPU (Python)          │  Inductor + Experimental │  CUDA Runtime        │  GPU
-──────────────────────│──────────────────────────│──────────────────────│─────────
-                      │                          │                      │
-首次调用:             │                          │                      │
-compiled_model(x)     │                          │                      │
-      │               │                          │                      │
-      +──────────────>│ 检查编译缓存             │                      │
-      │               │                          │                      │
-      │               │ 缓存未命中:              │                      │
-      │               │   导出 FX Graph          │                      │
-      │               │   │                      │                      │
-      │               │   分析 experimental 参数  │                      │
-      │               │   ├─ enable_cuda_graph   │                      │
-      │               │   ├─ capture_steps        │                      │
-      │               │   ├─ min_size            │                      │
-      │               │   └─ max_size            │                      │
-      │               │   │                      │                      │
-      │               │   分析子图:              │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ 遍历 FX Graph       │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 返回子图列表        │
-      │               │   │                      │                      │
-      │               │   对于每个子图:          │                      │
-      │               │   │                      │                      │
-      │               │   检查是否应该捕获:      │                      │
-      │               │   ├─ 大小检查            │                      │
-      │               │   ├─ 静态性检查          │                      │
-      │               │   └─ 其他条件            │                      │
-      │               │   │                      │                      │
-      │               │   如果应该捕获:          │                      │
-      │               │   │                      │                      │
-      │               │   创建静态内存池         │                      │
-      │   │           │   │                      │                      │
-      │               │   捕获 CUDA Graph:        │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaGraphCaptureBegin│
-      │               │   │                      │                      │
-      │               │   │                      │                      │ [记录操作]
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaGraphCaptureEnd  │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaGraphInstantiate │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ graphExec 创建      │
-      │               │   │                      │                      │
-      │               │   保存 graph 和静态池    │                      │
-      │               │   │                      │                      │
-      │               │   编译其他部分:           │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ Triton/NVRTC 编译   │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 编译完成            │
-      │               │   │                      │                      │
-      │               │   保存编译结果            │                      │
-      │               │                          │                      │
-后续调用:             │                          │                      │
-compiled_model(x)     │                          │                      │
-      │               │                          │                      │
-      +──────────────>│ 使用编译结果            │                      │
-      │               │                          │                      │
-      │               │ 执行非捕获部分:          │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ Launch kernels      │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 完成                │
-      │               │   │                      │                      │
-      │               │ 执行捕获部分:            │                      │
-      │               │   (使用 CUDA Graphs)      │                      │
-      │               │   │                      │                      │
-      │               │   对于每个 graphed 子图:  │                      │
-      │               │   │                      │                      │
-      │               │   复制输入到静态内存     │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaMemcpyAsync     │
-      │               │   │                      │                      │
-      │               │   cudaGraphLaunch()      │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ Replay 图           │
-      │               │   │                      │                      │
-      │               │   │                      │                      │ [执行子图]
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 执行完成            │
-      │               │   │                      │                      │
-      │               │   复制输出               │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaMemcpyAsync     │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 完成                │
-      │               │                          │                      │
-      │<──────────────+ 返回结果                │                      │
-                      │                          │                      │
-```
-
-### 可用的 experimental 参数
-
-```python
-experimental = {
-    # CUDA Graphs 相关
-    "enable_cuda_graph": True,           # 启用 CUDA Graphs
-    "cuda_graph_capture_steps": 3,       # 捕获步数
-    "cuda_graph_min_size": 10,           # 最小图大小（节点数）
-    "cuda_graph_max_size": 100,          # 最大图大小
-    "cuda_graph_capture_mode": "global", # 捕获模式
-    
-    # 性能优化相关
-    "enable_triton": True,               # 启用 Triton
-    "triton_autotune": True,             # Triton 自动调优
-    "max_autotune": True,                # 最大自动调优
-    
-    # 内存优化相关
-    "enable_memory_planning": True,      # 启用内存规划
-    "static_memory_allocation": True,     # 静态内存分配
-    
-    # 调试相关
-    "debug_cuda_graphs": False,          # 调试 CUDA Graphs
-    "print_graph_breakdown": False,      # 打印图分解
-}
-```
-
-### 优势
-
-1. **细粒度控制**: 可以精确控制 CUDA Graphs 行为
-2. **智能捕获**: 自动识别可捕获的子图
-3. **混合执行**: 结合 CUDA Graphs 和常规执行
-4. **实验性功能**: 访问最新的优化技术
-
-### 限制
-
-1. **实验性**: API 可能不稳定
-2. **PyTorch 2.1+**: 需要较新版本的 PyTorch
-3. **复杂性**: 配置选项较多，需要理解
-
----
-
 ## 综合比较
 
 ### 功能对比表
 
-| 特性 | backend="cudagraphs" | backend="inductor" + reduce-overhead | torch.cuda.graph() | make_graphed_callables | experimental |
-|------|---------------------|-------------------------------------|-------------------|----------------------|--------------|
-| **易用性** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
-| **灵活性** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| **性能** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| **自动内存管理** | ✅ | ✅ | ❌ | ✅ | ✅ |
-| **多函数支持** | ❌ | ❌ | ❌ | ✅ | ❌ |
-| **动态形状支持** | ❌ | 部分 | ❌ | ❌ | 部分 |
-| **生产就绪** | ✅ | ✅ | ✅ | ✅ | ⚠️ |
-| **最低 PyTorch 版本** | 2.0 | 2.0 | 1.10 | 1.10 | 2.1 |
+| 特性 | backend="cudagraphs" | backend="inductor" + reduce-overhead | torch.cuda.graph() | make_graphed_callables |
+|------|---------------------|-------------------------------------|-------------------|----------------------|
+| **易用性** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐ |
+| **灵活性** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **性能** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **自动内存管理** | ✅ | ✅ | ❌ | ✅ |
+| **多函数支持** | ❌ | ❌ | ❌ | ✅ |
+| **动态形状支持** | ❌ | 部分 | ❌ | ❌ |
+| **生产就绪** | ✅ | ✅ | ✅ | ✅ |
+| **最低 PyTorch 版本** | 2.0 | 2.0 | 1.10 | 1.10 |
 
 ### 使用场景推荐
 
@@ -1614,10 +1288,6 @@ experimental = {
 场景 4: 同时优化多个函数
 推荐: make_graphed_callables
 原因: 支持多函数，自动内存管理
-
-场景 5: 探索最新优化技术
-推荐: experimental 参数
-原因: 访问实验性功能，细粒度控制
 ```
 
 ### 性能对比
@@ -1631,13 +1301,10 @@ experimental = {
 2. backend="inductor" + mode="reduce-overhead"
    └─ 多级优化，自动选择最优策略
 
-3. experimental 参数
-   └─ 类似于 inductor，但更灵活
-
-4. make_graphed_callables
+3. make_graphed_callables
    └─ 自动管理，有一定开销
 
-5. backend="cudagraphs"
+4. backend="cudagraphs"
    └─ 简单但有效
 
 实际性能取决于:
@@ -1684,15 +1351,6 @@ def choose_cuda_graphs_method(model, use_case):
         return torch.cuda.make_graphed_callables(
             models,
             sample_inputs
-        )
-    
-    elif use_case == "experimental":
-        # 实验性优化
-        return torch.compile(
-            model,
-            backend="inductor",
-            mode="reduce-overhead",
-            experimental={"enable_cuda_graph": True}
         )
 ```
 
@@ -1860,11 +1518,6 @@ def debug_cuda_graphs(model, input_sample):
         model,
         backend="inductor",
         mode="reduce-overhead",
-        experimental={
-            "enable_cuda_graph": True,
-            "debug_cuda_graphs": True,
-            "print_graph_breakdown": True,
-        }
     )
     
     # Warmup
@@ -1895,14 +1548,12 @@ PyTorch 提供了多种使用 CUDA Graphs 的方式，每种方式都有其适�
 2. **backend="inductor" + mode="reduce-overhead"**: 生产环境推荐，多级优化
 3. **torch.cuda.graph()**: 最大灵活性，精细控制
 4. **make_graphed_callables**: 多函数支持，自动管理
-5. **experimental 参数**: 实验性功能，细粒度控制
 
 选择合适的方式取决于您的具体需求：
 - 如果追求简单易用，选择 backend="cudagraphs"
 - 如果需要生产级性能，选择 backend="inductor" + mode="reduce-overhead"
 - 如果需要完全控制，选择 torch.cuda.graph()
 - 如果需要优化多个函数，选择 make_graphed_callables
-- 如果想探索最新技术，选择 experimental 参数
 
 希望这份指南能帮助您更好地理解和使用 PyTorch 中的 CUDA Graphs！
 

@@ -606,9 +606,12 @@ Tile 尽量大：减少 DataCopy 调用次数（减少 MTE 启动 overhead）
 | L1/L2 Cache 自动管理 | ❌ 不适用 | 昇腾所有存储层次全部需要显式 DataCopy |
 | Occupancy 调优（warp 多路 hide latency） | ⚠️ 部分适用 | 昇腾的并发模型不同，以 AI Core 并发代替 warp 并发 |
 
-**昇腾特有问题：AI CPU 退化**
+**昇腾特有问题：AICPU 与 host CPU fallback（需区分两个概念）**
 
-torch_npu 遇到 CANN 不支持的算子时，自动退化到 AI CPU（ARM 核）执行，性能可能下降 100× 以上。MindStudio 时间线中 AI CPU 占比高的 kernel 需优先用 AscendC 实现。
+- **昇腾 AICPU**：片上 ARM 核执行的**一类 CANN 算子**（真实存在，常用于动态 shape、控制流密集等不适合 AI Core 的算子）。它仍运行在 NPU 设备上、无需主机拷贝，但比 AI Core 慢。MindStudio 时间线里的 "AI CPU" 指标统计的就是这类算子，占比高的 kernel 需优先用 AscendC 重写。
+- **PyTorch host CPU fallback**：当某算子在 NPU 侧**完全没有实现**（CANN 与 op-plugin 都未适配）时，PyTorch 分发机制会把它**回退到主机 CPU** 执行，需在 NPU↔host 间来回拷贝张量，性能可能下降 100× 以上，需补齐 NPU 实现来消除。
+
+辨析：torch_npu 遇到"不支持的算子"走的是 **host CPU fallback**（主机 CPU），而非 AICPU；AICPU 是 CANN 内置、在片上 ARM 核执行的算子实现，二者一个在主机、一个在 NPU 上。
 
 > **出处**：torch_npu 官方文档，"算子支持情况"（gitee.com/ascend/pytorch）；HPCA 2021, Section 3（Cube/Vector 互斥描述）。
 

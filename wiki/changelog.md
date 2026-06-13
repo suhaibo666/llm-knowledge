@@ -4,6 +4,32 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-13: 知识诊断与自动修复（对照 upstream + torch_npu v2.7.1 源码）
+
+**Type**: Source-Verified Correction（9 个只读 agent 全量核验 + 5 个修复 agent 精准订正；基准 pytorch upstream / torch_npu v2.7.1.post5 / op-plugin）
+
+**删除杜撰**：
+- CUDA Graphs「方式5: experimental 参数」整段系完全杜撰（torch.compile 无 experimental 参数，签名仅 backend/mode/options…）——跨 4 文件删除约 674 行（Complete_Guide / Timing_Diagrams / SUMMARY / README），并重排方式编号、删相关表列/场景/TOC；伪代码 C CUDA API 名改为 PyTorch `CUDAGraph` 方法。
+- MLIR 后端「`_triton.has_triton = lambda: False` 强制禁用 Triton（npu_inductor_plugin.py:68-69）」系杜撰：该处实为 `atexit.register(shutdown_compile_workers)`，且 ascend_npu_ir 插件无 has_triton 赋值；真实门控为 `_inductor/utils.py:25-63 patch_has_triton()`，对 NPU **返回 True**。订正跨 3 文件的代码块/表/叙述（改为「MLIR 后端改用 MLIR codegen 旁路 Triton，has_triton 仍 True」）。
+
+**订正过时数值/路径**：
+- NPU aten fallback 计数：859 / ~635(289+346) → 实测 **963**（TORCH_NATIVE 348 + NPU_EXTRA 615，截至 v2.7.1），跨 3 文件。
+- MLIR npu 行数：npu_inductor_plugin.py 474→461、inductor_patch/lowering.py 7440→7505、mlir.py 469→141。
+- Dynamo 页错误源码路径前缀 `file:///e:/97-codes/torch_parallel/pytorch` → `E:\97-codes\pytorch\pytorch`（24 处）。
+- AOTAutograd「Phase 0: create_aot_state」误述 → 标注为 aot_function 内部初始化、非独立编译阶段。
+- inductor `select_decomp_table()` 位置 compile_fx.py:2686 → decomposition.py:972。
+- post_grad FSDP2 pass（remove_fsdp2_unsharded_param_graph_input_usage）当前源码无 → 标注已移除/重构。
+- op-plugin 手写 opapi 计数 352 → ~356（补严格 `*KernelNpuOpApi.cpp` 命名约 300 的口径）；CUDACombinedScheduling 行号 23→24。
+- comparison.md NPU 捕获时序图：aclopExecute→aclnn 记录、删 aclmdlRIInstantiate（model_ri 于 capture_begin 创建）、修 ` ```mermer ` 渲染错误、过时 contradiction 标注转 note。
+
+**标注/软化**：torch-mlir 上游路径标注「本地不可验证」；过期日期（2026-05-08 等）软化为「截至 …」；tilelang/mindspore 页头加「概念级、本地无源码」说明；operator_optimization 区分 AICPU 与 host CPU fallback。
+
+**核验准确（未改）**：dispatcher（DispatchKeySet/优先级）、op-plugin 注册链路与 NPUGraph.cpp 行号、NPU Graphs 9 篇中 8 篇、inductor 多数概念页；`isnan` 确认为真实逻辑缺陷。
+
+**校验**：01_ai_frameworks 全量 wikilink 零断链。
+
+---
+
 ## 2026-06-13: 01_ai_frameworks 按 PyTorch 架构重组（功能目录 + 硬件子目录）
 
 **Type**: Structural Reorganization（目录重构，git mv 保留历史；内容不变）

@@ -197,7 +197,7 @@ Dynamo 生成的是前向 FX Graph，但训练场景需要反向传播。AOT Aut
 **关键代码路径**：
 - `torch/_inductor/decomposition.py:61+`
 - `torch/_decomp/__init__.py:38+`
-- `torch/_inductor/compile_fx.py:2686` — `select_decomp_table()`
+- `torch/_inductor/decomposition.py:~972` — `select_decomp_table()`
 
 Decomposition 将高层 ATen 算子分解为底层原语。Inductor 维护一个独立的分解表（`select_decomp_table`），合并了：
 1. **Core ATen Decomposition**：PyTorch 官方提供的标准分解

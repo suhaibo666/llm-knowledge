@@ -50,7 +50,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Start([输入: Python函数 + 编译器配置]) --> A[Phase 0: create_aot_state<br/>初始化AOTState]
+    Start([输入: Python函数 + 编译器配置]) --> A[create_aot_state<br/>初始化AOTState<br/>aot_function 内部初始化，非独立编译阶段]
     
     A --> B[Phase 1: aot_stage1_graph_capture<br/>图捕获与元数据收集]
     B --> B1[run_functionalized_fw_and_collect_metadata<br/>收集视图/变异元数据]

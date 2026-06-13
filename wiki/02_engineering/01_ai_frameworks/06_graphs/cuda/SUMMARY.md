@@ -39,7 +39,7 @@ cudagraphs/
 **CUDA Graphs 使用指南（含 Mermaid 时序图）**
 
 包含：
-- ✅ 所有5种使用方式的完整示例代码
+- ✅ 所有4种使用方式的完整示例代码
 - ✅ 详细的实现原理说明
 - ✅ Mermaid 格式的代码调用流程时序图
 - ✅ 优化机制和限制说明
@@ -56,7 +56,7 @@ python cudagraphs/cudagraphs_usage_guide.py
 **可运行的完整示例脚本**
 
 包含：
-- ✅ 所有5种 CUDA Graphs 使用方式的完整示例代码
+- ✅ 所有4种 CUDA Graphs 使用方式的完整示例代码
 - ✅ 性能基准测试
 - ✅ 错误处理和兼容性检查
 - ✅ 详细的输出信息
@@ -85,7 +85,7 @@ python cudagraphs/run_cudagraphs_examples.py
 **时序图汇总（Mermaid 格式）**
 
 包含：
-- ✅ 所有5种使用方式的完整 Mermaid 时序图
+- ✅ 所有4种使用方式的完整 Mermaid 时序图
 - ✅ 详细的执行流程说明
 - ✅ 性能优化层级分析
 - ✅ 关键特性总结
@@ -258,36 +258,6 @@ output = graphed_model(input_tensor)
 
 ---
 
-### 方式5: `experimental` 参数
-
-**特点：**
-- PyTorch 2.1+ 实验性功能
-- 细粒度控制
-- 智能子图捕获
-
-**示例：**
-```python
-import torch
-import torch.nn as nn
-
-model = MyModel().cuda()
-compiled_model = torch.compile(
-    model,
-    backend="inductor",
-    mode="reduce-overhead",
-    experimental={"enable_cuda_graph": True}
-)
-
-output = compiled_model(input_tensor)
-```
-
-**实现原理：**
-- 与 inductor backend 集成
-- 自动识别可捕获的子图
-- 提供更细粒度的控制
-
----
-
 ## 🔀 NPU Graphs (npugraphs) 对比
 
 torch_npu 提供了对应的 NPU Graphs 实现，用于华为昇腾 NPU 设备。
@@ -344,7 +314,6 @@ graph.replay()
 | 生产环境/推理优化 | `backend="inductor" + mode="reduce-overhead"` | PyTorch 2.0 推荐，自动选择最优策略 |
 | 高级用户/精细控制 | `torch.cuda.graph()` | 完全控制内存和执行 |
 | 多函数优化 | `make_graphed_callables` | 同时优化多个函数，自动内存管理 |
-| 实验性功能 | `experimental` 参数 | 探索最新优化，细粒度控制 |
 
 ---
 

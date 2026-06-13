@@ -7,7 +7,7 @@
 
 ## 社区活跃度 (2026-05)
 
-`llvm/torch-mlir` 是 LLVM 孵化器下的活跃项目。最后提交 2026-05-08，几乎每天有新 commit。当前维护方向：
+`llvm/torch-mlir` 是 LLVM 孵化器下的活跃项目（截至 2026-05 观察；社区活跃，具体以上游为准）。当前维护方向：
 
 - **TorchToLinalg lowering** 持续补全（反向传播算子、激活函数、插值）
 - **FlexAttention / GQA** 支持

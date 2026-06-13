@@ -163,7 +163,6 @@ NPUGraph (C++)
 ACL Graph API
     ├── aclmdlRICaptureBegin()
     ├── aclmdlRICaptureEnd()
-    ├── aclmdlRIInstantiate()
     └── aclmdlRIExecuteAsync()
 ```
 
@@ -217,7 +216,7 @@ sequenceDiagram
 
 ### NPU Graphs 捕获流程
 
-```mermer
+```mermaid
 sequenceDiagram
     participant CPU as CPU (Python)
     participant ACL as ACL Runtime
@@ -233,7 +232,7 @@ sequenceDiagram
     
     CPU->>ACL: 记录操作
     activate NPU
-    NPU->>NPU: aclopExecute (记录到图)
+    NPU->>NPU: aclnn 指令被记录到图
     deactivate NPU
     NPU-->>ACL: 已记录
     
@@ -242,16 +241,10 @@ sequenceDiagram
     NPU->>NPU: 退出捕获模式
     deactivate NPU
     NPU-->>ACL: graph 对象
-    
-    CPU->>ACL: aclmdlRIInstantiate()
-    activate NPU
-    NPU->>NPU: 分配资源
-    deactivate NPU
-    NPU-->>ACL: graphExec 对象
 ```
 
-> [!contradiction] 此时序图为简化示意，与源码两点不符（详见 [[aclgraph_deep_analysis]] 差异 8）
-> ① 捕获期 **aclop 被禁止**（`OpCommand.cpp:139` `assertNotCapturingAclop`，根因是 aclop 运行时做主机侧 JIT 编译），真正入图的是 **aclnn**，`aclopExecute (记录到图)` 措辞不准确；② torch_npu 路径中 `model_ri` 在 `capture_begin` 即创建，**无独立 `aclmdlRIInstantiate()` 步骤**（`NPUGraph.cpp` capture_begin/capture_end，三级 API 而非四级）。
+> [!note] 时序图已按源码订正（详见 [[aclgraph_deep_analysis]] 差异 8）
+> ① 捕获期 **aclop 被禁止**（`OpCommand.cpp:139` `assertNotCapturingAclop`，根因是 aclop 运行时做主机侧 JIT 编译），真正入图的是 **aclnn**；② torch_npu 路径中 `model_ri` 在 `capture_begin` 即创建，**无独立 `aclmdlRIInstantiate()` 步骤**（`NPUGraph.cpp` 三级 API：CaptureBegin/CaptureEnd/ExecuteAsync，237/255/293）。
 
 ### CUDA Graphs 执行流程
 

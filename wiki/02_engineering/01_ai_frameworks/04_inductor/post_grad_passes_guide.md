@@ -52,7 +52,11 @@ def model(x, w):
 
 ## 2. Pass 详解
 
+> **说明**：以下 Pass 编号为示意，实际执行顺序以 `post_grad.py` 源码为准。
+
 ### Pass 1: FSDP2 参数引用清理
+
+> **注**：该 FSDP2 专用 pass（`remove_fsdp2_unsharded_param_graph_input_usage`）在当前版本 `post_grad.py` 中已移除/重构，以 `post_grad.py` 实际为准。
 
 **代码位置**：`remove_fsdp2_unsharded_param_graph_input_usage`
 

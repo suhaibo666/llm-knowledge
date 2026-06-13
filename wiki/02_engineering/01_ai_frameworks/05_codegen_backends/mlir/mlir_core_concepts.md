@@ -228,7 +228,7 @@ pm.run(module);
 
 ### 实例: 上游 MLIR ElementwiseOpFusion 源码解析
 
-以 `mlir/lib/Dialect/Linalg/Transforms/ElementwiseOpFusion.cpp` 为例，这是一个 **Op-specific Pass**（只匹配 `linalg.generic`），功能等价于 Triton 的 `can_fuse_vertical` + `fuse_nodes()`。
+以 `mlir/lib/Dialect/Linalg/Transforms/ElementwiseOpFusion.cpp`（源自上游 LLVM/MLIR 与 torch-mlir 社区项目，本地代码库不含其源码，以上游为准）为例，这是一个 **Op-specific Pass**（只匹配 `linalg.generic`），功能等价于 Triton 的 `can_fuse_vertical` + `fuse_nodes()`。
 
 **合法性检查 `areElementwiseOpsFusable`**：
 
@@ -612,7 +612,7 @@ mesh.mesh @model_mesh<["tensor"=4, "data"=8]>  // 4-way TP × 8-way DP
 - `bucket_*` Pass 的等价操作可以在 Mesh Dialect 层实现
 - 未来：WaveEP 的 wave-level 流水线调度可以作为 Mesh Dialect Pass 自动生成
 
-**当前状态**（2026-05）：Mesh Dialect 已进入 MLIR 上游，但 Pass 体系（通信与计算的自动调度）仍在积极开发中。
+**当前状态**（截至 2026-05）：Mesh Dialect 已进入 MLIR 上游，但 Pass 体系（通信与计算的自动调度）仍在积极开发中。
 
 ---
 
@@ -754,7 +754,7 @@ PTX
 可以在 Linalg Pass 层做，享受 MLIR 的形式化保证。
 ```
 
-**当前状态**（2026-05）：Triton 3.x MLIR 后端在 `triton-lang/triton` 的 `main` 分支上，H100 TMA 相关特性已可用，整体迁移仍在进行中。
+**当前状态**（截至 2026-05）：Triton 3.x MLIR 后端在 `triton-lang/triton` 的 `main` 分支上，H100 TMA 相关特性已可用，整体迁移仍在进行中。
 
 ---
 

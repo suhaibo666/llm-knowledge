@@ -66,11 +66,11 @@ NPU 的 Inductor 有三条互斥路径，由 `TORCHINDUCTOR_NPU_BACKEND` 控制�
 
 这意味着 torch_npu 实际维护的不是一个后端，而是 **三个独立后端 + 一个兼容层**。
 
-### 2.3 Lowering 能力差距：859 个 aten op fallback
+### 2.3 Lowering 能力差距：约 963 个 op fallback
 
 `torch_npu/_inductor/lowering_fallback_list.py` 的统计结果：
 
-- **859 个 `aten.*` 算子**被强制 fallback 到 ACLNN（不进入 Inductor lowering/fusion）
+- **约 963 个算子**被强制 fallback 到 ACLNN（348 native + 615 npu-extra，截至 v2.7.1；不进入 Inductor lowering/fusion）
 - **135 个 `prims.*` 算子**被强制 fallback
 - 总计 **~994 个算子**无法被 Inductor 优化
 
@@ -292,7 +292,7 @@ CATLASS、手工融合算子、ACL Graph 的 operator handler 等，都是**为�
 
 #### B. 减少 lowering_fallback_list 规模
 
-当前 859 个 aten op fallback 意味着 **Inductor 对 NPU 的价值被严重削弱**（大部分 op 走 eager ACLNN，无法融合）。建议：
+当前约 963 个 op fallback 意味着 **Inductor 对 NPU 的价值被严重削弱**（大部分 op 走 eager ACLNN，无法融合）。建议：
 
 1. **优先实现 bitwise / reduction 的 lowering**：这些 op 在 fusion 中非常常见（如 mask 计算后的 `__and__` + `addmm`）
 2. **推动社区标准化 distributed op 的 Inductor 路径**：当前所有 `c10d_functional` 算子都 fallback，导致分布式 compile 几乎不可用
@@ -363,7 +363,7 @@ torchair 的路径设计（Dynamo → FX Graph → Graph Compiler → Binary）�
 | **Graph Capture** | ACLGraph，有 Operator Handler | 中等（功能等价，实现 diverge） | 高 |
 | **Dynamo Backend** | torchair 作为独立 graph compiler | 小（设计先进） | 低 |
 
-**最核心的问题**：`lowering_fallback_list.py` 中 859 个 aten op 的 fallback 是 torch_npu compile 路径的**最大短板**。即使所有 monkey patches 都消失，如果大部分 op 无法进入 Inductor 的 fusion 管道，`torch.compile()` 对 NPU 的性能收益就会非常有限。建议将 **lowering 覆盖率提升** 作为首要攻关目标。
+**最核心的问题**：`lowering_fallback_list.py` 中约 963 个 op 的 fallback 是 torch_npu compile 路径的**最大短板**。即使所有 monkey patches 都消失，如果大部分 op 无法进入 Inductor 的 fusion 管道，`torch.compile()` 对 NPU 的性能收益就会非常有限。建议将 **lowering 覆盖率提升** 作为首要攻关目标。
 
 ---
 
@@ -421,7 +421,7 @@ def prepare_capture(cls, func, args, kwargs):
 
 **困难 3：大量算子 fallback 打断 fusion 链**
 
-GPU 几乎所有标准 aten op 都有 Triton lowering，dynamic shape 可端到端在 Inductor 管道内处理。NPU 有 859 个 aten op fallback 到 ACLNN，每个 fallback 点是一个硬边界，ACLNN 有自己的 shape 约束且**完全绕过 SymInt 体系**，无法参与 ShapeEnv 的符号推导。
+GPU 几乎所有标准 aten op 都有 Triton lowering，dynamic shape 可端到端在 Inductor 管道内处理。NPU 有约 963 个 op fallback 到 ACLNN，每个 fallback 点是一个硬边界，ACLNN 有自己的 shape 约束且**完全绕过 SymInt 体系**，无法参与 ShapeEnv 的符号推导。
 
 ### 9.3 本质差异汇总
 
@@ -430,7 +430,7 @@ GPU 几乎所有标准 aten op 都有 Triton lowering，dynamic shape 可端到�
 | 执行模型友好度 | 高（SIMT + mask 边界） | 低（Cube Core 需对齐 tiling） |
 | Graph Capture | 不兼容但可 fallback | 需预知 shape，结构性阻碍 |
 | Kernel 参数化 | Triton 天然支持（runtime xnumel） | CATLASS/CK 需 shape-specific tuning |
-| Fallback 算子 | 极少（大多数 op 有 lowering） | 859 op fallback，独立 shape 约束 |
+| Fallback 算子 | 极少（大多数 op 有 lowering） | 约 963 op fallback，独立 shape 约束 |
 | 工程成熟度 | SymInt/ShapeEnv 成熟 | 多路径各有妥协，仍在演进 |
 | 核心问题定性 | 软件/编译层（可工程化解决） | 硬件架构层（需跨层协同解决） |
 

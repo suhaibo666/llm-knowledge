@@ -61,7 +61,7 @@ graph TB
 
 | 组件 | 文件路径 | 职责 |
 |------|----------|------|
-| **入口插件** | `npu_inductor_plugin.py` | 注册NPU后端、Monkey Patch关键方法、禁用Triton |
+| **入口插件** | `npu_inductor_plugin.py` | 注册NPU后端、Monkey Patch关键方法、走 MLIR codegen（非禁用 Triton） |
 | **Lowering覆盖** | `inductor_patch/lowering.py` | 完整的lowering实现，附加TracedGraph记录 |
 | **IR扩展** | `inductor_patch/ir.py` | Monkey Patch Inductor IR类添加traced_graph支持 |
 | **Scheduler扩展** | `inductor_patch/scheduler.py` | Scheduler buffer大小计算patch |
@@ -660,7 +660,7 @@ NPU通过Monkey Patch修改PyTorch原生行为：
 
 | Patch目标 | 原属模块 | 覆盖目的 | 源码位置 |
 |----------|---------|---------|---------|
-| `_triton.has_triton` | torch.utils | 禁用Triton检测，强制走MLIR路径 | `npu_inductor_plugin.py:68-69` |
+| `patch_has_triton` | torch.utils._triton | 控制 Triton 可用性检测（**订正**：并非置 False；对 NPU 返回 True，见 6.2） | `_inductor/utils.py:25-63`（`__init__.py:23` 调用） |
 | `_TorchCompileInductorWrapper.__call__` | torch | 恢复compile_fx入口（覆盖torch_npu其他patch） | `npu_inductor_plugin.py:116-121` |
 | `torch._dynamo.utils.run_node` | dynamo | 处理npu_fusion_attention的seq_len参数类型 | `npu_inductor_plugin.py:147-200` |
 | `AotAutograd.__call__` | dynamo.backends | 包装fw/bw/inference compiler注入npu_optimize_fx_graph | `npu_inductor_plugin.py:209-222` |
@@ -680,13 +680,17 @@ NPU通过Monkey Patch修改PyTorch原生行为：
 
 ### 6.2 关键Patch实现
 
-**禁用Triton**（强制使用MLIR路径）：
+**Triton 可用性门控**（**订正**：旧文称插件在 `npu_inductor_plugin.py:68-69` 置 `_triton.has_triton = lambda: False` 系杜撰——该处实为 `atexit.register(shutdown_compile_workers)`，且整个 `ascend_npu_ir` 插件并无 `has_triton` 赋值。v2.7.1 真实逻辑见 `_inductor/utils.py:25-63` 的 `patch_has_triton()`（由 `_inductor/__init__.py:23` 调用），对 NPU 走 `_return_true` 即 **返回 True**，Triton 检测**不被禁用**；MLIR 路径是经后端选择启用，而非靠关闭 Triton）：
 
 ```python
-# npu_inductor_plugin.py:48,68-69
-from torch.utils import _triton
-_triton.has_triton = lambda: False
-_triton.has_triton_package = lambda: False
+# torch_npu/_inductor/utils.py:25-63（节选）
+def patch_has_triton():
+    def has_triton() -> bool:
+        ...
+        triton_supported_devices = {"cuda": ..., "xpu": _return_true, "npu": _return_true}
+        ...
+    torch.utils._triton.has_triton = has_triton
+    torch._inductor.scheduler.has_triton = has_triton
 ```
 
 **AotAutograd包装**（注入FX Graph优化）：
@@ -776,7 +780,7 @@ fx_importer.sympy_expr_to_semi_affine_expr = _patch_sympy_expr_to_semi_affine_ex
 
 | 文件 | 原生PyTorch | NPU实现 | 说明 |
 |------|------------|---------|------|
-| lowering.py | ~5,000行 | 7,440行 | 大部分复制自原生，每个函数注入TracedGraph记录 |
+| lowering.py | ~5,000行 | 7,505行 | 大部分复制自原生，每个函数注入TracedGraph记录 |
 | ir.py | ~3,000行 | ~700行 | Monkey Patch方式，非完整复制 |
 
 **风险场景**：
@@ -1008,15 +1012,15 @@ torch_npu/
 │   ├── ascend_npu_ir/                         # NPU MLIR后端主目录
 │   │   ├── ascend_npu_ir/
 │   │   │   ├── npu/
-│   │   │   │   ├── npu_inductor_plugin.py     # 入口插件（474行）
+│   │   │   │   ├── npu_inductor_plugin.py     # 入口插件（461行）
 │   │   │   │   ├── inductor_patch/
 │   │   │   │   │   ├── __init__.py            # 初始化，导入各patch
-│   │   │   │   │   ├── lowering.py            # Lowering覆盖（7,440行）
+│   │   │   │   │   ├── lowering.py            # Lowering覆盖（7,505行）
 │   │   │   │   │   ├── ir.py                  # IR类Monkey Patch（~700行）
 │   │   │   │   │   ├── scheduler.py           # Scheduler buffer计算patch
 │   │   │   │   │   └── fake_tensor.py         # FakeTensor fallback处理
 │   │   │   │   ├── codegen/
-│   │   │   │   │   ├── mlir.py                # NpuMlirScheduling代码生成（469行）
+│   │   │   │   │   ├── mlir.py                # NpuMlirScheduling代码生成（141行）
 │   │   │   │   │   ├── wrapper.py             # NpuMlirWrapperCodeGen
 │   │   │   │   │   ├── cpp_wrapper.py         # C++ launcher生成
 │   │   │   │   │   └── akg.py                 # AKG调度（备选后端）

@@ -181,7 +181,7 @@ def select_golden_varlist(self):
 
 #### 差异 2：Scheduler 继承自 `CUDACombinedScheduling`
 
-**位置**：`torch_npu/_inductor/codegen/npu_combined_scheduling.py:23`
+**位置**：`torch_npu/_inductor/codegen/npu_combined_scheduling.py:24`
 
 ```python
 class NPUCombinedScheduling(CUDACombinedScheduling):

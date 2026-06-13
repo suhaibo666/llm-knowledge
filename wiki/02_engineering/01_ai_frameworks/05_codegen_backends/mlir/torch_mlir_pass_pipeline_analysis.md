@@ -1,6 +1,6 @@
 # torch-mlir Pass 管线: 完整执行序分析
 
-> 基于上游 `llvm/torch-mlir` 源码，追踪 `torch.compile` 自定义 backend → torch-mlir 导入/降级链 → MLIR Pass 管线的完整序列
+> 基于上游 `llvm/torch-mlir` 源码（源自 torch-mlir 上游社区项目，本地代码库不含其源码，以上游为准），追踪 `torch.compile` 自定义 backend → torch-mlir 导入/降级链 → MLIR Pass 管线的完整序列
 > 最后更新: 2026-05-11
 
 ---

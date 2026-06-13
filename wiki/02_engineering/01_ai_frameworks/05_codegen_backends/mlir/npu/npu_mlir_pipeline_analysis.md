@@ -87,7 +87,7 @@ GPU (Triton) 的策略是"尽可能分解为 pointwise → 最大化融合"。NP
 
 **问题**: 原生 `lowering.py` 的每个函数在创建 IR 节点后，FX Graph 信息就不复存在。但 NPU 的 codegen 阶段需要 FX Graph 作为 MLIR 导入的输入。
 
-**方案**: 复制全部 `lowering.py`（~7440 行），在每个函数中额外记录 FX Graph：
+**方案**: 复制全部 `lowering.py`（~7505 行），在每个函数中额外记录 FX Graph：
 
 ```python
 # 原生 (3 行)
@@ -347,7 +347,7 @@ NPU MLIR 路径的优化 Pass 分布在三个层级，每层有不同的设计�
 
 | Patch | 目的 |
 |-------|------|
-| `_triton.has_triton → False` | 强制禁用 Triton 路径 |
+| `patch_has_triton`（`_inductor/utils.py`） | 控制 Triton 检测（**订正**：对 NPU 返回 True，非禁用；MLIR 路径靠后端选择启用） |
 | `_TorchCompileInductorWrapper.__call__` | 恢复 compile_fx 入口（抵消 torch_npu 其他补丁影响） |
 
 ### 组 2: FX Graph 预处理 (2 个)

@@ -66,7 +66,7 @@ graph TD
 
 #### 阶段1：帧评估拦截
 
-**入口点**：[`eval_frame.py`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/eval_frame.py)
+**入口点**：[`eval_frame.py`](E:\97-codes\pytorch\pytorch/torch/_dynamo/eval_frame.py)
 
 Dynamo通过PEP 523的`PyEval_SetFrameEvalFunc`API注册自定义的帧评估函数：
 
@@ -104,8 +104,8 @@ def frame_callback(frame, cache_entry, hooks, frame_state):
 #### 阶段2：字节码分析和转换
 
 **核心文件**：
-- [`bytecode_analysis.py`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/bytecode_analysis.py) - 静态分析
-- [`bytecode_transformation.py`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/bytecode_transformation.py) - 动态转换
+- [`bytecode_analysis.py`](E:\97-codes\pytorch\pytorch/torch/_dynamo/bytecode_analysis.py) - 静态分析
+- [`bytecode_transformation.py`](E:\97-codes\pytorch\pytorch/torch/_dynamo/bytecode_transformation.py) - 动态转换
 
 **分析过程**（以上函数均在`bytecode_analysis.py`中定义）：
 
@@ -148,7 +148,7 @@ for inst in instructions:
 
 #### 阶段3：符号执行
 
-**核心文件**：[`symbolic_convert.py`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/symbolic_convert.py)
+**核心文件**：[`symbolic_convert.py`](E:\97-codes\pytorch\pytorch/torch/_dynamo/symbolic_convert.py)
 
 符号执行是Dynamo的核心技术，它在不实际执行代码的情况下分析程序行为：
 
@@ -184,7 +184,7 @@ class InstructionTranslatorBase:
 
 #### 阶段4：变量跟踪
 
-**核心目录**：[`variables/`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/variables/)
+**核心目录**：[`variables/`](E:\97-codes\pytorch\pytorch/torch/_dynamo/variables/)
 
 变量跟踪系统使用继承层次结构跟踪不同类型的值：
 
@@ -203,9 +203,9 @@ graph TD
     A --> L[... 其他类型 ctx_manager/optimizer/distributed等]
 ```
 
-**变量创建**：变量跟踪器的实例化主要通过[`variables/builder.py`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/variables/builder.py)中的`VariableBuilder`和`SourcelessBuilder`完成，而非直接调用各Variable类的构造函数。
+**变量创建**：变量跟踪器的实例化主要通过[`variables/builder.py`](E:\97-codes\pytorch\pytorch/torch/_dynamo/variables/builder.py)中的`VariableBuilder`和`SourcelessBuilder`完成，而非直接调用各Variable类的构造函数。
 
-**示例**：[`variables/tensor.py`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/variables/tensor.py)
+**示例**：[`variables/tensor.py`](E:\97-codes\pytorch\pytorch/torch/_dynamo/variables/tensor.py)
 
 ```python
 # 【PyTorch源码简化】variables/tensor.py
@@ -243,7 +243,7 @@ class TensorVariable(VariableTracker):
 
 #### 阶段5：Guard系统
 
-**核心文件**：[`guards.py`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/guards.py)
+**核心文件**：[`guards.py`](E:\97-codes\pytorch\pytorch/torch/_dynamo/guards.py)
 
 Guard系统确保编译代码的正确性：
 
@@ -286,7 +286,7 @@ def nn_module_guard(module):
 
 #### 阶段6：FX图构建
 
-**核心文件**：[`output_graph.py`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/output_graph.py)
+**核心文件**：[`output_graph.py`](E:\97-codes\pytorch\pytorch/torch/_dynamo/output_graph.py)
 
 ```python
 # 【PyTorch源码简化】output_graph.py
@@ -329,9 +329,9 @@ class SubgraphTracer(fx.Tracer):
 
 #### 阶段7：后端编译
 
-**核心目录**：[`backends/`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/backends/)
+**核心目录**：[`backends/`](E:\97-codes\pytorch\pytorch/torch/_dynamo/backends/)
 
-支持的后端（后端文件在[`backends/`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/backends/)目录下）：
+支持的后端（后端文件在[`backends/`](E:\97-codes\pytorch\pytorch/torch/_dynamo/backends/)目录下）：
 - **Inductor**（`inductor.py`）：默认后端，生成优化的Triton/CPU代码
 - **AOT Eager**（`debugging.py`）：AOT Autograd的eager实现，用于调试
 - **CUDAGraphs**（`cudagraphs.py`）：CUDA图优化
@@ -340,7 +340,7 @@ class SubgraphTracer(fx.Tracer):
 - **TorchXLA**（`torchxla.py`）：XLA后端
 - **TensorRT**（`tensorrt.py`）：TensorRT后端
 
-**示例**：[`backends/inductor.py`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/backends/inductor.py)
+**示例**：[`backends/inductor.py`](E:\97-codes\pytorch\pytorch/torch/_dynamo/backends/inductor.py)
 
 ```python
 # 【PyTorch源码】backends/inductor.py
@@ -388,7 +388,7 @@ graph TD
 
 ### 3.1 PEP 523帧评估API
 
-**位置**：[`torch/csrc/dynamo/`](file:///e:/97-codes/torch_parallel/pytorch/torch/csrc/dynamo/)
+**位置**：[`torch/csrc/dynamo/`](E:\97-codes\pytorch\pytorch/torch/csrc/dynamo/)
 
 Dynamo使用Python 3.7+的PEP 523 API来拦截函数调用：
 
@@ -470,7 +470,7 @@ class ConvertFrame:
 
 ### 3.2 字节码分析技术
 
-**死代码消除**：[`bytecode_analysis.py:remove_dead_code()`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/bytecode_analysis.py)
+**死代码消除**：[`bytecode_analysis.py:remove_dead_code()`](E:\97-codes\pytorch\pytorch/torch/_dynamo/bytecode_analysis.py)
 
 ```python
 # 【PyTorch源码】bytecode_analysis.py
@@ -502,7 +502,7 @@ def remove_dead_code(instructions):
     return [inst for i, inst in enumerate(instructions) if i in live_code]
 ```
 
-**栈大小分析**：[`bytecode_analysis.py:stacksize_analysis()`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/bytecode_analysis.py)
+**栈大小分析**：[`bytecode_analysis.py:stacksize_analysis()`](E:\97-codes\pytorch\pytorch/torch/_dynamo/bytecode_analysis.py)
 
 ```python
 # 【PyTorch源码】bytecode_analysis.py
@@ -539,7 +539,7 @@ def stacksize_analysis(instructions):
 
 ### 3.3 符号执行引擎
 
-**指令翻译器**：[`symbolic_convert.py:InstructionTranslator`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/symbolic_convert.py)
+**指令翻译器**：[`symbolic_convert.py:InstructionTranslator`](E:\97-codes\pytorch\pytorch/torch/_dynamo/symbolic_convert.py)
 
 ```python
 # 【PyTorch源码简化】symbolic_convert.py
@@ -603,7 +603,7 @@ def pop_jump_if_false(self, inst):
 
 ### 3.4 变量跟踪系统
 
-**基类**：[`variables/base.py:VariableTracker`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/variables/base.py)
+**基类**：[`variables/base.py:VariableTracker`](E:\97-codes\pytorch\pytorch/torch/_dynamo/variables/base.py)
 
 ```python
 # 【PyTorch源码简化】variables/base.py
@@ -635,7 +635,7 @@ class VariableTracker:
         ...
 ```
 
-**张量变量**：[`variables/tensor.py:TensorVariable`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/variables/tensor.py)
+**张量变量**：[`variables/tensor.py:TensorVariable`](E:\97-codes\pytorch\pytorch/torch/_dynamo/variables/tensor.py)
 
 ```python
 # 【PyTorch源码简化】variables/tensor.py + variables/builder.py
@@ -686,7 +686,7 @@ class TensorVariable(VariableTracker):
         ...
 ```
 
-**NN模块变量**：[`variables/nn_module.py:NNModuleVariable`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/variables/nn_module.py)
+**NN模块变量**：[`variables/nn_module.py:NNModuleVariable`](E:\97-codes\pytorch\pytorch/torch/_dynamo/variables/nn_module.py)
 
 ```python
 # 【PyTorch源码简化】variables/nn_module.py
@@ -728,7 +728,7 @@ class NNModuleVariable(VariableTracker):
 
 ### 3.5 Guard系统实现
 
-**Guard管理器**：[`guards.py:GuardManagerWrapper`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/guards.py)
+**Guard管理器**：[`guards.py:GuardManagerWrapper`](E:\97-codes\pytorch\pytorch/torch/_dynamo/guards.py)
 
 ```python
 # 【PyTorch源码简化】guards.py
@@ -798,7 +798,7 @@ def dict_version_guard(dict_obj, expected_version):
 
 ### 3.6 副作用跟踪
 
-**核心类**：[`side_effects.py:SideEffects`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/side_effects.py)
+**核心类**：[`side_effects.py:SideEffects`](E:\97-codes\pytorch\pytorch/torch/_dynamo/side_effects.py)
 
 ```python
 # 【PyTorch源码简化】side_effects.py
@@ -839,7 +839,7 @@ class SideEffects:
 
 ### 3.7 代码生成
 
-**代码生成器**：[`codegen.py:PyCodegen`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/codegen.py)
+**代码生成器**：[`codegen.py:PyCodegen`](E:\97-codes\pytorch\pytorch/torch/_dynamo/codegen.py)
 
 ```python
 # 【PyTorch源码】codegen.py
@@ -886,7 +886,7 @@ class PyCodegen:
 
 ### 3.8 配置系统
 
-**配置文件**：[`config.py`](file:///e:/97-codes/torch_parallel/pytorch/torch/_dynamo/config.py)
+**配置文件**：[`config.py`](E:\97-codes\pytorch\pytorch/torch/_dynamo/config.py)
 
 ```python
 # 【PyTorch源码】config.py
@@ -1186,7 +1186,7 @@ graph LR
 
 ### 4.6 测试用例分析
 
-**测试文件**：[`test/dynamo/test_compile.py`](file:///e:/97-codes/torch_parallel/pytorch/test/dynamo/test_compile.py)
+**测试文件**：[`test/dynamo/test_compile.py`](E:\97-codes\pytorch\pytorch/test/dynamo/test_compile.py)
 
 ```python
 # 【PyTorch源码】test/dynamo/test_compile.py
