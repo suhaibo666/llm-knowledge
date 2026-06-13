@@ -5,12 +5,14 @@
 
 ---
 
-## 页面列表
+## 页面列表(按层次)
 
-| 页面 | 类型 | 核心主题 |
+> 本索引即本模块 overview;下列页面按 quick start→deep dive 排列。
+
+| 页面 | 层次 | 核心主题 |
 |------|------|---------|
-| [[operator_optimization_guide]] | Guide | GPU/NPU 算子调优体系:Roofline、Memory/Compute Bound 优化、AscendC、融合策略;Host CPU fallback 与 AICPU 辨析 |
-| [[tilelang_analysis]] | Analysis | TileLang:Tile-Level IR、Host Codegen、Z3 SMT 验证、通算 wave 绑定(概念级,基于公开资料) |
+| [[operator_optimization_guide]] | quick start + deep dive | GPU/NPU 算子调优体系:Roofline、Memory/Compute Bound 优化、AscendC、融合策略;Host CPU fallback 与 AICPU 辨析 |
+| [[tilelang_analysis]] | deep dive | TileLang:Tile-Level IR、Host Codegen、Z3 SMT 验证、通算 wave 绑定(概念级,基于公开资料) |
 
 ---
 

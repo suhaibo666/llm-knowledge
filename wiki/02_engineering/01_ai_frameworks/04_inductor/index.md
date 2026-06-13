@@ -15,6 +15,12 @@
 | [[PyTorch_Inductor_Technical_Analysis]] | deep dive | Inductor 总体架构、IR 设计、后端代码生成(综合参考) |
 | [[torch_compile_source_analysis]] | deep dive | 源码结构与模块组织、torch.compile 入口 |
 
+## 上手
+
+| 页面 | 层次 | 核心主题 |
+|------|------|---------|
+| [[inductor_quickstart]] | **quick start** | 最小 fwd+bwd 示例、`torch.compile` 参数速查(mode/dynamic/fullgraph/options)、关键 `torch._inductor.config` 与环境变量、mode 选型、看生成代码与调试入口 |
+
 ## 编译阶段
 
 | 页面 | 层次 | 核心主题 |
@@ -43,7 +49,7 @@
 
 | 页面 | 层次 | 核心主题 |
 |------|------|---------|
-| [[Pytorch_Compile_Debug_Analysis]] | quick start | torch.compile 调试方法、`TORCH_LOGS`/`TORCH_COMPILE_DEBUG`、日志解读 |
+| [[Pytorch_Compile_Debug_Analysis]] | deep dive(调试) | torch.compile 调试方法、`TORCH_LOGS`/`TORCH_COMPILE_DEBUG`、日志解读 |
 | [[flex_attention_analysis]] | deep dive | FlexAttention:可组合注意力融合、BlockMask、score_mod、语义驱动 codegen |
 
 ---

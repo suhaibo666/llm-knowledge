@@ -4,6 +4,25 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-13: 补全各模块 quick start 层(overview→quick start→deep dive 三层闭环)
+
+**Type**: Layering Completion（5 个 agent 并发创建；所有 API/config/env/flag 对照 pytorch upstream / torch_npu v2.7.1 源码逐一核实、引用 path，无杜撰）
+
+**新增 quick start 页（代码核实）**：
+- `04_inductor/inductor_quickstart` —— `torch.compile` 参数（mode/dynamic/fullgraph/options）、`_inductor.config` 关键项、TORCH_LOGS、缓存、mode 选型
+- `02_dynamo/dynamo_quickstart` —— `explain()`、graph break 定位、`fullgraph`、guards/recompiles、disable/allow_in_graph/reset
+- `03_aot_autograd/aot_autograd_quickstart` —— `backend="aot_eager"` + `TORCH_LOGS=aot_graphs/aot_joint_graph`、partitioner（min-cut vs default）、`aot_function`
+- `01_dispatcher_and_device/device_integration_quickstart` —— PrivateUse1 最小接入（基于 torch_openreg）、9 接入点、dispatch 排查命令
+- `05_codegen_backends/mlir/npu/npu_mlir_quickstart` —— 启用 MLIR 后端（`TORCHINDUCTOR_NPU_BACKEND`）、anir config、bishengir flags、autotune、精度校验
+
+**索引分层**：01-08 各模块索引补「层次」列与 quick start 入口，形成 overview（索引/概览页）→ quick start → deep dive 三层闭环；根索引已有「知识分层约定」。
+
+**inductor 去冗余确认**：Backend_Analysis/Mechanism、scheduler_fusion 已于前次合并；`inductor_compiler_pipeline_analysis` 与 `PyTorch_Inductor_Technical_Analysis` 互补保留（流程 vs 综合参考，服务不同读者），`torch_compile_architecture`↔pipeline 为有意的 overview↔deepdive 分层。
+
+**校验**：01_ai_frameworks 全量 wikilink 零断链（唯一 `[[maybe_unused]]` 为 C++ 代码块内属性，非链接）。
+
+---
+
 ## 2026-06-13: 冗余文档合并 + overview→quick start→deep dive 分层
 
 **Type**: Redundancy Consolidation（4 簇并发分析 + 4 个执行 agent 保守合并；铁律＝保留全部独有信息、仅去重叠；不重命名既有 deepdive 以护 basename 链接）

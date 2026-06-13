@@ -16,13 +16,15 @@
 
 ---
 
-## 页面列表
+## 页面列表(按层次)
 
-| 页面 | 类型 | 核心主题 |
+> 本索引 +「这一域回答什么」表即本模块 overview;下列页面按 quick start→deep dive 标注。
+
+| 页面 | 层次 | 核心主题 |
 |------|------|---------|
-| [[op_plugin_config_and_classification_guide]] | Guide | config 五文件字段;official/custom/symint/quant 分组;acl_op(aclop) vs op_api(aclnn);gen_opapi 结构化 vs 手写;四维分类速查表 |
-| [[op_registration_pipeline_analysis]] | Analysis | 两段 codegen 串联;生成产物(RegisterNPU.cpp / CustomRegisterSchema.cpp / custom_ops.py);TORCH_LIBRARY 静态初始化「库加载即注册」;编译→加载→运行期时间线;两条完整调用链 |
-| [[npu_operator_graph_eligibility_guide]] | Guide | 入图四路线;非 torchair 三关递进(dynamo meta / inductor lowering+fallback / aclgraph aclnn-only);每关判别命令;三关速查表 |
+| [[op_plugin_config_and_classification_guide]] | quick start | config 五文件字段;official/custom/symint/quant 分组;acl_op(aclop) vs op_api(aclnn);gen_opapi 结构化 vs 手写;四维分类速查表 |
+| [[npu_operator_graph_eligibility_guide]] | quick start + deep dive | 入图四路线;非 torchair 三关递进(dynamo meta / inductor lowering+fallback / aclgraph aclnn-only);每关判别命令;三关速查表 |
+| [[op_registration_pipeline_analysis]] | deep dive | 两段 codegen 串联;生成产物(RegisterNPU.cpp / CustomRegisterSchema.cpp / custom_ops.py);TORCH_LIBRARY 静态初始化「库加载即注册」;编译→加载→运行期时间线;两条完整调用链 |
 
 ---
 
