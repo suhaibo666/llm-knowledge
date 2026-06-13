@@ -38,7 +38,7 @@
 | **torchair** | `"npu"` | CANN GE 整图 | torchair 的 `ge_converter`（把 aten/npu IR 翻成 GE 节点）+ meta | — |
 | **inductor+triton** | `"inductor"` | inductor → Triton-Ascend | dynamo meta + inductor lowering/fallback | [[npu_triton_backend_deep_analysis]] |
 | **aclgraph** | `"inductor"` + `mode="reduce-overhead"` | NPUGraph（CANN `AclmdlRI*` capture/replay） | 上两关 + capture 约束 | [[aclgraph_deep_analysis]] |
-| **npugraphs / npugraph_ex** | `"npugraphs"` / `"npugraph_ex"` | 直接 capture FX 图 / 独立外部包 | 同 aclgraph 门禁 | [[torch_compile_mode_reduce_overhead_vs_backend_npugraphs]] |
+| **npugraphs / npugraph_ex** | `"npugraphs"` / `"npugraph_ex"` | 直接 capture FX 图 / 独立外部包 | 同 aclgraph 门禁 | [[torch_compile_npugraphs_deep_dive]] |
 
 > **torchair 路线注记**：本 checkout 里 torchair 是**未初始化的空 submodule**（`.gitmodules` 指向 `gitcode.com/ascend/torchair.git`），converter 清单无法本地 grep。判别需先 `git submodule update --init third_party/torchair/torchair`，或到已 `pip install torch_npu` 的环境看 `torch_npu/dynamo/torchair/_ge_concrete_graph/ge_converter/{aten,custom,prims,experimental}/` 是否有该算子的 `register_fx_node_ge_converter`。
 > **npugraph_ex 注记**：`torch_npu/dynamo/__init__.py:150-159` 运行时 `import npugraph_ex`，是独立外部包、本仓无源码，文档归 torchair 系。

@@ -329,6 +329,11 @@ python cudagraphs/npugraphs/npugraphs_usage_guide.py
 
 在支持 Mermaid 的编辑器中打开 `.md` 文件，时序图会自动渲染。
 
+**如何查看 Mermaid 时序图（合并自 SUMMARY）：**
+- 在 VS Code 中安装 **Mermaid Preview** 扩展
+- 打开 `.md` 文件
+- 右键点击 → "Open Preview" 或按 `Ctrl+Shift+V`
+
 ---
 
 ## 📊 性能对比
@@ -415,4 +420,4 @@ CPU → Replay Graph → GPU (执行所有操作)
 
 - [[02_engineering/01_ai_frameworks/index]]
 - [[PyTorch_CUDA_Graphs_Complete_Guide]]
-- [[SUMMARY]]
+- [[06_graphs/cuda/README]]

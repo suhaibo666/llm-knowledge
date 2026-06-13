@@ -1052,17 +1052,349 @@ torch_npu/
 
 ---
 
-*文档版本: 2.0*
-*最后更新: 2026-03-12*
+## （合并自 npu_mlir_backend_deep_analysis.md）与社区逻辑的遵循/打破、问题根源与演进建议
+
+> 本节整合自原 `npu_mlir_backend_deep_analysis.md`（torch.compile 路径分析之 MLIR 路径，基于 torch_npu v2.7.1）。保留其独有的"遵循/打破社区逻辑"判断、路径存在意义与问题根源、以及面向社区对齐的演进路线。
+
+### A.1 实现思路是否遵循社区逻辑
+
+#### "遵循社区逻辑"的部分
+
+| 组件 | 遵循方式 |
+|---|---|
+| **torch-mlir 前端** | 使用 `stateless_fx_import`（社区推荐）和 `torch-lower-to-backend-contract`（社区标准 pipeline） |
+| **Backend 注册** | 正确使用 `register_backend_for_device('npu', ...)` |
+| **Inductor Scheduler 继承** | `NpuMlirScheduling` 继承 `SIMDScheduling`，复用拓扑排序、依赖分析等基础逻辑 |
+| **Wrapper CodeGen 继承** | `NpuMlirWrapperCodeGen(PythonWrapperCodegen)` |
+| **AOTAutograd 包装** | 在社区 AOTAutograd 框架内注入 NPU 优化，未替换整个框架 |
+
+#### "打破社区逻辑"的部分
+
+| 组件 | 打破方式 | 原因 |
+|---|---|---|
+| **Triton codegen 旁路** | MLIR 后端改用 MLIR codegen（`has_triton` 仍返回 True，经后端选择旁路 Triton，**非** `has_triton=False` 强制禁用） | 达芬奇架构与 Triton block/thread 模型不匹配 |
+| **IR 回溯** | monkey-patch `ir.Loops.create` 附加 `traced_graph` | torch-mlir 需要 FX Graph 输入 |
+| **Scheduler 融合规则** | monkey-patch `Scheduler.can_fuse_vertical` 等 | Bisheng 编译器的融合偏好不同 |
+| **后端编译器** | `bishengir-opt` + `bishengir-compile` | 社区无昇腾后端 |
+| **Dynamo run_node** | 替换 `torch._dynamo.utils.run_node` | NPU 算子参数类型需要转换 |
+| **Inductor 配置** | 强制关闭 layout_optimization / size_asserts / fake_tensor_cache | 与 MLIR / Bisheng 路径冲突 |
+
+#### 总体判断
+
+MLIR 路径在**宏观理念**上遵循了社区 "torch.compile → FX Graph → 编译器后端" 的架构，但在**微观实现**上因缺少标准化的后端插件接口而大量依赖 monkey-patch。其核心问题与 Triton 路径类似：**社区 Inductor 没有为 "非 Triton 后端" 提供足够的扩展钩子**。
+
+### A.2 NPU 路径问题根源与存在意义
+
+#### 这条路径解决的问题
+
+1. **Triton 不可用的替代方案**：为 NPU 提供一条不依赖 Triton 的编译路径
+2. **利用昇腾原生编译生态**：通过 Bisheng 编译器生成针对达芬奇架构深度优化的二进制
+3. **保留 Inductor 前端能力**：复用 Inductor 的图优化、调度器融合、内存规划等成熟能力
+4. **与 torchair 的差异化定位**：torchair 基于 XLA/StableHLO，MLIR 路径基于 Inductor + torch-mlir，两者覆盖不同用户场景
+
+#### 优势与劣势
+
+**优势**：
+- 绕过了 Triton 对 NPU 的适配难题
+- Bisheng 编译器可对达芬奇架构做深度优化（如 Cube Core 指令调度、L0/L1 Buffer tiling）
+- 保留了 `torch.compile()` 标准 API，用户无感知切换
+- `auto_fallback` 机制提供了编译失败的 graceful degradation
+
+**劣势（问题根源）**：
+- **IR 回溯机制脆弱**：monkey-patch `ir.Loops.create` 和 `merge_traced_graphs` 在上游 IR 结构变化时容易失效
+- **Scheduler patch 维护成本高**：每次 Inductor scheduler 升级都需要重新验证融合规则
+- **Bisheng 编译器是闭源黑盒**：调试困难，编译失败时错误信息不透明
+- **动态形状支持有限**：虽然支持 symbolic shapes，但 `size_asserts=False` 掩盖了部分问题
+- **与社区 MLIR 生态割裂**：无法复用 IREE、ONNX-MLIR 等社区后端
+
+#### 用户选择这条路径的场景
+
+- **推理性能优先**：Bisheng 编译器生成的二进制在固定 shape 推理场景通常优于 Triton 路径
+- **算子融合深度要求高**：MLIR 路径可以表达更复杂的融合模式（如 multi-op fusion with custom tiling）
+- **Triton 路径 fallback 过多**：当默认路径的大量 fallback 导致性能不可接受时，MLIR 路径可能通过 Bisheng 的 broader op support 获得更好效果
+- **torchair 不兼容的模型**：某些模型在 torchair 的 XLA 路径上有问题，但在 Inductor-MLIR 路径上可以工作
+
+#### 独有补充：被强制关闭/注入的社区配置与机制
+
+除前文主表已列的 Monkey Patch 外，MLIR 路径还**主动关闭多项社区 Inductor 优化并注入运行时配置**（`npu_inductor_plugin.py:79-82`）：
+
+```python
+config.layout_optimization = False          # Bisheng 自行处理 layout，Inductor 优化会冲突
+config.size_asserts = False                  # 动态 shape 下避免编译期断言失败
+config.fallback_random = True                # NPU RNG 实现与社区不同，需 fallback
+config.optimize_scatter_upon_const_tensor = False
+dynamo_config.fake_tensor_cache_enabled = False  # 避免 fake tensor 缓存与 MLIR 导入元数据不一致
+```
+
+**隐式分解禁用列表**（`npu_inductor_plugin.py:128-144`，`disable_implicit_decomposition()`）：从社区 `decomposition_table` 移除 **upsample 系列算子**（`upsample_nearest1d/2d/3d`、`upsample_bilinear2d` 的 vec/default 变体）的隐式分解——这些算子分解为子算子后 Bisheng 融合效果反而更差，与默认 Triton 路径"分解+自动融合"哲学相反。
+
+**Wrapper 环境变量自注入**（`codegen/wrapper.py:61-94`）：`NpuMlirWrapperCodeGen.write_header()` 在生成的 Python wrapper 中**硬编码 `os.environ["TORCHINDUCTOR_NPU_BACKEND"] = 'mlir'`**，确保运行时子进程也识别 MLIR 模式。
+
+**独立异步编译与自动 fallback**（`codecache.py` 的 `NPUTritonFuture`）：
+
+```python
+class NPUTritonFuture(CodeCacheFuture):
+    def result(self) -> ModuleType:
+        try:
+            self.future.result()
+            kernel = _load_kernel(...)
+        except Exception:
+            kernel = _load_fx_graph(...)  # 编译失败则回退到 FX Graph
+```
+
+MLIR 路径有自己的 `CustomAsyncCompile` 和 `MulitprocessCompileFuture`，实现**编译失败自动 fallback 到 FX Graph**；默认 Inductor 的 `AsyncCompile` 编译 Triton kernel 失败后通常直接抛异常。
+
+### A.3 后续如何演进贴近社区
+
+#### 短期（v2.9.0 / master 已在推进）
+
+| 演进动作 | 状态 | 效果 |
+|---|---|---|
+| `_compat` 兼容层隔离版本差异 | master 已做 | Inductor 升级时降低 patch 同步成本 |
+| `NPUDeviceOpOverrides` 替代部分 patch | v2.9.0 已做 | 减少 monkey-patch 数量 |
+| `patch_torch_for_aoti()` 条件化管理 patch | v2.9.0 已做 | 非核心 patch 可一键禁用 |
+
+#### 中期（建议）
+
+- **A. IR 回溯机制的上游化**：向 PyTorch Inductor 提出 ①IR 扩展接口（允许后端在 `ir.Loops`/`SchedulerNode` 上附加 `fx_subgraph` 等自定义元数据）；②FX subgraph reconstruction 钩子（在 Scheduler 中提供通用机制，让融合后节点输出对应 FX 子图）。
+- **B. 推动昇腾后端进入 torch-mlir 社区**：将昇腾后端作为 torch-mlir 官方 target（类似 IREE HAL）；用 `linalg-on-tensors` pipeline 替代私有 `named-op-backend-pipeline`；推动 LLVM 昇腾后端走 `torch-mlir → linalg → LLVM IR → 昇腾` 标准路径。
+- **C. Scheduler 插件化**：将 scheduler monkey-patch 转化为正式继承/组合（`NpuMlirScheduling` 覆盖 `compute_ancestors`/`can_fuse_vertical`/`prune_redundant_deps`），需社区将 `Scheduler` 部分内部方法从"私有约定"提升为"可覆盖扩展点"。
+- **D. 减少 Dynamo 层的 run_node patch**：`npu_fusion_attention` 的 `actual_seq_qlen` 类型转换应在 `torch.ops.npu.npu_fusion_attention` 的 Python 包装层解决，而非 patch `torch._dynamo.utils.run_node`。
+
+#### 长期（架构演进）
+
+- **A. 统一三条路径的 runtime**：当前 MLIR、default、ACLGraph 路径有完全独立的 code cache / async compile / runtime / fallback 机制。建议统一 `CustomAsyncCompile` 与 `AsyncCompile` 接口、统一 cache key 格式（纳入 CANN 版本、Bisheng 版本）、统一 `auto_fallback` 策略。
+- **B. 让 torch-mlir 替代 Bisheng 的前端**：使用新版 `torch-mlir.fx_importer` 替代旧的 `stateless_fx_import`；参与 torch-mlir 的稀疏性、量化、动态形状社区工作；将 NPU 特有优化 pass 贡献回社区而非在 Bisheng 中私有实现。
+
+**演进优先级**：① 🔴 最高：IR 回溯机制上游化（`traced_graph` → 正式 IR 扩展接口）；② 🟠 高：推动昇腾后端进入 torch-mlir / LLVM 社区生态；③ 🟡 中：Scheduler 插件化（减少 `can_fuse_vertical` 等 monkey-patch）；④ 🟢 低：统一三条路径 runtime 层。
+
+---
+
+## （合并自 npu_mlir_pipeline_analysis.md）六阶段逐阶段适配、三层 Pass 架构、Patch 分组与双通道 Fallback
+
+> 本节整合自原 `npu_mlir_pipeline_analysis.md`（NPU MLIR 编译流水线六阶段适配全景）。保留其逐阶段"改了什么/为什么在这一层"的组织、三层 Pass 架构图、15 个 Monkey Patch 功能分组、Fallback 双通道等独有视角。Technical 前文已详述的 TracedGraph 类定义、view 示例、autotune 60 组合、编译模式状态机等不再重复（见对应章节）。
+
+### B.1 六阶段主线：逐阶段"改了什么 / 为什么在这一层"
+
+GPU（Triton）与 NPU（MLIR）两条路径的阶段对照：
+
+```
+GPU (Triton 路径):
+  Dynamo → AOT → Decomp → Lowering → Scheduler → Triton codegen
+    → Triton Python 源码 → Triton JIT → PTX → GPU binary
+
+NPU (MLIR 路径):
+  Dynamo → AOT → Decomp → Lowering → Scheduler → MLIR codegen
+    → 重建 FX Graph → torch-mlir FxImporter → MLIR IR
+    → 毕昇编译器(bishengir-compile) → NPU kernel (.o/.so)
+```
+
+**阶段 1 — Dynamo：无改动。** NPU 与 GPU 共用同一套 Dynamo（PEP 523 帧评估 → 符号执行 → FX Graph + Guards）。
+
+**阶段 2 — AOT Autograd：注入 FX 预处理。** Monkey-patch `AotAutograd.__call__`，在 fw/bw/inference compiler 调用前注入 `npu_optimize_fx_graph()`。**为什么在这一层**：FX Graph 刚从 AOT 分区产出、尚未进入 Inductor lowering，此时做 NPU 硬件偏好的图优化（类型转换、算子替换）不影响后续流程。
+
+| NPU 预处理 | 作用 | 为什么 |
+|-----------|------|--------|
+| `iota int64 → int32` | 将索引生成的类型从 int64 转为 int32 | Ascend NPU 的标量计算单元偏好 int32 |
+| `empty + copy → npu_dtype_cast` | 将 "分配空tensor + 拷贝" 合并为 NPU 原生 dtype cast | 减少内存分配 + NPU 有专用的 dtype cast 硬件指令 |
+
+**阶段 3 — Decomposition：NPU 选择性禁用。** `npu_decomp.py` 禁用部分 ATen 分解。**为什么**：GPU 策略是"尽可能分解为 pointwise → 最大化融合"，NPU 策略是"保留部分复合算子 → 交给 MLIR 编译器直接优化"。
+
+| 策略 | GPU (Triton) | NPU (MLIR) | 原因 |
+|------|-------------|-----------|------|
+| `aten.native_layer_norm` | 分解为 mean/var/sub/mul | **不分解**，在 lowering 中手动实现 | 保持对中间 op 的控制（确保都在白名单内），避免分解后的中间节点被 fallback |
+| `aten.addmm` | 分解为 mm + add | **不分解**，交给毕昇编译器处理 | MLIR 编译器可以直接识别和优化 addmm 模式 |
+
+**阶段 4 — Lowering：最重的适配（也是最大技术债务）。** 三个独立但耦合的适配：
+- **适配 A**：完整复制 `lowering.py`（~7505 行）+ 注入 TracedGraph（机制详见前文 §3）。
+- **适配 B**：Monkey-patch IR 类注入 `traced_graph` 属性（`_post_init_setattr` 绕过 frozen dataclass，详见前文 §3.4）。
+- **适配 C（独有）**：算子白名单/黑名单**按芯片分流**：
+
+```
+旧芯片 (910B1): 白名单模式
+  GENERATE_LIST (~94 个 op) → MLIR codegen；其余 → FallbackKernel → AclNN
+新芯片 (910_9391): 黑名单模式
+  FALLBACK_LIST (~27 个 op) → FallbackKernel → AclNN；其余 → MLIR codegen
+```
+
+| 白名单核心 op | 黑名单核心 op |
+|-------------|-------------|
+| add/sub/mul/div/exp/log/sqrt/relu/sigmoid/tanh | mm/bmm/addmm |
+| sum/mean/amax/min/max/argmax | convolution/convolution_backward |
+| cat/split/reshape/permute/expand/slice | max_pool2d/adaptive_avg_pool2d |
+| where/clamp/full/arange | embedding/random/sort/topk |
+| native_layer_norm/flex_attention | linalg_*/triangular_solve |
+
+**策略哲学**："保守 codegen，激进 fallback"——不确定能正确编译的 op 一律走 AclNN，正确性第一。**三个适配为何在 lowering 层耦合**：TracedGraph（A）需要 IR 节点携带额外属性（B），而部分 NPU 专有 op（如 `npu_dtype_cast`）必须在白名单中（C）才能走 codegen，三层相互依赖、无法独立演进。
+
+**阶段 5 — Scheduler：融合策略放宽。** 覆盖 5 个 Scheduler 方法（仅 `enable_graph_trace=True` 生效，详见前文 §4.3 / §6）。`wrap_scheduler_codegen` 用 traced_graph 的 placeholder 而非 Inductor buffer 名重算 `last_usage`。**为什么**：①毕昇编译器有自己的 hfusion 水平融合，Scheduler 融合过度会破坏 MLIR 可识别的算子模式；②NPU 的 Vector/Cube 单元并行约束与 GPU 不同，Inductor 的 `score_fusion_memory` 成本模型是为 GPU HBM 带宽优化的。
+
+**阶段 6 — Codegen：完全替换。** `TritonScheduling` → `NpuMlirScheduling`。codegen 内部经历多个 MLIR 子阶段（`codegen/mlir.py`）：
+
+```
+Stage 6a: FX 重建  create_fx_from_snodes_by_traced_graph()
+  → merge_fx_graphs() 合并 traced_graph 碎片 → make_fx() 标准化
+  → view_to_reshape() MLIR 兼容 → scalarize_tensor_ops_on_scalars() 标量化
+Stage 6b: FX → MLIR Torch Dialect (FxImporter, RAW 模式)
+  stateless_fx_import(gm, output_type=RAW) → import_stateless_graph(gm.graph) [PATCHED]
+Stage 6c: MLIR Torch IR 简化
+  run_pipeline(... "torch-lower-to-backend-contract") 内部:
+    Canonicalizer → RecomposeComplexOps → ReduceOpVariants
+    → Canonicalizer → MaximizeValueSemantics → Canonicalizer
+    → [可选 Decompose] → satisfiesBackendContract()
+Stage 6d: Bisheng Torch → Named Op 降级
+  subprocess: bishengir-opt --torch-backend-to-named-op-backend-pipeline
+    (ensure-no-implicit-broadcast 消除隐式 broadcast)
+Stage 6e: 毕昇编译
+  subprocess: bishengir-compile → hfusion/ops_reorder/auto_multi_buffer/tiling → .so
+```
+
+Stage 6c 的 `torch-lower-to-backend-contract` 内部 Pass（与上游 torch-mlir 共用）：
+
+| Pass | 在 NPU 场景中的作用 |
+|------|-------------------|
+| `Canonicalizer` | 清理 FxImporter 1:1 翻译产生的冗余 op |
+| `RecomposeComplexOps` | 重组结构性拆分 (split+copy→index_put) |
+| `ReduceOpVariants` | 规约可能残留的 non-value tensor 类型 |
+| `MaximizeValueSemantics` | 确保全部 value-semantic tensor |
+| `satisfiesBackendContract()` | 断言：无非值语义类型、无 unranked tensor、无不合法 op |
+
+> NPU 路径中 Stage 6c 的 Shape/Dtype Refinement（12 Pass）与 DecomposeComplexOps 默认不执行——fake tensor 已在 Python 前端确定所有 shape/dtype，`run_decompositions()` 已完成主力分解。
+
+**为什么在这一层**：codegen 是"最后一道门"——之前的改动都与 GPU 共享，之后即 NPU 专属编译器栈。torch-mlir 补丁的存在是因上游 torch-mlir 不支持 PyTorch 2.x 的动态形状（SymInt）和部分 sympy 表达式。
+
+### B.2 三层 Pass 架构
+
+NPU MLIR 路径的优化 Pass 分布在三个层级（FX 预处理 / Inductor Scheduler / 毕昇编译器），每层有不同的设计动机：
+
+```
+═══════════════════════════════════════════════════════════════════
+第一层: FX Graph 预处理 (Python, Inductor lowering 之前)
+  │
+  ├── npu_optimize_fx_graph()          [utils.py:338-362]
+  │   ├── replace_iota_int64_to_int32    NPU 硬件 int32 偏好
+  │   └── empty + copy → dtype_cast     NPU 自定义算子
+  │
+  │  定位理由: NPU 硬件的类型/算子偏好必须在 lowering 前转换。
+  │  一旦 ATen op 变成 Inductor IR，就无法做图级别的算子替换。
+  │
+═══════════════════════════════════════════════════════════════════
+第二层: Inductor Scheduler 融合 (Python, IR 融合阶段)
+  │
+  ├── npu_can_fuse_vertical()          放宽垂直融合条件
+  ├── _npu_prune_redundant_deps()      剪除冗余依赖
+  ├── npu_compute_ancestors()          自定义祖先计算
+  ├── _npu_get_unmet_dep_nodes()       自定义未满足依赖节点
+  └── wrap_scheduler_codegen()         重算 last_usage (基于 traced_graph)
+  │
+  │  定位理由: ①放宽融合——毕昇编译器有 hfusion，NPU 只需基础融合；
+  │  ②重算 last_usage——MLIR 编译需要正确的输入/输出参数集，
+  │  traced_graph 的 placeholder 与 Inductor buffer 名不同。
+  │
+═══════════════════════════════════════════════════════════════════
+第三层: 毕昇编译器优化 (C++, bishengir-compile 内部)
+  │
+  ├── hfusion (水平融合)                -enable-hfusion-compile=true (始终)
+  ├── ops_reorder (算子重排)             --enable-ops-reorder (条件)
+  ├── auto_multi_buffer (多缓冲流水线)    --enable-auto-multi-buffer (条件)
+  ├── symbol_analysis (符号分析)          --enable-symbol-analysis (动态shape)
+  └── tuning (autotune)                -enable-tuning-mode (条件)
+  │
+  │  定位理由: 这些优化依赖 NPU 微架构细节：
+  │  • hfusion — Ascend Vector/Cube 单元的指令级并行约束
+  │  • ops_reorder — 优化 NPU 流水线利用率
+  │  • auto_multi_buffer — UB 大小固定 (910B1=192KB, 910_9391=256KB)
+  │  • block_dim — 控制 AI Core 的 block 调度粒度 (默认48)
+  │
+  │  PyTorch 层不知道这些硬件细节，必须在编译器层做"最后一公里"优化。
+═══════════════════════════════════════════════════════════════════
+```
+
+### B.3 15 个 Monkey Patch 功能分组
+
+这些 Patch 按目的分为五组。本质原因：PyTorch Inductor 没有为第三方后端预留足够的扩展点。（与前文 §6.1 的清单互为补充：此处按"功能目的"分组，§6.1 按"源码位置"列表。）
+
+**组 1：路径控制（2 个）**
+
+| Patch | 目的 |
+|-------|------|
+| `patch_has_triton`（`_inductor/utils.py:25-63`） | 控制 Triton 检测（**订正**：对 NPU 返回 True，**非禁用**；MLIR 路径靠后端选择启用） |
+| `_TorchCompileInductorWrapper.__call__` | 恢复 compile_fx 入口（抵消 torch_npu 其他补丁影响） |
+
+**组 2：FX Graph 预处理（2 个）**
+
+| Patch | 目的 |
+|-------|------|
+| `AotAutograd.__call__` | 注入 `npu_optimize_fx_graph` |
+| `torch._dynamo.utils.run_node` | 处理 `npu_fusion_attention` 的参数类型 |
+
+**组 3：IR 扩展 — TracedGraph 支持（3 个）**
+
+| Patch | 目的 |
+|-------|------|
+| `ir.Loops.create` | 注入 `traced_graph` + `node_name` |
+| `ir.Pointwise.constant_to_device` | `traced_graph` 透传 |
+| `ir.Reduction.create` | `traced_graph` 透传 + 附加 kept_idx/reduced_idx |
+
+**组 4：Scheduler 融合策略（5 个）**
+
+| Patch | 目的 |
+|-------|------|
+| `Scheduler._codegen` | 重算 last_usage |
+| `Scheduler.compute_ancestors` | 自定义祖先计算 |
+| `scheduler._prune_redundant_deps` | 自定义依赖剪枝 |
+| `Scheduler.can_fuse_vertical` | 放宽融合条件 |
+| `Scheduler._get_unmet_dep_nodes` | 自定义未满足依赖节点获取 |
+
+**组 5：算子兼容 + torch-mlir 兼容（3 个）**
+
+| Patch | 目的 |
+|-------|------|
+| `F.avg_pool2d` | bf16→fp32→bf16 精度修正 |
+| `FxImporter.import_stateless_graph` | 注入符号形状范围约束 |
+| `sympy_expr_to_semi_affine_expr` | 扩展 sympy→MLIR 仿射表达式 |
+
+### B.4 Fallback 双通道
+
+NPU 有两套并行的 fallback 机制——一套在 lowering 层（op 级别、编译期、不可逆），一套在 codegen 层（kernel 级别、运行时、自动恢复）：
+
+```
+═══════════════════════════════════════════════════════════════
+Lowering 层 fallback (op 级别):
+  某个 ATen op 不在 GENERATE_LIST → make_fallback(op)
+    → lowerings[op] = fallback_handler(op)
+    → 创建 ir.FallbackKernel → 调用 AclNN 算子库
+    → 发生在编译期, 不可逆
+
+Codegen 层 fallback (kernel 级别):
+  某个 kernel 的 MLIR 编译失败 → auto_fallback 模式自动回退
+    → 保存 FX Graph 到磁盘 → eager 执行
+    → 发生在运行时, 自动恢复
+═══════════════════════════════════════════════════════════════
+```
+
+| 维度 | Lowering fallback | Codegen fallback |
+|------|------------------|-----------------|
+| 触发条件 | op 不在白名单 | MLIR 编译失败 |
+| 时机 | 编译期 | 首次执行时 |
+| 目标 | AclNN 算子库 | FX Graph eager |
+| 可恢复 | 不可逆 | 自动回退 |
+
+> 编译模式状态机（三种编译模式 + 自动降级）与 60 种 autotune 参数组合详见前文 §8、§5.3，此处不重复。
+
+---
+
+*文档版本: 2.1*
+*最后更新: 2026-06-13*
 *作者: AI Assistant*
 *基于: torch_npu Inductor MLIR后端代码分析*
 *变更: v2.0 - 修正IR扩展机制描述、Fallback策略、行号引用、自动调优组合数；补充缺失组件、Monkey Patch完整清单、编译模式状态机、依赖关系、初学者总结等章节*
+*变更: v2.1 - 保守合并 npu_mlir_backend_deep_analysis.md 与 npu_mlir_pipeline_analysis.md 的独有内容（遵循/打破社区逻辑、问题根源、演进建议、六阶段逐阶段适配、三层 Pass 架构、15 个 patch 功能分组、Fallback 双通道）；删除该两篇并 repoint 入站链接*
 
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
 - [[mlir_core_concepts]]
 - [[triton_vs_mlir_backend_analysis]]
-- [[npu_mlir_pipeline_analysis]]
-- [[NPU_Inductor_Backend_Mechanism]]
+- [[NPU_Inductor_Backend_Analysis]]
 - [[npu_compile]]

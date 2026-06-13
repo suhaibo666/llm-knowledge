@@ -430,7 +430,7 @@ Inductor Triton 路径是 torch_npu 与社区差距**最大**的一条路径。�
 
 - [[npu_compile_paths_overview]] — torch_npu 三条编译路径全景概览（上级分析）
 - [[NPU_Inductor_Backend_Analysis]] — NPU Inductor 后端集成架构
-- [[NPU_Inductor_Backend_Mechanism]] — NPU 后端内部机制
+- [[NPU_Inductor_Backend_Analysis]] — NPU 后端内部机制
 - [[npu_lowering_guide]] — NPU 特定 lowering 步骤与算子映射
 - [[npu_compile]] — NPU 编译工作流
 - [[inductor_compiler_pipeline_analysis]] — PyTorch Inductor 端到端编译管线

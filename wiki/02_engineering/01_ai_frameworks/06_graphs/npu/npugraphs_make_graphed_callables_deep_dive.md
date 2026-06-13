@@ -665,5 +665,5 @@ check_memory_pool(
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
-- [[npugraphs_memory_management_analysis]]
+- [[npugraphs_memory_reuse_analysis]]
 - [[torch_compile_npugraphs_deep_dive]]

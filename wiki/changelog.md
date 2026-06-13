@@ -4,6 +4,25 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-13: 冗余文档合并 + overview→quick start→deep dive 分层
+
+**Type**: Redundancy Consolidation（4 簇并发分析 + 4 个执行 agent 保守合并；铁律＝保留全部独有信息、仅去重叠；不重命名既有 deepdive 以护 basename 链接）
+
+**合并（7 篇并入，内容无损）**：
+- 04_inductor/npu：`NPU_Inductor_Backend_Mechanism`（25-35% 重叠）→ `NPU_Inductor_Backend_Analysis`（并入 MultiTemplateBuffer / Prologue Fusion / 4 实战场景 / 融合性能 / 配置；2265 行）
+- 04_inductor：`scheduler_fusion_strategies` → `scheduler_analysis`（并入自定义融合 Pass + 排查指南）
+- 05_codegen_backends/mlir/npu：`npu_mlir_backend_deep_analysis` + `npu_mlir_pipeline_analysis`（65-75% 重叠）→ `NPU_MLIR_Backend_Technical_Analysis`（并入社区遵循/打破、三层 Pass、15 patch 分组、双通道 fallback、六阶段主线、演进建议；1400 行）
+- 06_graphs/cuda：`SUMMARY`（99% 同 README）→ `README`
+- 06_graphs/npu：`npugraphs_memory_management_analysis`（60%）→ `npugraphs_memory_reuse_analysis`；`torch_compile_mode_reduce_overhead_vs_backend_npugraphs`（45%）→ `torch_compile_npugraphs_deep_dive`（附录 A：双路径对比）
+
+**保留（互补不冗余）**：inductor 通用「管线 / 技术分析」二分、passes 三件套、动态形状三件套、MLIR 通用三篇、`aclgraph` + `aclgraph_deep_analysis`（天然 overview/deepdive）。
+
+**分层**：各模块索引新增「层次」列（overview→quick start→deep dive）；根索引补「知识分层约定」章节；硬件子索引按层次重排。
+
+**收尾**：全部入站 wikilink repoint（含跨域 megatron `[[SUMMARY]]`→`[[06_graphs/cuda/README]]`）；01_ai_frameworks 内容页 52→45；全量 wikilink 零断链；`wiki/index.md` 计数更新（45/21/10/4）。
+
+---
+
 ## 2026-06-13: 知识诊断与自动修复（对照 upstream + torch_npu v2.7.1 源码）
 
 **Type**: Source-Verified Correction（9 个只读 agent 全量核验 + 5 个修复 agent 精准订正；基准 pytorch upstream / torch_npu v2.7.1.post5 / op-plugin）

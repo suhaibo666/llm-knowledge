@@ -796,7 +796,7 @@ Step 6  回归 Profile
 - [[flex_attention_analysis]] — FlexAttention 可组合注意力融合机制
 - [[tilelang_analysis]] — TileLang Tile-Level IR 与 Host Codegen
 - [[npu_compile_paths_overview]] — NPU torch.compile 三条路径（Triton/ACLGraph/MLIR）
-- [[npu_mlir_pipeline_analysis]] — NPU MLIR 六阶段编译管线
+- [[NPU_MLIR_Backend_Technical_Analysis]] — NPU MLIR 六阶段编译管线
 - [[npu_compile]] — NPU 编译工作流与 Autotune
 - [[npu_lowering_guide]] — NPU 特定算子 Lowering 指南
 - [[PyTorch_CUDA_Graphs_Complete_Guide]] — CUDA Graphs 图捕获/重放机制

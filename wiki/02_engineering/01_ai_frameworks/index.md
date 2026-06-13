@@ -49,6 +49,18 @@
 
 ---
 
+## 知识分层约定(overview → quick start → deep dive)
+
+每个(子)模块内的知识按「深入浅出」分三层,索引页用 **层次** 列标注:
+
+- **overview**(浅):该模块是什么 / 为什么 / 全景图 / 如何选型,5 分钟通读;通常即各目录的 `index.md` 或显式 overview 页。
+- **quick start**(用):最小可用路径、关键 API、可跑示例、常见开关(并非每模块都有,按需)。
+- **deep dive**(深):源码级深度分析(多为既有大文),按主题拆分,一概念一页。
+
+阅读建议:先 overview 建立全局 → 需要动手看 quick start → 钻研细节看 deep dive。
+
+---
+
 ## 知识空白
 
 - **TorchDynamo guard 失败调试** — 常见但未系统记录

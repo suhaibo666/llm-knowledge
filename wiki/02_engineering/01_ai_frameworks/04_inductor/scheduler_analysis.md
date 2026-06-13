@@ -735,6 +735,114 @@ Scheduler 就是一个"智能排课系统"——它把所有要执行的计算�
 
 ---
 
+## 自定义融合 Pass 与排查(合并自 scheduler_fusion_strategies)
+
+> 本节补充 `pre_fusion_custom_pass` 的实战示例、Pass 内可操作 API 速查与融合问题排查清单，作为 §9 自定义指南、§10 调试观测的实践延伸。融合基本原理（垂直/水平/Reduction/Template）见 §2.2、§7、§3.x，此处不再重复。
+
+### A. 自定义融合 Pass 实战（`pre_fusion_custom_pass`）
+
+Inductor 允许用户通过 `pre_fusion_custom_pass` 在默认融合逻辑执行前介入，修改调度图（Scheduling Graph）。
+
+**定义与签名**
+
+```python
+# 类型签名
+Callable[[torch._inductor.graph.GraphLowering], torch._inductor.graph.GraphLowering]
+```
+
+- **执行时机**：在 `Scheduler` 初始化后，`fuse_nodes()` 被调用前。
+- **输入/输出**：接收 `GraphLowering` 实例，必须返回修改后的实例。
+- **作用域**：此时节点已转换为 `SchedulerNode`，但尚未进行融合分组。
+
+**编写示例（OOM 防护 + 强制融合特定模式）**
+
+```python
+import torch
+import torch._inductor.config as config
+from torch._inductor.graph import GraphLowering
+
+def my_pre_fusion_pass(graph: GraphLowering) -> GraphLowering:
+    """
+    自定义调度器融合前 Pass
+    """
+    for node in graph.nodes:
+        fx_node = getattr(node, 'node', None)
+        if fx_node is None:
+            continue
+
+        target = getattr(fx_node, 'target', None)
+        if target is None:
+            continue
+
+        # 场景 1：防止大输出 Tensor 被融合 (OOM 防护)
+        # 检查节点输出大小，超过 64MB 则禁止融合
+        if hasattr(node, 'get_outputs'):
+            outputs = node.get_outputs()
+            if outputs and hasattr(outputs[0], 'numel'):
+                # 假设 FP16，64MB ≈ 32M elements
+                if outputs[0].numel() > 32 * 1024 * 1024:
+                    node.fusable = False  # 关键：关闭融合标记
+                    continue
+
+        # 场景 2：强制融合特定模式 (add -> relu)
+        if 'aten.add.Tensor' in str(target):
+            for user in node.users:
+                user_target = getattr(getattr(user, 'node', None), 'target', '')
+                if 'aten.relu' in str(user_target):
+                    node.fusable = True
+                    user.fusable = True
+                    break
+
+    return graph
+
+# 注册到 Inductor 配置
+config.pre_fusion_custom_pass = my_pre_fusion_pass
+```
+
+**Pass 内可操作的核心 API**
+
+| 对象/属性 | 说明 | 常用操作 |
+| :--- | :--- | :--- |
+| `graph.nodes` | 待调度的节点列表 (`SchedulerNode`) | 遍历、过滤、重排 |
+| `node.node` | 底层 FX Node | 获取 `op`, `target`, `args` |
+| `node.fusable` | 融合开关 (bool) | `True` 允许融合，`False` 强制隔离 |
+| `node.users` | 数据依赖关系 | 检查消费者，构建自定义融合组 |
+
+### B. 融合问题排查指南
+
+**B.1 开启调试模式**
+
+```bash
+export TORCH_COMPILE_DEBUG=1
+export TORCH_LOGS="+inductor"
+```
+生成的 `torch_compile_debug` 目录包含：
+- `fx_graph_readable.html`: 原始 FX 图。
+- `post_grad_graph_*.txt`: **融合后的图**（查看 `FusedSchedulerNode`）。
+- `triton_kernel_*.py`: 生成的 Triton 代码。
+
+**B.2 编译报错 (Compilation Errors)**
+- **常见原因**：
+  - 动态 Shape 问题（未处理的 `SymInt`）。
+  - 不支持的算子（Fallback 到 Eager）。
+- **排查**：检查日志中的 `FALLBACK` 警告，查看生成的 Triton 代码是否有语法错误。
+
+**B.3 内存 OOM 问题**
+`reorder_for_peak_memory` 旨在解决 OOM，若仍失败：
+1. **检查融合是否过度**：
+   - 设置 `config.max_fused_size = 1` 禁用融合。若 OOM 消失，说明是融合策略问题。
+2. **检查 Fusion Groups**：
+   - 查看 Debug 日志中 `FusedSchedulerNode` 的大小。
+3. **手动干预**：
+   - 检查长生命周期的大 Tensor。
+   - 在模型代码中显式 `del tensor`。
+
+**B.4 性能回退**
+- 对比 `config.pre_fusion_custom_pass = None` 的基准性能。
+- 确认 Template Fusion 是否命中（如 Attention 未命中会导致性能大幅下降）。
+
+---
+
 ## 文件引用
 
 | 文件 | 关键内容 |

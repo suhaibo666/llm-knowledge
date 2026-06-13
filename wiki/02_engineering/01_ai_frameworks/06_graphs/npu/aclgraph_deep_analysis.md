@@ -562,6 +562,6 @@ ACLGraph 是 torch_npu 与社区差异**中等但很关键**的一条路径。�
 - [[aclgraph]] — ACL Graph 基础集成（已有页面）
 - [[comparison]] — CUDA Graphs vs NPU Graphs 特性对比
 - [[torch_compile_npugraphs_deep_dive]] — NPU Graphs 与 torch.compile 集成深度分析
-- [[npugraphs_memory_management_analysis]] — NPU Graphs 内存管理
-- [[torch_compile_mode_reduce_overhead_vs_backend_npugraphs]] — reduce_overhead vs npugraphs
+- [[npugraphs_memory_reuse_analysis]] — NPU Graphs 内存管理
+- [[torch_compile_npugraphs_deep_dive]] — reduce_overhead vs npugraphs
 - [[npu_lowering_guide]] — NPU lowering 与 fallback（§9）；差异 8 的 aclnn/aclop 把 fallback 关与捕获关连通

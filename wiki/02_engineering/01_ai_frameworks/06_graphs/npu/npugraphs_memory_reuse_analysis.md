@@ -1447,6 +1447,194 @@ flowchart TB
 
 ---
 
+## 关键代码解析（合并自 memory_management）
+
+> 以下小节来自原 `npugraphs_memory_management_analysis.md`，补充本文未覆盖的低层数据结构与生命周期管理实现。Graph Tree / Capture-Replay 等基础机制见前文，不再重复。
+
+### 1. TreeManager 生命周期管理
+
+```python
+class TreeManagerContainer:
+    """
+    管理 TreeManager 的生命周期
+    确保只要有任何 Graph 或 Tensor 输出存活，Tree 就保持存活
+    """
+
+    def __init__(self, device_index: int):
+        self.tree_manager: Optional[NPUGraphTreeManager] = None
+        self.live_npugraphify_fns = 0        # 活跃的 graph 函数数量
+        self.device_index = device_index
+        self.live_storages_count = 0          # 存活的 storage 数量（Tensor 输出）
+        self.graph: Optional[torch.npu.NPUGraph] = None  # 用于保持 pool 存活
+        self.lock = threading.Lock()
+
+    def add_strong_reference(self, fn: Callable[..., Any]) -> None:
+        """增加引用计数，当 fn 被垃圾回收时自动减少"""
+        with self.lock:
+            self.live_npugraphify_fns += 1
+
+        # 注册终结器：当 fn 被释放时自动调用 finalize_npugraphify_fn
+        weakref.finalize(fn, self.finalize_npugraphify_fn)
+
+    def finalize_npugraphify_fn(self) -> None:
+        """Graph 函数被释放时的回调"""
+        with self.lock:
+            self.live_npugraphify_fns -= 1
+            if self.live_npugraphify_fns == 0 and self.live_storages_count == 0:
+                # 没有活跃引用，可以安全释放 tree_manager
+                self.tree_manager = None
+
+    def _finalize_tensor(self) -> None:
+        """Tensor 输出被释放时的回调"""
+        with self.lock:
+            self.live_storages_count -= 1
+            if self.live_storages_count == 0:
+                self.graph = None  # 释放对 pool 的引用
+                if self.live_npugraphify_fns == 0:
+                    self.tree_manager = None
+```
+
+### 2. 分配器状态检查点（C++ 数据结构）
+
+```cpp
+// BlockState: 单个 block 的状态
+struct BlockState {
+  c10::DeviceIndex device = 0;
+  aclrtStream stream = nullptr;
+  stream_set stream_uses = {};
+  size_t size = 0;
+  void* ptr = nullptr;
+  bool allocated = false;
+  int64_t gc_count_base = 0;
+
+  explicit BlockState(Block* block);
+};
+
+// SegmentState: 整个 segment（连续的 block 链）的状态
+struct SegmentState {
+  std::vector<BlockState> blocks;
+  bool is_small = false;
+
+  explicit SegmentState(Block* head);
+};
+
+// PrivatePoolState: 私有内存池的完整状态
+struct PrivatePoolState : AllocatorState {
+  MempoolId_t owner_id = {0, 0};
+  std::vector<SegmentState> segments;
+
+  PrivatePoolState(
+      MempoolId_t pool_id,
+      const std::vector<Block*>& private_pool_head_blocks);
+};
+```
+
+**检查点的作用**：
+- 在分叉路径时保存当前分配器状态
+- 允许在分支间切换时恢复正确的内存布局
+- 避免重复分配，实现内存复用
+
+### 3. Warmup 与静态输入处理
+
+```python
+class NPUWarmupNode:
+    """
+    Warmup 节点的特殊处理
+    - 在正式录制 Graph 前执行，确保所有 NPU 操作都已完成编译和初始化
+    - 不录制到 Graph 中，仅用于准备
+    """
+
+    def run(self, new_inputs: List[InputType]) -> OutputType:
+        # 1. 收集当前路径上所有存活的 storage
+        existing_path_data_ptrs = {
+            t.data_ptr()
+            for t in self.path_live_weakrefs()
+            if t()
+        }
+
+        # 2. 找出非 Graph 管理的输入（需要拷贝到 pool）
+        non_npugraph_inps = []
+        for t in itertools.chain(new_inputs, self.wrapped_function.constants):
+            if (isinstance(t, torch.Tensor)
+                and t.untyped_storage().data_ptr() not in existing_path_data_ptrs):
+                non_npugraph_inps.append(weakref.ref(t.untyped_storage()))
+
+        # 3. 使用内存池执行函数
+        with _use_npu_memory_pool_manager(
+            self.device_index, self.npu_graphs_pool, self.stream
+        ):
+            out = self.wrapped_function.model(new_inputs)
+
+        # 4. 追踪输出：创建弱引用但不阻止 GC
+        self.outputs_weakrefs.extend([
+            map_to_ref(out_) if self._should_track_output(out_) else None
+            for out_ in out
+        ])
+
+        return out
+```
+
+### 4. 静态输入优化
+
+```python
+class NPUGraphNode:
+    def __init__(self, ...):
+        # ...
+
+        # 识别静态输入：来自之前 Graph 输出的 Tensor
+        self.npugraph_managed_idxs: List[int] = [
+            idx
+            for idx, t in enumerate(inputs)
+            if isinstance(t, torch.Tensor) and self._is_npu_graph_recorded_tensor(t)
+        ]
+
+        # 识别活性的别名引用
+        self.live_npugraph_managed_path_refs: List[Optional[PathOutputIndex]] = [
+            self._is_alias_of_live_recorded_tensor(t) if isinstance(t, torch.Tensor) else None
+            for t in inputs
+        ]
+
+        # 合并静态输入索引
+        self.static_input_idxs: List[int] = list(
+            set(wrapped_function.static_input_idxs) | set(self.npugraph_managed_idxs)
+        )
+
+        # 记录静态输入的数据指针（用于后续验证）
+        self.static_input_data_ptrs: List[Optional[int]] = [
+            self._get_static_data_ptr(i, inputs, self.static_input_idxs)
+            for i in range(len(inputs))
+        ]
+
+    def _is_npu_graph_recorded_tensor(self, t: torch.Tensor) -> bool:
+        """检查 Tensor 是否来自之前 Graph 的输出"""
+        for storage_weak_ref in self.path_live_weakrefs():
+            if t.untyped_storage().data_ptr() == storage_weak_ref.data_ptr():
+                return True
+        return False
+
+    def _is_alias_of_live_recorded_tensor(self, t: torch.Tensor) -> Optional[PathOutputIndex]:
+        """检查 Tensor 是否是某个活性输出的别名"""
+        for depth, node_outputs in enumerate(self.path_weakrefs):
+            for offset, weak_ref in enumerate(node_outputs):
+                if weak_ref is None:
+                    continue
+                storage_ptr = weak_ref.data_ptr()
+                if t.untyped_storage().data_ptr() == storage_ptr:
+                    return (depth, offset)
+        return None
+```
+
+### 使用建议补充
+
+来自 memory_management 的额外实践建议（与上文「最佳实践建议」互补）：
+
+1. **内存池共享**：当多个 Graph 顺序执行时，使用 `pool=graph.pool()` 共享内存池
+2. **Warmup 重要性**：确保在 capture 前充分 warmup，避免延迟初始化进入 Graph
+3. **避免动态性**：Graph 内避免动态控制流、动态形状、动态内存分配
+4. **监控内存**：使用 `torch.npu.memory_summary()` 监控内存池使用情况
+
+---
+
 ## 总结
 
 ### 核心机制回顾
@@ -1506,5 +1694,5 @@ flowchart TB
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
-- [[npugraphs_memory_management_analysis]]
+- [[npugraphs_memory_reuse_analysis]]
 - [[torch_compile_npugraphs_deep_dive]]

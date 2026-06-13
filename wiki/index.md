@@ -54,10 +54,10 @@ wiki/
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| AI框架 | [[02_engineering/01_ai_frameworks/index]] | 52 | 活跃 |
-| └─ TorchInductor | [[02_engineering/01_ai_frameworks/04_inductor/index]] | 23 | 活跃 |
-| └─ 运行时图(CUDA/NPU) | [[02_engineering/01_ai_frameworks/06_graphs/index]] | 13 | 活跃 |
-| └─ Codegen 后端(MLIR) | [[02_engineering/01_ai_frameworks/05_codegen_backends/mlir/index]] | 6 | 活跃 |
+| AI框架 | [[02_engineering/01_ai_frameworks/index]] | 45 | 活跃 |
+| └─ TorchInductor | [[02_engineering/01_ai_frameworks/04_inductor/index]] | 21 | 活跃 |
+| └─ 运行时图(CUDA/NPU) | [[02_engineering/01_ai_frameworks/06_graphs/index]] | 10 | 活跃 |
+| └─ Codegen 后端(MLIR) | [[02_engineering/01_ai_frameworks/05_codegen_backends/mlir/index]] | 4 | 活跃 |
 | 训练框架 | [[02_engineering/02_train_frameworks/index]] | 8 | 活跃 |
 | └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 6 | 活跃 |
 | └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 7 | 活跃 |
