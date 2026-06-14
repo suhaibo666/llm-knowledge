@@ -4,6 +4,27 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-14: PrivateUse1 接入面 9 接入点补「为什么·深入（根本原因）」
+
+**Type**: Page Deepening（9 个 agent 并发挖根因；基于本地 checkout pytorch `trunk/6f26be8` + torch_npu 逐条核对 `file:line`，配 RFC/PR/dev-discuss/官方博客；遵「只扩展不删除」铁律，原「为什么」一句全部保留）
+
+**更新页**：`02_engineering/01_ai_frameworks/01_dispatcher_and_device/privateuse1_device_integration_analysis`（212→277 行）——为 §1 设计哲学、9 个接入点、§12 运行时组件各加一节根本原因分析：
+- **§1 设计哲学**：DispatchKey 是稀缺 64-bit 资源（backend 槽 ≤16 且已满）→ 预留 PrivateUse1/2/3 匿名占位 key；对比"全员上游"撞 key/带宽墙、"各自 fork"碎片化；placeholder→100+ PR 升一等公民；Authenticity/dogfooding
+- **Device**：c10 不链接加速器库 → 按 DeviceType O(1) 虚分派；`exchange_device` 专为 RAII 恢复设计、`device_count` noexcept；CUDA12 eager-context 与 fork 防护
+- **Guard**：编译期不知后端 → `DeviceGuardImplInterface` 注册表；`InlineDeviceGuard<CUDAGuardImpl>`(去虚化) vs `VirtualGuardImpl`(虚分发) 的性能/可扩展分界
+- **Hooks**：编译期解耦下的控制反转（IoC），补「无 device key 可路由」的通用路径（Generator/pin_memory/init）
+- **Operators**：分层 alias key + redispatch（反向白送 / composite 自动分解 / cpu_fallback）+ 不可约核心算子
+- **AMP**：autocast 作为独立 dispatch key，cast 是算子属性而非设备属性，上游定策略后端填 dtype
+- **Autoload**：注册依赖 import 的鸡蛋问题、`entry_points(group="torch.backends")`、隐式加载代价
+- **Profiler**：`ProfilerStubs` 依赖倒置、event 异步计时、legacy fallback vs kineto `IActivityProfiler` 门槛（含一处精度澄清）
+- **Distributed**：集合通信语义/实现解耦、`Work` 异步句柄、device→backend 解析
+- **CI**：扩展点无编译期强约束 + 第三方管不住上游 → OpenReg 作可执行规格
+- **§12 运行时组件（逐组件根因）**：Allocator（caching/`recordStream` 防 use-after-free；OpenReg 仅落接口、caching 仍 TODO）、Host pinned（DMA 要 page-locked）、Stream（值类型 + StreamId 位编码 vs `pack3` 三字段）、Event（lazy 创建 + EventPool）、Generator（graph-safe RNG：seed/offset 放设备内存防 replay 不推进）、Serialization（`register_package` + `TensorBackendMetaRegistry` 持久化设备私有 format）、Exception（C 错误码→`c10::Error` + 异步 `PeekAtLastError`）
+
+**校验**：抽样核对 `file:line`（`DeviceGuardImplInterface.h:382/200/388`、`DispatchKey.h:332/345`、`autocast_mode.h:478`、`torch/__init__.py:3025`、`profiler.py:315`、`run_test.py:982-986` 等）通过；页 259 行，未触 500 行拆分阈值。
+
+---
+
 ## 2026-06-13: 补全各模块 quick start 层(overview→quick start→deep dive 三层闭环)
 
 **Type**: Layering Completion（5 个 agent 并发创建；所有 API/config/env/flag 对照 pytorch upstream / torch_npu v2.7.1 源码逐一核实、引用 path，无杜撰）
