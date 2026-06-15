@@ -414,6 +414,13 @@ microbatching 由 `pipelining/microbatch.py` 的 `split_args_kwargs_into_chunks`
 
 ---
 
+## 社区参考
+
+- PyTorch 官方教程,**PyTorch Distributed Overview** — https://pytorch.org/tutorials/beginner/dist_overview.html
+- 论文,**PyTorch Distributed: Experiences on Accelerating Data Parallel Training**(VLDB 2020,DDP Reducer 分桶/重叠的一手论述)— arXiv:2006.15704
+- 论文,**PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel**(VLDB 2023)— arXiv:2304.11277
+- PyTorch 官方文档,**DTensor / Tensor Parallelism** — https://pytorch.org/docs/stable/distributed.tensor.html(placement、DeviceMesh、parallelize_module)
+
 ## Related Pages
 
 - [[index]] — 本模块 overview(并行全景图与页面列表)

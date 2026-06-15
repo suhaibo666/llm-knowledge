@@ -347,6 +347,12 @@ sequenceDiagram
 
 ---
 
+## 社区参考
+
+- Edward Z. Yang, **《PyTorch internals》** — http://blog.ezyang.com/2019/05/pytorch-internals/(TensorImpl / Storage / dispatch / autograd 元数据的权威全景,本页结构与之呼应)
+- PyTorch 官方文档,**Tensor Views** — https://pytorch.org/docs/stable/tensor_view.html(哪些算子返回视图、共享 storage 的语义)
+- PyTorch 官方文档,**Tensor Attributes**(dtype / device / layout / memory_format)— https://pytorch.org/docs/stable/tensor_attributes.html
+
 ## Related Pages
 
 - [[index]]

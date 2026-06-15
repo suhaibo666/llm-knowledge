@@ -401,6 +401,12 @@ def dropout(input, p=0.5, training=True, inplace=False):
 
 ---
 
+## 社区参考
+
+- PyTorch 官方文档,**Modules**(notes)— https://pytorch.org/docs/stable/notes/modules.html(参数/缓冲注册、state_dict、hook 的官方说明)
+- PyTorch 官方文档,**torch.nn** — https://pytorch.org/docs/stable/nn.html;**torch.optim** — https://pytorch.org/docs/stable/optim.html
+- PyTorch 官方文档,**LazyModuleMixin**(惰性参数物化)— https://pytorch.org/docs/stable/generated/torch.nn.modules.lazy.LazyModuleMixin.html
+
 ## Related Pages
 
 - [[index]] — 本模块 overview:Module 树、注册表、状态 vs 计算的概念全景

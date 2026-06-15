@@ -251,6 +251,13 @@ sequenceDiagram
 
 ---
 
+## 社区参考
+
+- Edward Z. Yang,**《Let's talk about the PyTorch dispatcher》** — http://blog.ezyang.com/2020/09/lets-talk-about-the-pytorch-dispatcher/(分发表、alias key、boxing 的权威讲解)
+- 仓库内一手文档,**aten/src/ATen/native/README.md**(native_functions.yaml 字段与结构化 kernel 约定)
+- PyTorch 官方教程,**Registering a Dispatched Operator in C++** — https://pytorch.org/tutorials/advanced/dispatcher.html
+- PyTorch 官方教程,**Extending dispatcher for a new backend in C++** — https://pytorch.org/tutorials/advanced/extend_dispatcher.html
+
 ## Related Pages
 
 - [[11_aten_op_execution/index]] —— 本模块 overview:ATen 算子端到端生命周期与全景图

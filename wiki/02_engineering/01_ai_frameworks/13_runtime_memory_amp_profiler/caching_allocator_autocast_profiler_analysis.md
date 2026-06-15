@@ -363,6 +363,13 @@ storage 的可哈希身份用 `allocation_id`(而非易复用的裸指针)承载
 
 ---
 
+## 社区参考
+
+- PyTorch 官方文档,**CUDA semantics — Memory management**(缓存分配器、PYTORCH_CUDA_ALLOC_CONF、expandable_segments)— https://pytorch.org/docs/stable/notes/cuda.html
+- PyTorch 官方文档,**Understanding CUDA Memory Usage**(memory snapshot / 时间线)— https://pytorch.org/docs/stable/torch_cuda_memory.html
+- PyTorch 官方文档,**Automatic Mixed Precision package** — https://pytorch.org/docs/stable/amp.html;AMP recipe — https://pytorch.org/tutorials/recipes/recipes/amp_recipe.html
+- PyTorch 官方文档,**torch.profiler** — https://pytorch.org/docs/stable/profiler.html
+
 ## Related Pages
 
 - [[index]] — 本模块 overview:三支柱全景图与它们如何咬合

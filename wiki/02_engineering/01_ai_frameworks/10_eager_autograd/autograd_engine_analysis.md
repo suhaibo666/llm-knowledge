@@ -464,6 +464,13 @@ eager 引擎是「运行时、动态、Python/C++ 混跑」的反向执行器;[[
 
 ---
 
+## 社区参考
+
+- PyTorch 官方文档,**Autograd mechanics** — https://pytorch.org/docs/stable/notes/autograd.html(叶子/非叶子、inplace、版本计数、no_grad 的官方说明)
+- PyTorch Blog,**Overview of the PyTorch Autograd Engine** — https://pytorch.org/blog/overview-of-pytorch-autograd-engine/(引擎/ReadyQueue/多线程执行的官方综述)
+- PyTorch Blog,**How Computational Graphs are Constructed in PyTorch** — https://pytorch.org/blog/computational-graphs-constructed-in-pytorch/(Node/Edge/next_edges 建图细节)
+- 仓库内设计说明,**torch/csrc/autograd/README.md**(Variable/Node/PyNode 桥接的一手文档)
+
 ## Related Pages
 
 - [[10_eager_autograd/index]] — 本模块概览(是什么 / 与 AOT 的区别 / 全景图)

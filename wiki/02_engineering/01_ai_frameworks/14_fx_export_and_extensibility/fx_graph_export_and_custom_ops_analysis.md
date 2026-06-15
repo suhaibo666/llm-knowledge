@@ -296,6 +296,13 @@ sequenceDiagram
 
 ---
 
+## 社区参考
+
+- PyTorch 官方文档,**torch.fx** — https://pytorch.org/docs/stable/fx.html;**torch.export** — https://pytorch.org/docs/stable/export.html
+- 论文,**torch.fx: Practical Program Capture and Transformation for Deep Learning in Python**(MLSys 2021)— arXiv:2112.08429(Proxy/Tracer 设计的一手论述)
+- PyTorch 官方教程,**PyTorch Custom Operators Landing Page** — https://pytorch.org/tutorials/advanced/custom_ops_landing_page.html
+- PyTorch 官方文档,**torch.func**(functorch:vmap/grad/functional_call)— https://pytorch.org/docs/stable/func.html
+
 ## Related Pages
 
 - [[14_fx_export_and_extensibility/index]] — 本模块 overview / 目录索引
