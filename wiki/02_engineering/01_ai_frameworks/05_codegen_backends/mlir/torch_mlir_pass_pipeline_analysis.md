@@ -7,26 +7,9 @@
 
 ## 0. 定位说明: torch-mlir 在 PyTorch 生态中的角色
 
-**torch-mlir 本身的定位是"连接 PyTorch 生态和 MLIR 生态"的基础设施。** 它的架构文档明确写了：可以从 TorchDynamo、torch.fx、LazyTensorCore、TorchScript 等路径导入程序，并且它更像是一个可组合的编译组件，而不是独立的端到端生产编译器。
+> 快速上手见 [[torch_mlir_quickstart]]（torch-mlir 在 PyTorch 生态的定位、与 Inductor 的关系、何时用、最小 backend 骨架、output_type 选择）。本节只保留**理解下文 Pass 管线**所需的最小上下文。
 
-### torch-mlir 作为 `torch.compile` 的自定义 backend
-
-正确用法是写一个 `torch.compile(..., backend=...)` 的自定义 backend，把 Dynamo 捕获的 `gm` (GraphModule) 和 `example_inputs` 送进 torch-mlir 的导入/降级链，再返回一个可调用的已编译函数:
-
-```python
-# 自定义 backend 模式
-def torch_mlir_backend(gm: torch.fx.GraphModule, example_inputs):
-    # Step 1: gm → MLIR (torch-mlir 提供的 FxImporter)
-    # Step 2: 运行 MLIR Pass 管线 (降级到目标后端)
-    # Step 3: JIT 编译 MLIR → 可执行代码
-    # Step 4: 返回 callable
-    return compiled_callable
-
-# 使用
-model_opt = torch.compile(model, backend=torch_mlir_backend)
-```
-
-torch-mlir 代码中已经提供了关键入口函数 `stateless_fx_import(gm, output_type=...)`，它接收 Dynamo 产出的 `torch.fx.GraphModule`，不需要经过 `torch.export`:
+torch-mlir 的标准接法是写一个 `torch.compile(..., backend=...)` 的自定义 backend，把 Dynamo 捕获的 `gm` (GraphModule) 送进 torch-mlir 的导入/降级链。其关键入口函数 `stateless_fx_import(gm, output_type=...)` 接收 Dynamo 产出的 `torch.fx.GraphModule`，不需要经过 `torch.export`:
 
 ```python
 # fx.py — stateless_fx_import 签名
@@ -43,29 +26,7 @@ def stateless_fx_import(
 
 **本文分析的就是这条线**: `torch.compile(backend=custom_mlir)` → Dynamo 捕获 FX Graph → `stateless_fx_import(gm)` → MLIR Pass 管线 → Linalg-on-Tensors → GPU。
 
-### 三条路径对比
-
-```
-路径 A: torch.compile GPU 默认 — 不走 MLIR
-  torch.compile(model)
-    → Dynamo → Inductor → Triton → PTX
-  入口 API: torch.compile(model)
-
-路径 B: torch.compile + torch-mlir 自定义 backend (本文) — 走 MLIR
-  torch.compile(model, backend=custom_mlir_backend)
-    → Dynamo → FX Graph (gm)
-    → stateless_fx_import(gm)           ← torch-mlir 导入
-    → torchdynamo-export-to-torch-backend-pipeline  ← MLIR Pass 管线
-    → torch-backend-to-linalg-on-tensors-backend-pipeline
-    → Linalg → GPU → PTX
-  入口 API: torch.compile(model, backend=mlir_backend)
-
-路径 C: torch.compile NPU — 走 MLIR (monkey-patch 方式)
-  torch.compile(model, backend="inductor")
-    → Dynamo → Inductor lowering (含 TracedGraph)
-    → NPU MLIR codegen → 毕昇编译
-  入口 API: torch.compile(model)  (Inductor codegen 被替换)
-```
+三条路径（默认 Inductor / torch-mlir 自定义 backend / NPU monkey-patch）的对比汇总见本文 [§8](#8-三条路径对比总结)。
 
 ---
 

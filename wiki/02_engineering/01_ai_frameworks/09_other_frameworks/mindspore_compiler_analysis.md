@@ -21,6 +21,56 @@ MindSpore 是华为主导的深度学习框架，其编译器设计目标与 PyT
 
 ---
 
+## 快速理解
+
+> 本节是 quick start 中间层：先用一张表抓住 MindSpore 编译器与 PyTorch Inductor 的三个本质差异，再回答「我该不该用 MindSpore」，最后给出全文导航。想看实现细节请直接跳到后续各节。
+
+如果你只有 30 秒：MindSpore 是「编译时把一切静态确定下来」的框架，Inductor 是「运行时按需动态适配」的框架。两者的分歧集中在**何时编译、用什么 IR、怎么融合**这三件事上——下面三行表把它讲清楚。
+
+### 三个核心差异（一表速览）
+
+| 维度 | PyTorch Inductor | MindSpore Compiler |
+|------|-----------------|-------------------|
+| **编译时机** | JIT：运行时首次执行才触发编译，可随输入变化 guard + 重编译 | AOT：`GRAPH_MODE` 在编译时一次性构图，部署期不再编译 |
+| **核心 IR** | ATen IR：算子级 DAG，贴近 PyTorch 原生算子语义 | ANF：函数式 let 绑定（SSA），原生表达高阶函数与控制流 |
+| **融合策略** | 动态融合：Scheduler 贪心推断，运行时决定可融合性 | 白名单 Pattern：预定义融合模板匹配，命中才融合 |
+
+对这三点的进一步解读：
+
+- **AOT vs JIT**：MindSpore 把「编译」放在部署前一次性完成，运行期开销稳定可预测，代价是启动慢、对动态形状支持有限；Inductor 把编译延迟到运行期，灵活适配输入，但有 guard 校验与重编译成本。
+- **ANF vs ATen**：ANF 是函数式整图表示，控制流（cond / while_loop）与高阶函数是「一等公民」，便于做整图函数式变换；ATen IR 是算子级 DAG，更贴近 eager 语义，便于与 PyTorch 原生算子对齐。
+- **白名单 Pattern vs 动态融合**：白名单融合只融合验证过的模板，保守、正确性高，但遇到新颖结构需手动补 Pattern；Inductor 的 Scheduler 动态推断融合机会，激进、覆盖新结构快，但调优与正确性边界更复杂。
+
+一句话总结：**MindSpore 走「编译时静态确定 + 函数式整图 + 白名单稳妥融合」，Inductor 走「运行时动态适配 + 算子级 DAG + 贪心激进融合」**——前者把不确定性消灭在编译期，后者把灵活性留到运行期。
+
+### 何时选 MindSpore
+
+适合的典型场景：
+
+- **目标硬件是昇腾 NPU**：MindSpore + CANN 是华为官方端到端栈，AKG / TBE 对 Cube Unit、Vector Unit、Double Buffer 等硬件特性有原生支持（详见 §5.3），优化深度优于「PyTorch + MLIR 社区适配」路径。
+- **追求静态图极致优化**：模型确定后用 `GRAPH_MODE` AOT 编译，整图硬件无关 Pass + 白名单融合 + 内存复用一次性做满，运行期开销稳定，适合推理部署与大规模训练。
+- **模型结构固定**：白名单融合对成熟结构（标准 Transformer 层、Conv + BN + ReLU 等）正确性高、收益稳定；若频繁改结构或引入新颖算子模式，白名单需手动补 Pattern，灵活性不及 Inductor 动态融合。
+- **需要编译期自动并行**：ParallelAuto 在编译时搜索 TP / DP 策略并自动插入 AllReduce / AllGather（详见 §6），是 MindSpore 区别于 PyTorch 手动并行的差异化能力。
+
+不太适合的场景：研究态频繁改网络结构、强依赖 PyTorch 生态与第三方库、需要丰富动态形状支持时，PyTorch + Inductor 通常更顺手。
+
+一句话决策：**结构固定 + 跑昇腾 + 要部署 → MindSpore；结构多变 + 重生态 + 要灵活 → PyTorch Inductor。**
+
+### 下面详细讲…
+
+下面各节按「流水线 → IR → Pass → kernel → 并行 → 对比」的顺序展开，逐层细化上表中的三个差异：
+
+| 章节 | 主题 | 对应上面的哪个差异 |
+|------|------|------------------|
+| §2 编译流水线 | 从 Python nn.Cell 到 CANN 运行时的完整链路 | 总览（AOT 全流程） |
+| §3 ANF 图 | MindSpore 核心 IR，与 FX Graph 逐项对比 | ANF vs ATen |
+| §4 MindCompiler | 硬件无关 Pass 分类 + 动静统一（PyNative / GRAPH / @jit） | AOT vs JIT、白名单融合 |
+| §5 AKG | Polyhedral 自动 kernel 生成（**§5.3 含昇腾 NPU 特定实现细节**） | 硬件相关优化 |
+| §6 ParallelAuto | 编译期自动并行策略搜索，与 Alpa 对比 | 自动并行差异化能力 |
+| §7 / §8 | 与 PyTorch Inductor 的优化 Pass 全面对比、知识空白 | 三个差异的综合落点 |
+
+---
+
 ## 2. 编译流水线
 
 ```
@@ -188,7 +238,9 @@ AKG 自动：
 | 硬件支持 | 主要 CUDA | 昇腾 NPU（TBE）/ CUDA |
 | 与框架集成 | torch.compile 后端 | MindSpore 内置 |
 
-### 5.3 AKG 的 NPU 特化
+### 5.3 AKG 在昇腾 NPU 上的实现细节
+
+> [!note] 本节为昇腾 NPU 特定实现，不适用其它硬件
 
 针对昇腾 NPU 的特殊优化：
 ```

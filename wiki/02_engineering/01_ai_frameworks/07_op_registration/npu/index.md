@@ -41,6 +41,20 @@ graph TD
 
 ---
 
+## 整体架构
+
+算子的生命周期是一条单向链：在 `op_plugin_functions.yaml` 里**一行声明**（名字、入参、`op_api`/`acl_op` 等元数据）→ **两段 codegen** 据此生成胶水（dispatcher 注册桩 + Python 包装）→ `import torch_npu` 时 `TORCH_LIBRARY` 静态初始化把胶水**挂进 dispatcher**，算子在 **eager** 即可用 → 再经 `torch.compile` 时才逐关判别它**能否入图**（dynamo→inductor+triton→aclgraph）。
+
+理解全域可抓三个**顺序依赖**的维度：
+
+1. **配置维**——yaml 元数据，是一切的源头（[[op_plugin_config_and_classification_guide]]）；
+2. **注册维**——codegen 据配置生成胶水、决定 eager 怎么调到 aclnn/aclop（[[op_registration_pipeline_analysis]]）；
+3. **入图维**——compile 阶段在前两维之上再叠加额外约束：meta、lowering、aclnn-only（[[npu_operator_graph_eligibility_guide]]）。
+
+三者**层层依赖**：没有①就没有②可生成，没有②算子连 eager 都不可用、更谈不上③的入图——本域三篇正按此顺序展开。
+
+---
+
 ## 关联域
 
 - [[01_dispatcher_and_device/index]] — Dispatcher(注册目标)

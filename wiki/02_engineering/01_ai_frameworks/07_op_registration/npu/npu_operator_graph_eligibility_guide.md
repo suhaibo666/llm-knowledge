@@ -142,12 +142,11 @@ NPUGraph = CANN `AclmdlRICaptureBegin/End/ExecuteAsync`（`torch_npu/csrc/core/n
 
 ## 7. 贯穿主线：op_api/acl_op 一路决定到入图
 
-第三关那条铁律，**正是 [[op_plugin_config_and_classification_guide]] 里 `op_api`(aclnn) vs `acl_op`(aclop) 的区别**：
-
-- 在 **eager** 模式，它只决定「优先用谁、谁回退谁」（[[op_registration_pipeline_analysis]] §7 的运行时三层选择）；
-- 到 **aclgraph** 入图，它升级成**硬门槛**：一个算子如果在当前 shape/format 下落到了 aclop 分支，就无法被 capture。
+第三关那条铁律，**正是 [[op_plugin_config_and_classification_guide]] 里 `op_api`(aclnn) vs `acl_op`(aclop) 的区别**：到 **aclgraph** 入图，它升级成**硬门槛**——一个算子如果在当前 shape/format 下落到了 aclop 分支，就无法被 capture。
 
 所以一个算子要走完整条 reduce-overhead 流水线入图，前提之一是它在 yaml 里**有 `op_api`(aclnn)**、且运行时确实走到了 aclnn（没被私有格式逼回 aclop）——这也是 `allow_internal_format=False` 能救场的底层原因。
+
+> 交叉引用：op_api/acl_op 的**工程分类**见 [[op_plugin_config_and_classification_guide]] §4；两者**物理差异**（两段式 vs 运行时编译）见本页 §8.3 / [[op_registration_pipeline_analysis]] §7。
 
 ---
 

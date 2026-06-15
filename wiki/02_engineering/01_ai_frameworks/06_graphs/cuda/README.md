@@ -1,91 +1,26 @@
 # PyTorch CUDA Graphs 完整使用指南
 
-本目录包含 PyTorch CUDA Graphs 的完整使用指南，以及与 torch_npu NPU Graphs 的对比。
+本目录包含 PyTorch CUDA Graphs 的完整使用指南：原理、四种用法、性能与注意事项。
 
 ## 📁 目录结构
 
 ```
-cudagraphs/
-├── cudagraphs_usage_guide.py          # CUDA Graphs 使用指南（含 Mermaid 时序图）
-├── run_cudagraphs_examples.py         # 可运行的完整示例脚本
-├── PyTorch_CUDA_Graphs_Complete_Guide.md  # 完整技术文档
-├── CUDA_Graphs_Timing_Diagrams.md        # 时序图汇总（Mermaid 格式）
-├── npugraphs/                        # NPU Graphs 对比
-│   ├── README.md                       # NPU Graphs 概述
-│   ├── npugraphs_usage_guide.py        # NPU vs CUDA 对比示例
-│   └── comparison.md                   # 详细对比文档
-└── README.md                          # 本文件
+cuda/
+├── PyTorch_CUDA_Graphs_Complete_Guide.md   # 完整技术文档
+├── CUDA_Graphs_Timing_Diagrams.md          # 时序图汇总（Mermaid 格式）
+├── cudagraphs_usage_guide.py               # 使用指南（含 Mermaid 时序图）
+├── run_cudagraphs_examples.py              # 可运行的完整示例脚本
+└── README.md                               # 本文件
 ```
 
 ---
 
 ## 📚 文档说明
 
-### 1. [cudagraphs_usage_guide.py](cudagraphs_usage_guide.py)
-**CUDA Graphs 使用指南（含 Mermaid 时序图）**
-
-包含：
-- ✅ 所有4种使用方式的完整示例代码
-- ✅ 详细的实现原理说明
-- ✅ Mermaid 格式的代码调用流程时序图
-- ✅ 优化机制和限制说明
-- ✅ 综合比较表格
-
-**运行方式：**
-```bash
-python cudagraphs_usage_guide.py
-```
-
-### 2. [run_cudagraphs_examples.py](run_cudagraphs_examples.py)
-**可运行的完整示例脚本**
-
-包含：
-- ✅ 所有4种 CUDA Graphs 使用方式的完整示例代码
-- ✅ 性能基准测试
-- ✅ 错误处理和兼容性检查
-- ✅ 详细的输出信息
-
-**运行方式：**
-```bash
-python run_cudagraphs_examples.py
-```
-
-### 3. [PyTorch_CUDA_Graphs_Complete_Guide.md](PyTorch_CUDA_Graphs_Complete_Guide.md)
-**完整的技术文档**
-
-包含：
-- ✅ 每种使用方式的详细说明
-- ✅ 榜度实现原理解析
-- ✅ 完整的代码调用流程时序图（Mermaid 格式）
-- ✅ 高级用法和最佳实践
-- ✅ 性能优化建议
-- ✅ 错误处理和调试技巧
-
-### 4. [CUDA_Graphs_Timing_Diagrams.md](CUDA_Graphs_Timing_Diagrams.md)
-**时序图汇总（Mermaid 格式）**
-
-包含：
-- ✅ 所有4种使用方式的完整 Mermaid 时序图
-- ✅ 详细的执行流程说明
-- ✅ 性能优化层级分析
-- ✅ 关键特性总结
-
-### 5. [npugraphs/](npugraphs/)
-**NPU Graphs 对比目录**
-
-#### [npugraphs/README.md](npugraphs/README.md)
-NPU Graphs 概述和基本使用
-
-#### [npugraphs/npugraphs_usage_guide.py](npugraphs/npugraphs_usage_guide.py)
-NPU vs CUDA Graphs 对比示例代码
-
-#### [npugraphs/comparison.md](npugraphs/comparison.md)
-详细的对比文档，包含：
-- API 对比
-- 实现原理对比
-- 时序图对比
-- 代码示例对比
-- 性能优化对比
+- [cudagraphs_usage_guide.py](cudagraphs_usage_guide.py)：四种用法的示例代码与实现原理（含 Mermaid 时序图），可直接 `python` 运行。
+- [run_cudagraphs_examples.py](run_cudagraphs_examples.py)：可运行的完整示例，含性能基准与兼容性检查。
+- [PyTorch_CUDA_Graphs_Complete_Guide.md](PyTorch_CUDA_Graphs_Complete_Guide.md)：完整技术文档，覆盖每种用法、实现原理、高级用法与调试技巧。
+- [CUDA_Graphs_Timing_Diagrams.md](CUDA_Graphs_Timing_Diagrams.md)：四种用法的 Mermaid 时序图与执行流程说明。
 
 ---
 
@@ -231,54 +166,6 @@ output = graphed_model(input_tensor)
 
 ---
 
-## 🔀 NPU Graphs (npugraphs) 对比
-
-torch_npu 提供了对应的 NPU Graphs 实现，用于华为昇腾 NPU 设备。
-
-### 主要区别
-
-| 特性 | CUDA Graphs | NPU Graphs |
-|------|------------|-------------|
-| 设备 | NVIDIA GPU | 华为昇腾 NPU |
-| 库 | PyTorch | torch_npu |
-| 捕获 API | `torch.cuda.graph()` | `torch_npu.npu.graph()` |
-| 后端 | `backend="cudagraphs"` | `backend="npugraphs"` |
-| 底层 API | CUDA Runtime API | ACL (Ascend Computing Language) API |
-
-### API 对应关系
-
-| CUDA Graphs | NPU Graphs | 说明 |
-|------------|-------------|------|
-| `torch.cuda.graph()` | `torch_npu.npu.graph()` | 上下文管理器 |
-| `torch.cuda.CUDAGraph()` | `torch_npu.npu.NPUGraph()` | 图对象 |
-| `make_graphed_callables()` | `make_graphed_callables()` | 高级 API |
-| `cudaGraphCaptureBegin()` | `aclmdlRICaptureBegin()` | 开始捕获 |
-| `cudaGraphCaptureEnd()` | `aclmdlRICaptureEnd()` | 结束捕获 |
-| `cudaGraphLaunch()` | `aclmdlRIExecuteAsync()` | 执行图 |
-
-### NPU Graphs 示例
-
-```python
-import torch
-import torch.nn as nn
-import torch_npu
-
-model = MyModel().npu()
-
-# 使用 NPU Graphs
-graph = torch_npu.npu.NPUGraph()
-stream = torch_npu.npu.Stream()
-
-with torch_npu.npu.graph(graph, stream=stream):
-    output = model(input)
-
-graph.replay()
-```
-
-详细对比请查看 [npugraphs/](npugraphs/) 目录。
-
----
-
 ## 🎯 使用场景推荐
 
 | 场景 | 推荐方式 | 原因 |
@@ -299,11 +186,6 @@ graph.replay()
   - Volta (V100) 及更新架构
   - 推荐使用 Ampere (A100) 或更新架构
 
-### NPU Graphs
-- **torch_npu**: 支持图捕获的版本
-- **ACL**: 支持图捕获的 ACL 版本
-- **NPU**: 华为昇腾 910B/910C 及更新
-
 ---
 
 ## 🚀 快速开始
@@ -312,10 +194,7 @@ graph.replay()
 
 ```bash
 # CUDA Graphs 示例
-python cudagraphs/run_cudagraphs_examples.py
-
-# NPU vs CUDA 对比
-python cudagraphs/npugraphs/npugraphs_usage_guide.py
+python run_cudagraphs_examples.py
 ```
 
 ### 2. 查看详细指南
@@ -323,7 +202,6 @@ python cudagraphs/npugraphs/npugraphs_usage_guide.py
 打开以下文件查看详细文档：
 - [PyTorch_CUDA_Graphs_Complete_Guide.md](PyTorch_CUDA_Graphs_Complete_Guide.md)
 - [CUDA_Graphs_Timing_Diagrams.md](CUDA_Graphs_Timing_Diagrams.md)
-- [npugraphs/comparison.md](npugraphs/comparison.md)
 
 ### 3. 查看 Mermaid 时序图
 
@@ -346,17 +224,17 @@ CPU → Launch Kernel 1 → GPU → CPU → Launch Kernel 2 → GPU → CPU → 
      (开销)              (等待)    (开销)              (等待)    (开销)              (等待)
 ```
 
-**CUDA/NPU Graphs 执行:**
+**CUDA Graphs 执行:**
 ```
 CPU → Replay Graph → GPU (执行所有操作)
      (一次开销)        (连续执行)
 ```
 
 **优化效果:**
-- ✓ 消除多次 CPU-GPU/NPU 交互
+- ✓ 消除多次 CPU-GPU 交互
 - ✓ 消除多次 kernel launch 开销
 - ✓ 消除多次驱动程序调用
-- ✓ 提高 GPU/NPU 利用率
+- ✓ 提高 GPU 利用率
 - ✓ 减少总执行时间 30-70%
 
 ### 实际性能因素
@@ -364,8 +242,8 @@ CPU → Replay Graph → GPU (执行所有操作)
 实际性能取决于：
 - 模型复杂度
 - 输入形状
-- GPU/NPU 型号
-- CUDA/ACL 版本
+- GPU 型号
+- CUDA 版本
 - 批量大小
 
 ---
@@ -380,14 +258,6 @@ CPU → Replay Graph → GPU (执行所有操作)
 4. **首次开销**: 首次运行会有额外的编译/捕获开销
 5. **推理优化**: 主要用于推理场景，训练场景使用较少
 
-### NPU Graphs
-
-1. **设备要求**: 需要华为昇腾 NPU 设备
-2. **torch_npu 版本**: 需要支持 NPU Graphs 的 torch_npu 版本
-3. **ACL 版本**: 需要支持图捕获的 ACL 版本
-4. **静态形状**: 输入形状必须固定
-5. **无控制流**: 不支持动态控制流
-
 ---
 
 ## 📚 参考资源
@@ -397,12 +267,7 @@ CPU → Replay Graph → GPU (执行所有操作)
 - [PyTorch CUDA Graphs 文档](https://pytorch.org/docs/stable/generated/torch.cuda.graph.html)
 - [NVIDIA CUDA Graphs 文档](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#cuda-graphs)
 - [PyTorch 2.0 性能优化指南](https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html)
-
-### NPU Graphs
-
-- [torch_npu 文档](../torch_npu/README.md)
-- [华为 ACL 文档](https://www.hiascend.com/document)
-- [torch_npu graphs.py](../torch_npu/torch_npu/npu/graphs.py)
+- CUDA vs NPU Graphs 对比见 [[06_graphs/npu/comparison]]
 
 ---
 

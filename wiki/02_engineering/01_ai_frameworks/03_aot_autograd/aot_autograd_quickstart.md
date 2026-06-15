@@ -4,15 +4,15 @@
 >
 > 本页所有 API / backend / 日志键 / config 均对照真实源码核实,标注 `path:line`。深入原理见文末导航。
 
-## 1. AOTAutograd 是什么
+## 1. 快速导航
 
-在 `torch.compile` 的三段管线(Dynamo → **AOTAutograd** → Inductor)里,AOTAutograd 处于中间层,对 Dynamo 捕获的 FX 图做三件事:
+> 「AOTAutograd 是什么、在栈中的位置、三大职责(functionalization / joint graph / partition)」见 [[index]] 模块概述。本页聚焦上手:下面给出主要入口、核心概念与常用配置的索引,细节落在后续小节。
 
-1. **Functionalization(功能化)**:把原地写(in-place / mutation)、view 等改写成纯函数式的 ATen 算子图,便于后端优化。
-2. **Joint graph(联合图)**:提前(ahead-of-time)同时 trace 出前向 + 反向,合成一张**联合图**。
-3. **Partition(前/反向切分)**:用 partitioner 把联合图切成独立的 forward / backward 两张图,并决定哪些中间张量要 **save 给反向**、哪些在反向里**重计算(rematerialization)**。
+- **主要入口**:`aot_function` / `aot_module`(均在 `torch/_functorch/aot_autograd.py`)。走 `torch.compile` 时通常不直接调用,用 `backend="aot_eager"` 即可触发 AOTAutograd 全流程(见 §2);`aot_function` 的 docstring 写明它 ahead-of-time trace 前向 + 反向、生成联合图,再由 `partition_fn` 切分(`aot_autograd.py:723-728`)。
+- **核心概念**:partitioner 有 `min_cut_rematerialization_partition`(默认,以重计算换显存)与 `default_partition`(多 save、少重算)两种(§3);看图用 `TORCH_LOGS` 的 `aot_graphs`(切分后的前/反向图)与 `aot_joint_graph`(切分前的联合图)(§2)。
+- **常用配置**:`activation_memory_budget`(激活显存预算,调节 save vs 重算)、`AOT_PARTITIONER_DEBUG=1`(打印 partitioner 的切分决策),详见 §3。
 
-入口与定位见 `torch/_functorch/aot_autograd.py`;`aot_function` 文档串明确写了「traces the forward and backward graph ahead of time, and generates a joint forward and backward graph,partition_fn 再切分」(`torch/_functorch/aot_autograd.py:723-728`)。
+下面从「看前/反向图最快的方式」开始。
 
 ## 2. 看前/反向图最快的方式
 

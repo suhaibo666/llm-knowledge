@@ -9,7 +9,7 @@
 
 | 页面 | 类型 | 核心主题 |
 |------|------|---------|
-| [[mindspore_compiler_analysis]] | Analysis | MindSpore 编译器:ANF 图、MindCompiler Pass、AKG Polyhedral、ParallelAuto(概念级,基于公开资料) |
+| [[mindspore_compiler_analysis]] | Analysis | MindSpore 编译器:ANF 图、MindCompiler Pass、AKG Polyhedral、ParallelAuto(概念级,基于公开资料)[§5.3 含昇腾 NPU 特化] |
 
 ---
 

@@ -7,7 +7,7 @@
 >
 > 目的：通过最小入侵或纯环境变量方式，在单卡/多卡场景下收集 `torch.compile` 各阶段（Dynamo、FX、AOT、Inductor、kernel）产物与日志，帮助定位问题归因并给出修复建议。
 >
-> **支持平台**：CUDA（NVIDIA GPU）、NPU（华为昇腾）
+> **支持平台**：CUDA（NVIDIA GPU）
 
 ---
 
@@ -50,7 +50,7 @@ RUNDIR=${RUNDIR:-./debug_run}
 mkdir -p "$RUNDIR"
 
 # 1) 环境变量（针对 PyTorch 2.7-2.10）
-# 基础日志配置（适用于 CUDA 和 NPU）
+# 基础日志配置
 export TORCH_LOGS="+dynamo,guards,graph_breaks,recompiles,aot,inductor,schedule,codegen"
 export TORCH_COMPILE_DEBUG=1
 export TORCH_COMPILE_DEBUG_DIR=./torch_compile_debug
@@ -62,16 +62,6 @@ if [ "${DEVICE_TYPE:-cuda}" = "cuda" ]; then
     export TORCHINDUCTOR_VERBOSE=1
     export TORCHDYNAMO_VERBOSE=1
     export TORCH_NCCL_DEBUG=INFO
-fi
-
-# NPU 特有环境变量（仅在使用 NPU 时设置）
-if [ "${DEVICE_TYPE:-cuda}" = "npu" ]; then
-    export ASCEND_GLOBAL_LOG_LEVEL=0  # 0:debug, 1:info, 2:warning, 3:error
-    export HCCL_DESYNC_DEBUG=1  # 通信超时分析
-    export HCCL_ASYNC_ERROR_HANDLING=1  # 异步错误处理
-    export OOM_SNAPSHOT_ENABLE=1  # OOM 时保存内存快照
-    export OOM_SNAPSHOT_PATH=./oom_snapshot
-    export ACL_OP_COMPILER_CACHE_DIR=./op_cache  # 算子编译缓存目录
 fi
 
 # 2) 启动（示例使用 torchrun）
@@ -88,13 +78,6 @@ mkdir -p "${RUNDIR}/artifacts"
 # CUDA: 归档 inductor dump
 if [ "${DEVICE_TYPE:-cuda}" = "cuda" ]; then
     cp -r /tmp/torchinductor_* "${RUNDIR}/artifacts/" 2>/dev/null || true
-fi
-
-# NPU: 归档算子编译缓存和 OOM 快照
-if [ "${DEVICE_TYPE:-cuda}" = "npu" ]; then
-    cp -r ./op_cache "${RUNDIR}/artifacts/" 2>/dev/null || true
-    cp -r ./oom_snapshot "${RUNDIR}/artifacts/" 2>/dev/null || true
-    cp -r ./torch_compile_debug "${RUNDIR}/artifacts/" 2>/dev/null || true
 fi
 
 echo "Debug run complete. Artifacts collected under ${RUNDIR}/artifacts"

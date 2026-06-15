@@ -4,6 +4,25 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-15: 全模块分层与 NPU 分离审计修复(Workflow 编排 + 对抗式验证)
+
+**Type**: Audit & Fix（Workflow:9 模块并发审计 → 每条发现对抗式验证 → 7 模块并发修复;铁律＝保留独有信息、只去重叠/迁移 NPU、不重命名）
+
+**审计**:对 01_ai_frameworks 全部模块核查三项——冗余/雷同、overview→quick start→deep dive 分层、NPU↔upstream 分离;32 个 agent,每条可执行发现经对抗式验证(默认怀疑,排除「`input` 含 npu 子串」等假阳性),确认 16 条。
+
+**修复（7 模块,纯增改无删除/重命名）**:
+- **04_inductor**:`Pytorch_Compile_Debug_Analysis` 残留的 NPU 平台声明 + 脚本块(`DEVICE_TYPE=npu` / ASCEND/HCCL env)清除 → 纯 upstream(NPU 调试已在 [[npu_debug_guide]])
+- **06_graphs**:`cuda/README` 移除混入的「NPU Graphs 对比/系统要求/参考资源」段 + 失实目录树 → 纯 CUDA,对比指向 [[comparison]];与 cuda/index(导航)分工
+- **05_codegen_backends/mlir**:新建 `torch_mlir_quickstart`(quick start 层),`torch_mlir_pass_pipeline_analysis` §0 去重定位说明
+- **03_aot_autograd**:index 补「模块概述」(定义/栈位置/三职责),quickstart §1 精简为「快速导航」
+- **07_op_registration/npu**:index 补「整体架构」(算子生命周期 + 三维度依赖),`npu_operator_graph_eligibility_guide` §7 去 aclop/aclnn 重述、加交叉引用
+- **08_kernel_optimization**:`operator_optimization_guide` 加「文档结构与阅读路径」+ §2.2/§6 GPU↔NPU 对标标注
+- **09_other_frameworks**:`mindspore_compiler_analysis` 补「快速理解」(quick start)+ §5.3 标注昇腾 NPU 特化
+
+**校验**:01_ai_frameworks 全量 wikilink 零断链;`cuda/README` 与 Debug 页 NPU 残留清零。
+
+---
+
 ## 2026-06-15: 04_inductor 由浅入深重构 + NPU/upstream 彻底分离
 
 **Type**: Restructure（4 agent 并发；铁律＝保留全部独有 upstream 信息、只去重叠、迁移 NPU；对照 pytorch/torch_npu 源码核实）
