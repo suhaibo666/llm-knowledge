@@ -4,6 +4,27 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-15: 补齐 eager 运行时地基 — 新增 7 模块 21 页(Workflow 编排 + 源码逐行核实)
+
+**Type**: Ingest & Expand（Workflow：覆盖审计 → 架构全图 → 缺口路线图；再 7 模块流水线 research→并行写 3 层→校验；铁律＝纯增不改既有、对照 `E:\97-codes\pytorch\pytorch` v2.13.0a0 核实行号、不破坏既有 wikilink）
+
+**审计结论**：01_ai_frameworks 此前几乎全是 torch.compile 编译栈 + dispatcher/op 注册,**整层 eager 运行时地基缺失**（用户点名 autograd 引擎、tensor 表达机制）。13 个 agent 对照源码核实后产出 8 项优先级缺口路线图。
+
+**新增（7 模块,P0+P1,纯增无删改）**：
+- **[P0] [[00_tensor_and_storage/index]]**：张量表达机制 — `Tensor=intrusive_ptr<TensorImpl>`、Storage/视图别名、sizes/strides/dtype、张量上的 DispatchKeySet（overview + quickstart + deepdive）
+- **[P0] [[10_eager_autograd/index]]**：eager 反向引擎 — Node/Edge DAG、多线程 Engine、AccumulateGrad、SavedVariable、自定义 Function；**含与 03_aot_autograd 的对照表**（运行时磁带 vs 编译期联合图）
+- **[P1] [[11_aten_op_execution/index]]**：ATen 算子定义/执行 — native_functions.yaml、torchgen、结构化 kernel、boxing（07 的上游通用版）
+- **[P1] [[12_nn_module_system/index]]**：torch.nn — Module/Parameter/state_dict/hooks/容器/lazy/Optimizer
+- **[P1] [[13_runtime_memory_amp_profiler/index]]**：缓存分配器 / AMP+GradScaler / Kineto Profiler
+- **[P1] [[14_fx_export_and_extensibility/index]]**：torch.fx / torch.export / torch.library custom_op / functorch
+- **[P1] [[15_distributed_primitives/index]]**：c10d/DDP/FSDP/DTensor/TP/PP（[[02_train_frameworks/index]] 的底座）
+
+**索引与规划**：域 [[01_ai_frameworks/index]] 重构为「两条主轴（eager 地基 / 编译栈）+ 三层功能目录」,「知识空白」扩写为带优先级的规划路线图（P2 序列化遗留 `16_serialization_and_legacy`、各新模块 NPU 特化 `npu/` 下沉等留痕）。
+
+**校验**：21 页结构齐全（头块/层次/Related Pages）；域内 317 条 wikilink 全解析；独立抽查 tensor/autograd 关键 citation（`node.h:112`、`variable.h:229-230`、`TensorImpl.h:510` 等）与源码一致。后续对抗式全量校验按「可信度分级」原则从略（写手已逐行核实）。
+
+---
+
 ## 2026-06-15: 全模块分层与 NPU 分离审计修复(Workflow 编排 + 对抗式验证)
 
 **Type**: Audit & Fix（Workflow:9 模块并发审计 → 每条发现对抗式验证 → 7 模块并发修复;铁律＝保留独有信息、只去重叠/迁移 NPU、不重命名）

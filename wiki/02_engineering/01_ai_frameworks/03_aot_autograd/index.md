@@ -27,6 +27,7 @@ AOTAutograd(ahead-of-time autograd)在编译期就把一段可微计算的**前�
 
 ## 关联域
 
+- [[10_eager_autograd/index]] — **eager 对应物**:运行时动态磁带 + C++ 引擎(`.backward()`);本编译期模块的 eager 侧根源,两者对照见该页表格
 - [[02_dynamo/index]] — 上游:图捕获
 - [[04_inductor/index]] — 下游:lowering 与 codegen
 - [[01_ai_frameworks/index]] — 本域总索引
