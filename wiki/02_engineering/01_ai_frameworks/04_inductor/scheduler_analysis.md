@@ -522,20 +522,21 @@ import torch._inductor.config as cfg
 
 ### 9.3 为新设备注册 Backend
 
+Inductor 通过 `register_backend_for_device` 支持 out-of-tree 设备:实现 `BaseScheduling`(调度/融合/codegen)与 `PythonWrapperCodegen`(wrapper)子类即可。下例以占位设备 `mydevice` 演示骨架(设备无关):
+
 ```python
 from torch._inductor.codegen.common import register_backend_for_device
 from torch._inductor.scheduler import BaseScheduling, BaseSchedulerNode, FusedSchedulerNode
 from torch._inductor.codegen.wrapper import PythonWrapperCodegen
 
-class MyNPUScheduling(BaseScheduling):
+class MyDeviceScheduling(BaseScheduling):
     def __init__(self, scheduler):
         super().__init__(scheduler)
 
     def can_fuse_vertical(
         self, node1: BaseSchedulerNode, node2: BaseSchedulerNode
     ) -> bool:
-        # NPU 特有的垂直融合规则
-        # 例如：NPU 不支持 reduction 与 pointwise 垂直融合
+        # 设备特有的垂直融合规则（示例：某些设备不支持 reduction 与 pointwise 垂直融合）
         if node1.is_reduction():
             return False
         return True
@@ -543,25 +544,23 @@ class MyNPUScheduling(BaseScheduling):
     def can_fuse_horizontal(
         self, node1: BaseSchedulerNode, node2: BaseSchedulerNode
     ) -> bool:
-        # NPU 特有水平融合规则
+        # 设备特有的水平融合规则
         return True
 
     def group_fn(self, sizes):
-        # 如何分组 loop 维度（影响 tiling 策略）
-        from torch._inductor.codegen.simd import SIMDScheduling
-        # 通常复用 triton 的实现
+        # 如何分组 loop 维度（影响 tiling 策略）；通常可复用 SIMD/Triton 的实现
         return tuple(tuple(s) for s in sizes)
 
     def codegen_node(self, node):
-        # 生成 NPU kernel 代码
+        # 生成该设备的 kernel 代码
         ...
 
     def codegen_template(self, template_node, epilogue_nodes, prologue_nodes):
         raise NotImplementedError
 
     def codegen_sync(self):
-        # 生成同步代码
-        V.graph.wrapper_code.writeline("torch.npu.synchronize()")
+        # 生成同步代码（各设备的 synchronize）
+        ...
 
     def flush(self):
         # 将缓冲的 kernel 写入 wrapper
@@ -569,7 +568,6 @@ class MyNPUScheduling(BaseScheduling):
 
     def get_fusion_pair_priority(self, node1, node2) -> int:
         # 返回更小的数代表更高优先级
-        # 可用于让 NPU 特有 kernel 优先被考虑融合
         return 0
 
     def get_backend_features(self, device):
@@ -577,16 +575,17 @@ class MyNPUScheduling(BaseScheduling):
         from torch._inductor.codegen.common import BackendFeature
         return OrderedSet([BackendFeature.FOREACH])
 
-class MyNPUWrapperCodegen(PythonWrapperCodegen):
+class MyDeviceWrapperCodegen(PythonWrapperCodegen):
     ...
 
-# 注册 NPU backend
 register_backend_for_device(
-    "npu",                       # device type 字符串
-    MyNPUScheduling,             # BaseScheduling 子类
-    MyNPUWrapperCodegen,         # PythonWrapperCodegen 子类
+    "mydevice",                  # device type 字符串
+    MyDeviceScheduling,          # BaseScheduling 子类
+    MyDeviceWrapperCodegen,      # PythonWrapperCodegen 子类
 )
 ```
+
+> NPU(昇腾)正是以这种方式接入:其 `NpuMlirScheduling` / `NpuMlirWrapperCodeGen` 等真实实现见 [[04_inductor/npu/index]]。
 
 ### 9.4 自定义融合策略（InductorChoices）
 

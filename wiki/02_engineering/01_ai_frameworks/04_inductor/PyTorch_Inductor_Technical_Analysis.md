@@ -1,32 +1,32 @@
-# PyTorch Inductor 完整技术流程验证分析
+# PyTorch Inductor 后端选择与 IR 优化深度（upstream）
 
-> 基于实际代码的深度技术分析，涵盖从FX Graph到Inductor IR再到Triton IR的完整编译流程
+> 聚焦 PyTorch Inductor 中端到端编译管线**未展开**的「后端选择 / IR 设计 / 配置与调优 / 后端扩展」深度主题，基于 upstream 源码分析。
+>
+> 端到端 stage-by-stage 编译流程（Dynamo → AOT Autograd → Decomposition → FX Passes → Lowering → Scheduler → CodeGen）见 [[inductor_compiler_pipeline_analysis]]；本文聚焦其未深入的 **后端/IR/配置** 深度，不重复 stage 走读。
+>
+> NPU / 昇腾（Ascend）后端适配见 npu/[[NPU_Inductor_Backend_Analysis]]。
 
 ---
 
 ## 目录
 
-1. [概述](#概述)
+1. [概述与定位](#概述与定位)
 2. [后端选择与配置机制](#后端选择与配置机制)
-3. [阶段1: Graph Lowering (FX Graph → Inductor IR)](#阶段1-graph-lowering-fx-graph--inductor-ir)
-4. [阶段2: IR Optimization (Inductor IR 优化)](#阶段2-ir-optimization-inductor-ir-优化)
-5. [阶段3: Scheduling (调度与融合)](#阶段3-scheduling-调度与融合)
-6. [阶段4: Code Generation (Inductor IR → Triton IR)](#阶段4-code-generation-inductor-ir--triton-ir)
-7. [CUDA Graphs 后端详解](#cuda-graphs-后端详解)
-8. [昇腾NPU适配层实现](#昇腾npu适配层实现)
-9. [编译入口与数据流](#编译入口与数据流)
-10. [后端扩展机制](#后端扩展机制)
-11. [自定义融合规则](#自定义融合规则)
-12. [完整流程示例](#完整流程示例)
-13. [参考资源](#参考资源)
+3. [Inductor IR 数据结构设计](#inductor-ir-数据结构设计)
+4. [IR 优化（一）：融合成本模型与自动调优](#ir-优化一融合成本模型与自动调优)
+5. [IR 优化（二）：常量折叠](#ir-优化二常量折叠)
+6. [内存规划与内存池策略](#内存规划与内存池策略)
+7. [CUDA Graphs 集成](#cuda-graphs-集成)
+8. [后端扩展机制](#后端扩展机制)
+9. [自定义融合规则](#自定义融合规则)
+10. [参考资源](#参考资源)
+11. [附录：源码文件路径](#附录源码文件路径)
 
 ---
 
-## 概述
+## 概述与定位
 
-### PyTorch Inductor 编译架构
-
-PyTorch Inductor 是 PyTorch 2.0 引入的默认深度学习编译器后端，负责将捕获的 FX Graph 编译成高性能的机器代码。其核心架构包括：
+PyTorch Inductor 是 PyTorch 2.0 引入的默认深度学习编译器后端，负责将捕获的 FX Graph 编译成高性能的机器代码。其编译管线分为四个阶段：
 
 ```mermaid
 graph TB
@@ -40,36 +40,15 @@ graph TB
     style F fill:#c8e6c9
 ```
 
-### 完整编译流程时序图
+各阶段**过程性走读**（每个阶段做了什么、关键 Pass、调用链）已在 [[inductor_compiler_pipeline_analysis]] 中逐一覆盖，本文不再重复。本文聚焦以下贯穿/纵深主题：
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Dynamo
-    participant Inductor
-    participant Triton
-    participant Hardware
-
-    User->>Dynamo: torch.compile(model)
-    Dynamo->>Dynamo: 捕获执行
-    Dynamo->>Dynamo: 生成 FX Graph
-    Dynamo->>Inductor: compile_fx(FX Graph)
-
-    Inductor->>Inductor: Graph Lowering
-    Inductor->>Inductor: IR Optimization
-    Inductor->>Inductor: Scheduling
-    Inductor->>Triton: Code Generation
-
-    Triton->>Triton: 生成 Kernel 代码
-    Triton->>Hardware: 编译 Kernel
-
-    Inductor-->>User: 返回编译函数
-
-    User->>Inductor: compiled_fn(inputs)
-    Inductor->>Hardware: 执行 Kernel
-    Hardware-->>Inductor: 返回结果
-    Inductor-->>User: 返回输出
-```
+- **§2 后端选择与配置机制**：`device_codegens` 注册表、`register_backend_for_device`、配置系统与编译模式——决定了「用哪个后端、以什么配置编译」。
+- **§3 Inductor IR 数据结构设计**：`TensorBox`/`Buffer`/`Loops`/`Pointwise`/`Reduction`/`View` 等核心 IR 节点的继承关系与职责。
+- **§4 / §5 IR 优化深度**：融合成本模型、坐标下降（coordinate descent）自动调优、Triton heuristics 配置、常量折叠（含 shape-dependent 常量与 SymInt 传播）。
+- **§6 内存规划与内存池策略**：buffer 生命周期分析、复用组、`memory_planning` / `memory_pool` 配置。
+- **§7 CUDA Graphs 集成**：`reduce-overhead` 模式、mutation 约束、与图分区的配合。
+- **§8 后端扩展机制**：为一个新硬件后端实现 Scheduling / Kernel / Wrapper / DeviceOpOverrides 并注册的完整步骤。
+- **§9 自定义融合规则**：通过模式匹配 + Triton Template 注册自定义融合 kernel。
 
 ---
 
@@ -169,6 +148,8 @@ memory_planning: bool = os.environ.get("TORCHINDUCTOR_MEMORY_PLANNING", "0") == 
 memory_pool: Literal["none", "intermediates", "outputs", "combined"] = "intermediates"
 ```
 
+> `memory_planning` 与 `memory_pool` 的语义与作用见 §6 内存规划与内存池策略。
+
 ### 4. 模式选择
 
 在 [torch/_inductor/__init__.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\__init__.py#L351) 中定义了不同的编译模式：
@@ -216,276 +197,13 @@ compiled_model = torch.compile(
 )
 ```
 
+> `max_autotune` / `coordinate_descent_tuning` 的内部机制见 §4；`triton.cudagraphs` 见 §7。
+
 ---
 
-## 阶段1: Graph Lowering (FX Graph → Inductor IR)
+## Inductor IR 数据结构设计
 
-### 1.1 GraphLowering 核心类
-
-核心实现在 [torch/_inductor/graph.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\graph.py#L323)：
-
-```mermaid
-classDiagram
-    class GraphLowering {
-        +graph_outputs: list[IRNode]
-        +example_inputs: Sequence[object]
-        +layout_opt: bool
-        +num_channels_last_conv: int
-        +is_inference: bool
-        +is_backward: bool
-        +is_const_graph: bool
-        +_shape_env: ShapeEnv
-        +sizevars: SizeVarAllocator
-        +graph_input_names: list[str]
-        +buffers: list[Buffer]
-        +operations: list[Operation]
-        +device_types: OrderedSet[str]
-        +device_type: str
-
-        +__init__(gm, example_inputs, ...)
-        +run_node(n: Node) -> object
-        +finalize() -> None
-        +fetch_args_kwargs_from_env(n) -> tuple
-        +call_function(target, args, kwargs) -> object
-        +propagate_mutation(...)
-    }
-
-    class FXNode {
-        +op: str
-        +target: Any
-        +args: Tuple[Any, ...]
-        +kwargs: Dict[str, Any]
-        +name: str
-    }
-
-    class TensorBox {
-        +data: Union[Buffer, View, TensorBox]
-        +size: list[sympy.Expr]
-        +stride: list[sympy.Expr]
-        +dtype: torch.dtype
-        +device: torch.device
-    }
-
-    class Buffer {
-        +name: str
-        +layout: Union[FixedLayout, FlexibleLayout]
-        +device: torch.device
-        +dtype: torch.dtype
-    }
-
-    GraphLowering --> FXNode: 遍历
-    GraphLowering --> TensorBox: 生成
-    GraphLowering --> Buffer: 分配
-```
-
-### 1.2 run_node 方法流程
-
-节点执行的核心实现在 [torch/_inductor/graph.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\graph.py#L1649)：
-
-```mermaid
-flowchart TD
-
-    A["run_node(node)"] --> B{"Node Kind"}
-
-    B -->|"placeholder"| P["Create TensorBox"]
-    B -->|"get_attr"| GA["Resolve Attribute"]
-    B -->|"output"| OUT["Record Graph Output"]
-    B -->|"call_function"| CF{"Operator Dispatch"}
-
-    CF -->|"builtin op"| FB["Fallback Handler"]
-    CF -->|"custom op"| STRATEGY{"Execution Strategy"}
-
-    STRATEGY -->|"Inductor Lite"| FB
-    STRATEGY -->|"User Triton Kernel"| TR["Apply Layout Constraints"]
-    STRATEGY -->|"Magic Method"| SYM["Return SymInt / SymFloat"]
-    STRATEGY -->|"Default Path"| SUPER["Delegate to Base Interpreter"]
-
-    FB --> RET["Return Result"]
-    TR --> RET
-    SYM --> RET
-    SUPER --> RET
-    P --> RET
-    GA --> RET
-    OUT --> RET
-
-```
-
-### 1.2.1 符号形状推理与 Guard 生成
-
-**ShapeEnv 与 SizeVarAllocator 的作用**
-
-GraphLowering 通过 `ShapeEnv` 和 `SizeVarAllocator` 管理符号形状推理和运行时 guard 生成：
-
-```mermaid
-flowchart TD
-    A["输入张量"] --> B["symbolic_sizes_strides"]
-    B --> C["创建符号变量 s0, s1, ..."]
-    C --> D["ShapeEnv 管理"]
-    D --> E["SizeVarAllocator 简化表达式"]
-    E --> F{"需要 Guard?"}
-    F -->|"是"| G["生成运行时断言"]
-    F -->|"否"| H["使用符号表达式"]
-    G --> I["编译函数包含 guard 检查"]
-    H --> I
-```
-
-**核心机制**（[torch/_inductor/sizevars.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\sizevars.py)）：
-
-```python
-class SizeVarAllocator:
-    def __init__(self, shape_env=None) -> None:
-        self.shape_env = shape_env or ShapeEnv()
-        self.replacements = self.shape_env.replacements
-        self.precomputed_replacements = {}
-        self.inv_precomputed_replacements = {}
-
-    def guard_int(self, expr: Union[Expr, int]) -> int:
-        """
-        提取符号表达式的具体值并生成 guard
-        如果表达式包含未知的符号，会抛出错误
-        """
-        val = self.size_hint_or_throw(expr)
-        self.check_equals(expr, sympy.Integer(val))
-        return int(val)
-
-    def expect_true(self, expr: Expr) -> bool:
-        """
-        确保表达式为真，必要时添加 guard
-        """
-        if not self.statically_known_true(expr):
-            return self.shape_env.guard_or_defer_runtime_assert(
-                expr, "sizevars.expect_true"
-            )
-        return True
-
-    def statically_known_true(self, expr: Union[sympy.Basic, bool]) -> bool:
-        """
-        判断表达式是否在符号上已知为真（不添加 guard）
-        """
-        return statically_known_true(self.shape_env, expr)
-```
-
-**Guard 生成示例**：
-
-```python
-# 假设输入张量形状为 (s0, s1)，其中 s0 和 s1 是符号变量
-x = torch.randn(s0, s1)
-
-# 在执行 reshape 时，Inductor 会生成 guard
-y = x.reshape(s0 * s1)  # 生成 guard: assert s0 * s1 == s0 * s1
-
-# 在执行切片时，Inductor 会检查边界
-z = x[:s1]  # 生成 guard: assert s1 <= s0
-```
-
-### 1.2.2 In-Place Mutation 处理
-
-**Mutation 跟踪机制**
-
-GraphLowering 通过 `propagate_mutation` 方法处理 in-place 操作的 mutation 传播：
-
-```mermaid
-flowchart TD
-    A["In-place 操作"] --> B["检测到 mutation"]
-    B --> C["mark_buffer_mutated"]
-    C --> D["realize 所有依赖"]
-    D --> E["propagate_mutation"]
-    E --> F{"需要 clone?"}
-    F -->|"是"| G["生成拷贝操作"]
-    F -->|"否"| H["直接 mutation"]
-    G --> I["更新 alias 信息"]
-    H --> I
-    I --> J["生成正确的 wrapper 代码"]
-```
-
-**核心实现**（[torch/_inductor/graph.py:1574](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\graph.py#L1574)）：
-
-```python
-def propagate_mutation(
-    self,
-    fx_node: torch.fx.Node,
-    old_args: tuple[Any],
-    old_kwargs: dict[str, Any],
-    new_args: tuple[Any],
-    new_kwargs: dict[str, Any],
-) -> None:
-    """
-    将 new_args/new_kwargs 上的 mutation 传播回 old_args/old_kwargs
-
-    假设我们已经将 old_args/old_kwargs 克隆到 new_args/new_kwargs
-    并调用了 fx_node(*new_args, **new_kwargs)
-
-    如果 fx_node 修改了 new_args/new_kwargs 中的任何参数，
-    且它们与 old_args/old_kwargs 不同，则需要更新原始张量
-    """
-    assert len(old_args) == len(new_args)
-    assert len(old_kwargs) == len(new_kwargs)
-
-    # 处理 Triton kernel wrapper mutation
-    if fx_node.target is torch.ops.higher_order.triton_kernel_wrapper_mutation:
-        kwargs = fx_node.kwargs["kwargs"]
-        mutated = torch._higher_order_ops.triton_kernel_wrap.get_mutated_tensors(
-            old_kwargs["kernel_idx"],
-            old_kwargs["constant_args_idx"],
-            {
-                k: v.meta["val"] if isinstance(v, torch.fx.Node) else v
-                for k, v in kwargs.items()
-            },
-            old_kwargs["tma_descriptor_metadata"],
-        )
-        for name in mutated:
-            old_arg = old_kwargs["kwargs"][name]
-            new_arg = new_kwargs["kwargs"][name]
-            # 更新原始张量
-            self._update_mutation(old_arg, new_arg)
-
-def mark_buffer_mutated(self, name: str) -> None:
-    """
-    当 buffer 被 mutation 时，确保所有对旧版本的读取在 mutation 之前完成
-    """
-    assert isinstance(name, str)
-    self.mutated_buffers.add(name)
-
-    if name not in self.name_to_users:
-        return
-
-    for user in self.name_to_users[name]:
-        user.realize()
-```
-
-**Mutation 处理示例**：
-
-```python
-# 原始代码
-def model(x):
-    x.add_(1)  # in-place mutation
-    return x.mul(2)
-
-# Inductor 处理后的 wrapper 代码
-def compiled_model(x):
-    # 检测到 in-place 操作
-    # 1. 标记 buffer 为 mutated
-    # 2. realize 所有依赖
-    # 3. 生成正确的 mutation 代码
-    x = x.clone()  # 如果需要保护输入
-    x.add_(1)
-    y = x.mul(2)
-    return y
-```
-
-**CUDA Graphs 与 Mutation**：
-
-在启用 CUDA Graphs 时，mutation 处理更加严格：
-
-```python
-# CUDA Graphs 要求所有张量地址在录制时固定
-# 如果检测到 mutation，Inductor 会：
-# 1. 在 wrapper 中生成必要的设备守卫
-# 2. 确保内存分配在录制前完成
-# 3. 避免在 CUDA Graph 执行期间重新分配内存
-```
-
-### 1.3 Inductor IR 数据结构
+阶段1 Graph Lowering（FX Graph → Inductor IR）的**过程性走读**（`GraphLowering.run_node`、placeholder/call_function 分派、符号形状与 mutation 处理）见 [[inductor_compiler_pipeline_analysis]] §5 与 [[lowering_analysis]]。此处只剖析 Lowering 产物——Inductor IR 的核心数据结构设计。
 
 > **注**：以下结构为简化模型（illustrative），实际实现请以源码为准。类名和成员可能与源码有细微差别，例如 Pointwise 的实现细节、View 存储 offset 的具体形式、Buffer 是否携带 is_constant 标记等。
 
@@ -565,79 +283,15 @@ classDiagram
 > - `Pointwise` → `Loops` → `IRNode`
 > - `Reduction` → `Loops` → `IRNode`
 
+> `TensorBox`/`StorageBox` 如何用「指针摆动（swing）」将 in-place mutation 函数化，以及 `ComputedBuffer`/`ExternKernel`/`FallbackKernel`/`TemplateBuffer` 的职责，见 [[lowering_analysis]] 与 [[inductor_compiler_pipeline_analysis]] §5.2。
+
 ---
 
-## 阶段2: IR Optimization (Inductor IR 优化)
+## IR 优化（一）：融合成本模型与自动调优
 
-### 2.1 Scheduler 核心类
+> 阶段2/3 中 Scheduler 的拓扑排序、`can_fuse`/`can_fuse_vertical`、`score_fusion_memory` 等**融合决策流程**见 [[scheduler_analysis]] 与 [[inductor_compiler_pipeline_analysis]] §6。本节聚焦 pipeline 未深入的**成本模型与自动调优实现**。
 
-调度器核心在 [torch/_inductor/scheduler.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\scheduler.py#L2864)：
-
-```mermaid
-classDiagram
-    class Scheduler {
-        +nodes: list[BaseSchedulerNode]
-        +graph: GraphLowering
-        +backends: dict[str, BaseScheduling]
-        +compute_dependencies() void
-        +topological_sort_schedule() void
-        +fuse_nodes() void
-        +can_fuse(node1, node2) bool
-        +can_fuse_vertical(node1, node2) bool
-        +score_fusion_memory(node1, node2) int
-        +codegen() void
-        +get_backend(device) BaseScheduling
-    }
-
-    class FusionResult {
-        +should_fuse: Optional[bool]
-        +callable_fn: Optional[Callable]
-        +future: Optional[LambdaFuture]
-        +fuse(should_fuse) FusionResult
-        +from_callable(callable_fn, future) FusionResult
-    }
-
-    class PendingFusion {
-        +callable_fn: Callable
-        +node1: BaseSchedulerNode
-        +node2: BaseSchedulerNode
-        +future: Optional[LambdaFuture]
-        +get_fusion_nodes() tuple
-    }
-
-    class MixOrderReduction {
-        +can_fuse(node1, node2) bool
-        +is_split_reduction(node) bool
-    }
-
-    Scheduler --> FusionResult : 使用
-    Scheduler --> PendingFusion : 使用
-    FusionResult --> PendingFusion
-    PendingFusion --> MixOrderReduction
-```
-
-> **说明**：`Scheduler`（line 2864）是调度的核心类，负责拓扑排序、融合决策和代码生成。`FusionResult`（line 104）、`PendingFusion`（line 126）和 `MixOrderReduction`（line 136）是辅助数据结构，服务于融合决策流程。
-
-### 2.2 融合机会识别流程
-
-```mermaid
-flowchart TD
-    A["can_fuse(node1, node2)"] --> B{"类型兼容?"}
-    B -->|"否"| Z["返回 False"]
-    B -->|"是"| C{"有共享数据?"}
-    C -->|"否"| Z
-    C -->|"是"| D{"资源限制?"}
-    D -->|"超出"| Z
-    D -->|"允许"| E{"性能收益?"}
-    E -->|"无"| Z
-    E -->|"有"| F["返回 True"]
-```
-
-> **实际 can_fuse 逻辑**（[scheduler.py:5333](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\scheduler.py#L5333)）：除上述检查外，还包括：排除相同节点、排除 `GroupedSchedulerNode`、检查 extern/nop 节点、检查设备一致性、委托到后端的 `can_fuse_vertical` / `can_fuse_horizontal` 方法等。
-
-### 2.2.1 融合成本模型与自动调优
-
-**成本模型评估**
+### 成本模型评估
 
 Inductor 的融合决策结合了多种成本评估方法：
 
@@ -828,7 +482,7 @@ model = torch.compile(
 # - 如果 memory_saved > threshold 且 register_pressure < limit，则融合
 ```
 
-**Tile 大小优化**：
+### Tile 大小优化
 
 ```python
 # 对于矩阵乘法，Inductor 会优化 tile 大小
@@ -847,7 +501,9 @@ model = torch.compile(
 # - 寄存器使用率
 ```
 
-### 2.3 常量折叠流程
+---
+
+## IR 优化（二）：常量折叠
 
 常量折叠实现在 [torch/_inductor/constant_folding.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\constant_folding.py)：
 
@@ -961,61 +617,22 @@ def model(x):
 - 推导出之前未知的 SymInt 常量值
 - 更新 SizeVarAllocator 中的 replacements 和 guards
 
+> joint graph 阶段的 `constant_fold_uniform_value`（`UniformValueConstantFolder`）与其它常量相关 pass，见 [[joint_graph_passes_guide]] 与 [[inductor_compiler_pipeline_analysis]] §4.2。
+
 ---
 
-## 阶段3: Scheduling (调度与融合)
+## 内存规划与内存池策略
 
-### 3.1 节点拓扑排序流程
+内存规划实现在 [torch/_inductor/memory.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\memory.py)，由 §2.3 中的 `memory_planning` 开关与 `memory_pool` 策略控制：
 
-```mermaid
-flowchart TD
+- `memory_planning`（默认关闭，`TORCHINDUCTOR_MEMORY_PLANNING=1` 开启）：启用静态内存规划，预先分配并复用 buffer，降低运行时分配开销与峰值内存。
+- `memory_pool`（默认 `intermediates`）：决定哪些 buffer 进入复用池。
+  - `none`：不做池化复用
+  - `intermediates`：仅复用中间结果 buffer
+  - `outputs`：复用输出 buffer
+  - `combined`：中间结果与输出统一池化
 
-    A["schedule_nodes()"] --> B["Build Dependency Graph<br/>name_to_node: Dict[str, Node]"]
-    B --> C["Initialize seen=∅<br/>Initialize result=[]"]
-    C --> D["For each node in nodes:<br/>visit(node)"]
-
-    subgraph DFS_visit_n ["DFS visit(n) - 递归函数"]
-        E{"n in seen?"} -->|"Yes"| F["Return"]
-        E -->|"No"| G["Add n to seen"]
-        G --> H["For each dep in n.unmet_dependencies:"]
-        H --> I{"dep in<br/>name_to_node?"}
-        I -->|"No"| H
-        I -->|"Yes"| J["visit(dep)"]
-        J -.递归调用.-> E
-        H -->|"All deps<br/>processed"| K["Append n to result"]
-    end
-
-    D -.调用.-> E
-    F --> L["Return from visit"]
-    K --> L
-
-    L --> M["All nodes visited?"]
-    M -->|"No"| D
-    M -->|"Yes"| N["Return result<br/>(Topological Order)"]
-
-    style DFS_visit_n fill:#f9f,stroke:#333,stroke-width:2px
-```
-
-### 3.2 融合决策与执行流程
-
-```mermaid
-flowchart TD
-    A["fuse_nodes"] --> B["复制节点列表"]
-    B --> C{"列表非空?"}
-    C -->|"否"| D["返回融合节点"]
-    C -->|"是"| E["找融合组"]
-    E --> F{"组大小 > 1?"}
-    F -->|"是"| G["创建融合节点"]
-    G --> H["移除已融合节点"]
-    H --> B
-    F -->|"否"| I["添加单独节点"]
-    I --> J["弹出节点"]
-    J --> B
-```
-
-### 3.3 内存分配流程
-
-内存规划实现在 [torch/_inductor/memory.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\memory.py)：
+内存分配流程：
 
 ```mermaid
 flowchart TD
@@ -1037,328 +654,39 @@ flowchart TD
     C2 --> C3["返回复用组"]
 ```
 
----
+核心思想是把 buffer 复用建模为**区间图着色**问题：分析每个 buffer 的生命周期区间（创建点 → 最后使用点），生命周期不重叠的 buffer 可以共享同一块内存（同一「复用组」），从而最小化总内存占用。
 
-## 阶段4: Code Generation (Inductor IR → Triton IR)
-
-### 4.1 Triton Kernel 生成
-
-Triton 代码生成在 [torch/_inductor/codegen/triton.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\codegen\triton.py)：
-
-```mermaid
-classDiagram
-    class SIMDScheduling {
-        <<abstract>>
-        +kernel_type: type
-        +backend_features: OrderedSet
-    }
-
-    class TritonScheduling {
-        +kernel_type = TritonKernel
-        +backend_features: OrderedSet
-        +__init__(scheduler) void
-        +codegen_kernel(node) str
-        +codegen_comment(node_schedule, kernel_name) void
-        +get_backend_features(device) OrderedSet
-    }
-
-    class SIMDKernel {
-        <<abstract>>
-    }
-
-    class TritonKernel {
-        +overrides: TritonKernelOverrides
-        +helper_functions: HelperFunctions
-        +codegen_kernel() str
-        +codegen_body() void
-        +load(name, index) str
-        +store(name, index, value) void
-        +reduction(dtype, src_dtype, reduction_type, value) str
-        +call_kernel(name, node) void
-    }
-
-    SIMDScheduling <|-- TritonScheduling
-    SIMDKernel <|-- TritonKernel
-    TritonScheduling --> TritonKernel : 生成
-```
-
-> **继承关系**：`TritonScheduling` 继承自 `SIMDScheduling`（line 5957），`TritonKernel` 继承自 `SIMDKernel[TritonCSEVariable]`（line 2461）。`SIMDScheduling` 定义在 `codegen/simd.py:1272`，`SIMDKernel` 定义在 `codegen/simd.py:388`。
-
-### 4.2 Wrapper 代码生成
-
-Wrapper 代码生成在 [torch/_inductor/codegen/wrapper.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\codegen\wrapper.py)：
-
-```mermaid
-classDiagram
-    class PythonWrapperCodegen {
-        +imports: IndentedBuffer
-        +header: IndentedBuffer
-        +prefix: IndentedBuffer
-        +suffix: IndentedBuffer
-        +kernel_declarations: IndentedBuffer
-        +wrapper_call: IndentedBuffer
-        +src_to_kernel: dict[str, str]
-
-        +__init__()
-        +generate(is_inference) -> str
-        +write_header()
-        +codegen_function_def()
-        +codegen_output_allocation()
-        +codegen_kernel_calls()
-        +codegen_return()
-    }
-
-    class IndentedBuffer {
-        +indent_level: int
-        +lines: list[str]
-
-        +writeline(line)
-        +splice(text)
-        +indent()
-    }
-
-    PythonWrapperCodegen --> IndentedBuffer: 使用
-```
-
-## 昇腾NPU适配层实现
-
-### 1. NPU 后端注册
-
-NPU 后端适配在 [torch_npu/utils/_inductor.py](file:///e:\97-codes\torch_parallel\torch_npu\torch_npu\utils\_inductor.py)：
-
-```mermaid
-classDiagram
-    class NPUDeviceOpOverrides {
-        +import_get_raw_stream_as(name) -> str
-        +set_device(device_idx) -> str
-        +synchronize() -> str
-        +device_guard(device_idx) -> str
-        +cpp_device_guard() -> str
-        +cpp_aoti_device_guard() -> str
-        +cpp_stream_guard() -> str
-        +cpp_aoti_stream_guard() -> str
-        +cpp_getStreamFromExternal() -> str
-        +kernel_header() -> str
-        +kernel_driver() -> str
-        +cpp_stream_type() -> str
-        +aoti_get_stream() -> str
-        +cpp_kernel_type() -> str
-        +cpp_device_ptr() -> str
-        +tma_descriptor_helpers() -> str
-        +cpp_scratch(idx, workspace, prefix) -> Optional[tuple[list[str], str]]
-    }
-
-    NPUDeviceOpOverrides --|> DeviceOpOverrides: 继承
-```
-
-**核心代码**：
-
-```python
-from torch._inductor.codegen.common import DeviceOpOverrides, register_device_op_overrides
-
-
-class NPUDeviceOpOverrides(DeviceOpOverrides):
-    """
-    NPU 设备操作覆盖
-    """
-
-    def import_get_raw_stream_as(self, name):
-        return f"from torch_npu._C import _npu_getCurrentRawStream as {name}"
-
-    def set_device(self, device_idx):
-        return f"torch_npu.npu.set_device({device_idx})"
-
-    def synchronize(self):
-        return "torch_npu.npu.synchronize()"
-
-    def device_guard(self, device_idx):
-        return f"torch_npu.npu._DeviceGuard({device_idx})"
-
-
-def _inductor_register_device_op_overrides():
-    """
-    注册 NPU 设备操作覆盖
-    """
-    register_device_op_overrides('npu', NPUDeviceOpOverrides())
-```
-
-### 2. NPU 后端初始化
-
-在 torch_npu 初始化时调用：
-
-```python
-# torch_npu/__init__.py
-from .utils._inductor import _inductor_register_device_op_overrides
-
-_inductor_register_device_op_overrides()
-```
-
-### 3. NPU 补丁与 RNG 状态管理适配
-
-NPU 适配层在模块导入时自动应用一系列补丁，包括 decomposition 修复和 RNG 状态管理适配（[torch_npu/utils/_inductor.py:205-208](file:///e:\97-codes\torch_parallel\torch_npu\torch_npu\utils\_inductor.py#L205)）：
-
-**补丁总览**：
-
-| 补丁函数 | 行号 | 作用 |
-|---------|------|------|
-| `_max_unpoolnd_patch` | 32-47 | 修复 `_max_unpoolnd` decomposition 以兼容 NPU |
-| `patch_philox_rand_offset` | 51-59 | 适配 Philox 随机数的 offset 计算 |
-| `patch_register_philox_rand` | 62-124 | 注册 NPU 版本的 Philox 随机算子 |
-| `patch_register_run_and_save_rng_state_op` | 127-159 | 注册 NPU 的 `PrivateUse1` dispatch 实现 |
-| `patch_register_run_with_rng_state_op` | 162-203 | 注册 NPU 的 RNG 状态恢复实现 |
-
-```python
-# torch_npu/utils/_inductor.py 中的核心适配
-
-# 1. Philox 随机数 offset 适配（line 51）
-def patch_philox_rand_offset():
-    def get_philox_rand_offset_patch(shape):
-        numel_scalar = 1
-        for dim_size in shape:
-            numel_scalar *= dim_size
-        numel = torch.scalar_tensor(numel_scalar, dtype=torch.int64)
-        return numel
-    torch._prims.rng_prims.philox_rand_offset = get_philox_rand_offset_patch
-
-# 2. NPU Philox 随机算子注册（line 62）
-def patch_register_philox_rand():
-    # 内部定义 _philox_rand 实现
-    def _philox_rand(shape, seed, offset, stride, device, dtype):
-        if device.type == "cpu":
-            devices = []
-        else:
-            devices = [device]
-        with torch.random.fork_rng(devices, device_type="npu"):
-            CUDARngStateHelper.set_torch_state_tensor(seed, offset)
-            random_values = torch.rand(shape, device=device, dtype=dtype)
-        return random_values, philox_rand_offset(shape)
-
-    # 注册到 PyTorch 的 RNG prim 系统
-    register_rng_prim(
-        name="philox_rand", schema="...",
-        impl_aten=_philox_rand, impl_meta=_philox_rand_meta,
-    )
-
-# 3. RNG 状态保存/恢复适配（line 127, 162）
-def patch_register_run_and_save_rng_state_op():
-    # 为 PrivateUse1 dispatch key 注册 NPU 实现
-    @run_and_save_rng_state.py_impl(DispatchKey.PrivateUse1)
-    def impl_npu(op, *args, **kwargs):
-        return torch_npu.npu.get_rng_state(), op(*args, **kwargs)
-    # 并覆盖 BackendSelect 以支持 device="npu" 路由
-
-def patch_register_run_with_rng_state_op():
-    # 为 PrivateUse1 dispatch key 注册 RNG 状态恢复
-    @run_with_rng_state.py_impl(DispatchKey.PrivateUse1)
-    def impl_npu(rng_state, op, *args, **kwargs):
-        current_state = torch_npu.npu.get_rng_state()
-        torch_npu.npu.set_rng_state(rng_state)
-        try:
-            out = op(*args, **kwargs)
-        finally:
-            torch_npu.npu.set_rng_state(current_state)
-        return out
-
-# 模块导入时自动应用（line 205-208）
-patch_register_run_and_save_rng_state_op()
-patch_register_run_with_rng_state_op()
-patch_philox_rand_offset()
-patch_register_philox_rand()
-```
-
-### 4. NPU 特定配置
-
-```python
-import torch
-import torch._inductor.config as config
-
-# 设置 NPU 设备
-config.device = "npu"
-
-# NPU 特定的编译选项
-model = torch.compile(
-    model,
-    backend="inductor",
-    options={
-        "device": "npu",
-        "triton.cudagraphs": False,  # NPU 不支持 CUDA Graphs
-    }
-)
-```
+> Scheduler 侧的峰值内存重排序（`reorder_for_peak_memory`）与死节点消除见 [[scheduler_analysis]]；本节聚焦内存规划/内存池的策略与配置维度。
 
 ---
 
-## 编译入口与数据流
+## CUDA Graphs 集成
 
-### 1. 编译入口：compile_fx 调用链
+CUDA Graphs 通过**录制一次 kernel launch 序列并重放**来消除反复的 host 端 launch 开销，对小算子密集、CPU 成为瓶颈的场景收益显著。在 Inductor 中通过 `mode="reduce-overhead"`（等价于 `triton.cudagraphs=True`，见 §2.4）启用，核心实现位于 [torch/_inductor/cudagraph_trees.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\cudagraph_trees.py)。
 
-Inductor 的实际编译入口是 `compile_fx` 函数（[torch/_inductor/compile_fx.py:2483](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\compile_fx.py#L2483)），而非某个独立的 `DataFlow` 或 `InductorInterface` 类。数据流通过函数调用链隐式传递。
+### Mutation 约束
 
-```mermaid
-flowchart TD
-    A["torch.compile(model)"] --> B["torch._inductor.compile()"]
-    B --> C["compile_fx(gm, example_inputs)"]
-    C --> D["_maybe_wrap_and_compile_fx_main()"]
-    D --> E["_compile_fx_main()"]
-    E --> F["AOT Autograd: 分区前向/反向图"]
-    F --> G["compile_fx_inner()"]
-    G --> H["_compile_fx_inner()"]
-    H --> I["fx_codegen_and_compile()"]
-    I --> J["GraphLowering(gm, example_inputs)"]
-    J --> K["graph.run(*example_inputs)<br/>FX Graph → Inductor IR"]
-    K --> L["graph.codegen()<br/>Inductor IR → 目标代码"]
-    L --> M["返回编译后的可执行函数"]
-
-    style A fill:#e1f5fe
-    style M fill:#c8e6c9
-```
-
-**核心流程**（[torch/_inductor/compile_fx.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\compile_fx.py)）：
+在启用 CUDA Graphs 时，mutation 处理更加严格：
 
 ```python
-# 实际编译流程（简化）
-def compile_fx(model_, example_inputs_, config_patches=None):
-    # 1. 应用配置
-    with config.patch(config_patches):
-        # 2. 委托到主编译流程
-        return _maybe_wrap_and_compile_fx_main(model_, example_inputs_)
-
-# _compile_fx_inner 中的核心步骤（compile_fx.py:1444-1565）
-def _compile_fx_inner(gm, example_inputs, ...):
-    # 1. 创建 GraphLowering 实例
-    graph = GraphLowering(gm, example_inputs=example_inputs, ...)
-
-    # 2. 执行 lowering：遍历 FX Graph 中的每个节点，转换为 Inductor IR
-    graph.run(*example_inputs)
-
-    # 3. 代码生成：调度、融合、生成目标代码（Triton/C++/...）
-    compiled_fn = graph.compile_to_fn()
-    # 内部调用 graph.codegen() → Scheduler → Code Generation
-
-    return compiled_fn
+# CUDA Graphs 要求所有张量地址在录制时固定
+# 如果检测到 mutation，Inductor 会：
+# 1. 在 wrapper 中生成必要的设备守卫
+# 2. 确保内存分配在录制前完成
+# 3. 避免在 CUDA Graph 执行期间重新分配内存
 ```
 
-### 2. 数据流概览
+由于 CUDA Graph 录制的是固定的设备地址序列，任何在重放期间发生的动态内存重分配都会破坏图的正确性。因此 Inductor 在生成 wrapper 时会确保输入/中间 buffer 的地址在录制前就位，并对 mutation 做相应的输入保护（必要时 clone）。
 
-```mermaid
-flowchart LR
-    A["FX Graph<br/>(torch.fx.GraphModule)"] --> B["GraphLowering.run()"]
-    B --> C["Inductor IR<br/>(Buffer, Pointwise, Reduction...)"]
-    C --> D["Scheduler<br/>(拓扑排序+融合)"]
-    D --> E["FusedSchedulerNode"]
-    E --> F["TritonKernel / CppKernel<br/>(代码生成)"]
-    F --> G["PythonWrapperCodegen<br/>(Wrapper 代码)"]
-    G --> H["编译后可执行函数"]
+### 与图分区的配合
 
-    style A fill:#e1f5fe
-    style H fill:#c8e6c9
-```
-
-> **说明**：PyTorch Inductor 中不存在独立的 `DataFlow` 或 `InductorInterface` 类。数据在各阶段间通过 `GraphLowering` 实例的属性（如 `graph.buffers`、`graph.operations`）和 `Scheduler` 实例传递。`GraphLowering` 同时承担了 FX Graph 遍历、IR 构建和代码生成的入口职责。
+CUDA Graphs 并不支持所有操作（如 CPU 算子、设备间拷贝、动态形状算子、条件操作等）。Inductor 通过 **graph partition** 将「CUDA-Graph 安全」的操作隔离进可被录制的子图，其余操作单独执行。分区的判定（`should_partition`）与子图生成（`_codegen_partitions`）机制详见 [[inductor_compiler_pipeline_analysis]] §6.3.4 与 [[scheduler_analysis]]，此处不再展开。
 
 ---
 
 ## 后端扩展机制
+
+本节给出**为一个新硬件后端**实现并注册 Inductor 代码生成栈的完整步骤。这是 §2 后端选择机制的「写入端」——§2 讲如何查表选择后端，本节讲如何把一个后端写进 `device_codegens`。
 
 ### 1. 后端架构概览
 
@@ -1885,6 +1213,8 @@ x = torch.randn(1024, 1024, device="mydevice")
 y = model(x)
 ```
 
+> 一个真实的第三方后端实现（昇腾 NPU 的 `NPUDeviceOpOverrides` 注册、补丁与 RNG 适配）见 npu/[[NPU_Inductor_Backend_Analysis]]。
+
 ---
 
 ## 自定义融合规则
@@ -2299,151 +1629,6 @@ result = compiled_model(a, b, c)
 
 ---
 
-## 完整流程示例
-
-### 示例: y = relu(x + 1)
-
-```python
-import torch
-
-# 定义模型
-def model(x):
-    return torch.relu(x + 1)
-
-# 编译模型
-compiled_model = torch.compile(model, mode="reduce-overhead")
-
-# 运行
-x = torch.randn(1024, device='cuda')
-y = compiled_model(x)
-```
-
-### 编译流程分析
-
-#### 1. FX Graph
-
-```
-graph():
-    %x = placeholder[target=x]
-    %1 = prim::Constant[value=1]()
-    %add = aten::add(%x, %1)
-    %y = aten::relu(%add)
-    return %y
-```
-
-#### 2. Graph Lowering
-
-```python
-# placeholder %x
-x_tensor = TensorBox(
-    data=Buffer(name="x", size=1024, dtype=float32, device="cuda"),
-    size=[1024],
-    stride=[1],
-    dtype=float32,
-)
-
-# prim::Constant %1
-constant_buffer = Buffer(
-    name="constant_1",
-    size=4,
-    dtype=float32,
-    device="cpu",
-    is_constant=True,
-    data=np.array([1.0], dtype=np.float32),
-)
-
-# aten::add %add
-add_buffer = Buffer(name="add_0", size=1024, dtype=float32, device="cuda")
-add_node = Pointwise(
-    name="add",
-    inputs=[x_tensor, TensorBox(data=constant_buffer, ...)],
-    output=add_buffer,
-    expr=lambda x, y: x + y,
-)
-
-# aten::relu %y
-relu_buffer = Buffer(name="relu_0", size=1024, dtype=float32, device="cuda")
-relu_node = Pointwise(
-    name="relu",
-    inputs=[TensorBox(data=add_buffer, ...)],
-    output=relu_buffer,
-    expr=lambda x: max(x, 0),
-)
-```
-
-#### 3. IR Optimization
-
-```python
-# 融合机会识别
-# - add 和 relu 都是 Pointwise
-# - relu 依赖 add
-# - 可以融合
-
-# 创建融合节点
-fused_node = FusedSchedulerNode(
-    name="fused_add_relu",
-    nodes=[add_node, relu_node],
-    inputs=[x_tensor, TensorBox(data=constant_buffer, ...)],
-    output=relu_buffer,
-)
-```
-
-#### 4. Scheduling
-
-```python
-# 拓扑排序: [fused_node]
-
-# 内存分配
-# - x: offset 0
-# - constant_1: offset 1024
-# - add_0: offset 1028 (复用)
-# - relu_0: offset 1028 (复用 add_0 的内存)
-```
-
-#### 5. Code Generation
-
-```python
-# Triton Kernel
-@triton.jit
-def kernel_fused_add_relu(ptr0, ptr1, ptr_out, n0, stride0_0, stride1_0):
-    pid = tl.program_id(axis=0)
-    idx = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-    mask = idx < n0
-
-    # 加载输入
-    x0 = tl.load(ptr0 + idx * stride0_0, mask=mask)
-    x1 = tl.load(ptr1 + idx * stride1_0, mask=mask)
-
-    # 计算: add + relu
-    var_0 = x0 + x1
-    var_1 = tl.maximum(var_0, 0)
-
-    # 存储输出
-    tl.store(ptr_out + idx, var_1, mask=mask)
-
-# Python Wrapper
-import torch
-import triton
-import triton.language as tl
-
-def forward(arg0: torch.Tensor):
-    output = torch.empty([1024], dtype=torch.float32, device='cuda')
-
-    grid = ((1024 + BLOCK_SIZE - 1) // BLOCK_SIZE,)
-    kernel_fused_add_relu[grid](
-        arg0.data_ptr(),
-        constant_1.data_ptr(),
-        output.data_ptr(),
-        n0=1024,
-        stride0_0=1,
-        stride1_0=0,
-    )
-
-    return output
-```
-
----
-
 ## 参考资源
 
 ### 官方文档
@@ -2454,7 +1639,6 @@ def forward(arg0: torch.Tensor):
 ### 源代码
 - PyTorch Inductor: `torch/_inductor/`
 - Triton: `triton/python/triton/`
-- CANN: `usr/local/Ascend/ascend-toolkit/latest/`
 
 ### 论文
 - [Triton: An Intermediate Language and Compiler for Tiled Neural Network Computations](https://www.eecs.harvard.edu/~shieber/papers/triton.pdf)
@@ -2464,63 +1648,52 @@ def forward(arg0: torch.Tensor):
 
 ## 附录：源码文件路径
 
-本文档基于以下 PyTorch Inductor 源码文件进行分析：
+本文聚焦的 upstream 主题涉及以下 PyTorch Inductor 源码文件：
 
-### 核心模块
-- [torch/_inductor/compile_fx.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\compile_fx.py) - 编译入口（compile_fx 调用链）
-- [torch/_inductor/graph.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\graph.py) - GraphLowering 核心实现
+### 后端选择与配置
+- [torch/_inductor/codegen/common.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\codegen\common.py) - 后端注册（`register_backend_for_device`、`DeviceCodegen`、`DeviceOpOverrides`）
+- [torch/_inductor/config.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\config.py) - 配置系统
+- [torch/_inductor/__init__.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\__init__.py) - 模块初始化与编译模式
+
+### IR 设计
 - [torch/_inductor/ir.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\ir.py) - Inductor IR 定义
-- [torch/_inductor/scheduler.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\scheduler.py) - 调度器实现
-- [torch/_inductor/sizevars.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\sizevars.py) - 符号变量管理
-- [torch/_inductor/memory.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\memory.py) - 内存规划
 
-### 代码生成
-- [torch/_inductor/codegen/common.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\codegen\common.py) - 通用代码生成
-- [torch/_inductor/codegen/triton.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\codegen\triton.py) - Triton 代码生成
-- [torch/_inductor/codegen/wrapper.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\codegen\wrapper.py) - Wrapper 代码生成
-- [torch/_inductor/codegen/simd.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\codegen\simd.py) - SIMD 调度基类
-
-### 优化与调优
+### IR 优化与调优
 - [torch/_inductor/constant_folding.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\constant_folding.py) - 常量折叠
+- [torch/_inductor/fx_passes/joint_graph.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\fx_passes\joint_graph.py) - 常量折叠与 SymInt 传播
 - [torch/_inductor/runtime/coordinate_descent_tuner.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\runtime\coordinate_descent_tuner.py) - 坐标下降调优
 - [torch/_inductor/runtime/triton_heuristics.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\runtime\triton_heuristics.py) - Triton 启发式配置
 - [torch/_inductor/tiling_utils.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\tiling_utils.py) - Tiling 分析
 
-### 配置
-- [torch/_inductor/config.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\config.py) - 配置系统
-- [torch/_inductor/__init__.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\__init__.py) - 模块初始化
-
-### FX Passes
-- [torch/_inductor/fx_passes/joint_graph.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\fx_passes\joint_graph.py) - 联合图优化
-- [torch/_inductor/fx_passes/reinplace.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\fx_passes\reinplace.py) - In-place 操作优化
-- [torch/_inductor/fx_passes/overlap_scheduling.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\fx_passes\overlap_scheduling.py) - 重叠调度
+### 内存规划
+- [torch/_inductor/memory.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\memory.py) - 内存规划
 
 ### CUDA Graphs
 - [torch/_inductor/cudagraph_trees.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\cudagraph_trees.py) - CUDA Graphs 树实现
 
-### 依赖分析
-- [torch/_inductor/dependencies.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\dependencies.py) - 依赖关系分析
+### 代码生成（后端扩展涉及）
+- [torch/_inductor/codegen/triton.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\codegen\triton.py) - Triton 代码生成
+- [torch/_inductor/codegen/wrapper.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\codegen\wrapper.py) - Wrapper 代码生成
+- [torch/_inductor/codegen/simd.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\codegen\simd.py) - SIMD 调度基类
 
-### 模式匹配
+### 自定义融合规则
 - [torch/_inductor/pattern_matcher.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\pattern_matcher.py) - 模式匹配工具
-
-### 通信
-- [torch/_inductor/comms.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\comms.py) - 集合通信
-
-### NPU 适配
-- [torch_npu/utils/_inductor.py](file:///e:\97-codes\torch_parallel\torch_npu\torch_npu\utils\_inductor.py) - NPU 后端适配
+- [torch/_inductor/select_algorithm.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\select_algorithm.py) - 算法选择与 autotuning
+- [torch/_inductor/kernel/mm_plus_mm.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\kernel\mm_plus_mm.py) - 现有融合 kernel 示例
 
 > **注**：本文档中的 IR 结构（如 TensorBox、Buffer、View、Pointwise、Reduction 等）为简化模型（illustrative），实际实现请以源码为准。类名和成员可能与源码有细微差别，例如 Pointwise 的实现细节、View 存储 offset 的具体形式、Buffer 是否携带 is_constant 标记等。
 
 ---
 
-*文档版本: 2.2 (Accuracy Review + Mermaid Syntax Fix)*
-*最后更新: 2026-03-12*
+*文档版本: 3.0（聚焦化重构：纯 upstream，去除与 inductor_compiler_pipeline_analysis 的 stage 走读重复，NPU 内容已迁移至 npu/NPU_Inductor_Backend_Analysis）*
+*最后更新: 2026-06-15*
 *作者: AI Assistant*
 
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
-- [[lowering_analysis]]
-- [[inductor_codegen_analysis]]
-- [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景
+- [[inductor_compiler_pipeline_analysis]] — 端到端 stage-by-stage 编译管线全景（本文不重复的 stage 走读）
+- [[lowering_analysis]] — FX → Inductor IR lowering 详解
+- [[scheduler_analysis]] — 调度器与融合决策流程
+- [[inductor_codegen_analysis]] — 代码生成策略与 kernel 融合
+- [[NPU_Inductor_Backend_Analysis]] — 昇腾 NPU 后端适配（本文 NPU 内容迁移目标）

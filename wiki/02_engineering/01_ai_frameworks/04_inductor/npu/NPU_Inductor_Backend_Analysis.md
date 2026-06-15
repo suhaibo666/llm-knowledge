@@ -2258,6 +2258,181 @@ NPU Inductor **完全支持后端混合使用**，通过以下机制实现：
 
 ---
 
+## 来自 upstream 技术分析的 NPU 适配补充（合并自 PyTorch_Inductor_Technical_Analysis）
+
+> 以下内容自同目录上层 `PyTorch_Inductor_Technical_Analysis.md`（已聚焦化为纯 upstream 文档）中迁移而来，逐字保留，记录 torch_npu 在 PyTorch Inductor 通用后端框架上的设备注册、补丁与 RNG 适配等内容。
+
+### 1. NPU 后端注册
+
+NPU 后端适配在 [torch_npu/utils/_inductor.py](file:///e:\97-codes\torch_parallel\torch_npu\torch_npu\utils\_inductor.py)：
+
+```mermaid
+classDiagram
+    class NPUDeviceOpOverrides {
+        +import_get_raw_stream_as(name) -> str
+        +set_device(device_idx) -> str
+        +synchronize() -> str
+        +device_guard(device_idx) -> str
+        +cpp_device_guard() -> str
+        +cpp_aoti_device_guard() -> str
+        +cpp_stream_guard() -> str
+        +cpp_aoti_stream_guard() -> str
+        +cpp_getStreamFromExternal() -> str
+        +kernel_header() -> str
+        +kernel_driver() -> str
+        +cpp_stream_type() -> str
+        +aoti_get_stream() -> str
+        +cpp_kernel_type() -> str
+        +cpp_device_ptr() -> str
+        +tma_descriptor_helpers() -> str
+        +cpp_scratch(idx, workspace, prefix) -> Optional[tuple[list[str], str]]
+    }
+
+    NPUDeviceOpOverrides --|> DeviceOpOverrides: 继承
+```
+
+**核心代码**：
+
+```python
+from torch._inductor.codegen.common import DeviceOpOverrides, register_device_op_overrides
+
+
+class NPUDeviceOpOverrides(DeviceOpOverrides):
+    """
+    NPU 设备操作覆盖
+    """
+
+    def import_get_raw_stream_as(self, name):
+        return f"from torch_npu._C import _npu_getCurrentRawStream as {name}"
+
+    def set_device(self, device_idx):
+        return f"torch_npu.npu.set_device({device_idx})"
+
+    def synchronize(self):
+        return "torch_npu.npu.synchronize()"
+
+    def device_guard(self, device_idx):
+        return f"torch_npu.npu._DeviceGuard({device_idx})"
+
+
+def _inductor_register_device_op_overrides():
+    """
+    注册 NPU 设备操作覆盖
+    """
+    register_device_op_overrides('npu', NPUDeviceOpOverrides())
+```
+
+### 2. NPU 后端初始化
+
+在 torch_npu 初始化时调用：
+
+```python
+# torch_npu/__init__.py
+from .utils._inductor import _inductor_register_device_op_overrides
+
+_inductor_register_device_op_overrides()
+```
+
+### 3. NPU 补丁与 RNG 状态管理适配
+
+NPU 适配层在模块导入时自动应用一系列补丁，包括 decomposition 修复和 RNG 状态管理适配（[torch_npu/utils/_inductor.py:205-208](file:///e:\97-codes\torch_parallel\torch_npu\torch_npu\utils\_inductor.py#L205)）：
+
+**补丁总览**：
+
+| 补丁函数 | 行号 | 作用 |
+|---------|------|------|
+| `_max_unpoolnd_patch` | 32-47 | 修复 `_max_unpoolnd` decomposition 以兼容 NPU |
+| `patch_philox_rand_offset` | 51-59 | 适配 Philox 随机数的 offset 计算 |
+| `patch_register_philox_rand` | 62-124 | 注册 NPU 版本的 Philox 随机算子 |
+| `patch_register_run_and_save_rng_state_op` | 127-159 | 注册 NPU 的 `PrivateUse1` dispatch 实现 |
+| `patch_register_run_with_rng_state_op` | 162-203 | 注册 NPU 的 RNG 状态恢复实现 |
+
+```python
+# torch_npu/utils/_inductor.py 中的核心适配
+
+# 1. Philox 随机数 offset 适配（line 51）
+def patch_philox_rand_offset():
+    def get_philox_rand_offset_patch(shape):
+        numel_scalar = 1
+        for dim_size in shape:
+            numel_scalar *= dim_size
+        numel = torch.scalar_tensor(numel_scalar, dtype=torch.int64)
+        return numel
+    torch._prims.rng_prims.philox_rand_offset = get_philox_rand_offset_patch
+
+# 2. NPU Philox 随机算子注册（line 62）
+def patch_register_philox_rand():
+    # 内部定义 _philox_rand 实现
+    def _philox_rand(shape, seed, offset, stride, device, dtype):
+        if device.type == "cpu":
+            devices = []
+        else:
+            devices = [device]
+        with torch.random.fork_rng(devices, device_type="npu"):
+            CUDARngStateHelper.set_torch_state_tensor(seed, offset)
+            random_values = torch.rand(shape, device=device, dtype=dtype)
+        return random_values, philox_rand_offset(shape)
+
+    # 注册到 PyTorch 的 RNG prim 系统
+    register_rng_prim(
+        name="philox_rand", schema="...",
+        impl_aten=_philox_rand, impl_meta=_philox_rand_meta,
+    )
+
+# 3. RNG 状态保存/恢复适配（line 127, 162）
+def patch_register_run_and_save_rng_state_op():
+    # 为 PrivateUse1 dispatch key 注册 NPU 实现
+    @run_and_save_rng_state.py_impl(DispatchKey.PrivateUse1)
+    def impl_npu(op, *args, **kwargs):
+        return torch_npu.npu.get_rng_state(), op(*args, **kwargs)
+    # 并覆盖 BackendSelect 以支持 device="npu" 路由
+
+def patch_register_run_with_rng_state_op():
+    # 为 PrivateUse1 dispatch key 注册 RNG 状态恢复
+    @run_with_rng_state.py_impl(DispatchKey.PrivateUse1)
+    def impl_npu(rng_state, op, *args, **kwargs):
+        current_state = torch_npu.npu.get_rng_state()
+        torch_npu.npu.set_rng_state(rng_state)
+        try:
+            out = op(*args, **kwargs)
+        finally:
+            torch_npu.npu.set_rng_state(current_state)
+        return out
+
+# 模块导入时自动应用（line 205-208）
+patch_register_run_and_save_rng_state_op()
+patch_register_run_with_rng_state_op()
+patch_philox_rand_offset()
+patch_register_philox_rand()
+```
+
+### 4. NPU 特定配置
+
+```python
+import torch
+import torch._inductor.config as config
+
+# 设置 NPU 设备
+config.device = "npu"
+
+# NPU 特定的编译选项
+model = torch.compile(
+    model,
+    backend="inductor",
+    options={
+        "device": "npu",
+        "triton.cudagraphs": False,  # NPU 不支持 CUDA Graphs
+    }
+)
+```
+
+### 5. 相关源码与参考
+
+- [torch_npu/utils/_inductor.py](file:///e:\97-codes\torch_parallel\torch_npu\torch_npu\utils\_inductor.py) - NPU 后端适配
+- CANN: `usr/local/Ascend/ascend-toolkit/latest/`
+
+---
+
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]

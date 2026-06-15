@@ -1,56 +1,63 @@
 # 04 · TorchInductor — 目录索引
 
-> PyTorch 编译后端核心:FX passes → lowering(FX→Inductor IR)→ 调度/融合 → codegen。含动态形状全链路。**NPU Inductor 后端**见 [[04_inductor/npu/index]]。
-> 知识分层见各页「层次」标注(overview→quick start→deep dive,约定见 [[01_ai_frameworks/index]])。
-> 最后更新: 2026-06-13
+> PyTorch 编译后端核心:Decomposition → FX Passes → Lowering(FX→Inductor IR)→ Scheduler(调度/融合)→ CodeGen。
+> 阅读路径 **overview → quick start → deep dive**(约定见 [[01_ai_frameworks/index]])。本目录为 **upstream**;**NPU Inductor 后端**单独见 [[04_inductor/npu/index]]。
+> 最后更新: 2026-06-15
 
 ---
 
-## 架构与流程
+## overview(概览,先读这里)
 
-| 页面 | 层次 | 核心主题 |
-|------|------|---------|
-| [[torch_compile_architecture]] | overview | torch.compile 端到端流水线(Dynamo→AOT→Inductor),高层全景 |
-| [[inductor_compiler_pipeline_analysis]] | deep dive | 端到端编译管线全景,逐阶段源码级分析 |
-| [[PyTorch_Inductor_Technical_Analysis]] | deep dive | Inductor 总体架构、IR 设计、后端代码生成(综合参考) |
-| [[torch_compile_source_analysis]] | deep dive | 源码结构与模块组织、torch.compile 入口 |
+| 页面 | 核心主题 |
+|------|---------|
+| [[torch_compile_architecture]] | **Inductor 概览**:是什么/为什么、在 torch.compile 中的位置、五阶段一览、核心概念(IR/Scheduler/CodeGen)、由浅入深导航 |
 
-## 上手
+## quick start(上手)
 
-| 页面 | 层次 | 核心主题 |
-|------|------|---------|
-| [[inductor_quickstart]] | **quick start** | 最小 fwd+bwd 示例、`torch.compile` 参数速查(mode/dynamic/fullgraph/options)、关键 `torch._inductor.config` 与环境变量、mode 选型、看生成代码与调试入口 |
+| 页面 | 核心主题 |
+|------|---------|
+| [[inductor_quickstart]] | 最小 fwd+bwd 示例、`torch.compile` 参数(mode/dynamic/fullgraph/options)、关键 `torch._inductor.config` 与环境变量、mode 选型、看生成代码 |
 
-## 编译阶段
+---
 
-| 页面 | 层次 | 核心主题 |
-|------|------|---------|
-| [[lowering_analysis]] | deep dive | FX → Inductor IR lowering(注册/API/优化) |
-| [[inductor_codegen_analysis]] | deep dive | 代码生成策略、kernel 融合 |
-| [[scheduler_analysis]] | deep dive | 算子调度器、融合决策;**含自定义融合 Pass 与排查指南** |
+## deep dive — 端到端与全局
 
-## FX Passes
+| 页面 | 核心主题 |
+|------|---------|
+| [[inductor_compiler_pipeline_analysis]] | **端到端编译管线**:Eager→Dynamo→AOT→Decomp→FX Passes→Lowering→Scheduler→CodeGen 逐阶段源码级走读(脊柱文档) |
+| [[PyTorch_Inductor_Technical_Analysis]] | **后端选择 & IR 优化深度**:后端选择/配置、Inductor IR 数据结构、融合成本模型与坐标下降 autotune、常量折叠、内存规划/内存池、CUDA Graphs 集成、后端扩展(pipeline 未展开的纵深) |
+| [[torch_compile_source_analysis]] | torch.compile 源码入口、调用栈、函数签名、mode 对照、能力边界 |
 
-| 页面 | 层次 | 核心主题 |
-|------|------|---------|
-| [[pre_grad_passes_guide]] | deep dive | 预梯度优化 passes(`fx_passes/pre_grad.py`) |
-| [[joint_graph_passes_guide]] | deep dive | 联合图优化 passes(`fx_passes/joint_graph.py`) |
-| [[post_grad_passes_guide]] | deep dive | 后梯度优化 passes(`fx_passes/post_grad.py`) |
+## deep dive — 各编译阶段
 
-## 动态形状
+| 页面 | 核心主题 |
+|------|---------|
+| [[lowering_analysis]] | FX → Inductor IR lowering(注册/API/优化) |
+| [[scheduler_analysis]] | 算子调度器、融合决策;自定义融合 Pass 与排查;新设备 backend 注册(设备无关示例) |
+| [[inductor_codegen_analysis]] | 代码生成策略、kernel 融合、wrapper |
 
-| 页面 | 层次 | 核心主题 |
-|------|------|---------|
-| [[dynamic_shapes_full_analysis]] | deep dive | Dynamic Shape 全链路:静态特化→符号化→Guard→渐进动态化,ShapeEnv |
-| [[inductor_codegen_dynamic_shape_analysis]] | deep dive | 代码生成中的动态形状,XBLOCK 选择与性能代价 |
-| [[unbacked_symint_analysis]] | deep dive | Unbacked SymInt:数据相关 shape、deferred_runtime_asserts、torch._check() |
+## deep dive — FX Passes
 
-## 特性与调试
+| 页面 | 核心主题 |
+|------|---------|
+| [[pre_grad_passes_guide]] | 预梯度 passes(`fx_passes/pre_grad.py`) |
+| [[joint_graph_passes_guide]] | 联合图 passes(`fx_passes/joint_graph.py`) |
+| [[post_grad_passes_guide]] | 后梯度 passes(`fx_passes/post_grad.py`) |
 
-| 页面 | 层次 | 核心主题 |
-|------|------|---------|
-| [[Pytorch_Compile_Debug_Analysis]] | deep dive(调试) | torch.compile 调试方法、`TORCH_LOGS`/`TORCH_COMPILE_DEBUG`、日志解读 |
-| [[flex_attention_analysis]] | deep dive | FlexAttention:可组合注意力融合、BlockMask、score_mod、语义驱动 codegen |
+## deep dive — 动态形状
+
+| 页面 | 核心主题 |
+|------|---------|
+| [[dynamic_shapes_full_analysis]] | Dynamic Shape 全链路:静态特化→符号化→Guard→渐进动态化,ShapeEnv |
+| [[inductor_codegen_dynamic_shape_analysis]] | 代码生成中的动态形状,XBLOCK 选择与性能代价 |
+| [[unbacked_symint_analysis]] | Unbacked SymInt:数据相关 shape、deferred_runtime_asserts、torch._check() |
+
+## deep dive — 专题与调试
+
+| 页面 | 核心主题 |
+|------|---------|
+| [[flex_attention_analysis]] | FlexAttention:可组合注意力融合、BlockMask、score_mod、语义驱动 codegen |
+| [[Pytorch_Compile_Debug_Analysis]] | torch.compile 调试:`TORCH_LOGS`/`TORCH_COMPILE_DEBUG`、日志解读(纯 upstream;NPU 调试见 [[npu_debug_guide]]) |
 
 ---
 
@@ -58,7 +65,7 @@
 
 | 目录 | 核心主题 |
 |------|---------|
-| [[04_inductor/npu/index]] | NPU Inductor 后端:三条 compile 路径、lowering/fallback、35+ monkey patch、优化思想 |
+| [[04_inductor/npu/index]] | **NPU Inductor 后端**:三条 compile 路径、lowering/fallback、monkey patch、优化思想、NPU 调试 |
 
 ---
 

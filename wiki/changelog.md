@@ -4,6 +4,30 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-15: 04_inductor 由浅入深重构 + NPU/upstream 彻底分离
+
+**Type**: Restructure（4 agent 并发；铁律＝保留全部独有 upstream 信息、只去重叠、迁移 NPU；对照 pytorch/torch_npu 源码核实）
+
+**由浅入深三层闭环**：
+- overview：`torch_compile_architecture` 就地重写为「Inductor / torch.compile 概览」（153 行：是什么→在 torch.compile 中的位置→五阶段一览→核心概念→最小例子旅程→导航）
+- quick start：`inductor_quickstart`
+- deep dive：端到端 `inductor_compiler_pipeline_analysis`（脊柱）+ 后端/IR 深度 `PyTorch_Inductor_Technical_Analysis` + 各阶段（lowering/scheduler/codegen）/ passes / 动态形状 / 专题(flex/source/debug)
+
+**去冗余**：`PyTorch_Inductor_Technical_Analysis` 2527→1699 行——删除与 pipeline 重复的 stage 流程走读，重定位为「Inductor 后端选择与 IR 优化深度」（后端选择/配置、IR 数据结构、融合成本模型与坐标下降 autotune、常量折叠、内存规划/内存池、CUDA Graphs 集成、后端扩展，均 pipeline 未展开）。
+
+**NPU / upstream 分离**：
+- Technical 的 NPU 适配（后端注册 `NPUDeviceOpOverrides`、初始化 hook、RNG patch、`config.device="npu"` 等）→ 迁入 `npu/NPU_Inductor_Backend_Analysis`（→2440 行）
+- `Pytorch_Compile_Debug_Analysis` §11「NPU 特有调试」（~326 行）→ 新建 `npu/npu_debug_guide.md`（quick start），原页 897→575 行变纯 upstream
+- `scheduler_analysis` §9.3「新设备 backend 注册」示例泛化为设备无关（`MyDeviceScheduling`/占位 `mydevice`），NPU 真实实现指向 npu/
+- 各 upstream 文档 NPU 提及降至仅指针级：Technical 66→4、Debug→7（共享双平台脚本）、pipeline/source＝0
+- 复核确认 passes 三件套、动态形状三篇此前的「NPU 计数」实为 `input` 子串假阳性，本就纯 upstream
+
+**索引**：`04_inductor/index` 与 `04_inductor/npu/index` 重排为 overview→quick start→deep dive，分组清晰。
+
+**校验**：01_ai_frameworks 全量 wikilink 零断链；13 个 `PyTorch_Inductor_Technical_Analysis` 入站链接保持有效（未改名无需 repoint）。
+
+---
+
 ## 2026-06-14: PrivateUse1 接入面 9 接入点补「为什么·深入（根本原因）」
 
 **Type**: Page Deepening（9 个 agent 并发挖根因；基于本地 checkout pytorch `trunk/6f26be8` + torch_npu 逐条核对 `file:line`，配 RFC/PR/dev-discuss/官方博客；遵「只扩展不删除」铁律，原「为什么」一句全部保留）
