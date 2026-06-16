@@ -158,6 +158,10 @@ bucket_size_divisor = math.lcm(self.data_parallel_world_size, 128, 2**16)
 
 Padding 到 `lcm(dp_size, 128, 65536)` 确保每个 bucket 可以被均匀分片，且对齐到 NCCL 最优传输粒度，最大化 NVLink/IB 带宽利用率。
 
+> [!update] 2026-06-16 · dev@232c478d4 — bucket 对齐/尺寸的两处更正
+> **① 65536 对齐是条件性的,不是恒定的**:bucket 末端对齐 divisor 现集中在 `param_layout.py:29-33` `bucket_end_divisor()`,只有 `pad_buckets_for_high_nccl_busbw=True` 时才是 `lcm(dp, 128, 2**16)`;否则只对齐到 `lcm(dp, 128)`。即上文的 `65536` 项是"高 NCCL busbw"开关下的产物,默认未必启用。
+> **② 默认 `bucket_size` 公式改由 pg_collection 计算**(#5006,`dist_utils.py:249`):`max(40000000, 1000000 * pg_collection.dp_cp.size())` —— 数值口径与原 `1000000 * dp_size` 一致,但来源从全局 `mpu.get_data_parallel_world_size()` 换成显式 `pg_collection.dp_cp.size()`(同时 `pp_rank`、`expert_data_parallel_world_size` 等也都改走 pg_collection)。`pg_collection` 现在对 Megatron-FSDP 与 DistributedOptimizer **两条路径都会传入**(原仅 FSDP 传)。
+
 ## 3. 源码关键实现
 
 ### 3.1 类继承结构
@@ -205,6 +209,11 @@ shard_main_param.decoupled_grad = shard_model_grad
 **MXFP8 共享 Buffer**（`param_and_grad_buffer.py:1097-1113`）：
 - 参数 All-Gather 和梯度 Reduce-Scatter 共享同一块显存
 - 通过 `reuse_grad_buf_for_mxfp8_param_ag` 控制
+
+> [!update] 2026-06-16 · dev@232c478d4 — 精度/MXFP8 相关行号与门控
+> - **行号漂移**(§3.3):解耦梯度赋值 `shard_main_param.decoupled_grad = shard_model_grad` 现在 `distrib_optimizer.py:2728`(原 `:2568`);`shard_main_param.grad = shard_model_grad.float()` 现 `:2730`(原 `:2570`)。语义未变。
+> - **MXFP8 共享 buffer 的 all-gather 后处理被抽函数**(#4771,`distributed_data_parallel.py:492` `_start_bucket_group_param_sync`):原内联在 `start_param_sync` 里的"把 all-gather 出的 MXFP8 参数从共享 buffer 拷回 `param.data` 并清零 buffer 供梯度累加"逻辑被抽成单 bucket-group 方法,便于 LayerWise+DistOpt 链式各自只同步自己的 bucket。
+> - **ChainedOptimizer 的 MXFP8 defer-sync 改为探测 DDP config**(#4982,`optimizer.py:1456`):`_should_defer_mxfp8_param_sync` 不再信 `OptimizerConfig.overlap_param_gather`,而是逐个探测子 `DistributedOptimizer.ddp_config.overlap_param_gather`(详见 [[optimizer_internals_analysis]] §1.1 的 2026-06-16 更新)。
 
 ### 3.5 完整训练迭代流程
 
@@ -328,6 +337,12 @@ outer_dp_sharding_strategy="no_shard"                 # 组间无分片（复制
 ```
 组内做 ZeRO-3 全分片，组间做 AllReduce 去重。
 
+> [!update] 2026-06-16 · dev@232c478d4 — Megatron-FSDP 内部一组修复(FSDP-internal)
+> **① `no_shard`(ZeRO-0)收敛性修复**(#3835/#3754,`megatron_fsdp.py:1234`、`optimizer/__init__.py:1060`):`no_shard` 下参数本就在各 DP rank 复制,故 ① `start_param_sync` 对 `no_shard` 直接 return(无需 all-gather);② 梯度统计/范数只能在 **TP/PP(model_parallel_group)** 上规约,**不能**再在 DP 维度规约(梯度已是 all-reduce 后的复制值,再 reduce 会**虚高 grad norm 致不收敛**)—— 通过 `effective_intra_dist_opt_group = mp_group if no_shard else intra_dist_opt_group` 实现。另禁止 `no_shard` 配 meta-device 初始化。详见 [[ddp_optimizer_analysis]] 阶段① 的 2026-06-16 更新。
+> **② grouped expert 权重减少 padding**(#5013,`fsdp/.../param_and_grad_buffer.py:1404`):当 ≥3D 的 grouped-expert 张量与异构 chunk-size-factor 混在同一 bucket 时,LCM 对齐会**放大 padding**;修复把这类 grouped-expert 张量拆到独立 bucket,避免 LCM 膨胀。利好大规模 MoE(见 §A.5)。
+> **③ 跨 AllGatherPipeline reset 保留非-FSDP-unit bucket**(#4717,`fsdp/.../param_and_grad_buffer.py`):pipeline reset 时不再误清非 FSDP-unit 的 bucket。
+> **④ A2A Overlap**(#3797):把 MoE 的 All-to-All dispatch/combine 与 FSDP 的参数 all-gather / 梯度 reduce-scatter 重叠,详见 [[ddp_optimizer_analysis]] 阶段④ 与 [[megatron_comm_overlap_analysis]]。
+
 ### A.3 TorchFullyShardedDataParallel 详细分析 (`torch_fully_sharded_data_parallel.py`)
 
 对接 PyTorch FSDP2 `torch.distributed.fsdp.fully_shard` API：
@@ -409,5 +424,22 @@ FSDP 的 shard 在 **DP 维度**上执行（即 `world_size / (TP × CP × PP ×
 - 例如：所有 `weight` 矩阵参数（≥2D）→ `MuonOptimizer`，所有 `bias`、`norm`、`embedding` 参数 → `AdamWOptimizer`
 
 **选择场景**：使用混合优化器（如 Muon + AdamW）或超大模型需要极致 per-layer overlap 时。
+
+> [!deprecated] 2026-06-16:**触发方式更正**。不存在 `--layer-wise-distributed-optimizer` 这个 flag。Layer-wise 分布式优化器通过 **`--optimizer muon`(或其它 emerging 优化器)+ `--use-distributed-optimizer`** 触发:`arguments.py:1811-1823` 在 optimizer 非 `sgd`/`adam` 且开了 distributed optimizer 时,把 `use_layer_wise_distributed_optimizer` 置 True、并关掉普通 `use_distributed_optimizer`。`--optimizer dist_muon` 是旧写法,已弃用。
+
+> [!update] 2026-06-16 · dev@232c478d4 — LayerWise 与 DDP buffer 基建整合 + 非-Muon 参数改走真正的 DistributedOptimizer(#4509 / #4771,`layer_wise_optimizer.py`、`optimizer/__init__.py:796-960`、`distrib_optimizer.py:3041`)
+>
+> 这组 PR 实质性改写了 layer-wise 的实现,并**修正了上文"普通 distributed optimizer 难以优雅支持 per-parameter optimizer 切换"的暗示** —— 现在两者是**链式协作**,而非二选一:
+>
+> **① LayerWise 不再用独立 ping-pong 路径,而是建在 DDP 的 grad/param buffer 之上**(#4509)。它预计算一个 shard-aligned 的 `FullParamLayout`/`PerBufferParamLayout`(`param_layout.py`),把参数按 backprop 顺序装进**对齐到 shard 边界**的 bucket,使任何参数都不跨 shard 边界,从而能直接复用 DDP 的 reduce-scatter(`use_distributed_optimizer=True` 时)/ all-gather 通信与 `overlap_grad_reduce`/`overlap_param_gather` 重叠语义。装箱算法在 #4771 中从"同尺寸配对(size-matching)"换成 **LPT 贪心装箱**(按 numel 降序塞进当前负载最小的 shard),在保证 bucket 连续 backprop 区间的同时让各 shard 尽量均衡。
+>
+> **② 非-Muon 参数改由独立的 `DistributedOptimizer` 按字节级分片管理**(#4771)。新增 `is_managed_by_layer_wise_optimizer(param)`(`layer_wise_optimizer.py:37`):2D 矩阵权重且非 embedding/output → Muon/LayerWise 接管;embedding、bias、LayerNorm 等 → **路由到一个独立的 `DistributedOptimizer`**(真正的 ZeRO 字节级分片)。`BufferKey` 增加 `is_managed_by_layer_wise_optimizer` 维度(`param_and_grad_buffer.py:863`),让两类参数落进不同 buffer;`DistributedOptimizer.start_param_sync_for_bucket_group_subset()` 只同步自己那批 bucket group,避免与 sibling LayerWise 重复 all-gather。最终 `LayerWiseDistributedOptimizer`(Muon)+ `DistributedOptimizer`(Adam)由 `ChainedOptimizer` 串成一个。
+>
+> **结论(对上文 Muon/ZeRO 框架的修正)**:Muon 现在**可以与 ZeRO 分片共存**。Muon 管的矩阵权重经 LayerWise 走 shard-aligned 的 reduce-scatter/all-gather(等效 ZeRO-1/2 沿 DP 分片优化器状态与梯度),非-Muon 参数走标准 `DistributedOptimizer`。早期"Muon 对 ZeRO 切分的根本性挑战"(见 [[../distributed_optimizer_deep_dive]])指的是 Newton-Schulz 正交化需要**整块矩阵**、无法像 Adam 那样按字节随意切;LayerWise 的解法正是 **shard-aligned bucket + 按层/按整参数分配**,让每个矩阵整体落在某个 shard 内,从而既正交化又分片。
+>
+> **限制**:此 split 路径要求 `use_layer_wise_param_layout=True`(默认开;`--no-use-layer-wise-param-layout` 回退到 legacy ping-pong)、`num_distributed_optimizer_instances == 1`、且不支持 expert-parallel 的非-Muon 参数组与 `overlap_param_gather_with_optimizer_step`(`optimizer/__init__.py:761` 断言)。
+
+> [!update] 2026-06-16 · dev@232c478d4 — MTP-stage word_embeddings 必须打 `is_embedding_or_output_parameter` 标签(#5034,`language_module.py:205-213`)
+> `is_embedding_or_output_parameter` 标签决定参数被 Muon/LayerWise 接管还是路由给 Adam/DistOpt(见上)。MTP(Multi-Token Prediction)阶段的 `word_embeddings.weight` 是 pre_process embedding 的**副本**(靠跨 stage all-reduce 同步),原来漏打此标签 → 被 LayerWise 当作 2D 矩阵接管、且因 `shared_embedding=True` 在 `_emit_bucket` 里把整个 `(vocab × hidden)` 张量**复制到全部 `dp_size` 个 shard**,使该 chunk 的 buffer 膨胀约 8×。修复:`pre_process` 或 `mtp_process` 任一为真就打标签,让 MTP embedding 正确归 Adam/DistOpt 管理。
 
 4. **PyTorch FSDP2 (`fully_shard`) 的原生支持**：`TorchFullyShardedDataParallel` 让 Megatron 可以跟随 PyTorch 上游的 FSDP2 优化（如 per-param FSDP、DTensor 集成），降低维护成本。

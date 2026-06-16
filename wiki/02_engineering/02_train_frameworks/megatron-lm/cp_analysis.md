@@ -355,7 +355,35 @@ CP 效率高度依赖"通信能否与 attention 计算重叠"(README Guideline 5
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。`p2p`/`a2a`/`a2a+p2p` 的实际 attention 内核位于 TransformerEngine,Megatron 透传 `cp_comm_type`;原生 `all_gather` 实现见 `dot_product_attention_context_parallel.py`。配套文档:`pp_schedulers_analysis.md`、`ep_analysis.md`、`tp_analysis.md`。*
+## 7. 动态上下文并行(Dynamic CP)
+
+> [!update] 2026-06-16 · dev@232c478d4
+> ee3f1ff 之后引入并持续完善 **动态上下文并行(Dynamic Context Parallelism, DCP)** —— 在 THD(packed varlen)训练中**逐 microbatch / 逐样本动态选择 CP 度**,而非全程固定 `cp`(#4226 / #5215 / #5123)。
+
+### 7.1 动机
+
+§6 之前的 CP 把序列**固定**切成 `cp` 段。但 packed varlen 训练里样本长度差异极大(示例数据集取 lognormal,`128~8192` token)。固定 CP 会把**每个样本都摊到全部 `cp` 卡**:短样本被强行切碎,attention 通信(K/V 搬运)纯亏,还把短序列补到全 CP 尺寸浪费算力。
+
+**DCP 的思路**:按样本长度给每个 microbatch 选一个**恰好够用的 local CP 度** —— 短样本用 1 卡(`local_cp_size=1`,等于不切 CP),中等样本用 2 卡,长样本才用满 `cp`。`examples/dynamic_context_parallel/README.md` 实例:`--max-seqlen-per-dp-cp-rank 2048` 下,≤2048 用 1 rank、≤4096 用 2 rank、≤8192 用 4 rank。
+
+### 7.2 机制(源码)
+
+- **`PackedSeqParams` 新增两字段**(`packed_seq_params.py:23-24`):`local_cp_size`(本 microbatch 实际 CP 度)与 `cp_group`(对应的 CP 进程子组),由调度器 `DefaultDynamicCPScheduler` 按样本长度算出。
+- **`resolve_cp_group(static_cp_group, packed_seq_params)`**(`packed_seq_params.py:69`,#4226):统一"**优先用 `packed_seq_params.cp_group`,否则回退建图期静态 CP 组**"的解析逻辑,供 `GPTModel`、`GatedDeltaNet`、MTP 层共用(此前各处分散硬编码 `self.pg_collection.cp`)。
+- **TE attention 接入**(`extensions/transformer_engine.py:1798`):`TEDotProductAttention.forward` 按 `packed_seq_params.local_cp_size` **切换 TE 内部的 CP 组** —— `local_cp_size==1` → `set_context_parallel_group(None,...)`(该样本关 CP);否则换成 `packed_seq_params.cp_group`。
+  - **#5215 修复**(`transformer_engine.py:1886`):forward **开头先保存原始 CP 组**(`_te_orig_cp_group`),**结尾再恢复**。否则被换掉的动态 CP 组会**泄漏**到后续不带 dynamic CP 的 microbatch,导致 attention 用错组、结果错误。
+- **dispatcher 兼容**:sequence packing(THD)原仅支持 `alltoall` dispatcher,现已放宽到 `flex`(#4816,见 [[ep_analysis]] §③ 增量更新);THD 下 HybridEP 会把各 rank 不齐的 token 数补齐到组内最大值。
+- **CUDA Graph 守卫**(#4226,`training/utils.py`):`cuda_graph_impl=full_iteration` 与 `cu_seqlens`(THD 变长)互斥,`_broadcast_cu_seqlens` 直接短路返回 `None`。
+
+### 7.3 入口与示例
+
+- 开关:`--dynamic-context-parallel --sequence-packing-scheduler default_dynamic_cp --max-seqlen-per-dp-cp-rank N`。
+- 基准示例(#5123):`examples/dynamic_context_parallel/`(`benchmark_dcp.sh`),对比 `dp_balanced` 定长 packed 与 DCP 两条 run,复用 `pretrain_gpt.py` + `MockVarlenDataset`,不引入新模型/数据集类。
+- **数据集/调度器侧的完整机制**(packing、`max-seqlen-per-dp-cp-rank` 分配)见 [[packed_dataset_dynamic_cp_analysis]];本节只覆盖 CP/attention 侧的接入。
+
+---
+
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`(§7 增量基准 `dev@232c478d4`)。源码行号以对应 commit 为准。`p2p`/`a2a`/`a2a+p2p` 的实际 attention 内核位于 TransformerEngine,Megatron 透传 `cp_comm_type`;原生 `all_gather` 实现见 `dot_product_attention_context_parallel.py`。配套文档:`pp_schedulers_analysis.md`、`ep_analysis.md`、`tp_analysis.md`。*
 
 ## Related Pages
 

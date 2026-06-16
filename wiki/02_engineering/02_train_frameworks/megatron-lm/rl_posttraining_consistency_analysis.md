@@ -112,6 +112,10 @@ swap_model_weights(train_model, infer_model, refit_method="nccl")
 - `inference_moe_token_dispatcher_type`:推理专用 MoE dispatcher(`nccl` / `nvls`)—— `moe_layer.py` 的 `train()` 重写(`:421`)在 eval 模式自动切到推理 dispatcher、train 模式切回(见 `ep_analysis.md`)。
 - 强制 `--moe-router-dtype=fp32`(`:1467`)—— 与训练侧推荐一致,**路由精度对齐**。
 
+> [!deprecated] 2026-06-16:`moe_layer.py` 的 `train()` 重写已被**移除**(#4617,`moe_layer.py`)。推理 / 训练 dispatcher 的切换**不再依赖 `eval()`/`train()` 模式**,改由一个**进程级全局开关** `InferenceMode`(`megatron/core/inference/utils.py:20`)决定:`MoELayer.forward` 在入口处读 `InferenceMode.is_active()`,active → 推理 dispatcher、否则 → 训练 dispatcher(`megatron/core/transformer/moe/moe_layer.py:605`)。引擎进入推理时调用 `InferenceMode.set_active()`(`dynamic_engine.py:292`、`static_engine.py:133`),退出时 `unset_active()`(`dynamic_engine.py:787`)。**根本原因**:`self.training` / `torch.is_grad_enabled()` / `inference_context is not None` 都无法可靠区分"引擎正在用模型做 rollout"与"训练相正在用同一模型重算 RL logprob"(二者都可能处于 `eval()`+`no_grad`)。改用单一进程级标志后,全代码库(attention、router、experts、mamba、`gpt_model` 等,见 `grep InferenceMode.is_active`)统一据此分流——这条**正是本节"显式、独立、受控的推理路径"取向的延续**:把"是否走推理路径"收敛成一个可审计的全局真值,而非散落各处的隐式 `self.training` 判断。
+
+> [!update] 2026-06-16 · dev@232c478d4:§4 引用的行号已漂移——`transformer_impl` 三选枚举现位于 `transformer_config.py:1257`(原 `:1199`);`inference_optimized` 强制 `--moe-router-dtype=fp32` 的校验现位于 `transformer_config.py:1615`(原 `:1467`),且新增了 `inference_optimized` 对 EP>1、`fp8-recipe='mxfp8'` 的配套约束(`:1603`、`:1631`)。
+
 设计取向:把推理路径做成**一个显式、独立命名的实现**,而不是偷偷改训练路径。好处是 —— 训推差异**集中在这一条路径里、可被审计**,你清楚知道每个数值差异来自哪。这是"工程上把不一致变可控"的关键设计。
 
 ---
@@ -126,6 +130,8 @@ RL 训练里的标准做法:**不信任 rollout 的 logprob,在训练相用训�
 - **policy 梯度用的 `π_train` logprob**:训练路径重算,自洽。
 - **rollout 用的 `μ_rollout` logprob**:推理路径产出。
 - 二者的差,就是纯粹的"推理 kernel/精度 vs 训练 kernel/精度"之差 —— **已经被解法①②③收敛到最小且定义清晰**。
+
+> [!update] 2026-06-16 · dev@232c478d4:`dynamic_engine.py:1218`(#5167)修了一个 **logprob 切片越界**的 bug——会污染上层 IS 修正用的 rollout logprob。当请求 `num_tokens_to_generate == 0`(典型是 `echo + logprobs`,只要 prompt 的 logprob、不生成)时,prefill 步产出的 `request_log_probs` 布局是 `[<整段 prompt 的 logprob...>, <采样出的那个 token 的 logprob>]`;旧代码用 `request_log_probs[:keep]`(此时 `keep==0`)**从头部裁**,会把整段 prompt 的 logprob 全部丢掉。修复:改成**只裁尾部多余的** `request_log_probs[:-num_dropped]`(decode 步里全是生成 token,尾裁=头裁,等价)。同时把 `is_first_token` 事件与 TPOT 统计加了 `and tokens` 守卫(`:1260`/`:1276`),0 token 步不再污染指标。**意义**:rollout 侧 `μ` 的 per-token logprob 现在对 echo 类请求也对齐,IS 比值 `π/μ` 的分母不再缺失 prompt 段。
 
 ---
 
@@ -156,6 +162,14 @@ collocated(同卡同时持训练+推理模型):
 
 传输后端三选:`nccl`(GPU P2P,机内首选)/ `gloo`(CPU 中转,跨集群)/ `nvshmem`(流水线式 GPU↔GPU,高吞吐)。`_plan_cache` / `_service_cache` 缓存计划与传输器,反复 refit 不重建。
 
+> [!update] 2026-06-16 · dev@232c478d4:#4762 对 `resharding/` 做了一轮**清理与重构**(本文 §2/§3/§7 的高层结论——LCM tiling、MXFP8 2D/1D scale 累积、`_plan_cache`/`_service_cache`、三传输后端、collocated 退化为本地 copy——经核对**仍然成立**)。落地的结构变化:
+> - **统一 `CopyService` 抽象基类**(`copy_services/base.py`):nccl/gloo/nvshmem 三后端现共享 `submit_send`/`submit_recv`/`run`/`close()` 接口;`swap_model_weights(refit_method=...)` 既收字符串后端名、也收 `CopyService` 实例(`refit.py:349` 用 `isinstance(refit_method, CopyService)` 判定,替换原 duck-typing)。
+> - **collocated 同 rank 短路**改由 **`task_id` 配对**实现(`base.py` 的 `match_local_ops_by_task_id`):同一笔传输的 send/recv 共享全局唯一 `task_id`,本地直接 `copy_()`,并显式校验 send/recv 数量与 `task_id` 不重复。
+> - **plan 缓存键加入 `src_rank_offset`/`dst_rank_offset`**(`refit.py:44`):修复了"两个非 collocated 配置因 (rank, sizes, num_experts) 相同而错误共享同一 plan"的隐患。
+> - **热路径提速**:`_get_config_tuple` 把 (TP,PP,EP,DP,expt_tp) 元组**记忆在 core 对象上**(每次 refit 查键 2~3 次);`_harmonize_buffer_dtypes` 的 `all_gather_object` 现**只做一次**、结果 `buffer_dtypes` 缓存在 plan 上,后续 refit 仅做本地 dtype 替换(替换后 `invalidate_refit_tensor_cache`)。
+> - **缓存管理 API 扩充**:除 `clear_service_cache()`(现统一调 `service.close()` 释放 NVSHMEM GPU buffer)外,新增 `clear_plan_cache()` / `clear_all_caches()`(`refit.py:144`/`:152`)。
+> - `transforms.py` 的 `_ensure_sendable` 改用 `megatron.core.fp8_utils.is_mxfp8tensor`/`dequantize_fp8_tensor`,不再 try-import TransformerEngine 的 MXFP8Tensor。
+
 ---
 
 ## 8. 其他 RL 后训练适配
@@ -163,6 +177,10 @@ collocated(同卡同时持训练+推理模型):
 - **`post_training/modelopt/`**:NVIDIA ModelOpt 集成 —— 后训练量化 / 剪枝的 model spec 与 state-dict hook(GPT / Mamba / hybrid)。
 - **推理引擎**(`inference/engines/`):`static_engine`(定长批)、`dynamic_engine`(连续/动态批处理,RL rollout 主力)、`mcore_engine`。配 KV cache、`dynamic_context`、调度器。
 - **推理量化**(`inference/quantization/mxfp8_*`):把推理模型权重量化到 MXFP8。
+
+> [!update] 2026-06-16 · dev@232c478d4:**MRL(Megatron RL)rollout 服务端的 output parsers 接线**(#4768,`megatron/rl/inference/megatron.py:120`)。`MegatronLocal` 起动态文本生成服务时,`start_text_gen_server(..., parsers=...)` 之前**硬编码为空 `[]`**,导致命令行 `--rl-inference-parsers` 形同虚设;现改为透传 `args.rl_inference_parsers`。该参数定义在 `arguments.py:3472`(`nargs='*'`,默认 `[]`,如 `--rl-inference-parsers deepseek-r1-reasoning qwen3-coder-tool`),用于在 RL rollout 时**解析模型输出**(R1 reasoning 思维链、Qwen3-Coder 工具调用等结构化片段)。意义:RL 框架现能让 rollout 服务直接产出已解析的结构化 response,而非只回原始 token 流。
+
+> [!update] 2026-06-16 · dev@232c478d4:**rollout 的 policy-epoch / KV-cache-epoch 元数据下沉到 message 对象**(#4533,`megatron/rl/inference/megatron.py:80`、`.../endpoints/chat_completions.py:732`)。chat completions 端点现把 `policy_epoch`、`kv_cache_epoch`、`num_evictions`(本次生成被驱逐的 KV 块数)写进每条 `message` 而非外层 `choice`;`MegatronLocal` 相应从 `choice.message.policy_epoch` 读取。**与训推一致性的关系**:`policy_epoch` 标记"这条样本是由第几代 policy 权重生成的"——配合 §2 的每迭代 Refit,上层 RL 框架据此判定 rollout 样本的**权重陈旧程度**,对跨 epoch 的 off-policy 样本施加(或拒绝)IS 修正;`kv_cache_epoch` 则用于 prefix cache 跨 Refit 失效的追踪。
 
 ---
 

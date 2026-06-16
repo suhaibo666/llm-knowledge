@@ -85,6 +85,9 @@
 
 `DistributedDataParallel`,`distributed_data_parallel.py:23`。
 
+> [!update] 2026-06-16 · dev@232c478d4 — 行号基线刷新(机制未变)
+> 自 `ee3f1ff` 起 `distributed_data_parallel.py` 因 layer-wise 整合等改动增长,本节锚点上移:`_make_backward_post_hook` `:431 → :449`、`no_sync` `:461 → :480`、`start_param_sync` `:474 → :510`、`start_grad_sync` `:532`、`finish_grad_sync` `:544`(未变);新增 `_start_bucket_group_param_sync`(`:492`,见 §阶段②)。其它文件:`distrib_optimizer.py` 的 `DistributedOptimizer` `:103 → :108`;`distributed_data_parallel_config.py` 的 `data_parallel_sharding_strategy` `:93 → :100`、`outer_dp_sharding_strategy` `:153 → :162`;bf16 强制 fp32 累加的 `arguments.py` 分支 `:1296-1310 → :1317-1328`(`param_and_grad_buffer.py` 梯度 dtype `grad_dtype = torch.float ...` 现 `:861`)。
+
 ### 2.1 连续扁平缓冲区 + 分桶
 
 `_ParamAndGradBuffer`(`param_and_grad_buffer.py`)把一组参数的梯度打包进**一块连续显存**,每个参数的 `.main_grad` 是这块大 buffer 的一个视图。好处:① 梯度通信可以整桶发,不必逐参数发(减少 kernel/通信启动开销);② 便于与分布式优化器的分片对齐。
@@ -164,6 +167,9 @@ def hook(*unused):
 - 小模型、调试。
 - 一旦显存吃紧 → 上 ZeRO-1。
 
+> [!update] 2026-06-16 · dev@232c478d4 — Megatron-FSDP `no_shard` 收敛性修复(#3835/#3754,`megatron_fsdp.py:1234`、`optimizer/__init__.py:1060`)
+> `no_shard`(ZeRO-0)下,梯度经 all-reduce 后在各 DP rank 上是**复制**的。原实现仍把梯度统计/范数在 dist-opt(DP)组上规约一遍 → grad norm **虚高**、梯度裁剪过度 → **不收敛**。修复:`no_shard` 时把 grad-stats 规约组从 DP 组改为只用 `model_parallel_group`(TP/PP)(`effective_intra_dist_opt_group = mp_group if no_shard else intra_dist_opt_group`);同时 `start_param_sync` 对 `no_shard` 直接 return(参数已复制,无需 all-gather),并禁止 `no_shard` 配 meta-device 初始化。此修复仅针对 Megatron-FSDP 的 `no_shard` 路径;与 [[optimizer_internals_analysis]] §5 梯度范数"需跨 TP×PP all-reduce"的论述一致 —— 关键是 **DP 维度此时不能再 reduce**。
+
 ---
 
 ## 阶段② — `optim`(ZeRO-1,DistributedOptimizer)
@@ -198,6 +204,9 @@ ZeRO-1 一步:
 
 - **几乎所有多卡训练的默认项**:通信量与 DDP 相同,白拿 `12Ψ→12Ψ/dp` 的优化器显存节省。
 - README General Tips 直接把 `--use-distributed-optimizer` 列为通用开关。
+
+> [!update] 2026-06-16 · dev@232c478d4 — LayerWise(Muon)现在复用本节的 DDP buffer + DistOpt 分片(#4509/#4771)
+> `LayerWiseDistributedOptimizer` 已整合进本文的 DDP grad/param buffer 基建:它预计算 shard-aligned 的参数 layout,让每个矩阵整体落在某个 shard 内,从而复用本节的 reduce-scatter/all-gather 与 `overlap_grad_reduce`/`overlap_param_gather`。配 `--optimizer muon --use-distributed-optimizer` 时,Muon 管的 2D 矩阵权重走 LayerWise(等效 ZeRO-1/2 沿 DP 分片),其余 embedding/bias/LayerNorm 等**非-Muon 参数则路由到一个独立的标准 `DistributedOptimizer`**(本节的字节级 ZeRO),二者由 `ChainedOptimizer` 串起。新增 `_start_bucket_group_param_sync`(`distributed_data_parallel.py:492`)让两个 sibling 优化器各自只同步自己那批 bucket group,不重复 all-gather。详见 [[megatron_distributed_optimizer_analysis]] §A.7 与 [[optimizer_internals_analysis]] §7 的 2026-06-16 更新。
 
 ---
 
@@ -256,6 +265,10 @@ ZeRO-3:参数也只存 1/dp
 - 模型态实在塞不下、又不想/不能再加 TP/PP 时的终极手段。
 - 与 EP 组合(README v0.15:"Support FSDP with EP for MoE models")。
 - 不推荐当 ZeRO-1 + TP/PP 已能装下时使用 —— 多付 50% 通信不划算。
+
+> [!update] 2026-06-16 · dev@232c478d4 — Megatron-FSDP 的 A2A Overlap(ZeRO-3 + MoE 的通信重叠)(#3797,`megatron_fsdp.py`、`mcore_fsdp_adapter.py`、`combined_1f1b.py`)
+> ZeRO-3 与 MoE 叠加时,**两层通信**同时存在:FSDP 的逐层参数 all-gather / 梯度 reduce-scatter(DP 轴)与 MoE 的 dispatch/combine **All-to-All**(EP 轴)。#3797 让二者**重叠**:把 FSDP 的 `post_forward_release_module` / `post_backward_release_module` 等 hook 暴露出来交给 1F1B overlap pipeline 手动调度,并新增 `enable_fine_grained_param_gather_backward_hook` 支持 backward 侧细粒度参数 gather;配合 `delayed_wgrad`(expert 权重梯度延迟到 dispatch-backward 后再 reduce-scatter,见 [[megatron_distributed_optimizer_analysis]] §A.2)最大化 EP-A2A 与 DP-梯度同步的重叠。
+> 这是对 §④.3"参数 AG 必须靠 prefetch/计算重叠掩盖"的 FSDP-内部强化。通信调度/1F1B 重叠角度详见 [[megatron_comm_overlap_analysis]]。
 
 ---
 
@@ -362,5 +375,5 @@ DP 无流水线气泡。低效来源是**通信暴露**:
 ## Related Pages
 
 - [[tp_analysis]] · [[optimizer_internals_analysis]] · [[tp_fsdp_resharding_supplements_analysis]] · [[parallelism_orchestration_analysis]]
-- [[megatron_distributed_optimizer_analysis]]
+- [[megatron_distributed_optimizer_analysis]] · [[megatron_comm_overlap_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

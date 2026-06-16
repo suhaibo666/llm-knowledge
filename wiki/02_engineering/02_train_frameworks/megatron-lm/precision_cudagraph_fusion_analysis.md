@@ -86,7 +86,16 @@ GPU 执行每个 kernel 前,CPU 要先"启动"它(launch)。当模型由**大量
 | `transformer_engine` | 每层一张图 | 用 TE 的 `make_graphed_callables()` |
 | `full_iteration` | 整个前向+反向一张图 | 整步录成单图,消除最多 |
 
+> [!update] 2026-06-16 · dev@232c478d4：CUDA Graph API 已重构(#4292，与基线里的孪生 PR #4293 同内容；当前 `dev@232c478d4` 已生效)。本表的 "三种实现" 论断**在重构后依然成立**——`cuda_graph_impl` 是一个 `Literal['none','local','transformer_engine','full_iteration']`(`transformer/transformer_config.py:1016`)，`full_iteration` 确为一个独立的 **impl** 值(而非旧版的某个 scope)。但旧的单一旋钮 `--cuda-graph-scope` 已被**拆成三个正交字段**，需补充说明:
+> - **`--cuda-graph-impl`**：选实现/总粒度 —— `none`(eager) / `local` / `transformer_engine` / `full_iteration`。
+> - **`--cuda-graph-modules`**(由 `--cuda-graph-scope` 改名，`enums.py:CudaGraphModule`，`cuda_graph_config.py`)：在 `local` / `transformer_engine` 的**逐层图内部**选**捕获哪些子区域** —— `attn` / `mlp` / `moe` / `moe_router` / `moe_preprocess` / `mamba`；**留空 = 整层捕获**。`full_iteration` 下此字段**必须为空**。
+> - **`--inference-cuda-graph-scope`**(`enums.py:InferenceCudaGraphScope`)：推理图的归属边界 —— `none`(eager) / `layer`(TransformerLayer/MambaLayer 边界) / `block`(TransformerBlock/HybridBlock 边界)。`local` 默认 `layer`，其它 impl 默认 `none`(`ALLOWED_INFERENCE_SCOPES`)。
+> - 兼容迁移：旧值 `full_iteration` → `--cuda-graph-impl=full_iteration`；旧值 `full_iteration_inference` → `--inference-cuda-graph-scope=block`；`full` → 空 modules(整层)。`--cuda-graph-scope` 与旧 `CudaGraphScope` 枚举仅为旧 checkpoint 反序列化保留(`arguments.py`/`transformer_config.__post_init__` 自动迁移并告警)。
+> - 训练校验也随之改写：`--cuda-graph-impl=full_iteration` 要求 `--no-check-for-nan-in-loss-and-grad`；`--inference-cuda-graph-scope=block` + fp8 仅支持 `--transformer-impl=inference_optimized` 且 `--fp8-recipe=mxfp8`(`arguments.py:validate_args`)。
+
 `cuda_graphs.py` 的机制:`_CudaGraphRunner` 包住一个可图化的模块;`_CudagraphGlobalRecord`(`:320`)记录所有 runner 的创建顺序;`create_cudagraphs`(`:478`)在**第一个训练步**真正录图(被 `pp_schedulers_analysis.md` 的 `schedules.py` 在步末调用 —— 前五份文档里 `schedules.py` 出现的 `create_cudagraphs()` 就是它)。`TensorReusePool`(`:161`)在图之间复用张量缓冲。
+
+> [!deprecated] 2026-06-16：上面 `cuda_graphs.py` 的行号为基线 `ee3f1ff`，当前 `dev@232c478d4` 已位移(符号仍在)：`TensorReusePool`→`:186`、`_determine_if_first_last_layer_of_this_vp_chunk`→`:274`、`_ensure_generator_state_is_cudagraph_safe`→`:318`、`_CudagraphGlobalRecord`→`:345`(其 `create_cudagraphs` classmethod 在 `:373`)、模块级 `create_cudagraphs()`→`:503`、`_CudaGraphRunner`→`:695`(#4292, `transformer/cuda_graphs.py`)。
 
 ### 2.3 约束:动态形状
 
@@ -154,6 +163,38 @@ num_microbatches = global_batch_size / (micro_batch_size · data_parallel_size)
 - 三者都与并行轴**正交**,是 kernel/精度层面的提速,叠加在并行策略之上。
 
 至此"第二层补遗"3 份文档全部完成:① 激活重计算、② 优化器内部、③ FP8 精度 + CUDA Graph + 算子融合。
+
+---
+
+## 6. 增量更新（ee3f1ff → dev@232c478d4）
+
+> 基线 `ee3f1ff`(2026-05-19) 之后、当前 `dev@232c478d4`(2026-06-16) 的精度/CUDA-Graph 新增机制与勘误。§1–§4 原论断经核对仍成立(`enums.py` 的 `Fp8Recipe` 在 `megatron/core/enums.py:12`、`get_fp8_align_size`@`fp8_utils.py:168`、`quantize_param_shard`@`:484`、`post_all_gather_processing`@`:499`、`is_first_last_bf16_layer`@`:513` 行号均未变；`get_fp8_recipe` 由 `:536` 位移到 `:554`/`:676`)。
+
+### 6.1 MXFP8 LM-head 输出投影（opt-in）
+
+> [!update] 2026-06-16 · dev@232c478d4
+> 新增 `fp8_output_proj`(`transformer_config.py:627`，#4825)：把**词表输出投影(LM head)**也放进 MXFP8 autocast 跑。原本 §1.5 提过"首尾层常保留 bf16"，本特性是其**反向 opt-in** —— 显式让最后的 output projection 走 MXFP8。
+> - 仅当 `fp8=True` 且 `fp8_recipe='mxfp8'` 时生效(否则构造期报错)。
+> - 实现：`GPTModel` 的 `output_layer` 在 `is_mxfp8_output_proj_active(config)`(`fp8_utils.py:532`)为真时换成 `TELMHeadColumnParallelLinear`(`extensions/transformer_engine.py:1344`)而非普通 `ColumnParallelLinear`(`models/gpt/gpt_model.py`)。
+
+### 6.2 MXFP8/FP4 param-gather 一连串修复 + 新旋钮
+
+> [!update] 2026-06-16 · dev@232c478d4
+> §1.3/§1.4 提到的 `--fp8-param-gather`(参数 all-gather 走 FP8)在 mxfp8/nvfp4 下有多处数值与流程修复：
+> - **`reuse_grad_buf_for_mxfp8_param_ag`**(`optimizer/optimizer_config.py:179`，#4994/#4800)：复用 grad buffer 做 mxfp8 参数 all-gather。新增 `MegatronOptimizer.prepare_model_params_for_param_sync()`(`optimizer/optimizer.py`)，`ChainedOptimizer` 重写它，在显式 DDP param-sync 前每个 model chunk **只 stage 一次**(`zero_grad_buffer` + `_copy_main_params_to_param_buffer`)；并禁止与 `overlap_param_gather_with_optimizer_step` 同用。修了 "DP overlap 关闭时 mxfp8 param gather 数值错误"。
+> - **eval 期强制 param-AG 后的后处理**(#4562)：把 quantize/transpose 等 `post_all_gather_processing` 从 DDP 内联挪到 `param_and_grad_buffer.py`，确保 eval 里强制全量 all-gather 后参数的 FP8/FP4 量化态正确(`distributed/param_and_grad_buffer.py`、`training/training.py`)。
+> - **FP4 param gather 适配 NVFP4 混精**(#4358，`extensions/transformer_engine.py`、`quantization/utils.py`)：让 `--fp4-param-gather` 在 NVFP4 recipe 的**混合精度**(部分层 fp4、部分 fp8/bf16)下工作；`get_quant_config_or_none` 容忍 `module_path=None`。覆盖 attention/MLP/MoE/MLA/MTP/SSM 多处 quant 配置接线。
+> - **Megatron-FSDP MXFP8 转置权重缓冲**(#4852，`megatron_fsdp/param_and_grad_buffer.py`)：持久化转置权重 buffer 的**非对称单元(asymmetrical units)**，修 FSDP 下 mxfp8 转置权重的分片/持久化。
+
+### 6.3 推理 CUDA Graph 覆盖：max_requests → max_tokens
+
+> [!update] 2026-06-16 · dev@232c478d4
+> 新增 `cuda_graph_all_prefills` / `--inference-cuda-graph-all-prefills`(`inference/config.py:235`，#4214)。原先 prefill/mixed 推理图的 batch 上界受 `max_requests*(num_speculative_tokens+1)` 约束；开启后 prefill/mixed 图捕获**扩展到覆盖整个 `max_tokens` 预算**(decode-only 图仍按旧上界)。同时删除旧的 `--inference-dynamic-batching-cuda-graph-max-tokens`(默认 16384)旋钮，改由上述 token 预算逻辑推导。这呼应 §2 "动态形状是死穴" —— 通过把图覆盖按 **token 数**(而非请求数)分档，让变长 prefill 也能命中图。
+
+### 6.4 与融合页的交叉补充
+
+> [!update] 2026-06-16 · dev@232c478d4
+> §3 算子融合的增量(TE op-fuser 把 grouped MLP 的 GEMM+激活+GEMM 整链融合、ScaledSReLU/Clamped-SwiGLU、`TEFusedDenseMLP` 在 SM100+/MXFP8 触发 CuTe GEMM-SwiGLU 融合、mHC 多后端重写、DSv4 稀疏注意力融合 kernel、TE 版本依赖)详见 [[megatron_fusion_operators_analysis]] §7。这些融合与本页 FP8/MXFP8 精度强相关(多数融合 kernel 的收益正建立在 MXFP8 量化 epilogue 上)。
 
 ---
 

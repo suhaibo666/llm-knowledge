@@ -136,6 +136,11 @@ def forward(self, input_, ...):                                # layers.py:985
 - **attention 的 QKV 投影**:按 head 切,每卡得 `a/tp` 个头。
 - **输出层 embedding**(`VocabParallelEmbedding`,词表维切分)。
 
+> [!update] 2026-06-16 · dev@232c478d4
+> **非融合 vocab-parallel 交叉熵现在显式接收 TP 组**(#5128,`tensor_parallel/cross_entropy.py:213`、`language_module.py:184`)。
+> 词表并行(输出投影按词表维切到各 TP rank)后,损失计算 `vocab_parallel_cross_entropy` 要在 TP 组内做 **3 次 all-reduce**(`logits_max` 取 MAX、`predicted_logits`/`sum_exp_logits` 取 SUM)以跨分片拼出全词表 softmax 的分母。原实现把通信组写死为全局 `get_tensor_model_parallel_group()`;此 PR 给 `vocab_parallel_cross_entropy(..., tp_group=None)` 增加可选 `tp_group` 形参(`cross_entropy.py:217`),并改用 `get_pg_rank/get_pg_size(tp_group)` 取 rank/world_size(`:135-136`,替换原 `get_tensor_model_parallel_rank/world_size`)。`LanguageModule.compute_language_model_loss` 现传入 `self.tp_group`(`language_module.py:184`)。
+> **意义**:与非均匀/异构 TP(每层 TP 组可不同,见 [[megatron_nonuniform_tp_analysis]])解耦 —— CE 的 all-reduce 不再强制走全局 TP 组,而跟随调用方实际的 TP 子组;`tp_group=None` 时回退全局组,旧行为不变。融合实现(`fused_vocab_parallel_cross_entropy`)早已通过 `self.pg_collection.tp` 传组,本 PR 把非融合路径对齐。
+
 ---
 
 ## 算子② — RowParallelLinear(行并行)
@@ -314,4 +319,5 @@ TP 不像 PP 有流水线气泡。它的低效来自:**每层 4 次通信的延�
 ## Related Pages
 
 - [[pp_schedulers_analysis]] · [[ep_analysis]] · [[cp_analysis]] · [[ddp_optimizer_analysis]] · [[parallelism_orchestration_analysis]]
+- [[megatron_nonuniform_tp_analysis]] · [[megatron_comm_overlap_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

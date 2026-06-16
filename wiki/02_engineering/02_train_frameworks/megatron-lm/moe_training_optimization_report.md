@@ -6,6 +6,33 @@
 
 ---
 
+## ee3f1ff→232c478d4 增量
+
+> [!update] 2026-06-16 · dev@232c478d4
+> 本章是全景报告的"自上次快照（ee3f1ff，2026-05-19）以来的 MoE 相关增量"。这里只做**全景级一段话总结 + 指向详细 sibling 页的交叉链接**，不重复深潜（深潜见各 [[link]]）。正文第 2–9 章描述的 7 维体系与机制在当前 HEAD 上**依旧成立**，下面仅补充这一个月内新增/变化的 MoE 维度。
+
+### 通信 / EP 维度 — Token Dispatcher 后端扩张
+
+`moe_flex_dispatcher_backend` 由原来的 `{deepep, hybridep}` 扩为 **`{deepep, deepepv2, hybridep}`** 三选一（`transformer_config.py:881`，#4793）。新增的 `deepepv2` 后端走 DeepEP v2 的 **ElasticBuffer** API（`_DeepepV2Manager` 见 `token_dispatcher.py:1470`，`get_elastic_buffer` 见 `fused_a2a.py:90`），与 v1 的 `Buffer` 完全隔离，仅支持 `float32` probs（须配 `--moe-router-dtype=fp32`）。配套地 `moe_deepep_num_sms` 默认值从固定 `20` 改为 `None`（`transformer_config.py:942`）——v1 回退到 20，v2 使用其理论默认。此外 deepep/hybridep 现已支持 **thd（sequence-packing / varlen）格式训练**（#4816），以及 **high-priority A2A stream**（`high_priority_a2a_comm_stream`，`transformer_config.py:686`；`set_streams(high_priority=…)` 见 `pipeline_parallel/utils.py`）与 **HybridEP 预处理 SM 数**可调（`moe_hybridep_num_sms_preprocessing=108`，`transformer_config.py:959`，#4694）；dispatcher 内 `all_to_all` 新增 `use_nccl_stream` 形参（shared-experts 场景置 True）。详见 [[ep_analysis]]。
+
+### 显存维度 — Paged Stash 落地 + EP 显存估算修正
+
+第 7.2 节预告的 **Paged Stash** 已作为完整特性落地（新模块 `moe/paged_stash.py`，~1486 行，#4247）：开关 `moe_paged_stash`（`transformer_config.py:1312`），`moe_paged_stash_page_size=64`、`*_buffer_size_factor_cuda=1.10`、`*_cpu=0.0`，并**要求同时设置 `moe_expert_rank_capacity_factor`**；与 `cpu_offloading` 互斥，且 `offload_modules` 不得再包含 `expert_fc1`/`moe_act`（已由 paged stash 接管）。理论显存估算 `theoretical_memory_usage.py` 现**正确区分 EP-sharded 路由专家参数与复制参数**，按 `ETP×EP` 切分路由专家（#4687）；Megatron-FSDP 的 grouped expert 权重 padding 也被收紧（#5013）。详见 [[megatron_memory_optimization_analysis]]。
+
+### 精度 / 融合维度 — ClampedSwiGLU 与 Dense+Grouped GEMM 融合
+
+DeepSeek-V4 的 **ClampedSwiGLU** 接入 MoE mlp_op_fuser：当 `activation_func_clamp_value` 非空时，SwiGLU 走 TE 的 `ScaledClampedQGeGLU(alpha=1.0, limit=clamp)`（cuDNN geglu kernel 是 swiglu 的超集，`moe/experts.py:422`，需 TE≥2.17.0.dev0，#5130）。新增 **TEFusedDenseMLP**：`use_grouped_gemm_for_dense_mlp`（`transformer_config.py:830`）令 dense MLP 走 `GroupedLinear(num_groups=1)`，在 SM100+ / MXFP8 下触发 `ForwardGroupedMLP_CuTeGEMMSwiGLU_MXFP8` 融合（须 `use_te_op_fuser=True`，#4318）。详见 [[precision_cudagraph_fusion_analysis]] 与 [[megatron_fusion_operators_analysis]]。
+
+### 训练稳定性 / 可观测性维度 — 梯度缩放修正 + 日志重构
+
+修复 **TP>1 时 MoE aux_loss / z_loss 梯度缩放错误**（`moe/router.py:479-555`，#5047）：在 `calculate_per_token_loss` 路径下，aux/z loss 现按 `num_local_tokens × tp_cp_group.size()` 预乘，抵消 `finalize_model_grads` 中 `total_global_tokens` 除子里隐含的 `tp_cp` 因子，使有效缩放回到目标的 `1/(num_micro_batches × dp_size)`。MoE 日志被抽出为独立模块 **`moe/moe_logging.py`**（`MoEMetricsTracker`，逐层 metric 采集 + 跨 rank 规约 + TensorBoard/W&B，#3431），`moe_utils.py` 相应瘦身。此外 hash routing 新增 **force-balance / force-biased**（`moe_router_force_load_balancing` / `moe_router_force_biased`，用随机 topk 覆盖路由，`moe/router.py:641`，#5130）。详见 [[training_stability_observability_analysis]]。
+
+### 模型结构 / 配方维度 — MoE Recipes 与性能基线
+
+新增 `examples/moe_recipes/`（#4890 / #5012 / #5289），覆盖 **DeepSeek-V3 / DeepSeek-V4-Flash / Qwen3-235B-A22B / Qwen3-30B-A3B** 的可复现 YAML 配方，并给出 **Median TFLOP/s/GPU** 基线：如 DeepSeek-V3 GB300 MXFP8（256GPU, TP1/PP4/EP64, HybridEP+partial CG）≈ **1357.7**，Qwen3-235B GB300 full CG ≈ **1323.1**，DeepSeek-V4-Flash GB200（128GPU, EP64, paged stash + full CG + HybridEP）≈ **646.4**。这些配方把上文各维度（HybridEP/DeepEP、paged stash、partial/full CUDA Graph、EP overlap、MXFP8）组合成端到端可跑的样例，是第 9 章"各规模推荐配置"的真实对照。详见 [[model_structure_analysis]]。
+
+---
+
 ## 第 1 章：引言 — MoE 训练的三座大山
 
 ### 1.1 MoE 架构核心
@@ -967,3 +994,7 @@ TP=8, PP=32, EP=32, DP=8, CP=4
 - [[activation_checkpointing_analysis]]
 - [[low_precision_training_analysis]]
 - [[transformer_engine_analysis]]
+- [[ep_analysis]]
+- [[precision_cudagraph_fusion_analysis]]
+- [[training_stability_observability_analysis]]
+- [[model_structure_analysis]]

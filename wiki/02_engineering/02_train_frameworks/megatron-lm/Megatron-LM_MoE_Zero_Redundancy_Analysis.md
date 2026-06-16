@@ -40,6 +40,11 @@ Megatron-LM提供三种Token Dispatcher实现零冗余通信：
 - 适合大规模训练和细粒度MoE架构
 - 性能优化更激进
 
+> [!update] 2026-06-16 · dev@232c478d4
+> **机制复核（ee3f1ff→232c478d4）**：本页第 2 节描述的 `MoEAlltoAllTokenDispatcher` 七阶段流程（dispatch_preprocess → token_dispatch(All-to-All) → dispatch_postprocess → expert compute → combine_preprocess → token_combine(reverse All-to-All) → combine_postprocess）、`input_splits`/`output_splits` 在 combine 阶段互换、以及 `permute`/`unpermute` + variable-size All-to-All 的零冗余机制，在当前 HEAD 上**依旧成立**（`token_dispatcher.py:623-902`，三个 dispatcher 类与方法名均未变）。
+>
+> **新增点**：`MoEFlexTokenDispatcher` 的后端从 `{deepep, hybridep}` 扩为 **`{deepep, deepepv2, hybridep}`**（`moe_flex_dispatcher_backend`，`transformer_config.py:881`，#4793）。`deepepv2` 走 DeepEP v2 的 **ElasticBuffer** API（`_DeepepV2Manager`，`token_dispatcher.py:1470`），与 v1 的 `Buffer` 隔离、仅支持 `float32` probs；deepep/hybridep 现支持 **thd（sequence-packing）格式**（#4816）。全景级总结见 [[moe_training_optimization_report]] 的「ee3f1ff→232c478d4 增量」与 [[ep_analysis]]。
+
 ---
 
 ## 2. 核心代码实现分析
@@ -511,6 +516,11 @@ hidden_states, handle = fused_dispatch(
 # 一个kernel完成：permute + all-to-all
 ```
 
+> [!update] 2026-06-16 · dev@232c478d4
+> 上方为 **DeepEP v1** 路径（`fused_dispatch`/`fused_combine`，`fused_a2a.py`）。新增 **DeepEP v2** 后端基于 **ElasticBuffer**：先 `get_elastic_buffer(group, num_max_tokens_per_rank, hidden, num_topk)`（`fused_a2a.py:90`）申请/复用弹性通信缓冲，再调 `deepepv2_dispatch(buffer, …)` / `deepepv2_combine(buffer, …)`（均为带 autograd 的 `torch.autograd.Function`），仅支持 `float32` probs（#4793）。
+>
+> 此外，原生 `MoEAlltoAllTokenDispatcher` 的 `all_to_all` 现新增 `use_nccl_stream` 形参（`token_dispatcher.py:703/716/862`）——当 MoE 带 shared-experts 时置 True，把 A2A 放到独立 NCCL 流上与 shared-expert GEMM 重叠；并可配 `high_priority_a2a_comm_stream`（`transformer_config.py:686`，#4694）将该通信流提到 CUDA 高优先级。详见 [[ep_analysis]] 与 [[megatron_comm_overlap_analysis]]。
+
 ---
 
 ## 6. 通信量与显存分析
@@ -580,6 +590,12 @@ megatron/core/transformer/moe/
     └── switch_load_balancing_loss_func()  # 负载均衡
 ```
 
+> [!update] 2026-06-16 · dev@232c478d4
+> 该目录在 ee3f1ff 之后新增/变化的关键文件：
+> - `fused_a2a.py` — DeepEP/HybridEP 融合通信后端，含 v1（`fused_dispatch`/`fused_combine`）、**DeepEP v2 ElasticBuffer**（`get_elastic_buffer`/`deepepv2_dispatch`/`deepepv2_combine`，#4793）、HybridEP（`hybrid_ep_dispatch`/`hybrid_ep_combine`）。
+> - `paged_stash.py` — MoE 路由专家激活的页式暂存（虚拟内存式管理，#4247），开关 `moe_paged_stash`。
+> - `moe_logging.py` — 独立的 MoE 指标采集/规约/可视化模块（`MoEMetricsTracker`，#3431），原先散落在 `moe_utils.py` 的日志逻辑迁出于此。
+
 ---
 
 ## 8. 使用示例
@@ -635,3 +651,6 @@ Megatron-LM的MoE零冗余通信实现通过以下技术实现了显存和通信
 - [[Megatron-LM_Distributed_Parallel_Exam]]
 - [[llm_initiliaze_analysis]]
 - [[mHC]]
+- [[moe_training_optimization_report]]
+- [[ep_analysis]]
+- [[megatron_comm_overlap_analysis]]

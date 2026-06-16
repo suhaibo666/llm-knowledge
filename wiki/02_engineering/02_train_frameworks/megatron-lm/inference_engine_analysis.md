@@ -18,6 +18,15 @@
 | **Static** | `static_engine.py`(403 行) | 定长批,同进同出 | 简单 | 离线批量推理 |
 | **Dynamic** | `dynamic_engine.py`(2446 行) | **连续批处理**(in-flight) | **块级**(paged 式) | 在线服务、RL rollout |
 
+> [!update] 2026-06-16 · dev@232c478d4:新增**高层封装 API**(#4697,`megatron/core/inference/apis/`)。本文 §3~§9 描述的 `DynamicInferenceEngine` / `DynamicInferenceContext` / `TextGenerationController` / `model_inference_wrappers` 现被官方降格为**底层积木**;典型用法改用两个 vLLM 风格的门面类:
+> - **`MegatronLLM`**(同步,`apis/llm.py`):`generate(prompts, sampling_params)` 一行出结果,单 prompt 也**总是返回 `list[DynamicInferenceRequest]`**;含 `pause`/`unpause`/`suspend`/`resume`/`shutdown` 生命周期与 `with` 上下文管理器。
+> - **`MegatronAsyncLLM`**(异步,`apis/async_llm.py`):额外提供 `serve(ServeConfig(...))` 起 **OpenAI 兼容 HTTP 服务**;**强制 `use_coordinator=True`**(direct 模式会在 `__init__` 抛 `ValueError`,因 direct 模式的同步 `engine.generate()` 与调用方 asyncio loop 冲突)。
+> - **`ServeConfig`**(`apis/serve_config.py`):`host`/`port`(默认 `0.0.0.0:5000`)/`parsers`/`verbose`/`frontend_replicas=4`。`SamplingParams`、`DynamicInferenceRequest(Record)` 从 `megatron.core.inference` 重导出(`apis/__init__.py`)。
+>
+> 两种执行模式:`use_coordinator=False`(**direct**,调用方自己管数据分片)/ `use_coordinator=True`(**coordinator**,引擎跨 DP 副本路由请求,HTTP serving 必需)。调用方仍须**自行** `initialize_megatron(...)` + 建模型 + `model.eval()`。引擎层对应新增 `step_modern`(`dynamic_engine.py:2133`)/`step_legacy`(`:2139`)/`async_step`(`:2096`)分步入口。已知限制(见 `core/inference/README.md`):coordinator 模式下 `engine.reset()` 不安全(会重绑 `_cond`/`_state_events` 致死锁、并静默把 `use_coordinator` 置 `False`);HTTP 前端固定在 global rank 0;响应 `"model"` 字段恒为 `"EMPTY"`。RL 权重热更新门面(`suspend_for_refit`/`update_weights_from_collective`/`resume_after_refit`)与 `megatron serve` CLI 列入 roadmap、尚未落地。
+>
+> 本文后续各节仍**有效且更精确**——它们正是这层门面背后的实现细节。下文 path:line 中,`dynamic_engine.py` 的部分行号已随版本漂移(如 §7 的 `create_cuda_graphs` 现为 `:363`,原 `:325`)。
+
 ---
 
 ## 1. 动机:自回归推理为何需要专门的引擎
@@ -123,7 +132,13 @@ seq B 的 KV  →  block table = [blk1, blk2]
 
 ### 5.3 背压:overflow 异常
 
-显存有限,块会用完。`DynamicInferenceContext` 定义了一组 `ContextOverflowError`(`dynamic_context.py:106`):`RequestOverflowError`(请求数超)、`TokenOverflowError`、`BlockOverflowError`(块用尽)、`MaxSequenceLengthOverflowError`。引擎据此**背压** —— 新请求进不来就留在等待队列,而不是 OOM 崩溃。
+显存有限,块会用完。`DynamicInferenceContext` 定义了一组 `ContextOverflowError`(`dynamic_context.py:106`):`RequestOverflowError`(请求数超,`:126`)、`TokenOverflowError`(`:132`)、`MaxSequenceLengthOverflowError`(`:138`)、`BlockOverflowError`(块用尽,`:145`)。引擎据此**背压** —— 新请求进不来就留在等待队列,而不是 OOM 崩溃。
+
+> [!update] 2026-06-16 · dev@232c478d4:**超长 `num_tokens_to_generate` 改为「钳制」而非「拒绝」**(#5181,`dynamic_engine.py:1034`),对齐 vLLM 行为。旧逻辑:`prompt_len + num_tokens_to_generate > max_sequence_length` 直接把请求标 `FAILED` + `MaxSequenceLengthOverflowError`。新逻辑:仅当 `num_tokens_to_generate < 0` 或 prompt 本身已超长(`remaining_tokens < 0`)才 FAILED;若只是请求的生成长度超过剩余预算,则**钳到 `remaining_tokens`** 并(rank 0)`warnings.warn`,请求照常受理。意义:与其它推理框架行为一致,长请求不再被硬拒。
+
+> [!update] 2026-06-16 · dev@232c478d4:**非均匀 PP 下 KV `layer_map` 的尺寸修正**(#4775,`dynamic_context.py:361`)。纯 Transformer 模型原按 `num_layers // pp_size` 估算本 rank 的注意力层数,在 `account_for_embedding/loss_in_pipeline_split`、首尾 PP 段不等分、或自定义 `pipeline_model_parallel_layout` 时会**算错**,导致 `append_key_value_cache` 抛 `KeyError`。修复改调与 `TransformerBlock` 同源的 `get_num_layers_to_build(model_config, vp_stage=None, pp_rank=...)`(`pp_rank` 取自 `pg_collection.pp`),使 §5.2 的 block table / `layer_map` 在非均匀流水线切分下也对齐。
+
+> [!update] 2026-06-16 · dev@232c478d4:**修正推理元数据张量 dtype**(#4855,`dynamic_context.py` / `gpu_view.py`)。`token_to_block_idx` 等按 token 计数的索引字段从 `int32` 改为 `int64`(超长序列时 int32 会溢出),CPU bookkeeping buffer 的字节偏移与 8 字节对齐(含 Mamba 段 `batch_indices_decode` 为 int64、其余 int32)相应重排。属底层正确性修复,不改 §5 的分块语义。
 
 ---
 
@@ -142,6 +157,8 @@ seq B 的 KV  →  block table = [blk1, blk2]
 - 命中统计:`prefix_cache_hits`、`prefix_cache_blocks_matched`。
 - **对 RL rollout 收益巨大**:GRPO 对同一 prompt 采样多条 response(`ep_analysis.md` / `rl_posttraining_consistency_analysis.md`),prompt 前缀的 KV 算一次共享给所有 rollout;聊天服务里共享的 system prompt 同理。
 
+> [!update] 2026-06-16 · dev@232c478d4:**prefix cache / MTP 统计改为「整个引擎生命周期累计」**(#4101,`dynamic_engine.py`)。`DynamicInferenceContext.prefix_cache_hits` / `prefix_cache_blocks_matched` 是**每 step 清零**的瞬时量;引擎现把它们累加进生命周期级累加器 `self._prefix_cache_hits` / `_prefix_cache_blocks_matched`(`:344`,每步 `+=` 后把 context 计数清零,`:1952`),`get_metrics` 上报累计值(`inference/prefix_cache_hits` 等,`:1999`)。意义:metric 不再只反映最后一步,而是反映整个服务期的真实命中。
+
 ---
 
 ## 7. CUDA Graph 在推理里
@@ -153,6 +170,15 @@ decode step 是"逐 token、kernel 小而多",CPU 启动开销占比极高 —�
 - **为每种 batch size 各捕获一张图**,warmup 阶段录完。
 - 运行时按当前实际请求数,**选最接近的那张图**重放(不足部分 padding)。
 - `inference_cuda_graph_scope`(`layer` / `block`)控制图化粒度;`use_cuda_graphs_for_non_decode_steps` 决定 prefill 步是否也图化;MTP 另有独立的图 warmup。
+
+> [!update] 2026-06-16 · dev@232c478d4:**CUDA Graph 尺寸分布从「线性」改为「指数递减 + 混合 prefill 网格」**(#3509,`InferenceConfig.cuda_graph_sizing_distribution`、`config.py:120` 的 `CudaGraphSizingDistribution` 枚举、CLI `--inference-dynamic-batching-cuda-graph-sizing-distribution`)。本节"为多种 batch size 各捕一张图"的结论不变,变的是**枚举哪些尺寸**:
+> - **`EXPONENTIAL`(新默认)**:token 数从 `cuda_graph_max_tokens` 起**逐次减半**直到 `tp_size`(log 间距),总图数约 `log2(max_tokens)`,每个尺度的相对 padding 有界(最坏约 2×)。
+> - **`LINEAR`(旧行为)**:`[1,2,4] + range(8,256,8) + range(256,max+1,16)`,高端图更密。
+> - 混合 prefill/decode 另按 `cuda_graph_mixed_prefill_count`(默认 16)走**网格**枚举。动机:旧线性分布在大 `max_tokens` 下图数爆炸且高端浪费,指数分布用更少的图覆盖更宽的请求规模区间。`create_cuda_graphs` 现位于 `dynamic_engine.py:363`(原 §7 引用的 `:325`)。
+
+> [!update] 2026-06-16 · dev@232c478d4:**MTP 推测解码:术语更名 + 按位接受率指标**。`num_mtp_heads` 全面更名为 `num_mtp_depths`(#4101,`text_generation_controller.py`、`dynamic_engine.py`);推测解码接受统计从两个标量改为**按位置(per-position)张量** `_spec_tokens_proposed_per_pos` / `_spec_tokens_accepted_per_pos`(长度 = `num_speculative_tokens`,索引 i 对应 MTP 第 i 个 draft token),`get_metrics` 既报聚合 `inference/spec_decode_acceptance_rate` 也报逐位接受率;prefill 请求被排除出分母(MTP 只对 decode 请求提议)。配套 #3458 在训练侧 MTP 模块(`multi_token_prediction.py`)加了 per-layer loss / 接受率计数器。意义:可定位"哪一深度的 draft token 接受率塌掉",指导 `num_speculative_tokens` 调参。
+
+> [!update] 2026-06-16 · dev@232c478d4:**Nemotron 的 prefill engine step 优化**(#4764,`attention_context/mamba_metadata.py`、`ssm/mamba_mixer.py`、`ssm/ops/causal_conv1d_varlen.py`)。混合(Mamba)模型在 CUDA Graph 兼容的固定尺寸 buffer 下,中间状态提取元数据改用 `padded_prefill_count * MAX_INTERMEDIATE_OFFSETS_PER_REQUEST` 作为上界、并把 fill 操作限定在 `[:max_count]` 区间(而非整个 buffer),减少混合 prefill/decode 图里的无效填充开销;同时移除了 `token_dispatcher_inference.py` 里一处冗余逻辑。属 §4.2 chunked/混合 prefill 在 SSM 模型上的性能修补。
 
 ---
 
@@ -185,6 +211,8 @@ decode step 是"逐 token、kernel 小而多",CPU 启动开销占比极高 —�
 | `async_stream.py` / `async_zmq_communicator.py` | 异步、流式、ZMQ 通信 |
 
 `suspend`/`resume`(`dynamic_engine.py:719/768`)对 **RL collocated 部署**很关键:训练相和推理相在同一批卡上轮流跑,推理引擎 suspend 时删 CUDA Graph、把 KV cache 换出统一内存,让出显存给训练;resume 时再恢复(见 `rl_posttraining_consistency_analysis.md` §7)。
+
+> [!update] 2026-06-16 · dev@232c478d4:**「是否在推理」统一为一个进程级全局开关 `InferenceMode`**(#4617,`megatron/core/inference/utils.py:20`)。引擎进入推理时 `InferenceMode.set_active()`(`dynamic_engine.py:292`/`:838`、`static_engine.py:133`)、退出时 `unset_active()`(`dynamic_engine.py:787`),并提供 `with InferenceMode.active():` 上下文管理器。**为什么**:模型各模块此前靠 `self.training` / `torch.is_grad_enabled()` / `inference_context is not None` 来猜"现在是不是推理",这三者都不可靠(尤其 RL 训练相用 `eval()`+`no_grad` 重算 logprob 时会被误判)。改为单一标志后,`gpt_model`、`attention`、`moe_layer`/`router`/`experts`、`mamba_*`、`transformer_layer`(`inference_fuse_tp_communication`)等全部改读 `InferenceMode.is_active()` 决定走推理 kernel/dispatcher 还是训练路径。**对本文与 RL 页的影响**:`rl_posttraining_consistency_analysis.md` §4 所述 MoE 推理 dispatcher 的切换**不再**由 `MoELayer.train()` 重写驱动(该重写已删),而由 `MoELayer.forward` 入口的 `InferenceMode.is_active()` 决定——详见该页 §4 的 `[!deprecated]` 批注。
 
 ---
 

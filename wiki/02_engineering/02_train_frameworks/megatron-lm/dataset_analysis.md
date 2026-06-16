@@ -117,6 +117,8 @@ PackedSeqParams:
 
 `seq_idx` 由 `__post_init__` 从 `cu_seqlens` 自动算出(`packed_seq_params.py:28`,用 `repeat_interleave`),供 Mamba mixer 和 CUDA Graph 用。attention 内核(TE)凭 `cu_seqlens` 让**每条子序列只 attend 自己** —— 等价于 N 条独立序列,但只跑一个 kernel、零 padding 浪费(除尾部)。
 
+> [!update] 2026-06-16 · dev@232c478d4:**GDN 现也支持序列打包(THD)**(#2645,`ssm/gated_delta_net.py:340+`)。此前 GDN 遇到 `packed_seq_params` 直接 `NotImplementedError`;现在 `qkv_format=='thd'` 时按 `cu_seqlens` 把打包 buffer 拆成各子序列、**逐条**做 CP↔HP all-to-all 再 chunk 扫描(要求 `batch==1`、非 deterministic)。即:`cu_seqlens` 这套打包元数据不止给 attention/Mamba,GDN 线性注意力也消费它(详见 `model_structure_analysis.md` §7)。
+
 与 §2.3 GPTDataset 的对比:GPTDataset **切断 doc**、靠 EOD + `reset_attention_mask` 隔离;packed dataset **不切断**、靠 `cu_seqlens` + THD 格式隔离。后者保住了样本完整性。
 
 ### 3.3 `data_schedule.py` 的打包调度
@@ -130,6 +132,15 @@ PackedSeqParams:
 所以 packed dataset 不只是"打包数据",而是**打包 + 变长 CP 负载均衡 + microbatch 调度**一整套 —— 服务于 SFT、长文档、RL 等变长场景。
 
 > **打包与动态 CP 的统一流水线**(`DefaultDynamicCPScheduler` 如何作为打包调度器的子类把二者缝在一起)见专文 `packed_dataset_dynamic_cp_analysis.md`。
+
+### 3.4 NEW:`VarlenDataset` 独立入口 + get_batch 统一
+
+> [!update] 2026-06-16 · dev@232c478d4
+> ee3f1ff 之后,显式打包(SFT/变长)多了一条**独立数据集入口**,并统一了下游取数路径:
+>
+> - **`VarlenDataset`**(`--use-varlen-dataset`,`megatron/training/datasets/varlen_dataset.py`,#4832):面向 SFT 风格**变长指令数据**的 THD 打包数据集,继承 `SFTDataset` 家族但与 `--sft` 标志**解耦**(不再隐式耦合)。支持多源加载(HuggingFace Hub repo / 本地 `.parquet` / `.jsonl`),并按列名**自动识别四种 schema**:`openai-messages`(`messages`)、`sharegpt`(`conversations`)、`alpaca/dolly`(`instruction|prompt...`+`output|response...`)、`pretrain-text`(`text`,返回裸串无角色掩码);配套 `MockVarlenDataset`(`varlen_mock_dataset_config_json`,与 SFT mock 同 schema 但独立)。`varlen_sbhd_validation` 提供一个 SBHD 参考路径,跳过打包、用于 THD 数值正确性校验。
+> - **每 index 直接吐一条子样本**:不同于 `SFTDataset`(一条样本里 `cu_seqlens` 拼了多条子序列),`VarlenDataset` 每个样本已是单条、自带 `padded_seq_len`。于是打包流水线第④步前的 `_unpack_batch`(`data_schedule_utils.py:48`)现支持**两种输入**:预打包(切开 `cu_seqlens`)与已拆开(只归一 batch 维、缺 `original_seq_len` 时从 `padded_seq_len` 补)。
+> - **get_batch 统一 + SFT THD 支持 PP**(#4103):原先散落 `training/utils.py` 的取数逻辑收敛进 `megatron/core/utils.py`,按场景拆成 `get_batch_on_this_tp_rank`(`:1992`,长度前缀协议广播 `cu_seqlens`、动态 CP 的 `local_cp_size`)、`get_sft_batch_on_this_cp_rank`(`:2269`)、`get_pretrain_batch_on_this_cp_rank`(`:2321`)、`get_thd_batch_on_this_cp_rank`(`:2439`)。**关键能力:SFT 的 THD 打包现可与 PP 共用**(PP 中间 stage 经 broadcast 拿到打包元数据)。
 
 ---
 

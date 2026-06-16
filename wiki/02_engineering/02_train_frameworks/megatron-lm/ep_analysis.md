@@ -360,6 +360,9 @@ combine:               All-to-All(EP 域)反向 ◄─────────�
 - **单节点 EP(NVLink 域内)**:NCCL A2A 在 NVLink 上效率高。
 - **不推荐**:极小 EP / 大 topk(此时 AllGather 更优);超大规模跨节点细粒度 MoE(此时 Flex/DeepEP 更优,见③)。
 
+> [!update] 2026-06-16 · dev@232c478d4
+> **`tp=ep=1` 时跳过"置换2"(identity chunk sort)**(#5102,`token_dispatcher.py:496`、`755`、`801`)。AllToAll dispatcher 在 `num_local_experts>1` 时本要做"置换2"(`sort_chunks_by_idxs`,把 A2A 收来的 token 按本地专家重新分组,见 §②.2 `dispatch_postprocess`)。但当 `tp_size==1 且 ep_size==1`(没有真正的跨 rank A2A,token 本就按全局专家顺序排好)时,这次置换是**恒等操作**,只是无谓拷贝显存。新增 `_local_expert_chunk_sort_is_identity()` 判定此情形,跳过 dispatch/combine 两侧的置换2,省一次置换内核与中间缓冲。退化并行配置(单卡多专家、调试)受益。
+
 ---
 
 ## 调度器③ — Flex Dispatcher(DeepEP / HybridEP)
@@ -455,6 +458,24 @@ DeepEP fused_dispatch:
 - **细粒度 MoE(DeepSeek-V3 类)**:专家多、topk 大,目标专家挤在少数节点,去冗余收益最大。
 - **GB200 NVL72 / 多节点 NVLink**:用 HybridEP 后端,吃满 MNNVL。
 - **不推荐**:单节点小 EP(融合内核与库依赖的复杂度不划算,标准 AllToAll 足够)。
+
+> [!update] 2026-06-16 · dev@232c478d4 — Flex / DeepEP / HybridEP 后端的多项演进
+>
+> 1. **新增 `deepepv2` 后端**(#4793,`transformer_config.py:881`、`token_dispatcher.py:1470`)。`--moe-flex-dispatcher-backend` 取值从 `{deepep, hybridep}` 扩为 `{deepep, deepepv2, hybridep}`。`deepepv2` 用 DeepEP v2 的 **ElasticBuffer** API(`get_elastic_buffer` + `deepepv2_dispatch/combine`),由新类 `_DeepepV2Manager`(继承 `_DeepepManager` 但**不调其 `__init__`**,因为 v2-only 镜像可能不带 v1 Buffer API)承载。语义与 `deepep` 一致(跨节点去冗余 fused dispatch/combine),只是底层缓冲管理换成弹性缓冲;仍要求 probs 为 fp32(`--moe-router-dtype fp32`)。
+>
+> 2. **`moe_deepep_num_sms` 默认值改为 `None`**(#4793,`transformer_config.py:942`,原固定 `20`)。`None` 时:`deepep` 走 v1 默认 20 SM;`deepepv2` 走 `num_sms=0` 交库自适应。原"DeepEP 固定占 20 SM"的隐含假设已不再硬编码。
+>
+> 3. **Flex(DeepEP/HybridEP)现支持 THD / sequence packing 训练**(#4816,`transformer_config.py:3010`)。原断言"`sequence_packing` 仅支持 `alltoall`"放宽为 `('alltoall','flex')`。HybridEP 要求各 rank 输入 token 数相等,而 THD packed 各 rank token 数不一,故 `_HybridEPManager.setup_metadata`(`token_dispatcher.py:1071`)把本地 token 数 all-reduce 取**组内最大**、按 `HYBRIDEP_TOKEN_ALIGNMENT=64`(`fused_a2a.py:503`)对齐后**补零**,combine 末尾再**裁回**原长度。
+>
+> 4. **新增 `moe_hybridep_pad_variable_tokens` 开关**(#5048,`transformer_config.py:889`)。把上条的"补齐到组内最大 token 数"从"仅当启用 `sequence_packing_scheduler`"解耦:当前端自供本地 packed THD(不走 Megatron-Core 的 sequence packing 调度器)、但各 rank token 数仍不齐时,可单独打开此开关触发同样 padding。
+>
+> 5. **新增 `moe_hybridep_num_sms_preprocessing`(默认 108)**(#4694,`transformer_config.py:959`)。HybridEP 元数据扫描(preprocessing / metadata scan)kernel 占用的 SM 数,透传到 `init_hybrid_ep_buffer` / `hybrid_ep_dispatch`。与 `high_priority_a2a_comm_stream`(见 [[megatron_comm_overlap_analysis]] §5.7)配合,细调 A2A 与计算抢 SM 的平衡。
+>
+> 6. **移除 HybridEP IB 硬件上限的 Python 侧守卫**(#4846 移除;此前 #4719 添加、#4718 又 revert 过早期版本)。dev 一度在 `fused_a2a.py` 加过 `_validate_hybrid_ep_ib_tx_depth`,多节点(走 RDMA)且 per-rank token 过大时提前报"IB dispatch QP depth 超 65535 硬件上限"。**HEAD(dev@232c478d4)已彻底删除该检查**,不再有 Python 侧 IB token 上限校验(交底层库)。若多节点 HybridEP 报 QP depth 错误,需自行降 per-rank token(减 seq/micro-batch 或增 TP/CP)。
+>
+> 7. **DeepEP 本地 EP 组不再申请 RDMA 缓冲**(#4816,`fused_a2a.py:get_buffer`)。仅 `group.size() > torch.cuda.device_count()`(真跨节点)时才按 hint 申请 RDMA buffer;纯节点内 EP 组跳过,兼容无 internode 支持的 DeepEP 构建。
+>
+> 8. **DSv3 在 H100 上默认改用 HybridEP**(#5164/#5039)。参考配置从 `--moe-enable-deepep true` 切到 `--moe-flex-dispatcher-backend hybridep`(并设环境变量 `NUM_OF_HYBRID_EP_RANKS_PER_NVLINK_DOMAIN=8`)。即 §③.1 表中"HybridEP 适用 GB200/多节点 NVLink"的定位,现已在 H100 DSv3 这类标准 8 卡 NVLink 节点上作为默认推荐。
 
 ---
 
@@ -607,5 +628,5 @@ dispatch/combine 的 A2A **默认在关键路径上**:计算流必须等 token �
 ## Related Pages
 
 - [[pp_schedulers_analysis]] · [[model_structure_analysis]] · [[parallelism_orchestration_analysis]] · [[precision_cudagraph_fusion_analysis]]
-- [[Megatron-LM_MoE_Zero_Redundancy_Analysis]] · [[moe_training_optimization_report]]
+- [[Megatron-LM_MoE_Zero_Redundancy_Analysis]] · [[moe_training_optimization_report]] · [[megatron_comm_overlap_analysis]] · [[cp_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

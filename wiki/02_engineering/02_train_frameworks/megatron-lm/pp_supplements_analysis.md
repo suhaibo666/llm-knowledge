@@ -168,6 +168,18 @@ def get_total_workload(self, seq_length, cp_size):
 - 提供与 `P2PCommunicator` 同名的接口:`send_forward` / `recv_forward` / `send_forward_recv_backward` / `send_backward_recv_forward`,所以上层调度无需改。
 - 当前限制:CP 暂不支持(`:95`,断言两侧 CP=1)。
 
+> [!update] 2026-06-16 · dev@232c478d4 — 跨网格 P2P 改走专用进程组(#5234)
+>
+> 上文「与 `P2PCommunicator` 同名的接口」在 `ee3f1ff` 时,跨网格的 `dist.send/recv`、`P2POp(isend/irecv)` 都**不带 `group=` 参数**,即隐式走默认的全局 `WORLD` 组。这会让两个子模型之间的桥接 P2P 与其它集合通信共用同一个 NCCL 通信器,存在串行化与标签冲突风险。
+>
+> #5234 为每条桥接边新建一个**专用进程组** `bridge_pg`(`bridge_communicator.py:167-168`):取「源网格 TP leader ∪ 目标网格 TP leader」并排序,用 `dist.new_group(ranks, backend='nccl')` 建组,并以类级缓存 `_bridge_pg_cache`(键 = 排序后的 rank 列表)避免重复创建相同通信器(`:204-210`);`destroy_bridge_pgs`(`:63-68`)统一销毁。此后所有桥接 `send_forward` / `recv_forward` / `send_backward` / `recv_backward` 及其融合 `P2POp` 都显式传 `group=self.bridge_pg`(`:381`、`:424`、`:514`、`:553`、`:668` 等共 12 处 send/recv/P2POp 站点)。
+>
+> 意义:把跨网格 leader↔leader 的点对点通信从全局组**隔离**到独立通信器,避免与各子网格内部的 TP/PP/DP 集合通信争用同一 NCCL 资源。`_broadcast_pg_cache`(fan-in/fan-out 广播组)与新增的 `_bridge_pg_cache`(leader 间 P2P 组)现在是 `BridgeCommunicator` 的两类缓存进程组。
+>
+> 行号漂移:上文 §4.2 提到的 `build_comm_map` 因本 PR 在其上方插入了 `_get_or_create_bridge_pg` 等代码,已从 `:268` 下移到 `bridge_communicator.py:290`。
+>
+> 配套:`BridgeCommunicator` 连接的 `HyperCommGrid` 本身也在 #5148 获得了 named views(同一段 rank 挂多套命名分解),为异构子模型提供几何基础 —— 详见 [[parallelism_orchestration_analysis]] §4③ 的 2026-06-16 更新。
+
 ### 4.3 `MultiModulePipelineCommunicator` —— 编排模块 DAG
 
 `multimodule_communicator.py:110`。把多个子模块组织成一张有向图:

@@ -203,8 +203,62 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 - ✗ 极小的 hidden size（LayerNorm 融合不支持则回退）
 - ✗ 非 Blackwell GPU（Linear+CrossEntropy CUTLASS fusion 不可用）
 
+## 7. 增量更新（ee3f1ff → dev@232c478d4）
+
+> 以下为 wiki 基线 commit `ee3f1ff`（2026-05-19）之后、当前 `dev@232c478d4`（2026-06-16）的新增/变更融合机制。原文（§1–§6）的论断经核对仍然成立，下方为补充与勘误。
+
+### 7.1 TE Op-Fuser：把 grouped MLP 的两次 GEMM + 激活融成一条算子链
+
+> [!update] 2026-06-16 · dev@232c478d4
+> 新增 `use_transformer_engine_op_fuser`（`transformer_config.py:516`，#4636）。这是一条全新的 MoE grouped MLP 融合**实现路径**：不再用 `@jit_fuser` 包激活，而是借 **Transformer Engine 的 op-fuser API**（`te.pytorch.ops.Sequential`）把 `FC1 GroupedLinear → 激活 → FC2 GroupedLinear` 整条链交给 TE 一并融合（含跨 GEMM 的 epilogue 融合）。
+> - 入口：`TEGroupedMLP._is_fused_impl_supported`（`moe/experts.py:315`）做能力探测，`_make_fused_ops`（`moe/experts.py:408`）构造融合算子链；`_with_fused_impl`（`:273`）为开关。
+> - 支持条件（任一不满足回退非融合路径）：TE ≥ 2.14.0、`tp_group.size()==1`(不支持 TP)、非 fine-grained activation offloading、非 `moe_apply_probs_on_input`、FC1/FC2 均为 `te.pytorch.GroupedLinear`。
+> - 激活映射：SwiGLU → `ScaledSwiGLU`；quick-GEGLU → `ScaledClampedQGeGLU`（需 TE ≥ 2.15）。
+> - 配套新配置：`moe_single_grouped_weight` / `moe_single_grouped_bias`（`transformer_config.py`，把每个 expert 的权重/bias 存为 TE `GroupedTensor` 单参数，要求 `moe_grouped_gemm=True` + TE ≥ 2.14.0；`single_grouped_weight` 目前仅在 fp8+mxfp8 下验证过数值正确）；`moe_mlp_glu_interleave_size`（`transformer_config.py:962`，GLU 输入改为 gate/linear **交错块**布局，专为高级融合 kernel 设计）。
+
+### 7.2 Op-Fuser 激活扩展：ScaledSReLU 与 Clamped-SwiGLU
+
+> [!update] 2026-06-16 · dev@232c478d4
+> 在 §7.1 的 op-fuser 链上新增两种激活：
+> - **ScaledSReLU（加权 squared-ReLU）**（#4859，`moe/experts.py:389/527`）：当 `activation_func==squared_relu` 且 `use_fused_weighted_squared_relu=True` 且非 GLU 时，用 `te.pytorch.ops.ScaledSReLU` 融合。这把 §4.6 的 `fused_weighted_squared_relu`（jit_fuser 版）进一步纳入了 TE op-fuser 路径。同时引入 `activation_recompute_in_mlp` 透传（按 TE 签名探测）。
+> - **Clamped-SwiGLU（DSv4）**（#5130，`moe/experts.py:360`）：带 `activation_func_clamp_value` 的 SwiGLU 复用 `ScaledClampedQGeGLU(alpha=1.0, limit=clamp, glu_linear_offset=0.0)`——因为 cuDNN 的 geglu kernel 是 swiglu 的超集（`sigmoid(alpha·x)·x`，`alpha=1.0` 即 SiLU，`alpha=1.702` 即 quick-gelu）。需 **TE ≥ 2.17.0.dev0**。这与 §4.2 提到的 "Clamped variant 防 FP8 溢出" 一脉相承，但实现从手写 clamp 改为融合 kernel 的 runtime 参数。
+
+### 7.3 TEFusedDenseMLP：Dense MLP 也走 Grouped GEMM 以触发 SM100 融合
+
+> [!update] 2026-06-16 · dev@232c478d4
+> 新增 `TEFusedMLPWithGroupedLinear`（别名 `TEFusedDenseMLP`，`extensions/transformer_engine.py:2852`，#4318）与开关 `use_grouped_gemm_for_dense_mlp`（`transformer_config.py:830`）。**把稠密 MLP 也用 `GroupedLinear(num_groups=1)` 实现**，目的是在 **SM100+（Blackwell）+ MXFP8 recipe** 下触发 TE 的 `ForwardGroupedMLP_CuTeGEMMSwiGLU_MXFP8` 融合 kernel（FC1 GEMM + SwiGLU + 量化一体）。要求 `use_te_op_fuser=True` 且 SwiGLU 激活；spec 选择见 `gpt_layer_specs.py:get_mlp_module_spec_for_backend`。
+
+### 7.4 Frozen Linear dgrad 折叠
+
+> [!update] 2026-06-16 · dev@232c478d4
+> `LinearWithFrozenWeight.backward`（`tensor_parallel/layers.py:375`，#5092）：当 `grad_output.dim()>2` 时先 `reshape(-1, k)` 折成 2D 再 `matmul`，绕过 PyTorch matmul 对 size-1 前导维不折叠为 `mm` 的问题（pytorch#186148）。对冻结（如 LoRA base、frozen embedding）线性层的反向 dgrad 是一次纯吞吐优化，不改数值。
+
+### 7.5 mHC 融合 kernel 重写：多后端自动选择
+
+> [!deprecated] 2026-06-16：§3.6 与 §4.6 提到的 `fused_mhc_kernels` 原描述为"cuTile/cuTile fused kernels"。#4624（`fusions/fused_mhc_kernels.py`，`transformer_config.py:1103`）已重写为**多后端自动选择**：Sinkhorn 与 H_post_bda 反向优先 Triton，其余 fused kernel 用 cuTile，否则回退原生 torch。`use_fused_mhc` 不再因 cuTile 缺失而**静默重置为 False**（旧逻辑已删除），全 native 回退时保持开启并只发一条 rank-0 warning。hyper-connection 模块（SinkhornKnopp / H_aggregate / H_post_bda / ProjRms）相应改写。
+
+### 7.6 Fused MLA：补齐 delayed weight-grad 钩子
+
+> [!update] 2026-06-16 · dev@232c478d4
+> `FusedMLASelfAttention` 新增 `backward_dw()` 与 `set_for_recompute_input_layernorm()`（`transformer/multi_latent_attention.py:1352`，#5273）。修复融合 MLA 在 `delay_wgrad_compute`（延迟权重梯度，与 dispatch/通信 overlap 配合）下缺失 wgrad 钩子导致权重梯度不被触发的 bug；逐个对 `linear_kv_up_proj / linear_qkv_down_proj / linear_q_up_proj / output_proj` 调 `backward_dw()`。
+
+### 7.7 DSv4 Hybrid Attention 融合 kernel
+
+> [!update] 2026-06-16 · dev@232c478d4
+> 新增 `apply_dsa_kernel_fusion`（`transformer_config.py:346`，#4894）与 `experimental_attention_variant/dsa_kernels.py`（DeepSeek Sparse Attention 融合 kernel 封装）。基于 **FlashMLA 稀疏前向**（`flash_mla_sparse_fwd`）+ **cuDNN-Frontend DSA**（CuTe-DSL 反向 + indexer 评分 + TRT-LLM radix top-K），覆盖三条集成路径：可微稀疏注意力 `dsa_sparse_attn`、推理 indexer 评分+top-K `indexer_topk`、训练融合 indexer-loss+稀疏注意力共享反向 `fused_indexer_sparse_attn`。**仅 SM100+（Blackwell）**；缺包时报错或可 `--no-dsa-kernel-fusion` 回退非融合 PyTorch 实现。
+
+### 7.8 勘误：GDN 统一 A2A 已被回退
+
+> [!contradiction] 2026-06-16：#4913（48032d7b3）曾把 GDN forward 里 CP→HP 的**逐序列 All-to-All 循环**合并为**单次统一 A2A**（引入 `_build_head_perm_for_split_sections` / `_build_thd_cp_a2a_perm` 把分段与负载均衡置换折进一次 A2A）。但**当前 `dev@232c478d4` 源码中该优化已不存在**——`ssm/gated_delta_net.py:413-447` 仍是按 `split_sections` 的逐序列/分段 A2A 循环（`_build_thd_cp_a2a_perm` 在 HEAD 已不可见，被后续 dev↔main 合并回退/取代）。因此 §3.5 关于 MoE A2A 融合的论述对 GDN **不适用**当前代码；记录此 PR 仅为追溯历史。
+
+### 7.9 TE 版本依赖（影响融合可用性）
+
+> [!update] 2026-06-16 · dev@232c478d4
+> TE 依赖经 #4682（2.15.0）、#4992（2.16.0）多次 bump（`pyproject.toml`）。对融合的实际影响：op-fuser 路径需 **TE ≥ 2.14.0**；`ScaledClampedQGeGLU`（quick-GEGLU 融合）需 **TE ≥ 2.15**；Clamped-SwiGLU 走 `ScaledClampedQGeGLU` 需 **TE ≥ 2.17.0.dev0**（见 §7.2）。
+
 ## Related Pages
 
+- [[precision_cudagraph_fusion_analysis]]
 - [[megatron_memory_optimization_analysis]]
 - [[megatron_distributed_optimizer_analysis]]
 - [[megatron_comm_overlap_analysis]]

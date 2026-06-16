@@ -33,6 +33,12 @@ MegatronOptimizer (ABC, :100)              抽象基类:clip_grad_norm / get_los
    └── ChainedOptimizer (:1104)            把多个优化器串成一个(见 §1.1)
 ```
 
+> [!update] 2026-06-16 · dev@232c478d4
+> **行号基线刷新**:`optimizer.py` 自 `ee3f1ff` 起明显增长(emerging-optimizer / MXFP8 / layer-wise 相关代码),上面继承链的行号需整体上移。当前锚点(`optimizer.py`):
+> - `MegatronOptimizer` `:100 → :133`、`MixedPrecisionOptimizer` `:465 → :589`、`Float16OptimizerWithFloat16Params` `:654 → :779`、`FP32Optimizer` `:918 → :1042`、`ChainedOptimizer` `:1104 → :1229`。
+> - `MixedPrecisionOptimizer.step()` `:621 → :745`;`prepare_grads`/`step_with_ready_grads` `:676`/`:712`。
+> 类层次与五步流程本身**未变**,仅行号漂移。
+
 `get_megatron_optimizer`(`optimizer/__init__.py`)是工厂:按配置(`bf16`/`fp16`/`fp32`、是否分布式、是否 MoE)挑类、切 param group、装配。
 
 ### 1.1 `ChainedOptimizer` 为什么需要
@@ -42,6 +48,9 @@ MegatronOptimizer (ABC, :100)              抽象基类:clip_grad_norm / get_los
 - `num_distributed_optimizer_instances > 1`(HSDP)。
 
 `ChainedOptimizer` 把它们包成一个对外统一的优化器:`step()` 时依次驱动每个子优化器,`get_loss_scale` / `clip_grad` 跨子优化器协调。
+
+> [!update] 2026-06-16 · dev@232c478d4 — ChainedOptimizer 的 MXFP8 defer-sync 门控修正(#4982,`optimizer.py:1456` `_should_defer_mxfp8_param_sync`)
+> 当 `reuse_grad_buf_for_mxfp8_param_ag=True`(MXFP8 参数 all-gather 复用梯度 buffer)且 DDP 层 **未** 开 `overlap_param_gather` 时,链式 step 间会有参数 buffer 复用竞态,需把 MXFP8 参数同步**延迟**到所有子优化器 step 完成后再做。原实现用 `self.config.overlap_param_gather` 作为判据,但 `OptimizerConfig` 与 DDP config 的该字段**可能不一致**;修复后改为**直接探测每个子 `DistributedOptimizer.ddp_config.overlap_param_gather`**,任一为 False 即触发延迟同步。这是 ChainedOptimizer 与 DDP 层耦合的一个隐蔽点。
 
 ### 1.2 param group:weight decay 的区分
 
@@ -117,6 +126,9 @@ def step(self):
 
 关键:**inf/nan 检查在最前面**。一旦发现非有限梯度,整步丢弃(参数不动),交给 dynamic scaler 调整(§4)。这是 fp16 训练能稳住的安全阀。
 
+> [!update] 2026-06-16 · dev@232c478d4 — `count_zeros` 兼容解耦梯度 / Megatron-FSDP(#4802,`clip_grads.py:199` `count_zeros_fp32`)
+> 第 ③ 步 `count_zeros`(统计零梯度)原来固定读 `param.grad`。但两种新路径下梯度不在 `.grad`:① **precision-aware / 解耦优化器**(`use_decoupled_grad=True`)梯度在 `param.decoupled_grad`(见 §2.2 注、`megatron_distributed_optimizer_analysis.md` §3.3);② **Megatron-FSDP** 管理的参数梯度是 FSDP 分片后的 DTensor,需取 `._local_tensor`。修复后 `count_zeros_fp32` 先按 `use_decoupled_grad` 选 `decoupled_grad`/`grad` 属性,再对 `__fsdp_param__` 参数取 local shard,避免漏统计或读到 `None`。
+
 ---
 
 ## 4. Loss Scaling 与 GradScaler
@@ -165,6 +177,11 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 
 它不在 `optimizer.step()` 内部,而是训练循环每步单独调一次。
 
+> [!update] 2026-06-16 · dev@232c478d4 — per-param-group 调度覆盖值的 resume 修复(#5213,`optimizer_param_scheduler.py:102/151/351`)
+> `OptimizerParamScheduler` 支持 **per-param-group 覆盖**:某个 param group 可以带自己的 `max_lr`/`min_lr`/`start_wd`/`end_wd`(`_OPT_PARAM_SCHEDULER_OVERRIDE_KEYS`),它们在 `get_lr()`/`get_wd()` 中**优先于** scheduler 的类级值。两个 bug 被修:
+> 1. **`override_opt_param_scheduler` 模式下 resume 丢失覆盖值**:checkpoint 里 param group 携带的 max_lr/min_lr 会覆盖当前 run 的命令行参数。修复:`__init__` 时用当前 run 的参数快照各 group 的覆盖值(`self._param_group_scheduler_overrides`),`load_state_dict` 里新增 `_restore_param_group_scheduler_overrides()` 在重放 schedule 前还原。
+> 2. **`step(increment=num_steps)` 时机错误**:原来在还原 `start_wd`/`wd_incr_style` 等 WD 字段**之前**就调了 `self.step()`,导致 resume 后第一步用了旧 WD 状态。修复:把 `step(increment=num_steps)` 移到所有字段还原(含覆盖值还原)**之后**。
+
 ---
 
 ## 7. 其他优化器
@@ -177,6 +194,15 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 | emerging optimizers | `optimizer/emerging_optimizers.py` | 其他较新优化器 |
 
 `HybridDeviceOptimizer` 名字里的 "Hybrid":一部分参数的优化器状态/更新在 GPU、一部分在 CPU,按显存压力混合 —— 用 PCIe 带宽 + CPU 算力换 GPU 显存(类比激活 offload 的思路,见 `recompute_analysis.md` §0.2)。
+
+> [!deprecated] 2026-06-16:**Muon 的真正实现不在 `optimizer/muon.py`**。`muon.py` 已是一个 28 行的 *backward-compatible shim*(`get_megatron_muon_optimizer` 仅转调 `get_megatron_optimizer`,且 `dist_muon` 已弃用)。Muon / AdaptiveMuon 的实际实现是 `emerging_optimizers.py` 里的 `TensorParallelMuon` / `TensorParallelAdaptiveMuon`,经 `_EMERGING_OPTIMIZERS` 注册表(`emerging_optimizers.py:429`)接入,并依赖外部包 `emerging-optimizers`。注:此 shim 在 `ee3f1ff` 已存在,原表项的文件归属一直是错的。
+
+> [!update] 2026-06-16 · dev@232c478d4 — emerging optimizers / Muon 一组更新
+> **① 升级到 v0.3.0**(#5320,`pyproject.toml`、`emerging_optimizers.py`):外部 `emerging-optimizers` 包由 v0.2.0 → **v0.3.0**;`TensorParallelAdaptiveMuon` 新增暴露 `scale_mode` / `extra_scale_factor`;`OptimizerConfig` 删除 `soap_precondition_frequency` 字段。注册表当前内建 `muon`、`adaptive_muon`(本地 TP 版),并自动收编上游包注册的其它优化器(如 SOAP)。
+> **② 触发方式**:emerging 优化器通过 `--optimizer muon`(或 `adaptive_muon`/`soap` 等,即非 `sgd`/`adam`)选择;若同时 `--use-distributed-optimizer`,会自动转成 **layer-wise distributed optimizer**(`arguments.py:1811-1823`,`use_layer_wise_distributed_optimizer=True`)。`--optimizer dist_muon` 已弃用。emerging 优化器目前**不支持** Torch-FSDP2 / Megatron-FSDP(`arguments.py:1825-1828` 断言)。
+> **③ Muon 参数路由(关键)**:默认 override 规则把 **非线性/embedding/output 参数路由给 Adam**(`_is_nonlinear_or_embedding`,`emerging_optimizers.py:435-441`),Muon 只接管 2D 矩阵权重。配合 #4509/#4771,Muon 矩阵权重走 `LayerWiseDistributedOptimizer`、其余 Adam 参数走独立 `DistributedOptimizer`,二者由 `ChainedOptimizer` 串起(详见 `megatron_distributed_optimizer_analysis.md` §A.7 的 2026-06-16 更新)。
+> **④ Muon QKV split 支持 gated attention**(#4728,`emerging_optimizers.py:133` `_get_qkv_split_shapes`、`optimizer/__init__.py:776`):Muon 对 fused `linear_qkv.weight` 需按 Q/K/V 分块各自做 Newton-Schulz 正交化。当 `attention_output_gate=True`(门控注意力)时,QKV 切分形状由 3 段变为 **4 段** `[q, q_gate, k, v]`;并改为**逐参数**携带 `param.qkv_split_shapes`,且对 `shape[0] % sum(splits) != 0` 的参数跳过 QKV 标记(避免误切)。
+> **⑤ QK-Clip**:`optimizer/qk_clip.py`(`clip_qk`)对注意力 QK logits 做裁剪以稳住数值,是 Muon 训练注意力稳定性的配套件(该文件在 `ee3f1ff` 已存在,此前表中漏列)。
 
 ---
 

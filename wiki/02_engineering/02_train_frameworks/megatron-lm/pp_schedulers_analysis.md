@@ -583,6 +583,17 @@ TransformerLayerSchedulePlan.run(f_layer, b_layer)
                       └── A2A 通信与对侧计算在 GPU 上真并行 ──┘
 ```
 
+> [!update] 2026-06-16 · dev@232c478d4 — combined-1F1B 的三处增量(MTP 排序 / 显存释放 / 死代码清理)
+>
+> 自 `ee3f1ff` 以来,combined-1F1B 路径有三处源码变化,均**不改变**上文的双流重叠骨架:
+>
+> **1. MTP `mtp_post_process` 前向后移**(#4695,`megatron/core/models/common/model_chunk_schedule_plan.py:288-290`)。`TransformerLayerSchedulePlan.run` 里,带 MTP(多 token 预测)的层原先在 `moe_combine.forward` 之后**立刻**跑 `mtp_post_process.forward`;现在把它**挪到反向 `attn.backward` 之后**。docstring 明确(`:240-241`):「mtp_post_process_fwd 在 comp_stream 上排在 combine_fwd 之后,mtp_post_process_bwd 排在 combine_bwd 之前」。目的是让 MTP 的 output_layer/loss 计算与反向 attention 更好地错峰,避免它挤占 combine A2A 的掩盖窗口。非 MTP 模型的 `mtp_post_process` 是 `NoopScheduleNode`(`model_chunk_schedule_plan.py:174`),此改动无影响。
+> （注:同段落里的 `ep_overlap_early_attn_memory_release` 配置决定 `attn.backward` 排在 dispatch 之后(早释放 attn 显存)还是 combine 之后,见 `:274-286`。)
+>
+> **2. loss 节点输入显存的及时释放**(#4908 / #4909,`megatron/core/pipeline_parallel/combined_1f1b.py:24`、`447-471`)。新增 `_release_tensor_storage`:在最后一个 stage,combined 反向跑完 loss 节点后,立刻 `loss_node._release_state()`(`:448`)并把 `loss_node.inputs` 的 CUDA 存储 `untyped_storage().resize_(0)` 抹零(先 `record_stream(current_stream)` 保证跨流安全)。这缓解了 §⑤.4 提到的「F 与 B 两个 microbatch 激活同时在世」带来的峰值,属于纯显存优化,不改语义。
+>
+> **3. 删除死代码 `manual_release_grads`**(#4511,`megatron/core/pipeline_parallel/utils.py`、`megatron/core/models/gpt/fine_grained_callables.py`)。`ScheduleNode` 上原有的 `manual_release_grads` / `delay_grads_release` 两个标志位及其释放分支**从未被置真**,已整段删除;dgrad/wgrad 的显存释放现在统一交给上面 (2) 的 `_release_tensor_storage` 与正常 GC。这不影响 `delay_wgrad_compute` 的 F/B/W 三段拆分语义(见 §⑤.1)。
+
 ### ⑤.3 流水线模拟图
 
 combined-1F1B 是宿主调度的修饰器,**不改变 PP 级流水线的阶梯形状**。分三个粒度看。

@@ -47,9 +47,30 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 | [[Megatron_vLLM_Weight_Sync_Analysis]] | verl framework, Megatron-to-vLLM weight synchronization, Gather-Broadcast-Load pattern, colocation scenario, HuggingFace format reassembly |
 | [[mooncake_analysis]] | Mooncake: KVCache 中心化分离式服务架构，Prefill/Decode 池分离，缓存感知调度，Moonshot AI 推理基础设施 |
 
-## 源码级系统分析系列(Megatron-LM `dev` @ `ee3f1ff`, 2026-05)
+## 源码级系统分析系列(Megatron-LM `dev` @ `232c478d4`, 2026-06 刷新)
 
-> 一套 18 篇源码级系统分析,基于 Megatron-LM `dev` 分支 commit `ee3f1ff`,逐层覆盖并行体系、性能基建、训练稳定性、数据、推理与 RL、模型结构与存档。各篇互为 `[[wiki link]]` 交叉引用,自成体系。
+> 一套 18 篇源码级系统分析,基于 Megatron-LM `dev` 分支,逐层覆盖并行体系、性能基建、训练稳定性、数据、推理与 RL、模型结构与存档。各篇互为 `[[wiki link]]` 交叉引用,自成体系。
+>
+> **基线**:初版基于 commit `ee3f1ff`(2026-05-19);**2026-06-16 已对照 `dev@232c478d4` 全量刷新**,逐页核实并增补 `ee3f1ff..232c478d4`(298 commits)的增量(每处增补带 `> [!update] 2026-06-16` 标注 + `path:line` + `(#PR)`)。
+
+> [!update] 2026-06-16 · ee3f1ff→232c478d4 增量刷新(298 commits,7 维 + 模型结构)
+>
+> 9 个并行 agent 逐页对照当前源码核实,**纯增不删**(既有内容仅以 `[!update]`/`[!deprecated]`/`[!contradiction]` 标注)。各维度要点(详见各页 2026-06-16 更新块):
+>
+> - **并行优化**:1F1B `mtp_post_process` 重排序 + combined-1F1B 释放 loss-node 输入存储(#4695/#4909);HyperCommGrid 命名视图支持异构并行(#5148)、bridge 跨网格 P2P 专用进程组(#5234);训练循环全面迁移 `pg_collection` 注入(#5259/#5250/#5006);动态 CP per-microbatch CP 度 + TE CP-group 还原修复(#4226/#5215)。见 [[pp_schedulers_analysis]] [[parallelism_orchestration_analysis]] [[cp_analysis]] [[tp_analysis]]
+> - **通信优化**:**DeepEP v2 flex dispatcher**(`deepepv2` 后端,ElasticBuffer,#4793)、THD 序列打包下支持 deepep/hybridep(#4816)、高优先级 A2A 流 + HybridEP 预处理 SM(#4694)、dispatch 时排空前驱 reduce-scatter(#4940)、A2A-Overlap for Megatron-FSDP(#3797)。见 [[ep_analysis]] [[megatron_comm_overlap_analysis]]
+> - **显存优化**:**Paged Stashing 正式落地**(#4247,2 层 PagedStashBuffer + runner 级整步重跑)、NCCL UB 内存池正确反注册(#4492)、细粒度 offload in-flight 节流(#4692)、显存估算计入 EP 切分(#4687)。见 [[megatron_memory_optimization_analysis]] [[recompute_analysis]]
+> - **计算优化**:TE op-fuser 路径(GroupedMLP FC1→act→FC2 融合,#4636)、TEFusedDenseMLP(Dense+Grouped GEMM,SM100+,#4318)、ScaledSReLU / ClampedSwiGLU 融合(#4859/#5130)、DSv4 Hybrid Attention 融合 kernel(#4894)。见 [[megatron_fusion_operators_analysis]]
+> - **低精度**:MXFP8/NVFP4 param-gather 一组修复(#4994/#4800/#4358/#4852)、opt-in MXFP8 LM-head 输出投影(#4825)、CUDA Graph API 拆解(impl/modules/inference-scope,#4292)。见 [[precision_cudagraph_fusion_analysis]]
+> - **训练稳定性**:**grad-norm 超阈值跳过整步**(`grad_norm_skip_threshold`,#3460)、MoE aux/z-loss 在 TP>1 的梯度缩放修复(#5047)、DSA indexer loss 跨 micro-batch 平均(#4070)、**MTP 稳定性套件**(detach-heads / 独立损失缩放 / 独立裁剪组,#3456/#3459/#4116/#5080)。见 [[training_stability_observability_analysis]]
+> - **RL / 训推一致**:`--rl-inference-parsers` 接入 MRL(#4768)、Refit 重构(统一 CopyService,#4762)、policy-epoch 权重时效追踪(#4533);推理侧高层 `MegatronLLM`/`MegatronAsyncLLM` API(#4697)、进程级 `InferenceMode` 标志取代基于 `training` 的判定(#4617)。见 [[rl_posttraining_consistency_analysis]] [[inference_engine_analysis]]
+> - **模型结构(最大新增)**:**DeepSeek-V4 hybrid**(DSA 学习索引器 top-k 稀疏 + CSA/HCA 压缩注意力,#5042;TP=1、暂无推理路径)、GDN 序列打包(#2645)、mHC 支持 HybridModel(#4949)、Step-3.5-Flash 逐头注意力门控(#4841)。见 [[model_structure_analysis]]
+>
+> **本次纠正的知识库错误(4 处实质性)**:
+> 1. **Muon/ZeRO 框架**:既有"普通 distributed optimizer 难以优雅支持 per-parameter 优化器切换"已过时 —— Muon 现经 `LayerWiseDistributedOptimizer` + 独立 `DistributedOptimizer` 经 `ChainedOptimizer` 串联,**与 ZeRO 切分共存**(#4509/#4771);且 `--layer-wise-distributed-optimizer` 这一 flag **不存在**(由 `--optimizer muon --use-distributed-optimizer` 触发)。`muon.py` 是 28 行兼容 shim,真实现在 `emerging_optimizers.py`。
+> 2. **`mtp_isolated_loss` 已移除**:#5080 引入后被 #5223 合并进 `mtp_detach_heads` 并删除,HEAD 上不存在该配置。
+> 3. **moe_layer `train()` 重写已删除**:dispatcher 不再按 train/eval 模式切换,改由 `InferenceMode.is_active()` 在 `MoELayer.forward` 判定(#4617)。
+> 4. **GDN 统一 A2A(#4913)未在当前源码**:被后续 dev↔main 合并回退,GDN 前向仍用 per-section A2A 循环(已标 `[!contradiction]`)。
 
 ### 并行轴(5)
 

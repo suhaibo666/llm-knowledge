@@ -4,6 +4,35 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-16: Megatron-LM 知识库对照 `dev@232c478d4` 全量刷新(22 页 · 7 维 + 模型结构 · 9 并行 agent)
+
+**Type**: Update & Verify(更新上层 `Megatron-LM` 源码 `dev` 分支 `77c0f8cb3`→`232c478d4`,FF 306 commits;再对照 wiki 基线 `ee3f1ff`→`232c478d4`(298 commits)逐页核实增量并纠错;铁律＝纯增不删、每处增补带 `> [!update] 2026-06-16` + `path:line` + `(#PR)`、行号以当前 dev 复核)
+
+**背景**:Megatron-LM 源码级系统分析系列 18 篇初版基于 `dev@ee3f1ff`(2026-05-19)。上层仓库本地 HEAD 落后,先 fast-forward 到 `232c478d4`(2026-06-16,今日);该区间 298 个非合并 commit 覆盖用户点名的 7 个维度(并行/显存/计算/通信/低精度/训练稳定性/RL)+ 一批模型结构新增。9 个并行 agent 按**互不相交的页分组**(无文件冲突)逐页对照当前源码核实。
+
+**各维度新增要点**:
+- **并行**:1F1B `mtp_post_process` 重排序 + combined-1F1B 释放 loss-node 输入(#4695/#4909/#4511);HyperCommGrid 命名视图异构并行(#5148)、bridge 跨网格 P2P 专用 pg(#5234)、训练循环迁移 `pg_collection`(#5259/#5250/#5006);动态 CP per-microbatch CP 度 + TE CP-group 还原修复(#4226/#5215/#5123);非融合 cross-entropy 接收 `tp_group`(#5128)。
+- **通信**:DeepEP v2 flex dispatcher(`deepepv2`/ElasticBuffer,#4793)、THD 下 deepep/hybridep(#4816)、高优先级 A2A 流 + HybridEP 预处理 SM(#4694)、dispatch 排空前驱 RS(#4940)、双 buffer wgrad 竞态修复(#5222)、A2A-Overlap for Megatron-FSDP(#3797)、移除 HybridEP IB guardrail(#4846/#4719/#4718)。
+- **显存**:Paged Stashing 落地(#4247/#5003)、NCCL UB 内存池反注册(#4492)、细粒度 offload in-flight 节流(#4692)、显存估算计入 EP(#4687)、移除 checkpoint-time cache reclaim(#5170)、提前 del output(#4742)、FSDP double-buffer IMA 修复(#4810);GDN 整模块选择性重计算(#5296/#4715)、HybridModel 重计算(#4496)、MTP 重计算 + 训练 CG 修复(#4593/#3919)。
+- **计算**:TE op-fuser GroupedMLP 融合(#4636)、TEFusedDenseMLP Dense+Grouped GEMM SM100+(#4318)、ScaledSReLU/ClampedSwiGLU(#4859/#5130)、DSv4 Hybrid Attention 融合 kernel(#4894)、冻结线性 dgrad fold(#5092)、mHC 融合 kernel 多后端(#4624)、融合 MLA 权重梯度 hook 修复(#5273)。
+- **低精度**:MXFP8/NVFP4 param-gather 修复(#4994/#4800/#4358/#4852/#4562)、opt-in MXFP8 LM-head(#4825)、CUDA Graph API 拆解 impl/modules/inference-scope(#4292)、CG 覆盖按 max_tokens(#4214)、TE 2.15/2.16(#4682/#4992)。
+- **训练稳定性**:grad-norm 超阈值跳过整步(#3460)、MoE aux/z-loss TP>1 梯度缩放修复(#5047)、DSA indexer loss 跨 mb 平均(#4070)、MoE logging 重构(#3431)、MTP 稳定性套件(#3456/#3459/#4116/#5080)、RerunStateMachine 去 stat 系统调用(#5107)。
+- **RL/训推一致**:`--rl-inference-parsers` 接入 MRL(#4768)、Refit 重构统一 CopyService(#4762)、policy-epoch 权重时效(#4533)、logprob 0-token 切片修复(#5167);推理高层 API `MegatronLLM`/`MegatronAsyncLLM`(#4697)、进程级 `InferenceMode`(#4617)、MTP/prefix-cache 统计持久化 + 接受率指标(#4101/#3458)、mixed-prefill CG 分布(#3509)、非均匀 PP 的 KV layer_map(#4775)。
+- **模型结构(最大新增)**:DeepSeek-V4 hybrid(DSA 学习索引器 top-k 稀疏 + CSA/HCA 压缩注意力 + hash 路由,#5042/#5130/#5018/#5142/#3026;TP=1、暂无推理路径)、GDN 序列打包(#2645)、Mamba conv 直接 mixer 参数(#4899)、mHC 支持 HybridModel(#4949)、Step-3.5-Flash 逐头注意力门控(#4841)、Qwen3.5/Qwen3-30B(#4776/#4751/#5012);VarlenDataset(#4832)、get_batch 整合 + SFT THD PP(#4103)。
+
+**纠正的知识库错误(4 处实质性,均已源码核实)**:
+1. **Muon/ZeRO 框架过时**:Muon 现经 `LayerWiseDistributedOptimizer` + 独立 `DistributedOptimizer` 经 `ChainedOptimizer` 串联,**与 ZeRO 切分共存**(#4509/#4771);`--layer-wise-distributed-optimizer` flag **不存在**(由 `--optimizer muon --use-distributed-optimizer` 触发);`optimizer/muon.py` 是 28 行兼容 shim,真实现在 `emerging_optimizers.py::TensorParallelMuon`(此归属错误自 `ee3f1ff` 即存在)。
+2. **`mtp_isolated_loss` 已移除**:#5080 引入后被 #5223 合并进 `mtp_detach_heads` 并删除,HEAD 无此配置。
+3. **moe_layer `train()` 重写已删除**:dispatcher 改由 `InferenceMode.is_active()` 在 `MoELayer.forward` 判定(#4617),不再按 train/eval 切换。
+4. **GDN 统一 A2A(#4913)未在当前源码**:被后续 dev↔main 合并回退,GDN 前向仍用 per-section A2A 循环(标 `[!contradiction]`)。
+- 另修正多处 `path:line` 行号漂移(`optimizer.py`/`cuda_graphs.py`/`hyper_comm_grid.py`/`transformer_layer.py`/`bridge_communicator.py` 等,均因新增代码下移),逐处以当前 dev 行号标注。
+
+**索引更新**:[[megatron-lm/index]] 系列标题基线 `ee3f1ff`→`232c478d4`,新增「ee3f1ff→232c478d4 增量刷新」`[!update]` 总览块(7 维 + 4 处纠错 + 交叉链接)。
+
+**校验**:22 页改动 +641/−10(删除仅为标注重排,无内容删除);全量 `[[wiki link]]` 一致性检查通过,本次**未引入任何 dangling link**(`llm_parallelism_analysis` 等为既有遗留,非本次新增)。上层 `Megatron-LM` 本地改动(`.agents/.claude` 符号链接型变更、未跟踪 html)未受 FF 影响。
+
+---
+
 ## 2026-06-16: torchtitan 新增 HSDP 反向 + 性能手段 + SimpleFSDP(4 页 + 3 图)
 
 **Type**: Expand(对照 torchtitan `main` @ `61c010fcb` / PyTorch 2.9.1 源码逐行核实;5 个并行 research agent 摸清缺口 + 4 个并行 agent 机械转换入库;纯增不改既有)

@@ -5,6 +5,9 @@
 > 配套阅读:`optimizer_internals_analysis.md`、五份并行分析、`tp_fsdp_resharding_supplements_analysis.md`
 > 定位:系统性专题。前面所有文档讲"怎么把模型并行训起来、训得快";本文讲**怎么让它训得稳、出问题怎么发现、看哪些指标判断健康**。
 
+> [!update] 2026-06-16 · dev@232c478d4
+> 本页已对齐 `ee3f1ff..HEAD` 的稳定性/可观测性增量。新增机制:**梯度范数超阈跳步**(§1.2)、**MTP 训练稳定性套件**(detach / 隔离 / 独立缩放 / 独立裁剪,新增 §1.8)、**MoE aux/z-loss 在 TP>1 下的梯度缩放修正**与 **DSA indexer loss 跨 micro-batch 平均**(§1.7)。可观测性侧补充 RerunStateMachine 去 stat 系统调用(§1.4)、MoE logging 的 `record/report` 生命周期(§2.2)、seqlen 统计保真与混合模型显式进程组(§2.5)。各处以本日期 `[!update]` 标注,行号以 `dev@232c478d4` 为准。
+
 ---
 
 ## 0. 总览
@@ -19,7 +22,7 @@ Megatron 对应有三套机制,本文依次拆解:
 
 | 风险 | 机制 | 代码 |
 |------|------|------|
-| 数值不稳定 | loss scaling、梯度裁剪、NaN/Inf 检查、QK-clip | `grad_scaler.py`、`clip_grads.py`、`qk_clip.py` |
+| 数值不稳定 | loss scaling、梯度裁剪、**梯度范数超阈跳步**(§1.2)、NaN/Inf 检查、QK-clip、**MTP 稳定性套件**(§1.8) | `grad_scaler.py`、`clip_grads.py`、`optimizer.py`、`qk_clip.py`、`multi_token_prediction.py` |
 | 硬件故障 / SDC | RerunStateMachine、fault injector、NTP 容错 | `rerun_state_machine.py`、`fault_injector.py`、`nonuniform_tp.py` |
 | 可观测性 | Timer 系统、MoE 逐层指标、能耗监控、TB/wandb 日志 | `timers.py`、`moe_logging.py`、`energy_monitor.py` |
 
@@ -40,6 +43,14 @@ fp16 训练里梯度可能**下溢成 0** 或**上溢成 inf**。两道防线:
 ### 1.2 梯度尖峰防护:全局梯度裁剪
 
 `clip_grads.py` / `MegatronOptimizer.clip_grad_norm`:算全局梯度范数 `‖g‖`(需跨 TP×PP all-reduce),超过 `--clip-grad`(默认 1.0)就等比缩小。挡住偶发的梯度尖峰,防止单步大跳导致发散。
+
+> [!update] 2026-06-16 · dev@232c478d4 — 梯度范数超阈跳步(#3460)
+> 在裁剪之上新增**第二道闸**:`OptimizerConfig.grad_norm_skip_threshold`(`optimizer_config.py:376`,默认 `float('inf')` 即关闭)。
+> 在 `ChainedOptimizer.step()`(`optimizer/optimizer.py:1731`)里,算完主梯度范数 `grad_norm` 并完成裁剪后,若 `grad_norm > config.grad_norm_skip_threshold`(且存在 main 参数),则打 `INFO` 日志并置 `should_skip_update=True`,使 `update_successful = False`、**不调 `step_with_ready_grads()`** —— 整步丢弃,参数不动。
+> - 与 §1.1 inf/nan 跳步的区别:那是因**非有限值**而跳;这里是因**有限但过大**的范数而跳(裁剪还嫌不够,疑似该步本身被污染)。
+> - 与 §1.2 裁剪的区别:裁剪是把范数**缩到阈值后照常更新**;超阈跳步是**直接放弃这一步**。
+> - 判据用的是"主梯度范数"(`get_grad_norm()` 已排除 §1.8 的 `mtp` 独立范数组),且仅在 `main_params` 非空时触发。
+> - 目前**只有配置项、无 CLI 开关**,需经 `OptimizerConfig` 注入;只在 `ChainedOptimizer.step` 路径生效(Megatron 主训练栈即走此路径)。被跳的步计入 `skipped iters`(§3.2)。
 
 ### 1.3 NaN / Inf 显式检查
 
@@ -74,6 +85,12 @@ fp16 训练里梯度可能**下溢成 0** 或**上溢成 inf**。两道防线:
 
 > 源码自带 DISCLAIMER:这是 alpha 级实验特性,标记的"故障节点"应再用标准诊断套件确认。
 
+> [!update] 2026-06-16 · dev@232c478d4 — 去掉 validate_result 的 stat 系统调用(#5107)
+> 上文对 RerunStateMachine 流程的描述在 `dev@232c478d4` 仍然成立(行号微移:`validate_result`→`:463`、`RerunDiagnostic`→`:59`、`RerunMode`→`:73`、`RerunState`→`:81`、`should_checkpoint_and_exit`→`:399`、check-for-nan 兜底注释→`:582`)。一处实现变化:
+> - 旧实现每次 `validate_result` 都用 `inspect.currentframe()` + `inspect.getframeinfo()` 取调用点的 `filename/lineno`,后者会触发**文件系统 stat 系统调用**;在高频校验下成为热点。现已删去 `import inspect` 与整段取帧逻辑(`rerun_state_machine.py:958`)。
+> - `Caller` 具名元组(`:45`)不再含 `filename/lineno`,只保留 `(message, rank)`。确定性统计(`REPORT_DETERMINISM_STATS`)的日志改为按校验描述串定位 ——`"From validation call '<message>'"`(`:1011`/`:1019`),取代原来的 `From <file>, line <n>`。
+> - 结论:这是**纯性能/可观测性优化**,不改变 transient/persistent/correct 的三级归因语义;唯一影响是日志里用"校验描述"而非"文件:行号"来标识每个校验点(因此校验描述串应起得可读、可区分)。
+
 ### 1.5 QK-clip —— 注意力 logit 稳定
 
 `optimizer/qk_clip.py`。已知的一类训练不稳:attention 的 `Q·Kᵀ` logit 数值越训越大,softmax 进饱和区、梯度异常。`clip_qk(model)`:
@@ -95,6 +112,53 @@ MoE 有独有的不稳定源 —— 路由:
 - **负载均衡损失**:`aux_loss` 等防止专家路由坍塌(`ep_analysis.md` §4)。
 - **`router_replay.py`**(207 行):记录/重放路由决策 —— 用于复现和调试路由相关的不确定性。
 
+> [!update] 2026-06-16 · dev@232c478d4 — aux_loss / z_loss 在 TP>1 下的梯度缩放修正(#5047)
+> `--calculate-per-token-loss` 模式下,`finalize_model_grads` 会把每个参数梯度统一除以 `total_global_tokens`(全局非 padding token 数)。但 router 权重标了 `sequence_parallel=True`,各 TP rank 只在自己的**序列分片**上算偏梯度、再由 `_allreduce_non_tensor_model_parallel_grads` 在 TP 组内**求和**。把 `total_global_tokens` 按 router 的本地 token 数展开:
+> $$\text{total\_global\_tokens} = \text{num\_micro\_batches}\times \text{dp\_size}\times\big(\text{num\_local\_tokens}\times\lvert\text{tp\_cp}\rvert\big)$$
+> 旧代码只乘 `num_local_tokens`,在 `tp_cp_group.size()>1` 时 aux/z-loss 梯度被额外缩小了 `|tp_cp|` 倍 —— TP/CP 越大,负载均衡损失越被稀释。
+> 修正:`aux_loss` 与 `z_loss` 预乘改为 `num_local_tokens * self.tp_cp_group.size()`(`transformer/moe/router.py:546`、`:587`),恰好抵消上式中的 `|tp_cp|`,使有效缩放回到目标 `1/(num_micro_batches·dp_size)`,与 `!calculate_per_token_loss` 路径一致、且对 TP/CP 配置不变。(z_loss 系数另有 `/tp_cp_group.size()` 是独立的**前向**修正:z_loss 在每个 TP+CP rank 的本地 logits 上独立计算,需按 TP+CP 求平均而非求和。)回归测试见 `tests/.../test_aux_loss.py::TestPerTokenAuxLoss`。
+
+> [!update] 2026-06-16 · dev@232c478d4 — DSA indexer loss 跨 micro-batch 平均(#4070)
+> 新的实验性注意力变体 **DSA(Dynamic Sparse Attention,`experimental_attention_variant='dsa'`)** 引入一个 **indexer 辅助损失**,经 `DSAIndexerLossAutoScaler`(`transformer/experimental_attention_variant/dsa.py:754`)注入梯度。此前它**未按 micro-batch 数归一**,导致其相对主损失的尺度随梯度累积步数漂移。
+> 修正:在 `forward_step_calc_loss`(`pipeline_parallel/schedules.py:344–358`)按与 MTP loss 相同的方式设缩放 —— `calculate_per_token_loss` 时设 `loss_scale`,否则设 `loss_scale / num_microbatches`。属于"辅助损失正确归一"一类,与 §1.8 的 MTP loss 缩放同源。
+
+### 1.8 MTP(多 token 预测)训练稳定性套件
+
+> [!update] 2026-06-16 · dev@232c478d4 — MTP 稳定性套件(#3456 / #5080 / #3459 / #4116)
+> 注:#5080 引入的独立开关 `mtp_isolated_loss` 在 `dev@232c478d4` 已被**合并进 `mtp_detach_heads`** 并移除(见下文 (b) 的 `[!deprecated]`),故 HEAD 上实际是"`mtp_detach_heads` + `mtp_grad_scale_func` + `mtp` 独立裁剪组"三件套。
+
+MTP(Multi-Token Prediction,详见 GPT/DeepSeek 系列)在主模型之外挂若干 MTP head,用一个**辅助损失**让模型一次预测多个未来 token。问题在于:MTP loss 的梯度默认会**回流主模型与共享权重**(embedding、output projection),与主 LM loss 抢梯度、互相干扰;且 MTP head 的梯度尺度常与主干不同,统一裁剪/缩放会失真。`dev` 分支为此补了一套**可叠加**的控制开关,核心是"把 MTP 这条支路从主图上逐级解耦,并给它独立的损失缩放与梯度裁剪"。
+
+**(a) `mtp_detach_heads` —— 切断 MTP→主模型的梯度回流(#3456,并在 #5223 合并 #5080 的隔离能力)**
+
+`TransformerConfig.mtp_detach_heads`(`transformer/transformer_config.py:87`,默认 `False`)。开启后在三处 `detach()`,使 MTP loss **只训练 MTP head 自身**,不更新主模型:
+- `MultiTokenPredictionBlock.forward`:取出本 stage 的 `hidden_states` 后 `detach()`(`multi_token_prediction.py:2071`)。
+- `MultiTokenPredictionLayer._get_embeddings`:`decoder_input = embedding(...).detach()`,切断对**共享 embedding** 的梯度(`:1290`)。注意紧接着对 `hidden_states` 做 `make_viewless_tensor` 后,若它已不 `requires_grad` 会显式 `requires_grad_(True)` —— 因为 `detach()` 后张量 `_base` 为 `None`、`make_viewless_tensor` 退化为 no-op,而激活重计算(`CheckpointFunction`)要求至少一个输入可导,这里补回以保住到 MTP 层参数的梯度通路。
+- `process_mtp_loss`:`output_weight.detach()`,切断对**共享 output projection** 的梯度(`:940`)。
+- **在线 RL 支持**(原属 #5080,现并入本开关):`process_mtp_loss` 允许 `labels=None`(RL 时主 LM head 输出 logits 供外部 RL loss 用),此时从 `input_ids` 左移一位自行派生 MTP 标签(`label[i]=input_id[i+1]`,`multi_token_prediction.py:929–938`),让 MTP 辅助损失在不触碰主模型的前提下照常训练。
+
+**(b) ~~`mtp_isolated_loss`~~ —— 已被 (a) 合并并移除(#5080 引入 → #5223 撤下)**
+
+> [!deprecated] 2026-06-16:`mtp_isolated_loss` 配置在 `dev@232c478d4` **已不存在**。#5080 曾新增该开关,在 (a) 之上更进一步,用 `torch.func.functional_call` 配 `{name: param.detach()}` 把 **output layer 的全部参数/buffer** 也隔离(`output_layer_for_mtp`)。随后 #5223([Dev] Cherry-pick MTP detach heads,`7eedac586`)做了**收敛**:删除 `mtp_isolated_loss` 配置与该 `functional_call` 全隔离逻辑,把"切断对共享 `output_weight` 的梯度"与"`labels=None` 派生标签"两项能力**直接挂到 `mtp_detach_heads`** 上(见 (a))。因此 HEAD 上:① 不再有独立的 `mtp_isolated_loss`;② 不再对 output layer 的**全部可学习参数**做 functional 化隔离,只 `detach()` 共享的 `output_weight` 张量。文档保留此项以记录该演进;若读 `dev@232c478d4` 源码,请勿再找 `mtp_isolated_loss`。
+
+**(c) `mtp_grad_scale_func` —— MTP loss 独立的损失缩放(#3459)**
+
+`ModelParallelConfig.mtp_grad_scale_func`(`model_parallel_config.py:142`,默认 `None`)。此前 MTP loss 与主 loss 共用 `grad_scale_func`;现在可单独给 MTP loss 指定缩放函数。落地在 `schedules.py` 新增的 `_get_mtp_loss_scale(config, device)`(`:229`):
+- 优先用 `mtp_grad_scale_func()`;否则回退 `grad_scale_func(torch.ones(1))`;再否则取 `1`。
+- 结果会校验必须是标量 / size-1 张量,并搬到 output 张量所在 device,经 `MTPLossAutoScaler.set_loss_scale` 注入(`schedules.py:336–341`)。
+- 意义:fp16/bf16 下 MTP 支路可用与主 loss **不同的 loss scale**,避免辅助损失把主 loss 的动态缩放带偏。
+
+**(d) `mtp` 独立梯度裁剪组(#4116)**
+
+当 `mtp_detach_heads=True` 时,MTP head 的梯度已与主干解耦,但若仍并入全局范数一起裁剪,二者尺度差异会互相污染。本 PR 在优化器侧引入**命名梯度范数组**机制:
+- 建块时给 MTP 参数打标签:`MultiTokenPredictionBlock.__init__` 中 `for param in self.parameters(): param.grad_norm_group = 'mtp'`(`multi_token_prediction.py:1934`)。
+- 优化器侧新增基础设施(`optimizer/optimizer.py`):常量 `MTP_GRAD_NORM_GROUP='mtp'`、`SEPARATE_GRAD_NORM_GROUPS`、`GRAD_NORM_GROUP_ATTR`;辅助函数 `_get_param_grad_norm_group` / `_is_separate_grad_norm_group` / `_validate_grad_norm_group`;以及 `copy_optimizer_param_metadata`(建主 fp32 副本时把 `grad_norm_group` 标签一并复制,否则副本丢标签)。
+- 范数计算分流:原 `get_main_grads_for_grad_norm` 重构为 `get_grads_for_grad_norm(grad_norm_group=None)` —— 传 `None` 取**主组**梯度(已**排除** `mtp` 组),传 `'mtp'` 只取该组。`clip_grad_norm` / `ChainedOptimizer.step` 据此把 `main_params` 与各 `grad_norm_group` 分别算范数、**各自按 `clip_grad` 独立裁剪**(`optimizer.py:1685–1735`)。
+- 跨 rank 一致性:`has_grad_norm_group()` 用一次全局 `all_reduce(MAX)` 判断"是否有任一 rank 持有该组参数"并缓存,保证按组归约的集合通信在各 rank 间不失配(某 rank 本地无 mtp 分片、对端有);`LayerWiseDistributedOptimizer` 重写该方法走全局 `group=None` 归约(与其 dist-opt 全局归约范式一致)。
+- 与 §1.2 跳步的衔接:超阈跳步判据用的是**主组** `grad_norm`(不含 mtp),即 MTP head 的大范数不会误触发整步丢弃。
+
+**叠加关系小结(HEAD = `dev@232c478d4`)**:`mtp_detach_heads` 是主开关 —— 切断 MTP→主模型/共享 embedding/共享 `output_weight` 的梯度回流,并支持在线 RL 的 `labels=None` 派生(已吸收 #5080 原 `mtp_isolated_loss` 的能力,见 (b))。在此之上可叠加 `mtp_grad_scale_func`(独立损失缩放);且 `mtp_detach_heads=True` 时自动启用 `mtp` 独立梯度裁剪组(独立梯度裁剪)。三者共同把 MTP 这条辅助支路在**前向图、损失缩放、梯度裁剪**三个层面与主模型解耦,显著降低 MTP 对主训练稳定性的干扰。
+
 ---
 
 ## 2. 监控基础设施
@@ -113,6 +177,12 @@ MoE 有独有的不稳定源 —— 路由:
 - **`MoEMetricsTracker`**:逐层收集 MoE 指标(各层 aux loss、z-loss 等),`--moe-per-layer-logging` 开启。能看出**哪一层**路由出问题,而不只是全局平均。
 - **`MoEOverloadFactorTracker`**(`:95`):跟踪**专家过载因子**(overload factor)——`max_expert_load / mean_load`,即 `ep_analysis.md` §4 的负载不均衡因子 `f`。`--log-moe-overload-factor` 开启;跨 `tp_ep` 与 `expt_dp` 组做 MAX 规约,反映最坏专家的过载程度。
 
+> [!update] 2026-06-16 · dev@232c478d4 — MoE logging 的 record/report 生命周期(#3431)
+> `moe_logging.py` 在 `ee3f1ff..HEAD` 间**内容无净变化**(仍 745 行),上述两个 tracker 描述在 `dev@232c478d4` 依然准确。补充其 #3431 重构后的标准用法,便于对照源码:
+> - **生命周期**:每步 `record(name, value, layer_number, num_layers, reduce_group=...)` 在 router 前向时**按层累加**到 `MetricEntry`(`moe_logging.py:435` 起的 `MoEMetricsTracker`)→ 步末一次 `report(loss_scale=1/num_microbatches, iteration, writer=..., per_layer_logging=...)` 统一**跨 rank 同步 + 聚合 + 写 TB/W&B + 清零**。全局单例经 `get_moe_metrics_tracker()` 取得。
+> - **PP 对齐**:无 MoE 层的 PP rank 需 `force_initialize=True` 预建大小为 `num_layers(+mtp_num_layers)` 的零张量,否则跨 PP 的 `all_reduce` 会因张量尺寸不一致而挂死。
+> - **归约语义**:`MetricEntry` 带 `reduce_group`(求和,如 `tp_cp`)、`avg_group`(求平均)、`needs_dp_avg`(再跨 DP 平均)三档;以 `"loss"` 结尾的指标会并入训练循环的 `total_loss_dict` 而**不**重复打到控制台串。
+
 ### 2.3 能耗监控(`energy_monitor.py`)
 
 `energy_monitor.py`(95 行):采集 GPU 能耗,算每步/每 token 的能量 —— 大规模训练的成本与碳足迹指标。
@@ -120,6 +190,16 @@ MoE 有独有的不稳定源 —— 路由:
 ### 2.4 日志后端:TensorBoard / wandb / one_logger
 
 `megatron/training/training.py` 的 `training_log` 把指标同时写三处:`writer`(TensorBoard)、`wandb_writer`、`one_logger`。各指标有独立开关(`--log-loss-scale-to-tensorboard`、`--log-throughput` 等)。控制台还会拼一行 `log_string` 打印关键指标。
+
+### 2.5 杂项可观测性修正
+
+> [!update] 2026-06-16 · dev@232c478d4 — 保真序列长度统计(#95654c956)
+> `train_step` 返回的 `seqlen_sum_this_global_batch` / `seqlen_squared_sum_this_global_batch` 用于**变长序列感知的吞吐 / FLOP 估算**(`training.py:2666` 经 `seqlen_squared_sum_in_batch` 进入 attention FLOP 项)。旧代码在**非变长**(未走 `wrap_data_iterator`)路径下把这两个统计丢成 `_, _`,导致 FLOP/吞吐日志退化或失真。
+> 修正(`training.py:2244–2245`):非变长路径显式回填闭式值 `seq_length * global_batch_size` 与 `seq_length² * global_batch_size`,保证两条路径都给出正确的 seqlen 统计、`--log-throughput` 的 TFLOP/s 估算保真。属于纯可观测性修复,不改训练数值。
+
+> [!update] 2026-06-16 · dev@232c478d4 — 混合模型分阶段日志改传显式进程组(#4781)
+> 混合(Hybrid,如 Mamba/attention 混排)模型在 `select_pipeline_segment` 里对每个 PP 段做布局日志。此前该日志依赖全局 `parallel_state` 取 TP / DP-CP 组,在自定义进程组拓扑下可能取错组、或在多 `ProcessGroupCollection` 场景下不一致。
+> 修正:`HybridModel` 经 `_hybrid_logging_pg_kwargs(pg_collection)`(`models/hybrid/hybrid_model.py`)抽出 `tp` / `dp_cp` 组,显式透传给 `select_pipeline_segment(..., tp_group=, dp_cp_group=)`(`models/hybrid/hybrid_layer_allocation.py:333`),并校验两者"要么都给、要么都不给"。是分阶段日志在显式进程组拓扑下的健壮性修正。
 
 ---
 
@@ -147,6 +227,10 @@ MoE 有独有的不稳定源 —— 路由:
 | `skipped iters` | 因 inf/nan 跳过的迭代数 | 应 ≈ 0;偏多说明数值不稳 |
 | `max attention logit` | QK-clip 监控的最大注意力 logit | 不应无界增长 |
 
+> [!update] 2026-06-16 · dev@232c478d4 — 新增数值健康信号(#3460 / #4116)
+> - `skipped iters` 的口径扩展:除 inf/nan 跳步外,现在还包含 §1.2 的**梯度范数超阈跳步**(`grad_norm_skip_threshold`)。若启用了该阈值,`skipped iters` 偏多既可能是数值溢出、也可能是主梯度范数频繁超阈 —— 二者都指向"该降学习率 / 查数据 / 调阈值"。
+> - 启用 MTP `mtp` 独立裁剪组(§1.8d)后,MTP head 的梯度范数被**单独**计算与裁剪;主 `grad norm` 指标因此**只反映主模型**(已排除 mtp 组),读 grad norm 时需注意它不再涵盖 MTP head。
+
 ### 3.3 吞吐与效率
 
 | 指标 | 含义 |
@@ -162,6 +246,9 @@ MoE 有独有的不稳定源 —— 路由:
 |------|------|---------|
 | 逐层 aux loss | 哪一层路由不均(`--moe-per-layer-logging`) | 各层都小 |
 | **expert overload factor** `f` | 最忙专家 / 均值(`--log-moe-overload-factor`) | 接近 1 = 均衡;远大于 1 = 路由坍塌 |
+
+> [!update] 2026-06-16 · dev@232c478d4 — 解读 aux/z-loss 需注意 TP 缩放(#5047)
+> 若在 `--calculate-per-token-loss` 下用 TP>1 训练:旧版本里 aux/z-loss 的**梯度**被额外缩小了 `tp_cp_group.size()` 倍(§1.7),日志里的 loss 数值看似正常、但其对路由的实际约束被稀释 —— 表现为"aux loss 不高却仍路由不均 / overload factor 偏大"。升级到 `dev@232c478d4` 后该缩放已修正,横向对比历史曲线时需考虑这一口径变化。
 
 ### 3.5 系统
 
@@ -194,6 +281,10 @@ MoE 健康?     overload factor 接近 1;若远大于 1 → 调大 aux_loss 系�
               persistent error → 该 GPU 故障,checkpoint-and-exit 换节点
 ```
 
+> [!update] 2026-06-16 · dev@232c478d4 — 新增稳定性手段的实战切入
+> - **梯度尖峰**裁剪仍救不回时:设 `grad_norm_skip_threshold`(§1.2),让主梯度范数超阈的"坏步"被整步丢弃,而非缩放后照常更新 —— 适合偶发数据异常 / 疑似污染步。被丢的步计入 `skipped iters`。
+> - **MTP 训练干扰主干**:`lm loss` 抖动疑似来自 MTP 支路时,按 §1.8 逐级解耦 —— `mtp_detach_heads`(切回流,含共享 `output_weight` 与在线 RL `labels=None` 派生)→ 视需要 `mtp_grad_scale_func`(独立损失缩放)。`mtp_detach_heads=True` 自动启用 `mtp` 独立梯度裁剪组,主 `grad norm` 与 MTP head 不再互相污染。(注:HEAD 已无独立的 `mtp_isolated_loss`,其能力并入 `mtp_detach_heads`。)
+
 ---
 
 ## 5. 小结
@@ -203,9 +294,15 @@ MoE 健康?     overload factor 接近 1;若远大于 1 → 调大 aux_loss 系�
 - **可观测三件套**:分级带 barrier 的 `Timer` 系统(性能分解、找 straggler)、MoE 逐层 + 过载因子 tracker、energy monitor;统一写 TensorBoard/wandb/one_logger。
 - **核心指标**:收敛看 `lm loss`;数值健康看 `grad norm` / `loss scale` / `skipped & nan iters` / `num zeros`;性能看 `throughput` + Timer 分解;MoE 看 `overload factor`;硬件看 RerunStateMachine 归因。
 
+> [!update] 2026-06-16 · dev@232c478d4 — `ee3f1ff..HEAD` 增量补强
+> - **数值稳定**新增"梯度范数超阈跳步"(§1.2,`grad_norm_skip_threshold`)作为裁剪之外的第四道闸:坏步整步丢弃而非缩放。
+> - **MTP 稳定性套件**(§1.8):`mtp_detach_heads`(切回流 + 共享 output_weight 隔离 + 在线 RL `labels=None` 派生,已合并 #5080 原 `mtp_isolated_loss` 的能力)/ `mtp_grad_scale_func`(独立损失缩放)/ `mtp` 独立梯度裁剪组,把 MTP 辅助支路在前向图、损失缩放、梯度裁剪三层与主模型解耦。
+> - **辅助损失正确性**:aux/z-loss 在 TP>1 + per-token-loss 下的梯度缩放修正(§1.7);DSA indexer loss 跨 micro-batch 平均(§1.7)。
+> - **可观测性**:RerunStateMachine 去 stat 系统调用、确定性日志改按校验描述标识(§1.4);MoE logging 的 `record/report` 生命周期(§2.2);seqlen 统计保真、混合模型分阶段日志改传显式进程组(§2.5)。
+
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。`RerunStateMachine` 为实验特性。训练循环日志位于 `megatron/training/training.py`(在 `megatron/core` 之外)。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`,已增量对齐至 `dev@232c478d4`(2026-06-16);带 `[!update]` 的小节行号以 `232c478d4` 为准,其余以 `ee3f1ff` 为准。`RerunStateMachine` 为实验特性。训练循环日志位于 `megatron/training/training.py`(在 `megatron/core` 之外)。*
 
 ## Related Pages
 

@@ -86,6 +86,11 @@ for layer_idx in range(num_layers_per_pipeline_rank):
 | 多余重算 | 可能有(全算) | 少(只算装不下的) |
 | 适合 | 显存极紧、要全省 | 显存差一点点、精打细算 |
 
+> [!update] 2026-06-16 · dev@232c478d4
+> **全量重计算逻辑抽成共享实现，并支持 HybridModel（#4496，118933a85）**
+> - 新增 `megatron/core/recompute.py`，把整层重计算的 `checkpointed_forward`（含 `custom` / `chunk_runner` / `uniform`+`block` 两种切法）抽成**可复用函数**（`recompute.py:21`）；Hybrid（Mamba/GDN + attention 混合）模型的 `hybrid_block.py` 现也走同一套：`recompute_granularity=='full' and self.training` 时调 `checkpointed_forward(...)`。此前 full 重计算只在 GPT `transformer_block` 内可用，现 HybridModel 同样支持。
+> - **GPT 路径行号微移**（仍有效）：本节引用的 `transformer_block.py` 行号按当前 HEAD 各 +1 左右——`_checkpointed_forward` 在 `:465`、`checkpoint_handler` 在 `:543`、`uniform` 分支在 `:571`。GPT 的 `transformer_block._checkpointed_forward` 仍保留自有实现（与 `recompute.py` 的共享版并存），故 §2 的描述对 GPT 依然成立。
+
 ---
 
 ## 3. 选择性重计算(`recompute_granularity='selective'`)
@@ -112,6 +117,14 @@ for layer_idx in range(num_layers_per_pipeline_rank):
 | `moe` | 整个 MoE 层 |
 | `shared_experts` | 共享专家 |
 | `mhc` | hyper connections |
+| `gdn` | 整个 GatedDeltaNet 模块（**新增**，见下方 [!update]） |
+
+> [!update] 2026-06-16 · dev@232c478d4
+> **新增 `gdn`：GatedDeltaNet 整模块 selective 重计算（#5296，8dc6e6676）**
+> HEAD 的合法 `recompute_modules` 集合（`transformer_config.py:1862-1872`）已加入 `"gdn"`：core_attn, moe_act, layernorm, mla_up_proj, mlp, moe, shared_experts, mhc, **gdn**。
+> - 语义：`gdn` 在 `recompute_granularity='selective'` 下把**整个 GatedDeltaNet**（in_proj → conv1d → gated delta rule → gated norm → out_proj）包进一次 checkpoint 整体重算，用**标准 checkpointing**（非输出丢弃）。实现：`gated_delta_net.py:267-269`（`self.recompute_gdn`）+ `:374-387`（`tensor_parallel.checkpoint(_checkpointed_compute, False, hidden_states)`，核心计算抽到 `_forward_compute`）。
+> - 约束：仅当 `experimental_attention_variant='gated_delta_net'` 时可用（`transformer_config.py:1890-1897`）。
+> - **历史更正**：先前 #4715（ff5264c33）曾引入过更细的 `gdn_norm_out`（只对 GDN 输出 norm + HP→CP all-to-all 做**输出丢弃** checkpointing），但在 HEAD 已被 #5296 的整模块 `gdn` **取代**——`gdn_norm_out` / `recompute_norm_out` 在 HEAD 全仓已不存在（grep 验证）。如需引用，当前正确项是 `gdn`。
 
 ### 3.3 标准 checkpointing vs 输出丢弃 checkpointing
 
@@ -127,6 +140,11 @@ selective 下有**两种**底层机制(README MoE §Fine-grained Recomputation �
 - 否则 → `tensor_parallel.checkpoint`(`tensor_parallel/random.py`,Megatron 自带,正确处理 TP 的 RNG tracker —— 保证重算的 dropout 与原前向用同一随机种子)。
 
 > 重计算必须保证 dropout 等随机算子**重算与原前向结果一致**,否则梯度错。这就是为什么 checkpoint 要接管 CUDA RNG tracker。
+
+> [!update] 2026-06-16 · dev@232c478d4
+> **两个 checkpoint 健壮性修复**（注：上文 `checkpoint_handler` 当前在 `transformer_block.py:543`）
+> - **重计算 × 训练 CUDA graph（#3919，ada8dfe6f）**：`tensor_parallel.checkpoint`（`random.py`）在函数入口新增——`if is_graph_warmup() or is_graph_capturing(): return function(*args)`（`tensor_parallel/random.py:649`）。**CG warmup/capture 期间直接跳过 checkpoint 包装**，因为被捕获的 graph 已记录全部算子、反向无法在已捕获 graph 内再跑一遍重算（与 `CheckpointWithoutOutput` 行为一致）。否则 recompute + 训练 CG 会冲突。
+> - **MTP + packed sequence 重计算崩溃（#4593，2b77d32b1）**：`MultiTokenPredictionLayer` 新增自己的 `_checkpointed_forward`（`multi_token_prediction.py:1515`），仿照 `transformer_block`：把 `attention_mask` / `rotary_pos_emb` / `packed_seq_params` 等 **kwarg 张量经 `custom_forward` 闭包捕获**（`tensor_parallel.checkpoint` 只 stash 位置参数、`te_checkpoint` reentrant 实现也只追踪位置张量输入，kwarg 张量不进重算反向路径），并按精度路由 fp8/fp4 → `te_checkpoint`、否则 `tensor_parallel.checkpoint`。修复 packed-sequence 下 MTP 重计算 crash。
 
 ---
 

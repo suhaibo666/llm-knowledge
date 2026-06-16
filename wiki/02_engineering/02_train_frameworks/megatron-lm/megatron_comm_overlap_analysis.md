@@ -278,6 +278,10 @@ with _coalescing_manager(communication_group, async_ops=async_op) as cm:
 
 **关键收益**：通信被隐藏在所有后续层的反向计算时间内，总时间 ≈ `sum(backward) + last_RS_tail`。
 
+> [!update] 2026-06-16 · dev@232c478d4
+> **dispatch 时顺手 drain 前驱 bucket 的 reduce-scatter**（#4940，`distributed_data_parallel.py:323`、`param_and_grad_buffer.py:206/567/749`）。仅在 `reduce_scatter_with_fp32_accumulation`（fp32 累加的梯度 RS）且单优化器实例时启用。该路径下，RS 的中间 all-to-all 输出张量会被 **pin 住直到 `.wait()`**；若不主动 drain，所有 bucket 的这些中间张量会一直存活到 step 末，显存峰值偏高。
+> **机制**：`DistributedDataParallel.__init__` 把每个 bucket group 的 `previous_grad_reduce_bucket_group` 指向"反向中比它早一步 dispatch 的前驱"（反向按输出→输入顺序，故 `bucket_groups[i]` 的前驱是 `[i-1]`）。`start_grad_sync` 在为自己分配新 RS 缓冲**之前**，先 `finish_grad_sync()` 把前驱的 RS 等掉、释放其中间 buffer。新增 per-iteration 幂等标志 `grad_reduce_finished`（`param_and_grad_buffer.py:256`）：`finish_grad_sync` 第二次调用变 no-op，使"后继提前 drain 前驱"与"step 末 finalize 循环逐 bucket 收尾"不会重复 wait。**只省显存、不改通信量/重叠结构**；专家并行的 `expert_parallel_bucket_groups` 同样链接。
+
 ### 3.2 参数掩盖（`--overlap-param-gather`）
 
 **原理**：前向计算某一层时，**下一层（或下一个 bucket）的参数 AllGather 已在后台完成**。
@@ -598,6 +602,20 @@ class FusedDispatch(torch.autograd.Function):
 - **文件**：[`megatron/core/transformer/moe/token_dispatcher.py`](Megatron-LM/megatron/core/transformer/moe/token_dispatcher.py)
 - **类**：`_DeepepManager`（line 1113）、`_HybridEPManager`（line 964）
 
+### 5.7 增量更新（ee3f1ff → dev@232c478d4）
+
+> [!update] 2026-06-16 · dev@232c478d4 — 高优先级 A2A 通信流
+> 新增 `high_priority_a2a_comm_stream`（默认 `False`，`transformer_config.py:686`，#4694）。combined-1F1B 的 `set_streams` 现接受 `high_priority` 形参（`pipeline_parallel/utils.py:336`）：打开后，§5.3 那条专跑 dispatch/combine A2A 的 `comm_stream` 以 **CUDA 高优先级**创建（`torch.cuda.Stream.priority_range()` 的 high 端）。目的：让 A2A 通信 kernel 优先抢 SM，减少被同设备的计算 kernel 卡住的尾延迟。`combined_1f1b.py` 的两个 schedule（no-pipelining / interleaved）都按 `config.high_priority_a2a_comm_stream` 透传。配套地，HybridEP 还新增 `moe_hybridep_num_sms_preprocessing`（默认 108，metadata scan kernel 的 SM 数，见 [[ep_analysis]] §③ 增量更新）。
+
+> [!update] 2026-06-16 · dev@232c478d4 — A2A Overlap 支持 Megatron-FSDP
+> EP A2A 重叠（combined-1F1B）现可与 **Megatron-FSDP** 共用（#3797，`combined_1f1b.py`、`model_chunk_schedule_plan.py:176`）。难点：细粒度 overlap schedule **绕过** `TransformerLayer.forward`（直接调子模块），从而绕过 FSDP 注册在 unit module 上的 forward/backward hook —— all-gather 出来的分片参数不会被正常释放。解法：`TransformerLayerSchedulePlan.set_fsdp_reshard_hooks` 给单个 schedule node 显式挂"释放参数"回调（最后一个前向 node 后 `post_forward_release_module`，最后一个反向 node（attn）后 `post_backward_release_module`）；`combined_forward_backward_step` 在反向前后调 `fsdp_wrapper.pre/post_backward()`，并在调度前 `_replace_param_with_raw_if_needed()`。仅 `optim_grads_params`（参数分片）策略需逐层 reshard hook。**限制**：交错式 PP（VPP>1）+ FSDP 暂不支持（显式 assert）。FSDP 内部分片/reshard 细节见 [[ddp_optimizer_analysis]]。
+
+> [!update] 2026-06-16 · dev@232c478d4 — FSDP 双缓冲 wgrad 竞态修复
+> 修复 FSDP 双缓冲（`fsdp_double_buffer`）下的 wgrad 竞态（#5222，`megatron_fsdp/param_and_grad_buffer.py:2727`）。原先在反向 hook 里**预先**调 `_enforce_double_buffer_limit` 腾 bucket；改为把该调用下沉进懒加载的 `main_grad_getter` —— 即**真正 fetch 到 incoming bucket 的那一刻**才腾退旧 bucket，使双缓冲 reduce-scatter 流水线的 bucket 生命周期与梯度写入精确对齐，消除"buffer 还在被 wgrad 写就被双缓冲分配器回收"的竞态。属 FSDP 内部正确性修复，与本页"通信重叠不改数值"前提一致；FSDP 缓冲机制详见 [[ddp_optimizer_analysis]]。
+
+> [!update] 2026-06-16 · dev@232c478d4 — flex 后端配置补充
+> §八配置速查表的 `moe_flex_dispatcher_backend` 现多一个取值 `"deepepv2"`（DeepEP v2 ElasticBuffer 后端，#4793）；`moe_deepep_num_sms` 默认从 `20` 改为 `None`（自适应）。详见 [[ep_analysis]] §③ 增量更新。
+
 ---
 
 ## 六、CP 通信掩盖（Context Parallel）
@@ -685,7 +703,7 @@ args.batch_p2p_comm = False          # 必须与 overlap_p2p_comm 互斥
 args.overlap_moe_expert_parallel_comm = True  # 1F1B A2A 重叠
 args.delay_wgrad_compute = True               # 延迟 wgrad（需与上者同开）
 args.moe_token_dispatcher_type = "flex"       # flex dispatcher
-args.moe_flex_dispatcher_backend = "deepep"   # 或 "hybridep"
+args.moe_flex_dispatcher_backend = "deepep"   # 或 "deepepv2" / "hybridep"（deepepv2 见 §5.7，#4793）
 
 # CP
 args.context_parallel_size = 2       # CP > 1 时自动启用 attention overlap
@@ -693,4 +711,10 @@ args.context_parallel_size = 2       # CP > 1 时自动启用 attention overlap
 
 ---
 
-> **文档说明**：所有代码片段与文件路径均来自 Megatron-LM `dev` 分支（commit `3beeaa65b` 附近）的实际源码。若后续版本代码结构发生变化，请以实际代码为准。
+> **文档说明**：所有代码片段与文件路径均来自 Megatron-LM `dev` 分支（commit `3beeaa65b` 附近；§3.1 末、§5.7 的增量更新基准为 `dev@232c478d4`）的实际源码。若后续版本代码结构发生变化，请以实际代码为准。
+
+## Related Pages
+
+- [[tp_analysis]] · [[cp_analysis]] · [[ep_analysis]] · [[pp_schedulers_analysis]] · [[ddp_optimizer_analysis]]
+- [[megatron_distributed_optimizer_analysis]] · [[parallelism_orchestration_analysis]]
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

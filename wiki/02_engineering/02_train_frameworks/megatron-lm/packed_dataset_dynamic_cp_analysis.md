@@ -129,6 +129,17 @@ while sample_id_seqlens:
 
 ---
 
+## 4.5 NEW:varlen 数据源 + get_batch 统一(dev@232c478d4)
+
+> [!update] 2026-06-16 · dev@232c478d4
+> 这条统一 `run()` 流水线的**上游入口**和**下游取数**都有更新,但九步骨架与"唯一分叉=第③步"的结论不变:
+>
+> - **第①步 `_unpack_batch` 支持双输入**(`data_schedule_utils.py:48`,#4832):除了 `SFTDataset` 那种"一条样本里 `cu_seqlens` 拼了多条子序列、需切开"的**预打包**形态,新增 `VarlenDataset`(`--use-varlen-dataset`)这种"每 index 已是单条子样本、自带 `padded_seq_len`"的**已拆开**形态 —— 后者只需丢掉 collate_fn 多加的 batch 维、缺 `original_seq_len` 时从 `padded_seq_len` 补,再走同一条 ②→⑨。`VarlenDataset` 细节见 `dataset_analysis.md` §3.4。
+> - **下游 get_batch 统一 + SFT THD 支持 PP**(#4103):`get_batch_on_this_*` 取数函数收敛进 `megatron/core/utils.py` —— `get_batch_on_this_tp_rank`(`:1992`,**长度前缀协议**广播变长的 `cu_seqlens`,并在动态 CP 下广播 `local_cp_size` / `hybrid_cp_seq_length`)、`get_thd_batch_on_this_cp_rank`(`:2439`,对应第⑤步在本 rank 的 THD 切片)。SFT 的 THD 打包现可与 PP 共用(呼应第⑦步 `broadcast_to_pp_group`)。
+> - **第⑥步 seqlen 统计修正**:`train_step` 现保留 seqlen 统计(commit 95654c956);`sequence_packing_scheduler` 非空时的 TFLOPs 计算修正(#5342)—— 对应本页第⑥步 `Σseqlen / Σseqlen²` 的吞吐统计。
+
+---
+
 ## 5. 一张图看清统一关系
 
 ```
