@@ -4,6 +4,26 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-16: torchtitan 新增 HSDP 反向 + 性能手段 + SimpleFSDP(4 页 + 3 图)
+
+**Type**: Expand(对照 torchtitan `main` @ `61c010fcb` / PyTorch 2.9.1 源码逐行核实;5 个并行 research agent 摸清缺口 + 4 个并行 agent 机械转换入库;纯增不改既有)
+
+**背景**:torchtitan 上游迭代后,既有 8 篇(01–06 + AC + FSDP 预取)未覆盖一批性能手段。审计(对照 HEAD `61c010fcb`)确认遗漏:HSDP 反向双流掩盖、低精度(Float8/MXFP8)、算子融合、编译、对称内存、Async-TP、MinimalAsyncEP、full_dtensor、SimpleFSDP。
+
+**新增(4 页,均带 file:line 源码复核表)**:
+- [[torchtitan_hsdp_backward_overlap_analysis]] — HSDP 反向 reduce-scatter 与 all-reduce 双流掩盖:`foreach_reduce` 跨流编排、host 端算子下发顺序、AR∥RS 并发的正确性证明、reduce 路径 fp32 暂存与显存峰值;**带 3 张 SVG→PNG 机制图**(时间线 / 正确性分解 / 显存)
+- [[torchtitan_compute_memory_optimizations_analysis]] — 算力/显存:Float8 rowwise/MXFP8、FusedSwiGLU/MoE grouped GEMM/FusedQKV、逐 block 编译即融合、融合 Adam、ChunkedCELoss、CPU offload
+- [[torchtitan_comm_optimizations_overlap_analysis]] — 通信:跨维度计算-通信掩盖矩阵、Async-TP 微流水、对称内存、MinimalAsyncEP、full_dtensor SPMD
+- [[torchtitan_simple_fsdp_analysis]] — SimpleFSDP(graph_trainer 实验,arXiv:2411.00284):分片即 DTensor `redistribute` 进图、编译器 pass 分桶重叠;与 FSDP2 eager 多流编排逐项对比
+
+**纠正的常见误解(已写入)**:① Float8 rowwise 下通信仍高精度,本版无 fp8 all-gather;② torchtitan 核心循环不在 microbatch 间延迟 FSDP 规约(每 mb 都 reduce-scatter);③ MinimalAsyncEP 不做通信-计算重叠;④ `set_symm_mem_for_comm` 在 torch 2.9.1 不存在(追踪更新版 torch)。
+
+**索引更新**:[[torchtitan/index]] 头块基准 `cf3c4312`→`61c010fcb`、计数 9→12、新增「深挖伴篇(3)」补 HSDP +「性能手段与编译器路线(3)」分区 + Related Pages;[[02_engineering/02_train_frameworks/index]] torchtitan 行计数 7→12、基准更新、日期 2026-06-16。资源:3 张 HSDP 机制图(SVG+PNG)入 `torchtitan/assets/`。
+
+**校验**:4 页无残留相对链接 / 旧页脚,HSDP 三图引用完整;13 项 rel-link→`[[wiki]]` 映射逐条核对。来源同步自 `E:\97-codes\llm_repo\torchtitan\docs\parallelism-analysis\{07-hsdp-backward-overlap, 08-compute-and-memory-optimizations, 09-comm-optimizations-and-overlap, simple-fsdp}.md`。
+
+---
+
 ## 2026-06-15: 补齐 eager 运行时地基 — 新增 7 模块 21 页(Workflow 编排 + 源码逐行核实)
 
 **Type**: Ingest & Expand（Workflow：覆盖审计 → 架构全图 → 缺口路线图；再 7 模块流水线 research→并行写 3 层→校验；铁律＝纯增不改既有、对照 `E:\97-codes\pytorch\pytorch` v2.13.0a0 核实行号、不破坏既有 wikilink）

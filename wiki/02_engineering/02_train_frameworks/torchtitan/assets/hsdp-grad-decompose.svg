@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="640" font-family="Microsoft YaHei, SimHei, Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="ar2" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#495057"/>
+    </marker>
+    <marker id="ar2g" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2f9e44"/>
+    </marker>
+  </defs>
+
+  <rect width="1100" height="640" fill="#ffffff"/>
+  <text x="30" y="40" font-size="24" font-weight="bold" fill="#212529">HSDP 梯度规约为何正确:全局求和 = 组内 RS + 组间 AR</text>
+  <text x="30" y="65" font-size="14" fill="#868e96">DP 组 = dp_replicate(R=2) x fsdp(S=3);rank(r,s) 持本地完整梯度 g[r,s]。正确的分片梯度 = 全部 R x S 个 g 之和,再按本 rank 分片切出。</text>
+
+  <!-- ============ Panel A ============ -->
+  <text x="60" y="112" font-size="16" font-weight="bold" fill="#343a40">① 各 rank 本地完整梯度</text>
+  <text x="60" y="133" font-size="12.5" fill="#868e96">每行 = 一个 shard 组(fsdp 轴),每列 = 一个 replicate 组(dp_replicate 轴)</text>
+  <!-- axis hints -->
+  <text x="40" y="190" font-size="12" fill="#1971c2" transform="rotate(-90 40 190)">副本 R 轴</text>
+  <text x="70" y="158" font-size="12" fill="#0c8599">分片 S 轴 -></text>
+  <!-- grid r=0 -->
+  <rect x="70" y="165" width="74" height="46" rx="4" fill="#e7f5ff" stroke="#74c0fc"/><text x="107" y="193" font-size="13" text-anchor="middle" fill="#1864ab">g[0,0]</text>
+  <rect x="150" y="165" width="74" height="46" rx="4" fill="#e7f5ff" stroke="#74c0fc"/><text x="187" y="193" font-size="13" text-anchor="middle" fill="#1864ab">g[0,1]</text>
+  <rect x="230" y="165" width="74" height="46" rx="4" fill="#e7f5ff" stroke="#74c0fc"/><text x="267" y="193" font-size="13" text-anchor="middle" fill="#1864ab">g[0,2]</text>
+  <!-- grid r=1 -->
+  <rect x="70" y="221" width="74" height="46" rx="4" fill="#e7f5ff" stroke="#74c0fc"/><text x="107" y="249" font-size="13" text-anchor="middle" fill="#1864ab">g[1,0]</text>
+  <rect x="150" y="221" width="74" height="46" rx="4" fill="#e7f5ff" stroke="#74c0fc"/><text x="187" y="249" font-size="13" text-anchor="middle" fill="#1864ab">g[1,1]</text>
+  <rect x="230" y="221" width="74" height="46" rx="4" fill="#e7f5ff" stroke="#74c0fc"/><text x="267" y="249" font-size="13" text-anchor="middle" fill="#1864ab">g[1,2]</text>
+  <!-- row group brackets -->
+  <path d="M60,165 L54,165 L54,211 L60,211" fill="none" stroke="#0c8599" stroke-width="1.6"/>
+  <path d="M60,221 L54,221 L54,267 L60,267" fill="none" stroke="#0c8599" stroke-width="1.6"/>
+
+  <!-- arrow A->B -->
+  <line x1="320" y1="216" x2="392" y2="216" stroke="#0c8599" stroke-width="2" marker-end="url(#ar2)"/>
+  <text x="312" y="200" font-size="12.5" fill="#0c8599" font-weight="bold">RS</text>
+  <text x="300" y="290" font-size="11.5" fill="#0c8599">每行内求和+散射</text>
+
+  <!-- ============ Panel B ============ -->
+  <text x="410" y="112" font-size="16" font-weight="bold" fill="#343a40">② reduce-scatter(组内,fsdp 轴)</text>
+  <text x="410" y="133" font-size="12.5" fill="#868e96">每行 3 个完整 g 求和,散射成 3 个分片;rank(r,s) 拿到第 s 片</text>
+  <!-- row 0: Sigma_0 = g[0,0]+g[0,1]+g[0,2], split into 3 shards -->
+  <rect x="410" y="165" width="74" height="46" rx="4" fill="#d3f9d8" stroke="#69db7c"/><text x="447" y="186" font-size="11.5" text-anchor="middle" fill="#2b8a3e">Σ₀|s0</text><text x="447" y="202" font-size="9.5" text-anchor="middle" fill="#37b24d">(r0 持)</text>
+  <rect x="490" y="165" width="74" height="46" rx="4" fill="#d3f9d8" stroke="#69db7c"/><text x="527" y="186" font-size="11.5" text-anchor="middle" fill="#2b8a3e">Σ₀|s1</text><text x="527" y="202" font-size="9.5" text-anchor="middle" fill="#37b24d">(r0 持)</text>
+  <rect x="570" y="165" width="74" height="46" rx="4" fill="#d3f9d8" stroke="#69db7c"/><text x="607" y="186" font-size="11.5" text-anchor="middle" fill="#2b8a3e">Σ₀|s2</text><text x="607" y="202" font-size="9.5" text-anchor="middle" fill="#37b24d">(r0 持)</text>
+  <!-- row 1: Sigma_1 -->
+  <rect x="410" y="221" width="74" height="46" rx="4" fill="#d3f9d8" stroke="#69db7c"/><text x="447" y="242" font-size="11.5" text-anchor="middle" fill="#2b8a3e">Σ₁|s0</text><text x="447" y="258" font-size="9.5" text-anchor="middle" fill="#37b24d">(r1 持)</text>
+  <rect x="490" y="221" width="74" height="46" rx="4" fill="#d3f9d8" stroke="#69db7c"/><text x="527" y="242" font-size="11.5" text-anchor="middle" fill="#2b8a3e">Σ₁|s1</text><text x="527" y="258" font-size="9.5" text-anchor="middle" fill="#37b24d">(r1 持)</text>
+  <rect x="570" y="221" width="74" height="46" rx="4" fill="#d3f9d8" stroke="#69db7c"/><text x="607" y="242" font-size="11.5" text-anchor="middle" fill="#2b8a3e">Σ₁|s2</text><text x="607" y="258" font-size="9.5" text-anchor="middle" fill="#37b24d">(r1 持)</text>
+  <text x="410" y="292" font-size="11.5" fill="#2b8a3e">Σ_r = g[r,0]+g[r,1]+g[r,2]</text>
+
+  <!-- arrow B->C (vertical-emphasis AR) -->
+  <line x1="660" y1="216" x2="732" y2="216" stroke="#e8590c" stroke-width="2" marker-end="url(#ar2)"/>
+  <text x="652" y="200" font-size="12.5" fill="#e8590c" font-weight="bold">AR</text>
+  <text x="638" y="290" font-size="11.5" fill="#e8590c">每列跨副本求和</text>
+
+  <!-- ============ Panel C ============ -->
+  <text x="750" y="112" font-size="16" font-weight="bold" fill="#343a40">③ all-reduce(组间,dp_replicate 轴)</text>
+  <text x="750" y="133" font-size="12.5" fill="#868e96">每列(同一分片 s)跨 R=2 副本求和 -> 全局和 G|s,各副本复制持有</text>
+  <!-- vertical sum arrows per column (between B row0 and row1? draw within C) -->
+  <!-- row 0 -->
+  <rect x="750" y="165" width="74" height="46" rx="4" fill="#ffe8cc" stroke="#ffa94d"/><text x="787" y="186" font-size="11.5" text-anchor="middle" fill="#d9480f">G|s0</text><text x="787" y="202" font-size="9.5" text-anchor="middle" fill="#e8590c">(r0)</text>
+  <rect x="830" y="165" width="74" height="46" rx="4" fill="#ffe8cc" stroke="#ffa94d"/><text x="867" y="186" font-size="11.5" text-anchor="middle" fill="#d9480f">G|s1</text><text x="867" y="202" font-size="9.5" text-anchor="middle" fill="#e8590c">(r0)</text>
+  <rect x="910" y="165" width="74" height="46" rx="4" fill="#ffe8cc" stroke="#ffa94d"/><text x="947" y="186" font-size="11.5" text-anchor="middle" fill="#d9480f">G|s2</text><text x="947" y="202" font-size="9.5" text-anchor="middle" fill="#e8590c">(r0)</text>
+  <!-- row 1 -->
+  <rect x="750" y="221" width="74" height="46" rx="4" fill="#ffe8cc" stroke="#ffa94d"/><text x="787" y="242" font-size="11.5" text-anchor="middle" fill="#d9480f">G|s0</text><text x="787" y="258" font-size="9.5" text-anchor="middle" fill="#e8590c">(r1)</text>
+  <rect x="830" y="221" width="74" height="46" rx="4" fill="#ffe8cc" stroke="#ffa94d"/><text x="867" y="242" font-size="11.5" text-anchor="middle" fill="#d9480f">G|s1</text><text x="867" y="258" font-size="9.5" text-anchor="middle" fill="#e8590c">(r1)</text>
+  <rect x="910" y="221" width="74" height="46" rx="4" fill="#ffe8cc" stroke="#ffa94d"/><text x="947" y="242" font-size="11.5" text-anchor="middle" fill="#d9480f">G|s2</text><text x="947" y="258" font-size="9.5" text-anchor="middle" fill="#e8590c">(r1)</text>
+  <!-- vertical column arrows -->
+  <line x1="722" y1="160" x2="722" y2="272" stroke="#e8590c" stroke-width="1.4" stroke-dasharray="4 3"/>
+  <text x="750" y="292" font-size="11.5" fill="#d9480f">G|s = Σ_r Σ_s' g[r,s'] 的第 s 片 = 全局和</text>
+
+  <!-- ============ math box ============ -->
+  <rect x="60" y="330" width="980" height="120" rx="8" fill="#f1f3f5" stroke="#dee2e6"/>
+  <text x="80" y="362" font-size="16" fill="#212529" font-family="Consolas, monospace">Σ over (r,s) ∈ R×S  g[r,s]   =   Σ_r ( Σ_s g[r,s] )</text>
+  <text x="620" y="362" font-size="13.5" fill="#2b8a3e">&lt;- 加法结合律 / 交换律,与拆几步无关</text>
+  <text x="80" y="392" font-size="13.5" fill="#495057"><tspan fill="#0c8599" font-weight="bold">RS</tspan> 做内层 Σ_s(组内求和 + 散射成分片) -> <tspan fill="#d9480f" font-weight="bold">AR</tspan> 做外层 Σ_r(组间跨副本求和) -> 每 rank 得"全局和的本分片",与一次性全局 reduce 等价。</text>
+  <text x="80" y="418" font-size="13.5" fill="#495057"><tspan font-weight="bold">AVG 同理</tspan>:RS 除以 S、AR 除以 R,(1/S)·(1/R) = 1/(R×S);torchtitan 关掉梯度除法 -> RS/AR 均为纯 SUM,缩放交训练循环按 token 数做。</text>
+
+  <!-- ============ concurrency-safety box ============ -->
+  <rect x="60" y="468" width="980" height="120" rx="8" fill="#fff9db" stroke="#ffe066"/>
+  <text x="80" y="498" font-size="15" font-weight="bold" fill="#5c5f00">并发为何不破坏正确性</text>
+  <text x="80" y="524" font-size="13.5" fill="#495057"><tspan font-weight="bold">同层 RS->AR:</tspan>由 <tspan font-family="Consolas, monospace">all_reduce_stream.wait_stream(reduce_scatter_stream)</tspan>(:554)<tspan font-weight="bold">串行</tspan>,AR 读的就是 RS 写的同一 reduce_output。</text>
+  <text x="80" y="550" font-size="13.5" fill="#495057"><tspan font-weight="bold">跨层并发:</tspan>AR(N) 与 RS(N-1)/compute(N-1) 同时跑,但各组 <tspan font-family="Consolas, monospace">allocate</tspan> 各自的 reduce_output(:522),<tspan font-weight="bold">内存不相交</tspan>,谁也不写谁。</text>
+  <text x="80" y="576" font-size="13.5" fill="#495057">并发既不改变每个集合通信<tspan font-weight="bold">内部</tspan>的求和顺序,也不让两步互相覆盖 -> 结果与串行版逐位一致。缓冲复用安全由 CUDA event(ReduceScatterState/AllReduceState)界定。</text>
+</svg>

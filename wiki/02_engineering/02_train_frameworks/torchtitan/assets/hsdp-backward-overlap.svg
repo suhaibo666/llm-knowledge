@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1360" height="470" font-family="Microsoft YaHei, SimHei, Segoe UI, Arial, sans-serif">
+  <defs>
+    <pattern id="hatch" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+      <rect width="8" height="8" fill="#ffe3e3"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#ff8787" stroke-width="3"/>
+    </pattern>
+    <marker id="aRed" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#e03131"/></marker>
+    <marker id="aOrg" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#f08c00"/></marker>
+    <marker id="aGry" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#868e96"/></marker>
+  </defs>
+
+  <rect width="1360" height="470" fill="#ffffff"/>
+  <text x="30" y="38" font-size="24" font-weight="bold" fill="#212529">HSDP 反向 GPU 流时间线:AR(N) 与下一层 RS(N-1) / 计算 并发</text>
+  <text x="30" y="62" font-size="14" fill="#868e96">Bm=反向计算(梯度)  reAG=反向 re-all-gather 参数  RS=reduce-scatter(组内/NVLink)  AR=all-reduce(组间/跨节点,慢)  ci=梯度 copy-in</text>
+  <text x="30" y="82" font-size="13" fill="#495057">唯一跨流依赖:① RS(g)->AR(g) 串行(:554)  ② RS(g)->ci(g+1)(:520,仅挡 copy-in)  ③ ci(g)->RS(g)(:518)。<tspan fill="#e03131" font-weight="bold">没有 AR(g)->RS(g+1)</tspan> => AR(N) 与 RS(N-1) 并发。</text>
+
+  <!-- lane backgrounds -->
+  <rect x="150" y="114" width="1196" height="48" rx="5" fill="#f8f9fa"/>
+  <rect x="150" y="172" width="1196" height="30" rx="5" fill="#f8f9fa"/>
+  <rect x="150" y="214" width="1196" height="30" rx="5" fill="#f8f9fa"/>
+  <rect x="150" y="258" width="1196" height="34" rx="5" fill="#f8f9fa"/>
+
+  <!-- lane labels -->
+  <text x="22" y="142" font-size="13.5" font-weight="bold" fill="#343a40">默认流(计算)</text>
+  <text x="22" y="190" font-size="13" fill="#495057">all_gather 流</text>
+  <text x="22" y="232" font-size="13" fill="#495057">reduce_scatter 流</text>
+  <text x="22" y="276" font-size="13" fill="#495057">all_reduce 流</text>
+  <text x="22" y="290" font-size="11" fill="#868e96">(跨节点·慢)</text>
+
+  <!-- ===== compute lane (blocks y120 h40) ===== -->
+  <rect x="160" y="120" width="190" height="40" rx="3" fill="#4caf82"/><text x="255" y="145" font-size="14" text-anchor="middle" fill="#fff">Bm(N)</text>
+  <rect x="350" y="120" width="16" height="40" rx="2" fill="#adb5bd"/>
+  <rect x="366" y="120" width="190" height="40" rx="3" fill="#4caf82"/><text x="461" y="145" font-size="14" text-anchor="middle" fill="#fff">Bm(N-1)</text>
+  <rect x="556" y="120" width="16" height="40" rx="2" fill="#adb5bd"/>
+  <rect x="572" y="120" width="190" height="40" rx="3" fill="#4caf82"/><text x="667" y="145" font-size="14" text-anchor="middle" fill="#fff">Bm(N-2)</text>
+  <rect x="762" y="120" width="16" height="40" rx="2" fill="#adb5bd"/>
+  <rect x="778" y="120" width="90" height="40" rx="3" fill="#4caf82"/><text x="823" y="145" font-size="12" text-anchor="middle" fill="#fff">Bm(N-3)</text>
+  <text x="880" y="145" font-size="16" fill="#868e96">…</text>
+
+  <!-- ===== all_gather lane (blocks y178 h26) ===== -->
+  <rect x="200" y="178" width="70" height="26" rx="3" fill="#5b8def"/><text x="235" y="196" font-size="11.5" text-anchor="middle" fill="#fff">reAG(N-1)</text>
+  <rect x="406" y="178" width="70" height="26" rx="3" fill="#5b8def"/><text x="441" y="196" font-size="11.5" text-anchor="middle" fill="#fff">reAG(N-2)</text>
+  <rect x="612" y="178" width="70" height="26" rx="3" fill="#5b8def"/><text x="647" y="196" font-size="11.5" text-anchor="middle" fill="#fff">reAG(N-3)</text>
+  <rect x="790" y="178" width="64" height="26" rx="3" fill="#5b8def"/><text x="822" y="196" font-size="10.5" text-anchor="middle" fill="#fff">reAG(N-4)</text>
+
+  <!-- ===== reduce_scatter lane (blocks y220 h26) ===== -->
+  <rect x="366" y="220" width="70" height="26" rx="3" fill="#15aabf"/><text x="401" y="238" font-size="12" text-anchor="middle" fill="#fff">RS(N)</text>
+  <rect x="572" y="220" width="70" height="26" rx="3" fill="#15aabf"/><text x="607" y="238" font-size="12" text-anchor="middle" fill="#fff">RS(N-1)</text>
+  <rect x="778" y="220" width="70" height="26" rx="3" fill="#15aabf"/><text x="813" y="238" font-size="12" text-anchor="middle" fill="#fff">RS(N-2)</text>
+
+  <!-- ===== all_reduce lane (blocks y264 h30) long bars ===== -->
+  <rect x="436" y="264" width="200" height="30" rx="3" fill="#f76707"/><text x="536" y="284" font-size="12.5" text-anchor="middle" fill="#fff">AR(N)</text>
+  <rect x="642" y="264" width="200" height="30" rx="3" fill="#f76707"/><text x="742" y="284" font-size="12.5" text-anchor="middle" fill="#fff">AR(N-1)</text>
+  <rect x="848" y="264" width="200" height="30" rx="3" fill="#f76707"/><text x="948" y="284" font-size="12.5" text-anchor="middle" fill="#fff">AR(N-2)</text>
+
+  <!-- ===== gating arrows ===== -->
+  <!-- (3) ci(N)->RS(N) -->
+  <path d="M366,160 L366,220" fill="none" stroke="#868e96" stroke-width="1.3" stroke-dasharray="3 3" marker-end="url(#aGry)"/>
+  <text x="332" y="214" font-size="12.5" font-weight="bold" fill="#868e96">③</text>
+  <!-- (1) RS(N)->AR(N) serial -->
+  <path d="M436,246 L436,264" fill="none" stroke="#e03131" stroke-width="2" marker-end="url(#aRed)"/>
+  <text x="442" y="260" font-size="12.5" font-weight="bold" fill="#e03131">①</text>
+  <!-- (2) RS(N)->ci(N-1) buffer-reuse gate -->
+  <path d="M436,222 C474,192 512,168 552,160" fill="none" stroke="#f08c00" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#aOrg)"/>
+  <text x="486" y="182" font-size="12.5" font-weight="bold" fill="#f08c00">②</text>
+
+  <!-- ===== concurrency window: AR(N) || RS(N-1) ===== -->
+  <rect x="566" y="212" width="82" height="86" rx="4" fill="none" stroke="#2f9e44" stroke-width="1.8" stroke-dasharray="6 4"/>
+  <text x="607" y="208" font-size="12.5" text-anchor="middle" font-weight="bold" fill="#2f9e44">AR(N) ∥ RS(N-1)</text>
+
+  <!-- bracket under AR(N) -->
+  <path d="M436,300 L436,308 L636,308 L636,300" fill="none" stroke="#2f9e44" stroke-width="1.5"/>
+  <text x="448" y="324" font-size="12.5" fill="#2f9e44">AR(N) 全程藏在 compute(N-1) -> RS(N-1) -> compute(N-2) 之下(不同流·不同 reduce_output)</text>
+
+  <!-- ===== exposed tail ===== -->
+  <line x1="1062" y1="108" x2="1062" y2="298" stroke="#ced4da" stroke-width="1.4" stroke-dasharray="5 4"/>
+  <text x="1070" y="102" font-size="12" fill="#868e96">中间层略 … backward 末尾(末组 = embedding)</text>
+  <rect x="1072" y="120" width="110" height="40" rx="3" fill="url(#hatch)" stroke="#ffa8a8"/><text x="1127" y="145" font-size="11.5" text-anchor="middle" fill="#c92a2a">计算已结束</text>
+  <rect x="1072" y="220" width="64" height="26" rx="3" fill="#15aabf"/><text x="1104" y="238" font-size="11.5" text-anchor="middle" fill="#fff">RS₀</text>
+  <rect x="1142" y="264" width="180" height="30" rx="3" fill="#f76707"/><text x="1232" y="284" font-size="12" text-anchor="middle" fill="#fff">AR₀</text>
+  <path d="M1136,246 L1136,264" fill="none" stroke="#e03131" stroke-width="2" marker-end="url(#aRed)"/>
+  <path d="M1142,300 L1142,308 L1322,308 L1322,300" fill="none" stroke="#e03131" stroke-width="1.5"/>
+  <text x="1142" y="324" font-size="12" fill="#e03131">末组 RS+AR 暴露:无后续 Bm 可掩盖,收尾 wait_event(:313-317)</text>
+
+  <!-- ===== dependency legend ===== -->
+  <line x1="30" y1="346" x2="1330" y2="346" stroke="#dee2e6" stroke-width="1"/>
+  <text x="30" y="370" font-size="13" fill="#495057"><tspan font-weight="bold" fill="#e03131">① RS(g)->AR(g)</tspan> 同组串行(wait_stream :554,AR 读 RS 的同一 reduce_output)　<tspan font-weight="bold" fill="#f08c00">② RS(g)->ci(g+1)</tspan> 仅挡下一组 copy-in(wait_event :520,缓冲复用)　<tspan font-weight="bold" fill="#868e96">③ ci(g)->RS(g)</tspan>(wait_stream :518)</text>
+  <text x="30" y="394" font-size="13" fill="#2f9e44"><tspan font-weight="bold">绿框 = 并发</tspan>:AR(N) 与 RS(N-1) 无相互依赖,在 all_reduce / reduce_scatter 两条流(走不同网络资源)上同时进行。</text>
+
+  <!-- color legend -->
+  <rect x="30" y="412" width="20" height="14" rx="2" fill="#4caf82"/><text x="56" y="424" font-size="12.5" fill="#495057">Bm 反向计算</text>
+  <rect x="150" y="412" width="20" height="14" rx="2" fill="#5b8def"/><text x="176" y="424" font-size="12.5" fill="#495057">reAG re-all-gather</text>
+  <rect x="320" y="412" width="20" height="14" rx="2" fill="#15aabf"/><text x="346" y="424" font-size="12.5" fill="#495057">RS reduce-scatter(组内)</text>
+  <rect x="548" y="412" width="20" height="14" rx="2" fill="#f76707"/><text x="574" y="424" font-size="12.5" fill="#495057">AR all-reduce(组间)</text>
+  <rect x="742" y="412" width="20" height="14" rx="2" fill="#adb5bd"/><text x="768" y="424" font-size="12.5" fill="#495057">ci 梯度 copy-in</text>
+  <rect x="880" y="412" width="20" height="14" rx="2" fill="url(#hatch)" stroke="#ffa8a8"/><text x="906" y="424" font-size="12.5" fill="#495057">暴露/空转</text>
+  <text x="1010" y="424" font-size="12.5" fill="#495057">掩盖成立条件:单层反向计算 ≥ 单层 AR 时长</text>
+</svg>

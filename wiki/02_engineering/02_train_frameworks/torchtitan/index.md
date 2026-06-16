@@ -1,8 +1,8 @@
 # torchtitan 多维并行体系 — 知识地图
 
-> **代码基准**:torchtitan `main` @ `cf3c4312` · PyTorch `2.9.1`(FSDP2/DTensor/pipelining 内核)
-> **最后更新**:2026-06-11
-> 一套 9 篇 torchtitan 多维混合并行(DP/TP/CP/EP/PP)+ 训练机制(AC)源码级分析。以 `fully_shard` 为标杆粒度——**参数怎么切、切完怎么取回、哪些通信能掩盖、异步怎么实现**——逐维度展开。torchtitan 是薄封装,真实机制深入到 PyTorch FSDP2 / DTensor / pipelining 内核。
+> **代码基准**:torchtitan `main` @ `61c010fcb` · PyTorch `2.9.1`(FSDP2/DTensor/pipelining 内核)
+> **最后更新**:2026-06-16(新增 HSDP 反向、计算/显存优化、通信优化、SimpleFSDP 共 4 篇)
+> 一套 12 篇 torchtitan 多维混合并行(DP/TP/CP/EP/PP)+ 训练机制(AC)+ 性能手段(低精度/算子融合/编译/对称内存/Async-TP)源码级分析。以 `fully_shard` 为标杆粒度——**参数怎么切、切完怎么取回、哪些通信能掩盖、异步怎么实现**——逐维度展开。torchtitan 是薄封装,真实机制深入到 PyTorch FSDP2 / DTensor / pipelining 内核。
 
 ---
 
@@ -25,12 +25,23 @@ torchtitan 的并行体系不是"5 套独立机制",而是**一套统一的 `Dev
 | [[torchtitan_pp_analysis]] | **PP** | 模型按层切 stage、P2P send/recv、调度气泡(GPipe/1F1B/Interleaved/ZBV/DualPipeV)、Zero Bubble |
 | [[torchtitan_ep_analysis]] | **EP** | 专家权重 `Shard(0)`、token all-to-all dispatch/combine、`AsyncCollectiveTensor` 延迟 wait、DeepEP |
 
-### 深挖伴篇(2 篇,带 SVG→PNG 机制图)
+### 深挖伴篇(3 篇,带 SVG→PNG 机制图)
 
 | 页面 | 主题 | 核心机制 |
 |------|------|---------|
 | [[torchtitan_fsdp_prefetch_overlap_memory_analysis]] | **DP 深挖** | 预取/掩盖时序对照图、copy-in 三步与唯一跨流同步点 `wait_event`、flat 双缓冲(ping-pong)、完整参数 ≤2 份的代码时序证明 |
+| [[torchtitan_hsdp_backward_overlap_analysis]] | **HSDP 反向深挖** | reduce-scatter 与 all-reduce 双流掩盖、`foreach_reduce` 跨流编排、host 端算子下发顺序、AR∥RS 并发的正确性、reduce 路径 fp32 暂存与显存峰值(3 张机制图) |
 | [[torchtitan_ac_analysis]] | **AC** | `checkpoint_wrapper` 接口链路、票据机制(发票/重算绑票/兑票)、SAC 缓存回放 + attention 端到端走查、显存预估三法、横跨 autograd×dispatch 两核心 |
+
+### 性能手段与编译器路线(3 篇,2026-06-16 新增)
+
+并行之外的吞吐/显存手段,横跨所有维度:
+
+| 页面 | 主题 | 核心机制 |
+|------|------|---------|
+| [[torchtitan_compute_memory_optimizations_analysis]] | **算力/显存** | Float8(rowwise)/MXFP8 低精度 GEMM、FusedSwiGLU/MoE grouped GEMM/FusedQKV 融合算子、逐 block 编译即融合、融合 Adam、ChunkedCELoss、CPU offload。**纠正:rowwise 无 fp8 all-gather;核心循环不在 microbatch 间延迟 FSDP 规约** |
+| [[torchtitan_comm_optimizations_overlap_analysis]] | **通信** | 跨维度计算-通信掩盖矩阵、Async-TP 微流水(`symm_mem.fused_all_gather_matmul`)、对称内存、MinimalAsyncEP(**不重叠通信计算**)、full_dtensor SPMD 后端 |
+| [[torchtitan_simple_fsdp_analysis]] | **编译器 FSDP** | SimpleFSDP(graph_trainer 实验):分片表达成 DTensor `redistribute` 进图、通信由编译器 pass 分桶重叠;与 FSDP2 eager 多流编排逐项对比 |
 
 ## 六个维度速览
 
@@ -105,6 +116,7 @@ torchtitan 的并行体系不是"5 套独立机制",而是**一套统一的 `Dev
 ## Related Pages
 
 - [[torchtitan_parallel_dims_analysis]] · [[torchtitan_fsdp_analysis]] · [[torchtitan_tp_analysis]] · [[torchtitan_cp_analysis]] · [[torchtitan_pp_analysis]] · [[torchtitan_ep_analysis]]
-- [[torchtitan_fsdp_prefetch_overlap_memory_analysis]] · [[torchtitan_ac_analysis]] —— 深挖伴篇(FSDP 预取/掩盖/显存、激活重计算)
+- [[torchtitan_fsdp_prefetch_overlap_memory_analysis]] · [[torchtitan_hsdp_backward_overlap_analysis]] · [[torchtitan_ac_analysis]] —— 深挖伴篇(FSDP 预取/掩盖/显存、HSDP 反向、激活重计算)
+- [[torchtitan_compute_memory_optimizations_analysis]] · [[torchtitan_comm_optimizations_overlap_analysis]] · [[torchtitan_simple_fsdp_analysis]] —— 性能手段与编译器路线(低精度/融合/编译、对称内存/Async-TP、SimpleFSDP)
 - [[megatron-lm/index]] —— Megatron-LM 知识地图(姊妹训练框架)
 - [[02_engineering/02_train_frameworks/index]] —— 训练框架目录索引
