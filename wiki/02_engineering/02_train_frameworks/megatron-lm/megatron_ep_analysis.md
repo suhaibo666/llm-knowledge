@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心目录:`megatron/core/transformer/moe/`(`moe_layer.py` 855 行、`token_dispatcher.py` 1624 行、`router.py`、`experts.py`)
-> 配套阅读:`pp_schedulers_analysis.md`(EP A2A 重叠 = 该文档的调度器⑤ combined-1F1B)
+> 配套阅读:`megatron_pp_schedulers_analysis.md`(EP A2A 重叠 = 该文档的调度器⑤ combined-1F1B)
 > 适用读者:已了解 transformer 训练与 TP/DP/PP,想吃透 Megatron MoE 专家并行实现的工程师。
 
 ---
@@ -342,6 +342,40 @@ combine:               All-to-All(EP 域)反向 ◄─────────�
 对照:AllGather 是"每 rank 收全量 16 token";AllToAll 是"每 rank 只收路由到本地 2 专家的 token"。
 ```
 
+#### ②.3.1 具体数字走查(EP=4, num_experts=4, topk=2)
+
+> 本节为零冗余 AllToAll 的逐 token 数值走查(原独立页 `Megatron-LM_MoE_Zero_Redundancy_Analysis` 已并入本页)。设 4 卡各持 1 专家(R0→E0 … R3→E3),8 个 token,topk=2。
+
+**① Router 输出 `routing_map`(`[8,4]`,行=token、列=专家、1=选中)**
+
+```
+       E0 E1 E2 E3            选中
+T0      1  0  1  0   → E0,E2
+T1      0  1  0  1   → E1,E3
+T2      1  0  0  1   → E0,E3
+T3      0  1  1  0   → E1,E2
+T4      0  0  1  1   → E2,E3
+T5      1  1  0  0   → E0,E1
+T6      0  1  1  0   → E1,E2
+T7      1  0  0  1   → E0,E3
+```
+
+**② 置换1 + `input_splits`/`output_splits`**:每 rank 按"目标专家所在 rank"分桶,本例每桶恰好 4 token,故 `input_splits = output_splits = [4,4,4,4]`(变长时各不等,见 §②.1)。
+
+**③ Token Dispatch(All-to-All)**:每个 token 仅复制 `k` 份投向其 `k` 个目标 rank,**无全量广播**——这正是"零冗余":R0 只收路由到 E0 的 token `[T0,T2,T5,T7]`、R1 收 E1 的 `[T1,T3,T5,T6]`、R2 收 E2 的 `[T0,T3,T4,T6]`、R3 收 E3 的 `[T1,T2,T4,T7]`。
+
+**④ 本地专家计算**:`Rank_i: E_i(收到的 token) → out_i`。专家参数只存在 1 张卡 → 专家显存 `= 总专家参数 / EP`(§②.4)。
+
+**⑤ Combine(反向 All-to-All)+ 置换1还原 + 加权**:专家输出按 token 来源送回原 rank,`output_splits`/`input_splits` 互换(见 §②.2 阶段⑤),按 router 概率加权组合:
+
+```
+T0 = prob(E0)·out0[T0] + prob(E2)·out2[T0]
+T2 = prob(E0)·out0[T2] + prob(E3)·out3[T2]
+…（每 token 由其 topk 个专家的输出加权求和）
+```
+
+> 一句话:**token 按专家归属"精确投递",参数零复制、激活零广播**——通信量 `∝ topk`、显存 `÷ EP`,与 AllGather 的"收全量"形成对比(§②.4 / [[megatron_moe_training_optimization_report]] §2.4.1 给出精确公式 `2·S·B·H·K·(E-1)/E²`)。
+
 ### ②.4 开销分析
 
 | 维度 | AllToAll Dispatcher |
@@ -513,7 +547,7 @@ dispatch/combine 的 A2A **默认在关键路径上**:计算流必须等 token �
 
 ### 5.1 EP A2A Overlap(combined-1F1B)
 
-**这正是 `pp_schedulers_analysis.md` 里的调度器⑤。** 一句话回顾:把 microbatch `i+1` 的前向与 microbatch `i` 的反向**在层粒度配对**,用一个的计算掩盖另一个的 A2A —— 前向 dispatch/combine 的 A2A 藏进反向 attention/MLP 计算里,反之亦然。
+**这正是 `megatron_pp_schedulers_analysis.md` 里的调度器⑤。** 一句话回顾:把 microbatch `i+1` 的前向与 microbatch `i` 的反向**在层粒度配对**,用一个的计算掩盖另一个的 A2A —— 前向 dispatch/combine 的 A2A 藏进反向 attention/MLP 计算里,反之亦然。
 
 - 开关:`--overlap-moe-expert-parallel-comm --delay-wgrad-compute`。
 - 双 CUDA 流:`comm_stream` 跑 dispatch/combine A2A,`comp_stream` 跑 attn/mlp。
@@ -623,10 +657,10 @@ dispatch/combine 的 A2A **默认在关键路径上**:计算流必须等 token �
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准,后续版本可能漂移。配套文档:`pp_schedulers_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准,后续版本可能漂移。配套文档:`megatron_pp_schedulers_analysis.md`。*
 
 ## Related Pages
 
-- [[pp_schedulers_analysis]] · [[model_structure_analysis]] · [[parallelism_orchestration_analysis]] · [[precision_cudagraph_fusion_analysis]]
-- [[Megatron-LM_MoE_Zero_Redundancy_Analysis]] · [[moe_training_optimization_report]] · [[megatron_comm_overlap_analysis]] · [[cp_analysis]]
+- [[megatron_pp_schedulers_analysis]] · [[megatron_model_structure_analysis]] · [[megatron_parallelism_orchestration_analysis]] · [[megatron_precision_cudagraph_fusion_analysis]]
+- [[megatron_ep_analysis]] · [[megatron_moe_training_optimization_report]] · [[megatron_comm_overlap_analysis]] · [[megatron_cp_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

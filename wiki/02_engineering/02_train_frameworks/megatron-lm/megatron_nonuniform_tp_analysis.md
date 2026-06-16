@@ -204,4 +204,4 @@ NTP 是一个**梯度级 DDP shim**，在 DDP 梯度同步的前后插入两次 
 - [[megatron_distributed_optimizer_analysis]] — 分布式优化器分析（NTP 对其无感知）
 - [[megatron_memory_optimization_analysis]] — 显存优化全景（NTP side_grad 的额外显存开销）
 - [[deepseek_v4_tensor_parallel_analysis]] — DSv4 TP 分析（TP=1 的架构选择 vs NTP 的 TP 容错）
-- [[llm_parallelism_analysis]] — LLM 并行计算依赖分析
+- [[megatron_pp_schedulers_analysis]] — LLM 并行计算依赖分析

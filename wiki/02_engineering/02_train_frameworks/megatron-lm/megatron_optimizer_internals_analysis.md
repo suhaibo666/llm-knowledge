@@ -2,8 +2,8 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/optimizer/optimizer.py`(1516 行)、`grad_scaler.py`、`clip_grads.py`、`optimizer/__init__.py`、`optimizer_param_scheduler.py`
-> 配套阅读:`ddp_optimizer_analysis.md`(分布式优化器 / ZeRO 那一层)
-> 定位:"第二层补遗"第②份。`ddp_optimizer_analysis.md` 讲的是"优化器状态怎么沿 DP 切分(ZeRO)";本文讲**单个优化器实例内部**怎么运作 —— 混合精度、loss scaling、梯度裁剪、LR 调度。
+> 配套阅读:`megatron_ddp_optimizer_analysis.md`(分布式优化器 / ZeRO 那一层)
+> 定位:"第二层补遗"第②份。`megatron_ddp_optimizer_analysis.md` 讲的是"优化器状态怎么沿 DP 切分(ZeRO)";本文讲**单个优化器实例内部**怎么运作 —— 混合精度、loss scaling、梯度裁剪、LR 调度。
 
 ---
 
@@ -13,7 +13,7 @@
 
 它要解决的不只是"调 Adam":bf16/fp16 训练有**数值精度**问题(梯度下溢、累加误差),需要 fp32 master 副本 + loss scaling;还要做**梯度裁剪**稳定训练、**LR/WD 调度**。这些都封装在 Megatron 的优化器类里。
 
-`ddp_optimizer_analysis.md` 的 `DistributedOptimizer`(ZeRO-1)是本文 `MixedPrecisionOptimizer` 的**子类** —— 分布式分片是"在哪算",本文是"算什么"。
+`megatron_ddp_optimizer_analysis.md` 的 `DistributedOptimizer`(ZeRO-1)是本文 `MixedPrecisionOptimizer` 的**子类** —— 分布式分片是"在哪算",本文是"算什么"。
 
 ---
 
@@ -26,7 +26,7 @@ MegatronOptimizer (ABC, :100)              抽象基类:clip_grad_norm / get_los
    │
    ├── MixedPrecisionOptimizer (:465)      混合精度:fp32 master 副本 + grad scaler
    │      ├── Float16OptimizerWithFloat16Params (:654)   fp16/bf16 模型参数的具体实现
-   │      └── DistributedOptimizer          ← ZeRO-1,见 ddp_optimizer_analysis.md
+   │      └── DistributedOptimizer          ← ZeRO-1,见 megatron_ddp_optimizer_analysis.md
    │
    ├── FP32Optimizer (:918)                纯 fp32,无 scaling、无 master 副本
    │
@@ -68,7 +68,7 @@ MegatronOptimizer (ABC, :100)              抽象基类:clip_grad_norm / get_los
 
 ### 2.2 这就是"18 bytes/param"的来源
 
-`MixedPrecisionOptimizer` 持有的东西,正是 `ddp_optimizer_analysis.md` ZeRO 显存表里的 `18Ψ`:
+`MixedPrecisionOptimizer` 持有的东西,正是 `megatron_ddp_optimizer_analysis.md` ZeRO 显存表里的 `18Ψ`:
 
 | 张量 | 精度 | bytes/param | 谁持有 |
 |------|------|-------------|--------|
@@ -81,7 +81,7 @@ MegatronOptimizer (ABC, :100)              抽象基类:clip_grad_norm / get_los
 
 > 梯度为 **fp32(4 字节)** 而非 bf16(2 字节):bf16 尾数仅 7 位,跨 microbatch 累加会丢精度,Megatron 对 bf16 训练强制 fp32 梯度累积(`arguments.py:1296-1310`)。仅 `--grad-reduce-in-bf16` 时梯度为 2 字节、合计 16。
 
-`ddp_optimizer_analysis.md` 说 ZeRO-1 把"优化器状态 `12Ψ`"切成 `1/dp` —— 切的就是这里的 master + m + v。
+`megatron_ddp_optimizer_analysis.md` 说 ZeRO-1 把"优化器状态 `12Ψ`"切成 `1/dp` —— 切的就是这里的 master + m + v。
 
 `FP32Optimizer` 则相反:模型本身就是 fp32,无需 master 副本、无需 scaler。
 
@@ -193,7 +193,7 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 | **CPU offload** | `optimizer/cpu_offloading/`(`HybridDeviceOptimizer`) | 把优化器状态与 step 计算放 CPU,`--optimizer-cpu-offload`,GPU 显存极紧时用 |
 | emerging optimizers | `optimizer/emerging_optimizers.py` | 其他较新优化器 |
 
-`HybridDeviceOptimizer` 名字里的 "Hybrid":一部分参数的优化器状态/更新在 GPU、一部分在 CPU,按显存压力混合 —— 用 PCIe 带宽 + CPU 算力换 GPU 显存(类比激活 offload 的思路,见 `recompute_analysis.md` §0.2)。
+`HybridDeviceOptimizer` 名字里的 "Hybrid":一部分参数的优化器状态/更新在 GPU、一部分在 CPU,按显存压力混合 —— 用 PCIe 带宽 + CPU 算力换 GPU 显存(类比激活 offload 的思路,见 `megatron_recompute_analysis.md` §0.2)。
 
 > [!deprecated] 2026-06-16:**Muon 的真正实现不在 `optimizer/muon.py`**。`muon.py` 已是一个 28 行的 *backward-compatible shim*(`get_megatron_muon_optimizer` 仅转调 `get_megatron_optimizer`,且 `dist_muon` 已弃用)。Muon / AdaptiveMuon 的实际实现是 `emerging_optimizers.py` 里的 `TensorParallelMuon` / `TensorParallelAdaptiveMuon`,经 `_EMERGING_OPTIMIZERS` 注册表(`emerging_optimizers.py:429`)接入,并依赖外部包 `emerging-optimizers`。注:此 shim 在 `ee3f1ff` 已存在,原表项的文件归属一直是错的。
 
@@ -214,7 +214,7 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 - **Loss scaling**:把小梯度抬出 fp16 下溢区;`DynamicGradScaler` 自适应"尽量大又不溢出"。
 - **梯度裁剪**:全局范数裁剪,范数需跨 TP×PP all-reduce。
 - **LR/WD 调度**:warmup + decay(cosine / WSD …),`OptimizerParamScheduler` 每步更新。
-- 与 `ddp_optimizer_analysis.md` 的关系:那份讲"优化器状态怎么沿 DP 分片(ZeRO)",本文讲"单个优化器实例内部算什么"。
+- 与 `megatron_ddp_optimizer_analysis.md` 的关系:那份讲"优化器状态怎么沿 DP 分片(ZeRO)",本文讲"单个优化器实例内部算什么"。
 
 ---
 
@@ -222,6 +222,6 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 
 ## Related Pages
 
-- [[ddp_optimizer_analysis]] · [[precision_cudagraph_fusion_analysis]]
+- [[megatron_ddp_optimizer_analysis]] · [[megatron_precision_cudagraph_fusion_analysis]]
 - [[megatron_distributed_optimizer_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

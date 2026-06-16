@@ -213,7 +213,7 @@ shard_main_param.decoupled_grad = shard_model_grad
 > [!update] 2026-06-16 · dev@232c478d4 — 精度/MXFP8 相关行号与门控
 > - **行号漂移**(§3.3):解耦梯度赋值 `shard_main_param.decoupled_grad = shard_model_grad` 现在 `distrib_optimizer.py:2728`(原 `:2568`);`shard_main_param.grad = shard_model_grad.float()` 现 `:2730`(原 `:2570`)。语义未变。
 > - **MXFP8 共享 buffer 的 all-gather 后处理被抽函数**(#4771,`distributed_data_parallel.py:492` `_start_bucket_group_param_sync`):原内联在 `start_param_sync` 里的"把 all-gather 出的 MXFP8 参数从共享 buffer 拷回 `param.data` 并清零 buffer 供梯度累加"逻辑被抽成单 bucket-group 方法,便于 LayerWise+DistOpt 链式各自只同步自己的 bucket。
-> - **ChainedOptimizer 的 MXFP8 defer-sync 改为探测 DDP config**(#4982,`optimizer.py:1456`):`_should_defer_mxfp8_param_sync` 不再信 `OptimizerConfig.overlap_param_gather`,而是逐个探测子 `DistributedOptimizer.ddp_config.overlap_param_gather`(详见 [[optimizer_internals_analysis]] §1.1 的 2026-06-16 更新)。
+> - **ChainedOptimizer 的 MXFP8 defer-sync 改为探测 DDP config**(#4982,`optimizer.py:1456`):`_should_defer_mxfp8_param_sync` 不再信 `OptimizerConfig.overlap_param_gather`,而是逐个探测子 `DistributedOptimizer.ddp_config.overlap_param_gather`(详见 [[megatron_optimizer_internals_analysis]] §1.1 的 2026-06-16 更新)。
 
 ### 3.5 完整训练迭代流程
 
@@ -270,7 +270,7 @@ Forward（参数 All-Gather 可与计算 overlap）
 - [[Megatron-LM_Distributed_Parallel_Exam]]
 - [[megatron_memory_optimization_analysis]]
 - [[low_precision_training_analysis]]
-- [[Megatron-LM_MoE_Zero_Redundancy_Analysis]]
+- [[megatron_ep_analysis]]
 - [[../distributed_optimizer_deep_dive|distributed_optimizer_deep_dive]] — FSDP2/ZeRO/MindSpeed 三方对比, 梯度累积通信量分析, Adam vs Muon
 
 ---
@@ -338,10 +338,10 @@ outer_dp_sharding_strategy="no_shard"                 # 组间无分片（复制
 组内做 ZeRO-3 全分片，组间做 AllReduce 去重。
 
 > [!update] 2026-06-16 · dev@232c478d4 — Megatron-FSDP 内部一组修复(FSDP-internal)
-> **① `no_shard`(ZeRO-0)收敛性修复**(#3835/#3754,`megatron_fsdp.py:1234`、`optimizer/__init__.py:1060`):`no_shard` 下参数本就在各 DP rank 复制,故 ① `start_param_sync` 对 `no_shard` 直接 return(无需 all-gather);② 梯度统计/范数只能在 **TP/PP(model_parallel_group)** 上规约,**不能**再在 DP 维度规约(梯度已是 all-reduce 后的复制值,再 reduce 会**虚高 grad norm 致不收敛**)—— 通过 `effective_intra_dist_opt_group = mp_group if no_shard else intra_dist_opt_group` 实现。另禁止 `no_shard` 配 meta-device 初始化。详见 [[ddp_optimizer_analysis]] 阶段① 的 2026-06-16 更新。
+> **① `no_shard`(ZeRO-0)收敛性修复**(#3835/#3754,`megatron_fsdp.py:1234`、`optimizer/__init__.py:1060`):`no_shard` 下参数本就在各 DP rank 复制,故 ① `start_param_sync` 对 `no_shard` 直接 return(无需 all-gather);② 梯度统计/范数只能在 **TP/PP(model_parallel_group)** 上规约,**不能**再在 DP 维度规约(梯度已是 all-reduce 后的复制值,再 reduce 会**虚高 grad norm 致不收敛**)—— 通过 `effective_intra_dist_opt_group = mp_group if no_shard else intra_dist_opt_group` 实现。另禁止 `no_shard` 配 meta-device 初始化。详见 [[megatron_ddp_optimizer_analysis]] 阶段① 的 2026-06-16 更新。
 > **② grouped expert 权重减少 padding**(#5013,`fsdp/.../param_and_grad_buffer.py:1404`):当 ≥3D 的 grouped-expert 张量与异构 chunk-size-factor 混在同一 bucket 时,LCM 对齐会**放大 padding**;修复把这类 grouped-expert 张量拆到独立 bucket,避免 LCM 膨胀。利好大规模 MoE(见 §A.5)。
 > **③ 跨 AllGatherPipeline reset 保留非-FSDP-unit bucket**(#4717,`fsdp/.../param_and_grad_buffer.py`):pipeline reset 时不再误清非 FSDP-unit 的 bucket。
-> **④ A2A Overlap**(#3797):把 MoE 的 All-to-All dispatch/combine 与 FSDP 的参数 all-gather / 梯度 reduce-scatter 重叠,详见 [[ddp_optimizer_analysis]] 阶段④ 与 [[megatron_comm_overlap_analysis]]。
+> **④ A2A Overlap**(#3797):把 MoE 的 All-to-All dispatch/combine 与 FSDP 的参数 all-gather / 梯度 reduce-scatter 重叠,详见 [[megatron_ddp_optimizer_analysis]] 阶段④ 与 [[megatron_comm_overlap_analysis]]。
 
 ### A.3 TorchFullyShardedDataParallel 详细分析 (`torch_fully_sharded_data_parallel.py`)
 

@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/tensor_parallel/layers.py`(1392 行)、`mappings.py`(617 行)
-> 配套阅读:`pp_schedulers_analysis.md`、`ep_analysis.md`
+> 配套阅读:`megatron_pp_schedulers_analysis.md`、`megatron_ep_analysis.md`
 > 适用读者:已了解 transformer 训练与 DP/PP,想吃透 Megatron 张量并行实现的工程师。
 
 ---
@@ -296,7 +296,7 @@ TP 不像 PP 有流水线气泡。它的低效来自:**每层 4 次通信的延�
 | 单层能放进单卡 | ❌ 不用 | TP 引入高频关键路径通信,纯亏;用 DP |
 | 单层放不下 / 想降单层延迟 | ✅ 用 TP | 唯一能在层内并行的手段 |
 | 跨机扩展 | ❌ TP 不跨机 | 通信扛不住 IB;改用 PP 跨机 |
-| MoE 专家层 | ⚠️ 优先 EP | 细粒度专家被 TP 切碎,GEMM 效率低(见 `ep_analysis.md`) |
+| MoE 专家层 | ⚠️ 优先 EP | 细粒度专家被 TP 切碎,GEMM 效率低(见 `megatron_ep_analysis.md`) |
 
 **经验法则(见 MoE README Guidelines)**:
 - `TP × (EP) ≤ 单机卡数`,吃满 NVLink。
@@ -314,10 +314,10 @@ TP 不像 PP 有流水线气泡。它的低效来自:**每层 4 次通信的延�
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`pp_schedulers_analysis.md`、`ep_analysis.md`、`cp_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`megatron_pp_schedulers_analysis.md`、`megatron_ep_analysis.md`、`megatron_cp_analysis.md`。*
 
 ## Related Pages
 
-- [[pp_schedulers_analysis]] · [[ep_analysis]] · [[cp_analysis]] · [[ddp_optimizer_analysis]] · [[parallelism_orchestration_analysis]]
+- [[megatron_pp_schedulers_analysis]] · [[megatron_ep_analysis]] · [[megatron_cp_analysis]] · [[megatron_ddp_optimizer_analysis]] · [[megatron_parallelism_orchestration_analysis]]
 - [[megatron_nonuniform_tp_analysis]] · [[megatron_comm_overlap_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

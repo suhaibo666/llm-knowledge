@@ -2,8 +2,8 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/pipeline_parallel/` 下的 `p2p_communication.py`、`fine_grained_activation_offload.py`、`hybrid_cp_schedule.py`、`bridge_communicator.py`、`multimodule_communicator.py`
-> 配套阅读:`pp_schedulers_analysis.md`(主文档)、`parallelism_orchestration_analysis.md`
-> 定位:`pp_schedulers_analysis.md` 只讲了 `schedules.py` 的 5 个调度器,把 `pipeline_parallel/` 目录其余 4 块跳过了。本文补齐。
+> 配套阅读:`megatron_pp_schedulers_analysis.md`(主文档)、`megatron_parallelism_orchestration_analysis.md`
+> 定位:`megatron_pp_schedulers_analysis.md` 只讲了 `schedules.py` 的 5 个调度器,把 `pipeline_parallel/` 目录其余 4 块跳过了。本文补齐。
 
 ---
 
@@ -24,7 +24,7 @@
 
 ### 1.1 动机
 
-`pp_schedulers_analysis.md` 里调度器②③④反复用 `recv_forward` / `send_forward_recv_backward` / `send_forward_backward_recv_forward_backward` 等,它们都封装在 `P2PCommunicator`(`p2p_communication.py:140`)里。但底层的"一次 P2P 到底怎么发"有两条路径,且**直接决定调度器④ `overlap_p2p_comm` 能不能开** —— 这是主文档没讲的。
+`megatron_pp_schedulers_analysis.md` 里调度器②③④反复用 `recv_forward` / `send_forward_recv_backward` / `send_forward_backward_recv_forward_backward` 等,它们都封装在 `P2PCommunicator`(`p2p_communication.py:140`)里。但底层的"一次 P2P 到底怎么发"有两条路径,且**直接决定调度器④ `overlap_p2p_comm` 能不能开** —— 这是主文档没讲的。
 
 ### 1.2 两种 P2P 实现
 
@@ -114,7 +114,7 @@ variable_seq_lengths → 每次 P2P 前多一轮 _communicate_shapes
 
 ### 3.1 动机与解决的问题
 
-`cp_analysis.md` 讲的是**固定 CP 度**:所有样本一律切 `cp` 份。但**变长序列训练**(SFT、文档级语料、多分辨率多模态)里样本长度差异巨大 —— 对所有样本用同一个 CP 不合理:短样本用大 CP 是浪费,长样本用小 CP 又放不下、且 attention 的 `O(S²)` 负载在 DP×CP 组间严重不均。
+`megatron_cp_analysis.md` 讲的是**固定 CP 度**:所有样本一律切 `cp` 份。但**变长序列训练**(SFT、文档级语料、多分辨率多模态)里样本长度差异巨大 —— 对所有样本用同一个 CP 不合理:短样本用大 CP 是浪费,长样本用小 CP 又放不下、且 attention 的 `O(S²)` 负载在 DP×CP 组间严重不均。
 
 `hybrid_cp_schedule.py` 的动机:**按样本长度动态决定它的 CP 度,并把样本打包成各 DP×CP 组工作量均衡的批**。
 
@@ -139,14 +139,14 @@ def get_total_workload(self, seq_length, cp_size):
 
 | 并行轴 | 负载不均衡的来源 | 均衡手段 |
 |--------|----------------|---------|
-| PP | microbatch 填充/排空 | VPP(`pp_schedulers_analysis.md` 调度器③) |
-| CP | 因果掩码 | zigzag 切分(`cp_analysis.md` §2.2) |
+| PP | microbatch 填充/排空 | VPP(`megatron_pp_schedulers_analysis.md` 调度器③) |
+| CP | 因果掩码 | zigzag 切分(`megatron_cp_analysis.md` §2.2) |
 | **CP(变长)** | **样本长度差异** | **本文:动态 CP 度 + 工作量均衡分桶** |
-| EP | 路由不均 | aux_loss / 容量因子(`ep_analysis.md` §4) |
+| EP | 路由不均 | aux_loss / 容量因子(`megatron_ep_analysis.md` §4) |
 
 适用:变长序列训练 —— SFT、长文档预训练、多分辨率多模态。固定长度的标准预训练用不到。
 
-> 本节的 `BalancedCPScheduler` 是动态 CP 均衡逻辑的**类形态**;它与序列打包在 `data_schedule.py` 里被统一成一条流水线(`DefaultDynamicCPScheduler` 是打包调度器的子类),完整分析见 `packed_dataset_dynamic_cp_analysis.md`。
+> 本节的 `BalancedCPScheduler` 是动态 CP 均衡逻辑的**类形态**;它与序列打包在 `data_schedule.py` 里被统一成一条流水线(`DefaultDynamicCPScheduler` 是打包调度器的子类),完整分析见 `megatron_packed_dataset_dynamic_cp_analysis.md`。
 
 ---
 
@@ -156,11 +156,11 @@ def get_total_workload(self, seq_length, cp_size):
 
 标准 `P2PCommunicator`(§1)假设:上下游 PP stage 在**同一个并行网格**里、TP/DP/CP 都一样,激活张量形状对得上。
 
-但**多模态模型**不是这样:视觉编码器、LLM 主干、生成头是**不同的子模型**,各自可能用**完全不同的并行配置**(编码器 TP=2/PP=1,LLM TP=8/PP=4……),甚至输出张量维数都不同(视觉编码器常出 2D `[b*s,h]`,LLM 要 3D `[s,b,h]`)。标准 P2P 接不上。`pp_schedulers_analysis.md` 里 `schedules.py` 的 `is_multimodule` 分支、`backward_step_multimodule` 就是为它们留的钩子。
+但**多模态模型**不是这样:视觉编码器、LLM 主干、生成头是**不同的子模型**,各自可能用**完全不同的并行配置**(编码器 TP=2/PP=1,LLM TP=8/PP=4……),甚至输出张量维数都不同(视觉编码器常出 2D `[b*s,h]`,LLM 要 3D `[s,b,h]`)。标准 P2P 接不上。`megatron_pp_schedulers_analysis.md` 里 `schedules.py` 的 `is_multimodule` 分支、`backward_step_multimodule` 就是为它们留的钩子。
 
 ### 4.2 `BridgeCommunicator` —— 连接两个并行网格
 
-`bridge_communicator.py:39`。连接一对 `HyperCommGrid`(源网格 → 目标网格,见 `parallelism_orchestration_analysis.md` §4③):
+`bridge_communicator.py:39`。连接一对 `HyperCommGrid`(源网格 → 目标网格,见 `megatron_parallelism_orchestration_analysis.md` §4③):
 
 - 接收 `src_grid` / `dest_grid` 两个网格,二者并行度可不同。
 - `build_comm_map`(`:268`):算出"源网格哪些 rank 该把张量发给目标网格哪些 rank"。当两侧 batch/并行度不同,需要 **fan-in / fan-out**(按 batch 维 split 或 broadcast)—— 用缓存的 broadcast 进程组(`_broadcast_pg_cache`)实现。
@@ -178,7 +178,7 @@ def get_total_workload(self, seq_length, cp_size):
 >
 > 行号漂移:上文 §4.2 提到的 `build_comm_map` 因本 PR 在其上方插入了 `_get_or_create_bridge_pg` 等代码,已从 `:268` 下移到 `bridge_communicator.py:290`。
 >
-> 配套:`BridgeCommunicator` 连接的 `HyperCommGrid` 本身也在 #5148 获得了 named views(同一段 rank 挂多套命名分解),为异构子模型提供几何基础 —— 详见 [[parallelism_orchestration_analysis]] §4③ 的 2026-06-16 更新。
+> 配套:`BridgeCommunicator` 连接的 `HyperCommGrid` 本身也在 #5148 获得了 named views(同一段 rank 挂多套命名分解),为异构子模型提供几何基础 —— 详见 [[megatron_parallelism_orchestration_analysis]] §4③ 的 2026-06-16 更新。
 
 ### 4.3 `MultiModulePipelineCommunicator` —— 编排模块 DAG
 
@@ -217,7 +217,7 @@ VLM、音频-语言、encoder-decoder 等多模态/异构模型 —— 各子模
 | **混合 CP 调度** | 变长序列训练(SFT/长文档/多分辨率)→ 按样本长度动态分 CP、均衡 DP×CP 负载 |
 | **多模块 PP** | 多模态/异构模型,子模型并行度各异 → `BridgeCommunicator` 连网格,`MultiModulePipelineCommunicator` 编排 DAG |
 
-这 4 块都是 `pp_schedulers_analysis.md` 五调度器之外的"周边设施":通信底座、省显存手段、变长数据支持、多模型支持。
+这 4 块都是 `megatron_pp_schedulers_analysis.md` 五调度器之外的"周边设施":通信底座、省显存手段、变长数据支持、多模型支持。
 
 ---
 
@@ -225,5 +225,5 @@ VLM、音频-语言、encoder-decoder 等多模态/异构模型 —— 各子模
 
 ## Related Pages
 
-- [[pp_schedulers_analysis]] · [[parallelism_orchestration_analysis]] · [[packed_dataset_dynamic_cp_analysis]] · [[recompute_analysis]]
+- [[megatron_pp_schedulers_analysis]] · [[megatron_parallelism_orchestration_analysis]] · [[megatron_packed_dataset_dynamic_cp_analysis]] · [[megatron_recompute_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

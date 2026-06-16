@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/fp8_utils.py`、`fp4_utils.py`、`enums.py`、`transformer/cuda_graphs.py`、`full_cuda_graph.py`、`fusions/`、`num_microbatches_calculator.py`
-> 配套阅读:五份并行文档 + `recompute_analysis.md` + `optimizer_internals_analysis.md`
+> 配套阅读:五份并行文档 + `megatron_recompute_analysis.md` + `megatron_optimizer_internals_analysis.md`
 > 定位:"第二层补遗"第③份。这三块是与并行轴正交的**性能基建** —— 不改变并行策略,而是在精度、内核调度、内核形态三个层面榨吞吐与显存。
 
 ---
@@ -55,15 +55,15 @@ FP8 同时砸向三堵墙:
 |----|---------|------|
 | **显存** | 激活省 ~50% | 线性层输入存 FP8 而非 bf16;FP8 primary weight 免 bf16 拷贝 |
 | **算力** | GEMM 更快 | Hopper/Blackwell 的 FP8 Tensor Core 比 bf16 快 |
-| **通信** | EP dispatch 省 50% | token 以 FP8 做 all-to-all(`ep_analysis.md`);参数 all-gather FP8(`--fp8-param-gather`) |
+| **通信** | EP dispatch 省 50% | token 以 FP8 做 all-to-all(`megatron_ep_analysis.md`);参数 all-gather FP8(`--fp8-param-gather`) |
 
 ### 1.4 与并行轴的交织
 
 FP8 不是孤立特性,它**贯穿前面所有文档**:
 - **TP**:`ColumnParallel`/`RowParallel` 的 GEMM 走 FP8;`fp8_utils.py` 有 `is_column_parallel_linear`/`is_row_parallel_linear` 判定。
-- **EP**:dispatch 的 A2A 用 FP8,通信量砍半(`ep_analysis.md`);`combined_1f1b` 的 fp8 上下文(`pp_schedulers_analysis.md` 调度器⑤)。
+- **EP**:dispatch 的 A2A 用 FP8,通信量砍半(`megatron_ep_analysis.md`);`combined_1f1b` 的 fp8 上下文(`megatron_pp_schedulers_analysis.md` 调度器⑤)。
 - **DP/ZeRO**:`--fp8-param-gather` 让参数 all-gather 走 FP8(`quantize_param_shard`、`post_all_gather_processing`,`fp8_utils.py:484/499`)。
-- **重计算**:fp8 下用 `te_checkpoint`(`recompute_analysis.md` §3.4);delayed scaling 与某些 selective 重计算互斥。
+- **重计算**:fp8 下用 `te_checkpoint`(`megatron_recompute_analysis.md` §3.4);delayed scaling 与某些 selective 重计算互斥。
 - **首尾层**:`is_first_last_bf16_layer`(`:513`)—— 首尾层常保留 bf16(对精度最敏感)。
 
 FP4(`fp4_utils.py`、`Fp4Recipe`)同理,更激进,Blackwell 专属。
@@ -93,7 +93,7 @@ GPU 执行每个 kernel 前,CPU 要先"启动"它(launch)。当模型由**大量
 > - 兼容迁移：旧值 `full_iteration` → `--cuda-graph-impl=full_iteration`；旧值 `full_iteration_inference` → `--inference-cuda-graph-scope=block`；`full` → 空 modules(整层)。`--cuda-graph-scope` 与旧 `CudaGraphScope` 枚举仅为旧 checkpoint 反序列化保留(`arguments.py`/`transformer_config.__post_init__` 自动迁移并告警)。
 > - 训练校验也随之改写：`--cuda-graph-impl=full_iteration` 要求 `--no-check-for-nan-in-loss-and-grad`；`--inference-cuda-graph-scope=block` + fp8 仅支持 `--transformer-impl=inference_optimized` 且 `--fp8-recipe=mxfp8`(`arguments.py:validate_args`)。
 
-`cuda_graphs.py` 的机制:`_CudaGraphRunner` 包住一个可图化的模块;`_CudagraphGlobalRecord`(`:320`)记录所有 runner 的创建顺序;`create_cudagraphs`(`:478`)在**第一个训练步**真正录图(被 `pp_schedulers_analysis.md` 的 `schedules.py` 在步末调用 —— 前五份文档里 `schedules.py` 出现的 `create_cudagraphs()` 就是它)。`TensorReusePool`(`:161`)在图之间复用张量缓冲。
+`cuda_graphs.py` 的机制:`_CudaGraphRunner` 包住一个可图化的模块;`_CudagraphGlobalRecord`(`:320`)记录所有 runner 的创建顺序;`create_cudagraphs`(`:478`)在**第一个训练步**真正录图(被 `megatron_pp_schedulers_analysis.md` 的 `schedules.py` 在步末调用 —— 前五份文档里 `schedules.py` 出现的 `create_cudagraphs()` 就是它)。`TensorReusePool`(`:161`)在图之间复用张量缓冲。
 
 > [!deprecated] 2026-06-16：上面 `cuda_graphs.py` 的行号为基线 `ee3f1ff`，当前 `dev@232c478d4` 已位移(符号仍在)：`TensorReusePool`→`:186`、`_determine_if_first_last_layer_of_this_vp_chunk`→`:274`、`_ensure_generator_state_is_cudagraph_safe`→`:318`、`_CudagraphGlobalRecord`→`:345`(其 `create_cudagraphs` classmethod 在 `:373`)、模块级 `create_cudagraphs()`→`:503`、`_CudaGraphRunner`→`:695`(#4292, `transformer/cuda_graphs.py`)。
 
@@ -135,7 +135,7 @@ CUDA Graph 要求**每次重放的张量形状、地址固定**。问题:
 ### 3.3 MoE 专用融合(README)
 
 MoE 是"小算子最多"的地方,有三个关键融合开关:
-- `--moe-grouped-gemm`:把 `E/e` 个专家的 GEMM 批成**一次 grouped GEMM**(`ep_analysis.md` §2.4)。
+- `--moe-grouped-gemm`:把 `E/e` 个专家的 GEMM 批成**一次 grouped GEMM**(`megatron_ep_analysis.md` §2.4)。
 - `--moe-router-fusion`:路由投影 + top-k + softmax + aux loss 融成少数 kernel。
 - `--moe-permute-fusion`:token 置换/反置换融合。
 
@@ -151,7 +151,7 @@ MoE 是"小算子最多"的地方,有三个关键融合开关:
 num_microbatches = global_batch_size / (micro_batch_size · data_parallel_size)
 ```
 
-这个 `num_microbatches` 正是 `pp_schedulers_analysis.md` 里反复出现的 `m`(梯度累加步数 / 流水线 microbatch 数)。它还支持 **batch size ramp-up**(训练初期用小 global batch、逐步增大)。是连接"数据并行配置"与"PP 调度"的小齿轮。
+这个 `num_microbatches` 正是 `megatron_pp_schedulers_analysis.md` 里反复出现的 `m`(梯度累加步数 / 流水线 microbatch 数)。它还支持 **batch size ramp-up**(训练初期用小 global batch、逐步增大)。是连接"数据并行配置"与"PP 调度"的小齿轮。
 
 ---
 
@@ -198,10 +198,10 @@ num_microbatches = global_batch_size / (micro_batch_size · data_parallel_size)
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。FP8/FP4 的 GEMM 内核位于 TransformerEngine。配套文档:五份并行分析 + `recompute_analysis.md` + `optimizer_internals_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。FP8/FP4 的 GEMM 内核位于 TransformerEngine。配套文档:五份并行分析 + `megatron_recompute_analysis.md` + `megatron_optimizer_internals_analysis.md`。*
 
 ## Related Pages
 
-- [[ep_analysis]] · [[recompute_analysis]] · [[optimizer_internals_analysis]]
+- [[megatron_ep_analysis]] · [[megatron_recompute_analysis]] · [[megatron_optimizer_internals_analysis]]
 - [[megatron_fusion_operators_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

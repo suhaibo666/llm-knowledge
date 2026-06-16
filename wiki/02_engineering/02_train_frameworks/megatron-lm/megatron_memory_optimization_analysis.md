@@ -258,6 +258,6 @@ Layer 4（显著开销，降速 10-30%）：
 - [[megatron_fusion_operators_analysis]]
 - [[megatron_comm_overlap_analysis]]
 - [[activation_checkpointing_analysis]]
-- [[recompute_analysis]]
+- [[megatron_recompute_analysis]]
 - [[low_precision_training_analysis]]
 - [[Megatron-LM_Distributed_Parallel_Exam]]

@@ -4,6 +4,31 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-16: Megatron-LM 知识库去重整合 + 命名对齐 torchtitan(删 1 · 改名 21 · 索引收敛)
+
+**Type**: Refactor & Dedup(用户授权"只删重复的 md";4 个只读 agent 产出重复度矩阵 → 合并唯一独有内容 → 删冗余文件 → 全量改名 + 链接修复;允许删除既有文档)
+
+**背景**:megatron-lm 目录此前**命名两代混杂**——旧代 CamelCase/前缀混乱(`Megatron-LM_MoE_Zero_Redundancy_Analysis`、`Megatron_LM_TFLOPS_Analysis`)+ 新"源码级系统分析系列"无前缀(`ep_analysis`/`tp_analysis`…),且疑似存在重复知识。4 个只读 agent 逐页对照后结论:**两代多为"深版 + 精简digest 指针"的互补关系,而非重复**,仅 1 页是真正被涵盖的冗余。
+
+**① 去重删除(1 文件)**:
+- 删除 `Megatron-LM_MoE_Zero_Redundancy_Analysis.md` —— 其零冗余 AllToAll / 七阶段 dispatcher / MoE Folding 知识已被 [[megatron_ep_analysis]] **完全涵盖且更深**(该旧页 2026-06-16 自身更新note 也已指向 ep_analysis)。删除前把其**唯一独有教学资产**「EP=4、num_experts=4、topk=2 的逐 token 数值走查(routing_map 矩阵 + A2A 传输矩阵 + 反向 A2A + 加权 unpermute)」并入 [[megatron_ep_analysis]] §②.3.1。
+
+**② 命名对齐 torchtitan(改名 21 文件)**:本目录全部页统一为 `megatron_<topic>_analysis`(小写 snake_case,对齐 `torchtitan_<topic>_analysis` 风格)。
+- 新系列 19 页加前缀:`ep_analysis`→`megatron_ep_analysis`、`tp_analysis`→`megatron_tp_analysis`、`cp_analysis`→`megatron_cp_analysis`、`pp_schedulers_analysis`→`megatron_pp_schedulers_analysis`、`ddp_optimizer_analysis`→`megatron_ddp_optimizer_analysis`、`recompute_analysis`、`optimizer_internals_analysis`、`precision_cudagraph_fusion_analysis`、`training_stability_observability_analysis`、`rl_posttraining_consistency_analysis`、`inference_engine_analysis`、`model_structure_analysis`、`dataset_analysis`、`packed_dataset_dynamic_cp_analysis`、`dist_checkpointing_analysis`、`parallelism_orchestration_analysis`、`pp_supplements_analysis`、`tp_fsdp_resharding_supplements_analysis`、`moe_training_optimization_report` 均加 `megatron_` 前缀。
+- 旧 CamelCase 2 页规整:`Megatron_LM_TFLOPS_Analysis`→`megatron_tflops_analysis`、`Megatron_vLLM_Weight_Sync_Analysis`→`megatron_vllm_weight_sync_analysis`。
+- 已合规 5 页不动:`megatron_comm_overlap_analysis`、`megatron_fusion_operators_analysis`、`megatron_memory_optimization_analysis`、`megatron_distributed_optimizer_analysis`、`megatron_nonuniform_tp_analysis`。
+- **链接修复**:全 wiki(208 个 md)用 `[[<basename><delimiter>` 锚定的 perl 替换更新所有 `[[wiki link]]` + 反引号/散文中的 `*.md` 文件名提及;锚定保证不误伤 `[[deepseek_v4_cp_analysis]]`/`[[torchtitan_tp_analysis]]`/`[[megatron_nonuniform_tp_analysis]]` 等近名页。
+
+**③ 修复历史悬空链接**:`[[llm_parallelism_analysis]]`(该页从未以 .md 形式存在,仅旧 .html;changelog 早有记录)全 wiki 重指向 [[megatron_pp_schedulers_analysis]](正反向 DAG + 调度,最贴近其原意);涉及 megatron-lm/index、父级 `02_train_frameworks/index`、torchtitan 多页。
+
+**④ 索引收敛**:[[megatron-lm/index]] 原"Core Topics"旧分组中 3 行(并行/MoE 行)已与下文 18 篇系列重复——重构为「全景报告(capstone)+ 专题深挖(系列外深版:distributed_optimizer / memory / fusion / comm_overlap / nonuniform_tp / tflops / vllm_weight_sync)」,移除重复行;Related Pages 去重;加「去重与命名整合」note 说明深版/digest 互补关系。父 index 同步基线 `ee3f1ff`→`232c478d4` 并移除悬空行。
+
+**保留判定(审计结论:深版,非重复,不删)**:`megatron_fusion_operators_analysis`(融合算子全目录,precision §3 是其 digest)、`megatron_nonuniform_tp_analysis`(NTP 容错深版且更准确,tp_fsdp_resharding §2 是其 digest)、`megatron_distributed_optimizer_analysis`(FP8/FP4 量化 + CPU-offload + 三种 FSDP 对比 + §A.7 Muon,多页反向引用)、`megatron_memory_optimization_analysis`(显存 survey,与 recompute 互补);`distributed_optimizer_deep_dive`(父目录,跨框架对比)。
+
+**校验**:目录文件 28→27;**全 wiki 0 处仍指向旧 megatron 基名**、0 处残留旧 `.md` 散文提及(changelog 历史条目按惯例保留原名不改写);全量 `[[link]]` 一致性检查通过,**未引入任何新 dangling link**(`Megatron-LM_Distributed_Parallel_Exam`/`npugraphs_memory_analysis`/`scaling_laws_for_transfer_analysis` 为既有遗留,非本次)。
+
+---
+
 ## 2026-06-16: Megatron-LM 知识库对照 `dev@232c478d4` 全量刷新(22 页 · 7 维 + 模型结构 · 9 并行 agent)
 
 **Type**: Update & Verify(更新上层 `Megatron-LM` 源码 `dev` 分支 `77c0f8cb3`→`232c478d4`,FF 306 commits;再对照 wiki 基线 `ee3f1ff`→`232c478d4`(298 commits)逐页核实增量并纠错;铁律＝纯增不删、每处增补带 `> [!update] 2026-06-16` + `path:line` + `(#PR)`、行号以当前 dev 复核)
@@ -430,7 +455,7 @@ All source ingestions and significant wiki updates are logged here.
 
 - `wiki/02_engineering/02_train_frameworks/index.md` — 子目录表与页面列表加入 `torchtitan/index` 条目
 
-**交叉引用**: torchtitan 系列与 Megatron-LM 源码级系列([[tp_analysis]]/[[cp_analysis]]/[[ep_analysis]]/[[pp_schedulers_analysis]]/[[ddp_optimizer_analysis]])互为对照(PyTorch-native vs CUDA/Megatron 生态),并与 [[async_collective_tensor_deep_dive]]、[[comm_compute_overlap_analysis]] 等既有页交叉引用。
+**交叉引用**: torchtitan 系列与 Megatron-LM 源码级系列([[megatron_tp_analysis]]/[[megatron_cp_analysis]]/[[megatron_ep_analysis]]/[[megatron_pp_schedulers_analysis]]/[[megatron_ddp_optimizer_analysis]])互为对照(PyTorch-native vs CUDA/Megatron 生态),并与 [[async_collective_tensor_deep_dive]]、[[comm_compute_overlap_analysis]] 等既有页交叉引用。
 
 ---
 

@@ -341,5 +341,5 @@ _templated_ring_attention_backward:两个环并行
 
 - [[torchtitan/index]] · [[torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
 - [[torchtitan_tp_analysis]] · [[torchtitan_pp_analysis]] —— 相邻并行维度
-- [[cp_analysis]] —— Megatron-LM 上下文并行(4 种 `cp_comm_type` + 因果 zigzag 负载均衡)
+- [[megatron_cp_analysis]] —— Megatron-LM 上下文并行(4 种 `cp_comm_type` + 因果 zigzag 负载均衡)
 - [[deepseek_v4_context_parallel_analysis]] —— DeepSeek-V4 CP 实现、Native/TE CP、Dynamic CP

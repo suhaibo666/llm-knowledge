@@ -9,7 +9,7 @@
 
 | 目录 | 核心主题 |
 |------|---------|
-| [[megatron-lm/index]] | NVIDIA Megatron-LM, 5D 并行, MoE, TFLOPS, 通信掩盖;源码级系统分析 18 篇(`dev` ee3f1ff) |
+| [[megatron-lm/index]] | NVIDIA Megatron-LM, 5D 并行, MoE, TFLOPS, 通信掩盖;源码级系统分析 18 篇(`dev` 232c478d4, 2026-06 刷新) |
 | [[torchtitan/index]] | PyTorch-native 训练框架;DP/TP/CP/EP/PP 多维并行 + 性能手段(低精度/算子融合/对称内存/Async-TP/SimpleFSDP)源码级分析 12 篇(`main` 61c010fcb) |
 
 ## 页面列表
@@ -18,7 +18,6 @@
 |------|------|---------|
 | [[megatron-lm/index]] | Megatron-LM 源码 | 分布式并行、通信优化、MoE |
 | [[torchtitan/index]] | torchtitan 源码 | DP/TP/CP/EP/PP 多维并行机制级分析(参数切分/预取/通信掩盖/异步)+ HSDP 反向双流掩盖、低精度/算子融合/编译、对称内存/Async-TP、SimpleFSDP |
-| [[llm_parallelism_analysis]] | Megatron-LM 源码验证 | 正反向 DAG, TP/SP/EP/CP 通信依赖 |
 | [[comm_compute_fusion_guide]] | 综合深度分析 | 通算融合: WaveEP、DeepEP、TP/DP/PP/CP 各维度重叠, 自动化路线图 |
 | [[distributed_optimizer_deep_dive]] | 综合深度分析 | FSDP2/ZeRO/MindSpeed 对比, 梯度累积, Adam vs Muon |
 | [[deepseek_v4_tensor_parallel_analysis]] | Megatron-LM dev 源码 | DeepSeek-V4 TP 切分方案, CSA/HCA/MoE/mHC 通信量与 Overlap |

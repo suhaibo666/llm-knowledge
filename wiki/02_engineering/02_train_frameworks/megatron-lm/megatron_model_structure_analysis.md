@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`transformer/spec_utils.py`、`transformer_layer.py`、`transformer_block.py`、`attention.py`、`multi_latent_attention.py`、`mlp.py`、`moe/router.py`、`multi_token_prediction.py`、`ssm/`、`models/`
-> 配套阅读:`ep_analysis.md`(MoE dispatcher)、`cp_analysis.md`、`tp_analysis.md`、`recompute_analysis.md`
+> 配套阅读:`megatron_ep_analysis.md`(MoE dispatcher)、`megatron_cp_analysis.md`、`megatron_tp_analysis.md`、`megatron_recompute_analysis.md`
 > 定位:之前 17 份文档都讲"**怎么把模型大规模训起来/服务起来**"(并行、显存、稳定性、推理、数据);本文讲"**模型本身长什么样**" —— 一个 transformer 模型由什么构成。
 
 ---
@@ -63,7 +63,7 @@ class TransformerLayerSubmodules:
 
 ### 1.3 为什么这样设计
 
-- **可换实现**:同一层,spec 指向 TE 算子或 Megatron 自带算子或 `inference_optimized` 算子 —— 不改模型代码(呼应 `rl_posttraining_consistency_analysis.md` §4 的训推路径切换)。
+- **可换实现**:同一层,spec 指向 TE 算子或 Megatron 自带算子或 `inference_optimized` 算子 —— 不改模型代码(呼应 `megatron_rl_posttraining_consistency_analysis.md` §4 的训推路径切换)。
 - **可裁剪**:不需要的组件用 `IdentityOp` 占位。
 - **可混搭**:dense 层与 MoE 层用不同 spec,按 `moe_layer_freq` 间隔排布;hybrid 模型把 Mamba 层 / attention 层 / MLP 层混排。
 
@@ -104,12 +104,12 @@ def forward(self, *args, **kwargs):
        output
 ```
 
-`bda` = **bias-dropout-add**,融合算子(见 `precision_cudagraph_fusion_analysis.md` §3 `fused_bias_dropout`)。
+`bda` = **bias-dropout-add**,融合算子(见 `megatron_precision_cudagraph_fusion_analysis.md` §3 `fused_bias_dropout`)。
 
 ### 2.2 子类
 
-- **`MoETransformerLayer`**(`:1983`):`mlp` 槽是 `MoELayer`(见 `ep_analysis.md`);处理 MoE 特有的 recompute、padding_mask 等。
-- **`HyperConnectionTransformerLayer`**(`:1488`):hyper connections(mHC)—— 用**多条残差流**代替单条残差,层间连接更丰富;`*_hyper_connection` 槽生效,PP 通信传 n-stream 张量(见 `pp_schedulers_analysis.md` 里 `enable_hyper_connections` 的形状处理)。
+- **`MoETransformerLayer`**(`:1983`):`mlp` 槽是 `MoELayer`(见 `megatron_ep_analysis.md`);处理 MoE 特有的 recompute、padding_mask 等。
+- **`HyperConnectionTransformerLayer`**(`:1488`):hyper connections(mHC)—— 用**多条残差流**代替单条残差,层间连接更丰富;`*_hyper_connection` 槽生效,PP 通信传 n-stream 张量(见 `megatron_pp_schedulers_analysis.md` 里 `enable_hyper_connections` 的形状处理)。
 
 > [!update] 2026-06-16 · dev@232c478d4
 > - **行号漂移**(本页行号以 ee3f1ff 为准,以下为当前 dev):`TransformerLayer` 现 `transformer_layer.py:313`、`forward` `:841`、`TransformerLayerSubmodules` `:251`、`HyperConnectionTransformerLayer` `:1715`、`MoETransformerLayer` `:2213`。结构未变,仅因 DSv4/mHC 等新增而下移。
@@ -117,7 +117,7 @@ def forward(self, *args, **kwargs):
 
 ### 2.3 `TransformerBlock`(`transformer_block.py`)
 
-一摞 `TransformerLayer` 的容器。负责:层的构建与编号、`_checkpointed_forward`(激活重计算,见 `recompute_analysis.md`)、PP 下本 stage 只放 `num_layers_per_pipeline_rank` 层、final layernorm。
+一摞 `TransformerLayer` 的容器。负责:层的构建与编号、`_checkpointed_forward`(激活重计算,见 `megatron_recompute_analysis.md`)、PP 下本 stage 只放 `num_layers_per_pipeline_rank` 层、final layernorm。
 
 ---
 
@@ -131,10 +131,10 @@ def forward(self, *args, **kwargs):
 
 按 **`num_query_groups`** 区分三档:
 - **MHA**:`num_query_groups = num_attention_heads` —— 每个 Q 头有自己的 K/V 头。
-- **GQA(分组查询注意力)**:`num_query_groups < num_attention_heads` —— 多个 Q 头**共享**一组 K/V 头。KV 头变少 → **KV cache 变小、推理 decode 带宽压力降**(`inference_engine_analysis.md` §2 的瓶颈)。
+- **GQA(分组查询注意力)**:`num_query_groups < num_attention_heads` —— 多个 Q 头**共享**一组 K/V 头。KV 头变少 → **KV cache 变小、推理 decode 带宽压力降**(`megatron_inference_engine_analysis.md` §2 的瓶颈)。
 - **MQA**:`num_query_groups = 1` —— 所有 Q 头共享 1 组 K/V,GQA 的极端。
 
-TP 下 QKV 投影是 ColumnParallel(按头切)、输出投影 RowParallel(见 `tp_analysis.md` §3.2)。
+TP 下 QKV 投影是 ColumnParallel(按头切)、输出投影 RowParallel(见 `megatron_tp_analysis.md` §3.2)。
 
 > [!update] 2026-06-16 · dev@232c478d4:注意力输出门控。`attention_output_gate`(整 `head_dim` 门)与新增的 **`head_wise_attn_gate`**(每头一个标量 sigmoid 门,Step-3.5-Flash,#4841,`attention.py:1199`)二选一、不可同开。门权重并入 `linear_qkv` 一并产出,对 `core_attn_out` **逐头乘 `sigmoid(gate)`**;head-wise 门仅自注意力(`attention_type != "cross"`),且要求 `num_attention_heads` / `num_query_groups` 满足整除约束(`transformer_config.py:1383`)。
 
@@ -153,7 +153,7 @@ MLA:         K/V 投影到一个低维 latent c_KV(+ 一个解耦的 RoPE key)
 
 - `MLASelfAttentionSubmodules` 含 Q / KV 的压缩(`q_lora` / `kv_lora` 风格低秩投影)与上投影。
 - **`cache_mla_latents`**:推理时 KV cache 存 latent 而非完整 K/V;decode 时做 **"吸收(absorption)"** —— 把上投影矩阵数学上吸收进 Q 投影 / 输出投影,**永不物化完整 K/V**,`FusedMLASelfAttention`(`:1212`)即此路径。
-- 与 CP 的配合见 `cp_analysis.md`。
+- 与 CP 的配合见 `megatron_cp_analysis.md`。
 
 ### 3.3 实验性注意力变体
 
@@ -208,23 +208,23 @@ HybridModel 的层 pattern 字符串(见 §7)新增四个 MLA 系注意力符号
 
 ---
 
-## 4. MoE Router 算法(补 `ep_analysis.md` 的空白)
+## 4. MoE Router 算法(补 `megatron_ep_analysis.md` 的空白)
 
-`ep_analysis.md` 讲了 token 怎么**分发**(dispatcher),但没讲 token 怎么**被路由**。补在这里。`moe/router.py`:`Router`(ABC)→ `TopKRouter`(`:138`)。
+`megatron_ep_analysis.md` 讲了 token 怎么**分发**(dispatcher),但没讲 token 怎么**被路由**。补在这里。`moe/router.py`:`Router`(ABC)→ `TopKRouter`(`:138`)。
 
 `TopKRouter.forward` 产出 `(probs, routing_map)`:
 
-1. **打分**:轻量线性层把 hidden 投成 `[s, E]` logits(建议 fp32,见 `ep_analysis.md` §2.3)。
+1. **打分**:轻量线性层把 hidden 投成 `[s, E]` logits(建议 fp32,见 `megatron_ep_analysis.md` §2.3)。
 2. **score function**:`softmax` 或 `sigmoid` 把 logits 变概率。
 3. **选 top-k**,可叠加:
    - **group-limited routing**(`moe_router_num_groups` / `group_topk`):先选 top-k 个**专家组**,再在组内选专家 —— 限制一个 token 跨越的节点数(DeepSeek-V3,利于 EP 跨节点通信)。
    - **`topk_routing_with_score_function`** —— 统一的 topk + score 实现。
-4. **负载均衡**(决定路由怎么"被纠偏",对应 `ep_analysis.md` §4):
+4. **负载均衡**(决定路由怎么"被纠偏",对应 `megatron_ep_analysis.md` §4):
    - **`aux_loss`** —— 辅助损失惩罚不均衡(微批 / 序列 / 全局级)。
    - **`sinkhorn`** —— 最优传输式均衡(与 aux_loss 互斥)。
    - **aux-loss-free**(`moe_router_enable_expert_bias`)—— 给每个专家一个**动态偏置** `expert_bias`(`_maintain_float32_expert_bias` 保持 fp32),过载专家偏置降、冷门专家偏置升,**不引入辅助损失**(DeepSeek-V3 用法)。
 
-产出的 `routing_map`(`[s,E]` 多热掩码)和 `probs` 就交给 `ep_analysis.md` 的 dispatcher。
+产出的 `routing_map`(`[s,E]` 多热掩码)和 `probs` 就交给 `megatron_ep_analysis.md` 的 dispatcher。
 
 > [!update] 2026-06-16 · dev@232c478d4:DeepSeek-V4 引入第三类"路由"——**hash routing(哈希路由)** 与**强制均衡**开关。
 > - **哈希路由**(`router.py:651 _hash_routing`,`is_hash_layer` 在 `:183` 判定,#5042):前 `moe_n_hash_layers`(recipe=3)层的 MoE **不靠打分选专家**,而是用一张预先算好的 `tid2eid` 查找表把 **token id 直接映射到专家 id**(`tid2eid = (token_id + k) % num_experts`,取 topk 个;DSv4-Pro 的推理 checkpoint 直接带训练好的表)。需要 `actual_vocab_size`。哈希路由把"哪个 token 走哪个专家"固定下来,天然均衡且可缓存,常用于浅层。
@@ -236,7 +236,7 @@ HybridModel 的层 pattern 字符串(见 §7)新增四个 MLA 系注意力符号
 ## 5. MLP / 激活 / 归一化 / 位置编码
 
 - **MLP**(`mlp.py`):dense FFN —— `linear_fc1`(ColumnParallel,`h→H`)→ 激活 → `linear_fc2`(RowParallel,`H→h`)。激活常用 **SwiGLU**(门控,`fc1` 输出对半切,一半过 SiLU 门控另一半;有 `fused_bias_swiglu` 融合 kernel)。
-- **归一化**:`LayerNorm` / `RMSNorm`(现代模型多用 RMSNorm,省一个均值);有 `fused_layer_norm`。可选 **QK-Norm**(`q_layernorm`/`k_layernorm`,稳定 attention logit,呼应 `training_stability_observability_analysis.md` §1.5)。
+- **归一化**:`LayerNorm` / `RMSNorm`(现代模型多用 RMSNorm,省一个均值);有 `fused_layer_norm`。可选 **QK-Norm**(`q_layernorm`/`k_layernorm`,稳定 attention logit,呼应 `megatron_training_stability_observability_analysis.md` §1.5)。
 - **位置编码**:**RoPE**(旋转位置编码)是主流;长上下文用 **YaRN**(`fused_mla_yarn_rope_apply`)。代码在 `models/common/embeddings/`。
 - 这些组件都以 `ModuleSpec` 填进 §1.2 的层插槽。
 
@@ -246,7 +246,7 @@ HybridModel 的层 pattern 字符串(见 §7)新增四个 MLA 系注意力符号
 
 标准 LM 每步只预测**下一个** token。**MTP**(DeepSeek-V3)让模型额外预测**再后面若干个** token —— 增加训练信号密度、并为推理的投机解码铺路。
 
-实现:在主干之后接 `mtp_num_layers` 个 MTP 模块,每个预测一个更远的 token。`MTPLossAutoScaler` 给 MTP loss 缩放(`pp_schedulers_analysis.md` §0.3 见过)。MTP 与 PP 配合时可单独占 VPP stage(`mtp_standalone`)。
+实现:在主干之后接 `mtp_num_layers` 个 MTP 模块,每个预测一个更远的 token。`MTPLossAutoScaler` 给 MTP loss 缩放(`megatron_pp_schedulers_analysis.md` §0.3 见过)。MTP 与 PP 配合时可单独占 VPP stage(`mtp_standalone`)。
 
 ---
 
@@ -260,7 +260,7 @@ HybridModel 的层 pattern 字符串(见 §7)新增四个 MLA 系注意力符号
 - **`MambaContextParallel`**:Mamba 的 CP 支持。
 - **混合模型**:把 **Mamba 层 + attention 层 + MLP 层**按某种 pattern 交错(`models/hybrid/`、`hybrid_layer_allocation`)—— 兼顾 SSM 的长序列效率与 attention 的精确检索能力。`ssm/mlp_layer.py` 的 `MLPLayer` 就是 `TransformerLayer` 的纯 MLP 子类,供混合模型排布。
 
-Mamba 的"KV"是固定大小循环状态,推理时由 `MambaSlotAllocator` 分配(见 `inference_engine_analysis.md` §5.2);打包用 `PackedSeqParams.seq_idx`(见 `dataset_analysis.md` §3.2)。
+Mamba 的"KV"是固定大小循环状态,推理时由 `MambaSlotAllocator` 分配(见 `megatron_inference_engine_analysis.md` §5.2);打包用 `PackedSeqParams.seq_idx`(见 `megatron_dataset_analysis.md` §3.2)。
 
 > [!update] 2026-06-16 · dev@232c478d4:Mamba / GDN 增量
 > - **GDN 支持序列打包(THD)**(#2645,`ssm/gated_delta_net.py:340+`):`packed_seq_params.qkv_format=='thd'` 时按 `cu_seqlens` 把打包 buffer 拆成各条子序列、**逐条**做 CP↔HP 的 all-to-all 再 chunk 扫描(要求 `batch==1`、非 deterministic 模式;后续 #4913 把逐序列 all-to-all 融成统一一次)。MTP 路径也透传 `packed_seq_params`。GDN 另有"整模块 `gdn` 选择性重计算"(#5296)与 `norm_out` 选择性重计算(#4715)。
@@ -282,7 +282,7 @@ GPTModel = embedding(词嵌入 + 位置编码)
 
 `models/` 下:`gpt/`(GPT 系,含 layer specs、MoE module specs)、`bert/`、`T5/`、`mamba`、`hybrid/`(SSM-attention 混合)、`common/`(共享的 embedding、language_module 等)、多模态。`gpt_layer_specs.py` 是 spec 工厂的集中地。
 
-PP 下,`GPTModel` 按 PP rank 只实例化本 stage 的层(首 stage 带 embedding、末 stage 带 output layer,见 `parallelism_orchestration_analysis.md` 的 `embd` 组)。
+PP 下,`GPTModel` 按 PP rank 只实例化本 stage 的层(首 stage 带 embedding、末 stage 带 output layer,见 `megatron_parallelism_orchestration_analysis.md` 的 `embd` 组)。
 
 ---
 
@@ -291,7 +291,7 @@ PP 下,`GPTModel` 按 PP rank 只实例化本 stage 的层(首 stage 带 embeddi
 - **Spec 系统是地基**:模型不写死,由 `ModuleSpec` + `TransformerLayerSubmodules` 插槽表运行时**组装**;同一层类换 spec 就换实现(TE/local/inference)、换组件(dense/MoE/Mamba)、开关特性 —— 这也是训推路径切换、混合模型的实现基础。
 - **TransformerLayer**:pre-norm 残差结构,注意力子层 + MLP 子层,各夹 layernorm 与 bias-dropout-add;子类 `MoETransformerLayer` / `HyperConnectionTransformerLayer`。
 - **注意力家族**:MHA → GQA(共享 KV 头,省 KV cache)→ MLA(K/V 压成低秩 latent,KV cache 砍到 ~1/10,decode 用吸收);QK-Norm 稳定。**DeepSeek-V4**(§3.4)再往前一步:DSA 用学习的 indexer 做 top-k 稀疏检索,CSA/HCA 用 Compressor 压缩 KV(4×/128×),按 D/C/H/W 层符号混排,配分组低秩输出投影与 MoE 哈希路由。
-- **MoE Router**:打分 → score function(softmax/sigmoid)→ top-k(可 group-limited)→ 负载均衡(aux_loss / sinkhorn / aux-loss-free 动态偏置);产出的 routing_map 交给 `ep_analysis.md` 的 dispatcher。
+- **MoE Router**:打分 → score function(softmax/sigmoid)→ top-k(可 group-limited)→ 负载均衡(aux_loss / sinkhorn / aux-loss-free 动态偏置);产出的 routing_map 交给 `megatron_ep_analysis.md` 的 dispatcher。
 - **MLP/归一化/位置编码**:SwiGLU FFN、RMSNorm、RoPE/YaRN —— 都是填进层插槽的 spec。
 - **MTP**:额外预测更远的 token,增信号密度。
 - **SSM/Mamba**:固定状态、`O(s)` 处理长序列;混合模型把 Mamba/attention/MLP 层交错。
@@ -301,9 +301,9 @@ PP 下,`GPTModel` 按 PP rank 只实例化本 stage 的层(首 stage 带 embeddi
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。实验性注意力变体、各具体模型细节未逐一展开。配套文档:`ep_analysis.md`、`cp_analysis.md`、`tp_analysis.md`、`recompute_analysis.md`、`inference_engine_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。实验性注意力变体、各具体模型细节未逐一展开。配套文档:`megatron_ep_analysis.md`、`megatron_cp_analysis.md`、`megatron_tp_analysis.md`、`megatron_recompute_analysis.md`、`megatron_inference_engine_analysis.md`。*
 
 ## Related Pages
 
-- [[ep_analysis]] · [[cp_analysis]] · [[tp_analysis]] · [[recompute_analysis]] · [[inference_engine_analysis]]
+- [[megatron_ep_analysis]] · [[megatron_cp_analysis]] · [[megatron_tp_analysis]] · [[megatron_recompute_analysis]] · [[megatron_inference_engine_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

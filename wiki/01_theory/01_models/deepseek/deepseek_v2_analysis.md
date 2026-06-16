@@ -249,4 +249,4 @@ With only 21B activated parameters, DeepSeek-V2 achieves top-tier open-source pe
 - [[deepseek_vl_analysis]] — Vision-language model built on DeepSeek LLM
 - [[deepseek_math_v2]] — Mathematical reasoning with self-verification
 - [[mHC]] — Manifold-Constrained Hyper-Connections used in later DeepSeek-V3
-- [[Megatron-LM_MoE_Zero_Redundancy_Analysis]] — Expert parallelism and MoE training infrastructure
+- [[megatron_ep_analysis]] — Expert parallelism and MoE training infrastructure

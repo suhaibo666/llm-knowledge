@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/rerun_state_machine.py`、`fault_injector.py`、`energy_monitor.py`、`timers.py`、`optimizer/qk_clip.py`、`optimizer/grad_scaler.py`、`optimizer/clip_grads.py`、`transformer/moe/moe_logging.py`、`transformer/moe/router_replay.py`;训练循环日志在 `megatron/training/training.py`
-> 配套阅读:`optimizer_internals_analysis.md`、五份并行分析、`tp_fsdp_resharding_supplements_analysis.md`
+> 配套阅读:`megatron_optimizer_internals_analysis.md`、五份并行分析、`megatron_tp_fsdp_resharding_supplements_analysis.md`
 > 定位:系统性专题。前面所有文档讲"怎么把模型并行训起来、训得快";本文讲**怎么让它训得稳、出问题怎么发现、看哪些指标判断健康**。
 
 > [!update] 2026-06-16 · dev@232c478d4
@@ -32,7 +32,7 @@ Megatron 对应有三套机制,本文依次拆解:
 
 ### 1.1 数值溢出防护:loss scaling + inf/nan 跳步
 
-(详见 `optimizer_internals_analysis.md` §3–4,此处定位为"稳定性"视角)
+(详见 `megatron_optimizer_internals_analysis.md` §3–4,此处定位为"稳定性"视角)
 
 fp16 训练里梯度可能**下溢成 0** 或**上溢成 inf**。两道防线:
 - **Loss scaling**:loss 乘 `S`,把小梯度抬出下溢区;`DynamicGradScaler` 自适应 `S`(`grad_scaler.py:64`)。
@@ -102,14 +102,14 @@ fp16 训练里梯度可能**下溢成 0** 或**上溢成 inf**。两道防线:
 
 ### 1.6 容错:NTP 与故障注入
 
-- **NTP(Nonuniform TP)**:TP 组留备用 rank,核心 rank 故障时重分片续训,免整体重启 —— 详见 `tp_fsdp_resharding_supplements_analysis.md` §2。
+- **NTP(Nonuniform TP)**:TP 组留备用 rank,核心 rank 故障时重分片续训,免整体重启 —— 详见 `megatron_tp_fsdp_resharding_supplements_analysis.md` §2。
 - **`fault_injector.py`**(233 行):**主动注入故障**用于测试容错路径 —— 验证 RerunStateMachine、NTP 等机制是否真能正确响应。是"测试稳定性机制本身"的工具。
 
 ### 1.7 MoE 稳定性
 
 MoE 有独有的不稳定源 —— 路由:
 - **router fp32**:`--moe-router-dtype fp32` —— 路由 logit 保持 fp32(README 强调:高专家数下 bf16 路由精度不足,专家输出按路由分加权累加会放大误差)。
-- **负载均衡损失**:`aux_loss` 等防止专家路由坍塌(`ep_analysis.md` §4)。
+- **负载均衡损失**:`aux_loss` 等防止专家路由坍塌(`megatron_ep_analysis.md` §4)。
 - **`router_replay.py`**(207 行):记录/重放路由决策 —— 用于复现和调试路由相关的不确定性。
 
 > [!update] 2026-06-16 · dev@232c478d4 — aux_loss / z_loss 在 TP>1 下的梯度缩放修正(#5047)
@@ -175,7 +175,7 @@ MTP(Multi-Token Prediction,详见 GPT/DeepSeek 系列)在主模型之外挂若�
 
 `moe_logging.py`(745 行)有两个全局 tracker:
 - **`MoEMetricsTracker`**:逐层收集 MoE 指标(各层 aux loss、z-loss 等),`--moe-per-layer-logging` 开启。能看出**哪一层**路由出问题,而不只是全局平均。
-- **`MoEOverloadFactorTracker`**(`:95`):跟踪**专家过载因子**(overload factor)——`max_expert_load / mean_load`,即 `ep_analysis.md` §4 的负载不均衡因子 `f`。`--log-moe-overload-factor` 开启;跨 `tp_ep` 与 `expt_dp` 组做 MAX 规约,反映最坏专家的过载程度。
+- **`MoEOverloadFactorTracker`**(`:95`):跟踪**专家过载因子**(overload factor)——`max_expert_load / mean_load`,即 `megatron_ep_analysis.md` §4 的负载不均衡因子 `f`。`--log-moe-overload-factor` 开启;跨 `tp_ep` 与 `expt_dp` 组做 MAX 规约,反映最坏专家的过载程度。
 
 > [!update] 2026-06-16 · dev@232c478d4 — MoE logging 的 record/report 生命周期(#3431)
 > `moe_logging.py` 在 `ee3f1ff..HEAD` 间**内容无净变化**(仍 745 行),上述两个 tracker 描述在 `dev@232c478d4` 依然准确。补充其 #3431 重构后的标准用法,便于对照源码:
@@ -306,5 +306,5 @@ MoE 健康?     overload factor 接近 1;若远大于 1 → 调大 aux_loss 系�
 
 ## Related Pages
 
-- [[optimizer_internals_analysis]] · [[tp_fsdp_resharding_supplements_analysis]] · [[rl_posttraining_consistency_analysis]]
+- [[megatron_optimizer_internals_analysis]] · [[megatron_tp_fsdp_resharding_supplements_analysis]] · [[megatron_rl_posttraining_consistency_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

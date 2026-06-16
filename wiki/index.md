@@ -80,7 +80,7 @@ wiki/
 | 对齐/RLHF | [[instructgpt_rlhf_analysis]], [[dpo_analysis]], [[grpo_analysis]], [[ppo_analysis]] |
 | DeepSeek 模型 | [[deepseek_v4_analysis]], [[deepseek_v3_analysis]], [[deepseek_r1_analysis]] |
 | Megatron 分布式 | [[Megatron-LM_Distributed_Parallel_Exam]], [[megatron_comm_overlap_analysis]] |
-| MoE | [[Megatron-LM_MoE_Zero_Redundancy_Analysis]], [[deepseek_moe_analysis]] |
+| MoE | [[megatron_ep_analysis]], [[deepseek_moe_analysis]] |
 | torch.compile | [[torch_compile_architecture]], [[PyTorch_Dynamo_Technical_Analysis]], [[PyTorch_Inductor_Technical_Analysis]] |
 | CUDA/NPU Graphs | [[PyTorch_CUDA_Graphs_Complete_Guide]], [[torch_compile_npugraphs_deep_dive]] |
 | PPO/GRPO RL 训练 | [[RL_PPO_Loss_and_GRPO_Analysis]], [[RL_Training_Inference_Precision_Analysis]] |

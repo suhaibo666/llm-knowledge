@@ -3,7 +3,7 @@
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/distributed/distributed_data_parallel.py`(635 行)、`param_and_grad_buffer.py`(1589 行)、
 > `distributed_data_parallel_config.py`、`megatron/core/optimizer/distrib_optimizer.py`(3051 行)
-> 配套阅读:`pp_schedulers_analysis.md`、`ep_analysis.md`、`tp_analysis.md`、`cp_analysis.md`、`optimizer_internals_analysis.md`
+> 配套阅读:`megatron_pp_schedulers_analysis.md`、`megatron_ep_analysis.md`、`megatron_tp_analysis.md`、`megatron_cp_analysis.md`、`megatron_optimizer_internals_analysis.md`
 >
 > **更正记录(2026-05-22)**:原稿把模型态字节数写作 `16Ψ`(套用 ZeRO 论文假设 fp16 梯度)。经源码二次核查更正为 **`18Ψ`** —— `arguments.py:1296-1310` 中 bf16 训练强制 `accumulate_allreduce_grads_in_fp32`,梯度 buffer 为 fp32(4 字节)。详见 §0.4、§2.5。
 
@@ -168,7 +168,7 @@ def hook(*unused):
 - 一旦显存吃紧 → 上 ZeRO-1。
 
 > [!update] 2026-06-16 · dev@232c478d4 — Megatron-FSDP `no_shard` 收敛性修复(#3835/#3754,`megatron_fsdp.py:1234`、`optimizer/__init__.py:1060`)
-> `no_shard`(ZeRO-0)下,梯度经 all-reduce 后在各 DP rank 上是**复制**的。原实现仍把梯度统计/范数在 dist-opt(DP)组上规约一遍 → grad norm **虚高**、梯度裁剪过度 → **不收敛**。修复:`no_shard` 时把 grad-stats 规约组从 DP 组改为只用 `model_parallel_group`(TP/PP)(`effective_intra_dist_opt_group = mp_group if no_shard else intra_dist_opt_group`);同时 `start_param_sync` 对 `no_shard` 直接 return(参数已复制,无需 all-gather),并禁止 `no_shard` 配 meta-device 初始化。此修复仅针对 Megatron-FSDP 的 `no_shard` 路径;与 [[optimizer_internals_analysis]] §5 梯度范数"需跨 TP×PP all-reduce"的论述一致 —— 关键是 **DP 维度此时不能再 reduce**。
+> `no_shard`(ZeRO-0)下,梯度经 all-reduce 后在各 DP rank 上是**复制**的。原实现仍把梯度统计/范数在 dist-opt(DP)组上规约一遍 → grad norm **虚高**、梯度裁剪过度 → **不收敛**。修复:`no_shard` 时把 grad-stats 规约组从 DP 组改为只用 `model_parallel_group`(TP/PP)(`effective_intra_dist_opt_group = mp_group if no_shard else intra_dist_opt_group`);同时 `start_param_sync` 对 `no_shard` 直接 return(参数已复制,无需 all-gather),并禁止 `no_shard` 配 meta-device 初始化。此修复仅针对 Megatron-FSDP 的 `no_shard` 路径;与 [[megatron_optimizer_internals_analysis]] §5 梯度范数"需跨 TP×PP all-reduce"的论述一致 —— 关键是 **DP 维度此时不能再 reduce**。
 
 ---
 
@@ -206,7 +206,7 @@ ZeRO-1 一步:
 - README General Tips 直接把 `--use-distributed-optimizer` 列为通用开关。
 
 > [!update] 2026-06-16 · dev@232c478d4 — LayerWise(Muon)现在复用本节的 DDP buffer + DistOpt 分片(#4509/#4771)
-> `LayerWiseDistributedOptimizer` 已整合进本文的 DDP grad/param buffer 基建:它预计算 shard-aligned 的参数 layout,让每个矩阵整体落在某个 shard 内,从而复用本节的 reduce-scatter/all-gather 与 `overlap_grad_reduce`/`overlap_param_gather`。配 `--optimizer muon --use-distributed-optimizer` 时,Muon 管的 2D 矩阵权重走 LayerWise(等效 ZeRO-1/2 沿 DP 分片),其余 embedding/bias/LayerNorm 等**非-Muon 参数则路由到一个独立的标准 `DistributedOptimizer`**(本节的字节级 ZeRO),二者由 `ChainedOptimizer` 串起。新增 `_start_bucket_group_param_sync`(`distributed_data_parallel.py:492`)让两个 sibling 优化器各自只同步自己那批 bucket group,不重复 all-gather。详见 [[megatron_distributed_optimizer_analysis]] §A.7 与 [[optimizer_internals_analysis]] §7 的 2026-06-16 更新。
+> `LayerWiseDistributedOptimizer` 已整合进本文的 DDP grad/param buffer 基建:它预计算 shard-aligned 的参数 layout,让每个矩阵整体落在某个 shard 内,从而复用本节的 reduce-scatter/all-gather 与 `overlap_grad_reduce`/`overlap_param_gather`。配 `--optimizer muon --use-distributed-optimizer` 时,Muon 管的 2D 矩阵权重走 LayerWise(等效 ZeRO-1/2 沿 DP 分片),其余 embedding/bias/LayerNorm 等**非-Muon 参数则路由到一个独立的标准 `DistributedOptimizer`**(本节的字节级 ZeRO),二者由 `ChainedOptimizer` 串起。新增 `_start_bucket_group_param_sync`(`distributed_data_parallel.py:492`)让两个 sibling 优化器各自只同步自己那批 bucket group,不重复 all-gather。详见 [[megatron_distributed_optimizer_analysis]] §A.7 与 [[megatron_optimizer_internals_analysis]] §7 的 2026-06-16 更新。
 
 ---
 
@@ -370,10 +370,10 @@ DP 无流水线气泡。低效来源是**通信暴露**:
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。`--use-distributed-optimizer` 对应 `DistributedOptimizer`(ZeRO-1);`optim_grads` / `optim_grads_params` 由 Megatron-FSDP 实现。配套文档:`pp_schedulers_analysis.md`、`ep_analysis.md`、`tp_analysis.md`、`cp_analysis.md`、`optimizer_internals_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。`--use-distributed-optimizer` 对应 `DistributedOptimizer`(ZeRO-1);`optim_grads` / `optim_grads_params` 由 Megatron-FSDP 实现。配套文档:`megatron_pp_schedulers_analysis.md`、`megatron_ep_analysis.md`、`megatron_tp_analysis.md`、`megatron_cp_analysis.md`、`megatron_optimizer_internals_analysis.md`。*
 
 ## Related Pages
 
-- [[tp_analysis]] · [[optimizer_internals_analysis]] · [[tp_fsdp_resharding_supplements_analysis]] · [[parallelism_orchestration_analysis]]
+- [[megatron_tp_analysis]] · [[megatron_optimizer_internals_analysis]] · [[megatron_tp_fsdp_resharding_supplements_analysis]] · [[megatron_parallelism_orchestration_analysis]]
 - [[megatron_distributed_optimizer_analysis]] · [[megatron_comm_overlap_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

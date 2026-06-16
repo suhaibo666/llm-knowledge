@@ -258,8 +258,8 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 
 ## Related Pages
 
-- [[precision_cudagraph_fusion_analysis]]
+- [[megatron_precision_cudagraph_fusion_analysis]]
 - [[megatron_memory_optimization_analysis]]
 - [[megatron_distributed_optimizer_analysis]]
 - [[megatron_comm_overlap_analysis]]
-- [[Megatron-LM_MoE_Zero_Redundancy_Analysis]]
+- [[megatron_ep_analysis]]

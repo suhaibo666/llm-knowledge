@@ -746,7 +746,7 @@ comm |comb_b|  disp_f | disp_b | comb_f |     ← A2A 全程被对侧计算掩�
 
 ## Related Pages
 
-- [[ep_analysis]] · [[tp_analysis]] · [[cp_analysis]] · [[ddp_optimizer_analysis]]
-- [[parallelism_orchestration_analysis]] · [[pp_supplements_analysis]]
+- [[megatron_ep_analysis]] · [[megatron_tp_analysis]] · [[megatron_cp_analysis]] · [[megatron_ddp_optimizer_analysis]]
+- [[megatron_parallelism_orchestration_analysis]] · [[megatron_pp_supplements_analysis]]
 - [[megatron_comm_overlap_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心:`megatron/core/resharding/`(refit)、`inference/`(推理引擎)、`inference/quantization/`(MXFP8)、`post_training/modelopt/`、`transformer_config.py`(`transformer_impl='inference_optimized'`)
-> 配套阅读:`tp_fsdp_resharding_supplements_analysis.md` §3(refit 基础)、`parallelism_orchestration_analysis.md`、`ep_analysis.md`
+> 配套阅读:`megatron_tp_fsdp_resharding_supplements_analysis.md` §3(refit 基础)、`megatron_parallelism_orchestration_analysis.md`、`megatron_ep_analysis.md`
 > 定位:系统性专题。前面文档讲预训练;本文讲 **RL 后训练**(RLHF / GRPO / PPO)对 Megatron 提出的特殊需求,以及核心难题 **训推一致性(train-inference consistency)**。
 
 ---
@@ -63,7 +63,7 @@ Megatron 的解法不是"消灭全部差异"(做不到),而是**把差异逐项�
 
 ## 2. 解法①:Refit 消除"权重陈旧"
 
-`resharding/`(详见 `tp_fsdp_resharding_supplements_analysis.md` §3)。每个 RL 迭代结束,`swap_model_weights(train_model, infer_model)` 把训练模型的**最新权重**搬进推理模型。
+`resharding/`(详见 `megatron_tp_fsdp_resharding_supplements_analysis.md` §3)。每个 RL 迭代结束,`swap_model_weights(train_model, infer_model)` 把训练模型的**最新权重**搬进推理模型。
 
 ```python
 from megatron.core.resharding import prepare_swap_model_weights, swap_model_weights
@@ -109,7 +109,7 @@ swap_model_weights(train_model, infer_model, refit_method="nccl")
 `inference_optimized` 是 RL rollout 用的专用路径:
 - `use_inference_optimized_layers`:推理优化的线性层(`tensor_parallel/inference_layers.py`,如推理专用的 all-gather)。
 - `inference_grouped_gemm_backend`:MoE 推理的 grouped GEMM 后端(`flashinfer` / `torch` / `vllm`)。
-- `inference_moe_token_dispatcher_type`:推理专用 MoE dispatcher(`nccl` / `nvls`)—— `moe_layer.py` 的 `train()` 重写(`:421`)在 eval 模式自动切到推理 dispatcher、train 模式切回(见 `ep_analysis.md`)。
+- `inference_moe_token_dispatcher_type`:推理专用 MoE dispatcher(`nccl` / `nvls`)—— `moe_layer.py` 的 `train()` 重写(`:421`)在 eval 模式自动切到推理 dispatcher、train 模式切回(见 `megatron_ep_analysis.md`)。
 - 强制 `--moe-router-dtype=fp32`(`:1467`)—— 与训练侧推荐一致,**路由精度对齐**。
 
 > [!deprecated] 2026-06-16:`moe_layer.py` 的 `train()` 重写已被**移除**(#4617,`moe_layer.py`)。推理 / 训练 dispatcher 的切换**不再依赖 `eval()`/`train()` 模式**,改由一个**进程级全局开关** `InferenceMode`(`megatron/core/inference/utils.py:20`)决定:`MoELayer.forward` 在入口处读 `InferenceMode.is_active()`,active → 推理 dispatcher、否则 → 训练 dispatcher(`megatron/core/transformer/moe/moe_layer.py:605`)。引擎进入推理时调用 `InferenceMode.set_active()`(`dynamic_engine.py:292`、`static_engine.py:133`),退出时 `unset_active()`(`dynamic_engine.py:787`)。**根本原因**:`self.training` / `torch.is_grad_enabled()` / `inference_context is not None` 都无法可靠区分"引擎正在用模型做 rollout"与"训练相正在用同一模型重算 RL logprob"(二者都可能处于 `eval()`+`no_grad`)。改用单一进程级标志后,全代码库(attention、router、experts、mamba、`gpt_model` 等,见 `grep InferenceMode.is_active`)统一据此分流——这条**正是本节"显式、独立、受控的推理路径"取向的延续**:把"是否走推理路径"收敛成一个可审计的全局真值,而非散落各处的隐式 `self.training` 判断。
@@ -198,10 +198,10 @@ collocated(同卡同时持训练+推理模型):
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。完整 RL 训练环(GRPO/PPO loss、advantage、KL)位于上层 RL 框架(如 NeMo-RL),不在 `megatron/core`。配套文档:`tp_fsdp_resharding_supplements_analysis.md`、`parallelism_orchestration_analysis.md`、`ep_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。完整 RL 训练环(GRPO/PPO loss、advantage、KL)位于上层 RL 框架(如 NeMo-RL),不在 `megatron/core`。配套文档:`megatron_tp_fsdp_resharding_supplements_analysis.md`、`megatron_parallelism_orchestration_analysis.md`、`megatron_ep_analysis.md`。*
 
 ## Related Pages
 
-- [[tp_fsdp_resharding_supplements_analysis]] · [[inference_engine_analysis]] · [[ep_analysis]] · [[parallelism_orchestration_analysis]]
-- [[Megatron_vLLM_Weight_Sync_Analysis]]
+- [[megatron_tp_fsdp_resharding_supplements_analysis]] · [[megatron_inference_engine_analysis]] · [[megatron_ep_analysis]] · [[megatron_parallelism_orchestration_analysis]]
+- [[megatron_vllm_weight_sync_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
