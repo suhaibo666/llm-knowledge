@@ -4,6 +4,23 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-17: Inductor 分析「完整录入」扩写 — NPU 实验后端拆 3 页（§0 对标 + §1 三方 output code）+ 上游融合补全
+
+**Type**: Expand（应用户「完整录入、不过度裁剪、查知识熵减」要求；回读原始《npu_inductor 设计与对标分析》§0/§1 精确还原；纯增不删既有结构）
+
+**背景**：同日先前的「Inductor 后端分析合入」条为控冗余而**压缩过度，存在明显知识熵减**——丢了 §0 全套实测对标表、§1 GPU/内置/本后端三方 output code 逐行对比、四遍折叠的 dual-decomp 实例、动态 shape 三情形 A/B/C 完整代码、上游 G2 融合的 prologue/epilogue/foreach/proximity 细节。本次按「完整录入」扩写还原。
+
+**NPU 侧：1 页 → 3 页系列**：
+- [[npu_inductor_linearize_backend_analysis]] 扩为完整版：装配顺序全表、Linearize 恒等式 + `_apply_linearize` 主干 + 四遍折叠表 + **dual-decomp 折叠实例**（softmax-bw + sum(0) + permute，4 独立轴 → 2 基础轴的完整除/模映射 + 地址文本修复）、索引线性化全 6 pass、40-CU group dispatch prologue 完整代码、融合门控（病灶数据 + 别名坑）、r 轴 rsplit（partial + combine）、**全 5 处类型降型**、白名单 lowering + 算子专项、**完整可优化点**。
+- [[npu_inductor_dynamic_shape_analysis]]（新）—— 编译一次 vs gears 分桶、签名 numel/divisor 代码、header 三件套、**三情形 A/B/C 完整代码 + 对照表**、配套（fold_trivial / 符号 split / static split block）、permute 产物。
+- [[npu_inductor_vs_builtin_comparison]]（新，comparison）—— **§1 三方 output code 逐行对比**（GPU / 内置 Split-Tiling / 本后端 Linearize 完整 kernel + 逐项差异表）+ **§0 全套实测**（torchbench 34 模型总体 / 逐模型、京东 OneRec 4 backbone、test_all 60 算子 case）+ 逐维综合矩阵。
+
+**上游侧补全**：[[scheduler_analysis]] 新增 §7.6——组兼容（numel/rnumel + tiling 一致）、proximity 门控（>64）、模板 prologue/epilogue 融合、foreach 融合、`_LoopMutationTracker` 回滚 + 循环重排；`> [!note]` 指向 NPU 后端的 read 门控 / proximity 收 20。
+
+**索引/校验**：[[04_inductor/npu/index]] 补 2 新页行；3 个 NPU 页互链 + backlink 既有内置后端页；无悬空链接；§0/§1 数据均回读原始设计文档精确还原并标注口径（本库未独立复跑）。
+
+---
+
 ## 2026-06-17: megatron_ep_analysis §③.3 补「两级通信量公式 + 数值走查 + all2allv 澄清」
 
 **Type**: Expand(对照 `Megatron-LM` `dev@232c478d4` 源码 `fused_a2a.py` / `token_dispatcher.py` 核实;单页增补,纯增)

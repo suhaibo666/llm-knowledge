@@ -436,6 +436,28 @@ score = Σ size(共享 memory dep)
 
 通过递归搜索 `FusedSchedulerNode` 中的组合祖先集来判定。
 
+### 7.6 组兼容、proximity 门控、模板/foreach 融合（补，2026-06-17）
+
+补 §7.1–§7.5 未展开的几类合法性约束（对照本地 upstream `E:\97-codes\pytorch\pytorch`，按符号引用）：
+
+**① 迭代空间（组）兼容**（后端层 `simd.py`，是「为什么迭代空间不一致就不能融合」的根因）：节点 `group = (device, (numel_pw, numel_red))`（`group_fn` 把每组维度乘成一个数）。
+- reduction + reduction：`numel` 与 `rnumel` 都要相等；
+- pointwise + pointwise：`numel/rnumel` 相等，且 `config.triton.tiling_prevents_pointwise_fusion` 开时要求 `tiling1 == tiling2 == tiling3`；
+- pointwise + reduction：pointwise 迭代空间须覆盖 reduction 的外×内（`numel1 == numel2 * rnumel2`）。`SchedulerNode.swap_pw_red_dimension` 会置换维度以对齐 `.group`。
+
+**② proximity 门控**（`are_long_distant_nodes`）：`proximity_score = max(|n1.min_order − n2.max_order|, |n2.min_order − n1.max_order|)`，**> 64 则不融**（避免远距节点融合导致活跃区间过长）。
+
+**③ 模板 prologue/epilogue 融合**（GEMM 的融合面）：
+- **epilogue**（template 作生产者，后接 pointwise）：消费者**只能读 template 输出 buffer**；`config.epilogue_fusion` / template 的 `allow_epilogue_fusion` 门控。
+- **prologue**（pointwise 前置到 template）：生产者须非 reduction/非 template 且**单一使用方**；`config.prologue_fusion` 门控。
+
+**④ foreach 融合**（`ForeachKernelSchedulerNode`，如 `_foreach_*`）：两侧 subnode 数相等且**逐对可融**；**foreach 不与 reduction 融**。
+
+**⑤ 推测性循环改写**：`can_fuse` 用 `_LoopMutationTracker` 包裹，融合被拒时回滚循环改写；`config.loop_ordering_after_fusion` / `loop_index_inversion_in_fusion` 触发 §7.1 末轮 `is_reorder_round=True` 的循环重排以提高共享数据分数。
+
+> [!note] NPU 后端如何用这套模型
+> 实验性 [[npu_inductor_linearize_backend_analysis]] **完全复用**上述模型（其 `can_fuse` 先调 `super().can_fuse()`），只追加一道 `NPU_MAX_FUSED_READS`（默认 24）read 门控防 bishengir 编译爆炸，并重绑 `can_fuse_vertical/horizontal` 别名使子类生效；torch_npu **内置**后端（[[npu_triton_backend_deep_analysis]]）则把 proximity 阈值收到 20、并自定义 tiling 一致性。
+
 ---
 
 ## 8. 关键设计决策
