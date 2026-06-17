@@ -583,6 +583,25 @@ TransformerLayerSchedulePlan.run(f_layer, b_layer)
                       └── A2A 通信与对侧计算在 GPU 上真并行 ──┘
 ```
 
+#### ⑤.2.1 主流程接入 + 正反向配对/分类是怎么保证的
+
+上文讲了"分层执行"的结构,这里补"它**怎么挂进主流程**,以及**怎么保证 forward 与 backward 不混算、且配对正确**"(行号以 `dev@232c478d4` 为准)。
+
+**(0) 主流程接入 —— 一个 `if` 接管 steady 段**。两个宿主函数开头加分支即可:`forward_backward_no_pipelining` 在 `schedules.py:709`、`forward_backward_pipelining_with_interleaving` 在 `schedules.py:1551`,命中 `config.overlap_moe_expert_parallel_comm and not forward_only` 就 delegate 给 `combined_1f1b_schedule_for_{no_pipelining|interleaved_pipelining}`。warmup/steady/cooldown 仍由 Layer-2 的 `get_pp_rank_microbatches` 生成,只是该模式**多调度一个 warmup microbatch**(`schedules.py:879-883`,`num_warmup += 1`)—— 保证 steady 段里**永远有一个待反向的 microbatch** 能和当前 forward 配对。
+
+四重机制保证"正反向分类执行":
+
+**① plan 跟着 output tensor 走(配对的"账本",关键)**。combined 模式下模型不直接前向,而是 `forward_step_func(..., return_schedule_plan=True)` → `GPTModel.build_schedule_plan(...)`(`gpt_model.py:811`)产出 `f_schedule_plan`(`combined_1f1b.py:390`)。前向收尾把它**挂到自己的输出上**:`output_tensor.schedule_plan = f_schedule_plan`(`combined_1f1b.py:494`)。等这个 microbatch 轮到反向,从它**自己的** output tensor 取回:`b_schedule_plan = b_output_tensor[0].schedule_plan`(`combined_1f1b.py:435`)。
+→ f-plan 与 b-plan 来自**两个不同 microbatch、两个不同来源**,plan 随激活在流水线里传递 —— 这就是把"谁的前向、谁的反向"钉死的账本,天然不会错配。
+
+**② 全程独立实参,不合并成单一 step**。`combined_forward_backward_step`(`combined_1f1b.py:281`)里 forward 只碰 `f_model/f_schedule_plan`、backward 只碰 `b_model/b_output_tensor→b_schedule_plan`(retain_grad + loss 反向先单独做,`:441-448`),最后用**两个独立参数**进合并计算:`type(f_schedule_plan or b_schedule_plan).run(f_schedule_plan, b_schedule_plan, b_grad=b_grad, ...)`(`combined_1f1b.py:462`)。
+
+**③ 升序/降序层配对的正确性**。`TransformerModelChunkSchedulePlan.run`(`model_chunk_schedule_plan.py:465`)中:`f_layer = f_schedule_plan.get_layer(i)`(升序 0→N,`:527`)、`b_layer = b_schedule_plan.pop_layer()`(降序 N→0,FILO,`:528`)。**forward 第 i 层 配 backward 第 (N−1−i) 层**,正吻合 1F1B 中"做反向的 microbatch 领先,所以它的高层先算完"的依赖。`f_input`(前向激活)与 `b_grad`(反向梯度)是**两条独立数据流**各传各的(`:531`),绝不交叉;不配对的层再各跑 backward-only(`:543`)/ forward-only(`:554`)。
+
+**④ 角色化节点 + 双流 + event 同步**(承 §⑤.2):一层拆成 `attn / moe_dispatch / mlp / moe_combine` 四个 `ScheduleNode`,A2A 节点绑 `comm_stream`、计算节点绑 `comp_stream`;跨流靠 CUDA event(`record_current_stream`/`wait_current_stream`,`model_chunk_schedule_plan.py:427-435`)保证依赖正确。于是 forward 层的 A2A 与配对 backward 层的计算在不同 stream 上真并行,而 autograd 正确性不受影响(forward 仍建图、backward 仍真反向)。
+
+> 不变量:不支持 `checkpoint_activations_microbatch`(`combined_1f1b.py:343` assert);VPP>1 + Megatron-FSDP 显式不支持;FSDP `optim_grads_params` 下因绕过 `TransformerLayer.forward` 的 hook,要给每层显式挂 reshard 回调(`combined_1f1b.py:407-414`,见 [[megatron_ddp_optimizer_analysis]] / [[megatron_comm_overlap_analysis]] §5.7)。
+
 > [!update] 2026-06-16 · dev@232c478d4 — combined-1F1B 的三处增量(MTP 排序 / 显存释放 / 死代码清理)
 >
 > 自 `ee3f1ff` 以来,combined-1F1B 路径有三处源码变化,均**不改变**上文的双流重叠骨架:
