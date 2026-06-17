@@ -477,6 +477,77 @@ DeepEP fused_dispatch:
    ⇒ 跨节点流量 ∝ token 的"目标节点数",而非"目标专家数 k"
 ```
 
+#### ③.3.1 两级 dispatch 机制(源码)
+
+`fused_dispatch`(`fused_a2a.py:135`)先 `get_dispatch_layout` 拿到**两套**变长计数,对应两级通信:
+
+| 计数 | 粒度 | 阶段 |
+|------|------|------|
+| `num_tokens_per_rdma_rank` | 每 **node**(RDMA-rank) | `inter_dispatch`(RDMA / IB) |
+| `num_tokens_per_rank` | 每 **GPU**(EP-rank) | `intra_dispatch`(NVLink) |
+| `is_token_in_rank` | token→GPU 归属 | 节点内 fan-out |
+
+buffer 也分两块:`num_rdma_bytes`(跨节点)+ `num_nvl_bytes`(节点内,`get_buffer:62`);注释 `wait in deepep::intra/inter_dispatch`(`fused_a2a.py:168`)点明两阶段。**核心规则:一个 token 不论在目标 node 上命中几个专家/几张卡,跨 node 只发一次(RDMA),落地后由该 node 内 NVLink 复制给真正的目标卡** —— asymmetric-domain forwarding,把流量从稀缺 IB 转到富裕 NVLink。
+
+#### ③.3.2 通信量公式(两级分解)
+
+记 token `t` 的 payload $M = H \times \text{bytes/elt}$(bf16 即 $2H$);$R(t)$ = 命中的**远端 node 集**(≠ 源 node),$g_n(t)$ = `t` 在 node $n$ 上的目标 GPU 数,$g_s(t)$ = 源 node 内目标 GPU 数(不含源卡)。逐 token:
+
+$$
+\text{RDMA(跨节点)}(t) = |R(t)|\cdot M
+\qquad
+\text{NVLink(节点内)}(t) = \Big[\sum_{n\in R(t)}\big(g_n(t)-1\big) + g_s(t)\Big]\cdot M
+$$
+
+对照标准 AllToAll(按专家粒度,跨节点 = 远端目标专家数 ≤ k):$\text{标准跨节点}(t)=(\#\text{远端目标专家})\cdot M$。
+
+聚合(全局 $T=S\cdot B$ token,均匀路由近似,$P$=node 数,$k$=topk):
+
+$$
+\text{RDMA 总量}=T\,(P-1)\Big(1-(1-\tfrac1P)^k\Big)\,M,\qquad
+\text{标准跨节点}=T\,\tfrac{k(P-1)}{P}\,M
+$$
+
+$$
+\boxed{\ \text{IB 加速比}=\dfrac{k/P}{\,1-(1-1/P)^k\,}\ }
+$$
+
+dispatch 与 combine 对称(`fused_combine` 凭 `handle` 反向),前向 ×2、含反向 ×2 → 总系数 4,与 §②.4 / [[megatron_moe_training_optimization_report]] §2.4.1 标准 A2A 的 `4·S·B·H·K·(E−1)/E²` 同构,差别在把"按专家"换成"按远端 node"。
+
+#### ③.3.3 数值走查(2 node × 2 GPU,8 专家,EP=4,topk=4)
+
+布局(EP=4,每卡 8/4=2 专家):
+
+```
+node A:  GPU0 = {E0,E1}   GPU1 = {E2,E3}
+node B:  GPU2 = {E4,E5}   GPU3 = {E6,E7}
+```
+
+看驻留在 GPU0(node A)的 token `X` → `{E1, E3, E5, E6}`:
+
+| 专家 | 卡 | node | 类别 |
+|---|---|---|---|
+| E1 | GPU0 | A | 源卡本地(无通信) |
+| E3 | GPU1 | A | 节点内 NVLink(源 node) |
+| E5 | GPU2 | B | 远端 |
+| E6 | GPU3 | B | 远端,**另一张卡** |
+
+$R(X)=\{B\}$,$g_B(X)=2$(GPU2、GPU3),$g_s(X)=1$(GPU1)。
+
+- **标准 A2A**:E5→GPU2、E6→GPU3 各发一份过 node 边界 → **跨节点 2M**;节点内 1M(→GPU1)。
+- **DeepEP/HybridEP**:`inter_dispatch` 把 `X` 在 `num_tokens_per_rdma_rank[B]` 记一次 → 跨 node **1M** 到 node B 接收卡(设 GPU2);`intra_dispatch`(node B)GPU2 自留 E5 + NVLink 转 GPU3 给 E6 = **1M**;`intra_dispatch`(node A)GPU0 自留 E1 + NVLink 转 GPU1 给 E3 = **1M**。
+
+| 链路 | 标准 A2A | DeepEP/HybridEP |
+|---|---|---|
+| **跨节点 IB(瓶颈)** | **2M** | **1M** ✅ |
+| 节点内 NVLink | 1M | 2M(+1 跳 GPU2→GPU3) |
+
+→ **拿 1 次廉价 NVLink 跳换掉 1 次昂贵 IB 跳**。代入公式($P=2,k=4$):$\text{IB 加速比}=\frac{4/2}{1-(1/2)^4}=2.13\times$;topk 提到 8 → $\frac{4}{1-1/256}\approx 4\times$。**topk 越大、专家越聚集远端 node,省得越多**(DeepSeek-V3 256 专家/topk8 + node-limited 路由即此场景)。EP=4 这种小规模(仅 1 个远端 node、每 token 跨节点 ≤ 1 份)收益有限,DeepEP/HybridEP 真正发力在 ≥4 node、每 node 8 卡。
+
+#### ③.3.4 注意:不是 NCCL all2allv collective
+
+标准 `MoEAlltoAllTokenDispatcher` 用的是变长 all2allv(`all_to_all` + `input_splits/output_splits`,`token_dispatcher.py:703`、`:558` "in variable size",底层 `all_to_all_single`)。**DeepEP/HybridEP 不是 collective**:Flex 路径无任何 `all_to_all` 调用,而是 `buffer.dispatch()`(`fused_a2a.py:160`)—— DeepEP/HybridEP 库的**融合 CUDA 内核**,底层是 **NVSHMEM 单边 RDMA**(normal 内核走 IBRC,low-latency 走 IBGDA;HybridEP 用 IBGDA + TMA),与 permute 融合、两级(RDMA per-node + NVLink per-GPU)。语义上是"变长 all-to-all"(`num_tokens_per_rdma_rank` / `num_tokens_per_rank` 就是那个 "v"),但实现上是**单边、融合、两级**,所以才能做 node 级去冗余 —— 普通 GPU↔GPU all2allv 做不到。
+
 ### ③.4 开销分析
 
 | 维度 | Flex / DeepEP Dispatcher |

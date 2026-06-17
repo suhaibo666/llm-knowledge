@@ -4,6 +4,22 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-17: megatron_ep_analysis §③.3 补「两级通信量公式 + 数值走查 + all2allv 澄清」
+
+**Type**: Expand(对照 `Megatron-LM` `dev@232c478d4` 源码 `fused_a2a.py` / `token_dispatcher.py` 核实;单页增补,纯增)
+
+**背景**:用户追问 DeepEP/HybridEP 的**具体通信量公式**、**两级通信如何进行**,以及节点间是否用 all2allv。原 §③.3 只有一张概念示意图,缺公式与逐字节走查。
+
+**新增([[megatron_ep_analysis]] §③.3 下 4 个子小节)**:
+- **③.3.1 两级 dispatch 机制(源码)**:`get_dispatch_layout` 的双计数 `num_tokens_per_rdma_rank`(每 node→`inter_dispatch`/RDMA)+ `num_tokens_per_rank`(每 GPU→`intra_dispatch`/NVLink);双 buffer `num_rdma_bytes`/`num_nvl_bytes`(`fused_a2a.py:62/135/168`);asymmetric-domain forwarding 规则(跨 node 只发一次,落地 NVLink fan-out)。
+- **③.3.2 通信量公式**:逐 token 两级分解 $\text{RDMA}=|R(t)|M$、$\text{NVLink}=[\sum(g_n-1)+g_s]M$;聚合式 + IB 加速比 $\frac{k/P}{1-(1-1/P)^k}$;与 §2.4.1 标准 A2A `4·S·B·H·K·(E−1)/E²` 对齐。
+- **③.3.3 数值走查**:2 node×2 GPU、8 专家、EP=4、topk=4 逐字节例子(token X→{E1,E3,E5,E6}),标准 2M vs DeepEP 1M 跨节点对照,代入加速比 2.13×(topk8→4×)。
+- **③.3.4 all2allv 澄清**:标准 `MoEAlltoAllTokenDispatcher` 用 NCCL all2allv(`token_dispatcher.py:703`);DeepEP/HybridEP **非 collective**,是 `buffer.dispatch()`(`fused_a2a.py:160`)的 NVSHMEM 单边 RDMA(IBRC/IBGDA)+ permute 融合 + 两级 —— 语义是变长 A2A,实现非 all2allv,故能 node 级去冗余。
+
+**校验**:LaTeX 公式块、源码行号、`[[link]]` 均按本页约定;无删改既有内容。
+
+---
+
 ## 2026-06-17: Inductor 后端分析合入 — NPU 实验性 Linearize 后端 + 上游 GPU 派发/reduction/autotune 基线（4 新页 + 1 增补）
 
 **Type**: Add & Augment（对照本地源码逐文件核实：`npu_inductor_2.9.0` 包 + upstream PyTorch 2.9.0 `E:\97-codes\pytorch\pytorch\torch\_inductor`；6 个只读 agent 取证 + 既有页去重；纯增不删既有结构）
