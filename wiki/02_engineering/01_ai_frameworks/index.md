@@ -1,7 +1,7 @@
 # PyTorch 编译与运行时架构 — 知识地图
 
 > 本域(`01_ai_frameworks`)按 **PyTorch 编译/运行时架构**组织。每个功能目录下,**硬件无关的通用机制**置于该目录层级,**硬件特定实现**下沉到 `npu/`、`cuda/` 等硬件子目录。
-> 最后更新: 2026-06-15
+> 最后更新: 2026-06-17
 
 ---
 
@@ -105,8 +105,8 @@ PyTorch 可拆成相互支撑的两条主轴——**① eager 运行时地基**(
 ### 既有空白(沿用)
 
 - **TorchDynamo guard 失败调试** — 常见但未系统记录(可并入 [[02_dynamo/index]])
-- **Inductor autotuning** — Triton kernel autotuning 策略
-- **NPU Monkey Patch 演进追踪** — v2.7.1 → v2.9.0 → master,每次 PyTorch 升级需人工对齐内部接口
+- **Inductor autotuning** — ✅ 已补 [[inductor_autotuning_analysis]]（CachingAutotuner / config_of / triton.compile）、[[inductor_gpu_kernel_dispatch_model]]、[[inductor_reduction_codegen_deep_analysis]]
+- **NPU Monkey Patch 演进追踪** — v2.7.1 → v2.9.0 → master,每次 PyTorch 升级需人工对齐内部接口（v2.9.0 实验性 Linearize 后端已补 [[npu_inductor_linearize_backend_analysis]]）
 - **CATLASS/CK GEMM 模板库生态** — 社区 CUTLASS 与 NPU CATLASS 差异
 - **IR 回溯机制通用性** — MLIR 路径 FX Graph 重建的泛化方案
 - **Multi-backend dispatch** — Inductor 在 CUDA/NPU 间选择逻辑(部分覆盖,见 [[npu_compile_paths_overview]])

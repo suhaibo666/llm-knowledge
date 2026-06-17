@@ -3,7 +3,8 @@
 > torch_npu 的 Inductor 后端:三条 torch.compile 路径(Triton / ACLGraph / MLIR)、NPU 特定 lowering 与 fallback、monkey patch、按硬件特性组织的优化思想、NPU 调试。
 > 阅读路径 **overview → quick start → deep dive**(约定见 [[01_ai_frameworks/index]])。upstream 通用 Inductor 见 [[04_inductor/index]]。
 > 核验基准:torch_npu **v2.7.1.post5**(`torch_npu/_inductor/`)
-> 最后更新: 2026-06-15
+> 收录：除 torch_npu 内置后端外，另含**独立实验性** Linearize 后端 `npu_inductor_2.9.0`（PyTorch 2.9.0，见 [[npu_inductor_linearize_backend_analysis]]）。
+> 最后更新: 2026-06-17
 
 ---
 
@@ -30,6 +31,7 @@
 | [[npu_lowering_guide]] | NPU 特定 lowering 与算子映射;FALLBACK_LIST 黑名单策略;§9 当前源码复核 |
 | [[npu_triton_backend_deep_analysis]] | Triton/default 路径深度:golden_var_list、CATLASS/CK GEMM、monkey patch、NPUIndexTritonKernel |
 | [[npu_inductor_optimization_analysis]] | 优化思想全景(why):硬件特性→优化思想→实际案例,跨 Triton/MLIR/DVM 三后端 |
+| [[npu_inductor_linearize_backend_analysis]] | **实验性 `npu_inductor_2.9.0`**（≠ 内置后端）：Linearize + 40-CU group dispatch、索引线性化、编译一次动态 shape、`NPU_MAX_FUSED_READS` 融合门控、r 轴 rsplit、与内置后端对比、可优化点 |
 
 ---
 

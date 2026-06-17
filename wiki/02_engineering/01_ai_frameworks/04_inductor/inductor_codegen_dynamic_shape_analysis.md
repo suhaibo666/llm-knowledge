@@ -66,6 +66,18 @@ _triton_poi_0_xnumel = s0 * 64
 
 然后通过 `SymbolicCallArg` 将其传递给 kernel 调用。这避免了在 kernel 调用处直接塞入复杂表达式，保持代码清晰。
 
+### 2.4 符号实参的整型：`s0→ks0` 重命名与 `ks0*ks1` 防溢出（升 `tl.int64`）
+
+kernel 内符号实参由 `rename_indexing`（`common.py`）翻译（`s0→ks0`，按发现顺序）；`signature_to_meta._decide_tl_dtype`（`triton_utils.py`）对**动态 size 实参刻意升 `tl.int64`**，避免多维动态下 `ks0*ks1` 乘积超 int32 上限而溢出：
+
+```python
+if (not config.triton.use_block_ptr and isinstance(arg, SizeArg) and arg.name.startswith("ks")):
+    return "tl.int64"        # 动态 size 实参用 i64，防 ks0*ks1 溢出
+```
+
+> [!contradiction] 与 NPU Linearize 后端相反 — 见 [[npu_inductor_linearize_backend_analysis]]
+> 昇腾 vector core 不支持 i64 计算，实验性 Linearize 后端反而把 `*i64→*i32`、`_triton_type_mapping["tl.int64"]="tl.int32"`，并在 launcher 运行期 downcast——**上游用 i64 规避的 `ks0*ks1` 溢出，NPU 用 i32 重新引入了**（大张量索引溢出风险）。这是 GPU↔NPU 在动态 shape 整型处理上的根本分歧，另见 [[inductor_autotuning_analysis]] §三。
+
 ---
 
 ## 3. Triton Grid 的动态计算

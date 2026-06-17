@@ -4,6 +4,28 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-17: Inductor 后端分析合入 — NPU 实验性 Linearize 后端 + 上游 GPU 派发/reduction/autotune 基线（4 新页 + 1 增补）
+
+**Type**: Add & Augment（对照本地源码逐文件核实：`npu_inductor_2.9.0` 包 + upstream PyTorch 2.9.0 `E:\97-codes\pytorch\pytorch\torch\_inductor`；6 个只读 agent 取证 + 既有页去重；纯增不删既有结构）
+
+**背景**：用户在 pytorch 工作区完成了对 NPU 实验性后端 `npu_inductor_2.9.0`（独立 monkey-patch 包，≠ torch_npu 内置 `_inductor`）及其上游 GPU 基线的源码级分析，需按知识库约定（NPU↔upstream 分开、overview→quickstart→deepdive、零冗余）合入。只读 agent 确认：既有 `04_inductor/npu/` 8 页全部讲 **torch_npu 内置**后端（Split-Tiling/CATLASS，v2.7.1.post5），**零提及** Linearize / `npu_inductor_2.9.0`；既有上游页已覆盖后端注册/融合/动态 shape 符号化，**缺** GPU kernel 派发模型、reduction codegen、autotune 三块（后者即本域 index 列出的「Inductor autotuning」空白）。
+
+**新增 4 页**：
+- [[npu_inductor_linearize_backend_analysis]]（NPU）—— 实验性 `npu_inductor_2.9.0`：import 即 patch + `disable_register_inductor_npu()` 关掉内置后端、Linearize（多维→40-CU `bin[40,1,1]` group dispatch）+ 索引线性化、编译一次动态 shape（3 情形）、`NPU_MAX_FUSED_READS` 融合门控、r 轴 rsplit、类型降型、白名单 lowering、与内置后端逐维对比、可优化点。
+- [[inductor_gpu_kernel_dispatch_model]]（upstream）—— GPU kernel 骨架（`program_id→offset→mask`，无循环）、`IterationRanges` 树、stride-1 tiling、`Grid1D/2D/2DWithYZOverflow/CooperativeReductionGrid`。
+- [[inductor_reduction_codegen_deep_analysis]]（upstream）—— persistent/looped/split/cooperative reduction（semaphore barrier）、block ptr/TMA。
+- [[inductor_autotuning_analysis]]（upstream）—— `CachingAutotuner` 生命周期、config 启发式、`config_of`/AttrsDescriptor、`make_launcher`、`triton.compile(ASTSource,GPUTarget)`→PTX/cubin、`DeviceProperties`（填补「Inductor autotuning」空白）。
+
+**增补 1 处**：[[inductor_codegen_dynamic_shape_analysis]] 新增 §2.4——`s0→ks0` 重命名 + `signature_to_meta._decide_tl_dtype` 把动态 `ks*` 升 `tl.int64` 防 `ks0*ks1` 溢出；加 `> [!contradiction]` 指向 NPU 后端的 i32 降型（GPU↔NPU 动态 shape 整型的根本分歧）。
+
+**索引/空白更新**：[[04_inductor/index]] 加「codegen 派发与运行时（GPU 基线）」分组 3 行；[[04_inductor/npu/index]] 加实验后端行 + 头注（区分内置/实验、PyTorch 2.9.0 基线）；[[01_ai_frameworks/index]] 空白「Inductor autotuning」「NPU Monkey Patch 演进追踪 v2.9.0」标 ✅ 并指向新页。
+
+**交叉引用**：4 新页均含 `## Related Pages` + `[[wikilink]]`；NPU 页 §六对比直接 backlink 既有 [[npu_triton_backend_deep_analysis]]/[[npu_compile_paths_overview]]/[[npu_inductor_optimization_analysis]]（内置后端细节，不复述）；上游 3 页互链并指向既有 [[scheduler_analysis]]/[[dynamic_shapes_full_analysis]]/[[PyTorch_Inductor_Technical_Analysis]]。
+
+**核验**：所有代码引用带 `file:line`（npu_inductor 包 + upstream `torch/_inductor/`）；零冗余（内置后端/上游已覆盖部分一律 cross-link 而非复述）；纯增，未删改既有页结构。源分析底稿在 pytorch 工作区 `npu_inductor_2.9.0/triton-backend-analysis/`。
+
+---
+
 ## 2026-06-17: SimpleFSDP 页 §5 深挖(编译流程 + 两个通信 pass + 掩盖机制)
 
 **Type**: Expand(对照 torchtitan `main` @ `61c010fcb` `experiments/graph_trainer/` 源码逐行核实;纯增不改既有结构)

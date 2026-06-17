@@ -2,7 +2,7 @@
 
 > PyTorch 编译后端核心:Decomposition → FX Passes → Lowering(FX→Inductor IR)→ Scheduler(调度/融合)→ CodeGen。
 > 阅读路径 **overview → quick start → deep dive**(约定见 [[01_ai_frameworks/index]])。本目录为 **upstream**;**NPU Inductor 后端**单独见 [[04_inductor/npu/index]]。
-> 最后更新: 2026-06-15
+> 最后更新: 2026-06-17
 
 ---
 
@@ -35,6 +35,14 @@
 | [[lowering_analysis]] | FX → Inductor IR lowering(注册/API/优化) |
 | [[scheduler_analysis]] | 算子调度器、融合决策;自定义融合 Pass 与排查;新设备 backend 注册(设备无关示例) |
 | [[inductor_codegen_analysis]] | 代码生成策略、kernel 融合、wrapper |
+
+## deep dive — codegen 派发与运行时（GPU 基线）
+
+| 页面 | 核心主题 |
+|------|---------|
+| [[inductor_gpu_kernel_dispatch_model]] | GPU kernel 骨架（`program_id→offset→index→mask`，kernel 内无循环）、`IterationRanges` 树、stride-1 tiling、`Grid1D/2D/2DWithYZOverflow/CooperativeReductionGrid` |
+| [[inductor_reduction_codegen_deep_analysis]] | Reduction codegen：persistent / looped / split / cooperative（semaphore barrier）、block ptr / TMA |
+| [[inductor_autotuning_analysis]] | Autotune 生命周期（`CachingAutotuner`）、config 启发式、`config_of`/AttrsDescriptor、`make_launcher`、`triton.compile`→PTX/cubin、`DeviceProperties` |
 
 ## deep dive — FX Passes
 
