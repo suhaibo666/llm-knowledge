@@ -602,6 +602,26 @@ class FusedDispatch(torch.autograd.Function):
 - **文件**：[`megatron/core/transformer/moe/token_dispatcher.py`](Megatron-LM/megatron/core/transformer/moe/token_dispatcher.py)
 - **类**：`_DeepepManager`（line 1113）、`_HybridEPManager`（line 964）
 
+#### 5.6.1 两级通信：为什么能降 A2A 绝对耗时
+
+DeepEP/HybridEP 之所以能"加速通信"，核心是把单级的 GPU↔GPU A2A 拆成**两级**，并在节点间做**去冗余**——把流量从稀缺的 IB 转到富裕的 NVLink。`fused_dispatch` 的 `get_dispatch_layout` 给出**两套**变长计数，对应两级（`fused_a2a.py:135`）：
+
+| 计数 | 粒度 | 阶段 | 链路 |
+|------|------|------|------|
+| `num_tokens_per_rdma_rank` | 每 **node** | `inter_dispatch` | RDMA / IB（瓶颈） |
+| `num_tokens_per_rank` | 每 **GPU** | `intra_dispatch` | NVLink（富裕） |
+
+buffer 也分两块：`num_rdma_bytes` + `num_nvl_bytes`（`get_buffer:62`）。**核心规则**：一个 token 不论在目标 node 上命中几个专家/几张卡，**跨 node 只发一次**（RDMA），落地后由该 node 内 NVLink 复制给目标卡。于是**跨节点流量 ∝ token 的"目标节点数" `|R(t)|`（≤ k），而非"目标专家数 k"**：
+
+$$
+\text{RDMA(跨节点)}(t)=|R(t)|\cdot M,\qquad
+\boxed{\ \text{IB 加速比}=\dfrac{k/P}{\,1-(1-1/P)^k\,}\ }\quad(P=\text{node 数},\ M=H\times\text{bytes/elt})
+$$
+
+例：2 node、topk=4 → 跨节点 IB 流量约降到 1/2.13；topk=8 → ≈1/4。专家越多、topk 越大、目标越聚集在少数远端 node，省得越多（DeepSeek-V3 256 专家/topk8 即此场景）。**完整逐字节走查 + 两级公式推导见 [[megatron_ep_analysis]] §③.3**。
+
+> **与"掩盖"的关系**：两级拆分让 A2A 的长极（跨节点 RDMA 段）与廉价的 NVLink 段在不同引擎上推进；配合 §5.7 的 `high_priority_a2a_comm_stream`（让 A2A kernel 优先抢 SM）与 `moe_hybridep_num_sms_preprocessing`（调元数据扫描 SM 数），可在 §5.1 的 1F1B overlap 之上进一步压短 A2A 暴露在关键路径上的尾延迟。即：**§5.6 降 A2A 绝对耗时（去冗余 + 两级）+ §5.1 把剩余 A2A 掩盖到计算后面**，二者叠加。
+
 ### 5.7 增量更新（ee3f1ff → dev@232c478d4）
 
 > [!update] 2026-06-16 · dev@232c478d4 — 高优先级 A2A 通信流

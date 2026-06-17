@@ -4,6 +4,21 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-17: megatron_comm_overlap_analysis §5.6.1 补 DeepEP/HybridEP 两级通信模型
+
+**Type**: Expand(承 §③.3,把两级模型按"加速通信"角度补到通信掩盖页;纯增,交叉引用避免重复)
+
+**背景**:`megatron_ep_analysis` §③.3 已落地两级通信量公式与数值走查;通信掩盖页 §5.6（DeepEP/HybridEP 后端）此前只说"降 A2A 绝对耗时与 SM 占用",未解释**为什么**能降。
+
+**新增([[megatron_comm_overlap_analysis]] §5.6.1)**:
+- 两级拆分(`num_tokens_per_rdma_rank`/node→`inter_dispatch`/IB + `num_tokens_per_rank`/GPU→`intra_dispatch`/NVLink,双 buffer `num_rdma_bytes`/`num_nvl_bytes`,`fused_a2a.py:62/135`)+ 去冗余规则(跨 node 只发一次)。
+- 关键式:跨节点 `∝|R(t)|`、IB 加速比 $\frac{k/P}{1-(1-1/P)^k}$(2 node topk4→2.13×、topk8→4×);完整走查指向 [[megatron_ep_analysis]] §③.3,不重复。
+- **与"掩盖"的关系**:§5.6 去冗余/两级降 A2A 绝对耗时 + §5.1 1F1B 把剩余 A2A 掩盖到计算后;并接 §5.7 的 `high_priority_a2a_comm_stream` / `moe_hybridep_num_sms_preprocessing` 调尾延迟。
+
+**校验**:LaTeX、`path:line`、`[[link]]` 按页约定;无删改既有内容。
+
+---
+
 ## 2026-06-17: NPU 实验后端 3 页按「方案」改名（`npu_inductor_linearize_*`）
 
 **Type**: Rename（应用户「区分方案」要求，避免与 torch_npu 内置后端页混淆；`git mv` + 全 wiki `[[link]]` 同步）
