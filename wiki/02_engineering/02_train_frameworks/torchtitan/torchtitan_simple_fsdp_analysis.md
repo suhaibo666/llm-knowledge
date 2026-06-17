@@ -1,7 +1,7 @@
 # SimpleFSDP —— 编译器友好的 FSDP:分片即可追踪的 DTensor 集合通信(源码级)
 
 > **代码基准**:torchtitan `main` @ `61c010fcb`(`experiments/graph_trainer/`)· PyTorch nightly(实验件)
-> **最后更新**:2026-06-17(§5 扩写为编译流程 + 两个通信 pass + 掩盖机制源码级深挖)· **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
+> **最后更新**:2026-06-17(§5 扩写为编译流程 + 两个通信 pass + 掩盖机制源码级深挖,新增 §5.5 通信粒度 + 2 张 SVG→PNG 机制图)· **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
 >
 > 对象是 torchtitan `experiments/graph_trainer/` 的 SimpleFSDP(论文 arXiv:2411.00284),FSDP2 的编译器友好替代:把 all-gather/reduce-scatter 表达成 DTensor `redistribute` 进图,交编译器分桶重叠。对照 [[torchtitan_fsdp_analysis]] / [[torchtitan_hsdp_backward_overlap_analysis]]。
 > 行号约定:实验代码以 `graph_trainer/`(= `torchtitan/torchtitan/experiments/graph_trainer/`)为根;PyTorch 以 `[pt]` 前缀。
@@ -151,6 +151,8 @@ pass 流水线(`compile_time_passes`,`passes.py:134-190`,按序):
 
 **两个通信 pass 在第 6、7 位**——在显存策略(AC/offload)之后、inductor 编译之前。顺序有讲究(`passes.py:147`):`reassign_collective_pgs_pass` **必须在 bucketing 之前**,这样被分桶的集合通信能继承新 PG。
 
+![SimpleFSDP 编译流程:trace → 图 pass → 复用](assets/simple-fsdp-compile-flow.png)
+
 ### 5.2 通信 pass ①:`reassign_collective_pgs_pass` —— 额外 PG = 独立流(AG∥RS)
 
 `fsdp_passes.py:129`。只做一件事:**把 all-gather 改派到一个新建的、同 ranks 的额外 NCCL 进程组**。
@@ -191,13 +193,31 @@ pass 流水线(`compile_time_passes`,`passes.py:134-190`,按序):
 
 > 这些 pass 对无 FSDP collective 的图是 no-op(`fsdp_passes.py:10-12`),并可与 async-TP、CUDAGraph、CPU-offload、AC **作为同一张图上的 pass 自由组合**(README:11)。(注:`autobucketing_reordering_pass`/`transformer_block_bucketing_reordering_pass`,`fsdp_passes.py:167/181`,是已废弃 JIT 后端 `jit_backend.py` 走的非 joint 版;默认 `aot_fx_trace` 走上面的 joint 版。)
 
+### 5.5 通信粒度:trace 逐参数 → 编译期分层统一(重要)
+
+一个常见疑问:**SimpleFSDP 是每个参数做一次通信,还是分层统一通信?** 答案是**两段式**:
+
+![SimpleFSDP 通信粒度:逐参数 → 分层统一 + 掩盖](assets/simple-fsdp-bucketing-overlap.png)
+
+1. **参数化层(trace 时)= 逐参数,一参一次**。`_register_parametrization` 给每个参数名各装一个 getter(`simple_fsdp.py:145-150`),`replicate_compute(x)` 接收的是**单个参数**做 `x.redistribute`(`:189/232`)。所以 trace 出的图里,一个 block 的 `wq/wk/wv/wo/w1/w2/w3/norm…` 是 **N 个独立的 `all_gather_into_tensor` 节点**——**没有 eager 分组**。
+2. **编译期 bucketing pass = 按 block 分层统一**。`joint_transformer_block_bucketing_reordering_pass`(§5.3)把这些逐参数 collective 按 TransformerBlock 合成**每 block 1 个 AG + 1 个 RS**(按 FSDP2 参数序),= FSDP2 的 `FSDPParamGroup`。
+
+**关键含义**:对 SimpleFSDP 来说,「分层统一通信」是**编译期优化的产物,不是天生的**。
+
+| | 何时分组 | 不分组会怎样 |
+|---|---|---|
+| **FSDP2** | eager 建 `fully_shard` 时就把每 block 包成 `FSDPParamGroup` → 天生每块 1 AG+1 RS | — |
+| **SimpleFSDP** | **编译期 bucketing pass** 才合并;trace 时逐参数 | 不开 compile / 关 bucketing → 退化成逐参数(N 倍小通信,低效) |
+
+这也是 SimpleFSDP 必须走编译路径(`aot_fx_trace`)的原因之一:把"分组"从 FSDP2 的"运行时建 ParamGroup"挪到了"编译期 bucketing 图变换"。(默认 bucket plan 是 per-TransformerBlock,`get_default_transformer_block_buckets`;embedding / 最后的 norm+lm_head 等 block 外参数不在默认 plan 内,可能保持逐参数。)
+
 ---
 
 ## 6. 与 FSDP2 的对比
 
 | 维度 | FSDP2(`fully_shard`,[[torchtitan_fsdp_analysis]]/[[torchtitan_hsdp_backward_overlap_analysis]]) | SimpleFSDP(本篇) |
 |---|---|---|
-| 通信单位 | `FSDPParamGroup`(自底向上分组) | 逐参数 DTensor + per-module 参数化 |
+| 通信单位 | `FSDPParamGroup`(eager 建组,天生每块 1 AG+1 RS) | **trace 逐参数 → 编译期 bucketing 合成每块 1 AG+1 RS**(见 §5.5) |
 | 取回参数 | `unshard()` 钩子发 all-gather | 前向 `redistribute(Replicate)` 进图 |
 | 梯度规约 | `post_backward` → `foreach_reduce`(RS/AR) | 声明 `grad_placements=Partial(sum)`,DTensor 反向自动 RS/AR |
 | 掩盖编排 | 5 条 CUDA stream + 预取钩子 + event(运行时) | 编译器图 pass:额外 PG + 分桶 + 重排(编译期) |
@@ -240,6 +260,7 @@ pass 流水线(`compile_time_passes`,`passes.py:134-190`,按序):
 | 可任意前移的 all-gather 识别(预取目标) | `fsdp_passes.py:52-64` | OK |
 | pass② 分桶:按 block/方向/FSDP2 参数序合成 1 AG+1 RS | `fsdp_passes.py:208-294` | OK |
 | pass② 重排:AG 逆序预取 + RS 延后 wait(overlap_deps) | `fsdp_passes.py:303-439` | OK |
+| 参数化逐参数 getter → trace 出逐参数 collective(无 eager 分组) | `simple_fsdp.py:145-150/189` | OK |
 | 接入 `apply_simple_fsdp`,MoE 专家走 edp_mesh | `common_utils.py:217-282` | OK |
 | 实验件,需 nightly,Float8/PP/microbatch overlap 仍 🚧 | `README.md:24-29/200-218` | OK |
 
@@ -252,6 +273,8 @@ pass 流水线(`compile_time_passes`,`passes.py:134-190`,按序):
 - **怎么掩盖**(两个通信 pass,流水线第 6/7 位):① `reassign_collective_pgs_pass` 把 AG 改派额外 NCCL PG → 独立 CUDA 流 → AG∥RS∥compute(等价 FSDP2 多流);② `joint_transformer_block_bucketing_reordering_pass` 按 block 分桶(每 block 合 1 AG+1 RS,像 FSDP2 ParamGroup)+ 用 `overlap_deps` 把 AG-start 提前、collective-wait 推后越过计算(等价 FSDP2 预取)。全在**编译期图变换**上完成。
 - **怎么组合**:与 TP/EP 用 `_distribute_dtensor`+`_StridedShard` 嵌套;混合精度编进 redistribute dtype;AC/CUDAGraph/CPU-offload/Async-TP 都是同一张图上的 pass。
 - **与 FSDP2 的关系**:**语义等价、实现哲学相反**——FSDP2 运行时手写编排(主路径、eager),SimpleFSDP 编译期图变换(实验、需 nightly)。它是 graph_trainer "Every optimization is a graph pass" 哲学在数据并行上的落地,也是 [[torchtitan_comm_optimizations_overlap_analysis]] §5 `full_dtensor`/autoparallel 方向的近亲。
+
+> 图源:`assets/simple-fsdp-compile-flow.svg`、`assets/simple-fsdp-bucketing-overlap.svg`(可用 `@resvg/resvg-js` 以 zoom=2 导出 PNG)。
 
 ---
 

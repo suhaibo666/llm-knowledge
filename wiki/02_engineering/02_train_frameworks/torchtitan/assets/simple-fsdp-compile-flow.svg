@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="520" font-family="Microsoft YaHei, SimHei, Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#868e96"/></marker>
+    <marker id="arD" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#5f3dc4"/></marker>
+  </defs>
+  <rect width="1300" height="520" fill="#ffffff"/>
+  <text x="30" y="34" font-size="23" font-weight="bold" fill="#212529">SimpleFSDP 编译流程:trace → 图 pass → 复用(aot_fx_trace)</text>
+  <text x="30" y="58" font-size="14" fill="#868e96">分片即 DTensor redistribute;通信成图节点后,由图 pass 分桶 / 换流 / 重排来掩盖。trace + pass 仅首步一次,之后复用。</text>
+
+  <!-- ===== flow boxes ===== -->
+  <g>
+    <rect x="28" y="80" width="288" height="82" rx="6" fill="#e7f5ff" stroke="#74c0fc"/>
+    <text x="172" y="102" font-size="14" font-weight="bold" text-anchor="middle" fill="#1864ab">① 模型构建</text>
+    <text x="42" y="124" font-size="12" fill="#1971c2">data_parallel:每参数切成分片 DTensor</text>
+    <text x="42" y="142" font-size="12" fill="#1971c2">+ 注册 ReplicateComputation 参数化</text>
+    <text x="42" y="157" font-size="11" fill="#4dabf7">forward 里 redistribute(Replicate)=all-gather</text>
+
+    <rect x="336" y="80" width="288" height="82" rx="6" fill="#d3f9d8" stroke="#69db7c"/>
+    <text x="480" y="102" font-size="14" font-weight="bold" text-anchor="middle" fill="#2b8a3e">② make_fx trace(仅首步)</text>
+    <text x="350" y="124" font-size="12" fill="#2f9e44">fwd + loss + bwd → 一张 joint FX 图</text>
+    <text x="350" y="142" font-size="12" fill="#2f9e44">redistribute 落成 all_gather/reduce_scatter 节点</text>
+    <text x="350" y="157" font-size="11" fill="#51cf66">逐参数,带 module_fqn / autograd_backward meta</text>
+
+    <rect x="644" y="80" width="288" height="82" rx="6" fill="#fff3bf" stroke="#ffd43b"/>
+    <text x="788" y="102" font-size="14" font-weight="bold" text-anchor="middle" fill="#e67700">③ apply_graph_passes(仅首步)</text>
+    <text x="658" y="124" font-size="12" fill="#f08c00">按序跑 compile_time_passes 改写图</text>
+    <text x="658" y="142" font-size="12" fill="#f08c00">通信掩盖 = 第 6、7 两个 pass(见下)</text>
+    <text x="658" y="157" font-size="11" fill="#ffa94d">trainer.py:211-223 / passes.py:134-190</text>
+
+    <rect x="952" y="80" width="288" height="82" rx="6" fill="#f1f3f5" stroke="#adb5bd"/>
+    <text x="1096" y="102" font-size="14" font-weight="bold" text-anchor="middle" fill="#495057">④ run_traced(每步)</text>
+    <text x="966" y="124" font-size="12" fill="#495057">直接执行变换后的图</text>
+    <text x="966" y="142" font-size="12" fill="#495057">梯度累加进 param.grad</text>
+    <text x="966" y="157" font-size="11" fill="#868e96">不再 trace、不再跑 pass</text>
+  </g>
+  <!-- arrows between flow boxes -->
+  <path d="M316,121 L336,121" fill="none" stroke="#868e96" stroke-width="1.6" marker-end="url(#ar)"/>
+  <path d="M624,121 L644,121" fill="none" stroke="#868e96" stroke-width="1.6" marker-end="url(#ar)"/>
+  <path d="M932,121 L952,121" fill="none" stroke="#868e96" stroke-width="1.6" marker-end="url(#ar)"/>
+
+  <!-- dashed arrow ③ -> pass panel -->
+  <path d="M788,162 L788,206" fill="none" stroke="#5f3dc4" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arD)"/>
+
+  <!-- ===== pass panel ===== -->
+  <rect x="336" y="208" width="904" height="252" rx="6" fill="#fcfcfd" stroke="#dee2e6"/>
+  <text x="352" y="230" font-size="13.5" font-weight="bold" fill="#343a40">compile_time_passes(passes.py:134-190)—— 按序改写 joint 图</text>
+  <g font-size="12">
+    <rect x="352" y="240" width="872" height="19" rx="2" fill="#f8f9fa"/><text x="360" y="253" fill="#495057">1 · eliminate_dead_code —— 死代码清理</text>
+    <rect x="352" y="261" width="872" height="19" rx="2" fill="#f8f9fa"/><text x="360" y="274" fill="#495057">2 · canonicalize_graph —— 规范化(detach / view / transpose 归一)</text>
+    <rect x="352" y="282" width="872" height="19" rx="2" fill="#f8f9fa"/><text x="360" y="295" fill="#495057">3 · tag_with_memory_policy —— AC / offload 逐张量打标(save / recompute / offload)</text>
+    <rect x="352" y="303" width="872" height="19" rx="2" fill="#f8f9fa"/><text x="360" y="316" fill="#495057">4 · apply_cpu_offload —— 按标插入 D2H / H2D</text>
+    <rect x="352" y="324" width="872" height="19" rx="2" fill="#f8f9fa"/><text x="360" y="337" fill="#495057">5 · selective_activation_remat —— 按标复算</text>
+    <rect x="352" y="345" width="872" height="21" rx="2" fill="#ffe8cc" stroke="#ffa94d"/><text x="360" y="359" fill="#d9480f" font-weight="bold">6 ★ reassign_collective_pgs_pass —— AG 改派额外 NCCL PG → 独立 CUDA 流(AG∥RS)  fsdp_passes.py:129</text>
+    <rect x="352" y="368" width="872" height="21" rx="2" fill="#ffe8cc" stroke="#ffa94d"/><text x="360" y="382" fill="#d9480f" font-weight="bold">7 ★ joint_transformer_block_bucketing_reordering —— 逐参数→每 block 1 AG+1 RS + 重排预取  :442</text>
+    <rect x="352" y="391" width="872" height="19" rx="2" fill="#f8f9fa"/><text x="360" y="404" fill="#495057">8 · [若开 async-TP] async_tensor_parallel_pass —— micro_pipeline_tp(AG+matmul / matmul+RS 融合)</text>
+    <rect x="352" y="412" width="872" height="19" rx="2" fill="#f8f9fa"/><text x="360" y="425" fill="#495057">9 · inductor(regional / full)+ FlexAttention / RMSNorm 标注 —— Triton 融合</text>
+    <rect x="352" y="433" width="872" height="19" rx="2" fill="#f8f9fa"/><text x="360" y="446" fill="#495057">10 · [若开 cudagraph] insert_kernel_annotations + cudagraph_pass</text>
+  </g>
+
+  <!-- ===== left callout ===== -->
+  <rect x="28" y="208" width="288" height="200" rx="6" fill="#fffbea" stroke="#ffe066"/>
+  <text x="44" y="230" font-size="13.5" font-weight="bold" fill="#5c5f00">掩盖 = 第 6、7 两个通信 pass</text>
+  <text x="44" y="254" font-size="12" fill="#66610a"><tspan font-weight="bold" fill="#d9480f">①</tspan> reassign_collective_pgs:</text>
+  <text x="58" y="271" font-size="11.5" fill="#66610a">AG 改派额外 PG → 独立流 → AG∥RS∥compute</text>
+  <text x="44" y="294" font-size="12" fill="#66610a"><tspan font-weight="bold" fill="#d9480f">②</tspan> joint_bucketing_reordering:</text>
+  <text x="58" y="311" font-size="11.5" fill="#66610a">逐参数 → 每 block 1 AG+1 RS;</text>
+  <text x="58" y="327" font-size="11.5" fill="#66610a">AG 提前(预取)、RS-wait 推后越过计算</text>
+  <text x="44" y="351" font-size="11.5" fill="#66610a"><tspan font-weight="bold">顺序</tspan>:reassign 必须在 bucketing 之前</text>
+  <text x="58" y="367" font-size="11.5" fill="#66610a">(passes.py:147),分桶继承新 PG</text>
+  <text x="44" y="391" font-size="11.5" fill="#868e96">粒度/掩盖详见「通信粒度」图</text>
+
+  <!-- bottom note -->
+  <text x="30" y="488" font-size="13" fill="#495057">关键:<tspan font-weight="bold">分组与掩盖发生在【编译期图变换】</tspan>,而非 FSDP2 的「运行时建 FSDPParamGroup + 手写多流」。SimpleFSDP 把这件事整体交给了编译器。</text>
+</svg>

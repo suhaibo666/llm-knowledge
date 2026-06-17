@@ -17,6 +17,8 @@ All source ingestions and significant wiki updates are logged here.
 
 **更新**:`[[torchtitan_simple_fsdp_analysis]]` §5 重写、复核表补 8 条(编译流程 + 两 pass)、§9 小结补编译流程条;同步源文档 `llm_repo/torchtitan/docs/parallelism-analysis/simple-fsdp.md`。页头日期 → 2026-06-17。
 
+**追加(同日,应用户「补充通信粒度 + 配图」)**:新增 **§5.5 通信粒度**——讲清 SimpleFSDP **trace 时逐参数(一参一次,无 eager 分组)→ 编译期 bucketing pass 按 block 合成每块 1 AG+1 RS**;「分层统一通信」是编译期优化产物、非天生(不开 compile 即退化逐参数)。修正 §6 对比表「通信单位」行。新增 **2 张 SVG→PNG 机制图**(入 `torchtitan/assets/`):`simple-fsdp-compile-flow`(编译流程 + 10 步 pass 流水线,高亮第 6/7 通信 pass)、`simple-fsdp-bucketing-overlap`(逐参数 → 每块 1AG+1RS 的三流并发时间线)。复核表补「参数化逐参数 getter」行。
+
 ---
 
 ## 2026-06-16: Megatron-LM 知识库去重整合 + 命名对齐 torchtitan(删 1 · 改名 21 · 索引收敛)
