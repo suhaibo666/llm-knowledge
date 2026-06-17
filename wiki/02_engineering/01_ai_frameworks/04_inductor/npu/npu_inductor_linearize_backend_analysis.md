@@ -8,7 +8,7 @@
 > [!important] 两个「NPU Inductor」别混淆
 > 本页讲的是**独立实验性**的 monkey-patch 后端 `npu_inductor_2.9.0`；torch_npu **内置**的 `_inductor`（Split-Tiling / CATLASS / MLIR / DVM 多后端框架）见 [[npu_compile_paths_overview]]、[[npu_triton_backend_deep_analysis]]、[[NPU_Inductor_Backend_Analysis]]。二者是**两条注册时互斥的路线**——本后端 `import` 时主动调 `torch_npu.utils._dynamo.disable_register_inductor_npu()` 关掉内置后端（`npu_inductor/__init__.py:87-101`），运行时只有一个生效。
 >
-> 本系列分三页：**本页**（架构 + Linearize + 融合门控 + rsplit + 类型适配 + 可优化点）、[[npu_inductor_dynamic_shape_analysis]]（动态 shape 编译一次 + 三情形 + permute 产物）、[[npu_inductor_vs_builtin_comparison]]（三方 output code 逐行对比 + 实测对标）。
+> 本系列分三页：**本页**（架构 + Linearize + 融合门控 + rsplit + 类型适配 + 可优化点）、[[npu_inductor_linearize_dynamic_shape_analysis]]（动态 shape 编译一次 + 三情形 + permute 产物）、[[npu_inductor_linearize_vs_builtin_comparison]]（三方 output code 逐行对比 + 实测对标）。
 
 ---
 
@@ -160,7 +160,7 @@ def triton_kernel(..., XBLOCK: tl.constexpr):
 
 `iteration_ranges_get_pid`（`:1357`）把上游 `tl.program_id(0)` 替换为 `(group_base + i)`。launcher（`npu_triton_heuristics.py:206-223`）对「真正 1D pointwise」(`npu_num_x_nodes==1` 且签名有 `xnumel`、无 `R0_BLOCK`) 把 `grid_0 = min(ceil(xnumel/XBLOCK), CU_COUNT)`，省小 kernel 的空 core launch 开销；其余固定 `grid_0 = CU_COUNT`（=40）。group dispatch 的 body 对 `grid < total_thread` 仍良定义（多余 lane `group_size=0` 跑零次循环）。
 
-> 动态 shape 下签名如何带 `numel`/`divisor`、三种情形如何生成 header，详见 [[npu_inductor_dynamic_shape_analysis]]。
+> 动态 shape 下签名如何带 `numel`/`divisor`、三种情形如何生成 header，详见 [[npu_inductor_linearize_dynamic_shape_analysis]]。
 
 ---
 
@@ -189,7 +189,7 @@ can_fuse_horizontal = can_fuse
 - **必修坑**：`SIMDScheduling` 把 `can_fuse_vertical/horizontal` 绑成指向**父类**的别名,子类只覆盖 `can_fuse` 不生效；须在子类重绑别名（`triton.py:2375-2376`），否则门控永不被调用。
 - 融合是**纯性能启发式**,在此拒绝绝不影响正确性（只是拆成几个小 kernel）。
 
-> Linearize 还让「跨布局融合」真正划算：permute+pointwise 融成一个 kernel 后,索引线性化把 mod/div 还原成仿射（详见 [[npu_inductor_vs_builtin_comparison]] §1）；反向地,`npu_expand`（`lowering.py:266`）+ `no_fuse_buffer_names` 主动**拆**「短尾 broadcast（内维<8）+ pointwise」的融合,避免 bishengir 标量退化（inner=4 → 60+us vs inner=8 → 4us,约 15×）。
+> Linearize 还让「跨布局融合」真正划算：permute+pointwise 融成一个 kernel 后,索引线性化把 mod/div 还原成仿射（详见 [[npu_inductor_linearize_vs_builtin_comparison]] §1）；反向地,`npu_expand`（`lowering.py:266`）+ `no_fuse_buffer_names` 主动**拆**「短尾 broadcast（内维<8）+ pointwise」的融合,避免 bishengir 标量退化（inner=4 → 60+us vs inner=8 → 4us,约 15×）。
 
 ---
 
@@ -219,7 +219,7 @@ can_fuse_horizontal = can_fuse
 
 ## 六、可优化点
 
-- **reduction / 归一化反向是实测短板**（[[npu_inductor_vs_builtin_comparison]] §0.6：`bn_backward_reduce` 0.28×、`bn_backward_reduction` 0.30×、`clip_ln_bw_sum_transpose` 0.41×、`sum_reduce0_1d` 0.47×、`softmax_dyn` 0.57×、`bart_ln_bw_dual_sum_512` 0.56×）——rsplit 触发窄（仅单个非 welford OUTER）,可扩展到 **welford/多输出/INNER** reduction（直击短板，已有 partial+combine 骨架）。
+- **reduction / 归一化反向是实测短板**（[[npu_inductor_linearize_vs_builtin_comparison]] §0.6：`bn_backward_reduce` 0.28×、`bn_backward_reduction` 0.30×、`clip_ln_bw_sum_transpose` 0.41×、`sum_reduce0_1d` 0.47×、`softmax_dyn` 0.57×、`bart_ln_bw_dual_sum_512` 0.56×）——rsplit 触发窄（仅单个非 welford OUTER）,可扩展到 **welford/多输出/INNER** reduction（直击短板，已有 partial+combine 骨架）。
 - **已实现但默认关闭的优化**（验证后可放开）：**per-node BLOCK autotune**（`npu_per_node_block` 代码内强制 False，`triton.py:1591/3385`；基础设施 axis_hints/per-node config builder/header 分支全就绪,多轴/转置 kernel 最受益）、`NPU_SUBTILE`、`NPU_STATIC_SPLIT_BLOCK`（曾整体负优化故回退）、`NPU_MASK_CMP_FP32`（>2²⁴ 索引精度风险）、care_padding 注入（`NPU_INJECT_CARE_PADDING=0`——设计文档称已注入,实际默认关,故该优化**目前未生效**）。
 - **无 GEMM/epilogue 融合**（最大能力缺口,mm 全走 CANN,对比内置 CATLASS）——短期可做 `mm + 逐点 epilogue` 融合省一次 HBM 往返。
 - **persistent reduction 一律关闭**（`should_use_persistent_reduction` 恒 False,`triton.py:441`）——小 rnumel 也走 looped,可对小 INNER reduction 选择性放开（需确认 Triton-Ascend 支持度）。
@@ -227,14 +227,14 @@ can_fuse_horizontal = can_fuse
 - **UB 估算偏粗**：`_estimate_pointwise_tile_bytes` 固定 `4B/elem × 2.0 overhead`，fp16/混算/scratch 估不准,可按 dtype 细化提升 autotune 命中率。
 - **文本级正则改写脆弱**（care_padding / int1 cast / rsplit body / 地址子串替换）依赖上游生成文本形态,升级易静默失配；建议上移到 IR/结构化层。
 - **monkey-patch 随上游版本漂移**（各文件头部 2.3.1→2.7.1→2.9.0 迁移注记即证据）——建议为关键 patch 点加版本探测 fail-fast；白名单外算子静默 fallback,建议对 fallback 占比高的图给 debug 提示。
-- **4 个模型精度未过**（`hf_Bart`、两个 `hf_T5`、`soft_actor_critic`，[[npu_inductor_vs_builtin_comparison]] §0.1）需逐 case 修（T5 系与 position-bias backward 巨型融合/dual-decomp 相关）。
+- **4 个模型精度未过**（`hf_Bart`、两个 `hf_T5`、`soft_actor_critic`，[[npu_inductor_linearize_vs_builtin_comparison]] §0.1）需逐 case 修（T5 系与 position-bias backward 巨型融合/dual-decomp 相关）。
 
 ---
 
 ## Related Pages
 
-- [[npu_inductor_dynamic_shape_analysis]] — 本后端动态 shape：编译一次 + 三情形 A/B/C + permute 产物（本系列）
-- [[npu_inductor_vs_builtin_comparison]] — 三方 output code 逐行对比 + §0 实测对标（本系列）
+- [[npu_inductor_linearize_dynamic_shape_analysis]] — 本后端动态 shape：编译一次 + 三情形 A/B/C + permute 产物（本系列）
+- [[npu_inductor_linearize_vs_builtin_comparison]] — 三方 output code 逐行对比 + §0 实测对标（本系列）
 - [[npu_compile_paths_overview]] — torch_npu 内置三条编译路径全景（§九 GPU vs NPU 动态 shape）
 - [[npu_triton_backend_deep_analysis]] — torch_npu 内置 Triton/Split-Tiling 路径深度
 - [[npu_inductor_optimization_analysis]] — 内置后端「硬件特性→优化思想→案例」

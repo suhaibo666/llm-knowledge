@@ -4,6 +4,19 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-17: NPU 实验后端 3 页按「方案」改名（`npu_inductor_linearize_*`）
+
+**Type**: Rename（应用户「区分方案」要求，避免与 torch_npu 内置后端页混淆；`git mv` + 全 wiki `[[link]]` 同步）
+
+把实验性 `npu_inductor_2.9.0`（**Linearize 方案**）的页统一为 `npu_inductor_linearize_*` 前缀，与内置 default（**Split-Tiling**）的 `npu_inductor_*`/`npu_triton_*` 区分：
+- `npu_inductor_dynamic_shape_analysis` → [[npu_inductor_linearize_dynamic_shape_analysis]]
+- `npu_inductor_vs_builtin_comparison` → [[npu_inductor_linearize_vs_builtin_comparison]]
+- [[npu_inductor_linearize_backend_analysis]] 本已合规，不变。
+
+全 wiki `[[link]]`（index / changelog / 三页互链）同步更新；校验：0 处残留旧名、0 新增悬空链接。
+
+---
+
 ## 2026-06-17: Inductor 分析「完整录入」扩写 — NPU 实验后端拆 3 页（§0 对标 + §1 三方 output code）+ 上游融合补全
 
 **Type**: Expand（应用户「完整录入、不过度裁剪、查知识熵减」要求；回读原始《npu_inductor 设计与对标分析》§0/§1 精确还原；纯增不删既有结构）
@@ -12,8 +25,8 @@ All source ingestions and significant wiki updates are logged here.
 
 **NPU 侧：1 页 → 3 页系列**：
 - [[npu_inductor_linearize_backend_analysis]] 扩为完整版：装配顺序全表、Linearize 恒等式 + `_apply_linearize` 主干 + 四遍折叠表 + **dual-decomp 折叠实例**（softmax-bw + sum(0) + permute，4 独立轴 → 2 基础轴的完整除/模映射 + 地址文本修复）、索引线性化全 6 pass、40-CU group dispatch prologue 完整代码、融合门控（病灶数据 + 别名坑）、r 轴 rsplit（partial + combine）、**全 5 处类型降型**、白名单 lowering + 算子专项、**完整可优化点**。
-- [[npu_inductor_dynamic_shape_analysis]]（新）—— 编译一次 vs gears 分桶、签名 numel/divisor 代码、header 三件套、**三情形 A/B/C 完整代码 + 对照表**、配套（fold_trivial / 符号 split / static split block）、permute 产物。
-- [[npu_inductor_vs_builtin_comparison]]（新，comparison）—— **§1 三方 output code 逐行对比**（GPU / 内置 Split-Tiling / 本后端 Linearize 完整 kernel + 逐项差异表）+ **§0 全套实测**（torchbench 34 模型总体 / 逐模型、京东 OneRec 4 backbone、test_all 60 算子 case）+ 逐维综合矩阵。
+- [[npu_inductor_linearize_dynamic_shape_analysis]]（新）—— 编译一次 vs gears 分桶、签名 numel/divisor 代码、header 三件套、**三情形 A/B/C 完整代码 + 对照表**、配套（fold_trivial / 符号 split / static split block）、permute 产物。
+- [[npu_inductor_linearize_vs_builtin_comparison]]（新，comparison）—— **§1 三方 output code 逐行对比**（GPU / 内置 Split-Tiling / 本后端 Linearize 完整 kernel + 逐项差异表）+ **§0 全套实测**（torchbench 34 模型总体 / 逐模型、京东 OneRec 4 backbone、test_all 60 算子 case）+ 逐维综合矩阵。
 
 **上游侧补全**：[[scheduler_analysis]] 新增 §7.6——组兼容（numel/rnumel + tiling 一致）、proximity 门控（>64）、模板 prologue/epilogue 融合、foreach 融合、`_LoopMutationTracker` 回滚 + 循环重排；`> [!note]` 指向 NPU 后端的 read 门控 / proximity 收 20。
 

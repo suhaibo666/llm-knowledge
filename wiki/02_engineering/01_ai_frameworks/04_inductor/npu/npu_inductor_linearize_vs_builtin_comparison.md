@@ -5,7 +5,7 @@
 > 版本基线：`npu_inductor_2.9.0` 包 + PyTorch 2.9.0；内置后端 = torch_npu v2.7.1.post5。
 > 最后更新：2026-06-17
 
-> 本页是 [[npu_inductor_linearize_backend_analysis]] 系列的对标分册。机制原理见主页与 [[npu_inductor_dynamic_shape_analysis]]；内置后端细节见 [[npu_triton_backend_deep_analysis]]；GPU 上游基线见 [[inductor_gpu_kernel_dispatch_model]]。
+> 本页是 [[npu_inductor_linearize_backend_analysis]] 系列的对标分册。机制原理见主页与 [[npu_inductor_linearize_dynamic_shape_analysis]]；内置后端细节见 [[npu_triton_backend_deep_analysis]]；GPU 上游基线见 [[inductor_gpu_kernel_dispatch_model]]。
 >
 > [!note] 实测数据口径
 > §二实测数字均为作者在仓库内的实测记录（本知识库未独立复跑），以实际环境为准。**只对比算子加速比/设备 kernel 耗时**（直接反映 codegen 质量）；E2E 因两侧 aclgraph 开关不一致**不可比**，不纳入。
@@ -126,7 +126,7 @@ def triton_unk_fused_add_permute_0(in_ptr0, in_ptr1, out_ptr0, ks0, ks1, ynumel,
             tl.store(out_ptr0 + (x2 + ks1*y0 + ks0*ks1*y1), tmp2, x2mask & y0mask & y1mask)
 ```
 
-- `total_thread=40` group dispatch + 单层 `for i in range(group_size)`；permute 维保持原生子轴（`_maybe_split_fused_axes` 撤销 y 轴合并），load/store **无 mod/div、无 kernel 内 permute**；`y1` divisor 符号、`hint=128>1` 故多一层 `for y1inner`；签名多 `y1divisor`（动态 numel·divisor 参数流）。机制详见 [[npu_inductor_dynamic_shape_analysis]] §三、§五。
+- `total_thread=40` group dispatch + 单层 `for i in range(group_size)`；permute 维保持原生子轴（`_maybe_split_fused_axes` 撤销 y 轴合并），load/store **无 mod/div、无 kernel 内 permute**；`y1` divisor 符号、`hint=128>1` 故多一层 `for y1inner`；签名多 `y1divisor`（动态 numel·divisor 参数流）。机制详见 [[npu_inductor_linearize_dynamic_shape_analysis]] §三、§五。
 
 ### 1.4 三方逐项差异
 
@@ -216,7 +216,7 @@ def triton_unk_fused_add_permute_0(in_ptr0, in_ptr1, out_ptr0, ks0, ks1, ynumel,
 ## Related Pages
 
 - [[npu_inductor_linearize_backend_analysis]] — 本后端机制总览（架构 + Linearize + 融合 + rsplit + 优化点）
-- [[npu_inductor_dynamic_shape_analysis]] — 本后端动态 shape（三情形 + permute 产物机制）
+- [[npu_inductor_linearize_dynamic_shape_analysis]] — 本后端动态 shape（三情形 + permute 产物机制）
 - [[npu_triton_backend_deep_analysis]] — torch_npu 内置 Triton/Split-Tiling 路径（§1.2 内置后端细节）
 - [[npu_compile_paths_overview]] — 内置三路径全景 + §九 GPU vs NPU 动态 shape
 - [[inductor_gpu_kernel_dispatch_model]] — GPU 上游派发模型（§1.1 GPU 侧基线）

@@ -40,7 +40,7 @@ for node in tree.nodes.values():
 
 调用侧（`add_numel_to_call_args`，`triton.py:2155-2222`）把这些 per-node 量算成 wrapper 变量传入；整型实参还会经 `i64→i32` 降型（`triton.py:1560-1571`）。
 
-> **与上游/GPU 的关键差异**：本后端把 permute 维**保持为原生子轴**（divisor 动态），故比上游多传 `*divisor` 实参；上游靠 kernel 内 `y//s`/`y%s` 运行期还原（GPU mod/div 廉价）。三方产物对照见 [[npu_inductor_vs_builtin_comparison]] §1。
+> **与上游/GPU 的关键差异**：本后端把 permute 维**保持为原生子轴**（divisor 动态），故比上游多传 `*divisor` 实参；上游靠 kernel 内 `y//s`/`y%s` 运行期还原（GPU mod/div 廉价）。三方产物对照见 [[npu_inductor_linearize_vs_builtin_comparison]] §1。
 
 ---
 
@@ -109,7 +109,7 @@ for x0inner in range(0, real_block_x0, ((XBLOCK // divisor_hint) if (XBLOCK > di
 
 ## 五、产物实例（permute + add，三维全动态）
 
-`x.permute(0,2,1) + y` `dynamic=True` 的本后端产物（完整三方对照见 [[npu_inductor_vs_builtin_comparison]] §1.4）关键片段：permute 维 `y1` 保持原生子轴（divisor=`s27` 动态、`divisor_hint=128>1` → 走情形 B/C 的 inner loop），签名多出 `y1divisor`：
+`x.permute(0,2,1) + y` `dynamic=True` 的本后端产物（完整三方对照见 [[npu_inductor_linearize_vs_builtin_comparison]] §1.4）关键片段：permute 维 `y1` 保持原生子轴（divisor=`s27` 动态、`divisor_hint=128>1` → 走情形 B/C 的 inner loop），签名多出 `y1divisor`：
 
 ```python
 def triton_unk_fused_add_permute_0(..., ynumel, y0numel, y1numel, y1divisor, xnumel, x2numel,
@@ -133,7 +133,7 @@ def triton_unk_fused_add_permute_0(..., ynumel, y0numel, y1numel, y1divisor, xnu
 ## Related Pages
 
 - [[npu_inductor_linearize_backend_analysis]] — 本后端总览（架构 + Linearize + 融合 + rsplit + 优化点）
-- [[npu_inductor_vs_builtin_comparison]] — permute+add 三方 output code 逐行对比（§1）
+- [[npu_inductor_linearize_vs_builtin_comparison]] — permute+add 三方 output code 逐行对比（§1）
 - [[dynamic_shapes_full_analysis]] — 上游动态 shape 全链路（ShapeEnv/Guard，本后端继承的前半段）
 - [[inductor_codegen_dynamic_shape_analysis]] — 上游 codegen 动态 shape（§2.4 `ks*` 升 i64 vs 本后端 i32）
 - [[npu_compile_paths_overview]] — 内置后端动态 shape 难点（§九 GPU vs NPU）
