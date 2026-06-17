@@ -4,6 +4,21 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-17: SimpleFSDP 页 §5 深挖(编译流程 + 两个通信 pass + 掩盖机制)
+
+**Type**: Expand(对照 torchtitan `main` @ `61c010fcb` `experiments/graph_trainer/` 源码逐行核实;纯增不改既有结构)
+
+**背景**:`[[torchtitan_simple_fsdp_analysis]]` 原 §5 偏"概念入门",未讲清编译流程 / 通信 pass / 加 pass 阶段 / 掩盖机制。用户追问后,读透 `compile.py` / `passes.py` / `fsdp_passes.py` / `trainer.py` / `make_fx_tracer.py`,把 §5 从一节扩成 5.1–5.4 源码级深挖:
+
+- **5.1 编译流程**:`aot_fx_trace` 首步 `minimal_fx_tracer`(make_fx)把 fwd+loss+bwd 追成**一张 joint FX 图**(redistribute 落成 `all_gather_into_tensor`/`reduce_scatter_tensor` 节点),`apply_graph_passes` 跑 `compile_time_passes` 流水线改写图(只跑一次),之后每步 `run_traced` 复用;给出 10 步 pass 流水线,标出两个通信 pass 在**第 6/7 位**(显存策略之后、inductor 之前)。
+- **5.2 通信 pass ①** `reassign_collective_pgs_pass`:把 AG 改派到额外 NCCL PG(同 ranks、`use_local_synchronization`)→ 独立 CUDA 流 → **AG∥RS∥compute**(等价 FSDP2 多流)。
+- **5.3 通信 pass ②** `joint_transformer_block_bucketing_reordering_pass`(`JointManualOverlapScheduler`):按 block/方向/FSDP2 参数序**分桶**(每 block 合 1 AG+1 RS)+ `overlap_deps` **重排**(AG 逆序预取、RS 延后 wait 越过计算)。
+- **5.4** 一图收束 + 纠正:`autobucketing_/transformer_block_bucketing` 是已废弃 JIT 后端的非 joint 版,默认 aot_fx_trace 走 joint 版。
+
+**更新**:`[[torchtitan_simple_fsdp_analysis]]` §5 重写、复核表补 8 条(编译流程 + 两 pass)、§9 小结补编译流程条;同步源文档 `llm_repo/torchtitan/docs/parallelism-analysis/simple-fsdp.md`。页头日期 → 2026-06-17。
+
+---
+
 ## 2026-06-16: Megatron-LM 知识库去重整合 + 命名对齐 torchtitan(删 1 · 改名 21 · 索引收敛)
 
 **Type**: Refactor & Dedup(用户授权"只删重复的 md";4 个只读 agent 产出重复度矩阵 → 合并唯一独有内容 → 删冗余文件 → 全量改名 + 链接修复;允许删除既有文档)
