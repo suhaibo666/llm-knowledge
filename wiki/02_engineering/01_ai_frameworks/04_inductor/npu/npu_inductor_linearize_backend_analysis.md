@@ -6,7 +6,7 @@
 > 最后更新：2026-06-17
 
 > [!important] 两个「NPU Inductor」别混淆
-> 本页讲的是**独立实验性**的 monkey-patch 后端 `npu_inductor_2.9.0`；torch_npu **内置**的 `_inductor`（Split-Tiling / CATLASS / MLIR / DVM 多后端框架）见 [[npu_compile_paths_overview]]、[[npu_triton_backend_deep_analysis]]、[[NPU_Inductor_Backend_Analysis]]。二者是**两条注册时互斥的路线**——本后端 `import` 时主动调 `torch_npu.utils._dynamo.disable_register_inductor_npu()` 关掉内置后端（`npu_inductor/__init__.py:87-101`），运行时只有一个生效。
+> 本页讲的是**独立实验性**的 monkey-patch 后端 `npu_inductor_2.9.0`；torch_npu **内置**的 `_inductor`（Split-Tiling / CATLASS / MLIR / DVM 多后端框架）见 [[npu_compile_paths_overview]]、[[npu_inductor_splittiling_backend_analysis]]、[[NPU_Inductor_Backend_Analysis]]。二者是**两条注册时互斥的路线**——本后端 `import` 时主动调 `torch_npu.utils._dynamo.disable_register_inductor_npu()` 关掉内置后端（`npu_inductor/__init__.py:87-101`），运行时只有一个生效。
 >
 > 本系列分三页：**本页**（架构 + Linearize + 融合门控 + rsplit + 类型适配 + 可优化点）、[[npu_inductor_linearize_dynamic_shape_analysis]]（动态 shape 编译一次 + 三情形 + permute 产物）、[[npu_inductor_linearize_vs_builtin_comparison]]（三方 output code 逐行对比 + 实测对标）。
 
@@ -210,7 +210,7 @@ can_fuse_horizontal = can_fuse
 ## 五、类型降型 / 白名单 lowering / 算子适配
 
 - **类型降型**（昇腾 vector core 不支持 fp64/i64 计算）：fp64→fp32 / i64→i32 / bool→int1 **全链路 5 处**——printer `_print_Float`/`_print_ToFloat`（`triton.py:122-132`）、`triton_compute_type`（`:287`，含 fp16/bf16→fp32 by `codegen_upcast_to_fp32`、各 fp8）、`_triton_type_mapping["tl.int64"]="tl.int32"`（`npu_patch.py:1447`）、`NPUTritonKernelOverrides.to_dtype`/`constant`（`triton.py:379-407`）、签名 `*i64→*i32` + `downcast_args`（`:1560`）、launcher 运行期 downcast（`npu_triton_heuristics.py:309`）。
-- **白名单 lowering**（`lowering.py:132`）：`GENERATE_LIST`（约 70 算子）内才走 Inductor codegen（可被融合），其余 `make_fallback` 到 CANN aclnn。`mm`/卷积/池化/`gather`/`scatter` 等**不在白名单 → 走 CANN，无 GEMM codegen**（对比内置后端 CATLASS,见 [[npu_triton_backend_deep_analysis]]）。
+- **白名单 lowering**（`lowering.py:132`）：`GENERATE_LIST`（约 70 算子）内才走 Inductor codegen（可被融合），其余 `make_fallback` 到 CANN aclnn。`mm`/卷积/池化/`gather`/`scatter` 等**不在白名单 → 走 CANN，无 GEMM codegen**（对比内置后端 CATLASS,见 [[npu_inductor_splittiling_backend_analysis]]）。
 - **算子专项**：`npu_cat→CANN ConcatD`（`lowering.py:189`，上游 ConcatKernel realize-into 非连续 store 慢 20×+）；`npu_expand` 短尾 broadcast realize；`npu_var_mean_helper_` 高精度计算；`add_npu_patch` 里的 decomp 覆盖——`softmax_backward` 去 FMA、`gelu`/`gelu_backward`、`rms_norm` 走自定义、`native_dropout` 修 DT_BOOL mask、SDPA 走 `npu_fusion_attention_v3`、`matmul_backward` 补分解、0 维 CPU 标量 unwrap、`care_padding=False` 注入（默认关）、`tl.load(...).to(tl.int1)`→`(…!=0)`（避 packed-i1 trunc 越界，默认开）。
 - 关闭/中和 FX pass：`_disable_pad_mm_pass`、`_disable_addmm_fusion_pass`（`npu_patch.py:1051/1071`，NPU 上 add+mm→addmm 无门控触发有害）。
 - **autotune**：`NPUCachingAutotuner` 复用上游骨架,但加 **UB 192KB 预算过滤**（`_estimate_pointwise_tile_bytes`/`_filter_by_ub_estimate`，`npu_triton_heuristics.py:1418/1454`）+ balanced xblock 过滤 + mspti/profiler 计时 + `coordinate_descent` 强制关；`AUTOTUNE_ENHANCE` 路径生成对齐节点长度/divisor/饱和的大候选集。
@@ -236,7 +236,7 @@ can_fuse_horizontal = can_fuse
 - [[npu_inductor_linearize_dynamic_shape_analysis]] — 本后端动态 shape：编译一次 + 三情形 A/B/C + permute 产物（本系列）
 - [[npu_inductor_linearize_vs_builtin_comparison]] — 三方 output code 逐行对比 + §0 实测对标（本系列）
 - [[npu_compile_paths_overview]] — torch_npu 内置三条编译路径全景（§九 GPU vs NPU 动态 shape）
-- [[npu_triton_backend_deep_analysis]] — torch_npu 内置 Triton/Split-Tiling 路径深度
+- [[npu_inductor_splittiling_backend_analysis]] — torch_npu 内置 Triton/Split-Tiling 路径深度
 - [[npu_inductor_optimization_analysis]] — 内置后端「硬件特性→优化思想→案例」
 - [[NPU_Inductor_Backend_Analysis]] — 内置 NPU Inductor 后端集成架构与融合规则
 - [[npu_lowering_guide]] — NPU 特定 lowering / fallback（与本后端白名单对照）

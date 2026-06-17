@@ -29,7 +29,7 @@
 |------|---------|
 | [[NPU_Inductor_Backend_Analysis]] | NPU Inductor 后端集成架构;5 后端融合规则与性能对比;后端混合使用机制(MultiTemplateBuffer、Prologue/Epilogue Fusion、4 实战场景);**NPU 适配补充**(后端注册/初始化/RNG patch/特定配置,来自 upstream 技术分析迁入) |
 | [[npu_lowering_guide]] | NPU 特定 lowering 与算子映射;FALLBACK_LIST 黑名单策略;§9 当前源码复核 |
-| [[npu_triton_backend_deep_analysis]] | Triton/default 路径深度:golden_var_list、CATLASS/CK GEMM、monkey patch、NPUIndexTritonKernel |
+| [[npu_inductor_splittiling_backend_analysis]] | **内置 default（Split-Tiling 方案）**：Triton/default 路径深度——golden_var_list、CATLASS/CK GEMM、monkey patch、NPUIndexTritonKernel（对照实验 [[npu_inductor_linearize_backend_analysis]]） |
 | [[npu_inductor_optimization_analysis]] | 优化思想全景(why):硬件特性→优化思想→实际案例,跨 Triton/MLIR/DVM 三后端 |
 | [[npu_inductor_linearize_backend_analysis]] | **实验性 `npu_inductor_2.9.0`**（≠ 内置后端）：Linearize + 40-CU group dispatch、索引线性化、编译一次动态 shape、`NPU_MAX_FUSED_READS` 融合门控、r 轴 rsplit、与内置后端对比、可优化点 |
 | [[npu_inductor_linearize_dynamic_shape_analysis]] | 实验后端动态 shape：编译一次、签名只传动态 numel/divisor、header 三件套与三情形 A/B/C（含 inner-loop）、permute 产物 |

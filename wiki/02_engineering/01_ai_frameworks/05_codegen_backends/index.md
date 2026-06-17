@@ -1,7 +1,7 @@
 # 05 · Codegen 后端 — 目录索引
 
 > Inductor IR/FX 之后的代码生成后端。本域聚焦 **MLIR** 路径(核心概念、torch-mlir Pass 管线、NPU MLIR 后端)及其与 **Triton** 的对比选型。
-> Triton 在 NPU 上的具体适配见 [[04_inductor/npu/index]] 的 [[npu_triton_backend_deep_analysis]];CUDA/C++ codegen 见 [[04_inductor/index]]。
+> Triton 在 NPU 上的具体适配见 [[04_inductor/npu/index]] 的 [[npu_inductor_splittiling_backend_analysis]];CUDA/C++ codegen 见 [[04_inductor/index]]。
 > 最后更新: 2026-06-13
 
 ---

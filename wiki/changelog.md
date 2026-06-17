@@ -4,6 +4,19 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-17: 内置 default 后端「真·Split-Tiling」页改名对称（`npu_inductor_splittiling_backend_analysis`）
+
+**Type**: Rename（应用户「内置后端加 `_splittiling` 对称区分」；仅改唯一真·Split-Tiling 页，MLIR/DVM/总览/通用页保持原名以免误标；`git mv` + 全 wiki `[[link]]` 同步）
+
+为与实验性 [[npu_inductor_linearize_backend_analysis]] 成「方案对称对」，把内置 default 后端唯一描述 **Triton / Split-Tiling 路径**的深度页改名：
+- `npu_triton_backend_deep_analysis` → [[npu_inductor_splittiling_backend_analysis]]
+
+**刻意未改名（非单一方案，加后缀会误标）**：[[npu_compile_paths_overview]]（Triton/ACLGraph/MLIR 三路径）、[[NPU_Inductor_Backend_Analysis]]（5 后端融合规则）、[[npu_inductor_optimization_analysis]]（跨 Triton/MLIR/DVM）、[[npu_lowering_guide]] / [[npu_compile]] / [[npu_debug_guide]]（通用）。
+
+**同步**：该页有 10 处跨目录入链（04_inductor / 05_codegen_backends / 07_op_registration / changelog），全部 `[[link]]` 用 perl 同步；页头加 `> [!note]` 指向实验 Linearize 对照页；[[04_inductor/npu/index]] 行标「内置 default（Split-Tiling）」。校验：0 残留旧名、0 新增悬空链接。
+
+---
+
 ## 2026-06-17: megatron_comm_overlap_analysis §5.6.1 补 DeepEP/HybridEP 两级通信模型
 
 **Type**: Expand(承 §③.3,把两级模型按"加速通信"角度补到通信掩盖页;纯增,交叉引用避免重复)
@@ -81,7 +94,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **索引/空白更新**：[[04_inductor/index]] 加「codegen 派发与运行时（GPU 基线）」分组 3 行；[[04_inductor/npu/index]] 加实验后端行 + 头注（区分内置/实验、PyTorch 2.9.0 基线）；[[01_ai_frameworks/index]] 空白「Inductor autotuning」「NPU Monkey Patch 演进追踪 v2.9.0」标 ✅ 并指向新页。
 
-**交叉引用**：4 新页均含 `## Related Pages` + `[[wikilink]]`；NPU 页 §六对比直接 backlink 既有 [[npu_triton_backend_deep_analysis]]/[[npu_compile_paths_overview]]/[[npu_inductor_optimization_analysis]]（内置后端细节，不复述）；上游 3 页互链并指向既有 [[scheduler_analysis]]/[[dynamic_shapes_full_analysis]]/[[PyTorch_Inductor_Technical_Analysis]]。
+**交叉引用**：4 新页均含 `## Related Pages` + `[[wikilink]]`；NPU 页 §六对比直接 backlink 既有 [[npu_inductor_splittiling_backend_analysis]]/[[npu_compile_paths_overview]]/[[npu_inductor_optimization_analysis]]（内置后端细节，不复述）；上游 3 页互链并指向既有 [[scheduler_analysis]]/[[dynamic_shapes_full_analysis]]/[[PyTorch_Inductor_Technical_Analysis]]。
 
 **核验**：所有代码引用带 `file:line`（npu_inductor 包 + upstream `torch/_inductor/`）；零冗余（内置后端/上游已覆盖部分一律 cross-link 而非复述）；纯增，未删改既有页结构。源分析底稿在 pytorch 工作区 `npu_inductor_2.9.0/triton-backend-analysis/`。
 
@@ -381,11 +394,11 @@ All source ingestions and significant wiki updates are logged here.
 **索引与交叉引用**：
 
 - `inductor/index.md` —— NPU 后端节新增该页（标注「优化思想全景 why」，与既有「what/how」页互补）；最后更新 2026-06-13
-- `inductor/npu_triton_backend_deep_analysis.md` —— Related Pages 新增反链（本页「why」与该页「what/how」互补）
+- `inductor/npu_inductor_splittiling_backend_analysis.md` —— Related Pages 新增反链（本页「why」与该页「what/how」互补）
 
 **矛盾标注（保留双方）**：
 
-- fallback / patch 计数口径差异——本页（2.7 来源）fallback ~635 / patch 30+，本库 [[npu_triton_backend_deep_analysis]]（v2.7.1 源码核查）fallback 859 / patch 35+；已在页内 `> [!contradiction]` 标注，深入以 v2.7.1 源码页为准
+- fallback / patch 计数口径差异——本页（2.7 来源）fallback ~635 / patch 30+，本库 [[npu_inductor_splittiling_backend_analysis]]（v2.7.1 源码核查）fallback 859 / patch 35+；已在页内 `> [!contradiction]` 标注，深入以 v2.7.1 源码页为准
 
 ---
 
@@ -438,7 +451,7 @@ All source ingestions and significant wiki updates are logged here.
 **索引与交叉引用**:
 
 - `01_ai_frameworks/index.md` —— 子目录表新增 [[07_op_registration/npu/index]];页面列表新增「op-plugin 算子接入」区(3 行);页头摘要与最后更新改 2026-06-12
-- 交叉引用:三篇互链,并 [[link]] 到既有 [[npu_compile_paths_overview]] / [[npu_triton_backend_deep_analysis]] / [[aclgraph_deep_analysis]] / [[PyTorch_Dynamo_Technical_Analysis]] / [[npu_lowering_guide]]。入图判别页明确定位为「判别视角」,与既有「路径实现全景」页互补、不重复
+- 交叉引用:三篇互链,并 [[link]] 到既有 [[npu_compile_paths_overview]] / [[npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / [[PyTorch_Dynamo_Technical_Analysis]] / [[npu_lowering_guide]]。入图判别页明确定位为「判别视角」,与既有「路径实现全景」页互补、不重复
 
 ---
 
@@ -889,7 +902,7 @@ All source ingestions and significant wiki updates are logged here.
   - 当前适配的收益：快速迭代、硬件特性直达、多路径冗余保障
   - 演进路线：v2.7.1 (35+ patches) → v2.9.0 (~10) → master (~8)，`_compat.inductor` 兼容层、条件化 patch 管理
 
-- `wiki/02_engineering/01_ai_frameworks/inductor/npu_triton_backend_deep_analysis.md`
+- `wiki/02_engineering/01_ai_frameworks/inductor/npu_inductor_splittiling_backend_analysis.md`
   - Triton/Inductor default 路径深度分析（Path 1）
   - Monkey Patch 五类分类：调度器重写、代码生成、wrapper 层、 lowering 规则、Triton 集成
   - `NPUCombinedScheduling` 继承 `CUDACombinedScheduling`，组合 CATLASS + Triton + NoLinearTriton 三种调度器
@@ -920,13 +933,13 @@ All source ingestions and significant wiki updates are logged here.
 **更新页面**:
 
 - `wiki/02_engineering/01_ai_frameworks/inductor/index.md`
-  - 新增 2 个深度分析页面条目（npu_triton_backend_deep_analysis、npu_mlir_backend_deep_analysis）
+  - 新增 2 个深度分析页面条目（npu_inductor_splittiling_backend_analysis、npu_mlir_backend_deep_analysis）
 
 - `wiki/02_engineering/01_ai_frameworks/cudagraphs/npugraphs/index.md`
   - 新增 1 个深度分析页面条目（aclgraph_deep_analysis）
 
 - `wiki/02_engineering/01_ai_frameworks/index.md`
-  - 新增 4 个页面条目（npu_compile_paths_overview、npu_triton_backend_deep_analysis、npu_mlir_backend_deep_analysis、aclgraph_deep_analysis）
+  - 新增 4 个页面条目（npu_compile_paths_overview、npu_inductor_splittiling_backend_analysis、npu_mlir_backend_deep_analysis、aclgraph_deep_analysis）
   - 更新知识空白（新增 3 项：monkey patch 演进追踪、CATLASS/CK 生态、IR 回溯通用性）
 
 - `wiki/changelog.md`（本条目）

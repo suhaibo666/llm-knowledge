@@ -1,6 +1,6 @@
 # NPU 算子入图判别指南（dynamo / inductor+triton / aclgraph 三关）
 
-> **判别视角**：给定一个算子，如何判断它能否「入图」、会卡在哪一关、用什么命令验证。这不是路径实现介绍（实现全景见 [[npu_compile_paths_overview]]、各关深度见 [[npu_triton_backend_deep_analysis]] / [[aclgraph_deep_analysis]] / [[PyTorch_Dynamo_Technical_Analysis]]），而是一份面向「这个算子能不能入图」的可操作判别清单。
+> **判别视角**：给定一个算子，如何判断它能否「入图」、会卡在哪一关、用什么命令验证。这不是路径实现介绍（实现全景见 [[npu_compile_paths_overview]]、各关深度见 [[npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / [[PyTorch_Dynamo_Technical_Analysis]]），而是一份面向「这个算子能不能入图」的可操作判别清单。
 >
 > 基于版本：`E:\97-codes\pytorch\torch_npu` 当前 checkout
 > 分析日期：2026-06-12
@@ -36,7 +36,7 @@
 | 路线 | backend | 图引擎 | 「能否入图」由谁决定 | 深度页 |
 |------|---------|--------|---------------------|--------|
 | **torchair** | `"npu"` | CANN GE 整图 | torchair 的 `ge_converter`（把 aten/npu IR 翻成 GE 节点）+ meta | — |
-| **inductor+triton** | `"inductor"` | inductor → Triton-Ascend | dynamo meta + inductor lowering/fallback | [[npu_triton_backend_deep_analysis]] |
+| **inductor+triton** | `"inductor"` | inductor → Triton-Ascend | dynamo meta + inductor lowering/fallback | [[npu_inductor_splittiling_backend_analysis]] |
 | **aclgraph** | `"inductor"` + `mode="reduce-overhead"` | NPUGraph（CANN `AclmdlRI*` capture/replay） | 上两关 + capture 约束 | [[aclgraph_deep_analysis]] |
 | **npugraphs / npugraph_ex** | `"npugraphs"` / `"npugraph_ex"` | 直接 capture FX 图 / 独立外部包 | 同 aclgraph 门禁 | [[torch_compile_npugraphs_deep_dive]] |
 
@@ -264,7 +264,7 @@ graph TD
 - [[op_plugin_config_and_classification_guide]] —— 算子的 `op_api`/`acl_op` 配置（第三关 aclnn-only 铁律的源头）
 - [[op_registration_pipeline_analysis]] —— eager 注册与 acl_op/op_api 运行时三层选择
 - [[npu_compile_paths_overview]] —— 三条后端路径实现全景（本页的判别对象）
-- [[npu_triton_backend_deep_analysis]] —— 第二关 Triton/Inductor default 路径深度分析
+- [[npu_inductor_splittiling_backend_analysis]] —— 第二关 Triton/Inductor default 路径深度分析
 - [[aclgraph_deep_analysis]] —— 第三关 ACLGraph 图捕获/重放深度分析
 - [[PyTorch_Dynamo_Technical_Analysis]] —— 第一关 dynamo 图捕获机制
 - [[npu_lowering_guide]] —— 第二关 NPU lowering 与算子映射细节

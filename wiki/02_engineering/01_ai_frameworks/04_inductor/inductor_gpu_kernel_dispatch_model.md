@@ -59,7 +59,7 @@ if CandidateTiling.is_good_size(...): score *= 2   # is_good_size: s>=32 且 s%3
 
 在最右 stride-1 维切开以合并访存，偏好 32 对齐 tile，候选按分数排序取最优；1D / 2D(x,y) / reduction tiling 据此决定。
 
-> NPU 后端复用 `select_tiling`，但把 `is_good_size` 放宽到 `s>=2`（NPU 不要求 32 对齐）；torch_npu 内置后端则自带多级 `create_tiling`（见 [[npu_triton_backend_deep_analysis]]）。
+> NPU 后端复用 `select_tiling`，但把 `is_good_size` 放宽到 `s>=2`（NPU 不要求 32 对齐）；torch_npu 内置后端则自带多级 `create_tiling`（见 [[npu_inductor_splittiling_backend_analysis]]）。
 
 ---
 

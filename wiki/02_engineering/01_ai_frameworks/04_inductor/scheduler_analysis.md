@@ -456,7 +456,7 @@ score = Σ size(共享 memory dep)
 **⑤ 推测性循环改写**：`can_fuse` 用 `_LoopMutationTracker` 包裹，融合被拒时回滚循环改写；`config.loop_ordering_after_fusion` / `loop_index_inversion_in_fusion` 触发 §7.1 末轮 `is_reorder_round=True` 的循环重排以提高共享数据分数。
 
 > [!note] NPU 后端如何用这套模型
-> 实验性 [[npu_inductor_linearize_backend_analysis]] **完全复用**上述模型（其 `can_fuse` 先调 `super().can_fuse()`），只追加一道 `NPU_MAX_FUSED_READS`（默认 24）read 门控防 bishengir 编译爆炸，并重绑 `can_fuse_vertical/horizontal` 别名使子类生效；torch_npu **内置**后端（[[npu_triton_backend_deep_analysis]]）则把 proximity 阈值收到 20、并自定义 tiling 一致性。
+> 实验性 [[npu_inductor_linearize_backend_analysis]] **完全复用**上述模型（其 `can_fuse` 先调 `super().can_fuse()`），只追加一道 `NPU_MAX_FUSED_READS`（默认 24）read 门控防 bishengir 编译爆炸，并重绑 `can_fuse_vertical/horizontal` 别名使子类生效；torch_npu **内置**后端（[[npu_inductor_splittiling_backend_analysis]]）则把 proximity 阈值收到 20、并自定义 tiling 一致性。
 
 ---
 

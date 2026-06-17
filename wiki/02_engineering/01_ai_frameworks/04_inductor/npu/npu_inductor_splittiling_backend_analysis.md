@@ -4,6 +4,9 @@
 > 核心代码位置：`torch_npu/_inductor/`  
 > 版本：torch_npu v2.7.1
 
+> [!note] 内置 default = **Split-Tiling 方案**（本页）
+> 对照**实验性 Linearize 方案**（独立包 `npu_inductor_2.9.0`，import 时与本后端注册互斥）见 [[npu_inductor_linearize_backend_analysis]]；三方 output code 逐行对比 + 实测对标见 [[npu_inductor_linearize_vs_builtin_comparison]]。
+
 ---
 
 ## 一、路径概述

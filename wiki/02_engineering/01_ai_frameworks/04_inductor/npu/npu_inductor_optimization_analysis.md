@@ -6,7 +6,7 @@
 > 最后更新：2026-06-13
 
 > [!note] 代码位置说明
-> §一–§十一 的 `file:line` 沿用来源文档体系的标注（torch_npu 2.7 分支），**文件名 + 函数名为准，行号为指示性**（不同版本/分支会漂移，本库 [[npu_triton_backend_deep_analysis]] 的同名逻辑行号即与此不同）。**§十二「实战」的行号已用本地 `pta_suhaibo/torch_npu` checkout（v2.7.1，commit `8bcbe1939`）逐一核验**，可直接 `git grep` 对照。
+> §一–§十一 的 `file:line` 沿用来源文档体系的标注（torch_npu 2.7 分支），**文件名 + 函数名为准，行号为指示性**（不同版本/分支会漂移，本库 [[npu_inductor_splittiling_backend_analysis]] 的同名逻辑行号即与此不同）。**§十二「实战」的行号已用本地 `pta_suhaibo/torch_npu` checkout（v2.7.1，commit `8bcbe1939`）逐一核验**，可直接 `git grep` 对照。
 
 ---
 
@@ -123,7 +123,7 @@ flowchart LR
 > - **DVM `view_load` 零拷贝**：非连续但末维 `stride=1` 时零拷贝视图加载，省一次转连续（`06 §9.6`）。
 > - **transpose 标志标注**：mm 输入转置时标 `meta["trans_a/b"]`，直接 `k.matmul(...,True,False)`，**消掉一个真实 transpose 算子**（`08 §9.5`）。
 
-`golden_var_list` 的详细机制（`_detect_different_expansions` / `_build_guarded_expansions` / 坐标变换）见 [[npu_triton_backend_deep_analysis]] 差异 1。
+`golden_var_list` 的详细机制（`_detect_different_expansions` / `_build_guarded_expansions` / 坐标变换）见 [[npu_inductor_splittiling_backend_analysis]] 差异 1。
 
 ---
 
@@ -169,7 +169,7 @@ flowchart LR
 - **反向**：DVM/MLIR 又把 `sigmoid/gelu/tanh` **展开**成算术式（`06 §4.4`），因为 DVM 解释器 codegen 只认基础算术 op。**同一算子在不同后端「拆」或「不拆」完全相反，唯一标准是「目标后端能不能跑得更好」。**
 
 > [!contradiction] fallback / patch 计数因版本与口径而异
-> 本页采用来源文档体系（torch_npu 2.7 分支）口径：fallback **~635**（289+346）、Triton 路径 monkey-patch **30+**。本库 [[npu_triton_backend_deep_analysis]] / [[npu_compile_paths_overview]] 基于 **v2.7.1 源码核查**给出 fallback **约 963**（348 native + 615 npu-extra，截至 v2.7.1）、patch **35+**。差异主要来自版本漂移与统计口径（是否计入条件性 fallback / 是否按文件聚合），两者均保留，深入核查以本库 v2.7.1 源码页为准。
+> 本页采用来源文档体系（torch_npu 2.7 分支）口径：fallback **~635**（289+346）、Triton 路径 monkey-patch **30+**。本库 [[npu_inductor_splittiling_backend_analysis]] / [[npu_compile_paths_overview]] 基于 **v2.7.1 源码核查**给出 fallback **约 963**（348 native + 615 npu-extra，截至 v2.7.1）、patch **35+**。差异主要来自版本漂移与统计口径（是否计入条件性 fallback / 是否按文件聚合），两者均保留，深入核查以本库 v2.7.1 源码页为准。
 
 ---
 
@@ -194,7 +194,7 @@ flowchart LR
 **代表案例：origin tracking 替换 traced_graph**（来源：`09-origin-tracking-refactor-design §7.1`）
 - 纯**算法复杂度**优化：MLIR 后端原本在 lowering 时为每个 IR 节点手建微型 FX 子图，codegen 时 `merge_traced_graphs` 合并——**每次合并复制全部历史节点，O(n²)**（10 层模型累计复制 `210` 次）。
 - 改用 PyTorch 原生 origin 机制（节点自动继承 origin + `V.graph.orig_gm`）后降为 **O(n)**（`20` 次指针赋值），顺带删 17 个 monkey-patch、`ir.py 709→30 行（-96%）`、消除 codegen 二次 tracing。
-- 思想是「**复用上游已验证的原生能力，不要自造**」——和消 30+ patch、对标 Intel XPU 零 patch 是同一条工程主线（详见 [[npu_compile_paths_overview]] 演进章 + [[npu_triton_backend_deep_analysis]] §五）。
+- 思想是「**复用上游已验证的原生能力，不要自造**」——和消 30+ patch、对标 Intel XPU 零 patch 是同一条工程主线（详见 [[npu_compile_paths_overview]] 演进章 + [[npu_inductor_splittiling_backend_analysis]] §五）。
 
 这条主线与 torch_npu 上游 patch 消减（S2 编译栈方向）直接相关：`02-architecture §1.4` 的 Monkey-Patch 完整清单 + 重构提案的 P0–P6 分阶段迁移，可作为「逐条处置 + 风险可控演进」的方法论模板。
 
@@ -347,7 +347,7 @@ flowchart LR
 ## Related Pages
 
 - [[npu_compile_paths_overview]] — torch_npu 三条编译路径全景（本页的上级背景）
-- [[npu_triton_backend_deep_analysis]] — Triton/default 路径深度分析（golden_var_list、CATLASS、monkey-patch 的「what/how」，与本页「why」互补）
+- [[npu_inductor_splittiling_backend_analysis]] — Triton/default 路径深度分析（golden_var_list、CATLASS、monkey-patch 的「what/how」，与本页「why」互补）
 - [[scheduler_analysis]] — Scheduler 融合策略、自定义 Pass 与排查（§六 CATLASS / §四 规约融合的展开）
 - [[npu_lowering_guide]] — NPU 特定 lowering 与 fallback 算子映射（§八 的细节）
 - [[npu_compile]] — NPU 编译工作流、Autotune、精度校验（§九 的细节）

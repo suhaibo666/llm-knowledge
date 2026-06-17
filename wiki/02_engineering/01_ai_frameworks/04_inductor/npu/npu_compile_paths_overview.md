@@ -444,7 +444,7 @@ GPU 几乎所有标准 aten op 都有 Triton lowering，dynamic shape 可端到�
 
 ## Related Pages
 
-- [[npu_triton_backend_deep_analysis]] — Triton/Inductor default 路径深度分析（本文的三条路径之一）
+- [[npu_inductor_splittiling_backend_analysis]] — Triton/Inductor default 路径深度分析（本文的三条路径之一）
 - [[NPU_MLIR_Backend_Technical_Analysis]] — MLIR 路径深度分析（本文的三条路径之一；含六阶段适配全景）
 - [[aclgraph_deep_analysis]] — ACLGraph 路径深度分析（本文的三条路径之一）
 - [[NPU_Inductor_Backend_Analysis]] — NPU Inductor 后端集成架构（已有页面）
