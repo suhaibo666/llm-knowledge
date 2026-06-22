@@ -4,6 +4,36 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-22: vLLM 系列补「算子融合与 Triton Kernel」专页(系列增至 11 篇 + index)
+
+**Type**: Expand（应用户提问"融合算子/Triton 等算子特性有介绍吗"——既有 10 篇仅在注意力/量化页顺带提及,无专篇;补 [[vllm_fused_ops_and_kernels_analysis]] 填补真空）
+
+新增 [[vllm_fused_ops_and_kernels_analysis]](「特性优化」支柱):**CustomOp 多实现派发**(`model_executor/custom_op.py` native/cuda/triton + `custom_ops` 开关,Inductor 下默认走 native 交其自动融合)、**torch.compile 融合 Pass**(`compilation/passes/fusion/`:RMS+quant、SiluMul+quant、AllReduce+RMSNorm/async-TP、attention+quant、SP,经 `PostGradPassManager` 挂进 Inductor `post_grad_custom_post_pass`)、**fused_moe**(grouped GEMM + Triton/CUTLASS/DeepGEMM oracle 派发 + `configs/E=*,N=*,device=*.json` autotune)。与 [[vllm_compilation_cudagraph_analysis]](图捕获)、[[vllm_quantization_analysis]](量化 GEMM)、[[vllm_attention_backends_analysis]](Triton 注意力)形成"被引用→展开"分工;跨域对照 [[megatron_fusion_operators_analysis]] / [[torchtitan_compute_memory_optimizations_analysis]]。
+
+**整合**:[[vllm/index]] 支柱三增列本页(10→11 篇)、父索引 [[02_engineering/03_infer_frameworks/index]] 与总索引 [[index]] 计数同步;[[vllm_compilation_cudagraph_analysis]] 融合 pass 处回链本页。校验:本页 14 个 `[[]]` 链接全部解析,`file:line` 经核对 @ `485bbe1c6`。
+
+---
+
+## 2026-06-22: 新建 vLLM 推理引擎源码级分析系列(10 篇 + index)
+
+**Type**: New series（对标 [[torchtitan/index]] 的深度/格式/出处严谨度;源码基准 vLLM `main` @ `485bbe1c6`(2026-06-21),源码 `E:\97-codes\torch_parallel\vllm`,聚焦 **V1 引擎**;10 个并发 agent 各写一篇 + 整合 index/parent-index/changelog/交叉链接）
+
+新建目录 `wiki/02_engineering/03_infer_frameworks/vllm/`,按用户视角的「调度 → 模型库 → 特性优化」三支柱,每篇以「Overview → Quick Start → Deep Dive」三维展开,所有非平凡论断带 `file.py:line` 出处:
+
+- **调度(3 篇)**:[[vllm_engine_architecture_analysis]](脊梁篇:解耦双进程 + `EngineCore.step()` 四段忙循环 + ZMQ IPC + Executor→Worker 扇出)、[[vllm_scheduler_analysis]](连续批处理 token 级、`schedule()` 先 running 后 waiting、分块预填充、抢占/重算)、[[vllm_kv_cache_management_analysis]](分页块、BlockPool 引用计数/LRU 驱逐、`allocate_slots`、块哈希前缀缓存、混合 KV、显存 profiling 定块数)
+- **模型库(2 篇)**:[[vllm_model_library_analysis]](模型定义约定 `*ForCausalLM`、懒注册表、惰性流式权重加载 + `packed_modules_mapping`、TP 感知层库)、[[vllm_attention_backends_analysis]]("写 KV + 调后端"两步走、`AttentionMetadata` 桥、PagedAttention 间接寻址、统一变长注意力、FA/FlashInfer/Triton/MLA)
+- **特性优化(5 篇)**:[[vllm_feature_optimizations_overview]](特性总表 + 深挖结构化输出/LoRA/分离式 KV 连接器/KV 卸载)、[[vllm_speculative_decoding_analysis]](draft+verify、n-gram/EAGLE/Medusa/MTP、拒绝采样无偏、调度 lookahead/回退)、[[vllm_quantization_analysis]](`QuantizeMethodBase` 插件框架、FP8/AWQ/GPTQ/FP4、加载期 Marlin repack、KV 量化)、[[vllm_distributed_inference_analysis]](5 维 rank 张量切 TP/PP/EP/DP、`GroupCoordinator`、PP `batch_queue` 虚拟流水线、MoE DP-attention+EP+EPLB)、[[vllm_compilation_cudagraph_analysis]](`@support_torch_compile`→VllmBackend(Inductor)、**分段 CUDA Graph** 注意力切出、`cudagraph_mode` 五态、运行时按形状 dispatch replay)
+
+**HEAD 关键事实(各页据 `485bbe1c6` 源码核实,与多数旧博客不符)**:
+- **V0 独立引擎已移除**:`vllm/engine/llm_engine.py:6` 现仅为 `LLMEngine = V1LLMEngine` 别名;今天 `from vllm import LLMEngine` 拿到的是 V1 兼容外壳,底层跑 V1 `EngineCore`。
+- **注意力模块已重构**:无顶层 `vllm/attention/`;注意力层在 `vllm/model_executor/layers/attention/`,V1 后端/metadata 在 `vllm/v1/attention/`。
+- **调度统一**:无独立 prefill/decode 阶段,二者统一为 `num_computed_tokens` 追赶 `num_tokens_with_spec`;分块预填充只是 `min(剩余 prompt, token 预算)` 的自然结果,无独立代码路径。
+- **KV 卸载非独立子系统**:注册名 `OffloadingConnector`,与分离式推理共用 `KVConnectorBase_V1` 抽象;前缀缓存(GPU 内)/KV 卸载(下沉 CPU/盘)/分离式(跨实例)三者正交可叠加。
+
+**整合**:[[vllm/index]] 知识地图(四支点设计哲学 / 三支柱 10 篇表 / 一条请求穿三支柱全景 mermaid / 关键设计速览 / 阅读路径);父索引 [[02_engineering/03_infer_frameworks/index]] 新增 vLLM 子框架行、总索引 [[index]] 更新目录树/计数/快速导航。**校验**:10 页 + index 全部含 `## Related Pages` 且回链 [[vllm/index]];sibling slug 与文件名一一对应;18 个跨域目标页(megatron_inference_engine / mooncake / deepseek_v3 / gpu_kernel_guide / CUDA Graphs / torch.compile 栈等)均经 glob 确认存在,0 悬空链接。
+
+---
+
 ## 2026-06-22: 新建 verl(HybridFlow)RLHF 框架源码级分析系列(9 篇 + index)
 
 **Type**: New series（对标 [[torchtitan/index]] 的深度/格式/出处严谨度;源码基准 verl `main` @ `8a694930`,源码 `E:\97-codes\torch_parallel\verl`;9 个并发 agent 各写一篇 + 整合 index/parent-index/changelog/交叉链接）
