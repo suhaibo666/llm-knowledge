@@ -29,10 +29,11 @@ wiki/
     │   ├── megatron-lm/
     │   └── torchtitan/
     ├── 03_infer_frameworks/           # 推理框架
-    │   └── vllm/                       # vLLM V1 引擎(11 篇 + index)
+    │   └── vllm/                       # vLLM V1 引擎(12 篇 + index)
     ├── 04_posttrain_frameworks/       # 后训练框架 (verl / RLHF Infra)
     │   └── verl/                      # verl (HybridFlow) 源码级分析
-    └── 05_gpu_kernel/                 # GPU/NPU Kernel 工程
+    ├── 05_gpu_kernel/                 # GPU/NPU Kernel 工程
+    └── 06_auto_parallel/             # 自动并行策略搜索(综述罗盘)
 ```
 
 ---
@@ -63,11 +64,12 @@ wiki/
 | 训练框架 | [[02_engineering/02_train_frameworks/index]] | 8 | 活跃 |
 | └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 6 | 活跃 |
 | └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 7 | 活跃 |
-| 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 13 | 活跃 |
-| └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index]] | 12 | 活跃 |
+| 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 14 | 活跃 |
+| └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index]] | 13 | 活跃 |
 | 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 12 | 活跃 |
 | └─ verl (HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index]] | 9 | 活跃 |
 | GPU Kernel | [[02_engineering/05_gpu_kernel/index]] | 1 | 活跃 |
+| 自动并行 | [[02_engineering/06_auto_parallel/index]] | 1 | 活跃 |
 
 ---
 
@@ -88,6 +90,7 @@ wiki/
 | torch.compile | [[torch_compile_architecture]], [[PyTorch_Dynamo_Technical_Analysis]], [[PyTorch_Inductor_Technical_Analysis]] |
 | CUDA/NPU Graphs | [[PyTorch_CUDA_Graphs_Complete_Guide]], [[torch_compile_npugraphs_deep_dive]] |
 | vLLM 推理引擎 | [[vllm/index]], [[vllm_engine_architecture_analysis]], [[vllm_scheduler_analysis]], [[vllm_kv_cache_management_analysis]], [[vllm_feature_optimizations_overview]] |
+| vLLM 图编译/算子融合 | [[vllm_fused_ops_and_kernels_analysis]], [[vllm_ir_and_fusion_passes_analysis]], [[vllm_compilation_cudagraph_analysis]] |
 | PPO/GRPO RL 训练 | [[RL_PPO_Loss_and_GRPO_Analysis]], [[RL_Training_Inference_Precision_Analysis]] |
 | RL 训练框架 (verl/HybridFlow) | [[verl/index]], [[verl_architecture_overview_analysis]], [[verl_ray_trainer_analysis]], [[verl_rl_algorithms_analysis]] |
 | Coding RL「脏活」系列 | [[reward_hacking_defense_analysis]], [[rl_sandbox_design_analysis]], [[rl_infra_efficiency_analysis]] |

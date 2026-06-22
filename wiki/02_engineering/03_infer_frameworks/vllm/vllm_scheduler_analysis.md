@@ -353,6 +353,22 @@ self.waiting.prepend_request(request)     # 1128 插回 waiting 队首
 - **投机解码**:调度器为草稿 token 预留 `num_lookahead_tokens`(`scheduler.py:231-249`,eagle/draft 模型据 `num_speculative_tokens` 设定),`allocate_slots` 时带上以预分配 KV(`scheduler.py:528`);`scheduled_spec_decode_tokens` 随 `SchedulerOutput` 下发;草稿拒绝在 `update_from_output` 回退 `num_computed_tokens`(3.7)。动态 K 由 `dynamic_sd_lookup` 按 batch 大小查表(`scheduler.py:1052-1057`)。详见 [[vllm_speculative_decoding_analysis]]。
 - **结构化输出**:带 grammar 约束的请求初始处于 `WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR`(`request.py:112`),编译完成才可调度;`get_grammar_bitmask`(`scheduler.py:1440`)在每步为已过 prefill 的结构化请求生成 bitmask 随输出下发。归并于 [[vllm_feature_optimizations_overview]]。
 
+### 3.12 prefill/decode 的"切换":单实例统一 vs 集群级 PD 分离
+
+vLLM 处理 prefill/decode 有两条**截然相反**的路径,常被混为一谈:
+
+**① 单实例内:不"切换",而是统一追赶 + 混批。** 如 §1.1/§3.2,调度器对 prefill/decode 一视同仁,一个请求是"prefill 态"还是"decode 态"只看 `num_computed_tokens` 是否追平 `num_tokens`(`is_prefill_chunk`,`request.py:168`),**没有模式开关**:追平那一刻自动从"每步几百 token"变成"每步 1 token"。而且同一步里,running(decode,先扣预算)与 waiting(prefill chunk,用剩余预算)落进**同一个 `SchedulerOutput`**,执行层用 varlen attention 一次前向吃下混批(见 [[vllm_attention_backends_analysis]])。
+
+**② 集群级:PD 分离,prefill 与 decode 跑在不同实例。** 通过 KV 连接器(`--kv-transfer-config`)把 prefill 实例算出的 KV 跨实例搬给 decode 实例;decode 侧请求在远端 KV 到齐前待在 `WAITING_FOR_REMOTE_KVS`(`scheduler.py:1805` 的 `_is_blocked_waiting_status` 识别,置于 `skipped_waiting`),远端命中的 token 经 `num_external_computed_tokens` 并入 `num_computed_tokens`(`scheduler.py:746`)。机制详见 [[vllm_feature_optimizations_overview]] §3.4。
+
+| 场景 | prefill/decode 关系 | "切换"机制 | 开关 |
+|------|--------|-----------|------|
+| 单实例 + 分块预填充(默认) | 同一步**混批** | 无模式切换,按 `num_computed_tokens` 追赶 | `enable_chunked_prefill=True` |
+| 单实例 + 关分块 | prefill 须整段装下,挤占 decode | 仍连续批处理,但 prefill 不切块 | `--no-enable-chunked-prefill`;encoder-decoder 强制此路 |
+| 集群级 PD 分离 | **跨实例**物理分离 | KV 连接器搬运 + `WAITING_FOR_REMOTE_KVS` 跳过 prefill | `--kv-transfer-config` |
+
+> 两种思路解的是同一矛盾——prefill(算力密集、长)干扰 decode(延迟敏感)的 TPOT:**混批**用 `long_prefill_token_threshold` 限幅让二者在一机和平共处;**PD 分离**干脆把二者放到不同机器各自打满,代价是跨实例搬 KV。二者可叠加(`MultiConnector`)。集群级 P/D 架构对照见 [[mooncake_analysis]]。
+
 ---
 
 ## Related Pages

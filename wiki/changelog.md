@@ -4,6 +4,29 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-22: vLLM 系列补「图改写机制深挖」专页 + 调度页补 prefill/decode 与 PD 分离(系列增至 12 篇 + index)
+
+**Type**: Expand（沉淀对话中的源码级追问:图模式 pass 机制 / vllm_ir 自定义算子 / RMSNorm+quant 融合全程 / prefill-decode 切换与 PD 分离;源码核对 @ vLLM `485bbe1c6`）
+
+- **新增** [[vllm_ir_and_fusion_passes_analysis]]([[vllm_fused_ops_and_kernels_analysis]] 的机制深挖伴篇):① vLLM IR 层 `vllm_ir`(`torch.library` 自建命名空间、`CompositeExplicitAutograd` 不分解 + fake ⇒ 被 Dynamo 保留为 opaque 节点、为何不挂 `aten`、provider/lowering);② `PostGradPassManager` pass 流水线与 `-O` 档默认表;③ 经 `backends.py:966` 挂进 Inductor `post_grad_custom_post_pass` 生效;④ RMSNorm+FP8 量化从「用户模型代码 → eager 双 kernel(HBM 往返)→ 手写融合 kernel `_C.rms_norm_static_fp8_quant`」全程走查 + before/after FX 图。
+- **扩充** [[vllm_scheduler_analysis]] §3.12:prefill/decode 在单实例内"不切换"(统一 `num_computed_tokens` 追赶 + 混批),与集群级 **PD 分离**(KV 连接器跨实例)的不同场景对照与两种相反哲学。
+
+**整合**:[[vllm/index]] 支柱三新增 IR/Pass 页(11→12 篇)、父索引 [[02_engineering/03_infer_frameworks/index]](→12+index)与总索引 [[index]](推理框架 14 / vLLM 13)计数同步;[[vllm_fused_ops_and_kernels_analysis]] 回链伴篇。校验:新页 `file:line` 均核对,`[[]]` 链接全部解析。
+
+---
+
+## 2026-06-22: 新建「自动并行」域 + 业界研究综述罗盘(1 篇 + index)
+
+**Type**: New domain（应用户调研需求"业界自动并行研究现状、主流开源库与论文、从哪几个方面建模分析搜索较优并行策略"；wiki 此前无自动并行专题,grep 仅在 Megatron/torchtitan 页零散提及"并行策略",raw/ 亦无对口源论文,故基于公开论文/文档 Web 检索后综合成域）
+
+新建目录 `wiki/02_engineering/06_auto_parallel/`:
+- [[auto_parallel_survey_analysis]](罗盘综述):**通用流水线**(策略表示→代价模型→搜索算法→运行时,含 mermaid)、**7 大技术谱系**(算子级搜索 FlexFlow/OptCNN → 编译器传播 GSPMD/PartIR → 联合分层 **Alpa**(inter-op DP + intra-op ILP) → 显存感知 Galvatron/**Aceso** → 原语+约束 **nnScaler** → 异构/动态 Metis/Astra/Sailor → 框架原生 DTensor/veScale/OneFlow-SBP/MindSpore)、**4 个建模维度**(搜索空间 / 代价模型含 α-β 通信与显存约束 LaTeX / 硬件拓扑 / 优化目标)、**5 类搜索算法**(精确 ILP/DP/MILP · 元启发 MCMC/MCTS · 贪心传播 · 分解剪枝 · 模拟器在环)、**关键洞察**(分解是核心招式、代价模型准确性>搜索算法先进性、传播 vs 全局搜索分野)、2024–2026 趋势(显存-并行协同/异构/框架原生/4D→5D MoE)。
+- [[06_auto_parallel/index]] 域索引:罗盘速览 + 后续按系统拆页规划(alpa/nnscaler/galvatron/gspmd/dtensor)。
+
+**整合**:父索引 [[02_engineering/index]] 子领域表新增 `06_auto_parallel` 行;综述页交叉链接 [[megatron-lm/index]](手工 5D 对照组/执行后端)、[[torchtitan/index]](DTensor 原生)、[[mindspore_compiler_analysis]](传播范式)、[[comm_compute_fusion_guide]](overlap 实测)、[[distributed_optimizer_deep_dive]](ZeRO/FSDP 分片)。**校验**:2 页均含 `## Related Pages`,跨链目标页经 glob 确认存在,0 悬空链接;论文出处以 Sources 段外链给出(Alpa/GSPMD/nnScaler/PartIR/Galvatron-BMW/综述/DTensor 等)。
+
+---
+
 ## 2026-06-22: vLLM 系列补「算子融合与 Triton Kernel」专页(系列增至 11 篇 + index)
 
 **Type**: Expand（应用户提问"融合算子/Triton 等算子特性有介绍吗"——既有 10 篇仅在注意力/量化页顺带提及,无专篇;补 [[vllm_fused_ops_and_kernels_analysis]] 填补真空）

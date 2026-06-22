@@ -9,7 +9,7 @@
 
 | 子目录 | 入口 | 页数 | 核心主题 |
 |------|------|------|---------|
-| **vLLM** | [[vllm/index]] | 11 + index | vLLM V1 推理引擎源码级分析,三支柱:**调度**(连续批处理/分页 KV/抢占)、**模型库**(注册/层库/注意力后端)、**特性优化**(投机解码/量化/分布式/编译&CUDA Graph/算子融合&Triton);每篇 Overview→Quick Start→Deep Dive |
+| **vLLM** | [[vllm/index]] | 12 + index | vLLM V1 推理引擎源码级分析,三支柱:**调度**(连续批处理/分页 KV/抢占)、**模型库**(注册/层库/注意力后端)、**特性优化**(投机解码/量化/分布式/编译&CUDA Graph/算子融合&Triton);每篇 Overview→Quick Start→Deep Dive |
 
 ## 页面列表
 
