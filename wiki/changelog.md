@@ -4,6 +4,26 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-22: 新建 verl(HybridFlow)RLHF 框架源码级分析系列(9 篇 + index)
+
+**Type**: New series（对标 [[torchtitan/index]] 的深度/格式/出处严谨度;源码基准 verl `main` @ `8a694930`,源码 `E:\97-codes\torch_parallel\verl`;9 个并发 agent 各写一篇 + 整合 index/parent-index/changelog/交叉链接）
+
+新建目录 `wiki/02_engineering/04_posttrain_frameworks/verl/`(verl 是 RL **后训练(RLHF)**编排框架,归入「后训练框架」而非「训练框架」——后者 Megatron-LM/torchtitan 为预训练并行框架,是 verl 的训练后端),从「架构→实现→优化」「overview→quickstart→deep dive」由浅入深拆 9 篇,每篇所有非平凡论断均带 `file.py:line` 出处:
+
+- **入门两篇**:[[verl_architecture_overview_analysis]](HybridFlow 混合控制器、五平面、五角色、v0/v1 入口、master 架构图)、[[verl_quickstart_guide]](安装/Hydra 启动/config 体系/一次 GRPO 端到端走查/后端切换旋钮)
+- **实现五篇**:[[verl_single_controller_analysis]](`@register`+8 种 Dispatch、`DP_COMPUTE_PROTO` chunk/concat、RayWorkerGroup/colocate)、[[verl_dataproto_analysis]](`DataProto`/`BatchData`/`DataProtoFuture`)、[[verl_ray_trainer_analysis]](`RayPPOTrainer.fit()` 逐步追踪 + 数据流时序图)、[[verl_workers_engine_analysis]](`TrainingWorker`/`ActorRolloutRefWorker` + `BaseEngine` 模板方法 + FSDP/Megatron 引擎)、[[verl_rollout_resharding_analysis]](vLLM/SGLang 异步 server + 3D-HybridEngine:`get_per_tensor_param`+`CheckpointEngine`+CUDA-IPC bucketed transfer)
+- **算法与优化两篇**:[[verl_rl_algorithms_analysis]](`core_algos` 14 种优势估计 + 11 种 policy loss + KL k1/k2/k3,均含 LaTeX)、[[verl_optimization_analysis]](placement/offload/序列打包/Ulysses SP/异步 RL 旋钮目录)
+
+**HEAD 关键勘误(各页已标注,与多数博客的「经典 HybridFlow」描述不符)**:
+- `RayPPOTrainer` 已 `@deprecated`(`ray_trainer.py:285`)但默认 `trainer.use_v1=false` 仍走它;新路径为 `TaskRunnerV1`+TransferQueue+`AgentLoopManager`。
+- **无独立 `CriticWorker`/`RewardModelWorker` 类**:critic = 带 value head 的 `TrainingWorker`,reward 走 `workers/reward_manager` + `experimental/reward_loop`。
+- rollout 退役 SPMD 同步模式,改异步 server(`ServerAdapter.generate_sequences` 直接 raise),生成由 `LLMServerManager`/`AgentLoopManager` 驱动。
+- `Role` enum 实际在 `trainer/ppo/utils.py:27`(ray_trainer 仅 re-export);`compute_policy_loss`(core_algos:1203)已废弃,实际分发走 `workers/utils/losses.py` 的 `get_policy_loss_fn`。
+
+**整合**:[[verl/index]] 知识地图(五平面表/9 篇三层表/五角色表/RL 数据流图/与训练后端的 cross-domain 链接);父索引 [[02_engineering/04_posttrain_frameworks/index]] 新增 verl 子目录行、总索引 [[index]] 更新目录树/计数/快速导航;9 篇互链 + 跨域链(→ [[torchtitan_fsdp_analysis]]/[[megatron-lm/index]]/[[distributed_optimizer_deep_dive]] 等)。**校验**:9 页全部含 `## Related Pages`、均回链 [[verl/index]];所用 sibling slug 与文件名一一对应;跨域目标页均存在,0 悬空链接。
+
+---
+
 ## 2026-06-17: 内置 default 后端「真·Split-Tiling」页改名对称（`npu_inductor_splittiling_backend_analysis`）
 
 **Type**: Rename（应用户「内置后端加 `_splittiling` 对称区分」；仅改唯一真·Split-Tiling 页，MLIR/DVM/总览/通用页保持原名以免误标；`git mv` + 全 wiki `[[link]]` 同步）
