@@ -11,6 +11,7 @@
 | [[03_infer_frameworks/index]] | 推理框架：vLLM、TRT-LLM、Mooncake 分离式服务 |
 | [[04_posttrain_frameworks/index]] | 后训练框架：RLHF 基础设施、对齐工具链（预留） |
 | [[05_gpu_kernel/index]] | GPU Kernel 开发：执行层级、内存优化、Tensor Core/MMA、FlashAttention 链路、NPU 差异 |
+| [[06_auto_parallel/index]] | 自动并行：策略搜索空间、代价模型、ILP/DP/传播搜索算法（业界综述罗盘）|
 
 ## 页面列表
 
