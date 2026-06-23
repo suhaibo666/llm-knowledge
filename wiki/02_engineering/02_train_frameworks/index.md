@@ -1,7 +1,7 @@
 # 训练框架 — 目录索引
 
 > 覆盖分布式训练框架、并行策略、通信优化
-> 最后更新: 2026-06-16
+> 最后更新: 2026-06-23(新增 MindSpeed 昇腾训练加速栈子目录)
 
 ---
 
@@ -11,6 +11,8 @@
 |------|---------|
 | [[megatron-lm/index]] | NVIDIA Megatron-LM, 5D 并行, MoE, TFLOPS, 通信掩盖;源码级系统分析 18 篇(`dev` 232c478d4, 2026-06 刷新) |
 | [[torchtitan/index]] | PyTorch-native 训练框架;DP/TP/CP/EP/PP 多维并行 + 性能手段(低精度/算子融合/对称内存/Async-TP/SimpleFSDP)源码级分析 12 篇(`main` 61c010fcb) |
+| [[mindformers/index]] | 华为 MindFormers;MoE 专家并行(EP)源码级分析,PyNative 与 Graph 两条路径的 token dispatch、去冗余/零冗余/重叠与通信量(`master` 01e71622)2 篇 |
+| [[mindspeed/index]] | 华为昇腾 MindSpeed × MindSpeed-LLM;猴补丁式 Megatron 加速栈,~70 个特性按并行/通信掩盖/内存优化/昇腾亲和四类 + CP 专题的机制级深挖(`master` 1432cb09)5 篇 + index |
 
 ## 页面列表
 
@@ -26,7 +28,8 @@
 | [[comm_compute_overlap_analysis]] | Megatron-LM / torchtitan 源码 | 计算通信掩盖: combined_1f1b vs ZBV/DualPipe, sub-layer 级调度, DeepEP/HybridEP |
 | [[async_collective_tensor_deep_dive]] | PyTorch 源码 (_functional_collectives.py) | ACT 源码追踪: __torch_dispatch__, wait_tensor, stream 级执行过程, 与 Megatron 手动 stream 对比 |
 | [[muon_sharded_hsdp_report]] | Cursor Composer 2.5 博客 | 分片 Muon + 双网格 HSDP: all-to-all N-S、EP/CP 解耦、异步流水线、非专家分工优化 |
-| [[mindformers_moe_token_dispatcher_analysis]] | MindFormers master 源码 | MoE 去冗余 token dispatcher: oep/iep 两级 EP(跨机 AllGather + 机内 AlltoAllV)、mask+NonZero 去冗余、计数转置与 D2H overlap(Depend)、ReduceScatter top-k 求和与梯度反向 adjoint |
+
+> MindFormers MoE 专家并行(PyNative + Graph 两路径,共 2 篇)已收入子目录 [[mindformers/index]]。
 
 ---
 

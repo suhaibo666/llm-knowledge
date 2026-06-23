@@ -224,5 +224,6 @@ AllGather 与 ReduceScatter 互为共轭,AlltoAllV 的正反向只是收发 spli
 
 **来源**　mindformers/parallel_core/training_graph/transformer/moe/token_dispatcher.py（master）  
 **对照**　torchtitan/torchtitan/models/common/token_dispatcher.py（AllToAll / DeepEP 路径）  
+**PyNative 对照**　本页讲 Graph 模式的去冗余 dispatcher;PyNative 路径的 EP 三方案(alltoall / zero_redundancy / deredundancy)与通信量对照见 [[mindformers_pynative_ep_analysis]]  
 **说明**　图中数字为讲解用的小规模示例(E=8, ep=4, iep=2, oep=2);`d2h(..., False)` 的第三参为非阻塞标志属推断。  
 **生成**　Claude Code · 技术解读报告

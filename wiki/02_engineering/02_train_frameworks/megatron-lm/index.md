@@ -40,6 +40,9 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 > - **审计结论(保留)**:`megatron_fusion_operators_analysis`(融合深版)、`megatron_nonuniform_tp_analysis`(NTP 深版)、`megatron_distributed_optimizer_analysis`(FP8/FP4/CPU-offload 深版)、`megatron_memory_optimization_analysis`(显存 survey)均为**深版**,系列内对应页(precision §3 / tp_fsdp_resharding §2 / ddp_optimizer / recompute)是其精简digest——二者**互补非重复**,故保留。
 > - 索引已收敛:并行轴/重计算/RL/模型结构等逐维深挖见下文系列;上方「Core Topics」仅列系列外的全景报告与专题深版。
 
+> [!update] 2026-06-23 · DeepEP 通信量图解(配 DeepEP 源码核实)
+> [[megatron_ep_analysis]] 新增 §③.3.5「通信量图解」三图(SVG→PNG):①按专家 vs 按节点发、②两级通信量分解 + 逐 token 公式、③2node×2GPU 数值走查 + IB 加速比。配图源码基线 **DeepEP @ `af9a040`**(legacy v1 `Buffer` 内核),并据 `internode.cu`(`notify_dispatch` :314/:313、`SourceMeta` :22、`kRDMAAndNVLForwarder` :971、:826 落地卡同号)对 §③.3.2 的「−1 免费落地卡」做了上界纠正。
+
 > [!update] 2026-06-16 · ee3f1ff→232c478d4 增量刷新(298 commits,7 维 + 模型结构)
 >
 > 9 个并行 agent 逐页对照当前源码核实,**纯增不删**(既有内容仅以 `[!update]`/`[!deprecated]`/`[!contradiction]` 标注)。各维度要点(详见各页 2026-06-16 更新块):

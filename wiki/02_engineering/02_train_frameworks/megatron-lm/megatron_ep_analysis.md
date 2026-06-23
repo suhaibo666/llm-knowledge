@@ -548,6 +548,22 @@ $R(X)=\{B\}$,$g_B(X)=2$(GPU2、GPU3),$g_s(X)=1$(GPU1)。
 
 标准 `MoEAlltoAllTokenDispatcher` 用的是变长 all2allv(`all_to_all` + `input_splits/output_splits`,`token_dispatcher.py:703`、`:558` "in variable size",底层 `all_to_all_single`)。**DeepEP/HybridEP 不是 collective**:Flex 路径无任何 `all_to_all` 调用,而是 `buffer.dispatch()`(`fused_a2a.py:160`)—— DeepEP/HybridEP 库的**融合 CUDA 内核**,底层是 **NVSHMEM 单边 RDMA**(normal 内核走 IBRC,low-latency 走 IBGDA;HybridEP 用 IBGDA + TMA),与 permute 融合、两级(RDMA per-node + NVLink per-GPU)。语义上是"变长 all-to-all"(`num_tokens_per_rdma_rank` / `num_tokens_per_rank` 就是那个 "v"),但实现上是**单边、融合、两级**,所以才能做 node 级去冗余 —— 普通 GPU↔GPU all2allv 做不到。
 
+#### ③.3.5 通信量图解(三图速览)
+
+> 本节把 §③.3.1–③.3.4 的两级通信量分析可视化。配图源码基线:**DeepEP @ `af9a040`**(`main`,2026-06-15),legacy v1 `Buffer` 内核(即 `--moe-flex-dispatcher-backend deepep` 走的路径)。
+
+**图 1 — 核心思想:按「专家」发 vs 按「节点」发。** 标准 A2A 对同一 token 命中同节点的多个专家会跨界重复传 `k` 次;DeepEP 跨界只发一次(RDMA),落地后由节点内 NVLink 扇出。跨节点流量从此 ∝ 目标**节点**数 `|R(t)|`(≤ k),而非目标**专家**数 `k`。
+
+![图 1 标准 AllToAll 按专家发(同节点多专家跨界冗余 k 次)vs DeepEP fused_dispatch 按节点发(跨界一次 RDMA + 节点内 NVLink 扇出);跨节点流量 ∝ |R(t)| ≤ k,而非 k。](assets/megatron_ep_analysis_deepep_fig1.png)
+
+**图 2 — 两级通信量分解与逐 token 公式。** RDMA(跨节点·稀缺)= `|R(t)|·M`;NVLink(节点内·富裕)= `[Σₙ(gₙ−1)+g_s]·M`;二者满足「省 1 跳 IB ⇄ 多 1 跳 NVLink」**严格相等**。源码上这两份计数正是 `notify_dispatch` 同时算出的 `total_count`(每节点,命中任意卡只 +1,`internode.cu:314`)与 `per_nvl_rank_count`(每卡,`:313`),分别喂给 `num_tokens_per_rdma_rank` / `num_tokens_per_rank`;落地后由 token 随身携带的 `SourceMeta.is_token_in_nvl_rank_bits` 位图(`internode.cu:22`)选通,`kRDMAAndNVLForwarder` 逐卡判断 `is_token_in_nvl_rank(dst_nvl_rank)`(`:971`)决定是否 NVLink 转发。
+
+![图 2 两级通信量分解:RDMA(跨节点·稀缺)= |R(t)|·M,NVLink(节点内·富裕)= [Σ(gₙ−1)+g_s]·M;省 1 跳 IB ⇄ 多 1 跳 NVLink 严格相等。源码对应 notify_dispatch internode.cu:314 / :313、SourceMeta :22。](assets/megatron_ep_analysis_deepep_fig2.png)
+
+**图 3 — 2 node × 2 GPU 数值走查(token X → {E1,E3,E5,E6})。** 标准 A2A 跨节点 2M;DeepEP 跨节点压到 1M、代价是节点内多 1 跳 NVLink。代入 IB 加速比 `(k/P)/(1−(1−1/P)ᵏ)`:`P=2,k=4 → 2.13×`,`topk=8 → ≈4×`。**源码纠正**:落地卡是与源卡「同号」的 NVL rank(`internode.cu:826`),未必是目标卡,故节点内实际 `= gₙ − 𝟙[同号落地卡∈目标]`,§③.3.2 理想公式里的「−1」是上界(最好情形)。
+
+![图 3 2node×2GPU 数值走查(token X→{E1,E3,E5,E6}):跨节点 IB 2M→1M、节点内 NVLink 1M→2M;IB 加速比 (k/P)/(1−(1−1/P)ᵏ),P=2,k=4→2.13×、topk=8→≈4×。落地卡同号(internode.cu:826)未必是目标。](assets/megatron_ep_analysis_deepep_fig3.png)
+
 ### ③.4 开销分析
 
 | 维度 | Flex / DeepEP Dispatcher |

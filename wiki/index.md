@@ -25,9 +25,11 @@ wiki/
     │   ├── cudagraphs/
     │   ├── inductor/
     │   └── mlir/
-    ├── 02_train_frameworks/           # 训练框架 (Megatron-LM / torchtitan)
+    ├── 02_train_frameworks/           # 训练框架 (Megatron-LM / torchtitan / MindFormers / MindSpeed)
     │   ├── megatron-lm/
-    │   └── torchtitan/
+    │   ├── torchtitan/
+    │   ├── mindformers/               # MoE 专家并行(PyNative + Graph)
+    │   └── mindspeed/                 # 昇腾 MindSpeed 训练加速特性(并行/掩盖/内存/亲和)
     ├── 03_infer_frameworks/           # 推理框架
     │   └── vllm/                       # vLLM V1 引擎(12 篇 + index)
     ├── 04_posttrain_frameworks/       # 后训练框架 (verl / RLHF Infra)
@@ -64,6 +66,8 @@ wiki/
 | 训练框架 | [[02_engineering/02_train_frameworks/index]] | 8 | 活跃 |
 | └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 6 | 活跃 |
 | └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 7 | 活跃 |
+| └─ MindFormers | [[02_engineering/02_train_frameworks/mindformers/index]] | 2 | 活跃 |
+| └─ MindSpeed | [[02_engineering/02_train_frameworks/mindspeed/index]] | 6 | 活跃 |
 | 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 14 | 活跃 |
 | └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index]] | 13 | 活跃 |
 | 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 12 | 活跃 |
@@ -87,6 +91,8 @@ wiki/
 | DeepSeek 模型 | [[deepseek_v4_analysis]], [[deepseek_v3_analysis]], [[deepseek_r1_analysis]] |
 | Megatron 分布式 | [[Megatron-LM_Distributed_Parallel_Exam]], [[megatron_comm_overlap_analysis]] |
 | MoE | [[megatron_ep_analysis]], [[deepseek_moe_analysis]] |
+| MoE 专家并行 (MindFormers) | [[mindformers/index]], [[mindformers_pynative_ep_analysis]], [[mindformers_moe_token_dispatcher_analysis]] |
+| 昇腾训练加速 (MindSpeed) | [[mindspeed/index]], [[mindspeed_parallelism_analysis]], [[mindspeed_context_parallel_analysis]], [[mindspeed_comm_overlap_analysis]], [[mindspeed_memory_optimization_analysis]], [[mindspeed_ascend_affinity_analysis]] |
 | torch.compile | [[torch_compile_architecture]], [[PyTorch_Dynamo_Technical_Analysis]], [[PyTorch_Inductor_Technical_Analysis]] |
 | CUDA/NPU Graphs | [[PyTorch_CUDA_Graphs_Complete_Guide]], [[torch_compile_npugraphs_deep_dive]] |
 | vLLM 推理引擎 | [[vllm/index]], [[vllm_engine_architecture_analysis]], [[vllm_scheduler_analysis]], [[vllm_kv_cache_management_analysis]], [[vllm_feature_optimizations_overview]] |

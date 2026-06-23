@@ -4,6 +4,67 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-23: [[megatron_ep_analysis]] 新增「DeepEP 通信量图解」三图(§③.3.5)
+
+**Type**: Update（应用户"图示解释 DeepEP 通信量分析,用 SVG 画图转 PNG 放进 wiki"。承接本轮对话链:核实 Megatron flex dispatcher 通信量估计 → 深挖 DeepEP `intra_dispatch` NVLink 扇出内核路径 → 本次落图）
+
+- **配图基线**:为给出可核验 `file:line`,本地浅克隆 **DeepEP @ `af9a040`**(`main`,2026-06-15;`csrc/kernels/legacy/` v1 `Buffer` 内核 = `--moe-flex-dispatcher-backend deepep` 路径)。
+- **新增** [[megatron_ep_analysis]] §③.3.5 三图(SVG 手绘 → headless Edge 2× 元素截图 → PNG,存 `megatron-lm/assets/megatron_ep_analysis_deepep_fig{1,2,3}.png`):
+  - 图 1:标准 AllToAll(按专家,跨界冗余 k 次)vs DeepEP fused_dispatch(按节点,一次 RDMA + 节点内 NVLink 扇出);跨节点流量 ∝ |R(t)| ≤ k。
+  - 图 2:两级通信量分解 RDMA = |R(t)|·M / NVLink = [Σ(gₙ−1)+g_s]·M,「省 1 跳 IB ⇄ 多 1 跳 NVLink」严格相等;源码对应 `notify_dispatch`(`internode.cu:314` 每节点 `total_count` / `:313` 每卡 `per_nvl_rank_count`)+ `SourceMeta` 位图(`:22`)+ `kRDMAAndNVLForwarder` 逐卡选通(`:971`)。
+  - 图 3:2 node × 2 GPU 数值走查(token X→{E1,E3,E5,E6}),跨节点 IB 2M→1M、节点内 NVLink 1M→2M,IB 加速比 (k/P)/(1−(1−1/P)ᵏ)(P=2,k=4→2.13×、topk=8→≈4×)。
+- **源码纠正(code wins)**:DeepEP 落地卡 = 与源卡「同号」的 NVL rank(`internode.cu:826`),未必是目标卡;故节点内实际 NVLink = gₙ − 𝟙[同号落地卡∈目标],§③.3.2 理想公式的「−1」为上界(最好情形)。已在图 3 与正文标注。
+- **工具**:复用 gitignored `.html2md/`(puppeteer-core→Edge)新增 `deepep_figs/render.mjs` 元素截图脚本。**索引**:[[megatron-lm/index]] 加 `> [!update] 2026-06-23` note。
+
+---
+
+## 2026-06-23: MindSpeed 系列从「分类大纲」深挖到机制级(+CP 专页,4 篇重写到 megatron 深度)
+
+**Type**: Deepen（用户反馈"大纲有了,针对特性的 deep dive 分析缺少,参考 megatron-llm / torchtitan"。校准:`megatron_ep_analysis`(753 行,单机制)/`megatron_cp_analysis`(391)是深度标尺——每机制需 命题→源码片段+`file:line`→数据流图→通信/显存代数→权衡。原 4 篇每机制仅 ~15-30 行,远不及。并行 writer-agent 逐页重写,coordinator 抽样核验引用)
+
+- **新增** [[mindspeed_context_parallel_analysis]](373 行,对标 [[megatron_cp_analysis]]):CP 家族专页——分派脊柱 `dot_product_attention.py:134-322` 路由五变体;**Ulysses**(头维 `single_all_to_all` 换轴 `:83-108`,通信量 vs Ring 推为 `(2/cp)·(a/a_kv)`)、**Ring/双环**(KV 环形 P2P + online-softmax `utils.py:77-119`、因果块跳过 `ring_context_parallel.py:16-33`、双环窗口 `model_parallel_utils.py:121-212`)、**Hybrid**(Ulysses×Ring 2D)、**Adaptive**、**KV-cache**;含 2·cp 因果负载均衡(`get_batch_utils.py:244-263`)与各变体整除约束(Ulysses `a%(cp·TP)==0`、megatron-cp `seq%(2cp)==0` 等)。
+- **重写加深** [[mindspeed_parallelism_analysis]](241→469 行):CP 段收为指针(导向新 CP 专页),腾出篇幅深挖 **TP-2D**(`linear_2d_split_along_first_dim.py:128-150` AG→MM→RS 二维流水)、**PP 划分**(noop/非对齐/布局)、**MoE-EP**(GMM 原语 `gmm/experts.py:124-151`、tp-extend-ep、专家放置贪心重排 `expert_placement/planner.py:111-150`)、**LayerZeRO3**(`zero3/fsdp.py`)/Custom-FSDP、**分层解耦训练**(U-split/VDP/VTP)。
+- **重写加深** [[mindspeed_comm_overlap_analysis]](267→406 行):三母题各配时序图+代数——*算子融合*(MC2 `npu_all_gather_base_mm`/`npu_mm_reduce_scatter_base`、alltoall-MC2 `npu_alltoallv_gmm`)、*软件流水*(CoC chunk 双流 `coc_utils.py:200-248`、MoE async-handle、fb-overlap 跨微批 + WeightGradStore 解耦 `:203-205`)、*换调度*(DualPipeV 7 段 `:310-344`、RiPipe、optimize-p2p)。
+- **重写加深** [[mindspeed_ascend_affinity_analysis]](233→468 行,代码块 2→15、配图 4):补足代码走读——op_builder JIT(`builder.py:65-77` `cpp_extension.load`、GMM 三 dispatch key→CANN `GroupedMatmul`)、融合算子(`npu_swiglu`/`npu_scaled_masked_softmax`/`npu_rms_norm`/`npu_fusion_attention`)、HCCL buffer/QoS、`npu_apply_fused_ema_adamw`;保留 affinity 勘误([!warning])。
+- [[mindspeed_memory_optimization_analysis]] 维持(原已达深度标尺)。
+
+**整合**:[[mindspeed/index]] 四大类表新增「并行·CP 深挖」行;父索引 [[02_engineering/02_train_frameworks/index]](4→5 篇)与总索引 [[index]] 领域总览(MindSpeed 6)/快速导航(增 CP 页)同步。**校验**:各 agent 透明纠正了若干行号(expert_placement 路径、U-shaped loss 行、gmm dispatch 行),coordinator 抽样复核 `planner.py:111`(greedy)、`schedules.py:300`(U-loss)、`gmm.py:153`(@impl PrivateUse1)、`mc2_fuse_a2a.py:39`(npu_alltoallv_gmm)均命中;5 页 `[[]]` 链接经脚本提取确认 0 悬空。
+
+---
+
+## 2026-06-23: 新建「MindSpeed × MindSpeed-LLM 昇腾训练加速特性」子目录(index + 4 篇深挖)
+
+**Type**: New domain（应用户目标"分析 MindSpeed+MindSpeed-LLM 的训练优化特性:并行/计算通信掩盖/内存优化/昇腾亲和,总结进知识库"。源码核对 @ MindSpeed `master 1432cb09`(patches Megatron core_r0.17.0)+ MindSpeed-LLM `master 0c16322d`;4 篇深挖由并行 writer-agent 各读一域源码产出,coordinator 校验引用与链接）
+
+新建 `wiki/02_engineering/02_train_frameworks/mindspeed/`:
+- [[mindspeed/index]](知识地图):**猴补丁式 Megatron 加速层**定位、`MindSpeedFeature` 契约(register_args/register_patches/validate、O0/O1/O2 优化等级门控 `feature.py:12-20`)、`create_features_list()` ~70 特性总账(`features_manager/__init__.py:367-398`)、两层结构(core 通用 + LLM 模型/任务层)、四大类罗盘。
+- [[mindspeed_parallelism_analysis]](241 行):CP(Ulysses 头切 all-to-all / Ring / 自适应 / KV-cache,2·CP 因果负载均衡)、TP(非对齐线性 / TP-2D `[h/y,E/x]` / vocab ReplaceIndexPut)、PP 划分(noop/布局/非对齐/num-layer-list)、MoE-EP(tp-extend-ep + GMM 原语 + 专家放置 EMA 预测)、DP/分布式(LayerZeRO3 / Custom-FSDP)、分层解耦训练(U-split/VDP/VTP)。
+- [[mindspeed_comm_overlap_analysis]](267 行):两大母题——chunk-GEMM 流水异步通信(CoC/MoE-overlap)与 matmul+集合通信单核融合(MC2 `npu_all_gather_base_mm`/`npu_mm_reduce_scatter_base`、alltoall-MC2 `npu_alltoallv_gmm`);PP 换调度消/填气泡(DualPipeV 7 段 / RiPipe 重算填泡 / optimize-p2p)。**勘误**:async-log-allreduce 掩盖的是 loss 日志 all-reduce,非梯度规约。
+- [[mindspeed_memory_optimization_analysis]](248 行):统一原语 `untyped_storage().resize_(0)` + 反向重填;重计算(激活/norm/按 PP-rank/block-uniform)、Swap(smart-swap/swap-attention saved_tensors_hooks/swap-optimizer 态常驻 CPU)、reuse-fp32-param(fp32↔bf16 共享存储 `reuse_data_ptr`)、MoE-zero-memory、压缩(HANS/换尾数)、virtual-optimizer、chunk-loss。
+- [[mindspeed_ascend_affinity_analysis]](233 行):**算子替换层**——op_builder JIT(`cpp_extension.load` 编 CANN 核)、融合算子(GMM 三 dispatch key→`GroupedMatmul`、`npu_swiglu`/`npu_scaled_masked_softmax`/`npu_rms_norm`)、Flash-Attention(`npu_fusion_attention` SBH/TND)、HCCL buffer/QoS 调优、融合优化器(`npu_apply_fused_ema_adamw`)。**重要勘误**:`AffinityFeature` 并非 CPU 绑核(两仓 grep `sched_setaffinity/numa` 皆空),而是 VocabParallel 交叉熵的 NPU 亲和改写(`affinity.py:13-17` 补丁 `calculate_predicted_logits`)——已据此修正 index 描述。
+
+**整合**:父索引 [[02_engineering/02_train_frameworks/index]] 子目录表新增 `[[mindspeed/index]]` 行并更新日期;总索引 [[index]] 目录树 + 领域总览(MindSpeed 5 篇)+ 快速导航「昇腾训练加速」行同步。**校验**:抽样核对各页 `file:line`(affinity 勘误、recompute `resize_(0)`、op_builder `load`、`npu_swiglu`、Ulysses forward 均逐一开文件确认);5 页全部 `[[]]` 链接经脚本提取后确认目标存在,0 悬空(路径式 `[[megatron-lm/index]]` 等按 Obsidian 后缀匹配解析)。
+
+---
+
+## 2026-06-23: 新建「MindFormers PyNative 专家并行(EP)实现与通信量」专页(训练框架域 +1)
+
+**Type**: New（应用户提问"结合 MindFormers PyNative 代码分析 EP 实现、各方案通信量,尤其 deredundancyEP 与 zeroredundancyEP";既有 [[mindformers_moe_token_dispatcher_analysis]] 只覆盖 **Graph 模式**的去冗余 dispatcher,PyNative 路径与 zero_redundancy 均为真空。源码核对 @ MindFormers `01e71622` master）
+
+- **新增** [[mindformers_pynative_ep_analysis]]:
+  - **源码勘误(code wins)**:PyNative 路径只有 `alltoall`(`ExpertParallel`)与 `alltoall_deredundancy`(`DeredundancyExpertParallel`)两种;**`zero_redundancy` 在 PyNative 不存在**,仅 Graph 路径有 `MoEAlltoAllZeroRedundancyTokenDispatcher`(证据:`pynative/config/config.py:418-423` 选项表、`parallelize.py:967-975` 选择器、pynative 子树 grep 零命中)。
+  - **基础 `alltoall`**:单层 flat EP、逐 (token,expert) 对 all-to-all(`_permute:320` 每槽一行 ⇒ 同 rank 多专家=重复发送,量 ∝ k);`_build_resort_index:107-145` host 端从计数矩阵重建重排索引,省一次 routing-map a2a + 两次 sort。
+  - **去冗余 `deredundancy`**:两级 oep(跨机,步长取 rank)/iep(机内 8 卡);跨机只走 AllGather+ReduceScatter(每 token 跨机恰 1 次,与 k 无关),机内 AlltoAllV 精确落专家卡;`config.py:425-433` 强校验 `EP≥npu_nums_per_device`。
+  - **零冗余(对照)**:`mint.any` 按目标 rank 去重(`token_dispatcher.py:193-208`),冗余从 k 降到"不同 rank 数",收端本地复制。
+  - **`OverlapExpertParallel`**:A/B/C/D 同步钩子 + 异步 a2a 做通算重叠(不改通信量)。
+  - 含**三方案通信量总对照表**(拓扑 / 重复次数 / 与 k 关系 / 集合通信 / D2H / 适用瓶颈)。
+
+**整合**:姊妹篇 [[mindformers_moe_token_dispatcher_analysis]] footer 增「PyNative 对照」回链。**校验**:新页 `file:line` 均按当前 checkout 逐一核对;交叉链接 [[mindformers_moe_token_dispatcher_analysis]] / [[megatron_ep_analysis]] / [[torchtitan_ep_analysis]] / [[deepseek_moe_analysis]] 经 glob 确认存在。
+
+**目录重构(同日)**:为 MindFormers 单建子目录 `02_engineering/02_train_frameworks/mindformers/`,收纳两篇(PyNative EP + Graph 去冗余 dispatcher)及其 7 张图(移入 `mindformers/assets/`,`assets/…figN.png` 相对引用随之保持有效),新建 [[mindformers/index]] 知识地图。父索引 [[02_engineering/02_train_frameworks/index]] 子目录表新增 `[[mindformers/index]]` 行、移除两篇的单独条目;总索引 [[index]] 目录树/领域总览(MindFormers 2 篇)/MoE 快速导航同步。`[[bare filename]]` 链接按文件名解析,移动后不失效。
+
+---
+
 ## 2026-06-22: vLLM 系列补「图改写机制深挖」专页 + 调度页补 prefill/decode 与 PD 分离(系列增至 12 篇 + index)
 
 **Type**: Expand（沉淀对话中的源码级追问:图模式 pass 机制 / vllm_ir 自定义算子 / RMSNorm+quant 融合全程 / prefill-decode 切换与 PD 分离;源码核对 @ vLLM `485bbe1c6`）
