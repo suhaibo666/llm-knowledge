@@ -4,6 +4,20 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-23: 新建「训练快恢与重新建链」跨框架对比页(Megatron/MindSpeed/MindFormers)
+
+**Type**: New（应用户提问"故障节点更换涉及重新建链,Megatron/MindSpeed/MindFormers 各怎么做,结论要有事实依据"。3 个并行 research-agent 分别读三仓容错代码,coordinator 抽样核验关键引用后落页;wiki 此前无容错/快恢专题)
+
+- **新增** [[fault_recovery_relink_comparison]]:跨框架快恢与「重新建链」机制对比,源码核对 @ Megatron `232c478d4` / MindSpeed `1432cb09` / MindSpeed-LLM `0c16322d` / MindFormers `01e71622` / torch_npu。
+  - **Megatron-LM**:委托 NVRx,`--inprocess-restart` 进程内重启——abort NCCL(`inprocess_restart.py:93-98`)→ `destroy_model_parallel`(`training.py:286-292`)→ 新 `PrefixStore(str(iteration), store)` 命名空间重跑 `init_process_group`(`training.py:1088-1090`、`initialize.py:316-333`);热备 reserve rank 顶替。
+  - **MindSpeed-LLM**:MindIO TFT / **ARF 空中加油**——`arf_rebuild_process_group_callback`(`tft_arf_group_repair.py:31,47`)调 `torch_npu reinit_process_group(rebuild_link=True)` → `abort_hccl_comm("reinit")`(`torch_npu .../distributed_c10d.py:346-372`)**原地重建** HCCL(PG 对象存活);故障 rank 优化器态从同伴 DP **replica** 拷回(`tft_replica_group.py:26`、`tft_optimizer_data_repair.py:86-175`);另有 elastic scale-in/out 全重建。
+  - **MindFormers**:**不自实现**,委托 MindSpore runtime + MindIO——仅 `_tft_handler.init`(`build_context.py:346-352`)使能 ARF、包优化器、reboot 节点跳 barrier(`version_control.py:289-301`);重新建链在闭源 runtime 内。
+  - 显式标注三处**闭源边界**(NVRx / MindIO `mindio_ttp` / MindSpore runtime),区分"框架 Python 可见" vs "运行时黑盒"。
+
+**整合**:父索引 [[02_engineering/02_train_frameworks/index]] 页面列表新增条目。**校验**:抽样复核 `tft_arf_group_repair.py:47`(`reinit_process_group(rebuild_link=True)`)、`distributed_c10d.py:346/370`(`abort_hccl_comm`)、`build_context.py:346-352`(`_tft_handler.init`)、`inprocess_restart.py:93-98`(abort Compose)、`training.py:1088-1090`(PrefixStore)均逐一开文件命中。
+
+---
+
 ## 2026-06-23: [[megatron_ep_analysis]] 新增「DeepEP 通信量图解」三图(§③.3.5)
 
 **Type**: Update（应用户"图示解释 DeepEP 通信量分析,用 SVG 画图转 PNG 放进 wiki"。承接本轮对话链:核实 Megatron flex dispatcher 通信量估计 → 深挖 DeepEP `intra_dispatch` NVLink 扇出内核路径 → 本次落图）

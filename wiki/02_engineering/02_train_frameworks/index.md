@@ -28,6 +28,7 @@
 | [[comm_compute_overlap_analysis]] | Megatron-LM / torchtitan 源码 | 计算通信掩盖: combined_1f1b vs ZBV/DualPipe, sub-layer 级调度, DeepEP/HybridEP |
 | [[async_collective_tensor_deep_dive]] | PyTorch 源码 (_functional_collectives.py) | ACT 源码追踪: __torch_dispatch__, wait_tensor, stream 级执行过程, 与 Megatron 手动 stream 对比 |
 | [[muon_sharded_hsdp_report]] | Cursor Composer 2.5 博客 | 分片 Muon + 双网格 HSDP: all-to-all N-S、EP/CP 解耦、异步流水线、非专家分工优化 |
+| [[fault_recovery_relink_comparison]] | Megatron/MindSpeed/MindFormers + torch_npu 源码 | 跨框架快恢与「重新建链」对比: Megatron NVRx 进程内重启(abort NCCL→destroy→PrefixStore 重 init)、MindSpeed MindIO ARF 空中加油(`reinit_process_group(rebuild_link=True)`→`abort_hccl_comm` 原地重建 + replica 拷态)、MindFormers 委托 MindSpore runtime;含闭源边界标注 |
 
 > MindFormers MoE 专家并行(PyNative + Graph 两路径,共 2 篇)已收入子目录 [[mindformers/index]]。
 
