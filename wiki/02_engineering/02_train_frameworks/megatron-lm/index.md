@@ -40,6 +40,9 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 > - **审计结论(保留)**:`megatron_fusion_operators_analysis`(融合深版)、`megatron_nonuniform_tp_analysis`(NTP 深版)、`megatron_distributed_optimizer_analysis`(FP8/FP4/CPU-offload 深版)、`megatron_memory_optimization_analysis`(显存 survey)均为**深版**,系列内对应页(precision §3 / tp_fsdp_resharding §2 / ddp_optimizer / recompute)是其精简digest——二者**互补非重复**,故保留。
 > - 索引已收敛:并行轴/重计算/RL/模型结构等逐维深挖见下文系列;上方「Core Topics」仅列系列外的全景报告与专题深版。
 
+> [!update] 2026-06-23 · DDP/分布式优化器 bucketing 与 overlap 机制深挖
+> [[megatron_ddp_optimizer_analysis]] 新增 §2.7「bucketing 算法与 overlap 调度」:逆序贪心分桶(`param_and_grad_buffer.py:891-939`)、bucket_size 默认 `max(40M,1M·dp)` 与 ring 报文 `bucket_size/dp` 调参(`distributed_data_parallel_config.py:49-61`)、反向 `register_grad_ready`(就绪**计数器**,非填数据;填数据是 `main_grad.add_` 原地累加,main_grad 为 buffer 视图)集齐 golden-count 才触发 RS(`:802`)、前向 forward-pre-hook → `finish_param_sync` wait + 预取下一桶(`:496/:531`、DDP`:413`)。基线 dev@232c478d4。
+
 > [!update] 2026-06-23 · DeepEP 通信量图解(配 DeepEP 源码核实)
 > [[megatron_ep_analysis]] 新增 §③.3.5「通信量图解」三图(SVG→PNG):①按专家 vs 按节点发、②两级通信量分解 + 逐 token 公式、③2node×2GPU 数值走查 + IB 加速比。配图源码基线 **DeepEP @ `af9a040`**(legacy v1 `Buffer` 内核),并据 `internode.cu`(`notify_dispatch` :314/:313、`SourceMeta` :22、`kRDMAAndNVLForwarder` :971、:826 落地卡同号)对 §③.3.2 的「−1 免费落地卡」做了上界纠正。
 

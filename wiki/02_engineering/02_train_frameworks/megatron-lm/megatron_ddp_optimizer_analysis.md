@@ -140,6 +140,73 @@ def hook(*unused):
 
 `finalize_model_grads.py` 在反向后做跨并行轴的梯度收尾:DP 梯度规约、PP 首尾 stage 共享 embedding 的梯度 all-reduce、SP 下 LayerNorm 梯度的 all-reduce。是 DDP 与 TP/PP 协同的拼接点。
 
+### 2.7 bucketing 算法与 overlap 调度(机制细节)
+
+> [!update] 2026-06-23 · dev@232c478d4 — §2.1/2.2/2.3 的机制级补全:分桶**怎么切**、双向 overlap **怎么被 hook 驱动**、bucket_size **怎么调**
+
+§2.1–§2.3 给了"桶是通信单位、post-hook 发 RS、`start_param_sync` 做 AG"的轮廓。本节补到源码层。文件简称:PGB = `param_and_grad_buffer.py`、DDP = `distributed_data_parallel.py`、cfg = `distributed_data_parallel_config.py`。
+
+#### 三级结构
+
+| 层级 | 类 / 位置 | 角色 |
+|---|---|---|
+| Buffer | `_ParamAndGradBuffer`(PGB`:942`) | 每 (dtype, DP 组) 一块连续扁平缓冲(param 一块、grad 一块) |
+| Bucket | `_ParamAndGradBucket`(PGB`:70`) | buffer 的连续切片,通信寻址单位 |
+| BucketGroup | `_ParamAndGradBucketGroup`(PGB`:157`;`partition_buckets` 切分于 DDP`:268`) | **一次 NCCL collective 的粒度**,组内多桶由 `_coalescing_manager` 合并成一次调用 |
+
+#### 分桶算法:逆序贪心(`_compute_default_per_buffer_param_layout`,PGB`:891-939`)
+
+参数按 **`params[::-1]` 逆序**(`:917`,即 backprop 顺序)遍历,贪心累加 numel,当 `当前桶累计 ≥ bucket_size`(`:923`)即封桶、`bucket_id += 1`(`:926-928`);不足一桶的尾巴归最后一桶(`:931`)。每参数落 `(start, end, bucket_id)` 入 `param_index_map`(`:920`);`bucket_size=None` 则单桶。
+
+**逆序是 overlap 的前置设计**:反向时末层梯度最先就绪,逆序使末层落 bucket 0 → bucket 0 最先填满最先发 RS。
+
+#### bucket_size 默认与约束
+
+- 默认 `max(40_000_000, 1_000_000 × dp_size)`(DDP`:68-69`);`overlap_grad_reduce=False` 时置 `None`(单桶,`:71-72`)。
+- 理由(cfg`:49-51`):*"larger DP sizes need larger buckets to ensure collectives do not become latency-bound"* —— ring 算法每 rank 实际报文 = `bucket_size / dp_size`(cfg`:61`),DP 越大报文越小,桶须放大才吃满带宽。可改用 `num_buckets`(cfg`:53`,与 bucket_size 二选一)。
+- distopt 约束:每桶须可分片,`assert numel % data_parallel_world_size == 0`(PGB`:1059`);非 distopt 零 padding(`:1062-1063`)。`pad_buckets_for_high_nccl_busbw` 把桶凑到 `2^16` 倍数拉高 NCCL busbw(cfg`:58-62`)。
+
+#### 反向 overlap:grad RS 的就绪触发(承接 §2.2)
+
+backward post-hook(`_make_backward_post_hook`,DDP`:456-475`)里其实是**两步,别混为一谈**:① **填数据** `param.main_grad.add_(param.grad.data)`(DDP`:469`)—— `main_grad` 是扁平 grad buffer 的**视图**,梯度**原地**累加进该参数在桶里的固定区段,没有"搬进桶"这个动作(用融合 wgrad 时 `grad_added_to_main_grad=True`,连这次 `add_` 都省);② **记账** `register_grad_ready(param)`(DDP`:473` → PGB`:802`)**不碰数据**,只把计数器 +1(`per_param_grad_ready_counts[param] += 1`,`:819`)。
+
+所以**"桶满"不是攒够字节**(桶的大小与成员在初始化时已由逆序贪心定死),而是**该 bucket group 所有成员的梯度都算齐**:当 `per_param_grad_ready_counts == golden_per_param_grad_ready_counts`(`:822`)才 `start_grad_sync()` 发一次 coalesced 异步 RS(`:558` → `dist_reduce_scatter_func` `:662`)。两个细节:
+
+- **golden count 不一定是 1**:参数若在前向被用多次(tied embedding / 多算子消费),其梯度会多次就绪;第一个 batch 记录每个参数"应有的就绪次数"为 golden(`:273-276`),之后必须集齐该次数才算 ready。
+- 仅 `is_last_microbatch` 计数(`:815`),故梯度累积下前 m−1 个 microbatch 不发通信(与 §2.4 `no_sync` 一致)。逆序分桶使末层最先集齐 → bucket 0 最先发 RS,与前面层反向计算重叠。
+
+#### 前向 overlap:param AG 的预取流水(承接 §2.3)
+
+需求驱动 + 预取下一桶,是"计算 overlap 掉参数通信"的核心:
+
+1. `start_param_sync`(PGB`:352`)对一个 bucket group 发异步 all-gather:`_coalescing_manager` 合并组内各桶的 `all_gather_into_tensor`,每 rank 贡献自己的 shard(`:464-491`),句柄存 `param_gather_handle`。
+2. 每个 module 注册 **forward pre-hook**(`_make_forward_pre_hook`,DDP`:413`;挂载 `:392`)。module 前向前,对它用到的每个参数调其 bucket group 的 `finish_param_sync`(`:443`)。
+3. `finish_param_sync`(PGB`:496`):先 **wait** 本组 AG 完成(`:519`,保证这层参数齐),再**立刻派发下一组** `next_param_gather_bucket_group.start_param_sync()`(`:531`)—— 这就是预取:本 module 用刚 gather 好的参数算时,后台已在 gather 下一组。
+4. `next_param_gather_bucket_group` 链按前向序在 DDP`:295-308` 串好;链首(第一组)AG 在 step 末/`schedules.py` 先发(`:435-436` 注释),或被 `finish_param_sync` 懒发(PGB`:515-516`)。
+5. 若下一组 AG 已被提前派发 → PGB`:524-528` 警告 *"mismatch between the order of parameter registration and forward pass execution, which will hurt the communication-computation overlap performance"* —— **预取假设 module 前向序 == 参数注册序**。
+
+时间线(理想):
+
+```
+forward :  [算 g0]      [算 g1]      [算 g2]   ...
+AG 流  : AG_g0(头)│ AG_g1 ──┘ AG_g2 ──┘ AG_g3 ──┘     每组在上一组被消费时后台 gather
+           ↑首组暴露(可塞进 optimizer step)         ↑尾组无计算可盖则暴露
+backward:  ...[算 g2][算 g1][算 g0]
+RS 流  :          └RS_g0┘ └RS_g1┘ … └RS_last┘        逆序桶,首组(末层)最先发
+                                       ↑末桶 RS 尾巴,finish_grad_sync 收尾
+```
+
+#### 调节点
+
+| 旋钮 | 太小 / 错 | 太大 / 错 | 甜点 |
+|---|---|---|---|
+| **bucket_size**(主) | 桶多→collective 太小→latency-bound、ring 报文 `bucket_size/dp` 吃不满带宽 | 桶大→粒度粗:反向迟发首桶、前向首桶 gather 阻塞起步;单桶 = 零重叠 | 大到 BW-bound 又有多桶 → 默认 `max(40M,1M·dp)` + `pad_…_busbw` |
+| **桶序 = 执行序** | 注册序 ≠ 前向序 → PGB`:524` 警告、overlap 退化 | — | 反向逆序入桶、前向顺序预取 |
+| **align_param_gather**(cfg`:24`) | 不开时各 PP stage 自行发 AG 可能互抢 | — | 开启由 `schedules.py` 统一调度跨 stage 对齐(pre-hook `skip_next_bucket_dispatch`,DDP`:439-444`) |
+| **暴露的头尾** | — | — | 头(首桶 gather)可经 `overlap_param_gather_with_optimizer_step` 塞进 step;尾(末桶 RS)由 `finish_grad_sync` 收 |
+
+**一句话**:bucket 把整块 DP 通信切成 N 段并按执行序排好,hook 让"算第 i 段"自动等齐第 i 段并预取第 i+1 段;bucket_size 定 N —— 太小没东西可重叠、太大每段通信低效,默认 `max(40M, 1M·dp_size)` 在"够大到带宽受限"与"够多到首段早发、仅末段尾巴暴露"间取平衡。通信调度与 1F1B 重叠的全局视角见 [[megatron_comm_overlap_analysis]]。
+
 ---
 
 ## 阶段① — `no_shard`(ZeRO-0,朴素 DDP)

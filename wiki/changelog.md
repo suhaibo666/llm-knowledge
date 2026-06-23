@@ -4,6 +4,33 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-23: [[megatron_ddp_optimizer_analysis]] 新增 §2.7「bucketing 算法与 overlap 调度」(机制级深挖)
+
+**Type**: Update（应用户提问"Megatron distributed optimizer 如何 bucket、如何调计算与 bucket 让计算 overlap 掉参数通信",现读 Megatron-LM `dev@232c478d4` 源码后补全;既有 §2.1–2.3 只到高层轮廓）
+
+- **新增** [[megatron_ddp_optimizer_analysis]] §2.7,补三件源码层细节:
+  - **分桶算法**:逆序贪心 `_compute_default_per_buffer_param_layout`(`param_and_grad_buffer.py:891-939`)—— `params[::-1]` 逆序(backprop 序,末层落 bucket 0)、累计 ≥ bucket_size 即封桶;三级结构 Buffer / Bucket / BucketGroup(后者为一次 NCCL collective 粒度,`_coalescing_manager` 合并)。
+  - **bucket_size 调参**:默认 `max(40M, 1M·dp_size)`(`distributed_data_parallel.py:68-69`)、ring 每 rank 报文 = `bucket_size/dp_size`(`..._config.py:61`)、distopt 可分片约束 `numel % dp == 0`(`param_and_grad_buffer.py:1059`)、`pad_buckets_for_high_nccl_busbw` 凑 2^16。
+  - **双向 overlap 的 hook 调度**:反向 backward-post-hook → `register_grad_ready` golden-count 满才发异步 RS(`param_and_grad_buffer.py:802-824`);前向 forward-pre-hook(`distributed_data_parallel.py:413`)→ `finish_param_sync` wait 本组 AG + 预取 `next_param_gather_bucket_group`(`param_and_grad_buffer.py:496/:531`),链按前向序串于 `distributed_data_parallel.py:295-308`。附理想时间线 ASCII 图 + 调节点表(bucket_size / 桶序=执行序 / align_param_gather / 头尾暴露)。
+  - **补澄清(应用户追问"register_grad_ready 是否先填桶再统一通信")**:`register_grad_ready` 是**就绪计数器而非填数据**——填数据是同一 hook 内前一步 `param.main_grad.add_(param.grad.data)`(`distributed_data_parallel.py:469`,`main_grad` 是扁平 buffer 的视图,梯度原地累加,无"搬进桶"动作);"桶满"= 该组成员梯度全算齐(`per_param == golden`,`param_and_grad_buffer.py:822`),非攒够字节(桶大小/成员初始化即定死);golden count 可 >1(参数被多次消费,首 batch 记录,`:273-276`)。已并入 §2.7 反向 overlap 小段。
+- **基线**:Megatron-LM `dev@232c478d4`(2026-06-16);全部 `file:line` 现读现核。**索引**:[[megatron-lm/index]] 加 `> [!update] 2026-06-23` note。**纯增不删**:既有 §2.1–2.6 原样保留。
+
+---
+
+## 2026-06-23: MindSpeed 全 5 篇按「每特性四件套」再深挖(图示 + 优化点 callout + 源码,融合算子说明融合内容)
+
+**Type**: Deepen（用户第三轮反馈"每个都比较浅显,每种优化特性最好补对应图示和优化点说明;融合算子说明融合了哪些内容 + 补源码解读"。先把 affinity 页定为新标尺(每算子四件套:融合内容→before/after 图示→`[!tip] 优化点`→源码解读),再以它为 in-house exemplar 并行重写其余 4 篇。源码核对 @ MindSpeed 1432cb09 / MindSpeed-LLM 0c16322d)
+
+- **[[mindspeed_ascend_affinity_analysis]]**(468→**662 行**,10 图,12 优化点 callout):融合算子每个补**融合内容**(N 个散算子→1 核)——GMM(E 次切片+GEMM→1 变长分组,反向 dgrad 累加进 main_grad)、SwiGLU(chunk+SiLU+⊙→`npu_swiglu`)、RMSNorm(x²+mean+rsqrt+×→`npu_rms_norm`)、RoPE(rotate_half+cos/sin→`npu_rotary_position_embedding`)、Softmax(scale+mask+softmax 7 趟→`npu_scaled_masked_softmax`,带 fp16/sk≤4096 硬约束)、MoE-permute、Flash-Attention(**O(S²)→O(S),S×S 不物化**)、Fused-EMA-AdamW(一核回写 param/m/v/s);每个带 before/after 图 + 量化优化点。
+- **[[mindspeed_context_parallel_analysis]]**(373→**420 行**,7 优化点 callout):Ulysses/Ring-双环/Hybrid/Adaptive/KV-cache/2·cp 负载均衡 每变体补量化优化点(通信量比、overlap、straggler 消除)。
+- **[[mindspeed_parallelism_analysis]]**(469→**495 行**,18 优化点 callout,~20 图):TP-2D/非对齐/vocab/PP 划分/MoE-EP/LayerZeRO/Custom-FSDP/分层解耦(U-split/VDP/VTP)每特性补图 + 量化优化点。
+- **[[mindspeed_comm_overlap_analysis]]**(406→**461 行**,9 优化点 callout):MC2/CoC/MoE-overlap/fb-overlap/alltoall-MC2/DualPipeV/RiPipe/optimize-p2p/async-log 每特性补时序图 + 量化优化点(气泡比、隐藏率)。
+- **[[mindspeed_memory_optimization_analysis]]**(248→**422 行**,15 优化点 callout):重计算/Swap/reuse-fp32/MoE-zero-mem/压缩/virtual-opt/chunk-loss 每特性补 before/after 图 + 省显存 Δ 公式。
+
+**校验**:各 agent 透明纠正若干行号(mc2 CoC 互斥 `:21-22`、planner greedy `:127-142`、flexible_schedules 路径 `core/pipeline_parallel/`、compress pdf/ratio),coordinator 抽样复核均命中;5 页 `[[]]` 链接脚本提取确认 0 悬空。MindSpeed 系列累计约 **2460 行**(index 除外)。
+
+---
+
 ## 2026-06-23: [[fault_recovery_relink_comparison]] 深挖「重新建链全过程」+「进程状态管理」(§5/§6)
 
 **Type**: Expand（应用户"再深入解读重新建链过程,以及各训练进程状态如何管理"。读 MindSpeed TTP 状态机源码 + ARF 清理/重建回调 + Megatron Wrapper finalize,补两节深度)
