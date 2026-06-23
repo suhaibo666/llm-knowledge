@@ -4,6 +4,17 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-23: [[fault_recovery_relink_comparison]] 深挖「重新建链全过程」+「进程状态管理」(§5/§6)
+
+**Type**: Expand（应用户"再深入解读重新建链过程,以及各训练进程状态如何管理"。读 MindSpeed TTP 状态机源码 + ARF 清理/重建回调 + Megatron Wrapper finalize,补两节深度)
+
+- **§5 重新建链完整过程**:MindSpeed ARF 的有序回调链(`stop→clean→rebuild_group→repair`,注册序 `tft_train_initialize.py:97-107`)逐步拆解 + 时序图——`stop_device` / `torch_sync` / `unset_gather_handle` 置空旧异步句柄(`tft_stop_clean.py:76-88`)/ UCE 检查迁坏 HBM 张量(`:36-49,60-74`)/ 逐组 `reinit_process_group(rebuild_link=True)`(`tft_arf_group_repair.py:31-98`);对比 Megatron NVRx `Wrapper` 的 abort→finalize(`destroy_state`)→rank_assignment(RESERVE 热备)→initialize(`inprocess_restart.py:25-29,50-67,80-125`)。
+- **§6 训练进程状态管理**:MindSpeed 自研 TTP 的显式 `WorkerStatus` 状态机(INIT→NORMAL→{ABNORMAL/FAULT/PAUSE}→STOPPED,`core/ttp/constants.py:5-12`)、rank0 `TTPController._worker_status` + 心跳带 status/iteration(`comm/controller.py:53`、`comm/heartbeat.py:102-116`)、`_on_worker_fault` 广播 PAUSE(`controller.py:535-542`);并给出「故障时哪些状态丢/留」对照表(Megatron destroy&reload vs MindSpeed clean&repair-in-place)。
+
+**校验**:`controller.py:535-542`(PAUSE 广播)、`constants.py:5/53`、`tft_stop_clean.py`、`tft_arf_group_repair.py:31-98`、`inprocess_restart.py:25-125` 均逐一开文件核对。页面 130→约 260 行。
+
+---
+
 ## 2026-06-23: 新建「训练快恢与重新建链」跨框架对比页(Megatron/MindSpeed/MindFormers)
 
 **Type**: New（应用户提问"故障节点更换涉及重新建链,Megatron/MindSpeed/MindFormers 各怎么做,结论要有事实依据"。3 个并行 research-agent 分别读三仓容错代码,coordinator 抽样核验关键引用后落页;wiki 此前无容错/快恢专题)

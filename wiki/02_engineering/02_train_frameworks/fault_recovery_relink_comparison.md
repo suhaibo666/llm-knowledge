@@ -106,6 +106,145 @@ flowchart TB
 
 ---
 
+## 5. 「重新建链」的完整过程(逐步)
+
+重新建链不是一句 `init_process_group`,而是一条**有序的清理→重建→修复**链。两家可见路径的步骤截然不同。
+
+### 5.1 MindSpeed ARF:原地清理 + 逐组重链(能看到最底)
+
+MindIO 检测到故障后,按 `tft_register_processor` 注册的 handler 顺序(`tft_train_initialize.py:97-107`)依次回调——**这条注册顺序就是恢复状态机**:`stop → clean → rebuild_group → repair → rollback`。
+
+```mermaid
+sequenceDiagram
+    participant MIO as MindIO(闭源,检测+编排)
+    participant FW as 框架 Python(可见)
+    participant NPU as torch_npu / HCCL
+    MIO->>FW: stop_callback
+    FW->>NPU: npu.stop_device() 停设备/halt kernel
+    MIO->>FW: stream_sync(torch_sync)
+    FW->>NPU: torch.cuda.synchronize() 排空流
+    MIO->>FW: clean_callback(is_uce_error)
+    FW->>FW: unset_gather_handle() 置空旧异步句柄
+    FW->>NPU: check_uce_in_memory() → 迁移坏 HBM 张量
+    FW->>NPU: restart_device()
+    MIO->>FW: rebuild_group(arf_rebuild_process_group_callback)
+    FW->>NPU: reinit_process_group(group, rebuild_link=True) 逐组
+    MIO->>FW: repair_callback → 从 replica HCCL send/recv 拷态
+    MIO->>FW: (rollback_callback 如需)
+```
+
+逐步拆解(全部框架侧可见):
+1. **stop**(`tft_stop_clean.py:16-21`):`torch_npu.npu.stop_device(device)` 停 NPU、halt 在途 kernel。
+2. **stream sync**(`tft_stop_clean.py:91-94`):`torch.cuda.synchronize()` 排空 stream,确保没有在途算子引用旧 comm。
+3. **clean**(`tft_stop_clean.py:24-57`)——**这一步是状态卫生的核心**:
+   - `unset_gather_handle`(`:76-88`):把每个 `bucket_group` 的 `grad_reduce_handle` / `param_gather_handle` / `next_param_gather_bucket_group.param_gather_handle` 全置 `None`。这些是 overlap 通信遗留的**异步句柄,指向已 abort 的旧 HCCL 通信子**,不清就是野引用。
+   - **UCE 内存检查**(`:36-49`):`check_uce_in_memory(device)` → `UCE_LOW_LEVEL` 不必重建;`UCE_HIGH_LEVEL` 调 `optim.update_npu_tensor_to_safe()` + `model_update_npu_tensor_to_safe()`(`:60-74`)把 `param_data`/`grad_data` **从坏 HBM 区迁到健康区**;否则退出。
+   - `clean_type=="retry"` → `reinit_process_group(rebuild_link=False)`(只 `resume_hccl_comm` 不重建);最后 `restart_device(device)`。
+4. **rebuild_group**(`tft_arf_group_repair.py:31-98`)——re-link 核心,设 `TORCH_DIST_INIT_BARRIER=1` 后**逐组重建**:默认 PG(`:47`)→ DP `:51` → DP-CP `:55` → CP `:59` → MP `:63` → TP `:67` → PP `:71` → expert `:75` → replica DP `:80`。每组 `reinit_process_group(group=mpu._XXX_GROUP, rebuild_link=True)`(`:126`)——**复用同一个 Python group 对象**,底层 `abort_hccl_comm("reinit")`(`torch_npu/.../distributed_c10d.py:346-372`)abort 后懒重建。收尾 `update_model_and_optim_related_group(optimizer)`(`:95`)把 model/optimizer 缓存的 group 句柄重指到重建组,`update_arf_reboot_flag(False)`(`:44`)恢复 `args.load`。
+5. **repair**:从同伴 DP replica 用 `REPAIR_GROUP` HCCL `send`/`recv` 拷回 `param`/`exp_avg`/`exp_avg_sq`(见 §2)。
+
+### 5.2 Megatron in-process:abort → 销毁 → 重分配 → 重建(destroy & reload)
+
+`inprocess.Wrapper(train)` 是 NVRx 提供的状态机(`inprocess_restart.py:102-125`),健康时由心跳 + `CudaHealthCheck` + monitor thread/process 监控。故障触发后按 Wrapper 的四段:
+1. **abort**(`:93-98`):`Compose(AbortTransformerEngine, AbortTorchDistributed, AbortCheckpoint, NestedRestarterHandlingStarting)`——abort NCCL 在途集合通信、停异步 ckpt worker(`reset_persistent_async_worker`,`:90`)。
+2. **finalize**(`:69-78`):`ThreadedFinalize(destroy_state)` → `destroy_state()`(`:25-29`)= `training.destroy_global_state()`(销毁 model-parallel 组+全局态)+ `destroy_rerun_state_machine()` + 可选 `empty_cache`。
+3. **rank_assignment**(`:50-67`、`:112`):`Tree(layers)` 把标 `LayerFlag.RESERVE` 的热备 rank 提上来填缺(可按 `node` 粒度整节点替换)。
+4. **initialize**(`:80-83`):`RetryController(min_world_size=inprocess_active_world_size)` 重 rendezvous,够人数才放行;随后重入 `train` → `PrefixStore(str(iteration))` 新命名空间 → `init_process_group`。
+控制面 store 在 `MASTER_PORT+2`(Wrapper 自己的,`:104-105`),训练 base store 在 `MASTER_PORT+1`(持久 `TCPStore`,`:137-145`)。
+
+> **两条哲学一句话**:MindSpeed 是「**原地修补**」——进程、对象、group 句柄都不死,只清异步句柄+迁坏张量+逐组 `abort_hccl_comm` 重链;Megatron 是「**销毁重载**」——`destroy_global_state` 把框架全局态连同并行组全拆掉,换 store 命名空间从 checkpoint 重建,热备 rank 顶替。
+
+### 5.3 两条路径全状态对照图
+
+同一个故障,两种恢复哲学并排看——关键在 **③**:Megatron 把框架全局态**销毁**(红),MindSpeed 把进程/对象/group 全**保留**(绿),只做外科手术式清理。
+
+```mermaid
+flowchart TB
+    F["⚡ 故障发生:某 rank UCE / 掉卡 / hang"]:::fault
+
+    subgraph MG["Megatron-LM — 销毁重载(NVRx in-process restart)"]
+      direction TB
+      M1["①检测  NVRx Wrapper:心跳 + CudaHealthCheck<br/>soft/hard timeout → fault"]
+      M2["②中止  abort → AbortTorchDistributed(abort NCCL)<br/>+ reset 异步 ckpt worker"]
+      M3["③销毁  finalize → destroy_global_state()<br/>🔴 销毁 并行组 + 全局态 + rerun 状态机"]:::destroy
+      M4["④重建  RESERVE 热备顶替 + RetryController 重 rendezvous<br/>PrefixStore(iteration) 新命名空间 → init_process_group 重建全组"]
+      M5["⑤恢复  从 checkpoint 重载(local/disk + replication)"]
+      M6["⑥续训  从 Wrapper 持有的 iteration 继续"]
+      M1 --> M2 --> M3 --> M4 --> M5 --> M6
+    end
+
+    subgraph MS["MindSpeed — 原地修补(MindIO ARF / 空中加油)"]
+      direction TB
+      S1["①检测  TTPController 心跳(带 status+iter)<br/>漏3次→FAULT,_on_worker_fault 广播 PAUSE"]
+      S2["②中止  stop_device() + torch_sync()<br/>停设备 / 排空 stream"]
+      S3["③清理  unset_gather_handle 置空旧异步句柄<br/>UCE检查 → 坏HBM张量迁安全区<br/>🟢 进程 / 对象 / group 全保留"]:::keep
+      S4["④重链  逐组 reinit_process_group(group, rebuild_link=True)<br/>→ abort_hccl_comm 原地懒重建(复用同一 group 对象)"]
+      S5["⑤恢复  repair:同伴 DP replica HCCL send/recv 拷优化器态(可不读盘)"]
+      S6["⑥续训  恢复 args.load,继续"]
+      S1 --> S2 --> S3 --> S4 --> S5 --> S6
+    end
+
+    F --> M1
+    F --> S1
+
+    classDef fault fill:#ffe0e0,stroke:#c0392b,stroke-width:2px;
+    classDef destroy fill:#fdecea,stroke:#c0392b,stroke-width:2px;
+    classDef keep fill:#eafaf1,stroke:#27ae60,stroke-width:2px;
+```
+
+> 读图:两条路径**检测→中止→续训**六拍同构,差别全在中段——左路 ③ 一刀**销毁**框架态、④ 靠**热备 rank + 新 store 命名空间 + checkpoint** 从头长出来;右路 ③ 只**清理脏状态**(异步句柄/坏 HBM)、④ 在**同一批 group 对象**上 `abort_hccl_comm` 原地重链、⑤ 从**内存 replica** 取态。MindFormers 不在图中:它把 ②–⑤ 全部交给闭源 MindSpore runtime,Python 侧只在 reboot 节点跳过 barrier。
+
+---
+
+## 6. 训练进程的状态如何管理
+
+「快恢」的前提是知道**每个进程当下处于什么状态**,以及**故障时哪些状态要丢、哪些要留**。三家差异巨大。
+
+### 6.1 谁在追踪进程状态
+
+| | 追踪者 | 进程状态表示 | 故障传播 |
+|---|---|---|---|
+| Megatron | NVRx `Wrapper`(闭源) | 心跳 + `CudaHealthCheck` + monitor thread/process(`inprocess_restart.py:111-119`) | Wrapper 内部 |
+| MindSpeed(自研 TTP) | rank0 `TTPController` socket server | `_worker_status: Dict[rank, WorkerStatus]`(`comm/controller.py:53`) | 心跳带 status+iteration → controller 广播 PAUSE |
+| MindSpeed(生产 TFT) | MindIO(闭源) | 闭源 | 闭源,回调 handler 链 |
+| MindFormers | MindSpore runtime(闭源) | `is_reboot_node()` 标志 | runtime |
+
+### 6.2 MindSpeed 自研 TTP 的进程状态机(唯一能看全的)
+
+MindSpeed core `mindspeed/core/ttp/`(无 MindIO,RLHF/verl 用)有一套显式 worker 状态机。`WorkerStatus`(`core/ttp/constants.py:5-12`):
+
+```
+INIT(0) → NORMAL(1) ──┬─→ ABNORMAL(2)  # 自报故障(_on_exception)
+                      ├─→ FAULT(3)     # 心跳超时/掉线(_on_worker_timeout/_on_disconnect)
+                      ├─→ PAUSE(4)     # 收到 PAUSE 消息
+                      └─→ STOPPED(5)
+```
+
+- 每 worker 启动向 rank0 `REGISTER`→NORMAL(`controller.py:156-166`),后台线程持续发心跳,**心跳里带 `status` 和 `iteration`**(`comm/heartbeat.py:102-116`)。
+- rank0 `TTPController` 维护 `_worker_status` 字典(`controller.py:53`),`HeartbeatChecker` 监测每个 worker 最后心跳时间;漏 `DEFAULT_MAX_MISSED_COUNT=3` 次(`constants.py`)→ `on_timeout` → 标 `FAULT`(`controller.py:491-502`)。
+- 状态转移:自报异常→`ABNORMAL`(`:297-311`);超时/掉线→`FAULT`(`:471-484`、`:491-502`);收 PAUSE→`PAUSE`。
+- `_on_worker_fault`(`:504-643`):向**所有** rank 广播 `action: PAUSE`(`:535-542`),令全员暂停 → 触发 dump(`DUMP_REQUEST`)→ 协调恢复/退出。消息类型见 `MsgType`(`constants.py:17-32`:HEARTBEAT/REGISTER/DUMP/EXCEPTION/WAIT_RELEASE/EXIT)。
+
+### 6.3 故障时:哪些状态丢、哪些留
+
+这是两种哲学最本质的差别:
+
+| 状态项 | Megatron(destroy & reload) | MindSpeed ARF(clean & repair) |
+|---|---|---|
+| Python 进程 | 存活(in-process) | 存活 |
+| model-parallel **group 对象** | **销毁**(`destroy_model_parallel`)后新建 | **保留**,只 `reinit` 重链底层 HCCL |
+| 全局态 / rerun 状态机 | **销毁**(`destroy_state`,`inprocess_restart.py:25-29`) | 保留 |
+| 模型参数 / 优化器态 | 从 checkpoint **重载** | **保留**;坏 rank 从同伴 replica 拷回(可不读盘) |
+| 异步通信句柄 | 随对象销毁 | **显式置 None**(`unset_gather_handle`),否则野引用 |
+| 坏 HBM 张量 | 随重载丢弃 | **迁移到健康 HBM**(`update_npu_tensor_to_safe`) |
+| iteration / step | Wrapper 持有(`inprocess_call_wrapper.iteration`,`training.py:1088`) | `args` 常驻,`args.load` 临时置 None 再恢复 |
+| 通信 store | base `TCPStore` 持久,每轮换 `PrefixStore` 命名空间 | TCPStore key 删除后重建(`_delete_tcpstore_key`) |
+| 替换/恢复来源 | 磁盘/本地 ckpt + RESERVE 热备 | 同伴 DP replica(内存冗余) |
+
+**要点**:Megatron 把"进程存活但框架态全推倒重来"做到极简——代价是必须有 checkpoint 可重载、必须留热备 rank;MindSpeed 把"连对象都不死、外科手术式清理"做到极致——代价是要维护 replica 冗余、要精确管理每一处异步句柄与 HBM 张量的生命周期。MindFormers 则把这一切都压进 MindSpore runtime,Python 侧只剩一个 `is_reboot_node` 旗标决定"跳不跳 barrier、重不重载 ckpt"。
+
+---
+
 ## Related Pages
 
 - [[mindspeed/index]] —— MindSpeed 特性总览(TTP/high-availability 归此栈)
