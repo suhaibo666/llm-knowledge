@@ -218,6 +218,13 @@ $$\rho_{i,t} = \frac{\pi_{\theta_{old}}^{\text{train}}(y_{i,t}|x,y_{i,<t})}{\pi_
 
 ## 五、性能基准
 
+> [!contradiction] 基准数值以论文 Table 7 为准
+> 下方 5.1/5.2 表格为发布前估算；论文正式数值（Table 7, p22–24，逐项分析见 [[glm5_architecture_deepdive]] 同系列深挖页）如下，差异主要是早期估算偏低：
+> - **推理/通用**：HLE 30.5 · HLE(w/Tools) 50.4 · AIME 2026 I 92.7 · GPQA-Diamond 86.0 · LongBench v2 64.5
+> - **编码**：SWE-bench Verified **77.8** · SWE-bench Multilingual **73.3** · Terminal-Bench 2.0 56.2（/60.7†）· CyberGym 43.2
+> - **Agentic**：BrowseComp 62.0（**75.9** w/ 上下文管理）· τ²-Bench **89.7** · MCP-Atlas 67.8 · Tool-Decathlon 39.2 · Vending-Bench 2 **$4,432** · GDPval-AA Elo 1409
+> - **综合**：AA Intelligence Index v4.0 = **50**（开源首破 50）；SWE-rebench(2026-01) 42.1%（去污染动态集，仅微高于 GLM-4.7、低于 Claude Opus 4.5）。
+
 ### 5.1 Agentic & Coding
 
 | Benchmark | GLM-5 | GLM-4.7 | Claude Opus 4.5 | GPT-5.2 |
@@ -301,6 +308,16 @@ GLM-5V-Turbo (2604) → 多模态 Agent, CogViT
 
 ## Related Pages
 
+**逐章深挖（机制级，配流程图）**：
+- [[glm5_architecture_deepdive]] — 架构（MLA·Muon Split·MLA-256·MTP·DSA·高效注意力消融）
+- [[glm5_data_deepdive]] — 数据（预训练/中训练/长上下文）
+- [[glm5_training_infra_deepdive]] — 训练基础设施（显存五件套 + 并行）
+- [[glm5_posttraining_deepdive]] — 后训练（SFT/RL/跨阶段蒸馏）
+- [[glm5_agentic_rl_deepdive]] — slime + 全异步解耦 RL + 环境扩展
+- [[glm5_training_stability_deepdive]] — 训练稳定性主线
+- [[glm5_low_precision_chip_deepdive]] — 低精度链 + 国产芯片
+
+**其他**：
 - [[01_theory/index]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index]]
 - [[zhipu_glm/index]]

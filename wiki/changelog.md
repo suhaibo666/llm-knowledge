@@ -4,6 +4,23 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-24: GLM-5 论文逐章深挖补齐 6 篇 + 流程图工具链 + 索引整合
+
+**Type**: New + Deepen（应用户"针对每个章节做 deepdive，解释原理/效果/为什么，并补流程图(SVG→PNG)"。在 [[glm5_architecture_deepdive]] 校准页之上，6 个并行 writer-agent 各写一篇深挖页 + 各自流程图 HTML，coordinator 统一渲染 14 图并整合）
+
+- **新增 6 篇深挖页**（源基线 arXiv 2602.15763v2，逐节 原理/效果/为什么 + §/页码引用）：
+  - [[glm5_data_deepdive]] — §2.2–2.3 数据（双分类器漏斗 + 三段式上下文扩展，2 图）
+  - [[glm5_training_infra_deepdive]] — §2.4 显存五件套 + 长序列并行（2 图）
+  - [[glm5_posttraining_deepdive]] — §3.1–3.5 SFT(三思考模式)/GRPO+IcePop/General RL/跨阶段蒸馏（2 图）
+  - [[glm5_agentic_rl_deepdive]] — §3.6+§4 slime/全异步解耦 RL/三类环境构造（2 图）
+  - [[glm5_training_stability_deepdive]] — 跨章稳定性主线（失配×噪声×故障：TITO/双边IS/staleness/优化器reset/确定性topk，2 图）
+  - [[glm5_low_precision_chip_deepdive]] — §2.4.3+§3.6.2+§5 INT4 QAT→FP8→W4A8 + 昇腾三支柱（2 图）
+- **流程图工具链**：新增 `.html2md/render_figs.mjs`（复用 Edge/puppeteer 2× 截图）+ `figs/figstyle.css`；图源 HTML 在 gitignored `.html2md/figs/`，14 张 PNG 落 `assets/`（house 风格:奶白卡片 + 彩色圆角节点 + 灰箭头）。
+- **整合**：父索引 [[zhipu_glm/index]] 新增「§四之补 GLM-5 论文深挖页矩阵」(7 页表) + §六 GLM-5 行改指矩阵；概要页 [[glm_5_analysis]] 补「逐章深挖」Related 段，并对 §五 估算基准加 `> [!contradiction]` 用 Table 7 真值订正（SWE-bench Verified 77.8 / τ²-Bench 89.7 / AA Index 50 等）。
+- **校验**：7 页 + 索引/概要的 `[[]]` 链接脚本提取，同系列 7 个 `glm5_*_deepdive` + 既有 [[muon_analysis]]/[[grpo_analysis]]/[[megatron_ep_analysis]]/[[verl/index]]/[[low_precision_training_analysis]] 等均存在，0 悬空；14 图 `assets/*` 引用解析正常；agentic_rl 两图 note 内误写的 `[[]]` 已改纯文本并重渲。
+
+---
+
 ## 2026-06-24: 新增 [[glm5_architecture_deepdive]] 并入 GLM 索引
 
 **Type**: New（GLM-5 架构深挖页:论文 §2.1 的"规模 × 长上下文成本"权衡——744B/40B MoE 扩专家减层、MLA→Muon Split→MLA-256、MTP 参数共享、DSA 两阶段续训与高效注意力消融,含 2 图）

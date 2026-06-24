@@ -174,6 +174,23 @@ GLM-5 RL 框架:
 
 ---
 
+## 四之补、GLM-5 论文深挖页矩阵
+
+> 对论文 arXiv 2602.15763v2 的逐章机制级深挖，每页均按「原理 / 效果 / 为什么」展开并配 SVG→PNG 流程图；概要总览见 [[glm_5_analysis]]。
+
+| 维度 | 深挖页 | 覆盖章节 |
+|------|--------|---------|
+| 概要总览 | [[glm_5_analysis]] | 全文 |
+| 模型结构 | [[glm5_architecture_deepdive]] | §2.1 规模/MLA·Muon Split·MLA-256·MTP·DSA·高效注意力消融 |
+| 数据 | [[glm5_data_deepdive]] | §2.2–2.3 预训练/中训练/长上下文数据 |
+| AI Infra（训练） | [[glm5_training_infra_deepdive]] | §2.4 显存五件套 + 并行效率 |
+| 后训练 | [[glm5_posttraining_deepdive]] | §3.1–3.5 SFT/Reasoning RL/General RL/跨阶段蒸馏 |
+| AI Infra（RL） | [[glm5_agentic_rl_deepdive]] | §3.6+§4 slime/全异步解耦 RL/环境扩展 |
+| 训练稳定性 | [[glm5_training_stability_deepdive]] | 跨章主线：失配 × 噪声 × 故障 |
+| 低精度 + 国产芯片 | [[glm5_low_precision_chip_deepdive]] | §2.4.3+§3.6.2+§5 INT4 QAT→FP8→W4A8 |
+
+---
+
 ## 五、GLM-5V-Turbo 关键技术
 
 ### 5.1 CogViT 视觉编码器
@@ -214,7 +231,7 @@ GLM-5 RL 框架:
 | CharacterGLM | 2311.16832 | 待摄入 |
 | GLM-4 Voice | 2412.02612 | 待摄入 |
 | GLM-TTS | 2512.14291 | 待摄入 |
-| **GLM-5** | **2602.15763** | **[[glm_5_analysis]]**（概要）· **[[glm5_architecture_deepdive]]**（架构深挖:MLA·Muon Split·MTP·DSA） |
+| **GLM-5** | **2602.15763** | **[[glm_5_analysis]]**（概要）· 7 篇逐章深挖见 [§四之补](#四之补glm-5-论文深挖页矩阵) |
 | **GLM-5V-Turbo** | **2604.26752** | **[[glm_5v_turbo_analysis]]** |
 
 ---
