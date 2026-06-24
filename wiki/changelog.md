@@ -4,6 +4,17 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-24: AI infra 三页补「掩盖 / 缓存」图示（5 张时间线 / 复用图）
+
+**Type**: Update（应用户"AI infra 深挖里涉及掩盖、缓存的优化点都配个图示，便于分析理解"。掩盖用时间线(Gantt 前后对比)、缓存用复用流 / 前缀树 / 内存层）
+
+- [[glm5_training_infra_deepdive]] §3.3 新增 **图 3**：计算-通信掩盖时间线——②双缓冲(累积‖梯度同步)、③Muon(本地计算‖分片all-gather)、④激活offload(计算‖搬运)、⑥延迟wgrad(填气泡)、⑦层级all-to-all(节点内‖节点间)，各自把"什么藏进计算"。
+- [[glm5_agentic_rl_deepdive]] 新增 **图 1**（PD 解耦时间线：混部 prefill 抢占 decode vs 解耦后 decode 连续）+ **图 3**（DP-aware routing 的 KV 前缀复用：朴素 O(总上下文) vs 一致性哈希亲和 O(增量)）；原图 1/2 顺延为 **图 2/4** 以保持阅读序。
+- [[glm5_low_precision_chip_deepdive]] §4.3 新增 **图 3**：昇腾掩盖与缓存——左 Lightning Indexer/MLAPO(Vector‖Cube)/异步调度(D2H‖decode准备)/FlashComm(拆AllReduce) 计算掩盖访存通信，右 RadixCache 前缀共享 + Prefix Cache KV 外溢到系统内存。
+- **工具链**：`figstyle.css` 增加时间线(`.tl`/`.tl-bar`)与内存层(`.tier`)样式；新增图源 `glm5_infra_overlap` / `glm5_agentic_cache` / `glm5_chip_overlap_cache`.html（gitignored），渲染 5 张 PNG 到 `assets/`。**校验**：5 图逐张肉眼查无溢出/残留链接语法；agentic 页图号顺延后阅读序连续。
+
+---
+
 ## 2026-06-24: [[glm5_architecture_deepdive]] 补完整模型结构图（§1.1，config 实据）
 
 **Type**: Update（应用户"architecture 里缺一张完整模型结构图"。拉取 released `zai-org/GLM-5` config.json 作实据，新增"宏观层栈 + 单 MoE 解码层放大"的结构图 + config 超参表 + 层数 contradiction）

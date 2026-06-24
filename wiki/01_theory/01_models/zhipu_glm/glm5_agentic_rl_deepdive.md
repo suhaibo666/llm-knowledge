@@ -71,11 +71,13 @@ slime 的 robustness 杠杆是**心跳驱动容错**：rollout 服务器周期�
 
 > 三机制的共同逻辑：**把「最慢样本的完成时间」当成第一优化量**。No-queue 解决「排不上队」，FP8+MTP 解决「单条太慢」，PD 解耦解决「被别人插队打断」——分别对应排队、服务时长、干扰三类尾延迟来源。
 
+![图 1：PD 解耦时间线——混部时一次重 prefill 抢占 decode（decode 停滞、长尾拉长），解耦后 prefill/decode 各占专属资源、decode 连续推进](assets/glm5_agentic_rl_deepdive_fig4.png)
+
 ---
 
 ## 4. 全异步解耦 RL（§4.1.1, p15–16）
 
-![图 1：全异步解耦 Agentic RL 架构——推理持续产轨迹、Orchestrator 调度多任务、Training 攒批更新、每 K 次梯度回环同步权重并重置优化器](assets/glm5_agentic_rl_deepdive_fig1.png)
+![图 2：全异步解耦 Agentic RL 架构——推理持续产轨迹、Orchestrator 调度多任务、Training 攒批更新、每 K 次梯度回环同步权重并重置优化器](assets/glm5_agentic_rl_deepdive_fig1.png)
 
 ### 4.1 问题：同步 RL 在长尾 rollout 下产生大量 bubble
 
@@ -114,6 +116,8 @@ $$\mathcal{L}(\theta)=\mathbb{E}_{x\sim D}\!\left[\frac{1}{K}\sum_{i=1}^{K}\big(
 
 ## 5. DP-aware routing：在 DP 下保住 KV-cache 局部性（§4.1.2, p17）
 
+![图 3：DP-aware routing 的 KV 前缀复用——朴素路由每轮落不同 rank、cache miss 重算前缀 O(总上下文)；DP-aware 用一致性哈希把 rollout 钉到同一 rank、复用本地 KV、只 prefill 增量 O(Δ)](assets/glm5_agentic_rl_deepdive_fig3.png)
+
 **原理**：GLM-5 提出 **DP-aware routing**，在数据并行（DP）下为大规模 MoE 推理**保住 KV-cache 局部性**。机制链条如下（§4.1.2, p17）：
 
 1. **观察**：多轮 agentic workload 里，**来自同一 rollout 的连续请求共享同一前缀**；
@@ -129,7 +133,7 @@ $$\mathcal{L}(\theta)=\mathbb{E}_{x\sim D}\!\left[\frac{1}{K}\sum_{i=1}^{K}\big(
 
 ## 6. 环境扩展：给 RL 喂「可执行 + 可验证」的反馈（§4.2, p17–20）
 
-![图 2：三类可验证环境构造管线——SWE / Terminal / Search 三条并行分支，各自产出可执行可验证的 grounded 反馈](assets/glm5_agentic_rl_deepdive_fig2.png)
+![图 4：三类可验证环境构造管线——SWE / Terminal / Search 三条并行分支，各自产出可执行可验证的 grounded 反馈](assets/glm5_agentic_rl_deepdive_fig2.png)
 
 **原理**：为支撑多样 agentic 任务的 RL，GLM-5 构造**可验证、可执行**的环境，为 code-centric 与内容生成 workflow 提供 grounded 反馈（§4.2, p17）。下分四类。
 

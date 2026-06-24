@@ -100,6 +100,10 @@ GLM-5 从第一天起就**全栈适配七家国产芯片平台**：华为昇腾�
 
 **为什么这四项**：分别打**调度**（异步重叠去气泡）、**显存/复用**（前缀共享 + KV 外溢到 RAM）、**通信**（混合并行 + FlashComm 拆 AllReduce 隐藏通信）、**算力密度**（MTP 一步多 token）。四者叠加，把单机推理的各类瓶颈逐一抹平。
 
+下图把本节的**掩盖**（融合算子 + 异步调度 + FlashComm）与**缓存**（RadixCache + Prefix Cache）两条线并排呈现：
+
+![图 3：昇腾掩盖与缓存——左侧 Lightning Indexer/MLAPO/异步调度/FlashComm 用计算盖住访存与通信，右侧 RadixCache 前缀共享 + Prefix Cache 把 KV 外溢到系统内存](assets/glm5_low_precision_chip_deepdive_fig3.png)
+
 ### 4.4 结果：单机追平双卡国际集群（§5, p22）
 
 经上述硬件级协同优化，**GLM-5 在单个国产节点上达到可与双卡国际集群相当的性能，并在长序列场景下把部署成本降低 50%**（§5, p22）。
