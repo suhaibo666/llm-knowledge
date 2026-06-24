@@ -214,7 +214,7 @@ GLM-5 RL 框架:
 | CharacterGLM | 2311.16832 | 待摄入 |
 | GLM-4 Voice | 2412.02612 | 待摄入 |
 | GLM-TTS | 2512.14291 | 待摄入 |
-| **GLM-5** | **2602.15763** | **[[glm_5_analysis]]** |
+| **GLM-5** | **2602.15763** | **[[glm_5_analysis]]**（概要）· **[[glm5_architecture_deepdive]]**（架构深挖:MLA·Muon Split·MTP·DSA） |
 | **GLM-5V-Turbo** | **2604.26752** | **[[glm_5v_turbo_analysis]]** |
 
 ---

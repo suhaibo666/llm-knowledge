@@ -4,6 +4,14 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-24: 新增 [[glm5_architecture_deepdive]] 并入 GLM 索引
+
+**Type**: New（GLM-5 架构深挖页:论文 §2.1 的"规模 × 长上下文成本"权衡——744B/40B MoE 扩专家减层、MLA→Muon Split→MLA-256、MTP 参数共享、DSA 两阶段续训与高效注意力消融,含 2 图）
+
+**整合**:父索引 [[zhipu_glm/index]] §六 论文索引 GLM-5 行新增架构深挖链接(概要 [[glm_5_analysis]] + 架构深挖 [[glm5_architecture_deepdive]])。**校验**:2 张图 `assets/glm5_architecture_fig{1,2}.png` 引用解析正常;`## Related` 段含同系列深挖页前向引用(6 个 `glm5_*_deepdive` 为规划中页面,标记式前向链接)+ 既有页([[glm_5_analysis]]/[[muon_analysis]]/[[deepseek_v3_analysis]]/[[deepseek_moe_analysis]])均存在。
+
+---
+
 ## 2026-06-23: [[megatron_ddp_optimizer_analysis]] 新增 §2.7「bucketing 算法与 overlap 调度」(机制级深挖)
 
 **Type**: Update（应用户提问"Megatron distributed optimizer 如何 bucket、如何调计算与 bucket 让计算 overlap 掉参数通信",现读 Megatron-LM `dev@232c478d4` 源码后补全;既有 §2.1–2.3 只到高层轮廓）
