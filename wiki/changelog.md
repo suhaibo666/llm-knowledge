@@ -4,6 +4,16 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-24: [[glm5_architecture_deepdive]] 补完整模型结构图（§1.1，config 实据）
+
+**Type**: Update（应用户"architecture 里缺一张完整模型结构图"。拉取 released `zai-org/GLM-5` config.json 作实据，新增"宏观层栈 + 单 MoE 解码层放大"的结构图 + config 超参表 + 层数 contradiction）
+
+- 新增 §1.1「完整模型结构（GlmMoeDsa）」+ 图 `assets/glm5_architecture_fig3.png`：左=宏观栈(Embedding→Dense×3→MoE×75→Final RMSNorm→LM Head+MTP)，右=单层放大(子层A DSA 注意力：MLA-256 低秩+Muon Split→lightning indexer top-2048→稀疏注意力；子层B MoE：Router→top-8/256+1 共享→加权合并)。
+- 超参全部取自 released config：hidden 6,144 · **78 层**(前 3 dense + 75 MoE) · qk/v head_dim 256 · kv_lora 512+rope 64=**576** · 256 专家 top-8 + 1 共享 · DSA index_topk 2,048 · MTP×1。
+- `> [!contradiction]`：论文 §2.1 称 **80** 层、开源权重 **78** 层，以权重为准；原 DSA 续训图 caption 顺延为「图 3」。
+
+---
+
 ## 2026-06-24: GLM-5 论文逐章深挖补齐 6 篇 + 流程图工具链 + 索引整合
 
 **Type**: New + Deepen（应用户"针对每个章节做 deepdive，解释原理/效果/为什么，并补流程图(SVG→PNG)"。在 [[glm5_architecture_deepdive]] 校准页之上，6 个并行 writer-agent 各写一篇深挖页 + 各自流程图 HTML，coordinator 统一渲染 14 图并整合）

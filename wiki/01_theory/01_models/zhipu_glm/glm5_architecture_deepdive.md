@@ -22,6 +22,27 @@ GLM-5 的架构动机非常聚焦：在把模型从 355B 翻倍到 **744B** 的�
 
 ![图 1：GLM-5 整体训练流水线——Base Model(28.5T) 经预训练/中训练/DSA 续训，再进入渐进式后训练](assets/glm5_architecture_fig1.png)
 
+### 1.1 完整模型结构（GlmMoeDsa）
+
+下图给出 GLM-5 的完整模型结构：左为宏观层栈，右为单个 MoE 解码层的内部放大。后文 §2–§6 逐一解释各组件的"原理/效果/为什么"；这里先把结构与**确切超参**对齐——维度取自官方权重 `zai-org/GLM-5` 的 `config.json`（`model_type: glm_moe_dsa`），与论文 §2.1 的机制描述相互印证。
+
+![图 2：GLM-5 完整模型结构——78 层(前 3 dense + 75 MoE)，每层 = MLA-256+DSA 稀疏注意力子层 + MoE FFN 子层(top-8/256 + 1 共享)，末端 LM Head 与 MTP](assets/glm5_architecture_fig3.png)
+
+| 项 | 值（released config） | 说明 / 与论文对照 |
+|---|---|---|
+| `hidden_size` | 6,144 | 隐藏维 |
+| `num_hidden_layers` | **78** | 前 3 层 dense（`first_k_dense_replace=3`）+ 75 层 MoE |
+| 注意力 | MLA-256 | 64 heads · `qk_head_dim` 256（=192 nope + 64 rope）· `v_head_dim` 256 |
+| MLA 低秩 | `q_lora_rank` 2,048 / `kv_lora_rank` 512 | latent KV = 512 + 64(rope) = **576**，与论文"576 维 latent KV"（§2.1, p4）一致 |
+| DSA indexer | 32 heads · dim 128 · `index_topk`=**2,048** | lightning indexer 按内容选 2,048 个 KV（§2.1.1） |
+| 专家 | 256 路由 · `num_experts_per_tok`=**8** · `n_shared_experts`=**1** | `scoring_func=sigmoid`、`topk_method=noaux_tc`、无分组（`n_group=1`）、`routed_scaling_factor=2.5` |
+| FFN 中间维 | dense 12,288 / MoE 2,048 | dense 层 SwiGLU；每专家 `moe_intermediate_size` 2,048 |
+| MTP | `num_nextn_predict_layers`=1 | 单 MTP 模块；训练时 3 层参数共享、推理用于投机解码（§2.1, p5） |
+| 词表 / 上下文 | 154,880 / 202,752 | `rope_theta`=1e6 |
+
+> [!contradiction] 层数：论文 80 vs 开源权重 78
+> 论文 §2.1（p4）称"reduces its layer count to **80**"，而开源权重 `config.json` 为 **78** 层（前 3 dense + 75 MoE）。本结构图以 released 权重为准；论文数值可能为约数或含 MTP/计数口径差异。
+
 ---
 
 ## 2. 模型尺度：为什么"扩专家、却减层"
@@ -79,7 +100,7 @@ MLA 的另一个短板在**解码**：解码时它做 576 维点积，远高于 
 
 ## 5. DSA：从 dense 基座续训得到、"构造上无损"的稀疏注意力（§2.1.1, p5–7）
 
-![图 2：DSA 两阶段续训——dense warm-up（仅训 indexer）+ sparse adaptation（20B tokens 联训），从 MLA 基座得到稀疏注意力模型](assets/glm5_architecture_fig2.png)
+![图 3：DSA 两阶段续训——dense warm-up（仅训 indexer）+ sparse adaptation（20B tokens 联训），从 MLA 基座得到稀疏注意力模型](assets/glm5_architecture_fig2.png)
 
 **原理**：DSA（DeepSeek Sparse Attention）用一个 **lightning indexer** 按内容动态挑选 top-k（$k=2048$）个 token 做稀疏注意力，替代昂贵的 $O(L^2)$ 全注意力；与滑窗等**固定模式**不同，它"看内容"决定哪些 token 重要（§2.1.1, p5）。
 
