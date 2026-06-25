@@ -988,7 +988,7 @@ TP=8, PP=32, EP=32, DP=8, CP=4
 - [[megatron_memory_optimization_analysis]]
 - [[megatron_fusion_operators_analysis]]
 - [[megatron_comm_overlap_analysis]]
-- [[Megatron-LM_Distributed_Parallel_Exam]]
+- [[megatron_parallelism_orchestration_analysis]]
 - [[megatron_ep_analysis]]
 - [[megatron_pp_schedulers_analysis]]
 - [[activation_checkpointing_analysis]]

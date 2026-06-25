@@ -132,7 +132,7 @@ FP8 (E4M3) 比 FP4 (E2M1) 多 2 个指数位，动态范围更大。FP8 量化�
 
 ### 4.1 Grouped GEMM with FP8
 
-来自 `Megatron-LM_Distributed_Parallel_Exam.md` Q19：
+Megatron 的 MoE Grouped GEMM 低精度支持：
 
 多个 expert 的小 GEMM 合并为单次 `grouped GEMM` kernel launch，支持 **FP8、MXFP8、BF16**：
 - 一次 launch 处理所有 expert，消除多次 kernel 调度开销
@@ -193,7 +193,7 @@ FP8 (E4M3) 比 FP4 (E2M1) 多 2 个指数位，动态范围更大。FP8 量化�
 ## 7. 相关页面
 
 - [[02_engineering/02_train_frameworks/megatron-lm/index]] — Megatron-LM 知识地图
-- [[02_engineering/02_train_frameworks/megatron-lm/Megatron-LM_Distributed_Parallel_Exam]] — Q15 FP8 考核题
+- [[02_engineering/02_train_frameworks/megatron-lm/megatron_precision_cudagraph_fusion_analysis]] — FP8 低精度训练与 CUDA Graph 融合
 - [[02_engineering/02_train_frameworks/megatron-lm/megatron_comm_overlap_analysis]] — 通信掩盖中的 FP8 支持
 - [[01_theory/02_pretraining/transformer_engine_analysis]] — Transformer Engine 技术分析
 - [[01_theory/01_models/deepseek/deepseek_v4_fp4_qat_analysis]] — DeepSeek-V4 FP4 QAT

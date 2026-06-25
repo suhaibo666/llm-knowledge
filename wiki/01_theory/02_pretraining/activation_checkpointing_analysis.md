@@ -528,7 +528,7 @@ Time →
 ## Related Pages
 
 - [[torchtitan_ac_analysis]] — torchtitan/PyTorch 工程侧:非重入 `checkpoint_wrapper` 票据机制、SAC dispatch 缓存回放、显存预估(与本文 Megatron `CheckpointFunction` 重入路径互补)
-- [[Megatron-LM_Distributed_Parallel_Exam]] — Q12 Selective Recomputation 考点、Q13 Fine-Grained Offloading、Q30 Checkpoint Resharding
+- [[megatron_recompute_analysis]] — Selective Recomputation、Fine-Grained Offloading、Checkpoint Resharding（原 Exam Q12/Q13/Q30 内容已并入此页）
 - [[mHC]] — mHC 的选择性重计算实现与 CheckpointManager 的应用
 - [[aotautograd_analysis]] — §10.1 激活检查点与重计算、§10.2 视图重放优化
 - [[deepseek_v3_analysis]] — V3 的 RMSNorm + MLA up-projection 重计算

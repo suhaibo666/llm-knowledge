@@ -126,6 +126,6 @@ sequenceDiagram
 
 - [[01_theory/index]]
 - [[llm_initiliaze_analysis]]
-- [[Megatron-LM_Distributed_Parallel_Exam]]
+- [[megatron_distributed_optimizer_analysis]]
 - [[mHC]]
 - [[../../02_engineering/02_train_frameworks/muon_sharded_hsdp_report]] — 分片 Muon 与双网格 HSDP 工程实现分析

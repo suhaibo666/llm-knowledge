@@ -267,7 +267,7 @@ Forward（参数 All-Gather 可与计算 overlap）
 
 ## Related Pages
 
-- [[Megatron-LM_Distributed_Parallel_Exam]]
+- [[megatron_parallelism_orchestration_analysis]]
 - [[megatron_memory_optimization_analysis]]
 - [[low_precision_training_analysis]]
 - [[megatron_ep_analysis]]

@@ -439,7 +439,7 @@ def _get_amax_reduction_group(config):
 
 ## 10. CUDA Graphs 与 FP8
 
-来自 `Megatron-LM_Distributed_Parallel_Exam.md` Q14：
+Megatron/TE 的 CUDA Graphs 与 FP8 协同要点：
 
 - TE 的 `make_graphed_callables()` 自动处理内部 FP8/BF16 kernel 的 graph capture
 - `--cuda-graph-scope`：`full`（全图）/ `micro_batch` / 细粒度子模块
@@ -473,7 +473,7 @@ MAX_JOBS=16                         # 并行编译线程数
 - [[01_theory/02_pretraining/low_precision_training_analysis]] — Megatron 低精度训练全栈
 - [[02_engineering/02_train_frameworks/megatron-lm/index]] — Megatron-LM 知识地图
 - [[02_engineering/02_train_frameworks/megatron-lm/megatron_comm_overlap_analysis]] — TP 通信重叠中的 TE User Buffer
-- [[02_engineering/02_train_frameworks/megatron-lm/Megatron-LM_Distributed_Parallel_Exam]] — Q14 CUDA Graphs + Q15 FP8
+- [[02_engineering/02_train_frameworks/megatron-lm/megatron_precision_cudagraph_fusion_analysis]] — CUDA Graphs + FP8 精度
 - [[01_theory/01_models/deepseek/deepseek_v4_fp4_qat_analysis]] — FP4 QAT 实现
 - [[01_theory/02_pretraining/activation_checkpointing_analysis]] — TE checkpoint 与 FP8 激活重计算
 - [[01_theory/02_pretraining/RL_Training_Inference_Precision_Analysis]] — RL 训练推理精度对齐

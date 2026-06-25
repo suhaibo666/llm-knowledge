@@ -89,7 +89,7 @@ wiki/
 | 低精度训练 | [[low_precision_training_analysis]], [[transformer_engine_analysis]], [[deepseek_v4_fp4_qat_analysis]] |
 | 对齐/RLHF | [[instructgpt_rlhf_analysis]], [[dpo_analysis]], [[grpo_analysis]], [[ppo_analysis]] |
 | DeepSeek 模型 | [[deepseek_v4_analysis]], [[deepseek_v3_analysis]], [[deepseek_r1_analysis]] |
-| Megatron 分布式 | [[Megatron-LM_Distributed_Parallel_Exam]], [[megatron_comm_overlap_analysis]] |
+| Megatron 分布式 | [[megatron_parallelism_orchestration_analysis]], [[megatron_comm_overlap_analysis]] |
 | MoE | [[megatron_ep_analysis]], [[deepseek_moe_analysis]] |
 | MoE 专家并行 (MindFormers) | [[mindformers/index]], [[mindformers_pynative_ep_analysis]], [[mindformers_moe_token_dispatcher_analysis]] |
 | 昇腾训练加速 (MindSpeed) | [[mindspeed/index]], [[mindspeed_parallelism_analysis]], [[mindspeed_context_parallel_analysis]], [[mindspeed_comm_overlap_analysis]], [[mindspeed_memory_optimization_analysis]], [[mindspeed_ascend_affinity_analysis]] |

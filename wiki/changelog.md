@@ -4,6 +4,20 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-25: 清理 `Megatron-LM_Distributed_Parallel_Exam` 遗留悬挂链(11 处/9 文件)
+
+**Type**: Maintenance（该页早先已删除、内容分发至各分析页;全库尚残留 11 处指向它的悬挂链,逐条按主题重指到真实后继页）
+
+- **重指(按内容去向,非一键)**：
+  - 重计算/卸载/resharding 类 → [[megatron_recompute_analysis]]（activation_checkpointing 的 Q12/Q13/Q30）
+  - FP8 / CUDA Graph 类 → [[megatron_precision_cudagraph_fusion_analysis]]（low_precision Q15、transformer_engine Q14/Q15）
+  - Muon/Layer-Wise 优化器 → [[megatron_distributed_optimizer_analysis]]（muon_analysis）
+  - 泛 5D 并行综合 → [[megatron_parallelism_orchestration_analysis]]（distributed_optimizer/memory_optimization/moe_training/tflops 的「相关页面」、`wiki/index.md`「Megatron 分布式」导航）
+- **散文出处改写**：low_precision §4.1、transformer_engine §10 的「来自 `...Exam.md` Q19/Q14：」改为中性引导句（删去已失效的源文件名,内容保留）。
+- **校验**：全 wiki **0 处**仍指向 `Megatron-LM_Distributed_Parallel_Exam`（changelog 4 条历史记录按惯例保留）；5 个后继目标页均存在,**未引入新 dangling link**。
+
+---
+
 ## 2026-06-25: DeepSeek-V4 工程页(TP/CP)整理入 megatron-lm/ + 双向交叉链接 + 源码审核
 
 **Type**: Reorg + Audit（应用户"把 02_train 下重复的 deepseek-v4 内容合并/挪过来,模型分析放一起,重复删除、不重复挪,并审核内容"）
