@@ -103,8 +103,9 @@ venv.bak/
 # mypy
 .mypy_cache/
 
-# Claude Code
-.claude/
+# Claude Code — ignore local settings, but SHIP the repo-bundled skills
+.claude/*
+!.claude/skills/
 
 # macOS
 .DS_Store

@@ -1,6 +1,24 @@
-<!-- Mirrored (minus skill frontmatter) from the global ~/.claude/skills/source-faithful-analysis skill.
-     Repo entry & framing: methodology/index.md. Keep the two copies in sync when either changes. -->
-> 本文是本知识库「**源忠实分解**」方法论的核心。任何把一个源（代码 / 论文 / 任意材料）拆解、深挖、落成 wiki 页的工作都应遵循它；按来源类型再读对应的 `references/<type>.md` 包。框架与索引见 `methodology/index.md`。
+---
+name: source-faithful-analysis
+description: >-
+  Deep, source-faithful analysis of ANY artifact — a codebase, a research paper, a spec/RFC/standard,
+  a dataset, API/SDK docs, a running system or incident, a business/market report — turning it into a
+  mechanism-level technical write-up, wiki page, design doc, or knowledge-base entry where every
+  non-trivial claim is traced to its exact source locator (file:line / §·Table·Fig·Eq / clause /
+  column·row / endpoint·field / log timestamp), leads with the central thesis, and explains WHY each
+  design choice beats the obvious alternative — not just what it is. Use this whenever the goal is to
+  understand or explain something at the mechanism/why level from its ACTUAL source rather than a
+  one-line summary: "analyze X", "how does Y work internally", "write a deep dive / source-level
+  walkthrough of Z", reverse-engineering an architecture, mapping a subsystem, dissecting a paper's
+  design rationale, auditing a dataset/spec/report, comparing two implementations or approaches, or
+  ingesting any of these into a knowledge base. After you start, read the matching
+  references/<type>.md pack (codebase / paper / general) for the concrete locators, ingestion recipe,
+  and essence checklist. Trigger even when the user doesn't say "skill", "analysis", or
+  "documentation" — any time they want a faithful, essence-first reading of something's internals as
+  opposed to merely using it or fixing one isolated bug. Prefer this over a quick surface summary
+  whenever the user wants depth backed by exact, verifiable citations; especially apt for large or
+  unfamiliar sources and for multi-page / multi-subsystem efforts.
+---
 
 # Source-Faithful Analysis
 
