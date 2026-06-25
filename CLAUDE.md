@@ -9,11 +9,11 @@ This wiki has three layers:
 1. **Raw sources** (`raw/`) — Immutable source documents (PDFs, papers, articles). The LLM reads from them but NEVER modifies them.
 2. **Wiki** (`wiki/`) — LLM-generated markdown files. The LLM owns this layer entirely. It creates pages, updates them, maintains cross-references, and keeps everything consistent.
 3. **This schema** (`CLAUDE.md`) — Tells the LLM how the wiki is structured, what conventions to follow, and what workflows to execute.
-4. **Analysis methodology** (`methodology/`) — Tells the LLM *how to decompose and analyze a source* into those wiki pages. This schema governs *structure*; the methodology governs *process*.
+4. **Analysis methodology** (`.claude/skills/source-faithful-analysis/`) — A **repo-bundled Claude Code skill** that tells the LLM *how to decompose and analyze a source* into those wiki pages (Claude Code auto-loads it when this repo is open). This schema governs *structure*; the skill governs *process*.
 
 ## Analysis & Decomposition Methodology
 
-把一个源（论文 / 代码 / 规格 / 数据集 / 任意材料）拆解、深挖、落成 wiki 页的**标准分解流程**见 [`methodology/index.md`](methodology/index.md)：两条原则（**源忠实**——每条断言带已核验定位符、冲突时以源为准；**抓本质**——主线先行 + 动机/机制/证据/为什么不选替代），Phase 0–5 工作流，并行 writer-agent 契约；按来源类型再读 `methodology/references/{codebase,paper,general}.md`。下面的 Ingest / Query Workflow 是该方法论在本库的落地实例。
+把一个源（论文 / 代码 / 规格 / 数据集 / 任意材料）拆解、深挖、落成 wiki 页的**标准分解流程**封装为**仓库自带技能** [`.claude/skills/source-faithful-analysis/`](.claude/skills/source-faithful-analysis/SKILL.md)（Claude Code 打开本仓库即自动加载，无需另装）：两条原则（**源忠实**——每条断言带已核验定位符、冲突时以源为准；**抓本质**——主线先行 + 动机/机制/证据/为什么不选替代），Phase 0–5 工作流，并行 writer-agent 契约；按来源类型再读该技能的 `references/{codebase,paper,general}.md` 包。下面的 Ingest / Query Workflow 是该技能在本库的落地实例。
 
 ## Directory Layout
 

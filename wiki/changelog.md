@@ -4,13 +4,14 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
-## 2026-06-25: 新增 `methodology/` — 知识库「源忠实分解」方法论签入仓库
+## 2026-06-25: 仓库自带技能 `.claude/skills/source-faithful-analysis/` — 「源忠实分解」方法论
 
-**Type**: Meta（应用户"把分析 skill 作为本库后续的分解要求签入仓库"。镜像全局 `source-faithful-analysis` 技能，便于无技能环境也能照此执行）
+**Type**: Meta（应用户"把分析方法论作为 llm-knowledge **自带的 skill** 放进仓库，而非写成归档知识目录"。先建 `methodology/` docs，按反馈改为仓库内置 Claude Code 技能）
 
-- 新增 `methodology/`：`index.md`（仓库入口 / 框架）+ `source-faithful-analysis.md`（核心：两原则 源忠实/抓本质 + Phase 0–5 + 文档模板 + 红旗）+ `references/{codebase,paper,general,parallel-agent-contract}.md`（按来源类型的具体定位符/摄入配方/本质清单/专属红旗 + 并行 writer-agent 契约）。
-- `CLAUDE.md` 新增第 4 层「Analysis methodology」+「## Analysis & Decomposition Methodology」节，指向 `methodology/index.md`；明确分工：CLAUDE.md 管*结构与约定*、methodology/ 管*分析与分解的过程*，Ingest/Query Workflow 是其落地实例。
-- 该方法论与全局技能 `~/.claude/skills/source-faithful-analysis` 互为镜像（技能由原 `source-faithful-codebase-analysis` + `source-faithful-paper-analysis` 合并而来）；GLM-5 (2602.15763) 系列即其范例产出。
+- 新增**仓库自带技能** `.claude/skills/source-faithful-analysis/`：`SKILL.md`（含 frontmatter，Claude Code 打开本仓库即自动加载）+ `references/{codebase,paper,general,parallel-agent-contract}.md`（按来源类型的定位符/摄入配方/本质清单/专属红旗 + 并行 writer-agent 契约）。镜像全局同名技能（由原 `source-faithful-codebase-analysis` + `source-faithful-paper-analysis` 合并而来）。
+- `.gitignore`：`.claude/` 改为 `.claude/*` + `!.claude/skills/`——本地 settings 仍忽略，但**签入仓库自带技能**。
+- `CLAUDE.md` 第 4 层与「## Analysis & Decomposition Methodology」节改指该自带技能；CLAUDE.md 管*结构与约定*、技能管*分析与分解的过程*，Ingest/Query Workflow 是其落地实例。
+- 取代了本会话早先签入的 `methodology/` 文档目录（已删除）；GLM-5 (2602.15763) 系列即该方法论的范例产出。
 
 ---
 
