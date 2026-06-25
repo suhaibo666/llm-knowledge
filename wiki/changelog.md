@@ -4,6 +4,49 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-25: DeepSeek-V4 工程页(TP/CP)整理入 megatron-lm/ + 双向交叉链接 + 源码审核
+
+**Type**: Reorg + Audit（应用户"把 02_train 下重复的 deepseek-v4 内容合并/挪过来,模型分析放一起,重复删除、不重复挪,并审核内容"）
+
+**核查结论(先判定再动)**：`02_train_frameworks/` 下两篇 V4 页面经核查**不是重复**——它们是**真实的 Megatron-LM 源码级框架分析**（每节带 `megatron/core/...py:line`，与本地 `../Megatron-LM` 源码核对通过），与论文级模型页 [[deepseek_v4_cp_analysis]] **角度互补**（论文*算法* ↔ 框架*实现*）；TP 页在模型侧无对应。故**无可删的真重复**；缺的是两侧**互相没有交叉链接**。按 wiki「理论/工程」分层 + 用户选定「留工程层 + 双向交叉链接」执行：
+
+- **移库（`git mv` 保留历史）**：`deepseek_v4_tensor_parallel_analysis.md`、`deepseek_v4_context_parallel_analysis.md` + 7 张图 `assets/deepseek_v4_*_fig*.png` 从 `02_train_frameworks/` 移入 `02_train_frameworks/megatron-lm/`（与其余 Megatron 页同处；`assets/` 相对引用保持有效）。
+- **补基线头**：两页原**无 commit 基线**，补 `源基线: Megatron-LM dev @ 232c478d4 (2026-06-16)` + 维度(工程实现) + 与模型页分工说明。
+- **补 `## 相关页面`**：两页原**缺交叉引用节**（违反 wiki 规则），补全——双向链接模型页（[[deepseek_v4_cp_analysis]]/[[deepseek_v4_analysis]]/[[deepseek_v4_technical_deep_dive]]/[[mHC]]）+ 同目录 Megatron 页。
+- **模型页反向链接**：[[deepseek_v4_cp_analysis]] 的「相关页面」新增「框架实现」小节，指向两篇工程页（论文算法 ↔ Megatron 实现对照）。
+- **索引**：`02_train_frameworks/index.md` 删去两条目（已移子目录）；`megatron-lm/index.md`「专题深挖」表新增两条目（带跨目录指回模型页）。
+- **内容审核（对照 `../Megatron-LM` @ 232c478d4 抽查）**：✅ `deepseek_v4_hybrid_attention.py:92` `get_pg_size(tp)==1`、`:447` `parallel_mode='duplicated'`；✅ `hyper_connection.py:193/243` mHC 用 `nn.Linear`+`sequence_parallel`（非 TP-sharded）；✅ `experts.py:346` routed-expert `tp_group.size()>1` 约束；✅ `shared_experts.py:123` 标准 TP；✅ §九 特征5「CSA+CP 两阶段压缩 KV all-gather 尚未实现」仍成立（`csa.py` 的 `cp_group` 仅用于 RoPE CP 感知，page §5.1 已记，**非**压缩 KV 通信）。结论：内容真实、源码 grounded、非臆造非重复；仅**行号随源码漂移数行**（已在页头标注）。
+
+---
+
+## 2026-06-25: DeepSeek-V4 全系列对正式发表版 arXiv:2606.19348v1 审计 / 核对 / 订正
+
+**Type**: Reconciliation（应用户"分析 deepseek v4 输出一份报告，文章地址 arxiv 2606.19348"，并选定「审计 + 核对 + 订正」。既有 ~7 篇 V4 页面是论文正式上 arXiv 前 2 天(2026-04-24)基于无编号预发布 PDF / AI 合成笔记写成，故以正式版逐项复核）
+
+**方法**：下载正式版 PDF → 与本地预发布 `raw/.../DeepSeek_V4.pdf` 双双抽成页码标记文本 → diff + 逐项核对超参/基准/章节/机制；4 个并行只读审计 agent 锚定 `GROUND_TRUTH` 事实表逐页查证，关键臆造断言由协调者亲自 grep 正式版复核（`DualPath`=0、`Highly Compressed`=0 vs `Heavily`=7、`task_classifier`=0、`n log n`=0、`INT8`=0 vs `MXFP4`=1、`ablation`=0）。
+
+- **新增** [[deepseek_v4_audit_report]]：审计报告（核对基线 arXiv:2606.19348v1, 2026-04-26）——逐页裁决表 + 核对通过事实(超参/效率/基准全一致) + 章节号位移映射 + 论文中**不存在**的臆造清单(按出处反证)。
+- **核对通过(数字全对)**：超参表(层/维/专家/压缩率)、头条效率(Pro 27%/10%、Flash 10%/7%)、Table 1 基座(MMLU-Pro 65.5/68.3/73.5)、Table 6 后训练(LiveCodeBench 93.5、MRCR 83.5)。
+- **订正(Tier-A，论文真源页面)**：
+  - [[deepseek_v4_analysis]] —— 重订基线头；FP4 标注为**后训练 §5.2.1**(两组件 FP4 + 索引分数 BF16)；正文臆造的「DualPath 推理框架」加 `> [!contradiction]` 标注；评测表「顶尖」措辞按 Table 6 校准为有基线的相对表述；「51×/2048×」标注为本页推导。
+  - [[deepseek_v4_cp_analysis]] —— **章节号位移订正**(CP §3.5.3→§3.4.3、推理框架 §3.6/§3.6.1/§3.6.2→§3.5/§3.5.1/§3.5.2、Muon §3.4.1、mHC §3.4.2，共 ~13 处)；重订基线头；footer 旧路径修正。
+  - [[deepseek_v4_fp4_qat_analysis]] —— 出处 §3.7(两版皆无)订正为 **§5.2.1**；旧路径 `raw/05_model_families/`→`raw/01_theory/01_models/`；「三个组件 FP4」订正为「2 组件 FP4 + 索引分数 BF16」；效果表 ~75%/~2× 标注为估算(论文仅明述 top-k 2×、99.7% 召回)。
+  - [[mHC]] —— 基本一致；补注消融数据源自 mHC 论文(arXiv:2512.24880v2)而非 V4。
+- **加警示横幅，建议整页重写(Tier-B，预发布 AI 生成、无任何论文引用，确认系统性臆造)**：
+  - [[deepseek_v4_technical_deep_dive]] —— DSA=CSA+HCA 倒置、Highly/Heavily 名错、HCA 10% vs m′=128、臆造分层调度、臆造 MoE 任务路由、DualPath、MLA「V3 引入」(应 V2)、Sinkhorn 100(应 20)。
+  - [[deepseek_v4_implementation_details]] —— 专家 128/激活 8(应 256·384/6)、HCA 0.1、Sinkhorn 100、「Muon」实为 Adam(无 Newton-Schulz)、量化写成 INT8(应 FP4)、臆造 PCA KV 压缩/DualPath。
+  - [[deepseek_v4_architecture_diagrams]] —— 128 专家/K=8–12、5%·35% 任务自适应、领域命名专家、O(n log n)、DualPath/SNIC/CNIC、图缺 MTP、CSA/HCA 误并为一层。
+- **Tier-A 遵循 wiki「不删除、仅标注」规则**：臆造内容保留原文 + `> [!warning]`/`> [!contradiction]` 标注 + 指向审计报告。
+- **Tier-B 整页重写完成**（用户确认"基于正式版全部重写 3 篇"后执行）：3 个并行 writer-agent 锚定核验过的机制简报
+  （`MECH_BRIEF`：CSA/HCA/DSA Eq 9–27、Muon Alg 1/Eq 28、mHC Eq 1–8、§4.2.1 配置）逐方程重写，每条断言带 §/Eq/page；
+  协调者抽查定位符 + 机械校验（横幅已除、`DualPath`/`INT8`/`Highly`/`task_classifier`/`n log n` 清零、跨链无悬挂、图内无 `[[…]]` 泄漏）。
+  - [[deepseek_v4_technical_deep_dive]]（288 行）—— CSA/HCA/DSA/MLA 四机制「动机→机制(LaTeX)→证据→为何不选替代」对比。
+  - [[deepseek_v4_implementation_details]]（362 行）—— 五大组件逐方程伪代码，常量取自 §4.2.1，Flash|Pro 双值。
+  - [[deepseek_v4_architecture_diagrams]]（237 行）—— 复刻 Figure 2/3/4 + §4.2.1 配置表，含 MTP、首-2-层非对称、CSA/HCA 交错。
+- **更新** `deepseek/index.md`：V4 专题表加「核对状态」列 + 审计报告入口；3 篇 Tier-B 状态→「✅ 已据正式版整页重写」；最后更新日期→2026-06-25。
+
+---
+
 ## 2026-06-25: 仓库自带技能 `.claude/skills/source-faithful-analysis/` — 「源忠实分解」方法论
 
 **Type**: Meta（应用户"把分析方法论作为 llm-knowledge **自带的 skill** 放进仓库，而非写成归档知识目录"。先建 `methodology/` docs，按反馈改为仓库内置 Claude Code 技能）

@@ -2,6 +2,10 @@
 
 *基于 Megatron-LM dev 分支源码 · CP 进程组 · 通信类型 · TE 融合 · DSv4 适配 · 通信量分析*
 
+> **源基线**: Megatron-LM `dev` @ `232c478d4`（2026-06-16）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`parallel_state.py`、`dot_product_attention_context_parallel.py` 等。
+> **维度**: 工程实现（框架层）。**审计/移库**: 2026-06-25（自 `02_train_frameworks/` 移入 `megatron-lm/`；citation 已对照当前 HEAD 抽查，少量行号随源码漂移）。
+> **与模型页的分工**: 论文级 CP *算法*（两阶段压缩感知 CP、可见性控制）见模型页 [[deepseek_v4_cp_analysis]]（§3.4.3）；本页讲 Megatron 的 *实现* 与 *代码↔论文 gap*（见 §五 5.5、§九 特征 5）。
+
 > 本报告基于 Megatron-LM dev 分支中 DeepSeek-V4 的实际源码实现，系统分析其 Context Parallelism（CP）机制。涵盖 CP 进程组拓扑、四种通信类型（p2p/all_gather/a2a/a2a+p2p）的实现差异、TransformerEngine 的 fused flash attention + CP 路径、Native CP 的 autograd 实现、以及 DSv4（MLA + CSA/HCA）架构对 CP 的特殊适配与限制。
 
 **目录**
@@ -835,3 +839,15 @@ self.pg_collection.cp = _orig_cp_group
 ### 9.3 一句话总结
 
 > **总结**：DeepSeek-V4 的 Context Parallelism 实现充分利用了 MLA 的 KV 压缩优势（CP 通信量降低 128 倍），通过 TE 的 P2P Ring Attention 实现通信计算重叠，并支持 Hierarchical CP 匹配物理拓扑。当前限制包括：Native CP 只支持 all_gather、Dynamic CP 不支持 MLA/DSv4、CP 下不支持 attention dropout（Native 路径）。在 1M 序列长度的训练场景下，CP=8 + a2a+p2p 是推荐配置，可将 Attention 显存降低 8 倍，CP 通信开销控制在总时间的 5% 以内。
+
+---
+
+## 相关页面
+
+**模型侧（论文级，01_theory）** — 本页讲实现，下列讲算法/架构：
+- [[deepseek_v4_cp_analysis]] — V4 CP 的**论文算法**（§3.4.3 两阶段压缩感知 CP、packed sequences、三层可见性控制）。与本页对照阅读：论文设计 ↔ Megatron 实现 gap（见本页 §五 5.5、§九 特征 5）。
+- [[deepseek_v4_analysis]] — V4 整体架构　· [[deepseek_v4_technical_deep_dive]] — CSA/HCA/DSA/MLA 机制　· [[mHC]] — 流形约束超连接　· [[deepseek_v4_audit_report]] — V4 wiki 对正式版审计
+
+**框架侧（Megatron-LM，本目录）**：
+- [[deepseek_v4_tensor_parallel_analysis]] — V4 TP=1 切分实现（姊妹页）
+- [[megatron_cp_analysis]] — 通用 CP 机制　· [[megatron_packed_dataset_dynamic_cp_analysis]] — Dynamic CP / packed dataset　· [[megatron_ep_analysis]] — 专家并行　· [[megatron_comm_overlap_analysis]] — 通信掩盖

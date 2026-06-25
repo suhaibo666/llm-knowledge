@@ -2,7 +2,9 @@
 
 *基于 Megatron-LM dev 分支源码的实证分析 · CSA/HCA · MoE · mHC · 通信量与 Overlap*
 
-> 本报告基于 Megatron-LM dev 分支中 DeepSeek-V4 的实际源码实现，系统分析其 Tensor Parallel 切分策略。与此前推断性分析不同，本文所有结论均直接引用源码中的 `build_module` 调用、`tp_group` 传参和 `parallel_mode` 设置。
+> **源基线**: Megatron-LM `dev` @ `232c478d4`（2026-06-16）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`moe/experts.py`、`hyper_connection.py` 等。
+> **维度**: 工程实现（框架层）。**审计/移库**: 2026-06-25（自 `02_train_frameworks/` 移入 `megatron-lm/`；核查 `deepseek_v4_hybrid_attention.py:92` 仍为 `get_pg_size(tp)==1`、`:447` 仍为 `parallel_mode='duplicated'`，行号较旧稿有数行漂移）。
+> **与模型页的分工**: 模型侧无 TP 专页；本页是 V4 在 Megatron 的 *TP 切分实现*（强制 TP=1 的架构动因），与论文级架构 [[deepseek_v4_analysis]] / [[deepseek_v4_technical_deep_dive]] 互补。
 
 **目录**
 
@@ -604,3 +606,17 @@ self.linear_proj = build_module(..., tp_comm_buffer_name='proj', ...)
 > 2\. 为 Compressor/Indexer 实现细粒度的 TP 切分（需解决序列压缩的跨 rank 同步问题）。  
 > 3\. 将 mHC 的 `nn.Linear` 替换为 Column+Row Parallel 实现，激活 TP 对激活显存的分摊。  
 > 4\. 在 Routed Expert 的非 fused 路径中支持 ETP（需权衡 fused kernel 的性能损失）。
+
+---
+
+## 相关页面
+
+**模型侧（论文级，01_theory）** — 本页讲 Megatron 的 TP 实现，下列讲架构动因：
+- [[deepseek_v4_analysis]] — V4 整体架构（为何弱化 TP、强化 EP+DP）
+- [[deepseek_v4_technical_deep_dive]] — CSA/HCA/DSA 机制（压缩操作的全局性 = TP=1 的根因）
+- [[mHC]] — 流形约束超连接（本页 §四 讲其非 TP-aware 梯度同步）
+- [[deepseek_v4_audit_report]] — V4 wiki 对正式版审计
+
+**框架侧（Megatron-LM，本目录）**：
+- [[deepseek_v4_context_parallel_analysis]] — V4 CP 实现（姊妹页）
+- [[megatron_tp_analysis]] — 通用 TP 机制　· [[megatron_nonuniform_tp_analysis]] — 非均匀 TP　· [[megatron_ep_analysis]] — 专家并行　· [[megatron_moe_training_optimization_report]] — MoE 训练优化

@@ -1,14 +1,17 @@
 # DeepSeek-V4 Context Parallelism (CP) 深度分析
 
-> **来源**: `raw/01_theory/01_models/deepseek/DeepSeek_V4.pdf` §3.5.3  
-> **创建日期**: 2026-04-28  
-> **作者**: DeepSeek-AI  
+> **核对基线**: arXiv:**2606.19348v1** (DeepSeek-AI, **2026-04-26**) **§3.4.3**「Contextual Parallelism」  
+> **作者**: DeepSeek-AI　**创建**: 2026-04-28（预发布稿）　**对正式版核对/订正**: 2026-06-25  
+>
+> [!note] 本页内容与正式版一致（引文如「retained in a buffer / sample-level attention masking / state-space model」均已核验）。
+> **已订正章节号位移**：原稿沿用预发布编号（CP=§3.5.3、推理框架=§3.6.x），正式版因 FP4-QAT 移入后训练，§3 其后整体下移一位
+> ——CP 现为 **§3.4.3**、推理框架 **§3.5/§3.5.1/§3.5.2**、Muon **§3.4.1**、mHC **§3.4.2**。详见 [[deepseek_v4_audit_report]]。
 
 ---
 
 ## 概述
 
-DeepSeek-V4 的 Context Parallelism (CP) 在 §3.5.3 中提出，其核心挑战源于 **压缩注意力（CSA/HCA）与标准 CP 的不兼容性**。标准 CP 沿序列维度等分切分，每个 rank 持有连续的 $S/P$ 个 token。但 V4 的 CSA/HCA 对序列进行压缩，且训练数据使用 **packed sequences**（多文档拼接 + 独立压缩），导致压缩块边界与 CP 切分边界错位，以及各 rank 的压缩输出长度不可预测。
+DeepSeek-V4 的 Context Parallelism (CP) 在 §3.4.3 中提出，其核心挑战源于 **压缩注意力（CSA/HCA）与标准 CP 的不兼容性**。标准 CP 沿序列维度等分切分，每个 rank 持有连续的 $S/P$ 个 token。但 V4 的 CSA/HCA 对序列进行压缩，且训练数据使用 **packed sequences**（多文档拼接 + 独立压缩），导致压缩块边界与 CP 切分边界错位，以及各 rank 的压缩输出长度不可预测。
 
 论文设计了两阶段通信方案来解决：Stage 1 用常数级 P2P 通信解决跨边界压缩问题，Stage 2 用 All-Gather 在压缩空间中完成全局收集，从而利用压缩率 $c$ 将主要通信量线性缩减 $1/c$ 倍。
 
@@ -35,7 +38,7 @@ Packed input sequence (1M tokens):
 
 ### 1.2 独立压缩规则
 
-§3.5.3 明确压缩规则：
+§3.4.3 明确压缩规则：
 
 > "each sequence is compressed independently by a factor of $c_s$ (or $c_h$), with any **trailing tokens fewer than $c_s$ being discarded**"
 
@@ -176,7 +179,7 @@ $$
 
 ## 4. 训练时 Sample 可见范围控制（三层机制）
 
-§3.5.3 和 §4.1 共同描述了 query token 对 compressed KV 的可见性控制，从粗到细分为三层：
+§3.4.3 和 §4.1 共同描述了 query token 对 compressed KV 的可见性控制，从粗到细分为三层：
 
 ### 第一层：Sample-Level Attention Mask（§4.1）
 
@@ -204,7 +207,7 @@ Doc C  [    ✗ all    │    ✗ all     │  ✓ causal    ]
 
 这意味着 query token 对其所在压缩块内的其他 token 也不可见（由 SWA 分支单独补偿本地依赖）。block 的文档归属是唯一且确定的——不会出现一个压缩块包含两个文档的 token。
 
-### 第三层：Precomputed Rules + Top-K Selector（§3.5.3）
+### 第三层：Precomputed Rules + Top-K Selector（§3.4.3）
 
 > **For HCA and the indexer in CSA**: "the visible range of compressed KV entries for each query token can be **precomputed by rules**"
 
@@ -292,17 +295,17 @@ Rank 1 现在拥有 Doc B 的完整 5 个 tokens，可以压缩：
 
 ## 6. 推理侧尾部 Token 处理（三种策略）
 
-§3.5.3 描述的是**训练时的 CP**。推理侧（§3.6）对尾部不完整压缩块的 token 采用了不同策略。
+§3.4.3 描述的是**训练时的 CP**。推理侧（§3.5）对尾部不完整压缩块的 token 采用了不同策略。
 
 ### 6.1 策略对比
 
 | 场景 | 尾部不足 $c$ 个 token 的处理 | 依据 |
 |------|--------------------------|------|
-| **训练 CP（§3.5.3）** | **丢弃（Discard）**——batch 内多条序列，尾部丢弃对训练影响可忽略 | "any trailing tokens ... being **discarded**" |
-| **推理在线 State Cache（§3.6.1）** | **缓存（Buffer）**——保留为未压缩 KV state，等凑够 $c$ 个再压缩，移入 Classical KV Cache | "pending tokens ... must be **retained in a buffer**" |
-| **推理磁盘前缀复用（§3.6.2）** | **重计算（Recompute）**——落盘只存完整压缩块；尾部不完整块命中时重算 | "we still need to **recompute** them to restore the uncompressed KV entries" |
+| **训练 CP（§3.4.3）** | **丢弃（Discard）**——batch 内多条序列，尾部丢弃对训练影响可忽略 | "any trailing tokens ... being **discarded**" |
+| **推理在线 State Cache（§3.5.1）** | **缓存（Buffer）**——保留为未压缩 KV state，等凑够 $c$ 个再压缩，移入 Classical KV Cache | "pending tokens ... must be **retained in a buffer**" |
+| **推理磁盘前缀复用（§3.5.2）** | **重计算（Recompute）**——落盘只存完整压缩块；尾部不完整块命中时重算 | "we still need to **recompute** them to restore the uncompressed KV entries" |
 
-### 6.2 State Cache 机制（§3.6.1）
+### 6.2 State Cache 机制（§3.5.1）
 
 推理在线服务时，KV Cache 分为两个物理区域（Figure 6）：
 
@@ -361,7 +364,7 @@ Stage 1 的 P2P 发送 $c_s=4$ 个未压缩 KV 恰好覆盖这个重叠窗口的
 
 ## 8. 通信-计算重叠
 
-虽然 §3.5.3 本身未详细讨论重叠，但结合 §3.5.1（EP 细粒度重叠）和 §3.5.2（mHC DualPipe 调度）可以推断 CP 通信的重叠策略：
+虽然 §3.4.3 本身未详细讨论重叠，但结合 §3.4.1（EP 细粒度重叠）和 §3.4.2（mHC DualPipe 调度）可以推断 CP 通信的重叠策略：
 
 - Stage 1 的 P2P 可与本地压缩计算的开始部分重叠
 - Stage 2 的 All-Gather 可与后续层的计算形成 DualPipe 流水线
@@ -421,7 +424,7 @@ Example (query at global position 20, k=8):
 | 跨边界处理 | 不需要 | Stage 1 尾部 token 转发 |
 | 可见范围 | 简单因果 | 三层预计算规则 + 显式索引 |
 
-> 完整伪代码与数据流追踪见 `raw/05_model_families/deepseek/DeepSeek_V4_Contextual_Parallelism.md`。
+> 完整伪代码与数据流追踪见 `raw/01_theory/01_models/deepseek/DeepSeek_V4_Contextual_Parallelism.md（AI 辅助补充笔记，非论文）`。
 
 ---
 
@@ -442,5 +445,9 @@ Example (query at global position 20, k=8):
 - [[deepseek_v2_analysis]] — MLA 起源（低秩 KV 压缩）、DeepSeekMoE
 - [[mHC]] — 流形约束超连接深度解析
 - [[deepseek_r1_analysis]] — GRPO 推理训练
-- [[02_engineering/02_train_frameworks/megatron-lm/Megatron-LM_Distributed_Parallel_Exam]] — Megatron-LM 5D 并行（含标准 CP）
+
+**框架实现（Megatron-LM 源码级，与本页论文算法对照）**：
+- [[deepseek_v4_context_parallel_analysis]] — **V4 CP 的 Megatron 实现**：进程组拓扑、四种通信类型、Native/TE CP、以及本页论文设计在代码中的 gap（如压缩 KV all-gather 尚未实现）
+- [[deepseek_v4_tensor_parallel_analysis]] — V4 TP=1 切分实现（CSA/HCA/mHC/MoE 的切分约束）
+- [[02_engineering/02_train_frameworks/megatron-lm/megatron_parallelism_orchestration_analysis]] — Megatron-LM 5D 并行编排与进程组构造（含标准 CP）
 - [[02_engineering/02_train_frameworks/megatron-lm/megatron_comm_overlap_analysis]] — 通信重叠分析

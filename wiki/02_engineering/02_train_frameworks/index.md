@@ -1,7 +1,7 @@
 # 训练框架 — 目录索引
 
 > 覆盖分布式训练框架、并行策略、通信优化
-> 最后更新: 2026-06-23(新增 MindSpeed 昇腾训练加速栈子目录)
+> 最后更新: 2026-06-25(DeepSeek-V4 TP/CP 两篇移入 [[megatron-lm/index]] 子目录,与其他 Megatron 页同处)
 
 ---
 
@@ -22,8 +22,6 @@
 | [[torchtitan/index]] | torchtitan 源码 | DP/TP/CP/EP/PP 多维并行机制级分析(参数切分/预取/通信掩盖/异步)+ HSDP 反向双流掩盖、低精度/算子融合/编译、对称内存/Async-TP、SimpleFSDP |
 | [[comm_compute_fusion_guide]] | 综合深度分析 | 通算融合: WaveEP、DeepEP、TP/DP/PP/CP 各维度重叠, 自动化路线图 |
 | [[distributed_optimizer_deep_dive]] | 综合深度分析 | FSDP2/ZeRO/MindSpeed 对比, 梯度累积, Adam vs Muon |
-| [[deepseek_v4_tensor_parallel_analysis]] | Megatron-LM dev 源码 | DeepSeek-V4 TP 切分方案, CSA/HCA/MoE/mHC 通信量与 Overlap |
-| [[deepseek_v4_context_parallel_analysis]] | Megatron-LM dev 源码 | DeepSeek-V4 CP 实现, 4 种通信类型, Native/TE CP, Dynamic CP, MLA 通信量优化 |
 | [[megatron_pp_parallelism_analysis]] | Megatron-LM 源码 | PP 并行: 1F1B/VPP/Combined 调度, P2P 通信, Bubble 分析, 激活优化与卸载 |
 | [[comm_compute_overlap_analysis]] | Megatron-LM / torchtitan 源码 | 计算通信掩盖: combined_1f1b vs ZBV/DualPipe, sub-layer 级调度, DeepEP/HybridEP |
 | [[async_collective_tensor_deep_dive]] | PyTorch 源码 (_functional_collectives.py) | ACT 源码追踪: __torch_dispatch__, wait_tensor, stream 级执行过程, 与 Megatron 手动 stream 对比 |

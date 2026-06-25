@@ -1,8 +1,10 @@
 # DeepSeek-V4 深度解析
 
-> **来源**: `raw/05_model_families/deepseek/DeepSeek_V4.pdf` (DeepSeek-AI, 2025)  
-> **摄入日期**: 2026-04-24  
-> **作者**: DeepSeek-AI  
+> **核对基线**: arXiv:**2606.19348v1** (DeepSeek-AI, **2026-04-26**) ＝ `raw/01_theory/01_models/deepseek/DeepSeek_V4.pdf`  
+> **作者**: DeepSeek-AI　**初稿摄入**: 2026-04-24（基于预发布 PDF）　**对正式版复核/订正**: 2026-06-25  
+>
+> [!note] 本页超参表与基准数字已逐项对正式发表版核对（[[deepseek_v4_audit_report]]），结论：**数字全部一致**；
+> 已订正预发布残留（FP4 归属、章节口径），并对正文混入的 1 处臆造小节加 `> [!contradiction]` 标注。
 
 ---
 
@@ -243,7 +245,9 @@ V4 对大部分模块采用 [[muon_analysis]]：
 1. **Stage 1（P2P 邻接交换）**：Rank $i$ 将最后 $c$ 个未压缩 KV entry 发送给 rank $i+1$。Rank $i+1$ 将收到的 entry 与本地前 $c$ 个 entry 合并压缩为 $(c+1)$ 个固定长度 compressed block。通信量 $O(c \cdot n_{kv} \cdot d_h)$——与序列长度 $S$ 无关。
 2. **Stage 2（All-Gather）**：收集所有本地压缩 KV，通过 fused select-and-pad 算子重组为全局压缩 KV（总长 $P \times c$）。
 
-通信节省：All-gather 传输的是**压缩后 KV**，相比标准 CP（传输未压缩 KV），CSA 层节省约 **51×**，HCA 层节省约 **2048×**。
+通信节省：All-gather 传输的是**压缩后 KV**，相比标准 CP（传输未压缩 KV），通信量随压缩率 $c$ 线性缩减。
+
+> [!note] 「CSA ~51×、HCA ~2048×」是 [[deepseek_v4_cp_analysis]] 据通信量公式（$\approx 1/(P\cdot c)$，取 $P{=}8$）的**本页推导/估算**，正式版论文未直接给出该数字。
 
 > 完整分析见 [[deepseek_v4_cp_analysis]]，涵盖 packed sequences 数据格式、三层可见性控制（sample-level mask → block causal → precomputed rules/Top-K selector）、训练/推理尾部 token 处理差异、通信量公式推导和数值示例。
 
@@ -293,6 +297,11 @@ V4 的混合注意力因 cache 策略多样和对齐约束，无法直接使用 
 
 ### DualPath 推理框架
 
+> [!contradiction] **此小节与正式发表版不符（疑为预发布期臆造）。** 正式版 arXiv:2606.19348v1 全文**无** “DualPath”
+> （计数 0）、无 SNIC/CNIC 双网卡路由、无 1.87×/1.96× 吞吐数字。论文真正的推理框架是 **§3.5**：KV-Cache 结构与管理
+> (§3.5.1) + On-Disk KV 存储 (§3.5.2)（见上文「异构 KV Cache 管理」「磁盘 KV Cache 存储」两节，已与论文一致）。
+> 以下原文保留以备查，**请勿引用**。详见 [[deepseek_v4_audit_report]]。
+
 V4 引入 DualPath 解决大规模推理中的**存储带宽瓶颈**——所有 KV Cache 都通过 Prefill 节点的存储网卡（SNIC）加载，Decode 节点的网卡（CNIC）闲置。
 
 ```
@@ -337,7 +346,7 @@ V4 支持三级推理强度：
 1. **细粒度 EP 重叠**：基于 wave 的专家调度，一般推理加速 1.50~1.73 倍（RL rollout 等延迟敏感场景高达 1.96 倍）
 2. **TileLang 内核**：融合算子替代数百个 ATen 算子；Host Codegen 将 CPU 开销降至 <1μs；Z3 SMT 求解器辅助整数分析
 3. **批次不变性与确定性内核**：双内核 attention 策略、DeepGEMM 替代 cuBLAS、MoE 反向传播隔离累加缓冲区
-4. **FP4 量化感知训练（QAT）**：MoE 专家权重 + CSA indexer QK 路径使用 FP4；FP4→FP8 反量化**无损**（E4M3 比 FP4 多 2 个指数位）。详见 [[deepseek_v4_fp4_qat_analysis]]
+4. **FP4 量化感知训练（QAT）**——⚠️**这是后训练技术**（正式版 §5.2.1「Post-Training Infrastructures」，非预训练/训练框架）：FP4 仅作用于**两个组件**（MoE 专家权重、CSA indexer QK 路径）；**索引分数 I 另走 FP32→BF16**（top-k 选择器 2× 加速 / 99.7% 召回）。FP4→FP8 反量化**无损**（E4M3 比 FP4 多 2 个指数位）。详见 [[deepseek_v4_fp4_qat_analysis]]
 
 ---
 
@@ -357,14 +366,17 @@ V4-Flash-Base 尽管激活参数更小（13B vs 37B），仍在大多数基准�
 
 ### V4-Pro-Max（后训练旗舰，Think Max 模式）
 
-| 基准测试 | 得分 | 说明 |
+> 说明列已按正式版 **Table 6 (p38)** 校准（原稿「顶尖」措辞被 Table 6 反证，此处改为有基线的相对表述）。
+> 列内对手：Opus-4.6 / GPT-5.4 / Gemini-3.1-Pro / K2.6 / GLM-5.1 / DS-V4-Pro-Max。
+
+| 基准测试 | DS-V4-Pro-Max | 相对位置（Table 6） |
 |---------|------|------|
-| LiveCodeBench | 93.5% | 开源模型第一 |
-| Codeforces | 3206 | 超越 Gemini-3.1-Pro、Claude Opus-4.6 |
-| IMO-AnswerBench | 89.8% | 数学推理顶尖 |
-| HMMT 2026 | 95.2% | 数学竞赛顶尖 |
-| SWE-bench Verified | 80.6% | 软件工程顶尖 |
-| MRCR (长上下文) | 83.5% | 百万 Token 顶尖 |
+| LiveCodeBench (Pass@1) | 93.5 | **所列最高**（Gemini 91.7 / K2.6 89.6 / Opus 88.8） |
+| Codeforces (Rating) | 3206 | **最高**（> GPT-5.4 3168 > Gemini 3052；Opus 未报） |
+| IMO-AnswerBench (Pass@1) | 89.8 | 开源领先；低于 GPT-5.4 91.4 |
+| HMMT 2026 Feb (Pass@1) | 95.2 | 开源领先；低于 GPT-5.4 97.7 / Opus 96.2 |
+| SWE Verified (Resolved) | 80.6 | 与 Gemini 并列；略低于 Opus 80.8 |
+| MRCR 1M (MMR) | 83.5 | 胜 Gemini-3.1-Pro 76.3；负 Opus-4.6 92.9 |
 
 ### 后训练
 

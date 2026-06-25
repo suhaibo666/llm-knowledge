@@ -1,7 +1,7 @@
 # DeepSeek 模型家族 — 目录索引
 
 > 覆盖 DeepSeek LLM、V2、V3、V4、R1、Coder、Math、MoE、VL 等全系列
-> 最后更新: 2026-05-07
+> 最后更新: 2026-06-25（V4 全系列对正式版 arXiv:2606.19348v1 审计/订正）
 
 ---
 
@@ -18,14 +18,17 @@
 
 ### V4 专题分析
 
-| 页面 | 核心主题 |
-|------|---------|
-| [[deepseek_v4_architecture_diagrams]] | V4 架构 ASCII 结构图 |
-| [[deepseek_v4_cp_analysis]] | V4 Context Parallelism + packed sequences |
-| [[deepseek_v4_fp4_qat_analysis]] | V4 FP4 量化感知训练 |
-| [[deepseek_v4_implementation_details]] | V4 核心组件伪代码实现 |
-| [[deepseek_v4_technical_deep_dive]] | CSA/HCA/DSA/MLA 对比深度解析 |
-| [[mHC]] | 流形约束超连接（V4 残差连接改进） |
+> **基线**: 已全部对正式发表版 **arXiv:2606.19348v1 (2026-04-26)** 核对 —— 见 [[deepseek_v4_audit_report]]（2026-06-25）。
+
+| 页面 | 核心主题 | 核对状态 |
+|------|---------|---------|
+| [[deepseek_v4_audit_report]] | **审计报告**：以正式版核对全部 V4 页面，列出一致项与订正项 | ★ 入口 |
+| [[deepseek_v4_cp_analysis]] | V4 Context Parallelism + packed sequences | ✅ 已订正章节号 |
+| [[deepseek_v4_fp4_qat_analysis]] | V4 FP4 量化感知训练（后训练 §5.2.1） | ✅ 已订正出处/口径 |
+| [[mHC]] | 流形约束超连接（源自 mHC 论文，V4 §2.2 采用） | ✅ 一致 |
+| [[deepseek_v4_technical_deep_dive]] | CSA/HCA/DSA/MLA 对比深度解析 | ✅ 已据正式版整页重写 |
+| [[deepseek_v4_implementation_details]] | V4 核心组件伪代码（CSA/HCA/mHC/Muon/MoE，逐方程） | ✅ 已据正式版整页重写 |
+| [[deepseek_v4_architecture_diagrams]] | V4 结构图（Figure 2/3/4 复刻） | ✅ 已据正式版整页重画 |
 
 ### 推理与代码模型
 
