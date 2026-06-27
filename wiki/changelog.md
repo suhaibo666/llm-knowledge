@@ -4,6 +4,43 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-26: 新建 [[cuda_execution_model_guide]] — Grid·Block·Warp·Thread·SM 执行模型（概念→深入）
+
+**Type**: Ingest（应用户"Grid→Block→Warp→Thread→SM 这条映射链不清楚、会阻塞 GPU 编程理解，从概念到深入解释并入库"。**铁律：真实可靠 + demo**）
+
+**源（source-faithful）**：以 **NVIDIA CUDA C++ Programming Guide v12.9.1（archive）** 为权威源——`§Thread Hierarchy`（Programming Model）+ `§Hardware Implementation / SIMT Architecture`，关键事实逐条 WebFetch 核验后引用（warp=32、Block≤1024 因驻留同一 SM、Block 必须独立执行、warp 一次执行一条公共指令、发散逐路径串行、Independent Thread Scheduling 自 Volta/CC7.0、Cluster 自 CC9.0 最多 8 Block）。**注意**：v13.3 已把单页指南拆成多页，原 `index.html` 仅剩目录；故锚定有完整内容的 archive v12.9.1。
+
+- **新建** `wiki/02_engineering/05_gpu_kernel/cuda_execution_model_guide.md`：
+  - 主线：逻辑层级（Grid→Block→Thread，你写的）↔ 物理层级（GPU→SM→Warp，硬件跑的）互相映射，钥匙是 **Warp**。
+  - 概念层（公司类比 + 索引变量 + Thread ID 公式）→ 物理层（Block→SM 驻留、SM→Warp 切分）→ 深入层（warp 事实派生：①分支发散 ②合并访问 ③占用率 + ④`__syncthreads` 仅 Block 内 ⑤Block 独立=可扩展）→ 映射到 Triton（program≈block、num_warps、threadIdx 不可见）→ 常见误解纠正（以源为准）。
+  - **3 个可运行 demo**：`whoami.cu`（printf 看 Block 被切成 32 一组 warp）、`devinfo.cu`（`cudaGetDeviceProperties` 查真实 SM 数/warpSize/上限）、`triton_whoami.py`（`TRITON_INTERPRET=1` 看 program_id≈blockIdx，无 GPU 可跑）。
+- **整合**：`05_gpu_kernel/index.md` 页面列表新增本页（置于 gpu_kernel_guide 前，作地基）；[[triton_00_gpu_essentials_guide]]（正文执行层级处 + 相关页面）与 [[triton_01_programming_model_guide]]（相关页面）双向补链；`wiki/index.md` GPU Kernel 计数 10→11 + 主题导航新增「GPU 执行模型」行。
+- **校验**：本页外链（gpu_kernel_guide / triton_00 / triton_01 / triton_04 / triton_05 / index）均指向已存在页；**0 悬挂链**。
+
+---
+
+## 2026-06-26: 新建「Triton 学习路线」系列(9 页) — 小白→会写·会调·会优化·会debug 全能专家
+
+**Type**: Ingest + New domain（应用户"以 Triton 为切入点，整理 GPU 编程要素 + Triton 路线，手把手从小白到全能专家，输出学习资料入库"。**铁律：内容真实可靠、每教程带可运行 demo**）
+
+**源与方法（source-faithful）**：父目录无 Triton checkout，故按本库「上游 checkout 放父目录」惯例**浅克隆官方 `triton-lang/triton` 到 `../triton`**，钉死基线 **`main @ 70e0929`（2026-06-25）, v3.8.0**，作 `file:line` 可核验定位符。每个 demo 逐字锚定官方 tutorial，绝不凭记忆写。
+
+- **新建子目录** `wiki/02_engineering/05_gpu_kernel/triton/`，9 页：
+  - [[index]] — 学习路线总索引（主线：Triton=block-level 编程，编译器自动管 coalescing/shared mem/warp 划分；四能力闭环图）
+  - [[triton_00_gpu_essentials_guide]] — L0 地基：执行/内存层级 + roofline；**demo 用官方 benchmark 的 GB/s vs TFLOPS 公式手算算术强度判 bound**（锚 `01:128`/`02:225`/`03:438`）
+  - [[triton_01_programming_model_guide]] — L1 会写①：SPMD 五件套；向量加法（锚 `01-vector-add.py:29-75`）。**协调者自写的校准 exemplar**
+  - [[triton_02_fused_softmax_guide]] — L1 会写②：reduction + fusion 省带宽（锚 `02-fused-softmax.py:42-174`）
+  - [[triton_03_matmul_guide]] — L1 会写③+优化：多维指针算术/`tl.dot`/fp32 累加器/L2 grouping（锚 `03-matrix-multiplication.py:232-320`，A100 220→245 TFLOPS @ `:145`）
+  - [[triton_04_autotune_guide]] — L2 会调：`Config`/`num_warps`/`num_stages`/`key`（锚 `runtime/autotuner.py:351,334-340,408` + matmul `:228-231`）
+  - [[triton_05_debug_guide]] — L3 会debug：`TRITON_INTERPRET`（CPU 串行模拟，`knobs.py:471`/`interpreter.py:1410`）+ `device_print`/`static_print`/`static_assert`/`device_assert`（`core.py:3398/3414/3428/3478`）；越界 bug→修复 demo
+  - [[triton_06_optimization_profiling_guide]] — L4 会优化：roofline 驱动 + proton（`09-persistent-matmul.py` 真实用法）+ FlashAttention online-softmax（锚 `06-fused-attention.py:69-110`，HBM 流量 O(N²)→O(N·d)）
+  - [[triton_knowledge_map]] — 总纲：四能力知识点清单 + 分级自测 + 进阶（tutorials 04-11 + gluon）+ 真实资源
+- **生产方式**：协调者自写 index/00/01/knowledge_map + 5 个并行 writer-agent（严格契约：各锚定指定真实 tutorial 文件、以 01 为模板、mermaid 图、demo 忠实源 API）。**抽查定位符均真实**（`06:84 alpha=tl.math.exp2`、`autotuner.py:351` 默认值、`05-layer-norm.py` 锁式并行归约）。
+- **整合**：更新 `05_gpu_kernel/index.md`（新增 Triton 表）、`wiki/index.md`（GPU Kernel 计数 1→10 + Triton 子条目 + 主题导航）；交叉链向 [[gpu_kernel_guide]]/[[triton_vs_mlir_backend_analysis]]/[[inductor_codegen_analysis]]/[[inductor_autotuning_analysis]]/[[flex_attention_analysis]]。
+- **校验**：9 页内部 `[[链接]]` 全部互指存在页；外链目标均已存在；**0 悬挂链**。
+
+---
+
 ## 2026-06-25: 清理 `Megatron-LM_Distributed_Parallel_Exam` 遗留悬挂链(11 处/9 文件)
 
 **Type**: Maintenance（该页早先已删除、内容分发至各分析页;全库尚残留 11 处指向它的悬挂链,逐条按主题重指到真实后继页）
