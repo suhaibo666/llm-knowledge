@@ -22,6 +22,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 | [[../distributed_optimizer_deep_dive\|distributed_optimizer_deep_dive]] | (跨框架,父目录)FSDP2/ZeRO/MindSpeed 三方对比, 梯度累积通信量 (K×P), Adam vs Muon 内存估算 (18→14 bytes/param) |
 | [[megatron_memory_optimization_analysis]] | 显存手段全survey:NCCL memory pool、MoE Paged Stash、细粒度激活 offload、param/grad buffer 复用(MXFP8/NVFP4)、FP8/FP4 参数精度、CUDA graph buffer 复用、resharding(与 [[megatron_recompute_analysis]] 互补) |
 | [[megatron_fusion_operators_analysis]] | 融合算子全目录:Bias+激活(GEGLU/SwiGLU/GELU)、fused LayerNorm/Softmax、MoE 融合、fused Cross-Entropy、fused All-to-All(DeepEP/HybridEP)、FP8 input store、Triton/CUTLASS/cuTile —— 系列的 [[megatron_precision_cudagraph_fusion_analysis]] §3 是其精简版 |
+| [[megatron_linear_cross_entropy_analysis]] | **融合线性交叉熵("chunk loss")源码级深挖**:`cross_entropy_fusion_impl='linear'` 把 LM-head matmul 融进 CE 核、logits 从不物化(`save_for_backward` 只存 max+sum-exp、反向按 vocab 块重算);Blackwell-only CuTe 核 + TP `all_reduce(MAX/SUM)`;对照 `native`/`te`(仍物化 logits)与 MindSpeed 序列分块 `chunk_loss` |
 | [[megatron_comm_overlap_analysis]] | 6 维通信-计算重叠综合(TP/DP/PP/EP/CP)、bulk & pipelined overlap、delay-wgrad、DeepEP/HybridEP;TP overlap 深挖 + 跨维收益/配置速查表为其独有 |
 | [[megatron_nonuniform_tp_analysis]] | 混合尺寸 TP 组容错(spare→core→extra 梯度 all-to-all 重共享)、进程组重配、冷重启 —— 系列的 [[megatron_tp_fsdp_resharding_supplements_analysis]] §2 是其精简版 |
 | [[megatron_tflops_analysis]] | 理论 FLOPS 估算、前/反向 FLOP 计数、MoE dropless vs droptoken、吞吐公式 |

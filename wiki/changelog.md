@@ -4,6 +4,21 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-29: 新建 [[megatron_linear_cross_entropy_analysis]] — 融合线性交叉熵("chunk loss")源码级深挖
+
+**Type**: New（应用户提问"当前 Megatron 的 chunk loss 如何实现",读 Megatron-LM `dev@232c478d4` 源码后沉淀,带具体源码实现分析）
+
+- **新增** [[megatron_linear_cross_entropy_analysis]]:Megatron 版"chunk loss" = `cross_entropy_fusion_impl='linear'` 融合线性 CE。
+  - **配置三档**(`model_parallel_config.py:257,262`):`native`/`te` 接收**已物化的 logits**只融 softmax+NLL(`language_module.py:157,180`);**`linear`** 把 LM-head matmul 也融进核、logits 从不物化。
+  - **选路**:`gpt_model.py:157-160` 算 `fuse_linear_cross_entropy`,`:263` 把输出层换成 `LinearCrossEntropyModule`,`:799-802` 以 `output_cross_entropy_loss=True` 直接吐 loss。
+  - **省显存本质**(`fused_linear_cross_entropy.py:161-181/197-223`):`save_for_backward` 只存 `hidden + max + sum-exp`(各 O(N))、**不存 logits**,反向从统计量按块重算 → 峰值 `O(N·V)→O(N·d)+O(N)`。
+  - **Blackwell 融合核**(`linear_cross_entropy/blackwell/`):`entry.py:147-151` 按 `vocab_per_split=512` 切 `num_splits` 块、逐块 online-softmax(`fwd_mainloop.py:40-53`),`:246/253` 跨 TP `all_reduce(MAX/SUM)`;**硬件门控仅算力 10.x**(`:34-40` 非 Blackwell `raise`)——[!warning] 标注。
+  - **对照** MindSpeed `chunk_loss`(序列维框架层 autograd,可移植 NPU)vs Megatron `linear`(词表维 kernel 融合,绑 Blackwell);同属 Flash-Attention 式"online-softmax + 不物化大矩阵 + 反向重算"。
+
+**整合**:[[megatron-lm/index]] 专题深挖区(融合算子项下)新增条目;[[mindspeed_memory_optimization_analysis]] §8 chunk-loss 增"跨框架对照"回链。**校验**:`model_parallel_config.py:257/262`、`gpt_model.py:157-160/263/799-802`、`fused_linear_cross_entropy.py:34-40/161-181`、`blackwell/entry.py:147-151/246/253`、`language_module.py:157/180` 均逐一开文件核对;交叉链接 4 个目标经 find 确认存在。
+
+---
+
 ## 2026-06-26: 新建 [[cuda_execution_model_guide]] — Grid·Block·Warp·Thread·SM 执行模型（概念→深入）
 
 **Type**: Ingest（应用户"Grid→Block→Warp→Thread→SM 这条映射链不清楚、会阻塞 GPU 编程理解，从概念到深入解释并入库"。**铁律：真实可靠 + demo**）
