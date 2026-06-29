@@ -30,17 +30,19 @@ cross_entropy_fusion_impl: Literal['native', 'te', 'linear'] = 'native'
 
 ```mermaid
 flowchart LR
-    H["hidden[N,d]"] --> NA
-    W["Wᵀ[d,V]"] --> NA
-    subgraph NA["native / te(仍物化 logits)"]
-      L["logits[N,V] 整块落显存"] --> CE1["fused CE(softmax+NLL)"] --> LOSS1["loss[N]"]
+    H["hidden N×d"]
+    W["weight d×V"]
+    subgraph NA["native / te：仍物化 logits"]
+      L["logits N×V<br/>整块落显存"] --> CE1["fused CE：softmax + NLL"] --> LOSS1["loss N"]
     end
-    H --> LIN
-    W --> LIN
-    subgraph LIN["linear(融合线性 CE = chunk loss)"]
-      K["融合核:按 vocab 分 num_splits 块<br/>逐块 GEMM + online-softmax"] --> ST["只回传 max[N] / sum-exp[N]"] --> LOSS2["loss[N]"]
+    subgraph LIN["linear：融合线性 CE = chunk loss"]
+      K["融合核：按 vocab 分 num_splits 块<br/>逐块 GEMM + online-softmax"] --> ST["只回传 max N / sum-exp N"] --> LOSS2["loss N"]
     end
-    LIN -. "logits 从不作为张量存在" .-> X[(无 [N,V] 激活)]
+    H --> L
+    W --> L
+    H --> K
+    W --> K
+    LIN -.->|logits 从不作为张量存在| X["无 N×V 激活"]
 ```
 
 ---
