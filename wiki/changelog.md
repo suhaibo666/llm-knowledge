@@ -4,6 +4,25 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-30: 新建 [[control_flow_capture_analysis]] — Dynamo 控制流捕获两条路径(HOP 投机子图 vs 原生字节码特化)
+
+**Type**: New（应用户提问"torch.compile 编译流程里 cond 入图怎么做的" → 追问"是否覆盖所有控制流入图情况" → "总结一个章节专门介绍控制流"。源忠实 + 抓本质）
+
+**源（source-faithful）**：pytorch 本地 checkout @ `5f6df46744a`（trunk, 2026-06-29），逐一开文件核对 `torch/_dynamo/variables/higher_order_ops.py`、`torch/_dynamo/symbolic_convert.py`、`torch/_higher_order_ops/cond.py`、`torch/_inductor/ir.py` 的引用行。
+
+- **新增** [[control_flow_capture_analysis]]（02_dynamo deep dive）：核心论点——Dynamo 对控制流有**两条互不桥接的路径**。
+  - **路径 A 显式 HOP**：`speculate_subgraph`（`higher_order_ops.py:2004`）统一引擎四步（开子 tracer→内联→freevar lifting→收尾）；`cond` 深挖（常量谓词特化短路 `:2419`、checkpoint/rollback 投机两分支 `:2475-2552`、`_merge_graph_inputs` 合并签名 `:1287`、`_ALLOW_FALLBACK_TO_EAGER=False` 禁 graph break `:2378`）；控制流 HOP 家族表（cond/switch/while_loop/map/scan/associative_scan，子图结构均经投机/install 锚点核对）；下游 dispatch（`cond.py:403/408/710` Proxy/Fake/functionalize + `ir.py:10700` `Conditional`）。
+  - **路径 B 原生控制流**：`generic_jump`（`symbolic_convert.py:714`）四种结局（常量拍平/SymBool guard 特化/数据依赖切图/`fullgraph` 硬报错）；`FOR_ITER`（`:2485`）循环展开。
+  - [!correction] **纠正常见误解**：Dynamo **不会**自动把数据依赖 `if` 转成 `cond`——源码里只有"切图"或"报错提示手写 `torch.cond`"两条出路（`symbolic_convert.py:769`/`:937`）。
+
+**整合**：[[02_dynamo/index]] 页面列表新增本页；[[PyTorch_Dynamo_Technical_Analysis]] Related Pages 加回链。**校验**：所有 `file:line` 均本会话内开文件核对；3 个 mermaid 块按本库规范逐条扫（标签无裸 `[]()`、特殊形状无嵌套定界符、连线文字无引号/括号/`|`）；交叉链接目标经 glob 确认存在。
+
+**追加（同日，应用户连续追问澄清编译期/运行期边界）**：
+- [[PyTorch_Dynamo_Technical_Analysis]] §6.6「动态控制流」加 `> [!deprecated]` 指引转向本页（原演示内容按 never-delete 保留）。
+- 本页新增 **§2.5「trace 两支 / 编译两支 / 运行只跑一支」**：拆解三个常见误解——① 「捕获条件」是把 `pred` 接成 cond 节点运行时输入（`pred.as_proxy()` `:2588`），非 trace 期选支；② 「Dynamo 编译两个子图」不准——Dynamo 只 trace、产 **1 张父图**（两子图为嵌套 `GraphModule`），编译成 kernel 是下游 Inductor 一次编译产两段；③ 按 pred 选支是 cond 算子 lowering 在**运行期**做（`cond_op_dense` `cond.py:310-313`）。附 `cond` vs graph-break 六维对照表。新增锚点 `cond.py:301-313`、`higher_order_ops.py:2588` 均本会话开文件核对。
+
+---
+
 ## 2026-06-29: 新建投机推理专题 [[speculative_decoding/index]] — DSpark 论文 + DeepSpec 开源仓 + MTP→DFlash→DSpark 演进
 
 **Type**: Ingest（应用户"分析 dspark 论文原理 + 结合开源 dspark 仓 + 总览投机推理演进 mtp/dflash/dspark 区别，归纳入库"。源忠实 + 抓本质）

@@ -1946,6 +1946,9 @@ graph TD
 
 #### 2. 动态控制流
 
+> [!deprecated] 本节为概念性演示，机制级源码深挖见 [[control_flow_capture_analysis]]
+> 该专题页基于 pytorch `5f6df46744a` 逐行核对：路径 A 显式 HOP（`cond`/`while_loop`/`map`/`scan`）经 `speculate_subgraph` 投机子图入图；路径 B 原生 `if`/`for`/`while` 在字节码层走「常量拍平 / SymBool guard 特化 / 数据依赖切图」。注意 Dynamo **不会**自动把数据依赖 `if` 转成 `cond`。
+
 **问题**：复杂的动态控制流可能导致图断点
 
 **缓解**：
@@ -2012,3 +2015,4 @@ Dynamo在PyTorch生态中发挥着重要作用，提供了零代码修改的性�
 - [[torch_compile_architecture]]
 - [[aotautograd_analysis]]
 - [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景（本文 §1 Dynamo 阶段）
+- [[control_flow_capture_analysis]] — 控制流专题:显式 HOP 投机子图入图 vs 原生 `if`/`for`/`while` 字节码特化/切图
