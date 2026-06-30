@@ -4,6 +4,23 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-29: 新建投机推理专题 [[speculative_decoding/index]] — DSpark 论文 + DeepSpec 开源仓 + MTP→DFlash→DSpark 演进
+
+**Type**: Ingest（应用户"分析 dspark 论文原理 + 结合开源 dspark 仓 + 总览投机推理演进 mtp/dflash/dspark 区别，归纳入库"。源忠实 + 抓本质）
+
+> [!correction] **arXiv 编号订正（源 > 转述）**：用户给的 **arXiv:2606.19348 经核对是 DeepSeek-V4 模型论文**（本库已审计，见 [[deepseek_v4_audit_report]]），**不是 DSpark**。DSpark 是挂在 V4 checkpoint 上的投机解码草稿模块，其论文以 `DSpark_paper.pdf` 随开源仓 **`github.com/deepseek-ai/DeepSpec`** 发布（标题 *DSpark: Confidence-Scheduled Speculative Decoding with Semi-Autoregressive Generation*，Cheng et al., 北大+DeepSeek-AI）。HF 模型卡 `DeepSeek-V4-Pro-DSpark` 引用 2606.19348 指的是**底座模型**。
+
+**源（source-faithful）**：克隆 `DeepSpec` @ `dd854392`（main, 2026-06-28）到 `E:\97-codes\torch_parallel\DeepSpec`，PDF 抽成页码标记文本逐页核对；论文公式与代码 `file:line` 双向交叉核对（Eq.5 ↔ `markov_head.py:8`、Eq.7 ↔ `modeling.py:268/293`、Eq.8 ↔ `loss.py:69`、Eq.2-3 ↔ `modeling.py:241/104-113`）。
+
+- **新建目录** `wiki/02_engineering/03_infer_frameworks/speculative_decoding/`（3 页）：
+  - [[index]]（本专题总览/演进survey）：投机解码在 `L=(T_draft+T_verify)/τ` 上的三代演进——① 自回归（MTP/Eagle3，升 τ 但 T_draft∝γ）→ ② 并行（Medusa/DFlash，降 T_draft 但后缀崩塌）→ ③ DSpark（半自回归补 τ + 置信度调度降有效 T_verify）。四代横向对比表 + 三者区别本质。
+  - [[dspark_analysis]]（论文深挖，exemplar）：两大部件——**半自回归生成**（并行 DFlash 骨干 + Markov/RNN 串行头，Eq.4-6；接受长度相对 Eagle3 +30.9%、DFlash +16.3%）+ **置信度调度验证**（置信头 Eq.7-8 + STS 校准 + 硬件感知前缀调度器 Alg.1，按 SPS 负载曲线全局贪心、早停保无偏）。生产相对 MTP-1 提速 60%–85%（V4-Flash）/57%–78%（V4-Pro）。
+  - [[deepspec_codebase_analysis]]（源码级）：一套 `Qwen3DSparkTrainer` 同产三草稿模型——**DFlash = DSpark 关掉串行/置信头的消融**（`config/dflash/*:18-26`，无独立 modeling）；训练前向链、三项损失 ↔ Eq.9-12、推理拒绝采样路径。**关键边界**：开源仓只到「置信头 + 静态阈值裁剪 + bsz=1」，Algorithm 1 多请求调度器/异步 ZOS/变长内核是生产专属。
+
+**整合**：[[03_infer_frameworks/index]] 新增"投机推理"子目录；[[vllm_speculative_decoding_analysis]]（已含 dflash/mtp proposer）加 [[dspark_analysis]] 回链；[[deepseek_v3_analysis]]（MTP 起源）、[[deepseek_v4_analysis]]（底座模型）各加回链。**校验**：三页所有 `file:line` 已逐一开文件核对；交叉链接经 grep 确认目标存在。
+
+---
+
 ## 2026-06-29: 新建 [[megatron_linear_cross_entropy_analysis]] — 融合线性交叉熵("chunk loss")源码级深挖
 
 **Type**: New（应用户提问"当前 Megatron 的 chunk loss 如何实现",读 Megatron-LM `dev@232c478d4` 源码后沉淀,带具体源码实现分析）

@@ -402,3 +402,5 @@ V4-Flash-Base 尽管激活参数更小（13B vs 37B），仍在大多数基准�
 - [[deepseek_v4_implementation_details]] — V4 技术实现伪代码（补充参考）
 - [[deepseek_v4_technical_deep_dive]] — CSA/HCA/DSA/MLA 对比深度解析（补充参考）
 - [[attention_is_all_you_need_analysis]] — 原始 Transformer 注意力
+- [[dspark_analysis]] — DSpark：挂在 V4 checkpoint 上的投机解码草稿模块（生产相对 MTP-1 提速 60%–85% / 57%–78%）
+- [[deepspec_codebase_analysis]] — DSpark 开源训练/评测仓 DeepSpec 源码分析

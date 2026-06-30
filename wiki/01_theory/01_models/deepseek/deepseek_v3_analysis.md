@@ -309,3 +309,5 @@ With only **37B activated parameters** (vs 405B dense), V3-Base surpasses LLaMA-
 - [[mHC]] — Manifold-Constrained Hyper-Connections (related DeepSeek architecture research)
 - [[megatron_ep_analysis]] — Expert parallelism infrastructure
 - [[activation_checkpointing_analysis]] — V3 backward 中重计算 RMSNorm 和 MLA up-projections 的实现原理
+- [[dspark_analysis]] — DSpark speculative decoding: V3's MTP becomes the MTP-1 baseline that DSpark's semi-autoregressive drafter supersedes
+- [[speculative_decoding/index]] — Drafter evolution overview MTP → Eagle3 → DFlash → DSpark

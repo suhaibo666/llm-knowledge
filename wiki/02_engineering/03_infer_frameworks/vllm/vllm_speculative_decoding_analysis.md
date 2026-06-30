@@ -299,3 +299,5 @@ flowchart TD
 ## Cross-Domain Links
 - [[megatron_inference_engine_analysis]] —— 训练框架推理引擎对照
 - [[deepseek_v3_analysis]] —— MTP(多 token 预测)模型侧原理
+- [[dspark_analysis]] —— DSpark:半自回归草稿 + 置信度调度验证(本页 dflash/mtp proposer 的算法演进与生产落地)
+- [[speculative_decoding/index]] —— 投机推理草稿器演进总览(MTP → Eagle3 → DFlash → DSpark)
