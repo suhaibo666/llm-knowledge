@@ -4,6 +4,22 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-30: 新建 [[inductor_memory_allocation_guide]] + 深挖页补「池大小如何确定」—— 吸收外部专家报告
+
+**Type**: Ingest + Enrich（应用户"把外部报告 `deep-research-report.md` 的原理分析风格吸收进库 + 回答 pool 初始化大小如何确定 + 补例子/演示图"。源忠实 + 抓本质）
+
+**源（source-faithful）**：pytorch @ `5f6df46744a`，逐行核对 `codegen/memory_planning.py`（`AllocationPool`/`get_symbolic_size`/`allocate_at_end`/`codegen_create`）、`c10/core/AllocatorConfig.h:16-24`（段大小常量）、`c10/cuda/CUDACachingAllocator.cpp:3063/3697`（`round_size`/`get_allocation_size`）、`codegen/wrapper.py:1520`（`alloc_from_pool`=`torch.ops.inductor._alloc_from_pool`）、`torch/csrc/inductor/inductor_ops.cpp:36/129`、`test/inductor/test_memory_planning.py:108-142`（真实 codegen 实例）。
+
+- **深挖页 [[inductor_memory_management_analysis]] 新增**:
+  - **§2.6 池的初始化大小如何确定**:Inductor `AllocationPool` 大小=编译期 `root.get_symbolic_size()`（`TemporalSplit` 取最大、`SpatialSplit`=`align(left)+right`）、`allocate_at_end` 末尾追加扩容、`codegen_create` 出扁平 1-D buffer;带 `test_memory_planning.py` 真实实例（`pool1 = empty_strided_cuda((4*s27*s77 + align(4*s77*s77),),(1,))` + 两个 `alloc_from_pool`）+ **字节布局 ASCII 图**。
+  - **§3 物理段大小**:`empty_strided` 落 `CUDACachingAllocator` 后按 `get_allocation_size` 取段——≤1 MiB→2 MiB、1–10 MiB→20 MiB、≥10 MiB→2 MiB 倍数（`AllocatorConfig.h:16-24`），解释 `reserved` 远大于 `allocated` 的原因。
+- **新建 guide [[inductor_memory_allocation_guide]]**（吸收报告骨架：角色边界→分配全过程 sequence 图→分配器对照表→`memory_stats`/snapshot 实测复现→实践建议）。
+  - [!correction] **订正原报告 4 处**（源 > 报告）：① 池化 `memory_planning` 非默认、仅 inference（默认是逐 buffer 复用）;② 实验开关应 `memory_planning=True` 而非 `memory_efficient_fusion`;③ 数分配次数用 `allocation.all.allocated`/`segment.all.allocated` 而非 `allocation.all.current`;④ `expandable_segments` 是 native 子开关、非独立后端。报告对 `alloc_from_pool` 的描述确认正确。
+
+**整合**：[[04_inductor/index]] 新增两页条目;两页互相回链;深挖页 §2.6/§3 增补。**校验**：所有新 `file:line`/常量值本会话开文件核对（含 `AllocatorConfig.h:16-24` 数值、`test_memory_planning.py:108` 的 `@config.patch(memory_planning=True)`）；guide 的 1 个 sequenceDiagram 按规范扫（消息无 `[]`/`()`/`|`，participant 用英文 id + alias）；字节布局用 ASCII 非 mermaid。
+
+---
+
 ## 2026-06-30: 新建 [[inductor_memory_management_analysis]] — torch.compile 内存分配管理(全栈三层)
 
 **Type**: New（应用户提问"torch.compile 的 memory alloc 管理怎么做"→评估知识库覆盖发现"零件散在 3 个域、无统一脊柱、cudagraph_trees 与 codegen 复用链是短板"→开新页补齐。源忠实 + 抓本质）

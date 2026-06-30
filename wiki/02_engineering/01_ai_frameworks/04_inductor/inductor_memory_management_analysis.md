@@ -127,6 +127,43 @@ wrapper 决定「**怎么** free/reuse」,但「**何时** 一个 buffer 死」�
 
 **为什么默认关**:池化预分配能减少运行时分配次数、降峰值,但当前实现**在训练下会抬峰值**(`wrapper.py:2481` 注释),故默认 `False` 且仅 inference 生效。
 
+### 2.6 池的初始化大小如何确定?(带实例)
+
+> 常见疑问:`AllocationPool` 一开始要分多大?答案是 **编译期算出来、不是预设常量**——池大小 = 把所有入池 buffer 的生命周期区间打进 `TemporalSplit`/`SpatialSplit` 树后的总字节。
+
+- **大小来源**:`AllocationPool.codegen_create`(`memory_planning.py:458`)取 `nbytes = self.root.get_symbolic_size()`(`:461`)作为池的 `empty` 尺寸。`get_symbolic_size` 递归求值:`TemporalSplit`(时分复用)取**各块最大值**,`SpatialSplit`(空分并排)= `align(left) + right`(`:374/378`)。
+- **怎么增长**:新块放不进现有树时,`allocate_at_end`(`:445`)把 `root` 包成 `SpatialSplit(old_root, new_block)`——即在池**末尾追加**一段,池随之变大(`can_expand` 由 `config.memory_pool != "none"` 控,`:423/523`)。
+- **codegen 形态**:若某单块恰等于整池大小,就按该 buffer 原形状分配;否则发一个**扁平 1-D `uint8` 缓冲**,长度 = `nbytes`(`:476-484`)。池内每个张量再用 `alloc_from_pool` 按 offset 取视图。
+- **`alloc_from_pool` 是什么**:Python wrapper 前言里 `alloc_from_pool = torch.ops.inductor._alloc_from_pool`(`wrapper.py:1520`),C++ 算子 `_alloc_from_pool(Tensor self, int offset_bytes, ScalarType dtype, int[] size, int[] stride) -> Tensor`(`torch/csrc/inductor/inductor_ops.cpp:36/129`)——**零分配**,只在已分配的池存储上按字节偏移建一个张量视图(类 `as_strided`)。
+
+**真实实例**(`test/inductor/test_memory_planning.py:108-142`,`@config.patch(memory_planning=True)`):
+
+```python
+class Foo(torch.nn.Module):           # 两个同时存活的中间张量
+    def forward(self, x, y, z):
+        t0 = x.matmul(y); t1 = x.matmul(z)
+        t0 = x.transpose(0, 1).matmul(t1); t1 = x.matmul(t0)
+        return t0.sum() + t1.sum()
+# torch.compile(f, dynamic=True) 生成(GPU):
+pool1 = empty_strided_cuda((4*s27*s77 + align(4*s77*s77), ), (1, ), ...)   # 扁平字节池
+buf0  = alloc_from_pool(pool1, 0,                 torch.float32, (s77, s77), (s77, 1))
+buf1  = alloc_from_pool(pool1, align(4*s77*s77),  ...)
+```
+
+池 `pool1` 是一条 1-D 缓冲,大小 = `4*s27*s77 + align(4*s77*s77)`(正是 `SpatialSplit = align(left) + right`),两个张量按 offset 各取一段:
+
+```
+pool1  (总 = 4*s27*s77 + align(4*s77*s77) 字节, stride=(1,))
+┌──────────────────────────────┬───────────────────────────────────────┐
+│ offset 0                     │ offset = align(4*s77*s77)              │
+│ buf0  (s77,s77) f32          │ buf1  ...                              │
+│ 占 4*s77*s77,补齐到 align()   │ 占 4*s27*s77                           │
+└──────────────────────────────┴───────────────────────────────────────┘
+        alloc_from_pool 只算偏移、不分配 ── 真正的 cudaMalloc 在运行期由层 2 触发
+```
+
+> 动态形状下池大小是**符号表达式**(`s77`/`s27`),运行期代入具体值后才知确切字节——即「两阶段」:先算尺寸再 `empty_strided`(对应报告 §2.5 提到的 `test_unbacked_symint` 场景,`memory_planning.py:325` `get_symbolic_size`)。
+
 ---
 
 ## 3. 层 2:运行期 — `CUDACachingAllocator`(物理池)
@@ -135,6 +172,16 @@ wrapper 决定「**怎么** free/reuse」,但「**何时** 一个 buffer 死」�
 
 - 一次 `cudaMalloc` 拿一大块 `segment`,切成 `Block`(`prev/next` 双向链表,`CUDACachingAllocator.cpp:201`);释放只是标空闲 + 与相邻块 **coalesce**,**不还给驱动**;按 stream 池化;支持 expandable segments。
 - **为什么**:`cudaMalloc/cudaFree` 同步且昂贵,训练每步上万次张量分配不能每次打扰驱动。
+
+**物理段大小怎么定**(承接 §2.6:层 1 的 `empty_strided` 请求落到这里时,实际 `cudaMalloc` 多大?):请求先 `round_size`(`CUDACachingAllocator.cpp:3063`:`<512B → 512`;否则向上取 `kMinBlockSize=512` 的倍数,或按 `roundup_power2_divisions` 在 2 的幂区间内细分),再由 `get_allocation_size`(`:3697`)按档位决定 **segment 大小**:
+
+| 请求大小 | segment 大小 | 常量(`c10/core/AllocatorConfig.h:16-24`) |
+|---------|-------------|------------------------------------------|
+| ≤ 1 MiB | 固定 **2 MiB** | `kSmallSize=1048576` → `kSmallBuffer=2097152` |
+| 1–10 MiB | `large_segment_size()`(默认 **20 MiB**) | `kMinLargeAlloc=10485760` |
+| ≥ 10 MiB | 向上取 **2 MiB** 的倍数 | `kRoundLarge=2097152` |
+
+即「**初始 cudaMalloc ≠ 请求字节**,而是按这三档向上取整成段」;同一段内的小请求再 `should_split`(`:3677`)切 `Block` 复用。所以一个几 KB 的中间张量,首次也会触发一次 2 MiB 段分配——这正是 `max_memory_reserved()`(段总量)常远大于 `max_memory_allocated()`(请求总量)的原因。配置 `PYTORCH_CUDA_ALLOC_CONF`(`max_split_size_mb`/`roundup_power2_divisions`/`expandable_segments`)可调这套档位。
 
 **两层关系**:Inductor 的 `del`/`reuse` 减少了**逻辑分配次数**;即便仍要 `empty_strided` 分配,物理块也由缓存池复用——**编译期逻辑复用 + 运行期物理池复用,叠加才是最终显存行为**。
 
@@ -212,6 +259,7 @@ flowchart TB
 
 ## Related Pages
 
+- [[inductor_memory_allocation_guide]] — **实战指南**:实际分配走查 / 分配器选型对照 / `memory_stats` 实测复现 / 实践建议(本页的动手版)
 - [[caching_allocator_autocast_profiler_analysis]] — **层 2 深页**:`CUDACachingAllocator` 的 Block/segment/stream/expandable 源码级机制
 - [[inductor_codegen_analysis]] — wrapper codegen 全景(§4.5 内存规划集成是本页层 1 的简版)
 - [[scheduler_analysis]] — Scheduler 生命周期 / `dead_node_elimination` / `mutation_renames`(本页订正了其中两处行号)
