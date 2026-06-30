@@ -4,6 +4,22 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-06-30: 新建 [[inductor_memory_management_analysis]] — torch.compile 内存分配管理(全栈三层)
+
+**Type**: New（应用户提问"torch.compile 的 memory alloc 管理怎么做"→评估知识库覆盖发现"零件散在 3 个域、无统一脊柱、cudagraph_trees 与 codegen 复用链是短板"→开新页补齐。源忠实 + 抓本质）
+
+**源（source-faithful）**：pytorch 本地 checkout @ `5f6df46744a`（trunk, 2026-06-29）。两个并行 writer-agent 分别深挖**编译期**（`codegen/wrapper.py`·`_inductor/memory.py`·`codegen/memory_planning.py`·`config.py`）与 **CUDA Graphs**（`cudagraph_trees.py`·`cudagraph_utils.py`·`compile_fx.py`），每条 `file:line` 开文件核对；coordinator 抽检 `wrapper.py:2480`、`memory.py:1016`、`config.py:252-268`、`cudagraph_trees.py:2301-2302` 全部吻合。
+
+- **新增** [[inductor_memory_management_analysis]]：主线"三层叠加"——
+  - **层 1 编译期**：默认 `memory_plan_reuse` 两遍把 `Allocate`+`Free` 改写成 `Reuse`（峰值感知 `should_reuse_buffer`；同形状指针别名 / 异形状 `reinterpret_tensor`，`wrapper.py:2436/956/4043`）；scheduler `compute_last_usage`+`free_buffers` 决定释放时机（`scheduler.py:8731/8742`）；`reorder_for_peak_memory` 多拓扑序选最低峰值（`memory.py:1016`，扫描线估峰）；可选池化 `MemoryPlanner` 时分/空分打包（`memory_planning.py:675`，`memory_planning` 默认关）。
+  - **层 2 运行期**：`empty_strided` 落 `CUDACachingAllocator` block/segment 缓存池（复用既有深页 [[caching_allocator_autocast_profiler_analysis]]，强调"编译期逻辑复用 + 运行期物理复用叠加"）。
+  - **层 3 CUDA Graphs**：`cudagraph_trees` 跨图共享 `graph_pool_handle` 私有池 + 地址稳定（static/managed idx，`:1019/1932`）+ checkpoint 重建分配器簿记（`:3135`）+ graph partition 切出 cudagraph-unsafe 算子（`scheduler.py:8856`）。
+  - [!correction] 据 `5f6df46744a` **订正 [[scheduler_analysis]] 两处行号**：`reorder_for_peak_memory` 实定义在 `memory.py:1016`（非 `scheduler.py:2986`）；`mutation_renames` 在 `scheduler.py:4197/4770`（非 `:2913-2928`）——符号名对、行号随版本漂移；并澄清 `memory.py` 是"区间+扫描线估峰驱动重排"而非区间图着色（着色在 `memory_planning.py`，默认关）。
+
+**整合**：[[04_inductor/index]] 概览区新增本页；[[PyTorch_Inductor_Technical_Analysis]]（§6/§7 概念版）、[[caching_allocator_autocast_profiler_analysis]]（层 2）各加回链；本页另链 [[scheduler_analysis]]/[[inductor_codegen_analysis]]/[[control_flow_capture_analysis]]。**校验**：3 个 mermaid 块按本库规范逐条扫（subgraph 标题无 `[]`/`|`、各 `end` 单独闭合、连线标签无引号/括号/`|`、节点标签无裸 `[]()`）；交叉链接目标经 grep 确认存在。
+
+---
+
 ## 2026-06-30: 新建 [[control_flow_capture_analysis]] — Dynamo 控制流捕获两条路径(HOP 投机子图 vs 原生字节码特化)
 
 **Type**: New（应用户提问"torch.compile 编译流程里 cond 入图怎么做的" → 追问"是否覆盖所有控制流入图情况" → "总结一个章节专门介绍控制流"。源忠实 + 抓本质）

@@ -26,6 +26,7 @@
 |------|---------|
 | [[inductor_compiler_pipeline_analysis]] | **端到端编译管线**:Eager→Dynamo→AOT→Decomp→FX Passes→Lowering→Scheduler→CodeGen 逐阶段源码级走读(脊柱文档) |
 | [[PyTorch_Inductor_Technical_Analysis]] | **后端选择 & IR 优化深度**:后端选择/配置、Inductor IR 数据结构、融合成本模型与坐标下降 autotune、常量折叠、内存规划/内存池、CUDA Graphs 集成、后端扩展(pipeline 未展开的纵深) |
+| [[inductor_memory_management_analysis]] | **内存分配管理(全栈三层)**:编译期 buffer 复用/峰值重排/池化规划(`memory_plan_reuse`·`reorder_for_peak_memory`·`memory_planning.py`)→ 运行期 `CUDACachingAllocator` → CUDA Graphs `cudagraph_trees` 跨图共享私有池 + checkpoint |
 | [[torch_compile_source_analysis]] | torch.compile 源码入口、调用栈、函数签名、mode 对照、能力边界 |
 
 ## deep dive — 各编译阶段

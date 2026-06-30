@@ -1696,4 +1696,5 @@ result = compiled_model(a, b, c)
 - [[lowering_analysis]] — FX → Inductor IR lowering 详解
 - [[scheduler_analysis]] — 调度器与融合决策流程
 - [[inductor_codegen_analysis]] — 代码生成策略与 kernel 融合
+- [[inductor_memory_management_analysis]] — 内存分配管理全栈三层（本文 §6 内存规划/§7 CUDA Graphs 的源码级展开）
 - [[NPU_Inductor_Backend_Analysis]] — 昇腾 NPU 后端适配（本文 NPU 内容迁移目标）
