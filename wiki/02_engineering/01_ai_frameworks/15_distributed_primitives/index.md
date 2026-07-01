@@ -130,6 +130,7 @@ flowchart TB
 
 ## 关联域
 
+- [[01_theory/06_distributed_parallelism/index]] — **原理层对应**:同一套 DP/TP/SP/CP/EP/PP/ZeRO 的「为什么这么切 + α-β 通信代价 + 显存账本」引擎无关解读;本模块讲源码怎么实现,那里讲原理为什么如此
 - [[02_train_frameworks/index]] — **直接上层**:Megatron / torchtitan 把本模块的 DDP/FSDP/TP/PP 组合成端到端训练配方;本模块只提供原语,不重复其应用层内容
 - [[12_nn_module_system/index]] — DDP/FSDP 都包裹 `nn.Module`,在 Module 树上挂 autograd hook、改写参数为分片;理解参数/buffer 注册表是前提
 - [[00_tensor_and_storage/index]] — DTensor 是 `torch.Tensor` 子类,分片即对底层 storage 的切片与 `resize_`;张量/存储语义是基座

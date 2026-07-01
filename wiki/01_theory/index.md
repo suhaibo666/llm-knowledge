@@ -11,6 +11,7 @@
 | [[03_sft/index]] | 监督微调、指令微调、低参微调 (LoRA/PEFT) |
 | [[04_posttraining/index]] | 后训练对齐：RLHF、DPO、GRPO、PPO |
 | [[05_inference/index]] | 推理技术：CoT、RAG、Agent、验证 |
+| [[06_distributed_parallelism/index]] | 分布式并行原理：集合原语、$\alpha$-$\beta$ 代价模型、DP / TP / SP / CP / EP / PP、ZeRO / FSDP、N 维组合 |
 
 ## 关联域
 

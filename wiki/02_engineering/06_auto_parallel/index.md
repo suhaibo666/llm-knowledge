@@ -34,6 +34,7 @@
 
 ## 关联域
 
+- [[../../01_theory/06_distributed_parallelism/index]] — **原理层**：自动并行搜索的对象——DP/TP/SP/CP/EP/PP/ZeRO 各维的原理、α-β 代价模型与显存账本（搜索空间与代价函数的概念来源）
 - [[../02_train_frameworks/index]] — 训练框架（Megatron-LM 手工并行 / torchtitan DTensor，自动并行的对照与执行后端）
 - [[../01_ai_frameworks/index]] — AI 框架（PyTorch 编译栈 / MindSpore 自动并行）
 

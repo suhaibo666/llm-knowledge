@@ -4,6 +4,27 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-01: 新建 [[06_distributed_parallelism/index]] 分布式并行原理簇 —— 原语→DP→TP/SP/CP→EP→PP→ZeRO 全景（理论层）
+
+**Type**: New（应用户"在 01_theory 加分布式并行原理解读，从分布式原语→TP→EP→PP→ZeRO 等基本概念；演示图用 SVG→PNG"。抓本质 + 引擎无关的原理层，与已有工程页分工）
+
+**定位**：新建理论簇 `01_theory/06_distributed_parallelism/`，**原理（principle）层、引擎无关**——只讲「为什么这么切、代价函数长什么样、为什么不选替代」，两根主线贯穿全簇：**$\alpha$-$\beta$ 通信代价模型** + **显存账本（参数/梯度/优化器态/激活）**；「源码怎么实现」一律交叉链接到 [[../02_engineering/index]] 已有的源级页（[[15_distributed_primitives/index]]、[[megatron-lm/index]]、[[torchtitan/index]] 等），不重复。填补「理论层无分布式并行原理页」的空白。
+
+- **新增 index + 6 内容页**：
+  - [[collectives_analysis]] — 六大原语语义、$\alpha$-$\beta(-\gamma)$ 模型、核心恒等式 **all-reduce = reduce-scatter + all-gather**、ring 每卡搬运 $2(N{-}1)/N\cdot M$ 的带宽最优性、ring vs tree、all-to-all/p2p 代价（全簇「代价词汇表」）。
+  - [[data_parallel_analysis]] — DP：复制模型/切数据、all-reduce 梯度的等价性、通信 $\propto\Psi$ 与 batch/卡数无关、$16\Psi$ 显存账本（引出 ZeRO）、分桶重叠 + 梯度累积。
+  - [[zero_fsdp_analysis]] — ZeRO 1/2/3 逐级切优化器态/梯度/参数、通信 vs DP 增量（1/2 免费、3 多 ~50% AG）、ZeRO-3 = FSDP 的 unshard→compute→reshard。
+  - [[tensor_sequence_parallel_analysis]] — TP（Megatron 列切→行切 + f/g 共轭算子、每层 4 次 all-reduce、只敢机内）、SP（拆 all-reduce 为 RS+AG，零额外通信换激活显存）、CP（ring-attention 交换 KV 攻长序列）。
+  - [[expert_parallel_analysis]] — EP：路由 + 两次 all-to-all（分发/回收）、负载不均与容量因子、分层 a2a。
+  - [[pipeline_parallel_analysis]] — PP：microbatching、气泡率 $(P{-}1)/(m{+}P{-}1)$、GPipe vs 1F1B（同气泡、显存 $\propto m$ vs $\propto P$）vs interleaved（真降气泡）、zero-bubble。
+- **演示图 9 张 SVG→PNG**（手绘 HTML+SVG，走 `.html2md/render_figs.mjs` 无头 Edge 2× 截图）：六原语语义、ring all-reduce 分解、DP 数据流、Megatron 列/行切+f/g、TP+SP 激活切分、ring-attention、EP 三段 a2a+负载不均、GPipe/1F1B 甘特气泡对比、ZeRO 0/1/2/3 显存分区、N 维正交布局（DP2×PP2×TP4）。原理演示图统一走 SVG（按用户约定：代码调用/类/逻辑图才用 mermaid）。
+
+**工具改动**：`render_figs.mjs` 加 `FIGS_OUT` 环境变量支持自定义输出目录（默认仍指 GLM assets，向后兼容），本簇渲染到 `06_distributed_parallelism/assets/`。
+
+**整合**：[[01_theory/index]] 子领域表加「06 分布式并行原理」一行；[[15_distributed_primitives/index]] 与 [[06_auto_parallel/index]] 各加回链（理论↔实现互指）。**校验**：9 张 PNG 逐张实渲肉眼核对（SVG 经 Edge 所见即所得，天然规避 mermaid 定界符坑）；本簇内 `[[链接]]` 与指向工程页的跨域链接经 grep/文件核对存在。
+
+---
+
 ## 2026-06-30: 新建 [[inductor_memory_allocation_guide]] + 深挖页补「池大小如何确定」—— 吸收外部专家报告
 
 **Type**: Ingest + Enrich（应用户"把外部报告 `deep-research-report.md` 的原理分析风格吸收进库 + 回答 pool 初始化大小如何确定 + 补例子/演示图"。源忠实 + 抓本质）
