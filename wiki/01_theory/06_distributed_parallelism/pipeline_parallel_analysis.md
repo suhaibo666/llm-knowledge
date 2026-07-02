@@ -31,7 +31,7 @@ Transformer 是 $L$ 层顺序堆叠，$\text{layer}_{i+1}$ 的输入是 $\text{l
 
 ## 气泡率：填充与排空的固定损耗
 
-![GPipe / 1F1B / Interleaved 三种流水线调度的气泡对比](assets/dp_pipeline_parallel_fig1.png)
+![GPipe 与 1F1B 调度对比：同样的气泡率、不同的峰值显存（P=4, m=8，interleaved/zero-bubble 见下文）](assets/dp_pipeline_parallel_fig1.png)
 
 即便 microbatching，流水线**启动**（填满 $P$ 个 stage 需要 $P-1$ 步）和**收尾**（排空需要 $P-1$ 步）时仍有空闲。这段固定损耗就是气泡：
 
