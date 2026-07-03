@@ -4,6 +4,19 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-03: [[inductor_memory_allocation_guide]] 新增 §5「内存越界/踩踏排查」— 补第二份社区材料的缺口(纠错版)
+
+**Type**: Enrich（应用户"第二份专家社区材料的第三部分——内存踩踏检测——库里缺,补上,一定忠于事实"。经 gap 分析:材料前两部分已被 [[inductor_memory_management_analysis]] 覆盖且更准,仅第三部分是真缺口;材料本身有错,按源码收敛后再入库）
+
+**源（source-faithful）**：pytorch @ `5f6df46744a` 逐行核对——`config.py:232-237`（`size_asserts`/`nan_asserts`/`scalar_asserts` 默认值）、`codegen/wrapper.py:1793-1827`（`assert_size_stride` 生成 + 延迟到首个 kernel 前）、`ir.py:7817/7845/9152`、`utils.py:161`（`GPU_ALIGN_BYTES=16`）、`codegen/triton.py:5458`（`mask=xindex<xnumel`）、`codegen/common.py:2789`（核内 NaN 断言）。
+
+- **guide 新增 §5 内存越界/踩踏排查**（原 §5/§6 顺延为 §6/§7）：§5.1 自动核内置防护（Triton `mask` + `assert_size_stride`/`assert_alignment`/scalar·nan_asserts,多为默认 ON）· §5.2 真正越界来源（自定义算子/手写 Triton/错误 stride·offset/unbacked symint）· §5.3 工具（`compute-sanitizer` 取代 cuda-memcheck + `CUDA_LAUNCH_BLOCKING`）· §5.4 排查步骤。
+- [!correction] **订正该社区材料**（源 > 材料，均已核实）：① 「Inductor 对越界无内置保护」**错**——mask + size/alignment/scalar 断言多为默认 ON;② 「规划池用 `_cuda_beginAllocateToPool` 申请」**错**——该 API 全库仅在 `cudagraph_trees.py`（CUDA Graphs 私有池）,规划池是普通 `empty_strided`;③ `cuda-memcheck` 已被 `compute-sanitizer` 取代。**材料对的部分**（保留）：16 字节对齐确有其事（`GPU_ALIGN_BYTES=16`）。前两部分（池初始化/复用）不收录——深挖页已覆盖且更源忠实。
+
+**整合**：[[04_inductor/index]] guide 条目补「越界/踩踏排查」;guide Related 增 [[inductor_gpu_kernel_dispatch_model]]/[[Pytorch_Compile_Debug_Analysis]]/[[unbacked_symint_analysis]] 回链。**校验**：所有 `file:line`/常量值本会话开文件核对;新增段无 mermaid。
+
+---
+
 ## 2026-07-02: 新建 [[meituan_longcat/index]] + [[longcat_2_analysis]] —— 美团 LongCat-2.0（1.6T/48B MoE，国产 ASIC 全栈）
 
 **Type**: Ingest（应用户「分析 longcat 2.0 的模型结构、训练、AI infra、低精度、稳定性、效果，录入知识库」。源忠实 + 抓本质）

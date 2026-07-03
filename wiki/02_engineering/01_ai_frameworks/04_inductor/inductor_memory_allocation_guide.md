@@ -123,7 +123,49 @@ with ind.patch(memory_planning=True):
 
 ---
 
-## 5. 实践建议
+## 5. 内存越界 / 踩踏(out-of-bounds)排查
+
+> 二手材料常说「Inductor 对越界没有内置保护」——**不准确**(已对 `5f6df46744a` 核实)。Inductor 自动生成的核有**多层默认防护**;真正的越界风险集中在**自定义算子 / 手写 Triton / 错误的 stride·offset**,而不是自动核本身。
+
+### 5.1 自动核的内置防护(多为默认 ON)
+
+- **Triton kernel 边界掩码**:生成的 load/store 带 `mask = xindex < xnumel`(`codegen/triton.py:5458`),越界 lane 被 mask 掉、不读写——**规则的核内越界通常被挡住**。机制见 [[inductor_gpu_kernel_dispatch_model]]。
+- **`assert_size_stride`**(`size_asserts` **默认 ON**,`config.py:232`):每个输入/中间张量在首次被核使用前,断言其 **size + stride** 与编译期假设一致(`codegen/wrapper.py:1827`、`ir.py:7817`;输入的断言还被延迟到首个用它的 kernel 前,`wrapper.py:1798-1806`)。捕获 `reinterpret_tensor`/`as_strided`/动态 shape 推导错位——这类元数据错位正是「踩踏」的常见前因。
+- **`assert_alignment`**(`ir.py:7845`):断言张量数据指针按 **`GPU_ALIGN_BYTES = 16`**(`utils.py:161`)对齐(即原材料说的「16 字节对齐」确有其事)。
+- **`scalar_asserts`**(默认 ON,`ir.py:9152`)、**`nan_asserts`**(默认 OFF,`config.py:233`,查 NaN/Inf)、**`runtime_triton_nan_asserts`**(核内 NaN 断言,`codegen/common.py:2789`)。
+
+即:**规则的自动核越界被 `mask` + size/alignment/scalar 断言兜住**,不是「零保护」。
+
+### 5.2 真正的越界来源
+
+- **自定义算子**(`torch.library.custom_op`)/ **手写 Triton kernel**:索引、循环边界、mask 由用户负责,Inductor 不改写其内部。
+- **错误的 `stride`/`storage_offset`**:`as_strided`/`reinterpret_tensor` 给了越界的视图(`size_asserts` 能查「元数据不一致」,但给了「自洽但越界」的 stride 仍可能踩)。
+- **动态 shape 下 unbacked symint 上界推错**(见 [[unbacked_symint_analysis]])。
+
+### 5.3 检测工具(注意版本)
+
+- **`compute-sanitizer --tool memcheck`**(NVIDIA Compute Sanitizer)——**取代已废弃的 `cuda-memcheck`**(CUDA 11.6 起弃用、12 起移除)。检测 GPU kernel 越界/非法访问:
+  ```bash
+  CUDA_LAUNCH_BLOCKING=1 compute-sanitizer --tool memcheck python model_test.py
+  ```
+- **`CUDA_LAUNCH_BLOCKING=1`**:强制 kernel 同步 launch,让报错定位到**真正出事的 kernel**(否则异步下崩溃点会漂移到后续无关调用)。
+- **Inductor 断言开关**:`TORCHINDUCTOR_NAN_ASSERTS=1` 抓 NaN/Inf 起点;`TORCHINDUCTOR_SIZE_ASSERTS`/`SCALAR_ASSERTS` **默认已 ON**,排查时保留别关。
+- **`TORCH_LOGS="output_code"`**:导出生成的 wrapper + Triton kernel,人肉核对 `alloc_from_pool` 偏移、`assert_size_stride`、mask 与索引。
+- **CPU 端**:ASan/UBSan(需源码编译 PyTorch/扩展)、valgrind(仅主机内存,不覆盖 GPU)。
+
+### 5.4 排查步骤(收敛版)
+
+1. `CUDA_LAUNCH_BLOCKING=1` + 小模型/单步复现,让崩溃点固定。
+2. `compute-sanitizer --tool memcheck` 跑,读**第一条** out-of-bounds / invalid-access 的 kernel 名与栈。
+3. 若指向**自动核**:多半是上游 stride/shape 错——`TORCH_LOGS="output_code"` 看该 buffer 的 `reinterpret_tensor`/`assert_size_stride` 是否推错;`fullgraph=True` 缩小范围。
+4. 若指向**自定义算子/手写 Triton**:回该核检查索引与 mask 边界。
+5. `torch.cuda.memory._record_memory_history()` + snapshot(§4.2)看崩溃前后的分配布局,确认有无意外的复用/别名。
+
+> 一句话:**Inductor 自动核靠 `mask` + size/alignment/scalar 断言(多为默认 ON)兜底,不是「零保护」;越界几乎都出在自定义核或错误的 stride/offset,用 `compute-sanitizer`(非 `cuda-memcheck`)+ `CUDA_LAUNCH_BLOCKING` 定位。**
+
+---
+
+## 6. 实践建议
 
 - **先认清默认行为**:默认走的是**逐 buffer 复用 + 峰值重排**(`allow_buffer_reuse`/`reorder_for_peak_memory`,默认 ON),不是池化。池化 `memory_planning` 默认关、仅 inference——别误以为「不开就没有内存优化」。
 - **OOM 调档**:`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` 常能显著降 reserved 峰值(尤其动态 batch);或 `max_split_size_mb` 限制大块切分以减碎片。
@@ -134,7 +176,7 @@ with ind.patch(memory_planning=True):
 
 ---
 
-## 6. 与原报告的差异订正(源码 > 报告)
+## 7. 与原报告的差异订正(源码 > 报告)
 
 逐条对 `5f6df46744a` 核过,报告以下处需修正:
 
@@ -151,5 +193,8 @@ with ind.patch(memory_planning=True):
 - [[inductor_memory_management_analysis]] — **机制深挖**(三层 + 池大小 §2.6 + 段大小 §3):本指南的理论底座
 - [[caching_allocator_autocast_profiler_analysis]] — 层 2 `CUDACachingAllocator` 的 block/segment/expandable 源码级机制
 - [[inductor_codegen_analysis]] — wrapper codegen(`empty_strided`/`alloc_from_pool` 的生成处)
+- [[inductor_gpu_kernel_dispatch_model]] — Triton kernel 骨架与 `mask` 边界掩码(§5 越界防护的来源)
+- [[Pytorch_Compile_Debug_Analysis]] — `TORCH_LOGS`/`TORCH_COMPILE_DEBUG` 编译调试(与 §5 排查互补)
+- [[unbacked_symint_analysis]] — 动态 shape 的 unbacked symint(§5.2 越界来源之一)
 - [[PyTorch_CUDA_Graphs_Complete_Guide]] — CUDA Graphs 通用用法
 - [[inductor_quickstart]] — `torch.compile` 参数与 `torch._inductor.config` 上手
