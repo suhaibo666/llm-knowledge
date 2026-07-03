@@ -31,7 +31,7 @@ MTP 3-step (复用 LSA 索引)     (Agent/Reasoning/Interact) bit-flip 检测 + 
 |------|--------|
 | **架构** | 1.6T/48B MoE；LSA 三正交索引压 1M 上下文；N-gram 在「稀疏维」廉价扩参 135B；ScMoE 把计算-通信从重叠推到全并行 |
 | **预训练** | >35T tokens；Muon 大规模（TP 适配 + DP 状态去冗 + 对称矩阵乘 kernel）；数百亿 token 原生 1M |
-| **后训练** | MOPD：训 Agent/Reasoning/Interaction 三组 teacher，蒸馏融合最强能力 |
+| **后训练** | MOPD（**Multi-Teacher On-Policy Distillation**，多教师在线策略蒸馏）：训 Agent/Reasoning/Interaction 三组 teacher，对学生自身轨迹 on-policy 蒸馏融合 |
 | **AI Infra** | 6D 并行（5D + EMBP 专并行 N-gram）；superpod ≤48 机 + RoCE；推理 PD 分离（CPP+SP / KVP+EP128） |
 | **低精度** | **不**讲 FP8/FP4；主打国产 ASIC 上的**数值可靠性**（确定性算子 + 二叉树分段累加 + 精度对齐验证） |
 | **稳定性** | >35T 零回滚/无不可恢复 spike；bit-flip 检测 + 端到端自动容错 |
@@ -51,7 +51,16 @@ MTP 3-step (复用 LSA 索引)     (Agent/Reasoning/Interact) bit-flip 检测 + 
 
 ---
 
-## 四、知识缺口
+## 四、开源状态（截至 2026-07-03，已核实）
+
+| 模型 | 权重/代码 | HF 下载 | 说明 |
+|------|-----------|---------|------|
+| **LongCat-2.0** | ❌ **未放出** | 0 | 仓库 public 但仅 `README` + `LICENSE(MIT)` + `figures`，**无 `config.json` / 无建模代码 / 无 safetensors**；README 标「weights coming soon」。GitHub 默认分支 `master` 仅 README，另有 `dev/longcat-preview` 分支（暂无代码）。 |
+| **LongCat-Flash-Chat**（2.0 架构前身） | ✅ 已开源 | 79K+ | 完整权重 + 建模代码；LongCat-Flash 架构即含 **ScMoE / zero-compute experts / MoE 主干**。另有 FP8 / Thinking / Omni / Lite / Prover 等变体全部 released。 |
+
+**结论**：**LongCat-2.0 本体目前没有开源的代码实现**（只有博客 + 文档桩，MIT 协议已声明、待权重放出）。但**架构前身 LongCat-Flash 完全开源**——要读/跑与 2.0 共享的部分（ScMoE、zero-compute experts、MoE 主干），`LongCat-Flash-Chat` 是当前唯一可得的参考实现；而 2.0 新增的 **LSA / N-gram Embedding / MOPD 尚无任何开源代码**。
+
+## 五、知识缺口
 
 - **LongCat-Flash**（架构前身，含 zero-compute experts 动态激活机制）尚未摄入——待补技术报告。
 - **LongCat-2.0** 的层数/隐藏维/每层专家数/top-k、训练课程、是否 FP8、MOPD 具体 RL 算法**均未由官方博客披露**；权重与 config.json「coming soon」、正式技术报告未见。待 raw 源到位后回填精确基线（见 [[longcat_2_analysis]] §9）。

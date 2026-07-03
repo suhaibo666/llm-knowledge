@@ -81,24 +81,58 @@
 
 ### 2.1 LongCat Sparse Attention (LSA)：三种正交索引压 1M 上下文
 
-**动机**：1M 上下文下，注意力的**显存带宽/索引开销**（选哪些 KV 参与注意力）成为主瓶颈；直接 top-k 选 token 会产生**碎片化随机访存**，对硬件极不友好。LSA 用三种**相互正交**的索引策略分别攻不同代价：
+![LSA 总览：左 Owner Layer 跑完整索引——Streaming Tokens 绿→Contiguous KV 约 50% 预算；Non-Streaming Tokens 黄→Block Indexer→Token Indexer 两级 top-k→Non-Contiguous KV 约 50% 预算；右 Reuse Layer 无索引器、直接复用 Owner 层的索引](assets/lsa_overview.png)
 
-| 索引 | 机制 | 攻的代价 | 训练方式 |
+> **图源**：官方博客 LSA 总览图（`lsaimage-CCkXmBaN.svg`，原图注「Overview of the LongCat Sparse Attention design. Sink tokens omitted for clarity.」）。原始 SVG 存于 `assets/lsa_overview.svg`，本页 PNG 为 2× 渲染。
+
+**读图（这张图把三种索引一次画全）**：Full KV Tokens 先分成两股——
+
+- **Streaming Tokens（绿）**：**不进索引器**，直接作 **Contiguous KV（约 50% 预算）**。这就是「连续保留」的那一半——StreamingLLM 式的 **sink token + 近窗局部连续段**（图注注明 sink 已略去）；它天然顺序访存、coalesced。
+- **Non-Streaming Tokens（黄）**：走 **Block Indexer →(top-k 选块)→ Token Indexer →(块内 top-k 选 token)** 两级筛，得 **Non-Contiguous KV（约 50% 预算）**；两个索引器 **Sharing Parameters**（共享参数）。
+
+两股拼成 Indexed KV，与 Query 做 Attn。**右侧 "LSA from the Reuse Layer" 里没有任何索引器**，顶部标注 **"Directly Reusing the Indices from the Owner Layer"**——直接拿 Owner Layer 算好的索引，只保留 Top-k Selector + Attn。三种正交索引在图上的落点：**SI** = 「Streaming(连续) + Non-Streaming(动态)」这个约 50/50 拆分；**HI** = Non-Streaming 内的 Block→Token 两级；**CLI** = Owner Layer 与 Reuse Layer 之间的索引复用。
+
+**动机（源忠实：LSA 是冲着 DSA 的短板设计的）**：博客把参照系明确指向 **DeepSeek Sparse Attention (DSA) 的 Lightning Indexer**，并点名其两处瓶颈——**输出不连续（output discontinuity）**（选出的 token 在显存里碎片化、随机访存）与**打分的二次方成本（quadratic scoring cost）**。LSA 用三种**相互正交**的索引策略，分别正面修复这两处、再叠一层跨层摊薄：
+
+| 索引 | 机制 | 修复的 DSA 短板 | 训练方式 |
 |------|------|----------|----------|
-| **SI**（Streaming-aware Indexing） | 把 token 选择重塑为「硬件对齐的**连续访问** + 动态随机选择」结合——把碎片化随机访存转成**顺序读** | 访存带宽/局部性 | 训练中启用 |
-| **CLI**（Cross-Layer Indexing） | 利用「**相邻层注意力显著性经验稳定**」——一次索引服务多个连续层，摊薄索引成本 | 索引重复计算 | 需**跨层蒸馏**训练 |
-| **HI**（Hierarchical Indexing） | 两段式「**块级近似打分 → 细粒度 token 选择**」的 coarse-to-fine | 打分粒度/长尾超长任务 | **training-free**，仅对选定的超长上下文任务启用 |
+| **SI**（Streaming-aware Indexing） | 把 token 选择预算重塑为「硬件对齐的**连续访问** + 动态随机选择」结合——碎片化随机访存转成可预测**顺序读**，达成 **coalesced HBM 访问** | **输出不连续** | 训练中启用 |
+| **CLI**（Cross-Layer Indexing） | 利用「**相邻层注意力显著性经验稳定**」——一次索引 pass 服务多个连续层，摊薄索引成本 | 索引的**逐层重复计算** | 需**跨层蒸馏**训练 |
+| **HI**（Hierarchical Indexing） | 两段式 coarse-to-fine：先**块级近似打分粗召回**，再在候选内**细粒度 token 选择**——缩小 indexer 每 query 要处理的候选空间 | **二次方打分成本** | **training-free**，仅对选定的超长上下文任务启用 |
 
-> **为什么不选朴素稀疏注意力？** 朴素 top-k 稀疏注意力省了 FLOPs 却把访存打成随机碎片，在带宽受限的加速器上得不偿失；LSA 的三招都在「**让稀疏对硬件友好**」这条线上——SI 管访存形态、CLI 管跨层复用、HI 管超长任务的分层——是把「稀疏注意力」从「省算」重定义为「省访存 + 省索引」。这与 DeepSeek DSA / GLM-5 DSA（见 [[glm_5_analysis]]）同属「可学习稀疏注意力」大类，但 LSA 的三正交轴与「跨层复用 + 硬件对齐」是其区分点。
+> **为什么不直接用 DSA 的 Lightning Indexer？（源明确点名）** DSA（DeepSeek / GLM-5 的可学习稀疏注意力，见 [[glm_5_analysis]]）用 Lightning Indexer 选 token，但它**输出不连续**会把访存打成随机碎片、**二次方打分**在 1M 下昂贵。LSA 不另起炉灶，而是**针对这两处逐一修复**：SI 管访存形态（→coalesced 访问）、HI 管打分成本（→分层粗筛降二次方）、CLI 再叠一层跨层摊薄。本质是把「稀疏注意力」从「省 FLOPs」重定义为「**省访存 + 省索引**」——这正是带宽受限的国产 ASIC 最吃紧的两处。
+
+#### 读图问答（对着上图逐条澄清 LSA 的常见疑问）
+
+**Q1. SI 的 "streaming token" 是不是就是固定窗口的 token？**
+方向对，但要精确说是「**连续保留的那约一半 KV**」。图里 **Streaming Tokens（绿）不进索引器、直接作 Contiguous KV（~50% 预算）**——对应 **sink token + 近窗局部连续段**（StreamingLLM 式；图注专门说 sink 略去）。所以它确实是「固定/连续、总是保留」的部分，但两点补充：① 除局部窗口外还含 **sink**；② 它只占**约一半预算**，另一半（Non-Streaming）是**动态选**出来的。SI 的本质 = 把 KV 预算拆成「一半连续 + 一半动态」，让动态那半也尽量块对齐、可 coalesced。
+
+**Q2. 层次化 indexer 是不是「连续做两次选择」来稀疏化？**
+**完全正确**。图中 Non-Streaming 路径就是 **Block Indexer →(top-k 选块)→ Token Indexer →(块内 top-k 选 token)** 两级 top-k：先块级粗召回、再块内 token 级细选。这把索引打分从「对全序列每 token 打分（二次方）」降成「先对块打分、只在选中块里对 token 打分」。两级索引器还 **共享参数**。
+
+**Q3. CLI 的 reuse 是不是「一个 indexer 对应多个 transformer layer、算一次后续复用」？**
+**正确**。图右 "LSA from the **Reuse Layer**" **没有 Block/Token Indexer**，只剩一个 Top-k Selector，顶部箭头写明 **"Directly Reusing the Indices from the Owner Layer"**：**Owner Layer 跑一次完整索引得到 indices，后面连续若干 Reuse Layer 直接拿这套 indices，不再自己算**。一次算、多层复用（相邻层注意力显著性稳定是其经验前提）。
+
+**Q4. 这个复用，实现上是缓存还是重算？**
+**是缓存，不是重算**——而且从图上看是**结构性必然**：Reuse Layer **根本没有索引器**，它没有可「重算」的东西，只能接收 Owner Layer 传来的 index。所以实现上就是：**Owner Layer 算出的 top-k 索引集合（一个整型 index 张量：块索引 + token 索引）被缓存下来，喂给后续 Reuse Layer 的 Top-k Selector**。
+- **关键区分**：被缓存/复用的是**「选哪些 KV」的索引**，**不是注意力结果**——每个 Reuse Layer 仍用**自己这一层的 K/V**、在这套共享索引上算**自己的 Attn**（图里每层都有独立 Attn 框）。省掉的是 indexer 的打分开销（最贵、二次方那块），不是省 attention 本身。
+- **为什么不可能是重算**：若每层都重算 indexer，CLI 就没有意义（博客原话「amortize indexing cost」）；MTP 那段也明确用 **"reusing the index set generated in step 1"**——复用的就是**索引集合**。
+- **代价/前提**：跨层直接复用索引，要求「相邻层注意力显著性稳定」成立，故训练时用 **cross-layer distillation** 把 reuse layer 对齐到「用 owner 的索引也不掉点」。这是它的代价——多一条训练约束，换推理时把索引成本摊到多层。
 
 ### 2.2 N-gram Embedding：135B 参数、与 MoE 正交的「稀疏维」扩参
+
+![N-gram Embedding 总览：当前 token 处取 5/4/3/2-gram（各自 Hash+Embedding+Projection、多张哈希表），与 Base Embedding 相加得最终 Embedding Vector](assets/ngram_embedding_overview.png)
+
+> **图源**：官方博客 N-gram Embedding 总览图（`ngram-emb-new.drawio-DtU8Umnl.svg`）。原始 SVG 存于 `assets/ngram_embedding_overview.svg`。
+
+**读图**：对当前位置（图中 "improvements"），分别取以它结尾的 **2/3/4/5-gram**（如 5-gram = "introduces three orthogonal efficiency improvements"）；每个 n-gram 各过一组 **Hash + Embedding + Projection**（图中叠放的多张卡 = 多张哈希表/桶），再把 5/4/3/2-gram 的向量与 **Base Embedding**（普通 token embedding）**逐一相加**，得最终 **Embedding Vector**。即：**用「哈希查表」而非计算，把多 token 组合（n-gram）的信息直接注入到输入 embedding**——这正是「几乎不增 FLOPs、参数长在稀疏查表维」的由来；135B 参数就活在这些哈希 embedding 表里。
 
 **机制**：在 Token Embedding 之外并联一个 **n=5 的 N-gram Embedding 层**，参数量达 **135B**，把 embedding 表征空间约**扩大 100×**，同时**控制在总参数预算的 <10%**。
 
 **为什么这么设计**（四拍）：
-- **动机**：MoE 已在「专家维」扩参，但继续堆专家会推高 all-to-all 通信与路由负担；团队想在**另一个维度**廉价扩参。
-- **机制**：N-gram embedding 在「**与 MoE 正交的稀疏维度**」扩参——查表而非计算，几乎不增加 FLOPs。
-- **证据/收益**：博客称其**提升参数效率、并降低大 batch 解码时的 I/O**（查表命中率高、访存规整）。
+- **动机（源忠实：MoE 稀疏度已「过了甜点」）**：博客明确 MoE 的稀疏度**已越过甜点区（约 97% 稀疏）**——再堆专家边际收益递减、且继续推高 all-to-all 与路由负担；此时把 135B 参数**挪到 N-gram Embedding，其收益「远超标准专家」**。于是转向**另一个正交维度**廉价扩参。
+- **机制**：N-gram embedding 在「**与 MoE 正交的稀疏维度**」扩参——n=5 的 n-gram 组合查表而非计算，几乎不增加 FLOPs，把 embedding 表征空间约扩 100×。
+- **证据/收益**：博客称其**提升参数效率、并降低大 batch 解码时的 I/O**——把参数从专家挪到 N-gram Embedding，大 batch 解码的显存 I/O 下降、生成加速（查表命中率高、访存规整）。
 - **代价/为什么不选替代**：不是简单加大 vocab embedding（会线性放大主 embedding 访存），而是 n-gram 组合稀疏查表；代价是需要额外的 N-gram 索引结构与**专门的并行维（EMBP，见 §5）** 来分片这 135B。
 
 ### 2.3 ScMoE：从「重叠」到「全并行」的计算-通信
@@ -138,22 +172,31 @@
 
 ---
 
-## 四、后训练：MOPD 多教师蒸馏
+## 四、后训练：MOPD 多教师在线策略蒸馏
 
 **主线**：不追求单一「全能」策略，而是**先训三组各有所长的 teacher 专家群，再用 MOPD 把三者的最强能力融进一个学生模型**。
 
-- **MOPD** = Multi-Objective Policy Distribution（多目标策略分布），负责整合三组专家群的最强能力。
-- **三组 teacher expert groups**：
+![MOPD 多专家后训练架构总览：Agent / Reasoning / Interaction 三组 teacher expert 群，经 MOPD 融合蒸馏进统一学生模型](assets/mopd_overview.png)
 
-| 专家群 | 目标域 | 优化的「原子能力」 |
+> **图源**：官方博客 MOPD 架构图（`mopd-CIX9ZFo9.svg`）。原始 SVG 存于 `assets/mopd_overview.svg`。
+
+**读图**：从 **LongCat SFT 检查点**出发，分头训练三组专精 teacher，再经 **MOPD** 融合蒸馏成 **LongCat 2.0（Unified, Advanced）**。图中 MOPD 副标题写作 **"Multi-Teacher On-Policy Distill"**，两条职责标注为 **Real-World Scenarios**（整合 agentic 执行 / 推理 / 交互能力）与 **Domain Expert Integration**（融合各专精专家能力）。
+
+> [!contradiction] MOPD 的展开以官方图为准：Multi-Teacher On-Policy Distillation
+> 二手摘要（DeepWiki 等）曾把 MOPD 解作「**Multi-Objective Policy Distribution**（多目标策略分布）」；但**官方博客架构图**副标题白纸黑字写的是 **"Multi-Teacher On-Policy Distill(ation)"（多教师在线策略蒸馏）**。以官方图为准——本页早期版本与首次 changelog 的「多目标策略分布」为二手误读，特此订正。
+
+- **MOPD = Multi-Teacher On-Policy Distillation（多教师在线策略蒸馏）**：以三组 teacher 为多教师、对**学生自己生成的轨迹（on-policy）** 做蒸馏，把三者能力融进统一学生。**on-policy 是关键**——在学生自身分布上蒸馏（而非离线照抄 teacher 输出），能针对学生**真实会犯的错**纠偏、规避训练-推理分布错配（与 [[RL_Training_Inference_Precision_Analysis]] 同源问题）。
+- **三组 teacher expert groups**（原子能力据官方图逐一列全）：
+
+| 专家群 | 目标域 | 优化的「原子能力」（图中列举） |
 |--------|--------|--------------------|
-| **Agent Experts** | 细粒度垂域：**代码 / 工作 / 搜索** | 精确工具调用、可靠参数解析、自纠正机制 |
-| **Reasoning Experts** | **数学 / STEM 解题 / 多跳推理** | 长链推理 |
-| **Interaction Experts** | 交互 / 通用对话 | （博客侧重前两者，交互群细节较略） |
+| **Agent Experts** | 细粒度垂域：**代码 / 工作 / 搜索** | Tool Use（工具调用）· API Parsing（参数解析）· Self-Correction（自纠正） |
+| **Reasoning Experts** | **数学 / STEM / 多跳推理** | Multi-Hop Reasoning · STEM Reasoning · **Adaptive Computation（自适应算力）** |
+| **Interaction Experts** | 交互 / 通用对话 | Instruction Following（指令遵循）· Human Alignment（人类对齐）· Hallucination Suppression（幻觉抑制） |
 
 > **为什么不用单教师/单目标 RL？** Agentic coding、深推理、通用交互三者的**奖励信号与数据形态差异极大**，混在一个策略里互相拉扯（reward 冲突）。先分群把各自「原子能力」练到位、再蒸馏融合，是把「多目标对齐」从「一个策略硬扛」改成「分而治之 + 融合」。这与 GLM-5 的「分阶段 RL + 跨阶段蒸馏防遗忘」（见 [[glm_5_analysis]] §三）思路相通。
 >
-> **未披露**：具体 RL 算法（GRPO/PPO 变体？）、奖励模型设计、蒸馏损失形式、各群数据量——博客未给。
+> **仍未披露**：on-policy 蒸馏的**具体损失形式**（KL / reverse-KL / 排序？）、是否含显式 RL（奖励模型 / GRPO 等）、各 teacher 群的训练细节与数据量——博客与图均未给。
 
 ---
 
@@ -178,7 +221,16 @@
 - **EMBP 是本模型独有的第 6 维**：135B 的 N-gram Embedding 若挤在 TP/DP 里会破坏负载均衡，故单列一维专门分片。这是「架构创新（N-gram 扩参）倒逼 Infra 创新（新并行维）」的典型。
 - 相关原理：TP/CP/SP 见 [[tensor_sequence_parallel_analysis]]，EP 见 [[expert_parallel_analysis]]，PP 见 [[pipeline_parallel_analysis]]，通信重叠工程参照 [[megatron_comm_overlap_analysis]]。
 
-### 5.2 推理：Prefill–Decode 分离
+### 5.2 推理·模型专属优化（Model-Specific）
+
+针对「1.6T 参数 × 1M 上下文 × HBM 受限」的解码，博客列了几招（多为吸收/流水线类的硬件友好改写）：
+
+- **注意力吸收计算（absorb computation）**：把注意力里可合并的投影/缩放**吸收进相邻矩阵**，减少解码时的显存读写与算子数（*本页推断：类 MLA 家族的 absorb 技巧*）。
+- **索引器流水线化（pipelining the indexer）**：把 LSA 的 indexer 与后续注意力**流水线重叠**，让「选哪些 KV」的开销藏进计算。
+- **KV-cache 并行（KVP）**：把超长上下文 KV cache 切到多设备，缓解单卡 HBM 压力（与下方部署段 decode 侧呼应）。
+- **ScMoE 调度前推**：把架构侧的 ScMoE（§2.3）在推理调度上进一步优化，维持 dense/MoE 分支并行。
+
+### 5.3 推理·部署：Prefill–Decode 分离
 
 | 阶段 | 并行/技术 | 目标 |
 |------|-----------|------|
@@ -188,11 +240,12 @@
 
 > PD 分离是 2026 年大模型推理的主流范式（Kimi Mooncake 见 [[moonshot_kimi/index]]；vLLM 见 [[02_engineering/03_infer_frameworks/vllm/index]]）。LongCat-2.0 的特色是 **decode 侧 EP128 + KVP** 与**国产网卡 200Gbps 的 KV 搬运**。
 
-### 5.3 Kernel/访存优化
+### 5.4 推理·加速器导向优化（Kernel / 访存）
 
 - **Super Kernels**：把多个小算子融进一个大 kernel，**降 kernel launch 开销**（国产 ASIC 上 launch 开销尤其敏感）。
-- **L2 cache 预取**：把某算子的 **I/O 延迟藏进前一个算子的计算**里，隐藏访存延迟。
+- **权重预取（weight prefetch）/ L2 cache 预取**：把某算子的 **I/O（权重加载）延迟藏进前一个算子的计算**里，隐藏访存延迟。
 - **EPLB**（Expert-Parallel Load Balancing）：部署期专家负载均衡。
+- （P↔D 间 KV-cache 走内置 **200 Gbps 网卡**——见 §5.3 表。）
 
 ---
 
@@ -249,6 +302,14 @@
 - **基础项互有胜负**：IFEval（指令遵循）90.0 落后于 Gemini/GPT/Opus4.6/4.7；但 **IMO-AnswerBench 81.8 反超 GPT-5.5(79.5) 与 Opus4.8(75.3)**；GPQA-diamond 88.9 落后前沿闭源。
 - 结论：**在开源阵营与「受限国产算力」这两个约束下，LongCat-2.0 达到近前沿**，尤其 agentic coding 最能打。
 
+### 附：官方能力演示 showcase（3 个场景，定性非基准）
+
+博客在评测前用三个场景做定性演示：
+
+- **Codebase Migration（代码库迁移）**：读入**完整代码库 + 迁移文档**，映射整体架构，把插件**改写迁移到新 SDK**——一次演示「1M 长上下文 + agentic coding」的端到端闭环。
+- **Agentic & Research（智能体与研究）**：多步工具调用 / 搜索的自主任务执行。
+- **Content Generation（内容生成）**：通用写作类生成。
+
 ---
 
 ## 九、源忠实修正与未披露项
@@ -263,11 +324,15 @@
 
 ### 9.2 博客未披露、需后续补的量
 
-- 模型细节：**层数、隐藏维、每层 routed/shared 专家数、top-k、专家中间维**；
-- 训练细节：**学习率/batch/warmup、上下文扩展的分阶段课程、预训练是否分 stage**；
+> **已做完整大纲审计（2026-07-03）**：逐节比对博客全部章节（Introduction / Architecture / Scalable Infrastructure / Learning from Multiple Teachers / Capability Demonstration / Evaluations）后确认，下列项目**在正文任何位置都未出现**，非本页漏读。
+
+- 模型细节：**层数、隐藏维、注意力头数/头维、每层 routed/shared 专家数、top-k、专家中间维**；
+- 结构选型（大纲审计确认未提）：**激活函数、归一化类型、位置编码（RoPE/NoPE）、词表大小、tokenizer**；
+- 训练细节：**学习率/batch/warmup、上下文扩展的分阶段课程、预训练是否分 stage、数据配比（代码/数学/多语/网页占比）**；
 - 精度：**是否使用 FP8/FP4/BF16 混合精度训练**（博客只讲数值可靠性，未讲低比特量化）；
-- 后训练：**MOPD 的具体 RL 算法、奖励设计、蒸馏损失、各专家群数据量**；
-- 权重与 config.json（「coming soon」）、正式技术报告/arXiv（截至 2026-07-02 未见）。
+- 后训练：MOPD 已知为**多教师 on-policy 蒸馏**（§4），但**蒸馏损失形式、是否含显式 RL/奖励设计、各专家群训练数据量**未披露；
+- 推理：**吞吐（tokens/s）/ MFU / 成本**等数字未披露；
+- 权重与 config.json（「coming soon」）、正式技术报告/arXiv（截至 2026-07-03 未见）。**已核实**：HF/GitHub 仓库 `main` 分支当前仅 `README.md`(2.86 kB) + `figures/` + `LICENSE`，**无 `config.json` / 无建模代码**——故上述模型细节的硬数字目前从任何官方渠道都不可得，非本页遗漏；待权重放出即可从 config 一次性补全。
 
 > 按本库 Query Workflow：待 raw 源（权重/config/技术报告）到位后，回到源用 `file:line`/表号把上述项补成精确基线，并更新本页头 Baseline。
 
