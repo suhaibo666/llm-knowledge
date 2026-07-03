@@ -4,6 +4,27 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-02: 新建 [[meituan_longcat/index]] + [[longcat_2_analysis]] —— 美团 LongCat-2.0（1.6T/48B MoE，国产 ASIC 全栈）
+
+**Type**: Ingest（应用户「分析 longcat 2.0 的模型结构、训练、AI infra、低精度、稳定性、效果，录入知识库」。源忠实 + 抓本质）
+
+**源（source-faithful）**：官方 Tech Blog `longcat.chat/blog/longcat-2.0`（**JS 渲染 SPA**，直取仅得标题）→ 经**渲染代理提取 + 三源交叉核对**（渲染博客文本 · HF/GitHub `README.md` · DeepWiki 镜像），并与二手报道对比去伪。Baseline = 访问日期 **2026-07-02**；权重/config.json「coming soon」、正式技术报告未见 → 页头与 §9 已标注保真度与未披露项，待 raw 源到位回填精确基线。
+
+- **新建 family index [[meituan_longcat/index]]**：LongCat 家族（LongCat-Flash 前身 → LongCat-2.0）总览 + 一页速览 + 与 GLM-5/DeepSeek-V3/V4/Kimi-K2 的稀疏注意力/优化器/低精度/硬件定位对照表 + 知识缺口。
+- **新建深挖页 [[longcat_2_analysis]]**（主线「在国产 AI ASIC 上把 1.6T MoE 推到近前沿 Agentic Coding」）：
+  - **架构**：LSA 稀疏注意力三正交索引（SI 硬件对齐连续访问 / CLI 跨相邻层复用+跨层蒸馏 / HI 块级粗筛→token 细选 training-free）；**N-gram Embedding 135B, n=5**（与 MoE 正交稀疏维扩参、空间约 100×、<10% 预算、降大 batch 解码 I/O）；**ScMoE**（per-core 显式控制→dense/MoE 分支全并行）；**MTP 3-step**（第 2/3 步复用第 1 步 LSA 索引）。
+  - **预训练**：>35T tokens；**Muon 大规模**（TP 适配 + DP 状态去冗 + 对称矩阵乘 kernel）；数百亿 token **原生 1M**（all-gather CP 扩到 512+）。
+  - **后训练**：**MOPD** 多目标策略分布，融合 **Agent/Reasoning/Interaction** 三组 teacher expert 群蒸馏。
+  - **AI Infra**：**6D 并行 = 5D(TP/CP/EP/DP/PP) + EMBP**（专并行 135B N-gram）；superpod ≤48 机 all-to-all + 跨 pod RoCE（+30%）+ 总体 +35% 吞吐；推理 **PD 分离**（prefill CPP+Attention SP / decode KVP+EP128，KV 走 200Gbps 网卡）；**Super Kernels + L2 预取 + EPLB**。
+  - **低精度**：[!contradiction] **博客不讲 FP8/FP4 量化**——其「精度」叙事是国产 ASIC 上的**数值可靠性/确定性**（确定性算子覆盖 Embedding/FA/LSA/MoE + 二叉树分段累加降 FP 误差 + 对齐高精度基线验证）。与 DeepSeek-V3(FP8)/GLM-5(INT4 QAT) 是不同侧面。
+  - **稳定性**：>35T tokens **零回滚/无不可恢复 spike**；bit-flip 检测 + 端到端自动故障识别/流量切换/恢复。
+  - **效果**：全评测表（LongCat-2.0 vs Gemini 3.1 Pro / GPT-5.5 / Claude Opus 4.6/4.7/4.8）——**SWE-bench Pro 59.5 > GPT-5.5 58.6**、Terminal-Bench 2.1 70.8、GPQA-diamond 88.9；整体落后 Claude Opus 4.8。
+  - **§9 源忠实修正**：[!contradiction] 二手报道称「动态激活 33–56B / zero-compute experts」——博客只提训练期 padding→zero-expert（省显存），激活即 ~48B，疑似把 LongCat-Flash 机制张冠李戴；[!contradiction] 训练算力 README「加速器·小时」vs 博客渲染「天」24× 分歧，FLOPs 粗算支持「小时」。
+
+**整合**：[[01_theory/01_models/index]] 新增「LongCat / Meituan」家族区；[[index]]（总索引）模型行 28→30、加「LongCat (美团)」子行与「按主题查找」条目、更新日期至 2026-07-02；两新页与 [[glm_5_analysis]]/[[deepseek_v3_analysis]]/[[deepseek_v4_analysis]]/[[kimi_k2_analysis]]/[[muon_analysis]]/[[expert_parallel_analysis]] 等互链。**校验**：全用 ASIC——图表用 **ASCII**（与 GLM-5/Kimi 同系列风格，零 mermaid 定界符风险）；跨链目标经 grep 核对；因源为渲染提取，数值保真度与未披露项已在页头/§9 显式声明，不臆造未披露量。
+
+---
+
 ## 2026-07-01: 新建 [[06_distributed_parallelism/index]] 分布式并行原理簇 —— 原语→DP→TP/SP/CP→EP→PP→ZeRO 全景（理论层）
 
 **Type**: New（应用户"在 01_theory 加分布式并行原理解读，从分布式原语→TP→EP→PP→ZeRO 等基本概念；演示图用 SVG→PNG"。抓本质 + 引擎无关的原理层，与已有工程页分工）

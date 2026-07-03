@@ -318,6 +318,7 @@ GLM-5V-Turbo (2604) → 多模态 Agent, CogViT
 - [[glm5_low_precision_chip_deepdive]] — 低精度链 + 国产芯片
 
 **其他**：
+- [[longcat_2_analysis]] — 美团 LongCat-2.0：同为 MoE + Muon + 稀疏注意力(LSA)，但走「国产 ASIC 全栈 + 数值可靠性」而非 INT4 QAT 路线（对照阅读）
 - [[01_theory/index]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index]]
 - [[zhipu_glm/index]]

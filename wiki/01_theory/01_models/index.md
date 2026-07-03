@@ -50,6 +50,13 @@
 | [[glm_5_analysis]] | GLM-5 744B/40B MoE, Muon Split, DSA |
 | [[glm_5v_turbo_analysis]] | GLM-5V-Turbo, CogViT, MMTP, 多模态 Agent |
 
+### LongCat / Meituan
+
+| 页面 | 核心主题 |
+|------|---------|
+| [[meituan_longcat/index]] | 美团 LongCat 技术路线总览 |
+| [[longcat_2_analysis]] | LongCat-2.0 1.6T/48B MoE, LSA 稀疏注意力, N-gram Embedding, ScMoE, MOPD, 国产 ASIC 全栈 |
+
 ---
 
 ## 关联域
