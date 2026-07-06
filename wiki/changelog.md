@@ -17,6 +17,21 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-03: 深化 [[longcat_2_analysis]] —— 补官方原图(LSA/N-gram/MOPD) + 读图问答 + 开源状态 + 完整大纲审计 + MOPD 订正
+
+**Type**: Enrich（应用户连续追问：架构更细解读 / 是否有开源代码 / 放原图并结合图说明「LSA 复用是缓存还是重算」/ 完善缺失内容。源忠实——官方架构图与图注为一手证据，纠正二手误读。提交 `305dac1`）
+
+- **补 3 张官方原图**（美团 S3 CDN 下载 SVG → 本库无头 Edge 管线 2× 转 PNG、白底，与既有页一致；SVG 原图并存作 source）：`assets/lsa_overview.{svg,png}` · `ngram_embedding_overview.{svg,png}` · `mopd_overview.{svg,png}`。渲染工具 `.html2md/svg2png.mjs`（gitignored，不入库）。
+- **LSA §2.1 读图深化**：据 LSA 图确证结构——Full KV 分 **Streaming(绿)→Contiguous KV(~50% 预算)** 与 **Non-Streaming(黄)→Block Indexer→Token Indexer 两级 top-k→Non-Contiguous KV(~50% 预算)**，右 **Reuse Layer 无索引器**、标注 "Directly Reusing the Indices from the Owner Layer"。新增「读图问答」回答四问：① streaming token = sink + 近窗连续段（约半预算），非纯滑窗；② 层次化 = 块→token 两级选择（共享参数）；③ CLI = Owner 算一次、多 Reuse 层复用；④ **复用是缓存非重算**（Reuse 层结构上无索引器；缓存的是 top-k 索引集合而非注意力结果，每层仍算自己的 Attn；证据「amortize indexing cost」+ MTP「reusing the index set」）。LSA 动机补为「定点修 DSA Lightning Indexer 的**输出不连续 + 二次方打分**两短板」。
+- **N-gram §2.2 读图**：据图补机制——当前位置取 2/3/4/5-gram，各过 Hash+Embedding+Projection（多张哈希表）再与 Base Embedding 相加；动机补「MoE 稀疏度已过甜点区(~97%)、挪 135B 到 N-gram 收益远超标准专家」。
+- **[!contradiction] MOPD 订正（源 > 二手，超越本 changelog 2026-07-02 条目的「多目标策略分布」）**：官方架构图副标题为 **"Multi-Teacher On-Policy Distill(ation)"（多教师在线策略蒸馏）**，据此订正早期二手误读「Multi-Objective Policy Distribution」。三组 teacher 原子能力据图列全（Agent: Tool Use/API Parsing/Self-Correction；Reasoning: Multi-Hop/STEM/**Adaptive Computation**；Interaction: 指令遵循/人类对齐/幻觉抑制）。
+- **家族 index 补「四、开源状态」**：已核实 **LongCat-2.0 仓库 main 仅 README+LICENSE(MIT)+figures、无 config.json/建模代码/权重**（HF 下载 0、weights coming soon）；**架构前身 LongCat-Flash-Chat 完全开源（79K+ 下载，含 ScMoE / zero-compute experts）**，是当前唯一可读参考实现；2.0 新增的 LSA / N-gram / MOPD 无开源代码。
+- **完整大纲审计补缺**：据博客全章节大纲补 §5.2「推理·模型专属优化」（absorb computation / pipelining indexer / KVP / ScMoE 调度）、§5.4 weight prefetch、§8「官方能力演示 3 场景（Codebase Migration / Agentic & Research / Content Generation）」；§9.2 审计确认 layers/dims/heads/vocab/activation/norm/RoPE/数据配比/tokenizer/吞吐 **全部 not stated**（非漏读，已在页内声明）。
+
+**整合**：改动集中在 [[longcat_2_analysis]] 与 [[meituan_longcat/index]]。**校验**：3 张 PNG 均实渲肉眼核对（LSA/N-gram/MOPD 内容正确）；图片用标准 `![](assets/*.png)`（非 mermaid，无定界符风险）；§5 重编号后 §9 未动、页内/index 的「§9」引用仍有效；无新增死链。
+
+---
+
 ## 2026-07-02: 新建 [[meituan_longcat/index]] + [[longcat_2_analysis]] —— 美团 LongCat-2.0（1.6T/48B MoE，国产 ASIC 全栈）
 
 **Type**: Ingest（应用户「分析 longcat 2.0 的模型结构、训练、AI infra、低精度、稳定性、效果，录入知识库」。源忠实 + 抓本质）
