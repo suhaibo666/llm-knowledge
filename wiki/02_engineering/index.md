@@ -12,6 +12,7 @@
 | [[04_posttrain_frameworks/index]] | 后训练框架：RLHF 基础设施、对齐工具链（预留） |
 | [[05_gpu_kernel/index]] | GPU Kernel 开发：执行层级、内存优化、Tensor Core/MMA、FlashAttention 链路、NPU 差异 |
 | [[06_auto_parallel/index]] | 自动并行：策略搜索空间、代价模型、ILP/DP/传播搜索算法（业界综述罗盘）|
+| [[07_training_reliability/index]] | 万卡训练确定性与可靠性：浮点非确定性/batch 不变性/低精度累加/SDC、故障容错与恢复、训练动力学稳定性（9 问题域·多来源综述）|
 
 ## 页面列表
 

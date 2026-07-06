@@ -4,6 +4,23 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-06: 新建 [[07_training_reliability/index]] 簇 —— 摄入《万卡训练确定性与可靠性深度分析》(9 问题域·多来源综述)
+
+**Type**: Ingest（应用户「把这份基于 LongCat 衍生的稳定性训练文档吸收到知识库」。源忠实——二手综述的结构化摄入，机制/数字/命令/代码忠实原文，交叉链到已有一手页）
+
+**源**：用户提供的多来源综述 `raw/02_engineering/wanka_determinism_reliability_deep_analysis.md`（已存 raw、747 行），综合 Gemini 1.0/2.5 · Llama 3 · ByteRobust(SOSP'25) · MegaScale(NSDI'24) · Aegis(NSDI'25) · C4(HPCA'25) · DeepSeek-V3(ISCA'25) · Thinking Machines「Defeating Nondeterminism」· Anthropic postmortem · 华为 CloudMatrix · 美团 LongCat-2.0 博客 + Megatron-LM/NVRx/torch_npu 代码。
+
+- **新建 `02_engineering/07_training_reliability/` 簇（index + 3 内容页）**，按原文四部分/9 问题拆解：
+  - [[07_training_reliability/index]]（**coordinator 手写的 exemplar**）：问题地图（9 问题×两主线）+「确定性是故障定界的地基」主线 + 趋势与开放问题（原文第四部分）+ 与本库已有页的交叉表。
+  - [[determinism_and_numerical_reliability_analysis]]（问题 1-4）：浮点非确定性五层来源（atomicAdd/split-K/通信规约树/MoE 排序/框架随机性）、batch 不变性与 RL 确定性（Thinking Machines、Anthropic top-k 事故、TIS）、低精度长链累加（pairwise/树形、FP32 main_grad、DeepSeek FP8 两级累加/DeepGEMM、Kahan）、SDC 四层检测体系（压测/统计/ABFT+DP hash/确定性重放）。
+  - [[fault_tolerance_and_recovery_analysis]]（问题 5-8）：goodput/ETTR + 五级恢复坐标系（Job/Pod/Node/进程/Step + 算子链路级）+ 各家术语对照（华为 MindIO TFT 的 TTP/UCE/ARF、NVRx in-process restart、torchft、Gemini slice 弹性…）、hang/straggler（flight recorder/栈聚类/straggler 打分）、Checkpoint（异步+原子提交/本地分层/临终/数据回放）、网络链路（PFC 风暴/ECMP hash/链路级快恢/流量工程）。
+  - [[training_dynamics_stability_analysis]]（问题 9）：loss spike/NaN 四类根因、分层监控+前兆指标、排查决策树、四层防线（QK-Norm/z-loss/soft-capping/EGS、MuonClip/AdaGC/ZClip、数据指纹、运维自动化）、2026 前沿（Muon 路线共识、DeepSeek-V4 Anticipatory Routing/mHC、Kimi K2.5 与 GLM-5 的 RL 稳定性与问题 2 合流）。
+- **并行 writer-agent 契约**：3 内容页由 3 个 subagent 并行写，各读 raw 指定行段（Part1/2/3），严格「不加源外事实、保留全部数字/env-var/代码/出处、只用给定交叉链、无 mermaid」，结构化回报。
+
+**整合**：[[02_engineering/index]] 子领域表加 07 行；[[index]] 目录树加 07、工程域表加「训练可靠性 4」行、按主题查找加一行。**校验**：3 页 grep 确认关键 env-var/数字/机制在位（CUBLAS_WORKSPACE_CONFIG、TORCH_NCCL_TRACE_BUFFER_SIZE、五级坐标系、MuonClip/Anticipatory Routing/129.3 MWh 等）；4 页全部 `[[链接]]` 机械核对**零死链**；4 页 grep 确认**零 mermaid**（全用 ASCII/代码/表）；抽读 determinism 页头+§1 核对源忠实与房风格。
+
+---
+
 ## 2026-07-06: 新建 [[longcat_flash_analysis]] —— 摄入 LongCat-Flash（560B/27B MoE，ScMoE + 零计算专家首创）
 
 **Type**: Ingest（应用户「把 LongCat-Flash 也摄入知识库」。LongCat-2.0 的架构前身，源忠实 + 抓本质）
