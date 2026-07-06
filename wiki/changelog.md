@@ -4,6 +4,23 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-06: 用开源推理代码升级 [[longcat_2_analysis]] 架构描述 + 3 张代码级模型结构图
+
+**Type**: Enrich（应用户「longcat2.0 开源了推理代码，结合推理代码完善模型结构描述 + 详细绘制模型结构图，每步数据流用 SVG→PNG」。源升级：**codebase 一手 > 博客二手**）
+
+**源（source-faithful, codebase）**：官方 2026-07 放出 `config.json` + 194 分片权重（HF `meituan-longcat/LongCat-2.0`，`GIT_LFS_SKIP_SMUDGE` clone）；GPU 推理经 SGLang **PR #30042** @ `HarryWu99/sglang@c6c36d9`。逐文件核对 `longcat_flash.py`（模型/ScMoE/MoE，1093 行）、`n_gram_embedding.py`（:134-175）、`nsa_indexer.py`（SI/CLI，:493/:539-559）、`config.json`（60 行逐字段）、README（SGLang 部署 + LSA/N-gram 说明）。
+
+- **3 张代码级结构图**（手绘 HTML+CSS/SVG → 本库无头 Edge 2× 渲染；源 `.html2md/figs/longcat2_architecture.html`）：`assets/longcat2_arch_fig1.png`（整体前向 + 单层 ScMoE 短路放大）、`fig2`（N-gram Embedding 数据流）、`fig3`（MLA + LSA 数据流）。逐张实渲肉眼核对。
+- **§1.1 核心参数表全部落实**（每条带 config.json 行号或 `文件:行`）：38 层 · hidden 8192 · 64 heads · MLA(q_lora 1536/kv_lora 512/nope128+rope64/v128) · 稠密 FFN 12288 · **768 路由 + 128 零计算(identity)专家 / top-12** · 专家 FFN 2048 · vocab 163840 · RMSNorm/SiLU · RoPE-YaRN(factor 120) · N-gram 16 路哈希 · LSA index_topk 2048 / local 1024 / init 16 / cli_factor 2 · MTP 3-step。
+- **§1.2 换成 3 图 + 代码级结构总览**；**§2 三处订正**（`[!important]`）：① 注意力实为 **MLA**（LSA = MLA 骨干 + DSA 式索引器，非全新注意力）；② 层是 **ScMoE 短路**（2×(MLA+稠密FFN) ∥ MoE，`longcat_flash.py:449-460`），非「注意力→MoE」常规块；③ **零计算专家确有其事**（`zero_expert_num:128 identity`），激活参数随 token 动态。
+- **§2.1/2.2/2.3 加「代码补充」**：LSA 的 SI（force-keep 16 sink+1024 local = 50%，印证官方图）/ CLI（cli_factor=2、缓存索引集印证 Q4）/ HI（SGLang 未实现）；N-gram（16 路多项式哈希→查表→投影→**mean**）；ScMoE（`LongcatFlashMoE` 768+128、top-12、`zero_experts_compute_triton`）。
+- **[!contradiction] 订正**：§9.1 zero-compute experts 由「未证实」→**代码定案为常设机制**、二手「33–56B 区间」方向可信；新增「注意力实为 MLA」订正。§6 补**推理 FP8**（`LongCat-2.0-FP8` + bf16 KV，`longcat_flash.py:697-808`），训练精度仍未披露。§9.2 结构项**全部划除**（已回填 §1.1），仅留训练侧未披露。
+- **家族 index**：§四 开源状态**翻篇**（未放出 → 已开源：权重 + config + SGLang 推理码）；§一/§二/§三 补 38 层 / MLA / ScMoE 短路 / 推理 FP8 / 128 零计算专家。
+
+**整合**：改动集中在 [[longcat_2_analysis]]、[[meituan_longcat/index]]，新增 3 图。**校验**：3 PNG 实渲核对；图片用标准 `![](assets/*.png)`（非 mermaid）；config.json 行号与 `longcat_flash.py`/`nsa_indexer.py`/`n_gram_embedding.py` 关键行本会话开文件核对；SGLang 建模码不入本库（仅引 `file:line`）。
+
+---
+
 ## 2026-07-03: [[inductor_memory_allocation_guide]] 新增 §5「内存越界/踩踏排查」— 补第二份社区材料的缺口(纠错版)
 
 **Type**: Enrich（应用户"第二份专家社区材料的第三部分——内存踩踏检测——库里缺,补上,一定忠于事实"。经 gap 分析:材料前两部分已被 [[inductor_memory_management_analysis]] 覆盖且更准,仅第三部分是真缺口;材料本身有错,按源码收敛后再入库）

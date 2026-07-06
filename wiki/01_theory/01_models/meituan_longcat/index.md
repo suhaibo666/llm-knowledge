@@ -1,7 +1,7 @@
 # 美团 LongCat 技术路线总览
 
 > LongCat 是美团（Meituan）开发的大语言模型系列，主打**大规模 MoE + 稀疏注意力 + 国产 AI ASIC 全栈自研**，2026 年在 Agentic Coding 方向做到近前沿。
-> 最后更新: 2026-07-02
+> 最后更新: 2026-07-06（LongCat-2.0 已开源权重 + SGLang 推理码，架构描述升级为代码一手）
 
 ---
 
@@ -10,7 +10,7 @@
 | 模型 | 发布 | 参数量（总/激活） | 核心特点 | 状态 |
 |------|------|------------------|----------|------|
 | **LongCat-Flash** | 2025 | — MoE（含 **zero-compute experts** 动态激活） | 计算-通信重叠、动态算力分配 | 架构前身（待摄入） |
-| **LongCat-2.0** | 2026-06 | **1.6T / ~48B** | LSA 稀疏注意力 · N-gram Embedding(135B) · ScMoE · MOPD 多教师蒸馏 · 全栈国产 ASIC | [[longcat_2_analysis]] |
+| **LongCat-2.0** | 2026-06 | **1.6T / ~48B**（动态） | **38 层** · MLA+LSA 稀疏注意力 · N-gram Embedding(135B) · **ScMoE 短路 + 128 零计算专家** · MOPD 多教师蒸馏 · 国产 ASIC | ✅ 已开源（权重+config+SGLang 推理码）· [[longcat_2_analysis]] |
 
 ---
 
@@ -29,11 +29,11 @@ MTP 3-step (复用 LSA 索引)     (Agent/Reasoning/Interact) bit-flip 检测 + 
 
 | 维度 | 一句话 |
 |------|--------|
-| **架构** | 1.6T/48B MoE；LSA 三正交索引压 1M 上下文；N-gram 在「稀疏维」廉价扩参 135B；ScMoE 把计算-通信从重叠推到全并行 |
+| **架构** | 1.6T/48B MoE · **38 层**；注意力 = **MLA + LSA**（LSA=MLA 骨干 + DSA 式稀疏索引，index_topk 2048、SI 保 16 sink+1024 local、CLI 每 2 层复用）；N-gram 135B(16 路哈希)；**ScMoE 短路**：每层 2×(MLA+稠密FFN 12288) ∥ MoE(768 路由+128 零计算, top-12) 并行相加 |
 | **预训练** | >35T tokens；Muon 大规模（TP 适配 + DP 状态去冗 + 对称矩阵乘 kernel）；数百亿 token 原生 1M |
 | **后训练** | MOPD（**Multi-Teacher On-Policy Distillation**，多教师在线策略蒸馏）：训 Agent/Reasoning/Interaction 三组 teacher，对学生自身轨迹 on-policy 蒸馏融合 |
 | **AI Infra** | 6D 并行（5D + EMBP 专并行 N-gram）；superpod ≤48 机 + RoCE；推理 PD 分离（CPP+SP / KVP+EP128） |
-| **低精度** | **不**讲 FP8/FP4；主打国产 ASIC 上的**数值可靠性**（确定性算子 + 二叉树分段累加 + 精度对齐验证） |
+| **低精度** | **推理 FP8**（`LongCat-2.0-FP8` + bf16 KV）；训练精度未披露。国产 ASIC 侧主打**数值可靠性**（确定性算子 + 二叉树分段累加 + 精度对齐验证） |
 | **稳定性** | >35T 零回滚/无不可恢复 spike；bit-flip 检测 + 端到端自动容错 |
 | **效果** | 开源近前沿；SWE-bench Pro 59.5 > GPT-5.5，整体落后 Claude Opus 4.8 |
 
@@ -43,7 +43,7 @@ MTP 3-step (复用 LSA 索引)     (Agent/Reasoning/Interact) bit-flip 检测 + 
 
 | 模型 | 稀疏注意力 | 优化器 | 低精度路线 | 硬件 | Wiki |
 |------|-----------|--------|-----------|------|------|
-| **LongCat-2.0** | LSA (SI/CLI/HI) | Muon | 数值可靠性（非量化） | **国产 ASIC** | [[longcat_2_analysis]] |
+| **LongCat-2.0** | **MLA + LSA** (SI/CLI/HI) | Muon | 推理 FP8 + 数值可靠性 | **国产 ASIC** | [[longcat_2_analysis]] |
 | GLM-5 | DSA | Muon Split | INT4 QAT | 多家国产 GPU | [[glm_5_analysis]] |
 | DeepSeek-V3 | MLA | AdamW | **FP8 训练** | NVIDIA | [[deepseek_v3_analysis]] |
 | DeepSeek-V4 | CSA/HCA | Muon | FP4 QAT | NVIDIA | [[deepseek_v4_analysis]] |
@@ -51,19 +51,20 @@ MTP 3-step (复用 LSA 索引)     (Agent/Reasoning/Interact) bit-flip 检测 + 
 
 ---
 
-## 四、开源状态（截至 2026-07-03，已核实）
+## 四、开源状态（截至 2026-07-06，已核实——已翻篇）
 
-| 模型 | 权重/代码 | HF 下载 | 说明 |
-|------|-----------|---------|------|
-| **LongCat-2.0** | ❌ **未放出** | 0 | 仓库 public 但仅 `README` + `LICENSE(MIT)` + `figures`，**无 `config.json` / 无建模代码 / 无 safetensors**；README 标「weights coming soon」。GitHub 默认分支 `master` 仅 README，另有 `dev/longcat-preview` 分支（暂无代码）。 |
-| **LongCat-Flash-Chat**（2.0 架构前身） | ✅ 已开源 | 79K+ | 完整权重 + 建模代码；LongCat-Flash 架构即含 **ScMoE / zero-compute experts / MoE 主干**。另有 FP8 / Thinking / Omni / Lite / Prover 等变体全部 released。 |
+| 项 | 状态 | 说明 |
+|----|------|------|
+| **LongCat-2.0 权重 + config** | ✅ **已开源** | HF `meituan-longcat/LongCat-2.0`：`config.json` + **194 分片权重** + tokenizer；另有 **`LongCat-2.0-FP8`**。MIT。 |
+| **推理代码** | ✅ **SGLang** | GPU 经 SGLang [PR #30042](https://github.com/sgl-project/sglang/pull/30042)（`longcat_flash.py` / `nsa_indexer.py` / `n_gram_embedding.py`）；NPU 见 SGLang-FluentLLM。注意 **HI 未在 SGLang 实现**（for simplicity）。 |
+| **LongCat-Flash-Chat**（前身） | ✅ 已开源 | 79K+ 下载；ScMoE / zero-compute experts 的更早参考实现；N-gram Embedding 承袭自 **LongCat-Flash-Lite**。 |
 
-**结论**：**LongCat-2.0 本体目前没有开源的代码实现**（只有博客 + 文档桩，MIT 协议已声明、待权重放出）。但**架构前身 LongCat-Flash 完全开源**——要读/跑与 2.0 共享的部分（ScMoE、zero-compute experts、MoE 主干），`LongCat-Flash-Chat` 是当前唯一可得的参考实现；而 2.0 新增的 **LSA / N-gram Embedding / MOPD 尚无任何开源代码**。
+**结论（较 2026-07-03 已翻篇）**：**LongCat-2.0 已完整开源**（权重 + `config.json` + SGLang 推理码）。本页架构描述据此**从博客二手升级为代码一手**（§1.1 参数带 config 行号、§2 结构带 `文件:行`、图 1-3 据代码绘制）。注意：**建模 forward 代码在 SGLang**（HF 仓库只有 config + 权重 + tokenizer，无 `modeling_*.py`）。
 
 ## 五、知识缺口
 
-- **LongCat-Flash**（架构前身，含 zero-compute experts 动态激活机制）尚未摄入——待补技术报告。
-- **LongCat-2.0** 的层数/隐藏维/每层专家数/top-k、训练课程、是否 FP8、MOPD 具体 RL 算法**均未由官方博客披露**；权重与 config.json「coming soon」、正式技术报告未见。待 raw 源到位后回填精确基线（见 [[longcat_2_analysis]] §9）。
+- **LongCat-Flash / Flash-Lite**（架构前身；N-gram Embedding 即承袭自 Flash-Lite）尚未单独摄入——待补。
+- **LongCat-2.0 训练侧仍未披露**：学习率/batch/课程、数据配比、MOPD 蒸馏损失、**是否 FP8 训练**（推理已确认 FP8）——待正式技术报告。模型**结构硬参数已由 `config.json` 补全**（见 [[longcat_2_analysis]] §1.1/§9.2）。
 
 ---
 

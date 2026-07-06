@@ -1,18 +1,14 @@
 # LongCat-2.0：在国产 AI ASIC 上把 1.6T MoE 推到近前沿 Agentic Coding
 
-> **来源**: 美团 LongCat 团队官方 Tech Blog — Introducing LongCat-2.0
-> **URL**: https://longcat.chat/blog/longcat-2.0 · 模型卡 https://huggingface.co/meituan-longcat/LongCat-2.0 · 仓库 https://github.com/meituan-longcat/LongCat-2.0
-> **License**: MIT（权重「coming soon」，截至抓取日尚未放出）
-> **Baseline / 访问日期**: 2026-07-02
+> **来源**: 官方 Tech Blog + **已开源的推理代码 / 权重**（2026-07 陆续放出）
+> **URL**: 博客 https://longcat.chat/blog/longcat-2.0 · 模型 https://huggingface.co/meituan-longcat/LongCat-2.0（含 `config.json` + 194 分片权重）· GPU 推理 SGLang PR https://github.com/sgl-project/sglang/pull/30042
+> **License**: MIT（权重已放出；另有 `LongCat-2.0-FP8`）
+> **Baseline**: `config.json` @ HF main（2026-07-06 clone）+ SGLang PR #30042 @ `HarryWu99/sglang@c6c36d9`（分支 `feature/longcat_dsa`）；博客访问 2026-07-02
 > **维度**: Overview + 机制级深挖（架构 / 预训练 / 后训练 / AI Infra / 低精度与数值可靠性 / 稳定性 / 效果）
 
 > [!note] 来源与保真度说明（务必先读）
-> 官方博客是 **JS 渲染的 SPA**，直取只得到标题；本页内容经**渲染代理提取 + 三源交叉核对**（官方博客渲染文本、HF/GitHub `README.md`、DeepWiki 镜像），并与二手报道（VentureBeat / DeepWiki 摘要）对比去伪。因此：
-> - 明确**多源一致**的事实（参数量、tokens、LSA/N-gram/ScMoE/MOPD/6D 并行、评测表）按源陈述；
-> - 单源摘要或有分歧处**已标注**（如「加速器·小时 vs 天」）；
-> - 博客**未披露**的量（层数、隐藏维、每层专家数、top-k、学习率/batch、是否 FP8）一律标 **未披露**，绝不臆造；
-> - 与二手「常识」冲突处，**以官方源为准并显式指出**（见 §9）。
-> 待官方权重/config.json/技术报告放出后，应回头用 `file:line`/表号补精确基线。
+> **2026-07 更新**：官方已开源**推理代码（SGLang PR #30042）+ `config.json` + 权重**。因此本页**架构部分**已从「博客二手描述」升级为**代码/配置一手核对**（每条硬参数带 `config.json` 行号或 `文件名:行` 定位），并据此**订正了博客未言明或二手误传之处**（见 §2、§9）——**注意力实为 MLA**、**零计算专家确有其事（128 个 identity）**、层内为 **ScMoE 短路结构**。
+> 训练侧仍**未披露**（博客/代码均无）：学习率/batch/warmup、数据配比、MOPD 蒸馏损失、**训练精度**（推理已知 FP8）——在 §9.2 标注。
 
 ---
 
@@ -20,64 +16,61 @@
 
 **一句话主线**：LongCat-2.0 的核心赌注不是「换更便宜的注意力去堆更大模型」这一条常规路线，而是**证明「前沿规模训练 + 近前沿 Agentic Coding 能力」可以完全建立在国产 AI ASIC superpod 上**——为此它在架构（LSA 稀疏注意力 + N-gram 稀疏扩参 + ScMoE）、训练（Muon 大规模 + 原生 1M 长上下文）、Infra（6D 并行 + PD 分离 + 确定性算子）三层同时做了「为异构硬件量身」的工程，最终在 >35T tokens 预训练中**零回滚、无不可恢复 loss spike**。
 
-### 1.1 核心参数
+### 1.1 核心参数（据 released `config.json`，行号可核）
 
-| 参数 | 值 | 来源/备注 |
-|------|-----|----------|
-| 总参数量 | **1.6 T** | 博客/README 多源一致 |
-| 每 token 激活参数 | **~48 B** | 博客/README 一致（**未**披露动态区间，见 §9） |
-| 预训练 tokens | **> 35 T** | 博客/README 一致 |
-| 上下文长度 | **1 M tokens**（原生训练） | 数百亿 token 的 1M 上下文数据 |
-| N-gram Embedding | **135 B 参数, n=5** | 与 MoE 正交的稀疏扩参层 |
-| MTP | **3-step 模块** | speculative decoding |
-| 训练硬件 | **50K+ 国产 AI ASIC** | 全栈非 NVIDIA |
-| 训练算力 | **数百万 加速器·小时级** | HF README「millions of accelerator-hours」；博客渲染文本被摘为「accelerator-days」，存 24× 分歧（见 §9） |
-| 层数 / 隐藏维 / 每层专家数 / top-k | **未披露** | 博客未给；待权重/config |
-| 对标模型 | Claude Opus 4.6/4.7/4.8 · GPT-5.5 · Gemini 3.1 Pro | 评测表列（§8） |
+| 参数 | 值 | 定位 |
+|------|-----|------|
+| 架构类名 | `LongcatCausalLM` | config.json:2-3 |
+| 总参数 / 每 token 激活 | **1.6 T / ~48 B**（动态，见下） | 博客 / README |
+| 层数 num_layers | **38** | config.json:11 |
+| 隐藏维 hidden_size | **8,192** | config.json:8 |
+| 注意力 | **MLA**（Multi-head Latent Attention） | config.json:37,41 |
+| 注意力头数 | **64** | config.json:12 |
+| MLA 维度 | q_lora **1,536** · kv_lora **512** · qk_nope **128** + qk_rope **64**（=192）· v_head **128** | config.json:13-17 |
+| 稠密 FFN 中间维 | **12,288**（SiLU/SwiGLU） | config.json:9 · longcat_flash.py:160 |
+| 路由专家 / 零计算专家 | **768 routed** + **128 零计算(identity)** | config.json:21,38-39 |
+| 每 token top-k | **12**（在 768+128=896 中选） | config.json:40 · longcat_flash.py:182 |
+| 专家 FFN 中间维 / routed_scaling | **2,048** / **9** | config.json:10,20 |
+| 词表 vocab_size | **163,840** | config.json:7 |
+| 归一化 / 激活 | **RMSNorm**(eps 1e-5) / **SiLU** | config.json:23 · longcat_flash.py:160 |
+| 位置编码 | **RoPE + YaRN**（deepseek_yarn, factor 120, θ=1e6, 原始 8192） | config.json:27-36 |
+| max_position_embeddings | **262,144**（config 值；训练达 **1M**，靠 YaRN 外推） | config.json:22 |
+| N-gram Embedding | **135 B**；n=5(oe_neighbor)×k=4(oe_split)=**16 路哈希**；空间≈100× | config.json:44-46 |
+| LSA 索引器 | index_topk **2,048** · 32 heads×dim 128 · 恒保留 sink **16** + local **1,024** · cli_factor **2** | config.json:52-59 |
+| MTP | **3-step**（nextn，投机解码） | config.json:48 |
+| 预训练 tokens / 硬件 | **>35 T** / **50K+ 国产 AI ASIC** | 博客 / README |
+| 对标模型 | Claude Opus 4.6/4.7/4.8 · GPT-5.5 · Gemini 3.1 Pro | 评测表（§8） |
 
-### 1.2 架构总览（ASCII，避免 mermaid 定界符风险）
+> **激活参数为何「动态」**：每 token 从 768 路由 + 128 零计算专家里 top-12；命中零计算(identity)专家的部分**不做 FFN**，故实际激活的专家 FFN 数随 token 变化，~48B 是均值（zero-compute experts 机制，见 §2.3）。
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                 LongCat-2.0  (1.6T total / ~48B act)          │
-├──────────────────────────────────────────────────────────────┤
-│  Input tokens                                                 │
-│    │                                                          │
-│    ├── Token Embedding                                        │
-│    └── N-gram Embedding (135B, n=5)  ← 与 MoE 正交的稀疏维扩参 │
-│    │        · embedding 空间约扩 100×                          │
-│    │        · 占总参数预算 < 10%                               │
-│    ▼                                                          │
-│  Transformer Block × N   (N 未披露)                           │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  LongCat Sparse Attention (LSA)                        │   │
-│  │   ├─ SI  Streaming-aware Indexing  (连续访问+随机选择)  │   │
-│  │   ├─ CLI Cross-Layer Indexing      (跨相邻层复用索引)   │   │
-│  │   └─ HI  Hierarchical Indexing     (块级粗筛→token细选) │   │
-│  └──────────────────────────────────────────────────────┘   │
-│    │                                                          │
-│    ▼                                                          │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  ScMoE  (per-core 显式控制 → dense/MoE 分支全并行)      │   │
-│  │   · 从 LongCat-Flash 的「计算-通信重叠」再进一步        │   │
-│  └──────────────────────────────────────────────────────┘   │
-│    │                                                          │
-│    ▼                                                          │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  MTP (3-step)  → speculative decoding                  │   │
-│  │   · CLI 延伸：第 2/3 步复用第 1 步的注意力索引          │   │
-│  └──────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────┘
+### 1.2 完整结构与前向数据流（代码级，配图）
 
-    训练/部署底座：国产 AI ASIC superpod（单体 ≤48 机 all-to-all）
-                   6D 并行 TP/CP/EP/DP/PP + EMBP
-```
+> 下三张图据 released `config.json` 的维度 + SGLang 推理代码（`longcat_flash.py` / `n_gram_embedding.py` / `nsa_indexer.py`，PR #30042）绘制，把每一步数据流画全。SVG 源见 `.html2md/figs/longcat2_architecture.html`。
+
+**图 1 — 整体前向 + 单层 ScMoE 放大**（tokens → N-gram 嵌入 → 38× ScMoE 解码层 → RMSNorm → LM Head，旁挂 MTP×3）：
+
+![LongCat-2.0 完整模型结构与前向数据流：左宏观层栈、右单个 ScMoE 解码层放大——稠密链 attn0→稠密FFN→attn1→稠密FFN 与 MoE 短路分支(768 路由 + 128 零计算专家, top-12)并行、最后相加](assets/longcat2_arch_fig1.png)
+
+**图 2 — N-gram Embedding 数据流**：
+
+![N-gram Embedding 数据流：base 词嵌入 + 16 路(n=2..5 × k=4)哈希查表嵌入(每路 512 维投影回 8192)，共 17 项取平均得最终 8192 维嵌入](assets/longcat2_arch_fig2.png)
+
+**图 3 — MLA + LSA 稀疏注意力数据流**：
+
+![MLA + LSA 数据流：MLA 低秩压缩(q_lora 1536 / kv_lora 512+rope64，KV cache 每 token 576 维) + LSA 轻量索引器打分 → SI 恒保留 16 sink + 1024 local、top-2048 选择 → 稀疏注意力 → o_proj](assets/longcat2_arch_fig3.png)
+
+**一句话读结构**：`LongcatCausalLM` = **N-gram 嵌入 → 38 个 ScMoE 解码层 → RMSNorm → LM Head**（`longcat_flash.py`）。每个解码层**不是**「注意力→MoE」的常规块，而是 **LongCat-Flash 的 ScMoE 短路**：一条**稠密链** `MLA-attn0 → 稠密FFN → MLA-attn1 → 稠密FFN` 与一条 **MoE 短路分支**（在 attn0 之后**克隆输入**、并行计算，最后 `dense_out + moe_out` 相加，`longcat_flash.py:449-460`）——让 MoE 的 all-to-all 通信被稠密链计算掩盖。注意力是 **MLA + LSA 稀疏索引器**（DeepSeek 血缘）。
 
 ---
 
 ## 二、模型架构
 
-架构自陈**承袭 LongCat-Flash 并「进一步推参数效率」**（措辞为架构继承，而非从 checkpoint 续训；隐含从头预训练）。三个 headline 创新如下。
+架构自陈**承袭 LongCat-Flash 并「进一步推参数效率」**（措辞为架构继承，隐含从头预训练）。**代码开源后可坐实**：LongCat-2.0 复用 SGLang 的 `longcat_flash.py` 模型类（PR「support LongCat2.0」在其上改），注意力走 `DeepseekV2AttentionMLA`——即 **DeepSeek(MLA+MoE) 血缘 + LongCat 特色（ScMoE 短路 / 零计算专家 / N-gram 嵌入 / LSA 稀疏索引）**。
+
+> [!important] 代码开源后对架构描述的三处关键订正（源：`config.json` + SGLang `longcat_flash.py`）
+> 1. **注意力是 MLA**（`attention_method:"MLA"`, config.json:37）——LSA 不是全新注意力，而是**在 MLA 骨干上叠 DSA 式稀疏索引器**（DeepSeek-V3.2 血缘），见 §2.1「代码补充」。
+> 2. **层结构是 ScMoE 短路**（非「注意力→MoE」常规块）：每层 2×(MLA + 稠密 FFN) 稠密链 ∥ 1×MoE 短路分支并行相加（`longcat_flash.py:419-461`），见 §2.3、图 1。
+> 3. **零计算专家确有其事**：`zero_expert_num:128, zero_expert_type:"identity"`（config.json:38-39）——768 路由 + 128 恒等零专家、top-12、激活参数随 token 动态。**订正**本页早期（博客只字未提时）对「动态激活/zero-compute」的保留意见，见 §9.1。
 
 ### 2.1 LongCat Sparse Attention (LSA)：三种正交索引压 1M 上下文
 
@@ -119,6 +112,16 @@
 - **为什么不可能是重算**：若每层都重算 indexer，CLI 就没有意义（博客原话「amortize indexing cost」）；MTP 那段也明确用 **"reusing the index set generated in step 1"**——复用的就是**索引集合**。
 - **代价/前提**：跨层直接复用索引，要求「相邻层注意力显著性稳定」成立，故训练时用 **cross-layer distillation** 把 reuse layer 对齐到「用 owner 的索引也不掉点」。这是它的代价——多一条训练约束，换推理时把索引成本摊到多层。
 
+#### 代码补充：LSA = MLA 骨干 + DSA 式索引器（据 `config.json` + `nsa_indexer.py`）
+
+上面的官方图讲「三索引」的**设计**；released 代码进一步坐实**实现与数字**：
+
+- **骨干是 MLA**：`attention_method:"MLA"`（config.json:37），低秩压缩 q_lora 1,536 / kv_lora 512(+rope 64)，**KV cache 每 token 仅存 576 维**——与 DeepSeek MLA 同构（数据流见图 3）。
+- **索引器规格**：`index_n_heads 32 × index_head_dim 128`，为每个 query 打分选 **index_topk = 2,048** 个 KV（config.json:52-54）。
+- **SI 的「连续半」有确切数字**：`nsa_indexer.py` 的 `_mask_init_and_local_tokens`（:493, :539-559）**强制保留 `index_init_tokens=16`（sink）+ `index_local_tokens=1,024`（近窗）**，再 top-k 补满 2,048——**1,024 / 2,048 = 50%**，正好印证官方图「Contiguous KV ~50%」，另 ~1,008 为动态选。这把 §2.1 Q1 的「streaming token」坐实为「**16 sink + 1,024 local 的连续段**」。
+- **CLI 的「每几层复用」有确切数字**：`cli_factor = 2`（config.json:56）——**每 2 层复用一次**索引；`dsa_mtp_cli:true`，3 个 MTP 草稿步共用一次。`longcat_flash.py` 把 `prev_topk_indices` 沿层线程传递（:426, :456）即此机制——**印证 Q4：复用的是索引集合（缓存），非重算**。
+- **HI 未在推理实现**：README 明确「Hierarchical indexing is not supported for simplicity」（SGLang GPU 推理）——HI 是 training-free、仅用于超长任务的两级粗筛，推理暂略（故 §2.1 表中 HI 的「块级→token 级」仅在训练/超长任务生效）。
+
 ### 2.2 N-gram Embedding：135B 参数、与 MoE 正交的「稀疏维」扩参
 
 ![N-gram Embedding 总览：当前 token 处取 5/4/3/2-gram（各自 Hash+Embedding+Projection、多张哈希表），与 Base Embedding 相加得最终 Embedding Vector](assets/ngram_embedding_overview.png)
@@ -135,11 +138,25 @@
 - **证据/收益**：博客称其**提升参数效率、并降低大 batch 解码时的 I/O**——把参数从专家挪到 N-gram Embedding，大 batch 解码的显存 I/O 下降、生成加速（查表命中率高、访存规整）。
 - **代价/为什么不选替代**：不是简单加大 vocab embedding（会线性放大主 embedding 访存），而是 n-gram 组合稀疏查表；代价是需要额外的 N-gram 索引结构与**专门的并行维（EMBP，见 §5）** 来分片这 135B。
 
-### 2.3 ScMoE：从「重叠」到「全并行」的计算-通信
+**代码补充（`n_gram_embedding.py:134-175`）**：坐实并微调上文——(1) 路数 = (n−1)×k = (5−1)×4 = **16 路**（n=2..5 每阶 4 个 hash split，config `oe_neighbor_num 5 / oe_split_num 4`）；(2) 每路先**多项式滚动哈希**成 id（`compute_n_gram_ids`，权重 = vocabᵟ mod m）→ 查 `oe_embeder`（每路 512 维）→ `oe_projection` 投回 8,192；(3) 与 base 词嵌入**取平均（mean，非「逐一相加」）** 得最终嵌入（:175）——官方图画的是求和汇聚，代码是 mean，等价于缩放后的和。135B 参数主要在 `oe_embeder` 哈希表（每 (n,k) 表 ≈ m 项，m≈vocab×100）。数据流见图 2。
 
-**机制**：ScMoE 承袭 LongCat-Flash 的计算-通信重叠思路，但通过 **per-core（每计算核）显式控制**，把 **dense 分支与 MoE 分支从「重叠执行」推进到「完全并行执行」**。
+### 2.3 ScMoE 短路结构 + 零计算专家（代码级）
 
-> **为什么关键**：MoE 的 all-to-all（分发/回收 token）是长延迟通信；若 dense 与 MoE 只是「部分重叠」，通信仍会拖尾。ScMoE 用显式 per-core 调度让两分支真正并行跑满，是 §5 中「+35% 训练吞吐」的架构侧来源之一。（EP 的 all-to-all 原理见 [[expert_parallel_analysis]] / [[megatron_ep_analysis]]。）
+**结构（`longcat_flash.py:306-461`）**：这是 LongCat-2.0 与常规 MoE Transformer 最不同的一处。每个解码层 = **2 个 MLA 注意力 + 2 个稠密 FFN + 1 个 MoE**，接成 **ScMoE 短路**（数据流见图 1 右）：
+
+1. `attn0`（RMSNorm→MLA→⊕残差）产出中间态 h1（:429-443）；
+2. **克隆** h1 → 送入 **MoE 短路分支**（:449-451），与稠密链**并行**；
+3. **稠密链**：`mlp0 → attn1 → mlp1`（`forward_mlp`, :463-500）；
+4. **相加** `hidden = moe_out + dense_out`（:460）。
+
+> **为什么这么接（ScMoE 的本质）**：MoE 的 all-to-all（分发/回收 token）是长延迟通信。把 MoE 作为**短路分支**与稠密链（mlp0→attn1→mlp1）**并行**，其通信就被稠密计算**掩盖**——这就是博客「per-core 显式控制 → dense/MoE 全并行」的落地，也是 §5「+35% 吞吐」的架构侧来源。承袭 LongCat-Flash 的 Shortcut-connected MoE。（EP 的 all-to-all 原理见 [[expert_parallel_analysis]] / [[megatron_ep_analysis]]。）
+
+**MoE 内部（`LongcatFlashMoE`, :201-293）**：
+- **Router 对 768+128=896 个专家打分**（`n_routed_experts + zero_expert_num`, :182），取 **top-12**（:245-251）。
+- 命中**真实路由专家**的做 FFN（中间维 2,048）；命中 **128 个 identity 零计算专家**的走 `zero_experts_compute_triton` **恒等直通、不做 FFN**（:274-281）——即 **zero-compute experts**：每 token 实际做 FFN 的专家数 = 12 − 命中零专家数，**动态**。
+- 输出 `× routed_scaling_factor(9)` 再加零专家结果（:285-288）。
+
+> 这解决了本页早期的悬案：博客只提「训练期 padding→zero-expert」时，我曾按源忠实保留「推理动态激活未证实」的态度；**代码证明 zero-compute experts 是常设机制**（config `zero_expert_num:128`），故 ~48B 激活是**动态均值**，二手报道的「33–56B 区间」方向可信（见 §9.1 订正）。
 
 ### 2.4 MTP（Multi-Token Prediction）：3-step + 复用 LSA 索引
 
@@ -252,7 +269,9 @@
 ## 六、低精度与数值可靠性（重要的源忠实澄清）
 
 > [!contradiction] 「低精度」在 LongCat-2.0 语境下 ≠ FP8/FP4 量化训练
-> 用户常把「低精度」等同于 DeepSeek-V3 的 **FP8 训练**（见 [[low_precision_training_analysis]] / [[deepseek_v3_analysis]]）或 GLM-5 的 **INT4 QAT**（见 [[glm_5_analysis]]）。但**官方博客通篇未提 FP8/FP4/BF16 的训练或推理量化**。LongCat-2.0 的「精度」叙事完全落在**另一侧面：国产 ASIC 上的数值可靠性 / 可复现性**。这是一个诚实且重要的区分——若权重/技术报告后续披露 FP8，再补正。
+> 用户常把「低精度」等同于 DeepSeek-V3 的 **FP8 训练**（见 [[low_precision_training_analysis]] / [[deepseek_v3_analysis]]）或 GLM-5 的 **INT4 QAT**（见 [[glm_5_analysis]]）。**官方博客**通篇未提 FP8/FP4/BF16 的训练或推理量化，其「精度」叙事落在**另一侧面：国产 ASIC 上的数值可靠性 / 可复现性**。
+>
+> **✅ 2026-07 代码开源后补正**：**推理确有 FP8**——官方另发 `LongCat-2.0-FP8` 权重、SGLang 以 FP8 权重 + `--kv-cache-dtype bfloat16` 部署（README），`longcat_flash.py` 内有成套 FP8（e4m3fn / block-quant / DeepGEMM）加载与反量化逻辑（:697-808）。但**训练是否用 FP8 仍未披露**——博客「精度」叙事依旧是下面这套数值可靠性，而非低比特训练。
 
 在国产 ASIC 上「让数值可信」是本模型稳定训练的前提，具体手段（均归在 Determinism & Reliability）：
 
@@ -317,22 +336,27 @@
 ### 9.1 与二手「常识」冲突处（以官方源为准）
 
 > [!contradiction] 「动态激活 33–56B / zero-compute experts」——博客未如此陈述
-> 部分二手报道（如媒体解读）称 LongCat-2.0「**动态激活 33B–56B 参数 / 用 zero-compute experts 跳过计算**」。核对官方博客：**激活参数就是 ~48B**，博客**未披露任何推理期动态激活区间**；提到 zero-expert 之处仅是**训练期把 padding token 路由到 zero-expert 以省显存**，**不是** LongCat-Flash 式的推理期动态算力分配机制。判断：二手报道疑似**把 LongCat-Flash 的 zero-compute experts（其激活确有动态区间）张冠李戴到 2.0**。本页只采信博客的「~48B 激活」。
+> 部分二手报道（如媒体解读）称 LongCat-2.0「**动态激活 33B–56B 参数 / 用 zero-compute experts 跳过计算**」。核对官方博客（当时）：**激活参数就是 ~48B**，博客**未披露任何推理期动态激活区间**。当时按源忠实存疑。
+>
+> **✅ 2026-07 代码定案（源升级：config > 博客沉默）**：released `config.json` 有 `zero_expert_num:128, zero_expert_type:"identity"`（:38-39），`longcat_flash.py` 的 MoE 用 `zero_experts_compute_triton` 走恒等直通（:274-281）——**zero-compute experts 是 LongCat-2.0 的常设机制**（768 路由 + 128 零专家、top-12）。故**激活参数确实随 token 动态**，~48B 是均值，二手报道的「33–56B 区间」**方向可信**。详见 §2.3。
+
+> [!contradiction] 注意力实为 MLA（博客未言明，代码定案）
+> 博客只讲「LSA 稀疏注意力」，从未点明骨干注意力类型，易让人误以为 LSA 是一种全新注意力。`config.json` 定案：`attention_method:"MLA", use_mla:1`（:37,41），MLA 低秩维度俱全（q_lora 1536 / kv_lora 512 / nope128+rope64 / v128）——**LSA = MLA 骨干 + DSA 式稀疏索引器**，DeepSeek-V3.2 血缘。见 §2.1 代码补充。
 
 > [!contradiction] 训练算力单位：accelerator-hours vs accelerator-days
 > HF/GitHub `README.md` 写「millions of **accelerator-hours**」；官方博客经渲染代理提取后被摘为「millions of **accelerator-days**」，二者差 24×。用 `6·N_act·D ≈ 6×48e9×35e12 ≈ 1e25` FLOPs、除以「50K ASIC × 合理有效算力」粗算，**「数百万加速器·小时」量级自洽**，「天」高约一个数量级。本页取 README 口径（**加速器·小时**），待技术报告确认。
 
-### 9.2 博客未披露、需后续补的量
+### 9.2 已披露 / 仍未披露（2026-07 代码开源后更新）
 
-> **已做完整大纲审计（2026-07-03）**：逐节比对博客全部章节（Introduction / Architecture / Scalable Infrastructure / Learning from Multiple Teachers / Capability Demonstration / Evaluations）后确认，下列项目**在正文任何位置都未出现**，非本页漏读。
+> **✅ 2026-07 代码开源**：`config.json` + 权重（194 分片）+ SGLang 推理码放出后，**模型结构类的硬参数已全部可得**——层数 38 / 隐藏维 8192 / 头数 64 / MLA 维度 / 专家 768+128 / top-12 / 词表 163840 / 激活 SiLU / 归一化 RMSNorm / 位置编码 RoPE-YaRN / N-gram 与 LSA 索引器参数等，**均已回填 §1.1 表（带 config.json 行号）**。原「未披露」清单中的**结构项全部划除**。
 
-- 模型细节：**层数、隐藏维、注意力头数/头维、每层 routed/shared 专家数、top-k、专家中间维**；
-- 结构选型（大纲审计确认未提）：**激活函数、归一化类型、位置编码（RoPE/NoPE）、词表大小、tokenizer**；
-- 训练细节：**学习率/batch/warmup、上下文扩展的分阶段课程、预训练是否分 stage、数据配比（代码/数学/多语/网页占比）**；
-- 精度：**是否使用 FP8/FP4/BF16 混合精度训练**（博客只讲数值可靠性，未讲低比特量化）；
-- 后训练：MOPD 已知为**多教师 on-policy 蒸馏**（§4），但**蒸馏损失形式、是否含显式 RL/奖励设计、各专家群训练数据量**未披露；
-- 推理：**吞吐（tokens/s）/ MFU / 成本**等数字未披露；
-- 权重与 config.json（「coming soon」）、正式技术报告/arXiv（截至 2026-07-03 未见）。**已核实**：HF/GitHub 仓库 `main` 分支当前仅 `README.md`(2.86 kB) + `figures/` + `LICENSE`，**无 `config.json` / 无建模代码**——故上述模型细节的硬数字目前从任何官方渠道都不可得，非本页遗漏；待权重放出即可从 config 一次性补全。
+**仍未披露**（训练侧，博客/代码/config 均无）：
+- 训练超参：**学习率 / batch / warmup / 上下文扩展分阶段课程 / 预训练是否分 stage**；
+- 数据：**配比（代码/数学/多语/网页占比）、清洗与配方**；
+- **训练精度**：是否 FP8 训练（**推理已确认 FP8**，见 §6；训练侧未表态）；
+- 后训练：MOPD 的**蒸馏损失形式、是否含显式 RL/奖励设计、各专家群训练数据量**；
+- 推理：官方**吞吐（tokens/s）/ MFU / 成本**数字；
+- 正式**技术报告 / arXiv**（截至 2026-07-06 未见；架构细节现由代码替代，训练细节待报告）。
 
 > 按本库 Query Workflow：待 raw 源（权重/config/技术报告）到位后，回到源用 `file:line`/表号把上述项补成精确基线，并更新本页头 Baseline。
 
