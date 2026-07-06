@@ -1,7 +1,8 @@
 # Unbacked SymInt 深度分析：数据相关 Shape 的处理机制
 
 > 基于 PyTorch 主分支源码与官方文档分析
-> 最后更新: 2026-05-22
+> 最后更新: 2026-07-06（原 2026-05-22）
+> 2026-07-06 增补 [§10](#10-2025-2026-进展从-guard_size_oblivious-到显式-size-oblivious-推理原语)：据 pinned pytorch checkout 核验 size-oblivious 推理原语族（全部定位符指向 `torch/fx/experimental/symbolic_shapes.py`）
 
 ---
 
@@ -217,7 +218,13 @@ if n > 4:             # 现在可以：编译器取 True 分支
 | `torch.fx.experimental.symbolic_shapes.constrain_range(x, min, max)` | 显式设置值域 `[min, max]` |
 | `torch._dynamo.decorators.mark_unbacked(tensor, dim)` | 手动将某维度标记为 unbacked |
 | `torch.fx.experimental.symbolic_shapes.statically_known_true(expr)` | 不加 guard 地测试一个条件是否静态已知为真 |
+| `torch.fx.experimental.symbolic_shapes.statically_known_false(expr)` | 不加 guard 地测试是否静态已知为假 |
 | `torch.fx.experimental.symbolic_shapes.guard_or_false(expr)` | 若可 guard 则加 guard，否则返回 False（不崩溃） |
+| `torch.fx.experimental.symbolic_shapes.guard_or_true(expr)` | 与 `guard_or_false` 对偶：判不出时返回 True（不崩溃） |
+| `torch.fx.experimental.symbolic_shapes.optimization_hint(x, fallback)` | 把符号估成具体 int，**仅供优化决策**（选 kernel／估显存）；不加 guard、不影响正确性 |
+| `torch.fx.experimental.symbolic_shapes.sym_and(x, *ys)` / `sym_or(...)` | 组合符号布尔而不做 bool 求值（避免提前触发数据相关判断） |
+
+> 上面 `guard_or_*` / `statically_known_*` / `optimization_hint` / `sym_and·sym_or` 同属一族「显式 size-oblivious 推理原语」，是 2025–2026 取代旧 `guard_size_oblivious` 的核心进展 —— 语义、选型与迁移规模见 [§10](#10-2025-2026-进展从-guard_size_oblivious-到显式-size-oblivious-推理原语)。
 
 ---
 
@@ -287,6 +294,69 @@ return torch.empty((u0, 64))
 Wrapper 体现 │ assert_size_stride(arg, ...)   │ u0 = output.size(dim) [先读取]
              │ 在 wrapper 开头执行             │ torch._check(u0>0)    [后断言]
 ```
+
+---
+
+## 10. 2025-2026 进展：从 `guard_size_oblivious` 到显式 size-oblivious 推理原语
+
+> 这是本主题近一年最主要的社区进展：unbacked 的「判不出该走哪条路」问题，从一个**隐式全局假设**演进为**一族语义显式、可开放给用户代码的原语**。
+
+### 10.1 旧机制：`guard_size_oblivious` 的隐式假设
+
+`guard_size_oblivious(expr)`（`symbolic_shapes.py:534`）是早期处理「框架内部要对 size 做 0/1 判断、但 size 是 unbacked」的手段。它对 size-like unbacked 符号**临时把值域设为 `[2, Inf]`**——即「假设这个 size 既不等于 0 也不等于 1」——让 `if size == 0` / `if size == 1` 这类判断在编译期能走通，而不抛 `GuardOnDataDependentSymNode`。
+
+问题在于它是一种**隐式、全局**的假设：调用点从字面看不出它悄悄改写了值域，语义也偏离常规 PyTorch（其 docstring 明说 *"we may diverge in behavior"*），既难推理又容易埋 bug（典型如 upper bound < 2 的 size-like 符号会与这套假设冲突）。
+
+### 10.2 新机制：一族「显式声明默认行为」的原语
+
+2025 年起，PyTorch 团队系统性地把框架内部的 `guard_size_oblivious` 调用点替换为一组**语义显式**的原语，并将它们开放给用户代码。核心区别：不再偷偷改值域，而是让调用点**明说「判不出时走哪条路」**。（下表定位符均在 `symbolic_shapes.py`，且均已在该文件 `__all__` 中导出为公共 API。）
+
+| 原语 | 源码 | 语义 | 会不会加 guard | 数据相关判不出时 |
+|------|------|------|----------------|-----------------|
+| `guard_or_false(a)` | `:1573` | 能判就判，判不出回落 False | 可能（对 backed 符号） | 返回 False，不报错 |
+| `guard_or_true(a)` | `:1580` | 能判就判，判不出回落 True | 可能（对 backed 符号） | 返回 True，不报错 |
+| `statically_known_true(x)` | `:1648` | 仅当**静态可证为真**才返 True | **从不加 guard** | 返回 False，不报错 |
+| `statically_known_false(x)` | `:1621` | 仅当**静态可证为假**才返 True | **从不加 guard** | 返回 False，不报错 |
+| `optimization_hint(a, fallback)` | `:155` | 把符号估成具体 int，仅供优化决策 | **从不加 guard** | 用 fallback／估计值 |
+| `sym_and(x, *ys)` / `sym_or(...)` | `:1672` / `:1698` | 组合符号布尔而不做 bool 求值 | 否 | 不提前触发判断 |
+
+三档的分工：
+
+- **`statically_known_*`**：最保守。只信「编译期能证明」的，绝不加新 guard、绝不重编译、绝不报错——判不出就当 False。适合**优化短路**（判不出就走通用慢路径也无所谓）。
+- **`guard_or_false/true`**：对 backed 符号仍会加 guard（因此可能重编译），但对 unbacked「判不出」时不报错而是**回落到你指定的布尔**。适合「有一个安全默认分支」的场景，通常配合 `torch._check` 给通用路径兜底。
+- **`optimization_hint`**：只影响**性能**不影响**正确性**（如选快慢 kernel、估显存），要求两条分支都对。
+
+### 10.3 迁移的规模（据 pinned checkout 实测）
+
+在当前 checkout 的 `torch/` 目录下按符号名统计：
+
+- `guard_or_false` / `guard_or_true`：**约 366 处调用，横跨 44 个文件** —— 已是 decompositions、`_refs`、`_meta_registrations`、Inductor `lowering`/`ir`、AOTAutograd，以及 **DTensor（`torch/distributed/tensor/`，仅 `_view_ops.py` 就有 ~38 处）** 的主流写法。
+- `guard_size_oblivious`：收缩到**约 18 处、9 个文件**，多为定义、C++/Dynamo 桥接与历史残留。
+
+数量级的反转（366 vs 18）说明：**「显式 `guard_or_*`」已经成为框架内部处理 unbacked 判断的默认范式，`guard_size_oblivious` 沦为残留。** DTensor 侧的密集使用也正对应社区长期痛点「DTensor + dynamic shape 支持差」——团队正用这族原语把 DTensor 逐步变得 unbacked-safe。
+
+### 10.4 选型决策
+
+```mermaid
+flowchart TD
+    Start["对含 unbacked 的条件求值"] --> Q1{要影响计算正确性吗}
+    Q1 -->|否 仅用于选 kernel 或估显存| OH["optimization_hint 不加 guard 只给估计值"]
+    Q1 -->|是| Q2{此后是否长期依赖该结论}
+    Q2 -->|是 需精确且要向后传播| CHK["torch._check 注入事实 加运行时验证"]
+    Q2 -->|否 只需当下有安全默认分支| Q3{能否静态证明}
+    Q3 -->|仅静态可证才要 True| SK["statically_known_true 判不出返回 False 永不报错"]
+    Q3 -->|判不出就走给定默认分支| GOF["guard_or_false 或 guard_or_true 回落到默认布尔"]
+```
+
+### 10.5 「是否必须解决 unbacked」——一句话取舍
+
+unbacked 只有在**既用了数据相关 op、又要求整图不断**时才是「必须解决」的问题：
+
+- **不碰** `nonzero` / `item` / `masked_select` / `unique` 等 op → 永远见不到 unbacked，无需理会。
+- **碰了但允许 graph break**（默认 `fullgraph=False`）→ **不必解决**：数据相关那段自动断图、回退 eager，其余照常编译；代价是**性能**（那段没融合、可能挡住 CUDA Graph），不是**正确性**。
+- **要求** `fullgraph=True` / `torch.export` / AOTInductor / 整图 CUDA Graph，**且路径穿过数据相关 op** → **此时才必须**：用 §5–§8 的 `torch._check` 家族 + 本节的 `guard_or_*` 把 unbacked「喂」给编译器。
+
+即：**graph break 是合法逃生口；只有在追求全图捕获／导出／极致性能时，才需要真正驯服 unbacked。**
 
 ---
 

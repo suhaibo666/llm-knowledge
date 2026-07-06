@@ -4,6 +4,20 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-06: [[unbacked_symint_analysis]] 增补 §10 —— unbacked 处理的最新进展（`guard_size_oblivious` → 显式 size-oblivious 原语族）
+
+**Type**: Update（应用户「根据最新技术更新知识库」。源忠实——全部新断言据 pinned pytorch checkout `torch/fx/experimental/symbolic_shapes.py` 逐个核验签名/行号/docstring/`__all__` 导出，只扩展不删除）
+
+- **§7 API 表补 5 条**（均带全路径）：`statically_known_false`、`guard_or_true`、`optimization_hint(x, fallback)`、`sym_and`/`sym_or`；并加一行指针指向 §10。
+- **新增 §10「从 `guard_size_oblivious` 到显式 size-oblivious 推理原语」**：
+  - **旧机制** `guard_size_oblivious`（`:534`）——对 size-like unbacked 隐式临时设值域 `[2,Inf]`，docstring 自承 "we may diverge in behavior"，隐式/难推理。
+  - **新原语族**（逐个核验行号）：`guard_or_false`(`:1573`)/`guard_or_true`(`:1580`)/`statically_known_true`(`:1648`)/`statically_known_false`(`:1621`)/`optimization_hint`(`:155`)/`sym_and`(`:1672`)/`sym_or`(`:1698`)，均在 `__all__` 导出；三档分工（静态保守 / 有默认分支 / 仅优化不影响正确性）。
+  - **迁移规模实测**（当前 checkout `torch/`）：`guard_or_false|true` **~366 处/44 文件**（decomp、`_refs`、`_meta_registrations`、Inductor `lowering/ir`、**DTensor** `_view_ops.py` 单文件 ~38 处）vs `guard_size_oblivious` **~18 处/9 文件** —— 数量级反转，佐证「显式 guard_or_* 已成默认范式、旧接口沦为残留」，并呼应 DTensor+dynamic shape 正被改造为 unbacked-safe。
+  - **选型决策 mermaid 图** + 「是否必须解决 unbacked」取舍（graph break 是合法逃生口；仅 `fullgraph=True`/export/AOTInductor/整图 CUDA Graph 穿过数据相关 op 时才必须）。
+- **校验**：新 API 的签名/行号/`__all__` 全部对 pinned checkout 源码核对；mermaid 块按本库规范逐条自查（首行 `flowchart TD`、英文 id、矩形/菱形标签无裸 `[]()`、连线标签无引号/括号/`|`）通过；页头「最后更新」改 2026-07-06 并注明增补范围与定位符基准；§10 内部锚点因 heading 含 en-dash 会被 GitHub slugger 吞成 `20252026`，已改 heading 为 ASCII 连字符使 `#...2025-2026...` 锚点可解析。页仍 <500 行。
+
+---
+
 ## 2026-07-06: [[07_training_reliability/index]] 簇补 7 张机制图示（提升可读性）
 
 **Type**: Enrich（应用户「三类文章基于原始 technical report 补图示、提升可读性」。据原文机制 + 其引用的技术报告绘制）
