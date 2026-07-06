@@ -366,6 +366,7 @@
 
 **同域模型（对比阅读）**：
 - [[meituan_longcat/index]] — 美团 LongCat 家族总览（本页所属家族入口）
+- [[longcat_flash_analysis]] — **LongCat-Flash**（本模型的架构前身：ScMoE 短路 + 零计算专家在此首创；2.0 = Flash + LSA/N-gram + 国产 ASIC）
 - [[glm_5_analysis]] — GLM-5：MoE + Muon Split + DSA 稀疏注意力 + INT4 QAT（最相近的对照）
 - [[kimi_k2_analysis]] — Kimi K2：1T MoE + MuonClip + Agentic RL
 - [[deepseek_v3_analysis]] — FP8 训练 · MTP · 671B MoE（低精度/MTP 对照）

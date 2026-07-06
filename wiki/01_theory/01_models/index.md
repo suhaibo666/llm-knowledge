@@ -55,6 +55,7 @@
 | 页面 | 核心主题 |
 |------|---------|
 | [[meituan_longcat/index]] | 美团 LongCat 技术路线总览 |
+| [[longcat_flash_analysis]] | LongCat-Flash 560B/27B MoE, ScMoE 短路 + 零计算专家(首创), MLA, H800 |
 | [[longcat_2_analysis]] | LongCat-2.0 1.6T/48B MoE, LSA 稀疏注意力, N-gram Embedding, ScMoE, MOPD, 国产 ASIC 全栈 |
 
 ---

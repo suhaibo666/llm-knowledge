@@ -4,6 +4,25 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-06: 新建 [[longcat_flash_analysis]] —— 摄入 LongCat-Flash（560B/27B MoE，ScMoE + 零计算专家首创）
+
+**Type**: Ingest（应用户「把 LongCat-Flash 也摄入知识库」。LongCat-2.0 的架构前身，源忠实 + 抓本质）
+
+**源（source-faithful）**：LongCat-Flash Technical Report **arXiv 2509.01322v1**（2025-09-01）+ released `meituan-longcat/LongCat-Flash-Chat/config.json`（含 `modeling_longcat_flash.py`）。config 逐字段核对；报告按 §/Eq./Table 定位（§2.1 零计算专家 Eq.1-5、§2.2 ScMoE Fig.4、§2.3 方差对齐 Eq.6-8、§2.4 MLA/MTP、§3.1 超参迁移 Table1 + 模型生长、§3.2 稳定性、Table2/3 评测）。
+
+- **新建深挖页 [[longcat_flash_analysis]]**（主线「用零计算专家 + ScMoE 短路把 560B 的激活压到 ~27B」）：
+  - **架构**：MLA(64h, q_lora1536/kv_lora512/nope128+rope64/v128) · **零计算专家**（512 FFN + **256 identity**、top-12、激活 18.6–31.3B 动态、PID 控偏置 + 设备级均衡损失）· **ScMoE 短路**（前块稠密 FFN ∥ 当前 MoE dispatch/combine 通信、TPOT 较 DeepSeek-V3 ↓~50%、质量中性 Fig.4）· MTP（单稠密头、接受率 >90%）。
+  - **缩放/稳定性**：μP 超参迁移(s=8, 代理宽 768, Table1) · 模型生长初始化(14→28, r=2) · Router 稳定(Rg<0.1 + PID) · hidden z-loss(Eq.10) · Adam eps 1e-16 · 确定性 + SDC 检测。
+  - **预训练**：20T tokens/30 天/98.48% 可用率；三段课程(通用→STEM&code 70%→长上下文 8k→32k 80B→128k 20B)；13-gram + BGE-m3>0.9 去污染。
+  - **Infra/推理**：SBO(NVLink TP ∥ RDMA EP)；**H800 >100 TPS、$0.7/M**；投机解码。
+  - **Agentic**：τ²-Bench 67.7 / VitaBench 24.30(30+ 工具、60+ 轮)为长板；Base/Chat 评测表(Table2/3)。
+  - **§八 Flash→2.0 演进对照表**：Flash(560B/27B·28 层·MLA 全注意力·512+256 专家·128K·H800) → 2.0(1.6T/48B·38 层·MLA+**LSA**·768+128·**N-gram**·1M·**国产 ASIC**)。
+  - [!correction] 订正本人先前假设：**Flash 亦用 MLA**（非 MHA/GQA）——config `attention_method:"MLA"` 坐实；ScMoE/零计算专家为两代共享、SGLang `longcat_flash.py` 同一份代码。
+
+**整合**：[[meituan_longcat/index]] §一家族表 Flash 行改为已摄入、§五缺口更新；[[01_theory/01_models/index]] LongCat 区加 Flash 行；[[index]] 模型 30→31、LongCat 子域 2→3、导航加 [[longcat_flash_analysis]]；[[longcat_2_analysis]] Related 加前身回链。**校验**：9 个交叉链接目标本会话/前序 grep 核对存在；纯文本+表+ASCII，无 mermaid；数值带 arXiv §/Eq./Table 或 config 定位。
+
+---
+
 ## 2026-07-06: 用开源推理代码升级 [[longcat_2_analysis]] 架构描述 + 3 张代码级模型结构图
 
 **Type**: Enrich（应用户「longcat2.0 开源了推理代码，结合推理代码完善模型结构描述 + 详细绘制模型结构图，每步数据流用 SVG→PNG」。源升级：**codebase 一手 > 博客二手**）

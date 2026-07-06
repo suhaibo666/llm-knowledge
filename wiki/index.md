@@ -46,11 +46,11 @@ wiki/
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| 模型 | [[01_theory/01_models/index]] | 30 | 活跃 |
+| 模型 | [[01_theory/01_models/index]] | 31 | 活跃 |
 | └─ DeepSeek | [[01_theory/01_models/deepseek/index]] | 19 | 活跃 |
 | └─ Kimi | [[01_theory/01_models/moonshot_kimi/index]] | 6 | 活跃 |
 | └─ GLM | [[01_theory/01_models/zhipu_glm/index]] | 3 | 活跃 |
-| └─ LongCat (美团) | [[01_theory/01_models/meituan_longcat/index]] | 2 | 活跃 |
+| └─ LongCat (美团) | [[01_theory/01_models/meituan_longcat/index]] | 3 | 活跃 |
 | 预训练 | [[01_theory/02_pretraining/index]] | 7 | 活跃 |
 | SFT & 低参微调 | [[01_theory/03_sft/index]] | 0 | 待建设 |
 | 后训练对齐 | [[01_theory/04_posttraining/index]] | 14 | 活跃 |
@@ -91,7 +91,7 @@ wiki/
 | 低精度训练 | [[low_precision_training_analysis]], [[transformer_engine_analysis]], [[deepseek_v4_fp4_qat_analysis]] |
 | 对齐/RLHF | [[instructgpt_rlhf_analysis]], [[dpo_analysis]], [[grpo_analysis]], [[ppo_analysis]] |
 | DeepSeek 模型 | [[deepseek_v4_analysis]], [[deepseek_v3_analysis]], [[deepseek_r1_analysis]] |
-| LongCat (美团) | [[meituan_longcat/index]], [[longcat_2_analysis]] |
+| LongCat (美团) | [[meituan_longcat/index]], [[longcat_flash_analysis]], [[longcat_2_analysis]] |
 | Megatron 分布式 | [[megatron_parallelism_orchestration_analysis]], [[megatron_comm_overlap_analysis]] |
 | MoE | [[megatron_ep_analysis]], [[deepseek_moe_analysis]] |
 | MoE 专家并行 (MindFormers) | [[mindformers/index]], [[mindformers_pynative_ep_analysis]], [[mindformers_moe_token_dispatcher_analysis]] |

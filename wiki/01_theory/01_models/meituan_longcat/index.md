@@ -9,7 +9,7 @@
 
 | 模型 | 发布 | 参数量（总/激活） | 核心特点 | 状态 |
 |------|------|------------------|----------|------|
-| **LongCat-Flash** | 2025 | — MoE（含 **zero-compute experts** 动态激活） | 计算-通信重叠、动态算力分配 | 架构前身（待摄入） |
+| **LongCat-Flash** | 2025-09 | **560B / ~27B**（18.6–31.3B 动态） | ScMoE 短路 + **零计算专家**首创 · MLA · MTP · H800（arXiv 2509.01322） | [[longcat_flash_analysis]] |
 | **LongCat-2.0** | 2026-06 | **1.6T / ~48B**（动态） | **38 层** · MLA+LSA 稀疏注意力 · N-gram Embedding(135B) · **ScMoE 短路 + 128 零计算专家** · MOPD 多教师蒸馏 · 国产 ASIC | ✅ 已开源（权重+config+SGLang 推理码）· [[longcat_2_analysis]] |
 
 ---
@@ -63,7 +63,7 @@ MTP 3-step (复用 LSA 索引)     (Agent/Reasoning/Interact) bit-flip 检测 + 
 
 ## 五、知识缺口
 
-- **LongCat-Flash / Flash-Lite**（架构前身；N-gram Embedding 即承袭自 Flash-Lite）尚未单独摄入——待补。
+- ✅ **LongCat-Flash 已摄入** → [[longcat_flash_analysis]]。仍待补：**Flash-Lite**（N-gram Embedding 出处）、**Flash-Thinking**（arXiv 2509.18883，推理专精）、**Flash-Omni**（2511.00279，多模态）。
 - **LongCat-2.0 训练侧仍未披露**：学习率/batch/课程、数据配比、MOPD 蒸馏损失、**是否 FP8 训练**（推理已确认 FP8）——待正式技术报告。模型**结构硬参数已由 `config.json` 补全**（见 [[longcat_2_analysis]] §1.1/§9.2）。
 
 ---
