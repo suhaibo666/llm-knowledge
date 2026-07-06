@@ -69,6 +69,8 @@ MoE 另有自己的病：router 是「连续 logits → 离散 top-k」的决策
 
 ## 四、排查思路：一棵决策树
 
+![loss spike/NaN 排查决策树：异常触发→第 0 步分类→{NaN 通道:loss scale 历史/定位首个非有限张量/查坏编码→转 SDC；有限 spike 通道:确定性重放(核心分岔,不复现→SDC、复现→数据轴二分→状态轴二分→层定位)}→处置分级(良性记录/恶性回滚跳批/复发升级)](assets/tr_dyn_fig1.png)
+
 这是本问题与问题 1/4 交汇的地方，完整流程如下：
 
 ```text
@@ -109,6 +111,8 @@ MoE 另有自己的病：router 是「连续 logits → 离散 top-k」的决策
 ---
 
 ## 五、解决方案与代码实现：四层防线
+
+![spike/发散治理四层防线：① 架构层(QK-Norm/z-loss/soft-capping/embedding gradient shrink) ② 优化器层(grad clip/β₂ 0.95/MuonClip-QK-Clip/AdaGC-ZClip) ③ 数据层(预清洗+batch 指纹) ④ 运维层(自动检测重启/NaN 即停/多版本 ckpt/MoE router z-loss)](assets/tr_dyn_fig2.png)
 
 ### （1）架构层（治本，主要来自各实验室报告）
 

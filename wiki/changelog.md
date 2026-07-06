@@ -4,6 +4,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-06: [[07_training_reliability/index]] 簇补 7 张机制图示（提升可读性）
+
+**Type**: Enrich（应用户「三类文章基于原始 technical report 补图示、提升可读性」。据原文机制 + 其引用的技术报告绘制）
+
+- 手绘 HTML+CSS/SVG → 本库无头 Edge 2× 渲染 **7 图**（源 `.html2md/figs/training_reliability_figs.html`，gitignored）：
+  - **确定性&数值页**（[[determinism_and_numerical_reliability_analysis]]）：`tr_det_fig1` 浮点非确定性五层来源 · `tr_det_fig2` 长链累加病(顺序 O(n·ε) 吞位,BF16 Σ1000×1.0=256)与药(树形 O(log n·ε) + DeepSeek FP8 两级累加) · `tr_det_fig3` SDC 四层检测 + Gemini split-phase 确定性重放闭环。
+  - **容错&恢复页**（[[fault_tolerance_and_recovery_analysis]]）：`tr_ft_fig1` 恢复粒度坐标系(8 环恢复链路 + Job/Pod/进程内/Step 各级砍环时间轴) · `tr_ft_fig2` hang 症状/病灶空间分离 + Flight Recorder seq 对账定位。
+  - **训练动力学页**（[[training_dynamics_stability_analysis]]）：`tr_dyn_fig1` spike/NaN 排查决策树(确定性重放为核心分岔) · `tr_dyn_fig2` spike 治理四层防线(架构/优化器/数据/运维)。
+- 各图嵌入对应小节（背景 / 如何发现 / 排查思路 / 解决方案）。**校验**：7 张 PNG 逐张实渲肉眼核对（恢复链路时间轴、seq 对账暗框、决策树双通道分支均正常，无溢出/无裸定界符）；图片用标准 `![](assets/*.png)`（SVG 渲染，非 mermaid）。
+
+---
+
 ## 2026-07-06: 新建 [[07_training_reliability/index]] 簇 —— 摄入《万卡训练确定性与可靠性深度分析》(9 问题域·多来源综述)
 
 **Type**: Ingest（应用户「把这份基于 LongCat 衍生的稳定性训练文档吸收到知识库」。源忠实——二手综述的结构化摄入，机制/数字/命令/代码忠实原文，交叉链到已有一手页）
