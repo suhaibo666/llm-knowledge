@@ -107,7 +107,7 @@
 
 ## 五、Infra 与推理
 
-- **SBO（Single Batch Overlap）流水线**：把**机内 TP（NVLink）** 与**跨机 EP（RDMA）** 通信重叠——配合 ScMoE，推理 **TPOT 较 DeepSeek-V3 降低约 50%**。
+- **SBO（Single Batch Overlap）流水线**：把**机内 TP（NVLink）** 与**跨机 EP（RDMA）** 通信重叠——配合 ScMoE，推理 **TPOT 较 DeepSeek-V3 降低约 50%**。SBO 的 decode 侧四阶段调度——把窗口内的 MLA **拆成 QKV 投影段 / 核心注意力+输出投影段两个 phase**，分别掩盖 all-to-all **dispatch / combine**，而 **MoE 专家 GEMM 裸露、靠 wide EP 压薄**；训练侧则改用 **token 维双 chunk 互掩**——阶段级细节与对照见 [[longcat_2_analysis]] §5.5。
 - **实测**：H800 上 **>100 TPS**、**$0.70 / 百万 output tokens**；万卡级专家并行部署。
 - **投机解码**：用 MTP 头，接受率 >90%。
 

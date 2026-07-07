@@ -4,7 +4,7 @@
 > **URL**: 博客 https://longcat.chat/blog/longcat-2.0 · 模型 https://huggingface.co/meituan-longcat/LongCat-2.0（含 `config.json` + 194 分片权重）· GPU 推理 SGLang PR https://github.com/sgl-project/sglang/pull/30042
 > **License**: MIT（权重已放出；另有 `LongCat-2.0-FP8`）
 > **Baseline**: `config.json` @ HF main（2026-07-06 clone）+ SGLang PR #30042 @ `HarryWu99/sglang@c6c36d9`（分支 `feature/longcat_dsa`）；博客访问 2026-07-02
-> **维度**: Overview + 机制级深挖（架构 / 预训练 / 后训练 / AI Infra / 低精度与数值可靠性 / 稳定性 / 效果）
+> **维度**: Overview + 机制级深挖（架构 / 预训练 / 后训练 / AI Infra（含并行与 **ScMoE 计算-通信重叠调度** §5.5）/ 低精度与数值可靠性 / 稳定性 / 效果）
 
 > [!note] 来源与保真度说明（务必先读）
 > **2026-07 更新**：官方已开源**推理代码（SGLang PR #30042）+ `config.json` + 权重**。因此本页**架构部分**已从「博客二手描述」升级为**代码/配置一手核对**（每条硬参数带 `config.json` 行号或 `文件名:行` 定位），并据此**订正了博客未言明或二手误传之处**（见 §2、§9）——**注意力实为 MLA**、**零计算专家确有其事（128 个 identity）**、层内为 **ScMoE 短路结构**。
@@ -49,7 +49,7 @@
 
 **图 1 — 整体前向 + 单层 ScMoE 放大**（tokens → N-gram 嵌入 → 38× ScMoE 解码层 → RMSNorm → LM Head，旁挂 MTP×3）：
 
-![LongCat-2.0 完整模型结构与前向数据流：左宏观层栈、右单个 ScMoE 解码层放大——稠密链 attn0→稠密FFN→attn1→稠密FFN 与 MoE 短路分支(768 路由 + 128 零计算专家, top-12)并行、最后相加](assets/longcat2_arch_fig1.png)
+![LongCat-2.0 完整模型结构与前向数据流：左宏观层栈、右单个 ScMoE 解码层放大——MLA attn0 先算，其输出在 fork 点克隆成两支并行：一支 MoE 短路分支(768 路由 + 128 零计算专家, top-12)，一支稠密链(稠密FFN→attn1→稠密FFN)，最后相加](assets/longcat2_arch_fig1.png)
 
 **图 2 — N-gram Embedding 数据流**：
 
@@ -59,7 +59,7 @@
 
 ![MLA + LSA 数据流：MLA 低秩压缩(q_lora 1536 / kv_lora 512+rope64，KV cache 每 token 576 维) + LSA 轻量索引器打分 → SI 恒保留 16 sink + 1024 local、top-2048 选择 → 稀疏注意力 → o_proj](assets/longcat2_arch_fig3.png)
 
-**一句话读结构**：`LongcatCausalLM` = **N-gram 嵌入 → 38 个 ScMoE 解码层 → RMSNorm → LM Head**（`longcat_flash.py`）。每个解码层**不是**「注意力→MoE」的常规块，而是 **LongCat-Flash 的 ScMoE 短路**：一条**稠密链** `MLA-attn0 → 稠密FFN → MLA-attn1 → 稠密FFN` 与一条 **MoE 短路分支**（在 attn0 之后**克隆输入**、并行计算，最后 `dense_out + moe_out` 相加，`longcat_flash.py:449-460`）——让 MoE 的 all-to-all 通信被稠密链计算掩盖。注意力是 **MLA + LSA 稀疏索引器**（DeepSeek 血缘）。
+**一句话读结构**：`LongcatCausalLM` = **N-gram 嵌入 → 38 个 ScMoE 解码层 → RMSNorm → LM Head**（`longcat_flash.py`）。每个解码层**不是**「注意力→MoE」的常规块，而是 **LongCat-Flash 的 ScMoE 短路**：**MLA-attn0 先算**，其输出在 fork 点**克隆**成两支**并行**——一支是 **MoE 短路分支**（Router→dispatch→专家 GEMM→combine），另一支是**稠密链** `稠密FFN → MLA-attn1 → 稠密FFN`（`longcat_flash.py:449` 克隆、:456 稠密链、:460 `moe_out + dense_out` 相加）——让 MoE 的 all-to-all 通信被稠密链计算掩盖。**注意 fork 在 attn0 *之后***：所以可掩盖 MoE 通信的「重叠窗口」= **稠密FFN₁ + MLA-attn1 + 稠密FFN₂**（**不含 attn0**，attn0 是 fork 之前的共享前置）；窗口内部「谁盖 dispatch、谁盖 combine」的调度细节见 **§5.5**。注意力是 **MLA + LSA 稀疏索引器**（DeepSeek 血缘）。
 
 ---
 
@@ -150,6 +150,8 @@
 4. **相加** `hidden = moe_out + dense_out`（:460）。
 
 > **为什么这么接（ScMoE 的本质）**：MoE 的 all-to-all（分发/回收 token）是长延迟通信。把 MoE 作为**短路分支**与稠密链（mlp0→attn1→mlp1）**并行**，其通信就被稠密计算**掩盖**——这就是博客「per-core 显式控制 → dense/MoE 全并行」的落地，也是 §5「+35% 吞吐」的架构侧来源。承袭 LongCat-Flash 的 Shortcut-connected MoE。（EP 的 all-to-all 原理见 [[expert_parallel_analysis]] / [[megatron_ep_analysis]]。）
+>
+> **可重叠窗口要说精确（易错点）**：`clone` 发生在 `attn0` **之后**（:449），故被掩盖 MoE 通信的窗口 = **稠密FFN₁(mlp0) + MLA-attn1(self_attn[1]) + 稠密FFN₂(mlp1)** 这三个模块，**attn0（MLA₁）不在窗口内**——它是 fork 之前算完、其输出同时喂给两支的**共享前置**。换言之 shortcut 只负责**建立数据依赖上的自由度**（MoE 输入在 attn0 后即就绪、输出到层尾才被消费）；窗口内部**怎么切、谁盖 dispatch、谁盖 combine**，是**调度层**的选择，且**训练与推理选了两套不同方案**——详见 **§5.5**。
 
 **MoE 内部（`LongcatFlashMoE`, :201-293）**：
 - **Router 对 768+128=896 个专家打分**（`n_routed_experts + zero_expert_num`, :182），取 **top-12**（:245-251）。
@@ -245,7 +247,7 @@
 - **注意力吸收计算（absorb computation）**：把注意力里可合并的投影/缩放**吸收进相邻矩阵**，减少解码时的显存读写与算子数（*本页推断：类 MLA 家族的 absorb 技巧*）。
 - **索引器流水线化（pipelining the indexer）**：把 LSA 的 indexer 与后续注意力**流水线重叠**，让「选哪些 KV」的开销藏进计算。
 - **KV-cache 并行（KVP）**：把超长上下文 KV cache 切到多设备，缓解单卡 HBM 压力（与下方部署段 decode 侧呼应）。
-- **ScMoE 调度前推**：把架构侧的 ScMoE（§2.3）在推理调度上进一步优化，维持 dense/MoE 分支并行。
+- **ScMoE 调度（SBO 四阶段）**：把架构侧的 ScMoE（§2.3）在推理 decode 上落成 **SBO 单批重叠**——用稠密链的计算分段掩盖 MoE 的 dispatch/combine 通信、MoE GEMM 裸露靠 wide EP 压薄。这是本模型并行策略里最关键的一环，**独立成节展开见 §5.5**。
 
 ### 5.3 推理·部署：Prefill–Decode 分离
 
@@ -263,6 +265,56 @@
 - **权重预取（weight prefetch）/ L2 cache 预取**：把某算子的 **I/O（权重加载）延迟藏进前一个算子的计算**里，隐藏访存延迟。
 - **EPLB**（Expert-Parallel Load Balancing）：部署期专家负载均衡。
 - （P↔D 间 KV-cache 走内置 **200 Gbps 网卡**——见 §5.3 表。）
+
+### 5.5 ScMoE 的计算-通信重叠调度：训练与推理两套方案
+
+> **一句话主线**：ScMoE 的短路**本身只做一件事——建立数据依赖上的自由度**：MoE 分支的输入在 `attn0` 之后即克隆就绪（可提前算）、输出到层尾才被合并（可延后消费）。至于这个「可重叠窗口」内部**怎么切、谁盖谁**，是**调度层**的选择——而**训练与推理各选了一套不同方案**。这是本模型「并行策略设置」中最关键、也最容易被讲错的一处。
+
+**可重叠窗口（code-confirmed）**：`forward` 里 `attn0`(MLA₁) 先跑（`longcat_flash.py:433`），其输出 `clone` 出 MoE 分支（:449）后，稠密链 `mlps[0]→self_attn[1]→mlps[1]`（= 稠密FFN₁→MLA₂→稠密FFN₂，`forward_mlp` :467-492）与 MoE 分支**并行**，最后 `moe_out + dense_out`（:460）。所以 MoE 的 **dispatch / combine 两段 all-to-all** 要藏进的，就是**稠密FFN₁ + MLA₂ + 稠密FFN₂** 这三个模块的计算（**不含 attn0**）。
+
+#### 推理侧：SBO（Single Batch Overlap）四阶段
+
+> **来源与保真度**：SBO 是 **LongCat-Flash 技术报告**（arXiv [2509.01322](https://arxiv.org/abs/2509.01322) §5，见 [[longcat_flash_analysis]] §五）首创的 decode 侧重叠调度；2.0 的推理**复用同一份 ScMoE 代码**（`longcat_flash.py`），故同样适用。2.0 博客（README）只讲部署形态（PD 分离 + EP128，§5.3）、**未再细述 SBO 阶段**——本节的**阶段级切分**据 Flash 报告 SBO 设计补全，窗口拓扑（fork 点、三模块）则由上述代码行坐实。
+
+> [!important] 命名消歧（务必先读）：SBO 的「Attn 0 / Attn 1」≠ 层内两个 MLA 块
+> 本页 §2.3 的 **attn0 / attn1** 指层内**两个独立的 MLA 块**（`self_attn[0]`=MLA₁、`self_attn[1]`=MLA₂）。而 SBO 图里的 **Attn 0 / Attn 1** 指**同一个 MLA 的两个计算 phase**——**Attn 0 = QKV 投影段**、**Attn 1 = 核心注意力 + 输出投影段**（MLA decode 的 absorb 式两段拆分）。SBO 拆的是**窗口内的 MLA₂**：把它切成「QKV 投影段」与「核心+输出段」，分别塞进 dispatch / combine 两个通信窗口。下图的 `MLA₂.QKV`、`MLA₂.核心+输出` 即这两个 phase。**两套「Attn0/Attn1」含义不同，切勿混为一谈。**
+
+```
+推理 decode 单层 SBO 四阶段（"Attn0/Attn1" = MLA₂ 的两个 phase，非两个注意力块）
+
+Stage:    ①          ②                          ③              ④
+计算流:  [MLA₁]   [稠密FFN₁ | MLA₂.QKV投影]   [ MoE GEMM ]   [MLA₂.核心+输出投影 | 稠密FFN₂]
+通信流:            [===== all-to-all dispatch =====]                [===== all-to-all combine =====]
+掩盖:              dispatch ← 稠密FFN₁ + MLA₂.QKV       GEMM 裸露        combine ← MLA₂.核心+输出 + 稠密FFN₂
+                                                     (靠 wide EP 压薄)
+```
+
+- **Stage ①**：单独执行 **MLA₁**——它的输出是后续所有 stage 的输入（fork 源），必须先算、无从掩盖。
+- **Stage ②**：**稠密FFN₁ + MLA₂ 的 QKV 投影段** 掩盖 **all-to-all dispatch**。正因 dispatch 太长、单靠稠密FFN₁ 盖不住，才**把 MLA₂ 拆开**、把 QKV 投影段也搭进这个窗口（把窗口拉宽到 QKV 为止）。
+- **Stage ③**：**MoE 专家 GEMM 裸露**——没有任何计算掩它、它也不掩别人。其时延靠 **wide EP 部署**（2.0 用 **EP128**，§5.3）压缩：在进入 compute-bound 之前，**扩大 EP 规模与 batch size 会缩短单卡 MoE 计算时间**，所以 SBO 能从更宽的 EP 配置中**持续获益**——这正是 2.0 坚持 wide EP 的原因之一（GEMM 藏不掉，就把它切薄）。
+- **Stage ④**：**MLA₂ 的核心注意力+输出投影段 + 稠密FFN₂** 掩盖 **all-to-all combine**。
+
+> **相对「稠密FFN 掩 dispatch、MLA₂ 掩 combine」这一粗略说法的三处精确修正**：
+> 1. 掩 dispatch 的**不只稠密FFN₁**，还搭上 **MLA₂ 的 QKV 投影段**（拆 attention 的动机正是 dispatch 太长）；
+> 2. 掩 combine 的**不只 MLA₂**，是 **MLA₂ 的后半段（核心注意力 + 输出投影）+ 稠密FFN₂**；
+> 3. **MoE GEMM 是裸露的**（Stage ③ 无人掩它、它也不掩人）。
+
+#### 训练侧：token 维双 chunk 互掩
+
+训练**不做** Attn0/Attn1 这种细粒度 phase 切分，而是把 **MoE 层沿 token 维切成两个 chunk**（Flash 报告 §2.2「token 维细粒度切分并发」，见 [[longcat_flash_analysis]] §2.2）：
+
+```
+MoE 层沿 token 维 → chunk A / chunk B
+  chunk A: [dispatch] → [expert GEMM] → [combine]
+  chunk B:              [dispatch] → [expert GEMM] → [combine]
+  A 的 dispatch/combine 在飞  ⇄  B 在做专家 GEMM   （两 chunk 互相 overlap）
+  两者整体再压在 dense FFN 计算上                     （chunk 与 dense 计算 overlap）
+```
+
+- 两个 sub-chunk **一方面与 dense FFN 计算 overlap、一方面互相 overlap**：chunk A 的 dispatch/combine 在飞时，chunk B 正在做专家 GEMM。
+- **与推理的本质差异**：训练 token 数大、切 chunk「**有肉可分**」，于是**连 MoE GEMM 也部分参与掩盖**（拿一个 chunk 的 GEMM 去盖另一个 chunk 的通信）——这与推理 decode「GEMM 裸露」正相反（decode 每步 token 少，切不出能互掩的 chunk）。
+
+> **本质回看**：shortcut 只建立「MoE 输入提前就绪、输出延后消费」的自由度；**窗口内部怎么切、谁盖谁，是调度层的选择**。推理（decode，token 少）选 **SBO 四阶段 + 把 MLA₂ 拆 QKV/核心两 phase**，让 GEMM 裸露靠 wide EP 压薄；训练（token 多）选 **token 维双 chunk 互掩**，连 GEMM 都拿来盖通信。**同一条 shortcut，两套调度。**
 
 ---
 

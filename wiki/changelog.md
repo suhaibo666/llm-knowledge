@@ -4,6 +4,19 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-07: [[longcat_2_analysis]] 订正 ScMoE 结构描述 + 新增 §5.5「计算-通信重叠调度（SBO / 训练双 chunk）」
+
+**Type**: Update（应用户「2.0 模型结构介绍有点问题、并行策略设置未介绍」。源忠实——窗口拓扑据 SGLang `sglang-longcat-pr/longcat_flash.py:429-461` 逐行核验；SBO 阶段级调度据 LongCat-Flash 技术报告 arXiv 2509.01322 §5 并明确标注来源与推断边界）
+
+- **订正结构描述的「fork 点」易错点**：`clone` 发生在 `attn0`(MLA₁) **之后**（`longcat_flash.py:449`），故 Fig-1 图注与「一句话读结构」原先把 `attn0` 计入「与 MoE 并行的稠密链」不准——已改为 **attn0 是 fork 前的共享前置**，可掩盖 MoE 通信的**重叠窗口 = 稠密FFN₁ + MLA-attn1 + 稠密FFN₂**（不含 attn0）。Fig-1 PNG 本身画法正确（attn0 在 fork 之上），**无需重绘**，仅订正文字；§2.3 note 补「窗口要说精确」段。
+- **新增 §5.5**：ScMoE 短路只建立**数据依赖上的自由度**，窗口内部「怎么切/谁盖谁」是调度层选择、训练与推理各一套——
+  - **推理 SBO 四阶段**（含 ASCII 图）：① MLA₁ → ② 稠密FFN₁+**MLA₂.QKV 投影段**掩 dispatch → ③ **MoE GEMM 裸露**（靠 wide EP/EP128 压薄）→ ④ **MLA₂.核心+输出投影段**+稠密FFN₂ 掩 combine。**命名消歧 callout**：SBO 的「Attn0/Attn1」= MLA₂ 的两个 phase，≠ 层内两个 MLA 块（`self_attn[0/1]`）。列出相对「稠密FFN 掩 dispatch、MLA₂ 掩 combine」粗说法的三处精确修正。
+  - **训练 token 维双 chunk 互掩**（Flash 报告 §2.2「token 维细粒度切分并发」）：两 chunk 与 dense FFN、彼此 overlap，**连 GEMM 也参与掩盖**——与推理「GEMM 裸露」相反。
+- **联动更新**：§5.2「ScMoE 调度」bullet 改指 §5.5；页头「维度」补「并行与重叠调度」；[[longcat_flash_analysis]] §五 SBO bullet 补四阶段/双 chunk 摘要并交叉链到本页 §5.5。
+- **校验**：两处 ASCII 图为纯 `code` 块（非 mermaid，无渲染风险）；`longcat_flash.py:433/449/456/460/467-492` 定位符逐一对源核对；页仍 <500 行。
+
+---
+
 ## 2026-07-06: [[unbacked_symint_analysis]] 增补 §10 —— unbacked 处理的最新进展（`guard_size_oblivious` → 显式 size-oblivious 原语族）
 
 **Type**: Update（应用户「根据最新技术更新知识库」。源忠实——全部新断言据 pinned pytorch checkout `torch/fx/experimental/symbolic_shapes.py` 逐个核验签名/行号/docstring/`__all__` 导出，只扩展不删除）
