@@ -82,6 +82,8 @@ top_k_weights = top_k_weights * self.router_scaling_factor        # L318 ×2.826
 
 64Q/8KV/dim128 的标准 GQA,q/k 各加逐 head_dim 的 RMSNorm(modeling L248-249、L265-266)。**为什么不是省 KV cache 的 MLA**(源无明说,本库推断): ① GQA 8 KV 头在 256K 上下文下 KV cache = 2×8×128×80×2B ≈ 320KB/token,尚可接受;② GQA 与 vLLM/SGLang 的成熟 kernel 生态零适配成本,与 Hy3"三个月快速迭代 + 产品落地优先"的路线一致;③ QK-Norm 抑制 logits 爆炸,是不引入 MLA 时更便宜的长上下文稳定手段。对照组: [[deepseek_v3_analysis]](MLA)、[[glm_5_analysis]](DSA)、[[longcat_flash_analysis]](MLA+ScMoE)都在注意力上做了改造,Hy3 是刻意的保守派。
 
+> **注意力的推理侧优化在服务栈里,不在权重里**: 混元团队另发了免训练的 **Stem 稀疏注意力**(arXiv 2603.06274,TPD 位置衰减预算 + OAM 输出感知选块,25% 算力逼近稠密精度、128K prefill 3.7×),在腾讯内部集成进 Hy3 preview 的 vLLM 服务(搭配 HPC-BSA 算子)——开源权重与官方部署配方仍是纯稠密 GQA。机制详见 [[stem_sparse_attention_analysis]]。
+
 ### 2.5 三档推理模式: 用 chat template 硬编码,不是三个模型
 
 `chat_template.jinja` 揭示 fast/slow thinking 融合的真实实现(行号为该文件行):
@@ -179,6 +181,7 @@ Hy3 激活参数是这一档里最小的(21B vs 27–40B),官方叙事"21B 激�
 ## Related Pages
 
 - [[index]] — 腾讯混元模型家族入口
+- [[stem_sparse_attention_analysis]] — 混元自研免训练稀疏注意力,Hy3 preview 内部推理服务的 prefill 优化(不在开源权重内)
 - [[deepseek_v3_analysis]] — sigmoid+bias 免辅助损失路由与 MTP 的原创出处,Hy3 的直接技术上游
 - [[deepseek_moe_analysis]] — 共享专家 + 细粒度专家切分的源头
 - [[deepseek_v4_analysis]] — 同期对比: 走架构激进路线(CSA/HCA/mHC)的反面参照

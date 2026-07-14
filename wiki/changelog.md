@@ -4,6 +4,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-14 (二): 新增 [[stem_sparse_attention_analysis]] — 混元 Stem 免训练稀疏注意力 (arXiv 2603.06274v1)
+
+**Type**: Ingest(应用户提问「Hy3 提出的推理 attn 结构是什么」——Phase 5 按需生长。溯源链: 中文报道 → 腾讯技术工程公众号(2026-06-26,经 53AI/搜狐转载)→ **论文本体 PDF 已下载入 raw/ 并逐节核读** p1-7)
+
+- **定性**: Stem 是**推理服务栈的免训练 prefill 优化插件,不在 Hy3 开源权重内**(`modeling_hy_v3.py` 纯稠密 GQA,README 部署配方无 Stem)——回答了"推理的 attn 结构"与开源模型结构的边界问题。
+- **机制**(全部对论文核验): TPD 预算按 query 位置从 k_start 线性衰减到 μ·k_start(Eq. 3, μ=0.7),理论依据是因果信息流的递归误差放大(Eq. 1/Fig. 2/Fig. 3);OAM 选块度量 = QK^T + 0.2·max(0, log‖V‖₂)(Eq. 7),由最小化稀疏-稠密输出重构误差推导(Eq. 5-6);块大小 128、恒保 4 初始+4 局部块、下限 54 块(§3.1/Alg. 1)。
+- **证据**: LongBench 25-31% 预算近稠密(Table 2)、RULER 25% 预算稀疏方法最高分(Table 4)、可叠加 DeepSeek-V3.2 DSA/MiniCPM-4.1 再压 15-18% 预算(Table 3)、等预算消融 TPD +2~3.4 分(Table 5)、128K H20 prefill 1540→420ms=3.7×(Fig. 1/§3.3)。
+- **口径修正**: 新闻稿"3.6 倍首字延迟"与论文 Fig. 1 的 3.7× 不一致,页内以论文为准并注明;"ICML-26 接收"仅新闻口径,PDF 页眉仍为 Preprint,两说并存;HPC-BSA 算子 ~3× 加速为公众号口径(论文用 MIT-BSA),已标二手。
+- **联动**: [[hy3_analysis]] §2.4 增服务栈指针 callout + Related 反链;tencent_hunyuan/index 与 01_models/index 增行;mermaid 流程图按库规范自查通过。
+
+---
+
 ## 2026-07-14: 新增 [[hy3_analysis]] — 腾讯混元 Hy3 (295B-A21B) 收录,含 tencent_hunyuan 新目录
 
 **Type**: Ingest(应用户「增加最新的 Hy3 technical report」。**关键事实: 截至 2026-07-14 Hy3 无 arXiv 正式论文**——arXiv API 与 HF papers 索引均核验无果;"technical report" 实体 = 模型卡 + 开源工件 + 官方博客/新闻稿,已全部落入 `raw/01_theory/01_models/tencent_hunyuan/`)

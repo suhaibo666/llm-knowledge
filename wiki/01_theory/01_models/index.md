@@ -56,6 +56,7 @@
 |------|---------|
 | [[tencent_hunyuan/index]] | 腾讯混元模型家族总览 |
 | [[hy3_analysis]] | Hy3 295B/21B MoE,架构冻结+纯后训练迭代,sigmoid 免辅助损失路由,三档推理模式 |
+| [[stem_sparse_attention_analysis]] | Stem 免训练稀疏注意力,TPD+OAM,25% 算力近稠密,128K prefill 3.7× |
 
 ### LongCat / Meituan
 

@@ -10,6 +10,7 @@
 | 页面 | 核心主题 |
 |------|---------|
 | [[hy3_analysis]] | Hy3 295B/21B MoE,架构冻结 + 纯后训练迭代,sigmoid 免辅助损失路由,三档推理模式,Apache 2.0 |
+| [[stem_sparse_attention_analysis]] | Stem 免训练稀疏注意力 (arXiv 2603.06274): TPD 位置衰减预算 + OAM 输出感知选块,25% 算力近稠密精度,128K prefill 3.7× |
 
 ## 家族时间线(简)
 
