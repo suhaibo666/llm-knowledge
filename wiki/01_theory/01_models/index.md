@@ -1,7 +1,7 @@
 # 模型架构与模型家族 — 目录索引
 
 > 覆盖 Transformer 架构、缩放定律、模型技术报告
-> 最后更新: 2026-05-08
+> 最后更新: 2026-07-14
 
 ---
 
@@ -49,6 +49,13 @@
 | [[zhipu_glm/index]] | GLM 技术路线总览 |
 | [[glm_5_analysis]] | GLM-5 744B/40B MoE, Muon Split, DSA |
 | [[glm_5v_turbo_analysis]] | GLM-5V-Turbo, CogViT, MMTP, 多模态 Agent |
+
+### Hunyuan / 腾讯混元
+
+| 页面 | 核心主题 |
+|------|---------|
+| [[tencent_hunyuan/index]] | 腾讯混元模型家族总览 |
+| [[hy3_analysis]] | Hy3 295B/21B MoE,架构冻结+纯后训练迭代,sigmoid 免辅助损失路由,三档推理模式 |
 
 ### LongCat / Meituan
 

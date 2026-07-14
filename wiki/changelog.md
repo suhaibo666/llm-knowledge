@@ -4,6 +4,20 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-14: 新增 [[hy3_analysis]] — 腾讯混元 Hy3 (295B-A21B) 收录,含 tencent_hunyuan 新目录
+
+**Type**: Ingest(应用户「增加最新的 Hy3 technical report」。**关键事实: 截至 2026-07-14 Hy3 无 arXiv 正式论文**——arXiv API 与 HF papers 索引均核验无果;"technical report" 实体 = 模型卡 + 开源工件 + 官方博客/新闻稿,已全部落入 `raw/01_theory/01_models/tencent_hunyuan/`)
+
+- **新源文件(raw/)**: GitHub README EN/CN(@ `8a12d9af87c6`, 2026-07-06)、`config.json`(HF `tencent/Hy3`)、`chat_template.jinja`、transformers `modeling_hy_v3.py`(@ `295cee3e1d00`)、官方榜图 benchmark.png / benchmark-appendix.png(约 40 基准 × 11 模型全量矩阵)。
+- **新页**: [[hy3_analysis]](主线: 架构冻结、全靠后训练的性价比 Agent 模型)+ [[tencent_hunyuan/index]];[[01_theory/01_models/index]] 增 Hunyuan 段;[[deepseek_v3_analysis]] Related 区加反向链接。
+- **本库独立核验的三个关键发现**:
+  1. **preview 与正式版 `config.json` 逐字段完全一致**(实测 diff)——三个月提升纯来自后训练,榜单增量(DeepSWE 0.9→28.0、USAMO 37.3→72.0 等)构成一组罕见的"纯后训练 ablation"。
+  2. **路由 = DeepSeek-V3 免辅助损失配方原样采用**(sigmoid L310 + 选择期偏置 L312-313 + 原始分加权),非标处仅 `router_scaling_factor: 2.826`;注意力为 GQA+QK-Norm(保守派,未用 MLA)。
+  3. **[!contradiction] 已挂**: preview 官方博客称"differentiated expert size + P-Penalty Loss",但开源工件为均匀 1536 专家(config + `HYV3Experts` 单张量存储 L324-333)——按工件优先原则记录两说。
+- **校验**: 全部 config/modeling/chat-template 行号逐一对 raw/ 内文件核对;榜图数字从 PNG 原图读取(非二手转述);mermaid 结构图按库规范逐条自查(首行 `flowchart TB`、英文 id、标签无裸 `[]()|`、subgraph 标题合规、单独 `end`)通过;API 定价仅有二手来源,已标"存疑待核"。页 <300 行。
+
+---
+
 ## 2026-07-07: [[longcat_2_analysis]] 订正 ScMoE 结构描述 + 新增 §5.5「计算-通信重叠调度（SBO / 训练双 chunk）」
 
 **Type**: Update（应用户「2.0 模型结构介绍有点问题、并行策略设置未介绍」。源忠实——窗口拓扑据 SGLang `sglang-longcat-pr/longcat_flash.py:429-461` 逐行核验；SBO 阶段级调度据 LongCat-Flash 技术报告 arXiv 2509.01322 §5 并明确标注来源与推断边界）
