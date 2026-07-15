@@ -271,6 +271,7 @@ graph TD
 
 ## Related Pages
 
+- [[torch_npu_upstream_adaptation_analysis]] —— 将本页的上游标准接入点与 torch_npu 实际硬件实现、框架补丁边界做横向对照
 - [[op_plugin_config_and_classification_guide]] —— 接入点 4（算子）：op-plugin 配置与分类
 - [[op_registration_pipeline_analysis]] —— 接入点 4（算子）：yaml→codegen→dispatcher 注册链路与「库加载即注册」（与命名注册同一静态初始化机制）
 - [[npu_operator_graph_eligibility_guide]] —— 算子入图判别（与 Allocator/Generator 的 graph-safe 关联）

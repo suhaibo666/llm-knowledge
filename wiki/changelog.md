@@ -4,6 +4,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-15: 新增 [[torch_npu_upstream_adaptation_analysis]] — Ascend out-of-tree 适配与 PyTorch upstream 差异全景
+
+**Type**: Ingest / codebase comparison（应用户“结合工作区 torch_npu 和 PyTorch 源码梳理 Ascend 适配主要点与上游差异”。基线：`torch_npu v2.7.1@b3c8a815`、其记录的 `op-plugin@6ef73e399`、PyTorch `main@2b460d01`，均按本地源码逐点核实行号）
+
+- **中心结论**：torch_npu 应拆成三层评价——PrivateUse1/autoload/Guard/Hooks/Allocator/Dispatcher/AMP/c10d/Dynamo/Inductor registry 等**标准插件面**；ACL/CANN、私有 format、ACLNN、HCCL、Ascend codegen/ACLGraph 等**硬件实现面**；改写 Dynamo rule/Variable、Inductor lowering/scheduler/wrapper、cudagraph tree、distributed/FSDP 等**兼容补丁面**。前两层不是“落后”，第三层才是升级风险主来源。
+- **口径订正**：旧页“Ascend 三路径 vs 社区统一 Triton”已加 `[!deprecated]`；当前 upstream CUDA/XPU 也采用 combined scheduling 混合多 codegen，差异应看公开注册接口与私有 patch 的边界。
+- **upstream 新方向**：核实 AcceleratorHooks/`torch.accelerator`、实验性 Python PrivateUse1 hooks/guard、Inductor custom pass/config 与 device-module 自动 codegen 注册、`CUDAGraphPolicy`、distributed backend entry point、OpenReg 可执行规格；据此给出 P0-P2 收敛路线。
+- **现场约束**：torch_npu 严格 pin PyTorch 2.7.1，而对照为 upstream main，页内明确区分版本差异与硬件差异；op-plugin 工作树未停在 gitlink commit，正文只引用 git 对象中可核验的记录版本配置。
+- **联动**：更新 `01_dispatcher_and_device/index`、AI framework 总索引；为 [[privateuse1_device_integration_analysis]] 增反链；[[npu_compile_paths_overview]] 增过时口径提示与反链。
+
+---
+
 ## 2026-07-15: 新增 [[hw_friendly_llm_codesign_analysis]] — NVIDIA 硬件友好 LLM 设计指南(软硬协同,系列第一篇)
 
 **Type**: Ingest(应用户「总结该 blog 并加入知识库」。源 = NVIDIA Developer Blog 2026-07-10,HTML 快照已存 `raw/01_theory/06_distributed_parallelism/`;正文经本地 HTML→文本提取逐行核验,7 条 Guideline、公式、Table 1/2、Fig. 4/5/7/9 图注均照原文录入,未依赖 WebFetch 小模型转述——两次转述在"对齐 128/256/512"表述上确有出入,以原文为准)
