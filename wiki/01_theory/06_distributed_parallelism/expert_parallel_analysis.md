@@ -76,3 +76,4 @@ $$T_{\text{MoE}} \approx \underbrace{T_{a2a}^{\text{dispatch}}}_{\text{送 token
 - [[../../02_engineering/02_train_frameworks/megatron-lm/megatron_ep_analysis]] — **实现层**：Megatron 的 EP token dispatcher 与 a2a
 - [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_ep_analysis]] — **实现层**：torchtitan 的 EP
 - [[../../02_engineering/02_train_frameworks/mindformers/mindformers_moe_token_dispatcher_analysis]] — **实现层**：token dispatcher 的分发/回收
+- [[hw_friendly_llm_codesign_analysis]] — 推理侧视角：宽 EP 抬 GEMM-M 的定量论证（NVIDIA GB300）

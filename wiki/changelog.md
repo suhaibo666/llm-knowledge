@@ -4,6 +4,16 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-15: 新增 [[hw_friendly_llm_codesign_analysis]] — NVIDIA 硬件友好 LLM 设计指南(软硬协同,系列第一篇)
+
+**Type**: Ingest(应用户「总结该 blog 并加入知识库」。源 = NVIDIA Developer Blog 2026-07-10,HTML 快照已存 `raw/01_theory/06_distributed_parallelism/`;正文经本地 HTML→文本提取逐行核验,7 条 Guideline、公式、Table 1/2、Fig. 4/5/7/9 图注均照原文录入,未依赖 WebFetch 小模型转述——两次转述在"对齐 128/256/512"表述上确有出入,以原文为准)
+
+- **落位裁定**: 本库 `05_inference` 域定义为 CoT/RAG/Agent(推理=reasoning,见 01_theory/index),故本页落 **06_distributed_parallelism**(兄弟页 EP/PP/TP 直接对应博客 §五/§六);raw 同步新建 `06_distributed_parallelism/` 目录。
+- **页面要点**: 主线"模型超参(H/H'/L/对齐/精度)= 部署性能参数";roofline 记账 + Table 2 小 K 反例(H'=512 全程 memory-bound)+ Fig. 4 阈值(80% 吞吐需 K>3072/N>2560,GB300+NVFP4)+ tile 量化(128/256/512)+ NVFP4 双层缩放(16 值 micro-block E4M3 + FP32)+ 宽 EP 的 GEMM-M 公式 + CPP/Helix。§7 单列**立场评注**(NVIDIA 硬件本位、阈值不可跨硬件搬运)并对照 [[hy3_analysis]] 专家维 1536 与 K>3072 阈值的张力。
+- **联动**: 06 index 页面列表增行、日期 bump;[[expert_parallel_analysis]] / [[pipeline_parallel_analysis]] Related 区各加反链;mermaid 决策图按库规范自查通过。
+
+---
+
 ## 2026-07-14 (二): 新增 [[stem_sparse_attention_analysis]] — 混元 Stem 免训练稀疏注意力 (arXiv 2603.06274v1)
 
 **Type**: Ingest(应用户提问「Hy3 提出的推理 attn 结构是什么」——Phase 5 按需生长。溯源链: 中文报道 → 腾讯技术工程公众号(2026-06-26,经 53AI/搜狐转载)→ **论文本体 PDF 已下载入 raw/ 并逐节核读** p1-7)

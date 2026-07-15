@@ -78,3 +78,4 @@ $$\text{bubble ratio} = \frac{P-1}{m + P - 1}$$
 - [[index]] — N 维布局里 PP 占据「跨机维」
 - [[../../02_engineering/02_train_frameworks/megatron-lm/megatron_pp_schedulers_analysis]] — **实现层**：Megatron 的 GPipe/1F1B/interleaved 调度器
 - [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_pp_analysis]] — **实现层**：torchtitan 的 PP 调度
+- [[hw_friendly_llm_codesign_analysis]] — 推理侧特化：Chunked Pipeline Parallelism 压长上下文首 token 延迟

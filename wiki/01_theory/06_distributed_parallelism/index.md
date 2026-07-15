@@ -2,7 +2,7 @@
 
 > 覆盖：分布式集合原语 → DP → TP/SP/CP → EP → PP → ZeRO/FSDP → N 维组合
 > 层次：**原理（principle）· 引擎无关**——讲「为什么这么切、代价函数长什么样」；「源码怎么实现」交叉链接到 [[../../02_engineering/index|工程实现]] 各页，不重复
-> 最后更新：2026-07-01
+> 最后更新：2026-07-15
 
 ---
 
@@ -63,6 +63,7 @@
 | [[tensor_sequence_parallel_analysis]] | TP（列切/行切 + f/g）、SP（零额外通信换激活）、CP（ring-attention） |
 | [[expert_parallel_analysis]] | EP：路由 + 两次 all-to-all、容量因子、负载均衡 |
 | [[pipeline_parallel_analysis]] | PP：microbatching、气泡率、GPipe / 1F1B / interleaved |
+| [[hw_friendly_llm_codesign_analysis]] | NVIDIA 软硬协同指南：GEMM roofline 定维、tile 对齐、NVFP4、宽 EP、CPP、Helix（推理侧视角） |
 
 ---
 
