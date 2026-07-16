@@ -189,3 +189,4 @@ Hy3 激活参数是这一档里最小的(21B vs 27–40B),官方叙事"21B 激�
 - [[kimi_k2.5_analysis]] — 主榜对比模型之一的多模态延伸
 - [[glm_5_analysis]] — 主榜最强同段对手,DSA 注意力路线
 - [[longcat_flash_analysis]] — 另一"小激活参数"路线: 用 ScMoE 调度而非纯后训练换性价比
+- [[inkling_analysis]] — 反面对照: Hy3 架构最保守赌后训练,Inkling 赌架构差异化(抛 RoPE/MLA)

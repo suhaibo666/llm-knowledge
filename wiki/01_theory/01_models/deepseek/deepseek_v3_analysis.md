@@ -312,3 +312,4 @@ With only **37B activated parameters** (vs 405B dense), V3-Base surpasses LLaMA-
 - [[dspark_analysis]] — DSpark speculative decoding: V3's MTP becomes the MTP-1 baseline that DSpark's semi-autoregressive drafter supersedes
 - [[speculative_decoding/index]] — Drafter evolution overview MTP → Eagle3 → DFlash → DSpark
 - [[hy3_analysis]] — 腾讯 Hy3 (295B/21B) 原样采用 V3 的 sigmoid+bias 免辅助损失路由与 MTP 投机解码,是该配方成为开源 MoE 事实标准的例证
+- [[inkling_analysis]] — Thinking Machines Inkling 部分沿用 V3 免辅助损失路由,但抛弃 MLA/RoPE/单 MTP,是"选择性继承"的对照

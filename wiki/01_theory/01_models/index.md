@@ -58,6 +58,13 @@
 | [[hy3_analysis]] | Hy3 295B/21B MoE,架构冻结+纯后训练迭代,sigmoid 免辅助损失路由,三档推理模式 |
 | [[stem_sparse_attention_analysis]] | Stem 免训练稀疏注意力,TPD+OAM,25% 算力近稠密,128K prefill 3.7× |
 
+### Thinking Machines Lab
+
+| 页面 | 核心主题 |
+|------|---------|
+| [[thinking_machines/index]] | Thinking Machines(Mira Murati)模型家族总览 |
+| [[inkling_analysis]] | Inkling 975B/41B 多模态 MoE,抛 RoPE/MLA、滑窗-全局 5:1 交错、SConv、encoder-free 四模态、8 层 MTP、Muon、Apache 2.0 |
+
 ### LongCat / Meituan
 
 | 页面 | 核心主题 |

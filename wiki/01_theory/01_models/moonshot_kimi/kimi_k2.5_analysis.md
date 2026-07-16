@@ -319,3 +319,4 @@ $$\tilde{r}(x,y) = \begin{cases} r(x,y) \cdot I\{ \frac{1}{K}\sum_i r(x,y_i) < \
 - [[moonshot_kimi/index]]
 - [[moonshot_kimi/kimi_k2_analysis]]
 - [[01_theory/01_models]]
+- [[inkling_analysis]] — 多模态对照: Inkling encoder-free vs K2.5 MoonViT-3D 重编码器;Inkling SFT 用 K2.5 合成数据冷启动

@@ -4,6 +4,23 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-16: 新增 [[inkling_analysis]] — Thinking Machines Inkling (975B-A41B) 收录,含 thinking_machines 新目录
+
+**Type**: Ingest(应用户「今天 Thinking Machines 发布开源模型,分析并落库」。**关键事实: 无正式技术报告/论文**——arXiv 无;"technical report" = 官方公告 + HF 模型卡 + config.json,已全部落 `raw/01_theory/01_models/thinking_machines/`)
+
+- **新源文件(raw/)**: `Inkling_config.json`(架构 ground truth,HF `thinkingmachines/Inkling`)、`Inkling_HF_model_card.md`(完整基准表 + Apache 2.0 许可 + 安全评估)、`Inkling_official_announcement_2026-07-15.html`(训练配方 + 设计哲学)。
+- **新页**: [[inkling_analysis]](主线: 不抄 DeepSeek 作业的多模态开源 MoE,赌可定制底座而非榜首)+ [[thinking_machines/index]];[[01_theory/01_models/index]] 增 Thinking Machines 段。
+- **本库对 config 核验的架构差异化要点**(全部带行号):
+  1. **抛 RoPE**: 学习式相对位置编码(`d_rel=16, rel_extent=1024`)+ >128K logit 缩放外推到 1M。
+  2. **抛 MLA**: 滑窗/全局 5:1 交错(`local_layer_ids` 55 层 + 11 全局),**非对称 KV 头**(全局 8 / 滑窗 16,窗口 512)。
+  3. **SConv**(核 4)+ **encoder-free 四模态**(vision hMLP patchify 40×40 / audio 离散 dMel 16 级)+ **8 层 MTP**(vs DeepSeek/Hy3 的 1)。
+  4. 路由沿用 sigmoid 免辅助损失,但 `route_scale=8.0` 异常大;Muon+Adam 混合训练 + muP。
+- **影响力判断**(§五,已与事实分离): 前 OpenAI CTO 首发即开源(Apache 2.0)的象征意义;Tinker 微调变现的商业模式创新;抗审查/校准的差异化卡位;encoder-free 在视觉基准上已见代价(MMMU Pro 落后)。
+- **联动反链**: [[hy3_analysis]](保守 vs 差异化对照)、[[deepseek_v3_analysis]](选择性继承)、[[kimi_k2.5_analysis]](多模态路线对照 + K2.5 合成数据冷启动)、[[hw_friendly_llm_codesign_analysis]](NVFP4 部署)。
+- **校验**: config 行号逐一对 raw/ 核对;基准表从 HF 模型卡原表摘录(非二手);mermaid 结构图按库规范自查(首行 flowchart TB、英文 id、subgraph 标题无 `[]|`、标签无裸定界符)通过;无技术报告故"为什么"部分推断已显式标注。页 <300 行。
+
+---
+
 ## 2026-07-15: 新增 [[torch_npu_upstream_adaptation_analysis]] — Ascend out-of-tree 适配与 PyTorch upstream 差异全景
 
 **Type**: Ingest / codebase comparison（应用户“结合工作区 torch_npu 和 PyTorch 源码梳理 Ascend 适配主要点与上游差异”。基线：`torch_npu v2.7.1@b3c8a815`、其记录的 `op-plugin@6ef73e399`、PyTorch `main@2b460d01`，均按本地源码逐点核实行号）
