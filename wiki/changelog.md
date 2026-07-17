@@ -4,6 +4,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-17（四次更新）：GDN/KDA 线性注意力从公式到训推融合 Kernel 的完整闭环
+
+**Type**: Deep Dive（承接用户连续追问：QKVABZ、$a/b/z$ 设计、RNN 中的 $t$、chunk size 与 $t$ 的关系、chunk 数学等价性、仿射状态是否必须保序，以及当前训练/Prefill/Decode kernel 融合。）
+
+- **新增 [[gdn_kda_linear_attention_analysis]]**：从 $x_t\rightarrow q,k,v,a,b,z$ 开始，逐步解释 raw $a\rightarrow g=\log\alpha$、$b\rightarrow\beta$、$z$ 输出门的职责分离；给出 GDN 标量 decay 与 KDA 逐通道 decay 的五步递推、统一仿射式 $S_t=A_tS_{t-1}+B_t$、$C=3$ 展开，以及 chunk 摘要 $(P,R)$ 的保序结合复合。明确纠正“chunk 状态矩阵直接相乘”和“有结合律即可乱序”两个误解。
+- **新增 [[gdn_kda_kernel_implementation_analysis]]**：训练侧固定 FLA `ccb0ff944cbf`，拆解 autograd chunk forward/backward、gate+cumsum、KKT+solve-tril+W/U、状态 scan、输出和反向重算；推理侧固定 SGLang `7824903417b7`，拆解 QKVABZ 投影融合、Prefill $C=64$ chunk pipeline、Decode fused recurrent 五步、GDN packed-decode 与 speculative verify。明确 SGLang 是推理基线，不用其 forward-only 代码冒充训练反向。
+- **原始来源与联动**：新增 raw 快照 `Gated_Delta_Networks-2412.06464v3.pdf`；修正 [[kimi_linear_analysis]] KDA 公式中 $S_{-1}$ 的下标笔误为 $S_{t-1}$；更新 Moonshot/Kimi 与模型总索引，并为 [[kimi_k3_architecture_deepdive]] 补充双向入口。
+- **后续补充：TND/THD packed 输入**：[[gdn_kda_kernel_implementation_analysis]] 新增 §八，明确 TND/THD 的 $T=\sum_iL_i$、外层 batch=1 与 `cu_seqlens` 状态边界；逐段追踪 Megatron-LM `dev@232c478d43ce` 的 `T×1×D → per-sequence CP→HP → 1×T×N×d → boundary-aware short conv/chunk GDN → per-sequence HP→CP`，并解释为何每条 packed 序列必须独立重置 RNN 状态、chunk 不能跨 pack 边界，以及当前 batch、CP 对齐、FLA 与 inference 限制。
+- **TND 代码级追踪**：同页 §8.6 补充最小等价伪代码，并把边界隔离落实到三层实现：Megatron `_unpack_sequence` 与逐序列 CP↔HP、FLA causal-conv 的 `bos/eos + boundary_check`、GDN Triton state kernel 的 `N×head` program grid 与每序列独立 chunk-state 槽。
+
+---
+
 ## 2026-07-17(三次更新): [[kimi_k3_infra_deepdive]] 新增 §四「负载建模」—— 逐模块 roofline 记账与 bound 判定
 
 **Type**: Update(应用户「探讨引入 KDA 后各部分的负载瓶颈与 bound;训练侧按 8K→64K→256K→1M 逐模块计算说明;不压缩合并入库」)

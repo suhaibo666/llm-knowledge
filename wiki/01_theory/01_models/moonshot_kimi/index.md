@@ -197,6 +197,8 @@ k1.5 RL 框架 (2025.01)
 | Kimi Audio Technical Report | 2504.18425 | 待摄入 |
 | Kimi K2: Open Agentic Intelligence | 2507.20534 | [[kimi_k2_analysis]] |
 | Kimi Linear: Expressive Efficient Attention | 2510.26692 | [[kimi_linear_analysis]] |
+| Gated Delta Networks + KDA 机制深挖 | 2412.06464 / 2510.26692 | [[gdn_kda_linear_attention_analysis]] |
+| GDN/KDA 训练与推理 Kernel 实现 | FLA / SGLang | [[gdn_kda_kernel_implementation_analysis]] |
 | Kimi K2.5: Visual Agentic Intelligence | 2602.02276 | [[kimi_k2.5_analysis]] |
 | Attention Residuals | 2603.15031 | [[kimi_k3_architecture_deepdive]] §4(独立页待建) |
 | Kimi K3(发布博客;技术报告 2026-07-27 前随权重发布) | — | [[kimi_k3_analysis]] · [[kimi_k3_architecture_deepdive]] · [[kimi_k3_infra_deepdive]] |
@@ -227,3 +229,5 @@ k1.5 RL 框架 (2025.01)
 - [[01_theory/01_models/attention_is_all_you_need_analysis]]
 - [[01_theory/04_posttraining/grpo_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index]]
+- [[gdn_kda_linear_attention_analysis]] — 从 QKVABZ 到 chunkwise 仿射扫描
+- [[gdn_kda_kernel_implementation_analysis]] — 训练、Prefill、Decode 融合实现

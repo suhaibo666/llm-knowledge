@@ -5,6 +5,7 @@
 > **arXiv**: 2510.26692 (2025-10)
 > **开源**: https://github.com/MoonshotAI/Kimi-Linear
 > **模型**: https://huggingface.co/moonshotai/Kimi-Linear-48B-A3B-Instruct
+> **机制与 Kernel 深挖（2026-07-17）**: [[gdn_kda_linear_attention_analysis]] · [[gdn_kda_kernel_implementation_analysis]]
 
 ---
 
@@ -35,7 +36,7 @@ Layer 8:  [MLA]
 
 ### 2.1 KDA 核心公式
 
-$$\mathbf{S}_t = \left(\mathbf{I}-\beta_t\bm{k}_{t}\bm{k}_{t}^{\top}\right)\operatorname{Diag}\left(\bm{\alpha}_t \right)\mathbf{S}_{-1} + \beta_t\bm{k}_{t}\bm{v}_{t}^{\top}$$
+$$\mathbf{S}_t = \left(\mathbf{I}-\beta_t\bm{k}_{t}\bm{k}_{t}^{\top}\right)\operatorname{Diag}\left(\bm{\alpha}_t \right)\mathbf{S}_{t-1} + \beta_t\bm{k}_{t}\bm{v}_{t}^{\top}$$
 
 $$\bm{o}_t = \mathbf{S}_t^\top \bm{q}_t$$
 
@@ -218,4 +219,6 @@ Kimi Linear 基于 **Moonlight** (K2 基础架构)，面向 K2.5 及后续模型
 - [[01_theory/index]]
 - [[01_theory/01_models/attention_is_all_you_need_analysis]]
 - [[moba_analysis]]
+- [[gdn_kda_linear_attention_analysis]] — GDN/KDA 的 QKVABZ、RNN 递推与 chunk 数学等价性
+- [[gdn_kda_kernel_implementation_analysis]] — 训练、Prefill、Decode 融合 kernel
 - [[kimi_k3_analysis]] / [[kimi_k3_architecture_deepdive]] — KDA 在 K3 的产品化落地

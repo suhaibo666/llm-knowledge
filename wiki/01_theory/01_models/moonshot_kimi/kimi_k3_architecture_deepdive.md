@@ -120,7 +120,7 @@ KV cache 只存在于 MLA 层。`KimiDynamicCache` 为 KDA 层保存 convolution
 
 **为什么不选择其他方案。** 纯 MLA 的质量略低，在 1M 上下文下 TPOT 又高出约 6.3×；Mamba2 没有 delta rule，在 Palindrome、MQAR 和 Stack 等合成任务上全面落后（Fig. 4）；GDN 的粗粒度标量门在短文本上略优于 MLA，但到长文本时反而落后，只有 KDA 的细粒度门在两端都占优（p.12）。Scaling law 拟合进一步给出：KDA 混合架构相对 MLA 约有 1.16× 的计算效率（Table 2）。
 
-> 更完整的 Kimi Linear 论文分析(含 chunkwise 并行推导)见 [[kimi_linear_analysis]];本节聚焦 K3 采用视角与源码定位。
+> 更完整的 Kimi Linear 模型分析见 [[kimi_linear_analysis]]；GDN/KDA 的 QKVABZ、逐 token 递推、chunk 仿射等价性与当前训推 kernel 见 [[gdn_kda_linear_attention_analysis]]、[[gdn_kda_kernel_implementation_analysis]]。本节聚焦 K3 采用视角与源码定位。
 
 ---
 
