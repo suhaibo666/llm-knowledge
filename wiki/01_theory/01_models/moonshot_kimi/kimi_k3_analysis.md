@@ -1,23 +1,23 @@
-# Kimi K3 — 用「结构效率 ×2.5」逼近闭源前沿的首个开源 3T 级模型
+# Kimi K3：以约 2.5× 的整体扩展效率迈向 3T 级开放模型
 
-> **来源基线**(2026-07-16 发布,**完整技术报告与权重尚未放出**,将于 2026-07-27 前随权重发布):
-> - 一手来源:官方发布博客 [kimi.com/blog/kimi-k3](https://www.kimi.com/blog/kimi-k3),本地快照 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.txt`(逐字稿,下称"博客");官方内嵌架构图原件 `assets/kimi_k3_official_arch.svg`
-> - 结构组件的机制/源码证据:见 [[kimi_k3_architecture_deepdive]](KDA/AttnRes/LatentMoE 逐项溯源)
-> - 训推 infra:见 [[kimi_k3_infra_deepdive]]
-> **维度**: Entity 总览(发布报告级)。本页回答"K3 是什么、表现如何、官方怎么定位";机制级"为什么"在两个 deepdive 页。
-> **更新**: 2026-07-17 初版(基于发布博客;技术报告发布后需回填激活参数、层数、训练配方等缺口)
+> **来源基线**：官方 Kimi K3 Tech Blog 发布于 2026-07-16；**完整技术报告与模型权重尚未发布**。官方承诺最迟于 2026-07-27 发布权重，并表示架构、训练与评测细节将在技术报告中披露，但没有给出报告的明确发布日期（博客 `:94-105`、`:210`）。
+> - 一手来源：[kimi.com/blog/kimi-k3](https://www.kimi.com/blog/kimi-k3)，本地逐字快照为 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.txt`（下称“博客”）；官方内嵌架构图原件为 `assets/kimi_k3_official_arch.svg`。
+> - 结构组件的论文与源码证据：见 [[kimi_k3_architecture_deepdive]]。
+> - 训练与推理基础设施：见 [[kimi_k3_infra_deepdive]]。
+> **维度**：模型发布总览。本页回答“K3 是什么、表现如何、官方如何定位”；机制层面的“为什么”由两篇 deep dive 展开。
+> **更新**：2026-07-17，依据官方 Tech Blog 优化中文叙述与公式展示；完整技术报告发布后仍需回填激活参数、层数和训练配方。
 
 ---
 
 ## 一、主线
 
-**K3 的主线不是"更大",而是"每单位算力换更多智能"**:官方将 KDA + AttnRes + 高稀疏 Stable LatentMoE 三项结构改动加上训练/数据配方,合并量化为——
+**K3 的主线不只是“把模型做大”，而是提高单位算力所能换取的能力。** 官方将 KDA、AttnRes、高稀疏 Stable LatentMoE，以及训练和数据配方的共同收益，概括为相对 Kimi K2 **约 2.5× 的整体 scaling efficiency**（博客 `:104-105`）。
 
-> "these structural changes yield an approximate **2.5× improvement in overall scaling efficiency compared to Kimi K2**, allowing the model to convert compute into intelligence more effectively"(博客 §An Open 3T-Class Model)
+这里的“2.5×”不是某一项 benchmark 的提升，也不是单纯的训练吞吐倍率。官方给出的含义是：同等计算投入能够转化为更多模型能力。公开材料尚未披露该指标的精确定义，因此本文只把它作为官方总体口径，不进一步推导为 loss-matched compute 或成本倍率。
 
-2.8T 总参数是这个效率红利之上的规模化结果,而非卖点本身。官方同时罕见地自报位次:"整体性能仍落后于最强闭源模型 Claude Fable 5 和 GPT 5.6 Sol,但稳定超过其余被测模型"(博客开篇原句),Limitations 里再次承认 UX 差距。
+2.8T 总参数可以理解为这套效率改造进一步规模化后的结果。官方也没有回避差距：K3 的整体表现仍落后于 Claude Fable 5 和 GPT 5.6 Sol，但在其评测套件中持续领先其他被测模型（博客 `:76-77`）；Limitations 又进一步承认，实际用户体验与这两款闭源模型之间仍有可感知差距（博客 `:552-559`）。
 
-## 二、关键规格(vs 直接前代 K2.5)
+## 二、关键规格（对比直接前代 K2.5）
 
 | 维度 | Kimi K3 | Kimi K2.5(对照) | 出处 |
 |---|---|---|---|
@@ -31,53 +31,53 @@
 | 量化 | **MXFP4 权重 + MXFP8 激活,SFT 起 QAT** | 原生 INT4(post-training QAT) | 博客 §Architecture |
 | 训练稳定性组件 | Per-Head Muon、Quantile Balancing、SiTU | MuonClip | 博客 §Architecture;[[kimi_k2_analysis]] |
 | 思考模式 | 默认 max effort;**preserved thinking history 模式训练** | thinking + instant 双模式 | 博客开篇、§Limitations |
-| API 定价 | 输入 $3.00/M(缓存命中 $0.30/M)、输出 $15.00/M | — | 博客 §Availability |
+| API 定价 | 输入 3.00 USD/MTok；缓存命中输入 0.30 USD/MTok；输出 15.00 USD/MTok | — | 博客 §Availability（`:223-227`） |
 
-**整体结构图**(按官方博客内嵌架构图重绘,原件见 assets):
+**整体结构图**（按官方博客内嵌架构图重绘，原件见 `assets/`）：
 
-![Kimi K3 整体结构:中间主干为重复单元 KDA→Stable LatentMoE ×3 + Gated MLA→Stable LatentMoE ×1,每个子层带 AttnRes 的 (α,w) 深度注意力系数,从 Block n−1/n−2/n−3 与 Embedding 选择性取回表征;左放大面板为 KDA 内部(q/k/v 各自 Linear+Conv,q/k 加 L2 归一,σ 门 α_t/β_t,输出门),右放大面板为 Stable LatentMoE(Linear 降维→Router→896 选 16 + Shared Expert→Linear 升维)](assets/kimi_k3_arch_redrawn.png)
+![Kimi K3 整体结构：主干以三个 KDA 单元和一个 Gated MLA 单元交错，每个注意力层后连接 Stable LatentMoE，并通过 AttnRes 从较早块和 embedding 中选择性取回表征。](assets/kimi_k3_arch_redrawn.png)
 
 > 官方内嵌 SVG 的 aria-label 直接写着 **"Block Attention Residuals architecture diagram"**——AttnRes 在官方叙事中的地位可见一斑。
 
 ## 三、基准结果
 
-评测口径:K3 全部 reasoning effort=max、temperature=1.0、top-p=1.0;按基准分别用 KimiCode / Claude Code / Codex harness(博客 §Footnotes)。对手:Claude Fable 5(max, with fallback)、GPT 5.6 Sol(max)、Claude Opus 4.8(max)、GPT 5.5(xhigh)、GLM-5.2(max)。
+K3 的所有结果都使用 `reasoning effort=max`、`temperature=1.0`、`top-p=1.0`。不同 benchmark 分别运行在 KimiCode、Claude Code 或 Codex harness 下，因此分数不仅反映基础模型，也包含 agent harness 的影响（博客 §Footnotes，`:495-539`）。主要对手包括 Claude Fable 5（max，可能 fallback）、GPT 5.6 Sol（max）、Claude Opus 4.8（max）、GPT 5.5（xhigh）和 GLM-5.2（max）。
 
-![官方 Coding 基准图:DeepSWE 67.5(第3)、Terminal Bench 2.1 88.3(第2)、FrontierSWE 81.2(第2)、Program Bench 77.8(第1)、Kimi Code Bench 2.0 72.9(第2)、SWE Marathon 42.0(第1,Fable 5 仅 35.0)](assets/kimi_k3_bench_coding.png)
+![官方 Coding 基准：K3 在 Program Bench 和 SWE Marathon 排名第一，在 Terminal Bench 2.1、FrontierSWE 与 Kimi Code Bench 2.0 排名第二。](assets/kimi_k3_bench_coding.png)
 
-![官方 General/Visual Agents 基准图:GDPval-AA v2 Elo 1668(第3)、AA-Briefcase Elo 1548(第2)、Automation Bench 30.8(第1)、JobBench 52.9(第2)、SpreadsheetBench 2 34.8(第1)、BrowseComp 91.2(第1)、CharXiv w/tool 91.3(第2)、Zerobench w/tool 41.0(并列第2)](assets/kimi_k3_bench_agents.png)
+![官方 General 与 Visual Agents 基准：K3 在 Automation Bench、SpreadsheetBench 2 和 BrowseComp 排名第一，多项知识工作与视觉任务进入前三。](assets/kimi_k3_bench_agents.png)
 
-**K3 登顶项**(全表 33 项,博客 §Full Benchmark Table):SWE Marathon 42.0、Program Bench 77.8、BrowseComp 91.2、DeepSearchQA 95.0(F1)、Automation Bench 30.8、SpreadsheetBench 2 34.8、OmniDocBench 91.1、ZeroBench 23.0(与 Fable 5 并列)。
+在博客给出的 33 项完整评测中，K3 的第一名项目包括：SWE Marathon 42.0、Program Bench 77.8、BrowseComp 91.2、DeepSearchQA 95.0（F1）、Automation Bench 30.8、SpreadsheetBench 2 34.8、OmniDocBench 91.1，以及与 Fable 5 并列的 ZeroBench 23.0。
 
-**分域画像**:
+**分域画像**：
 
-- **长程任务是最大亮点**:SWE Marathon 42.0 全场第一(Fable 5 35.0);FrontierSWE 81.2 仅次于 Fable 5(86.6)、大幅超 GPT 5.6 Sol(71.3)。与其"训练特别强调长程高难任务"的自述一致(§Limitations)。
-- **检索/浏览第一梯队**:BrowseComp 91.2 全场最高;脚注披露**用 1M 上下文、完全不做 context 管理时 90.4**(300K 触发 compaction 反而 91.2)——1M 原生上下文让"无压缩暴力浏览"成为可行基线(博客 §Footnotes/BrowseComp)。
-- **经典编码略逊半档**:DeepSWE 67.5 vs GPT 5.6 Sol 73.0 / Fable 5 70.0。
-- **知识推理**:GPQA-Diamond 93.5;HLE-Full 43.5 与 Fable 5(53.3)差距明显。
-- **视觉**:OmniDocBench 91.1 第一;MathVision 94.3/97.8(裸考/带 python)接近第一梯队。
+- **长程任务是最突出的优势。** SWE Marathon 得分 42.0，明显高于 Fable 5 的 35.0；FrontierSWE 得分 81.2，仅次于 Fable 5 的 86.6，并高于 GPT 5.6 Sol 的 71.3。这与官方“训练特别强调长程高难任务”的说明一致。
+- **检索与浏览能力进入第一梯队。** BrowseComp 得分 91.2。脚注还披露：使用 1M 上下文且完全不做 context management 时，K3 仍能得到 90.4；采用 300K token 触发的上下文压缩策略后为 91.2（博客 `:538-539`）。这说明 1M 原生窗口至少让“无需压缩直接浏览”成为可行基线。
+- **经典编码仍略逊于最强闭源模型。** DeepSWE 为 67.5，低于 GPT 5.6 Sol 的 73.0 和 Fable 5 的 70.0。
+- **知识推理强弱并存。** GPQA-Diamond 达到 93.5，但 HLE-Full 为 43.5，与 Fable 5 的 53.3 仍有明显差距。
+- **视觉任务整体较强。** OmniDocBench 以 91.1 排名第一；MathVision 在不使用和使用 Python 时分别为 94.3、97.8，接近第一梯队。
 
-**读表注意**(博客 §Footnotes):Fable 5 由第三方评测、"结果可能含 fallback";PostTrain Bench 中 Fable 5 拒答自动回落 Opus 4.8 作答;GLM-5.2/部分 Claude/GPT 分数引自各家官方页与 artificialanalysis.ai 而非自测;DeepSWE 官方榜单口径下 K3 为 67.3(mini-SWE-agent harness)。
+**读表时需要保留四项口径限制。** Fable 5 的结果来自第三方评测，且可能包含 fallback；在 PostTrain Bench 中，如果 Fable 5 拒答，评测会回退到 Opus 4.8；GLM-5.2 以及部分 Claude/GPT 分数引用自各家官方页面或 Artificial Analysis，并非 Moonshot 自测；DeepSWE 官方榜单使用 mini-SWE-agent harness 时，K3 得分为 67.3，而不是上图中的 67.5（博客 §Footnotes）。
 
-## 四、能力叙事(官方案例,未经第三方复现)
+## 四、能力案例（官方自报，尚未经第三方复现）
 
-1. **Kernel 优化**:四项任务(AttnRes、KDA、512 head-dim MLA kernel)跨 H200 与"另一厂商 GPGPU",每模型独立沙箱 24h;K3 与 Fable 5 相当、明显超 Opus 4.8/GPT 5.6 Sol;并披露"K3 开发后期,团队大部分 kernel 优化由早期版 K3 完成"(博客 §Kernel Optimization)。**任务选材本身泄露了 K3 自家 kernel 栈的组成**。
-2. **GPU 编译器**:从零构建 MiniTriton(tile 级 IR over MLIR + PTX codegen),roofline 微基准持平或超 Triton/torch.compile,端到端撑起 nanoGPT 训练收敛(§GPU Compiler Development)。
-3. **芯片设计**:48h 自主运行,开源 EDA + Nangate 45nm,为"跑自家架构 nano 模型"设计芯片:4mm²、100MHz 时序收敛、1.46M 标准单元、0.277MB SRAM、INT4 MAC + 融合反量化,仿真 8,700 tokens/s 解码(§Chip Design)。
-4. **科研复现**:天体物理 I–Love–Q 关系,交叉验证 20+ 论文、300+ 物态方程、3,000+ 行代码,约 2h 完成"资深研究员 1-2 周"工作量(§Coding for Research)。
-5. **知识工作/视频**:42 年 ASIC 行业交互式报告(120+ 轮递归自改进、2.8k+ 检索);56 素材自剪 teaser(≈熟练剪辑师 1-2 个工作日)(§Knowledge Work、§Video Editing)。
+1. **Kernel 优化。** 官方设置了四项任务，覆盖 AttnRes、KDA 和 512 head-dimension MLA kernel，并分别在 H200 与“另一厂商 GPGPU”上运行；每个模型获得独立沙箱和 24 小时时间。K3 与 Fable 5 表现接近，并明显优于 Opus 4.8 和 GPT 5.6 Sol。博客还称，K3 开发后期的大部分 kernel 优化由早期版 K3 自己完成。任务本身也从侧面揭示了 K3 kernel 栈的关键组成（博客 §Kernel Optimization，`:164-169`）。
+2. **GPU 编译器。** K3 从零构建 MiniTriton：以 MLIR 为基础设计 tile-level IR，并实现 PTX code generation。官方报告其 roofline 微基准可达到或超过 Triton、`torch.compile`，且能够端到端训练 nanoGPT 并正常收敛（§GPU Compiler Development）。
+3. **芯片设计。** 在 48 小时自主运行中，K3 使用开源 EDA 与 Nangate 45 nm 工艺库，为运行自家架构的 nano 模型设计芯片。官方给出的结果包括 4 mm² 面积、100 MHz 时序收敛、146 万个标准单元、0.277 MB SRAM，以及带融合反量化的 INT4 MAC；仿真解码吞吐为 8,700 token/s（§Chip Design）。
+4. **科研复现。** 在天体物理 I–Love–Q 关系任务中，K3 交叉核验 20 多篇论文和 300 多个物态方程，产出 3,000 多行代码。官方称约两小时完成了资深研究员通常需要一至两周的工作（§Coding for Research）。
+5. **知识工作与视频编辑。** K3 生成了一份覆盖 42 年 ASIC 行业史的交互式报告，经历 120 多轮递归改进和 2,800 多次检索；另一个案例把 56 份素材自动剪成 teaser，官方估计相当于熟练剪辑师一至两个工作日的工作量（§Knowledge Work、§Video Editing）。
 
-## 五、使用限制(官方 Limitations,部署方必读)
+## 五、使用限制（官方 Limitations）
 
-1. **对 thinking history 敏感**:K3 以 preserved thinking history 模式训练——harness 不完整回传历史思考内容、或会话中途从其他模型切到 K3,"生成质量可能高度不稳定";建议用验证过的 harness(如 Kimi Code)、避免中途切换。
-2. **过度主动**:遇小问题/意图含糊可能替用户做预期外决定;需在 system prompt 或 AGENTS.md 显式约束。
-3. **UX 差距自认**:与 Fable 5 / GPT 5.6 Sol 相比仍有可感知差距。
+1. **对 thinking history 敏感。** K3 使用 preserved thinking history 模式训练。如果 harness 没有完整回传历史思考内容，或者会话中途从其他模型切换到 K3，生成质量可能变得高度不稳定。官方建议使用经过验证的 harness（如 Kimi Code），并避免中途切换模型。
+2. **可能过度主动。** 面对小问题或含糊意图时，K3 可能替用户做出超出预期的决定。部署方需要在 system prompt 或 `AGENTS.md` 中明确权限与行为边界。
+3. **用户体验仍有差距。** 官方承认，K3 与 Fable 5、GPT 5.6 Sol 之间仍存在可感知的 UX 差距（博客 `:552-559`）。
 
 ## 六、发布与获取
 
-- 渠道:kimi.com、Kimi Work(≥3.1.0)、Kimi Code(`/model` 选 kimi-k3)、Kimi API(`kimi-k3`)。
-- 价格:$0.30/M(缓存命中输入)/ $3.00/M(未命中输入)/ $15.00/M(输出);官方 API 由 Mooncake 驱动,**coding 负载缓存命中率 >90%** ⇒ 有效输入价 ≈$0.57/M(博客 §Availability;机制见 [[kimi_k3_infra_deepdive]] §3)。
-- 时间线:权重 2026-07-27 前 + 技术报告同步;低/高思考档后续推出。
+- 渠道：kimi.com、Kimi Work（3.1.0 及以上）、Kimi Code（通过 `/model` 选择 `kimi-k3`）和 Kimi API（模型名 `kimi-k3`）。
+- 价格：缓存命中输入为 0.30 USD/MTok，未命中输入为 3.00 USD/MTok，输出为 15.00 USD/MTok。官方 API 由 Mooncake 的分离式推理架构支撑，coding 负载的缓存命中率超过 90%（博客 `:223-227`）。若按恰好 90% 命中估算，平均输入成本上界约为 `0.9 × 0.30 + 0.1 × 3.00 = 0.57 USD/MTok`；机制见 [[kimi_k3_infra_deepdive]] §3。
+- 时间线：模型权重最迟于 2026-07-27 发布；完整技术报告尚无明确日期。低、高 thinking effort 档位将在后续更新中提供。
 
 ## 七、待技术报告回填的缺口
 
@@ -85,7 +85,7 @@
 
 ## Related Pages
 
-- [[kimi_k3_architecture_deepdive]] — 六大结构变化点逐项:动机→机制→证据→为何不选替代(KDA/Gated MLA/AttnRes/Stable LatentMoE/SiTU/规模)
+- [[kimi_k3_architecture_deepdive]] — 按“动机 → 机制 → 证据 → 替代方案”分析 KDA、Gated MLA、AttnRes、Stable LatentMoE、SiTU 与规模变化
 - [[kimi_k3_infra_deepdive]] — Per-Head Muon、MXFP4/MXFP8 QAT、全平衡 EP、Mooncake、KDA prefix cache 进 vLLM、64+ 卡超节点
 - [[kimi_linear_analysis]] — KDA 与 3:1 混合架构的原始论文(K3 注意力主干的前身)
 - [[kimi_k2.5_analysis]] — 直接前代(1.04T MoE + MoonViT 原生视觉)

@@ -6,13 +6,14 @@ All source ingestions and significant wiki updates are logged here.
 
 ## 2026-07-17: 新增 Kimi K3 收录(三页)—— 首个开源 3T 级模型的发布报告 + 结构变化 + 训推 infra
 
-**Type**: Ingest(应用户「kimi3 发布了,总结模型报告 + 结合开源源码分析结构变化点与训推 infra」。**关键事实:K3 完整技术报告与权重 2026-07-27 前才发布**——当前"报告"实体 = 官方发布博客,已快照落 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.{txt,html}`;结构机制的源码证据来自官方声明 K3 所基于的组件仓库,均已实际克隆/打开核验)
+**Type**: Ingest(应用户「kimi3 发布了,总结模型报告 + 结合开源源码分析结构变化点与训推 infra」。**关键事实：K3 权重承诺于 2026-07-27 前发布，完整技术报告尚无明确发布日期**——当前“报告”实体 = 官方发布博客，已快照落 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.{txt,html}`；结构机制的源码证据来自官方声明 K3 所基于的组件仓库，均已实际克隆/打开核验)
 
 - **新页**:[[kimi_k3_analysis]](发布总结:2.8T/896选16/1M 上下文,33 项基准全表与口径脚注,官方自报"位列 Fable 5 与 GPT 5.6 Sol 之后",preserved thinking history 等限制)、[[kimi_k3_architecture_deepdive]](六大变化点各按动机→机制→证据→为何不选替代:KDA 3:1 混合、Gated MLA+NoPE、AttnRes、Stable LatentMoE+Quantile Balancing、SiTU、2.8T/1M/视频)、[[kimi_k3_infra_deepdive]](Per-Head Muon、静态 shape 全平衡 EP、INT4→MXFP4/MXFP8 QAT 演进、Mooncake >90% 命中、KDA prefix caching 进 vLLM 的 PR 链 #27654/#42406、FlashKDA CUTLASS kernel、64+ 卡超节点账)。
+- **可读性修订**：结合 K3 官方 Tech Blog（当前公开“报告”）重写三页的主线与长段落，明确区分官方事实、组件证据和推断；将 KDA、AttnRes、Per-Head Muon、MXFP4 容量与 Mooncake 成本公式改为独立公式块并补齐符号说明；价格统一写作 `USD/MTok`，避免美元符号与 Markdown LaTeX 定界符冲突。同时订正发布时间口径：7 月 27 日是权重发布期限，不是技术报告的官方承诺日期。
 - **源码核验基线**:Kimi-Linear @`8c1d85e` + HF 48B config/modeling @`e1df551a` + fla @`b328e7c`(KDA 公式↔`fla/ops/kda/naive.py:59-63` 逐行对照;27 层实际 20 KDA:7 MLA;MLA `assert use_nope`);Attention-Residuals @`85e2231`(仓库仅 README+论文,伪代码 README.md:52-91;arXiv 2603.15031v1 全套消融);FlashKDA @`d2ff19a`(CHUNK=16 双 kernel,H20 1.85–2.31×)。
 - **图**:9 张入 `moonshot_kimi/assets/`——官方基准图 2 张(PNG 原件)+ 官方内嵌架构 SVG 原件(aria-label 即 "Block Attention Residuals architecture diagram")+ 按官方风格重绘架构主图 + KDA/AttnRes/LatentMoE/KDA-prefix-cache/Mooncake/MXFP4-QAT 自绘深色 SVG(均 2× 渲染 PNG,已逐张目检)。
 - **索引联动**:[[moonshot_kimi/index]] 家族表/时间线/论文索引增 K3 与 AttnRes 行,知识缺口标注 AttnRes 已覆盖;[[01_theory/01_models/index]] Kimi 段增 4 行(含补录 kimi_linear_analysis);[[kimi_linear_analysis]]/[[kimi_k2.5_analysis]]/[[kimi_k2_analysis]] 增后继回链。
-- **待回填**:激活参数、层数、SiTU/Quantile Balancing/Per-Head Muon 精确定义、训练规模——三页中所有 [推断] 标注项等 7/27 技术报告发布后核对(缺口清单在 [[kimi_k3_infra_deepdive]] §4)。
+- **待回填**：激活参数、层数、SiTU/Quantile Balancing/Per-Head Muon 精确定义与训练规模；三页中所有 `[推断]` 项须在完整技术报告发布后核对（报告日期未定，缺口清单见 [[kimi_k3_infra_deepdive]] §4）。
 
 ---
 
