@@ -59,13 +59,50 @@ $$
 
 **硬件效率来自对广义 DPLR 转移的特化。** KDA 把 DPLR 中的两个向量都绑定到 `k`，使二级 chunk 计算由 4 次减为 2 次，并进一步消去 3 个矩阵乘。论文报告其 chunkwise kernel 相比通用 DPLR 快约 100%（§3.2、Fig. 2）。训练和 prefill 的生产入口是 `chunk_kda`（`fla/ops/kda/chunk.py:178`）；短序列解码切到 `fused_recurrent_kda`（`fla/ops/kda/fused_recurrent.py:336`，`q_len ≤ 64` 的选择逻辑见 `modeling_kimi.py:523-525`）。
 
-### 2.3 混合排布：只有四分之一的层保留完整 KV
+### 2.3 单 token 数据流：q / k / v / a / b / z 六路信号如何各司其职
+
+§2.2 的矩阵公式回答“状态怎么变”；本节换成**单 token、单 head 的数据流视角**，回答“每一路投影信号从哪里来、到哪里去”。下图以 GDN（Gated DeltaNet，KDA 的直接前身）为基线绘制——GDN 与 KDA 共享同一套 delta rule 骨架与门参数化，六路信号的分工完全一致，差异集中在门的粒度与投影布局（本节末尾逐条标出）。
+
+![GDN 单 token 数据流全图：第一段从隐藏状态 x_t 经融合投影一次 GEMM 切出六路信号——mixed_qkv 走 causal short conv 后做 Q/K L2Norm+scale（v 不归一化）；b_t 每 head 一个标量经 sigmoid 得写门 β_t；低秩遗忘特征 a_t^low 经第二级投影与 g_t=−exp(A_log)·softplus(a_t+dt_bias) 得 α_t=exp(g_t)∈(0,1)；低秩输出特征 z_t^low 经第二级投影得 z_t，全程不进入记忆状态。第二段为状态更新五步：先按 α_t 遗忘旧状态 S⁻=α_t·S_{t−1}（GDN 每 head 一个标量）；用 k_t 查询旧记忆 v̂_t=(S⁻)ᵀk_t；只写预测误差 e_t=v_t−v̂_t；以写入强度 δ_t=β_t·e_t 做 rank-1 Delta Rule 写入 S_t=S⁻+k_t·δ_tᵀ；最后用 q_t 读取 o_t=S_tᵀq_t（inclusive causal，当前 token 的写入可被读到），输出经 RMSNorm(o_t)⊙sigmoid(z_t) 与 W_o 投影。图底主线：a 决定旧记忆保留多少，b 决定纠错写入多强，k 负责寻址和写入，v 提供目标，q 负责读取，z 只控制最终输出。](assets/kimi_k3_fig_gdn_qkvabz_dataflow.png)
+
+> **图源**：本库自绘收录（2026-07-17），SVG 原件 `assets/kimi_k3_fig_gdn_qkvabz_dataflow.svg`；图内标注的实现基线为 SGLang `main@78249034` 的 GDN 路径（fused projection、short conv、gate activation、recurrent Delta Rule、gated RMSNorm），该 commit 对应关系以图内标注为准，本库未逐行复核 SGLang 侧。
+
+**第一段：一次融合投影切出六路信号。** GDN 的工程实现把 `u_t = W_fused · x_t` 一次 GEMM 算出，再切成四份：`mixed_qkv_t`、`b_t`、`a_t^low`、`z_t^low`。六路信号随后各走各路：
+
+| 信号 | 形状（每 head） | 后续处理 | 作用 |
+|---|---|---|---|
+| `q_t` | `d_k` 维 | short conv → L2Norm + scale | **读取**：从更新后的状态中取出输出 |
+| `k_t` | `d_k` 维 | short conv → L2Norm | **寻址与写入**：决定查询/擦除/写入状态的哪个方向 |
+| `v_t` | `d_v` 维 | short conv（不归一化） | **写入目标**：本 token 希望记忆记住的内容 |
+| `a_t^low` | 低秩 → 二级投影 | `g_t = −exp(A_log)·softplus(a_t + dt_bias)`，`α_t = exp(g_t) ∈ (0,1)` | **遗忘门**：旧记忆保留多少 |
+| `b_t` | 标量 | `β_t = sigmoid(b_t)` | **写门**：这次纠错写入多强 |
+| `z_t^low` | 低秩 → 二级投影 | 旁路直达输出门 | **输出门**：只调制最终输出，**不进入状态更新** |
+
+两个值得注意的设计：**causal short conv** 在投影后给 q/k/v 补一小段（核宽 4）的因果局部感受野——线性注意力没有 RoPE，超短程的位置/局部模式主要靠它；**Q/K 做 L2 归一而 v 不做**——q/k 只负责“方向”（寻址），范数交给门控管理，这是状态转移谱半径受控、长序列不爆的前提。遗忘门用的是 Mamba 式 Δt 参数化（低秩两级投影 + `softplus` + 可学习 `A_log`/`dt_bias`），fla 中 KDA 的同款实现见 `fla/ops/kda/gate.py:35,53`。
+
+**第二段：状态更新的五步拆解（delta rule 的"误差修正"读法）。**
+
+1. **先遗忘**：`S⁻ = α_t ⊙ S_{t−1}`——旧记忆按遗忘门整体（GDN）或逐通道（KDA）衰减；
+2. **查询旧记忆**：`v̂_t = (S⁻)ᵀ k_t`——“按这个 key，记忆原本会预测什么 value？”
+3. **只写预测误差**：`e_t = v_t − v̂_t`——已经记住的内容不重复叠加，这是 delta rule 与普通线性注意力（`S += k vᵀ` 无脑累加）的本质区别；
+4. **rank-1 写入**：`S_t = S⁻ + k_t (β_t e_t)ᵀ`——`k` 决定写到哪个方向，误差决定写什么，`β` 决定写多强；
+5. **读取与输出**：`o_t = S_tᵀ q_t`（inclusive causal：当前 token 刚写入的内容立即可读），再经 `RMSNorm(o_t) ⊙ sigmoid(z_t)` 与 `W_o` 得到 `y_t`。
+
+这五步与 §2.2 的闭式公式是同一件事的两种写法——把步骤 1–4 代入展开：`S⁻ + k(β(v − (S⁻)ᵀk))ᵀ = (I − β_t k_t k_tᵀ)·S⁻ + β_t k_t v_tᵀ`，即"误差修正"视角等价于"定向擦除 + 写入"视角。还要注意：此图是**逐 token 递推（decode）视角**，对应 `fused_recurrent_kda` 路径；训练与 prefill 实际走 chunkwise 并行形式（`chunk_kda`），数学等价、调度不同。
+
+**从 GDN 到 KDA：读这张图时要改三处。**
+
+1. **遗忘门粒度（最关键的一处）**：图中第 3 步“GDN：每个 head 用一个标量 `α_t`”（`fla/ops/gated_delta_rule/naive.py:31,54`，整个 `d_k×d_v` 状态乘同一标量）；KDA 换成 `d_k` 维向量 `Diag(α_t)`（`fla/ops/kda/naive.py:30-31`），即状态矩阵的**每一行（每个 key 通道）可以按不同速率遗忘**。直观效果是记忆管理从“一刀切保留/丢弃”细化为“分通道的差异化保留”——这正是 Kimi Linear 消融中 KDA 长文本反超 GDN-H 的机制来源（RULER@128K 84.3 vs 80.5，论文 Table 5）。
+2. **投影与卷积布局**：图基于 SGLang 的融合投影实现（一次 GEMM 切六路）；Kimi-Linear 的 HF 参考实现是 q/k/v 各自独立投影、各自 ShortConv(4)+SiLU（`modeling_kimi.py:471-485`），q/k 的 L2 归一在 kernel 内完成（`use_qk_l2norm_in_kernel=True`，`modeling_kimi.py:568-577`）；FlashKDA 进一步把 `β` 的 sigmoid 和 `g` 的激活也融进 kernel（其 README Kernel API 注明输入为 pre-activation logits）。布局差异只是工程折衷，数学不变。
+3. **输出门定位**：图中 `z` 旁路与 KDA 的低秩 sigmoid 输出门（`g_a/g_b proj`，2304→128→4096，`modeling_kimi.py:498-499`）同构；KDA 论文把它的作用明确定位为缓解 attention sink 并稳定梯度（Eq. 10），且消融显示换成 swish 会显著恶化（Val PPL 5.65 → 5.81，Table 1）。
+
+### 2.4 混合排布：只有四分之一的层保留完整 KV
 
 Kimi-Linear-48B 的 `config.json:20-52` 给出了实际排布：27 层中，`full_attn_layers=[4,8,12,16,20,24,27]`，即 20 个 KDA 层和 7 个 MLA 层，比例约为 2.86:1。论文称其为 uniform 3:1；前 24 层确实严格重复六次“3 个 KDA + 1 个 MLA”。
 
 KV cache 只存在于 MLA 层。`KimiDynamicCache` 为 KDA 层保存 convolution state 和定长 recurrent state，而不保存逐 token KV（`modeling_kimi.py:118-150`）。因此，相比所有层均使用 MLA，3:1 混合架构可直接减少约 75% 的 KV cache。K3 官方架构图继续使用 3× KDA、1× Gated MLA 的标注。
 
-### 2.4 证据：1.4T tokens、相同配方下的对照
+### 2.5 证据：1.4T tokens、相同配方下的对照
 
 论文 Table 1 的层比消融如下：
 

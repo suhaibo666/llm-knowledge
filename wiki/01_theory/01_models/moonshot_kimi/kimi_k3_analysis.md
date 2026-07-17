@@ -33,9 +33,9 @@
 | 思考模式 | 默认 max effort;**preserved thinking history 模式训练** | thinking + instant 双模式 | 博客开篇、§Limitations |
 | API 定价 | 输入 3.00 USD/MTok；缓存命中输入 0.30 USD/MTok；输出 15.00 USD/MTok | — | 博客 §Availability（`:223-227`） |
 
-**整体结构图**（按官方博客内嵌架构图重绘，原件见 `assets/`）：
+**整体结构图**（官方博客内嵌架构图**原图**：SVG 原件 + 官方页面 CSS 按暗色主题渲染，渲染 wrapper 存于 `assets/kimi_k3_official_arch_render.html`，可复现）：
 
-![Kimi K3 整体结构：主干以三个 KDA 单元和一个 Gated MLA 单元交错，每个注意力层后连接 Stable LatentMoE，并通过 AttnRes 从较早块和 embedding 中选择性取回表征。](assets/kimi_k3_arch_redrawn.png)
+![Kimi K3 官方架构图：右侧主干自下而上为 Embedding → Block n−3/n−2/n−1 → 当前块，块内重复单元为 KDA→(+)→Stable LatentMoE→(+) ×3 加 Gated MLA→(+)→Stable LatentMoE ×1；每个子层既有常规残差 (+)，又有一个 (w, α) 单元从历史块与 Embedding 做深度注意力取回，网络最终 Output 前还有一次 (w, α) 聚合。左上放大面板为 Stable LatentMoE：输入经 Router 与降维 Linear（梯形）分发给 Shared Expert（绿）与 Routed Expert（蓝紫），聚合后经升维 Linear 与 Norm 相加输出。左下放大面板为 KDA：q/k 走 Linear→Conv→L2，v 走 Linear→Conv，另有低秩瓶颈（梯形对）产生细粒度遗忘门与 σ 门、以及低秩 σ 输出门与 Norm 后的逐元素乘。](assets/kimi_k3_official_arch.png)
 
 > 官方内嵌 SVG 的 aria-label 直接写着 **"Block Attention Residuals architecture diagram"**——AttnRes 在官方叙事中的地位可见一斑。
 

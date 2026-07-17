@@ -4,6 +4,15 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-17(二次更新): K3 结构页吸收 GDN→KDA 单 token 数据流图;总体结构图恢复为官方原图
+
+**Type**: Update(应用户「吸收 gdn-qkvabz-dataflow.svg 并详细解释;总体结构图直接复用原报告的,不要自绘」)
+
+- **[[kimi_k3_architecture_deepdive]] 新增 §2.3「单 token 数据流:q/k/v/a/b/z 六路信号如何各司其职」**:融合投影切六路信号的分工表、状态更新五步拆解("误差修正"读法,并给出与 §2.2 闭式公式的代数等价展开)、GDN→KDA 需改的三处(每 head 标量门→Diag 逐通道门、投影/卷积布局、输出门定位),源码定位补齐(`fla/ops/gated_delta_rule/naive.py:31,54` vs `fla/ops/kda/naive.py:30-31` 等);原 §2.3/2.4 顺延为 §2.4/2.5。图源 `assets/kimi_k3_fig_gdn_qkvabz_dataflow.{svg,png}`(图内标注实现基线 SGLang main@78249034,以图注为准)。
+- **官方架构图原图可渲染了**:从博客 CSS bundle(`78620784116c2822.css`)抽出全部 89 条 `BlockAttnRes-module` 规则,与官方内嵌 SVG 拼装成自包含 wrapper `assets/kimi_k3_official_arch_render.html`,按暗色主题 2× 渲染为 `assets/kimi_k3_official_arch.png`;[[kimi_k3_analysis]] 的总体结构图改用该官方原图,自绘重绘版 `kimi_k3_arch_redrawn.{svg,png}` 删除。原图证实:每个子层是常规残差 (+) 与 AttnRes (w,α) 取回并存,最终 Output 前还有一次 (w,α) 聚合;MoE/KDA 放大面板中的低秩梯形投影清晰可见。
+
+---
+
 ## 2026-07-17: 新增 Kimi K3 收录(三页)—— 首个开源 3T 级模型的发布报告 + 结构变化 + 训推 infra
 
 **Type**: Ingest(应用户「kimi3 发布了,总结模型报告 + 结合开源源码分析结构变化点与训推 infra」。**关键事实：K3 权重承诺于 2026-07-27 前发布，完整技术报告尚无明确发布日期**——当前“报告”实体 = 官方发布博客，已快照落 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.{txt,html}`；结构机制的源码证据来自官方声明 K3 所基于的组件仓库，均已实际克隆/打开核验)
