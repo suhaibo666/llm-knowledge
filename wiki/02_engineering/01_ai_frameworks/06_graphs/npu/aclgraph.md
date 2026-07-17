@@ -265,4 +265,5 @@ sequenceDiagram
 
 - [[02_engineering/01_ai_frameworks/index]]
 - [[torch_compile_npugraphs_deep_dive]]
+- [[aclgraph_multistream_rng_analysis]] —— 多流 fork/join、Event 语义与 graph-safe RNG 算子适配
 - [[comparison]]

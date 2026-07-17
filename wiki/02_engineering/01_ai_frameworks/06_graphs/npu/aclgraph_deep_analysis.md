@@ -377,6 +377,8 @@ void NPUGraph::register_generator_state(const at::Generator& generator)
 
 NPU 使用 `NPUGeneratorImpl` 替代了 CUDA 的 `CUDAGeneratorImpl`。虽然两者都实现了"per-graph RNG offset"机制，但 NPU 的 secondary stream capture state 管理（`set_secondary_stream_capture_state`）是**NPU 特有的**，用于处理多流场景下的随机数同步。
 
+多流并不是捕获多个子图后合并，而是通过 Event Record/Wait 把其他 stream 纳入同一个 `model_ri_`；RNG 则通过 device seed/offset tensor 让每次 replay 推进状态。两者及 dropout 的联合路径详见 [[aclgraph_multistream_rng_analysis]]。
+
 #### 差异 10：NPU Graph  Trees 的独立管理器
 
 **位置**：`torch_npu/npu/_graph_tree.py`（由 `_graph_tree.py` 导入）
@@ -563,5 +565,6 @@ ACLGraph 是 torch_npu 与社区差异**中等但很关键**的一条路径。�
 - [[comparison]] — CUDA Graphs vs NPU Graphs 特性对比
 - [[torch_compile_npugraphs_deep_dive]] — NPU Graphs 与 torch.compile 集成深度分析
 - [[npugraphs_memory_reuse_analysis]] — NPU Graphs 内存管理
+- [[aclgraph_multistream_rng_analysis]] — 多流依赖、通信流边界与 graph-safe RNG 算子适配
 - [[torch_compile_npugraphs_deep_dive]] — reduce_overhead vs npugraphs
 - [[npu_lowering_guide]] — NPU lowering 与 fallback（§9）；差异 8 的 aclnn/aclop 把 fallback 关与捕获关连通
