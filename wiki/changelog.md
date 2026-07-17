@@ -11,6 +11,7 @@ All source ingestions and significant wiki updates are logged here.
 - **推理侧(§4.1-4.4)**:decode 逐部件字节/FLOP 记账——KDA 状态 R/W(~2 FLOPs/B 带宽 bound 但噪声级,Kimi-Linear 模板 40MB/token)、Gated MLA KV 扫描(1M=1.15GB/层/序列,**与论文实测 TPOT 1.84ms@1M 交叉验证吻合**)、LatentMoE 权重扫描(全量 1.49TB/步 ≈ 4.8ms 地板/64 卡,MXFP4 砍半的对象)、EP a2a 同步延迟(~120 次/步,supernode 的真正含义);prefill 三段迁移:冷算 170 PFLOPs@1M → FlashKDA 的"小矩阵效率" bound → 命中 >90% 后变"恢复带宽" bound(50-200ms vs 冷算三分钟)。
 - **训练侧(§4.5-4.7)**:8 个模块逐个"公式→代数→判 bound"——专家 GEMM t≈2500/专家 compute bound(与推理相反);EP a2a 16ms vs 27ms/层的重叠余量(无 LatentMoE 则 64ms 反超成主 bound);MLA 注意力 ∝L(256K 交叉、1M 占 78%,373ms vs 27ms/层);KDA 常数但 bwd 状态检查点 32GB/层/序列;AttnRes 1M 显存税 8.6GB/卡;**Per-Head Muon 的 NS 正交化代价 ∝min²×max,按头切片砍 64×**(整矩阵 11 TFLOPs vs 64 片共 0.17 TFLOPs);PP 气泡 (p−1)/m 随 m∝1/L 崩塌 → 拓扑必须 PP→CP 重排;激活显存 1TB/序列@1M 决定 CP 下限。含四档 L 的 binding constraint 矩阵与两个反直觉结论(a2a 随 L 变轻;训推瓶颈迁移方向相反,3:1 同时钉住两头)。
 - 全部模型维度假设(d=8192、48+16 层、d_lat=2048、激活 50B)与硬件锚点(H200/H20/H800 公开规格)显式标注 [推断];§五清单新增 6 行负载建模敏感参数,报告发布后代入公式即可整体刷新。原 §四顺延为 §五。
+- 后续补充:§4.5 账本总纲下新增「记账单位说明」——"常数/∝L"均指每 token 成本;GEMM 每 token 恒定(按序列算总量仍 ∝L),注意力是唯一 token 两两交互、每 token ∝L 的模块;并注明两个二阶效应(GEMM 利用率、MoE t 判据)与口径稳健性检查。
 
 ---
 
