@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 540" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">
+  <defs>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9ca3af"/>
+    </marker>
+    <marker id="a2b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6"/>
+    </marker>
+  </defs>
+  <rect width="980" height="540" fill="#0a0a0a"/>
+  <text x="490" y="34" fill="#f5f5f5" font-size="20" font-weight="600" text-anchor="middle">Stable LatentMoE:专家搬进低维 latent 空间,稀疏度推到 896 选 16</text>
+  <text x="490" y="56" fill="#71717a" font-size="12" text-anchor="middle">机制依据:官方架构图 MoE 面板(Norm→Linear→Router→Experts→Linear)+ LatentMoE 论文(arXiv 2601.18089);"Stable" 前缀的具体改动待 K3 技术报告</text>
+
+  <!-- Left: conventional MoE -->
+  <text x="240" y="92" fill="#e5e5e5" font-size="16" font-weight="600" text-anchor="middle">常规 MoE(K2/K2.5:384 选 8)</text>
+  <g font-size="13" text-anchor="middle">
+    <rect x="165" y="110" width="150" height="32" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="240" y="131" fill="#e5e5e5">token 表征(d_model)</text>
+    <rect x="165" y="170" width="150" height="32" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="240" y="191" fill="#e5e5e5">Router(d_model)</text>
+  </g>
+  <g stroke="#9ca3af" stroke-width="1.4" fill="none">
+    <path d="M 240 142 V 164" marker-end="url(#a2)"/>
+    <path d="M 240 202 V 232" marker-end="url(#a2)"/>
+  </g>
+  <!-- experts row -->
+  <g font-size="12" text-anchor="middle">
+    <rect x="90" y="238" width="60" height="82" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="120" y="283" fill="#e5e5e5">E₁</text>
+    <rect x="160" y="238" width="60" height="82" rx="6" fill="#1a2333" stroke="#3b82f6"/>
+    <text x="190" y="283" fill="#60a5fa">E₂</text>
+    <rect x="230" y="238" width="60" height="82" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="260" y="283" fill="#e5e5e5">E₃</text>
+    <text x="320" y="283" fill="#71717a">…</text>
+    <rect x="350" y="238" width="60" height="82" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="380" y="283" fill="#e5e5e5">E₃₈₄</text>
+  </g>
+  <text x="240" y="345" fill="#9ca3af" font-size="12.5" text-anchor="middle">每个专家的 up/down 投影都对接 <tspan fill="#f59e0b">全宽 d_model</tspan></text>
+  <text x="240" y="366" fill="#9ca3af" font-size="12.5" text-anchor="middle">专家数 ↑ ⇒ 参数量、EP 通信量(d_model/token)同步 ↑</text>
+  <text x="240" y="396" fill="#ef4444" font-size="12.5" text-anchor="middle">稀疏度做不高:路由粒度与通信成本互相顶死</text>
+
+  <!-- divider -->
+  <line x1="490" y1="76" x2="490" y2="510" stroke="#27272a" stroke-width="1.5"/>
+
+  <!-- Right: LatentMoE -->
+  <text x="735" y="92" fill="#e5e5e5" font-size="16" font-weight="600" text-anchor="middle">Stable LatentMoE(K3:896 选 16)</text>
+  <g font-size="13" text-anchor="middle">
+    <rect x="660" y="110" width="150" height="32" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="735" y="131" fill="#e5e5e5">token 表征(d_model)</text>
+    <rect x="660" y="166" width="150" height="32" rx="6" fill="#26170a" stroke="#f59e0b"/>
+    <text x="735" y="187" fill="#fbbf24">Linear 降维 → latent(d_lat &lt; d_model)</text>
+    <rect x="660" y="222" width="150" height="32" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="735" y="243" fill="#e5e5e5">Router(latent 空间)</text>
+  </g>
+  <g stroke="#9ca3af" stroke-width="1.4" fill="none">
+    <path d="M 735 142 V 160" marker-end="url(#a2)"/>
+    <path d="M 735 198 V 216" marker-end="url(#a2)"/>
+    <path d="M 735 254 V 284" marker-end="url(#a2)"/>
+  </g>
+  <!-- experts row: many small -->
+  <g font-size="11" text-anchor="middle">
+    <rect x="590" y="290" width="34" height="58" rx="5" fill="#1a2333" stroke="#3b82f6"/>
+    <rect x="630" y="290" width="34" height="58" rx="5" fill="#111318" stroke="#4b5563"/>
+    <rect x="670" y="290" width="34" height="58" rx="5" fill="#1a2333" stroke="#3b82f6"/>
+    <rect x="710" y="290" width="34" height="58" rx="5" fill="#111318" stroke="#4b5563"/>
+    <rect x="750" y="290" width="34" height="58" rx="5" fill="#111318" stroke="#4b5563"/>
+    <text x="800" y="323" fill="#71717a">…</text>
+    <rect x="820" y="290" width="34" height="58" rx="5" fill="#111318" stroke="#4b5563"/>
+    <rect x="860" y="290" width="34" height="58" rx="5" fill="#1a2333" stroke="#3b82f6"/>
+    <text x="742" y="368" fill="#9ca3af" font-size="12.5">896 个小专家(latent 维),激活 16 个 + Shared Expert</text>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <rect x="660" y="382" width="150" height="32" rx="6" fill="#26170a" stroke="#f59e0b"/>
+    <text x="735" y="403" fill="#fbbf24">Linear 升维 → d_model</text>
+  </g>
+  <path d="M 735 348 V 376" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#a2)"/>
+
+  <text x="735" y="443" fill="#22c55e" font-size="12.5" text-anchor="middle">专家算在低维空间:同参数量下专家数量/稀疏度可以更高</text>
+  <text x="735" y="463" fill="#22c55e" font-size="12.5" text-anchor="middle">EP dispatch/combine 传 latent 向量 → all-to-all 通信量下降</text>
+  <text x="735" y="483" fill="#60a5fa" font-size="12.5" text-anchor="middle">配套 Quantile Balancing:专家分配直接取自 router 分数分位数,</text>
+  <text x="735" y="501" fill="#60a5fa" font-size="12.5" text-anchor="middle">去掉启发式 bias 更新与敏感的均衡超参(博客 §Architecture)</text>
+
+  <!-- sparsity note bottom-left -->
+  <text x="240" y="446" fill="#71717a" font-size="12.5" text-anchor="middle">稀疏度(总专家/激活):K2 384/8 = 48</text>
+  <text x="240" y="466" fill="#e5e5e5" font-size="12.5" text-anchor="middle">K3:896/16 = <tspan fill="#3b82f6" font-weight="600">56</tspan>,且专家更小、总参数 2.8T</text>
+</svg>

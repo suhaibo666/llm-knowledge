@@ -208,6 +208,9 @@ Kimi 技术栈:
 
 Kimi Linear 基于 **Moonlight** (K2 基础架构)，面向 K2.5 及后续模型的效率优化。
 
+> [!note] 后继(2026-07-17 更新)
+> KDA + 3:1 混合架构已在 **Kimi K3**(2.8T,2026-07-16 发布)成为注意力主干,且论文遗留的"MLA 加输出门"在 K3 以 **Gated MLA** 兑现——见 [[kimi_k3_architecture_deepdive]] §2-3;KDA 引发的 prefix caching 重做与 FlashKDA kernel 见 [[kimi_k3_infra_deepdive]] §3.2-3.3。
+
 ---
 
 ## Related Pages
@@ -215,3 +218,4 @@ Kimi Linear 基于 **Moonlight** (K2 基础架构)，面向 K2.5 及后续模型
 - [[01_theory/index]]
 - [[01_theory/01_models/attention_is_all_you_need_analysis]]
 - [[moba_analysis]]
+- [[kimi_k3_analysis]] / [[kimi_k3_architecture_deepdive]] — KDA 在 K3 的产品化落地

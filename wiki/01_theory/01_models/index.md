@@ -1,7 +1,7 @@
 # 模型架构与模型家族 — 目录索引
 
 > 覆盖 Transformer 架构、缩放定律、模型技术报告
-> 最后更新: 2026-07-14
+> 最后更新: 2026-07-17
 
 ---
 
@@ -41,6 +41,10 @@
 | [[kimi_k1.5_analysis]] | k1.5 RL 缩放定律, 128K 上下文 RL |
 | [[kimi_k2_analysis]] | K2 1.04T MoE, MuonClip, Agentic RL |
 | [[kimi_k2.5_analysis]] | K2.5 视觉 Agent, MoonViT-3D, Agent Swarm |
+| [[kimi_linear_analysis]] | Kimi Linear 48B/3B, KDA 线性注意力, 3:1 混合, K3 注意力前身 |
+| [[kimi_k3_analysis]] | K3 2.8T MoE(896 选 16), 首个开源 3T 级, KDA+AttnRes, 1M 上下文, 2.5× scaling 效率 |
+| [[kimi_k3_architecture_deepdive]] | K3 六大结构变化点: KDA 3:1 / Gated MLA / AttnRes / Stable LatentMoE / SiTU(源码级溯源) |
+| [[kimi_k3_infra_deepdive]] | K3 训推 infra: Per-Head Muon, MXFP4/MXFP8 QAT, 全平衡 EP, Mooncake, KDA prefix cache, 64+ 卡超节点 |
 
 ### GLM / Zhipu AI
 

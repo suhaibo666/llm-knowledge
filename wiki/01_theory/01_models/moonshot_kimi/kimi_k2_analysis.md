@@ -265,3 +265,4 @@ GPT-4.1:     ██████████████░░░░░░░  (A
 - [[moonshot_kimi/index]]
 - [[moonshot_kimi/kimi_k2.5_analysis]]
 - [[01_theory/04_posttraining/kimi_k1.5_analysis]]
+- [[kimi_k3_analysis]] — 两代后旗舰(2026-07):官方称相对 K2 约 2.5× scaling 效率;MuonClip 的 per-head 思路在 K3 演进为 Per-Head Muon(见 [[kimi_k3_infra_deepdive]] §2.1)

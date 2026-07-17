@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9ca3af"/>
+    </marker>
+    <marker id="arrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6"/>
+    </marker>
+  </defs>
+  <rect width="980" height="560" fill="#0a0a0a"/>
+  <text x="490" y="34" fill="#f5f5f5" font-size="20" font-weight="600" text-anchor="middle">Attention Residuals:把「沿深度的等权累加」换成「沿深度的 softmax attention」</text>
+
+  <!-- ===== Left panel: standard residual ===== -->
+  <text x="245" y="72" fill="#e5e5e5" font-size="16" font-weight="600" text-anchor="middle">标准 Pre-Norm 残差(K2/K2.5)</text>
+  <text x="245" y="94" fill="#9ca3af" font-size="13" text-anchor="middle">h_l = h₁ + Σ f_i(h_i) — 所有前层输出等权(权重恒为 1)求和</text>
+
+  <!-- residual stream boxes -->
+  <g font-size="13" text-anchor="middle">
+    <rect x="170" y="440" width="150" height="34" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="245" y="462" fill="#e5e5e5">Embedding h₁</text>
+    <rect x="170" y="370" width="150" height="34" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="245" y="392" fill="#e5e5e5">f₁ 输出</text>
+    <rect x="170" y="300" width="150" height="34" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="245" y="322" fill="#e5e5e5">f₂ 输出</text>
+    <rect x="170" y="230" width="150" height="34" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="245" y="252" fill="#e5e5e5">f₃ 输出</text>
+    <circle cx="245" cy="172" r="16" fill="#111318" stroke="#9ca3af"/>
+    <text x="245" y="177" fill="#e5e5e5" font-size="15">+</text>
+    <rect x="170" y="110" width="150" height="34" rx="6" fill="#1a2333" stroke="#3b82f6"/>
+    <text x="245" y="132" fill="#e5e5e5">第 l 层输入 h_l</text>
+  </g>
+  <!-- uniform weight arrows -->
+  <g stroke="#9ca3af" stroke-width="1.4" fill="none">
+    <path d="M 245 440 V 404" marker-end="url(#arr)"/>
+    <path d="M 245 370 V 334" marker-end="url(#arr)"/>
+    <path d="M 245 300 V 264" marker-end="url(#arr)"/>
+    <path d="M 245 230 V 188" marker-end="url(#arr)"/>
+    <path d="M 245 156 V 144" marker-end="url(#arr)"/>
+    <path d="M 120 457 H 90 V 172 H 229" marker-end="url(#arr)" stroke-dasharray="4 3"/>
+    <path d="M 120 387 H 104 V 240" stroke-dasharray="4 3" opacity="0.55"/>
+  </g>
+  <line x1="170" y1="457" x2="120" y2="457" stroke="#9ca3af" stroke-width="1.4" stroke-dasharray="4 3"/>
+  <line x1="170" y1="387" x2="120" y2="387" stroke="#9ca3af" stroke-width="1.4" stroke-dasharray="4 3" opacity="0.55"/>
+  <g fill="#f59e0b" font-size="12" text-anchor="middle">
+    <text x="266" y="424">×1</text>
+    <text x="266" y="354">×1</text>
+    <text x="266" y="284">×1</text>
+    <text x="76" y="318">×1</text>
+  </g>
+  <text x="245" y="508" fill="#ef4444" font-size="12.5" text-anchor="middle">‖h_l‖ 随深度 O(L) 增长 → 单层贡献被稀释(dilution)</text>
+  <text x="245" y="528" fill="#ef4444" font-size="12.5" text-anchor="middle">梯度不成比例集中在浅层;信息一旦淹没不可找回</text>
+
+  <!-- divider -->
+  <line x1="490" y1="60" x2="490" y2="540" stroke="#27272a" stroke-width="1.5"/>
+
+  <!-- ===== Right panel: AttnRes ===== -->
+  <text x="735" y="72" fill="#e5e5e5" font-size="16" font-weight="600" text-anchor="middle">AttnRes(K3,arXiv 2603.15031 Eq.1-4)</text>
+  <text x="735" y="94" fill="#9ca3af" font-size="13" text-anchor="middle">h_l = Σ αᵢ·vᵢ, α = softmax( wₗᵀ · RMSNorm(vᵢ) ) — 按需选择性取回</text>
+
+  <g font-size="13" text-anchor="middle">
+    <rect x="565" y="440" width="150" height="34" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="640" y="462" fill="#e5e5e5">b₀ = Embedding</text>
+    <rect x="565" y="370" width="150" height="34" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="640" y="392" fill="#e5e5e5">Block n−3</text>
+    <rect x="565" y="300" width="150" height="34" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="640" y="322" fill="#e5e5e5">Block n−2</text>
+    <rect x="565" y="230" width="150" height="34" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="640" y="252" fill="#e5e5e5">Block n−1</text>
+    <rect x="565" y="160" width="150" height="34" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="640" y="182" fill="#e5e5e5">当前块部分和 bₙ</text>
+    <rect x="565" y="96" width="150" height="34" rx="6" fill="#1a2333" stroke="#3b82f6"/>
+    <text x="640" y="118" fill="#e5e5e5">第 l 子层输入 h_l</text>
+  </g>
+
+  <!-- pseudo-query -->
+  <rect x="830" y="250" width="120" height="40" rx="6" fill="#26170a" stroke="#f59e0b"/>
+  <text x="890" y="268" fill="#fbbf24" font-size="13" text-anchor="middle">pseudo-query wₗ</text>
+  <text x="890" y="284" fill="#a16207" font-size="11" text-anchor="middle">每子层 1 个 d 维参数,零初始化</text>
+
+  <!-- softmax node -->
+  <rect x="780" y="120" width="110" height="34" rx="17" fill="#0f1a2e" stroke="#3b82f6"/>
+  <text x="835" y="142" fill="#60a5fa" font-size="13" text-anchor="middle">softmax(深度轴)</text>
+
+  <!-- weighted arrows with alpha labels -->
+  <g stroke="#3b82f6" stroke-width="1.6" fill="none">
+    <path d="M 715 457 C 790 440 810 300 782 158" marker-end="url(#arrB)" opacity="0.55"/>
+    <path d="M 715 387 C 780 370 800 290 780 156" marker-end="url(#arrB)" opacity="0.7"/>
+    <path d="M 715 317 C 772 300 792 250 778 154" marker-end="url(#arrB)" opacity="0.85"/>
+    <path d="M 715 247 C 760 230 780 200 772 152" marker-end="url(#arrB)"/>
+    <path d="M 715 177 C 745 170 762 158 776 146" marker-end="url(#arrB)"/>
+  </g>
+  <g fill="#60a5fa" font-size="12" text-anchor="middle">
+    <text x="755" y="440">α₀</text>
+    <text x="748" y="368">α₁</text>
+    <text x="742" y="298">α₂</text>
+    <text x="737" y="228">α₃</text>
+    <text x="733" y="163">αₙ</text>
+  </g>
+  <path d="M 872 250 C 860 210 848 180 840 158" stroke="#f59e0b" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <path d="M 835 120 C 800 110 740 108 717 111" stroke="#3b82f6" stroke-width="1.6" fill="none" marker-end="url(#arrB)"/>
+
+  <text x="735" y="508" fill="#22c55e" font-size="12.5" text-anchor="middle">块内仍是普通残差;块间用注意力 → 深度方向的"KV"数量固定为 N(≈8)</text>
+  <text x="735" y="528" fill="#22c55e" font-size="12.5" text-anchor="middle">训练端到端开销 &lt;4%(流水线并行),推理延迟开销 &lt;2%(two-phase + online softmax)</text>
+</svg>

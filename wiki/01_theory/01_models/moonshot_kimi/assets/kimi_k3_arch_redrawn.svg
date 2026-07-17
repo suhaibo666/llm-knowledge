@@ -1,0 +1,170 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 660" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">
+  <defs>
+    <marker id="a7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9ca3af"/>
+    </marker>
+    <marker id="a7b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6"/>
+    </marker>
+  </defs>
+  <rect width="980" height="660" fill="#0a0a0a"/>
+  <text x="490" y="30" fill="#f5f5f5" font-size="19" font-weight="600" text-anchor="middle">Kimi K3 整体结构(按官方博客内嵌架构图重绘)</text>
+  <text x="490" y="52" fill="#71717a" font-size="12" text-anchor="middle">官方 SVG 的 aria-label 即为 "Block Attention Residuals architecture diagram"</text>
+
+  <!-- ===== center: main stack ===== -->
+  <g text-anchor="middle" font-size="13.5">
+    <!-- history blocks -->
+    <rect x="410" y="586" width="160" height="32" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="490" y="607" fill="#e5e5e5">Embedding</text>
+    <rect x="410" y="536" width="160" height="32" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="490" y="557" fill="#e5e5e5">Block n−3</text>
+    <rect x="410" y="492" width="160" height="32" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="490" y="513" fill="#e5e5e5">Block n−2</text>
+    <rect x="410" y="448" width="160" height="32" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="490" y="469" fill="#e5e5e5">Block n−1</text>
+    <g stroke="#9ca3af" stroke-width="1.3" fill="none">
+      <path d="M 490 586 V 572" marker-end="url(#a7)"/>
+      <path d="M 490 536 V 528" marker-end="url(#a7)"/>
+      <path d="M 490 492 V 484" marker-end="url(#a7)"/>
+      <path d="M 490 448 V 436" marker-end="url(#a7)"/>
+    </g>
+
+    <!-- current block frame -->
+    <rect x="380" y="86" width="220" height="344" rx="10" fill="none" stroke="#6b7280" stroke-dasharray="5 4"/>
+    <text x="392" y="106" fill="#9ca3af" font-size="11.5" text-anchor="start">Block n(当前块)</text>
+
+    <!-- unit 1: KDA + LatentMoE  x3 -->
+    <rect x="410" y="368" width="160" height="34" rx="6" fill="#0f1a2e" stroke="#3b82f6"/>
+    <text x="490" y="390" fill="#60a5fa">KDA</text>
+    <rect x="410" y="308" width="160" height="34" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="490" y="330" fill="#e5e5e5">Stable LatentMoE</text>
+    <g stroke="#9ca3af" stroke-width="1.3" fill="none">
+      <path d="M 490 368 V 348" marker-end="url(#a7)"/>
+      <path d="M 490 308 V 288" marker-end="url(#a7)"/>
+    </g>
+    <!-- 3x bracket -->
+    <path d="M 588 402 H 600 V 308 H 588" stroke="#f59e0b" fill="none" stroke-width="1.4"/>
+    <text x="614" y="360" fill="#f59e0b" font-size="13">3×</text>
+
+    <!-- unit 2: Gated MLA + LatentMoE x1 -->
+    <rect x="410" y="248" width="160" height="34" rx="6" fill="#26170a" stroke="#f59e0b"/>
+    <text x="490" y="270" fill="#fbbf24">Gated MLA</text>
+    <rect x="410" y="188" width="160" height="34" rx="6" fill="#111318" stroke="#4b5563"/>
+    <text x="490" y="210" fill="#e5e5e5">Stable LatentMoE</text>
+    <g stroke="#9ca3af" stroke-width="1.3" fill="none">
+      <path d="M 490 248 V 228" marker-end="url(#a7)"/>
+      <path d="M 490 188 V 158" marker-end="url(#a7)"/>
+    </g>
+    <path d="M 588 282 H 600 V 188 H 588" stroke="#f59e0b" fill="none" stroke-width="1.4"/>
+    <text x="614" y="240" fill="#f59e0b" font-size="13">1×</text>
+
+    <text x="490" y="140" fill="#71717a" font-size="12">↑ 重复 ×N 组成整网</text>
+  </g>
+
+  <!-- AttnRes alpha/w annotations -->
+  <g font-size="12.5" text-anchor="middle">
+    <g fill="#60a5fa">
+      <text x="358" y="390">α</text>
+      <text x="358" y="330">α</text>
+      <text x="358" y="270">α</text>
+      <text x="358" y="210">α</text>
+    </g>
+    <g fill="#f59e0b">
+      <text x="338" y="376">w</text>
+      <text x="338" y="316">w</text>
+      <text x="338" y="256">w</text>
+      <text x="338" y="196">w</text>
+    </g>
+  </g>
+  <!-- attnres arrows from history to sublayers -->
+  <g stroke="#3b82f6" stroke-width="1.2" fill="none" opacity="0.6">
+    <path d="M 410 602 C 300 560 300 440 348 392" marker-end="url(#a7b)"/>
+    <path d="M 410 552 C 316 510 316 420 348 332" marker-end="url(#a7b)"/>
+    <path d="M 410 508 C 330 470 330 330 348 272" marker-end="url(#a7b)"/>
+    <path d="M 410 464 C 342 430 342 260 348 212" marker-end="url(#a7b)"/>
+  </g>
+  <text x="272" y="470" fill="#71717a" font-size="11.5" text-anchor="middle">AttnRes:每个子层用</text>
+  <text x="272" y="488" fill="#71717a" font-size="11.5" text-anchor="middle">pseudo-query w 对历史块</text>
+  <text x="272" y="506" fill="#71717a" font-size="11.5" text-anchor="middle">做深度 softmax,得权重 α</text>
+
+  <!-- ===== left panel: KDA zoom ===== -->
+  <g font-size="11.5" text-anchor="middle">
+    <rect x="30" y="86" width="180" height="316" rx="10" fill="#0d0f14" stroke="#374151"/>
+    <text x="120" y="110" fill="#60a5fa" font-size="13" font-weight="600">KDA 放大</text>
+    <rect x="55" y="124" width="110" height="24" rx="5" fill="#111318" stroke="#4b5563"/>
+    <text x="110" y="140" fill="#e5e5e5">Norm</text>
+    <g>
+      <rect x="42" y="162" width="42" height="58" rx="5" fill="#111318" stroke="#4b5563"/>
+      <text x="63" y="180" fill="#e5e5e5">Linear</text>
+      <text x="63" y="196" fill="#e5e5e5">Conv</text>
+      <text x="63" y="212" fill="#60a5fa">L2</text>
+      <rect x="90" y="162" width="42" height="58" rx="5" fill="#111318" stroke="#4b5563"/>
+      <text x="111" y="180" fill="#e5e5e5">Linear</text>
+      <text x="111" y="196" fill="#e5e5e5">Conv</text>
+      <text x="111" y="212" fill="#60a5fa">L2</text>
+      <rect x="138" y="162" width="42" height="58" rx="5" fill="#111318" stroke="#4b5563"/>
+      <text x="159" y="180" fill="#e5e5e5">Linear</text>
+      <text x="159" y="196" fill="#e5e5e5">Conv</text>
+    </g>
+    <text x="63" y="236" fill="#71717a">q</text>
+    <text x="111" y="236" fill="#71717a">k</text>
+    <text x="159" y="236" fill="#71717a">v</text>
+    <g fill="#f59e0b">
+      <text x="70" y="256">σ 门 α_t</text>
+      <text x="150" y="256">σ 门 β_t</text>
+    </g>
+    <rect x="48" y="268" width="124" height="30" rx="6" fill="#0f1a2e" stroke="#3b82f6"/>
+    <text x="110" y="288" fill="#60a5fa">Kimi Delta Attention</text>
+    <rect x="55" y="312" width="110" height="24" rx="5" fill="#26170a" stroke="#f59e0b"/>
+    <text x="110" y="328" fill="#fbbf24">σ 输出门 ⊙ Norm</text>
+    <rect x="55" y="350" width="110" height="24" rx="5" fill="#111318" stroke="#4b5563"/>
+    <text x="110" y="366" fill="#e5e5e5">Linear → Output</text>
+    <g stroke="#9ca3af" stroke-width="1.1" fill="none">
+      <path d="M 110 148 V 158" marker-end="url(#a7)"/>
+      <path d="M 110 220 V 264" marker-end="url(#a7)"/>
+      <path d="M 110 298 V 308" marker-end="url(#a7)"/>
+      <path d="M 110 336 V 346" marker-end="url(#a7)"/>
+    </g>
+  </g>
+  <path d="M 210 300 C 300 340 340 370 406 384" stroke="#374151" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>
+
+  <!-- ===== right panel: MoE zoom ===== -->
+  <g font-size="11.5" text-anchor="middle">
+    <rect x="740" y="86" width="210" height="316" rx="10" fill="#0d0f14" stroke="#374151"/>
+    <text x="845" y="110" fill="#60a5fa" font-size="13" font-weight="600">Stable LatentMoE 放大</text>
+    <rect x="785" y="124" width="120" height="24" rx="5" fill="#111318" stroke="#4b5563"/>
+    <text x="845" y="140" fill="#e5e5e5">Norm</text>
+    <rect x="785" y="160" width="120" height="24" rx="5" fill="#26170a" stroke="#f59e0b"/>
+    <text x="845" y="176" fill="#fbbf24">Linear(降维)</text>
+    <rect x="785" y="196" width="120" height="24" rx="5" fill="#111318" stroke="#4b5563"/>
+    <text x="845" y="212" fill="#e5e5e5">Router</text>
+    <!-- experts -->
+    <g>
+      <rect x="758" y="238" width="30" height="44" rx="4" fill="#111318" stroke="#4b5563"/>
+      <text x="773" y="264" fill="#e5e5e5">1</text>
+      <rect x="794" y="238" width="30" height="44" rx="4" fill="#1a2333" stroke="#3b82f6"/>
+      <text x="809" y="264" fill="#60a5fa">2</text>
+      <rect x="830" y="238" width="30" height="44" rx="4" fill="#111318" stroke="#4b5563"/>
+      <text x="845" y="264" fill="#e5e5e5">3</text>
+      <text x="880" y="264" fill="#71717a">…</text>
+      <rect x="896" y="238" width="30" height="44" rx="4" fill="#111318" stroke="#4b5563"/>
+      <text x="911" y="264" fill="#e5e5e5">N</text>
+    </g>
+    <text x="845" y="300" fill="#9ca3af">Routed Expert(896 选 16)</text>
+    <text x="845" y="318" fill="#9ca3af">+ Shared Expert</text>
+    <rect x="785" y="332" width="120" height="24" rx="5" fill="#26170a" stroke="#f59e0b"/>
+    <text x="845" y="348" fill="#fbbf24">Linear(升维)</text>
+    <rect x="785" y="368" width="120" height="24" rx="5" fill="#111318" stroke="#4b5563"/>
+    <text x="845" y="384" fill="#e5e5e5">Output</text>
+    <g stroke="#9ca3af" stroke-width="1.1" fill="none">
+      <path d="M 845 148 V 156" marker-end="url(#a7)"/>
+      <path d="M 845 184 V 192" marker-end="url(#a7)"/>
+      <path d="M 845 220 V 234" marker-end="url(#a7)"/>
+      <path d="M 845 282 V 328" marker-end="url(#a7)"/>
+      <path d="M 845 356 V 364" marker-end="url(#a7)"/>
+    </g>
+  </g>
+  <path d="M 740 220 C 680 240 640 300 602 322" stroke="#374151" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>
+
+  <text x="490" y="644" fill="#71717a" font-size="11.5" text-anchor="middle">重绘依据:官方内嵌 SVG 的文本标签与坐标(3×/1× 单元、α/w 对、Block n−1/2/3 深度来源、两放大面板);原件 assets/kimi_k3_official_arch.svg</text>
+</svg>

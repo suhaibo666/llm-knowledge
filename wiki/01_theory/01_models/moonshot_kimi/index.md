@@ -12,7 +12,8 @@
 | **k1.5** | 2025.01 | - | RL 缩放、长 CoT 推理 | 2501.12599 |
 | **K2** | 2025.07 | 1T MoE | 开放 Agent 智能 | 2507.20534 |
 | **K2.5** | 2026.02 | 1.1T MoE | 视觉 Agent 智能 | 2602.02276 |
-| **K2.6** | 2026.04 | 1.1T MoE | 最新迭代 | 待发布 |
+| **K2.6** | 2026.04 | 1.1T MoE | 开源编码迭代 | 待发布 |
+| **K3** | 2026.07 | **2.8T MoE**(896 选 16) | 首个开源 3T 级;KDA+AttnRes+Stable LatentMoE;1M 上下文;原生视觉/视频 | 报告随权重 2026-07-27 发布 |
 
 ---
 
@@ -62,8 +63,21 @@
     │
     ▼
 2026.02  K2.5 (视觉 Agent 智能)
-           └── 1.1T MoE 参数
-           └── 视觉 + Agent 能力融合
+    │      └── 1.1T MoE 参数
+    │      └── 视觉 + Agent 能力融合
+    │
+    ▼
+2026.03  Attention Residuals (AttnRes 论文, 2603.15031)
+    │      └── 残差流 → 深度方向 softmax attention
+    │      └── 在 Kimi-Linear 48B + 1.4T tokens 验证 (等效 1.25× 算力)
+    │
+    ▼
+2026.07  K3 (首个开源 3T 级旗舰)
+           └── 2.8T MoE (Stable LatentMoE, 896 选 16)
+           └── KDA : Gated MLA = 3:1 + AttnRes
+           └── 1M 上下文、原生视觉/视频
+           └── MXFP4 权重 + MXFP8 激活 (SFT 起 QAT)
+           └── 相对 K2 约 2.5× scaling 效率
 ```
 
 ---
@@ -184,6 +198,8 @@ k1.5 RL 框架 (2025.01)
 | Kimi K2: Open Agentic Intelligence | 2507.20534 | [[kimi_k2_analysis]] |
 | Kimi Linear: Expressive Efficient Attention | 2510.26692 | [[kimi_linear_analysis]] |
 | Kimi K2.5: Visual Agentic Intelligence | 2602.02276 | [[kimi_k2.5_analysis]] |
+| Attention Residuals | 2603.15031 | [[kimi_k3_architecture_deepdive]] §4(独立页待建) |
+| Kimi K3(发布博客;技术报告 2026-07-27 前随权重发布) | — | [[kimi_k3_analysis]] · [[kimi_k3_architecture_deepdive]] · [[kimi_k3_infra_deepdive]] |
 
 ---
 
@@ -197,7 +213,8 @@ k1.5 RL 框架 (2025.01)
 另有 6 篇 Moonshot AI 论文待下载摄入：
 - Kimi-Dev (2509.23045) — Agentless Training
 - Kimina-Prover (2504.11354) — 形式推理
-- Attention Residuals (2603.15031) — 最新注意力研究
+- Attention Residuals (2603.15031) — 机制/消融/开销已在 [[kimi_k3_architecture_deepdive]] §4 深度覆盖(2026-07-17,含源码核查);独立 `attnres_analysis` 页待建
+- Kimi K3 技术报告(2026-07-27 随权重发布)— 发布后回填 [[kimi_k3_analysis]] 系列三页的 [推断] 项
 - G1 (2505.13426) — VLM 感知 + RL
 - WorldVQA (2602.02537) — 多模态评测
 - Pixel-Level VLM (2601.19228) — 像素级感知

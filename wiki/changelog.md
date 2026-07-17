@@ -4,6 +4,31 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-17: 新增 Kimi K3 收录(三页)—— 首个开源 3T 级模型的发布报告 + 结构变化 + 训推 infra
+
+**Type**: Ingest(应用户「kimi3 发布了,总结模型报告 + 结合开源源码分析结构变化点与训推 infra」。**关键事实:K3 完整技术报告与权重 2026-07-27 前才发布**——当前"报告"实体 = 官方发布博客,已快照落 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.{txt,html}`;结构机制的源码证据来自官方声明 K3 所基于的组件仓库,均已实际克隆/打开核验)
+
+- **新页**:[[kimi_k3_analysis]](发布总结:2.8T/896选16/1M 上下文,33 项基准全表与口径脚注,官方自报"位列 Fable 5 与 GPT 5.6 Sol 之后",preserved thinking history 等限制)、[[kimi_k3_architecture_deepdive]](六大变化点各按动机→机制→证据→为何不选替代:KDA 3:1 混合、Gated MLA+NoPE、AttnRes、Stable LatentMoE+Quantile Balancing、SiTU、2.8T/1M/视频)、[[kimi_k3_infra_deepdive]](Per-Head Muon、静态 shape 全平衡 EP、INT4→MXFP4/MXFP8 QAT 演进、Mooncake >90% 命中、KDA prefix caching 进 vLLM 的 PR 链 #27654/#42406、FlashKDA CUTLASS kernel、64+ 卡超节点账)。
+- **源码核验基线**:Kimi-Linear @`8c1d85e` + HF 48B config/modeling @`e1df551a` + fla @`b328e7c`(KDA 公式↔`fla/ops/kda/naive.py:59-63` 逐行对照;27 层实际 20 KDA:7 MLA;MLA `assert use_nope`);Attention-Residuals @`85e2231`(仓库仅 README+论文,伪代码 README.md:52-91;arXiv 2603.15031v1 全套消融);FlashKDA @`d2ff19a`(CHUNK=16 双 kernel,H20 1.85–2.31×)。
+- **图**:9 张入 `moonshot_kimi/assets/`——官方基准图 2 张(PNG 原件)+ 官方内嵌架构 SVG 原件(aria-label 即 "Block Attention Residuals architecture diagram")+ 按官方风格重绘架构主图 + KDA/AttnRes/LatentMoE/KDA-prefix-cache/Mooncake/MXFP4-QAT 自绘深色 SVG(均 2× 渲染 PNG,已逐张目检)。
+- **索引联动**:[[moonshot_kimi/index]] 家族表/时间线/论文索引增 K3 与 AttnRes 行,知识缺口标注 AttnRes 已覆盖;[[01_theory/01_models/index]] Kimi 段增 4 行(含补录 kimi_linear_analysis);[[kimi_linear_analysis]]/[[kimi_k2.5_analysis]]/[[kimi_k2_analysis]] 增后继回链。
+- **待回填**:激活参数、层数、SiTU/Quantile Balancing/Per-Head Muon 精确定义、训练规模——三页中所有 [推断] 标注项等 7/27 技术报告发布后核对(缺口清单在 [[kimi_k3_infra_deepdive]] §4)。
+
+---
+
+## 2026-07-16: 新增 [[aclgraph_multistream_rng_analysis]] —— ACLGraph 多流依赖与 graph-safe RNG
+
+**Type**: Ingest / codebase deep dive（应用户连续咨询，将“多流入图、`wait_stream`/Event、遗漏 join、通信流场景、随机数入图与算子适配”去重后落库）
+
+- **基线**：`torch_npu v2.7.1@b3c8a815`、其记录的 `op-plugin@6ef73e399`、PyTorch `main@2b460d01`。当前 op-plugin 工作树仍是较旧 `b7a17be...`，算子引用统一从固定 git 对象核验。
+- **核心结论**：多流不是多个图 capture 后合并，而是 Event Record/Wait 把 side stream 纳入同一个 `model_ri_` 并在 capture end 前返回主流；`wait_stream` 只建立“源流调用点之前 → 目标流调用点之后”的局部单向偏序。RNG 也不是 CPU 完全不可用，而是 replay 不重跑 host 取 seed 逻辑，故用 device seed/offset tensor + intragraph offset + wholegraph increment 保证每次 replay 推进 Philox counter。
+- **源码展开**：记录 `NPUGraph` 单模型 capture/replay、Stream/Event fork/join、HCCL 独立流及 allocator `recordStream`；以 native dropout 串起 secondary stream 与 Tensor RNG API；按固定 op-plugin 源码区分明确支持、部分重载/SoC 分支和仍走 `philox_engine_inputs()` 的路径。
+- **测试审计**：保留 torch_npu 已有多流、RNG functional/distribution 测试证据，同时标出测试清单与固定 op-plugin 中 `bernoulli_` 等旧标量路径的版本/dispatch 张力；补充逐 overload、连续 replay、自定义 generator、无 join 负例、多副流 RNG 与 ACLGraph+HCCL 验收矩阵。
+- **去重联动**：原 [[aclgraph_deep_analysis]] 只保留总览并链接专题；[[aclgraph]]、[[npu_operator_graph_eligibility_guide]] 与 NPU Graphs index 增加反链，不复制机制正文。
+- **二次扩写**：按用户反馈恢复对话中的机制细节：显式 Event 与 `wait_stream` 的差别、capture/replay 逐阶段时序、三流间接加入与逐级返回、HCCL compute→comm→compute 双向依赖、数值化 Philox offset 演算、counter 计算边界、dropout 捕获/重放时间线，以及可直接转为用例的 RNG/多流验收模板。专题页由 312 行扩至 465 行，仍低于单页 500 行拆分线。
+
+---
+
 ## 2026-07-16: 新增 [[inkling_analysis]] — Thinking Machines Inkling (975B-A41B) 收录,含 thinking_machines 新目录
 
 **Type**: Ingest(应用户「今天 Thinking Machines 发布开源模型,分析并落库」。**关键事实: 无正式技术报告/论文**——arXiv 无;"technical report" = 官方公告 + HF 模型卡 + config.json,已全部落 `raw/01_theory/01_models/thinking_machines/`)

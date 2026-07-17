@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 620" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">
+  <defs>
+    <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9ca3af"/>
+    </marker>
+    <marker id="a3b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6"/>
+    </marker>
+  </defs>
+  <rect width="980" height="620" fill="#0a0a0a"/>
+  <text x="490" y="32" fill="#f5f5f5" font-size="20" font-weight="600" text-anchor="middle">Kimi Delta Attention:带细粒度遗忘门的 Delta Rule 线性注意力</text>
+  <text x="490" y="54" fill="#71717a" font-size="12" text-anchor="middle">依据:arXiv 2510.26692v2 Eq.1/Eq.10、fla/ops/kda/naive.py:59-63、HF modeling_kimi.py:471-599(定位符见正文)</text>
+
+  <!-- input -->
+  <rect x="410" y="70" width="160" height="34" rx="6" fill="#111318" stroke="#4b5563"/>
+  <text x="490" y="92" fill="#e5e5e5" font-size="14" text-anchor="middle">x_t(hidden 2304)</text>
+
+  <!-- three projection branches -->
+  <g font-size="12.5" text-anchor="middle">
+    <rect x="80" y="150" width="140" height="88" rx="8" fill="#111318" stroke="#4b5563"/>
+    <text x="150" y="172" fill="#e5e5e5">q_proj → ShortConv(4)</text>
+    <text x="150" y="192" fill="#e5e5e5">→ SiLU → <tspan fill="#60a5fa">L2Norm</tspan></text>
+    <text x="150" y="222" fill="#71717a" font-size="11">32 头 × 128 维</text>
+
+    <rect x="250" y="150" width="140" height="88" rx="8" fill="#111318" stroke="#4b5563"/>
+    <text x="320" y="172" fill="#e5e5e5">k_proj → ShortConv(4)</text>
+    <text x="320" y="192" fill="#e5e5e5">→ SiLU → <tspan fill="#60a5fa">L2Norm</tspan></text>
+    <text x="320" y="222" fill="#71717a" font-size="11">谱半径受控 → 训练稳定</text>
+
+    <rect x="420" y="150" width="140" height="88" rx="8" fill="#111318" stroke="#4b5563"/>
+    <text x="490" y="172" fill="#e5e5e5">v_proj → ShortConv(4)</text>
+    <text x="490" y="192" fill="#e5e5e5">→ SiLU</text>
+
+    <rect x="600" y="150" width="170" height="88" rx="8" fill="#26170a" stroke="#f59e0b"/>
+    <text x="685" y="170" fill="#fbbf24">细粒度遗忘门 α_t ∈ (0,1)^dk</text>
+    <text x="685" y="190" fill="#e5e5e5" font-size="11.5">低秩 2304→128→4096</text>
+    <text x="685" y="208" fill="#e5e5e5" font-size="11.5">g = −exp(A_log)·softplus(·+dt_bias)</text>
+    <text x="685" y="228" fill="#f59e0b" font-size="11.5">每 key 通道一个 decay(GDN 是每头标量)</text>
+
+    <rect x="800" y="150" width="120" height="88" rx="8" fill="#111318" stroke="#4b5563"/>
+    <text x="860" y="176" fill="#e5e5e5">β_t = σ(b_proj x)</text>
+    <text x="860" y="196" fill="#71717a" font-size="11">每头标量</text>
+    <text x="860" y="216" fill="#71717a" font-size="11">delta 写入强度</text>
+  </g>
+
+  <g stroke="#9ca3af" stroke-width="1.4" fill="none">
+    <path d="M 448 104 C 300 118 190 130 152 144" marker-end="url(#a3)"/>
+    <path d="M 470 104 C 400 120 350 132 324 144" marker-end="url(#a3)"/>
+    <path d="M 490 104 V 144" marker-end="url(#a3)"/>
+    <path d="M 512 104 C 590 120 650 132 678 144" marker-end="url(#a3)"/>
+    <path d="M 534 104 C 700 116 810 130 852 144" marker-end="url(#a3)"/>
+  </g>
+
+  <!-- delta rule core -->
+  <rect x="170" y="290" width="640" height="110" rx="10" fill="#0f1a2e" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="490" y="318" fill="#60a5fa" font-size="15" font-weight="600" text-anchor="middle">Delta Rule 状态更新(定长矩阵状态 S ∈ R^{128×128}/头,替代随长度增长的 KV cache)</text>
+  <text x="490" y="348" fill="#f5f5f5" font-size="16" text-anchor="middle">S_t = ( I − β_t k_t k_tᵀ ) · Diag(α_t) · S_{t−1} + β_t k_t v_tᵀ</text>
+  <text x="490" y="376" fill="#e5e5e5" font-size="14" text-anchor="middle">o_t = S_tᵀ q_t</text>
+  <text x="490" y="394" fill="#71717a" font-size="11" text-anchor="middle">「先按通道遗忘 → 再擦除 k 方向旧值 → 写入新键值对」:有针对性的记忆管理,而非 Mamba2 式一刀切衰减</text>
+
+  <g stroke="#9ca3af" stroke-width="1.4" fill="none">
+    <path d="M 150 238 C 160 260 200 278 240 288" marker-end="url(#a3)"/>
+    <path d="M 320 238 V 284" marker-end="url(#a3)"/>
+    <path d="M 490 238 V 284" marker-end="url(#a3)"/>
+    <path d="M 685 238 C 670 260 640 276 610 286" marker-end="url(#a3)"/>
+    <path d="M 860 238 C 840 262 790 280 750 290" marker-end="url(#a3)"/>
+  </g>
+
+  <!-- output gate -->
+  <rect x="240" y="440" width="500 " height="64" rx="8" fill="#26170a" stroke="#f59e0b"/>
+  <text x="490" y="466" fill="#fbbf24" font-size="14" text-anchor="middle">输出门:o = W_o [ Sigmoid(W↓W↑ x_t) ⊙ RMSNorm_head(o_t) ]</text>
+  <text x="490" y="488" fill="#a16207" font-size="12" text-anchor="middle">低秩 sigmoid 门 + 分头 RMSNorm — 缓解 attention sink、稳定梯度(论文 Eq.10)</text>
+  <path d="M 490 400 V 434" stroke="#3b82f6" stroke-width="1.6" fill="none" marker-end="url(#a3b)"/>
+
+  <rect x="410" y="534" width="160" height="34" rx="6" fill="#1a2333" stroke="#3b82f6"/>
+  <text x="490" y="556" fill="#e5e5e5" font-size="14" text-anchor="middle">输出</text>
+  <path d="M 490 504 V 528" stroke="#3b82f6" stroke-width="1.6" fill="none" marker-end="url(#a3b)"/>
+
+  <!-- side note: DPLR -->
+  <text x="490" y="598" fill="#22c55e" font-size="12.5" text-anchor="middle">硬件效率:KDA 是 DPLR 转移矩阵把 a、b 都绑到 k 的特化 → chunkwise kernel 比通用 DPLR 快约 1 倍(论文 §3.2, Fig.2)</text>
+</svg>
