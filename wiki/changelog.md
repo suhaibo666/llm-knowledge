@@ -4,6 +4,17 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-20：新增 [[npu_fusion_passes_deepdive]] —— 自定义融合 Pass 逐个深挖（场景·问题·优化·效果）
+
+**Type**: Deep Dive（应用户反馈「[[npu_vs_upstream_fusion_passes]] 对每个 pass 的 why/场景/效果讲得不够——需要具体代码场景、为什么这么优化、优化带来什么效果」。三路并发 source-audit agent 逐函数读 `ascend_graph_pass.py`(2548 行)全部 26 个 pass + helper。）
+
+- **新增 [[npu_fusion_passes_deepdive]]**：对 26 个自定义 pass（4 PRE + 22 POST）+ 3 个后端融合机制（CATLASS EVG epilogue / DVM 图级分区融合 / `NPUTritonScheduling.can_fuse`）逐个给「**触发场景（含 before 代码）→ 待优化问题 → 优化机制（after）→ 效果**」四拍，每条带 `file:line`。重点展开 9 个「真·融合」pass：`masked_add_compose`（互补掩码相加→单 where）、`bool_cast_mul_to_where`（bool cast×→where）、`sign_diff_hamming_fuse`（符号位汉明距离 6 算子链→gt/gt/ne/sum）、`batch_embedding_fusion`（N 段 embed+reduce→单次 reshape→embedding→reduce）、`cat_to_view`/`repeat_to_expand`（cat/repeat→零拷贝 view/expand/roll）等。
+- **效果口径诚实边界**（核心方法论）：逐函数 grep 确认**全文除 CATLASS `catlass_epilogue_fusion_counter` 外无任何计数器/benchmark**，故所有效果均为**结构性**（少 N kernel / 少一次拷贝 / 转零拷贝 / int32 索引），非实测加速；多个 pass 带**中文 docstring 直述动机**（标「原文」，可信度最高），而源文件**无硬件注释**，凡「因为达芬奇/UB/i64」因果均标 [硬件推断]；`fold_four_op`/`fold_where` 经 `get_binary_fold_result` 会留一个 clone、非零成本。
+- **校正**：`fusion_attention_v3_pass` 是 **基础版 `npu_fusion_attention.default` → `v3.default`**（本 baseline 无 `_v2`），非「v2→v3」——同步订正 [[npu_vs_upstream_fusion_passes]] §6 措辞。
+- **联动**：[[npu_vs_upstream_fusion_passes]] §3.4 加深挖页指针、Related 补链；更新 [[04_inductor/npu/index]] deep dive 表。
+
+---
+
 ## 2026-07-17（五次更新）：新增 [[npu_vs_upstream_fusion_passes]] —— torch_npu vs 上游 Inductor 融合 Pass 全流程对照
 
 **Type**: Deep Dive（应用户「总结为一个新页，从 FX pass 到后端全流程比较 torch_npu 与 upstream 融合 pass 的差异、谁有谁无及原因，稽核源码」。逐行核验两套 checkout：torch_npu `b3c8a815b`(v2.7.1) + upstream `9922478dffa`(main)，三路并发 source-audit agent + 主体自审。）

@@ -107,6 +107,8 @@ flowchart TB
 
 ### 3.4 torch_npu 自定义 pass 全清单（NPU 有、上游无）
 
+> 本表是**清单**；每个 pass 的**触发代码场景 → 待优化问题 → 优化 → 效果**逐条深挖见配套页 [[npu_fusion_passes_deepdive]]。
+
 全部在 `ascend_graph_pass.py`，用 `@register_custom_pass(PassType.PRE|POST)` 自注册（默认 `FxPassLevel.LEVEL1`，故全在 L1）；运行器按 `sorted(FxPassLevel)` 迭代（`register_custom_pass.py:10-48`；`__init__.py:13-36`）。可用环境变量 `SHUT_DOWN_FX_PASS_LIST=<name1>,<name2>`（或 `all`）逐个/全部关闭（`register_custom_pass.py:15-35`）。
 
 **PRE（4 个）**：见 §3.1 表。
@@ -268,12 +270,13 @@ flowchart TB
 > [[npu_inductor_optimization_analysis]] §12.4 列的 pass（含 `unfold_dual_reduction_pass`）基于更早状态。本 commit `ascend_graph_pass.py` 已长到 26 个 pass、`unfold_dual_reduction_pass` 不在此 head，并新增 `sign_diff_hamming_fuse_pass`/`batch_embedding_fusion_pass`/`masked_add_compose_pass`/`broadcast_const_mask_compress`/`fold_iota_arithmetic_pass` 等（全表见 §3.4）。
 
 > [!note] `pattern_match/npu_fusion_attention_graph.py` 在本 checkout 未接线
-> 该文件定义了一个包住 `npu_fusion_attention` 的 autograd `Function`（`fx_passes/pattern_match/npu_fusion_attention_graph.py:93-155`），但除自身 `__init__` 与测试外**无生产代码 import** 它（`ascend_custom_passes` 的 `pkgutil` 只遍历自身包，不含 sibling `pattern_match`）。因此 NPU 侧**并没有**「softmax→npu_fusion_attention 的 SDPA pattern-match FX pass」在跑；真正生效的 attention 改写是 v2→v3 的 `fusion_attention_v3_pass`。
+> 该文件定义了一个包住 `npu_fusion_attention` 的 autograd `Function`（`fx_passes/pattern_match/npu_fusion_attention_graph.py:93-155`），但除自身 `__init__` 与测试外**无生产代码 import** 它（`ascend_custom_passes` 的 `pkgutil` 只遍历自身包，不含 sibling `pattern_match`）。因此 NPU 侧**并没有**「softmax→npu_fusion_attention 的 SDPA pattern-match FX pass」在跑；真正生效的 attention 改写是 `fusion_attention_v3_pass`，它把**基础版 `npu_fusion_attention.default` → `v3.default`**（本 baseline 无 `_v2`，故非「v2→v3」；args/meta 原样透传，见 [[npu_fusion_passes_deepdive]] §2.4）。
 
 ---
 
 ## Related Pages
 
+- [[npu_fusion_passes_deepdive]] — **配套深挖页**：26 个自定义 pass + 3 个后端融合机制的场景·问题·优化·效果逐条源码级
 - [[npu_compile_paths_overview]] — torch_npu 三条编译路径全景 + 与社区差异章（本页的上级背景）
 - [[npu_inductor_optimization_analysis]] — 硬件特性 → 优化思想 → 案例（本页 §5 原因的 why 全景）
 - [[npu_inductor_splittiling_backend_analysis]] — 内置 default 路径 what/how（golden_var_list、CATLASS、monkey-patch）
