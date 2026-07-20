@@ -31,6 +31,7 @@
 | [[npu_lowering_guide]] | NPU 特定 lowering 与算子映射;FALLBACK_LIST 黑名单策略;§9 当前源码复核 |
 | [[npu_inductor_splittiling_backend_analysis]] | **内置 default（Split-Tiling 方案）**：Triton/default 路径深度——golden_var_list、CATLASS/CK GEMM、monkey patch、NPUIndexTritonKernel（对照实验 [[npu_inductor_linearize_backend_analysis]]） |
 | [[npu_inductor_optimization_analysis]] | 优化思想全景(why):硬件特性→优化思想→实际案例,跨 Triton/MLIR/DVM 三后端 |
+| [[npu_vs_upstream_fusion_passes]] | **torch_npu vs 上游融合 Pass 全流程对照**(FX pass→lowering→后端 scheduler):谁有谁无谁不同及原因;26 个自定义 pass 全清单、`is_gpu`/`GPU_TYPES` 总开关、932 fallback;逐行核验 v2.7.1 `b3c8a815b`(含对旧口径的多处校正) |
 | [[npu_inductor_linearize_backend_analysis]] | **实验性 `npu_inductor_2.9.0`**（≠ 内置后端）：Linearize + 40-CU group dispatch、索引线性化、编译一次动态 shape、`NPU_MAX_FUSED_READS` 融合门控、r 轴 rsplit、与内置后端对比、可优化点 |
 | [[npu_inductor_linearize_dynamic_shape_analysis]] | 实验后端动态 shape：编译一次、签名只传动态 numel/divisor、header 三件套与三情形 A/B/C（含 inner-loop）、permute 产物 |
 | [[npu_inductor_linearize_vs_builtin_comparison]] | 三方 output code 逐行对比（GPU / 内置 Split-Tiling / 本后端 Linearize）+ §0 实测对标（torchbench 34 模型 / 京东 OneRec / test_all 算子 case） |

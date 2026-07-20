@@ -347,6 +347,7 @@ flowchart LR
 ## Related Pages
 
 - [[npu_compile_paths_overview]] — torch_npu 三条编译路径全景（本页的上级背景）
+- [[npu_vs_upstream_fusion_passes]] — torch_npu vs 上游融合 Pass 全流程对照（含对本页 §12.4 自定义 pass 清单、§八 fallback 计数、persistent 恒关口径的源码级更新）
 - [[npu_inductor_splittiling_backend_analysis]] — Triton/default 路径深度分析（golden_var_list、CATLASS、monkey-patch 的「what/how」，与本页「why」互补）
 - [[scheduler_analysis]] — Scheduler 融合策略、自定义 Pass 与排查（§六 CATLASS / §四 规约融合的展开）
 - [[npu_lowering_guide]] — NPU 特定 lowering 与 fallback 算子映射（§八 的细节）

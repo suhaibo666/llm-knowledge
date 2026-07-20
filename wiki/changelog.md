@@ -4,6 +4,16 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-17（五次更新）：新增 [[npu_vs_upstream_fusion_passes]] —— torch_npu vs 上游 Inductor 融合 Pass 全流程对照
+
+**Type**: Deep Dive（应用户「总结为一个新页，从 FX pass 到后端全流程比较 torch_npu 与 upstream 融合 pass 的差异、谁有谁无及原因，稽核源码」。逐行核验两套 checkout：torch_npu `b3c8a815b`(v2.7.1) + upstream `9922478dffa`(main)，三路并发 source-audit agent + 主体自审。）
+
+- **新增 [[npu_vs_upstream_fusion_passes]]**：主线「torch_npu 不重写上游 pass 管线，而是三处介入 + 重活下沉后端」。逐层对照 pre_grad / joint_graph / post_grad / lowering-decomp / 后端 scheduler；三张「谁有谁无谁不同」总表；`is_gpu`/`GPU_TYPES` 门控如何决定上游 pass 在 NPU 上跑不跑（`patch_is_gpu` 追加 `"npu"`，但硬编码 `.is_cuda` 的 pad_mm/b2b_gemm/decompose_mm 仍不跑）；26 个 `ascend_custom_passes` 全清单（4 PRE + 22 POST，仅推理）；根因收敛到 Cube 专用单元 / ACLNN 手工库 / 达芬奇布局约束 / 集成方式四条。
+- **源码级校正（source-wins）**：① `patch_pattern_mm_plus_mm` 是**删除**上游 `mm_plus_mm`（注释「torch_npu does not support」）而非添加——纠正 [[npu_compile_paths_overview]] §2.5 旧记法；② fallback 实测 **932**(340+592) 而非旧「约 963」；③ persistent reduction 内置后端是**阈值门控非恒关**（恒关的是实验性 Linearize 后端）；④ [[npu_inductor_optimization_analysis]] §12.4 自定义 pass 清单已过时（`unfold_dual_reduction_pass` 不在此 head，新增 `sign_diff_hamming_fuse_pass`/`batch_embedding_fusion_pass` 等）；⑤ `pattern_match/npu_fusion_attention_graph.py` 在此 checkout **未接线**（无生产代码 import），真正生效的 attention 改写是 v2→v3 的 `fusion_attention_v3_pass`。
+- **联动**：更新 [[04_inductor/npu/index]] deep dive 表；为 [[npu_compile_paths_overview]] 与 [[npu_inductor_optimization_analysis]] 补 `## Related Pages` 反向链接。
+
+---
+
 ## 2026-07-17（四次更新）：GDN/KDA 线性注意力从公式到训推融合 Kernel 的完整闭环
 
 **Type**: Deep Dive（承接用户连续追问：QKVABZ、$a/b/z$ 设计、RNN 中的 $t$、chunk size 与 $t$ 的关系、chunk 数学等价性、仿射状态是否必须保序，以及当前训练/Prefill/Decode kernel 融合。）
