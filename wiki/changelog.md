@@ -4,6 +4,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-20（三次更新）：工业界 FX Pass 全景——上游全集 + vLLM/SGLang 现状 + 开发方法论（4 页，3 路并发 agent）
+
+**Type**: Deep Dive（应用户「是否有 upstream pass 分析全集?补一个 torch_upstream_pass_deepdive;vllm/sglang 是否也有大量 pass?并发总结;并归纳 pass 优化开发方法论」。3 路并发 source-audit agent 逐仓核源：upstream `9922478dffa`、vLLM `97a98006b0`、SGLang `d6ef68881e`。）
+
+- **新增 [[torch_upstream_pass_deepdive]]**（04_inductor）：上游 Inductor pass「全集 + 机制」总纲，补上三份 stage 指南缺的**机制层**——`PatternMatcherPass` 声明式引擎（声明→trace→匹配→改写）、三种 `PatternEntry`（lowering/graph/replacement）、`fwd_only`/`joint_fwd_bwd` 两种 trace、序列化 pattern 缓存（30 个 `_sfdp`）、三阶段驱动器 + `*_custom_*_pass` 钩子 + `GraphTransformObserver`，及 pre/joint/post_grad 全集目录。6 处载荷 `file:line` 已实读复核（`PatternMatcherPass.apply:2352` + 跨 mutation/stream 护栏 2400/2409、`LoweringPatternEntry.apply:1156`↔`graph.py:1372-1376` passthrough、序列化缓存 import 1973-1981、post_grad 三桶 85-89、`_sfdp_init:1487`）。
+- **新增 [[sglang_compilation_passes_analysis]]** + 新建 `sglang/` 目录与 index：**核心发现——SGLang `srt/compilation/` 是 vLLM piecewise-cudagraph 管线的近逐文件 fork，但融合 pass 被整个抽空，真实图重写 pass 数=0**；唯一的 `FixFunctionalizationPass.__call__` 是 no-op（`fix_functionalization.py:34-37` 只 `count+=1`，`pass_manager.py:47-51` `configure()` 只挂它、`passes` 恒空）——两处均本人实读复核。含两条 compile 路径、split_ops 切图、CUDA/NPU/XPU piecewise backend 差异。
+- **更新 [[vllm_ir_and_fusion_passes_analysis]]**：新增 §3.5「Pass 全家福 + 三大融合维度」——回答「vLLM 有没有大量 pass：有，约 23 个」（16 融合 + 6 IR/utility + 1 pre-grad），建在 torch `pattern_matcher` 上，朝**厂商 kernel**（FlashInfer/cutlass/symm_mem/AITER）融合，三维度 upstream 没有：**集合通信 / 量化 / KV-cache 写入**；补 pre-grad 钩子 + `compile_range` 门控 + 三种 pattern 注册形态。
+- **新增 [[fx_pass_optimization_methodology]]**（04_inductor）：跨四家归纳的 pass 开发方法论——四家现状对照表、四个决策问题（在哪做 Q1 / 匹配什么 Q2 / 怎么落地 Q3 / 怎么保证对 Q4）、**融合朝向谱系**（codegen→厂商库→预融合 kernel，解释 vLLM 写十几个而 SGLang 一个不写）、工业界工程护栏（uuid=源码 hash / 可 bisect / 门控分层 / pattern 对 custom_ops 鲁棒 / 序列化缓存）、开发 checklist、反模式（搬框架≠搬融合、pass 会腐化、跨类别改写会错）。
+- **联动**：04_inductor/index 加两页；03_infer_frameworks/index 加 SGLang 子框架行；各页 Related 交叉链接。
+
+---
+
 ## 2026-07-20（二次更新）：[[npu_fusion_passes_deepdive]] 新增 §7「改图操作原语与 pass 通用原理（机制总纲）」
 
 **Type**: Update（应用户「补充这个改图的操作，以及 pass 主要操作的原理是什么」——承接对 `view_fold_pass` 的连续追问：多个 view 如何变一个、如何保证等价、DAG 扇出/多后继怎么处理。）

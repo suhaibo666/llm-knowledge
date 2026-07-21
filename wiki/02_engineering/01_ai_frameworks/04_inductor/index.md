@@ -50,9 +50,11 @@
 
 | 页面 | 核心主题 |
 |------|---------|
+| [[torch_upstream_pass_deepdive]] | **上游 Pass 全集与机制**(总纲):PatternMatcher 引擎(声明→trace→匹配→改写)、三种 PatternEntry、fwd_only/joint_fwd_bwd、序列化 pattern 缓存、三阶段驱动器 + custom 钩子、全集目录;下面三份 stage 指南的上层 |
 | [[pre_grad_passes_guide]] | 预梯度 passes(`fx_passes/pre_grad.py`) |
 | [[joint_graph_passes_guide]] | 联合图 passes(`fx_passes/joint_graph.py`) |
 | [[post_grad_passes_guide]] | 后梯度 passes(`fx_passes/post_grad.py`) |
+| [[fx_pass_optimization_methodology]] | **Pass 开发方法论**(跨源综合 upstream/npu/vLLM/sglang):四个决策问题(在哪做/匹配什么/怎么落地/怎么保证对)、融合朝向谱系、工程护栏、开发 checklist、反模式 |
 
 ## deep dive — 动态形状
 

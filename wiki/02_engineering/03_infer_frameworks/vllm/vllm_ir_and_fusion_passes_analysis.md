@@ -220,7 +220,34 @@ pm.register_replacement(pattern, replacement, inputs, pm.fwd_only, pm_pass,
 
 ---
 
+## 3.5 Pass 全家福 与 三大融合维度（当前基线 `97a98006b0` 复核补全）
+
+> [!note] 基线更新
+> 本页 §1–§3.4 的 IR 层 / PassManager / RMSNorm+FP8 走查在 `97a98006b0` 上仍成立（仅 `backends.py` 行号漂移到 `configure_post_pass@934/953/971`）。本节补上此前未系统记录的**完整 pass 目录、挂载机制与三大融合维度**——回答「vLLM 到底有没有大量 pass」：**有，约 23 个**。
+
+**总量**：`compilation/passes/fusion/` 下 **16 个融合 pass 类**（11 条 CUDA/通用 + 5 个 ROCm/AITER），外加 IR/utility 支撑 pass 6 个（`NoOpElimination`、`SplitCoalescing`、`ScatterSplitReplacement`、`PostCleanup`、`VllmIRLowering`、`UnsafeCloneElimination`、`FixFunctionalization`）+ 1 个 **pre-grad** 的 `VllmIRInplaceFunctionalization`。
+
+**建在 torch 的 `pattern_matcher` 上**：所有融合 pass 都用 `torch._inductor.pattern_matcher`（`PatternMatcherPass`/`register_replacement`/`fx_to_pattern`），vLLM 只在外面包 `VllmInductorPass` 家族做**计时 / uuid（源码 hash）/ match 计数 / pattern dump**（`vllm_inductor_pass.py:334` `self.matched_count = self.pm_pass.apply(graph)`）。手工 `graph.find_nodes` 遍历只出现在**图归一化的 utility pass**（noop/scatter-split/split-coalescing/fix-functionalization），不用于融合本身。上游引擎机制见 [[torch_upstream_pass_deepdive]]。
+
+**挂载机制（现有页 §3.3 的补全）**：`backends.py:configure_post_pass` 同时挂**两个钩子**——pre-grad 的 `inductor_config["pre_grad_custom_pass"] = VllmIRInplaceFunctionalizationPass(...)`（`:939`，并加进 `_cache_config_ignore_prefix`）+ post-grad 的 `inductor_config[self.pass_key] = self.pass_manager`（`:971`，`pass_key` = `"post_grad_custom_post_pass"`，`platforms/interface.py:177-179`）。**运行期尺寸门控** `is_applicable_for_range(compile_range)` 让重通信/KV 类融合只在小 batch decode 的 token 区间触发。pattern 注册有**三种形态**：①现代 `VllmPatternReplacement` ABC + `VllmFusionPatternMatcherPass.register()`；②直接 `pm.register_replacement` + 手写 pattern 类；③`fx_to_pattern(ignore_types=(int,SymInt))` 预构 `search_fn_pattern` 处理动态 shape。外加 `MatcherCustomOp.forward = custom if enabled else native` 让 pattern 对 `custom_ops` 开关鲁棒。
+
+**三大融合维度（上游 Inductor 没有的）**——这是 vLLM pass 的价值所在，全部**朝厂商/手写 kernel 融合**（非 codegen Triton）：
+
+| 维度 | 代表 pass | 融合成什么（vendor kernel） |
+|---|---|---|
+| **集合通信** | `AllReduceFusionPass`、`SequenceParallelismPass`、`AsyncTPPass` | `flashinfer_trtllm_fused_allreduce_norm`；`reduce_scatter`+本地 norm+`all_gather`；`symm_mem.fused_matmul_reduce_scatter` / `fused_all_gather_matmul`（GEMM↔通信重叠） |
+| **量化** | `RMSNormQuantFusionPass`、`ActivationQuantFusionPass`、`AttnQuantFusionPass` | `_C.rms_norm_static_fp8_quant`、`silu_and_mul_nvfp4_quant`；attn 系列**重写 `unified_attention_with_output`** 让 attention 直接吐量化结果（省一趟 bf16 HBM 往返） |
+| **KV-cache 写入** | `QkNormRopeKvCacheFusionPass`、`RopeKVCacheFusionPass`、`MLARoPEKVCacheCatFusionPass` | `fused_qk_norm_rope_and_unified_kv_cache_update`（AITER）、`fused_rope_and_unified_kv_cache_update`（RoPE+cache 写一核） |
+| ROCm/AITER 家族（5） | `RocmAiter{AllReduce,RMSNormQuant,SiluMulFp8GroupQuant,TritonAddRMSNormPad}`、`MLADualRMSNorm` | 各自 `rocm_aiter_ops.get_*_op()` 的 AITER HIP kernel，门控 `rocm_aiter_ops.is_enabled()` |
+
+方法论层面（为什么推理框架比 upstream 多出这三维）见 [[fx_pass_optimization_methodology]] §3；与「fork 骨架却不写融合」的 SGLang 反例对照见 [[sglang_compilation_passes_analysis]]。
+
+---
+
 ## Related Pages
+- [[torch_upstream_pass_deepdive]] —— 上游 Inductor pass 全集与 PatternMatcher 机制(vLLM 复用的引擎基座)
+- [[fx_pass_optimization_methodology]] —— 四家(upstream/npu/vLLM/sglang)pass 开发方法论归纳
+- [[sglang_compilation_passes_analysis]] —— SGLang:fork vLLM 骨架却抽空融合的反例
 - [[vllm_fused_ops_and_kernels_analysis]] —— 本页的"目录"母篇(CustomOp 派发 / 融合 Pass 全表 / fused_moe / Triton 全景)
 - [[vllm_compilation_cudagraph_analysis]] —— torch.compile→Inductor 链路与分段 CUDA Graph(图捕获侧)
 - [[vllm_quantization_analysis]] · [[vllm_attention_backends_analysis]] · [[vllm_model_library_analysis]]
