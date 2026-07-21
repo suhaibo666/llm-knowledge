@@ -12,6 +12,7 @@ All source ingestions and significant wiki updates are logged here.
 - **核心回答「怎么建模选最终融合」**：三段式=**启发式定合法性 + 实测定收益/实现 + 编译期穷举定形状**。真正的实测代价模型只有两处——③收益 `speedup_by_fusion` 编译 fused/unfused 真机实测 `ms_fused < ms1+ms2`（`scheduler.py:541`）；④GEMM 多模板 `finalize_as_caller` 选最快实现（`:440-441`，同时决定融不融与选哪个实现，真机 AICore profiling `do_batch_profiling`）。tiling 靠 UB 公式 `max_numel_threshold=ub_size//ptr//dtype` 编译期穷举（`tile_generator.py:47-48`）。
 - **两处源码校正**：① `score_fusion`/`score_fusion_memory` **NPU 未覆写**（全库无 `def score_fusion`），NPU 只改邻近门 `are_long_distant_nodes`（64→20，仅 A5）——不能说「NPU 自定义融合打分」；② AKG 在本 baseline **实际停用**（mfusion 路径警告 "not supported currently"），不写成活跃后端。两个实测开关（`CATLASS_EPILOGUE_FUSION`、`TORCHINDUCTOR_PROFILE_WITH_DO_BENCH_USING_PROFILING`）默认均关。
 - 7 处载荷 file:line 已抽验（`scheduler.py:541/440-441/202-203`、`tile_generator.py:47-48`、`npu_combined_scheduling.py:40-43`、score_fusion 无覆写、`are_long_distant_nodes:39`）；新 mermaid 过本库规范校验。
+- **追加（应用户「default 路径下走 CATLASS 分支怎么判？直接白名单吗」）**：§5.1 补「CATLASS 分支三时刻路由链」——**不是直接白名单**。① lowering 时 `tuned_mm` 过外层 3 门（连续性/非零/`use_catlass_template`）+ 内层 6 门（白名单 `mm/addmm/bmm` + size 阈值 + 非 ROCm + dtype + `use_max_autotune` + backend/库），过了才 `add_catlass_gemm_choices` 展开一批候选（`kernel/mm.py:79-135`、`utils.py:236-265`、`gemm_template.py:189,227-247`）；② autotune 真机实测选中，胜出才产 `CATLASSTemplateBuffer`；③ scheduler `is_catlass_template` 仅类型 dispatch（`catlass_scheduling.py:70-73`）。结论：白名单只是资格门之一，最终判据是 autotune 实测；无 max-autotune 时根本不生成 CATLASS 候选。所有 file:line 本人实读。
 
 ---
 

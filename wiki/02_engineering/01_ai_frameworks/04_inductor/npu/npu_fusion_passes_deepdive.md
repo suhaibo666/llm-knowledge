@@ -222,7 +222,29 @@ flowchart TB
 
 - **进程级**：`TORCHINDUCTOR_NPU_BACKEND` 选 `default`/`mlir`/`dvm` 三条互斥路径（`__init__.py:336-340` `_BACKEND_LOADERS`，未知值回落 `default`），default 注册 `NPUCombinedScheduling`（`__init__.py:171-173`）。
 - **逐 node**：`choose_node_backend`——是 CATLASS 模板则走 `CATLASSScheduling`，否则走 `NPUTritonScheduling`（`codegen/npu_combined_scheduling.py:40-43`）；Ascend950 上非 linear 模式再分出 `NPUNoLinearTritonScheduling`（`:82-99`）。
-- **范式：heuristic-legality**（类型/环境变量分派，无代价）。
+- **范式：heuristic-legality**（类型/环境变量分派，无代价）——但**注意 CATLASS 那一支的「类型」本身部分由 empirical autotune 决定**（见下方三时刻链）。
+
+#### CATLASS 分支怎么判出来的？—— 不是「直接白名单」，而是一条三时刻链
+
+`choose_node_backend` 里那句「是 CATLASS 模板则走 CATLASS」只是**末端的类型检查**；一个 `mm/addmm/bmm` 到底走不走 CATLASS，是下面三个时刻**逐步收敛**的结果：
+
+**① lowering 时——CATLASS 只是「成为候选之一」**（`kernel/mm.py:tuned_mm :79-135`）。要把 CATLASS 候选加进 `choices`，需同时过**外层 3 门 + 内层 6 门**：
+- 外层（`:100-104`）：`is_contiguous_input`（mat1/mat2 都连续，行主 `stride[1]==1` 或列主 `stride[0]==1`，`is_contiguous_striding:60-73`）**且** `is_nonzero`（静态非零问题）**且** `use_catlass_template(...)`。
+- 内层 `use_catlass_template`（`utils.py:236-265`）叠 6 门，缺一即 False：
+  1. **白名单**：`op ∈ catlass_enabled_ops`（默认 `"mm,addmm,bmm"`，或设 `"ALL"`；`:243-247`）
+  2. **size 阈值**：`size_hint(m*n*k) ≥ catlass_backend_min_gemm_size`（`:249-251`）——小矩阵不上模板
+  3. **非 ROCm**（`:253-255`）
+  4. **dtype ∈ {fp16, bf16, fp32}**（`_use_template_for_npu`，`:257-259`）
+  5. **`use_max_autotune()`**（`:260`）——**没开 max-autotune 就根本不会有 CATLASS 候选**，直接走 ATen
+  6. **`_use_autotune_backend("CATLASS")` + CATLASS 库可导入**（`try_import_catlass`，`:261-265`）
+- 全过 → `add_catlass_gemm_choices` 按不同 tile config **展开一批 CATLASS 候选**（内部 `maybe_append_choice` 逐 config 追加，`codegen/catlass/gemm_template.py:189,227-247`），与 ATen（`:92`）/CK（`:111`）/Cpp（`:114`）/extern（`:131`）**并列**塞进 `choices`。
+
+**② autotune 时——CATLASS 才「被选中」**（`autotune_select_algorithm :135`）。此时 `choices` 里有 ATen + 一批 CATLASS(+CK/Cpp) 候选，autotune 用**真机实测**挑最快；GEMM 常走 `MultiTemplateBuffer` 把最终选择**延迟到融合阶段**由 `finalize_as_caller` 定（见 §5.3/§5.4）。**只有 CATLASS 候选实测胜出（或作为 multi-template 保留），产出的 buffer 才是 `CATLASSTemplateBuffer`**；若更慢，同一个 `mm` 就用 ATen/CK。
+
+**③ scheduler 时——只是「类型 dispatch」，不再判断**。`is_catlass_template(node)` = `isinstance(node.node, CATLASSTemplateBuffer)`（`codegen/catlass/catlass_scheduling.py:70-73`），`choose_node_backend` 据此把它交给 `CATLASSScheduling` codegen（含 EVG epilogue，§5.4）。**「该不该用 CATLASS」早在 ①② 定案，这一步只看 buffer 类型。**
+
+> 一句话：**白名单（`mm/addmm/bmm`）只决定「有没有资格上牌桌」——那是 ① 的第一门；能不能真上桌还要再过连续性/size/dtype/max-autotune/backend/库共 5 门；最后「是不是它」由 autotune 真机实测拍板（②）。scheduler 的 CATLASS 分支（③）只是对已定案 buffer 的类型分派，不是在那儿查白名单。** 所以「直接是白名单吗」——不是；白名单只是资格门之一，最终判据是实测。
+
 > 校正：`AKG` 在本 baseline 实际停用——`TORCHINDUCTOR_USE_AKG` 只在 mfusion 路径出现且命中即警告「AKG codegen is not supported currently」（`mfusion/graph_fusion.py:52-54,910`），不宜写成活跃后端。`mlir`/`dvm` 是完整独立路径。
 
 ### 5.2 融合合法性（②）— 能不能融（Triton）
