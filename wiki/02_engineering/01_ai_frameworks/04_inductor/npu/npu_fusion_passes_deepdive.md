@@ -296,6 +296,38 @@ x
 - 处理 C：同理 ⇒ `C=view(x,s3)`，只动 C↔A 这条边；
 - **A 仍被 D 使用** → A 存活（DCE 不删）。结果 B、C 各自独立绕过共享的 A，互不影响。若没有 D，A 的用户只剩 B、C，两条边都改走后 A 变孤儿被 DCE 删。
 
+下图把「处理 B 时**只重接 B 自己的入边**、C→A 与 D→A 纹丝不动」画出来：
+
+```mermaid
+flowchart TB
+    subgraph BEFORE["改写前：B C D 都指向 A"]
+        x1["x 源头"]
+        A1["A = reshape 到 s1"]
+        B1["B = view 到 s2"]
+        C1["C = view 到 s3"]
+        D1["D = A 加 1"]
+        x1 --> A1
+        A1 --> B1
+        A1 --> C1
+        A1 --> D1
+    end
+    subgraph AFTER["处理 B 后：只重接 B 的入边"]
+        x2["x 源头"]
+        A2["A = reshape 到 s1"]
+        B2["B = view 到 s2"]
+        C2["C = view 到 s3"]
+        D2["D = A 加 1"]
+        x2 --> A2
+        x2 -->|B 的入边改指 x| B2
+        A2 -->|不变| C2
+        A2 -->|不变| D2
+    end
+    style B2 fill:#ffe0b2,stroke:#e65100
+    style A2 fill:#c8e6c9,stroke:#2e7d32
+```
+
+图中 `B.replace_input_with(A, x)` 只把 **B 这一条入边**从 A 改指 x（橙色 B）；`C→A`、`D→A` 两条边**完全没动**，A（绿色）因 D 仍引用而存活。处理 C 时同理只动 C 自己的边——这就是「边局部、不影响其他节点」的含义,也是 `replace_input_with` 与「全局替换」`replace_all_uses_with` 的根本区别。
+
 所以**不需要「单用户」前提**，也不是「从某个单后继的后继开始融合」——是「每个 view 消费者各自往上游跳过它的 view 类前驱」，前驱有几个后继无所谓。
 
 **(3) 等价性**：末端 view 的输出只由 `(读到的扁平数据, 自己的目标 shape)` 决定；view 类算子（view/reshape/_unsafe_view/squeeze/unsqueeze）**只重解释、不重排元素、不改元素数**，所以中间那些 shape 全程不影响最终结果，直连链根＝逐元素等价（`-1` 自动维也因 numel 恒定而解析一致）。

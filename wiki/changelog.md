@@ -11,6 +11,7 @@ All source ingestions and significant wiki updates are logged here.
 - **新增 §7（机制总纲）**：把 26 个 pass 共用的改图机制抽出来单讲。§7.1 **FX 改图操作原语表**（`replace_input_with` 边局部 / `replace_all_uses_with` 全局 / `call_function` / `inserting_before` / `erase_node` / `propagate_fake_tensor` / `eliminate_dead_code`，全文 132 处调用，每行带代表 `file:line`）+ 数据模型（`node.args` 与 `node.meta["val"]` FakeTensor）；§7.2 **pass 四步通用套路**（定位→改写[指针重接 | 造等价新子图]→维护 meta→DCE 清理）；§7.3 **`view_fold_pass` 全走查**（t0/t1/t2 拓扑序传递塌缩 + A/B/C/D DAG 扇出的边局部安全 + 等价性论证）；§7.4 **三条贯穿原理**（纯函数⇒边局部安全 & 单用户门槛判据、拓扑序⇒一趟塌缩、等价来自算子类别不变式、meta 一等公民 + 静态 shape 门槛）。
 - **核心结论**：「多变一」= 指针重接让末端算子直连源头、中间节点变孤儿再 DCE，**不是生成合并算子**；view_fold **不需要单用户前提**（边局部改写对 DAG 扇出天然安全），而 `fold_cat`/`fold_squeeze` 因会改动前驱本身才查单用户（`:287`/`:580`）。
 - §1 加「机制总纲建议先读 §7」前向指针；§3 `view_fold_pass` 表行加「全走查见 §7.3」。§7.1 全部 `file:line` 经 grep/直读复核。
+- **补图**：§7.3 增 before/after mermaid 图直观展示 `replace_input_with` 的**边局部**改写——处理 B 时只把 B 的入边从 A 改指 x（橙色），`C→A`/`D→A` 两条边纹丝不动、A（绿色）因 D 仍引用而存活；对照 `replace_all_uses_with` 的全局替换。图经本库 mermaid 规范校验（无嵌套定界符/管道标签合规）。
 
 ---
 
