@@ -21,6 +21,8 @@
 
 **「效果」锚定的 6 个 NPU 硬件事实**（母页 §5 / [[npu_inductor_optimization_analysis]] 展开）：① 逐元素/规约算子会各起一个 vector kernel 并把张量经 UB 在 GM 间搬运；② matmul 由 Cube 单元算、结果落 L0C，接逐元素若不融合就得 Cube→GM→Vector 往返；③ UB 是便笺，中间张量越多压力越大；④ vector core 对 i64 支持弱，int32 索引省一半位宽 [硬件推断]；⑤ 达芬奇偏好连续访存；⑥ view/expand/squeeze 是零拷贝元数据，cat/clone/pad/repeat/slice_scatter 是真拷贝。
 
+> **机制总纲（建议先读）**：这 26 个 pass 到底「怎么改图」、共用什么改写套路、凭什么保证等价——集中在文末 **§7**（FX 改图原语表 + 四步套路 + 三条贯穿原理 + `view_fold_pass` 全走查）。不熟悉 `replace_all_uses_with`/DCE 等 fx 改图操作的读者，先读 §7 再看下面逐个 pass 会顺很多。
+
 ---
 
 ## 2. PRE passes（4 个）
@@ -84,7 +86,7 @@ pos = something.to(torch.int64)                      # (b) 源是 int32
 | `fold_slice`（`:551`） | 全范围 `slice` → 输入；全覆盖 `slice_scatter` → 替换张量 | slice_scatter 全覆盖仍复制整张量 | 删 no-op slice / 删一次全量拷贝（日志 `FoldSliceLike: Folded`） |
 | `fold_squeeze`（`:571`） | `squeeze(unsqueeze(x,1),1)` → `x`；相邻 squeeze 合并 | 相邻/互逆的 squeeze/unsqueeze 是冗余 view | 抵消视图节点，利于融合（要求 prev 单用户） |
 | `fold_to_copy`（`:604`） | `_to_copy(x)`（dtype/device/layout/mem_format 全不变、非输出）→ `x` | 无变化的 `_to_copy` 仍整张量拷贝 | 真拷贝消除 |
-| `view_fold_pass`（`:668`） | `view(reshape(x,..),..)` → 折成单个 view；恒等 view 删除 | view/reshape/squeeze 链只加节点、堵融合 | 折叠 view 链、删恒等 view |
+| `view_fold_pass`（`:668`） | `view(reshape(x,..),..)` → 折成单个 view；恒等 view 删除 | view/reshape/squeeze 链只加节点、堵融合 | 折叠 view 链、删恒等 view（改图机制 + DAG 扇出**全走查见 §7.3**） |
 | `fold_where`（`:715`） | `where(cond,a,a)`（两支相同/都 0/都 1）→ 一支 | where 读三张量（cond+两支）起 select kernel | 消掉 select kernel；**同样**经 `get_binary_fold_result` 余下 broadcast+clone，故部分收益 |
 | `fold_redundant_ops`（`:741`） | `squeeze.dim(view(x))`（形状+dtype 回到原样）→ `x` | view→squeeze 往返是两个冗余 view、堵融合 | 删掉这对往返（至多 2 节点） |
 
@@ -228,6 +230,82 @@ t = torch.rsqrt(x * x + eps); y = (x * t) * w   # mul/add/rsqrt/mul 链 -> 一�
 - `fold_four_op` / `fold_where` 经 `get_binary_fold_result` 会**留一个 clone**，非零成本。
 - **仅静态 shape**（SymInt 即跳过）；**仅推理生效**（`fusion_attention_v3_pass` 例外，训练也跑）。
 - 单条 pass 可用 `SHUT_DOWN_FX_PASS_LIST=<name>`（或 `all`）关闭（`register_custom_pass.py:15-35`）。
+
+---
+
+## 7. 附：改图操作原语与 pass 通用原理（机制总纲）
+
+前面 26 个 pass 形态各异，但「怎么改图」只用同一小组 FX 原语、走同一个改写套路。这一节把它抽出来，回答两个问题：**这些 pass 具体在图上做什么操作，以及这些操作的通用原理是什么。**
+
+### 7.1 FX 改图操作原语（这些 pass 到底「怎么改图」）
+
+所有 pass 都在同一份 `torch.fx.Graph`（一张 **DAG**：节点=算子调用，边=数据依赖 `node.args`）上做**原地改写**，全靠下面这几个 fx 原语（全文这些调用共 **132 处**，grep 计数）：
+
+| 原语 | 语义 | 作用范围 | 代表用处（`ascend_graph_pass.py`） |
+|---|---|---|---|
+| `node.replace_input_with(old, new)` | 把**本节点**参数里对 `old` 的引用换成 `new` | **边局部**——只改本节点这一条入边，**不碰 `old` 的其他后继** | view_fold 链式短路 `:699`；fold_squeeze `:585` |
+| `node.replace_all_uses_with(new)` | 把**所有**引用 `node` 的地方改成引用 `new` | **全局**——`node` 的每个后继都改 | fold_cast `:258`、view_fold 恒等支 `:708`、cat_to_view `:1011`、fusion_attention_v3 `:903` |
+| `graph.call_function(target, args, kwargs)` | **新建**一个算子节点 | 造新子图 | cat_to_view 造 `roll` `:1051`、repeat_to_expand 造 `expand` `:1166`、cmp-sub 折叠造新比较 `:1507` |
+| `with graph.inserting_before(node):` | 让随后 `call_function` 造的节点插在**正确拓扑位置**（`node` 之前） | 放置新节点 | fold_where `:731`、fold_reduce `:438`、fold_sink_view `:462` |
+| `graph.erase_node(node)` | 删节点（**前提：已无用户**，否则报错） | 删除 | 各 fold 支 |
+| `propagate_fake_tensor` / `_refresh_fake_meta` / `with fake_mode` | 改写后**重算 `node.meta["val"]`（FakeTensor）** | 维护 shape/stride/dtype 元数据 | fold_cast `:259`、identity view `:709`、造新节点后各处 |
+| `eliminate_dead_code(graph, changed, name)`（本文件 `:2541`） | `changed` 时 `graph.lint()` + `graph.eliminate_dead_code()` | **收尾**：把被短路后没人用的孤儿节点真正删掉 | 每个 pass 结尾 |
+
+要理解上表，先记住数据模型两件事：
+- **`node.args`** = 它的输入 + 属性。例如 `view` 的输入是 `args[0]`、目标 shape 是 `args[1]`；改输入指针只动 `args[0]`，不动 `args[1]`。
+- **`node.meta["val"]`** = 一个 **FakeTensor**，携带 shape/stride/dtype。**Inductor 后续 lowering / tiling / 融合判定全靠读它**，所以任何结构改写都必须让它保持正确——要么「目标 shape 没变、meta 天然仍对」，要么显式重算。
+
+### 7.2 pass 的通用套路（四步）
+
+26 个 pass 的主干动作是同一个四步循环：
+
+1. **定位（locate）**：遍历 `graph.nodes`，用 target 算子 + 守卫条件（dtype 相等 / shape 相等 / **单用户** / **静态 shape** …）筛出命中点。
+2. **改写（rewrite）**，两条路线之一：
+   - **(a) 指针重接**——`replace_input_with`（绕过前驱，边局部）或 `replace_all_uses_with`（整体替换，全局）。**折叠 / 消冗余类**基本走这条，**不造新算子**。
+   - **(b) 造等价新子图**——`call_function` 造更省的节点、`inserting_before` 放好位置、再 `replace_all_uses_with` 接上。**真·融合类**（masked_add_compose、bool_cast_mul_to_where、sign_diff_hamming、batch_embedding、cat_to_view 的 roll）走这条。
+3. **维护 meta**：重算 FakeTensor，保证下游看到正确 shape/dtype。
+4. **清理（cleanup）**：`eliminate_dead_code` 把孤儿节点真正删掉。
+
+> 一句话原理：**「多变一」= 指针重接让末端算子直连源头、中间节点变孤儿，再由 DCE 删除**——不是生成一个「合并算子」。
+
+### 7.3 worked example：`view_fold_pass` 全走查（含 DAG 扇出）
+
+以 `:668-712` 为例把上面串起来。候选只收 `view/reshape/_unsafe_view`（`:673-677`），但「输入算不算 view 类」用更大的集合（多了 `squeeze.*/unsqueeze`，`:678-686`）。
+
+**(1) 链式短路 + 拓扑序传递塌缩**：
+```
+x → reshape(x,[B,S,H]) → view(·,[B*S,H]) → view(·,[B*S*H]) → y
+       t0                    t1                 t2(链尾)
+```
+按拓扑序处理候选 t0→t1→t2，每个只做 `view.replace_input_with(inp, inp.args[0])`（`:699`，只改自己入边）：
+- **t1**：输入 t0 是 view 类 → 重接到 `t0.args[0]=x` ⇒ `t1=view(x,[B*S,H])`
+- **t2**：输入 t1 是 view 类 → 重接到 `t1.args[0]`，而 t1 **刚被改成读 x** ⇒ `t2=view(x,[B*S*H])`
+- t0、t1 变孤儿 → `eliminate_dead_code`（`:712`）删除 ⇒ **`y=view(x,[B*S*H])+1`**，三个 view → 一个。
+
+关键就是 `replace_input_with` 读的是前驱**当前**的 `args[0]`，而前驱因拓扑序已被短路到更上游，于是短路一趟传到链根；**保留的是链尾 view，它的输入=链根 x，shape=最终 shape（`args[1]` 从没动）**。
+
+**(2) DAG 扇出（一个 view 有多个后继）如何处理**：因为 `replace_input_with` 是**边局部**的，扇出天然安全——
+```
+x
+└─ A = reshape(x,s1)      # A 有 3 个后继
+   ├─ B = view(A,s2)      # view 类
+   ├─ C = view(A,s3)      # view 类
+   └─ D = A + 1           # 非 view 类
+```
+- 处理 B：`B.replace_input_with(A, x)` ⇒ `B=view(x,s2)`，只动 B↔A 这条边；
+- 处理 C：同理 ⇒ `C=view(x,s3)`，只动 C↔A 这条边；
+- **A 仍被 D 使用** → A 存活（DCE 不删）。结果 B、C 各自独立绕过共享的 A，互不影响。若没有 D，A 的用户只剩 B、C，两条边都改走后 A 变孤儿被 DCE 删。
+
+所以**不需要「单用户」前提**，也不是「从某个单后继的后继开始融合」——是「每个 view 消费者各自往上游跳过它的 view 类前驱」，前驱有几个后继无所谓。
+
+**(3) 等价性**：末端 view 的输出只由 `(读到的扁平数据, 自己的目标 shape)` 决定；view 类算子（view/reshape/_unsafe_view/squeeze/unsqueeze）**只重解释、不重排元素、不改元素数**，所以中间那些 shape 全程不影响最终结果，直连链根＝逐元素等价（`-1` 自动维也因 numel 恒定而解析一致）。
+
+### 7.4 三条贯穿性原理（为什么这么改是安全且有效的）
+
+1. **纯函数 ⇒ 边局部改写天然安全（也决定要不要「单用户」门槛）**：post-grad 图是**函数化**的、SSA 式纯算子，节点无副作用、不共享可变状态。所以「为某个消费者重接一条入边」绝不会影响别的消费者——这正是 `view_fold` 敢无视扇出、不设单用户门槛的根据。反过来，**会「吃掉/改动前驱本身」的 pass 必须查单用户**：`fold_cat`（内层 cat 要被展平，`:287`）、`fold_squeeze`（前驱要被合并，`:580`），多用户就会破坏别的后继。**判据：只改自己入边 → 无需单用户；动到前驱 → 需单用户。**
+2. **拓扑序 ⇒ 一趟传递塌缩**：遍历按图拓扑序，前驱先于后继处理，短路沿链一路传到根，长链一趟塌成一个（见 §7.3）。
+3. **等价性来自「算子类别不变式」**：每个 pass 只在**共享某条不变式**的一类算子内改写，等价性就由那条不变式兜底——view 类＝扁平序/元素数不变；masked_add＝两掩码互补（两 where+add＝一次三目）；bool_cast_mul＝bool×等于按位选择……**pass 从不跨类别改写**（绝不碰 `permute/transpose/`真广播 `expand` 这些会重排元素或改 stride 语义的算子），这才是它敢只改元数据、不重算数值的根据。
+4. **meta 一等公民 + 静态 shape 门槛**：任何结构改写后都要维护 FakeTensor（§7.1）；SymInt 动态维一律跳过（`get_node_shape` 返回 None，`get_binary_fold_result.py:37-38`）——这也是这些 pass 只在静态 shape 下生效的原因。
 
 ---
 

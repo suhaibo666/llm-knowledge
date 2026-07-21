@@ -4,6 +4,16 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-20（二次更新）：[[npu_fusion_passes_deepdive]] 新增 §7「改图操作原语与 pass 通用原理（机制总纲）」
+
+**Type**: Update（应用户「补充这个改图的操作，以及 pass 主要操作的原理是什么」——承接对 `view_fold_pass` 的连续追问：多个 view 如何变一个、如何保证等价、DAG 扇出/多后继怎么处理。）
+
+- **新增 §7（机制总纲）**：把 26 个 pass 共用的改图机制抽出来单讲。§7.1 **FX 改图操作原语表**（`replace_input_with` 边局部 / `replace_all_uses_with` 全局 / `call_function` / `inserting_before` / `erase_node` / `propagate_fake_tensor` / `eliminate_dead_code`，全文 132 处调用，每行带代表 `file:line`）+ 数据模型（`node.args` 与 `node.meta["val"]` FakeTensor）；§7.2 **pass 四步通用套路**（定位→改写[指针重接 | 造等价新子图]→维护 meta→DCE 清理）；§7.3 **`view_fold_pass` 全走查**（t0/t1/t2 拓扑序传递塌缩 + A/B/C/D DAG 扇出的边局部安全 + 等价性论证）；§7.4 **三条贯穿原理**（纯函数⇒边局部安全 & 单用户门槛判据、拓扑序⇒一趟塌缩、等价来自算子类别不变式、meta 一等公民 + 静态 shape 门槛）。
+- **核心结论**：「多变一」= 指针重接让末端算子直连源头、中间节点变孤儿再 DCE，**不是生成合并算子**；view_fold **不需要单用户前提**（边局部改写对 DAG 扇出天然安全），而 `fold_cat`/`fold_squeeze` 因会改动前驱本身才查单用户（`:287`/`:580`）。
+- §1 加「机制总纲建议先读 §7」前向指针；§3 `view_fold_pass` 表行加「全走查见 §7.3」。§7.1 全部 `file:line` 经 grep/直读复核。
+
+---
+
 ## 2026-07-20：新增 [[npu_fusion_passes_deepdive]] —— 自定义融合 Pass 逐个深挖（场景·问题·优化·效果）
 
 **Type**: Deep Dive（应用户反馈「[[npu_vs_upstream_fusion_passes]] 对每个 pass 的 why/场景/效果讲得不够——需要具体代码场景、为什么这么优化、优化带来什么效果」。三路并发 source-audit agent 逐函数读 `ascend_graph_pass.py`(2548 行)全部 26 个 pass + helper。）
