@@ -4,6 +4,17 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-20（四次更新）：[[npu_fusion_passes_deepdive]] §5 后端级融合大幅展开——加「决策链 + 代价模型」
+
+**Type**: Update（应用户「§5 后端 pass 需展开:当前后端优化都做了哪些?怎么建模选择最终的融合方式?」。1 路 source-audit agent 核 scheduler/select_algorithm/tiling 决策链 + 本人抽验 7 处载荷 file:line。）
+
+- **§5 从 3 小节（CATLASS/DVM/can_fuse）扩为 8 小节**：新增 §5.0 决策链（mermaid：后端路由→合法性→排序→收益实测→tiling / GEMM 分支 autotune→EVG）、§5.1 后端路由（`choose_node_backend` + `TORCHINDUCTOR_NPU_BACKEND`）、**§5.3 融合收益建模（核心）**、§5.4 GEMM 实现+epilogue autotune、§5.5 tiling 编译期穷举、§5.7 四类建模范式小结。原 can_fuse/CATLASS/DVM 归位重编号。
+- **核心回答「怎么建模选最终融合」**：三段式=**启发式定合法性 + 实测定收益/实现 + 编译期穷举定形状**。真正的实测代价模型只有两处——③收益 `speedup_by_fusion` 编译 fused/unfused 真机实测 `ms_fused < ms1+ms2`（`scheduler.py:541`）；④GEMM 多模板 `finalize_as_caller` 选最快实现（`:440-441`，同时决定融不融与选哪个实现，真机 AICore profiling `do_batch_profiling`）。tiling 靠 UB 公式 `max_numel_threshold=ub_size//ptr//dtype` 编译期穷举（`tile_generator.py:47-48`）。
+- **两处源码校正**：① `score_fusion`/`score_fusion_memory` **NPU 未覆写**（全库无 `def score_fusion`），NPU 只改邻近门 `are_long_distant_nodes`（64→20，仅 A5）——不能说「NPU 自定义融合打分」；② AKG 在本 baseline **实际停用**（mfusion 路径警告 "not supported currently"），不写成活跃后端。两个实测开关（`CATLASS_EPILOGUE_FUSION`、`TORCHINDUCTOR_PROFILE_WITH_DO_BENCH_USING_PROFILING`）默认均关。
+- 7 处载荷 file:line 已抽验（`scheduler.py:541/440-441/202-203`、`tile_generator.py:47-48`、`npu_combined_scheduling.py:40-43`、score_fusion 无覆写、`are_long_distant_nodes:39`）；新 mermaid 过本库规范校验。
+
+---
+
 ## 2026-07-20（三次更新）：工业界 FX Pass 全景——上游全集 + vLLM/SGLang 现状 + 开发方法论（4 页，3 路并发 agent）
 
 **Type**: Deep Dive（应用户「是否有 upstream pass 分析全集?补一个 torch_upstream_pass_deepdive;vllm/sglang 是否也有大量 pass?并发总结;并归纳 pass 优化开发方法论」。3 路并发 source-audit agent 逐仓核源：upstream `9922478dffa`、vLLM `97a98006b0`、SGLang `d6ef68881e`。）

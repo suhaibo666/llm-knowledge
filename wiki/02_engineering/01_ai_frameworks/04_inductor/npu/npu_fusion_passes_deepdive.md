@@ -191,35 +191,88 @@ for i in range(N):
 
 ---
 
-## 5. 后端级融合（场景 · 问题 · 效果）
+## 5. 后端级融合：当前优化全景 与「怎么建模选择最终融合」
 
-FX pass 之外，真正的重活在后端 scheduler。这三条与上游「都有但机制不同」（对照见母页 §3.6/§4.3）。
+FX pass 之外，真正决定 kernel 长什么样的是后端 scheduler / codegen。这一节回答两个问题：**后端当前做了哪些融合优化**，以及**它用什么模型在多个候选里选出最终的融合方式**。基线同上（`b3c8a815b`）。与上游对照见母页 §3.6/§4.3。
 
-### 5.1 CATLASS EVG epilogue（`codegen/catlass/catlass_scheduling.py`）
-**场景**：GEMM 后接逐元素尾巴：
-```python
-y = torch.relu(x @ w + bias)   # mm(CATLASS 模板) + add + relu(Pointwise epilogue)
+### 5.0 决策链：从 scheduler node 到最终 kernel
+
+一个 node 走完 FX pass 后，后端按下面这条有序链把它收敛到最终 kernel（每步注明 owner + 建模范式）：
+
+```mermaid
+flowchart TB
+    N["scheduler node · FX passes 之后"]
+    N --> B0["① 后端路由 · env TORCHINDUCTOR_NPU_BACKEND 选 default/mlir/dvm"]
+    B0 --> R["default 内逐 node · choose_node_backend"]
+    R -->|是 GEMM 模板| G["GEMM 分支"]
+    R -->|通用算子| T["Triton 分支"]
+    T --> T1["② 合法性 can_fuse · shape 与 tiling 门"]
+    T1 --> T2["③a 排序 · 上游 score_fusion 共享内存字节 + 邻近门"]
+    T2 --> T3["③b 收益实测 · 编译 fused vs unfused · ms_fused 小于 ms1+ms2 才融"]
+    T3 --> T4["⑥ tiling · SplitTiling 选轴 + TileGenerator 编译期穷举 block"]
+    G --> G1["④ 多实现 autotune · ATen/CATLASS/CK/Cpp 真机实测选最快"]
+    G1 --> G2["⑤ CATLASS EVG epilogue · 逐元素尾折进 GEMM 核"]
+    T4 --> K["最终 kernel"]
+    G2 --> K["最终 kernel"]
 ```
-（`_can_fuse_epilogue_impl:234`：消费者须是 `ComputedBuffer(Pointwise)`、同输出尺寸、读模板 buffer、非 reduction/非 mutation，`:267-297`）
-**问题**：不融合时 GEMM 结果落 GM、`add/relu` 再读回——Cube→GM→Vector 往返 [硬件推断]。
-**优化**：`codegen_template` 用 `CatlassEVGCodegen`（EVG=epilogue visitor graph）把尾巴折进 GEMM kernel（`:141-204`）。**门控**：`catlass_epilogue_fusion_enable AND config.epilogue_fusion`（`:298-303`）+ 模板 `epilogue_fusion_type!=0`；EVG 回退路径需 `type==2` 且**拒 bf16**（`:333-337`）。默认 **`CATLASS_EPILOGUE_FUSION=0` 关**（`config.py:76-78`）。
-**效果**：epilogue 在 GEMM kernel 内片上完成，省 GEMM 结果的 GM 写回+读回。**唯一有计数器**：`counters["inductor"]["catlass_epilogue_fusion_counter"] += len(epilogue_nodes)`（`:151`）。硬限制：不支持链式 epilogue（`:256-258`）、不融进已 `FusedSchedulerNode`、不融 reduction、EVG 回退不支持 bf16。
 
-### 5.2 DVM 图级分区融合（`dvm/graph_fusion.py`）
-**场景**：一段连通的逐元素/GEMM 子图（算子都在 `GRAPH_FUSION_SUPPORT_OP` 白名单、47 个 active）：
-```python
-t = torch.rsqrt(x * x + eps); y = (x * t) * w   # mul/add/rsqrt/mul 链 -> 一个 dvm::fused_graph 算子
-```
-（`DvmOpSupport.is_node_supported:123-128`；白名单 `:42-92`，`expand/reshape` 被注释掉）
-**问题**：每个逐元素算子否则各起一个 kernel、彼此间 GM 往返；DVM 把最大连通子图融成**单个**自定义算子 [launch/GM 成本为硬件推断]。
-**优化**：作为 post-grad FX pass 安装（`DvmGraphFusionPatch.enable` 把 `config.post_grad_custom_post_pass=dvm_graph_fusion`，`:400-413`）：`CapabilityBasedPartitioner` 提议最大支持子图 → 按数据依赖连通性再切 → 每块 `fuse_as_graphmodule`、做 `decompose_k1_matmul`/`insert_sum_fp32_prepost_cast` 等子图内改写 → 定义动态 `dvm::fused_graph_<in>_<out>` 自定义算子（带 `flexible_layout` tag，`:246-248`）替换整块（`:311-340`）。
-**效果**：整段连通区塌成**一次** DVM kernel 调用；`flexible_layout` 让共享生产者保持共享、避免每个消费者各物化定长拷贝（源注释 `:246-247`）。
+一句话主线：**合法性用启发式（shape/tiling/EVG 可行性），收不收益 + 选哪个 GEMM 实现用真机实测 benchmark，tiling block 大小用编译期穷举，dvm 图级融合用能力表 + 连通性启发式。** 真正的「代价模型」（实测）只有 ③收益 与 ④实现 两处，其余都是规则/能力门。
 
-### 5.3 `NPUTritonScheduling.can_fuse` 重写（`codegen/scheduling.py:579-721`）
-**场景**：scheduler 问两个节点能否融合（垂直=水平都走这一个方法，`:720-721`），按 reduce 状态分支。
-**问题**：上游 GPU tiling 把迭代范围塌成 1D，**NPU 需要非塌缩多轴范围**（`candidate_tilings` docstring `:726-728`「npu needs non-collapse ranges」）；naive 融合可能产生 NPU kernel 切不动、或两节点不一致的 tiling。
-**优化**：在上游 numel/rnumel 检查上叠两道 NPU 门：① **tiling 门**（pw+pw，`:657-679`）——对 node1/node2/合并集各算 `select_tiling`，多于 2 维时要求三者相等否则 `why("tiling mismatch")`；② **`is_compatible` 门**（pw→reduce，`:687-690`）——每个子节点须能被 `NPUIndexTritonKernel._split_iteration_ranges` 无塌缩切到 reduction group，`CantSplit` 即拒（`triton.py:1327-1348`）。
-**效果**：仅当 NPU 多轴 tiling 一致/可切时才融合，避免非法或劣化的融合 kernel；每次拒绝经 `WhyNoFuse` 记因（如 `"tiling mismatch"`）。
+### 5.1 后端路由（①）— 选哪个后端
+
+- **进程级**：`TORCHINDUCTOR_NPU_BACKEND` 选 `default`/`mlir`/`dvm` 三条互斥路径（`__init__.py:336-340` `_BACKEND_LOADERS`，未知值回落 `default`），default 注册 `NPUCombinedScheduling`（`__init__.py:171-173`）。
+- **逐 node**：`choose_node_backend`——是 CATLASS 模板则走 `CATLASSScheduling`，否则走 `NPUTritonScheduling`（`codegen/npu_combined_scheduling.py:40-43`）；Ascend950 上非 linear 模式再分出 `NPUNoLinearTritonScheduling`（`:82-99`）。
+- **范式：heuristic-legality**（类型/环境变量分派，无代价）。
+> 校正：`AKG` 在本 baseline 实际停用——`TORCHINDUCTOR_USE_AKG` 只在 mfusion 路径出现且命中即警告「AKG codegen is not supported currently」（`mfusion/graph_fusion.py:52-54,910`），不宜写成活跃后端。`mlir`/`dvm` 是完整独立路径。
+
+### 5.2 融合合法性（②）— 能不能融（Triton）
+
+（原 §5.3）`NPUTritonScheduling.can_fuse`（`codegen/scheduling.py:579-721`，垂直=水平共用，`:720-721`）在上游 numel/rnumel 检查上叠两道 NPU 门：① **tiling 门**（pw+pw，`:657-679`）——对 node1/node2/合并集各算 `select_tiling`，>2 维时要求三者相等，否则 `why("tiling mismatch")`；② **`is_compatible` 门**（pw→reduce，`:687-690`）——每个子节点须能被 `NPUIndexTritonKernel._split_iteration_ranges` 无塌缩切到 reduction group，`CantSplit` 即拒（`triton.py:1327-1348`）。**为什么**：上游 GPU tiling 塌成 1D，NPU 需非塌缩多轴范围（docstring `:726-728`「npu needs non-collapse ranges」），naive 融合会产出切不动/不一致的 tiling。**范式：heuristic-legality**（纯 shape/tiling 门，无 benchmark）。
+
+### 5.3 融合收益建模（③）— 划不划算【本节核心】
+
+这一步才是「怎么建模选择最终融合」的核心——**合法 ≠ 一定融**，torch_npu 借上游 `Scheduler` 机制、用**真机实测**决定接不接受。`patch_scheduler`（`scheduler.py:29`）改写融合主循环：
+
+- **③a 候选排序（启发式）**：`fuse_nodes_once`（`:79-187`）按 `get_possible_fusions`（`:147`，**未被 NPU 覆写、沿用上游**）——上游按 `score_fusion`（融合能省下的**共享内存字节** + 邻近度）排序。NPU **只改了邻近门** `are_long_distant_nodes`：`proximity_score > 20`（`:31-39`），注释明写 GPU 默认 64、Ascend950 用 20，且**仅 A5 才 patch**（`:41-42`）。
+  > 校正：`score_fusion`/`score_fusion_memory` 在整个 `_inductor` **无覆写**（全库 grep 无 `def score_fusion`）——说「NPU 自定义了融合打分」是错的，NPU 只调了一个邻近阈值。
+- **③b 收益判定（实测 benchmark）**：`speedup_by_fusion`（`:189-553`）：
+  - `not config.benchmark_fusion and not is_multi_template` → 直接 `return True`（`:202-203`）：关掉 benchmark 时「合法即融」。
+  - **普通对**（`:479-551`）：并行编译 `n1 / n2 / fused` 三个核 → `benchmark_codegened_module` 真机实测 → **接受判据 `return ms_fused < ms1 + ms2`**（`:541`）；任一核 register spilling（inf）则拒（`:503-519`）。
+  - **GEMM+epilogue 多模板对**（`:313-477`）：取模板 `MultiTemplateBuffer.choice_timings`，按 unfused_time 升序遍历候选并在 `unfused_time >= ms1+ms2` 时剪枝（`:361-362`），CATLASS 候选再过一次 `_can_fuse_epilogue_impl`；对每个候选**带 epilogue 编译并实测**取 `min_ms_fused`，**`min_ms_fused < (ms1+ms2)` 后 `finalize_as_caller(ms_fused_choice)`**（`:440-441`）——这一步**同时决定「融不融」与「选哪个 GEMM 实现」**。
+- **范式：empirical-benchmark**（唯一真·代价模型）；它依赖 §5.4 的真机计时。
+
+### 5.4 GEMM 实现 + epilogue 选择（④⑤）— 模板 autotune
+
+- **④ 候选生成 + 计时**：`tuned_mm`（`kernel/mm.py:79-142`）按 ATen→CATLASS→CK→Cpp→extern 生成候选（空则回落 ATen），交 `autotune_select_algorithm`（`:135`）。`patch_algorithm_selector`（`select_algorithm.py:639`）覆写 `AlgorithmSelectorCache.__call__` 与 `make_benchmark_fn`：`catlass_bench_use_profiling` 时走**真机 AICore profiling**——`do_batch_profiling`（`:1145-1223`）在 `torch_npu.profiler.profile`（`AiCMetrics.PipeUtilization`）下每候选跑 50 步、读 `kernel_details.csv` 的 `Duration` 求和、并用 192MB buffer 做 L2 flush；否则走 `do_bench`（子进程/当前进程）。开关 `catlass_bench_use_profiling`（env `TORCHINDUCTOR_PROFILE_WITH_DO_BENCH_USING_PROFILING`）**默认关**（`config.py:80-83`）。**范式：empirical-benchmark**。
+- **⑤ CATLASS EVG epilogue**（`codegen/catlass/catlass_scheduling.py`）：把 GEMM 后的逐元素尾（`relu(x@w+bias)`）折进 GEMM 核，省 GEMM 结果的 Cube→GM→Vector 往返。合法性门 `_can_fuse_epilogue_impl`（`:234-338`）：消费者须 `ComputedBuffer(Pointwise)`、同输出尺寸、读模板 buffer、非 reduction/非 mutation、单条 epilogue（`:256-258`）、EVG 可生成（`ir_to_evg_python_code` 不抛 `NotImplementedError`）、回退路径 `type==2` 且非 bf16（`:333-337`）。**唯一有计数器**：`catlass_epilogue_fusion_counter += len(epilogue_nodes)`（`:151`）。开关 `catlass_epilogue_fusion_enable`（env `CATLASS_EPILOGUE_FUSION`）**默认关**（`config.py:76-78`）。**范式：heuristic-legality（能否融）+ empirical（在 §5.3 多模板路径里选实现）**。
+
+### 5.5 tiling 建模（⑥）— 编译期穷举
+
+block/sub-block 大小不靠运行期 autotune，而在 codegen 时算死成固定 `Config`：
+- **选轴**：`SplitTiling`（`codegen/split_tiling.py:19`）`select_split_axis`（`:80-129`，停止条件=切分总 numel ≥ `num_vector_core` 且每核均衡，或已 3 轴，优先高维非规约轴）+ `select_tiling_axis`（`:137-205`，覆盖低维 + 规约轴，triton-ascend 最多 2 维）。
+- **UB 公式**：`TileGenerator`（`codegen/tile_generator.py`）`max_numel_threshold = local_mem_size // input_ptr_num // dtype_bytes`（`:47`，`local_mem_size` = `ub_size` 192KB(A3)/256KB(A5)，`input_ptr_num` 上限 3），`stop_numel = min(max_numel_threshold, max_total_numel//num_vector_core)//8`（`:48`）。
+- **穷举**：`descend_tiling_axis`（`:190-242`）对 tiling 轴反复 `next_power_of_2(numel//2)`（<32 时逐 1 递减）生成候选，每候选用 `valid_tile_numel`（≤ `max_numel_threshold`）过滤，产出 `Config(num_warps=1, num_stages=2)` 列表。
+- **为什么编译期而非运行期**：NPU 固定核数 + 便笺 UB，编译期一次算准（vs GPU 靠运行期 autotune）——机制在 [[npu_inductor_optimization_analysis]] §三/§四。**范式：compile-time-exhaustive**。
+
+### 5.6 DVM 图级分区融合（⑦）— dvm 后端
+
+（原 §5.2）仅 `dvm` 后端。`DvmGraphFusionPatch.enable` 把 `config.post_grad_custom_post_pass=dvm_graph_fusion`（`dvm/graph_fusion.py:400-413`），用 `CapabilityBasedPartitioner` 把一段连通、算子都在 `GRAPH_FUSION_SUPPORT_OP`（约 50 个，`:42-92`）白名单内的子图（`t=rsqrt(x*x+eps); y=(x*t)*w` 这类逐元素/GEMM 链）融成**一个** `dvm::fused_graph_*` 自定义算子：`partition_and_fuse`（`:273-306`）先 `propose_partitions()` 再 `split_partition_with_union_find`（`:131-156`，按数据依赖连通性细分），`_should_fuse` 门（`:258-271`，至少一输出、非 fallback、含 FakeTensor）；`flexible_layout` tag 让共享生产者保持共享（`:246-248`）。**效果**：整段连通区塌成**一次** DVM kernel 调用。**范式：heuristic-legality**（能力表 + 连通性，无 benchmark）。
+
+### 5.7 小结：四类建模范式 + 默认路径
+
+| 决策点 | 建模范式 | 判据 |
+|---|---|---|
+| ① 后端路由 | heuristic-legality | 类型/env 分派 |
+| ② can_fuse | heuristic-legality | shape/tiling 门 |
+| ③a 排序 | heuristic-ordering | 上游 score_fusion 共享内存字节 + 邻近门(A5=20) |
+| ③b 收益 | **empirical-benchmark** | 编译 fused/unfused 真机实测 `ms_fused < ms1+ms2` |
+| ④ GEMM autotune | **empirical-benchmark** | AICore profiling / do_bench 选实现 |
+| ⑤ CATLASS EVG | heuristic-legality | EVG 可生成 + 类型/形状门 |
+| ⑥ tiling | **compile-time-exhaustive** | UB 公式约束下 2 分递降穷举 |
+| ⑦ DVM 分区 | heuristic-legality | 能力表 + 连通性 |
+
+**三段式落差**：torch_npu 的融合体系是「**启发式定合法性 + 实测定收益/实现 + 编译期穷举定形状**」。真正的实测代价模型只有 ③收益、④实现 两处；tiling 从 GPU 的运行期 autotune 改成**编译期穷举**（受 UB=`ub_size//ptr//dtype` 硬约束），根因是 NPU 固定核数 + 便笺 UB。
+**默认路径提醒**：两个实测开关默认都关——`CATLASS_EPILOGUE_FUSION=0`（EVG epilogue 关）、`TORCHINDUCTOR_PROFILE_WITH_DO_BENCH_USING_PROFILING=0`（GEMM 计时走 do_bench 而非 AICore profiling）。想吃满后端融合需显式打开。
 
 ---
 
@@ -346,5 +399,5 @@ flowchart TB
 - [[npu_vs_upstream_fusion_passes]] — 母页：torch_npu vs 上游融合 Pass 全流程对照（谁有谁无谁不同 + `is_gpu` 总开关）
 - [[npu_inductor_optimization_analysis]] — 硬件特性 → 优化思想 → 案例（本页「效果」锚定的硬件 why 全景）
 - [[npu_inductor_splittiling_backend_analysis]] — 内置 default 路径 what/how（golden_var_list、CATLASS、tiling）
-- [[scheduler_analysis]] — Scheduler 融合策略与自定义 Pass（§5.3 can_fuse 的上游基线）
+- [[scheduler_analysis]] — Scheduler 融合策略与自定义 Pass（§5.2 can_fuse / §5.3 speedup_by_fusion 的上游基线）
 - [[post_grad_passes_guide]] · [[pre_grad_passes_guide]] — 上游 pass 详解（对照上游侧）
