@@ -4,6 +4,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-22：CUDA GEMM / 非 GEMM / Ascend 算子三篇生产级 Kernel 资料入库
+
+**Type**: Source Ingestion（按 `llm-knowledge` 的 raw→wiki→index→backlink→changelog 流程导入用户提供的三份 HTML。）
+
+- **原始资料归档**：新增 `raw/02_engineering/05_gpu_kernel/{cuda_gemm_final,cuda_nonmatmul_kernels_final,ascend_kernels}.html`，保持下载文件字节不变；SHA-256 分别为 `56f589…f85b0`、`ba1ce1…db02`、`1a6b9c…f7f0`。
+- **新增 [[cuda_gemm_kernel_analysis]]**：以 SM80 / A100 代表性配置串起 Grid→CTA→Warp→MMA、M/N 空间切块与 K 时间归约、`cp.async` 完成语义、每线程约 232 寄存器账本、shared-memory epilogue 与生产级 kernel 骨架。
+- **新增 [[cuda_nonmatmul_kernels_analysis]]**：以 roofline + 五类数据依赖为统一分类，覆盖 elementwise、reduction、norm、FlashAttention、stencil、scan、gather/scatter/sort，明确 shape 会让同一算子跨 compute-/memory-/latency-bound 阵营。
+- **新增 [[ascend_kernel_execution_model_analysis]]**：把 CUDA 两篇映射到 DaVinci AI Core 的 Cube/Vector/Scalar/MTE、GM→L1→L0→UB 显式缓冲链、Queue 双缓冲、FixPipe，以及 compute / memory / communication 三条训练优化主线；明确其为平台对照材料、非官方文档。
+- **可核验性与图形**：三页逐章附 raw HTML 行号范围和快照哈希；19 个内嵌 SVG 已渲染为 PNG。更新 GPU Kernel、工程与总索引，并向 [[gpu_kernel_guide]]、[[cuda_execution_model_guide]]、[[triton_03_matmul_guide]]、[[operator_optimization_guide]]、[[mindspeed_ascend_affinity_analysis]]、[[npu_inductor_optimization_analysis]] 补回链；未发现需标记的既有内容冲突。
+
+---
+
 ## 2026-07-20（四次更新）：[[npu_fusion_passes_deepdive]] §5 后端级融合大幅展开——加「决策链 + 代价模型」
 
 **Type**: Update（应用户「§5 后端 pass 需展开:当前后端优化都做了哪些?怎么建模选择最终的融合方式?」。1 路 source-audit agent 核 scheduler/select_algorithm/tiling 决策链 + 本人抽验 7 处载荷 file:line。）

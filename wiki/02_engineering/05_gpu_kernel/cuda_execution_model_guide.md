@@ -270,8 +270,11 @@ TRITON_INTERPRET=1 python triton_whoami.py  # 看 program_id ≈ blockIdx（无�
 ## 相关页面
 
 - [[gpu_kernel_guide]] — GPU/NPU Kernel 工程总览（本页是其 §01 执行层级的「概念→深入」展开版）
+- [[cuda_gemm_kernel_analysis]] — 把执行层级落到 SM80 生产级 Tensor Core GEMM
+- [[cuda_nonmatmul_kernels_analysis]] — 同一执行模型下，按 roofline 与数据依赖切换优化逻辑
+- [[ascend_kernel_execution_model_analysis]] — 对照没有 warp 的 DaVinci AI Core 执行模型
 - [[triton_00_gpu_essentials_guide]] — GPU 编程要素（roofline / 内存层级；本页补齐其「执行层级」前置）
 - [[triton_01_programming_model_guide]] — Triton SPMD 编程模型（program ≈ block 的实战）
 - [[triton_04_autotune_guide]] — `num_warps` / 占用率怎么自动调
 - [[triton_05_debug_guide]] — `device_print` / `TRITON_INTERPRET` 打印细节
-- [[index]] — Triton 学习路线总索引
+- [[index]] — GPU Kernel 领域索引

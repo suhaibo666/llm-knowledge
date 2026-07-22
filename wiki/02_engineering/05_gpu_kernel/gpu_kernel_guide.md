@@ -292,3 +292,12 @@ FlashAttention 中各层概念的完整映射：
 > **通用优化优先级（经验顺序）：**① 修复 non-coalesced access → ② 引入 shared memory tiling → ③ 消除 bank conflict → ④ 减少 warp divergence → ⑤ 调整 occupancy（tile size / register 用量） → ⑥ 引入 async pipeline（cp.async）→ ⑦ 切换 Tensor Core MMA 指令。
 
 GPU Kernel Engineering Reference · 内容来源：对话记录整理 · 所有技术细节均基于对话原文，未作增补
+
+## Related Pages
+
+- [[cuda_execution_model_guide]] — Grid / Block / Warp / Thread / SM 的执行模型地基
+- [[cuda_gemm_kernel_analysis]] — SM80 生产级 GEMM 的完整切分、流水、寄存器与 epilogue
+- [[cuda_nonmatmul_kernels_analysis]] — 非 GEMM 算子的 roofline 与数据依赖分类
+- [[ascend_kernel_execution_model_analysis]] — DaVinci AI Core、显式缓冲链与 Cube–Vector 路径
+- [[triton/index]] — Triton 从入门到优化的学习路线
+- [[index]] — GPU Kernel 领域索引

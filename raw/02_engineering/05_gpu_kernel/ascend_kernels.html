@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>生产级 Ascend 算子完整解读:达芬奇执行模型 · 片上缓冲 · 流水</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0E141F; --panel:#18212F; --panel2:#111A27; --line:#2C3A4E;
+    --ink:#CBD6E6; --muted:#7E8DA6; --dim:#586780;
+    --amber:#E7A33C; --cyan:#46B7C6; --green:#6CC178; --violet:#A98BD6; --rose:#D97E86;
+    --amber-f:rgba(231,163,60,.16); --cyan-f:rgba(70,183,198,.16);
+    --green-f:rgba(108,193,120,.18); --rose-f:rgba(217,126,134,.14); --violet-f:rgba(169,139,214,.16);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Space Grotesk", ui-sans-serif, system-ui, "PingFang SC","Microsoft YaHei", sans-serif;
+    line-height:1.7; -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1000px; margin:0 auto; padding:56px 28px 96px;}
+  .eyebrow{font-family:"JetBrains Mono", ui-monospace, monospace; font-size:12px; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--violet); margin:0 0 14px;}
+  h1{font-size:32px; line-height:1.24; margin:0 0 10px; font-weight:700; letter-spacing:-.01em;}
+  h1 .mono{font-family:"JetBrains Mono", monospace; color:var(--violet); font-weight:600;}
+  .sub{color:var(--muted); font-size:16px; max-width:74ch; margin:0 0 8px;}
+  .cfg{font-family:"JetBrains Mono", monospace; font-size:13px; color:var(--ink);
+    background:var(--panel2); border:1px solid var(--line); border-radius:10px;
+    padding:12px 16px; margin:18px 0 0; display:inline-block;}
+  .cfg b{color:var(--violet);}
+  h2{font-size:22px; margin:64px 0 6px; font-weight:600; letter-spacing:-.01em;
+    display:flex; align-items:baseline; gap:12px;}
+  h2 .n{font-family:"JetBrains Mono", monospace; font-size:13px; color:var(--bg);
+    background:var(--violet); border-radius:5px; padding:3px 8px; font-weight:600; letter-spacing:0;}
+  h3{font-size:16px; margin:30px 0 4px; color:var(--ink); font-weight:600;}
+  h3 .kls{font-family:"JetBrains Mono", monospace; font-size:12px; color:var(--dim); font-weight:500; margin-left:8px;}
+  p{margin:10px 0; color:var(--ink);}
+  p.note{color:var(--muted); font-size:15px;}
+  .fig{margin:26px 0 8px; background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
+    border:1px solid var(--line); border-radius:14px; padding:22px 20px 16px;}
+  .fig svg{display:block; width:100%; height:auto;}
+  .cap{font-family:"JetBrains Mono", monospace; font-size:12.5px; color:var(--muted);
+    margin:12px 4px 2px; letter-spacing:.01em;}
+  code, .k{font-family:"JetBrains Mono", monospace; font-size:.92em;}
+  code{color:var(--cyan); background:rgba(70,183,198,.10); padding:1px 6px; border-radius:5px;}
+  pre{background:var(--panel2); border:1px solid var(--line); border-radius:12px;
+    padding:18px 20px; overflow-x:auto; font-family:"JetBrains Mono", monospace;
+    font-size:13px; line-height:1.7; color:#B9C6D8; margin:22px 0;}
+  pre .cm{color:var(--dim); font-style:italic;} pre .kw{color:var(--amber);} pre .fn{color:var(--cyan);}
+  .callout{background:var(--violet-f); border:1px solid rgba(169,139,214,.35); border-left:3px solid var(--violet);
+    border-radius:0 10px 10px 0; padding:14px 18px; margin:22px 0; font-size:15px; color:#EAF1FA;}
+  .callout b{color:var(--violet);}
+  .cwarn{background:var(--rose-f); border-color:rgba(217,126,134,.35); border-left-color:var(--rose);}
+  .cwarn b{color:var(--rose);}
+  .cwarn .tag{font-family:"JetBrains Mono", monospace; font-size:11px; color:var(--rose);
+    letter-spacing:.08em; text-transform:uppercase; display:block; margin-bottom:4px;}
+  .legend{display:flex; flex-wrap:wrap; gap:16px 22px; margin:16px 2px 2px;
+    font-family:"JetBrains Mono", monospace; font-size:12px; color:var(--muted);}
+  .legend span{display:inline-flex; align-items:center; gap:7px;}
+  .sw{width:13px; height:13px; border-radius:3px; display:inline-block;}
+  table{width:100%; border-collapse:collapse; margin:22px 0; font-size:13.5px;}
+  th,td{text-align:left; padding:11px 12px; border-bottom:1px solid var(--line); vertical-align:top;}
+  th{color:var(--violet); font-weight:600; font-size:12.5px; letter-spacing:.04em; font-family:"JetBrains Mono", monospace;}
+  td.mono, th.mono{font-family:"JetBrains Mono", monospace; color:var(--cyan);}
+  .rule{height:1px; background:var(--line); border:0; margin:60px 0 0;}
+  .foot{color:var(--dim); font-size:12px; font-family:"JetBrains Mono", monospace; margin-top:22px; line-height:1.9;}
+  .foot a{color:var(--muted); text-decoration:none; border-bottom:1px dotted var(--dim);}
+  b, strong{color:#EAF1FA; font-weight:600;}
+  em{color:var(--violet); font-style:normal;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">Production Ascend · DaVinci / 910B · complete</p>
+  <h1>生产级 Ascend 算子完整解读:<span class="mono">达芬奇执行模型 · 片上缓冲 · 流水</span></h1>
+  <p class="sub">以一个 fp16 Cube GEMM 为主线,完整走一遍 Ascend 的四个层面:软件层(分核 / Ascend C / Tiling)、硬件层(AI Core / Cube / Vector / Scalar / MTE)、内存层(GM / L1 / L0A·L0B·L0C / UB)、指令层(DataCopy / Load3D / Mmad / FixPipe)——再把非 GEMM 那一大类接到 Vector 单元这条路上。全篇以 CUDA/SM80 那套为参照,标出<em>哪里照搬、哪里换词、哪里断层</em>。</p>
+  <p class="cfg">代表性配置:AI Core = <b>Cube + Vector + Scalar + 3×MTE</b> · Cube 基础 shape <b>16×16×16</b>(int8→16×16×32) · 缓冲链 <b>GM→L1→L0A/L0B→Cube→L0C→UB→GM</b> · fp16→fp32</p>
+
+  <div class="callout"><b>一句话总纲:</b> 把 CUDA 的 <b>SIMT / warp / occupancy</b> 世界先忘掉——达芬奇没有 warp,也没有 occupancy 这个旋钮。AI Core 里 <b>Cube / Vector / Scalar / MTE 四类单元物理并行</b>,延迟隐藏靠<em>单元间 overlap + 片上缓冲双缓冲</em>,不是靠多 warp 轮转。GEMM 那套(tiling / 复用 / 累加常驻)照搬,只是介质从 shared memory / 寄存器换成 <b>L1 / L0 / UB</b>;非 GEMM 那套(融合 / 砍 HBM 往返)也照搬,只是全走 <b>Vector 单元 + UB</b>。两条最易错的分界:<b>K 循环迭代数 ≠ Queue 双缓冲深度</b>;<b>分核(实际启动的 block 数)≠ Tiling(逻辑 tile → AI Core 的切分策略)</b>。</div>
+
+
+  <!-- ================= FIG 1 : AI Core anatomy ================= -->
+  <h2><span class="n">1</span>达芬奇 AI Core:四类单元,一条显式缓冲链</h2>
+  <p>CUDA 的 SM 里是一堆同构的 CUDA core + Tensor Core,靠调度器塞 warp;达芬奇的 AI Core 里是<em>四类各司其职的异构单元</em>,它们之间用一条<b>程序员/编译器显式管理的片上缓冲链</b>串起来。没有自动 L1 缓存兜底——数据什么时候从 GM 搬到 L1、从 L1 搬到 L0,全是 MTE 按指令做的。</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 960 430" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace">
+      <defs>
+        <marker id="a1" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--dim)"/></marker>
+      </defs>
+
+      <!-- GM -->
+      <rect x="30" y="30" width="120" height="360" rx="10" fill="var(--panel2)" stroke="var(--line)"/>
+      <text x="90" y="205" fill="var(--muted)" font-size="14" font-weight="600" text-anchor="middle" transform="rotate(-90 90 205)">Global Memory · HBM</text>
+
+      <!-- AI Core outer -->
+      <rect x="196" y="24" width="734" height="372" rx="14" fill="none" stroke="var(--violet)" stroke-opacity=".55" stroke-width="1.4"/>
+      <text x="212" y="46" fill="var(--violet)" font-size="13" font-weight="600">AI Core(达芬奇核心)· 一个 = 一个"block"</text>
+
+      <!-- L1 -->
+      <rect x="216" y="66" width="150" height="120" rx="9" fill="var(--green-f)" stroke="var(--green)" stroke-opacity=".55"/>
+      <text x="291" y="120" fill="var(--green)" font-size="13" font-weight="600" text-anchor="middle">L1 Buffer</text>
+      <text x="291" y="140" fill="var(--dim)" font-size="10.5" text-anchor="middle">GM 的落脚点</text>
+      <text x="291" y="156" fill="var(--dim)" font-size="10.5" text-anchor="middle">≈ shared memory</text>
+
+      <!-- L0A / L0B -->
+      <rect x="216" y="200" width="72" height="88" rx="8" fill="var(--amber-f)" stroke="var(--amber)" stroke-opacity=".5"/>
+      <text x="252" y="240" fill="var(--amber)" font-size="12" font-weight="600" text-anchor="middle">L0A</text>
+      <text x="252" y="258" fill="var(--dim)" font-size="9.5" text-anchor="middle">左矩阵</text>
+      <rect x="294" y="200" width="72" height="88" rx="8" fill="var(--amber-f)" stroke="var(--amber)" stroke-opacity=".5"/>
+      <text x="330" y="240" fill="var(--amber)" font-size="12" font-weight="600" text-anchor="middle">L0B</text>
+      <text x="330" y="258" fill="var(--dim)" font-size="9.5" text-anchor="middle">右矩阵</text>
+
+      <!-- Cube -->
+      <rect x="406" y="66" width="150" height="150" rx="10" fill="var(--amber-f)" stroke="var(--amber)" stroke-width="1.4"/>
+      <text x="481" y="128" fill="var(--amber)" font-size="15" font-weight="600" text-anchor="middle">Cube 单元</text>
+      <text x="481" y="150" fill="var(--dim)" font-size="10.5" text-anchor="middle">16×16×16 矩阵乘</text>
+      <text x="481" y="166" fill="var(--dim)" font-size="10.5" text-anchor="middle">🔒 硬件固定 · 随 dtype</text>
+      <text x="481" y="188" fill="var(--muted)" font-size="10.5" text-anchor="middle">≈ Tensor Core</text>
+
+      <!-- L0C -->
+      <rect x="406" y="232" width="150" height="56" rx="9" fill="rgba(231,163,60,.10)" stroke="var(--amber)" stroke-opacity=".7" stroke-dasharray="4 3"/>
+      <text x="481" y="256" fill="var(--amber)" font-size="12.5" font-weight="600" text-anchor="middle">L0C · fp32 累加器</text>
+      <text x="481" y="274" fill="var(--dim)" font-size="10" text-anchor="middle">常驻整个 K 循环 ≈ 寄存器 acc</text>
+
+      <!-- Vector -->
+      <rect x="596" y="66" width="150" height="120" rx="10" fill="var(--cyan-f)" stroke="var(--cyan)" stroke-width="1.4"/>
+      <text x="671" y="120" fill="var(--cyan)" font-size="15" font-weight="600" text-anchor="middle">Vector 单元</text>
+      <text x="671" y="142" fill="var(--dim)" font-size="10.5" text-anchor="middle">elementwise / reduce</text>
+      <text x="671" y="158" fill="var(--muted)" font-size="10.5" text-anchor="middle">≈ CUDA core / SIMD</text>
+
+      <!-- UB -->
+      <rect x="596" y="200" width="150" height="88" rx="9" fill="var(--cyan-f)" stroke="var(--cyan)" stroke-opacity=".55"/>
+      <text x="671" y="240" fill="var(--cyan)" font-size="13" font-weight="600" text-anchor="middle">Unified Buffer</text>
+      <text x="671" y="258" fill="var(--dim)" font-size="10.5" text-anchor="middle">Vector 的工作缓冲</text>
+
+      <!-- Scalar -->
+      <rect x="786" y="66" width="124" height="88" rx="9" fill="var(--panel2)" stroke="var(--line)"/>
+      <text x="848" y="104" fill="var(--muted)" font-size="12.5" font-weight="600" text-anchor="middle">Scalar</text>
+      <text x="848" y="122" fill="var(--dim)" font-size="10" text-anchor="middle">控制 / 地址 / 循环</text>
+      <text x="848" y="138" fill="var(--dim)" font-size="10" text-anchor="middle">≈ 标量后端</text>
+
+      <!-- FixPipe -->
+      <rect x="786" y="168" width="124" height="120" rx="9" fill="var(--violet-f)" stroke="var(--violet)" stroke-opacity=".55"/>
+      <text x="848" y="214" fill="var(--violet)" font-size="12.5" font-weight="600" text-anchor="middle">FixPipe</text>
+      <text x="848" y="232" fill="var(--dim)" font-size="10" text-anchor="middle">随路量化 / 激活</text>
+      <text x="848" y="248" fill="var(--dim)" font-size="10" text-anchor="middle">L0C→UB 后处理</text>
+      <text x="848" y="270" fill="var(--muted)" font-size="10" text-anchor="middle">≈ epilogue 引擎</text>
+
+      <!-- MTE arrows -->
+      <line x1="150" y1="110" x2="214" y2="120" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#a1)"/>
+      <text x="182" y="102" fill="var(--green)" font-size="9.5" text-anchor="middle">MTE2</text>
+      <line x1="291" y1="186" x2="291" y2="198" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#a1)"/>
+      <text x="323" y="197" fill="var(--dim)" font-size="9.5">MTE1 / Load3D</text>
+      <line x1="368" y1="244" x2="404" y2="244" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#a1)"/>
+      <line x1="481" y1="216" x2="481" y2="230" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#a1)"/>
+      <line x1="558" y1="256" x2="594" y2="250" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#a1)"/>
+      <text x="576" y="242" fill="var(--violet)" font-size="9.5" text-anchor="middle">FixPipe</text>
+      <line x1="596" y1="244" x2="152" y2="340" stroke="var(--dim)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#a1)"/>
+      <text x="360" y="330" fill="var(--dim)" font-size="9.5">MTE3:UB → GM 写回</text>
+
+      <text x="216" y="382" fill="var(--muted)" font-size="11">四类单元并行工作;数据在缓冲链上被 MTE 显式搬运——没有隐式缓存,搬运时机就是流水编排。</text>
+    </svg>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--amber-f); border:1.5px solid var(--amber)"></i>Cube / L0(矩阵)</span>
+      <span><i class="sw" style="background:var(--cyan-f); border:1.5px solid var(--cyan)"></i>Vector / UB(逐点·归约)</span>
+      <span><i class="sw" style="background:var(--green-f); border:1.5px solid var(--green)"></i>L1 / MTE(搬运)</span>
+      <span><i class="sw" style="background:var(--violet-f); border:1.5px solid var(--violet)"></i>FixPipe(后处理)</span>
+    </div>
+    <p class="cap">GM ↔ AI Core;核内 Cube/Vector/Scalar 三类算力 + 三条 MTE 搬运通道 + FixPipe 后处理,靠一条显式缓冲链串联。</p>
+  </div>
+
+  <div class="callout"><b>对位表(先建立词典):</b> 后面所有章节都在这张表的基础上展开。</div>
+
+  <table>
+    <tr><th>CUDA / SM80</th><th>Ascend / DaVinci</th><th>说明</th></tr>
+    <tr><td class="mono">Grid → CTA 调度</td><td class="mono">分核(GetBlockNum / GetBlockIdx)</td><td>SPMD,但一个 "block" = 一整个 AI Core 程序,不是 256 个 SIMT 线程</td></tr>
+    <tr><td class="mono">Warp / 32 lane / shuffle</td><td class="mono">(无对应)</td><td>没有 warp、没有 lane、没有 shfl——最大的抽象断层</td></tr>
+    <tr><td class="mono">Tensor Core · mma 16×8×16</td><td class="mono">Cube · 16×16×16(int8→16×16×32)</td><td>硬件固定最小矩阵指令,随 dtype 变,与 CUDA 同构</td></tr>
+    <tr><td class="mono">CUDA core / SIMD</td><td class="mono">Vector 单元(对 UB 操作)</td><td>所有 elementwise / reduction / softmax 走这条路</td></tr>
+    <tr><td class="mono">CTA tile / Warp tile</td><td class="mono">Tiling(L1 tile / L0 tile)</td><td>同样"软件可调、受片上容量卡";分核数被 tiling 推导,不自由</td></tr>
+    <tr><td class="mono">shared memory</td><td class="mono">L1 Buffer / Unified Buffer</td><td>显式 scratchpad,比 smem 更"手动"——无自动缓存</td></tr>
+    <tr><td class="mono">register file(acc 常驻)</td><td class="mono">L0C(Cube fp32 累加器)</td><td>累加器住在<em>专用 buffer</em>,不是 GPR</td></tr>
+    <tr><td class="mono">cp.async + commit/wait_group</td><td class="mono">MTE 异步搬运 + Queue 双缓冲</td><td>完成语义靠 EnQue/DeQue 或 set_flag/wait_flag</td></tr>
+    <tr><td class="mono">epilogue(经 smem 重排 + α/β/act)</td><td class="mono">FixPipe / 随路后处理</td><td>L0C→UB 路上做量化 / 激活 / bias,省掉独立 elementwise kernel</td></tr>
+  </table>
+
+
+  <!-- ================= FIG 2 : tiling ladder ================= -->
+  <h2><span class="n">2</span>GEMM 映射:分核 → L1 tile → L0 tile → Cube 指令</h2>
+  <p>第一篇 CUDA 文档的四层结构(Grid → CTA → Warp → MMA)在 Ascend 上是<em>分核 → L1 tile → L0 tile → Cube 指令</em>。同样只有最底层是硬件固定的;上面几级都是 Tiling 在切,受片上缓冲容量约束。warp 那一级消失了,取而代之的是 L1/L0 两级 tiling。</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 960 452" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace">
+      <defs>
+        <marker id="dn2" markerWidth="9" markerHeight="9" refX="4" refY="8" orient="auto"><path d="M0,0 L8,0 L4,8 Z" fill="var(--dim)"/></marker>
+      </defs>
+
+      <!-- Rung 1 分核 -->
+      <rect x="40" y="28" width="650" height="52" rx="8" fill="var(--violet-f)" stroke="var(--violet)" stroke-opacity=".6"/>
+      <text x="58" y="52" fill="var(--violet)" font-size="14" font-weight="600">分核 / Block 切分</text>
+      <text x="58" y="70" fill="var(--muted)" font-size="11">整个 GEMM → 每个 AI Core 领一块输出;block_num ≈ AI Core 数,GetBlockIdx 定位</text>
+      <rect x="702" y="40" width="222" height="28" rx="14" fill="none" stroke="var(--violet)" stroke-opacity=".6"/>
+      <text x="813" y="58" fill="var(--violet)" font-size="10.5" text-anchor="middle">调度层,不是计算 tile</text>
+
+      <line x1="120" y1="80" x2="120" y2="114" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#dn2)"/>
+      <text x="140" y="103" fill="var(--muted)" font-size="11">每个 AI Core 负责一块 M×N 输出 tile</text>
+
+      <!-- Rung 2 L1 tile -->
+      <rect x="40" y="118" width="650" height="52" rx="8" fill="var(--green-f)" stroke="var(--green)" stroke-opacity=".6"/>
+      <text x="58" y="142" fill="var(--green)" font-size="14" font-weight="600">L1 tile — GM 一次搬进来的块</text>
+      <text x="58" y="160" fill="var(--dim)" font-size="11">MTE2 把 A/B 的 M×K、K×N 子块搬进 L1;决定 K 方向 mainloop 的粒度</text>
+      <rect x="702" y="130" width="222" height="28" rx="14" fill="none" stroke="var(--green)" stroke-opacity=".6"/>
+      <text x="813" y="148" fill="var(--green)" font-size="10.5" text-anchor="middle">软件可调 · 受 L1 容量卡</text>
+
+      <line x1="120" y1="170" x2="120" y2="204" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#dn2)"/>
+      <text x="140" y="193" fill="var(--amber)" font-size="11">MTE1 / Load3D 把 L1 子块喂进 L0A / L0B</text>
+
+      <!-- Rung 3 L0 tile -->
+      <rect x="40" y="208" width="650" height="52" rx="8" fill="var(--amber-f)" stroke="var(--amber)" stroke-opacity=".6"/>
+      <text x="58" y="232" fill="var(--amber)" font-size="14" font-weight="600">L0 tile — Cube 一次吃进的块</text>
+      <text x="58" y="250" fill="var(--dim)" font-size="11">L0A(左)× L0B(右)→ Cube;部分积落 L0C。L0 tile ÷ 16×16×16 = 若干条 Mmad</text>
+      <rect x="702" y="220" width="222" height="28" rx="14" fill="none" stroke="var(--amber)" stroke-opacity=".6"/>
+      <text x="813" y="238" fill="var(--amber)" font-size="10.5" text-anchor="middle">软件可调 · 受 L0A/B/C 容量卡</text>
+
+      <line x1="120" y1="260" x2="120" y2="294" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#dn2)"/>
+      <text x="140" y="283" fill="var(--cyan)" font-size="11">L0 tile 铺满 = 若干条 16×16×16 Mmad,结果累加进 L0C</text>
+
+      <!-- Rung 4 Cube -->
+      <rect x="40" y="298" width="650" height="52" rx="8" fill="var(--cyan-f)" stroke="var(--cyan)" stroke-width="1.4"/>
+      <text x="58" y="322" fill="var(--cyan)" font-size="14" font-weight="600">Cube 指令 — 16×16×16</text>
+      <text x="58" y="340" fill="var(--dim)" font-size="11">= 硬件最小矩阵运算(fp16);int8 → 16×16×32</text>
+      <rect x="702" y="310" width="222" height="28" rx="14" fill="rgba(70,183,198,.10)" stroke="var(--cyan)"/>
+      <text x="813" y="328" fill="var(--cyan)" font-size="10.5" text-anchor="middle">🔒 硬件固定 · 随 dtype 变</text>
+
+      <text x="40" y="384" fill="var(--muted)" font-size="12">上三级由 Tiling 切,受 L1 / L0 容量约束;Cube 指令是硬件地板。分核数 = 问题尺寸 ÷ 单核 tile,被推导出来。</text>
+      <text x="40" y="404" fill="var(--dim)" font-size="11.5">和 CUDA 的差异:warp 这一级没了——CUDA 用 warp tile 把 CTA 分给 8 个 warp,Ascend 直接是 L1→L0 两级搬运,单核内不再切"线程组"。</text>
+      <text x="40" y="428" fill="var(--dim)" font-size="11.5">换 dtype:从 Cube 支持的 shape 里重选(int8→16×16×32);跨代际(910→910B→…)缓冲容量、FixPipe 能力、MTE 通道会一起变。</text>
+    </svg>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--violet-f); border:1.5px solid var(--violet)"></i>调度层(分核)</span>
+      <span><i class="sw" style="background:var(--green-f); border:1.5px solid var(--green)"></i>软件可调(L1 约束)</span>
+      <span><i class="sw" style="background:var(--amber-f); border:1.5px solid var(--amber)"></i>软件可调(L0 约束)</span>
+      <span><i class="sw" style="background:var(--cyan-f); border:1.5px solid var(--cyan)"></i>硬件固定(Cube shape)</span>
+    </div>
+    <p class="cap">四级切分:分核在最上只做枚举;L1 / L0 两级 tiling 受各自缓冲容量卡;Cube 16×16×16 是硬件地板。</p>
+  </div>
+
+
+  <!-- ================= FIG 3 : M/N spatial vs K temporal ================= -->
+  <h2><span class="n">3</span>M/N 是空间切块,K 是循环归约 —— L0C 累加器常驻</h2>
+  <p>和 CUDA 完全一样的分界:三级尺寸的"乘法关系"只对 <em>M/N 方向</em>成立。<b>K 方向不是空间上排布,而是时间上的循环累加</b>——沿 K 把一片片部分积加进同一批 L0C。第一篇里"accumulator 跨所有 K tile 常驻寄存器",在 Ascend 上就是 <b>L0C 常驻整个 mainloop</b>,K 走完才由 FixPipe/MTE3 撤出。</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 960 300" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace">
+      <defs>
+        <marker id="a3" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--dim)"/></marker>
+      </defs>
+
+      <!-- M/N block left -->
+      <rect x="40" y="34" width="270" height="230" rx="10" fill="none" stroke="var(--line)"/>
+      <text x="56" y="58" fill="var(--cyan)" font-size="13" font-weight="600">M / N:输出空间 tiling</text>
+      <text x="56" y="76" fill="var(--muted)" font-size="10.5">并行 · 一次算清 · 空间铺满</text>
+      <!-- grid of tiles -->
+      <g>
+        <rect x="70" y="92" width="52" height="52" rx="4" fill="var(--cyan-f)" stroke="var(--cyan)" stroke-opacity=".5"/>
+        <rect x="128" y="92" width="52" height="52" rx="4" fill="var(--cyan-f)" stroke="var(--cyan)" stroke-opacity=".5"/>
+        <rect x="186" y="92" width="52" height="52" rx="4" fill="var(--cyan-f)" stroke="var(--cyan)" stroke-opacity=".5"/>
+        <rect x="70" y="150" width="52" height="52" rx="4" fill="var(--cyan-f)" stroke="var(--cyan)" stroke-opacity=".5"/>
+        <rect x="128" y="150" width="52" height="52" rx="4" fill="var(--cyan-f)" stroke="var(--cyan)" stroke-opacity=".5"/>
+        <rect x="186" y="150" width="52" height="52" rx="4" fill="var(--cyan-f)" stroke="var(--cyan)" stroke-opacity=".5"/>
+      </g>
+      <text x="155" y="228" fill="var(--dim)" font-size="10.5" text-anchor="middle">每块 = 16×16 Cube 输出,规则切块</text>
+      <text x="155" y="246" fill="var(--dim)" font-size="10.5" text-anchor="middle">互不依赖 → 可并行铺满</text>
+
+      <!-- K loop right -->
+      <rect x="360" y="34" width="560" height="230" rx="10" fill="none" stroke="var(--line)"/>
+      <text x="376" y="58" fill="var(--amber)" font-size="13" font-weight="600">K:归约循环 tiling → L0C 累加</text>
+      <text x="376" y="76" fill="var(--muted)" font-size="10.5">串行 · 沿时间累加 · 同一批 L0C 反复更新</text>
+
+      <!-- K tiles feeding into L0C -->
+      <g>
+        <rect x="384" y="104" width="48" height="34" rx="5" fill="var(--amber-f)" stroke="var(--amber)" stroke-opacity=".5"/><text x="408" y="126" fill="var(--amber)" font-size="10" text-anchor="middle">K₀</text>
+        <rect x="444" y="104" width="48" height="34" rx="5" fill="var(--amber-f)" stroke="var(--amber)" stroke-opacity=".5"/><text x="468" y="126" fill="var(--amber)" font-size="10" text-anchor="middle">K₁</text>
+        <rect x="504" y="104" width="48" height="34" rx="5" fill="var(--amber-f)" stroke="var(--amber)" stroke-opacity=".5"/><text x="528" y="126" fill="var(--amber)" font-size="10" text-anchor="middle">K₂</text>
+        <rect x="564" y="104" width="48" height="34" rx="5" fill="var(--amber-f)" stroke="var(--amber)" stroke-opacity=".5"/><text x="588" y="126" fill="var(--amber)" font-size="10" text-anchor="middle">K₃</text>
+        <text x="640" y="126" fill="var(--dim)" font-size="11">… ⌈K/K_tile⌉ 个 K tile(mainloop 迭代)</text>
+      </g>
+
+      <!-- arrows down to L0C -->
+      <line x1="408" y1="138" x2="640" y2="176" stroke="var(--dim)" stroke-width="1.2" marker-end="url(#a3)"/>
+      <line x1="468" y1="138" x2="650" y2="176" stroke="var(--dim)" stroke-width="1.2"/>
+      <line x1="528" y1="138" x2="660" y2="176" stroke="var(--dim)" stroke-width="1.2"/>
+      <line x1="588" y1="138" x2="670" y2="176" stroke="var(--dim)" stroke-width="1.2"/>
+
+      <!-- L0C resident -->
+      <rect x="560" y="180" width="200" height="56" rx="9" fill="rgba(231,163,60,.10)" stroke="var(--amber)" stroke-width="1.4" stroke-dasharray="5 3"/>
+      <text x="660" y="204" fill="var(--amber)" font-size="12.5" font-weight="600" text-anchor="middle">L0C · fp32 累加器</text>
+      <text x="660" y="222" fill="var(--dim)" font-size="10" text-anchor="middle">D = A×B + C,常驻到 K 走完</text>
+
+      <text x="376" y="256" fill="var(--muted)" font-size="10.5">Cube 的 accumulate 语义把每个 K 片的部分积加进 L0C;和 CUDA 的寄存器 accumulator 一样——不能被挪作他用。</text>
+    </svg>
+    <p class="cap">M/N 把输出切块并行算清;K 沿时间循环归约,部分积不断累加进常驻的 L0C——这条分界与 CUDA GEMM 一字不差,只是介质从寄存器换成 L0C。</p>
+  </div>
+
+
+  <!-- ================= FIG 4 : MTE pipeline ================= -->
+  <h2><span class="n">4</span>完整数据流:MTE 异步搬运 + Queue 双缓冲 + FixPipe epilogue</h2>
+  <p>第一篇里两条易错语义,在 Ascend 上有直接对应:① <code>cp.async</code> 的 commit/wait_group → 这里是 <b>MTE 搬运 + Queue 的 EnQue/DeQue</b>(Ascend C 帮你把 producer/consumer 同步藏进队列);底层是 <b>set_flag / wait_flag</b> 在 <code>PIPE_MTE2</code> 与 <code>PIPE_M</code>(Cube)之间挂依赖——<em>搬运没完成,Cube 不能读</em>。② 结果不从 L0C 直写 GM——中间有 <b>FixPipe</b>,就是 CUDA 那个 epilogue。</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 960 340" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace">
+      <defs>
+        <marker id="a4" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--dim)"/></marker>
+      </defs>
+
+      <text x="40" y="30" fill="var(--muted)" font-size="12">主循环(沿 K 迭代):MTE 预取下一片,Cube 算当前片,三者流水错开</text>
+
+      <!-- GM -->
+      <rect x="40" y="48" width="110" height="50" rx="8" fill="var(--panel2)" stroke="var(--line)"/>
+      <text x="95" y="78" fill="var(--muted)" font-size="12" text-anchor="middle">A / B · GM</text>
+
+      <!-- L1 double buffer -->
+      <rect x="196" y="40" width="230" height="66" rx="9" fill="none" stroke="var(--green)" stroke-opacity=".55"/>
+      <text x="311" y="30" fill="var(--green)" font-size="11" text-anchor="middle">L1 · Queue 双缓冲(ping-pong)</text>
+      <rect x="210" y="52" width="94" height="42" rx="6" fill="var(--green-f)" stroke="var(--green)" stroke-opacity=".5"/><text x="257" y="78" fill="var(--green)" font-size="10.5" text-anchor="middle">slot 0 · 算</text>
+      <rect x="318" y="52" width="94" height="42" rx="6" fill="var(--green-f)" stroke="var(--green)" stroke-opacity=".3"/><text x="365" y="78" fill="var(--dim)" font-size="10.5" text-anchor="middle">slot 1 · 预取</text>
+
+      <line x1="150" y1="73" x2="208" y2="73" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#a4)"/>
+      <text x="178" y="64" fill="var(--green)" font-size="9.5" text-anchor="middle">MTE2</text>
+
+      <!-- L0A/B -->
+      <rect x="470" y="40" width="120" height="66" rx="9" fill="var(--amber-f)" stroke="var(--amber)" stroke-opacity=".5"/>
+      <text x="530" y="68" fill="var(--amber)" font-size="11.5" text-anchor="middle">L0A / L0B</text>
+      <text x="530" y="86" fill="var(--dim)" font-size="9.5" text-anchor="middle">fragment</text>
+      <line x1="426" y1="73" x2="468" y2="73" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#a4)"/>
+      <text x="447" y="64" fill="var(--amber)" font-size="9.5" text-anchor="middle">MTE1</text>
+
+      <!-- Cube -->
+      <rect x="632" y="40" width="120" height="66" rx="9" fill="var(--amber-f)" stroke="var(--amber)" stroke-width="1.4"/>
+      <text x="692" y="68" fill="var(--amber)" font-size="12.5" font-weight="600" text-anchor="middle">Cube</text>
+      <text x="692" y="86" fill="var(--dim)" font-size="9.5" text-anchor="middle">Mmad 累加</text>
+      <line x1="590" y1="73" x2="630" y2="73" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#a4)"/>
+
+      <!-- L0C -->
+      <rect x="632" y="130" width="120" height="46" rx="9" fill="rgba(231,163,60,.10)" stroke="var(--amber)" stroke-opacity=".7" stroke-dasharray="4 3"/>
+      <text x="692" y="150" fill="var(--amber)" font-size="11" font-weight="600" text-anchor="middle">L0C 累加器</text>
+      <text x="692" y="166" fill="var(--dim)" font-size="9" text-anchor="middle">留着,反复累加</text>
+      <line x1="692" y1="106" x2="692" y2="128" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#a4)"/>
+
+      <!-- completion semantics box -->
+      <rect x="196" y="130" width="384" height="76" rx="9" fill="var(--panel2)" stroke="var(--line)"/>
+      <text x="212" y="152" fill="var(--violet)" font-size="11.5" font-weight="600">正确的完成语义</text>
+      <text x="212" y="172" fill="#B9C6D8" font-size="10.5" font-family="JetBrains Mono">set_flag(PIPE_MTE2, PIPE_M);  wait_flag(...)</text>
+      <text x="212" y="188" fill="var(--muted)" font-size="10">↑ 等 MTE 搬运真正完成,Cube 才读 L0A/B</text>
+      <text x="212" y="202" fill="var(--dim)" font-size="9.5">Queue 的 EnQue/DeQue 就是这套 flag 的封装 · 深度=2 即双缓冲</text>
+
+      <!-- Epilogue band -->
+      <rect x="40" y="234" width="880" height="84" rx="10" fill="var(--violet-f)" stroke="var(--violet)" stroke-opacity=".4"/>
+      <text x="56" y="256" fill="var(--violet)" font-size="12" font-weight="600">Epilogue(K 归约结束 · FixPipe 随路)</text>
+      <rect x="60" y="266" width="120" height="40" rx="6" fill="rgba(231,163,60,.10)" stroke="var(--amber)" stroke-opacity=".6"/><text x="120" y="290" fill="var(--amber)" font-size="10.5" text-anchor="middle">L0C(累加器)</text>
+      <line x1="184" y1="286" x2="228" y2="286" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#a4)"/>
+      <rect x="232" y="266" width="170" height="40" rx="6" fill="var(--violet-f)" stroke="var(--violet)" stroke-opacity=".6"/><text x="317" y="284" fill="var(--violet)" font-size="10.5" text-anchor="middle">FixPipe:量化/激活/bias</text><text x="317" y="298" fill="var(--dim)" font-size="9" text-anchor="middle">D = α·acc + β·C (+act)</text>
+      <line x1="406" y1="286" x2="450" y2="286" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#a4)"/>
+      <rect x="454" y="266" width="120" height="40" rx="6" fill="var(--cyan-f)" stroke="var(--cyan)" stroke-opacity=".6"/><text x="514" y="290" fill="var(--cyan)" font-size="10.5" text-anchor="middle">UB · 重排</text>
+      <line x1="578" y1="286" x2="622" y2="286" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#a4)"/>
+      <rect x="626" y="266" width="140" height="40" rx="6" fill="var(--panel2)" stroke="var(--line)"/><text x="696" y="290" fill="var(--muted)" font-size="10.5" text-anchor="middle">MTE3 → GM</text>
+      <text x="786" y="284" fill="var(--dim)" font-size="9.5">融合掉一次</text>
+      <text x="786" y="298" fill="var(--dim)" font-size="9.5">独立 kernel</text>
+    </svg>
+    <p class="cap">MTE 异步预取 + Queue 双缓冲让搬运与 Cube 计算错开;set_flag/wait_flag 保证"搬完才读";FixPipe 在 L0C→UB 路上随路做 α/β/act,省掉独立 elementwise kernel。</p>
+  </div>
+
+
+  <!-- ================= FIG 5 : buffer budget ================= -->
+  <h2><span class="n">5</span>片上缓冲预算:L0C 是地板,"换 tile"是唯一出路</h2>
+  <p>第一篇最硬核的一章是"寄存器账本"——128 个 fp32 accumulator 铺了地板,其余是操作数与控制的天花板。Ascend 上这本账换成<em>片上缓冲容量账</em>:L0C 的容量决定单核一次能算多大的 M×N 输出(那批 fp32 accumulator 必须放得下),L1/UB 的容量决定搬运块和 Vector 工作集的大小。<b>没有寄存器 spill 到 local memory 这回事,但一旦 tile 超出缓冲,只能换小一号 tile 重调形</b>——和 CUDA "别硬压寄存器换 occupancy、真要降压就换小 warp tile"的结论完全一致。</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 960 300" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace">
+      <!-- axis label -->
+      <text x="40" y="30" fill="var(--muted)" font-size="12">单个 AI Core 的片上缓冲占用 vs 容量上限(示意 · 代表值,随代际不同)</text>
+
+      <!-- bars -->
+      <!-- L1 -->
+      <text x="40" y="66" fill="var(--green)" font-size="12" font-weight="600">L1 Buffer</text>
+      <rect x="150" y="52" width="620" height="20" rx="4" fill="var(--panel2)" stroke="var(--line)"/>
+      <rect x="150" y="52" width="460" height="20" rx="4" fill="var(--green-f)" stroke="var(--green)" stroke-opacity=".6"/>
+      <text x="782" y="66" fill="var(--dim)" font-size="10.5">A/B 双缓冲搬运块 · 卡 K-tile 大小</text>
+
+      <!-- L0A -->
+      <text x="40" y="102" fill="var(--amber)" font-size="12" font-weight="600">L0A(左矩阵)</text>
+      <rect x="150" y="88" width="620" height="20" rx="4" fill="var(--panel2)" stroke="var(--line)"/>
+      <rect x="150" y="88" width="300" height="20" rx="4" fill="var(--amber-f)" stroke="var(--amber)" stroke-opacity=".6"/>
+      <text x="782" y="102" fill="var(--dim)" font-size="10.5">Cube 左输入 fragment · 双缓冲则 ×2</text>
+
+      <!-- L0B -->
+      <text x="40" y="138" fill="var(--amber)" font-size="12" font-weight="600">L0B(右矩阵)</text>
+      <rect x="150" y="124" width="620" height="20" rx="4" fill="var(--panel2)" stroke="var(--line)"/>
+      <rect x="150" y="124" width="300" height="20" rx="4" fill="var(--amber-f)" stroke="var(--amber)" stroke-opacity=".6"/>
+      <text x="782" y="138" fill="var(--dim)" font-size="10.5">Cube 右输入 fragment</text>
+
+      <!-- L0C floor -->
+      <text x="40" y="174" fill="var(--amber)" font-size="12" font-weight="600">L0C 累加器</text>
+      <rect x="150" y="160" width="620" height="20" rx="4" fill="var(--panel2)" stroke="var(--line)"/>
+      <rect x="150" y="160" width="560" height="20" rx="4" fill="rgba(231,163,60,.10)" stroke="var(--amber)" stroke-width="1.4"/>
+      <text x="782" y="174" fill="var(--amber)" font-size="10.5">= M×N 输出的 fp32,常驻整个 K 循环 → 地板</text>
+
+      <!-- UB -->
+      <text x="40" y="210" fill="var(--cyan)" font-size="12" font-weight="600">Unified Buffer</text>
+      <rect x="150" y="196" width="620" height="20" rx="4" fill="var(--panel2)" stroke="var(--line)"/>
+      <rect x="150" y="196" width="380" height="20" rx="4" fill="var(--cyan-f)" stroke="var(--cyan)" stroke-opacity=".6"/>
+      <text x="782" y="210" fill="var(--dim)" font-size="10.5">Vector 工作集 + epilogue 重排 · 卡逐点算子行长</text>
+
+      <!-- cap line -->
+      <line x1="770" y1="44" x2="770" y2="224" stroke="var(--rose)" stroke-width="1.3" stroke-dasharray="4 3"/>
+      <text x="770" y="240" fill="var(--rose)" font-size="10" text-anchor="middle">容量上限</text>
+
+      <text x="40" y="270" fill="var(--muted)" font-size="11">L0C 那条("M×N 输出 fp32 常驻")就是地板:输出 tile 越大,L0C 越吃紧——它顶死了单核一次能算多大的块。</text>
+      <text x="40" y="288" fill="var(--dim)" font-size="11">要看的指标不是 occupancy(不存在),而是 <tspan fill="var(--amber)">Cube 利用率</tspan> 和 <tspan fill="var(--green)">MTE 是否成瓶颈</tspan>(≈ Nsight 的 tensor pipe active vs scoreboard stall)。</text>
+    </svg>
+    <p class="cap">缓冲预算账本:L0C 的"M×N 输出 fp32 常驻"是地板,和 CUDA 的 128 fp32 accumulator 同构;tile 超容量的唯一出路是调小 tile,不是硬压。</p>
+  </div>
+
+  <div class="callout cwarn">
+    <span class="tag">坑 · pitfall</span>
+    <b>别照搬 occupancy 直觉。</b> CUDA 里"低 occupancy 靠 ILP 补"是个有效策略;Ascend 上根本没有 occupancy 这个量,别去找它的类比。这里的延迟隐藏 100% 靠<b>流水排布</b>:MTE 预取、Cube 计算、Vector 后处理三条 pipe 能不能真正 overlap。双缓冲深度不够、或某条 pipe 排空等另一条,就是你的性能坑——用 profiling 看每条 pipe 的 active 占比,而不是去调"线程数"。
+  </div>
+
+
+  <!-- ================= §6 who decides ================= -->
+  <h2><span class="n">6</span>每一级由谁定、谁被谁推导</h2>
+  <table>
+    <tr><th>层级</th><th>本例</th><th>可调?</th><th>被谁约束 / 如何被推导</th></tr>
+    <tr><td class="mono">分核 / block</td><td class="mono">⌈M/BM⌉×⌈N/BN⌉</td><td>调度策略</td><td>由问题尺寸 + 单核 tile 推出;≈ AI Core 数时利用率最好</td></tr>
+    <tr><td class="mono">L1 tile</td><td class="mono">M×K / K×N 子块</td><td>✓ 软件</td><td>主要受 L1 容量;决定 K 方向 mainloop 迭代数与双缓冲深度</td></tr>
+    <tr><td class="mono">L0 tile</td><td class="mono">Cube 一次吃的块</td><td>✓ 软件</td><td>主要受 L0A/L0B/<em>L0C</em>;L0C 顶死单核 M×N 输出大小</td></tr>
+    <tr><td class="mono">Cube shape</td><td class="mono">16×16×16</td><td>✗ 硬件</td><td>固定,随 dtype 变(int8→16×16×32)</td></tr>
+    <tr><td class="mono">Queue 深度</td><td class="mono">2(双缓冲)</td><td>✓ 软件</td><td>受缓冲容量;深度 ≠ K-tile 数,是循环复用的 slot 数</td></tr>
+  </table>
+  <p class="note"><b>代表性 ≠ 标准。</b> 和 cuBLAS/CUTLASS 一样,生产库(CANN 的 GEMM / ATB / AscendC Matmul 模板)会为同一个 GEMM 备一堆候选 tile,按 M/N/K、dtype、缓冲、MTE 带宽、FixPipe 能力和<em>实测</em>选择。不存在一个 tile 适合所有 GEMM。</p>
+
+
+  <!-- ================= §7 code skeleton ================= -->
+  <h2><span class="n">7</span>Ascend C kernel 骨架:CopyIn → Compute → CopyOut</h2>
+  <p>第一篇把理论落成 SM80 kernel;这里把它落成 <b>Ascend C</b> 的三段式流水。核内逻辑不是"一堆线程各算一块",而是 <em>CopyIn(MTE)→ Compute(Cube/Vector)→ CopyOut(MTE)</em> 三段,用 <code>TQue</code> 在段间传数据、自动挂 producer/consumer 依赖;<code>TQue</code> 深度设 2 就是双缓冲。</p>
+
+  <pre><span class="cm">// —— 三段式:每段一个 pipe,TQue 串起来,深度 2 = 双缓冲 ——</span>
+<span class="kw">class</span> MatmulKernel {
+  TPipe pipe;
+  TQue&lt;TPosition::A1, <span class="kw">2</span>&gt; inQueueA;   <span class="cm">// GM→L1 的 A,双缓冲</span>
+  TQue&lt;TPosition::B1, <span class="kw">2</span>&gt; inQueueB;   <span class="cm">// GM→L1 的 B</span>
+  TQue&lt;TPosition::CO1,<span class="kw">1</span>&gt; outQueueC;  <span class="cm">// L0C→UB 的结果</span>
+
+  <span class="kw">void</span> <span class="fn">Process</span>() {
+    <span class="kw">for</span> (<span class="kw">int</span> kt = 0; kt &lt; K / BK; ++kt) {   <span class="cm">// 沿 K 的 mainloop</span>
+      <span class="fn">CopyIn</span>(kt);      <span class="cm">// MTE2:GM → L1(EnQue 触发依赖)</span>
+      <span class="fn">Compute</span>(kt);     <span class="cm">// MTE1→L0 + Cube Mmad,累加进 L0C</span>
+    }
+    <span class="fn">Epilogue</span>();       <span class="cm">// FixPipe:L0C → UB(量化/激活)→ MTE3 写回</span>
+  }
+
+  <span class="kw">void</span> <span class="fn">CopyIn</span>(<span class="kw">int</span> kt) {
+    <span class="kw">auto</span> a = inQueueA.<span class="fn">AllocTensor</span>();
+    <span class="fn">DataCopy</span>(a, aGM[kt * BK], ...);  <span class="cm">// 异步搬运;分工按合并访存定</span>
+    inQueueA.<span class="fn">EnQue</span>(a);              <span class="cm">// ← 相当于 cp.async.commit_group</span>
+  }
+
+  <span class="kw">void</span> <span class="fn">Compute</span>(<span class="kw">int</span> kt) {
+    <span class="kw">auto</span> a = inQueueA.<span class="fn">DeQue</span>();       <span class="cm">// ← 相当于 wait_group,搬完才拿</span>
+    <span class="kw">auto</span> b = inQueueB.<span class="fn">DeQue</span>();
+    <span class="fn">Mmad</span>(cL0C, a, b, /*initC=*/kt==0); <span class="cm">// Cube:C += A×B,L0C 常驻</span>
+    inQueueA.<span class="fn">FreeTensor</span>(a);           <span class="cm">// 归还 slot 供下轮复用</span>
+  }
+}</pre>
+
+  <p class="note">对照第一篇:<code>EnQue/DeQue</code> = <code>cp.async</code> 的 <code>commit/wait_group</code>——搬运没落地,<code>DeQue</code> 拿不到,Cube 就不会读到脏数据。<code>Mmad</code> 的 <code>initC=(kt==0)</code> 就是 accumulate 语义:第一轮清零、之后累加,L0C 常驻到 <code>Epilogue</code> 才撤。搬运的线程分工(按合并访存)与计算分工(按 Cube fragment)是两套独立映射,和 CUDA 一样。</p>
+
+  <table>
+    <tr><th>本文的块</th><th>Ascend C / CANN 里的对应物</th></tr>
+    <tr><td>§4 mainloop(MTE 双缓冲流水)</td><td class="mono">TPipe + TQue(A1/B1)· DataCopy · 深度=2</td></tr>
+    <tr><td>§4 Cube 指令组合</td><td class="mono">Mmad / AscendC Matmul API</td></tr>
+    <tr><td>§2 L1/L0 tiling</td><td class="mono">Tiling 结构体(host 侧算)+ TilingData</td></tr>
+    <tr><td>§4 epilogue</td><td class="mono">FixPipe(随路量化/激活)+ CopyOut</td></tr>
+    <tr><td>conv 的 img2col</td><td class="mono">MTE1 · Load3D(硬件原生 im2col)</td></tr>
+    <tr><td>§1 分核 / 调度</td><td class="mono">GetBlockIdx / GetBlockNum + 图模式融合(GE)</td></tr>
+  </table>
+  <p class="note">教学版省略、生产版必有:边界与非对齐(尾块补零 / K 余数轮)、更细的 pipe 同步(手工 set_flag/wait_flag 拆 producer/consumer)、多核负载均衡、dtype × 布局 × 对齐的模板特化与自动调 tiling。骨架相同,工程量在这些边角。</p>
+
+
+  <!-- ================= §8 non-GEMM ================= -->
+  <h2><span class="n">8</span>非 GEMM:统一执行模型,Vector 单元这条路<span class="kls">// roofline 左侧 · 融合砍 HBM</span></h2>
+  <p>第二篇 CUDA 文档的核心结论——<em>底层执行模型统一,优化逻辑随算子处境而变</em>——在 Ascend 上完全成立。GEMM 那套(tiling / 复用 / Cube / L0C 分块)是"计算受限 + 高复用"的专属打法;<b>其余大多数算子访存受限,全走 Vector 单元 + UB,主战场是融合与向量化</b>。roofline 框架照搬:GEMV / 瘦 GEMM / decode 线性层落回左侧,位置取决于形状不取决于算子名字。</p>
+
+  <p>但几处因为"没有 warp"而换了打法,逐类标出:</p>
+
+  <table>
+    <tr><th>算子类</th><th>数据依赖</th><th>Ascend 落点</th><th>与 CUDA 的关键差异</th></tr>
+    <tr><td>Elementwise</td><td>逐点 1→1</td><td>Vector + UB,分核 + 核内循环,融合</td><td>"float4 向量化" → UB 内向量指令粒度;融合逻辑一致</td></tr>
+    <tr><td>Reduction</td><td>多对一 N→1</td><td>UB 内 vector reduce;跨核走 workspace + 二次 kernel</td><td><em>没有 warp shuffle</em>——四级漏斗塌成"核内 reduce + 核间 GM 归约"</td></tr>
+    <tr><td>Softmax / Norm</td><td>reduction + 逐点</td><td>单遍融合,online-softmax / Welford 在 UB 常驻</td><td>"整行驻留片上"的前提是 <em>UB 容量</em>;超长行需分块重读</td></tr>
+    <tr><td>Attention / FA</td><td>matmul + softmax</td><td>Cube–Vector 融合(见 §9)</td><td>两套逻辑合流;关键 lever 是 Cube-Vector overlap</td></tr>
+    <tr><td>Stencil / Conv</td><td>邻域复用</td><td>MTE Load3D 硬件 im2col → 直喂 Cube</td><td>im2col 是<em>硬件原生</em>,比 CUDA 那条路更顺</td></tr>
+    <tr><td>Scan</td><td>前缀依赖</td><td>无 shuffle,靠 workspace 多阶段</td><td>结合律 / 确定性问题同样存在(见坑)</td></tr>
+    <tr><td>Gather/Scatter/MoE</td><td>不规则、间接</td><td>Vector/Scalar + workspace;dispatch/combine</td><td>无高效全局 atomic → 更依赖"先排序再分段规约"</td></tr>
+  </table>
+
+  <div class="callout cwarn">
+    <span class="tag">坑 · 确定性</span>
+    <b>归约顺序在 Ascend 上更容易不可复现。</b> 浮点归约不满足结合律,这条在 CUDA 里就有;Ascend 的跨核归约走 GM/workspace、顺序更不定,问题只会更突出。要位级可复现,就得<b>固定 tiling + 固定归约树 + 关掉非确定性的核间累加路径</b>。这也是训练侧做 bit-level reproducibility 时的主线——单核 kernel 视角刚好给了它一个"为什么"。
+  </div>
+
+
+  <!-- ================= FIG : FlashAttention ================= -->
+  <h2><span class="n">9</span>FlashAttention:Cube–Vector 融合<span class="kls">// 训练里最关键的融合 kernel</span></h2>
+  <p>第二篇把 FlashAttention 称作"两套逻辑合流"——右侧的分块 GEMM 和左侧的 online reduction 挤进一个 kernel。Ascend 上这正好落在<em>一个 AI Core 里 Cube 和 Vector 两类单元的协作</em>:Cube 算 S=Q·Kᵀ 和 P·V,Vector 做 online-softmax,中间量常驻 L1/UB,<b>永不物化完整的 N×N</b>。torch_npu 里对应 <code>npu_fusion_attention</code>(底层 FlashAttentionScore 融合算子)。</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 960 320" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace">
+      <defs>
+        <marker id="a9" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--dim)"/></marker>
+      </defs>
+
+      <!-- Qi resident -->
+      <rect x="40" y="40" width="110" height="90" rx="9" fill="var(--violet-f)" stroke="var(--violet)" stroke-opacity=".6"/>
+      <text x="95" y="78" fill="var(--violet)" font-size="13" font-weight="600" text-anchor="middle">Qᵢ 块</text>
+      <text x="95" y="98" fill="var(--dim)" font-size="10" text-anchor="middle">常驻 L1</text>
+
+      <!-- KV stream -->
+      <text x="196" y="34" fill="var(--muted)" font-size="11">j = 0,1,2,… 流式扫过 K/V 块</text>
+      <g>
+        <rect x="196" y="44" width="60" height="42" rx="6" fill="var(--panel2)" stroke="var(--line)"/><text x="226" y="70" fill="var(--muted)" font-size="10.5" text-anchor="middle">K₀V₀</text>
+        <rect x="264" y="44" width="60" height="42" rx="6" fill="var(--panel2)" stroke="var(--line)"/><text x="294" y="70" fill="var(--muted)" font-size="10.5" text-anchor="middle">K₁V₁</text>
+        <rect x="332" y="44" width="60" height="42" rx="6" fill="var(--panel2)" stroke="var(--line)"/><text x="362" y="70" fill="var(--muted)" font-size="10.5" text-anchor="middle">K₂V₂</text>
+        <text x="410" y="70" fill="var(--dim)" font-size="11">…</text>
+      </g>
+      <line x1="150" y1="85" x2="194" y2="70" stroke="var(--dim)" stroke-width="1.2" marker-end="url(#a9)"/>
+
+      <!-- pipeline: Cube -> Vector -> Cube -->
+      <rect x="196" y="118" width="180" height="52" rx="8" fill="var(--amber-f)" stroke="var(--amber)" stroke-opacity=".6"/>
+      <text x="286" y="140" fill="var(--amber)" font-size="12" font-weight="600" text-anchor="middle">Cube:Sᵢⱼ = Qᵢ·Kⱼᵀ</text>
+      <text x="286" y="158" fill="var(--dim)" font-size="9.5" text-anchor="middle">分块 GEMM</text>
+
+      <rect x="396" y="118" width="200" height="52" rx="8" fill="var(--cyan-f)" stroke="var(--cyan)" stroke-opacity=".6"/>
+      <text x="496" y="140" fill="var(--cyan)" font-size="12" font-weight="600" text-anchor="middle">Vector:online-softmax</text>
+      <text x="496" y="158" fill="var(--dim)" font-size="9.5" text-anchor="middle">更新 mᵢ, lᵢ + rescale</text>
+
+      <rect x="616" y="118" width="180" height="52" rx="8" fill="var(--amber-f)" stroke="var(--amber)" stroke-opacity=".6"/>
+      <text x="706" y="140" fill="var(--amber)" font-size="12" font-weight="600" text-anchor="middle">Cube:Oᵢ += Pᵢⱼ·Vⱼ</text>
+      <text x="706" y="158" fill="var(--dim)" font-size="9.5" text-anchor="middle">累加进输出</text>
+
+      <line x1="376" y1="144" x2="394" y2="144" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#a9)"/>
+      <line x1="596" y1="144" x2="614" y2="144" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#a9)"/>
+      <path d="M706,170 L706,196 L286,196 L286,172" fill="none" stroke="var(--dim)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#a9)"/>
+      <text x="496" y="212" fill="var(--dim)" font-size="10" text-anchor="middle">取下一个 K/V 块,继续累加</text>
+
+      <!-- running state -->
+      <rect x="196" y="228" width="600" height="60" rx="9" fill="var(--panel2)" stroke="var(--line)"/>
+      <text x="212" y="250" fill="var(--violet)" font-size="11.5" font-weight="600">运行态(常驻 UB / L1)</text>
+      <text x="212" y="270" fill="var(--muted)" font-size="10.5">mᵢ · running max　　lᵢ · running sum　　Oᵢ · 输出累加器　→　永不物化 N×N,额外工作内存 O(N)</text>
+      <text x="212" y="284" fill="var(--dim)" font-size="9.5">= Cube tiling(计算受限那套)+ online reduction(reduction 那套)合进一个 kernel · 关键 lever:Cube–Vector overlap</text>
+    </svg>
+    <p class="cap">Qᵢ 常驻,K/V 块流式进来;每来一块 Cube 算局部 attention、Vector 用 online-softmax 修正、Cube 累加进输出——两类单元在一个 AI Core 里合流,不物化 N×N。</p>
+  </div>
+  <p class="note">反向用重计算换显存(不存 S),和 CUDA 一致。场景要分开:prefill 长序列偏 compute-bound(喂满 Cube);decode 的 attention 受 KV-cache 带宽与延迟约束,落回左侧——和第二篇的判断相同。</p>
+
+
+  <!-- ================= §10 training ================= -->
+  <h2><span class="n">10</span>落到训练:两条主线 + 万卡的第三条</h2>
+  <p>一个 transformer step 里,算子天然分两拨,对应两条优化主线;Ascend 上还多出被这两篇(单 device 视角)天然略过的第三条。</p>
+
+  <table>
+    <tr><th>部分</th><th>典型算子</th><th>处境</th><th>优化主线(Ascend)</th></tr>
+    <tr><td>计算受限</td><td>训练/prefill 的大 GEMM、长序列 attention</td><td>compute-bound</td><td>挑对 tiling / 用融合 FA(<span class="k">npu_fusion_attention</span>);喂满 Cube</td></tr>
+    <tr><td>访存受限</td><td>激活、norm、residual add、dropout、优化器更新</td><td>memory-bound</td><td>融合它们、砍 HBM 往返——GE/CANN 融合 pass、torch_npu 图模式 + AscendC 融合算子</td></tr>
+    <tr><td>通信</td><td>TP/DP/PP/EP 的 all-reduce、all-gather、all-to-all</td><td>comm-bound</td><td>HCCL comp-comm overlap;SDMA/RDMA 与 Cube/Vector 计算并行</td></tr>
+  </table>
+
+  <p>前两条和第二篇一字不差:compute-bound 走 <b>Cube path</b>(挑 tiling、用融合 FA),memory-bound 走 <b>Vector path</b>(融合砍 HBM)。CUDA 侧那个"融合编译器"的角色(Triton / Inductor / XLA),在 Ascend 上是 <b>GE 图融合 pass + torch_npu 的 torch.compile 后端 + 手写 AscendC 融合算子</b>——dynamic shape 在这里尤其扎手:tiling 依赖 shape,shape 一动 tiling 就得重算,所以 Ascend 侧的融合比 CUDA 侧更吃"编译期能不能定 tiling"。</p>
+
+  <div class="callout"><b>多出的一维。</b> 这两篇是单 device kernel 视角,天然不覆盖<em>卡间</em>那一层。到万卡尺度,HCCL 的 comp-comm overlap 叠在整个 kernel 层之上——本质上和核内"MTE 与计算 overlap"是同一种流水思想在不同粒度上的复现:<b>核内三单元 overlap ↔ 卡间计算/通信 overlap</b>。把这条接上,才是完整的训练 step 优化图景。</p>
+
+  <p>所以"编程逻辑是否一样"的答案和第二篇相同,只是换了硬件:<b>底层执行模型(AI Core / Cube / Vector / MTE / 缓冲链)统一,但优化逻辑几乎完全不同。</b> Cube 那套(tiling / 复用 / L0C 分块)是"计算受限 + 高复用"的专属打法;其余大多数算子访存受限,主战场是 Vector 路上的融合与向量化——和 GEMM 里"选 tiling"是两条不同的线。</p>
+
+
+  <hr class="rule">
+  <p class="foot">
+    Ascend · DaVinci / 910B-class · 代表性配置 Cube 16×16×16 · 缓冲链 GM→L1→L0A/L0B→L0C→UB→GM · 图为示意,简化绘制;缓冲容量为代表值,随代际不同。<br>
+    以 CUDA/SM80 两篇(《生产级 CUDA GEMM》《非 GEMM 类算子》)为参照做的平台对照,非官方文档。<br>
+    参考:Ascend C 编程指南 · CANN 算子开发 · DaVinci 架构白皮书 · torch_npu(npu_fusion_attention)· HCCL · FlashAttention(分块 + online-softmax)· Roofline model(Williams / Waterman / Patterson)。
+  </p>
+
+</div>
+</body>
+</html>

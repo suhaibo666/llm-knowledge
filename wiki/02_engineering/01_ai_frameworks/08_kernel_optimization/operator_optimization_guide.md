@@ -828,6 +828,7 @@ Step 6  回归 Profile
 - [[PyTorch_CUDA_Graphs_Complete_Guide]] — CUDA Graphs 图捕获/重放机制
 - [[torch_compile_npugraphs_deep_dive]] — NPU Graphs + torch.compile 深度分析
 - [[aclgraph_deep_analysis]] — ACLGraph 图捕获与 Super Kernel
+- [[ascend_kernel_execution_model_analysis]] — DaVinci AI Core、L1/L0/UB 缓冲链、TQue 与 FixPipe 的执行模型深挖
 - [[01_ai_frameworks/index]] — AI 框架领域索引
 - [[02_engineering/index]] — 工程实现领域索引
 - [[changelog]] — 变更日志

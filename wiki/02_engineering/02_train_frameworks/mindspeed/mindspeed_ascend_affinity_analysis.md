@@ -660,3 +660,4 @@ for i, param in enumerate(var):
 - [[mindspeed_memory_optimization_analysis]] —— 内存优化(低精度优化器、swap-optimizer 复用本页的融合优化器核)
 - [[megatron-lm/megatron_fusion_operators_analysis]] —— 被替换前的 Megatron/NVIDIA 原生融合算子(对照阅读:同一接口,CUDA vs NPU 两套核)
 - [[muon_analysis]] —— Muon 优化器(Newton-Schulz)算法原理
+- [[ascend_kernel_execution_model_analysis]] —— 本页 Cube/Vector、融合算子与 HCCL 优化背后的 DaVinci 执行模型

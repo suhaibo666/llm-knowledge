@@ -356,3 +356,4 @@ flowchart LR
 - [[dynamic_shapes_full_analysis]] — Dynamic Shape 全链路（§十一 的上游机制）
 - [[NPU_Inductor_Backend_Analysis]] — NPU 后端内部实现机制
 - [[inductor_compiler_pipeline_analysis]] — PyTorch Inductor 端到端编译管线（社区基线）
+- [[ascend_kernel_execution_model_analysis]] — tiling、Cube/Vector、L0C 与 FixPipe 的硬件执行模型背景

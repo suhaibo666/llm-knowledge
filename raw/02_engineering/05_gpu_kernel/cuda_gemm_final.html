@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>生产级 CUDA GEMM 完整解读:执行模型 · 寄存器 · 代码</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0E141F; --panel:#18212F; --panel2:#111A27; --line:#2C3A4E;
+    --ink:#CBD6E6; --muted:#7E8DA6; --dim:#586780;
+    --amber:#E7A33C; --cyan:#46B7C6; --green:#6CC178; --violet:#A98BD6; --rose:#D97E86;
+    --amber-f:rgba(231,163,60,.16); --cyan-f:rgba(70,183,198,.16);
+    --green-f:rgba(108,193,120,.18); --rose-f:rgba(217,126,134,.14); --violet-f:rgba(169,139,214,.16);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Space Grotesk", ui-sans-serif, system-ui, "PingFang SC","Microsoft YaHei", sans-serif;
+    line-height:1.7; -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1000px; margin:0 auto; padding:56px 28px 96px;}
+  .eyebrow{font-family:"JetBrains Mono", ui-monospace, monospace; font-size:12px; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--amber); margin:0 0 14px;}
+  h1{font-size:33px; line-height:1.22; margin:0 0 10px; font-weight:700; letter-spacing:-.01em;}
+  h1 .mono{font-family:"JetBrains Mono", monospace; color:var(--cyan); font-weight:600;}
+  .sub{color:var(--muted); font-size:16px; max-width:74ch; margin:0 0 8px;}
+  .cfg{font-family:"JetBrains Mono", monospace; font-size:13px; color:var(--ink);
+    background:var(--panel2); border:1px solid var(--line); border-radius:10px;
+    padding:12px 16px; margin:18px 0 0; display:inline-block;}
+  .cfg b{color:var(--amber);}
+  h2{font-size:22px; margin:64px 0 6px; font-weight:600; letter-spacing:-.01em;
+    display:flex; align-items:baseline; gap:12px;}
+  h2 .n{font-family:"JetBrains Mono", monospace; font-size:13px; color:var(--bg);
+    background:var(--amber); border-radius:5px; padding:3px 8px; font-weight:600; letter-spacing:0;}
+  h3{font-size:16px; margin:30px 0 4px; color:var(--ink); font-weight:600;}
+  p{margin:10px 0; color:var(--ink);}
+  p.note{color:var(--muted); font-size:15px;}
+  .fig{margin:26px 0 8px; background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
+    border:1px solid var(--line); border-radius:14px; padding:22px 20px 16px;}
+  .fig svg{display:block; width:100%; height:auto;}
+  .cap{font-family:"JetBrains Mono", monospace; font-size:12.5px; color:var(--muted);
+    margin:12px 4px 2px; letter-spacing:.01em;}
+  code, .k{font-family:"JetBrains Mono", monospace; font-size:.92em;}
+  code{color:var(--cyan); background:rgba(70,183,198,.10); padding:1px 6px; border-radius:5px;}
+  pre{background:var(--panel2); border:1px solid var(--line); border-radius:12px;
+    padding:18px 20px; overflow-x:auto; font-family:"JetBrains Mono", monospace;
+    font-size:13px; line-height:1.7; color:#B9C6D8; margin:22px 0;}
+  pre .cm{color:var(--dim); font-style:italic;} pre .kw{color:var(--amber);} pre .fn{color:var(--cyan);}
+  .callout{background:var(--amber-f); border:1px solid rgba(231,163,60,.35); border-left:3px solid var(--amber);
+    border-radius:0 10px 10px 0; padding:14px 18px; margin:22px 0; font-size:15px; color:#EAF1FA;}
+  .callout b{color:var(--amber);}
+  .cwarn{background:var(--rose-f); border-color:rgba(217,126,134,.35); border-left-color:var(--rose);}
+  .cwarn b{color:var(--rose);}
+  .cwarn .tag{font-family:"JetBrains Mono", monospace; font-size:11px; color:var(--rose);
+    letter-spacing:.08em; text-transform:uppercase; display:block; margin-bottom:4px;}
+  .legend{display:flex; flex-wrap:wrap; gap:16px 22px; margin:16px 2px 2px;
+    font-family:"JetBrains Mono", monospace; font-size:12px; color:var(--muted);}
+  .legend span{display:inline-flex; align-items:center; gap:7px;}
+  .sw{width:13px; height:13px; border-radius:3px; display:inline-block;}
+  table{width:100%; border-collapse:collapse; margin:22px 0; font-size:13.5px;}
+  th,td{text-align:left; padding:11px 12px; border-bottom:1px solid var(--line); vertical-align:top;}
+  th{color:var(--amber); font-weight:600; font-size:12.5px; letter-spacing:.04em; font-family:"JetBrains Mono", monospace;}
+  td.mono, th.mono{font-family:"JetBrains Mono", monospace; color:var(--cyan);}
+  .rule{height:1px; background:var(--line); border:0; margin:60px 0 0;}
+  .foot{color:var(--dim); font-size:12px; font-family:"JetBrains Mono", monospace; margin-top:22px; line-height:1.9;}
+  .foot a{color:var(--muted); text-decoration:none; border-bottom:1px dotted var(--dim);}
+  b, strong{color:#EAF1FA; font-weight:600;}
+  em{color:var(--amber); font-style:normal;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">Production GEMM · SM80 / A100 · complete</p>
+  <h1>生产级 CUDA GEMM 完整解读:<span class="mono">执行模型 · 寄存器 · 代码</span></h1>
+  <p class="sub">以一个生产级 FP16 Tensor Core GEMM 为主线,完整走一遍 CUDA 编程模型的四个层面:软件层(grid / block / thread)、硬件层(SM / warp / Tensor Core)、内存层(global / shared / register)、指令层(cp.async / ldmatrix / mma.sync)——从执行模型讲到可对照的 kernel 代码。</p>
+  <p class="cfg">代表性配置(CUTLASS 风格 SM80):CTA <b>256×128×32</b> · Warp <b>64×64×32</b> · MMA <b>m16n8k16</b> · <b>8 warp / 256 线程</b> · FP16 → FP32</p>
+
+  <div class="callout"><b>一句话总纲:</b> tile 大小和线程数不是一一对应,但也<em>不是完全独立</em>。生产 kernel 由 <b>CTA tile、warp tile、MMA shape、pipeline stage 数和硬件资源约束</b>共同定死执行配置——没有哪个是能单独随便拧的旋钮。另有两条最易混淆的分界:<b>K tile(⌈K/32⌉ 个 mainloop 迭代)≠ pipeline stage(3 个循环复用的 buffer slot)</b>;<b>Grid(实际启动的 CTA 集合)≠ Tile Scheduler(逻辑 tile → CTA 的映射策略)</b>。</div>
+
+  <!-- ================= FIG 1 ================= -->
+  <h2><span class="n">1</span>四层结构:Grid(调度)→ CTA → Warp → MMA</h2>
+  <p>真正的计算 tile 只有下面三级(= CUTLASS 的三个 Shape);<em>Grid 在它们之上,只负责枚举和调度输出 tile,本身不是更小一级的计算 tile</em>。三级里只有最底层 MMA 是硬件固定的。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 960 456" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace">
+    <defs>
+      <marker id="dn" markerWidth="9" markerHeight="9" refX="4" refY="8" orient="auto"><path d="M0,0 L8,0 L4,8 Z" fill="var(--dim)"/></marker>
+    </defs>
+
+    <!-- Rung 1 Grid -->
+    <rect x="40" y="30" width="650" height="52" rx="8" fill="var(--violet-f)" stroke="var(--violet)" stroke-opacity=".6"/>
+    <text x="58" y="54" fill="var(--violet)" font-size="14" font-weight="600">Grid / Tile Scheduler</text>
+    <text x="58" y="72" fill="var(--muted)" font-size="11">Grid = 实际启动的 CTA 集合;Tile Scheduler = 逻辑输出 tile → CTA 的映射策略(三种调度见下表)</text>
+    <rect x="702" y="42" width="222" height="28" rx="14" fill="none" stroke="var(--violet)" stroke-opacity=".6"/>
+    <text x="813" y="60" fill="var(--violet)" font-size="10.5" text-anchor="middle">调度层,不是计算 tile</text>
+
+    <line x1="120" y1="82" x2="120" y2="118" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#dn)"/>
+    <text x="140" y="106" fill="var(--muted)" font-size="11">普通调度:每个 CTA 领取一个 256×128 输出 tile</text>
+
+    <!-- Rung 2 CTA -->
+    <rect x="40" y="122" width="650" height="52" rx="8" fill="var(--amber-f)" stroke="var(--amber)" stroke-opacity=".6"/>
+    <text x="58" y="146" fill="var(--amber)" font-size="14" font-weight="600">CTA / Threadblock tile — 256×128×32</text>
+    <text x="58" y="164" fill="var(--dim)" font-size="11">= ThreadblockShape(BM×BN×BK)</text>
+    <rect x="702" y="134" width="222" height="28" rx="14" fill="none" stroke="var(--amber)" stroke-opacity=".6"/>
+    <text x="813" y="152" fill="var(--amber)" font-size="10.5" text-anchor="middle">软件可调 · 受 shared memory 卡</text>
+
+    <line x1="120" y1="174" x2="120" y2="210" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#dn)"/>
+    <text x="140" y="198" fill="var(--green)" font-size="11">(256/64)×(128/64) = 4×2 = 8 warp = 256 线程　← 由上两级尺寸决定,不自由</text>
+
+    <!-- Rung 3 Warp -->
+    <rect x="40" y="214" width="650" height="52" rx="8" fill="var(--green-f)" stroke="var(--green)" stroke-opacity=".6"/>
+    <text x="58" y="238" fill="var(--green)" font-size="14" font-weight="600">Warp tile — 64×64×32</text>
+    <text x="58" y="256" fill="var(--dim)" font-size="11">= WarpShape(含 K)· WarpShape.K / InstrShape.K = 32/16 = 2 轮 K16</text>
+    <rect x="702" y="226" width="222" height="28" rx="14" fill="none" stroke="var(--green)" stroke-opacity=".6"/>
+    <text x="813" y="244" fill="var(--green)" font-size="10.5" text-anchor="middle">软件可调 · 受寄存器文件卡</text>
+
+    <line x1="120" y1="266" x2="120" y2="302" stroke="var(--dim)" stroke-width="1.4" marker-end="url(#dn)"/>
+    <text x="140" y="290" fill="var(--cyan)" font-size="11">(64/16)×(64/8) = 4×8 = 32 条 MMA / 每个 K16 轮</text>
+
+    <!-- Rung 4 MMA -->
+    <rect x="40" y="306" width="650" height="52" rx="8" fill="var(--cyan-f)" stroke="var(--cyan)" stroke-width="1.4"/>
+    <text x="58" y="330" fill="var(--cyan)" font-size="14" font-weight="600">MMA instruction tile — 16×8×16</text>
+    <text x="58" y="348" fill="var(--dim)" font-size="11">= InstructionShape</text>
+    <rect x="702" y="318" width="222" height="28" rx="14" fill="rgba(70,183,198,.10)" stroke="var(--cyan)"/>
+    <text x="813" y="336" fill="var(--cyan)" font-size="10.5" text-anchor="middle">🔒 硬件固定 · ISA 菜单,随 dtype 变</text>
+
+    <text x="40" y="392" fill="var(--muted)" font-size="12">下三级 = CUTLASS 的 ThreadblockShape / WarpShape / InstructionShape;Grid 在其之上,只做枚举与调度。</text>
+    <text x="40" y="412" fill="var(--dim)" font-size="11">同一架构换 dtype:从 ISA 支持的 instruction shape 里重选(int8→16×8×32、tf32→16×8×8),上两级重调即可。</text>
+    <text x="40" y="434" fill="var(--dim)" font-size="11">跨到 Hopper 等新架构:执行层级与数据流水也会一起变(warpgroup wgmma、TMA、warp specialization、threadblock cluster)。</text>
+  </svg>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--violet-f); border:1.5px solid var(--violet)"></i>调度层(非计算 tile）</span>
+    <span><i class="sw" style="background:var(--amber-f); border:1.5px solid var(--amber)"></i>软件可调(shared mem 约束）</span>
+    <span><i class="sw" style="background:var(--green-f); border:1.5px solid var(--green)"></i>软件可调(寄存器约束）</span>
+    <span><i class="sw" style="background:var(--cyan-f); border:1.5px solid var(--cyan)"></i>硬件固定(ISA）</span>
+  </div>
+  <p class="cap">定死 warp 数和线程数的,是 CTA tile ÷ warp tile 这个比值;所以线程数是被上两级尺寸推导出来的,不是独立选的。</p>
+  </div>
+
+  <div class="callout cwarn">
+    <span class="tag">调度 · Grid ≠ Tile Scheduler</span>
+    <b>Grid ≠ Tile Scheduler,三种调度也不能套同一个 gridDim。</b> 只有<em>普通直接调度</em>才是"一 CTA 一 tile";split-K 让多个 CTA 分担同一个输出 tile 的不同 K 段(还要事后归约),persistent 则只启动接近硬件可驻留数量的 CTA、每个在循环里算多个 tile。
+  </div>
+  <table>
+    <thead><tr><th>调度</th><th>CTA ↔ 输出 tile</th><th>Grid 规模 / 额外结构</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">普通(direct)</td><td>1 CTA ↔ 1 个 M×N tile</td><td>gridDim = (⌈N/128⌉, ⌈M/256⌉)</td></tr>
+      <tr><td class="mono">split-K</td><td>多个 CTA 分担同一 M×N tile 的不同 K 段</td><td>多一个 K 分区维度 + 事后归约 kernel</td></tr>
+      <tr><td class="mono">persistent</td><td>1 CTA 循环领取并计算多个 tile</td><td>启动 CTA 数 ≈ 硬件可驻留 CTA 数</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ================= FIG 2 ================= -->
+  <h2><span class="n">2</span>M/N 是空间切块,K 是循环归约 —— 别都当成"尺寸相乘"</h2>
+  <p>三级尺寸的"乘法关系"只对 <em>M/N 方向</em>成立。<em>K 方向不是把不同 warp 在空间上排列,而是时间上的循环累加</em>。这是读懂 GEMM kernel 最重要的一条分界。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 960 400" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace">
+    <defs>
+      <marker id="kx" markerWidth="10" markerHeight="10" refX="8" refY="3.4" orient="auto"><path d="M0,0 L9,3.4 L0,6.8 Z" fill="var(--rose)"/></marker>
+    </defs>
+
+    <!-- LEFT: M/N spatial -->
+    <rect x="20" y="40" width="440" height="320" rx="11" fill="none" stroke="var(--line)"/>
+    <text x="38" y="70" fill="var(--green)" font-size="14" font-weight="600">M / N:输出空间 tiling</text>
+    <text x="38" y="90" fill="var(--muted)" font-size="11.5">并行 · 一次算清 · 空间上铺满</text>
+    <!-- output tile 256x128 as 4x2 warps -->
+    <rect x="120" y="112" width="240" height="180" fill="var(--panel2)" stroke="var(--line)"/>
+    <line x1="240" y1="112" x2="240" y2="292" stroke="var(--green)" stroke-opacity=".5"/>
+    <line x1="120" y1="157" x2="360" y2="157" stroke="var(--green)" stroke-opacity=".5"/>
+    <line x1="120" y1="202" x2="360" y2="202" stroke="var(--green)" stroke-opacity=".5"/>
+    <line x1="120" y1="247" x2="360" y2="247" stroke="var(--green)" stroke-opacity=".5"/>
+    <!-- one warp cell subdivided into mma tiles -->
+    <rect x="240" y="157" width="120" height="45" fill="var(--green-f)" stroke="var(--green)" stroke-width="1.5"/>
+    <g stroke="var(--cyan)" stroke-opacity=".45">
+      <line x1="270" y1="157" x2="270" y2="202"/><line x1="300" y1="157" x2="300" y2="202"/><line x1="330" y1="157" x2="330" y2="202"/>
+      <line x1="240" y1="179.5" x2="360" y2="179.5"/>
+    </g>
+    <text x="130" y="312" fill="var(--muted)" font-size="10.5">C 256×128 → 4×2 warp,每 warp 4×8 MMA</text>
+    <text x="120" y="330" fill="var(--green)" font-size="10.5">Warp / MMA tile 规则切块</text>
+    <text x="120" y="346" fill="var(--green)" font-size="10.5">单个 lane 持离散 fragment(非连续矩形)</text>
+
+    <!-- RIGHT: K temporal -->
+    <rect x="480" y="40" width="460" height="320" rx="11" fill="none" stroke="var(--line)"/>
+    <text x="498" y="66" fill="var(--rose)" font-size="14" font-weight="600">K:归约循环 tiling</text>
+    <text x="498" y="84" fill="var(--muted)" font-size="11">串行 · 沿时间累加 · 同一 accumulator 反复更新</text>
+
+    <text x="498" y="112" fill="var(--cyan)" font-size="11">每个 K tile(BK=32)= BK / MMA_K = 32 / 16 = 2 轮 K16 MMA</text>
+
+    <text x="498" y="146" fill="var(--ink)" font-size="11.5" font-weight="600">K tile 数 与 pipeline stage 数,是两码事</text>
+    <!-- row: K tile index -->
+    <text x="498" y="180" fill="var(--muted)" font-size="10.5">K tile(mainloop iter):</text>
+    <g font-size="12" font-weight="600" fill="var(--rose)">
+      <text x="662" y="180">0</text><text x="700" y="180">1</text><text x="738" y="180">2</text><text x="776" y="180">3</text><text x="814" y="180">4</text><text x="852" y="180">5</text>
+    </g>
+    <text x="868" y="180" fill="var(--dim)" font-size="10.5">… ⌈K/32⌉</text>
+    <!-- row: slot index -->
+    <text x="498" y="206" fill="var(--muted)" font-size="10.5">→ buffer slot(共 3 个):</text>
+    <g font-size="12" font-weight="600" fill="var(--cyan)">
+      <text x="662" y="206">0</text><text x="700" y="206">1</text><text x="738" y="206">2</text><text x="776" y="206">0</text><text x="814" y="206">1</text><text x="852" y="206">2</text>
+    </g>
+    <text x="878" y="206" fill="var(--dim)" font-size="10.5">循环复用</text>
+    <text x="498" y="232" fill="var(--green)" font-size="10.5">slot = iter mod 3:3 个 buffer 循环复用,pipeline 深度=3 ≠ K tile 数</text>
+
+    <!-- accumulator note -->
+    <rect x="498" y="250" width="424" height="96" rx="9" fill="rgba(231,163,60,.06)" stroke="var(--amber)" stroke-opacity=".4"/>
+    <text x="514" y="274" fill="var(--amber)" font-size="11.5">accumulator 跨所有 K tile 一直待在寄存器里</text>
+    <text x="514" y="294" fill="var(--muted)" font-size="10.5">MMA 的 "Accumulate":D = A×B + C,每个 K tile 把当前 K 片的部分积</text>
+    <text x="514" y="310" fill="var(--muted)" font-size="10.5">加进去,K 归约走完才是完整结果 → 必须常驻。</text>
+    <text x="514" y="330" fill="var(--dim)" font-size="10">对比:buffer slot 会循环复用,accumulator 不会。</text>
+  </svg>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--green-f); border:1.5px solid var(--green)"></i>M/N 空间 tile(并行）</span>
+    <span><i class="sw" style="background:var(--cyan-f); border:1.5px solid var(--cyan)"></i>K tile / buffer slot</span>
+    <span><i class="sw" style="background:rgba(231,163,60,.1); border:1.5px solid var(--amber)"></i>常驻 accumulator</span>
+  </div>
+  <p class="cap">M/N:把输出切块,一次并行算清。K:沿时间循环归约,把部分积不断累加进同一批寄存器 accumulator。</p>
+  </div>
+
+  <!-- ================= FIG 3 ================= -->
+  <h2><span class="n">3</span>完整数据流:cp.async 的正确完成语义 + epilogue</h2>
+  <p>两条容易搞错的语义:① <code>__syncthreads()</code> <em>不能单独</em>作为 cp.async 的完成机制——异步拷贝要靠 <code>commit_group</code> / <code>wait_group</code> 等待;<code>__syncthreads()</code> 负责 CTA 级同步与 shared memory 可见性,但不等拷贝完成;② 结果不是从寄存器直接写回全局内存,典型情况下(如 CUTLASS SM80)中间还有一个 epilogue。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 960 500" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace">
+    <defs>
+      <marker id="f3" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto"><path d="M0,0 L8,3.2 L0,6.4 Z" fill="var(--cyan)"/></marker>
+      <marker id="f3g" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto"><path d="M0,0 L8,3.2 L0,6.4 Z" fill="var(--green)"/></marker>
+      <marker id="f3a" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto"><path d="M0,0 L8,3.2 L0,6.4 Z" fill="var(--amber)"/></marker>
+    </defs>
+
+    <!-- MAIN LOOP band -->
+    <text x="30" y="42" fill="var(--muted)" font-size="12.5">主循环(沿 K 迭代)</text>
+    <!-- global -->
+    <rect x="30" y="56" width="96" height="120" rx="8" fill="var(--panel2)" stroke="var(--line)"/>
+    <text x="78" y="110" fill="var(--ink)" font-size="11" text-anchor="middle">全局内存</text>
+    <text x="78" y="128" fill="var(--dim)" font-size="10" text-anchor="middle">A / B(HBM）</text>
+    <path d="M126,116 L164,116" stroke="var(--green)" stroke-width="1.5" marker-end="url(#f3g)"/>
+    <text x="145" y="106" fill="var(--green)" font-size="9.5" text-anchor="middle">cp.async</text>
+    <!-- shared mem multistage -->
+    <rect x="168" y="56" width="150" height="120" rx="8" fill="rgba(70,183,198,.05)" stroke="var(--cyan)" stroke-opacity=".5"/>
+    <text x="243" y="76" fill="var(--cyan)" font-size="10.5" text-anchor="middle">shared mem 多级缓冲</text>
+    <rect x="180" y="86" width="126" height="20" rx="3" fill="var(--green-f)" stroke="var(--green)"/><text x="243" y="100" fill="var(--green)" font-size="9" text-anchor="middle">stage 0 · 算</text>
+    <rect x="180" y="112" width="126" height="20" rx="3" fill="var(--amber-f)" stroke="var(--amber)"/><text x="243" y="126" fill="var(--amber)" font-size="9" text-anchor="middle">stage 1 · 预取</text>
+    <rect x="180" y="138" width="126" height="20" rx="3" fill="var(--panel)" stroke="var(--line)"/><text x="243" y="152" fill="var(--muted)" font-size="9" text-anchor="middle">stage 2 · 待用</text>
+
+    <!-- completion box -->
+    <path d="M318,116 L356,116" stroke="var(--cyan)" stroke-width="1.5" marker-end="url(#f3)"/>
+    <rect x="358" y="52" width="238" height="128" rx="9" fill="var(--rose-f)" stroke="var(--rose)" stroke-opacity=".6"/>
+    <text x="372" y="72" fill="var(--rose)" font-size="11.5" font-weight="600">正确的完成语义</text>
+    <text x="372" y="96" fill="var(--ink)" font-size="11">cp.async.commit_group;</text>
+    <text x="372" y="116" fill="var(--ink)" font-size="11">cp.async.wait_group N;</text>
+    <text x="384" y="132" fill="var(--rose)" font-size="9.5">↑ 等异步拷贝真正完成</text>
+    <text x="372" y="152" fill="var(--ink)" font-size="11">__syncthreads();</text>
+    <text x="384" y="168" fill="var(--rose)" font-size="9.5">↑ CTA 同步 + smem 可见性,不等拷贝</text>
+
+    <!-- registers + tensor core -->
+    <path d="M596,116 L634,116" stroke="var(--cyan)" stroke-width="1.5" marker-end="url(#f3)"/>
+    <text x="615" y="106" fill="var(--cyan)" font-size="9.5" text-anchor="middle">ldmatrix</text>
+    <rect x="636" y="56" width="120" height="52" rx="8" fill="none" stroke="var(--green)" stroke-width="1.4"/>
+    <text x="696" y="80" fill="var(--green)" font-size="11" text-anchor="middle">寄存器</text>
+    <text x="696" y="96" fill="var(--dim)" font-size="9.5" text-anchor="middle">A/B fragment</text>
+    <path d="M696,108 L696,124" stroke="var(--cyan)" stroke-width="1.4" marker-end="url(#f3)"/>
+    <rect x="636" y="126" width="120" height="50" rx="8" fill="var(--cyan-f)" stroke="var(--cyan)"/>
+    <text x="696" y="150" fill="var(--cyan)" font-size="11" text-anchor="middle">Tensor Core</text>
+    <text x="696" y="166" fill="var(--dim)" font-size="9.5" text-anchor="middle">mma.sync 累加</text>
+    <!-- accumulate loopback -->
+    <path d="M786,150 C860,150 860,300 300,300 C120,300 90,220 90,182" fill="none" stroke="var(--amber)" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#f3a)"/>
+    <text x="470" y="292" fill="var(--amber)" font-size="10.5" text-anchor="middle">沿 K 迭代:accumulator 留在寄存器,反复累加</text>
+    <rect x="782" y="126" width="150" height="50" rx="8" fill="rgba(231,163,60,.06)" stroke="var(--amber)" stroke-opacity=".4"/>
+    <text x="857" y="150" fill="var(--amber)" font-size="10" text-anchor="middle">128 个 fp32</text>
+    <text x="857" y="165" fill="var(--dim)" font-size="9" text-anchor="middle">accumulator / 线程</text>
+
+    <!-- EPILOGUE band -->
+    <rect x="30" y="336" width="902" height="130" rx="11" fill="rgba(108,193,120,.05)" stroke="var(--green)" stroke-opacity=".5"/>
+    <text x="48" y="362" fill="var(--green)" font-size="13" font-weight="600">Epilogue(K 归约结束后 · 典型 CUTLASS SM80)</text>
+    <rect x="48" y="376" width="150" height="46" rx="7" fill="none" stroke="var(--amber)"/><text x="123" y="400" fill="var(--amber)" font-size="10.5" text-anchor="middle">accumulator</text><text x="123" y="414" fill="var(--dim)" font-size="9" text-anchor="middle">(寄存器)</text>
+    <path d="M198,399 L232,399" stroke="var(--green)" stroke-width="1.4" marker-end="url(#f3g)"/>
+    <rect x="234" y="376" width="150" height="46" rx="7" fill="none" stroke="var(--cyan)"/><text x="309" y="395" fill="var(--cyan)" font-size="10.5" text-anchor="middle">shared mem</text><text x="309" y="411" fill="var(--dim)" font-size="9" text-anchor="middle">重排 / 合并</text>
+    <path d="M384,399 L418,399" stroke="var(--green)" stroke-width="1.4" marker-end="url(#f3g)"/>
+    <rect x="420" y="376" width="180" height="46" rx="7" fill="none" stroke="var(--green)"/><text x="510" y="395" fill="var(--green)" font-size="10.5" text-anchor="middle">向量化写回</text><text x="510" y="411" fill="var(--dim)" font-size="9" text-anchor="middle">global memory</text>
+    <text x="628" y="392" fill="var(--muted)" font-size="11">融合:D = α·acc + β·C</text>
+    <text x="628" y="410" fill="var(--muted)" font-size="11">(+ bias / activation / 类型转换)</text>
+    <text x="48" y="444" fill="var(--dim)" font-size="10">非 MMA 的部分(地址、访存、控制、缩放/激活)</text>
+    <text x="48" y="460" fill="var(--dim)" font-size="10">走常规标量·向量 / load-store / SFU,不经 Tensor Core。</text>
+  </svg>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--rose-f); border:1.5px solid var(--rose)"></i>完成语义</span>
+    <span><i class="sw" style="background:rgba(108,193,120,.08); border:1.5px solid var(--green)"></i>epilogue</span>
+    <span><i class="sw" style="background:var(--amber-f); border:1.5px solid var(--amber)"></i>常驻 accumulator</span>
+  </div>
+  <p class="cap">wait_group 等异步拷贝完成,__syncthreads 做 CTA 同步 + shared mem 可见性(不等拷贝)——两者分工。epilogue 里 accumulator 先经 shared mem 重排,再融合 α/β/bias/激活,向量化写回。</p>
+  </div>
+
+  <!-- ================= 4 registers ================= -->
+  <h2><span class="n">4</span>寄存器:accumulator、fragment 与 occupancy 的完整账本</h2>
+  <p><b>寄存器是什么。</b>每个线程私有、无额外访问延迟的存储,由编译器(ptxas)在编译期静态分配,kernel 里的每个标量变量、数组元素、地址、临时值都要落在这里。A100 每个 SM 有 <b>65,536 个 32-bit 寄存器</b>(256 KB),物理上分属 4 个 processing block(各 16,384);分配以 <em>warp</em> 为单位(粒度 256 个),单线程架构上限 <b>255</b>。换算规则:1 个 fp32 占 1 个寄存器;2 个 fp16 打包占 1 个;64-bit 指针占 2 个。</p>
+
+  <p><b>fragment:每个 lane 分到的那一小片。</b>一条 <code>m16n8k16</code> 由 warp 的 32 个线程协作完成,操作数按硬件规定布局摊到各 lane(不是连续小块):</p>
+  <table>
+    <thead><tr><th>fragment</th><th>每线程持有</th><th>占用寄存器</th><th>来源</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">A frag</td><td class="mono">8 × fp16</td><td class="mono">4</td><td>16×16 A 块的 256 元素 ÷ 32 lane</td></tr>
+      <tr><td class="mono">B frag</td><td class="mono">4 × fp16</td><td class="mono">2</td><td>16×8 B 块的 128 元素 ÷ 32 lane</td></tr>
+      <tr><td class="mono">C/D frag</td><td class="mono">4 × fp32</td><td class="mono">4</td><td>16×8 C 块的 128 元素 ÷ 32 lane</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>逐项算账:一个线程的 ≈232 个寄存器花在哪。</b></p>
+  <p class="note"><b>① accumulator = 128,一个都省不掉。</b>两种算法殊途同归:warp tile 64×64 = 4,096 个 fp32 输出 ÷ 32 lane = 128 个/线程;或者 4×8 = 32 条 MMA × 每条 C frag 4 个 fp32 = 128。因为 MMA 的 accumulate 语义(D = A×B + C),这 128 个必须<em>常驻整个 K 循环</em>——从第一个 K tile 到最后一个,期间不能被挪作他用。这就是寄存器预算的地板。</p>
+  <p class="note"><b>② A/B fragment = 32(双缓冲则 64)。</b>每轮 K16,warp 要用 4 个不同的 A 块(沿 M)+ 8 个不同的 B 块(沿 N):每线程 4×4 + 8×2 = 32 个寄存器。若做 fragment 双缓冲——边对下一轮做 ldmatrix、边对本轮做 mma——则 ×2 = 64。</p>
+  <p class="note"><b>③ 地址与杂项 ≈ 25–45。</b>A/B/C 的全局指针(64-bit,各占 2)、shared memory 地址、循环计数、stage 序号、边界谓词、临时值。</p>
+  <p class="note"><b>合计 ≈ 185–235;ptxas 实报常在 200–255。</b>这就是前文"128–255 寄存器/线程"的完整来历——128 是 accumulator 铺的地板,其余是操作数与控制的天花板。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 960 430" xmlns="http://www.w3.org/2000/svg" font-family="JetBrains Mono, monospace">
+    <!-- LEFT: SM register file allocation -->
+    <rect x="20" y="28" width="452" height="270" rx="11" fill="none" stroke="var(--line)"/>
+    <text x="38" y="54" fill="var(--amber)" font-size="13" font-weight="600">SM 寄存器文件:65,536 个 32-bit</text>
+    <!-- capacity bar -->
+    <rect x="40" y="72" width="410" height="30" rx="4" fill="var(--panel2)" stroke="var(--line)"/>
+    <rect x="40" y="72" width="372" height="30" rx="4" fill="var(--green-f)" stroke="var(--green)"/>
+    <!-- subpartition ticks -->
+    <line x1="142" y1="72" x2="142" y2="102" stroke="var(--dim)" stroke-dasharray="2 3"/>
+    <line x1="245" y1="72" x2="245" y2="102" stroke="var(--dim)" stroke-dasharray="2 3"/>
+    <line x1="347" y1="72" x2="347" y2="102" stroke="var(--dim)" stroke-dasharray="2 3"/>
+    <text x="40" y="120" fill="var(--green)" font-size="10.5">1 个 CTA:8 warp × 7,424 = 59,392(≈91%)</text>
+    <text x="40" y="138" fill="var(--dim)" font-size="10">每 warp:232 × 32 = 7,424,按 256 粒度分配</text>
+    <!-- 2 CTA requirement -->
+    <rect x="40" y="158" width="410" height="24" rx="4" fill="none" stroke="var(--rose)" stroke-dasharray="5 4"/>
+    <text x="454" y="174" fill="var(--rose)" font-size="12" font-weight="600" text-anchor="end">✗</text>
+    <text x="40" y="200" fill="var(--rose)" font-size="10.5">2 个 CTA 需 118,784 → 放不下</text>
+    <text x="40" y="218" fill="var(--muted)" font-size="10.5">阈值:512 线程共驻需 ≤128/线程 —— 光 accumulator 就 128</text>
+    <text x="40" y="248" fill="var(--dim)" font-size="10">物理:4 个 processing block × 16,384;</text>
+    <text x="40" y="264" fill="var(--dim)" font-size="10">每 scheduler 驻 2 warp × 7,424 = 14,848 ≤ 16,384 ✓</text>
+    <text x="40" y="288" fill="var(--dim)" font-size="10">单线程架构上限:255</text>
+
+    <!-- RIGHT: per-thread budget -->
+    <rect x="490" y="28" width="450" height="270" rx="11" fill="none" stroke="var(--line)"/>
+    <text x="508" y="54" fill="var(--cyan)" font-size="13" font-weight="600">一个线程的预算(≈232 / 上限 255)</text>
+    <!-- stacked bar: scale 410px = 255 regs → 1.608px/reg -->
+    <rect x="508" y="72" width="410" height="30" rx="4" fill="var(--panel2)" stroke="var(--line)"/>
+    <rect x="508" y="72" width="206" height="30" fill="var(--amber-f)" stroke="var(--amber)"/>
+    <rect x="714" y="72" width="26" height="30" fill="var(--cyan-f)" stroke="var(--cyan)"/>
+    <rect x="740" y="72" width="26" height="30" fill="rgba(70,183,198,.09)" stroke="var(--cyan)" stroke-opacity=".6"/>
+    <rect x="766" y="72" width="51" height="30" fill="var(--violet-f)" stroke="var(--violet)" stroke-opacity=".7"/>
+    <rect x="817" y="72" width="64" height="30" fill="rgba(120,130,150,.15)" stroke="var(--dim)"/>
+    <line x1="918" y1="66" x2="918" y2="108" stroke="var(--rose)" stroke-width="1.6" stroke-dasharray="4 3"/>
+    <text x="914" y="62" fill="var(--rose)" font-size="9.5" text-anchor="end">255 上限</text>
+    <text x="611" y="92" fill="var(--amber)" font-size="10" text-anchor="middle">acc 128</text>
+    <!-- itemized list -->
+    <text x="508" y="136" fill="var(--amber)" font-size="10.5">128 · accumulator(32 MMA × 4 fp32)常驻整个 mainloop</text>
+    <text x="508" y="156" fill="var(--cyan)" font-size="10.5">16 · A frag(4 × m16k16,各 4 寄存器)</text>
+    <text x="508" y="176" fill="var(--cyan)" font-size="10.5">16 · B frag(8 × k16n8,各 2 寄存器)</text>
+    <text x="508" y="196" fill="var(--violet)" font-size="10.5">32 · fragment 双缓冲(ldmatrix 与 mma 重叠)</text>
+    <text x="508" y="216" fill="var(--muted)" font-size="10.5">≈40 · 指针 / smem 地址 / 循环 / 谓词 / 临时</text>
+    <text x="508" y="244" fill="var(--ink)" font-size="10.5">合计 ≈232 → ptxas 常报 200–255,spill 应为 0</text>
+    <text x="508" y="272" fill="var(--dim)" font-size="10">64-bit 指针占 2 个;2 个 fp16 打包占 1 个</text>
+
+    <!-- BOTTOM: occupancy + ILP strip -->
+    <rect x="20" y="314" width="920" height="98" rx="11" fill="rgba(108,193,120,.05)" stroke="var(--green)" stroke-opacity=".5"/>
+    <text x="40" y="342" fill="var(--green)" font-size="12.5" font-weight="600">occupancy = 8 / 64 warp = 12.5% —— 却能接近打满 Tensor Core</text>
+    <text x="40" y="366" fill="var(--muted)" font-size="11">延迟隐藏从 TLP(靠多 warp 轮转)转向 ILP:128 条互不依赖的累加链,32 条 mma 背靠背发射不必等待;</text>
+    <text x="40" y="384" fill="var(--muted)" font-size="11">cp.async 又让访存不占用目标寄存器等待。要看的指标是 tensor pipe 利用率,不是 occupancy。</text>
+    <text x="40" y="402" fill="var(--dim)" font-size="10">经典出处:Volkov, "Better Performance at Lower Occupancy"(GTC 2010)</text>
+  </svg>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--amber-f); border:1.5px solid var(--amber)"></i>accumulator</span>
+    <span><i class="sw" style="background:var(--cyan-f); border:1.5px solid var(--cyan)"></i>A/B fragment</span>
+    <span><i class="sw" style="background:var(--violet-f); border:1.5px solid var(--violet)"></i>fragment 双缓冲</span>
+    <span><i class="sw" style="background:rgba(120,130,150,.15); border:1.5px solid var(--dim)"></i>地址 / 控制</span>
+  </div>
+  <p class="cap">左:65,536 的寄存器文件被 1 个 CTA 吃掉 91%,第 2 个 CTA 的门槛(128/线程)被 accumulator 一项顶死。右:232 的逐项构成。下:低 occupancy 靠 ILP 补。</p>
+  </div>
+
+  <div class="callout cwarn">
+    <span class="tag">两个实践要点</span>
+    <b>① 别硬压寄存器换 occupancy。</b>用 <code>maxrregcount</code> / <code>__launch_bounds__</code> 压下去的部分会 spill 到 local memory——名字里有 local,实际是<em>线程私有的全局内存</em>(经 L1/L2 缓存);内环里每次 spill/reload 都是一次访存,通常比低 occupancy 更慢。真要降寄存器压力,应整体换小一号 warp tile(如 64×64 → 64×32)重新调形。<b>② 纸面账必须用工具确认。</b><code>ptxas -v</code> 看 registers / spill loads / spill stores(spill 应为 0);Nsight Compute 看 achieved occupancy(此类 kernel ~12.5% 属正常)与 tensor pipe active。shared memory 侧同理:A100 单 SM 最高 164 KiB,单个 CTA 上限 163 KiB。
+  </div>
+
+  <!-- ================= 5 constraints table ================= -->
+  <h2><span class="n">5</span>每一级由谁定、谁被谁推导</h2>
+  <table>
+    <thead><tr><th>层级</th><th>本例</th><th>可调?</th><th>被谁约束 / 如何被推导</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">Grid</td><td class="mono">⌈N/128⌉×⌈M/256⌉</td><td>调度策略</td><td>由问题尺寸 + CTA tile 推出;persistent / split-K 在此决定</td></tr>
+      <tr><td class="mono">ThreadblockShape</td><td class="mono">256×128×32</td><td>✓ 软件</td><td>主要受 shared memory:缓冲 ≈ 每级 payload 24KiB × slot 数,须满足单 CTA 上限 163KiB + padding</td></tr>
+      <tr><td class="mono">WarpShape</td><td class="mono">64×64×32</td><td>✓ 软件</td><td>主要受寄存器;与 CTA tile 一起<b>决定 warp 数 = 8 → 线程数 = 256</b></td></tr>
+      <tr><td class="mono">InstructionShape</td><td class="mono">16×8×16</td><td>✗ 硬件</td><td>ISA 固定,随 dtype 变(int8→16×8×32,Hopper→wgmma)</td></tr>
+      <tr><td class="mono">线程数</td><td class="mono">256</td><td>被推导</td><td>= (BM/WM)×(BN/WN)×32,不是独立旋钮</td></tr>
+    </tbody>
+  </table>
+  <p class="note">表里的"主要约束"只是主导因素。实际上 CTA tile 与 warp tile <b>共同</b>影响数据复用、并行度、寄存器占用、shared memory 用量和 occupancy——是耦合的,要一起权衡,不是各自只受一种资源限制。</p>
+
+  <div class="callout cwarn">
+    <span class="tag">代表性 ≠ 标准</span>
+    <b>这只是一个有代表性的配置,不是唯一"标准"。</b> 生产库(cuBLAS / CUTLASS）会为同一个 GEMM 准备一堆候选:<code>128×128×32</code>、<code>128×256×32</code>、<code>256×128×32</code>、<code>64×128×64</code> …… 再按 M/N/K 尺寸、A/B 布局、对齐、dtype、shared mem、寄存器压力、occupancy、split-K / persistent 调度和<em>实测 benchmark</em> 选择。不存在一个 tile 尺寸适合所有 GEMM。
+  </div>
+
+  <!-- ================= 6 code walkthrough ================= -->
+  <h2><span class="n">6</span>生产级 kernel 代码解析:从理论到实践</h2>
+  <p>把前五章落成代码。下面是一个<b>教学精简、结构生产级</b>的 SM80 kernel:保留生产实现的全部骨架——多级 cp.async 流水、ldmatrix、内联 mma.sync、经 shared memory 的 epilogue——省略 swizzle、边界谓词等细节(6.7 列了完整差距清单)。每段代码后紧跟解读。</p>
+
+  <h3>6.1 配置与 shared memory 布局</h3>
+  <pre><span class="cm">// —— 与全文一致的三级 Shape ——</span>
+<span class="kw">constexpr int</span> BM=256, BN=128, BK=32;      <span class="cm">// ThreadblockShape</span>
+<span class="kw">constexpr int</span> WM=64,  WN=64;              <span class="cm">// WarpShape(M,N);K 维 = BK</span>
+<span class="kw">constexpr int</span> STAGES=3;                   <span class="cm">// 流水深度 = buffer slot 数</span>
+<span class="kw">constexpr int</span> WARPS=(BM/WM)*(BN/WN);      <span class="cm">// 4×2 = 8 —— warp 数被推导</span>
+<span class="kw">constexpr int</span> THREADS=WARPS*32;           <span class="cm">// 256 —— 线程数被推导</span>
+
+<span class="cm">// smem 超过 48 KiB,必须用动态分配 + opt-in(生产必备细节)</span>
+<span class="cm">// host 侧:cudaFuncSetAttribute(kernel,</span>
+<span class="cm">//            cudaFuncAttributeMaxDynamicSharedMemorySize, SMEM_BYTES);</span>
+<span class="kw">extern __shared__</span> __half smem[];
+<span class="cm">// 教学版:行末 +8 半精度 padding 抗 bank conflict(生产版用 XOR swizzle,不胀容量)</span>
+<span class="cm">// sA[STAGES][BM][BK+8] ≈ 60 KiB;sB[STAGES][BK][BN+8] ≈ 25.5 KiB;共 ≈85.5 ≤ 163 KiB</span>
+<span class="kw">auto</span> sA = (__half (*)[BM][BK+8]) smem;
+<span class="kw">auto</span> sB = (__half (*)[BK][BN+8]) (smem + STAGES*BM*(BK+8));
+
+<span class="cm">// 每个 warp 在 CTA tile 内的坐标(4×2 排布)</span>
+<span class="kw">int</span> warp_id = threadIdx.x / 32, lane = threadIdx.x % 32;
+<span class="kw">int</span> warp_m = warp_id % 4, warp_n = warp_id / 4;   <span class="cm">// 该 warp 负责 (warp_m*64, warp_n*64)</span></pre>
+  <p class="note">对照第 1 章:warp 数与线程数不是选的,是 <code>(BM/WM)×(BN/WN)</code> 推导出来的。对照第 4 章:padding 版 smem ≈85.5 KiB,这就是为什么生产版要用 swizzle——同样功能不胀容量(72 KiB),给更深的流水留空间。</p>
+
+  <h3>6.2 Global → Shared:cp.async 搬运层</h3>
+  <pre><span class="kw">__device__ __forceinline__ void</span> <span class="fn">cp_async_16B</span>(<span class="kw">void</span>* dst_smem, <span class="kw">const void</span>* src_gmem) {
+  uint32_t s = __cvta_generic_to_shared(dst_smem);
+  <span class="kw">asm volatile</span>(<span class="sh">"cp.async.cg.shared.global [%0], [%1], 16;\n"</span> :: <span class="sh">"r"</span>(s), <span class="sh">"l"</span>(src_gmem));
+}
+<span class="cm">// 搬运量:A 块 256×32 fp16 = 16 KiB → 256 线程 × 4 次 16B</span>
+<span class="cm">//        B 块 32×128 fp16 =  8 KiB → 256 线程 × 2 次 16B</span>
+<span class="kw">__device__ void</span> <span class="fn">load_tile_async</span>(<span class="kw">int</span> slot, <span class="kw">int</span> kt, <span class="kw">const</span> __half* A, <span class="kw">const</span> __half* B,
+                                <span class="kw">int</span> K, <span class="kw">int</span> N, <span class="kw">int</span> bm0, <span class="kw">int</span> bn0) {
+  <span class="cm">// 分工按「合并访存」定:相邻线程搬相邻 16B —— 与它待会儿算哪块 C 无关</span>
+  <span class="cm">// A:每线程 4 行片段(行 = tid/4,列 = (tid%4)*8,跨 64 行 ×4)</span>
+  #pragma unroll
+  <span class="kw">for</span> (<span class="kw">int</span> i = 0; i &lt; 4; ++i) {
+    <span class="kw">int</span> r = (threadIdx.x / 4) + i * 64, c = (threadIdx.x % 4) * 8;
+    cp_async_16B(&amp;sA[slot][r][c], &amp;A[(bm0 + r) * K + kt * BK + c]);
+  }
+  <span class="cm">// B:每线程 2 行片段(行 = tid/16,列 = (tid%16)*8,跨 16 行 ×2)</span>
+  #pragma unroll
+  <span class="kw">for</span> (<span class="kw">int</span> i = 0; i &lt; 2; ++i) {
+    <span class="kw">int</span> r = (threadIdx.x / 16) + i * 16, c = (threadIdx.x % 16) * 8;
+    cp_async_16B(&amp;sB[slot][r][c], &amp;B[(kt * BK + r) * N + bn0 + c]);
+  }
+}</pre>
+  <p class="note">对照第 3 章:<code>cp.async</code> 直通 shared memory、不过普通寄存器——所以第 4 章的预算里没有"staging 数据"这一项,访存不占记分板。"搬运的线程分工"与"计算的线程分工"是两套独立映射:搬按合并定,算按 fragment 定。</p>
+
+  <h3>6.3 Prologue:预填流水</h3>
+  <pre><span class="cm">// 先填 STAGES-1 = 2 个 slot,留 1 个手位给循环内的持续预取</span>
+#pragma unroll
+<span class="kw">for</span> (<span class="kw">int</span> s = 0; s &lt; STAGES-1; ++s) {
+  load_tile_async(s, s, A, B, K, N, bm0, bn0);
+  <span class="kw">asm volatile</span>(<span class="sh">"cp.async.commit_group;\n"</span>);       <span class="cm">// 每个 slot 一组</span>
+}</pre>
+
+  <h3>6.4 Mainloop:wait → ldmatrix → mma → prefetch</h3>
+  <pre><span class="kw">float</span> acc[4][8][4] = {};                    <span class="cm">// 128 个 fp32,第 4 章的"地板",常驻到底</span>
+
+<span class="kw">for</span> (<span class="kw">int</span> kt = 0; kt &lt; K / BK; ++kt) {
+  <span class="kw">asm volatile</span>(<span class="sh">"cp.async.wait_group %0;\n"</span> :: <span class="sh">"n"</span>(STAGES-2)); <span class="cm">// 允许 1 组在途</span>
+  __syncthreads();                          <span class="cm">// slot kt%3 已就绪且全员可见</span>
+  <span class="kw">int</span> slot = kt % STAGES;
+
+  #pragma unroll
+  <span class="kw">for</span> (<span class="kw">int</span> kk = 0; kk &lt; BK/16; ++kk) {     <span class="cm">// 每个 K tile = 2 轮 K16(第 2 章)</span>
+    uint32_t a[4][4], b[8][2];
+    <span class="cm">// A:4 次 ldmatrix.x4(每次装 1 个 m16k16 的 warp fragment)</span>
+    <span class="cm">// B:4 次 ldmatrix.x4.trans(每次装 2 个 k16n8;mma 的 .col 形态)</span>
+    ldmatrix_A(a, &amp;sA[slot][warp_m*WM][kk*16]);
+    ldmatrix_B(b, &amp;sB[slot][kk*16][warp_n*WN]);
+    #pragma unroll
+    <span class="kw">for</span> (<span class="kw">int</span> m = 0; m &lt; 4; ++m)
+      #pragma unroll
+      <span class="kw">for</span> (<span class="kw">int</span> n = 0; n &lt; 8; ++n)
+        mma_16816(acc[m][n], a[m], b[n]); <span class="cm">// 32 条 mma.sync,铺满 64×64</span>
+  }
+
+  <span class="kw">int</span> nxt = kt + STAGES - 1;                <span class="cm">// 预取的 K tile 序号</span>
+  <span class="kw">if</span> (nxt &lt; K / BK) load_tile_async(nxt % STAGES, nxt, A, B, K, N, bm0, bn0);
+  <span class="kw">asm volatile</span>(<span class="sh">"cp.async.commit_group;\n"</span>); <span class="cm">// 尾部空组也提交,保持 wait 计数节奏</span>
+}</pre>
+  <p class="note"><b>为什么这样是对的(slot 复用不变量)。</b>迭代 kt 里正在写的 slot 是 <code>(kt+2)%3 = (kt-1)%3</code>——恰是上一轮迭代读的那个;而本轮开头的 <code>wait_group + __syncthreads</code> 是全员栅栏,保证所有线程都已完成上一轮的读,才可能有人开始覆写。读的 slot(<code>kt%3</code>)与写的 slot 永远错开。这就是第 2 章"K tile 数 ≠ pipeline stage 数"在代码里的样子:kt 跑 ⌈K/32⌉ 轮,slot 只有 3 个循环转。生产实现用 <code>cuda::pipeline</code> / named barrier 把这个栅栏做得更细(producer/consumer 分开),原理相同。</p>
+
+  <h3>6.5 两条核心指令的内联 PTX</h3>
+  <pre><span class="cm">// mma:D = A×B + C,C/D 同址 → "+f" 就是 accumulate 语义本身(第 2 章)</span>
+<span class="kw">__device__ __forceinline__ void</span> <span class="fn">mma_16816</span>(<span class="kw">float</span> c[4], <span class="kw">const</span> uint32_t a[4], <span class="kw">const</span> uint32_t b[2]) {
+  <span class="kw">asm volatile</span>(
+    <span class="sh">"mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 "</span>
+    <span class="sh">"{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"</span>
+    : <span class="sh">"+f"</span>(c[0]), <span class="sh">"+f"</span>(c[1]), <span class="sh">"+f"</span>(c[2]), <span class="sh">"+f"</span>(c[3])
+    : <span class="sh">"r"</span>(a[0]), <span class="sh">"r"</span>(a[1]), <span class="sh">"r"</span>(a[2]), <span class="sh">"r"</span>(a[3]), <span class="sh">"r"</span>(b[0]), <span class="sh">"r"</span>(b[1]));
+}
+<span class="cm">// ldmatrix:warp 协作,把 smem 里 4 个 8×8 b16 矩阵按 mma 需要的布局装进各 lane</span>
+<span class="cm">// lane i 提供第 i 行的 smem 地址;B 用 .trans 变体(装出 .col 形态)</span>
+<span class="kw">asm volatile</span>(<span class="sh">"ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"</span>
+             : <span class="sh">"=r"</span>(r0), <span class="sh">"=r"</span>(r1), <span class="sh">"=r"</span>(r2), <span class="sh">"=r"</span>(r3) : <span class="sh">"r"</span>(addr));</pre>
+  <p class="note">操作数形状与第 4 章 fragment 表逐位对上:A 4 个 .b32 = 8 fp16;B 2 个 .b32 = 4 fp16;C/D 4 个 .f32。每轮 K16 的寄存器账:4 次 ldmatrix.x4 → a[4][4] = 16 个;4 次 → b[8][2] = 16 个。<code>"+f"</code> 读改写约束让 accumulator 从头到尾待在原寄存器里——这就是"常驻"在指令层的实现。生产 kernel 最烧脑的部分在 ldmatrix 的<em>地址计算</em>:swizzle 布局下每个 lane 的行地址要做 XOR 变换,教学版用 padding 绕开了它。</p>
+
+  <h3>6.6 Epilogue:重排与写回</h3>
+  <pre><span class="cm">// K 归约结束,acc 里是最终值,但 fragment 布局是离散的(第 4 章)→ 直写全局必然不合并</span>
+__syncthreads();                              <span class="cm">// mainloop 结束,smem 可整体挪用作 staging</span>
+<span class="kw">float</span>* stage = <span class="kw">reinterpret_cast</span>&lt;<span class="kw">float</span>*&gt;(smem);
+<span class="kw">for</span> (<span class="kw">int</span> pass = 0; pass &lt; PASSES; ++pass) {  <span class="cm">// 分批:如每批 64 行(64×128×4B = 32 KiB)</span>
+  <span class="cm">// ① 各 warp 把本批的 acc 按 fragment→行主序写入 stage(离散写,片上无所谓)</span>
+  <span class="cm">// ② __syncthreads()</span>
+  <span class="cm">// ③ 按合并布局读出:D = alpha*acc + beta*C(+bias/激活/类型转换)</span>
+  <span class="cm">// ④ float4 向量化写回 global;__syncthreads() 进下一批</span>
+}</pre>
+  <p class="note">对照第 3 章的 epilogue 带:离散→合并的转换发生在片上(shared memory 随便乱序,全局内存必须合并),这就是"先经 smem 重排"的全部理由。α/β/bias/激活在 ③ 融合,省一次独立的 elementwise kernel。</p>
+
+  <h3>6.7 验证、对照 CUTLASS、教学版与生产版的差距</h3>
+  <p><b>编译验证:</b><code>ptxas -v</code> 应看到 registers/thread ≈ 200–255、spill loads/stores = 0、smem ≈ 85 KiB(swizzle 版 72 KiB)。<b>运行验证:</b>Nsight Compute 看 tensor pipe active(应高)、achieved occupancy(≈12.5%,正常)、long scoreboard stall(应低——cp.async 在干活的证据)。</p>
+  <table>
+    <thead><tr><th>本文的块</th><th>CUTLASS 3.x 里的对应物</th></tr></thead>
+    <tbody>
+      <tr><td>6.2–6.4 mainloop(cp.async 多级流水)</td><td class="mono">CollectiveMainloop(SM80 multistage)</td></tr>
+      <tr><td>6.5 ldmatrix + mma 组合</td><td class="mono">TiledMMA / MMA Atom(CuTe)</td></tr>
+      <tr><td>6.1 smem 布局(padding→swizzle)</td><td class="mono">cute::Layout + Swizzle</td></tr>
+      <tr><td>6.6 epilogue</td><td class="mono">CollectiveEpilogue / EVT 融合树</td></tr>
+      <tr><td>第 1 章 Grid / 调度</td><td class="mono">TileScheduler(persistent / stream-K)</td></tr>
+    </tbody>
+  </table>
+  <p class="note"><b>教学版刻意省略、生产版必有的东西:</b>边界与非对齐处理(带谓词的 cp.async,越界 zfill 补零;K 余数轮);XOR swizzle 取代 padding;<code>cuda::pipeline</code> / named barrier 取代粗粒度 __syncthreads(producer/consumer 分离);split-K / stream-K / persistent 调度;epilogue 的完整融合;dtype × layout × 对齐的模板特化与自动调参选型。骨架相同,工程量在这些"边角"里。</p>
+
+  <!-- ================= 7 execution model ================= -->
+  <h2><span class="n">7</span>完整执行模型</h2>
+  <pre><span class="cm"># 问题:C[M,N] = A[M,K] × B[K,N]</span>
+
+<span class="kw">1.</span> 选一个代表性配置        CTA 256×128×32 · Warp 64×64×32 · MMA 16×8×16
+<span class="kw">2.</span> Grid 枚举输出 tile       普通调度:gridDim = (⌈N/128⌉, ⌈M/256⌉)  <span class="cm"># split-K / persistent 另算</span>
+<span class="kw">3.</span> 一个 CTA 负责 256×128     4×2 warp = 8 warp = 256 线程    <span class="cm"># 线程数被推导</span>
+<span class="kw">4.</span> 沿 K 循环(mainloop)     共 ⌈K/32⌉ 个 K tile;每个 K tile = 2 轮 K16;cp.async 预取 A[256,32]、B[32,128]
+<span class="kw">5.</span> pipeline 缓冲            3 个 shared buffer slot 循环复用(深度=3 ≠ K tile 数);commit/wait_group 等拷贝 + __syncthreads
+<span class="kw">6.</span> 每 warp 每个 K16 轮        执行 4×8 = 32 条 m16n8k16 MMA(空间上铺满 64×64)
+<span class="kw">7.</span> 累加器常驻                每线程 128 个 fp32 accumulator,跨所有 stage 反复更新
+<span class="kw">8.</span> Epilogue                  acc → shared mem 重排 → α·acc+β·C(+bias/act)→ 向量化写回 global</pre>
+
+  <div class="callout"><b>回到最初的问题链:</b> Grid 决定有多少 CTA 任务;CTA 负责较大的输出 tile;warp 负责 CTA tile 的一部分;<em>MMA 才是 Tensor Core 真正执行的最小矩阵运算</em>。而"tile 大小 ≠ 线程数,但也不独立"——是这套模型里最容易说错、也最该记住的一句。</div>
+
+  <hr class="rule">
+  <p class="foot">A100 / SM80 · FP16 GEMM · 代表性配置 256×128×32 / 64×64×32 / 16×8×16 · 图为示意,简化绘制;代码为教学精简版,结构与生产实现一致(差距见 6.7)。<br>
+  参考:<a href="https://docs.nvidia.com/cutlass/latest/media/docs/cpp/efficient_gemm.html">CUTLASS Efficient GEMM</a> · <a href="https://docs.nvidia.com/cutlass/latest/media/docs/cpp/gemm_api.html">CUTLASS GEMM API</a> · <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cp-async">PTX ISA: cp.async</a> · <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#matrix-fragments-for-mma-m16n8k16-with-floating-point-type">PTX ISA: mma m16n8k16 fragments</a> · <a href="https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html">Ampere Tuning Guide</a> · Volkov, Better Performance at Lower Occupancy(GTC 2010)</p>
+
+</div>
+</body>
+</html>
