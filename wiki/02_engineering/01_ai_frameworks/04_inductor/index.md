@@ -1,8 +1,8 @@
 # 04 · TorchInductor — 目录索引
 
-> PyTorch 编译后端核心:Decomposition → FX Passes → Lowering(FX→Inductor IR)→ Scheduler(调度/融合)→ CodeGen。
+> PyTorch 编译全链路扩展面:Dynamo backend → Pre-Grad → AOT/Decomposition → Joint → Post-Grad → Lowering(FX→Inductor IR) → Scheduler(调度/融合) → CodeGen。
 > 阅读路径 **overview → quick start → deep dive**(约定见 [[01_ai_frameworks/index]])。本目录为 **upstream**;**NPU Inductor 后端**单独见 [[04_inductor/npu/index]]。
-> 最后更新: 2026-06-17
+> 最后更新: 2026-07-22
 
 ---
 
@@ -34,9 +34,11 @@
 
 | 页面 | 核心主题 |
 |------|---------|
-| [[lowering_analysis]] | FX → Inductor IR lowering(注册/API/优化) |
-| [[scheduler_analysis]] | 算子调度器、融合决策;自定义融合 Pass 与排查;新设备 backend 注册(设备无关示例) |
-| [[inductor_codegen_analysis]] | 代码生成策略、kernel 融合、wrapper |
+| [[decomposition_passes_guide]] | **Decomposition 开发**：是什么/为什么、AOT 注入位置、关键 API、注册示例、与 Graph Pattern/Lowering 的选择边界 |
+| [[lowering_analysis]] | **FX → Inductor IR**：注册/IR/fallback/layout API、接入示例、为什么在此阶段 |
+| [[scheduler_analysis]] | **调度与融合**：依赖/融合决策、`_pre/_post_fusion_custom_pass` 真实签名、错误旧接口辨析 |
+| [[inductor_codegen_analysis]] | 现有代码生成策略、kernel、wrapper 与调用链 |
+| [[codegen_extension_guide]] | **Codegen 开发**：`BaseScheduling`、Wrapper、`DeviceOpOverrides`、设备注册骨架与验证清单 |
 
 ## deep dive — codegen 派发与运行时（GPU 基线）
 
@@ -51,10 +53,10 @@
 | 页面 | 核心主题 |
 |------|---------|
 | [[torch_upstream_pass_deepdive]] | **上游 Pass 全集与机制**(总纲):PatternMatcher 引擎(声明→trace→匹配→改写)、三种 PatternEntry、fwd_only/joint_fwd_bwd、序列化 pattern 缓存、三阶段驱动器 + custom 钩子、全集目录;下面三份 stage 指南的上层 |
-| [[pre_grad_passes_guide]] | 预梯度 passes(`fx_passes/pre_grad.py`) |
-| [[joint_graph_passes_guide]] | 联合图 passes(`fx_passes/joint_graph.py`) |
-| [[post_grad_passes_guide]] | 后梯度 passes(`fx_passes/post_grad.py`) |
-| [[fx_pass_optimization_methodology]] | **Pass 开发方法论**(跨源综合 upstream/npu/vLLM/sglang):四个决策问题(在哪做/匹配什么/怎么落地/怎么保证对)、融合朝向谱系、工程护栏、开发 checklist、反模式 |
+| [[pre_grad_passes_guide]] | Pre-Grad 真实顺序、主要 Pass、关键 API、custom/Pattern 注册示例与动态形状边界 |
+| [[joint_graph_passes_guide]] | Joint 真实顺序、两轮 `pass_patterns`、切图前方法论与 custom hook 示例 |
+| [[post_grad_passes_guide]] | Post-Grad 真实顺序、三轮 pattern、通信/mutation 尾部约束与 inference-aware hook |
+| [[fx_pass_optimization_methodology]] | **八阶段 Pass 开发方法论**：Dynamo/Pre/Decomp/Joint/Post/Lowering/Scheduler/Codegen 的是什么、为什么、适合做什么、为什么不放相邻阶段 |
 
 ## deep dive — 动态形状
 

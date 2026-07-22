@@ -1,7 +1,13 @@
 # TorchInductor Scheduler 深度分析
 
-> 基于 `torch/_inductor/scheduler.py`（7075行）的完整技术分析
+> **Updated**: 2026-07-22
+
+> **Source baseline**: PyTorch `9922478dffa`，重点复核 `torch/_inductor/scheduler.py:4099-4141,8479-8497,9470-9505,9713-9850` 与 `torch/_inductor/config.py:315-330`。
+>
+> 基于 `torch/_inductor/scheduler.py` 的完整技术分析
 > 覆盖：是什么 / 为什么 / 怎么做 / 如何自定义
+>
+> **阶段结论**：Scheduler 优化的是“已有 Inductor IR 节点怎样排序、融合成哪些 kernel”。它不再改 ATen 图语义；需要 ATen rewrite 的规则应前移，需要 target 指令/ABI 的规则应后移到 Codegen。
 
 ---
 
@@ -56,6 +62,24 @@ Triton / CPP Kernel 源码
 | 通信-计算重叠 | `reorder_for_compute_comm_overlap` | L2999 |
 | 图分区（CUDAGraph） | `graph_partition()` | L5865 |
 | 驱动 codegen | `codegen()` / `_codegen()` | L6505 / L6662 |
+
+### 1.1 为什么在这里做，为什么不放相邻阶段
+
+- **适合这里**：依赖完整 buffer 读写、未满足依赖、设备、融合组、stream、预计代价的重排/分组。
+- **不放 Lowering**：Lowering 逐个解释 ATen 节点并产 IR，尚未拥有完整调度图。
+- **不放 Codegen**：Codegen 接收的 kernel 分组已经确定；在那里再改依赖或融合会使 kernel 与 wrapper 不一致。
+- **不该放 Scheduler**：若规则仍在证明 `aten` 子图的数学等价，说明它应在 Joint/Post-Grad；若需要生成一种新 IR op，应在 Lowering。
+
+### 1.2 两个真实 Custom Pass 插点
+
+固定基线只提供下面两个 Scheduler node-list hook：
+
+| 配置 | 时机 | 签名 |
+|---|---|---|
+| `config._pre_fusion_custom_pass` | `fuse_nodes(self.nodes)` 之前 | `Callable[[list[BaseSchedulerNode]], list[BaseSchedulerNode]]` |
+| `config._post_fusion_custom_pass` | `fuse_nodes(self.nodes)` 之后 | 同上 |
+
+二者参数都不是 `GraphLowering`，且必须返回节点列表。配置名以 `_` 开头，源码明确警告 Scheduler IR 是 prototype，第三方必须固定 PyTorch 版本。
 
 ---
 
@@ -760,7 +784,41 @@ Scheduler 就是一个"智能排课系统"——它把所有要执行的计算�
 
 > 本节补充 `pre_fusion_custom_pass` 的实战示例、Pass 内可操作 API 速查与融合问题排查清单，作为 §9 自定义指南、§10 调试观测的实践延伸。融合基本原理（垂直/水平/Reduction/Template）见 §2.2、§7、§3.x，此处不再重复。
 
-### A. 自定义融合 Pass 实战（`pre_fusion_custom_pass`）
+### 先看固定基线的正确写法
+
+```python
+import torch
+from torch._inductor import config
+from torch._inductor.scheduler import BaseSchedulerNode, FusedSchedulerNode
+
+def before_fusion(
+    nodes: list[BaseSchedulerNode],
+) -> list[BaseSchedulerNode]:
+    # 这里可以检查/过滤/重排节点。改变顺序前必须保持依赖合法。
+    print("before fusion:", [node.get_name() for node in nodes])
+    return nodes
+
+def after_fusion(
+    nodes: list[BaseSchedulerNode],
+) -> list[BaseSchedulerNode]:
+    fused = sum(isinstance(node, FusedSchedulerNode) for node in nodes)
+    print("after fusion:", len(nodes), "fused groups:", fused)
+    return nodes
+
+with config.patch(
+    _pre_fusion_custom_pass=before_fusion,
+    _post_fusion_custom_pass=after_fusion,
+):
+    compiled = torch.compile(model)
+    actual = compiled(*example_inputs)
+```
+
+常用但不稳定的节点读取接口包括 `get_name()`、`get_device()`、`get_buffer_names()`、`get_operation_names()` 与依赖/read-write 信息。没有通用的 `node.fusable` 布尔协议；要阻止融合，可在固定版本内使用 `V.graph.no_fuse_buffer_names` 等真实机制，并用源码测试锁定行为。
+
+### A. 历史错误示例（保留用于辨错）
+
+> [!deprecated]
+> 以下旧段把接口写成 `pre_fusion_custom_pass(GraphLowering) -> GraphLowering`，并使用不存在的通用 `node.fusable` 属性；这与固定基线不符。正确接口是上面的 `_pre_fusion_custom_pass(list[BaseSchedulerNode]) -> list[BaseSchedulerNode]`。旧内容按知识库 never-delete 规则保留，不可复制使用。
 
 Inductor 允许用户通过 `pre_fusion_custom_pass` 在默认融合逻辑执行前介入，修改调度图（Scheduling Graph）。
 
@@ -859,12 +917,15 @@ export TORCH_LOGS="+inductor"
    - 在模型代码中显式 `del tensor`。
 
 **B.4 性能回退**
-- 对比 `config.pre_fusion_custom_pass = None` 的基准性能。
+- 对比 `config._pre_fusion_custom_pass = None` 的基准性能。
 - 确认 Template Fusion 是否命中（如 Attention 未命中会导致性能大幅下降）。
 
 ---
 
 ## 文件引用
+
+> [!deprecated]
+> 下表多数行号来自旧版 `scheduler.py`，仅用于按符号名定位，不能作为固定基线行号。`9922478dffa` 已核入口为：custom hooks `scheduler.py:4099-4141`、设备 backend 创建 `:8479-8497`、codegen 派发 `:9470-9505`、`BaseScheduling` `:9713`、config hooks `config.py:315-330`、设备注册 `codegen/common.py:407`。
 
 | 文件 | 关键内容 |
 |------|---------|
@@ -893,4 +954,5 @@ export TORCH_LOGS="+inductor"
 - [[02_engineering/01_ai_frameworks/index]]
 - [[PyTorch_Inductor_Technical_Analysis]]
 - [[inductor_codegen_analysis]]
+- [[codegen_extension_guide]] — `BaseScheduling`、Wrapper 与设备注册的当前开发接口
 - [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景（本文 §6 Scheduler 阶段）

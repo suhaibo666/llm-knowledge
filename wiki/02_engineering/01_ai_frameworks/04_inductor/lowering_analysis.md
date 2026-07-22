@@ -1,5 +1,11 @@
 # Code Analysis: Inductor Lowering (`lowering.py`)
 
+> **Updated**: 2026-07-22
+
+> **Source baseline**: PyTorch `9922478dffa`。本次重点复核 `torch/_inductor/lowering.py:217-240,534-552,2610-2630,2728-2765` 与 `torch/_inductor/graph.py:1367-1450`。
+>
+> **阶段结论**：Lowering 不是另一轮 ATen FX Pass，而是解释每个 ATen 节点并产出 Inductor IR 的边界。需要 layout、realization、IR 节点或外部 kernel 的优化放这里；仍产出 ATen 图的 rewrite 应留在 Joint/Post-Grad。
+
 ## Overview
 
 **Purpose**: 将 FX Graph 中的 ATen 算子翻译为 Inductor 的 IR（中间表示），是 TorchInductor 编译器从"图级别"到"代码生成"的核心桥梁。
@@ -20,11 +26,11 @@
 ```
 torch.compile / torch._dynamo
   ↓ (FX Graph with ATen ops)
-Decomposition (decomposition.py)
-  ↓ (Simplified ATen ops)
 Pre-grad passes (pre_grad.py)
-  ↓
-GraphLowering.call_function (graph.py:L1260)
+  ↓ AOTAutograd + Decomposition + Joint Graph passes
+Post-grad passes (post_grad.py)
+  ↓ (Normalized/functionalized ATen FX Graph)
+GraphLowering.call_function (graph.py:1367)
   ↓
 ┌─────────────────────────────────────┐
 │  lowering.py  ← 本文分析重点         │
@@ -32,10 +38,11 @@ GraphLowering.call_function (graph.py:L1260)
 │  将 ATen op → IR Node               │
 └─────────────────────────────────────┘
   ↓ (IR Nodes: Pointwise, Reduction, ExternKernel, etc.)
-Post-grad passes (post_grad.py)
-  ↓
 Scheduler → Codegen (Triton / C++ / etc.)
 ```
+
+> [!important] 顺序订正
+> 旧版图曾把 Post-Grad 放在 Lowering 之后，这是错误的。固定基线中 Post-Grad 先改写函数化 ATen FX 图，随后 `GraphLowering.call_function()` 查 `lowerings[target]` 产出 IR。
 
 **This component operates at**: ATen → IR 翻译层
 **It receives calls from**: `GraphLowering.call_function()` (`graph.py:L1260`)
@@ -79,6 +86,60 @@ out = lowerings[target](*args, **kwargs)
 | `register_foreach_pointwise()` | L1016 | foreach 批量 op | `_foreach_add`, `_foreach_mul` |
 | `register_inplace()` | L7249 | 原地 op 注册 | `add_`, `mul_`, `relu_` |
 | `fallback_handler()` | L2187 | 回退到 eager 执行 | 不支持的 op |
+
+> [!note] 固定基线行号
+> `register_lowering` 在 `lowering.py:534`，`register_pointwise` 在 `:1064`，`fallback_handler` 在 `:2610`，`make_fallback` 在 `:2728`，`register_inplace` 在 `:8359`。上表旧行号保留作历史版本对照，开发时以函数名和固定 commit 为准。
+
+### 2.2.1 关键 API 到底负责什么
+
+| API/对象 | 作用 | 何时使用 |
+|---|---|---|
+| `lowerings` | `OpOverload -> lowering callable` 的全局查找表 | 理解/调试最终派发 |
+| `register_lowering` | 处理 overload、broadcast、type promotion，再验证返回 IR | 自定义 op 直接产 IR |
+| `register_pointwise` | 从 pointwise 语义生成可融合 loop IR | 标准逐元素 op |
+| `add_needs_realized_inputs` | 声明调用前必须把输入 materialize | 外部库、layout-sensitive op |
+| `add_layout_constraint` | 为 op 约束输入/输出 layout | 外部 kernel 的 contiguous/stride 要求 |
+| `fallback_handler` | 构造 `FallbackKernel` handler | 需要手工放入其他 registry 时 |
+| `make_fallback` | 校验 decomposition 冲突、注册 fallback 和 layout constraint | 后端不 lowering、但 eager/custom kernel 可执行 |
+| `register_lowering_pattern` | PatternMatcher 命中一段 ATen 子图后直接返回 IR | lowering-time fusion；内部 API，必须指定 `pass_dict` |
+
+### 2.2.2 如何注册并真正进入 Lowering
+
+若自定义 op 先以外部实现跑通，最小接入是 fallback：
+
+```python
+import torch
+from torch._inductor.lowering import make_fallback
+
+my_op = torch.ops.my_ns.my_op.default
+make_fallback(my_op, warn=False)
+
+# 注册模块必须在首次 torch.compile 前 import。
+compiled = torch.compile(model)
+```
+
+若希望复用已有 IR lowering 组成一个新 op：
+
+```python
+import torch
+from torch._inductor.lowering import lowerings, register_lowering
+
+aten = torch.ops.aten
+my_op = torch.ops.my_ns.bias_sigmoid.default
+
+@register_lowering(my_op, type_promotion_kind=None)
+def lower_bias_sigmoid(x, bias):
+    z = lowerings[aten.add.Tensor](x, bias)
+    return lowerings[aten.sigmoid.default](z)
+```
+
+这是内部扩展面：先确认被复用 lowering 的参数已是 Inductor IR，而不是 FakeTensor/FX Node。若目标只是等价 ATen 公式，优先写 [[decomposition_passes_guide]]，避免把纯语义展开硬塞进 Lowering。
+
+### 2.2.3 为什么不放相邻阶段
+
+- **不放 Post-Grad**：需要显式构造 Pointwise/Reduction/ExternKernel IR 或施加 layout/realization 约束时，FX 层信息不足。
+- **不放 Scheduler**：Scheduler 接收的是已经构造好的 IR 操作，只负责依赖、融合与顺序，不应再解释 ATen schema。
+- **不该放 Lowering**：若输出仍是 ATen op/子图，或必须同时影响 AOT 生成的 backward，应分别放 Graph Pattern 或 Decomposition。
 
 #### `register_lowering` 的核心流程 (L472-L522)
 
@@ -369,6 +430,10 @@ flowchart LR
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
+- [[fx_pass_optimization_methodology]] — 八阶段放置方法论
+- [[decomposition_passes_guide]] — 等价 ATen 展开与 Lowering 的选择边界
+- [[scheduler_analysis]] — IR 产出后的依赖与融合
+- [[codegen_extension_guide]] — 复用或扩展目标 Codegen
 - [[PyTorch_Inductor_Technical_Analysis]]
 - [[inductor_codegen_analysis]]
 - [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景（本文 §5 Lowering 阶段）

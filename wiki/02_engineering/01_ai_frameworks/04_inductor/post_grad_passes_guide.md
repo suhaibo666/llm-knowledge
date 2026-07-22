@@ -1,5 +1,11 @@
 # PyTorch Inductor Post-Grad Passes 完全解析
 
+> **Updated**: 2026-07-22
+
+> **Source baseline**: PyTorch `9922478dffa`，重点核验 `torch/_inductor/fx_passes/post_grad.py:84-89,144-446`、`torch/_inductor/custom_graph_pass.py:73-76,118-145`。
+>
+> **阶段结论**：Post-Grad 的输入已经 normalized/functionalized，并且前向、反向图已分开。这是后端 ATen 图融合的默认落点；但 layout/read-write 已成为核心条件的优化应放 Lowering/Scheduler，而不是继续堆 FX rewrite。
+
 ## 目录
 1. [概述](#1-概述)
 2. [Pass 详解](#2-pass-详解)
@@ -48,6 +54,27 @@ def model(x, w):
 - **后端特化优化**：MKLDNN、自定义后端 passes
 - **图清理与规范化**：DCE、noop 消除、拓扑排序
 
+### 1.3 为什么在这里做，为什么不放相邻阶段
+
+- **适合这里**：精确 ATen overload pattern、inference/backward 专用变换、设备/量化/通信图改写、把子图换成已有后端 op。
+- **不放 Joint**：Joint 还不能把 inference-only、forward-only、backward-only 条件安全分开。
+- **不放 Lowering**：若产物仍是 ATen 图，Post-Grad 更容易用 PatternMatcher 表达和测试；Lowering 应负责 ATen → Inductor IR。
+- **应放 Scheduler/Codegen**：优化依赖完整 buffer 读写、融合组、stream、target ISA 或 wrapper ABI 时，FX 图信息不够。
+
+### 1.4 固定基线的主流程与“为什么”
+
+| 区段 | 主要 Pass | 为什么这样排序 |
+|---|---|---|
+| 前置清理 | DCE；inference locality reorder；`post_grad_custom_pre_pass` | 先缩图并给用户一个内建 pattern 前的插点 |
+| CPU 专项 | grouped GEMM、WOQ int4 concat-linear | 只在 MKLDNN/对应配置满足时运行 |
+| Pattern 核心 | profiler-op 清理；group-batch；noop/assert；`pass_patterns[0..2]`；配置化 `POST_GRAD_PATTERNS`；B2B GEMM | 先移除阻塞匹配的节点，再按三轮依赖逐步改写 |
+| 并行专项 | micro-pipeline TP、DDP communication fusion | 需要函数化图和已稳定的 ATen 结构 |
+| 用户后置 | `post_grad_custom_post_pass` | 第三方后端通常在内建 FX 融合后接入 |
+| 设备/通信 | stable sort、constructor-to-GPU、设备 custom backend pass、collective decomposition/bucketing/overlap | 通信 bucketing 可能要求再次拓扑排序；all-gather bucketing 会引入 mutation，故靠后 |
+| 最终 mutation | `reinplace_inplaceable_ops` 与 functional-wrapper 分解 | 源码明确要求会引入 mutation 的步骤保持最后 |
+
+`post_grad_passes(gm, is_inference)` 在前向和反向各调用一次；`CustomInferenceAwareGraphPass` 能收到 `is_inference`，普通 `CustomGraphPass` 则只收到 `torch.fx.Graph`。
+
 ---
 
 ## 2. Pass 详解
@@ -56,7 +83,8 @@ def model(x, w):
 
 ### Pass 1: FSDP2 参数引用清理
 
-> **注**：该 FSDP2 专用 pass（`remove_fsdp2_unsharded_param_graph_input_usage`）在当前版本 `post_grad.py` 中已移除/重构，以 `post_grad.py` 实际为准。
+> [!deprecated]
+> 该 FSDP2 专用 pass（`remove_fsdp2_unsharded_param_graph_input_usage`）不在固定基线 `9922478dffa` 的 `post_grad_passes()` 中。以下历史说明保留用于版本考古，不应加入当前执行顺序；当前 FSDP/collective 路径以 §1.4 的 dedup、bucketing、overlap 为准。
 
 **代码位置**：`remove_fsdp2_unsharded_param_graph_input_usage`
 
@@ -593,6 +621,21 @@ result = torch.where(mask, 0.9, 0.01)
 
 ## 5. 自定义开发指南
 
+### 5.0 关键 API 速查
+
+| API/对象 | 作用 | 适用位置 |
+|---|---|---|
+| `config.post_grad_custom_pre_pass` | 内建 group/noop/pattern 前插入 | 给内建规则铺路、观测初始切分图 |
+| `config.post_grad_custom_post_pass` | 内建 FX pattern 与通信前段后插入 | 第三方后端融合的常用落点 |
+| `CustomInferenceAwareGraphPass` | `Graph, is_inference -> None` | 明确区分 inference 与训练图 |
+| `pass_patterns[0..2]` | 三轮主 PatternMatcher | 用轮次表达 pattern 依赖 |
+| `POST_GRAD_PATTERNS` + `post_grad_fusion_options` | 名字化的配置 pattern | 内部注册/配置表 |
+| `register_graph_pattern` | ATen 子图 → ATen 图改写 | 仍由后续 lowering 处理 |
+| `post_grad.register_lowering_pattern` | ATen pattern → Inductor IR handler | lowering-time fusion，默认 `pass_number=1` |
+| `FakeTensorUpdater` | Pass 后增量维护 fake tensor meta | constructor 移动、reinplace 等依赖 |
+| `stable_topological_sort` | 确定性拓扑与通信改写后修序 | 不等同于语义正确性证明 |
+| `reinplace_inplaceable_ops` | 最终恢复安全的 inplace | 会引入 mutation，必须靠后 |
+
 ### 5.1 注册新 Pattern
 
 #### 方式一：Lowering Pattern（生成 Inductor IR）
@@ -619,8 +662,9 @@ def mm_plus_mm_replacement(match: Match, mat1, mat2, mat3, mat4):
 
 ```python
 from torch._inductor.pattern_matcher import (
-    register_graph_pattern, CallFunction, Match, pass_patterns
+    register_graph_pattern, CallFunction, KeywordArg, Match
 )
+from torch._inductor.fx_passes.post_grad import pass_patterns
 
 @register_graph_pattern(
     CallFunction(
@@ -673,20 +717,34 @@ def is_valid_my_pattern(match: Match) -> bool:
 ### 5.3 添加自定义 Graph Pass
 
 ```python
-def my_custom_pass(graph: torch.fx.Graph):
-    """遍历整个 graph 进行复杂变换"""
+import torch
+from torch._inductor import config
+from torch._inductor.custom_graph_pass import CustomInferenceAwareGraphPass
+
+def my_custom_pass(graph: torch.fx.Graph) -> None:
+    """普通 hook：接收 Graph，原地修改，返回 None。"""
     for node in graph.nodes:
         if should_optimize(node):
             # 复杂的多节点变换
             pass
-    
     graph.lint()
 
-# 配置
-torch._inductor.config.post_grad_custom_pre_pass = my_custom_pass
-# 或
-torch._inductor.config.post_grad_custom_post_pass = my_custom_pass
+with config.patch(post_grad_custom_post_pass=my_custom_pass):
+    compiled = torch.compile(model)
+
+class InferenceOnlyPass(CustomInferenceAwareGraphPass):
+    def __call__(self, graph: torch.fx.Graph, is_inference: bool) -> None:
+        if is_inference:
+            graph.lint()  # 在这里执行 inference-only rewrite
+
+    def uuid(self):
+        return b"inference-only-pass-v1"
+
+with config.patch(post_grad_custom_post_pass=InferenceOnlyPass()):
+    compiled = torch.compile(model)
 ```
+
+选择 pre 还是 post hook 的方法：规则要先给内建 PatternMatcher 铺路时用 `post_grad_custom_pre_pass`；规则依赖内建规范化/融合结果、或要把最终 ATen 子图换成后端 op 时用 `post_grad_custom_post_pass`。
 
 ### 5.4 调试技巧
 
@@ -711,9 +769,9 @@ if node.meta["val"].shape[0] > 1000:
 
 # 导出图对比
 torch._inductor.config.post_grad_custom_pre_pass = \
-    lambda g: open("before.py", "w").write(str(g.graph))
+    lambda g: open("before.py", "w").write(str(g))
 torch._inductor.config.post_grad_custom_post_pass = \
-    lambda g: open("after.py", "w").write(str(g.graph))
+    lambda g: open("after.py", "w").write(str(g))
 ```
 
 ### 5.5 最佳实践
@@ -769,6 +827,8 @@ Post-Grad Passes 是 PyTorch Inductor 编译器的关键阶段，专注于：
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
+- [[fx_pass_optimization_methodology]] — 八阶段放置方法论
+- [[lowering_analysis]] — Post-Grad 之后的 ATen → IR 边界
 - [[pre_grad_passes_guide]]
 - [[joint_graph_passes_guide]]
 - [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景（本文 §4.3 Post-grad Passes）

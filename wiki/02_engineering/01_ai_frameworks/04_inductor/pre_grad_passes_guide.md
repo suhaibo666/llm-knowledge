@@ -1,5 +1,11 @@
 # PyTorch Inductor Pre-Grad Passes 深度解析
 
+> **Updated**: 2026-07-22
+
+> **Source baseline**: PyTorch `9922478dffa`，重点核验 `torch/_inductor/fx_passes/pre_grad.py:287-369`、`torch/_inductor/config.py:309-313`、`torch/_inductor/custom_graph_pass.py:73-76,124-145`。
+>
+> **阶段结论**：Pre-Grad 是 AOTAutograd 前的高层 FX 改写窗口。它保留高层语义，但 IR **未函数化、未规范化且易变化**；只有确实依赖这些高层结构的优化才应放这里，能在 Joint/Post-Grad 表达的规则通常更稳。
+
 ## 目录
 1. [概述](#1-概述)
 2. [Pass 详解](#2-pass-详解)
@@ -47,12 +53,19 @@ def pre_grad_graph(x, w):
 
 | 特性 | Pre-Grad | Post-Grad |
 |------|----------|-----------|
-| IR 级别 | Torch IR (functional) | ATen IR (decomposed) |
+| IR 级别 | Torch IR（**non-functional、non-normalized**） | ATen IR（functionalized/decomposed） |
 | 执行时机 | AOT Autograd 之前 | AOT Autograd 之后 |
 | 优化重点 | 高层语义融合、批量化 | 底层算子融合、内存规划 |
 | 处理复杂度 | 高（需处理各种参数变体） | 低（已规范化） |
 
 **WARNING**: Pre-Grad IR 不是功能化的，编写 pass 时需要小心处理别名和变异。
+
+### 1.4 为什么在这里做，为什么不放相邻阶段
+
+- **适合这里**：依赖 `torch.nn.functional`、module/高层复合调用、Python 参数形式的融合与规范化；这些语义在 decomposition 后可能被拆散。
+- **后移到 Joint/Post-Grad**：规则需要精确 `aten` overload、函数化、前反向共现或 inference/backward 身份。
+- **前移到 Dynamo backend**：目标涉及 graph break、捕获区域边界或 Python 控制流，而不是已捕获图内部改写。
+- **不要机械拒绝动态形状**：若条件是符号恒等或可由 ShapeEnv/guard 证明，应支持 SymInt；只有无法证明等价条件时才跳过。
 
 ---
 
@@ -452,9 +465,14 @@ argmax(softmax(x) / exp(g))
 
 ## 3. 执行顺序与依赖关系
 
+> [!important] 以固定基线主函数为准
+> `pre_grad_passes()` 的 OSS 非 predispatch 路径顺序是：`numpy_compat_normalization` → `fuse_fx` → 可选 `normalization_pass` → group-batch → 配置化 `PRE_GRAD_PATTERNS` → efficient Conv-BN → Gumbel trick。无论是否启用 PatternMatcher，随后都会运行 `pre_grad_custom_pass`、稳定拓扑、`quant_lift_up`、lint 和 recompile（`pre_grad.py:287-369`）。
+
 ```
 Stage 1: 基础 Fusion 与规范化
 ─────────────────────────────────
+numpy_compat_normalization      ──> NumPy 兼容性处理
+│
 fuse_fx                         ──> linear/permute 融合、ConvBN 融合
 │   ├─ sink_cat_after_pointwise
 │   ├─ linear_permute_fusion
@@ -463,9 +481,7 @@ fuse_fx                         ──> linear/permute 融合、ConvBN 融合
 │   ├─ remove_identity
 │   └─ fuse_conv_bn
 │
-numpy_compat_normalization      ──> NumPy 兼容性处理
-│
-normalization_pass              ──> 统一操作调用形式
+normalization_pass（配置启用时）──> 统一操作调用形式
 │   ├─ normalize_split_default
 │   ├─ normalize_unbind_default
 │   ├─ normalize_cat_default
@@ -503,6 +519,7 @@ apply_gumbel_max_trick_pass     ──> Gumbel 采样优化
 
 Stage 5: 后处理
 ─────────────────────────────────
+pre_grad_custom_pass            ──> 用户全图 hook（每项 Callable[[Graph], None]）
 stable_topological_sort         ──> 稳定拓扑排序
 quant_lift_up                   ──> 量化相关处理
 lint + recompile                ──> 验证与编译
@@ -526,6 +543,20 @@ lint + recompile                ──> 验证与编译
 
 ## 4. 自定义开发 Pass 指南
 
+### 4.0 关键 API 速查
+
+| API/对象 | 作用 | 稳定性/注意事项 |
+|---|---|---|
+| `config.pre_grad_custom_pass` | 注册一个 callable 或 callable 列表 | 第三方首选；`Graph -> None` |
+| `CustomGraphPass` | 带 `uuid()` 的可缓存 custom pass 基类 | 影响生成结果时优于 lambda |
+| `get_custom_graph_passes` | 把单个/list/tuple 统一成执行序列 | 驱动器内部使用 |
+| `PatternMatcherPass.apply(graph)` | 执行一组声明式 pattern | 内部 API；跨 mutation/stream match 会被拒绝 |
+| `register_graph_pattern` | 把手写 `PatternExpr` handler 注册进 pass | handler 负责安全改图 |
+| `register_replacement` | 从 search/replace 示例 trace pattern 与替换 | 适合可由纯函数例子表达的规则 |
+| `PRE_GRAD_PATTERNS` | 名字到 `PatternMatcherPass` 的表 | 内部注册表；仅列在 config 中的名字会执行 |
+| `config.pre_grad_fusion_options` | 控制内建/注册 pattern 的名字、顺序和 counter | 修改全局配置前做好作用域隔离 |
+| `stable_topological_sort`、`lint`、`recompile` | 改图后的确定性排序、合法性检查与代码刷新 | 主驱动会统一收尾；独立测试也应调用 |
+
 ### 4.1 Pre-Grad Pass 的特点
 
 **与 Post-Grad 的主要区别**：
@@ -547,10 +578,34 @@ torch.ops.aten.cat.default([a, b], 0)  # 已规范化
 
 ### 4.2 注册新 Pattern 的方法
 
-#### 方式一：使用 PatternMatcherPass（推荐）
+#### 方式零：使用官方 Custom Graph Pass 钩子（第三方首选）
+
+`pre_grad_custom_pass` 接收一个 pass 或 pass 列表。每个 callable 的契约是 `Callable[[torch.fx.Graph], None]`：参数是 `Graph`，不是 `GraphModule`；原地修改且不依赖返回值。它在内建 PatternMatcher 流程之后、拓扑整理之前运行。
+
+```python
+import torch
+from torch._inductor import config
+
+def inspect_pre_grad(graph: torch.fx.Graph) -> None:
+    # 在这里做全图检查/改写；示例只验证，不改变语义。
+    graph.lint()
+    print(graph)
+
+with config.patch(pre_grad_custom_pass=inspect_pre_grad):
+    compiled = torch.compile(model)
+    actual = compiled(*example_inputs)
+```
+
+若 Pass 会影响编译缓存，应实现 `torch._inductor.custom_graph_pass.CustomGraphPass` 的 `uuid()`；固定基线用该标识参与 compiled artifact 的缓存区分。单纯 lambda 更适合本地调试。
+
+#### 方式一：使用 PatternMatcherPass（修改 upstream/同版本内部分支）
+
+> [!warning]
+> `PRE_GRAD_PATTERNS` 和 `pre_grad_fusion_options` 是 Inductor 内部注册表，不是承诺稳定的公开扩展 API。第三方优先使用上面的 custom hook；只有维护同一 PyTorch 版本或准备 upstream 时，才直接接入注册表。
 
 ```python
 from torch._inductor.fx_passes.split_cat import PRE_GRAD_PATTERNS
+from torch._inductor.fx_passes.pre_grad import PatternMatcherPass
 from torch._inductor.pattern_matcher import (
     register_graph_pattern,
     CallFunction,
@@ -564,51 +619,39 @@ my_pass = PatternMatcherPass(pass_name="my_custom_pass")
 
 @register_graph_pattern(
     CallFunction(
-        torch.nn.functional.linear,
-        KeywordArg("input"),
-        KeywordArg("weight"),
+        torch.relu,
+        CallFunction(torch.relu, KeywordArg("x")),
     ),
     pass_dict=my_pass,
 )
-def optimize_my_linear(match: Match, input, weight):
-    """自定义 linear 优化"""
-    node = match.output_node()
-    graph = match.graph
-    
-    # 检查条件
-    if not is_node_meta_valid(input):
-        return
-    
-    # 创建替换节点
-    with graph.inserting_before(node):
-        new_node = graph.call_function(
-            torch.ops.aten.mm,
-            args=(input, weight.T),
-        )
-        new_node.meta.update(node.meta)
-    
-    node.replace_all_uses_with(new_node)
-    graph.erase_node(node)
+def remove_redundant_relu(match: Match, x):
+    """relu(relu(x)) -> relu(x)。"""
+    outer = match.output_node()
+    inner = outer.args[0]
+    assert isinstance(inner, torch.fx.Node)
+    outer.replace_all_uses_with(inner)
+    match.graph.erase_node(outer)
 
 # 添加到 PRE_GRAD_PATTERNS
 PRE_GRAD_PATTERNS["my_custom_pass"] = my_pass
+
+# 驱动器只执行 pre_grad_fusion_options 中列出的名字。
+torch._inductor.config.pre_grad_fusion_options["my_custom_pass"] = {"counter": 1}
 ```
 
 #### 方式二：Graph Pass（全图遍历）
 
 ```python
-def my_graph_pass(graph: torch.fx.GraphModule):
-    """遍历整个 graph 进行复杂变换"""
-    for node in graph.graph.nodes:
+def my_graph_pass(graph: torch.fx.Graph) -> None:
+    """遍历整个 graph 进行复杂变换。"""
+    for node in graph.nodes:
         if should_optimize(node):
             # 复杂的多节点变换
             pass
-    
-    graph.graph.lint()
-    graph.recompile()
 
-# 在 pre_grad_passes 中调用
-# 或配置为 custom pass
+    graph.lint()
+
+# with config.patch(pre_grad_custom_pass=my_graph_pass): ...
 ```
 
 ### 4.3 常见 Pre-Grad 优化模式
@@ -685,11 +728,10 @@ def eliminate_split_cat(match, ...):
 ```python
 # Step 1: 识别优化机会
 # 通过查看 FX Graph 发现冗余模式
-# torch._inductor.config.joint_custom_pre_pass = debug_graph_pass
+# torch._inductor.config.pre_grad_custom_pass = debug_graph_pass
 
-def debug_graph_pass(graph):
-    print(graph.graph)
-    return graph
+def debug_graph_pass(graph: torch.fx.Graph) -> None:
+    print(graph)
 
 # Step 2: 编写 Pattern
 @register_graph_pattern(...)
@@ -738,11 +780,10 @@ def my_fuse(graph, subset):
 
 **3. 处理动态形状**
 ```python
-from torch.fx.experimental.symbolic_shapes import free_symbols
-
-if free_symbols(node.meta["example_value"].shape):
-    # 动态形状需要特殊处理
-    return
+# 不要因为 shape 中含 SymInt 就一律 return。
+# 先判断等价条件是否为符号恒等；若不是，再使用可证明的
+# ShapeEnv/guard 条件。只有无法证明时才拒绝该 match。
+shape = node.meta["example_value"].shape
 ```
 
 **4. 使用配置控制**
@@ -763,11 +804,11 @@ def my_pattern(match, ...):
     print(f"Matched: {match.nodes}")
     print(f"Args: {...}")
 
-# 导出优化前后的 graph
-torch._inductor.config.joint_custom_pre_pass = \
-    lambda g: (print("Before:", g.graph), g)[1]
-torch._inductor.config.joint_custom_post_pass = \
-    lambda g: (print("After:", g.graph), g)[1]
+# 观察进入 custom hook 时的 Pre-Grad graph
+def dump_pre_grad(g: torch.fx.Graph) -> None:
+    print("Pre-Grad before custom rewrite:", g)
+
+torch._inductor.config.pre_grad_custom_pass = dump_pre_grad
 
 # 使用 counters 统计优化次数
 from torch._dynamo.utils import counters
@@ -794,6 +835,8 @@ Pre-Grad Passes 是 PyTorch Inductor 编译流程中的**早期优化阶段**，
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
+- [[fx_pass_optimization_methodology]] — 八阶段放置方法论
+- [[decomposition_passes_guide]] — Pre-Grad 之后的 AOT 算子集收敛
 - [[post_grad_passes_guide]]
 - [[joint_graph_passes_guide]]
 - [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景（本文 §4.1 Pre-grad Passes）

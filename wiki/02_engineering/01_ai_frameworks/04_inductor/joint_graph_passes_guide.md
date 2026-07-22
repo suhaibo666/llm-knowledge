@@ -1,5 +1,11 @@
 # PyTorch Inductor Joint Graph Passes 完全解析
 
+> **Updated**: 2026-07-22
+
+> **Source baseline**: PyTorch `9922478dffa`，重点核验 `torch/_inductor/fx_passes/joint_graph.py:48-56,640-720`、`torch/_inductor/custom_graph_pass.py:73-76,124-145`。
+>
+> **阶段结论**：Joint Graph 是 AOT 产出的函数化 ATen 前向+反向联合图。这里适合做切分前才看得全的规范化和跨前反向改写；仅对 inference、forward 或 backward 成立的优化应放到 Post-Grad。
+
 ## 目录
 1. [概述](#1-概述)
 2. [Pass 详解](#2-pass-详解)
@@ -44,6 +50,30 @@ def joint_graph(x, w, grad_output):
 - **算子融合**：将多个小算子合并成大算子
 - **内存优化**：常量折叠、分块计算
 - **设备优化**：修复设备不匹配问题
+
+### 1.3 为什么在这里做，为什么不放相邻阶段
+
+- **适合这里**：依赖前向保存值和反向消费者同时可见、会影响 partition、或必须在切图前统一的 ATen 规范化。
+- **不放 Pre-Grad**：Joint 已经过 AOT functionalization/decomposition，精确 ATen overload 和 alias 语义更稳定；Pre-Grad 没有这些前提。
+- **不放 Post-Grad**：切分后看不到另一半图，无法判断跨边界保存/消费关系。
+- **应放 Post-Grad**：只针对 inference、只针对 backward、或面向特定后端 kernel 的最终 FX 融合。
+
+### 1.4 固定基线的真实顺序和主要 Pass
+
+| 顺序 | Pass/入口 | 为什么在这里 |
+|---|---|---|
+| 1 | `canonicalize_aten_ir_passes(gm)` | 源码要求紧跟 AOT 且先于其他图 Pass，先统一量化调用形态 |
+| 2 | `joint_custom_pre_pass` | 给用户在内建清理前观察/改写函数化 Joint 图 |
+| 3 | `remove_noop_ops` | 删除不改变值且不破坏 alias 的节点，减少后续匹配噪声 |
+| 4 | `constant_fold_uniform_value` | 配置启用时折叠 uniform-value 常量 |
+| 5 | `early_patterns` | 给依赖“必须早于主 pattern”的规则独立注册表 |
+| 6 | AutoChunker | 必须在 pad-mm pattern 之前，避免匹配已 padding 的结构 |
+| 7 | `pass_patterns[0]`、`pass_patterns[1]` | 两轮主 PatternMatcher；`patterns` 是第 0 轮的别名 |
+| 8 | `replace_random_passes` | `fallback_random=False` 时把随机操作换为 Inductor 可管理表示 |
+| 9 | `joint_custom_post_pass` | 内建 Joint 优化后的最后用户改写点 |
+| 收尾 | stable sort、lint、recompile | 仅在计数表明有 Pass 执行/变更时收尾 |
+
+源码定义中 `early_patterns`、`patterns` 和 `pass_patterns` 都在 `fx_passes/joint_graph.py`，不在 `pattern_matcher.py`。
 
 ---
 
@@ -94,12 +124,14 @@ config.joint_custom_post_pass  # 在其他 passes 之后执行
 
 **示例**：
 ```python
-def my_custom_pass(graph: torch.fx.GraphModule):
-    # 自定义图变换
-    for node in graph.graph.nodes:
-        if node.target == torch.ops.aten.exp:
+def my_custom_pass(graph: torch.fx.Graph) -> None:
+    # custom hook 接收 Graph，原地修改并返回 None。
+    for node in graph.nodes:
+        if node.target == torch.ops.aten.exp.default:
             # 替换为更快的近似实现
             pass
+
+    graph.lint()
 
 # 配置
 torch._inductor.config.joint_custom_pre_pass = my_custom_pass
@@ -489,6 +521,21 @@ Stage 6: 后处理
 
 ## 4. 自定义开发 Pass 指南
 
+### 4.0 关键 API 速查
+
+| API/对象 | 作用 | 适用位置 |
+|---|---|---|
+| `config.joint_custom_pre_pass` | 内建 noop/constant/pattern 前运行 | 先铺规范形态或观测输入 Joint 图 |
+| `config.joint_custom_post_pass` | 内建 Joint 规则后运行 | 依赖内建结果的最后切图前改写 |
+| `CustomGraphPass` | `Graph -> None` 加 `uuid()` | 需要正确编译缓存的第三方 pass |
+| `early_patterns` | 主 pattern 之前执行的 registry | 对顺序有硬依赖的 pattern |
+| `patterns` | `pass_patterns[0]` 的别名 | 常规第一轮 Joint pattern |
+| `pass_patterns[0:2]` | 固定基线的两轮主 matcher | 第二轮用于依赖第一轮结果的规则 |
+| `register_graph_pattern` | 命中后直接改 FX Graph | 替换结果仍是 ATen 图 |
+| `register_replacement` | trace search/replace 示例 | 纯函数式等价子图替换 |
+| `Match.replace_by_example` | 用示例函数 trace 并替换当前 match | handler 内生成等价子图 |
+| `stable_topological_sort`、`lint`、`recompile` | 变更后的收尾 | Joint 驱动按 count 条件执行 |
+
 ### 4.1 注册新 Pattern 的方法
 
 #### 方式一：Graph Pattern（推荐）
@@ -499,13 +546,13 @@ from torch._inductor.pattern_matcher import (
     CallFunction,
     KeywordArg,
     Match,
-    pass_patterns,
 )
+from torch._inductor.fx_passes.joint_graph import early_patterns, patterns, pass_patterns
 
 # 在 joint_graph.py 或新建文件
 @register_graph_pattern(
     CallFunction(
-        torch.ops.aten.your_target,
+        torch.ops.aten.your_target.default,
         KeywordArg("input"),
         KeywordArg("param"),
     ),
@@ -546,19 +593,24 @@ def optimize_pattern(match: Match, x, y):
 #### 方式三：Graph Pass（全图遍历）
 
 ```python
-def my_graph_pass(graph: torch.fx.GraphModule):
-    """遍历整个 graph 进行复杂变换"""
-    for node in graph.graph.nodes:
+import torch
+from torch._inductor import config
+
+def my_graph_pass(graph: torch.fx.Graph) -> None:
+    """Joint custom hook 接收 Graph，原地修改并返回 None。"""
+    for node in graph.nodes:
         if should_optimize(node):
             # 复杂的多节点变换
             pass
-    
-    graph.graph.lint()
-    graph.recompile()
+    graph.lint()
 
-# 注册到配置
-torch._inductor.config.joint_custom_post_pass = my_graph_pass
+# 注册到配置；也可传 list/tuple 依次执行多个 pass。
+with config.patch(joint_custom_post_pass=my_graph_pass):
+    compiled = torch.compile(model)
+    actual = compiled(*example_inputs)
 ```
+
+`joint_custom_pre_pass/post_pass` 的 callable 契约均为 `Callable[[torch.fx.Graph], None]`。若 Pass 影响编译结果，优先实现 `CustomGraphPass.uuid()` 参与缓存 key，而不是长期使用 lambda。
 
 ---
 
@@ -646,9 +698,7 @@ with torch.no_grad():
 ```python
 # 导出 graph 检查
 def debug_graph_pass(graph):
-    print(graph.graph)
-    # 或使用 graph.print_readable()
-    return graph
+    print(graph)
 
 torch._inductor.config.joint_custom_post_pass = debug_graph_pass
 ```
@@ -870,7 +920,7 @@ if node.meta["val"].shape[0] > 1000:
 # Graph 可视化
 def visualize_graph(graph, filename):
     with open(filename, 'w') as f:
-        f.write(str(graph.graph))
+        f.write(str(graph))
         
 # 比较优化前后
 torch._inductor.config.joint_custom_pre_pass = lambda g: visualize_graph(g, "before.py")
@@ -933,10 +983,13 @@ def optimize_pow2_mul(match: Match, x, y):
     node.replace_all_uses_with(result)
     match.erase_nodes()
 
-# 使用
-import torch._inductor.config
-torch._inductor.config.joint_custom_post_pass = lambda g: None  # 确保加载
+# 使用：本文件被 import 时，装饰器就会把 pattern 注册到 `patterns`。
+import my_custom_passes  # noqa: F401
+compiled = torch.compile(model)
 ```
+
+> [!deprecated]
+> 旧写法通过 `joint_custom_post_pass = lambda g: None` 声称“确保加载”是无效的：空 hook 不会 import 注册模块，也不会把 pattern 加入 `patterns`。必须显式 import 含装饰器的模块。
 
 ---
 
@@ -956,6 +1009,8 @@ Joint Graph Passes 是 PyTorch Inductor 优化的核心阶段，通过系统化�
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
+- [[fx_pass_optimization_methodology]] — 八阶段放置方法论
+- [[decomposition_passes_guide]] — Joint 图的算子集来源
 - [[pre_grad_passes_guide]]
 - [[post_grad_passes_guide]]
 - [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景（本文 §4.2 Joint Graph Passes）

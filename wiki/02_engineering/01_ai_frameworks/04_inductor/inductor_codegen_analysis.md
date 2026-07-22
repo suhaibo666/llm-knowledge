@@ -1,5 +1,11 @@
 # PyTorch Inductor Codegen 深度分析报告
 
+> **Updated**: 2026-07-22
+
+> **Source baseline**: PyTorch `9922478dffa`，入口复核为 `torch/_inductor/graph.py:2620-2637`、`torch/_inductor/scheduler.py:8479-8497,9470-9505`、`torch/_inductor/codegen/common.py:407-472`。
+>
+> 本页解释现有 Codegen 怎样工作；要开发新设备 scheduling/wrapper、查看关键接口与注册骨架，请直接阅读 [[codegen_extension_guide]]。
+
 ## 1. 概述：Codegen 在 Inductor 中的位置
 
 Inductor 的编译流水线大致为：
@@ -10,7 +16,7 @@ FX Graph → Lowering → IR (Scheduler Node) → Scheduling/Fusion → Codegen 
 
 **Codegen 是 Inductor 编译的最后一个环节**，位于 `torch/_inductor/codegen/` 目录下。它的职责是将经过 lowering、调度和融合优化后的中间表示（IR/Scheduler Nodes）**转化为实际可执行的代码**（Triton kernels、C++ kernels、以及调用这些 kernels 的 wrapper 代码）。
 
-入口函数在 `torch/_inductor/graph.py:2358`：
+入口函数在固定基线 `torch/_inductor/graph.py:2620`：
 
 ```python
 def codegen(self) -> tuple[ValueWithLineMap, ValueWithLineMap]:
@@ -21,6 +27,9 @@ def codegen(self) -> tuple[ValueWithLineMap, ValueWithLineMap]:
     result = self.wrapper_code.generate(self.is_inference)
     return result
 ```
+
+> [!important] 阶段边界
+> Scheduler 决定“哪些 IR 节点组成一个 kernel”，Codegen 决定“这个 kernel 与 host wrapper 写成什么代码”。仍需证明 ATen 数学等价的优化应前移到 Joint/Post-Grad；需要产 Inductor IR 的优化应放 Lowering。
 
 ---
 
@@ -237,6 +246,7 @@ Inductor 的 **codegen 是其编译流程的最终执行环节**，承担着将�
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
+- [[codegen_extension_guide]] — 新设备 scheduling/wrapper 的关键 API 与注册方法
 - [[PyTorch_Inductor_Technical_Analysis]]
 - [[scheduler_analysis]]
 - [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景（本文 §7 CodeGen 阶段）
