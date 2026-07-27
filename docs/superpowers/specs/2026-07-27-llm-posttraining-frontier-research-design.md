@@ -124,36 +124,36 @@
 
 ## 4. 交付物结构
 
-研究成果沉淀到现有 `llm-knowledge`，采用“总览 + 专题 + 学习路线”结构。
+研究成果沉淀到现有 `llm-knowledge`，采用“学习入口 + 总览 + 专题 + 综合对比”结构。
 
-### 4.1 总览与算法专题
+### 4.1 编号规范
 
-计划页面：
+- 研究阶段统一使用 `S00` 至 `S05`，编号表示产出顺序；
+- 学习文档统一使用 `D00` 至 `D11`，编号表示推荐阅读顺序；
+- 两位数字直接写入文件名，使文件系统排序与推荐阅读顺序一致；
+- 每篇页面标题以对应的 `Dxx` 开头，页面头部同时标注所属 `Sxx`；
+- 后续插入专题时优先增加子编号，例如文档 `D04.1` 使用文件名前缀 `04_1_`，避免破坏已有阅读顺序。
 
-- `wiki/01_theory/04_posttraining/posttraining_frontier_map_analysis.md`
-- `wiki/01_theory/04_posttraining/reasoning_rl_algorithm_evolution_analysis.md`
-- `wiki/01_theory/04_posttraining/agentic_rl_algorithm_analysis.md`
-- `wiki/01_theory/04_posttraining/on_policy_off_policy_staleness_analysis.md`
+### 4.2 推荐阅读顺序与文件名
 
-### 4.2 Infra 与框架专题
+| 文档 | 阶段 | 推荐标题 | 文件路径 | 前置文档 |
+|---|---|---|---|---|
+| D00 | S00/S05 | 后训练前沿源码学习路线 | `wiki/02_engineering/04_posttrain_frameworks/00_posttraining_source_reading_guide.md` | 无 |
+| D01 | S00 | 后训练前沿全景地图 | `wiki/01_theory/04_posttraining/01_posttraining_frontier_map_analysis.md` | D00 |
+| D02 | S01 | Reasoning RL 算法演进 | `wiki/01_theory/04_posttraining/02_reasoning_rl_algorithm_evolution_analysis.md` | D01 |
+| D03 | S01 | Agentic RL 算法与信用分配 | `wiki/01_theory/04_posttraining/03_agentic_rl_algorithm_analysis.md` | D02 |
+| D04 | S01 | On-policy、Off-policy 与 Staleness | `wiki/01_theory/04_posttraining/04_on_policy_off_policy_staleness_analysis.md` | D02、D03 |
+| D05 | S01 | 后训练 Infra 核心机制 | `wiki/02_engineering/04_posttrain_frameworks/05_posttraining_infra_mechanism_analysis.md` | D04 |
+| D06 | S02/S05 | 工业后训练框架对比 | `wiki/02_engineering/04_posttrain_frameworks/06_framework_comparison.md` | D05 |
+| D07 | S02 | verl 端到端训练迭代 | `wiki/02_engineering/04_posttrain_frameworks/verl/07_verl_end_to_end_iteration_analysis.md` | D06 |
+| D08 | S03 | slime 高性能与异步架构 | `wiki/02_engineering/04_posttrain_frameworks/slime/08_slime_architecture_analysis.md` | D07 |
+| D09 | S03 | AReaL Fully-async 与 Agentic 架构 | `wiki/02_engineering/04_posttrain_frameworks/areal/09_areal_async_architecture_analysis.md` | D08 |
+| D10 | S04 | ROLL Strategy 与昇腾适配 | `wiki/02_engineering/04_posttrain_frameworks/roll/10_roll_strategy_and_ascend_analysis.md` | D09 |
+| D11 | S04 | CUDA—昇腾后训练栈对比 | `wiki/02_engineering/04_posttrain_frameworks/11_cuda_ascend_posttraining_stack_comparison.md` | D10 |
 
-计划页面：
+### 4.3 阅读与维护规则
 
-- `wiki/02_engineering/04_posttrain_frameworks/posttraining_infra_mechanism_analysis.md`
-- `wiki/02_engineering/04_posttrain_frameworks/framework_comparison.md`
-- `wiki/02_engineering/04_posttrain_frameworks/verl/verl_end_to_end_iteration_analysis.md`
-- `wiki/02_engineering/04_posttrain_frameworks/slime/slime_architecture_analysis.md`
-- `wiki/02_engineering/04_posttrain_frameworks/areal/areal_async_architecture_analysis.md`
-- `wiki/02_engineering/04_posttrain_frameworks/roll/roll_strategy_and_ascend_analysis.md`
-- `wiki/02_engineering/04_posttrain_frameworks/cuda_ascend_posttraining_stack_comparison.md`
-
-### 4.3 学习路线
-
-计划页面：
-
-- `wiki/02_engineering/04_posttrain_frameworks/posttraining_source_reading_guide.md`
-
-学习路线不按固定天数切分，而按可验证能力分级：
+`D00` 是总入口，先给出完整阅读顺序和每一阶段的能力检查点，并在 `S05` 综合阶段更新为最终版。学习路线不按固定天数切分，而按可验证能力分级：
 
 1. 能解释核心数学对象；
 2. 能画出单次训练迭代；
@@ -162,7 +162,7 @@
 5. 能分析权重同步和资源布局；
 6. 能独立评估新框架与昇腾适配成本。
 
-所有新页面必须加入领域 `index.md`，建立双向 `[[wiki links]]`，并更新 `wiki/changelog.md`。
+每篇文档开头显示“上一页 / 下一页”，底部保留 `## Related Pages`。所有新页面必须加入领域 `index.md`，建立双向 `[[wiki links]]`，并更新 `wiki/changelog.md`。
 
 ## 5. 证据与版本标准
 
@@ -214,43 +214,49 @@
 
 ## 7. 分阶段研究顺序
 
-### 阶段 0：建立当前快照
+### S00：建立当前快照与学习入口
 
 - 盘点现有知识库并标记已覆盖、陈旧、矛盾和空白内容；
 - 核验 2026-07-27 时点的论文、框架和官方动态；
 - 固定四个框架及关键依赖的源码基线；
-- 形成前沿候选清单与证据清单。
+- 形成前沿候选清单与证据清单；
+- 创建 `D00` 学习入口和 `D01` 前沿全景地图。
 
-### 阶段 1：建立统一坐标系
+### S01：建立算法与 Infra 统一坐标系
 
 - 补齐必要基础；
 - 形成 Reasoning RL 与 Agentic RL 算法演进图；
 - 深挖 on-policy/off-policy、staleness、importance sampling 与 train-inference mismatch；
-- 输出前沿地图初版。
+- 建立同步、异步、rollout、reward 和权重同步的 Infra 坐标系；
+- 完成 `D02` 至 `D05`。
 
-### 阶段 2：贯通 verl
+### S02：建立框架坐标并贯通 verl
 
+- 创建 `D06` 框架对比的首版坐标矩阵；
 - 从真实配置和训练入口开始；
 - 完整追踪单次训练迭代；
 - 分析 worker/engine、DataProto、资源布局、rollout、reward、advantage、更新与权重同步；
-- 标注算法扩展点、性能瓶颈和昇腾相关路径。
+- 标注算法扩展点、性能瓶颈和昇腾相关路径；
+- 完成 `D07`，并用源码结论更新 `D06`。
 
-### 阶段 3：对照 slime 与 AReaL
+### S03：对照 slime 与 AReaL
 
 - slime 聚焦 Megatron + SGLang、高性能生成、训练推理解耦和异步路径；
 - AReaL 聚焦 fully-async、Agent runtime 服务化、policy lag 和 Agentic RL；
-- 使用同一交叉矩阵与 verl 对照，避免按各自 README 的宣传口径比较。
+- 使用同一交叉矩阵与 verl 对照，避免按各自 README 的宣传口径比较；
+- 完成 `D08` 和 `D09`，并用源码结论更新 `D06`。
 
-### 阶段 4：ROLL 与昇腾专题
+### S04：ROLL 与昇腾专题
 
 - ROLL 聚焦多后端 Strategy、资源映射和昇腾支持；
 - 建立 CUDA—昇腾组件矩阵；
 - 对比通信、推理、权重同步、算子和性能工具链差异；
-- 区分“框架已声明支持”与“源码和示例已闭环验证”。
+- 区分“框架已声明支持”与“源码和示例已闭环验证”；
+- 完成 `D10` 和 `D11`，并用适配证据更新 `D06`。
 
-### 阶段 5：综合与持续追踪
+### S05：综合、验收与持续追踪
 
-- 完成框架对比和学习路线；
+- 完成并复核 `D00` 学习路线、`D01` 前沿地图和 `D06` 框架对比；
 - 更新索引、交叉链接与 changelog；
 - 对超过 30 天未核验的快速演进页面标记 staleness；
 - 新论文或版本先进入雷达，满足证据标准后再进入主干专题。
