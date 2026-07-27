@@ -40,7 +40,17 @@ wiki/
 └── 03_posttraining/                   # 后训练纵向学习域 (算法 + Infra + 工业源码 + CUDA/Ascend)
     ├── index.md                       # 领域入口与 S00–S05 阶段
     ├── 00_posttraining_source_reading_guide.md
-    └── 01_posttraining_frontier_map_analysis.md
+    ├── 01_posttraining_frontier_map_analysis.md
+    ├── 02_reasoning_rl_algorithm_evolution_analysis.md
+    ├── 03_agentic_rl_algorithm_analysis.md
+    ├── 04_on_policy_off_policy_staleness_analysis.md
+    ├── 05_posttraining_infra_mechanism_analysis.md
+    ├── 06_framework_comparison.md
+    ├── 07_verl_end_to_end_iteration_analysis.md
+    ├── 08_slime_architecture_analysis.md
+    ├── 09_areal_async_architecture_analysis.md
+    ├── 10_roll_strategy_and_ascend_analysis.md
+    └── 11_cuda_ascend_posttraining_stack_comparison.md
 ```
 
 ---
@@ -87,7 +97,7 @@ wiki/
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| 后训练前沿学习域 | [[03_posttraining/index]] | 3 | S00 已建立 |
+| 后训练前沿学习域 | [[03_posttraining/index]] | 13 | S00–S05 已完成 |
 
 ---
 
@@ -118,7 +128,8 @@ wiki/
 | PPO/GRPO RL 训练 | [[RL_PPO_Loss_and_GRPO_Analysis]], [[RL_Training_Inference_Precision_Analysis]] |
 | RL 训练框架 (verl/HybridFlow) | [[verl/index]], [[verl_architecture_overview_analysis]], [[verl_ray_trainer_analysis]], [[verl_rl_algorithms_analysis]] |
 | Coding RL「脏活」系列 | [[reward_hacking_defense_analysis]], [[rl_sandbox_design_analysis]], [[rl_infra_efficiency_analysis]] |
-| LLM 后训练前沿学习路线 | [[03_posttraining/index]], [[00_posttraining_source_reading_guide]], [[01_posttraining_frontier_map_analysis]] |
+| LLM 后训练前沿 D00–D05 | [[03_posttraining/index]], [[03_posttraining/00_posttraining_source_reading_guide]], [[03_posttraining/01_posttraining_frontier_map_analysis]], [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis]], [[03_posttraining/03_agentic_rl_algorithm_analysis]], [[03_posttraining/04_on_policy_off_policy_staleness_analysis]], [[03_posttraining/05_posttraining_infra_mechanism_analysis]] |
+| LLM 后训练前沿 D06–D11 | [[03_posttraining/06_framework_comparison]], [[03_posttraining/07_verl_end_to_end_iteration_analysis]], [[03_posttraining/08_slime_architecture_analysis]], [[03_posttraining/09_areal_async_architecture_analysis]], [[03_posttraining/10_roll_strategy_and_ascend_analysis]], [[03_posttraining/11_cuda_ascend_posttraining_stack_comparison]] |
 | 万卡训练确定性与可靠性 | [[07_training_reliability/index]], [[determinism_and_numerical_reliability_analysis]], [[fault_tolerance_and_recovery_analysis]], [[training_dynamics_stability_analysis]] |
 
 ### 按原始来源

@@ -4,6 +4,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-27：完成 LLM 后训练 D02–D11 算法、Infra、框架源码与 CUDA–Ascend 深挖
+
+**Type**: Deep Dive + Source Audit（在统一 `wiki/03_posttraining/` 中完成 S01–S05，固定论文版本和四框架 commit，贯通算法统计语义、在线数据、系统与硬件。）
+
+- **算法与数据语义**：新增 D02–D04，比较 GRPO、DAPO、Dr. GRPO、GSPO、SAO，定义 Agentic trajectory/reward/credit schema，并严格拆分 system async、policy lag、off-policy 与 training–inference mismatch。
+- **Infra 与主框架**：新增 D05–D07，以 control/data/weight 三平面建立工业机制模型；完成四框架矩阵，并从 verl `main_ppo.py` 追踪 `RayPPOTrainer.fit`、`DataProto`、advantage、actor update 与 rollout weight refresh。
+- **三个源码对照**：新增 D08–D10，固定 slime `aaf5c20`、AReaL `b23fa6c`、ROLL `370cb24`；澄清 TransferQueue 不属于 slime core，分别追踪 slime async producer、AReaL freshness/weight services、ROLL Strategy/device mapping/NPU platform。
+- **CUDA–Ascend**：新增 D11，按 device、collective、train/rollout、weight sync、kernel、dynamic shape、profiling 和版本矩阵建立 M1–M4 迁移验收；纳入 2026-07-27 的 vLLM-Ascend、SGLang NPU、MindSpeed 与 HCCL 公开进展。
+- **证据与导航**：新增 `docs/research/2026-07-27-posttraining-source-ledger.md`；D00、D01、领域索引和全局索引更新为 D00–D11 顺序入口；旧 GRPO/DAPO/GSPO/verl/infra/sandbox 页面增加统一领域回链。
+
+---
+
 ## 2026-07-27：建立 LLM 后训练统一纵向学习域与 S00 前沿快照
 
 **Type**: Research Baseline + Learning Route（将 Reasoning RL、Agentic/Coding RL、Infra、工业框架源码与 CUDA/Ascend 映射纳入同一研究闭环。）

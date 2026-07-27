@@ -286,6 +286,9 @@ Trajectory C:              [Init][==Exec=][======Eval======]
 
 ## Related Pages
 
+- [[03_posttraining/05_posttraining_infra_mechanism_analysis]] — control/data/weight 三平面与工业正确性不变量
+- [[03_posttraining/04_on_policy_off_policy_staleness_analysis]] — async、staleness、off-policy 与 TIM 的严格区分
+- [[03_posttraining/index]] — D00–D11 后训练统一学习域
 - [[reward_hacking_defense_analysis]] — 同系列，environment 多样性是 hack 防御 Layer 1
 - [[rl_sandbox_design_analysis]] — 同系列，disaggregated 架构的物理基础
 - [[grpo_analysis]] — GRPO 算法基础，off-policy 友好
