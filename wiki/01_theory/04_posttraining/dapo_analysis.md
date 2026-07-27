@@ -176,9 +176,12 @@ In RLHF, KL penalty keeps the policy close to the SFT model. But for long-CoT re
 
 DAPO is the **first fully open-source** large-scale RL system for LLM reasoning that matches/exceeds DeepSeek-R1 results. All code, data, and training details are released, enabling reproducibility and further research.
 
+> **2026-07-27 更新说明**：上面的 AIME 数字属于论文完整 recipe 与固定模型/采样条件，不应外推为单一组件收益。DAPO 与 Dr. GRPO、GSPO、SAO 的统计单位和系统约束对照见 [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|D02]]；dynamic sampling 的 buffer/backpressure 见 [[03_posttraining/05_posttraining_infra_mechanism_analysis|D05]]。
+
 ## Related Pages
 
 - [[grpo_analysis]] — GRPO algorithm that DAPO improves upon
 - [[ppo_analysis]] — PPO foundation
 - [[deepseek_r1_analysis]] — DeepSeek-R1 comparison
+- [[03_posttraining/index]] — D00–D11 后训练统一学习域
 - [[01_theory/index]]

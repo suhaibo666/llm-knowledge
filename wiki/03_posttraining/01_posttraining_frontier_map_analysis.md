@@ -5,7 +5,7 @@
 > **快照日期**：2026-07-27
 > **研究主线**：Reasoning RL + Agentic/Coding RL
 > **工程视角**：NVIDIA/CUDA 为上游基线，Ascend/NPU 作为映射与差距分析对象
-> **阅读导航**：[上一篇：D00 学习路线](00_posttraining_source_reading_guide.md) · [下一篇：D02 Reasoning RL 算法演进（计划于 S01 完成）](02_reasoning_rl_algorithm_evolution_analysis.md)
+> **阅读导航**：[[03_posttraining/00_posttraining_source_reading_guide|上一篇 D00]] · [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|下一篇 D02]]
 
 ---
 
@@ -28,7 +28,7 @@ flowchart LR
     C --> U["Policy Update"]
     U --> S["权重同步、转换与 Reshard"]
     S --> R
-    R -. "版本与数值一致性" .-> U
+    R -.->|版本与数值一致性| U
 ```
 
 **核心判断**：Reasoning RL 和 Agentic RL 的算法设计，正在被在线数据系统的约束重新塑形；与此同时，系统设计也不能只追求吞吐，而必须显式维护 freshness、correctness 和可诊断性。
@@ -83,7 +83,7 @@ LLM 生成动作天然以 token 展开，但 reasoning 和 agent task 的成败�
 - [AsyncFlow（arXiv:2507.01663v1）](https://arxiv.org/abs/2507.01663v1)通过 producer–consumer 流水与 staleness threshold 组织异步执行；
 - [RollPacker（arXiv:2509.21009v1）](https://arxiv.org/abs/2509.21009v1)则保留同步 policy freshness，用 tail batching、弹性 rollout 和资源调度消除同步系统中的长尾 bubble。
 
-因此 D04 不会只比较“同步/异步”两个标签，而会沿四个维度分析：
+因此 D04 已沿四个维度分析，而不是只比较“同步/异步”两个标签：
 
 1. 样本生成时的 policy version；
 2. update 时可接受的最大 lag；
@@ -94,7 +94,7 @@ LLM 生成动作天然以 token 展开，但 reasoning 和 agent task 的成败�
 
 RL 系统通常使用不同栈承担训练和推理：例如 Megatron/FSDP 训练，vLLM/SGLang rollout。即便权重同步正确，两边仍可能因为 kernel、精度、并行切分、采样实现或 batch-dependent numerics 得到不同的 token probability。
 
-[Diagnosing Training–Inference Mismatch（arXiv:2605.14220v1）](https://arxiv.org/abs/2605.14220v1)在受控设置中把 TIM 单独隔离出来，说明很小的数值差异也可能成为训练稳定性的独立变量。[verl S00 baseline README](https://github.com/verl-project/verl/blob/983cb0f24443f87b3d161fad318445130a620b07/README.md)还公开了面向 zero-mismatch rollout 的 `vexact` 路线，但其适用范围与实现边界仍需在 D07 中从源码验证。
+[Diagnosing Training–Inference Mismatch（arXiv:2605.14220v1）](https://arxiv.org/abs/2605.14220v1)在受控设置中把 TIM 单独隔离出来，说明很小的数值差异也可能成为训练稳定性的独立变量。[verl S00 baseline README](https://github.com/verl-project/verl/blob/983cb0f24443f87b3d161fad318445130a620b07/README.md)还公开了面向 zero-mismatch rollout 的 `vexact` 路线；D04 已解释它与 ratio 语义的关系，D07 则把稳定主路径与 experimental 边界落实到固定 commit 的源码。
 
 这使“正确性”成为 infra 的一等指标：
 
@@ -113,7 +113,7 @@ Reasoning RL 常可把一次 response 视作主要优化单位；Agentic/Coding 
 - trajectory 长度和完成时间呈现更强长尾；
 - credit assignment 不能默认等同于“整条 response 一个标量”。
 
-因此 Agentic RL 不是给 GRPO 外面套一个 agent loop。D03 将把环境协议、trajectory schema、reward/verifier、credit assignment 和异步调度作为同一个机制研究。
+因此 Agentic RL 不是给 GRPO 外面套一个 agent loop。D03 已把环境协议、trajectory schema、reward/verifier、credit assignment 和异步调度作为同一个机制研究。
 
 ---
 
@@ -124,11 +124,11 @@ Reasoning RL 常可把一次 response 视作主要优化单位；Agentic/Coding 
 | 框架 | S00 固定 commit | 在研究中的角色 | 当前官方定位所显示的重点 | 深挖前必须保留的疑问 |
 |---|---|---|---|---|
 | verl | [`983cb0f`](https://github.com/verl-project/verl/commit/983cb0f24443f87b3d161fad318445130a620b07) | 主基线 | 通用 RL 训练生态；训练与 rollout 后端组合较广；fully async、one-step off-policy 等仍有 experimental 路径 | experimental 与稳定主路径的边界；权重同步/reshard 的真实调用链；vexact 的覆盖范围 |
-| slime | [`aaf5c20`](https://github.com/THUDM/slime/commit/aaf5c2092b01219fa0d5c2d323741d409086ca32) | 性能与前沿对照 | Megatron + SGLang；data buffer；TransferQueue；可配置 staleness；强调训练、生成和数据面的解耦 | 官方性能结论需在固定配置下复核；DCS/TransferQueue 的一致性与故障语义；哪些能力在核心仓库、哪些来自扩展 |
+| slime | [`aaf5c20`](https://github.com/THUDM/slime/commit/aaf5c2092b01219fa0d5c2d323741d409086ca32) | 性能与前沿对照 | Megatron + SGLang；`DataSource`/buffer；NCCL、tensor、disk、delta 多种权重传输；可选 warm async producer | 官方性能结论需在固定配置下复核；producer queue 的版本准入和故障语义；核心仓库能力与 Relax 等生态组件的边界 |
 | AReaL | [`b23fa6c`](https://github.com/areal-project/AReaL/commit/b23fa6cf9c8edfebcf055079ab78913128bc4579) | Fully async 与 Agentic 对照 | AReaL 2.0 将 training、inference、agent、weight update 服务化；Hermes 在线 RL loop；含 SWE/Agentic 路径 | 论文版本与 2.0 源码代际如何对应；staleness 控制实际落在哪些组件；Ascend 分支与主线差异 |
 | ROLL | [`370cb24`](https://github.com/alibaba/ROLL/commit/370cb24c1036ea9145365478fcc40612b2186fc8) | 多后端、异构与 Ascend 专项 | 多 role 的 Ray 架构；Strategy 抽象；Megatron/FSDP2；vLLM/SGLang；AutoDeviceMapping；提供 Ascend 使用路径 | 普通 RLVR 与 Agentic RL 的 async 状态并不相同；Strategy 抽象是否真正屏蔽后端差异；NPU 功能/性能缺口 |
 
-框架定位的项目方说明固定在同一 commit 的 README：[verl](https://github.com/verl-project/verl/blob/983cb0f24443f87b3d161fad318445130a620b07/README.md)、[slime](https://github.com/THUDM/slime/blob/aaf5c2092b01219fa0d5c2d323741d409086ca32/README.md)、[AReaL](https://github.com/areal-project/AReaL/blob/b23fa6cf9c8edfebcf055079ab78913128bc4579/README.md)、[ROLL](https://github.com/alibaba/ROLL/blob/370cb24c1036ea9145365478fcc40612b2186fc8/README.md)。这些链接证明的是项目在该版本公开声明的定位；D07–D10 仍需以可达源码、示例和测试复核。
+框架定位的项目方说明固定在同一 commit 的 README：[verl](https://github.com/verl-project/verl/blob/983cb0f24443f87b3d161fad318445130a620b07/README.md)、[slime](https://github.com/THUDM/slime/blob/aaf5c2092b01219fa0d5c2d323741d409086ca32/README.md)、[AReaL](https://github.com/areal-project/AReaL/blob/b23fa6cf9c8edfebcf055079ab78913128bc4579/README.md)、[ROLL](https://github.com/alibaba/ROLL/blob/370cb24c1036ea9145365478fcc40612b2186fc8/README.md)。这些链接只证明项目在该版本公开声明的定位；D07–D10 已进一步用可达源码、示例和测试边界复核。
 
 ### 3.1 为什么不把四个框架排成一个总榜
 
@@ -139,7 +139,7 @@ Reasoning RL 常可把一次 response 视作主要优化单位；Agentic/Coding 
 - AReaL 更适合研究**fully async、online agent loop 与服务化边界**；
 - ROLL 更适合研究**Strategy 抽象、多后端、异构资源和 Ascend 落地**。
 
-直接比较“谁最快”会混淆模型、集群、训练算法、rollout 长度、环境、后端版本和 freshness 约束。D06 的比较单位将是**能力与机制**，性能数字只在配置可比、来源可追踪时使用。
+直接比较“谁最快”会混淆模型、集群、训练算法、rollout 长度、环境、后端版本和 freshness 约束。D06 的比较单位是**能力与机制**，性能数字只在配置可比、来源可追踪时使用。
 
 ### 3.2 源码活跃不等于本地资料仍然有效
 
@@ -151,7 +151,7 @@ Reasoning RL 常可把一次 response 视作主要优化单位；Agentic/Coding 
 - fully async、one-step off-policy、VLA、vexact 等新路径；
 - fault tolerance 与 metrics。
 
-本地 ROLL checkout 同样早于 S00 baseline，不能用“本地没看到”推断当前官方仓库不支持某项能力。
+本研究已把四个框架都固定到 S00 commit；后续升级时仍不能用旧 checkout 中“没看到”推断当前官方仓库不支持某项能力。
 
 ---
 
@@ -163,12 +163,14 @@ Reasoning RL 常可把一次 response 视作主要优化单位；Agentic/Coding 
 |---|---|---|---|---|
 | 纯 RL 激发 reasoning | [DeepSeek-R1，arXiv:2501.12948v2](https://arxiv.org/abs/2501.12948v2) | 展示无需先依赖大规模 SFT 也能通过 RL 激发可观察的 reasoning 行为 | 需要规模化、可验证的 reasoning rollout 与稳定训练闭环 | D02 |
 | 工程化 GRPO 改造 | [DAPO，arXiv:2503.14476v2](https://arxiv.org/abs/2503.14476v2) | decoupled clipping、动态采样等组合改造 | rollout filtering、batch 动态性和 loss 逻辑紧密耦合 | D02、D07 |
+| 无偏 group-relative reducer | [Dr. GRPO，arXiv:2503.20783v2](https://arxiv.org/abs/2503.20783v2) | 去除长度与组内标准差带来的偏置源 | reducer、mask、归一化分母必须成为可审计配置 | D02 |
 | Sequence-level policy optimization | [GSPO，arXiv:2507.18071v2](https://arxiv.org/abs/2507.18071v2) | sequence-level ratio 与 clipping | trainer 的统计、聚合与有效样本单位改变 | D02、D04 |
 | Fully asynchronous RL | [AReaL，arXiv:2505.24298v5](https://arxiv.org/abs/2505.24298v5) | policy lag 成为显式控制和优化变量 | 数据版本、staleness、weight update 服务成为核心组件 | D04、D09 |
 | Streamed / producer–consumer RL | [StreamRL](https://arxiv.org/abs/2504.15930v1)、[AsyncFlow](https://arxiv.org/abs/2507.01663v1) | generation、storage、training 形成流式流水 | backpressure、buffer、传输、故障恢复影响算法数据分布 | D04、D05 |
 | Freshness-preserving synchronous optimization | [RollPacker，arXiv:2509.21009v1](https://arxiv.org/abs/2509.21009v1) | 在不主动放宽 policy freshness 的前提下消除 rollout 长尾 | tail batching、弹性资源与 streaming training 成为替代路径 | D04、D05 |
+| Agent trajectory credit | [RAGEN，arXiv:2504.20073v2](https://arxiv.org/abs/2504.20073v2)、[Agent Lightning，arXiv:2508.03680v1](https://arxiv.org/abs/2508.03680v1) | 从最终任务回报扩展到状态、转移和多轮 credit | 环境事件、reward provenance 与可重放 trajectory 进入训练 schema | D03、D05 |
 | Single-rollout Agentic RL | [SAO，arXiv:2607.07508v1](https://arxiv.org/abs/2607.07508v1) | 让优化单位适应异步返回的单条 trajectory | 降低 group barrier，但需重新审视估计方差、clip 与 credit | D03、D04 |
-| Train–inference consistency | [Diagnosing TIM，arXiv:2605.14220v1](https://arxiv.org/abs/2605.14220v1) | 把 rollout/training 数值差异视为独立因果变量 | kernel、precision、log-prob 与验证机制进入 RL 正确性边界 | D04、D05、D07 |
+| Train–inference consistency | [Diagnosing TIM，arXiv:2605.14220v1](https://arxiv.org/abs/2605.14220v1)、[Beyond Precision，arXiv:2602.01826v1](https://arxiv.org/abs/2602.01826v1)、[MIPI/MIPU，arXiv:2606.29526v1](https://arxiv.org/abs/2606.29526v1) | 从隔离数值差异扩展到动态检测、监控和校正 | kernel、precision、log-prob、policy version 与 ratio telemetry 进入 RL 正确性边界 | D04、D05、D07 |
 
 ### 4.1 暂不做出的三个结论
 
@@ -190,7 +192,7 @@ Reasoning RL 常可把一次 response 视作主要优化单位；Agentic/Coding 
 | 数据面 | prompt/trajectory/log-prob/reward/advantage 的产生、传输、缓存和消费 | schema；queue/buffer；版本字段；序列化；批构造；丢弃规则 |
 | 权重面 | trainer 权重导出、格式转换、通信、加载、reshard 与版本发布 | 参数遍历；collective；layout 转换；版本提交点；加载完成信号；一致性校验 |
 
-只看架构图会遗漏最容易出错的边界：例如“权重同步完成”究竟表示字节传完、所有 rank 加载完成，还是新 rollout 已经只使用新版本。D05 会为每个框架绘制消息顺序和所有权边界。
+只看架构图会遗漏最容易出错的边界：例如“权重同步完成”究竟表示字节传完、所有 rank 加载完成，还是新 rollout 已经只使用新版本。D05 已用消息顺序和所有权边界定义这类提交语义。
 
 ### 5.2 Placement 与 parallelism 是两套问题
 
@@ -216,43 +218,43 @@ Reasoning RL 常可把一次 response 视作主要优化单位；Agentic/Coding 
 | Kernel 与推理后端 | CUDA kernel、FlashAttention、vLLM/SGLang | torch_npu/CANN、推理引擎与算子覆盖；数值语义差异 |
 | 运维与诊断 | profiler、metrics、故障恢复、镜像版本 | 工具链成熟度、错误可观测性、版本耦合和恢复路径 |
 
-D10 先研究 ROLL 的 Strategy/AutoDeviceMapping 与 Ascend 路径，D11 再做跨框架的 CUDA–Ascend 差距矩阵。
+阅读时先用 D10 理解 ROLL 的 Strategy/AutoDeviceMapping 与 Ascend 路径，再用 D11 查看跨框架的 CUDA–Ascend 差距矩阵。
 
 ---
 
 ## 6. 既有知识的复用与重新验证
 
-旧资料不会被丢弃，但也不会无条件当作当前事实。S00 采用以下迁移规则：
+旧资料不会被丢弃，但也不会无条件当作当前事实。本研究采用以下迁移规则：
 
 | 既有页面 | 可直接复用 | 必须重新验证 |
 |---|---|---|
-| [GRPO 原理与实现](../01_theory/04_posttraining/grpo_analysis.md) | 公式背景、group-relative advantage 的基本解释 | 与最新论文版本、具体框架 loss 实现和 on-policy 假设的对应 |
-| [DAPO 深度解析](../01_theory/04_posttraining/dapo_analysis.md) | DAPO 组件的概念拆解 | 论文 v2、verl 当前实现入口、动态采样对数据面的影响 |
-| [GSPO 深度解析](../01_theory/04_posttraining/gspo_analysis.md) | sequence-level objective 的背景 | 论文 v2、框架实际支持状态、与异步样本的组合语义 |
-| [RL Infra 效率分析](../02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis.md) | 训练/rollout bubble、资源利用率的分析框架 | 性能数字、当前项目能力、同步与异步的边界 |
-| [RL Sandbox 设计](../02_engineering/04_posttrain_frameworks/rl_sandbox_design_analysis.md) | sandbox、verifier、agent environment 的问题清单 | 安全边界、生产实现、最新 coding-agent runtime |
-| [verl 系列分析](../02_engineering/04_posttrain_frameworks/verl/index.md) | HybridFlow/role 视角和历史调用链 | 从旧 baseline `8a694930` 迁移到 `983cb0f` 后的所有源码 locator |
+| [[01_theory/04_posttraining/grpo_analysis|GRPO 原理与实现]] | 公式背景、group-relative advantage 的基本解释 | 与最新论文版本、具体框架 loss 实现和 on-policy 假设的对应 |
+| [[01_theory/04_posttraining/dapo_analysis|DAPO 深度解析]] | DAPO 组件的概念拆解 | 论文 v2、verl 当前实现入口、动态采样对数据面的影响 |
+| [[01_theory/04_posttraining/gspo_analysis|GSPO 深度解析]] | sequence-level objective 的背景 | 论文 v2、框架实际支持状态、与异步样本的组合语义 |
+| [[02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis|RL Infra 效率分析]] | 训练/rollout bubble、资源利用率的分析框架 | 性能数字、当前项目能力、同步与异步的边界 |
+| [[02_engineering/04_posttrain_frameworks/rl_sandbox_design_analysis|RL Sandbox 设计]] | sandbox、verifier、agent environment 的问题清单 | 安全边界、生产实现、最新 coding-agent runtime |
+| [[02_engineering/04_posttrain_frameworks/verl/index|verl 系列分析]] | HybridFlow/role 视角和历史调用链 | 从旧 baseline `8a694930` 迁移到 `983cb0f` 后的所有源码 locator |
 
 迁移后的深挖页面统一放在 `wiki/03_posttraining/`，原页面作为历史背景和专题材料保留。这样既避免重复抄写，也不再让“算法”和“工程”分居两个目录。
 
 ---
 
-## 7. 后续深挖队列
+## 7. 已完成的深挖顺序
 
 | 顺序 | 编号与文档 | 阶段 | 必须回答的核心问题 | 当前状态 |
 |---:|---|---|---|---|
-| 1 | D00 [后训练源码阅读指南与学习路线](00_posttraining_source_reading_guide.md) | S00 | 应按什么先修关系阅读，怎样从论文定位到源码和运行证据 | 已建立初版 |
-| 2 | D01 本文 | S00 | 前沿问题怎样由算法、数据、系统和硬件共同定义 | 已建立地图 |
-| 3 | D02 [Reasoning RL 算法演进](02_reasoning_rl_algorithm_evolution_analysis.md) | S01 | GRPO、DAPO、GSPO 及后续方法究竟改变了什么估计量与约束 | 计划 |
-| 4 | D03 [Agentic RL 算法与环境](03_agentic_rl_algorithm_analysis.md) | S01 | 多轮 trajectory、工具调用和 coding task 怎样改变 reward 与 credit | 计划 |
-| 5 | D04 [On-policy、Off-policy 与 Staleness](04_on_policy_off_policy_staleness_analysis.md) | S01 | policy lag 如何测量、校正和限制；TIM 如何影响 ratio | 计划 |
-| 6 | D05 [后训练 Infra 核心机制](05_posttraining_infra_mechanism_analysis.md) | S01 | control/data/weight 三平面的所有权、并发和故障语义是什么 | 计划 |
-| 7 | D06 [四框架机制对比](06_framework_comparison.md) | S02 | 在统一术语和约束下，各框架的真实能力边界是什么 | 计划 |
-| 8 | D07 [verl 单次迭代端到端源码](07_verl_end_to_end_iteration_analysis.md) | S02 | 一批数据怎样穿过 rollout、reward、advantage、update 和 weight sync | 计划 |
-| 9 | D08 [slime 架构与高性能路径](08_slime_architecture_analysis.md) | S03 | TransferQueue、buffer、Megatron/SGLang 与 staleness 怎样协同 | 计划 |
-| 10 | D09 [AReaL Fully Async 架构](09_areal_async_architecture_analysis.md) | S03 | 微服务、Hermes、staleness control 与 agent trajectory 怎样闭环 | 计划 |
-| 11 | D10 [ROLL Strategy、异构与 Ascend](10_roll_strategy_and_ascend_analysis.md) | S04 | Strategy 抽象、AutoDeviceMapping 和 Ascend 路径的真实边界 | 计划 |
-| 12 | D11 [CUDA–Ascend 后训练栈对照](11_cuda_ascend_posttraining_stack_comparison.md) | S04 | 算子、通信、推理、并行、诊断和性能差距分别在哪里 | 计划 |
+| 1 | D00 [[03_posttraining/00_posttraining_source_reading_guide|后训练源码阅读指南与学习路线]] | S00/S05 | 应按什么先修关系阅读，怎样从论文定位到源码和运行证据 | 已完成 |
+| 2 | D01 本文 | S00 | 前沿问题怎样由算法、数据、系统和硬件共同定义 | 已完成 |
+| 3 | D02 [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|Reasoning RL 算法演进]] | S01 | GRPO、DAPO、GSPO 及后续方法究竟改变了什么估计量与约束 | 已完成 |
+| 4 | D03 [[03_posttraining/03_agentic_rl_algorithm_analysis|Agentic RL 算法与环境]] | S01 | 多轮 trajectory、工具调用和 coding task 怎样改变 reward 与 credit | 已完成 |
+| 5 | D04 [[03_posttraining/04_on_policy_off_policy_staleness_analysis|On-policy、Off-policy 与 Staleness]] | S01 | policy lag 如何测量、校正和限制；TIM 如何影响 ratio | 已完成 |
+| 6 | D05 [[03_posttraining/05_posttraining_infra_mechanism_analysis|后训练 Infra 核心机制]] | S01 | control/data/weight 三平面的所有权、并发和故障语义是什么 | 已完成 |
+| 7 | D06 [[03_posttraining/06_framework_comparison|四框架机制对比]] | S02/S05 | 在统一术语和约束下，各框架的真实能力边界是什么 | 已完成 |
+| 8 | D07 [[03_posttraining/07_verl_end_to_end_iteration_analysis|verl 单次迭代端到端源码]] | S02 | 一批数据怎样穿过 rollout、reward、advantage、update 和 weight sync | 已完成 |
+| 9 | D08 [[03_posttraining/08_slime_architecture_analysis|slime 架构与高性能路径]] | S03 | DataSource、buffer、Megatron/SGLang 与 async producer 怎样协同 | 已完成 |
+| 10 | D09 [[03_posttraining/09_areal_async_architecture_analysis|AReaL Fully Async 架构]] | S03 | 微服务、Hermes、staleness control 与 agent trajectory 怎样闭环 | 已完成 |
+| 11 | D10 [[03_posttraining/10_roll_strategy_and_ascend_analysis|ROLL Strategy、异构与 Ascend]] | S04 | Strategy 抽象、AutoDeviceMapping 和 Ascend 路径的真实边界 | 已完成 |
+| 12 | D11 [[03_posttraining/11_cuda_ascend_posttraining_stack_comparison|CUDA–Ascend 后训练栈对照]] | S04 | 算子、通信、推理、并行、诊断和性能差距分别在哪里 | 已完成 |
 
 ---
 
@@ -264,7 +266,7 @@ D10 先研究 ROLL 的 Strategy/AutoDeviceMapping 与 Ascend 路径，D11 再做
 2. **项目方声明**：README、发布说明或官方博客中的能力/性能描述；明确标注为官方声明，不自动视为独立复现。
 3. **综合判断**：基于多个事实做出的架构推断或选型建议；说明推理链和适用前提。
 
-本页中的框架能力描述主要来自各项目官方仓库在固定 baseline 附近的公开说明；论文方向来自所列 arXiv 固定版本。它们只代表 **2026-07-27 快照**。D07–D10 进入源码后，将把框架级描述下钻为：
+本页中的框架能力描述主要来自各项目官方仓库在固定 baseline 附近的公开说明；论文方向来自所列 arXiv 固定版本。它们只代表 **2026-07-27 快照**。D07–D10 已把框架级描述下钻为：
 
 ```text
 入口命令
@@ -291,8 +293,8 @@ D10 先研究 ROLL 的 Strategy/AutoDeviceMapping 与 Ascend 路径，D11 再做
 
 ## Related Pages
 
-- [D00 后训练源码阅读指南与学习路线](00_posttraining_source_reading_guide.md)
-- [后训练旧目录索引](../01_theory/04_posttraining/index.md)
-- [verl 既有分析索引](../02_engineering/04_posttrain_frameworks/verl/index.md)
-- [RL Infra 效率分析](../02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis.md)
-- [RL Sandbox 设计](../02_engineering/04_posttrain_frameworks/rl_sandbox_design_analysis.md)
+- [[03_posttraining/00_posttraining_source_reading_guide|D00 后训练源码阅读指南与学习路线]]
+- [[01_theory/04_posttraining/index|后训练旧目录索引]]
+- [[02_engineering/04_posttrain_frameworks/verl/index|verl 既有分析索引]]
+- [[02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis|RL Infra 效率分析]]
+- [[02_engineering/04_posttrain_frameworks/rl_sandbox_design_analysis|RL Sandbox 设计]]

@@ -1,10 +1,10 @@
 # D00 LLM 后训练前沿源码学习路线
 
-> **阶段**：S00 建立初版，S05 综合验收时更新终版
+> **阶段**：S00–S05 已完成，本文为综合验收版
 > **文档编号**：D00
 > **快照日期**：2026-07-27
 > **适用目标**：理解 Reasoning RL、Agentic/Coding RL 的前沿机制，并具备阅读、修改和评估工业级后训练框架的能力
-> **阅读导航**：[上一篇：后训练纵向学习域首页](index.md) · [下一篇：D01 后训练前沿全景地图](01_posttraining_frontier_map_analysis.md)
+> **阅读导航**：[[03_posttraining/index|上一篇：后训练纵向学习域首页]] · [[03_posttraining/01_posttraining_frontier_map_analysis|下一篇：D01 后训练前沿全景地图]]
 
 ---
 
@@ -38,18 +38,18 @@ flowchart LR
 
 | 顺序 | 文档 | 阶段 | 学习问题 | 前置知识 | 读完后应能完成的任务 | 状态 |
 |---:|---|---|---|---|---|---|
-| 1 | D00 本文 | S00/S05 | 整个研究域怎样组织，什么算真正掌握 | PyTorch 基础；LLM 训练/推理常识 | 根据自己的薄弱点标出阅读路径和验收物 | 已建立初版 |
-| 2 | D01 [后训练前沿全景地图](01_posttraining_frontier_map_analysis.md) | S00 | 当前前沿为什么同时是算法、在线数据和系统问题 | D00 | 画出五层闭环，并把一个新工作定位到算法/数据/系统/硬件层 | 已完成 |
-| 3 | D02 [Reasoning RL 算法演进](02_reasoning_rl_algorithm_evolution_analysis.md) | S01 | GRPO、DAPO、GSPO 等方法改变了哪个估计量、clip 或采样假设 | policy gradient、KL、importance sampling | 从公式推导 loss 所需字段，并指出它对 rollout batch 的要求 | 计划 |
-| 4 | D03 [Agentic RL 算法与环境](03_agentic_rl_algorithm_analysis.md) | S01 | 多轮工具调用和 coding task 怎样改变 trajectory、reward 与 credit | D02；MDP/trajectory 基础 | 为一个 coding agent 定义 trajectory schema、reward 时点和失败处理 | 计划 |
-| 5 | D04 [On-policy、Off-policy 与 Staleness](04_on_policy_off_policy_staleness_analysis.md) | S01 | policy lag、importance ratio 与 train–inference mismatch 怎样相互作用 | D02、D03；概率比 | 给出样本版本规则，判断一个异步方案在什么意义下偏离 on-policy | 计划 |
-| 6 | D05 [后训练 Infra 核心机制](05_posttraining_infra_mechanism_analysis.md) | S01 | control/data/weight 三平面怎样协同，bubble、backpressure 和故障怎样产生 | D04；分布式通信基础 | 画出一次迭代的消息时序并标明数据、权重和状态的 owner | 计划 |
-| 7 | D06 [工业后训练框架对比](06_framework_comparison.md) | S02/S05 | 怎样用统一术语比较 verl、slime、AReaL、ROLL | D05 | 不依赖 README 口径，完成一张机制与证据等级对比表 | 计划 |
-| 8 | D07 [verl 端到端训练迭代](07_verl_end_to_end_iteration_analysis.md) | S02 | 一批 prompt 怎样穿过 rollout、reward、advantage、update 与权重刷新 | D06；Ray；FSDP/Megatron 基础 | 从配置/入口追到关键类与函数，并指出扩展 loss 或 rollout 的位置 | 计划 |
-| 9 | D08 [slime 高性能与异步架构](08_slime_architecture_analysis.md) | S03 | Megatron、SGLang、TransferQueue、buffer 和 staleness 怎样组合 | D07 | 对照 verl 解释 slime 的吞吐来源及其 freshness/correctness 代价 | 计划 |
-| 10 | D09 [AReaL Fully Async 与 Agentic 架构](09_areal_async_architecture_analysis.md) | S03 | 服务化 training/inference/agent/weight update 如何维持在线 RL 闭环 | D08 | 定位 staleness 控制、agent trajectory 和 weight service 的所有权边界 | 计划 |
-| 11 | D10 [ROLL Strategy、异构与 Ascend](10_roll_strategy_and_ascend_analysis.md) | S04 | Strategy/AutoDeviceMapping 能屏蔽哪些后端差异，哪些不能 | D09；Ascend 软件栈常识 | 从 CUDA 配置映射到 Ascend，列出需要改动和需要实测的组件 | 计划 |
-| 12 | D11 [CUDA–Ascend 后训练栈对照](11_cuda_ascend_posttraining_stack_comparison.md) | S04 | 通信、推理、并行、权重同步、kernel 与诊断的差距在哪里 | D10 | 独立评估一个后训练方案的 NPU 可行性、风险和验证矩阵 | 计划 |
+| 1 | D00 本文 | S00/S05 | 整个研究域怎样组织，什么算真正掌握 | PyTorch 基础；LLM 训练/推理常识 | 根据自己的薄弱点标出阅读路径和验收物 | 已完成 |
+| 2 | D01 [[03_posttraining/01_posttraining_frontier_map_analysis|后训练前沿全景地图]] | S00 | 当前前沿为什么同时是算法、在线数据和系统问题 | D00 | 画出五层闭环，并把一个新工作定位到算法/数据/系统/硬件层 | 已完成 |
+| 3 | D02 [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|Reasoning RL 算法演进]] | S01 | GRPO、DAPO、GSPO 等方法改变了哪个估计量、clip 或采样假设 | policy gradient、KL、importance sampling | 从公式推导 loss 所需字段，并指出它对 rollout batch 的要求 | 已完成 |
+| 4 | D03 [[03_posttraining/03_agentic_rl_algorithm_analysis|Agentic RL 算法与环境]] | S01 | 多轮工具调用和 coding task 怎样改变 trajectory、reward 与 credit | D02；MDP/trajectory 基础 | 为一个 coding agent 定义 trajectory schema、reward 时点和失败处理 | 已完成 |
+| 5 | D04 [[03_posttraining/04_on_policy_off_policy_staleness_analysis|On-policy、Off-policy 与 Staleness]] | S01 | policy lag、importance ratio 与 train–inference mismatch 怎样相互作用 | D02、D03；概率比 | 给出样本版本规则，判断一个异步方案在什么意义下偏离 on-policy | 已完成 |
+| 6 | D05 [[03_posttraining/05_posttraining_infra_mechanism_analysis|后训练 Infra 核心机制]] | S01 | control/data/weight 三平面怎样协同，bubble、backpressure 和故障怎样产生 | D04；分布式通信基础 | 画出一次迭代的消息时序并标明数据、权重和状态的 owner | 已完成 |
+| 7 | D06 [[03_posttraining/06_framework_comparison|工业后训练框架对比]] | S02/S05 | 怎样用统一术语比较 verl、slime、AReaL、ROLL | D05 | 不依赖 README 口径，完成一张机制与证据等级对比表 | 已完成 |
+| 8 | D07 [[03_posttraining/07_verl_end_to_end_iteration_analysis|verl 端到端训练迭代]] | S02 | 一批 prompt 怎样穿过 rollout、reward、advantage、update 与权重刷新 | D06；Ray；FSDP/Megatron 基础 | 从配置/入口追到关键类与函数，并指出扩展 loss 或 rollout 的位置 | 已完成 |
+| 9 | D08 [[03_posttraining/08_slime_architecture_analysis|slime 高性能与异步架构]] | S03 | Megatron、SGLang、DataSource、buffer 和 async producer 怎样组合 | D07 | 对照 verl 解释 slime 的吞吐来源及其 freshness/correctness 代价 | 已完成 |
+| 10 | D09 [[03_posttraining/09_areal_async_architecture_analysis|AReaL Fully Async 与 Agentic 架构]] | S03 | 服务化 training/inference/agent/weight update 如何维持在线 RL 闭环 | D08 | 定位 staleness 控制、agent trajectory 和 weight service 的所有权边界 | 已完成 |
+| 11 | D10 [[03_posttraining/10_roll_strategy_and_ascend_analysis|ROLL Strategy、异构与 Ascend]] | S04 | Strategy/AutoDeviceMapping 能屏蔽哪些后端差异，哪些不能 | D09；Ascend 软件栈常识 | 从 CUDA 配置映射到 Ascend，列出需要改动和需要实测的组件 | 已完成 |
+| 12 | D11 [[03_posttraining/11_cuda_ascend_posttraining_stack_comparison|CUDA–Ascend 后训练栈对照]] | S04 | 通信、推理、并行、权重同步、kernel 与诊断的差距在哪里 | D10 | 独立评估一个后训练方案的 NPU 可行性、风险和验证矩阵 | 已完成 |
 
 ### 1.1 如果只想先抓主干
 
@@ -264,15 +264,33 @@ Inference vs verified fact:
 - 新论文先进入雷达，只有明确改变机制或系统约束、且有一手证据时进入主线。
 - 框架升级先比较 commit diff，再复查入口、数据 schema、weight update 和实验配置。
 - 若新证据推翻旧结论，保留原结论的版本条件并记录修订原因，不直接抹除历史。
-- D00 在 S05 复核：删去已失效的前置要求，补充实践中真正需要的调试与验证能力。
+- 本版已完成 S05 复核；下一次复核触发条件是框架 baseline 升级或快速变化页面超过 30 天。
+
+---
+
+## 8. 最小源码路径与终局验收
+
+按顺序完成整套材料后，至少应能独立复现以下路径：
+
+| 能力 | 最小阅读路径 | 最终验收 |
+|---|---|---|
+| 算法 | D02 → D04 | 从公式推导 batch schema、ratio provenance 与 freshness 假设 |
+| Agentic | D03 → D05 | 定义 per-call version、reward event、sandbox failure 和 credit |
+| verl | D06 → D07 | 从 `main_ppo.py` 追到 `RayPPOTrainer.fit`、actor update 与 weight refresh |
+| slime | D08 | 从 `train.py` 追到 DataSource、Megatron actor、SGLang 和 updater |
+| AReaL | D09 | 从 PPOTrainer 追到 workflow、staleness admission 与 v2 weight gateway |
+| ROLL | D10 | 从 RLVR/Agentic pipeline 追到 Strategy、device mapping 与 NPU platform |
+| 硬件 | D11 | 给出 CUDA→Ascend 的 M1–M4 迁移与实验 gate |
+
+真正完成不是“能说出框架特点”，而是能对一个新框架产出固定版本、真实调用链、正确性不变量、性能条件和硬件适配矩阵。
 
 ---
 
 ## Related Pages
 
-- [D01 后训练前沿全景地图](01_posttraining_frontier_map_analysis.md)
-- [旧后训练理论入口](../01_theory/04_posttraining/index.md)
-- [旧后训练框架入口](../02_engineering/04_posttrain_frameworks/index.md)
-- [verl 既有分析索引](../02_engineering/04_posttrain_frameworks/verl/index.md)
-- [RL Infra 效率分析](../02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis.md)
-- [RL Sandbox 设计](../02_engineering/04_posttrain_frameworks/rl_sandbox_design_analysis.md)
+- [[03_posttraining/01_posttraining_frontier_map_analysis|D01 后训练前沿全景地图]]
+- [[01_theory/04_posttraining/index|旧后训练理论入口]]
+- [[02_engineering/04_posttrain_frameworks/index|旧后训练框架入口]]
+- [[02_engineering/04_posttrain_frameworks/verl/index|verl 既有分析索引]]
+- [[02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis|RL Infra 效率分析]]
+- [[02_engineering/04_posttrain_frameworks/rl_sandbox_design_analysis|RL Sandbox 设计]]
