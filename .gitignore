@@ -112,3 +112,6 @@ venv.bak/
 **/.DS_Store
 
 .html2md/
+
+# Local Git worktrees
+.worktrees/
