@@ -124,7 +124,9 @@
 
 ## 4. 交付物结构
 
-研究成果沉淀到现有 `llm-knowledge`，采用“学习入口 + 总览 + 专题 + 综合对比”结构。
+研究成果统一沉淀到新的纵向领域 `wiki/03_posttraining/`，采用“学习入口 + 总览 + 专题 + 综合对比”结构。该目录是本研究唯一的主入口和新增文档承载位置，避免算法、Infra 与框架源码分散在理论和工程两棵目录树中。
+
+现有 `wiki/01_theory/04_posttraining/` 与 `wiki/02_engineering/04_posttrain_frameworks/` 不迁移、不复制；它们作为历史知识页面，通过 `[[wiki links]]` 接入 `wiki/03_posttraining/index.md`。后续本研究产生的新内容默认写入 `wiki/03_posttraining/`。
 
 ### 4.1 编号规范
 
@@ -138,18 +140,18 @@
 
 | 文档 | 阶段 | 推荐标题 | 文件路径 | 前置文档 |
 |---|---|---|---|---|
-| D00 | S00/S05 | 后训练前沿源码学习路线 | `wiki/02_engineering/04_posttrain_frameworks/00_posttraining_source_reading_guide.md` | 无 |
-| D01 | S00 | 后训练前沿全景地图 | `wiki/01_theory/04_posttraining/01_posttraining_frontier_map_analysis.md` | D00 |
-| D02 | S01 | Reasoning RL 算法演进 | `wiki/01_theory/04_posttraining/02_reasoning_rl_algorithm_evolution_analysis.md` | D01 |
-| D03 | S01 | Agentic RL 算法与信用分配 | `wiki/01_theory/04_posttraining/03_agentic_rl_algorithm_analysis.md` | D02 |
-| D04 | S01 | On-policy、Off-policy 与 Staleness | `wiki/01_theory/04_posttraining/04_on_policy_off_policy_staleness_analysis.md` | D02、D03 |
-| D05 | S01 | 后训练 Infra 核心机制 | `wiki/02_engineering/04_posttrain_frameworks/05_posttraining_infra_mechanism_analysis.md` | D04 |
-| D06 | S02/S05 | 工业后训练框架对比 | `wiki/02_engineering/04_posttrain_frameworks/06_framework_comparison.md` | D05 |
-| D07 | S02 | verl 端到端训练迭代 | `wiki/02_engineering/04_posttrain_frameworks/verl/07_verl_end_to_end_iteration_analysis.md` | D06 |
-| D08 | S03 | slime 高性能与异步架构 | `wiki/02_engineering/04_posttrain_frameworks/slime/08_slime_architecture_analysis.md` | D07 |
-| D09 | S03 | AReaL Fully-async 与 Agentic 架构 | `wiki/02_engineering/04_posttrain_frameworks/areal/09_areal_async_architecture_analysis.md` | D08 |
-| D10 | S04 | ROLL Strategy 与昇腾适配 | `wiki/02_engineering/04_posttrain_frameworks/roll/10_roll_strategy_and_ascend_analysis.md` | D09 |
-| D11 | S04 | CUDA—昇腾后训练栈对比 | `wiki/02_engineering/04_posttrain_frameworks/11_cuda_ascend_posttraining_stack_comparison.md` | D10 |
+| D00 | S00/S05 | 后训练前沿源码学习路线 | `wiki/03_posttraining/00_posttraining_source_reading_guide.md` | 无 |
+| D01 | S00 | 后训练前沿全景地图 | `wiki/03_posttraining/01_posttraining_frontier_map_analysis.md` | D00 |
+| D02 | S01 | Reasoning RL 算法演进 | `wiki/03_posttraining/02_reasoning_rl_algorithm_evolution_analysis.md` | D01 |
+| D03 | S01 | Agentic RL 算法与信用分配 | `wiki/03_posttraining/03_agentic_rl_algorithm_analysis.md` | D02 |
+| D04 | S01 | On-policy、Off-policy 与 Staleness | `wiki/03_posttraining/04_on_policy_off_policy_staleness_analysis.md` | D02、D03 |
+| D05 | S01 | 后训练 Infra 核心机制 | `wiki/03_posttraining/05_posttraining_infra_mechanism_analysis.md` | D04 |
+| D06 | S02/S05 | 工业后训练框架对比 | `wiki/03_posttraining/06_framework_comparison.md` | D05 |
+| D07 | S02 | verl 端到端训练迭代 | `wiki/03_posttraining/07_verl_end_to_end_iteration_analysis.md` | D06 |
+| D08 | S03 | slime 高性能与异步架构 | `wiki/03_posttraining/08_slime_architecture_analysis.md` | D07 |
+| D09 | S03 | AReaL Fully-async 与 Agentic 架构 | `wiki/03_posttraining/09_areal_async_architecture_analysis.md` | D08 |
+| D10 | S04 | ROLL Strategy 与昇腾适配 | `wiki/03_posttraining/10_roll_strategy_and_ascend_analysis.md` | D09 |
+| D11 | S04 | CUDA—昇腾后训练栈对比 | `wiki/03_posttraining/11_cuda_ascend_posttraining_stack_comparison.md` | D10 |
 
 ### 4.3 阅读与维护规则
 
@@ -162,7 +164,7 @@
 5. 能分析权重同步和资源布局；
 6. 能独立评估新框架与昇腾适配成本。
 
-每篇文档开头显示“上一页 / 下一页”，底部保留 `## Related Pages`。所有新页面必须加入领域 `index.md`，建立双向 `[[wiki links]]`，并更新 `wiki/changelog.md`。
+每篇文档开头显示“上一页 / 下一页”，底部保留 `## Related Pages`。所有新页面必须加入 `wiki/03_posttraining/index.md`，建立双向 `[[wiki links]]`，并更新 `wiki/changelog.md`。
 
 ## 5. 证据与版本标准
 
@@ -220,6 +222,7 @@
 - 核验 2026-07-27 时点的论文、框架和官方动态；
 - 固定四个框架及关键依赖的源码基线；
 - 形成前沿候选清单与证据清单；
+- 创建统一入口 `wiki/03_posttraining/index.md`；
 - 创建 `D00` 学习入口和 `D01` 前沿全景地图。
 
 ### S01：建立算法与 Infra 统一坐标系
