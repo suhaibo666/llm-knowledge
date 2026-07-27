@@ -1,6 +1,6 @@
 # LLM Knowledge Wiki — 知识库总索引
 
-> 最后更新: 2026-07-22
+> 最后更新: 2026-07-27
 
 ---
 
@@ -20,23 +20,27 @@ wiki/
 │   ├── 03_sft/                        # SFT + 低参微调
 │   ├── 04_posttraining/               # 后训练对齐 (RLHF/DPO/GRPO)
 │   └── 05_inference/                  # 推理技术 (CoT/RAG/Agent)
-└── 02_engineering/                    # 工程实现
-    ├── 01_ai_frameworks/              # AI框架 (PyTorch compile)
-    │   ├── cudagraphs/
-    │   ├── inductor/
-    │   └── mlir/
-    ├── 02_train_frameworks/           # 训练框架 (Megatron-LM / torchtitan / MindFormers / MindSpeed)
-    │   ├── megatron-lm/
-    │   ├── torchtitan/
-    │   ├── mindformers/               # MoE 专家并行(PyNative + Graph)
-    │   └── mindspeed/                 # 昇腾 MindSpeed 训练加速特性(并行/掩盖/内存/亲和)
-    ├── 03_infer_frameworks/           # 推理框架
-    │   └── vllm/                       # vLLM V1 引擎(12 篇 + index)
-    ├── 04_posttrain_frameworks/       # 后训练框架 (verl / RLHF Infra)
-    │   └── verl/                      # verl (HybridFlow) 源码级分析
-    ├── 05_gpu_kernel/                 # GPU/NPU Kernel 工程 (含 triton/ 学习路线)
-    ├── 06_auto_parallel/             # 自动并行策略搜索(综述罗盘)
-    └── 07_training_reliability/       # 万卡训练确定性与可靠性(9 问题域·多来源综述)
+├── 02_engineering/                    # 工程实现
+│   ├── 01_ai_frameworks/              # AI框架 (PyTorch compile)
+│   │   ├── cudagraphs/
+│   │   ├── inductor/
+│   │   └── mlir/
+│   ├── 02_train_frameworks/           # 训练框架 (Megatron-LM / torchtitan / MindFormers / MindSpeed)
+│   │   ├── megatron-lm/
+│   │   ├── torchtitan/
+│   │   ├── mindformers/               # MoE 专家并行(PyNative + Graph)
+│   │   └── mindspeed/                 # 昇腾 MindSpeed 训练加速特性(并行/掩盖/内存/亲和)
+│   ├── 03_infer_frameworks/           # 推理框架
+│   │   └── vllm/                       # vLLM V1 引擎(12 篇 + index)
+│   ├── 04_posttrain_frameworks/       # 后训练框架 (verl / RLHF Infra)
+│   │   └── verl/                      # verl (HybridFlow) 源码级分析
+│   ├── 05_gpu_kernel/                 # GPU/NPU Kernel 工程 (含 triton/ 学习路线)
+│   ├── 06_auto_parallel/             # 自动并行策略搜索(综述罗盘)
+│   └── 07_training_reliability/       # 万卡训练确定性与可靠性(9 问题域·多来源综述)
+└── 03_posttraining/                   # 后训练纵向学习域 (算法 + Infra + 工业源码 + CUDA/Ascend)
+    ├── index.md                       # 领域入口与 S00–S05 阶段
+    ├── 00_posttraining_source_reading_guide.md
+    └── 01_posttraining_frontier_map_analysis.md
 ```
 
 ---
@@ -79,6 +83,12 @@ wiki/
 | 自动并行 | [[02_engineering/06_auto_parallel/index]] | 1 | 活跃 |
 | 训练可靠性 | [[02_engineering/07_training_reliability/index]] | 4 | 活跃 |
 
+### 03 后训练纵向学习域
+
+| 领域 | 入口 | 页面数 | 状态 |
+|------|------|--------|------|
+| 后训练前沿学习域 | [[03_posttraining/index]] | 3 | S00 已建立 |
+
 ---
 
 ## 快速导航
@@ -108,6 +118,7 @@ wiki/
 | PPO/GRPO RL 训练 | [[RL_PPO_Loss_and_GRPO_Analysis]], [[RL_Training_Inference_Precision_Analysis]] |
 | RL 训练框架 (verl/HybridFlow) | [[verl/index]], [[verl_architecture_overview_analysis]], [[verl_ray_trainer_analysis]], [[verl_rl_algorithms_analysis]] |
 | Coding RL「脏活」系列 | [[reward_hacking_defense_analysis]], [[rl_sandbox_design_analysis]], [[rl_infra_efficiency_analysis]] |
+| LLM 后训练前沿学习路线 | [[03_posttraining/index]], [[00_posttraining_source_reading_guide]], [[01_posttraining_frontier_map_analysis]] |
 | 万卡训练确定性与可靠性 | [[07_training_reliability/index]], [[determinism_and_numerical_reliability_analysis]], [[fault_tolerance_and_recovery_analysis]], [[training_dynamics_stability_analysis]] |
 
 ### 按原始来源

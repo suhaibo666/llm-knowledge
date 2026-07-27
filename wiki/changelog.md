@@ -4,6 +4,17 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-27：建立 LLM 后训练统一纵向学习域与 S00 前沿快照
+
+**Type**: Research Baseline + Learning Route（将 Reasoning RL、Agentic/Coding RL、Infra、工业框架源码与 CUDA/Ascend 映射纳入同一研究闭环。）
+
+- **新增统一入口**：建立 [[03_posttraining/index]]，后续 D00–D11 新研究统一写入 `wiki/03_posttraining/`；旧理论与工程页面保持原位，通过链接复用，不再把 RL 算法和 Infra 分散承载。
+- **新增 D00 [[00_posttraining_source_reading_guide]]**：按 D00 → D11 固定推荐阅读顺序，定义 S00–S05 六个研究阶段、六级可验证能力门槛，以及论文、源码、工业“支持等级”和 CUDA→Ascend 适配的阅读方法。
+- **新增 D01 [[01_posttraining_frontier_map_analysis]]**：以优化粒度、on-policy/freshness、训练—推理一致性和 Agentic 环境四组张力组织前沿地图；固定 verl `983cb0f`、slime `aaf5c20`、AReaL `b23fa6c`、ROLL `370cb24` 的 2026-07-27 源码快照。
+- **研究分工**：verl 作为主基线，slime 作为性能/前沿对照，AReaL 作为 fully async/Agentic 对照，ROLL 作为多后端、异构和 Ascend 专项；不使用脱离模型、硬件、配置和 freshness 条件的总榜。
+
+---
+
 ## 2026-07-22：Torch Compile 八阶段 Pass 开发方法论与 Dynamo/Codegen 缺口补齐
 
 **Type**: Deep Dive + Correction（按 PyTorch `9922478dffa` 固定基线复核并补齐 pass 放置方法、关键 API、注册示例与阶段注意事项。）
