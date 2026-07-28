@@ -2,7 +2,7 @@
 
 > **阶段**：S00 基线冻结与研究地图
 > **文档编号**：D01
-> **快照日期**：2026-07-27
+> **快照日期**：2026-07-28
 > **研究主线**：Reasoning RL + Agentic/Coding RL
 > **工程视角**：NVIDIA/CUDA 为上游基线，Ascend/NPU 作为映射与差距分析对象
 > **阅读导航**：[[03_posttraining/00_posttraining_source_reading_guide|上一篇 D00]] · [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|下一篇 D02]]
@@ -82,6 +82,7 @@ LLM 生成动作天然以 token 展开，但 reasoning 和 agent task 的成败�
 - [StreamRL（arXiv:2504.15930v1）](https://arxiv.org/abs/2504.15930v1)研究 generation 与 training 的流式解耦；
 - [AsyncFlow（arXiv:2507.01663v1）](https://arxiv.org/abs/2507.01663v1)通过 producer–consumer 流水与 staleness threshold 组织异步执行；
 - [RollPacker（arXiv:2509.21009v1）](https://arxiv.org/abs/2509.21009v1)则保留同步 policy freshness，用 tail batching、弹性 rollout 和资源调度消除同步系统中的长尾 bubble。
+- Kimi K3 则保留同步 phase 和 prompt 内 \(K\) 样本组，在完成量达到 \(\lambda NK\) 后暂停全局长尾、跨 iteration 恢复，并显式承认 trajectory 会进入 extreme off-policy（Kimi K3 Technical Report §4.1.2，p.13）。
 
 因此 D04 已沿四个维度分析，而不是只比较“同步/异步”两个标签：
 
@@ -104,6 +105,8 @@ RL 系统通常使用不同栈承担训练和推理：例如 Megatron/FSDP 训�
 - 权重转换后如何验证 tensor、layout 与输出；
 - mismatch 是被监控、限制，还是仅被经验性地吸收进 clip。
 
+K3 又增加了 deployment-aware 路线：从 SFT 到 RL 对 routed-expert MXFP4 weights/MXFP8 activations 做 QAT，并让 rollout 与 training 共享量化 scheme（Kimi K3 Technical Report §4.1.1、§4.1.4，pp.12、14）。这减少了量化 scheme 造成的 TIM，但不能代替 kernel、batch、并行 layout 和 sampling backend 的 exact calibration。
+
 ### 2.4 通用 RL loop 与 Agentic/Coding 环境
 
 Reasoning RL 常可把一次 response 视作主要优化单位；Agentic/Coding RL 则可能包含多轮工具调用、外部环境、sandbox、测试执行和不可预测的等待时间。这会改变四个底层假设：
@@ -114,6 +117,8 @@ Reasoning RL 常可把一次 response 视作主要优化单位；Agentic/Coding 
 - credit assignment 不能默认等同于“整条 response 一个标量”。
 
 因此 Agentic RL 不是给 GRPO 外面套一个 agent loop。D03 已把环境协议、trajectory schema、reward/verifier、credit assignment 和异步调度作为同一个机制研究。
+
+K3 把这条线再推进到 harness distribution：tools、system prompt、context management、skills、memories、subagents 都成为动态组合的 white-box environment 模块；XTML preserved-thinking history 则成为必须保留的 trajectory state（Kimi K3 Technical Report §4.2.1，pp.14–15；Appendix F，pp.46–47）。
 
 ---
 
@@ -129,6 +134,8 @@ Reasoning RL 常可把一次 response 视作主要优化单位；Agentic/Coding 
 | ROLL | [`370cb24`](https://github.com/alibaba/ROLL/commit/370cb24c1036ea9145365478fcc40612b2186fc8) | 多后端、异构与 Ascend 专项 | 多 role 的 Ray 架构；Strategy 抽象；Megatron/FSDP2；vLLM/SGLang；AutoDeviceMapping；提供 Ascend 使用路径 | 普通 RLVR 与 Agentic RL 的 async 状态并不相同；Strategy 抽象是否真正屏蔽后端差异；NPU 功能/性能缺口 |
 
 框架定位的项目方说明固定在同一 commit 的 README：[verl](https://github.com/verl-project/verl/blob/983cb0f24443f87b3d161fad318445130a620b07/README.md)、[slime](https://github.com/THUDM/slime/blob/aaf5c2092b01219fa0d5c2d323741d409086ca32/README.md)、[AReaL](https://github.com/areal-project/AReaL/blob/b23fa6cf9c8edfebcf055079ab78913128bc4579/README.md)、[ROLL](https://github.com/alibaba/ROLL/blob/370cb24c1036ea9145365478fcc40612b2186fc8/README.md)。这些链接只证明项目在该版本公开声明的定位；D07–D10 已进一步用可达源码、示例和测试边界复核。
+
+K3 不加入这张“工业源码样本”表。其官方仓库 `0797decb` 提供报告而没有 RL trainer、rollout 或 MOPD 训练源码，所以 D12 把它作为**项目级工业设计案例**，不作为第五个可追调用链的框架。
 
 ### 3.1 为什么不把四个框架排成一个总榜
 
@@ -170,6 +177,8 @@ Reasoning RL 常可把一次 response 视作主要优化单位；Agentic/Coding 
 | Freshness-preserving synchronous optimization | [RollPacker，arXiv:2509.21009v1](https://arxiv.org/abs/2509.21009v1) | 在不主动放宽 policy freshness 的前提下消除 rollout 长尾 | tail batching、弹性资源与 streaming training 成为替代路径 | D04、D05 |
 | Agent trajectory credit | [RAGEN，arXiv:2504.20073v2](https://arxiv.org/abs/2504.20073v2)、[Agent Lightning，arXiv:2508.03680v1](https://arxiv.org/abs/2508.03680v1) | 从最终任务回报扩展到状态、转移和多轮 credit | 环境事件、reward provenance 与可重放 trajectory 进入训练 schema | D03、D05 |
 | Single-rollout Agentic RL | [SAO，arXiv:2607.07508v1](https://arxiv.org/abs/2607.07508v1) | 让优化单位适应异步返回的单条 trajectory | 降低 group barrier，但需重新审视估计方差、clip 与 credit | D03、D04 |
+| Expert RL → on-policy consolidation | [Kimi K3 Technical Report](https://github.com/MoonshotAI/Kimi-K3/blob/0797decb18ab079de86f991b87a64b81ec15a3c2/k3_tech_report.pdf) §4.1 | 3 领域 × 3 effort 专家经 MOPD 合并为统一 policy | student on-policy token、teacher routing 与 dense reward 进入同一 RL infra | D02、D12 |
+| Phase-partial long-horizon rollout | Kimi K3 Technical Report §4.1.2、§5.3 | 达到 \(\lambda NK\) 后暂停全局长尾，但保留 prompt 内 \(K\) group | per-call version、KV continuation、sandbox resume 和 stale-data regularization 成为联合状态 | D03–D05、D12 |
 | Train–inference consistency | [Diagnosing TIM，arXiv:2605.14220v1](https://arxiv.org/abs/2605.14220v1)、[Beyond Precision，arXiv:2602.01826v1](https://arxiv.org/abs/2602.01826v1)、[MIPI/MIPU，arXiv:2606.29526v1](https://arxiv.org/abs/2606.29526v1) | 从隔离数值差异扩展到动态检测、监控和校正 | kernel、precision、log-prob、policy version 与 ratio telemetry 进入 RL 正确性边界 | D04、D05、D07 |
 
 ### 4.1 暂不做出的三个结论
@@ -255,6 +264,7 @@ Reasoning RL 常可把一次 response 视作主要优化单位；Agentic/Coding 
 | 10 | D09 [[03_posttraining/09_areal_async_architecture_analysis|AReaL Fully Async 架构]] | S03 | 微服务、Hermes、staleness control 与 agent trajectory 怎样闭环 | 已完成 |
 | 11 | D10 [[03_posttraining/10_roll_strategy_and_ascend_analysis|ROLL Strategy、异构与 Ascend]] | S04 | Strategy 抽象、AutoDeviceMapping 和 Ascend 路径的真实边界 | 已完成 |
 | 12 | D11 [[03_posttraining/11_cuda_ascend_posttraining_stack_comparison|CUDA–Ascend 后训练栈对照]] | S04 | 算子、通信、推理、并行、诊断和性能差距分别在哪里 | 已完成 |
+| 13 | D12 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\|Kimi K3 后训练案例]] | S05 | 九专家与 MOPD、partial rollout、1M agent state、QAT 和 draft model 怎样形成部署闭环 | 已完成 |
 
 ---
 
@@ -266,7 +276,7 @@ Reasoning RL 常可把一次 response 视作主要优化单位；Agentic/Coding 
 2. **项目方声明**：README、发布说明或官方博客中的能力/性能描述；明确标注为官方声明，不自动视为独立复现。
 3. **综合判断**：基于多个事实做出的架构推断或选型建议；说明推理链和适用前提。
 
-本页中的框架能力描述主要来自各项目官方仓库在固定 baseline 附近的公开说明；论文方向来自所列 arXiv 固定版本。它们只代表 **2026-07-27 快照**。D07–D10 已把框架级描述下钻为：
+本页中的框架能力描述主要来自各项目官方仓库在固定 baseline 附近的公开说明；论文方向来自所列 arXiv 固定版本；K3 案例固定于 2026-07-28 的 `0797decb` 报告。D07–D10 已把框架级描述下钻为：
 
 ```text
 入口命令
@@ -294,6 +304,7 @@ Reasoning RL 常可把一次 response 视作主要优化单位；Agentic/Coding 
 ## Related Pages
 
 - [[03_posttraining/00_posttraining_source_reading_guide|D00 后训练源码阅读指南与学习路线]]
+- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[01_theory/04_posttraining/index|后训练旧目录索引]]
 - [[02_engineering/04_posttrain_frameworks/verl/index|verl 既有分析索引]]
 - [[02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis|RL Infra 效率分析]]

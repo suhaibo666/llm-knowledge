@@ -1,12 +1,15 @@
 # Kimi K3 结构变化深析：同时优化序列轴与深度轴的信息流
 
 > **来源基线**（所有 `file:line` 与论文页码均已打开核对）：
-> - K3 官方 Tech Blog 快照 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.txt`（下称“博客”）；官方内嵌架构图原件 `assets/kimi_k3_official_arch.svg`。博客确认 K3 基于 KDA、AttnRes 与 Stable LatentMoE，但更多技术细节仍待完整报告披露（博客 `:207-210`）。
+> - K3 官方 Tech Blog 快照 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.txt`（下称“博客”）；[Kimi K3 Technical Report `0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2) 与本地 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`；官方内嵌架构图原件 `assets/kimi_k3_official_arch.svg`。
 > - KDA：arXiv **2510.26692v2**（本库 `raw/.../Kimi_Linear_Attention-2510.26692.pdf`）；`MoonshotAI/Kimi-Linear@8c1d85e`；kernel 来自 `fla-org/flash-linear-attention@b328e7c` 的 `fla/ops/kda/*`；发布模型为 `moonshotai/Kimi-Linear-48B-A3B-Instruct@e1df551a`（`modeling_kimi.py`、`config.json`）。
 > - AttnRes：arXiv **2603.15031v1**（2026-03-16）；`MoonshotAI/Attention-Residuals@85e2231`。仓库只有 README 和论文 PDF，**没有 `.py` 实现**；`README.md:52-91` 的伪代码对应论文 Fig. 2。
 > - FlashKDA：`MoonshotAI/FlashKDA@d2ff19a`；LatentMoE：NVIDIA arXiv **2601.18089v1**。
-> **事实边界**：K3 权重最迟于 2026-07-27 发布；完整技术报告尚无明确发布日期。对 K3 本体的判断以博客为准；机制细节来自官方明确点名的组件论文与源码；所有外推均标记为 **[推断]**。
-> **更新**：2026-07-17，依据官方 Tech Blog 优化中文叙述和公式排版。
+> **事实边界**：K3 技术报告与权重均已发布，但官方仓库仍未公开 K3 backbone、训练器或 RL 源码。结构事实以报告和权重配置为准；独立组件实现只证明其对应机制，不等于 K3 本体调用链。
+> **更新**：2026-07-28，已用正式报告替换 NoPE、Stable LatentMoE、Quantile Balancing、SiTU 和 MoonViT-V2 的预发布推断；后训练见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]]。
+
+> [!deprecated]
+> 2026-07-17 初版的“完整技术报告待发布”事实边界已过期；报告仍未披露或未开源的项目改写为“2026-07-28 报告未披露/仓库未开源”。
 
 ---
 
@@ -15,15 +18,15 @@
 | # | 部件 | K2 / K2.5(基线) | K3 | 一句话动机 | 出处 |
 |---|---|---|---|---|---|
 | 1 | 注意力主干 | 纯 MLA(61 层) | **KDA : Gated MLA = 3:1 混合** | 1M 上下文的 KV cache 与解码吞吐 | 博客架构图 3×/1×;Kimi Linear §4 |
-| 2 | 全局注意力层 | MLA + RoPE | **Gated MLA**(输出门;预计 NoPE)| 注意力选择性、长度外推 | 博客 §Architecture;Kimi Linear §5.2 |
+| 2 | 全局注意力层 | MLA + RoPE | **Gated MLA + NoPE** | 注意力选择性、长度外推 | 报告 §2.1.2，pp.5–6 |
 | 3 | 跨层连接 | 标准 pre-norm 残差 | **AttnRes**(深度方向 softmax 注意力) | 深层贡献稀释、梯度失衡 | 博客 §Architecture;AttnRes 论文 |
 | 4 | MoE | 384 选 8 + 1 共享(专家全宽) | **Stable LatentMoE 896 选 16** + Quantile Balancing | 同算力更高稀疏度、更低 EP 通信 | 博客 §Architecture;LatentMoE 论文 |
-| 5 | 激活函数 | SwiGLU 系 | **SiTU(Sigmoid Tanh Unit)** | 激活幅值控制(配 MXFP8)[推断] | 博客 §Architecture(仅一句) |
+| 5 | 激活函数 | SwiGLU 系 | **SiTU（Sigmoid Tanh Unit）** | 平滑限制 LatentMoE routed path 的内部激活爆炸 | 报告 §2.3.2、Appendix B，pp.7–8、43 |
 | 6 | 规模/上下文/模态 | 1.04T-A32B / 256K / 视觉 | **2.8T / 1M / +视频** | 结构效率红利再投入规模 | 博客开篇 |
 
-Moonshot 的推进节奏是“先验证组件，再合入旗舰”：KDA 于 2025 年 10 月在 48B 模型上验证；AttnRes 于 2026 年 3 月继续使用同一套 Kimi-Linear 48B 骨架，并训练 1.4T tokens；到 2026 年 7 月，K3 才把两条路线合并并扩展到 2.8T 参数。KDA 和 AttnRes 的独立论文与开源实现，使得本文能够分析其机制；但这些组件实现仍不能替代尚未发布的 K3 本体代码。
+Moonshot 的推进节奏是“先验证组件，再合入旗舰”：KDA 于 2025 年 10 月在 48B 模型上验证；AttnRes 于 2026 年 3 月继续使用同一套 Kimi-Linear 48B 骨架，并训练 1.4T tokens；到 2026 年 7 月，K3 才把两条路线合并并扩展到 2.8T 参数。KDA 和 AttnRes 的独立论文与开源实现，使得本文能够分析其机制；但这些组件实现仍不能替代未公开的 K3 本体代码。
 
-官方只给出了合并口径：结构改动与训练/数据配方共同带来相对 K2 **约 2.5× 的整体 scaling efficiency**（博客 `:104-105`）。组件论文分别报告 KDA 混合架构约 1.16×、AttnRes 约 1.25× 的计算效率；两者简单相乘约为 `1.16 × 1.25 ≈ 1.45`。剩余差额是否来自 LatentMoE、数据或其他配方，目前只能作为 **[推断]**，不能视为官方分解。
+正式报告用 Figure 7 给出 K2/K3 拟合 scaling curves，并继续只给出结构改动与训练/数据配方共同带来的 **约 2.5× overall scaling efficiency** 合并口径（报告 §3.2、Fig. 7、Table 1，p.11）。组件论文分别报告 KDA 混合架构约 1.16×、AttnRes 约 1.25× 的计算效率；两者简单相乘约为 `1.16 × 1.25 ≈ 1.45`。剩余差额不能在没有隔离消融的情况下归因给 LatentMoE、数据或其他配方。
 
 ---
 
@@ -128,7 +131,7 @@ KV cache 只存在于 MLA 层。`KimiDynamicCache` 为 KDA 层保存 convolution
 
 - **官方确认的变化。** K3 为四分之一的全局 MLA 层增加输出门；博客将其作用概括为提升 attention selectivity（博客 `:207-209`）。
 - **为什么要加门。** Kimi Linear 为了与标准 MLA 做严格对照，实验模型中的 MLA 层刻意没有门控，并把“未来补门”列为后续方向。KDA 侧的消融已经显示 sigmoid 输出门有效：去掉输出门时 Val PPL 从 5.65 升至 5.67，换成 swish 门则恶化到 5.81（Table 1）。K3 的 Gated MLA 可以看作这项遗留设计的产品化。
-- **NoPE 仍是推断，不是 K3 已披露规格。** Kimi-Linear 发布模型设置了 `"mla_use_nope": true`（`config.json:56`），并在 `modeling_kimi.py:378` 强制断言；其 RULER 消融中，NoPE 为 84.3，RoPE 为 78.8（Table 5）。这些证据说明 NoPE 与 KDA 混合架构相容，但 K3 是否沿用必须等待完整技术报告。
+- **NoPE 已由 K3 报告确认。** K3 对所有 MLA 层使用 NoPE，由 KDA 提供 position-sensitive、recency-aware mixing，MLA 保留无约束全局内容交互；长上下文扩展不需要 RoPE rescaling 或 interpolation（报告 §2.1.2，p.5；§3.4，p.12）。Kimi-Linear 发布模型的 `"mla_use_nope": true`（`config.json:56`）因此从先行证据升级为 K3 路线的一致实现依据。
 - **512 维 MLA 只能作为旁证。** 博客的 Kernel Optimization 案例包含“512-head-dimension MLA kernel”（博客 `:164-166`），与 Kimi-Linear 的 `kv_lora_rank=512`（`config.json:19`）一致；据此推测 K3 沿用 512 维压缩态是合理的，但仍属于 **[推断]**。
 
 ---
@@ -211,24 +214,34 @@ $$
 ![标准 MoE 与 Stable LatentMoE 对比：后者先降到 latent 空间，再从 896 个小专家中激活 16 个，聚合后升回模型宽度，并配合 Quantile Balancing。](assets/kimi_k3_fig_latentmoe.png)
 
 - **官方披露的变化。** K3 使用 Stable LatentMoE，每个 token 从 896 个专家中激活 16 个；总专家数与激活专家数之比为 56，高于 K2.5 的 48。博客同时强调，在这一稀疏度下，路由和优化已经成为一等问题（博客 `:207-209`）。
-- **LatentMoE 的可能机制。** K3 官方图在 router 前后各有一个 Linear，与 NVIDIA LatentMoE 论文中“先降到 latent 空间，在 latent 空间路由和执行专家，再升回模型宽度”的结构一致。它的直接收益是：专家不再对接完整的 `d_model`，同一参数预算可以容纳更多、更小的专家；EP dispatch/combine 传输的也是 latent 向量，all-to-all 通信量随之下降。由于 K3 完整报告尚未发布，这一对应关系及 “Stable” 的具体含义仍标为 **[推断]**。
-- **Quantile Balancing 的官方边界。** 博客只说明它根据 router score 的分位数直接确定专家分配，从而去掉启发式更新和敏感的均衡超参数。它是否针对 K2 沿用的 loss-free balancing、分位数如何更新，以及是否保证每个专家固定 token 数，都要等待报告确认。
+- **LatentMoE 的机制已确认。** shared experts 保留全宽路径；routed path 先由 \(W^\downarrow\) 投到 3,584 维 latent space，在其中执行 896 选 16，再由 \(W^\uparrow\) 升回 7,168 维。K3 每层还有两个 full-width shared experts。“Stable” 来自 routed aggregate 后、up projection 前的 RMSNorm，以及 SiTU-GLU 和 Quantile Balancing 三项稳定化组件（报告 §2.3、Eq. 10–12，pp.6–8；Table 1，p.11）。
+- **Quantile Balancing 的更新规则已确认。** K3 使用 auxiliary-loss-free routing；router bias 只影响 Top-k dispatch，不进入 mixture weights。QB 先做 Top-\(k+1\) 得到每 token cutoff，再对每个专家选取能匹配目标负载 \(q=mk/n\) 的 score margin quantile，一次 forward 即得到下一 bias，取代固定步长的 sign update（报告 §2.3.3、Eq. 13–14、Fig. 5，pp.8–9；Appendix C，pp.43–45）。
 - **为何继续提高稀疏度。** 增加总专家数、保持每 token 激活量相对有限，可以提高参数容量而不同比例增加计算量；真正的约束转移到路由稳定性、专家并行通信和负载均衡。K3 将 LatentMoE、Quantile Balancing 与全平衡 EP 训练并列介绍，表明它试图从结构、算法和系统三个层面同时解除这些约束；三者之间的精确耦合仍属于 **[推断]**。
 
 ---
 
 ## 六、变化点 5：SiTU（Sigmoid Tanh Unit）
 
-博客对 SiTU 只给出一句定义：SiTU 用于改善 activation control，而 Gated MLA 用于改善 attention selectivity（博客 `:207-209`）。截至 2026-07-17，没有公开论文、代码或可核验的公式说明 SiTU 位于何处、如何参数化。
+SiTU-GLU 位于 Stable LatentMoE 的 routed experts 中。它分别对 Swish gate 的线性因子和 up branch 使用 smooth cap：
 
-从名称推测，它可能是在 SiLU/GLU 类门控激活中引入 tanh 的有界化设计；同一段落又紧接 MXFP8 激活量化，因此它也可能用于压制 activation outlier。**这两点都只是 [推断]。** 在完整技术报告披露前，本文不把 `tanh(x) ∈ [-1,1]` 这一数学性质进一步包装成 K3 的既定实现。
+\[
+\operatorname{SiTU\text{-}GLU}(x)=
+\left[
+\beta_1\tanh\left(\frac{W_gx}{\beta_1}\right)
+\odot \operatorname{Sigmoid}(W_gx)
+\right]
+\odot
+\beta_2\tanh\left(\frac{W_ux}{\beta_2}\right).
+\]
+
+K3 取 \(\beta_1=4,\beta_2=25\)，使输出坐标满足 \(\lVert f(x)\rVert_\infty\le100\)。它在原点附近保持 SwiGLU 的一阶行为，同时平滑限制大正激活；报告把动机明确归因于 LatentMoE routed path 连续多次矩阵乘造成的内部 activation explosion，而不是把 SiTU 定义为量化专用技巧（报告 §2.3.2、Fig. 4，pp.7–8；Appendix B、Eq. 18–19，p.43）。
 
 ---
 
 ## 七、变化点 6：1M 原生上下文与原生视觉、视频
 
 - **1M 是原生规格，不是事后外推。** Kimi-Linear 发布模型已设置 `model_max_length: 1048576`（`config.json:57`），长上下文本就是 3:1 混合与 NoPE 的设计目标；K3 延续为官方原生规格。BrowseComp 脚注进一步显示：使用完整 1M 窗口且不做 context management 时，模型仍能取得 90.4 分（博客 `:538-539`）。
-- **多模态范围从图文扩展到视频。** K2.5 已使用 400M 参数的 MoonViT，在约 15T 图文混合 tokens 上继续预训练（[[kimi_k2.5_analysis]]）；K3 则明确在同一模型中原生处理文本、图像和视频（博客 `:76-77`、§Video Editing）。视觉塔及视频编码细节仍待完整报告披露。
+- **多模态范围从图文扩展到视频。** K3 的 MoonViT-V2 是约 401M 参数、27 层的 vision transformer，从零开始用 next-token prediction 与 LLM 联合训练；图像和视频完全共享参数，attention 分为空间/时间两段，并用 temporal pooling 与 2×2 pixel shuffle 压缩 token（报告 §2.4、Fig. 6，pp.9–10；Table 1，p.11）。
 
 ---
 
@@ -240,13 +253,14 @@ $$
 | Gated MLA | attention sink、选择性 | 无门(+0.02 PPL);swish 门(+0.16) | 低秩门投影(可忽略) |
 | AttnRes | 深度轴信息稀释/梯度失衡 | DenseFormer(无效);mHC(弱且 I/O 6×);input-dependent query(好 0.006 但推理不友好) | 训 <4%、推 <2%;残差流变二元状态(PP/重计算要适配) |
 | Stable LatentMoE + 896/16 | 同算力更高稀疏度;EP 通信 | 全宽专家继续堆;bias 启发式均衡(敏感超参) | 路由/优化难度上升("first-order challenges") |
-| SiTU | 激活幅值控制(配 MXFP8)[推断] | 待报告 | 待报告 |
+| SiTU | 平滑限制 routed path 的大激活，同时保持 SwiGLU 局部形状 | hard clamp（梯度边界差）；无界 SwiGLU（内部激活爆炸） | 两个 soft-cap 超参数；饱和区梯度减弱 |
 | 2.8T/1M/视频 | 效率红利变现 | — | 部署门槛 64+ 卡超节点(infra 页) |
 
 ## Related Pages
 
 - [[kimi_k3_analysis]] — K3 发布总结、完整基准、限制与官方定位
 - [[kimi_k3_infra_deepdive]] — 本页各项结构选择在训练与推理系统中的配套实现
+- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]] — K3 后训练算法、环境、Infra 与部署闭环
 - [[kimi_linear_analysis]] — KDA/3:1 混合的原始论文分析
 - [[kimi_k2.5_analysis]] / [[kimi_k2_analysis]] — 直接前代与 2.5× 效率基线
 - [[moba_analysis]] — Moonshot 前一代长上下文注意力(块稀疏路线)

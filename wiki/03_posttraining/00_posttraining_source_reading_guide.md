@@ -2,7 +2,7 @@
 
 > **阶段**：S00–S05 已完成，本文为综合验收版
 > **文档编号**：D00
-> **快照日期**：2026-07-27
+> **快照日期**：2026-07-28
 > **适用目标**：理解 Reasoning RL、Agentic/Coding RL 的前沿机制，并具备阅读、修改和评估工业级后训练框架的能力
 > **阅读导航**：[[03_posttraining/index|上一篇：后训练纵向学习域首页]] · [[03_posttraining/01_posttraining_frontier_map_analysis|下一篇：D01 后训练前沿全景地图]]
 
@@ -10,7 +10,7 @@
 
 ## 0. 怎样使用这条路线
 
-这不是按天数安排的课程表，而是一条按**可验证能力**推进的路线。推荐顺序是 D00 → D11，但不要求把每篇文档逐字记忆。每读完一段，应能完成对应的图、公式、源码定位或设计判断；做不到，就回到前置文档补齐。
+这不是按天数安排的课程表，而是一条按**可验证能力**推进的路线。推荐顺序是 D00 → D12，但不要求把每篇文档逐字记忆。每读完一段，应能完成对应的图、公式、源码定位或设计判断；做不到，就回到前置文档补齐。
 
 整条路线遵循三个原则：
 
@@ -27,12 +27,13 @@ flowchart LR
     I --> V["D07 verl 端到端主链"]
     V --> C["D08-D10 框架对照"]
     C --> H["D11 CUDA 与 Ascend 映射"]
-    H --> E["独立评估与修改新框架"]
+    H --> K["D12 K3 工业案例"]
+    K --> E["独立评估与修改新框架"]
 ```
 
 ---
 
-## 1. D00 → D11 推荐阅读顺序
+## 1. D00 → D12 推荐阅读顺序
 
 “读完后任务”是进入下一篇前的验收，不只是复述摘要。
 
@@ -50,17 +51,19 @@ flowchart LR
 | 10 | D09 [[03_posttraining/09_areal_async_architecture_analysis|AReaL Fully Async 与 Agentic 架构]] | S03 | 服务化 training/inference/agent/weight update 如何维持在线 RL 闭环 | D08 | 定位 staleness 控制、agent trajectory 和 weight service 的所有权边界 | 已完成 |
 | 11 | D10 [[03_posttraining/10_roll_strategy_and_ascend_analysis|ROLL Strategy、异构与 Ascend]] | S04 | Strategy/AutoDeviceMapping 能屏蔽哪些后端差异，哪些不能 | D09；Ascend 软件栈常识 | 从 CUDA 配置映射到 Ascend，列出需要改动和需要实测的组件 | 已完成 |
 | 12 | D11 [[03_posttraining/11_cuda_ascend_posttraining_stack_comparison|CUDA–Ascend 后训练栈对照]] | S04 | 通信、推理、并行、权重同步、kernel 与诊断的差距在哪里 | D10 | 独立评估一个后训练方案的 NPU 可行性、风险和验证矩阵 | 已完成 |
+| 13 | D12 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\|Kimi K3 后训练案例]] | S05 | 九专家、MOPD、partial rollout、white-box environment、QAT 与百万 token 状态怎样形成一条工业闭环 | D02–D05、D11 | 区分报告事实、机制推导和源码未知项，并画出跨 GPU/CPU/NVMe/sandbox 的状态生命周期 | 已完成 |
 
 ### 1.1 如果只想先抓主干
 
-按 `D00 → D01 → D02 → D04 → D05 → D07 → D11` 阅读。这条短路线先建立：
+按 `D00 → D01 → D02 → D04 → D05 → D07 → D11 → D12` 阅读。这条短路线先建立：
 
 - optimizer 与样本分布的关系；
 - on/off-policy 和 TIM 的正确性边界；
 - 一次工业 RL 迭代的真实调用链；
 - CUDA 方案迁移到 Ascend 时的判断框架。
+- 用一个最新工业报告把算法、trajectory、infra 与部署约束重新对齐。
 
-随后再用 D03、D08、D09、D10 补 Agentic 和多框架对照。
+随后再用 D03、D08、D09、D10 补 Agentic 和多框架源码对照。
 
 ---
 
@@ -254,7 +257,7 @@ Inference vs verified fact:
 | S02 | 从 verl 配置追踪一个完整 step | 调用链、时序图和扩展点清单 |
 | S03 | 比较 verl/slime/AReaL 处理慢 trajectory 的方式 | freshness–throughput–complexity 权衡表 |
 | S04 | 将一个 CUDA 训练/rollout 配置映射到 Ascend | 兼容、缺口、风险、验证用例矩阵 |
-| S05 | 独立评估一个新框架或一次 baseline 升级 | 带固定版本和差异证据的审计报告 |
+| S05 | 独立评估一个新框架、技术报告或 baseline 升级 | 带固定版本、证据等级、未知项和差异结论的审计报告 |
 
 ---
 
@@ -264,7 +267,7 @@ Inference vs verified fact:
 - 新论文先进入雷达，只有明确改变机制或系统约束、且有一手证据时进入主线。
 - 框架升级先比较 commit diff，再复查入口、数据 schema、weight update 和实验配置。
 - 若新证据推翻旧结论，保留原结论的版本条件并记录修订原因，不直接抹除历史。
-- 本版已完成 S05 复核；下一次复核触发条件是框架 baseline 升级或快速变化页面超过 30 天。
+- 本版已用 Kimi K3 Technical Report `0797decb` 完成一次 S05 前沿案例复核；下一次复核触发条件是框架 baseline 升级、K3 训练源码公开或快速变化页面超过 30 天。
 
 ---
 
@@ -281,6 +284,7 @@ Inference vs verified fact:
 | AReaL | D09 | 从 PPOTrainer 追到 workflow、staleness admission 与 v2 weight gateway |
 | ROLL | D10 | 从 RLVR/Agentic pipeline 追到 Strategy、device mapping 与 NPU platform |
 | 硬件 | D11 | 给出 CUDA→Ascend 的 M1–M4 迁移与实验 gate |
+| 综合案例 | D12 | 把专家 RL、MOPD、partial rollout、environment、QAT 和 1M 状态管理映射回 D02–D05/D11，并标出源码未知项 |
 
 真正完成不是“能说出框架特点”，而是能对一个新框架产出固定版本、真实调用链、正确性不变量、性能条件和硬件适配矩阵。
 
@@ -289,6 +293,7 @@ Inference vs verified fact:
 ## Related Pages
 
 - [[03_posttraining/01_posttraining_frontier_map_analysis|D01 后训练前沿全景地图]]
+- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[01_theory/04_posttraining/index|旧后训练理论入口]]
 - [[02_engineering/04_posttrain_frameworks/index|旧后训练框架入口]]
 - [[02_engineering/04_posttrain_frameworks/verl/index|verl 既有分析索引]]

@@ -1,7 +1,7 @@
 # 03 LLM 后训练纵向学习域
 
 > **当前阶段**：S00–S05 全部完成
-> **快照日期**：2026-07-27
+> **快照日期**：2026-07-28
 > **主线**：Reasoning RL + Agentic/Coding RL + 工业级训练系统
 > **核心框架**：verl、slime、AReaL、ROLL
 > **硬件视角**：NVIDIA/CUDA 主线与 Ascend/NPU 映射
@@ -17,7 +17,7 @@
 
 这种分类适合按学科查资料，却会割裂一次真实 RL 迭代。算法中的 importance ratio、group sampling、sequence clipping 和 staleness 假设，必须与 rollout、buffer、权重同步、训练—推理一致性和资源调度一起分析。
 
-因此，2026 后训练前沿研究新增的 D00–D11 全部写入本目录。旧页面保持原位，通过链接复用，不迁移、不复制。
+因此，2026 后训练前沿研究新增的 D00–D12 全部写入本目录。旧页面保持原位，通过链接复用，不迁移、不复制。
 
 本领域要建立的不是论文清单，而是三种连续能力：
 
@@ -31,9 +31,9 @@
 
 1. 先读 [[03_posttraining/00_posttraining_source_reading_guide|D00 LLM 后训练前沿源码学习路线]]，了解完整顺序和六级能力门槛。
 2. 再读 [[03_posttraining/01_posttraining_frontier_map_analysis|D01 后训练前沿全景地图]]，建立算法—数据—系统—硬件的统一坐标。
-3. 按 D02 → D11 顺序进入机制、源码与硬件深挖。
+3. 按 D02 → D11 顺序进入机制、源码与硬件深挖，最后用 D12 完成算法—环境—Infra—部署综合案例复核。
 
-如果已经熟悉 policy gradient，可使用 D00 中的短路线：`D00 → D01 → D02 → D04 → D05 → D07 → D11`。
+如果已经熟悉 policy gradient，可使用 D00 中的短路线：`D00 → D01 → D02 → D04 → D05 → D07 → D11 → D12`。
 
 ---
 
@@ -46,11 +46,11 @@
 | S02 | 建立框架矩阵并贯通 verl | D06 首版、D07 | 能从配置追完一次 verl 迭代及 weight refresh | 已完成 |
 | S03 | 用 slime 与 AReaL 对照性能和 fully async | D08、D09，更新 D06 | 能比较同步、流式和 fully async 的收益来源与代价 | 已完成 |
 | S04 | 深挖 ROLL、异构和 Ascend | D10、D11，更新 D06 | 能给出 CUDA–Ascend 组件差距与验证矩阵 | 已完成 |
-| S05 | 综合、验收和持续追踪 | 复核 D00、D01、D06 | 所有结论有固定版本，快速变化页面有 staleness 标记 | 已完成 |
+| S05 | 综合、验收和持续追踪 | 复核 D00、D01、D06；新增 D12 | 所有结论有固定版本；能把新报告放回算法、数据、系统与部署闭环 | 已完成 |
 
 ---
 
-## 4. D00–D11 文档顺序
+## 4. D00–D12 文档顺序
 
 | 编号 | 文档 | 阶段 | 角色 | 状态 |
 |---|---|---|---|---|
@@ -66,6 +66,7 @@
 | D09 | [[03_posttraining/09_areal_async_architecture_analysis|AReaL Fully Async 与 Agentic 架构]] | S03 | fully async 与服务化 agent loop | 已完成 |
 | D10 | [[03_posttraining/10_roll_strategy_and_ascend_analysis|ROLL Strategy、异构与 Ascend]] | S04 | 多后端 Strategy 和 NPU 专项 | 已完成 |
 | D11 | [[03_posttraining/11_cuda_ascend_posttraining_stack_comparison|CUDA–Ascend 后训练栈对照]] | S04 | 跨硬件的能力与差距矩阵 | 已完成 |
+| D12 | [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\|Kimi K3 后训练案例]] | S05 | 九专家、MOPD、partial rollout、white-box environment、QAT 与百万 token 状态管理 | 已完成 |
 
 ---
 
@@ -79,6 +80,8 @@
 | ROLL | 多后端/异构/Ascend 专项 | Strategy、AutoDeviceMapping、RLVR 与 Agentic async 差异 | D10 |
 
 四者不按单一性能榜排名。D06 已在固定版本与 freshness 语义下比较机制与证据；真实性能仍需同条件实测。
+
+Kimi K3 不作为第五个源码框架。其 `0797decb` 官方报告提供项目级后训练和 1M Agentic RL 设计，但未公开 RL trainer、rollout 或 MOPD 训练源码；因此统一放入 D12 案例页，并把可核验机制回填 D01–D05/D11。
 
 ---
 
@@ -109,7 +112,7 @@
 
 - 新增的本研究文档只进入 `wiki/03_posttraining/`。
 - 旧理论/工程页面只链接，不在新目录复制全文。
-- 阶段使用 S00–S05，文档使用 D00–D11；文件名两位数字前缀与阅读顺序一致。
+- 阶段使用 S00–S05，文档使用 D00–D12；文件名两位数字前缀与阅读顺序一致。
 - 论文结论绑定 arXiv ID 和版本；代码结论绑定 repo、branch、commit、日期和 `file:line`。
 - 区分来源事实、机制推导、项目方声明和研究判断。
 - 性能数字必须附硬件、模型、并行、batch、序列长度和对照条件。
@@ -122,6 +125,7 @@
 
 - [[03_posttraining/00_posttraining_source_reading_guide|D00 LLM 后训练前沿源码学习路线]]
 - [[03_posttraining/01_posttraining_frontier_map_analysis|D01 后训练前沿全景地图]]
+- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [知识库总索引](../index.md)
 - [[01_theory/04_posttraining/index|旧后训练理论目录]]
 - [[02_engineering/04_posttrain_frameworks/index|旧后训练框架目录]]

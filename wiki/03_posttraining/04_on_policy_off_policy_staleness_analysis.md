@@ -2,7 +2,7 @@
 
 > **阶段**：S01
 > **文档编号**：D04
-> **快照日期**：2026-07-27
+> **快照日期**：2026-07-28
 > **证据基线**：固定 arXiv 版本与四框架 S00 commit，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
 > **结论先行**：异步是执行结构，staleness 是版本年龄，off-policy 是分布关系，TIM 是同参数下的实现差异；四者相关但绝不等价。
 > **阅读导航**：[[03_posttraining/03_agentic_rl_algorithm_analysis|上一篇 D03]] · [[03_posttraining/05_posttraining_infra_mechanism_analysis|下一篇 D05]]
@@ -61,16 +61,21 @@ w_{\text{beh}}=\frac{\pi_{\text{old}}}{\mu},
 
 Agentic partial rollout 还需 `version_per_call`，因为一条 trajectory 内可能有多个 \(\mu_k\)。
 
+K3 把这个情况落成了明确时序：达到 \(\lambda NK\) 完成量后暂停未完成轨迹，下一 iteration 优先恢复；报告同时承认单条 trajectory 会跨 iteration 并进入 extreme off-policy regime（Kimi K3 Technical Report §4.1.2，p.13）。因此 `sample version` 不能只取 trajectory 开始或结束时的单值。
+
 ## 4. Freshness 的系统设计点
 
 | 方案 | barrier | 允许旧样本 | 优点 | 主要代价 |
 |---|---|---:|---|---|
 | 严格同步 batch | 全 batch | 0 step | 语义最清楚 | 长尾 bubble |
+| phase-partial synchronous | \(\lambda NK\) phase gate；prompt 内保留 \(K\)-response completion/dispatch boundary | 跨 iteration continuation | 消除全局 rollout 尾部，不必等待所有 prompt 完成 | per-call version、KV/sandbox 恢复、极旧片段 |
 | tail packing | 重排尾部 | 0 step | 保 freshness，削减 straggler | packing 与公平性 |
 | streamed bounded | watermark/窗口 | 小于阈值 | overlap 高 | buffer 与回压复杂 |
 | fully async | 无全局 phase barrier | 配置上限 | 利用率高，适合 agent | correction、版本和恢复更难 |
 
 [RollPacker v1](https://arxiv.org/abs/2509.21009v1) §3–4 的价值是说明“解决 rollout 长尾”不必自动接受 stale data；[AReaL v5](https://arxiv.org/abs/2505.24298v5) 则探索 bounded fully async 的另一端。
+
+K3 位于两者之间：它明确称基础系统为 synchronous RL framework，但允许 paused trajectory 跨 iteration 恢复。系统 phase 仍存在，样本却可能 stale；所以“同步执行结构”并不能推出“所有 token 都是当前 behavior policy”（Kimi K3 Technical Report §4.1.2，p.13）。
 
 ## 5. AReaL 的可执行 freshness 公式
 
@@ -111,6 +116,8 @@ AReaL 文档还显式区分：
 
 verl 固定快照已实现 rollout correction helper：`verl/trainer/ppo/rollout_corr_helper.py:554-601` 包含 raw weight、sequence expansion、clipping 和 rejection mask；policy loss 调用在 `core_algos.py:1357-1358` 等处。它是可配置工具箱，不意味着默认组合在目标 workload 上已校准。
 
+K3 报告称 K2.5-style policy optimization 通过逐 token regularization 把更新限制在 localized neighborhood，从而容忍跨 iteration 的 extreme off-policy data；但 K3 报告没有重述公式、阈值或 staleness 分布。因此它是“项目方声称已稳定运行”的设计证据，不是可独立复现的 correction recipe（Kimi K3 Technical Report §4.1.2，p.13）。
+
 ## 7. TIM：同一 checkpoint 也可能是两个 policy
 
 [Diagnosing TIM v1](https://arxiv.org/abs/2605.14220v1) §3.1 用 VeXact 统一模型与 kernel，并使用 batch-invariant kernel 建立零 mismatch 对照；§3.2 与 Fig. 2 显示，小 token 概率差在对照实验中即可独立触发不稳定。§4.1 还区分：
@@ -122,6 +129,8 @@ verl 固定快照已实现 rollout correction helper：`verl/trainer/ppo/rollout
 §4.2 表明 token+sequence correction 可逼近 exact baseline，但需要阈值且会丢学习信号，不能替代 exact diagnostic。
 
 [Beyond Precision v1](https://arxiv.org/abs/2602.01826v1) §3、§4.1–4.4 进一步指出 mismatch 与 response-length surge、gradient noise、update size 动态耦合；LR scheduler 与 IS 不是互相替代的修补。
+
+K3 从另一方向缩小一条 TIM 来源：从 SFT 到 RL 都做 MXFP4 expert-weight/MXFP8 activation QAT，并让 RL rollout 与 training 使用相同量化 scheme（Kimi K3 Technical Report §4.1.1，p.12；§4.1.4，p.14）。这只能证明**量化 scheme 一致性**；batch-dependent kernel、并行 layout、sampling backend 和 weight-install 时序仍需单独测量，不能把报告中的 “eliminating TIM” 扩大为全部 TIM 归零。
 
 ## 8. inference policy 才是部署对象
 
@@ -164,10 +173,12 @@ weight publish commits atomically before new-version rollout
 5. TIM 与 version lag 是否分别度量？
 6. correction 的 bias/variance 和丢样成本是否可观测？
 7. checkpoint 恢复后 version、queue watermark 和 optimizer 是否一致？
+8. partial rollout 的 KV state、sandbox state 和 per-call policy version 是否在同一 continuation 上恢复？
 
 ## Related Pages
 
 - [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]
 - [[03_posttraining/03_agentic_rl_algorithm_analysis|D03 Agentic RL 算法与环境]]
 - [[03_posttraining/05_posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
+- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis|既有 RL Infra 效率分析]]

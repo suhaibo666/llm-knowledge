@@ -50,7 +50,8 @@ wiki/
     ├── 08_slime_architecture_analysis.md
     ├── 09_areal_async_architecture_analysis.md
     ├── 10_roll_strategy_and_ascend_analysis.md
-    └── 11_cuda_ascend_posttraining_stack_comparison.md
+    ├── 11_cuda_ascend_posttraining_stack_comparison.md
+    └── 12_kimi_k3_posttraining_case_study_analysis.md
 ```
 
 ---
@@ -97,7 +98,7 @@ wiki/
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| 后训练前沿学习域 | [[03_posttraining/index]] | 13 | S00–S05 已完成 |
+| 后训练前沿学习域 | [[03_posttraining/index]] | 14 | S00–S05 已完成 |
 
 ---
 
@@ -129,7 +130,7 @@ wiki/
 | RL 训练框架 (verl/HybridFlow) | [[verl/index]], [[verl_architecture_overview_analysis]], [[verl_ray_trainer_analysis]], [[verl_rl_algorithms_analysis]] |
 | Coding RL「脏活」系列 | [[reward_hacking_defense_analysis]], [[rl_sandbox_design_analysis]], [[rl_infra_efficiency_analysis]] |
 | LLM 后训练前沿 D00–D05 | [[03_posttraining/index]], [[03_posttraining/00_posttraining_source_reading_guide]], [[03_posttraining/01_posttraining_frontier_map_analysis]], [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis]], [[03_posttraining/03_agentic_rl_algorithm_analysis]], [[03_posttraining/04_on_policy_off_policy_staleness_analysis]], [[03_posttraining/05_posttraining_infra_mechanism_analysis]] |
-| LLM 后训练前沿 D06–D11 | [[03_posttraining/06_framework_comparison]], [[03_posttraining/07_verl_end_to_end_iteration_analysis]], [[03_posttraining/08_slime_architecture_analysis]], [[03_posttraining/09_areal_async_architecture_analysis]], [[03_posttraining/10_roll_strategy_and_ascend_analysis]], [[03_posttraining/11_cuda_ascend_posttraining_stack_comparison]] |
+| LLM 后训练前沿 D06–D12 | [[03_posttraining/06_framework_comparison]], [[03_posttraining/07_verl_end_to_end_iteration_analysis]], [[03_posttraining/08_slime_architecture_analysis]], [[03_posttraining/09_areal_async_architecture_analysis]], [[03_posttraining/10_roll_strategy_and_ascend_analysis]], [[03_posttraining/11_cuda_ascend_posttraining_stack_comparison]], [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]] |
 | 万卡训练确定性与可靠性 | [[07_training_reliability/index]], [[determinism_and_numerical_reliability_analysis]], [[fault_tolerance_and_recovery_analysis]], [[training_dynamics_stability_analysis]] |
 
 ### 按原始来源

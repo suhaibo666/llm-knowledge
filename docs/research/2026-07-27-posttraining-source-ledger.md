@@ -1,7 +1,7 @@
-# 2026-07-27 LLM 后训练来源台账
+# 2026-07-27 起 LLM 后训练来源台账
 
-> 用途：为 `wiki/03_posttraining/` 的 D02–D11 提供统一、可复核的论文版本与源码定位。
-> 核验日期：2026-07-27
+> 用途：为 `wiki/03_posttraining/` 的 D02–D12 提供统一、可复核的论文版本、技术报告与源码定位。
+> 框架快照日期：2026-07-27；D12 Kimi K3 报告增补核验：2026-07-28。
 > 证据口径：A 为论文正文或固定 commit 源码；B 为同版本官方文档、测试或示例；C 为项目方声明；D 为本文机制推导。
 
 ## 1. 固定源码快照
@@ -12,8 +12,9 @@
 | slime | [THUDM/slime](https://github.com/THUDM/slime) | `aaf5c2092b01219fa0d5c2d323741d409086ca32` | D06、D08 | detached HEAD，工作树干净 |
 | AReaL | [areal-project/AReaL](https://github.com/areal-project/AReaL) | `b23fa6cf9c8edfebcf055079ab78913128bc4579` | D03、D04、D06、D09、D11 | detached HEAD，工作树干净 |
 | ROLL | [alibaba/ROLL](https://github.com/alibaba/ROLL) | `370cb24c1036ea9145365478fcc40612b2186fc8` | D03、D06、D10、D11 | detached HEAD，工作树干净 |
+| Kimi K3 报告仓库 | [MoonshotAI/Kimi-K3](https://github.com/MoonshotAI/Kimi-K3) | `0797decb18ab079de86f991b87a64b81ec15a3c2` | D01–D05、D11、D12 | 官方报告仓库；无核心 RL 训练源码 |
 
-### 1.1 D02–D11 证据覆盖
+### 1.1 D02–D12 证据覆盖
 
 | 文档 | 主要一手证据 |
 |---|---|
@@ -27,6 +28,7 @@
 | D09 | AReaL trainer、freshness manager、v2 services、Hermes 与 Ascend 分支文档 |
 | D10 | ROLL RLVR/Agentic pipeline、Strategy、resource mapping、weight group 与 NPU platform |
 | D11 | 四框架证据加 torch_npu、HCCL、MindSpeed、vLLM-Ascend、SGLang NPU 官方文档 |
+| D12 | Kimi K3 Technical Report `0797decb` §4.1、§4.2、§5.3、Appendix F；官方固定仓库树与本地 PDF hash |
 
 ## 2. 算法来源
 
@@ -60,9 +62,22 @@
 | TIM 动态耦合 | [Beyond Precision, arXiv:2602.01826v1](https://arxiv.org/abs/2602.01826v1)，§3、§4.1–4.4，Fig. 7–13 | mismatch 与 update size/response length 动态耦合；LR 调度与 IS 处理不同问题 | A |
 | inference policy 目标 | [MIPI/MIPU, arXiv:2606.29526v1](https://arxiv.org/abs/2606.29526v1)，§4.1，Algorithm 1，Table 1–2 | 同参数仍可能有 train/inference policy 差异；candidate update 需接受测试 | A |
 
-## 5. 四框架源码地图
+## 5. Kimi K3 技术报告基线
 
-### 5.1 verl
+| 来源 | 固定版本与承重定位 | 支持的结论 | 证据 |
+|---|---|---|---|
+| Kimi K3 Technical Report | [MoonshotAI/Kimi-K3 `0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2)，47 页；PDF SHA-256 `fd6ee35c07766a5eb6104235f1b407e4329f969e3482b8c42937c7b5f2b3efe1`；本地 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf` | 固定 2026-07-28 官方报告正文；仓库未含核心 RL 训练实现 | A/C |
+| 三阶段后训练 | §4.1、pp.12–14；Eq. 15–16 | SFT → 3 领域 × 3 effort 专家 RL → MOPD；reasoning budget、GRM、deployment-aware QAT 与 draft fine-tuning | A |
+| Partial rollout | §4.1.2，p.13 | \(\lambda NK\) phase gate、prompt 内 \(K\) group、跨 iteration resume 与 extreme off-policy 声明 | A/C |
+| White-box environments | §4.2.1–4.2.7、pp.14–16；Fig. 9–10 | 动态 harness、任务合成、kernel/personal-assistant/AET/web-dev verifier 设计 | A |
+| 1M Agentic RL infra | §5.3、pp.21–22 | co-location、external KV write-back、auto-throttling、gradient-buffer reuse、AgentENV lifecycle | A/C |
+| XTML trajectory protocol | Appendix F、pp.46–47；Fig. 16 | option zones、think/response/tools channels、preserved thinking、typed tool calls | A |
+
+报告没有披露 \(N,K,\lambda,\tau,\sigma,R_{\max}\)、完整 stale-data regularizer、RL 总计算量、组件消融或 trainer/rollout/weight-sync 源码。D12 中由机制推出的 schema 和设计检查项统一标为综合判断，不反写成项目方实现事实。
+
+## 6. 四框架源码地图
+
+### 6.1 verl
 
 - 入口/编排：`verl/trainer/main_ppo.py:34,103,167-168`；`verl/trainer/ppo/ray_trainer.py:286,772,1380`。
 - 数据：`verl/protocol.py:318,721,781,963,971` 的 `DataProto` 及变换。
@@ -72,7 +87,7 @@
 - 权重：`verl/workers/engine_workers.py:705-725,783-787`；`verl/workers/rollout/vllm_rollout/vllm_rollout.py:271-320`。
 - fully async 边界：`verl/experimental/fully_async_policy/README.md:64`；`verl/experimental/fully_async_policy/fully_async_main.py:25-29,222`。
 
-### 5.2 slime
+### 6.2 slime
 
 - 入口/同步主循环：`train.py:9-93`。
 - Ray role：`slime/ray/rollout.py:427,552-680`；`slime/ray/actor_group.py:13,130-178`。
@@ -82,7 +97,7 @@
 - weight transport：`slime/backends/megatron_utils/actor.py:150-181`；`slime/ray/actor_group.py:161-268`。
 - fully async：`slime/rollout/fully_async_rollout.py:76-256`；官方 smoke test 入口 `examples/fully_async/README.md:3-83`。
 
-### 5.3 AReaL
+### 6.3 AReaL
 
 - 训练主链：`areal/trainer/rl_trainer.py:105,307-434,605-816`。
 - rollout/任务：`areal/infra/controller/rollout_controller.py:74`；`areal/infra/workflow_executor.py:263,747`。
@@ -92,7 +107,7 @@
 - 权重服务：`areal/v2/weight_update/gateway/app.py:170-757`，AWEX/disk/colocate 三路径。
 - NPU：`docs/en/tutorial/installation_npu.md:1-182`；`areal/infra/platforms/npu.py:14-30`。
 
-### 5.4 ROLL
+### 6.4 ROLL
 
 - RLVR：`roll/pipeline/rlvr/rlvr_pipeline.py:121,197-374,459-700`。
 - async 分支：`roll/pipeline/rlvr/rlvr_pipeline.py:454,477-565`。
@@ -102,9 +117,10 @@
 - 权重同步：`roll/distributed/executor/model_update_group.py:9-37`。
 - NPU：`roll/platforms/__init__.py:16-43`；`roll/platforms/npu.py:11-105`；`roll/distributed/scheduler/protocol.py:230-240,378-386`。
 
-## 6. 使用约束
+## 7. 使用约束
 
 1. “支持”必须分接口存在、调用链可达、正确性验证和目标规模性能四级。
 2. 论文 benchmark 数字不能脱离版本、模型、硬件、序列和采样条件。
 3. 当前台账只证明固定快照中的事实；30 天后引用快速变化源码前应重验。
 4. `file:line` 只有与 40 位 commit 一起使用才是稳定证据。
+5. 技术报告中的项目级设计与自报规模不自动等于公开源码支持；K3 不加入 D06 的四框架 P1–P4 矩阵。

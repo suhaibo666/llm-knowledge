@@ -2,7 +2,7 @@
 
 > **阶段**：S01
 > **文档编号**：D02
-> **快照日期**：2026-07-27
+> **快照日期**：2026-07-28
 > **证据基线**：固定 arXiv 版本与四框架 S00 commit，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
 > **结论先行**：前沿不是简单地从 GRPO 换一个缩写，而是在修正四类对象：统计单位、有效样本分布、行为策略比率和训练—推理一致性。
 > **阅读导航**：[[03_posttraining/01_posttraining_frontier_map_analysis|上一篇 D01]] · [[03_posttraining/03_agentic_rl_algorithm_analysis|下一篇 D03]]
@@ -21,6 +21,8 @@
 - 训练端重算 log-prob，却不测 rollout 与 train engine 的数值差。
 
 SAO 的 single-rollout 是另一组偏差—方差—调度折衷，并没有证明 group rollout 普遍无效。它用 value model 和更严格的 token mask 补回单样本高方差；因此“一个样本”不是免费升级。
+
+Kimi K3 又给出一个工业反例：它仍为每个 prompt 采 \(K\) 条 completion，并在同题 \(K\) 条全部完成后才送优化；partial rollout 打破的是全局 \(N\times K\) 的长尾等待，而不是 \(K\)-response completion/dispatch boundary。报告没有重述所有任务的 advantage estimator，不能把这条调度边界扩大为通用统计公式（Kimi K3 Technical Report §4.1.2，p.13；详见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]]）。
 
 ## 2. 统一符号
 
@@ -123,6 +125,30 @@ verl 的固定快照已有 GSPO 注册与 sequence clipping：`verl/trainer/ppo/
 
 收益来自取消 group 完成 barrier 和更接近真实在线流量；代价是恢复 value model、提高 estimator 方差、加强版本与 log-prob 可信度要求。它与 GRPO/GSPO 是并列设计点，不是线性替代关系。
 
+### 3.6 Kimi K3：先训练九个专家，再用 MOPD 合并
+
+K3 把“优化一个 policy”和“合并多个 specialist”拆成两个问题。它先按三个领域与 `low/high/max` 三档 reasoning effort 训练九个专家，再让统一 student 自己采样，由对应 teacher 在 student 实际访问的 prefix 上提供逐 token dense reward（Kimi K3 Technical Report §4.1.2–4.1.3，pp.12–14）。
+
+\[
+r_{\mathrm{opd}}^d(y_t\mid e,x,y_{<t})
+=
+\operatorname{clip}
+\left(
+\operatorname{sg}
+\left[
+\log
+\frac{\pi_{\mathrm{teacher}}^{(d,e)}(y_t\mid x,y_{<t})}
+{\pi_\theta(y_t\mid e,x,y_{<t})}
+\right],
+-R_{\max},
+R_{\max}
+\right).
+\]
+
+Eq. 15 的关键不是“又一种 PPO ratio”：student token 才是训练数据，teacher/student log-ratio 被当作 stop-gradient reward，并以 \(R_{\max}\) 截断极端信号。它解决的是能力 consolidation，可与 K2.5-style policy optimization 和 partial rollout 组合；报告还称 top-k 蒸馏在其设置下没有明确优势，但没有给出数值消融（Kimi K3 Technical Report §4.1.3、Eq. 15，pp.13–14）。
+
+reasoning-effort expert 则由相对预算约束形成：对问题 \(x\) 估计 cold-start budget \(b_0(x)\)，若 \(T(y)>\tau b_0(x)\) 就把任务 reward 覆盖为 \(-1\)，随后逐阶段减小 \(\tau\) 得到 max、high、low experts。general task 的 \(T(y)\) 只计 thinking tokens，agentic task 则计 reasoning 与 tool arguments 的累计输出（Kimi K3 Technical Report §4.1.2，p.13）。
+
 ## 4. 真正改变了什么
 
 | 方法 | 优化单位 | advantage | ratio/clip | 采样结构 | 关键系统不变量 |
@@ -132,6 +158,7 @@ verl 的固定快照已有 GSPO 注册与 sequence clipping：`verl/trainer/ppo/
 | Dr. GRPO | token sum 配固定 divisor | 去 std 或无偏 baseline | PPO 类 | group | reducer 不引入长度权重 |
 | GSPO | sequence；可 token 化实现 | group-relative sequence reward | sequence ratio/clip | group | 整条 response 同一 clip 决策 |
 | SAO | token | value estimator | rollout log-prob + 双侧 mask | 单 response 流 | behavior log-prob 与 version 可审计 |
+| K3 MOPD | student token | 对应 domain/effort teacher 的 clipped dense reward | teacher/student log-ratio 作为 reward | student on-policy rollout，九 teacher | teacher 选择、effort 条件和 student token 严格对齐 |
 
 ## 5. 从公式推回 batch schema
 
@@ -148,6 +175,8 @@ valid_token_count, response_length
 
 若使用 GSPO，再增加 sequence log-ratio 与 sequence clip mask；若使用动态采样，记录 rejected reason 和补采次数；若使用 SAO，记录 critic version。
 
+若使用 K3 类 partial rollout/MOPD，还要增加 `continuation_id`、`pause_iteration`、`resume_iteration`、`policy_version_per_call`、`teacher_domain`、`teacher_effort` 和 `teacher_log_probs`。这些字段是从报告机制推导的最小可审计 schema；K3 没有公开实际 trainer schema。
+
 ## 6. 选择算法的工程决策
 
 | Workload | 首选起点 | 原因 | 必做对照 |
@@ -156,6 +185,7 @@ valid_token_count, response_length
 | 长 CoT、无效 group 多 | DAPO | 动态采样与 token 聚合 | 过滤分布、overlong shaping |
 | MoE/长序列出现 token clip 抖动 | GSPO | sequence ratio 与 reward 对齐 | sequence clip fraction、TIM |
 | 长尾 agent/coding、每题只能得到一次反馈 | SAO/PPO 类 | 无 group barrier | critic error、version lag、rollout log-prob |
+| 多领域、多 effort 专家需合为一个部署模型 | MOPD 类 consolidation | student on-policy 状态上接受对应 teacher 的 dense signal | 单 teacher、离线 KD、参数合并与 teacher-routing 消融 |
 
 最终判断不是看算法名，而是检查：
 
@@ -169,6 +199,7 @@ valid_token_count, response_length
 
 - [[03_posttraining/03_agentic_rl_algorithm_analysis|D03 Agentic RL 算法与环境]]
 - [[03_posttraining/04_on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
+- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[01_theory/04_posttraining/grpo_analysis|既有 GRPO 分析]]
 - [[01_theory/04_posttraining/dapo_analysis|既有 DAPO 分析]]
 - [[01_theory/04_posttraining/gspo_analysis|既有 GSPO 分析]]

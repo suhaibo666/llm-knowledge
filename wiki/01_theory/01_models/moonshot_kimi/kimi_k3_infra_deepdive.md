@@ -1,12 +1,15 @@
 # Kimi K3 训推基础设施深析：结构、训练与推理如何共同支撑 2.8T + 1M 上下文
 
 > **来源基线**：
-> - K3 官方 Tech Blog 快照 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.txt`（下称“博客”）。基础设施相关原文集中在 §Architecture and Infrastructure 与 §Availability，即本地快照 `:207-227`。
+> - K3 官方 Tech Blog 快照 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.txt`（下称“博客”）；[Kimi K3 Technical Report `0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2)（2026-07-28，47 页）与本地 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`。
 > - K2 训练基础设施基线：arXiv 2507.20534（本库 `raw/.../Kimi_K2-2507.20534.pdf`，见 [[kimi_k2_analysis]]）；K2 Thinking INT4：Hugging Face 上的 `moonshotai/Kimi-K2-Thinking` 模型卡。
 > - Mooncake：`kvcache-ai/Mooncake` README（FAST'25 Best Paper，见 [[mooncake_analysis]]）；vLLM：issue #26201 与 PR #27654、#42406、#44539、#44848、#43833（通过 GitHub API 核实合入状态）；FlashKDA：`MoonshotAI/FlashKDA@d2ff19a` 与 MarkTechPost 2026-04-30 报道。
 > - OCP MX 格式：OCP Microscaling Formats v1.0 规范（经解读页逐条核对）。
-> **标记**：`[官方]` 表示第一手材料，`[三方]` 表示第三方来源，`[推断]` 表示基于已核实事实的推理。K3 完整技术报告尚未发布，所有推断均需后续回填核对。
-> **更新**：2026-07-17，依据官方 Tech Blog 优化中文叙述与公式排版；同日新增 §四「负载建模」——推理 decode/prefill 逐部件 roofline 记账 + 训练侧 8K→1M 逐模块 bound 推演（参数化公式，报告发布后代入真实维度即可刷新）。
+> **标记**：`[官方]` 表示第一手材料，`[三方]` 表示第三方来源，`[推断]` 表示基于已核实事实的推理。
+> **更新**：2026-07-28，回填正式技术报告中的 Per-Head Muon、MoonEP、全后训练 QAT、KDA Context Parallelism 与统一 cache layout；§四保留为报告发布前的敏感性分析档案，不再作为 K3 容量规划依据。
+
+> [!important]
+> 正式报告已经解决“是否做了什么”的主要缺口，但没有公开完整 trainer、rollout、部署配置和生产拓扑。本文只把项目级设计提升为官方证据；实现级判断仍需分别核查 MoonEP、FLA/vLLM、AgentENV 等源码。K3 后训练算法与 1M Agentic RL 闭环统一见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]]。
 
 ---
 
@@ -26,23 +29,23 @@ $$
 
 K2 报告称，这套机制在 15.5T tokens 训练中实现了零 loss spike。此时 per-head 粒度主要用于**事后稳定性修补**。
 
-- **K3 的官方变化。** 博客称 Per-Head Muon “通过独立优化每个注意力头，使大规模训练更具适应性”（博客 `:207-209`）。这意味着 per-head 粒度从 clip 阶段前移到了优化器更新本身。
-- **机制边界。** Muon 的 Newton–Schulz 正交化以矩阵为单位，因此一种自然实现是把 Q/K 投影按头切分后分别更新，而不是把整个投影矩阵视为一个整体。这样可以适应不同头的谱结构和更新尺度，但 K3 报告尚未披露切分维度、学习率共享方式及其与 QK-Clip 的关系；这些都仍是 **[推断]**。
+- **K3 的官方变化。** 正式报告确认：对 Q、K、V 投影，不再对完整 momentum matrix 做 Newton–Schulz 正交化，而是沿 head 维切分 momentum matrix，再独立正交化每个 head block。这样可避免大尺度 head 主导共享更新方向，使各 head 更新尺度更均衡；官方还报告训练稳定性改善和 optimizer overhead 略降（报告 §2.5，pp.10–11）。
+- **机制边界。** 报告没有给出 Per-Head Muon 与 QK-Clip 的联合消融、学习率共享方式、完整超参数或公开实现。因而“按头切分 Q/K/V momentum block”是 **[官方]**，但它如何与 K2 的 MuonClip 组合仍未知。
 
 ### 2.2 高稀疏 MoE 的训练配套：Quantile Balancing + 全平衡 EP
 
-官方明确给出的目标是：避免大规模专家并行中的负载不均拖低吞吐。为此，K3 引入了“静态 shape、关键路径无 host synchronization”的全平衡专家并行训练方法（博客 `:208-209`）。
+官方明确给出的目标是：避免大规模专家并行中的负载不均拖低吞吐。为此，K3 在路由侧使用 Quantile Balancing（QB），并在执行侧引入 MoonEP，使所有 rank 的总 token 负载完全一致（报告 §2.3.3，pp.8–9；§5.2.1，pp.19–20）。
 
-- **算法侧：Quantile Balancing。** 博客称它直接依据 router score 的分位数确定专家分配，从而去掉启发式更新和敏感的均衡超参数。当前公开材料没有公式，详见 [[kimi_k3_architecture_deepdive]] §5。
-- **系统侧：全平衡 EP。** “静态 shape”意味着 kernel 不需要在每一步应对变化的专家 batch；“关键路径无 host synchronization”意味着容量统计或溢出判断不能通过 device→host 回读阻断 all-to-all 流水。把这两点合起来，可以把 MoE 训练变成更适合静态编译和流水执行的确定性负载。
-- **两者是否严格耦合仍待确认。** 分位数分配可能天然导出固定专家配额，从而与静态 shape 相互配合；但博客没有说明是否做到“每个专家恰好接收固定数量 token”，也没有说明这是否就是 “Stable” 的来源，因此这里只标为 **[推断]**。
+- **算法侧：Quantile Balancing。** QB 从最大分数的 balanced assignment 推导 token 侧与 expert 侧的分位数更新；部署时只需冻结 expert bias，并执行普通 Top-k 路由。公式、收敛规则和与 sign-based loss-free update 的关系已在报告 Appendix C 给出，详见 [[kimi_k3_architecture_deepdive]] §5（报告 §2.3.3，pp.8–9；Appendix C，pp.43–44）。
+- **系统侧：MoonEP。** 对序列长度 `S`、每 token 选择 `K` 个专家的 micro-batch，MoonEP 要求每个 EP rank 恰好接收 `S×K` 个 token；通过在线规划和迁移 dynamic redundant experts，在每个 rank 最多预留 `E/R` 个冗余专家槽即可保证可行。GPU planner、直接写入远端 expert-grouped 位置的 zero-copy permute/unpermute、固定 `S×K` 通信缓冲和静态 computation shape 共同移除了逐层 host synchronization（报告 §5.2.1，pp.19–20）。
+- **不要把 QB 与 MoonEP 合并成一个算法。** QB 负责 router assignment 的训练与推理一致性，MoonEP 负责给既定 router output 制定冗余专家执行计划。报告把两者放在不同章节，也没有声称 MoonEP 的完全平衡由 QB 直接保证。
 
 ### 2.3 量化：从 INT4 weight-only 转向 MXFP4 权重 + MXFP8 激活
 
 ![K2 到 K3 的量化路线：K2 在后训练阶段使用 INT4 weight-only QAT；K3 从 SFT 开始采用 MXFP4 权重与 MXFP8 激活，并以 OCP MX 块格式面向多类硬件。](assets/kimi_k3_fig_mxfp_qat.png)
 
 - **K2 Thinking 的做法。** HF 模型卡披露的是 INT4 weight-only，只量化 MoE 组件，并在 post-training 阶段进行 QAT；官方宣称低延迟模式可获得“无损 2× 加速”。工程师 AMA 的第三方转述称，选择 INT4 而不是 FP4 是为了兼容非 Blackwell 硬件，并改善 thinking 模型长解码的低利用率。
-- **K3 的升级。** 博客明确写道：K3 从 SFT 阶段开始进行 QAT，采用 MXFP4 权重和 MXFP8 激活，以获得更广泛的硬件兼容性（博客 `:208-209`）。相较 K2，这包含三项变化：QAT 时间点提前到整个后训练链路；格式切换到 OCP MX 开放标准；激活也进入低精度。至于 RL 是否全程保持相同伪量化配置、训练本身是否使用 MX GEMM，官方尚未披露。
+- **K3 的升级。** 正式报告确认 QAT 覆盖整个后训练阶段，包括 SFT 与 RL；routed expert 权重使用 MXFP4，其输入 activation 使用 MXFP8，attention projection、latent MoE projection、shared expert 与 router 保持更高精度。RL 的 rollout 与 training 使用同一量化方案，从**量化配置这一维**消除 train–inference mismatch（报告 §4.1.4，p.14）。报告没有说明 trainer 是否原生执行 MX GEMM，不能把“同一量化方案”进一步解释为相同 kernel 或相同硬件。
 
 仅按 4 bit 权重计算，2.8T 参数的理论下限为：
 
@@ -58,7 +61,7 @@ $$
 
 K2 报告（arXiv 2507.20534）披露的训练系统是：H800 集群，每节点 8 卡和 2 TB RAM，节点间使用 8 × 400 Gbps RoCE；并行策略为 16-way PP（含虚拟 stage）+ 16-way EP + ZeRO-1 DP，不使用 TP。显存优化包括选择性重计算、FP8-E4M3 激活压缩和与计算重叠的 CPU offload；官方报告称 15.5T tokens 训练期间没有 loss spike。
 
-K3 的“约 2.5×”指 overall scaling efficiency，即计算投入到模型能力的总体转化效率，不是上述训练系统吞吐的直接倍率。组件论文可核验的数字只有 KDA 约 1.16× 与 AttnRes 约 1.25×，简单相乘约为 `1.45×`。其余收益归因于 LatentMoE 或数据配方只是 **[推断]**。K3 的训练集群规模、卡型和成本均未披露；TechCrunch 发布稿也没有可靠成本数字。
+K3 的“约 2.5×”来自正式报告 Figure 7 的 held-out OOD validation loss–FLOPs 拟合曲线，不是上述训练系统吞吐的直接倍率。组件论文可核验的数字只有 KDA 约 1.16× 与 AttnRes 约 1.25×；即便简单相乘约为 `1.45×`，也不能与项目级联合 scaling curve 做严格归因。K3 的训练集群规模、卡型和成本仍未披露（报告 §3.2、Fig. 7，pp.10–11）。
 
 ## 三、推理侧
 
@@ -87,8 +90,8 @@ $$
 - **为什么传统前缀缓存失效。** 全注意力的 KV 按 token 追加，因此可以对缓存块做哈希并直接复用共享前缀。KDA 只维护一个固定大小、随 token 持续覆写的递归状态，并不保留完整的逐 token 历史；传统 Automatic Prefix Caching（APC）因而不能原样套用。这一机制解释来自 vLLM issue #26201，映射到 K3 的判断为 **[推断]**。
 - **如何恢复可复用性。** vLLM 的设计是在 prefill 过程中，于 cache block 边界保存 KDA 状态快照。新请求命中共享前缀后，系统先恢复“不超过前缀长度的最近快照”，再重算快照之后的短尾段。`all` 模式保存所有候选快照；`align` 模式只保留对齐位置，并用 GPU kernel 完成后处理，以免引入 CPU–GPU 同步。
 - **社区落地链。** GitHub API 显示：PR #27654 于 2025-10-28 将 KDA 纳入 vLLM，支持 Kimi Linear day-0；#42406 为 hybrid 模型加入 `align` 前缀缓存并进入 v0.25.0；随后 #44539 统一 KDA convolution state 的双状态布局，#44848 打通 Kimi Linear 经 NIXL 的 Prefill/Decode 分离。FlashKDA prefill backend 对应 #43833，截至 2026-07-17 尚未合入。
-- **K3 官方结论。** 博客指出，KDA 给传统 prefix caching 带来了新问题，Moonshot 已向 vLLM 社区贡献相应实现，并计划随模型发布；具备 prefill cache 后，K3 才能在 2.8T 规模和 1M 上下文下维持有竞争力的 token 价格（博客 `:208-210`）。博客没有点名具体 PR，因此与上述 PR 链的对应关系仍是 **[推断]**。
-- **与 Mooncake 如何组合。** 在 hybrid 模型中，MLA 层复用的是 KV block，KDA 层复用的是状态快照；Mooncake 一类缓存系统需要统一调度这两种生命周期不同的工件。这解释了 K3 为何把 KDA prefix cache 视为服务成本的关键环节，但具体存储布局尚未公开，属于 **[推断]**。
+- **K3 官方结论。** 博客指出，KDA 给传统 prefix caching 带来了新问题，Moonshot 已向 vLLM 社区贡献相应实现；正式报告进一步给出了 production design，而不是只停留在社区 PR 线索：KDA state 与 MLA KV 被放入同一个 paged block pool，page 统一为相同字节大小，共享 allocation、reference counting 与 eviction 逻辑（博客 `:208-210`；报告 §5.4.1，pp.22–24）。
+- **统一布局的关键细节。** 一个 page 内按 head 连续存放 KDA state，使单个 head 的 byte stream 成为跨节点传输的最小单位；Prefill/Decode 使用不同 TP degree 时，在传输路径完成 re-layout，无需 GPU 端额外 reshuffle。由此，“两类 cache 必须共同恢复”和“二者如何共享资源管理”已经是 **[官方]**；生产调度器源码、page 参数选择和 Mooncake 内部接线仍未公开。
 
 ### 3.3 FlashKDA：面向 prefill 的第二代 kernel
 
@@ -108,14 +111,17 @@ $$
 2. **专家并行通信。** 896 个专家、每 token 激活 16 个专家，会在每层引入两次 all-to-all。若以 64 卡承载专家，平均约为每卡 14 个专家；通信最好留在 NVLink 或 Unified Bus 一类 scale-up 域内，而不是频繁跨越节点间 RoCE。
 3. **稀疏模型的摊销效率。** 更大的 batch 和 EP 域可以摊薄专家权重读取成本。作为旁证，LMSYS 对 K2 128 × H200 部署的第三方分析给出了约 224k token/s 的 prefill、288k token/s 的 decode，以及约 0.21 USD/MTok 的输出成本；这些数字不能直接外推为 K3 的实测性能。
 
-现实中的超节点形态包括 NVIDIA GB200 NVL72（72 张 GPU 处于统一 NVLink 域，原生支持 FP4）和华为 CloudMatrix384（384 张 NPU 通过 Unified Bus 互联，并面向大规模 MoE 专家并行和分布式 KV cache 访问优化，见 arXiv 2506.12708）。K3 选择开放的 MXFP4 标准，并采用厂商中性的 “accelerators” 表述，说明它在接口层面没有排除这两类平台；但具体完成了哪些平台适配，仍需等待权重、部署文档和完整技术报告确认。
+现实中的超节点形态包括 NVIDIA GB200 NVL72（72 张 GPU 处于统一 NVLink 域，原生支持 FP4）和华为 CloudMatrix384（384 张 NPU 通过 Unified Bus 互联，并面向大规模 MoE 专家并行和分布式 KV cache 访问优化，见 arXiv 2506.12708）。K3 选择开放的 MXFP4 标准，并采用厂商中性的 “accelerators” 表述，说明它在接口层面没有排除这两类平台；但正式报告与权重快照仍未给出已验证平台清单，不能据此声称某一超节点已有官方适配。
 
-## 四、负载建模：引入 KDA 后，每个模块的瓶颈是什么 bound
+## 四、报告前负载建模档案：引入 KDA 后，每个模块的瓶颈是什么 bound
 
-> **方法**：roofline + 每 token 字节/FLOP 记账。**K3 的隐藏维度、层数、激活参数均未公开**，本节用 Kimi-Linear-48B 的已核实 config 做精确模板，对 K3 只做量级估算，全部标注 **[推断]**。
-> **模型假设 [推断]**：d=8192；64 层 = 48 KDA + 16 MLA；64 头；KDA 状态 128×128/头；MLA 压缩 KV 512+64；MoE 每层 896 专家（44M/专家，latent 维 d_lat=2048），激活 16+1 → 每层激活 ≈750M，全模型激活 ≈50B。
+> [!warning]
+> 本节是 2026-07-17、正式报告发布前建立的 sensitivity worksheet。报告 Table 1 已确认 K3 为 93 层、hidden dimension 7,168、96 heads、69 KDA + 24 Gated MLA、latent MoE dimension 3,584、104.2B activated parameters；这与下方假设不一致。为保留推演方法与研究轨迹，旧账不删除，但其中 K3 数值、交叉点和容量结论均已失效，**不得用于采购、部署或容量规划**。
+>
+> **原方法**：roofline + 每 token 字节/FLOP 记账。下文用 Kimi-Linear-48B config 做模板，并以报告前假设外推 K3，全部应按历史 **[推断]** 阅读。
+> **原模型假设 [已失效]**：d=8192；64 层 = 48 KDA + 16 MLA；64 头；KDA 状态 128×128/头；MLA 压缩 KV 512+64；MoE 每层 896 专家（44M/专家，latent 维 d_lat=2048），激活 16+1 → 每层激活 ≈750M，全模型激活 ≈50B。
 > **硬件锚点**（公开规格，凭记忆，量级可靠）：H200 ≈ 989 TFLOPS bf16 / 4.8 TB/s，knee ≈ 206 FLOPs/B；H20 ≈ 148 TFLOPS / 4.0 TB/s，knee ≈ 37 FLOPs/B；H800（K2 实际训练卡）bf16 峰值 989 TFLOPS，按 45% MFU 记 **450 TFLOPS 有效**，HBM 3.35TB/s，节点内 NVLink 400GB/s，节点间 8×400Gbps ≈ **50GB/s/卡**。
-> 技术报告发布后，把真实维度代入本节的参数化公式即可整体刷新结论；公式列不随维度变。
+> 刷新该模型还需要权重 config、部署精度、kernel 路径和并行拓扑；不能只替换 Table 1 的维度。
 
 ### 4.1 总图：瓶颈发生了"迁移"而不是"消失"
 
@@ -248,28 +254,30 @@ KDA 层自己:              降到"噪声级"(定长状态,~MB 量级/层/序列
 - **训练和推理的瓶颈迁移方向相反**：推理引入 KDA 后瓶颈从注意力迁到 MoE 权重带宽；训练里 MoE 恒定、注意力随 L 回来——**1M 训练的主项恰是那 1/4 没被 KDA 替掉的 MLA 层**。换句话说，3:1 这个比例同时钉住了两头：再稀（15:1）长文质量掉（Kimi-Linear Table 1），再密（1:1）1M 训推两侧的账都翻倍。
 - **一句话**：训练侧的 bound 随 L 从"通信/调度问题"（8K，a2a 贴着专家计算跑）单调迁移到"纯算力问题"（1M，1/4 的 MLA 层吃掉八成 FLOPs）；KDA 的作用不是消灭这个迁移，而是把终点的账单除以 3.3，把 1M 原生预训练从"不经济"拉回"贵但可付"。
 
-## 五、事实边界与待报告确认清单
+## 五、正式报告回填后的事实边界
 
-| 项 | 现状 | 待确认 |
+| 项 | 正式报告已确认 | 仍待源码或运行证据确认 |
 |---|---|---|
-| Per-Head Muon 精确定义 | 博客一句 [官方] | 按头切分粒度、与 QK-Clip 的关系、消融 |
-| Quantile Balancing 公式 | 博客一句 [官方] | 分位数如何定义/更新、与 aux-loss-free 的对比数据 |
-| 全平衡 EP 训练 | 博客一句 [官方] | token drop 与否、静态配额的精度代价 |
-| MXFP4/MXFP8 QAT 细节 | 博客一句 [官方] | 伪量化算子位置、RL 阶段是否同精度、训练硬件 |
+| Per-Head Muon | Q/K/V momentum matrix 沿 head 维切分并分别做 Newton–Schulz；改善 head 间更新均衡与稳定性（§2.5） | 与 QK-Clip 的组合、完整超参数、消融与实现 |
+| Quantile Balancing | balanced assignment 推导、token/expert 两轴分位数更新、部署时 frozen bias + Top-k（§2.3.3；App. C） | trainer 代码、超参数、独立消融 |
+| MoonEP | 每 rank 恰收 `S×K` token；最多 `E/R` 冗余专家槽；GPU planning、zero-copy、静态 shape、无逐层 host sync（§5.2.1） | MoonEP 仓库的 commit 级实现审计、目标硬件与端到端消融 |
+| MXFP4/MXFP8 QAT | QAT 覆盖 SFT + RL；routed expert 权重 MXFP4、输入 MXFP8；rollout 与 training 同量化方案（§4.1.4） | fake/native quant 边界、trainer kernel、硬件和吞吐 |
+| 1M Agentic RL infra | co-located + partial rollout；external KV pool、auto-throttling、gradient-buffer reuse；AgentENV（§5.3） | 核心 trainer/rollout 源码、生产配置与复现实验；详见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\|D12]] |
 | K3 训练集群/成本 | 无任何可靠数字(TechCrunch 亦无)| 卡型、规模、token 数 |
-| vLLM 贡献的具体 PR | "随模型发布" [官方] | 权重发布时的配套 PR/分支 |
-| 2.5× scaling 效率的度量 | "overall scaling efficiency" [官方] | 是 loss-matched compute 比还是别的口径 |
-| §四负载建模的模型维度 | 全部 [推断](d=8192、64 层=48 KDA+16 MLA、64 头、d_lat=2048、激活 ≈50B) | 真实 hidden/层数/头数/d_latent/激活参数——代入 §四 公式即可整体刷新 |
-| MLA 层数与 KV 精度 | [推断] 16 层、bf16 | 直接决定 decode 主 bound①(KV 扫描)与容量账 |
-| 长上下文训练的 CP 方案 | 未披露 | ring vs 双遍扫描;KDA 段间 scan 实现;各 L 阶段的 PP/CP/EP/DP 拓扑(对照 K2 16PP×16EP×ZeRO-1) |
+| KDA-aware prefix cache | KDA/MLA 共用 paged pool 与 page 生命周期；head-contiguous；跨不同 TP degree 在传输路径 re-layout（§5.4.1） | vLLM/Mooncake 生产接线、page 参数和调度源码 |
+| 2.5× scaling 效率 | Fig. 7 的 fitted validation-loss–FLOPs 曲线给出整体 scaling efficiency [官方] | 各结构、数据与训练改进的隔离归因 |
+| §四负载建模 | Table 1 已确认 93 层、7,168 hidden、96 heads、69 KDA + 24 MLA、3,584 latent MoE、104.2B activated parameters | 旧模型与报告冲突，需结合 config、精度、kernel 和真实拓扑整节重算 |
+| MLA cache 精度与 serving 账 | 24 个 Gated MLA layer 已确认 | 生产 cache 精度、page 形状、批处理与 kernel 数据决定实际容量/带宽 |
+| 长上下文训练与 KCP | KCP 以 local transition + zero-state fragment 表示 rank 更新，经固定大小 all-gather 与 prefix scan 恢复输入 state；总体结合 PP/VP/EP/ZeRO-1/Pipeline ZeRO-2/CP（§5.1.2、§5.2） | 各长度阶段的并行度配置、拓扑映射与性能数据 |
 | AttnRes 在 1M 训练的实测开销 | 论文 "<4%" 只测到 128K [官方论文] | 1M 下块表示分片与开销是否仍 <4% |
-| a2a 与计算的重叠机制 | 未披露 | 是否有 DualPipe 式双 micro-batch 重叠;decode 侧 a2a 延迟怎么藏 |
-| 长上下文各阶段课程 | 未披露 | 8K→1M 的 L 课程与 token 配比;RL rollout 与训练算力配比 |
+| a2a 与计算重叠 | 报告 Fig. 11 明确 EP dispatch/combine 与计算重叠，共享专家走独立 stream（§5.2） | 具体 schedule、拓扑和 decode 侧 a2a 延迟隐藏 |
+| 长上下文课程 | 四阶段 `8K → 64K → 256K → 1M`，后两档在 cooldown；长序列只占较小预算（§3.4） | 各档 token 配比、RL rollout 与训练算力配比 |
 
 ## Related Pages
 
 - [[kimi_k3_analysis]] — K3 发布总结
 - [[kimi_k3_architecture_deepdive]] — 结构变化点(本页多数 infra 选择的结构侧上半场)
+- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]] — D12：K3 后训练与 1M Agentic RL 统一案例
 - [[mooncake_analysis]] — Mooncake 论文级分析(FAST'25)
 - [[kimi_k2_analysis]] — K2 的 MuonClip 与训练系统基线
 - [[kimi_k2.5_analysis]] — K2.5(INT4 沿用、Agent Swarm)

@@ -2,10 +2,10 @@
 
 > **阶段**：S04
 > **文档编号**：D11
-> **快照日期**：2026-07-27
-> **证据基线**：四框架 S00 commit 与 2026-07-27 官方 Ascend/PyTorch/vLLM/SGLang 文档快照
+> **快照日期**：2026-07-28
+> **证据基线**：四框架 S00 commit、2026-07-27 官方 Ascend/PyTorch/vLLM/SGLang 文档快照与 Kimi K3 Technical Report `0797decb`
 > **结论先行**：Ascend 已不是“只能训练、不能 rollout”的早期状态：torch_npu、HCCL、MindSpeed、vLLM-Ascend、SGLang NPU 和后训练框架都有可达路径；但迁移单位必须是整套版本矩阵与正确性闭环，不能只替换 `cuda` 字符串。
-> **阅读导航**：[[03_posttraining/10_roll_strategy_and_ascend_analysis|上一篇 D10]] · [[03_posttraining/00_posttraining_source_reading_guide|回到 D00]]
+> **阅读导航**：[[03_posttraining/10_roll_strategy_and_ascend_analysis|上一篇 D10]] · [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|下一篇 D12]]
 
 ---
 
@@ -56,6 +56,7 @@ msprof and CANN HCCL diagnostics
 | weight sync | NCCL/CUDA IPC/shared memory | HCCL/P2P/disk/框架适配 | 需要独立实现或 backend |
 | graph | CUDA Graph | ACLGraph/NPUGraph 等 | capture 与 dynamic shape 不同 |
 | kernels | FlashAttention、TransformerEngine、DeepEP | CANN op、MindSpeed、DeepEP-Ascend、NPU kernels | 不能直接复用 CUDA binary |
+| post-training precision | trainer/rollout 可使用 FP8/FP4 与 QAT | MXFP4/MXFP8 的算子、scale、layout 和 checkpoint 支持需逐项确认 | 相同 dtype 名不保证相同数值 policy |
 | profiling | Nsight、PyTorch profiler | msprof、CANN/torch_npu profiler | 指标映射而非工具替换 |
 | container | CUDA driver/toolkit image | driver/firmware/CANN/torch_npu image | 版本耦合更显式 |
 
@@ -217,6 +218,19 @@ CUDA train + CUDA rollout 已可能因 kernel、batch、precision 有 TIM；Asce
 
 算法 patch 不能替代 engine-level calibration。
 
+K3 提供了“部署精度前移”的工业案例：MoE expert weights 使用 MXFP4、expert input activations 使用 MXFP8，QAT 覆盖 SFT 和 RL，且 RL rollout/training 采用相同 quantization scheme（Kimi K3 Technical Report §4.1.1，p.12；§4.1.4，p.14；详见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]]）。迁移到 Ascend 时，验收单位因此不能只是“模型能以 FP4/FP8 加载”，而应同时核对：
+
+```text
+expert and non-expert precision boundary
+MX block scale and group layout
+fake quant or native compute path in SFT and RL
+rollout and trainer token log probabilities
+checkpoint and weight-sync quantization metadata
+draft-model QAT and target-model compatibility
+```
+
+报告所谓 eliminating TIM 应限定为量化 scheme 这一维；CUDA/NPU kernel、graph、并行 layout、batch numerics 和 sampling implementation 仍需按本节的 exact baseline 逐层打开。
+
 ## 11. Kernel 与动态 shape
 
 | 问题 | CUDA 经验 | Ascend 迁移检查 |
@@ -285,6 +299,7 @@ weight update 是否阻塞 generation
 |---|---|---|---|
 | 1 | tiny FSDP2 | 单机 FSDP2 | 一步 loss/update |
 | 2 | vLLM/SGLang | vLLM-Ascend 或 SGLang NPU | token/log-prob |
+| 2Q | 同一 QAT checkpoint 的 train/rollout | 同 MXFP4/MXFP8 边界与 scale metadata | expert/non-expert logits 与量化误差 |
 | 3 | synchronous GRPO | 同配置 GRPO | 100 step 曲线 |
 | 4 | weight refresh | HCCL/disk path | atomicity/failure |
 | 5 | TP/EP/CP | 对应 NPU parallel | scale efficiency |
@@ -311,3 +326,4 @@ Ascend 路径已具备工业深挖价值，尤其是：
 - [[03_posttraining/09_areal_async_architecture_analysis|D09 AReaL Fully Async]]
 - [[03_posttraining/07_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
 - [[03_posttraining/00_posttraining_source_reading_guide|D00 学习路线]]
+- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]

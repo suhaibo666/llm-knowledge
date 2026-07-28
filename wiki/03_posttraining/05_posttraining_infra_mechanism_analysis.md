@@ -2,8 +2,8 @@
 
 > **阶段**：S01
 > **文档编号**：D05
-> **快照日期**：2026-07-27
-> **证据基线**：四框架 S00 commit 与 Async/Freshness 固定论文版本，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
+> **快照日期**：2026-07-28
+> **证据基线**：四框架 S00 commit、Async/Freshness 固定论文版本与 Kimi K3 Technical Report `0797decb`，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
 > **结论先行**：工业 RL infra 的最小完整模型不是 actor/rollout 两个进程，而是 control、data、weight 三个平面，加上一组跨平面的版本提交与恢复不变量。
 > **阅读导航**：[[03_posttraining/04_on_policy_off_policy_staleness_analysis|上一篇 D04]] · [[03_posttraining/06_framework_comparison|下一篇 D06]]
 
@@ -50,12 +50,13 @@ flowchart TB
 
 三个平面可以由同一进程实现，但不能在设计上混为一谈。比如 `generate()` 返回不代表权重已经刷新；checkpoint 成功也不代表 buffer 与 policy version 可恢复。
 
-## 2. 四种执行结构
+## 2. 五种执行结构
 
 | 结构 | generation 与 train | freshness | 主要 bubble | 正确性负担 |
 |---|---|---|---|---|
 | phase-synchronous | 串行 | 通常 0 step | rollout、reward、weight sync | 低 |
 | colocated time-share | 串行但共卡 | 通常 0 step | sleep/wake、reshard | 中 |
+| phase-partial colocated | 保留 phase；未完成轨迹跨 iteration | trajectory 内可混合版本 | 全局 rollout 尾部、超长 prefill 重做 | 中高 |
 | streamed pipeline | 局部 overlap | 有界 | watermark、尾部 | 中高 |
 | fully async | 长期并发 | 显式上限 | 降低 phase bubble | 高 |
 
@@ -95,13 +96,16 @@ retry count
 checkpoint watermark
 ```
 
-Backpressure 有三层：
+Backpressure 至少有四层：
 
 1. **并发容量**：同时执行多少 rollout；
 2. **staleness 容量**：最多预生成多少未来 batch；
 3. **内存容量**：object store、host RAM、NVMe 和 network queue。
+4. **状态容量**：GPU KV、CPU external KV、KDA recurrent state 和可暂停 sandbox。
 
 只限制 queue 长度会让短样本挤占版本预算；只限制版本会在慢 verifier 下耗尽内存。AReaL 的 `StalenessManager` 同时取 concurrency 和 staleness capacity 的最小值，是一个清楚的参考实现，见 `areal/infra/staleness_manager.py:80-112`。
+
+K3 给出 cache-pressure-aware admission 的另一种信号组合：active request count、queued request count 和 KV utilization 共同调节送入 inference engine 的请求数。早期 context 短时提高并发，轨迹变长、KV 压力升高时自动收紧，而不是用固定“平均完整轨迹长度”静态限流（Kimi K3 Technical Report §5.3.1，p.21；详见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]]）。
 
 ## 5. Dynamic batching 与 group 语义
 
@@ -111,6 +115,8 @@ continuous batching 优化 inference engine 的 token 调度；dynamic sampling 
 - RL group 必须保留 `prompt_id/group_id`；
 - sequence 完成后才能确定 finish reason、reward 和有效 token；
 - partial rollout 若提前消费，必须定义 credit 与版本边界。
+
+K3 把两层完成条件明确分开：整个活跃工作集达到 \(\lambda NK\) 后即可暂停全局长尾并切换 phase；但某个 prompt 的 \(K\) 条 response 全部完成后，该 group 才送 policy optimization。因此 continuous batching 可以拆散执行顺序，partial rollout 可以跨 iteration，`prompt_id/group_id` 的 completion/dispatch identity 仍不能丢；报告没有据此重述所有任务的 advantage estimator（Kimi K3 Technical Report §4.1.2，p.13）。
 
 优化长尾的顺序应是：
 
@@ -170,6 +176,10 @@ reward = f
 - 环境失败被计为负 reward；
 - slow reward 把 buffer 推向 stale。
 
+K3 的 white-box environment 还要求把 harness 本身版本化：tools、system prompt、context management、skills、memories 和 subagents 都是可组合模块，训练时会动态构造不同 scaffold。AET 则把 public/hidden verifier、提交预算和最终 environment state 纳入 reward contract（Kimi K3 Technical Report §4.2.1、§4.2.6，pp.14–16）。
+
+当 reward judge 可能产生副作用时，K3/AgentENV 的 `Fork` 语义比“复制日志后评分”更强：它从相同 microVM state 派生 judge sandbox，同时让原环境继续运行。报告还区分 `Pause/Resume` 与 `Snapshot`，分别处理 inference 等待和故障恢复（Kimi K3 Technical Report §5.3.2，p.22）。
+
 ## 8. Checkpoint 与恢复
 
 一个完整 checkpoint 不只有 model/optimizer：
@@ -183,8 +193,27 @@ reward = f
 | reward/verifier version | reward 不可复现 |
 | weight publish state | inference 看到混合版本 |
 | RNG 与 sampling config | group 对照不可复现 |
+| rollout KV/KDA continuation | 1M prefix miss 后必须重做超长 prefill |
+| sandbox pause/snapshot state | 恢复后环境 side effect 与模型 history 不一致 |
 
 不必把所有 in-flight 请求持久化，但必须定义恢复时 drop、replay 或 resume。
+
+### 8.1 K3 的 phase 间状态交换
+
+K3 的 external KV pool 使用 write-back：active decode blocks 留在 GPU；只有被驱逐的 reusable idle prefix 才写入 CPU DRAM，并在复用前 prefetch。KDA state 与对应 MLA KV blocks 共用生命周期，避免只恢复其中一半（Kimi K3 Technical Report §5.3.1，p.21）。
+
+为了在 CPU DRAM 留出 external pool，training iteration 结束后把 model/optimizer states 卸载到 NVMe；rollout iteration 结束后释放 external pool，避免与训练争用。reference 等 non-policy weights 平时驻 CPU，需要 forward 时才流式写入 policy FP32 gradient buffers；两个 VPP chunk buffer 分别承担当前 forward 和下一 chunk prefetch（Kimi K3 Technical Report §5.3.1，pp.21–22）。
+
+这形成四级状态层次：
+
+```text
+GPU active KV and current model working set
+CPU reusable prefix pool and reference weights
+NVMe phase-inactive model and optimizer states
+microVM environment snapshots
+```
+
+报告没有给出各层容量、命中率、带宽和吞吐消融，因此这里只能确认生命周期设计，不能把它写成通用容量参数。
 
 ## 9. 故障域
 
@@ -206,6 +235,8 @@ reward = f
 - rollout/train log-prob mismatch；
 - update/clip/reject/entropy/gradient norm；
 - weight conversion/transfer/install/commit；
+- GPU/CPU external KV hit、eviction、prefetch、preemption 与 cache pressure；
+- paused trajectory 的 KV continuation、sandbox resume 与 group-complete latency；
 - retry、drop、timeout 与恢复原因。
 
 性能优化必须和正确性指标同图观察，否则“吞吐上升”可能只是允许更多旧样本或丢弃更多难样本。
@@ -219,10 +250,13 @@ reward = f
 5. 给出 train-to-inference layout 及通信量。
 6. 设计故障注入：rollout crash、reward timeout、weight partial failure、checkpoint restore。
 7. 先在 exact/synchronous baseline 验正确性，再引入 overlap。
+8. 对超长 agent 画出 GPU KV、CPU DRAM、NVMe 与 sandbox state 的统一生命周期。
+9. 分开验证 Pause、Fork、Snapshot，不能用单一“支持续跑”布尔值代替。
 
 ## Related Pages
 
 - [[03_posttraining/04_on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
 - [[03_posttraining/06_framework_comparison|D06 工业后训练框架对比]]
 - [[03_posttraining/07_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
+- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis|既有 RL Infra 效率分析]]

@@ -13,7 +13,7 @@
 | **K2** | 2025.07 | 1T MoE | 开放 Agent 智能 | 2507.20534 |
 | **K2.5** | 2026.02 | 1.1T MoE | 视觉 Agent 智能 | 2602.02276 |
 | **K2.6** | 2026.04 | 1.1T MoE | 开源编码迭代 | 待发布 |
-| **K3** | 2026.07 | **2.8T MoE**(896 选 16) | 首个开源 3T 级;KDA+AttnRes+Stable LatentMoE;1M 上下文;原生视觉/视频 | 报告随权重 2026-07-27 发布 |
+| **K3** | 2026.07 | **2.78T MoE**（104.2B 激活） | KDA+AttnRes+Stable LatentMoE；1M 上下文；原生视觉/视频 | Technical Report 2026-07-28 |
 
 ---
 
@@ -77,6 +77,8 @@
            └── KDA : Gated MLA = 3:1 + AttnRes
            └── 1M 上下文、原生视觉/视频
            └── MXFP4 权重 + MXFP8 激活 (SFT 起 QAT)
+           └── 三领域 × 三 effort RL experts → MOPD
+           └── Partial rollout + 外部 KV 池 + 可恢复 AgentENV
            └── 相对 K2 约 2.5× scaling 效率
 ```
 
@@ -124,7 +126,17 @@ k1.5 RL 框架 (2025.01)
 ├── Partial Rollout
 ├── 混合部署 (Megatron ↔ vLLM)
 └── Long2Short 蒸馏
+
+K3 后训练闭环 (2026.07)
+├── SFT agent cold start + XTML
+├── 三领域 × low/high/max = 九个 RL experts
+├── Reasoning Effort RL + Agentic GRM
+├── Partial rollout: 达到 λNK 后暂停；同 prompt 的 K 条完成后 dispatch
+├── MOPD: student on-policy token 上汇合九个 teachers
+└── 1M infra: external KV pool / auto-throttling / AgentENV
 ```
+
+K3 没有把 partial rollout 换成一套完全异步算法：它仍按迭代和组边界更新，只允许未完成轨迹跨迭代续跑。完整机制、公式、证据边界与源码缺口统一见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]]。
 
 ---
 
@@ -142,12 +154,13 @@ k1.5 RL 框架 (2025.01)
 
 ### 4.2 RL 算法对比
 
-| 特性 | Kimi k1.5 | DeepSeek-R1 | OpenAI o1 |
-|------|-----------|-------------|-----------|
-| RL 算法 | 在线镜像下降变体 | GRPO | 未公开 |
-| 最大上下文 | 128K | 128K | 未公开 |
-| 多模态 | ✅ | ❌ | ❌ |
-| Partial Rollout | ✅ | ❌ | 未公开 |
+| 特性 | Kimi k1.5 | Kimi K3 | DeepSeek-R1 | OpenAI o1 |
+|------|-----------|---------|-------------|-----------|
+| RL 主线 | 在线镜像下降变体 | 九专家 RL → MOPD | GRPO | 未公开 |
+| 最大上下文 | 128K | 1M | 128K | 未公开 |
+| 多模态 | ✅ | ✅ | ❌ | ❌ |
+| Partial Rollout | ✅ | ✅，跨迭代续跑但保留 \(K\)-response completion/dispatch boundary | ❌ | 未公开 |
+| 推理预算档 | 未统一为产品档 | low / high / max | 未公开 | 未公开 |
 
 ---
 
@@ -161,7 +174,7 @@ k1.5 RL 框架 (2025.01)
 │  应用层: Kimi Chat / API / Agent                                │
 │       │                                                         │
 │       ▼                                                         │
-│  模型层: K2.5 (1.1T MoE) ← K2 (1T MoE) ← k1.5                  │
+│  模型层: K3 (2.78T MoE) ← K2.5 (1.1T MoE) ← K2 ← k1.5         │
 │       │                                                         │
 │       ▼                                                         │
 │  注意力层:                                                       │
@@ -173,7 +186,8 @@ k1.5 RL 框架 (2025.01)
 │  训练层:                                                         │
 │       ├── RL 框架 (在线镜像下降 + 长度惩罚)                       │
 │       ├── Long2Short 蒸馏                                        │
-│       └── Partial Rollout                                        │
+│       ├── Partial Rollout                                        │
+│       └── K3: 九专家分化 → MOPD 在线汇合                         │
 │       │                                                         │
 │       ▼                                                         │
 │  推理层: Mooncake                                                │
@@ -201,7 +215,7 @@ k1.5 RL 框架 (2025.01)
 | GDN/KDA 训练与推理 Kernel 实现 | FLA / SGLang | [[gdn_kda_kernel_implementation_analysis]] |
 | Kimi K2.5: Visual Agentic Intelligence | 2602.02276 | [[kimi_k2.5_analysis]] |
 | Attention Residuals | 2603.15031 | [[kimi_k3_architecture_deepdive]] §4(独立页待建) |
-| Kimi K3(发布博客;技术报告 2026-07-27 前随权重发布) | — | [[kimi_k3_analysis]] · [[kimi_k3_architecture_deepdive]] · [[kimi_k3_infra_deepdive]] |
+| Kimi K3: Open Frontier Intelligence Technical Report | 官方报告 2026-07-28 | [[kimi_k3_analysis]] · [[kimi_k3_architecture_deepdive]] · [[kimi_k3_infra_deepdive]] · [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\|D12]] |
 
 ---
 
@@ -212,11 +226,11 @@ k1.5 RL 框架 (2025.01)
 - [[Kimi VL]] (2504.07491) — 视觉语言模型技术报告
 - [[Kimi Audio]] (2504.18425) — 音频模型技术报告
 
-另有 6 篇 Moonshot AI 论文待下载摄入：
+仍待补齐或独立摄入的 Moonshot AI 材料：
 - Kimi-Dev (2509.23045) — Agentless Training
 - Kimina-Prover (2504.11354) — 形式推理
 - Attention Residuals (2603.15031) — 机制/消融/开销已在 [[kimi_k3_architecture_deepdive]] §4 深度覆盖(2026-07-17,含源码核查);独立 `attnres_analysis` 页待建
-- Kimi K3 技术报告(2026-07-27 随权重发布)— 发布后回填 [[kimi_k3_analysis]] 系列三页的 [推断] 项
+- Kimi K3 技术报告已于 2026-07-28 摄入；尚缺核心 RL trainer/rollout 源码、训练与生产拓扑、关键超参数及隔离消融，统一追踪在 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]]
 - G1 (2505.13426) — VLM 感知 + RL
 - WorldVQA (2602.02537) — 多模态评测
 - Pixel-Level VLM (2601.19228) — 像素级感知
@@ -228,6 +242,7 @@ k1.5 RL 框架 (2025.01)
 - [[01_theory/index]]
 - [[01_theory/01_models/attention_is_all_you_need_analysis]]
 - [[01_theory/04_posttraining/grpo_analysis]]
+- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]] — K3 后训练算法、1M Agentic RL infra 与源码边界
 - [[02_engineering/02_train_frameworks/megatron-lm/index]]
 - [[gdn_kda_linear_attention_analysis]] — 从 QKVABZ 到 chunkwise 仿射扫描
 - [[gdn_kda_kernel_implementation_analysis]] — 训练、Prefill、Decode 融合实现

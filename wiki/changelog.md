@@ -4,6 +4,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-28：Kimi K3 技术报告回填后训练统一学习域
+
+**Type**: Source Ingest + Industrial Case Study + Cross-Document Correction（固定官方报告 `0797decb`，将算法、trajectory、environment、Infra 与部署精度放回同一个 `wiki/03_posttraining/` 闭环。）
+
+- **原始来源**：新增 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`，SHA-256 `fd6ee35c07766a5eb6104235f1b407e4329f969e3482b8c42937c7b5f2b3efe1`；来源台账补 §4.1、§4.2、§5.3 与 Appendix F 的精确定位。
+- **新增 D12 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]]**：串起 SFT → 九个 domain/effort 专家 → MOPD，澄清 partial rollout 保留 prompt 内 \(K\) group，并分析 white-box environment、XTML preserved thinking、MXFP4/MXFP8 QAT、draft model、external KV pool 与 AgentENV。
+- **回填统一主线**：更新 D00–D05 与 D11；把 K3 作为项目级工业案例，而不是没有训练源码证据的“第五个开源框架”；D00 与领域/全局索引扩展为 D00–D12 连续编号。
+- **修正事实边界**：量化 scheme 一致只消除该维度 TIM；K3 partial rollout 不是 fully async；Figure 8、MOPD、GRM、external KV 与 AgentENV 均保留未披露超参数、消融或运行条件。
+- **K3 旧页同步**：总览、架构、Infra 与 Moonshot 索引从“报告/权重待发布”更新为 2026-07-28 固定报告，并把后训练机制统一链接到 D12。
+
+---
+
 ## 2026-07-27：完成 LLM 后训练 D02–D11 算法、Infra、框架源码与 CUDA–Ascend 深挖
 
 **Type**: Deep Dive + Source Audit（在统一 `wiki/03_posttraining/` 中完成 S01–S05，固定论文版本和四框架 commit，贯通算法统计语义、在线数据、系统与硬件。）
