@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "course_root": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end",
+  "aliases": {
+    "index.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/00_pytorch_graph_series_index.md",
+    "00_pytorch_graph_series_index.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/00_pytorch_graph_series_index.md",
+    "01_graph_ir_motivation_and_taxonomy.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy.md",
+    "02_fx_graph_core_data_model.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/02_fx_graph_core_data_model.md",
+    "03_graph_values_metadata_and_signatures.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/03_graph_values_metadata_and_signatures.md",
+    "04_symbolic_shapes_guards_and_graph_reuse.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+    "05_graph_effects_alias_mutation_and_order.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order.md",
+    "06_structured_outputs_higher_order_and_nested_graphs.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/06_structured_outputs_higher_order_and_nested_graphs.md",
+    "07_graph_capture_frontends_and_tracing.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing.md",
+    "08_graph_normalization_decomposition_and_functionalization.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization.md",
+    "09_aotautograd_joint_forward_backward_graphs.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+    "10_saved_tensors_recompute_and_runtime_abi.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+    "11_graph_stage_boundaries_identity_and_provenance.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance.md",
+    "12_fx_graph_editing_primitives.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/12_fx_graph_editing_primitives_and_invariants.md",
+    "12_fx_graph_editing_primitives_and_invariants.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/12_fx_graph_editing_primitives_and_invariants.md",
+    "13_patternexpr_and_patternmatcher.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/13_pattern_expression_and_matcher_engine.md",
+    "13_pattern_expression_and_matcher_engine.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/13_pattern_expression_and_matcher_engine.md",
+    "14_dead_code_topology_and_effect_order.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/14_dead_code_topology_and_effect_order.md",
+    "15_graph_pass_pipeline_ordering_and_fixpoint.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint.md",
+    "16_graph_rewrite_legality_validation_and_complexity.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/16_graph_rewrite_legality_validation_and_complexity.md",
+    "17_fx_lowering_to_inductor_ir.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/17_fx_lowering_to_inductor_ir.md",
+    "18_inductor_ir_values_loops_layouts_and_buffers.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/18_inductor_ir_values_loops_layouts_and_buffers.md",
+    "19_buffer_liveness_memory_planning_and_reuse.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse.md",
+    "20_scheduler_dependency_graph_fusion_and_ordering.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering.md",
+    "21_codegen_kernel_mapping_autotuning_and_provenance.md": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance.md"
+  },
+  "manual_split_required": {
+    "20_debugging_observability_and_verification_labs.md": {
+      "reason": "The former aggregate debugging page was removed; each decision must be assigned to the exact stage-specific debugging or Lab heading after semantic review.",
+      "candidate_paths": [
+        "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance.md",
+        "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/13_pattern_expression_and_matcher_engine.md",
+        "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/14_dead_code_topology_and_effect_order.md",
+        "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint.md",
+        "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/16_graph_rewrite_legality_validation_and_complexity.md",
+        "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse.md",
+        "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance.md"
+      ]
+    }
+  }
+}

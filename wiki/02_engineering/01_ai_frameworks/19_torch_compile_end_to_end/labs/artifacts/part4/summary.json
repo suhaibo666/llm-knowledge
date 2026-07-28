@@ -1,0 +1,126 @@
+{
+  "external_matmul_execution": true,
+  "fallback_eigvals_execution": true,
+  "fallback_trace_captured": true,
+  "fallback_wrapper_observed": true,
+  "external_trace": {
+    "external_matmul_trace": {
+      "fx_graph_readable.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/external_matmul/fx_graph_readable.py",
+      "fx_graph_runnable.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/external_matmul/fx_graph_runnable.py",
+      "fx_graph_transformed.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/external_matmul/fx_graph_transformed.py",
+      "ir_pre_fusion.txt": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/external_matmul/ir_pre_fusion.txt",
+      "ir_post_fusion.txt": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/external_matmul/ir_post_fusion.txt",
+      "inductor_provenance_tracking_node_mappings.json": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/external_matmul/inductor_provenance_tracking_node_mappings.json",
+      "output_code.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/external_matmul/output_code.py"
+    },
+    "fallback_eigvals_trace": {
+      "fx_graph_readable.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fallback_eigvals/fx_graph_readable.py",
+      "fx_graph_runnable.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fallback_eigvals/fx_graph_runnable.py",
+      "fx_graph_transformed.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fallback_eigvals/fx_graph_transformed.py",
+      "ir_pre_fusion.txt": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fallback_eigvals/ir_pre_fusion.txt",
+      "ir_post_fusion.txt": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fallback_eigvals/ir_post_fusion.txt",
+      "inductor_provenance_tracking_node_mappings.json": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fallback_eigvals/inductor_provenance_tracking_node_mappings.json",
+      "output_code.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fallback_eigvals/output_code.py"
+    },
+    "fallback_trace_captured": true,
+    "fallback_wrapper_observed": true
+  },
+  "codegen_only_status": "generated_not_executed",
+  "real_pointwise_compile_status": "blocked_missing_msvc_cl",
+  "fusion_enabled_has_fused_scheduler": true,
+  "fusion_limited_has_fused_scheduler": false,
+  "fusion_codegen_structure_changed": true,
+  "scheduler_to_fx_provenance_observed": true,
+  "kernel_to_fx_provenance_observed": true,
+  "fx_to_python_source_observed": true,
+  "scheduler_kernel_source_chain_observed": true,
+  "custom_lowering_reached_ir": true,
+  "triton_autotune_tested": false,
+  "fusion_enabled": {
+    "captured_cpp_translation_units": 1,
+    "cpp_entrypoint_count": 1,
+    "cpp_loop_count": 2,
+    "source_sha256": "3fc51e818aeb6a173bb5268498fc6bdb5c8b6a3bfc6441fb76baf89925abd203",
+    "copied_trace_files": {
+      "fx_graph_readable.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fusion_enabled/fx_graph_readable.py",
+      "fx_graph_runnable.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fusion_enabled/fx_graph_runnable.py",
+      "fx_graph_transformed.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fusion_enabled/fx_graph_transformed.py",
+      "ir_pre_fusion.txt": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fusion_enabled/ir_pre_fusion.txt",
+      "ir_post_fusion.txt": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fusion_enabled/ir_post_fusion.txt",
+      "inductor_provenance_tracking_node_mappings.json": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fusion_enabled/inductor_provenance_tracking_node_mappings.json",
+      "output_code.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fusion_enabled/output_code.py"
+    },
+    "has_fused_scheduler": true,
+    "scheduler_to_fx_provenance_observed": true,
+    "kernel_to_fx_provenance_observed": true,
+    "fx_to_python_source_observed": true,
+    "scheduler_kernel_source_chain_observed": true,
+    "evidence_boundary": {
+      "cpp_compiler_mocked": true,
+      "wrapper_executed_to_trigger_codegen": true,
+      "mock_noop_kernel_executed": true,
+      "generated_cpp_source_compiled": false,
+      "generated_cpp_kernel_executed": false,
+      "numerical_correctness_checked": false,
+      "native_kernel_performance_tested": false
+    }
+  },
+  "fusion_limited": {
+    "captured_cpp_translation_units": 1,
+    "cpp_entrypoint_count": 1,
+    "cpp_loop_count": 3,
+    "source_sha256": "251acc92d1244df02bdd30a4ce9a3acb9fd3e9c6a18ec6d4cbcb654a6eb40eff",
+    "copied_trace_files": {
+      "fx_graph_readable.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fusion_limited/fx_graph_readable.py",
+      "fx_graph_runnable.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fusion_limited/fx_graph_runnable.py",
+      "fx_graph_transformed.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fusion_limited/fx_graph_transformed.py",
+      "ir_pre_fusion.txt": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fusion_limited/ir_pre_fusion.txt",
+      "ir_post_fusion.txt": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fusion_limited/ir_post_fusion.txt",
+      "inductor_provenance_tracking_node_mappings.json": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fusion_limited/inductor_provenance_tracking_node_mappings.json",
+      "output_code.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/fusion_limited/output_code.py"
+    },
+    "has_fused_scheduler": false,
+    "scheduler_to_fx_provenance_observed": true,
+    "kernel_to_fx_provenance_observed": true,
+    "fx_to_python_source_observed": true,
+    "scheduler_kernel_source_chain_observed": true,
+    "evidence_boundary": {
+      "cpp_compiler_mocked": true,
+      "wrapper_executed_to_trigger_codegen": true,
+      "mock_noop_kernel_executed": true,
+      "generated_cpp_source_compiled": false,
+      "generated_cpp_kernel_executed": false,
+      "numerical_correctness_checked": false,
+      "native_kernel_performance_tested": false
+    }
+  },
+  "custom_lowering": {
+    "captured_cpp_translation_units": 1,
+    "cpp_entrypoint_count": 1,
+    "cpp_loop_count": 2,
+    "source_sha256": "a2a0a362da460bcdb3e849e97d9b20138f369c54ef876b71bdaaf6ad45f88793",
+    "copied_trace_files": {
+      "fx_graph_readable.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/custom_lowering/fx_graph_readable.py",
+      "fx_graph_runnable.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/custom_lowering/fx_graph_runnable.py",
+      "fx_graph_transformed.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/custom_lowering/fx_graph_transformed.py",
+      "ir_pre_fusion.txt": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/custom_lowering/ir_pre_fusion.txt",
+      "ir_post_fusion.txt": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/custom_lowering/ir_post_fusion.txt",
+      "inductor_provenance_tracking_node_mappings.json": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/custom_lowering/inductor_provenance_tracking_node_mappings.json",
+      "output_code.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4/custom_lowering/output_code.py"
+    },
+    "has_fused_scheduler": false,
+    "scheduler_to_fx_provenance_observed": true,
+    "kernel_to_fx_provenance_observed": true,
+    "fx_to_python_source_observed": true,
+    "scheduler_kernel_source_chain_observed": true,
+    "evidence_boundary": {
+      "cpp_compiler_mocked": true,
+      "wrapper_executed_to_trigger_codegen": true,
+      "mock_noop_kernel_executed": true,
+      "generated_cpp_source_compiled": false,
+      "generated_cpp_kernel_executed": false,
+      "numerical_correctness_checked": false,
+      "native_kernel_performance_tested": false
+    }
+  }
+}

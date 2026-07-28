@@ -1,10 +1,15 @@
 # Triton Autotune / Remote Cache — kernel 级缓存与远端设施：把「每 kernel 重新 benchmark + 重新 triton.compile」变成一次查表
 
+> [!note] 页面角色与审计状态
+> **页面角色**：Triton winner config、kernel artifact bundling 与 RemoteCache 基础设施专题；它解释搜索结果如何复用，不替代 autotuning 搜索过程或 kernel codegen 机制。
+> **原始基线**：PyTorch `3bda74318624581502db16e6439c36effdb16481`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
+> **审计状态**：已纳入历史 manifest，但全部 key/remote/bundling claim 尚未迁到当前基线复核，本轮 CPU/no-CUDA 环境也未执行 Triton autotune cache hit。kernel、wrapper、autotune 与 provenance 主线见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]]；缓存领域入口见 [[17_compile_cache/index]]。
+
 > **分析对象**：torch.compile 缓存栈最底层的 kernel 粒度缓存与远端基础设施——`AutotuneCache`（每 kernel 获胜 config，`torch/_inductor/runtime/autotune_cache.py`）、`AutotuneCacheBundler`（整图打包的 autotune 远端缓存）、`TritonBundler` 内部机制（`torch/_inductor/triton_bundler.py`）、以及它们共用的 `RemoteCache` 抽象（`torch/_inductor/remote_cache.py`）。
 > **Source baseline**：PyTorch upstream 本地检出 `E:\97-codes\torch_parallel\pytorch` @ branch `main`, commit `3bda74318624581502db16e6439c36effdb16481`（2026-07-10, version 2.14.0a0）。所有 `file:line` 均对该 commit 逐一开文件核验。
 > **最后更新**：2026-07-10
 
-本页回答三件事：图级缓存（[[fx_graph_cache_analysis]]）之下还有哪几层 kernel 粒度缓存、各自消灭哪段重复开销；autotune 获胜 config 的 key 怎么算、为什么是 device（arch）相关的；以及 `remote_cache.py` 这套被 fx-graph / autotune / bundled-autotune / PGO 共用的远端设施长什么样。TritonBundler 的动机与打包-回放**接入点**已由 [[fx_graph_cache_analysis]] §4.1 覆盖，本页只写其**内部机制**；`CachingAutotuner` 的运行时生命周期与 config 生成启发式见 [[inductor_autotuning_analysis]]，零重复。总览见 [[compile_cache_overview]]，目录索引 [[17_compile_cache/index]]。
+本页回答三件事：图级缓存（[[fx_graph_cache_analysis]]）之下还有哪几层 kernel 粒度缓存、各自消灭哪段重复开销；autotune 获胜 config 的 key 怎么算、为什么是 device（arch）相关的；以及 `remote_cache.py` 这套被 fx-graph / autotune / bundled-autotune / PGO 共用的远端设施长什么样。TritonBundler 的动机与打包-回放**接入点**已由 [[fx_graph_cache_analysis]] §4.1 覆盖，本页只写其**内部机制**；`CachingAutotuner` 的运行时生命周期与 config 生成启发式见 [[inductor_autotuning_analysis]]，零重复。总览与目录索引见 [[17_compile_cache/index]]。
 
 ---
 
@@ -17,7 +22,7 @@
 | `AutotuneCache` | 单 kernel 获胜 config 的 local+remote 协调器（类 docstring：coordinates local and remote autotune cache lookups for one kernel） | `autotune_cache.py:121` |
 | `.best_config` 文件 | local 侧产物，与生成的 kernel `.py` 同目录 | `autotune_cache.py:171` |
 | `AutotuneCacheBundler` | 按整张图（wrapper 代码 hash）打包 autotune 结果的远端缓存 | `autotune_cache.py:484` |
-| `AutotuneCacheArtifact` | Mega-cache 挂钩（细节归 [[megacache_and_precompile_analysis]]） | `autotune_cache.py:94` |
+| `AutotuneCacheArtifact` | Mega-cache挂钩（独立当前基线审计尚未完成） | `autotune_cache.py:94` |
 | `RemoteCache` / `RemoteCacheSerde` / `RemoteCacheBackend` | 远端缓存三件套抽象：控制器 + 序列化 + 存储后端 | `remote_cache.py:178/103/66` |
 | `RedisRemoteCacheBackend` | OSS 侧唯一内置远端后端 | `remote_cache.py:271` |
 | `create_cache` | 工厂：local / fbcode / OSS 三分支，失败返回 `None` | `remote_cache.py:405` |
@@ -108,7 +113,7 @@ flowchart TB
 - **写**：`AutotuneCache.save` 被作为 `save_cache_hook` 挂到 `CachingAutotuner` 上（`triton_heuristics.py:3492/3507`），共三个触发点——常规 benchmark 选出获胜者后（`:1894-1902`，还带 `triton_cache_hash=launcher.cache_hash`，即获胜 kernel 的 Triton hash）、combo kernel 顺序调优后（`:2049-2050`）、coordinate-descent 调优后（`:2301-2306`，`found_by_coordesc=True`）。
 - **命中时的 config 还原**（`_load_cached_autotuning`，`autotune_cache.py:687-736`）：优先在现有候选里找唯一精确匹配（`:711-722`）；找不到就直接从缓存字段**重建** `Config` 对象——注释说明这覆盖 coordesc 与 `_dynamic_scale_rblock` 动态生成、不在原始候选列表里的 config（`:727-730`）。
 - **worker 进程序列化**：Triton 编译在 AsyncCompile worker 进程做，`AutotuneCache` 在 worker 建、`save` 在父进程调（`:279-283` 注释），所以 `__getstate__` 把不可 pickle 的 remote cache 句柄拆成 key、`__setstate__` 在父进程用保存的 `create_cache` 参数重建（`:284-321`）。
-- **Mega-cache 挂钩**：`_read` 命中与 `save` 都会把 JSON 记进 `CacheArtifactRecorder`（`:177-180/198/357`）；`AutotuneCacheArtifact.populate_cache` 回放时以 `cache_dir()` 相对路径写回文件（`:96-99`，artifact key 取 local key 最后两段路径分量使其跨机器可移植，`:173-175`）。机制细节归 [[megacache_and_precompile_analysis]]。
+- **Mega-cache 挂钩**：`_read` 命中与 `save` 都会把 JSON 记进 `CacheArtifactRecorder`（`:177-180/198/357`）；`AutotuneCacheArtifact.populate_cache` 回放时以 `cache_dir()` 相对路径写回文件（`:96-99`，artifact key 取 local key 最后两段路径分量使其跨机器可移植，`:173-175`）。独立当前基线审计尚未完成。
 
 ---
 
@@ -216,14 +221,16 @@ Triton 本身就有按 kernel hash 组织的磁盘缓存。**纠正一个常见�
 
 ---
 
-## Related / Cross-references
+## Related Pages
 
-- [[compile_cache_overview]] — 编译缓存总览(本页是最底层)
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[17_compile_cache/index]] — 编译缓存总览(本页是最底层)
 - [[17_compile_cache/index]] — 本目录索引
 - [[fx_graph_cache_analysis]] — 图级缓存;TritonBundler 的打包-回放接入点在其 §4.1,远端接入点在其 §六
 - [[aotautograd_cache_analysis]] — 上层缓存,复用本页 §三设施(cache id `autograd-experimental`)
 - [[dynamo_pgo_cache_analysis]] — 同样复用 §三设施(cache id `dynamo-pgo`)
-- [[megacache_and_precompile_analysis]] — `AutotuneCacheArtifact` / `CacheArtifactRecorder` 的整包携带机制
+- `AutotuneCacheArtifact` / `CacheArtifactRecorder`整包携带：尚未完成独立当前基线审计
+- [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]] — kernel/wrapper、autotune choices 与 provenance 课程主线
 - [[inductor_autotuning_analysis]] — `CachingAutotuner` 生命周期与 config 生成启发式(本页缓存的正是其 benchmark 结果)
 - [[torch_compile_architecture]] — torch.compile 整体栈
 - [[PyTorch_Inductor_Technical_Analysis]] — Inductor lowering/codegen

@@ -1,0 +1,754 @@
+[
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aotautograd_analysis.md",
+    "start_line": 1,
+    "end_line": 84,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy.md",
+        "anchor_text": "3.3 AOT joint\u3001forward \u4e0e backward FX graph",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization.md",
+        "anchor_text": "4. Decomposition",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "2. metadata analysis \u4e0d\u662f\u6784\u56fe",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance.md",
+        "anchor_text": "2. \u9636\u6bb5\u5730\u56fe",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-001,A-002,A-011: metadata, joint capture, decomposition, backend optimization and runtime assembly are not the depicted linear phases"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aotautograd_analysis.md",
+    "start_line": 85,
+    "end_line": 149,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "2. metadata analysis \u4e0d\u662f\u6784\u56fe",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance.md",
+        "anchor_text": "2. \u9636\u6bb5\u5730\u56fe",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-001,A-002: metadata collection precedes stage-1 capture; aot_dispatch_autograd_graph belongs to capture, not stage-2 compile"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aotautograd_analysis.md",
+    "start_line": 150,
+    "end_line": 275,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order.md",
+        "anchor_text": "4. Tensor\u3001Storage\u3001View \u4e0e Alias",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "1. \u6700\u91cd\u8981\u7684\u7ed3\u8bba",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "1. \u6838\u5fc3\u6a21\u578b",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-001,A-003: retain mutation/alias concepts, replace obsolete signatures and partial schema snapshots"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aotautograd_analysis.md",
+    "start_line": 276,
+    "end_line": 379,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order.md",
+        "anchor_text": "6. Functionalization \u771f\u6b63\u505a\u4ec0\u4e48",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization.md",
+        "anchor_text": "5. Functionalization",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "1. \u6700\u91cd\u8981\u7684\u7ed3\u8bba",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-004,A-005: functionalization has controlled mutation/effect exceptions and the wrapper composition order is wrong"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aotautograd_analysis.md",
+    "start_line": 380,
+    "end_line": 466,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "7. \u63d0\u53d6\u65b0 Graph \u7684\u673a\u5236",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "4. `default_partition`",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-010,A-019: default_partition signature is obsolete and stage-local compilers are threaded explicitly rather than assigned into AOTConfig"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aotautograd_analysis.md",
+    "start_line": 467,
+    "end_line": 604,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization.md",
+        "anchor_text": "4. Decomposition",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/14_dead_code_topology_and_effect_order.md",
+        "anchor_text": "2. FX DCE",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint.md",
+        "anchor_text": "2. \u4e09\u4e2aInductor FX driver\u4e0d\u540c",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-011: decomposition happens during make_fx capture; constant folding, DCE and pattern fusion are not a fixed post-compilation AOT phase"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aotautograd_analysis.md",
+    "start_line": 605,
+    "end_line": 684,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "2. saved tensor \u4e0d\u662f\u552f\u4e00 saved value",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance.md",
+        "anchor_text": "2. \u9636\u6bb5\u5730\u56fe",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-005,A-006,A-007: runtime wrapper ordering is inaccurate and omits the full fw/bw saved-value ABI"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aotautograd_analysis.md",
+    "start_line": 685,
+    "end_line": 802,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order.md",
+        "anchor_text": "11. Pass \u5408\u6cd5\u6027\u8fb9\u754c",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization.md",
+        "anchor_text": "2. \u4e94\u7c7b\u89c4\u8303\u5316\u4e0d\u8981\u6df7\u6210\u4e00\u7c7b pass",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "1. \u6700\u91cd\u8981\u7684\u7ed3\u8bba",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-004,A-005: preserve topic coverage but replace universal-purity claims and stale wrapper signatures"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aotautograd_analysis.md",
+    "start_line": 803,
+    "end_line": 864,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/03_graph_values_metadata_and_signatures.md",
+        "anchor_text": "9.3 AOT runtime ABI",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "11. \u7f16\u8bd1\u5668\u8c03\u7528",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "1. \u6838\u5fc3\u6a21\u578b",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-003: AOTConfig and ViewAndMutationMeta snapshots omit current ABI-critical fields and must not be presented as exhaustive"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aotautograd_analysis.md",
+    "start_line": 865,
+    "end_line": 940,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "anchor_text": "8. `torch.compile` dynamic \u7b56\u7565",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order.md",
+        "anchor_text": "4. Tensor\u3001Storage\u3001View \u4e0e Alias",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "1. \u6838\u5fc3\u6a21\u578b",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance.md",
+        "anchor_text": "11. Cache\u4e5f\u4e0d\u80fd\u53ea\u7528Node identity",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-010,A-013,A-014,A-017: default partition, view replay, static inputs and cache behavior require entry-point-specific boundaries"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aotautograd_analysis.md",
+    "start_line": 941,
+    "end_line": 1032,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order.md",
+        "anchor_text": "4. Tensor\u3001Storage\u3001View \u4e0e Alias",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/06_structured_outputs_higher_order_and_nested_graphs.md",
+        "anchor_text": "5. HigherOrderOperator \u4e3a\u4ec0\u4e48\u5b58\u5728",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "1. \u6700\u91cd\u8981\u7684\u7ed3\u8bba",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-012,A-015: custom autograd backward is not categorically untraceable; subclass/alias/export restrictions are path-specific"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aotautograd_analysis.md",
+    "start_line": 1033,
+    "end_line": 1076,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "1. \u6700\u91cd\u8981\u7684\u7ed3\u8bba",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance.md",
+        "anchor_text": "9. Dump\u540d\u79f0\u5fc5\u987b\u7ed1\u5b9astage",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-004,A-005,A-019: summary repeats universal functionalization and old phase boundaries; source index path is now current but needs pinned anchors"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aotautograd_analysis.md",
+    "start_line": 1077,
+    "end_line": 1114,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy.md",
+        "anchor_text": "3.3 AOT joint\u3001forward \u4e0e backward FX graph",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization.md",
+        "anchor_text": "5. Functionalization",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "1. \u6700\u91cd\u8981\u7684\u7ed3\u8bba",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-004,A-011: glossary and related-page prose must use corrected graph, functionalization and pass-stage terminology"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aot_autograd_quickstart.md",
+    "start_line": 1,
+    "end_line": 16,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "7. \u63d0\u53d6\u65b0 Graph \u7684\u673a\u5236",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "4. `default_partition`",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-020: qualify which entry point defaults to min-cut versus default_partition"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aot_autograd_quickstart.md",
+    "start_line": 17,
+    "end_line": 20,
+    "claimed_baseline": "unknown",
+    "current_result": "semantically_verified_on_e8f97c1",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "15. \u5df2\u9a8c\u8bc1 Lab",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate",
+    "notes": "aot_eager remains an AOTAutograd plus nop-compiler debugging backend"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aot_autograd_quickstart.md",
+    "start_line": 21,
+    "end_line": 40,
+    "claimed_baseline": "unknown",
+    "current_result": "example_not_run_on_pinned_baseline",
+    "status": "unresolved",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "15. \u5df2\u9a8c\u8bc1 Lab",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "candidate_only",
+    "action": "run-lab-before-migration",
+    "notes": "API and logging mechanisms are supported by source, but this Python/shell example and its output have not been executed"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aot_autograd_quickstart.md",
+    "start_line": 41,
+    "end_line": 52,
+    "claimed_baseline": "unknown",
+    "current_result": "semantically_verified_with_line_drift",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "15. \u5df2\u9a8c\u8bc1 Lab",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate-refresh-locators",
+    "notes": "aot_eager registration and AOT log artifact keys remain current; refresh line numbers"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aot_autograd_quickstart.md",
+    "start_line": 53,
+    "end_line": 70,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "4. `default_partition`",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-010,A-020: strategy summary is useful but defaults and default_partition recompute behavior need precise qualification"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aot_autograd_quickstart.md",
+    "start_line": 71,
+    "end_line": 76,
+    "claimed_baseline": "unknown",
+    "current_result": "example_not_run_on_pinned_baseline",
+    "status": "unresolved",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "15. \u5df2\u9a8c\u8bc1 Lab",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "candidate_only",
+    "action": "run-lab-before-migration",
+    "notes": "backend comparison command and expected graph observation require execution"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aot_autograd_quickstart.md",
+    "start_line": 77,
+    "end_line": 87,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "7. activation memory budget",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-009: memory budget is normalized between full-region checkpoint and runtime-optimized saved sets, not an absolute retained-activation percentage"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aot_autograd_quickstart.md",
+    "start_line": 88,
+    "end_line": 91,
+    "claimed_baseline": "unknown",
+    "current_result": "example_not_run_and_comment_semantically_inexact",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "7. activation memory budget",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite-and-run",
+    "notes": "A-009: the assignment is valid but the 50-percent comment is not the current budget definition"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aot_autograd_quickstart.md",
+    "start_line": 93,
+    "end_line": 98,
+    "claimed_baseline": "unknown",
+    "current_result": "semantically_verified_with_line_drift",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "11. \u7f16\u8bd1\u5668\u8c03\u7528",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate-refresh-locators",
+    "notes": "functorch.compile still exports the named experimental AOT entry points"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aot_autograd_quickstart.md",
+    "start_line": 99,
+    "end_line": 115,
+    "claimed_baseline": "unknown",
+    "current_result": "example_not_run_on_pinned_baseline",
+    "status": "unresolved",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "15. \u5df2\u9a8c\u8bc1 Lab",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "candidate_only",
+    "action": "run-lab-before-migration",
+    "notes": "direct aot_function example must be executed and its lazy/eager backward compilation output recorded"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aot_autograd_quickstart.md",
+    "start_line": 116,
+    "end_line": 137,
+    "claimed_baseline": "unknown",
+    "current_result": "semantically_verified_with_line_drift",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "11. \u7f16\u8bd1\u5668\u8c03\u7528",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate-refresh-locators",
+    "notes": "aot_function, aot_module and aot_export_module signatures and export return contract remain current"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aot_autograd_quickstart.md",
+    "start_line": 138,
+    "end_line": 144,
+    "claimed_baseline": "unknown",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization.md",
+        "anchor_text": "5. Functionalization",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "2. saved tensor \u4e0d\u662f\u552f\u4e00 saved value",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-004,A-006,A-007: saved values include non-tensors and multiple tensor classes; in-place handling has controlled copy/effect exceptions"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/aot_autograd_quickstart.md",
+    "start_line": 145,
+    "end_line": 158,
+    "claimed_baseline": "unknown",
+    "current_result": "navigation_only",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/00_pytorch_graph_series_index.md",
+        "anchor_text": "\u56db\u90e8\u5206\u77e5\u8bc6\u5730\u56fe",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "replace-with-series-navigation",
+    "notes": "migrate navigation intent, not the obsolete five-stage page description"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/fx_graph_construction_and_transformation_analysis.md",
+    "start_line": 11,
+    "end_line": 15,
+    "claimed_baseline": "ea5655fcebf726ec4cf1a859de75d2d0e6425805",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "7. \u63d0\u53d6\u65b0 Graph \u7684\u673a\u5236",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "2. saved tensor \u4e0d\u662f\u552f\u4e00 saved value",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-006,A-007,A-019: structural independence/recompute claims are sound, but the bridge is broader than saved tensors and the partitioner path moved"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/fx_graph_construction_and_transformation_analysis.md",
+    "start_line": 111,
+    "end_line": 137,
+    "claimed_baseline": "ea5655fcebf726ec4cf1a859de75d2d0e6425805",
+    "current_result": "semantically_verified_on_e8f97c1",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "3. joint inputs\uff1aprimals \u4e0e tangents",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate-refresh-locators",
+    "notes": "primals/tangents, create_joint, autograd.grad and joint-output semantics remain current"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/fx_graph_construction_and_transformation_analysis.md",
+    "start_line": 139,
+    "end_line": 167,
+    "claimed_baseline": "ea5655fcebf726ec4cf1a859de75d2d0e6425805",
+    "current_result": "semantically_verified_with_source_path_correction",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "7. \u63d0\u53d6\u65b0 Graph \u7684\u673a\u5236",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate-fix-path-and-abi-detail",
+    "notes": "A-019: extraction model is valid, but current implementation is torch/_functorch/partitioners.py and the input classes are richer"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/fx_graph_construction_and_transformation_analysis.md",
+    "start_line": 168,
+    "end_line": 189,
+    "claimed_baseline": "ea5655fcebf726ec4cf1a859de75d2d0e6425805",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "2. saved tensor \u4e0d\u662f\u552f\u4e00 saved value",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-006,A-007: retain no-cross-Graph-edge model, expand exact VC/no-VC tensor, symbolic, opaque, tangent, token/RNG/BackwardState channels"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/fx_graph_construction_and_transformation_analysis.md",
+    "start_line": 190,
+    "end_line": 235,
+    "claimed_baseline": "ea5655fcebf726ec4cf1a859de75d2d0e6425805",
+    "current_result": "semantically_verified_on_e8f97c1",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "8. Recompute\u5982\u4f55\u8fdb\u5165bw",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate-refresh-locators",
+    "notes": "flow-network boundary, ordinary node_copy recompute and absence of a recompute opcode remain correct"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/fx_graph_construction_and_transformation_analysis.md",
+    "start_line": 236,
+    "end_line": 255,
+    "claimed_baseline": "ea5655fcebf726ec4cf1a859de75d2d0e6425805",
+    "current_result": "semantically_verified_with_symbol_correction",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "10. \u4e3a\u4ec0\u4e48\u8fd8\u8981\u91cd\u6392bw",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate-fix-name",
+    "notes": "A-008: reorder rationale and mechanics are correct; current symbol is reordering_to_mimic_autograd_engine"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/fx_graph_construction_and_transformation_analysis.md",
+    "start_line": 495,
+    "end_line": 514,
+    "claimed_baseline": "ea5655fcebf726ec4cf1a859de75d2d0e6425805",
+    "current_result": "semantically_verified_on_e8f97c1",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/16_graph_rewrite_legality_validation_and_complexity.md",
+        "anchor_text": "11. \u5168\u94fe\u8def\u590d\u6742\u5ea6",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate-expand",
+    "notes": "A-016: additive pipeline model and warning about trace/shape/backend costs remain sound; add multiple-cut and knapsack terms"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/fx_graph_construction_and_transformation_analysis.md",
+    "start_line": 551,
+    "end_line": 554,
+    "claimed_baseline": "ea5655fcebf726ec4cf1a859de75d2d0e6425805",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md",
+        "anchor_text": "7. \u63d0\u53d6\u65b0 Graph \u7684\u673a\u5236",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi.md",
+        "anchor_text": "2. saved tensor \u4e0d\u662f\u552f\u4e00 saved value",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "A-006,A-007,A-019: partitioner path moved and saved-value runtime anchors must include all ABI classes"
+  }
+]

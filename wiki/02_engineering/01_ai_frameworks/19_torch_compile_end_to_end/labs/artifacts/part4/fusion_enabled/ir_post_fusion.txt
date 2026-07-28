@@ -1,0 +1,65 @@
+op0_op1: OuterLoopFusedSchedulerNode(SchedulerNode,SchedulerNode)
+op0_op1.writes = [MemoryDep('buf0', c0, {c0: 8}), MemoryDep('buf1', c0, {c0: 8})]
+op0_op1.unmet_dependencies = []
+op0_op1.met_dependencies = [MemoryDep('arg0_1', c0, {c0: 128})]
+op0_op1.outputs = [
+    buf0: ComputedBuffer
+    buf0.layout = FixedLayout('cpu', torch.float32, size=[8], stride=[1])
+    buf0.users = [NodeUser(node=SchedulerNode(name='op1'), can_inplace=True, is_weak=False)]
+    buf1: ComputedBuffer
+    buf1.layout = FixedLayout('cpu', torch.float32, size=[8], stride=[1])
+    buf1.users = [NodeUser(node=OUTPUT, can_inplace=False, is_weak=False)]
+]
+op0_op1.snodes[0] =
+op0: SchedulerNode(ComputedBuffer)
+op0.writes = [MemoryDep('buf0', c0, {c0: 8})]
+op0.unmet_dependencies = []
+op0.met_dependencies = [MemoryDep('arg0_1', c0, {c0: 128})]
+op0.outputs = [
+    buf0: ComputedBuffer
+    buf0.layout = FixedLayout('cpu', torch.float32, size=[8], stride=[1])
+    buf0.users = [NodeUser(node=SchedulerNode(name='op1'), can_inplace=True, is_weak=False)]
+]
+op0.group.device = cpu
+op0.group.iteration = ((8,), (16,))
+op0.sizes = ([8], [16])
+arg0_1_layout = FixedLayout('cpu', torch.float32, size=[8, 16], stride=[16, 1])
+buf0_layout = FixedLayout('cpu', torch.float32, size=[8], stride=[1])
+class op0_loop_body:
+    var_ranges = {p0: 8, p1: 16}
+    index0 = 16*p0 + p1
+    index1 = p0
+    def body(self, ops):
+        get_index = self.get_index('index0')
+        load = ops.load('arg0_1', get_index)
+        reduction = ops.reduction(torch.float32, torch.float32, 'sum', load)
+        get_index_1 = self.get_index('index1')
+        store_reduction = ops.store_reduction('buf0', get_index_1, reduction)
+        return None
+op0_op1.snodes[1] =
+op1: SchedulerNode(ComputedBuffer)
+op1.writes = [MemoryDep('buf1', c0, {c0: 8})]
+op1.unmet_dependencies = [MemoryDep('buf0', c0, {c0: 8})]
+op1.met_dependencies = []
+op1.outputs = [
+    buf1: ComputedBuffer
+    buf1.layout = FixedLayout('cpu', torch.float32, size=[8], stride=[1])
+    buf1.users = [NodeUser(node=OUTPUT, can_inplace=False, is_weak=False)]
+]
+op1.group.device = cpu
+op1.group.iteration = ((8,), ())
+op1.sizes = ([8], [])
+buf0_layout = FixedLayout('cpu', torch.float32, size=[8], stride=[1])
+buf1_layout = FixedLayout('cpu', torch.float32, size=[8], stride=[1])
+class op1_loop_body:
+    var_ranges = {p0: 8}
+    index0 = p0
+    def body(self, ops):
+        get_index = self.get_index('index0')
+        load = ops.load('buf0', get_index)
+        sin = ops.sin(load)
+        get_index_1 = self.get_index('index0')
+        store = ops.store('buf1', get_index_1, sin, None)
+        return store
+
+

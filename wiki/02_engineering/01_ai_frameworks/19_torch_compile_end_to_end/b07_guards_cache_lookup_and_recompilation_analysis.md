@@ -1,0 +1,226 @@
+# B07 · Guards、Cache Lookup 与 Recompilation
+
+> 卷别：B · TorchDynamo 捕获  
+> 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
+> 前置：[[b06_output_graph_side_effects_and_graph_emission_analysis]]  
+> 后续：[[b08_graph_break_resume_functions_and_partial_graphs_analysis]]  
+> 最后更新：2026-07-28
+
+## 1. 为什么 compiled graph必须有 guards
+
+捕获时只观察到一次具体执行，却常做了超出纯Tensor数据流的假设：
+
+- `self.training`值不变；
+- 某个函数/对象identity不变；
+- tensor dtype/device/rank/layout满足特化；
+- shape满足静态值或符号约束；
+- globals、default device、grad mode、dispatch mode不变；
+- Python容器的结构/键顺序仍适用；
+- alias和mutation关系没有改变。
+
+没有 guards，系统会把一次执行中成立的假设错误地推广到所有调用。
+
+**核心结论**：guard定义的是一个 compiled artifact的运行时适用域；recompilation是发现
+当前输入落在现有适用域之外后，为新域构造另一个artifact。
+
+## 2. Guard不是FX graph的边
+
+FX graph描述区域内部的值依赖；guard在进入 transformed code前检查 Python frame环境。
+两者关系是：
+
+```text
+runtime frame
+  → guard manager检查“捕获假设仍成立吗”
+  → 若成立，执行包含compiled graph调用的transformed code
+  → 若不成立，尝试下一个CacheEntry或重新捕获
+```
+
+guard可能引用一个Source路径，但不是正向/反向FX图间的边，也不是普通GraphNode。
+
+## 3. Guard从哪里产生
+
+主要来源：
+
+- VariableBuilder按Python值类别安装；
+- Source访问路径决定如何重新取值；
+- shape environment产生符号表达式guards；
+- OutputGraph记录global/dispatcher/module状态；
+- alias/identity跟踪产生duplicate或ID guards；
+- backend/AOT层可以补充约束。
+
+`CheckFunctionManager`读取 `output_graph.guards`，对guards排序并构造guard manager
+（`torch/_dynamo/guards.py:4501-4524` 与
+`torch/_dynamo/guards.py:4575-4580`）。
+
+排序用于稳定构建与执行组织，不代表它在对FX nodes做topological traversal。
+
+## 4. CacheEntry保存什么
+
+每个entry至少绑定：
+
+- guard manager；
+- transformed user bytecode；
+- compile id；
+- backend；
+- root/diff guard manager；
+- owner ExtraState与bucket id。
+
+见 `torch/csrc/dynamo/cache_entry.h:44-64`。
+
+这说明一个cache key不是预先哈希出的简单tuple。Dynamo一级cache更像：
+
+```text
+同一 code object 下的一组候选 specialization
+→ 逐项运行可执行 guard predicate
+→ 第一个通过者提供 transformed code
+```
+
+## 5. Lookup的精确顺序
+
+对当前 isolate bucket：
+
+1. 顺序扫描entry list；
+2. 先检查backend是否相同/相等；
+3. 再运行root guard manager；
+4. 首个成功entry命中；
+5. 若都失败则miss。
+
+核心代码见 `torch/csrc/dynamo/extra_state.cpp:203-225` 与
+`torch/csrc/dynamo/extra_state.cpp:226-248`。
+
+若开启isolated recompiles，则自己的bucket miss后再查默认bucket
+（`torch/csrc/dynamo/extra_state.cpp:292-317`）。
+
+## 6. Recompile的判定不是“cache里已经有任意entry”
+
+同一 code object可被许多不同module实例调用，每个实例通过 `ID_MATCH`形成独立entry。
+这不应被当作“同一对象不停重编译”。`compute_cache_size`因此分别统计：
+
+- 当前region总entries；
+- 与当前frame拥有相同ID-matched objects的entries；
+- 所有regions总entries。
+
+结构和计数见 `torch/_dynamo/cache_size.py:72-90`、
+`torch/_dynamo/cache_size.py:92-106` 与
+`torch/_dynamo/cache_size.py:142-162`。
+
+`is_recompilation`关注同一ID group是否将超过1，而非裸entry总数
+（`torch/_dynamo/cache_size.py:165-175`）。
+
+## 7. 两层重编译上限
+
+当前机制至少有：
+
+- `recompile_limit`：同一region、同一ID-matched对象组的上限；
+- `accumulated_recompile_limit`：同一code object跨regions的全局安全上限；
+- compile id的额外兜底，处理guard manager失效导致cache不增长但持续编译的情况。
+
+判断逻辑见 `torch/_dynamo/cache_size.py:178-196`。
+
+达到上限时，普通partial模式可把该region策略设为 `RUN_ONLY`；fullgraph则必须硬失败，不能
+静默回退（`torch/_dynamo/convert_frame.py:2037-2052`）。
+
+## 8. Guard failure、cache miss和compile failure的区别
+
+| 事件 | 含义 | 典型后续 |
+|---|---|---|
+| guard failure | 某个entry不适用 | 继续查下一entry |
+| cache miss | 所有候选均不适用 | 新捕获、eager或报错 |
+| recompile | miss后为相同code新建specialization | entry增长 |
+| graph break | 捕获某条Python路径时切分区域 | partial graph + resume |
+| backend failure | backend不能编译已捕获FX graph | 报错/由策略回退 |
+
+将所有慢调用都叫“recompile”会掩盖真实层次。
+
+## 9. Guard invalidation与“dead”
+
+guard可能通过weakref观察被 `ID_MATCH`的对象。对象死亡后：
+
+- 对应guard/entry可能失效或被清理；
+- cache size不能只靠list长度判断历史编译次数；
+- compile id上限用于防止“entry不断失效、list不增长、却持续编译”。
+
+`_has_same_id_matched_objs`比较frame locals中的weakref与entry记录
+（`torch/_dynamo/cache_size.py:109-126`、
+`torch/_dynamo/cache_size.py:129-139`）。
+
+这里的“dead”是**被guard引用的Python对象不再存活或entry失效**，不是FX node dead。
+
+## 10. 为什么guard manager是树
+
+多个guards常共享访问前缀，例如：
+
+```text
+L["self"]
+├── type
+├── training
+└── layer
+    ├── weight
+    │   ├── dtype
+    │   └── size
+    └── bias
+```
+
+树结构可：
+
+- 共享Source前缀访问；
+- 在父检查失败时短路整个子树；
+- 用专门C++ accessor/leaf guard降低Python overhead；
+-构造diff guard manager支持unsafe的差异检查路径。
+
+它不是图优化pattern tree；相同的“树”只是因为两者都需要组合结构。
+
+## 11. Cache顺序与LRU
+
+当前容器是list，查找顺序直接影响hit成本。启用LRU时命中项移到前面
+（`torch/csrc/dynamo/extra_state.cpp:319-325`），创建entry时插入前或末尾取决于配置
+（`torch/csrc/dynamo/extra_state.cpp:380-397`）。
+
+因此稳态复杂度与输入分布相关：
+
+- 热specialization靠前：平均检查少；
+- 多形态均匀分布：平均扫描增加；
+- 每次都新形态：扫描全部再支付capture/backend；
+- guard共享树优化的是单entry内部，不能消除跨entry顺序扫描。
+
+## 12. 复杂度
+
+设 \(C\) 个entries，第 \(i\) 个entry的guard tree实际访问 \(Q_i\) 个检查节点：
+
+\[
+T_{\text{lookup-hit-k}} = O\left(\sum_{i=1}^{k} Q_i\right)
+\]
+
+\[
+T_{\text{miss}} = O\left(\sum_{i=1}^{C} Q_i\right)
+\ T_{\text{capture}}
+\ T_{\text{backend}}
+\]
+
+空间为：
+
+\[
+O\left(\sum_{i=1}^{C}
+(\lvert guards_i\rvert+\lvert code_i\rvert+\lvert artifacts_i\rvert)
+\lvert frame\_state\rvert\right)
+\]
+
+backend artifact可能由更深cache共享，不能简单按Dynamo entries相乘。
+
+## 13. 常见误解
+
+- **“guard是图里if节点。”** guard在cache dispatch边界检查frame假设。
+- **“任何shape变化都会重编译。”** 已有动态entry可能覆盖新shape。
+- **“entry越多就一定超过recompile_limit。”** limit按region和ID group统计，并有累计上限。
+- **“guard failure就是错误。”** 它通常只是候选specialization不适用。
+- **“dead node由反向图是否连边决定。”** FX DCE、autograd liveness和guard weakref死亡是
+  三种不同概念。
+
+## Related Pages
+
+- [[00_torch_compile_end_to_end_index]]
+- [[b03_eval_frame_callback_and_code_cache_analysis]]
+- [[b05_variable_tracker_source_and_python_object_model_analysis]]
+- [[b09_dynamic_shapes_generalization_and_fallback_analysis]]
+- [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
+- [[e03_guard_failure_and_recompile_diagnosis_analysis]]

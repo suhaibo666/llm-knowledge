@@ -1,0 +1,80 @@
+{
+  "scheduler_groups": [
+    {
+      "group": "op0",
+      "type": "SchedulerNode",
+      "operation_names": [
+        "op0"
+      ],
+      "subnodes": [
+        {
+          "scheduler_node": "op0",
+          "ir_type": "ComputedBuffer",
+          "origins": [
+            {
+              "name": "sum_1",
+              "op": "call_function",
+              "target": "aten.sum.dim_IntList",
+              "stack_trace": "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part4_artifact_bundle.py\", line 31, in pointwise_reduction\n    return torch.sin(x.sum(dim=1))\n"
+            }
+          ],
+          "stack_traces": [
+            "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part4_artifact_bundle.py\", line 31, in pointwise_reduction\n    return torch.sin(x.sum(dim=1))\n"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "op1",
+      "type": "SchedulerNode",
+      "operation_names": [
+        "op1"
+      ],
+      "subnodes": [
+        {
+          "scheduler_node": "op1",
+          "ir_type": "ComputedBuffer",
+          "origins": [
+            {
+              "name": "sin",
+              "op": "call_function",
+              "target": "aten.sin.default",
+              "stack_trace": "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part4_artifact_bundle.py\", line 31, in pointwise_reduction\n    return torch.sin(x.sum(dim=1))\n"
+            }
+          ],
+          "stack_traces": [
+            "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part4_artifact_bundle.py\", line 31, in pointwise_reduction\n    return torch.sin(x.sum(dim=1))\n"
+          ]
+        }
+      ]
+    }
+  ],
+  "raw_mapping_schema_keys": [
+    "cppCodeToPost",
+    "postToCppCode",
+    "postToPre",
+    "preToPost"
+  ],
+  "joined_chains": [
+    {
+      "cpp_code": "cpp_fused_sin_sum_0:3",
+      "scheduler_group": "op0",
+      "scheduler_node": "op0",
+      "post_fx_node": "sum_1",
+      "pre_fx_nodes": [
+        "sum_1"
+      ],
+      "source_stack": "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part4_artifact_bundle.py\", line 31, in pointwise_reduction\n    return torch.sin(x.sum(dim=1))\n"
+    },
+    {
+      "cpp_code": "cpp_fused_sin_sum_0:3",
+      "scheduler_group": "op1",
+      "scheduler_node": "op1",
+      "post_fx_node": "sin",
+      "pre_fx_nodes": [
+        "sin"
+      ],
+      "source_stack": "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part4_artifact_bundle.py\", line 31, in pointwise_reduction\n    return torch.sin(x.sum(dim=1))\n"
+    }
+  ]
+}

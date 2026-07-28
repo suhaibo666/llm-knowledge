@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "observed_date": "2026-07-27",
+  "runtime_baseline": {
+    "python": "3.13.5",
+    "torch": "2.9.1+cpu",
+    "torch_git": "5811a8d7da873dd699ff6687092c225caffcf1bb",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cuda_available": false
+  },
+  "commands": [
+    {
+      "script": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part1_fx_core.py",
+      "exit_code": 0,
+      "stdout": {
+        "x_distinct_users": 1,
+        "x_uses_in_add": 2,
+        "before_replace": 8.0,
+        "erase_live_node": "RuntimeError",
+        "after_replace": 6.0,
+        "lint_cross_graph": "RuntimeError"
+      }
+    },
+    {
+      "script": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part1_effects_alias.py",
+      "exit_code": 0,
+      "stdout": {
+        "before_dce_call_functions": 2,
+        "dce_changed": true,
+        "after_dce_targets": "copy_.default",
+        "mutation_result": 7.0,
+        "alias_observes_mutation": true,
+        "pure_dead_removed": true,
+        "dead_chain_removed": true,
+        "nested_child_dead_removed": true,
+        "impure_copy_retained": true,
+        "both_effect_orders_lint": true,
+        "effect_reorder_changes_result": true,
+        "effect_original_order_result": 2.0,
+        "effect_reordered_result": 1.0
+      }
+    },
+    {
+      "script": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part3_passes.py",
+      "exit_code": 0,
+      "stdout": {
+        "node_copy_value_matches": true,
+        "graph_copy_value_matches": true,
+        "lint_failed_before_sort": true,
+        "topology_repaired_value": 8.0,
+        "pass_manager_steps_1_count": 1,
+        "pass_manager_steps_4_count": 3,
+        "front_end_like_before_targets": "matmul,add",
+        "functional_aten_like_before_targets": "aten.mm.default,aten.add.Tensor",
+        "front_end_like_after_targets": "addmm",
+        "functional_aten_like_after_targets": "aten.addmm.default",
+        "stage_target_spelling_differs": true,
+        "stage_correct_contract_rewrites": true,
+        "stage_wrong_contract_rejected": true,
+        "stage_rewrite_idempotent": true,
+        "stage_outputs_match": true,
+        "stage_contract_kind": "simulated_frontend_like_vs_functional_aten",
+        "actual_torch_compile_stage_hook_executed": false,
+        "oscillation_bounded_at_four": true,
+        "oscillation_final_target_is_add": true
+      }
+    }
+  ]
+}

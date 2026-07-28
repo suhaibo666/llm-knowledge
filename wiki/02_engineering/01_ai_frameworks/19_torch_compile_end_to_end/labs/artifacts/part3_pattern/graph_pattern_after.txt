@@ -1,0 +1,6 @@
+graph():
+    %x : [num_users=1] = placeholder[target=x]
+    %y : [num_users=1] = placeholder[target=y]
+    %add_1 : [num_users=1] = call_function[target=operator.add](args = (%x, %x), kwargs = {})
+    %mul_1 : [num_users=1] = call_function[target=operator.mul](args = (%add_1, %y), kwargs = {})
+    return mul_1

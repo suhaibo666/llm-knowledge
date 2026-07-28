@@ -1,0 +1,57 @@
+{
+  "pre": {
+    "matched_targets": [
+      "operator.matmul",
+      "operator.add"
+    ],
+    "correct_stage_hits": 1,
+    "wrong_stage_hits": 0,
+    "hook_calls": 1,
+    "compile_count": 1,
+    "forward_matches": true,
+    "gradient_matches": true,
+    "pass_idempotence_checks": 1,
+    "pass_second_run_rewrite_count": 0,
+    "pass_second_run_graph_unchanged": true,
+    "second_call_no_recompile": true,
+    "second_call_no_additional_rewrite": true
+  },
+  "post": {
+    "matched_targets": [
+      "aten.mm.default",
+      "aten.add.Tensor"
+    ],
+    "correct_stage_hits": 1,
+    "wrong_stage_hits": 0,
+    "hook_calls": 2,
+    "compile_count": 1,
+    "forward_matches": true,
+    "gradient_matches": true,
+    "pass_idempotence_checks": 1,
+    "pass_second_run_rewrite_count": 0,
+    "pass_second_run_graph_unchanged": true,
+    "second_call_no_recompile": true,
+    "second_call_no_additional_rewrite": true
+  },
+  "config_restored": true,
+  "mock_compiler_used": false,
+  "native_kernel_executed": false,
+  "native_kernel_boundary": "The test executes real Inductor extern addmm/mm paths; it does not claim an Inductor-generated C++ kernel.",
+  "checks": {
+    "actual_torch_compile_stage_hook_executed": true,
+    "pre_correct_stage_hits": 1,
+    "pre_wrong_stage_hits": 0,
+    "post_correct_stage_hits": 1,
+    "post_wrong_stage_hits": 0,
+    "pre_forward_matches": true,
+    "pre_gradient_matches": true,
+    "post_forward_matches": true,
+    "post_gradient_matches": true,
+    "pass_second_run_zero_rewrites": true,
+    "pass_second_run_graph_unchanged": true,
+    "second_call_no_recompile": true,
+    "second_call_no_additional_rewrite": true,
+    "config_restored": true,
+    "native_kernel_executed": false
+  }
+}

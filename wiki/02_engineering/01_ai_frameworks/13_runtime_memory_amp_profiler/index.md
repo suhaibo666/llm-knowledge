@@ -2,7 +2,7 @@
 
 > 层次:overview(浅)
 > 核验基准:PyTorch upstream `E:\97-codes\pytorch\pytorch`(v2.13.0a0, commit 9922478)
-> 最后更新:2026-06-15
+> 最后更新:2026-07-27
 
 ---
 
@@ -25,6 +25,19 @@
 - **分配器 ⇄ 图捕获**:CUDA/NPU Graphs 重放要求地址稳定,分配器为此提供**图私有内存池**隔离 API(`beginAllocateToPool`/`endAllocateToPool`/`releasePool`,`c10/cuda/CUDACachingAllocator.h:148-162`),并在 `DeviceStats::reserved_bytes_by_private_pools` 里按池单独记账。详见 [[06_graphs/index]]。
 
 > 配置层的现状(写手提醒):分配器的配置真身已**下沉**到设备无关的 `c10/core/AllocatorConfig.h:162 AcceleratorAllocatorConfig`(`max_split_size`/`use_expandable_segments`/`garbage_collection_threshold` 等都在这里,如 `:212 use_expandable_segments()`);老的 `c10/cuda/CUDAAllocatorConfig.h` 里的同名项现在多是带 `C10_DEPRECATED_MESSAGE` 的**转发壳**。环境变量主名也升级为通用的 **`PYTORCH_ALLOC_CONF`**,旧名 `PYTORCH_CUDA_ALLOC_CONF` 仅作低优先级兼容(`AllocatorConfig.h:157-159`)。读旧资料时务必区分「壳」与「真身」。
+
+### 编译期与运行时的三层内存边界
+
+| 层 | 对象/决策 | 它能回答什么 | 不能直接推出什么 |
+|---|---|---|---|
+| AOTAutograd boundary | saved tensor、recompute、fw/bw ABI | 哪些activation跨前反向阶段持有 | 单张Inductor图内的buffer reuse |
+| Inductor graph | logical value、IR Buffer、Scheduler last-use、wrapper reuse | 哪些中间量realize、何时可free/reuse、静态peak估计 | allocator最终保留多少segment/block |
+| runtime allocator | storage、block、segment、stream event | 实际allocated/reserved/active与物理峰值 | 某个FX value为何被save或fusion |
+
+对应主线分别见
+[[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]]与
+[[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]]。排查peak时必须先说
+清是哪一层；AOT逻辑saved bytes、Scheduler静态peak和allocator snapshot不能混成同一个数。
 
 ### 三支柱全景图
 
@@ -93,6 +106,7 @@ flowchart TB
 
 | 页面 | 层次 | 核心主题 |
 |------|------|---------|
+| [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] | **系统主线** | 从 FX/AOT saved activation 进入 Inductor logical buffer、Scheduler last-use、wrapper reuse，并严格区分 runtime allocator 的 physical block/segment |
 | [[amp_and_memory_tooling_quickstart]] | **quick start** | autocast + GradScaler 训练循环最小写法、默认参数与排查;`memory_stats()`/`memory_summary()`/`snapshot` 字段语义;`PYTORCH_ALLOC_CONF`(`max_split_size_mb`/`expandable_segments`)开关;`profile` + `schedule` 用法、`export_chrome_trace`/`tensorboard_trace_handler`/`export_memory_timeline` |
 | [[caching_allocator_autocast_profiler_analysis]] | deep dive | 源码级:`Block`/`malloc`/`free_block`/`process_events`/`recordStream`、Expandable Segments 设计、`DeviceStats`/`TraceEntry`/`SegmentInfo`、`DeviceCachingAllocator`;autocast 的 TLS exclude 与 weakref cast 缓存、逐设备 dtype;`GradScaler` 的 `_unscale_grads_`/`_amp_update_scale_`;`kineto_shim` 与 `_memory_profiler` 时间线归因 |
 
@@ -103,14 +117,19 @@ flowchart TB
 - [[06_graphs/index]] — 运行时图捕获:复用本模块分配器的**图私有内存池**(`beginAllocateToPool`/`releasePool`)保证重放地址稳定
 - [[01_dispatcher_and_device/index]] — Dispatcher:autocast 正是作为 `Autocast*` **dispatch key** 在分发层拦截算子
 - [[00_tensor_and_storage/index]] — `Tensor`/`Storage`/`DataPtr`:分配器交付的内存句柄(`Allocator`/`DataPtr` 抽象)与 storage 是 profiler 内存归因的统计单元
+- [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]] — AOT saved activation与recompute
+- [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]] — Inductor logical buffer、last-use、reuse与静态peak
 - [[01_ai_frameworks/index]] — 本域总索引
 
 ---
 
 ## Related Pages
 
+- [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 编号化端到端课程：卷 D–E 连接 wrapper、内存、CUDAGraph、观测与性能
 - [[amp_and_memory_tooling_quickstart]] — 本模块 quick start(怎么用 / 怎么查 / 怎么验证)
 - [[caching_allocator_autocast_profiler_analysis]] — 本模块 deep dive(源码级)
 - [[06_graphs/index]] — CUDA / NPU Graphs(图私有内存池消费方)
 - [[01_dispatcher_and_device/index]] — Dispatcher 与 Autocast dispatch key
 - [[00_tensor_and_storage/index]] — Tensor / Storage / DataPtr / Allocator 抽象
+- [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]]
+- [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]]

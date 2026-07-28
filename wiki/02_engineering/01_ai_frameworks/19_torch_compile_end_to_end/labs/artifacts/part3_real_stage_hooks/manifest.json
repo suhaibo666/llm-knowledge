@@ -1,0 +1,45 @@
+{
+  "entrypoint": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part3_real_stage_hooks.py",
+  "command": [
+    "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+    "wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part3_real_stage_hooks.py",
+    "--output-dir",
+    "wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\artifacts\\part3_real_stage_hooks"
+  ],
+  "evidence_scope": "real_torch_compile_inductor_extern_addmm",
+  "artifacts": [
+    {
+      "path": "environment.json",
+      "sha256": "e0c8d2dd753ef95d802bdea18be5c2afc44858c8feb0138a7eec60c924a9d8c3"
+    },
+    {
+      "path": "results.json",
+      "sha256": "30c7960c91bf519b703609de9268b82ee17e2170fb0e80852066f1fe3193bda5"
+    },
+    {
+      "path": "pre_stage_graph.py",
+      "sha256": "30a27c1664320f69057186903e0b602d5106e365bda88d4619519f3665217a5a"
+    },
+    {
+      "path": "post_stage_graph.py",
+      "sha256": "1f4c68281b4983eff442fa129e112dc472e5871445a3158fcafb676c5af32462"
+    }
+  ],
+  "checks": {
+    "actual_torch_compile_stage_hook_executed": true,
+    "pre_correct_stage_hits": 1,
+    "pre_wrong_stage_hits": 0,
+    "post_correct_stage_hits": 1,
+    "post_wrong_stage_hits": 0,
+    "pre_forward_matches": true,
+    "pre_gradient_matches": true,
+    "post_forward_matches": true,
+    "post_gradient_matches": true,
+    "pass_second_run_zero_rewrites": true,
+    "pass_second_run_graph_unchanged": true,
+    "second_call_no_recompile": true,
+    "second_call_no_additional_rewrite": true,
+    "config_restored": true,
+    "native_kernel_executed": false
+  }
+}

@@ -1,0 +1,309 @@
+{
+  "run_id": "continuous-aot-inductor-extern-mm-seed-0",
+  "evidence_scope": "extern_matmul_only",
+  "forward": {
+    "partition_module_id": 1579104708864,
+    "partition_graph_id": 1579105361968,
+    "partition_owner_id": 1579104708864,
+    "partition_tokens": [
+      "continuous-aot-inductor-extern-mm-seed-0:forward:structural:5:output",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:0:primals_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:1:primals_2",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:3:mm",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1"
+    ],
+    "compiler_callback_module_id": 1579104708864,
+    "compiler_callback_graph_id": 1579105361968,
+    "compiler_callback_owner_id": 1579104708864,
+    "compiler_callback_tokens": [
+      "continuous-aot-inductor-extern-mm-seed-0:forward:structural:5:output",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:0:primals_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:1:primals_2",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:3:mm",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1"
+    ],
+    "graph_lowering_module_id": 1579104708864,
+    "graph_lowering_graph_id": 1579105361968,
+    "graph_lowering_owner_id": 1579104708864,
+    "graph_lowering_tokens": [
+      "continuous-aot-inductor-extern-mm-seed-0:forward:structural:5:output",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:0:primals_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:1:primals_2",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:3:mm",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1"
+    ],
+    "scheduler_module_id": 1579104708864,
+    "scheduler_graph_id": 1579105361968,
+    "scheduler_owner_id": 1579110109872,
+    "scheduler_graph_lowering_copy_module_id": 1579110109872,
+    "scheduler_owner_is_graph_lowering_copy": true,
+    "scheduler_module_tokens": [
+      "continuous-aot-inductor-extern-mm-seed-0:forward:structural:5:output",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:0:primals_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:1:primals_2",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:3:mm",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1"
+    ],
+    "scheduler_origin_tokens": [
+      "continuous-aot-inductor-extern-mm-seed-0:joint:3:mm"
+    ],
+    "scheduler_input_operation_count": 1,
+    "scheduler_node_count": 1,
+    "scheduler_read_dependency_count": 2,
+    "scheduler_write_dependency_count": 1,
+    "scheduler_unmet_dependency_count": 0
+  },
+  "backward": {
+    "partition_module_id": 1579106142592,
+    "partition_graph_id": 1579106175824,
+    "partition_owner_id": 1579106142592,
+    "partition_tokens": [
+      "continuous-aot-inductor-extern-mm-seed-0:backward:structural:5:output",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:2:tangents_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:5:mm_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:7:mm_2"
+    ],
+    "compiler_callback_module_id": 1579102678592,
+    "compiler_callback_graph_id": 1579102572368,
+    "compiler_callback_owner_id": 1579102678592,
+    "compiler_callback_tokens": [
+      "continuous-aot-inductor-extern-mm-seed-0:backward:structural:5:output",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:2:tangents_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:5:mm_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:7:mm_2"
+    ],
+    "graph_lowering_module_id": 1579102678592,
+    "graph_lowering_graph_id": 1579102572368,
+    "graph_lowering_owner_id": 1579102678592,
+    "graph_lowering_tokens": [
+      "continuous-aot-inductor-extern-mm-seed-0:backward:structural:5:output",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:2:tangents_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:5:mm_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:7:mm_2"
+    ],
+    "scheduler_module_id": 1579102678592,
+    "scheduler_graph_id": 1579102572368,
+    "scheduler_owner_id": 1579103132640,
+    "scheduler_graph_lowering_copy_module_id": 1579103132640,
+    "scheduler_owner_is_graph_lowering_copy": true,
+    "scheduler_module_tokens": [
+      "continuous-aot-inductor-extern-mm-seed-0:backward:structural:5:output",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:2:tangents_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:5:mm_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:7:mm_2"
+    ],
+    "scheduler_origin_tokens": [
+      "continuous-aot-inductor-extern-mm-seed-0:joint:5:mm_1",
+      "continuous-aot-inductor-extern-mm-seed-0:joint:7:mm_2"
+    ],
+    "scheduler_input_operation_count": 2,
+    "scheduler_node_count": 2,
+    "scheduler_read_dependency_count": 4,
+    "scheduler_write_dependency_count": 2,
+    "scheduler_unmet_dependency_count": 0,
+    "identity_note": "This run rebuilt the backward module/Graph before the compiler callback. GraphLowering then shallow-copied that module, retaining the Graph while transferring graph.owning_module to orig_gm before Scheduler dependency construction."
+  },
+  "events": [
+    {
+      "run_id": "continuous-aot-inductor-extern-mm-seed-0",
+      "phase": "dynamo_backend_compile_fx_entry",
+      "graph_id": 1579103125584
+    },
+    {
+      "run_id": "continuous-aot-inductor-extern-mm-seed-0",
+      "phase": "partition_return",
+      "forward": {
+        "role": "forward",
+        "module_id": 1579104708864,
+        "graph_id": 1579105361968,
+        "owner_id": 1579104708864,
+        "owner_is_graph_module": true,
+        "tokens": [
+          "continuous-aot-inductor-extern-mm-seed-0:forward:structural:5:output",
+          "continuous-aot-inductor-extern-mm-seed-0:joint:0:primals_1",
+          "continuous-aot-inductor-extern-mm-seed-0:joint:1:primals_2",
+          "continuous-aot-inductor-extern-mm-seed-0:joint:3:mm",
+          "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+          "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1"
+        ]
+      },
+      "backward": {
+        "role": "backward",
+        "module_id": 1579106142592,
+        "graph_id": 1579106175824,
+        "owner_id": 1579106142592,
+        "owner_is_graph_module": true,
+        "tokens": [
+          "continuous-aot-inductor-extern-mm-seed-0:backward:structural:5:output",
+          "continuous-aot-inductor-extern-mm-seed-0:joint:2:tangents_1",
+          "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+          "continuous-aot-inductor-extern-mm-seed-0:joint:5:mm_1",
+          "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1",
+          "continuous-aot-inductor-extern-mm-seed-0:joint:7:mm_2"
+        ]
+      }
+    },
+    {
+      "run_id": "continuous-aot-inductor-extern-mm-seed-0",
+      "phase": "compiler_callback_inner_compile_entry",
+      "role": "forward",
+      "module_id": 1579104708864,
+      "graph_id": 1579105361968,
+      "owner_id": 1579104708864,
+      "owner_is_graph_module": true,
+      "tokens": [
+        "continuous-aot-inductor-extern-mm-seed-0:forward:structural:5:output",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:0:primals_1",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:1:primals_2",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:3:mm",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1"
+      ]
+    },
+    {
+      "run_id": "continuous-aot-inductor-extern-mm-seed-0",
+      "phase": "graph_lowering_init",
+      "role": "forward",
+      "module_id": 1579104708864,
+      "graph_id": 1579105361968,
+      "owner_id": 1579104708864,
+      "owner_is_graph_module": true,
+      "tokens": [
+        "continuous-aot-inductor-extern-mm-seed-0:forward:structural:5:output",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:0:primals_1",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:1:primals_2",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:3:mm",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1"
+      ]
+    },
+    {
+      "run_id": "continuous-aot-inductor-extern-mm-seed-0",
+      "phase": "scheduler_dependency_construction_complete",
+      "role": "forward",
+      "module_id": 1579104708864,
+      "graph_id": 1579105361968,
+      "owner_id": 1579110109872,
+      "owner_is_graph_module": false,
+      "tokens": [
+        "continuous-aot-inductor-extern-mm-seed-0:forward:structural:5:output",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:0:primals_1",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:1:primals_2",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:3:mm",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1"
+      ],
+      "graph_lowering_copy_module_id": 1579110109872,
+      "owner_is_graph_lowering_copy": true,
+      "input_operation_count": 1,
+      "origin_tokens": [
+        "continuous-aot-inductor-extern-mm-seed-0:joint:3:mm"
+      ],
+      "scheduler_node_count": 1,
+      "read_dependency_count": 2,
+      "write_dependency_count": 1,
+      "unmet_dependency_count": 0
+    },
+    {
+      "run_id": "continuous-aot-inductor-extern-mm-seed-0",
+      "phase": "compiler_callback_inner_compile_entry",
+      "role": "backward",
+      "module_id": 1579102678592,
+      "graph_id": 1579102572368,
+      "owner_id": 1579102678592,
+      "owner_is_graph_module": true,
+      "tokens": [
+        "continuous-aot-inductor-extern-mm-seed-0:backward:structural:5:output",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:2:tangents_1",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:5:mm_1",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:7:mm_2"
+      ]
+    },
+    {
+      "run_id": "continuous-aot-inductor-extern-mm-seed-0",
+      "phase": "graph_lowering_init",
+      "role": "backward",
+      "module_id": 1579102678592,
+      "graph_id": 1579102572368,
+      "owner_id": 1579102678592,
+      "owner_is_graph_module": true,
+      "tokens": [
+        "continuous-aot-inductor-extern-mm-seed-0:backward:structural:5:output",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:2:tangents_1",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:5:mm_1",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:7:mm_2"
+      ]
+    },
+    {
+      "run_id": "continuous-aot-inductor-extern-mm-seed-0",
+      "phase": "scheduler_dependency_construction_complete",
+      "role": "backward",
+      "module_id": 1579102678592,
+      "graph_id": 1579102572368,
+      "owner_id": 1579103132640,
+      "owner_is_graph_module": false,
+      "tokens": [
+        "continuous-aot-inductor-extern-mm-seed-0:backward:structural:5:output",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:2:tangents_1",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:4:permute",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:5:mm_1",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:6:permute_1",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:7:mm_2"
+      ],
+      "graph_lowering_copy_module_id": 1579103132640,
+      "owner_is_graph_lowering_copy": true,
+      "input_operation_count": 2,
+      "origin_tokens": [
+        "continuous-aot-inductor-extern-mm-seed-0:joint:5:mm_1",
+        "continuous-aot-inductor-extern-mm-seed-0:joint:7:mm_2"
+      ],
+      "scheduler_node_count": 2,
+      "read_dependency_count": 4,
+      "write_dependency_count": 2,
+      "unmet_dependency_count": 0
+    }
+  ],
+  "checks": {
+    "continuous_aot_forward_to_inductor": true,
+    "partition_forward_tokens_preserved": true,
+    "partition_backward_tokens_preserved": true,
+    "forward_graph_identity_preserved": true,
+    "forward_owner_identity_preserved": true,
+    "backward_partition_to_callback_identity_transition": true,
+    "backward_callback_to_lowering_identity_preserved": true,
+    "forward_callback_to_scheduler_module_graph_preserved": true,
+    "backward_callback_to_scheduler_module_graph_preserved": true,
+    "scheduler_owner_transition_recorded": true,
+    "scheduler_origin_tokens_recorded": true,
+    "scheduler_dependency_construction_recorded": true,
+    "compiler_callback_recorded": true,
+    "graph_lowering_recorded": true,
+    "scheduler_recorded": true,
+    "forward_matches": true,
+    "gradient_matches": true,
+    "native_kernel_executed": false,
+    "evidence_scope": "extern_matmul_only"
+  },
+  "mock_compiler_used": false,
+  "native_kernel_executed": false,
+  "native_kernel_boundary": "The observed path executes real Inductor around ATen extern mm calls. It does not compile or execute an Inductor-generated C++ kernel.",
+  "graph_lowering_wrapper_restored": true,
+  "scheduler_wrapper_restored": true,
+  "config_restored": true
+}

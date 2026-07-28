@@ -1,0 +1,407 @@
+# 17 · 从 FX Lowering 到 Inductor IR
+
+> 前置：[[11_graph_stage_boundaries_identity_and_provenance]]、[[16_graph_rewrite_legality_validation_and_complexity]]
+> 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
+> Lab 环境：PyTorch `2.9.1+cpu`
+> 最后更新：2026-07-28
+
+## 1. 为什么FX之后还需要IR
+
+FX Node说：
+
+```text
+call_function aten.add.Tensor(x, y)
+```
+
+codegen需要知道：
+
+- output iteration domain；
+- 每个index读x/y哪个地址；
+- broadcast如何index；
+- dtype promotion；
+- layout/stride；
+- 是否lazy compose；
+- 是否用template/extern；
+-何时materialize buffer。
+
+FX表达“调用什么”；Inductor IR表达“如何实现与存储”。
+
+## 2. GraphLowering是Interpreter
+
+`GraphLowering`继承 `torch.fx.Interpreter`
+（`torch/_inductor/graph.py:386-386`）。对每个FX Node：
+
+1. 从interpreter env取已lowered args；
+2. 选择lowering/fallback；
+3. 执行Python lowering function；
+4. 将返回的IR/Python value写回env。
+
+`run()`本身只把执行交给父类 `Interpreter.run()`；真正的逐节点循环、参数解析与
+`env[node] = self.run_node(node)`由 FX Interpreter 提供，`GraphLowering`重写各 opcode
+的处理方法，把这个通用解释器变成 lowering 解释器
+（`torch/_inductor/graph.py:1130-1132`；
+`torch/fx/interpreter.py:170-190`）。`run_node()`明确描述
+“Lower and execute a single FX node into Inductor IR”，并在调用父类分派前后安装
+origin、stream 与 memory-pool 上下文
+（`torch/_inductor/graph.py:1925-1946`；
+`torch/_inductor/graph.py:1960-1989`）。
+
+### 2.1 一次 `call_function` 的源码调用链
+
+以下调用链比“一个 FX Node 被翻译成一个 IR Node”更准确：
+
+```text
+GraphLowering.run()
+  → torch.fx.Interpreter.run()
+    → Interpreter.run_node(fx_node)
+      → 从 env 递归解析 fx_node.args / fx_node.kwargs
+      → 按 fx_node.op 分派到 GraphLowering.call_function()
+        → 选择 lowering / user lowering / fallback
+        → lowering wrapper 做 broadcast、类型提升并构造 IR value
+      → 把返回值写入 env[fx_node]
+```
+
+这里发生了三种不同的“状态变化”：
+
+| 层次 | 写入位置 | 写入的是什么 | 为什么不能合并成一种 Node |
+|---|---|---|---|
+| FX 解释器状态 | `env[fx_node]` | lowering 的 Python/IR 返回值 | 它记录“这个 FX 值当前对应什么”，不是调度边 |
+| GraphLowering 全局状态 | `operations`、`buffers`、名称表 | 已 materialize 的 operation/buffer | 只有实体化之后才应进入后续调度 |
+| IR 对象内部状态 | `TensorBox`、`StorageBox`、`Loops`、layout | lazy expression、view、storage 与布局 | 多个 FX Node 可以折叠进一个表达式，也可能展开成多个 buffer |
+
+`register_operation()`把 operation 追加到 `operations` 并分配名称；
+`register_buffer()`把 buffer 追加到 `buffers`、分配名称并记录设备
+（`torch/_inductor/graph.py:1134-1163`）。这两个容器不是在每次
+`env` 写入时同步增长，因此 FX 节点数与可调度 operation 数天然不相等。
+
+## 3. 不是一Node换一Node
+
+FX env value可为：
+
+- `TensorBox(StorageBox(lazy Loops))`；
+- view/reinterpret；
+- realized Buffer；
+- tuple/list/dict；
+- Python scalar/SymInt；
+- ExternKernel/Template choice；
+- `None`。
+
+多个pointwise FX nodes可compose成同一lazy expression；一个multi-output/fallback又可创建多个
+objects。不存在 `N_fx == N_ir == N_scheduler`不变量。
+
+## 4. Lowering注册
+
+`register_lowering`包装注册函数；内部 `_register_lowering`可处理：
+
+- broadcasting；
+- type promotion；
+- 调用被注册的IR实现函数；
+- IR validation
+  （`torch/_inductor/lowering.py:481-510`；
+  `torch/_inductor/lowering.py:511-532`）。
+
+lowering的职责是返回合法IR/value，不是独立做全局fusion decision。
+这里的wrapper也不是decomposition pass；算子分解发生在前面的FX/ATen规范化阶段。
+
+### 4.1 注册器为什么还要包一层 wrapper
+
+`register_lowering()`不是简单执行 `lowerings[op] = fn`。源码先为每个 overload 建立统一
+wrapper，再按注册参数对输入做广播和类型提升，调用真正的 lowering，最后用
+`validate_ir()`检查返回结构。一个 lowering 作者因此只需实现“规范输入 → 合法 IR
+value”的局部语义，不必在每个算子里重复输入标准化
+（`torch/_inductor/lowering.py:497-525`）。
+
+这个设计由 FX 图中的三个场景共同决定：
+
+1. 同一 operator packet 可能有多个 overload，需要共享 lowering 规则；
+2. FX args 已经从 Node 解析成 IR value，但 rank、dtype 与 Python scalar 形式仍可能不同；
+3. lowering 可以返回嵌套容器或多个 IR value，必须在进入后续阶段前统一验证。
+
+### 4.1.1 普通 lowering、lowering-pattern 与 graph pattern
+
+三者的名字相近，但产物和生效时刻不同：
+
+| 机制 | 匹配/调用对象 | 产物 | 职责 |
+|---|---|---|---|
+| `register_lowering(op)` | 单个 FX `call_function` target | IR/Python value | 定义一个 operator 如何实现 |
+| `register_lowering_pattern(pattern)` | post-grad FX 子图 | 一个带 lowering handler 的新 FX call | 把整段 FX 子图延迟到 lowering 时直接变为 IR |
+| `register_graph_pattern(pattern)` | post-grad FX 子图 | handler 直接编辑 FX Graph | 在 lowering 前完成普通图改写 |
+
+`LoweringPatternEntry.apply()`先用一个 handler call 替换匹配子图；注册器再给 handler 标记
+`_inductor_lowering_function`。因此它不是“Matcher 直接把 IR 塞进 FX Graph”，而是：
+
+```text
+post-grad 子图匹配
+  → FX 中生成 lowering-handler call
+  → GraphLowering 识别标记
+  → handler 在 lowering 时返回 IR
+```
+
+对应实现见 `torch/_inductor/pattern_matcher.py:1373-1385`、
+`torch/_inductor/pattern_matcher.py:2296-2328` 与
+`torch/_inductor/fx_passes/post_grad.py:924-944`。
+
+### 4.2 decomposition、post-grad fusion 与 lowering 的边界
+
+- decomposition把高层 operator 展开为目标算子集，仍在 FX/ATen 语义层；
+- post-grad pattern pass按子图结构改写 FX，尚未决定最终 loop、buffer 或 kernel；
+- lowering把 FX operator/handler 解释为 IR implementation；
+- Scheduler 才基于已 realization 的 operations 决定依赖、融合与最终顺序；
+- backend codegen再把 Scheduler group 变成 generated kernel、template 或 extern call。
+
+因此“post-grad 匹配成功”不等于“最终产生一个 fused kernel”，而“一个 lowering 返回
+Pointwise”也不等于该 Pointwise 一定单独 materialize。
+
+## 5. `call_function`选择顺序
+
+当前关键路径：
+
+1. 若target携带 `_inductor_lowering_function`，直接passthrough；
+2. 缺lowering时按allow list/implicit fallback/decomposition presence决定fallback或error；
+3. 应用layout constraints；
+4. Node metadata可强制fallback；
+5. user lowering优先，带recursion guard；
+6. user返回None则普通lowering；
+7. 仍无lowering的递归/custom场景走fallback handler。
+
+源码不是一张无条件的“lowering 表查询”，而是一棵有优先级的决策树：
+
+```text
+getitem / 已标记 lowering handler
+  ├─ 直接处理
+  └─ 普通 target
+       ├─ lowering 缺失 → allow-list / implicit fallback / 明确报错
+       ├─ 应用 layout constraint
+       ├─ node.meta 强制 fallback
+       ├─ user lowering（防递归）
+       ├─ 内建 lowering
+       └─ fallback handler
+```
+
+入口特判与缺失 lowering 分支见
+`torch/_inductor/graph.py:1402-1431`、
+`torch/_inductor/graph.py:1432-1461`；
+layout constraint 见 `torch/_inductor/graph.py:1475-1504`；
+metadata、user lowering 与最终分派见
+`torch/_inductor/graph.py:1517-1546`。
+
+设计成决策树而不是单张表，是因为“target 有实现”并不足以证明当前调用合法：布局约束、
+用户覆盖、显式 fallback 标记、分解存在性与递归保护都依赖这一次 FX Node 的上下文。
+
+## 6. 缺lowering并不保证成功fallback
+
+可能结果：
+
+- allow-listed fallback；
+- `implicit_fallbacks`允许的fallback；
+- `MissingOperatorWithDecomp`；
+- `MissingOperatorWithoutDecomp`。
+
+backward implicit fallback若无layout tag还可保守require contiguous
+（`torch/_inductor/graph.py:1413-1442`；
+`torch/_inductor/graph.py:1443-1472`）。
+
+因此fallback是受contract控制的外部执行路径，不是“编译永不失败”。
+
+## 7. Fallback与ExternKernel
+
+`fallback_handler`创建 `FallbackKernel`
+（`torch/_inductor/lowering.py:2714-2745`）。`FallbackKernel`属于
+`ExternKernelAlloc`/`InputsKernel` operation family
+（`torch/_inductor/ir.py:6645-7035`;
+`torch/_inductor/ir.py:9314-9355`）。
+
+它仍有inputs、layout、buffer、SchedulerNode与wrapper call，只是计算由external/eager
+kernel实现。
+
+## 8. Pointwise与Reduction
+
+Loop IR用ranges与inner index function表达：
+
+```text
+for index in ranges:
+    out[index] = inner_fn(index)
+```
+
+`Pointwise`无reduction domain；`Reduction`有reduction ranges与reduction type
+（`torch/_inductor/ir.py:1057-1420`）。
+
+lazy inner function使producer expression可内联到consumer loop，为fusion提供表示基础；
+是否最终fusion由Scheduler/backend决定。
+
+## 9. View与layout
+
+view可用index/layout transformation共享storage，但不是“永远free”。固定stride要求、
+alias/mutation、output escape或backend constraint可能require stride/copy/materialization。
+
+GraphLowering在调用lowering前可normalize fake args并施加layout constraint
+（`torch/_inductor/graph.py:1478-1515`）。
+
+## 10. Template与algorithm choice
+
+matmul/conv等可创建template/extern choices，而不是普通Pointwise。选择可立即benchmark，也可
+形成 `MultiTemplateBuffer`延迟到Scheduler评估epilogue/prologue fusion。
+
+所以“matmul一定lower为一个Triton pointwise loop”错误；backend/config/dtype/layout决定路径。
+
+## 11. Realization
+
+`TensorBox.create(IRNode)`通常包装 `StorageBox`
+（`torch/_inductor/ir.py:10547-10559`）。
+
+`StorageBox.realize()`将lazy Pointwise/Reduction/Scan/Sort变成：
+
+- `ComputedBuffer`；
+- `FlexibleLayout`；
+- registered buffer name；
+- registered operation；
+- copied origins/trace/stream/mempool
+（`torch/_inductor/ir.py:10578-10607`）。
+
+Scheduler只看到registered operations；这是真正FX→Scheduler数量变化的关键边界。
+
+### 11.1 Realization 是“登记时刻”，不是普通求值
+
+`StorageBox.realize()`先判断当前 data 是否已经是 `Buffer`；若仍是
+`Pointwise`、`Reduction`、`Scan` 或 `Sort`，它会创建 `ComputedBuffer`，复制
+origin/trace/stream/memory-pool 信息，然后调用 GraphLowering 的注册接口。也就是说：
+
+```text
+lazy Loops
+  → ComputedBuffer + FlexibleLayout
+  → register_buffer()
+  → register_operation()
+  → Scheduler 可见
+```
+
+决定“现在必须 realize”的代码可能位于 output、布局约束、mutation、extern/template
+输入等消费者位置；`StorageBox.realize()`描述的是决定作出之后如何落地。把二者混为
+一谈会误以为任何 lazy IR 构造都会立刻生成 SchedulerNode。
+
+## 12. placeholder与output
+
+placeholder可lower成：
+
+- InputBuffer；
+- DonatedBuffer；
+- symbolic scalar；
+- constants/objects。
+
+GraphLowering output会realize必要outputs、处理stride/layout、mutation/alias和wrapper ABI
+（`torch/_inductor/graph.py:1296-1399`;
+`torch/_inductor/graph.py:1651-1775`）。
+
+device不是事后附加属性：InputBuffer、Layout、Loops 与 ExternKernel 都携带或推导device；
+GraphLowering还按device选择backend与wrapper路径。mutation也不是普通数据边的别名：
+lowering/IR会记录mutation target与alias，Scheduler随后从read/write/mutation关系重建依赖。
+
+## 13. provenance
+
+run_node合并当前FX Node与input origins，并为新IR安装origin/stream/mempool context
+（`torch/_inductor/graph.py:1960-1989`）。这允许lazy expression/fusion保留many-to-many
+source mapping。
+
+## 14. 复杂度
+
+若把嵌套参数访问总量记为 `A`、FX Node 数记为 `N_fx`，仅解释器骨架为：
+
+```text
+O(N_fx + A)
+```
+
+总成本应写成：
+
+```text
+T_lowering = O(N_fx + A) + Σ_i T_lowering(i) + T_realize + T_choice
+```
+
+其中 `T_realize` 与最终展开的 lazy expression、注册的 buffer/operation 数有关，
+`T_choice`可能包含 template compile/benchmark。因而不能只用 `O(N_fx)`描述完整编译成本。
+此外：
+
+- lowering可做symbolic algebra；
+- template choice可compile/benchmark；
+- realization数量不等于N_fx；
+- fallback可能触发layout copies；
+- output realization递归展开lazy expressions。
+
+## 15. 已验证 Lab
+
+### 15.1 命令
+
+在仓库根目录执行：
+
+```powershell
+python wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part4_ir_scheduler_analysis.py `
+  --output-dir wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4_ir
+
+python wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part4_artifact_bundle.py `
+  --output-dir wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4
+```
+
+### 15.2 正例与边界例
+
+`part4_ir_scheduler_analysis.py`实际执行
+`make_fx → GraphLowering.run → Scheduler`，并断言：
+
+```text
+elementwise_ir_observed=True
+reduction_ir_observed=True
+matmul_extern_observed=True
+```
+
+它不请求native codegen，因此没有提供generated native kernel的编译或执行证据。
+
+该路径已经实际构造Pointwise、Reduction、view/copy、ExternKernel及Scheduler结构；缺少
+MSVC `cl`不影响这些运行时内部观察。
+
+这些 IR 类型与数量关系的直接证据来自
+`labs/artifacts/part4_ir/ir_matrix.json`，其 producer 是
+`part4_ir_scheduler_analysis.py`；不能把它归因给下面的 artifact bundle。
+
+`part4_artifact_bundle.py`另行验证：
+
+```text
+external_matmul_execution=True
+fallback_eigvals_execution=True
+fallback_trace_captured=True
+custom_lowering_reached_ir=True
+real_pointwise_compile_status=blocked_missing_msvc_cl
+codegen_only_status=generated_not_executed
+triton_autotune_tested=False
+```
+
+其中matmul与`eigvals`是实际`torch.compile`执行结果，`eigvals`的pre-fusion IR还明确包含
+`FallbackKernel`；custom op使用`register_lowering`进入Pointwise/Reduction IR。
+
+codegen-only路径用mock compiler边界截获真实生成的C++ source与wrapper trace，但no-op
+kernel没有执行计算，所以这些文件只属于`[M] 机制走通、非真实执行`证据，不能用于数值、
+性能或kernel-count结论。
+
+### 15.3 产物
+
+- `labs/artifacts/part4_ir/ir_matrix.json`：FX、IR operation/buffer/layout与Scheduler node；
+- `labs/artifacts/part4/summary.json`：真实extern/fallback结果与证据边界；
+- `labs/artifacts/part4/fallback_eigvals/ir_pre_fusion.txt`：unsupported op的fallback IR；
+- `labs/artifacts/part4/custom_lowering/ir_pre_fusion.txt`：custom lowering后的IR；
+- `labs/artifacts/part4/*/output_code.py`与`captured_cpp_kernel.cpp`：仅codegen、未执行；
+- 两个目录内的`environment.json`记录runtime、源码基线、CUDA与MSVC状态。
+
+失败边界是明确的：当前机器只能证明native C++ pointwise编译被`cl`缺失阻塞。
+
+前述GraphLowering、Scheduler与IR观察已经独立运行成功。
+
+native CPU阻塞结论不能外推为Triton/GPU autotune结论。
+
+## 学习顺序
+
+- 上一篇：[[16_graph_rewrite_legality_validation_and_complexity]]
+- 下一篇：[[18_inductor_ir_values_loops_layouts_and_buffers]]
+
+## Related Pages
+
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[11_graph_stage_boundaries_identity_and_provenance]]
+- [[18_inductor_ir_values_loops_layouts_and_buffers]]
+- [[20_scheduler_dependency_graph_fusion_and_ordering]]
+- [[lowering_analysis]]

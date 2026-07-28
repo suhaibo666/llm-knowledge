@@ -1,0 +1,5 @@
+graph():
+    %x_1 : [num_users=1] = placeholder[target=x_1]
+    %y_1 : [num_users=1] = placeholder[target=y_1]
+    %lower_add_direct : [num_users=1] = call_function[target=__main__.lower_add_direct](args = (), kwargs = {x: %x_1, y: %y_1})
+    return lower_add_direct

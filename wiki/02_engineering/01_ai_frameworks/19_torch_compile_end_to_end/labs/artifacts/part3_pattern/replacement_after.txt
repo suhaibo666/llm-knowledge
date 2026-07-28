@@ -1,0 +1,4 @@
+graph():
+    %x_1 : [num_users=1] = placeholder[target=x_1]
+    %mul_tensor : [num_users=1] = call_function[target=torch.ops.aten.mul.Tensor](args = (%x_1, 2), kwargs = {})
+    return mul_tensor

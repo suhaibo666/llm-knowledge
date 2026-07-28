@@ -1,0 +1,602 @@
+[
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/fx_graph_construction_and_transformation_analysis.md",
+    "start_line": 22,
+    "end_line": 86,
+    "claimed_baseline": "ea5655fcebf726ec4cf1a859de75d2d0e6425805",
+    "current_result": "semantically_verified_on_e8f97c1",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/02_fx_graph_core_data_model.md",
+        "anchor_text": "4. \u6570\u636e\u4f9d\u8d56\uff1a\u5d4c\u5957 args/kwargs \u4e2d\u7684 Node \u5f15\u7528",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/03_graph_values_metadata_and_signatures.md",
+        "anchor_text": "9. \u4e09\u79cd signature \u4e0d\u8981\u6df7\u7528",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate",
+    "notes": "FX storage, use-def, linked-list order, lint, GraphModule execution contract verified"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/fx_graph_construction_and_transformation_analysis.md",
+    "start_line": 87,
+    "end_line": 110,
+    "claimed_baseline": "ea5655fcebf726ec4cf1a859de75d2d0e6425805",
+    "current_result": "semantically_verified_on_e8f97c1",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing.md",
+        "anchor_text": "2. `symbolic_trace`",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate",
+    "notes": "symbolic_trace and Proxy construction path verified"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/03_aot_autograd/fx_graph_construction_and_transformation_analysis.md",
+    "start_line": 381,
+    "end_line": 418,
+    "claimed_baseline": "ea5655fcebf726ec4cf1a859de75d2d0e6425805",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/14_dead_code_topology_and_effect_order.md",
+        "anchor_text": "10. nested graph",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-010: retain root rule and reverse cascade, add nested GraphModule DCE/recompile"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/14_fx_export_and_extensibility/fx_graph_export_and_custom_ops_analysis.md",
+    "start_line": 13,
+    "end_line": 34,
+    "claimed_baseline": "9922478dffa606fd798cc2346a227d4867e8b6ee",
+    "current_result": "semantically_verified_on_e8f97c1",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing.md",
+        "anchor_text": "5. `torch.export`",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate",
+    "notes": "capture products remain distinct; refresh current APIs and anchors"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/14_fx_export_and_extensibility/fx_graph_export_and_custom_ops_analysis.md",
+    "start_line": 35,
+    "end_line": 70,
+    "claimed_baseline": "9922478dffa606fd798cc2346a227d4867e8b6ee",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing.md",
+        "anchor_text": "2. `symbolic_trace`",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-016: distinguish Proxy __torch_function__ from dispatch-mode/__torch_dispatch__ capture"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/14_fx_export_and_extensibility/fx_graph_export_and_custom_ops_analysis.md",
+    "start_line": 71,
+    "end_line": 156,
+    "claimed_baseline": "9922478dffa606fd798cc2346a227d4867e8b6ee",
+    "current_result": "semantically_verified_with_line_drift",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/02_fx_graph_core_data_model.md",
+        "anchor_text": "3. \u7a0b\u5e8f\u987a\u5e8f\uff1a\u4fb5\u5165\u5f0f\u53cc\u5411\u94fe\u8868",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing.md",
+        "anchor_text": "2. `symbolic_trace`",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate",
+    "notes": "Tracer boundaries, FX storage and GraphModule code generation remain current"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/14_fx_export_and_extensibility/fx_graph_export_and_custom_ops_analysis.md",
+    "start_line": 157,
+    "end_line": 177,
+    "claimed_baseline": "9922478dffa606fd798cc2346a227d4867e8b6ee",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint.md",
+        "anchor_text": "5. Single round\u3001bounded repeat\u3001fixed point",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-017: PassResult.modified only controls repetition within PassManager.steps; default steps is one"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/14_fx_export_and_extensibility/fx_graph_export_and_custom_ops_analysis.md",
+    "start_line": 178,
+    "end_line": 209,
+    "claimed_baseline": "9922478dffa606fd798cc2346a227d4867e8b6ee",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/03_graph_values_metadata_and_signatures.md",
+        "anchor_text": "9.2 ExportGraphSignature",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing.md",
+        "anchor_text": "5. `torch.export`",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization.md",
+        "anchor_text": "5. Functionalization",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-008,F-009: add ShapesSpec and callable/guard contract; separate lifted state from functionalization"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/14_fx_export_and_extensibility/fx_graph_export_and_custom_ops_analysis.md",
+    "start_line": 210,
+    "end_line": 253,
+    "claimed_baseline": "9922478dffa606fd798cc2346a227d4867e8b6ee",
+    "current_result": "semantically_verified_with_line_drift",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing.md",
+        "anchor_text": "5. `torch.export`",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "link-domain-page",
+    "notes": "custom_op registration/fake/autograd bridge remains current but is supporting, not mainline graph-series material"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/14_fx_export_and_extensibility/fx_export_custom_op_quickstart.md",
+    "start_line": 9,
+    "end_line": 110,
+    "claimed_baseline": "9922478dffa606fd798cc2346a227d4867e8b6ee",
+    "current_result": "semantically_verified_with_line_drift",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing.md",
+        "anchor_text": "5. `torch.export`",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/12_fx_graph_editing_primitives_and_invariants.md",
+        "anchor_text": "5. replace \u4e0e erase \u7684\u6b63\u786e\u987a\u5e8f",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate-examples",
+    "notes": "capture, insertion, replace uses, lint and recompile flow remains valid"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/14_fx_export_and_extensibility/fx_export_custom_op_quickstart.md",
+    "start_line": 111,
+    "end_line": 155,
+    "claimed_baseline": "9922478dffa606fd798cc2346a227d4867e8b6ee",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint.md",
+        "anchor_text": "5. Single round\u3001bounded repeat\u3001fixed point",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-017: qualify how PassManager consumes modified and when it repeats"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/14_fx_export_and_extensibility/fx_export_custom_op_quickstart.md",
+    "start_line": 156,
+    "end_line": 220,
+    "claimed_baseline": "9922478dffa606fd798cc2346a227d4867e8b6ee",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/03_graph_values_metadata_and_signatures.md",
+        "anchor_text": "9.2 ExportGraphSignature",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing.md",
+        "anchor_text": "5. `torch.export`",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-008: retain Dim example, add recommended ShapesSpec path and ExportedProgram module/check_guards contract"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/14_fx_export_and_extensibility/fx_export_custom_op_quickstart.md",
+    "start_line": 221,
+    "end_line": 268,
+    "claimed_baseline": "9922478dffa606fd798cc2346a227d4867e8b6ee",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing.md",
+        "anchor_text": "5. `torch.export`",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "fix-domain-page-and-link",
+    "notes": "F-018: fake implementation must match the declared same-shape/same-dtype contract or implement broadcast/promotion"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/dynamic_shapes_full_analysis.md",
+    "start_line": 19,
+    "end_line": 70,
+    "claimed_baseline": "historical-main-2026-05-11",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "anchor_text": "8. `torch.compile` dynamic \u7b56\u7565",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-001: replace universal raw-shape cache-key model with guarded cache-entry selection and accumulated recompile limits"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/dynamic_shapes_full_analysis.md",
+    "start_line": 71,
+    "end_line": 83,
+    "claimed_baseline": "historical-main-2026-05-11",
+    "current_result": "semantically_verified_on_e8f97c1",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "anchor_text": "3. SymInt\u3001SymBool \u4e0e symbolic expression",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate",
+    "notes": "symbolic dimension motivation remains valid"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/dynamic_shapes_full_analysis.md",
+    "start_line": 84,
+    "end_line": 148,
+    "claimed_baseline": "historical-main-2026-05-11",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "anchor_text": "4. ShapeEnv \u7684\u804c\u8d23",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-002,F-003: correct ShapeEnv field semantics, size_like/ranges, DimDynamic nuance and dynamic API contracts"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/dynamic_shapes_full_analysis.md",
+    "start_line": 149,
+    "end_line": 169,
+    "claimed_baseline": "historical-main-2026-05-11",
+    "current_result": "semantically_verified_on_e8f97c1",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/03_graph_values_metadata_and_signatures.md",
+        "anchor_text": "2.3 SymInt/SymBool \u4e0e SymNode",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "anchor_text": "7. backed \u4e0e unbacked symbols",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate",
+    "notes": "SymInt/SymNode expression, ShapeEnv and hint model remains valid; distinguish backed and unbacked hints"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/dynamic_shapes_full_analysis.md",
+    "start_line": 170,
+    "end_line": 240,
+    "claimed_baseline": "historical-main-2026-05-11",
+    "current_result": "semantically_verified_with_line_drift",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "anchor_text": "4. ShapeEnv \u7684\u804c\u8d23",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate-and-refresh",
+    "notes": "compile-time ShapeEnv facts, SHAPE_ENV translation and runtime guard layer remain valid; refresh exact APIs/examples"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/dynamic_shapes_full_analysis.md",
+    "start_line": 241,
+    "end_line": 253,
+    "claimed_baseline": "historical-main-2026-05-11",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "anchor_text": "10. Guard\u3001assert \u4e0e\u540e\u7aef\u7ea6\u675f\u7684\u5206\u5de5",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-006: assert_size_stride verifies emitted size/stride relations, not every range/divisibility guard"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/dynamic_shapes_full_analysis.md",
+    "start_line": 254,
+    "end_line": 281,
+    "claimed_baseline": "historical-main-2026-05-11",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "anchor_text": "5. compile-time refinement \u4e0e\u8de8\u8c03\u7528\u91cd\u7f16\u8bd1",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-004,F-005: range refinement is within compilation; equality replacement preserves a runtime validity obligation"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/dynamic_shapes_full_analysis.md",
+    "start_line": 282,
+    "end_line": 338,
+    "claimed_baseline": "historical-main-2026-05-11",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "anchor_text": "8. `torch.compile` dynamic \u7b56\u7565",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-002,F-019: explain current automatic generalization separately from optional exclusion guards"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/dynamic_shapes_full_analysis.md",
+    "start_line": 339,
+    "end_line": 432,
+    "claimed_baseline": "historical-main-2026-05-11",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "anchor_text": "8. `torch.compile` dynamic \u7b56\u7565",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/17_fx_lowering_to_inductor_ir.md",
+        "anchor_text": "2. GraphLowering\u662fInterpreter",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance.md",
+        "anchor_text": "1. Codegen\u7684\u53cc\u5c42\u4ea7\u7269",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "replace-example",
+    "notes": "F-001 through F-007: rebuild end-to-end example; do not promise Triton matmul or runtime ShapeEnv learning"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/dynamic_shapes_full_analysis.md",
+    "start_line": 433,
+    "end_line": 453,
+    "claimed_baseline": "historical-main-2026-05-11",
+    "current_result": "source_index_line_and_semantic_drift",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "anchor_text": "10. Guard\u3001assert \u4e0e\u540e\u7aef\u7ea6\u675f\u7684\u5206\u5de5",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "replace-source-index",
+    "notes": "F-020: use current full paths and symbol-level anchors from the foundation corrections report"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/inductor_codegen_dynamic_shape_analysis.md",
+    "start_line": 3,
+    "end_line": 126,
+    "claimed_baseline": "unknown-historical-main",
+    "current_result": "semantically_verified_with_line_drift",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/17_fx_lowering_to_inductor_ir.md",
+        "anchor_text": "12. placeholder\u4e0eoutput",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance.md",
+        "anchor_text": "6. Loop codegen",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate-and-refresh",
+    "notes": "F-015: SizeArg, numel expressions, integer widening and runtime GridExpr mechanisms remain current"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/inductor_codegen_dynamic_shape_analysis.md",
+    "start_line": 127,
+    "end_line": 155,
+    "claimed_baseline": "unknown-historical-main",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/03_graph_values_metadata_and_signatures.md",
+        "anchor_text": "2.3 SymInt/SymBool \u4e0e SymNode",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "anchor_text": "7. backed \u4e0e unbacked symbols",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-013: unbacked means no backed hint, not no range constraints or deferred runtime assertions"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/inductor_codegen_dynamic_shape_analysis.md",
+    "start_line": 156,
+    "end_line": 167,
+    "claimed_baseline": "unknown-historical-main",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "anchor_text": "11. symbolic shape \u5bf9\u540e\u7eed\u56fe\u673a\u5236\u7684\u5f71\u54cd",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-006: narrow assert_size_stride to its emitted input size/stride contract"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/inductor_codegen_dynamic_shape_analysis.md",
+    "start_line": 168,
+    "end_line": 209,
+    "claimed_baseline": "unknown-historical-main",
+    "current_result": "semantically_verified_with_line_drift",
+    "status": "verified-current",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md",
+        "anchor_text": "11. symbolic shape \u5bf9\u540e\u7eed\u56fe\u673a\u5236\u7684\u5f71\u54cd",
+        "anchor_occurrence": 1
+      },
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse.md",
+        "anchor_text": "B. \u9ed8\u8ba4wrapper reuse planning",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "migrate-and-refresh",
+    "notes": "32-bit indexing guards, symbolic reuse keys and dynamic allocation emission remain current"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/inductor_codegen_dynamic_shape_analysis.md",
+    "start_line": 216,
+    "end_line": 226,
+    "claimed_baseline": "unknown-historical-main",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance.md",
+        "anchor_text": "6. Loop codegen",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-014: ordinary C++ symbolic scalar temporaries use auto; uint32_t is a launch-grid ABI detail"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/inductor_codegen_dynamic_shape_analysis.md",
+    "start_line": 227,
+    "end_line": 245,
+    "claimed_baseline": "unknown-historical-main",
+    "current_result": "source_index_line_and_semantic_drift",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance.md",
+        "anchor_text": "15. Debug\u987a\u5e8f",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "replace-source-index",
+    "notes": "F-015: preserve mechanisms with current paths and symbol-level anchors"
+  },
+  {
+    "page": "wiki/02_engineering/01_ai_frameworks/04_inductor/inductor_codegen_dynamic_shape_analysis.md",
+    "start_line": 246,
+    "end_line": 345,
+    "claimed_baseline": "unknown-historical-main",
+    "current_result": "semantic_correction_required",
+    "status": "corrected",
+    "destinations": [
+      {
+        "path": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance.md",
+        "anchor_text": "8. \u4e24\u5c42autotuning",
+        "anchor_occurrence": 1
+      }
+    ],
+    "destination_role": "authoritative_import",
+    "action": "rewrite",
+    "notes": "F-012: replace runtime XBLOCK three-mode story with current config generation, autotuning and runtime grid model"
+  }
+]

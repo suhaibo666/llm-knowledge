@@ -1,5 +1,10 @@
 # torch 上游 Inductor Pass 全集与机制 — 一个 PatternMatcher 引擎，三处 IR 阶段落地
 
+> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
+> **页面角色**：upstream pass全集、Pattern注册和阶段目录参考。
+> **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
+> **课程分工**：本页保留大全式参考；PatternExpr、候选检索、匹配/替换和通用管线的当前主线见 [[19_torch_compile_end_to_end/13_pattern_expression_and_matcher_engine]] 与 [[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint]]。
+
 > **Source baseline**: pytorch @ `9922478dffa`（main，2026-07-20 校验）
 > **Dimension**: Deep Dive（mechanism-level）
 > 本页是上游 Inductor FX pass 的「全集 + 机制」总纲：既给出 pre_grad / joint / post_grad 三阶段所有 pass 的目录（名字·干什么·门控·file:line），又补上三份 stage 指南 [[pre_grad_passes_guide]] / [[joint_graph_passes_guide]] / [[post_grad_passes_guide]] 缺失的「机制层」——pattern 如何被声明、trace、匹配、改写，三阶段如何被 compile_fx 串起来。与 [[npu_vs_upstream_fusion_passes]] 互为上游侧 / NPU 侧对照；工业界 pass 开发方法论归纳见 [[fx_pass_optimization_methodology]]。
@@ -7,7 +12,7 @@
 ---
 
 ## 1. 概览
-
+> [!correction] P-017、P-020：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy#3. PyTorch 中常见的六类“图”]]，逐项说明见 [[correction_report]]。
 ### 一条主线（thesis）
 
 **上游 Inductor 的所有图改写，几乎都由同一台 `PatternMatcherPass` 声明式引擎驱动；真正的多样性不在「匹配算法」，而在「这批 pattern 注册进哪个阶段的哪个 pass_dict、以什么 trace 方式生成、命中后是原地改 FX 图还是推迟到 lowering 才产 IR」。** 理解了「声明→trace→匹配→改写」这一条链路，和「pre_grad（Torch IR，未函数化）/ joint（aten IR，函数化后、切分前）/ post_grad（aten IR，切分后、lowering 前）」三个落地点，整个 pass 体系就是这台引擎在不同 IR 阶段的重复实例化。
@@ -67,7 +72,7 @@ Dynamo 抓取 → Torch-IR GraphModule
 ---
 
 ## 2. Pass 基础设施（现有 stage 指南缺失的机制层）
-
+> [!correction] P-001、P-009：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/13_pattern_expression_and_matcher_engine#9. Candidate index 与逆序]]，逐项说明见 [[correction_report]]。
 ### 2.1 一次匹配的生命周期：声明 → trace → 匹配 → 改写
 
 **声明**。所有 pattern 用 `PatternExpr` 语法树描述要匹配的子图：`CallFunction(target, *arg_patterns, **kwarg_patterns)`（pattern_matcher.py:845）是最常用的节点；叶子里 `KeywordArg("q")`（536）在命中时把该节点作为名为 `q` 的入参捕获交给 handler，`Arg`（511）按位置捕获，`Ignored`（521，`repr` 为 `*`）匹配但不传参，`MultiOutputPattern`（948）描述多输出子图。`PatternExpr._match`（482）是抽象方法，`match`（484）是入口。
@@ -89,7 +94,7 @@ Dynamo 抓取 → Torch-IR GraphModule
 三个注册入口一一对应：`register_lowering_pattern`（2052，装饰器 → `LoweringPatternEntry` 2069）、`register_graph_pattern`（2084 → `GraphPatternEntry` 2098）、`register_replacement`（1588，末尾建 `ReplacementPatternEntry` 并 `register` 到 pass_dict，1842-1848）。`register` 方法（1130）按 pattern 的 `fns`（即 target）把 entry 挂到 `pass_dicts[(op, target)]`，支持 `prepend` 插队和多 pass_dict 广播。
 
 ### 2.3 两种 trace 方式：`fwd_only` vs `joint_fwd_bwd`
-
+> [!correction] P-022：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/13_pattern_expression_and_matcher_engine#13. Serialized/precompiled pattern 为什么存在]]，逐项说明见 [[correction_report]]。
 `register_replacement` 的 `trace_fn` 决定 pattern 匹配的是推理图还是训练图：
 
 - `fwd_only`（2583）：`make_fx(fn, decomps, tracing_mode="real")` 直接 trace，再跑 `remove_noop_ops` + `eliminate_dead_code`，得到「规范化推理图」。
@@ -105,7 +110,7 @@ Dynamo 抓取 → Torch-IR GraphModule
 落盘的是 **`.py`（非 `.pt`）** 文件；目录里最典型的是 30 个 `_sfdp_pattern_*.py`（SDPA 各模板）。`test_serialized_patterns_up_to_date()` 用 `_known_precompiled_patterns`（1940）校验缓存与源码同步。
 
 ### 2.5 三阶段驱动器：如何被调用、如何收尾
-
+> [!correction] P-010、P-011、P-017：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint#2. 三个Inductor FX driver不同]]，逐项说明见 [[correction_report]]。
 三个 driver 函数结构一致——**入口先 `lazy_init` 一次性注册，中间按序跑 pass，尾部统一 `stable_topological_sort` + `lint` + `recompile`**——但落在不同 IR 阶段：
 
 - **pre_grad**（`pre_grad_passes` pre_grad.py:287）：受 `config.pattern_matcher`（config.py:290，默认 `True`）门控；入口 `lazy_init()`（305 → def 174，导入 `split_cat`/`efficient_conv_bn_eval`/`apply_gumbel_max_trick`，fbcode 时另加 `fb`）。分两条互斥路径：`config.is_predispatch` 走 aten 预派发列表 `_run_pre_dispatch_passes`（199，`default_pass_list` 206）；否则走 OSS 路径：`numpy_compat_normalization`（316）→ `fuse_fx`（318）→ `normalization_pass`（320-322）→ `group_batch_fusion_passes(pre_grad=True)`（323-325）→ 遍历 `config.pre_grad_fusion_options` 应用 `PRE_GRAD_PATTERNS[name]`（326-348）→ `efficient_conv_bn_eval`（350）→ gumbel（353）。收尾：custom 钩子（357）、`stable_topological_sort`（362）、`quant_lift_up`（366）、`lint`/`recompile`（368-369）。
@@ -121,7 +126,7 @@ Dynamo 抓取 → Torch-IR GraphModule
 ---
 
 ## 3. Pass 全集目录
-
+> [!correction] P-017、P-020、P-021：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint#2. 三个Inductor FX driver不同]]，逐项说明见 [[correction_report]]。
 > 门控约定：`config.pattern_matcher`（默认 True）是三阶段 pattern 类 pass 的总闸；`pre_grad_fusion_options`/`post_grad_fusion_options` 默认 `{}`（config.py:362/366），故 group_batch 与 split_cat 家族**默认不做事**，需用户填 options 才逐个启用。
 
 ### 3.1 pre_grad（Torch IR，未函数化）
@@ -200,7 +205,7 @@ Dynamo 抓取 → Torch-IR GraphModule
 ---
 
 ## 4. 两种 pattern 匹配 与 pass 顺序约束
-
+> [!correction] P-006、P-010、P-015、P-020：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/13_pattern_expression_and_matcher_engine#10. 单次apply不是fixed point]]，逐项说明见 [[correction_report]]。
 ### 4.1 lowering-pattern vs graph/replacement-pattern
 
 三阶段的所有 `PatternMatcherPass.apply` 都在 **FX 图 pass 阶段**完成匹配。真正的分野在**命中后何时、以何形态落地**：
@@ -223,6 +228,8 @@ Dynamo 抓取 → Torch-IR GraphModule
 
 ## Related Pages
 
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[fx_graph_construction_and_transformation_analysis]] — PatternExpr/候选桶/逆序匹配背后的 FX 数据结构，以及 DCE、保序和复杂度
 - [[pre_grad_passes_guide]] — pre_grad 阶段逐 pass 细节
 - [[joint_graph_passes_guide]] — joint 阶段（SDPA/pad_mm/常量折叠）细节
 - [[post_grad_passes_guide]] — post_grad 阶段逐 pass 细节

@@ -1,0 +1,56 @@
+{
+  "command": [
+    "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+    "-B",
+    "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/native_backend_contract.py",
+    "probe",
+    "--output",
+    "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/native_backend/local_capability_diagnostic.json"
+  ],
+  "diagnostic": {
+    "artifact_type": "local_capability_diagnostic",
+    "capabilities": {
+      "cpu_cpp": {
+        "available": false,
+        "compiler_path": null,
+        "compiler_version": null,
+        "detail": "no supported native C++ compiler (cl.exe) was found on PATH"
+      },
+      "cuda": {
+        "available": false,
+        "detail": "torch.cuda.is_available() is false; torch.version.cuda=None",
+        "device_count": 0
+      },
+      "triton": {
+        "available": false,
+        "detail": "the triton Python package is not installed",
+        "version": null
+      }
+    },
+    "generated_at_utc": "2026-07-28T07:47:23Z",
+    "host": {
+      "architecture": "AMD64",
+      "hostname": "DESKTOP-8EQM9GS",
+      "os": "Windows",
+      "os_version": "10.0.26200"
+    },
+    "runtime": {
+      "python_executable": "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+      "python_version": "3.13.5",
+      "torch_git_version": "5811a8d7da873dd699ff6687092c225caffcf1bb",
+      "torch_version": "2.9.1+cpu"
+    },
+    "schema_version": "native-backend-evidence/v1",
+    "statuses": {
+      "cpu_native": "BLOCKED",
+      "cuda_triton": "BLOCKED"
+    }
+  },
+  "exit_code": 0,
+  "generated_at_utc": "2026-07-28T07:47:24.446588Z",
+  "schema_version": "native-probe-receipt/v1",
+  "script": "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/native_backend_contract.py",
+  "script_sha256": "f9ced090263dd4eed003146d12b3bcd39302e8edf15bd8a17b9e0f5e50382ac4",
+  "stderr": "",
+  "stdout": "{\"cpu_native\": \"BLOCKED\", \"cuda_triton\": \"BLOCKED\"}\ndiagnostic=E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\artifacts\\native_backend\\local_capability_diagnostic.json\n"
+}

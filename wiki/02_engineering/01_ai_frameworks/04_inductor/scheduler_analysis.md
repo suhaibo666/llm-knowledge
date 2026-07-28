@@ -1,5 +1,10 @@
 # TorchInductor Scheduler 深度分析
 
+> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
+> **页面角色**：TorchInductor Scheduler子系统完整源码参考。
+> **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
+> **课程分工**：本页保留纵深实现清单；当前依赖图、融合约束、保序与复杂度见 [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering]]。
+
 > **Updated**: 2026-07-22
 
 > **Source baseline**: PyTorch `9922478dffa`，重点复核 `torch/_inductor/scheduler.py:4099-4141,8479-8497,9470-9505,9713-9850` 与 `torch/_inductor/config.py:315-330`。
@@ -12,7 +17,7 @@
 ---
 
 ## 目录
-
+> [!correction] I-009、I-015、I-016：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse#6. 三套不能混写的“memory planning”]]，逐项说明见 [[correction_report]]。
 1. [是什么：Scheduler 的定位与职责](#1-是什么scheduler-的定位与职责)
 2. [为什么：设计动机与核心问题](#2-为什么设计动机与核心问题)
 3. [怎么做：完整执行流程](#3-怎么做完整执行流程)
@@ -127,7 +132,7 @@ GPU 算力远超内存带宽（H100: ~3000 TFLOPS vs ~3.3 TB/s）。对于 eleme
 ---
 
 ## 3. 怎么做：完整执行流程
-
+> [!correction] I-009、I-010、I-018：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/18_inductor_ir_values_loops_layouts_and_buffers#14. IR dependency入口]]，逐项说明见 [[correction_report]]。
 `Scheduler.__init__` 在 `_init` 方法（L2874）中完成所有初始化工作，按顺序执行以下 pass：
 
 ```mermaid
@@ -364,7 +369,7 @@ flowchart LR
 ```
 
 ### 依赖计算关键逻辑（`compute_dependencies`, L3170）
-
+> [!correction] I-010、I-011、I-012、I-016：本区段按固定基线纠错；其中 `WeakDep` 仍可约束调度，只是在 lifetime/DCE 等消费者中具有弱语义，`StarDep` 也不是所有 mutation 的通用“全局边”。现行结论见 [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering#3. Dependency类型]]，逐项说明见 [[correction_report]]。
 `compute_dependencies` 遍历所有节点，通过分析 `ReadWrites` 建立 `unmet_dependencies`：
 
 - **`MemoryDep`**: 常规读写依赖（由 `extract_read_writes` 分析 LoopBody 得到）
@@ -401,7 +406,7 @@ nodes = self.fuse_nodes_once(nodes, is_reorder_round=True)
 `config.max_fusion_buffer_group_pairwise_attempts` 控制每组最多检查多少对（避免 O(n²) 爆炸）。
 
 ### 7.3 融合合法性检查（`can_fuse`, L5333）
-
+> [!correction] I-014：下图把 legality、priority score 与可选 benchmark 串成单一阈值流程，不能作为当前 Scheduler 的执行规范。现行合法性与收益决策见 [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering#10. Legality]]、[[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering#11. Profitability与priority]]，逐项说明见 [[correction_report]]。
 ```mermaid
 flowchart TD
     A["can_fuse(node1, node2)"]
@@ -441,7 +446,7 @@ flowchart TD
 检查 node2 的所有 `unmet_dependencies` 中，凡是来自 node1 的 buffer，其索引访问模式是否与 node1 的写入完全匹配——只有访问模式一致（或是全局访问）才能内联，否则需要中间 buffer。
 
 ### 7.4 融合评分（`score_fusion_memory`, L5657）
-
+> [!correction] I-014：下式是旧版简写；当前评分还区分 exact dependency、同 buffer overlap 与 mix-order reduction，template 路径还可能另做 benchmark，不能归结为普通集合交集大小。现行机制见 [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering#11. Profitability与priority]]，逐项说明见 [[correction_report]]。
 ```
 score = Σ size(共享 memory dep)
 ```
@@ -518,7 +523,7 @@ if not V.choices.can_fuse(self, node1, node2, shared_data_score):
 ---
 
 ## 9. 自定义指南
-
+> [!correction] I-017、I-023、I-024：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering#14. 当前配置锚点]]，逐项说明见 [[correction_report]]。
 ### 9.1 自定义融合前/后 Pass
 
 最简单的方式，无需修改 Scheduler 核心：
@@ -705,7 +710,7 @@ cfg.triton.mix_order_reduction = False
 ---
 
 ## 10. 调试与观测
-
+> [!correction] I-031：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering#16.3 codegen对照与证据边界]]，逐项说明见 [[correction_report]]。
 ### 10.1 环境变量
 
 ```bash
@@ -923,7 +928,7 @@ export TORCH_LOGS="+inductor"
 ---
 
 ## 文件引用
-
+> [!correction] I-031：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering#14. 当前配置锚点]]，逐项说明见 [[correction_report]]。
 > [!deprecated]
 > 下表多数行号来自旧版 `scheduler.py`，仅用于按符号名定位，不能作为固定基线行号。`9922478dffa` 已核入口为：custom hooks `scheduler.py:4099-4141`、设备 backend 创建 `:8479-8497`、codegen 派发 `:9470-9505`、`BaseScheduling` `:9713`、config hooks `config.py:315-330`、设备注册 `codegen/common.py:407`。
 
@@ -951,6 +956,7 @@ export TORCH_LOGS="+inductor"
 
 ## Related Pages
 
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[02_engineering/01_ai_frameworks/index]]
 - [[PyTorch_Inductor_Technical_Analysis]]
 - [[inductor_codegen_analysis]]

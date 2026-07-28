@@ -1,0 +1,1692 @@
+{
+  "mapping_kind": "semantic stage records plus separately referenced exact mappings",
+  "overall_stage_continuity": "partial",
+  "continuity_definition": "continuous means the downstream artifact was produced from the upstream artifact inside the same capture/compile invocation; running multiple frontends on the same Python computation is an independent recapture, not a continuous transition",
+  "exact_mapping_artifacts": {
+    "aot_joint_to_partition_forward_backward": "aot_joint_to_fw_bw_node_mapping.json",
+    "post_grad_fx_to_generated_code": "backend/inductor_provenance_tracking_node_mappings.json"
+  },
+  "stage_run_ids": {
+    "symbolic_fx": "symbolic_trace_capture",
+    "dynamo_fx": "dynamo_capture_for_eager_backend",
+    "exported_program": "export_capture",
+    "functional_aten": "functional_make_fx_capture",
+    "aot_joint": "aot_autograd_capture_and_partition",
+    "aot_forward": "aot_autograd_capture_and_partition",
+    "aot_backward": "aot_autograd_capture_and_partition",
+    "inductor_ir/scheduler/kernel": "inductor_backend_compile"
+  },
+  "stages": {
+    "symbolic_fx": [
+      {
+        "name": "x",
+        "op": "placeholder",
+        "target": "x",
+        "users": [
+          "view"
+        ],
+        "meta_keys": []
+      },
+      {
+        "name": "weight",
+        "op": "get_attr",
+        "target": "weight",
+        "users": [
+          "matmul"
+        ],
+        "meta_keys": []
+      },
+      {
+        "name": "view",
+        "op": "call_method",
+        "target": "view",
+        "users": [
+          "matmul"
+        ],
+        "meta_keys": []
+      },
+      {
+        "name": "matmul",
+        "op": "call_function",
+        "target": "<built-in function matmul>",
+        "users": [
+          "add"
+        ],
+        "meta_keys": []
+      },
+      {
+        "name": "offset",
+        "op": "get_attr",
+        "target": "offset",
+        "users": [
+          "add"
+        ],
+        "meta_keys": []
+      },
+      {
+        "name": "add",
+        "op": "call_function",
+        "target": "<built-in function add>",
+        "users": [
+          "clone"
+        ],
+        "meta_keys": []
+      },
+      {
+        "name": "clone",
+        "op": "call_method",
+        "target": "clone",
+        "users": [
+          "view_1",
+          "sin"
+        ],
+        "meta_keys": []
+      },
+      {
+        "name": "view_1",
+        "op": "call_method",
+        "target": "view",
+        "users": [
+          "add_"
+        ],
+        "meta_keys": []
+      },
+      {
+        "name": "add_",
+        "op": "call_method",
+        "target": "add_",
+        "users": [],
+        "meta_keys": []
+      },
+      {
+        "name": "sin",
+        "op": "call_function",
+        "target": "<built-in method sin of type object at 0x00007FFFC7F778E0>",
+        "users": [
+          "sum_1",
+          "output"
+        ],
+        "meta_keys": []
+      },
+      {
+        "name": "sum_1",
+        "op": "call_method",
+        "target": "sum",
+        "users": [
+          "output"
+        ],
+        "meta_keys": []
+      },
+      {
+        "name": "output",
+        "op": "output",
+        "target": "output",
+        "users": [],
+        "meta_keys": []
+      }
+    ],
+    "dynamo_fx": [
+      {
+        "name": "l_self_parameters_weight_",
+        "op": "placeholder",
+        "target": "L_self_parameters_weight_",
+        "users": [
+          "projected"
+        ],
+        "meta_keys": [
+          "example_value",
+          "stack_trace",
+          "tensor_dict"
+        ]
+      },
+      {
+        "name": "l_self_buffers_offset_",
+        "op": "placeholder",
+        "target": "L_self_buffers_offset_",
+        "users": [
+          "biased"
+        ],
+        "meta_keys": [
+          "example_value",
+          "stack_trace",
+          "tensor_dict"
+        ]
+      },
+      {
+        "name": "s77",
+        "op": "placeholder",
+        "target": "s77",
+        "users": [],
+        "meta_keys": [
+          "example_value",
+          "stack_trace"
+        ]
+      },
+      {
+        "name": "l_x_",
+        "op": "placeholder",
+        "target": "L_x_",
+        "users": [
+          "view"
+        ],
+        "meta_keys": [
+          "example_value",
+          "stack_trace",
+          "tensor_dict"
+        ]
+      },
+      {
+        "name": "view",
+        "op": "call_method",
+        "target": "view",
+        "users": [
+          "projected"
+        ],
+        "meta_keys": [
+          "example_value",
+          "source_fn_stack",
+          "stack_trace"
+        ]
+      },
+      {
+        "name": "projected",
+        "op": "call_function",
+        "target": "<built-in function matmul>",
+        "users": [
+          "biased"
+        ],
+        "meta_keys": [
+          "example_value",
+          "source_fn_stack",
+          "stack_trace"
+        ]
+      },
+      {
+        "name": "biased",
+        "op": "call_function",
+        "target": "<built-in function add>",
+        "users": [
+          "scratch"
+        ],
+        "meta_keys": [
+          "example_value",
+          "source_fn_stack",
+          "stack_trace"
+        ]
+      },
+      {
+        "name": "scratch",
+        "op": "call_method",
+        "target": "clone",
+        "users": [
+          "view_1",
+          "activation"
+        ],
+        "meta_keys": [
+          "example_value",
+          "source_fn_stack",
+          "stack_trace"
+        ]
+      },
+      {
+        "name": "view_1",
+        "op": "call_method",
+        "target": "view",
+        "users": [
+          "add_"
+        ],
+        "meta_keys": [
+          "example_value",
+          "source_fn_stack",
+          "stack_trace"
+        ]
+      },
+      {
+        "name": "add_",
+        "op": "call_method",
+        "target": "add_",
+        "users": [],
+        "meta_keys": [
+          "example_value",
+          "source_fn_stack",
+          "stack_trace"
+        ]
+      },
+      {
+        "name": "activation",
+        "op": "call_function",
+        "target": "<built-in method sin of type object at 0x00007FFFC7F778E0>",
+        "users": [
+          "summary",
+          "output"
+        ],
+        "meta_keys": [
+          "example_value",
+          "source_fn_stack",
+          "stack_trace"
+        ]
+      },
+      {
+        "name": "summary",
+        "op": "call_method",
+        "target": "sum",
+        "users": [
+          "output"
+        ],
+        "meta_keys": [
+          "example_value",
+          "source_fn_stack",
+          "stack_trace"
+        ]
+      },
+      {
+        "name": "output",
+        "op": "output",
+        "target": "output",
+        "users": [],
+        "meta_keys": [
+          "creation_timestamp"
+        ]
+      }
+    ],
+    "exported_program": [
+      {
+        "name": "p_weight",
+        "op": "placeholder",
+        "target": "p_weight",
+        "users": [
+          "matmul"
+        ],
+        "meta_keys": [
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "b_offset",
+        "op": "placeholder",
+        "target": "b_offset",
+        "users": [
+          "add"
+        ],
+        "meta_keys": [
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "x",
+        "op": "placeholder",
+        "target": "x",
+        "users": [
+          "view"
+        ],
+        "meta_keys": [
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view",
+        "op": "call_function",
+        "target": "aten.view.default",
+        "users": [
+          "matmul"
+        ],
+        "meta_keys": [
+          "nn_module_stack",
+          "stack_trace",
+          "tensor_meta",
+          "torch_fn",
+          "val"
+        ]
+      },
+      {
+        "name": "matmul",
+        "op": "call_function",
+        "target": "aten.matmul.default",
+        "users": [
+          "add"
+        ],
+        "meta_keys": [
+          "nn_module_stack",
+          "stack_trace",
+          "tensor_meta",
+          "torch_fn",
+          "val"
+        ]
+      },
+      {
+        "name": "add",
+        "op": "call_function",
+        "target": "aten.add.Tensor",
+        "users": [
+          "clone"
+        ],
+        "meta_keys": [
+          "nn_module_stack",
+          "stack_trace",
+          "tensor_meta",
+          "torch_fn",
+          "val"
+        ]
+      },
+      {
+        "name": "clone",
+        "op": "call_function",
+        "target": "aten.clone.default",
+        "users": [
+          "view_1",
+          "sin"
+        ],
+        "meta_keys": [
+          "nn_module_stack",
+          "stack_trace",
+          "tensor_meta",
+          "torch_fn",
+          "val"
+        ]
+      },
+      {
+        "name": "view_1",
+        "op": "call_function",
+        "target": "aten.view.default",
+        "users": [
+          "add_"
+        ],
+        "meta_keys": [
+          "nn_module_stack",
+          "stack_trace",
+          "tensor_meta",
+          "torch_fn",
+          "val"
+        ]
+      },
+      {
+        "name": "add_",
+        "op": "call_function",
+        "target": "aten.add_.Tensor",
+        "users": [],
+        "meta_keys": [
+          "nn_module_stack",
+          "stack_trace",
+          "tensor_meta",
+          "torch_fn",
+          "val"
+        ]
+      },
+      {
+        "name": "sin",
+        "op": "call_function",
+        "target": "aten.sin.default",
+        "users": [
+          "sum_1",
+          "output"
+        ],
+        "meta_keys": [
+          "nn_module_stack",
+          "stack_trace",
+          "tensor_meta",
+          "torch_fn",
+          "val"
+        ]
+      },
+      {
+        "name": "sum_1",
+        "op": "call_function",
+        "target": "aten.sum.dim_IntList",
+        "users": [
+          "output"
+        ],
+        "meta_keys": [
+          "nn_module_stack",
+          "stack_trace",
+          "tensor_meta",
+          "torch_fn",
+          "val"
+        ]
+      },
+      {
+        "name": "output",
+        "op": "output",
+        "target": "output",
+        "users": [],
+        "meta_keys": []
+      }
+    ],
+    "functional_aten": [
+      {
+        "name": "arg0_1",
+        "op": "placeholder",
+        "target": "arg0_1",
+        "users": [
+          "view_copy"
+        ],
+        "meta_keys": [
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_copy",
+        "op": "call_function",
+        "target": "aten.view_copy.default",
+        "users": [
+          "mm"
+        ],
+        "meta_keys": [
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "_param_constant0",
+        "op": "get_attr",
+        "target": "_param_constant0",
+        "users": [
+          "mm"
+        ],
+        "meta_keys": [
+          "val"
+        ]
+      },
+      {
+        "name": "mm",
+        "op": "call_function",
+        "target": "aten.mm.default",
+        "users": [
+          "add"
+        ],
+        "meta_keys": [
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "_tensor_constant0",
+        "op": "get_attr",
+        "target": "_tensor_constant0",
+        "users": [
+          "add"
+        ],
+        "meta_keys": [
+          "val"
+        ]
+      },
+      {
+        "name": "add",
+        "op": "call_function",
+        "target": "aten.add.Tensor",
+        "users": [
+          "clone"
+        ],
+        "meta_keys": [
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "clone",
+        "op": "call_function",
+        "target": "aten.clone.default",
+        "users": [
+          "view_copy_1"
+        ],
+        "meta_keys": [
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_copy_1",
+        "op": "call_function",
+        "target": "aten.view_copy.default",
+        "users": [
+          "add_1"
+        ],
+        "meta_keys": [
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "add_1",
+        "op": "call_function",
+        "target": "aten.add.Tensor",
+        "users": [
+          "view_copy_2"
+        ],
+        "meta_keys": [
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_copy_2",
+        "op": "call_function",
+        "target": "aten.view_copy.default",
+        "users": [
+          "view_copy_3",
+          "sin"
+        ],
+        "meta_keys": [
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_copy_3",
+        "op": "call_function",
+        "target": "aten.view_copy.default",
+        "users": [],
+        "meta_keys": [
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "sin",
+        "op": "call_function",
+        "target": "aten.sin.default",
+        "users": [
+          "sum_1",
+          "output"
+        ],
+        "meta_keys": [
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "sum_1",
+        "op": "call_function",
+        "target": "aten.sum.dim_IntList",
+        "users": [
+          "output"
+        ],
+        "meta_keys": [
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "output",
+        "op": "output",
+        "target": "output",
+        "users": [],
+        "meta_keys": []
+      }
+    ],
+    "aot_joint": [
+      {
+        "name": "primals_1",
+        "op": "placeholder",
+        "target": "primals_1",
+        "users": [
+          "mm",
+          "t_1"
+        ],
+        "meta_keys": [
+          "desc",
+          "graph_series_joint_origin_id",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "primals_2",
+        "op": "placeholder",
+        "target": "primals_2",
+        "users": [
+          "add"
+        ],
+        "meta_keys": [
+          "desc",
+          "graph_series_joint_origin_id",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "primals_3",
+        "op": "placeholder",
+        "target": "primals_3",
+        "users": [
+          "view"
+        ],
+        "meta_keys": [
+          "desc",
+          "graph_series_joint_origin_id",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "tangents_1",
+        "op": "placeholder",
+        "target": "tangents_1",
+        "users": [
+          "add_2"
+        ],
+        "meta_keys": [
+          "desc",
+          "graph_series_joint_origin_id",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "tangents_2",
+        "op": "placeholder",
+        "target": "tangents_2",
+        "users": [
+          "unsqueeze"
+        ],
+        "meta_keys": [
+          "desc",
+          "graph_series_joint_origin_id",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view",
+        "op": "call_function",
+        "target": "aten.view.default",
+        "users": [
+          "mm",
+          "t"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "mm",
+        "op": "call_function",
+        "target": "aten.mm.default",
+        "users": [
+          "add"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "add",
+        "op": "call_function",
+        "target": "aten.add.Tensor",
+        "users": [
+          "clone"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "clone",
+        "op": "call_function",
+        "target": "aten.clone.default",
+        "users": [
+          "view_1"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_1",
+        "op": "call_function",
+        "target": "aten.view.default",
+        "users": [
+          "add_1"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "add_1",
+        "op": "call_function",
+        "target": "aten.add.Tensor",
+        "users": [
+          "view_2"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_2",
+        "op": "call_function",
+        "target": "aten.view.default",
+        "users": [
+          "sin",
+          "cos"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "sin",
+        "op": "call_function",
+        "target": "aten.sin.default",
+        "users": [
+          "sum_1",
+          "output"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "sum_1",
+        "op": "call_function",
+        "target": "aten.sum.dim_IntList",
+        "users": [
+          "output"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "unsqueeze",
+        "op": "call_function",
+        "target": "aten.unsqueeze.default",
+        "users": [
+          "expand"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "expand",
+        "op": "call_function",
+        "target": "aten.expand.default",
+        "users": [
+          "add_2"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "add_2",
+        "op": "call_function",
+        "target": "aten.add.Tensor",
+        "users": [
+          "mul"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "stack_trace",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "cos",
+        "op": "call_function",
+        "target": "aten.cos.default",
+        "users": [
+          "mul"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "mul",
+        "op": "call_function",
+        "target": "aten.mul.Tensor",
+        "users": [
+          "new_empty_strided",
+          "copy"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "new_empty_strided",
+        "op": "call_function",
+        "target": "aten.new_empty_strided.default",
+        "users": [
+          "copy"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "copy",
+        "op": "call_function",
+        "target": "aten.copy.default",
+        "users": [
+          "view_6"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_6",
+        "op": "call_function",
+        "target": "aten.view.default",
+        "users": [
+          "clone_1",
+          "copy_1"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "clone_1",
+        "op": "call_function",
+        "target": "aten.clone.default",
+        "users": [
+          "copy_1"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "copy_1",
+        "op": "call_function",
+        "target": "aten.copy.default",
+        "users": [
+          "view_7"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_7",
+        "op": "call_function",
+        "target": "aten.view.default",
+        "users": [
+          "mm_1",
+          "mm_2"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "t",
+        "op": "call_function",
+        "target": "aten.t.default",
+        "users": [
+          "mm_1"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "mm_1",
+        "op": "call_function",
+        "target": "aten.mm.default",
+        "users": [
+          "output"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "t_1",
+        "op": "call_function",
+        "target": "aten.t.default",
+        "users": [
+          "mm_2"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "mm_2",
+        "op": "call_function",
+        "target": "aten.mm.default",
+        "users": [
+          "view_9"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_9",
+        "op": "call_function",
+        "target": "aten.view.default",
+        "users": [
+          "output"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "output",
+        "op": "output",
+        "target": "output",
+        "users": [],
+        "meta_keys": [
+          "desc",
+          "graph_series_joint_origin_id"
+        ]
+      }
+    ],
+    "aot_forward": [
+      {
+        "name": "primals_1",
+        "op": "placeholder",
+        "target": "primals_1",
+        "users": [
+          "mm",
+          "output"
+        ],
+        "meta_keys": [
+          "desc",
+          "graph_series_joint_origin_id",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "primals_2",
+        "op": "placeholder",
+        "target": "primals_2",
+        "users": [
+          "add"
+        ],
+        "meta_keys": [
+          "desc",
+          "graph_series_joint_origin_id",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "primals_3",
+        "op": "placeholder",
+        "target": "primals_3",
+        "users": [
+          "view"
+        ],
+        "meta_keys": [
+          "desc",
+          "graph_series_joint_origin_id",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view",
+        "op": "call_function",
+        "target": "aten.view.default",
+        "users": [
+          "mm",
+          "output"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "mm",
+        "op": "call_function",
+        "target": "aten.mm.default",
+        "users": [
+          "add"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "add",
+        "op": "call_function",
+        "target": "aten.add.Tensor",
+        "users": [
+          "clone"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "clone",
+        "op": "call_function",
+        "target": "aten.clone.default",
+        "users": [
+          "view_1"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_1",
+        "op": "call_function",
+        "target": "aten.view.default",
+        "users": [
+          "add_1"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "add_1",
+        "op": "call_function",
+        "target": "aten.add.Tensor",
+        "users": [
+          "view_2"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_2",
+        "op": "call_function",
+        "target": "aten.view.default",
+        "users": [
+          "sin",
+          "output"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "sin",
+        "op": "call_function",
+        "target": "aten.sin.default",
+        "users": [
+          "sum_1",
+          "output"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "sum_1",
+        "op": "call_function",
+        "target": "aten.sum.dim_IntList",
+        "users": [
+          "output"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "output",
+        "op": "output",
+        "target": "output",
+        "users": [],
+        "meta_keys": [
+          "desc"
+        ]
+      }
+    ],
+    "aot_backward": [
+      {
+        "name": "primals_1",
+        "op": "placeholder",
+        "target": "primals_1",
+        "users": [
+          "t_1"
+        ],
+        "meta_keys": [
+          "desc",
+          "graph_series_joint_origin_id",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view",
+        "op": "placeholder",
+        "target": "view",
+        "users": [
+          "t"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_2",
+        "op": "placeholder",
+        "target": "view_2",
+        "users": [
+          "cos"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "tangents_1",
+        "op": "placeholder",
+        "target": "tangents_1",
+        "users": [
+          "add_2"
+        ],
+        "meta_keys": [
+          "desc",
+          "graph_series_joint_origin_id",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "tangents_2",
+        "op": "placeholder",
+        "target": "tangents_2",
+        "users": [
+          "unsqueeze"
+        ],
+        "meta_keys": [
+          "desc",
+          "graph_series_joint_origin_id",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "unsqueeze",
+        "op": "call_function",
+        "target": "aten.unsqueeze.default",
+        "users": [
+          "expand"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "expand",
+        "op": "call_function",
+        "target": "aten.expand.default",
+        "users": [
+          "add_2"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "add_2",
+        "op": "call_function",
+        "target": "aten.add.Tensor",
+        "users": [
+          "mul"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "stack_trace",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "cos",
+        "op": "call_function",
+        "target": "aten.cos.default",
+        "users": [
+          "mul"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "mul",
+        "op": "call_function",
+        "target": "aten.mul.Tensor",
+        "users": [
+          "new_empty_strided",
+          "copy"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "new_empty_strided",
+        "op": "call_function",
+        "target": "aten.new_empty_strided.default",
+        "users": [
+          "copy"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "copy",
+        "op": "call_function",
+        "target": "aten.copy.default",
+        "users": [
+          "view_6"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_6",
+        "op": "call_function",
+        "target": "aten.view.default",
+        "users": [
+          "clone_1",
+          "copy_1"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "clone_1",
+        "op": "call_function",
+        "target": "aten.clone.default",
+        "users": [
+          "copy_1"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "copy_1",
+        "op": "call_function",
+        "target": "aten.copy.default",
+        "users": [
+          "view_7"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_7",
+        "op": "call_function",
+        "target": "aten.view.default",
+        "users": [
+          "mm_1",
+          "mm_2"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "t",
+        "op": "call_function",
+        "target": "aten.t.default",
+        "users": [
+          "mm_1"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "mm_1",
+        "op": "call_function",
+        "target": "aten.mm.default",
+        "users": [
+          "output"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "t_1",
+        "op": "call_function",
+        "target": "aten.t.default",
+        "users": [
+          "mm_2"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "mm_2",
+        "op": "call_function",
+        "target": "aten.mm.default",
+        "users": [
+          "view_9"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "view_9",
+        "op": "call_function",
+        "target": "aten.view.default",
+        "users": [
+          "output"
+        ],
+        "meta_keys": [
+          "graph_series_joint_origin_id",
+          "original_aten",
+          "partitioner_tag",
+          "seq_nr",
+          "tensor_meta",
+          "val"
+        ]
+      },
+      {
+        "name": "output",
+        "op": "output",
+        "target": "output",
+        "users": [],
+        "meta_keys": [
+          "desc"
+        ]
+      }
+    ]
+  },
+  "relationships": [
+    {
+      "from": "symbolic_fx",
+      "to": "functional_aten",
+      "relationship": "independent captures of the same UnifiedGraphModel computation",
+      "continuous_transition": false,
+      "mechanism": "functionalization plus a separate make_fx invocation; functional_aten was not produced by consuming symbolic_fx",
+      "identity_preserved": false
+    },
+    {
+      "from": "functional_aten",
+      "to": "aot_joint",
+      "relationship": "independent captures of the same UnifiedGraphModel computation",
+      "continuous_transition": false,
+      "mechanism": "a separate aot_module invocation recaptured the model and synthesized backward; it did not consume functional_aten",
+      "identity_preserved": false
+    },
+    {
+      "from": "aot_joint",
+      "to": "aot_forward/aot_backward",
+      "mechanism": "partition copies required nodes into fresh Graphs",
+      "continuous_transition": true,
+      "identity_preserved": false,
+      "evidence": "aot_joint_to_fw_bw_node_mapping.json"
+    },
+    {
+      "from": "aot_forward",
+      "to": "backend/fx_graph_readable.py",
+      "relationship": "the backend_core computation is shared, but the backend run has explicit state inputs and independently recaptures it",
+      "continuous_transition": false,
+      "mechanism": "_run_codegen_only invokes torch.compile on backend_core; it does not consume the AOT forward GraphModule above",
+      "identity_preserved": false
+    },
+    {
+      "from": "backend/fx_graph_readable.py",
+      "to": "inductor_ir/scheduler/kernel",
+      "mechanism": "one _run_codegen_only torch.compile invocation performs GraphLowering, scheduling, fusion, and code generation",
+      "continuous_transition": true,
+      "identity_preserved": false,
+      "evidence": "backend/inductor_provenance_tracking_node_mappings.json"
+    }
+  ],
+  "backend": {
+    "codegen_status": "generated_not_executed",
+    "captured_cpp_translation_units": 1,
+    "trace_files": {
+      "fx_graph_readable.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/end_to_end/backend/fx_graph_readable.py",
+      "fx_graph_runnable.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/end_to_end/backend/fx_graph_runnable.py",
+      "fx_graph_transformed.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/end_to_end/backend/fx_graph_transformed.py",
+      "ir_pre_fusion.txt": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/end_to_end/backend/ir_pre_fusion.txt",
+      "ir_post_fusion.txt": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/end_to_end/backend/ir_post_fusion.txt",
+      "inductor_provenance_tracking_node_mappings.json": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/end_to_end/backend/inductor_provenance_tracking_node_mappings.json",
+      "output_code.py": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/end_to_end/backend/output_code.py"
+    }
+  }
+}

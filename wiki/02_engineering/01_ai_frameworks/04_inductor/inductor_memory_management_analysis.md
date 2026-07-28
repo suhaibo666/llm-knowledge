@@ -1,5 +1,10 @@
 # torch.compile 内存分配管理 — 三层:编译期规划 / 运行期缓存池 / CUDA Graphs 私有池
 
+> [!note] 页面角色与审计状态
+> **页面角色**：Inductor 编译期规划、运行时 caching allocator 与 CUDA Graph 私有池三层关系的内存专题；它保留跨层机制纵深，不把 logical buffer、allocator block 和 graph-private pool 合并成同一种对象。
+> **原始基线**：PyTorch `5f6df46744a`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
+> **审计状态**：已纳入历史 manifest，但跨基线 locator、配置默认值和实验尚未逐结构单元复核；原页订正只对其声明基线负责。Inductor buffer liveness/reuse 见 [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]]，Scheduler reorder 与 dependency 见 [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering]]；Inductor 领域入口见 [[04_inductor/index]]。
+
 > **Source baseline**: pytorch @ `5f6df46744a`(trunk, 2026-06-29)
 > **Dimension**: Deep Dive(mechanism-level)
 > 最后更新: 2026-06-30
@@ -259,6 +264,10 @@ flowchart TB
 
 ## Related Pages
 
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[04_inductor/index]] — Inductor 领域索引
+- [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]] — logical buffer、last use、reuse 与静态 peak 课程主线
+- [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering]] — Scheduler dependency、fusion 与 reorder
 - [[inductor_memory_allocation_guide]] — **实战指南**:实际分配走查 / 分配器选型对照 / `memory_stats` 实测复现 / 实践建议(本页的动手版)
 - [[caching_allocator_autocast_profiler_analysis]] — **层 2 深页**:`CUDACachingAllocator` 的 Block/segment/stream/expandable 源码级机制
 - [[inductor_codegen_analysis]] — wrapper codegen 全景(§4.5 内存规划集成是本页层 1 的简版)

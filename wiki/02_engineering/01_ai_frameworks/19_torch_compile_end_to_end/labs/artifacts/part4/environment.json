@@ -1,0 +1,10 @@
+{
+  "source_locator_baseline": "e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52",
+  "python": "3.13.5",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "torch": "2.9.1+cpu",
+  "runtime_torch_git": "5811a8d7da873dd699ff6687092c225caffcf1bb",
+  "runtime_matches_source_baseline": false,
+  "cuda_available": false,
+  "msvc_cl": null
+}

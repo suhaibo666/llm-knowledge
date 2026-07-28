@@ -1,0 +1,65 @@
+{
+  "forward_user_output_count": 2,
+  "forward_output_slots": [
+    "sin",
+    "sum_1",
+    "primals_1",
+    "view",
+    "view_2"
+  ],
+  "saved_value_slots": [
+    "primals_1",
+    "view",
+    "view_2"
+  ],
+  "backward_placeholders": [
+    "primals_1",
+    "view",
+    "view_2",
+    "tangents_1",
+    "tangents_2"
+  ],
+  "saved_slot_bindings": [
+    {
+      "saved_slot_index": 0,
+      "forward_output_index": 2,
+      "forward_value_node": "primals_1",
+      "forward_joint_origin_token": "joint:0:primals_1",
+      "backward_placeholder_index": 0,
+      "backward_placeholder_node": "primals_1",
+      "backward_joint_origin_token": "joint:0:primals_1",
+      "same_joint_origin": true,
+      "transport": "runtime value slot from forward output/context to a fresh backward placeholder; not a cross-Graph Node edge"
+    },
+    {
+      "saved_slot_index": 1,
+      "forward_output_index": 3,
+      "forward_value_node": "view",
+      "forward_joint_origin_token": "joint:5:view",
+      "backward_placeholder_index": 1,
+      "backward_placeholder_node": "view",
+      "backward_joint_origin_token": "joint:5:view",
+      "same_joint_origin": true,
+      "transport": "runtime value slot from forward output/context to a fresh backward placeholder; not a cross-Graph Node edge"
+    },
+    {
+      "saved_slot_index": 2,
+      "forward_output_index": 4,
+      "forward_value_node": "view_2",
+      "forward_joint_origin_token": "joint:11:view_2",
+      "backward_placeholder_index": 2,
+      "backward_placeholder_node": "view_2",
+      "backward_joint_origin_token": "joint:11:view_2",
+      "same_joint_origin": true,
+      "transport": "runtime value slot from forward output/context to a fresh backward placeholder; not a cross-Graph Node edge"
+    }
+  ],
+  "saved_slot_binding_checks": {
+    "all_bindings_have_same_joint_origins": true,
+    "binding_uses_positional_runtime_abi": true,
+    "binding_is_cross_graph_node_edge": false
+  },
+  "cross_graph_node_refs": [],
+  "joint_to_fw_bw_mapping_artifact": "aot_joint_to_fw_bw_node_mapping.json",
+  "explanation": "Forward outputs and backward placeholders form the runtime ABI; there are no Node references whose owner is the other Graph."
+}

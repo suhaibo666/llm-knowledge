@@ -1,7 +1,7 @@
 # PyTorch 编译与运行时架构 — 知识地图
 
 > 本域(`01_ai_frameworks`)按 **PyTorch 编译/运行时架构**组织。每个功能目录下,**硬件无关的通用机制**置于该目录层级,**硬件特定实现**下沉到 `npu/`、`cuda/` 等硬件子目录。
-> 最后更新: 2026-07-15
+> 最后更新: 2026-07-28
 
 ---
 
@@ -53,6 +53,21 @@ PyTorch 可拆成相互支撑的两条主轴——**① eager 运行时地基**(
 | [[06_graphs/index]] | 运行时图捕获:CUDA Graphs / NPU Graphs(ACLGraph) | `cuda/` + `npu/` |
 | [[07_op_registration/index]] | 算子接入供给侧:op-plugin 配置/注册/入图判别 | `npu/` |
 | [[08_kernel_optimization/index]] | 算子调优(GPU/NPU Roofline、融合)、TileLang | 通用 |
+| [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] | **图编译系统化主线**：FX IR 与 use-def、捕获/规范化、AOTAutograd 正反向构图、saved tensor/recompute、PatternMatcher、DCE/保序、Inductor IR/调度/codegen；按固定源码基线逐条核验 | 通用 |
+| [[17_compile_cache/index]] | **跨阶段编译缓存**：Dynamo PGO、AOTAutograd result、Inductor FX graph artifact、Triton autotune/kernel 的key、命中边界与失效 | 通用 |
+| [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] | **`torch.compile` 端到端课程**：执行前置、Dynamo、现有图编译卷、runtime/cache、调试/性能、训练/分布式/扩展/部署；A→F 编号化阅读 | 通用 |
+
+缓存不是codegen之后新增的一种IR阶段，而是横跨生命周期的“跳过既有工作”机制：
+
+```text
+Dynamo PGO → 复用动态行为/shape经验
+AOTAutograd cache → 复用functionalization、joint/partition与编译结果
+Inductor FX graph cache → 复用lowering/codegen artifact
+Triton autotune/kernel cache → 复用候选winner与已编译kernel
+```
+
+阅读顺序仍是捕获→AOT→Inductor→codegen；随后从[[17_compile_cache/index]]反向检查每一层
+cache hit究竟跳过了哪些阶段，不能把“命中cache”笼统理解成整条编译栈都未运行。
 
 ### ③ 图/扩展与分布式
 
@@ -97,7 +112,7 @@ PyTorch 可拆成相互支撑的两条主轴——**① eager 运行时地基**(
 
 ### 📋 规划任务(按优先级)
 
-- **[P2] 持久化与遗留 `16_serialization_and_legacy`**(spec 已就绪,本轮暂缓):序列化(`torch.save/load` zip+pickle、`weights_only` 安全模型)、TorchScript/JIT(已废弃,迁移见 14)、C++/CUDA 扩展(`cpp_extension`)。建议三页:overview / `save_load_and_cpp_extension_quickstart` / `serialization_jit_and_cpp_extensions_analysis`。
+- **[P2] 持久化与遗留 `18_serialization_and_legacy`**(spec 已就绪,本轮暂缓):序列化(`torch.save/load` zip+pickle、`weights_only` 安全模型)、TorchScript/JIT(已废弃,迁移见 14)、C++/CUDA 扩展(`cpp_extension`)。编号 16 曾由图编译主线占用；该主线现已归并到 19，但 17/18 的既有编号保持不回退，避免再次迁移链接。建议三页:overview / `save_load_and_cpp_extension_quickstart` / `serialization_jit_and_cpp_extensions_analysis`。
 - **[P2] 新模块的 NPU 特化下沉**:为 00/10/11/13/15 按需建 `npu/` 子目录——NPU 缓存分配器与内存复用(与 [[06_graphs/npu/index]] 联动)、`HCCL`/`ProcessGroupHCCL`、`AutogradPrivateUse1` 反向注册、aclnn 结构化 kernel 对照;upstream 页仅留指向 `npu/` 的指针。
 - **[P1→补深] 11_aten**:补一条 `yaml → torchgen → 生成 C++(RegisterCPU.cpp)` 的**具体生成实例**走读(当前以机制为主)。
 - **[P1→补深] 15_distributed**:`ProcessGroupNCCL` 具体实现、FSDP2(`_composable/fsdp`)与 FSDP1 差异、pipeline 调度(1F1B/interleaved)细节;与 [[02_train_frameworks/index]] 划清「原语 vs 应用」边界后双向补链。
@@ -116,8 +131,11 @@ PyTorch 可拆成相互支撑的两条主轴——**① eager 运行时地基**(
 
 ---
 
-## 关联域
+## Related Pages
 
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 图编译系统化课程
+- [[17_compile_cache/index]] — 跨阶段编译缓存地图
+- [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 从 API 到生产运行的端到端课程
 - [[02_train_frameworks/megatron-lm/index]] — Megatron-LM(CUDA Graphs 使用场景)
 - [[02_train_frameworks/index]] — 训练框架:建立在 [[15_distributed_primitives/index]] 之上的并行应用层
 - [[05_gpu_kernel/index]] — GPU Kernel 开发(执行层级、内存优化、NPU 差异)

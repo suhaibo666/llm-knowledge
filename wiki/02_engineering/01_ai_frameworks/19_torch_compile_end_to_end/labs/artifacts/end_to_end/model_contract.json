@@ -1,0 +1,25 @@
+{
+  "stable_prefix": [
+    "view",
+    "matmul",
+    "parameter_plus_buffer",
+    "clone",
+    "view_mutation",
+    "sin",
+    "reduction"
+  ],
+  "features": [
+    "parameter",
+    "buffer",
+    "view",
+    "mutation",
+    "dynamic_shape",
+    "structured_output",
+    "matmul",
+    "pointwise",
+    "reduction",
+    "higher_order_branch"
+  ],
+  "higher_order_branch_is_separate_export_variant": true,
+  "reason": "The HOP variant keeps the same tensor domain but is exported separately because nested branch graphs have their own ownership boundary."
+}

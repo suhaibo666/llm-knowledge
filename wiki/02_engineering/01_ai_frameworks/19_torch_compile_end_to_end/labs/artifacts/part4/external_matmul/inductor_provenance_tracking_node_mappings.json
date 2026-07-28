@@ -1,0 +1,1 @@
+{"preToPost": {"matmul": ["mm"]}, "postToPre": {"mm": ["matmul"]}, "cppCodeToPost": {"extern_kernels.mm:1": ["mm"]}, "postToCppCode": {"mm": ["extern_kernels.mm:1"]}}

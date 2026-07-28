@@ -1,0 +1,382 @@
+{
+  "evidence_kind": "runtime_observed_scheduler_no_codegen",
+  "configuration": "torch._inductor.config.reorder_for_peak_memory",
+  "reorder_enabled": {
+    "node_order": [
+      "op1",
+      "op0",
+      "op2"
+    ],
+    "liveness": {
+      "estimator": "torch._inductor.memory.estimate_peak_memory",
+      "estimator_kind": "static_scheduler_estimate_not_physical_allocator_peak",
+      "scheduled_order_estimated_peak_bytes": 263172,
+      "estimated_peak_bytes": 263172,
+      "timeline_bytes": [
+        263172,
+        2052,
+        1028,
+        0
+      ],
+      "buffers": [
+        {
+          "name": "buf0",
+          "size_alloc_bytes": 1024,
+          "size_free_bytes": 1024,
+          "successor_nodes": [
+            "op2"
+          ]
+        },
+        {
+          "name": "buf1",
+          "size_alloc_bytes": 4,
+          "size_free_bytes": 4,
+          "successor_nodes": [
+            "op2"
+          ]
+        },
+        {
+          "name": "buf2",
+          "size_alloc_bytes": 1024,
+          "size_free_bytes": 1024,
+          "successor_nodes": []
+        }
+      ],
+      "nodes": [
+        {
+          "name": "op1",
+          "type": "SchedulerNode",
+          "operation_names": [
+            "op1"
+          ],
+          "reads": [
+            {
+              "type": "MemoryDep",
+              "name": "y_1",
+              "index": "c0",
+              "var_names": [
+                "c0"
+              ],
+              "size": [
+                65536
+              ],
+              "mode": null
+            }
+          ],
+          "writes": [
+            {
+              "type": "MemoryDep",
+              "name": "buf1",
+              "index": 0,
+              "var_names": [],
+              "size": [],
+              "mode": null
+            }
+          ],
+          "last_usage": [
+            "y_1"
+          ],
+          "planning_index": 0,
+          "output_allocation_bytes": 4,
+          "predecessor_nodes": [],
+          "successor_nodes": [
+            "op2"
+          ]
+        },
+        {
+          "name": "op0",
+          "type": "ExternKernelSchedulerNode",
+          "operation_names": [
+            "op0"
+          ],
+          "reads": [
+            {
+              "type": "StarDep",
+              "name": "x_1",
+              "index": null,
+              "var_names": [],
+              "size": [],
+              "mode": null
+            },
+            {
+              "type": "StarDep",
+              "name": "weight_1",
+              "index": null,
+              "var_names": [],
+              "size": [],
+              "mode": null
+            }
+          ],
+          "writes": [
+            {
+              "type": "StarDep",
+              "name": "buf0",
+              "index": null,
+              "var_names": [],
+              "size": [],
+              "mode": null
+            }
+          ],
+          "last_usage": [
+            "weight_1",
+            "x_1"
+          ],
+          "planning_index": 1,
+          "output_allocation_bytes": 1024,
+          "predecessor_nodes": [],
+          "successor_nodes": [
+            "op2"
+          ]
+        },
+        {
+          "name": "op2",
+          "type": "SchedulerNode",
+          "operation_names": [
+            "op2"
+          ],
+          "reads": [
+            {
+              "type": "MemoryDep",
+              "name": "buf0",
+              "index": "c0",
+              "var_names": [
+                "c0"
+              ],
+              "size": [
+                256
+              ],
+              "mode": null
+            },
+            {
+              "type": "MemoryDep",
+              "name": "buf1",
+              "index": 0,
+              "var_names": [],
+              "size": [],
+              "mode": null
+            }
+          ],
+          "writes": [
+            {
+              "type": "MemoryDep",
+              "name": "buf2",
+              "index": "c0",
+              "var_names": [
+                "c0"
+              ],
+              "size": [
+                256
+              ],
+              "mode": null
+            }
+          ],
+          "last_usage": [
+            "buf0",
+            "buf1"
+          ],
+          "planning_index": 2,
+          "output_allocation_bytes": 1024,
+          "predecessor_nodes": [
+            "op0",
+            "op1"
+          ],
+          "successor_nodes": []
+        }
+      ],
+      "native_kernel_performance_tested": false
+    }
+  },
+  "reorder_disabled": {
+    "node_order": [
+      "op0",
+      "op1",
+      "op2"
+    ],
+    "liveness": {
+      "estimator": "torch._inductor.memory.estimate_peak_memory",
+      "estimator_kind": "static_scheduler_estimate_not_physical_allocator_peak",
+      "scheduled_order_estimated_peak_bytes": 264192,
+      "estimated_peak_bytes": 264192,
+      "timeline_bytes": [
+        264192,
+        262148,
+        1028,
+        0
+      ],
+      "buffers": [
+        {
+          "name": "buf0",
+          "size_alloc_bytes": 1024,
+          "size_free_bytes": 1024,
+          "successor_nodes": [
+            "op2"
+          ]
+        },
+        {
+          "name": "buf1",
+          "size_alloc_bytes": 4,
+          "size_free_bytes": 4,
+          "successor_nodes": [
+            "op2"
+          ]
+        },
+        {
+          "name": "buf2",
+          "size_alloc_bytes": 1024,
+          "size_free_bytes": 1024,
+          "successor_nodes": []
+        }
+      ],
+      "nodes": [
+        {
+          "name": "op0",
+          "type": "ExternKernelSchedulerNode",
+          "operation_names": [
+            "op0"
+          ],
+          "reads": [
+            {
+              "type": "StarDep",
+              "name": "x_1",
+              "index": null,
+              "var_names": [],
+              "size": [],
+              "mode": null
+            },
+            {
+              "type": "StarDep",
+              "name": "weight_1",
+              "index": null,
+              "var_names": [],
+              "size": [],
+              "mode": null
+            }
+          ],
+          "writes": [
+            {
+              "type": "StarDep",
+              "name": "buf0",
+              "index": null,
+              "var_names": [],
+              "size": [],
+              "mode": null
+            }
+          ],
+          "last_usage": [
+            "weight_1",
+            "x_1"
+          ],
+          "planning_index": 0,
+          "output_allocation_bytes": 1024,
+          "predecessor_nodes": [],
+          "successor_nodes": [
+            "op2"
+          ]
+        },
+        {
+          "name": "op1",
+          "type": "SchedulerNode",
+          "operation_names": [
+            "op1"
+          ],
+          "reads": [
+            {
+              "type": "MemoryDep",
+              "name": "y_1",
+              "index": "c0",
+              "var_names": [
+                "c0"
+              ],
+              "size": [
+                65536
+              ],
+              "mode": null
+            }
+          ],
+          "writes": [
+            {
+              "type": "MemoryDep",
+              "name": "buf1",
+              "index": 0,
+              "var_names": [],
+              "size": [],
+              "mode": null
+            }
+          ],
+          "last_usage": [
+            "y_1"
+          ],
+          "planning_index": 1,
+          "output_allocation_bytes": 4,
+          "predecessor_nodes": [],
+          "successor_nodes": [
+            "op2"
+          ]
+        },
+        {
+          "name": "op2",
+          "type": "SchedulerNode",
+          "operation_names": [
+            "op2"
+          ],
+          "reads": [
+            {
+              "type": "MemoryDep",
+              "name": "buf0",
+              "index": "c0",
+              "var_names": [
+                "c0"
+              ],
+              "size": [
+                256
+              ],
+              "mode": null
+            },
+            {
+              "type": "MemoryDep",
+              "name": "buf1",
+              "index": 0,
+              "var_names": [],
+              "size": [],
+              "mode": null
+            }
+          ],
+          "writes": [
+            {
+              "type": "MemoryDep",
+              "name": "buf2",
+              "index": "c0",
+              "var_names": [
+                "c0"
+              ],
+              "size": [
+                256
+              ],
+              "mode": null
+            }
+          ],
+          "last_usage": [
+            "buf0",
+            "buf1"
+          ],
+          "planning_index": 2,
+          "output_allocation_bytes": 1024,
+          "predecessor_nodes": [
+            "op0",
+            "op1"
+          ],
+          "successor_nodes": []
+        }
+      ],
+      "native_kernel_performance_tested": false
+    }
+  },
+  "schedule_changed": true,
+  "estimated_peak_changed": true,
+  "comparison_recorded": true,
+  "effect_observed": true,
+  "reorder_enabled_topological": true,
+  "reorder_disabled_topological": true,
+  "native_kernel_count": null,
+  "native_kernel_performance_tested": false
+}

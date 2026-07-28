@@ -2,7 +2,7 @@
 
 > PyTorch 编译全链路扩展面:Dynamo backend → Pre-Grad → AOT/Decomposition → Joint → Post-Grad → Lowering(FX→Inductor IR) → Scheduler(调度/融合) → CodeGen。
 > 阅读路径 **overview → quick start → deep dive**(约定见 [[01_ai_frameworks/index]])。本目录为 **upstream**;**NPU Inductor 后端**单独见 [[04_inductor/npu/index]]。
-> 最后更新: 2026-07-22
+> 最后更新: 2026-07-27
 
 ---
 
@@ -11,6 +11,23 @@
 | 页面 | 核心主题 |
 |------|---------|
 | [[torch_compile_architecture]] | **Inductor 概览**:是什么/为什么、在 torch.compile 中的位置、五阶段一览、核心概念(IR/Scheduler/CodeGen)、由浅入深导航 |
+| [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] | **当前图编译系统化主线**：从 FX IR、AOT 正反向图和改图合法性，一直走到 Inductor IR、调度、内存规划与 codegen；固定源码基线并配套可执行 Lab |
+
+### 课程主线与子系统参考分工
+
+| 需求 | 入口 |
+|---|---|
+| 建立“为什么这样设计”的连续心智模型并运行Lab | [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] |
+| FX→IR职责与fallback/custom lowering | [[19_torch_compile_end_to_end/17_fx_lowering_to_inductor_ir]] |
+| IR value/loop/layout/buffer与index | [[19_torch_compile_end_to_end/18_inductor_ir_values_loops_layouts_and_buffers]] |
+| liveness、reuse、静态peak与runtime边界 | [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]] |
+| Scheduler dependency/fusion/reorder | [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering]] |
+| kernel/wrapper/autotune/provenance | [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]] |
+| 查某个子系统的完整函数/API清单 | 本目录下`lowering_analysis`、`scheduler_analysis`、`inductor_codegen_analysis`等专题页 |
+
+autotuning负责搜索/测量候选并选择winner；[[17_compile_cache/index]]讨论winner、graph
+artifact与compiled module如何复用。两者相邻但不是同一机制：一次autotune可能写cache，
+一次cache hit也可能完全跳过新的benchmark。
 
 ## quick start(上手)
 
@@ -53,6 +70,7 @@
 | 页面 | 核心主题 |
 |------|---------|
 | [[torch_upstream_pass_deepdive]] | **上游 Pass 全集与机制**(总纲):PatternMatcher 引擎(声明→trace→匹配→改写)、三种 PatternEntry、fwd_only/joint_fwd_bwd、序列化 pattern 缓存、三阶段驱动器 + custom 钩子、全集目录;下面三份 stage 指南的上层 |
+| [[fx_graph_construction_and_transformation_analysis]] | **FX 构图与改图底座**:Node/Graph 双向 use-def、PatternExpr AST、候选桶与逆序匹配、DCE、稳定拓扑排序、AOT fw/bw/recompute 及复杂度 |
 | [[pre_grad_passes_guide]] | Pre-Grad 真实顺序、主要 Pass、关键 API、custom/Pattern 注册示例与动态形状边界 |
 | [[joint_graph_passes_guide]] | Joint 真实顺序、两轮 `pass_patterns`、切图前方法论与 custom hook 示例 |
 | [[post_grad_passes_guide]] | Post-Grad 真实顺序、三轮 pattern、通信/mutation 尾部约束与 inference-aware hook |
@@ -83,10 +101,17 @@
 
 ---
 
-## 关联域
+## Related Pages
 
+- [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 编号化端到端课程：卷 C 的 lowering/codegen 与卷 D 的 artifact/runtime
 - [[02_dynamo/index]] — 上游:图捕获
 - [[03_aot_autograd/index]] — 上游:前/反向分解
+- [[19_torch_compile_end_to_end/17_fx_lowering_to_inductor_ir]] — 当前基线的 FX → Inductor IR 边界
+- [[19_torch_compile_end_to_end/18_inductor_ir_values_loops_layouts_and_buffers]] — 当前基线的IR值、循环、layout与buffer
+- [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]] — 当前基线的liveness、reuse与peak边界
+- [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering]] — 当前基线的 scheduler 依赖图、融合与保序
+- [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]] — 当前基线的 codegen、autotune 与 provenance
+- [[17_compile_cache/index]] — 跨阶段cache与artifact复用
 - [[05_codegen_backends/index]] — codegen 后端(MLIR/Triton)
 - [[06_graphs/index]] — 运行时图捕获
 - [[01_ai_frameworks/index]] — 本域总索引

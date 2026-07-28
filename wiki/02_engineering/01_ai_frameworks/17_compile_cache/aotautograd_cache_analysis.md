@@ -1,10 +1,15 @@
 # AOTAutogradCache — 在 dynamo 图层面直接命中「整个前反向编译单元」，连 AOTAutograd 本身也跳过
 
+> [!note] 页面角色与审计状态
+> **页面角色**：AOTAutograd result cache 的 key、entry、bypass 与 runtime wrapper 重放专题；它回答“哪些构图/分图工作可被缓存跳过”，不是 AOT 正反向图构造本身的课程替代。
+> **原始基线**：PyTorch `3bda74318624581502db16e6439c36effdb16481`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
+> **审计状态**：已纳入历史 manifest，但当前只完成结构 inventory 与导航迁移，尚未把全部 claim/locator 和 cache-hit 实验复核到当前基线。正反向构图见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]]，阶段身份与 artifact 追踪见 [[19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance]]；缓存领域入口见 [[17_compile_cache/index]]。
+
 > **分析对象**：PyTorch AOTAutograd 级编译缓存 `AOTAutogradCache`（`torch/_functorch/_aot_autograd/autograd_cache.py`，1523 行）——缓存 dynamo 输出的 FX graph 到「编译后的 forward/backward + runtime wrapper 元数据」整个编译单元的映射，命中时连 AOTAutograd 的 dispatch/functionalization/metadata 收集/partition 都不再跑。
 > **Source baseline**：PyTorch upstream 本地检出 `E:\97-codes\torch_parallel\pytorch` @ branch `main`, commit `3bda74318624581502db16e6439c36effdb16481`（2026-07-10, version 2.14.0a0）。所有 `file:line` 均对该 commit 逐一开文件核验。
 > **最后更新**：2026-07-10
 
-本页回答四件事：为什么 [[fx_graph_cache_analysis|FxGraphCache]] 命中了还不够、必须在它**上面**再加一级；AOTAutogradCache 的 key 如何在「dynamo 图可含任意 Python callable」的前提下算得安全（白名单 + 名字归一化）；缓存产物如何以**两种形态**（引用 FxGraphCache key vs 直接内嵌 CompiledFxGraph）组织、命中时 runtime wrapper 链如何逐层重放；以及全部 bypass 约束的精确清单。GuardedCache 多 entry 挑选、FxGraphHashDetails 因素清单、TritonBundler 机制均已由 [[fx_graph_cache_analysis]] 覆盖，本页只引用其结论。总览见 [[compile_cache_overview]]，目录索引 [[17_compile_cache/index]]。
+本页回答四件事：为什么 [[fx_graph_cache_analysis|FxGraphCache]] 命中了还不够、必须在它**上面**再加一级；AOTAutogradCache 的 key 如何在「dynamo 图可含任意 Python callable」的前提下算得安全（白名单 + 名字归一化）；缓存产物如何以**两种形态**（引用 FxGraphCache key vs 直接内嵌 CompiledFxGraph）组织、命中时 runtime wrapper 链如何逐层重放；以及全部 bypass 约束的精确清单。GuardedCache 多 entry 挑选、FxGraphHashDetails 因素清单、TritonBundler 机制均已由 [[fx_graph_cache_analysis]] 覆盖，本页只引用其结论。总览与目录索引见 [[17_compile_cache/index]]。
 
 ---
 
@@ -203,14 +208,17 @@ flowchart TB
 
 ---
 
-## Related / Cross-references
+## Related Pages
 
-- [[compile_cache_overview]] — 编译缓存总览（本页是栈中第二级）
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[17_compile_cache/index]] — 编译缓存总览（本页是栈中第二级）
 - [[fx_graph_cache_analysis]] — 下层图级缓存：`FxGraphHashDetails`/`FxGraphCachePickler`/`GuardedCache`/`TritonBundler` 机制均在彼页，本页大量继承复用
-- [[megacache_and_precompile_analysis]] — Bundled entry 的主要消费方（`PrecompileContext`/`CacheArtifact` 挂钩）
+- Mega-cache / precompile：Bundled entry 的主要消费方；尚未完成独立当前基线审计，作为知识缺口保留
 - [[triton_autotune_cache_analysis]] — 远端缓存基础设施（本页 remote 端走同一 `create_cache`）
 - [[dynamo_pgo_cache_analysis]] — Dynamo 侧缓存（本页 key 的输入图由其上游产出）
 - [[17_compile_cache/index]] — 本目录索引
+- [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]] — 被 AOTAutogradCache 命中所跳过的 joint/fw/bw 构图主线
+- [[19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance]] — cache entry 与跨阶段 artifact/identity 边界
 - [[aotautograd_analysis]] — 命中时被跳过的那整段：dispatch/functionalization/partition
 - [[torch_compile_architecture]] — torch.compile 整体栈
 - [[dynamic_shapes_full_analysis]] — `guards_expr`/backed symint/shape env 的上游机制

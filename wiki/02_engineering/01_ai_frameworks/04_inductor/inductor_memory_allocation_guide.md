@@ -1,5 +1,10 @@
 # torch.compile 内存分配实战指南 — 实际分配走查 / 分配器选型 / 实测复现
 
+> [!note] 页面角色与审计状态
+> **页面角色**：从 Inductor 规划走到 allocator/CUDA Graph pool 的观测、配置与实验指南；它承担实操和排障，不替代编译期 liveness/reuse 的机制课程。
+> **原始基线**：PyTorch `5f6df46744a`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
+> **审计状态**：已纳入历史 manifest，但页内实验、默认配置和 locator 尚未在当前基线逐项重跑；外部报告订正仍限定在原页基线。当前 buffer/liveness/reuse 课程见 [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]]；Inductor 领域入口见 [[04_inductor/index]]。
+
 > **Source baseline**: pytorch @ `5f6df46744a`(trunk, 2026-06-29)
 > **Dimension**: Guide(how-to / 实战走查)
 > 最后更新: 2026-06-30
@@ -190,6 +195,9 @@ with ind.patch(memory_planning=True):
 
 ## Related Pages
 
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[04_inductor/index]] — Inductor 领域索引
+- [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]] — 编译期 logical buffer、liveness、reuse 与静态 peak
 - [[inductor_memory_management_analysis]] — **机制深挖**(三层 + 池大小 §2.6 + 段大小 §3):本指南的理论底座
 - [[caching_allocator_autocast_profiler_analysis]] — 层 2 `CUDACachingAllocator` 的 block/segment/expandable 源码级机制
 - [[inductor_codegen_analysis]] — wrapper codegen(`empty_strided`/`alloc_from_pool` 的生成处)

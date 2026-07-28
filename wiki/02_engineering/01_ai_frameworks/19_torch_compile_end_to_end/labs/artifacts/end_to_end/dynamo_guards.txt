@@ -1,0 +1,146 @@
+Graph Count: 1
+Graph Break Count: 0
+Op Count: 3
+Break Reasons:
+Ops per Graph:
+  Ops 1:
+    <built-in function matmul>
+    <built-in function add>
+    <built-in method sin of type object at 0x00007FFFC7F778E0>
+Out Guards:
+  Guard 1:
+    Name: "G['torch']"
+    Source: global
+    Create Function: FUNCTION_MATCH
+    Guard Types: ['ID_MATCH']
+    Code List: ["___check_obj_id(G['torch'], 2390908314992)"]
+    Object Weakref: <weakref at 0x22cd58f4270; to 'module' at 0x22cad3da570>
+    Guarded Class Weakref: <weakref at 0x0000022CAC903A60; to 'type' at 0x00007FF83D6E30E0 (module)>
+  Guard 2:
+    Name: ''
+    Source: shape_env
+    Create Function: SHAPE_ENV
+    Guard Types: None
+    Code List: None
+    Object Weakref: None
+    Guarded Class Weakref: None
+  Guard 3:
+    Name: "L['self']._modules"
+    Source: local_unspecialized_nn_module
+    Create Function: TYPE_MATCH
+    Guard Types: ['TYPE_MATCH']
+    Code List: ["___check_type_id(L['self']._modules, 140704159207008)"]
+    Object Weakref: None
+    Guarded Class Weakref: <weakref at 0x0000022CAC8E9170; to 'type' at 0x00007FF83D6D8E60 (dict)>
+  Guard 4:
+    Name: "L['self']._buffers"
+    Source: local_unspecialized_nn_module
+    Create Function: TYPE_MATCH
+    Guard Types: ['TYPE_MATCH']
+    Code List: ["___check_type_id(L['self']._buffers, 140704159207008)"]
+    Object Weakref: None
+    Guarded Class Weakref: <weakref at 0x0000022CAC8E9170; to 'type' at 0x00007FF83D6D8E60 (dict)>
+  Guard 5:
+    Name: "L['self']"
+    Source: local_unspecialized_nn_module
+    Create Function: TYPE_MATCH
+    Guard Types: ['TYPE_MATCH']
+    Code List: ["___check_type_id(L['self'], 2391539544784)"]
+    Object Weakref: <weakref at 0x22cd58be9d0; to 'UnifiedGraphModel' at 0x22cd51f3390>
+    Guarded Class Weakref: <weakref at 0x0000022CD5391F80; to 'type' at 0x0000022CD2DD72D0 (UnifiedGraphModel)>
+  Guard 6:
+    Name: ''
+    Source: global
+    Create Function: DETERMINISTIC_ALGORITHMS
+    Guard Types: None
+    Code List: None
+    Object Weakref: None
+    Guarded Class Weakref: None
+  Guard 7:
+    Name: ''
+    Source: global
+    Create Function: TORCH_FUNCTION_STATE
+    Guard Types: None
+    Code List: None
+    Object Weakref: None
+    Guarded Class Weakref: None
+  Guard 8:
+    Name: ''
+    Source: global
+    Create Function: AUTOGRAD_SAVED_TENSORS_HOOKS
+    Guard Types: ['AUTOGRAD_SAVED_TENSORS_HOOKS']
+    Code List: ['torch._functorch.aot_autograd.utils.top_saved_tensors_hooks ids == None']
+    Object Weakref: None
+    Guarded Class Weakref: None
+  Guard 9:
+    Name: "L['self']._buffers['offset']"
+    Source: local_unspecialized_nn_module
+    Create Function: TENSOR_MATCH
+    Guard Types: None
+    Code List: None
+    Object Weakref: None
+    Guarded Class Weakref: None
+  Guard 10:
+    Name: "L['self']._parameters"
+    Source: local_unspecialized_nn_module
+    Create Function: TYPE_MATCH
+    Guard Types: ['TYPE_MATCH']
+    Code List: ["___check_type_id(L['self']._parameters, 140704159207008)"]
+    Object Weakref: None
+    Guarded Class Weakref: <weakref at 0x0000022CAC8E9170; to 'type' at 0x00007FF83D6D8E60 (dict)>
+  Guard 11:
+    Name: "L['x']"
+    Source: local
+    Create Function: TENSOR_MATCH
+    Guard Types: ['TENSOR_MATCH']
+    Code List: ["hasattr(L['x'], '_dynamo_dynamic_indices') == False"]
+    Object Weakref: <weakref at 0x22cd58f44f0; to 'Tensor' at 0x22cd54c0320>
+    Guarded Class Weakref: <weakref at 0x0000022CCA299D50; to 'torch._C._TensorMeta' at 0x0000022CB3158D30 (Tensor)>
+  Guard 12:
+    Name: "G['torch'].sin"
+    Source: global
+    Create Function: FUNCTION_MATCH
+    Guard Types: ['ID_MATCH']
+    Code List: ["___check_obj_id(G['torch'].sin, 2390936422256)"]
+    Object Weakref: <weakref at 0x22cd58f54e0; to 'builtin_function_or_method' at 0x22caeea8770>
+    Guarded Class Weakref: <weakref at 0x0000022CAC8D44A0; to 'type' at 0x00007FF83D6E2DA0 (builtin_function_or_method)>
+  Guard 13:
+    Name: "L['self']._parameters['weight']"
+    Source: local_unspecialized_nn_module
+    Create Function: TENSOR_MATCH
+    Guard Types: None
+    Code List: None
+    Object Weakref: None
+    Guarded Class Weakref: None
+  Guard 14:
+    Name: "G['backend_core']"
+    Source: global
+    Create Function: CLOSURE_MATCH
+    Guard Types: None
+    Code List: None
+    Object Weakref: None
+    Guarded Class Weakref: None
+  Guard 15:
+    Name: ''
+    Source: global
+    Create Function: DEFAULT_DEVICE
+    Guard Types: ['DEFAULT_DEVICE']
+    Code List: ['utils_device.CURRENT_DEVICE == None']
+    Object Weakref: None
+    Guarded Class Weakref: None
+  Guard 16:
+    Name: ''
+    Source: global
+    Create Function: GRAD_MODE
+    Guard Types: None
+    Code List: None
+    Object Weakref: None
+    Guarded Class Weakref: None
+Compile Times: TorchDynamo compilation metrics:
+Function, Runtimes (s)
+_compile.compile_inner, 0.0321
+compile_attempt_0, 0.0202
+bytecode_tracing, 0.0155
+OutputGraph.call_user_compiler, 0.0002
+build_guards, 0.0106
+gc, 0.0005

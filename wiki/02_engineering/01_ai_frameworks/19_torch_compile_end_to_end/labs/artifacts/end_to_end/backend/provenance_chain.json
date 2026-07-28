@@ -1,0 +1,165 @@
+{
+  "scheduler_groups": [
+    {
+      "group": "op0",
+      "type": "ExternKernelSchedulerNode",
+      "operation_names": [
+        "op0"
+      ],
+      "subnodes": [
+        {
+          "scheduler_node": "op0",
+          "ir_type": "ExternKernelOut",
+          "origins": [
+            {
+              "name": "addmm_default",
+              "op": "call_function",
+              "target": "aten.addmm.default",
+              "stack_trace": null
+            }
+          ],
+          "stack_traces": [
+            "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 67, in backend_core\n    biased = projected + offset\n",
+            "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 68, in backend_core\n    scratch = biased.clone()\n"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "op1",
+      "type": "SchedulerNode",
+      "operation_names": [
+        "op1"
+      ],
+      "subnodes": [
+        {
+          "scheduler_node": "op1",
+          "ir_type": "ComputedBuffer",
+          "origins": [
+            {
+              "name": "sin",
+              "op": "call_function",
+              "target": "aten.sin.default",
+              "stack_trace": "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 70, in backend_core\n    activation = torch.sin(scratch)\n"
+            },
+            {
+              "name": "view_2",
+              "op": "call_function",
+              "target": "aten.reshape.default",
+              "stack_trace": "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 69, in backend_core\n    scratch.view(-1).add_(0.25)\n"
+            },
+            {
+              "name": "add_1",
+              "op": "call_function",
+              "target": "aten.add.Tensor",
+              "stack_trace": "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 69, in backend_core\n    scratch.view(-1).add_(0.25)\n"
+            },
+            {
+              "name": "view_1",
+              "op": "call_function",
+              "target": "aten.reshape.default",
+              "stack_trace": "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 69, in backend_core\n    scratch.view(-1).add_(0.25)\n"
+            }
+          ],
+          "stack_traces": [
+            "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 69, in backend_core\n    scratch.view(-1).add_(0.25)\n",
+            "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 70, in backend_core\n    activation = torch.sin(scratch)\n"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "op2",
+      "type": "SchedulerNode",
+      "operation_names": [
+        "op2"
+      ],
+      "subnodes": [
+        {
+          "scheduler_node": "op2",
+          "ir_type": "ComputedBuffer",
+          "origins": [
+            {
+              "name": "sum_1",
+              "op": "call_function",
+              "target": "aten.sum.dim_IntList",
+              "stack_trace": "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 71, in backend_core\n    return activation, activation.sum(dim=1)\n"
+            }
+          ],
+          "stack_traces": [
+            "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 71, in backend_core\n    return activation, activation.sum(dim=1)\n"
+          ]
+        }
+      ]
+    }
+  ],
+  "raw_mapping_schema_keys": [
+    "cppCodeToPost",
+    "postToCppCode",
+    "postToPre",
+    "preToPost"
+  ],
+  "joined_chains": [
+    {
+      "cpp_code": "cpp_fused_add_sin_sum_view_0:1",
+      "scheduler_group": "op1",
+      "scheduler_node": "op1",
+      "post_fx_node": "sin",
+      "pre_fx_nodes": [
+        "activation"
+      ],
+      "source_stack": "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 70, in backend_core\n    activation = torch.sin(scratch)\n"
+    },
+    {
+      "cpp_code": "cpp_fused_add_sin_sum_view_0:1",
+      "scheduler_group": "op1",
+      "scheduler_node": "op1",
+      "post_fx_node": "view_2",
+      "pre_fx_nodes": [
+        "add_"
+      ],
+      "source_stack": "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 69, in backend_core\n    scratch.view(-1).add_(0.25)\n"
+    },
+    {
+      "cpp_code": "cpp_fused_add_sin_sum_view_0:1",
+      "scheduler_group": "op1",
+      "scheduler_node": "op1",
+      "post_fx_node": "add_1",
+      "pre_fx_nodes": [
+        "add_"
+      ],
+      "source_stack": "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 69, in backend_core\n    scratch.view(-1).add_(0.25)\n"
+    },
+    {
+      "cpp_code": "cpp_fused_add_sin_sum_view_0:1",
+      "scheduler_group": "op1",
+      "scheduler_node": "op1",
+      "post_fx_node": "view_1",
+      "pre_fx_nodes": [
+        "view_1"
+      ],
+      "source_stack": "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 69, in backend_core\n    scratch.view(-1).add_(0.25)\n"
+    },
+    {
+      "cpp_code": "cpp_fused_add_sin_sum_view_0:1",
+      "scheduler_group": "op2",
+      "scheduler_node": "op2",
+      "post_fx_node": "sum_1",
+      "pre_fx_nodes": [
+        "sum_1"
+      ],
+      "source_stack": "  File \"E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py\", line 71, in backend_core\n    return activation, activation.sum(dim=1)\n"
+    },
+    {
+      "cpp_code": "extern_kernels.addmm:2",
+      "scheduler_group": "op0",
+      "scheduler_node": "op0",
+      "post_fx_node": "addmm_default",
+      "pre_fx_nodes": [
+        "scratch",
+        "biased"
+      ],
+      "source_stack": null
+    }
+  ]
+}

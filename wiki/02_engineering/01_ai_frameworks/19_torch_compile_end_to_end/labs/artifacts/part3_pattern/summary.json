@@ -1,0 +1,48 @@
+{
+  "source_locator_baseline": "e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52",
+  "runtime_torch_version": "2.9.1+cpu",
+  "runtime_torch_git": "5811a8d7da873dd699ff6687092c225caffcf1bb",
+  "runtime_matches_source_baseline": false,
+  "expression": {
+    "unary_pattern_matched": true,
+    "unary_arg_captured": true,
+    "shared_pattern_matched": true,
+    "failed_sharing_pattern": true,
+    "kwargs_pattern_matched": true,
+    "kwargs_constant_captured": true,
+    "multi_output_pattern_matched": true,
+    "ignored_not_positional": true
+  },
+  "graph_pattern_entry": {
+    "entry_type": "GraphPatternEntry",
+    "apply_count": 1,
+    "handler_calls": 1,
+    "value_matches": true,
+    "old_nodes_erased": true,
+    "second_apply_count": 0
+  },
+  "replacement_pattern_entry": {
+    "entry_type": "ReplacementPatternEntry",
+    "apply_count": 1,
+    "value_matches": true,
+    "has_mul": true,
+    "has_no_add": true,
+    "second_apply_count": 0,
+    "extra_check_rejected": true
+  },
+  "lowering_pattern_entry": {
+    "entry_type": "LoweringPatternEntry",
+    "apply_count": 1,
+    "handler_marked": true,
+    "handler_deferred_until_graph_lowering": true,
+    "reached_inductor_ir": true,
+    "original_add_erased": true,
+    "native_kernel_executed": false
+  },
+  "evidence_boundary": {
+    "fx_pattern_matching_and_rewrite": "runtime_observed",
+    "traced_replacement_execution": "runtime_observed",
+    "inductor_graph_lowering": "runtime_observed",
+    "native_kernel_execution": "not_run"
+  }
+}

@@ -1,10 +1,15 @@
 # Dynamo PGO 缓存 — 持久化的不是编译产物,而是「动态形状画像」,把 automatic dynamic 的第二次重编译从冷启动里抹掉
 
+> [!note] 页面角色与审计状态
+> **页面角色**：Dynamo dynamic-shape 决策画像与 PGO 持久化专题；它缓存编译决策输入，不缓存 FX/Inductor 编译产物。
+> **原始基线**：PyTorch `3bda74318624581502db16e6439c36effdb16481`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
+> **审计状态**：已纳入历史 manifest，但尚未逐 claim 复核当前 PGO key、读写和 exclusion 行为，也未在当前环境复跑跨进程命中实验。symbolic shape、guard 与 graph reuse 主线见 [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse]]；缓存领域入口见 [[17_compile_cache/index]]。
+
 > **分析对象**:Dynamo 侧 profile-guided optimization 缓存(`torch/_dynamo/pgo.py`,全文 1093 行)——把「这个 frame 的哪些输入维度最终是动态的」聚合成画像(`CodeState`/`FrameStateSizeEntry`)并跨进程持久化,让新进程**第一次**编译就直接按动态编,省掉 automatic dynamic 「先静态、shape 变了再动态重编」的那次全栈重编译。
 > **Source baseline**:PyTorch upstream 本地检出 `E:\97-codes\torch_parallel\pytorch` @ branch `main`, commit `3bda74318624581502db16e6439c36effdb16481`(2026-07-10, version 2.14.0a0)。所有 `file:line` 均对该 commit 逐一开文件核验。
 > **最后更新**:2026-07-10
 
-本页与本目录其它页面有一个本质区别:[[fx_graph_cache_analysis]]/[[aotautograd_cache_analysis]] 缓存的是**编译输出**(命中=跳过编译),PGO 缓存的是**编译决策的输入**(命中=第一次编译就编「对的版本」,编译本身一次也不少跑,但少跑一整轮)。也因此它的正确性模型完全不同:画像允许「soundly stale」——过期的画像不产生错误结果,只会让编译偏保守地多动态化(`torch/_dynamo/config.py:844-848`)。上游概念(automatic dynamic、guard、符号形状)见 [[dynamic_shapes_full_analysis]];总览见 [[compile_cache_overview]],目录索引 [[17_compile_cache/index]]。
+本页与本目录其它页面有一个本质区别:[[fx_graph_cache_analysis]]/[[aotautograd_cache_analysis]] 缓存的是**编译输出**(命中=跳过编译),PGO 缓存的是**编译决策的输入**(命中=第一次编译就编「对的版本」,编译本身一次也不少跑,但少跑一整轮)。也因此它的正确性模型完全不同:画像允许「soundly stale」——过期的画像不产生错误结果,只会让编译偏保守地多动态化(`torch/_dynamo/config.py:844-848`)。上游概念(automatic dynamic、guard、符号形状)见 [[dynamic_shapes_full_analysis]];总览与目录索引见 [[17_compile_cache/index]]。
 
 ---
 
@@ -158,7 +163,7 @@ flowchart TB
 
 ### 4.4 Mega-cache 挂钩:`PGOCacheArtifact`
 
-画像是 Mega-cache(`torch.compiler.save/load_cache_artifacts`)打包的 artifact 类型之一,type 字符串 `"pgo"`(`pgo.py:779-780`):本地/远端每次读到或写出画像 bytes 时都会 `CacheArtifactRecorder(PGOCacheArtifact.type(), cache_key).record(...)` 登记(读侧 `:834,876`,写侧 `:1031`);异地 `load_cache_artifacts` 反序列化后 `populate_cache` 把 bytes 直接写回本地画像文件(`:768-775`)。特殊处理:MAST 自动生成的 `mast:name:version` key 在新 job 上重放时会被 `_rewrite_cache_key_for_mega_cache` 替换成**新 job** 的 key(`:783-794`)——否则画像会写到旧 job 名下永远读不到。注册面:`CacheInfo.pgo_artifacts`(`torch/compiler/_cache.py:133`)、fresh 进程反序列化前的强制 import(`_cache.py:335`)。机制全貌属 [[megacache_and_precompile_analysis]]。
+画像是 Mega-cache(`torch.compiler.save/load_cache_artifacts`)打包的 artifact 类型之一,type 字符串 `"pgo"`(`pgo.py:779-780`):本地/远端每次读到或写出画像 bytes 时都会 `CacheArtifactRecorder(PGOCacheArtifact.type(), cache_key).record(...)` 登记(读侧 `:834,876`,写侧 `:1031`);异地 `load_cache_artifacts` 反序列化后 `populate_cache` 把 bytes 直接写回本地画像文件(`:768-775`)。特殊处理:MAST 自动生成的 `mast:name:version` key 在新 job 上重放时会被 `_rewrite_cache_key_for_mega_cache` 替换成**新 job** 的 key(`:783-794`)——否则画像会写到旧 job 名下永远读不到。注册面:`CacheInfo.pgo_artifacts`(`torch/compiler/_cache.py:133`)、fresh 进程反序列化前的强制 import(`_cache.py:335`)。Mega-cache/precompile机制全貌尚未完成独立当前基线审计。
 
 ---
 
@@ -215,15 +220,17 @@ collective 本体在 `OutputGraph.run_compiler_collective`(`torch/_dynamo/output
 
 ---
 
-## Related / Cross-references
+## Related Pages
 
-- [[compile_cache_overview]] — 编译缓存总览(本页是其中唯一「缓存决策而非产物」的一级)
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[17_compile_cache/index]] — 编译缓存总览(本页是其中唯一「缓存决策而非产物」的一级)
 - [[dynamic_shapes_full_analysis]] — automatic dynamic / guard / DimDynamic / ShapeEnv(本页画像的消费下游)
 - [[fx_graph_cache_analysis]] — Inductor 图级产物缓存(与 PGO 正交叠加)
 - [[aotautograd_cache_analysis]] — AOT 级产物缓存
 - [[triton_autotune_cache_analysis]] — `create_cache`/RemoteCache 远端设施(§4.2 复用)
-- [[megacache_and_precompile_analysis]] — Mega-cache 打包/重放(`PGOCacheArtifact` 挂钩)
+- Mega-cache打包/重放（`PGOCacheArtifact`挂钩）：尚未完成独立当前基线审计
 - [[17_compile_cache/index]] — 本目录索引
+- [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse]] — dynamic shape、guard、重编译与 graph reuse 主线
 - [[torch_compile_architecture]] — torch.compile 整体栈
 - [[PyTorch_Dynamo_Technical_Analysis]] — Dynamo 追踪机制(`VariableBuilder`/guard 的宿主)
 - [[dynamo_quickstart]] — Dynamo 入门

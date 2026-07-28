@@ -1,7 +1,12 @@
 # PyTorch AOTAutograd 模块深度技术分析报告
 
-## 目录
+> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
+> **页面角色**：AOTAutograd 全量 reference 与 edge-case 集合，不是历史废页。
+> **原始基线**：baseline-unknown；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
+> **审计状态**：已纳入 Batch 0，但逐结构单元迁移仍有 unresolved；当前机制主线见 [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]，本页继续承载宽口径源码参考。
 
+## 目录
+> [!correction] A-001、A-002、A-011：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy#3.3 AOT joint、forward 与 backward FX graph]]，逐项说明见 [[correction_report]]。
 1. [概述与架构总览](#1-概述与架构总览)
 2. [核心工作流程](#2-核心工作流程)
 3. [阶段一：图捕获与元数据收集](#3-阶段一图捕获与元数据收集)
@@ -14,6 +19,22 @@
 10. [性能优化策略](#10-性能优化策略)
 11. [边缘情况与局限性](#11-边缘情况与局限性)
 12. [总结与展望](#12-总结与展望)
+
+### 课程主线与本页分工
+
+本页保留全量reference、历史实现细节与edge cases；需要按当前固定基线建立因果链时，按
+以下主线阅读：
+
+| 问题 | 当前课程页 |
+|---|---|
+| alias、mutation、effect与functionalization前提 | [[19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order]] |
+| decomposition与规范化顺序 | [[19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization]] |
+| joint图如何抽取fw/bw | [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]] |
+| saved tensors、recompute与runtime ABI | [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]] |
+| 跨阶段identity与provenance | [[19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance]] |
+
+本页未逐段标成current并不等于内容无价值；它表示历史ledger尚未把每个claim、代码块、
+表格与实验都闭环到当前基线。
 
 ---
 
@@ -83,7 +104,7 @@ flowchart TD
 ---
 
 ## 2. 核心工作流程
-
+> [!correction] A-001、A-002：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs#2. metadata analysis 不是构图]]，逐项说明见 [[correction_report]]。
 ### 2.1 总体流程概览
 
 ```mermaid
@@ -136,7 +157,7 @@ def aot_function(
 ```
 
 ### 2.3 三阶段架构
-
+> [!correction] A-001、A-003：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order#4. Tensor、Storage、View 与 Alias]]，逐项说明见 [[correction_report]]。
 AOTAutograd 采用清晰的三阶段架构：
 
 | 阶段 | 函数 | 职责 |
@@ -274,7 +295,7 @@ def detect_mutations(flat_args, flat_f_args):
 ---
 
 ## 4. 阶段二：功能化转换与包装
-
+> [!correction] A-004、A-005：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order#6. Functionalization 真正做什么]]，逐项说明见 [[correction_report]]。
 ### 4.1 阶段概述
 
 **主要功能**：将用户的 Python 函数转换为功能化形式，处理输入变异、别名、子类等复杂情况。
@@ -378,7 +399,7 @@ def aot_dispatch_subclass(
 ---
 
 ## 5. 阶段三：分区与编译
-
+> [!correction] A-010、A-019：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs#7. 提取新 Graph 的机制]]，逐项说明见 [[correction_report]]。
 ### 5.1 阶段概述
 
 **主要功能**：将联合图（joint graph）分离为前向和反向图，然后分别编译。
@@ -465,7 +486,7 @@ def aot_stage2_compile(
 ---
 
 ## 6. 阶段四：算子分解与图优化
-
+> [!correction] A-011：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization#4. Decomposition]]，逐项说明见 [[correction_report]]。
 ### 6.1 算子分解（Decomposition）
 
 **目的**：将复杂的复合算子（composite operators）分解为更基础的原子算子（ATen Core），以便后端编译器（如 Inductor）能够更好地优化。
@@ -603,7 +624,7 @@ class PatternMatcher:
 ---
 
 ## 7. 阶段五：运行时包装与执行
-
+> [!correction] A-005、A-006、A-007：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi#2. saved tensor 不是唯一 saved value]]，逐项说明见 [[correction_report]]。
 ### 7.1 阶段概述
 
 **主要功能**：创建运行时包装器，处理输入准备、输出处理和变异应用。
@@ -663,7 +684,7 @@ def _create_runtime_wrapper(
 ```
 
 ### 7.4 输出处理器
-
+> [!correction] A-004、A-005：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order#11. Pass 合法性边界]]，逐项说明见 [[correction_report]]。
 AOTAutograd 使用处理器映射来处理不同类型的输出：
 
 ```python
@@ -801,7 +822,7 @@ class TwoTensor(torch.Tensor):
 ---
 
 ## 9. 关键数据结构
-
+> [!correction] A-003：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/03_graph_values_metadata_and_signatures#9.3 AOT runtime ABI]]，逐项说明见 [[correction_report]]。
 ### 9.1 AOTConfig
 
 ```python
@@ -842,7 +863,7 @@ class ViewAndMutationMeta:
 ```
 
 ### 9.3 AOTState
-
+> [!correction] A-010、A-013、A-014、A-017：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse#8. `torch.compile` dynamic 策略]]，逐项说明见 [[correction_report]]。
 ```python
 # torch/_functorch/_aot_autograd/schemas.py:L650-L680
 @dataclass
@@ -919,7 +940,7 @@ static_input_indices: list[int]  # 标记哪些输入是静态的
 3. 内存规划优化
 
 ### 10.4 缓存策略
-
+> [!correction] A-012、A-015：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order#4. Tensor、Storage、View 与 Alias]]，逐项说明见 [[correction_report]]。
 ```python
 # torch/_functorch/_aot_autograd/autograd_cache.py
 class AOTAutogradCache:
@@ -1015,7 +1036,7 @@ def _is_result_of_custom_autograd_fn(grad_fn) -> bool:
 ```
 
 ### 11.4 元数据变异限制
-
+> [!correction] A-004、A-005、A-019：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs#1. 最重要的结论]]，逐项说明见 [[correction_report]]。
 某些元数据变异操作在导出模式下受限：
 
 ```python
@@ -1059,7 +1080,7 @@ AOTAutograd 在 PyTorch 编译栈中提供了以下核心功能：
 5. **性能优化**：减少编译时间，优化运行时开销
 
 ### 12.4 关键文件索引
-
+> [!correction] A-004、A-011：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy#3.3 AOT joint、forward 与 backward FX graph]]，逐项说明见 [[correction_report]]。
 | 文件路径 | 功能描述 |
 |---------|---------|
 | `torch/_functorch/aot_autograd.py` | 主入口，`aot_function`，`aot_module` |
@@ -1105,6 +1126,13 @@ AOTAutograd 在 PyTorch 编译栈中提供了以下核心功能：
 
 ## Related Pages
 
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order]]
+- [[19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization]]
+- [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]]
+- [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]]
+- [[19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance]]
+- [[fx_graph_construction_and_transformation_analysis]] — joint graph 如何切成独立 fw/bw、saved-tensor ABI、recompute 抽图与复杂度
 - [[02_engineering/01_ai_frameworks/index]]
 - [[torch_compile_architecture]]
 - [[PyTorch_Dynamo_Technical_Analysis]]

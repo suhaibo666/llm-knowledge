@@ -1,0 +1,39 @@
+{
+  "schema_version": "native-backend-evidence/v1",
+  "artifact_type": "local_capability_diagnostic",
+  "generated_at_utc": "2026-07-28T07:47:23Z",
+  "host": {
+    "hostname": "DESKTOP-8EQM9GS",
+    "os": "Windows",
+    "os_version": "10.0.26200",
+    "architecture": "AMD64"
+  },
+  "runtime": {
+    "python_version": "3.13.5",
+    "python_executable": "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+    "torch_version": "2.9.1+cpu",
+    "torch_git_version": "5811a8d7da873dd699ff6687092c225caffcf1bb"
+  },
+  "capabilities": {
+    "cpu_cpp": {
+      "available": false,
+      "compiler_path": null,
+      "compiler_version": null,
+      "detail": "no supported native C++ compiler (cl.exe) was found on PATH"
+    },
+    "cuda": {
+      "available": false,
+      "device_count": 0,
+      "detail": "torch.cuda.is_available() is false; torch.version.cuda=None"
+    },
+    "triton": {
+      "available": false,
+      "version": null,
+      "detail": "the triton Python package is not installed"
+    }
+  },
+  "statuses": {
+    "cpu_native": "BLOCKED",
+    "cuda_triton": "BLOCKED"
+  }
+}

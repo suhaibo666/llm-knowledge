@@ -1,5 +1,10 @@
 # FX Pass 优化开发方法论 — 从 upstream / torch_npu / vLLM / SGLang 四家现状归纳
 
+> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
+> **页面角色**：跨项目、跨阶段的FX pass工程方法论。
+> **原始基线**：见下方四项目快照；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
+> **课程分工**：本页继续负责多项目综合；PyTorch当前改图原语、阶段顺序、合法性与复杂度见 [[19_torch_compile_end_to_end/12_fx_graph_editing_primitives_and_invariants]]、[[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint]] 和 [[19_torch_compile_end_to_end/16_graph_rewrite_legality_validation_and_complexity]]。
+
 > **Updated**: 2026-07-22
 
 > **Source baseline**: 归纳自四套已核源分析——upstream pytorch `9922478dffa`、torch_npu `b3c8a815b`(v2.7.1)、vLLM `97a98006b0`、SGLang `d6ef68881e`（均 2026-07-20 前后核验）
@@ -54,7 +59,7 @@ flowchart LR
 ---
 
 ## 0.1 Dynamo：它是什么，为什么不是普通 Inductor Pass？
-
+> [!correction] P-011、P-017、P-019：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization#4. Decomposition]]，逐项说明见 [[correction_report]]。
 **是什么。** Dynamo 在 Python frame 上做符号执行，产出带 guards 的 FX `GraphModule`，再把 `(gm, example_inputs)` 交给 backend callable。`torch._dynamo.register_backend()` 只是让 backend 能以字符串名传给 `torch.compile`；直接把函数传给 `backend=` 更简单。源码契约见 `torch/_dynamo/backends/registry.py:81-114`，Inductor 自身也是同一注册机制（`torch/_dynamo/backends/inductor.py:19-30`）。
 
 **为什么放这里。** 只有这里还掌握 graph break、Python 特化和编译区域边界。若优化目标是“某段 Python 为什么没入图”“是否合并/拒绝一个捕获区域”“在送入 AOT 前做整图审计”，Dynamo backend 是正确边界。
@@ -211,7 +216,7 @@ compiled = torch.compile(model, backend="audit_then_inductor")
 ---
 
 ## 0.10 旧版跨项目方法论（保留）
-
+> [!correction] P-006、P-010、P-015、P-020、P-021：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/13_pattern_expression_and_matcher_engine#1. Pattern 定义了什么]]，逐项说明见 [[correction_report]]。
 > [!deprecated]
 > 以下章节形成于完整八阶段模型之前，仍保留 upstream/torch_npu/vLLM/SGLang 的横向经验。涉及阶段选择时，以 §0～§0.9 为准；尤其不要把 `post_grad_custom_post_pass` 当成所有优化的唯一入口，也不要把动态形状简单等同于“不支持”。
 
@@ -335,6 +340,7 @@ compiled = torch.compile(model, backend="audit_then_inductor")
 
 ## Related Pages
 
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[dynamo_pass_methodology]] — Dynamo backend 与整图改写边界
 - [[decomposition_passes_guide]] — AOT Decomposition 开发
 - [[pre_grad_passes_guide]] · [[joint_graph_passes_guide]] · [[post_grad_passes_guide]] — 三阶段逐页指南

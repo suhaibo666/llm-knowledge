@@ -1,0 +1,489 @@
+{
+  "evidence_kind": "runtime_observed_internal_graphlowering",
+  "cases": {
+    "elementwise": {
+      "fx_graph": "graph():\n    %x_1 : [num_users=1] = placeholder[target=x_1]\n    %add : [num_users=1] = call_function[target=torch.ops.aten.add.Tensor](args = (%x_1, 1), kwargs = {})\n    %sin : [num_users=1] = call_function[target=torch.ops.aten.sin.default](args = (%add,), kwargs = {})\n    return sin",
+      "operation_types": [
+        "ComputedBuffer"
+      ],
+      "buffers": [
+        {
+          "name": "buf0",
+          "type": "ComputedBuffer",
+          "data_type": "Pointwise",
+          "layout": {
+            "type": "FixedLayout",
+            "size": [
+              3,
+              4
+            ],
+            "stride": [
+              4,
+              1
+            ],
+            "device": "cpu",
+            "dtype": "torch.float32",
+            "offset": 0
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "type": "StorageBox",
+          "name": "buf0",
+          "layout": {
+            "type": "FixedLayout",
+            "size": [
+              3,
+              4
+            ],
+            "stride": [
+              4,
+              1
+            ],
+            "device": "cpu",
+            "dtype": "torch.float32",
+            "offset": 0
+          }
+        }
+      ],
+      "scheduler_nodes": [
+        {
+          "name": "op0",
+          "type": "SchedulerNode",
+          "operation_names": [
+            "op0"
+          ],
+          "reads": [
+            {
+              "type": "MemoryDep",
+              "name": "x_1",
+              "index": "c0",
+              "var_names": [
+                "c0"
+              ],
+              "size": [
+                12
+              ],
+              "mode": null
+            }
+          ],
+          "writes": [
+            {
+              "type": "MemoryDep",
+              "name": "buf0",
+              "index": "c0",
+              "var_names": [
+                "c0"
+              ],
+              "size": [
+                12
+              ],
+              "mode": null
+            }
+          ],
+          "last_usage": [
+            "x_1"
+          ]
+        }
+      ]
+    },
+    "broadcast": {
+      "fx_graph": "graph():\n    %x_1 : [num_users=1] = placeholder[target=x_1]\n    %y_1 : [num_users=1] = placeholder[target=y_1]\n    %add : [num_users=1] = call_function[target=torch.ops.aten.add.Tensor](args = (%x_1, %y_1), kwargs = {})\n    return add",
+      "operation_types": [
+        "ComputedBuffer"
+      ],
+      "buffers": [
+        {
+          "name": "buf0",
+          "type": "ComputedBuffer",
+          "data_type": "Pointwise",
+          "layout": {
+            "type": "FixedLayout",
+            "size": [
+              3,
+              4
+            ],
+            "stride": [
+              4,
+              1
+            ],
+            "device": "cpu",
+            "dtype": "torch.float32",
+            "offset": 0
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "type": "StorageBox",
+          "name": "buf0",
+          "layout": {
+            "type": "FixedLayout",
+            "size": [
+              3,
+              4
+            ],
+            "stride": [
+              4,
+              1
+            ],
+            "device": "cpu",
+            "dtype": "torch.float32",
+            "offset": 0
+          }
+        }
+      ],
+      "scheduler_nodes": [
+        {
+          "name": "op0",
+          "type": "SchedulerNode",
+          "operation_names": [
+            "op0"
+          ],
+          "reads": [
+            {
+              "type": "MemoryDep",
+              "name": "x_1",
+              "index": "c0",
+              "var_names": [
+                "c0"
+              ],
+              "size": [
+                3
+              ],
+              "mode": null
+            },
+            {
+              "type": "MemoryDep",
+              "name": "y_1",
+              "index": "c1",
+              "var_names": [
+                "c0",
+                "c1"
+              ],
+              "size": [
+                3,
+                4
+              ],
+              "mode": null
+            }
+          ],
+          "writes": [
+            {
+              "type": "MemoryDep",
+              "name": "buf0",
+              "index": "c0",
+              "var_names": [
+                "c0"
+              ],
+              "size": [
+                12
+              ],
+              "mode": null
+            }
+          ],
+          "last_usage": [
+            "x_1",
+            "y_1"
+          ]
+        }
+      ]
+    },
+    "transpose_view": {
+      "fx_graph": "graph():\n    %x_1 : [num_users=1] = placeholder[target=x_1]\n    %permute : [num_users=1] = call_function[target=torch.ops.aten.permute.default](args = (%x_1, [1, 0]), kwargs = {})\n    return permute",
+      "operation_types": [],
+      "buffers": [],
+      "outputs": [
+        {
+          "type": "ReinterpretView",
+          "name": "x_1",
+          "layout": {
+            "type": "FixedLayout",
+            "size": [
+              4,
+              3
+            ],
+            "stride": [
+              1,
+              4
+            ],
+            "device": "cpu",
+            "dtype": "torch.float32",
+            "offset": 0
+          }
+        }
+      ],
+      "scheduler_nodes": []
+    },
+    "contiguous_copy": {
+      "fx_graph": "graph():\n    %x_1 : [num_users=1] = placeholder[target=x_1]\n    %permute : [num_users=1] = call_function[target=torch.ops.aten.permute.default](args = (%x_1, [1, 0]), kwargs = {})\n    %clone : [num_users=1] = call_function[target=torch.ops.aten.clone.default](args = (%permute,), kwargs = {memory_format: torch.contiguous_format})\n    return clone",
+      "operation_types": [
+        "ComputedBuffer"
+      ],
+      "buffers": [
+        {
+          "name": "buf0",
+          "type": "ComputedBuffer",
+          "data_type": "Pointwise",
+          "layout": {
+            "type": "FixedLayout",
+            "size": [
+              4,
+              3
+            ],
+            "stride": [
+              3,
+              1
+            ],
+            "device": "cpu",
+            "dtype": "torch.float32",
+            "offset": 0
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "type": "StorageBox",
+          "name": "buf0",
+          "layout": {
+            "type": "FixedLayout",
+            "size": [
+              4,
+              3
+            ],
+            "stride": [
+              3,
+              1
+            ],
+            "device": "cpu",
+            "dtype": "torch.float32",
+            "offset": 0
+          }
+        }
+      ],
+      "scheduler_nodes": [
+        {
+          "name": "op0",
+          "type": "SchedulerNode",
+          "operation_names": [
+            "op0"
+          ],
+          "reads": [
+            {
+              "type": "MemoryDep",
+              "name": "x_1",
+              "index": "c0 + 4*c1",
+              "var_names": [
+                "c0",
+                "c1"
+              ],
+              "size": [
+                4,
+                3
+              ],
+              "mode": null
+            }
+          ],
+          "writes": [
+            {
+              "type": "MemoryDep",
+              "name": "buf0",
+              "index": "c0",
+              "var_names": [
+                "c0"
+              ],
+              "size": [
+                12
+              ],
+              "mode": null
+            }
+          ],
+          "last_usage": [
+            "x_1"
+          ]
+        }
+      ]
+    },
+    "reduction": {
+      "fx_graph": "graph():\n    %x_1 : [num_users=1] = placeholder[target=x_1]\n    %sum_1 : [num_users=1] = call_function[target=torch.ops.aten.sum.dim_IntList](args = (%x_1, [1]), kwargs = {})\n    return sum_1",
+      "operation_types": [
+        "ComputedBuffer"
+      ],
+      "buffers": [
+        {
+          "name": "buf0",
+          "type": "ComputedBuffer",
+          "data_type": "Reduction",
+          "layout": {
+            "type": "FixedLayout",
+            "size": [
+              8
+            ],
+            "stride": [
+              1
+            ],
+            "device": "cpu",
+            "dtype": "torch.float32",
+            "offset": 0
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "type": "StorageBox",
+          "name": "buf0",
+          "layout": {
+            "type": "FixedLayout",
+            "size": [
+              8
+            ],
+            "stride": [
+              1
+            ],
+            "device": "cpu",
+            "dtype": "torch.float32",
+            "offset": 0
+          }
+        }
+      ],
+      "scheduler_nodes": [
+        {
+          "name": "op0",
+          "type": "SchedulerNode",
+          "operation_names": [
+            "op0"
+          ],
+          "reads": [
+            {
+              "type": "MemoryDep",
+              "name": "x_1",
+              "index": "c0",
+              "var_names": [
+                "c0"
+              ],
+              "size": [
+                128
+              ],
+              "mode": null
+            }
+          ],
+          "writes": [
+            {
+              "type": "MemoryDep",
+              "name": "buf0",
+              "index": "c0",
+              "var_names": [
+                "c0"
+              ],
+              "size": [
+                8
+              ],
+              "mode": null
+            }
+          ],
+          "last_usage": [
+            "x_1"
+          ]
+        }
+      ]
+    },
+    "matmul": {
+      "fx_graph": "graph():\n    %x_1 : [num_users=1] = placeholder[target=x_1]\n    %weight_1 : [num_users=1] = placeholder[target=weight_1]\n    %mm : [num_users=1] = call_function[target=torch.ops.aten.mm.default](args = (%x_1, %weight_1), kwargs = {})\n    return mm",
+      "operation_types": [
+        "ExternKernelOut"
+      ],
+      "buffers": [
+        {
+          "name": "buf0",
+          "type": "ExternKernelOut",
+          "data_type": null,
+          "layout": {
+            "type": "FixedLayout",
+            "size": [
+              3,
+              5
+            ],
+            "stride": [
+              5,
+              1
+            ],
+            "device": "cpu",
+            "dtype": "torch.float32",
+            "offset": 0
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "type": "StorageBox",
+          "name": "buf0",
+          "layout": {
+            "type": "FixedLayout",
+            "size": [
+              3,
+              5
+            ],
+            "stride": [
+              5,
+              1
+            ],
+            "device": "cpu",
+            "dtype": "torch.float32",
+            "offset": 0
+          }
+        }
+      ],
+      "scheduler_nodes": [
+        {
+          "name": "op0",
+          "type": "ExternKernelSchedulerNode",
+          "operation_names": [
+            "op0"
+          ],
+          "reads": [
+            {
+              "type": "StarDep",
+              "name": "x_1",
+              "index": null,
+              "var_names": [],
+              "size": [],
+              "mode": null
+            },
+            {
+              "type": "StarDep",
+              "name": "weight_1",
+              "index": null,
+              "var_names": [],
+              "size": [],
+              "mode": null
+            }
+          ],
+          "writes": [
+            {
+              "type": "StarDep",
+              "name": "buf0",
+              "index": null,
+              "var_names": [],
+              "size": [],
+              "mode": null
+            }
+          ],
+          "last_usage": [
+            "weight_1",
+            "x_1"
+          ]
+        }
+      ]
+    }
+  },
+  "observations": {
+    "elementwise_ir_observed": true,
+    "broadcast_index_observed": true,
+    "transpose_view_observed": true,
+    "copy_buffer_observed": true,
+    "reduction_ir_observed": true,
+    "matmul_extern_observed": true
+  },
+  "native_kernel_performance_tested": false
+}

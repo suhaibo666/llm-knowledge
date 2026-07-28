@@ -1,0 +1,145 @@
+{
+  "evidence_kind": "runtime_observed_scheduler_no_codegen",
+  "fusion_enabled": {
+    "max_fusion_size": 64,
+    "node_count": 1,
+    "has_fused_scheduler_node": true,
+    "nodes": [
+      {
+        "name": "op0_op1",
+        "type": "FusedSchedulerNode",
+        "operation_names": [
+          "op0",
+          "op1"
+        ],
+        "reads": [
+          {
+            "type": "MemoryDep",
+            "name": "x_1",
+            "index": "c0",
+            "var_names": [
+              "c0"
+            ],
+            "size": [
+              128
+            ],
+            "mode": null
+          }
+        ],
+        "writes": [
+          {
+            "type": "MemoryDep",
+            "name": "buf0",
+            "index": "c0",
+            "var_names": [
+              "c0"
+            ],
+            "size": [
+              128
+            ],
+            "mode": null
+          },
+          {
+            "type": "MemoryDep",
+            "name": "buf1",
+            "index": "c0",
+            "var_names": [
+              "c0"
+            ],
+            "size": [
+              128
+            ],
+            "mode": null
+          }
+        ],
+        "last_usage": [
+          "x_1"
+        ]
+      }
+    ]
+  },
+  "fusion_limited": {
+    "max_fusion_size": 1,
+    "node_count": 2,
+    "has_fused_scheduler_node": false,
+    "nodes": [
+      {
+        "name": "op0",
+        "type": "SchedulerNode",
+        "operation_names": [
+          "op0"
+        ],
+        "reads": [
+          {
+            "type": "MemoryDep",
+            "name": "x_1",
+            "index": "c0",
+            "var_names": [
+              "c0"
+            ],
+            "size": [
+              128
+            ],
+            "mode": null
+          }
+        ],
+        "writes": [
+          {
+            "type": "MemoryDep",
+            "name": "buf0",
+            "index": "c0",
+            "var_names": [
+              "c0"
+            ],
+            "size": [
+              128
+            ],
+            "mode": null
+          }
+        ],
+        "last_usage": []
+      },
+      {
+        "name": "op1",
+        "type": "SchedulerNode",
+        "operation_names": [
+          "op1"
+        ],
+        "reads": [
+          {
+            "type": "MemoryDep",
+            "name": "x_1",
+            "index": "c0",
+            "var_names": [
+              "c0"
+            ],
+            "size": [
+              128
+            ],
+            "mode": null
+          }
+        ],
+        "writes": [
+          {
+            "type": "MemoryDep",
+            "name": "buf1",
+            "index": "c0",
+            "var_names": [
+              "c0"
+            ],
+            "size": [
+              128
+            ],
+            "mode": null
+          }
+        ],
+        "last_usage": [
+          "x_1"
+        ]
+      }
+    ]
+  },
+  "fusion_toggle_observed": true,
+  "native_kernel_count": null,
+  "native_kernel_performance_tested": false
+}

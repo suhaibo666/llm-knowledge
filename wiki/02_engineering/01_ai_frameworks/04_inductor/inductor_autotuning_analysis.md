@@ -1,5 +1,10 @@
 # Inductor Autotuning 与 Triton 编译流程
 
+> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
+> **页面角色**：Triton autotune生命周期专题。
+> **原始基线**：见下方2026-06-17快照；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
+> **课程分工**：本页保留autotune纵深；当前codegen/autotune边界与本机未测GPU限制见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]]。
+
 > 分析对象：upstream PyTorch Inductor 的 Triton kernel **autotune 生命周期 + 如何驱动 Triton 编译器**（`CachingAutotuner`、config 启发式、`config_of`/AttrsDescriptor、`make_launcher`、`triton.compile`→PTX/cubin、`DeviceProperties`）。
 > 核心代码位置：本地 upstream `E:\97-codes\pytorch\pytorch`：`torch/_inductor/runtime/triton_heuristics.py`、`codegen/triton_utils.py`、`runtime/hints.py`
 > 最后更新：2026-06-17
@@ -9,7 +14,7 @@
 ---
 
 ## 一、`CachingAutotuner` 生命周期
-
+> [!correction] I-025、I-026：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance#8. 两层autotuning]]，逐项说明见 [[correction_report]]。
 每个 kernel 被 `@triton_heuristics.pointwise/reduction(...)` 装饰,运行时由 `CachingAutotuner`（`triton_heuristics.py:421`）驱动,两级派发（`run`,`:2061`）：
 
 ```python
@@ -102,6 +107,7 @@ binary = triton.compile(
 
 ## Related Pages
 
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[inductor_gpu_kernel_dispatch_model]] — grid 生成（launcher 调用的 grid 来源）
 - [[inductor_reduction_codegen_deep_analysis]] — reduction config（R0_BLOCK / persistent）
 - [[PyTorch_Inductor_Technical_Analysis]] — §4 融合成本模型 + CoordescTuner 坐标下降（本页不重复）

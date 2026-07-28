@@ -1,0 +1,39 @@
+{
+  "entrypoint": "E:/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part2_activation_peak.py",
+  "command": [
+    "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+    "wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part2_activation_peak.py",
+    "--output-dir",
+    "wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\artifacts\\part2_activation_peak"
+  ],
+  "model": "sum(mm(cos(x), weight))",
+  "activation_memory_budgets": {
+    "high": 1.0,
+    "low": 0.0
+  },
+  "artifacts": [
+    {
+      "path": "environment.json",
+      "sha256": "e0c8d2dd753ef95d802bdea18be5c2afc44858c8feb0138a7eec60c924a9d8c3"
+    },
+    {
+      "path": "results.json",
+      "sha256": "c5d2c63f1c00dd35766179bbdcf9de38a868d3791d008eb5f14e18cf6f31525f"
+    }
+  ],
+  "checks": {
+    "saved_tensors_hooks_executed": true,
+    "budget_high_logical_tensor_peak_gt_low": true,
+    "budget_high_unique_backing_storage_peak_gt_low": true,
+    "budget_high_pack_unpack_balanced": true,
+    "budget_low_pack_unpack_balanced": true,
+    "budget_high_logical_tensor_live_bytes_returned_to_zero": true,
+    "budget_low_logical_tensor_live_bytes_returned_to_zero": true,
+    "budget_high_unique_backing_storage_live_bytes_returned_to_zero": true,
+    "budget_low_unique_backing_storage_live_bytes_returned_to_zero": true,
+    "gradient_matches": true,
+    "physical_allocator_peak_status": "blocked_no_cuda",
+    "physical_allocator_peak_measured": false,
+    "logical_peak_is_physical_allocator_peak": false
+  }
+}

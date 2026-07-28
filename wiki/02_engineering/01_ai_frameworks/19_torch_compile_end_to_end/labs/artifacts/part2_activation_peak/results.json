@@ -1,0 +1,159 @@
+{
+  "measurement_kinds": {
+    "logical_tensor_bytes": "sum_of_active_saved_tensor_numel_times_element_size",
+    "unique_backing_storage_bytes": "deduplicated_active_untyped_storage_nbytes"
+  },
+  "deduplication_rule": "Logical tensor bytes count each active saved value. Unique backing storage bytes charge each active device/data_ptr/storage_nbytes storage once at untyped_storage().nbytes().",
+  "lifecycle_rule": "pack adds one active saved-tensor reference; its first unpack removes that reference. Peak is the maximum live logical charge over hook events.",
+  "budget_high": {
+    "activation_memory_budget": 1.0,
+    "pack_count": 3,
+    "unpack_count": 3,
+    "peak_logical_tensor_bytes": 768,
+    "peak_unique_backing_storage_bytes": 768,
+    "peak_unique_storages": 3,
+    "final_live_logical_tensor_bytes": 0,
+    "final_live_unique_backing_storage_bytes": 0,
+    "final_active_unique_storages": 0,
+    "events": [
+      {
+        "event": "pack",
+        "shape": [
+          8,
+          8
+        ],
+        "dtype": "torch.float32",
+        "logical_tensor_bytes": 256,
+        "backing_storage_bytes": 256,
+        "live_logical_tensor_bytes": 256,
+        "live_unique_backing_storage_bytes": 256,
+        "active_unique_storages": 1
+      },
+      {
+        "event": "pack",
+        "shape": [
+          8,
+          8
+        ],
+        "dtype": "torch.float32",
+        "logical_tensor_bytes": 256,
+        "backing_storage_bytes": 256,
+        "live_logical_tensor_bytes": 512,
+        "live_unique_backing_storage_bytes": 512,
+        "active_unique_storages": 2
+      },
+      {
+        "event": "pack",
+        "shape": [
+          8,
+          8
+        ],
+        "dtype": "torch.float32",
+        "logical_tensor_bytes": 256,
+        "backing_storage_bytes": 256,
+        "live_logical_tensor_bytes": 768,
+        "live_unique_backing_storage_bytes": 768,
+        "active_unique_storages": 3
+      },
+      {
+        "event": "unpack",
+        "logical_tensor_bytes": 256,
+        "backing_storage_bytes": 256,
+        "live_logical_tensor_bytes": 512,
+        "live_unique_backing_storage_bytes": 512,
+        "active_unique_storages": 2
+      },
+      {
+        "event": "unpack",
+        "logical_tensor_bytes": 256,
+        "backing_storage_bytes": 256,
+        "live_logical_tensor_bytes": 256,
+        "live_unique_backing_storage_bytes": 256,
+        "active_unique_storages": 1
+      },
+      {
+        "event": "unpack",
+        "logical_tensor_bytes": 256,
+        "backing_storage_bytes": 256,
+        "live_logical_tensor_bytes": 0,
+        "live_unique_backing_storage_bytes": 0,
+        "active_unique_storages": 0
+      }
+    ]
+  },
+  "budget_low": {
+    "activation_memory_budget": 0.0,
+    "pack_count": 2,
+    "unpack_count": 2,
+    "peak_logical_tensor_bytes": 512,
+    "peak_unique_backing_storage_bytes": 512,
+    "peak_unique_storages": 2,
+    "final_live_logical_tensor_bytes": 0,
+    "final_live_unique_backing_storage_bytes": 0,
+    "final_active_unique_storages": 0,
+    "events": [
+      {
+        "event": "pack",
+        "shape": [
+          8,
+          8
+        ],
+        "dtype": "torch.float32",
+        "logical_tensor_bytes": 256,
+        "backing_storage_bytes": 256,
+        "live_logical_tensor_bytes": 256,
+        "live_unique_backing_storage_bytes": 256,
+        "active_unique_storages": 1
+      },
+      {
+        "event": "pack",
+        "shape": [
+          8,
+          8
+        ],
+        "dtype": "torch.float32",
+        "logical_tensor_bytes": 256,
+        "backing_storage_bytes": 256,
+        "live_logical_tensor_bytes": 512,
+        "live_unique_backing_storage_bytes": 512,
+        "active_unique_storages": 2
+      },
+      {
+        "event": "unpack",
+        "logical_tensor_bytes": 256,
+        "backing_storage_bytes": 256,
+        "live_logical_tensor_bytes": 256,
+        "live_unique_backing_storage_bytes": 256,
+        "active_unique_storages": 1
+      },
+      {
+        "event": "unpack",
+        "logical_tensor_bytes": 256,
+        "backing_storage_bytes": 256,
+        "live_logical_tensor_bytes": 0,
+        "live_unique_backing_storage_bytes": 0,
+        "active_unique_storages": 0
+      }
+    ]
+  },
+  "physical_allocator_peak_bytes": null,
+  "physical_allocator_peak_status": "blocked_no_cuda",
+  "physical_allocator_peak_measured": false,
+  "logical_peak_is_physical_allocator_peak": false,
+  "allocator_boundary": "This CPU-only Lab does not call CUDA allocator APIs. Logical saved-tensor bytes, process RSS, and Scheduler estimates are not a physical CUDA allocator peak.",
+  "checks": {
+    "saved_tensors_hooks_executed": true,
+    "budget_high_logical_tensor_peak_gt_low": true,
+    "budget_high_unique_backing_storage_peak_gt_low": true,
+    "budget_high_pack_unpack_balanced": true,
+    "budget_low_pack_unpack_balanced": true,
+    "budget_high_logical_tensor_live_bytes_returned_to_zero": true,
+    "budget_low_logical_tensor_live_bytes_returned_to_zero": true,
+    "budget_high_unique_backing_storage_live_bytes_returned_to_zero": true,
+    "budget_low_unique_backing_storage_live_bytes_returned_to_zero": true,
+    "gradient_matches": true,
+    "physical_allocator_peak_status": "blocked_no_cuda",
+    "physical_allocator_peak_measured": false,
+    "logical_peak_is_physical_allocator_peak": false
+  }
+}

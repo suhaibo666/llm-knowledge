@@ -1,0 +1,1 @@
+{"preToPost": {"sum_1": ["sum_1"], "sin": ["sin"]}, "postToPre": {"sum_1": ["sum_1"], "sin": ["sin"]}, "cppCodeToPost": {"cpp_fused_sin_sum_0:2": ["sum_1", "sin"]}, "postToCppCode": {"sum_1": ["cpp_fused_sin_sum_0:2"], "sin": ["cpp_fused_sin_sum_0:2"]}}

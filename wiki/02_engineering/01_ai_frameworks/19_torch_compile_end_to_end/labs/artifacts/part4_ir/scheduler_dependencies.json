@@ -1,0 +1,125 @@
+{
+  "evidence_kind": "runtime_observed_scheduler",
+  "nodes": [
+    {
+      "name": "op0",
+      "type": "SchedulerNode",
+      "operation_names": [
+        "op0"
+      ],
+      "reads": [
+        {
+          "type": "MemoryDep",
+          "name": "x_1",
+          "index": "c0",
+          "var_names": [
+            "c0"
+          ],
+          "size": [
+            128
+          ],
+          "mode": null
+        }
+      ],
+      "writes": [
+        {
+          "type": "MemoryDep",
+          "name": "buf0",
+          "index": "c0",
+          "var_names": [
+            "c0"
+          ],
+          "size": [
+            8
+          ],
+          "mode": null
+        }
+      ],
+      "last_usage": [
+        "x_1"
+      ]
+    },
+    {
+      "name": "op1",
+      "type": "SchedulerNode",
+      "operation_names": [
+        "op1"
+      ],
+      "reads": [
+        {
+          "type": "MemoryDep",
+          "name": "buf0",
+          "index": "c0",
+          "var_names": [
+            "c0"
+          ],
+          "size": [
+            8
+          ],
+          "mode": null
+        }
+      ],
+      "writes": [
+        {
+          "type": "MemoryDep",
+          "name": "buf1",
+          "index": "c0",
+          "var_names": [
+            "c0"
+          ],
+          "size": [
+            8
+          ],
+          "mode": null
+        }
+      ],
+      "last_usage": [
+        "buf0"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "producer": "graph_input:x_1",
+      "consumer": "op0",
+      "buffer": "x_1",
+      "dependency": {
+        "type": "MemoryDep",
+        "name": "x_1",
+        "index": "c0",
+        "var_names": [
+          "c0"
+        ],
+        "size": [
+          128
+        ],
+        "mode": null
+      }
+    },
+    {
+      "producer": "op0",
+      "consumer": "op1",
+      "buffer": "buf0",
+      "dependency": {
+        "type": "MemoryDep",
+        "name": "buf0",
+        "index": "c0",
+        "var_names": [
+          "c0"
+        ],
+        "size": [
+          8
+        ],
+        "mode": null
+      }
+    }
+  ],
+  "graph_inputs": [
+    "x_1"
+  ],
+  "graph_outputs": [
+    "buf1"
+  ],
+  "dependency_edges_recorded": true,
+  "native_kernel_performance_tested": false
+}

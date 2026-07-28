@@ -1,0 +1,40 @@
+{
+  "command": [
+    "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+    "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part3_end_to_end_pass.py",
+    "--output-dir",
+    "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part3"
+  ],
+  "rewrite": "add(matmul(x, weight), bias) -> addmm(bias, x, weight)",
+  "legal_domain": {
+    "x_rank": 2,
+    "weight_rank": 2,
+    "bias_shape": "exactly equal to matmul output",
+    "dtype": "all tensor metadata dtypes equal"
+  },
+  "rejection_case": "broadcast bias shape (5,) is intentionally unsupported",
+  "artifacts": [
+    "environment.json",
+    "illegal_after.py",
+    "illegal_before.py",
+    "legal_after.py",
+    "legal_before.py",
+    "manifest.json",
+    "results.json"
+  ],
+  "checks": {
+    "legal_rewrite_applied": true,
+    "legal_has_addmm": true,
+    "illegal_broadcast_rewrite_applied": false,
+    "illegal_graph_unchanged": true,
+    "failure_atomicity_matches": true,
+    "forward_matches": true,
+    "gradient_matches": true,
+    "gradcheck_matches": true,
+    "shape_matches": true,
+    "alias_contract_matches": true,
+    "mutation_contract_matches": true,
+    "second_run_modified": false,
+    "second_run_code_unchanged": true
+  }
+}

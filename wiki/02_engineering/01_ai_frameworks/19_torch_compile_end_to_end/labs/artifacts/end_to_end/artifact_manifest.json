@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "bundle_kind": "multi-run evidence bundle for one stable user computation prefix",
+  "overall_stage_continuity": "partial",
+  "claims": {
+    "manifested_artifacts_generated_or_refreshed_in_one_script_invocation": true,
+    "all_frontend_artifacts_form_one_continuous_compile": false,
+    "independent_stable_prefix_frontends_capture_same_user_computation": true,
+    "aot_joint_partition_fw_bw_is_one_continuous_run": true,
+    "inductor_trace_to_ir_scheduler_codegen_is_one_continuous_run": true,
+    "aot_forward_is_direct_input_to_recorded_inductor_run": false,
+    "native_generated_kernel_executed": false
+  },
+  "continuous_segments": [
+    {
+      "run_id": "aot_autograd_capture_and_partition",
+      "artifacts": [
+        "aot_joint.py",
+        "aot_forward.py",
+        "aot_backward.py",
+        "aot_joint_to_fw_bw_node_mapping.json",
+        "aot_partition_abi.json"
+      ],
+      "evidence": {
+        "exact_old_to_new_mapping": "aot_joint_to_fw_bw_node_mapping.json",
+        "runtime_slot_abi": "aot_partition_abi.json"
+      }
+    },
+    {
+      "run_id": "inductor_backend_compile",
+      "input_scope": "backend_core with parameter and buffer values passed as explicit tensor inputs",
+      "artifacts": [
+        "backend/fx_graph_readable.py",
+        "backend/fx_graph_transformed.py",
+        "backend/ir_pre_fusion.txt",
+        "backend/ir_post_fusion.txt",
+        "backend/output_code.py",
+        "backend/captured_cpp_kernel.cpp",
+        "backend/inductor_provenance_tracking_node_mappings.json"
+      ],
+      "evidence_boundary": {
+        "cpp_compiler_mocked": true,
+        "wrapper_executed_to_trigger_codegen": true,
+        "mock_noop_kernel_executed": true,
+        "generated_cpp_source_compiled": false,
+        "generated_cpp_kernel_executed": false,
+        "numerical_correctness_checked": false,
+        "native_kernel_performance_tested": false
+      }
+    }
+  ],
+  "independent_capture_runs": [
+    {
+      "run_id": "symbolic_trace_capture",
+      "artifact": "symbolic_fx.py"
+    },
+    {
+      "run_id": "dynamo_capture_for_eager_backend",
+      "artifacts": [
+        "dynamo_fx.py",
+        "dynamo_guards.txt"
+      ]
+    },
+    {
+      "run_id": "export_capture",
+      "artifacts": [
+        "exported_program.py",
+        "export_graph_signature.json"
+      ]
+    },
+    {
+      "run_id": "functional_make_fx_capture",
+      "artifact": "functional_aten.py"
+    },
+    {
+      "run_id": "hop_export_capture",
+      "artifact": "hop_exported_program.py"
+    }
+  ],
+  "missing_continuous_edges": [
+    {
+      "from": "symbolic_fx",
+      "to": "functional_aten",
+      "reason": "functional_aten is a separate make_fx recapture"
+    },
+    {
+      "from": "functional_aten",
+      "to": "aot_joint",
+      "reason": "aot_module performs a separate capture"
+    },
+    {
+      "from": "aot_forward",
+      "to": "backend/fx_graph_readable.py",
+      "reason": "the recorded backend run compiles backend_core directly instead of consuming the captured AOT forward GraphModule"
+    }
+  ],
+  "index_artifacts": {
+    "semantic_stage_records": "stage_node_mapping.json",
+    "environment": "environment.json",
+    "model_contract": "model_contract.json"
+  }
+}

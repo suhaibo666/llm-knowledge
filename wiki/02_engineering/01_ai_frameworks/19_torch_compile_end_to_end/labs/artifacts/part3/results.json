@@ -1,0 +1,15 @@
+{
+  "legal_rewrite_applied": true,
+  "legal_has_addmm": true,
+  "illegal_broadcast_rewrite_applied": false,
+  "illegal_graph_unchanged": true,
+  "failure_atomicity_matches": true,
+  "forward_matches": true,
+  "gradient_matches": true,
+  "gradcheck_matches": true,
+  "shape_matches": true,
+  "alias_contract_matches": true,
+  "mutation_contract_matches": true,
+  "second_run_modified": false,
+  "second_run_code_unchanged": true
+}

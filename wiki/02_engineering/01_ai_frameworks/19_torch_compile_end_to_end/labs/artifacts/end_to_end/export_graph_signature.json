@@ -1,0 +1,34 @@
+{
+  "input_specs": [
+    {
+      "kind": "PARAMETER",
+      "arg": "TensorArgument(name='p_weight')",
+      "target": "weight"
+    },
+    {
+      "kind": "BUFFER",
+      "arg": "TensorArgument(name='b_offset')",
+      "target": "offset"
+    },
+    {
+      "kind": "USER_INPUT",
+      "arg": "TensorArgument(name='x')",
+      "target": "None"
+    }
+  ],
+  "output_specs": [
+    {
+      "kind": "USER_OUTPUT",
+      "arg": "TensorArgument(name='sin')",
+      "target": "None"
+    },
+    {
+      "kind": "USER_OUTPUT",
+      "arg": "TensorArgument(name='sum_1')",
+      "target": "None"
+    }
+  ],
+  "range_constraints": {
+    "s77": "VR[1, 8]"
+  }
+}

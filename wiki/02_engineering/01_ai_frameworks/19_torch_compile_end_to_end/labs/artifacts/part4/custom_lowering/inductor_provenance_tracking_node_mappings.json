@@ -1,0 +1,1 @@
+{"preToPost": {"scale_default": ["scale"], "sum_1": ["sum_1"]}, "postToPre": {"scale": ["scale_default"], "sum_1": ["sum_1"]}, "cppCodeToPost": {"cpp_fused_scale_sum_0:4": ["sum_1", "scale"]}, "postToCppCode": {"sum_1": ["cpp_fused_scale_sum_0:4"], "scale": ["cpp_fused_scale_sum_0:4"]}}

@@ -1,5 +1,10 @@
 # PyTorch Inductor Joint Graph Passes 完全解析
 
+> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
+> **页面角色**：joint阶段目录、注册API与切图前约束。
+> **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
+> **课程分工**：本页保留阶段开发参考；当前joint graph、partition与pass边界见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]] 和 [[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint]]。
+
 > **Updated**: 2026-07-22
 
 > **Source baseline**: PyTorch `9922478dffa`，重点核验 `torch/_inductor/fx_passes/joint_graph.py:48-56,640-720`、`torch/_inductor/custom_graph_pass.py:73-76,124-145`。
@@ -15,7 +20,7 @@
 ---
 
 ## 1. 概述
-
+> [!correction] P-011、P-017：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs#3. joint inputs：primals 与 tangents]]，逐项说明见 [[correction_report]]。
 ### 1.1 什么是 Joint Graph
 
 Joint Graph 是 PyTorch 2.0 编译器（Inductor）在训练场景下的核心数据流图，它包含：
@@ -379,7 +384,7 @@ chunked_result = torch.ops.higher_order.invoke_subgraph(
 ---
 
 ### Pass 7: pass_patterns（主优化）
-
+> [!correction] P-021：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint#2. 三个Inductor FX driver不同]]，逐项说明见 [[correction_report]]。
 **初始化**：
 ```python
 pass_patterns = [patterns, PatternMatcherPass()]
@@ -479,7 +484,7 @@ seed3 = inductor_lookup_seed(seeds, 2)
 ---
 
 ## 3. 执行顺序与依赖关系
-
+> [!correction] P-011、P-017：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint#5. Single round、bounded repeat、fixed point]]，逐项说明见 [[correction_report]]。
 ```
 Stage 1: 规范化 & 用户前置处理
 ─────────────────────────────────
@@ -1008,6 +1013,7 @@ Joint Graph Passes 是 PyTorch Inductor 优化的核心阶段，通过系统化�
 
 ## Related Pages
 
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[02_engineering/01_ai_frameworks/index]]
 - [[fx_pass_optimization_methodology]] — 八阶段放置方法论
 - [[decomposition_passes_guide]] — Joint 图的算子集来源

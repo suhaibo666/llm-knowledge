@@ -1,0 +1,31 @@
+{
+  "command": [
+    "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+    "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part2_aot_recompute_analysis.py",
+    "--output-dir",
+    "wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part2_recompute"
+  ],
+  "model": "sum(mm(cos(x), weight))",
+  "partitioner": "min_cut_rematerialization_partition",
+  "activation_memory_budgets": {
+    "high": 1.0,
+    "low": 0.0
+  },
+  "artifacts": [
+    "environment.json",
+    "manifest.json",
+    "budget_high_forward.py",
+    "budget_high_backward.py",
+    "budget_low_forward.py",
+    "budget_low_backward.py",
+    "partition_comparison.json"
+  ],
+  "checks": {
+    "budget_high_saved_bytes_gt_low": true,
+    "budget_low_recompute_targets_observed": true,
+    "gradient_matches": true,
+    "cross_graph_node_refs": 0,
+    "physical_allocator_peak_measured": false
+  },
+  "physical_allocator_peak_measured": false
+}

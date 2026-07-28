@@ -1,10 +1,15 @@
 # FxGraphCache — 用「post-grad 图指纹 + 形状 guard」把 Inductor 的 lowering/codegen/Triton 编译整段省掉
 
+> [!note] 页面角色与审计状态
+> **页面角色**：Inductor post-grad FX graph artifact cache 的 key、guarded multi-entry、bypass 与产物恢复专题；它不与 Dynamo PGO 的决策画像或 AOTAutograd result cache 混为一层。
+> **原始基线**：PyTorch `3bda74318624581502db16e6439c36effdb16481`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
+> **审计状态**：已纳入历史 manifest，但结构 inventory 尚未升级为逐 claim 当前基线复核，cache hit/bypass 也未在本轮环境端到端重跑。图阶段与产物身份见 [[19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance]]，生成 kernel/wrapper 与 provenance 见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]]；缓存领域入口见 [[17_compile_cache/index]]。
+
 > **分析对象**：PyTorch Inductor 图级编译缓存 `FxGraphCache`（`torch/_inductor/codecache.py`）——缓存 post-grad FX graph 到编译产物 `CompiledFxGraph`（Python wrapper 代码 + Triton kernels）的映射，命中时跳过 Inductor lowering / codegen / Triton 编译整段。
 > **Source baseline**：PyTorch upstream 本地检出 `E:\97-codes\torch_parallel\pytorch` @ branch `main`, commit `3bda74318624581502db16e6439c36effdb16481`（2026-07-10, version 2.14.0a0）。所有 `file:line` 均对该 commit 逐一开文件核验。
 > **最后更新**：2026-07-10
 
-本页回答三件事：进 cache key 的**因素精确清单**及其「为什么必须进」；命中路径上 **shape-env guard** 如何在同一 key 的多个 entry 里挑出正确产物；以及**产物序列化 / bypass 约束 / Triton bundling** 的机制。它是 torch.compile 编译缓存里最古老、最核心的一级——上有 [[aotautograd_cache_analysis]]（缓存整个前反向编译单元、复用本页的 `GuardedCache`），旁有 [[triton_autotune_cache_analysis]]（本页只简述的 autotune/远端缓存设施）。总览见 [[compile_cache_overview]]，目录索引 [[17_compile_cache/index]]。
+本页回答三件事：进 cache key 的**因素精确清单**及其「为什么必须进」；命中路径上 **shape-env guard** 如何在同一 key 的多个 entry 里挑出正确产物；以及**产物序列化 / bypass 约束 / Triton bundling** 的机制。它是 torch.compile 编译缓存里最古老、最核心的一级——上有 [[aotautograd_cache_analysis]]（缓存整个前反向编译单元、复用本页的 `GuardedCache`），旁有 [[triton_autotune_cache_analysis]]（本页只简述的 autotune/远端缓存设施）。总览与目录索引见 [[17_compile_cache/index]]。
 
 ---
 
@@ -195,7 +200,7 @@ flowchart TB
 
 写盘走 `write_atomic`（`_write_to_local_cache`，`codecache.py:2178`），文件名用产物内容的 sha256，因为 lookup 是遍历整个 `<key>/` 目录，文件名本身不参与匹配（`:2183` 注释）。
 
-**写入时的 CacheArtifact 记录**：`_save_graph` 在写盘前先 `CacheArtifactRecorder(...).record(content)`（`codecache.py:2247`），把这份 bytes 也登记进 `InductorCacheArtifact`（`codecache.py:1902`）。它的 `populate_cache` 会 `_write_to_local_cache` + `_emit_triton_bundle`（`:1905–1907`）——这是 Mega-cache「一次编译、打包全部 artifact、异地整包重放」的挂钩点，本页只标此挂钩，机制细节属 [[megacache_and_precompile_analysis]]。
+**写入时的 CacheArtifact 记录**：`_save_graph` 在写盘前先 `CacheArtifactRecorder(...).record(content)`（`codecache.py:2247`），把这份 bytes 也登记进 `InductorCacheArtifact`（`codecache.py:1902`）。它的 `populate_cache` 会 `_write_to_local_cache` + `_emit_triton_bundle`（`:1905–1907`）——这是 Mega-cache「一次编译、打包全部 artifact、异地整包重放」的挂钩点；其独立当前基线审计尚未完成。
 
 ### 4.1 TritonBundler——把 Triton 产物打包进 entry
 
@@ -260,14 +265,17 @@ flowchart TB
 
 ---
 
-## Related / Cross-references
+## Related Pages
 
-- [[compile_cache_overview]] — 编译缓存总览（本页是其最核心一级）
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[17_compile_cache/index]] — 编译缓存总览（本页是其最核心一级）
 - [[aotautograd_cache_analysis]] — 上层缓存，复用本页 `GuardedCache`；`bundled_autograd_cache` 下 Inductor 不自存
 - [[triton_autotune_cache_analysis]] — Triton bundling / 远端缓存设施细节
 - [[dynamo_pgo_cache_analysis]] — Dynamo 侧 PGO 缓存
-- [[megacache_and_precompile_analysis]] — Mega-cache / precompile
+- Mega-cache / precompile：尚未完成独立当前基线审计
 - [[17_compile_cache/index]] — 本目录索引
+- [[19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance]] — post-grad FX、Inductor artifact 与跨阶段 identity 边界
+- [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]] — 被缓存复用的 kernel/wrapper 与 provenance 产物
 - [[torch_compile_architecture]] — torch.compile 整体栈
 - [[inductor_autotuning_analysis]] — autotune 生命周期（获胜 config 即 TritonBundler 打包对象）
 - [[PyTorch_Inductor_Technical_Analysis]] — Inductor lowering/codegen（命中时被跳过的那段）

@@ -2,7 +2,7 @@
 
 > 层次:overview(浅)
 > 核验基准:PyTorch upstream `E:\97-codes\pytorch\pytorch`(v2.13.0a0, commit 9922478)
-> 最后更新:2026-06-15
+> 最后更新:2026-07-27
 
 ---
 
@@ -109,8 +109,10 @@ flowchart LR
 
 | 页面 | 层次 | 核心主题 |
 |------|------|---------|
-| [[fx_export_custom_op_quickstart]] | **quick start** | 最小可用路径:`symbolic_trace` + 遍历/插点改写 `Graph` + `recompile`/`lint`;写一个 `PassBase`;`export` + `dynamic_shapes`(`Dim`)+ 查看 `graph_signature`/`range_constraints`/`module()`;用 `torch.library.custom_op` + `register_kernel`/`register_fake` 注册算子;`vmap`/`functional_call` 用法 |
-| [[fx_graph_export_and_custom_ops_analysis]] | deep dive | 源码级:Proxy 拦截与 `TracerBase.create_proxy`、Node/Graph 双向链表 IR 与 use-def、`GraphModule` 代码生成 + linecache、`PassBase.__call__` 前置/变换/后置、`ExportedProgram` 的 lifted params/buffers 与约束、`Library`/`custom_op` 的分发与 autograd 桥接、functorch 的 BatchedTensor 语义 |
+| [[fx_export_custom_op_quickstart]] | **保留的 quick start** | 最小可用路径:`symbolic_trace` + 遍历/插点改写 `Graph` + `recompile`/`lint`;写一个 `PassBase`;`export` + `dynamic_shapes`(`Dim`)+ 查看 `graph_signature`/`range_constraints`/`module()`;用 `torch.library.custom_op` + `register_kernel`/`register_fake` 注册算子;`vmap`/`functional_call` 用法 |
+| [[fx_graph_export_and_custom_ops_analysis]] | **保留的 deep dive** | 源码级:Proxy 拦截与 `TracerBase.create_proxy`、Node/Graph 双向链表 IR 与 use-def、`GraphModule` 代码生成 + linecache、`PassBase.__call__` 前置/变换/后置、`ExportedProgram` 的 lifted params/buffers 与约束、`Library`/`custom_op` 的分发与 autograd 桥接、functorch 的 BatchedTensor 语义 |
+| [[fx_graph_construction_and_transformation_analysis]] | **cross-domain deep dive** | FX 图的数据结构、AOT 正反向分图、PatternMatcher/DCE/保序与复杂度 |
+| [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] | **current source-faithful series** | 图 IR 设计动机、FX 数据结构/值语义、捕获与规范化、改图原语、PatternMatcher、DCE/保序、合法性与复杂度；旧页冲突时以此系列的固定源码定位为准 |
 
 ---
 
@@ -120,14 +122,23 @@ flowchart LR
 - [[03_aot_autograd/index]] — 下游:decomposition / 前后向分解,`run_decompositions` 共用机制
 - [[07_op_registration/index]] — 算子注册全景,`custom_op` 的注册去向
 - [[01_dispatcher_and_device/index]] — ATen 分发器,扩展面与 functional ATen 的共同底座
+- [[19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy]] — 图 IR 为什么这样分层
+- [[19_torch_compile_end_to_end/02_fx_graph_core_data_model]] — 当前基线的 FX `Graph` / `Node` / use-def
+- [[19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing]] — FX、make_fx、Dynamo 与 export 的捕获边界
+- [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse]] — dynamic shape、guard与图复用
+- [[19_torch_compile_end_to_end/06_structured_outputs_higher_order_and_nested_graphs]] — pytree、HOP与嵌套GraphModule
+- [[19_torch_compile_end_to_end/12_fx_graph_editing_primitives_and_invariants]] — 改图原语与必须维护的不变量
 - [[01_ai_frameworks/index]] — 本域总索引
 
 ---
 
 ## Related Pages
 
+- [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 编号化端到端课程：卷 C 讲 FX 图，卷 F 讲 custom op/backend/AOTI
 - [[fx_export_custom_op_quickstart]] — 本模块 quick start
 - [[fx_graph_export_and_custom_ops_analysis]] — 本模块 deep dive
+- [[fx_graph_construction_and_transformation_analysis]] — FX IR 如何进入 AOT 分图与 Inductor 改图
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前系统化图编译主线
 - [[02_dynamo/index]]
 - [[03_aot_autograd/index]]
 - [[07_op_registration/index]]

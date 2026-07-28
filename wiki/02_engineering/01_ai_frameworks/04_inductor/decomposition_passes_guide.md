@@ -1,5 +1,10 @@
 # TorchInductor Decomposition 开发指南
-
+> [!correction] P-019????????????????? [[19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization#4. Decomposition]]?????? [[correction_report]]?
+> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
+> **页面角色**：decomposition pass目录、注册API与开发指南。
+> **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
+> **课程分工**：本页保留开发清单；decomposition、functionalization与规范化边界的当前主线见 [[19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization]]。
+> [!correction] P-019：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization#4. Decomposition]]，逐项说明见 [[correction_report]]。
 > **Created**: 2026-07-22
 
 > **Source baseline**: PyTorch `9922478dffa`，核验 `torch/_inductor/decomposition.py:130-156,972-983`、`torch/_inductor/compile_fx.py:2710-2728,3061-3070`。
@@ -153,6 +158,7 @@ Decomposition 通常应使用 Tensor 运算和 SymInt-safe 的 shape 表达式�
 
 ## Related Pages
 
+- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[fx_pass_optimization_methodology]] — 八阶段放置决策
 - [[joint_graph_passes_guide]] — decomposition 后的联合图改写
 - [[post_grad_passes_guide]] — 切图后的 ATen pattern

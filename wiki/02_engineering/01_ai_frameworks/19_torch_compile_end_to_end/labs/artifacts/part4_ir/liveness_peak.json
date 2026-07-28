@@ -1,0 +1,118 @@
+{
+  "estimator": "torch._inductor.memory.estimate_peak_memory",
+  "estimator_kind": "static_scheduler_estimate_not_physical_allocator_peak",
+  "scheduled_order_estimated_peak_bytes": 512,
+  "estimated_peak_bytes": 512,
+  "timeline_bytes": [
+    512,
+    32,
+    0
+  ],
+  "buffers": [
+    {
+      "name": "buf0",
+      "size_alloc_bytes": 32,
+      "size_free_bytes": 32,
+      "successor_nodes": [
+        "op1"
+      ]
+    },
+    {
+      "name": "buf1",
+      "size_alloc_bytes": 32,
+      "size_free_bytes": 32,
+      "successor_nodes": []
+    }
+  ],
+  "nodes": [
+    {
+      "name": "op0",
+      "type": "SchedulerNode",
+      "operation_names": [
+        "op0"
+      ],
+      "reads": [
+        {
+          "type": "MemoryDep",
+          "name": "x_1",
+          "index": "c0",
+          "var_names": [
+            "c0"
+          ],
+          "size": [
+            128
+          ],
+          "mode": null
+        }
+      ],
+      "writes": [
+        {
+          "type": "MemoryDep",
+          "name": "buf0",
+          "index": "c0",
+          "var_names": [
+            "c0"
+          ],
+          "size": [
+            8
+          ],
+          "mode": null
+        }
+      ],
+      "last_usage": [
+        "x_1"
+      ],
+      "planning_index": 0,
+      "output_allocation_bytes": 32,
+      "predecessor_nodes": [],
+      "successor_nodes": [
+        "op1"
+      ]
+    },
+    {
+      "name": "op1",
+      "type": "SchedulerNode",
+      "operation_names": [
+        "op1"
+      ],
+      "reads": [
+        {
+          "type": "MemoryDep",
+          "name": "buf0",
+          "index": "c0",
+          "var_names": [
+            "c0"
+          ],
+          "size": [
+            8
+          ],
+          "mode": null
+        }
+      ],
+      "writes": [
+        {
+          "type": "MemoryDep",
+          "name": "buf1",
+          "index": "c0",
+          "var_names": [
+            "c0"
+          ],
+          "size": [
+            8
+          ],
+          "mode": null
+        }
+      ],
+      "last_usage": [
+        "buf0"
+      ],
+      "planning_index": 1,
+      "output_allocation_bytes": 32,
+      "predecessor_nodes": [
+        "op0"
+      ],
+      "successor_nodes": []
+    }
+  ],
+  "native_kernel_performance_tested": false
+}

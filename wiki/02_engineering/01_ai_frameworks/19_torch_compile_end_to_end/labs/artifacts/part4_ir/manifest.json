@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "command": "python part4_ir_scheduler_analysis.py --output-dir <artifact-directory>",
+  "artifacts": [
+    "environment.json",
+    "manifest.json",
+    "ir_matrix.json",
+    "scheduler_dependencies.json",
+    "fusion_comparison.json",
+    "reorder_comparison.json",
+    "liveness_peak.json"
+  ],
+  "analysis_path": "make_fx -> GraphLowering.run -> Scheduler",
+  "source_locator_baseline": "e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52",
+  "runtime_torch_git": "5811a8d7da873dd699ff6687092c225caffcf1bb",
+  "runtime_matches_source_baseline": false,
+  "graph_lowering_execution": "runtime_observed",
+  "scheduler_execution": "runtime_observed",
+  "native_kernel_execution": "not_run",
+  "native_kernel_performance_tested": false,
+  "runtime_observations": [
+    "IR classes and layouts",
+    "Scheduler read/write dependencies and last usage",
+    "Scheduler fusion groups under max_fusion_size",
+    "Scheduler order and static peak with peak-memory reorder on/off",
+    "static Scheduler peak-memory estimate"
+  ],
+  "evidence_boundary": {
+    "graph_lowering_executed": true,
+    "scheduler_executed": true,
+    "static_memory_estimator_executed": true,
+    "native_codegen_requested": false,
+    "native_kernel_compiled": false,
+    "native_kernel_executed": false,
+    "native_kernel_performance_tested": false,
+    "physical_allocator_peak_measured": false
+  }
+}

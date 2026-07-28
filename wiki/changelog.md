@@ -4,6 +4,73 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-28：`torch.compile` 端到端 A→F 课程补齐
+
+**Type**: Source-faithful Learning Series + Evidence Closure（固定源码基线为 PyTorch
+`e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`；本阶段只完善原理和源码链路，不新增 demo，
+不把 CPU 环境观察外推为 native/CUDA 实测。）
+
+- **新增课程域 [[02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]]**：
+  形成 A→F 六卷编号路径；新写 A01–A05、B01–B10、D01–D07、E01–E09、F01–F08 共
+  39 篇正文，并将 [[02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+  的 C01–C21 正文、Labs 和证据资产实体并入同一目录；旧目录 16 已删除，原 01–21
+  文件顺序和内容身份继续保留。
+- **从 eager 贯通生产运行**：卷 A 建立 Tensor/storage/layout、dispatcher/autograd、
+  Python frame、dispatch modes 和成本模型；卷 B 追踪 `torch.compile`、eval-frame、
+  bytecode、VariableTracker/Source、OutputGraph、guards、graph break、dynamic shape 与
+  backend；卷 D 衔接 `compile_fx`、AOT runtime wrapper、异步编译、cache、wrapper memory、
+  CUDAGraph Trees 与 artifact lifecycle。
+- **补齐工程验收闭环**：卷 E 按 capture/AOT/lowering/codegen/load/runtime 分层组织日志、
+  explain、guard/recompile、minifier/bisector、正确性、冷启动/热缓存/稳态、fusion/memory/
+  hardware 和 production rollout；明确“能编译”“能加载”“数值正确”“性能获益”是四个门槛。
+- **补齐高级边界**：卷 F 区分 Compiled Autograd 与 AOTAutograd，解释 activation
+  checkpoint 与 AOT recompute 的叠加、DDP/FSDP/DTensor 的图和 rank state、custom op
+  完整编译契约、Dynamo backend 与 Inductor device backend、AOTInductor 的 PT2/C ABI/
+  constant ownership，以及 training/inference/freezing/CUDA Graph 的正交组合。
+- **纠正历史路径和关键误解**：minifier 当前入口核准为
+  `torch/_functorch/fx_minifier.py`；AOTInductor package 入口核准为
+  `torch/_inductor/__init__.py` 与 `torch/_inductor/package/package.py`。明确 JIT cache
+  不是部署 ABI、freezing 不是 `eval()`、CUDA Graph static input 首先约束地址而非值、
+  partitioned forward 的 saved activation 不能全部当作 backward static input。
+- **统一课程与证据闭合**：端到端 manifest 已逐篇纳入 C00–C21，包含
+  61 个编号入口/正文和 1 个 C00 支持索引；6,312 个 claim units 全部有决定，其中
+  `[S]/[R]/[I]/[M]/[B]` 分别为 1,287/366/3,552/19/43，另有 1,045 个非断言；
+  validation error 为 0。卷 C 自身账本也已随实体迁移重建并复核。
+- **导航闭合**：框架总索引、Dynamo、AOTAutograd、Inductor、runtime memory、FX/export/
+  extensibility、distributed primitives、C 卷图编译主线与 compile cache
+  均已建立课程回链。当前主机无 MSVC/CUDA/Triton；未新增或伪造 native runtime receipt。
+
+---
+
+## 2026-07-28：PyTorch 图编译系列源码级重构与审计闭合
+
+**Type**: Source-faithful Refactor + Final Audit（固定源码基线为 PyTorch
+`e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`；本轮冻结演示扩展，集中完成原理与源码机制说明。）
+
+- **建立编号化学习主线**：形成 `00` 总索引与 `01–21` 正文，按“图语义基础 → 捕获与
+  AOT 正反向构图 → 安全改图与 PatternMatcher → Inductor IR/Scheduler/Codegen”
+  顺序组织；总索引新增源码阅读方法与各阶段 driver 入口。
+- **补强源码机制**：所有正文均从概念解释推进到真实调用链、读写状态、不变量、
+  consumer、设计取舍和参数化复杂度；重点闭合 FX use-def、AOT fw/bw runtime ABI、
+  saved tensor/recompute、PatternExpr 匹配、DCE/稳定拓扑、lowering/realization、
+  Scheduler dependency/fusion 以及 codegen/autotune/cache 边界。
+- **纠正关键误解**：fw/bw 是两张独立 FX Graph，没有跨图 Node 边；recompute 是
+  partitioner 向 bw fresh graph 复制节点；PatternMatcher 按注册 root 候选索引匹配；
+  DCE 必须结合副作用判定；Scheduler topo 与 fusion candidate 复杂度均按真实实现参数化，
+  不再笼统写成“逐 pattern 扫整图”或“必然二次”。
+- **课程证据闭合**：3134/3134 个课程 claim decisions，0 个 validation error；
+  916 个固定源码证据、366 个当前环境实测、1284 个带已验证父结论的推论，41 个环境阻塞
+  保持显式，不把 generated-only 或 blocked 能力升级成 native runtime 事实。
+- **历史材料隔离闭合**：28 篇旧页完整保留；2190/2190 个历史 claim 有处置，
+  91 个纠正，2099 个未证实结论全部 `retain-quarantined`；新课程未导入任何 unresolved
+  history claim。
+- **验证结果**：审计工具 90 项测试与课程合同 42 项测试均通过，21/21 个既有
+  runtime producer receipts 成功；本机缺少 MSVC/CUDA/Triton，原生 C++ kernel 与
+  CUDA/Triton autotune 仍保持 `BLOCKED`，没有扩展演示 demo。
+
+---
+
+
 ## 2026-07-28：Kimi K3 技术报告回填后训练统一学习域
 
 **Type**: Source Ingest + Industrial Case Study + Cross-Document Correction（固定官方报告 `0797decb`，将算法、trajectory、environment、Infra 与部署精度放回同一个 `wiki/03_posttraining/` 闭环。）
@@ -36,6 +103,31 @@ All source ingestions and significant wiki updates are logged here.
 - **新增 D00 [[00_posttraining_source_reading_guide]]**：按 D00 → D11 固定推荐阅读顺序，定义 S00–S05 六个研究阶段、六级可验证能力门槛，以及论文、源码、工业“支持等级”和 CUDA→Ascend 适配的阅读方法。
 - **新增 D01 [[01_posttraining_frontier_map_analysis]]**：以优化粒度、on-policy/freshness、训练—推理一致性和 Agentic 环境四组张力组织前沿地图；固定 verl `983cb0f`、slime `aaf5c20`、AReaL `b23fa6c`、ROLL `370cb24` 的 2026-07-27 源码快照。
 - **研究分工**：verl 作为主基线，slime 作为性能/前沿对照，AReaL 作为 fully async/Agentic 对照，ROLL 作为多后端、异构和 Ascend 专项；不使用脱离模型、硬件、配置和 freshness 条件的总榜。
+
+---
+
+## 2026-07-26：图编译知识体系重构复核——课程主线通过，历史无损迁移仍未验收
+
+**Type**: Source-faithful Refactor + Design Conformance Review（不删除旧页；固定源码审计基线为 PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。本机 Lab 使用 PyTorch `2.9.1+cpu`、`torch.version.git_version=5811a8d7da873dd699ff6687092c225caffcf1bb`，两条基线分开记录。）
+
+- **重审 [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] 与 21 篇专题**：Part I 建立图 IR、FX 数据模型、值/metadata/signature、符号形状、effect/alias/mutation、结构化输出与 higher-order graph；Part II 解释捕获、规范化、AOTAutograd joint→fw/bw、saved tensor/recompute ABI 与跨阶段 provenance；Part III 解释 FX 改图原语、`PatternExpr`、DCE/稳定拓扑排序、pass 顺序/fixpoint、合法性与复杂度；Part IV 贯通 FX lowering、Inductor IR、buffer/liveness、Scheduler 与 codegen/autotune。21 篇正文的 323 个完整 repository-relative `file:line` 定位在固定 checkout 上全部路径存在且行号有效。
+- **可执行证据升级**：Lab 目录现有 18 个机制/贯穿脚本和 1 个 9-test 自动合同入口；合同覆盖四种捕获、FX 不变量、effect/alias/DCE、AOT joint/fw/bw/recompute、PatternMatcher、pass/topology、Part III rewrite、Part IV IR/Scheduler/provenance 与统一模型 bundle。AOT Lab 现用同次 partition 的 lab-only origin token 建立 joint→fw/bw 精确 old-to-new 映射，并把 saved-slot fw value/bw placeholder 绑定到同一 joint origin；artifact manifest 明确整体 continuity 为 `partial`，不再把独立前端捕获和独立 backend 捕获写成一条单次编译链。本轮复跑 `Ran 9 tests`，结果 `OK`；审计工具 8 项测试也全部通过。
+- **Part III 贯穿改写**：`add(matmul(x, weight), bias) → addmm(bias, x, weight)` 仅在 rank、dtype、shape/无 broadcast 等合法性成立时执行；数值、一阶梯度、`gradcheck`、shape、alias relation、输入 mutation relation、非法 broadcast 拒绝、失败原子性与第二次运行零改动均有 assertion。
+- **Part IV 证据边界**：真实执行 GraphLowering、Scheduler、dependency/fusion/reorder、external matmul 与 `eigvals` fallback；custom lowering 到达 `ComputedBuffer`；生成 wrapper/C++ source 并完成 Scheduler→FX→Python provenance join。当前 Windows CPU 缺 MSVC `cl` 且无 CUDA，因此 native pointwise/reduction kernel、真实 fusion 性能、物理 allocator peak 与 Triton autotune 没有实测；mock/no-op 捕获的 codegen 产物明确标记为 generated-not-executed，Scheduler group 数也不再误写成 native kernel 数。
+- **迁移与导航**：28/28 篇 manifest 页面均有“页面角色与审计状态”说明并保留全文；其中 19 篇旧主干页面不再整页 blanket deprecated，另 9 篇 runtime/checkpoint/cache/memory 专题补齐独有职责、基线和未闭合边界。综合报告增加旧节→新系列去向表；同步更新框架总索引、AOTAutograd、Inductor、FX/export、runtime memory 和 compile cache 六个索引，并补齐相关回链。
+- **历史审计 gate 仍打开**：manifest 已扩为 28 页、2,514 条 inventory records、2,022 条 heading/code/locator ledger rows，围栏不平衡为 0；但仍有 832 个 `TBD` destination、1,041 个 unresolved-like row（1,030 `unresolved`、1 `not_semantically_audited`、10 `needs_manual_resolution`）、0 个真实 destination anchor。故当前新课程可作为固定基线下的已验证主线使用，但整个重构不能宣称满足“历史资料逐结构单元无损迁移”或 authoritative 发布门槛。完整结论见 `docs/audits/pytorch_graph_series/2026-07-26/design_conformance_review.md`。
+
+---
+
+## 2026-07-23：FX Graph 构图、AOT 正反向分图与 PatternMatcher 改图机制报告
+
+**Type**: Deep Dive（按 PyTorch `ea5655fcebf` 固定基线核对 FX、AOTAutograd 与 Inductor 源码。）
+
+- **新增 [[fx_graph_construction_and_transformation_analysis]]**：统一解释 `Graph` 侵入式双向链表、`Node.args/kwargs`、`_input_nodes/users` 与查找辅助表，区分图序、依赖边和 `GraphModule.forward` 生成代码。
+- **补全 AOTAutograd 正反向构图**：从 joint function tracing、partition 分类与子图抽取，解释 fw 额外输出 → runtime context → bw placeholder 的跨图 ABI；明确 fw/bw 无对象级 Node 边。
+- **补全 recompute 机制**：说明 min-cut 保存/重算选择、普通 forward 节点复制进 bw，以及 backward recompute reorder 如何缩短临时值生命周期。
+- **补全 PatternMatcher、DCE 与保序**：覆盖 PatternExpr 子类的图场景、候选桶与逆序匹配、三类 PatternEntry、mutation/stream 边界、dead node 定义、稳定拓扑排序、lint/recompile 检查点。
+- **复杂度模型**：给出构图、候选检索、匹配/替换、DCE、lint、稳定拓扑排序、fw/bw 抽取、min-cut 与全 pass 管线的参数化复杂度；同步更新 AOTAutograd、Inductor、FX/export 索引与双向链接。
 
 ---
 

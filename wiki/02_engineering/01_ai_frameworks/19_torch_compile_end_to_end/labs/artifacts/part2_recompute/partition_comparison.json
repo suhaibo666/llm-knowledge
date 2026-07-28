@@ -1,0 +1,115 @@
+{
+  "budget_high": {
+    "activation_memory_budget": 1.0,
+    "forward_saved_value_slots": [
+      {
+        "slot": 0,
+        "name": "primals_1",
+        "op": "placeholder",
+        "target": "primals_1",
+        "shape": [
+          8,
+          8
+        ],
+        "dtype": "torch.float32",
+        "logical_bytes": 256
+      },
+      {
+        "slot": 1,
+        "name": "t",
+        "op": "call_function",
+        "target": "aten.t.default",
+        "shape": [
+          8,
+          8
+        ],
+        "dtype": "torch.float32",
+        "logical_bytes": 256
+      },
+      {
+        "slot": 2,
+        "name": "t_1",
+        "op": "call_function",
+        "target": "aten.t.default",
+        "shape": [
+          8,
+          8
+        ],
+        "dtype": "torch.float32",
+        "logical_bytes": 256
+      }
+    ],
+    "forward_saved_slot_count": 3,
+    "forward_saved_logical_bytes": 768,
+    "backward_call_targets": [
+      "aten.expand.default",
+      "aten.mm.default",
+      "aten.mm.default",
+      "aten.sin.default",
+      "aten.neg.default",
+      "aten.mul.Tensor"
+    ],
+    "cross_graph_node_refs": []
+  },
+  "budget_low": {
+    "activation_memory_budget": 0.0,
+    "forward_saved_value_slots": [
+      {
+        "slot": 0,
+        "name": "primals_1",
+        "op": "placeholder",
+        "target": "primals_1",
+        "shape": [
+          8,
+          8
+        ],
+        "dtype": "torch.float32",
+        "logical_bytes": 256
+      },
+      {
+        "slot": 1,
+        "name": "primals_2",
+        "op": "placeholder",
+        "target": "primals_2",
+        "shape": [
+          8,
+          8
+        ],
+        "dtype": "torch.float32",
+        "logical_bytes": 256
+      }
+    ],
+    "forward_saved_slot_count": 2,
+    "forward_saved_logical_bytes": 512,
+    "backward_call_targets": [
+      "aten.expand.default",
+      "aten.cos.default",
+      "aten.t.default",
+      "aten.mm.default",
+      "aten.t.default",
+      "aten.mm.default",
+      "aten.sin.default",
+      "aten.neg.default",
+      "aten.mul.Tensor"
+    ],
+    "cross_graph_node_refs": []
+  },
+  "budget_low_recompute_targets": [
+    "aten.cos.default",
+    "aten.t.default",
+    "aten.t.default"
+  ],
+  "recompute_target_definition": "Positive multiset difference between low- and high-budget backward call_function targets.",
+  "checks": {
+    "budget_high_saved_bytes_gt_low": true,
+    "budget_low_recompute_targets_observed": true,
+    "gradient_matches": true,
+    "cross_graph_node_refs": 0,
+    "physical_allocator_peak_measured": false
+  },
+  "measurement_scope": {
+    "saved_bytes": "Sum of logical tensor bytes in forward outputs after the single user-output slot; aliases/views are separate ABI slots.",
+    "physical_allocator_peak_measured": false,
+    "disclaimer": "This Lab inspects partition graphs and does not measure a physical CPU/CUDA allocator peak."
+  }
+}

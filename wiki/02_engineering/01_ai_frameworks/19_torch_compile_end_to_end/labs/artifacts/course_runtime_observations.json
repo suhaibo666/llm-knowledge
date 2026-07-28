@@ -1,0 +1,608 @@
+{
+  "all_scripts_passed": true,
+  "completed_script_count": 21,
+  "failed_script_count": 0,
+  "failed_scripts": [],
+  "generated_at_utc": "2026-07-28T07:46:24.344346Z",
+  "observations": [
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part1_graph_taxonomy.py"
+      ],
+      "exit_code": 0,
+      "script": "part1_graph_taxonomy.py",
+      "script_sha256": "bb17171c23b0d018ebb48cb7b5bb1200ff858ed2c9becc81412c6b4d0d4df2b6",
+      "stderr": "",
+      "stdout": "eager_grad_fn=SumBackward0\neager_next=ReluBackward0\nfx_ops=placeholder,call_function,call_method,call_method,output\nfx_call_targets=add,relu,sum\n",
+      "stdout_key_values": {
+        "eager_grad_fn": "SumBackward0",
+        "eager_next": "ReluBackward0",
+        "fx_call_targets": "add,relu,sum",
+        "fx_ops": "placeholder,call_function,call_method,call_method,output"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part1_fx_core.py"
+      ],
+      "exit_code": 0,
+      "script": "part1_fx_core.py",
+      "script_sha256": "219682b7beddb2eecfd08e781986e617117520e4a71a8002ceb30fbc8ff7f87f",
+      "stderr": "",
+      "stdout": "x_distinct_users=1\nx_uses_in_add=2\nbefore_replace=8.0\nerase_live_node=RuntimeError\nafter_replace=6.0\nlint_cross_graph=RuntimeError\n",
+      "stdout_key_values": {
+        "after_replace": "6.0",
+        "before_replace": "8.0",
+        "erase_live_node": "RuntimeError",
+        "lint_cross_graph": "RuntimeError",
+        "x_distinct_users": "1",
+        "x_uses_in_add": "2"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part1_values_signatures.py"
+      ],
+      "exit_code": 0,
+      "script": "part1_values_signatures.py",
+      "script_sha256": "28ffedfaf6b4e694a496760161ff2b6dfd976476b7709320e14538aae78f4ea2",
+      "stderr": "",
+      "stdout": "symbolic_fx_ops=placeholder,get_attr,call_function,get_attr,call_function,output\nsymbolic_parameter_access=get_attr\nexported_program_callable=False\nexport_input_kinds=PARAMETER,BUFFER,USER_INPUT\nexport_output_kinds=USER_OUTPUT\nexport_non_output_has_val_meta=True\n",
+      "stdout_key_values": {
+        "export_input_kinds": "PARAMETER,BUFFER,USER_INPUT",
+        "export_non_output_has_val_meta": "True",
+        "export_output_kinds": "USER_OUTPUT",
+        "exported_program_callable": "False",
+        "symbolic_fx_ops": "placeholder,get_attr,call_function,get_attr,call_function,output",
+        "symbolic_parameter_access": "get_attr"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part1_symbolic_shapes.py"
+      ],
+      "exit_code": 0,
+      "script": "part1_symbolic_shapes.py",
+      "script_sha256": "4f24d46751203c2b873383f13649a8e6be96058901124a206e3c97717c935af0",
+      "stderr": "",
+      "stdout": "dynamic_false_compiles=3\ndynamic_none_compiles=2\ndynamic_none_second_graph_has_symint=True\nexport_range_constraints=1\n",
+      "stdout_key_values": {
+        "dynamic_false_compiles": "3",
+        "dynamic_none_compiles": "2",
+        "dynamic_none_second_graph_has_symint": "True",
+        "export_range_constraints": "1"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part1_effects_alias.py"
+      ],
+      "exit_code": 0,
+      "script": "part1_effects_alias.py",
+      "script_sha256": "8b725fee91dc0710a6d945a5ca95d6d0221a6ad1076ab43d5c69365add715398",
+      "stderr": "",
+      "stdout": "before_dce_call_functions=2\ndce_changed=True\nafter_dce_targets=copy_.default\nmutation_result=7.0\nalias_observes_mutation=7.0\npure_dead_removed=True\ndead_chain_removed=True\nnested_child_dead_removed=True\nimpure_copy_retained=True\nalias_observes_mutation=True\nboth_effect_orders_lint=True\neffect_reorder_changes_result=True\neffect_original_order_result=2.0\neffect_reordered_result=1.0\n",
+      "stdout_key_values": {
+        "after_dce_targets": "copy_.default",
+        "alias_observes_mutation": "True",
+        "before_dce_call_functions": "2",
+        "both_effect_orders_lint": "True",
+        "dce_changed": "True",
+        "dead_chain_removed": "True",
+        "effect_original_order_result": "2.0",
+        "effect_reorder_changes_result": "True",
+        "effect_reordered_result": "1.0",
+        "impure_copy_retained": "True",
+        "mutation_result": "7.0",
+        "nested_child_dead_removed": "True",
+        "pure_dead_removed": "True"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part1_structured_hop.py"
+      ],
+      "exit_code": 0,
+      "script": "part1_structured_hop.py",
+      "script_sha256": "eeb5f071066947c715349a5d5f22d341a844bfa9554ed40174245b81b2ebe37d",
+      "stderr": "",
+      "stdout": "tuple_graph_has_getitem=True\noutput_is_nested_dict=True\ncond_outer_target=cond\ncond_subgraphs=true_graph_0,false_graph_0\ncond_positive=6.0\ncond_negative=-5.0\nbranch_output_specs_equal=True\n",
+      "stdout_key_values": {
+        "branch_output_specs_equal": "True",
+        "cond_negative": "-5.0",
+        "cond_outer_target": "cond",
+        "cond_positive": "6.0",
+        "cond_subgraphs": "true_graph_0,false_graph_0",
+        "output_is_nested_dict": "True",
+        "tuple_graph_has_getitem": "True"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part2_capture_frontends.py"
+      ],
+      "exit_code": 0,
+      "script": "part2_capture_frontends.py",
+      "script_sha256": "7ddb6ec0f47c6e1764b1d36df0feae57a9a07cc72040569062739927e47c103a",
+      "stderr": "",
+      "stdout": "symbolic_has_call_module=True\nmake_fx_has_call_module=False\ndynamo_backend_graphs=1\nexport_input_kinds=PARAMETER,PARAMETER,USER_INPUT\nexport_range_constraints=0\ndynamo_guards_recorded=True\ndynamo_example_value_meta_recorded=True\nexplicit_graph_break_backend_graphs=2\n",
+      "stdout_key_values": {
+        "dynamo_backend_graphs": "1",
+        "dynamo_example_value_meta_recorded": "True",
+        "dynamo_guards_recorded": "True",
+        "explicit_graph_break_backend_graphs": "2",
+        "export_input_kinds": "PARAMETER,PARAMETER,USER_INPUT",
+        "export_range_constraints": "0",
+        "make_fx_has_call_module": "False",
+        "symbolic_has_call_module": "True"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part2_normalization.py"
+      ],
+      "exit_code": 0,
+      "script": "part2_normalization.py",
+      "script_sha256": "8f63680824181739770ea2383c77965449eec8b1ad5293d5503836cdaf001c11",
+      "stderr": "",
+      "stdout": "original_has_inplace=True\nfunctional_has_outplace_add=True\nfunctional_output_matches=True\nfunctional_input_semantics_match=True\nplain_has_silu=True\ndecomposed_has_silu=False\n",
+      "stdout_key_values": {
+        "decomposed_has_silu": "False",
+        "functional_has_outplace_add": "True",
+        "functional_input_semantics_match": "True",
+        "functional_output_matches": "True",
+        "original_has_inplace": "True",
+        "plain_has_silu": "True"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part2_aot_graphs.py"
+      ],
+      "exit_code": 0,
+      "script": "part2_aot_graphs.py",
+      "script_sha256": "f2bfb45af7210abee7c70e1f6d11930f88f49ec6fa2dfe4f566639a8d95c1b4d",
+      "stderr": "",
+      "stdout": "joint_graphs=1\nforward_graphs=1\nbackward_graphs=1\nfw_and_bw_are_distinct=True\nfw_total_output_count=4\nfw_user_output_count=1\nfw_saved_value_count=3\nbw_placeholder_count=4\ncross_graph_node_refs=0\ngradient_matches_eager=True\ndefault_bw_targets=aten.mul.Tensor,aten.mul.Tensor,aten.add.Tensor,aten.sin.default,aten.neg.default,aten.mul.Tensor,aten.cos.default,aten.mul.Tensor\nmin_cut_fw_total_output_count=2\nmin_cut_fw_saved_value_count=1\nmin_cut_bw_targets=aten.sin.default,aten.cos.default,aten.mul.Tensor,aten.add.Tensor,aten.sin.default,aten.neg.default,aten.mul.Tensor,aten.cos.default,aten.mul.Tensor\n",
+      "stdout_key_values": {
+        "backward_graphs": "1",
+        "bw_placeholder_count": "4",
+        "cross_graph_node_refs": "0",
+        "default_bw_targets": "aten.mul.Tensor,aten.mul.Tensor,aten.add.Tensor,aten.sin.default,aten.neg.default,aten.mul.Tensor,aten.cos.default,aten.mul.Tensor",
+        "forward_graphs": "1",
+        "fw_and_bw_are_distinct": "True",
+        "fw_saved_value_count": "3",
+        "fw_total_output_count": "4",
+        "fw_user_output_count": "1",
+        "gradient_matches_eager": "True",
+        "joint_graphs": "1",
+        "min_cut_bw_targets": "aten.sin.default,aten.cos.default,aten.mul.Tensor,aten.add.Tensor,aten.sin.default,aten.neg.default,aten.mul.Tensor,aten.cos.default,aten.mul.Tensor",
+        "min_cut_fw_saved_value_count": "1",
+        "min_cut_fw_total_output_count": "2"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part2_aot_recompute_analysis.py",
+        "--output-dir",
+        "C:\\Users\\suhaibo\\AppData\\Local\\Temp\\course_runtime_observations_g5o1aija\\part2_recompute"
+      ],
+      "exit_code": 0,
+      "script": "part2_aot_recompute_analysis.py",
+      "script_sha256": "fd65fdb2efcd1766afc101add60fb2ecd61e7f60fba32e97dbf3c2e700da7ba7",
+      "stderr": "",
+      "stdout": "budget_high_saved_bytes_gt_low=True\nbudget_low_recompute_targets_observed=True\ngradient_matches=True\ncross_graph_node_refs=0\nphysical_allocator_peak_measured=False\nbudget_high_saved_slots=3\nbudget_low_saved_slots=2\nbudget_high_saved_bytes=768\nbudget_low_saved_bytes=512\nbudget_low_recompute_targets=aten.cos.default,aten.t.default,aten.t.default\nartifact_dir=C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part2_recompute\n",
+      "stdout_key_values": {
+        "artifact_dir": "C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part2_recompute",
+        "budget_high_saved_bytes": "768",
+        "budget_high_saved_bytes_gt_low": "True",
+        "budget_high_saved_slots": "3",
+        "budget_low_recompute_targets": "aten.cos.default,aten.t.default,aten.t.default",
+        "budget_low_recompute_targets_observed": "True",
+        "budget_low_saved_bytes": "512",
+        "budget_low_saved_slots": "2",
+        "cross_graph_node_refs": "0",
+        "gradient_matches": "True",
+        "physical_allocator_peak_measured": "False"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part2_activation_peak.py",
+        "--output-dir",
+        "C:\\Users\\suhaibo\\AppData\\Local\\Temp\\course_runtime_observations_g5o1aija\\part2_activation_peak"
+      ],
+      "exit_code": 0,
+      "script": "part2_activation_peak.py",
+      "script_sha256": "a2b420d5d3c212779d9d975c67311a02a8e76e62da84539809b699a6d4c568ec",
+      "stderr": "",
+      "stdout": "saved_tensors_hooks_executed=True\nbudget_high_logical_tensor_peak_gt_low=True\nbudget_high_unique_backing_storage_peak_gt_low=True\nbudget_high_pack_unpack_balanced=True\nbudget_low_pack_unpack_balanced=True\nbudget_high_logical_tensor_live_bytes_returned_to_zero=True\nbudget_low_logical_tensor_live_bytes_returned_to_zero=True\nbudget_high_unique_backing_storage_live_bytes_returned_to_zero=True\nbudget_low_unique_backing_storage_live_bytes_returned_to_zero=True\ngradient_matches=True\nphysical_allocator_peak_status=blocked_no_cuda\nphysical_allocator_peak_measured=False\nlogical_peak_is_physical_allocator_peak=False\nbudget_high_peak_logical_tensor_bytes=768\nbudget_low_peak_logical_tensor_bytes=512\nbudget_high_peak_unique_backing_storage_bytes=768\nbudget_low_peak_unique_backing_storage_bytes=512\nartifact_dir=C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part2_activation_peak\n",
+      "stdout_key_values": {
+        "artifact_dir": "C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part2_activation_peak",
+        "budget_high_logical_tensor_live_bytes_returned_to_zero": "True",
+        "budget_high_logical_tensor_peak_gt_low": "True",
+        "budget_high_pack_unpack_balanced": "True",
+        "budget_high_peak_logical_tensor_bytes": "768",
+        "budget_high_peak_unique_backing_storage_bytes": "768",
+        "budget_high_unique_backing_storage_live_bytes_returned_to_zero": "True",
+        "budget_high_unique_backing_storage_peak_gt_low": "True",
+        "budget_low_logical_tensor_live_bytes_returned_to_zero": "True",
+        "budget_low_pack_unpack_balanced": "True",
+        "budget_low_peak_logical_tensor_bytes": "512",
+        "budget_low_peak_unique_backing_storage_bytes": "512",
+        "budget_low_unique_backing_storage_live_bytes_returned_to_zero": "True",
+        "gradient_matches": "True",
+        "logical_peak_is_physical_allocator_peak": "False",
+        "physical_allocator_peak_measured": "False",
+        "physical_allocator_peak_status": "blocked_no_cuda",
+        "saved_tensors_hooks_executed": "True"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part2_continuous_aot_inductor.py",
+        "--output-dir",
+        "C:\\Users\\suhaibo\\AppData\\Local\\Temp\\course_runtime_observations_g5o1aija\\part2_continuous_aot_inductor"
+      ],
+      "exit_code": 0,
+      "script": "part2_continuous_aot_inductor.py",
+      "script_sha256": "fb3aeae45f2ebc884af1f6ae58e28047dadc8cf807941ef13a89d414eb32f5ff",
+      "stderr": "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\torch\\_dynamo\\pgo.py:537: UserWarning: dynamo_pgo force disabled by torch.compiler.config.force_disable_caches\n  warn_once(\n",
+      "stdout": "continuous_aot_forward_to_inductor=True\npartition_forward_tokens_preserved=True\npartition_backward_tokens_preserved=True\nforward_graph_identity_preserved=True\nforward_owner_identity_preserved=True\nbackward_partition_to_callback_identity_transition=True\nbackward_callback_to_lowering_identity_preserved=True\nforward_callback_to_scheduler_module_graph_preserved=True\nbackward_callback_to_scheduler_module_graph_preserved=True\nscheduler_owner_transition_recorded=True\nscheduler_origin_tokens_recorded=True\nscheduler_dependency_construction_recorded=True\ncompiler_callback_recorded=True\ngraph_lowering_recorded=True\nscheduler_recorded=True\nforward_matches=True\ngradient_matches=True\nnative_kernel_executed=False\nevidence_scope=extern_matmul_only\nartifact_dir=C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part2_continuous_aot_inductor\n",
+      "stdout_key_values": {
+        "artifact_dir": "C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part2_continuous_aot_inductor",
+        "backward_callback_to_lowering_identity_preserved": "True",
+        "backward_callback_to_scheduler_module_graph_preserved": "True",
+        "backward_partition_to_callback_identity_transition": "True",
+        "compiler_callback_recorded": "True",
+        "continuous_aot_forward_to_inductor": "True",
+        "evidence_scope": "extern_matmul_only",
+        "forward_callback_to_scheduler_module_graph_preserved": "True",
+        "forward_graph_identity_preserved": "True",
+        "forward_matches": "True",
+        "forward_owner_identity_preserved": "True",
+        "gradient_matches": "True",
+        "graph_lowering_recorded": "True",
+        "native_kernel_executed": "False",
+        "partition_backward_tokens_preserved": "True",
+        "partition_forward_tokens_preserved": "True",
+        "scheduler_dependency_construction_recorded": "True",
+        "scheduler_origin_tokens_recorded": "True",
+        "scheduler_owner_transition_recorded": "True",
+        "scheduler_recorded": "True"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part3_passes.py"
+      ],
+      "exit_code": 0,
+      "script": "part3_passes.py",
+      "script_sha256": "4e9e2177f4de2e509a3b0a0507fd7dcfbf4b6e16979e9755e9ae2232eab9a073",
+      "stderr": "",
+      "stdout": "node_copy_value_matches=True\ngraph_copy_value_matches=True\nlint_failed_before_sort=True\ntopology_repaired_value=8.0\npass_manager_steps_1_count=1\npass_manager_steps_4_count=3\nfront_end_like_before_targets=matmul,add\nfunctional_aten_like_before_targets=aten.mm.default,aten.add.Tensor\nfront_end_like_after_targets=addmm\nfunctional_aten_like_after_targets=aten.addmm.default\nstage_target_spelling_differs=True\nstage_correct_contract_rewrites=True\nstage_wrong_contract_rejected=True\nstage_rewrite_idempotent=True\nstage_outputs_match=True\nstage_contract_kind=simulated_frontend_like_vs_functional_aten\nactual_torch_compile_stage_hook_executed=False\noscillation_bounded_at_four=True\noscillation_final_target_is_add=True\n",
+      "stdout_key_values": {
+        "actual_torch_compile_stage_hook_executed": "False",
+        "front_end_like_after_targets": "addmm",
+        "front_end_like_before_targets": "matmul,add",
+        "functional_aten_like_after_targets": "aten.addmm.default",
+        "functional_aten_like_before_targets": "aten.mm.default,aten.add.Tensor",
+        "graph_copy_value_matches": "True",
+        "lint_failed_before_sort": "True",
+        "node_copy_value_matches": "True",
+        "oscillation_bounded_at_four": "True",
+        "oscillation_final_target_is_add": "True",
+        "pass_manager_steps_1_count": "1",
+        "pass_manager_steps_4_count": "3",
+        "stage_contract_kind": "simulated_frontend_like_vs_functional_aten",
+        "stage_correct_contract_rewrites": "True",
+        "stage_outputs_match": "True",
+        "stage_rewrite_idempotent": "True",
+        "stage_target_spelling_differs": "True",
+        "stage_wrong_contract_rejected": "True",
+        "topology_repaired_value": "8.0"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part3_pattern.py",
+        "--output-dir",
+        "C:\\Users\\suhaibo\\AppData\\Local\\Temp\\course_runtime_observations_g5o1aija\\part3_pattern"
+      ],
+      "exit_code": 0,
+      "script": "part3_pattern.py",
+      "script_sha256": "32885dfabcac100069874084287d026ccf6fb0cd1e1087ea03310e33325c01ee",
+      "stderr": "",
+      "stdout": "source_locator_baseline=e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52\nruntime_torch_version=2.9.1+cpu\nruntime_torch_git=5811a8d7da873dd699ff6687092c225caffcf1bb\nruntime_matches_source_baseline=False\nunary_pattern_matched=True\nunary_arg_captured=True\nshared_pattern_matched=True\npositional_captures=y\nkeyword_captures=x:x\nignored_positional_count=0\nignored_keyword_count=2\nkwargs_pattern_matched=True\nkwargs_constant_captured=True\nfailed_sharing_pattern=True\nmulti_output_pattern_matched=True\npattern_matcher_pass_apply_count=1\npattern_matcher_handler_calls=1\ngraph_pattern_entry_type=GraphPatternEntry\ngraph_pattern_value_matches=True\ngraph_pattern_old_nodes_erased=True\ngraph_pattern_second_apply_count=0\nreplacement_entry_type=ReplacementPatternEntry\nreplacement_apply_count=1\nreplacement_value_matches=True\nreplacement_has_mul=True\nreplacement_has_no_add=True\nreplacement_second_apply_count=0\nreplacement_extra_check_rejected=True\nlowering_entry_type=LoweringPatternEntry\nlowering_apply_count=1\nlowering_handler_marked=True\nlowering_handler_deferred_until_graph_lowering=True\nlowering_pattern_reached_inductor_ir=True\nlowering_original_add_erased=True\nlowering_native_kernel_executed=False\nartifact_dir=C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part3_pattern\n",
+      "stdout_key_values": {
+        "artifact_dir": "C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part3_pattern",
+        "failed_sharing_pattern": "True",
+        "graph_pattern_entry_type": "GraphPatternEntry",
+        "graph_pattern_old_nodes_erased": "True",
+        "graph_pattern_second_apply_count": "0",
+        "graph_pattern_value_matches": "True",
+        "ignored_keyword_count": "2",
+        "ignored_positional_count": "0",
+        "keyword_captures": "x:x",
+        "kwargs_constant_captured": "True",
+        "kwargs_pattern_matched": "True",
+        "lowering_apply_count": "1",
+        "lowering_entry_type": "LoweringPatternEntry",
+        "lowering_handler_deferred_until_graph_lowering": "True",
+        "lowering_handler_marked": "True",
+        "lowering_native_kernel_executed": "False",
+        "lowering_original_add_erased": "True",
+        "lowering_pattern_reached_inductor_ir": "True",
+        "multi_output_pattern_matched": "True",
+        "pattern_matcher_handler_calls": "1",
+        "pattern_matcher_pass_apply_count": "1",
+        "positional_captures": "y",
+        "replacement_apply_count": "1",
+        "replacement_entry_type": "ReplacementPatternEntry",
+        "replacement_extra_check_rejected": "True",
+        "replacement_has_mul": "True",
+        "replacement_has_no_add": "True",
+        "replacement_second_apply_count": "0",
+        "replacement_value_matches": "True",
+        "runtime_matches_source_baseline": "False",
+        "runtime_torch_git": "5811a8d7da873dd699ff6687092c225caffcf1bb",
+        "runtime_torch_version": "2.9.1+cpu",
+        "shared_pattern_matched": "True",
+        "source_locator_baseline": "e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52",
+        "unary_arg_captured": "True",
+        "unary_pattern_matched": "True"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part3_legality.py"
+      ],
+      "exit_code": 0,
+      "script": "part3_legality.py",
+      "script_sha256": "1449b716c33c86f2799159fa664cdef85385f6afa8c8c76270ca103b12e10402",
+      "stderr": "",
+      "stdout": "broadcast_structural_match=True\nbroadcast_rewrite_legal=False\nbroadcast_original_preserved=True\ntransposed_exact_rewrite_legal=True\nforward_matches=True\ngradient_matches=True\n",
+      "stdout_key_values": {
+        "broadcast_original_preserved": "True",
+        "broadcast_rewrite_legal": "False",
+        "broadcast_structural_match": "True",
+        "forward_matches": "True",
+        "gradient_matches": "True",
+        "transposed_exact_rewrite_legal": "True"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part3_end_to_end_pass.py",
+        "--output-dir",
+        "C:\\Users\\suhaibo\\AppData\\Local\\Temp\\course_runtime_observations_g5o1aija\\part3"
+      ],
+      "exit_code": 0,
+      "script": "part3_end_to_end_pass.py",
+      "script_sha256": "8aa2b16bfbc887e089d33248987a07faf7cb5c234a289838833d7a4ee31aa7bd",
+      "stderr": "",
+      "stdout": "legal_rewrite_applied=True\nlegal_has_addmm=True\nillegal_broadcast_rewrite_applied=False\nillegal_graph_unchanged=True\nfailure_atomicity_matches=True\nforward_matches=True\ngradient_matches=True\ngradcheck_matches=True\nshape_matches=True\nalias_contract_matches=True\nmutation_contract_matches=True\nsecond_run_modified=False\nsecond_run_code_unchanged=True\nartifact_dir=C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part3\n",
+      "stdout_key_values": {
+        "alias_contract_matches": "True",
+        "artifact_dir": "C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part3",
+        "failure_atomicity_matches": "True",
+        "forward_matches": "True",
+        "gradcheck_matches": "True",
+        "gradient_matches": "True",
+        "illegal_broadcast_rewrite_applied": "False",
+        "illegal_graph_unchanged": "True",
+        "legal_has_addmm": "True",
+        "legal_rewrite_applied": "True",
+        "mutation_contract_matches": "True",
+        "second_run_code_unchanged": "True",
+        "second_run_modified": "False",
+        "shape_matches": "True"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part3_real_stage_hooks.py",
+        "--output-dir",
+        "C:\\Users\\suhaibo\\AppData\\Local\\Temp\\course_runtime_observations_g5o1aija\\part3_real_stage_hooks"
+      ],
+      "exit_code": 0,
+      "script": "part3_real_stage_hooks.py",
+      "script_sha256": "26af278814b4d291e5a875db729ff1d25cae7b12f3c37f1bff73eb58048cbeb2",
+      "stderr": "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\torch\\_dynamo\\pgo.py:537: UserWarning: dynamo_pgo force disabled by torch.compiler.config.force_disable_caches\n  warn_once(\nC:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\torch\\_dynamo\\pgo.py:537: UserWarning: dynamo_pgo force disabled by torch.compiler.config.force_disable_caches\n  warn_once(\n",
+      "stdout": "actual_torch_compile_stage_hook_executed=True\npre_correct_stage_hits=1\npre_wrong_stage_hits=0\npost_correct_stage_hits=1\npost_wrong_stage_hits=0\npre_forward_matches=True\npre_gradient_matches=True\npost_forward_matches=True\npost_gradient_matches=True\npass_second_run_zero_rewrites=True\npass_second_run_graph_unchanged=True\nsecond_call_no_recompile=True\nsecond_call_no_additional_rewrite=True\nconfig_restored=True\nnative_kernel_executed=False\nartifact_dir=C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part3_real_stage_hooks\n",
+      "stdout_key_values": {
+        "actual_torch_compile_stage_hook_executed": "True",
+        "artifact_dir": "C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part3_real_stage_hooks",
+        "config_restored": "True",
+        "native_kernel_executed": "False",
+        "pass_second_run_graph_unchanged": "True",
+        "pass_second_run_zero_rewrites": "True",
+        "post_correct_stage_hits": "1",
+        "post_forward_matches": "True",
+        "post_gradient_matches": "True",
+        "post_wrong_stage_hits": "0",
+        "pre_correct_stage_hits": "1",
+        "pre_forward_matches": "True",
+        "pre_gradient_matches": "True",
+        "pre_wrong_stage_hits": "0",
+        "second_call_no_additional_rewrite": "True",
+        "second_call_no_recompile": "True"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part4_inductor.py"
+      ],
+      "exit_code": 0,
+      "script": "part4_inductor.py",
+      "script_sha256": "61071032c5e763bc3ea773b0e7f6e0b12d6c454aee6b3b8f83f47a94da2d33a8",
+      "stderr": "",
+      "stdout": "pointwise_inductor_status=blocked_missing_msvc_cl\nmatmul_output_matches=True\nmatmul_generated_kernels=0\ntriton_autotune_tested=False\n",
+      "stdout_key_values": {
+        "matmul_generated_kernels": "0",
+        "matmul_output_matches": "True",
+        "pointwise_inductor_status": "blocked_missing_msvc_cl",
+        "triton_autotune_tested": "False"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part4_ir_scheduler_analysis.py",
+        "--output-dir",
+        "C:\\Users\\suhaibo\\AppData\\Local\\Temp\\course_runtime_observations_g5o1aija\\part4_ir"
+      ],
+      "exit_code": 0,
+      "script": "part4_ir_scheduler_analysis.py",
+      "script_sha256": "2f9f85b3dc5beec5ecee14f69c55b736275066886921fa41a2d9966fdb03de96",
+      "stderr": "",
+      "stdout": "elementwise_ir_observed=True\nbroadcast_index_observed=True\ntranspose_view_observed=True\ncopy_buffer_observed=True\nreduction_ir_observed=True\nmatmul_extern_observed=True\ndependency_edges_recorded=True\nfusion_toggle_observed=True\nreorder_comparison_recorded=True\nreorder_effect_observed=True\nstatic_peak_estimate_recorded=True\nnative_kernel_performance_tested=False\nartifact_dir=C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part4_ir\n",
+      "stdout_key_values": {
+        "artifact_dir": "C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part4_ir",
+        "broadcast_index_observed": "True",
+        "copy_buffer_observed": "True",
+        "dependency_edges_recorded": "True",
+        "elementwise_ir_observed": "True",
+        "fusion_toggle_observed": "True",
+        "matmul_extern_observed": "True",
+        "native_kernel_performance_tested": "False",
+        "reduction_ir_observed": "True",
+        "reorder_comparison_recorded": "True",
+        "reorder_effect_observed": "True",
+        "static_peak_estimate_recorded": "True",
+        "transpose_view_observed": "True"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\part4_artifact_bundle.py",
+        "--output-dir",
+        "C:\\Users\\suhaibo\\AppData\\Local\\Temp\\course_runtime_observations_g5o1aija\\part4"
+      ],
+      "exit_code": 0,
+      "script": "part4_artifact_bundle.py",
+      "script_sha256": "397923c88d33ff0ca8bcf61a244d2757b09f9b2886c8b940f1a998b9187966b8",
+      "stderr": "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\torch\\_dynamo\\pgo.py:537: UserWarning: dynamo_pgo force disabled by torch.compiler.config.force_disable_caches\n  warn_once(\nW0728 15:46:15.313000 22676 site-packages\\torch\\_inductor\\debug.py:507] [0/0] model__1_inference_1 debug trace: C:\\Users\\suhaibo\\AppData\\Local\\Temp\\graph_series_real_trace_027valp2\\trace\\torchinductor\\model__1_inference_1.0\nC:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\torch\\_dynamo\\pgo.py:537: UserWarning: dynamo_pgo force disabled by torch.compiler.config.force_disable_caches\n  warn_once(\nC:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\torch\\_inductor\\lowering.py:1988: UserWarning: Torchinductor does not support code generation for complex operators. Performance may be worse than eager.\n  warnings.warn(\nW0728 15:46:15.548000 22676 site-packages\\torch\\_inductor\\debug.py:507] [0/0] model__2_inference_2 debug trace: C:\\Users\\suhaibo\\AppData\\Local\\Temp\\graph_series_real_trace_xexmi59t\\trace\\torchinductor\\model__2_inference_2.1\nC:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\torch\\_dynamo\\pgo.py:537: UserWarning: dynamo_pgo force disabled by torch.compiler.config.force_disable_caches\n  warn_once(\nW0728 15:46:16.055000 22676 site-packages\\torch\\_inductor\\debug.py:507] [0/0] model__3_inference_3 debug trace: C:\\Users\\suhaibo\\AppData\\Local\\Temp\\graph_series_codegen_siix5e93\\trace\\torchinductor\\model__3_inference_3.2\nC:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\torch\\_dynamo\\pgo.py:537: UserWarning: dynamo_pgo force disabled by torch.compiler.config.force_disable_caches\n  warn_once(\nW0728 15:46:16.187000 22676 site-packages\\torch\\_inductor\\debug.py:507] [0/0] model__4_inference_4 debug trace: C:\\Users\\suhaibo\\AppData\\Local\\Temp\\graph_series_codegen_p_ex0an1\\trace\\torchinductor\\model__4_inference_4.3\nC:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\torch\\_dynamo\\pgo.py:537: UserWarning: dynamo_pgo force disabled by torch.compiler.config.force_disable_caches\n  warn_once(\nW0728 15:46:16.311000 22676 site-packages\\torch\\_inductor\\debug.py:507] [0/0] model__5_inference_5 debug trace: C:\\Users\\suhaibo\\AppData\\Local\\Temp\\graph_series_codegen_x_9b60n2\\trace\\torchinductor\\model__5_inference_5.4\n",
+      "stdout": "external_matmul_execution=True\nfallback_eigvals_execution=True\nfallback_trace_captured=True\nfallback_wrapper_observed=True\ncodegen_only_status=generated_not_executed\nreal_pointwise_compile_status=blocked_missing_msvc_cl\nfusion_enabled_has_fused_scheduler=True\nfusion_limited_has_fused_scheduler=False\nfusion_codegen_structure_changed=True\nscheduler_to_fx_provenance_observed=True\nkernel_to_fx_provenance_observed=True\nfx_to_python_source_observed=True\nscheduler_kernel_source_chain_observed=True\ncustom_lowering_reached_ir=True\ntriton_autotune_tested=False\nartifact_dir=C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part4\n",
+      "stdout_key_values": {
+        "artifact_dir": "C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/part4",
+        "codegen_only_status": "generated_not_executed",
+        "custom_lowering_reached_ir": "True",
+        "external_matmul_execution": "True",
+        "fallback_eigvals_execution": "True",
+        "fallback_trace_captured": "True",
+        "fallback_wrapper_observed": "True",
+        "fusion_codegen_structure_changed": "True",
+        "fusion_enabled_has_fused_scheduler": "True",
+        "fusion_limited_has_fused_scheduler": "False",
+        "fx_to_python_source_observed": "True",
+        "kernel_to_fx_provenance_observed": "True",
+        "real_pointwise_compile_status": "blocked_missing_msvc_cl",
+        "scheduler_kernel_source_chain_observed": "True",
+        "scheduler_to_fx_provenance_observed": "True",
+        "triton_autotune_tested": "False"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    },
+    {
+      "command": [
+        "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "-B",
+        "E:\\97-codes\\torch_parallel\\llm-knowledge\\wiki\\02_engineering\\01_ai_frameworks\\19_torch_compile_end_to_end\\labs\\series_artifact_bundle.py",
+        "--output-dir",
+        "C:\\Users\\suhaibo\\AppData\\Local\\Temp\\course_runtime_observations_g5o1aija\\end_to_end"
+      ],
+      "exit_code": 0,
+      "script": "series_artifact_bundle.py",
+      "script_sha256": "df17a112ac8412d9a4f0f8421df03733470d24cd253a7eaf72b52ff8d58423a3",
+      "stderr": "E0728 15:46:22.720000 17024 site-packages\\torch\\export\\_trace.py:1142] always_classified is unsupported.\nE0728 15:46:22.720000 17024 site-packages\\torch\\export\\_trace.py:1142] always_classified is unsupported.\nC:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\torch\\_dynamo\\pgo.py:537: UserWarning: dynamo_pgo force disabled by torch.compiler.config.force_disable_caches\n  warn_once(\nW0728 15:46:23.465000 17024 site-packages\\torch\\_inductor\\debug.py:507] [0/0] model__1_inference_4 debug trace: C:\\Users\\suhaibo\\AppData\\Local\\Temp\\graph_series_codegen_hs6a1o6p\\trace\\torchinductor\\model__1_inference_4.0\n",
+      "stdout": "forward_matches=True\ngradient_matches=True\ndynamic_export_has_range_constraints=True\nexport_out_of_range_rejected=True\naot_has_joint_forward_backward=True\naot_cross_graph_node_refs=0\naot_joint_partition_mapping_exact=True\naot_partition_to_compiler_callback_continuity=True\naot_saved_slot_binding_origins_match=True\nartifact_bundle_continuity=partial\nbackend_codegen_status=generated_not_executed\nhop_branch_captured=True\nhop_invalid_branch_rejected=True\nartifact_dir=C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/end_to_end\n",
+      "stdout_key_values": {
+        "aot_cross_graph_node_refs": "0",
+        "aot_has_joint_forward_backward": "True",
+        "aot_joint_partition_mapping_exact": "True",
+        "aot_partition_to_compiler_callback_continuity": "True",
+        "aot_saved_slot_binding_origins_match": "True",
+        "artifact_bundle_continuity": "partial",
+        "artifact_dir": "C:/Users/suhaibo/AppData/Local/Temp/course_runtime_observations_g5o1aija/end_to_end",
+        "backend_codegen_status": "generated_not_executed",
+        "dynamic_export_has_range_constraints": "True",
+        "export_out_of_range_rejected": "True",
+        "forward_matches": "True",
+        "gradient_matches": "True",
+        "hop_branch_captured": "True",
+        "hop_invalid_branch_rejected": "True"
+      },
+      "working_directory": "E:\\97-codes\\torch_parallel\\llm-knowledge"
+    }
+  ],
+  "runtime_environment": {
+    "cuda_available": false,
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python_executable": "C:\\Users\\suhaibo\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+    "python_version": "3.13.5",
+    "torch_git_version": "5811a8d7da873dd699ff6687092c225caffcf1bb",
+    "torch_version": "2.9.1+cpu"
+  },
+  "schema_version": "course-runtime-observations/v1",
+  "script_count": 21,
+  "status": "passed"
+}

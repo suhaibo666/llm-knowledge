@@ -1,0 +1,1147 @@
+{
+  "mapping_kind": "instrumented exact old-to-new mapping for one default_partition call",
+  "mapping_scope": "joint GraphModule to the fresh forward/backward GraphModules returned by the same partition_fn invocation, before compiler callbacks",
+  "instrumentation": {
+    "meta_key": "graph_series_joint_origin_id",
+    "injected_before_default_partition": true,
+    "collected_immediately_after_default_partition": true,
+    "production_schema_key": false,
+    "does_not_match_by_node_name": true
+  },
+  "source_semantics": "Graph.node_copy copies node.meta and partition-created placeholders inherit source meta; the audit token observes that extraction path.",
+  "entries": [
+    {
+      "origin_id": "joint:0:primals_1",
+      "joint_node": {
+        "name": "primals_1",
+        "op": "placeholder",
+        "target": "primals_1"
+      },
+      "destinations": [
+        {
+          "stage": "partition_forward",
+          "name": "primals_1",
+          "op": "placeholder",
+          "target": "primals_1",
+          "origin_token_observed": "joint:0:primals_1",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        },
+        {
+          "stage": "partition_backward",
+          "name": "primals_1",
+          "op": "placeholder",
+          "target": "primals_1",
+          "origin_token_observed": "joint:0:primals_1",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": true,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "forward_compiler_callback",
+          "name": "primals_1",
+          "op": "placeholder",
+          "target": "primals_1",
+          "origin_token_observed": "joint:0:primals_1",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": true
+        },
+        {
+          "stage": "backward_compiler_callback",
+          "name": "primals_1",
+          "op": "placeholder",
+          "target": "primals_1",
+          "origin_token_observed": "joint:0:primals_1",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:1:primals_2",
+      "joint_node": {
+        "name": "primals_2",
+        "op": "placeholder",
+        "target": "primals_2"
+      },
+      "destinations": [
+        {
+          "stage": "partition_forward",
+          "name": "primals_2",
+          "op": "placeholder",
+          "target": "primals_2",
+          "origin_token_observed": "joint:1:primals_2",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": true,
+      "present_in_backward": false,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "forward_compiler_callback",
+          "name": "primals_2",
+          "op": "placeholder",
+          "target": "primals_2",
+          "origin_token_observed": "joint:1:primals_2",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": true
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:2:primals_3",
+      "joint_node": {
+        "name": "primals_3",
+        "op": "placeholder",
+        "target": "primals_3"
+      },
+      "destinations": [
+        {
+          "stage": "partition_forward",
+          "name": "primals_3",
+          "op": "placeholder",
+          "target": "primals_3",
+          "origin_token_observed": "joint:2:primals_3",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": true,
+      "present_in_backward": false,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "forward_compiler_callback",
+          "name": "primals_3",
+          "op": "placeholder",
+          "target": "primals_3",
+          "origin_token_observed": "joint:2:primals_3",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": true
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:3:tangents_1",
+      "joint_node": {
+        "name": "tangents_1",
+        "op": "placeholder",
+        "target": "tangents_1"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "tangents_1",
+          "op": "placeholder",
+          "target": "tangents_1",
+          "origin_token_observed": "joint:3:tangents_1",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "tangents_1",
+          "op": "placeholder",
+          "target": "tangents_1",
+          "origin_token_observed": "joint:3:tangents_1",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:4:tangents_2",
+      "joint_node": {
+        "name": "tangents_2",
+        "op": "placeholder",
+        "target": "tangents_2"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "tangents_2",
+          "op": "placeholder",
+          "target": "tangents_2",
+          "origin_token_observed": "joint:4:tangents_2",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "tangents_2",
+          "op": "placeholder",
+          "target": "tangents_2",
+          "origin_token_observed": "joint:4:tangents_2",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:5:view",
+      "joint_node": {
+        "name": "view",
+        "op": "call_function",
+        "target": "aten.view.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_forward",
+          "name": "view",
+          "op": "call_function",
+          "target": "aten.view.default",
+          "origin_token_observed": "joint:5:view",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        },
+        {
+          "stage": "partition_backward",
+          "name": "view",
+          "op": "placeholder",
+          "target": "view",
+          "origin_token_observed": "joint:5:view",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": true,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "forward_compiler_callback",
+          "name": "view",
+          "op": "call_function",
+          "target": "aten.view.default",
+          "origin_token_observed": "joint:5:view",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": true
+        },
+        {
+          "stage": "backward_compiler_callback",
+          "name": "view",
+          "op": "placeholder",
+          "target": "view",
+          "origin_token_observed": "joint:5:view",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:6:mm",
+      "joint_node": {
+        "name": "mm",
+        "op": "call_function",
+        "target": "aten.mm.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_forward",
+          "name": "mm",
+          "op": "call_function",
+          "target": "aten.mm.default",
+          "origin_token_observed": "joint:6:mm",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": true,
+      "present_in_backward": false,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "forward_compiler_callback",
+          "name": "mm",
+          "op": "call_function",
+          "target": "aten.mm.default",
+          "origin_token_observed": "joint:6:mm",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": true
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:7:add",
+      "joint_node": {
+        "name": "add",
+        "op": "call_function",
+        "target": "aten.add.Tensor"
+      },
+      "destinations": [
+        {
+          "stage": "partition_forward",
+          "name": "add",
+          "op": "call_function",
+          "target": "aten.add.Tensor",
+          "origin_token_observed": "joint:7:add",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": true,
+      "present_in_backward": false,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "forward_compiler_callback",
+          "name": "add",
+          "op": "call_function",
+          "target": "aten.add.Tensor",
+          "origin_token_observed": "joint:7:add",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": true
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:8:clone",
+      "joint_node": {
+        "name": "clone",
+        "op": "call_function",
+        "target": "aten.clone.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_forward",
+          "name": "clone",
+          "op": "call_function",
+          "target": "aten.clone.default",
+          "origin_token_observed": "joint:8:clone",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": true,
+      "present_in_backward": false,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "forward_compiler_callback",
+          "name": "clone",
+          "op": "call_function",
+          "target": "aten.clone.default",
+          "origin_token_observed": "joint:8:clone",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": true
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:9:view_1",
+      "joint_node": {
+        "name": "view_1",
+        "op": "call_function",
+        "target": "aten.view.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_forward",
+          "name": "view_1",
+          "op": "call_function",
+          "target": "aten.view.default",
+          "origin_token_observed": "joint:9:view_1",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": true,
+      "present_in_backward": false,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "forward_compiler_callback",
+          "name": "view_1",
+          "op": "call_function",
+          "target": "aten.view.default",
+          "origin_token_observed": "joint:9:view_1",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": true
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:10:add_1",
+      "joint_node": {
+        "name": "add_1",
+        "op": "call_function",
+        "target": "aten.add.Tensor"
+      },
+      "destinations": [
+        {
+          "stage": "partition_forward",
+          "name": "add_1",
+          "op": "call_function",
+          "target": "aten.add.Tensor",
+          "origin_token_observed": "joint:10:add_1",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": true,
+      "present_in_backward": false,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "forward_compiler_callback",
+          "name": "add_1",
+          "op": "call_function",
+          "target": "aten.add.Tensor",
+          "origin_token_observed": "joint:10:add_1",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": true
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:11:view_2",
+      "joint_node": {
+        "name": "view_2",
+        "op": "call_function",
+        "target": "aten.view.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_forward",
+          "name": "view_2",
+          "op": "call_function",
+          "target": "aten.view.default",
+          "origin_token_observed": "joint:11:view_2",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        },
+        {
+          "stage": "partition_backward",
+          "name": "view_2",
+          "op": "placeholder",
+          "target": "view_2",
+          "origin_token_observed": "joint:11:view_2",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": true,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "forward_compiler_callback",
+          "name": "view_2",
+          "op": "call_function",
+          "target": "aten.view.default",
+          "origin_token_observed": "joint:11:view_2",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": true
+        },
+        {
+          "stage": "backward_compiler_callback",
+          "name": "view_2",
+          "op": "placeholder",
+          "target": "view_2",
+          "origin_token_observed": "joint:11:view_2",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:12:sin",
+      "joint_node": {
+        "name": "sin",
+        "op": "call_function",
+        "target": "aten.sin.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_forward",
+          "name": "sin",
+          "op": "call_function",
+          "target": "aten.sin.default",
+          "origin_token_observed": "joint:12:sin",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": true,
+      "present_in_backward": false,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "forward_compiler_callback",
+          "name": "sin",
+          "op": "call_function",
+          "target": "aten.sin.default",
+          "origin_token_observed": "joint:12:sin",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": true
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:13:sum_1",
+      "joint_node": {
+        "name": "sum_1",
+        "op": "call_function",
+        "target": "aten.sum.dim_IntList"
+      },
+      "destinations": [
+        {
+          "stage": "partition_forward",
+          "name": "sum_1",
+          "op": "call_function",
+          "target": "aten.sum.dim_IntList",
+          "origin_token_observed": "joint:13:sum_1",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": true,
+      "present_in_backward": false,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "forward_compiler_callback",
+          "name": "sum_1",
+          "op": "call_function",
+          "target": "aten.sum.dim_IntList",
+          "origin_token_observed": "joint:13:sum_1",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": true
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:14:unsqueeze",
+      "joint_node": {
+        "name": "unsqueeze",
+        "op": "call_function",
+        "target": "aten.unsqueeze.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "unsqueeze",
+          "op": "call_function",
+          "target": "aten.unsqueeze.default",
+          "origin_token_observed": "joint:14:unsqueeze",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "unsqueeze",
+          "op": "call_function",
+          "target": "aten.unsqueeze.default",
+          "origin_token_observed": "joint:14:unsqueeze",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:15:expand",
+      "joint_node": {
+        "name": "expand",
+        "op": "call_function",
+        "target": "aten.expand.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "expand",
+          "op": "call_function",
+          "target": "aten.expand.default",
+          "origin_token_observed": "joint:15:expand",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "expand",
+          "op": "call_function",
+          "target": "aten.expand.default",
+          "origin_token_observed": "joint:15:expand",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:16:add_2",
+      "joint_node": {
+        "name": "add_2",
+        "op": "call_function",
+        "target": "aten.add.Tensor"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "add_2",
+          "op": "call_function",
+          "target": "aten.add.Tensor",
+          "origin_token_observed": "joint:16:add_2",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "add_2",
+          "op": "call_function",
+          "target": "aten.add.Tensor",
+          "origin_token_observed": "joint:16:add_2",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:17:cos",
+      "joint_node": {
+        "name": "cos",
+        "op": "call_function",
+        "target": "aten.cos.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "cos",
+          "op": "call_function",
+          "target": "aten.cos.default",
+          "origin_token_observed": "joint:17:cos",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "cos",
+          "op": "call_function",
+          "target": "aten.cos.default",
+          "origin_token_observed": "joint:17:cos",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:18:mul",
+      "joint_node": {
+        "name": "mul",
+        "op": "call_function",
+        "target": "aten.mul.Tensor"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "mul",
+          "op": "call_function",
+          "target": "aten.mul.Tensor",
+          "origin_token_observed": "joint:18:mul",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "mul",
+          "op": "call_function",
+          "target": "aten.mul.Tensor",
+          "origin_token_observed": "joint:18:mul",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:19:new_empty_strided",
+      "joint_node": {
+        "name": "new_empty_strided",
+        "op": "call_function",
+        "target": "aten.new_empty_strided.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "new_empty_strided",
+          "op": "call_function",
+          "target": "aten.new_empty_strided.default",
+          "origin_token_observed": "joint:19:new_empty_strided",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "new_empty_strided",
+          "op": "call_function",
+          "target": "aten.new_empty_strided.default",
+          "origin_token_observed": "joint:19:new_empty_strided",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:20:copy",
+      "joint_node": {
+        "name": "copy",
+        "op": "call_function",
+        "target": "aten.copy.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "copy",
+          "op": "call_function",
+          "target": "aten.copy.default",
+          "origin_token_observed": "joint:20:copy",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "copy",
+          "op": "call_function",
+          "target": "aten.copy.default",
+          "origin_token_observed": "joint:20:copy",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:21:view_6",
+      "joint_node": {
+        "name": "view_6",
+        "op": "call_function",
+        "target": "aten.view.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "view_6",
+          "op": "call_function",
+          "target": "aten.view.default",
+          "origin_token_observed": "joint:21:view_6",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "view_6",
+          "op": "call_function",
+          "target": "aten.view.default",
+          "origin_token_observed": "joint:21:view_6",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:22:clone_1",
+      "joint_node": {
+        "name": "clone_1",
+        "op": "call_function",
+        "target": "aten.clone.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "clone_1",
+          "op": "call_function",
+          "target": "aten.clone.default",
+          "origin_token_observed": "joint:22:clone_1",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "clone_1",
+          "op": "call_function",
+          "target": "aten.clone.default",
+          "origin_token_observed": "joint:22:clone_1",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:23:copy_1",
+      "joint_node": {
+        "name": "copy_1",
+        "op": "call_function",
+        "target": "aten.copy.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "copy_1",
+          "op": "call_function",
+          "target": "aten.copy.default",
+          "origin_token_observed": "joint:23:copy_1",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "copy_1",
+          "op": "call_function",
+          "target": "aten.copy.default",
+          "origin_token_observed": "joint:23:copy_1",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:24:view_7",
+      "joint_node": {
+        "name": "view_7",
+        "op": "call_function",
+        "target": "aten.view.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "view_7",
+          "op": "call_function",
+          "target": "aten.view.default",
+          "origin_token_observed": "joint:24:view_7",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "view_7",
+          "op": "call_function",
+          "target": "aten.view.default",
+          "origin_token_observed": "joint:24:view_7",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:25:t",
+      "joint_node": {
+        "name": "t",
+        "op": "call_function",
+        "target": "aten.t.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "t",
+          "op": "call_function",
+          "target": "aten.t.default",
+          "origin_token_observed": "joint:25:t",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "t",
+          "op": "call_function",
+          "target": "aten.t.default",
+          "origin_token_observed": "joint:25:t",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:26:mm_1",
+      "joint_node": {
+        "name": "mm_1",
+        "op": "call_function",
+        "target": "aten.mm.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "mm_1",
+          "op": "call_function",
+          "target": "aten.mm.default",
+          "origin_token_observed": "joint:26:mm_1",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "mm_1",
+          "op": "call_function",
+          "target": "aten.mm.default",
+          "origin_token_observed": "joint:26:mm_1",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:27:t_1",
+      "joint_node": {
+        "name": "t_1",
+        "op": "call_function",
+        "target": "aten.t.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "t_1",
+          "op": "call_function",
+          "target": "aten.t.default",
+          "origin_token_observed": "joint:27:t_1",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "t_1",
+          "op": "call_function",
+          "target": "aten.t.default",
+          "origin_token_observed": "joint:27:t_1",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:28:mm_2",
+      "joint_node": {
+        "name": "mm_2",
+        "op": "call_function",
+        "target": "aten.mm.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "mm_2",
+          "op": "call_function",
+          "target": "aten.mm.default",
+          "origin_token_observed": "joint:28:mm_2",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "mm_2",
+          "op": "call_function",
+          "target": "aten.mm.default",
+          "origin_token_observed": "joint:28:mm_2",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:29:view_9",
+      "joint_node": {
+        "name": "view_9",
+        "op": "call_function",
+        "target": "aten.view.default"
+      },
+      "destinations": [
+        {
+          "stage": "partition_backward",
+          "name": "view_9",
+          "op": "call_function",
+          "target": "aten.view.default",
+          "origin_token_observed": "joint:29:view_9",
+          "python_object_identity_preserved": false,
+          "owner_graph_preserved": false
+        }
+      ],
+      "present_in_forward": false,
+      "present_in_backward": true,
+      "mapping_mechanism": "audit origin token propagated while partition extraction created a fresh placeholder or copied the node",
+      "compiler_callback_destinations": [
+        {
+          "stage": "backward_compiler_callback",
+          "name": "view_9",
+          "op": "call_function",
+          "target": "aten.view.default",
+          "origin_token_observed": "joint:29:view_9",
+          "python_object_identity_preserved_from_joint": false,
+          "owner_graph_preserved_from_joint": false,
+          "same_python_object_as_partition_destination": false
+        }
+      ]
+    },
+    {
+      "origin_id": "joint:30:output",
+      "joint_node": {
+        "name": "output",
+        "op": "output",
+        "target": "output"
+      },
+      "destinations": [],
+      "present_in_forward": false,
+      "present_in_backward": false,
+      "mapping_mechanism": "the extracted graph creates a fresh output node from mapped output values; the joint output node itself is not node_copy'd",
+      "compiler_callback_destinations": []
+    }
+  ],
+  "summary": {
+    "joint_node_count": 31,
+    "mapped_joint_node_count": 30,
+    "unmapped_or_rebuilt_joint_node_count": 1,
+    "joint_output_node_count": 1,
+    "unmapped_non_output_joint_node_count": 0,
+    "mapped_to_forward_count": 12,
+    "mapped_to_backward_count": 21,
+    "mapped_to_both_graphs_count": 3,
+    "forward_destination_node_count": 12,
+    "backward_destination_node_count": 21,
+    "forward_compiler_callback_node_count": 12,
+    "backward_compiler_callback_node_count": 21
+  },
+  "unknown_origin_tokens": [],
+  "exact_mapping_checks": {
+    "no_unknown_origin_tokens": true,
+    "all_mapped_destination_tokens_match_joint_sources": true,
+    "all_mapped_destination_objects_are_fresh": true,
+    "all_mapped_destination_graph_owners_are_fresh": true,
+    "joint_has_exactly_one_structurally_rebuilt_output": true
+  },
+  "limitations": [
+    "The token is lab-only instrumentation and is not a supported PyTorch provenance schema.",
+    "The fresh output Node is structural glue and is intentionally not represented as a node_copy destination.",
+    "This run does not exercise control_deps see-through/remapping special cases in the extraction helper."
+  ],
+  "compiler_callback_unknown_origin_tokens": [],
+  "compiler_callback_mapping_checks": {
+    "no_unknown_origin_tokens_at_compiler_callbacks": true,
+    "all_compiler_callback_nodes_are_fresh_from_joint": true,
+    "all_compiler_callback_graph_owners_are_fresh_from_joint": true
+  },
+  "compiler_callback_continuity": {
+    "same_aot_module_invocation": true,
+    "forward_partition_module_is_compiler_callback_module": true,
+    "backward_partition_module_is_compiler_callback_module": false,
+    "forward_partition_graph_is_compiler_callback_graph": true,
+    "backward_partition_graph_is_compiler_callback_graph": false,
+    "forward_origin_tokens_preserved_to_compiler_callback": true,
+    "backward_origin_tokens_preserved_to_compiler_callback": true,
+    "continuity_verified": true
+  }
+}
