@@ -30,7 +30,7 @@
 | MoE | **Stable LatentMoE,896 专家选 16**(稀疏度 56) | K2：384 选 8 + 1 共享(稀疏度 48) | 报告 §2.3，pp.6–8；Table 1，p.11 |
 | 注意力 | **KDA : Gated MLA = 3:1 混合** | K2：纯 MLA(61 层) | 报告 §2.1，pp.3–6；Table 1，p.11 |
 | 跨层连接 | **AttnRes**(深度方向 softmax 注意力) | K2：标准残差 | 报告 §2.2，p.6；Table 1，p.11 |
-| 上下文 | **1M 原生** | K2.5：256K | 报告 Table 1，p.11；§3.4，p.12；[[kimi_k2.5_analysis]] §1.1 |
+| 上下文 | **1M 原生** | K2.5：256K | 报告 §3.4，p.12；[[kimi_k2.5_analysis]] §1.1 |
 | 模态 | 原生文本/图像/**视频**同模型 | K2.5：原生视觉(MoonViT-3D) | 报告 §2.4，pp.9–10；[[kimi_k2.5_analysis]] §1.3 |
 | 量化 | **MXFP4 routed-expert 权重 + MXFP8 输入激活，SFT/RL 全程 QAT** | K2.5：INT4 post-training QAT | 报告 §4.1.4，p.14；[[kimi_k2.5_analysis]] |
 | 训练稳定性组件 | Per-Head Muon、Quantile Balancing、SiTU | K2：MuonClip | 报告 §2.3、§2.5，pp.6–11；[[kimi_k2_analysis]] |
