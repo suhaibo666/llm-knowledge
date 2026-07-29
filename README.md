@@ -2,41 +2,25 @@
 
 LLM 训练与推理技术知识库，由 Claude Code Agent 维护。
 
-## 规模
-
-- **99** 篇原始论文（`raw/`）
-- **102** 个 Wiki 页面（`wiki/`）
-
 ## 结构
 
 ```
-raw/  和  wiki/  目录镜像
-├── 01_theory/                  # 理论研究
-│   ├── 01_models/              # 模型架构 + 模型家族 (DeepSeek/Kimi/GLM)
-│   ├── 02_pretraining/         # 预训练：优化器、低精度、初始化
-│   ├── 03_sft/                 # SFT + 低参微调 (LoRA/PEFT)
-│   ├── 04_posttraining/        # 后训练对齐：RLHF、DPO、GRPO
-│   └── 05_inference/           # 推理技术：CoT、RAG、Agent
-└── 02_engineering/             # 工程实现
-    ├── 01_ai_frameworks/       # AI框架：PyTorch compile、CUDA Graphs
-    ├── 02_train_frameworks/    # 训练框架：Megatron-LM、分布式
-    ├── 03_infer_frameworks/    # 推理框架：vLLM、TRT-LLM
-    └── 04_posttrain_frameworks/ # 后训练框架 (预留)
+raw/            # 原始源材料（论文 PDF / 文章 / 图表源），只读
+wiki/           # 生成的分析页（Obsidian vault）
+├── 01_theory/        # 理论：模型家族 / 预训练 / SFT / 后训练对齐 / 推理技术 / 分布式并行
+├── 02_engineering/   # 工程：AI框架 / 训练框架 / 推理框架 / 后训练框架 / GPU Kernel / 自动并行 / 训练可靠性
+└── 03_posttraining/  # 后训练纵向学习域（整改中：将并入功能树，阅读路线迁往 wiki/courses/）
+docs/           # 流程文档（specs / plans / research）
+tools/          # 维护工具（链接检查器、图表源与再生脚本、demo）
 ```
+
+各域页面清单见 [wiki/index.md](wiki/index.md)。
 
 ## 使用
 
-知识页面之间通过 `[[wiki link]]` 交叉引用，支持 Obsidian 打开浏览。
-
-```
-cd llm-knowledge
-claude       # 启动后直接提问，Agent 自动检索 wiki
-```
+页面间用 `[[wiki link]]` 交叉引用，Obsidian 打开 `wiki/` 浏览；或 `cd llm-knowledge && claude` 直接提问。
 
 ## 维护
 
-由 Claude Code Agent 按 [CLAUDE.md](CLAUDE.md) 中定义的 Ingest Workflow 自动维护：
-
-1. 新论文放入 `raw/` → Agent 自动读取并生成 wiki 页面
-2. 更新领域 `index.md` 索引
-3. 追加 `changelog.md` 记录
+按 [CLAUDE.md](CLAUDE.md) 定义的 Workflow 由 Agent 维护。当前结构整改：
+`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md`。

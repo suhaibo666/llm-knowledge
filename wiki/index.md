@@ -6,53 +6,7 @@
 
 ## 目录结构
 
-```
-wiki/
-├── index.md                           # ← 本文件
-├── changelog.md                       # 变更日志
-├── 01_theory/                         # 理论研究
-│   ├── 01_models/                     # 模型架构 + 模型家族
-│   │   ├── index.md
-│   │   ├── deepseek/
-│   │   ├── moonshot_kimi/
-│   │   └── zhipu_glm/
-│   ├── 02_pretraining/                # 预训练技术
-│   ├── 03_sft/                        # SFT + 低参微调
-│   ├── 04_posttraining/               # 后训练对齐 (RLHF/DPO/GRPO)
-│   └── 05_inference/                  # 推理技术 (CoT/RAG/Agent)
-├── 02_engineering/                    # 工程实现
-│   ├── 01_ai_frameworks/              # AI框架 (PyTorch compile)
-│   │   ├── cudagraphs/
-│   │   ├── inductor/
-│   │   └── mlir/
-│   ├── 02_train_frameworks/           # 训练框架 (Megatron-LM / torchtitan / MindFormers / MindSpeed)
-│   │   ├── megatron-lm/
-│   │   ├── torchtitan/
-│   │   ├── mindformers/               # MoE 专家并行(PyNative + Graph)
-│   │   └── mindspeed/                 # 昇腾 MindSpeed 训练加速特性(并行/掩盖/内存/亲和)
-│   ├── 03_infer_frameworks/           # 推理框架
-│   │   └── vllm/                       # vLLM V1 引擎(12 篇 + index)
-│   ├── 04_posttrain_frameworks/       # 后训练框架 (verl / RLHF Infra)
-│   │   └── verl/                      # verl (HybridFlow) 源码级分析
-│   ├── 05_gpu_kernel/                 # GPU/NPU Kernel 工程 (含 triton/ 学习路线)
-│   ├── 06_auto_parallel/             # 自动并行策略搜索(综述罗盘)
-│   └── 07_training_reliability/       # 万卡训练确定性与可靠性(9 问题域·多来源综述)
-└── 03_posttraining/                   # 后训练纵向学习域 (算法 + Infra + 工业源码 + CUDA/Ascend)
-    ├── index.md                       # 领域入口与 S00–S05 阶段
-    ├── 00_posttraining_source_reading_guide.md
-    ├── 01_posttraining_frontier_map_analysis.md
-    ├── 02_reasoning_rl_algorithm_evolution_analysis.md
-    ├── 03_agentic_rl_algorithm_analysis.md
-    ├── 04_on_policy_off_policy_staleness_analysis.md
-    ├── 05_posttraining_infra_mechanism_analysis.md
-    ├── 06_framework_comparison.md
-    ├── 07_verl_end_to_end_iteration_analysis.md
-    ├── 08_slime_architecture_analysis.md
-    ├── 09_areal_async_architecture_analysis.md
-    ├── 10_roll_strategy_and_ascend_analysis.md
-    ├── 11_cuda_ascend_posttraining_stack_comparison.md
-    └── 12_kimi_k3_posttraining_case_study_analysis.md
-```
+目录结构以文件系统与各域 index 为准；本索引只维护下方领域总览。
 
 ---
 
@@ -71,12 +25,13 @@ wiki/
 | SFT & 低参微调 | [[01_theory/03_sft/index]] | 0 | 待建设 |
 | 后训练对齐 | [[01_theory/04_posttraining/index]] | 14 | 活跃 |
 | 推理技术 | [[01_theory/05_inference/index]] | 1 | 待建设 |
+| 分布式并行理论 | [[01_theory/06_distributed_parallelism/index]] | 8 | 活跃 |
 
 ### 02 工程实现
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| AI框架 | [[02_engineering/01_ai_frameworks/index]] | 45 | 活跃 |
+| AI框架 | [[02_engineering/01_ai_frameworks/index]] | 178 | 活跃 |
 | └─ TorchInductor | [[02_engineering/01_ai_frameworks/04_inductor/index]] | 21 | 活跃 |
 | └─ 运行时图(CUDA/NPU) | [[02_engineering/01_ai_frameworks/06_graphs/index]] | 10 | 活跃 |
 | └─ Codegen 后端(MLIR) | [[02_engineering/01_ai_frameworks/05_codegen_backends/mlir/index]] | 4 | 活跃 |
