@@ -1,6 +1,6 @@
 # LLM Knowledge Wiki — 知识库总索引
 
-> 最后更新: 2026-07-29
+> 最后更新: 2026-07-30
 
 ---
 
@@ -33,9 +33,9 @@
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| AI框架 | [[02_engineering/01_ai_frameworks/index]] | 178 | 活跃 |
+| AI框架 | [[02_engineering/01_ai_frameworks/index]] | 174 | 活跃 |
 | └─ TorchInductor | [[02_engineering/01_ai_frameworks/04_inductor/index]] | 39 | 活跃 |
-| └─ 运行时图(CUDA/NPU) | [[02_engineering/01_ai_frameworks/06_graphs/index]] | 14 | 活跃 |
+| └─ 运行时图(CUDA/NPU) | [[02_engineering/01_ai_frameworks/06_graphs/index]] | 10 | 活跃 |
 | └─ Codegen 后端(MLIR) | [[02_engineering/01_ai_frameworks/05_codegen_backends/mlir/index]] | 8 | 活跃 |
 | 训练框架 | [[02_engineering/02_train_frameworks/index]] | 60 | 活跃 |
 | └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 30 | 活跃 |
