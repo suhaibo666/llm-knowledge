@@ -1398,6 +1398,44 @@ for _ in range(5):
     result = foo(a) + foo(a)
 ```
 
+#### 3.2.7 NPUWarmupNode.run() 的实现机制
+
+§3.2.1-3.2.4 讲的是 Warmup 在状态机里的角色（何时触发、为什么有传染性）；`NPUWarmupNode.run()` 的实际实现补上"怎么做"这一层：
+
+```python
+class NPUWarmupNode:
+    def run(self, new_inputs: List[InputType]) -> OutputType:
+        # 1. 收集当前路径上所有存活的 storage
+        existing_path_data_ptrs = {
+            t.data_ptr()
+            for t in self.path_live_weakrefs()
+            if t()
+        }
+
+        # 2. 找出非 Graph 管理的输入（需要拷贝到 pool）
+        non_npugraph_inps = []
+        for t in itertools.chain(new_inputs, self.wrapped_function.constants):
+            if (isinstance(t, torch.Tensor)
+                and t.untyped_storage().data_ptr() not in existing_path_data_ptrs):
+                non_npugraph_inps.append(weakref.ref(t.untyped_storage()))
+
+        # 3. 使用内存池执行函数
+        with _use_npu_memory_pool_manager(
+            self.device_index, self.npu_graphs_pool, self.stream
+        ):
+            out = self.wrapped_function.model(new_inputs)
+
+        # 4. 追踪输出：创建弱引用但不阻止 GC
+        self.outputs_weakrefs.extend([
+            map_to_ref(out_) if self._should_track_output(out_) else None
+            for out_ in out
+        ])
+
+        return out
+```
+
+四步依次是：① 用 `path_live_weakrefs()` 收集路径上已存活的 storage 指针；② 遍历新输入和常量，把**尚不在**已存活集合里的输入标记为 `non_npugraph_inps`（即真正"外部带入"、需要走普通内存分配的输入，而非来自树上游节点的输出）；③ 用 `_use_npu_memory_pool_manager` 上下文管理器把 eager 执行的实际分配导向 Graph 共享内存池（§3.3），使 warmup 阶段探测到的内存布局与后续录制阶段一致；④ 用 `map_to_ref` 把输出包装成弱引用记录进 `outputs_weakrefs`，但不阻止其被 GC——呼应 §3.7.2 "弱引用而不阻止 GC" 的设计。
+
 ---
 
 ### 3.3 内存池共享机制
@@ -1511,11 +1549,15 @@ class TreeManagerContainer:
 
 | 成员 | 类型 | 说明 |
 |------|------|------|
+| `register_generator_state(state)` / `register_generator_state(generator)` | 方法（2 个重载） | 注册随机数生成器状态，分别接受 `NPUGeneratorState` 智能指针或 `at::Generator` |
 | `capture_begin(pool, capture_mode, report_shape)` | 方法 | 开始捕获；`pool` 非零时复用外部共享池，否则创建私有池 |
 | `capture_end()` / `replay()` / `reset()` | 方法 | 结束捕获 / 重放 / 释放资源 |
 | `pool()` | 方法 | 返回该 Graph 关联的 `MempoolId_t` |
+| `enable_debug_mode()` | 方法 | 开启调试模式 |
+| `debug_dump(debug_path)` | 方法 | 把捕获内容 dump 到指定路径，用于排查捕获问题 |
 | `model_ri_` | `aclmdlRI` | 昇腾模型实例句柄（protected） |
 | `has_graph_exec_` | `bool` | 是否已成功捕获 |
+| `capture_id_` | `CaptureId_t` | 捕获期间分配的 ID |
 | `mempool_id_` | `MempoolId_t` | 内存池标识，`pair<uint64_t, uint64_t>` |
 | `capture_stream_` / `capture_dev_` | `NPUStream` / `int` | 捕获使用的流与设备 |
 | `captured_generator_states_` | `flat_hash_map<GeneratorState, uint64_t>` | 随机数生成器状态 → wholegraph increment 映射 |
@@ -1567,23 +1609,35 @@ struct PrivatePool {
 
 ```cpp
 struct BlockState {                // 单个内存块的状态
+    c10::DeviceIndex device = 0;
     aclrtStream stream = nullptr;
+    stream_set stream_uses = {};   // 多流场景下，还有哪些流在使用这块内存
     size_t size = 0;
     void* ptr = nullptr;
     bool allocated = false;
+    int64_t gc_count_base = 0;
+
     explicit BlockState(Block* block);
 };
 
 struct SegmentState {              // 一个 segment（连续 block 链）的状态
     std::vector<BlockState> blocks;
     bool is_small = false;
+
+    explicit SegmentState(Block* head);
 };
 
 struct PrivatePoolState : AllocatorState {  // 私有内存池的完整状态快照
     MempoolId_t owner_id = {0, 0};
     std::vector<SegmentState> segments;
+
+    PrivatePoolState(
+        MempoolId_t pool_id,
+        const std::vector<Block*>& private_pool_head_blocks);
 };
 ```
+
+`stream_uses`（多流使用追踪）对 Graph Tree 的内存系统并非平凡字段：Graph Tree 本身涉及捕获流、多个执行路径共享同一内存池（§3.3），一个 block 存在被多条流引用的可能性，快照因此需要按 block 记录这层信息，而不能只看单一 `stream`。
 
 这三个结构就是 §3.2.3 原则 3 中 `checkpointed_caching_state` 的实际内容——一份**纯结构快照**（block 划分方式 + 分配状态），不拷贝内存数据本身；§3.6 说明它如何在路径切换时被应用。
 
@@ -1609,11 +1663,19 @@ flowchart TD
     style L fill:#c8e6c9
 ```
 
+`_npu_setCheckpointPoolState`（`NPUCachingAllocator.cpp:L1893-L1941`）在 C++ 层分三步完成"回退到录制结束时的内存布局"：
+
+1. **先释放**池中当前所有 allocated blocks（`freeBlocksAllocatedToPool`）；
+2. **再按快照重建** block 结构（`setSegmentStateToCheckpoint`）；
+3. **最后释放**快照中标记为非 live 的 blocks。
+
+这三步保证了恢复后的 block 划分与录制结束时完全一致，同时通过 `live_storages` 参数保护了仍在使用的 tensor 不被步骤 1 误释放。
+
 路径切换时，内存中的 tensor 被分为三类：
 
 | 分类 | 判定方式 | 处理 |
 |------|----------|------|
-| **保留**（live） | `path_live_weakrefs()`：`StorageWeakRefWrapper`（§3.7.2）仍可解引用 | 传入 `_npu_setCheckpointPoolState` 的 `live_storages` 参数，C++ 侧标记为 allocated |
+| **保留**（live） | ① `path_live_weakrefs()`：路径上所有节点输出中 `StorageWeakRefWrapper`（§3.7.2）仍可解引用的；② 被用户代码持有的 tensor（如中间结果传给后续 step），靠 Python GC 引用计数保持其 `StorageWeakRefWrapper` 存活 | 传入 `_npu_setCheckpointPoolState` 的 `live_storages` 参数，C++ 侧标记为 allocated |
 | **释放**（dead） | `data_ptrs_dead_since_invocation()`：对比 `recorded_liveness_after_graph`（§3.7.1）与当前 liveness 的差异 | `_npu_npuCachingAllocator_raw_delete(ptr)` 显式释放 |
 | **解除缓存**（cached） | `remove_path_cached_tensors()`：遍历路径节点的 `cached_tensor_outputs` | `_remove_cached_tensor()` + `remove_extra_reference()`，**必须先于**「保留」的存活收集执行——否则缓存持有的额外引用会让本应回收的 storage 误判为仍存活 |
 
@@ -1632,6 +1694,8 @@ flowchart TD
 Checkpoint 恢复（§3.6）依赖三套更底层的 Python 侧追踪机制来判断"谁还活着、谁可以复用"。
 
 #### 3.7.1 Liveness Tracking
+
+`NPUGraphNode.__init__` 中，父节点用弱引用持有——`self._parent = weakref.ref(parent) if parent is not None else None`，源码注释明确写着"弱引用防止循环"（该表述在源码中重复出现 3 次），避免父子节点相互强引用形成引用环、导致 GC 无法回收。输出跟踪除 `outputs_weakrefs`/`path_weakrefs` 外还有一个 `self.tensor_weakrefs: OutputList[Optional[TensorWeakRef]] = []`，用于追踪已重建的输出 Tensor 对象本身（区别于追踪 storage 的 `outputs_weakrefs`）。
 
 `NPUGraphNode` 为路径上每一层都维护录制前/后的活性快照：
 
@@ -1652,6 +1716,8 @@ if self.parent is not None:
     self.expected_dead_indices_before_graph = self._get_different_indices(previous_liveness, curr_liveness)
 ```
 
+`recorded_liveness_after_graph` 的捕获时机同样有明确约束：`_record()` 中它在 `torch.npu.graph()` 捕获块**退出之后**、保存 checkpoint（`_npu_getCheckpointState`）**之前**立即计算——`self.recorded_liveness_after_graph = self._get_liveness(self.path_weakrefs)`。这个"录制刚结束"的存活快照，正是 §3.6 中 `data_ptrs_dead_since_invocation()` 用来对比"此后谁死亡了"的基准。
+
 #### 3.7.2 StorageWeakRefWrapper：弱引用而不阻止 GC
 
 **源码位置**：`torch_npu/npu/_graph_tree.py:L410-L481`
@@ -1665,6 +1731,15 @@ class StorageWeakRefWrapper:
         self.ref = StorageWeakRef(stor)
         self._data_ptr = stor.data_ptr()
         self.extra_ref_check = extra_ref_check   # 存在时对 Storage 多持有一个引用
+
+    @classmethod
+    def from_weakref_and_data_ptr(cls, cdata, data_ptr, extra_ref_check=None):
+        """从已有的弱引用和数据指针构造（不需要原始 Storage）"""
+        instance = cls.__new__(cls)
+        instance._data_ptr = data_ptr
+        instance.ref = StorageWeakRef.from_weakref(cdata)
+        instance.extra_ref_check = extra_ref_check
+        return instance
 
     def __call__(self):
         return None if self.expired() else self.ref.cdata
@@ -1721,14 +1796,33 @@ self.static_input_idxs: List[int] = list(
     set(wrapped_function.static_input_idxs) | set(self.npugraph_managed_idxs)
 )
 
+# 记录静态输入的数据指针（用于后续验证）
+self.static_input_data_ptrs: List[Optional[int]] = [
+    self._get_static_data_ptr(i, inputs, self.static_input_idxs)
+    for i in range(len(inputs))
+]
+
 def _is_npu_graph_recorded_tensor(self, t: torch.Tensor) -> bool:
     """t 的 storage 是否与路径上某个存活的 StorageWeakRef 相同"""
     return any(t.untyped_storage().data_ptr() == ref.data_ptr() for ref in self.path_live_weakrefs())
+
+def _is_alias_of_live_recorded_tensor(self, t: torch.Tensor) -> Optional[PathOutputIndex]:
+    """检查 Tensor 是否是某个活性输出的别名"""
+    for depth, node_outputs in enumerate(self.path_weakrefs):
+        for offset, weak_ref in enumerate(node_outputs):
+            if weak_ref is None:
+                continue
+            storage_ptr = weak_ref.data_ptr()
+            if t.untyped_storage().data_ptr() == storage_ptr:
+                return (depth, offset)
+    return None
 ```
+
+`static_input_data_ptrs` 记录的是 `run()` 阶段 `check_static_inputs_are_stable`（§2.8）核对的基准——回放前比对当前地址与这份记录是否一致，从而判断参数是否被外部重新分配。`_is_alias_of_live_recorded_tensor` 与 `_is_npu_graph_recorded_tensor` 的区别：后者只判断"是否命中"，前者额外定位到具体的 `(depth, offset)`，供 §3.7.3 的 `AliasesPriorGraphOutput` 使用。
 
 ### 3.8 案例分析：graph break 分支场景下的完整 Tree 生命周期
 
-以下用一个包含条件分支的 `@torch.compile(mode="reduce-overhead")` 示例，把 §3.1–§3.7 的机制串成一条完整时间线。`y.sum() > 0` 触发的 graph break 把函数拆成 4 段（GRAPH 1 → {GRAPH 2 | GRAPH 3} → GRAPH 4），对应树结构 `A→B→D`（True 分支）与 `A→C→E`（False 分支，B/C 互斥地共享 A 的 pool）。
+以下用一个包含条件分支的 `@torch.compile(mode="reduce-overhead")` 示例，把 §3.1–§3.7 的机制串成一条完整时间线。`y.sum() > 0` 触发的 graph break 把函数拆成 4 段（GRAPH 1 → {GRAPH 2 | GRAPH 3} → GRAPH 4），两个分支最终都要经过共享的 GRAPH 4；下面的时序图追踪到 GRAPH 3 被录制为止（B、C 互斥地共享 A 的 pool），GRAPH 4 在新分支下的录制不做延伸推断。
 
 ```python
 @torch.compile(mode="reduce-overhead")
@@ -1776,12 +1870,13 @@ sequenceDiagram
     Mgr->>Mgr: apply_checkpoint_execution_state_in_allocator（见 3.6）
     Alloc->>Alloc: 恢复到 NodeA 录制结束时的状态，释放 NodeB 独占的临时内存
     Mgr->>Node: record_function(GRAPH3) 到 NodeC(child of A)，复用恢复后的 pool
-    Mgr->>Node: record_function(GRAPH4) 到 NodeE(child of C)
 
-    Note over User,Alloc: 树结构现为 A到B到D(旧路径) 与 A到C到E(新路径) 并存<br/>后续调用会在 NodeA.children 中按 check_invariants 自动选中对应分支
+    Note over User,Alloc: 现在 Graph Tree 结构：NodeA 下有两个子节点<br/>NodeB(旧路径,已延伸到 NodeD)与 NodeC(新路径,刚录制)<br/>后续调用会在 NodeA.children 中按 check_invariants 自动选中对应分支
 ```
 
-**内存复用效率**：若不共享内存池，A/B/D 与切换后新增的 C/E 共 5 个 Graph 各自独立分配，峰值等于全部之和；有 Graph Tree 时 B 与 C 互斥（同一时刻只有一条路径存活），峰值只需 `max(A→B→D 路径, A→C→E 路径)`——这正是 §3.1 内存优化公式在本例中的具体体现。案例也说明了「五、使用约束与最佳实践」中的两条实践依据：减少 graph break 能降低树的分支复杂度；输入形状/分支越稳定，命中 Execution 热路径（而非反复 checkpoint+录制）的概率越高。
+（GRAPH 4 在新分支下的录制，源材料的时序图未继续展示，本文不做推断续写。）
+
+**内存复用效率**：checkpoint 恢复把 NodeB 独占的临时内存释放并重置为 NodeA 录制结束时的布局，NodeC 直接复用这块空间而非另外分配——树越深、分支越多，这种"同一时刻只有一条路径存活"的互斥复用效果越明显，是 §3.1 内存优化公式 `max` 而非 `sum` 的具体体现。案例也说明了「五、使用约束与最佳实践」中的两条实践依据：减少 graph break 能降低树的分支复杂度；输入形状/分支越稳定，命中 Execution 热路径（而非反复 checkpoint+录制）的概率越高。
 
 ---
 
