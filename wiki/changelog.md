@@ -30,6 +30,41 @@ All source ingestions and significant wiki updates are logged here.
 
 **收尾**：5 处入站 wikilink 改指(`activation_checkpointing_analysis`/`aclgraph_deep_analysis`/`aclgraph_multistream_rng_analysis`/`npugraphs_make_graphed_callables_deep_dive`/主干自身的 Related Pages 自链接一并清除);`06_graphs/npu/index.md` 删行+承接说明+日期 bump 至 2026-07-30。体量:两页合计 1698+317=2015 行变动,净删 1698-317=1381 行(≥1200 目标);主干净增 317 行(≤500 目标)。链接检查 broken 0→0、orphans 1→1(与本次改动无关的既有孤儿页)。
 
+**追记(质量审查回补)**：上表 2714 行为本条目写入当时的统计;后续质量审查中对本次合并做了三处小修正回补(§3.6 措辞澄清、Related Pages 去重等),回补后终值为 **2809 行**(非 2714)。审查过程中还发现 §3.8 案例分析里有一处推断性事件描述并非源码可验证事实,已就地删除——记此一笔作为本次合并的自纠记录。
+
+---
+
+## 2026-07-30：知识库结构整改 P3 Task 5(deep_dive 内两处收缩 + 三项遗留修正)
+
+**Type**: Redundancy Consolidation(设计:`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md`;P3 阶段收尾编辑)
+
+**A. §四「与 make_graphed_callables 的对比」收缩**：`torch_compile_npugraphs_deep_dive.md` §四(90 行)只留 4.1 功能对比表 + 到 [[npugraphs_make_graphed_callables_deep_dive]] 的链接(90→18 行,净删 72)。逐段核对：4.2「实现对比」两幅 ASCII 流程图——`make_graphed_callables` 六步图被承接页「二、完整实现流程(六阶段)」(490-716 行)以远更详细的代码粒度完整覆盖，`torch.compile(backend="npugraphs")` 六步图被本文档自身 §1.3 流程图 + §2.3-2.8 完整覆盖(均原地保留未删)，故两图均丢弃不搬运；4.3「执行时序对比」sequenceDiagram 被本文档自身 §3.2.5(A→B→C 完整执行场景，含 generation/warmup/record/execute 状态转换)以更细粒度完整覆盖，同样丢弃不搬运。核对结论：§四无独有内容需要搬运，承接页 `npugraphs_make_graphed_callables_deep_dive.md` 本次未变动(668→668)。
+
+**B. 附录 A「mode="reduce-overhead" 完整编译流程与双路径对比」收缩**：整改决策(spec §3.3)以 `aclgraph_deep_analysis.md` 为 reduce-overhead 捕获路径权威页。附录 A(759 行)逐段核对：
+- 一、mode 参数澄清(1.1 mode→config 表、1.2 mode/backend 关系) — 承接页原无 mode 参数说明,独有,搬入承接页新增 §1.5「mode 参数与两条路径的触发关系」。
+- 二、整体架构对比(2.1/2.2 双路径 ASCII+mermaid 架构图) — 路径 B 部分与本文档自身 §1-2 完全重叠丢弃;路径 A 部分(Wrapper→compile_fx→AOT→Codegen→cudagraph_post_compile)的阶段划分与源码定位独有,浓缩为 §4.4 的 Phase 表(不逐字保留原 ASCII/mermaid 图,信息已被表格等价表达,避免图文双份冗余)。
+- 三、路径 A 完整调用链路(3.1-3.7,各 Phase 完整代码清单) — 逐 Phase 源码位置(文件+行号)独有,浓缩进 §4.4 Phase 表;3.6 npugraphify monkey-patch 入口代码与承接页 §二·差异1 现有代码逐字重复,丢弃、原地加引用。
+- 四、路径 A 完整调用栈 / 五、路径 B 调用栈(对比参考) — 与三、八两节内容重复(调用链路的另一种呈现),丢弃。
+- 六、关键代码路径差异分析(6.1 编译产物对比/6.2 录制内容差异/6.3 回退差异) — 独有,浓缩进 §4.4 对比表(录制内容/NPU 利用率/编译耗时/回退行为/典型定位五维)。
+- 七、Wrapper 类对比(7.1/7.2) — 独有,并入新增 §1.5。
+- 八、执行时序对比(8.1/8.2 两幅 sequenceDiagram) — 与三、四节的 Phase 文字描述重复(可视化重述而非新事实),且承接页已有 §1.3 通用捕获/回放时序图,丢弃不搬运。
+- 九、性能特性对比(9.1 综合对比表/9.2 适用场景) — 独有,浓缩进 §4.4 对比表 + 选型清单。
+- 十、max-autotune 额外优化 — 独有,并入 §1.5 mode 表备注。
+- 十一、对比总结(11.1 一句话/11.2 决策流程图/11.3 代码示例/11.4 文件索引) — 11.1/11.2 改写为 §4.4 结尾的一句话总结+选型清单;11.3 代码示例与本文档自身 §5.2 最佳实践重复,丢弃;11.4 文件索引表独有,搬入 §4.4。
+
+附录 A 本体替换为一段摘要(路径 A/B 核心差异一段话 + 链接到 [[aclgraph_deep_analysis]] §1.5/§4.4，759→12 行，净删 747)。
+
+**承接页接收清单**：
+- `npugraphs_make_graphed_callables_deep_dive.md`：净增 0 行(668→668，§四无独有内容)。
+- `aclgraph_deep_analysis.md`：净增 63 行(569→632)，新增 §1.5「mode 参数与两条路径的触发关系」(并入「一、路径概述」)与 §4.4「与 backend="npugraphs" 路径(路径 B)的对比」(并入「四、这条路径为什么会存在」)，均为小节融入而非尾部堆贴；同步合并 Related Pages 中两行重复的 `[[torch_compile_npugraphs_deep_dive]]` 为一行(见下 C.1)。
+
+**C. 三项遗留小修正**(上一任务质量审查发现)：
+1. `aclgraph_deep_analysis.md` Related Pages 两行 `[[torch_compile_npugraphs_deep_dive]]` 合并为一行，注释合并为"NPU Graphs 与 torch.compile 集成深度分析；§3.4-3.8 内存管理与复用；reduce_overhead vs npugraphs 对比"。
+2. `torch_compile_npugraphs_deep_dive.md` §3.6 加一句区分 checkpoint 恢复三步机制与分类表 dead 行 `_npu_npuCachingAllocator_raw_delete` 为两层释放，不引入新机制断言。
+3. 本 changelog 上条(P3 Task 4)追记回补后终值 2809 行(非 2714)与 §3.8 自纠记录(即上方"追记"段)。
+
+**体量**：`torch_compile_npugraphs_deep_dive.md` 2809→1990 行(净删 819 = §四 -72 + 附录A -747)；`aclgraph_deep_analysis.md` 569→632 行(净增 63)；`npugraphs_make_graphed_callables_deep_dive.md` 668→668 行(不变)。三页合计 4046→3290，净删 756 行。链接检查 broken 0→0、ambiguous 70→70、bare_index 70→70、orphans 1→1(与本次改动无关，四项均与改动前基线一致)。全部新增/删除的 mermaid 块经 fence 计数校验闭合平衡(无需重渲，本次未新增 mermaid 内容，只有整块删除)。
+
 ---
 
 ## 2026-07-29：知识库结构整改 P0–P2(工具、快速止血、图源入库)

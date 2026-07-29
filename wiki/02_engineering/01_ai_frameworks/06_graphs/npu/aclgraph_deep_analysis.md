@@ -165,6 +165,28 @@ flowchart TB
     A3 --> H1
 ```
 
+### 1.5 mode 参数与两条路径的触发关系
+
+`torch.compile` 的 `mode` 参数只在 `backend="inductor"`（默认）时生效，用于控制 Inductor 的预设配置（`torch/_inductor/__init__.py` 的 `list_mode_options`）：
+
+| mode | 对应 config | 是否触发 ACLGraph |
+|---|---|---|
+| `"default"` | `{}` | 不触发 |
+| `"reduce-overhead"` | `{"triton.cudagraphs": True}` | **触发**（即本页分析对象） |
+| `"max-autotune"` | `{"max_autotune": True, "triton.cudagraphs": True, "coordinate_descent_tuning": True}` | **触发**，额外做 Triton autotune + 坐标下降调优，录制进图的内核更优但编译更慢 |
+| `"max-autotune-no-cudagraphs"` | `{"max_autotune": True, "coordinate_descent_tuning": True}` | 不触发 |
+
+`mode="max-reduce"` 并非有效值，会抛出 `RuntimeError: Unrecognized mode=max-reduce`；需要"最大化减少开销"应使用 `"reduce-overhead"`。
+
+`torch.compile` 按 `backend` 参数分发到两个不同的 Wrapper（`torch/__init__.py:2745-2751`）：
+
+| | `_TorchCompileInductorWrapper`（`backend="inductor"`，默认，`torch/__init__.py:2384-2456`） | `_TorchCompileWrapper`（`backend="npugraphs"` 等非 inductor 后端） |
+|---|---|---|
+| mode 处理 | `apply_mode()` → `list_mode_options()` → 转成 Inductor `config_patches` | 原样存入 `kwargs["mode"]` 传给后端 |
+| 调用目标 | `compile_fx(model_, inputs_, config_patches=self.config)` | `self.compiler_fn(model_, inputs_, **self.kwargs)` |
+
+`NpugraphsBackend.__call__(model, inputs)` 签名不接受 `mode` 参数，因此 `torch.compile(backend="npugraphs", mode="reduce-overhead")` 这种组合中 `mode` 实际被忽略——这是本页分析对象（路径 A：`mode="reduce-overhead"`，经 Inductor）与 [[torch_compile_npugraphs_deep_dive]] 正文分析对象（路径 B：`backend="npugraphs"`，绕开 Inductor）分道的起点，两条路径的完整对比见 §四·4.4。
+
 ---
 
 ## 二、为什么有这些差异？
@@ -446,6 +468,47 @@ ACLGraph 路径在**用户语义**上完全遵循了社区 CUDA Graph 的设计�
 - **小规模 kernel 密集模型**：元素级操作多、kernel launch overhead 占比高的模型
 - **训练中的 static 部分**：如 optimizer step、loss scaling 等固定计算图
 
+### 4.4 与 backend="npugraphs" 路径（路径 B）的对比
+
+路径 A（`mode="reduce-overhead"`，本页分析对象）在进入 NPU Graph Tree 前先经过完整的 Inductor 编译，逐 Phase 源码定位：
+
+| Phase | 组件 | 代码位置 | 作用 |
+|---|---|---|---|
+| 1 | `_TorchCompileInductorWrapper.__init__` | `torch/__init__.py:2384-2456` | `apply_mode("reduce-overhead")` → `list_mode_options()` → `self.config = {"triton.cudagraphs": True}`（见 §1.5） |
+| 2 | `compile_fx` | `torch/_inductor/compile_fx.py`（第2483行） | 递归应用 `config_patches`：`config.patch({"triton.cudagraphs": True})` 在整个编译过程全局生效 |
+| 3 | `_compile_fx_main` | `compile_fx.py`（第2650行） | pre-grad passes → 构造 `fw_compiler`/`bw_compiler`/`inference_compiler` → `aot_autograd(..., cudagraphs=BoxedBool(True))` |
+| 4 | `_compile_fx_inner`（Inductor Codegen） | `compile_fx.py`（第829行） | `graph_lowering` → Scheduling（算子融合/内存规划）→ Triton/C++ Codegen，产出 `CompiledFxGraph`（`current_callable` + `cudagraph_info`） |
+| 5 | `cudagraph_post_compile` | `torch/_inductor/output_code.py`（第195行） | 检查 `cudagraph_fail_reasons`；可行则把 `current_callable`（Triton 内核）传入 `cudagraphify`（已被 torch_npu monkey-patch 为 `npugraphify`，见 §二·差异1）包装进 NPU Graph；不可行则 `BoxedBool.disable(cudagraphs)` 退化为普通执行 |
+| 6-8 | NPU Graph Tree（与路径 B 共享） | `torch_npu/npu/_graph_tree.py` | Warmup → Record → Replay，与 [[torch_compile_npugraphs_deep_dive]] 正文 Phase 5-8（§2.5-2.8）完全相同的实现 |
+
+路径 B（`backend="npugraphs"`，详见 [[torch_compile_npugraphs_deep_dive]] 正文）跳过 Phase 2-5，AOT Autograd 分离出前向/反向后直接用 `boxed_nop` 解释执行原始 FX 图，再进入同一套 Phase 6-8 Graph Tree。两条路径录制进图的内容、稳态表现与回退行为差异：
+
+| 维度 | 路径 A：`mode="reduce-overhead"` | 路径 B：`backend="npugraphs"` |
+|---|---|---|
+| 录制进图的内容 | 少量融合 Triton/C++ 内核（如 `fused_matmul_add_relu`） | 大量原始 aten op（`matmul` → `add` → `relu` → … 逐个） |
+| 稳态 NPU 利用率 | 高（内核少、计算密度高） | 中（内核多、launch 数量大；两者的 CPU dispatch 开销均已被 `graph.replay()` 消除） |
+| 编译耗时 | 长（Inductor codegen + Graph 录制） | 短（仅 AOT 分解 + Graph 录制） |
+| Graph 捕获失败时的回退 | 退回 Inductor 编译后的 Triton 内核（仍是优化过的） | 退回 `boxed_nop` FX 图解释执行（明显更慢） |
+| 典型定位 | 生产部署（推理/训练稳态性能优先） | 调试、baseline、快速验证 NPU Graph 兼容性 |
+
+一句话：路径 A = "优化内核 + 快速启动"，路径 B = "原始内核 + 快速启动"。选型：
+- 需要最高稳态性能、能接受较长首次编译 → `mode="max-autotune"`
+- 需要最高稳态性能、首次编译延迟需可控 → `mode="reduce-overhead"`
+- 需要快速编译/调试，或验证 NPU Graph 兼容性 → `backend="npugraphs"`
+- 不需要 NPU Graph 加速 → `mode="default"`（仅 Inductor 优化）
+
+核心文件索引：
+
+| 文件 | 路径 A 角色 | 路径 B 角色 |
+|---|---|---|
+| `torch/__init__.py` | `_TorchCompileInductorWrapper` 创建与配置 | `_TorchCompileWrapper` 创建 |
+| `torch/_inductor/__init__.py` | `list_mode_options()` mode→config 映射 | 不涉及 |
+| `torch/_inductor/compile_fx.py` | `compile_fx` 主编译入口 + `cudagraphify` 定义 | 不涉及（被绕过） |
+| `torch/_inductor/output_code.py` | `cudagraph_post_compile` NPU Graph 包装 | 不涉及 |
+| `torch/_dynamo/backends/inductor.py` | `inductor` 后端注册 | 不涉及 |
+| `torch_npu/utils/_graph_tree.py` | `npugraphify`（monkey-patch）+ `npugraphs` 后端注册 | `NpugraphsBackend` + `npugraphs()` 函数 |
+| `torch_npu/npu/_graph_tree.py` | NPU Graph Tree 核心（共享） | NPU Graph Tree 核心（共享） |
+
 ---
 
 ## 五、后续如何演进贴近社区？
@@ -563,7 +626,6 @@ ACLGraph 是 torch_npu 与社区差异**中等但很关键**的一条路径。�
 - [[npu_compile_paths_overview]] — torch_npu 三条编译路径全景概览（上级分析）
 - [[aclgraph]] — ACL Graph 基础集成（已有页面）
 - [[comparison]] — CUDA Graphs vs NPU Graphs 特性对比
-- [[torch_compile_npugraphs_deep_dive]] — NPU Graphs 与 torch.compile 集成深度分析；§3.4-3.8 内存管理与复用（Graph Tree/Checkpoint/Liveness）
+- [[torch_compile_npugraphs_deep_dive]] — NPU Graphs 与 torch.compile 集成深度分析；§3.4-3.8 内存管理与复用；reduce_overhead vs npugraphs 对比
 - [[aclgraph_multistream_rng_analysis]] — 多流依赖、通信流边界与 graph-safe RNG 算子适配
-- [[torch_compile_npugraphs_deep_dive]] — reduce_overhead vs npugraphs
 - [[npu_lowering_guide]] — NPU lowering 与 fallback（§9）；差异 8 的 aclnn/aclop 把 fallback 关与捕获关连通
