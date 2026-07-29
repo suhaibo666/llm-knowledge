@@ -3,7 +3,7 @@
 > NPU Graphs 的编译集成、内存管理与重用、make_graphed_callables 适配、ACLGraph 深度分析、多流与随机状态捕获，以及与 CUDA Graphs 的对比。
 > 知识分层:overview→quick start→deep dive(约定见 [[01_ai_frameworks/index]])。冗余文档已合并(内存两篇、torch.compile 两篇),信息无损。
 > 核验基准:torch_npu **v2.7.1.post5**
-> 最后更新: 2026-07-16
+> 最后更新: 2026-07-29
 
 ---
 

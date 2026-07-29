@@ -3,7 +3,7 @@
 > CUDA Graphs 使用指南、捕获/回放时序、API 与最佳实践。
 > 知识分层:overview→deep dive(约定见 [[01_ai_frameworks/index]])。
 > 核验基准:PyTorch 上游 `torch/cuda/graphs.py`、`torch/_inductor/cudagraph_trees.py`
-> 最后更新: 2026-06-13
+> 最后更新: 2026-07-29
 
 ---
 
