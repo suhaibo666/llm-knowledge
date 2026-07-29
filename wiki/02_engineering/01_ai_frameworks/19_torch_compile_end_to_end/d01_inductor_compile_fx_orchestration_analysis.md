@@ -175,7 +175,105 @@ flowchart TD
     OB --> RT
 ```
 
-## 11. 不变量与失败边界
+## 11. 源码跟读：`compile_fx`怎样把一个入口拆成三类 compiler
+
+### 11.1 入口先封存策略，再进入真正的图编译
+
+`compile_fx`的签名把 `inner_compile`显式作为参数，并声明接管 `model_`所有权
+（`torch/_inductor/compile_fx.py:2889-2907`）。这不是普通依赖注入而已：同一个
+`inner_compile`随后会被做成 inference、training forward、backward三个回调，所以 cache、
+debug wrapper、bisector或测试替身能以同一协议覆盖三个方向。
+
+有 `config_patches`时，入口在 patch作用域内递归调用自己，并把经过
+`config.patch(...)(inner_compile)`装饰的新回调传下去
+（`torch/_inductor/compile_fx.py:2925-2941`）。为什么需要“作用域 + 装饰器”两层？
+
+- 当前 `compile_fx`同步执行的 AOT trace需要外层 config context；
+- lazy backward可能在函数返回后才调用 `inner_compile`，只能靠装饰后的 callable重新进入
+  相同 config；
+- `compile_region_name`被做成 partial参数但刻意不进入 graph kwargs，避免只用于诊断的名字
+  扰动 FX cache key。
+
+### 11.2 wrapper递归是在收敛 ABI，不是在重复编译
+
+`_maybe_wrap_and_compile_fx_main`建立一个指回自己的 `compile_gm` closure，然后每个 wrapper
+只处理一种外层差异；满足一个条件后，把归一化后的 graph再次交回该 closure
+（`torch/_inductor/compile_fx.py:3030-3056`）。因此它形成的是有限的 ABI归一化链：
+
+```mermaid
+flowchart LR
+    G0["原 GraphModule / pytree ABI"] --> R{"需要哪种 wrapper"}
+    R -->|output 非 tuple| W1["return-tuple wrapper"]
+    R -->|pytree codegen| W2["pytree wrapper"]
+    R -->|AOTI/CPP/FX wrapper| W3["模式 wrapper"]
+    W1 --> R
+    W2 --> R
+    W3 --> R
+    R -->|均满足| M["_compile_fx_main"]
+```
+
+递归会在对应条件被消除后前进；它不是对同一未变化输入无界递归，也不是多次执行
+Inductor lowering。
+
+### 11.3 `_compile_fx_main`先制作 callbacks，再把图交给 AOTAutograd
+
+源码注释直接给出四阶段协议：pre-grad、构造 fw/bw compiler、AOT创建和切分joint graph、
+最后重新组装 runtime callable
+（`torch/_inductor/compile_fx.py:3080-3100`）。具体 callback所有权如下：
+
+| callback | 输入图 | 额外状态 | 下游 |
+|---|---|---|---|
+| `inference_compiler` | inference AOT graph | inference metadata/freezing选择 | `compile_fx_forward(..., is_inference=True)` |
+| `fw_compiler` | partition后的 training fw | 原输出数、原输入数、共享 config extra | `compile_fx_forward(..., is_inference=False)` |
+| `bw_compiler` | partition后的 bw | compile lock、tangent/static input规则 | `compile_fx_backward` |
+
+training backward callback的闭包把 `compiler_config_extra`和同一个 `inner_compile`继续传入
+（`torch/_inductor/compile_fx.py:3163-3177`）。然后入口在 FakeTensor、TracingContext、
+禁用 compiled-autograd 与 functorch config作用域中调用 `dynamo_common.aot_autograd`，显式
+传入三个 compiler、decomposition table与 partition function
+（`torch/_inductor/compile_fx.py:3262-3286`）。
+
+这里的调用方向是 AOTAutograd **回调** Inductor，而不是 Inductor先自行构造 bw图：
+
+```mermaid
+sequenceDiagram
+    participant D as Dynamo backend
+    participant C as compile_fx
+    participant A as AOTAutograd
+    participant F as fw_compiler
+    participant B as bw_compiler
+    participant I as compile_fx_inner
+    D->>C: GraphModule + example inputs
+    C->>A: aot_autograd(fw,bw,inference,partition)
+    A->>A: functionalize / decompose / joint / partition
+    A->>F: fw GraphModule
+    F->>I: lower one graph
+    A-->>C: runtime wrapper（可携带 lazy bw info）
+    Note over A,B: 第一次 backward 才可能触发
+    A->>B: bw GraphModule + placeholders
+    B->>I: lower one graph
+```
+
+### 11.4 单图编译边界从 `compile_fx_inner`开始
+
+`compile_fx_forward`不是一个别名：它先区分 inference/training，并保留原模型输出数与原输入
+数（`torch/_inductor/compile_fx.py:2609-2629`）；随后计算 fixed arguments、识别
+user-visible outputs（`torch/_inductor/compile_fx.py:2674-2703`）。`compile_fx_backward`
+则在全局 compile lock内处理输出可见性
+（`torch/_inductor/compile_fx.py:2762-2789`），再根据 forward是否被分区决定只有 primals
+可标 static，还是所有非 tangent前缀都可标 static
+（`torch/_inductor/compile_fx.py:2791-2820`）。
+
+两条路径最终都进入 `compile_fx_inner`。它填充单图 kwargs并说明为何 backward需要独立的
+fresh cache/lazy graph作用域（`torch/_inductor/compile_fx.py:857-877`），随后建立计时、
+fresh-cache、debug context，才调用 `_compile_fx_inner`
+（`torch/_inductor/compile_fx.py:901-926`）。后者的契约已经收窄为“编译一张 graph”
+（`torch/_inductor/compile_fx.py:937-948`）。
+
+因此排障时应先问“失败位于总编排、AOT callback还是单图 lowering”。三者都可能出现在
+一次 `torch.compile`调用栈中，但持有的图、配置状态和缓存键不同。
+
+## 12. 不变量与失败边界
 
 - `compile_fx`可修改输入gm，调用方不能依赖原Node identity；
 - config必须跨lazy backward保存；
@@ -186,7 +284,7 @@ flowchart TD
 - inner compile要在正确FakeTensor/ShapeEnv上下文运行；
 - cache/load后还要执行post-compile包装，不能把序列化对象直接当最终callable。
 
-## 12. 复杂度
+## 13. 复杂度
 
 设Dynamo region有 \(G\) 个nodes，joint图 \(J\)，partition后 \(F,B\)，backend各阶段成本
 为 \(K(F),K(B)\)：
@@ -203,7 +301,7 @@ T_{\text{compile}}
 lazy backward把 \(K(B)\)从first forward调用移动到first backward调用，不消灭它。若cache
 命中，公式中对应部分变为key构造、lookup、deserialize/load和post-compile成本。
 
-## 13. 常见误解
+## 14. 常见误解
 
 - **“compile_fx只编译FX。”** 它还编排AOTAutograd和runtime wrappers。
 - **“forward编译成功说明backward也已lower。”** lazy backward可能尚未发生。

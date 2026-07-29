@@ -114,7 +114,13 @@ name，最后减去未来仍会使用的集合
 ### B. 默认wrapper reuse planning
 
 wrapper IR有 `AllocateLine`、`FreeIfNotReusedLine`、`ReuseLine`
-（`torch/_inductor/codegen/wrapper.py:963-1188`）。
+（`torch/_inductor/codegen/wrapper.py:963-984`;
+`torch/_inductor/codegen/wrapper.py:986-1009`;
+`torch/_inductor/codegen/wrapper.py:1010-1034`;
+`torch/_inductor/codegen/wrapper.py:1076-1105`;
+`torch/_inductor/codegen/wrapper.py:1131-1151`;
+`torch/_inductor/codegen/wrapper.py:1155-1172`;
+`torch/_inductor/codegen/wrapper.py:1174-1188`）。
 
 reuse key包括：
 
@@ -147,7 +153,17 @@ reuse key包括：
 ## 7. Pooled planner不是interval graph最优着色
 
 实现使用LiveRange与TemporalSplit/SpatialSplit allocation tree，按size/lifetime greedy放置
-（`torch/_inductor/codegen/memory_planning.py:35-397`;
+（`torch/_inductor/codegen/memory_planning.py:35-56`;
+`torch/_inductor/codegen/memory_planning.py:59-76`;
+`torch/_inductor/codegen/memory_planning.py:78-101`;
+`torch/_inductor/codegen/memory_planning.py:104-133`;
+`torch/_inductor/codegen/memory_planning.py:137-166`;
+`torch/_inductor/codegen/memory_planning.py:168-194`;
+`torch/_inductor/codegen/memory_planning.py:260-288`;
+`torch/_inductor/codegen/memory_planning.py:289-316`;
+`torch/_inductor/codegen/memory_planning.py:319-338`;
+`torch/_inductor/codegen/memory_planning.py:342-370`;
+`torch/_inductor/codegen/memory_planning.py:373-388`;
 `torch/_inductor/codegen/memory_planning.py:777-817`）。
 
 它不承诺global optimum。
@@ -205,7 +221,7 @@ fusion可：
 - 删除intermediate write/read与allocation；
 - 延长输入liveness；
 - 增大kernel register/shared memory；
--改变schedule；
+- 改变schedule；
 - 让template选择变化。
 
 所以kernel数减少不保证device peak一定下降；需测wrapper/allocator与AOT saved activations。
@@ -226,7 +242,7 @@ recompute减少saved bytes但bw新增operations/buffers
 - 若每个 node 的 alias closure 已经展开，逆序 last-use 集合传播骨架近似
   `O(V + D + A)`，其中 `D`为 read/write dependency 总数，`A`为本次遍历实际访问的
   alias 关系；集合哈希操作按均摊常数计；
--普通reuse字典匹配近线性，但当前line构造用 `scheduler.nodes.index(current)`，可使构造最坏
+- 普通reuse字典匹配近线性，但当前line构造用 `scheduler.nodes.index(current)`，可使构造最坏
   达 `O(BV)`；
 - peak reorder多heuristics，LPMF path可二次；
 - pooled planner排序+allocation tree search最坏超线性；

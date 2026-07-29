@@ -43,14 +43,14 @@ lookup按需加载entry point、给无效name提供建议，最终返回稳定co
 
 真正生产backend还需处理：
 
--FakeTensor/example input，不可读取真实数据；
--dynamic SymInt；
--boxed calling convention；
--mutation/alias输出ABI；
--forward/backward compiler；
--config/cache key；
--线程、device和exception；
--返回callable lifetime。
+- FakeTensor/example input，不可读取真实数据；
+- dynamic SymInt；
+- boxed calling convention；
+- mutation/alias输出ABI；
+- forward/backward compiler；
+- config/cache key；
+- 线程、device和exception；
+- 返回callable lifetime。
 
 ## 3. 为什么 backend callable identity 要稳定
 
@@ -60,22 +60,22 @@ identity。
 
 建议backend对象具有：
 
--稳定名称与版本；
--可序列化、可hash配置；
--确定性compile output；
--清晰capability；
--显式artifact/cache compatibility key。
+- 稳定名称与版本；
+- 可序列化、可hash配置；
+- 确定性compile output；
+- 清晰capability；
+- 显式artifact/cache compatibility key。
 
 ## 4. DeviceInterface 解决 runtime 抽象
 
 Inductor需要设备无关地查询：
 
--device context与数量；
--Event/Stream；
--current/exchange/set device；
--raw stream与synchronize；
--device properties/compute capability；
--multiprocessing worker安全查询。
+- device context与数量；
+- Event/Stream；
+- current/exchange/set device；
+- raw stream与synchronize；
+- device properties/compute capability；
+- multiprocessing worker安全查询。
 
 抽象定义见 `torch/_dynamo/device_interface.py:40-68`、
 `torch/_dynamo/device_interface.py:70-85`、
@@ -94,16 +94,16 @@ compile worker不能随意初始化GPU runtime。
 
 generated code有两部分：
 
--kernel code；
--桥接kernel、allocation、stream和输出的wrapper。
+- kernel code；
+- 桥接kernel、allocation、stream和输出的wrapper。
 
 源码说明新backend需提供自定义Scheduling以生成kernel，并从PythonWrapperCodegen继承/覆盖
 目标逻辑；`register_backend_for_device`登记：
 
--device scheduling；
--Python/C++/FX wrapper constructors；
--custom graph pass；
--custom config。
+- device scheduling；
+- Python/C++/FX wrapper constructors；
+- custom graph pass；
+- custom config。
 
 见 `torch/_inductor/codegen/common.py:389-418` 与
 `torch/_inductor/codegen/common.py:419-434`。
@@ -114,13 +114,13 @@ generated code有两部分：
 
 wrapper代码需要目标device专属表达：
 
--set/synchronize device；
--device/stream guard；
--raw/current stream；
--kernel header/driver/type；
--device pointer；
--AOTI stream guard；
--scratch/TMA helpers。
+- set/synchronize device；
+- device/stream guard；
+- raw/current stream；
+- kernel header/driver/type；
+- device pointer；
+- AOTI stream guard；
+- scratch/TMA helpers。
 
 抽象方法见 `torch/_inductor/codegen/common.py:321-350` 与
 `torch/_inductor/codegen/common.py:352-380`。
@@ -139,10 +139,10 @@ validation
 
 device backend需要回答每个可能op：
 
--先decompose成已有op；
--在共享/自定义lowering生成IR；
--生成external/fallback call；
--明确不支持并让上层失败/回退。
+- 先decompose成已有op；
+- 在共享/自定义lowering生成IR；
+- 生成external/fallback call；
+- 明确不支持并让上层失败/回退。
 
 缺少一个路径会表现为lowering failure；错误fallback layout则可能导致runtime错或不必要
 realization。
@@ -151,13 +151,13 @@ realization。
 
 不同device可支持不同：
 
--foreach；
--in-place buffers；
--scan/sort；
--tuple reduction；
--Triton templates；
--single-element reduction；
--loop order偏好。
+- foreach；
+- in-place buffers；
+- scan/sort；
+- tuple reduction；
+- Triton templates；
+- single-element reduction；
+- loop order偏好。
 
 `BackendFeature`定义与按device查询入口见
 `torch/_inductor/codegen/common.py:437-455`。
@@ -187,14 +187,14 @@ flowchart LR
 
 cache key至少包含：
 
--backend版本；
--device architecture/capability；
--driver/runtime/compiler；
--feature flags；
--lowering/decomposition版本；
--wrapper/AOTI ABI；
--shape/dtype/layout specialization；
--custom op library version。
+- backend版本；
+- device architecture/capability；
+- driver/runtime/compiler；
+- feature flags；
+- lowering/decomposition版本；
+- wrapper/AOTI ABI；
+- shape/dtype/layout specialization；
+- custom op library version。
 
 远端cache不能假设所有worker硬件等价。load前应验证兼容性，失败时rebuild或安全fallback。
 

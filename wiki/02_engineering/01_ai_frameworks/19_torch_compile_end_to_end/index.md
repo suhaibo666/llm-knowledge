@@ -2,6 +2,7 @@
 
 > 层次：overview → source-level deep dive  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
+> 本地精确 checkout：`E:/97-codes/torch_parallel/p`（detached HEAD，课程源码定位只以此目录为准）
 > 当前阶段：原理解读 + CUDA-first 配套 Demo
 > 最后更新：2026-07-29
 

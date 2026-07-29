@@ -49,12 +49,19 @@ Inductor要分别回答：
 关键声明位置：
 
 - `IRNode`/`Operation`/`Loops`：`torch/_inductor/ir.py:589-655`、
-  `torch/_inductor/ir.py:956-1061`；
-- `Pointwise`/`Reduction`/`Scan`：`torch/_inductor/ir.py:1219-1420`、
+  `torch/_inductor/ir.py:956-977`、`torch/_inductor/ir.py:979-1007`、
+  `torch/_inductor/ir.py:1057-1086`、`torch/_inductor/ir.py:1090-1119`；
+- `Pointwise`/`Reduction`/`Scan`：`torch/_inductor/ir.py:1219-1238`、
+  `torch/_inductor/ir.py:1238-1256`、`torch/_inductor/ir.py:1384-1406`、
   `torch/_inductor/ir.py:2877-2946`；
 - view/layout：`torch/_inductor/ir.py:3386-3412`、
-  `torch/_inductor/ir.py:4061-4105`、`torch/_inductor/ir.py:4416-5040`；
-- buffer/template/extern/fallback：`torch/_inductor/ir.py:5160-5435`、
+  `torch/_inductor/ir.py:4061-4105`、`torch/_inductor/ir.py:4399-4412`、
+  `torch/_inductor/ir.py:4416-4432`、`torch/_inductor/ir.py:4433-4448`、
+  `torch/_inductor/ir.py:4726-4750`、`torch/_inductor/ir.py:4962-4976`、
+  `torch/_inductor/ir.py:4978-4998`；
+- buffer/template/extern/fallback：`torch/_inductor/ir.py:5160-5180`、
+  `torch/_inductor/ir.py:5182-5194`、`torch/_inductor/ir.py:5306-5334`、
+  `torch/_inductor/ir.py:5408-5435`、
   `torch/_inductor/ir.py:5876-5915`、`torch/_inductor/ir.py:6995-7035`、
   `torch/_inductor/ir.py:9314-9358`；
 - value wrapper：`torch/_inductor/ir.py:10547-10607`。
@@ -161,7 +168,12 @@ read具有不同索引表达式，从而把“发生了broadcast”落实到寻�
 - `NoneLayout`：无普通Tensor storage；
 - `NonOwningLayout`/view；
 - `MultiOutputLayout`
-  （`torch/_inductor/ir.py:4399-4755`;
+  （`torch/_inductor/ir.py:4399-4412`;
+  `torch/_inductor/ir.py:4416-4432`;
+  `torch/_inductor/ir.py:4433-4448`;
+  `torch/_inductor/ir.py:4726-4750`;
+  `torch/_inductor/ir.py:4962-4976`;
+  `torch/_inductor/ir.py:4978-4998`;
   `torch/_inductor/ir.py:5040-5085`;
   `torch/_inductor/ir.py:10144-10190`）。
 
@@ -178,8 +190,17 @@ non-owning layout 决定。于是相同 size/stride 元数据既可能属于新�
 `OperationBuffer(Buffer, Operation)`同时是具名buffer和schedulable computation。
 
 `ComputedBuffer`包装Loops；`TemplateBuffer`包装template implementation
-（`torch/_inductor/ir.py:5160-5435`;
-`torch/_inductor/ir.py:5876-6315`）。
+（`torch/_inductor/ir.py:5160-5180`;
+`torch/_inductor/ir.py:5182-5194`;
+`torch/_inductor/ir.py:5306-5334`;
+`torch/_inductor/ir.py:5408-5435`;
+`torch/_inductor/ir.py:5876-5905`;
+`torch/_inductor/ir.py:5942-5964`;
+`torch/_inductor/ir.py:6011-6043`;
+`torch/_inductor/ir.py:6185-6193`;
+`torch/_inductor/ir.py:6194-6219`;
+`torch/_inductor/ir.py:6284-6305`;
+`torch/_inductor/ir.py:6306-6315`）。
 
 对应到源码：
 
@@ -217,7 +238,11 @@ calling convention。FallbackKernel是其具体路径之一。
 
 template表示可生成专用kernel的实现。`ChoiceCaller`可产生output node并benchmark；多个choices
 可由 `MultiTemplateBuffer`延迟决定
-（`torch/_inductor/ir.py:6185-6315`）。
+（`torch/_inductor/ir.py:6185-6193`;
+`torch/_inductor/ir.py:6194-6219`;
+`torch/_inductor/ir.py:6221-6250`;
+`torch/_inductor/ir.py:6284-6305`;
+`torch/_inductor/ir.py:6306-6315`）。
 
 这让algorithm selection和fusion交互，而非lowering时过早固定。
 

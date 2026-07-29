@@ -11,7 +11,7 @@
 AOT partition后的fw/bw只是静态图。用户仍期望普通autograd行为：
 
 - forward返回原始用户pytree；
--需要梯度的outputs带 `grad_fn`；
+- 需要梯度的outputs带 `grad_fn`；
 - saved tensors在forward保存、backward解包；
 - tangents按bw placeholder ABI排列；
 - input mutation/view/alias语义恢复；
@@ -105,7 +105,7 @@ deepcopy用于避免lowering对保留bw module的修改影响compiled autograd�
 - 根据当前GraphTask判断saved tensors是否仅使用一次；
 - 调用 `get_or_compile`；
 - 将结果写回类缓存；
--检查donated-buffer与retain_graph/create_graph约束；
+- 检查donated-buffer与retain_graph/create_graph约束；
 - 最终boxed调用compiled bw并可steal args。
 
 见 `torch/_functorch/_aot_autograd/runtime_wrappers.py:3577-3590` 与
@@ -131,9 +131,9 @@ graph（`torch/_functorch/_aot_autograd/runtime_wrappers.py:2459-2464`）。
 若backward被认为只运行一次，runtime可以：
 
 - 清saved tensors；
--steal argument list；
+- steal argument list；
 - donation/reuse部分buffer；
--降低峰值内存。
+- 降低峰值内存。
 
 `retain_graph=True`或 `create_graph=True`会破坏“一次消费”假设。runtime因此检查donated
 buffers与当前GraphTask keep-graph状态，不满足时抛错而非静默复用。
@@ -171,18 +171,108 @@ sequenceDiagram
     CF-->>U: autograd returns grads
 ```
 
-## 11. 正确性不变量
+## 11. 源码跟读：forward outputs怎样变成 backward inputs
+
+### 11.1 partition先固定 ABI，runtime只按 metadata切片
+
+AOT partition不是在 forward结束时临时猜哪些值要保存。它已经把 backward需要的值放进
+fw graph outputs，并在 `ViewAndMutationMeta`中记录各类 slice。runtime的
+`_AutogradSavedState.save_from_forward`据此分别取出：
+
+- 需要 autograd version-counter检查的 tensors；
+- 不做该检查的 tensors；
+- SymInt/SymFloat；
+- opaque custom objects。
+
+tensor slices与view detach规则见
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:2615-2645`；动态维标记和
+`ctx.save_for_backward`见同文件 `2648-2659`；符号值与opaque对象分别写入
+`ctx.symints`、`ctx.opaque_objects`
+（`torch/_functorch/_aot_autograd/runtime_wrappers.py:2661-2683`）。
+
+```mermaid
+flowchart LR
+    O["compiled_fw flat outputs"] --> U["用户 outputs"]
+    O --> TV["tensor slice: version check"]
+    O --> TN["tensor slice: no version check"]
+    O --> SY["SymInt / SymFloat slice"]
+    O --> OP["opaque object slice"]
+    TV --> C["autograd.Function ctx"]
+    TN --> C
+    SY --> C
+    OP --> C
+    C --> A["bw prologue按 placeholder ABI组装 args"]
+    A --> B["compiled_bw"]
+```
+
+这段实现也解释了为什么“saved tensors只是把 fw tensor对象塞给 bw”不够准确：view是否
+detach、是否进行version check、动态维信息以及非Tensor对象的保存通道都属于ABI。
+
+### 11.2 `CompiledFunction`把静态编译产物挂回 eager autograd
+
+生成的 `CompiledFunction`类把 `compiled_fw`、`compiled_bw`、metadata、lazy info和四个
+codegen helper保存为类属性
+（`torch/_functorch/_aot_autograd/runtime_wrappers.py:3499-3511`）。`forward`调用生成的
+`_fwd_fn`，并把 `saved_state.save_from_forward`作为回调传入；`backward`调用生成的
+`_bwd_fn`，由它运行bw prologue、真正的 `_backward_impl`与epilogue
+（`torch/_functorch/_aot_autograd/runtime_wrappers.py:3513-3539`）。
+
+所以 AOT runtime并不把两张FX图合并成一张。它利用 `torch.autograd.Function`的动态边：
+用户输出的 `grad_fn`指向 `CompiledFunctionBackward`，而类属性和 `ctx`保存静态 callable
+及本次forward状态。跨图依赖存在于 runtime对象与参数槽位，不存在于
+`fw_graph.nodes`/`bw_graph.nodes`之间。
+
+### 11.3 第一次 backward在恢复原上下文后才 lower
+
+`_AutogradBackwardCompiler.get_or_compile`先检查 `compiled_bw`；只有为空且 lazy info类型
+正确时才继续（`torch/_functorch/_aot_autograd/runtime_wrappers.py:2848-2876`）。随后它
+恢复捕获时的 `TracingContext`、`CompileContext`、AMP状态、metrics与lazy-backward
+callbacks，再调用：
+
+```text
+bw_compiler(copy.deepcopy(bw_module), placeholder_list)
+```
+
+对应实现位于
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:2878-2905`。编译完成后可保存cache
+entry，并把结果持久化到 `self.compiled_bw`
+（`torch/_functorch/_aot_autograd/runtime_wrappers.py:2906-2915`）。
+
+deepcopy的设计约束来自两个消费者：Inductor lowering允许修改它收到的GraphModule；
+compiled autograd仍可能需要原始 bw module重新trace更大的 backward。共享同一个可变
+GraphModule会让第一次lowering污染第二个消费者。
+
+### 11.4 backward消费策略在编译前决定
+
+`_backward_impl`先读取当前 GraphTask的keep-graph状态，得到
+`saved_tensors_use_once`，再调用 `get_or_compile`并把结果写回
+`CompiledFunction.compiled_bw`
+（`torch/_functorch/_aot_autograd/runtime_wrappers.py:3577-3590`）。若启用了donated
+buffer但本次需要保留图，则直接报错；满足约束后boxed调用 bw并允许steal args
+（`torch/_functorch/_aot_autograd/runtime_wrappers.py:3592-3617`）。
+
+这形成两个不能交换的决策：
+
+1. 先由 autograd runtime确认saved values是否一次消费；
+2. lazy compiler据此准备上下文和可能的donation；
+3. 才执行/编译 backward。
+
+double backward另有专门的 `CompiledFunctionBackward`用于保持图连接并在第二次求导时报出
+明确错误（`torch/_functorch/_aot_autograd/runtime_wrappers.py:3541-3561`），不是在
+`compiled_bw`上静默继续追踪。
+
+## 12. 正确性不变量
 
 - fw saved-output顺序必须与bw placeholder顺序一致；
 - tensor/SymInt/opaque对象分别用正确保存机制；
 - saved tensor version/alias/mutation语义不能丢；
 - lazy compile恢复原compile config、ShapeEnv和tracing context；
 - lowering修改deepcopy，不污染需要保留的bw graph；
--retain_graph/create_graph与donation假设一致；
+- retain_graph/create_graph与donation假设一致；
 - backward output映射回原inputs，非需梯度位置返回None；
 - AMP/RNG状态与eager一致。
 
-## 12. 复杂度
+## 13. 复杂度
 
 设saved tensors数量 \(S_t\)、saved symbols \(S_s\)、bw graph规模 \(B\)：
 
@@ -193,7 +283,7 @@ sequenceDiagram
 - donation可降低内存但增加适用条件；
 - deepcopy bw graph近似 \(O(B)\)，通常小于native compile但不是零。
 
-## 13. 常见误解
+## 14. 常见误解
 
 - **“fw和bw通过save tensors建立FX边。”** save建立runtime ABI，不是跨Graph Node边。
 - **“recompute在runtime临时决定重跑forward。”** partition已把选中的forward nodes复制进bw。

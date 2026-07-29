@@ -242,18 +242,87 @@ contract。
 | AOT bw graph 是 eager Node 图的拷贝 | AOT 在 trace 中重新构造 joint，再提取 fresh FX Graph |
 | 一个 operator 永远对应一个 kernel | dispatch key、backend、mode 和 fallback 都可改变实现 |
 
-## 12. 源码阅读顺序
+## 12. 源码跟读：一次 ATen 调用如何穿过 Dispatcher、Autograd 与 Engine
 
-```text
-torch/_ops.py
-  → aten/src/ATen/core/dispatch/Dispatcher.h
-  → torch/csrc/autograd/VariableTypeManual.cpp
-  → torch/csrc/autograd/node.h + edge.h
-  → torch/csrc/autograd/engine.h
+这一节选取手写 Autograd wrapper 作为可见样本，把 forward 调用和 backward 执行接起来。
+手写 wrapper 不是所有 operator 的统一实现；大量 wrapper 由生成器产生。但它完整暴露了
+生成代码同样需要遵循的契约，因此适合观察层次边界。
+
+```mermaid
+flowchart LR
+    P["OpOverload"] --> D["Dispatcher key lookup"]
+    D --> A["Autograd wrapper"]
+    A -->|redispatch below Autograd| K["backend kernel"]
+    A --> E["next edges and grad history"]
+    E --> N["backward Node graph"]
+    N --> Q["Engine ready queue"]
 ```
 
-读源码时要分别标注：当前代码是在选择实现、创建梯度历史，还是执行 backward；这三件事
-经常因为都发生在“算子附近”而被混为一谈。
+### 12.1 Python `OpOverload` 保存的是可分派 operator 句柄
+
+`OpOverload.__call__` 根据当前状态选择直接调用缓存的 C++ dispatch handle，或进入
+Python-side `_op`；`redispatch` 则显式带着剩余 DispatchKeySet 调用同一个 operator
+（`torch/_ops.py:908-926`）。因此，FX 图上常见的 `torch.ops.aten.*` target 不是某个
+CUDA kernel 的函数指针，而是带 schema/overload 身份、还能继续分派的 operator 对象。
+
+进入 C++ 后，`TypedOperatorHandle::call` 和 `redispatch` 把类型安全参数转交给 Dispatcher
+（`aten/src/ATen/core/dispatch/Dispatcher.h:614-634`）。redispatch 从给定 keyset 中查找
+下一实现并调用 kernel（`aten/src/ATen/core/dispatch/Dispatcher.h:843-858`）；boxed 路径
+也会先从参数提取 dispatch keyset，再完成 lookup
+（`aten/src/ATen/core/dispatch/Dispatcher.h:861-884`）。这就是 wrapper 能“处理一次语义，
+再继续走更低层实现”而不递归命中自己的基础。
+
+### 12.2 Autograd wrapper 本身也是 Dispatcher 选中的 kernel
+
+手写 `_fw_primal` wrapper 展示了典型结构：先判断输出是否需要梯度，必要时创建
+`Identity` backward Node 并收集 next edges；随后在排除 Autograd keys 的 guard 下
+redispatch；最后给输出安装 history
+（`torch/csrc/autograd/VariableTypeManual.cpp:123-139`）。
+
+这段顺序很重要：Autograd 不是在 backend kernel 之后扫描结果、凭空恢复输入关系；wrapper
+在调用 lower kernel 前已经保存了构建 backward edge 所需的输入语义，kernel 返回后再把
+输出与新 Node 连接。
+
+`compute_requires_grad` 会先尊重全局 GradMode，再扫描参数是否需要梯度；
+`set_history` 为 Node 添加 output metadata，并把 Tensor 的 gradient edge 指向该 Node
+（`torch/csrc/autograd/functions/utils.h:59-84`）。所以 `requires_grad=True` 只是建图条件，
+真正的依赖关系由 Node 的 next edges 与输出 gradient edge 共同组成。
+
+### 12.3 mutation operator 为什么多出 inplace 检查和 rebase
+
+`copy_` wrapper 先 unpack 输入并计算梯度需求，然后调用 `check_inplace`；需要建图时创建
+`CopyBackwards`、设置 next edges，redispatch 执行真实写入，最后对被修改 Tensor
+`rebase_history`（`torch/csrc/autograd/VariableTypeManual.cpp:196-215`）。
+
+这比 functional operator 多出的步骤不是实现噪声。写操作保留了 Python 对象和 Storage，
+却改变了它的数学历史；因此旧 gradient edge 不能原样继续代表“当前值从哪里来”。编译器
+若把 mutation 改写为 functional op，也必须在图 ABI 或 runtime writeback 中恢复同一可见
+语义。
+
+### 12.4 backward 调用不是沿 FX Graph 反向遍历
+
+当用户触发 backward 时，`Engine::execute` 接收 root edges、inputs、是否保留图以及
+是否创建高阶图等参数，并验证执行契约
+（`torch/csrc/autograd/engine.cpp:1294-1320`）。它为 root gradients 创建 InputBuffer，
+交给 `execute_with_graph_task`，然后等待 future 完成
+（`torch/csrc/autograd/engine.cpp:1382-1402`）。
+
+执行线程和设备队列会按需初始化；root 被封装为 `NodeTask` 放入相应 ready queue
+（`torch/csrc/autograd/engine.cpp:1418-1444`）。之后是 backward Node/Edge 图上的依赖调度，
+不是把 forward FX Node 做一次逆拓扑循环。AOTAutograd 后续会通过 tracing **重新表达**
+这段计算，才得到可交给编译器的 backward FX Graph。
+
+### 12.5 跟读后应区分的三种“边”
+
+| 关系 | 产生位置 | 语义 |
+|---|---|---|
+| Dispatcher redispatch | wrapper 到下一 dispatch key | 选择下一层 operator 实现 |
+| Autograd Edge | output gradient edge / Node next edge | backward value 应送到哪个 Node input |
+| FX data edge | Node 参数引用另一个 Node | 编译 IR 中值定义与使用 |
+
+三者都可能在一次算子附近出现，但对象、所有者和生命周期不同。pattern 匹配 ATen target
+只是在 FX data graph 上匹配 operator 结构；它不会自动证明 Autograd Edge、mutation
+history 或 dispatch behavior 也保持不变。
 
 ## 配套 Demo
 

@@ -34,9 +34,9 @@ profiler/runtime metrics，最终调用boxed wrapper
 所以：
 
 - disk entry可存在但 `current_callable=None`；
--反序列化后必须load generated module；
--post-compile可再次把callable包装为alignment/CUDAGraph版本；
--同一serialized graph在不同进程有不同runtime callable identity。
+- 反序列化后必须load generated module；
+- post-compile可再次把callable包装为alignment/CUDAGraph版本；
+- 同一serialized graph在不同进程有不同runtime callable identity。
 
 ## 3. 生命周期状态机
 
@@ -78,12 +78,12 @@ native callables和进程内对象不能可靠pickle。`prepare_for_serializatio
 
 反序列化后 `after_deserialization`：
 
--把source写回content-addressed path；
--通过PyCodeCache import module；
--注入constants；
--取得module `call`；
--恢复partition runner；
--若OSError则记录artifact path并失败。
+- 把source写回content-addressed path；
+- 通过PyCodeCache import module；
+- 注入constants；
+- 取得module `call`；
+- 恢复partition runner；
+- 若OSError则记录artifact path并失败。
 
 见 `torch/_inductor/output_code.py:1018-1047`、
 `torch/_inductor/output_code.py:1048-1048` 与
@@ -96,10 +96,10 @@ native callables和进程内对象不能可靠pickle。`prepare_for_serializatio
 
 cache序列化的是通用compiled graph描述，不保存本进程的：
 
--CUDAGraph recordings；
--input alignment wrapper；
--current tracing context output strides；
--某些customized partition wrappers。
+- CUDAGraph recordings；
+- input alignment wrapper；
+- current tracing context output strides；
+- 某些customized partition wrappers。
 
 `post_compile`明确在hit和miss后都运行，结果不写回cache
 （`torch/_inductor/output_code.py:842-856`）。
@@ -155,12 +155,12 @@ CUDAGraph rerecord过多、mutation/address invariant不满足，转普通compil
 
 cache目录可能被：
 
--另一个进程清理；
--作业生命周期脚本回收；
--容量策略驱逐；
--容器重启丢失；
--不同版本共享错误；
--并发writer尚未完成。
+- 另一个进程清理；
+- 作业生命周期脚本回收；
+- 容量策略驱逐；
+- 容器重启丢失；
+- 不同版本共享错误；
+- 并发writer尚未完成。
 
 content-addressed write需要atomic rename/锁；reader遇到不完整或丢失artifact应miss/rebuild，
 不能执行部分文件。源码通用write使用hash path和atomic write
@@ -169,11 +169,11 @@ content-addressed write需要atomic rename/锁；reader遇到不完整或丢失a
 ## 10. 进程、设备与fork边界
 
 - worker pools不能跨fork直接复用；
--Python module对象属于当前解释器；
--shared library handle属于当前进程；
--CUDA context、streams、CUDAGraph pool属于device/process；
--remote cache只共享可持久化artifact，不共享live handles；
--distributed ranks可能各自compile/load，也可能通过collective协调部分决策。
+- Python module对象属于当前解释器；
+- shared library handle属于当前进程；
+- CUDA context、streams、CUDAGraph pool属于device/process；
+- remote cache只共享可持久化artifact，不共享live handles；
+- distributed ranks可能各自compile/load，也可能通过collective协调部分决策。
 
 把父进程warmup过的live callable直接假设为child可用是高风险做法。
 
@@ -181,12 +181,12 @@ content-addressed write需要atomic rename/锁；reader遇到不完整或丢失a
 
 不同clear操作：
 
--丢弃lookup metadata；
--清进程内module/future；
--删除disk source；
--销毁CUDAGraph tree；
--重置backend；
--保留外部compiler/Triton cache。
+- 丢弃lookup metadata；
+- 清进程内module/future；
+- 删除disk source；
+- 销毁CUDAGraph tree；
+- 重置backend；
+- 保留外部compiler/Triton cache。
 
 恢复故障前要先确认是否需要保留repro artifact。粗暴清全部cache可能让问题暂时消失，也会
 丢失失效层证据。
@@ -195,14 +195,14 @@ content-addressed write需要atomic rename/锁；reader遇到不完整或丢失a
 
 - artifact必须绑定compiler版本、config、device/toolchain ABI；
 - constants和weights来源可验证；
--load失败可安全rebuild或降级；
--first-call compile/autotune不应在不允许的请求时延路径发生；
--CUDAGraph fallback仍保证正确性；
--cache目录权限/exec mount满足平台要求；
--多进程写入原子；
--remote cache内容有信任和隔离策略；
--错误指标能区分capture/compile/load/runtime；
--部署包不得依赖未随包提供的临时文件。
+- load失败可安全rebuild或降级；
+- first-call compile/autotune不应在不允许的请求时延路径发生；
+- CUDAGraph fallback仍保证正确性；
+- cache目录权限/exec mount满足平台要求；
+- 多进程写入原子；
+- remote cache内容有信任和隔离策略；
+- 错误指标能区分capture/compile/load/runtime；
+- 部署包不得依赖未随包提供的临时文件。
 
 ## 13. 复杂度与容量
 

@@ -85,7 +85,7 @@ dynamic shape dims（`torch/csrc/dynamo/cache_entry.h:26-32`）。
 
 - dynamic indices；
 - 每一维range；
--可选hint override；
+- 可选hint override；
 - 可选specialization predicates。
 
 写入逻辑见 `torch/_dynamo/decorators.py:1236-1263`。
@@ -117,7 +117,7 @@ scalar outputs和dynamic output-shape ops（`torch/__init__.py:3170-3174`）。
 - rank；
 - dtype/device/layout；
 - stride关系；
--符号range、整除和等式；
+- 符号range、整除和等式；
 - branch选择；
 - module状态；
 - Python对象identity；
@@ -187,8 +187,8 @@ T =
 - frame-state比较约随输入Tensor维度线性增长；
 - guard生成与shape expression规模至少为 \(O(D+E)\)；
 - constraint simplification实际成本取决于表达式结构，不能保证简单线性；
--静态策略空间可能随输入形态产生 \(S\) 个compiled entries；
--动态策略把一部分 \(S\) 转换为更大的单graph/guard/kernel成本。
+- 静态策略空间可能随输入形态产生 \(S\) 个compiled entries；
+- 动态策略把一部分 \(S\) 转换为更大的单graph/guard/kernel成本。
 
 评估时应同时记录compiled graph数、guard failure原因、symbol数量和稳态kernel性能。
 

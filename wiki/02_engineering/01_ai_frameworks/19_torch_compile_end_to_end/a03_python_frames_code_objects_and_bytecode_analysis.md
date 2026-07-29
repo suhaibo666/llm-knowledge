@@ -223,18 +223,97 @@ resume program。卷 B08 会继续追踪 `ContinueExecutionCache`。
 | graph break 后从函数头重来 | resume code 从保存的 program point 恢复 |
 | transformed code 就是 native kernel | 它是调用 compiled regions 的新 Python code object |
 
-## 14. 源码阅读顺序
+## 14. 源码跟读：首次调用如何把 Python frame 变成 GuardedCode
 
-```text
-torch/csrc/dynamo/eval_frame.c
-  → torch/_dynamo/cache_size.py
-  → torch/_dynamo/bytecode_transformation.py
-  → torch/_dynamo/convert_frame.py
-  → torch/_dynamo/symbolic_convert.py
+这里沿 public API 走到 bytecode translator，再回到 code cache。最容易混淆的两个时刻是：
+`torch.compile(fn)` 创建 wrapper，而 **wrapper 第一次执行** 才有真实 frame、locals 和输入，
+因而才可能捕获与编译。
+
+```mermaid
+flowchart LR
+    A["torch.compile"] --> W["optimized wrapper"]
+    W --> H["temporary eval frame callback"]
+    H --> C["C frame hook and code cache"]
+    C -->|cache miss| F["ConvertFrame"]
+    F --> T["InstructionTranslator"]
+    T --> B["bytecode transform and FX region"]
+    B --> G["GuardedCode"]
+    G --> C
+    C -->|cache hit| X["transformed code"]
 ```
 
-先确认 frame hook 和 cache ownership，再读 instruction rewrite，最后进入符号状态机；从
-InstructionTranslator 孤立开始会看见大量 opcode handler，却不知道它们最终要生成什么。
+### 14.1 public API 只先组装 wrapper
+
+`torch.compile` 的文档明确说明 compiled results 按 code object 缓存，guard failure 会产生
+重编译并受 cache-size limit 约束（`torch/__init__.py:3134-3166`）。函数末尾根据 backend
+配置包装 callable，再调用 `torch._dynamo.optimize(...)(model)` 返回优化后的对象
+（`torch/__init__.py:3361-3378`）。这里尚没有用户调用 frame，所以不能完成针对 locals、
+shape 和对象状态的 guard 构建。
+
+优化 wrapper 的 `_fn` 在真正调用原函数前设置 eval-frame callback，调用结束后恢复之前的
+callback（`torch/_dynamo/eval_frame.py:1480-1505`）。`optimize` 与 `_optimize` 则负责把
+backend、dynamic、guard hooks 等选项组装成这一入口
+（`torch/_dynamo/eval_frame.py:1726-1761`）。callback 是动态作用域，而不是永久替换
+整个解释器的执行函数。
+
+### 14.2 C frame hook 是捕获与 cache 的边界
+
+C 扩展把 callback 存在线程局部状态；`None`、`False` 和 callable 分别表示不同 eval-frame
+策略（`torch/csrc/dynamo/eval_frame.c:616-638`）。当 frame 到达时，Python 侧
+`CatchErrorsWrapper` 先检查 frame 是否应跳过、当前 compile mode 是否允许处理等边界
+（`torch/_dynamo/convert_frame.py:2517-2561`），再进入真正的 ConvertFrame。
+
+`ConvertFrameAssert.__call__` 接收 code object、cache entries 与 cache size 等信息
+（`torch/_dynamo/convert_frame.py:632-656`）。这说明 cache identity 的锚点是 code
+object 及其 entry 集合，不是一次性的 frame 实例；frame 提供本次 locals/stack，
+code object 提供可复用程序身份。
+
+### 14.3 `_compile` 为什么同时需要 instructions 和运行时状态
+
+`_compile` 的参数契约同时包含 code、globals、locals、builtins、compiler function、
+one-graph/export 选项和 frame state
+（`torch/_dynamo/convert_frame.py:1647-1680`）。只读取 bytecode 不能决定 Tensor
+shape、Python object identity 或分支结果；只读取运行时对象又没有 instruction pointer
+和控制流结构。Dynamo 必须把两者放进同一次 symbolic execution。
+
+内部 `compile_inner` 返回 transformed code、OutputGraph 等结果，随后更新 code state
+（`torch/_dynamo/convert_frame.py:2115-2138`）。ConvertFrame 外层再把这些行为包入统一
+异常与 replay/diagnostic 处理，而不是让每个 opcode handler自行决定 fallback
+（`torch/_dynamo/convert_frame.py:2295-2337`）。
+
+### 14.4 InstructionTranslator 是 bytecode 状态机，不是 operator recorder
+
+translator 的 `step` 每次读取一条 instruction，维护当前 instruction、speculation
+状态，并在需要时处理 graph break
+（`torch/_dynamo/symbolic_convert.py:1673-1705`）。`run` 驱动整个 instruction loop，
+还负责到达 fallback boundary 后的处理
+（`torch/_dynamo/symbolic_convert.py:2060-2085`）。translator 初始化时还建立当前
+translator 的线程局部上下文，供嵌套 tracing/inline 等路径使用
+（`torch/_dynamo/symbolic_convert.py:5493-5515`）。
+
+所以它的输出不只是 ATen Node 列表：locals、value stack、side effects、sources、
+guards 和 resume point 都参与 transformed program 的生成。operator graph 只是这次
+Python 符号执行中可编译区域的一个产物。
+
+### 14.5 transformed code 与 guards 如何形成可缓存结果
+
+bytecode transformer 先取得并清理 instructions，调用变换函数，再修复并组装新的
+code object（`torch/_dynamo/bytecode_transformation.py:1824-1845`）。清理后的
+instructions 可以缓存，但每次使用必须 clone，因为 transformation 会原地修改它们
+（`torch/_dynamo/bytecode_transformation.py:1899-1915`）。
+
+编译完成后，ConvertFrame 构建 guard manager，并把 transformed code 与 guard check
+封装成 `GuardedCode`（`torch/_dynamo/convert_frame.py:1903-1938`）。cache hit 的含义
+由此变得精确：不是“函数编过就无条件复用”，而是当前 frame 状态通过某个 entry 的
+guards 后，执行该 entry 的 transformed code。
+
+### 14.6 设计结论
+
+1. wrapper 把捕获延迟到有真实 frame 的调用时刻。
+2. C frame hook 负责解释器边界和 code-object cache，Python ConvertFrame 负责编译策略。
+3. InstructionTranslator 模拟 Python 机器状态，因此能在 graph break 后生成正确 resume。
+4. GuardedCode 把“优化后的程序”和“它成立的前提”作为一个 cache entry 保存。
+5. 因而 Dynamo graph 不能脱离 transformed bytecode、guards 和 resume code 单独解释。
 
 ## 配套 Demo
 

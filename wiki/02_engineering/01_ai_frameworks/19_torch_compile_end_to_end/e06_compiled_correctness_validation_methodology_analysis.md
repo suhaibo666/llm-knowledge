@@ -24,14 +24,14 @@
 
 eager和compiled两路必须从等价但独立的状态开始：
 
--深拷贝可复制的module/optimizer state；
--克隆输入并保留requires-grad；
--明确共享alias关系，不能把本应alias的输入独立clone；
--重置RNG；
--清grad；
--控制train/eval、autocast、grad、determinism；
--同步异步device后再读取结果；
--避免第一路mutation污染第二路。
+- 深拷贝可复制的module/optimizer state；
+- 克隆输入并保留requires-grad；
+- 明确共享alias关系，不能把本应alias的输入独立clone；
+- 重置RNG；
+- 清grad；
+- 控制train/eval、autocast、grad、determinism；
+- 同步异步device后再读取结果；
+- 避免第一路mutation污染第二路。
 
 源码的debug helper会复制GraphModule、克隆输入并恢复gradness；若输出需要backward，则把
 输出归约为scalar loss再收集结果
@@ -68,8 +68,8 @@ Tensor值。
 - fp64/fp32/fp16/bf16不能使用同一容差；
 - reduction顺序改变会产生可预期误差；
 - NaN相等是否允许要显式决定；
--整数、布尔、shape和索引通常要求精确；
--容差不能随模型规模任意放大到掩盖错误。
+- 整数、布尔、shape和索引通常要求精确；
+- 容差不能随模型规模任意放大到掩盖错误。
 
 `same_two_models`先运行eager reference，并可生成fp64 reference辅助判断低精度误差，再用
 配置的tolerance比较（`torch/_dynamo/debug_utils.py:631-658` 与
@@ -107,21 +107,21 @@ outputs和gradients
 
 需要为每个可变对象记录：
 
--调用前值和version；
--调用后值和version；
--是否仍是view；
--base/storage identity；
--storage offset、size、stride；
--相互alias是否保持；
--mutation发生次数和可见顺序。
+- 调用前值和version；
+- 调用后值和version；
+- 是否仍是view；
+- base/storage identity；
+- storage offset、size、stride；
+- 相互alias是否保持；
+- mutation发生次数和可见顺序。
 
 常见错误包括：
 
 - functionalization返回更新值但wrapper未写回；
--输出值正确但view被materialize成copy；
--输入alias模式特殊化错误；
--buffer mutation被DCE或重排；
--saved tensor在反向前被不当覆盖。
+- 输出值正确但view被materialize成copy；
+- 输入alias模式特殊化错误；
+- buffer mutation被DCE或重排；
+- saved tensor在反向前被不当覆盖。
 
 这类错误不一定造成首轮数值差异。
 
@@ -129,12 +129,12 @@ outputs和gradients
 
 对有effect的程序，比较：
 
--print/log/callback/hook是否发生；
--发生次数与相对顺序；
--RNG消耗；
--collective调用顺序；
--异常是在调用前、部分mutation后还是调用后抛出；
--异常后对象是否保持一致状态。
+- print/log/callback/hook是否发生；
+- 发生次数与相对顺序；
+- RNG消耗；
+- collective调用顺序；
+- 异常是在调用前、部分mutation后还是调用后抛出；
+- 异常后对象是否保持一致状态。
 
 编译器通常不保证所有错误消息逐字符一致，但异常类别和用户可观察状态不能被无意改变。
 生产验收应提前定义哪些effect在compile region内允许。
@@ -143,19 +143,92 @@ outputs和gradients
 
 测试集合应覆盖：
 
--最小/典型/最大shape；
--动态范围边界和越界；
--contiguous与代表性stride；
--不同dtype/autocast；
--requires-grad组合；
--alias与非alias；
--train/eval；
--空Tensor、零维、极端值、NaN/Inf；
--首次编译、cache hit、recompile后的新entry；
--forward-only与forward+backward；
--单进程与多rank。
+- 最小/典型/最大shape；
+- 动态范围边界和越界；
+- contiguous与代表性stride；
+- 不同dtype/autocast；
+- requires-grad组合；
+- alias与非alias；
+- train/eval；
+- 空Tensor、零维、极端值、NaN/Inf；
+- 首次编译、cache hit、recompile后的新entry；
+- forward-only与forward+backward；
+- 单进程与多rank。
 
 不能用一次示例输入证明guard覆盖范围内所有输入正确；至少要按约束边界设计代表类。
+
+## 源码跟读：PyTorch 的调试比较器到底比较了什么
+
+### 1. reference run为什么必须克隆 GraphModule 与输入
+
+`clone_inputs_retaining_gradness`先克隆输入，再逐 Tensor 恢复原
+`requires_grad`（`torch/_dynamo/debug_utils.py:586-596`）。`run_fwd_maybe_bwd`又
+deepcopy GraphModule，默认克隆参数，清零 module grads，运行 forward；输出需要 backward
+时把结构归约为 scalar loss 后调用 backward，最后收集模型、输出与输入相关结果
+（`torch/_dynamo/debug_utils.py:599-628`）。
+
+这套所有权隔离防止 reference 先执行时的 mutation、grad accumulation 或 module state
+直接污染 optimized run。`disable_clone=True`只在追求更高复现 fidelity、并接受输入可能被
+破坏时使用，不能成为常规正确性基线。
+
+### 2. `same_two_models`不是简单的 output allclose
+
+调用链是：
+
+```mermaid
+flowchart LR
+    GM["reference GraphModule"] --> RefRun["clone + forward + optional backward"]
+    GM --> FP64["optional fp64 deepcopy/reference"]
+    Opt["optimized GraphModule"] --> OptRun["独立 clone + forward + optional backward"]
+    RefRun --> Compare["utils.same<br/>nested outputs / grads / tolerance"]
+    FP64 --> Compare
+    OptRun --> Compare
+```
+
+函数先运行 reference；若开启配置则尝试把 model 与 inputs 转为 fp64 再得到第三份 reference
+（`torch/_dynamo/debug_utils.py:631-658`）。随后独立运行 optimized model，把 ref、result
+与可选 fp64_ref 交给 `same`，使用 repro tolerance、`equal_nan=True`等策略
+（`torch/_dynamo/debug_utils.py:666-686`）。
+
+这里有一个容易误用的机制：optimized run 抛异常时，`same_two_models`在 accuracy minifier
+语境中记录异常并返回 `True`，意思是“这不是当前要保留的 accuracy failure”，不是“运行
+正确”。`backend_accuracy_fails`同样在 compiler/比较异常时返回 `False`
+（`torch/_dynamo/debug_utils.py:739-768`）。所以这些返回值是**minifier predicate**，不能
+直接当生产验收布尔值；异常必须由外层单独记录为 FAIL。
+
+### 3. FX pass numeric checker覆盖的状态比名字看起来更多，也更有限
+
+numeric checker固定 Python、NumPy、Torch seed并打开 deterministic algorithms
+（`torch/_inductor/fx_passes/numeric_utils.py:19-35`）。它分别比较：
+
+- 字典 key 与非 `None`参数/梯度 Tensor
+  （`torch/_inductor/fx_passes/numeric_utils.py:43-61`;
+  `torch/_inductor/fx_passes/numeric_utils.py:62-74`）；
+- tuple output长度与逐项 Tensor
+  （`torch/_inductor/fx_passes/numeric_utils.py:77-104`）；
+- named parameters、forward output 与 parameter gradients
+  （`torch/_inductor/fx_passes/numeric_utils.py:107-130`）。
+
+`run_model`在每轮为 reference/control分别重置随机状态，比较 forward 前后的 parameters 与
+outputs，再尝试 backward 与 gradient 比较
+（`torch/_inductor/fx_passes/numeric_utils.py:133-159`）；配置要求时才额外执行 SGD step 并
+比较参数（`torch/_inductor/fx_passes/numeric_utils.py:160-180`）。
+
+这解释了它的边界：它适合 pass 前后数值回归，不自动证明 alias identity、storage offset、
+异常类型、I/O/RNG次数、optimizer state dict 或分布式 collective 语义。那些必须按本篇的
+mutation/alias/effect/optimizer矩阵另建断言。
+
+### 4. 正确性 harness的失败语义必须比比较器更严格
+
+一个可交付 harness 至少需要把三种结果分开：
+
+1. reference 或 setup 本身失败：测试无效，标记 harness/setup FAIL；
+2. compiled callable 抛异常：runtime FAIL；
+3. 两边都完成但值、grad、alias/effect不一致：correctness FAIL。
+
+不能沿用 minifier 为缩图服务的“异常不属于 accuracy predicate，所以返回非失败”语义。
+同一底层 helper在不同 caller 中有不同返回值含义，正是这里需要源码跟读而不能只看函数名的
+原因。
 
 ## 9. 分层验证与定位
 
@@ -169,10 +242,10 @@ flowchart LR
 
 每相邻两层比较，可以把差异收敛到：
 
--capture/side effects；
--AOT functionalization/partition/runtime；
--Inductor passes/codegen；
--runtime wrapper、cache或CUDAGraph。
+- capture/side effects；
+- AOT functionalization/partition/runtime；
+- Inductor passes/codegen；
+- runtime wrapper、cache或CUDAGraph。
 
 `backend_accuracy_fails`会复制图与输入、编译候选并调用`same_two_models`；若候选出现不同
 runtime异常，则不把它判成原accuracy failure
@@ -185,12 +258,12 @@ numeric check helper设置torch/Python/NumPy seed，并请求deterministic algor
 
 但确定性测试仍需考虑：
 
--某些算子没有deterministic实现；
--并行reduction次序变化；
--device异步错误；
--分布式通信时序；
--allocator地址影响；
--autotune与CUDAGraph warmup。
+- 某些算子没有deterministic实现；
+- 并行reduction次序变化；
+- device异步错误；
+- 分布式通信时序；
+- allocator地址影响；
+- autotune与CUDAGraph warmup。
 
 建议把“严格确定性验证”和“统计误差分布验证”分开，不用一次测试兼任二者。
 
@@ -210,14 +283,14 @@ T_{\text{validation}}=O(MSRT)
 
 每个结果应记录：
 
--reference与candidate层级；
--版本/config/device；
--输入类和状态；
--比较字段与容差；
--是否发生graph break/recompile/cache hit；
--cold/warm/steady调用序号；
--失败artifact和最小repro；
--已知数值差异的批准依据。
+- reference与candidate层级；
+- 版本/config/device；
+- 输入类和状态；
+- 比较字段与容差；
+- 是否发生graph break/recompile/cache hit；
+- cold/warm/steady调用序号；
+- 失败artifact和最小repro；
+- 已知数值差异的批准依据。
 
 ## 13. 常见误解
 

@@ -4,6 +4,11 @@
 > 固定源码 checkout：`E:/97-codes/torch_parallel/p`  
 > 固定源码 commit：`e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 交付策略：原理与源码优先；不新增 demo；设计文档不提交，课程正文按用户后续授权提交
+>
+> **复核修订说明（2026-07-29）**：本报告记录初次交付快照；审查意见修复后的
+> 最新统计、变更与验证证据以
+> [review_remediation_report_2026-07-29.md](review_remediation_report_2026-07-29.md)
+> 为准。
 
 ## 1. 交付结论
 

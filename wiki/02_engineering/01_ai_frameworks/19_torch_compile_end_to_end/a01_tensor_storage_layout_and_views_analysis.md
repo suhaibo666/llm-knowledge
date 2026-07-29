@@ -201,18 +201,96 @@ effect、graph users 和 runtime ABI。
 | FX Node 就是 runtime Tensor | Node 是程序值定义；runtime Tensor/Storage 是执行结果 |
 | functionalization 后再也没有 mutation | mutation 被重编码，runtime writeback/reinplace 仍需恢复语义 |
 
-## 12. 源码阅读顺序
+## 12. 源码跟读：一个 view 如何从 Storage 关系进入 Autograd 与编译器
 
-```text
-c10/core/TensorImpl.h
-  → c10/core/StorageImpl.h
-  → torch/csrc/autograd/variable.h
-  → torch/csrc/autograd/variable.cpp
-  → 卷 C 的 metadata / alias / functionalization / memory
+这一节沿着“创建 view → 共享版本 → inplace 检查 → 梯度历史重接 → 编译期显式化”走一遍。
+目标不是背类名，而是确认一个关键事实：**view 语义同时跨越 TensorImpl、AutogradMeta
+和编译期 alias 表示，任何一层单独存在都不足以保证改图正确。**
+
+```mermaid
+flowchart LR
+    K["view kernel result"] --> A["as_view"]
+    A --> M["DifferentiableViewMeta"]
+    M --> V["shared version counter"]
+    V --> I["inplace legality check"]
+    I --> R["rebase base history"]
+    V --> G["lazy grad_fn refresh"]
+    A -.->|compile capture| F["functional view metadata"]
 ```
 
-先读 TensorImpl 与 StorageImpl 的所有权，再读 autograd view；从 autograd view 反推为什么
-编译器需要 functionalization、alias analysis 和 mutation ABI。
+### 12.1 `as_view` 不是只返回一个共享 Storage 的 Tensor
+
+Autograd 生成代码在 view kernel 得到结果后进入 `as_view`。入口首先区分 inference tensor：
+inference mode 不需要追踪 differentiable view，因而可以直接返回原结果
+（`torch/csrc/autograd/VariableTypeUtils.h:189-205`）。正常路径则读取 base 已有的
+backward/forward view metadata；当 view-of-view 可以安全串联时，它把当前 view function
+与原链组合，再调用 `make_variable_differentiable_view`
+（`torch/csrc/autograd/VariableTypeUtils.h:207-225`）。
+
+`make_variable_differentiable_view` 会确认新 Tensor 还没有 AutogradMeta，然后安装
+`DifferentiableViewMeta`，而不是改写 kernel 已经创建的 TensorImpl
+（`torch/csrc/autograd/variable.h:837-864`）。这解释了为什么“底层 Storage 已共享”和
+“Autograd 知道它是哪个 base 的 view”是两种不同的关系：前者由 Tensor 实现承载，后者由
+Autograd metadata 补齐。
+
+### 12.2 version counter 为什么必须沿 alias 共享
+
+`DifferentiableViewMeta` 构造时会标记 `is_view_`，并把当前变量的 version counter 指向
+backward view base 的 counter，同时记录创建时的 `attr_version_`
+（`torch/csrc/autograd/variable.cpp:42-59`）。因此，对 base 或任一共享 counter 的 view
+做 inplace，其他 view 下次读取时能够观察到版本变化。
+
+真正的 counter 接口位于 TensorImpl：可以设置、读取和 bump；inference tensor 在
+inference mode 之外 bump 会报错（`c10/core/TensorImpl.h:2137-2159`）。Autograd 的
+`set_version_counter` 与 `bump_version` 只是把操作转交给 TensorImpl
+（`torch/csrc/autograd/variable.cpp:355-365`）。所以 counter 的所有权在 Tensor 实现层，
+Autograd 用它检测自己记录的 view/梯度信息是否陈旧。
+
+### 12.3 inplace 检查和 rebase 分别解决什么问题
+
+写操作前，`check_inplace` 会根据 `can_mutate_inplace` 的结果区分普通可写、需要处理的
+non-default backward view、leaf view 和 leaf Tensor；后两类在 grad mode 下直接报错
+（`torch/csrc/autograd/VariableTypeUtils.h:67-82`）。它不是一般意义上的 alias analysis，
+而是在当前 Autograd 规则下判断这次修改是否允许以及是否需要重接历史。
+
+若修改的是 backward view，`rebase_history` 不会仅给这个 view 换 `grad_fn`。源码会在
+base 上构造 `CopySlices`，把原 view 的 geometry、view function 和新 backward edge
+编码进去，再把 hooks 移到新的节点
+（`torch/csrc/autograd/variable.cpp:212-240`）。原因是后续梯度必须沿 base 的历史看见
+这次写入；若只更新 view 对象，本来共享 base 的其他路径会得到不一致的梯度关系。
+
+### 12.4 为什么 `grad_fn` 读取也可能触发修复
+
+`VariableHooks::grad_fn` 对 backward view 比较当前 version 与 `attr_version_`。不相等时
+调用 `handle_view_on_rebase`，再返回刷新后的 `grad_fn`
+（`torch/csrc/autograd/variable.cpp:650-665`）。这是一种惰性一致性机制：mutation 通过
+共享 counter 发出“历史可能失效”的信号，真正需要 Autograd 历史时再验证和重建。
+
+由此也能解释编译器为什么不能把 version counter 简化成一个普通整数 guard：
+counter 只负责暴露变化，合法性检查、历史重接和错误诊断仍依赖 view metadata 与创建上下文。
+
+### 12.5 functionalization 把隐式关系改写成什么
+
+编译捕获希望 pass 看到显式 value flow，而不是依赖运行时对象之间隐藏的 Storage/view
+关系。functionalization 的 view fallback 会调用 functional view 表达，计算输出 stride；
+若 symbolic stride 无法求出会明确报错，然后把 sizes/strides 写回包装结果
+（`aten/src/ATen/FunctionalizeFallbackKernel.cpp:350-367`；
+`aten/src/ATen/FunctionalizeFallbackKernel.cpp:369-383`）。
+
+这一步不是删除 view 语义，而是把“这个对象悄悄共享了谁”转成可追踪的 functional
+metadata 和 value relation。类似地，TensorImpl 的 shallow-copy/detach 路径仍必须决定
+Python dispatch/subclass 参与方式，并显式设置 version counter
+（`c10/core/TensorImpl.cpp:562-590`）。因此，编译期复制 metadata 或创建替代值时，也不能
+默认“复制 TensorImpl 字段”就等价于复制完整 Tensor 语义。
+
+### 12.6 跟读后应保留的设计结论
+
+1. Storage alias 回答“数据可能共享”，DifferentiableViewMeta 回答“梯度历史如何关联”。
+2. version counter 是跨 alias 的失效信号，不是 mutation 合法性的完整证明。
+3. inplace 后需要把历史 rebase 到 base 可见的位置，不能只修改局部 view。
+4. functionalization 的价值是把隐式对象关系提升为 pass 能分析的显式图关系。
+5. 因此，FX Node identity、Tensor identity、Storage identity 和 Autograd view identity
+   必须分别建模，任何两个都不能无条件互换。
 
 ## 配套 Demo
 
@@ -236,4 +314,3 @@ python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\
 - [[19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order]] — alias、mutation 与 effect
 - [[19_torch_compile_end_to_end/18_inductor_ir_values_loops_layouts_and_buffers]] — Inductor layout/storage
 - [[00_tensor_and_storage/index]] — Tensor/Storage 领域资料
-

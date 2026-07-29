@@ -12,7 +12,7 @@ FX/Inductor图是编译IR；CUDA Graph记录的是某次设备执行：
 
 - kernel launches；
 - memcpy/memset；
--固定地址上的device work；
+- 固定地址上的device work；
 - stream上的执行顺序；
 - private memory pool中的allocation pattern。
 
@@ -31,7 +31,7 @@ FX/Inductor图是编译IR；CUDA Graph记录的是某次设备执行：
 - input mutation；
 - forward/backward阶段；
 - memory pool checkpoint；
--用户output是否仍存活。
+- 用户output是否仍存活。
 
 因此同一个function可在树的不同parent路径下有多个recordings。`CUDAGraphNode`注释说明：
 每个node只有一个parent但可有多个children，并共享一个memory pool
@@ -41,11 +41,11 @@ FX/Inductor图是编译IR；CUDA Graph记录的是某次设备执行：
 
 动态SymInt在generated wrapper中可能作为Python int输入。`cudagraphify_impl`：
 
--提取int inputs形成key；
--不允许capture的size直接走普通model；
--已有key直接复用recorded function；
+- 提取int inputs形成key；
+- 不允许capture的size直接走普通model；
+- 已有key直接复用recorded function；
 - miss时对齐/复制inputs并record；
--把结果存入 `fn_cache[int_key]`。
+- 把结果存入 `fn_cache[int_key]`。
 
 见 `torch/_inductor/cudagraph_trees.py:414-441` 与
 `torch/_inductor/cudagraph_trees.py:442-470`。
@@ -57,12 +57,12 @@ FX/Inductor图是编译IR；CUDA Graph记录的是某次设备执行：
 `CUDAGraphTreeManager`管理：
 
 - roots和function到recording nodes；
--function metadata/stack traces；
+- function metadata/stack traces；
 - warmed functions；
 - mutation/rerecord counters；
 - current path state；
--当前node/generation；
--一个device上的共享capture stream和graph memory pool。
+- 当前node/generation；
+- 一个device上的共享capture stream和graph memory pool。
 
 职责与设计见 `torch/_inductor/cudagraph_trees.py:2243-2265`，roots/functions/warmup状态见
 `torch/_inductor/cudagraph_trees.py:2268-2287`。
@@ -84,9 +84,9 @@ manager可结束当前tree，减少不必要耦合。
 record前需要warmup：
 
 - 初始化lazy modules/kernels；
--完成首次allocator行为；
--避免capture期间发生不允许的初始化；
--观察真实output/liveness。
+- 完成首次allocator行为；
+- 避免capture期间发生不允许的初始化；
+- 观察真实output/liveness。
 
 若用普通pool warmup，再在graph pool record，地址pattern可能不同；若额外保留输入又会增加
 training内存。Tree manager因此在graph pool中warmup，并在必要时checkpoint allocator state。
@@ -97,7 +97,7 @@ training内存。Tree manager因此在graph pool中warmup，并在必要时check
 `CUDAGraphNode`使用：
 
 - output storage weakrefs；
--从root到当前node的path weakrefs；
+- 从root到当前node的path weakrefs；
 - Tensor weakrefs；
 - cudagraph-managed input indices；
 - 对live previous outputs的alias引用；
@@ -163,31 +163,132 @@ output metadata创建runtime wrapper
 收益：
 
 - 减少Python和kernel launch overhead；
--稳定多kernel工作流replay；
--共享private pool。
+- 稳定多kernel工作流replay；
+- 共享private pool。
 
 代价：
 
--warmup与record额外调用；
--private pool持有memory；
--输入地址/shape/liveness限制；
--dynamic key产生多recordings；
--rerecord/fallback；
--调试/profiling复杂度。
+- warmup与record额外调用；
+- private pool持有memory；
+- 输入地址/shape/liveness限制；
+- dynamic key产生多recordings；
+- rerecord/fallback；
+- 调试/profiling复杂度。
 
 因此 `reduce-overhead`是策略，不是无条件加速承诺。
 
-## 13. 复杂度
+## 13. 源码跟读：compiled callable怎样进入 Tree状态机
+
+### 13.1 `post_compile`只换 callable，不改任何 FX node
+
+`cudagraph_post_compile`接收已经生成的 `CompiledFxGraph`，检查策略后**原地替换**
+`compiled_graph.current_callable`（`torch/_inductor/output_code.py:230-257`）。它从cache
+metadata和本次装载环境组装device、forward/backward模式、constants、mutated inputs与
+user-visible outputs，再调用policy或默认 `cudagraphify`
+（`torch/_inductor/output_code.py:272-312`）。
+
+这条边界证明 runtime CUDA Graph不参与FX pass：
+
+```mermaid
+flowchart LR
+    F["post-grad FX"] --> I["Inductor IR / codegen"]
+    I --> O["CompiledFxGraph.current_callable"]
+    O --> P["post_compile"]
+    P --> D["deferred_cudagraphify callable"]
+    D --> T["CUDAGraphTreeManager.run"]
+    T -->|warmup / fallback| O
+    T -->|record| N["CUDAGraphNode"]
+    T -->|replay| N
+```
+
+FXGraphCache可缓存编译产物与CUDAGraph eligibility metadata，却不能序列化当前进程的CUDA
+stream、allocator pool、live output weakrefs或已record的graph。因此cache hit后仍必须执行
+这层包装。
+
+### 13.2 第一层cache按动态整数值分流
+
+`cudagraphify_impl`只在closure中保存 `fn_cache`和哪些输入位置是Python int
+（`torch/_inductor/cudagraph_trees.py:414-429`）。每次调用先抽取 `int_key`：
+
+1. key不在允许capture的sizes集合，直接调用普通compiled model；
+2. `fn_cache`命中，直接调用该key的deferred recording；
+3. miss时检查alignment、调整static input集合并复制misaligned inputs；
+4. 调用真正的 `cudagraphify`，缓存返回的函数，同时把这一次产生的output直接返回。
+
+对应分支在 `torch/_inductor/cudagraph_trees.py:431-470`。这里的key变化只是runtime
+recording多态性，不必然触发 Dynamo guard miss或重新lower FX图。
+
+### 13.3 manager先按device隔离，再按function/path选择node
+
+manager container存在线程局部状态中，并以 `device_index`加锁创建
+（`torch/_inductor/cudagraph_trees.py:384-400`）。一个manager的roots、function metadata
+和warmed set见 `torch/_inductor/cudagraph_trees.py:2268-2287`。每次 `run`先把
+function对应的 FORWARD/BACKWARD mode设为当前状态，执行 `_run`，再更新“是否有待运行
+backward的forward”标志（`torch/_inductor/cudagraph_trees.py:2382-2399`）。
+
+`_run`首先结束遗留的record/warmup状态并处理generation边界，然后判断mutation
+（`torch/_inductor/cudagraph_trees.py:2445-2478`）。真正的三态分支是：
+
+```mermaid
+stateDiagram-v2
+    [*] --> Warmup: function 未 warmup
+    Warmup --> Candidate: 后续相同路径调用
+    Candidate --> Replay: child invariant SUCCESS
+    Candidate --> Record: 没有合法 child
+    Record --> Replay: recording 完成
+    Replay --> Candidate: 下一次 function 调用
+    Record --> Fallback: 非 static churn 的 rerecord 超限
+    Fallback --> Fallback: 普通 compiled callable
+```
+
+未warmup、处于warmup或强制warmup时，它在必要时先恢复allocator checkpoint，再在
+`graph_capture_lock`下调用 `run_eager`
+（`torch/_inductor/cudagraph_trees.py:2482-2503`）。否则从roots或current node的children中
+逐个检查同一function的recordings，首个 invariant成功者立即执行
+（`torch/_inductor/cudagraph_trees.py:2505-2520`）。
+
+### 13.4 replay为什么仍要复制输入和重建输出
+
+`CUDAGraphNode.run`并不是裸 `cudaGraphLaunch`：它先检查static inputs地址，再把本次动态
+输入复制到record时的稳定buffer，执行graph，依据保存的storage/alias metadata重建
+outputs，最后清空输入列表
+（`torch/_inductor/cudagraph_trees.py:1246-1265`）。
+
+candidate是否可用还要求“liveness、static inputs、private-pool managed tensors”稳定；
+检查入口及managed pointer比较见
+`torch/_inductor/cudagraph_trees.py:1932-1961`。node保留共享pool、children以及当前path的
+storage/tensor weakrefs（`torch/_inductor/cudagraph_trees.py:952-981`），所以树边表达：
+
+> 在父recording留下的allocator checkpoint与仍存活outputs条件下，这个child recording的
+> 固定地址假设成立。
+
+它不是Tensor值依赖边。真实Tensor数据依赖早已在compiled kernels中；树只决定哪份recording
+能在当前memory state下安全replay。
+
+### 13.5 invariant miss后的fallback不是重新编译
+
+若child检查失败，除 `StaticInputIdxMismatch`这种允许的地址churn外，其余原因计入
+unexpected rerecord（`torch/_inductor/cudagraph_trees.py:2522-2543`）。达到上限后直接
+调用 `ids_to_funcs[function_id].model(new_inputs)`；未超限则checkpoint当前执行状态并
+record一个新node（`torch/_inductor/cudagraph_trees.py:2563-2599`）。
+
+这个fallback仍执行已经编译的Inductor callable。它放弃的是CUDA Graph replay，不是退回
+eager PyTorch，也不是创建新FX graph。forward即使未被CUDAGraph包装，backward wrapper仍会
+通知同device manager进入backward generation
+（`torch/_inductor/output_code.py:181-208`），以免错误保留上一轮forward的activation
+liveness状态。
+
+## 14. 复杂度
 
 设函数有 \(R\) 个recording paths，当前parent下 \(C_f\) 个children：
 
--child匹配要检查候选invariants，worst case \(O(C_f \cdot Q)\)；
--record成本约为一次compiled execution加capture开销；
--replay launch overhead近似常数，但kernel本身成本不变；
--memory随shared pool high-water mark、live path outputs和recordings增长；
--int key cache空间随实际动态key种类增长。
+- child匹配要检查候选invariants，worst case \(O(C_f \cdot Q)\)；
+- record成本约为一次compiled execution加capture开销；
+- replay launch overhead近似常数，但kernel本身成本不变；
+- memory随shared pool high-water mark、live path outputs和recordings增长；
+- int key cache空间随实际动态key种类增长。
 
-## 14. 常见误解
+## 15. 常见误解
 
 - **“CUDA Graph是编译器的最终FX图。”** 它是runtime device-work recording。
 - **“第一次调用就一定record并replay。”** 常先warmup，后续才record。

@@ -25,14 +25,14 @@
 
 一个高保真repro至少需要：
 
--GraphModule code与必要submodule/constants；
--输入shape、stride、dtype、device、requires-grad和alias；
--随机状态与determinism；
--compiler/backend/config和环境变量；
--forward-only或forward+backward；
--异常或accuracy predicate；
--分布式world/rank/collective条件；
--复现依赖的custom op注册与toolchain。
+- GraphModule code与必要submodule/constants；
+- 输入shape、stride、dtype、device、requires-grad和alias；
+- 随机状态与determinism；
+- compiler/backend/config和环境变量；
+- forward-only或forward+backward；
+- 异常或accuracy predicate；
+- 分布式world/rank/collective条件；
+- 复现依赖的custom op注册与toolchain。
 
 after-AOT生成器会构造独立FX脚本，加入环境、配置、Tensor构造和必要的distributed/Triton
 imports（`torch/_dynamo/repro/after_aot.py:528-557` 与
@@ -47,8 +47,8 @@ imports（`torch/_dynamo/repro/after_aot.py:528-557` 与
 保存backend收到的 Dynamo FX，适合：
 
 - Dynamo FX本身错误；
--backend入口即失败；
--需要保留Dynamo region边界。
+- backend入口即失败；
+- 需要保留Dynamo region边界。
 
 `dump_to_minify_after_dynamo`把图、参数、backend名和accuracy模式写入launcher
 （`torch/_dynamo/repro/after_dynamo.py:300-316`）。
@@ -58,8 +58,8 @@ imports（`torch/_dynamo/repro/after_aot.py:528-557` 与
 保存lift parameters后的fw或bw图，适合：
 
 - Inductor compiler失败；
--单独最小化forward/backward；
--保存更规则的Tensor/SymInt输入ABI。
+- 单独最小化forward/backward；
+- 保存更规则的Tensor/SymInt输入ABI。
 
 `dump_compiler_graph_state`按node数建立checkpoint并复制最新`repro.py`
 （`torch/_dynamo/repro/after_aot.py:917-943`）；`dump_to_minify`则生成带`minify`命令的launcher
@@ -72,9 +72,9 @@ imports（`torch/_dynamo/repro/after_aot.py:528-557` 与
 核心函数接收：
 
 - failing `GraphModule`；
--与placeholder对齐的inputs；
+- 与placeholder对齐的inputs；
 - `module_fails(gm, inputs) -> bool`；
--每次缩减后的dump callback。
+- 每次缩减后的dump callback。
 
 它先做concrete propagation和sanity check，确保原始图确实满足失败predicate
 （`torch/_functorch/fx_minifier.py:195-224`、
@@ -100,11 +100,11 @@ imports（`torch/_dynamo/repro/after_aot.py:528-557` 与
 
 实际循环还会：
 
--移除outputs；
--消除dead code；
--移除未使用inputs；
--整理placeholder到图首；
--尝试不同granularity。
+- 移除outputs；
+- 消除dead code；
+- 移除未使用inputs；
+- 整理placeholder到图首；
+- 尝试不同granularity。
 
 未使用input和DCE策略见 `torch/_functorch/fx_minifier.py:382-411` 与
 `torch/_functorch/fx_minifier.py:412-422`；delta debugging把候选node
@@ -116,10 +116,10 @@ imports（`torch/_dynamo/repro/after_aot.py:528-557` 与
 
 直接删除一个中间node会让其users失去定义。把它变成placeholder相当于：
 
--切断上游子图；
--把该中间值物化为新输入；
--保留下游失败路径；
--让DCE删除不再可达的上游。
+- 切断上游子图；
+- 把该中间值物化为新输入；
+- 保留下游失败路径；
+- 让DCE删除不再可达的上游。
 
 这会缩小图，但也可能降低保真度：新输入跳过了producer的alias、layout、mutation或device
 行为。因此每次候选都必须重跑predicate。
@@ -128,9 +128,9 @@ imports（`torch/_dynamo/repro/after_aot.py:528-557` 与
 
 bisector先在backend阶梯（如eager、aot_eager、inductor）定位首个失败系统，再：
 
--完全禁用某subsystem判断问题是否消失；
--对于重复应用的subsystem，寻找最大界限；
--二分到第几次pass/lowering应用触发问题。
+- 完全禁用某subsystem判断问题是否消失；
+- 对于重复应用的subsystem，寻找最大界限；
+- 二分到第几次pass/lowering应用触发问题。
 
 类的设计目标和CLI见 `torch/_inductor/compiler_bisector.py:98-123`。
 
@@ -162,14 +162,14 @@ bisector先在backend阶梯（如eager、aot_eager、inductor）定位首个失�
 
 以下情况会让predicate不稳定：
 
--未固定随机源；
--异步设备错误在后续同步点才抛出；
--autotune选择变化；
--cache冷热变化；
--allocator地址或CUDAGraph状态；
--数据竞争/分布式时序；
--浮点误差刚好跨容差；
--缩图后换成另一个更早异常。
+- 未固定随机源；
+- 异步设备错误在后续同步点才抛出；
+- autotune选择变化；
+- cache冷热变化；
+- allocator地址或CUDAGraph状态；
+- 数据竞争/分布式时序；
+- 浮点误差刚好跨容差；
+- 缩图后换成另一个更早异常。
 
 可采用重复 \(r\) 次、要求至少 \(k\) 次失败的统计predicate，但查询成本近似乘以 \(r\)。
 对hang需要外部timeout与进程隔离，不能让minifier本身永久阻塞。
@@ -178,24 +178,24 @@ bisector先在backend阶梯（如eager、aot_eager、inductor）定位首个失�
 
 设图node数为 \(V\)，单次predicate成本为 \(T_p\)：
 
--理想二分式缩减查询数接近 \(O(\log V)\)，但策略回退和依赖约束可显著增加；
--每次要复制、lint、DCE并运行图，总成本约 \(Q(T_p+O(V))\)；
--bisector对可排序的 \(M\) 次应用，二分部分约 \(O(\log M)\) 次程序运行；
--跨多个backend/subsystem还要加线性探测成本。
+- 理想二分式缩减查询数接近 \(O(\log V)\)，但策略回退和依赖约束可显著增加；
+- 每次要复制、lint、DCE并运行图，总成本约 \(Q(T_p+O(V))\)；
+- bisector对可排序的 \(M\) 次应用，二分部分约 \(O(\log M)\) 次程序运行；
+- 跨多个backend/subsystem还要加线性探测成本。
 
 最大成本通常来自编译/运行predicate，而不是图数据结构操作。
 
 ## 11. 交付一个有效 repro 的标准
 
--干净进程可复现；
--无私有数据和不必要依赖；
--明确版本、device、命令；
--明确预期与实际；
--异常类型/消息或accuracy predicate稳定；
--说明forward/backward和cache状态；
--最小输入仍保留shape/stride/alias；
--若已bisect，附backend/subsystem/第N次应用；
--原始和最小repro都保留，防止最小化失真。
+- 干净进程可复现；
+- 无私有数据和不必要依赖；
+- 明确版本、device、命令；
+- 明确预期与实际；
+- 异常类型/消息或accuracy predicate稳定；
+- 说明forward/backward和cache状态；
+- 最小输入仍保留shape/stride/alias；
+- 若已bisect，附backend/subsystem/第N次应用；
+- 原始和最小repro都保留，防止最小化失真。
 
 ## 12. 常见误解
 

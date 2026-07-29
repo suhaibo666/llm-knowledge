@@ -72,12 +72,12 @@ callable或稳定的partial（`torch/_dynamo/guards.py:5407-5415`）。
 
 记录每次调用的：
 
--输入shape/stride/dtype/device；
--requires-grad与alias；
--module training/eval；
--autocast、grad、dispatch mode；
--标量/配置值；
--code object与compile id。
+- 输入shape/stride/dtype/device；
+- requires-grad与alias；
+- module training/eval；
+- autocast、grad、dispatch mode；
+- 标量/配置值；
+- code object与compile id。
 
 没有时间序列，只能知道“某guard失败”，不能知道状态从何时开始漂移。
 
@@ -113,11 +113,11 @@ rank、dtype或某个shape关系不同，仍可能需要新specialization。
 
 处理shape重编译要区分：
 
--同一范围应泛化但没有泛化；
--不同rank/layout本来就需要不同图；
--Python从Tensor读取scalar导致值specialization；
--shape触发不同控制流/算法；
--用户手工mark dynamic与实际范围矛盾。
+- 同一范围应泛化但没有泛化；
+- 不同rank/layout本来就需要不同图；
+- Python从Tensor读取scalar导致值specialization；
+- shape触发不同控制流/算法；
+- 用户手工mark dynamic与实际范围矛盾。
 
 盲目把所有维度设为dynamic可能扩大编译和kernel泛化成本。
 
@@ -125,9 +125,9 @@ rank、dtype或某个shape关系不同，仍可能需要新specialization。
 
 计数结构同时保存：
 
--当前region的entry数；
--具有相同ID_MATCH对象的entry数；
--该code object所有region累计entry数。
+- 当前region的entry数；
+- 具有相同ID_MATCH对象的entry数；
+- 该code object所有region累计entry数。
 
 见 `torch/_dynamo/cache_size.py:72-101` 与
 `torch/_dynamo/cache_size.py:102-106`。
@@ -137,7 +137,7 @@ rank、dtype或某个shape关系不同，仍可能需要新specialization。
 
 - `recompile_limit`面向某region/相同identity上下文；
 - `accumulated_recompile_limit`是跨region全局安全上限；
--限制是防止无界编译成本，不是优化目标。
+- 限制是防止无界编译成本，不是优化目标。
 
 达到限制时，convert_frame记录最后原因和限制类型；`fullgraph`或fail配置会硬失败，否则
 把frame执行策略改为RUN_ONLY
@@ -182,12 +182,12 @@ S \lesssim
 ## 10. 验收不变量
 
 - warmup完成后关键code object不再产生意外compile id；
--输入契约允许的shape/stride范围命中有限entry；
--单请求编译时间和累计entry有上限；
--失败原因按类别聚合，而不是只统计recompile总数；
--limit hit可观测并有明确fallback；
--不同rank/worker不会因初始化差异产生无界specialization；
--修复后比较正确性和steady-state，不只看日志消失。
+- 输入契约允许的shape/stride范围命中有限entry；
+- 单请求编译时间和累计entry有上限；
+- 失败原因按类别聚合，而不是只统计recompile总数；
+- limit hit可观测并有明确fallback；
+- 不同rank/worker不会因初始化差异产生无界specialization；
+- 修复后比较正确性和steady-state，不只看日志消失。
 
 ## 11. 常见误解
 

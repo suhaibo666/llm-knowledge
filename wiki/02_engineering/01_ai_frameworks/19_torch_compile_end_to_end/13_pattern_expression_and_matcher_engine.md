@@ -38,8 +38,22 @@ Graph，也不是另一个backend IR。
 
 当前主要声明位于 `torch/_inductor/pattern_matcher.py:526-583`,
 `torch/_inductor/pattern_matcher.py:745-788`,
-`torch/_inductor/pattern_matcher.py:791-1019`,
-`torch/_inductor/pattern_matcher.py:1058-1233`。
+`torch/_inductor/pattern_matcher.py:791-810`,
+`torch/_inductor/pattern_matcher.py:816-847`,
+`torch/_inductor/pattern_matcher.py:849-870`,
+`torch/_inductor/pattern_matcher.py:881-898`,
+`torch/_inductor/pattern_matcher.py:901-906`,
+`torch/_inductor/pattern_matcher.py:909-935`,
+`torch/_inductor/pattern_matcher.py:963-990`,
+`torch/_inductor/pattern_matcher.py:991-1019`,
+`torch/_inductor/pattern_matcher.py:1058-1079`,
+`torch/_inductor/pattern_matcher.py:1082-1099`,
+`torch/_inductor/pattern_matcher.py:1114-1127`,
+`torch/_inductor/pattern_matcher.py:1129-1151`,
+`torch/_inductor/pattern_matcher.py:1153-1159`,
+`torch/_inductor/pattern_matcher.py:1162-1188`,
+`torch/_inductor/pattern_matcher.py:1190-1217`,
+`torch/_inductor/pattern_matcher.py:1219-1233`。
 
 ## 3. Arg、KeywordArg、Ignored
 
@@ -57,7 +71,11 @@ Graph，也不是另一个backend IR。
 `CallFunction(target, *arg_patterns, **kwarg_patterns)`先检查candidate opcode/target，再对
 normalized argument structure递归匹配。`_TargetArgsExpr`可利用operator schema补default
 kwargs，flatten aggregate，递归pattern leaves并精确比较constants
-（`torch/_inductor/pattern_matcher.py:876-1019`;
+（`torch/_inductor/pattern_matcher.py:881-898`;
+`torch/_inductor/pattern_matcher.py:901-906`;
+`torch/_inductor/pattern_matcher.py:909-935`;
+`torch/_inductor/pattern_matcher.py:963-990`;
+`torch/_inductor/pattern_matcher.py:991-1019`;
 `torch/_inductor/pattern_matcher.py:1058-1064`）。
 
 ## 5. AST如何表达DAG sharing
@@ -134,8 +152,21 @@ candidates，合并后按Node顺序逆序处理
 - `ReplacementPatternEntry`要求 `Match.replacement_graph`已经由 traced-replacement 的
   `check_fn`建立；`apply()`按 `normalize_args`解释并复制 replacement GraphModule，
   reconnect outputs，最后做matched-node与dead replacement-node的local cleanup
-  （`torch/_inductor/pattern_matcher.py:1401-1663`;
-  `torch/_inductor/pattern_matcher.py:1878-2059`）。
+  （`torch/_inductor/pattern_matcher.py:1410-1424`;
+  `torch/_inductor/pattern_matcher.py:1430-1452`;
+  `torch/_inductor/pattern_matcher.py:1491-1504`;
+  `torch/_inductor/pattern_matcher.py:1526-1551`;
+  `torch/_inductor/pattern_matcher.py:1553-1583`;
+  `torch/_inductor/pattern_matcher.py:1585-1612`;
+  `torch/_inductor/pattern_matcher.py:1619-1638`;
+  `torch/_inductor/pattern_matcher.py:1640-1652`;
+  `torch/_inductor/pattern_matcher.py:1654-1663`;
+  `torch/_inductor/pattern_matcher.py:1878-1905`;
+  `torch/_inductor/pattern_matcher.py:1910-1937`;
+  `torch/_inductor/pattern_matcher.py:1939-1968`;
+  `torch/_inductor/pattern_matcher.py:1969-1997`;
+  `torch/_inductor/pattern_matcher.py:1998-2024`;
+  `torch/_inductor/pattern_matcher.py:2025-2033`）。
 
 `Match.erase_nodes()`仅逆序删除matched且users已空的Nodes
 （`torch/_inductor/pattern_matcher.py:295-300`）。
@@ -144,7 +175,17 @@ candidates，合并后按Node顺序逆序处理
 
 generic trace构造广匹配pattern；命中后用matched fake values重建arguments，必要时trace
 shape-specific search，再验证extra_check，最后trace replacement
-（`torch/_inductor/pattern_matcher.py:1828-2092`）。
+（`torch/_inductor/pattern_matcher.py:1828-1854`;
+`torch/_inductor/pattern_matcher.py:1864-1876`;
+`torch/_inductor/pattern_matcher.py:1878-1905`;
+`torch/_inductor/pattern_matcher.py:1910-1937`;
+`torch/_inductor/pattern_matcher.py:1939-1968`;
+`torch/_inductor/pattern_matcher.py:1969-1997`;
+`torch/_inductor/pattern_matcher.py:1998-2024`;
+`torch/_inductor/pattern_matcher.py:2025-2033`;
+`torch/_inductor/pattern_matcher.py:2035-2050`;
+`torch/_inductor/pattern_matcher.py:2052-2083`;
+`torch/_inductor/pattern_matcher.py:2085-2092`）。
 
 这是为了防止generic pattern忽略的shape/scalar细节授权非法replacement。
 
@@ -153,7 +194,9 @@ shape-specific search，再验证extra_check，最后trace replacement
 对大型 traced replacement，每次进程启动重新 trace/search pattern 会增加 import/compile
 延迟。当前实现可以把 PatternExpr 序列化成 Python：设置 `PYTORCH_GEN_PATTERNS` 时生成
 serialized module，普通路径则按 search function 与 unique name 导入 precompiled pattern
-（`torch/_inductor/pattern_matcher.py:2095-2224`）。这一入口在缺少目标属性时只记录 warning，
+（`torch/_inductor/pattern_matcher.py:2098-2127`;
+`torch/_inductor/pattern_matcher.py:2146-2175`;
+`torch/_inductor/pattern_matcher.py:2194-2224`）。这一入口在缺少目标属性时只记录 warning，
 随后仍执行 `getattr`；它**没有**在该处自动回退到 tracing path。
 
 它缓存的是“如何构造/注册 pattern”的编译产物，不改变运行时匹配语义：
@@ -339,6 +382,18 @@ patterns[(root_op, root_target)] -> [PatternEntry, ...]
 7. 调对应 entry.apply；root 若已 erased，停止尝试其余 entries
    （`torch/_inductor/pattern_matcher.py:2609-2656`;
    `torch/_inductor/pattern_matcher.py:2657-2712`）。
+
+```mermaid
+flowchart LR
+    Registry["registry<br/>(root op, target) → entries"] --> Find["Graph.find_nodes<br/>只取注册过的 root bucket"]
+    Find --> Snapshot["candidate snapshot<br/>按 Node sort key 逆序"]
+    Snapshot --> Match["PatternExpr.match<br/>递归匹配 args / kwargs / users"]
+    Match --> Safety{"mutation region、stream、mempool<br/>与 extra_check 合法？"}
+    Safety -->|否| Next["尝试下一个 entry / candidate"]
+    Safety -->|是| Apply["PatternEntry.apply<br/>局部改图"]
+    Apply --> Local["替换 outputs、erase matched nodes<br/>清理 dead replacement nodes"]
+    Local --> Next
+```
 
 所以“逆图序逐个 Node 匹配”应精确理解为：
 

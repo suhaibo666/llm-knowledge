@@ -85,6 +85,18 @@ CUDA kernel、显存、autotune、CUDAGraph 或多卡事实。
 2. Windows 构建报告 `distributed.is_available()`，但本机 Gloo 无可用 device；
    DDP 教学 case 明确声明 Linux runtime gate，避免把“编译进 binary”误当“可建立进程组”。
 
+### 4.1 被替代的原始 FAIL 证据
+
+原始运行没有删除，以保留故障与修复前后的完整证据链；但它们不再是最终验收状态：
+
+| 原始目录 | 原始状态 | 替代目录 | 最终解释 |
+|---|---:|---|---|
+| `acceptance/e/` | 6 PASS / 1 FAIL / 2 BLOCKED | `acceptance/e-minifier-fixed/` | 只替代 `minifier_repro`；卷 E 汇总为 7 PASS / 2 BLOCKED / 0 FAIL |
+| `acceptance/f/` | 4 PASS / 1 FAIL / 3 BLOCKED | `acceptance/f-fixed/` | 完整重跑；卷 F 汇总为 4 PASS / 4 BLOCKED / 0 FAIL |
+
+两个原始目录均含 `SUPERSEDED.md`，因此直接浏览 artifact 时不会把历史 FAIL
+误读成当前交付状态。
+
 ## 5. 自动验证
 
 最终门禁：

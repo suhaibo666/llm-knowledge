@@ -65,7 +65,11 @@ Node 的 `name` 是图内 SSA-like value 名；`target` 是被调用实体，两
 Tensor，而是请求 Tracer 创建新 proxy/node。当前 `Proxy` 的 Python operator、
 attribute/method 和 `__torch_function__` 路径最终调用 `create_proxy`
 （`torch/fx/proxy.py:600-635`;
-`torch/fx/proxy.py:680-805`）。
+`torch/fx/proxy.py:680-705`;
+`torch/fx/proxy.py:710-731`;
+`torch/fx/proxy.py:732-743`;
+`torch/fx/proxy.py:757-780`;
+`torch/fx/proxy.py:781-806`）。
 
 Proxy 属于“构图期间的用户接口”，Node 属于“图内存储结构”。
 

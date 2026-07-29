@@ -73,7 +73,7 @@ flowchart LR
     BW --> CF["ConvertFrame callback"]
     CF --> OC["OptimizeContext"]
     OC --> CW["compile_wrapper"]
-    CW -. "尚未调用" .-> NF["没有真实 frame / inputs / guards"]
+    CW -.->|尚未调用| NF["没有真实 frame / inputs / guards"]
 ```
 
 此时已有：

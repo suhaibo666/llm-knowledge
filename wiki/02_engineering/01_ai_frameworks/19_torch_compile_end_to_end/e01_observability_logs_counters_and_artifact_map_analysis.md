@@ -82,7 +82,7 @@ frame/code object
 
 - code object、cache size、guard count、graph node/op/input count；
 - frame/backend/Inductor/codegen时间；
--失败类型、失败原因和用户栈；
+- 失败类型、失败原因和用户栈；
 - forward/backward/runtime标记；
 - FX/AOT local/remote cache hit/miss；
 - Triton、runtime autotune、CUDAGraph等时间。
@@ -119,10 +119,10 @@ count看起来为零”这种统计失真。可缓存字段与delta helper见
 这也说明counter值必须附带：
 
 - reset时点；
--进程/rank；
--冷启动或热缓存；
--调用次数；
--是否发生cache hit。
+- 进程/rank；
+- 冷启动或热缓存；
+- 调用次数；
+- 是否发生cache hit。
 
 ## 7. 证据包的最小结构
 
@@ -167,7 +167,7 @@ flowchart TD
 - verbose guard失败重放可能对多个cache entry逐一检查；
 - profiler、同步计时可能改变异步设备执行；
 - kernel源码、输入meta和stack会显著增大日志；
--分布式全rank采集会把数据量近似乘以rank数。
+- 分布式全rank采集会把数据量近似乘以rank数。
 
 因此生产环境应把“常开结构化指标”和“按事件采样的重型artifact”分开。
 

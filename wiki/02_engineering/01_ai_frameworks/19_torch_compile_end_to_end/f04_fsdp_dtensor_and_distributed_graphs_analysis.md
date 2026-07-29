@@ -19,10 +19,10 @@ rank N local graph ─┘
 
 因此正确性需要同时满足：
 
--每rank local dataflow正确；
--placement/shard metadata正确；
--collective参与集合、顺序、shape、dtype一致；
--reshard/unshard时机与liveness正确。
+- 每rank local dataflow正确；
+- placement/shard metadata正确；
+- collective参与集合、顺序、shape、dtype一致；
+- reshard/unshard时机与liveness正确。
 
 ## 2. FSDP 的状态机
 
@@ -49,11 +49,11 @@ view之间切换；某rank可能只拥有部分或空数据。当前实现要求
 
 Dynamo annotation说明：
 
--FSDP frames被跳过，以避免trace复杂hooks并在通信边界切图；
--wrapped submodule被标成FSDP-managed和UnspecializedNNModule；
--每轮新建的orig-param views必须作为参数输入使用，避免首次view被固化在图中，从而破坏
+- FSDP frames被跳过，以避免trace复杂hooks并在通信边界切图；
+- wrapped submodule被标成FSDP-managed和UnspecializedNNModule；
+- 每轮新建的orig-param views必须作为参数输入使用，避免首次view被固化在图中，从而破坏
   backward compute/communication交错；
--Dynamo只支持FSDP `use_orig_params=True`。
+- Dynamo只支持FSDP `use_orig_params=True`。
 
 见 `torch/distributed/fsdp/_dynamo_utils.py:4-27` 与
 `torch/distributed/fsdp/_dynamo_utils.py:29-43`。
@@ -62,10 +62,10 @@ Dynamo annotation说明：
 
 跳过复杂FSDP wrapper frame、捕获wrapped module compute，是一种边界设计：
 
--通信和parameter lifecycle留在明确runtime层；
--纯计算子模块交给Dynamo/AOT/Inductor；
--unshard/reshard之间形成可审查边界；
--避免Python hook/control state全部进入一张图。
+- 通信和parameter lifecycle留在明确runtime层；
+- 纯计算子模块交给Dynamo/AOT/Inductor；
+- unshard/reshard之间形成可审查边界；
+- 避免Python hook/control state全部进入一张图。
 
 代价是图间Python/runtime overhead，以及跨边界fusion受限。是否把更多collective函数化入图
 取决于具体FSDP版本和配置，不能泛化为“FSDP所有通信都在FX图里”。
@@ -90,12 +90,12 @@ precision/offload策略，然后给managed module写入Dynamo annotations
 相较FSDP1，参数常以DTensor表达shard placement，module通过mixin改变运行状态。学习时仍要
 分开：
 
--Python module变换；
--parameter global/local表示；
--collective执行；
--Dynamo capture boundary；
--AOT fw/bw与saved tensors；
--optimizer看到的local state。
+- Python module变换；
+- parameter global/local表示；
+- collective执行；
+- Dynamo capture boundary；
+- AOT fw/bw与saved tensors；
+- optimizer看到的local state。
 
 ## 7. DTensor 的数据模型
 
@@ -165,14 +165,14 @@ forward/backward collective dtype
 
 以下状态应被部署契约固定或跨rank一致：
 
--world size、mesh维度与rank坐标；
--placements和shard dim；
--global/local shape与stride；
--parameter shard ownership；
--collective process group；
--train/eval、requires-grad和unused parameter路径；
--activation checkpoint/partition选择；
--Dynamo specialization与graph break路径。
+- world size、mesh维度与rank坐标；
+- placements和shard dim；
+- global/local shape与stride；
+- parameter shard ownership；
+- collective process group；
+- train/eval、requires-grad和unused parameter路径；
+- activation checkpoint/partition选择；
+- Dynamo specialization与graph break路径。
 
 某rank guard miss并独立重编译不一定立即错误，但若因此改变collective序列，可能hang或数据
 错误。监控必须比较各rank compile id和collective timeline。

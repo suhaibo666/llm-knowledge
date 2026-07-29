@@ -47,6 +47,14 @@ def text_sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def normalize_markdown_list_spacing(text: str) -> str:
+    """Canonicalize only the audited ``-item`` -> ``- item`` rendering fix."""
+    return "\n".join(
+        re.sub(r"^(\s*)-([^\s-])", r"\1- \2", line)
+        for line in text.splitlines()
+    )
+
+
 def load_runtime_blocker_evidence(graph_ledger: Path) -> list[dict[str, Any]]:
     """Reuse the existing executed native-capability receipt, never prose as runtime proof."""
     for line in graph_ledger.read_text(encoding="utf-8").splitlines():
@@ -80,10 +88,248 @@ def load_volume_c_decisions(graph_ledger: Path) -> dict[str, dict[str, Any]]:
             )
         decision = {field: copy.deepcopy(row[field]) for field in DECISION_FIELDS}
         decision["unit_kind"] = str(row.get("kind", row.get("unit_kind", "")))
+        decision["_audited_text"] = str(row.get("text", ""))
         decisions[claim_id] = decision
     if not decisions:
         raise RuntimeError("no audited C01-C21 decisions found")
     return decisions
+
+
+def reconcile_volume_c_decisions(
+    current_rows: list[dict[str, Any]],
+    old_decisions: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Re-key unchanged audited C decisions after page edits.
+
+    The generic reconciler deliberately rejects duplicate text.  Volume C has a
+    few intentional repetitions (for example, the same ``graph.lint`` snippet
+    appears in both the main explanation and the checklist).  When an entire
+    page/text group has the same cardinality before and after an edit, its
+    occurrences can be paired safely by source order.  A cardinality mismatch
+    remains unmatched and is freshly audited by ``resolve_course_decision``.
+    """
+    current_by_id = {str(row["id"]): row for row in current_rows}
+    selected: dict[str, dict[str, Any]] = {}
+    claimed_targets: set[str] = set()
+
+    # Preserve exact, content-stable IDs first.  This also removes them from any
+    # later duplicate-text group before occurrence-order matching.
+    for decision in old_decisions:
+        old_id = str(decision.get("claim_id", ""))
+        current = current_by_id.get(old_id)
+        if current is None:
+            continue
+        if str(decision.get("text_sha256", "")) != text_sha256(
+            str(current.get("text", ""))
+        ):
+            continue
+        selected[old_id] = current
+        claimed_targets.add(old_id)
+
+    old_groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    current_groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for decision in old_decisions:
+        old_id = str(decision.get("claim_id", ""))
+        if old_id in selected:
+            continue
+        key = (
+            str(decision.get("page", "")),
+            str(decision.get("text_sha256", "")),
+        )
+        old_groups[key].append(decision)
+    for current in current_rows:
+        current_id = str(current["id"])
+        if current_id in claimed_targets:
+            continue
+        key = (
+            str(current["page"]),
+            text_sha256(str(current.get("text", ""))),
+        )
+        current_groups[key].append(current)
+
+    for key, decisions in old_groups.items():
+        candidates = current_groups.get(key, [])
+        if not candidates or len(decisions) != len(candidates):
+            continue
+        ordered_decisions = sorted(
+            decisions,
+            key=lambda item: (
+                int(item.get("start_line", 0)),
+                int(item.get("end_line", 0)),
+                str(item.get("claim_id", "")),
+            ),
+        )
+        ordered_candidates = sorted(
+            candidates,
+            key=lambda item: (
+                int(item.get("source_start_line", 0)),
+                int(item.get("source_end_line", 0)),
+                str(item.get("id", "")),
+            ),
+        )
+        for decision, current in zip(
+            ordered_decisions,
+            ordered_candidates,
+            strict=True,
+        ):
+            old_id = str(decision.get("claim_id", ""))
+            selected[old_id] = current
+            claimed_targets.add(str(current["id"]))
+
+    # Preserve decisions whose only text edit was the audited CommonMark list
+    # repair.  As above, equal cardinality and source order are required.
+    normalized_old_groups: dict[
+        tuple[str, str], list[dict[str, Any]]
+    ] = defaultdict(list)
+    normalized_current_groups: dict[
+        tuple[str, str], list[dict[str, Any]]
+    ] = defaultdict(list)
+    for decision in old_decisions:
+        old_id = str(decision.get("claim_id", ""))
+        audited_text = decision.get("_audited_text")
+        if old_id in selected or not isinstance(audited_text, str):
+            continue
+        key = (
+            str(decision.get("page", "")),
+            text_sha256(normalize_markdown_list_spacing(audited_text)),
+        )
+        normalized_old_groups[key].append(decision)
+    for current in current_rows:
+        current_id = str(current["id"])
+        if current_id in claimed_targets:
+            continue
+        key = (
+            str(current["page"]),
+            text_sha256(
+                normalize_markdown_list_spacing(str(current.get("text", "")))
+            ),
+        )
+        normalized_current_groups[key].append(current)
+    for key, decisions in normalized_old_groups.items():
+        candidates = normalized_current_groups.get(key, [])
+        if not candidates or len(decisions) != len(candidates):
+            continue
+        ordered_decisions = sorted(
+            decisions,
+            key=lambda item: (
+                int(item.get("start_line", 0)),
+                int(item.get("end_line", 0)),
+                str(item.get("claim_id", "")),
+            ),
+        )
+        ordered_candidates = sorted(
+            candidates,
+            key=lambda item: (
+                int(item.get("source_start_line", 0)),
+                int(item.get("source_end_line", 0)),
+                str(item.get("id", "")),
+            ),
+        )
+        for decision, current in zip(
+            ordered_decisions,
+            ordered_candidates,
+            strict=True,
+        ):
+            old_id = str(decision.get("claim_id", ""))
+            selected[old_id] = current
+            claimed_targets.add(str(current["id"]))
+
+    # A list-spacing repair can also change claim boundaries: an old malformed
+    # ``-item`` line belonged to the preceding list claim, while ``- item`` is a
+    # new claim.  Migrate only when one unique sequence of consecutive current
+    # claims reconstructs the complete normalized old claim.
+    split_selected: dict[str, list[dict[str, Any]]] = {}
+    available_by_page: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for current in current_rows:
+        if str(current["id"]) not in claimed_targets:
+            available_by_page[str(current["page"])].append(current)
+    for candidates in available_by_page.values():
+        candidates.sort(
+            key=lambda item: (
+                int(item.get("source_start_line", 0)),
+                int(item.get("source_end_line", 0)),
+                str(item.get("id", "")),
+            )
+        )
+    for decision in old_decisions:
+        old_id = str(decision.get("claim_id", ""))
+        audited_text = decision.get("_audited_text")
+        if old_id in selected or not isinstance(audited_text, str):
+            continue
+        target_text = normalize_markdown_list_spacing(audited_text)
+        candidates = available_by_page.get(str(decision.get("page", "")), [])
+        matches: list[list[dict[str, Any]]] = []
+        for start in range(len(candidates)):
+            for size in range(2, min(6, len(candidates) - start) + 1):
+                window = candidates[start : start + size]
+                if any(
+                    str(item["id"]) in claimed_targets for item in window
+                ):
+                    continue
+                combined = "\n".join(
+                    normalize_markdown_list_spacing(str(item.get("text", "")))
+                    for item in window
+                )
+                if combined == target_text:
+                    matches.append(window)
+        if len(matches) != 1:
+            continue
+        split_selected[old_id] = matches[0]
+        for current in matches[0]:
+            claimed_targets.add(str(current["id"]))
+
+    selected_targets = {
+        old_id: [current] for old_id, current in selected.items()
+    }
+    selected_targets.update(split_selected)
+    old_to_new = {
+        old_id: [str(current["id"]) for current in currents]
+        for old_id, currents in selected_targets.items()
+    }
+    migrated: dict[str, dict[str, Any]] = {}
+    decisions_by_id = {
+        str(decision.get("claim_id", "")): decision for decision in old_decisions
+    }
+
+    def remap_parent_ids(parents: list[Any]) -> list[str]:
+        remapped: list[str] = []
+        for parent in parents:
+            targets = old_to_new.get(str(parent), [str(parent)])
+            for target in targets:
+                if target not in remapped:
+                    remapped.append(target)
+        return remapped
+
+    for old_id, currents in selected_targets.items():
+        for current in currents:
+            value = copy.deepcopy(decisions_by_id[old_id])
+            value.pop("_audited_text", None)
+            value.update(
+                claim_id=str(current["id"]),
+                page=str(current["page"]),
+                start_line=int(current["source_start_line"]),
+                end_line=int(current["source_end_line"]),
+                text_sha256=text_sha256(str(current.get("text", ""))),
+                unit_kind=str(current.get("kind", "")),
+            )
+            parents = value.get("parent_claim_ids")
+            if isinstance(parents, list):
+                value["parent_claim_ids"] = remap_parent_ids(parents)
+            evidence = value.get("evidence")
+            if isinstance(evidence, list):
+                remapped_evidence: list[Any] = []
+                for item in evidence:
+                    if not isinstance(item, dict) or "parent_claim_id" not in item:
+                        remapped_evidence.append(item)
+                        continue
+                    parent = str(item["parent_claim_id"])
+                    for target in old_to_new.get(parent, [parent]):
+                        migrated_item = copy.deepcopy(item)
+                        migrated_item["parent_claim_id"] = target
+                        remapped_evidence.append(migrated_item)
+                value["evidence"] = remapped_evidence
+            migrated[str(value["claim_id"])] = value
+    return migrated
 
 
 def is_volume_c_page(page: str) -> bool:
@@ -101,23 +347,43 @@ def source_evidence(text: str, baseline: str) -> list[dict[str, Any]]:
     for match in SOURCE_RE.finditer(text):
         start = int(match.group("start"))
         end = int(match.group("end") or start)
-        key = (match.group("path"), start, end)
-        if key in seen:
-            continue
-        seen.add(key)
-        evidence.append(
-            {
-                "baseline": baseline,
-                "path": key[0],
-                "start_line": start,
-                "end_line": end,
-                "supports": (
-                    "该固定源码范围直接支撑本事实单元中对应对象、调用链、条件或状态变化；"
-                    f"被审计文本为：{compact_claim[:180]}"
-                ),
-            }
-        )
+        for chunk_start in range(start, end + 1, 30):
+            chunk_end = min(chunk_start + 29, end)
+            key = (match.group("path"), chunk_start, chunk_end)
+            if key in seen:
+                continue
+            seen.add(key)
+            evidence.append(
+                {
+                    "baseline": baseline,
+                    "path": key[0],
+                    "start_line": chunk_start,
+                    "end_line": chunk_end,
+                    "supports": (
+                        "该固定源码范围直接支撑本事实单元中对应对象、调用链、条件或状态变化；"
+                        f"被审计文本为：{compact_claim[:180]}"
+                    ),
+                }
+            )
     return evidence
+
+
+def is_direct_parent_anchor(
+    row: dict[str, Any],
+    *,
+    baseline: str,
+    volume_c_decisions: dict[str, dict[str, Any]],
+) -> bool:
+    """Return whether this row is a valid direct-evidence parent after migration."""
+    if not source_evidence(str(row.get("text", "")), baseline):
+        return False
+    existing = volume_c_decisions.get(str(row["id"]))
+    if existing is None:
+        return True
+    return (
+        existing.get("status") == "verified-current"
+        and existing.get("evidence_class") in {"S", "R"}
+    )
 
 
 def is_navigation_or_instruction(row: dict[str, Any]) -> bool:
@@ -272,6 +538,30 @@ def decision_for(
     }
 
 
+def resolve_course_decision(
+    row: dict[str, Any],
+    *,
+    baseline: str,
+    parent: dict[str, Any] | None,
+    blocker_runtime: list[dict[str, Any]],
+    volume_c_decisions: dict[str, dict[str, Any]],
+    current_claim_ids: set[str] | None = None,
+) -> dict[str, Any]:
+    """Reuse unchanged C decisions and audit changed/new claims with current evidence."""
+    claim_id = str(row["id"])
+    if is_volume_c_page(str(row["page"])) and claim_id in volume_c_decisions:
+        existing = volume_c_decisions[claim_id]
+        parent_ids = set(existing.get("parent_claim_ids", []))
+        if current_claim_ids is None or parent_ids.issubset(current_claim_ids):
+            return copy.deepcopy(existing)
+    return decision_for(
+        row,
+        baseline=baseline,
+        parent=parent,
+        blocker_runtime=blocker_runtime,
+    )
+
+
 def volume_key(page: str) -> str:
     if is_volume_c_page(page):
         return "c"
@@ -301,7 +591,11 @@ def main() -> int:
     rows = build_course_claim_rows(repo_root, source_root, args.manifest.resolve())
     graph_ledger = args.graph_ledger.resolve()
     blocker_runtime = load_runtime_blocker_evidence(graph_ledger)
-    volume_c_decisions = load_volume_c_decisions(graph_ledger)
+    old_volume_c_decisions = load_volume_c_decisions(graph_ledger)
+    volume_c_decisions = reconcile_volume_c_decisions(
+        [row for row in rows if is_volume_c_page(str(row["page"]))],
+        list(old_volume_c_decisions.values()),
+    )
 
     source_rows_by_page_section: dict[
         tuple[str, str], list[dict[str, Any]]
@@ -309,7 +603,11 @@ def main() -> int:
     source_rows_by_page: dict[str, list[dict[str, Any]]] = defaultdict(list)
     source_rows: list[dict[str, Any]] = []
     for row in rows:
-        if source_evidence(str(row.get("text", "")), args.pinned_baseline):
+        if is_direct_parent_anchor(
+            row,
+            baseline=args.pinned_baseline,
+            volume_c_decisions=volume_c_decisions,
+        ):
             source_rows.append(row)
             source_rows_by_page_section[
                 (str(row["page"]), str(row.get("section", "")))
@@ -329,18 +627,11 @@ def main() -> int:
         ),
         source_rows[0],
     )
+    current_claim_ids = {str(row["id"]) for row in rows}
 
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         page = str(row["page"])
-        if is_volume_c_page(page):
-            claim_id = str(row["id"])
-            if claim_id not in volume_c_decisions:
-                raise RuntimeError(
-                    f"volume C claim {claim_id} has no decision in {graph_ledger}"
-                )
-            grouped["c"].append(copy.deepcopy(volume_c_decisions[claim_id]))
-            continue
         has_direct = bool(
             source_evidence(str(row.get("text", "")), args.pinned_baseline)
         )
@@ -352,14 +643,15 @@ def main() -> int:
                 source_rows_by_page,
                 global_anchor,
             )
-        grouped[volume_key(page)].append(
-            decision_for(
-                row,
-                baseline=args.pinned_baseline,
-                parent=parent,
-                blocker_runtime=blocker_runtime,
-            )
+        decision = resolve_course_decision(
+            row,
+            baseline=args.pinned_baseline,
+            parent=parent,
+            blocker_runtime=blocker_runtime,
+            volume_c_decisions=volume_c_decisions,
+            current_claim_ids=current_claim_ids,
         )
+        grouped[volume_key(page)].append(decision)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for key, decisions in sorted(grouped.items()):

@@ -113,7 +113,12 @@ template、multi-output 等有不同表示。详见 [[17_fx_lowering_to_inductor
 Scheduler 从已经物化并注册的 operation 创建 SchedulerNode，然后根据 buffer reads/writes、
 alias、mutation rename、weak ordering 等建立依赖
 （`torch/_inductor/scheduler.py:4641-4651`;
-`torch/_inductor/scheduler.py:4689-5053`）。
+`torch/_inductor/scheduler.py:4689-4693`;
+`torch/_inductor/scheduler.py:4731-4745`;
+`torch/_inductor/scheduler.py:4746-4761`;
+`torch/_inductor/scheduler.py:4847-4865`;
+`torch/_inductor/scheduler.py:4874-4898`;
+`torch/_inductor/scheduler.py:4904-4918`）。
 
 它的边不同于 FX users：
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import importlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -511,6 +512,152 @@ class DemoManifestContractTest(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 4)
         self.assertIn("unknown case ids", completed.stderr)
+
+
+class CourseMarkdownContractTest(unittest.TestCase):
+    @staticmethod
+    def _course_pages() -> list[Path]:
+        course_root = Path(__file__).resolve().parent.parent
+        return sorted(course_root.glob("*.md"))
+
+    def test_list_markers_render_as_commonmark_lists(self) -> None:
+        malformed: list[str] = []
+        for path in self._course_pages():
+            fence: str | None = None
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                stripped = line.lstrip()
+                marker = stripped[:3]
+                if marker in {"```", "~~~"}:
+                    if fence is None:
+                        fence = marker
+                    elif marker == fence:
+                        fence = None
+                    continue
+                if fence is None and re.match(r"^-[^ \t-]", line):
+                    malformed.append(f"{path.name}:{line_number}")
+
+        self.assertEqual(malformed, [])
+
+    def test_ordered_list_markers_render_as_commonmark_lists(self) -> None:
+        malformed: list[str] = []
+        for path in self._course_pages():
+            fence: str | None = None
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                stripped = line.lstrip()
+                marker = stripped[:3]
+                if marker in {"```", "~~~"}:
+                    if fence is None:
+                        fence = marker
+                    elif marker == fence:
+                        fence = None
+                    continue
+                if fence is None and re.match(r"^\s*\d+\.(?![ \t])", line):
+                    malformed.append(f"{path.name}:{line_number}")
+
+        self.assertEqual(malformed, [])
+
+    def test_mermaid_pipe_labels_do_not_embed_quotes(self) -> None:
+        invalid: list[str] = []
+        quoted_pipe_label = re.compile(r"\|[\"'][^|]*[\"']\|")
+        quoted_inline_label = re.compile(
+            r"(?:--|==|-\.)(?:\s+)[\"'][^\"']+[\"'](?:\s+)(?:-->|==>|\.->)"
+        )
+        for path in self._course_pages():
+            in_mermaid = False
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                if line.strip() == "```mermaid":
+                    in_mermaid = True
+                    continue
+                if in_mermaid and line.strip() == "```":
+                    in_mermaid = False
+                    continue
+                if in_mermaid and (
+                    quoted_pipe_label.search(line)
+                    or quoted_inline_label.search(line)
+                ):
+                    invalid.append(f"{path.name}:{line_number}")
+
+        self.assertEqual(invalid, [])
+
+    def test_call_chain_pages_have_source_walkthroughs(self) -> None:
+        course_root = Path(__file__).resolve().parent.parent
+        target_pages = [
+            "a01_tensor_storage_layout_and_views_analysis.md",
+            "a02_operator_schema_dispatch_and_autograd_analysis.md",
+            "a03_python_frames_code_objects_and_bytecode_analysis.md",
+            "a04_dispatch_modes_proxy_tensor_and_fake_tensor_analysis.md",
+            "a05_eager_capture_compile_and_replay_cost_model_analysis.md",
+            "b04_instruction_translator_and_bytecode_state_machine_analysis.md",
+            "b07_guards_cache_lookup_and_recompilation_analysis.md",
+            "d01_inductor_compile_fx_orchestration_analysis.md",
+            "d02_aot_runtime_wrappers_and_lazy_backward_compile_analysis.md",
+            "d06_cudagraph_trees_warmup_record_and_replay_analysis.md",
+            "f01_compiled_autograd_analysis.md",
+        ]
+        locator = re.compile(
+            r"(?:torch|test|tests|functorch|aten|c10|tools)/"
+            r"[^`\s:]+:(?:L)?\d+(?:-(?:L)?\d+)?"
+        )
+        missing: list[str] = []
+        shallow: list[str] = []
+        for filename in target_pages:
+            lines = (course_root / filename).read_text(encoding="utf-8").splitlines()
+            start = next(
+                (
+                    index
+                    for index, line in enumerate(lines)
+                    if line.startswith("## ") and "源码跟读" in line
+                ),
+                None,
+            )
+            if start is None:
+                missing.append(filename)
+                continue
+            end = next(
+                (
+                    index
+                    for index in range(start + 1, len(lines))
+                    if lines[index].startswith("## ")
+                ),
+                len(lines),
+            )
+            source_count = len(locator.findall("\n".join(lines[start:end])))
+            if source_count < 5:
+                shallow.append(f"{filename}:{source_count}")
+
+        self.assertEqual(missing, [])
+        self.assertEqual(shallow, [])
+
+    def test_b07_cache_miss_formula_contains_all_addends(self) -> None:
+        course_root = Path(__file__).resolve().parent.parent
+        page = course_root / "b07_guards_cache_lookup_and_recompilation_analysis.md"
+        text = page.read_text(encoding="utf-8")
+        self.assertIn(
+            "O\\left(\\sum_{i=1}^{C} Q_i\\right)\n"
+            "+ T_{\\text{capture}}\n"
+            "+ T_{\\text{backend}}",
+            text,
+        )
+
+    def test_course_source_locators_are_not_region_sized(self) -> None:
+        broad: list[str] = []
+        locator = re.compile(
+            r"(?:torch|test|tests|functorch|aten|c10|tools)/"
+            r"[^`\s:]+:(?:L)?(\d+)-(?:L)?(\d+)"
+        )
+        for path in self._course_pages():
+            for match in locator.finditer(path.read_text(encoding="utf-8")):
+                start, end = map(int, match.groups())
+                if end - start + 1 > 100:
+                    broad.append(f"{path.name}:{match.group(0)}")
+
+        self.assertEqual(broad, [])
 
 
 if __name__ == "__main__":

@@ -10,10 +10,10 @@
 
 Dynamo对一个 Python frame做符号执行。遇到无法或不应继续建图的操作时，它可以：
 
--提交当前可编译region；
--生成resume bytecode；
--在 Python 中执行边界操作；
--从新的位置继续捕获后续region。
+- 提交当前可编译region；
+- 生成resume bytecode；
+- 在 Python 中执行边界操作；
+- 从新的位置继续捕获后续region。
 
 所以graph break不是“FX图内部的一条特殊边”，而是一次frame被拆成多个FX
 `GraphModule`与Python续执行片段。`fullgraph=True`时，同样的Unsupported通常会上升为硬失败。
@@ -28,10 +28,10 @@ Dynamo对一个 Python frame做符号执行。遇到无法或不应继续建图�
 
 这意味着 `explain`主要观察 **Dynamo capture边界**：
 
--它不以Inductor优化性能为目的；
--图数量来自backend被调用的次数；
--`graph_break_count`按 `graph_count - 1`计算；
--输出是本次实际输入路径的观察，不是所有可能控制流的静态证明。
+- 它不以Inductor优化性能为目的；
+- 图数量来自backend被调用的次数；
+- `graph_break_count`按 `graph_count - 1`计算；
+- 输出是本次实际输入路径的观察，不是所有可能控制流的静态证明。
 
 ## 3. `ExplainOutput`具体保存什么
 
@@ -52,17 +52,17 @@ compile times（`torch/_dynamo/backends/debugging.py:604-617`）。
 - `op_count`不是总FX node数；
 - placeholder/get_attr/call_module等不在该计数中；
 - break count不是“失败次数”的通用定义；
--图中没有Inductor IR或最终kernel信息。
+- 图中没有Inductor IR或最终kernel信息。
 
 ## 4. Graph break reason 如何形成
 
 `unimplemented(...)`要求调用方提供：
 
--稳定、无动态上下文的 `gb_type`；
--开发者上下文 `context`；
--面向用户的 `explanation`；
--可行动的 `hints`；
--可选原异常和 `skip_frame`。
+- 稳定、无动态上下文的 `gb_type`；
+- 开发者上下文 `context`；
+- 面向用户的 `explanation`；
+- 可行动的 `hints`；
+- 可选原异常和 `skip_frame`。
 
 入口契约见 `torch/_dynamo/exc.py:722-742`。它格式化消息后抛出`Unsupported`
 （`torch/_dynamo/exc.py:744-757`）。
@@ -75,11 +75,11 @@ compile times（`torch/_dynamo/backends/debugging.py:604-617`）。
 
 源码预置的提示类别包括：
 
--用户程序在eager也可能出错；
--可能是Dynamo缺陷；
--属于fundamental、不适合trace的Python行为；
--理论上可增加trace rule支持；
--当前break可能由更早的break诱发；
+- 用户程序在eager也可能出错；
+- 可能是Dynamo缺陷；
+- 属于fundamental、不适合trace的Python行为；
+- 理论上可增加trace rule支持；
+- 当前break可能由更早的break诱发；
 - inference mode或sparse tensor等特定建议。
 
 见 `torch/_dynamo/graph_break_hints.py:1-30` 与
@@ -92,11 +92,11 @@ compile times（`torch/_dynamo/backends/debugging.py:604-617`）。
 
 先在同输入、同状态下验证eager能正确执行。明确你关心的是：
 
--必须单图；
--允许切图但性能差；
--只在某些输入路径切图；
--切图后结果错误；
--切图数量随迭代增长。
+- 必须单图；
+- 允许切图但性能差；
+- 只在某些输入路径切图；
+- 切图后结果错误；
+- 切图数量随迭代增长。
 
 ### 第二步：定位第一个用户栈
 
@@ -123,11 +123,11 @@ compile times（`torch/_dynamo/backends/debugging.py:604-617`）。
 
 切图可能：
 
--缩短fusion范围；
--增加wrapper/Python dispatch；
--使中间Tensor物化；
--改变saved tensor或mutation边界；
--导致后续region输入/guard增加。
+- 缩短fusion范围；
+- 增加wrapper/Python dispatch；
+- 使中间Tensor物化；
+- 改变saved tensor或mutation边界；
+- 导致后续region输入/guard增加。
 
 因此“break消失”后仍要比较图、正确性和稳态性能。
 
@@ -156,9 +156,9 @@ flowchart LR
 设一次路径产生 \(G\) 个region，总node为 \(V\)：
 
 - `explain`收集图和遍历`call_function` node约 \(O(V)\)；
--图数量和break数量的展示为 \(O(G)\)；
--真实捕获成本还包含每个frame的符号执行、guard构建和Python续执行；
--多路径覆盖需要对每类输入分别执行，成本不能由一次`explain`推断。
+- 图数量和break数量的展示为 \(O(G)\)；
+- 真实捕获成本还包含每个frame的符号执行、guard构建和Python续执行；
+- 多路径覆盖需要对每类输入分别执行，成本不能由一次`explain`推断。
 
 切图的稳态成本近似是每个region的guard与callable调用，再加region间Python执行；它不是
 单纯的 \(G\) 倍kernel成本。
@@ -166,12 +166,12 @@ flowchart LR
 ## 9. 不变量与验收
 
 - eager语义先成立；
--首个break有稳定的用户栈和分类；
--关键路径graph count在重复调用中稳定；
--不得切图的region用`fullgraph=True`或等效断言约束；
--修复break后检查guards没有异常膨胀；
--比较AOT图与kernel，而不止Dynamo图；
--性能验收包含cold、warm和steady state。
+- 首个break有稳定的用户栈和分类；
+- 关键路径graph count在重复调用中稳定；
+- 不得切图的region用`fullgraph=True`或等效断言约束；
+- 修复break后检查guards没有异常膨胀；
+- 比较AOT图与kernel，而不止Dynamo图；
+- 性能验收包含cold、warm和steady state。
 
 ## 10. 常见误解
 

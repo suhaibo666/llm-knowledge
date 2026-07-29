@@ -10,14 +10,14 @@
 
 一个Python/C++/第三方kernel要稳定进入PT2，编译器需要知道：
 
--稳定operator name和schema；
--输入输出类型与pytree边界；
--mutation、alias和view语义；
--每device真实kernel；
--无数据执行时的FakeTensor metadata；
--autograd formula与saved state；
--vmap/autocast等transform行为；
--后端是直接lower、decompose还是fallback。
+- 稳定operator name和schema；
+- 输入输出类型与pytree边界；
+- mutation、alias和view语义；
+- 每device真实kernel；
+- 无数据执行时的FakeTensor metadata；
+- autograd formula与saved state；
+- vmap/autocast等transform行为；
+- 后端是直接lower、decompose还是fallback。
 
 `custom_op`的用途之一就是阻止`torch.compile`/export/FX深入函数体，把它当稳定operator
 （`torch/_library/custom_ops.py:67-93`）。
@@ -28,11 +28,11 @@
 
 schema描述：
 
--参数与返回类型；
--默认值和keyword-only；
--alias set；
--哪些输入被写；
--view/in-place/out标签。
+- 参数与返回类型；
+- 默认值和keyword-only；
+- alias set；
+- 哪些输入被写；
+- view/in-place/out标签。
 
 `mutates_args`必须准确；若设为`"unknown"`会悲观假设所有输入都变异。错误声明属于undefined
 behavior
@@ -48,13 +48,13 @@ autograd version counter都依赖同一mutation/alias事实。
 
 对象持有：
 
--namespace/name/schema/tags；
--各device backend kernels；
--abstract/fake function；
--autograd setup/backward；
--TorchDispatch/vmap/autocast；
--in-place/out metadata；
--dispatcher library和OpOverload。
+- namespace/name/schema/tags；
+- 各device backend kernels；
+- abstract/fake function；
+- autograd setup/backward；
+- TorchDispatch/vmap/autocast；
+- in-place/out metadata；
+- dispatcher library和OpOverload。
 
 见 `torch/_library/custom_ops.py:272-292` 与
 `torch/_library/custom_ops.py:293-313`。
@@ -66,11 +66,11 @@ autograd version counter都依赖同一mutation/alias事实。
 
 `register_kernel`按device type注册实现：
 
--无device type时走CompositeExplicitAutograd默认实现；
--指定device时注册对应dispatch key；
--in-place/out实现会校验返回对象identity；
--非view functional op检查alias约束；
--无Tensor输入但device-specific时必须有`device: torch.device`参数。
+- 无device type时走CompositeExplicitAutograd默认实现；
+- 指定device时注册对应dispatch key；
+- in-place/out实现会校验返回对象identity；
+- 非view functional op检查alias约束；
+- 无Tensor输入但device-specific时必须有`device: torch.device`参数。
 
 见 `torch/_library/custom_ops.py:433-448`、
 `torch/_library/custom_ops.py:449-463`、
@@ -84,11 +84,11 @@ autograd version counter都依赖同一mutation/alias事实。
 
 Dynamo/AOT/Inductor经常只持有FakeTensor，需要在不读数据的情况下推导：
 
--输出shape/stride；
--dtype/device；
--storage offset；
--动态维度；
--可能的alias关系。
+- 输出shape/stride；
+- dtype/device；
+- storage offset；
+- 动态维度；
+- 可能的alias关系。
 
 `register_fake`的公开说明明确称其为让custom op高效工作于`torch.compile`所必需，并定义为
 无数据Tensor上的metadata行为
@@ -104,11 +104,11 @@ Dynamo/AOT/Inductor经常只持有FakeTensor，需要在不读数据的情况下
 
 对每个代表输入，真实kernel与fake kernel的：
 
--输出数量/pytree；
--shape/dtype/device/stride；
--alias/view；
--dynamic shape约束；
--异常前置条件
+- 输出数量/pytree；
+- shape/dtype/device/stride；
+- alias/view；
+- dynamic shape约束；
+- 异常前置条件
 
 必须一致。Fake kernel“只返回同shape empty Tensor”并不总正确：transpose、slice、view、
 channels-last、data-dependent shape都会要求更精确metadata。
@@ -124,7 +124,7 @@ Fake registration最终作为Meta kernel加入dispatcher；holder还管理覆盖
 
 - `setup_context(ctx, inputs, output)`保存反向所需值；
 - `backward(ctx, *grads)`返回各输入梯度；
--两者自身必须可trace，不得直接读取data pointer、依赖或修改global state。
+- 两者自身必须可trace，不得直接读取data pointer、依赖或修改global state。
 
 契约见 `torch/_library/custom_ops.py:639-655` 与
 `torch/_library/custom_ops.py:656-672`。
@@ -140,9 +140,9 @@ operator
 
 mutable/view custom op需要dispatcher的ADInplaceOrView行为。实现会：
 
--为mutable/view注册fallback；
--对schema声明的mutated positional/keyword Tensor递增version；
--保证autograd能发现in-place修改。
+- 为mutable/view注册fallback；
+- 对schema声明的mutated positional/keyword Tensor递增version；
+- 保证autograd能发现in-place修改。
 
 见 `torch/_library/custom_ops.py:789-806` 与
 `torch/_library/custom_ops.py:807-823`。
@@ -197,18 +197,18 @@ Python call
 
 ## 11. 测试矩阵
 
--每device与dtype；
--shape/stride/layout；
--dynamic output shape；
--empty/zero-dim；
--mutation/version；
--alias/view；
--forward/backward/gradgrad；
--autocast/vmap；
--FakeTensor与`torch.compile(fullgraph=True)`；
--export/AOTInductor若要部署；
--fallback与direct lowering结果；
--多rank/collective若为distributed op。
+- 每device与dtype；
+- shape/stride/layout；
+- dynamic output shape；
+- empty/zero-dim；
+- mutation/version；
+- alias/view；
+- forward/backward/gradgrad；
+- autocast/vmap；
+- FakeTensor与`torch.compile(fullgraph=True)`；
+- export/AOTInductor若要部署；
+- fallback与direct lowering结果；
+- 多rank/collective若为distributed op。
 
 ## 12. 复杂度与性能
 

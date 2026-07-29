@@ -40,7 +40,7 @@
 
 pool按配置的compile threads惰性创建。process pool可用：
 
--受控sidecar `SubprocPool`；
+- 受控sidecar `SubprocPool`；
 - spawn/fork等multiprocessing context；
 - worker initializer。
 
@@ -72,8 +72,8 @@ fork后必须清理继承的pool引用和lru cache，否则child会误用parent 
 
 - parallel模式可直接返回同一个future；
 - synchronous模式等待 `future.result()`；
--某些future在parent懒加载kernel；
--避免重复提交相同编译任务。
+- 某些future在parent懒加载kernel；
+- 避免重复提交相同编译任务。
 
 命中分支见 `torch/_inductor/async_compile.py:483-499`。
 
@@ -84,9 +84,9 @@ fork后必须清理继承的pool引用和lru cache，否则child会误用parent 
 Triton异步路径把source/config交给worker。worker：
 
 - 初始化CachingAutotuner；
--编译候选；
+- 编译候选；
 - 返回可pickling的 `TritonCompileResult`；
--可能带AutotuneCache save hook数据。
+- 可能带AutotuneCache save hook数据。
 
 某些配置需要parent之后从source重新load function，因此future持有lazy reload callback。
 设计说明见 `torch/_inductor/async_compile.py:442-471`。
@@ -121,9 +121,9 @@ Triton异步路径把source/config交给worker。worker：
 
 `CppCodeCache`以source和compile flags编译shared library，加载时处理：
 
--普通ImportError/OSError；
--libgomp特殊环境；
--temp/cache目录以 `noexec`挂载导致的mapping失败。
+- 普通ImportError/OSError；
+- libgomp特殊环境；
+- temp/cache目录以 `noexec`挂载导致的mapping失败。
 
 错误诊断和替代cache dir提示见 `torch/_inductor/codecache.py:3789-3818` 与
 `torch/_inductor/codecache.py:3819-3822`。
@@ -172,12 +172,12 @@ sequenceDiagram
 
 若有 \(K\) 个independent kernels，单核编译时间 \(t_i\)，\(P\) workers：
 
--串行约为 \(\sum_i t_i\)；
--理想并行下界接近 \(\max(\max_i t_i,\sum_i t_i/P)\)；
--实际还加进程startup、serialization、I/O、load和等待；
--相同source future hit可近似省去新编译；
--module load至少与source/import工作相关；
--native library load受OS动态链接器和filesystem影响。
+- 串行约为 \(\sum_i t_i\)；
+- 理想并行下界接近 \(\max(\max_i t_i,\sum_i t_i/P)\)；
+- 实际还加进程startup、serialization、I/O、load和等待；
+- 相同source future hit可近似省去新编译；
+- module load至少与source/import工作相关；
+- native library load受OS动态链接器和filesystem影响。
 
 ## 13. 常见误解
 

@@ -124,9 +124,9 @@ LocalSource("self")
 描述根 frame的 local/cell输入，并附带：
 
 - 是否为root input；
--已知 dynamism；
--是否是 cell内容；
--是否为 `*args`或`**kwargs`。
+- 已知 dynamism；
+- 是否是 cell内容；
+- 是否为 `*args`或`**kwargs`。
 
 见 `torch/_dynamo/source.py:146-174`。
 

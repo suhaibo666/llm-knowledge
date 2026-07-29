@@ -58,7 +58,10 @@ Python source
 ### 一对一但 fresh
 
 partition `node_copy`：语义对应，但owner/object不同
-（`torch/_functorch/partitioners.py:514-705`）。
+（`torch/_functorch/partitioners.py:514-538`;
+`torch/_functorch/partitioners.py:544-568`;
+`torch/_functorch/partitioners.py:654-661`;
+`torch/_functorch/partitioners.py:676-705`）。
 
 ### 一对多
 

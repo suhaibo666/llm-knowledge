@@ -104,7 +104,13 @@ Scheduler `_codegen`遍历最终nodes，管理：
 - backend flush与wrapper lines。
 
 入口：`torch/_inductor/scheduler.py:9749-9764`与
-`torch/_inductor/scheduler.py:9920-10087`。
+`torch/_inductor/scheduler.py:9920-9949`、
+`torch/_inductor/scheduler.py:9950-9974`、
+`torch/_inductor/scheduler.py:9976-10005`、
+`torch/_inductor/scheduler.py:10006-10034`、
+`torch/_inductor/scheduler.py:10036-10064`、
+`torch/_inductor/scheduler.py:10065-10087`及
+`torch/_inductor/scheduler.py:10089-10117`。
 
 Scheduler group是一次backend codegen decision的输入，不存在“一group必然对应一个
 native kernel”的不变量。extern可变成library call，foreach/combo/partition/nested
@@ -140,8 +146,27 @@ Triton与C++共享上游IR/Scheduler，但具体loop/kernel classes与heuristics
 
 在GEMM/conv-like operation层选择extern/template implementations，负责persistent cache、
 precompile、benchmark
-（`torch/_inductor/select_algorithm.py:3949-4255`、
-`torch/_inductor/select_algorithm.py:4391-4710`）。
+（`torch/_inductor/select_algorithm.py:3949-3978`、
+`torch/_inductor/select_algorithm.py:3979-4004`、
+`torch/_inductor/select_algorithm.py:4021-4040`、
+`torch/_inductor/select_algorithm.py:4041-4057`、
+`torch/_inductor/select_algorithm.py:4077-4106`、
+`torch/_inductor/select_algorithm.py:4113-4142`、
+`torch/_inductor/select_algorithm.py:4154-4183`、
+`torch/_inductor/select_algorithm.py:4190-4208`、
+`torch/_inductor/select_algorithm.py:4238-4255`、
+`torch/_inductor/select_algorithm.py:4391-4408`、
+`torch/_inductor/select_algorithm.py:4410-4424`、
+`torch/_inductor/select_algorithm.py:4458-4486`、
+`torch/_inductor/select_algorithm.py:4487-4507`、
+`torch/_inductor/select_algorithm.py:4511-4537`、
+`torch/_inductor/select_algorithm.py:4541-4561`、
+`torch/_inductor/select_algorithm.py:4563-4578`、
+`torch/_inductor/select_algorithm.py:4580-4594`、
+`torch/_inductor/select_algorithm.py:4613-4624`、
+`torch/_inductor/select_algorithm.py:4638-4665`、
+`torch/_inductor/select_algorithm.py:4673-4690`、
+`torch/_inductor/select_algorithm.py:4705-4718`）。
 
 可返回 `MultiTemplateBuffer`，把winner延迟到Scheduler benchmark fusion
 （`torch/_inductor/select_algorithm.py:4190-4208`）。
@@ -161,9 +186,22 @@ CPU/custom input 等条件关闭 deferred multi-template
 - select one；
 - optional coordinate descent；
 - cache steady-state launcher
-  （`torch/_inductor/runtime/triton_heuristics.py:531-803`;
-  `torch/_inductor/runtime/triton_heuristics.py:1789-1859`;
-  `torch/_inductor/runtime/triton_heuristics.py:2412-2549`）。
+  （`torch/_inductor/runtime/triton_heuristics.py:531-545`;
+  `torch/_inductor/runtime/triton_heuristics.py:546-561`;
+  `torch/_inductor/runtime/triton_heuristics.py:576-603`;
+  `torch/_inductor/runtime/triton_heuristics.py:628-647`;
+  `torch/_inductor/runtime/triton_heuristics.py:648-675`;
+  `torch/_inductor/runtime/triton_heuristics.py:719-747`;
+  `torch/_inductor/runtime/triton_heuristics.py:763-791`;
+  `torch/_inductor/runtime/triton_heuristics.py:793-818`;
+  `torch/_inductor/runtime/triton_heuristics.py:1789-1818`;
+  `torch/_inductor/runtime/triton_heuristics.py:1819-1848`;
+  `torch/_inductor/runtime/triton_heuristics.py:1849-1859`;
+  `torch/_inductor/runtime/triton_heuristics.py:2412-2440`;
+  `torch/_inductor/runtime/triton_heuristics.py:2441-2470`;
+  `torch/_inductor/runtime/triton_heuristics.py:2471-2500`;
+  `torch/_inductor/runtime/triton_heuristics.py:2501-2530`;
+  `torch/_inductor/runtime/triton_heuristics.py:2531-2550`）。
 
 两者candidate、cache key、timing point不同。
 
@@ -183,7 +221,11 @@ steady state 又把唯一 launcher 缓存在 `_cached_launcher`，直接进入 f
 pointwise/reduction configs来自device heuristic registry；templates有各自search space。
 current runtime grid可依赖symbolic numel，而block config来自compile-time selection
 （`torch/_inductor/runtime/triton_heuristics.py:4365-4435`;
-`torch/_inductor/runtime/triton_heuristics.py:5005-5152`）。
+`torch/_inductor/runtime/triton_heuristics.py:5005-5032`;
+`torch/_inductor/runtime/triton_heuristics.py:5078-5099`;
+`torch/_inductor/runtime/triton_heuristics.py:5101-5115`;
+`torch/_inductor/runtime/triton_heuristics.py:5118-5134`;
+`torch/_inductor/runtime/triton_heuristics.py:5137-5152`）。
 
 固定BLOCK/XBLOCK列表只在绑定具体backend/version/generator时成立。
 
@@ -253,8 +295,19 @@ Scheduler wrapper context选择：
 `torch/_inductor/scheduler.py:9053-9069`。
 
 显式pre/post/code映射与debug handle生成见
-`torch/_inductor/debug.py:958-1137`、
-`torch/_inductor/debug.py:1231-1355`、
+`torch/_inductor/debug.py:948-977`、
+`torch/_inductor/debug.py:978-1007`、
+`torch/_inductor/debug.py:1008-1037`、
+`torch/_inductor/debug.py:1038-1044`、
+`torch/_inductor/debug.py:1047-1076`、
+`torch/_inductor/debug.py:1077-1104`、
+`torch/_inductor/debug.py:1107-1136`、
+`torch/_inductor/debug.py:1137-1142`、
+`torch/_inductor/debug.py:1231-1256`、
+`torch/_inductor/debug.py:1256-1281`、
+`torch/_inductor/debug.py:1282-1311`、
+`torch/_inductor/debug.py:1322-1345`、
+`torch/_inductor/debug.py:1347-1358`、
 `torch/_inductor/codegen/cpp.py:6086-6093`与
 `torch/_inductor/codegen/wrapper.py:4262-4270`。
 

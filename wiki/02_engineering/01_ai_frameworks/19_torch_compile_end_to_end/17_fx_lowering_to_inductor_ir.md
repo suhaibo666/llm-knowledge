@@ -22,7 +22,7 @@ codegen需要知道：
 - layout/stride；
 - 是否lazy compose；
 - 是否用template/extern；
--何时materialize buffer。
+- 何时materialize buffer。
 
 FX表达“调用什么”；Inductor IR表达“如何实现与存储”。
 
@@ -59,6 +59,17 @@ GraphLowering.run()
         → 选择 lowering / user lowering / fallback
         → lowering wrapper 做 broadcast、类型提升并构造 IR value
       → 把返回值写入 env[fx_node]
+```
+
+```mermaid
+flowchart LR
+    FX["FX Graph<br/>call-site/value Nodes"] --> Interpreter["GraphLowering<br/>FX Interpreter"]
+    Interpreter --> Env["env[fx_node]<br/>Python/IR value mapping"]
+    Interpreter --> Lowering["lowering / fallback dispatch"]
+    Lowering --> Lazy["TensorBox / StorageBox / Loops<br/>lazy expression or view"]
+    Lowering --> Materialized["register_operation / register_buffer<br/>materialized Inductor IR"]
+    Materialized --> Scheduler["Scheduler dependency graph"]
+    Lazy -.->|realize 时才登记| Materialized
 ```
 
 这里发生了三种不同的“状态变化”：
@@ -208,8 +219,10 @@ backward implicit fallback若无layout tag还可保守require contiguous
 `fallback_handler`创建 `FallbackKernel`
 （`torch/_inductor/lowering.py:2714-2745`）。`FallbackKernel`属于
 `ExternKernelAlloc`/`InputsKernel` operation family
-（`torch/_inductor/ir.py:6645-7035`;
-`torch/_inductor/ir.py:9314-9355`）。
+（`torch/_inductor/ir.py:6645-6674`;
+`torch/_inductor/ir.py:6995-7023`;
+`torch/_inductor/ir.py:9314-9340`;
+`torch/_inductor/ir.py:9342-9358`）。
 
 它仍有inputs、layout、buffer、SchedulerNode与wrapper call，只是计算由external/eager
 kernel实现。
@@ -224,7 +237,13 @@ for index in ranges:
 ```
 
 `Pointwise`无reduction domain；`Reduction`有reduction ranges与reduction type
-（`torch/_inductor/ir.py:1057-1420`）。
+（`torch/_inductor/ir.py:1057-1086`;
+`torch/_inductor/ir.py:1090-1119`;
+`torch/_inductor/ir.py:1175-1198`;
+`torch/_inductor/ir.py:1200-1208`;
+`torch/_inductor/ir.py:1219-1238`;
+`torch/_inductor/ir.py:1238-1256`;
+`torch/_inductor/ir.py:1384-1406`）。
 
 lazy inner function使producer expression可内联到consumer loop，为fusion提供表示基础；
 是否最终fusion由Scheduler/backend决定。
@@ -288,8 +307,17 @@ placeholder可lower成：
 - constants/objects。
 
 GraphLowering output会realize必要outputs、处理stride/layout、mutation/alias和wrapper ABI
-（`torch/_inductor/graph.py:1296-1399`;
-`torch/_inductor/graph.py:1651-1775`）。
+（`torch/_inductor/graph.py:1296-1323`;
+`torch/_inductor/graph.py:1328-1355`;
+`torch/_inductor/graph.py:1357-1382`;
+`torch/_inductor/graph.py:1392-1399`;
+`torch/_inductor/graph.py:1651-1668`;
+`torch/_inductor/graph.py:1669-1688`;
+`torch/_inductor/graph.py:1690-1715`;
+`torch/_inductor/graph.py:1716-1725`;
+`torch/_inductor/graph.py:1727-1755`;
+`torch/_inductor/graph.py:1757-1769`;
+`torch/_inductor/graph.py:1771-1773`）。
 
 device不是事后附加属性：InputBuffer、Layout、Loops 与 ExternKernel 都携带或推导device；
 GraphLowering还按device选择backend与wrapper路径。mutation也不是普通数据边的别名：

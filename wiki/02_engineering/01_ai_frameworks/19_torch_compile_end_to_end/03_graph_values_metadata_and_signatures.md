@@ -140,7 +140,10 @@ root，不要求某个单 Node 返回 tuple。详见
 ProxyTensor 当前将抽取出的 fake/symbolic value 放在 `meta["val"]`，并尽力生成
 `meta["tensor_meta"]`
 （`torch/fx/experimental/proxy_tensor.py:817-835`;
-`torch/fx/experimental/proxy_tensor.py:934-1035`）。
+`torch/fx/experimental/proxy_tensor.py:934-954`;
+`torch/fx/experimental/proxy_tensor.py:956-985`;
+`torch/fx/experimental/proxy_tensor.py:986-1005`;
+`torch/fx/experimental/proxy_tensor.py:1007-1028`）。
 
 `val`可能是：
 

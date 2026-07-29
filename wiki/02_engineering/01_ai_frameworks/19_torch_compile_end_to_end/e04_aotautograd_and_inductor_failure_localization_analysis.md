@@ -29,7 +29,7 @@ Dynamo仍捕获FX，但backend直接返回`gm.forward`
 
 - eager原函数通过、`backend="eager"`失败：优先调查Dynamo图、side effects、guards或输入
   调用契约；
--两者都失败：先修用户程序/测试。
+- 两者都失败：先修用户程序/测试。
 
 ### `aot_eager`
 
@@ -152,26 +152,104 @@ minifier launcher
 
 这个位置的取舍是：
 
--优点：输入ABI明确，能单独最小化fw或bw compiler；
--限制：若失败发生在更早的AOT joint trace/partition，可能还没有这个干净边界。
+- 优点：输入ABI明确，能单独最小化fw或bw compiler；
+- 限制：若失败发生在更早的AOT joint trace/partition，可能还没有这个干净边界。
 
 ## 7. 编译异常与准确率失败必须分开
 
 异常最小化的predicate通常是：
 
--异常类型/消息仍与原失败匹配；
--编译或执行在相同阶段失败。
+- 异常类型/消息仍与原失败匹配；
+- 编译或执行在相同阶段失败。
 
 准确率最小化的predicate则是：
 
--eager/reference成功；
--compiled成功；
--输出/梯度差异超过定义的容差。
+- eager/reference成功；
+- compiled成功；
+- 输出/梯度差异超过定义的容差。
 
 如果缩减后变成了另一个runtime异常，不能把它当原accuracy bug。源码的accuracy helper正是
 在compiled执行出现异常时跳过该候选
 （`torch/_dynamo/debug_utils.py:666-686` 与
 `torch/_dynamo/debug_utils.py:739-768`）。
+
+## 源码跟读：一次 backend 调用怎样留下可定位的故障边界
+
+### 1. Dynamo 交给 backend 的不是“异常黑盒”
+
+`OutputGraph.call_user_compiler`先用 `dynamo_timed`建立 `backend_compile`阶段计时，再进入
+`_call_user_compiler`（`torch/_dynamo/output_graph.py:3217-3228`）。后者先统计 GraphModule
+里的 call 与 placeholder，给 placeholder 补 `_dynamo_source`，并把参数来源、用户栈写到
+GraphModule 上（`torch/_dynamo/output_graph.py:3230-3253`）。这些 provenance state 是后续
+异常能回指用户代码与输入来源的前提。
+
+调用前还可按 compile ID 覆盖 backend 或 Inductor config
+（`torch/_dynamo/output_graph.py:3254-3269`）。真正调用发生在
+`compiled_fn = compiler_fn(gm, example_inputs)`；返回值必须 callable
+（`torch/_dynamo/output_graph.py:3286-3293`）。除少数明确透传的异常外，编译阶段异常被包装成
+`BackendCompilerFailed`（`torch/_dynamo/output_graph.py:3294-3320`）。
+
+关键边界是：这个 `try`只包围**产生 callable**的阶段。backend 已返回 callable 之后，该
+callable 在模型运行期抛出的错误属于 runtime failure，不应倒推为 capture/backend compile
+失败。
+
+### 2. backend 阶梯为什么能做因果二分
+
+三种调试 backend 实际替换的是不同边界，而不只是换名字：
+
+| backend | 仍执行 | 被替换 |
+|---|---|---|
+| `eager` | Dynamo GraphModule | 直接返回 `gm.forward`，不进 AOT/Inductor |
+| `aot_eager` | AOTAutograd、min-cut partition、runtime wrapper | fw/bw compiler 都是 `boxed_nop` |
+| `aot_eager_decomp_partition` | AOT + Inductor decomposition + Inductor-aware min-cut | 最终 fw/bw compiler 仍是 nop |
+| `inductor` | 上述全部阶段 | 无 |
+
+`eager`的实现直接返回 GraphModule forward
+（`torch/_dynamo/backends/debugging.py:52-63`）；`aot_eager`把两个 compiler 都设为
+`boxed_nop`，但保留 min-cut
+（`torch/_dynamo/backends/debugging.py:417-434`）；第三种则显式引入 Inductor decomposition
+table 与 `compiler="inductor"` partition，同时仍用 nop compiler
+（`torch/_dynamo/backends/debugging.py:444-473`）。
+
+因此相邻两级之间的行为变化才是证据：若 `aot_eager`通过而
+`aot_eager_decomp_partition`失败，优先查 decomposition/partition；若第三层通过而
+Inductor失败，才把注意力推进到 post-grad、lowering、scheduler、codegen 或 native load。
+
+```mermaid
+flowchart LR
+    Dynamo["Dynamo GraphModule"] --> Eager["eager<br/>gm.forward"]
+    Dynamo --> AOT["AOTAutograd<br/>functionalize + joint + partition"]
+    AOT --> Nop["boxed_nop fw/bw compiler"]
+    AOT --> Decomp["Inductor decompositions<br/>Inductor-aware partition"]
+    Decomp --> Nop2["boxed_nop fw/bw compiler"]
+    Decomp --> Inductor["compile_fx<br/>passes → lowering → scheduler → codegen"]
+    Inductor --> Callable["compiled callable"]
+    Callable --> Runtime["runtime execution"]
+```
+
+### 3. after-AOT wrapper为什么能区分 forward 与 backward compiler failure
+
+Inductor入口在进入 `_compile_fx_inner`前安装 `inductor_compile`计时、fresh cache、
+`DebugContext`，然后用 `wrap_compiler_debug`包住真正编译器
+（`torch/_inductor/compile_fx.py:899-926`）。wrapper 的合同明确是分别拦截 AOT 后的
+forward 与 backward GraphModule（`torch/_dynamo/repro/after_aot.py:284-301`）。
+
+每次调用先保存原 graph copy，再调用实际 compiler；若编译抛错且配置为 `repro_after=aot`，
+按 repro level 生成 compiler graph state 或 minifier 输入，然后原异常继续向外抛
+（`torch/_dynamo/repro/after_aot.py:303-325`;
+`torch/_dynamo/repro/after_aot.py:326-343`）。它没有把失败吞成 PASS，也没有把尚未执行的
+backward compile 预先算成失败。训练图常见的“forward成功、第一次 backward 才失败”正是
+lazy backward compile 的时间边界。
+
+### 4. 这套定位法的所有权边界
+
+- Dynamo拥有“GraphModule是否成功交给 backend、backend 是否返回 callable”的证据；
+- AOT wrapper拥有“是哪张 AOT 后 Graph、forward 还是 backward compiler”的证据；
+- Inductor各阶段日志拥有“pass/lowering/scheduler/codegen/native load”的细分证据；
+- runtime stack与数值比较拥有“callable执行失败或结果错误”的证据。
+
+只看最外层 `BackendCompilerFailed`会丢失内层阶段；只看最终 stack 最底层也可能把包装层与
+根因混为一谈。正确做法是沿这四层 ownership 从外向内收缩。
 
 ## 8. 决策树
 
@@ -204,13 +282,13 @@ T_{\text{ladder}}=\sum_j T_j
 
 ## 10. 验收不变量
 
--每个阶梯使用同一输入语义和随机状态；
--同时比较值、梯度、mutation、alias和异常；
--失败阶段与artifact时间线一致；
--repro能在干净进程复现；
--forward与backward分别标记；
--native compile、load、first call和steady call不混为一层；
--最小化predicate不会接受不同失败。
+- 每个阶梯使用同一输入语义和随机状态；
+- 同时比较值、梯度、mutation、alias和异常；
+- 失败阶段与artifact时间线一致；
+- repro能在干净进程复现；
+- forward与backward分别标记；
+- native compile、load、first call和steady call不混为一层；
+- 最小化predicate不会接受不同失败。
 
 ## 11. 常见误解
 

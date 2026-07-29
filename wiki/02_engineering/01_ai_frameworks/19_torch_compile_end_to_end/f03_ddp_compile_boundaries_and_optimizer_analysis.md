@@ -27,17 +27,17 @@ DDPOptimizer的源码动机正是：让Dynamo forward graph按DDP bucket边界�
 
 输入：
 
--Dynamo捕获的forward `GraphModule`；
--example inputs；
--与DDP一致的bucket byte cap/first bucket cap；
--实际backend compiler。
+- Dynamo捕获的forward `GraphModule`；
+- example inputs；
+- 与DDP一致的bucket byte cap/first bucket cap；
+- 实际backend compiler。
 
 输出不是多张独立顶层模型，而是：
 
--一个split outer GraphModule；
--每个child submodule单独编译；
--outer graph按原数据依赖调用children；
--整体返回一个callable。
+- 一个split outer GraphModule；
+- 每个child submodule单独编译；
+- outer graph按原数据依赖调用children；
+- 整体返回一个callable。
 
 算法说明见 `torch/_dynamo/backends/distributed.py:407-427`。
 
@@ -45,11 +45,11 @@ DDPOptimizer的源码动机正是：让Dynamo forward graph按DDP bucket边界�
 
 典型网络的backward执行顺序与forward相反。DDPOptimizer逆序扫描FX nodes：
 
--识别node参数；
--累计参数storage bytes；
--达到first/normal bucket cap时尝试开新bucket；
--所有node即使没有参数也映射到某bucket；
--若当前bucket没有可作为外部输出的值，会继续扩展，确保split子图有合法输出。
+- 识别node参数；
+- 累计参数storage bytes；
+- 达到first/normal bucket cap时尝试开新bucket；
+- 所有node即使没有参数也映射到某bucket；
+- 若当前bucket没有可作为外部输出的值，会继续扩展，确保split子图有合法输出。
 
 入口与阈值判断见 `torch/_dynamo/backends/distributed.py:506-535`；参数识别与node归桶见
 `torch/_dynamo/backends/distributed.py:541-559` 与
@@ -64,10 +64,10 @@ execution trace。
 
 1. 创建 `node -> bucket index` partition map；
 2. 调用FX `split_module`；
-3.传播Dynamo source和metadata；
-4.记录outer与child图；
-5.用FakeTensorMode运行`SubmodCompiler`编译各child；
-6.重新compile outer GraphModule。
+3. 传播Dynamo source和metadata；
+4. 记录outer与child图；
+5. 用FakeTensorMode运行`SubmodCompiler`编译各child；
+6. 重新compile outer GraphModule。
 
 见 `torch/_dynamo/backends/distributed.py:594-619` 与
 `torch/_dynamo/backends/distributed.py:621-647`。
@@ -83,16 +83,16 @@ first bucket可更小以降低首个通信启动延迟
 
 过小：
 
--更多subgraphs与AOT/Inductor compile；
--更多runtime边界和guards；
--小collective效率低；
--fusion范围缩小。
+- 更多subgraphs与AOT/Inductor compile；
+- 更多runtime边界和guards；
+- 小collective效率低；
+- fusion范围缩小。
 
 过大：
 
--通信启动晚；
--compute/communication overlap变差；
--峰值grad/bucket生命周期可能增加。
+- 通信启动晚；
+- compute/communication overlap变差；
+- 峰值grad/bucket生命周期可能增加。
 
 优化目标是step critical path，而非最少图或最大fusion。
 
@@ -100,10 +100,10 @@ first bucket可更小以降低首个通信启动延迟
 
 源码明确承认：
 
--DDP可能在运行中观察并重建bucket顺序；
--Dynamo若已有graph break，编译器split可能与DDP bucket不对齐；
--被DDP忽略的parameter marker可能经其他transform丢失；
--单个child backend失败可eager执行，其余child仍compiled。
+- DDP可能在运行中观察并重建bucket顺序；
+- Dynamo若已有graph break，编译器split可能与DDP bucket不对齐；
+- 被DDP忽略的parameter marker可能经其他transform丢失；
+- 单个child backend失败可eager执行，其余child仍compiled。
 
 见 `torch/_dynamo/backends/distributed.py:415-430`。
 
@@ -121,11 +121,11 @@ DDP `find_unused_parameters`会从forward outputs遍历autograd graph，提前�
 
 这些选项改变：
 
--grad storage alias；
--hook触发与ready顺序；
--bucket rebuild；
--可否跨迭代复用图；
--optimizer读取`.grad`的方式。
+- grad storage alias；
+- hook触发与ready顺序；
+- bucket rebuild；
+- 可否跨迭代复用图；
+- optimizer读取`.grad`的方式。
 
 它们是编译正确性契约的一部分，不只是DDP调参。
 
@@ -167,14 +167,14 @@ DDPOptimizer通过 **forward graph split** 间接让AOT backward分段，恢复a
 
 每个rank验证：
 
--相同参数初值、loss和grad；
--used/unused参数一致；
--collective数量、类型、顺序一致；
--bucket mapping与rebuild稳定；
--grad alias符合`gradient_as_bucket_view`；
--optimizer state与parameter更新一致；
--overflow/skip step跨rank一致；
--graph break/recompile不会造成某rank独立路径。
+- 相同参数初值、loss和grad；
+- used/unused参数一致；
+- collective数量、类型、顺序一致；
+- bucket mapping与rebuild稳定；
+- grad alias符合`gradient_as_bucket_view`；
+- optimizer state与parameter更新一致；
+- overflow/skip step跨rank一致；
+- graph break/recompile不会造成某rank独立路径。
 
 性能同时看backward compute、collective、overlap和最慢rank；单rank kernel时间不足以评价DDP。
 

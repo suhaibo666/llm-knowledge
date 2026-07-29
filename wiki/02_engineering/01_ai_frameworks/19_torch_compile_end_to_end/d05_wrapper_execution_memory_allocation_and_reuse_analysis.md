@@ -124,7 +124,7 @@ stream属于key，因此普通策略自然阻止跨stream不安全reuse。
 
 - inference且开启完整memory planning：调用独立 `MemoryPlanner`；
 - training默认不用完整planner，因为当前可能增加peak；
--其他路径仍可做line-based reuse。
+- 其他路径仍可做line-based reuse。
 
 见 `torch/_inductor/codegen/wrapper.py:2575-2582`。
 
@@ -151,7 +151,7 @@ CUDA Graph private pool、views/aliases、external outputs、retain_graph和用�
 
 - graph output aliases；
 - input mutation；
--MultiOutputLayout；
+- MultiOutputLayout；
 - reinterpret view范围；
 - external kernel持有；
 - async stream完成；
@@ -185,12 +185,12 @@ wrapper lines来自Scheduler codegen顺序。安全重排需满足：
 
 设wrapper有 \(L\) lines、buffer数 \(B\)，reuse pool用hash key：
 
--单遍line planning期望 \(O(L)\)；
--pool push/pop期望 \(O(1)\)；
--peak-between查询取决于估算数据结构；
--源码生成 \(O(L)\)；
--runtime allocation次数在最佳复用下显著少于 \(B\)，但受key/alias/stream限制；
--实际物理peak还受allocator fragmentation、reserved blocks和异步lifetime影响。
+- 单遍line planning期望 \(O(L)\)；
+- pool push/pop期望 \(O(1)\)；
+- peak-between查询取决于估算数据结构；
+- 源码生成 \(O(L)\)；
+- runtime allocation次数在最佳复用下显著少于 \(B\)，但受key/alias/stream限制；
+- 实际物理peak还受allocator fragmentation、reserved blocks和异步lifetime影响。
 
 ## 14. 常见误解
 

@@ -10,13 +10,13 @@
 
 生产契约必须同时定义：
 
--正确性：值、grad、mutation、alias、effect；
--可用性：编译/加载/runtime失败如何降级；
--延迟：cold、new specialization和steady SLO；
--资源：编译CPU、disk cache、host/device memory；
--状态空间：允许多少shape/config specialization；
--可观测性：能定位到frame、compile id、阶段和artifact；
--回滚：不重启或最小影响地切回eager/旧版本。
+- 正确性：值、grad、mutation、alias、effect；
+- 可用性：编译/加载/runtime失败如何降级；
+- 延迟：cold、new specialization和steady SLO；
+- 资源：编译CPU、disk cache、host/device memory；
+- 状态空间：允许多少shape/config specialization；
+- 可观测性：能定位到frame、compile id、阶段和artifact；
+- 回滚：不重启或最小影响地切回eager/旧版本。
 
 “打开 `suppress_errors` 后请求成功”只满足部分可用性，不证明编译路径正确或有收益。
 
@@ -42,11 +42,11 @@
 
 因此：
 
--它是可用性策略，不是错误修复；
--不能掩盖eager本身错误；
--不保证AOT/Inductor所有runtime错误都能安全转换；
--silent wrong answer不能靠fallback自动检测；
--上线仍需记录被抑制的异常与流量比例。
+- 它是可用性策略，不是错误修复；
+- 不能掩盖eager本身错误；
+- 不保证AOT/Inductor所有runtime错误都能安全转换；
+- silent wrong answer不能靠fallback自动检测；
+- 上线仍需记录被抑制的异常与流量比例。
 
 ## 4. Stance 是运行时控制面
 
@@ -89,10 +89,10 @@ eval-frame侧的实际选择是：
 ### Stage 0：离线契约
 
 - backend阶梯正确性；
--输入类/shape/alias矩阵；
--cold/hit/steady性能；
--失败注入与fallback；
--artifact可复现。
+- 输入类/shape/alias矩阵；
+- cold/hit/steady性能；
+- 失败注入与fallback；
+- artifact可复现。
 
 ### Stage 1：shadow
 
@@ -117,37 +117,37 @@ memory和正确性自动阈值。
 
 ### Capture/cache
 
--compile attempts/success/failure；
--graph breaks按reason；
--recompile按guard category；
--每code object entry数与limit hit；
--Dynamo/AOT/FX/Triton cache hit/miss；
--artifact load/rebuild。
+- compile attempts/success/failure；
+- graph breaks按reason；
+- recompile按guard category；
+- 每code object entry数与limit hit；
+- Dynamo/AOT/FX/Triton cache hit/miss；
+- artifact load/rebuild。
 
 ### Latency
 
--cold compile；
--new specialization；
--persistent hit load；
--first forward/first backward；
--steady p50/p95/p99；
--runtime autotune/CUDAGraph时间。
+- cold compile；
+- new specialization；
+- persistent hit load；
+- first forward/first backward；
+- steady p50/p95/p99；
+- runtime autotune/CUDAGraph时间。
 
 ### Correctness
 
--shadow mismatch；
--NaN/Inf；
--gradient/parameter drift；
--exception divergence；
--fallback后结果。
+- shadow mismatch；
+- NaN/Inf；
+- gradient/parameter drift；
+- exception divergence；
+- fallback后结果。
 
 ### Resources
 
--编译CPU/worker queue；
--cache disk/IO；
--host RSS；
--device allocated/reserved/CUDAGraph pools；
--kernel/communication utilization。
+- 编译CPU/worker queue；
+- cache disk/IO；
+- host RSS；
+- device allocated/reserved/CUDAGraph pools；
+- kernel/communication utilization。
 
 `CompilationMetrics`已有fail type/reason、guard/cache、forward/backward/runtime及多个阶段耗时
 字段，可作为事件骨架
@@ -173,13 +173,13 @@ memory和正确性自动阈值。
 
 发布键至少应包含：
 
--PyTorch/compiler commit；
--backend与配置；
--Python/ABI；
--device capability、driver/toolchain；
--模型/常量版本；
--shape/dtype/layout specialization；
--安全/租户域。
+- PyTorch/compiler commit；
+- backend与配置；
+- Python/ABI；
+- device capability、driver/toolchain；
+- 模型/常量版本；
+- shape/dtype/layout specialization；
+- 安全/租户域。
 
 `torch.compile`文档说明cache关联code object，guard miss会产生多个compiled result，超过
 recompile limit后fallback
@@ -193,14 +193,14 @@ entries，但累计上限仍是全局安全cap
 
 必须在上线前验证：
 
--进程内切换force eager；
--新请求不再触发compile；
--已在执行的请求语义明确；
--清理/保留cache不会误加载不兼容artifact；
--distributed所有rank一致切换；
--lazy backward/async compile future不会遗留资源；
--回滚后指标能区分eager与compiled流量；
--恢复compiled路径需要重新warmup还是可复用cache。
+- 进程内切换force eager；
+- 新请求不再触发compile；
+- 已在执行的请求语义明确；
+- 清理/保留cache不会误加载不兼容artifact；
+- distributed所有rank一致切换；
+- lazy backward/async compile future不会遗留资源；
+- 回滚后指标能区分eager与compiled流量；
+- 恢复compiled路径需要重新warmup还是可复用cache。
 
 ## 11. 容量与复杂度
 

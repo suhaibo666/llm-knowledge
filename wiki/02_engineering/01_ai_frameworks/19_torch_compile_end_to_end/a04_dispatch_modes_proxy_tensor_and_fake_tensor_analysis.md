@@ -245,18 +245,107 @@ object modeling 仍可能主导 compile latency。
 | TorchDispatchMode 必须包装 inputs | mode 是动态作用域，能拦截 factory op |
 | Dynamo 就是 ProxyTorchDispatchMode | Dynamo还解释 Python bytecode、objects、guards 和 resume |
 
-## 14. 源码阅读顺序
+## 14. 源码跟读：`make_fx` 如何协同 Proxy 与 Fake 两套状态
 
-```text
-torch/overrides.py
-  → torch/utils/_python_dispatch.py
-  → torch/_subclasses/fake_tensor.py
-  → torch/fx/experimental/proxy_tensor.py
-  → Dynamo VariableTracker / OutputGraph
+Proxy 和 Fake 同时出现不是重复 tracing。Proxy 回答“这次 operator 在 FX 图中依赖谁”，
+Fake 回答“若不运行真实 data kernel，输出的 shape、stride、dtype 和 device 是什么”。
+`make_fx` 把两者放进同一动态作用域，再把两类结果绑定到同一输出树。
+
+```mermaid
+flowchart LR
+    M["make_fx"] --> S["dispatch mode stack"]
+    S --> P["ProxyTorchDispatchMode"]
+    S --> F["FakeTensorMode"]
+    P --> C["proxy_call"]
+    C --> N["FX call_function Node"]
+    F --> K["fake or meta execution"]
+    K --> O["abstract output"]
+    N --> T["track_tensor_tree"]
+    O --> T
 ```
 
-阅读时为每个对象标注它是在“选择拦截层”“推导值属性”还是“记录程序关系”；这样能避免
-把多个同时出现的 mode/tracer 当作重复包装。
+### 14.1 mode 是线程动态作用域，不要求预先包装所有输入
+
+`TorchDispatchMode` 的注释说明 mode 在 operator dispatch 时生效，尤其能拦截没有 Tensor
+输入的 factory function；多个 mode 以栈形式组合
+（`torch/utils/_python_dispatch.py:72-100`）。进入 mode 时会更新相关 flags 并 push 到
+mode stack（`torch/utils/_python_dispatch.py:146-175`），退出时恢复原状态
+（`torch/utils/_python_dispatch.py:177-184`）。
+
+因此，mode 的 owner 是当前动态执行上下文，不是某个 FX Node。这个设计让 tracing
+能够看到 `torch.ones(...)` 一类尚无可包装输入的调用，也意味着嵌套 mode 的入栈顺序会
+改变实际拦截链。
+
+### 14.2 FakeTensorMode 维护抽象执行状态
+
+FakeTensorMode 持有 cache、cache epoch 与相关状态
+（`torch/_subclasses/fake_tensor.py:1526-1548`）。Fake Tensor 的
+`__torch_dispatch__` 把 operator 转回所属 mode 的 dispatch
+（`torch/_subclasses/fake_tensor.py:1692-1708`）；mode 再选择 meta handler、
+直接实现或 cache 路径（`torch/_subclasses/fake_tensor.py:2464-2492`）。
+
+这里的产物仍然是可供 Python 代码使用的 Tensor-like abstract value，而不是 FX Node。
+它保留足够的 tensor metadata 让后续 operator 继续传播，但没有真实设备 data 可供任意
+data-dependent 分支读取。
+
+### 14.3 ProxyTorchDispatchMode 维护图关系与 tracing 策略
+
+Proxy mode 构造时持有 tracer、decomposition table、是否允许 data-dependent operator
+等策略（`torch/fx/experimental/proxy_tensor.py:2108-2137`）。它的
+`__torch_dispatch__` 进入 `proxy_call`；进入 mode 时还会把自己注册为 infra mode
+（`torch/fx/experimental/proxy_tensor.py:2148-2167`）。
+
+`proxy_call` 首先校验类型并尝试 decomposition
+（`torch/fx/experimental/proxy_tensor.py:1278-1308`），然后从输入提取 proxies，
+处理 data-dependent 策略与相应错误
+（`torch/fx/experimental/proxy_tensor.py:1334-1361`）。这说明 decomposition 发生在
+图节点最终落定前；同一 eager operator 在不同 decomposition policy 下可以得到不同
+FX surface。
+
+### 14.4 一个 operator 为什么既创建 Node 又执行一次
+
+在常规路径，`proxy_call` 先用输入 proxies 创建 FX `call_function` proxy，随后用去掉
+proxy 外壳的 inner/fake args 真正调用 operator
+（`torch/fx/experimental/proxy_tensor.py:1417-1426`）。这里的“执行”通常落到
+FakeTensorMode/meta kernel，不是用用户真实数据跑 backend kernel。
+
+获得 abstract output 后，源码用 `track_tensor_tree` 把 output pytree 中的 Tensor、
+Proxy 与 metadata 逐叶绑定，再返回 real/fake result 给正在执行的 Python 程序
+（`torch/fx/experimental/proxy_tensor.py:1490-1498`）。
+`track_tensor_tree` 还会记录 unbacked symbol bindings，并为 Tensor 叶子建立
+Tensor/Proxy/meta 对应关系（`torch/fx/experimental/proxy_tensor.py:934-965`）。
+
+所以一次 trace operator 有两个同步产物：
+
+- FX Node/Proxy：供图中的后续使用表达 data dependency；
+- Fake Tensor：供原 Python 继续执行并计算后续 metadata。
+
+只有 Node 没有 Fake value，下一步 Python 无法读取 `shape` 等抽象属性；只有 Fake value
+没有 Proxy，最终 Graph 不知道这个值由哪个 operator 定义。
+
+### 14.5 `make_fx` 在哪里组装两套 mode
+
+`MakeFxTracer` 根据 tracing mode 进入 fake mode、proxy mode 与 metadata mode，然后调用
+`dispatch_trace` 生成 GraphModule
+（`torch/fx/experimental/proxy_tensor.py:3170-3213`）。trace 入口先初始化这些 modes
+再执行 inner trace（`torch/fx/experimental/proxy_tensor.py:3257-3259`）。
+public `make_fx` 暴露 decomposition、tracing mode、data-dependent policy 等契约
+（`torch/fx/experimental/proxy_tensor.py:3312-3342`），最终 wrapper 调用
+`make_fx_tracer.trace`（`torch/fx/experimental/proxy_tensor.py:3370-3385`）。
+
+分层设计的原因由调用链直接给出：mode stack 负责拦截，Proxy tracer 负责 IR identity，
+Fake mode 负责 abstract semantics，ShapeEnv/metadata 负责符号约束；它们的生命周期和
+失败模式不同，合成一个“大 tracer 对象”反而会模糊所有权。
+
+### 14.6 失败边界
+
+- decomposition 不可用时，可能保留原 operator 或进入特定 fallback；
+- data-dependent operator 不能从 Fake data 读取真实值，会按 policy 报错或产生符号；
+- output pytree 无法与 proxy 对齐时，`track_tensor_tree` 不能建立完整关系；
+- mode nesting 或跨 trace 复用状态错误，会让 operator 被错误层拦截或 metadata 串线。
+
+因此，分析 Proxy/Fake bug 时应先问失败发生在“拦截、建 Node、abstract execution、
+output binding”哪一步，而不是笼统归因于 `__torch_dispatch__`。
 
 ## 配套 Demo
 

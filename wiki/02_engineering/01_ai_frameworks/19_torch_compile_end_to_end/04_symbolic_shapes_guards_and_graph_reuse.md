@@ -13,7 +13,7 @@
 - dtype/device/layout 等假设必须成立；
 - shape 关系与 range 必须满足；
 - module/global/object 状态假设不能变化；
--生成代码采用的 indexing、allocation、kernel 选择仍合法。
+- 生成代码采用的 indexing、allocation、kernel 选择仍合法。
 
 PyTorch 用“图 + companion validity state”回答：
 
@@ -334,7 +334,11 @@ symbolic numel 可能成为 kernel `SizeArg`，grid 运行时表达式可依赖�
 compile-time heuristic/config。当前 pointwise 配置经 device heuristic registry 生成，不应
 用一个历史固定 XBLOCK 列表概括
 （`torch/_inductor/runtime/triton_heuristics.py:4365-4435`;
-`torch/_inductor/runtime/triton_heuristics.py:5005-5152`）。
+`torch/_inductor/runtime/triton_heuristics.py:5005-5032`;
+`torch/_inductor/runtime/triton_heuristics.py:5078-5099`;
+`torch/_inductor/runtime/triton_heuristics.py:5101-5115`;
+`torch/_inductor/runtime/triton_heuristics.py:5118-5134`;
+`torch/_inductor/runtime/triton_heuristics.py:5137-5152`）。
 
 ## 12. 复杂度与 cache 代价
 

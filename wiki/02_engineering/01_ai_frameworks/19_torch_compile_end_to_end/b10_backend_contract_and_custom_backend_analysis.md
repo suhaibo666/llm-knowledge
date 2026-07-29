@@ -153,11 +153,11 @@ Dynamo会把一般backend异常包装为backend compiler failure，但一些异�
 用于计时、校验、图变换或fallback。若修改graph，应：
 
 - 保持topological legality；
--维护node metadata；
--处理副作用/alias；
--执行lint和必要DCE；
--验证输出结构；
--明确cache key是否覆盖自己的配置。
+- 维护node metadata；
+- 处理副作用/alias；
+- 执行lint和必要DCE；
+- 验证输出结构；
+- 明确cache key是否覆盖自己的配置。
 
 ## 10. 自定义backend与FX pass的责任边界
 

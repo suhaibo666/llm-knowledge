@@ -39,7 +39,11 @@ args比较，会把语义相同调用当成不同结构。
 
 FX/PatternMatcher 可借 operator schema 补齐 default kwargs、flatten结构后递归比较。
 当前 `_TargetArgsExpr`的 normalization/match逻辑位于
-`torch/_inductor/pattern_matcher.py:876-1019`。
+`torch/_inductor/pattern_matcher.py:881-898`、
+`torch/_inductor/pattern_matcher.py:901-906`、
+`torch/_inductor/pattern_matcher.py:909-935`、
+`torch/_inductor/pattern_matcher.py:963-990`与
+`torch/_inductor/pattern_matcher.py:991-1019`。
 
 Schema normalization只统一 call signature，不做代数等价证明。
 
@@ -69,7 +73,11 @@ table配置 tracing；Inductor也有自己的 decomposition/fallback决策。
 
 functionalization追踪 alias并把 mutation转为 functional updates。AOT metadata先分析输入/
 输出 mutation 与 alias，再决定 graph/runtime ABI
-（`torch/_functorch/_aot_autograd/collect_metadata_analysis.py:252-510`;
+（`torch/_functorch/_aot_autograd/collect_metadata_analysis.py:252-274`;
+`torch/_functorch/_aot_autograd/collect_metadata_analysis.py:276-289`;
+`torch/_functorch/_aot_autograd/collect_metadata_analysis.py:291-320`;
+`torch/_functorch/_aot_autograd/collect_metadata_analysis.py:447-475`;
+`torch/_functorch/_aot_autograd/collect_metadata_analysis.py:488-510`;
 `torch/_functorch/_aot_autograd/collect_metadata_analysis.py:760-805`）。
 
 它不是简单字符串替换：
@@ -92,7 +100,10 @@ x.add_(1)
 当前 AOT functional graph contract允许受控 `copy_`尾部，用于 `keep_input_mutations`等路径；
 若关闭 functionalization则不强制该 invariant
 （`torch/_functorch/_aot_autograd/graph_capture.py:340-403`;
-`torch/_functorch/_aot_autograd/graph_capture_wrappers.py:1030-1144`）。
+`torch/_functorch/_aot_autograd/graph_capture_wrappers.py:1030-1056`;
+`torch/_functorch/_aot_autograd/graph_capture_wrappers.py:1058-1070`;
+`torch/_functorch/_aot_autograd/graph_capture_wrappers.py:1088-1104`;
+`torch/_functorch/_aot_autograd/graph_capture_wrappers.py:1130-1144`）。
 
 所以准确表述是：
 
@@ -110,8 +121,19 @@ x.add_(1)
 
 `f(base[:], base[1:])`是不同 Tensor对象但共享 storage。若发生 mutation，AOT可用
 `AOTSyntheticBaseWrapper`合并为 synthetic base，再在图内重建 views
-（`torch/_functorch/_aot_autograd/runtime_wrappers.py:1586-1766`;
-`torch/_functorch/_aot_autograd/runtime_wrappers.py:1844-2018`）。
+（`torch/_functorch/_aot_autograd/runtime_wrappers.py:1586-1608`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1612-1639`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1660-1689`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1696-1716`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1725-1747`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1749-1766`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1844-1863`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1864-1880`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1909-1938`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1945-1960`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1963-1978`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1979-1999`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:2001-2018`）。
 
 这两种机制解决 object identity 与 storage alias 的不同问题。
 

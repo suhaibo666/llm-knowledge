@@ -49,7 +49,11 @@ impure（`torch/fx/node.py:759-808`）。
 自身dead nodes。这不是全图DCE。
 
 PatternMatcherPass不自动调用universal DCE/sort/lint/recompile bundle
-（`torch/_inductor/pattern_matcher.py:2609-2726`）。stage driver决定清理。
+（`torch/_inductor/pattern_matcher.py:2609-2637`;
+`torch/_inductor/pattern_matcher.py:2640-2665`;
+`torch/_inductor/pattern_matcher.py:2666-2685`;
+`torch/_inductor/pattern_matcher.py:2686-2710`;
+`torch/_inductor/pattern_matcher.py:2711-2726`）。stage driver决定清理。
 
 ## 5. Scheduler DCE
 
@@ -237,6 +241,25 @@ Scheduler 反向遍历 `self.nodes`，但判活对象是 operation outputs：
 
 lazy expression 未形成独立 SchedulerNode 时，不属于 Scheduler DCE 的候选；它可能已经内联
 进 live operation。故“没有 Scheduler Node”不等于“被 Scheduler DCE 删除”。
+
+```mermaid
+flowchart TB
+    subgraph FX["FX Graph DCE"]
+        FXOrder["Graph 链表的逆拓扑扫描"] --> FXLive{"Node 无 users 且 pure？"}
+        FXLive -->|是| FXErase["erase_node<br/>同步更新 input.users"]
+    end
+    subgraph Effect["Effect 保序"]
+        Discover["alias / mutation / RNG / collective 分析"] --> Control["显式 control dependency / HOP operand"]
+        Control --> FXOrder
+    end
+    subgraph Sched["Scheduler DCE"]
+        SOrder["SchedulerNode 逆序扫描"] --> SLive{"无 side effect<br/>且无 active output buffer？"}
+        SLive -->|是| SErase["删除 operation<br/>更新 buffer users / weak deps"]
+    end
+```
+
+这张图刻意没有画“正向 Node → 反向 Node”的边：所谓反向扫描只是访问顺序；真正的反向
+索引分别是 FX 的 `Node.users` 和 Scheduler 的 buffer-user 关系。
 
 ### 6. 复杂度从实现得到，而不是统一写成 `O(V+E)`
 

@@ -143,7 +143,7 @@ remote命中后的artifact仍需在本机落盘/load；若环境key或guard不�
 
 AOT cache输入接近Dynamo graph + AOT config，value包含：
 
--fw/bw partition结果；
+- fw/bw partition结果；
 - runtime wrapper metadata；
 - deeper Inductor cache references；
 - lazy/compiled backward状态。
@@ -166,14 +166,14 @@ Inductor load/recompile。反之AOT miss产生相同post-grad graph时，FXGraph
 
 ## 12. Cache安全不变量
 
--所有影响codegen的配置都应进入key或被明确guard；
--dynamic shape guard在load时评估并回注当前ShapeEnv；
--constant绑定不能被同source module错误共享；
--backend/toolchain/extern libs变化必须miss；
--序列化内容不能保存进程私有callable/pointer；
--load失败转miss，不能执行半恢复对象；
--unsafe skip guard选项可能破坏正确性，不应作为常规加速；
--远程内容须视为不可信序列化边界并受部署策略控制。
+- 所有影响codegen的配置都应进入key或被明确guard；
+- dynamic shape guard在load时评估并回注当前ShapeEnv；
+- constant绑定不能被同source module错误共享；
+- backend/toolchain/extern libs变化必须miss；
+- 序列化内容不能保存进程私有callable/pointer；
+- load失败转miss，不能执行半恢复对象；
+- unsafe skip guard选项可能破坏正确性，不应作为常规加速；
+- 远程内容须视为不可信序列化边界并受部署策略控制。
 
 ## 13. 复杂度
 
@@ -181,10 +181,10 @@ Inductor load/recompile。反之AOT miss产生相同post-grad graph时，FXGraph
 
 - key构造/hash约为 \(O(H)\)；
 - guarded lookup worst case \(O(C \cdot Q)\)，\(Q\)为guard表达式成本；
--local deserialize/load约与entry/source/artifact大小相关；
--remote lookup另加网络延迟与传输 \(O(A)\)；
--hit仍支付module import、constant attach和post-compile；
--cache空间随graph版本、guard版本、toolchain/config组合增长。
+- local deserialize/load约与entry/source/artifact大小相关；
+- remote lookup另加网络延迟与传输 \(O(A)\)；
+- hit仍支付module import、constant attach和post-compile；
+- cache空间随graph版本、guard版本、toolchain/config组合增长。
 
 ## 14. 常见误解
 

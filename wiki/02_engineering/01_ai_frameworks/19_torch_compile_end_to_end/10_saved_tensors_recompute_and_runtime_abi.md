@@ -74,8 +74,14 @@ source/sink:
 ```
 
 cut穿过的内部边对应saved values；未被cut但bw所需的forward computation被复制到bw
-（`torch/_functorch/partitioners.py:2641-2765`;
-`torch/_functorch/partitioners.py:2888-3069`）。
+（`torch/_functorch/partitioners.py:2641-2659`;
+`torch/_functorch/partitioners.py:2661-2674`;
+`torch/_functorch/partitioners.py:2680-2709`;
+`torch/_functorch/partitioners.py:2711-2721`;
+`torch/_functorch/partitioners.py:2728-2757`;
+`torch/_functorch/partitioners.py:2759-2765`;
+`torch/_functorch/partitioners.py:2888-2890`;
+`torch/_functorch/partitioners.py:3052-3072`）。
 
 ## 6. “最小”优化的是什么
 
@@ -110,7 +116,12 @@ partition extraction为bw创建fresh graph/env。需要重算的joint forward no
 
 `node.meta["recompute"]`是选择/provenance metadata，不是runtime opcode
 （`torch/_functorch/partitioners.py:1690-1770`;
-`torch/_functorch/partitioners.py:2630-2765`）。
+`torch/_functorch/partitioners.py:1728-1750`;
+`torch/_functorch/partitioners.py:1751-1770`;
+`torch/_functorch/partitioners.py:1373-1394`;
+`torch/_functorch/partitioners.py:1510-1539`;
+`torch/_functorch/partitioners.py:1540-1546`;
+`torch/_functorch/partitioners.py:654-661`）。
 
 ## 9. 带recompute的bw长什么样
 
@@ -161,7 +172,9 @@ AOT post-compile创建generated `torch.autograd.Function`：
 
 核心backward prologue组装symbolic values、tensors、opaque objects、filtered gradients与
 optional effect/RNG state
-（`torch/_functorch/_aot_autograd/runtime_wrappers.py:2982-3089`）。
+（`torch/_functorch/_aot_autograd/runtime_wrappers.py:2982-3010`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:3031-3058`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:3060-3089`）。
 
 最终外层还有RuntimeWrapper恢复原pytree、mutation、alias、subclass calling convention
 （`torch/_functorch/_aot_autograd/runtime_wrappers.py:3806-3816`）。

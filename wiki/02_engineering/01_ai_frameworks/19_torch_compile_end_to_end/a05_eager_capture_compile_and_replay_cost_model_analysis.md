@@ -256,7 +256,101 @@ UNWRAPPED
 不同层的 failure 处置不同：graph break可产生 partial graph；guard miss可重编译；backend
 failure可能在配置允许时 suppress/fallback；native runtime错误不能视为普通 cache miss。
 
-## 14. 复杂度的主导参数
+## 14. 源码跟读：首次调用、cache miss 与后续 replay 的真实边界
+
+前面的状态机给出了阶段；这一节把阶段落实到 owner。关键结论是：`torch.compile`
+没有一个包办全程的“总 cache”。code-object guard cache、backend compile cache、
+native artifact cache 和 runtime wrapper 各自跳过不同工作。
+
+```mermaid
+flowchart LR
+    A["torch.compile wrapper"] --> B["temporary eval frame callback"]
+    B --> C["code object ExtraState lookup"]
+    C -->|guard hit| H["cached transformed code"]
+    C -->|guard miss| D["Dynamo capture"]
+    D --> E["backend compiler"]
+    E --> G["GuardedCode"]
+    G --> I["install cache entry"]
+    I --> H
+```
+
+### 14.1 wrapper creation 与 first call 是两个事件
+
+public API 在选择 backend wrapper 后调用 `torch._dynamo.optimize(...)(model)`，返回可调用
+对象（`torch/__init__.py:3361-3378`）。真正执行这个对象时，wrapper 才在原函数调用周围
+临时设置 eval-frame callback，并在退出时恢复旧 callback
+（`torch/_dynamo/eval_frame.py:1480-1505`）。
+
+因此，wrapper creation 的成本主要是配置与对象组装；捕获需要的 frame、locals 和 Tensor
+输入只存在于 first call。把两段时间合成一个“compile latency”会让测量无法解释
+lazy compilation。
+
+### 14.2 code object 的 `ExtraState` 如何决定 hit 或 miss
+
+C++ eval-frame 路径从 code object 取得或创建 `ExtraState`，并结合当前 frame strategy
+决定是否尝试优化（`torch/csrc/dynamo/eval_frame_cpp.cpp:495-525`）。执行 guards 时会
+暂时关闭 callback，避免 guard 自身再次被 Dynamo 捕获，然后查询 cache
+（`torch/csrc/dynamo/eval_frame_cpp.cpp:526-555`）。
+
+cache hit 直接取得 cached code 并进入自定义执行；miss 才继续 Python compiler callback
+或对应错误路径（`torch/csrc/dynamo/eval_frame_cpp.cpp:589-607`）。miss 路径把 frame、
+cache entry 与 frame state 传给 Python callback
+（`torch/csrc/dynamo/eval_frame_cpp.cpp:614-634`）。这条边界说明：一次 guard lookup
+发生在 Dynamo 再次符号解释 Python 之前，hit 能跳过的是 capture/compile，不是本次
+运行的全部 wrapper 和 guard 工作。
+
+### 14.3 cache entry 的选择为什么既看 backend 又跑 guards
+
+`ExtraState::lookup_in_list` 会先核对 backend，再运行 entry 的 guard manager
+（`torch/csrc/dynamo/extra_state.cpp:201-225`）。更外层 lookup 依次查询相应 backend 的
+bucket 与 default bucket（`torch/csrc/dynamo/extra_state.cpp:292-316`）；命中后还会把
+entry 移到链表前端并返回 cached code
+（`torch/csrc/dynamo/extra_state.cpp:319-323`）。
+
+因此，“同一 code object”只是 cache 搜索范围，不是充分命中条件。不同 backend 或不同
+输入 specialization 可以对应多个 entries；每次调用的 guard cost 取决于实际检查过的
+entries 和每组 guard 的内容。
+
+### 14.4 miss 后 backend 在哪里接管
+
+Dynamo 完成 capture 后，`OutputGraph` 在计时区域调用 compiler function，并检查 backend
+返回值必须可调用；异常在这里被归类为 backend compiler failure
+（`torch/_dynamo/output_graph.py:3217-3228`；
+`torch/_dynamo/output_graph.py:3286-3300`）。若 backend 是 Inductor，
+`compile_fx` 接收 FX GraphModule 与 example inputs，并负责继续编排 AOTAutograd/
+Inductor 路径（`torch/_inductor/compile_fx.py:2889-2907`）。
+
+这说明 backend handoff 是一个明确接口：Dynamo 提交一段图和样例输入，backend 可以再有
+自己的 graph cache、code cache、native compiler 与 lazy backward compile。code-object
+entry hit 只保证不再次走这次 Dynamo/backend handoff，不代表那些下层 cache 与 runtime
+都不存在。
+
+### 14.5 GuardedCode 如何返回 C 层 cache
+
+ConvertFrame 完成后构造 guards，并把 transformed code 与 guard check 封装为
+`GuardedCode`（`torch/_dynamo/convert_frame.py:1916-1938`）。C++ 路径收到 guarded code
+后创建 cache entry，再执行 custom code
+（`torch/csrc/dynamo/eval_frame_cpp.cpp:672-689`）；真正的 entry 创建会设置 ownership
+links 并把对象接入 cache 结构（`torch/csrc/dynamo/extra_state.cpp:380-405`）。
+
+至此 first-call miss 才闭环：
+
+1. wrapper 安装 callback；
+2. C 层按 code object 查 cache；
+3. miss 进入 Dynamo capture；
+4. backend 编译图；
+5. transformed code 与 guards 返回为 GuardedCode；
+6. C 层安装 entry 并执行；
+7. 后续调用通过 guards 时复用 transformed code。
+
+### 14.6 对性能测量的直接约束
+
+测量至少要分别报告 wrapper creation、首次 miss、guarded hit 和 steady-state runtime。
+若只测 first call，会把 capture、backend、native compile 和首次加载全部归给执行；
+若只测第二次，又可能尚未越过 lazy backward、autotune 或 CUDAGraph warmup。cache
+统计也必须标明层级，否则“hit”无法说明究竟跳过了哪段工作。
+
+## 15. 复杂度的主导参数
 
 - wrapper creation：与 option/backend setup相关；
 - Dynamo lookup：与 cache entries和 guard expressions相关；
@@ -269,7 +363,7 @@ failure可能在配置允许时 suppress/fallback；native runtime错误不能�
 
 “模型有 \(N\) 个 FX nodes，所以 compile是 \(O(N)\)”不足以描述整条路径。
 
-## 15. 常见误解
+## 16. 常见误解
 
 | 误解 | 修正 |
 |---|---|
@@ -279,7 +373,7 @@ failure可能在配置允许时 suppress/fallback；native runtime错误不能�
 | dynamic一定减少总成本 | 它减少 specialization但可能增加通用 graph/kernel成本 |
 | max-autotune一定提高端到端性能 | 候选测量增加 compile成本，收益依 workload和调用次数 |
 
-## 16. 下一步
+## 17. 下一步
 
 卷 A建立了五个坐标：
 

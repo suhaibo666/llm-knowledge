@@ -2,6 +2,9 @@
 
 > Fixed checkout: `E:/97-codes/torch_parallel/p`  
 > Commit: `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
+> Navigation rule: all locators in this course resolve against this detached checkout. The sibling
+> `E:/97-codes/torch_parallel/pytorch` is a separate working copy with uncommitted work and must not
+> be used for line-number navigation or forcibly switched to the audit commit.
 > Purpose: map each volume to its load-bearing source entry points before prose is written.
 
 ## Volume A

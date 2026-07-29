@@ -14,8 +14,8 @@ Python程序包含FX图难以完整表达的语义：
 - 局部/全局变量；
 - 对象属性、cell和closure；
 - graph break；
--异常与block stack；
--副作用的发生顺序；
+- 异常与block stack；
+- 副作用的发生顺序；
 - 调用 compiled callable前后的状态恢复。
 
 因此一次 frame转换必须同时产生：
@@ -39,7 +39,7 @@ Python程序包含FX图难以完整表达的语义：
 - source到input tracker的去重表；
 - frame state；
 - compile id；
--当前 scopes和mode stack。
+- 当前 scopes和mode stack。
 
 见 `torch/_dynamo/output_graph.py:769-785` 与
 `torch/_dynamo/output_graph.py:786-799`。
@@ -68,7 +68,7 @@ guard；一个Python list mutation可能没有对应FX node，却必须在compil
 - parameter/buffer可在根图注册为 `get_attr`；
 - 高阶子图中把值提升为输入，而在根图保留 `get_attr`；
 - 对对象安装 `ID_MATCH`或 `TENSOR_MATCH` guard；
--用 identity table避免重复注册。
+- 用 identity table避免重复注册。
 
 关键决策见 `torch/_dynamo/output_graph.py:1671-1690`、
 `torch/_dynamo/output_graph.py:1691-1705` 与

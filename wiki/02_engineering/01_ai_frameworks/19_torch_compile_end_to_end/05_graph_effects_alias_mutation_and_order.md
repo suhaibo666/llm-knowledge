@@ -151,7 +151,10 @@ runtime wrapper:
 
 AOT 在 enabled path 断言 functional graph，同时允许受控 `copy_`尾部
 （`torch/_functorch/_aot_autograd/graph_capture.py:340-403`;
-`torch/_functorch/_aot_autograd/graph_capture_wrappers.py:1030-1144`）。
+`torch/_functorch/_aot_autograd/graph_capture_wrappers.py:1030-1056`;
+`torch/_functorch/_aot_autograd/graph_capture_wrappers.py:1058-1070`;
+`torch/_functorch/_aot_autograd/graph_capture_wrappers.py:1088-1104`;
+`torch/_functorch/_aot_autograd/graph_capture_wrappers.py:1130-1144`）。
 
 ### 6.1 为什么后端又会 reinplace
 
@@ -163,7 +166,11 @@ post-grad 在主要 functional patterns 与 collective/order 处理之后调用
 reinplace 的合法性不是“发现 out-of-place 对应的下划线算子”这么简单。当前
 `can_inplace`会检查 storage alias、graph input view、后续 users、被 mutation 的多参数
 是否互相 alias 等条件；同一 storage 已被选择为另一个 reinplace 目标时还可能克隆
-（`torch/_inductor/fx_passes/reinplace.py:484-690`;
+（`torch/_inductor/fx_passes/reinplace.py:484-500`;
+`torch/_inductor/fx_passes/reinplace.py:555-582`;
+`torch/_inductor/fx_passes/reinplace.py:583-610`;
+`torch/_inductor/fx_passes/reinplace.py:613-638`;
+`torch/_inductor/fx_passes/reinplace.py:643-671`;
 `torch/_inductor/fx_passes/reinplace.py:739-834`）。因此设计成
 “先 functionalize、完成大多数分析，再在已知 liveness/alias 约束下受控 reinplace”，
 是为了把语义证明和最终内存优化分层。
@@ -183,8 +190,19 @@ f(a_view, b_view):
 
 当前 wrapper 顺序中，dedupe 与 synthetic-base 在 capture/compile 前处理，post-compile
 逆序恢复（`torch/_functorch/_aot_autograd/graph_compile.py:185-189`;
-`torch/_functorch/_aot_autograd/runtime_wrappers.py:1586-1766`;
-`torch/_functorch/_aot_autograd/runtime_wrappers.py:1844-2018`）。
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1586-1608`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1612-1639`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1660-1689`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1696-1716`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1725-1747`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1749-1766`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1844-1863`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1864-1880`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1909-1938`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1945-1960`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1963-1978`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:1979-1999`;
+`torch/_functorch/_aot_autograd/runtime_wrappers.py:2001-2018`）。
 
 ## 8. Effect token：把隐藏顺序显式化
 

@@ -39,8 +39,8 @@ GraphLowering.operations
 - alias names共享/合并user list；
 - mutation rename到最新version；
 - 加read/write users；
--处理WeakDep/StarDep；
--处理unbacked symbol origin；
+- 处理WeakDep/StarDep；
+- 处理unbacked symbol origin；
 - output/input mutation roots
   （`torch/_inductor/scheduler.py:4689-4717`；
   `torch/_inductor/scheduler.py:4731-4761`；
@@ -107,7 +107,28 @@ mutation的统一global edge。
 16. peak-memory/comm overlap reorder；
 17. grouped/partition processing；
 18. last use
-   （`torch/_inductor/scheduler.py:4235-4410`）。
+   （`torch/_inductor/scheduler.py:4235-4258`;
+   `torch/_inductor/scheduler.py:4259-4286`;
+   `torch/_inductor/scheduler.py:4287-4316`;
+   `torch/_inductor/scheduler.py:4318-4347`;
+   `torch/_inductor/scheduler.py:4373-4402`;
+   `torch/_inductor/scheduler.py:4403-4410`）。
+
+```mermaid
+flowchart LR
+    IR["realized Inductor IR"] --> Deps["compute dependencies"]
+    Deps --> Topo["topological sort"]
+    Topo --> DCE["Scheduler DCE"]
+    DCE --> Meta["ancestors / distances<br/>stream / mempool"]
+    Meta --> Fusion["iterative fusion"]
+    Fusion --> Post["post-fusion DCE<br/>merge / template finalize"]
+    Post --> Reorder["peak-memory / comm-overlap reorder"]
+    Reorder --> LastUse["group processing / last use"]
+    LastUse --> Codegen["backend codegen"]
+```
+
+其中 topo、fusion、reorder 都可能改变顺序或分组，但只有 `compute_dependencies`/后续依赖维护
+决定什么是合法边；“链表位置更靠前”本身不产生数据依赖。
 
 ## 5. Topological schedule
 
@@ -190,7 +211,26 @@ O(Σ_g n_g · min(n_g, W))
 - template/foreach规则；
 - no-fuse buffers；
 - stream/mempool boundary
-  （`torch/_inductor/scheduler.py:7818-8526`）。
+  （`torch/_inductor/scheduler.py:7818-7838`;
+  `torch/_inductor/scheduler.py:7840-7856`;
+  `torch/_inductor/scheduler.py:7867-7885`;
+  `torch/_inductor/scheduler.py:7890-7918`;
+  `torch/_inductor/scheduler.py:7971-8000`;
+  `torch/_inductor/scheduler.py:8012-8040`;
+  `torch/_inductor/scheduler.py:8074-8104`;
+  `torch/_inductor/scheduler.py:8106-8135`;
+  `torch/_inductor/scheduler.py:8159-8188`;
+  `torch/_inductor/scheduler.py:8189-8197`;
+  `torch/_inductor/scheduler.py:8199-8228`;
+  `torch/_inductor/scheduler.py:8229-8258`;
+  `torch/_inductor/scheduler.py:8259-8270`;
+  `torch/_inductor/scheduler.py:8272-8301`;
+  `torch/_inductor/scheduler.py:8302-8331`;
+  `torch/_inductor/scheduler.py:8344-8373`;
+  `torch/_inductor/scheduler.py:8374-8403`;
+  `torch/_inductor/scheduler.py:8407-8426`;
+  `torch/_inductor/scheduler.py:8429-8458`;
+  `torch/_inductor/scheduler.py:8513-8524`）。
 
 cycle check遍历fused ancestors
 （`torch/_inductor/scheduler.py:6886-6925`）。
@@ -215,10 +255,22 @@ cycle check遍历fused ancestors
 - same-buffer不同index overlap；
 - common read sets/cache locality；
 - mix-order reduction score
-  （`torch/_inductor/scheduler.py:8547-8908`）。
+  （`torch/_inductor/scheduler.py:8547-8575`;
+  `torch/_inductor/scheduler.py:8576-8609`;
+  `torch/_inductor/scheduler.py:8631-8660`;
+  `torch/_inductor/scheduler.py:8662-8691`;
+  `torch/_inductor/scheduler.py:8692-8721`;
+  `torch/_inductor/scheduler.py:8829-8858`;
+  `torch/_inductor/scheduler.py:8859-8888`;
+  `torch/_inductor/scheduler.py:8889-8911`）。
 
 `V.choices.score_fusion`提供策略层；template fusion还可异步compile/benchmark
-（`torch/_inductor/scheduler.py:6181-6377`）。
+（`torch/_inductor/scheduler.py:6181-6208`;
+`torch/_inductor/scheduler.py:6211-6240`;
+`torch/_inductor/scheduler.py:6242-6260`;
+`torch/_inductor/scheduler.py:6296-6325`;
+`torch/_inductor/scheduler.py:6327-6347`;
+`torch/_inductor/scheduler.py:6349-6373`）。
 
 ## 12. Fusion不保证硬件细节
 

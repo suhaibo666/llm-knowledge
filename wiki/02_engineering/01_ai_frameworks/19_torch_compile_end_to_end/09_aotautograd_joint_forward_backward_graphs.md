@@ -34,7 +34,11 @@ AOT先在 `FunctionalTensorMode`下执行 forward并返回 `ViewAndMutationMeta`
 - differentiability；
 - tangent candidates；
 - subclass/effect相关调用约定
-  （`torch/_functorch/_aot_autograd/collect_metadata_analysis.py:252-510`;
+  （`torch/_functorch/_aot_autograd/collect_metadata_analysis.py:252-274`;
+  `torch/_functorch/_aot_autograd/collect_metadata_analysis.py:276-289`;
+  `torch/_functorch/_aot_autograd/collect_metadata_analysis.py:291-320`;
+  `torch/_functorch/_aot_autograd/collect_metadata_analysis.py:447-475`;
+  `torch/_functorch/_aot_autograd/collect_metadata_analysis.py:488-510`;
   `torch/_functorch/_aot_autograd/collect_metadata_analysis.py:760-805`）。
 
 这些信息控制后续 capture和runtime ABI。
@@ -71,7 +75,13 @@ def joint(primals, tangents):
 - tangent-originated/backward-created nodes标记 `is_backward`；
 - 调用 `torch.autograd.grad`；
 - 返回 forward-side outputs与每个primal对应的gradient-or-None
-  （`torch/_functorch/_aot_autograd/graph_capture_wrappers.py:294-477`）。
+  （`torch/_functorch/_aot_autograd/graph_capture_wrappers.py:294-310`;
+  `torch/_functorch/_aot_autograd/graph_capture_wrappers.py:311-325`;
+  `torch/_functorch/_aot_autograd/graph_capture_wrappers.py:350-376`;
+  `torch/_functorch/_aot_autograd/graph_capture_wrappers.py:377-390`;
+  `torch/_functorch/_aot_autograd/graph_capture_wrappers.py:392-412`;
+  `torch/_functorch/_aot_autograd/graph_capture_wrappers.py:439-458`;
+  `torch/_functorch/_aot_autograd/graph_capture_wrappers.py:459-477`）。
 
 标记服务于 partition/provenance，不是新的 Node opcode，也不代表两张图已生成。
 
@@ -115,7 +125,10 @@ partition需从：
 4. 按顺序 `node_copy`所需节点；
 5. 映射 outputs；
 6. 返回 fresh `fx.Graph`
-   （`torch/_functorch/partitioners.py:514-705`）。
+   （`torch/_functorch/partitioners.py:514-538`;
+   `torch/_functorch/partitioners.py:544-568`;
+   `torch/_functorch/partitioners.py:654-661`;
+   `torch/_functorch/partitioners.py:676-705`）。
 
 该 helper 本身不创建 GraphModule；调用它的 `_extract_fwd_bwd_modules` 随后在自身函数体
 内分别把两个 fresh Graph 包装成 `fx.GraphModule`
@@ -192,7 +205,8 @@ forward-visible prefix可包括：
 - symbolic scalar values。
 
 精确 slices由 `ViewAndMutationMeta`携带
-（`torch/_functorch/_aot_autograd/schemas.py:446-565`;
+（`torch/_functorch/_aot_autograd/schemas.py:446-475`;
+`torch/_functorch/_aot_autograd/schemas.py:500-529`;
 `torch/_functorch/_aot_autograd/schemas.py:781-863`）。
 
 ## 10. Backward input 的顺序
@@ -265,6 +279,21 @@ flat_fn + primals + ViewAndMutationMeta
  _extract_fwd_bwd_modules
    ├─ fresh fwd Graph → GraphModule
    └─ fresh bwd Graph → GraphModule
+```
+
+把对象所有权与跨阶段数据边分开画，会更容易看出“joint 中有边、partition 后没有跨图
+Node 边”的区别：
+
+```mermaid
+flowchart LR
+    Inputs["primals + tangents + metadata"] --> Capture["make_fx / create_joint"]
+    Capture --> Joint["joint GraphModule<br/>forward-origin 与 backward-origin Node 同图相连"]
+    Joint --> Partition["partition_fn"]
+    Partition --> Extract["_extract_fwd_bwd_modules"]
+    Extract --> FW["fresh forward GraphModule"]
+    Extract --> BW["fresh backward GraphModule"]
+    FW -->|runtime outputs: user outputs + saved values| ABI["generated autograd.Function ABI"]
+    ABI -->|runtime args: saved values + tangents| BW
 ```
 
 ### 1. Joint 的输入不是从 forward Graph 猜出来，而由 metadata 显式准备
@@ -384,6 +413,20 @@ runtime：
   compiled fw 返回真实 value
   generated autograd.Function 保存/持有它
   compiled bw 调用时把真实 value 作为第 j 个参数传入
+```
+
+```mermaid
+flowchart TB
+    subgraph Joint["partition 前：一张 joint Graph"]
+        FP["forward-origin producer"] --> BP["backward-origin consumer"]
+    end
+    subgraph Split["partition 后：两张独立 Graph"]
+        FO["forward output slot i"]
+        BI["backward placeholder slot j"]
+    end
+    FP -.->|切边并确定 ABI slot| FO
+    BP -.->|复制重建为 fresh Node| BI
+    FO ==>|运行时 Tensor SymInt opaque value| BI
 ```
 
 因此“通过 saved tensors 连接正反向依赖”作为概念是对的，但必须补全：连接的是运行时值与

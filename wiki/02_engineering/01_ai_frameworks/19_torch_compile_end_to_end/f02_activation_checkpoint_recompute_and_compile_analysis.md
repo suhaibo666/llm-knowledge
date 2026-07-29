@@ -40,8 +40,8 @@ producer node复制进bw graph重算。
 
 - non-reentrant会记录autograd graph，可在所有需要的saved tensor重建后early-stop；
 - reentrant forward运行在`no_grad`下，backward重跑完整函数；
--二者对backward API、嵌套结构、detached tensor和requires-grad有不同限制；
--显式传 `use_reentrant`，避免版本默认变化。
+- 二者对backward API、嵌套结构、detached tensor和requires-grad有不同限制；
+- 显式传 `use_reentrant`，避免版本默认变化。
 
 差异说明见 `torch/utils/checkpoint.py:391-420` 与
 `torch/utils/checkpoint.py:421-450`；入口分派见
@@ -74,12 +74,12 @@ unpack触发recompute与metadata检查见
 重算必须与原forward产生语义等价的中间值。checkpoint可保存/恢复RNG和device/autocast
 context，但以下行为危险：
 
--forward与recompute走不同控制流；
--依赖未保存的global mutable state；
--在region中移动到新的device；
--不可重放I/O、collective、hook；
--in-place影响region外对象；
--随机算子未保持对应RNG state。
+- forward与recompute走不同控制流；
+- 依赖未保存的global mutable state；
+- 在region中移动到新的device；
+- 不可重放I/O、collective、hook；
+- in-place影响region外对象；
+- 随机算子未保持对应RNG state。
 
 文档警告若recompute与原forward调用不同，可能错误或抛异常；这是checkpoint契约，不是
 编译器可自动修复的问题
@@ -106,10 +106,10 @@ Caching TorchDispatchMode在forward执行op并缓存允许保存的output；reco
 
 对joint graph中的forward node：
 
--若被选为saved value，则它成为fw额外输出和bw placeholder；
--若标为recompute且其值未跨cut保存，producer node被复制到bw图；
--bw中的梯度node消费这些重算结果；
--fw/bw之间仍没有直接FX边，ABI由fw output与bw placeholder位置连接。
+- 若被选为saved value，则它成为fw额外输出和bw placeholder；
+- 若标为recompute且其值未跨cut保存，producer node被复制到bw图；
+- bw中的梯度node消费这些重算结果；
+- fw/bw之间仍没有直接FX边，ABI由fw output与bw placeholder位置连接。
 
 partition后会提取fw/bw GraphModule，并对两图DCE；若有可重算RNG op还会functionalize RNG，
 再重排bw以模拟autograd engine
@@ -122,9 +122,9 @@ partition后会提取fw/bw GraphModule，并对两图DCE；若有可重算RNG op
 
 partitioner默认强制保存：
 
--未被用户显式AC标记的collective输出；
--effectful op包装后的Tensor输出；
--forward/backward对同一primal mutation时的mutation source。
+- 未被用户显式AC标记的collective输出；
+- effectful op包装后的Tensor输出；
+- forward/backward对同一primal mutation时的mutation source。
 
 collective与effect约束见 `torch/_functorch/partitioners.py:2309-2335`；mutation source约束见
 `torch/_functorch/partitioners.py:2354-2368`。
@@ -135,11 +135,11 @@ collective与effect约束见 `torch/_functorch/partitioners.py:2309-2335`；muta
 
 partitioner把joint graph转为flow network：
 
--需要在backward可用的值连接sink；
--禁止重算的node以无限容量连接source；
--必须重算的node以无限容量连接sink侧；
--保存某node的代价与Tensor大小、materialization和启发式有关；
--cut决定saved values。
+- 需要在backward可用的值连接sink；
+- 禁止重算的node以无限容量连接source；
+- 必须重算的node以无限容量连接sink侧；
+- 保存某node的代价与Tensor大小、materialization和启发式有关；
+- cut决定saved values。
 
 `should_ban_recomputation`会拒绝MUST_SAVE、随机、compute-intensive、非allowlist或在backward
 必须materialize等node
@@ -177,7 +177,7 @@ tokens、opaque objects和mutation更新值，不能只按Tensor列表理解。
 - Inductor分别编译fw/bw，包括bw中的重算node；
 - backward可能lazy compile；
 - Compiled Autograd还可能把局部AOT bw纳入更大反向图；
--CUDAGraph对动态shape、地址和mutation另有约束。
+- CUDAGraph对动态shape、地址和mutation另有约束。
 
 定位时必须标明问题发生在用户checkpoint replay、AOT partition选择、bw codegen还是CA
 capture。

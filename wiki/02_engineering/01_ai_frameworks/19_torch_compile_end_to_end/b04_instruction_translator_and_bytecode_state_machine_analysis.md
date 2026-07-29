@@ -161,7 +161,96 @@ translator运行结束后，`OutputGraph.output_instructions`替换原 instructi
 这一步的“dead code”是字节码控制流层的不可达/无用指令，不是 FX graph DCE，也不是
 AOTAutograd保存激活的生命周期。
 
-## 10. 不变量与失败边界
+## 10. 源码跟读：一个 frame 怎样变成图与新字节码
+
+这一节按实际控制流阅读，不按类名罗列。先把对象所有权画清楚：
+
+```mermaid
+flowchart TD
+    C["convert_frame 的 transform attempt"] --> T["root InstructionTranslator"]
+    T --> O["唯一的 OutputGraph"]
+    T --> S["symbolic_locals / operand stack / block stack"]
+    T --> I["inline child translator"]
+    I --> O
+    T --> L["run 循环"]
+    L --> D["step: 取指、推进 IP、dispatch"]
+    D --> V["VariableTracker handler"]
+    V -->|Tensor 可图化路径| P["OutputGraph.create_proxy"]
+    V -->|Python 状态路径| S
+    V -->|不支持且允许切图| R["记录 speculation 失败并 RestartAnalysis"]
+    R --> C
+```
+
+### 10.1 根对象不是“先建 FX 图、再解释字节码”
+
+`InstructionTranslator.__init__`在调用基类时内联创建 `OutputGraph`，并同时传入原始
+instructions、真实 locals/globals、closure、frame state 与 compiler callback
+（`torch/_dynamo/symbolic_convert.py:5510-5539`、
+`torch/_dynamo/symbolic_convert.py:5540-5567`）。因此真实顺序是：
+
+1. 为当前 frame 建立符号解释状态；
+2. 把同一个 `OutputGraph`作为所有可图化操作的汇点；
+3. 逐条解释 bytecode，只有走到需要代理 Tensor 计算的 handler 才创建 FX node；
+4. 同时生成恢复 Python 状态所需的新 bytecode。
+
+这解释了为什么一个 bytecode 不一定对应一个 FX node：`LOAD_FAST`只从
+`symbolic_locals`取出 `VariableTracker`并压栈
+（`torch/_dynamo/symbolic_convert.py:2173-2180`），`STORE_FAST`只是弹栈并更新符号
+locals（`torch/_dynamo/symbolic_convert.py:2220-2224`）。它们影响后续图节点的参数和
+Source，却不是 Tensor 算子。
+
+### 10.2 `run`只负责生命周期，`step`才是状态迁移
+
+`run`进入 translator 上下文、把自己压入 `OutputGraph`的 translator 栈，然后执行
+`while self.step()`（`torch/_dynamo/symbolic_convert.py:2060-2068`）。单次 `step`先读取
+`instructions[ip]`并立即把 IP 推到下一条；再同步源码位置，并在空 operand stack 的安全点
+检查 partial graph speculation（`torch/_dynamo/symbolic_convert.py:1673-1698`）。
+
+随后它更新 block stack，并用 `dispatch_table[inst.opcode]`调用版本对应的 handler；
+`ReturnValueOp`/`YieldValueOp`结束循环，观察到的 Python 异常进入符号异常处理
+（`torch/_dynamo/symbolic_convert.py:1717-1728`）。所以这里的“状态机”不是比喻：
+
+\[
+(\mathrm{IP},\ stack,\ locals,\ blocks,\ exceptions,\ output)
+\xrightarrow{\mathrm{opcode}}
+(\mathrm{IP}',\ stack',\ locals',\ blocks',\ exceptions',\ output')
+\]
+
+### 10.3 以 `CALL`为例看栈协议怎样落到图
+
+`CALL`本身只委托 `_call`。`_call`按照对应 CPython 版本的栈约定弹出 callable、位置参数和
+关键字参数（`torch/_dynamo/symbolic_convert.py:4651-4679`），重建
+`args/kwargs`后调用 translator 的 `call_function`
+（`torch/_dynamo/symbolic_convert.py:4687-4713`）。
+
+`call_function`先断言 callable 和所有实参都已是 `VariableTracker`
+（`torch/_dynamo/symbolic_convert.py:1584-1603`）。之后是多态分派：
+
+- Python 常量/容器 tracker可在符号层直接求值；
+- 可内联的用户函数创建 child translator，但继续写根 `OutputGraph`；
+- Tensor/torch callable tracker才会把代理实参交给当前 tracer；
+- 不支持路径抛出 `Unsupported`，由 `CALL`外层的
+  `break_graph_if_unsupported`决定 graph break 或硬失败。
+
+真正的 FX 写入边界是 `OutputGraph.create_proxy → current_tracer.create_proxy`
+（`torch/_dynamo/output_graph.py:1458-1462`）。因此不能把 `_call`等同于“创建
+`call_function` node”：是否建 node由被调 `VariableTracker`的语义决定。
+
+### 10.4 restart为什么必须回到 frame 级 attempt
+
+装饰器先建立 speculation；handler第一次抛出 `Unsupported`时只记录 break reason，最后
+调用 `fail_and_restart_analysis`
+（`torch/_dynamo/symbolic_convert.py:1089-1103`、
+`torch/_dynamo/symbolic_convert.py:1133-1148`）。外层 attempt循环重新执行
+`transform_code_object`（`torch/_dynamo/convert_frame.py:1592-1612`），捕获
+`RestartAnalysis`后还会清理失败 tracer output以断开图中的引用环
+（`torch/_dynamo/convert_frame.py:1613-1628`）。
+
+这个边界很关键：回滚对象不只是一条 FX node，还包括 operand stack、locals、guards、
+side effects、resume决策与已生成 bytecode。只在 `Graph`上调用 `erase_node`无法恢复这些
+frame级状态。
+
+## 11. 不变量与失败边界
 
 - symbolic operand stack必须模拟 CPython stack effect；
 - 每个 VariableTracker必须能参与图化、守卫、重建或明确失败；
@@ -171,7 +260,7 @@ AOTAutograd保存激活的生命周期。
 - fullgraph模式下不允许通过 partial graph掩盖 unsupported；
 - resume prologue tracing中的失败不能再次被普通 graph break吞掉。
 
-## 11. 复杂度
+## 12. 复杂度
 
 令：
 
@@ -192,7 +281,7 @@ O\left(\sum_{r=1}^{R+1}(B_r+V_r+G_r)\right)
 若同一长前缀多次重跑，捕获成本会高于线性单遍。VariableTracker缓存、source去重和
 speculation log用于降低重复工作与保证决策一致。
 
-## 12. 常见误解
+## 13. 常见误解
 
 - **“Dynamo逐个遍历 FX node来构图。”** Dynamo先逐个解释 Python bytecode；FX nodes是
   某些 handler的副产物。

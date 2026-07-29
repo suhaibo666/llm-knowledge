@@ -26,12 +26,12 @@ Compiled Autograd还可把AOT产生的lazy backward图复制到更大的CA图中
 
 C++入口负责：
 
--从autograd engine收集inputs、sizes、scalars、hooks和节点拓扑；
--查Compiled Autograd cache；
--cache miss时调用Python compiler instance的`begin_capture`；
--逐个代理autograd node/hook/accumulate-grad；
--调用`end_capture`取得 `(runtime_wrapper, compiled_fn)`；
--缓存并执行。
+- 从autograd engine收集inputs、sizes、scalars、hooks和节点拓扑；
+- 查Compiled Autograd cache；
+- cache miss时调用Python compiler instance的`begin_capture`；
+- 逐个代理autograd node/hook/accumulate-grad；
+- 调用`end_capture`取得 `(runtime_wrapper, compiled_fn)`；
+- 缓存并执行。
 
 C++实现的capture入口与Python callback位置见
 `torch/csrc/dynamo/python_compiled_autograd.cpp:878-907`、
@@ -45,11 +45,11 @@ engine。
 
 每个实例拥有：
 
--compiler callback；
--独立`ShapeEnv`；
--允许fallback/non-fake input的`FakeTensorMode`；
--`PythonKeyTracer`与ProxyTorchDispatchMode；
--context stack、hook proxy和compile context。
+- compiler callback；
+- 独立`ShapeEnv`；
+- 允许fallback/non-fake input的`FakeTensorMode`；
+- `PythonKeyTracer`与ProxyTorchDispatchMode；
+- context stack、hook proxy和compile context。
 
 构造见 `torch/_dynamo/compiled_autograd.py:333-346`。
 
@@ -68,15 +68,15 @@ placeholder创建见 `torch/_dynamo/compiled_autograd.py:357-375` 与
 
 CA图不仅有ATen计算，还需要表达：
 
--autograd Node apply；
--tensor/node pre/post hooks；
--saved tensor pack/unpack hooks；
--AccumulateGrad与`.grad`更新；
--final callbacks；
--动态sizes/scalars；
--可能的AOT backward子图；
--错误/NaN检查；
--输出grad与`.grad()`返回值。
+- autograd Node apply；
+- tensor/node pre/post hooks；
+- saved tensor pack/unpack hooks；
+- AccumulateGrad与`.grad`更新；
+- final callbacks；
+- 动态sizes/scalars；
+- 可能的AOT backward子图；
+- 错误/NaN检查；
+- 输出grad与`.grad()`返回值。
 
 因此effect与顺序约束比纯函数forward更强，DCE和重排不能只看Tensor users。
 
@@ -85,11 +85,11 @@ CA图不仅有ATen计算，还需要表达：
 AOT或trace过程可能把accumulate-grad、hook等节点推到图末，而eager autograd engine会在
 依赖满足时尽早调度。CA在end-capture中依次重排：
 
--unpack hooks；
--tensor/node pre-hooks；
--accumulate-grad；
--post-acc-grad hooks；
--post-hooks。
+- unpack hooks；
+- tensor/node pre-hooks；
+- accumulate-grad；
+- post-acc-grad hooks；
+- post-hooks。
 
 调用序列见 `torch/_dynamo/compiled_autograd.py:1192-1208` 与
 `torch/_dynamo/compiled_autograd.py:1209-1223`。
@@ -138,13 +138,13 @@ function，防止递归capture
 CA cache必须覆盖的不只是Tensor metadata，还包括autograd graph结构、hooks、是否
 accumulate-grad及其他runtime状态。改变以下任一项可能产生新图：
 
--loss到leaf的反向拓扑；
--hook注册/顺序；
--`backward()`与`autograd.grad()`输出契约；
--create_graph/retain_graph相关行为；
--动态sizes/scalars；
--AOT backward子图；
--参数是否需要grad。
+- loss到leaf的反向拓扑；
+- hook注册/顺序；
+- `backward()`与`autograd.grad()`输出契约；
+- create_graph/retain_graph相关行为；
+- 动态sizes/scalars；
+- AOT backward子图；
+- 参数是否需要grad。
 
 因此“forward graph cache hit”不推出“Compiled Autograd cache hit”。
 
@@ -165,26 +165,125 @@ reset。该状态的全局性也意味着多线程/嵌套用法需遵守入口�
 Compiled Autograd看到AccumulateGrad与更完整的backward调度，因此理论上能优化跨region的
 反向、hooks和通信边界。但：
 
--collective是effect，不能任意DCE/重排；
--DDP reducer对grad ready顺序有假设；
--所有rank必须得到兼容图和collective序列；
--graph/cache差异可能导致rank间不一致。
+- collective是effect，不能任意DCE/重排；
+- DDP reducer对grad ready顺序有假设；
+- 所有rank必须得到兼容图和collective序列；
+- graph/cache差异可能导致rank间不一致。
 
 不能因为CA“图更大”就自动推断通信重叠更好。
 
-## 11. 复杂度与成本
+## 11. 源码跟读：C++ engine怎样驱动一张Python FX反向图
+
+### 11.1 cache key来自真实 GraphTask，而不是forward GraphModule
+
+C++ `_compiled_autograd_impl`从 `GraphTask.dependencies_`开始，建立worklist、
+`AutogradCompilerCall`和cache root
+（`torch/csrc/dynamo/python_compiled_autograd.cpp:878-906`）。处理每个autograd Node时，
+`CompiledNodeArgs`收集node类型、next edges、sizes、hooks等数据并产生 `CacheKey`，随后
+沿cache trie向下lookup
+（`torch/csrc/dynamo/python_compiled_autograd.cpp:914-940`）。
+
+node只有在所有依赖计数满足时才进入worklist
+（`torch/csrc/dynamo/python_compiled_autograd.cpp:948-963`）。因此这次遍历同时完成两件事：
+
+- 按真实engine调度依赖建立稳定的 `ordered_calls`；
+- 用同一序列累积cache key和runtime inputs。
+
+forward Dynamo cache、AOT fw/bw cache与这里的cache不是同一个命名空间；CA key包含的是
+实际backward拓扑和engine语义。
+
+### 11.2 miss后才创建Python tracer，命中不会重建FX图
+
+动态size检查失败表示CA cache miss。此时C++才实例化Python compiler并调用
+`begin_capture`
+（`torch/csrc/dynamo/python_compiled_autograd.cpp:965-981`）。接着按前面保存的
+`ordered_calls`逐个设置node origin并代理执行
+（`torch/csrc/dynamo/python_compiled_autograd.cpp:984-1003`）；pre-hooks与
+`apply_with_saved`也在这次驱动中进入Python tracer
+（`torch/csrc/dynamo/python_compiled_autograd.cpp:1050-1064`）。
+
+```mermaid
+sequenceDiagram
+    participant E as C++ Autograd Engine
+    participant K as CA Cache Trie
+    participant P as AutogradCompilerInstance
+    participant G as PythonKeyTracer FX Graph
+    E->>K: 按 ordered autograd nodes 逐层 lookup
+    alt cache hit
+        K-->>E: runtime_wrapper + compiled_fn
+    else cache miss
+        E->>P: begin_capture(inputs,sizes,scalars,...)
+        P->>G: 建立5个顶层placeholders
+        loop ordered_calls
+            E->>P: hook / apply_with_saved / accumulate
+            P->>G: proxy nodes
+        end
+        E->>P: end_capture(outputs)
+        P-->>K: runtime_wrapper + compiler_fn(graph)
+    end
+```
+
+### 11.3 `begin_capture`把engine对象翻译成可编译输入
+
+`AutogradCompilerInstance`为每次capture创建自己的 `ShapeEnv`、`FakeTensorMode`、
+`PythonKeyTracer`与proxy mode
+（`torch/_dynamo/compiled_autograd.py:333-346`）。`begin_capture`新建Graph并一次创建
+`inputs/sizes/scalars/hooks/packed_data`五个placeholder
+（`torch/_dynamo/compiled_autograd.py:357-392`）。
+
+真实Tensor被转换成带 `GetItemSource(LocalSource(...), idx)`的FakeTensor并绑定proxy；
+整数size被建成动态SymInt
+（`torch/_dynamo/compiled_autograd.py:394-419`）。因此CA图的placeholder既是FX数据入口，
+也是随后Dynamo/guard系统能够重取runtime值的Source根。
+
+当engine遇到AOT backward时，Python不是保留一个不透明“调用另一张图”的node。实现将其
+分为prologue、backward graph、epilogue，并明确把backward graph复制进CA graph，使后续
+CA passes与Dynamo能看见内部算子
+（`torch/_dynamo/compiled_autograd.py:495-514`）。这正是局部AOT backward如何进入更大
+runtime backward图。
+
+### 11.4 `end_capture`先恢复engine顺序，再编译
+
+`end_capture`插入final-callback stub与output，关闭trace contexts，并移除dummy tensor
+metadata（`torch/_dynamo/compiled_autograd.py:1166-1190`）。随后按固定次序移动unpack
+hooks、pre-hooks、accumulate-grad和post-hooks，最后执行专用DCE
+（`torch/_dynamo/compiled_autograd.py:1192-1223`）。
+
+专用DCE把所有placeholder的直接unpack users和 `_impure_targets`视为impure，之后才调用
+FX `eliminate_dead_code`
+（`torch/_dynamo/compiled_autograd.py:1090-1114`）。这不是为了“保守一点”，而是因为
+unpack承担guard/alias可见性，hook和grad更新承担用户可观察effect；普通users为空不能证明
+它们无语义。
+
+重排后创建 `CompiledAutograd{id}` GraphModule并计算实际用到的size输入
+（`torch/_dynamo/compiled_autograd.py:1224-1242`）。C++严格验证
+`end_capture`返回二元组，分别缓存callable `runtime_wrapper`和 `compiled_fn`
+（`torch/csrc/dynamo/python_compiled_autograd.cpp:1135-1147`）。
+
+### 11.5 runtime wrapper为何必须临时禁用CA
+
+运行时wrapper过滤未使用sizes、处理需要移到CUDA的inputs，然后在 `_disable()`和同一
+compile context中调用compiled function
+（`torch/_dynamo/compiled_autograd.py:1244-1275`）。`_disable`把C++侧autograd compiler
+暂时设为None，退出时恢复原callback与dynamic策略
+（`torch/_dynamo/compiled_autograd.py:1716-1734`）。
+
+否则执行这张“已经编译的backward图”内部的autograd相关路径可能再次触发CA，形成递归
+capture。这里的disable是runtime重入保护，不会关闭已经生成的Inductor kernels。
+
+## 12. 复杂度与成本
 
 若runtime autograd图有 \(V_b\) 个node、\(E_b\) 条依赖：
 
--capture与FX建立至少 \(O(V_b+E_b)\)；
--专用重排/DCE通常线性或与users遍历相关；
--后续Dynamo/AOT/Inductor编译成本随图规模增长；
--cache lookup依赖CA cache entries与specialization；
--稳态收益需要摊销首次backward capture/compile。
+- capture与FX建立至少 \(O(V_b+E_b)\)；
+- 专用重排/DCE通常线性或与users遍历相关；
+- 后续Dynamo/AOT/Inductor编译成本随图规模增长；
+- cache lookup依赖CA cache entries与specialization；
+- 稳态收益需要摊销首次backward capture/compile。
 
 CA扩大优化范围，也可能显著增加编译延迟和失败面。
 
-## 12. 常见误解
+## 13. 常见误解
 
 - **“AOTAutograd已经编译反向，所以CA没作用。”** AOT边界通常较局部，CA从engine捕获更大
   runtime backward。

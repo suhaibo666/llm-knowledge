@@ -10,19 +10,19 @@
 
 fusion可能减少：
 
--launch次数；
--中间buffer写回与读取；
--Python/wrapper调度；
--allocator活动。
+- launch次数；
+- 中间buffer写回与读取；
+- Python/wrapper调度；
+- allocator活动。
 
 但也可能增加：
 
--register pressure；
--shared memory；
--单kernel工作集；
--同步/依赖；
--编译与autotune成本；
--occupancy下降和spill。
+- register pressure；
+- shared memory；
+- 单kernel工作集；
+- 同步/依赖；
+- 编译与autotune成本；
+- occupancy下降和spill。
 
 因此要沿“图结构 → schedule/fusion → generated code → memory traffic → hardware counters →
 端到端”逐层建立证据。
@@ -54,8 +54,8 @@ score排序（`torch/_inductor/scheduler.py:6836-6865`、
 因为早期fusion会创建新的 `FusedSchedulerNode`，它又可能与后续node形成新候选。由此产生
 两个调试结论：
 
--某个最终fused kernel是多轮决策结果；
--只观察一次候选列表不足以解释最终schedule。
+- 某个最终fused kernel是多轮决策结果；
+- 只观察一次候选列表不足以解释最终schedule。
 
 ## 4. Memory score 表示什么
 
@@ -69,10 +69,10 @@ fusion score的一部分估算可省的memory operations。对producer write与c
 
 但它是估算：
 
--不等于实际HBM bytes；
--不自动包含cache命中、coalescing、spill；
--symbolic size可能依赖hint；
--硬件瓶颈仍需运行测量。
+- 不等于实际HBM bytes；
+- 不自动包含cache命中、coalescing、spill；
+- symbolic size可能依赖hint；
+- 硬件瓶颈仍需运行测量。
 
 ## 5. Benchmark Fusion 的边界
 
@@ -85,46 +85,46 @@ Scheduler可以在随机生成输入上benchmark fused nodes，并把时间计�
 
 因此：
 
--“选择了fusion”不一定意味着对真实输入做过benchmark；
--随机输入benchmark不覆盖数据相关性能；
--benchmark成本属于compile latency；
--cache key/config必须保证选择可复用。
+- “选择了fusion”不一定意味着对真实输入做过benchmark；
+- 随机输入benchmark不覆盖数据相关性能；
+- benchmark成本属于compile latency；
+- cache key/config必须保证选择可复用。
 
 ## 6. 四层性能证据
 
 ### 图层
 
--graph break数量；
--Dynamo/AOT/Inductor pass后node；
--是否存在阻断fusion的mutation/effect/layout；
--saved/recompute是否增加计算或显存。
+- graph break数量；
+- Dynamo/AOT/Inductor pass后node；
+- 是否存在阻断fusion的mutation/effect/layout；
+- saved/recompute是否增加计算或显存。
 
 ### Scheduler/Codegen层
 
--pre/post fusion IR；
--kernel数量与类型；
--每个kernel读写buffer；
--loop order、tiling、reduction；
--generated wrapper中的allocation/free/reuse。
+- pre/post fusion IR；
+- kernel数量与类型；
+- 每个kernel读写buffer；
+- loop order、tiling、reduction；
+- generated wrapper中的allocation/free/reuse。
 
 ### Runtime层
 
--kernel launch数与duration；
--host gap；
--memcpy与synchronization；
--allocator活动；
--CUDAGraph replay；
--communication overlap。
+- kernel launch数与duration；
+- host gap；
+- memcpy与synchronization；
+- allocator活动；
+- CUDAGraph replay；
+- communication overlap。
 
 ### Hardware层
 
--DRAM/HBM throughput；
--L2/cache hit；
--SM/compute utilization；
--occupancy/register/shared-memory；
--warp stall；
--tensor core/vectorization；
--power/clock/throttling。
+- DRAM/HBM throughput；
+- L2/cache hit；
+- SM/compute utilization；
+- occupancy/register/shared-memory；
+- warp stall；
+- tensor core/vectorization；
+- power/clock/throttling。
 
 没有硬件counter时，结论应写成“从code/estimate推断”，不能写成已测事实。
 
@@ -156,15 +156,15 @@ Scheduler逆序计算last usage，随后为不再需要的buffer生成free
 
 峰值显存不只由Tensor总大小决定，还受：
 
--live range重叠；
--buffer reuse规划；
--workspace；
--autotune候选；
--saved tensors/recompute；
--CUDAGraph pool；
--allocator reserved与fragmentation；
--distributed bucket/shard；
--异步执行导致的延迟释放。
+- live range重叠；
+- buffer reuse规划；
+- workspace；
+- autotune候选；
+- saved tensors/recompute；
+- CUDAGraph pool；
+- allocator reserved与fragmentation；
+- distributed bucket/shard；
+- 异步执行导致的延迟释放。
 
 `allocated`、`reserved`、CUDAGraph private pool和进程RSS必须分别解释。
 

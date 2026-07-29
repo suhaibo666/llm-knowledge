@@ -166,7 +166,7 @@ L["self"]
 - 共享Source前缀访问；
 - 在父检查失败时短路整个子树；
 - 用专门C++ accessor/leaf guard降低Python overhead；
--构造diff guard manager支持unsafe的差异检查路径。
+- 构造diff guard manager支持unsafe的差异检查路径。
 
 它不是图优化pattern tree；相同的“树”只是因为两者都需要组合结构。
 
@@ -183,7 +183,100 @@ L["self"]
 - 每次都新形态：扫描全部再支付capture/backend；
 - guard共享树优化的是单entry内部，不能消除跨entry顺序扫描。
 
-## 12. 复杂度
+## 12. 源码跟读：一次命中、miss 与重新捕获
+
+把 guard build、C++ lookup 和 Python compile callback放在一条链上，才能避免把所有慢
+调用都误称为 recompile：
+
+```mermaid
+flowchart TD
+    F["CPython frame 进入 eval_frame"] --> Q["构造 FrameLocalsMapping 并 lookup"]
+    Q --> P["precompile entries"]
+    P --> B["当前 isolate bucket"]
+    B --> D["default bucket -1"]
+    D --> E{"结果"}
+    E -->|code object| H["执行 cached transformed code"]
+    E -->|Py_None: 正常 miss| M{"RUN_ONLY?"}
+    E -->|nullptr: guard 抛异常| X["传播异常，不编译"]
+    M -->|是| G["执行原 frame"]
+    M -->|否| C["调用 Python convert_frame callback"]
+    C --> N["统计同 ID group / 检查上限"]
+    N --> T["重新捕获并构造 GuardedCode"]
+    T --> A["写入对应 cache bucket"]
+```
+
+### 12.1 Guard tree在编译完成时构造
+
+`CheckFunctionManager`从 `output_graph.guards`取得本次捕获累积的 guard集合，同时先更新
+已有 entries的 diff guard sources
+（`torch/_dynamo/guards.py:4501-4524`）。随后按 `Guard.sort_key`稳定排序，并在
+`DisableTorchFunction`作用域中构造 guard manager
+（`torch/_dynamo/guards.py:4575-4591`）。
+
+这里先更新旧 entry不是额外优化 pass，而是 cache 共存要求：新 specialization出现后，
+已有 entry的差异检查视图也必须知道新的 source集合。排序提供稳定的构造与诊断次序，
+guard tree的父子关系则来自共享的 Source访问路径。
+
+### 12.2 C++先查 cache，Python只处理真正的 miss
+
+eval-frame路径先尝试无需完整 guard evaluation的快路；快路不能决定时才构造
+`FrameLocalsMapping`并调用 `lookup`
+（`torch/csrc/dynamo/eval_frame_cpp.cpp:536-555`）。`lookup`先扫描 precompile entries，
+再按“当前 `isolate_recompiles_id`、默认 bucket `-1`”的次序查找
+（`torch/csrc/dynamo/extra_state.cpp:274-290`、
+`torch/csrc/dynamo/extra_state.cpp:292-317`）。
+
+单个 bucket内部，`lookup_in_list`对每个 entry先比较 backend，再运行 root manager；启用
+unsafe skip时改用 diff manager
+（`torch/csrc/dynamo/extra_state.cpp:200-225`）。首个有效 entry立即返回；guard执行抛出的
+Python异常会把 `guard_error`设为真并返回空指针，而普通“不匹配”继续下一 entry
+（`torch/csrc/dynamo/extra_state.cpp:226-248`）。
+
+因此三种返回值的语义不同：
+
+| C++结果 | 含义 | 后续 |
+|---|---|---|
+| code object | 命中 specialization | 直接执行 transformed code |
+| `Py_None` | 所有候选正常返回 false | 进入 miss策略 |
+| `nullptr` | guard evaluation自身异常 | 传播异常，不能伪装为 miss |
+
+命中后只有启用 LRU才把 entry移到表头
+（`torch/csrc/dynamo/extra_state.cpp:319-325`）；这改变下次扫描成本，不改变 guard的适用
+域。
+
+### 12.3 `cache miss`不自动等于 `recompile`
+
+eval-frame拿到 code object便执行 cached code
+（`torch/csrc/dynamo/eval_frame_cpp.cpp:589-594`）。拿到 `Py_None`才进入 miss路径：
+`skip_guard_eval_unsafe`要求硬失败，`RUN_ONLY`执行原 frame；其余情况才调用 Python
+callback（`torch/csrc/dynamo/eval_frame_cpp.cpp:597-618`、
+`torch/csrc/dynamo/eval_frame_cpp.cpp:620-638`）。
+
+callback侧取得当前 isolate bucket与默认 bucket的 entries，并计算当前 frame相关的
+cache size（`torch/_dynamo/convert_frame.py:640-656`）。`compute_cache_size`逐 entry检查
+`ID_MATCH`对象是否与当前 frame相同
+（`torch/_dynamo/cache_size.py:142-162`）；只有同一 ID group已经有 specialization，
+`is_recompilation`才返回真（`torch/_dynamo/cache_size.py:165-175`）。
+
+所以：
+
+- 首次见到某个 code object：cache miss，但不是 recompile；
+- 新 module实例有不同 `ID_MATCH`对象：可能新增 entry，但仍不是同一对象的 recompile；
+- 同一 ID group的 guard全失败后再捕获：才是这里统计的 recompile；
+- `RUN_ONLY`或 unsafe stance：miss后根本不进入正常重编译。
+
+### 12.4 上限为何同时看 entry计数和 compile id
+
+`exceeds_recompile_limit`先检查跨 regions累计上限，再检查当前 region、当前 ID group的
+专用上限；最后还用 `frame_compile_id`兜底
+（`torch/_dynamo/cache_size.py:178-196`）。最后一项处理 weakref对象死亡导致旧 guard
+manager失效、cache长度不增长却仍反复编译的情况。
+
+超过上限后，`fullgraph=True`必须硬失败；普通模式把 frame策略改为 `RUN_ONLY`
+（`torch/_dynamo/convert_frame.py:2037-2052`）。这说明“上限”控制的是下一步执行策略，
+不是对 FX graph做 DCE，也不是删除已有 compiled artifact。
+
+## 13. 复杂度
 
 设 \(C\) 个entries，第 \(i\) 个entry的guard tree实际访问 \(Q_i\) 个检查节点：
 
@@ -193,8 +286,8 @@ T_{\text{lookup-hit-k}} = O\left(\sum_{i=1}^{k} Q_i\right)
 
 \[
 T_{\text{miss}} = O\left(\sum_{i=1}^{C} Q_i\right)
-\ T_{\text{capture}}
-\ T_{\text{backend}}
++ T_{\text{capture}}
++ T_{\text{backend}}
 \]
 
 空间为：
@@ -207,7 +300,7 @@ O\left(\sum_{i=1}^{C}
 
 backend artifact可能由更深cache共享，不能简单按Dynamo entries相乘。
 
-## 13. 常见误解
+## 14. 常见误解
 
 - **“guard是图里if节点。”** guard在cache dispatch边界检查frame假设。
 - **“任何shape变化都会重编译。”** 已有动态entry可能覆盖新shape。
