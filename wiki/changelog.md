@@ -65,6 +65,8 @@ All source ingestions and significant wiki updates are logged here.
 
 **体量**：`torch_compile_npugraphs_deep_dive.md` 2809→1990 行(净删 819 = §四 -72 + 附录A -747)；`aclgraph_deep_analysis.md` 569→632 行(净增 63)；`npugraphs_make_graphed_callables_deep_dive.md` 668→668 行(不变)。三页合计 4046→3290，净删 756 行。链接检查 broken 0→0、ambiguous 70→70、bare_index 70→70、orphans 1→1(与本次改动无关，四项均与改动前基线一致)。全部新增/删除的 mermaid 块经 fence 计数校验闭合平衡(无需重渲，本次未新增 mermaid 内容，只有整块删除)。
 
+**追记(复核回补)**：上方 B 段"六、…独有,浓缩进 §4.4 对比表"与"九、…独有,浓缩进 §4.4 对比表 + 选型清单"两处表述不够精确——复核发现浓缩过程连带丢了 6 组分析性事实(Inductor 各编译阶段"对性能的影响"列、6.3 三类回退场景的路径 A 特有行为、7.1 Wrapper 的 options 处理/reset 行为两行、7.2 `backend="npugraphs"` 时 `mode` 参数的 TypeError footgun、9.1 首次执行延迟与内存占用两个对比维度、9.2 路径 A/B 的具体选型场景列表)，已在后续 commit 中以表行/脚注形式逐字回补至 `aclgraph_deep_analysis.md` §1.5/§4.4；更准确的表述应为"部分浓缩,若干维度经复核回补"。另，上方"三、"段对附录 §3.6 的删除依据也不完整：其 `npugraphify` 函数体代码不仅与 `aclgraph_deep_analysis.md` §二·差异1 的 monkey-patch 注册代码重复，也与 `torch_compile_npugraphs_deep_dive.md` 自身 §2.4.1「npugraphify 函数（utils/_graph_tree.py）」的函数体重复，是双重重复而非仅与差异1重复。
+
 ---
 
 ## 2026-07-29：知识库结构整改 P0–P2(工具、快速止血、图源入库)

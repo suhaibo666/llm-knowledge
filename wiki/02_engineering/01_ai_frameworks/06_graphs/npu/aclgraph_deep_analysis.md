@@ -183,9 +183,11 @@ flowchart TB
 | | `_TorchCompileInductorWrapper`（`backend="inductor"`，默认，`torch/__init__.py:2384-2456`） | `_TorchCompileWrapper`（`backend="npugraphs"` 等非 inductor 后端） |
 |---|---|---|
 | mode 处理 | `apply_mode()` → `list_mode_options()` → 转成 Inductor `config_patches` | 原样存入 `kwargs["mode"]` 传给后端 |
+| options 处理 | `apply_options()` → 校验后存入 config | 作为 `kwargs["options"]` 传给后端 |
 | 调用目标 | `compile_fx(model_, inputs_, config_patches=self.config)` | `self.compiler_fn(model_, inputs_, **self.kwargs)` |
+| reset 行为 | 调用 `reset_cudagraph_trees()` | 调用后端的 `reset()` 方法 |
 
-`NpugraphsBackend.__call__(model, inputs)` 签名不接受 `mode` 参数，因此 `torch.compile(backend="npugraphs", mode="reduce-overhead")` 这种组合中 `mode` 实际被忽略——这是本页分析对象（路径 A：`mode="reduce-overhead"`，经 Inductor）与 [[torch_compile_npugraphs_deep_dive]] 正文分析对象（路径 B：`backend="npugraphs"`，绕开 Inductor）分道的起点，两条路径的完整对比见 §四·4.4。
+当使用 `torch.compile(model, backend="npugraphs", mode="reduce-overhead")` 时：`_TorchCompileWrapper.__init__` 把 `mode` 存入 `self.kwargs = {"mode": "reduce-overhead"}`；`__call__` 时执行 `self.compiler_fn(model_, inputs_, mode="reduce-overhead")` → `NpugraphsBackend.__call__(model, inputs, mode="reduce-overhead")` → `npugraphs(model, inputs)`。但 `NpugraphsBackend.__call__` 的签名是 `def __call__(model, inputs)`，并不接受 `mode` 参数——按 Python 的函数调用机制，若该 `@staticmethod` 方法不接受额外 kwargs，这会导致 **TypeError**，而不是简单的"静默忽略"。因此 `mode` 参数在 `backend="npugraphs"` 时实际上**不应与非默认 mode 组合使用**，这是一个真实的 footgun——这是本页分析对象（路径 A：`mode="reduce-overhead"`，经 Inductor）与 [[torch_compile_npugraphs_deep_dive]] 正文分析对象（路径 B：`backend="npugraphs"`，绕开 Inductor）分道的起点，两条路径的完整对比见 §四·4.4。
 
 ---
 
@@ -481,21 +483,40 @@ ACLGraph 路径在**用户语义**上完全遵循了社区 CUDA Graph 的设计�
 | 5 | `cudagraph_post_compile` | `torch/_inductor/output_code.py`（第195行） | 检查 `cudagraph_fail_reasons`；可行则把 `current_callable`（Triton 内核）传入 `cudagraphify`（已被 torch_npu monkey-patch 为 `npugraphify`，见 §二·差异1）包装进 NPU Graph；不可行则 `BoxedBool.disable(cudagraphs)` 退化为普通执行 |
 | 6-8 | NPU Graph Tree（与路径 B 共享） | `torch_npu/npu/_graph_tree.py` | Warmup → Record → Replay，与 [[torch_compile_npugraphs_deep_dive]] 正文 Phase 5-8（§2.5-2.8）完全相同的实现 |
 
-路径 B（`backend="npugraphs"`，详见 [[torch_compile_npugraphs_deep_dive]] 正文）跳过 Phase 2-5，AOT Autograd 分离出前向/反向后直接用 `boxed_nop` 解释执行原始 FX 图，再进入同一套 Phase 6-8 Graph Tree。两条路径录制进图的内容、稳态表现与回退行为差异：
+Phase 4 的 Inductor 编译阶段是路径 B 没有的，各阶段对性能的影响：
+
+| 优化阶段 | 说明 | 对性能的影响 |
+|---|---|---|
+| **Pre-grad passes** | 图级别优化（常量折叠、死代码消除等） | 减少计算量 |
+| **Joint graph passes** | 联合前反向图优化（重计算策略等） | 优化内存/计算平衡 |
+| **Post-grad passes** | 后梯度优化（算子融合、布局优化等） | 减少内核数量 |
+| **Scheduling** | 算子融合（pointwise fusion、reduction fusion 等）、内存规划 | 显著减少内核启动次数 |
+| **Triton Codegen** | 生成高性能 Triton GPGPU 内核 | 单内核执行效率更高 |
+| **Memory Planning** | 静态内存分配、buffer 复用 | 减少内存碎片 |
+
+路径 B（`backend="npugraphs"`，详见 [[torch_compile_npugraphs_deep_dive]] 正文）跳过 Phase 2-5，AOT Autograd 分离出前向/反向后直接用 `boxed_nop` 解释执行原始 FX 图，再进入同一套 Phase 6-8 Graph Tree。两条路径录制进图的内容、稳态表现差异：
 
 | 维度 | 路径 A：`mode="reduce-overhead"` | 路径 B：`backend="npugraphs"` |
 |---|---|---|
 | 录制进图的内容 | 少量融合 Triton/C++ 内核（如 `fused_matmul_add_relu`） | 大量原始 aten op（`matmul` → `add` → `relu` → … 逐个） |
 | 稳态 NPU 利用率 | 高（内核少、计算密度高） | 中（内核多、launch 数量大；两者的 CPU dispatch 开销均已被 `graph.replay()` 消除） |
 | 编译耗时 | 长（Inductor codegen + Graph 录制） | 短（仅 AOT 分解 + Graph 录制） |
-| Graph 捕获失败时的回退 | 退回 Inductor 编译后的 Triton 内核（仍是优化过的） | 退回 `boxed_nop` FX 图解释执行（明显更慢） |
+| 首次执行延迟 | 高（Triton 编译 + warmup + recording） | 中（warmup + recording） |
+| 内存占用 | 较高（Triton 编译缓存 + Graph 内存池） | 较低（仅 Graph 内存池） |
 | 典型定位 | 生产部署（推理/训练稳态性能优先） | 调试、baseline、快速验证 NPU Graph 兼容性 |
 
-一句话：路径 A = "优化内核 + 快速启动"，路径 B = "原始内核 + 快速启动"。选型：
-- 需要最高稳态性能、能接受较长首次编译 → `mode="max-autotune"`
-- 需要最高稳态性能、首次编译延迟需可控 → `mode="reduce-overhead"`
-- 需要快速编译/调试，或验证 NPU Graph 兼容性 → `backend="npugraphs"`
-- 不需要 NPU Graph 加速 → `mode="default"`（仅 Inductor 优化）
+Graph 捕获失败时的回退，按触发场景细分：
+
+| 场景 | 路径 A | 路径 B |
+|---|---|---|
+| NPU Graph 捕获失败（泛化场景） | 回退到 Inductor 编译后的 Triton 内核（仍然很快） | 回退到 `boxed_nop`（FX 图解释执行，较慢） |
+| 包含 CPU 节点 | 跳过 `cudagraph_post_compile`，直接执行 Triton 内核 | `check_for_skip` 返回 skip_msg，回退到 `interp` |
+| 输入 mutation | 可能跳过整个图或部分图的 cudagraph 包装 | `BoxedBool.disable(do_npugraphs)` 跳过 Graph |
+
+一句话：路径 A = "优化内核 + 快速启动"，路径 B = "原始内核 + 快速启动"。选型场景：
+- 优先用路径 A（`mode="reduce-overhead"`）：大模型推理（Triton 融合 + Graph replay → 极低延迟）、训练循环（前反向均优化）、稳定生产环境（编译一次，持续高效执行）、对首次编译延迟不敏感的场景；能接受更长首次编译再叠加 autotune 选 `mode="max-autotune"`。
+- 优先用路径 B（`backend="npugraphs"`）：调试和开发阶段（编译快，问题定位容易）、作为性能 baseline（隔离 Inductor 优化的效果）、Inductor 不支持的特殊算子场景、快速验证 NPU Graph 兼容性。
+- 不需要 NPU Graph 加速 → `mode="default"`（仅 Inductor 优化，不触发 ACLGraph，见 §1.5）
 
 核心文件索引：
 
