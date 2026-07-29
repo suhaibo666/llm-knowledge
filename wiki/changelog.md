@@ -6,6 +6,15 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P3 完成（runtime_graphs 去重收官）
+
+**Type**: Structure Reorg（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.3；P0-P7 的第四段）
+
+- **06_graphs 目录 14 页 → 10 页**：删 cuda/README、npu/README（overview 三写归一）、CUDA_Graphs_Timing_Diagrams（时序图内联进 Complete_Guide 并以 mermaid 替换其 ASCII 重复图）、npugraphs_memory_reuse_analysis（Graph Tree 双写并入 torch_compile_npugraphs_deep_dive）；comparison 633→145 行只留真差异表。
+- **每次合并均经逐句对抗审查**：三轮回补（8 组机制事实、6 组分析事实、硬件约束转 [!todo]）、一处推断性时序事件删除、一处"理论→实测"措辞漂移回退——详见本页下方各 Task 条目与 git 历史。
+- CLAUDE.md「Never delete」条款同步为「Merge over coexist」（完整修订仍在 P7）。
+- 全程 broken=0；本域净删约 2900 行重复内容。
+
 ## 2026-07-30：知识库结构整改 P3 Task 4(NPU Graph Tree 双写合并)
 
 **Type**: Redundancy Consolidation(设计:`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md`;P3 阶段最大编辑)
