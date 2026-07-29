@@ -236,6 +236,20 @@ decomposition可降低直接lowering数量，但会增加图规模；fallback提
 - **“fallback意味着回到整个eager模型。”** 可能只在compiled graph内调用单个external op。
 - **“能生成源码就是设备支持完成。”** native compile、load、execute、stream和ABI仍需验证。
 
+## 配套 Demo
+
+本页对应卷级入口 `labs/demo_f_advanced_topics.py` 的 `custom_backend` 用例。默认以 CUDA 为验收设备：
+
+```powershell
+python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_f_advanced_topics.py `
+  --case custom_backend --device cuda `
+  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\f06
+```
+
+先用 `--list --json` 查看用例声明的能力要求。无 CUDA 的机器可把 `--device` 改为 `cpu` 探索设备无关机制；CUDA/Triton/多卡专属用例会返回 `BLOCKED`，且不会执行用例正文。不要把 `BLOCKED` 写成 `PASS`。
+
+重点读取 `summary.json` 与 `custom_backend/result.json`：`status` 区分 `PASS/BLOCKED/FAIL`，`environment` 固化运行环境，`observations` 保存本页机制的实测字段，`artifacts` 指向图代码、日志、trace 或进程证据。`PASS` 只表示该次运行中的断言通过，不外推到其他 PyTorch 版本、shape、dtype 或硬件。
+
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]

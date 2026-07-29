@@ -180,6 +180,20 @@ flowchart TD
 - **“fullgraph会生成一个 kernel。”** graph数量和 kernel数量是不同层的概念。
 - **“删除 guards只影响性能。”** 它可能扩大错误 artifact的适用域并损害正确性。
 
+## 配套 Demo
+
+本页对应卷级入口 `labs/demo_b_dynamo_capture.py` 的 `backend_modes_fullgraph` 用例。默认以 CUDA 为验收设备：
+
+```powershell
+python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_b_dynamo_capture.py `
+  --case backend_modes_fullgraph --device cuda `
+  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\b02
+```
+
+先用 `--list --json` 查看用例声明的能力要求。无 CUDA 的机器可把 `--device` 改为 `cpu` 探索设备无关机制；CUDA/Triton/多卡专属用例会返回 `BLOCKED`，且不会执行用例正文。不要把 `BLOCKED` 写成 `PASS`。
+
+重点读取 `summary.json` 与 `backend_modes_fullgraph/result.json`：`status` 区分 `PASS/BLOCKED/FAIL`，`environment` 固化运行环境，`observations` 保存本页机制的实测字段，`artifacts` 指向图代码、日志、trace 或进程证据。`PASS` 只表示该次运行中的断言通过，不外推到其他 PyTorch 版本、shape、dtype 或硬件。
+
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]

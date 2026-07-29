@@ -3,8 +3,8 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 运行观察：PyTorch `2.9.1+cpu` / git `5811a8d7da873dd699ff6687092c225caffcf1bb`  
 > 范围：从 eager/Python 执行模型到 production rollout  
-> 当前阶段：原理解读与源码链路；不新增 demo  
-> 最后更新：2026-07-28
+> 当前阶段：原理解读、源码链路与 CUDA-first 配套 Demo
+> 最后更新：2026-07-29
 
 ## 1. 核心问题
 
@@ -149,7 +149,38 @@ B06 OutputGraph
 | F07 | [[f07_aotinductor_packaging_and_deployment_analysis]] | AOTInductor 与 JIT compile 的产物和 ABI 有何不同 |
 | F08 | [[f08_training_inference_cudagraph_and_freezing_analysis]] | training/inference/freezing/CUDAGraph 如何组合 |
 
-## 9. 三条推荐路径
+## 9. 六卷 Demo 验收入口
+
+每卷一个入口、每卷多个 case；`--list --json` 给出 case、对应页面与能力要求，
+`--case <id>` 只运行一个机制，`--case all` 运行整卷：
+
+| 卷 | 入口 | 主题 |
+|---|---|---|
+| A | `labs/demo_a_execution_model.py` | Tensor/dispatcher/frame/Proxy-FakeTensor/成本 |
+| B | `labs/demo_b_dynamo_capture.py` | lifecycle/cache/bytecode/guard/break/dynamic/backend |
+| C | `labs/demo_c_graph_compiler.py` | 编排既有 Part I–IV 与贯穿 bundle |
+| D | `labs/demo_d_artifact_runtime.py` | compile_fx/AOT wrapper/cache/module load/memory/CUDAGraph |
+| E | `labs/demo_e_diagnostics.py` | explain/recompile/故障分层/repro/正确性/性能/回退 |
+| F | `labs/demo_f_advanced_topics.py` | compiled autograd/checkpoint/distributed/custom/AOTI |
+
+统一运行契约：
+
+```powershell
+python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_b_dynamo_capture.py `
+  --case guards_recompile --device cuda `
+  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\b07
+```
+
+- `PASS`：case 正文真实执行，且内置断言全部通过；
+- `BLOCKED`：声明的 CUDA/Triton/native compiler/多卡等能力缺失，正文没有执行；
+- `FAIL`：正文已经执行，但编译阶段、子进程、断言或 runtime 失败；
+- `summary.json` 是卷级摘要，`<case>/result.json` 是单用例证据，其他 artifact 从后者列出。
+
+默认 `--device cuda`。无 CUDA 的开发机可用 `--device cpu` 预检设备无关机制，但这不能替代
+GPU、Triton、CUDAGraph、allocator 或多卡验收。页面到 case 的完整映射固定在
+`labs/demo_manifest.json`；卷 C 同时保留原有更细粒度脚本与证据目录。
+
+## 10. 三条推荐路径
 
 ### 初学者完整路径
 
@@ -184,7 +215,7 @@ A05
 → F01 → F04 → F08
 ```
 
-## 10. 阅读源码的统一问题
+## 11. 阅读源码的统一问题
 
 每一机制都按同一顺序阅读：
 
@@ -197,10 +228,12 @@ A05
 7. 失败后是 break、recompile、fallback 还是异常；
 8. 成本属于一次性、每 specialization 还是每次调用。
 
-## 11. 验收边界
+## 12. 验收边界
 
-本阶段只扩展原理与源码解读，不新增 demo。已有正式 runtime receipt 可以被引用，但不能
-用历史脚本输出支撑未观测的新结论。当前 native CPU/CUDA/Triton 能力继续保持环境 gate。
+正文的实现结论仍以固定源码审计为准；Demo 只证明它实际运行过的 case、输入与环境，
+不能用一次 `PASS` 外推其他版本、shape、dtype 或硬件。已有正式 runtime receipt 可以被
+引用，但不能用历史脚本输出支撑未观测的新结论。当前 native CPU/CUDA/Triton 能力继续
+保持环境 gate。
 
 ## Related Pages
 
@@ -211,3 +244,4 @@ A05
 - [[04_inductor/index]] — Inductor 领域索引
 - [[17_compile_cache/index]] — 编译缓存索引
 - [[15_distributed_primitives/index]] — 分布式原语索引
+- [[19_torch_compile_end_to_end/labs/README]] — Demo 命令、状态和证据说明

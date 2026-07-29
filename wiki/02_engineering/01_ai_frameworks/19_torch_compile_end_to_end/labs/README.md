@@ -1,4 +1,4 @@
-# Graph Compiler Foundations Labs
+# `torch.compile` A–F 配套 Labs
 
 本目录把“源码审计基线”和“可运行 Lab 环境”明确分开：
 
@@ -14,7 +14,53 @@
 cd E:\97-codes\torch_parallel\llm-knowledge
 ```
 
-## 五个验收入口
+## 六卷统一入口
+
+每卷一个入口，每个入口包含多个 case。先查看清单，再选择单个 case 或整卷运行：
+
+```powershell
+python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_a_execution_model.py --list --json
+python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_b_dynamo_capture.py --list --json
+python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_c_graph_compiler.py --list --json
+python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_d_artifact_runtime.py --list --json
+python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_e_diagnostics.py --list --json
+python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_f_advanced_topics.py --list --json
+```
+
+统一参数：
+
+- `--case <id>` 可重复；`--case all` 运行整卷；
+- `--device cuda|cpu`，默认 `cuda`；
+- `--seed <int>` 固化随机输入；
+- `--output-dir <path>` 隔离本次证据。
+
+例如：
+
+```powershell
+python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_e_diagnostics.py `
+  --case dynamo_explain --device cuda `
+  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\e02
+```
+
+退出码与证据语义：
+
+- `0 / PASS`：正文执行，所有断言通过；
+- `2 / FAIL`：正文执行后发生断言、编译、子进程或 runtime 失败；
+- `3 / BLOCKED`：能力探测发现 CUDA、Triton、native compiler、多卡或 distributed 不满足，
+  正文不会执行；
+- `4`：CLI 参数、未知 case 或 manifest 合同错误；
+- `summary.json` 汇总整次运行；每个 `<case>/result.json` 保存环境、观察值、限制、异常和
+  artifact 清单。
+
+默认 CUDA 是正式验收路径。无 CUDA 时，可以显式 `--device cpu` 运行设备无关 case，
+但 CUDA-only case 必须保持 `BLOCKED`，不能把源码可达、generated code 或 CPU 结果写成
+CUDA `PASS`。60 篇正文到脚本和 case 的唯一映射见 `demo_manifest.json`。
+
+卷 C 的入口是编排层：它以独立子进程运行已有 Part I–IV 脚本，保存每个子进程的命令、
+退出码、stdout/stderr 和 artifact 清单，避免 hook/config 污染后续 case。原有细粒度
+脚本与证据不会被替代。
+
+## 既有 C 卷验收入口
 
 ### 1. 全系列贯穿模型
 
@@ -175,6 +221,7 @@ peak），会明确写“未验证”，不会由源码结构推测数值。
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[demo_delivery_report_2026-07-29]] — A–F Demo 验收与能力边界
 - [[16_graph_rewrite_legality_validation_and_complexity]]
 - [[11_graph_stage_boundaries_identity_and_provenance]]
 - [[21_codegen_kernel_mapping_autotuning_and_provenance]]

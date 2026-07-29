@@ -206,6 +206,20 @@ stateDiagram-v2
    `torch/csrc/dynamo/eval_frame_cpp.cpp:614-625`：hit/miss/callback；
 7. `torch/csrc/dynamo/eval_frame_cpp.cpp:672-691`：cache安装和执行。
 
+## 配套 Demo
+
+本页对应卷级入口 `labs/demo_b_dynamo_capture.py` 的 `compile_lifecycle` 用例。默认以 CUDA 为验收设备：
+
+```powershell
+python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_b_dynamo_capture.py `
+  --case compile_lifecycle --device cuda `
+  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\b01
+```
+
+先用 `--list --json` 查看用例声明的能力要求。无 CUDA 的机器可把 `--device` 改为 `cpu` 探索设备无关机制；CUDA/Triton/多卡专属用例会返回 `BLOCKED`，且不会执行用例正文。不要把 `BLOCKED` 写成 `PASS`。
+
+重点读取 `summary.json` 与 `compile_lifecycle/result.json`：`status` 区分 `PASS/BLOCKED/FAIL`，`environment` 固化运行环境，`observations` 保存本页机制的实测字段，`artifacts` 指向图代码、日志、trace 或进程证据。`PASS` 只表示该次运行中的断言通过，不外推到其他 PyTorch 版本、shape、dtype 或硬件。
+
 ## Related Pages
 
 - [[a05_eager_capture_compile_and_replay_cost_model_analysis]]

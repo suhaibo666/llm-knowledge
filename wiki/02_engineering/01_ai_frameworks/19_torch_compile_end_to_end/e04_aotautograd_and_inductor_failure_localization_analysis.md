@@ -220,6 +220,20 @@ T_{\text{ladder}}=\sum_j T_j
 - **“没有异常就说明该层正确。”** accuracy、alias或mutation仍可能错误。
 - **“forward成功说明训练编译成功。”** backward可能lazy compile并独立失败。
 
+## 配套 Demo
+
+本页对应卷级入口 `labs/demo_e_diagnostics.py` 的 `stage_failure_localization` 用例。默认以 CUDA 为验收设备：
+
+```powershell
+python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_e_diagnostics.py `
+  --case stage_failure_localization --device cuda `
+  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\e04
+```
+
+先用 `--list --json` 查看用例声明的能力要求。无 CUDA 的机器可把 `--device` 改为 `cpu` 探索设备无关机制；CUDA/Triton/多卡专属用例会返回 `BLOCKED`，且不会执行用例正文。不要把 `BLOCKED` 写成 `PASS`。
+
+重点读取 `summary.json` 与 `stage_failure_localization/result.json`：`status` 区分 `PASS/BLOCKED/FAIL`，`environment` 固化运行环境，`observations` 保存本页机制的实测字段，`artifacts` 指向图代码、日志、trace 或进程证据。`PASS` 只表示该次运行中的断言通过，不外推到其他 PyTorch 版本、shape、dtype 或硬件。
+
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]

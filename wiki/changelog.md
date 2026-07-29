@@ -4,6 +4,37 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-29：`torch.compile` A→F 六卷 CUDA-first 配套 Demo
+
+**Type**: Executable Teaching Labs + Evidence Contract（固定实现审计仍以 PyTorch
+`e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52` 为准；当前本机为 PyTorch `2.9.1+cpu`，
+不把 CPU、FakeTensor、generated code 或源码可达性冒充 CUDA 实测。）
+
+- **建立六个卷级入口与 45 个 case**：新增统一 harness，以及 A/B/C/D/E/F 六个入口。
+  A 覆盖执行模型，B 覆盖 Dynamo，C 编排原有 21 篇深度 Labs，D 覆盖 artifact/cache/runtime，
+  E 覆盖诊断、复现、正确性与性能，F 覆盖 compiled autograd、checkpoint、distributed、
+  custom op/backend 与 AOTInductor。
+- **固定运行与失败合同**：统一支持 `--list --json`、可重复 `--case`、`--device`、`--seed`
+  和隔离的 `--output-dir`；`PASS/BLOCKED/FAIL` 分别使用退出码 `0/3/2`，CLI 合同错误为
+  `4`。能力缺失在 case 正文前阻断，异常和子进程非零退出不会被吞成成功。
+- **形成 60 页唯一映射**：`labs/demo_manifest.json` 把 A01–F08 全部正文映射到真实入口和
+  case；A/B/D/E/F 的 39 篇正文在最终 `Related Pages` 前新增可复制命令、证据字段与
+  CUDA 边界。C01–C21 保留原有逐篇 Lab，由 C 卷入口分主题编排，不复制或弱化原证据。
+- **真实预检结果**：本机实际通过 A 的 4 个 CPU case、B 的 10 个 case、C 的 6 个编排
+  case、D 的 3 个 CPU case、E 的 7 个 CPU case、F 的 4 个 CPU case；CUDA/Triton、
+  native compiler、Linux distributed 和多卡路径按声明返回 `BLOCKED`。修复了
+  after-Dynamo repro 误传 `make_fx` 图的问题，并把 Windows Gloo 不可运行边界改为
+  声明式 Linux gate。
+- **验证与审计闭合**：Labs 合同由 42 项增至 63 项并全部通过；审计工具 90/90 通过；
+  六入口 subprocess JSON 清单、60 页映射、Markdown 回链、CLI 退出码、C 子进程证据传播
+  均有自动测试。统一课程账本重建为 6,483/6,483 个 decisions，validation error 为 0；
+  `[S]/[R]/[I]/[M]/[B]` 为 1,287/366/3,675/19/43。
+- **保留验收边界**：当前没有 CUDA receipt，因此 GPU kernel 数、显存峰值、加速比、
+  autotune winner、CUDAGraph replay、多卡 FSDP/DTensor 与 AOTI package load 仍未升级为
+  `PASS`，必须在目标 CUDA/Linux 环境重新运行对应 case。
+
+---
+
 ## 2026-07-28：`torch.compile` 端到端 A→F 课程补齐
 
 **Type**: Source-faithful Learning Series + Evidence Closure（固定源码基线为 PyTorch
