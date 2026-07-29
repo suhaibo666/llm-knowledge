@@ -6,6 +6,32 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P3 Task 4(NPU Graph Tree 双写合并)
+
+**Type**: Redundancy Consolidation(设计:`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md`;P3 阶段最大编辑)
+
+**合并**：`06_graphs/npu/npugraphs_memory_reuse_analysis.md`(1698 行)并入 `torch_compile_npugraphs_deep_dive.md`(2397→2714 行,净增 317)。两页讲同一套 NPU Graph Tree 机制,§三「NPU Graph Tree 核心机制」与被并页的「Graph Tree 机制」「内存复用策略」「@torch.compile 场景案例」约 800 行重叠;被并页内「关键代码解析(合并自 memory_management)」节为上次合并未合净的残留,一并处理。
+
+**逐节处置**（被并页每个 `##`/`###` 节）：
+- `目录`/`概述` — 纯框架文字,丢弃(信息已含于主干开篇)。
+- `核心架构组件`(NPUGraph/NPUCachingAllocator/NPUGraphTreeManager/NPUGraphNode 四个 C++/Python 结构) — NPUGraph、PrivatePool 为独有,搬入新增 §3.5.1-3.5.2(表格化,无损);Manager/Node 类结构与主干 §2.5.1、§3.2 重叠,丢弃。
+- `内存池管理`(MempoolId_t/生命周期/PrivatePool) — 独有,搬入 §3.5.1(含 capture_begin 池注册代码节选、Capture vs Replay 差异表、replay 可跨流回放的事实)。
+- `Graph Tree 机制`(核心概念/树节点结构/路径管理与状态切换) — 核心概念的"树形峰值内存=max 而非 sum"公式独有,搬入 §3.1 补充段;树节点结构与主干重复,丢弃;路径管理与状态切换的 `_run`/`apply_checkpoint` 源码与主干 §3.2.2-3.2.3 重叠但含更细粒度行号引用,细粒度引用被 §3.6 新流程图吸收,原始代码块丢弃。
+- `Capture 与 Replay 流程` — capture_begin/replay 完整 ACL 样板代码与主干 §2.7 概念重叠,丢弃;差异表与"可跨流回放"独有事实已搬入 §3.5.1。
+- `内存复用策略`(Liveness/StorageWeakRefWrapper/Alias Detection) — 全部独有,搬入新增 §3.7.1-3.7.3(无损)。
+- `详细案例分析:@torch.compile 场景` — 旗舰案例,与主干既有的"训练循环 A→B→C"场景不同(本例为 graph-break 分支场景);代码示例+完整时序图+效率对比搬入新增 §3.8(精简,舍弃与其自身内部重复的 4 张辅助图:Liveness T0-T3、Checkpoint/Restore 图解、Phase1-4 图解、总内存变化图,因其事实已被时序图/§3.6/§3.7 覆盖);两张拓扑图(代码执行流程图、Graph Tree 节点关系)舍弃,拓扑事实由时序图 Note 与案例文字保留。
+- `关键源码解析`(Graph Tree 创建流程/add_function 流程/NPUGraphNode 内存管理) — 前两者与主干 §2.6、§3.2.2 逐字重复,丢弃;第三者的 `_record`/`run` 与主干 §2.7-2.8 重复丢弃,`__init__` 中父子 liveness 对比片段独有,搬入 §3.7.1。
+- `内存复用可视化总结` — 与时序图/效率对比重复,除"内存复用效率对比"(独有的定量对比,搬入 §3.8)外丢弃。
+- `关键代码解析(合并自 memory_management)`(TreeManager 生命周期/分配器检查点结构/Warmup 与静态输入/静态输入优化) — 全部独有:TreeManagerContainer 生命周期搬入新增 §3.4;BlockState/SegmentState/PrivatePoolState 搬入 §3.5.3;NPUWarmupNode.run 与主干 §3.2 warmup 概念重叠部分丢弃,`_use_npu_memory_pool_manager` 事实已隐含于既有描述;静态输入优化(`npugraph_managed_idxs` 等)搬入 §3.7.4。「使用建议补充」为通用泛泛建议,丢弃。
+- `总结`(核心机制回顾/三分类/触发条件/最佳实践/待探索问题) — 前三者与新搬入内容重复,丢弃;最佳实践中"减少 graph break/稳定输入/避免频繁路径切换"三点折入 §3.8 结尾一句;`待探索问题`(stale_storages 恒空、clear_path_state 为空操作)独有,搬入 §3.6。
+- `参考文档` — 源码文件列表并入主干 §六"核心实现分布在"(新增 NPUGraph.h/cpp、NPUCachingAllocator.cpp 两行);外部链接与主干无实质差异,丢弃。
+
+**主干新增结构**：§三新增 3.4 TreeManagerContainer 单例生命周期、3.5 C++ 层数据结构(NPUGraph/PrivatePool/Checkpoint 快照)、3.6 Checkpoint 恢复流程与内存复用三分类、3.7 内存复用策略(Liveness/弱引用/别名检测)、3.8 案例分析(graph-break 分支完整生命周期);3.1 补充内存优化公式;3.2.3 加一句指向 §3.6 的前向引用。全部新增 mermaid(1 flowchart + 1 sequenceDiagram)经 `@mermaid-js/mermaid-cli` 实渲验证。
+
+**收尾**：5 处入站 wikilink 改指(`activation_checkpointing_analysis`/`aclgraph_deep_analysis`/`aclgraph_multistream_rng_analysis`/`npugraphs_make_graphed_callables_deep_dive`/主干自身的 Related Pages 自链接一并清除);`06_graphs/npu/index.md` 删行+承接说明+日期 bump 至 2026-07-30。体量:两页合计 1698+317=2015 行变动,净删 1698-317=1381 行(≥1200 目标);主干净增 317 行(≤500 目标)。链接检查 broken 0→0、orphans 1→1(与本次改动无关的既有孤儿页)。
+
+---
+
 ## 2026-07-29：知识库结构整改 P0–P2(工具、快速止血、图源入库)
 
 **Type**: Structure Reorg(设计:`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md`;这是 P0–P7 七阶段的前三段,后续 P3+ 将做内容去重与目录重组)
