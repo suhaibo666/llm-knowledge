@@ -406,7 +406,7 @@ nodes = self.fuse_nodes_once(nodes, is_reorder_round=True)
 
 ### 7.3 融合合法性检查（`can_fuse`, L5333）
 
-> **注**:下图把 legality、priority score 与可选 benchmark 串成单一阈值流程,不能作为当前 Scheduler 的执行规范;现行模型见 [[20_scheduler_dependency_graph_fusion_and_ordering]] §10/§11(Legality 与 Profitability 分离)。
+> **注**：下图把 legality、priority score 与可选 benchmark 串成单一阈值流程,不能作为当前 Scheduler 的执行规范;现行模型见 [[20_scheduler_dependency_graph_fusion_and_ordering]] §10/§11(Legality 与 Profitability 分离)。
 
 ```mermaid
 flowchart TD
@@ -448,7 +448,7 @@ flowchart TD
 
 ### 7.4 融合评分（`score_fusion_memory`, L5657）
 
-> **注**:下式是旧版简写;当前评分还区分 exact dependency、同 buffer overlap 与 mix-order reduction,见 [[20_scheduler_dependency_graph_fusion_and_ordering]] §11。
+> **注**：下式是旧版简写;当前评分还区分 exact dependency、同 buffer overlap 与 mix-order reduction,template 路径还可能另做 benchmark,不能归结为普通集合交集大小,见 [[20_scheduler_dependency_graph_fusion_and_ordering]] §11。
 
 ```
 score = Σ size(共享 memory dep)
