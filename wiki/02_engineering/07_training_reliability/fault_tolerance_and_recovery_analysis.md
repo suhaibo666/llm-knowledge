@@ -1,6 +1,6 @@
 # 故障容错与自动恢复：goodput · 五级恢复坐标系 · hang/straggler · checkpoint · 链路切流
 
-> **来源**：`raw/02_engineering/wanka_determinism_reliability_deep_analysis.md` 第二部分（问题 5–8）——一份多来源综述深度分析文档的结构化摄入，机制/数字/命令/代码忠实于原文。
+> **来源**：`docs/research/wanka_determinism_reliability_deep_analysis.md` 第二部分（问题 5–8）——一份多来源综述深度分析文档的结构化摄入，机制/数字/命令/代码忠实于原文。
 > **维度**：机制级深挖（背景 → 影响 → 如何发现 → 解决方案与代码）。
 > **所属簇**：[[07_training_reliability/index]]（万卡级训练：确定性与可靠性问题域）。
 > 最后更新: 2026-07-06
