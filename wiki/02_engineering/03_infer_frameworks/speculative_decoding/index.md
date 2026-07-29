@@ -79,8 +79,8 @@ flowchart LR
 
 - [[vllm_speculative_decoding_analysis]] —— 投机解码在 vLLM V1 引擎的验收侧实现（proposer 家族含 mtp/dflash、拒绝采样内核）
 - [[../index]] —— 推理框架目录
-- [[../../01_theory/01_models/deepseek/index]] —— DeepSeek 模型族（V3 MTP / V4 底座）
+- [[../../../01_theory/01_models/deepseek/index]] —— DeepSeek 模型族（V3 MTP / V4 底座）
 
 ## Related Pages
 - [[../../index]] — 知识库总索引
-- [[../../changelog]] — 变更日志
+- [[../../../changelog]] — 变更日志

@@ -1,6 +1,5 @@
 # torch.compile Dynamic Shape 技术全解：从静态特化到符号化推导
 
-> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
 > **页面角色**：advanced symbolic-shape、ShapeEnv 与 guard 纵深专题。
 > **原始基线**：主分支快照，见下方日期；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
 > **课程分工**：本页保留纵深材料；图复用、符号形状和guard的当前主线见 [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse]]，历史逐项审计尚未闭环。
@@ -22,7 +21,6 @@
 ---
 
 ## 1. 问题起源：为什么 torch.compile 最初不支持动态 shape
-> [!correction] F-001：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse#8. `torch.compile` dynamic 策略]]，逐项说明见 [[correction_report]]。
 ### 1.1 核心矛盾
 
 TorchDynamo 的编译缓存模型是：**相同的输入属性 → 相同的编译产物**。这里的"输入属性"包括 tensor 的 shape、dtype、device、stride 等。每次编译时，Dynamo 通过 **Guard** 系统将这些属性冻结为具体的 Python 表达式。
@@ -87,7 +85,6 @@ PyTorch 团队有意将 `assume_static_by_default=True` 设为默认值。原因
 这样 `(3, 64)` 和 `(5, 64)` 都满足 `(s0, 64)` 的约束 → **命中同一缓存**。
 
 ### 2.2 ShapeEnv：符号环境的中心管理器
-> [!correction] F-002、F-003：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse#4. ShapeEnv 的职责]]，逐项说明见 [[correction_report]]。
 `torch/fx/experimental/symbolic_shapes.py:3811` — `class ShapeEnv` 是整个符号化 shape 系统的核心。它管理所有与符号 shape 相关的状态：
 
 ```python
@@ -244,7 +241,6 @@ arg0.size()[0] != 3                     # 排除之前静态特化的值
 生成的注释（verbose）中包含完整的符号表达式，用于调试。
 
 ### 3.4 运行时 Shape 断言
-> [!correction] F-006：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse#10. Guard、assert 与后端约束的分工]]，逐项说明见 [[correction_report]]。
 除了 Guard（决定缓存命中），Inductor 还在 wrapper code 中插入运行时断言，确保编译假设成立：
 
 `torch/_inductor/codegen/wrapper.py:1407` — `codegen_input_size_asserts()`:
@@ -257,7 +253,6 @@ assert_size_stride(arg0_1, (s0, 64), (64, 1))
 `assert_size_stride` 在运行时验证输入 tensor 的实际 shape/stride 是否与编译时的符号约束一致。如果 runtime 传入的 tensor 不满足约束（例如动态维度不是 size-like ≥2 或整除性不满足），此断言立即失败——**Fail Fast**，避免产生静默错误结果。
 
 ### 3.5 值域推导与细化的自动机制
-> [!correction] F-004、F-005：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse#5. compile-time refinement 与跨调用重编译]]，逐项说明见 [[correction_report]]。
 `_refine_ranges()` 在每次 guard 发生时更新 `var_to_range`：
 
 ```python
@@ -285,7 +280,6 @@ assert_size_stride(arg0_1, (s0, 64), (64, 1))
 ---
 
 ## 4. 渐进式动态化：automatic_dynamic_shapes 机制
-> [!correction] F-002、F-019：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse#8. `torch.compile` dynamic 策略]]，逐项说明见 [[correction_report]]。
 ### 4.1 设计动机
 
 静态 shape 编译快、性能好；动态 shape 编译慢但更灵活。PyTorch 2.0 引入了一种**渐进式动态化**策略：
@@ -342,7 +336,6 @@ self.exclusion_constraints: list[tuple[sympy.Symbol, int]] = []
 ---
 
 ## 5. 端到端案例追踪
-> [!correction] F-001、F-007：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse#8. `torch.compile` dynamic 策略]]，逐项说明见 [[correction_report]]。
 以 `matmul` 操作为例，当 `dynamic=True` 时，追踪从用户代码到最终 kernel 的完整路径。
 
 ### 5.1 Stage 0：用户代码
@@ -436,7 +429,6 @@ def call(args):
 ---
 
 ## 6. 关键源码索引
-> [!correction] F-020：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse#10. Guard、assert 与后端约束的分工]]，逐项说明见 [[correction_report]]。
 | 功能 | 文件 | 行号 | 说明 |
 |------|------|------|------|
 | `ShapeEnv._init` | `torch/fx/experimental/symbolic_shapes.py` | 3885 | ShapeEnv 核心数据结构初始化 |

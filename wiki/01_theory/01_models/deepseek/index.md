@@ -53,6 +53,6 @@
 
 ## 关联域
 
-- [[06_infra/megatron-lm/index]] — Megatron-LM（DeepSeek 使用 Megatron 训练）
-- [[03_alignment/index]] — 对齐方法（GRPO, DPO 等）
-- [[02_training/index]] — 低精度训练（FP8, FP4 QAT）
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM]] — Megatron-LM（DeepSeek 使用 Megatron 训练）
+- [[01_theory/04_posttraining/index|对齐/后训练]] — 对齐方法（GRPO, DPO 等）
+- [[01_theory/02_pretraining/index|预训练/低精度]] — 低精度训练（FP8, FP4 QAT）

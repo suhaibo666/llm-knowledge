@@ -1,0 +1,82 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css">
+<style>
+  .gemm{background:#FBFAF7;border:1px solid #ECE9E2;border-radius:12px;padding:14px 18px;margin:8px 0}
+  .gtag{font-size:14px;font-weight:700;color:#1F2430;margin-bottom:12px}
+  .gtag small{font-weight:400;color:#8A8F98;font-size:12px;margin-left:6px}
+  .mrow{display:flex;align-items:center;justify-content:flex-start;gap:0;flex-wrap:nowrap}
+  .mw{display:flex;flex-direction:column;align-items:center;gap:5px}
+  .mt{font-size:11px;color:#5B6470;line-height:1.25;text-align:center;white-space:nowrap}
+  .mt b{color:#1F2430;font-size:12.5px}
+  .mx2{border:1.7px solid #9AA1AC;border-radius:5px;overflow:hidden;display:flex}
+  .mx2.c{flex-direction:row}.mx2.r{flex-direction:column}
+  .hf{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800}
+  .divR{border-right:1.7px solid rgba(30,30,40,.22)}
+  .divB{border-bottom:1.7px solid rgba(30,30,40,.22)}
+  .g0{background:#E9F2FC;color:#1E4E79}
+  .g1{background:#FBF0E1;color:#8A581A}
+  .rep{background:#EEF1F4;color:#3A434F}
+  .res{background:#E6F4EC;color:#1F6B41}
+  .op2{font-size:22px;color:#9AA1AC;padding:0 10px;align-self:center}
+  .plab{font-size:10.5px;margin-top:3px;font-weight:700}
+  .ar{display:flex;flex-direction:column;align-items:center;padding:0 6px;align-self:center}
+  .ar .l1{font-size:20px;color:#5BAE80;line-height:1}
+  .ar .l2{font-size:11px;color:#1F6B41;font-weight:700;white-space:nowrap}
+  .why{font-size:12.8px;line-height:1.5;margin-top:11px;padding:9px 13px;border-radius:9px}
+  .why b{font-weight:700}
+  .why.blue{background:#EAF2FB;color:#274B6E}
+  .why.red{background:#FBECEF;color:#7A2536}
+  .bridge{font-size:12px;color:#8A581A;font-weight:600;text-align:center;margin:2px 0 8px}
+</style></head><body>
+
+<div class="diagram" data-name="dp_tensor_parallel_fig3">
+  <div class="dg-title">张量并行的「具体切法」：列切→拼接、行切→求和——为什么末尾非 all-reduce 不可</div>
+  <div class="dg-sub">MLP 两个 GEMM（TP=2）· 蓝＝GPU0 持有、橙＝GPU1 持有、灰＝两卡复制、绿＝汇总后 · 方块宽∝列数、高∝行数 · s＝B·S（token 数），d＝隐藏维</div>
+
+  <!-- ===== GEMM1 列切 ===== -->
+  <div class="gemm">
+    <div class="gtag">GEMM① 列切 Column-Parallel<small>H = GeLU(X · A)，把 A 按「输出列」切</small></div>
+    <div class="mrow">
+      <div class="mw"><div class="mt"><b>X</b><br>s×d · 复制</div>
+        <div class="mx2 c" style="width:42px;height:64px"><div class="hf rep" style="width:100%">X</div></div></div>
+      <div class="op2">×</div>
+      <div class="mw"><div class="mt"><b>A</b>&nbsp;d×4d&nbsp;→&nbsp;[A₁ | A₂]<br>按<b>列</b>切（切 4d 输出维）</div>
+        <div class="mx2 c" style="width:168px;height:42px"><div class="hf g0 divR" style="width:84px">A₁</div><div class="hf g1" style="width:84px">A₂</div></div></div>
+      <div class="op2">=</div>
+      <div class="mw"><div class="mt"><b>H</b>&nbsp;s×4d&nbsp;→&nbsp;[H₁ | H₂]<br>列分片，<b>并排拼接</b>即完整</div>
+        <div class="mx2 c" style="width:168px;height:64px"><div class="hf g0 divR" style="width:84px">H₁</div><div class="hf g1" style="width:84px">H₂</div></div>
+        <div class="plab" style="color:#1F6B41">↳ 逐元素 GeLU：H₁/H₂ 各自算，无通信</div></div>
+    </div>
+    <div class="why blue"><b>切 A 的输出列（4d 维）</b>：GPU0 拿 A₁ 算出 H₁ = X·A₁，GPU1 拿 A₂ 算出 H₂ = X·A₂ —— 两片是<b>不同的输出列</b>，并排 concat 就是完整 H，<b>互不重叠 ⇒ 前向无需通信</b>；且逐元素 GeLU 对每个列片独立成立（这正是「先列切」的理由）。</div>
+  </div>
+
+  <div class="bridge">▼ H 的「列分片」恰好就是下面行切 B 所需要的「输入分片」布局 → 两个 GEMM 之间零通信 ▼</div>
+
+  <!-- ===== GEMM2 行切 ===== -->
+  <div class="gemm">
+    <div class="gtag">GEMM② 行切 Row-Parallel<small>Z = H · B，把 B 按「输入/收缩维」切，匹配 H 的列切</small></div>
+    <div class="mrow">
+      <div class="mw"><div class="mt"><b>H</b>&nbsp;s×4d&nbsp;=&nbsp;[H₁ | H₂]<br>沿用上一步的列分片</div>
+        <div class="mx2 c" style="width:168px;height:64px"><div class="hf g0 divR" style="width:84px">H₁</div><div class="hf g1" style="width:84px">H₂</div></div></div>
+      <div class="op2">×</div>
+      <div class="mw"><div class="mt"><b>B</b>&nbsp;4d×d&nbsp;→&nbsp;[B₁ ; B₂]<br>按<b>行</b>切（切 4d 收缩维）</div>
+        <div class="mx2 r" style="width:48px;height:160px"><div class="hf g0 divB" style="height:80px">B₁</div><div class="hf g1" style="height:80px">B₂</div></div></div>
+      <div class="op2">=</div>
+      <div class="mw"><div class="mt"><b>Z₀ = H₁·B₁</b><br>s×d · <b>部分和</b></div>
+        <div class="mx2 c" style="width:42px;height:64px"><div class="hf g0" style="width:100%">Z₀</div></div>
+        <div class="plab" style="color:#1E4E79">只含前 2d 的贡献</div></div>
+      <div class="op2" style="color:#8A2A3C">⊕</div>
+      <div class="mw"><div class="mt"><b>Z₁ = H₂·B₂</b><br>s×d · <b>部分和</b></div>
+        <div class="mx2 c" style="width:42px;height:64px"><div class="hf g1" style="width:100%">Z₁</div></div>
+        <div class="plab" style="color:#8A581A">只含后 2d 的贡献</div></div>
+      <div class="ar"><div class="l1">▶</div><div class="l2">all-reduce<br>(求和)</div></div>
+      <div class="mw"><div class="mt"><b>Z = Z₀+Z₁</b><br>s×d · 完整 ✓</div>
+        <div class="mx2 c" style="width:42px;height:64px"><div class="hf res" style="width:100%">Z</div></div></div>
+    </div>
+    <div class="why red"><b>切 B 的输入/收缩维（4d 维）</b>匹配 H 的列切：GPU0 只有 H₁（前 2d 列）和 B₁（前 2d 行），算出的 Z₀ = H₁·B₁ 只是「沿 4d 求和」的<b>前一半贡献</b>；GPU1 算后一半 Z₁ = H₂·B₂。两片<b>同形状、各自是部分和</b>，谁都不是最终答案 —— 真正的 Z = Z₀ + Z₁，<b>必须一次 all-reduce(sum) 把各卡部分和加起来</b>，才与单卡等价。这就是「行切末尾必须通信」的根本原因。</div>
+  </div>
+
+  <div class="note" style="width:1080px"><b>一句话对照</b>：<b>列切</b>产出的是<b>不同的输出列</b> → 并排<b>拼接</b>（concat，无归约）；<b>行切</b>产出的是<b>同形状的部分积</b> → 必须<b>求和</b>（reduce ⇒ all-reduce）。Megatron 故意排成「先列后行」：中间的 GeLU 和两 GEMM 衔接都免通信，把整个 MLP 的前向通信压到<b>出口一次 all-reduce</b>（反向对称地在入口一次）。</div>
+</div>
+
+</body></html>

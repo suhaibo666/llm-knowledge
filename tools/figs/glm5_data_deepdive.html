@@ -1,0 +1,51 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css"></head><body>
+
+<!-- ============ FIG 1: pre-training data funnel ============ -->
+<div class="diagram" data-name="glm5_data_deepdive_fig1">
+  <div class="dg-title">预训练数据处理漏斗：三路并行精筛 → 27T 起步 → 28.5T base</div>
+  <div class="dg-sub">在 GLM-4.5 数据流水线基础上重构筛选标准（§2.2, p8）；早期前置 code &amp; reasoning（§1, p3）</div>
+
+  <div class="chip">三路并行：分类器精筛 / 去重扩容 / LLM 评分</div>
+  <div class="row" style="gap:14px">
+    <div class="node blue" style="width:400px"><div class="t">Web · 双分类器精筛</div>
+      <div class="d">DCLM 句向量分类器：标准分类器之外再捞高质数据<br>World Knowledge 分类器（Wikipedia + LLM 标注优化）<br>从中低质数据蒸馏长尾知识</div></div>
+    <div class="node blue" style="width:430px"><div class="t">Code · +28% unique tokens</div>
+      <div class="d">刷新代码平台快照 + 含代码网页 → 模糊去重后 +28%<br>修复 Software Heritage 元数据对齐 · 语言分类更准<br>GLM-4.5 质量感知采样 · Scala/Swift/Lua 专用分类器</div></div>
+    <div class="node blue" style="width:430px"><div class="t">Math &amp; Science · LLM 评分</div>
+      <div class="d">网页/书籍/论文：精提取 + PDF 解析增强<br>LLM 打分仅留最有教育价值内容<br>长文 chunk-and-aggregate 评分 · 严禁合成/AI/模板数据</div></div>
+  </div>
+
+  <div class="downwrap"><svg width="20" height="40" viewBox="0 0 20 40"><line x1="10" y1="0" x2="10" y2="32" stroke="currentColor" stroke-width="2"/><path d="M5 30 L10 38 L15 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="row" style="justify-content:center">
+    <div class="node amber center" style="width:360px"><div class="t">27T 起步语料</div>
+      <div class="d">训练以 27T token 大语料起步<br>早期优先采样 code &amp; reasoning（§1, p3）</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node green center" style="width:320px"><div class="t">28.5T base 总预算</div>
+      <div class="d">扩 token 预算至 28.5T（§2, p4）<br>744B / 40B MoE 基座</div></div>
+  </div>
+
+  <div class="note">三路数据各有专门的「质量门」：Web 用<b>分类器精筛 + 长尾蒸馏</b>，Code 靠<b>去重扩容 + 元数据修复</b>，Math&amp;Science 用 <b>LLM 评分只留最有教育价值的内容并严禁合成数据</b>。语料以 27T 起步、code/reasoning 前置，最终扩到 28.5T base 预算（§2.2 / §1 / §2）。</div>
+</div>
+
+<!-- ============ FIG 2: three-stage context extension ============ -->
+<div class="diagram" data-name="glm5_data_deepdive_fig2">
+  <div class="dg-title">中训练三段式上下文扩展：32K → 128K → 200K</div>
+  <div class="dg-sub">在 GLM-4.5 中训练框架上同时放大训练量与最大上下文（§2.3, p8）</div>
+
+  <div class="row">
+    <div class="node blue center" style="width:230px"><div class="t">32K · 1T tokens</div>
+      <div class="d">基础扩窗阶段</div></div>
+    <div class="arrow lbl"><span class="al">扩窗</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue center" style="width:250px"><div class="t">128K · 500B tokens</div>
+      <div class="d">GLM-4.5 的最大上下文</div></div>
+    <div class="arrow lbl"><span class="al">再扩窗 + up-sample</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber center" style="width:300px"><div class="t">200K · 50B tokens</div>
+      <div class="d">超越 GLM-4.5 128K 上限<br>处理超长文档 + 多文件代码库</div></div>
+  </div>
+
+  <div class="note">后期阶段按比例 <b>up-sample 长文档 + 合成 agent 轨迹</b>；200K 阶段额外加入 <b>MRCR-like 多变体</b>强化多轮对话召回。关键发现：在 128K 阶段之上再做 200K 阶段，<b>反过来提升了 128K 窗口内的表现</b>（§2.3, p8–9）。</div>
+</div>
+
+</body></html>

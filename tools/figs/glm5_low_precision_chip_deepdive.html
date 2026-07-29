@@ -1,0 +1,92 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css"></head><body>
+
+<!-- ============ FIG 1: low-precision chain across train / RL / deploy ============ -->
+<div class="diagram" data-name="glm5_low_precision_chip_deepdive_fig1">
+  <div class="dg-title">低精度链贯穿训练 → RL → 部署三层</div>
+  <div class="dg-sub">同一条「降比特」主线，三处目的各不相同（§2.4.3 p10 / §3.6.2 p14–15 / §5 p21）</div>
+
+  <div class="row">
+    <div class="node blue" style="width:336px"><div class="t">训练 · INT4 QAT</div>
+      <div class="d">SFT 阶段做 INT4 量化感知训练<br>训练 / 推理 kernel <b>bitwise-identical</b><br>同一量化 kernel 兼做离线权重量化</div></div>
+    <div class="arrow lbl"><span class="al">学到补偿</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node purple" style="width:336px"><div class="t">RL · FP8 Rollout</div>
+      <div class="d">slime 中 rollout 推理用 FP8<br>降 per-token 延迟<br>缩短长轨迹完成时间（攻<b>尾延迟</b>）</div></div>
+    <div class="arrow lbl"><span class="al">省显存上线</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node green" style="width:356px"><div class="t">部署 · W4A8 混合精度</div>
+      <div class="d">Attn / MLP → W8A8（INT8）<br>MoE 专家 → W4A8（INT4）<br>QuaRot 抑离群 + Flex_AWQ_SSZ 标定</div></div>
+  </div>
+
+  <div class="note">
+    三处精度<b>目的不同</b>：① 训练端 INT4 QAT 让模型在 SFT 中<b>学会补偿量化误差</b>，且训/推 kernel 逐比特一致 → 消除「训练-上线」精度鸿沟；
+    ② RL 端 FP8 只服务<b>尾延迟</b>（RL step 时间由最慢样本决定），而非吞吐；
+    ③ 部署端 W4A8 用<b>非均匀比特</b>把 750B 塞进单机显存。
+  </div>
+
+  <div class="legend">
+    <span><i class="dot" style="display:inline-block;background:#E9F2FC;border-color:#6296D4"></i>训练</span>
+    <span><i class="dot" style="display:inline-block;background:#EEEAF8;border-color:#8E7DCB"></i>RL</span>
+    <span><i class="dot" style="display:inline-block;background:#E6F4EC;border-color:#5BAE80"></i>部署 / 结果</span>
+  </div>
+</div>
+
+<br><br>
+
+<!-- ============ FIG 2: Ascend single-machine inference — three pillars ============ -->
+<div class="diagram" data-name="glm5_low_precision_chip_deepdive_fig2">
+  <div class="dg-title">昇腾 Atlas 单机推理：三支柱协同</div>
+  <div class="dg-sub">以 Ascend Atlas 为案例，七家国产芯片全栈适配的方法论（§5 p21–22）</div>
+
+  <div class="chip">GLM-5 750B · 单台 Atlas 800T A3 · vLLM-Ascend / SGLang</div>
+
+  <div class="row" style="align-items:flex-start;gap:22px">
+
+    <!-- pillar 1: extreme quantization -->
+    <div class="col" style="gap:9px;width:396px">
+      <div class="node amber center" style="width:396px"><div class="t">① 极致量化</div>
+        <div class="d">msModelSlim · 混合精度 W4A8</div></div>
+      <div class="node slate" style="width:396px"><div class="t">分块定精度</div>
+        <div class="d">标准 Attn / MLP → W8A8（INT8）<br>MoE 专家 → W4A8（INT4）</div></div>
+      <div class="node slate" style="width:396px"><div class="t">低比特稳定性</div>
+        <div class="d">QuaRot 抑制离群值<br>Flex_AWQ_SSZ 缩放标定</div></div>
+      <div class="node green" style="width:396px"><div class="t">效果</div>
+        <div class="d">750B 装进<b>单台</b> Atlas 800T A3<br>显存大降、精度无明显损失</div></div>
+    </div>
+
+    <!-- pillar 2: fusion kernels -->
+    <div class="col" style="gap:9px;width:396px">
+      <div class="node amber center" style="width:396px"><div class="t">② 高性能融合算子</div>
+        <div class="d">为 NPU 上的稀疏注意力定制</div></div>
+      <div class="node slate" style="width:396px"><div class="t">Lightning Indexer</div>
+        <div class="d">score 计算 + ReLU + TopK 合 1 kernel<br>让 NPU <b>计算与访存重叠</b></div></div>
+      <div class="node slate" style="width:396px"><div class="t">Sparse Flash Attention</div>
+        <div class="d">KV-cache 的 TopK token 选择<br>与稀疏注意力计算<b>并行</b></div></div>
+      <div class="node slate" style="width:396px"><div class="t">MLAPO 超级算子</div>
+        <div class="d">13 个预处理小算子 → 合 1<br>Vector / Cube 单元<b>并行</b>处理</div></div>
+    </div>
+
+    <!-- pillar 3: inference-engine scheduling -->
+    <div class="col" style="gap:9px;width:396px">
+      <div class="node amber center" style="width:396px"><div class="t">③ 推理引擎调度</div>
+        <div class="d">vLLM-Ascend · SGLang 专项优化</div></div>
+      <div class="node slate" style="width:396px"><div class="t">异步调度</div>
+        <div class="d">D2H 采样拷贝 与 下一步 decode 准备<br>重叠 → 消除调度<b>气泡</b></div></div>
+      <div class="node slate" style="width:396px"><div class="t">上下文管理 · 并行策略</div>
+        <div class="d">RadixCache 前缀共享 + Prefix Cache 扩到内存<br>Attn-DP + MoE-EP + FlashComm 拆 AllReduce</div></div>
+      <div class="node slate" style="width:396px"><div class="t">MTP</div>
+        <div class="d">每步多 token<br>提升 NPU 算力密度、缩短总生成时间</div></div>
+    </div>
+
+  </div>
+
+  <div class="downwrap"><svg width="20" height="40" viewBox="0 0 20 40"><line x1="10" y1="0" x2="10" y2="32" stroke="currentColor" stroke-width="2"/><path d="M5 30 L10 38 L15 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="row" style="justify-content:center">
+    <div class="node green center" style="width:760px"><div class="t">单节点 ≈ 双卡国际集群</div>
+      <div class="d">三支柱硬件级协同优化 → 长序列部署成本 <b>−50%</b></div></div>
+  </div>
+
+  <div class="note">三支柱分别打<b>显存</b>（W4A8 非均匀量化）、<b>算子效率</b>（融合 + 重叠 + 双单元并行）、<b>调度</b>（异步 / 前缀复用 / 混合并行 / MTP）。它们叠加后让单台国产机器追平双卡国际集群（§5 p22）。</div>
+</div>
+
+</body></html>

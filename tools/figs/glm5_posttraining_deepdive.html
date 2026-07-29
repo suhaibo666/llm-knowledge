@@ -1,0 +1,121 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css"></head><body>
+
+<!-- ============ FIG 1: three thinking modes (paper Figure 7 + §3.1) ============ -->
+<div class="diagram" data-name="glm5_posttraining_deepdive_fig1">
+  <div class="dg-title">SFT 三种思考特性</div>
+  <div class="dg-sub">更新 chat template + 202,752 上下文上协同：思考-行动交错 / 跨轮保留 / 按轮开关（§3.1, p10–11；Figure 7）</div>
+
+  <div class="row" style="gap:30px;align-items:flex-start">
+
+    <!-- Column 1: Interleaved Thinking -->
+    <div class="col" style="width:400px">
+      <div class="node purple center" style="width:100%"><div class="t">① Interleaved Thinking</div>
+        <div class="d" style="color:#5B4FA0">每次响应与每次工具调用之前都先思考</div></div>
+      <div class="downwrap"><svg width="16" height="24" viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="16" stroke="currentColor" stroke-width="2"/><path d="M3 14 L8 22 L13 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node blue" style="width:100%"><div class="t" style="font-size:14px">用户消息</div></div>
+      <div class="downwrap"><svg width="16" height="24" viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="16" stroke="currentColor" stroke-width="2"/><path d="M3 14 L8 22 L13 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node purple" style="width:100%"><div class="t" style="font-size:14px">思考 ①</div><div class="d">推理块 · 在工具调用前规划</div></div>
+      <div class="downwrap"><svg width="16" height="24" viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="16" stroke="currentColor" stroke-width="2"/><path d="M3 14 L8 22 L13 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node slate" style="width:100%"><div class="t" style="font-size:14px">工具调用 ① → 工具结果 ①</div></div>
+      <div class="downwrap"><svg width="16" height="24" viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="16" stroke="currentColor" stroke-width="2"/><path d="M3 14 L8 22 L13 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node purple" style="width:100%"><div class="t" style="font-size:14px">思考 ②</div><div class="d">读结果后再规划下一步</div></div>
+      <div class="downwrap"><svg width="16" height="24" viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="16" stroke="currentColor" stroke-width="2"/><path d="M3 14 L8 22 L13 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node slate" style="width:100%"><div class="t" style="font-size:14px">工具调用 ② → 工具结果 ②</div></div>
+      <div class="downwrap"><svg width="16" height="24" viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="16" stroke="currentColor" stroke-width="2"/><path d="M3 14 L8 22 L13 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node green" style="width:100%"><div class="t" style="font-size:14px">最终回答</div></div>
+    </div>
+
+    <!-- Column 2: Preserved Thinking (highlight) -->
+    <div class="col" style="width:400px">
+      <div class="node amber center" style="width:100%"><div class="t">② Preserved Thinking</div>
+        <div class="d" style="color:#9A6A2A">coding agent 场景：跨多轮自动保留全部思考块</div></div>
+      <div class="downwrap"><svg width="16" height="24" viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="16" stroke="currentColor" stroke-width="2"/><path d="M3 14 L8 22 L13 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node slate" style="width:100%"><div class="t" style="font-size:14px">Turn 1</div><div class="d">用户消息① · 思考① · 工具 · 思考② · 回答①</div></div>
+      <div class="downwrap"><svg width="16" height="24" viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="16" stroke="currentColor" stroke-width="2"/><path d="M3 14 L8 22 L13 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node blue" style="width:100%"><div class="t" style="font-size:14px">Turn 2 · 用户消息②</div></div>
+      <div class="downwrap"><svg width="16" height="24" viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="16" stroke="currentColor" stroke-width="2"/><path d="M3 14 L8 22 L13 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node amber" style="width:100%"><div class="t" style="font-size:14px">保留并复用 Turn 1 全部思考块</div>
+        <div class="d">接着已有推理继续，无需从零重新推导 → 减少信息损失与不一致</div></div>
+      <div class="downwrap"><svg width="16" height="24" viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="16" stroke="currentColor" stroke-width="2"/><path d="M3 14 L8 22 L13 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node green" style="width:100%"><div class="t" style="font-size:14px">一致、连贯的回答②</div></div>
+      <div class="downwrap"><svg width="16" height="20" viewBox="0 0 16 20"><line x1="8" y1="0" x2="8" y2="13" stroke="#C9B79A" stroke-width="1.6" stroke-dasharray="3 3"/></svg></div>
+      <div class="node rose" style="width:100%"><div class="t" style="font-size:13px">对照 · 不保留思考</div>
+        <div class="d">丢弃历史思考块 → 下一轮需从零重新推导，易丢信息/前后不一致</div></div>
+    </div>
+
+    <!-- Column 3: Turn-level Thinking -->
+    <div class="col" style="width:400px">
+      <div class="node purple center" style="width:100%"><div class="t">③ Turn-level Thinking</div>
+        <div class="d" style="color:#5B4FA0">会话内按轮开关思考，权衡延迟与精度</div></div>
+      <div class="downwrap"><svg width="16" height="24" viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="16" stroke="currentColor" stroke-width="2"/><path d="M3 14 L8 22 L13 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node blue" style="width:100%"><div class="t" style="font-size:14px">Turn 1 · 复杂任务</div></div>
+      <div class="downwrap" style="flex-direction:column"><span class="al" style="color:#1F6B41;font-weight:600">thinking = ON</span><svg width="16" height="22" viewBox="0 0 16 22"><line x1="8" y1="0" x2="8" y2="14" stroke="currentColor" stroke-width="2"/><path d="M3 12 L8 20 L13 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node purple" style="width:100%"><div class="t" style="font-size:14px">开启思考 → 推理</div></div>
+      <div class="downwrap"><svg width="16" height="24" viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="16" stroke="currentColor" stroke-width="2"/><path d="M3 14 L8 22 L13 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node green" style="width:100%"><div class="t" style="font-size:14px">准确、稳定的回答</div></div>
+      <div class="downwrap"><svg width="16" height="28" viewBox="0 0 16 28"><line x1="8" y1="0" x2="8" y2="20" stroke="currentColor" stroke-width="2"/><path d="M3 18 L8 26 L13 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node blue" style="width:100%"><div class="t" style="font-size:14px">Turn 2 · 轻量请求</div></div>
+      <div class="downwrap" style="flex-direction:column"><span class="al" style="color:#8A2A3C;font-weight:600">thinking = OFF</span><svg width="16" height="22" viewBox="0 0 16 22"><line x1="8" y1="0" x2="8" y2="14" stroke="currentColor" stroke-width="2"/><path d="M3 12 L8 20 L13 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node green" style="width:100%"><div class="t" style="font-size:14px">关闭思考 → 直接回答</div><div class="d">降低延迟与成本</div></div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <span><span class="dot blue"></span>用户输入</span>
+    <span><span class="dot purple"></span>思考块 (reasoning)</span>
+    <span><span class="dot slate"></span>工具调用 / 结果</span>
+    <span><span class="dot green"></span>最终回答</span>
+    <span><span class="dot amber"></span>保留并复用</span>
+    <span><span class="dot rose"></span>反例（不保留）</span>
+  </div>
+</div>
+
+<br><br>
+
+<!-- ============ FIG 2: sequential RL + cross-stage distillation against forgetting (§3.4–3.5) ============ -->
+<div class="diagram" data-name="glm5_posttraining_deepdive_fig2">
+  <div class="dg-title">顺序 RL + On-Policy 跨阶段蒸馏：防灾难性遗忘</div>
+  <div class="dg-sub">顺序优化不同目标会逐步侵蚀先前能力，故以蒸馏作为最后一步，各阶段 final checkpoint 充当教师召回技能（§3.4–3.5, p13–14）</div>
+
+  <!-- progressive chain -->
+  <div class="row">
+    <div class="node blue" style="width:228px"><div class="t">SFT</div>
+      <div class="d">三种思考 · 三类数据<br>202,752 上下文</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node purple" style="width:228px"><div class="t">Reasoning RL</div>
+      <div class="d">GRPO+IcePop · 去 KL<br>数学/科学/代码/TIR</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node purple" style="width:228px"><div class="t">Agentic RL</div>
+      <div class="d">全异步解耦<br>SWE/Terminal/Search</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node purple" style="width:228px"><div class="t">General RL</div>
+      <div class="d">三维目标 · 混合奖励<br>人类风格锚点</div></div>
+  </div>
+
+  <!-- teacher arrows feeding the distillation box -->
+  <div class="row" style="width:1050px;justify-content:space-around">
+    <div class="arrow lbl"><span class="al" style="color:#8A581A">final ckpt → 教师</span><svg width="18" height="40" viewBox="0 0 18 40"><line x1="9" y1="0" x2="9" y2="32" stroke="#DBA059" stroke-width="2"/><path d="M4 30 L9 38 L14 30" fill="none" stroke="#DBA059" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="arrow lbl"><span class="al" style="color:#8A581A">final ckpt → 教师</span><svg width="18" height="40" viewBox="0 0 18 40"><line x1="9" y1="0" x2="9" y2="32" stroke="#DBA059" stroke-width="2"/><path d="M4 30 L9 38 L14 30" fill="none" stroke="#DBA059" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="arrow lbl"><span class="al" style="color:#8A581A">（已含于链中）</span><svg width="18" height="40" viewBox="0 0 18 40"><line x1="9" y1="0" x2="9" y2="32" stroke="#DBA059" stroke-width="1.6" stroke-dasharray="3 3"/></svg></div>
+    <div class="arrow lbl"><span class="al" style="color:#8A581A">final ckpt → 教师</span><svg width="18" height="40" viewBox="0 0 18 40"><line x1="9" y1="0" x2="9" y2="32" stroke="#DBA059" stroke-width="2"/><path d="M4 30 L9 38 L14 30" fill="none" stroke="#DBA059" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+  </div>
+
+  <!-- distillation box -->
+  <div class="row">
+    <div class="node amber center" style="width:1050px"><div class="t">On-Policy 跨阶段蒸馏（最终收尾阶段）</div>
+      <div class="d" style="text-align:center">prompt 从各教师 RL 训练集按比例混采 · 用 sg[ log(π<sub>teacher</sub> / π<sub>student</sub>) ] 替换 Eq.1 的优势项（Eq.2）<br>group size = 1（优势直接来自与教师的差距，无需大组估计）· batch size = 1024</div></div>
+  </div>
+
+  <div class="downwrap"><svg width="18" height="36" viewBox="0 0 18 36"><line x1="9" y1="0" x2="9" y2="28" stroke="currentColor" stroke-width="2"/><path d="M4 26 L9 34 L14 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="row" style="justify-content:center">
+    <div class="node green center" style="width:560px"><div class="t">GLM-5 最终模型</div>
+      <div class="d">召回 SFT / Reasoning RL / General RL 各阶段技能，缓解能力回退</div></div>
+  </div>
+
+  <div class="note">教师 = 各前置阶段的 <b>final checkpoint</b>；当前用推理引擎取教师 logits，未来计划把推理后端迁到训练引擎并统一用 MLA 的 MQA 模式（§3.5, p14）。蒸馏属 GRPO 框架的一个变体——仅把"群组归一化优势"替换为"与教师的对数概率差"。</div>
+</div>
+
+</body></html>

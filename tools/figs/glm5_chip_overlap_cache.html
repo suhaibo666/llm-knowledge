@@ -1,0 +1,69 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css"></head><body>
+
+<!-- glm5_low_precision_chip_deepdive_fig3 : Ascend overlap (掩盖) + cache (缓存) -->
+<div class="diagram" data-name="glm5_low_precision_chip_deepdive_fig3">
+  <div class="dg-title">昇腾 Atlas 推理：掩盖（重叠隐藏）与缓存（KV 复用）</div>
+  <div class="dg-sub">§4.2 融合算子 + §4.3 引擎调度里的两条线——"用计算盖住访存/通信"与"KV 前缀复用 + 外溢"（§5, p21–22）</div>
+
+  <div style="display:flex;gap:30px;align-items:flex-start">
+    <!-- LEFT: overlap timelines -->
+    <div style="width:560px">
+      <div class="chip">掩盖：用计算盖住访存 / 通信（上 = 主计算，下 = 被掩盖项）</div>
+      <div class="tl">
+        <div class="tl-row"><div class="tl-lab">Lightning Indexer<small>§4.2 · score+ReLU+TopK 融合</small></div>
+          <div class="tl-track">
+            <div class="tl-bar tl-c" style="left:0;width:62%;top:4px;height:15px">融合 kernel 计算</div>
+            <div class="tl-bar tl-m" style="left:6%;width:44%;top:21px;height:15px">访存</div>
+          </div></div>
+        <div class="tl-row"><div class="tl-lab">MLAPO<small>§4.2 · 13 算子→1 超算子</small></div>
+          <div class="tl-track">
+            <div class="tl-bar tl-c" style="left:0;width:58%;top:4px;height:15px">Vector 单元</div>
+            <div class="tl-bar tl-c2" style="left:6%;width:50%;top:21px;height:15px">Cube 单元（并行）</div>
+          </div></div>
+        <div class="tl-row"><div class="tl-lab">异步调度<small>§4.3 · 去气泡</small></div>
+          <div class="tl-track">
+            <div class="tl-bar tl-c" style="left:0;width:60%;top:4px;height:15px">下一步 decode 准备</div>
+            <div class="tl-bar tl-m" style="left:6%;width:40%;top:21px;height:15px">D2H 采样拷贝</div>
+          </div></div>
+        <div class="tl-row"><div class="tl-lab">FlashComm<small>§4.3 · 拆 AllReduce</small></div>
+          <div class="tl-track">
+            <div class="tl-bar tl-c" style="left:0;width:64%;top:4px;height:15px">计算</div>
+            <div class="tl-bar tl-m" style="left:8%;width:50%;top:21px;height:15px">拆分的 AllReduce（藏到计算背后）</div>
+          </div></div>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:#6296D4;border-color:#6296D4;display:inline-block"></span>主计算 / Vector</span>
+        <span><span class="dot" style="background:#DBA059;border-color:#DBA059;display:inline-block"></span>访存 / 通信</span>
+        <span><span class="dot" style="background:#5BAE80;border-color:#5BAE80;display:inline-block"></span>Cube 单元</span>
+      </div>
+    </div>
+
+    <!-- RIGHT: KV cache reuse -->
+    <div style="width:392px">
+      <div class="chip" style="background:#E6F4EC;color:#1F6B41">缓存：KV 前缀复用 + 外溢</div>
+
+      <div style="font-weight:700;font-size:13.5px;color:#473B86;margin:4px 0 8px">RadixCache · 前缀共享</div>
+      <div style="display:flex;gap:14px;justify-content:center">
+        <div class="node slate" style="width:120px;padding:8px 12px"><div class="t" style="font-size:13px">请求 A</div></div>
+        <div class="node slate" style="width:120px;padding:8px 12px"><div class="t" style="font-size:13px">请求 B</div></div>
+      </div>
+      <div style="display:flex;justify-content:center;color:#9AA1AC;padding:1px 0"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node green" style="width:100%"><div class="t" style="font-size:14px">公共前缀 KV（共享 · 命中即复用）</div><div class="d">相同前缀只存一份、只算一次</div></div>
+      <div style="display:flex;justify-content:center;color:#9AA1AC;padding:1px 0"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div style="display:flex;gap:14px;justify-content:center">
+        <div class="node blue" style="width:120px;padding:8px 12px"><div class="t" style="font-size:13px">A 的后续</div></div>
+        <div class="node blue" style="width:120px;padding:8px 12px"><div class="t" style="font-size:13px">B 的后续</div></div>
+      </div>
+
+      <div style="font-weight:700;font-size:13.5px;color:#473B86;margin:18px 0 8px">Prefix Cache · KV 外溢到 RAM</div>
+      <div class="tier" style="border-color:#5BAE80;background:#E6F4EC;width:100%"><span class="th">GPU KV-cache</span> — 快 · 容量小</div>
+      <div style="display:flex;justify-content:center;color:#9AA1AC;padding:2px 0"><svg width="34" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg><span class="al" style="align-self:center;margin-left:6px">满则外溢</span></div>
+      <div class="tier" style="border-color:#A7AEB8;background:#EEF1F4;width:100%"><span class="th">系统内存 RAM</span> — 大 · 慢，扩展 KV 存储</div>
+    </div>
+  </div>
+
+  <div class="note">融合算子把"小算子多、访存碎"的稀疏注意力<b>用计算掩盖访存</b>（Lightning Indexer）、<b>让 Vector/Cube 双单元并行</b>（MLAPO）；引擎侧异步调度把 D2H 拷贝与下一步 decode 重叠去气泡、FlashComm 把拆分的 AllReduce 藏到计算背后。缓存侧 RadixCache 让多请求共享公共前缀 KV，Prefix Cache 再把 KV 外溢到系统内存以扛长上下文（§5, p22）。</div>
+</div>
+
+</body></html>

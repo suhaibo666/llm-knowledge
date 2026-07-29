@@ -1,6 +1,5 @@
 # torch.fx / torch.export / 算子扩展 — 实用上手
 
-> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
 > **页面角色**：FX/export/custom-op API 实操入口。
 > **原始基线**：见下方页头；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
 > **课程分工**：本页保留API速查；捕获前端、FX数据结构与改图不变量的当前主线见 [[19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing]]、[[19_torch_compile_end_to_end/02_fx_graph_core_data_model]] 与 [[19_torch_compile_end_to_end/12_fx_graph_editing_primitives_and_invariants]]。
@@ -114,7 +113,6 @@ print("ok")
 ---
 
 ## 2. 把改写包成 PassBase pass
-> [!correction] F-017：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint#5. Single round、bounded repeat、fixed point]]，逐项说明见 [[correction_report]]。
 `PassBase`(`torch/fx/passes/infra/pass_base.py:28`)是统一的图变换接口。它的 `__call__`(`:40`)按
 **前置校验 → 变换 → 后置校验**串起来:
 
@@ -159,7 +157,6 @@ print(result.modified)                 # True
 ---
 
 ## 3. torch.export + 动态 Dim 约束
-> [!correction] F-008：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/03_graph_values_metadata_and_signatures#9.2 ExportGraphSignature]]，逐项说明见 [[correction_report]]。
 `export(mod, args, kwargs=None, *, dynamic_shapes=None, strict=False, ...)`
 (`torch/export/__init__.py:59`)做 **AOT 规范化**:输出一张规范到 functional ATen 算子集、消除了
 Python 控制流/数据结构、并带形状约束的 `ExportedProgram`,可序列化重放。`Dim` / `ShapesCollection`
@@ -224,7 +221,6 @@ for bs in (1, 7, 512):          # 动态维任意取值都成立
 ---
 
 ## 4. torch.library:定义 + 注册一个 custom_op
-> [!correction] F-018：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing#5. `torch.export`]]，逐项说明见 [[correction_report]]。
 **现代推荐 API** 是 `torch.library.custom_op`(从 `torch._library.custom_ops` 再导出,
 `torch/library.py:17`;真实实现 `torch/_library/custom_ops.py:67`)。它靠**类型注解推断 schema**,
 把函数包成分发器一等公民,从而能被 autograd / `torch.compile` / `export` / FX **当作不透明黑盒**正确处理

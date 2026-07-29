@@ -1,0 +1,129 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css"></head><body>
+
+<!-- ============ FIG 1: overall forward data flow + ScMoE layer zoom ============ -->
+<div class="diagram" data-name="longcat2_arch_fig1">
+  <div class="dg-title">LongCat-2.0 完整模型结构与前向数据流（LongcatCausalLM）</div>
+  <div class="dg-sub">维度取自 released <code>config.json</code>；结构取自 SGLang 推理代码 <code>longcat_flash.py</code>（PR #30042）。左：宏观层栈 · 右：单个解码层放大（ScMoE 短路）</div>
+
+  <div style="display:flex;align-items:stretch;gap:0">
+
+    <!-- ===== Col A: macro stack ===== -->
+    <div style="width:360px;display:flex;flex-direction:column">
+      <div class="node slate" style="width:100%"><div class="t">输入 token ids</div><div class="d">N 个 token（N = batch·seq）</div></div>
+      <div class="downwrap"><svg width="16" height="20" viewBox="0 0 16 20"><line x1="8" y1="0" x2="8" y2="13" stroke="currentColor" stroke-width="2"/><path d="M4 11 L8 18 L12 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node amber" style="width:100%"><div class="t">N-gram Embedding</div><div class="d">词表 163,840 · hidden d=8,192<br>base 词嵌 + 16 路 n-gram 哈希嵌入 → 平均（见图 2）<br>→ hidden <b>N×8,192</b></div></div>
+      <div class="downwrap"><svg width="16" height="20" viewBox="0 0 16 20"><line x1="8" y1="0" x2="8" y2="13" stroke="currentColor" stroke-width="2"/><path d="M4 11 L8 18 L12 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node purple" style="width:100%;border-width:2.4px"><div class="t">解码层 × 38（ScMoE 短路结构）　★</div><div class="d">每层 = 稠密链 2×(MLA 注意力 + 稠密 FFN) ∥ 1×MoE 短路分支<br>（右图放大；每步保持 N×8,192）</div></div>
+      <div class="downwrap"><svg width="16" height="20" viewBox="0 0 16 20"><line x1="8" y1="0" x2="8" y2="13" stroke="currentColor" stroke-width="2"/><path d="M4 11 L8 18 L12 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node slate" style="width:100%"><div class="t">Final RMSNorm</div><div class="d">eps 1e-5</div></div>
+      <div class="downwrap"><svg width="16" height="20" viewBox="0 0 16 20"><line x1="8" y1="0" x2="8" y2="13" stroke="currentColor" stroke-width="2"/><path d="M4 11 L8 18 L12 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div style="display:flex;gap:10px">
+        <div class="node green" style="width:222px"><div class="t">LM Head</div><div class="d">→ logits <b>N×163,840</b></div></div>
+        <div class="node amber" style="width:128px"><div class="t">MTP × 3</div><div class="d">投机解码<br>3 步共享一次索引</div></div>
+      </div>
+    </div>
+
+    <!-- ===== zoom connector ===== -->
+    <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;padding:0 12px;color:#B7937A">
+      <svg width="40" height="170" viewBox="0 0 40 170"><path d="M2 40 L36 6" stroke="#C9AE97" stroke-width="1.5" stroke-dasharray="4 4" fill="none"/><path d="M2 130 L36 164" stroke="#C9AE97" stroke-width="1.5" stroke-dasharray="4 4" fill="none"/></svg>
+      <span style="font-size:11.5px;color:#B7937A;margin-top:4px">放大 ★</span>
+    </div>
+
+    <!-- ===== Col B: one ScMoE decoder layer ===== -->
+    <div style="width:640px;display:flex;flex-direction:column">
+      <div class="node slate" style="width:100%;padding:9px 14px"><div class="t" style="font-size:14px">层输入 hidden (N×8,192)</div></div>
+      <div class="downwrap"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node blue" style="width:100%;padding:10px 14px"><div class="t" style="font-size:14px">RMSNorm → MLA 注意力 attn0（+ LSA 稀疏索引）→ ⊕ 残差</div><div class="d">64 heads · MLA 低秩 KV · LSA 选 top-2,048（见图 3）；此处产出并缓存本组索引</div></div>
+      <div class="downwrap"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="chip">分叉：稠密链 与 MoE 短路分支并行（ScMoE）</div>
+      <div style="display:flex;gap:14px;align-items:stretch">
+        <!-- dense chain -->
+        <div style="flex:1;border:1.5px dashed #C9CDD4;border-radius:14px;padding:12px 13px;background:#FCFCFB">
+          <div style="font-weight:700;font-size:13.5px;color:#1E4E79;margin-bottom:8px">稠密链（串行）</div>
+          <div class="node blue center" style="width:100%;padding:8px 10px"><div class="t" style="font-size:13px">RMSNorm → 稠密 FFN mlp0</div><div class="d">SwiGLU/SiLU · 中间维 12,288</div></div>
+          <div class="downwrap" style="padding:3px 0"><svg width="14" height="15" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+          <div class="node blue center" style="width:100%;padding:8px 10px"><div class="t" style="font-size:13px">RMSNorm → MLA 注意力 attn1</div><div class="d">复用 attn0 的稀疏索引（CLI）</div></div>
+          <div class="downwrap" style="padding:3px 0"><svg width="14" height="15" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+          <div class="node blue center" style="width:100%;padding:8px 10px"><div class="t" style="font-size:13px">RMSNorm → 稠密 FFN mlp1</div><div class="d">SwiGLU/SiLU · 中间维 12,288</div></div>
+        </div>
+        <!-- MoE shortcut -->
+        <div style="flex:1;border:1.5px dashed #C9CDD4;border-radius:14px;padding:12px 13px;background:#FCFCFB">
+          <div style="font-weight:700;font-size:13.5px;color:#473B86;margin-bottom:8px">MoE 短路分支（并行，克隆输入）</div>
+          <div class="node purple center" style="width:100%;padding:8px 10px"><div class="t" style="font-size:13px">Router</div><div class="d">对 768+128=896 打分 → top-12</div></div>
+          <div class="downwrap" style="padding:3px 0"><svg width="14" height="15" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+          <div class="node purple center" style="width:100%;padding:8px 10px"><div class="t" style="font-size:13px">768 路由专家（FFN 2,048）</div><div class="d">被选中者做 SwiGLU 计算</div></div>
+          <div class="downwrap" style="padding:3px 0"><svg width="14" height="15" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+          <div class="node amber center" style="width:100%;padding:8px 10px"><div class="t" style="font-size:13px">128 零计算专家（identity）</div><div class="d">被选中者走恒等直通，不做 FFN → 动态省算</div></div>
+          <div class="downwrap" style="padding:3px 0"><svg width="14" height="15" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+          <div class="node green center" style="width:100%;padding:8px 10px"><div class="t" style="font-size:13px">加权合并 ×9（routed_scaling）</div></div>
+        </div>
+      </div>
+      <div class="downwrap"><svg width="16" height="20" viewBox="0 0 16 20"><line x1="8" y1="0" x2="8" y2="13" stroke="currentColor" stroke-width="2"/><path d="M4 11 L8 18 L12 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node green" style="width:100%;padding:10px 14px"><div class="t" style="font-size:14px">⊕ 相加：dense_out + moe_out → 层输出 (N×8,192)</div><div class="d">MoE 短路让专家分支与稠密链并行、其 all-to-all 通信被稠密计算掩盖（ScMoE 的核心）</div></div>
+    </div>
+  </div>
+
+  <div class="note">★ 层内两次 MLA 注意力（attn0/attn1）共享同一套 LSA 稀疏索引；<b>每 2 层</b>（cli_factor=2）再复用一次（CLI）。每 token 从 768 路由专家里选中的部分做 FFN、选中零计算专家的部分走恒等 → <b>激活参数随 token 动态变化，均值 ≈ 48B / 1.6T</b>。维度：<code>num_layers 38 · hidden 8192 · heads 64 · n_routed 768 · zero 128 · top-12 · vocab 163840</code>（config.json）。</div>
+  <div class="legend">
+    <span><span class="dot" style="background:#E9F2FC;border-color:#6296D4"></span>注意力/稠密 FFN</span>
+    <span><span class="dot" style="background:#EEEAF8;border-color:#8E7DCB"></span>MoE/路由专家</span>
+    <span><span class="dot" style="background:#E6F4EC;border-color:#5BAE80"></span>输出/合并/残差</span>
+    <span><span class="dot" style="background:#FBF0E1;border-color:#DBA059"></span>N-gram/零计算专家/MTP</span>
+    <span><span class="dot" style="background:#EEF1F4;border-color:#A7AEB8"></span>Norm/输入</span>
+  </div>
+</div>
+
+<!-- ============ FIG 2: N-gram Embedding data flow ============ -->
+<div class="diagram" data-name="longcat2_arch_fig2">
+  <div class="dg-title">N-gram Embedding 数据流（每个位置）</div>
+  <div class="dg-sub">源：<code>n_gram_embedding.py</code>（forward，line 134-175）+ config <code>oe_neighbor_num 5 · oe_split_num 4</code>。与 MoE 正交的稀疏「哈希查表」维度，135B 参数</div>
+
+  <div class="node slate" style="width:100%;max-width:1120px"><div class="t">当前位置 token 及其前文（用于构造 n-gram）</div></div>
+  <div class="downwrap"><svg width="16" height="20" viewBox="0 0 16 20"><line x1="8" y1="0" x2="8" y2="13" stroke="currentColor" stroke-width="2"/><path d="M4 11 L8 18 L12 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="row" style="gap:14px;align-items:stretch">
+    <div class="node blue" style="width:250px"><div class="t">Base 词嵌入</div><div class="d">word_embeder(token)<br>→ e₀ : <b>8,192</b></div></div>
+    <div class="node amber" style="width:520px"><div class="t">16 路 n-gram 哈希嵌入　(n=2,3,4,5) × (k=4 split)</div>
+      <div class="d">① 多项式滚动哈希：id = Σ tokenδ·vocabᵟ mod m<sub>n,k</sub>（compute_n_gram_ids）<br>② oe_embeder 查表 → 每路 <b>512</b> 维（= 8192 / 16）<br>③ oe_projection 逐路投影回 <b>8,192</b> → e₁ … e₁₆</div></div>
+  </div>
+  <div class="downwrap"><svg width="16" height="20" viewBox="0 0 16 20"><line x1="8" y1="0" x2="8" y2="13" stroke="currentColor" stroke-width="2"/><path d="M4 11 L8 18 L12 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+  <div class="node green" style="width:100%;max-width:1120px"><div class="t">平均：mean(e₀, e₁ … e₁₆) 共 17 项 → 最终 embedding <b>8,192</b></div>
+    <div class="d">哈希查表几乎不增 FLOPs；把「多 token 组合」信息直接注入输入嵌入。参数 135B 主要活在 oe_embeder 哈希表（每 (n,k) 表 ≈ m 项、m≈vocab×100）</div></div>
+
+  <div class="note">「MoE 稀疏度已过甜点区」→ 与其继续堆专家，不如在<b>与 MoE 正交的稀疏维</b>（哈希嵌入）廉价扩参；收益「远超同等规模纯 MoE」（README / blog）。承袭自 LongCat-Flash-Lite。</div>
+</div>
+
+<!-- ============ FIG 3: MLA + LSA (SI/CLI) data flow ============ -->
+<div class="diagram" data-name="longcat2_arch_fig3">
+  <div class="dg-title">MLA 注意力 + LongCat 稀疏注意力（LSA）数据流</div>
+  <div class="dg-sub">源：config <code>attention_method MLA · index_*</code> + <code>nsa_indexer.py</code>（SI: line 493/539-559）。LSA = MLA 骨干 + DSA 式稀疏索引器（改进 DeepSeek-V3.2 Lightning Indexer）</div>
+
+  <div style="display:flex;gap:16px;align-items:stretch">
+    <!-- MLA compression -->
+    <div style="flex:1;border:1.5px dashed #C9CDD4;border-radius:14px;padding:13px 14px;background:#FCFCFB">
+      <div style="font-weight:700;font-size:14px;color:#1E4E79;margin-bottom:9px">① MLA 低秩压缩（省 KV cache）</div>
+      <div class="node slate" style="width:100%;padding:8px 12px"><div class="t" style="font-size:13.5px">hidden N×8,192</div></div>
+      <div class="downwrap" style="padding:3px 0"><svg width="14" height="15" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node blue" style="width:100%;padding:9px 12px"><div class="t" style="font-size:13.5px">Q 低秩：q_lora 1,536 ↓↑</div><div class="d">64 heads · 每头 qk = 128 nope + 64 rope = 192</div></div>
+      <div class="downwrap" style="padding:3px 0"><svg width="14" height="15" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node blue" style="width:100%;padding:9px 12px"><div class="t" style="font-size:13.5px">KV 低秩 latent：kv_lora 512 + rope 64</div><div class="d">KV cache 每 token 仅存 <b>576</b> 维（512+64）· v_head_dim 128</div></div>
+    </div>
+
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+    <!-- LSA indexer -->
+    <div style="flex:1.25;border:1.5px dashed #C9CDD4;border-radius:14px;padding:13px 14px;background:#FCFCFB">
+      <div style="font-weight:700;font-size:14px;color:#8A581A;margin-bottom:9px">② LSA 稀疏索引器（选 KV 预算 2,048）</div>
+      <div class="node amber" style="width:100%;padding:9px 12px"><div class="t" style="font-size:13.5px">轻量 Indexer 打分</div><div class="d">index 32 heads × dim 128 · 为每个 query 给全体 KV 打分</div></div>
+      <div class="downwrap" style="padding:3px 0"><svg width="14" height="15" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node green" style="width:100%;padding:9px 12px"><div class="t" style="font-size:13.5px">SI：强制保留 + 动态选（合计 top-2,048）</div><div class="d">恒保留 16 sink + 1,024 local（连续 ≈ 半预算）；其余 ≈ 1,008 动态选（block 对齐、coalesced）</div></div>
+      <div class="downwrap" style="padding:3px 0"><svg width="14" height="15" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node blue" style="width:100%;padding:9px 12px"><div class="t" style="font-size:13.5px">在选中的 2,048 个 KV 上算稀疏注意力 → o_proj → ⊕ 残差</div></div>
+    </div>
+  </div>
+
+  <div class="note"><b>CLI</b>：索引一次算好后，本层 attn0/attn1 共用，且<b>每 2 层</b>（cli_factor=2）复用一次、3 个 MTP 草稿步共用一次 —— 复用的是<b>索引集合（缓存）</b>，不是注意力结果，每层仍用自己的 KV 算 Attn。<b>HI</b>（块级粗筛→细选的两级索引）是训练-free、用于超长任务；SGLang 推理「for simplicity」暂未实现。KV cache 推理为 bf16、权重为 FP8（LongCat-2.0-FP8）。</div>
+</div>
+
+</body></html>

@@ -20,7 +20,7 @@
 
 ## 关联域
 
-- [[01_architecture/index]] — 基础架构（Transformer, 缩放定律）
-- [[03_alignment/index]] — 对齐方法（RLHF, DPO, GRPO）
-- [[06_infra/megatron-lm/index]] — Megatron-LM 训练基础设施
-- [[torch_compile/index]] — PyTorch 编译栈
+- [[01_theory/01_models/index|模型家族]] — 基础架构（Transformer, 缩放定律）
+- [[01_theory/04_posttraining/index|对齐/后训练]] — 对齐方法（RLHF, DPO, GRPO）
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM]] — Megatron-LM 训练基础设施
+- [[02_engineering/01_ai_frameworks/index|AI 框架]] — PyTorch 编译栈

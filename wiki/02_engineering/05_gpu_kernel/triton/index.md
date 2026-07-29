@@ -79,8 +79,8 @@ python -c "import triton; print(triton.__version__)"   # 本系列基线 3.8.0
 - [[gpu_kernel_guide]] — GPU/NPU Kernel 工程总览（CUDA thread-level 视角、Tensor Core、NPU 差异）；与本系列**互补**：那页讲 CUDA 手写，本系列讲 Triton 自动化
 - [[triton_vs_mlir_backend_analysis]] — Triton 作为 `torch.compile` 后端的编译流水线（FX→Inductor IR→Triton→PTX）
 - [[inductor_codegen_analysis]] — TorchInductor 如何**自动生成** Triton kernel（你手写的，编译器也在生成）
-- [[../01_ai_frameworks/index]] — PyTorch 编译栈
-- [[../03_infer_frameworks/index]] — 推理框架（FlashAttention 等 Triton kernel 是性能关键）
+- [[../../01_ai_frameworks/index]] — PyTorch 编译栈
+- [[../../03_infer_frameworks/index]] — 推理框架（FlashAttention 等 Triton kernel 是性能关键）
 
 ---
 

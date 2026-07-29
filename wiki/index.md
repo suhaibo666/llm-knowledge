@@ -1,58 +1,12 @@
 # LLM Knowledge Wiki — 知识库总索引
 
-> 最后更新: 2026-07-27
+> 最后更新: 2026-07-29
 
 ---
 
 ## 目录结构
 
-```
-wiki/
-├── index.md                           # ← 本文件
-├── changelog.md                       # 变更日志
-├── 01_theory/                         # 理论研究
-│   ├── 01_models/                     # 模型架构 + 模型家族
-│   │   ├── index.md
-│   │   ├── deepseek/
-│   │   ├── moonshot_kimi/
-│   │   └── zhipu_glm/
-│   ├── 02_pretraining/                # 预训练技术
-│   ├── 03_sft/                        # SFT + 低参微调
-│   ├── 04_posttraining/               # 后训练对齐 (RLHF/DPO/GRPO)
-│   └── 05_inference/                  # 推理技术 (CoT/RAG/Agent)
-├── 02_engineering/                    # 工程实现
-│   ├── 01_ai_frameworks/              # AI框架 (PyTorch compile)
-│   │   ├── cudagraphs/
-│   │   ├── inductor/
-│   │   └── mlir/
-│   ├── 02_train_frameworks/           # 训练框架 (Megatron-LM / torchtitan / MindFormers / MindSpeed)
-│   │   ├── megatron-lm/
-│   │   ├── torchtitan/
-│   │   ├── mindformers/               # MoE 专家并行(PyNative + Graph)
-│   │   └── mindspeed/                 # 昇腾 MindSpeed 训练加速特性(并行/掩盖/内存/亲和)
-│   ├── 03_infer_frameworks/           # 推理框架
-│   │   └── vllm/                       # vLLM V1 引擎(12 篇 + index)
-│   ├── 04_posttrain_frameworks/       # 后训练框架 (verl / RLHF Infra)
-│   │   └── verl/                      # verl (HybridFlow) 源码级分析
-│   ├── 05_gpu_kernel/                 # GPU/NPU Kernel 工程 (含 triton/ 学习路线)
-│   ├── 06_auto_parallel/             # 自动并行策略搜索(综述罗盘)
-│   └── 07_training_reliability/       # 万卡训练确定性与可靠性(9 问题域·多来源综述)
-└── 03_posttraining/                   # 后训练纵向学习域 (算法 + Infra + 工业源码 + CUDA/Ascend)
-    ├── index.md                       # 领域入口与 S00–S05 阶段
-    ├── 00_posttraining_source_reading_guide.md
-    ├── 01_posttraining_frontier_map_analysis.md
-    ├── 02_reasoning_rl_algorithm_evolution_analysis.md
-    ├── 03_agentic_rl_algorithm_analysis.md
-    ├── 04_on_policy_off_policy_staleness_analysis.md
-    ├── 05_posttraining_infra_mechanism_analysis.md
-    ├── 06_framework_comparison.md
-    ├── 07_verl_end_to_end_iteration_analysis.md
-    ├── 08_slime_architecture_analysis.md
-    ├── 09_areal_async_architecture_analysis.md
-    ├── 10_roll_strategy_and_ascend_analysis.md
-    ├── 11_cuda_ascend_posttraining_stack_comparison.md
-    └── 12_kimi_k3_posttraining_case_study_analysis.md
-```
+目录结构以文件系统与各域 index 为准；本索引只维护下方领域总览。
 
 ---
 
@@ -62,37 +16,42 @@ wiki/
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| 模型 | [[01_theory/01_models/index]] | 31 | 活跃 |
-| └─ DeepSeek | [[01_theory/01_models/deepseek/index]] | 19 | 活跃 |
-| └─ Kimi | [[01_theory/01_models/moonshot_kimi/index]] | 6 | 活跃 |
-| └─ GLM | [[01_theory/01_models/zhipu_glm/index]] | 3 | 活跃 |
+| 模型 | [[01_theory/01_models/index]] | 56 | 活跃 |
+| └─ DeepSeek | [[01_theory/01_models/deepseek/index]] | 21 | 活跃 |
+| └─ Kimi | [[01_theory/01_models/moonshot_kimi/index]] | 13 | 活跃 |
+| └─ GLM | [[01_theory/01_models/zhipu_glm/index]] | 10 | 活跃 |
 | └─ LongCat (美团) | [[01_theory/01_models/meituan_longcat/index]] | 3 | 活跃 |
 | 预训练 | [[01_theory/02_pretraining/index]] | 7 | 活跃 |
-| SFT & 低参微调 | [[01_theory/03_sft/index]] | 0 | 待建设 |
-| 后训练对齐 | [[01_theory/04_posttraining/index]] | 14 | 活跃 |
+| SFT & 低参微调 | [[01_theory/03_sft/index]] | 1 | 待建设 |
+| 后训练对齐 | [[01_theory/04_posttraining/index]] | 15 | 活跃 |
 | 推理技术 | [[01_theory/05_inference/index]] | 1 | 待建设 |
+| 分布式并行理论 | [[01_theory/06_distributed_parallelism/index]] | 8 | 活跃 |
+
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-07-29。
 
 ### 02 工程实现
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| AI框架 | [[02_engineering/01_ai_frameworks/index]] | 45 | 活跃 |
-| └─ TorchInductor | [[02_engineering/01_ai_frameworks/04_inductor/index]] | 21 | 活跃 |
-| └─ 运行时图(CUDA/NPU) | [[02_engineering/01_ai_frameworks/06_graphs/index]] | 10 | 活跃 |
-| └─ Codegen 后端(MLIR) | [[02_engineering/01_ai_frameworks/05_codegen_backends/mlir/index]] | 4 | 活跃 |
-| 训练框架 | [[02_engineering/02_train_frameworks/index]] | 8 | 活跃 |
-| └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 6 | 活跃 |
-| └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 7 | 活跃 |
-| └─ MindFormers | [[02_engineering/02_train_frameworks/mindformers/index]] | 2 | 活跃 |
+| AI框架 | [[02_engineering/01_ai_frameworks/index]] | 178 | 活跃 |
+| └─ TorchInductor | [[02_engineering/01_ai_frameworks/04_inductor/index]] | 39 | 活跃 |
+| └─ 运行时图(CUDA/NPU) | [[02_engineering/01_ai_frameworks/06_graphs/index]] | 14 | 活跃 |
+| └─ Codegen 后端(MLIR) | [[02_engineering/01_ai_frameworks/05_codegen_backends/mlir/index]] | 8 | 活跃 |
+| 训练框架 | [[02_engineering/02_train_frameworks/index]] | 60 | 活跃 |
+| └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 30 | 活跃 |
+| └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 13 | 活跃 |
+| └─ MindFormers | [[02_engineering/02_train_frameworks/mindformers/index]] | 3 | 活跃 |
 | └─ MindSpeed | [[02_engineering/02_train_frameworks/mindspeed/index]] | 6 | 活跃 |
-| 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 14 | 活跃 |
+| 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 20 | 活跃 |
 | └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index]] | 13 | 活跃 |
-| 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 12 | 活跃 |
-| └─ verl (HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index]] | 9 | 活跃 |
-| GPU Kernel | [[02_engineering/05_gpu_kernel/index]] | 14 | 活跃 |
+| 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 14 | 活跃 |
+| └─ verl (HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index]] | 10 | 活跃 |
+| GPU Kernel | [[02_engineering/05_gpu_kernel/index]] | 15 | 活跃 |
 | └─ Triton 学习路线 | [[02_engineering/05_gpu_kernel/triton/index]] | 9 | 活跃 |
-| 自动并行 | [[02_engineering/06_auto_parallel/index]] | 1 | 活跃 |
+| 自动并行 | [[02_engineering/06_auto_parallel/index]] | 2 | 活跃 |
 | 训练可靠性 | [[02_engineering/07_training_reliability/index]] | 4 | 活跃 |
+
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-07-29。
 
 ### 03 后训练纵向学习域
 

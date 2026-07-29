@@ -226,8 +226,8 @@ K3 没有把 partial rollout 换成一套完全异步算法：它仍按迭代和
 
 以下 raw 文件尚未摄入到 wiki：
 
-- [[Kimi VL]] (2504.07491) — 视觉语言模型技术报告
-- [[Kimi Audio]] (2504.18425) — 音频模型技术报告
+- Kimi VL(2504.07491,待摄入) — 视觉语言模型技术报告
+- Kimi Audio(2504.18425,待摄入) — 音频模型技术报告
 
 仍待补齐或独立摄入的 Moonshot AI 材料：
 - Kimi-Dev (2509.23045) — Agentless Training

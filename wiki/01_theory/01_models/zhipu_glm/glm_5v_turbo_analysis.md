@@ -280,4 +280,4 @@ GUI Agent 分层任务层次:
 - [[01_theory/index]]
 - [[zhipu_glm/index]]
 - [[zhipu_glm/glm_5_analysis]]
-- [[01_theory/01_models]]
+- [[01_theory/01_models/index|01_theory/01_models]]

@@ -74,8 +74,8 @@ cache位于既有阶段的入口/出口，不是新的IR阶段。调试时从最
 复核时，历史材料的 4,155 个结构单元中已有 1,602 个写入精确 destination，但它们全部仍是
 `unresolved / retain-quarantined`；另有 2,553 个结构单元尚无决策，其中包含全部 2,160 个
 claim candidate。也就是说，旧的 `TBD destination` 统计已被更精确的 destination 取代，
-但语义迁移仍未闭环。最终状态见
-`docs/audits/pytorch_graph_series/2026-07-26/design_conformance_review.md`。
+但语义迁移仍未闭环。最终状态原见
+`docs/audits/pytorch_graph_series/2026-07-26/design_conformance_review.md`；该目录属审计流水线中间产物，已在 kb-reorg 清理中移出工作区（可经 git 历史追溯，删除前末次提交 `1ebafb5`），当前 checkout 不再包含该路径。
 
 ## Related Pages
 

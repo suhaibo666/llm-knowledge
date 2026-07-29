@@ -7,7 +7,7 @@
 
 ## 来源与定位
 
-- **本簇原始素材**：一份多来源综述深度分析文档 `raw/02_engineering/wanka_determinism_reliability_deep_analysis.md`（用户提供，2026-07 摄入）。它综合了 **Gemini 1.0/2.5、Llama 3、ByteRobust(SOSP'25)、MegaScale(NSDI'24)、Aegis(NSDI'25)、C4(HPCA'25)、DeepSeek-V3(ISCA'25)、Thinking Machines「Defeating Nondeterminism」、Anthropic 事故 postmortem、华为 CloudMatrix、美团 LongCat-2.0 博客**，以及 Megatron-LM / NVRx / torch_npu 等代码库的公开实现。
+- **本簇原始素材**：一份多来源综述深度分析文档 `docs/research/wanka_determinism_reliability_deep_analysis.md`（用户提供，2026-07 摄入）。它综合了 **Gemini 1.0/2.5、Llama 3、ByteRobust(SOSP'25)、MegaScale(NSDI'24)、Aegis(NSDI'25)、C4(HPCA'25)、DeepSeek-V3(ISCA'25)、Thinking Machines「Defeating Nondeterminism」、Anthropic 事故 postmortem、华为 CloudMatrix、美团 LongCat-2.0 博客**，以及 Megatron-LM / NVRx / torch_npu 等代码库的公开实现。
 - **保真度说明**：本簇是对上述**二手综述**的结构化摄入——机制、数字、命令、代码均**忠实于原文**；原文引用的一手来源见其[附录](#附主要一手来源)。与本库已有一手页（LongCat / 低精度 / RL 精度）冲突或互补处已交叉链接。
 - **为什么摄入到这里**：由「LongCat 的稳定性训练」延伸——LongCat（确定性算子、二叉树分段累加、bit-flip 检测、链路无感切流）是全篇的一条运行主线，但问题域本身是引擎无关的通用工程知识，故独立成簇，与 [[longcat_2_analysis]]/[[longcat_flash_analysis]] 互链。
 

@@ -52,7 +52,9 @@ def test_target_of_variants():
     assert target_of("alpha|显示名") == "alpha"
     assert target_of("alpha#章节") == "alpha"
     assert target_of("dir/alpha.md") == "dir/alpha"
-    # 末尾反斜杠是本库实际存在的坏链形态,规范化后仍应无法解析(报 broken)
+    # Obsidian 表格内的转义别名 [[a\|label]] 等价于 [[a|label]](合法语法,不是坏链)
+    assert target_of("alpha\\|标签") == "alpha"
+    # 真正的孤立末尾反斜杠仍是畸形链接(解析后含 /,会报 broken)
     assert "/" in target_of("alpha\\")
 
 
@@ -109,6 +111,29 @@ def test_orphan(tmp_path):
     })
     r, _ = scan(wiki)
     assert r["orphans"] == ["charlie.md"]
+
+
+def test_main_exit_codes(tmp_path, monkeypatch):
+    import check_links
+    bad = make(tmp_path / "w1", {"alpha.md": "[[missing]]", "index.md": "[[alpha]]"})
+    monkeypatch.setattr("sys.argv", ["check_links.py", "--wiki", str(bad), "--strict"])
+    assert check_links.main() == 1
+    good = make(tmp_path / "w2", {"alpha.md": "", "index.md": "[[alpha]]"})
+    monkeypatch.setattr("sys.argv", ["check_links.py", "--wiki", str(good), "--strict"])
+    assert check_links.main() == 0
+    monkeypatch.setattr("sys.argv", ["check_links.py", "--wiki", str(tmp_path / "nope"), "--strict"])
+    assert check_links.main() == 2
+
+
+def test_orphan_rescued_by_index(tmp_path):
+    wiki = make(tmp_path, {
+        "alpha.md": "",
+        "charlie_page.md": "",
+        "index.md": "- charlie_page 相关内容(提及但未链接)",
+    })
+    r, _ = scan(wiki)
+    assert "charlie_page.md" not in r["orphans"]
+    assert "alpha.md" in r["orphans"]
 ```
 
 - [ ] **Step 3: 运行测试确认失败**
@@ -165,7 +190,8 @@ def visible_text(md: str) -> str:
 
 
 def target_of(raw: str) -> str:
-    """[[a/b#sec|label]] -> a/b;反斜杠归一为 /;去 .md 后缀。"""
+    """[[a/b#sec|label]] -> a/b;表格转义别名 [[a\\|label]] 视同 [[a|label]];反斜杠归一为 /;去 .md 后缀。"""
+    raw = raw.replace("\\|", "|")
     t = raw.split("|", 1)[0].split("#", 1)[0].strip().replace("\\", "/")
     if t.lower().endswith(".md"):
         t = t[:-3]
@@ -226,13 +252,24 @@ def scan(wiki: Path):
 
 
 def main() -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--wiki", default="wiki")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--strict", action="store_true")
     a = ap.parse_args()
 
-    report, n_pages = scan(Path(a.wiki))
+    wiki = Path(a.wiki)
+    if not wiki.is_dir():
+        print(f"error: wiki dir not found: {wiki}", file=sys.stderr)
+        return 2
+    report, n_pages = scan(wiki)
+    if n_pages == 0:
+        print(f"error: no md pages under {wiki}", file=sys.stderr)
+        return 2
     if a.json:
         print(json.dumps({"pages": n_pages, **report}, ensure_ascii=False, indent=1))
     else:
@@ -257,7 +294,7 @@ if __name__ == "__main__":
 cd tools && python -m pytest test_check_links.py -q
 ```
 
-Expected: `6 passed`
+Expected: `8 passed`
 
 - [ ] **Step 6: 跑真实 wiki 存基线**
 
@@ -267,7 +304,7 @@ python tools/check_links.py
 python tools/check_links.py --json > docs/research/2026-07-29-linkcheck-baseline.json
 ```
 
-Expected 量级(以实际输出为准并记录):pages≈400、broken≈160、bare_index≈71、ambiguous 数百(裸基名撞 index 等)、orphans 个位数。
+Expected 量级(以实际输出为准并记录):pages≈402、broken≈138(盘点值 160 含 8 处 `\|` 表格别名误报与代码块内误报,本工具口径更准)、bare_index≈70、ambiguous≈70、orphans 个位数。stdout 已内置 UTF-8,重定向无编码风险。
 
 - [ ] **Step 7: Commit**
 
@@ -452,7 +489,7 @@ python tools/check_links.py --json > /tmp/lc.json   # Windows 下用 scratchpad 
 
 - [ ] **Step 2: 按四类逐处修**(每处修法固定,不改语义)
 
-1. **末尾反斜杠(≈9 处)**:`00_posttraining_source_reading_guide.md` 的 5 处 `[[03_posttraining/12_kimi...analysis\]]`、`megatron-lm/index.md` 的 3 处 `[[../...\]]` → 删掉链接末尾的 `\`。
+1. ~~末尾反斜杠~~ **已撤销**:盘点误诊——那些 `[[...\|label]]` 是 Obsidian 表格内合法的转义别名语法,检查器已支持(fix commit),**不要改动这些链接**(删 `\` 反而会破坏表格)。只需确认 --json 清单里它们不再出现;若个别真 broken 再按实际目标修。
 2. **示例文本被当链接(≈16 处)**:changelog.md 里的 `[[wiki link]]`/`[[link]]`/`[[wiki]]`/`[[SUMMARY]]`/`[[*]]`/`[[*.html]]`/`[[maybe_unused]]` 等、`megatron_moe_training_optimization_report.md` 的 8 处 `[[link]]`、`deepseek_v4_architecture_diagrams.md` 的 4 处 `[[wiki link]]` → 整个示例包进反引号(`` `[[wiki link]]` ``)。
 3. **代码签名被误解析(3 处)**:`dynamo_pass_methodology.md`(`fx.GraphModule, list[Tensor`)、`scheduler_analysis.md`(`list[BaseSchedulerNode`)、`mlir_core_concepts.md`(`0, 1, 2, 3`)→ 找到原句,把整个类型签名/下标表达式包进反引号。
 4. **乱码链接(≈6 处,changelog.md)**:打开命中行看上下文;能从上下文推出原意就恢复为纯文本,推不出就替换为 `(原文编码损坏,见 git 历史)`。
@@ -587,9 +624,9 @@ git add tools/ && git commit -m "tools: check in figure sources and render scrip
 - [ ] **Step 1: 全量验收**
 
 ```bash
-python -m pytest tools/test_check_links.py -q          # 6 passed
+python -m pytest tools/test_check_links.py -q          # 8 passed
 python tools/check_links.py --json > docs/research/2026-07-29-linkcheck-post-p1p2.json
-python tools/check_links.py                            # broken ≤ 5,较基线 -155 左右
+python tools/check_links.py                            # broken ≤ 5,较基线(138)约 -133
 git add docs/research/2026-07-29-linkcheck-post-p1p2.json
 git commit -m "docs: record post-P1/P2 link-check stats"
 git status --short                                     # 干净

@@ -17,5 +17,5 @@
 
 ## 关联域
 
-- [[04_reasoning_and_retrieval/index]] — 推理与检索
-- [[03_alignment/index]] — 对齐方法（工具使用 RLHF）
+- 推理与检索（原 04_reasoning_and_retrieval 目录的 CoT/推理主题现已并入本域自身，无独立页面）
+- [[01_theory/04_posttraining/index|对齐/后训练]] — 对齐方法（工具使用 RLHF）

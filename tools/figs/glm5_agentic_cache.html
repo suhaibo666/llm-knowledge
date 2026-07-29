@@ -1,0 +1,87 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css"></head><body>
+
+<!-- glm5_agentic_rl_deepdive_fig3 : DP-aware routing, KV prefix reuse -->
+<div class="diagram" data-name="glm5_agentic_rl_deepdive_fig3">
+  <div class="dg-title">DP-aware routing：把同一 rollout 钉在同一 DP rank 上，复用 KV 前缀</div>
+  <div class="dg-sub">多轮 agent 反复回到同一前缀；路由亲和让 prefill 只为"新增 token"付费（§4.1.2, p17）</div>
+
+  <div style="display:flex;gap:26px;align-items:flex-start">
+    <!-- naive -->
+    <div style="width:432px">
+      <div class="chip rose-chip" style="background:#FBE9EC;color:#8A2A3C">朴素：无亲和路由 · prefill ∝ O(总上下文)</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="row"><div class="node slate" style="width:96px"><div class="t" style="font-size:14px">Turn 1</div></div>
+          <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+          <div class="node rose" style="width:230px"><div class="t" style="font-size:14px">DP rank A</div><div class="d">重算整段前缀 prefill</div></div></div>
+        <div class="row"><div class="node slate" style="width:96px"><div class="t" style="font-size:14px">Turn 2</div></div>
+          <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+          <div class="node rose" style="width:230px"><div class="t" style="font-size:14px">DP rank B</div><div class="d">cache miss · 重算整段前缀</div></div></div>
+        <div class="row"><div class="node slate" style="width:96px"><div class="t" style="font-size:14px">Turn 3</div></div>
+          <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+          <div class="node rose" style="width:230px"><div class="t" style="font-size:14px">DP rank C</div><div class="d">cache miss · 重算整段前缀</div></div></div>
+      </div>
+    </div>
+
+    <!-- dp-aware -->
+    <div style="width:452px">
+      <div class="chip" style="background:#E6F4EC;color:#1F6B41">DP-aware：一致性哈希亲和 · prefill ∝ O(增量)</div>
+      <div class="row" style="align-items:center">
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <div class="node slate" style="width:96px;padding:7px 12px"><div class="t" style="font-size:13.5px">Turn 1</div></div>
+          <div class="node slate" style="width:96px;padding:7px 12px"><div class="t" style="font-size:13.5px">Turn 2</div></div>
+          <div class="node slate" style="width:96px;padding:7px 12px"><div class="t" style="font-size:13.5px">Turn 3</div></div>
+        </div>
+        <div class="arrow lbl"><span class="al">一致性哈希<br>rollout ID→固定 rank</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+        <div class="node green" style="width:214px"><div class="t" style="font-size:14px">同一 DP rank A</div><div class="d">复用本地 KV 前缀<br>只 prefill 新增 token</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">三轮请求共享同一前缀：朴素路由每轮落到不同 rank → cache miss → 重算 O(总上下文)；DP-aware 用<b>一致性哈希</b>把 rollout 钉死到同一 rank、复用其本地 KV，prefill 只付<b>增量 token</b> O(Δ) 的钱，且<b>不需跨 rank 同步 KV</b>。叠加哈希空间上的轻量负载再平衡防倾斜；与 §3.6.2 的 DP-attention「不跨 rank 复制 KV」是同一思想的路由层版本（§4.1.2, p17）。</div>
+</div>
+
+<!-- glm5_agentic_rl_deepdive_fig4 : PD disaggregation timeline -->
+<div class="diagram" data-name="glm5_agentic_rl_deepdive_fig4">
+  <div class="dg-title">PD 解耦：让重 prefill 不抢占进行中的 decode</div>
+  <div class="dg-sub">多轮长前缀 prefill 频繁；混部时一次重 prefill 会打断 decode、拉长尾延迟（§3.6.2, p15）</div>
+
+  <div style="width:880px">
+    <div class="chip" style="background:#FBE9EC;color:#8A2A3C">朴素：PD 混部（同一资源）—— decode 在 prefill 期间停滞</div>
+    <div class="tl">
+      <div class="tl-row"><div class="tl-lab">共享资源</div>
+        <div class="tl-track slim">
+          <div class="tl-bar tl-c" style="left:0;width:14%;top:3px;height:18px">d1</div>
+          <div class="tl-bar tl-c" style="left:15%;width:12%;top:3px;height:18px">d2</div>
+          <div class="tl-bar tl-m" style="left:28%;width:30%;top:3px;height:18px">重 prefill（抢占）</div>
+          <div class="tl-bar tl-c" style="left:59%;width:13%;top:3px;height:18px">d3</div>
+          <div class="tl-bar tl-c" style="left:73%;width:13%;top:3px;height:18px">d4</div>
+          <div class="tl-end" style="left:86%;height:28px;top:-2px"></div>
+        </div></div>
+    </div>
+
+    <div class="chip" style="margin-top:16px;background:#E6F4EC;color:#1F6B41">GLM-5：PD 解耦（专属资源）—— decode 连续推进</div>
+    <div class="tl">
+      <div class="tl-row"><div class="tl-lab">prefill 资源</div>
+        <div class="tl-track slim"><div class="tl-bar tl-m" style="left:28%;width:30%;top:3px;height:18px">重 prefill</div></div></div>
+      <div class="tl-row"><div class="tl-lab">decode 资源</div>
+        <div class="tl-track slim">
+          <div class="tl-bar tl-c" style="left:0;width:16%;top:3px;height:18px">d1</div>
+          <div class="tl-bar tl-c" style="left:17%;width:16%;top:3px;height:18px">d2</div>
+          <div class="tl-bar tl-c" style="left:34%;width:16%;top:3px;height:18px">d3</div>
+          <div class="tl-bar tl-c" style="left:51%;width:16%;top:3px;height:18px">d4</div>
+          <div class="tl-end" style="left:67%;height:28px;top:-2px"></div>
+        </div></div>
+      <div class="tl-row"><div class="tl-lab"></div><div class="tl-save">decode 不被打断 → 长尾样本持续推进、尾延迟下降</div></div>
+    </div>
+
+    <div class="legend">
+      <span><span class="dot" style="background:#6296D4;border-color:#6296D4;display:inline-block"></span>decode（逐 token）</span>
+      <span><span class="dot" style="background:#DBA059;border-color:#DBA059;display:inline-block"></span>prefill（长前缀）</span>
+      <span><span class="dot" style="border-color:#C3651F;background:#fff;display:inline-block"></span>该步完成时刻</span>
+    </div>
+    <div class="note">尾延迟两类来源：<b>排不上队</b>（由 no-queue 多节点 DP-attention 供足 KV 容量、且不跨 rank 复制 KV 解决）与 <b>被重 prefill 插队打断</b>（由 PD 解耦解决）。把 prefill 与 decode 放到各自专属资源后，decode 不再被抢占，多轮 agentic RL 的尾部表现显著改善（§3.6.2, p14–15）。</div>
+  </div>
+</div>
+
+</body></html>

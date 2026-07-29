@@ -81,6 +81,14 @@
 
 ---
 
+## Knowledge Gaps
+
+> 本节记录已确认在当前 wiki 中缺失的一手来源摄入项。按 CLAUDE.md 的 Query Workflow，这些缺口不应用推测填补；若日后摄入对应 raw 材料，应先建页再补链接。
+
+- scaling_laws_for_transfer_analysis — 待摄入(raw 有源)
+
+---
+
 ## 关联域
 
 - [[../02_pretraining/index]] — 预训练技术

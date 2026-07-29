@@ -1,0 +1,87 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css">
+<style>
+  .zrow{display:flex;gap:30px;align-items:flex-start;justify-content:center}
+  .zcol{display:flex;flex-direction:column;align-items:center;width:170px}
+  .zttl{font-size:14.5px;font-weight:700;color:#1F2430;margin-bottom:2px}
+  .zcut{font-size:11px;color:#8A8F98;margin-bottom:10px;height:28px;text-align:center;line-height:1.3}
+  .zbar{width:120px;display:flex;flex-direction:column;gap:2px}
+  .seg{width:100%;border-radius:4px;border:1.4px solid;display:flex;align-items:center;justify-content:center;
+    font-size:10.5px;font-weight:700;overflow:hidden}
+  .opt{background:#FBF0E1;border-color:#DBA059;color:#8A581A}
+  .grad{background:#E9F2FC;border-color:#6296D4;color:#1E4E79}
+  .par{background:#E6F4EC;border-color:#5BAE80;color:#1F6B41}
+  .sharded{border-style:dashed;opacity:.95}
+  .ztot{margin-top:10px;font-size:14px;font-weight:700;color:#473B86}
+  .zcomm{margin-top:4px;font-size:11.5px;padding:3px 10px;border-radius:999px;background:#EEF1F4;color:#3A434F;font-weight:600}
+  .zcomm.hi{background:#FBE9EC;color:#8A2A3C}
+</style></head><body>
+
+<div class="diagram" data-name="dp_zero_fig1">
+  <div class="dg-title">ZeRO：把 DP 冗余复制的 16Ψ 状态逐级切开（N=4 卡示意）</div>
+  <div class="dg-sub">每卡模型状态 = 参数 2Ψ + 梯度 2Ψ + 优化器态 12Ψ · 柱高 ∝ 显存 · 虚线段＝只存 1/N 分片 · 通信量以「每卡搬运 ∝Ψ」计</div>
+
+  <div class="zrow" style="width:1040px">
+    <!-- DP baseline -->
+    <div class="zcol">
+      <div class="zttl">DP（baseline）</div>
+      <div class="zcut">什么都不切<br>16Ψ 在每卡冗余复制</div>
+      <div class="zbar">
+        <div class="seg opt" style="height:108px">优化器态 12Ψ</div>
+        <div class="seg grad" style="height:18px">梯度 2Ψ</div>
+        <div class="seg par" style="height:18px">参数 2Ψ</div>
+      </div>
+      <div class="ztot">每卡 16Ψ</div>
+      <div class="zcomm">通信 ≈ 2Ψ（all-reduce）</div>
+    </div>
+
+    <!-- ZeRO-1 -->
+    <div class="zcol">
+      <div class="zttl">ZeRO-1</div>
+      <div class="zcut">切<b>优化器态</b><br>RS 梯度 + AG 参数</div>
+      <div class="zbar">
+        <div class="seg opt sharded" style="height:27px">优化器 12Ψ/N</div>
+        <div class="seg grad" style="height:18px">梯度 2Ψ</div>
+        <div class="seg par" style="height:18px">参数 2Ψ</div>
+      </div>
+      <div class="ztot">每卡 4Ψ + 12Ψ/N</div>
+      <div class="zcomm">通信 ≈ 2Ψ（同 DP·白捡）</div>
+    </div>
+
+    <!-- ZeRO-2 -->
+    <div class="zcol">
+      <div class="zttl">ZeRO-2</div>
+      <div class="zcut">再切<b>梯度</b><br>算完即 RS，不攒完整梯度</div>
+      <div class="zbar">
+        <div class="seg opt sharded" style="height:27px">优化器 12Ψ/N</div>
+        <div class="seg grad sharded" style="height:6px">梯度 2Ψ/N</div>
+        <div class="seg par" style="height:18px">参数 2Ψ</div>
+      </div>
+      <div class="ztot">每卡 2Ψ + 14Ψ/N</div>
+      <div class="zcomm">通信 ≈ 2Ψ（同 DP）</div>
+    </div>
+
+    <!-- ZeRO-3 -->
+    <div class="zcol">
+      <div class="zttl">ZeRO-3 ＝ FSDP</div>
+      <div class="zcut">再切<b>参数</b><br>用时 AG 拼回、用完即弃</div>
+      <div class="zbar">
+        <div class="seg opt sharded" style="height:27px">优化器 12Ψ/N</div>
+        <div class="seg grad sharded" style="height:6px">梯度 2Ψ/N</div>
+        <div class="seg par sharded" style="height:6px">参数 2Ψ/N</div>
+      </div>
+      <div class="ztot">每卡 16Ψ/N</div>
+      <div class="zcomm hi">通信 ≈ 3Ψ（多一次 AG）</div>
+    </div>
+  </div>
+
+  <div class="legend" style="margin-top:16px;justify-content:center">
+    <span><span class="dot" style="background:#DBA059;border-color:#DBA059"></span>优化器态 12Ψ（fp32 参数+m+v）</span>
+    <span><span class="dot" style="background:#6296D4;border-color:#6296D4"></span>梯度 2Ψ</span>
+    <span><span class="dot" style="background:#5BAE80;border-color:#5BAE80"></span>参数 2Ψ</span>
+    <span><span class="dot" style="border-style:dashed;background:#fff;border-color:#8A8F98"></span>只存 1/N 分片</span>
+  </div>
+  <div class="note" style="width:1000px"><b>读图</b>：从左到右逐级把状态切成 1/N（虚线段），每卡显存从 16Ψ 一路降到 16Ψ/N（N 大时<b>趋于零</b>）。<b>关键</b>：ZeRO-1/2 通信不增（RS+AG＝原 all-reduce），是<b>免费</b>省显存；ZeRO-3 因前/反向各要 all-gather 一次参数，多约 50% 通信，是<b>花钱</b>换极致省显存。显存够就停在 ZeRO-2，放不下才上 ZeRO-3/FSDP。</div>
+</div>
+
+</body></html>

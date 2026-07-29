@@ -1,0 +1,137 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css"></head><body>
+
+<!-- ============ FIG 1: overall training pipeline (paper Figure 5) ============ -->
+<div class="diagram" data-name="glm5_architecture_fig1">
+  <div class="dg-title">GLM-5 整体训练流水线</div>
+  <div class="dg-sub">Base Model（28.5T tokens）→ 渐进式后训练；对应论文 Figure 5（§1 / §2 / §3）</div>
+
+  <div class="chip">① Base Model 训练 · 28.5T tokens · 早期前置 code/reasoning</div>
+  <div class="row">
+    <div class="node blue" style="width:250px"><div class="t">Pre-Training</div>
+      <div class="d">27T 语料起步<br>Web / Code(+28%) / Math&amp;Science</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue" style="width:290px"><div class="t">Mid-Training</div>
+      <div class="d">上下文三段扩展<br>32K(1T) → 128K(500B) → 200K(50B)</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node green" style="width:300px"><div class="t">DSA 续训</div>
+      <div class="d">Dense warm-up → Sparse adaptation<br>把 MLA 基座转成稀疏注意力</div></div>
+  </div>
+
+  <div class="downwrap"><svg width="20" height="40" viewBox="0 0 20 40"><line x1="10" y1="0" x2="10" y2="32" stroke="currentColor" stroke-width="2"/><path d="M5 30 L10 38 L15 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="chip">② Post-Training · 渐进式对齐（顺序 RL + 蒸馏收尾）</div>
+  <div class="row">
+    <div class="node purple" style="width:188px"><div class="t">SFT</div>
+      <div class="d">3 种思考模式<br>202,752 上下文</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node purple" style="width:188px"><div class="t">Reasoning RL</div>
+      <div class="d">GRPO + IcePop<br>数学/科学/代码/TIR</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node purple" style="width:184px"><div class="t">Agentic RL</div>
+      <div class="d">全异步解耦<br>SWE/Terminal/Search</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node purple" style="width:170px"><div class="t">General RL</div>
+      <div class="d">三维目标<br>混合奖励</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:200px"><div class="t">On-Policy 跨阶段蒸馏</div>
+      <div class="d">收尾 · 防灾难性遗忘</div></div>
+  </div>
+
+  <div class="note">渐进式 RL 顺序优化不同目标会逐步侵蚀先前能力，故以<b>在线策略跨阶段蒸馏</b>作为最后一步把各阶段技能召回（§3.5）。</div>
+</div>
+
+<!-- ============ FIG 2: DSA two-stage continued pre-training ============ -->
+<div class="diagram" data-name="glm5_architecture_fig2">
+  <div class="dg-title">DSA 两阶段续训：从 dense 基座得到稀疏注意力</div>
+  <div class="dg-sub">"dense warm-up + sparse adaptation"，避免从头训练的天文成本（§2.1.1, p5–6）</div>
+
+  <div class="row">
+    <div class="node slate" style="width:210px"><div class="t">Dense MLA 基座</div>
+      <div class="d">mid-training 末尾<br>O(L²) 全注意力</div></div>
+    <div class="arrow lbl"><span class="al">warm-up</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue" style="width:268px"><div class="t">① Dense Warm-up</div>
+      <div class="d">1000 步 · 仅训 lightning indexer<br>14×202,752 tok/步 · LR 5e-3<br>base 权重冻结</div></div>
+    <div class="arrow lbl"><span class="al">joint</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node green" style="width:262px"><div class="t">② Sparse Adaptation</div>
+      <div class="d">20B tokens · 沿用 mid-training<br>数据与超参 · model+indexer 联训</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:206px"><div class="t">DSA 模型</div>
+      <div class="d">≈ MLA 长上下文精度<br>注意力计算 ↓1.5–2×</div></div>
+  </div>
+
+  <div class="note">训练预算仅 <b>20B tokens</b> 就足以追平原 MLA —— 对比 DeepSeek-V3.2 的 <b>943.7B</b>；indexer 按内容选 top-k，是<b>构造上无损</b>、可应用于所有层的高效注意力（§2.1.1–2.1.2）。</div>
+</div>
+
+<!-- ============ FIG 3: complete model architecture (GlmMoeDsa, from released config) ============ -->
+<div class="diagram" data-name="glm5_architecture_fig3">
+  <div class="dg-title">GLM-5 完整模型结构（GlmMoeDsa）</div>
+  <div class="dg-sub">左：宏观层栈 · 右：单个 MoE 解码层放大；维度取自 released <code>zai-org/GLM-5</code> config，机制见 §2.1</div>
+
+  <div style="display:flex;align-items:stretch;gap:0">
+
+    <!-- ===== Col A: macro stack ===== -->
+    <div style="width:322px;display:flex;flex-direction:column">
+      <div class="node slate" style="width:100%"><div class="t">输入 token ids</div></div>
+      <div style="display:flex;justify-content:center;color:#9AA1AC;padding:2px 0"><svg width="16" height="20" viewBox="0 0 16 20"><line x1="8" y1="0" x2="8" y2="13" stroke="currentColor" stroke-width="2"/><path d="M4 11 L8 18 L12 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node blue" style="width:100%"><div class="t">Embedding</div><div class="d">vocab 154,880 × hidden 6,144</div></div>
+      <div style="display:flex;justify-content:center;color:#9AA1AC;padding:2px 0"><svg width="16" height="20" viewBox="0 0 16 20"><line x1="8" y1="0" x2="8" y2="13" stroke="currentColor" stroke-width="2"/><path d="M4 11 L8 18 L12 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node blue" style="width:100%"><div class="t">Dense 解码层 × 3</div><div class="d">first_k_dense_replace=3<br>MLA-DSA 注意力 + SwiGLU FFN(12,288)</div></div>
+      <div style="display:flex;justify-content:center;color:#9AA1AC;padding:2px 0"><svg width="16" height="20" viewBox="0 0 16 20"><line x1="8" y1="0" x2="8" y2="13" stroke="currentColor" stroke-width="2"/><path d="M4 11 L8 18 L12 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node purple" style="width:100%;border-width:2.4px"><div class="t">MoE 解码层 × 75　★</div><div class="d">MLA-DSA 注意力 + MoE FFN（右图放大）</div></div>
+      <div style="display:flex;justify-content:center;color:#9AA1AC;padding:2px 0"><svg width="16" height="20" viewBox="0 0 16 20"><line x1="8" y1="0" x2="8" y2="13" stroke="currentColor" stroke-width="2"/><path d="M4 11 L8 18 L12 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div class="node blue" style="width:100%"><div class="t">Final RMSNorm</div></div>
+      <div style="display:flex;justify-content:center;color:#9AA1AC;padding:2px 0"><svg width="16" height="20" viewBox="0 0 16 20"><line x1="8" y1="0" x2="8" y2="13" stroke="currentColor" stroke-width="2"/><path d="M4 11 L8 18 L12 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+      <div style="display:flex;gap:10px">
+        <div class="node green" style="width:196px"><div class="t">LM Head</div><div class="d">→ logits 154,880</div></div>
+        <div class="node amber" style="width:116px"><div class="t">MTP × 1</div><div class="d">投机解码<br>训练 3 层共享</div></div>
+      </div>
+    </div>
+
+    <!-- ===== zoom connector ===== -->
+    <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;padding:0 12px;color:#B7937A">
+      <svg width="40" height="150" viewBox="0 0 40 150"><path d="M2 30 L36 6" stroke="#C9AE97" stroke-width="1.5" stroke-dasharray="4 4" fill="none"/><path d="M2 120 L36 144" stroke="#C9AE97" stroke-width="1.5" stroke-dasharray="4 4" fill="none"/></svg>
+      <span style="font-size:11.5px;color:#B7937A;margin-top:4px">放大 ★</span>
+    </div>
+
+    <!-- ===== Col B: micro detail of one MoE decoder layer ===== -->
+    <div style="width:566px;display:flex;flex-direction:column">
+      <!-- sub-block A: DSA attention -->
+      <div style="border:1.5px dashed #C9CDD4;border-radius:14px;padding:13px 14px;background:#FCFCFB;margin-bottom:12px">
+        <div style="font-weight:700;font-size:14.5px;color:#1E4E79;margin-bottom:9px">① 子层 A · DSA 注意力（MLA-256）</div>
+        <div class="node slate" style="width:100%;padding:9px 14px"><div class="t" style="font-size:14px">RMSNorm</div></div>
+        <div style="display:flex;justify-content:center;color:#9AA1AC;padding:2px 0"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+        <div class="node blue" style="width:100%;padding:10px 14px"><div class="t" style="font-size:14px">MLA 低秩投影 + Muon Split</div><div class="d">Q-LoRA rank 2,048 ↓↑ · KV latent 512 + RoPE 64 = <b>576</b> ↓↑<br>64 heads · qk_head_dim 256(=192 nope + 64 rope) · v_head_dim 256</div></div>
+        <div style="display:flex;justify-content:center;color:#9AA1AC;padding:2px 0"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+        <div class="node amber" style="width:100%;padding:10px 14px"><div class="t" style="font-size:14px">Lightning Indexer → 选 top-2,048</div><div class="d">32 heads × dim 128，为每个 query 挑出最相关的 2,048 个 KV</div></div>
+        <div style="display:flex;justify-content:center;color:#9AA1AC;padding:2px 0"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+        <div class="node green" style="width:100%;padding:10px 14px"><div class="t" style="font-size:14px">稀疏注意力 + 输出投影 → ⊕ 残差</div><div class="d">仅在选中的 2,048 token 上计算，O(L²) → 稀疏</div></div>
+      </div>
+      <!-- sub-block B: MoE FFN -->
+      <div style="border:1.5px dashed #C9CDD4;border-radius:14px;padding:13px 14px;background:#FCFCFB">
+        <div style="font-weight:700;font-size:14.5px;color:#473B86;margin-bottom:9px">② 子层 B · MoE FFN</div>
+        <div class="node slate" style="width:100%;padding:9px 14px"><div class="t" style="font-size:14px">RMSNorm</div></div>
+        <div style="display:flex;justify-content:center;color:#9AA1AC;padding:2px 0"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+        <div class="node purple" style="width:100%;padding:10px 14px"><div class="t" style="font-size:14px">Router</div><div class="d">sigmoid 打分 · noaux_tc · 无分组(n_group=1) · norm_topk</div></div>
+        <div style="display:flex;justify-content:center;color:#9AA1AC;padding:2px 0"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+        <div style="display:flex;gap:10px">
+          <div class="node purple" style="width:320px;padding:10px 14px"><div class="t" style="font-size:14px">Top-8 / 256 路由专家</div><div class="d">每专家中间维 moe_intermediate 2,048</div></div>
+          <div class="node green" style="width:194px;padding:10px 14px"><div class="t" style="font-size:14px">+ 1 共享专家</div><div class="d">始终激活</div></div>
+        </div>
+        <div style="display:flex;justify-content:center;color:#9AA1AC;padding:2px 0"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+        <div class="node green" style="width:100%;padding:10px 14px"><div class="t" style="font-size:14px">加权合并 (routed_scaling 2.5) → ⊕ 残差</div><div class="d">每 token 仅激活 ≈ <b>40B / 744B</b> 参数</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">★ 前 3 个 dense 层结构相同，仅 FFN 用稠密 SwiGLU(12,288) 而非 MoE。维度取自 released config（<code>model_type: glm_moe_dsa</code>）；论文 §2.1 称 80 层，开源权重为 <b>78 层</b>（前 3 dense + 75 MoE），以权重为准。MLA latent 512 + RoPE 64 = 576 与论文"576 维 latent KV"一致。</div>
+  <div class="legend">
+    <span><span class="dot" style="background:#E9F2FC;border-color:#6296D4;display:inline-block"></span>注意力/Embedding</span>
+    <span><span class="dot" style="background:#EEEAF8;border-color:#8E7DCB;display:inline-block"></span>MoE/路由</span>
+    <span><span class="dot" style="background:#E6F4EC;border-color:#5BAE80;display:inline-block"></span>输出/共享专家/残差</span>
+    <span><span class="dot" style="background:#FBF0E1;border-color:#DBA059;display:inline-block"></span>DSA indexer / MTP</span>
+    <span><span class="dot" style="background:#EEF1F4;border-color:#A7AEB8;display:inline-block"></span>Norm/输入</span>
+  </div>
+</div>
+
+</body></html>

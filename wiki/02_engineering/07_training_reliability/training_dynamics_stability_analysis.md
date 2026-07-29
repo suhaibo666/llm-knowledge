@@ -1,6 +1,6 @@
 # 训练动力学稳定性：loss spike · NaN · 发散 · 2026 前沿
 
-> **来源**：`raw/02_engineering/wanka_determinism_reliability_deep_analysis.md` 第三部分（问题 9：训练动力学不稳定——loss spike、NaN 与发散），含「2026 前沿一代」与「与其他问题的交叉」两节。
+> **来源**：`docs/research/wanka_determinism_reliability_deep_analysis.md` 第三部分（问题 9：训练动力学不稳定——loss spike、NaN 与发散），含「2026 前沿一代」与「与其他问题的交叉」两节。
 > **维度**：机制级深挖（背景 → 影响 → 如何发现 → 排查 → 解决方案 → 前沿 → 交叉）。
 > **所属簇**：[[07_training_reliability/index]]（万卡级训练：确定性与可靠性问题域）。
 > **保真度**：本页是对上述二手综述的结构化摄入，机制、数字、命令、代码、arXiv id 与归属均忠实于原文。

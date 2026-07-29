@@ -1,6 +1,5 @@
 # Inductor / torch.compile 概览(overview)
 
-> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
 > **页面角色**：torch.compile/Inductor模块overview。
 > **原始基线**：见下方2026-06-15快照；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
 > **课程分工**：本页保留快速全景；当前图编译端到端学习入口见 [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]，其中明确区分FX、AOTAutograd与Inductor各阶段的数据结构。
@@ -10,7 +9,6 @@
 > 这是 04_inductor 模块「由浅入深」的第一层。读完本页你应能回答:Inductor 解决什么问题、在 `torch.compile` 里处于什么位置、内部分哪几个阶段、有哪些核心概念。需要细节时,顺着每节末尾的 deepdive 链接往下走。
 
 ## 1. Inductor 是什么,解决什么问题
-> [!correction] I-015?I-022?I-030????????????????? [[19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy#3.3 AOT joint、forward 与 backward FX graph]]?????? [[correction_report]]?
 **TorchInductor 是 `torch.compile` 的默认后端编译器**:把一张已经捕获、已经处理过自动微分的 FX 计算图,**降级(lowering)成基于循环的中间表示,做激进的算子融合(fusion),最后生成 Triton(GPU)或 C++/OpenMP(CPU)kernel 代码**并编译执行。
 
 它针对的核心矛盾是**内存带宽 vs. 算力**。现代加速器的浮点算力远超访存带宽,深度学习里大量逐元素算子(`add`/`mul`/`sin`/激活/归一化…)本身计算极轻,瓶颈在于反复把张量从显存读进来、算一下、再写回去。Eager 模式下每个算子一个 kernel,中间结果都要落地到全局内存。Inductor 的根本手段就是**把多个算子融合进同一个 kernel**,让中间结果留在寄存器/共享内存里,从而消除冗余的内存往返;再叠加自动调优(autotuning)、内存复用、布局优化等,逼近手写 kernel 的性能,同时完全不需要用户改模型代码。
@@ -27,7 +25,6 @@ Inductor: 融合为 1 个 kernel: load x,y → t=x+y → max(t,0) → store out 
 源码位于 `torch/_inductor/`(核验基准:`E:\97-codes\pytorch\pytorch`)。
 
 ## 2. 在 torch.compile 中的位置
-> [!correction] I-015、I-022、I-030：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy#3.3 AOT joint、forward 与 backward FX graph]]，逐项说明见 [[correction_report]]。
 `torch.compile` 是一条三段式流水线,Inductor 是其中的**后端**:
 
 ```
@@ -69,7 +66,6 @@ Eager Python 代码
 - 编译产物会被**缓存**(进程内 + 落盘):`FxGraphCache` 缓存编译结果、`PyCodeCache` 缓存生成的 kernel 源码,因此首次编译慢、后续命中缓存可跳过大部分工作。这也是「torch.compile 第一次调用卡顿、之后变快」的原因。
 
 ## 3. Inductor 阶段一览
-> [!correction] I-001?I-007?I-018?I-024?I-029????????????????? [[19_torch_compile_end_to_end/17_fx_lowering_to_inductor_ir#2. GraphLowering是Interpreter]]?????? [[correction_report]]?
 Inductor 内部是一条子流水线。从 ATen FX 图到落盘 kernel,大致经过五个阶段;整条管线由 `compile_fx`(入口)与 `GraphLowering`(`torch._inductor.graph`,统管 FX→IR 转换与最终 codegen)串起来:
 
 | 阶段 | 一句话职责 | deepdive |
@@ -85,7 +81,6 @@ Inductor 内部是一条子流水线。从 ATen FX 图到落盘 kernel,大致经
 **为什么分这么多阶段?** 关键在于「在哪一层做哪种优化最自然」:图级重写(算子替换、常量折叠)在 FX 图上做最直接;而融合必须先把算子拆成统一的循环表示才能跨算子合并,所以需要一层独立于 ATen、独立于具体硬件的 **Inductor IR**——它向上承接任意前端算子,向下对接 Triton/C++ 等多种 codegen 后端。分层让「优化逻辑」与「目标硬件」解耦:同一套 lowering/scheduler 逻辑,换个 codegen 后端就能支持新设备(这也是 NPU 等后端的接入方式)。
 
 ## 4. 核心概念速览
-> [!correction] I-001、I-007、I-018、I-024、I-029：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/17_fx_lowering_to_inductor_ir#2. GraphLowering是Interpreter]]，逐项说明见 [[correction_report]]。
 理解 Inductor 主要是理解它的 **IR** 和 **调度** 两套抽象。最关键的一次认知跳变是:Inductor 用的不是 FX 那种「算子节点图」,而是一套**循环级 IR**——它不记「调用了 add」,而记「输出每个位置的值 = 一个关于输入索引的纯函数」。正因为算子被还原成了可组合的索引计算,跨算子融合才得以成立。
 
 ### Inductor IR(`torch._inductor.ir`)
@@ -118,7 +113,6 @@ Lowering 产出的 IR 进入调度器后,被包成调度节点参与融合决策
 - **AOTInductor(`torch.export` + AOT 编译)**:提前编译为自包含 `.so`,生成 C++ wrapper,不依赖 Python 运行时,面向部署/Serving。
 
 ## 5. 一个最小例子的旅程
-> [!correction] I-032????????????????? [[19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance#2. 阶段地图]]?????? [[correction_report]]?
 把上面几节串起来,看 `out = torch.relu(x @ w + b)` 在 Inductor 里走过的路:
 
 1. **入口**:AOT Autograd 把前向(及反向)FX 图交给 `compile_fx`。图里是 ATen 算子:`aten.mm`、`aten.add`、`aten.relu`。
@@ -130,7 +124,6 @@ Lowering 产出的 IR 进入调度器后,被包成调度节点参与融合决策
 最终落盘的是一段可缓存、可直接执行的 kernel + wrapper 代码。想逐行看,用 `TORCH_LOGS=output_code` / `TORCH_COMPILE_DEBUG=1`(见 [[inductor_quickstart]] 与 [[Pytorch_Compile_Debug_Analysis]])。
 
 ## 6. 由浅入深导航
-> [!correction] I-032：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance#2. 阶段地图]]，逐项说明见 [[correction_report]]。
 本模块按「层次」组织,建议路径:
 
 1. **overview(本页)** — 建立全局心智模型。

@@ -1,6 +1,5 @@
 # PyTorch Inductor 后端选择与 IR 优化深度（upstream）
 
-> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
 > **页面角色**：Inductor纵向综合参考与模块快照。
 > **原始基线**：baseline-unknown；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
 > **课程分工**：本页保留宽口径后端/IR/配置参考；当前Inductor IR、buffer生命周期、Scheduler与codegen主线见 [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] 的Part IV。
@@ -14,7 +13,6 @@
 ---
 
 ## 目录
-> [!correction] I-022、I-024、I-029、I-030：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/17_fx_lowering_to_inductor_ir#2. GraphLowering是Interpreter]]，逐项说明见 [[correction_report]]。
 1. [概述与定位](#概述与定位)
 2. [后端选择与配置机制](#后端选择与配置机制)
 3. [Inductor IR 数据结构设计](#inductor-ir-数据结构设计)
@@ -84,7 +82,6 @@ flowchart TD
 ```
 
 > **注意**：每个设备在 `device_codegens` 中只注册一个 scheduling 实现。CPU/CUDA 的具体 scheduling 类型取决于 `config.cpu_backend` 和 `config.cuda_backend` 配置。例如 CPU 默认使用 `CppScheduling`（`cpu_backend="cpp"`），CUDA 默认使用 `TritonScheduling`（`cuda_backend="triton"`），可通过配置切换为 `HalideScheduling` 或 `PallasScheduling`。
-
 
 ### 2. 后端注册与选择接口
 
@@ -207,7 +204,6 @@ compiled_model = torch.compile(
 ---
 
 ## Inductor IR 数据结构设计
-> [!correction] I-001、I-007、I-029：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/18_inductor_ir_values_loops_layouts_and_buffers#3. TensorBox与StorageBox]]，逐项说明见 [[correction_report]]。
 阶段1 Graph Lowering（FX Graph → Inductor IR）的**过程性走读**（`GraphLowering.run_node`、placeholder/call_function 分派、符号形状与 mutation 处理）见 [[inductor_compiler_pipeline_analysis]] §5 与 [[lowering_analysis]]。此处只剖析 Lowering 产物——Inductor IR 的核心数据结构设计。
 
 > **注**：以下结构为简化模型（illustrative），实际实现请以源码为准。类名和成员可能与源码有细微差别，例如 Pointwise 的实现细节、View 存储 offset 的具体形式、Buffer 是否携带 is_constant 标记等。
@@ -293,7 +289,6 @@ classDiagram
 ---
 
 ## IR 优化（一）：融合成本模型与自动调优
-> [!correction] I-013、I-017、I-025、I-027：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering#7. Fusion与相关分组机制]]，逐项说明见 [[correction_report]]。
 > 阶段2/3 中 Scheduler 的拓扑排序、`can_fuse`/`can_fuse_vertical`、`score_fusion_memory` 等**融合决策流程**见 [[scheduler_analysis]] 与 [[inductor_compiler_pipeline_analysis]] §6。本节聚焦 pipeline 未深入的**成本模型与自动调优实现**。
 
 ### 成本模型评估
@@ -627,7 +622,6 @@ def model(x):
 ---
 
 ## 内存规划与内存池策略
-> [!correction] I-019、I-021：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse#6. 三套不能混写的“memory planning”]]，逐项说明见 [[correction_report]]。
 内存规划实现在 [torch/_inductor/memory.py](file:///e:\97-codes\torch_parallel\pytorch\torch\_inductor\memory.py)，由 §2.3 中的 `memory_planning` 开关与 `memory_pool` 策略控制：
 
 - `memory_planning`（默认关闭，`TORCHINDUCTOR_MEMORY_PLANNING=1` 开启）：启用静态内存规划，预先分配并复用 buffer，降低运行时分配开销与峰值内存。
@@ -1223,7 +1217,9 @@ y = model(x)
 ---
 
 ## 自定义融合规则
-> [!contradiction] I-028：本节 `addmulnorm` 教程及其注册、template、多输出、fallback、调试 API/命令未在固定当前基线验证，不能作为当前实现或可执行 recipe；整节保留仅作历史材料并维持 unresolved quarantine。当前 Template/Extern 分支见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance#7. Template与Extern分支]]，逐项说明见 [[correction_report]]。
+
+> **注**：本节 `addmulnorm` 教程及其注册、template、多输出、fallback、调试 API/命令未在当前固定基线验证,不能作为当前实现或可执行 recipe;整节保留仅作历史材料并维持 unresolved quarantine。
+
 ### 1. 融合规则概述
 
 Inductor 支持通过模式匹配和 Triton Template 来实现自定义的融合规则。融合规则可以将多个操作合并到一个 kernel 中，减少内存访问和 kernel launch 开销。
@@ -1331,7 +1327,6 @@ addmulnorm_template = TritonTemplate(
     cache_codegen_enabled_for_template=True,
 )
 
-
 def tuned_addmulnorm(a, b, c, *, layout=None):
     """
     融合计算：norm((a + b) * c)
@@ -1409,7 +1404,6 @@ def is_valid_addmulnorm(match: Match):
         return False
 
     return True
-
 
 # 注册 lowering pattern
 @register_lowering_pattern(

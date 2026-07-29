@@ -1,0 +1,59 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css">
+<style>
+  .gpucol{display:flex;flex-direction:column;align-items:center;gap:0;width:210px}
+  .gbox{width:186px;border-radius:11px;border:1.6px solid;padding:10px 12px;text-align:center;
+    font-size:13px;font-weight:600;line-height:1.35}
+  .gbox small{display:block;font-weight:400;color:#7A808A;font-size:11px;margin-top:2px}
+  .down{color:#9AA1AC;font-size:18px;line-height:1;padding:5px 0}
+  .modelrep{background:#EEEAF8;border-color:#8E7DCB;color:#473B86}
+  .dat0{background:#E9F2FC;border-color:#6296D4;color:#1E4E79}
+  .dat1{background:#E6F4EC;border-color:#5BAE80;color:#1F6B41}
+  .dat2{background:#FBF0E1;border-color:#DBA059;color:#8A581A}
+  .dat3{background:#FBE9EC;border-color:#D98A9B;color:#8A2A3C}
+  .grad{background:#F4F2ED;border-color:#B7B1A4;color:#5B6470}
+  .arbar{margin:8px 0;background:#EDE7F7;border:1.8px solid #8E7DCB;border-radius:12px;
+    padding:11px 16px;text-align:center;color:#473B86;font-weight:700;font-size:14.5px}
+  .gsame{background:#EEEAF8;border-color:#8E7DCB;color:#473B86}
+</style></head><body>
+
+<div class="diagram" data-name="dp_data_parallel_fig1">
+  <div class="dg-title">数据并行：切数据、各算各的、all-reduce 梯度、各自更新</div>
+  <div class="dg-sub">4 张卡各放<strong>一份完整模型</strong>（紫＝复制），吃不同数据分片 → 本地梯度 → all-reduce 求平均 → 参数保持处处一致</div>
+
+  <div style="width:900px">
+    <div class="row" style="gap:16px;justify-content:center">
+      <div class="gpucol"><div class="gbox dat0">数据分片 0<small>batch 的 1/4</small></div></div>
+      <div class="gpucol"><div class="gbox dat1">数据分片 1<small>batch 的 1/4</small></div></div>
+      <div class="gpucol"><div class="gbox dat2">数据分片 2<small>batch 的 1/4</small></div></div>
+      <div class="gpucol"><div class="gbox dat3">数据分片 3<small>batch 的 1/4</small></div></div>
+    </div>
+    <div class="row" style="justify-content:center"><div class="down" style="width:210px;text-align:center">↓</div><div class="down" style="width:210px;text-align:center">↓</div><div class="down" style="width:210px;text-align:center">↓</div><div class="down" style="width:210px;text-align:center">↓</div></div>
+    <div class="row" style="gap:16px;justify-content:center">
+      <div class="gpucol"><div class="gbox modelrep">完整模型 θ<small>GPU 0 · 前向+反向</small></div></div>
+      <div class="gpucol"><div class="gbox modelrep">完整模型 θ<small>GPU 1 · 前向+反向</small></div></div>
+      <div class="gpucol"><div class="gbox modelrep">完整模型 θ<small>GPU 2 · 前向+反向</small></div></div>
+      <div class="gpucol"><div class="gbox modelrep">完整模型 θ<small>GPU 3 · 前向+反向</small></div></div>
+    </div>
+    <div class="row" style="justify-content:center"><div class="down" style="width:210px;text-align:center">↓</div><div class="down" style="width:210px;text-align:center">↓</div><div class="down" style="width:210px;text-align:center">↓</div><div class="down" style="width:210px;text-align:center">↓</div></div>
+    <div class="row" style="gap:16px;justify-content:center">
+      <div class="gpucol"><div class="gbox grad">本地梯度 g₀</div></div>
+      <div class="gpucol"><div class="gbox grad">本地梯度 g₁</div></div>
+      <div class="gpucol"><div class="gbox grad">本地梯度 g₂</div></div>
+      <div class="gpucol"><div class="gbox grad">本地梯度 g₃</div></div>
+    </div>
+
+    <div class="arbar">All-Reduce（求和 ÷ N）&nbsp;&nbsp;g = (g₀+g₁+g₂+g₃) / 4 &nbsp;— 唯一的一次通信，量 ∝ 参数量 Ψ</div>
+
+    <div class="row" style="gap:16px;justify-content:center">
+      <div class="gpucol"><div class="gbox gsame">用 g 更新 θ<small>GPU 0</small></div></div>
+      <div class="gpucol"><div class="gbox gsame">用 g 更新 θ<small>GPU 1</small></div></div>
+      <div class="gpucol"><div class="gbox gsame">用 g 更新 θ<small>GPU 2</small></div></div>
+      <div class="gpucol"><div class="gbox gsame">用 g 更新 θ<small>GPU 3</small></div></div>
+    </div>
+
+    <div class="note"><b>不变量</b>：初始参数一致（起手 broadcast 一次）+ 每步梯度一致（all-reduce）⇒ 更新后参数<b>处处一致</b>，故只需同步梯度、无需同步参数。<b>局限</b>：每卡都扛完整 θ / 梯度 / 优化器态（≈16Ψ），<b>一分显存不省</b> ── 这正是 ZeRO 的出发点。</div>
+  </div>
+</div>
+
+</body></html>
