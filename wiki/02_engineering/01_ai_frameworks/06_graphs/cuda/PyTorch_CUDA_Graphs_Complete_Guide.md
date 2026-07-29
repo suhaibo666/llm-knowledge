@@ -194,83 +194,91 @@ CUDA Graphs 要求所有内存预先分配：
 
 ### 代码调用流程时序图
 
-```
-时序图: torch.compile(backend="cudagraphs")
-
-时间轴 →
-─────────────────────────────────────────────────────────────────────────────
-
-CPU (Python)          │  CUDAGraphsBackend       │  CUDA Runtime        │  GPU
-──────────────────────│──────────────────────────│──────────────────────│─────────
-                      │                          │                      │
-首次调用:             │                          │                      │
-compiled_model(x)     │                          │                      │
-      │               │                          │                      │
-      +──────────────>│ 检查 graphExec 是否存在  │                      │
-      │               │                          │                      │
-      │               │ 不存在:                  │                      │
-      │               │   warmup 执行            │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ Launch kernels      │
-      │               │   │                      │                      │
-      │               │   │                      │                      │ [执行]
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 完成                │
-      │               │   │                      │                      │
-      │               │   cudaGraphCaptureBegin() │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ 开始捕获模式        │
-      │               │   │                      │                      │
-      │               │   重放模型执行            │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ 记录操作到图        │
-      │               │   │                      │ (不实际执行)         │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 记录完成            │
-      │               │   │                      │                      │
-      │               │   cudaGraphCaptureEnd()   │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ 结束捕获            │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 返回 graph 对象     │
-      │               │   │                      │                      │
-      │               │   cudaGraphInstantiate() │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ 分配资源            │
-      │               │   │                      │ (内存、执行队列)     │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 返回 graphExec      │
-      │               │   │                      │                      │
-      │               │   保存 graphExec          │                      │
-      │               │                          │                      │
-后续调用:             │                          │                      │
-compiled_model(x)     │                          │                      │
-      │               │                          │                      │
-      +──────────────>│ graphExec 存在:          │                      │
-      │               │                          │                      │
-      │               │   static_input.copy_(x)  │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaMemcpyAsync     │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 复制完成            │
-      │               │   │                      │                      │
-      │               │   cudaGraphLaunch()      │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ 提交图执行          │
-      │               │   │                      │                      │
-      │               │   │                      │                      │ [执行整个图]
-      │               │   │                      │                      │ (所有 kernels)
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 执行完成            │
-      │               │   │                      │                      │
-      │               │   output.copy_(static_output)                    │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaMemcpyAsync     │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 复制完成            │
-      │               │                          │                      │
-      │<──────────────+ 返回 output              │                      │
-                      │                          │                      │
+```mermaid
+sequenceDiagram
+    participant CPU as CPU (Python)
+    participant Backend as CUDA Graph Backend
+    participant GPU as GPU (CUDA)
+    
+    Note over CPU,GPU: 首次调用 (Warmup 阶段)
+    
+    CPU->>Backend: 调用 compiled_model(x)
+    Backend->>Backend: 检查 graphExec 是否存在
+    Backend->>Backend: graphExec = None (首次调用)
+    
+    Note over Backend: 开始 Warmup 阶段
+    
+    Backend->>GPU: Warmup 执行 (验证操作序列)
+    activate GPU
+    GPU->>GPU: cuLaunchKernel (linear1)
+    GPU->>GPU: cuLaunchKernel (relu)
+    GPU->>GPU: cuLaunchKernel (linear2)
+    deactivate GPU
+    GPU-->>Backend: 操作完成
+    
+    Note over Backend: 开始捕获阶段
+    
+    Backend->>GPU: cudaGraphCaptureBegin()
+    activate GPU
+    GPU->>GPU: 进入捕获模式 (记录所有操作)
+    deactivate GPU
+    GPU-->>Backend: 模式已激活
+    
+    Backend->>GPU: 重放模型执行 (记录到图)
+    activate GPU
+    GPU->>GPU: cuLaunchKernel (linear1) - 记录到图 (不实际执行)
+    GPU->>GPU: cuLaunchKernel (relu) - 记录到图
+    GPU->>GPU: cuLaunchKernel (linear2) - 记录到图
+    deactivate GPU
+    GPU-->>Backend: 已记录
+    
+    Backend->>GPU: cudaGraphCaptureEnd()
+    activate GPU
+    GPU->>GPU: 退出捕获模式，返回 graph 对象
+    deactivate GPU
+    GPU-->>Backend: graph 对象
+    
+    Note over Backend: graph 对象包含节点列表、内存依赖、执行顺序
+    
+    Backend->>GPU: cudaGraphInstantiate()
+    activate GPU
+    GPU->>GPU: 分配资源 (内存池、执行队列、同步对象)
+    deactivate GPU
+    GPU-->>Backend: graphExec 对象
+    
+    Note over Backend: graphExec 对象包含可执行实例、静态内存指针
+    
+    Backend->>Backend: 保存 graphExec
+    
+    Note over CPU,GPU: 后续调用 (执行阶段)
+    
+    CPU->>Backend: 调用 compiled_model(x)
+    Backend->>Backend: 检查 graphExec
+    Backend->>Backend: graphExec 存在，直接执行
+    
+    Backend->>GPU: cudaMemcpyAsync (复制输入到静态内存)
+    activate GPU
+    GPU->>GPU: 复制数据到静态输入缓冲区
+    deactivate GPU
+    GPU-->>Backend: 复制完成
+    
+    Backend->>GPU: cudaGraphLaunch()
+    activate GPU
+    GPU->>GPU: 提交整个图执行
+    GPU->>GPU: 执行 linear1 (使用静态内存)
+    GPU->>GPU: 执行 relu
+    GPU->>GPU: 执行 linear2
+    deactivate GPU
+    GPU-->>Backend: 执行完成
+    
+    Backend->>GPU: cudaMemcpyAsync (从静态内存复制输出)
+    activate GPU
+    deactivate GPU
+    GPU-->>Backend: 复制完成
+    
+    Backend-->>CPU: 返回结果
+    
+    Note over CPU,GPU: 性能优势: 消除多次 CPU-GPU 交互、kernel launch 开销
 ```
 
 ### 限制和注意事项
@@ -480,86 +488,102 @@ class InductorCompiledFunction:
 
 ### 代码调用流程时序图
 
-```
-时序图: torch.compile(backend="inductor", mode="reduce-overhead")
-
-时间轴 →
-─────────────────────────────────────────────────────────────────────────────
-
-CPU (Python)          │  Inductor Backend        │  CUDA Runtime        │  GPU
-──────────────────────│──────────────────────────│──────────────────────│─────────
-                      │                          │                      │
-首次调用:             │                          │                      │
-compiled_model(x)     │                          │                      │
-      │               │                          │                      │
-      +──────────────>│ 检查编译缓存             │                      │
-      │               │                          │                      │
-      │               │ 缓存未命中:              │                      │
-      │               │   导出 FX Graph          │                      │
-      │               │   │                      │                      │
-      │               │   Lowering               │                      │
-      │               │   │                      │                      │
-      │               │   代码生成 (Triton)      │                      │
-      │               │   │                      │                      │
-      │               │   分析子图               │                      │
-      │               │   ├─ 静态子图            │                      │
-      │               │   └─ 动态子图            │                      │
-      │               │   │                      │                      │
-      │               │   编译 Kernels            │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ NVRTC/Triton 编译    │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 编译完成            │
-      │               │   │                      │                      │
-      │               │   为静态子图创建         │                      │
-      │               │   CUDA Graphs:           │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaGraphCaptureBegin│
-      │               │   │                      │                      │
-      │               │   │                      │                      │ [记录操作]
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaGraphCaptureEnd  │
-      │   │           │   │                      │                      │
-      │               │   +─────────────────────>│ cudaGraphInstantiate │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ graphExec 创建完成  │
-      │               │   │                      │                      │
-      │               │   保存编译结果            │                      │
-      │               │                          │                      │
-后续调用:             │                          │                      │
-compiled_model(x)     │                          │                      │
-      │               │                          │                      │
-      +──────────────>│ 使用编译结果            │                      │
-      │               │                          │                      │
-      │               │ 执行动态子图:            │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ Launch kernels      │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 完成                │
-      │               │   │                      │                      │
-      │               │ 执行静态子图:            │                      │
-      │               │   (使用 CUDA Graphs)      │                      │
-      │               │   │                      │                      │
-      │               │   复制输入到静态内存     │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaMemcpyAsync     │
-      │               │   │                      │                      │
-      │               │   cudaGraphLaunch()      │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ Replay 整个图       │
-      │               │   │                      │                      │
-      │               │   │                      │                      │ [执行所有操作]
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 执行完成            │
-      │               │   │                      │                      │
-      │               │   复制输出               │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaMemcpyAsync     │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 完成                │
-      │               │                          │                      │
-      │<──────────────+ 返回结果                │                      │
-                      │                          │                      │
+```mermaid
+sequenceDiagram
+    participant CPU as CPU (Python)
+    participant Inductor as Inductor Backend
+    participant GPU as GPU (CUDA)
+    
+    Note over CPU,GPU: 首次调用 (编译阶段)
+    
+    CPU->>Inductor: 调用 compiled_model(x)
+    Inductor->>Inductor: 检查编译缓存
+    Inductor->>Inductor: 缓存未命中，开始编译流程
+    
+    Note over Inductor: 步骤1: 导出 FX Graph
+    
+    Inductor->>Inductor: torch.fx.symbolic_trace
+    Inductor->>Inductor: 创建 FX Graph (输入节点、linear1、relu、linear2、输出节点)
+    
+    Note over Inductor: 步骤2: Lowering
+    
+    Inductor->>Inductor: 转换为中间表示 (IR)
+    Inductor->>Inductor: IR 包含 Buffer 管理、Kernel 调用、依赖关系
+    
+    Note over Inductor: 步骤3: 代码生成
+    
+    Inductor->>Inductor: 生成 Triton/CUDA 代码
+    Inductor->>Inductor: Triton kernels: fused_linear, fused_relu
+    
+    Note over Inductor: 步骤4: 分析子图
+    
+    Inductor->>Inductor: 识别静态子图
+    Inductor->>Inductor: 子图1 (静态): linear1, relu, linear2 - 可使用 CUDA Graphs
+    
+    Note over Inductor: 步骤5: 编译 Kernels
+    
+    Inductor->>GPU: NVRTC/Triton 编译
+    activate GPU
+    GPU->>GPU: 编译 Triton kernels (优化 tiling、向量化)
+    deactivate GPU
+    GPU-->>Inductor: 编译完成
+    
+    Note over Inductor: 步骤6: 创建 CUDA Graphs (如果适用)
+    
+    Inductor->>GPU: cuStreamBeginCapture
+    activate GPU
+    GPU->>GPU: 捕获子图操作
+    deactivate GPU
+    GPU-->>Inductor: 已捕获
+    
+    Inductor->>GPU: cuStreamEndCapture
+    activate GPU
+    deactivate GPU
+    GPU-->>Inductor: graph 对象
+    
+    Inductor->>GPU: cuGraphInstantiate
+    activate GPU
+    GPU->>GPU: 分配资源 (内存池、执行队列)
+    deactivate GPU
+    GPU-->>Inductor: graphExec 创建完成
+    
+    Note over Inductor: 步骤7: 生成执行函数
+    
+    Inductor->>Inductor: 创建 compiled_fn (Triton kernels + CUDA Graphs + 内存管理)
+    
+    Inductor->>Inductor: 保存到编译缓存
+    
+    Note over CPU,GPU: 后续调用 (执行阶段)
+    
+    CPU->>Inductor: 调用 compiled_model(x)
+    Inductor->>Inductor: 使用编译结果
+    
+    Note over Inductor: 执行优化代码
+    
+    Inductor->>GPU: cudaMemcpyAsync (复制输入到内存池)
+    activate GPU
+    deactivate GPU
+    GPU-->>Inductor: 完成
+    
+    Inductor->>GPU: cuLaunchKernel (fused_linear)
+    activate GPU
+    deactivate GPU
+    GPU-->>Inductor: 完成
+    
+    Inductor->>GPU: cuGraphLaunch (执行子图)
+    activate GPU
+    GPU->>GPU: 执行整个子图 (linear1, relu, linear2 连续执行)
+    deactivate GPU
+    GPU-->>Inductor: 完成
+    
+    Inductor->>GPU: cudaMemcpyAsync (复制输出)
+    activate GPU
+    deactivate GPU
+    GPU-->>Inductor: 完成
+    
+    Inductor-->>CPU: 返回结果
+    
+    Note over CPU,GPU: 优化层级: Kernel Fusion -> Triton Kernels -> CUDA Graphs -> 内存优化
 ```
 
 ### 优势
@@ -568,6 +592,7 @@ compiled_model(x)     │                          │                      │
 2. **灵活性**: 支持部分动态形状
 3. **自动化**: 自动选择最优策略
 4. **生产就绪**: PyTorch 2.0 推荐
+5. **量化收益**: 综合 Kernel Fusion → Triton → CUDA Graphs → 内存优化四级叠加，理论上可达 2-5x 加速（具体幅度取决于模型与硬件，未附实测来源）
 
 ---
 
@@ -773,100 +798,141 @@ class CUDAGraph:
 
 ### 代码调用流程时序图
 
-```
-时序图: torch.cuda.graph() 上下文管理器
-
-时间轴 →
-─────────────────────────────────────────────────────────────────────────────
-
-CPU (Python)          │  CUDA Graph API          │  CUDA Runtime        │  GPU
-──────────────────────│──────────────────────────│──────────────────────│─────────
-                      │                          │                      │
-初始化阶段:           │                          │                      │
-创建静态内存池       │                          │                      │
-static_input/output   │                          │                      │
-      │               │                          │                      │
-创建 CUDA Stream      │                          │                      │
-stream = cuda.Stream()│                          │                      │
-      │               │                          │                      │
-创建 CUDAGraph 对象   │                          │                      │
-graph = CUDAGraph()   │                          │                      │
-      │               │                          │                      │
-进入 graph 上下文:    │                          │                      │
-with torch.cuda.graph │                          │                      │
-      │               │                          │                      │
-      +──────────────>│ __enter__()              │                      │
-      │               │   │                      │                      │
-      │               │   保存当前 stream        │                      │
-      │               │   │                      │                      │
-      │               │   cudaSetStream()        │                      │
-      │               │   │                      │                      │
-      │               │   cudaGraphCaptureBegin() │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ 进入捕获模式        │
-      │               │   │                      │ (记录所有操作)      │
-      │               │   │                      │                      │
-执行模型操作:         │                          │                      │
-(使用静态内存)       │                          │                      │
-      │               │                          │                      │
-      +──────────────>│ 记录操作到图            │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ 记录 kernel launch  │
-      │               │   │                      │ (不实际执行)        │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ 记录内存操作        │
-      │               │   │                      │ (记录指针)          │
-      │               │   │                      │                      │
-      │               │   ... (记录所有操作)    │                      │
-      │               │                          │                      │
-退出 graph 上下文:    │                          │                      │
-      │               │                          │                      │
-      +──────────────>│ __exit__()               │                      │
-      │               │   │                      │                      │
-      │               │   cudaGraphCaptureEnd()  │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ 退出捕获模式        │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 返回 graph 对象     │
-      │               │   │                      │                      │
-      │               │   cudaGraphInstantiate()  │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ 分配执行资源        │
-      │               │   │                      │ (内存、队列)        │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 返回 graphExec      │
-      │               │   │                      │                      │
-      │               │   恢复 stream            │                      │
-      │               │                          │                      │
-后续调用:             │                          │                      │
-复制输入到静态内存   │                          │                      │
-static_input.copy_(x)│                          │                      │
-      │               │                          │                      │
-      +──────────────>│ cudaMemcpyAsync()        │                      │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 复制完成            │
-      │               │                          │                      │
-Replay 图:            │                          │                      │
-graph.replay()        │                          │                      │
-      │               │                          │                      │
-      +──────────────>│ cudaGraphLaunch()        │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ 提交图执行          │
-      │               │   │                      │                      │
-      │               │   │                      │                      │ [执行所有操作]
-      │               │   │                      │                      │ (连续执行)
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 执行完成            │
-      │               │                          │                      │
-复制输出:             │                          │                      │
-result = static_output.clone()                    │                      │
-      │               │                          │                      │
-      +──────────────>│ cudaMemcpyAsync()        │                      │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 复制完成            │
-      │               │                          │                      │
-      │<──────────────+ 返回结果                │                      │
-                      │                          │                      │
+```mermaid
+sequenceDiagram
+    participant CPU as CPU (Python)
+    participant API as CUDA Graph API
+    participant GPU as GPU (CUDA)
+    
+    Note over CPU,GPU: 初始化阶段
+    
+    CPU->>CPU: 创建静态内存池
+    CPU->>CPU: static_input = torch.empty_like(x)
+    CPU->>CPU: static_output = torch.empty_like(y)
+    
+    Note over CPU: 静态内存池布局: 输入缓冲区(固定形状) + 输出缓冲区(固定形状)
+    
+    CPU->>API: stream = cuda.Stream()
+    API->>GPU: cuStreamCreate
+    activate GPU
+    GPU-->>API: Stream 创建完成
+    deactivate GPU
+    
+    CPU->>CPU: graph = CUDAGraph()
+    
+    Note over CPU,GPU: 捕获阶段
+    
+    CPU->>API: 进入 graph 上下文 (with torch.cuda.graph)
+    API->>API: __enter__()
+    API->>API: 保存当前 stream
+    API->>API: 切换到目标 stream
+    API->>GPU: cuStreamSetCurrent
+    activate GPU
+    GPU-->>API: Stream 已切换
+    deactivate GPU
+    
+    API->>API: 开始捕获
+    API->>GPU: cuStreamBeginCapture
+    activate GPU
+    GPU->>GPU: 进入捕获模式 (mode=GLOBAL, 记录所有操作)
+    deactivate GPU
+    GPU-->>API: 捕获模式已激活
+    
+    Note over CPU,GPU: 执行模型操作 (使用静态内存)
+    
+    CPU->>API: temp = static_input
+    API->>GPU: 记录 buffer 引用
+    deactivate GPU
+    
+    CPU->>API: temp = model.linear1(temp)
+    API->>GPU: cuLaunchKernel (linear1)
+    activate GPU
+    GPU->>GPU: 记录到图: kernel 参数、buffer 指针、执行配置 (不实际执行)
+    deactivate GPU
+    GPU-->>API: 已记录
+    
+    CPU->>API: temp = model.relu(temp)
+    API->>GPU: cuLaunchKernel (relu)
+    activate GPU
+    GPU->>GPU: 记录到图
+    deactivate GPU
+    GPU-->>API: 已记录
+    
+    CPU->>API: temp = model.linear2(temp)
+    API->>GPU: cuLaunchKernel (linear2)
+    activate GPU
+    GPU->>GPU: 记录到图
+    deactivate GPU
+    GPU-->>API: 已记录
+    
+    CPU->>API: static_output.copy_(temp)
+    API->>GPU: cudaMemcpyAsync (Device -> Device)
+    activate GPU
+    GPU->>GPU: 记录内存操作
+    deactivate GPU
+    GPU-->>API: 已记录
+    
+    CPU->>API: 退出 graph 上下文
+    API->>API: __exit__()
+    API->>API: 结束捕获
+    API->>GPU: cuStreamEndCapture
+    activate GPU
+    GPU->>GPU: 退出捕获模式，验证图完整性，返回 graph 对象
+    deactivate GPU
+    GPU-->>API: graph 对象
+    
+    Note over API: graph 对象包含节点列表、边列表、内存依赖、执行顺序
+    
+    API->>API: 实例化图
+    API->>GPU: cuGraphInstantiate
+    activate GPU
+    GPU->>GPU: 分配资源: 验证节点、分配内存池、创建执行队列、设置同步对象
+    deactivate GPU
+    GPU-->>API: graphExec 对象
+    
+    Note over API: graphExec 对象包含可执行实例、静态内存映射、准备好执行
+    
+    API->>API: 恢复 stream
+    API->>GPU: cuStreamSetCurrent
+    activate GPU
+    GPU-->>API: Stream 已恢复
+    deactivate GPU
+    
+    API-->>CPU: 上下文退出
+    
+    Note over CPU,GPU: 执行阶段
+    
+    CPU->>CPU: 后续调用: 复制输入到静态内存
+    CPU->>CPU: static_input.copy_(x)
+    CPU->>API: cudaMemcpyAsync()
+    API->>GPU: cudaMemcpyAsync (Host -> Device)
+    activate GPU
+    deactivate GPU
+    GPU-->>API: 复制完成
+    
+    CPU->>CPU: Replay 图
+    CPU->>API: graph.replay()
+    API->>GPU: cuGraphLaunch()
+    activate GPU
+    GPU->>GPU: 提交整个图执行 (一次性提交)
+    GPU->>GPU: 执行 linear1 (使用静态内存)
+    GPU->>GPU: 执行 relu
+    GPU->>GPU: 执行 linear2
+    GPU->>GPU: copy output
+    deactivate GPU
+    GPU-->>API: 执行完成
+    
+    CPU->>CPU: 复制输出
+    CPU->>CPU: result = static_output.clone()
+    CPU->>API: cudaMemcpyAsync()
+    API->>GPU: cudaMemcpyAsync (Device -> Host)
+    activate GPU
+    deactivate GPU
+    GPU-->>API: 复制完成
+    
+    CPU->>CPU: 返回结果
+    
+    Note over CPU,GPU: 关键特性: 静态内存管理、完全控制、高性能
 ```
 
 ### 高级用法
@@ -927,6 +993,28 @@ with torch.cuda.graph(graph2):
     event.wait()
     output2 = model2(output1)
 ```
+
+### 优势
+
+**静态内存管理:**
+- 所有内存预先分配
+- 避免运行时内存分配
+- 提高内存访问效率
+
+**完全控制:**
+- 手动管理输入/输出
+- 精确控制执行流程
+- 支持自定义同步
+
+**高性能:**
+- 一次性提交整个图
+- 消除所有 kernel launch 开销
+- 连续执行所有操作
+
+**适用场景:**
+- 需要精细控制的场景
+- 自定义推理 pipeline
+- 与其他 CUDA 操作同步
 
 ### 限制和注意事项
 
@@ -1135,72 +1223,102 @@ def execute_graphed(graph, static_pool, input):
 
 ### 代码调用流程时序图
 
-```
-时序图: torch.cuda.make_graphed_callables
-
-时间轴 →
-─────────────────────────────────────────────────────────────────────────────
-
-CPU (Python)          │  make_graphed_callables   │  CUDA Runtime        │  GPU
-──────────────────────│──────────────────────────│──────────────────────│─────────
-                      │                          │                      │
-准备阶段:             │                          │                      │
-提供 callables 和     │                          │                      │
-sample_inputs         │                          │                                           │
-      │               │                          │                      │
-      +──────────────>│ 遍历 callables           │                      │
-      │               │   │                      │                      │
-      │               │   对于每个 callable:     │                      │
-      │               │   │                      │                      │
-      │               │   1. 分析输入形状        │                      │
-      │               │   2. 创建静态内存池     │                      │
-      │               │   │                      │                      │
-      │               │   3. Warmup 执行        │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ 执行 callable        │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 完成                │
-      │               │   │                      │                      │
-      │               │   4. 捕获 CUDA Graph     │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaGraphCaptureBegin│
-      │               │   │                      │                      │
-      │               │   │                      │                      │ [记录操作]
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaGraphCaptureEnd  │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaGraphInstantiate │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ graphExec 创建      │
-      │               │   │                      │                      │
-      │               │   5. 创建包装函数        │                      │
-      │               │   (自动管理 I/O)          │                      │
-      │               │   │                      │                      │
-      │<──────────────+ 返回 graphed callables   │                      │
-                      │                          │                      │
-后续调用:             │                          │                      │
-graphed_model(x)      │                          │                      │
-      │               │                          │                      │
-      +──────────────>│ 包装函数调用:            │                      │[执行整个图]
-      │               │   │                      │                      │
-      │               │   1. 复制输入到静态内存   │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaMemcpyAsync     │
-      │               │   │                      │                      │
-      │               │   2. cudaGraphLaunch()    │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ Replay 图           │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 执行完成            │
-      │               │   │                      │                      │
-      │               │   3. 复制输出            │                      │
-      │               │   │                      │                      │
-      │               │   +─────────────────────>│ cudaMemcpyAsync     │
-      │               │   │                      │                      │
-      │               │   │<─────────────────────+ 复制完成            │
-      │               │                          │                      │
-      │<──────────────+ 返回结果                │                      │
-                      │                          │                      │
+```mermaid
+sequenceDiagram
+    participant CPU as CPU (Python)
+    participant API as make_graphed_callables
+    participant GPU as GPU (CUDA)
+    
+    Note over CPU,GPU: 准备阶段
+    
+    CPU->>CPU: 提供 callables 和 sample_inputs
+    CPU->>CPU: 例：model1、model2 与 input1、input2
+    
+    CPU->>API: 接收参数
+    API->>API: 验证参数 (callables 列表、sample_inputs 列表、长度匹配)
+    
+    Note over CPU,GPU: 处理每个 callable
+    
+    par 处理 callable 1
+        API->>API: 步骤1: 分析输入形状
+        API->>API: input_shape = sample_input.shape (32, 512)
+        
+        API->>API: 步骤2: 创建静态内存池
+        API->>GPU: 执行一次以追踪内存
+        activate GPU
+        GPU-->>API: 返回输出形状
+        deactivate GPU
+        
+        Note over API: 静态内存池: input_buffer, output_buffer, intermediate buffers
+        
+        API->>API: 步骤3: Warmup 执行
+        API->>GPU: cuLaunchKernel
+        activate GPU
+        GPU-->>API: 完成
+        deactivate GPU
+        
+        API->>API: 步骤4: 捕获 CUDA Graph
+        API->>GPU: cuStreamBeginCapture
+        activate GPU
+        GPU->>GPU: 进入捕获模式
+        deactivate GPU
+        GPU-->>API: 模式已激活
+        
+        API->>GPU: 记录所有操作 (不实际执行)
+        activate GPU
+        deactivate GPU
+        GPU-->>API: 已记录
+        
+        API->>GPU: cuStreamEndCapture
+        activate GPU
+        deactivate GPU
+        GPU-->>API: graph 对象
+        
+        API->>GPU: cuGraphInstantiate
+        activate GPU
+        GPU->>GPU: 分配资源
+        deactivate GPU
+        GPU-->>API: graphExec 对象
+        
+        API->>API: 步骤5: 创建包装函数
+        Note over API: graphed_callable: graphExec, static_pool, auto I/O
+    end
+    
+    par 处理 callable 2
+        API->>API: 重复步骤1-5
+    end
+    
+    API-->>CPU: 返回 graphed callables
+    
+    Note over CPU,GPU: 执行阶段
+    
+    CPU->>API: 调用 graphed_model(x)
+    API->>API: graphed_callable 调用
+    
+    Note over API: 自动处理 I/O
+    
+    API->>API: 1. 复制输入到静态内存
+    API->>GPU: cudaMemcpyAsync (Host -> Device)
+    activate GPU
+    deactivate GPU
+    GPU-->>API: 复制完成
+    
+    API->>API: 2. cudaGraphLaunch()
+    API->>GPU: cuGraphLaunch
+    activate GPU
+    GPU->>GPU: Replay 整个图
+    deactivate GPU
+    GPU-->>API: 执行完成
+    
+    API->>API: 3. 复制输出
+    API->>GPU: cudaMemcpyAsync (Device -> Host)
+    activate GPU
+    deactivate GPU
+    GPU-->>API: 复制完成
+    
+    API-->>CPU: 返回结果
+    
+    Note over CPU,GPU: 优势: 自动化、多函数支持、简单易用
 ```
 
 ### 高级用法
@@ -1271,6 +1389,15 @@ graphed_model = torch.cuda.make_graphed_callables(
 | **生产就绪** | ✅ | ✅ | ✅ | ✅ |
 | **最低 PyTorch 版本** | 2.0 | 2.0 | 1.10 | 1.10 |
 
+### 时序图复杂度对比
+
+| 方式 | 捕获复杂度 | 执行复杂度 |
+|------|-----------|-----------|
+| backend="cudagraphs" | 低 | 低 |
+| backend="inductor" + reduce-overhead | 中 | 低 |
+| torch.cuda.graph() | 高 | 中 |
+| make_graphed_callables | 中 | 低 |
+
 ### 硬件与适用场景
 
 - **GPU 架构要求**: 需要 Volta（V100）及更新架构的 NVIDIA GPU 才支持 CUDA Graphs；推荐使用 Ampere（A100）及更新架构以获得更好性能。
@@ -1294,6 +1421,28 @@ graphed_model = torch.cuda.make_graphed_callables(
 场景 4: 同时优化多个函数
 推荐: make_graphed_callables
 原因: 支持多函数，自动内存管理
+```
+
+### 性能优化层级（跨方式总览）
+
+```
+Level 0: 原始 PyTorch
+  └─ 基础执行
+
+Level 1: Kernel Fusion
+  └─ 融合多个操作
+
+Level 2: Triton Kernels
+  └─ 自动优化
+
+Level 3: CUDA Graphs
+  └─ 消除 kernel launch
+
+Level 4: 内存优化
+  └─ 预先分配内存
+
+Level 5: 混合优化
+  └─ 静态+动态结合
 ```
 
 ### 性能对比
@@ -1567,5 +1716,4 @@ PyTorch 提供了多种使用 CUDA Graphs 的方式，每种方式都有其适�
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
-- [[CUDA_Graphs_Timing_Diagrams]]
 - [[comparison]]

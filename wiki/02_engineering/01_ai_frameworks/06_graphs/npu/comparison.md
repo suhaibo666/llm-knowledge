@@ -624,7 +624,7 @@ output = graphed_model(input_tensor)
 ### 相关文档
 
 - [CUDA Graphs 使用指南](../cudagraphs_usage_guide.py)
-- [CUDA Graphs 时序图](../CUDA_Graphs_Timing_Diagrams.md)
+- CUDA Graphs 时序图:已并入 [[PyTorch_CUDA_Graphs_Complete_Guide]] 各"方式"小节的"代码调用流程时序图"
 
 ## Related Pages
 
