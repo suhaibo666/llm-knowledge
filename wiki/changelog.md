@@ -42,6 +42,33 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-28（二）：K3 开源栈源码审计 + 稳定性专题横切
+
+**Type**: Source Audit（代码）+ Deep Dive + Cross-Document Correction（把 K3 随发布开放的仓库从“报告项目级说法”推进到源码级，并把散落各页的稳定性机制横切成一页。）
+
+- **新增 [[01_theory/01_models/moonshot_kimi/moonep_analysis]]**：固定 `MoonshotAI/MoonEP@0f385f03`（2026-07-28，MIT）做 file:line 级审计。拆出在线规划的五步算法（全局直方图 → `balance` 守恒 → 贪心配额 → 逐专家分配 → 精确落点 + dedup），并从算法本身推出 README 只给结论的那条约束——贪心“一次填满最空接收方”⇒ 每 rank 至多从一个远端 home group 接收 ⇒ 训练时 `B=E/R` 足够。记录工程形态（几乎全部 kernel 用 CUTLASS Python DSL 写，C++ 仅 60 行 pybind + VMM/IPC/multicast；planner 是单个 cooperative kernel，计划全程不下 GPU）、梯度回收闭环、以及源码注释里写明的被否决方案（远端写清零 vs 本地清零的 NVLink 预算权衡，`grad_reduce.py:24-30`）。
+- **新增 [[01_theory/01_models/moonshot_kimi/kimi_k3_open_source_stack_analysis]]**：按 GitHub API 逐仓核对 `created_at`/`pushed_at`，把仓库分成三类（生产栈组件 / K3 自己写的作品 / 评测配套）。**更正一条流传口径**：FlashKDA 建于 2026-04-20、最新 commit `d2ff19a`（2026-05-26），**并非随 K3 新开源、也未为 K3 更新**；真正落在发布窗口的新仓是 MoonEP、AgentENV、minitriton、nano-kpu、PerceptionBench。补齐 AgentENV 的 overlaybd 与 memory ballooning（报告未提）、minitriton 与 nano-kpu 的免责声明与“综合估算而非 P&R”口径。
+- **新增 [[01_theory/01_models/moonshot_kimi/kimi_k3_stability_analysis]]**：按“哪条轴会失稳”重组报告 §2.2/§2.3/§2.4/§2.5/§3.2/§3.3/§3.4/§4.1.2/§4.1.4 与 Appendix C，得出主线——**K3 拒绝的每个替代方案都是“用质量或超参换稳定”，被采纳的机制几乎都同时提升质量或降低开销**（aux loss、sign 更新、BIP、hard clamp、无界 SwiGLU、SigLIP 初始化、WSD 七处取舍指向同一方向）。
+- **修正 [[01_theory/01_models/moonshot_kimi/kimi_k3_infra_deepdive]] §2.1**：原记“Per-Head Muon 如何与 K2 MuonClip 组合仍未知”过窄；报告 §3.3（p.11）明写三者并用（Per-Head Muon + K2 weight-clipping + QB），并给出 cosine + 1% warmup、weight decay 0.1、8k→64k 预训练。“未知”收窄到联合消融与 clip 阈值。§5 事实边界表的 MoonEP 行标为已兑现、AgentENV 行补仓库口径。
+- **补齐 [[01_theory/01_models/moonshot_kimi/kimi_k3_architecture_deepdive]] 两处缺失的“为什么”**：MoonViT-V2 从零训练的**首要动机是训练稳定性**（SigLIP 初始化的 MoonViT-3D 梯度范数持续偏高且频繁 spike，Fig. 6），且视觉质量持平；Block AttnRes 在 K3 的精确配置为 8 块 × 12 层、计入 embedding 共 9 块，开销从 `O(Ld)` 降到 `O(Nd)`。
+- **[[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]] 新增 §9.1**：AgentENV 仓库侧口径，并标注与报告延迟数字（133/49 ms vs `<100`/`<50 ms`）的口径差异，证据等级升至“可下载实现 + README 自报”，未升 P2/P3。
+- **补写 [[01_theory/01_models/moonshot_kimi/kimi_k3_architecture_deepdive]] §六 SiTU（2026-07-28 追加）**：把原来 5 行的条目扩成完整一节，并新增自绘四联图 `assets/kimi_k3_fig_situ_range.png/.svg`（按报告 §2.3.2 与 Appendix B 公式数值绘制，非复制 Fig. 4）。补出报告 Appendix B 的设计目标原文（bound the SwiGLU product **without discarding the characteristic shape of Swish**——保住原点近线性与消失负尾）、只 cap 线性因子而保留 sigmoid 的理由、Eq. 18 的一阶等价与 Eq. 19 的界，以及 hard clamp 被否决的原因（饱和边界外梯度归零）。**值域主结果**：预激活不变；门支 `(−0.2785,+∞) → (−0.2698, 4)`（下确界只动 3%，cap 实际只作用于正半轴）；up 支 `ℝ → ±25`；输出 `ℝ → (−100,100)`。另加三条本库推算：四角点显示 ±100 两端都由门支饱和到 4 驱动、门支负半轴对输出量级贡献上限仅 6.74；cap 保留线性值的比例只依赖 `z/β`（0.25β→98.0%、1β→76.2%、2β→48.2%），据此说明 `β₁=4` vs `β₂=25` 意味着门被管得比 up 严约 6 倍（取值理由报告未给，标 [推断]）。
+- **证据边界（显眼的缺席）**：K2 有“15.5T tokens 零 loss spike”，**K3 报告没有等价陈述**——无训练 loss 曲线、无 spike 计数、无容错章节；全文唯一 spike 级实测证据是 Fig. 6 的 MoonViT 梯度范数对比。因此“K3 稳定性机制更系统”可说，“K3 训练更稳定”不可说。
+
+---
+
+## 2026-07-28：Kimi K3 技术报告回填后训练统一学习域
+
+**Type**: Source Ingest + Industrial Case Study + Cross-Document Correction（固定官方报告 `0797decb`，将算法、trajectory、environment、Infra 与部署精度放回同一个 `wiki/03_posttraining/` 闭环。）
+
+- **原始来源**：新增 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`，SHA-256 `fd6ee35c07766a5eb6104235f1b407e4329f969e3482b8c42937c7b5f2b3efe1`；来源台账补 §4.1、§4.2、§5.3 与 Appendix F 的精确定位。
+- **新增 D12 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]]**：串起 SFT → 九个 domain/effort 专家 → MOPD，澄清 partial rollout 保留 prompt 内 \(K\) group，并分析 white-box environment、XTML preserved thinking、MXFP4/MXFP8 QAT、draft model、external KV pool 与 AgentENV。
+- **回填统一主线**：更新 D00–D05 与 D11；把 K3 作为项目级工业案例，而不是没有训练源码证据的“第五个开源框架”；D00 与领域/全局索引扩展为 D00–D12 连续编号。
+- **修正事实边界**：量化 scheme 一致只消除该维度 TIM；K3 partial rollout 不是 fully async；Figure 8、MOPD、GRM、external KV 与 AgentENV 均保留未披露超参数、消融或运行条件。
+- **K3 旧页同步**：总览、架构、Infra 与 Moonshot 索引从“报告/权重待发布”更新为 2026-07-28 固定报告，并把后训练机制统一链接到 D12。
+
+---
+
 ## 2026-07-28：PyTorch 图编译系列源码级重构与审计闭合
 
 **Type**: Source-faithful Refactor + Final Audit（固定源码基线为 PyTorch
@@ -67,19 +94,6 @@ All source ingestions and significant wiki updates are logged here.
 - **验证结果**：审计工具 90 项测试与课程合同 42 项测试均通过，21/21 个既有
   runtime producer receipts 成功；本机缺少 MSVC/CUDA/Triton，原生 C++ kernel 与
   CUDA/Triton autotune 仍保持 `BLOCKED`，没有扩展演示 demo。
-
----
-
-
-## 2026-07-28：Kimi K3 技术报告回填后训练统一学习域
-
-**Type**: Source Ingest + Industrial Case Study + Cross-Document Correction（固定官方报告 `0797decb`，将算法、trajectory、environment、Infra 与部署精度放回同一个 `wiki/03_posttraining/` 闭环。）
-
-- **原始来源**：新增 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`，SHA-256 `fd6ee35c07766a5eb6104235f1b407e4329f969e3482b8c42937c7b5f2b3efe1`；来源台账补 §4.1、§4.2、§5.3 与 Appendix F 的精确定位。
-- **新增 D12 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]]**：串起 SFT → 九个 domain/effort 专家 → MOPD，澄清 partial rollout 保留 prompt 内 \(K\) group，并分析 white-box environment、XTML preserved thinking、MXFP4/MXFP8 QAT、draft model、external KV pool 与 AgentENV。
-- **回填统一主线**：更新 D00–D05 与 D11；把 K3 作为项目级工业案例，而不是没有训练源码证据的“第五个开源框架”；D00 与领域/全局索引扩展为 D00–D12 连续编号。
-- **修正事实边界**：量化 scheme 一致只消除该维度 TIM；K3 partial rollout 不是 fully async；Figure 8、MOPD、GRM、external KV 与 AgentENV 均保留未披露超参数、消融或运行条件。
-- **K3 旧页同步**：总览、架构、Infra 与 Moonshot 索引从“报告/权重待发布”更新为 2026-07-28 固定报告，并把后训练机制统一链接到 D12。
 
 ---
 
@@ -116,6 +130,23 @@ All source ingestions and significant wiki updates are logged here.
 - **Part IV 证据边界**：真实执行 GraphLowering、Scheduler、dependency/fusion/reorder、external matmul 与 `eigvals` fallback；custom lowering 到达 `ComputedBuffer`；生成 wrapper/C++ source 并完成 Scheduler→FX→Python provenance join。当前 Windows CPU 缺 MSVC `cl` 且无 CUDA，因此 native pointwise/reduction kernel、真实 fusion 性能、物理 allocator peak 与 Triton autotune 没有实测；mock/no-op 捕获的 codegen 产物明确标记为 generated-not-executed，Scheduler group 数也不再误写成 native kernel 数。
 - **迁移与导航**：28/28 篇 manifest 页面均有“页面角色与审计状态”说明并保留全文；其中 19 篇旧主干页面不再整页 blanket deprecated，另 9 篇 runtime/checkpoint/cache/memory 专题补齐独有职责、基线和未闭合边界。综合报告增加旧节→新系列去向表；同步更新框架总索引、AOTAutograd、Inductor、FX/export、runtime memory 和 compile cache 六个索引，并补齐相关回链。
 - **历史审计 gate 仍打开**：manifest 已扩为 28 页、2,514 条 inventory records、2,022 条 heading/code/locator ledger rows，围栏不平衡为 0；但仍有 832 个 `TBD` destination、1,041 个 unresolved-like row（1,030 `unresolved`、1 `not_semantically_audited`、10 `needs_manual_resolution`）、0 个真实 destination anchor。故当前新课程可作为固定基线下的已验证主线使用，但整个重构不能宣称满足“历史资料逐结构单元无损迁移”或 authoritative 发布门槛。完整结论见 `docs/audits/pytorch_graph_series/2026-07-26/design_conformance_review.md`。
+
+---
+
+## 2026-07-25：训推不一致（TIM）因果链——第 1 块首页与 raw 摄入清单
+
+**Type**: Source Ingestion + Deep Dive（严格路线：所有断言带一手来源与 §/Fig/Table/Eq 级定位符；未核实项显式标注，不做推测补齐。）
+
+- **新增 [[tim_causal_chain_analysis]]**（515 行）：打通本库此前断掉的一环——「kernel 非确定性 → logprob 偏差 → 重要性比方差放大 → 训练崩溃」。上游（浮点非确定性、batch 不变性）已由 [[determinism_and_numerical_reliability_analysis]] 覆盖，下游（loss spike 治理）已由 [[training_dynamics_stability_analysis]] 覆盖，本页补中间两环与算法侧修法全谱。
+- **归因框架**：采用 Qwen 2512.01374 §2.4 的二因子分解（训推数值分歧 × 策略陈旧度）作为全页坐标系，据此把 PPO clip、TIS/TRM/ALP/MIPU、batch-invariant kernel、TBIK、FP16、MoE 路由回放归位到各自作用的因子上。
+- **六类病因逐条落定位符**：引擎间 kernel 差异、batch 触发不同 tiling、**TP size 改变累加顺序**（本库此前未覆盖）、BF16 尾数不足、MoE 路由分歧、量化 rollout。其中 TBIK Table 1/2 的对照实验证明「只做 batch 不变，对跨 TP 数值发散几乎无效」（Llama-3.1-8B 上 BIO 的 27.54 甚至高于 BF16 的 26.48）。
+- **崩溃形态学**：首次在本库区分 recomputation 与 bypass 两条路径的不同崩溃曲线（多阶段 vs 单阶段、是否伴随 loss spike），并记录一条对工程有直接影响的发现——**K1/K3 KL 对 recomputation 型崩溃是盲的**（前 700 步几乎平坦而 reward 已在退化），而 recomputation 正是 verl 等框架的常见默认路径。
+- **确定性税汇总**：batch-invariant GEMM 194 vs cuBLAS 527 TFLOPS；单个确定性请求混入 11 请求批次使整批吞吐掉 56%；TBIK 端到端 22%–63%；vLLM+TorchTitan bitwise 一致 RL run 慢 2.4×。并指明三篇系统侧论文**无一测量 RL 闭环端到端代价**，列为头号 open question。
+- **三处 `> [!contradiction]` 标注**：① TIM 根因是精度（2510.26788）还是优化（2602.01826）——两篇互相点名，本页据 $C\cdot T^2$ 的乘积结构论证二者数学上不互斥；② MoE 的 Routing Replay 是否必要——GSPO §5.3 主张可取代 vs 同作者组 2512.01374 §4.4 回到「必需」，并如实标注后者**未点名**前者；③ 确定性是否必须付性能代价——实测派 vs 2606.00279，本页指出后者目标是可审计而非不变性，且「无性能代价」这一标题级主张零测量。
+- **两处 raw 原文核实**（直接读 `raw/` 中已有 PDF）：DeepSeek-V4 §3.3 的 dual-kernel strategy 抵消的是**放弃 split-KV 后 decoding attention 的 wave-quantization 损失**，不是 matmul 固定 tiling 的损失（matmul 侧是 DeepGEMM 端到端替换 + 放弃 split-k 后另做优化）；GSPO §5.3 的 Routing Replay 表述与 10% 专家漂移数字逐句核对。
+- **更新 [[01_theory/04_posttraining/index]]**：新增「训推一致性（TIM）与 RL 稳定性」小节；**首次建立 Knowledge Gaps 节**，记录 9 条确认无一手来源的缺口（崩溃阈值、尾部刻画、逐位置增长曲线、极端 token 频率、重尾→熵坍塌因果、RL 闭环确定性税、VeXact 开销、RL 阶段路由坍塌、vLLM logprobs RFC）；标注三条旧目录结构下的失效链接并给出替代。
+- **新增 `raw/_ingest/INGEST_MANIFEST_block1_tim.md` 与 `fetch_block1_tim_sources.ps1`**：29 项已核实来源（26 篇 PDF + 3 份官方文档）的摄入清单与下载脚本，含目标路径、arXiv ID、一句话定位、保真度标注，以及 7 项需浏览器手动存档的博客/issue。**容器侧 arXiv 被代理阻断，PDF 需在本机执行脚本落盘。**
+- **Mermaid 三块**：均按 CLAUDE.md 清单逐条自检，并用 mermaid-cli 实渲通过。
 
 ---
 
@@ -479,7 +510,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **Type**: New（应用户"在 01_theory 加分布式并行原理解读，从分布式原语→TP→EP→PP→ZeRO 等基本概念；演示图用 SVG→PNG"。抓本质 + 引擎无关的原理层，与已有工程页分工）
 
-**定位**：新建理论簇 `01_theory/06_distributed_parallelism/`，**原理（principle）层、引擎无关**——只讲「为什么这么切、代价函数长什么样、为什么不选替代」，两根主线贯穿全簇：**$\alpha$-$\beta$ 通信代价模型** + **显存账本（参数/梯度/优化器态/激活）**；「源码怎么实现」一律交叉链接到 [[../02_engineering/index]] 已有的源级页（[[15_distributed_primitives/index]]、[[megatron-lm/index]]、[[torchtitan/index]] 等），不重复。填补「理论层无分布式并行原理页」的空白。
+**定位**：新建理论簇 `01_theory/06_distributed_parallelism/`，**原理（principle）层、引擎无关**——只讲「为什么这么切、代价函数长什么样、为什么不选替代」，两根主线贯穿全簇：**$\alpha$-$\beta$ 通信代价模型** + **显存账本（参数/梯度/优化器态/激活）**；「源码怎么实现」一律交叉链接到 [[02_engineering/index]] 已有的源级页（[[15_distributed_primitives/index]]、[[megatron-lm/index]]、[[torchtitan/index]] 等），不重复。填补「理论层无分布式并行原理页」的空白。
 
 - **新增 index + 6 内容页**：
   - [[collectives_analysis]] — 六大原语语义、$\alpha$-$\beta(-\gamma)$ 模型、核心恒等式 **all-reduce = reduce-scatter + all-gather**、ring 每卡搬运 $2(N{-}1)/N\cdot M$ 的带宽最优性、ring vs tree、all-to-all/p2p 代价（全簇「代价词汇表」）。
@@ -1363,7 +1394,7 @@ All source ingestions and significant wiki updates are logged here.
 **索引与交叉引用**:
 
 - `01_ai_frameworks/index.md` —— 子目录表新增 [[07_op_registration/npu/index]];页面列表新增「op-plugin 算子接入」区(3 行);页头摘要与最后更新改 2026-06-12
-- 交叉引用:三篇互链,并 [[link]] 到既有 [[npu_compile_paths_overview]] / [[npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / [[PyTorch_Dynamo_Technical_Analysis]] / [[npu_lowering_guide]]。入图判别页明确定位为「判别视角」,与既有「路径实现全景」页互补、不重复
+- 交叉引用:三篇互链,并 link 到既有 [[npu_compile_paths_overview]] / [[npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / [[PyTorch_Dynamo_Technical_Analysis]] / [[npu_lowering_guide]]。入图判别页明确定位为「判别视角」,与既有「路径实现全景」页互补、不重复
 
 ---
 

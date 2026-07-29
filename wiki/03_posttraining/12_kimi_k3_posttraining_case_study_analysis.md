@@ -310,7 +310,24 @@ K3 同时使用传统 container、GPU sandbox 和 AgentENV microVM。报告称�
 
 AgentENV 用 dirty-page incremental checkpoint；报告给出的最低 checkpoint/resume latency 为 133 ms/49 ms，称 inference wait 最多占 sandbox lifetime 的 98%，并报告最高 6.5× memory overcommit。整个 K3 训练与评测创建了 51,219,741 个 sandboxes、覆盖 1,505,678 个 images（报告 §5.3.2，p.22）。
 
-这些数字均是项目方自报，而且报告没有给出硬件、sandbox memory size、状态脏页量或延迟分位数，不能直接用于外部容量规划。AgentENV 的独立源码仓库已公开，但其代码机制需要另行固定 commit 审计，不能从 K3 报告自动升级为 P2/P3 证据（报告脚注 4，p.22；[AgentENV 仓库](https://github.com/kvcache-ai/AgentENV)）。
+这些数字均是项目方自报，而且报告没有给出硬件、sandbox memory size、状态脏页量或延迟分位数，不能直接用于外部容量规划（报告脚注 4，p.22）。
+
+### 9.1 仓库侧口径（2026-07-28 补）
+
+[AgentENV 仓库](https://github.com/kvcache-ai/AgentENV)（`kvcache-ai/AgentENV`，Rust，MIT，建仓 2026-07-23、推送 2026-07-28）已公开，README 补出了报告里没有的三个机制：
+
+| 机制 | 作用 | 报告是否提及 |
+|---|---|---|
+| **Firecracker microVM** | 虚拟化基座；快照支撑的环境启动/恢复 `< 50 ms`、暂停 `< 100 ms`；增量内存与文件系统快照 `< 100 ms`（即使磁盘被大量修改） | 提及 microVM，未给这组口径 |
+| **overlaybd 按需镜像加载** | 镜像总量可**超过磁盘容量**而仍保持全集群快速启动 | **未提及**——它解释了 1,505,678 个 image 为何工程上可行 |
+| **memory ballooning** | 把可回收的 guest 内存还给 host，环境跑得越久越能维持高超分比 | **未提及**——它是 6.5× 超分的实现基础 |
+
+另有两项接口事实：快照持久化到 S3 兼容存储或共享分布式文件系统；对外暴露 **E2B 兼容 HTTP API**，因此现有 E2B Python/TS SDK 不改代码即可接入。运行要求 Linux kernel 6.8+ 与 `/dev/kvm`。
+
+> [!important] 两组延迟数字口径不同，不要混用
+> 报告给的是“最低 133 ms / 49 ms”（训练期实测最小值），README 给的是“`< 100 ms` / `< 50 ms`”（产品指标，且把 `<50 ms` 限定为 **snapshot-backed** 的启动或恢复）。二者不矛盾但统计口径不同，**都没有给分位数、硬件与 sandbox 内存规格**，因此本节开头的容量规划限制依然成立。
+>
+> 证据等级：从“报告自报”升级为“可下载实现 + README 自报指标”，但**本库尚未做 commit 级代码审计，也未复现任何延迟数字**，因此不升级为 P2/P3。栈级定位见 [[01_theory/01_models/moonshot_kimi/kimi_k3_open_source_stack_analysis|K3 开源栈全景]] §3.2。
 
 ---
 
@@ -369,3 +386,6 @@ AgentENV 用 dirty-page incremental checkpoint；报告给出的最低 checkpoin
 - [[01_theory/01_models/moonshot_kimi/kimi_k3_analysis|Kimi K3 模型总览]]
 - [[01_theory/01_models/moonshot_kimi/kimi_k3_architecture_deepdive|Kimi K3 架构深析]]
 - [[01_theory/01_models/moonshot_kimi/kimi_k3_infra_deepdive|Kimi K3 训推基础设施深析]]
+- [[01_theory/01_models/moonshot_kimi/kimi_k3_stability_analysis|Kimi K3 稳定性栈]] — §4.1.2 逐 token 正则化在“七条失稳轴”中的位置
+- [[01_theory/01_models/moonshot_kimi/kimi_k3_open_source_stack_analysis|Kimi K3 开源栈全景]] — AgentENV 等仓库的证据等级地图
+- [[01_theory/01_models/moonshot_kimi/moonep_analysis|MoonEP 源码级分析]] — 训练侧全平衡 EP 的实现

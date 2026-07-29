@@ -77,3 +77,4 @@ $$T_{\text{MoE}} \approx \underbrace{T_{a2a}^{\text{dispatch}}}_{\text{送 token
 - [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_ep_analysis]] — **实现层**：torchtitan 的 EP
 - [[../../02_engineering/02_train_frameworks/mindformers/mindformers_moe_token_dispatcher_analysis]] — **实现层**：token dispatcher 的分发/回收
 - [[hw_friendly_llm_codesign_analysis]] — 推理侧视角：宽 EP 抬 GEMM-M 的定量论证（NVIDIA GB300）
+- [[../01_models/moonshot_kimi/moonep_analysis]] — **本页“最大的敌人是负载不均”的 2026 年新答案**：MoonEP 用动态冗余专家把不均从“减小”改成“吸收”，源码级分析

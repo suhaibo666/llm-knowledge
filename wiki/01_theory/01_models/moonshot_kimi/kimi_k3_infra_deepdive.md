@@ -30,7 +30,8 @@ $$
 K2 报告称，这套机制在 15.5T tokens 训练中实现了零 loss spike。此时 per-head 粒度主要用于**事后稳定性修补**。
 
 - **K3 的官方变化。** 正式报告确认：对 Q、K、V 投影，不再对完整 momentum matrix 做 Newton–Schulz 正交化，而是沿 head 维切分 momentum matrix，再独立正交化每个 head block。这样可避免大尺度 head 主导共享更新方向，使各 head 更新尺度更均衡；官方还报告训练稳定性改善和 optimizer overhead 略降（报告 §2.5，pp.10–11）。
-- **机制边界。** 报告没有给出 Per-Head Muon 与 QK-Clip 的联合消融、学习率共享方式、完整超参数或公开实现。因而“按头切分 Q/K/V momentum block”是 **[官方]**，但它如何与 K2 的 MuonClip 组合仍未知。
+- **组合方式已由报告 §3.3 明确（2026-07-28 修正）。** 本节初版记为“如何与 K2 的 MuonClip 组合仍未知”，该判断过窄：报告 §3.3（p.11）写明 "We optimize the model using the Per-Head Muon optimizer (§2.5) **together with the weight-clipping mechanism introduced in Kimi K2**, while adopting QB (§2.3.3) for MoE load balancing."，即 **K3 = Per-Head Muon + K2 的 weight-clipping + QB 三者并用**，clip 被保留而非替代。同段还给出基础超参：cosine 调度 + 1% 线性 warmup、weight decay 全程 0.1、预训练从 8k 起步后扩到 64k。
+- **机制边界（收窄后）。** 仍未公开的是联合消融、clip 阈值 `τ` 与触发频率、学习率共享方式与实现代码。稳定性视角的横切见 [[kimi_k3_stability_analysis]] §2.2。
 
 ### 2.2 高稀疏 MoE 的训练配套：Quantile Balancing + 全平衡 EP
 
@@ -258,11 +259,11 @@ KDA 层自己:              降到"噪声级"(定长状态,~MB 量级/层/序列
 
 | 项 | 正式报告已确认 | 仍待源码或运行证据确认 |
 |---|---|---|
-| Per-Head Muon | Q/K/V momentum matrix 沿 head 维切分并分别做 Newton–Schulz；改善 head 间更新均衡与稳定性（§2.5） | 与 QK-Clip 的组合、完整超参数、消融与实现 |
+| Per-Head Muon | Q/K/V momentum matrix 沿 head 维切分并分别做 Newton–Schulz；改善 head 间更新均衡与稳定性、略降 optimizer overhead（§2.5）。**与 K2 weight-clipping + QB 并用已由 §3.3 明确** | 联合消融、clip 阈值与触发频率、完整超参数与实现 |
 | Quantile Balancing | balanced assignment 推导、token/expert 两轴分位数更新、部署时 frozen bias + Top-k（§2.3.3；App. C） | trainer 代码、超参数、独立消融 |
-| MoonEP | 每 rank 恰收 `S×K` token；最多 `E/R` 冗余专家槽；GPU planning、zero-copy、静态 shape、无逐层 host sync（§5.2.1） | MoonEP 仓库的 commit 级实现审计、目标硬件与端到端消融 |
+| MoonEP | 每 rank 恰收 `S×K` token；最多 `E/R` 冗余专家槽；GPU planning、zero-copy、静态 shape、无逐层 host sync（§5.2.1） | **✅ 已兑现（2026-07-28）**：七条说法逐条对上 `MoonEP@0f385f03` 源码，见 [[moonep_analysis]]。**仍缺**：K3 生产配置（896 选 16、实际 EP 度、卡型、跨节点）下的端到端数据——仓库基准是 `E=384,K=8` 的 K2 档、单机 H20、EP=8 |
 | MXFP4/MXFP8 QAT | QAT 覆盖 SFT + RL；routed expert 权重 MXFP4、输入 MXFP8；rollout 与 training 同量化方案（§4.1.4） | fake/native quant 边界、trainer kernel、硬件和吞吐 |
-| 1M Agentic RL infra | co-located + partial rollout；external KV pool、auto-throttling、gradient-buffer reuse；AgentENV（§5.3） | 核心 trainer/rollout 源码、生产配置与复现实验；详见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\|D12]] |
+| 1M Agentic RL infra | co-located + partial rollout；external KV pool、auto-throttling、gradient-buffer reuse；AgentENV（§5.3） | **AgentENV 已开源**（`kvcache-ai/AgentENV`，Rust/MIT，2026-07-23 建仓）：Firecracker microVM、overlaybd 按需镜像、memory ballooning、E2B 兼容 API，见 [[kimi_k3_open_source_stack_analysis]] §3.2。**仍缺**：核心 trainer/rollout 源码、生产配置与复现实验；详见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\|D12]] |
 | K3 训练集群/成本 | 无任何可靠数字(TechCrunch 亦无)| 卡型、规模、token 数 |
 | KDA-aware prefix cache | KDA/MLA 共用 paged pool 与 page 生命周期；head-contiguous；跨不同 TP degree 在传输路径 re-layout（§5.4.1） | vLLM/Mooncake 生产接线、page 参数和调度源码 |
 | 2.5× scaling 效率 | Fig. 7 的 fitted validation-loss–FLOPs 曲线给出整体 scaling efficiency [官方] | 各结构、数据与训练改进的隔离归因 |
@@ -277,6 +278,9 @@ KDA 层自己:              降到"噪声级"(定长状态,~MB 量级/层/序列
 
 - [[kimi_k3_analysis]] — K3 发布总结
 - [[kimi_k3_architecture_deepdive]] — 结构变化点(本页多数 infra 选择的结构侧上半场)
+- [[moonep_analysis]] — §2.2 全平衡 EP 的源码级兑现(算法五步、CuTe DSL 形态、代价清单)
+- [[kimi_k3_open_source_stack_analysis]] — K3 开源栈全景与各仓证据等级
+- [[kimi_k3_stability_analysis]] — 七条失稳轴的横切(Per-Head Muon、QB、SiTU、QAT 在其中的位置)
 - [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]] — D12：K3 后训练与 1M Agentic RL 统一案例
 - [[mooncake_analysis]] — Mooncake 论文级分析(FAST'25)
 - [[kimi_k2_analysis]] — K2 的 MuonClip 与训练系统基线

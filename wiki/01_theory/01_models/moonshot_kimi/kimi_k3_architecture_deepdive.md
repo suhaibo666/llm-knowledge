@@ -21,7 +21,7 @@
 | 2 | 全局注意力层 | MLA + RoPE | **Gated MLA + NoPE** | 注意力选择性、长度外推 | 报告 §2.1.2，pp.5–6 |
 | 3 | 跨层连接 | 标准 pre-norm 残差 | **AttnRes**(深度方向 softmax 注意力) | 深层贡献稀释、梯度失衡 | 博客 §Architecture;AttnRes 论文 |
 | 4 | MoE | 384 选 8 + 1 共享(专家全宽) | **Stable LatentMoE 896 选 16** + Quantile Balancing | 同算力更高稀疏度、更低 EP 通信 | 博客 §Architecture;LatentMoE 论文 |
-| 5 | 激活函数 | SwiGLU 系 | **SiTU（Sigmoid Tanh Unit）** | 平滑限制 LatentMoE routed path 的内部激活爆炸 | 报告 §2.3.2、Appendix B，pp.7–8、43 |
+| 5 | 激活函数 | SwiGLU 系（**两个乘性因子都无界**） | **SiTU（Sigmoid Tanh Unit）**，输出值域 \(\mathbb{R}\to(-100,100)\) | 平滑限制 LatentMoE routed path 的内部激活爆炸 | 报告 §2.3.2、Appendix B，pp.7–8、43 |
 | 6 | 规模/上下文/模态 | 1.04T-A32B / 256K / 视觉 | **2.8T / 1M / +视频** | 结构效率红利再投入规模 | 博客开篇 |
 
 Moonshot 的推进节奏是“先验证组件，再合入旗舰”：KDA 于 2025 年 10 月在 48B 模型上验证；AttnRes 于 2026 年 3 月继续使用同一套 Kimi-Linear 48B 骨架，并训练 1.4T tokens；到 2026 年 7 月，K3 才把两条路线合并并扩展到 2.8T 参数。KDA 和 AttnRes 的独立论文与开源实现，使得本文能够分析其机制；但这些组件实现仍不能替代未公开的 K3 本体代码。
@@ -177,6 +177,8 @@ $$
 
 官方仓库没有完整 Python 实现，唯一可执行描述是 `README.md:52-91` 的伪代码，与论文 Fig. 2 相同。每个子层增加 `attn_res_proj`（即 `w_l`）和 `attn_res_norm`，在 attention 前和 MLP 前各聚合一次，并在块边界封存当前块。K3 官方图中的 `(α, w)`、`Block n−1/n−2/n−3` 和 `Embedding` 正是这套记号；SVG 的 aria-label 也明确写着 “Block Attention Residuals architecture diagram”。
 
+**K3 的实际分块配置（报告 §2.2，p.6）。** 报告给出的经验值是 `N≈8` 即可在各规模上取回大部分收益；**K3 把层划分为 8 个块、每块 12 层，因此最后一块不完整，计入 embedding 层后共 9 个块**。93 层按 12 层一块正好是 7 整块 + 1 残块 = 8 块，加 embedding 得 9——与官方架构图上 `Block n−3/n−2/n−1` 加 `Embedding` 的记号完全对上。Block 化的收益是双重的：内存与通信开销从 `O(Ld)` 降到 `O(Nd)`，并且**给推理期状态定了界**，使块间并行结果能经 online softmax 与块内串行部分和更好地合并。
+
 **额外开销受控。** 每个子层只新增一个 `d` 维向量和一个 RMSNorm。论文报告：在 pipeline parallel 训练下，端到端开销低于 4%；推理通过 two-phase 计算与 online softmax，把每 token、每层的残差 I/O 从 `3d` 提高到约 `5.5d`，仍远低于 mHC 的 `34d`，端到端延迟增幅低于 2%（Table 1、§4.2）。由于块数 `N` 固定，深度方向的“KV”规模也是有界的。
 
 ### 4.3 证据
@@ -220,21 +222,97 @@ $$
 
 ---
 
-## 六、变化点 5：SiTU（Sigmoid Tanh Unit）
+## 六、变化点 5：SiTU（Sigmoid Tanh Unit）——把"两个无界因子相乘"改成"两个有界因子相乘"
 
-SiTU-GLU 位于 Stable LatentMoE 的 routed experts 中。它分别对 Swish gate 的线性因子和 up branch 使用 smooth cap：
+### 6.1 它解决的是哪个具体问题
+
+SiTU 不是一次通用的激活函数改良，而是**为高稀疏 LatentMoE 的 routed path 定制的**。报告的因果链是两段：
+
+1. **结构层面的病因（§2.3，p.6）。** 极端稀疏（896 选 16，稀疏度 56）放大了 vanilla 设计的失效模式之一：routed path 把 \(W^\downarrow\)、一个门控多分支专家 FFN、\(W^\uparrow\) 串成**"几乎四个连续矩阵乘"**的链条；这种**病态条件（ill-conditioned）结构叠加 2.8T 规模，在 routed 分支产生内部激活爆炸**。
+2. **激活函数层面的病因（§2.3.2，p.7）。** SwiGLU 的**两个乘性因子都是无界的**（门支 \(a\sigma(a)\) 在正向 \(\sim a\)，up 支就是 \(u\) 本身），因此**同时出现大坐标就会产生激活离群值，并抬高低精度算术中的溢出风险**。原始 GLU 的 sigmoid 门虽然避免了门的无界增长，却丢掉了 Swish 正半轴那段近似线性的响应。
+
+所以要找的是这样一个激活：**限制大值增长，同时保住 SwiGLU 的局部形状与正向响应特征**。Appendix B 开篇把设计目标写得更精确——bound the SwiGLU product **without discarding the characteristic shape of Swish**，具体是两条形状必须保住：**① 原点附近近似线性；② 消失的负尾**（p.43）。
+
+### 6.2 机制：只 cap 线性因子，保留 sigmoid
+
+记 smooth cap 为 \(\operatorname{softcap}(z,\beta)=\beta\tanh(z/\beta)\)，则
 
 \[
 \operatorname{SiTU\text{-}GLU}(x)=
-\left[
-\beta_1\tanh\left(\frac{W_gx}{\beta_1}\right)
+\underbrace{\left[
+\beta_1\tanh\!\left(\frac{W_gx}{\beta_1}\right)
 \odot \operatorname{Sigmoid}(W_gx)
-\right]
+\right]}_{\text{门支：只换掉 Swish 的线性因子}}
 \odot
-\beta_2\tanh\left(\frac{W_ux}{\beta_2}\right).
+\underbrace{\beta_2\tanh\!\left(\frac{W_ux}{\beta_2}\right)}_{\text{up 支：同款 cap}},
+\qquad \beta_1=4,\ \beta_2=25 .
 \]
 
-K3 取 \(\beta_1=4,\beta_2=25\)，使输出坐标满足 \(\lVert f(x)\rVert_\infty\le100\)。它在原点附近保持 SwiGLU 的一阶行为，同时平滑限制大正激活；报告把动机明确归因于 LatentMoE routed path 连续多次矩阵乘造成的内部 activation explosion，而不是把 SiTU 定义为量化专用技巧（报告 §2.3.2、Fig. 4，pp.7–8；Appendix B、Eq. 18–19，p.43）。
+两处设计意图报告都写明了（Appendix B，p.43）：
+
+- **门支只 cap Swish 的线性因子，`Sigmoid` 因子原样保留。** 理由是"**sigmoid 本来就把负向门响应压向零**，因此这一改动主要控制大正激活，**而不移除负尾**"。
+- **up 支施加同款 cap，目的是"不让任何一支独大（preventing either branch from dominating the product）"。** 这是理解 SiTU 的关键——问题出在**乘积**上，只治一支没用。
+
+**它是 SwiGLU 的单参数族推广，不是另一个函数。** 由 Eq. 18，\(\beta\tanh(z/\beta)=z+O\!\left(z^3/\beta^2\right)\)，故 SiTU-GLU 在原点**与 SwiGLU 一阶重合**；且当 \(\beta_1,\beta_2\to\infty\) 时**逐点还原 SwiGLU**。
+
+### 6.3 值域怎么变（本节主结果）
+
+![SiTU-GLU 值域四联图。A 门支：横轴为门支预激活 a=W_g·x，红线是 SwiGLU 门支 a·sigmoid(a)（上界正无穷、持续线性上升），蓝线是 SiTU 门支 beta1·tanh(a/beta1)·sigmoid(a)，在 beta1=4 处水平饱和；两条曲线的负向极小值几乎重合，标注为 −0.2785 → −0.2698，说明 cap 只压正向、负尾原样保留。B up 支：红线是恒等映射 u（双向无界的直线），蓝线是 beta2·tanh(u/beta2)，双向对称饱和于正负 25；标注 u=beta2 处只剩线性值的 76.2%。C 标量响应（两支同一输入，对应报告 Fig. 4 口径）：红线 SwiGLU 按 x 平方无界增长，在 x=10 处已达 100 并继续上升；蓝线 SiTU-GLU 单调趋近水平虚线 100，即 Eq. 19 的界 beta1·beta2；右上插图放大原点附近，两条曲线一阶重合。D 值域阶梯（横轴 symlog，箭头表示无界）：自上而下四行分别为预激活、门支、up 支、输出；每行上方红条为 SwiGLU、下方蓝条为 SiTU-GLU。预激活两者都是全实轴不变；门支 SwiGLU 从约 −0.28 延伸到正无穷，SiTU 收到 −0.27 至 4；up 支 SwiGLU 全实轴，SiTU 收到正负 25；输出 SwiGLU 全实轴，SiTU 收到正负 100。](assets/kimi_k3_fig_situ_range.png)
+
+> **图源**：本库自绘（2026-07-28），按报告 §2.3.2 与 Appendix B 的公式直接数值绘制，非复制报告 Fig. 4。SVG 原件 `assets/kimi_k3_fig_situ_range.svg`，生成脚本参数 \(\beta_1=4,\beta_2=25\)。
+
+**逐级值域对照**（"报告"列为 Eq. 19 的原文结论，其余为本库据同一公式的数值推算）：
+
+| 量 | SwiGLU | SiTU-GLU | 变化 |
+|---|---|---|---|
+| 预激活 \(a=W_gx,\ u=W_ux\) | \(\mathbb{R}\) | \(\mathbb{R}\) | **不变**——cap 作用在其后，不动权重与预激活 |
+| 门支 | \((-0.2785,\ +\infty)\) | \((-0.2698,\ \beta_1=4)\) | **上界从 \(+\infty\) 收到 4；下界几乎不动** |
+| up 支 | \(\mathbb{R}\) | \((-\beta_2,\ \beta_2)=(-25,25)\) | 双向对称收紧 |
+| 输出 \(f(x)\) | \(\mathbb{R}\)，量级 \(\sim a\cdot u\)（**二次**） | \((-100,\ 100)\) | \(\lvert f(x)\rvert\le\beta_1\beta_2=100\)（**报告 Eq. 19**） |
+
+报告给出的界很简洁：因为 \(\lvert\tanh(z)\rvert<1\) 且 \(0<\operatorname{Sigmoid}(z)<1\)，每个输出坐标都满足 \(\lvert\operatorname{SiTU\text{-}GLU}(x)\rvert\le\beta_1\beta_2\)。在这个界之上，还有三点值得单独记（以下数值为本库按公式计算）：
+
+**① 负尾"不被移除"是可以量化的。** 门支下确界从 Swish 的 **−0.2785**（在 \(a\approx-1.278\)）只变到 **−0.2698**（在 \(a\approx-1.219\)），相对变化约 3%。也就是说 cap 在负半轴几乎不起作用——sigmoid 早已把那边压没了，tanh 再压也无处可压。**cap 真正改变的只有正半轴：上界 \(+\infty \to 4\)。**
+
+**② 输出的 ±100 两端都由"门支饱和到 4"驱动，与门支的负半轴几乎无关。** 四个角点乘积：
+
+| | up 支取上界 \(+25\) | up 支取下界 \(-25\) |
+|---|---|---|
+| 门支取上确界 \(+4\) | **+100** | **−100** |
+| 门支取下确界 \(-0.2698\) | −6.74 | +6.74 |
+
+门支负半轴对输出量级的贡献上限只有 **6.74**，不到 100 的 7%。因此"输出值域 \((-100,100)\) 是对称的"这件事，**并不意味着门支对称**——负输出靠的是 up 支为负、而不是门为负。
+
+**③ cap 的形状在 \(z/\beta\) 下是通用的，\(\beta\) 只决定膝点位置。** 保留的线性值比例 \(\beta\tanh(z/\beta)/z\) 只依赖 \(z/\beta\)：
+
+| \(z/\beta\) | 0.25 | 0.5 | 1 | 2 | 4 |
+|---|---|---|---|---|---|
+| 保留线性值 | 98.0% | 92.4% | 76.2% | 48.2% | 25.0% |
+
+于是 \(\beta_1=4\) 与 \(\beta_2=25\) 的**不对称取值**含义就清楚了：门支在 \(\lvert a\rvert\approx1\) 就开始被明显压制（\(1=0.25\beta_1\)），而 up 支要到 \(\lvert u\rvert\approx6\) 才受到同等程度的压制——**门被管得比 up 严约 6 倍**。一个自然的解释是：门只负责调制/选择，其有用动态范围本就窄，压它代价小；up 支携带真正的值信号，压太狠会直接损失信息。**这个解释是 [推断]——报告给出了 \(\beta_1,\beta_2\) 的取值与由此得到的界，但没有解释为什么取这一对数，也没有给 \(\beta\) 的选取方法或敏感性分析。**
+
+**标量响应对照**（报告 Fig. 4 口径：两支喂同一标量输入，即上图 C）：
+
+| \(x\) | 2 | 4 | 8 | 16 | 32 | 64 |
+|---|---|---|---|---|---|---|
+| SwiGLU | 3.5 | 15.7 | 64.0 | 256 | 1024 | 4096 |
+| SiTU-GLU | 3.25 | 11.9 | 29.8 | 56.5 | 85.6 | 98.8 |
+
+SwiGLU 在 **\(x=10\) 就已经达到 100**，此后按 \(x^2\) 继续涨；SiTU 单调趋近 100 而不越过。偏离是渐进的：相对 SwiGLU 下压 1% 发生在 \(x\approx0.69\)，5% 在 \(x\approx1.58\)，20% 在 \(x\approx3.49\)，50% 在 \(x\approx7.40\)。负方向 \(x\to-\infty\) 时 SiTU 的标量响应趋于 \(0^+\)——**负尾照旧消失，与 Swish 同形**。
+
+### 6.4 为什么不用 hard clamp，以及与低精度的关系
+
+**hard clamp 被明确否决（Appendix B 末句，p.43）：** "与对 gate 预激活做硬截断不同，**smooth cap 在饱和边界之外保留非零梯度**，我们发现这带来更好的训练行为。" 硬截断在阈值外梯度直接归零，被截住的坐标会失去学习信号；\(\tanh\) 则处处可导、梯度只是逐渐衰减。
+
+**与 MXFP4/MXFP8 的关系需要分清报告说了什么、什么是推理。** 报告说的是：无界乘积"**抬高低精度算术中的溢出风险**"（§2.3.2，p.7）——这是它给出的两个风险之一，因此把 SiTU 说成"纯量化技巧"是错的，把低精度因素完全剔除同样偏离原文。
+
+具体到 K3 的量化配置，本库的补充理解是 **[推断]**：OCP MX 的元素格式里 E2M1（MXFP4）最大可表示值只有 6、E4M3（MXFP8）为 448，而 MX 是**每 32 个元素共享一个 2 的幂次 scale**。真正致命的往往不是绝对溢出，而是**块内一个离群值把共享 scale 顶高，从而把同块内的小值精度碾平**。把输出钉在 \(\pm100\) 等于给块内动态范围设了上界，这与 §4.1.4 "QAT 从 SFT 起贯穿整个后训练"的路线是自洽的。稳定性视角的横切见 [[kimi_k3_stability_analysis]] §2.1、§2.7。
+
+### 6.5 代价与证据边界
+
+- **两个新超参 \(\beta_1,\beta_2\)。** 报告给了取值和由此推出的界，**没有给选取方法、敏感性或消融**。
+- **饱和区梯度衰减。** \(\lvert a\rvert=2\beta_1=8\) 时门支只剩线性值的 48%，梯度同步减小。smooth cap 只是比 hard clamp 好，不是没有代价。
+- **报告没有 SiTU 的隔离消融。** Fig. 4 是函数曲线图，不是训练对照实验；"SiTU 贡献了多少 loss/稳定性"在报告中无法单独归因——RMSNorm、SiTU、QB 三个组件只有合并叙述（§2.3）。
 
 ---
 
@@ -253,13 +331,16 @@ K3 取 \(\beta_1=4,\beta_2=25\)，使输出坐标满足 \(\lVert f(x)\rVert_\inf
 | Gated MLA | attention sink、选择性 | 无门(+0.02 PPL);swish 门(+0.16) | 低秩门投影(可忽略) |
 | AttnRes | 深度轴信息稀释/梯度失衡 | DenseFormer(无效);mHC(弱且 I/O 6×);input-dependent query(好 0.006 但推理不友好) | 训 <4%、推 <2%;残差流变二元状态(PP/重计算要适配) |
 | Stable LatentMoE + 896/16 | 同算力更高稀疏度;EP 通信 | 全宽专家继续堆;bias 启发式均衡(敏感超参) | 路由/优化难度上升("first-order challenges") |
-| SiTU | 平滑限制 routed path 的大激活，同时保持 SwiGLU 局部形状 | hard clamp（梯度边界差）；无界 SwiGLU（内部激活爆炸） | 两个 soft-cap 超参数；饱和区梯度减弱 |
+| SiTU | 把「两个无界因子相乘」改成「两个有界因子相乘」：输出 \(\mathbb{R}\to(-\beta_1\beta_2,\beta_1\beta_2)=(-100,100)\)，同时一阶保持 SwiGLU 局部形状与消失负尾 | hard clamp（饱和边界外梯度归零）；无界 SwiGLU（近四次连乘下内部激活爆炸）；原始 GLU（丢掉 Swish 正半轴响应） | 两个 soft-cap 超参数（选取方法未公开）；饱和区梯度衰减；报告无隔离消融 |
 | 2.8T/1M/视频 | 效率红利变现 | — | 部署门槛 64+ 卡超节点(infra 页) |
 
 ## Related Pages
 
 - [[kimi_k3_analysis]] — K3 发布总结、完整基准、限制与官方定位
 - [[kimi_k3_infra_deepdive]] — 本页各项结构选择在训练与推理系统中的配套实现
+- [[kimi_k3_stability_analysis]] — 七条失稳轴的横切：本页各结构组件的稳定性动机与被拒绝的替代方案
+- [[kimi_k3_open_source_stack_analysis]] — 哪些结构有开源 kernel、哪些没有
+- [[moonep_analysis]] — Stable LatentMoE 在执行侧的均衡保障(Quantile Balancing 的系统侧搭档)
 - [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]] — K3 后训练算法、环境、Infra 与部署闭环
 - [[kimi_linear_analysis]] — KDA/3:1 混合的原始论文分析
 - [[kimi_k2.5_analysis]] / [[kimi_k2_analysis]] — 直接前代与 2.5× 效率基线

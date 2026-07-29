@@ -95,6 +95,9 @@ K3 的所有结果都使用 `reasoning effort=max`、`temperature=1.0`、`top-p=
 
 - [[kimi_k3_architecture_deepdive]] — 按“动机 → 机制 → 证据 → 替代方案”分析 KDA、Gated MLA、AttnRes、Stable LatentMoE、SiTU 与规模变化
 - [[kimi_k3_infra_deepdive]] — Per-Head Muon、MXFP4/MXFP8 QAT、全平衡 EP、Mooncake、KDA prefix cache 进 vLLM、64+ 卡超节点
+- [[kimi_k3_stability_analysis]] — 稳定性栈横切：七条失稳轴、七处被拒绝的替代方案，以及“K3 没有 K2 那样的零 spike 陈述”这条边界
+- [[kimi_k3_open_source_stack_analysis]] — 随发布开放的仓库全景（含“FlashKDA 并非本次新开源”的更正）与各仓证据等级
+- [[moonep_analysis]] — MoonEP 源码级审计：报告 §5.2.1 的七条说法逐条兑现
 - [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]] — 九专家 RL、MOPD、partial rollout、white-box environment 与 1M Agentic RL Infra 的统一案例
 - [[kimi_linear_analysis]] — KDA 与 3:1 混合架构的原始论文(K3 注意力主干的前身)
 - [[kimi_k2.5_analysis]] — 直接前代(1.04T MoE + MoonViT 原生视觉)

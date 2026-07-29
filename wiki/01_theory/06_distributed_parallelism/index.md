@@ -48,7 +48,7 @@
 2. **[[data_parallel_analysis]]** — DP：最简单的并行，引出「显存冗余」问题
 3. **[[zero_fsdp_analysis]]** — ZeRO/FSDP：DP 的省显存版（同一数据轴）
 4. **[[tensor_sequence_parallel_analysis]]** — TP/SP/CP：当模型本身放不下时切层内 / 序列
-5. **[[expert_parallel_analysis]]** — EP：MoE 的专家路由
+5. **[[expert_parallel_analysis]]** — EP：MoE 的专家路由（读完可接 [[../01_models/moonshot_kimi/moonep_analysis|MoonEP 源码级分析]]，看“负载不均”这个老问题在 2026 年被怎样从“减小不均”改成“吸收不均”）
 6. **[[pipeline_parallel_analysis]]** — PP：切层、气泡与调度
 
 ---
@@ -89,6 +89,7 @@ DP / FSDP（最外，跨机）
 - [[../../02_engineering/02_train_frameworks/index]] — **实现层**：Megatron-LM / torchtitan 把这些原语组合成端到端训练配方
 - [[../../02_engineering/06_auto_parallel/index]] — 自动并行：自动求解 N 维布局
 - [[../02_pretraining/index]] — 预训练技术：优化器、低精度、激活重计算（与并行正交的另一组显存/算力手段）
+- [[../01_models/moonshot_kimi/moonep_analysis]] — **EP 负载均衡的 2026 年新解法（源码级）**：MoonEP 用动态冗余专家把“每 rank 恰收 `S×K`”变成硬保证；因属 Kimi K3 栈，页面收在模型目录
 
 ## Related Pages
 
