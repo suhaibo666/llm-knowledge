@@ -10,9 +10,9 @@
 
 | 阶段 | 计划文档 | 状态 |
 |---|---|---|
-| P0 工具与基线 + P1 快速止血 + P2 图源入库 | `2026-07-29-kb-reorg-p0-p2-foundation.md` | ✅ 已写 |
-| P3 runtime_graphs(原 06_graphs)去重 | `2026-07-29-kb-reorg-p3-runtime-graphs.md` | ✅ 已写 |
-| P4 ai_frameworks 两级重组 + 19 号解散 | `kb-reorg-p4-*.md` | ⏳ P3 完成后写(依赖 check_links 输出与 P3 合并经验) |
+| P0 工具与基线 + P1 快速止血 + P2 图源入库 | `2026-07-29-kb-reorg-p0-p2-foundation.md` | ✅ 已执行完(merge 77fd28a,broken 138→0) |
+| P3 runtime_graphs(原 06_graphs)去重 | `2026-07-29-kb-reorg-p3-runtime-graphs.md` | ✅ 已执行完(merge 65a8fe2,14→10 页,净删 ~3300 行) |
+| P4 ai_frameworks 两级重组 + 19 号解散 | `kb-reorg-p4-*.md` | ⏳ 计划编写中(逐篇映射侦察已启动) |
 | P5 后训练三域整合 + courses/posttraining | `kb-reorg-p5-*.md` | ⏳ P4 完成后写 |
 | P6 横向页收缩 + P7 命名/索引/CLAUDE.md 收尾 | `kb-reorg-p6-p7-*.md` | ⏳ P5 完成后写 |
 
