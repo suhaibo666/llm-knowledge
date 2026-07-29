@@ -6,6 +6,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-29：知识库结构整改 P0–P2(工具、快速止血、图源入库)
+
+**Type**: Structure Reorg(设计:`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md`;这是 P0–P7 七阶段的前三段,后续 P3+ 将做内容去重与目录重组)
+
+- **新增链接检查器** `tools/check_links.py`(+8 项测试):broken/ambiguous/裸 index/孤儿页四类检查,`--strict` 做阶段门禁;基线与终值存档于 `docs/research/2026-07-29-linkcheck-*.json`。
+- **坏链清零**:broken 138 → 0。其中 113 处为指向已删审计产物的 `[[correction_report]]` 标注(删除时甄别出 14 处含实质技术警示的,以纯文本注回补);其余 24 处为陈旧目录名遗留、相对路径深度错、示例文本误解析等,逐处改指现路径/转义/登记 Knowledge Gap。
+- **工作产物清理**:`docs/audits/`(55MB,107 文件)移出工作区并 gitignore;`torch_compile_debug/` 调试残留删除;`raw/_ingest/` 施工单与 wanka 源汇编稿归位 `docs/research/`;重复 docx 经核验后删除;demo 脚本迁 `tools/`。
+- **图表可再生**:`.html2md` 中 24 个图表源 html 与 8 个渲染脚本入库 `tools/figs/`、`tools/html2md/`(修正六个脚本的硬编码路径深度);端到端验证 html 与 PNG 再生均字节一致。
+- **文档除假**:README 与 `wiki/index.md` 重写/修正(删幻影目录树、全表页数按实数重算并注明统计口径);本 changelog 头部新增"按写入当时状态记载、不随迁移回写"政策。
+
+---
+
 ## 2026-07-29：`torch.compile` A→F 六卷 CUDA-first 配套 Demo
 
 **Type**: Executable Teaching Labs + Evidence Contract（固定实现审计仍以 PyTorch
