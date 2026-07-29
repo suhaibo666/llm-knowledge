@@ -40,7 +40,7 @@
 
 **待建页面**
 
-- `moe_routing_replay_analysis` — R2 / R3 / PR² / RSPO 谱系，MoE 路由漂移的机理与系统侧利用（ReLibra / ForeMoE）。相关 raw 已列入 `raw/_ingest/INGEST_MANIFEST_block1_tim.md`。
+- `moe_routing_replay_analysis` — R2 / R3 / PR² / RSPO 谱系，MoE 路由漂移的机理与系统侧利用（ReLibra / ForeMoE）。相关 raw 已列入 `docs/research/INGEST_MANIFEST_block1_tim.md`。
 
 ### 高级方法
 
