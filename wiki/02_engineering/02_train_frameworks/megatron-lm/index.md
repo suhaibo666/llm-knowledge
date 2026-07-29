@@ -115,7 +115,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 
 - Distributed parallelism concepts connect to [[muon_analysis]] in the LLM domain (Muon's ZeRO incompatibility)
 - MoE zero-redundancy dispatch relates to [[llm_initiliaze_analysis]] (MoE expert initialization)
-- CUDA Graphs usage in Megatron connects to [[06_graphs/cuda/README]] in the CUDA Graphs sub-domain
+- CUDA Graphs usage in Megatron connects to [[06_graphs/cuda/index]] in the CUDA Graphs sub-domain
 - Weight sync patterns relate to inference optimization topics in the torch_compile domain
 - FP8/low-precision training connects to [[low_precision_training_analysis]] and [[transformer_engine_analysis]] in the training domain
 - Distributed optimizer state sharding relates to ZeRO strategies in [[megatron_distributed_optimizer_analysis]]
