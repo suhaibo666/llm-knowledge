@@ -3,6 +3,8 @@
 ## 目标
 梳理 PyTorch NPU Graphs 的实现原理和使用方法，并给出详细的代码示例（包含训练与推理）及端到端的架构分析。
 
+> NPU Graphs 是 torch_npu 对应 CUDA Graphs 的实现，用于华为昇腾 NPU 设备的性能优化。与 CUDA Graphs 的 API 逐项对应关系、概念/架构/代码示例对比见 [[comparison]]。
+
 ## 1. 实现原理
 
 PyTorch NPU Graphs 是一种基于 NPU 后端（aclgraph）的图模式执行机制，旨在通过将多个算子操作捕获并融合为一个静态图来减少 CPU Launch 开销，提高执行效率。其核心流程包括图捕获、图编译和图执行。
@@ -260,6 +262,14 @@ sequenceDiagram
     2.  **Warmup**: 创建私有 Stream，执行一次模型 (lines 163-178)，确保 lazy init 不被录制。
     3.  **Capture**: 实例化 `torch.npu.NPUGraph()`，使用 `with torch.npu.graph(...)` 捕获 `model` 的执行 (lines 181-183)。
     4.  **Codegen**: 返回 `run` 函数 (lines 218-227)，该函数内部执行 `index_expanded_dims_and_copy_` (内存拷贝) 然后调用 `graph.replay()`。
+
+## 4. 使用限制与注意事项
+
+1. **设备要求**: 需要华为昇腾 NPU 设备
+2. **torch_npu 版本**: 需要支持 NPU Graphs 的 torch_npu 版本
+3. **ACL 版本**: 需要支持图捕获的 ACL 版本
+4. **静态形状**: 输入形状必须固定
+5. **无控制流**: 不支持动态控制流
 
 ## Related Pages
 
