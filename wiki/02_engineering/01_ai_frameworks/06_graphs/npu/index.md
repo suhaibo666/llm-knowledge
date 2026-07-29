@@ -12,7 +12,7 @@
 | 页面 | 层次 | 核心主题 |
 |------|------|---------|
 | [[aclgraph]] | **overview** | ACL Graph(昇腾计算语言)集成基础:是什么、调用流程、使用限制与注意事项、与 CUDA Graph 关系(已并入原 README) |
-| [[comparison]] | **overview** | CUDA Graphs vs NPU Graphs 特性对比(API/实现/捕获时序) |
+| [[comparison]] | **overview** | CUDA Graphs vs NPU Graphs 真差异表(API 映射/组件对照/捕获时序行为差异);机制原理见 [[aclgraph]] 等权威页 |
 | [[npugraphs_make_graphed_callables_deep_dive]] | **quick start** | make_graphed_callables API:六阶段实现流程、内存峰值 debug 方法 |
 | [[aclgraph_deep_analysis]] | deep dive | ACLGraph 深度:图捕获/重放、Super Kernel、NpuGraphOpHandler、aclop/aclnn 捕获门禁、与社区差异及演进;**mode="reduce-overhead" 捕获路径权威页**(§1.5 mode 参数与两条路径触发关系、§4.4 与 backend="npugraphs" 路径对比,已并入原 reduce_overhead_vs_backend 的独有内容) |
 | [[aclgraph_multistream_rng_analysis]] | deep dive | ACLGraph 状态化捕获:Event fork/join、多流/通信流边界、graph-safe Philox RNG、dropout 联合路径与算子测试矩阵 |

@@ -625,8 +625,8 @@ void OpCommand::RunOpApi(...) { ... }
 
 此外 RNG 状态变更在捕获期也被禁（`NPUGeneratorImpl.cpp` 的 register_state / seed / set_offset / clone 等挂 `assertNotCapturing`，`:139/269/301/484/517`），须走 graph-safe RNG 协作（`NPUGraph.cpp:188-195` 注册 generator + `capture_prologue/epilogue`）。
 
-> [!contradiction] 与 [[comparison]] 捕获时序图的出入
-> [[comparison]] 的捕获时序图（`comparison.md:236`）画的是 `aclopExecute (记录到图)`，且 `:246` 另画了独立的 `aclmdlRIInstantiate()` 步骤。按当前源码两点不符：① **aclop 在捕获期是被禁止的**（`OpCommand.cpp:139`），真正入图的是 aclnn；② `model_ri` 在 `capture_begin` 即创建（本页三·差异 2），torch_npu 路径中**无独立 instantiate**。该时序图为简化示意，深入以源码为准。
+> [!note] 与 [[comparison]] 的出入已订正
+> [[comparison]]「捕获/执行时序差异」表已按本页差异 2/8 核验：① aclop 在捕获期被 `assertNotCapturingAclop` 禁止（`OpCommand.cpp:139`），真正入图的是 aclnn；② `model_ri` 在 `capture_begin` 即创建（本页三·差异 2），torch_npu 路径中**无独立 instantiate**。comparison 页不再重复画简化时序图，直接引用本页差异 2/8 结论。
 
 ---
 
