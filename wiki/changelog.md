@@ -2,6 +2,8 @@
 
 All source ingestions and significant wiki updates are logged here.
 
+> 本文件为只追加的历史日志：各条目按**写入当时**的状态记载，其中的文件路径、行数等均以当时为准，**不随后续目录迁移回写**。查当前路径请以各域 index 为准。
+
 ---
 
 ## 2026-07-29：`torch.compile` A→F 六卷 CUDA-first 配套 Demo
