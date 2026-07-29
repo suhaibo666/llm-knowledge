@@ -1,0 +1,84 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css"></head><body>
+
+<!-- ============ FIG 1: fully-async decoupled agentic RL architecture ============ -->
+<div class="diagram" data-name="glm5_agentic_rl_deepdive_fig1">
+  <div class="dg-title">全异步解耦 Agentic RL 架构</div>
+  <div class="dg-sub">训练引擎与推理引擎部署在不同 GPU；攒够阈值才传 batch；每 K 次梯度同步权重（§4.1.1, p15–16）</div>
+
+  <div class="row">
+    <div class="node blue" style="width:262px"><div class="t">Inference Engines</div>
+      <div class="d">持续生成轨迹（不停步）<br>独立 GPU · FP8 rollout · MTP</div></div>
+    <div class="arrow lbl"><span class="al">轨迹流</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:330px"><div class="t">Multi-Task Rollout Orchestrator</div>
+      <div class="d">各任务=独立 microservice（自带 rollout+reward）<br>控制 per-task 配比 / 生成速度<br>统一 message-list 表示 · &gt;1k 并发</div></div>
+    <div class="arrow lbl"><span class="al">攒够阈值→batch</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node purple" style="width:236px"><div class="t">Training Engine</div>
+      <div class="d">group-wise 策略优化<br>仅优化模型生成 token<br>（env 反馈不计入 loss）</div></div>
+  </div>
+
+  <!-- loopback: every K gradient updates push new weights back to inference -->
+  <div class="row" style="justify-content:center;margin-top:10px">
+    <div class="arrow lbl" style="flex-direction:column;width:100%">
+      <span class="al">每 K 次梯度更新：push 新权重 → 推理引擎，并重置优化器（off-policy 兜底见稳定性页）</span>
+      <svg width="820" height="16" viewBox="0 0 820 16"><line x1="10" y1="8" x2="820" y2="8" stroke="currentColor" stroke-width="2"/><path d="M16 3 L8 8 L16 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>
+    </div>
+  </div>
+
+  <div class="note">异步会让<b>不同版本模型</b>生成同一批轨迹，引入 off-policy 偏差 —— 由 TITO 网关 / 双边重要性采样 / 丢弃过期·噪声样本 / 优化器重置兜底，详见<b>训练稳定性</b>深挖页。同步 RL 因长尾 rollout 会产生大量 GPU bubble，故此处全异步（§4.1.1）。</div>
+</div>
+
+<!-- ============ FIG 2: three verifiable-environment construction pipelines ============ -->
+<div class="diagram" data-name="glm5_agentic_rl_deepdive_fig2">
+  <div class="dg-title">三类可验证环境构造管线（并行）</div>
+  <div class="dg-sub">为 Agentic RL 提供「可执行 + 可验证」反馈：SWE / Terminal / Search 三条独立流水线（§4.2, p17–19）</div>
+
+  <div class="chip">分支 A · SWE 软件工程环境（§4.2.1, p17–18）</div>
+  <div class="row">
+    <div class="node slate" style="width:182px"><div class="t">真实 Issue–PR 对</div>
+      <div class="d">规则 + LLM 过滤<br>分类：bug/feature/重构/其他</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue" style="width:212px"><div class="t">RepoLaunch 建环境</div>
+      <div class="d">自动分析安装/依赖<br>构建可执行环境 + 测试命令</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node green" style="width:206px"><div class="t">LLM 语言感知日志解析</div>
+      <div class="d">提取 Fail-to-Pass (F2P)<br>+ Pass-to-Pass (P2P) 测例</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:176px"><div class="t">&gt;10k 可验证环境</div>
+      <div class="d">数千仓库 · 9 种语言<br>Py/Java/Go/C/C++/JS/TS/PHP/Ruby</div></div>
+  </div>
+
+  <div class="chip" style="margin-top:8px">分支 B · Terminal 终端环境（Harbor 格式, §4.2.2, p18）</div>
+  <div class="row">
+    <div class="node slate" style="width:196px"><div class="t">种子合成（三阶段）</div>
+      <div class="d">task-draft → 具体任务实现<br>→ 迭代优化</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue" style="width:214px"><div class="t">construction agent</div>
+      <div class="d">实例化 Docker 化环境<br>+ 测试脚本</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node green" style="width:196px"><div class="t">refine agent 按 rubric 迭代</div>
+      <div class="d">校验 Docker 可构建<br>测例一致 · 防 shortcut</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:204px"><div class="t">web 语料自验证闭环</div>
+      <div class="d">构造 agent 兼任一审评测者<br>跑 Harbor 校验自身产出·过则收</div></div>
+  </div>
+
+  <div class="chip" style="margin-top:8px">分支 C · Search 深度搜索环境（WKG, §4.2.3, p18–19）</div>
+  <div class="row">
+    <div class="node slate" style="width:200px"><div class="t">Web Knowledge Graph</div>
+      <div class="d">早期搜索 agent 轨迹<br>去重 &gt;2M 高信息页 · LLM 语义解析</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue" style="width:204px"><div class="t">采样低/中频实体为种子</div>
+      <div class="d">扩展多跳邻域<br>→ 多实体子图</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node green" style="width:188px"><div class="t">转多实体关系链 QA</div>
+      <div class="d">每个子图 → 一道<br>多跳推理问题</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:206px"><div class="t">三阶段难度过滤</div>
+      <div class="d">①无工具能答的剔除 ②早期 agent 几步可解剔除<br>③验证 agent 双向校验</div></div>
+  </div>
+
+  <div class="note">三类环境共享同一目标：产出<b>可执行 + 可验证</b>的 grounded 反馈信号供 RL 使用。SWE 用真实仓库测例、Terminal 用 Docker+测试脚本、Search 用唯一答案校验；Slides 另有渲染几何校验（见正文 §4.2.5）。沙盒可靠性与样本去噪见<b>训练稳定性</b>深挖页。</div>
+</div>
+
+</body></html>

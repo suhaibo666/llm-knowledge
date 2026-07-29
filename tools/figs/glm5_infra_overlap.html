@@ -1,0 +1,69 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css"></head><body>
+
+<!-- glm5_training_infra_deepdive_fig3 : compute–communication overlap timelines -->
+<div class="diagram" data-name="glm5_training_infra_deepdive_fig3">
+  <div class="dg-title">计算–通信掩盖：把通信 / 搬运藏进计算</div>
+  <div class="dg-sub">§2.4 的多项优化共享同一手法——让通信或数据搬运与计算<strong>时间重叠</strong>，于是它"消失"在墙钟里（§2.4.1–2.4.2, p9–10）</div>
+
+  <div style="width:900px">
+    <!-- principle -->
+    <div class="chip">原理：串行（暴露）→ 重叠（掩盖）</div>
+    <div class="tl">
+      <div class="tl-row"><div class="tl-lab">朴素：串行<small>通信暴露在关键路径</small></div>
+        <div class="tl-track slim">
+          <div class="tl-bar tl-c" style="left:0;width:46%;top:3px;height:18px">计算</div>
+          <div class="tl-bar tl-m" style="left:46%;width:34%;top:3px;height:18px">通信（暴露）</div>
+          <div class="tl-end" style="left:80%;height:28px;top:-2px"></div>
+        </div></div>
+      <div class="tl-row"><div class="tl-lab">GLM-5：重叠<small>通信藏进计算</small></div>
+        <div class="tl-track">
+          <div class="tl-bar tl-c" style="left:0;width:46%;top:4px;height:15px">计算</div>
+          <div class="tl-bar tl-m" style="left:4%;width:38%;top:21px;height:15px">通信（隐藏）</div>
+          <div class="tl-end" style="left:46%"></div>
+        </div>
+        <div class="tl-save">省下暴露的通信</div></div>
+    </div>
+
+    <!-- per-technique -->
+    <div class="chip" style="margin-top:18px">§2.4 各优化点把"什么藏进什么"（上=计算，下=被掩盖的通信/搬运）</div>
+    <div class="tl">
+      <div class="tl-row"><div class="tl-lab">② ZeRO2 双缓冲<small>§2.4.1</small></div>
+        <div class="tl-track">
+          <div class="tl-bar tl-c" style="left:0;width:60%;top:4px;height:15px">buffer A 累积（连续 microbatch）</div>
+          <div class="tl-bar tl-m" style="left:6%;width:40%;top:21px;height:15px">buffer B 梯度同步</div>
+        </div></div>
+      <div class="tl-row"><div class="tl-lab">③ Muon 零冗余<small>§2.4.1</small></div>
+        <div class="tl-track">
+          <div class="tl-bar tl-c" style="left:0;width:56%;top:4px;height:15px">本地正交化计算</div>
+          <div class="tl-bar tl-m" style="left:6%;width:42%;top:21px;height:15px">自有分片 all-gather</div>
+        </div></div>
+      <div class="tl-row"><div class="tl-lab">④ 激活 offload<small>§2.4.1</small></div>
+        <div class="tl-track">
+          <div class="tl-bar tl-c" style="left:0;width:62%;top:4px;height:15px">fwd / bwd 计算</div>
+          <div class="tl-bar tl-m" style="left:8%;width:46%;top:21px;height:15px">激活 ↔ host offload/reload（避让 P2P · MoE routing）</div>
+        </div></div>
+      <div class="tl-row"><div class="tl-lab">⑥ 延迟 wgrad<small>§2.4.2</small></div>
+        <div class="tl-track">
+          <div class="tl-bar tl-c" style="left:0;width:38%;top:4px;height:15px">dgrad（关键路径）</div>
+          <div class="tl-bar tl-idle" style="left:38%;width:26%;top:4px;height:15px">朴素：气泡空转</div>
+          <div class="tl-bar tl-c2" style="left:38%;width:24%;top:21px;height:15px">延迟的 wgrad 填进气泡</div>
+        </div></div>
+      <div class="tl-row"><div class="tl-lab">⑦ 层级 all-to-all<small>§2.4.2 · QKV</small></div>
+        <div class="tl-track">
+          <div class="tl-bar tl-m" style="left:0;width:40%;top:4px;height:15px">节点内 intra-node 聚合</div>
+          <div class="tl-bar tl-c2" style="left:28%;width:36%;top:21px;height:15px">节点间 inter-node 交换</div>
+        </div></div>
+    </div>
+
+    <div class="legend">
+      <span><span class="dot" style="background:#6296D4;border-color:#6296D4;display:inline-block"></span>计算</span>
+      <span><span class="dot" style="background:#DBA059;border-color:#DBA059;display:inline-block"></span>通信 / 数据搬运</span>
+      <span><span class="dot" style="background:#5BAE80;border-color:#5BAE80;display:inline-block"></span>第二计算单元 / 填气泡</span>
+      <span><span class="dot" style="background:#E0DDD6;border-color:#E0DDD6;display:inline-block"></span>气泡（空转）</span>
+    </div>
+    <div class="note">朴素做法里这些通信/搬运都<b>串行在计算之后</b>（暴露在关键路径）；GLM-5 把它们调度到与计算<b>同期发生</b>，③④ 还刻意<b>避让 P2P 与 MoE routing</b> 的带宽，于是近零开销。⑥ 不同：weight-grad 不在"梯度往前传"的依赖链上，于是被推迟去<b>填流水线气泡</b>，而非与通信重叠。</div>
+  </div>
+</div>
+
+</body></html>

@@ -1,0 +1,66 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css"></head><body>
+
+<!-- ============ FIG 1: where the 5 memory techniques act on interleaved PP ============ -->
+<div class="diagram" data-name="glm5_training_infra_deepdive_fig1">
+  <div class="dg-title">显存五件套：在 interleaved 流水线并行上各自作用的位置</div>
+  <div class="dg-sub">interleaved PP 下每个 pipeline rank 持有多个 stage（model chunk），组件可灵活分配；①–⑤ 对应正文五项显存优化（§2.4.1, p9）</div>
+
+  <div class="chip">interleaved PP：1 个 pipeline rank = 多个 stage，模型组件灵活分配到各 stage</div>
+
+  <div class="row">
+    <div class="node blue" style="width:148px"><div class="t">Stage k</div>
+      <div class="d">transformer 层</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue" style="width:150px"><div class="t">Stage k+1 …</div>
+      <div class="d">transformer 层</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:286px"><div class="t">倒数第二 Stage（preceding）</div>
+      <div class="d">① MTP 的 embedding + transformer 移到此处<br>把高显存的 MTP 从最终 stage 拆出，给它减压</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node green" style="width:316px"><div class="t">Final Stage</div>
+      <div class="d">① MTP output ⊕ main output 同处一 stage → 参数共享<br>⑤ output projection + CE loss 按序列分块算，逐块释放激活</div></div>
+  </div>
+
+  <div class="chip">跨所有 stage 通用：② ZeRO2 梯度分片（每 stage 存 1/dp + 仅 2 个滚动 full buffer，双缓冲）　·　③ Muon 分布式优化器仅 all-gather 自有参数分片</div>
+
+  <div class="downwrap"><svg width="20" height="40" viewBox="0 0 20 40"><line x1="10" y1="0" x2="10" y2="32" stroke="currentColor" stroke-width="2"/><path d="M5 30 L10 38 L15 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="row">
+    <div class="node slate" style="width:760px"><div class="t">Host Memory（主机内存）</div>
+      <div class="d">④ pipeline warmup 时 forward 领先 backward → 激活存活期变长：forward 后 offload、backward 前 reload（layer 粒度）；与细粒度重算配合，几乎无需把激活常驻显存。offload/reload 调度与 P2P 通信、MoE token routing（dispatch &amp; combine）错峰，近零开销</div></div>
+  </div>
+
+  <div class="legend">
+    <span><span class="dot" style="background:#E9F2FC;border-color:#6296D4"></span>pipeline stage</span>
+    <span><span class="dot" style="background:#FBF0E1;border-color:#DBA059"></span>highlight 技术（MTP 摆放）</span>
+    <span><span class="dot" style="background:#E6F4EC;border-color:#5BAE80"></span>节省/结果（参数共享·分块）</span>
+    <span><span class="dot" style="background:#EEF1F4;border-color:#A7AEB8"></span>host / offload</span>
+  </div>
+</div>
+
+<!-- ============ FIG 2: efficient long-sequence training ============ -->
+<div class="diagram" data-name="glm5_training_infra_deepdive_fig2">
+  <div class="dg-title">长序列训练：可变大小 CP 组 + 层级 all-to-all</div>
+  <div class="dg-sub">长序列加剧 DP / PP 组间负载不均；以重排 + 注意力再分配 + 弹性 CP 切分缓解，层级 all-to-all 降延迟（§2.4.2, p10）</div>
+
+  <div class="chip">问题：序列越长 → DP / PP 组之间负载越不均</div>
+
+  <div class="row">
+    <div class="node slate" style="width:208px"><div class="t">DP ranks</div>
+      <div class="d">长短不一的序列<br>workload 不均</div></div>
+    <div class="arrow lbl"><span class="al">序列重排</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:280px"><div class="t">可变大小 CP 组</div>
+      <div class="d">把 DP ranks 弹性切成不同大小的<br>context-parallel 组<br>+ 注意力计算动态再分配</div></div>
+    <div class="arrow lbl"><span class="al">QKV 传输</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue" style="width:300px"><div class="t">层级 all-to-all</div>
+      <div class="d">QKV 张量的<b>节点内 + 节点间</b>通信重叠<br>(hierarchical intra-node + inter-node)</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node green" style="width:160px"><div class="t">结果</div>
+      <div class="d">通信延迟 ↓<br>负载更均衡</div></div>
+  </div>
+
+  <div class="note">三招组合：① workload-aware 序列重排　② 注意力计算动态再分配　③ 把 DP ranks 弹性切成<b>可变大小</b> CP 组；再用<b>层级 all-to-all</b> 把 QKV 的节点内 / 节点间通信重叠以降延迟（§2.4.2, p10）。</div>
+</div>
+
+</body></html>

@@ -1,0 +1,74 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css">
+<style>
+  .axis{display:flex;align-items:center;gap:0;border-left:6px solid;border-radius:8px;
+    background:#FBFAF7;border:1px solid #ECE9E2;padding:9px 13px;margin:8px 0;width:470px}
+  .axis .an{width:78px;flex:0 0 auto;font-size:14px;font-weight:700}
+  .axis .ap{flex:1;font-size:12.5px;color:#3A434F;line-height:1.35}
+  .axis .ap b{color:#1F2430}
+  .axis .ap small{color:#8A8F98}
+  .ax-dp{border-left-color:#8E7DCB}.ax-dp .an{color:#473B86}
+  .ax-pp{border-left-color:#DBA059}.ax-pp .an{color:#8A581A}
+  .ax-tp{border-left-color:#6296D4}.ax-tp .an{color:#1E4E79}
+  .ax-ep{border-left-color:#5BAE80}.ax-ep .an{color:#1F6B41}
+  /* device grid */
+  .replica{border:2px solid #8E7DCB;border-radius:12px;padding:10px;background:#F6F3FC;width:250px}
+  .replica-ttl{font-size:12px;font-weight:700;color:#473B86;text-align:center;margin-bottom:7px}
+  .stage{border:1.6px solid #DBA059;border-radius:9px;padding:7px;background:#FDF7EE;margin:7px 0}
+  .stage-ttl{font-size:10.5px;color:#8A581A;font-weight:600;margin-bottom:5px}
+  .tpgrp{display:flex;gap:5px;justify-content:center}
+  .gpu{width:46px;height:38px;border-radius:6px;border:1.5px solid #6296D4;background:#E9F2FC;
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#1E4E79}
+  .conn{text-align:center;font-size:10.5px;color:#8A581A;font-weight:600;margin:1px 0}
+  .dpconn{writing-mode:vertical-rl;font-size:11px;color:#473B86;font-weight:700;display:flex;align-items:center;padding:0 4px}
+  .tpband{text-align:center;font-size:10px;color:#1E4E79;font-weight:600;margin-top:3px}
+</style></head><body>
+
+<div class="diagram" data-name="dp_index_fig1">
+  <div class="dg-title">N 维并行：正交的切分轴、各自的原语与带宽域</div>
+  <div class="dg-sub">各维正交可叠加，用 DeviceMesh 描述坐标 · 原则「通信越贵、放得越近」· 右图示例 16 卡 = DP2 × PP2 × TP4</div>
+
+  <div style="display:flex;gap:44px;align-items:flex-start;width:1120px">
+    <!-- 左：轴图例 -->
+    <div>
+      <div class="axis ax-dp"><div class="an">数据轴</div><div class="ap"><b>DP · ZeRO / FSDP</b><br>原语 all-reduce / RS+AG　<small>· 量∝Ψ · 可跨机</small></div></div>
+      <div class="axis ax-pp"><div class="an">深度轴</div><div class="ap"><b>PP 流水线</b>（切层）<br>原语 p2p　<small>· 量最小、频次最低 · 可跨机/机架</small></div></div>
+      <div class="axis ax-tp"><div class="an">层内轴</div><div class="ap"><b>TP · SP · CP</b>（切层内/序列）<br>原语 all-reduce / all-gather　<small>· 频次极高 · 机内 NVLink</small></div></div>
+      <div class="axis ax-ep"><div class="an">专家轴</div><div class="ap"><b>EP</b>（MoE 切专家）<br>原语 all-to-all　<small>· 怕负载不均 · 机内为主</small></div></div>
+      <div class="note" style="max-width:460px;margin-top:14px"><b>为什么这样分域</b>：TP/SP/CP/EP 每层都发大量集合通信、卡在关键路径 → 只能待<b>机内高带宽域</b>；PP 只发少量 p2p、DP 每步一次且量∝Ψ → 放<b>机间</b>最划算。这套「谁在内、谁在外」正是右侧嵌套的由来。</div>
+    </div>
+
+    <!-- 右：设备布局 -->
+    <div>
+      <div style="text-align:center;font-size:12.5px;font-weight:700;color:#473B86;margin-bottom:6px">DP2 / FSDP：跨副本 all-reduce（跨机）</div>
+      <div style="display:flex;gap:14px;align-items:center">
+        <div class="replica">
+          <div class="replica-ttl">模型副本 A</div>
+          <div class="stage"><div class="stage-ttl">PP Stage 0（前半层）</div>
+            <div class="tpgrp"><div class="gpu">G0</div><div class="gpu">G1</div><div class="gpu">G2</div><div class="gpu">G3</div></div>
+            <div class="tpband">TP4 · all-reduce · 机内</div></div>
+          <div class="conn">↓ PP · p2p · 跨机架 ↓</div>
+          <div class="stage"><div class="stage-ttl">PP Stage 1（后半层）</div>
+            <div class="tpgrp"><div class="gpu">G4</div><div class="gpu">G5</div><div class="gpu">G6</div><div class="gpu">G7</div></div>
+            <div class="tpband">TP4 · all-reduce · 机内</div></div>
+        </div>
+
+        <div class="dpconn">⇄ all-reduce ⇄</div>
+
+        <div class="replica">
+          <div class="replica-ttl">模型副本 B</div>
+          <div class="stage"><div class="stage-ttl">PP Stage 0（前半层）</div>
+            <div class="tpgrp"><div class="gpu">G8</div><div class="gpu">G9</div><div class="gpu">G10</div><div class="gpu">G11</div></div>
+            <div class="tpband">TP4 · all-reduce · 机内</div></div>
+          <div class="conn">↓ PP · p2p · 跨机架 ↓</div>
+          <div class="stage"><div class="stage-ttl">PP Stage 1（后半层）</div>
+            <div class="tpgrp"><div class="gpu">G12</div><div class="gpu">G13</div><div class="gpu">G14</div><div class="gpu">G15</div></div>
+            <div class="tpband">TP4 · all-reduce · 机内</div></div>
+        </div>
+      </div>
+      <div class="note" style="max-width:540px"><b>读图</b>：最外层 DP/FSDP 把整模型复制成 2 副本、跨机 all-reduce 梯度；每副本内 PP 切成 2 个 stage、用 p2p 跨机架接力；每个 stage 内 4 卡做 TP、靠机内 NVLink 高频 all-reduce。MoE 时 EP 与 TP 同处机内维。每卡坐标 =（dp, pp, tp）三元组，由 DeviceMesh 统一描述。</div>
+    </div>
+  </div>
+</div>
+
+</body></html>

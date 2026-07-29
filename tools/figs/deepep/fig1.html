@@ -1,0 +1,101 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  body{margin:0}
+  figure{margin:0;padding:18px;background:#fff;display:inline-block}
+  text{font-family:'Segoe UI','Microsoft YaHei',system-ui,sans-serif;fill:#212529}
+  .gpu{fill:#e7f5ff;stroke:#4dabf7;stroke-width:1.5}
+  .exp{fill:#e7f5ff;stroke:#4dabf7;stroke-width:1.5}
+  .node{fill:#f8f9fa;stroke:#adb5bd;stroke-width:1.5}
+  .tok{fill:#fff3bf;stroke:#f59f00;stroke-width:1.5}
+  .ib{stroke:#e8590c;stroke-width:2.5;fill:none}
+  .nvl{stroke:#2f9e44;stroke-width:2.5;fill:none}
+  .bdy{stroke:#ced4da;stroke-width:1.5;stroke-dasharray:5 4}
+  .t-title{font-size:17px;font-weight:700}
+  .t-node{font-size:13px;font-weight:700;fill:#495057}
+  .t-exp{font-size:15px;font-weight:700}
+  .t-sub{font-size:11px;fill:#868e96}
+  .t-ib{font-size:12px;font-weight:700;fill:#e8590c}
+  .t-nvl{font-size:12px;font-weight:700;fill:#2f9e44}
+  .t-bdy{font-size:11px;fill:#868e96}
+</style></head><body>
+<figure>
+<svg width="980" height="500" viewBox="0 0 980 500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="aIB" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0L7,3L0,6Z" fill="#e8590c"/></marker>
+    <marker id="aNVL" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0L7,3L0,6Z" fill="#2f9e44"/></marker>
+  </defs>
+
+  <!-- divider between the two panels -->
+  <line x1="490" y1="20" x2="490" y2="380" stroke="#dee2e6" stroke-width="1.5"/>
+
+  <!-- ===== LEFT: standard AllToAll ===== -->
+  <text class="t-title" x="240" y="38" text-anchor="middle">标准 AllToAll · 按「专家」发</text>
+
+  <line class="bdy" x1="245" y1="95" x2="245" y2="320"/>
+  <text class="t-bdy" x="245" y="86" text-anchor="middle">节点边界(IB)</text>
+
+  <!-- Node 0 -->
+  <rect class="node" x="40" y="120" width="120" height="110" rx="10"/>
+  <text class="t-node" x="100" y="142" text-anchor="middle">Node 0</text>
+  <rect class="tok" x="58" y="152" width="84" height="58" rx="6"/>
+  <text class="t-exp" x="100" y="178" text-anchor="middle">token tp</text>
+  <text class="t-sub" x="100" y="196" text-anchor="middle">→ E2, E5</text>
+
+  <!-- Node 1 -->
+  <rect class="node" x="320" y="95" width="120" height="230" rx="10"/>
+  <text class="t-node" x="380" y="116" text-anchor="middle">Node 1</text>
+  <rect class="exp" x="338" y="128" width="84" height="64" rx="6"/>
+  <text class="t-exp" x="380" y="156" text-anchor="middle">E2</text>
+  <text class="t-sub" x="380" y="174" text-anchor="middle">GPU a</text>
+  <rect class="exp" x="338" y="232" width="84" height="64" rx="6"/>
+  <text class="t-exp" x="380" y="260" text-anchor="middle">E5</text>
+  <text class="t-sub" x="380" y="278" text-anchor="middle">GPU b</text>
+
+  <!-- two redundant IB hops -->
+  <path class="ib" d="M144,172 L334,158" marker-end="url(#aIB)"/>
+  <path class="ib" d="M144,192 L334,262" marker-end="url(#aIB)"/>
+  <text class="t-ib" x="250" y="150" text-anchor="middle">IB · M</text>
+  <text class="t-ib" x="240" y="240" text-anchor="middle">IB · M</text>
+
+  <text x="240" y="362" text-anchor="middle" font-size="15" font-weight="700" fill="#e8590c">跨节点 IB = 2 × M　✗ 冗余</text>
+
+  <!-- ===== RIGHT: DeepEP fused_dispatch ===== -->
+  <text class="t-title" x="725" y="38" text-anchor="middle">DeepEP fused_dispatch · 按「节点」发</text>
+
+  <line class="bdy" x1="715" y1="95" x2="715" y2="320"/>
+  <text class="t-bdy" x="715" y="86" text-anchor="middle">节点边界(IB)</text>
+
+  <!-- Node 0 -->
+  <rect class="node" x="510" y="120" width="120" height="110" rx="10"/>
+  <text class="t-node" x="570" y="142" text-anchor="middle">Node 0</text>
+  <rect class="tok" x="528" y="152" width="84" height="58" rx="6"/>
+  <text class="t-exp" x="570" y="178" text-anchor="middle">token tp</text>
+  <text class="t-sub" x="570" y="196" text-anchor="middle">→ E2, E5</text>
+
+  <!-- Node 1 -->
+  <rect class="node" x="788" y="92" width="152" height="248" rx="10"/>
+  <text class="t-node" x="864" y="112" text-anchor="middle">Node 1</text>
+  <rect class="gpu" x="806" y="122" width="116" height="56" rx="6"/>
+  <text class="t-exp" x="864" y="148" text-anchor="middle">落地卡</text>
+  <text class="t-sub" x="864" y="166" text-anchor="middle">GPU a(收 RDMA)</text>
+  <rect class="exp" x="806" y="200" width="116" height="52" rx="6"/>
+  <text class="t-exp" x="864" y="231" text-anchor="middle">E2(GPU a)</text>
+  <rect class="exp" x="806" y="266" width="116" height="52" rx="6"/>
+  <text class="t-exp" x="864" y="297" text-anchor="middle">E5(GPU b)</text>
+
+  <!-- one IB hop -->
+  <path class="ib" d="M614,168 L802,150" marker-end="url(#aIB)"/>
+  <text class="t-ib" x="708" y="138" text-anchor="middle">IB · M(一次)</text>
+  <!-- NVLink fan-out inside the node -->
+  <path class="nvl" d="M848,178 L848,198" marker-end="url(#aNVL)"/>
+  <path class="nvl" d="M906,178 C 958,200 958,270 922,290" marker-end="url(#aNVL)"/>
+  <text class="t-nvl" x="864" y="334" text-anchor="middle">节点内 NVLink 复制 × 份</text>
+
+  <text x="725" y="362" text-anchor="middle" font-size="15" font-weight="700" fill="#2f9e44">跨节点 IB = 1 × M　✓</text>
+
+  <!-- ===== bottom banner ===== -->
+  <rect x="30" y="402" width="920" height="78" rx="12" fill="#fff9db" stroke="#f59f00" stroke-width="1.5"/>
+  <text x="490" y="434" text-anchor="middle" font-size="18" font-weight="700">⇒ 跨节点流量 ∝ |R(t)|(命中的远端节点数 ≤ k),而非目标专家数 k</text>
+  <text x="490" y="462" text-anchor="middle" font-size="12.5" fill="#495057">同一节点上挤多个目标专家时跨界仍只发一次 —— 把流量从稀缺 IB 转到富裕 NVLink</text>
+</svg>
+</figure>
+</body></html>

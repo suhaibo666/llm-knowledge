@@ -1,0 +1,215 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css">
+<style>
+  .p-row{display:flex;align-items:center;gap:16px;margin:9px 0}
+  .p-name{width:186px;flex:0 0 auto;font-size:13.5px;color:#3A434F;line-height:1.35}
+  .p-name b{color:#1F2430;font-size:14.5px}
+  .p-name small{display:block;color:#8A8F98;font-size:11.5px;margin-top:2px}
+  .side{display:flex;flex-direction:column;align-items:center;gap:5px}
+  .side-lab{font-size:11px;color:#8A8F98;font-weight:600}
+  .ranks{display:flex;gap:8px}
+  .rk{display:flex;flex-direction:column;gap:3px;align-items:center}
+  .rk-lab{font-size:10px;color:#A7AEB8;margin-top:2px}
+  .cells{display:flex;flex-direction:column;gap:3px}
+  .cell{width:30px;height:22px;border-radius:5px;border:1.4px solid;display:flex;align-items:center;
+    justify-content:center;font-size:11px;font-weight:700;font-family:"Cascadia Code",Consolas,monospace}
+  .empty{background:#F4F2ED;border-color:#E6E2D9;color:#CFC9BE}
+  .ca{background:#E9F2FC;border-color:#6296D4;color:#1E4E79}
+  .cb{background:#E6F4EC;border-color:#5BAE80;color:#1F6B41}
+  .cc{background:#FBF0E1;border-color:#DBA059;color:#8A581A}
+  .cd{background:#FBE9EC;border-color:#D98A9B;color:#8A2A3C}
+  .cs{background:#EEEAF8;border-color:#8E7DCB;color:#473B86}
+  .pa{display:flex;align-items:center;color:#9AA1AC;font-size:20px;padding:0 2px}
+  hr.sep{border:0;border-top:1px dashed #E6E2D9;margin:6px 0}
+  /* ring fig */
+  .phase{display:flex;align-items:center;gap:14px;margin:8px 0}
+  .phase-lab{width:150px;flex:0 0 auto;font-size:13px;color:#3A434F;text-align:right}
+  .phase-lab small{display:block;color:#8A8F98;font-size:11px}
+  .costbox{background:#EEEAF8;border:1.6px solid#8E7DCB;border-radius:12px;padding:14px 20px;margin-top:16px;
+    font-size:15px;color:#473B86;line-height:1.7}
+  .costbox b{color:#2E2557}
+  .kbig{font-size:17px;font-weight:700}
+</style></head><body>
+
+<!-- ======================= fig1 : 六大原语语义 ======================= -->
+<div class="diagram" data-name="dp_collectives_fig1">
+  <div class="dg-title">六大集合通信原语：谁把什么给了谁</div>
+  <div class="dg-sub">4 个 rank（R0–R3）· 彩色格 = 一块数据 · 左＝通信前，右＝通信后 · Σ＝按位求和</div>
+
+  <div style="width:1120px">
+    <!-- Broadcast -->
+    <div class="p-row">
+      <div class="p-name"><b>Broadcast</b><small>root 的 x → 全员</small></div>
+      <div class="side"><div class="side-lab">前</div><div class="ranks">
+        <div class="rk"><div class="cell ca">x</div><div class="rk-lab">R0</div></div>
+        <div class="rk"><div class="cell empty">·</div><div class="rk-lab">R1</div></div>
+        <div class="rk"><div class="cell empty">·</div><div class="rk-lab">R2</div></div>
+        <div class="rk"><div class="cell empty">·</div><div class="rk-lab">R3</div></div>
+      </div></div>
+      <div class="pa">→</div>
+      <div class="side"><div class="side-lab">后</div><div class="ranks">
+        <div class="rk"><div class="cell ca">x</div><div class="rk-lab">R0</div></div>
+        <div class="rk"><div class="cell ca">x</div><div class="rk-lab">R1</div></div>
+        <div class="rk"><div class="cell ca">x</div><div class="rk-lab">R2</div></div>
+        <div class="rk"><div class="cell ca">x</div><div class="rk-lab">R3</div></div>
+      </div></div>
+    </div>
+    <hr class="sep">
+    <!-- All-Reduce -->
+    <div class="p-row">
+      <div class="p-name"><b>All-Reduce</b><small>各 xᵢ → 全员得 Σxᵢ<br>DP 梯度 · TP 求和</small></div>
+      <div class="side"><div class="side-lab">前</div><div class="ranks">
+        <div class="rk"><div class="cell ca">a</div><div class="rk-lab">R0</div></div>
+        <div class="rk"><div class="cell cb">b</div><div class="rk-lab">R1</div></div>
+        <div class="rk"><div class="cell cc">c</div><div class="rk-lab">R2</div></div>
+        <div class="rk"><div class="cell cd">d</div><div class="rk-lab">R3</div></div>
+      </div></div>
+      <div class="pa">→</div>
+      <div class="side"><div class="side-lab">后</div><div class="ranks">
+        <div class="rk"><div class="cell cs">Σ</div><div class="rk-lab">R0</div></div>
+        <div class="rk"><div class="cell cs">Σ</div><div class="rk-lab">R1</div></div>
+        <div class="rk"><div class="cell cs">Σ</div><div class="rk-lab">R2</div></div>
+        <div class="rk"><div class="cell cs">Σ</div><div class="rk-lab">R3</div></div>
+      </div></div>
+    </div>
+    <hr class="sep">
+    <!-- Reduce-Scatter -->
+    <div class="p-row">
+      <div class="p-name"><b>Reduce-Scatter</b><small>各持全量 4 片 → Rⱼ 只得第 j 片的 Σ<br>ZeRO 梯度 · SP</small></div>
+      <div class="side"><div class="side-lab">前</div><div class="ranks">
+        <div class="rk"><div class="cells"><div class="cell ca">a</div><div class="cell cb">b</div><div class="cell cc">c</div><div class="cell cd">d</div></div><div class="rk-lab">R0</div></div>
+        <div class="rk"><div class="cells"><div class="cell ca">a</div><div class="cell cb">b</div><div class="cell cc">c</div><div class="cell cd">d</div></div><div class="rk-lab">R1</div></div>
+        <div class="rk"><div class="cells"><div class="cell ca">a</div><div class="cell cb">b</div><div class="cell cc">c</div><div class="cell cd">d</div></div><div class="rk-lab">R2</div></div>
+        <div class="rk"><div class="cells"><div class="cell ca">a</div><div class="cell cb">b</div><div class="cell cc">c</div><div class="cell cd">d</div></div><div class="rk-lab">R3</div></div>
+      </div></div>
+      <div class="pa">→</div>
+      <div class="side"><div class="side-lab">后</div><div class="ranks">
+        <div class="rk"><div class="cell cs">Σa</div><div class="rk-lab">R0</div></div>
+        <div class="rk"><div class="cell cs">Σb</div><div class="rk-lab">R1</div></div>
+        <div class="rk"><div class="cell cs">Σc</div><div class="rk-lab">R2</div></div>
+        <div class="rk"><div class="cell cs">Σd</div><div class="rk-lab">R3</div></div>
+      </div></div>
+    </div>
+    <hr class="sep">
+    <!-- All-Gather -->
+    <div class="p-row">
+      <div class="p-name"><b>All-Gather</b><small>Rⱼ 持第 j 片 → 全员得拼接<br>ZeRO 参数还原 · TP · SP</small></div>
+      <div class="side"><div class="side-lab">前</div><div class="ranks">
+        <div class="rk"><div class="cell ca">p₀</div><div class="rk-lab">R0</div></div>
+        <div class="rk"><div class="cell cb">p₁</div><div class="rk-lab">R1</div></div>
+        <div class="rk"><div class="cell cc">p₂</div><div class="rk-lab">R2</div></div>
+        <div class="rk"><div class="cell cd">p₃</div><div class="rk-lab">R3</div></div>
+      </div></div>
+      <div class="pa">→</div>
+      <div class="side"><div class="side-lab">后</div><div class="ranks">
+        <div class="rk"><div class="cells"><div class="cell ca">p₀</div><div class="cell cb">p₁</div><div class="cell cc">p₂</div><div class="cell cd">p₃</div></div><div class="rk-lab">R0</div></div>
+        <div class="rk"><div class="cells"><div class="cell ca">p₀</div><div class="cell cb">p₁</div><div class="cell cc">p₂</div><div class="cell cd">p₃</div></div><div class="rk-lab">R1</div></div>
+        <div class="rk"><div class="cells"><div class="cell ca">p₀</div><div class="cell cb">p₁</div><div class="cell cc">p₂</div><div class="cell cd">p₃</div></div><div class="rk-lab">R2</div></div>
+        <div class="rk"><div class="cells"><div class="cell ca">p₀</div><div class="cell cb">p₁</div><div class="cell cc">p₂</div><div class="cell cd">p₃</div></div><div class="rk-lab">R3</div></div>
+      </div></div>
+    </div>
+    <hr class="sep">
+    <!-- All-to-All -->
+    <div class="p-row">
+      <div class="p-name"><b>All-to-All</b><small>Rᵢ 的第 j 块 → Rⱼ 的第 i 块（转置）<br>EP token 路由</small></div>
+      <div class="side"><div class="side-lab">前</div><div class="ranks">
+        <div class="rk"><div class="cells"><div class="cell ca">0→0</div><div class="cell cb">0→1</div><div class="cell cc">0→2</div><div class="cell cd">0→3</div></div><div class="rk-lab">R0</div></div>
+        <div class="rk"><div class="cells"><div class="cell ca">1→0</div><div class="cell cb">1→1</div><div class="cell cc">1→2</div><div class="cell cd">1→3</div></div><div class="rk-lab">R1</div></div>
+        <div class="rk"><div class="cells"><div class="cell ca">2→0</div><div class="cell cb">2→1</div><div class="cell cc">2→2</div><div class="cell cd">2→3</div></div><div class="rk-lab">R2</div></div>
+        <div class="rk"><div class="cells"><div class="cell ca">3→0</div><div class="cell cb">3→1</div><div class="cell cc">3→2</div><div class="cell cd">3→3</div></div><div class="rk-lab">R3</div></div>
+      </div></div>
+      <div class="pa">→</div>
+      <div class="side"><div class="side-lab">后</div><div class="ranks">
+        <div class="rk"><div class="cells"><div class="cell ca">0→0</div><div class="cell ca">1→0</div><div class="cell ca">2→0</div><div class="cell ca">3→0</div></div><div class="rk-lab">R0</div></div>
+        <div class="rk"><div class="cells"><div class="cell cb">0→1</div><div class="cell cb">1→1</div><div class="cell cb">2→1</div><div class="cell cb">3→1</div></div><div class="rk-lab">R1</div></div>
+        <div class="rk"><div class="cells"><div class="cell cc">0→2</div><div class="cell cc">1→2</div><div class="cell cc">2→2</div><div class="cell cc">3→2</div></div><div class="rk-lab">R2</div></div>
+        <div class="rk"><div class="cells"><div class="cell cd">0→3</div><div class="cell cd">1→3</div><div class="cell cd">2→3</div><div class="cell cd">3→3</div></div><div class="rk-lab">R3</div></div>
+      </div></div>
+    </div>
+    <hr class="sep">
+    <!-- P2P -->
+    <div class="p-row">
+      <div class="p-name"><b>P2P（send/recv）</b><small>指定 src→dst 两方<br>PP stage 间传激活</small></div>
+      <div class="side"><div class="side-lab">前</div><div class="ranks">
+        <div class="rk"><div class="cell ca">h</div><div class="rk-lab">R0</div></div>
+        <div class="rk"><div class="cell empty">·</div><div class="rk-lab">R1</div></div>
+        <div class="rk"><div class="cell empty">·</div><div class="rk-lab">R2</div></div>
+        <div class="rk"><div class="cell empty">·</div><div class="rk-lab">R3</div></div>
+      </div></div>
+      <div class="pa">→</div>
+      <div class="side"><div class="side-lab">后</div><div class="ranks">
+        <div class="rk"><div class="cell empty">·</div><div class="rk-lab">R0</div></div>
+        <div class="rk"><div class="cell ca">h</div><div class="rk-lab">R1</div></div>
+        <div class="rk"><div class="cell empty">·</div><div class="rk-lab">R2</div></div>
+        <div class="rk"><div class="cell empty">·</div><div class="rk-lab">R3</div></div>
+      </div></div>
+    </div>
+
+    <div class="note"><b>读图</b>：全员参与的是 collective（前 5 行），只两方参与的是 p2p（末行）。注意 <b>All-Reduce = Reduce-Scatter + All-Gather</b>——把第 2 行拆成第 3、4 行两步，正是 ring 实现与 ZeRO 省显存的根本。</div>
+  </div>
+</div>
+
+<!-- ======================= fig2 : ring all-reduce 分解与代价 ======================= -->
+<div class="diagram" data-name="dp_collectives_fig2">
+  <div class="dg-title">Ring All-Reduce：为什么每卡搬运量与卡数 N 几乎无关</div>
+  <div class="dg-sub">N 卡组成逻辑环，张量 M 切成 N 片沿环流动 · All-Reduce ＝ Reduce-Scatter（累加）＋ All-Gather（广播）</div>
+
+  <div style="width:1040px">
+    <!-- ring svg -->
+    <div style="display:flex;gap:36px;align-items:center">
+      <svg width="300" height="240" viewBox="0 0 300 240">
+        <defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L7,3 L0,6 Z" fill="#6296D4"/></marker></defs>
+        <!-- ring arrows (clockwise) -->
+        <path d="M150,52 A78,78 0 0,1 226,132" fill="none" stroke="#6296D4" stroke-width="2.4" marker-end="url(#ah)"/>
+        <path d="M222,150 A78,78 0 0,1 150,220" fill="none" stroke="#6296D4" stroke-width="2.4" marker-end="url(#ah)"/>
+        <path d="M132,218 A78,78 0 0,1 60,150" fill="none" stroke="#6296D4" stroke-width="2.4" marker-end="url(#ah)"/>
+        <path d="M62,132 A78,78 0 0,1 132,54" fill="none" stroke="#6296D4" stroke-width="2.4" marker-end="url(#ah)"/>
+        <!-- nodes -->
+        <g font-family="Segoe UI" font-size="15" font-weight="700" text-anchor="middle">
+          <circle cx="150" cy="42" r="24" fill="#E9F2FC" stroke="#6296D4" stroke-width="2"/><text x="150" y="47" fill="#1E4E79">R0</text>
+          <circle cx="248" cy="140" r="24" fill="#E6F4EC" stroke="#5BAE80" stroke-width="2"/><text x="248" y="145" fill="#1F6B41">R1</text>
+          <circle cx="150" cy="228" r="24" fill="#FBF0E1" stroke="#DBA059" stroke-width="2"/><text x="150" y="233" fill="#8A581A">R2</text>
+          <circle cx="52" cy="140" r="24" fill="#FBE9EC" stroke="#D98A9B" stroke-width="2"/><text x="52" y="145" fill="#8A2A3C">R3</text>
+        </g>
+        <text x="150" y="134" text-anchor="middle" font-family="Segoe UI" font-size="12" fill="#8A8F98">每步只向</text>
+        <text x="150" y="150" text-anchor="middle" font-family="Segoe UI" font-size="12" fill="#8A8F98">下游发 1 片</text>
+      </svg>
+
+      <div style="flex:1">
+        <div class="phase">
+          <div class="phase-lab">① Reduce-Scatter<small>N−1 步 · 累加</small></div>
+          <div style="flex:1"><div class="tl"><div class="tl-row"><div class="tl-track slim">
+            <div class="tl-bar tl-m" style="left:0;width:24%;top:3px;height:18px">步1</div>
+            <div class="tl-bar tl-m" style="left:25.5%;width:24%;top:3px;height:18px">步2</div>
+            <div class="tl-bar tl-m" style="left:51%;width:24%;top:3px;height:18px">步3</div>
+          </div></div></div>
+          <div style="font-size:12px;color:#8A581A;white-space:nowrap;margin-left:10px">每卡得<br>1 片全局和</div></div>
+        </div>
+        <div class="phase">
+          <div class="phase-lab">② All-Gather<small>N−1 步 · 广播</small></div>
+          <div style="flex:1"><div class="tl"><div class="tl-row"><div class="tl-track slim">
+            <div class="tl-bar tl-c" style="left:0;width:24%;top:3px;height:18px">步1</div>
+            <div class="tl-bar tl-c" style="left:25.5%;width:24%;top:3px;height:18px">步2</div>
+            <div class="tl-bar tl-c" style="left:51%;width:24%;top:3px;height:18px">步3</div>
+          </div></div></div>
+          <div style="font-size:12px;color:#1E4E79;white-space:nowrap;margin-left:10px">每卡得<br>全量和</div></div>
+        </div>
+
+        <div class="costbox">
+          每卡总发送量 &nbsp;<span class="kbig">V<sub>send</sub> = 2 · (N−1)/N · M</span><br>
+          带宽受限时 &nbsp;<b>T ≈ 2·(N−1)/N · M / B<sub>w</sub></b> &nbsp;<span style="color:#1F6B41">──→ N 大时趋于常数 2M/B<sub>w</sub></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend" style="margin-top:14px">
+      <span><span class="dot" style="background:#DBA059;border-color:#DBA059"></span>Reduce-Scatter（发+累加）</span>
+      <span><span class="dot" style="background:#6296D4;border-color:#6296D4"></span>All-Gather（发+覆盖）</span>
+      <span><span class="dot" style="background:#8E7DCB;border-color:#8E7DCB"></span>代价</span>
+    </div>
+    <div class="note"><b>为什么带宽最优</b>：每卡在两阶段各发 (N−1)/N·M ≈ M，合计 ≈ 2M，<b>几乎不随 N 增长</b>——这是 DP 能扩到上千卡的通信基础。代价藏在步数 2(N−1)：卡极多、消息又小时延迟（α 项）吃不消，改用 tree（≈2·log₂N 步）或分层 all-reduce。</div>
+  </div>
+</div>
+
+</body></html>

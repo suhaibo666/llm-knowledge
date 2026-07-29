@@ -116,6 +116,9 @@ venv.bak/
 
 .html2md/
 
+# figure re-render tooling — deps installed on demand, never checked in
+tools/html2md/node_modules/
+
 # Local Git worktrees
 .worktrees/
 

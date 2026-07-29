@@ -1,0 +1,140 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css">
+<style>
+  .fg{border-radius:11px;border:1.6px solid;padding:9px 13px;font-size:13px;font-weight:700;text-align:center;line-height:1.3}
+  .fg small{display:block;font-weight:400;font-size:11px;color:#7A808A;margin-top:2px}
+  .op{background:#EEEAF8;border-color:#8E7DCB;color:#473B86}
+  .g0{background:#E9F2FC;border-color:#6296D4;color:#1E4E79}
+  .g1{background:#FBF0E1;border-color:#DBA059;color:#8A581A}
+  .col2{display:flex;flex-direction:column;gap:9px;align-items:stretch;width:220px}
+  .stepbox{border-radius:9px;border:1.4px solid;padding:8px 10px;font-size:12.5px;text-align:center;line-height:1.3}
+  .plain{background:#FBFAF7;border-color:#E0DDD6;color:#3A434F}
+  .h-arrow{align-self:center;color:#9AA1AC;font-size:20px;padding:0 6px}
+  .v-arrow{text-align:center;color:#9AA1AC;font-size:15px;line-height:1}
+  /* memory bars for SP fig */
+  .layer-reg{display:flex;align-items:center;gap:12px;margin:7px 0}
+  .reg-lab{width:150px;flex:0 0 auto;font-size:12.5px;color:#3A434F;text-align:right;line-height:1.3}
+  .reg-lab small{display:block;color:#8A8F98;font-size:10.5px}
+  .barset{display:flex;gap:5px}
+  .mbar{width:34px;height:30px;border-radius:5px;border:1.4px solid;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700}
+  .full{background:#FBE9EC;border-color:#D98A9B;color:#8A2A3C}
+  .shard{background:#E6F4EC;border-color:#5BAE80;color:#1F6B41}
+  .bnd{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .bnd-ar{background:#FBE9EC;color:#8A2A3C}
+  .bnd-rsag{background:#E6F4EC;color:#1F6B41}
+  .panelttl{font-size:14.5px;font-weight:700;margin:0 0 8px;color:#1F2430}
+  /* CP ring */
+  .cpwrap{display:flex;gap:30px;align-items:center}
+</style></head><body>
+
+<!-- ============ fig1 : Megatron MLP 列切→行切 + f/g ============ -->
+<div class="diagram" data-name="dp_tensor_parallel_fig1">
+  <div class="dg-title">张量并行：MLP 的「列切 → 行切」与 f/g 共轭算子</div>
+  <div class="dg-sub">Y = GeLU(X·A)·B　·　A 按列切、B 按行切，非线性 GeLU 夹在中间<strong>零通信</strong>，只在出口 g 做一次 all-reduce</div>
+
+  <div style="width:1080px">
+    <div class="row" style="align-items:stretch;gap:0">
+      <div class="fg plain" style="align-self:center">输入 X<small>完整激活</small></div>
+      <div class="h-arrow">→</div>
+      <div class="fg op" style="align-self:center">f<small>前向 identity<br>反向 all-reduce</small></div>
+      <div class="h-arrow">→</div>
+
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="col2">
+          <div class="fg g0">GPU 0</div>
+          <div class="stepbox g0">X · A₁　<small style="color:#1E4E79">列切：算部分列</small></div>
+          <div class="v-arrow">↓</div>
+          <div class="stepbox plain">GeLU（逐元素·无通信）</div>
+          <div class="v-arrow">↓</div>
+          <div class="stepbox g0">GeLU(XA₁) · B₁　<small style="color:#1E4E79">行切：部分积</small></div>
+        </div>
+        <div class="col2">
+          <div class="fg g1">GPU 1</div>
+          <div class="stepbox g1">X · A₂　<small style="color:#8A581A">列切：算部分列</small></div>
+          <div class="v-arrow">↓</div>
+          <div class="stepbox plain">GeLU（逐元素·无通信）</div>
+          <div class="v-arrow">↓</div>
+          <div class="stepbox g1">GeLU(XA₂) · B₂　<small style="color:#8A581A">行切：部分积</small></div>
+        </div>
+      </div>
+
+      <div class="h-arrow">→</div>
+      <div class="fg op" style="align-self:center">g<small>前向 all-reduce<br>反向 identity</small></div>
+      <div class="h-arrow">→</div>
+      <div class="fg plain" style="align-self:center">Y = ΣᵢGeLU(XAᵢ)Bᵢ<small>完整输出</small></div>
+    </div>
+
+    <div class="note"><b>为什么这样切</b>：先列切让 GeLU 天然可逐卡独立（逐元素非线性对列切透明）；再行切使两卡各得一个部分积，<b>相加</b>即 Y。通信被压缩到出口 g 的<b>一次 all-reduce</b>。<b>f 与 g 是共轭对</b>：前向的 all-reduce 在 g、反向在 f，故每个 MLP 块前向 1 次、反向 1 次；Attention 块按 head 切、结构对称，一层合计前向 2 次、反向 2 次 all-reduce。<b>量 ∝ B·S·d、每层都发、在关键路径上 ⇒ 只敢机内 NVLink。</b></div>
+  </div>
+</div>
+
+<!-- ============ fig2 : TP vs TP+SP 激活切分 ============ -->
+<div class="diagram" data-name="dp_tensor_parallel_fig2">
+  <div class="dg-title">序列并行：把 TP 漏掉的激活也切了（零额外通信换显存）</div>
+  <div class="dg-sub">TP 未切 LayerNorm/Dropout/residual → 每卡存完整 B·S·d 激活；SP 沿序列维切成 1/N，边界处 all-reduce 拆成 reduce-scatter + all-gather</div>
+
+  <div class="row" style="gap:56px;width:1060px;align-items:flex-start">
+    <!-- 纯 TP -->
+    <div style="flex:1">
+      <div class="panelttl">纯 TP</div>
+      <div class="layer-reg"><div class="reg-lab">LayerNorm / Dropout<small>逐 token 区</small></div>
+        <div class="barset"><div class="mbar full">S</div><div class="mbar full">S</div><div class="mbar full">S</div><div class="mbar full">S</div></div></div>
+      <div style="text-align:center;margin:4px 0"><span class="bnd bnd-ar">↕ all-reduce（进出 TP 区）</span></div>
+      <div class="layer-reg"><div class="reg-lab">Attention / MLP<small>TP 区（权重已切）</small></div>
+        <div class="barset"><div class="mbar shard">¼</div><div class="mbar shard">¼</div><div class="mbar shard">¼</div><div class="mbar shard">¼</div></div></div>
+      <div class="note" style="max-width:440px"><b>每卡激活 = 完整 B·S·d</b>（红＝整条序列）。TP 只切了权重，逐 token 区的激活谁都存一整份 → 激活显存瓶颈。</div>
+    </div>
+    <!-- TP + SP -->
+    <div style="flex:1">
+      <div class="panelttl">TP + SP</div>
+      <div class="layer-reg"><div class="reg-lab">LayerNorm / Dropout<small>SP 区：沿序列切</small></div>
+        <div class="barset"><div class="mbar shard">¼</div><div class="mbar shard">¼</div><div class="mbar shard">¼</div><div class="mbar shard">¼</div></div></div>
+      <div style="text-align:center;margin:4px 0"><span class="bnd bnd-rsag">↑ all-gather　↓ reduce-scatter</span></div>
+      <div class="layer-reg"><div class="reg-lab">Attention / MLP<small>TP 区（需完整激活）</small></div>
+        <div class="barset"><div class="mbar shard">¼</div><div class="mbar shard">¼</div><div class="mbar shard">¼</div><div class="mbar shard">¼</div></div></div>
+      <div class="note" style="max-width:440px"><b>每卡激活 = B·S·d / N</b>（绿＝1/N 序列片）。边界把 all-reduce 拆成 RS+AG：<b>总通信量不变</b>（AR＝RS+AG），白捡激活显存。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CP : ring-attention ============ -->
+<div class="diagram" data-name="dp_context_parallel_fig1">
+  <div class="dg-title">上下文并行：ring-attention 交换 KV，攻克超长序列的 O(S²)</div>
+  <div class="dg-sub">序列切到 4 卡，每卡持一段 Q 及本段 KV；KV 分块沿环流动，每轮算一块局部 attention，online-softmax 增量累积</div>
+
+  <div class="cpwrap" style="width:1000px">
+    <svg width="300" height="250" viewBox="0 0 300 250">
+      <defs><marker id="cah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5BAE80"/></marker></defs>
+      <path d="M150,58 A72,72 0 0,1 220,132" fill="none" stroke="#5BAE80" stroke-width="2.4" marker-end="url(#cah)"/>
+      <path d="M216,150 A72,72 0 0,1 150,218" fill="none" stroke="#5BAE80" stroke-width="2.4" marker-end="url(#cah)"/>
+      <path d="M130,216 A72,72 0 0,1 64,150" fill="none" stroke="#5BAE80" stroke-width="2.4" marker-end="url(#cah)"/>
+      <path d="M66,132 A72,72 0 0,1 130,60" fill="none" stroke="#5BAE80" stroke-width="2.4" marker-end="url(#cah)"/>
+      <g font-family="Segoe UI" font-size="13" font-weight="700" text-anchor="middle">
+        <circle cx="150" cy="46" r="26" fill="#E9F2FC" stroke="#6296D4" stroke-width="2"/><text x="150" y="43" fill="#1E4E79">卡0</text><text x="150" y="57" fill="#6296D4" font-size="10.5">Q₀·KV</text>
+        <circle cx="240" cy="140" r="26" fill="#FBF0E1" stroke="#DBA059" stroke-width="2"/><text x="240" y="137" fill="#8A581A">卡1</text><text x="240" y="151" fill="#DBA059" font-size="10.5">Q₁·KV</text>
+        <circle cx="150" cy="230" r="26" fill="#FBE9EC" stroke="#D98A9B" stroke-width="2"/><text x="150" y="227" fill="#8A2A3C">卡2</text><text x="150" y="241" fill="#D98A9B" font-size="10.5">Q₂·KV</text>
+        <circle cx="60" cy="140" r="26" fill="#EEEAF8" stroke="#8E7DCB" stroke-width="2"/><text x="60" y="137" fill="#473B86">卡3</text><text x="60" y="151" fill="#8E7DCB" font-size="10.5">Q₃·KV</text>
+      </g>
+      <text x="150" y="140" text-anchor="middle" font-family="Segoe UI" font-size="11.5" fill="#8A8F98">KV 块</text>
+      <text x="150" y="155" text-anchor="middle" font-family="Segoe UI" font-size="11.5" fill="#8A8F98">绕环流动</text>
+    </svg>
+
+    <div style="flex:1">
+      <div class="tl">
+        <div class="tl-row"><div class="tl-lab">卡0 的 Q₀<small>需看全序列 KV</small></div>
+          <div class="tl-track">
+            <div class="tl-bar tl-c" style="left:0;width:23%;top:4px;height:15px">算本地 KV₀</div>
+            <div class="tl-bar tl-c" style="left:25%;width:23%;top:4px;height:15px">收 KV₃ 算</div>
+            <div class="tl-bar tl-c" style="left:50%;width:23%;top:4px;height:15px">收 KV₂ 算</div>
+            <div class="tl-bar tl-c" style="left:75%;width:23%;top:4px;height:15px">收 KV₁ 算</div>
+            <div class="tl-bar tl-m" style="left:23%;width:2%;top:22px;height:13px"></div>
+            <div class="tl-bar tl-m" style="left:48%;width:2%;top:22px;height:13px"></div>
+            <div class="tl-bar tl-m" style="left:73%;width:2%;top:22px;height:13px"></div>
+          </div></div>
+      </div>
+      <div class="note" style="max-width:600px"><b>为什么用环</b>：每个 query 要看全序列的 key，但整份 KV 太大存不下。ring 让每卡每轮只暂持<b>一块</b>别人的 KV，算完局部 attention 用 <b>online-softmax</b> 累进、随即丢弃 → 峰值显存低，且 KV 传输与计算<b>重叠</b>。CP 与 TP 正交（一个切序列、一个切隐藏维），可组合 CP×TP。</div>
+    </div>
+  </div>
+</div>
+
+</body></html>

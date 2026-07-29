@@ -1,0 +1,222 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css"></head><body>
+
+<!-- ================= DET FIG 1: 浮点非确定性的五层来源 ================= -->
+<div class="diagram" data-name="tr_det_fig1">
+  <div class="dg-title">浮点非确定性的五层来源</div>
+  <div class="dg-sub">根源：浮点加法不满足结合律 —— 顺序不固定则比特不固定。自底向上五层，机理各异（问题 1）</div>
+
+  <div class="node slate center" style="width:920px"><div class="t">根源：<span style="font-family:monospace">(a+b)+c ≠ a+(b+c)</span></div><div class="d">尾数位有限 → 每步舍入路径不同 → 只要加法结合顺序不定，结果就不可能逐比特一致（每种顺序都"合法"，但不可复现）</div></div>
+  <div class="downwrap"><svg width="16" height="20" viewBox="0 0 16 20"><line x1="8" y1="0" x2="8" y2="13" stroke="currentColor" stroke-width="2"/><path d="M4 11 L8 18 L12 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="node amber" style="width:920px"><div class="t">第 1 层 · 算子内原子操作（atomicAdd 类）</div><div class="d">embedding/FA backward、scatter_add：并发线程向同一地址累加，硬件串行化但<b>到达顺序随调度</b>每次不同</div></div>
+  <div class="downwrap"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+  <div class="node amber" style="width:920px"><div class="t">第 2 层 · 算子内规约拆分（split-K / autotuning）</div><div class="d">M、N 小 K 大时启用 split-K；cuBLAS/cuDNN 按 shape 自动选算法 —— <b>不同算法 = 不同规约树</b>（今天 algo7、明天 algo3，都"对"）</div></div>
+  <div class="downwrap"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+  <div class="node blue" style="width:920px"><div class="t">第 3 层 · 通信库规约（NCCL / HCCL）</div><div class="d">AllReduce 是加法树：Ring/Tree/NVLS 形态不同；<b>规模一变规约树必变</b>；在网规约（NVSwitch/SHARP）顺序由链路时序定、<b>软件无法固定</b></div></div>
+  <div class="downwrap"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+  <div class="node purple" style="width:920px"><div class="t">第 4 层 · 动态路由（MoE dispatch / combine）</div><div class="d">按 expert 分桶靠排序：<b>不稳定排序</b>使同 expert 的 token 次序每次不同；超容丢 token 依赖此序 → <b>输入内容级</b>不确定（非 ULP 级）</div></div>
+  <div class="downwrap"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+  <div class="node green" style="width:920px"><div class="t">第 5 层 · 框架级随机性</div><div class="d">dropout 种子 / DataLoader 多 worker 交错 / TP 组内 RNG 不同步 / Python hash 随机化 —— 与浮点无关，漏一处则前四层白做</div></div>
+
+  <div class="note">对应治理：第 1 层 <b>sort + segmented reduce</b> 替代 atomicAdd；第 2 层固定 workspace/禁 split-K（<span style="font-family:monospace">CUBLAS_WORKSPACE_CONFIG</span>）；第 3 层锁 <span style="font-family:monospace">NCCL_ALGO=Ring</span>/排除 NVLS；第 4 层稳定排序；第 5 层 RNG tracker。综合"确定性税"约 5%–15%。</div>
+  <div class="legend">
+    <span><span class="dot" style="background:#FBF0E1;border-color:#DBA059"></span>算子内</span>
+    <span><span class="dot" style="background:#E9F2FC;border-color:#6296D4"></span>通信规约</span>
+    <span><span class="dot" style="background:#EEEAF8;border-color:#8E7DCB"></span>MoE 路由</span>
+    <span><span class="dot" style="background:#E6F4EC;border-color:#5BAE80"></span>框架状态</span>
+  </div>
+</div>
+
+<!-- ================= DET FIG 2: 长链累加的病与药 ================= -->
+<div class="diagram" data-name="tr_det_fig2">
+  <div class="dg-title">低精度长链累加：病与药</div>
+  <div class="dg-sub">有限尾数的两个病 → 树形/成对求和把误差从 O(n) 压到 O(log n)（问题 3）</div>
+
+  <div class="row" style="gap:14px;align-items:stretch">
+    <div class="node rose" style="width:300px"><div class="t">病：顺序累加 O(n·ε)</div><div class="d">"巨大累加器 + 单个小元素"最易<b>吞位</b>：|x| &lt; ulp(S)/2 则被整个吞掉<br><br><span style="font-family:monospace">BF16 顺序 Σ 1000×1.0 = 256</span><br>（ulp(256)=2，+1 全被舍掉）</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node green" style="width:320px"><div class="t">药①：树形 / pairwise O(log n·ε)</div><div class="d">递归二分，每层相加两个<b>规模相当</b>的部分和 → 几乎不吞位；每元素只过 log₂n 层舍入<br><br><span style="font-family:monospace">同样 1000×1.0 → 精确 1000</span><br>= LongCat"二叉树分段累加"</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue" style="width:340px"><div class="t">药②：FP8 两级累加（DeepSeek-V3）</div><div class="d">tensor core 累加精度不足（实测 ~14 位，K=4096 误差近 2%）<br>→ 只连续累 <b>K=128</b> 短链（低精度硬件）<br>→ 搬到 <b>FP32 寄存器</b>做块间树累加<br>= "短链 × 外层树"，DeepGEMM 参考实现</div></div>
+  </div>
+
+  <div class="note">工程要点：CUB/单卡 block reduce 内部本就是树形，真正要治的是<b>跨 block / 跨卡 / 跨机的合并顺序</b> —— 分段树形同时给出<b>更小误差 + 固定顺序</b>，是确定性（问题 1）与精度（问题 3）的交汇解。另有 Megatron <span style="font-family:monospace">--accumulate-allreduce-grads-in-fp32</span>（FP32 main_grad）与 Kahan 补偿求和两条互补路。</div>
+</div>
+
+<!-- ================= DET FIG 3: SDC 四层检测 + 确定性重放 ================= -->
+<div class="diagram" data-name="tr_det_fig3">
+  <div class="dg-title">SDC / 比特翻转：四层检测体系 + 确定性重放定界</div>
+  <div class="dg-sub">覆盖率与开销逐层权衡；重放是"黄金标准"，但前提是问题 1 的全栈确定性（问题 4）</div>
+
+  <div style="display:flex;gap:18px;align-items:stretch">
+    <!-- left: 4-layer ladder -->
+    <div style="width:470px;display:flex;flex-direction:column">
+      <div class="node slate" style="width:100%"><div class="t" style="font-size:14px">第 1 层 · 带外筛查（不占训练时间）</div><div class="d">已知答案测试 + 应力工况（满功耗/逼近温度阈）；DCGM/EUD、华为 5 层压测（感知率 40%→90%）。筛查 ≠ 训练负载，有漏网</div></div>
+      <div class="downwrap" style="padding:4px 0"><svg width="16" height="16" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+      <div class="node slate" style="width:100%"><div class="t" style="font-size:14px">第 2 层 · 在线统计（近零开销，有盲区）</div><div class="d"><span style="font-family:monospace">--check-for-nan-in-loss-and-grad</span> + grad-norm spike。盲区：多数真实 SDC <b>不体现在任何聚合统计量</b>（尾数翻转混在梯度噪声里）</div></div>
+      <div class="downwrap" style="padding:4px 0"><svg width="16" height="16" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+      <div class="node blue" style="width:100%"><div class="t" style="font-size:14px">第 3 层 · 在线校验（低开销冗余）</div><div class="d"><b>ABFT</b>：校验和以 O(n²) 抓 O(n³) GEMM 的翻转（十字交叉定位）；<b>DP 副本 hash 互查</b>：多数表决直指坏副本。LongCat 只保护 GEMM 类热点算子</div></div>
+      <div class="downwrap" style="padding:4px 0"><svg width="16" height="16" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+      <div class="node amber" style="width:100%;border-width:2.2px"><div class="t" style="font-size:14px">第 4 层 · 确定性重放定界（黄金标准）★</div><div class="d">Gemini 2.5 split-phase：约 0.25% step 被重放，其中 6% 确认真损坏 —— 没有 bitwise 确定性，这层直接不存在</div></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;padding:0 6px;color:#B7937A">
+      <span style="font-size:11.5px;writing-mode:vertical-rl">覆盖率 ↑ · 开销 ↑</span>
+    </div>
+
+    <!-- right: replay closed loop -->
+    <div style="width:430px;border:1.5px dashed #C9CDD4;border-radius:14px;padding:14px 15px;background:#FCFCFB;display:flex;flex-direction:column">
+      <div style="font-weight:700;font-size:14px;color:#8A581A;margin-bottom:9px">第 4 层机制：确定性重放闭环</div>
+      <div class="node blue center" style="width:100%;padding:8px 10px"><div class="t" style="font-size:13px">在线监控发现可疑 step（spike / 梯度异常）</div></div>
+      <div class="downwrap" style="padding:3px 0"><svg width="14" height="15" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+      <div class="node amber center" style="width:100%;padding:8px 10px"><div class="t" style="font-size:13px">同一批设备上确定性<b>重跑该 step</b></div></div>
+      <div class="downwrap" style="padding:3px 0"><svg width="14" height="15" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+      <div class="node slate center" style="width:100%;padding:8px 10px"><div class="t" style="font-size:13px">逐设备比对中间结果 checksum</div></div>
+      <div class="downwrap" style="padding:3px 0"><svg width="14" height="15" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+      <div style="display:flex;gap:10px">
+        <div class="node rose center" style="flex:1;padding:8px 8px"><div class="t" style="font-size:12.5px">不复现</div><div class="d">哪台两次不一致 → <b>坏硬件</b>，分钟级踢卡续训</div></div>
+        <div class="node green center" style="flex:1;padding:8px 8px"><div class="t" style="font-size:12.5px">两次一致</div><div class="d">合法波动，<b>虚警排除</b></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="note">关键认知：ECC 只保护存储，<b>运算逻辑里的翻转 ECC 管不到</b>。确定性保证了重放"不一致"只可能来自硬件 —— 这是把"全局 spike"裁决成"某台设备坏了"的唯一可靠依据。</div>
+</div>
+
+<!-- ================= FT FIG 1: 五级恢复坐标系 vs 恢复链路 ================= -->
+<div class="diagram" data-name="tr_ft_fig1">
+  <div class="dg-title">恢复粒度坐标系：每细化一级，砍掉恢复链路的几环</div>
+  <div class="dg-sub">恢复链路串行开销 = 检测→定位→调度→拉起→建链→编译→加载 ckpt→数据快进（轻松半小时）。越细的粒度越晚接入 → 恢复越快（问题 5）</div>
+
+  <div class="tl">
+    <div class="tl-row">
+      <div class="tl-lab">恢复链路（8 环）<small>横轴 = 时间</small></div>
+      <div class="tl-track" style="height:26px;background:transparent;display:flex;gap:2px">
+        <div style="flex:1;background:#EEF1F4;border-radius:4px;font-size:10px;display:flex;align-items:center;justify-content:center;color:#5B6470">检测</div>
+        <div style="flex:1;background:#EEF1F4;border-radius:4px;font-size:10px;display:flex;align-items:center;justify-content:center;color:#5B6470">定位隔离</div>
+        <div style="flex:1.2;background:#EEF1F4;border-radius:4px;font-size:10px;display:flex;align-items:center;justify-content:center;color:#5B6470">调度凑资源</div>
+        <div style="flex:1;background:#EEF1F4;border-radius:4px;font-size:10px;display:flex;align-items:center;justify-content:center;color:#5B6470">进程拉起</div>
+        <div style="flex:1;background:#EEF1F4;border-radius:4px;font-size:10px;display:flex;align-items:center;justify-content:center;color:#5B6470">万卡建链</div>
+        <div style="flex:0.8;background:#EEF1F4;border-radius:4px;font-size:10px;display:flex;align-items:center;justify-content:center;color:#5B6470">图编译</div>
+        <div style="flex:1.2;background:#EEF1F4;border-radius:4px;font-size:10px;display:flex;align-items:center;justify-content:center;color:#5B6470">加载 ckpt</div>
+        <div style="flex:0.9;background:#EEF1F4;border-radius:4px;font-size:10px;display:flex;align-items:center;justify-content:center;color:#5B6470">数据快进</div>
+      </div>
+      <div class="tl-save" style="width:120px">总时长</div>
+    </div>
+    <div class="tl-row">
+      <div class="tl-lab">Job 级<small>整任务重调度</small></div>
+      <div class="tl-track"><div class="tl-bar tl-m" style="left:0;width:100%">全链路走一遍</div></div>
+      <div class="tl-save" style="width:120px;color:#8A2A3C">~30+ min</div>
+    </div>
+    <div class="tl-row">
+      <div class="tl-lab">Pod / Node 级<small>只换故障机</small></div>
+      <div class="tl-track"><div class="tl-bar tl-idle" style="left:0;width:26%">省</div><div class="tl-bar tl-m" style="left:26%;width:74%">拉起→建链→编译→加载</div></div>
+      <div class="tl-save" style="width:120px">省资源调度</div>
+    </div>
+    <div class="tl-row">
+      <div class="tl-lab">进程内重启<small>NVRx in-process</small></div>
+      <div class="tl-track"><div class="tl-bar tl-idle" style="left:0;width:74%">省（进程不死/权重仍在 HBM）</div><div class="tl-bar tl-c" style="left:74%;width:26%">重建通信域</div></div>
+      <div class="tl-save" style="width:120px;color:#1F6B41">秒级</div>
+    </div>
+    <div class="tl-row">
+      <div class="tl-lab">Step 级<small>临终 ckpt / 重放</small></div>
+      <div class="tl-track"><div class="tl-bar tl-c2" style="left:0;width:100%">状态回到故障前一刻（回滚窗口 → 上一 step）</div></div>
+      <div class="tl-save" style="width:120px;color:#1F6B41">进度几乎不丢</div>
+    </div>
+  </div>
+
+  <div class="note">两条正交轴：<b>Job/Pod/Node</b> 回答"重建多大资源域"、<b>进程级</b>回答"进程与通信域怎么处理"、<b>Step 级</b>回答"状态从哪接续" —— 可组合（如"Pod 级重调度 + 临终 ckpt"）。度量已从 MTBF 转向 <b>goodput / ETTR</b>。各家：华为 MindIO TFT（TTP/UCE/ARF）、NVRx、Google slice 弹性、torchft 副本组级不停训。</div>
+</div>
+
+<!-- ================= FT FIG 2: hang 症状/病灶分离 + flight recorder ================= -->
+<div class="diagram" data-name="tr_ft_fig2">
+  <div class="dg-title">隐式故障 hang：症状与病灶的空间分离 + flight recorder 定位</div>
+  <div class="dg-sub">集合通信的阻塞语义：一个 rank 不到齐，其余上万个静静阻塞在同一调用里（问题 6）</div>
+
+  <div style="display:flex;gap:18px;align-items:stretch">
+    <div style="width:420px;border:1.5px dashed #C9CDD4;border-radius:14px;padding:13px 14px;background:#FCFCFB">
+      <div style="font-weight:700;font-size:14px;color:#8A2A3C;margin-bottom:9px">难点：症状 ≠ 病灶</div>
+      <div class="node rose center" style="width:100%;padding:9px"><div class="t" style="font-size:13.5px">症状：全体 rank 卡住</div><div class="d">无人报错 · 日志停滚 · GPU 利用率读数甚至还是 100%（SM 自旋等待）</div></div>
+      <div class="downwrap" style="padding:4px 0"><svg width="16" height="16" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+      <div class="node amber center" style="width:100%;padding:9px"><div class="t" style="font-size:13.5px">病灶：某 1 个 rank</div><div class="d">dataloader 卡慢存储 / host 死锁 / GPU 停摆 / 网卡半死 —— 没发起或没完成本次 collective</div></div>
+      <div class="note" style="margin-top:12px">兜底=超时看门狗（watchdog + heartbeat 双线程），但默认 10 min、生产常配 30–60 min —— 一次 hang 最低成本就是数千卡时空转。</div>
+    </div>
+
+    <div style="width:500px;border:1.5px dashed #C9CDD4;border-radius:14px;padding:13px 14px;background:#FCFCFB">
+      <div style="font-weight:700;font-size:14px;color:#1E4E79;margin-bottom:9px">定位：NCCL Flight Recorder 的 seq 对账</div>
+      <div class="d" style="font-size:12.5px;color:#5B6470;margin-bottom:8px">每个 communicator 环形缓冲记录最近 N 次通信的 (seq, 类型, 尺寸, 状态)，常态零开销；watchdog 超时 dump 全体 rank：</div>
+      <div style="background:#0F1720;color:#D6DEE8;border-radius:10px;padding:12px 14px;font-family:monospace;font-size:12px;line-height:1.7">
+        rank 0..1022:&nbsp; seq=<b style="color:#7FD1A0">182931</b> (allreduce, completed)<br>
+        rank 1023:&nbsp;&nbsp;&nbsp;&nbsp; seq=<b style="color:#F0A85F">182930</b> (completed) &nbsp;<span style="color:#E58F8F">← 未发起 #182931</span><br>
+        <span style="color:#9AA6B2">────────────────────────────────</span><br>
+        结论：rank 1023 在两次通信间的<b style="color:#F0A85F">本地代码</b>里卡住
+      </div>
+      <div class="note" style="margin-top:10px"><span style="font-family:monospace">TORCH_NCCL_TRACE_BUFFER_SIZE</span> + <span style="font-family:monospace">TORCH_NCCL_DUMP_ON_TIMEOUT</span>。非通信 hang 再用 ByteRobust <b>全量栈聚类</b>（多数栈一致=基准，离群簇=嫌疑机）；straggler 用 NVRx 相对打分 / C4 通信可预测性检出。哲学：<b>快速隔离优先于精确定位</b>。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= DYN FIG 1: spike 排查决策树 ================= -->
+<div class="diagram" data-name="tr_dyn_fig1">
+  <div class="dg-title">loss spike / NaN 排查决策树</div>
+  <div class="dg-sub">与问题 1/4 交汇：确定性重放是"SDC 还是优化问题"的唯一可靠分岔器（问题 9）</div>
+
+  <div class="node slate center" style="width:900px"><div class="t">异常触发（loss 统计量告警 / NaN 检测器命中）→ 第 0 步分类</div></div>
+  <div class="downwrap"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+
+  <div class="row" style="gap:16px;align-items:stretch">
+    <!-- NaN channel -->
+    <div style="flex:1;border:1.5px dashed #D98A9B;border-radius:14px;padding:12px 13px;background:#FDFBFB">
+      <div style="font-weight:700;font-size:13.5px;color:#8A2A3C;margin-bottom:8px">NaN / Inf 通道</div>
+      <div class="node slate center" style="width:100%;padding:7px"><div class="t" style="font-size:12.5px">① 查 loss scale 历史（FP16 崩溃循环）</div></div>
+      <div class="downwrap" style="padding:2px 0"><svg width="13" height="13" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+      <div class="node slate center" style="width:100%;padding:7px"><div class="t" style="font-size:12.5px">② 逐层 hook 定位首个非有限张量</div></div>
+      <div class="downwrap" style="padding:2px 0"><svg width="13" height="13" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+      <div class="node slate center" style="width:100%;padding:7px"><div class="t" style="font-size:12.5px">③ 查 batch 是否含坏编码</div></div>
+      <div class="downwrap" style="padding:2px 0"><svg width="13" height="13" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+      <div class="node amber center" style="width:100%;padding:7px"><div class="t" style="font-size:12.5px">均排除 → 转 SDC 流程（问题 4）</div></div>
+    </div>
+
+    <!-- finite spike channel -->
+    <div style="flex:1.35;border:1.5px dashed #6296D4;border-radius:14px;padding:12px 13px;background:#FBFCFE">
+      <div style="font-weight:700;font-size:13.5px;color:#1E4E79;margin-bottom:8px">有限 spike 通道</div>
+      <div class="node amber center" style="width:100%;padding:8px"><div class="t" style="font-size:13px">① 确定性重放该 step ★</div></div>
+      <div class="downwrap" style="padding:2px 0"><svg width="13" height="13" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+      <div style="display:flex;gap:10px">
+        <div class="node rose center" style="flex:1;padding:7px"><div class="t" style="font-size:12px">不复现 → SDC 嫌疑<br>问题 4 第四层定界</div></div>
+        <div class="node green center" style="flex:1;padding:7px"><div class="t" style="font-size:12px">比特级复现 →<br>软件/数据/优化，继续 ↓</div></div>
+      </div>
+      <div class="downwrap" style="padding:2px 0"><svg width="13" height="13" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+      <div class="node blue center" style="width:100%;padding:7px"><div class="t" style="font-size:12.5px">② 数据轴二分：跳过/替换嫌疑 batch 重跑</div></div>
+      <div class="downwrap" style="padding:2px 0"><svg width="13" height="13" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+      <div class="node blue center" style="width:100%;padding:7px"><div class="t" style="font-size:12.5px">③ 状态轴二分：更早 ckpt + 同 batch（PaLM：data × optimizer 联合事件）</div></div>
+      <div class="downwrap" style="padding:2px 0"><svg width="13" height="13" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+      <div class="node blue center" style="width:100%;padding:7px"><div class="t" style="font-size:12.5px">④ 层定位：翻前兆指标找首发层（embedding grad? max logit? router?）</div></div>
+    </div>
+  </div>
+
+  <div class="downwrap"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+  <div class="row" style="gap:12px">
+    <div class="node green center" style="flex:1"><div class="t" style="font-size:13px">良性且孤立</div><div class="d">记录事件，不动作</div></div>
+    <div class="node amber center" style="flex:1"><div class="t" style="font-size:13px">恶性</div><div class="d">回滚 + 跳批（PaLM：回滚 ~100 step、跳 200–500 batch；<span style="font-family:monospace">--skip-train-iteration-range</span>）</div></div>
+    <div class="node purple center" style="flex:1"><div class="t" style="font-size:13px">同源复发</div><div class="d">升级为架构 / 优化器级修复</div></div>
+  </div>
+</div>
+
+<!-- ================= DYN FIG 2: spike 四层防线 ================= -->
+<div class="diagram" data-name="tr_dyn_fig2">
+  <div class="dg-title">spike / 发散治理：四层防线</div>
+  <div class="dg-sub">从"运维负担"到"架构与优化器层面可基本消除"：PaLM(~20 次人工回滚) → DeepSeek-V3(零回滚) → Kimi K2 MuonClip(15.5T 零 spike)（问题 9）</div>
+
+  <div class="node blue" style="width:960px"><div class="t">① 架构层（治本）</div><div class="d"><b>QK-Norm</b>（内积前对 Q/K 各 LayerNorm，约束 logit 幅值；<span style="font-family:monospace">--qk-layernorm</span>）· <b>z-loss</b>（PaLM，压 log Z，系数 1e-4）· <b>logit soft-capping</b>（Gemma 2）· <b>embedding gradient shrink</b>（GLM-130B，α=0.1）· post-norm 重排 · RMSNorm 统计量用 FP32</div></div>
+  <div class="downwrap"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+  <div class="node purple" style="width:960px"><div class="t">② 优化器层</div><div class="d">grad clip 1.0 · 充分 warmup · Adam <b>β₂ 0.999→0.95</b>（缩短二阶矩记忆，直击 Molybog 机理）· ε 不宜过小 · 自适应削峰 <b>AdaGC/ZClip</b>（z-score 只削异常）· <b>MuonClip/QK-Clip</b>（Kimi K2：限幅移到<b>权重侧</b>，逐 head 回缩 W_q/W_k）</div></div>
+  <div class="downwrap"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+  <div class="node amber" style="width:960px"><div class="t">③ 数据层</div><div class="d">预清洗（去重 / 长度 / 编码过滤）解决可预见部分；对不可预见部分：<b>每 step 记 batch 指纹</b>（文件+偏移）→ 支撑决策树取证与精确跳批</div></div>
+  <div class="downwrap"><svg width="16" height="18" viewBox="0 0 16 18"><line x1="8" y1="0" x2="8" y2="11" stroke="currentColor" stroke-width="2"/><path d="M4 9 L8 16 L12 9" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+  <div class="node green" style="width:960px"><div class="t">④ 运维层（兜底自动化）</div><div class="d">K2-V2：异常自动检测（滑动中位数+MAD）→ 自动重启 → 告警一条龙 · NaN 即停（<span style="font-family:monospace">--check-for-nan-in-loss-and-grad</span>）· 多版本 ckpt · MoE：router z-loss（<span style="font-family:monospace">--moe-z-loss-coeff</span>）+ DeepSeek-V3 aux-loss-free 均衡</div></div>
+
+  <div class="note">2026 前沿：同一病灶（attention logit 爆炸）两条路线正式分叉 —— Kimi <b>权重侧限幅</b>（QK-Clip，需在线监控 max logit）vs DeepSeek-V4 <b>归一化</b>（QK RMSNorm，logits 天然有界、免调阈值）。DeepSeek-V4 更进一步：<b>Anticipatory Routing</b> 检测到 spike 时切"用历史参数算路由"模式，斩断"权重更新→路由翻转→更大梯度"的死循环。</div>
+</div>
+
+</body></html>

@@ -1,0 +1,68 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css">
+<style>
+  .tok{width:24px;height:18px;border-radius:4px;border:1.3px solid;margin:2px 0}
+  .t0{background:#E9F2FC;border-color:#6296D4}
+  .t1{background:#FBF0E1;border-color:#DBA059}
+  .t2{background:#FBE9EC;border-color:#D98A9B}
+  .t3{background:#E6F4EC;border-color:#5BAE80}
+  .rkc{display:flex;flex-direction:column;align-items:center;gap:0;width:64px}
+  .rkc .lab{font-size:11px;color:#3A434F;font-weight:600;margin-top:5px}
+  .rkc .lab small{display:block;color:#8A8F98;font-size:10px;font-weight:400}
+  .stack{display:flex;flex-direction:column;align-items:center;min-height:150px;justify-content:flex-end}
+  .grp{display:flex;gap:8px;align-items:flex-end;background:#FBFAF7;border:1px solid #ECE9E2;border-radius:12px;padding:12px 14px 8px}
+  .grp-ttl{font-size:13px;font-weight:700;color:#1F2430;margin-bottom:8px;text-align:center}
+  .a2a{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 6px;color:#473B86}
+  .a2a .big{font-size:22px}
+  .a2a .al{font-size:11.5px;font-weight:700;white-space:nowrap}
+  .cap{width:100%;border-top:2px dashed #C3651F;margin:3px 0;position:relative}
+  .cap::after{content:"容量上限";position:absolute;right:0;top:-14px;font-size:9.5px;color:#C3651F}
+</style></head><body>
+
+<div class="diagram" data-name="dp_expert_parallel_fig1">
+  <div class="dg-title">专家并行：token 的 all-to-all 分发与回收</div>
+  <div class="dg-sub">4 卡各放 2 专家（共 8 个）· 格色 = 目标专家所在卡 · 两次 all-to-all 夹一段本地专家计算 · 热门专家 → 负载不均</div>
+
+  <div style="display:flex;align-items:center;gap:6px;width:1140px">
+    <!-- ① 路由后 -->
+    <div>
+      <div class="grp-ttl">① 路由后<br><small style="font-weight:400;color:#8A8F98">每卡 token 目的地混合</small></div>
+      <div class="grp">
+        <div class="rkc"><div class="stack"><div class="tok t0"></div><div class="tok t1"></div><div class="tok t2"></div><div class="tok t0"></div></div><div class="lab">卡0<small>E0 E1</small></div></div>
+        <div class="rkc"><div class="stack"><div class="tok t1"></div><div class="tok t0"></div><div class="tok t3"></div><div class="tok t1"></div></div><div class="lab">卡1<small>E2 E3</small></div></div>
+        <div class="rkc"><div class="stack"><div class="tok t0"></div><div class="tok t2"></div><div class="tok t1"></div><div class="tok t0"></div></div><div class="lab">卡2<small>E4 E5</small></div></div>
+        <div class="rkc"><div class="stack"><div class="tok t0"></div><div class="tok t3"></div><div class="tok t1"></div><div class="tok t0"></div></div><div class="lab">卡3<small>E6 E7</small></div></div>
+      </div>
+    </div>
+
+    <div class="a2a"><div class="big">⇄</div><div class="al">all-to-all</div><div class="al">分发</div></div>
+
+    <!-- ② 到达专家卡 -->
+    <div>
+      <div class="grp-ttl">② 到达专家卡 · 算本地专家<br><small style="font-weight:400;color:#8A8F98">同色 = 该卡专家的 token</small></div>
+      <div class="grp">
+        <div class="rkc"><div class="stack"><div class="tok t0"></div><div class="tok t0"></div><div class="tok t0"></div><div class="tok t0"></div><div class="cap"></div><div class="tok t0"></div><div class="tok t0"></div><div class="tok t0"></div></div><div class="lab">卡0🔥<small>热门·满</small></div></div>
+        <div class="rkc"><div class="stack"><div class="tok t1"></div><div class="tok t1"></div></div><div class="lab">卡1<small>偏冷</small></div></div>
+        <div class="rkc"><div class="stack"><div class="tok t2"></div><div class="tok t2"></div><div class="tok t2"></div></div><div class="lab">卡2</div></div>
+        <div class="rkc"><div class="stack"><div class="tok t3"></div><div class="tok t3"></div></div><div class="lab">卡3</div></div>
+      </div>
+    </div>
+
+    <div class="a2a"><div class="big">⇄</div><div class="al">all-to-all</div><div class="al">回收</div></div>
+
+    <!-- ③ 回原卡 -->
+    <div>
+      <div class="grp-ttl">③ 结果回原 token 卡<br><small style="font-weight:400;color:#8A8F98">按 gate 权重合并</small></div>
+      <div class="grp">
+        <div class="rkc"><div class="stack"><div class="tok t0"></div><div class="tok t1"></div><div class="tok t2"></div><div class="tok t0"></div></div><div class="lab">卡0</div></div>
+        <div class="rkc"><div class="stack"><div class="tok t1"></div><div class="tok t0"></div><div class="tok t3"></div><div class="tok t1"></div></div><div class="lab">卡1</div></div>
+        <div class="rkc"><div class="stack"><div class="tok t0"></div><div class="tok t2"></div><div class="tok t1"></div><div class="tok t0"></div></div><div class="lab">卡2</div></div>
+        <div class="rkc"><div class="stack"><div class="tok t0"></div><div class="tok t3"></div><div class="tok t1"></div><div class="tok t0"></div></div><div class="lab">卡3</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note" style="width:1120px"><b>墙钟 = a2a 分发 + 本地专家 + a2a 回收</b>，两次全连接 all-to-all 常是瓶颈。<b>负载不均</b>（②中卡0 热门专家爆满、其余空等）是 EP 头号敌人：用<b>容量因子</b>设上限（超出 drop / reroute）、<b>负载均衡损失</b>拉平路由；机间 a2a 易打满 → <b>分层 all-to-all + 与专家计算重叠</b>（DeepEP 路线）。</div>
+</div>
+
+</body></html>

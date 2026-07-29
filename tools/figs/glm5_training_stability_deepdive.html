@@ -1,0 +1,90 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css"></head><body>
+
+<!-- ============ FIG 1: async RL sample filtering pipeline (§4.1.1–4.1.2) ============ -->
+<div class="diagram" data-name="glm5_training_stability_deepdive_fig1">
+  <div class="dg-title">异步 RL 样本过滤流水线：从 rollout 到一次安全的权重更新</div>
+  <div class="dg-sub">TITO 直出 token IDs → 双边 IS mask → staleness/噪声过滤 → GRPO 组补齐 → 训练 → 优化器 reset（§4.1.1–4.1.2, p15–17）</div>
+
+  <div class="chip">① Rollout 产出 · 异步解耦 · 推理引擎持续生成</div>
+  <div class="row">
+    <div class="node blue" style="width:236px"><div class="t">Rollout（TITO Gateway）</div>
+      <div class="d">直出 token IDs + 元数据<br>不经文本往返/重分词</div></div>
+    <div class="arrow lbl"><span class="al">token IDs</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:248px"><div class="t">双边 IS · token 级 mask</div>
+      <div class="d">r<sub>t</sub>=π<sub>θ</sub>/π<sub>rollout</sub><br>越界 [1−ε<sub>ℓ</sub>,1+ε<sub>h</sub>] → 该 token 置零</div></div>
+    <div class="arrow lbl"><span class="al">保留 token</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node slate" style="width:210px"><div class="t">staleness 过滤</div>
+      <div class="d">记版本序列 w<sub>0</sub>&lt;…&lt;w<sub>k</sub><br>w′−w<sub>0</sub> &gt; τ ?</div></div>
+    <div class="arrow lbl"><span class="al">是 → 丢弃</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node rose" style="width:130px"><div class="t">丢弃</div>
+      <div class="d">过期 off-policy</div></div>
+  </div>
+
+  <div class="downwrap"><svg width="20" height="40" viewBox="0 0 20 40"><line x1="10" y1="0" x2="10" y2="32" stroke="currentColor" stroke-width="2"/><path d="M5 30 L10 38 L15 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="chip">② 噪声过滤 + 组补齐 → 训练 → 回环同步</div>
+  <div class="row">
+    <div class="node slate" style="width:206px"><div class="t">环境崩溃/噪声过滤</div>
+      <div class="d">记录失败原因<br>沙箱崩溃 → 剔除</div></div>
+    <div class="arrow lbl"><span class="al">env 崩溃</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node rose" style="width:120px"><div class="t">剔除</div>
+      <div class="d">噪声奖励</div></div>
+    <div class="arrow lbl"><span class="al">残缺组</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:208px"><div class="t">GRPO 组补齐</div>
+      <div class="d">有效 &gt; 半数 ? 复制补齐<br>否则 → 整组丢弃</div></div>
+  </div>
+
+  <div class="row" style="margin-top:14px">
+    <div class="node green" style="width:240px"><div class="t">Training 更新</div>
+      <div class="d">仅在保留 token 上回传梯度<br>token 级 PG · 每 K 次更新</div></div>
+    <div class="arrow lbl"><span class="al">推回权重</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node green" style="width:226px"><div class="t">优化器 reset</div>
+      <div class="d">每次同步推理权重后重置<br>rollout 策略变→优化问题变</div></div>
+    <div class="arrow lbl"><span class="al">每 K 次同步 · 回环到 Rollout</span><svg width="60" height="18" viewBox="0 0 60 18"><line x1="0" y1="9" x2="52" y2="9" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"/><path d="M50 4 L58 9 L50 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue center" style="width:150px"><div class="t">→ Rollout</div>
+      <div class="d">权重回推推理引擎</div></div>
+  </div>
+
+  <div class="legend">
+    <span><span class="dot" style="background:#E9F2FC;border-color:#6296D4"></span>输入/rollout</span>
+    <span><span class="dot" style="background:#FBF0E1;border-color:#DBA059"></span>门控/校准</span>
+    <span><span class="dot" style="background:#EEF1F4;border-color:#A7AEB8"></span>判定</span>
+    <span><span class="dot" style="background:#FBE9EC;border-color:#D98A9B"></span>丢弃/剔除</span>
+    <span><span class="dot" style="background:#E6F4EC;border-color:#5BAE80"></span>保留/训练</span>
+  </div>
+
+  <div class="note">异步带来吞吐却引入<b>多版本 off-policy</b>：双边 IS 丢掉 π<sub>θ<sub>old</sub></sub> 只留 rollout log-prob 作锚（更简单、比 IcePop 更稳）；staleness 与环境噪声两道过滤剥离不可信样本；GRPO 组补齐保住组内基线；优化器 reset 防动量错配（§4.1.2, p16–17）。</div>
+</div>
+
+<!-- ============ FIG 2: deterministic top-k for DSA indexer in RL (§3.2, p12) ============ -->
+<div class="diagram" data-name="glm5_training_stability_deepdive_fig2" style="margin-top:30px">
+  <div class="dg-title">DSA indexer top-k 的「确定性」之于 RL 稳定性</div>
+  <div class="dg-sub">indexer 检索 top-k（k=2048）KV；top-k 一致 = RL 稳定。indexer replay 存不起 → 改用确定性算子（§3.2, p12）</div>
+
+  <div class="row">
+    <div class="node blue" style="width:226px"><div class="t">DSA Indexer 选 top-k</div>
+      <div class="d">检索 k=2048 个最相关 KV<br>稀疏注意力 · 训练-推理须一致</div></div>
+    <div class="arrow lbl"><span class="al">两种 top-k 算子</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="col" style="gap:14px">
+      <div class="row">
+        <div class="node green" style="width:236px"><div class="t">torch.topk（确定性）</div>
+          <div class="d">略慢于 SGLang CUDA top-k<br>但输出可复现</div></div>
+        <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+        <div class="node green" style="width:248px"><div class="t">训练-推理一致 → RL 显著增益</div>
+          <div class="d">全 RL 阶段默认采用</div></div>
+      </div>
+      <div class="row">
+        <div class="node slate" style="width:236px"><div class="t">CUDA / TileLang（非确定性）</div>
+          <div class="d">SGLang DSA Indexer 默认实现<br>每次 top-k 选择可能不同</div></div>
+        <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+        <div class="node rose" style="width:248px"><div class="t">几步后熵骤降 → 性能崩溃</div>
+          <div class="d">RL 仅数步即剧烈退化</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">类比 MoE 的 <b>routing replay</b>（保持激活 top-k 专家一致）；但 indexer 的 k=2048 远大于 MoE，<b>indexer replay 存索引</b>→ 巨大存储 + 训练/推理引擎间巨量通信，不可行。改用<b>确定性算子</b>让两边天然选出同一批 KV。另：RL 期间<b>默认冻结 indexer 参数</b>，加速训练并防止 indexer 自身学习不稳定（§3.2, p12）。</div>
+</div>
+
+</body></html>

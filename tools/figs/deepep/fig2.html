@@ -1,0 +1,72 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  body{margin:0}
+  figure{margin:0;padding:18px;background:#fff;display:inline-block}
+  text{font-family:'Segoe UI','Microsoft YaHei',system-ui,sans-serif;fill:#212529}
+  .gpu{fill:#e7f5ff;stroke:#4dabf7;stroke-width:1.5}
+  .node{fill:#fff;stroke:#adb5bd;stroke-width:1.5}
+  .tok{fill:#fff3bf;stroke:#f59f00;stroke-width:1.5}
+  .ib{stroke:#e8590c;stroke-width:2.5;fill:none}
+  .nvl{stroke:#2f9e44;stroke-width:2.5;fill:none}
+  .t-node{font-size:12px;font-weight:700;fill:#495057}
+  .t-sub{font-size:11px;fill:#868e96}
+</style></head><body>
+<figure>
+<svg width="980" height="540" viewBox="0 0 980 540" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="aIB" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0L7,3L0,6Z" fill="#e8590c"/></marker>
+    <marker id="aNVL" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0L7,3L0,6Z" fill="#2f9e44"/></marker>
+  </defs>
+
+  <!-- ===== Band 1: RDMA / IB ===== -->
+  <rect x="30" y="64" width="920" height="170" rx="12" fill="#fff5f5" stroke="#ffc9c9" stroke-width="1.5"/>
+  <text x="50" y="92" font-size="16" font-weight="700" fill="#e8590c">①　RDMA / IB · 跨节点 · 稀缺带宽</text>
+
+  <rect class="node" x="62" y="108" width="92" height="106" rx="8"/>
+  <text class="t-node" x="108" y="130" text-anchor="middle">源 node</text>
+  <rect class="tok" x="78" y="140" width="60" height="58" rx="6"/>
+  <text x="108" y="175" text-anchor="middle" font-size="15" font-weight="700">t</text>
+
+  <rect class="node" x="300" y="110" width="92" height="32" rx="6"/><text class="t-node" x="346" y="131" text-anchor="middle">node n₁</text>
+  <rect class="node" x="300" y="150" width="92" height="32" rx="6"/><text class="t-node" x="346" y="171" text-anchor="middle">node n₂</text>
+  <rect class="node" x="300" y="190" width="92" height="32" rx="6"/><text class="t-node" x="346" y="211" text-anchor="middle">node n₃</text>
+
+  <path class="ib" d="M140,160 L296,126" marker-end="url(#aIB)"/>
+  <path class="ib" d="M140,168 L296,166" marker-end="url(#aIB)"/>
+  <path class="ib" d="M140,176 L296,206" marker-end="url(#aIB)"/>
+  <text x="218" y="228" text-anchor="middle" font-size="12" font-weight="700" fill="#e8590c">每远端 node 仅 1 份　·　× |R(t)|</text>
+
+  <rect x="560" y="120" width="362" height="84" rx="8" fill="#fff" stroke="#e8590c" stroke-width="1.5"/>
+  <text x="741" y="156" text-anchor="middle" font-size="22" font-weight="700">RDMA(t) = |R(t)| · M</text>
+  <text x="741" y="184" text-anchor="middle" font-size="12" fill="#495057">|R(t)| = 命中的远端 node 数 ≤ k　M = 单 token 字节</text>
+
+  <!-- ===== middle callout ===== -->
+  <rect x="330" y="250" width="320" height="40" rx="20" fill="#fff3bf" stroke="#f59f00" stroke-width="1.5"/>
+  <text x="490" y="275" text-anchor="middle" font-size="13.5" font-weight="700">每省 1 跳 IB　⇄　多 1 跳 NVLink　(严格相等)</text>
+
+  <!-- ===== Band 2: NVLink ===== -->
+  <rect x="30" y="304" width="920" height="170" rx="12" fill="#ebfbee" stroke="#b2f2bb" stroke-width="1.5"/>
+  <text x="50" y="332" font-size="16" font-weight="700" fill="#2f9e44">②　NVLink · 节点内 · 富裕带宽</text>
+
+  <rect class="node" x="62" y="348" width="200" height="112" rx="8"/>
+  <text class="t-node" x="162" y="368" text-anchor="middle">某目标 node</text>
+  <rect class="gpu" x="78" y="378" width="74" height="34" rx="6"/>
+  <text x="115" y="400" text-anchor="middle" font-size="12" font-weight="700">落地卡</text>
+  <rect class="gpu" x="180" y="372" width="66" height="26" rx="5"/><text x="213" y="390" text-anchor="middle" font-size="11">GPU</text>
+  <rect class="gpu" x="180" y="404" width="66" height="26" rx="5"/><text x="213" y="422" text-anchor="middle" font-size="11">GPU</text>
+  <rect class="gpu" x="180" y="436" width="66" height="18" rx="5"/><text x="213" y="450" text-anchor="middle" font-size="10">GPU</text>
+  <path class="nvl" d="M152,392 L176,385" marker-end="url(#aNVL)"/>
+  <path class="nvl" d="M152,398 L176,417" marker-end="url(#aNVL)"/>
+  <path class="nvl" d="M152,404 L176,445" marker-end="url(#aNVL)"/>
+  <text x="300" y="402" font-size="12" font-weight="700" fill="#2f9e44">每远端 node 扇出 (gₙ−1) 份</text>
+  <text x="300" y="422" font-size="12" font-weight="700" fill="#2f9e44">＋ 源 node 扇出 g_s 份</text>
+
+  <rect x="560" y="360" width="362" height="84" rx="8" fill="#fff" stroke="#2f9e44" stroke-width="1.5"/>
+  <text x="741" y="394" text-anchor="middle" font-size="18" font-weight="700">NVLink(t) = [ Σₙ(gₙ−1) + g_s ] · M</text>
+  <text x="741" y="422" text-anchor="middle" font-size="12" fill="#495057">落地卡那份免费,其余目标卡各 1 跳</text>
+
+  <!-- ===== source tie ===== -->
+  <text x="490" y="506" text-anchor="middle" font-size="12" fill="#495057">源码对应　①← num_tokens_per_rdma_rank　②← num_tokens_per_rank　落地选通← SourceMeta.is_token_in_nvl_rank_bits</text>
+  <text x="490" y="525" text-anchor="middle" font-size="11" fill="#868e96">internode.cu　notify_dispatch :314（每节点 total_count）/ :313（每卡 per_nvl_rank_count）/ SourceMeta :22</text>
+</svg>
+</figure>
+</body></html>
