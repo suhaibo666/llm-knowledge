@@ -30,6 +30,9 @@
 逐结构单元状态原以`docs/audits/pytorch_graph_series/`下的coverage ledger为准；该目录属审计流水线中间产物，已在 kb-reorg 清理中移出工作区（可经 git 历史追溯，删除前末次提交 `1ebafb5`），当前 checkout 不再包含该路径。
 
 ## 1. 核心结论
+
+> **注**：以下机制结论保留，但旧完整路径 `torch/_functorch/_aot_autograd/partitioners.py` 已发生 locator drift；当前文件是 `torch/_functorch/partitioners.py`。现行提取机制见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs#7. 提取新 Graph 的机制]]。
+
 1. **FX 图不是单独的邻接表，也没有独立 `Edge` 对象。** `Graph` 用侵入式双向链表保存全局节点顺序；每个 `Node` 的 `args/kwargs` 保存输入引用，`_input_nodes` 汇总前驱，前驱的 `users` 保存反向 use-def 邻接。因此一份节点对象同时承载“程序语句、数据依赖和反向用户索引”。源码见 `torch/fx/node.py:258-322`、`torch/csrc/fx/node.cpp:154-205`。
 2. **AOTAutograd 最终产物本质是两张独立 FX `GraphModule`：fw 与 bw。** 二者之间没有跨图 `Node` 边；跨图依赖由 ABI 表达为“fw 的额外输出 → 运行时保存 → bw 的 placeholder 输入”。源码见 `torch/_functorch/_aot_autograd/partitioners.py:1343-1592`、`runtime_wrappers.py:3215-3256,3288-3301`。
 3. **recompute 不是特殊节点类型。** partitioner 选择少保存某些激活后，把必要的前向 `call_function` 节点复制到 bw 图；它们仍是普通 FX 节点，只是元数据可标记其重计算来源。源码见 `partitioners.py:514-705,1920-1995`。
@@ -158,6 +161,9 @@ flowchart LR
 注意：joint graph 是 partition 前的中间产物。真正交给 fw compiler 与 bw compiler 的，通常是 partition 后两张独立图。
 
 ### 3.3 partition 如何得到 fw 与 bw
+
+> **注**：旧完整 partitioner 路径已迁至 `torch/_functorch/partitioners.py`；现行结论见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs#7. 提取新 Graph 的机制]]。
+
 partitioner 先按 joint 输出和依赖闭包识别：
 
 - forward required nodes；
@@ -555,6 +561,9 @@ T_total
 ---
 
 ## 11. 关键源码导航
+
+> **注**：下表中的旧完整路径 `torch/_functorch/_aot_autograd/partitioners.py` 仅是 locator drift，不能作为当前源码入口；当前入口及提取关系见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs#7. 提取新 Graph 的机制]]。
+
 | 主题 | 当前基线位置 |
 |---|---|
 | Node 数据模型与输入/用户关系 | `torch/fx/node.py:258-322`；`torch/csrc/fx/node.cpp:154-205,307-359` |

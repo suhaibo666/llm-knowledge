@@ -112,6 +112,9 @@ if not torch._dynamo.config.skip_fsdp_hooks:
 ---
 
 ### Pass 2: 死代码消除（DCE）
+
+> **注**：“`copy_` 因没有 users 就会被当前 FX DCE 误删”的例子不准确，当前 mutable-schema `OpOverload` 会被 impurity 检测保留；现行规则见 [[19_torch_compile_end_to_end/14_dead_code_topology_and_effect_order#2. FX DCE]] 与 [[19_torch_compile_end_to_end/14_dead_code_topology_and_effect_order#3. Pure + no users]]。
+
 **代码位置**：`gm.graph.eliminate_dead_code()`
 
 **触发条件**：

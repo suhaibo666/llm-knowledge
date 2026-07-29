@@ -255,6 +255,9 @@ flowchart LR
 数值常量（int, float, sympy.Basic）被包装为 `ir.Constant` 或 `IndexingConstant`，在代码生成时直接内联为立即数，避免额外的 tensor 创建和读取。
 
 ### 3.5 智能 Fallback
+
+> **注**：以下“缺少 lowering 时自动 fallback，因而编译永不失败”的绝对化结论不成立；缺失 target 仍可能因 decomposition/allow-list 条件而报错。现行分支见 [[19_torch_compile_end_to_end/17_fx_lowering_to_inductor_ir#6. 缺lowering并不保证成功fallback]]。
+
 **相关代码**: `fallback_handler()` (L2187), `make_fallback()` (L7898)
 
 对于 Inductor 暂不支持原生 lowering 的 op（如 `aten.sort.stable` 大尺寸情况），自动回退到 `ir.FallbackKernel`，调用 ATen 库实现。这保证了**编译永远不会因为缺少 lowering 而失败**。
@@ -280,6 +283,9 @@ flowchart LR
 ## 四、为什么 Lowering 能带来优化？
 
 ### 根本原因：延迟执行 + 全局可见性
+
+> **注**：下表的“全局可见性/全局优化”是 lowering 产出 lazy IR 后由下游 pipeline 获得的机会，不是 `register_lowering` wrapper 自身拥有整图优化权；最终 fusion 与顺序选择属于 Scheduler。阶段边界见 [[19_torch_compile_end_to_end/17_fx_lowering_to_inductor_ir#4.2 decomposition、post-grad fusion 与 lowering 的边界]]。
+
 | 维度 | Eager 模式 | Lowering 后 |
 |------|-----------|------------|
 | 执行时机 | 每个 op 立即执行 | 先构建 IR，统一优化后执行 |
@@ -391,6 +397,9 @@ flowchart LR
 ```
 
 ## Key Design Decisions
+
+> **注**：下表“fallback 兜底保证编译不会失败”是旧版绝对化表述；fallback 是有条件的外部执行路径，不是所有 missing lowering 的必然结果。现行边界见 [[19_torch_compile_end_to_end/17_fx_lowering_to_inductor_ir#6. 缺lowering并不保证成功fallback]]。
+
 | Decision | Implementation | Rationale |
 |----------|----------------|-----------|
 | Lambda-based IR | `inner_fn` 闭包而非 eager value | 延迟执行允许跨 op 融合 |
@@ -401,6 +410,9 @@ flowchart LR
 | View 不产生计算 | 直接返回 metadata 变换 | 最大化零拷贝机会 |
 
 ## Beginner Summary
+
+> **注**：下方第 4 条只能说明已成功注册 fallback 后的执行形态，不能推出任意不能 lower 的 op 都会自动生成 `FallbackKernel`。现行边界见 [[19_torch_compile_end_to_end/17_fx_lowering_to_inductor_ir#6. 缺lowering并不保证成功fallback]]。
+
 **Lowering 的核心思想用一句话说明**：把 PyTorch 的"立即执行"算子翻译成"描述性"的 IR 节点，让编译器有机会把多个操作合并成一个更高效的 kernel。
 
 ### What You Should Know

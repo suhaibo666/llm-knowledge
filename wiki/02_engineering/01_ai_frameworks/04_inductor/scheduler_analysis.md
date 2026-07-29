@@ -366,6 +366,9 @@ flowchart LR
 ```
 
 ### 依赖计算关键逻辑（`compute_dependencies`, L3170）
+
+> **注**：`WeakDep` 仍可约束调度，只是在 lifetime/DCE 等消费者中具有弱语义，`StarDep` 也不是所有 mutation 的通用“全局边”；现行结论见 [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering#3. Dependency类型]]。
+
 `compute_dependencies` 遍历所有节点，通过分析 `ReadWrites` 建立 `unmet_dependencies`：
 
 - **`MemoryDep`**: 常规读写依赖（由 `extract_read_writes` 分析 LoopBody 得到）
@@ -402,6 +405,9 @@ nodes = self.fuse_nodes_once(nodes, is_reorder_round=True)
 `config.max_fusion_buffer_group_pairwise_attempts` 控制每组最多检查多少对（避免 O(n²) 爆炸）。
 
 ### 7.3 融合合法性检查（`can_fuse`, L5333）
+
+> **注**:下图把 legality、priority score 与可选 benchmark 串成单一阈值流程,不能作为当前 Scheduler 的执行规范;现行模型见 [[20_scheduler_dependency_graph_fusion_and_ordering]] §10/§11(Legality 与 Profitability 分离)。
+
 ```mermaid
 flowchart TD
     A["can_fuse(node1, node2)"]
@@ -441,6 +447,9 @@ flowchart TD
 检查 node2 的所有 `unmet_dependencies` 中，凡是来自 node1 的 buffer，其索引访问模式是否与 node1 的写入完全匹配——只有访问模式一致（或是全局访问）才能内联，否则需要中间 buffer。
 
 ### 7.4 融合评分（`score_fusion_memory`, L5657）
+
+> **注**:下式是旧版简写;当前评分还区分 exact dependency、同 buffer overlap 与 mix-order reduction,见 [[20_scheduler_dependency_graph_fusion_and_ordering]] §11。
+
 ```
 score = Σ size(共享 memory dep)
 ```

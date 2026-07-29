@@ -113,6 +113,9 @@ Inductor 支持 `aot_inductor` 模式（`cpp_wrapper=True`），此时 codegen �
 - 支持常量折叠子图、graph partition 等高级特性。
 
 ### 3.4 内存复用与峰值控制
+
+> **注**：训练走默认 wrapper reuse，而 `config.memory_planning` 只选择可选的 inference pooled planner；现行结论见 [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse#C. 可选pooled static planner]]。
+
 通过 `memory_planning.py`，codegen 在 wrapper 中显式插入 `AllocateLine`、`FreeIfNotReusedLine`、`ReuseLine` 等指令，基于 tensor 的 live range 分析实现**内存池复用**，这对于大模型推理和训练的峰值内存控制至关重要。
 
 ---
@@ -197,6 +200,9 @@ for node in nodes:
 `generate(is_inference)`（`wrapper.py:1781`）按顺序拼接这些 buffer，输出完整可执行的 Python 字符串，最终通过 `PyCodeCache.load()` 动态编译为 Python module。
 
 ### 4.5 内存规划集成
+
+> **注**：本节把默认 `memory_plan_reuse()` 的两遍 Allocate/Free/Reuse 改写与 `memory_planning.py` 的 pooled planner 混写；前者也用于训练，后者仅在 inference 且开关启用时选择。三套机制边界见 [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse#6. 三套不能混写的“memory planning”]]。
+
 在 wrapper 的 `lines` 列表中，内存分配以 `WrapperLine` 子类对象表示：
 
 - `AllocateLine`：为新 tensor 分配内存

@@ -1217,6 +1217,9 @@ y = model(x)
 ---
 
 ## 自定义融合规则
+
+> **注**:本节 `addmulnorm` 教程及其注册、template、多输出、fallback、调试 API 未在当前固定基线验证,不能作为当前实现或可执行 recipe;整节仅作历史材料保留。
+
 ### 1. 融合规则概述
 
 Inductor 支持通过模式匹配和 Triton Template 来实现自定义的融合规则。融合规则可以将多个操作合并到一个 kernel 中，减少内存访问和 kernel launch 开销。
