@@ -430,6 +430,8 @@ def inductor_compile(model, inputs):
 
 #### 3. reduce-overhead 模式的优化策略
 
+> 跨层级总览见 综合比较 节的优化层级速览。
+
 ```
 reduce-overhead 模式优化层级:
 
@@ -842,7 +844,6 @@ sequenceDiagram
     
     CPU->>API: temp = static_input
     API->>GPU: 记录 buffer 引用
-    deactivate GPU
     
     CPU->>API: temp = model.linear1(temp)
     API->>GPU: cuLaunchKernel (linear1)
@@ -932,7 +933,7 @@ sequenceDiagram
     
     CPU->>CPU: 返回结果
     
-    Note over CPU,GPU: 关键特性: 静态内存管理、完全控制、高性能
+    Note over CPU,GPU: 优势: 静态内存管理、完全控制、高性能
 ```
 
 ### 高级用法
@@ -1304,7 +1305,7 @@ sequenceDiagram
     GPU-->>API: 复制完成
     
     API->>API: 2. cudaGraphLaunch()
-    API->>GPU: cuGraphLaunch
+    API->>GPU: cuGraphLaunch (Driver 层)
     activate GPU
     GPU->>GPU: Replay 整个图
     deactivate GPU
@@ -1423,7 +1424,9 @@ graphed_model = torch.cuda.make_graphed_callables(
 原因: 支持多函数，自动内存管理
 ```
 
-### 性能优化层级（跨方式总览）
+### 方式2 优化层级速览(详见方式2 §3)
+
+> 注:Level 1-2 为 Inductor/Triton 编译管线专属,仅方式2(reduce-overhead)经过;方式1/3/4 直接使用 CUDA Graphs(Level 3)。
 
 ```
 Level 0: 原始 PyTorch
