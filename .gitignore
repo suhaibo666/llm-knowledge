@@ -107,6 +107,9 @@ venv.bak/
 .claude/*
 !.claude/skills/
 
+# Superpowers framework session working files (brainstorm drafts, review tmp, logs)
+.superpowers/
+
 # macOS
 .DS_Store
 **/.DS_Store
