@@ -16,7 +16,9 @@ def test_target_of_variants():
     assert target_of("alpha|显示名") == "alpha"
     assert target_of("alpha#章节") == "alpha"
     assert target_of("dir/alpha.md") == "dir/alpha"
-    # 末尾反斜杠是本库实际存在的坏链形态,规范化后仍应无法解析(报 broken)
+    # Obsidian 表格内的转义别名 [[a\|label]] 等价于 [[a|label]]
+    assert target_of("alpha\\|标签") == "alpha"
+    # 真正的孤立末尾反斜杠仍是畸形链接(解析后含 /,会报 broken)
     assert "/" in target_of("alpha\\")
 
 
@@ -73,3 +75,26 @@ def test_orphan(tmp_path):
     })
     r, _ = scan(wiki)
     assert r["orphans"] == ["charlie.md"]
+
+
+def test_main_exit_codes(tmp_path, monkeypatch):
+    import check_links
+    bad = make(tmp_path / "w1", {"alpha.md": "[[missing]]", "index.md": "[[alpha]]"})
+    monkeypatch.setattr("sys.argv", ["check_links.py", "--wiki", str(bad), "--strict"])
+    assert check_links.main() == 1
+    good = make(tmp_path / "w2", {"alpha.md": "", "index.md": "[[alpha]]"})
+    monkeypatch.setattr("sys.argv", ["check_links.py", "--wiki", str(good), "--strict"])
+    assert check_links.main() == 0
+    monkeypatch.setattr("sys.argv", ["check_links.py", "--wiki", str(tmp_path / "nope"), "--strict"])
+    assert check_links.main() == 2
+
+
+def test_orphan_rescued_by_index(tmp_path):
+    wiki = make(tmp_path, {
+        "alpha.md": "",
+        "charlie_page.md": "",
+        "index.md": "- charlie_page 相关内容(提及但未链接)",
+    })
+    r, _ = scan(wiki)
+    assert "charlie_page.md" not in r["orphans"]
+    assert "alpha.md" in r["orphans"]

@@ -4,11 +4,9 @@
   "01_theory/01_models/deepseek/index.md -> [[06_infra/megatron-lm/index]]",
   "01_theory/01_models/deepseek/index.md -> [[03_alignment/index]]",
   "01_theory/01_models/deepseek/index.md -> [[02_training/index]]",
-  "01_theory/01_models/moonshot_kimi/index.md -> [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\\|D12]]",
   "01_theory/01_models/moonshot_kimi/index.md -> [[Kimi VL]]",
   "01_theory/01_models/moonshot_kimi/index.md -> [[Kimi Audio]]",
   "01_theory/01_models/moonshot_kimi/kimi_k2.5_analysis.md -> [[01_theory/01_models]]",
-  "01_theory/01_models/moonshot_kimi/kimi_k3_infra_deepdive.md -> [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\\|D12]]",
   "01_theory/01_models/scaling_laws_analysis.md -> [[scaling_laws_for_transfer_analysis]]",
   "01_theory/01_models/zhipu_glm/glm_5v_turbo_analysis.md -> [[01_theory/01_models]]",
   "01_theory/02_pretraining/index.md -> [[01_architecture/index]]",
@@ -132,9 +130,6 @@
   "02_engineering/01_ai_frameworks/14_fx_export_and_extensibility/fx_graph_export_and_custom_ops_analysis.md -> [[correction_report]]",
   "02_engineering/01_ai_frameworks/14_fx_export_and_extensibility/fx_graph_export_and_custom_ops_analysis.md -> [[correction_report]]",
   "02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/README.md -> [[demo_delivery_report_2026-07-29]]",
-  "02_engineering/02_train_frameworks/megatron-lm/index.md -> [[../distributed_optimizer_deep_dive\\|distributed_optimizer_deep_dive]]",
-  "02_engineering/02_train_frameworks/megatron-lm/index.md -> [[../../../01_theory/01_models/deepseek/deepseek_v4_analysis\\|deepseek_v4_analysis]]",
-  "02_engineering/02_train_frameworks/megatron-lm/index.md -> [[../../../01_theory/01_models/deepseek/deepseek_v4_cp_analysis\\|deepseek_v4_cp_analysis]]",
   "02_engineering/02_train_frameworks/megatron-lm/megatron_moe_training_optimization_report.md -> [[link]]",
   "02_engineering/02_train_frameworks/megatron-lm/megatron_moe_training_optimization_report.md -> [[wiki page]]",
   "02_engineering/03_infer_frameworks/speculative_decoding/index.md -> [[../../01_theory/01_models/deepseek/index]]",
@@ -143,10 +138,7 @@
   "02_engineering/05_gpu_kernel/triton/index.md -> [[../01_ai_frameworks/index]]",
   "02_engineering/05_gpu_kernel/triton/index.md -> [[../03_infer_frameworks/index]]",
   "02_engineering/pin_memory_and_memory_semantics_analysis.md -> [[01_ai_frameworks/comm_compute_fusion_guide]]",
-  "02_engineering/pin_memory_and_memory_semantics_analysis.md -> [[02_train_frameworks/megatron_comm_overlap_analysis]]",
-  "03_posttraining/00_posttraining_source_reading_guide.md -> [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\\|Kimi K3 后训练案例]]",
-  "03_posttraining/01_posttraining_frontier_map_analysis.md -> [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\\|Kimi K3 后训练案例]]",
-  "03_posttraining/index.md -> [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\\|Kimi K3 后训练案例]]"
+  "02_engineering/pin_memory_and_memory_semantics_analysis.md -> [[02_train_frameworks/megatron_comm_overlap_analysis]]"
  ],
  "ambiguous": [
   "01_theory/01_models/tencent_hunyuan/hy3_analysis.md -> [[index]]",

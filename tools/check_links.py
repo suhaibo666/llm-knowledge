@@ -2,7 +2,7 @@
 """Obsidian [[wiki-link]] 健康检查器(llm-knowledge 专用)。
 
 检查项(扫 wiki/**/*.md,围栏代码块与行内代码不计):
-  broken     - 目标解析不到任何 .md(含末尾反斜杠等畸形链接)
+  broken     - 目标解析不到任何 .md(含末尾反斜杠等畸形链接;表格转义别名 \\| 不算)
   ambiguous  - 裸基名命中多个文件(典型:[[index]] 命中 56 个)
   bare_index - 裸 [[index]] 链接(规则要求路径限定)
   orphans    - 无入链且未被任何 index.md 提及的非 index 页
@@ -39,7 +39,8 @@ def visible_text(md: str) -> str:
 
 
 def target_of(raw: str) -> str:
-    """[[a/b#sec|label]] -> a/b;反斜杠归一为 /;去 .md 后缀。"""
+    """[[a/b#sec|label]] -> a/b;表格转义别名 [[a\\|label]] 视同 [[a|label]];反斜杠归一为 /;去 .md 后缀。"""
+    raw = raw.replace("\\|", "|")
     t = raw.split("|", 1)[0].split("#", 1)[0].strip().replace("\\", "/")
     if t.lower().endswith(".md"):
         t = t[:-3]
@@ -100,13 +101,25 @@ def scan(wiki: Path):
 
 
 def main() -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--wiki", default="wiki")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--strict", action="store_true")
     a = ap.parse_args()
 
-    report, n_pages = scan(Path(a.wiki))
+    wiki = Path(a.wiki)
+    if not wiki.is_dir():
+        print(f"error: wiki dir not found: {wiki}", file=sys.stderr)
+        return 2
+    report, n_pages = scan(wiki)
+    if n_pages == 0:
+        print(f"error: no md pages under {wiki}", file=sys.stderr)
+        return 2
     if a.json:
         print(json.dumps({"pages": n_pages, **report}, ensure_ascii=False, indent=1))
     else:
