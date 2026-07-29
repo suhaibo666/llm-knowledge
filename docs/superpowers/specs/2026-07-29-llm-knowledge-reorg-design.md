@@ -15,6 +15,7 @@
 | 破坏性尺度 | **允许合并与删页**(git 历史可追溯),同步修订 CLAUDE.md 的 "Never delete" 规则 |
 | 权威归属模型 | **功能分类树为权威,课程/学习域降为纯导读页**(courses/ 层,无正文只有链接) |
 | 工作产物处置 | **分类治理**:轻量流程文档留 docs/,重量审计产物删除+gitignore,图表源入库 tools/ |
+| ai_frameworks 目录分组 | **按架构三层收敛为 5 个两级目录**(2026-07-29 追加确认):现 18 个平铺编号目录的编号顺序与逻辑分层(eager 地基/编译栈/图/扩展)脱节,重组为 5 个架构层目录、模块降一级并局部重编号 |
 
 成功标准:
 
@@ -86,11 +87,12 @@ llm-knowledge/
 │   │   ├── 05_inference/       # 空目录保留
 │   │   └── 06_distributed_parallelism/   # 新增 Ring Attention/CP 通用机制权威页
 │   ├── 02_engineering/
-│   │   ├── 01_ai_frameworks/   # 00–18 连续编号;19 号解散
-│   │   │   ├── 00_tensor_and_storage/ … 15_distributed_primitives/
-│   │   │   ├── 16_graph_compiler_ir_and_passes/   # 回填:吸收 C 卷中 FX 数据模型/改图/pattern/pass 流水线篇
-│   │   │   ├── 17_compile_cache/                  # d04 变本目录 overview
-│   │   │   └── 18_debugging_and_observability/    # 回填:吸收 E 卷 9 篇
+│   │   ├── 01_ai_frameworks/   # 重组为 5 个架构层目录(两级);19 号解散
+│   │   │   ├── 01_eager_runtime/           # 地基:tensor_storage/dispatcher_device/op_registration/aten/autograd/nn_module/memory_amp_profiler
+│   │   │   ├── 02_compile_stack/           # 编译栈:dynamo/aot_autograd/graph_ir_and_passes(新,C卷)/inductor/codegen_backends/compile_cache/debugging(新,E卷)
+│   │   │   ├── 03_runtime_graphs/          # cuda/ + npu/(原 06_graphs)
+│   │   │   ├── 04_export_and_distributed/  # fx_export_extensibility + distributed_primitives
+│   │   │   └── 05_other_frameworks/        # MindSpore 对照(原 09)
 │   │   ├── 02_train_frameworks/    # 顶层横向页收缩为对比矩阵;megatron_pp_parallelism 并入 megatron-lm/
 │   │   ├── 03_infer_frameworks/
 │   │   ├── 04_posttrain_frameworks/  # 吸收 D05/D06/D08/D09/D10/D11;verl/ 吸收 D07
@@ -111,7 +113,32 @@ llm-knowledge/
 └── CLAUDE.md                   # 按 §6 修订
 ```
 
-C 卷 21 篇的目标目录补充说明:严格属于 Dynamo 符号形状的(04)入 `02_dynamo/`;AOT joint graph/重算(09、10)入 `03_aot_autograd/`;FX 数据模型/改图原语/pattern/pass 流水线/合法性(02、03、05、06、11–16)入新建 `16_graph_compiler_ir_and_passes/`;Inductor IR/内存/scheduler/codegen(17–21)入 `04_inductor/`;01(动机与分类)并入课程导读页。逐篇映射与合并对象在实施计划中定稿。
+**01_ai_frameworks 旧目录 → 新位置映射**(链接修复与实施计划的依据):
+
+| 旧目录 | 新位置 |
+|---|---|
+| `00_tensor_and_storage` | `01_eager_runtime/01_tensor_and_storage` |
+| `01_dispatcher_and_device` | `01_eager_runtime/02_dispatcher_and_device` |
+| `07_op_registration`(含 npu/) | `01_eager_runtime/03_op_registration` |
+| `11_aten_op_execution` | `01_eager_runtime/04_aten_op_execution` |
+| `10_eager_autograd` | `01_eager_runtime/05_autograd_engine` |
+| `12_nn_module_system` | `01_eager_runtime/06_nn_module_system` |
+| `13_runtime_memory_amp_profiler` | `01_eager_runtime/07_memory_amp_profiler` |
+| `02_dynamo` | `02_compile_stack/01_dynamo` |
+| `03_aot_autograd` | `02_compile_stack/02_aot_autograd` |
+| (新建) | `02_compile_stack/03_graph_ir_and_passes`(吸收 C 卷 FX 数据模型/改图/pattern/pass 流水线篇) |
+| `04_inductor`(含 npu/) | `02_compile_stack/04_inductor` |
+| `05_codegen_backends`(mlir/) | `02_compile_stack/05_codegen_backends` |
+| `17_compile_cache` | `02_compile_stack/06_compile_cache`(d04 变本目录 overview) |
+| (新建) | `02_compile_stack/07_debugging`(吸收 E 卷 9 篇) |
+| `06_graphs`(cuda/ npu/) | `03_runtime_graphs` |
+| `14_fx_export_and_extensibility` | `04_export_and_distributed/01_fx_export_extensibility` |
+| `15_distributed_primitives` | `04_export_and_distributed/02_distributed_primitives` |
+| `09_other_frameworks` | `05_other_frameworks` |
+| `08_kernel_optimization` | 删除,内容迁 `02_engineering/05_gpu_kernel/`(§3.5) |
+| `19_torch_compile_end_to_end` | 解散(§3.1) |
+
+C 卷 21 篇的目标目录补充说明:严格属于 Dynamo 符号形状的(04)入 `01_dynamo/`;AOT joint graph/重算(09、10)入 `02_aot_autograd/`;FX 数据模型/改图原语/pattern/pass 流水线/合法性(02、03、05、06、11–16)入新建 `03_graph_ir_and_passes/`;Inductor IR/内存/scheduler/codegen(17–21)入 `04_inductor/`;01(动机与分类)并入课程导读页。逐篇映射与合并对象在实施计划中定稿。
 
 ## 3. 去重迁移策略
 
@@ -121,12 +148,12 @@ C 卷 21 篇的目标目录补充说明:严格属于 Dynamo 符号形状的(04)�
 
 | 卷 | 动作 |
 |---|---|
-| A 卷(a01–a05 基础回顾) | **删除**。内容已存在于 00/01/10 目录;课程页直接链功能树对应页 |
-| B 卷(b01–b10 Dynamo) | 迁入 `02_dynamo/`;**删除** `PyTorch_Dynamo_Technical_Analysis.md`(2018 行);`dynamo_quickstart` 保留;`control_flow_capture_analysis`、`dynamo_pass_methodology` 与 B 卷对应篇合并 |
+| A 卷(a01–a05 基础回顾) | **删除**。内容已存在于 `01_eager_runtime/` 各模块;课程页直接链功能树对应页 |
+| B 卷(b01–b10 Dynamo) | 迁入 `02_compile_stack/01_dynamo/`;**删除** `PyTorch_Dynamo_Technical_Analysis.md`(2018 行);`dynamo_quickstart` 保留;`control_flow_capture_analysis`、`dynamo_pass_methodology` 与 B 卷对应篇合并 |
 | C 卷(01–21 图编译) | 按 §2 映射分发;替换/合并旧页:动态形状四写归一(概念页+unbacked 专项+NPU 特化各一)、内存规划四页归一、`scheduler_analysis`(964)与 20 二选一、`lowering_analysis`(445)与 17 二选一、`inductor_compiler_pipeline_analysis`(921)与 d01 二选一、pass 六页(3453 行)按 pre/joint/post 阶段归一 |
-| D 卷 | d01 入 `04_inductor/`(与 `inductor_compiler_pipeline_analysis` 二选一);d04 改写为 `17_compile_cache/` 的 overview;d06(cudagraph_trees)与 f08(训练/推理 cudagraph+freezing)迁入 `06_graphs/cuda/`,与 Complete_Guide 对应节合并 |
-| E 卷(e01–e09 debug) | 迁入新建 `18_debugging_and_observability/`;**删除** `Pytorch_Compile_Debug_Analysis.md`(558 行) |
-| F 卷 | f01(compiled autograd)入 `10_eager_autograd/` 与旧页互补划界;f03/f04 入 `15_distributed_primitives/`(讲"与 compile 的边界",与原语页显式分工);f05/f06 与 `14_fx_export`/`01_dispatcher` 对应页合并 |
+| D 卷 | d01 入 `02_compile_stack/04_inductor/`(与 `inductor_compiler_pipeline_analysis` 二选一);d04 改写为 `02_compile_stack/06_compile_cache/` 的 overview;d06(cudagraph_trees)与 f08(训练/推理 cudagraph+freezing)迁入 `03_runtime_graphs/cuda/`,与 Complete_Guide 对应节合并 |
+| E 卷(e01–e09 debug) | 迁入新建 `02_compile_stack/07_debugging/`;**删除** `Pytorch_Compile_Debug_Analysis.md`(558 行) |
+| F 卷 | f01(compiled autograd)入 `01_eager_runtime/05_autograd_engine/` 与旧页互补划界;f03/f04 入 `04_export_and_distributed/02_distributed_primitives/`(讲"与 compile 的边界",与原语页显式分工);f05/f06 与 `01_fx_export_extensibility`/`02_dispatcher_and_device` 对应页合并 |
 | 三个索引 + labs/ | 索引内容并入 `courses/torch_compile_end_to_end.md`;labs/(含 NATIVE_BACKEND_RUNBOOK、demo py 脚本、artifacts 空目录)迁到 `tools/labs_torch_compile/`,artifacts 空目录清除 |
 | 旧枢纽页 | `torch_compile_architecture.md`(158,overview 四写之一)并入课程导读页后删除;`torch_compile_source_analysis.md`(593)与 b01/b02 合并 |
 
@@ -145,7 +172,7 @@ C 卷 21 篇的目标目录补充说明:严格属于 Dynamo 符号形状的(04)�
 | verl/ 其余 8 篇 | 页头加基线横幅("基线 `8a694930`,端到端迭代以 [[新 D07 页]] 的 `983cb0f` 为准"),不做全量重核 |
 | 位置错位页 | `RL_PPO_Loss_and_GRPO_Analysis`(TorchTitan+vLLM 源码级)迁入 `04_posttrain_frameworks/`;`batch_invariance_guide` 迁入 `07_training_reliability/`;megatron 两篇 weight sync 页与 D05 §6 划界补链 |
 
-### 3.3 组 3:06_graphs 内部去重
+### 3.3 组 3:runtime_graphs(原 06_graphs)内部去重
 
 - 删 `cuda/README.md`(288)、`npu/README.md`(125),导航职能归各自 index.md;npu 侧 overview 归 `aclgraph.md`。
 - `CUDA_Graphs_Timing_Diagrams.md`(627)时序图内联进 `PyTorch_CUDA_Graphs_Complete_Guide` 对应四节后删除。
@@ -161,7 +188,7 @@ C 卷 21 篇的目标目录补充说明:严格属于 Dynamo 符号形状的(04)�
 
 - `comm_compute_overlap_analysis`、`distributed_optimizer_deep_dive` 收缩为纯对比矩阵页,机制正文下沉至 megatron-lm/torchtitan/mindspeed 对应页;`comm_compute_fusion_guide` 与 overlap 页补交叉链澄清"融合 vs 掩盖"边界。
 - Ring Attention/CP 通用机制抽为 `01_theory/06_distributed_parallelism/` 权威页;`megatron_cp`/`torchtitan_cp`/`mindspeed_context_parallel`/`deepseek_v4_context_parallel` 四页只留各自实现差异。
-- `08_kernel_optimization/operator_optimization_guide.md`(834)整页迁入 `05_gpu_kernel/`,Roofline/执行模型与 `gpu_kernel_guide`/`cuda_execution_model_guide`/`triton_00`/`triton_06` 归一为"执行模型一页+Roofline 一页",其余页只链接;§6 昇腾段与 `ascend_kernel_execution_model_analysis` 合并;`08_kernel_optimization/` 剩余页(tilelang 等)一并迁入 `05_gpu_kernel/` 后该目录删除,编号 08 留空并在 `01_ai_frameworks/index.md` 标注去向(不为编号连续而整体重编号,避免大规模改链)。
+- `08_kernel_optimization/operator_optimization_guide.md`(834)整页迁入 `05_gpu_kernel/`,Roofline/执行模型与 `gpu_kernel_guide`/`cuda_execution_model_guide`/`triton_00`/`triton_06` 归一为"执行模型一页+Roofline 一页",其余页只链接;§6 昇腾段与 `ascend_kernel_execution_model_analysis` 合并;`08_kernel_optimization/` 剩余页(tilelang 等)一并迁入 `05_gpu_kernel/` 后该目录删除(两级重组后不产生编号空缺)。
 - FSDP 六处、megatron 优化器三页:megatron-lm 内 `megatron_distributed_optimizer`/`megatron_ddp_optimizer`/`megatron_optimizer_internals` 三页合并为一页;torchtitan 四页 FSDP 保留(各讲一个专题,补显式分工声明);`15_distributed_primitives` 与 `02_train_frameworks` 执行既有待办"原语 vs 应用划界"。
 
 ### 3.6 中重叠 7 组
@@ -206,12 +233,12 @@ C 卷 21 篇的目标目录补充说明:严格属于 Dynamo 符号形状的(04)�
 | P1 快速止血 | 删 `torch_compile_debug/`;`raw/_ingest`→`docs/research/`;`wanka_*.md` 迁回 wiki;git rm `docs/audits` `docs/reports` `docs/batch_invariance_demo.py`(demo 脚本移至 tools/)+gitignore;修 README/`wiki/index.md` 失真;修琐碎坏链(§4.3) | 低 |
 | P2 图源入库 | `.html2md` 的 figs/脚本迁 `tools/`;抽验 1–2 张图可再生 | 低 |
 | P3 06_graphs 去重 | §3.3,自包含练手 | 中 |
-| P4 19 号大迁移 | §3.1,按 A→E→B→D→C→F 卷分批(先易后难) | 高 |
+| P4 ai_frameworks 重组+19 号大迁移 | 先按 §2 映射表 git mv 完成两级重组(纯移动+修链),再按 §3.1 以 A→E→B→D→C→F 卷分批解散 19 号 | 高 |
 | P5 后训练整合 | §3.2 + `courses/posttraining_frontier.md` | 中 |
 | P6 横向页收缩 | §3.4 + §3.5 + §3.6 | 中 |
 | P7 收尾 | 命名统一(§5);全部 index 重建;`courses/torch_compile_end_to_end.md` 定稿;CLAUDE.md/README 修订(§6);changelog 归档 | 中 |
 
-预期结果:页面数 400 → 约 330;13 组高重叠清零;坏链 160 → 0;仓库工作区瘦身约 60MB;`01_ai_frameworks` 回填 16、18 两个编号(08 留空有标注)。实施计划体量较大,writing-plans 阶段可按阶段拆成多份计划文档。
+预期结果:页面数 400 → 约 330;13 组高重叠清零;坏链 160 → 0;仓库工作区瘦身约 60MB;`01_ai_frameworks` 从 18 个平铺目录重组为 5 个架构层两级目录,目录顺序即阅读顺序。实施计划体量较大,writing-plans 阶段可按阶段拆成多份计划文档。
 
 ## 8. 范围外(明确不做)
 
