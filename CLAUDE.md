@@ -58,7 +58,7 @@ When a new source is added to `raw/`, follow this sequence:
 
 ## Update Principles
 
-- **Never delete** existing content — only extend or annotate
+- **Merge over coexist**: 主题重叠时合并到权威页，被并页在修复全部入链后删除，并在 changelog 记录并入目标(2026-07 结构整改起生效;完整规则见 docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md §6)
 - Mark outdated claims with `> [!deprecated] Updated by [[page_name]]`
 - Mark contradictions with `> [!contradiction] See also [[page_name]]`
 - Record the date of each significant update in the page header

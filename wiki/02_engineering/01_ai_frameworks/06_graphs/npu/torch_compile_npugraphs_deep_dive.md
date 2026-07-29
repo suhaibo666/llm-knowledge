@@ -906,6 +906,8 @@ Generation 1:                    Generation 2:
 4. 动态选择执行路径，支持动态形状
 ```
 
+**内存优化的本质**：树形结构相比为每条路径独立分配内存，峰值内存降为各路径峰值的 `max` 而非各路径之和——例如路径 A→C→F、A→D、B→E 共享内存池时，峰值内存为 `max(mem(A→C→F), mem(A→D), mem(B→E))`。这是 §3.3 内存池共享机制、§3.6 checkpoint 恢复机制共同实现的收益来源；§3.8 会用一个具体案例把这个公式落到实处。
+
 ### 3.2 Tree Manager 生命周期与状态转换
 
 #### 3.2.1 状态机概览
@@ -1073,6 +1075,8 @@ if self.current_node is not None:
 
 out = self.record_function(new_inputs, function_id)
 ```
+
+`apply_checkpoint_execution_state_in_allocator` 内部的完整调用链、它依赖的 C++ 快照结构、以及路径切换时内存的三分类处理，展开于 §3.6。
 
 #### 3.2.4 Warmup 是 per-function 的，不是 per-node 的
 
@@ -1394,6 +1398,44 @@ for _ in range(5):
     result = foo(a) + foo(a)
 ```
 
+#### 3.2.7 NPUWarmupNode.run() 的实现机制
+
+§3.2.1-3.2.4 讲的是 Warmup 在状态机里的角色（何时触发、为什么有传染性）；`NPUWarmupNode.run()` 的实际实现补上"怎么做"这一层：
+
+```python
+class NPUWarmupNode:
+    def run(self, new_inputs: List[InputType]) -> OutputType:
+        # 1. 收集当前路径上所有存活的 storage
+        existing_path_data_ptrs = {
+            t.data_ptr()
+            for t in self.path_live_weakrefs()
+            if t()
+        }
+
+        # 2. 找出非 Graph 管理的输入（需要拷贝到 pool）
+        non_npugraph_inps = []
+        for t in itertools.chain(new_inputs, self.wrapped_function.constants):
+            if (isinstance(t, torch.Tensor)
+                and t.untyped_storage().data_ptr() not in existing_path_data_ptrs):
+                non_npugraph_inps.append(weakref.ref(t.untyped_storage()))
+
+        # 3. 使用内存池执行函数
+        with _use_npu_memory_pool_manager(
+            self.device_index, self.npu_graphs_pool, self.stream
+        ):
+            out = self.wrapped_function.model(new_inputs)
+
+        # 4. 追踪输出：创建弱引用但不阻止 GC
+        self.outputs_weakrefs.extend([
+            map_to_ref(out_) if self._should_track_output(out_) else None
+            for out_ in out
+        ])
+
+        return out
+```
+
+四步依次是：① 用 `path_live_weakrefs()` 收集路径上已存活的 storage 指针；② 遍历新输入和常量，把**尚不在**已存活集合里的输入标记为 `non_npugraph_inps`（即真正"外部带入"、需要走普通内存分配的输入，而非来自树上游节点的输出）；③ 用 `_use_npu_memory_pool_manager` 上下文管理器把 eager 执行的实际分配导向 Graph 共享内存池（§3.3），使 warmup 阶段探测到的内存布局与后续录制阶段一致；④ 用 `map_to_ref` 把输出包装成弱引用记录进 `outputs_weakrefs`，但不阻止其被 GC——呼应 §3.7.2 "弱引用而不阻止 GC" 的设计。
+
 ---
 
 ### 3.3 内存池共享机制
@@ -1466,6 +1508,378 @@ def __init__(self, device_index: int):
 | **单 Stream 保证** | 所有分配在同一 Stream 上，避免不同 Stream 导致的内存碎片 |
 | **Checkpoint 机制** | 切换树路径时，通过 checkpoint/restore 恢复 allocator 状态，而非重新分配 |
 
+### 3.4 TreeManagerContainer：单例生命周期管理
+
+每个 NPU 设备只有一个 `TreeManagerContainer`（`get_container(device_index)`），内部懒加载唯一的 `NPUGraphTreeManager`（§2.6 已提及）。它用引用计数决定 Manager——连同其持有的共享内存池——何时可以被安全释放：
+
+```python
+class TreeManagerContainer:
+    def __init__(self, device_index):
+        self.tree_manager: Optional[NPUGraphTreeManager] = None
+        self.live_npugraphify_fns = 0     # 活跃的 graph 函数（add_function 返回的 fn）数量
+        self.live_storages_count = 0      # 活跃的 Graph 输出 Tensor 数量
+        self.graph: Optional[torch.npu.NPUGraph] = None  # 持有它以保持 pool 存活
+
+    def add_strong_reference(self, fn):
+        self.live_npugraphify_fns += 1
+        weakref.finalize(fn, self.finalize_npugraphify_fn)   # fn 被 GC 时自动回调
+
+    def finalize_npugraphify_fn(self):
+        self.live_npugraphify_fns -= 1
+        if self.live_npugraphify_fns == 0 and self.live_storages_count == 0:
+            self.tree_manager = None   # 无任何活跃引用，可安全释放
+
+    def _finalize_tensor(self):
+        self.live_storages_count -= 1
+        if self.live_storages_count == 0:
+            self.graph = None          # 释放对 pool 的引用
+            if self.live_npugraphify_fns == 0:
+                self.tree_manager = None
+```
+
+即：只要还有一个 `add_function` 返回的 replay 函数存活，或者还有一个 Graph 输出 Tensor 被用户代码持有，Tree Manager（及其共享内存池）就不会被释放——这解释了为什么上面的共享内存池不会在两次 `foo()` 调用之间被意外回收。
+
+### 3.5 NPU Graph Tree 底层数据结构（C++ 层）
+
+§3.2 的状态机与 §3.3 的内存池共享，最终都落在 C++ 层的三个数据结构上：`NPUGraph`（单个 Graph 的捕获/回放载体）、`PrivatePool`（内存池的块管理）、以及 checkpoint 恢复用的状态快照结构。
+
+#### 3.5.1 NPUGraph 与内存池标识
+
+**源码位置**：`torch_npu/csrc/core/npu/NPUGraph.h:L41-L98`
+
+| 成员 | 类型 | 说明 |
+|------|------|------|
+| `register_generator_state(state)` / `register_generator_state(generator)` | 方法（2 个重载） | 注册随机数生成器状态，分别接受 `NPUGeneratorState` 智能指针或 `at::Generator` |
+| `capture_begin(pool, capture_mode, report_shape)` | 方法 | 开始捕获；`pool` 非零时复用外部共享池，否则创建私有池 |
+| `capture_end()` / `replay()` / `reset()` | 方法 | 结束捕获 / 重放 / 释放资源 |
+| `pool()` | 方法 | 返回该 Graph 关联的 `MempoolId_t` |
+| `enable_debug_mode()` | 方法 | 开启调试模式 |
+| `debug_dump(debug_path)` | 方法 | 把捕获内容 dump 到指定路径，用于排查捕获问题 |
+| `model_ri_` | `aclmdlRI` | 昇腾模型实例句柄（protected） |
+| `has_graph_exec_` | `bool` | 是否已成功捕获 |
+| `capture_id_` | `CaptureId_t` | 捕获期间分配的 ID |
+| `mempool_id_` | `MempoolId_t` | 内存池标识，`pair<uint64_t, uint64_t>` |
+| `capture_stream_` / `capture_dev_` | `NPUStream` / `int` | 捕获使用的流与设备 |
+| `captured_generator_states_` | `flat_hash_map<GeneratorState, uint64_t>` | 随机数生成器状态 → wholegraph increment 映射 |
+
+`graph_pool_handle()`（`torch_npu/npu/_graph_tree.py`）通过 `c10_npu::MemPool()` 分配一个新池并返回其 id，即 §3.3 中 `npu_graphs_thread_pool` 的来源。`capture_begin` 按以下顺序把该池注册进分配器（`NPUGraph.cpp:L145-L218`，节选）：
+
+```cpp
+if (pool.first != 0 || pool.second != 0) {
+    mempool_id_ = pool;                          // 复用外部共享池
+} else {
+    auto mempool = c10_npu::MemPool({}, false);
+    mempool_id_ = mempool.id();                   // 创建私有池
+}
+c10_npu::NPUCachingAllocator::beginAllocateToPool(
+    capture_dev_, mempool_id_,
+    [this](aclrtStream stream) {                  // 过滤器：仅本 Graph 活跃捕获期间的流才导向此池
+        aclmdlRICaptureStatus status; aclmdlRI model_ri;
+        NPU_CHECK_ERROR(c10_npu::acl::AclmdlRICaptureGetInfo(stream, &status, &model_ri));
+        return status == ACL_MODEL_RI_CAPTURE_STATUS_ACTIVE && model_ri == model_ri_;
+    });
+```
+
+`replay()`（`NPUGraph.cpp:L255-L268`）核心只有一行 `AclmdlRIExecuteAsync(model_ri_, currentStream)`——**重放可以提交到与捕获时不同的 Stream**，因为 `model_ri_` 是昇腾侧已编译好的独立模型实例。Capture 与 Replay 的开销特征截然不同：
+
+| 方面 | Capture | Replay |
+|------|---------|--------|
+| CPU 开销 | 高（首次执行所有操作） | 极低（直接提交预编译图） |
+| 内存分配 | 实际执行分配 | 不复用分配逻辑，直接使用预分配内存 |
+| Kernel 启动 | 逐个启动 | 批量提交 |
+
+#### 3.5.2 PrivatePool 与内存块管理
+
+**源码位置**：`torch_npu/csrc/core/npu/NPUCachingAllocator.cpp:L804-L822`
+
+```cpp
+struct PrivatePool {
+    int use_count{ 1 };          // 引用计数：活跃 Graph 数量
+    int npuMalloc_count{ 0 };    // 未释放的分配计数
+    BlockPool large_blocks;      // 大块内存池 (>1MB)
+    BlockPool small_blocks;      // 小块内存池 (≤1MB)
+};
+```
+
+`use_count == 0` 且 `npuMalloc_count == 0` 时可安全销毁；`NPUGraph::reset()` 会递减 `use_count` 并触发清理。
+
+#### 3.5.3 Checkpoint 状态快照结构
+
+**源码位置**：`torch_npu/csrc/core/npu/NPUCachingAllocator.cpp`（`PrivatePoolState` 及依赖类型）
+
+```cpp
+struct BlockState {                // 单个内存块的状态
+    c10::DeviceIndex device = 0;
+    aclrtStream stream = nullptr;
+    stream_set stream_uses = {};   // 多流场景下，还有哪些流在使用这块内存
+    size_t size = 0;
+    void* ptr = nullptr;
+    bool allocated = false;
+    int64_t gc_count_base = 0;
+
+    explicit BlockState(Block* block);
+};
+
+struct SegmentState {              // 一个 segment（连续 block 链）的状态
+    std::vector<BlockState> blocks;
+    bool is_small = false;
+
+    explicit SegmentState(Block* head);
+};
+
+struct PrivatePoolState : AllocatorState {  // 私有内存池的完整状态快照
+    MempoolId_t owner_id = {0, 0};
+    std::vector<SegmentState> segments;
+
+    PrivatePoolState(
+        MempoolId_t pool_id,
+        const std::vector<Block*>& private_pool_head_blocks);
+};
+```
+
+`stream_uses`（多流使用追踪）对 Graph Tree 的内存系统并非平凡字段：Graph Tree 本身涉及捕获流、多个执行路径共享同一内存池（§3.3），一个 block 存在被多条流引用的可能性，快照因此需要按 block 记录这层信息，而不能只看单一 `stream`。
+
+这三个结构就是 §3.2.3 原则 3 中 `checkpointed_caching_state` 的实际内容——一份**纯结构快照**（block 划分方式 + 分配状态），不拷贝内存数据本身；§3.6 说明它如何在路径切换时被应用。
+
+### 3.6 Checkpoint 恢复流程与内存复用三分类
+
+延续 §3.2.3 原则 3：当 `check_invariants` 未找到匹配子节点时，`_run()` 需要先把分配器恢复到 `current_node` 录制结束时的 `PrivatePoolState` 快照（§3.5.3），再开始录制新分支。完整调用链细化到具体源码行如下（`torch_npu/npu/_graph_tree.py`）：
+
+```mermaid
+flowchart TD
+    A["_run 无匹配子节点<br/>L2055"] --> D["try_end_curr_execution<br/>L2367"]
+    D --> E{"current_node 是否为 None?"}
+    E -->|路径已释放| L["record_function 录制新路径<br/>L2171"]
+    E -->|输出仍存活| F["apply_checkpoint_execution_state_in_allocator<br/>L2504"]
+    F --> G["remove_path_cached_tensors<br/>解除缓存 tensor 额外引用"]
+    G --> H["path_live_weakrefs<br/>收集仍存活 storage<br/>L1571-1594"]
+    H --> I["data_ptrs_dead_since_invocation<br/>收集已死亡 data_ptr"]
+    I --> J["_npu_setCheckpointPoolState<br/>NPUCachingAllocator.cpp L1893"]
+    J --> K["raw_delete 逐个释放死亡指针<br/>L2538"]
+    K --> L
+
+    style F fill:#fff9c4
+    style J fill:#f3e5f5
+    style L fill:#c8e6c9
+```
+
+`_npu_setCheckpointPoolState`（`NPUCachingAllocator.cpp:L1893-L1941`）在 C++ 层分三步完成"回退到录制结束时的内存布局"：
+
+1. **先释放**池中当前所有 allocated blocks（`freeBlocksAllocatedToPool`）；
+2. **再按快照重建** block 结构（`setSegmentStateToCheckpoint`）；
+3. **最后释放**快照中标记为非 live 的 blocks。
+
+这三步保证了恢复后的 block 划分与录制结束时完全一致，同时通过 `live_storages` 参数保护了仍在使用的 tensor 不被步骤 1 误释放。
+
+> 注：步骤 3 只回退到快照当时的分配器状态；下表分类中 dead 行的 `_npu_npuCachingAllocator_raw_delete` 是另一层，专门清理快照之后才死亡的张量。两者不是同一次释放。
+
+路径切换时，内存中的 tensor 被分为三类：
+
+| 分类 | 判定方式 | 处理 |
+|------|----------|------|
+| **保留**（live） | ① `path_live_weakrefs()`：路径上所有节点输出中 `StorageWeakRefWrapper`（§3.7.2）仍可解引用的；② 被用户代码持有的 tensor（如中间结果传给后续 step），靠 Python GC 引用计数保持其 `StorageWeakRefWrapper` 存活 | 传入 `_npu_setCheckpointPoolState` 的 `live_storages` 参数，C++ 侧标记为 allocated |
+| **释放**（dead） | `data_ptrs_dead_since_invocation()`：对比 `recorded_liveness_after_graph`（§3.7.1）与当前 liveness 的差异 | `_npu_npuCachingAllocator_raw_delete(ptr)` 显式释放 |
+| **解除缓存**（cached） | `remove_path_cached_tensors()`：遍历路径节点的 `cached_tensor_outputs` | `_remove_cached_tensor()` + `remove_extra_reference()`，**必须先于**「保留」的存活收集执行——否则缓存持有的额外引用会让本应回收的 storage 误判为仍存活 |
+
+**关键设计决策**：
+
+| 决策 | 原因 |
+|------|------|
+| Checkpoint 只记录 block 结构，不拷贝内存内容 | 内存内容的正确性由 NPU Graph replay 本身保证，checkpoint 只需重建 allocator 的簿记 |
+| 死亡 tensor 显式 `raw_delete`，不依赖 GC 时机 | 必须在新录制前确保内存立即可用 |
+| Lazy 路径清理（`try_end_curr_execution` 按需调用） | 避免在 replay 热路径上做不必要的存活检查 |
+
+**已知的实现留白**（源码注释暗示未来扩展，非本文推测）：`apply_checkpoint_execution_state_in_allocator` 中 `stale_storages` 参数目前恒为空列表；`clear_path_state()`（`_graph_tree.py:L1614-1616`）当前是空操作占位符。
+
+### 3.7 内存复用策略：Liveness Tracking / 存储弱引用 / 别名检测
+
+Checkpoint 恢复（§3.6）依赖三套更底层的 Python 侧追踪机制来判断"谁还活着、谁可以复用"。
+
+#### 3.7.1 Liveness Tracking
+
+`NPUGraphNode.__init__` 中，父节点用弱引用持有——`self._parent = weakref.ref(parent) if parent is not None else None`，源码注释明确写着"弱引用防止循环"（该表述在源码中重复出现 3 次），避免父子节点相互强引用形成引用环、导致 GC 无法回收。输出跟踪除 `outputs_weakrefs`/`path_weakrefs` 外还有一个 `self.tensor_weakrefs: OutputList[Optional[TensorWeakRef]] = []`，用于追踪已重建的输出 Tensor 对象本身（区别于追踪 storage 的 `outputs_weakrefs`）。
+
+`NPUGraphNode` 为路径上每一层都维护录制前/后的活性快照：
+
+```python
+self.recorded_liveness_before_graph: LevelList[OutputList[bool]] = []
+self.recorded_liveness_after_graph: LevelList[OutputList[bool]] = []
+self.expected_dead_indices_before_graph: List[PathOutputIndex] = []
+self.expected_dead_indices_after_graph: List[PathOutputIndex] = []
+self.live_indices_after_graph: List[PathOutputIndex] = []
+```
+
+`__init__` 中，若存在父节点，会用父节点的 `recorded_liveness_after_graph` 与当前实际存活状态对比，算出"预期应死亡但仍存活"的索引：
+
+```python
+if self.parent is not None:
+    previous_liveness = self.parent.recorded_liveness_after_graph
+    curr_liveness = self._get_liveness(self.path_weakrefs)
+    self.expected_dead_indices_before_graph = self._get_different_indices(previous_liveness, curr_liveness)
+```
+
+`recorded_liveness_after_graph` 的捕获时机同样有明确约束：`_record()` 中它在 `torch.npu.graph()` 捕获块**退出之后**、保存 checkpoint（`_npu_getCheckpointState`）**之前**立即计算——`self.recorded_liveness_after_graph = self._get_liveness(self.path_weakrefs)`。这个"录制刚结束"的存活快照，正是 §3.6 中 `data_ptrs_dead_since_invocation()` 用来对比"此后谁死亡了"的基准。
+
+#### 3.7.2 StorageWeakRefWrapper：弱引用而不阻止 GC
+
+**源码位置**：`torch_npu/npu/_graph_tree.py:L410-L481`
+
+```python
+class StorageWeakRefWrapper:
+    __slots__ = ["ref", "_data_ptr", "extra_ref_check"]
+
+    def __init__(self, inp, extra_ref_check=None):
+        stor = inp.untyped_storage() if isinstance(inp, Tensor) else inp
+        self.ref = StorageWeakRef(stor)
+        self._data_ptr = stor.data_ptr()
+        self.extra_ref_check = extra_ref_check   # 存在时对 Storage 多持有一个引用
+
+    @classmethod
+    def from_weakref_and_data_ptr(cls, cdata, data_ptr, extra_ref_check=None):
+        """从已有的弱引用和数据指针构造（不需要原始 Storage）"""
+        instance = cls.__new__(cls)
+        instance._data_ptr = data_ptr
+        instance.ref = StorageWeakRef.from_weakref(cdata)
+        instance.extra_ref_check = extra_ref_check
+        return instance
+
+    def __call__(self):
+        return None if self.expired() else self.ref.cdata
+
+    def expired(self) -> bool:
+        if self.extra_ref_check is not None and not self.extra_ref_check():
+            return False
+        stor_count = torch_npu._C._storage_Use_Count(self.ref.cdata)
+        return (stor_count - (self.extra_ref_check is not None)) == 0
+
+    def data_ptr(self) -> int:
+        return self._data_ptr   # 即使 Storage 已过期也能返回
+```
+
+`path_live_weakrefs()`（§3.6 三分类表中的"保留"判定）就是遍历路径上所有节点的 `outputs_weakrefs`，调用 `expired()` 过滤出仍存活的。
+
+#### 3.7.3 Alias Detection：输出别名关系
+
+**源码位置**：`torch_npu/npu/_graph_tree.py:L700-L734`
+
+```python
+class OutputAliasInfo: pass
+
+class _UnaliasedStorage(OutputAliasInfo):
+    "标记该输出构造了新的存储，或为 None"
+
+UnaliasedStorage = _UnaliasedStorage()
+
+class AliasesPriorGraphOutput(OutputAliasInfo):
+    "标记该输出是路径上某个先前 Graph 输出的别名"
+    index: PathOutputIndex  # (depth, output_index)
+
+class AliasesNewOutput(OutputAliasInfo):
+    "标记该输出是本次新返回输出中某一项的别名"
+    index: int
+```
+
+`AliasesPriorGraphOutput` 正是 §3.3「零拷贝传递」的判定依据：一旦某个输出被标记为对某个祖先节点输出的别名，`reconstruct_outputs()` 就直接复用该祖先的 Tensor/Storage，而不重新分配内存。
+
+#### 3.7.4 静态输入识别：把上游节点的输出接回本节点
+
+`NPUGraphNode.__init__` 结合 Alias Detection 与 §2.7 已介绍的 `static_input_idxs`，判断哪些新输入本身就来自树上游节点的输出（因而地址已经固定，无需按普通输入处理）：
+
+```python
+self.npugraph_managed_idxs: List[int] = [
+    idx for idx, t in enumerate(inputs)
+    if isinstance(t, torch.Tensor) and self._is_npu_graph_recorded_tensor(t)
+]
+self.live_npugraph_managed_path_refs: List[Optional[PathOutputIndex]] = [
+    self._is_alias_of_live_recorded_tensor(t) if isinstance(t, torch.Tensor) else None
+    for t in inputs
+]
+self.static_input_idxs: List[int] = list(
+    set(wrapped_function.static_input_idxs) | set(self.npugraph_managed_idxs)
+)
+
+# 记录静态输入的数据指针（用于后续验证）
+self.static_input_data_ptrs: List[Optional[int]] = [
+    self._get_static_data_ptr(i, inputs, self.static_input_idxs)
+    for i in range(len(inputs))
+]
+
+def _is_npu_graph_recorded_tensor(self, t: torch.Tensor) -> bool:
+    """t 的 storage 是否与路径上某个存活的 StorageWeakRef 相同"""
+    return any(t.untyped_storage().data_ptr() == ref.data_ptr() for ref in self.path_live_weakrefs())
+
+def _is_alias_of_live_recorded_tensor(self, t: torch.Tensor) -> Optional[PathOutputIndex]:
+    """检查 Tensor 是否是某个活性输出的别名"""
+    for depth, node_outputs in enumerate(self.path_weakrefs):
+        for offset, weak_ref in enumerate(node_outputs):
+            if weak_ref is None:
+                continue
+            storage_ptr = weak_ref.data_ptr()
+            if t.untyped_storage().data_ptr() == storage_ptr:
+                return (depth, offset)
+    return None
+```
+
+`static_input_data_ptrs` 记录的是 `run()` 阶段 `check_static_inputs_are_stable`（§2.8）核对的基准——回放前比对当前地址与这份记录是否一致，从而判断参数是否被外部重新分配。`_is_alias_of_live_recorded_tensor` 与 `_is_npu_graph_recorded_tensor` 的区别：后者只判断"是否命中"，前者额外定位到具体的 `(depth, offset)`，供 §3.7.3 的 `AliasesPriorGraphOutput` 使用。
+
+### 3.8 案例分析：graph break 分支场景下的完整 Tree 生命周期
+
+以下用一个包含条件分支的 `@torch.compile(mode="reduce-overhead")` 示例，把 §3.1–§3.7 的机制串成一条完整时间线。`y.sum() > 0` 触发的 graph break 把函数拆成 4 段（GRAPH 1 → {GRAPH 2 | GRAPH 3} → GRAPH 4），两个分支最终都要经过共享的 GRAPH 4；下面的时序图追踪到 GRAPH 3 被录制为止（B、C 互斥地共享 A 的 pool），GRAPH 4 在新分支下的录制不做延伸推断。
+
+```python
+@torch.compile(mode="reduce-overhead")
+def foo(x):
+    y = x * x * x                      # GRAPH 1
+    if y.sum() > 0:
+        z = y ** y                     # GRAPH 2（True 分支）
+    else:
+        z = (y.abs() ** y.abs())       # GRAPH 3（False 分支）
+    torch._dynamo.graph_break()
+    return z * torch.rand_like(z)      # GRAPH 4
+
+foo(torch.arange(0, 10, device="npu"))        # 第 1 次：warmup
+foo(torch.arange(0, 10, device="npu"))        # 第 2 次：recording
+foo(torch.arange(0, 10, device="npu"))        # 第 3 次：replay（sum=45>0，True 分支）
+foo(torch.arange(0, 10, device="npu") * -1)   # 第 4 次：sum<0，触发路径切换
+```
+
+```mermaid
+sequenceDiagram
+    participant User as User Code
+    participant Mgr as NPUGraphTreeManager
+    participant Node as NPUGraphNode
+    participant Alloc as NPUCachingAllocator
+
+    Note over User,Alloc: 第 1 次：Warmup（GRAPH 1/2/4 均 eager 执行，只预热不录制）
+    User->>Mgr: foo(x)
+    Mgr->>Node: NPUWarmupNode(GRAPH1/2/4) 依次 eager 执行
+
+    Note over User,Alloc: 第 2 次：Recording（沿用第 1 次的分支，True）
+    User->>Mgr: foo(x)
+    Mgr->>Node: record_function(GRAPH1) 到 NodeA(root)，torch.npu.graph() 捕获
+    Node->>Node: 保存 checkpoint（_npu_getCheckpointState）
+    Mgr->>Node: record_function(GRAPH2) 到 NodeB(child of A)，复用 A 的 pool
+    Mgr->>Node: record_function(GRAPH4) 到 NodeD(child of B)
+
+    Note over User,Alloc: 第 3 次：Replay 热路径（GRAPH1/2/4 全部 check_invariants 成功）
+    User->>Mgr: foo(x)
+    Mgr->>Node: execute_node(NodeA/B/D) 依次 replay，无 CPU 侧重新调度
+
+    Note over User,Alloc: 第 4 次：路径切换（x 取负 → sum<0，走 False 分支）
+    User->>Mgr: foo(x 乘以 -1)
+    Mgr->>Node: execute_node(NodeA) replay（A 与分支无关，直接复用）
+    Note right of Mgr: GRAPH3 在 NodeA.children 中无匹配，B 与 C 不同
+    Mgr->>Mgr: apply_checkpoint_execution_state_in_allocator（见 3.6）
+    Alloc->>Alloc: 恢复到 NodeA 录制结束时的状态，释放 NodeB 独占的临时内存
+    Mgr->>Node: record_function(GRAPH3) 到 NodeC(child of A)，复用恢复后的 pool
+
+    Note over User,Alloc: 现在 Graph Tree 结构：NodeA 下有两个子节点<br/>NodeB(旧路径,已延伸到 NodeD)与 NodeC(新路径,刚录制)<br/>后续调用会在 NodeA.children 中按 check_invariants 自动选中对应分支
+```
+
+（GRAPH 4 在新分支下的录制，源材料的时序图未继续展示，本文不做推断续写。）
+
+**内存复用效率**：checkpoint 恢复把 NodeB 独占的临时内存释放并重置为 NodeA 录制结束时的布局，NodeC 直接复用这块空间而非另外分配——树越深、分支越多，这种"同一时刻只有一条路径存活"的互斥复用效果越明显，是 §3.1 内存优化公式 `max` 而非 `sum` 的具体体现。案例也说明了「五、使用约束与最佳实践」中的两条实践依据：减少 graph break 能降低树的分支复杂度；输入形状/分支越稳定，命中 Execution 热路径（而非反复 checkpoint+录制）的概率越高。
+
 ---
 
 ## 四、与 make_graphed_callables 的对比
@@ -1482,79 +1896,7 @@ def __init__(self, device_index: int):
 | **适用场景** | 推理优化 | 训练+推理全场景 |
 | **调试难度** | 简单直接 | 较复杂（树结构） |
 
-### 4.2 实现对比
-
-```
-make_graphed_callables:
-┌─────────────────────────────────────────────────────────┐
-│  1. 输入校验与展平                                       │
-│  2. 构建 static_input_surface                           │
-│  3. Warmup（3次迭代）                                   │
-│  4. 前向图捕获 (0→N 正序)                                │
-│  5. 反向图捕获 (N→0 逆序)                                │
-│  6. 包装为 autograd.Function                            │
-└─────────────────────────────────────────────────────────┘
-                              ↓
-                  单一内存池，固定形状
-
-torch.compile(backend="npugraphs"):
-┌─────────────────────────────────────────────────────────┐
-│  1. TorchDynamo 捕获 FX Graph                            │
-│  2. aot_autograd 分离前向/反向                           │
-│  3. npugraphify 进入 Graph Tree                        │
-│  4. Warmup（eager 模式）                                 │
-│  5. Recording（录制到树节点）                             │
-│  6. Execution（匹配子节点或新建录制）                      │
-└─────────────────────────────────────────────────────────┘
-                              ↓
-                  树形内存池，支持动态形状
-```
-
-### 4.3 执行时序对比
-
-```mermaid
-sequenceDiagram
-    participant User as 用户代码
-    participant Compile as torch.compile
-    participant Dynamo as TorchDynamo
-    participant AOT as AOT Autograd
-    participant Impl as npugraphify_impl
-    participant TM as TreeManager
-    participant Node as NPUGraphNode
-
-    Note over User,Node: === 首次调用（Warmup + Recording）===
-    User->>Compile: model(input)
-    Compile->>Dynamo: 拦截 Python 帧
-    Dynamo->>Dynamo: 字节码分析 → FX Graph
-    Dynamo->>AOT: backend(gm, example_inputs)
-    AOT->>AOT: 分离前向/反向
-    AOT->>Impl: forward_npugraphs(aot_model, aot_inputs)
-    Impl->>TM: add_function(model, inputs, ...)
-    TM->>TM: _run() → 未 warmup
-    TM->>TM: run_eager() → NPUWarmupNode
-    TM-->>Impl: 返回 (fn, warmup_output)
-    Impl-->>User: 返回结果
-
-    Note over User,Node: === 第二次调用（Recording）===
-    User->>Impl: fn(new_inputs)
-    Impl->>TM: run(new_inputs, function_id)
-    TM->>TM: _run() → 已 warmup，无匹配子节点
-    TM->>Node: record_function() → _record()
-    Node->>Node: 分配输入缓冲区
-    Node->>Node: torch.npu.graph() 录制
-    Node->>Node: _add_first_outputs()
-    Node-->>TM: 录制完成
-    TM-->>User: 返回结果
-
-    Note over User,Node: === 后续调用（Execution - 热路径）===
-    User->>Impl: fn(new_inputs)
-    Impl->>TM: run(new_inputs, function_id)
-    TM->>TM: _run() → check_invariants() 匹配成功
-    TM->>Node: execute_node() → run()
-    Node->>Node: 复制输入 → graph.replay()
-    Node->>Node: reconstruct_outputs()
-    Node-->>User: 返回结果
-```
+`make_graphed_callables` 的完整实现流程（六阶段：输入校验展平 → 构建 static_input_surface → Warmup → 前向图捕获 → 反向图捕获 → 包装为 autograd.Function）、内存分配与复用机制、内存峰值 debug 方法，详见 [[npugraphs_make_graphed_callables_deep_dive]]；`torch.compile(backend="npugraphs")` 自身的完整调用链路见本文「二、完整调用链路分析」与「三、NPU Graph Tree 核心机制」。
 
 ---
 
@@ -1626,772 +1968,25 @@ with torch.no_grad():
 - `torch_npu/utils/_graph_tree.py`: 后端入口和包装层（`NpugraphsBackend`、`npugraphs()`、`npugraphify()`）
 - `torch_npu/npu/_graph_tree.py`: NPU Graph Tree 核心实现（`NPUGraphTreeManager`、`NPUGraphNode`、`NPUWarmupNode`）
 - `torch_npu/npu/graphs.py`: 底层 `make_graphed_callables` 实现
+- `torch_npu/csrc/core/npu/NPUGraph.h/cpp`: C++ 层 `NPUGraph`（capture_begin/replay/reset，§3.5.1）
+- `torch_npu/csrc/core/npu/NPUCachingAllocator.cpp`: C++ 层内存分配器（`PrivatePool`、checkpoint 快照结构，§3.5.2-3.5.3）
 
 与直接使用 `make_graphed_callables` 相比，`torch.compile(backend="npugraphs")` 通过 Graph Tree 提供了更高级的运行时管理能力，能自动应对动态形状、多子图协调、路径分支等复杂场景。
 
 ---
 
-## 附录 A：mode="reduce-overhead" 完整编译流程与双路径对比（合并自 reduce_overhead_vs_backend）
+## 附录 A：mode="reduce-overhead" 与 backend="npugraphs" 双路径对比（摘要）
 
-> 本附录深入分析 `torch.compile(mode="reduce-overhead")`（路径 A）路径下 NPU Graphs 的完整调用链路，并与 `torch.compile(backend="npugraphs")`（路径 B，即本文正文）进行全面对比。两者都能实现 NPU Graph 加速，但编译流程、优化层级和适用场景存在本质差异。路径 B 的内部机制见正文「二、完整调用链路分析」，此处不再展开。
+> 本附录曾详细展开 `torch.compile(mode="reduce-overhead")`（路径 A，经 Inductor 编译）与本文正文 `torch.compile(backend="npugraphs")`（路径 B，绕开 Inductor）的完整调用链路、逐 Phase 源码定位、性能对比与选型决策；现已收缩为摘要，完整内容并入 [[aclgraph_deep_analysis]]（该页是 `mode="reduce-overhead"` 捕获路径的权威页）。
 
-### 一、mode 参数澄清
+路径 A 与路径 B 都能触发 NPU Graph 加速，核心差异在于是否经过 Inductor 编译：路径 A 经 `_TorchCompileInductorWrapper` → `compile_fx`（AOT Autograd + Pre-grad/Joint-graph/Post-grad passes + Scheduling + Triton/C++ Codegen）产出**少量融合内核**，再由 `cudagraph_post_compile` 把已被 torch_npu monkey-patch 的 `cudagraphify`（即 `npugraphify`）接入 NPU Graph Tree；路径 B 的 AOT Autograd 直接用 `boxed_nop` 解释执行**原始 FX 图**（大量未融合的 aten op），同样接入 Graph Tree。两条路径从 NPU Graph Tree 起（Warmup → Record → Replay）完全共享同一套核心实现（本文「二、完整调用链路分析」Phase 5-8）。`mode` 参数仅在 `backend="inductor"`（默认）时生效；显式指定 `backend="npugraphs"` 时 `mode` 参数会被忽略。
 
-#### 1.1 有效 mode 列表
+结论：路径 A 编译更慢但稳态 NPU 利用率更高、Graph 捕获失败时回退到仍经优化的 Triton 内核，适合生产部署；路径 B 编译快、适合调试/baseline/快速验证 NPU Graph 兼容性，但回退会退化为较慢的 FX 图解释执行。
 
-`torch.compile` 的 `mode` 参数仅支持以下值（定义在 `torch/_inductor/__init__.py` 的 `list_mode_options` 中）：
-
-| mode | 配置项 | NPU Graphs |
-|------|--------|------------|
-| `"default"` | `{}` | 不启用 |
-| `"reduce-overhead"` | `{"triton.cudagraphs": True}` | **启用** |
-| `"max-autotune"` | `{"max_autotune": True, "triton.cudagraphs": True, "coordinate_descent_tuning": True}` | **启用** |
-| `"max-autotune-no-cudagraphs"` | `{"max_autotune": True, "coordinate_descent_tuning": True}` | 不启用 |
-
-**注意**：`mode="max-reduce"` 并非有效值，会抛出 `RuntimeError: Unrecognized mode=max-reduce`。用户如需"最大化减少开销"，应使用 `mode="reduce-overhead"`（仅启用 NPU Graphs）或 `mode="max-autotune"`（同时启用 Triton 自动调优 + NPU Graphs）。
-
-#### 1.2 mode 与 backend 的关系
-
-```python
-# mode 参数仅在 backend="inductor"（默认）时生效
-# mode 控制 Inductor 的配置选项，是 Inductor 后端的"预设配置"
-torch.compile(model, mode="reduce-overhead")
-# 等价于：
-torch.compile(model, backend="inductor", options={"triton.cudagraphs": True})
-
-# backend="npugraphs" 完全绕过 Inductor，mode 参数无意义
-torch.compile(model, backend="npugraphs")
-# 此时传 mode 会作为 kwargs 传给 NpugraphsBackend，被忽略
-```
+完整的 mode 参数表、Wrapper 分发机制、逐 Phase 源码定位、录制内容/性能/回退对比表、选型决策与核心文件索引，见 [[aclgraph_deep_analysis]] §一「1.5 mode 参数与两条路径的触发关系」、§四「4.4 与 backend="npugraphs" 路径（路径 B）的对比」。
 
 ---
-
-### 二、整体架构对比
-
-#### 2.1 两条路径的核心差异
-
-```
-路径 A: torch.compile(mode="reduce-overhead")
-┌────────────────────────────────────────────────────────────────────────────┐
-│  1. TorchDynamo                                                            │
-│     └── 捕获 Python 代码 → FX Graph                                       │
-├────────────────────────────────────────────────────────────────────────────┤
-│  2. _TorchCompileInductorWrapper                                           │
-│     └── apply_mode("reduce-overhead")                                      │
-│         → config_patches = {"triton.cudagraphs": True}                     │
-│     └── compile_fx(gm, inputs, config_patches=...)                         │
-├────────────────────────────────────────────────────────────────────────────┤
-│  3. Inductor 编译 (compile_fx → _compile_fx_inner)                         │
-│     ├── AOT Autograd: 分离前向/反向/推理                                    │
-│     ├── Pre-grad passes: 图级优化                                          │
-│     ├── Joint graph passes: 联合前反向优化                                  │
-│     ├── Post-grad passes: 后梯度优化                                       │
-│     ├── Scheduling: 算子融合、内存规划                                      │
-│     └── Codegen: 生成 Triton/C++ 内核代码                                  │
-├────────────────────────────────────────────────────────────────────────────┤
-│  4. CudaGraph Post-Compile (cudagraph_post_compile)                        │
-│     └── cudagraphify() → 被 torch_npu monkey-patch 为 npugraphify()       │
-│         → 将 Inductor 编译后的代码包装进 NPU Graph                         │
-├────────────────────────────────────────────────────────────────────────────┤
-│  5. NPU Graph Tree 核心 (torch_npu/npu/_graph_tree.py)                     │
-│     ├── NPUGraphTreeManager: 管理图树生命周期                               │
-│     ├── NPUGraphNode: 单个 NPU Graph 节点（录制/回放）                     │
-│     └── NPUWarmupNode: Warmup 阶段节点                                     │
-└────────────────────────────────────────────────────────────────────────────┘
-
-路径 B: torch.compile(backend="npugraphs")
-┌────────────────────────────────────────────────────────────────────────────┐
-│  1. TorchDynamo                                                            │
-│     └── 捕获 Python 代码 → FX Graph                                       │
-├────────────────────────────────────────────────────────────────────────────┤
-│  2. _TorchCompileWrapper → NpugraphsBackend                                │
-│     └── npugraphs(dynamo_model, dynamo_inputs)                             │
-├────────────────────────────────────────────────────────────────────────────┤
-│  3. AOT Autograd（无 Inductor 编译）                                       │
-│     ├── 分离前向/反向/推理                                                 │
-│     ├── forward_npugraphs: boxed_nop(aot_model) → 解释执行 FX 图          │
-│     └── 直接调用 npugraphify_impl → 进入 Graph Tree                       │
-├────────────────────────────────────────────────────────────────────────────┤
-│  4. NPU Graph Tree 核心（同路径 A 的第 5 步）                              │
-│     ├── NPUGraphTreeManager                                                │
-│     ├── NPUGraphNode                                                       │
-│     └── NPUWarmupNode                                                      │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-#### 2.2 流程对比图
-
-```mermaid
-flowchart TB
-    subgraph PathA["路径 A: mode='reduce-overhead'"]
-        A1["torch.compile(model,<br/>mode='reduce-overhead')"] --> A2["_TorchCompileInductorWrapper<br/>config = {triton.cudagraphs: True}"]
-        A2 --> A3["compile_fx(gm, inputs,<br/>config_patches={...})"]
-        A3 --> A4["AOT Autograd<br/>分离前向/反向"]
-        A4 --> A5["Inductor Codegen<br/>Triton 内核 / C++ 代码"]
-        A5 --> A6["cudagraph_post_compile()<br/>检查可行性"]
-        A6 --> A7["cudagraphify()<br/>→ npugraphify()"]
-        A7 --> A8["NPU Graph Tree<br/>Warmup → Record → Replay"]
-    end
-
-    subgraph PathB["路径 B: backend='npugraphs'"]
-        B1["torch.compile(model,<br/>backend='npugraphs')"] --> B2["_TorchCompileWrapper<br/>→ NpugraphsBackend"]
-        B2 --> B3["npugraphs()<br/>→ aot_autograd()"]
-        B3 --> B4["AOT Autograd<br/>分离前向/反向"]
-        B4 --> B5["boxed_nop()<br/>解释执行 FX 图"]
-        B5 --> B6["npugraphify_impl()"]
-        B6 --> B7["NPU Graph Tree<br/>Warmup → Record → Replay"]
-    end
-
-    style A5 fill:#fff3e0,stroke:#ff9800,stroke-width:2px
-    style A6 fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
-    style B5 fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
-    style A8 fill:#f3e5f5,stroke:#9c27b0
-    style B7 fill:#f3e5f5,stroke:#9c27b0
-```
-
----
-
-### 三、路径 A 完整调用链路：torch.compile(mode="reduce-overhead")
-
-#### 3.1 Phase 1: 入口与配置分发
-
-**调用栈**：
-```
-torch.compile(model, mode="reduce-overhead")
-    ↓ (torch/__init__.py:2745-2749)
-    backend == "inductor"
-    → backend = _TorchCompileInductorWrapper(mode="reduce-overhead", options=None, dynamic=...)
-    ↓ (_TorchCompileInductorWrapper.__init__)
-    apply_mode("reduce-overhead")
-    → list_mode_options("reduce-overhead") → {"triton.cudagraphs": True}
-    → self.config = {"triton.cudagraphs": True}
-    ↓ (torch/__init__.py:2753)
-    torch._dynamo.optimize(backend=backend, ...)
-    ↓ 首次调用 model(input) 时
-    _TorchCompileInductorWrapper.__call__(model_, inputs_)
-    → compile_fx(model_, inputs_, config_patches={"triton.cudagraphs": True})
-```
-
-**关键代码**（`torch/__init__.py` 第2384-2456行）：
-
-```python
-class _TorchCompileInductorWrapper:
-    compiler_name = "inductor"
-
-    def __init__(self, mode, options, dynamic):
-        self.config: dict[str, Any] = {}
-        self.dynamic = dynamic
-        self.apply_mode(mode)        # ← 将 mode 转为 Inductor 配置
-        self.apply_options(options)
-
-    def apply_mode(self, mode: str | None):
-        if mode and mode != "default":
-            from torch._inductor import list_mode_options
-            self.apply_options(list_mode_options(mode, self.dynamic))
-            # "reduce-overhead" → {"triton.cudagraphs": True}
-            # "max-autotune"    → {"max_autotune": True, "triton.cudagraphs": True, ...}
-
-    def __call__(self, model_, inputs_):
-        from torch._inductor.compile_fx import compile_fx
-        return compile_fx(model_, inputs_, config_patches=self.config)
-```
-
-**mode 到 config 的映射关系**：
-
-```mermaid
-flowchart LR
-    M1["mode='reduce-overhead'"] --> C1["triton.cudagraphs = True"]
-    M2["mode='max-autotune'"] --> C2["max_autotune = True<br/>triton.cudagraphs = True<br/>coordinate_descent_tuning = True"]
-    M3["mode='default'"] --> C3["{}（无额外配置）"]
-    M4["mode='max-autotune<br/>-no-cudagraphs'"] --> C4["max_autotune = True<br/>coordinate_descent_tuning = True"]
-
-    C1 --> G["NPU Graphs 启用"]
-    C2 --> G
-    C3 --> N["NPU Graphs 不启用"]
-    C4 --> N
-
-    style G fill:#e8f5e9,stroke:#4caf50
-    style N fill:#ffebee,stroke:#f44336
-```
-
-#### 3.2 Phase 2: compile_fx — Inductor 编译主入口
-
-**代码位置**：`torch/_inductor/compile_fx.py` (第2483行)
-
-```python
-def compile_fx(
-    model_: GraphModule,
-    example_inputs_: Sequence[InputType],
-    inner_compile: Callable[..., OutputCode] = compile_fx_inner,
-    config_patches: Optional[dict[str, Any]] = None,  # ← {"triton.cudagraphs": True}
-    decompositions: Optional[dict[OpOverload, Callable[..., Any]]] = None,
-    ignore_shape_env: bool = False,
-) -> CompileFxOutput:
-    # 递归地将 config_patches 应用到整个编译过程
-    if config_patches:
-        with config.patch(config_patches):  # ← 全局设置 triton.cudagraphs=True
-            return compile_fx(
-                model_, example_inputs_,
-                inner_compile=config.patch(config_patches)(inner_compile),
-                decompositions=decompositions,
-            )
-    ...
-```
-
-`config.patch({"triton.cudagraphs": True})` 在整个编译过程中生效，包括后续的 `_compile_fx_inner` 和 `cudagraph_post_compile`。
-
-#### 3.3 Phase 3: _compile_fx_main — AOT Autograd + Inductor 编译
-
-**代码位置**：`torch/_inductor/compile_fx.py` (第2650行)
-
-```python
-def _compile_fx_main(model_, example_inputs_, inner_compile, decompositions, ...):
-    """
-    核心编译流程：
-    (1) apply pre-grad passes
-    (2) create fw_compiler / bw_compiler / inference_compiler
-    (3) call aot_autograd:
-        - (3a) creates a joint graph with decompositions
-        - (3b) partitions it into fw/bw graphs (applying joint-graph passes)
-        - (3c) calls fw_compiler and bw_compiler (applying post-grad passes)
-        - (3d) assembles compiled functions back together
-    """
-    model_ = run_pre_grad_passes(model_, example_inputs_)
-    compiler_config_extra = create_compiler_config_extra(config)
-    # compiler_config_extra.cudagraphs = BoxedBool(True)  ← 因为 triton.cudagraphs=True
-
-    def fw_compiler_base(gm, example_inputs, is_inference):
-        return compile_fx_forward(gm, example_inputs, ...,
-            compiler_config_extra=compiler_config_extra,
-            inner_compile=inner_compile,
-            is_inference=is_inference)
-
-    fw_compiler = functools.partial(fw_compiler_base, is_inference=False)
-    inference_compiler = functools.partial(fw_compiler_base, is_inference=True)
-
-    def bw_compiler(gm, example_inputs):
-        return compile_fx_backward(gm, example_inputs,
-            compiler_config_extra=compiler_config_extra,
-            inner_compile=inner_compile)
-
-    return aot_autograd(
-        fw_compiler=fw_compiler,
-        bw_compiler=bw_compiler,
-        inference_compiler=inference_compiler,
-        decompositions=decompositions,
-        partition_fn=partition_fn,
-        cudagraphs=compiler_config_extra.cudagraphs,  # ← BoxedBool(True)
-        boxed_forward_device_index=compiler_config_extra.forward_device,
-    )(model_, example_inputs_)
-```
-
-#### 3.4 Phase 4: Inductor Codegen — 与 backend="npugraphs" 的核心差异
-
-在路径 A 中，`fw_compiler` / `bw_compiler` 实际调用 `compile_fx_inner` → `_compile_fx_inner`，执行完整的 Inductor 编译流程：
-
-```mermaid
-flowchart TB
-    A["_compile_fx_inner(gm, example_inputs)"] --> B["graph_lowering(gm)<br/>将 FX 图降低为 Inductor IR"]
-    B --> C["Scheduling<br/>算子融合、内存规划、循环优化"]
-    C --> D{"目标设备?"}
-    D -->|GPU/NPU| E["Triton Codegen<br/>生成高性能 Triton 内核"]
-    D -->|CPU| F["C++ Codegen<br/>生成优化的 C++ 代码"]
-    E --> G["CompiledFxGraph<br/>包含 current_callable<br/>+ cudagraph_info"]
-    F --> G
-    G --> H["Post-compile 阶段"]
-    H --> I{"triton.cudagraphs<br/>== True?"}
-    I -->|是| J["cudagraph_post_compile()<br/>将编译结果包装到 NPU Graph"]
-    I -->|否| K["直接返回编译结果"]
-
-    style E fill:#fff3e0,stroke:#ff9800
-    style J fill:#e8f5e9,stroke:#4caf50
-```
-
-**Inductor 编译阶段做了什么**（路径 B 没有的）：
-
-| 优化阶段 | 说明 | 对性能的影响 |
-|----------|------|-------------|
-| **Pre-grad passes** | 图级别优化（常量折叠、死代码消除等） | 减少计算量 |
-| **Joint graph passes** | 联合前反向图优化（重计算策略等） | 优化内存/计算平衡 |
-| **Post-grad passes** | 后梯度优化（算子融合、布局优化等） | 减少内核数量 |
-| **Scheduling** | 算子融合（pointwise fusion、reduction fusion 等）、内存规划 | 显著减少内核启动次数 |
-| **Triton Codegen** | 生成高性能 Triton GPGPU 内核 | 单内核执行效率更高 |
-| **Memory Planning** | 静态内存分配、buffer 复用 | 减少内存碎片 |
-
-#### 3.5 Phase 5: cudagraph_post_compile — NPU Graph 包装
-
-**代码位置**：`torch/_inductor/output_code.py` (第195行)
-
-这是路径 A 中 NPU Graph 被引入的关键阶段。在 Inductor 编译产出 `CompiledFxGraph`（包含 Triton 内核的可调用函数）后，`cudagraph_post_compile` 将其包装进 NPU Graph。
-
-```python
-def cudagraph_post_compile(
-    example_inputs, compiled_graph, cudagraphs, constants, boxed_forward_device_index
-):
-    """
-    检查是否有不能使用 cudagraphs 的原因，
-    如果可以，则将 compiled_graph.current_callable 包装进 NPU Graph。
-    """
-    cached_info = compiled_graph.cudagraph_info
-    cudagraph_fail_reasons = cached_info.cudagraph_fail_reasons
-
-    if not cudagraph_fail_reasons:
-        # 准备 cudagraph 元数据
-        prepare_cudagraph_post_compile(compiled_graph, example_inputs, ...)
-
-        from .compile_fx import cudagraphify  # ← 被 torch_npu monkey-patch 为 npugraphify
-
-        current_callable = compiled_graph.current_callable
-        compiled_graph.current_callable = cudagraphify(
-            current_callable,                                    # ← Inductor 编译后的 Triton 内核
-            static_input_idxs=static_input_idxs or (),
-            device_index=next(iter(compiled_graph.device_idxs)),
-            stack_traces=stack_traces,
-            is_backward=is_backward,
-            is_inference=is_inference,
-            constants=tuple(tensor_constants.values()),
-            placeholders=placeholders,
-            mutated_input_idxs=tuple(compiled_graph.mutated_input_idxs),
-        )
-    else:
-        BoxedBool.disable(cudagraphs)
-        # 跳过 NPU Graph，退化为普通执行
-```
-
-#### 3.6 Phase 6: npugraphify — torch_npu 的 Monkey-Patch 入口
-
-**代码位置**：`torch_npu/utils/_graph_tree.py` (第91行)
-
-torch_npu 在初始化时通过 `_apply_npugraph_tree_methods()` 执行关键的 monkey-patch：
-
-```python
-def _apply_npugraph_tree_methods():
-    register_backend(name="npugraphs", compiler_fn=NpugraphsBackend())
-    torch._inductor.compile_fx.cudagraphify = npugraphify  # ← 核心 patch
-    torch._inductor.cudagraph_utils.check_multiple_devices_or_any_cpu_nodes = (
-        check_multiple_devices_or_any_cpu_nodes
-    )
-    torch.compiler.npugraph_mark_step_begin = npugraph_mark_step_begin
-```
-
-`npugraphify` 的签名与 Inductor 原始的 `cudagraphify` 完全一致，但内部将 CUDA Graph 操作替换为 NPU Graph：
-
-```python
-def npugraphify(model, static_input_idxs, *, device_index, stack_traces,
-                is_backward, is_inference, constants, placeholders, mutated_input_idxs):
-    from torch_npu.npu._graph_tree import npugraphify_impl as new_npugraphify_impl
-
-    if config.triton.cudagraph_trees:
-        npugraphify_fn = functools.partial(
-            new_npugraphify_impl,         # ← Graph Tree 实现
-            device_index=device_index,
-            stack_traces=stack_traces,
-            is_backward=is_backward,
-            ...
-        )
-    else:
-        npugraphify_fn = npugraphify_impl  # ← 旧版简单实现
-
-    compiled_fn = None
-    def run(new_inputs):
-        nonlocal compiled_fn
-        if compiled_fn is None:
-            compiled_fn = npugraphify_fn(model, new_inputs, static_input_idxs)
-        return compiled_fn(new_inputs)
-    return run
-```
-
-**注意**：此处的 `model` 参数在路径 A 中是 **Inductor 编译后的 Triton 内核函数**，而在路径 B 中是 **boxed_nop 包装的 FX 图解释器**。这是两条路径最核心的区别。
-
-#### 3.7 Phase 7-8: NPU Graph Tree 核心（与路径 B 共享）
-
-从 `npugraphify_impl` 开始，路径 A 和路径 B 进入相同的 NPU Graph Tree 核心逻辑。详细分析参见本文正文「二、完整调用链路分析」的 Phase 5-8（§2.5–2.8）章节（`NPUGraphTreeManager` → `deferred_npugraphify` → `npugraphify` → `NPUGraphNode._record` / `NPUGraphNode.run`）。
-
----
-
-### 四、路径 A 完整调用栈
-
-```
-torch.compile(model, mode="reduce-overhead")
-    ↓ (torch/__init__.py:2749)
-    _TorchCompileInductorWrapper(mode="reduce-overhead")
-        → self.config = {"triton.cudagraphs": True}
-    ↓ (torch.__init__.py:2753)
-    torch._dynamo.optimize(backend=_TorchCompileInductorWrapper_inst)
-    ↓ 首次调用 model(input) 时
-    _TorchCompileInductorWrapper.__call__(model_, inputs_)
-    ↓ (torch/__init__.py:2456)
-    compile_fx(model_, inputs_, config_patches={"triton.cudagraphs": True})
-    ↓ (compile_fx.py:2511-2520)
-    config.patch({"triton.cudagraphs": True})  # 全局设置
-    compile_fx(model_, inputs_)  # 递归调用，无 config_patches
-    ↓ (compile_fx.py:2604)
-    _maybe_wrap_and_compile_fx_main(model_, inputs_, inner_compile, ...)
-    ↓ (compile_fx.py:2650)
-    _compile_fx_main(model_, inputs_, inner_compile, decompositions, ...)
-    ↓ (compile_fx.py:2836)
-    aot_autograd(
-        fw_compiler=fw_compiler,    # → compile_fx_forward → compile_fx_inner
-        bw_compiler=bw_compiler,    # → compile_fx_backward → compile_fx_inner
-        inference_compiler=inference_compiler,
-        cudagraphs=BoxedBool(True),
-    )(model_, inputs_)
-    ↓ AOT Autograd 分离前向/反向后：
-    fw_compiler(aot_fw_graph, aot_fw_inputs)
-    ↓ (compile_fx.py:2695)
-    fw_compiler_base(gm, example_inputs, is_inference=False)
-    ↓ (compile_fx.py:2277)
-    compile_fx_forward(gm, example_inputs, ...)
-    ↓ (compile_fx.py:2277)
-    inner_compile = compile_fx_inner(gm, example_inputs, cudagraphs=BoxedBool(True), ...)
-    ↓ (compile_fx.py:829)
-    _compile_fx_inner(gm, example_inputs, ...)
-        ├── graph_lowering → Inductor IR
-        ├── scheduling → 算子融合
-        ├── codegen → Triton 内核 / C++ 代码
-        └── 返回 CompiledFxGraph (包含 current_callable + cudagraph_info)
-    ↓ (output_code.py:195)
-    cudagraph_post_compile(example_inputs, compiled_graph, cudagraphs=BoxedBool(True), ...)
-    ↓ (output_code.py:234)
-    from .compile_fx import cudagraphify  # 已被 monkey-patch 为 npugraphify
-    compiled_graph.current_callable = cudagraphify(
-        current_callable,  # Inductor 编译后的 Triton 内核
-        static_input_idxs=..., device_index=..., ...
-    )
-    ↓ (torch_npu/utils/_graph_tree.py:91)
-    npugraphify(model=triton_kernel_fn, ...)
-    ↓ (torch_npu/utils/_graph_tree.py:121)
-    run(new_inputs)  # 首次调用时触发
-    ↓ (torch_npu/npu/_graph_tree.py:327)
-    npugraphify_impl(model, inputs, static_input_idxs, ...)
-    → deferred_npugraphify(inputs)
-    ↓ (torch_npu/npu/_graph_tree.py:376)
-    npugraphify(model, inputs, static_input_idxs, ...)
-    ↓ (torch_npu/npu/_graph_tree.py:376)
-    manager = get_container(device_index).get_tree_manager()
-    manager.add_function(model, inputs, ...)
-    ↓ (torch_npu/npu/_graph_tree.py)
-    _run() → run_eager() / record_function() / execute_node()
-        ├── Warmup: NPUWarmupNode
-        ├── Record: NPUGraphNode._record()  ← 录制 NPU Graph
-        └── Execute: NPUGraphNode.run()     ← graph.replay()
-```
-
----
-
-### 五、路径 B 完整调用栈（对比参考）
-
-> 路径 B（`backend="npugraphs"`）的完整调用栈与逐 Phase 机制已在本文正文「二、完整调用链路分析」（Phase 1-8）详述，此处不再重复。其核心链路概览为：
->
-> `torch.compile(backend="npugraphs")` → `_TorchCompileWrapper` → `NpugraphsBackend` → `npugraphs()` → `aot_autograd(fw=forward_npugraphs)` → `boxed_nop()` 解释执行 FX 图（无 Inductor 优化）→ `npugraphify_impl(interp, ...)` → 进入相同的 NPU Graph Tree 核心（`deferred_npugraphify` → `npugraphify` → `manager.add_function` → `_run()`）。
-
----
-
-### 六、关键代码路径差异分析
-
-#### 6.1 编译产物对比
-
-| 维度 | 路径 A (mode="reduce-overhead") | 路径 B (backend="npugraphs") |
-|------|------|------|
-| **被 NPU Graph 录制的函数** | Inductor 编译后的 Triton 内核 | `boxed_nop` 包装的 FX 图解释器 |
-| **函数内部执行** | 高度优化的融合内核（如 fused_add_relu） | 逐节点执行原始 aten ops（如 add、relu 分开） |
-| **内核数量** | 少（经过算子融合） | 多（每个 aten op 一次调用） |
-| **单内核效率** | 高（Triton auto-tuned） | 一般（默认实现） |
-| **编译耗时** | 较长（Inductor 编译 + Graph 录制） | 较短（仅 Graph 录制） |
-
-#### 6.2 NPU Graph 录制的内容差异
-
-```mermaid
-flowchart LR
-    subgraph PathA["路径 A 录制的内容"]
-        A1["融合内核 1<br/>fused_matmul_add_relu"] --> A2["融合内核 2<br/>fused_layernorm_dropout"]
-        A2 --> A3["融合内核 3<br/>fused_matmul_softmax"]
-    end
-
-    subgraph PathB["路径 B 录制的内容"]
-        B1["aten::matmul"] --> B2["aten::add"]
-        B2 --> B3["aten::relu"]
-        B3 --> B4["aten::layer_norm"]
-        B4 --> B5["aten::dropout"]
-        B5 --> B6["aten::matmul"]
-        B6 --> B7["aten::softmax"]
-    end
-
-    style PathA fill:#e8f5e9
-    style PathB fill:#fff3e0
-```
-
-**路径 A** 录制的是少量高效融合内核的序列，**路径 B** 录制的是大量原始 aten op 的序列。两者在 NPU Graph replay 时的行为差异：
-
-- **路径 A**：少量内核启动，每个内核计算量大且经过优化 → **replay 时 NPU 利用率高**
-- **路径 B**：大量小内核启动，每个内核计算量小 → replay 消除了 CPU dispatch 开销，但 **NPU 端执行效率较低**
-
-#### 6.3 跳过 NPU Graph 时的回退差异
-
-| 场景 | 路径 A | 路径 B |
-|------|--------|--------|
-| NPU Graph 捕获失败 | 回退到 Inductor 编译后的 Triton 内核（仍然很快） | 回退到 `boxed_nop`（FX 图解释执行，较慢） |
-| 包含 CPU 节点 | 跳过 cudagraph_post_compile，直接执行 Triton 内核 | `check_for_skip` 返回 skip_msg，回退到 `interp` |
-| 输入 mutation | 可能跳过整个图或部分图的 cudagraph 包装 | `BoxedBool.disable(do_npugraphs)` 跳过 Graph |
-
----
-
-### 七、Wrapper 类对比
-
-#### 7.1 `_TorchCompileInductorWrapper` vs `_TorchCompileWrapper`
-
-`torch.compile` 根据 `backend` 参数选择不同的 Wrapper：
-
-```python
-# torch/__init__.py 第2745-2751行
-if backend == "inductor":
-    backend = _TorchCompileInductorWrapper(mode, options, dynamic)
-else:
-    backend = _TorchCompileWrapper(backend, mode, options, dynamic)
-```
-
-| 特性 | `_TorchCompileInductorWrapper` | `_TorchCompileWrapper` |
-|------|------|------|
-| **使用条件** | `backend == "inductor"`（默认） | `backend != "inductor"`（如 `"npugraphs"` 等） |
-| **mode 处理** | `apply_mode()` → `list_mode_options()` → Inductor config_patches | 作为 `kwargs["mode"]` 传给后端（通常被忽略） |
-| **options 处理** | `apply_options()` → 校验后存入 config | 作为 `kwargs["options"]` 传给后端 |
-| **调用后端** | `compile_fx(model_, inputs_, config_patches=self.config)` | `self.compiler_fn(model_, inputs_, **self.kwargs)` |
-| **reset 行为** | 调用 `reset_cudagraph_trees()` | 调用后端的 `reset()` 方法 |
-
-#### 7.2 mode 参数在路径 B 中的行为
-
-当使用 `torch.compile(model, backend="npugraphs", mode="reduce-overhead")` 时：
-
-```python
-# _TorchCompileWrapper.__init__
-self.compiler_fn = lookup_backend("npugraphs")  # → NpugraphsBackend()
-self.kwargs = {"mode": "reduce-overhead"}  # mode 被存入 kwargs
-
-# _TorchCompileWrapper.__call__
-self.compiler_fn(model_, inputs_, mode="reduce-overhead")
-# → NpugraphsBackend.__call__(model, inputs, mode="reduce-overhead")
-# → npugraphs(model, inputs)  # **mode 参数被忽略**
-```
-
-`NpugraphsBackend.__call__` 的签名是 `def __call__(model, inputs)`，不接受 `mode` 参数。但由于 Python 的函数调用机制，如果 `@staticmethod` 方法不接受额外 kwargs，这会导致 **TypeError**。因此 `mode` 参数在 `backend="npugraphs"` 时实际上**不应与非默认 mode 组合使用**。
-
----
-
-### 八、执行时序对比
-
-#### 8.1 路径 A：首次编译与执行
-
-```mermaid
-sequenceDiagram
-    participant User as 用户代码
-    participant Dynamo as TorchDynamo
-    participant IW as _TorchCompile<br/>InductorWrapper
-    participant CFX as compile_fx
-    participant Inner as _compile_fx_inner<br/>(Inductor Codegen)
-    participant Post as cudagraph_post_compile
-    participant NPG as npugraphify<br/>(torch_npu)
-    participant TM as TreeManager
-
-    Note over User,TM: === 首次调用 (Inductor 编译 + NPU Graph 录制) ===
-    User->>Dynamo: model(input)
-    Dynamo->>Dynamo: 字节码分析 → FX Graph
-    Dynamo->>IW: backend(gm, example_inputs)
-    IW->>CFX: compile_fx(gm, inputs,<br/>config_patches={"triton.cudagraphs": True})
-    CFX->>CFX: config.patch({"triton.cudagraphs": True})
-    CFX->>CFX: aot_autograd(fw_compiler, bw_compiler, ...)
-    CFX->>Inner: fw_compiler(aot_fw_graph, aot_fw_inputs)
-    Inner->>Inner: graph_lowering → scheduling → codegen
-    Note right of Inner: 生成 Triton 内核
-    Inner-->>Post: CompiledFxGraph(current_callable=triton_fn)
-    Post->>Post: 检查 cudagraph_fail_reasons
-    Post->>NPG: cudagraphify(triton_fn, ...)
-    NPG->>TM: npugraphify_impl → add_function
-    TM->>TM: _run() → run_eager() (Warmup)
-    TM-->>User: warmup 结果
-
-    Note over User,TM: === 第二次调用 (Recording) ===
-    User->>NPG: compiled_fn(new_inputs)
-    NPG->>TM: run(new_inputs, function_id)
-    TM->>TM: _run() → record_function()
-    Note right of TM: torch.npu.graph() 录制<br/>Triton 内核执行序列
-    TM-->>User: recording 结果
-
-    Note over User,TM: === 后续调用 (Execution - 热路径) ⚡ ===
-    User->>NPG: compiled_fn(new_inputs)
-    NPG->>TM: run(new_inputs, function_id)
-    TM->>TM: check_invariants ✓ → execute_node()
-    Note right of TM: graph.replay()<br/>单次提交所有 Triton 内核
-    TM-->>User: replay 结果
-```
-
-#### 8.2 路径 B：首次编译与执行
-
-```mermaid
-sequenceDiagram
-    participant User as 用户代码
-    participant Dynamo as TorchDynamo
-    participant TW as _TorchCompile<br/>Wrapper
-    participant NGB as NpugraphsBackend
-    participant AOT as AOT Autograd
-    participant BNop as boxed_nop
-    participant TM as TreeManager
-
-    Note over User,TM: === 首次调用 (AOT 分解 + NPU Graph 录制) ===
-    User->>Dynamo: model(input)
-    Dynamo->>Dynamo: 字节码分析 → FX Graph
-    Dynamo->>TW: backend(gm, example_inputs)
-    TW->>NGB: NpugraphsBackend()(gm, inputs)
-    NGB->>AOT: aot_autograd(fw=forward_npugraphs, bw=backward_npugraphs, ...)
-    AOT->>AOT: functionalize + autograd decompose + partition
-    AOT->>BNop: forward_npugraphs(aot_model, aot_inputs)
-    BNop->>BNop: boxed_nop(aot_model) → interp
-    Note right of BNop: FX 图解释器，无 Inductor 优化
-    BNop->>TM: npugraphify_impl(interp, aot_inputs, ...)
-    TM->>TM: add_function → _run() → run_eager() (Warmup)
-    TM-->>User: warmup 结果
-
-    Note over User,TM: === 第二次调用 (Recording) ===
-    User->>TM: compiled_fn(new_inputs)
-    TM->>TM: _run() → record_function()
-    Note right of TM: torch.npu.graph() 录制<br/>逐个 aten op 执行序列
-    TM-->>User: recording 结果
-
-    Note over User,TM: === 后续调用 (Execution - 热路径) ⚡ ===
-    User->>TM: compiled_fn(new_inputs)
-    TM->>TM: check_invariants ✓ → execute_node()
-    Note right of TM: graph.replay()<br/>单次提交所有 aten ops
-    TM-->>User: replay 结果
-```
-
----
-
-### 九、性能特性对比
-
-#### 9.1 综合对比表
-
-| 维度 | 路径 A: `mode="reduce-overhead"` | 路径 B: `backend="npugraphs"` |
-|------|------|------|
-| **编译时间** | 较长（Inductor codegen + Graph 录制） | 较短（仅 AOT 分解 + Graph 录制） |
-| **首次执行延迟** | 高（Triton 编译 + warmup + recording） | 中（warmup + recording） |
-| **稳态执行性能** | **最优**（优化内核 + Graph replay） | 良好（原始内核 + Graph replay） |
-| **NPU 利用率** | 高（融合内核，少量 launch） | 中（未融合内核，多次 launch） |
-| **CPU dispatch 开销** | 极低（Graph replay 消除） | 极低（Graph replay 消除） |
-| **内存占用** | 较高（Triton 编译缓存 + Graph 内存池） | 较低（仅 Graph 内存池） |
-| **动态形状支持** | 支持（Graph Tree + Inductor 动态支持） | 支持（Graph Tree） |
-| **调试难度** | 高（Inductor + Graph Tree 双层抽象） | 中（仅 Graph Tree） |
-| **代码侵入性** | 无 | 无 |
-| **回退性能** | 好（回退到 Triton 内核，仍有优化） | 差（回退到 FX 图解释执行） |
-
-#### 9.2 适用场景
-
-```
-优先使用 mode="reduce-overhead":
-├── 大模型推理（Triton 融合 + Graph replay → 极低延迟）
-├── 训练循环（前反向均优化）
-├── 稳定生产环境（编译一次，持续高效执行）
-└── 对首次编译延迟不敏感的场景
-
-优先使用 backend="npugraphs":
-├── 调试和开发阶段（编译快，问题定位容易）
-├── 作为性能 baseline（隔离 Inductor 优化的效果）
-├── Inductor 不支持的特殊算子场景
-└── 快速验证 NPU Graph 兼容性
-```
-
----
-
-### 十、mode="max-autotune" 的额外优化
-
-当使用 `mode="max-autotune"` 时，在路径 A 的基础上增加了两项配置：
-
-```python
-"max-autotune": {
-    "max_autotune": True,              # ← 额外：启用 Triton autotune
-    "triton.cudagraphs": True,          # 启用 NPU Graphs
-    "coordinate_descent_tuning": True,  # ← 额外：坐标下降法调优
-}
-```
-
-| 额外优化 | 说明 | 对 NPU Graph 的影响 |
-|----------|------|-------------------|
-| `max_autotune` | 对 matmul 等操作搜索最优 Triton 配置 | 录制到 Graph 中的 Triton 内核性能更优 |
-| `coordinate_descent_tuning` | 在 autotune 基础上进一步微调参数 | 进一步提升录制内核的性能 |
-
-`mode="max-autotune"` 的编译时间比 `mode="reduce-overhead"` 更长（因为需要 profile 多种配置），但稳态性能通常更优。
-
----
-
-### 十一、对比总结
-
-#### 11.1 核心区别一句话总结
-
-- **`mode="reduce-overhead"`**：先用 Inductor 编译优化代码，再用 NPU Graph 消除 CPU dispatch 开销 → **"优化内核 + 快速启动"**
-- **`backend="npugraphs"`**：跳过 Inductor 编译，直接用 NPU Graph 包装原始 aten ops → **"原始内核 + 快速启动"**
-
-#### 11.2 决策流程图
-
-```mermaid
-flowchart TB
-    A{"需求是什么?"} --> B{"需要最高稳态性能?"}
-    B -->|是| C{"首次编译延迟<br/>可接受?"}
-    C -->|是| D["mode='max-autotune'<br/>（最优内核 + NPU Graph）"]
-    C -->|否| E["mode='reduce-overhead'<br/>（优化内核 + NPU Graph）"]
-    B -->|否| F{"需要快速编译<br/>或调试?"}
-    F -->|是| G["backend='npugraphs'<br/>（原始内核 + NPU Graph）"]
-    F -->|否| H["mode='default'<br/>（Inductor 优化，无 NPU Graph）"]
-
-    style D fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
-    style E fill:#fff3e0,stroke:#ff9800,stroke-width:2px
-    style G fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
-    style H fill:#f5f5f5,stroke:#9e9e9e
-```
-
-#### 11.3 代码示例
-
-```python
-import torch
-import torch_npu
-
-model = MyModel().npu()
-input = torch.randn(32, 3, 224, 224).npu()
-
-# 方式 1: Inductor + NPU Graphs（推荐生产使用）
-compiled_model_a = torch.compile(model, mode="reduce-overhead")
-
-# 方式 2: Inductor + NPU Graphs + Max Autotune（追求极致性能）
-compiled_model_b = torch.compile(model, mode="max-autotune")
-
-# 方式 3: 纯 NPU Graphs（调试/baseline）
-compiled_model_c = torch.compile(model, backend="npugraphs")
-
-# 方式 4: 通过 options 精确控制
-compiled_model_d = torch.compile(model, options={"triton.cudagraphs": True})
-
-# 训练循环中建议标记 step 开始
-for epoch in range(num_epochs):
-    for batch in dataloader:
-        torch.compiler.npugraph_mark_step_begin()
-        output = compiled_model_a(batch)
-        loss = criterion(output, target)
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
-```
-
-#### 11.4 核心文件索引
-
-| 文件 | 路径 A 角色 | 路径 B 角色 |
-|------|------------|------------|
-| `torch/__init__.py` | `_TorchCompileInductorWrapper` 创建与配置 | `_TorchCompileWrapper` 创建 |
-| `torch/_inductor/__init__.py` | `list_mode_options()` mode→config 映射 | 不涉及 |
-| `torch/_inductor/compile_fx.py` | `compile_fx` 主编译入口 + `cudagraphify` 定义 | 不涉及（被绕过） |
-| `torch/_inductor/output_code.py` | `cudagraph_post_compile` NPU Graph 包装 | 不涉及 |
-| `torch/_dynamo/backends/inductor.py` | `inductor` 后端注册 | 不涉及 |
-| `torch_npu/utils/_graph_tree.py` | `npugraphify` (monkey-patch) + `npugraphs` 后端注册 | `NpugraphsBackend` + `npugraphs()` 函数 |
-| `torch_npu/npu/_graph_tree.py` | NPU Graph Tree 核心（共享） | NPU Graph Tree 核心（共享） |
 
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
-- [[torch_compile_npugraphs_deep_dive]]
-- [[npugraphs_memory_reuse_analysis]]
