@@ -1,6 +1,5 @@
 # PyTorch Inductor Post-Grad Passes 完全解析
 
-> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
 > **页面角色**：post-grad阶段目录、注册API与尾部不变量。
 > **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
 > **课程分工**：本页保留阶段开发参考；当前改图不变量、pass管线与合法性见 [[19_torch_compile_end_to_end/12_fx_graph_editing_primitives_and_invariants]]、[[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint]] 和 [[19_torch_compile_end_to_end/16_graph_rewrite_legality_validation_and_complexity]]。
@@ -21,7 +20,6 @@
 ---
 
 ## 1. 概述
-> [!correction] P-017：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance#2. 阶段地图]]，逐项说明见 [[correction_report]]。
 ### 1.1 什么是 Post-Grad Passes
 
 Post-Grad Passes 是 PyTorch Inductor 编译器在**梯度计算之后**执行的一系列图级优化。与 Joint Graph Passes 不同，Post-Grad Passes 分别作用于：
@@ -114,7 +112,6 @@ if not torch._dynamo.config.skip_fsdp_hooks:
 ---
 
 ### Pass 2: 死代码消除（DCE）
-> [!correction] P-012、P-013、P-014：本区段按固定基线纠错；“`copy_` 因没有 users 就会被当前 FX DCE 误删”的例子不准确，当前 mutable-schema `OpOverload` 会被 impurity 检测保留；现行规则见 [[19_torch_compile_end_to_end/14_dead_code_topology_and_effect_order#2. FX DCE]] 与 [[19_torch_compile_end_to_end/14_dead_code_topology_and_effect_order#3. Pure + no users]]，逐项说明见 [[correction_report]]。
 **代码位置**：`gm.graph.eliminate_dead_code()`
 
 **触发条件**：
@@ -139,7 +136,6 @@ x.copy_(y)  # in-place 操作，x 之后没被使用但 mutation 已发生
 ---
 
 ### Pass 3: 局部性重排序（推理模式）
-> [!correction] P-017：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/14_dead_code_topology_and_effect_order#8. 拓扑正确不等于effect正确]]，逐项说明见 [[correction_report]]。
 **代码位置**：`reorder_for_locality`
 
 **触发条件**：
@@ -241,7 +237,6 @@ profiler_ops = [
 ---
 
 ### Pass 7-10: 模式匹配优化（核心）
-> [!correction] P-017、P-021：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint#4. Registration order]]，逐项说明见 [[correction_report]]。
 #### A. 批处理融合
 ```python
 group_batch_fusion_passes(gm.graph, pre_grad=False)
@@ -347,7 +342,6 @@ for i, patterns in enumerate(pass_patterns):
 ---
 
 ### Pass 16-17: 图规范化
-> [!correction] P-015、P-017：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/14_dead_code_topology_and_effect_order#8. 拓扑正确不等于effect正确]]，逐项说明见 [[correction_report]]。
 #### A. 稳定拓扑排序
 ```python
 stable_topological_sort(gm.graph)
@@ -479,7 +473,6 @@ decompose_map_to_while_loop(gm.graph)
 ---
 
 ## 3. 执行顺序与依赖关系
-> [!correction] P-017：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint#2. 三个Inductor FX driver不同]]，逐项说明见 [[correction_report]]。
 ```
 Stage 1: FSDP & 基础清理
 ─────────────────────────────────

@@ -1,4 +1,3 @@
-> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
 > **页面角色**：FX、export、custom-op 与 functorch 的完整 deep dive。
 > **原始基线**：见下方页头；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
 > **审计状态**：保留专题纵深；图 IR、捕获、值语义和安全改图的当前课程主线见 [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]，逐结构单元历史迁移仍在 ledger 中跟踪。
@@ -38,7 +37,6 @@ graph TD
 ---
 
 ## 1. 机制一:Proxy 拦截式捕获
-> [!correction] F-016：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing#2. `symbolic_trace`]]，逐项说明见 [[correction_report]]。
 **做什么**:把一次「符号执行」记录成 FX Graph。输入张量被包成 `Proxy`(内部持有一个占位 `Node`),算子调用命中拦截点后建节点、返回新 `Proxy`,层层串成数据流图。
 
 **为什么这么设计**:FX 选择复用 PyTorch 已有的 `__torch_function__` 覆盖协议(与 `__torch_dispatch__` 同源的扩展点,背景见 [[01_dispatcher_and_device/index]]),而不是去 hook 解释器。好处是实现极轻、产物是可读 Python、可被任意 Python 改写;代价是它看到的是「Python 层的 torch 调用」,因此遇到 `if proxy:`、`for x in proxy:`、`len(proxy)` 这类需要具体值的操作只能报错(见 `Proxy` docstring,`torch/fx/proxy.py:600`,以及 `__len__` 的显式报错 `torch/fx/proxy.py:750`)。
@@ -160,7 +158,6 @@ linecache.lazycache(key, globals_copy)
 ---
 
 ## 5. 机制五:PassBase —— 前置/变换/后置三段式
-> [!correction] F-017：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint#5. Single round、bounded repeat、fixed point]]，逐项说明见 [[correction_report]]。
 **做什么**:统一的图变换 pass 接口(`torch/fx/passes/infra/pass_base.py:28`)。`__call__` 把「前置不变量检查 → 变换 → 后置不变量检查」串成一条流水线。
 
 **为什么**:把「不变量断言」与「变换逻辑」解耦,保证 pass 链每一步都能验证图仍然合法;`PassResult(graph_module, modified)`(`torch/fx/passes/infra/pass_base.py:14`)把「这个 pass 是否改了图」回传给 PassManager,使其知道是否需要再迭代到不动点。
@@ -181,7 +178,6 @@ def __call__(self, graph_module: GraphModule) -> PassResult | None:
 ---
 
 ## 6. 机制六:ExportedProgram —— AOT 规范化、lifted state、Dim 约束
-> [!correction] F-008、F-009：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/03_graph_values_metadata_and_signatures#9.2 ExportGraphSignature]]，逐项说明见 [[correction_report]]。
 **做什么**:`export(mod, args, kwargs, *, dynamic_shapes=...)`(`torch/export/__init__.py:59`)产出 `ExportedProgram`(`torch/export/exported_program.py:1058`)—— 一张已规范化到 **functional ATen 算子集**、消除了 Python 控制流/数据结构、并带形状约束的 IR,可序列化、可重放。注意 **`strict` 默认 `False`**:
 
 ```python

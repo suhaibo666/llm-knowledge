@@ -1,6 +1,5 @@
 # PyTorch Inductor Codegen 中 Dynamic Shape 的处理机制
 
-> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
 > **页面角色**：Inductor codegen dynamic-shape 专题。
 > **原始基线**：baseline-unknown；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
 > **课程分工**：本页继续负责符号shape流入kernel/wrapper的纵深；当前图复用与codegen边界见 [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse]] 和 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]]。
@@ -130,7 +129,6 @@ triton_kernel.run(..., grid=grid, stream=stream)
 ---
 
 ## 4. Unbacked Symbols：运行时才能确定的符号
-> [!correction] F-013：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/03_graph_values_metadata_and_signatures#2.3 SymInt/SymBool 与 SymNode]]，逐项说明见 [[correction_report]]。
 ### 4.1 什么是 Unbacked Symbols
 
 某些符号（通常以 `u0`, `u1` 命名）**没有任何编译时约束**，完全依赖于运行时 tensor 的实际 shape（例如 `nonzero` 的输出大小）。这些符号在 codegen 中需要特殊处理。
@@ -159,7 +157,6 @@ u1 = outs[0].stride(0)
 ---
 
 ## 5. 运行时 Shape 断言：保证编译假设成立
-> [!correction] F-006：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse#11. symbolic shape 对后续图机制的影响]]，逐项说明见 [[correction_report]]。
 ### 5.1 assert_size_stride
 
 在 `PythonWrapperCodegen.write_prefix()` 中，会调用 `codegen_input_size_asserts()`（`wrapper.py:1407`），为每个图输入生成运行时断言：
@@ -219,7 +216,6 @@ Python 解释器在运行时求值 `s0`，因此动态分配是透明的。
 ---
 
 ## 7. C++ Wrapper 中的 Dynamic Shape
-> [!correction] F-014：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance#6. Loop codegen]]，逐项说明见 [[correction_report]]。
 当 `cpp_wrapper=True`（AOTInductor 模式）时，dynamic shape 的处理逻辑基本保持一致，但输出语言变为 C++：
 
 - `SymbolicCallArgLine` 在 C++ 模式下生成 `uint32_t` 类型的中间变量。
@@ -230,7 +226,6 @@ Python 解释器在运行时求值 `s0`，因此动态分配是透明的。
 ---
 
 ## 8. 关键源码索引
-> [!correction] F-015：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance#15. Debug顺序]]，逐项说明见 [[correction_report]]。
 | 功能 | 文件 | 关键代码位置 |
 |------|------|--------------|
 | SizeArg 定义 | `codegen/common.py` | `class SizeArg` (L291) |
@@ -249,7 +244,6 @@ Python 解释器在运行时求值 `s0`，因此动态分配是透明的。
 ---
 
 ## 9. XBLOCK 选择机制与 Dynamic Shape 的性能代价
-> [!correction] F-012：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance#8. 两层autotuning]]，逐项说明见 [[correction_report]]。
 > 本节补充说明 Triton kernel 的 tiling 参数（XBLOCK）如何与 dynamic shape 交互，以及由此带来的性能代价。
 
 ### 9.1 XBLOCK 候选值范围

@@ -1,6 +1,5 @@
 # PyTorch Inductor Codegen 深度分析报告
 
-> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
 > **页面角色**：codegen、kernel与wrapper子系统完整源码参考。
 > **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
 > **课程分工**：本页保留纵深实现；当前IR到kernel/wrapper的映射、autotune与provenance见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]]。
@@ -12,7 +11,6 @@
 > 本页解释现有 Codegen 怎样工作；要开发新设备 scheduling/wrapper、查看关键接口与注册骨架，请直接阅读 [[codegen_extension_guide]]。
 
 ## 1. 概述：Codegen 在 Inductor 中的位置
-> [!correction] I-022、I-025：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance#11. Wrapper不是“没有Python”]]，逐项说明见 [[correction_report]]。
 Inductor 的编译流水线大致为：
 
 ```
@@ -115,7 +113,6 @@ Inductor 支持 `aot_inductor` 模式（`cpp_wrapper=True`），此时 codegen �
 - 支持常量折叠子图、graph partition 等高级特性。
 
 ### 3.4 内存复用与峰值控制
-> [!correction] I-018、I-020、I-024：本区段按固定基线纠错；其中训练走默认 wrapper reuse，而 `config.memory_planning` 只选择可选的 inference pooled planner。现行结论见 [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse#C. 可选pooled static planner]]，逐项说明见 [[correction_report]]。
 通过 `memory_planning.py`，codegen 在 wrapper 中显式插入 `AllocateLine`、`FreeIfNotReusedLine`、`ReuseLine` 等指令，基于 tensor 的 live range 分析实现**内存池复用**，这对于大模型推理和训练的峰值内存控制至关重要。
 
 ---
@@ -200,7 +197,6 @@ for node in nodes:
 `generate(is_inference)`（`wrapper.py:1781`）按顺序拼接这些 buffer，输出完整可执行的 Python 字符串，最终通过 `PyCodeCache.load()` 动态编译为 Python module。
 
 ### 4.5 内存规划集成
-> [!correction] I-020：本节把默认 `memory_plan_reuse()` 的两遍 Allocate/Free/Reuse 改写与 `memory_planning.py` 的 pooled planner 混写；前者也用于训练，后者仅在 inference 且开关启用时选择。三套机制边界见 [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse#6. 三套不能混写的“memory planning”]]，逐项说明见 [[correction_report]]。
 在 wrapper 的 `lines` 列表中，内存分配以 `WrapperLine` 子类对象表示：
 
 - `AllocateLine`：为新 tensor 分配内存
@@ -225,7 +221,6 @@ for node in nodes:
 ---
 
 ## 5. 关键源码导航
-> [!correction] I-032：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance#15. Debug顺序]]，逐项说明见 [[correction_report]]。
 | 功能 | 文件 | 关键类/函数 |
 |------|------|-------------|
 | Codegen 入口 | `torch/_inductor/graph.py` | `GraphLowering.codegen()` (L2358) |

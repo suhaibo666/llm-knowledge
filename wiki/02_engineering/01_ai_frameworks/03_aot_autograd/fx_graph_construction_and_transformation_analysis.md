@@ -1,6 +1,5 @@
 # FX Graph 构图与改图机制 — AOTAutograd 正反向分图、PatternMatcher、DCE 与保序
 
-> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
 > **页面角色**：2026-07-23 问答形成的综合报告快照，保留原问题链与长篇推导。  
 > **原始基线**：见下方页头；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。  
 > **课程分工**：系统化、可执行的当前主线见 [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]；本页不是废弃页，但不再作为唯一事实入口。
@@ -9,7 +8,6 @@
 > **分析范围**：`torch.fx` IR、AOTAutograd joint graph 与 partition、Inductor PatternMatcher、DCE、稳定拓扑排序和运行时正反向桥接。  
 > **结论口径**：标注为“源码事实”的描述可由所列 `file:line` 直接核验；复杂度上界和设计动机属于基于实现的分析。
 > **配套文档**：[Design Report Word 版](../../../../docs/reports/fx_graph_construction_and_transformation_design_report.docx)。
-> [!correction] A-006、A-007、A-019：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs#7. 提取新 Graph 的机制]]，逐项说明见 [[correction_report]]。
 ---
 
 ## 阅读定位与迁移去向
@@ -32,7 +30,6 @@
 逐结构单元状态原以`docs/audits/pytorch_graph_series/`下的coverage ledger为准；该目录属审计流水线中间产物，已在 kb-reorg 清理中移出工作区（可经 git 历史追溯，删除前末次提交 `1ebafb5`），当前 checkout 不再包含该路径。
 
 ## 1. 核心结论
-> [!correction] F-011：以下机制结论保留，但旧完整路径 `torch/_functorch/_aot_autograd/partitioners.py` 已发生 locator drift；当前文件是 `torch/_functorch/partitioners.py`。现行提取机制见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs#7. 提取新 Graph 的机制]]，逐项说明见 [[correction_report]]。
 1. **FX 图不是单独的邻接表，也没有独立 `Edge` 对象。** `Graph` 用侵入式双向链表保存全局节点顺序；每个 `Node` 的 `args/kwargs` 保存输入引用，`_input_nodes` 汇总前驱，前驱的 `users` 保存反向 use-def 邻接。因此一份节点对象同时承载“程序语句、数据依赖和反向用户索引”。源码见 `torch/fx/node.py:258-322`、`torch/csrc/fx/node.cpp:154-205`。
 2. **AOTAutograd 最终产物本质是两张独立 FX `GraphModule`：fw 与 bw。** 二者之间没有跨图 `Node` 边；跨图依赖由 ABI 表达为“fw 的额外输出 → 运行时保存 → bw 的 placeholder 输入”。源码见 `torch/_functorch/_aot_autograd/partitioners.py:1343-1592`、`runtime_wrappers.py:3215-3256,3288-3301`。
 3. **recompute 不是特殊节点类型。** partitioner 选择少保存某些激活后，把必要的前向 `call_function` 节点复制到 bw 图；它们仍是普通 FX 节点，只是元数据可标记其重计算来源。源码见 `partitioners.py:514-705,1920-1995`。
@@ -161,14 +158,12 @@ flowchart LR
 注意：joint graph 是 partition 前的中间产物。真正交给 fw compiler 与 bw compiler 的，通常是 partition 后两张独立图。
 
 ### 3.3 partition 如何得到 fw 与 bw
-> [!correction] A-019、F-011：本区段按固定基线纠错；旧完整 partitioner 路径已迁至 `torch/_functorch/partitioners.py`；现行结论见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs#7. 提取新 Graph 的机制]]，逐项说明见 [[correction_report]]。
 partitioner 先按 joint 输出和依赖闭包识别：
 
 - forward required nodes；
 - backward required nodes；
 - 两边共享或可作为边界值的节点；
 - 不被最终输出闭包需要的 unclaimed nodes。
-> [!correction] A-006、A-007：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi#2. saved tensor 不是唯一 saved value]]，逐项说明见 [[correction_report]]。
 源码见 `torch/_functorch/_aot_autograd/partitioners.py:4005-4088`。
 
 随后 `_extract_graph_with_inputs_outputs` 创建一张新 `Graph`：
@@ -236,7 +231,6 @@ x,w -> a -> b -> forward_output
                  \
                   gradient_region
 ```
-> [!correction] A-008：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi#10. 为什么还要重排bw]]，逐项说明见 [[correction_report]]。
 如果保存 `a`，bw 大致是：
 
 ```text
@@ -342,7 +336,6 @@ CallFunction add                       add_0
 ## 6. PatternMatcherPass 怎样遍历、匹配与替换
 
 ### 6.1 注册与候选索引
-> [!correction] P-005：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/13_pattern_expression_and_matcher_engine#9. Candidate index 与逆序]]，逐项说明见 [[correction_report]]。
 每条 `PatternEntry` 以 pattern 根的 `(op, target)` 注册到桶：
 
 ```text
@@ -389,7 +382,6 @@ patterns[
 匹配成功后还会拒绝跨 mutation region、stream 或 mempool 边界的结果，再运行 `extra_check`。源码见 `pattern_matcher.py:2657-2710`。这说明 pattern AST 只表达局部结构，阶段语义与安全边界仍由 matcher/entry 的外层机制负责。
 
 ### 6.4 替换后会不会自动全局重排
-> [!correction] F-010：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/14_dead_code_topology_and_effect_order#10. nested graph]]，逐项说明见 [[correction_report]]。
 不会由 `PatternMatcherPass.apply()` 自动完成。它返回命中数量；局部 entry 尽量借助 `graph.inserting_before`、`replace_all_uses_with`、`erase_node` 维持合法关系。真正的收尾取决于所属 driver：
 
 - **pre-grad**：阶段末执行稳定拓扑排序、lint、recompile；
@@ -551,7 +543,6 @@ T_total
 - graph 改完先 `lint()`，需要执行时再 `recompile()`；
 - 不把 bw 叫“反向边图”：它的内部边仍是生产者到消费者；
 - 不把 saved tensor 理解为跨图 Node 引用：它是 fw 输出/bw 输入 ABI。
-> [!correction] A-006、A-007、A-019：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs#7. 提取新 Graph 的机制]]，逐项说明见 [[correction_report]]。
 ### 10.2 阅读图时的四问
 
 1. 当前看到的是 Dynamo forward graph、AOT joint graph，还是 partition 后 fw/bw？
@@ -564,7 +555,6 @@ T_total
 ---
 
 ## 11. 关键源码导航
-> [!correction] F-011：下表中的旧完整路径 `torch/_functorch/_aot_autograd/partitioners.py` 仅是 locator drift，不能作为当前源码入口；当前入口及提取关系见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs#7. 提取新 Graph 的机制]]，逐项说明见 [[correction_report]]。
 | 主题 | 当前基线位置 |
 |---|---|
 | Node 数据模型与输入/用户关系 | `torch/fx/node.py:258-322`；`torch/csrc/fx/node.cpp:154-205,307-359` |

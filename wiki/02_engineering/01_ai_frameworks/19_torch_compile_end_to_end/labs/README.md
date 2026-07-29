@@ -221,7 +221,7 @@ peak），会明确写“未验证”，不会由源码结构推测数值。
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[demo_delivery_report_2026-07-29]] — A–F Demo 验收与能力边界
+- demo 交付报告(审计产物,已随 docs/audits 清理移出工作区) — A–F Demo 验收与能力边界
 - [[16_graph_rewrite_legality_validation_and_complexity]]
 - [[11_graph_stage_boundaries_identity_and_provenance]]
 - [[21_codegen_kernel_mapping_autotuning_and_provenance]]

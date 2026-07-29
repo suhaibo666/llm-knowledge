@@ -1,6 +1,5 @@
 # AOTAutograd Quick Start
 
-> [!correction] 页面角色、审计状态与集中纠错（见 [[correction_report]]）
 > **页面角色**：AOTAutograd API quick start；示例是否在当前环境运行须以各代码块标注为准。
 > **原始基线**：见下方页头；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
 > **审计状态**：已纳入 Batch 0，尚未逐代码块全部复跑；fw/bw 与 save/recompute 的已验证课程主线见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]] 和 [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]]。
@@ -10,7 +9,6 @@
 > 本页所有 API / backend / 日志键 / config 均对照真实源码核实,标注 `path:line`。深入原理见文末导航。
 
 ## 1. 快速导航
-> [!correction] A-020：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs#7. 提取新 Graph 的机制]]，逐项说明见 [[correction_report]]。
 > 「AOTAutograd 是什么、在栈中的位置、三大职责(functionalization / joint graph / partition)」见 [[index]] 模块概述。本页聚焦上手:下面给出主要入口、核心概念与常用配置的索引,细节落在后续小节。
 
 - **主要入口**:`aot_function` / `aot_module`(均在 `torch/_functorch/aot_autograd.py`)。走 `torch.compile` 时通常不直接调用,用 `backend="aot_eager"` 即可触发 AOTAutograd 全流程(见 §2);`aot_function` 的 docstring 写明它 ahead-of-time trace 前向 + 反向、生成联合图,再由 `partition_fn` 切分(`aot_autograd.py:723-728`)。
@@ -56,7 +54,6 @@ TORCH_LOGS="aot,aot_joint_graph,aot_graphs" python script.py
 | `aot_graphs_effects` | 含 effects 处理的前/反向图 | `_registrations.py:108-112` |
 
 ## 3. Partitioner:min-cut vs default
-> [!correction] A-010、A-020：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi#4. `default_partition`]]，逐项说明见 [[correction_report]]。
 AOTAutograd 自带两个 partitioner,都在 `torch/_functorch/partitioners.py`:
 
 | partitioner | 策略 | 来源 |
@@ -79,7 +76,6 @@ TORCH_LOGS="aot_graphs" python script.py
 # 改成 default:前向 save 更多张量,反向几乎不重算
 # 把 @torch.compile(backend="aot_eager") 换成 backend="aot_eager_default_partitioner"
 ```
-> [!correction] A-009：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi#7. activation memory budget]]，逐项说明见 [[correction_report]]。
 **观察重计算 / 调 min-cut**(config 在 `torch/_functorch/config.py`):
 
 | 开关 | 默认 | 作用 | 来源 |
@@ -89,7 +85,6 @@ TORCH_LOGS="aot_graphs" python script.py
 | `activation_memory_budget_runtime_estimator` | `"flops"` | budget 下估算重算代价:`flops` / `profile` / `testing` | `config.py:209` |
 | `activation_memory_budget_solver` | `"dp"` | 0-1 背包求解器:`dp` / `greedy` / `ilp` / `dp_knapsack_sliding_hirschberg` | `config.py:215` |
 | `recompute_views` | `False` | view 是否总是重算(view 重算成本低,常设 True) | `config.py:175` |
-> [!correction] A-009：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi#7. activation memory budget]]，逐项说明见 [[correction_report]]。
 ```python
 import torch._functorch.config as fc
 fc.activation_memory_budget = 0.5   # 只保留约 50% 激活,其余反向重算
@@ -141,7 +136,6 @@ def aot_export_module(mod, args, *, decompositions=None, trace_joint,
 注意:`aot_export_module` 不在 `functorch.compile` 里,规范导入是 `from torch._functorch.aot_autograd import aot_export_module`(用例见 `torch/export/exported_program.py:340`);`trace_joint=True` 时返回联合前/反向图(`aot_autograd.py:1559`)。换 partitioner 直接传 `partition_fn=min_cut_rematerialization_partition`。
 
 ## 5. 常见现象速解
-> [!correction] A-004、A-006、A-007：本区段按固定基线纠错；现行结论见 [[19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization#5. Functionalization]]，逐项说明见 [[correction_report]]。
 - **反向图里冒出 sin/relu 之类「本该在前向」的算子?** 这是 min-cut 的**重计算**:partitioner 判断「重算它」比「在前向存下它并跨边界传递」更省显存/带宽,于是没把它列入 saved tensors,而在反向就地重算。
 - **saved tensors 与切分的关系**:前向图的额外输出 = 要 save 给反向的中间张量;default partitioner 倾向多 save(`partitioners.py:1263-1267`「stash 中间张量作为前向输出」),min-cut 在 save 与 recompute 间求最小割(`partitioners.py:3735-3736`「backward recomputes the forward,以带宽换显存」)。saved 越少 → 反向重算越多、峰值显存越低。
 - **想让某类算子别被重算 / 多重算**:用 §3 的 `activation_memory_budget`(全局调档)或 `AOT_PARTITIONER_DEBUG=1` 先看清当前决策。
