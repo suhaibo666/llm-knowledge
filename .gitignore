@@ -129,3 +129,6 @@ wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/
 
 # torch.compile 运行时自动生成的调试输出
 torch_compile_debug/
+
+# 审计流水线产物(账本 jsonl 动辄十几 MB),只留本地,不入库
+docs/audits/

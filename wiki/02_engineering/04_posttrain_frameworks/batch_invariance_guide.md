@@ -183,7 +183,7 @@ class DualKernelScheduler:
             return f"Kernel1 × {full_waves} + Kernel2 for last {remainder} seqs"
 ```
 
-完整的调度器与 CUDA 伪代码示例见本文 §六 及 `docs/batch_invariance_demo.py`。
+完整的调度器与 CUDA 伪代码示例见本文 §六 及 `tools/batch_invariance_demo.py`。
 
 ---
 
@@ -321,7 +321,7 @@ __global__ void deterministic_global_sum(
 
 ## 六、完整代码示例
 
-以下 Python/numpy 演示了批次不变性的核心概念。完整 CUDA 伪代码见 `docs/batch_invariance_demo.py`。
+以下 Python/numpy 演示了批次不变性的核心概念。完整 CUDA 伪代码见 `tools/batch_invariance_demo.py`。
 
 ### 6.1 浮点非结合性演示
 
