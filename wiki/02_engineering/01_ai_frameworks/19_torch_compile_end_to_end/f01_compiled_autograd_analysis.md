@@ -2,7 +2,7 @@
 
 > 卷别：F · 训练、分布式、扩展与部署  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[e09_production_rollout_fallback_and_monitoring_analysis]]  
+> 前置：[[production_rollout_fallback_and_monitoring_analysis]]  
 > 后续：[[f02_activation_checkpoint_recompute_and_compile_analysis]]  
 > 最后更新：2026-07-28
 
@@ -310,7 +310,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 
 - [[00_torch_compile_end_to_end_index]]
 - [[d02_aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
-- [[e04_aotautograd_and_inductor_failure_localization_analysis]]
+- [[aotautograd_and_inductor_failure_localization_analysis]]
 - [[f02_activation_checkpoint_recompute_and_compile_analysis]]
 - [[f03_ddp_compile_boundaries_and_optimizer_analysis]]
 - [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]]

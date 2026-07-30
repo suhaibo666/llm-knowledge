@@ -133,7 +133,7 @@ TORCH_COMPILE_DEBUG=1 python train.py
 | `graph_breaks` | graph break 触发点 | `_registrations.py:158-162` |
 | `recompiles_verbose` | 重编译时所有失败 guard | `_registrations.py:150-157` |
 
-`TORCH_COMPILE_DEBUG=1` 等价 `torch._inductor.config.trace.enabled=True`(`config.py:2724`),把 FX 图、IR、融合、kernel 等落到调试目录。完整全链路排查(单卡/多卡、CUDA/NPU、配套脚本)见 [[Pytorch_Compile_Debug_Analysis]]。
+`TORCH_COMPILE_DEBUG=1` 等价 `torch._inductor.config.trace.enabled=True`(`config.py:2724`),把 FX 图、IR、融合、kernel 等落到调试目录。完整全链路排查(单卡/多卡、CUDA/NPU、配套脚本)见 [[02_compile_stack/07_debugging/index]]。
 
 ## 7. 深入阅读导航
 
@@ -142,7 +142,7 @@ TORCH_COMPILE_DEBUG=1 python train.py
 - 调度器:[[scheduler_analysis]] — 融合算法与调度
 - 降级:[[lowering_analysis]] — FX 算子 → Inductor IR
 - 动态形状:[[dynamic_shapes_full_analysis]]
-- 调试:[[Pytorch_Compile_Debug_Analysis]]
+- 调试:[[02_compile_stack/07_debugging/index]]
 - NPU 后端:[[02_compile_stack/04_inductor/npu/index]]
 
 ## Related Pages
@@ -153,5 +153,5 @@ TORCH_COMPILE_DEBUG=1 python train.py
 - [[scheduler_analysis]]
 - [[lowering_analysis]]
 - [[dynamic_shapes_full_analysis]]
-- [[Pytorch_Compile_Debug_Analysis]]
+- [[02_compile_stack/07_debugging/index]]
 - [[02_compile_stack/04_inductor/npu/index]]

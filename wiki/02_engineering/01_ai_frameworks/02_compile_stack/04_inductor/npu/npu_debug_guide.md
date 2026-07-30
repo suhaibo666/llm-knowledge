@@ -322,7 +322,7 @@ echo "NPU artifacts archived to ${OUTDIR}.tgz"
 
 ## Related Pages
 
-- [[Pytorch_Compile_Debug_Analysis]]（upstream 调试）
+- [[02_compile_stack/07_debugging/index]]（upstream 调试）
 - [[npu_compile]]
 - [[02_compile_stack/04_inductor/npu/index]]
 - [[01_ai_frameworks/index]]

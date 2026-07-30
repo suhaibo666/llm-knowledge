@@ -243,4 +243,4 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[01_graph_ir_motivation_and_taxonomy]]
 - [[13_pattern_expression_and_matcher_engine]]
 - [[f06_custom_backends_and_device_integration_analysis]]
-- [[e06_compiled_correctness_validation_methodology_analysis]]
+- [[compiled_correctness_validation_methodology_analysis]]

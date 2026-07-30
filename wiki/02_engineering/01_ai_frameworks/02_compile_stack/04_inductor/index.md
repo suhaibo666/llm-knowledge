@@ -89,7 +89,7 @@ artifact与compiled module如何复用。两者相邻但不是同一机制：一
 | 页面 | 核心主题 |
 |------|---------|
 | [[flex_attention_analysis]] | FlexAttention:可组合注意力融合、BlockMask、score_mod、语义驱动 codegen |
-| [[Pytorch_Compile_Debug_Analysis]] | torch.compile 调试:`TORCH_LOGS`/`TORCH_COMPILE_DEBUG`、日志解读(纯 upstream;NPU 调试见 [[npu_debug_guide]]) |
+| [[02_compile_stack/07_debugging/index]] | torch.compile 调试:`TORCH_LOGS`/`TORCH_COMPILE_DEBUG`、九篇分层诊断 + 分布式排查脚本包(纯 upstream;NPU 调试见 [[npu_debug_guide]]) |
 
 ---
 

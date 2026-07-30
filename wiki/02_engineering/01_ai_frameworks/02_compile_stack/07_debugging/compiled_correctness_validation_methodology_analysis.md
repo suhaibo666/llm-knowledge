@@ -2,8 +2,8 @@
 
 > 卷别：E · 调试、正确性与性能  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[e05_minifier_repro_and_compiler_bisector_analysis]]  
-> 后续：[[e07_compile_latency_cache_and_steady_state_performance_analysis]]  
+> 前置：[[minifier_repro_and_compiler_bisector_analysis]]  
+> 后续：[[compile_latency_cache_and_steady_state_performance_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. “输出 allclose”为什么不够
@@ -317,8 +317,8 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[e04_aotautograd_and_inductor_failure_localization_analysis]]
-- [[e05_minifier_repro_and_compiler_bisector_analysis]]
-- [[e07_compile_latency_cache_and_steady_state_performance_analysis]]
+- [[aotautograd_and_inductor_failure_localization_analysis]]
+- [[minifier_repro_and_compiler_bisector_analysis]]
+- [[compile_latency_cache_and_steady_state_performance_analysis]]
 - [[19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order]]
 - [[19_torch_compile_end_to_end/16_graph_rewrite_legality_validation_and_complexity]]

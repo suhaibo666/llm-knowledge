@@ -121,7 +121,7 @@ Lowering 产出的 IR 进入调度器后,被包成调度节点参与融合决策
 4. **Scheduler**:依赖分析发现 `add` 与 `relu` 都是逐元素且形状一致,可**垂直融合**;`mm` 作为计算密集算子通常单独成 kernel(或走 epilogue 融合),其输出缓冲区按需物化。
 5. **CodeGen**:融合后的逐元素部分生成一个 Triton kernel(GPU)或 C++ 循环(CPU),autotuning 选 block 参数;再生成 wrapper,负责分配缓冲区、按序调用 `mm` kernel 与融合 kernel、返回 `out`。
 
-最终落盘的是一段可缓存、可直接执行的 kernel + wrapper 代码。想逐行看,用 `TORCH_LOGS=output_code` / `TORCH_COMPILE_DEBUG=1`(见 [[inductor_quickstart]] 与 [[Pytorch_Compile_Debug_Analysis]])。
+最终落盘的是一段可缓存、可直接执行的 kernel + wrapper 代码。想逐行看,用 `TORCH_LOGS=output_code` / `TORCH_COMPILE_DEBUG=1`(见 [[inductor_quickstart]] 与 [[02_compile_stack/07_debugging/index]])。
 
 ## 6. 由浅入深导航
 本模块按「层次」组织,建议路径:
@@ -131,7 +131,7 @@ Lowering 产出的 IR 进入调度器后,被包成调度节点参与融合决策
 3. **deepdive** —
    - 端到端全景:[[inductor_compiler_pipeline_analysis]]、[[PyTorch_Inductor_Technical_Analysis]]
    - 各阶段:[[lowering_analysis]] · [[scheduler_analysis]] · [[inductor_codegen_analysis]] · FX passes([[pre_grad_passes_guide]] / [[joint_graph_passes_guide]] / [[post_grad_passes_guide]])
-   - 横切专题:[[dynamic_shapes_full_analysis]]、[[unbacked_symint_analysis]]、[[flex_attention_analysis]]、调试 [[Pytorch_Compile_Debug_Analysis]]
+   - 横切专题:[[dynamic_shapes_full_analysis]]、[[unbacked_symint_analysis]]、[[flex_attention_analysis]]、调试 [[02_compile_stack/07_debugging/index]]
 4. **NPU 后端**(Ascend 适配,非 upstream)→ 见 [[02_compile_stack/04_inductor/npu/index]]。
 
 读完本页,带走三句话即可:

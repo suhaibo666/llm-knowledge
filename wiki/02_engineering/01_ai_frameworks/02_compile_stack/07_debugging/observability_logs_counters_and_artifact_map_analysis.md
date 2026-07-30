@@ -3,7 +3,7 @@
 > 卷别：E · 调试、正确性与性能  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]]  
-> 后续：[[e02_dynamo_explain_and_graph_break_diagnosis_analysis]]  
+> 后续：[[dynamo_explain_and_graph_break_diagnosis_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么必须先建立“证据层级”
@@ -197,7 +197,7 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 
 - [[00_torch_compile_end_to_end_index]]
 - [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
-- [[e02_dynamo_explain_and_graph_break_diagnosis_analysis]]
-- [[e03_guard_failure_and_recompile_diagnosis_analysis]]
-- [[e04_aotautograd_and_inductor_failure_localization_analysis]]
-- [[e07_compile_latency_cache_and_steady_state_performance_analysis]]
+- [[dynamo_explain_and_graph_break_diagnosis_analysis]]
+- [[guard_failure_and_recompile_diagnosis_analysis]]
+- [[aotautograd_and_inductor_failure_localization_analysis]]
+- [[compile_latency_cache_and_steady_state_performance_analysis]]

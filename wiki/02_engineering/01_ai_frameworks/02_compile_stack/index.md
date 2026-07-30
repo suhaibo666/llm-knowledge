@@ -12,7 +12,7 @@
 | [[04_inductor/index]] | 编译后端核心:lowering、调度、codegen、FX passes、动态形状;`npu/` NPU Inductor 后端 |
 | [[05_codegen_backends/index]] | codegen 后端:MLIR(及 Triton 对比) |
 | [[06_compile_cache/index]] | 跨阶段编译缓存:Dynamo PGO、AOTAutograd result、Inductor FX graph artifact、Triton autotune cache |
-| [[07_debugging/index]] | 调试与诊断(P4 后续任务填充) |
+| [[07_debugging/index]] | 调试与诊断:证据层级、graph break/guard/AOT/Inductor 失败分层定位、minifier/bisector、正确性与性能验收、生产上线;附分布式排查脚本包 |
 
 ## Related Pages
 

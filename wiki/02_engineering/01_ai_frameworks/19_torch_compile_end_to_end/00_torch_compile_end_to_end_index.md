@@ -46,7 +46,7 @@ flowchart LR
 
 ## 3. 卷 A：执行模型前置基础（已并入功能页，2026-07-30）
 
-> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/tensor_impl_and_storage_analysis]] §13、[[pytorch_dispatcher_analysis]] §12、[[b03_eval_frame_callback_and_code_cache_analysis]] §13、[[b04_instruction_translator_and_bytecode_state_machine_analysis]] §14、[[aotautograd_analysis]] §13、[[b01_torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[e07_compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
+> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/tensor_impl_and_storage_analysis]] §13、[[pytorch_dispatcher_analysis]] §12、[[b03_eval_frame_callback_and_code_cache_analysis]] §13、[[b04_instruction_translator_and_bytecode_state_machine_analysis]] §14、[[aotautograd_analysis]] §13、[[b01_torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
 
 ## 4. 卷 B：`torch.compile` API 与 TorchDynamo
 
@@ -117,19 +117,9 @@ B06 OutputGraph
 | D06 | [[d06_cudagraph_trees_warmup_record_and_replay_analysis]] | warmup、record、replay 与 liveness 如何形成 tree |
 | D07 | [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]] | artifact 从创建到失效有哪些状态 |
 
-## 7. 卷 E：调试、正确性与性能
+## 7. 卷 E：调试、正确性与性能（已迁移至 `02_compile_stack/07_debugging/`，2026-07-30）
 
-| 编号 | 页面 | 先回答的问题 |
-|---:|---|---|
-| E01 | [[e01_observability_logs_counters_and_artifact_map_analysis]] | 每类日志或 artifact 能证明什么 |
-| E02 | [[e02_dynamo_explain_and_graph_break_diagnosis_analysis]] | 如何定位捕获失败与切图 |
-| E03 | [[e03_guard_failure_and_recompile_diagnosis_analysis]] | 如何定位 recompile storm |
-| E04 | [[e04_aotautograd_and_inductor_failure_localization_analysis]] | 如何判断失败属于哪一编译阶段 |
-| E05 | [[e05_minifier_repro_and_compiler_bisector_analysis]] | 如何最小化和二分失败 |
-| E06 | [[e06_compiled_correctness_validation_methodology_analysis]] | 如何验收值、梯度、alias、mutation 与 effect |
-| E07 | [[e07_compile_latency_cache_and_steady_state_performance_analysis]] | 如何分开测量冷启动、热缓存和稳态 |
-| E08 | [[e08_kernel_fusion_memory_and_hardware_performance_analysis]] | 如何从图、kernel、内存和硬件归因 |
-| E09 | [[e09_production_rollout_fallback_and_monitoring_analysis]] | 如何灰度、监控、回退和回滚 |
+> E01-E09 九篇经 P4 知识库整改随两级重组迁移并去前缀重命名到 [[02_compile_stack/07_debugging/index]]：observability(E01)→dynamo explain/graph break(E02)→guard failure/recompile(E03)→AOTAutograd/Inductor failure localization(E04)→minifier/bisector(E05)→correctness validation(E06)→compile latency/cache(E07)→kernel fusion/memory/hardware performance(E08)→production rollout(E09)，阅读顺序不变，完整卷内表格重建见该目录 index.md。本节的导读性重排列入 Task 10。
 
 ## 8. 卷 F：训练、分布式、扩展与部署
 

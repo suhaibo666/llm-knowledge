@@ -221,4 +221,4 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 - [[20_scheduler_dependency_graph_fusion_and_ordering]]
 - [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
 - [[d06_cudagraph_trees_warmup_record_and_replay_analysis]]
-- [[e08_kernel_fusion_memory_and_hardware_performance_analysis]]
+- [[kernel_fusion_memory_and_hardware_performance_analysis]]

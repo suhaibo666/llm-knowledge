@@ -2,8 +2,8 @@
 
 > 卷别：E · 调试、正确性与性能  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[e07_compile_latency_cache_and_steady_state_performance_analysis]]  
-> 后续：[[e09_production_rollout_fallback_and_monitoring_analysis]]  
+> 前置：[[compile_latency_cache_and_steady_state_performance_analysis]]  
+> 后续：[[production_rollout_fallback_and_monitoring_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么“kernel少了”不等于“更快”
@@ -228,5 +228,5 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 - [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]]
 - [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]]
 - [[d05_wrapper_execution_memory_allocation_and_reuse_analysis]]
-- [[e07_compile_latency_cache_and_steady_state_performance_analysis]]
-- [[e09_production_rollout_fallback_and_monitoring_analysis]]
+- [[compile_latency_cache_and_steady_state_performance_analysis]]
+- [[production_rollout_fallback_and_monitoring_analysis]]

@@ -318,5 +318,5 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[f02_activation_checkpoint_recompute_and_compile_analysis]]
 - [[d06_cudagraph_trees_warmup_record_and_replay_analysis]]
 - [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
-- [[e07_compile_latency_cache_and_steady_state_performance_analysis]]
+- [[compile_latency_cache_and_steady_state_performance_analysis]]
 - [[00_torch_compile_end_to_end_index]]

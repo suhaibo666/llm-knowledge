@@ -2,8 +2,8 @@
 
 > 卷别：E · 调试、正确性与性能  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[e03_guard_failure_and_recompile_diagnosis_analysis]]  
-> 后续：[[e05_minifier_repro_and_compiler_bisector_analysis]]  
+> 前置：[[guard_failure_and_recompile_diagnosis_analysis]]  
+> 后续：[[minifier_repro_and_compiler_bisector_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么必须按 backend 阶梯定位
@@ -317,6 +317,6 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 - [[00_torch_compile_end_to_end_index]]
 - [[d01_inductor_compile_fx_orchestration_analysis]]
 - [[d02_aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
-- [[e03_guard_failure_and_recompile_diagnosis_analysis]]
-- [[e05_minifier_repro_and_compiler_bisector_analysis]]
-- [[e06_compiled_correctness_validation_methodology_analysis]]
+- [[guard_failure_and_recompile_diagnosis_analysis]]
+- [[minifier_repro_and_compiler_bisector_analysis]]
+- [[compiled_correctness_validation_methodology_analysis]]

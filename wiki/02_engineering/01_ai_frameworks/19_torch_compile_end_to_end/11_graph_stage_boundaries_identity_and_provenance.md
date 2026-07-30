@@ -467,4 +467,4 @@ continuity:
 - [[10_saved_tensors_recompute_and_runtime_abi]]
 - [[17_fx_lowering_to_inductor_ir]]
 - [[21_codegen_kernel_mapping_autotuning_and_provenance]]
-- [[Pytorch_Compile_Debug_Analysis]]
+- [[02_compile_stack/07_debugging/index]]

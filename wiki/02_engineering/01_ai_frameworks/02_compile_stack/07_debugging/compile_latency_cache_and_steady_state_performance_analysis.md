@@ -2,8 +2,8 @@
 
 > 卷别：E · 调试、正确性与性能  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[e06_compiled_correctness_validation_methodology_analysis]]  
-> 后续：[[e08_kernel_fusion_memory_and_hardware_performance_analysis]]  
+> 前置：[[compiled_correctness_validation_methodology_analysis]]  
+> 后续：[[kernel_fusion_memory_and_hardware_performance_analysis]]  
 > 最后更新：2026-07-30(§12-16 并入 A05 独有的细粒度成本模型/dynamic·mode 权衡/四层缓存对照内容)
 
 ## 1. 为什么一个“平均耗时”没有诊断价值
@@ -401,6 +401,6 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 - [[00_torch_compile_end_to_end_index]]
 - [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
 - [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
-- [[e06_compiled_correctness_validation_methodology_analysis]]
-- [[e08_kernel_fusion_memory_and_hardware_performance_analysis]]
-- [[e09_production_rollout_fallback_and_monitoring_analysis]]
+- [[compiled_correctness_validation_methodology_analysis]]
+- [[kernel_fusion_memory_and_hardware_performance_analysis]]
+- [[production_rollout_fallback_and_monitoring_analysis]]

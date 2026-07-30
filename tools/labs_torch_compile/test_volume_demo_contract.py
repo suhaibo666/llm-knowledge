@@ -429,16 +429,23 @@ class VolumeDEFContractTest(unittest.TestCase):
         )
 
 
+# kb-reorg P4 physically relocates course volumes out of
+# 19_torch_compile_end_to_end one volume at a time (Task 4: E -> 07_debugging).
+# Manifest entries still carry only a bare filename, so resolve each entry's
+# directory from its "volume" field; volumes not yet moved fall back to the
+# legacy course directory.
+def _page_root(labs_root: Path, volume: str) -> Path:
+    ai_frameworks_root = (
+        labs_root.parent.parent / "wiki" / "02_engineering" / "01_ai_frameworks"
+    )
+    if volume == "E":
+        return ai_frameworks_root / "02_compile_stack" / "07_debugging"
+    return ai_frameworks_root / "19_torch_compile_end_to_end"
+
+
 class DemoManifestContractTest(unittest.TestCase):
     def test_manifest_maps_every_course_page_to_a_real_case(self) -> None:
         labs_root = Path(__file__).resolve().parent
-        course_root = (
-            labs_root.parent.parent
-            / "wiki"
-            / "02_engineering"
-            / "01_ai_frameworks"
-            / "19_torch_compile_end_to_end"
-        )
         manifest = json.loads(
             (labs_root / "demo_manifest.json").read_text(encoding="utf-8")
         )
@@ -463,7 +470,7 @@ class DemoManifestContractTest(unittest.TestCase):
 
         modules: dict[str, object] = {}
         for entry in entries:
-            page_path = course_root / entry["page"]
+            page_path = _page_root(labs_root, entry["volume"]) / entry["page"]
             self.assertTrue(page_path.is_file(), page_path)
             module_name = Path(entry["script"]).stem
             module = modules.setdefault(
@@ -474,20 +481,15 @@ class DemoManifestContractTest(unittest.TestCase):
 
     def test_non_c_pages_contain_executable_demo_backlinks(self) -> None:
         labs_root = Path(__file__).resolve().parent
-        course_root = (
-            labs_root.parent.parent
-            / "wiki"
-            / "02_engineering"
-            / "01_ai_frameworks"
-            / "19_torch_compile_end_to_end"
-        )
         entries = json.loads(
             (labs_root / "demo_manifest.json").read_text(encoding="utf-8")
         )["pages"]
         for entry in entries:
             if entry["volume"] == "C":
                 continue
-            text = (course_root / entry["page"]).read_text(encoding="utf-8")
+            text = (_page_root(labs_root, entry["volume"]) / entry["page"]).read_text(
+                encoding="utf-8"
+            )
             self.assertIn("## 配套 Demo", text, entry["page"])
             self.assertIn(entry["script"], text, entry["page"])
             self.assertIn(f"--case {entry['case']}", text, entry["page"])
@@ -534,14 +536,17 @@ class DemoManifestContractTest(unittest.TestCase):
 class CourseMarkdownContractTest(unittest.TestCase):
     @staticmethod
     def _course_pages() -> list[Path]:
-        course_root = (
+        ai_frameworks_root = (
             Path(__file__).resolve().parent.parent.parent
             / "wiki"
             / "02_engineering"
             / "01_ai_frameworks"
-            / "19_torch_compile_end_to_end"
         )
-        return sorted(course_root.glob("*.md"))
+        course_root = ai_frameworks_root / "19_torch_compile_end_to_end"
+        # Volume E physically moved to 07_debugging (kb-reorg P4 Task 4); its
+        # markdown quality gates below still apply, just from the new home.
+        debugging_root = ai_frameworks_root / "02_compile_stack" / "07_debugging"
+        return sorted(course_root.glob("*.md")) + sorted(debugging_root.glob("*.md"))
 
     def test_list_markers_render_as_commonmark_lists(self) -> None:
         malformed: list[str] = []

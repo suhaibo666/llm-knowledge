@@ -6,6 +6,32 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 4（19 号 E 卷迁入 07_debugging，9 篇 2391 行 + 吸收旧 debug 页）
+
+**Type**: Structure Reorg + Redundancy Consolidation（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 4）
+
+**迁移**：`19_torch_compile_end_to_end/e01-e09`（观测台账、Dynamo explain/graph break、guard failure/recompile、AOTAutograd/Inductor 失败分层定位、minifier/repro/bisector、正确性验证方法论、compile 延迟/cache/稳态性能、kernel/fusion/内存/硬件性能归因、生产上线/fallback/监控，共 2391 行）`git mv` 到 `02_compile_stack/07_debugging/`，去 `eNN_` 前缀规范重命名（新基名全库唯一，无冲突）：
+
+- `e01_observability_logs_counters_and_artifact_map_analysis.md` → `observability_logs_counters_and_artifact_map_analysis.md`
+- `e02_dynamo_explain_and_graph_break_diagnosis_analysis.md` → `dynamo_explain_and_graph_break_diagnosis_analysis.md`
+- `e03_guard_failure_and_recompile_diagnosis_analysis.md` → `guard_failure_and_recompile_diagnosis_analysis.md`
+- `e04_aotautograd_and_inductor_failure_localization_analysis.md` → `aotautograd_and_inductor_failure_localization_analysis.md`
+- `e05_minifier_repro_and_compiler_bisector_analysis.md` → `minifier_repro_and_compiler_bisector_analysis.md`
+- `e06_compiled_correctness_validation_methodology_analysis.md` → `compiled_correctness_validation_methodology_analysis.md`
+- `e07_compile_latency_cache_and_steady_state_performance_analysis.md` → `compile_latency_cache_and_steady_state_performance_analysis.md`
+- `e08_kernel_fusion_memory_and_hardware_performance_analysis.md` → `kernel_fusion_memory_and_hardware_performance_analysis.md`
+- `e09_production_rollout_fallback_and_monitoring_analysis.md` → `production_rollout_fallback_and_monitoring_analysis.md`
+
+**删除并吸收**：`02_compile_stack/04_inductor/Pytorch_Compile_Debug_Analysis.md`（558 行，E 卷的压缩前身）逐节判重后删除。机制性内容（Dynamo/FX/Guards/AOT/Inductor 各阶段原理与定位方法、通用决策树前 4 步）已被上述九篇更严谨的源码级分析取代，不重复落地；但该页提供的**可运行排查脚本**、**分布式专属决策分支**与**kernel/CUDA 层崩溃诊断**九篇均未覆盖，逐字迁入新建的 `02_compile_stack/07_debugging/index.md` 附录：`run_debug.sh`（环境变量一键启动）、`export_capture.py`/`capture_backend.py`（DIY GraphModule 捕获，与官方 `after_dynamo`/`after_aot` repro 生成器正交互补）、`collect_artifacts.sh`、`diff_rank_logs.sh`（多 rank 日志对比，九篇未提供任何等价工具）、决策树第 5 分支（仅分布式场景复现）、kernel/CUDA 崩溃关键词与修复清单（segfault/OOM/launch failed/arch mismatch，[[kernel_fusion_memory_and_hardware_performance_analysis]] 只覆盖性能不覆盖崩溃）、工程化使用流程、小技巧、upstream issue 附件清单（与 [[minifier_repro_and_compiler_bisector_analysis]] §11 的通用 repro 标准互补，不重复）。
+
+**入链修复**：九篇互链（前置/后续 + Related Pages）随重命名全库替换（裸基名，新基名唯一）；`00_torch_compile_end_to_end_index.md` 卷 E 表按 Task 3 先例压缩为一行式指向（完整表格重建留 Task 10）；`b01/b02/b07/b08/b09/b10/d03/d05/d06/d07/f01/f03/f04/f07/f08` 对九篇的引用改指新基名；`04_inductor/index.md`、`inductor_memory_allocation_guide.md`、`inductor_quickstart.md`（3 处）、`npu/npu_debug_guide.md`、`torch_compile_architecture.md`（2 处）、`19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance.md` 对旧 debug 页的引用改指 `02_compile_stack/07_debugging/index`；changelog 历史条目（2026-07 更早的一条）按本文件「历史不回写」惯例改为惰性反引号 + 说明去向，不当作活链接维护。
+
+**Labs 同步**：`tools/labs_torch_compile/demo_manifest.json` 的 9 条 E 卷 `page` 字段同步改名（page_id/volume/script/case 不变，55 条不变）；`test_volume_demo_contract.py` 新增 `_page_root(labs_root, volume)` 按卷解析页面目录（E→`07_debugging`，其余仍在 `19_torch_compile_end_to_end`，为 Task 5-9 逐卷迁移预留同一模式）；`CourseMarkdownContractTest._course_pages()` 同步纳入 `07_debugging/*.md`，保持 list-marker/mermaid/locator 质量门禁覆盖迁移后的九篇。
+
+**校验**：`python tools/check_links.py`：pages 393→392（-1 为旧 debug 页删除，九篇是移动不减少），broken=0；`pytest tools/ -q`：77 passed。
+
+---
+
 ## 2026-07-30：知识库结构整改 P4 Task 3（19 号 A 卷删除，5 篇 1790 行）
 
 **Type**: Redundancy Consolidation + Structure Reorg（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 3；P4 阶段首个编辑任务）
@@ -16,7 +42,7 @@ All source ingestions and significant wiki updates are logged here.
 - a02 → [[pytorch_dispatcher_analysis]] §12（ADInplaceOrView 分层、mutation 算子 rebase 样本、Dispatcher/Autograd Edge/FX data edge 三种"边"辨析）
 - a03 → [[b04_instruction_translator_and_bytecode_state_machine_analysis]] §14 + [[b03_eval_frame_callback_and_code_cache_analysis]] §13（`bytecode_transformation` 重组子系统、code object/frame/instruction 定义表、C-hook 与 ConvertFrame 边界）
 - a04 → [[aotautograd_analysis]] §13（`__torch_function__`/`__torch_dispatch__`/ProxyTensor/FakeTensor 四层分工、`track_tensor_tree`、FakeTensorMode 状态、decomposition 落点、数据相关 operator 边界）
-- a05 → [[b01_torch_compile_api_and_first_call_lifecycle_analysis]] §12 + [[e07_compile_latency_cache_and_steady_state_performance_analysis]] §12-§16（七阶段成本词汇表、cache-entry 查找与 backend handoff 源码补充；参数化成本模型/break-even/四层 cache 对照表与 e07 既有的测量方法论合并，不重复落地两处）
+- a05 → [[b01_torch_compile_api_and_first_call_lifecycle_analysis]] §12 + [[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16（七阶段成本词汇表、cache-entry 查找与 backend handoff 源码补充；参数化成本模型/break-even/四层 cache 对照表与 e07 既有的测量方法论合并，不重复落地两处）
 
 **入链修复**：`f05`（a02/a04 引用改指 pytorch_dispatcher_analysis / aotautograd_analysis）、`b01`/`e07`/`d06`（a05 引用改指内容实际落点）；卷内 a01-a05 互链随整卷删除一并消失；`00_torch_compile_end_to_end_index.md` 的"卷 A"表按 Task 3 约定不做整体重排（留给 Task 10），仅去除失效行并加一行去向说明，避免 broken>0。
 
@@ -601,7 +627,7 @@ All source ingestions and significant wiki updates are logged here.
 - **guide 新增 §5 内存越界/踩踏排查**（原 §5/§6 顺延为 §6/§7）：§5.1 自动核内置防护（Triton `mask` + `assert_size_stride`/`assert_alignment`/scalar·nan_asserts,多为默认 ON）· §5.2 真正越界来源（自定义算子/手写 Triton/错误 stride·offset/unbacked symint）· §5.3 工具（`compute-sanitizer` 取代 cuda-memcheck + `CUDA_LAUNCH_BLOCKING`）· §5.4 排查步骤。
 - [!correction] **订正该社区材料**（源 > 材料，均已核实）：① 「Inductor 对越界无内置保护」**错**——mask + size/alignment/scalar 断言多为默认 ON;② 「规划池用 `_cuda_beginAllocateToPool` 申请」**错**——该 API 全库仅在 `cudagraph_trees.py`（CUDA Graphs 私有池）,规划池是普通 `empty_strided`;③ `cuda-memcheck` 已被 `compute-sanitizer` 取代。**材料对的部分**（保留）：16 字节对齐确有其事（`GPU_ALIGN_BYTES=16`）。前两部分（池初始化/复用）不收录——深挖页已覆盖且更源忠实。
 
-**整合**：[[04_inductor/index]] guide 条目补「越界/踩踏排查」;guide Related 增 [[inductor_gpu_kernel_dispatch_model]]/[[Pytorch_Compile_Debug_Analysis]]/[[unbacked_symint_analysis]] 回链。**校验**：所有 `file:line`/常量值本会话开文件核对;新增段无 mermaid。
+**整合**：[[04_inductor/index]] guide 条目补「越界/踩踏排查」;guide Related 增 [[inductor_gpu_kernel_dispatch_model]]/`Pytorch_Compile_Debug_Analysis`(该页已于 P4 Task 4 判重删除，内容并入 [[02_compile_stack/07_debugging/index]])/[[unbacked_symint_analysis]] 回链。**校验**：所有 `file:line`/常量值本会话开文件核对;新增段无 mermaid。
 
 ---
 

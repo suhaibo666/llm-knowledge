@@ -330,4 +330,4 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[b05_variable_tracker_source_and_python_object_model_analysis]]
 - [[b09_dynamic_shapes_generalization_and_fallback_analysis]]
 - [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
-- [[e03_guard_failure_and_recompile_diagnosis_analysis]]
+- [[guard_failure_and_recompile_diagnosis_analysis]]
