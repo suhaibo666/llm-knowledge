@@ -398,4 +398,4 @@ artifact 位于 `tools/labs_torch_compile/artifacts/end_to_end/functional_aten.p
 - [[graph_effects_alias_mutation_and_order_analysis]]
 - [[09_aotautograd_joint_forward_backward_graphs]]
 - [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]
-- [[decomposition_passes_guide]]
+- [[decomposition_passes_guide]] — 开发者视角的姊妹页:注册 API、代码示例与验证清单(判重结论见该页页头「课程分工」)

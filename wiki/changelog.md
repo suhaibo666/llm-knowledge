@@ -6,6 +6,32 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 7 组 3（decomposition_passes_guide vs C08 判重，保留双页）
+
+**Type**: Redundancy Review（no merge）（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 7）
+
+`04_inductor/decomposition_passes_guide.md`（163 行）逐节核对 vs
+[[graph_normalization_decomposition_and_functionalization_analysis]]（C08，图规范化/Decomposition/
+Functionalization 机制骨架）：guide 的 §1（decomposition table 结构与 mermaid）、§3（`register_
+decomposition`/`decompositions`/`select_decomp_table`/`torch._decomp.get_decompositions`/
+`compile_fx(decompositions=table)` API 表）、§4（注册并加入编译的可运行代码示例）、§5（写
+decomposition 前必须回答的算子集收益/语义等价/动态形状三组问题，含 dtype promotion、整数
+溢出、NaN/Inf、复数、低精度误差、RNG 顺序、高阶梯度等细项）、§7（六条验证清单）、§8（五条
+反模式）在 C08 中**逐句核实均不存在**——C08 是捕获期机制解释（为什么/怎样发生），guide 是
+面向开发者的 API 参考+可运行示例+checklist（如何写一个新 decomposition），两者体裁不同，
+guide 独有内容占比远超 50% 判据。§2（适合/不适合做的理由）与 C08 §4（收益/代价）主题重叠
+但角度不同（guide 是"该不该做"的决策框架，C08 是"是什么"的描述），判定为互补而非重复，
+不删减。
+
+**判定**：按计划判据（独有 >50% 时保留为 guide）保留双页，不合并、不删除。双向互链已存在
+（guide 页头「课程分工」→ C08；C08 Related Pages → guide），本次只把 C08 → guide 的反向链接
+补充一句说明区分二者体裁，避免后续误判为待归一的重复对。
+
+**校验**：`python tools/check_links.py`：pages 388→388，broken=0（本组无内容迁移，仅一行
+Related Pages 描述补充）。
+
+---
+
 ## 2026-07-30：知识库结构整改 P4 Task 7 组 1（fx_graph_construction_and_transformation_analysis 判重归一）
 
 **Type**: Redundancy Consolidation（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 7）
