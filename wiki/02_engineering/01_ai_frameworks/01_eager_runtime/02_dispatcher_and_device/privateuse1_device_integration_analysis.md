@@ -5,7 +5,11 @@
 > 基于版本：PyTorch 上游 `E:\97-codes\pytorch\pytorch`、torch_npu `E:\97-codes\pytorch\torch_npu` 当前 checkout
 > 分析日期：2026-06-13
 > 更新（2026-06-14）：为 §1 设计哲学、9 个接入点、§12 运行时组件各补充「**为什么·深入（根本原因）**」小节——基于本地 checkout（pytorch `trunk/6f26be8`、torch_npu）逐条核对源码 `file:line` + 社区资料（RFC / PR / dev-discuss / 官方博客）。原有内容保留不删，深入小节只扩展。
+> 更新（2026-07-30）：补与 [[custom_backends_and_device_integration_analysis]] 的分工声明（见下方 note）。
 > 权威来源：① 官方指南 `pytorch/docs/source/accelerator/*.md`；② 官方参考后端 `pytorch/test/cpp_extensions/open_registration_extension/torch_openreg/`（下称 **OpenReg**，是 in-tree 的 PrivateUse1 测试后端 + 接入范例）；③ 生产实现 torch_npu。
+
+> [!note] 与 [[custom_backends_and_device_integration_analysis]] 的分工
+> 本页讲第三方加速器如何在**完全不涉及 `torch.compile`** 的前提下接入 PyTorch dispatcher(Guard/Hooks/Operators/AMP/Autoload/Profiler/Distributed backend 九个接入点)。[[custom_backends_and_device_integration_analysis]] 讲的是设备接入 `torch.compile` 编译栈时的另一层契约——Dynamo backend、Inductor device backend(含 `DeviceInterface`)、dispatcher/custom op backend 三者如何分层组合。二者是先后关系:先按本页接入 dispatcher,再按该页接入编译栈。
 
 ---
 
@@ -276,3 +280,4 @@ graph TD
 - [[op_registration_pipeline_analysis]] —— 接入点 4（算子）：yaml→codegen→dispatcher 注册链路与「库加载即注册」（与命名注册同一静态初始化机制）
 - [[npu_operator_graph_eligibility_guide]] —— 算子入图判别（与 Allocator/Generator 的 graph-safe 关联）
 - [[pytorch_dispatcher_analysis]] —— PrivateUse1 key 在 Dispatcher 中如何分发（本页上游基础）
+- [[custom_backends_and_device_integration_analysis]] —— 设备接入 `torch.compile` 编译栈的另一层契约(Dynamo/Inductor/dispatcher 三层 backend),见页头分工声明

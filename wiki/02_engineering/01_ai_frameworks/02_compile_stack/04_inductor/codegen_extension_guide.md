@@ -244,3 +244,5 @@ scheduling 对象按节点内部委派。
 - [[fx_lowering_to_inductor_ir_analysis]] — 新 op 如何进入现有 IR/codegen
 - [[inductor_gpu_kernel_dispatch_model]] — GPU kernel indexing/dispatch 基线
 - [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段放置决策(现含跨框架对照)
+- [[custom_backends_and_device_integration_analysis]] — 本指南在"三层 backend 契约"里的位置(Dynamo backend / Inductor backend / dispatcher backend 划分,以及 `DeviceInterface` 与本页 `DeviceOpOverrides` 的层次区别),2026-07-30 起互指
+- [[privateuse1_device_integration_analysis]] — 更底层的 eager/dispatcher 设备接入(与本页的 Inductor codegen 接入是两个不同阶段)

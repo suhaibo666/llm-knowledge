@@ -242,6 +242,6 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[dynamic_shapes_generalization_and_fallback_analysis]]
 - [[01_graph_ir_motivation_and_taxonomy]]
 - [[pattern_expression_and_matcher_engine_analysis]]
-- [[f06_custom_backends_and_device_integration_analysis]]
+- [[custom_backends_and_device_integration_analysis]]
 - [[compiled_correctness_validation_methodology_analysis]]
 - [[dynamo_pass_methodology]] — 开发决策线:何时该/不该在 Dynamo 做、可运行注册代码、改图排错流程、何时该离开 Dynamo
