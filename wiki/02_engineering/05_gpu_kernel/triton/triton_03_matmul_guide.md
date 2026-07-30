@@ -231,7 +231,7 @@ b = tl.load(b_ptrs, mask=offs_k[:, None] < K - k * BLOCK_SIZE_K, other=0.0)  # :
 
 ### 3.5 `tl.dot` —— 块级矩阵乘走 Tensor Core（源 `:304`）
 
-`tl.dot(a, b, accumulator)` 把 `[BM,BK] × [BK,BN]` 做成 `[BM,BN]` 并加到第三参数累加器上。这是 Triton 把整块映射到硬件 MMA / Tensor Core 指令的入口（源未在本文件展开实现，归 [[triton_vs_mlir_backend_analysis]]）。block 思维在这里达到顶点：你写一行 `tl.dot`，编译器负责切 warp、排 Tensor Core、管 shared memory。
+`tl.dot(a, b, accumulator)` 把 `[BM,BK] × [BK,BN]` 做成 `[BM,BN]` 并加到第三参数累加器上。这是 Triton 把整块映射到硬件 MMA / Tensor Core 指令的入口（源未在本文件展开实现，归 [[30_triton_vs_mlir_backend_analysis]]）。block 思维在这里达到顶点：你写一行 `tl.dot`，编译器负责切 warp、排 Tensor Core、管 shared memory。
 
 ### 3.6 `tl.assume(...)`：给后端整数范围提示（源 `:266-277`）
 
@@ -362,4 +362,4 @@ TRITON_INTERPRET=1 python 03-matrix-multiplication.py   # 详见 [[triton_05_deb
 - [[triton_knowledge_map]] — Triton 知识全景图
 - [[gpu_kernel_guide]] — CUDA 手写 GEMM tiling 对照（shared memory / register tiling 的硬件视角）
 - [[cuda_gemm_kernel_analysis]] — SM80 生产级 GEMM 的 CTA/Warp/MMA、`cp.async` 与 epilogue 深挖
-- [[triton_vs_mlir_backend_analysis]] — `tl.dot` 之后：Triton → Tensor Core MMA 的编译路径
+- [[30_triton_vs_mlir_backend_analysis]] — `tl.dot` 之后：Triton → Tensor Core MMA 的编译路径

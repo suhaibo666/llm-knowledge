@@ -84,7 +84,7 @@
 | d06(320)+f08(322) | `03_runtime_graphs/cuda/`,与 `PyTorch_CUDA_Graphs_Complete_Guide` 对应节(方式2/综合比较)判重合并——注意 P3 已把 Guide 改为权威页,以 Guide 为主干吸收两篇独有内容后两篇删除或降为专题页(按独有量定,台账说明) |
 | d07(264) | `07_debugging/`(runtime failure 族)——缺口补齐 |
 
-- [ ] 逐篇执行(每篇台账);重命名去前缀;入链修复;checker=0;commit
+- [x] 逐篇执行(每篇台账);重命名去前缀;入链修复;checker=0;commit
 
 ## Task 7: C 卷第一批 → 03_graph_ir_and_passes(12 篇:02,03,05,06,07,08,11-16)
 
@@ -119,6 +119,14 @@
 | f07(292) | `04_inductor/`(AOTInductor 打包部署)——缺口补齐 |
 
 - [ ] 逐篇台账;重命名;入链;checker=0;commit
+
+## Task 9.5: 目录内分段编号(2026-07-30 用户追加需求,spec §5 已修订)
+
+- [ ] 对 `01_ai_frameworks` 下**全部内容定型的模块目录**(01_eager_runtime 七个子目录、01_dynamo、02_aot_autograd、03_graph_ir_and_passes、04_inductor(含 npu/)、05_codegen_backends、06_compile_cache、07_debugging、03_runtime_graphs(cuda/npu/)、04_export_and_distributed 两个子目录、05_other_frameworks)逐目录施行分段编号:
+  - 段 0(01-09)入门导览 / 段 1(10-19)核心机制主线 / 段 2(20-29)深潜专题 / 段 3(30-39)方法论对照实践;index.md 不编号;超容占相邻空段并在 index 段位表注明
+  - 每目录先在 index.md 里定段位表(哪页归哪段哪号,顺序=学习路径),再按表批量 `git mv` 改名,再全库改写入链(裸基名链接逐一替换;labs manifest page 字段同步)
+  - 分批 commit(每 2-3 个目录一个),每批 checker broken=0 + pytest 77
+- [ ] 编号顺序的判断标准:quickstart/overview 最前;机制主线按该子系统的执行流水线顺序(如 dynamo:api→eval frame→translator→variable tracker→output graph→guards→graph break→dynamic shapes→backend contract);deepdive/专题按依赖的机制页顺序;方法论/对照收尾
 
 ## Task 10: 课程页 + 19 号删除 + 全 index 重建 + 阶段门
 

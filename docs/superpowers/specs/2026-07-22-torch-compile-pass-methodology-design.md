@@ -36,7 +36,7 @@
 
 重构：
 
-- `wiki/02_engineering/01_ai_frameworks/04_inductor/fx_pass_optimization_methodology.md`
+- `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/fx_pass_optimization_methodology.md`
 
 该页从“FX Pass 方法论”提升为“完整 Torch Compile 优化选层方法论”。每个阶段统一回答：
 
@@ -53,11 +53,11 @@
 
 校验并补强：
 
-- `wiki/02_engineering/01_ai_frameworks/04_inductor/pre_grad_passes_guide.md`
-- `wiki/02_engineering/01_ai_frameworks/04_inductor/joint_graph_passes_guide.md`
-- `wiki/02_engineering/01_ai_frameworks/04_inductor/post_grad_passes_guide.md`
-- `wiki/02_engineering/01_ai_frameworks/04_inductor/lowering_analysis.md`
-- `wiki/02_engineering/01_ai_frameworks/04_inductor/scheduler_analysis.md`
+- `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/pre_grad_passes_guide.md`
+- `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/joint_graph_passes_guide.md`
+- `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/post_grad_passes_guide.md`
+- `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/lowering_analysis.md`
+- `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/scheduler_analysis.md`
 
 每页新增或重构统一的“阶段方法论与开发指南”部分：
 
@@ -75,9 +75,9 @@
 
 新增：
 
-- `wiki/02_engineering/01_ai_frameworks/02_dynamo/dynamo_pass_methodology.md`
-- `wiki/02_engineering/01_ai_frameworks/04_inductor/decomposition_passes_guide.md`
-- `wiki/02_engineering/01_ai_frameworks/04_inductor/codegen_extension_guide.md`
+- `wiki/02_engineering/01_ai_frameworks/02_compile_stack/01_dynamo/dynamo_pass_methodology.md`
+- `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/decomposition_passes_guide.md`
+- `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/codegen_extension_guide.md`
 
 三个新页面分别解决：
 
@@ -121,9 +121,9 @@
 
 更新：
 
-- `wiki/02_engineering/01_ai_frameworks/02_dynamo/index.md`
-- `wiki/02_engineering/01_ai_frameworks/04_inductor/index.md`
-- `wiki/02_engineering/01_ai_frameworks/04_inductor/inductor_codegen_analysis.md`
+- `wiki/02_engineering/01_ai_frameworks/02_compile_stack/01_dynamo/index.md`
+- `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/index.md`
+- `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/inductor_codegen_analysis.md`
 - `wiki/changelog.md`
 
 每个新增页面必须包含 `## Related Pages`，并与总方法论页、流水线总览和相邻阶段页面建立双向 Obsidian 链接。

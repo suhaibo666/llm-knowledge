@@ -414,7 +414,7 @@ docs/audits/
 
 ```bash
 ls -la docs/reports/
-wc -l wiki/02_engineering/01_ai_frameworks/03_aot_autograd/fx_graph_construction_and_transformation_analysis.md
+wc -l wiki/02_engineering/01_ai_frameworks/02_compile_stack/02_aot_autograd/fx_graph_construction_and_transformation_analysis.md
 ```
 
 确认同主题 wiki 页存在(≈600 行)后:`rm -r docs/reports`。若 wiki 页不存在或行数异常(<100 行),**停止并向用户报告**,不删。
@@ -464,7 +464,7 @@ grep -rn "\[!correction\]" wiki/ --include="*.md"
 
 - [ ] **Step 3: 顺手修同类跨层链接**
 
-`wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/README.md` 里的 `[[demo_delivery_report_2026-07-29]]`(目标在已删除的 docs/audits 下)改为纯文本 `demo 交付报告(审计产物,见 git 历史)`。
+`tools/labs_torch_compile/README.md` 里的 `[[demo_delivery_report_2026-07-29]]`(目标在已删除的 docs/audits 下)改为纯文本 `demo 交付报告(审计产物,见 git 历史)`。
 
 - [ ] **Step 4: 验证 + Commit**
 
@@ -479,7 +479,7 @@ git add -A && git commit -m "docs: strip correction_report audit callouts (113 d
 ### Task 6: 修剩余琐碎坏链(示例转义/反斜杠/乱码/真实缺页)
 
 **Files:**(逐处编辑,以 `--json` 清单为准)
-- Modify: `wiki/changelog.md`、`wiki/03_posttraining/00_posttraining_source_reading_guide.md`、`wiki/02_engineering/02_train_frameworks/megatron-lm/index.md`、`wiki/02_engineering/02_train_frameworks/megatron-lm/megatron_moe_training_optimization_report.md`、`wiki/01_theory/01_models/deepseek/deepseek_v4_architecture_diagrams.md`、`wiki/01_theory/01_models/moonshot_kimi/kimi_k2.5_analysis.md`、`wiki/01_theory/01_models/moonshot_kimi/index.md`、`wiki/01_theory/01_models/scaling_laws_analysis.md`、`wiki/01_theory/01_models/index.md`、`wiki/02_engineering/01_ai_frameworks/02_dynamo/dynamo_pass_methodology.md`、`wiki/02_engineering/01_ai_frameworks/04_inductor/scheduler_analysis.md`、`wiki/02_engineering/01_ai_frameworks/05_codegen_backends/mlir/mlir_core_concepts.md`
+- Modify: `wiki/changelog.md`、`wiki/03_posttraining/00_posttraining_source_reading_guide.md`、`wiki/02_engineering/02_train_frameworks/megatron-lm/index.md`、`wiki/02_engineering/02_train_frameworks/megatron-lm/megatron_moe_training_optimization_report.md`、`wiki/01_theory/01_models/deepseek/deepseek_v4_architecture_diagrams.md`、`wiki/01_theory/01_models/moonshot_kimi/kimi_k2.5_analysis.md`、`wiki/01_theory/01_models/moonshot_kimi/index.md`、`wiki/01_theory/01_models/scaling_laws_analysis.md`、`wiki/01_theory/01_models/index.md`、`wiki/02_engineering/01_ai_frameworks/02_compile_stack/01_dynamo/dynamo_pass_methodology.md`、`wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/scheduler_analysis.md`、`wiki/02_engineering/01_ai_frameworks/02_compile_stack/05_codegen_backends/mlir/mlir_core_concepts.md`
 
 - [ ] **Step 1: 取当前 broken 全量清单**
 

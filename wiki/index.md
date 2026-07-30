@@ -33,10 +33,10 @@
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| AI框架 | [[02_engineering/01_ai_frameworks/index]] | 174 | 活跃 |
-| └─ TorchInductor | [[02_engineering/01_ai_frameworks/04_inductor/index]] | 39 | 活跃 |
-| └─ 运行时图(CUDA/NPU) | [[02_engineering/01_ai_frameworks/06_graphs/index]] | 10 | 活跃 |
-| └─ Codegen 后端(MLIR) | [[02_engineering/01_ai_frameworks/05_codegen_backends/mlir/index]] | 8 | 活跃 |
+| AI框架 | [[02_engineering/01_ai_frameworks/index]] | 150 | 活跃 |
+| └─ TorchInductor | [[02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/index]] | 36 | 活跃 |
+| └─ 运行时图(CUDA/NPU) | [[02_engineering/01_ai_frameworks/03_runtime_graphs/index]] | 12 | 活跃 |
+| └─ Codegen 后端(MLIR) | [[02_engineering/01_ai_frameworks/02_compile_stack/05_codegen_backends/mlir/index]] | 8 | 活跃 |
 | 训练框架 | [[02_engineering/02_train_frameworks/index]] | 60 | 活跃 |
 | └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 30 | 活跃 |
 | └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 13 | 活跃 |
@@ -51,13 +51,22 @@
 | 自动并行 | [[02_engineering/06_auto_parallel/index]] | 2 | 活跃 |
 | 训练可靠性 | [[02_engineering/07_training_reliability/index]] | 4 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-07-29。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-07-30。
 
 ### 03 后训练纵向学习域
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
 | 后训练前沿学习域 | [[03_posttraining/index]] | 14 | S00–S05 已完成 |
+
+### courses 课程入口
+
+跨领域的纯导读页(只含阅读顺序、链接与一句话导读,正文归属对应功能树,详见
+`CLAUDE.md`/spec §6 课程页规则):
+
+| 课程 | 入口 | 覆盖范围 |
+|------|------|---------|
+| torch.compile 端到端 | [[courses/torch_compile_end_to_end]] | `01_ai_frameworks` 五层功能树(eager 地基→Dynamo→AOTAutograd→Graph IR/Passes→Inductor→缓存→调试→运行时图→导出/分布式) |
 
 ---
 
@@ -78,8 +87,8 @@
 | MoE | [[megatron_ep_analysis]], [[deepseek_moe_analysis]] |
 | MoE 专家并行 (MindFormers) | [[mindformers/index]], [[mindformers_pynative_ep_analysis]], [[mindformers_moe_token_dispatcher_analysis]] |
 | 昇腾训练加速 (MindSpeed) | [[mindspeed/index]], [[mindspeed_parallelism_analysis]], [[mindspeed_context_parallel_analysis]], [[mindspeed_comm_overlap_analysis]], [[mindspeed_memory_optimization_analysis]], [[mindspeed_ascend_affinity_analysis]] |
-| torch.compile | [[torch_compile_architecture]], [[PyTorch_Dynamo_Technical_Analysis]], [[PyTorch_Inductor_Technical_Analysis]] |
-| CUDA/NPU Graphs | [[PyTorch_CUDA_Graphs_Complete_Guide]], [[torch_compile_npugraphs_deep_dive]] |
+| torch.compile | [[courses/torch_compile_end_to_end]], [[02_compile_stack/01_dynamo/index]], [[02_compile_stack/04_inductor/index]] |
+| CUDA/NPU Graphs | [[01_PyTorch_CUDA_Graphs_Complete_Guide]], [[11_torch_compile_npugraphs_deep_dive]] |
 | Triton kernel 入门→专家 | [[triton_01_programming_model_guide]], [[triton_03_matmul_guide]], [[triton_04_autotune_guide]], [[triton_06_optimization_profiling_guide]], [[triton_knowledge_map]] |
 | GPU/NPU 执行模型与 GEMM | [[cuda_execution_model_guide]], [[cuda_gemm_kernel_analysis]], [[ascend_kernel_execution_model_analysis]] |
 | 非 GEMM Kernel 优化 | [[cuda_nonmatmul_kernels_analysis]], [[gpu_kernel_guide]], [[triton_00_gpu_essentials_guide]] |

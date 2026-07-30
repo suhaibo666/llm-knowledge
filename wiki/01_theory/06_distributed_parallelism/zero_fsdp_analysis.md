@@ -2,7 +2,7 @@
 
 > 层次：原理（principle）· 引擎无关
 > 前置：[[data_parallel_analysis]]（DP 的 $16\Psi$ 显存账本）、[[collectives_analysis]]（all-reduce = reduce-scatter + all-gather）
-> 实现见 [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_fsdp_analysis]]、[[../../02_engineering/01_ai_frameworks/15_distributed_primitives/index]]（FSDP1/FSDP2）
+> 实现见 [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_fsdp_analysis]]、[[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]]（FSDP1/FSDP2）
 > 最后更新：2026-07-01
 
 ---
@@ -79,4 +79,4 @@ PyTorch 的 **FSDP（Fully Sharded Data Parallel）** 是 ZeRO-3 的框架实现
 - [[index]] — N 维布局里 ZeRO/FSDP 占据数据轴
 - [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_fsdp_analysis]] — **实现层**：torchtitan/FSDP2 的分片与通信
 - [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_fsdp_prefetch_overlap_memory_analysis]] — **实现层**：预取重叠与显存核算
-- [[../../02_engineering/01_ai_frameworks/15_distributed_primitives/index]] — **实现层**：FSDP1 `FlatParameter` 与 FSDP2 `fully_shard`
+- [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：FSDP1 `FlatParameter` 与 FSDP2 `fully_shard`

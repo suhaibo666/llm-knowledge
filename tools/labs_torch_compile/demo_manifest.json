@@ -1,0 +1,410 @@
+{
+  "schema_version": "torch-compile-demo-manifest/v1",
+  "default_device": "cuda",
+  "status_contract": {
+    "PASS": "The case body executed and all embedded assertions passed.",
+    "BLOCKED": "A declared runtime capability was unavailable; the body did not execute.",
+    "FAIL": "The body executed but an assertion, compiler stage, child process, or runtime failed."
+  },
+  "pages": [
+    {
+      "page_id": "b01",
+      "page": "10_torch_compile_api_and_first_call_lifecycle_analysis.md",
+      "volume": "B",
+      "script": "tools/labs_torch_compile/demo_b_dynamo_capture.py",
+      "case": "compile_lifecycle"
+    },
+    {
+      "page_id": "b02",
+      "page": "22_backend_modes_options_stances_and_fullgraph_analysis.md",
+      "volume": "B",
+      "script": "tools/labs_torch_compile/demo_b_dynamo_capture.py",
+      "case": "backend_modes_fullgraph"
+    },
+    {
+      "page_id": "b03",
+      "page": "11_eval_frame_callback_and_code_cache_analysis.md",
+      "volume": "B",
+      "script": "tools/labs_torch_compile/demo_b_dynamo_capture.py",
+      "case": "eval_frame_cache"
+    },
+    {
+      "page_id": "b04",
+      "page": "12_instruction_translator_and_bytecode_state_machine_analysis.md",
+      "volume": "B",
+      "script": "tools/labs_torch_compile/demo_b_dynamo_capture.py",
+      "case": "bytecode_state_machine"
+    },
+    {
+      "page_id": "b05",
+      "page": "13_variable_tracker_source_and_python_object_model_analysis.md",
+      "volume": "B",
+      "script": "tools/labs_torch_compile/demo_b_dynamo_capture.py",
+      "case": "variable_source_guards"
+    },
+    {
+      "page_id": "b06",
+      "page": "14_output_graph_side_effects_and_graph_emission_analysis.md",
+      "volume": "B",
+      "script": "tools/labs_torch_compile/demo_b_dynamo_capture.py",
+      "case": "output_graph_side_effects"
+    },
+    {
+      "page_id": "b07",
+      "page": "15_guards_cache_lookup_and_recompilation_analysis.md",
+      "volume": "B",
+      "script": "tools/labs_torch_compile/demo_b_dynamo_capture.py",
+      "case": "guards_recompile"
+    },
+    {
+      "page_id": "b08",
+      "page": "16_graph_break_resume_functions_and_partial_graphs_analysis.md",
+      "volume": "B",
+      "script": "tools/labs_torch_compile/demo_b_dynamo_capture.py",
+      "case": "graph_break_resume"
+    },
+    {
+      "page_id": "b09",
+      "page": "17_dynamic_shapes_generalization_and_fallback_analysis.md",
+      "volume": "B",
+      "script": "tools/labs_torch_compile/demo_b_dynamo_capture.py",
+      "case": "dynamic_shapes"
+    },
+    {
+      "page_id": "b10",
+      "page": "18_backend_contract_and_custom_backend_analysis.md",
+      "volume": "B",
+      "script": "tools/labs_torch_compile/demo_b_dynamo_capture.py",
+      "case": "custom_backend_contract"
+    },
+    {
+      "page_id": "c01",
+      "page": "torch_compile_end_to_end.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "ir_fx",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c02",
+      "page": "10_fx_graph_core_data_model_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "ir_fx",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c03",
+      "page": "11_graph_values_metadata_and_signatures_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "ir_fx",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c04",
+      "page": "20_symbolic_shapes_guards_and_graph_reuse_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "ir_fx",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c05",
+      "page": "12_graph_effects_alias_mutation_and_order_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "ir_fx",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c06",
+      "page": "13_structured_outputs_higher_order_and_nested_graphs_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "ir_fx",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c07",
+      "page": "14_graph_capture_frontends_and_tracing_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "capture_normalize",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c08",
+      "page": "15_graph_normalization_decomposition_and_functionalization_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "capture_normalize",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c09",
+      "page": "11_aotautograd_joint_forward_backward_graphs_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "aot_recompute",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c10",
+      "page": "12_saved_tensors_recompute_and_runtime_abi_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "aot_recompute",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c11",
+      "page": "20_graph_stage_boundaries_identity_and_provenance_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "aot_recompute",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c12",
+      "page": "21_fx_graph_editing_primitives_and_invariants_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "pattern_rewrite",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c13",
+      "page": "22_pattern_expression_and_matcher_engine_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "pattern_rewrite",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c14",
+      "page": "23_dead_code_topology_and_effect_order_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "pattern_rewrite",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c15",
+      "page": "24_graph_pass_pipeline_ordering_and_fixpoint_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "pattern_rewrite",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c16",
+      "page": "25_graph_rewrite_legality_validation_and_complexity_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "pattern_rewrite",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c17",
+      "page": "10_fx_lowering_to_inductor_ir_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "inductor_ir",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c18",
+      "page": "11_inductor_ir_values_loops_layouts_and_buffers_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "inductor_ir",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c19",
+      "page": "12_buffer_liveness_memory_planning_and_reuse_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "inductor_ir",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c20",
+      "page": "13_scheduler_dependency_graph_fusion_and_ordering_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "inductor_ir",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "c21",
+      "page": "14_codegen_kernel_mapping_autotuning_and_provenance_analysis.md",
+      "volume": "C",
+      "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
+      "case": "inductor_ir",
+      "also_cases": ["full_bundle"]
+    },
+    {
+      "page_id": "d01",
+      "page": "15_inductor_compile_fx_orchestration_analysis.md",
+      "volume": "D",
+      "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
+      "case": "compile_fx_orchestration"
+    },
+    {
+      "page_id": "d02",
+      "page": "13_aot_runtime_wrappers_and_lazy_backward_compile_analysis.md",
+      "volume": "D",
+      "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
+      "case": "aot_wrappers_lazy_backward"
+    },
+    {
+      "page_id": "d03",
+      "page": "27_async_compile_workers_and_module_loading_analysis.md",
+      "volume": "D",
+      "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
+      "case": "async_compile_loading"
+    },
+    {
+      "page_id": "d04",
+      "page": "index.md",
+      "volume": "D",
+      "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
+      "case": "cache_keys_invalidation"
+    },
+    {
+      "page_id": "d06",
+      "page": "10_cudagraph_trees_warmup_record_and_replay_analysis.md",
+      "volume": "D",
+      "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
+      "case": "cudagraph_replay"
+    },
+    {
+      "page_id": "d07",
+      "page": "14_compiled_artifact_lifecycle_and_runtime_failures_analysis.md",
+      "volume": "D",
+      "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
+      "case": "artifact_lifecycle_failure"
+    },
+    {
+      "page_id": "e01",
+      "page": "10_observability_logs_counters_and_artifact_map_analysis.md",
+      "volume": "E",
+      "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
+      "case": "logs_artifact_map"
+    },
+    {
+      "page_id": "e02",
+      "page": "11_dynamo_explain_and_graph_break_diagnosis_analysis.md",
+      "volume": "E",
+      "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
+      "case": "dynamo_explain"
+    },
+    {
+      "page_id": "e03",
+      "page": "12_guard_failure_and_recompile_diagnosis_analysis.md",
+      "volume": "E",
+      "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
+      "case": "guard_failure"
+    },
+    {
+      "page_id": "e04",
+      "page": "13_aotautograd_and_inductor_failure_localization_analysis.md",
+      "volume": "E",
+      "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
+      "case": "stage_failure_localization"
+    },
+    {
+      "page_id": "e05",
+      "page": "15_minifier_repro_and_compiler_bisector_analysis.md",
+      "volume": "E",
+      "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
+      "case": "minifier_repro"
+    },
+    {
+      "page_id": "e06",
+      "page": "16_compiled_correctness_validation_methodology_analysis.md",
+      "volume": "E",
+      "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
+      "case": "correctness_validation"
+    },
+    {
+      "page_id": "e07",
+      "page": "17_compile_latency_cache_and_steady_state_performance_analysis.md",
+      "volume": "E",
+      "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
+      "case": "cold_warm_steady"
+    },
+    {
+      "page_id": "e08",
+      "page": "18_kernel_fusion_memory_and_hardware_performance_analysis.md",
+      "volume": "E",
+      "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
+      "case": "fusion_memory_profiler"
+    },
+    {
+      "page_id": "e09",
+      "page": "19_production_rollout_fallback_and_monitoring_analysis.md",
+      "volume": "E",
+      "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
+      "case": "rollout_fallback"
+    },
+    {
+      "page_id": "f01",
+      "page": "20_compiled_autograd_analysis.md",
+      "volume": "F",
+      "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
+      "case": "compiled_autograd"
+    },
+    {
+      "page_id": "f02",
+      "page": "20_activation_checkpoint_recompute_and_compile_analysis.md",
+      "volume": "F",
+      "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
+      "case": "checkpoint_recompute"
+    },
+    {
+      "page_id": "f03",
+      "page": "20_ddp_compile_boundaries_and_optimizer_analysis.md",
+      "volume": "F",
+      "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
+      "case": "ddp_compile"
+    },
+    {
+      "page_id": "f04",
+      "page": "21_fsdp_dtensor_and_distributed_graphs_analysis.md",
+      "volume": "F",
+      "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
+      "case": "fsdp_dtensor"
+    },
+    {
+      "page_id": "f05",
+      "page": "20_custom_operators_fake_kernels_and_decompositions_analysis.md",
+      "volume": "F",
+      "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
+      "case": "custom_op_contract"
+    },
+    {
+      "page_id": "f06",
+      "page": "20_custom_backends_and_device_integration_analysis.md",
+      "volume": "F",
+      "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
+      "case": "custom_backend"
+    },
+    {
+      "page_id": "f07",
+      "page": "28_aotinductor_packaging_and_deployment_analysis.md",
+      "volume": "F",
+      "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
+      "case": "aotinductor_package"
+    },
+    {
+      "page_id": "f08",
+      "page": "20_training_inference_cudagraph_and_freezing_analysis.md",
+      "volume": "F",
+      "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
+      "case": "inference_freezing_cudagraph"
+    }
+  ]
+}

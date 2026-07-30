@@ -8,7 +8,7 @@
 
 ## 1. 一条主线：把「并行 + 不透明」退化成「串行 + 纯 Python」
 
-> **Triton 难 debug 的根因有两条：① kernel 在 GPU 上成百上千个 program 同时跑，没有断点、没有 stdout 顺序；② `@triton.jit` 之后源码被编译进 Triton IR → LLVM IR → PTX，中间产物对你不透明（见 [[triton_vs_mlir_backend_analysis]]）。解药是把问题「降维」——用 `TRITON_INTERPRET=1` 让 kernel 在 CPU 上用纯 Python 逐 program 串行模拟执行，于是 `print`/`pdb`/numpy 全部恢复可用；GPU 上则用 `device_print` 远程打印、`static_*` 在编译期就拦下错误、`device_assert` 做运行期检查。**
+> **Triton 难 debug 的根因有两条：① kernel 在 GPU 上成百上千个 program 同时跑，没有断点、没有 stdout 顺序；② `@triton.jit` 之后源码被编译进 Triton IR → LLVM IR → PTX，中间产物对你不透明（见 [[30_triton_vs_mlir_backend_analysis]]）。解药是把问题「降维」——用 `TRITON_INTERPRET=1` 让 kernel 在 CPU 上用纯 Python 逐 program 串行模拟执行，于是 `print`/`pdb`/numpy 全部恢复可用；GPU 上则用 `device_print` 远程打印、`static_*` 在编译期就拦下错误、`device_assert` 做运行期检查。**
 
 ### 工具速查表
 
@@ -241,5 +241,5 @@ print("max diff:", (out - (x + y)).abs().max())  # 预期 0.0
 - [[triton_03_matmul_guide]] — 指针-stride 算术与广播方向（bug③）的高发地
 - [[triton_04_autotune_guide]] — `num_stages`/`BLOCK_SIZE`（bug④⑤）与 SRAM 约束
 - [[triton_06_optimization_profiling_guide]] — 下一步：语义对了之后调性能
-- [[triton_vs_mlir_backend_analysis]] — 「中间 IR 不透明」的背景：`@triton.jit` 后的编译流水线
+- [[30_triton_vs_mlir_backend_analysis]] — 「中间 IR 不透明」的背景：`@triton.jit` 后的编译流水线
 - [[gpu_kernel_guide]] — CUDA 视角的并发/竞态，解释器抓不到的那一类

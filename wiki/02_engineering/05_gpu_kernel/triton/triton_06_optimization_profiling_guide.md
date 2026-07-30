@@ -90,7 +90,7 @@ NVIDIA 的 **Nsight Systems**（`nsys`，时间线/CPU-GPU 重叠/kernel 间隙�
 - 显式：`02-fused-softmax.py:90` 的 `tl.range(row_start, n_rows, row_step, num_stages=num_stages)`，`num_stages` 是 kernel 的 `constexpr` 参数（`:86`），host 端按 SMEM 大小选 `num_stages = 4 if SIZE_SMEM > 200000 else 2`（`:137`）。
 - autotune 搜：`03-matrix-multiplication.py:166-198` 的 configs 里 `num_stages` 取 3/4/5；`06-fused-attention.py:131-141` 的 `NUM_STAGES_OPTIONS=[2,3,4]` 进 autotune 空间。
 
-**权衡**：级数越多预取越深、越能掩盖延迟，但每多一级就多占一份 SRAM 缓冲——SMEM 不够会降占用率甚至编不出来。所以 `02` 才按 `SIZE_SMEM` 动态选，`06` 才交给 autotune。流水线在编译器侧如何下降到 `cp.async`/MMA，见 [[triton_vs_mlir_backend_analysis]]。
+**权衡**：级数越多预取越深、越能掩盖延迟，但每多一级就多占一份 SRAM 缓冲——SMEM 不够会降占用率甚至编不出来。所以 `02` 才按 `SIZE_SMEM` 动态选，`06` 才交给 autotune。流水线在编译器侧如何下降到 `cp.async`/MMA，见 [[30_triton_vs_mlir_backend_analysis]]。
 
 ### ③ `num_warps` —— 占用率的旋钮（治 compute-bound 的并行度）
 
@@ -110,7 +110,7 @@ num_programs = NUM_SM * occupancy                          # :169
 
 ### ⑤ Tensor Core：`tl.dot`（治 compute-bound）
 
-矩阵乘想摸到峰值算力，**唯一入口是 `tl.dot`**——它会被编译器映射到 Tensor Core 的 MMA 指令；用标量循环手写乘加只能跑 CUDA core，差一个数量级。FlashAttention 两处 `tl.dot`：`06:73` 算 $S=QK^\top$、`06:103` 算 $acc \mathrel{+}= P\,V$（第三参数 `acc` 让它做「乘加进累加器」）。`tl.dot→MMA` 的下降细节见 [[triton_vs_mlir_backend_analysis]]。配套技巧：累加器用 fp32（`06:218` `acc = tl.zeros(..., tl.float32)`）保精度，输入在喂给 MMA 前转半精度（`06:101` `p = p.to(dtype)`）。
+矩阵乘想摸到峰值算力，**唯一入口是 `tl.dot`**——它会被编译器映射到 Tensor Core 的 MMA 指令；用标量循环手写乘加只能跑 CUDA core，差一个数量级。FlashAttention 两处 `tl.dot`：`06:73` 算 $S=QK^\top$、`06:103` 算 $acc \mathrel{+}= P\,V$（第三参数 `acc` 让它做「乘加进累加器」）。`tl.dot→MMA` 的下降细节见 [[30_triton_vs_mlir_backend_analysis]]。配套技巧：累加器用 fp32（`06:218` `acc = tl.zeros(..., tl.float32)`）保精度，输入在喂给 MMA 前转半精度（`06:101` `p = p.to(dtype)`）。
 
 ---
 
@@ -175,7 +175,7 @@ $$O_i = \frac{acc}{\ell_i},\qquad \text{并存 logsumexp } m_i \mathrel{+}= \log
 
 直觉上 FlashAttention 把 HBM 流量从「被 $N^2$ 的分数矩阵支配」降到「只与 Q/K/V/O 的 $N\cdot d$ 同阶」。**严格表述**（FA 论文 arXiv:2205.14135，`:11`）：设片上 SRAM 大小为 $M$，FA 的 HBM 访问量是 $\Theta(N^2 d^2 / M)$，而标准实现是 $\Theta(Nd + N^2)$——因为 K/V 会被各个 query 块重复读，所以并非字面 $O(Nd)$，但当 $d^2\ll M$ 时 FA 的 $N^2$ 系数被 $d^2/M$ 显著压小。这正是 attention 从 memory-bound 受益于融合的根本原因。
 
-> 与 [[gpu_kernel_guide]] §08 的关系：那页已给出 FlashAttention 的硬件层级映射表（Grid/Block/SRAM/Warp/Register/Tile 各落到哪）。本页**不重复**那张表，只补「Triton 实现视角」——上面的 `m_i/l_i/acc` 三状态与 `alpha` 重标定，就是该表里「SRAM 常驻状态」一行的代码级真相。attention 的其它变体见 [[flex_attention_analysis]]。
+> 与 [[gpu_kernel_guide]] §08 的关系：那页已给出 FlashAttention 的硬件层级映射表（Grid/Block/SRAM/Warp/Register/Tile 各落到哪）。本页**不重复**那张表，只补「Triton 实现视角」——上面的 `m_i/l_i/acc` 三状态与 `alpha` 重标定，就是该表里「SRAM 常驻状态」一行的代码级真相。attention 的其它变体见 [[26_flex_attention_analysis]]。
 
 ### 4.3 configs 解读：把杠杆②③④交给 autotune
 
@@ -293,5 +293,5 @@ proton_viewer.print_tree(tree, metrics)
 - [[triton_05_debug_guide]] — 优化引入 bug 时回这里（interpreter / assert）
 - [[triton_knowledge_map]] — 四种能力总纲与自测
 - [[gpu_kernel_guide]] — FlashAttention 硬件层级映射表（§08）、Tensor Core 硬件视角（与本页互补）
-- [[flex_attention_analysis]] — attention 变体与 mask/score 修改
-- [[triton_vs_mlir_backend_analysis]] — `tl.dot→MMA`、`num_stages` 流水线在编译器侧的下降
+- [[26_flex_attention_analysis]] — attention 变体与 mask/score 修改
+- [[30_triton_vs_mlir_backend_analysis]] — `tl.dot→MMA`、`num_stages` 流水线在编译器侧的下降

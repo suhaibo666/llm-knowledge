@@ -206,6 +206,13 @@ C 卷 21 篇的目标目录补充说明:严格属于 Dynamo 符号形状的(04)�
 
 ## 5. 命名统一
 
+- **目录内分段编号(2026-07-30 追加确认)**:内容页文件名加两位段位编号前缀,十位数字=类别/难度段,个位=段内学习顺序,让读者从文件名即可由浅入深:
+  - 段 0(`01`–`09`):入门/导览(quickstart、knowledge map、overview 类)
+  - 段 1(`10`–`19`):核心机制主线(按流水线/学习顺序排列的 `_analysis` 页)
+  - 段 2(`20`–`29`):深潜/专题(`_deepdive`、专项分析、边角机制)
+  - 段 3(`30`–`39`):方法论/对照/工程实践(开发 guide、comparison、排查实践)
+  - `index.md` 不编号;某段超容时占用相邻空段并在该目录 index 的段位表注明;硬件子目录(npu/、cuda/)页多时同规则递归适用
+  - 生效范围与时机:P4 收尾时对 `01_ai_frameworks` 全部定型目录统一编号;P7 推广到全库其余目录
 - 合法后缀 6 种:`_analysis`、`_guide`、`_quickstart`、`_deepdive`(统一无下划线)、`comparison`、`index`。
 - `_deep_dive` 5 篇改 `_deepdive`;`_report/_methodology/_overview/_map/_model/_concepts/_details/_diagrams/_v2` 等就近改名(多数在合并清单内自然消亡)。
 - 非 snake_case 17 篇:删除清单外的改小写下划线;`kimi_k2.5_analysis`→`kimi_k2_5_analysis`、`kimi_k1.5_analysis`→`kimi_k1_5_analysis`(消点号);`mHC.md`→`mhc_analysis.md`;`Engram_Analysis.md`→`engram_analysis.md`;`RL_Training_Inference_Precision_Analysis` 等迁移时一并改名。

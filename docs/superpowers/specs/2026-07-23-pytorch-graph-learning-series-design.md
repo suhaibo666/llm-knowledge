@@ -529,24 +529,24 @@ Part I 用它建立语义；Part II 捕获和分图；Part III 实现 `add + mat
 
 至少包括：
 
-- `03_aot_autograd/aotautograd_analysis.md`
-- `03_aot_autograd/aot_autograd_quickstart.md`
-- `03_aot_autograd/fx_graph_construction_and_transformation_analysis.md`
-- `14_fx_export_and_extensibility/fx_graph_export_and_custom_ops_analysis.md`
-- `14_fx_export_and_extensibility/fx_export_custom_op_quickstart.md`
-- `04_inductor/dynamic_shapes_full_analysis.md`
-- `04_inductor/decomposition_passes_guide.md`
-- `04_inductor/pre_grad_passes_guide.md`
-- `04_inductor/joint_graph_passes_guide.md`
-- `04_inductor/post_grad_passes_guide.md`
-- `04_inductor/torch_upstream_pass_deepdive.md`
-- `04_inductor/fx_pass_optimization_methodology.md`
-- `04_inductor/lowering_analysis.md`
-- `04_inductor/scheduler_analysis.md`
-- `04_inductor/inductor_codegen_analysis.md`
-- `04_inductor/inductor_autotuning_analysis.md`
-- `04_inductor/PyTorch_Inductor_Technical_Analysis.md`
-- `04_inductor/torch_compile_architecture.md`
+- `02_compile_stack/02_aot_autograd/aotautograd_analysis.md`
+- `02_compile_stack/02_aot_autograd/aot_autograd_quickstart.md`
+- `02_compile_stack/02_aot_autograd/fx_graph_construction_and_transformation_analysis.md`
+- `04_export_and_distributed/01_fx_export_extensibility/fx_graph_export_and_custom_ops_analysis.md`
+- `04_export_and_distributed/01_fx_export_extensibility/fx_export_custom_op_quickstart.md`
+- `02_compile_stack/04_inductor/dynamic_shapes_full_analysis.md`
+- `02_compile_stack/04_inductor/decomposition_passes_guide.md`
+- `02_compile_stack/04_inductor/pre_grad_passes_guide.md`
+- `02_compile_stack/04_inductor/joint_graph_passes_guide.md`
+- `02_compile_stack/04_inductor/post_grad_passes_guide.md`
+- `02_compile_stack/04_inductor/torch_upstream_pass_deepdive.md`
+- `02_compile_stack/04_inductor/fx_pass_optimization_methodology.md`
+- `02_compile_stack/04_inductor/lowering_analysis.md`
+- `02_compile_stack/04_inductor/scheduler_analysis.md`
+- `02_compile_stack/04_inductor/inductor_codegen_analysis.md`
+- `02_compile_stack/04_inductor/inductor_autotuning_analysis.md`
+- `02_compile_stack/04_inductor/PyTorch_Inductor_Technical_Analysis.md`
+- `02_compile_stack/04_inductor/torch_compile_architecture.md`
 - runtime memory、activation checkpointing 和 compile-cache 相关页面。
 
 ### 7.2 审计单位
@@ -646,11 +646,11 @@ Part I 用它建立语义；Part II 捕获和分图；Part III 实现 `add + mat
 修改：
 
 - `01_ai_frameworks/index.md`
-- `03_aot_autograd/index.md`
-- `04_inductor/index.md`
-- `14_fx_export_and_extensibility/index.md`
-- `13_runtime_memory_amp_profiler/index.md`
-- `17_compile_cache/index.md`
+- `02_compile_stack/02_aot_autograd/index.md`
+- `02_compile_stack/04_inductor/index.md`
+- `04_export_and_distributed/01_fx_export_extensibility/index.md`
+- `01_eager_runtime/07_memory_amp_profiler/index.md`
+- `02_compile_stack/06_compile_cache/index.md`
 - `wiki/changelog.md`
 
 相关旧页面增加反向链接和角色说明。
