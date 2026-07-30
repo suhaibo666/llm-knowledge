@@ -1,4 +1,4 @@
-# 03 · AOTAutograd — 目录索引
+# 02 · AOTAutograd — 目录索引
 
 > 介于 Dynamo 与 Inductor 之间:functionalization、前/反向联合图(joint graph)生成与 min-cut partition。
 > 知识分层:overview(本索引)→ quick start → deep dive(约定见 [[01_ai_frameworks/index]])。

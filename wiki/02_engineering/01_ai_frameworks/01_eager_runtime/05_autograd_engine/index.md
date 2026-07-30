@@ -1,4 +1,4 @@
-# 10 · Eager 反向自动微分引擎 — 目录索引
+# 05 · Eager 反向自动微分引擎 — 目录索引
 
 > 层次:overview(浅)
 > 核验基准:PyTorch upstream `E:\97-codes\pytorch\pytorch`(v2.13.0a0, commit 9922478)
@@ -103,7 +103,7 @@ flowchart LR
 
 ---
 
-## 与 03_aot_autograd 的区别(读者最易混的一点)
+## 与编译期 AOTAutograd 的区别(读者最易混的一点)
 
 这是本模块**必须讲清**的对照点。eager autograd 与 AOTAutograd 都产出「反向计算」,但**何时、以什么形态**截然不同:
 

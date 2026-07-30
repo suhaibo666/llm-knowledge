@@ -1,4 +1,4 @@
-# 14 · FX 图 IR · torch.export · 算子扩展 — 目录索引
+# 01 · FX 图 IR · torch.export · 算子扩展 — 目录索引
 
 > 层次:overview(浅)
 > 核验基准:PyTorch upstream `E:\97-codes\pytorch\pytorch`(v2.13.0a0, commit 9922478)
@@ -35,7 +35,7 @@ flowchart TB
         direction LR
         ST["symbolic_trace<br/>Proxy 拦截<br/>proxy.py:600"]
         EX["torch.export<br/>AOT 规范化<br/>export/__init__.py:59"]
-        DY["TorchDynamo<br/>PEP-523 字节码<br/>(见 02_dynamo)"]
+        DY["TorchDynamo<br/>PEP-523 字节码<br/>(见 02_compile_stack/01_dynamo)"]
     end
 
     M --> ST
@@ -44,7 +44,7 @@ flowchart TB
 
     ST --> GM["FX GraphModule<br/>graph_module.py:511<br/>(eager 图 IR)"]
     EX --> EP["ExportedProgram<br/>exported_program.py:1058<br/>(functional ATen + 约束)"]
-    DY --> AOT["AOTAutograd 前/反向分解<br/>(见 03_aot_autograd)"]
+    DY --> AOT["AOTAutograd 前/反向分解<br/>(见 02_compile_stack/02_aot_autograd)"]
 
     GM -.可作为输入.-> AOT
     EP -.run_decompositions.-> AOT
@@ -53,7 +53,7 @@ flowchart TB
         CO["torch.library.custom_op<br/>library.py:17 → _library/custom_ops.py:67"]
         LIB["Library 句柄<br/>library.py:212"]
     end
-    CO --> DISP["ATen 分发器<br/>(见 01_dispatcher_and_device / 07_op_registration)"]
+    CO --> DISP["ATen 分发器<br/>(见 01_eager_runtime/02_dispatcher_and_device 与 03_op_registration)"]
     LIB --> DISP
 
     DISP -.算子为黑盒节点.-> GM

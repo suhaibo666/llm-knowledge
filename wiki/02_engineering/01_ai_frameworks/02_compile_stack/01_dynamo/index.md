@@ -1,4 +1,4 @@
-# 02 · TorchDynamo 图捕获 — 目录索引
+# 01 · TorchDynamo 图捕获 — 目录索引
 
 > torch.compile 前端:Python 帧评估钩子、字节码符号执行、Guard 生成与守卫失败重编译。
 > 知识分层:overview(本索引)→ quick start → deep dive(约定见 [[01_ai_frameworks/index]])。

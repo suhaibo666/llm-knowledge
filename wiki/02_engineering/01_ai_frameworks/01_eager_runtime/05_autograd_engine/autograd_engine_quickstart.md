@@ -6,7 +6,7 @@
 
 本页面向已经会用 `loss.backward()`、但想搞清「叶子/非叶子、`grad_fn`、`retain_graph`/`create_graph`、自定义 `Function`、grad 模式、NaN/inplace 排查」的工程师。每个结论都对照上游源码标注 `相对路径:行号`(相对 `E:\97-codes\pytorch\pytorch` 根)。
 
-> 概念全景(Node/Edge/AutogradMeta、与 03_aot_autograd 的区别)见 [[index]];源码级深析见 [[autograd_engine_analysis]]。
+> 概念全景(Node/Edge/AutogradMeta、与编译期 AOTAutograd 的区别)见 [[index]];源码级深析见 [[autograd_engine_analysis]]。
 
 ## 0. 30 秒最小可用路径
 

@@ -1,4 +1,4 @@
-# 00 · Tensor 与 Storage(张量表达机制) — 目录索引
+# 01 · Tensor 与 Storage(张量表达机制) — 目录索引
 
 > 层次:overview
 > 核验基准:PyTorch upstream `E:\97-codes\pytorch\pytorch`(v2.13.0a0, commit 9922478)

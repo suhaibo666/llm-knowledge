@@ -1,4 +1,4 @@
-# 17 · torch.compile 跨阶段缓存 — 目录索引
+# 06 · torch.compile 跨阶段缓存 — 目录索引
 
 > 层次：overview
 > 当前课程源码基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`

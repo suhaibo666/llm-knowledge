@@ -1,4 +1,4 @@
-# 01 · 算子分发与设备接入 — 目录索引
+# 02 · 算子分发与设备接入 — 目录索引
 
 > PyTorch 运行时基石:ATen Dispatcher 的 DispatchKey/KeySet 优先级与 redispatch;以及 PrivateUse1 out-of-tree 设备接入机制(NPU 经由它注册为加速器)。
 > 知识分层:overview(本索引)→ quick start → deep dive(约定见 [[01_ai_frameworks/index]])。

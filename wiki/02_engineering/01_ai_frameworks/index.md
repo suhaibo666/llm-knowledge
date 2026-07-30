@@ -10,21 +10,22 @@
 PyTorch 可拆成相互支撑的两条主轴——**① eager 运行时地基**(默认即时执行所依赖的数据模型与机制)与 **② torch.compile 编译栈**(把 eager 计算捕获、分解、编译成 kernel)。编译栈始终建立在地基之上,二者共享同一套 Tensor/Dispatcher 底座。
 
 ```
-                         ┌─────────────────── ② torch.compile 编译栈 ───────────────────┐
-   算子供给侧            @torch.compile
- (07_op_registration)   User Code ─► TorchDynamo ─► AOTAutograd ─► TorchInductor ─► Kernel 执行
-        │                              (02)            (03)            (04)            │
-        │                            图捕获/Guard    前/反向分解     lowering→codegen   │
-        │                                                              │               │
-        ▼                                                     codegen 后端(05)   图捕获/回放(06)
- ┌──────────────────────────────── ① eager 运行时地基 ──────────────────────────────────┐
- │ 00 Tensor/Storage(张量表达) ── 01 Dispatcher(分发) ── 11 ATen 算子定义/执行          │
- │ 10 eager autograd 引擎(.backward())  12 torch.nn 模块/Optimizer                       │
- │ 13 运行时:缓存分配器 / AMP / Profiler    14 torch.fx/export/扩展   15 torch.distributed │
- └──────────────────────────────────────────────────────────────────────────────────────┘
+                         ┌─────────────────── ② torch.compile 编译栈(02_compile_stack) ───────────────────┐
+   算子供给侧             @torch.compile
+ (01_eager_runtime/      User Code ─► TorchDynamo ─► AOTAutograd ─► TorchInductor ─► Kernel 执行
+  03_op_registration)                  (01_dynamo)   (02_aot_autograd) (04_inductor)          │
+        │                             图捕获/Guard    前/反向分解      lowering→codegen        │
+        │                                                                  │                  │
+        ▼                                                    codegen 后端(05_codegen_backends)  图捕获/回放(03_runtime_graphs) │
+ ┌──────────────────────────────── ① eager 运行时地基(01_eager_runtime) ──────────────────────────────┐
+ │ 01 Tensor/Storage(张量表达) ── 02 Dispatcher(分发) ── 04 ATen 算子定义/执行                        │
+ │ 05 eager autograd 引擎(.backward())  06 torch.nn 模块/Optimizer                                    │
+ │ 07 运行时:缓存分配器 / AMP / Profiler                                                              │
+ └──────────────────────────────────────────────────────────────────────────────────────────────────┘
+   (04_export_and_distributed:torch.fx/export/扩展、torch.distributed 原语 —— 见 ④ 图导出与分布式)
 ```
 
-> 关键对照:**10_eager_autograd**(运行时动态磁带 + C++ 引擎)是 **03_aot_autograd**(编译期前/反向联合 FX 图)的 eager 对应物;两者易混,见各自 index 的对照表。
+> 关键对照:**01_eager_runtime/05_autograd_engine**(运行时动态磁带 + C++ 引擎)是 **02_compile_stack/02_aot_autograd**(编译期前/反向联合 FX 图)的 eager 对应物;两者易混,见各自 index 的对照表。
 > 编译栈端到端流水线详见 [[torch_compile_architecture]];eager 地基从 [[01_eager_runtime/01_tensor_and_storage/index]] 读起。
 
 ---
@@ -93,10 +94,10 @@ cache hit究竟跳过了哪些阶段，不能把“命中cache”笼统理解成
 
 ### 📋 规划任务(按优先级)
 
-- **[P2] 持久化与遗留 `18_serialization_and_legacy`**(spec 已就绪,本轮暂缓):序列化(`torch.save/load` zip+pickle、`weights_only` 安全模型)、TorchScript/JIT(已废弃,迁移见 14)、C++/CUDA 扩展(`cpp_extension`)。编号 16 曾由图编译主线占用；该主线现已归并到 19，但 17/18 的既有编号保持不回退，避免再次迁移链接。建议三页:overview / `save_load_and_cpp_extension_quickstart` / `serialization_jit_and_cpp_extensions_analysis`。
-- **[P2] 新模块的 NPU 特化下沉**:为 00/10/11/13/15 按需建 `npu/` 子目录——NPU 缓存分配器与内存复用(与 [[03_runtime_graphs/npu/index]] 联动)、`HCCL`/`ProcessGroupHCCL`、`AutogradPrivateUse1` 反向注册、aclnn 结构化 kernel 对照;upstream 页仅留指向 `npu/` 的指针。
-- **[P1→补深] 11_aten**:补一条 `yaml → torchgen → 生成 C++(RegisterCPU.cpp)` 的**具体生成实例**走读(当前以机制为主)。
-- **[P1→补深] 15_distributed**:`ProcessGroupNCCL` 具体实现、FSDP2(`_composable/fsdp`)与 FSDP1 差异、pipeline 调度(1F1B/interleaved)细节;与 [[02_train_frameworks/index]] 划清「原语 vs 应用」边界后双向补链。
+- **[P2] 持久化与遗留 `18_serialization_and_legacy`**(spec 已就绪,本轮暂缓):序列化(`torch.save/load` zip+pickle、`weights_only` 安全模型)、TorchScript/JIT(已废弃,迁移见 [[04_export_and_distributed/01_fx_export_extensibility/index]])、C++/CUDA 扩展(`cpp_extension`)。编号 16 曾由图编译主线占用;该主线现已归并到 19。17_compile_cache 已随 P4 两级重组迁至 `02_compile_stack/06_compile_cache`(编号跟随新层结构变化);本条目若未来落地,按 P4 后的 5 层结构选址,不再沿用旧扁平编号。建议三页:overview / `save_load_and_cpp_extension_quickstart` / `serialization_jit_and_cpp_extensions_analysis`。
+- **[P2] 新模块的 NPU 特化下沉**:为 `01_eager_runtime` 的 01/04/05/07(tensor_and_storage/aten_op_execution/autograd_engine/memory_amp_profiler)与 `04_export_and_distributed/02_distributed_primitives` 按需建 `npu/` 子目录——NPU 缓存分配器与内存复用(与 [[03_runtime_graphs/npu/index]] 联动)、`HCCL`/`ProcessGroupHCCL`、`AutogradPrivateUse1` 反向注册、aclnn 结构化 kernel 对照;upstream 页仅留指向 `npu/` 的指针。
+- **[P1→补深] 01_eager_runtime/04_aten_op_execution**:补一条 `yaml → torchgen → 生成 C++(RegisterCPU.cpp)` 的**具体生成实例**走读(当前以机制为主)。
+- **[P1→补深] 04_export_and_distributed/02_distributed_primitives**:`ProcessGroupNCCL` 具体实现、FSDP2(`_composable/fsdp`)与 FSDP1 差异、pipeline 调度(1F1B/interleaved)细节;与 [[02_train_frameworks/index]] 划清「原语 vs 应用」边界后双向补链。
 
 ### 既有空白(沿用)
 

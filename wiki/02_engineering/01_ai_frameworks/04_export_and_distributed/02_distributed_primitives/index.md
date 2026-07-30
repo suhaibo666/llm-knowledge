@@ -1,4 +1,4 @@
-# 15 · torch.distributed 原生原语 — 目录索引
+# 02 · torch.distributed 原生原语 — 目录索引
 
 > 层次:overview(浅)
 > 核验基准:PyTorch upstream `E:\97-codes\pytorch\pytorch`(v2.13.0a0, commit 9922478)
@@ -15,13 +15,13 @@
 ### 边界:原语层 vs 框架层
 
 ```
-┌─────────────────────────────────────────────┐
-│  02_train_frameworks  Megatron / torchtitan  │  ← 应用层:调度策略、配方、并行组合
-├─────────────────────────────────────────────┤
-│  15_distributed_primitives (本模块)           │  ← 原语层:DDP / FSDP / DTensor / TP / PP
-│       ↑ 都站在下面这层之上                      │
-│  c10d:ProcessGroup + collective/p2p + Work    │  ← 通信底座(Python 薄壳 + C++ 实现)
-└─────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────┐
+│  02_train_frameworks  Megatron / torchtitan        │  ← 应用层:调度策略、配方、并行组合
+├───────────────────────────────────────────────────┤
+│  02_distributed_primitives (本模块)                │  ← 原语层:DDP / FSDP / DTensor / TP / PP
+│       ↑ 都站在下面这层之上                          │
+│  c10d:ProcessGroup + collective/p2p + Work         │  ← 通信底座(Python 薄壳 + C++ 实现)
+└───────────────────────────────────────────────────┘
 ```
 
 一句话划界:**本模块 = PyTorch 仓库里 `torch/distributed/` 与 `torch/nn/parallel/` 内的原生能力**;凡是「把这些原语按某种配方拼起来训大模型」的工程,归 [[02_train_frameworks/index]]。
