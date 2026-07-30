@@ -8,7 +8,7 @@
 > 核心代码位置：本地 upstream `E:\97-codes\pytorch\pytorch`：`torch/_inductor/runtime/triton_heuristics.py`、`codegen/triton_utils.py`、`runtime/hints.py`
 > 最后更新：2026-07-30（新增 §六「编译期算法选择基础设施」，回补自已删除的 `inductor_compiler_pipeline_analysis.md` §7.5；此前 §一~五均为运行时 `CachingAutotuner` 视角）
 
-> 填补 [[01_ai_frameworks/index]] 知识空白「Inductor autotuning」。融合成本模型与 `CoordescTuner`（坐标下降）已在 [[PyTorch_Inductor_Technical_Analysis]] §4 详述,本页**不重复**,聚焦 autotune 运行时生命周期、metadata、launcher 与 Triton JIT 编译。
+> 填补 [[01_ai_frameworks/index]] 知识空白「Inductor autotuning」。`CoordescTuner`（坐标下降）见本页 §七（2026-07-30 从已删除的 `PyTorch_Inductor_Technical_Analysis.md` §4 判重并入并重新核验）。
 
 ---
 
@@ -41,7 +41,7 @@ def run(self, *args, stream, **kwargs):
 - `pointwise`（`:3877`）：1D 出 2 个候选（bs / bs//2,不同 elem/warp）；2D 出 6 个不同纵横比 `(32,32)(64,64)(256,16)(16,256)(bs,1)(1,bs)`。
 - `reduction`（`:4547`）/`persistent_reduction`（`:4809`）：扫 X/R block,按 `ReductionHint.INNER/OUTER` 调 num_warps；`MAX_R0_BLOCK`（Blackwell `cc>=10` 取 1024,旧 2048）；persistent 的 XBLOCK 候选 `[1,8,32,128]`、`MAX_PERSISTENT_BLOCK_NUMEL=4096`。
 
-候选数受 `disable_pointwise_autotuning` / `max_autotune` / `max_autotune_pointwise` 控制；`coordinate_descent_tuning` 在 autotune 出一个 config 后再逐旋钮微调（`CoordescTuner`,详见 [[PyTorch_Inductor_Technical_Analysis]] §4）。
+候选数受 `disable_pointwise_autotuning` / `max_autotune` / `max_autotune_pointwise` 控制；`coordinate_descent_tuning` 在 autotune 出一个 config 后再逐旋钮微调（`CoordescTuner`,详见本页 §七）。
 
 ---
 
@@ -140,12 +140,45 @@ class TuningProcessPool:
 
 > [!correction] 对照当前审计基线核实：`TuningProcessPool` 位于 `torch/_inductor/autotune_process.py:313`（非原文 `262`）。构造函数体与原文简化版一致（`get_device_list()` → 逐 device 建 `TuningProcess` → `ThreadPoolExecutor(max_workers=len(devices))`），当前源码额外维护一个 `process_queue`（原文简化省略，非错误）。"子进程隔离防主进程崩溃" 的动机在源码里有直接依据：同文件 `BenchmarkRequest` 类的 docstring（`autotune_process.py:497-501`）写道 "Only handle triton template benchmark for now. The extern kernel benchmark can be done inside the same process since they usually don't cause crash"——反面隐含 Triton template kernel 的 benchmark **会**导致崩溃，与原文 "避免编译错误导致主进程崩溃"/"Triton 编译可能 segfault" 的论断吻合。
 
+## 七、`CoordescTuner`：坐标下降怎样在 autotune 出的 config 上继续微调
+
+§二提到 `coordinate_descent_tuning` 在 autotune 选出一个 config 后逐旋钮微调；这里展开
+它具体怎么做（2026-07-30 从已删除的 `PyTorch_Inductor_Technical_Analysis.md` §4 判重
+并入，已按当前基线 `torch/_inductor/runtime/coordinate_descent_tuner.py` 重新核验
+行号并改写为本页风格）。
+
+`CoordescTuner`docstring 自陈"一次只调一个 field/坐标"（`coordinate_descent_tuner.py:48`），
+不是同时优化多个维度；模块级 `get_field`/`set_field`（`:28`、`:37`）统一处理
+`num_warps`/`num_stages`/`waves_per_eu`/其余 `config.kwargs`字段的读写，供
+`tunable_fields`（`:118`）、`get_neighbour_values`（`:192`）与核心 `autotune`（`:377`）
+调用。
+
+算法骨架：从 baseline config 出发，逐个可调字段尝试其邻域候选值（增大/减小），只要
+`has_improvement`判定为真就切换到新配置，重复直到一轮内所有字段都没有改进：
+
+```text
+best = baseline_config
+while improved:
+    improved = False
+    for field in tunable_fields:
+        for candidate in get_neighbour_values(field, get_field(best, field)):
+            if not valid(candidate): continue
+            timing = benchmark(candidate)
+            if has_improvement(best_timing, timing):
+                best, best_timing, improved = candidate, timing, True
+```
+
+`has_improvement`要求新配置比当前最优快至少 0.1%（`threshold = 0.001`，
+`coordinate_descent_tuner.py:242-244`）才算改进，避免在测量噪声内无限微调。这是
+§二启发式生成的候选 config 之后的**第二轮、局部**搜索——启发式负责给出结构合理的
+起点（block/warp 组合），坐标下降负责在起点附近沿单个维度爬坡，两者不是互斥的
+候选生成方式，而是先后两个阶段。
+
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[inductor_gpu_kernel_dispatch_model]] — grid 生成（launcher 调用的 grid 来源）
 - [[inductor_reduction_codegen_deep_analysis]] — reduction config（R0_BLOCK / persistent）
-- [[PyTorch_Inductor_Technical_Analysis]] — §4 融合成本模型 + CoordescTuner 坐标下降（本页不重复）
 - [[inductor_codegen_dynamic_shape_analysis]] — 动态 shape 与 XBLOCK 选择、ks0*ks1 升 i64
 - [[inductor_compile_fx_orchestration_analysis]] — compile_fx 编排全景；§15 组织原则提到"算子后端选择延迟到 CodeGen 阶段 autotuning"与本页 §6 呼应，§16 源码速查表 CodeGen 行含 `select_algorithm.py`/`autotune_process.py`
 - [[npu_inductor_linearize_backend_analysis]] — NPU autotune（UB 过滤 + mspti + 降型）

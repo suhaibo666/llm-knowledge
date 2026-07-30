@@ -78,7 +78,7 @@
 | MoE | [[megatron_ep_analysis]], [[deepseek_moe_analysis]] |
 | MoE 专家并行 (MindFormers) | [[mindformers/index]], [[mindformers_pynative_ep_analysis]], [[mindformers_moe_token_dispatcher_analysis]] |
 | 昇腾训练加速 (MindSpeed) | [[mindspeed/index]], [[mindspeed_parallelism_analysis]], [[mindspeed_context_parallel_analysis]], [[mindspeed_comm_overlap_analysis]], [[mindspeed_memory_optimization_analysis]], [[mindspeed_ascend_affinity_analysis]] |
-| torch.compile | [[torch_compile_architecture]], [[02_compile_stack/01_dynamo/index]], [[PyTorch_Inductor_Technical_Analysis]] |
+| torch.compile | [[torch_compile_architecture]], [[02_compile_stack/01_dynamo/index]], [[02_compile_stack/04_inductor/index]] |
 | CUDA/NPU Graphs | [[PyTorch_CUDA_Graphs_Complete_Guide]], [[torch_compile_npugraphs_deep_dive]] |
 | Triton kernel 入门→专家 | [[triton_01_programming_model_guide]], [[triton_03_matmul_guide]], [[triton_04_autotune_guide]], [[triton_06_optimization_profiling_guide]], [[triton_knowledge_map]] |
 | GPU/NPU 执行模型与 GEMM | [[cuda_execution_model_guide]], [[cuda_gemm_kernel_analysis]], [[ascend_kernel_execution_model_analysis]] |

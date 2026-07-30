@@ -214,10 +214,29 @@ register_device_op_overrides("my_accel", MyDeviceOps())
 - **只测 eager callable**：没有覆盖 AOT/CPP/FX wrapper 和缓存路径。
 - **覆盖全局设备注册做局部实验**：污染同进程其他模型的编译。
 
+## 10. 读侧：`device_codegens` 怎样被查询
+
+前面几节讲的是"写侧"——怎样把一个新后端注册进去；查询是它的镜像："写侧"用
+`register_backend_for_device()`把 `device.type → DeviceCodegen(scheduling, wrapper_codegen,
+cpp_wrapper_codegen, fx_wrapper_codegen)`写进全局字典 `device_codegens`
+（`torch/_inductor/codegen/common.py:318`）；"读侧"由 `get_scheduling_for_device(device)`
+（`common.py:473` 附近）和 `get_wrapper_codegen_for_device(device, cpp_wrapper, fx_wrapper)`
+按同一个字典查出对应 scheduling/wrapper 构造器，供 `GraphLowering.codegen`/`Scheduler.
+create_backend()`调用。
+
+同设备可能仍有多种 kernel 语言可选——不是通过多次注册，而是通过 config 挑选具体
+scheduling 实现：`cpu_backend: Literal["cpp", "triton", "halide", "pallas"]`（默认
+`"cpp"`）与 `cuda_backend: Literal["triton", "halide", "pallas"]`（默认 `"triton"`）
+（`torch/_inductor/config.py:2769`、`:2773`）决定 CPU/CUDA 具体落到 `CppScheduling`
+还是 `TritonScheduling`/`HalideScheduling`/`PallasScheduling`。这与 §6 提到的
+`CUDACombinedScheduling`（一个 scheduling 内部委派多种 codegen 技术）是两种不同的
+"一个 device 多种 kernel 语言"路径：前者是 config 驱动的整体替换，后者是同一
+scheduling 对象按节点内部委派。
+
 ## Related Pages
 
 - [[inductor_codegen_analysis]] — 现有 Inductor codegen 调用链与实现分析
-- [[scheduler_analysis]] — 融合组和调度顺序如何形成
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]] — 融合组和调度顺序如何形成
 - [[fx_lowering_to_inductor_ir_analysis]] — 新 op 如何进入现有 IR/codegen
 - [[inductor_gpu_kernel_dispatch_model]] — GPU kernel indexing/dispatch 基线
 - [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段放置决策(现含跨框架对照)

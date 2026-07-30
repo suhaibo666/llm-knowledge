@@ -136,7 +136,7 @@ flowchart LR
 **实际案例：CATLASS GEMM + EVG epilogue 融合**（来源：`04-backend-triton §5`）
 - `mm/addmm/bmm` 绕开 Triton，走类 CUTLASS 的 **CATLASS 模板库**（自有 tiling + autotune，贴合 Cube 矩阵块尺寸）。
 - **EVG（Epilogue Visitor Graph）** 把 GEMM 之后的 `add/mul/relu/sigmoid` 融进 epilogue——matmul 算完结果还在片上，顺手做完激活再写回，避免「算完 matmul→写回→再起 elementwise kernel→再读回」。
-- 调度层用 **`NPUCombinedScheduling` 委托分发**：`choose_node_backend` 按 `is_catlass_template` 把 GEMM 路由给 CATLASS、其余给 Triton，两条 codegen 路径在同一调度框架内共存。融合分发详见 [[scheduler_analysis]]。
+- 调度层用 **`NPUCombinedScheduling` 委托分发**：`choose_node_backend` 按 `is_catlass_template` 把 GEMM 路由给 CATLASS、其余给 Triton，两条 codegen 路径在同一调度框架内共存。融合分发详见 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]。
 
 ---
 
@@ -349,7 +349,7 @@ flowchart LR
 - [[npu_compile_paths_overview]] — torch_npu 三条编译路径全景（本页的上级背景）
 - [[npu_vs_upstream_fusion_passes]] — torch_npu vs 上游融合 Pass 全流程对照（含对本页 §12.4 自定义 pass 清单、§八 fallback 计数、persistent 恒关口径的源码级更新）
 - [[npu_inductor_splittiling_backend_analysis]] — Triton/default 路径深度分析（golden_var_list、CATLASS、monkey-patch 的「what/how」，与本页「why」互补）
-- [[scheduler_analysis]] — Scheduler 融合策略、自定义 Pass 与排查（§六 CATLASS / §四 规约融合的展开）
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]] — Scheduler 融合策略、自定义 Pass 与排查（§六 CATLASS / §四 规约融合的展开）
 - [[npu_lowering_guide]] — NPU 特定 lowering 与 fallback 算子映射（§八 的细节）
 - [[npu_compile]] — NPU 编译工作流、Autotune、精度校验（§九 的细节）
 - [[inductor_codegen_dynamic_shape_analysis]] — 代码生成中动态形状处理（§十一 的展开）

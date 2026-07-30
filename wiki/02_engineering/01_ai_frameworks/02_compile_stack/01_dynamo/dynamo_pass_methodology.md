@@ -135,7 +135,7 @@ compiled = torch.compile(model, backend="audit_inductor")
 | functionalized 前反向联合 ATen 图 | [[joint_graph_passes_guide]] |
 | 切分后的精确 ATen 图 | [[post_grad_passes_guide]] |
 | ATen → IR、layout/realization | [[fx_lowering_to_inductor_ir_analysis]] |
-| buffer 依赖、融合组、stream | [[scheduler_analysis]] |
+| buffer 依赖、融合组、stream | [[scheduler_dependency_graph_fusion_and_ordering_analysis]] |
 | target kernel/wrapper ABI | [[codegen_extension_guide]] |
 
 ## Related Pages

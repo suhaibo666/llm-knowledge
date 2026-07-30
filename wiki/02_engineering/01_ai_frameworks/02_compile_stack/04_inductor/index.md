@@ -23,7 +23,7 @@
 | liveness、reuse、静态peak与runtime边界 | [[buffer_liveness_memory_planning_and_reuse_analysis]] |
 | Scheduler dependency/fusion/reorder | [[scheduler_dependency_graph_fusion_and_ordering_analysis]] |
 | kernel/wrapper/autotune/provenance | [[codegen_kernel_mapping_autotuning_and_provenance_analysis]] |
-| 查某个子系统的完整函数/API清单 | 本目录下`fx_lowering_to_inductor_ir_analysis`、`scheduler_analysis`、`inductor_codegen_analysis`等专题页 |
+| 查某个子系统的完整函数/API清单 | 本目录下`fx_lowering_to_inductor_ir_analysis`、`scheduler_dependency_graph_fusion_and_ordering_analysis`、`inductor_codegen_analysis`等专题页 |
 
 autotuning负责搜索/测量候选并选择winner；[[02_compile_stack/06_compile_cache/index]]讨论winner、graph
 artifact与compiled module如何复用。两者相邻但不是同一机制：一次autotune可能写cache，
@@ -42,7 +42,6 @@ artifact与compiled module如何复用。两者相邻但不是同一机制：一
 | 页面 | 核心主题 |
 |------|---------|
 | [[inductor_compile_fx_orchestration_analysis]] | **compile_fx 编排入口**:为什么先调用 AOTAutograd、wrapper ABI 归一化、fw/bw compiler 分工、产物层次、`compile_fx→_compile_fx_main→AOTAutograd`源码跟读;§0 附带全链路全景图与各阶段深挖入口导航表(原"脊柱文档" `inductor_compiler_pipeline_analysis` 921 行的逐阶段走读已被本目录各专题页更深入覆盖,判重后删除,2026-07-30) |
-| [[PyTorch_Inductor_Technical_Analysis]] | **后端选择 & IR 优化深度**:后端选择/配置、Inductor IR 数据结构、融合成本模型与坐标下降 autotune、常量折叠、内存规划/内存池、CUDA Graphs 集成、后端扩展(pipeline 未展开的纵深) |
 | [[inductor_memory_management_analysis]] | **内存分配管理(全栈三层)**:编译期 buffer 复用/峰值重排/池化规划(`memory_plan_reuse`·`reorder_for_peak_memory`·`memory_planning.py`)→ 运行期 `CUDACachingAllocator` → CUDA Graphs `cudagraph_trees` 跨图共享私有池 + checkpoint;含**池大小如何确定**(§2.6)+ 段大小档位(§3) |
 | [[inductor_memory_allocation_guide]] | **内存分配实战指南(guide)**:实际分配全过程走查 + 分配器对照(native/cudaMallocAsync/expandable)+ `memory_stats`/snapshot 实测复现 + **内存越界/踩踏排查**(mask/size_asserts 内置防护、compute-sanitizer)+ 实践建议 |
 | [[wrapper_execution_memory_allocation_and_reuse_analysis]] | **Wrapper 执行与 buffer reuse(源码级)**:boxed calling convention、`MemoryPlanningLine` IR(Allocate/FreeIfNotReused/Reuse)、reuse key、view/alias 对 reuse 的限制;与上两页视角重叠,归一进行中(见页头互指) |
@@ -55,7 +54,7 @@ artifact与compiled module如何复用。两者相邻但不是同一机制：一
 |------|---------|
 | [[decomposition_passes_guide]] | **Decomposition 开发**：是什么/为什么、AOT 注入位置、关键 API、注册示例、与 Graph Pattern/Lowering 的选择边界 |
 | [[fx_lowering_to_inductor_ir_analysis]] | **FX → Inductor IR**：注册/IR/fallback/layout API、接入示例、为什么在此阶段 |
-| [[scheduler_analysis]] | **调度与融合**：依赖/融合决策、`_pre/_post_fusion_custom_pass` 真实签名、错误旧接口辨析 |
+| [[scheduler_dependency_graph_fusion_and_ordering_analysis]] | **调度与融合**：依赖/融合决策、`_pre/_post_fusion_custom_pass` 真实签名、错误旧接口辨析 |
 | [[inductor_codegen_analysis]] | 现有代码生成策略、kernel、wrapper 与调用链 |
 | [[codegen_extension_guide]] | **Codegen 开发**：`BaseScheduling`、Wrapper、`DeviceOpOverrides`、设备注册骨架与验证清单 |
 

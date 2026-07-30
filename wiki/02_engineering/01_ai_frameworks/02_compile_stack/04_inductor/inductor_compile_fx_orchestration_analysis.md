@@ -35,7 +35,7 @@ flowchart TD
 | Decomposition | [[decomposition_passes_guide]] |
 | FX Passes(pre/joint/post-grad) | [[pre_grad_passes_guide]] / [[joint_graph_passes_guide]] / [[post_grad_passes_guide]] |
 | Lowering | [[fx_lowering_to_inductor_ir_analysis]] |
-| Scheduler | [[scheduler_analysis]] |
+| Scheduler | [[scheduler_dependency_graph_fusion_and_ordering_analysis]] |
 | CodeGen | [[inductor_codegen_analysis]] |
 
 ## 1. 为什么入口位于Inductor，却先调用AOTAutograd

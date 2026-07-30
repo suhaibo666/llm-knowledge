@@ -278,6 +278,6 @@ flowchart TB
 - [[codegen_kernel_mapping_autotuning_and_provenance_analysis]] — 被缓存复用的 kernel/wrapper 与 provenance 产物
 - [[torch_compile_architecture]] — torch.compile 整体栈
 - [[inductor_autotuning_analysis]] — autotune 生命周期（获胜 config 即 TritonBundler 打包对象）
-- [[PyTorch_Inductor_Technical_Analysis]] — Inductor lowering/codegen（命中时被跳过的那段）
+- [[02_compile_stack/04_inductor/index]] — Inductor lowering/codegen（命中时被跳过的那段）
 - [[symbolic_shapes_guards_and_graph_reuse_analysis]] — 动态形状与 guard（§三 guard 校验的上游）
 - [[aotautograd_joint_forward_backward_graphs_analysis]] — AOTAutograd 前反向切分

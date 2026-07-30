@@ -83,7 +83,7 @@ rsplit_start = rsplit_chunk * rsplit_id
 - [[inductor_gpu_kernel_dispatch_model]] — kernel 骨架与 grid（CooperativeReductionGrid 在此）
 - [[inductor_codegen_analysis]] — codegen 概览
 - [[fx_lowering_to_inductor_ir_analysis]] — Reduction IR（make_reduction / Welford）
-- [[scheduler_analysis]] — 融合（含 MixOrderReductions）
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]] — 融合（含 MixOrderReductions）
 - [[inductor_autotuning_analysis]] — reduction config（R0_BLOCK / num_warps）
 - [[npu_inductor_linearize_backend_analysis]] — NPU persistent 恒关 + r 轴 rsplit
 - [[02_compile_stack/04_inductor/index]] — 本目录索引

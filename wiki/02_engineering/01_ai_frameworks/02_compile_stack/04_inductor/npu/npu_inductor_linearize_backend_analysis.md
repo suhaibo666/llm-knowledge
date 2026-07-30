@@ -14,7 +14,7 @@
 
 ## 一、定位：monkey-patch 复用上游，而非独立框架
 
-`npu_inductor_2.9.0` 的根本取向是**最小侵入地复用上游 Inductor**：不重写调度框架，而是在上游 `SIMDScheduling`/`SIMDKernel`（`TritonScheduling`/`TritonKernel` 基类，见 [[scheduler_analysis]]）的少数扩展点上挂子类 + monkey-patch，**白继承上游已验证的调度、lowering、内存规划**，只在 NPU 真正需要差异化处改写：索引线性化、tiling、融合门控、autotune 计时、类型适配。
+`npu_inductor_2.9.0` 的根本取向是**最小侵入地复用上游 Inductor**：不重写调度框架，而是在上游 `SIMDScheduling`/`SIMDKernel`（`TritonScheduling`/`TritonKernel` 基类，见 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]）的少数扩展点上挂子类 + monkey-patch，**白继承上游已验证的调度、lowering、内存规划**，只在 NPU 真正需要差异化处改写：索引线性化、tiling、融合门控、autotune 计时、类型适配。
 
 ```mermaid
 flowchart TB
@@ -46,7 +46,7 @@ flowchart TB
 |---|---|---|---|
 | 0 | `_ensure_mspti_preload()` | `__init__.py:11-63` | 保证 `libmspti.so` 真正 `LD_PRELOAD` 进**本**进程（必要时 `os.execv` 重启解释器一次）；用于 autotune 设备计时，未加载则回退 profiler |
 | 1 | `disable_register_inductor_npu()` | `__init__.py:87-101` | **关掉 torch_npu 内置后端**（否则首次 compile 时它注册 `NPUCombinedScheduling` 覆盖本后端） |
-| 2 | `register_backend_for_device('npu', NPUTritonScheduling, NPUWrapperCodeGen)` | `__init__.py:103-108` | 注册本后端（机制见 [[scheduler_analysis]] 「新设备 backend 注册」） |
+| 2 | `register_backend_for_device('npu', NPUTritonScheduling, NPUWrapperCodeGen)` | `__init__.py:103-108` | 注册本后端（机制见 [[scheduler_dependency_graph_fusion_and_ordering_analysis]] 「新设备 backend 注册」） |
 | 3 | `_override_disable_pointwise_autotuning()` | `__init__.py:120-136` | 让 autotune 忽略 `use_deterministic_algorithms`（否则锁死默认 tile，6.3M gelu_backward 慢约 154×；autotune 非确定性仅计时层面、不影响数值） |
 | 4 | `_force_triton_available()` | `__init__.py:144-185` | NPU `get_device_capability()` 返 None 会让 `has_triton()` 抛 `TypeError`，强制 True 并清 lru_cache |
 | 5 | config 覆盖 | `__init__.py:187-192` | 关 `layout_optimization` / `coordinate_descent_tuning` / `split_reductions` |
@@ -166,7 +166,7 @@ def triton_kernel(..., XBLOCK: tl.constexpr):
 
 ## 三、融合门控：复用上游 + `NPU_MAX_FUSED_READS`
 
-本后端**不自建融合模型**，完全复用上游 Scheduler 的 `can_fuse_vertical/horizontal` + `score_fusion`（numel 兼容 + 依赖匹配 + 共享内存打分，完整见 [[scheduler_analysis]]）。只在其通过**之后**加一道后端门控（`NPUTritonScheduling.can_fuse`，`triton.py:2315`）：
+本后端**不自建融合模型**，完全复用上游 Scheduler 的 `can_fuse_vertical/horizontal` + `score_fusion`（numel 兼容 + 依赖匹配 + 共享内存打分，完整见 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]）。只在其通过**之后**加一道后端门控（`NPUTritonScheduling.can_fuse`，`triton.py:2315`）：
 
 ```python
 def can_fuse(self, node1, node2):
@@ -240,7 +240,7 @@ can_fuse_horizontal = can_fuse
 - [[npu_inductor_optimization_analysis]] — 内置后端「硬件特性→优化思想→案例」
 - [[NPU_Inductor_Backend_Analysis]] — 内置 NPU Inductor 后端集成架构与融合规则
 - [[npu_lowering_guide]] — NPU 特定 lowering / fallback（与本后端白名单对照）
-- [[scheduler_analysis]] — 上游融合模型（本后端复用并加门控）
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]] — 上游融合模型（本后端复用并加门控）
 - [[inductor_gpu_kernel_dispatch_model]] — 上游 GPU 派发模型（本后端 Linearize 替换的对象）
 - [[inductor_reduction_codegen_deep_analysis]] — 上游 reduction（cooperative/split，本后端 rsplit 的基线）
 - [[inductor_autotuning_analysis]] — 上游 autotune（本后端 autotune 的基线）

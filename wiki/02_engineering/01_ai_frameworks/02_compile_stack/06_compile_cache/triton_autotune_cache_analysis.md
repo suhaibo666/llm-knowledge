@@ -233,4 +233,4 @@ Triton 本身就有按 kernel hash 组织的磁盘缓存。**纠正一个常见�
 - [[codegen_kernel_mapping_autotuning_and_provenance_analysis]] — kernel/wrapper、autotune choices 与 provenance 课程主线
 - [[inductor_autotuning_analysis]] — `CachingAutotuner` 生命周期与 config 生成启发式(本页缓存的正是其 benchmark 结果)
 - [[torch_compile_architecture]] — torch.compile 整体栈
-- [[PyTorch_Inductor_Technical_Analysis]] — Inductor lowering/codegen
+- [[02_compile_stack/04_inductor/index]] — Inductor lowering/codegen

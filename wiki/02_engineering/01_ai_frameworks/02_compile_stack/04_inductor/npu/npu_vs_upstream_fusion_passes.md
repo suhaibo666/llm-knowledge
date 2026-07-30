@@ -4,7 +4,7 @@
 > - torch_npu `E:\97-codes\torch_parallel\torch_npu` @ `b3c8a815b`（tag `v2.7.1`，2026-07-15），路径前缀 `torch_npu/_inductor/`
 > - upstream PyTorch `E:\97-codes\pytorch\pytorch` @ `9922478dffa`（branch `main`），路径前缀 `torch/_inductor/`
 > **Dimension**：Deep Dive（mechanism-level，逐层稽核源码）
-> 本页回答：从 pre_grad FX pass 一直到后端 scheduler 融合，torch_npu 与上游到底差在哪儿——**哪些是上游有 NPU 没有、哪些是 NPU 有上游没有、两边都有但机制不同**，并逐条给出原因与已核验 `file:line`。是 [[npu_inductor_optimization_analysis]]（why 全景）、[[npu_compile_paths_overview]]（三路径全景）、[[scheduler_analysis]]（融合调度）、[[post_grad_passes_guide]]/[[pre_grad_passes_guide]]/[[joint_graph_passes_guide]]（上游 pass 详解）的横向对照页。
+> 本页回答：从 pre_grad FX pass 一直到后端 scheduler 融合，torch_npu 与上游到底差在哪儿——**哪些是上游有 NPU 没有、哪些是 NPU 有上游没有、两边都有但机制不同**，并逐条给出原因与已核验 `file:line`。是 [[npu_inductor_optimization_analysis]]（why 全景）、[[npu_compile_paths_overview]]（三路径全景）、[[scheduler_dependency_graph_fusion_and_ordering_analysis]]（融合调度）、[[post_grad_passes_guide]]/[[pre_grad_passes_guide]]/[[joint_graph_passes_guide]]（上游 pass 详解）的横向对照页。
 
 ---
 
@@ -281,7 +281,7 @@ flowchart TB
 - [[npu_inductor_optimization_analysis]] — 硬件特性 → 优化思想 → 案例（本页 §5 原因的 why 全景）
 - [[npu_inductor_splittiling_backend_analysis]] — 内置 default 路径 what/how（golden_var_list、CATLASS、monkey-patch）
 - [[npu_inductor_linearize_backend_analysis]] — 实验性 Linearize 后端（persistent 恒关的那个）
-- [[scheduler_analysis]] — Scheduler 融合策略、自定义 Pass 与排查（§3.6 的上游基线）
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]] — Scheduler 融合策略、自定义 Pass 与排查（§3.6 的上游基线）
 - [[pre_grad_passes_guide]] · [[post_grad_passes_guide]] · [[joint_graph_passes_guide]] — 上游三阶段 pass 详解（本页 §3–§4 对照的上游侧）
 - [[npu_lowering_guide]] — NPU 特定 lowering 与 fallback 算子映射（§3.5 的细节）
 - [[NPU_Inductor_Backend_Analysis]] — 五后端融合规则与后端混合使用机制

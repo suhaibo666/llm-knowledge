@@ -645,6 +645,33 @@ mask = (arange(C) == indices.unsqueeze(1))
 result = torch.where(mask, 0.9, 0.01)
 ```
 
+### 4.5 常量折叠：`ConstantFolder`
+
+这是一个跨阶段复用的通用工具，不是本页 Pass 1-27 列表里某个固定位置的 post-grad
+pass——freezing 等路径按需调用它，与 [[joint_graph_passes_guide]] 里只折叠
+uniform-value 张量的窄化版 `UniformValueConstantFolder`是不同粒度的两个工具（后者
+避免把大张量内联进图导致代码膨胀；本节讲的是通用版本）。（2026-07-30 从已删除的
+`PyTorch_Inductor_Technical_Analysis.md` §5 判重并入，原文示意图把入口函数写成
+`fold_constants`，已按当前基线核验改正为 `constant_fold`。）
+
+`ConstantFolder(torch.fx.Interpreter)`（`torch/_inductor/constant_folding.py:82`）
+逐节点判断是否可折叠：`_support_dynamic_shape()`当前恒为 `False`（不支持动态形状
+折叠，`:102`）；`_deduce_value()`在没有 `lifted_constant_names`时直接调用父类
+`run_node`求值，有的话则只检查所有输入是否已知，未知就返回哨兵
+`unknown_value`（`:107-120`）。真正的折叠入口是模块级函数
+`constant_fold()`（`:321`），不是某个 `fold_constants`风格的名字。
+
+**Shape-dependent 常量需要特殊处理**：若某个"常量"实际依赖输入 shape（如
+`torch.full((x.shape[0],), 1.0)`里的 `batch_size`），不能被直接当成编译时立即数上移，
+否则会绑死到捕获时的具体 batch size。`torch/_inductor/fx_passes/joint_graph.py`里一段
+注释（`constant folding refining of symints`，`:308`/`:513`/`:566` 三处引用同一条
+note）明确说明：常量折叠在部分求值图时，可能推导出此前未被识别为编译期常量的
+SymInt——例如 `torch.full((), 11).item()`产生的 unbacked SymInt，如果折叠证明它恒为
+11，后续 `torch.full((unbacked_symint_eq_11,), 0)`就能进一步被折叠。这意味着常量折叠
+不只是"发现字面常量"，还能反向**收紧符号约束**（更新 SizeVarAllocator 的
+replacements/guards），是符号形状系统（见
+[[symbolic_shapes_guards_and_graph_reuse_analysis]]）与图优化之间的一个真实交互点。
+
 ---
 
 ## 5. 自定义开发指南
@@ -859,4 +886,5 @@ Post-Grad Passes 是 PyTorch Inductor 编译器的关键阶段，专注于：
 - [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段放置方法论(现含跨框架对照)
 - [[fx_lowering_to_inductor_ir_analysis]] — Post-Grad 之后的 ATen → IR 边界
 - [[pre_grad_passes_guide]]
-- [[joint_graph_passes_guide]]
+- [[joint_graph_passes_guide]] — §4.5 常量折叠的窄化版 `UniformValueConstantFolder`
+- [[symbolic_shapes_guards_and_graph_reuse_analysis]] — 常量折叠反向收紧 SymInt 约束的符号系统一侧

@@ -279,5 +279,5 @@ CPU CodeGen 的关键决策：
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[02_engineering/01_ai_frameworks/index]]
 - [[codegen_extension_guide]] — 新设备 scheduling/wrapper 的关键 API 与注册方法
-- [[PyTorch_Inductor_Technical_Analysis]]
-- [[scheduler_analysis]]
+- [[codegen_kernel_mapping_autotuning_and_provenance_analysis]]
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]]

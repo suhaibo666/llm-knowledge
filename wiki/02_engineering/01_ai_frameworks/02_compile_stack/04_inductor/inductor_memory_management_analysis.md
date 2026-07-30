@@ -109,7 +109,7 @@ wrapper 决定「**怎么** free/reuse」,但「**何时** 一个 buffer 死」�
 - **死节点消除** `dead_node_elimination`(`scheduler.py:4916`,`config.use_dce` 门控):反向拓扑序,users 全弱/全移除的 buffer 进 `removed_buffers`,无活 buffer 又无副作用的 node 整体删除。
 - **mutation 处理** `mutation_renames`(`scheduler.py:4197`,注释 `:4189-4196`,填充于 `:4770-4779`):原地修改(`buf0 = relu_(buf0)`)会在依赖 DAG 里成环;解法是把修改后的版本**重命名**(`mutation_real_name` 反查),codegen 只用 `buf0` 这个规范名,从而保持 DAG 无环、让正常调度+复用成立。
 
-> [!correction] 旧页 [[scheduler_analysis]] 把 `mutation_renames` 标在 `scheduler.py:2913-2928`,经 `5f6df46744a` 核对应为 **`:4197`(声明)/ `:4770-4779`(填充)**;`:2913-2928` 在本 checkout 是 `FusedMixOrderReductions` 类,与此无关(行号随版本漂移,符号名正确)。
+> [!correction] 旧页 [[scheduler_dependency_graph_fusion_and_ordering_analysis]] 把 `mutation_renames` 标在 `scheduler.py:2913-2928`,经 `5f6df46744a` 核对应为 **`:4197`(声明)/ `:4770-4779`(填充)**;`:2913-2928` 在本 checkout 是 `FusedMixOrderReductions` 类,与此无关(行号随版本漂移,符号名正确)。
 
 ### 2.4 峰值重排:`reorder_for_peak_memory`
 
@@ -118,7 +118,7 @@ wrapper 决定「**怎么** free/reuse」,但「**何时** 一个 buffer 死」�
 - **定义在 `torch/_inductor/memory.py:1016`**。算法(`:1028-1105`):先 `prepare_planning_info` 算 baseline 峰值,再试多个**拓扑序启发式**——`topological_sort_lpmf`(Least-Peak-Memory-First 贪心,`:630`)/ `topological_sort_bfs`(`:779`)/ `topological_sort_dfs`(`:857`)加 baseline,各自重算 `estimate_peak_memory`,最后 `min(...)` 取**估计峰值最低**的顺序。它是**算子重排序以最小化峰值 live 内存**,不是布局/偏移分配。
 - **峰值怎么估**:`BufferInfo` 记每个 buffer 的生命周期区间 `(start_step, end_step)`(`memory.py:338`,`compute_memory_timeline` `:346`,图输出 `end_step=-1` 永不释放);`peak_memory_from_buf_info_list`(`:438`)是一条**扫描线**——`delta[start]+=size_alloc`、`delta[end+1]-=size_free`,前缀和取最大 live。
 
-> [!correction] 旧页 [[scheduler_analysis]] 写 `reorder_for_peak_memory` 在 `scheduler.py:2986`——错;实际**定义在 `memory.py:1016`**,scheduler 只在 `:4278-4281` 导入调用。另:`memory.py` 是「区间+扫描线**估峰**来驱动重排序」,**不是**区间图着色/偏移分配;真正的 bin-packing(最接近着色)在 §2.5 的 `memory_planning.py`、且默认不开。
+> [!correction] 旧页 [[scheduler_dependency_graph_fusion_and_ordering_analysis]] 写 `reorder_for_peak_memory` 在 `scheduler.py:2986`——错;实际**定义在 `memory.py:1016`**,scheduler 只在 `:4278-4281` 导入调用。另:`memory.py` 是「区间+扫描线**估峰**来驱动重排序」,**不是**区间图着色/偏移分配;真正的 bin-packing(最接近着色)在 §2.5 的 `memory_planning.py`、且默认不开。
 
 ### 2.5 可选池化规划:`memory_planning.py`(`memory_planning=True`)
 
@@ -272,7 +272,6 @@ flowchart TB
 - [[wrapper_execution_memory_allocation_and_reuse_analysis]] — wrapper 层 `MemoryPlanningLine`/reuse pool 的源码级机制(与本页视角重叠,归一进行中,见该页页头互指)
 - [[caching_allocator_autocast_profiler_analysis]] — **层 2 深页**:`CUDACachingAllocator` 的 Block/segment/stream/expandable 源码级机制
 - [[inductor_codegen_analysis]] — wrapper codegen 全景(§4.5 内存规划集成是本页层 1 的简版)
-- [[scheduler_analysis]] — Scheduler 生命周期 / `dead_node_elimination` / `mutation_renames`(本页订正了其中两处行号)
-- [[PyTorch_Inductor_Technical_Analysis]] — §6 内存规划与内存池 / §7 CUDA Graphs(本页是这两节的源码级展开)
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]] — Scheduler 生命周期 / `dead_node_elimination` / `mutation_renames`(本页订正了其中两处行号)
 - [[control_flow_capture_analysis]] — `Conditional`/`WhileLoop` 为何被 graph partition 切出 cudagraph
 - [[PyTorch_CUDA_Graphs_Complete_Guide]] — CUDA Graphs 通用用法(非 `cudagraph_trees` 专属)

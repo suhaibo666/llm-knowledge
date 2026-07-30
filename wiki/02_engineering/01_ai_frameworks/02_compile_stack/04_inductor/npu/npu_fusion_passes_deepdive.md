@@ -421,5 +421,5 @@ flowchart TB
 - [[npu_vs_upstream_fusion_passes]] — 母页：torch_npu vs 上游融合 Pass 全流程对照（谁有谁无谁不同 + `is_gpu` 总开关）
 - [[npu_inductor_optimization_analysis]] — 硬件特性 → 优化思想 → 案例（本页「效果」锚定的硬件 why 全景）
 - [[npu_inductor_splittiling_backend_analysis]] — 内置 default 路径 what/how（golden_var_list、CATLASS、tiling）
-- [[scheduler_analysis]] — Scheduler 融合策略与自定义 Pass（§5.2 can_fuse / §5.3 speedup_by_fusion 的上游基线）
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]] — Scheduler 融合策略与自定义 Pass（§5.2 can_fuse / §5.3 speedup_by_fusion 的上游基线）
 - [[post_grad_passes_guide]] · [[pre_grad_passes_guide]] — 上游 pass 详解（对照上游侧）

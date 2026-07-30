@@ -830,7 +830,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **方法论升级**：重写 `fx_pass_optimization_methodology`（2026-07-30 起并入 [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]，详见该日期 changelog 条目）的权威主干，完整覆盖 Dynamo → Pre-Grad → AOT/Decomposition → Joint → Post-Grad → Lowering → Scheduler → Codegen；每阶段均回答“是什么、为什么、适合做什么、为什么不放相邻阶段”，新增选择表、放置规则、六问设计法和验证矩阵。
 - **补齐三块缺失内容**：新增 [[dynamo_pass_methodology]]（backend callable/`register_backend` 边界）、[[decomposition_passes_guide]]（decomp table、AOT 注入位置、注册/选择方法）、[[codegen_extension_guide]]（`BaseScheduling` + Wrapper + `DeviceOpOverrides` + `register_backend_for_device`）。
 - **三阶段 Pass 指南纠错**：[[pre_grad_passes_guide]] 订正 non-functional/non-normalized IR、真实执行顺序、`pre_grad_custom_pass(Graph)->None` 和缺失 `PatternMatcherPass` import；[[joint_graph_passes_guide]] 订正 `pass_patterns` 所属模块、两轮顺序、Graph hook 契约和“空 hook 确保加载”错误；[[post_grad_passes_guide]] 补真实全流程、三轮 pattern、inference-aware hook、通信 bucketing 与 reinplace 尾部不变量。
-- **Lowering/Scheduler/Codegen 纠错**：`lowering_analysis`（历史活链接，该页已于 2026-07-30 判重并入 [[fx_lowering_to_inductor_ir_analysis]]，按"历史不回写"惯例降级为反引号）订正“Post-Grad 在 Lowering 之后”的错误顺序并补 `register_lowering`/fallback API 示例；[[scheduler_analysis]] 明确真实接口是 `_pre/_post_fusion_custom_pass(list[BaseSchedulerNode]) -> list[...]`，将 `GraphLowering`/`node.fusable` 旧示例标为 deprecated；[[inductor_codegen_analysis]] 更新固定基线入口并链接完整扩展指南。
+- **Lowering/Scheduler/Codegen 纠错**：`lowering_analysis`（历史活链接，该页已于 2026-07-30 判重并入 [[fx_lowering_to_inductor_ir_analysis]]，按"历史不回写"惯例降级为反引号）订正“Post-Grad 在 Lowering 之后”的错误顺序并补 `register_lowering`/fallback API 示例；`scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]，按"历史不回写"惯例降级为反引号）明确真实接口是 `_pre/_post_fusion_custom_pass(list[BaseSchedulerNode]) -> list[...]`，将 `GraphLowering`/`node.fusable` 旧示例标为 deprecated；[[inductor_codegen_analysis]] 更新固定基线入口并链接完整扩展指南。
 - **动态形状方法修正**：把“遇到 SymInt 一律跳过”改为“符号恒等或 ShapeEnv/guard 可证明则支持，无法证明才拒绝”。同步更新 Dynamo/Inductor 索引与交叉链接。
 
 ---
@@ -1214,9 +1214,9 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - **层 1 编译期**：默认 `memory_plan_reuse` 两遍把 `Allocate`+`Free` 改写成 `Reuse`（峰值感知 `should_reuse_buffer`；同形状指针别名 / 异形状 `reinterpret_tensor`，`wrapper.py:2436/956/4043`）；scheduler `compute_last_usage`+`free_buffers` 决定释放时机（`scheduler.py:8731/8742`）；`reorder_for_peak_memory` 多拓扑序选最低峰值（`memory.py:1016`，扫描线估峰）；可选池化 `MemoryPlanner` 时分/空分打包（`memory_planning.py:675`，`memory_planning` 默认关）。
   - **层 2 运行期**：`empty_strided` 落 `CUDACachingAllocator` block/segment 缓存池（复用既有深页 [[caching_allocator_autocast_profiler_analysis]]，强调"编译期逻辑复用 + 运行期物理复用叠加"）。
   - **层 3 CUDA Graphs**：`cudagraph_trees` 跨图共享 `graph_pool_handle` 私有池 + 地址稳定（static/managed idx，`:1019/1932`）+ checkpoint 重建分配器簿记（`:3135`）+ graph partition 切出 cudagraph-unsafe 算子（`scheduler.py:8856`）。
-  - [!correction] 据 `5f6df46744a` **订正 [[scheduler_analysis]] 两处行号**：`reorder_for_peak_memory` 实定义在 `memory.py:1016`（非 `scheduler.py:2986`）；`mutation_renames` 在 `scheduler.py:4197/4770`（非 `:2913-2928`）——符号名对、行号随版本漂移；并澄清 `memory.py` 是"区间+扫描线估峰驱动重排"而非区间图着色（着色在 `memory_planning.py`，默认关）。
+  - [!correction] 据 `5f6df46744a` **订正 `scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]，按"历史不回写"惯例降级为反引号）两处行号**：`reorder_for_peak_memory` 实定义在 `memory.py:1016`（非 `scheduler.py:2986`）；`mutation_renames` 在 `scheduler.py:4197/4770`（非 `:2913-2928`）——符号名对、行号随版本漂移；并澄清 `memory.py` 是"区间+扫描线估峰驱动重排"而非区间图着色（着色在 `memory_planning.py`，默认关）。
 
-**整合**：[[04_inductor/index]] 概览区新增本页；[[PyTorch_Inductor_Technical_Analysis]]（§6/§7 概念版）、[[caching_allocator_autocast_profiler_analysis]]（层 2）各加回链；本页另链 [[scheduler_analysis]]/[[inductor_codegen_analysis]]/[[control_flow_capture_analysis]]。**校验**：3 个 mermaid 块按本库规范逐条扫（subgraph 标题无 `[]`/`|`、各 `end` 单独闭合、连线标签无引号/括号/`|`、节点标签无裸 `[]()`）；交叉链接目标经 grep 确认存在。
+**整合**：[[04_inductor/index]] 概览区新增本页；`PyTorch_Inductor_Technical_Analysis`（§6/§7 概念版，该页已于 2026-07-30 判重删除，§6/§7 被本页确认冗余未迁移，按"历史不回写"惯例降级为反引号）、[[caching_allocator_autocast_profiler_analysis]]（层 2）各加回链；本页另链 `scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]，按"历史不回写"惯例降级为反引号）/[[inductor_codegen_analysis]]/[[control_flow_capture_analysis]]。**校验**：3 个 mermaid 块按本库规范逐条扫（subgraph 标题无 `[]`/`|`、各 `end` 单独闭合、连线标签无引号/括号/`|`、节点标签无裸 `[]()`）；交叉链接目标经 grep 确认存在。
 
 ---
 
@@ -1660,7 +1660,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - [[npu_inductor_linearize_dynamic_shape_analysis]]（新）—— 编译一次 vs gears 分桶、签名 numel/divisor 代码、header 三件套、**三情形 A/B/C 完整代码 + 对照表**、配套（fold_trivial / 符号 split / static split block）、permute 产物。
 - [[npu_inductor_linearize_vs_builtin_comparison]]（新，comparison）—— **§1 三方 output code 逐行对比**（GPU / 内置 Split-Tiling / 本后端 Linearize 完整 kernel + 逐项差异表）+ **§0 全套实测**（torchbench 34 模型总体 / 逐模型、京东 OneRec 4 backbone、test_all 60 算子 case）+ 逐维综合矩阵。
 
-**上游侧补全**：[[scheduler_analysis]] 新增 §7.6——组兼容（numel/rnumel + tiling 一致）、proximity 门控（>64）、模板 prologue/epilogue 融合、foreach 融合、`_LoopMutationTracker` 回滚 + 循环重排；`> [!note]` 指向 NPU 后端的 read 门控 / proximity 收 20。
+**上游侧补全**：`scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除，本条所述 §7.6 内容已逐字并入 [[scheduler_dependency_graph_fusion_and_ordering_analysis]] §18.6，按"历史不回写"惯例降级为反引号）新增 §7.6——组兼容（numel/rnumel + tiling 一致）、proximity 门控（>64）、模板 prologue/epilogue 融合、foreach 融合、`_LoopMutationTracker` 回滚 + 循环重排；`> [!note]` 指向 NPU 后端的 read 门控 / proximity 收 20。
 
 **索引/校验**：[[04_inductor/npu/index]] 补 2 新页行；3 个 NPU 页互链 + backlink 既有内置后端页；无悬空链接；§0/§1 数据均回读原始设计文档精确还原并标注口径（本库未独立复跑）。
 
@@ -1698,7 +1698,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **索引/空白更新**：[[04_inductor/index]] 加「codegen 派发与运行时（GPU 基线）」分组 3 行；[[04_inductor/npu/index]] 加实验后端行 + 头注（区分内置/实验、PyTorch 2.9.0 基线）；[[01_ai_frameworks/index]] 空白「Inductor autotuning」「NPU Monkey Patch 演进追踪 v2.9.0」标 ✅ 并指向新页。
 
-**交叉引用**：4 新页均含 `## Related Pages` + `[[wikilink]]`；NPU 页 §六对比直接 backlink 既有 [[npu_inductor_splittiling_backend_analysis]]/[[npu_compile_paths_overview]]/[[npu_inductor_optimization_analysis]]（内置后端细节，不复述）；上游 3 页互链并指向既有 [[scheduler_analysis]]/`dynamic_shapes_full_analysis`（历史活链接，该页已于 2026-07-30 并入 [[symbolic_shapes_guards_and_graph_reuse_analysis]]，按"历史不回写"惯例降级为反引号）/[[PyTorch_Inductor_Technical_Analysis]]。
+**交叉引用**：4 新页均含 `## Related Pages` + `[[wikilink]]`；NPU 页 §六对比直接 backlink 既有 [[npu_inductor_splittiling_backend_analysis]]/[[npu_compile_paths_overview]]/[[npu_inductor_optimization_analysis]]（内置后端细节，不复述）；上游 3 页互链并指向既有 `scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]，按"历史不回写"惯例降级为反引号）/`dynamic_shapes_full_analysis`（历史活链接，该页已于 2026-07-30 并入 [[symbolic_shapes_guards_and_graph_reuse_analysis]]，按"历史不回写"惯例降级为反引号）/`PyTorch_Inductor_Technical_Analysis`（历史活链接，该页已于 2026-07-30 判重删除，按"历史不回写"惯例降级为反引号）。
 
 **核验**：所有代码引用带 `file:line`（npu_inductor 包 + upstream `torch/_inductor/`）；零冗余（内置后端/上游已覆盖部分一律 cross-link 而非复述）；纯增，未删改既有页结构。源分析底稿在 pytorch 工作区 `npu_inductor_2.9.0/triton-backend-analysis/`。
 

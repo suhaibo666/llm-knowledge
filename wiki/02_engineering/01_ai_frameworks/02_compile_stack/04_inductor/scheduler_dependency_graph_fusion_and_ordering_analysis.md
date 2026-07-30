@@ -410,6 +410,328 @@ reduction/template fusion，native fusion/reorder on/off的性能对照仍明确
 
 AOT fw/bw无跨图edge。Scheduler又是各图lowering后的独立buffer dependency graph。
 
+## 18. 融合算法源码级细节
+
+以下内容 2026-07-30 从已删除的 `scheduler_analysis.md` §7 逐字并入（该页原有 §7.3/§7.4 的
+"旧版简写"提示已随并入本页而失效，一并去除；其余小节保持原文）。
+
+### 18.1 主循环（`fuse_nodes`）
+
+```python
+for i in range(10):           # 最多10轮
+    old_len = len(nodes)
+    nodes = self.fuse_nodes_once(nodes)
+    if len(nodes) == old_len:  # 无进展则停止
+        break
+# 最后一轮用于 loop ordering
+nodes = self.fuse_nodes_once(nodes, is_reorder_round=True)
+```
+
+### 18.2 候选对生成（`get_possible_fusions`）
+
+```text
+对每个节点, 按 used_buffer_names 分组
+→ 同组的节点对才可能共享数据
+→ 调用 can_fuse(node1, node2) 过滤合法 pair
+→ 按 score_fusion_key 降序排列
+```
+
+`config.max_fusion_buffer_group_pairwise_attempts` 控制每组最多检查多少对（避免 O(n²) 爆炸）。
+
+### 18.3 融合合法性检查（`can_fuse`）
+
+`can_fuse(node1, node2)` 大致依次：判断是否可组成 `FusedMixOrderReductions`；若是
+Grouped/Extern/Nop 直接拒绝；检查 device 相同；调用 `score_fusion_memory()` 计算共享
+buffer 的内存节省量，交给 `V.choices.can_fuse()` 做阈值判断（score 太低直接拒绝）；
+阈值通过后按 node2 是否依赖 node1 分流——依赖则走垂直融合 `can_fuse_vertical()` →
+`backend.can_fuse_vertical()`，不依赖则走水平融合 `V.choices.can_fuse_horizontal()` →
+`backend.can_fuse_horizontal()`。
+
+**`can_fuse_vertical` 关键逻辑：** 检查 node2 的所有 `unmet_dependencies` 中，凡是来自
+node1 的 buffer，其索引访问模式是否与 node1 的写入完全匹配——只有访问模式一致（或是
+全局访问）才能内联，否则需要中间 buffer。
+
+### 18.4 融合评分（`score_fusion_memory`）
+
+概念上是对两节点的 `read_writes`（reads ∪ writes）求交集，交集越大代表融合后节省的
+内存 IO 越多、越优先融合；`V.choices.score_fusion()` 在此基础上进一步包装（默认实现在
+`inductor/choices.py`），实际评分区分 exact dependency、同 buffer overlap 与
+mix-order reduction（§11 已述），不能简化成单一集合交集大小。
+
+### 18.5 循环检测（`will_fusion_create_cycle`）
+
+融合本身会引入新的"合并祖先"。检查逻辑：如果 node1 和 node2 融合后，是否有第三方
+node3 满足"node3 是 node1 的后代（依赖 node1 输出）且 node3 也是 node2 的祖先（node2
+依赖 node3）"——这会形成环。通过递归搜索 `FusedSchedulerNode` 中的组合祖先集来判定。
+
+### 18.6 组兼容、proximity 门控、模板/foreach 融合
+
+补 §18.1–§18.5 未展开的几类合法性约束（对照本地 upstream 按符号引用）：
+
+**① 迭代空间（组）兼容**（后端层 `simd.py`，是"为什么迭代空间不一致就不能融合"的
+根因）：节点 `group = (device, (numel_pw, numel_red))`（`group_fn` 把每组维度乘成
+一个数）。
+- reduction + reduction：`numel` 与 `rnumel` 都要相等；
+- pointwise + pointwise：`numel/rnumel` 相等，且 `config.triton.tiling_prevents_pointwise_fusion`
+  开时要求 `tiling1 == tiling2 == tiling3`；
+- pointwise + reduction：pointwise 迭代空间须覆盖 reduction 的外×内
+  （`numel1 == numel2 * rnumel2`）。`SchedulerNode.swap_pw_red_dimension` 会置换
+  维度以对齐 `.group`。
+
+**② proximity 门控**（`are_long_distant_nodes`）：`proximity_score = max(|n1.min_order
+− n2.max_order|, |n2.min_order − n1.max_order|)`，**> 64 则不融**（避免远距节点融合
+导致活跃区间过长）。
+
+**③ 模板 prologue/epilogue 融合**（GEMM 的融合面）：
+- **epilogue**（template 作生产者，后接 pointwise）：消费者**只能读 template 输出
+  buffer**；`config.epilogue_fusion` / template 的 `allow_epilogue_fusion` 门控。
+- **prologue**（pointwise 前置到 template）：生产者须非 reduction/非 template 且
+  **单一使用方**；`config.prologue_fusion` 门控。
+
+**④ foreach 融合**（`ForeachKernelSchedulerNode`，如 `_foreach_*`）：两侧 subnode
+数相等且**逐对可融**；**foreach 不与 reduction 融**。
+
+**⑤ 推测性循环改写**：`can_fuse` 用 `_LoopMutationTracker` 包裹，融合被拒时回滚
+循环改写；`config.loop_ordering_after_fusion` / `loop_index_inversion_in_fusion`
+触发 §18.1 末轮 `is_reorder_round=True` 的循环重排以提高共享数据分数。
+
+> [!note] NPU 后端如何用这套模型
+> 实验性 [[npu_inductor_linearize_backend_analysis]] **完全复用**上述模型（其
+> `can_fuse` 先调 `super().can_fuse()`），只追加一道 `NPU_MAX_FUSED_READS`（默认
+> 24）read 门控防 bishengir 编译爆炸，并重绑 `can_fuse_vertical/horizontal` 别名使
+> 子类生效；torch_npu **内置**后端（[[npu_inductor_splittiling_backend_analysis]]）
+> 则把 proximity 阈值收到 20、并自定义 tiling 一致性。
+
+### 18.7 两个设计点补充：`V.choices` 外挂点与 MixOrderReduction
+
+**`V.choices` 是融合策略的外挂点**：`can_fuse` 内部先经 `V.choices.can_fuse(self,
+node1, node2, shared_data_score)` 判断（`scheduler.py` 附近，行号见 §14），`V.choices`
+即 `GraphLowering.choices`，类型为 `InductorChoices`（定义于 `choices.py`）。它把融合
+策略与 Scheduler 核心逻辑解耦，是**自定义融合策略的最重要入口**（§20.4 展开怎么覆盖）。
+
+**`MixOrderReduction`**：当两个规约算子的规约维度互换（一个按行、一个按列），正常
+情况下不可融合。`FusedMixOrderReductions` 通过特殊的 tiling 策略（将其中一个规约
+tiled 化）实现融合，需满足严格的大小限制。这是 §11 "mix-order reduction score" 的
+机制来源。
+
+## 19. 自定义指南
+
+以下内容 2026-07-30 从已删除的 `scheduler_analysis.md` §9 逐字并入。
+
+### 19.1 自定义融合前/后 Pass
+
+最简单的方式，无需修改 Scheduler 核心：
+
+```python
+import torch._inductor.config as inductor_config
+from torch._inductor.scheduler import BaseSchedulerNode, SchedulerNode
+
+def my_pre_fusion_pass(
+    nodes: list[BaseSchedulerNode],
+) -> list[BaseSchedulerNode]:
+    """在融合前修改节点列表。例如：强制某些节点不参与融合"""
+    for node in nodes:
+        # 检查节点名字或类型，做自定义处理
+        if "my_special_op" in node.get_name():
+            # 将节点对应的 buffer 加入 no_fuse 集合
+            from torch._inductor.virtualized import V
+            for buf in node.get_buffer_names():
+                V.graph.no_fuse_buffer_names.add(buf)
+    return nodes
+
+def my_post_fusion_pass(
+    nodes: list[BaseSchedulerNode],
+) -> list[BaseSchedulerNode]:
+    """在融合后做进一步调整"""
+    # 例如：打印融合统计
+    from torch._inductor.scheduler import FusedSchedulerNode
+    fused = [n for n in nodes if isinstance(n, FusedSchedulerNode)]
+    print(f"融合后: {len(nodes)} 节点, 其中 {len(fused)} 个是融合节点")
+    return nodes
+
+# 注册 pass（在 torch.compile 之前设置）
+inductor_config._pre_fusion_custom_pass = my_pre_fusion_pass
+inductor_config._post_fusion_custom_pass = my_post_fusion_pass
+```
+
+### 19.2 禁止特定 Buffer 参与融合
+
+```python
+# 方式1：通过 config（静态）
+import torch._inductor.config as cfg
+# 在编译期间通过 pass 动态添加（见 19.1）
+
+# 方式2：在 comm_lowering 中直接操作（框架内部用法）
+# V.graph.no_fuse_buffer_names.add(buf_name)  # scheduler.py 附近
+```
+
+### 19.3 为新设备注册 Backend
+
+Inductor 通过 `register_backend_for_device` 支持 out-of-tree 设备:实现 `BaseScheduling`
+（调度/融合/codegen）与 `PythonWrapperCodegen`（wrapper）子类即可。骨架示例与验证清单见
+[[codegen_extension_guide]]（本节不重复该页已更完整覆盖的注册步骤）；NPU（昇腾）的真实
+实现见 [[02_compile_stack/04_inductor/npu/index]]。
+
+### 19.4 自定义融合策略（InductorChoices）
+
+覆盖 `V.choices`（见 §18.7）是最精细的融合控制方式：
+
+```python
+from torch._inductor.choices import InductorChoices
+from torch._inductor.virtualized import V
+
+class MyFusionChoices(InductorChoices):
+    def can_fuse(self, scheduler, node1, node2, shared_data_score: int) -> bool:
+        # 完全控制融合决策
+        # 例如：对大矩阵乘后的 pointwise 提高融合阈值
+        if node1.is_reduction() and shared_data_score < 1024 * 1024:
+            return False
+        return super().can_fuse(scheduler, node1, node2, shared_data_score)
+
+    def score_fusion(self, scheduler, node1, node2):
+        # 自定义评分函数
+        base_score = super().score_fusion(scheduler, node1, node2)
+        # 加入自定义 bonus/penalty
+        return base_score
+
+# 在编译上下文中替换
+# V.choices = MyFusionChoices()  # 需要在 GraphLowering 上下文中设置
+```
+
+### 19.5 自定义图分区规则
+
+控制哪些 op 不进入 CUDAGraph 分区：
+
+```python
+import torch._inductor.config as cfg
+
+# 方式1：通过 config 指定 op 名
+cfg.custom_should_partition_ops = [
+    "my_custom_op.default",   # op 名称
+]
+
+# 方式2：继承 Scheduler 并覆盖 should_partition
+# （较重量级，通常不推荐）
+```
+
+### 19.6 调整融合相关超参
+
+```python
+import torch._inductor.config as cfg
+
+# 融合的内存节省阈值（bytes）：低于此值不融合
+cfg.score_fusion_memory_threshold = 10  # 默认 10 bytes
+
+# 最大融合 buffer 分组中的 pairwise 检查数量
+cfg.max_fusion_buffer_group_pairwise_attempts = 80  # 默认 80
+
+# 是否开启激进融合（同 group 的所有节点都尝试两两融合）
+cfg.aggressive_fusion = False
+
+# 是否开启 Triton 模板 epilogue fusion
+cfg.epilogue_fusion = True
+
+# 是否开启 Triton 模板 prologue fusion
+cfg.prologue_fusion = False
+
+# 是否开启 loop ordering after fusion（影响 can_reorder 路径）
+cfg.loop_ordering_after_fusion = True
+
+# 混合规约顺序融合
+cfg.triton.mix_order_reduction = False
+```
+
+## 20. 自定义融合 Pass 实战与排查
+
+以下内容 2026-07-30 从已删除的 `scheduler_analysis.md`"自定义融合 Pass 与排查"节判重
+并入，补充 §19.1 的实战写法与调试/排查清单。
+
+### 20.1 固定基线的正确写法（context manager）
+
+```python
+import torch
+from torch._inductor import config
+from torch._inductor.scheduler import BaseSchedulerNode, FusedSchedulerNode
+
+def before_fusion(
+    nodes: list[BaseSchedulerNode],
+) -> list[BaseSchedulerNode]:
+    # 这里可以检查/过滤/重排节点。改变顺序前必须保持依赖合法。
+    print("before fusion:", [node.get_name() for node in nodes])
+    return nodes
+
+def after_fusion(
+    nodes: list[BaseSchedulerNode],
+) -> list[BaseSchedulerNode]:
+    fused = sum(isinstance(node, FusedSchedulerNode) for node in nodes)
+    print("after fusion:", len(nodes), "fused groups:", fused)
+    return nodes
+
+with config.patch(
+    _pre_fusion_custom_pass=before_fusion,
+    _post_fusion_custom_pass=after_fusion,
+):
+    compiled = torch.compile(model)
+    actual = compiled(*example_inputs)
+```
+
+比 §19.1 的直接赋值多一层 `config.patch(...)` context manager，编译结束后自动恢复
+原配置，避免污染进程内后续编译。常用但不稳定的节点读取接口包括 `get_name()`、
+`get_device()`、`get_buffer_names()`、`get_operation_names()` 与依赖/read-write
+信息。没有通用的 `node.fusable` 布尔协议；要阻止融合，应使用 §19.2 的
+`V.graph.no_fuse_buffer_names` 等真实机制。
+
+> [!deprecated] 历史错误示例（保留用于辨错，不可复制使用）
+> 旧材料曾把接口写成 `pre_fusion_custom_pass(GraphLowering) -> GraphLowering`，并使用
+> 不存在的通用 `node.fusable` 属性——这与固定基线不符。正确接口是 §19.1/§20.1 的
+> `_pre_fusion_custom_pass(list[BaseSchedulerNode]) -> list[BaseSchedulerNode]`。
+> 按知识库 never-delete 规则保留此提示，说明错在哪，而不复制错误代码本身。
+
+### 20.2 融合问题排查指南
+
+**开启调试模式**：
+
+```bash
+export TORCH_COMPILE_DEBUG=1
+export TORCH_LOGS="+inductor"
+```
+
+生成的 `torch_compile_debug` 目录包含：`fx_graph_readable.html`（原始 FX 图）、
+`post_grad_graph_*.txt`（融合后的图，查看 `FusedSchedulerNode`）、
+`triton_kernel_*.py`（生成的 Triton 代码）。
+
+**编译报错**：常见原因是动态 shape 问题（未处理的 `SymInt`）或不支持的算子（fallback
+到 eager）；排查时检查日志中的 `FALLBACK` 警告，查看生成的 Triton 代码是否有语法错误。
+
+**内存 OOM**：`reorder_for_peak_memory` 旨在解决 OOM，若仍失败：① 设置
+`config.max_fused_size = 1` 禁用融合，若 OOM 消失说明是融合策略问题；② 查看 Debug
+日志中 `FusedSchedulerNode` 的大小；③ 手动检查长生命周期的大 Tensor，必要时在模型
+代码中显式 `del tensor`。
+
+**性能回退**：对比 `config._pre_fusion_custom_pass = None` 的基准性能；确认 Template
+Fusion 是否命中（如 Attention 未命中会导致性能大幅下降）。
+
+### 20.3 调试环境变量与函数速查
+
+```bash
+TORCH_LOGS="+fusion" python script.py          # 每轮融合情况
+TORCH_LOGS="+schedule" python script.py        # 调度器节点详细信息
+INDUCTOR_WRITE_SCHEDULER_GRAPH=1 python script.py  # 可视化调度器图（需 graphviz）
+TORCH_LOGS="+loop_ordering" python script.py   # loop ordering 日志
+```
+
+```python
+node.debug_str()          # 打印节点依赖详情
+node.debug_str_short()
+node.log_details()
+
+# WhyNoFuse 类在 fusion_log 启用时记录"两个节点为什么没有融合"
+from torch._inductor.scheduler import WhyNoFuse
+
+import torch._inductor.metrics as metrics
+print(metrics.ir_nodes_pre_fusion)   # 融合前节点数，融合后对比见 graph_stats metric table
+```
+
 ## 学习顺序
 
 - 上一篇：[[buffer_liveness_memory_planning_and_reuse_analysis]]
@@ -421,4 +743,5 @@ AOT fw/bw无跨图edge。Scheduler又是各图lowering后的独立buffer depende
 - [[pattern_expression_and_matcher_engine_analysis]]
 - [[buffer_liveness_memory_planning_and_reuse_analysis]]
 - [[codegen_kernel_mapping_autotuning_and_provenance_analysis]]
-- [[scheduler_analysis]]
+- [[codegen_extension_guide]] — 新设备 `BaseScheduling`/Wrapper 注册骨架(§19.3 的完整版本)
+- [[npu_inductor_linearize_backend_analysis]] — NPU 实验后端如何复用/扩展本页融合合法性模型

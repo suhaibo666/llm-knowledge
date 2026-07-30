@@ -556,6 +556,6 @@ lower 的路径有 fallback 可用。
 - [[inductor_ir_values_loops_layouts_and_buffers_analysis]]
 - [[scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[decomposition_passes_guide]] — 等价 ATen 展开与 lowering 的选择边界
-- [[scheduler_analysis]] — IR 产出后的依赖与融合
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]] — IR 产出后的依赖与融合
 - [[codegen_extension_guide]] — 复用或扩展目标 codegen
 - [[inductor_autotuning_analysis]] — matmul/conv 等 template/algorithm choice 的 autotune 生命周期
