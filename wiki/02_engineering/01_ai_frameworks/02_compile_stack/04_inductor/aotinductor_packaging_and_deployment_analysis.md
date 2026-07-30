@@ -4,7 +4,7 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[custom_backends_and_device_integration_analysis]]  
 > 后续：[[training_inference_cudagraph_and_freezing_analysis]]  
-> 最后更新：2026-07-28
+> 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,纯平移;解答 [[backend_modes_options_stances_and_fullgraph_analysis]] §14.2 的 `use_aoti` todo)
 
 ## 1. 为什么还需要 AOTInductor
 
@@ -290,4 +290,4 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[02_compile_stack/06_compile_cache/index]]
 - [[compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[production_rollout_fallback_and_monitoring_analysis]]
-- [[backend_modes_options_stances_and_fullgraph_analysis]] — §14.2:`torch.compile(..., options={"use_aoti": True})` 的 JIT 入口路径,与本页 §2-§3 的 export 驱动打包路径待核实关系
+- [[backend_modes_options_stances_and_fullgraph_analysis]] — §14.2:`torch.compile(..., options={"use_aoti": True})` 的 JIT 入口路径,与本页 §2-§3 的 export 驱动打包路径共享 `compile_fx`/`CompiledAOTI`/C ABI runner,差异在捕获来源(Dynamo 运行时捕获 vs `ExportedProgram`)与是否打包成 `.pt2`(关系已于该页 §14.2 note 核实)

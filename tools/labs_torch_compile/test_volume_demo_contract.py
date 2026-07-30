@@ -471,6 +471,22 @@ _C_PAGE_ROOTS = {
     "c15": ("02_compile_stack", "03_graph_ir_and_passes"),
     "c16": ("02_compile_stack", "03_graph_ir_and_passes"),
 }
+# Volume F scatters out of 19_torch_compile_end_to_end across six
+# directories (kb-reorg P4 Task 9, mirroring D/C's scatter pattern rather
+# than B/E's wholesale move): f01 -> eager_runtime autograd engine, f02 ->
+# aot_autograd, f03/f04 -> distributed_primitives, f05 -> fx_export
+# extensibility, f06 -> dispatcher_and_device, f07 -> inductor. f08 already
+# moved in Task 6 alongside D06 (see the standalone check below).
+_F_PAGE_ROOTS = {
+    "f01": ("01_eager_runtime", "05_autograd_engine"),
+    "f02": ("02_compile_stack", "02_aot_autograd"),
+    "f03": ("04_export_and_distributed", "02_distributed_primitives"),
+    "f04": ("04_export_and_distributed", "02_distributed_primitives"),
+    "f05": ("04_export_and_distributed", "01_fx_export_extensibility"),
+    "f06": ("01_eager_runtime", "02_dispatcher_and_device"),
+    "f07": ("02_compile_stack", "04_inductor"),
+    "f08": ("03_runtime_graphs", "cuda"),
+}
 
 
 def _page_root(labs_root: Path, volume: str, page_id: str | None = None) -> Path:
@@ -485,8 +501,8 @@ def _page_root(labs_root: Path, volume: str, page_id: str | None = None) -> Path
         return ai_frameworks_root.joinpath(*_D_PAGE_ROOTS[page_id])
     if volume == "C" and page_id in _C_PAGE_ROOTS:
         return ai_frameworks_root.joinpath(*_C_PAGE_ROOTS[page_id])
-    if volume == "F" and page_id == "f08":
-        return ai_frameworks_root / "03_runtime_graphs" / "cuda"
+    if volume == "F" and page_id in _F_PAGE_ROOTS:
+        return ai_frameworks_root.joinpath(*_F_PAGE_ROOTS[page_id])
     return ai_frameworks_root / "19_torch_compile_end_to_end"
 
 
@@ -695,7 +711,6 @@ class CourseMarkdownContractTest(unittest.TestCase):
             / "02_engineering"
             / "01_ai_frameworks"
         )
-        course_root = ai_frameworks_root / "19_torch_compile_end_to_end"
         # Volume B physically moved to 01_dynamo (kb-reorg P4 Task 5); the two
         # b04/b07 call-chain pages below now live there.
         dynamo_root = ai_frameworks_root / "02_compile_stack" / "01_dynamo"
@@ -705,13 +720,18 @@ class CourseMarkdownContractTest(unittest.TestCase):
         inductor_root = ai_frameworks_root / "02_compile_stack" / "04_inductor"
         aot_autograd_root = ai_frameworks_root / "02_compile_stack" / "02_aot_autograd"
         cuda_root = ai_frameworks_root / "03_runtime_graphs" / "cuda"
+        # Volume F physically scatters out of 19_torch_compile_end_to_end
+        # (kb-reorg P4 Task 9); f01's call-chain page now lives here.
+        autograd_engine_root = (
+            ai_frameworks_root / "01_eager_runtime" / "05_autograd_engine"
+        )
         target_pages = [
             (dynamo_root, "instruction_translator_and_bytecode_state_machine_analysis.md"),
             (dynamo_root, "guards_cache_lookup_and_recompilation_analysis.md"),
             (inductor_root, "inductor_compile_fx_orchestration_analysis.md"),
             (aot_autograd_root, "aot_runtime_wrappers_and_lazy_backward_compile_analysis.md"),
             (cuda_root, "cudagraph_trees_warmup_record_and_replay_analysis.md"),
-            (course_root, "f01_compiled_autograd_analysis.md"),
+            (autograd_engine_root, "compiled_autograd_analysis.md"),
         ]
         locator = re.compile(
             r"(?:torch|test|tests|functorch|aten|c10|tools)/"

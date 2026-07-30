@@ -88,6 +88,7 @@ artifact与compiled module如何复用。两者相邻但不是同一机制：一
 | 页面 | 核心主题 |
 |------|---------|
 | [[flex_attention_analysis]] | FlexAttention:可组合注意力融合、BlockMask、score_mod、语义驱动 codegen |
+| [[aotinductor_packaging_and_deployment_analysis]] | **AOTInductor 打包与部署**:JIT cache 与 AOT package 的产物差异、`ExportedProgram` 驱动的 `aoti_compile_and_package`、PT2 archive/call spec/C ABI runner、发布与回滚;2026-07-30 迁入(纯平移),与 [[backend_modes_options_stances_and_fullgraph_analysis]] §14.2 的 `use_aoti` JIT 捷径互指(共享 `compile_fx`/`CompiledAOTI`/runner,差异在捕获来源与是否打包) |
 | [[02_compile_stack/07_debugging/index]] | torch.compile 调试:`TORCH_LOGS`/`TORCH_COMPILE_DEBUG`、九篇分层诊断 + 分布式排查脚本包(纯 upstream;NPU 调试见 [[npu_debug_guide]]) |
 
 ---

@@ -240,7 +240,15 @@ class _TorchCompileAOTInductorWrapper(_TorchCompileInductorWrapper):
 
 除了复用父类的 `apply_mode`/`apply_options`,它额外强制打开 `cpp_wrapper` 和 `aot_inductor.package`,并在 `__call__` 里用 `V.set_aot_compilation(True)` 包住编译上下文。
 
-> [!todo] 这是从 `torch.compile(..., options={"use_aoti": True})` **JIT 入口**直接触发的 AOTInductor 路径;而 [[f07_aotinductor_packaging_and_deployment_analysis]] §2-§3 记录的公开入口是 `aoti_compile_and_package`,明确要求 `ExportedProgram`(export 驱动,部署前离线完成)。两条路径是否共享下游产物、`use_aoti` 这条 JIT 捷径的运维定位(是否推荐用于生产打包),F07 尚未覆盖,留待后续核实,不在本页展开。
+> [!note] 已核实:与 [[aotinductor_packaging_and_deployment_analysis]] §2-§3 export 驱动路径的关系(2026-07-30,kb-reorg P4 Task 9 随 F07 迁入一并解答原 todo)
+> `_TorchCompileAOTInductorWrapper.__call__` 最终仍调用父类的 `compile_fx(...)`(§14.1 `__call__`)——与普通 JIT 编译**是同一个函数入口**;而 F07 §2-§3 的 `aoti_compile_and_package` 底层调用的 `compile_fx_aot`(`torch/_inductor/compile_fx.py:2221`)内部也是调用这同一个 `compile_fx(...)`(`compile_fx.py:2282-2284`)。两条路径在 `compile_fx` 内部汇合于同一段代码:`V.aot_compilation` 为真时,直接返回 `CompiledAOTI(filename=compiled_fn, device_type=graph.device_type)`(`compile_fx.py:1849-1859`)——这正是 `compile_fx_aot` 断言并解包 `.filename` 的同一个 `CompiledAOTI` 类型(`compile_fx.py:2285-2289`)。也就是说**两条路径共享完全相同的 AOT 代码生成产物类型与 C ABI runner**:`CompiledAOTI.__post_init__` 会自动构造 `AOTIModelContainerRunner{Cuda,Xpu,Cpu}`(即 [[aotinductor_packaging_and_deployment_analysis]] §8 讲的同一个 `model_container_runner.cpp` runner)并装进 `current_callable`,使 `CompiledAOTI` 本身就是可直接调用对象(`torch/_inductor/output_code.py:1061-1138`)。
+>
+> 真正的差异在**前端捕获**与**是否打包**两层,不在代码生成/runtime 层:
+>
+> 1. **捕获来源不同**:`use_aoti` 的 `model_/inputs_` 来自 Dynamo 对**当前真实调用**的运行时捕获(普通 `torch.compile` guard/cache 语义仍适用),不是 `torch.export.export()` 产出的、经约束求解的 `ExportedProgram`;F07 §3 要求的 export 前置校验(`example_inputs` 存在性等)这条 JIT 捷径完全不走。
+> 2. **产物去向不同**:`use_aoti` 路径里 `CompiledAOTI` 在 `__post_init__` 阶段**同进程内自动加载**并直接充当这次 `torch.compile` 调用的 compiled callable(`output_code.py:1071-1138`),整个过程停在生成 `.so` 这一步,**不调用** `package_aoti` 打包成 `.pt2`;F07 §5-§6 讲的 archive/model-name/多模型打包、§10 的 loader 兼容性检查,这条 JIT 捷径都不经过。
+>
+> 结论:`use_aoti=True` 可以理解为「**复用 AOTInductor 的代码生成与 C ABI runner,把它接到 JIT 编译入口上,跳过 export 和打包两层**」——是同一套底层机制的另一种触发方式与消费方式,不是另一套独立实现;但它产出的是进程内即时可用的编译结果,不是 F07 讲的可发布、可跨进程加载的部署工件,两者不能互相替代用于生产打包决策。
 
 ### 14.3 `_TorchCompileWrapper`:非 Inductor backend 怎样接收 mode/options
 
@@ -273,4 +281,4 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[cudagraph_trees_warmup_record_and_replay_analysis]]
 - [[production_rollout_fallback_and_monitoring_analysis]]
 - [[minifier_repro_and_compiler_bisector_analysis]] — CompilerBisector 内部的二分定位算法
-- [[f07_aotinductor_packaging_and_deployment_analysis]] — AOTInductor 的 export 驱动打包路径(与 §14.2 的 `use_aoti` JIT 路径待核实关系)
+- [[aotinductor_packaging_and_deployment_analysis]] — AOTInductor 的 export 驱动打包路径;与 §14.2 的 `use_aoti` JIT 路径共享 `compile_fx`/`CompiledAOTI`/C ABI runner,差异在捕获来源与是否打包(关系已核实,见 §14.2 note)

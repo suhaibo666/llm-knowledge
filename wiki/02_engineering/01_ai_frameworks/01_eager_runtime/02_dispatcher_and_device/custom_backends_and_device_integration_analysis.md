@@ -3,7 +3,7 @@
 > 卷别：F · 训练、分布式、扩展与部署  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[custom_operators_fake_kernels_and_decompositions_analysis]]  
-> 后续：[[f07_aotinductor_packaging_and_deployment_analysis]]  
+> 后续：[[aotinductor_packaging_and_deployment_analysis]]  
 > 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,与 [[privateuse1_device_integration_analysis]]+[[codegen_extension_guide]] 三方划界)
 
 > [!note] 三方划界:本页 vs [[privateuse1_device_integration_analysis]] vs [[codegen_extension_guide]]
@@ -240,6 +240,6 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[codegen_extension_guide]] — Inductor device backend 注册的实操指南,见页头三方划界
 - [[backend_contract_and_custom_backend_analysis]]
 - [[custom_operators_fake_kernels_and_decompositions_analysis]]
-- [[f07_aotinductor_packaging_and_deployment_analysis]]
+- [[aotinductor_packaging_and_deployment_analysis]]
 - [[async_compile_workers_and_module_loading_analysis]]
 - [[fx_lowering_to_inductor_ir_analysis]]
