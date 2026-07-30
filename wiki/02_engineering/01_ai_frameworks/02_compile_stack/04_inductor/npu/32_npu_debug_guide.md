@@ -1,6 +1,6 @@
 # NPU torch.compile 调试指南
 
-> 层次：quick start / 核验基准：torch_npu v2.7.1.post5 / 最后更新 2026-06-15
+> 层次：方法论/排查实践(段 3) / 核验基准：torch_npu v2.7.1.post5 / 最后更新 2026-06-15
 
 > 本节专门针对使用 `torch_npu`（华为昇腾 NPU）时的调试方法，包括 NPU 特有的环境变量、API 和工具。
 

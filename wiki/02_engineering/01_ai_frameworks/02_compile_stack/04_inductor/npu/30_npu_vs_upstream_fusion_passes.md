@@ -49,7 +49,7 @@ flowchart TB
 | FX pass 挂载方式 | 内建 pass 列表逐个跑 | 走**官方 custom-pass 钩子**并存 | `torch_npu/_inductor/fx_passes/graph_match_pass.py:12-17` |
 | 自定义 pass 注册表 | 无（用 `PatternMatcherPass`） | `PassType × FxPassLevel` 二维表 + `SHUT_DOWN_FX_PASS_LIST` 关关 | `.../ascend_custom_passes/register_custom_pass.py:10-48` |
 | 自定义 pass 生效条件 | 训练/推理均可 | **仅推理**（`is_inference_check()==not grad_enabled`），attention 例外 | `.../ascend_custom_passes/__init__.py:15,30`、`.../utils/check_mode.py:6-10` |
-| GEMM | Triton GEMM template + CUTLASS | CATLASS + CK + Cpp + ATen fallback | `npu_compile_paths_overview.md` §2.4 |
+| GEMM | Triton GEMM template + CUTLASS | CATLASS + CK + Cpp + ATen fallback | `01_npu_compile_paths_overview.md` §2.4 |
 | Attention | SDPA pattern 融合 → `scaled_dot_product_attention` | SDPA/flash/efficient **全 fallback 到 ACLNN**，用手工算子 `npu_fusion_attention(_v3)` | `torch_npu/_inductor/lowering_fallback_list.py:656-700` |
 | 融合总开关 | `is_gpu(device)`，`GPU_TYPES` 不含 npu | `patch_is_gpu()` 把 `"npu"` 塞进 `GPU_TYPES` | `torch/_inductor/utils.py:100,3539`；`torch_npu/_inductor/utils.py:18-21` |
 

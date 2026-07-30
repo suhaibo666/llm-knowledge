@@ -57,7 +57,7 @@ Passes → Lowering → Scheduler → CodeGen 五阶段(要点表见 [[courses/t
 | liveness、reuse、静态peak与runtime边界 | [[12_buffer_liveness_memory_planning_and_reuse_analysis]] |
 | Scheduler dependency/fusion/reorder | [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]] |
 | kernel/wrapper/autotune/provenance | [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]] |
-| 查某个子系统的完整函数/API清单 | 本目录下`fx_lowering_to_inductor_ir_analysis`、`scheduler_dependency_graph_fusion_and_ordering_analysis`、`inductor_codegen_analysis`等专题页 |
+| 查某个子系统的完整函数/API清单 | 本目录下`10_fx_lowering_to_inductor_ir_analysis`、`13_scheduler_dependency_graph_fusion_and_ordering_analysis`、`20_inductor_codegen_analysis`等专题页 |
 
 autotuning负责搜索/测量候选并选择winner；[[02_compile_stack/06_compile_cache/index]]讨论winner、graph
 artifact与compiled module如何复用。两者相邻但不是同一机制：一次autotune可能写cache，

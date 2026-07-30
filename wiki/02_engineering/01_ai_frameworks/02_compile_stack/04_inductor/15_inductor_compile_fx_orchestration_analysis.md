@@ -4,7 +4,7 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]]  
 > 后续：[[13_aot_runtime_wrappers_and_lazy_backward_compile_analysis]]  
-> 最后更新：2026-07-30(kb-reorg P4 Task 6 迁入本目录,去 d01_ 前缀;与已删除的 `inductor_compiler_pipeline_analysis`(921 行,原"脊柱文档")逐节判重后,吸收其 §0 全景图与 §8/§9 的跨阶段综合为新增 §0、§15;该页 §1-§7 的逐阶段走读已被本目录各阶段专题页——`pre_grad_passes_guide`/`joint_graph_passes_guide`/`post_grad_passes_guide`/`decomposition_passes_guide`/`fx_lowering_to_inductor_ir_analysis`/`scheduler_analysis`/`inductor_codegen_analysis`,以及 01_dynamo、02_aot_autograd 目录各专题页——更深入地覆盖,不再重复,详见 changelog)
+> 最后更新：2026-07-30(kb-reorg P4 Task 6 迁入本目录,去 d01_ 前缀;与已删除的 `inductor_compiler_pipeline_analysis`(921 行,原"脊柱文档")逐节判重后,吸收其 §0 全景图与 §8/§9 的跨阶段综合为新增 §0、§15;该页 §1-§7 的逐阶段走读已被本目录各阶段专题页——`30_pre_grad_passes_guide`/`31_joint_graph_passes_guide`/`32_post_grad_passes_guide`/`33_decomposition_passes_guide`/`10_fx_lowering_to_inductor_ir_analysis`/`13_scheduler_dependency_graph_fusion_and_ordering_analysis`/`20_inductor_codegen_analysis`,以及 01_dynamo、02_aot_autograd 目录各专题页——更深入地覆盖,不再重复,详见 changelog)
 
 ## 0. 编译管线全景与本页定位
 
