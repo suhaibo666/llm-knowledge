@@ -12,9 +12,9 @@
 |---|---|---|
 | P0 工具与基线 + P1 快速止血 + P2 图源入库 | `2026-07-29-kb-reorg-p0-p2-foundation.md` | ✅ 已执行完(merge 77fd28a,broken 138→0) |
 | P3 runtime_graphs(原 06_graphs)去重 | `2026-07-29-kb-reorg-p3-runtime-graphs.md` | ✅ 已执行完(merge 65a8fe2,14→10 页,净删 ~3300 行) |
-| P4 ai_frameworks 两级重组 + 19 号解散 | `kb-reorg-p4-*.md` | ⏳ 计划编写中(逐篇映射侦察已启动) |
+| P4 ai_frameworks 两级重组 + 19 号解散 | `2026-07-30-kb-reorg-p4-ai-frameworks.md` | ✅ 已执行完(merge c5c084e,57 commits:5 架构层两级重组、19 号 63 篇解散、8 个旧大文判重处置、118 页分段编号、课程页落地;wiki 398→375 页,broken=0 全程) |
 | P5 后训练三域整合 + courses/posttraining | `kb-reorg-p5-*.md` | ⏳ P4 完成后写 |
-| P6 横向页收缩 + P7 命名/索引/CLAUDE.md 收尾 | `kb-reorg-p6-p7-*.md` | ⏳ P5 完成后写 |
+| P6 横向页收缩 + P7 命名/索引/CLAUDE.md 收尾 | `kb-reorg-p6-p7-*.md` | ⏳ P5 完成后写;**P6 已登记待办**:`04_inductor/npu/` 三页(npu_lowering_guide/npu_fusion_passes_deepdive/npu_vs_upstream)与 C17/C15 新页划界;正文裸编号链接补显示名(Task 9.5 审查建议,~120-150 处) |
 
 后续计划的**决策已全部锁定在 spec §2/§3**(含旧→新目录映射表、五大重复组逐组处置、C 卷分发规则);阶段计划只需把 spec 决策展开为逐文件任务,不得改变决策。
 
