@@ -50,6 +50,52 @@
 
 ---
 
+## 附录:跨图类型对照(源自已删除的课程页 C01,逐字保留)
+
+> 出处:原 19 号课程 `01_graph_ir_motivation_and_taxonomy.md`(见 git `e5cc60a`)。各类型的机制细节由本目录与关联页分别承载;此处保留其**跨类型合成视图**——功能树中没有天然"同时讲六类图"的页,这两张对照表以附录形式存活于此。
+
+### 四个基本问题(看任何"图"先问)
+
+看到任何“图”时先问：
+
+| 问题 | 含义 |
+|---|---|
+| Node 是什么 | Python 调用、FX callsite、autograd Function、IR Buffer、kernel group，还是设备任务 |
+| Edge 是什么 | Tensor 数据依赖、梯度 next edge、buffer read/write、控制/effect 顺序，还是流事件 |
+| Value 是什么 | 运行时 Tensor、Node 引用、FakeTensor、saved activation、storage name，还是设备地址 |
+| Order 是什么 | 源程序顺序、拓扑顺序、反向执行顺序、调度顺序，还是捕获回放顺序 |
+
+同一个词在不同层的答案不同。若不先分类，“逆图”“dead node”“正反向连接”“图重排”
+都会产生歧义。
+
+### 六类图的统一边界(五问对照)
+
+这些实现共享“有节点、有依赖、需要顺序”的外观，但没有共享一种足够具体的运行语义。
+真正稳定的统一框架是下面五问，而不是统一基类：
+
+| 问题 | autograd | FX | AOT fw/bw | Inductor/Scheduler |
+|---|---|---|---|---|
+| 谁创建它 | eager forward | tracer/capture | partitioner copy | lowering / scheduler |
+| Node 代表什么 | backward function | callsite/value | 独立 program callsite | IR value、operation、group |
+| 依赖放哪里 | explicit `Edge` | args/kwargs + users | 各图内 use-def + 跨图 ABI | reads/writes/effect deps |
+| 顺序为何存在 | backward ready order | 可生成程序的拓扑顺序 | 独立 fw/bw 拓扑 | 可执行调度顺序 |
+| 何时结束生命周期 | backward graph 释放策略 | GraphModule/编译阶段持有 | 编译 artifact/runtime 持有 | codegen 后由 artifact 接管 |
+
+源码并不能证明“任何 PyTorch 图都一定属于这几类”；它证明的是本系列讨论的这些具体实现
+拥有不同的数据结构与转换边界。后续各篇都以固定版本源码中的真实类型和调用链为准。
+
+### 七行速查对照表
+
+| 图 | 构造时间 | Node | Edge/依赖 | 主要用途 |
+|---|---|---|---|---|
+| eager autograd tape | forward 运行时 | backward Function | gradient next edge | 立即求导 |
+| FX program graph | trace/capture 时 | 程序 callsite/value | args/kwargs use-def | 分析与改写程序 |
+| AOT joint graph | 编译期 capture | forward/backward callsite | joint 数据依赖 | 选择 save/recompute |
+| AOT fw/bw graph | partition 时 | fresh copied FX Node | 各自图内 use-def | 独立后端编译 |
+| Inductor IR | lowering 时 | value/layout/buffer/operation | lazy composition 与 reads/writes | 表达实现与寻址 |
+| Scheduler graph | 调度时 | realized operation/group | buffer/effect/order deps | 排序、融合、liveness |
+| CUDA Graph | 运行时 capture | 设备操作节点 | stream/event/memory relation | 低开销回放 |
+
 ## 关联域
 
 - [[courses/torch_compile_end_to_end]] — 编号化课程主线(C01 动机与 C17–C21 Inductor IR 不在本目录),对应卷 C §5 部分行
