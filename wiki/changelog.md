@@ -6,6 +6,23 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 5 spec 审查修复（bytecode_analysis 两算法补落点 + 加速数字弃置例外可见化）
+
+**Type**: Redundancy Consolidation 修复（spec 审查发现 2 项：824c5a2 抽验通过、989080c 修剪无删失，另 2 项需修）
+
+**修复 1(实质缺口)**：`git show d0b998f:...PyTorch_Dynamo_Technical_Analysis.md` §3.2「字节码分析技术」的 `remove_dead_code()`(活代码可达性,跟随跳转目标与异常表条目)与 `stacksize_analysis()`(≤100 轮定点迭代)两个算法此前全库无落点——97d19ce 的判重台账遗漏了这两个具体函数(只覆盖了架构层面的"死代码消除/栈大小分析"存在性,未展开算法机制)。按 B04 §14 吸收 a03 `bytecode_transformation.py` 内容的同款模式,在 [[instruction_translator_and_bytecode_state_machine_analysis]] 新增 §15,以原文算法主张为基底,对照本地 pinned 源码(`E:/97-codes/torch_parallel/p`,`e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`)的 `torch/_dynamo/bytecode_analysis.py` 补全精确行号引用（原文无定位符,引用补全属允许的增强,非新造断言）：
+
+- §15.1 `remove_dead_code()`(`torch/_dynamo/bytecode_analysis.py:69-125`)：`find_live_code`(`:74-89`)可达性遍历,含跳转目标空值断言(`:82-87`,原文简化版缺失)；Python 3.11+ 异常表 start/end 回填(`:93-123`,原文完全未覆盖)；调用点 `convert_frame.py:979`。
+- §15.2 `stacksize_analysis()`(`:249-291`)：`StackSize`区间(`:224-247`)+ 三类传播边——顺序执行(`:266-270`)、跳转(`:271-276`)、异常表(`:277-281`,原文未覆盖)；`fixed_point`收敛判据(`:260-262`)与失败断言(`:286-289`,原文未覆盖)；结果写回 `co_stacksize`(`:290`，`bytecode_transformation.py:1875`)。
+- [!correction] 原文简化伪代码的定点循环声明 `changed` 却从未赋值为 `True`，若照抄会导致收敛判断恒假、循环跑满 100 轮不提前退出；订正为当前源码的 `FixedPointBox` 判据，不迁移原文这段有缺陷的伪代码。
+- §9"删除死bytecode和无意义跳转"补一句指向 §15 的前向指针。
+
+**修复 2(例外可见化)**：97d19ce 判重台账里"§6.1 加速数字无源、与 e07 论点抵触、不落地"的例外此前只记录在 changelog，页面本身不可见。在 [[compile_latency_cache_and_steady_state_performance_analysis]] §1（"平均耗时没有诊断价值"论点处）补一句注，明示该旧页给出的"2-3x/4x/1.5-2x"数字已按记录弃置、未作 `[!todo]` 保留。
+
+**校验**：`python tools/check_links.py`：pages 390→390（纯编辑）,broken=0；`pytest tools/ -q`：77 passed（新增 §15 的 mermaid/list-marker/locator-length 质量门禁通过，所有引用跨度 ≤57 行，未触发 100 行上限）。
+
+---
+
 ## 2026-07-30：知识库结构整改 P4 Task 5 Step 4-5（control_flow_capture_analysis 判重结论 + dynamo_pass_methodology 与 B10 互链）
 
 **Type**: Redundancy Consolidation（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 5）

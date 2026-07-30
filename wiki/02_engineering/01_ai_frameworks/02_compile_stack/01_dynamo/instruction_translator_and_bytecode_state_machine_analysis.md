@@ -4,7 +4,7 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[eval_frame_callback_and_code_cache_analysis]]  
 > 后续：[[variable_tracker_source_and_python_object_model_analysis]]  
-> 最后更新：2026-07-30(§14 并入 A03 独有的 bytecode_transformation 重组内容；补 §14.4「不变量与失败边界」7 条,此前漏迁,勿与本页 §11 同名小节混淆——后者讲符号执行状态机的不变量)
+> 最后更新：2026-07-30(§14 并入 A03 独有的 bytecode_transformation 重组内容；补 §14.4「不变量与失败边界」7 条,此前漏迁,勿与本页 §11 同名小节混淆——后者讲符号执行状态机的不变量;§15 补 `PyTorch_Dynamo_Technical_Analysis` 删除前遗漏的 `remove_dead_code`/`stacksize_analysis` 两个算法,原文无定位符,本次对照 pinned 源码补全)
 
 ## 1. 为什么 Dynamo要解释 Python bytecode
 
@@ -159,7 +159,8 @@ translator运行结束后，`OutputGraph.output_instructions`替换原 instructi
 见 `torch/_dynamo/convert_frame.py:967-980`。
 
 这一步的“dead code”是字节码控制流层的不可达/无用指令，不是 FX graph DCE，也不是
-AOTAutograd保存激活的生命周期。
+AOTAutograd保存激活的生命周期。`remove_dead_code`/`stacksize_analysis` 两个函数内部
+具体怎样工作见 §15。
 
 ## 10. 源码跟读：一个 frame 怎样变成图与新字节码
 
@@ -363,6 +364,30 @@ CPython 可以合法执行的新 code object，而不是简单地把字节数组
 - generator/coroutine 的 resume 语义有额外限制；
 - code object/cache identity 不能用函数名代替；
 - Python 版本改变 opcode/exception-table 格式，源码结论必须绑定版本与 commit。
+
+## 15. 源码补充:`bytecode_analysis` 两个具体算法——死代码消除与栈大小分析
+
+> 本节内容原属 P4 知识库整改被删除的旧页(`02_compile_stack/01_dynamo/PyTorch_Dynamo_Technical_Analysis.md` §3.2「字节码分析技术」,已于 Task 5 判重删除)。该节以简化伪代码描述了 `remove_dead_code()`/`stacksize_analysis()` 两个函数,原文未给出源码定位符;本节保留其算法主张为基底,对照当前 pinned 源码(`e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`)补全精确 file:line 引用,并订正原文遗漏的两处行为(3.11+ 异常表回填、fixed-point 收敛判定)。§9"删除死bytecode和无意义跳转"已提到调用点,本节展开这两个函数内部具体怎样工作。
+
+### 15.1 `remove_dead_code()`:从可达性出发的死代码消除
+
+`remove_dead_code`(`torch/_dynamo/bytecode_analysis.py:69-125`)从指令 0 开始做可达性遍历(`find_live_code`,`:74-89`):把当前指令标记为 live 后,若该指令挂有 `exn_tab_entry`,递归遍历其异常处理目标(`:80-81`);若指令是跳转指令,递归遍历跳转目标,且目标为空时直接 `AssertionError`(`:82-87`,原文简化版没有这条断言);命中 `TERMINAL_OPCODES` 则停止该分支的遍历(`:88-89`)。最终只保留被标记为 live 的指令(`:125`)。
+
+Python 3.11+ 额外有一段原文完全没有覆盖的收尾:当某条异常表条目的 start/end 指令因死代码被删除,需要用 `bisect` 在剩余 live 指令里重新定位最近的 start/end 边界,并把 `exn_tab_entry.start`/`.end` 改写指向这些替代指令(`:93-123`)——否则删除死代码可能让异常表指向一个已经不存在的指令。
+
+调用点见 §9:`convert_frame.py:979` 在 tracing 产出 `output_instructions` 并回填异常表之后,紧接着调用 `remove_pointless_jumps(remove_dead_code(instructions))`。
+
+### 15.2 `stacksize_analysis()`:≤100 轮定点迭代
+
+`stacksize_analysis`(`torch/_dynamo/bytecode_analysis.py:249-291`)给每条指令关联一个 `StackSize(low, high)` 区间(`torch/_dynamo/bytecode_analysis.py:224-247`),起始指令区间清零(`:257`),随后最多迭代 100 轮(`:259`)。每轮沿两类边传播区间:
+
+- **顺序执行边**:非终止指令按 `stack_effect(opcode, arg, jump=False)` 把自己的区间叠加传给下一条指令(`:266-270`);
+- **跳转边**:跳转指令额外按 `stack_effect(..., jump=True)` 把区间传给跳转目标(`:271-276`);
+- **异常表边**:若指令挂有 `exn_tab_entry`,额外按 CPython 异常处理帧深度公式(`depth + int(lasti) + 1`)把区间传给异常处理目标(`:277-281`,原文完全没有这一分支)。
+
+每轮通过一个共享的 `fixed_point` 标志判断本轮是否有区间变化;没有变化才提前 break(`:260-262`)。循环结束后取全体区间的 `low`/`high` 边界(`:283-284`),若从未收敛到 fixed point,或最终 `low` 为负,直接 `AssertionError`(`:286-289`)——这两条断言原文均未提及。收敛值即最终返回的 `co_stacksize`(`:290`),供 §14.3 assemble 步骤写回新 code object(`torch/_dynamo/bytecode_transformation.py:1875`)。
+
+> [!correction] 原文该函数的简化伪代码里,`for _ in range(100)` 循环声明了 `changed` 变量却从未在循环体内赋值为 `True`——若照抄会导致收敛判断恒假、循环执行满 100 轮而不提前退出。当前源码用共享的 `FixedPointBox`(`fixed_point.value`)在每次 `offset_of`/`exn_tab_jump` 真正改变区间时才置 `False`,并在轮首置 `True`,这才是可行的定点判据;订正后不再迁移原文那段有缺陷的伪代码。
 
 ## 配套 Demo
 

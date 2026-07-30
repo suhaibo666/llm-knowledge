@@ -4,7 +4,7 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[compiled_correctness_validation_methodology_analysis]]  
 > 后续：[[kernel_fusion_memory_and_hardware_performance_analysis]]  
-> 最后更新：2026-07-30(§12-16 并入 A05 独有的细粒度成本模型/dynamic·mode 权衡/四层缓存对照内容)
+> 最后更新：2026-07-30(§12-16 并入 A05 独有的细粒度成本模型/dynamic·mode 权衡/四层缓存对照内容;§1 补注旧页无源加速数字的弃置说明,使例外在页面本身可见,不止存于 changelog)
 
 ## 1. 为什么一个“平均耗时”没有诊断价值
 
@@ -20,6 +20,8 @@
 - 稳态guard、wrapper与kernel/replay。
 
 如果把这些轮次平均，既看不出冷启动SLO，也看不出稳态吞吐，更无法判断cache是否有效。
+
+> 注:曾有旧页(PyTorch_Dynamo_Technical_Analysis,已删)给出"2-3x/4x/1.5-2x"类平均加速数字,无源且正属本节所批评的口径,整改时按记录弃置(见 changelog 2026-07-30 条),未作 [!todo] 保留。
 
 ## 2. 五个必须分开的测量场景
 
