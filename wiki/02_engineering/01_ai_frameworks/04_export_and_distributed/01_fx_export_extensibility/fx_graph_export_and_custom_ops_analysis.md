@@ -239,6 +239,8 @@ self.m: Any | None = torch._C._dispatch_library(kind, ns, dispatch_key, filename
 
 算子注册的更完整图景(尤其 NPU/PrivateUse1 侧)见 [[01_eager_runtime/03_op_registration/index]]。
 
+> custom op 作为"编译器边界契约"的更完整深度分析——fake kernel 必须满足的正确性(不止"返回同 shape 空 Tensor")、mutation/version 与 ADInplaceOrView、decomposition/direct lowering/fallback 的选择依据、按阶段分层的失败定位——见 [[custom_operators_fake_kernels_and_decompositions_analysis]]。
+
 ```mermaid
 graph LR
     D["custom_op 定义<br/>name + schema<br/>_library/custom_ops.py:67"] --> K["register_kernel<br/>CPU/CUDA 数值实现<br/>library.py:1004"]
@@ -313,3 +315,4 @@ sequenceDiagram
 - [[02_compile_stack/02_aot_autograd/index]] — export `run_decompositions` 的 ATen 分解栈同源
 - [[01_eager_runtime/03_op_registration/index]] — 算子注册的工程化(含 NPU/PrivateUse1)
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — `__torch_function__`/分发器底座,custom_op 的分发落点
+- [[custom_operators_fake_kernels_and_decompositions_analysis]] — custom op 编译器边界契约的深度分析(§7 的下游对应物,fake kernel 正确性/decomposition 选择/失败定位)

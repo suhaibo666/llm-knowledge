@@ -4,7 +4,10 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[fsdp_dtensor_and_distributed_graphs_analysis]]  
 > 后续：[[f06_custom_backends_and_device_integration_analysis]]  
-> 最后更新：2026-07-28
+> 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,判重 vs [[fx_graph_export_and_custom_ops_analysis]] §7)
+
+> [!note] 判重结论:与 [[fx_graph_export_and_custom_ops_analysis]] §7 的关系
+> 该页 §7「torch.library / custom_op」是 FX/export/functorch 全景 deep dive 中的一节(约 40 行),概述 `custom_op` 定义、`register_kernel`/`register_fake`/`register_autograd`/`Library` 句柄的**公开重导出入口**(`torch/library.py` 行号)。本页是专讲"custom op 作为编译器边界契约"的 13 节深度分析,覆盖 fake kernel 正确性要求(§5-§6)、mutation/version 与 ADInplaceOrView(§8)、decomposition/lowering/fallback 的选择与 Inductor 内部机制(§9)、失败定位分层(§10)、测试矩阵与复杂度模型(§11-§12)——这些在该页完全没有展开,且本页引用的是**底层实现**(`torch/_library/custom_ops.py`)行号而非公开重导出入口,两者互补不重复。独有内容占比远超一半,故保留为独立页,不并入;仅在该页 §7 末尾补一条指向本页的深度链接(重叠段无需收缩,因二者角度不同、无逐句重复)。
 
 ## 1. Custom op 定义的是“编译器边界契约”
 
@@ -248,8 +251,9 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
+- [[04_export_and_distributed/01_fx_export_extensibility/index]] — 本模块 overview
+- [[fx_graph_export_and_custom_ops_analysis]] — §7 是 custom_op 注册机制的公开入口概述(本页的浅层对照),见页头判重结论
 - [[pytorch_dispatcher_analysis]] — schema/dispatcher/ADInplaceOrView 分层
 - [[dispatch_modes_proxytensor_faketensor_analysis]] — ProxyTensor/FakeTensor 两套抽象执行状态（2026-07-30 起独立成页，取代原 `aotautograd_analysis` §13 引用）
 - [[fsdp_dtensor_and_distributed_graphs_analysis]]
 - [[f06_custom_backends_and_device_integration_analysis]]
-- [[04_export_and_distributed/01_fx_export_extensibility/index]]

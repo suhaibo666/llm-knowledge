@@ -118,7 +118,7 @@ B06 OutputGraph
 | F02 | [[activation_checkpoint_recompute_and_compile_analysis]] | checkpoint 与 AOT recompute 怎样叠加(2026-07-30 迁入 `02_compile_stack/02_aot_autograd/`,与 [[saved_tensors_recompute_and_runtime_abi_analysis]] 互指划界) |
 | F03 | [[ddp_compile_boundaries_and_optimizer_analysis]] | DDP/reducer/optimizer 如何改变 compile region(2026-07-30 迁入 `04_export_and_distributed/02_distributed_primitives/`,与 [[c10d_ddp_fsdp_dtensor_analysis]] 互指划界) |
 | F04 | [[fsdp_dtensor_and_distributed_graphs_analysis]] | shard、placement、collective 与 rank state 如何入图(2026-07-30 迁入同上,与 [[c10d_ddp_fsdp_dtensor_analysis]] 互指划界) |
-| F05 | [[f05_custom_operators_fake_kernels_and_decompositions_analysis]] | custom op 怎样补齐编译契约 |
+| F05 | [[custom_operators_fake_kernels_and_decompositions_analysis]] | custom op 怎样补齐编译契约(2026-07-30 迁入 `04_export_and_distributed/01_fx_export_extensibility/`,与 [[fx_graph_export_and_custom_ops_analysis]] §7 判重后保留独立页+互指) |
 | F06 | [[f06_custom_backends_and_device_integration_analysis]] | backend/device 怎样接入 lowering 与 codegen |
 | F07 | [[f07_aotinductor_packaging_and_deployment_analysis]] | AOTInductor 与 JIT compile 的产物和 ABI 有何不同 |
 | F08 | [[training_inference_cudagraph_and_freezing_analysis]] | training/inference/freezing/CUDAGraph 如何组合 |
