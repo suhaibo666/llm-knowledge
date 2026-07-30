@@ -6,6 +6,42 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 7 组 4（control_flow_capture_analysis vs C06 收尾判重）
+
+**Type**: Redundancy Review + Boundary Clarification（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 7；Task 5 遗留收尾）
+
+`02_compile_stack/01_dynamo/control_flow_capture_analysis.md`（204 行）vs
+[[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] 卷 B 的 b04 判重已在
+Task 5 完成（零重叠）；本组补做 vs C06
+（[[structured_outputs_higher_order_and_nested_graphs_analysis]]）的判重，Task 7 组 1-3
+未涉及的最后一项遗留。
+
+**判定**：两页体裁不同——本页讲**捕获前端**：Dynamo 字节码符号执行期间"控制流该不该
+入图、走哪条路径"（`speculate_subgraph`/`generic_jump`/graph break，均是 `torch/_dynamo/`
+内部机制，源码引用 `torch/_dynamo/variables/higher_order_ops.py`、
+`torch/_dynamo/symbolic_convert.py`）；C06 讲**IR 层结构**：不论谁捕获（Dynamo/`make_fx`/
+`torch.export`），outer/child GraphModule 的 ownership、pytree、DCE 递归边界怎样表达
+（源码引用 `torch/_higher_order_ops/`、`torch/fx/`）。逐节核对确认本页 §1-§4（两条路径
+框架、`speculate_subgraph` 四步机制、`cond` 深挖的 Dynamo 侧投机/checkpoint-rollback、
+控制流 HOP 家族、原生 `if/for/while` 字节码分流、"trace 两支/编译两支/运行一支"三个
+误解辨析、路径选型表）在 C06 中**零重叠**——C06 全篇未提及 `speculate_subgraph`、
+`VariableTracker`、`generic_jump`、`symbolic_convert`、graph break 中任何一个术语。
+
+**唯一重叠段**：本页 §2.4「下游:HOP 在编译后端的处理」的 `FakeTensorMode`/
+`ProxyTorchDispatchMode` 两条 bullet（`cond.py:408/403`，讲 `trace_cond`/FakeTensor merge
+机制）与 C06 §6 及其"源码跟读"§1-§3 讲的是**同一段源码**（locator 一致），但 C06 是完整
+源码跟读、本页只是两行下游提及——收缩本页这两条为互指 C06，保留 §2.4 另外两条独有 bullet
+（`py_functionalize_impl`/Inductor `Conditional` IR，C06 未涉及）。
+
+**互链**：本页页头新增与 C06 的划界说明段；页尾 Related Pages 加一条指向 C06；C06 §6 开头
+加一句指回本页（"Dynamo 如何决定该不该走 cond 是更早一层问题"），Related Pages 加一条
+反向链接。本组是四组中改动量最小的一组，符合预期（该页"大概率保留，只补划界"）。
+
+**校验**：`python tools/check_links.py`：pages 386→386，broken=0；`pytest tools/ -q`：
+77 passed。
+
+---
+
 ## 2026-07-30：知识库结构整改 P4 Task 7 组 2（pass 方法论归一：C13/C15/C16 吸收两旧页后删除）
 
 **Type**: Redundancy Consolidation（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 7）

@@ -5,6 +5,15 @@
 > 最后更新: 2026-06-30
 >
 > 本页回答「`torch.compile` 编译流程里控制流是怎么入图的」。结论先行:**控制流不是只有一种处理方式**。Dynamo 走**两条互不相同的路径**——显式高阶算子(`torch.cond` 等)被投机成子图、在主图留一个节点;原生 Python `if/for/while` 则在字节码层被**特化 / 展开 / 切图**,多数情况根本不以控制流形态入图。上游 Dynamo 字节码符号执行见 [[instruction_translator_and_bytecode_state_machine_analysis]],下游分解见 [[02_compile_stack/02_aot_autograd/index]] / [[02_compile_stack/04_inductor/index]]。
+>
+> **与 [[structured_outputs_higher_order_and_nested_graphs_analysis]] 的划界**（P4 Task 7 组 4
+> 判重结论）：本页讲**捕获前端**——Dynamo 如何在字节码符号执行期间决定"这段控制流该不该
+> 入图、走哪条路径"（`speculate_subgraph`/`generic_jump`/graph break，均是 `torch/_dynamo/`
+> 内部机制）；那一页讲**IR 层结构**——不论控制流是谁捕获的（Dynamo、`make_fx`、
+> `torch.export` 均可能触发），outer/child GraphModule 的 ownership、pytree、DCE 递归
+> 边界怎样表达（`torch/_higher_order_ops/`、`torch/fx/` 机制）。两页在 `torch.cond` 的
+> `FakeTensorMode`/`ProxyTorchDispatchMode` dispatch 细节上有小段重叠，已在 §2.4 收缩为
+> 互指，其余内容互不重复。
 
 ---
 
@@ -112,8 +121,15 @@ flowchart TB
 
 Dynamo 发射的 `torch.ops.higher_order.cond` 是个 `HigherOrderOperator`(`torch/_higher_order_ops/cond.py:47` `class CondOp`),按 dispatch key 注册多份实现,后续编译阶段按需命中:
 
-- **`FakeTensorMode`**(`cond.py:408`):分别 fake 跑两分支取输出 meta,`_merge_output`(`:451`)合并——要求两分支输出结构一致(`:419-425`),shape 不一致处退化成 unbacked symint。这给主图 cond 节点定 example value。
-- **`ProxyTorchDispatchMode`**(`cond.py:403` → `trace_cond`):AOTAutograd 再次 trace 时把内层子图重新记成 proxy 上的 cond 节点(子图保留、不展开)。
+- **`FakeTensorMode`**（`cond.py:408`，逐分支 fake 执行、`_merge_output` 合并输出、拒绝
+  TreeSpec 不一致）与 **`ProxyTorchDispatchMode`**（`cond.py:403` → `trace_cond`，AOTAutograd
+  再次 trace 时把子图重新记成 proxy 上的 cond 节点，child 注册为 outer tracer root 的
+  `GraphModule` 属性、不产生跨图 Node 边）这两条 dispatch 路径本页不再展开——它们是
+  `cond` 算子自身的捕获/推断机制，与本页 §2.1-§2.2 讨论的 **Dynamo 侧** `speculate_subgraph`
+  是两层不同的实现，完整源码跟读见
+  [[structured_outputs_higher_order_and_nested_graphs_analysis]] §6 与其"源码跟读"§1-§3
+  （`trace_cond` 的 `reenter_make_fx`/`register_module`、FakeTensor merge 的 TreeSpec/metadata
+  校验，locator 一致）。
 - **`py_functionalize_impl`**(`cond.py:710`):对两分支做函数化;cond 默认不允许输入突变(除非走 `auto_functionalize`,`:721`)。
 - **Inductor**:`torch/_inductor/ir.py:10700` `class Conditional(ExternKernel)` 是 cond 的 IR 节点,codegen 出 host 端真实 if/else(按 `pred` 选择执行哪张子 kernel),输出用 `MultiOutput`;编译后的 cond 不支持输出别名(`ir.py:10834`)。
 
@@ -204,3 +220,4 @@ flowchart TB
 - [[02_compile_stack/02_aot_autograd/index]] — 下游:HOP 子图的前/反向分解
 - [[02_compile_stack/04_inductor/index]] — 下游:`Conditional` IR 与控制流 codegen
 - [[04_export_and_distributed/01_fx_export_extensibility/index]] — 对比:`torch.export` 如何用控制流算子消除 Python 控制流;`symbolic_trace` 为何不支持数据依赖控制流
+- [[structured_outputs_higher_order_and_nested_graphs_analysis]] — IR 层的 HOP/nested graph ownership、pytree 与 DCE 递归边界(与本页的划界见页头)
