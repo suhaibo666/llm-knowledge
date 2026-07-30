@@ -267,7 +267,7 @@ flowchart TB
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[02_compile_stack/06_compile_cache/index]] — 编译缓存总览（本页是其最核心一级）
 - [[11_aotautograd_cache_analysis]] — 上层缓存，复用本页 `GuardedCache`；`bundled_autograd_cache` 下 Inductor 不自存
 - [[13_triton_autotune_cache_analysis]] — Triton bundling / 远端缓存设施细节
@@ -276,7 +276,7 @@ flowchart TB
 - [[02_compile_stack/06_compile_cache/index]] — 本目录索引
 - [[20_graph_stage_boundaries_identity_and_provenance_analysis]] — post-grad FX、Inductor artifact 与跨阶段 identity 边界
 - [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]] — 被缓存复用的 kernel/wrapper 与 provenance 产物
-- [[02_torch_compile_architecture]] — torch.compile 整体栈
+- [[02_compile_stack/04_inductor/index]] — torch.compile 整体栈
 - [[21_inductor_autotuning_analysis]] — autotune 生命周期（获胜 config 即 TritonBundler 打包对象）
 - [[02_compile_stack/04_inductor/index]] — Inductor lowering/codegen（命中时被跳过的那段）
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — 动态形状与 guard（§三 guard 校验的上游）

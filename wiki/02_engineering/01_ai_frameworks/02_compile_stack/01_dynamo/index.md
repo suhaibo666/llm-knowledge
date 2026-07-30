@@ -27,13 +27,13 @@
 | [[22_backend_modes_options_stances_and_fullgraph_analysis]] | deep dive(B02,段 2) | backend/mode/options/stance/fullgraph 五个控制面怎样互不覆盖 |
 | [[30_dynamo_pass_methodology]] | **development guide**(段 3) | Dynamo backend 是什么/为什么、整图改写边界、`register_backend`/callable 注册示例、何时后移到 Inductor 各阶段 |
 
-> 端到端流水线(Dynamo→AOTAutograd→Inductor)见 [[02_torch_compile_architecture]]。B01-B10 的课程化阅读顺序与配套 Demo 见 [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] §4。
+> 端到端流水线(Dynamo→AOTAutograd→Inductor)见 [[02_compile_stack/04_inductor/index]]。B01-B10 的课程化阅读顺序与配套 Demo 见 [[courses/torch_compile_end_to_end]] §4。
 
 ---
 
 ## 关联域
 
-- [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 编号化端到端课程：卷 B 系统展开 Dynamo，并连接卷 A、C–F
+- [[courses/torch_compile_end_to_end]] — 编号化端到端课程：卷 B 系统展开 Dynamo，并连接卷 A、C–F
 - [[02_compile_stack/02_aot_autograd/index]] — 下一阶段:前/反向分解
 - [[02_compile_stack/04_inductor/index]] — 编译后端
 - [[01_ai_frameworks/index]] — 本域总索引

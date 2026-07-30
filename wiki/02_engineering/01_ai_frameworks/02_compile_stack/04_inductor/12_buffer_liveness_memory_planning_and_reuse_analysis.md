@@ -506,7 +506,7 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[12_saved_tensors_recompute_and_runtime_abi_analysis]]
 - [[11_inductor_ir_values_loops_layouts_and_buffers_analysis]]
 - [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]

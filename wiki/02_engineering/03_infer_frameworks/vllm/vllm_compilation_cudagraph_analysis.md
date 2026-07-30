@@ -172,7 +172,7 @@ self._compiled_callable = torch.compile(
 - **`dynamic=False` + 手动 `mark_dynamic`**:vLLM 自己控制哪维动态,不让 Dynamo 自动推断。
 - **去掉所有 guard**(`wrapper.py:120-125`):非 `STOCK_TORCH_COMPILE` 模式下用 `skip_all_guards_unsafe` 把 guard 全删。因为 vLLM 保证输入结构稳定,删 guard 后**永不重编译**,省掉 guard 检查开销(类名 `WithNoGuards` 由此而来)。
 
-> 与原生 `torch.compile` 的关系:vLLM 并没有另造一套编译器,它仍然调标准 `torch.compile`,只是把 `backend` 换成自己的 `VllmBackend`,从而在 Dynamo 抓到 FX 图之后接管"图怎么切、怎么编、怎么包 CUDA Graph"。Dynamo / Inductor 栈本身见 [[02_compile_stack/01_dynamo/index]] / [[02_compile_stack/04_inductor/index]] / [[02_torch_compile_architecture]]。
+> 与原生 `torch.compile` 的关系:vLLM 并没有另造一套编译器,它仍然调标准 `torch.compile`,只是把 `backend` 换成自己的 `VllmBackend`,从而在 Dynamo 抓到 FX 图之后接管"图怎么切、怎么编、怎么包 CUDA Graph"。Dynamo / Inductor 栈本身见 [[02_compile_stack/01_dynamo/index]] / [[02_compile_stack/04_inductor/index]]。
 
 ### 3.3 VllmBackend:从 Dynamo FX 全图到分段
 
@@ -350,5 +350,5 @@ vLLM 的编译 + CUDA Graph 是两件正交武器协同对付 decode 的 CPU 下
 
 ## Cross-Domain Links
 - [[01_PyTorch_CUDA_Graphs_Complete_Guide]] —— CUDA Graph 原理与捕获/replay
-- [[02_torch_compile_architecture]] · [[02_compile_stack/04_inductor/index]] · [[02_compile_stack/01_dynamo/index]] —— torch.compile 栈
+- [[02_compile_stack/04_inductor/index]] · [[02_compile_stack/01_dynamo/index]] —— torch.compile 栈
 - [[11_torch_compile_npugraphs_deep_dive]] —— NPU 图捕获对照

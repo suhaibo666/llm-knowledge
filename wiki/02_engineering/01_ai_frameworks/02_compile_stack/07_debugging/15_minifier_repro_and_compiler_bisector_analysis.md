@@ -221,7 +221,7 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[13_aotautograd_and_inductor_failure_localization_analysis]]
 - [[16_compiled_correctness_validation_methodology_analysis]]
 - [[18_kernel_fusion_memory_and_hardware_performance_analysis]]

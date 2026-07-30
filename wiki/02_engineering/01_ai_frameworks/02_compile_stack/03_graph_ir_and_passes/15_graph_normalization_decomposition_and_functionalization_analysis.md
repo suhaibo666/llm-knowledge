@@ -393,7 +393,7 @@ artifact 位于 `tools/labs_torch_compile/artifacts/end_to_end/functional_aten.p
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[14_graph_capture_frontends_and_tracing_analysis]]
 - [[12_graph_effects_alias_mutation_and_order_analysis]]
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]]

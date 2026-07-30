@@ -221,7 +221,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[02_compile_stack/02_aot_autograd/index]] — 本模块 overview
 - [[20_compiled_autograd_analysis]]
 - [[20_ddp_compile_boundaries_and_optimizer_analysis]]

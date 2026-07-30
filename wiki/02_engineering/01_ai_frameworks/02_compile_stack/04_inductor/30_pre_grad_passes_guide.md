@@ -839,7 +839,7 @@ Pre-Grad Passes 是 PyTorch Inductor 编译流程中的**早期优化阶段**，
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[02_engineering/01_ai_frameworks/index]]
 - [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段放置方法论(现含跨框架对照)
 - [[33_decomposition_passes_guide]] — Pre-Grad 之后的 AOT 算子集收敛

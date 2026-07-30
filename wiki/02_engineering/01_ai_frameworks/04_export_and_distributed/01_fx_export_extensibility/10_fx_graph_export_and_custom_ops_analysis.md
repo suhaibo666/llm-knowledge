@@ -1,6 +1,6 @@
 > **页面角色**：FX、export、custom-op 与 functorch 的完整 deep dive。
 > **原始基线**：见下方页头；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **审计状态**：保留专题纵深；图 IR、捕获、值语义和安全改图的当前课程主线见 [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]，逐结构单元历史迁移仍在 ledger 中跟踪。
+> **审计状态**：保留专题纵深；图 IR、捕获、值语义和安全改图的当前课程主线见 [[courses/torch_compile_end_to_end]]，逐结构单元历史迁移仍在 ledger 中跟踪。
 
 > 层次:deep dive
 > 核验基准:PyTorch upstream `E:\97-codes\pytorch\pytorch`(v2.13.0a0, commit 9922478)

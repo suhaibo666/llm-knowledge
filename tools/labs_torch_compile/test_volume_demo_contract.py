@@ -429,13 +429,14 @@ class VolumeDEFContractTest(unittest.TestCase):
         )
 
 
-# kb-reorg P4 physically relocates course volumes out of
+# kb-reorg P4 physically relocated course volumes out of
 # 19_torch_compile_end_to_end one volume (or, for D, one page) at a time
 # (Task 4: E -> 07_debugging; Task 5: B -> 01_dynamo; Task 6: D scatters
 # across four directories per spec appendix A instead of moving wholesale).
-# Manifest entries still carry only a bare filename, so resolve each entry's
-# directory from its "volume" field (and, for D, its "page_id"); volumes/
-# pages not yet moved fall back to the legacy course directory.
+# Task 10 (2026-07-30) deleted 19_torch_compile_end_to_end entirely, so
+# every volume/page_id below and in _C_PAGE_ROOTS/_F_PAGE_ROOTS must now be
+# explicitly mapped -- there is no more legacy course directory to fall
+# back to (see the AssertionError fallback in _page_root() below).
 _D_PAGE_ROOTS = {
     "d01": ("02_compile_stack", "04_inductor"),
     "d02": ("02_compile_stack", "02_aot_autograd"),
@@ -444,11 +445,14 @@ _D_PAGE_ROOTS = {
     "d06": ("03_runtime_graphs", "cuda"),
     "d07": ("02_compile_stack", "07_debugging"),
 }
-# Volume C physically scatters out of 19_torch_compile_end_to_end in two
+# Volume C physically scattered out of 19_torch_compile_end_to_end in two
 # batches (kb-reorg P4 Task 7: 12 FX-data-model/pass pages -> new
-# 03_graph_ir_and_passes; Task 8 will move the remaining 9 pages -> 01_dynamo /
-# 02_aot_autograd / 04_inductor). Only list pages that have actually moved;
-# unlisted c-ids fall back to the legacy course directory below.
+# 03_graph_ir_and_passes; Task 8: the remaining 9 pages -> 01_dynamo /
+# 02_aot_autograd / 04_inductor). c01 (01_graph_ir_motivation_and_taxonomy.md,
+# the "why do we need a graph IR" motivation page) had no functional-tree
+# home of its own -- Task 10 (2026-07-30) folded its motivation-level
+# takeaways into the courses readthrough page and deleted it, so c01 is
+# special-cased in _page_root() below instead of living in this dict.
 _C_PAGE_ROOTS = {
     "c02": ("02_compile_stack", "03_graph_ir_and_passes"),
     "c04": ("02_compile_stack", "01_dynamo"),
@@ -490,9 +494,14 @@ _F_PAGE_ROOTS = {
 
 
 def _page_root(labs_root: Path, volume: str, page_id: str | None = None) -> Path:
-    ai_frameworks_root = (
-        labs_root.parent.parent / "wiki" / "02_engineering" / "01_ai_frameworks"
-    )
+    wiki_root = labs_root.parent.parent / "wiki"
+    ai_frameworks_root = wiki_root / "02_engineering" / "01_ai_frameworks"
+    if volume == "C" and page_id == "c01":
+        # c01's page (01_graph_ir_motivation_and_taxonomy.md) had no
+        # functional-tree home of its own and was deleted by kb-reorg P4
+        # Task 10 (2026-07-30); its motivation-level takeaways were folded
+        # into the courses readthrough page instead.
+        return wiki_root / "courses"
     if volume == "E":
         return ai_frameworks_root / "02_compile_stack" / "07_debugging"
     if volume == "B":
@@ -503,7 +512,14 @@ def _page_root(labs_root: Path, volume: str, page_id: str | None = None) -> Path
         return ai_frameworks_root.joinpath(*_C_PAGE_ROOTS[page_id])
     if volume == "F" and page_id in _F_PAGE_ROOTS:
         return ai_frameworks_root.joinpath(*_F_PAGE_ROOTS[page_id])
-    return ai_frameworks_root / "19_torch_compile_end_to_end"
+    # 19_torch_compile_end_to_end was deleted by kb-reorg P4 Task 10
+    # (2026-07-30); every volume/page_id combination in the current
+    # manifest is now explicitly mapped above, so this should be
+    # unreachable. Fail loudly instead of silently pointing at a directory
+    # that no longer exists.
+    raise AssertionError(
+        f"no page root mapping for volume={volume!r} page_id={page_id!r}"
+    )
 
 
 class DemoManifestContractTest(unittest.TestCase):
@@ -530,8 +546,8 @@ class DemoManifestContractTest(unittest.TestCase):
         # d05 (wrapper_execution_memory_allocation_and_reuse_analysis.md) was
         # dropped from the manifest by kb-reorg P4 Task 8 group D (2026-07-30):
         # the page's unique content was merged verbatim into C19
-        # (buffer_liveness_memory_planning_and_reuse_analysis.md) Sec18, which
-        # already carries c19's own manifest entry with that filename -- the
+        # (12_buffer_liveness_memory_planning_and_reuse_analysis.md) Sec18,
+        # which already carries c19's own manifest entry with that filename -- the
         # manifest requires unique page values, so d05 can't point at the same
         # file. The demo_d_artifact_runtime.py wrapper_memory_reuse case still
         # runs; C19 Sec18 links to it directly as a pointer instead of a
@@ -613,27 +629,27 @@ class DemoManifestContractTest(unittest.TestCase):
 class CourseMarkdownContractTest(unittest.TestCase):
     @staticmethod
     def _course_pages() -> list[Path]:
-        ai_frameworks_root = (
-            Path(__file__).resolve().parent.parent.parent
-            / "wiki"
-            / "02_engineering"
-            / "01_ai_frameworks"
-        )
-        course_root = ai_frameworks_root / "19_torch_compile_end_to_end"
+        wiki_root = Path(__file__).resolve().parent.parent.parent / "wiki"
+        ai_frameworks_root = wiki_root / "02_engineering" / "01_ai_frameworks"
+        # 19_torch_compile_end_to_end was deleted by kb-reorg P4 Task 10
+        # (2026-07-30); the courses readthrough page that replaced its
+        # navigational role lives here instead.
+        courses_root = wiki_root / "courses"
         # Volume E physically moved to 07_debugging (kb-reorg P4 Task 4); its
         # markdown quality gates below still apply, just from the new home.
         debugging_root = ai_frameworks_root / "02_compile_stack" / "07_debugging"
         # Volume B physically moved to 01_dynamo (kb-reorg P4 Task 5); same.
         dynamo_root = ai_frameworks_root / "02_compile_stack" / "01_dynamo"
-        # 12 of volume C's 21 pages physically moved to the new
-        # 03_graph_ir_and_passes directory (kb-reorg P4 Task 7); same gates
-        # apply from the new home. The remaining 9 pages stay under
-        # course_root until Task 8 scatters them further.
+        # All of volume C's 21 pages physically moved out of the legacy
+        # course directory (kb-reorg P4 Task 7-8): 12 into the new
+        # 03_graph_ir_and_passes directory, the remaining 9 scattered across
+        # 01_dynamo/02_aot_autograd/04_inductor; c01 was deleted (folded
+        # into courses_root above). Same gates apply from the new home.
         graph_ir_root = (
             ai_frameworks_root / "02_compile_stack" / "03_graph_ir_and_passes"
         )
         return (
-            sorted(course_root.glob("*.md"))
+            sorted(courses_root.glob("*.md"))
             + sorted(debugging_root.glob("*.md"))
             + sorted(dynamo_root.glob("*.md"))
             + sorted(graph_ir_root.glob("*.md"))

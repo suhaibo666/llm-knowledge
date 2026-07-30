@@ -1,6 +1,6 @@
 # 02 · FX Graph 的核心数据模型
 
-> 前置：[[01_graph_ir_motivation_and_taxonomy]]
+> 前置：[[courses/torch_compile_end_to_end]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -556,13 +556,12 @@ Lab 证明：
 
 ## 学习顺序
 
-- 上一篇：[[01_graph_ir_motivation_and_taxonomy]]
+- 上一篇：[[courses/torch_compile_end_to_end]]
 - 下一篇：[[11_graph_values_metadata_and_signatures_analysis]]
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[01_graph_ir_motivation_and_taxonomy]]
+- [[courses/torch_compile_end_to_end]]
 - [[11_graph_values_metadata_and_signatures_analysis]]
 - [[21_fx_graph_editing_primitives_and_invariants_analysis]]
 - [[23_dead_code_topology_and_effect_order_analysis]]

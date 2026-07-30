@@ -26,7 +26,7 @@ PyTorch 可拆成相互支撑的两条主轴——**① eager 运行时地基**(
 ```
 
 > 关键对照:**01_eager_runtime/05_autograd_engine**(运行时动态磁带 + C++ 引擎)是 **02_compile_stack/02_aot_autograd**(编译期前/反向联合 FX 图)的 eager 对应物;两者易混,见各自 index 的对照表。
-> 编译栈端到端流水线详见 [[02_torch_compile_architecture]];eager 地基从 [[01_eager_runtime/01_tensor_and_storage/index]] 读起。
+> 编译栈端到端流水线详见 [[02_compile_stack/04_inductor/index]];eager 地基从 [[01_eager_runtime/01_tensor_and_storage/index]] 读起。
 
 ---
 
@@ -54,12 +54,10 @@ Triton autotune/kernel cache → 复用候选winner与已编译kernel
 阅读顺序仍是捕获→AOT→Inductor→codegen；随后从[[02_compile_stack/06_compile_cache/index]]反向检查每一层
 cache hit究竟跳过了哪些阶段，不能把“命中cache”笼统理解成整条编译栈都未运行。
 
-课程/主线读物(跨 5 层,过渡期独立编号,不计入上表):
-
-| 页面 | 说明 |
-|---|---|
-| [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] | **图编译系统化主线**：FX IR 与 use-def、捕获/规范化、AOTAutograd 正反向构图、saved tensor/recompute、PatternMatcher、DCE/保序、Inductor IR/调度/codegen；按固定源码基线逐条核验 |
-| [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] | **`torch.compile` 端到端课程**：执行前置、Dynamo、现有图编译卷、runtime/cache、调试/性能、训练/分布式/扩展/部署；A→F 编号化阅读(19 号目录随 P4 后续任务逐步解散,内容归并进上表 5 层) |
+课程入口(跨 5 层的纯导读页,正文全部归属上表功能树,不计入上表):[[courses/torch_compile_end_to_end|torch.compile 端到端课程]] ——
+从 eager 地基到 Dynamo 捕获、AOTAutograd 分解、Graph IR/Passes、Inductor 编译、跨阶段缓存、
+调试诊断、运行时图捕获、导出与分布式的完整阅读路线 + labs 对应表(2026-07-30 kb-reorg P4
+Task 10 起,原 19 号课程目录已整体解散,内容归并进上表 5 层)。
 
 ---
 
@@ -115,9 +113,8 @@ cache hit究竟跳过了哪些阶段，不能把“命中cache”笼统理解成
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 图编译系统化课程
+- [[courses/torch_compile_end_to_end]] — torch.compile 端到端阅读课程:从 API 到生产运行,图编译系统化主线
 - [[02_compile_stack/06_compile_cache/index]] — 跨阶段编译缓存地图
-- [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 从 API 到生产运行的端到端课程
 - [[02_train_frameworks/megatron-lm/index]] — Megatron-LM(CUDA Graphs 使用场景)
 - [[02_train_frameworks/index]] — 训练框架:建立在 [[04_export_and_distributed/02_distributed_primitives/index]] 之上的并行应用层
 - [[05_gpu_kernel/index]] — GPU Kernel 开发(执行层级、内存优化、NPU 差异)

@@ -210,7 +210,7 @@ flowchart TB
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[02_compile_stack/06_compile_cache/index]] — 编译缓存总览（本页是栈中第二级）
 - [[12_fx_graph_cache_analysis]] — 下层图级缓存：`FxGraphHashDetails`/`FxGraphCachePickler`/`GuardedCache`/`TritonBundler` 机制均在彼页，本页大量继承复用
 - Mega-cache / precompile：Bundled entry 的主要消费方；尚未完成独立当前基线审计，作为知识缺口保留
@@ -219,6 +219,6 @@ flowchart TB
 - [[02_compile_stack/06_compile_cache/index]] — 本目录索引
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]] — 被 AOTAutogradCache 命中所跳过的 joint/fw/bw 构图主线
 - [[20_graph_stage_boundaries_identity_and_provenance_analysis]] — cache entry 与跨阶段 artifact/identity 边界
-- [[02_torch_compile_architecture]] — torch.compile 整体栈
+- [[02_compile_stack/04_inductor/index]] — torch.compile 整体栈
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — `guards_expr`/backed symint/shape env 的上游机制
 - [[02_compile_stack/04_inductor/index]] — Inductor 编译（默认形态命中时降级为缓存查询的那段）

@@ -276,7 +276,7 @@ CPU CodeGen 的关键决策：
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[02_engineering/01_ai_frameworks/index]]
 - [[34_codegen_extension_guide]] — 新设备 scheduling/wrapper 的关键 API 与注册方法
 - [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]]

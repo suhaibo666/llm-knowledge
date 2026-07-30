@@ -482,7 +482,7 @@ Program legality
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[10_fx_graph_core_data_model_analysis]]
 - [[15_graph_normalization_decomposition_and_functionalization_analysis]]
 - [[23_dead_code_topology_and_effect_order_analysis]]

@@ -486,7 +486,7 @@ def call(args):
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[11_graph_values_metadata_and_signatures_analysis]]
 - [[14_graph_capture_frontends_and_tracing_analysis]]
 - [[25_graph_rewrite_legality_validation_and_complexity_analysis]]

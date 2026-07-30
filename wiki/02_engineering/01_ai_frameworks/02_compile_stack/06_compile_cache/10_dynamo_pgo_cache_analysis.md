@@ -222,7 +222,7 @@ collective 本体在 `OutputGraph.run_compiler_collective`(`torch/_dynamo/output
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[02_compile_stack/06_compile_cache/index]] — 编译缓存总览(本页是其中唯一「缓存决策而非产物」的一级)
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — automatic dynamic / guard / DimDynamic / ShapeEnv(本页画像的消费下游)
 - [[12_fx_graph_cache_analysis]] — Inductor 图级产物缓存(与 PGO 正交叠加)
@@ -231,7 +231,7 @@ collective 本体在 `OutputGraph.run_compiler_collective`(`torch/_dynamo/output
 - Mega-cache打包/重放（`PGOCacheArtifact`挂钩）：尚未完成独立当前基线审计
 - [[02_compile_stack/06_compile_cache/index]] — 本目录索引
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — dynamic shape、guard、重编译与 graph reuse 主线
-- [[02_torch_compile_architecture]] — torch.compile 整体栈
+- [[02_compile_stack/04_inductor/index]] — torch.compile 整体栈
 - [[13_variable_tracker_source_and_python_object_model_analysis]] — VariableBuilder 与 VariableTracker 追踪机制
 - [[15_guards_cache_lookup_and_recompilation_analysis]] — guard 的宿主与重编译判定
 - [[01_dynamo_quickstart]] — Dynamo 入门

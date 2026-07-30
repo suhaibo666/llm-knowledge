@@ -588,7 +588,7 @@ metadata 收集阶段在给某个输出分类 `OutputType`（§2）时，需要�
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[15_graph_normalization_decomposition_and_functionalization_analysis]]
 - [[12_saved_tensors_recompute_and_runtime_abi_analysis]]
 - [[20_graph_stage_boundaries_identity_and_provenance_analysis]]

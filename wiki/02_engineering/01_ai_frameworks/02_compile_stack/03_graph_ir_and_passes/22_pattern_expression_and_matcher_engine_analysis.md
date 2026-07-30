@@ -657,7 +657,7 @@ assert，不是只打印结果。完整命令与全系列证据等级见
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[21_fx_graph_editing_primitives_and_invariants_analysis]]
 - [[13_structured_outputs_higher_order_and_nested_graphs_analysis]]
 - [[23_dead_code_topology_and_effect_order_analysis]]

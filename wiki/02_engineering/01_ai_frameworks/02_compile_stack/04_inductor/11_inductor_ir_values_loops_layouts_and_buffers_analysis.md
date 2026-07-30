@@ -376,7 +376,7 @@ stdout中的六项`*_observed`必须全为`True`，否则脚本直接`AssertionE
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[10_fx_lowering_to_inductor_ir_analysis]]
 - [[12_buffer_liveness_memory_planning_and_reuse_analysis]]
 - [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]

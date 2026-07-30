@@ -525,7 +525,7 @@ CUDA caching allocator 物理峰值在当前无 CUDA 环境中为 `[B]`；它只
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]]
 - [[12_buffer_liveness_memory_planning_and_reuse_analysis]]
 - [[20_graph_stage_boundaries_identity_and_provenance_analysis]]

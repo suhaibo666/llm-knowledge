@@ -59,6 +59,15 @@
 |------|------|--------|------|
 | 后训练前沿学习域 | [[03_posttraining/index]] | 14 | S00–S05 已完成 |
 
+### courses 课程入口
+
+跨领域的纯导读页(只含阅读顺序、链接与一句话导读,正文归属对应功能树,详见
+`CLAUDE.md`/spec §6 课程页规则):
+
+| 课程 | 入口 | 覆盖范围 |
+|------|------|---------|
+| torch.compile 端到端 | [[courses/torch_compile_end_to_end]] | `01_ai_frameworks` 五层功能树(eager 地基→Dynamo→AOTAutograd→Graph IR/Passes→Inductor→缓存→调试→运行时图→导出/分布式) |
+
 ---
 
 ## 快速导航
@@ -78,7 +87,7 @@
 | MoE | [[megatron_ep_analysis]], [[deepseek_moe_analysis]] |
 | MoE 专家并行 (MindFormers) | [[mindformers/index]], [[mindformers_pynative_ep_analysis]], [[mindformers_moe_token_dispatcher_analysis]] |
 | 昇腾训练加速 (MindSpeed) | [[mindspeed/index]], [[mindspeed_parallelism_analysis]], [[mindspeed_context_parallel_analysis]], [[mindspeed_comm_overlap_analysis]], [[mindspeed_memory_optimization_analysis]], [[mindspeed_ascend_affinity_analysis]] |
-| torch.compile | [[02_torch_compile_architecture]], [[02_compile_stack/01_dynamo/index]], [[02_compile_stack/04_inductor/index]] |
+| torch.compile | [[courses/torch_compile_end_to_end]], [[02_compile_stack/01_dynamo/index]], [[02_compile_stack/04_inductor/index]] |
 | CUDA/NPU Graphs | [[01_PyTorch_CUDA_Graphs_Complete_Guide]], [[11_torch_compile_npugraphs_deep_dive]] |
 | Triton kernel 入门→专家 | [[triton_01_programming_model_guide]], [[triton_03_matmul_guide]], [[triton_04_autotune_guide]], [[triton_06_optimization_profiling_guide]], [[triton_knowledge_map]] |
 | GPU/NPU 执行模型与 GEMM | [[cuda_execution_model_guide]], [[cuda_gemm_kernel_analysis]], [[ascend_kernel_execution_model_analysis]] |

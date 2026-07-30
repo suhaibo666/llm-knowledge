@@ -223,7 +223,7 @@ Triton 本身就有按 kernel hash 组织的磁盘缓存。**纠正一个常见�
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[02_compile_stack/06_compile_cache/index]] — 编译缓存总览(本页是最底层)
 - [[02_compile_stack/06_compile_cache/index]] — 本目录索引
 - [[12_fx_graph_cache_analysis]] — 图级缓存;TritonBundler 的打包-回放接入点在其 §4.1,远端接入点在其 §六
@@ -232,5 +232,5 @@ Triton 本身就有按 kernel hash 组织的磁盘缓存。**纠正一个常见�
 - `AutotuneCacheArtifact` / `CacheArtifactRecorder`整包携带：尚未完成独立当前基线审计
 - [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]] — kernel/wrapper、autotune choices 与 provenance 课程主线
 - [[21_inductor_autotuning_analysis]] — `CachingAutotuner` 生命周期与 config 生成启发式(本页缓存的正是其 benchmark 结果)
-- [[02_torch_compile_architecture]] — torch.compile 整体栈
+- [[02_compile_stack/04_inductor/index]] — torch.compile 整体栈
 - [[02_compile_stack/04_inductor/index]] — Inductor lowering/codegen

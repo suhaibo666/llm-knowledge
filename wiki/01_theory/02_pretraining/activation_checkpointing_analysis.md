@@ -532,7 +532,7 @@ Time →
 
 ## Related Pages
 
-- [[02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[01_theory/02_pretraining/index]] — 预训练领域索引
 - [[12_saved_tensors_recompute_and_runtime_abi_analysis]] — AOTAutograd saved-value、min-cut partition 与 backward recompute 边界
 - [[torchtitan_ac_analysis]] — torchtitan/PyTorch 工程侧:非重入 `checkpoint_wrapper` 票据机制、SAC dispatch 缓存回放、显存预估(与本文 Megatron `CheckpointFunction` 重入路径互补)

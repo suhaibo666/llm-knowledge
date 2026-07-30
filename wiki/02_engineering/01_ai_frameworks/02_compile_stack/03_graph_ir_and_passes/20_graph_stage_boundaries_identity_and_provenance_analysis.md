@@ -461,7 +461,7 @@ continuity:
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[14_graph_capture_frontends_and_tracing_analysis]]
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]]
 - [[12_saved_tensors_recompute_and_runtime_abi_analysis]]

@@ -818,7 +818,7 @@ Step 6  回归 Profile
 
 ## Related Pages
 
-- [[02_torch_compile_architecture]] — torch.compile 端到端编译流水线（Dynamo → Inductor）
+- [[02_compile_stack/04_inductor/index]] — torch.compile 端到端编译流水线（Dynamo → Inductor）
 - [[26_flex_attention_analysis]] — FlexAttention 可组合注意力融合机制
 - [[tilelang_analysis]] — TileLang Tile-Level IR 与 Host Codegen
 - [[01_npu_compile_paths_overview]] — NPU torch.compile 三条路径（Triton/ACLGraph/MLIR）

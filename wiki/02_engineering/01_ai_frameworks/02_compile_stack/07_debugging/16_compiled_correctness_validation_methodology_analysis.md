@@ -316,7 +316,7 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[13_aotautograd_and_inductor_failure_localization_analysis]]
 - [[15_minifier_repro_and_compiler_bisector_analysis]]
 - [[17_compile_latency_cache_and_steady_state_performance_analysis]]

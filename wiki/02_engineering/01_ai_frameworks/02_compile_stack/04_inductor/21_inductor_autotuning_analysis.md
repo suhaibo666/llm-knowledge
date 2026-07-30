@@ -176,7 +176,7 @@ while improved:
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[23_inductor_gpu_kernel_dispatch_model]] — grid 生成（launcher 调用的 grid 来源）
 - [[22_inductor_reduction_codegen_deep_analysis]] — reduction config（R0_BLOCK / persistent）
 - [[24_inductor_codegen_dynamic_shape_analysis]] — 动态 shape 与 XBLOCK 选择、ks0*ks1 升 i64

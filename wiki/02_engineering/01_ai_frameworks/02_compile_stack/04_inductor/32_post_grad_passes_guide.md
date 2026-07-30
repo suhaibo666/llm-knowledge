@@ -881,7 +881,7 @@ Post-Grad Passes 是 PyTorch Inductor 编译器的关键阶段，专注于：
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[02_engineering/01_ai_frameworks/index]]
 - [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段放置方法论(现含跨框架对照)
 - [[10_fx_lowering_to_inductor_ir_analysis]] — Post-Grad 之后的 ATen → IR 边界

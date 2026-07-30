@@ -345,7 +345,7 @@ Inductor 的 codegen 对 dynamic shape 的处理是一个**贯穿 kernel 生成�
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — Dynamic Shape 全链路: 静态→符号化→Guard→渐进动态化 (ShapeEnv 源码分析)
 - [[25_unbacked_symint_analysis]] — Unbacked SymInt 深度分析：数据相关 shape 的处理机制
 - [[02_engineering/01_ai_frameworks/index]]

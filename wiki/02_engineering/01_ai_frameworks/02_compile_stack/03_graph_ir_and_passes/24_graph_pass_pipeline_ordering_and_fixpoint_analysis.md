@@ -607,7 +607,7 @@ epilogue）与 **fallback/换手工算子**（torch_npu 把 attention/通信 fal
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[15_graph_normalization_decomposition_and_functionalization_analysis]]
 - [[22_pattern_expression_and_matcher_engine_analysis]]
 - [[23_dead_code_topology_and_effect_order_analysis]]

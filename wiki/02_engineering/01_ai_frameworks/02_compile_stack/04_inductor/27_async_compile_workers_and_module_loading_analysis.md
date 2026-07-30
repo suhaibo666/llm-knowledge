@@ -203,7 +203,7 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[15_inductor_compile_fx_orchestration_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
 - [[14_compiled_artifact_lifecycle_and_runtime_failures_analysis]]

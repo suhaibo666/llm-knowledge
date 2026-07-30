@@ -287,12 +287,11 @@ claim candidate。也就是说,旧的 `TBD destination` 统计已被更精确的
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 编号化端到端课程:卷 B 的 guard/cache 与卷 D 的多层 artifact cache
+- [[courses/torch_compile_end_to_end]] — 编号化端到端课程:卷 B 的 guard/cache、图编译系统化课程与卷 D 的多层 artifact cache
 - [[01_ai_frameworks/index]] — PyTorch编译与运行时总地图
 - [[02_compile_stack/01_dynamo/index]] — Dynamo捕获、guard与dynamic shape
 - [[02_compile_stack/02_aot_autograd/index]] — AOTAutograd构图与partition
 - [[02_compile_stack/04_inductor/index]] — Inductor lowering、Scheduler与codegen
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 图编译系统化课程
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]]
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]]
 - [[20_graph_stage_boundaries_identity_and_provenance_analysis]]

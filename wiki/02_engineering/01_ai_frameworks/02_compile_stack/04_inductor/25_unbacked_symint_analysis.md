@@ -365,5 +365,5 @@ unbacked 只有在**既用了数据相关 op、又要求整图不断**时才是�
 
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — 符号形状/Guard/图复用概念权威页，ShapeEnv 与 Backed Symbol 体系
 - [[24_inductor_codegen_dynamic_shape_analysis]] — Inductor codegen 中的符号传递机制
-- [[02_torch_compile_architecture]] — torch.compile 端到端流水线
+- [[02_compile_stack/04_inductor/index]] — torch.compile 端到端流水线
 - [[02_compile_stack/01_dynamo/index]] — Dynamo 帧捕获与 Guard 系统

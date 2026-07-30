@@ -255,6 +255,6 @@ pm.register_replacement(pattern, replacement, inputs, pm.fwd_only, pm_pass,
 
 ## Cross-Domain Links
 - [[32_post_grad_passes_guide]] —— Inductor pattern matcher / post-grad pass 原生机制
-- [[02_torch_compile_architecture]] · [[02_compile_stack/01_dynamo/index]] —— Dynamo 抓图 / AOTAutograd 分解与否
+- [[02_compile_stack/04_inductor/index]] · [[02_compile_stack/01_dynamo/index]] —— Dynamo 抓图 / AOTAutograd 分解与否
 - [[megatron_fusion_operators_analysis]] · [[torchtitan_compute_memory_optimizations_analysis]] —— 训练侧融合算子对照
 - [[11_npu_inductor_splittiling_backend_analysis]] —— Inductor 自定义后端的 IR lowering 对照(NPU)

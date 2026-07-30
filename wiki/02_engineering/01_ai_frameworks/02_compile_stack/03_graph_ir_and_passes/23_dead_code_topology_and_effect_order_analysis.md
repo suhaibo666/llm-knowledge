@@ -349,7 +349,7 @@ topology_repaired_value=8.0
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[12_graph_effects_alias_mutation_and_order_analysis]]
 - [[21_fx_graph_editing_primitives_and_invariants_analysis]]
 - [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]]

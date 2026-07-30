@@ -150,7 +150,7 @@ def aot_export_module(mod, args, *, decompositions=None, trace_joint,
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[01_ai_frameworks/index]]
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]]
 - [[12_saved_tensors_recompute_and_runtime_abi_analysis]]

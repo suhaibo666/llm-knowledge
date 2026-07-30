@@ -388,7 +388,7 @@ unbacked 专项（`torch._check`/`guard_or_*`/size-oblivious）；[[24_inductor_
 **Type**: Redundancy Review + Boundary Clarification（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 7；Task 5 遗留收尾）
 
 `02_compile_stack/01_dynamo/control_flow_capture_analysis.md`（204 行）vs
-[[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] 卷 B 的 b04 判重已在
+`00_torch_compile_end_to_end_index`（已于 P4 Task 10 删除，导读价值并入 [[courses/torch_compile_end_to_end]]）卷 B 的 b04 判重已在
 Task 5 完成（零重叠）；本组补做 vs C06
 （[[13_structured_outputs_higher_order_and_nested_graphs_analysis]]）的判重，Task 7 组 1-3
 未涉及的最后一项遗留。
@@ -906,9 +906,10 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`；本阶段只完善原理和源码链路，不新增 demo，
 不把 CPU 环境观察外推为 native/CUDA 实测。）
 
-- **新增课程域 [[02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]]**：
+- **新增课程域 `19_torch_compile_end_to_end/00_torch_compile_end_to_end_index`**（该目录已于
+  P4 Task 10 整体解散删除，导读价值并入 [[courses/torch_compile_end_to_end]]）：
   形成 A→F 六卷编号路径；新写 A01–A05、B01–B10、D01–D07、E01–E09、F01–F08 共
-  39 篇正文，并将 [[02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+  39 篇正文，并将 `00_pytorch_graph_series_index`
   的 C01–C21 正文、Labs 和证据资产实体并入同一目录；旧目录 16 已删除，原 01–21
   文件顺序和内容身份继续保留。
 - **从 eager 贯通生产运行**：卷 A 建立 Tensor/storage/layout、dispatcher/autograd、
@@ -1020,7 +1021,8 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Source-faithful Refactor + Design Conformance Review（不删除旧页；固定源码审计基线为 PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。本机 Lab 使用 PyTorch `2.9.1+cpu`、`torch.version.git_version=5811a8d7da873dd699ff6687092c225caffcf1bb`，两条基线分开记录。）
 
-- **重审 [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] 与 21 篇专题**：Part I 建立图 IR、FX 数据模型、值/metadata/signature、符号形状、effect/alias/mutation、结构化输出与 higher-order graph；Part II 解释捕获、规范化、AOTAutograd joint→fw/bw、saved tensor/recompute ABI 与跨阶段 provenance；Part III 解释 FX 改图原语、`PatternExpr`、DCE/稳定拓扑排序、pass 顺序/fixpoint、合法性与复杂度；Part IV 贯通 FX lowering、Inductor IR、buffer/liveness、Scheduler 与 codegen/autotune。21 篇正文的 323 个完整 repository-relative `file:line` 定位在固定 checkout 上全部路径存在且行号有效。
+- **重审 `00_pytorch_graph_series_index`**（该页已于 P4 Task 10 删除，导读价值并入
+  [[courses/torch_compile_end_to_end]]）**与 21 篇专题**：Part I 建立图 IR、FX 数据模型、值/metadata/signature、符号形状、effect/alias/mutation、结构化输出与 higher-order graph；Part II 解释捕获、规范化、AOTAutograd joint→fw/bw、saved tensor/recompute ABI 与跨阶段 provenance；Part III 解释 FX 改图原语、`PatternExpr`、DCE/稳定拓扑排序、pass 顺序/fixpoint、合法性与复杂度；Part IV 贯通 FX lowering、Inductor IR、buffer/liveness、Scheduler 与 codegen/autotune。21 篇正文的 323 个完整 repository-relative `file:line` 定位在固定 checkout 上全部路径存在且行号有效。
 - **可执行证据升级**：Lab 目录现有 18 个机制/贯穿脚本和 1 个 9-test 自动合同入口；合同覆盖四种捕获、FX 不变量、effect/alias/DCE、AOT joint/fw/bw/recompute、PatternMatcher、pass/topology、Part III rewrite、Part IV IR/Scheduler/provenance 与统一模型 bundle。AOT Lab 现用同次 partition 的 lab-only origin token 建立 joint→fw/bw 精确 old-to-new 映射，并把 saved-slot fw value/bw placeholder 绑定到同一 joint origin；artifact manifest 明确整体 continuity 为 `partial`，不再把独立前端捕获和独立 backend 捕获写成一条单次编译链。本轮复跑 `Ran 9 tests`，结果 `OK`；审计工具 8 项测试也全部通过。
 - **Part III 贯穿改写**：`add(matmul(x, weight), bias) → addmm(bias, x, weight)` 仅在 rank、dtype、shape/无 broadcast 等合法性成立时执行；数值、一阶梯度、`gradcheck`、shape、alias relation、输入 mutation relation、非法 broadcast 拒绝、失败原子性与第二次运行零改动均有 assertion。
 - **Part IV 证据边界**：真实执行 GraphLowering、Scheduler、dependency/fusion/reorder、external matmul 与 `eigvals` fallback；custom lowering 到达 `ComputedBuffer`；生成 wrapper/C++ source 并完成 Scheduler→FX→Python provenance join。当前 Windows CPU 缺 MSVC `cl` 且无 CUDA，因此 native pointwise/reduction kernel、真实 fusion 性能、物理 allocator peak 与 Triton autotune 没有实测；mock/no-op 捕获的 codegen 产物明确标记为 generated-not-executed，Scheduler group 数也不再误写成 native kernel 数。

@@ -213,7 +213,7 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[15_guards_cache_lookup_and_recompilation_analysis]]
 - [[17_dynamic_shapes_generalization_and_fallback_analysis]]
 - [[10_observability_logs_counters_and_artifact_map_analysis]]

@@ -257,7 +257,7 @@ print("alloc_retries / ooms:", s["num_alloc_retries"], s["num_ooms"])
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[01_eager_runtime/07_memory_amp_profiler/index]] — 本模块 overview(三支柱全景与 mermaid)
 - [[10_caching_allocator_autocast_profiler_analysis]] — 本模块 deep dive(Block/Expandable Segments/recordStream、autocast dispatch key、Kineto shim 源码级深析)
 - [[12_buffer_liveness_memory_planning_and_reuse_analysis]] — Inductor 编译期 logical buffer/liveness；与本页运行时 allocator 观测分层

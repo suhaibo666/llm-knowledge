@@ -879,7 +879,7 @@ print(metrics.ir_nodes_pre_fusion)   # 融合前节点数，融合后对比见 g
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[22_pattern_expression_and_matcher_engine_analysis]]
 - [[12_buffer_liveness_memory_planning_and_reuse_analysis]]
 - [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]]

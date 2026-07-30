@@ -312,7 +312,7 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[12_buffer_liveness_memory_planning_and_reuse_analysis]]
 - [[14_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[17_compile_latency_cache_and_steady_state_performance_analysis]] — warmup/record/replay 在整体成本模型中的位置

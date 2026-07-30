@@ -469,7 +469,7 @@ Observed artifacts/performance:
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[21_fx_graph_editing_primitives_and_invariants_analysis]]
 - [[22_pattern_expression_and_matcher_engine_analysis]]
 - [[23_dead_code_topology_and_effect_order_analysis]]

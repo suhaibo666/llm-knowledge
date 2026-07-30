@@ -345,7 +345,7 @@ print({k: v.shape for k, v in grads.items()})
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[index]] — 本模块 overview(FX / export / 扩展机制全景与捕获路径对比)
 - [[10_fx_graph_export_and_custom_ops_analysis]] — 本模块 deepdive(Proxy 拦截、Node/Graph IR、代码生成、分发桥接源码级深析)
 - [[02_compile_stack/01_dynamo/index]] — Dynamo:字节码帧求值的另一条图捕获路径

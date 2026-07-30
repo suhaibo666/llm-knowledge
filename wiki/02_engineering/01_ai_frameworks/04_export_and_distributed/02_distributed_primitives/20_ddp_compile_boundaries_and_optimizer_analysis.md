@@ -225,7 +225,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[20_compiled_autograd_analysis]]
 - [[20_activation_checkpoint_recompute_and_compile_analysis]]
 - [[21_fsdp_dtensor_and_distributed_graphs_analysis]]

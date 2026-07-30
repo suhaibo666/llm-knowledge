@@ -3,7 +3,7 @@
 > 卷别：F · 训练、分布式、扩展与部署  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[28_aotinductor_packaging_and_deployment_analysis]]  
-> 后续：[[00_torch_compile_end_to_end_index]]  
+> 后续：[[courses/torch_compile_end_to_end]]  
 > 最后更新：2026-07-30(kb-reorg P4 Task 6 随 D06 一并迁入本目录,去 f08_ 前缀;判重 vs [[01_PyTorch_CUDA_Graphs_Complete_Guide]] 方式2/综合比较节——本页 freezing/training-inference 边界内容 Guide 未覆盖,保留为专题页)
 
 ## 1. 先拆开四个经常混用的概念
@@ -319,4 +319,4 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[10_cudagraph_trees_warmup_record_and_replay_analysis]]
 - [[14_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[17_compile_latency_cache_and_steady_state_performance_analysis]]
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]

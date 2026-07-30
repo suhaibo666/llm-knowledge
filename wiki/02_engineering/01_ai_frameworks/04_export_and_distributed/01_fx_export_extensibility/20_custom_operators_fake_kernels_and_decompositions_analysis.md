@@ -250,7 +250,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[04_export_and_distributed/01_fx_export_extensibility/index]] — 本模块 overview
 - [[10_fx_graph_export_and_custom_ops_analysis]] — §7 是 custom_op 注册机制的公开入口概述(本页的浅层对照),见页头判重结论
 - [[10_pytorch_dispatcher_analysis]] — schema/dispatcher/ADInplaceOrView 分层

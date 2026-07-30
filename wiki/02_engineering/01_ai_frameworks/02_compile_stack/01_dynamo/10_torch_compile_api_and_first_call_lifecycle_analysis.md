@@ -326,4 +326,4 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[14_output_graph_side_effects_and_graph_emission_analysis]]
 - [[17_compile_latency_cache_and_steady_state_performance_analysis]] — 测量场景与统计设计
 - [[02_compile_stack/06_compile_cache/index]] — 多层缓存 key/失效边界
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]

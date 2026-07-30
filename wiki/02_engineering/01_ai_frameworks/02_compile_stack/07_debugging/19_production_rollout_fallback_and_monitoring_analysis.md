@@ -240,7 +240,7 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[12_guard_failure_and_recompile_diagnosis_analysis]]
 - [[17_compile_latency_cache_and_steady_state_performance_analysis]]
 - [[18_kernel_fusion_memory_and_hardware_performance_analysis]]

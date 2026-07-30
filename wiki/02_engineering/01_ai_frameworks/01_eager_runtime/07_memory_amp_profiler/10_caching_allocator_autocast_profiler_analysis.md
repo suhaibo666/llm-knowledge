@@ -377,7 +377,7 @@ storage 的可哈希身份用 `allocation_id`(而非易复用的裸指针)承载
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[01_eager_runtime/07_memory_amp_profiler/index]] — runtime memory、AMP 与 profiler 领域索引
 - [[index]] — 本模块 overview:三支柱全景图与它们如何咬合
 - [[01_amp_and_memory_tooling_quickstart]] — 本模块 quick start:怎么用 / 怎么查 / 怎么验证

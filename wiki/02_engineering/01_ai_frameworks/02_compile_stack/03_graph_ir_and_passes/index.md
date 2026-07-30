@@ -28,7 +28,7 @@
 | [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] | deep dive(C15,段 2) | pass stage、注册顺序、迭代与 fixpoint 如何决定改写结果 |
 | [[25_graph_rewrite_legality_validation_and_complexity_analysis]] | deep dive(C16,段 2) | 结构命中后 shape/dtype/alias/autograd 的合法性验证、全链路复杂度 |
 
-> 12 篇按 [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] Part I–III 的固定顺序组织
+> 12 篇按 [[courses/torch_compile_end_to_end]] Part I–III 的固定顺序组织
 > (Part IV 的 C17–C21 属 Inductor IR/Scheduler/Codegen,随 Task 8 迁入 `04_inductor/`)。课程化
 > 阅读顺序、前置依赖表与配套 Demo 见该系列索引 §"四部分知识地图"与 §"每篇前置依赖与学习成果"。
 
@@ -52,8 +52,7 @@
 
 ## 关联域
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 编号化课程主线,C01(动机)与 C17–C21(Inductor IR)不在本目录
-- [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 六卷端到端总索引,本目录对应卷 C 的 §5 部分行
+- [[courses/torch_compile_end_to_end]] — 编号化课程主线(C01 动机与 C17–C21 Inductor IR 不在本目录),对应卷 C §5 部分行
 - [[02_compile_stack/01_dynamo/index]] — 上游:Dynamo 捕获出 guarded FX graph 交给本目录的捕获/规范化机制
 - [[02_compile_stack/02_aot_autograd/index]] — 下游承接:joint graph、正反向分图与 recompute
 - [[02_compile_stack/04_inductor/index]] — 下游承接:FX lowering 为 Inductor IR、pass 阶段 guide 与 scheduler

@@ -217,7 +217,7 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[15_guards_cache_lookup_and_recompilation_analysis]]
 - [[16_graph_break_resume_functions_and_partial_graphs_analysis]]
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]]

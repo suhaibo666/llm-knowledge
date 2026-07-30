@@ -410,7 +410,7 @@ mutation-contract 源码结论。
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[10_fx_graph_core_data_model_analysis]]
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]]
 - [[13_structured_outputs_higher_order_and_nested_graphs_analysis]]

@@ -394,7 +394,7 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]]
 - [[13_aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
 - [[27_async_compile_workers_and_module_loading_analysis]]

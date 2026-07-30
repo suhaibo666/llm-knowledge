@@ -30,7 +30,7 @@ AOTAutograd(ahead-of-time autograd)在编译期就把一段可微计算的**前�
 |---|---|---|
 | [[01_aot_autograd_quickstart]] | API quick start与日志/config入口 | 示例需看代码块是否current-run；未统一默认视为未复跑 |
 | [[10_dispatch_modes_proxytensor_faketensor_analysis]] | make_fx 捕获所依赖的 ProxyTensor/FakeTensor dispatch-mode 专题 | 2026-07-30 从原 `aotautograd_analysis` §13 独立成页，逐字保留 |
-| [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] | 当前系统课程与可执行Lab | 源码、runtime和mock证据分级 |
+| [[courses/torch_compile_end_to_end]] | 当前系统课程与可执行Lab | 源码、runtime和mock证据分级 |
 
 > `aotautograd_analysis`（1460 行全量 reference）与 `fx_graph_construction_and_transformation_analysis`（AOT 特有残留页）已于 2026-07-30（kb-reorg P4 Task 8）判重删除：joint/fw/bw 构图并入 [[11_aotautograd_joint_forward_backward_graphs_analysis]]，saved/recompute/runtime ABI 并入 [[12_saved_tensors_recompute_and_runtime_abi_analysis]]，ProxyTensor/FakeTensor 独立为 [[10_dispatch_modes_proxytensor_faketensor_analysis]]；逐节台账见对应 commit 与 changelog。
 
@@ -59,10 +59,9 @@ PatternExpr/PatternMatcherPass、DCE与稳定拓扑排序、rewrite合法性与�
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 编号化端到端课程：AOTAutograd 位于卷 C，并由卷 B、D 衔接捕获与运行时
+- [[courses/torch_compile_end_to_end]] — 编号化端到端课程：AOTAutograd 位于卷 C，并由卷 B、D 衔接捕获与运行时；同时是图编译系统化主线
 - [[01_eager_runtime/05_autograd_engine/index]] — **eager 对应物**:运行时动态磁带 + C++ 引擎(`.backward()`);本编译期模块的 eager 侧根源,两者对照见该页表格
 - [[02_compile_stack/01_dynamo/index]] — 上游:图捕获
 - [[02_compile_stack/04_inductor/index]] — 下游:lowering 与 codegen
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 图编译系统化主线
 - [[02_compile_stack/06_compile_cache/index]] — AOTAutograd cache与其他编译缓存的边界
 - [[01_ai_frameworks/index]] — 本域总索引

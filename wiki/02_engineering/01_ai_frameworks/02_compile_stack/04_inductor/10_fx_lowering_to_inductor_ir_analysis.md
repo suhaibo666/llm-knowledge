@@ -551,7 +551,7 @@ lower 的路径有 fallback 可用。
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[20_graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[11_inductor_ir_values_loops_layouts_and_buffers_analysis]]
 - [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]

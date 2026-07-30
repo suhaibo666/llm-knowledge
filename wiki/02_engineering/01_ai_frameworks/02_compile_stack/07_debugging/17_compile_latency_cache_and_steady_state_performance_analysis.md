@@ -400,7 +400,7 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[02_compile_stack/06_compile_cache/index]]
 - [[14_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[16_compiled_correctness_validation_methodology_analysis]]

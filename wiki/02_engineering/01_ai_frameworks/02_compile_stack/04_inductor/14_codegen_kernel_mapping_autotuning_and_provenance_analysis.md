@@ -492,11 +492,11 @@ Provenance把generated artifacts映回source
 ## 学习顺序
 
 - 上一篇：[[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]
-- 返回总索引：[[00_pytorch_graph_series_index]]
+- 返回总索引：[[courses/torch_compile_end_to_end]]
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[20_graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[12_buffer_liveness_memory_planning_and_reuse_analysis]]

@@ -277,7 +277,7 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[10_torch_compile_api_and_first_call_lifecycle_analysis]]
 - [[11_eval_frame_callback_and_code_cache_analysis]]
 - [[15_guards_cache_lookup_and_recompilation_analysis]]

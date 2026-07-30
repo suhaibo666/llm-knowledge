@@ -311,7 +311,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[01_eager_runtime/05_autograd_engine/index]] — 本模块 overview(eager Engine 全景 + 与本页的分工)
 - [[10_autograd_engine_analysis]] — eager 模式下 C++ Engine 如何直接执行反向 DAG(本页驱动的是同一引擎,录制而非替代)
 - [[13_aot_runtime_wrappers_and_lazy_backward_compile_analysis]]

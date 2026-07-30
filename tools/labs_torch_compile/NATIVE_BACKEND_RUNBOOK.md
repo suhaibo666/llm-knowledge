@@ -324,4 +324,4 @@ Schema 负责必填字段、类型、枚举、合法状态和 PASS 条件；Pyth
 
 - [[21_codegen_kernel_mapping_autotuning_and_provenance]]
 - [[11_graph_stage_boundaries_identity_and_provenance]]
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]

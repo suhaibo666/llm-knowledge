@@ -195,7 +195,7 @@ with ind.patch(memory_planning=True):
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
+- [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[02_compile_stack/04_inductor/index]] — Inductor 领域索引
 - [[12_buffer_liveness_memory_planning_and_reuse_analysis]] — 编译期 logical buffer、liveness、reuse 与静态 peak
 - [[12_buffer_liveness_memory_planning_and_reuse_analysis]] — **机制深挖**(编译期规划权威页,§16 三层全景 + §17 池大小 + §18 wrapper boxed convention/通信 buffer 池):本指南的理论底座

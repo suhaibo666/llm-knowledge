@@ -284,7 +284,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[20_custom_backends_and_device_integration_analysis]]
 - [[20_training_inference_cudagraph_and_freezing_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]

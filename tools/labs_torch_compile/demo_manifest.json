@@ -79,7 +79,7 @@
     },
     {
       "page_id": "c01",
-      "page": "01_graph_ir_motivation_and_taxonomy.md",
+      "page": "torch_compile_end_to_end.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "ir_fx",

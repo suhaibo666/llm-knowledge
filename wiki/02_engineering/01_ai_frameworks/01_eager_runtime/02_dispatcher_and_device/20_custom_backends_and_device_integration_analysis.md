@@ -234,7 +234,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — 本模块 overview
 - [[11_privateuse1_device_integration_analysis]] — 更底层的 eager/dispatcher 设备接入,见页头三方划界
 - [[34_codegen_extension_guide]] — Inductor device backend 注册的实操指南,见页头三方划界

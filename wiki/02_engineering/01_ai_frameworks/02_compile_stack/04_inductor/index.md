@@ -13,7 +13,6 @@
 | 段 | 页面 | 一句话 |
 |---|------|------|
 | 0 | [[01_inductor_quickstart]] | 最小示例、config、mode 选型 |
-| 0 | [[02_torch_compile_architecture]] | Inductor 概览:五阶段一览、导航 |
 | 1 | [[10_fx_lowering_to_inductor_ir_analysis]] | FX → Inductor IR:注册/fallback/layout |
 | 1 | [[11_inductor_ir_values_loops_layouts_and_buffers_analysis]] | IR value/loop/layout/buffer |
 | 1 | [[12_buffer_liveness_memory_planning_and_reuse_analysis]] | liveness/reuse/静态peak/runtime 三层内存权威页 |
@@ -38,16 +37,21 @@
 
 ## overview(概览,先读这里)
 
+TorchInductor 是 `torch.compile` 的默认后端编译器:把已捕获、已处理自动微分的 FX 图降级
+(lowering)为循环级 Inductor IR,做算子融合(fusion)消除中间结果的内存往返,生成
+Triton(GPU)或 C++/OpenMP(CPU)kernel 代码并编译执行;内部经 Decomposition → FX Graph
+Passes → Lowering → Scheduler → CodeGen 五阶段(要点表见 [[courses/torch_compile_end_to_end]]
+§4)。
+
 | 页面 | 核心主题 |
 |------|---------|
-| [[02_torch_compile_architecture]] | **Inductor 概览**:是什么/为什么、在 torch.compile 中的位置、五阶段一览、核心概念(IR/Scheduler/CodeGen)、由浅入深导航 |
-| [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] | **当前图编译系统化主线**：从 FX IR、AOT 正反向图和改图合法性，一直走到 Inductor IR、调度、内存规划与 codegen；固定源码基线并配套可执行 Lab |
+| [[courses/torch_compile_end_to_end]] | **当前图编译系统化主线**：从 FX IR、AOT 正反向图和改图合法性，一直走到 Inductor IR、调度、内存规划与 codegen；固定源码基线并配套可执行 Lab |
 
 ### 课程主线与子系统参考分工
 
 | 需求 | 入口 |
 |---|---|
-| 建立“为什么这样设计”的连续心智模型并运行Lab | [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] |
+| 建立“为什么这样设计”的连续心智模型并运行Lab | [[courses/torch_compile_end_to_end]] |
 | FX→IR职责与fallback/custom lowering | [[10_fx_lowering_to_inductor_ir_analysis]] |
 | IR value/loop/layout/buffer与index | [[11_inductor_ir_values_loops_layouts_and_buffers_analysis]] |
 | liveness、reuse、静态peak与runtime边界 | [[12_buffer_liveness_memory_planning_and_reuse_analysis]] |
@@ -133,7 +137,7 @@ artifact与compiled module如何复用。两者相邻但不是同一机制：一
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 编号化端到端课程：卷 C 的 lowering/codegen 与卷 D 的 artifact/runtime
+- [[courses/torch_compile_end_to_end]] — 编号化端到端课程：卷 C 的 lowering/codegen 与卷 D 的 artifact/runtime
 - [[02_compile_stack/01_dynamo/index]] — 上游:图捕获
 - [[02_compile_stack/02_aot_autograd/index]] — 上游:前/反向分解
 - [[10_fx_lowering_to_inductor_ir_analysis]] — 当前基线的 FX → Inductor IR 边界

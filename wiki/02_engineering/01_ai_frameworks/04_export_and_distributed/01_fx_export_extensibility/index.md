@@ -115,7 +115,7 @@ flowchart LR
 | [[10_fx_graph_export_and_custom_ops_analysis]] | **保留的 deep dive**(段 1) | 源码级:Proxy 拦截与 `TracerBase.create_proxy`、Node/Graph 双向链表 IR 与 use-def、`GraphModule` 代码生成 + linecache、`PassBase.__call__` 前置/变换/后置、`ExportedProgram` 的 lifted params/buffers 与约束、`Library`/`custom_op` 的分发与 autograd 桥接、functorch 的 BatchedTensor 语义 |
 | [[20_custom_operators_fake_kernels_and_decompositions_analysis]] | deep dive(专题,段 2) | custom op 作为"编译器边界契约"的深度分析:fake kernel 正确性要求、mutation/version 与 ADInplaceOrView、decomposition/direct lowering/fallback 的选择、失败定位分层、测试矩阵;2026-07-30 迁入,与上一篇 §7 判重后保留独立(独有内容 >50%),详见页头判重结论 |
 | [[02_compile_stack/03_graph_ir_and_passes/index]] | **cross-domain reference** | FX 图的数据结构、改图原语、PatternMatcher/DCE/保序与合法性验证全套索引(AOT 正反向分图见 [[02_compile_stack/02_aot_autograd/index]] 的 [[11_aotautograd_joint_forward_backward_graphs_analysis]]/[[12_saved_tensors_recompute_and_runtime_abi_analysis]]) |
-| [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] | **current source-faithful series** | 图 IR 设计动机、FX 数据结构/值语义、捕获与规范化、改图原语、PatternMatcher、DCE/保序、合法性与复杂度；旧页冲突时以此系列的固定源码定位为准 |
+| [[courses/torch_compile_end_to_end]] | **current source-faithful series** | 图 IR 设计动机、FX 数据结构/值语义、捕获与规范化、改图原语、PatternMatcher、DCE/保序、合法性与复杂度；旧页冲突时以此系列的固定源码定位为准 |
 
 ---
 
@@ -125,7 +125,7 @@ flowchart LR
 - [[02_compile_stack/02_aot_autograd/index]] — 下游:decomposition / 前后向分解,`run_decompositions` 共用机制
 - [[01_eager_runtime/03_op_registration/index]] — 算子注册全景,`custom_op` 的注册去向
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — ATen 分发器,扩展面与 functional ATen 的共同底座
-- [[19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy]] — 图 IR 为什么这样分层
+- [[courses/torch_compile_end_to_end]] — 图 IR 为什么这样分层
 - [[10_fx_graph_core_data_model_analysis]] — 当前基线的 FX `Graph` / `Node` / use-def
 - [[14_graph_capture_frontends_and_tracing_analysis]] — FX、make_fx、Dynamo 与 export 的捕获边界
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — dynamic shape、guard与图复用
@@ -137,11 +137,10 @@ flowchart LR
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 编号化端到端课程：卷 C 讲 FX 图，卷 F 讲 custom op/backend/AOTI
+- [[courses/torch_compile_end_to_end]] — 编号化端到端课程：卷 C 讲 FX 图，卷 F 讲 custom op/backend/AOTI；同时是当前系统化图编译主线
 - [[01_fx_export_custom_op_quickstart]] — 本模块 quick start
 - [[10_fx_graph_export_and_custom_ops_analysis]] — 本模块 deep dive
 - [[02_compile_stack/03_graph_ir_and_passes/index]] — FX IR 如何进入改图、pattern 与 Inductor 底座（AOT 分图见 [[02_compile_stack/02_aot_autograd/index]]）
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前系统化图编译主线
 - [[02_compile_stack/01_dynamo/index]]
 - [[02_compile_stack/02_aot_autograd/index]]
 - [[01_eager_runtime/03_op_registration/index]]

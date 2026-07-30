@@ -223,7 +223,7 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[12_buffer_liveness_memory_planning_and_reuse_analysis]]
 - [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]]

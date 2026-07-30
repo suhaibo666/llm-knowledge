@@ -375,7 +375,7 @@ Part III 持久 artifact 位于 `tools/labs_torch_compile/artifacts/part3/`：`l
 
 ## Related Pages
 
-- [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[10_fx_graph_core_data_model_analysis]]
 - [[22_pattern_expression_and_matcher_engine_analysis]]
 - [[23_dead_code_topology_and_effect_order_analysis]]

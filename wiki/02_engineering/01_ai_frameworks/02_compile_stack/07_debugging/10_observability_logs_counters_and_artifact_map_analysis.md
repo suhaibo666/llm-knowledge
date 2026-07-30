@@ -195,7 +195,7 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 
 ## Related Pages
 
-- [[00_torch_compile_end_to_end_index]]
+- [[courses/torch_compile_end_to_end]]
 - [[14_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[11_dynamo_explain_and_graph_break_diagnosis_analysis]]
 - [[12_guard_failure_and_recompile_diagnosis_analysis]]
