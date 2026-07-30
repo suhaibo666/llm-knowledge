@@ -315,6 +315,6 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 - [[00_torch_compile_end_to_end_index]]
 - [[d05_wrapper_execution_memory_allocation_and_reuse_analysis]]
 - [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
-- [[a05_eager_capture_compile_and_replay_cost_model_analysis]]
+- [[e07_compile_latency_cache_and_steady_state_performance_analysis]] — warmup/record/replay 在整体成本模型中的位置
 - [[f08_training_inference_cudagraph_and_freezing_analysis]]
 - [[01_eager_runtime/07_memory_amp_profiler/index]]

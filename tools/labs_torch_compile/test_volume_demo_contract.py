@@ -444,7 +444,6 @@ class DemoManifestContractTest(unittest.TestCase):
         )
         entries = manifest["pages"]
         expected_ids = {
-            *(f"a{index:02d}" for index in range(1, 6)),
             *(f"b{index:02d}" for index in range(1, 11)),
             *(f"c{index:02d}" for index in range(1, 22)),
             *(f"d{index:02d}" for index in range(1, 8)),
@@ -452,9 +451,15 @@ class DemoManifestContractTest(unittest.TestCase):
             *(f"f{index:02d}" for index in range(1, 9)),
         }
         self.assertEqual(manifest["schema_version"], "torch-compile-demo-manifest/v1")
-        self.assertEqual(len(entries), 60)
+        # Volume A (a01-a05) was dropped from the course + manifest by kb-reorg
+        # P4 Task 3 (2026-07-30): the 5 recap pages were deleted, their unique
+        # content migrated verbatim into the eager_runtime/compile_stack pages
+        # that cover their mechanisms. demo_a_execution_model.py and its two
+        # VolumeABContractTest cases above still exercise the CPU-mechanism
+        # scripts directly (script-level, not page-level), so they're unaffected.
+        self.assertEqual(len(entries), 55)
         self.assertEqual({entry["page_id"] for entry in entries}, expected_ids)
-        self.assertEqual(len({entry["page"] for entry in entries}), 60)
+        self.assertEqual(len({entry["page"] for entry in entries}), 55)
 
         modules: dict[str, object] = {}
         for entry in entries:
@@ -612,11 +617,6 @@ class CourseMarkdownContractTest(unittest.TestCase):
             / "19_torch_compile_end_to_end"
         )
         target_pages = [
-            "a01_tensor_storage_layout_and_views_analysis.md",
-            "a02_operator_schema_dispatch_and_autograd_analysis.md",
-            "a03_python_frames_code_objects_and_bytecode_analysis.md",
-            "a04_dispatch_modes_proxy_tensor_and_fake_tensor_analysis.md",
-            "a05_eager_capture_compile_and_replay_cost_model_analysis.md",
             "b04_instruction_translator_and_bytecode_state_machine_analysis.md",
             "b07_guards_cache_lookup_and_recompilation_analysis.md",
             "d01_inductor_compile_fx_orchestration_analysis.md",

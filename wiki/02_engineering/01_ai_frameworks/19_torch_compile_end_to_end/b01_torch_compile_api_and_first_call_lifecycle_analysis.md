@@ -2,9 +2,8 @@
 
 > 卷别：B · TorchDynamo 捕获  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[a05_eager_capture_compile_and_replay_cost_model_analysis]]  
 > 后续：[[b02_backend_modes_options_stances_and_fullgraph_analysis]]  
-> 最后更新：2026-07-28
+> 最后更新：2026-07-30(§12 并入 A05 独有的七阶段成本模型与缓存分层内容)
 
 ## 1. 为什么公开入口必须很薄
 
@@ -147,6 +146,17 @@ Dynamo不是简单把整个 Python函数替换成一个 FX graph。一次捕获�
 这就是“编译 Python frame”而不是“只追踪 Tensor算子列表”。详情见
 [[b06_output_graph_side_effects_and_graph_emission_analysis]]。
 
+### 7.1 backend 收到 capture 结果后交给谁
+
+> 本节内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a05_eager_capture_compile_and_replay_cost_model_analysis.md`)。该页对 `OutputGraph` 调用 backend、校验返回值、失败分类的这段控制流已在 §12.3 用更精确的源码定位（`call_user_compiler`/`BackendCompilerFailed`）覆盖；此处只保留 §12.3 未涉及的一步——backend 是 Inductor 时，capture 结果具体交给了谁。
+
+若 backend 是 Inductor，`compile_fx` 接收 §12.3 中 `call_user_compiler` 传出的 FX
+GraphModule 与 example inputs，并负责继续编排 AOTAutograd/Inductor 路径
+（`torch/_inductor/compile_fx.py:2889-2907`）。这说明 backend handoff 是一个明确接口：
+Dynamo 提交一段图和样例输入，backend 可以再有自己的 graph cache、code cache、native
+compiler 与 lazy backward compile；code-object entry hit 只保证不再次走这次
+Dynamo/backend handoff，不代表那些下层 cache 与 runtime 都不存在。
+
 ## 8. 生命周期状态机
 
 ```mermaid
@@ -206,6 +216,47 @@ stateDiagram-v2
    `torch/csrc/dynamo/eval_frame_cpp.cpp:614-625`：hit/miss/callback；
 7. `torch/csrc/dynamo/eval_frame_cpp.cpp:672-691`：cache安装和执行。
 
+## 12. 编译器视角补充：七阶段成本模型与缓存分层
+
+> 本节内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a05_eager_capture_compile_and_replay_cost_model_analysis.md`)。该页的参数化成本模型、四层 cache 对照表与阶段主导参数已迁入 [[e07_compile_latency_cache_and_steady_state_performance_analysis]] §12-§16(与该页既有的 break-even 模型合并,不在本页重复);这里只保留与本页 §1-§11"wrapper creation 与 first call 是两个事件"直接互补、e07 未覆盖的两块:七阶段词汇表,以及 cache 命中之后仍要做的具体工作清单。
+
+### 12.1 七个时间阶段
+
+| 阶段 | 输入 | 主要产物 | 是否每次调用 |
+|---|---|---|---|
+| wrapper creation | Python callable + options | Dynamo context/backend wrapper | 否 |
+| cache lookup | code object + frame state | 命中 entry 或 compile decision | 是 |
+| capture | Python frame + inputs | FX region、guards、residual code | 每个新 specialization |
+| graph compile | FX + fake inputs | AOT/Inductor transformed artifacts | 每个新 specialization/cache miss |
+| native compile/load | generated source/binary | callable module/kernel | 取决于 artifact cache |
+| warmup/record | callable + runtime state | runtime/cache/CUDAGraph 状态 | backend/模式相关 |
+| replay | guards + callable + inputs | 用户结果 | 每次命中调用 |
+
+"一次 compile"常同时包含 capture、AOT、Inductor 和 native compile,但这些阶段的 cache 边界不同,所以不能用一个总开关推断全部是否执行。
+
+### 12.2 cache 命中之后仍要做的 8 件事
+
+命中 specialization 的调用仍可能执行:
+
+1. eval-frame/run-only wrapper 逻辑;
+2. cache entry guards;
+3. transformed Python code;
+4. compiled callable wrapper;
+5. input unpack/layout/alias checks;
+6. allocation/reuse;
+7. kernel/extern calls;
+8. output assembly。
+
+因此 steady-state overhead 不为零。小模型/小 batch 中,guards、Python wrapper、launch 和同步可能比 kernel 本身更显著。跨调用的参数化成本模型、break-even 分析与四层 cache 对照表见 [[e07_compile_latency_cache_and_steady_state_performance_analysis]] §12-§16。
+
+### 12.3 源码补充:cache entry 查找与 backend handoff 的两处细节
+
+§6 已说明命中路径不再触发 frame conversion callback,以下补两处更底层的边界:
+
+`ExtraState::lookup_in_list` 会先核对 backend,再运行 entry 的 guard manager(`torch/csrc/dynamo/extra_state.cpp:201-225`)。更外层 lookup 依次查询相应 backend 的 bucket 与 default bucket(`torch/csrc/dynamo/extra_state.cpp:292-316`);命中后还会把 entry 移到链表前端并返回 cached code(`torch/csrc/dynamo/extra_state.cpp:319-323`)。因此"同一 code object"只是 cache 搜索范围,不是充分命中条件。
+
+miss 后,Dynamo 完成 capture 交给 backend 的边界是显式的:`call_user_compiler` 在 `dynamo_timed` 计时区域内调用 `_call_user_compiler`(`torch/_dynamo/output_graph.py:3046-3057`),后者调用 compiler function 并检查返回值必须可调用(`torch/_dynamo/output_graph.py:3115-3123`);除少数允许 fallback 的例外,其余异常在这里统一被归类为 `BackendCompilerFailed`(`torch/_dynamo/output_graph.py:3146-3149`)。code-object entry hit 只保证不再次走这次 Dynamo/backend handoff,不代表 backend 自己的 graph cache、code cache、native compiler 与 lazy backward compile 都不存在。backend handoff 之后各阶段成本的主导参数(codegen/native compile/autotune)见 [[e07_compile_latency_cache_and_steady_state_performance_analysis]] §16。
+
 ## 配套 Demo
 
 本页对应卷级入口 `tools/labs_torch_compile/demo_b_dynamo_capture.py` 的 `compile_lifecycle` 用例。默认以 CUDA 为验收设备：
@@ -222,8 +273,9 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 
 ## Related Pages
 
-- [[a05_eager_capture_compile_and_replay_cost_model_analysis]]
 - [[b02_backend_modes_options_stances_and_fullgraph_analysis]]
 - [[b03_eval_frame_callback_and_code_cache_analysis]]
 - [[b06_output_graph_side_effects_and_graph_emission_analysis]]
+- [[e07_compile_latency_cache_and_steady_state_performance_analysis]] — 测量场景与统计设计
+- [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]] — 多层缓存 key/失效边界
 - [[00_torch_compile_end_to_end_index]]

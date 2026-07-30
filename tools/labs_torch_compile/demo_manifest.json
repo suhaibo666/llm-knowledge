@@ -8,41 +8,6 @@
   },
   "pages": [
     {
-      "page_id": "a01",
-      "page": "a01_tensor_storage_layout_and_views_analysis.md",
-      "volume": "A",
-      "script": "tools/labs_torch_compile/demo_a_execution_model.py",
-      "case": "tensor_storage_layout"
-    },
-    {
-      "page_id": "a02",
-      "page": "a02_operator_schema_dispatch_and_autograd_analysis.md",
-      "volume": "A",
-      "script": "tools/labs_torch_compile/demo_a_execution_model.py",
-      "case": "dispatcher_autograd"
-    },
-    {
-      "page_id": "a03",
-      "page": "a03_python_frames_code_objects_and_bytecode_analysis.md",
-      "volume": "A",
-      "script": "tools/labs_torch_compile/demo_a_execution_model.py",
-      "case": "python_frame_bytecode"
-    },
-    {
-      "page_id": "a04",
-      "page": "a04_dispatch_modes_proxy_tensor_and_fake_tensor_analysis.md",
-      "volume": "A",
-      "script": "tools/labs_torch_compile/demo_a_execution_model.py",
-      "case": "proxy_fake_tensor"
-    },
-    {
-      "page_id": "a05",
-      "page": "a05_eager_capture_compile_and_replay_cost_model_analysis.md",
-      "volume": "A",
-      "script": "tools/labs_torch_compile/demo_a_execution_model.py",
-      "case": "eager_compile_cost"
-    },
-    {
       "page_id": "b01",
       "page": "b01_torch_compile_api_and_first_call_lifecycle_analysis.md",
       "volume": "B",

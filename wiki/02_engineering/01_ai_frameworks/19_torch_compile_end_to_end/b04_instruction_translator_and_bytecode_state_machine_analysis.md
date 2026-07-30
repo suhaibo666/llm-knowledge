@@ -4,7 +4,7 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[b03_eval_frame_callback_and_code_cache_analysis]]  
 > 后续：[[b05_variable_tracker_source_and_python_object_model_analysis]]  
-> 最后更新：2026-07-28
+> 最后更新：2026-07-30(§14 并入 A03 独有的 bytecode_transformation 重组内容)
 
 ## 1. 为什么 Dynamo要解释 Python bytecode
 
@@ -291,6 +291,69 @@ speculation log用于降低重复工作与保证决策一致。
 - **“restart说明系统失败了。”** restart是 speculative tracing的正常控制机制之一。
 - **“输出只有 GraphModule。”** 输出还包含 guards、transformed code和相关元数据。
 
+## 14. 源码补充：`bytecode_transformation` 如何把 Instructions 重新组装成新 code object
+
+> 本节内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a03_python_frames_code_objects_and_bytecode_analysis.md`),因其"改写后的字节码如何被重新汇编成合法 code object"这一层(`torch/_dynamo/bytecode_transformation.py`)在本页(聚焦符号执行状态机)、[[b03_eval_frame_callback_and_code_cache_analysis]](聚焦 cache)与 [[b08_graph_break_resume_functions_and_partial_graphs_analysis]] 均未覆盖,逐字迁入本页。
+
+### 14.1 Dynamo 的 mutable Instruction
+
+PyTorch 定义的 `Instruction`是 `dis.Instruction`的可变版本，除 opcode/opname/arg/offset
+外，还显式保存 jump target 和 exception table entry
+（`torch/_dynamo/bytecode_transformation.py:71-95`）。
+
+使用对象 target 而不是只保存原始字节 offset，可以在插入/删除指令后重新计算跳转。
+Instruction equality 采用 identity，也符合"这是可重写程序位置，不是按字段合并的值"。
+
+### 14.2 从 code object 到可重写 instructions
+
+`cleaned_instructions()`先从缓存取标准化 instructions，再 clone 一份，因为后续转换会
+原地修改 instruction array
+（`torch/_dynamo/bytecode_transformation.py:1899-1909`）。
+
+缓存构建路径：
+
+```text
+code object
+  → dis.get_instructions
+  → convert_instruction
+  → line number propagation
+  → exception table / jump virtualization
+  → strip extended args
+```
+
+见 `torch/_dynamo/bytecode_transformation.py:1944-1959`。
+
+"virtualize jump"的意义是把原始数字 offset 变成 Instruction target；真正重新组装前再
+根据新位置 devirtualize。
+
+### 14.3 代码重写状态机
+
+`transform_code_object()`执行：
+
+1. 从原 code object复制 code options；
+2. 生成 cleaned instructions；
+3. 运行 transformations；
+4. 清理并重新 assemble；
+5. 返回新 code object和 tracer output。
+
+对应入口见 `torch/_dynamo/bytecode_transformation.py:1824-1845`。
+
+assemble 前要：
+
+- 检查 exception table；
+- 修复 locals；
+- 重复更新 offsets、devirtualize jumps、修复 extended args，直到 offset 稳定；
+- 重建 bytecode、line table、stack size 和 exception table。
+
+实现见 `torch/_dynamo/bytecode_transformation.py:1848-1875`。
+
+**设计原因**：插入一个 compiled-graph call 可能改变后续 instruction offsets；offset
+变化又可能使 jump 参数需要更多字节。一次线性写出不能保证稳定，因此要迭代修复布局。
+
+这一层解释了 §9 "Transformed code怎样形成"中 `OutputGraph.output_instructions`替换原
+instruction列表之后，具体是靠这套 clone→transform→fixpoint-reassemble 流程才产出一个
+CPython 可以合法执行的新 code object，而不是简单地把字节数组拼接起来。
+
 ## 配套 Demo
 
 本页对应卷级入口 `tools/labs_torch_compile/demo_b_dynamo_capture.py` 的 `bytecode_state_machine` 用例。默认以 CUDA 为验收设备：
@@ -308,7 +371,6 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[a03_python_frames_code_objects_and_bytecode_analysis]]
 - [[b03_eval_frame_callback_and_code_cache_analysis]]
 - [[b05_variable_tracker_source_and_python_object_model_analysis]]
 - [[b06_output_graph_side_effects_and_graph_emission_analysis]]

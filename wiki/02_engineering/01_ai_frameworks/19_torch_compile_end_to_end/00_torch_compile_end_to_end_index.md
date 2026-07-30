@@ -44,15 +44,9 @@ flowchart LR
 | E | 如何调试、验证和测量 | 建立证据驱动的诊断与性能验收 |
 | F | 如何进入训练、分布式、扩展和部署 | 判断高级机制的接入层与约束 |
 
-## 3. 卷 A：执行模型前置基础
+## 3. 卷 A：执行模型前置基础（已并入功能页，2026-07-30）
 
-| 编号 | 页面 | 先回答的问题 |
-|---:|---|---|
-| A01 | [[a01_tensor_storage_layout_and_views_analysis]] | Tensor 值、Storage 身份、layout 与 view 为什么必须分层 |
-| A02 | [[a02_operator_schema_dispatch_and_autograd_analysis]] | 一个 operator 如何经过 schema、dispatcher、kernel 和 autograd |
-| A03 | [[a03_python_frames_code_objects_and_bytecode_analysis]] | Dynamo 为什么选择 frame/bytecode 作为捕获边界 |
-| A04 | [[a04_dispatch_modes_proxy_tensor_and_fake_tensor_analysis]] | Python override、dispatch mode、ProxyTensor、FakeTensor 如何分工 |
-| A05 | [[a05_eager_capture_compile_and_replay_cost_model_analysis]] | eager、capture、compile、load、warmup、replay 的成本如何分开 |
+> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/tensor_impl_and_storage_analysis]] §13、[[pytorch_dispatcher_analysis]] §12、[[b03_eval_frame_callback_and_code_cache_analysis]] §13、[[b04_instruction_translator_and_bytecode_state_machine_analysis]] §14、[[aotautograd_analysis]] §12.5、[[b01_torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[e07_compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
 
 ## 4. 卷 B：`torch.compile` API 与 TorchDynamo
 

@@ -4,7 +4,7 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[e06_compiled_correctness_validation_methodology_analysis]]  
 > 后续：[[e08_kernel_fusion_memory_and_hardware_performance_analysis]]  
-> 最后更新：2026-07-28
+> 最后更新：2026-07-30(§12-16 并入 A05 独有的细粒度成本模型/dynamic·mode 权衡/四层缓存对照内容)
 
 ## 1. 为什么一个“平均耗时”没有诊断价值
 
@@ -276,6 +276,111 @@ M_{\text{total}}
 - **“disk hit等于0编译开销。”** 仍有load/post-compile/first-runtime。
 - **“kernel time下降就代表端到端加速。”** guard、wrapper、通信和队列可能主导。
 - **“平均值足够。”** 编译与线上延迟常是长尾分布。
+- **“dynamic一定减少总成本。”** 它减少 specialization 但可能增加通用 graph/kernel 成本。
+- **“max-autotune一定提高端到端性能。”** 候选测量增加 compile 成本，收益依 workload 和调用次数。
+
+## 12. 跨调用摊销：参数化多次调用成本模型
+
+> 本节至 §15 内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a05_eager_capture_compile_and_replay_cost_model_analysis.md`)。它给出的是本页§7-§10 break-even分析的**更细粒度前身**——把"一次性成本"进一步拆成 wrapper/capture/optimization/native-compile/warmup 五个子项，并显式给出 `dynamic`/`mode` 参数如何在这套分解里两头影响成本；本页此前的模型（§3、§10）在跨调用层面只用 \(K_s\)/\(C_i\) 两项概括，未展开到这个粒度，故逐字迁入作为补充视角，不替换已有模型。
+
+对一种输入分布和调用总数 \(N\)，设：
+
+- \(T_w\)：wrapper creation；
+- \(T_{g,i}\)：第 \(i\) 次调用的 guard/cache lookup；
+- \(T_{c,j}\)：第 \(j\) 个新 specialization 的 capture；
+- \(T_{o,j}\)：该 specialization 的 graph optimization/AOT/Inductor；
+- \(T_{n,j}\)：native compile/load；
+- \(T_{u,j}\)：warmup/record；
+- \(T_{r,i}\)：steady runtime wrapper + kernel；
+- \(S\)：实际生成的 specializations 数。
+
+总时间可写为：
+
+\[
+T_{\text{compiled}}
+=T_w
++\sum_{i=1}^{N}(T_{g,i}+T_{r,i})
++\sum_{j=1}^{S}(T_{c,j}+T_{o,j}+T_{n,j}+T_{u,j})
+\]
+
+eager 总时间为：
+
+\[
+T_{\text{eager}}=\sum_{i=1}^{N}T_{e,i}
+\]
+
+只有：
+
+\[
+\sum(T_{e,i}-T_{g,i}-T_{r,i})
+>
+T_w+\sum(T_c+T_o+T_n+T_u)
+\]
+
+才在该调用分布和测量窗口内获得净收益。
+
+这是机制推论 `[I]`，不是固定硬件的性能测量。它与本页 §7/§10 的 break-even 模型描述同一件事，区别只是把一次性成本 \(K\) 进一步拆到 wrapper/capture/optimize/native-compile/warmup 五个可分别归因的子项。
+
+## 13. `dynamic` 为什么影响两端成本
+
+公开入口定义三种策略：
+
+- `dynamic=True`：尽量预先生成动态 kernel；
+- `dynamic=False`：始终 specialization；
+- `dynamic=None`：先静态，检测到变化后尝试更动态。
+
+见 `torch/__init__.py:3175-3181`。
+
+动态 graph可能：
+
+- 减少 \(S\) 和重复 compile；
+- 增加 guards/symbolic expressions；
+- 限制 specialization-based optimization；
+- 使 kernel处理更一般的 shape。
+
+所以动态不是单向“更快”或“更慢”，而是在 compile multiplicity 与每个 graph/kernel
+通用性之间交换成本。
+
+## 14. mode 不是性能承诺
+
+当前 public docstring把：
+
+- `default`定义为性能与 overhead 平衡；
+- `reduce-overhead`与 CUDA Graph、更多 workspace memory、输入 mutation限制关联；
+- `max-autotune`与候选 profiling 和 GPU CUDAGraph默认策略关联。
+
+见 `torch/__init__.py:3192-3210`。
+
+这只是策略含义，不是对任意 workload 的加速保证。`reduce-overhead`不能消除 guard；
+`max-autotune`会增加 compile-time measurement；CUDAGraph也要求 runtime invariants。
+
+## 15. 四种常被混淆的“缓存命中”
+
+| 命中层 | 跳过的工作 | 仍可能发生 |
+|---|---|---|
+| Dynamo code cache | frame重新捕获与 backend callback | guards、wrapper/runtime |
+| AOTAutograd cache | functionalization/joint/partition/compile result | 外层 Dynamo 与 runtime |
+| FXGraph/code cache | Inductor部分 lowering/codegen/native compile | AOT、load、runtime |
+| kernel/autotune cache | candidate编译或重新测量 | wrapper、launch、其他 kernels |
+
+这张表与本页 §5 的清单是同一件事的两种切面：§5 按"清 cache 要清哪些层"组织，此表按
+"命中这一层跳过什么、仍会发生什么"组织；诊断"为什么这次调用还是慢"时按此表逐层排查
+比只看一个笼统的 cache-hit 布尔值更准确。
+
+## 16. 复杂度的主导参数（覆盖到 backend/codegen 阶段）
+
+本页 §4 的 `CompilationMetrics` 覆盖 frame/backend/Inductor/codegen 各阶段的**实测**耗时字段；这里补充每个阶段成本**由什么主导**，用于解释这些字段为什么会漂移：
+
+- wrapper creation：与 option/backend setup相关；
+- Dynamo lookup：与 cache entries和 guard expressions相关；
+- capture：与解释 instructions、inline calls、operator数量相关；
+- graph passes：与各阶段 Node/Edge/candidates相关；
+- codegen/native compile：与 kernels、source size、toolchain相关；
+- autotune：与 candidates × repetitions × measurement cost相关；
+- replay：与 guards、wrapper operations、kernel/extern workload相关；
+- dynamic workload：还要乘实际 specializations \(S\)。
+
+“模型有 \(N\) 个 FX nodes，所以 compile是 \(O(N)\)”不足以描述整条路径。
 
 ## 配套 Demo
 
@@ -294,7 +399,6 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[a05_eager_capture_compile_and_replay_cost_model_analysis]]
 - [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
 - [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[e06_compiled_correctness_validation_methodology_analysis]]

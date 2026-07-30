@@ -248,8 +248,8 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[a02_operator_schema_dispatch_and_autograd_analysis]]
-- [[a04_dispatch_modes_proxy_tensor_and_fake_tensor_analysis]]
+- [[pytorch_dispatcher_analysis]] — schema/dispatcher/ADInplaceOrView 分层
+- [[aotautograd_analysis]] — ProxyTensor/FakeTensor 两套抽象执行状态
 - [[f04_fsdp_dtensor_and_distributed_graphs_analysis]]
 - [[f06_custom_backends_and_device_integration_analysis]]
 - [[04_export_and_distributed/01_fx_export_extensibility/index]]

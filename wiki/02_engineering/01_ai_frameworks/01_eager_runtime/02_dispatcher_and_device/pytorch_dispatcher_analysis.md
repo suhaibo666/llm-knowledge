@@ -1,7 +1,7 @@
 # PyTorch Dispatcher：算子分发机制与自定义扩展
 
 > 从 `DispatchKey` 到 `__torch_dispatch__`：一个算子如何路由到 CPU/CUDA/Autograd/Autocast kernel，分发顺序由什么决定，以及用户如何包装自定义分发
-> 最后更新: 2026-06-13
+> 最后更新: 2026-07-30(§12 并入 A02 独有的 ADInplaceOrView 分层与 mutation rebase 内容)
 > 来源：PyTorch 源码（github.com/pytorch/pytorch，`c10/` + `aten/` + `torch/csrc/`）。本页符号引用以稳定的类/函数名为准，行号随版本漂移不标注。
 
 ---
@@ -523,7 +523,97 @@ z = x + y * 2     # 预期打印: [dispatch] aten::mul  然后  [dispatch] aten:
 
 ---
 
-## 12. 小结：思维模型
+## 12. 深入④：ADInplaceOrView 分层与 mutation 算子的 rebase(手写 wrapper 样本)
+
+> 本节内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a02_operator_schema_dispatch_and_autograd_analysis.md`),因其"Autograd 与 ADInplaceOrView 为什么分层、mutation 算子在 wrapper 层多做了什么"的手写样本在本页与 [[01_eager_runtime/05_autograd_engine/index]] 均无覆盖,逐字迁入本页。
+
+### 12.1 Autograd dispatch wrapper 做什么
+
+以手写的 `copy_` autograd wrapper 为例，当前源码路径大致是：
+
+```text
+Autograd key 命中 VariableType::copy_
+  → 判断是否需要 grad
+  → 构造 CopyBackwards
+  → collect_next_edges
+  → AutoDispatchBelowAutograd
+  → redispatch 到更低层实现
+  → rebase_history
+```
+
+对应实现见 `torch/csrc/autograd/VariableTypeManual.cpp:201-215`。
+Autograd wrapper 注册到 Autograd key
+（`torch/csrc/autograd/VariableTypeManual.cpp:343-369`）；view/inplace 还有单独
+`ADInplaceOrView`注册层（同文件 `:532-559`）。
+
+#### 为什么 Autograd 和 ADInplaceOrView 分层
+
+- Autograd 负责梯度公式与 next edges；
+- ADInplaceOrView 负责 version bump、view/inplace bookkeeping；
+- inference/no-grad 等模式可能需要其中一部分而跳过另一部分。
+
+若二者完全耦合，inference、functionalization 和 view-only tracking 很难只选择需要的
+语义层。
+
+### 12.2 源码跟读：手写 `_fw_primal` 与 `copy_` wrapper 如何把 Dispatcher 接到 Autograd
+
+这一节选取手写 Autograd wrapper 作为可见样本，把 forward 调用和 backward 执行接起来。
+手写 wrapper 不是所有 operator 的统一实现；大量 wrapper 由生成器产生。但它完整暴露了
+生成代码同样需要遵循的契约，因此适合观察层次边界。
+
+```mermaid
+flowchart LR
+    P["OpOverload"] --> D["Dispatcher key lookup"]
+    D --> A["Autograd wrapper"]
+    A -->|redispatch below Autograd| K["backend kernel"]
+    A --> E["next edges and grad history"]
+    E --> N["backward Node graph"]
+    N --> Q["Engine ready queue"]
+```
+
+#### 12.2.1 Autograd wrapper 本身也是 Dispatcher 选中的 kernel
+
+手写 `_fw_primal` wrapper 展示了典型结构：先判断输出是否需要梯度，必要时创建
+`Identity` backward Node 并收集 next edges；随后在排除 Autograd keys 的 guard 下
+redispatch；最后给输出安装 history
+（`torch/csrc/autograd/VariableTypeManual.cpp:123-139`）。
+
+这段顺序很重要：Autograd 不是在 backend kernel 之后扫描结果、凭空恢复输入关系；wrapper
+在调用 lower kernel 前已经保存了构建 backward edge 所需的输入语义，kernel 返回后再把
+输出与新 Node 连接。
+
+`compute_requires_grad` 会先尊重全局 GradMode，再扫描参数是否需要梯度；
+`set_history` 为 Node 添加 output metadata，并把 Tensor 的 gradient edge 指向该 Node
+（`torch/csrc/autograd/functions/utils.h:59-84`）。所以 `requires_grad=True` 只是建图条件，
+真正的依赖关系由 Node 的 next edges 与输出 gradient edge 共同组成。
+
+#### 12.2.2 mutation operator 为什么多出 inplace 检查和 rebase
+
+`copy_` wrapper 先 unpack 输入并计算梯度需求，然后调用 `check_inplace`；需要建图时创建
+`CopyBackwards`、设置 next edges，redispatch 执行真实写入，最后对被修改 Tensor
+`rebase_history`（`torch/csrc/autograd/VariableTypeManual.cpp:196-215`）。
+
+这比 functional operator 多出的步骤不是实现噪声。写操作保留了 Python 对象和 Storage，
+却改变了它的数学历史；因此旧 gradient edge 不能原样继续代表"当前值从哪里来"。编译器
+若把 mutation 改写为 functional op，也必须在图 ABI 或 runtime writeback 中恢复同一可见
+语义。
+
+### 12.3 跟读后应区分的三种"边"
+
+一次算子调用附近至少存在三种不同的"边"，对象、所有者和生命周期都不同：
+
+| 关系 | 产生位置 | 语义 |
+|---|---|---|
+| Dispatcher redispatch | wrapper 到下一 dispatch key | 选择下一层 operator 实现 |
+| Autograd Edge | output gradient edge / Node next edge | backward value 应送到哪个 Node input |
+| FX data edge | Node 参数引用另一个 Node | 编译 IR 中值定义与使用 |
+
+pattern 匹配 ATen target 只是在 FX data graph 上匹配 operator 结构；它不会自动证明
+Autograd Edge、mutation history 或 dispatch behavior 也保持不变。
+
+---
+
+## 13. 小结：思维模型
 
 1. **本质**：`kernel = OperatorEntry[op].table[ keyset.highestPriorityTypeId() ]`，kernel 间层层 redispatch 成洋葱。
 2. **数据结构**：`DispatchKey`（枚举即优先级）、`DispatchKeySet`（Tensor 携带的 64-bit 集）、`OperatorEntry`（分发表）、`KernelFunction`（boxed/unboxed）。

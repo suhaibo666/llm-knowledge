@@ -6,6 +6,24 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 3（19 号 A 卷删除，5 篇 1790 行）
+
+**Type**: Redundancy Consolidation + Structure Reorg（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 3；P4 阶段首个编辑任务）
+
+**删除**：`19_torch_compile_end_to_end/a01-a05`（Tensor/Storage/View、operator/schema/dispatcher/autograd、Python frame/code object/bytecode、dispatch mode/ProxyTensor/FakeTensor、eager-capture-compile-replay 成本模型，共 1790 行）。这五篇是"执行模型前置基础回顾"，判重发现约 60-70% 内容与 `01_eager_runtime` 各功能页重复，但**逐句核查后确认每篇均有编译器视角的独有分析**（不可盲信"回顾=重复"），已逐字迁入对应功能页新增小节，不是简单删除：
+
+- a01 → [[01_eager_runtime/01_tensor_and_storage/tensor_impl_and_storage_analysis]] §13（differentiable view/DifferentiableViewMeta、mutation 状态机、复杂度记账、常见误解、view→Autograd→编译器的源码跟读）
+- a02 → [[pytorch_dispatcher_analysis]] §12（ADInplaceOrView 分层、mutation 算子 rebase 样本、Dispatcher/Autograd Edge/FX data edge 三种"边"辨析）
+- a03 → [[b04_instruction_translator_and_bytecode_state_machine_analysis]] §14 + [[b03_eval_frame_callback_and_code_cache_analysis]] §13（`bytecode_transformation` 重组子系统、code object/frame/instruction 定义表、C-hook 与 ConvertFrame 边界）
+- a04 → [[aotautograd_analysis]] §12.5（`__torch_function__`/`__torch_dispatch__`/ProxyTensor/FakeTensor 四层分工、`track_tensor_tree`、FakeTensorMode 状态）
+- a05 → [[b01_torch_compile_api_and_first_call_lifecycle_analysis]] §12 + [[e07_compile_latency_cache_and_steady_state_performance_analysis]] §12-§16（七阶段成本词汇表、cache-entry 查找与 backend handoff 源码补充；参数化成本模型/break-even/四层 cache 对照表与 e07 既有的测量方法论合并，不重复落地两处）
+
+**入链修复**：`f05`（a02/a04 引用改指 pytorch_dispatcher_analysis / aotautograd_analysis）、`b01`/`e07`/`d06`（a05 引用改指内容实际落点）；卷内 a01-a05 互链随整卷删除一并消失；`00_torch_compile_end_to_end_index.md` 的"卷 A"表按 Task 3 约定不做整体重排（留给 Task 10），仅去除失效行并加一行去向说明，避免 broken>0。
+
+**Labs 同步**：`tools/labs_torch_compile/demo_manifest.json` 移除 a01-a05 五条 page 映射（60→55 条）；`test_volume_demo_contract.py` 同步更新 `expected_ids`/条目计数与 `test_call_chain_pages_have_source_walkthroughs` 的 target_pages；`demo_a_execution_model.py` 脚本与其两个 `VolumeABContractTest` 保留（脚本级机制验证，不依赖已删除的课程页）。
+
+**校验**：迁移前逐条 grep+读段落核实独有性（而非凭印象判重）；迁移时对照本地 pinned PyTorch(`9922478`) 抽样核验源码定位符，发现 a05 一处 `output_graph.py` 引用行号漂移（原 A 卷标注的 `e8f97c1a...` 版本与当前 pinned 版本不一致），已重新定位到 `call_user_compiler`/`_call_user_compiler`/`BackendCompilerFailed` 的准确行号后再落地。`python tools/check_links.py`：pages 398→393，broken=0，orphans=0（基线持平）；`pytest tools/ -q`：77 passed。
+
 ## 2026-07-30：知识库结构整改 P3 完成（runtime_graphs 去重收官）
 
 **Type**: Structure Reorg（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.3；P0-P7 的第四段）
