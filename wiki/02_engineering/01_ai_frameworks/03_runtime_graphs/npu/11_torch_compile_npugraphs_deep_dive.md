@@ -1896,7 +1896,7 @@ sequenceDiagram
 | **适用场景** | 推理优化 | 训练+推理全场景 |
 | **调试难度** | 简单直接 | 较复杂（树结构） |
 
-`make_graphed_callables` 的完整实现流程（六阶段：输入校验展平 → 构建 static_input_surface → Warmup → 前向图捕获 → 反向图捕获 → 包装为 autograd.Function）、内存分配与复用机制、内存峰值 debug 方法，详见 [[npugraphs_make_graphed_callables_deep_dive]]；`torch.compile(backend="npugraphs")` 自身的完整调用链路见本文「二、完整调用链路分析」与「三、NPU Graph Tree 核心机制」。
+`make_graphed_callables` 的完整实现流程（六阶段：输入校验展平 → 构建 static_input_surface → Warmup → 前向图捕获 → 反向图捕获 → 包装为 autograd.Function）、内存分配与复用机制、内存峰值 debug 方法，详见 [[20_npugraphs_make_graphed_callables_deep_dive]]；`torch.compile(backend="npugraphs")` 自身的完整调用链路见本文「二、完整调用链路分析」与「三、NPU Graph Tree 核心机制」。
 
 ---
 
@@ -1977,13 +1977,13 @@ with torch.no_grad():
 
 ## 附录 A：mode="reduce-overhead" 与 backend="npugraphs" 双路径对比（摘要）
 
-> 本附录曾详细展开 `torch.compile(mode="reduce-overhead")`（路径 A，经 Inductor 编译）与本文正文 `torch.compile(backend="npugraphs")`（路径 B，绕开 Inductor）的完整调用链路、逐 Phase 源码定位、性能对比与选型决策；现已收缩为摘要，完整内容并入 [[aclgraph_deep_analysis]]（该页是 `mode="reduce-overhead"` 捕获路径的权威页）。
+> 本附录曾详细展开 `torch.compile(mode="reduce-overhead")`（路径 A，经 Inductor 编译）与本文正文 `torch.compile(backend="npugraphs")`（路径 B，绕开 Inductor）的完整调用链路、逐 Phase 源码定位、性能对比与选型决策；现已收缩为摘要，完整内容并入 [[10_aclgraph_deep_analysis]]（该页是 `mode="reduce-overhead"` 捕获路径的权威页）。
 
 路径 A 与路径 B 都能触发 NPU Graph 加速，核心差异在于是否经过 Inductor 编译：路径 A 经 `_TorchCompileInductorWrapper` → `compile_fx`（AOT Autograd + Pre-grad/Joint-graph/Post-grad passes + Scheduling + Triton/C++ Codegen）产出**少量融合内核**，再由 `cudagraph_post_compile` 把已被 torch_npu monkey-patch 的 `cudagraphify`（即 `npugraphify`）接入 NPU Graph Tree；路径 B 的 AOT Autograd 直接用 `boxed_nop` 解释执行**原始 FX 图**（大量未融合的 aten op），同样接入 Graph Tree。两条路径从 NPU Graph Tree 起（Warmup → Record → Replay）完全共享同一套核心实现（本文「二、完整调用链路分析」Phase 5-8）。`mode` 参数仅在 `backend="inductor"`（默认）时生效；显式指定 `backend="npugraphs"` 时 `mode` 参数会被忽略。
 
 结论：路径 A 编译更慢但稳态 NPU 利用率更高、Graph 捕获失败时回退到仍经优化的 Triton 内核，适合生产部署；路径 B 编译快、适合调试/baseline/快速验证 NPU Graph 兼容性，但回退会退化为较慢的 FX 图解释执行。
 
-完整的 mode 参数表、Wrapper 分发机制、逐 Phase 源码定位、录制内容/性能/回退对比表、选型决策与核心文件索引，见 [[aclgraph_deep_analysis]] §一「1.5 mode 参数与两条路径的触发关系」、§四「4.4 与 backend="npugraphs" 路径（路径 B）的对比」。
+完整的 mode 参数表、Wrapper 分发机制、逐 Phase 源码定位、录制内容/性能/回退对比表、选型决策与核心文件索引，见 [[10_aclgraph_deep_analysis]] §一「1.5 mode 参数与两条路径的触发关系」、§四「4.4 与 backend="npugraphs" 路径（路径 B）的对比」。
 
 ---
 

@@ -3,7 +3,7 @@
 > 卷别：F · 训练、分布式、扩展与部署  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[20_custom_backends_and_device_integration_analysis]]  
-> 后续：[[training_inference_cudagraph_and_freezing_analysis]]  
+> 后续：[[20_training_inference_cudagraph_and_freezing_analysis]]  
 > 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,纯平移;解答 [[22_backend_modes_options_stances_and_fullgraph_analysis]] §14.2 的 `use_aoti` todo)
 
 ## 1. 为什么还需要 AOTInductor
@@ -286,7 +286,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 
 - [[00_torch_compile_end_to_end_index]]
 - [[20_custom_backends_and_device_integration_analysis]]
-- [[training_inference_cudagraph_and_freezing_analysis]]
+- [[20_training_inference_cudagraph_and_freezing_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
 - [[14_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[19_production_rollout_fallback_and_monitoring_analysis]]

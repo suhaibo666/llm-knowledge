@@ -758,7 +758,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Redundancy Consolidation(设计:`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md`;P3 阶段收尾编辑)
 
-**A. §四「与 make_graphed_callables 的对比」收缩**：`torch_compile_npugraphs_deep_dive.md` §四(90 行)只留 4.1 功能对比表 + 到 [[npugraphs_make_graphed_callables_deep_dive]] 的链接(90→18 行,净删 72)。逐段核对：4.2「实现对比」两幅 ASCII 流程图——`make_graphed_callables` 六步图被承接页「二、完整实现流程(六阶段)」(490-716 行)以远更详细的代码粒度完整覆盖，`torch.compile(backend="npugraphs")` 六步图被本文档自身 §1.3 流程图 + §2.3-2.8 完整覆盖(均原地保留未删)，故两图均丢弃不搬运；4.3「执行时序对比」sequenceDiagram 被本文档自身 §3.2.5(A→B→C 完整执行场景，含 generation/warmup/record/execute 状态转换)以更细粒度完整覆盖，同样丢弃不搬运。核对结论：§四无独有内容需要搬运，承接页 `npugraphs_make_graphed_callables_deep_dive.md` 本次未变动(668→668)。
+**A. §四「与 make_graphed_callables 的对比」收缩**：`torch_compile_npugraphs_deep_dive.md` §四(90 行)只留 4.1 功能对比表 + 到 [[20_npugraphs_make_graphed_callables_deep_dive]] 的链接(90→18 行,净删 72)。逐段核对：4.2「实现对比」两幅 ASCII 流程图——`make_graphed_callables` 六步图被承接页「二、完整实现流程(六阶段)」(490-716 行)以远更详细的代码粒度完整覆盖，`torch.compile(backend="npugraphs")` 六步图被本文档自身 §1.3 流程图 + §2.3-2.8 完整覆盖(均原地保留未删)，故两图均丢弃不搬运；4.3「执行时序对比」sequenceDiagram 被本文档自身 §3.2.5(A→B→C 完整执行场景，含 generation/warmup/record/execute 状态转换)以更细粒度完整覆盖，同样丢弃不搬运。核对结论：§四无独有内容需要搬运，承接页 `npugraphs_make_graphed_callables_deep_dive.md` 本次未变动(668→668)。
 
 **B. 附录 A「mode="reduce-overhead" 完整编译流程与双路径对比」收缩**：整改决策(spec §3.3)以 `aclgraph_deep_analysis.md` 为 reduce-overhead 捕获路径权威页。附录 A(759 行)逐段核对：
 - 一、mode 参数澄清(1.1 mode→config 表、1.2 mode/backend 关系) — 承接页原无 mode 参数说明,独有,搬入承接页新增 §1.5「mode 参数与两条路径的触发关系」。
@@ -772,14 +772,14 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - 十、max-autotune 额外优化 — 独有,并入 §1.5 mode 表备注。
 - 十一、对比总结(11.1 一句话/11.2 决策流程图/11.3 代码示例/11.4 文件索引) — 11.1/11.2 改写为 §4.4 结尾的一句话总结+选型清单;11.3 代码示例与本文档自身 §5.2 最佳实践重复,丢弃;11.4 文件索引表独有,搬入 §4.4。
 
-附录 A 本体替换为一段摘要(路径 A/B 核心差异一段话 + 链接到 [[aclgraph_deep_analysis]] §1.5/§4.4，759→12 行，净删 747)。
+附录 A 本体替换为一段摘要(路径 A/B 核心差异一段话 + 链接到 [[10_aclgraph_deep_analysis]] §1.5/§4.4，759→12 行，净删 747)。
 
 **承接页接收清单**：
 - `npugraphs_make_graphed_callables_deep_dive.md`：净增 0 行(668→668，§四无独有内容)。
-- `aclgraph_deep_analysis.md`：净增 63 行(569→632)，新增 §1.5「mode 参数与两条路径的触发关系」(并入「一、路径概述」)与 §4.4「与 backend="npugraphs" 路径(路径 B)的对比」(并入「四、这条路径为什么会存在」)，均为小节融入而非尾部堆贴；同步合并 Related Pages 中两行重复的 `[[torch_compile_npugraphs_deep_dive]]` 为一行(见下 C.1)。
+- `aclgraph_deep_analysis.md`：净增 63 行(569→632)，新增 §1.5「mode 参数与两条路径的触发关系」(并入「一、路径概述」)与 §4.4「与 backend="npugraphs" 路径(路径 B)的对比」(并入「四、这条路径为什么会存在」)，均为小节融入而非尾部堆贴；同步合并 Related Pages 中两行重复的 `[[11_torch_compile_npugraphs_deep_dive]]` 为一行(见下 C.1)。
 
 **C. 三项遗留小修正**(上一任务质量审查发现)：
-1. `aclgraph_deep_analysis.md` Related Pages 两行 `[[torch_compile_npugraphs_deep_dive]]` 合并为一行，注释合并为"NPU Graphs 与 torch.compile 集成深度分析；§3.4-3.8 内存管理与复用；reduce_overhead vs npugraphs 对比"。
+1. `aclgraph_deep_analysis.md` Related Pages 两行 `[[11_torch_compile_npugraphs_deep_dive]]` 合并为一行，注释合并为"NPU Graphs 与 torch.compile 集成深度分析；§3.4-3.8 内存管理与复用；reduce_overhead vs npugraphs 对比"。
 2. `torch_compile_npugraphs_deep_dive.md` §3.6 加一句区分 checkpoint 恢复三步机制与分类表 dead 行 `_npu_npuCachingAllocator_raw_delete` 为两层释放，不引入新机制断言。
 3. 本 changelog 上条(P3 Task 4)追记回补后终值 2809 行(非 2714)与 §3.8 自纠记录(即上方"追记"段)。
 
@@ -1115,7 +1115,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 ---
 
-## 2026-07-16: 新增 [[aclgraph_multistream_rng_analysis]] —— ACLGraph 多流依赖与 graph-safe RNG
+## 2026-07-16: 新增 [[21_aclgraph_multistream_rng_analysis]] —— ACLGraph 多流依赖与 graph-safe RNG
 
 **Type**: Ingest / codebase deep dive（应用户连续咨询，将“多流入图、`wait_stream`/Event、遗漏 join、通信流场景、随机数入图与算子适配”去重后落库）
 
@@ -1123,7 +1123,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **核心结论**：多流不是多个图 capture 后合并，而是 Event Record/Wait 把 side stream 纳入同一个 `model_ri_` 并在 capture end 前返回主流；`wait_stream` 只建立“源流调用点之前 → 目标流调用点之后”的局部单向偏序。RNG 也不是 CPU 完全不可用，而是 replay 不重跑 host 取 seed 逻辑，故用 device seed/offset tensor + intragraph offset + wholegraph increment 保证每次 replay 推进 Philox counter。
 - **源码展开**：记录 `NPUGraph` 单模型 capture/replay、Stream/Event fork/join、HCCL 独立流及 allocator `recordStream`；以 native dropout 串起 secondary stream 与 Tensor RNG API；按固定 op-plugin 源码区分明确支持、部分重载/SoC 分支和仍走 `philox_engine_inputs()` 的路径。
 - **测试审计**：保留 torch_npu 已有多流、RNG functional/distribution 测试证据，同时标出测试清单与固定 op-plugin 中 `bernoulli_` 等旧标量路径的版本/dispatch 张力；补充逐 overload、连续 replay、自定义 generator、无 join 负例、多副流 RNG 与 ACLGraph+HCCL 验收矩阵。
-- **去重联动**：原 [[aclgraph_deep_analysis]] 只保留总览并链接专题；[[aclgraph]]、[[npu_operator_graph_eligibility_guide]] 与 NPU Graphs index 增加反链，不复制机制正文。
+- **去重联动**：原 [[10_aclgraph_deep_analysis]] 只保留总览并链接专题；[[01_aclgraph]]、[[npu_operator_graph_eligibility_guide]] 与 NPU Graphs index 增加反链，不复制机制正文。
 - **二次扩写**：按用户反馈恢复对话中的机制细节：显式 Event 与 `wait_stream` 的差别、capture/replay 逐阶段时序、三流间接加入与逐级返回、HCCL compute→comm→compute 双向依赖、数值化 Philox offset 演算、counter 计算边界、dropout 捕获/重放时间线，以及可直接转为用例的 RNG/多流验收模板。专题页由 312 行扩至 465 行，仍低于单页 500 行拆分线。
 
 ---
@@ -1991,7 +1991,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **修复（7 模块,纯增改无删除/重命名）**:
 - **04_inductor**:`Pytorch_Compile_Debug_Analysis` 残留的 NPU 平台声明 + 脚本块(`DEVICE_TYPE=npu` / ASCEND/HCCL env)清除 → 纯 upstream(NPU 调试已在 [[32_npu_debug_guide]])
-- **06_graphs**:`cuda/README` 移除混入的「NPU Graphs 对比/系统要求/参考资源」段 + 失实目录树 → 纯 CUDA,对比指向 [[comparison]];与 cuda/index(导航)分工
+- **06_graphs**:`cuda/README` 移除混入的「NPU Graphs 对比/系统要求/参考资源」段 + 失实目录树 → 纯 CUDA,对比指向 [[30_comparison]];与 cuda/index(导航)分工
 - **05_codegen_backends/mlir**:新建 `torch_mlir_quickstart`(quick start 层),`torch_mlir_pass_pipeline_analysis` §0 去重定位说明
 - **03_aot_autograd**:index 补「模块概述」(定义/栈位置/三职责),quickstart §1 精简为「快速导航」
 - **07_op_registration/npu**:index 补「整体架构」(算子生命周期 + 三维度依赖),`npu_operator_graph_eligibility_guide` §7 去 aclop/aclnn 重述、加交叉引用
@@ -2222,7 +2222,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **索引与交叉引用**:
 
 - `01_ai_frameworks/index.md` —— 子目录表新增 `[[07_op_registration/npu/index]]`;页面列表新增「op-plugin 算子接入」区(3 行);页头摘要与最后更新改 2026-06-12
-- 交叉引用:三篇互链,并 link 到既有 [[01_npu_compile_paths_overview]] / [[11_npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / `PyTorch_Dynamo_Technical_Analysis`（该页已于 P4 Task 5 判重删除，内容并入 [[02_compile_stack/01_dynamo/index]]） / [[20_npu_lowering_guide]]。入图判别页明确定位为「判别视角」,与既有「路径实现全景」页互补、不重复
+- 交叉引用:三篇互链,并 link 到既有 [[01_npu_compile_paths_overview]] / [[11_npu_inductor_splittiling_backend_analysis]] / [[10_aclgraph_deep_analysis]] / `PyTorch_Dynamo_Technical_Analysis`（该页已于 P4 Task 5 判重删除，内容并入 [[02_compile_stack/01_dynamo/index]]） / [[20_npu_lowering_guide]]。入图判别页明确定位为「判别视角」,与既有「路径实现全景」页互补、不重复
 
 ---
 

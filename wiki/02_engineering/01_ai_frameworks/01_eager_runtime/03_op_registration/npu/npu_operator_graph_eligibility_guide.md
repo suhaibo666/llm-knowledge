@@ -1,6 +1,6 @@
 # NPU 算子入图判别指南（dynamo / inductor+triton / aclgraph 三关）
 
-> **判别视角**：给定一个算子，如何判断它能否「入图」、会卡在哪一关、用什么命令验证。这不是路径实现介绍（实现全景见 [[01_npu_compile_paths_overview]]、各关深度见 [[11_npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / [[02_compile_stack/01_dynamo/index]]），而是一份面向「这个算子能不能入图」的可操作判别清单。
+> **判别视角**：给定一个算子，如何判断它能否「入图」、会卡在哪一关、用什么命令验证。这不是路径实现介绍（实现全景见 [[01_npu_compile_paths_overview]]、各关深度见 [[11_npu_inductor_splittiling_backend_analysis]] / [[10_aclgraph_deep_analysis]] / [[02_compile_stack/01_dynamo/index]]），而是一份面向「这个算子能不能入图」的可操作判别清单。
 >
 > 基于版本：`E:\97-codes\pytorch\torch_npu` 当前 checkout
 > 分析日期：2026-06-12
@@ -37,8 +37,8 @@
 |------|---------|--------|---------------------|--------|
 | **torchair** | `"npu"` | CANN GE 整图 | torchair 的 `ge_converter`（把 aten/npu IR 翻成 GE 节点）+ meta | — |
 | **inductor+triton** | `"inductor"` | inductor → Triton-Ascend | dynamo meta + inductor lowering/fallback | [[11_npu_inductor_splittiling_backend_analysis]] |
-| **aclgraph** | `"inductor"` + `mode="reduce-overhead"` | NPUGraph（CANN `AclmdlRI*` capture/replay） | 上两关 + capture 约束 | [[aclgraph_deep_analysis]] |
-| **npugraphs / npugraph_ex** | `"npugraphs"` / `"npugraph_ex"` | 直接 capture FX 图 / 独立外部包 | 同 aclgraph 门禁 | [[torch_compile_npugraphs_deep_dive]] |
+| **aclgraph** | `"inductor"` + `mode="reduce-overhead"` | NPUGraph（CANN `AclmdlRI*` capture/replay） | 上两关 + capture 约束 | [[10_aclgraph_deep_analysis]] |
+| **npugraphs / npugraph_ex** | `"npugraphs"` / `"npugraph_ex"` | 直接 capture FX 图 / 独立外部包 | 同 aclgraph 门禁 | [[11_torch_compile_npugraphs_deep_dive]] |
 
 > **torchair 路线注记**：本 checkout 里 torchair 是**未初始化的空 submodule**（`.gitmodules` 指向 `gitcode.com/ascend/torchair.git`），converter 清单无法本地 grep。判别需先 `git submodule update --init third_party/torchair/torchair`，或到已 `pip install torch_npu` 的环境看 `torch_npu/dynamo/torchair/_ge_concrete_graph/ge_converter/{aten,custom,prims,experimental}/` 是否有该算子的 `register_fx_node_ge_converter`。
 > **npugraph_ex 注记**：`torch_npu/dynamo/__init__.py:150-159` 运行时 `import npugraph_ex`，是独立外部包、本仓无源码，文档归 torchair 系。
@@ -130,7 +130,7 @@ NPUGraph = CANN `AclmdlRICaptureBegin/End/ExecuteAsync`（`torch_npu/csrc/core/n
 **捕获期运行时硬门禁**（命中即抛错打断；`torch_npu/csrc/core/npu/NPUGraphsUtils.h:93-105`、`torch_npu/csrc/framework/OpCommand.cpp:129-140`）：
 
 - ⭐ **只有 aclnn 算子能入图**：走 aclop 路径的算子在捕获期一执行就 `assertNotCapturingAclop` 抛错——`Cannot run aclop operators during NPU graph capture. Current working aclop is <op>...`。**修复杠杆：`torch.npu.config.allow_internal_format = False`**（强制 ND/aclnn，避开私有格式触发 aclop）；仍失败说明该算子根本没有 aclnn 实现。
-- 还要：非默认流捕获（`NPUGraph.cpp:181-184`）；不支持 `TASK_QUEUE_ENABLE=2`（`:169-173`）；显存走私有 mempool、地址固定（更新输入要用 `copy_` 写回原地址，不能重新赋值）；RNG/HCCL 有额外约束，机制与逐算子检查项见 [[aclgraph_multistream_rng_analysis]]。
+- 还要：非默认流捕获（`NPUGraph.cpp:181-184`）；不支持 `TASK_QUEUE_ENABLE=2`（`:169-173`）；显存走私有 mempool、地址固定（更新输入要用 `copy_` 写回原地址，不能重新赋值）；RNG/HCCL 有额外约束，机制与逐算子检查项见 [[21_aclgraph_multistream_rng_analysis]]。
 - 特例：IFA/FA3/PagedAttention 等可入图但 seqlen 每步变，靠 task-group update（`g.update(...)`）在重放前刷新，无需重捕。
 
 **判别方法**：
@@ -265,7 +265,7 @@ graph TD
 - [[op_registration_pipeline_analysis]] —— eager 注册与 acl_op/op_api 运行时三层选择
 - [[01_npu_compile_paths_overview]] —— 三条后端路径实现全景（本页的判别对象）
 - [[11_npu_inductor_splittiling_backend_analysis]] —— 第二关 Triton/Inductor default 路径深度分析
-- [[aclgraph_deep_analysis]] —— 第三关 ACLGraph 图捕获/重放深度分析
-- [[aclgraph_multistream_rng_analysis]] —— 第三关中的多流闭合、通信流边界与随机数状态协议
+- [[10_aclgraph_deep_analysis]] —— 第三关 ACLGraph 图捕获/重放深度分析
+- [[21_aclgraph_multistream_rng_analysis]] —— 第三关中的多流闭合、通信流边界与随机数状态协议
 - [[02_compile_stack/01_dynamo/index]] —— 第一关 dynamo 图捕获机制
 - [[20_npu_lowering_guide]] —— 第二关 NPU lowering 与算子映射细节

@@ -281,7 +281,7 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[10_torch_compile_api_and_first_call_lifecycle_analysis]]
 - [[11_eval_frame_callback_and_code_cache_analysis]]
 - [[15_guards_cache_lookup_and_recompilation_analysis]]
-- [[cudagraph_trees_warmup_record_and_replay_analysis]]
+- [[10_cudagraph_trees_warmup_record_and_replay_analysis]]
 - [[19_production_rollout_fallback_and_monitoring_analysis]]
 - [[15_minifier_repro_and_compiler_bisector_analysis]] — CompilerBisector 内部的二分定位算法
 - [[28_aotinductor_packaging_and_deployment_analysis]] — AOTInductor 的 export 驱动打包路径;与 §14.2 的 `use_aoti` JIT 路径汇合于同一套 `compile_fx`/`CompiledAOTI` 机制,但 runner 是否就绪不对称(`enable_autograd_for_aot` 门控),差异还在捕获来源与是否打包(关系已核实,见 §14.2 note)

@@ -730,7 +730,7 @@ class CourseMarkdownContractTest(unittest.TestCase):
             (dynamo_root, "15_guards_cache_lookup_and_recompilation_analysis.md"),
             (inductor_root, "15_inductor_compile_fx_orchestration_analysis.md"),
             (aot_autograd_root, "13_aot_runtime_wrappers_and_lazy_backward_compile_analysis.md"),
-            (cuda_root, "cudagraph_trees_warmup_record_and_replay_analysis.md"),
+            (cuda_root, "10_cudagraph_trees_warmup_record_and_replay_analysis.md"),
             (autograd_engine_root, "20_compiled_autograd_analysis.md"),
         ]
         locator = re.compile(

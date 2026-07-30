@@ -204,5 +204,5 @@ with ind.patch(memory_planning=True):
 - [[23_inductor_gpu_kernel_dispatch_model]] — Triton kernel 骨架与 `mask` 边界掩码(§5 越界防护的来源)
 - [[02_compile_stack/07_debugging/index]] — `TORCH_LOGS`/`TORCH_COMPILE_DEBUG` 编译调试(与 §5 排查互补)
 - [[25_unbacked_symint_analysis]] — 动态 shape 的 unbacked symint(§5.2 越界来源之一)
-- [[PyTorch_CUDA_Graphs_Complete_Guide]] — CUDA Graphs 通用用法
+- [[01_PyTorch_CUDA_Graphs_Complete_Guide]] — CUDA Graphs 通用用法
 - [[01_inductor_quickstart]] — `torch.compile` 参数与 `torch._inductor.config` 上手

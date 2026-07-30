@@ -294,9 +294,9 @@ sequenceDiagram
 
 > 本节的编译流程与 CUDA Graph 集成为简化示意(伪代码)。真实的 `cudagraph_trees` 运行时是一棵
 > 按 memory-path 组织的树(warmup→record→replay 状态机、按 static input 地址与动态整数 key
-> 分流的多份 recording、fallback 而非重新编译),源码级机制见 [[cudagraph_trees_warmup_record_and_replay_analysis]];
+> 分流的多份 recording、fallback 而非重新编译),源码级机制见 [[10_cudagraph_trees_warmup_record_and_replay_analysis]];
 > training/inference/freezing 与 CUDA Graph 的组合边界(freezing 变换链、地址不变式、组合矩阵)见
-> [[training_inference_cudagraph_and_freezing_analysis]]。
+> [[20_training_inference_cudagraph_and_freezing_analysis]]。
 
 ### 完整示例代码
 
@@ -1409,7 +1409,7 @@ graphed_model = torch.cuda.make_graphed_callables(
 
 - **GPU 架构要求**: 需要 Volta（V100）及更新架构的 NVIDIA GPU 才支持 CUDA Graphs；推荐使用 Ampere（A100）及更新架构以获得更好性能。
 - **适用场景**: CUDA Graphs 主要用于推理场景优化，训练场景中使用相对较少。训练/推理/freezing 三者与
-  CUDA Graph 的组合不等价——四轴拆解、组合矩阵与失败/回退边界见 [[training_inference_cudagraph_and_freezing_analysis]]。
+  CUDA Graph 的组合不等价——四轴拆解、组合矩阵与失败/回退边界见 [[20_training_inference_cudagraph_and_freezing_analysis]]。
 
 ### 使用场景推荐
 
@@ -1726,6 +1726,6 @@ PyTorch 提供了多种使用 CUDA Graphs 的方式，每种方式都有其适�
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
-- [[cudagraph_trees_warmup_record_and_replay_analysis]] — 方式2 CUDA Graph 集成的源码级机制(`cudagraph_trees.py`:Tree 状态机、warmup/record/replay、按整数 key 分流的多份 recording)
-- [[training_inference_cudagraph_and_freezing_analysis]] — training/inference/freezing 与 CUDA Graph 的组合边界、地址不变式、失败与回退
-- [[comparison]]
+- [[10_cudagraph_trees_warmup_record_and_replay_analysis]] — 方式2 CUDA Graph 集成的源码级机制(`cudagraph_trees.py`:Tree 状态机、warmup/record/replay、按整数 key 分流的多份 recording)
+- [[20_training_inference_cudagraph_and_freezing_analysis]] — training/inference/freezing 与 CUDA Graph 的组合边界、地址不变式、失败与回退
+- [[30_comparison]]

@@ -825,9 +825,9 @@ Step 6  回归 Profile
 - [[NPU_MLIR_Backend_Technical_Analysis]] — NPU MLIR 六阶段编译管线
 - [[12_npu_compile]] — NPU 编译工作流与 Autotune
 - [[20_npu_lowering_guide]] — NPU 特定算子 Lowering 指南
-- [[PyTorch_CUDA_Graphs_Complete_Guide]] — CUDA Graphs 图捕获/重放机制
-- [[torch_compile_npugraphs_deep_dive]] — NPU Graphs + torch.compile 深度分析
-- [[aclgraph_deep_analysis]] — ACLGraph 图捕获与 Super Kernel
+- [[01_PyTorch_CUDA_Graphs_Complete_Guide]] — CUDA Graphs 图捕获/重放机制
+- [[11_torch_compile_npugraphs_deep_dive]] — NPU Graphs + torch.compile 深度分析
+- [[10_aclgraph_deep_analysis]] — ACLGraph 图捕获与 Super Kernel
 - [[ascend_kernel_execution_model_analysis]] — DaVinci AI Core、L1/L0/UB 缓冲链、TQue 与 FixPipe 的执行模型深挖
 - [[01_ai_frameworks/index]] — AI 框架领域索引
 - [[02_engineering/index]] — 工程实现领域索引

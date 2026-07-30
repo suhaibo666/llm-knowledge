@@ -182,7 +182,7 @@ def __call__(self, graph):                       # fix_functionalization.py:28-5
 
 - **vLLM**：pass 体系是「编译期优化器」——用 PatternMatcher 在 FX 图上做十几种融合（rms+quant、silu+quant、attn+quant、rope+kvcache、collective+rms、sequence parallelism），fix_functionalization 是这套融合的「收尾清理」。torch.compile 是优化主战场。
 - **SGLang**：`compilation/` 是「piecewise cudagraph 的编译管线」，核心价值在**按注意力/通信切图 + 逐尺寸 cudagraph 捕获/回放**，融合外包给 kernel 与 inductor 原生能力。pass 层薄、且当前 fix_functionalization 为 no-op。
-- **NPU 侧**：`NPUPiecewiseBackend` 把 `torch.cuda.CUDAGraph` 换成 `torch.npu.NPUGraph`、`weak_ref_tensor` 换成 `torch_npu._C._weak_ref_tensor`；但覆写 `__call__` 时丢了 warmup 短路与 stream-为空回退。这与 [[aclgraph]] 的「捕获-回放静态图」范式相邻——只是 device API 不同，且 SGLang 这层不依赖任何 FX 融合 pass，对 NPU 移植更友好（要搬的只有捕获壳，不用搬一堆 CUDA-only fusion pattern）。
+- **NPU 侧**：`NPUPiecewiseBackend` 把 `torch.cuda.CUDAGraph` 换成 `torch.npu.NPUGraph`、`weak_ref_tensor` 换成 `torch_npu._C._weak_ref_tensor`；但覆写 `__call__` 时丢了 warmup 短路与 stream-为空回退。这与 [[01_aclgraph]] 的「捕获-回放静态图」范式相邻——只是 device API 不同，且 SGLang 这层不依赖任何 FX 融合 pass，对 NPU 移植更友好（要搬的只有捕获壳，不用搬一堆 CUDA-only fusion pattern）。
 
 ### 4.3 给读者的结论（诚实版）
 
@@ -194,4 +194,4 @@ def __call__(self, graph):                       # fix_functionalization.py:28-5
 
 - [[vllm_ir_and_fusion_passes_analysis]] — 对照面：vLLM 的 IR/fusion pass 全家桶（本页反复引用其 `passes/fusion`、`passes/utility` 作为血缘对照）
 - [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 上游 Inductor pass 机制与三阶段 driver（SGLang/vLLM pass 框架的共同基座 `post_grad_custom_post_pass`）+ 工业界 pass 开发方法论归纳（§14：SGLang 是「把融合下推到 kernel/inductor」这一路线的代表）
-- [[aclgraph]] — NPU 侧「捕获-回放静态图」范式，与 `NPUPiecewiseBackend` 相邻
+- [[01_aclgraph]] — NPU 侧「捕获-回放静态图」范式，与 `NPUPiecewiseBackend` 相邻

@@ -457,9 +457,9 @@ assert torch.equal(reset, eager_ref)        # 图与 eager 的 counter 协议一
 
 ## Related Pages
 
-- [[aclgraph]] —— ACLGraph 基础用法与 capture/replay 生命周期
-- [[aclgraph_deep_analysis]] —— ACLGraph、NpuGraphOpHandler、aclnn/aclop 门禁与社区差异
+- [[01_aclgraph]] —— ACLGraph 基础用法与 capture/replay 生命周期
+- [[10_aclgraph_deep_analysis]] —— ACLGraph、NpuGraphOpHandler、aclnn/aclop 门禁与社区差异
 - [[npu_operator_graph_eligibility_guide]] —— 从 Dynamo、Inductor 到 ACLGraph 的算子入图判别
-- [[torch_compile_npugraphs_deep_dive]] —— Graph Tree、静态地址与 allocator 生命周期（§3.4-3.8）
-- [[comparison]] —— CUDA Graphs 与 NPU Graphs 的接口和实现对照
+- [[11_torch_compile_npugraphs_deep_dive]] —— Graph Tree、静态地址与 allocator 生命周期（§3.4-3.8）
+- [[30_comparison]] —— CUDA Graphs 与 NPU Graphs 的接口和实现对照
 - [[21_torch_npu_upstream_adaptation_analysis]] —— torch_npu out-of-tree 适配全景与源码基线

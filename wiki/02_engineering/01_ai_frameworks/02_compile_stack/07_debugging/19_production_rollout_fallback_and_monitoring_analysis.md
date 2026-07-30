@@ -246,4 +246,4 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 - [[18_kernel_fusion_memory_and_hardware_performance_analysis]]
 - [[14_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[20_compiled_autograd_analysis]]
-- [[training_inference_cudagraph_and_freezing_analysis]]
+- [[20_training_inference_cudagraph_and_freezing_analysis]]

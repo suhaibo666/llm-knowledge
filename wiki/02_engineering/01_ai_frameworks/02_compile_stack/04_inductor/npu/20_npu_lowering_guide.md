@@ -773,7 +773,7 @@ npu_config.force_fallback_kernel_id = 'all'        # 全部 fallback
 ## 9. 当前源码复核（a6655d4）：两半 fallback、make_fallback 六分类、融合收益实测
 
 > 2026-06-13 基于 **当前 torch_npu 源码 `a6655d4`** 复核（本页 §1–§8 部分行号/机制源自较早版本）。本节是对前文的**校正 + 补充**，不删除原文。
-> 关联：[[21_npu_inductor_optimization_analysis]] §八（why 侧，2.7 口径）、[[aclgraph_deep_analysis]] 差异 8（aclnn/aclop 把本节的 fallback 关与捕获关连通）。
+> 关联：[[21_npu_inductor_optimization_analysis]] §八（why 侧，2.7 口径）、[[10_aclgraph_deep_analysis]] 差异 8（aclnn/aclop 把本节的 fallback 关与捕获关连通）。
 
 ### 9.1 校正：主 `_inductor` 后端当前是**纯黑名单**（无 soc A/B）
 
@@ -881,4 +881,4 @@ torch_npu 的 lowering 策略可以概括为**"保守 codegen，激进 fallback"
 - [[NPU_MLIR_Backend_Technical_Analysis]]
 - [[10_fx_lowering_to_inductor_ir_analysis]]
 - [[21_npu_inductor_optimization_analysis]] — NPU Inductor 优化思想全景（§9 fallback 的「why」侧，能力门控 §八）
-- [[aclgraph_deep_analysis]] — ACLGraph 捕获关（§9 的 aclnn/aclop 与捕获门禁连通：fallback 到 aclop 会同时破坏融合与捕获）
+- [[10_aclgraph_deep_analysis]] — ACLGraph 捕获关（§9 的 aclnn/aclop 与捕获门禁连通：fallback 到 aclop 会同时破坏融合与捕获）

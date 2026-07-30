@@ -665,4 +665,4 @@ check_memory_pool(
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
-- [[torch_compile_npugraphs_deep_dive]]
+- [[11_torch_compile_npugraphs_deep_dive]]

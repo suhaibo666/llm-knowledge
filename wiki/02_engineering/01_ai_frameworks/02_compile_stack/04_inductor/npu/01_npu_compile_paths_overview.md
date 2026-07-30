@@ -452,10 +452,10 @@ GPU 几乎所有标准 aten op 都有 Triton lowering，dynamic shape 可端到�
 - [[21_torch_npu_upstream_adaptation_analysis]] —— 跨 eager/compile/graph/distributed 的 upstream 对照与补丁债分类，并订正“社区统一 Triton”旧口径
 - [[11_npu_inductor_splittiling_backend_analysis]] — Triton/Inductor default 路径深度分析（本文的三条路径之一）
 - [[NPU_MLIR_Backend_Technical_Analysis]] — MLIR 路径深度分析（本文的三条路径之一；含六阶段适配全景）
-- [[aclgraph_deep_analysis]] — ACLGraph 路径深度分析（本文的三条路径之一）
+- [[10_aclgraph_deep_analysis]] — ACLGraph 路径深度分析（本文的三条路径之一）
 - [[10_NPU_Inductor_Backend_Analysis]] — NPU Inductor 后端集成架构（已有页面）
 - [[10_NPU_Inductor_Backend_Analysis]] — NPU 后端内部机制（已有页面）
 - [[12_npu_compile]] — NPU 编译工作流与配置（已有页面）
-- [[aclgraph]] — ACL Graph 基础集成（已有页面）
+- [[01_aclgraph]] — ACL Graph 基础集成（已有页面）
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — PyTorch Dynamic Shape 全链路（GPU 侧参考）
 - [[24_inductor_codegen_dynamic_shape_analysis]] — Inductor codegen 的 XBLOCK 选择机制

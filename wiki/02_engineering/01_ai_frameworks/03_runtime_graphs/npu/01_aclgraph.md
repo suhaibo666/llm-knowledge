@@ -3,7 +3,7 @@
 ## 目标
 梳理 PyTorch NPU Graphs 的实现原理和使用方法，并给出详细的代码示例（包含训练与推理）及端到端的架构分析。
 
-> NPU Graphs 是 torch_npu 对应 CUDA Graphs 的实现，用于华为昇腾 NPU 设备的性能优化。与 CUDA Graphs 的 API 逐项对应关系、概念/架构/代码示例对比见 [[comparison]]。
+> NPU Graphs 是 torch_npu 对应 CUDA Graphs 的实现，用于华为昇腾 NPU 设备的性能优化。与 CUDA Graphs 的 API 逐项对应关系、概念/架构/代码示例对比见 [[30_comparison]]。
 
 ## 1. 实现原理
 
@@ -274,6 +274,6 @@ sequenceDiagram
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
-- [[torch_compile_npugraphs_deep_dive]]
-- [[aclgraph_multistream_rng_analysis]] —— 多流 fork/join、Event 语义与 graph-safe RNG 算子适配
-- [[comparison]]
+- [[11_torch_compile_npugraphs_deep_dive]]
+- [[21_aclgraph_multistream_rng_analysis]] —— 多流 fork/join、Event 语义与 graph-safe RNG 算子适配
+- [[30_comparison]]

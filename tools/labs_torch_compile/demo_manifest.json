@@ -275,7 +275,7 @@
     },
     {
       "page_id": "d06",
-      "page": "cudagraph_trees_warmup_record_and_replay_analysis.md",
+      "page": "10_cudagraph_trees_warmup_record_and_replay_analysis.md",
       "volume": "D",
       "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
       "case": "cudagraph_replay"
@@ -401,7 +401,7 @@
     },
     {
       "page_id": "f08",
-      "page": "training_inference_cudagraph_and_freezing_analysis.md",
+      "page": "20_training_inference_cudagraph_and_freezing_analysis.md",
       "volume": "F",
       "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
       "case": "inference_freezing_cudagraph"

@@ -542,5 +542,5 @@ Time →
 - [[deepseek_v3_analysis]] — V3 的 RMSNorm + MLA up-projection 重计算
 - [[deepseek_v4_analysis]] — V4 的 selective recomputation 与 SWA KV 策略
 - [[deepseek_v4_cp_analysis]] — CP 场景的尾部 token 重计算策略
-- [[torch_compile_npugraphs_deep_dive]] — NPU 侧 Joint Graph 中的重计算；§3.5-3.6 内存池 Checkpoint/Restore（同名异义，指 allocator 状态快照）
+- [[11_torch_compile_npugraphs_deep_dive]] — NPU 侧 Joint Graph 中的重计算；§3.5-3.6 内存池 Checkpoint/Restore（同名异义，指 allocator 状态快照）
 - [[llm_initiliaze_analysis]] — 内存管理与 meta device 初始化
