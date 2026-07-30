@@ -2,7 +2,7 @@
 
 > 卷别：F · 训练、分布式、扩展与部署  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[f01_compiled_autograd_analysis]]  
+> 前置：[[compiled_autograd_analysis]]  
 > 后续：[[f03_ddp_compile_boundaries_and_optimizer_analysis]]  
 > 最后更新：2026-07-28
 
@@ -219,7 +219,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[f01_compiled_autograd_analysis]]
+- [[compiled_autograd_analysis]]
 - [[f03_ddp_compile_boundaries_and_optimizer_analysis]]
 - [[saved_tensors_recompute_and_runtime_abi_analysis]]
 - [[aotautograd_joint_forward_backward_graphs_analysis]]

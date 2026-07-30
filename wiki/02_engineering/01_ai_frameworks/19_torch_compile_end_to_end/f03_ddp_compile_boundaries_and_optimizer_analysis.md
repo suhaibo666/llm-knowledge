@@ -223,7 +223,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[f01_compiled_autograd_analysis]]
+- [[compiled_autograd_analysis]]
 - [[f02_activation_checkpoint_recompute_and_compile_analysis]]
 - [[f04_fsdp_dtensor_and_distributed_graphs_analysis]]
 - [[04_export_and_distributed/02_distributed_primitives/index]]

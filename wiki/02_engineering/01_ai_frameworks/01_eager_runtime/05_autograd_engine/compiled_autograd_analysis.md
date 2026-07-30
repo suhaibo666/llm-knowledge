@@ -4,7 +4,10 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[production_rollout_fallback_and_monitoring_analysis]]  
 > 后续：[[f02_activation_checkpoint_recompute_and_compile_analysis]]  
-> 最后更新：2026-07-28
+> 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,与 [[autograd_engine_analysis]] 补充显式分工声明)
+
+> [!note] 与 [[autograd_engine_analysis]] 的分工
+> 两页共享同一个 C++ `Engine`/`Node`/`Edge`/`GraphTask`/`AccumulateGrad` 底层抽象(定义与执行细节见 [[autograd_engine_analysis]]),但描述的是**同一引擎的两种运行模式**：[[autograd_engine_analysis]] 讲 eager 模式——`Engine::execute` 在 `.backward()` 时直接遍历 DAG、逐 Node 调 `apply` 执行,不产生任何可编译产物；本页讲 **Compiled Autograd** 模式——同一个 C++ engine 在调度反向时改为驱动一个 Python `AutogradCompilerInstance`（`PythonKeyTracer`）把这次运行时反向"录制"成一张 FX 图，再交给 Dynamo/Inductor 编译执行，命中 cache 后不再重放 eager DAG。换言之：**eager 引擎负责"驱动/调度"，Compiled Autograd 只是给这次驱动接上一个"录制器"**，不是另一套独立反向机制。
 
 ## 1. 它为什么不是 AOTAutograd 的别名
 
@@ -309,6 +312,8 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
+- [[01_eager_runtime/05_autograd_engine/index]] — 本模块 overview(eager Engine 全景 + 与本页的分工)
+- [[autograd_engine_analysis]] — eager 模式下 C++ Engine 如何直接执行反向 DAG(本页驱动的是同一引擎,录制而非替代)
 - [[aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
 - [[aotautograd_and_inductor_failure_localization_analysis]]
 - [[f02_activation_checkpoint_recompute_and_compile_analysis]]

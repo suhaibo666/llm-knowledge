@@ -312,4 +312,4 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 - [[saved_tensors_recompute_and_runtime_abi_analysis]]
 - [[inductor_compile_fx_orchestration_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
-- [[f01_compiled_autograd_analysis]]
+- [[compiled_autograd_analysis]]

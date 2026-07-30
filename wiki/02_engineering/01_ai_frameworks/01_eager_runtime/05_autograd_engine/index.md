@@ -119,6 +119,10 @@ flowchart LR
 
 > 关系而非替代:`torch.compile` 路径下,AOTAutograd 仍**复用** eager autograd 的机制来 trace 出反向(它在 trace 期跑一遍带 autograd 的前向以采集反向),只是把结果固化成了静态图。理解 eager autograd 是理解 03 的前提。
 
+### 与 Compiled Autograd 的关系(同一引擎的第三种运行模式)
+
+除上表的 eager / AOTAutograd 两极外,还有第三种模式——**Compiled Autograd**:同一个 C++ `Engine` 在 `.backward()` 时仍按本页 §建图/调度逻辑驱动执行顺序,但不直接对每个就绪 `Node` 调 `apply()`,而是把它代理给 Python tracer,把这次运行时反向"录制"成 FX 图交给 Dynamo/Inductor 编译执行。它与 eager 共享驱动/调度机制(是运行时录制,不是替代),与 AOTAutograd 的编译期 trace 是两条独立路径。详见 [[compiled_autograd_analysis]]。
+
 ---
 
 ## 页面列表(按层次)
@@ -127,6 +131,7 @@ flowchart LR
 |------|------|---------|
 | [[autograd_engine_quickstart]] | **quick start** | `requires_grad` / 叶子-非叶子 / `grad_fn.next_functions`;自定义 `torch.autograd.Function`(`forward`/`backward`/`save_for_backward`/`mark_dirty`);`no_grad`/`enable_grad`/`inference_mode`;`retain_graph`/`create_graph`;`detect_anomaly` 与 inplace 报错排查 |
 | [[autograd_engine_analysis]] | deep dive | Node/Edge 建图、`sequence_nr`/`topological_nr`、`SavedVariable` 循环引用规避与版本检测、`GraphTask`、多线程 Engine + `ReadyQueue` + 可重入反向、`evaluate_function`/`InputBuffer`、`AccumulateGrad` Layout 契约、`ForwardGrad` JVP、`PyNode` 桥接 |
+| [[compiled_autograd_analysis]] | deep dive | Compiled Autograd:C++ engine 如何驱动 Python tracer 把运行时反向录制成 FX 图、`begin_capture`/`end_capture`、hook/accumulate-grad 重排、专用 DCE、cache specialization、与 DDP/通信的交互 |
 
 ---
 

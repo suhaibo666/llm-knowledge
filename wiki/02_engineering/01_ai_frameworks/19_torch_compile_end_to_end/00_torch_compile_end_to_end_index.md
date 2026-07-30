@@ -114,7 +114,7 @@ B06 OutputGraph
 
 | 编号 | 页面 | 先回答的问题 |
 |---:|---|---|
-| F01 | [[f01_compiled_autograd_analysis]] | Compiled Autograd 与 AOTAutograd 有何不同 |
+| F01 | [[compiled_autograd_analysis]] | Compiled Autograd 与 AOTAutograd 有何不同(2026-07-30 迁入 `01_eager_runtime/05_autograd_engine/`,与 [[autograd_engine_analysis]] 互指划界) |
 | F02 | [[f02_activation_checkpoint_recompute_and_compile_analysis]] | checkpoint 与 AOT recompute 怎样叠加 |
 | F03 | [[f03_ddp_compile_boundaries_and_optimizer_analysis]] | DDP/reducer/optimizer 如何改变 compile region |
 | F04 | [[f04_fsdp_dtensor_and_distributed_graphs_analysis]] | shard、placement、collective 与 rank state 如何入图 |
