@@ -239,6 +239,35 @@ if [ ${#LOGS[@]} -gt 1 ]; then
 fi
 ```
 
+### 常用命令片段
+
+原页在四个脚本之后还留了三条与之同性质的可直接用命令/步骤，此前判重时被连带扫掉，逐字补回。
+
+**1) 统计每个 rank 的 GRAPH BREAK / GUARD FAIL / INDUCTOR 行数**
+
+```bash
+for f in compile_debug_rank*.log; do
+  echo "=== $f ==="
+  echo "GRAPH BREAK: $(grep -c "GRAPH BREAK" "$f")"
+  echo "GUARD FAIL:  $(grep -c "GUARD FAIL" "$f")"
+  echo "RECOMPILE:   $(grep -c "recompil" "$f")"
+  echo "INDUCTOR:    $(grep -c "inductor" "$f")"
+  echo
+done
+```
+
+**2) 从 guards json 提取最常见的 guard（示例）**
+
+```bash
+jq -r '.[]' debug_dumps/export/gm_<ts>/guards.json | sort | uniq -c | sort -nr | head -n 50
+```
+
+（如果没有 `jq`，可用 `sed`/`grep` 简化）
+
+**3) 把某个 gm 的 code 提取成最小 repro 模块（人工步骤）**
+
+* 从 `gm_code.py` 把 `GraphModule` 的 `forward` 与需要的 `__init__`（attributes）复制到新的 `repro_model.py`，写一个小的 `run_repro.py` 给定同样的 `example_inputs` 去 `torch.compile(repro_model, backend=...)` 运行。
+
 ### 决策树第 5 分支：仅在多卡/分布式场景复现
 
 原页决策树共 5 步：GRAPH BREAK 多→Dynamo 问题、recompiles/GUARD FAIL 频繁→guard 问题、
