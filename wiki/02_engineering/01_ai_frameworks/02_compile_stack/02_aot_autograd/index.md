@@ -48,6 +48,7 @@ PatternExpr/PatternMatcherPass、DCE与稳定拓扑排序、rewrite合法性与�
 | [[aotautograd_joint_forward_backward_graphs_analysis]] | deep dive | metadata analysis、joint graph 构造(primals/tangents)、partition 如何抽取 fresh fw/bw Graph、输出/输入 ABI 分层 |
 | [[saved_tensors_recompute_and_runtime_abi_analysis]] | deep dive | saved value 分类、min-cut rematerialization、recompute 节点复制与 reorder、运行时 autograd.Function 拼接 |
 | [[dispatch_modes_proxytensor_faketensor_analysis]] | deep dive(专题) | `__torch_function__`/`__torch_dispatch__`/ProxyTensor/FakeTensor 四层分工，make_fx 怎样协同两套抽象执行状态捕获联合图 |
+| [[activation_checkpoint_recompute_and_compile_analysis]] | deep dive(专题) | 用户层 `torch.utils.checkpoint`(reentrant/non-reentrant、Selective AC policy)如何与 partitioner 的 save/recompute 选择叠加；2026-07-30 迁入,与 [[saved_tensors_recompute_and_runtime_abi_analysis]] 互指划界(用户 API/策略层 vs partitioner 源码/runtime ABI 层) |
 
 > joint graph 上的优化 pass 见 [[joint_graph_passes_guide]](实现于 Inductor `fx_passes/joint_graph.py`)。
 

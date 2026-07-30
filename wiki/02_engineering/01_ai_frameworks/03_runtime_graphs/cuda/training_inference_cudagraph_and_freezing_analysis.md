@@ -315,7 +315,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 ## Related Pages
 
 - [[f07_aotinductor_packaging_and_deployment_analysis]]
-- [[f02_activation_checkpoint_recompute_and_compile_analysis]]
+- [[activation_checkpoint_recompute_and_compile_analysis]]
 - [[cudagraph_trees_warmup_record_and_replay_analysis]]
 - [[compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[compile_latency_cache_and_steady_state_performance_analysis]]
