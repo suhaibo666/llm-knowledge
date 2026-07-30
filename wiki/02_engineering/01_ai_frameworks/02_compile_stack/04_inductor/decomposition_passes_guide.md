@@ -159,5 +159,5 @@ Decomposition 通常应使用 Tensor 运算和 SymInt-safe 的 shape 表达式�
 - [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段放置决策(现含跨框架对照)
 - [[joint_graph_passes_guide]] — decomposition 后的联合图改写
 - [[post_grad_passes_guide]] — 切图后的 ATen pattern
-- [[lowering_analysis]] — 保留 op 并实现 lowering/fallback
+- [[fx_lowering_to_inductor_ir_analysis]] — 保留 op 并实现 lowering/fallback
 - [[inductor_compile_fx_orchestration_analysis]] — compile_fx 把 decomposition table 传给 AOTAutograd 的调用点(该页 §11.3)

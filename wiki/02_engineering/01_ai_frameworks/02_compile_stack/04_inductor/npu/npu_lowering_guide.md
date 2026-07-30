@@ -879,6 +879,6 @@ torch_npu 的 lowering 策略可以概括为**"保守 codegen，激进 fallback"
 - [[02_engineering/01_ai_frameworks/index]]
 - [[NPU_Inductor_Backend_Analysis]]
 - [[NPU_MLIR_Backend_Technical_Analysis]]
-- [[lowering_analysis]]
+- [[fx_lowering_to_inductor_ir_analysis]]
 - [[npu_inductor_optimization_analysis]] — NPU Inductor 优化思想全景（§9 fallback 的「why」侧，能力门控 §八）
 - [[aclgraph_deep_analysis]] — ACLGraph 捕获关（§9 的 aclnn/aclop 与捕获门禁连通：fallback 到 aclop 会同时破坏融合与捕获）

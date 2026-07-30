@@ -106,7 +106,7 @@ GraphLowering 作为 FX Interpreter 执行 lowering。环境值可能是 lazy
 `torch/_inductor/graph.py:1925-2000`）。
 
 loop-level `Pointwise`/`Reduction` 是 fusion-friendly 核心，但不是唯一 IR；extern、
-template、multi-output 等有不同表示。详见 [[17_fx_lowering_to_inductor_ir]]。
+template、multi-output 等有不同表示。详见 [[fx_lowering_to_inductor_ir_analysis]]。
 
 ### 3.5 Scheduler dependency graph
 
@@ -367,6 +367,6 @@ fx_call_targets=add,relu,sum
 - [[fx_graph_core_data_model_analysis]]
 - [[01_eager_runtime/05_autograd_engine/index]]
 - [[aotautograd_joint_forward_backward_graphs_analysis]]
-- [[17_fx_lowering_to_inductor_ir]]
+- [[fx_lowering_to_inductor_ir_analysis]]
 - [[20_scheduler_dependency_graph_fusion_and_ordering]]
 - [[03_runtime_graphs/index]]

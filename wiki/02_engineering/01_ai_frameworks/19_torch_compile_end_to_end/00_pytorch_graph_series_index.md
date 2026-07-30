@@ -100,7 +100,7 @@ flowchart LR
 
 | 编号 | 页面 | 先解决的问题 |
 |---:|---|---|
-| 17 | [[17_fx_lowering_to_inductor_ir]] | 为什么 FX 与代码生成之间还需要一层 IR |
+| 17 | [[fx_lowering_to_inductor_ir_analysis]] | 为什么 FX 与代码生成之间还需要一层 IR |
 | 18 | [[18_inductor_ir_values_loops_layouts_and_buffers]] | loop、寻址、layout 与 storage 如何表达 |
 | 19 | [[19_buffer_liveness_memory_planning_and_reuse]] | Buffer 何时物化、何时释放、如何复用 |
 | 20 | [[20_scheduler_dependency_graph_fusion_and_ordering]] | Scheduler 边为何不同于 FX users |

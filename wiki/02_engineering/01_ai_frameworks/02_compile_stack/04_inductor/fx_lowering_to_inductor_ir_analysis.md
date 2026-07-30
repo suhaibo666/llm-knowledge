@@ -163,6 +163,58 @@ post-grad 子图匹配
 因此“post-grad 匹配成功”不等于“最终产生一个 fused kernel”，而“一个 lowering 返回
 Pointwise”也不等于该 Pointwise 一定单独 materialize。
 
+### 4.3 完整注册 API 面
+
+`register_lowering`只是入口最常用的一个；`lowering.py`按不同粒度还提供多个专用注册器，
+均已核对现存于当前基线（部分与 §4.1 的 wrapper 机制共享同一条 `_register_lowering`
+路径，行号相对旧版参考资料已漂移，以函数名定位为准）：
+
+| API | 用途 | 适用场景 |
+|---|---|---|
+| `register_lowering()`（`lowering.py:535`） | 通用注册装饰器，套 §4.1 的 broadcast/type-promotion/validate wrapper | 所有 op |
+| `register_pointwise()`（`lowering.py:1100`） | 从 pointwise 语义直接生成可融合 loop IR 的快捷注册 | 逐元素 op（add/mul/relu/sin…） |
+| `register_foreach_pointwise()`（`lowering.py:1222`） | foreach 批量 op 注册 | `_foreach_add`/`_foreach_mul` 等 |
+| `register_inplace()` | 原地 op 注册，复用对应 out-of-place lowering | `add_`/`mul_`/`relu_` |
+| `add_needs_realized_inputs()`（`lowering.py:219`） | 声明调用前必须把输入 materialize | 外部库、layout-sensitive op |
+| `add_layout_constraint()`（`lowering.py:227`） | 为 op 约束输入/输出 layout | 外部 kernel 的 contiguous/stride 要求 |
+| `fallback_handler()`（`lowering.py:2714`） | 构造 `FallbackKernel` handler（§7 已详述） | 手工接入其他 registry 时 |
+| `make_fallback()` | 校验 decomposition 冲突、注册 fallback 和 layout constraint 三件事一次做完 | 后端不 lowering、但 eager/custom kernel 可执行的 op |
+| `register_lowering_pattern()`（`torch/_inductor/pattern_matcher.py:2296`） | 见 §4.1.1，post-grad 子图匹配后直接产 IR | lowering-time fusion |
+
+#### 两种最小接入路径
+
+若自定义 op 已有可跑通的外部实现，最省事的接入是纯 fallback：
+
+```python
+import torch
+from torch._inductor.lowering import make_fallback
+
+my_op = torch.ops.my_ns.my_op.default
+make_fallback(my_op, warn=False)
+
+# 注册模块必须在首次 torch.compile 前 import。
+compiled = torch.compile(model)
+```
+
+若希望复用已注册的 IR lowering 组合出一个新 op，直接在 `lowerings`字典里查已注册函数并调用：
+
+```python
+import torch
+from torch._inductor.lowering import lowerings, register_lowering
+
+aten = torch.ops.aten
+my_op = torch.ops.my_ns.bias_sigmoid.default
+
+@register_lowering(my_op, type_promotion_kind=None)
+def lower_bias_sigmoid(x, bias):
+    z = lowerings[aten.add.Tensor](x, bias)
+    return lowerings[aten.sigmoid.default](z)
+```
+
+这里传入 `lowerings[...]`的参数已经是 Inductor IR（而非 FakeTensor/FX Node），所以只能
+在 lowering 内部这样组合；若目标只是表达一个等价 ATen 公式，应优先写
+[[decomposition_passes_guide]]，不要把纯语义展开硬塞进 lowering。
+
 ## 5. `call_function`选择顺序
 
 当前关键路径：
@@ -421,6 +473,77 @@ kernel没有执行计算，所以这些文件只属于`[M] 机制走通、非真
 
 native CPU阻塞结论不能外推为Triton/GPU autotune结论。
 
+## 16. Lowering 提供的具体优化目录
+
+前面各节讲的是 lowering **怎样**把 FX Node 变成 IR；这一节列出 lowering 阶段实际启用了
+哪些具体优化——它们是 §2-§3 的"lazy IR + 延迟决策"机制在具体算子上的落地，不是另一套
+独立设计。以下函数均已核对现存于当前基线，行号相对旧版参考资料普遍有数百行漂移，
+以函数名定位为准：
+
+- **Pointwise 融合基础**：`make_pointwise()`（`lowering.py:731`）把逐元素运算表示成
+  `inner_fn`——一个 lambda，而不是独立 kernel。多个连续 Pointwise 共享同一 index range
+  时可被 Scheduler 融合进同一个 Triton kernel（消除中间 tensor 分配、消除中间结果读写、
+  减少 kernel launch 次数）；例如 `relu(add(a, b))` 两次逐元素操作能融合成一次
+  `d = relu(a + b)`，中间不落盘。
+- **View 零拷贝家族**：`view()`→`View.create()`、`permute()`→`PermuteView.create()`、
+  `squeeze()`→`SqueezeView.create()`、`expand()`→`ExpandView.create()`、
+  `as_strided()`→`ReinterpretView`。这些操作在 lowering 后变成 IR 里的纯 metadata
+  变换，不产生计算也不拷贝数据；后续 Pointwise 消费它们时只是换一种 indexing 方式。
+- **Reduction 优化**：`make_reduction()`（`lowering.py:7269`）、
+  `var_mean_welford_()`（`lowering.py:7425`，数值稳定的单遍 Welford 在线算法）、
+  `var_mean_sum_()`（两步退化路径，小规模 reduction 用简单双步代替 Welford）；
+  `mean()`（`lowering.py:7333`）对 fp16/bf16 先升到 fp32 再计算，避免精度损失；
+  `OnlineSoftmaxReduction`（`lowering.py:9461` 附近使用点）让 softmax 的 max 和 sum
+  单 pass 完成。
+- **常量折叠与提升**：`promote_constants()`（`lowering.py:582`）把数值常量（int/float/
+  `sympy.Basic`）包装为 `ir.Constant`/`IndexingConstant`，在 codegen 时直接内联为
+  立即数，避免额外的 tensor 创建和读取。
+- **智能 Fallback**：对暂无原生 lowering 的 op（如某些大尺寸 `aten.sort.stable`），
+  `fallback_handler()`自动回退到 `ir.FallbackKernel`，调用 ATen 库实现——但如 §6 所述，
+  这是**受 allow-list/decomposition 存在性约束的路径**，不是"lowering 缺失时总能
+  自动兜底"的无条件保证。
+- **Foreach 水平融合**：`make_foreach_pointwise()`/`foreach_group_loop()`把
+  `_foreach_add`/`_foreach_mul`等批量操作中的同类型 op 合并进同一个 combo kernel，
+  减少 kernel launch 数——常见于优化器多参数更新场景。
+- **量化 op 融合**：`quantize_per_tensor`/`dequantize_per_channel`等被 lowering 为
+  Pointwise，与前后 op 可融合，避免量化/反量化的额外内存往返。
+- **Layout 约束优化**：`maybe_layout_constraints()`（`lowering.py:186`）、
+  `tag_to_layout_constraint()`（`lowering.py:200`）对需要特定内存布局的 op（如 `mm`
+  要求连续内存）在 lowering 时插入 stride/layout 要求，把最优布局的最终决策留给
+  Scheduler，减少不必要的提前拷贝。
+
+这些优化能够生效，根本原因是 §2-§3 已经建立的模型：lowering 产出的是 lazy IR
+（`inner_fn` 延迟求值 + 全局图可见性），而不是像 eager 那样每个 op 立即执行——只有
+延迟到 realization/codegen 阶段才决定的信息（融合边界、内存布局、模板选择），
+才有机会被这些优化利用。
+
+## 17. 写一个新 Lowering 时的检查清单
+
+面向"给某个 op 补 lowering"这个具体任务，按优先级排列：
+
+**必须做的基础**：逐元素 op 表示为 `inner_fn` lambda（复用 `make_pointwise()`）；
+view/reshape/permute/slice 只改 indexing、不要引入拷贝；遵循 PyTorch 类型提升语义
+（复用 `register_lowering`的 wrapper，不要自己重写）；正确处理 shape 广播；确保无法
+lower 的路径有 fallback 可用。
+
+**高优先级**：reduction 涉及 fp16/bf16 时数值稳定性（先升精度）；能用 Welford 单遍
+算法就不要多遍扫描；同类 foreach op 合并成一个 combo kernel；量化相关 cast 尽量内联
+消除；layout 决策尽量延后交给 Scheduler，不要在 lowering 时就强制 contiguous。
+
+**进阶**：attention 一类 max+sum 单 pass（OnlineSoftmax 模式）；小 tensor `cat`
+融合为 pointwise；`addcmul`一类可用 FMA 指令；`emulate_precision_casts`一类精度
+仿真；matmul/conv 等需要 autotuning 的多算法 template 选择（见
+[[inductor_autotuning_analysis]]）。
+
+设计上始终围绕两个模式：**注册表**（`lowerings` 字典把 `op → lowering_fn` 映射开放
+扩展）与**lambda 延迟计算**（`inner_fn` 只描述"如何计算"，不提前执行）——新 lowering
+应该复用而不是绕开这两个模式，并在返回前让 `validate_ir()`检查结构合法性。
+
+已知局限（写作本节时按当前基线核对，可能随版本变化）：complex tensor 的 lowering
+支持不完整；unbacked symbol 参与的 slice/select lowering 路径相对复杂；
+`OnlineSoftmaxReduction`当前不支持 split reduction。这些是查文档时的具体切入点，
+不是稳定不变的架构限制。
+
 ## 学习顺序
 
 - 上一篇：[[graph_rewrite_legality_validation_and_complexity_analysis]]
@@ -432,4 +555,7 @@ native CPU阻塞结论不能外推为Triton/GPU autotune结论。
 - [[graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[18_inductor_ir_values_loops_layouts_and_buffers]]
 - [[20_scheduler_dependency_graph_fusion_and_ordering]]
-- [[lowering_analysis]]
+- [[decomposition_passes_guide]] — 等价 ATen 展开与 lowering 的选择边界
+- [[scheduler_analysis]] — IR 产出后的依赖与融合
+- [[codegen_extension_guide]] — 复用或扩展目标 codegen
+- [[inductor_autotuning_analysis]] — matmul/conv 等 template/algorithm choice 的 autotune 生命周期

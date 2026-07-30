@@ -465,7 +465,7 @@ Observed artifacts/performance:
 ## 学习顺序
 
 - 上一篇：[[graph_pass_pipeline_ordering_and_fixpoint_analysis]]
-- 下一篇：[[17_fx_lowering_to_inductor_ir]]
+- 下一篇：[[fx_lowering_to_inductor_ir_analysis]]
 
 ## Related Pages
 

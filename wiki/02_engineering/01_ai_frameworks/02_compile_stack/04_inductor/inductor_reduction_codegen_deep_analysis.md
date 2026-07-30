@@ -4,7 +4,7 @@
 > 核心代码位置：本地 upstream `E:\97-codes\pytorch\pytorch`：`torch/_inductor/codegen/triton.py`、`codegen/simd.py`、`ir.py`
 > 最后更新：2026-06-17
 
-> 这是 [[inductor_codegen_analysis]] / [[lowering_analysis]] 未展开的 reduction codegen 细节，也是 [[npu_inductor_linearize_backend_analysis]] 中 NPU「persistent 恒关 + r 轴 rsplit」的**上游基线**。
+> 这是 [[inductor_codegen_analysis]] / [[fx_lowering_to_inductor_ir_analysis]] 未展开的 reduction codegen 细节，也是 [[npu_inductor_linearize_backend_analysis]] 中 NPU「persistent 恒关 + r 轴 rsplit」的**上游基线**。
 
 ---
 
@@ -82,7 +82,7 @@ rsplit_start = rsplit_chunk * rsplit_id
 
 - [[inductor_gpu_kernel_dispatch_model]] — kernel 骨架与 grid（CooperativeReductionGrid 在此）
 - [[inductor_codegen_analysis]] — codegen 概览
-- [[lowering_analysis]] — Reduction IR（make_reduction / Welford）
+- [[fx_lowering_to_inductor_ir_analysis]] — Reduction IR（make_reduction / Welford）
 - [[scheduler_analysis]] — 融合（含 MixOrderReductions）
 - [[inductor_autotuning_analysis]] — reduction config（R0_BLOCK / num_warps）
 - [[npu_inductor_linearize_backend_analysis]] — NPU persistent 恒关 + r 轴 rsplit

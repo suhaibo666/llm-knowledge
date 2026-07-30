@@ -207,7 +207,7 @@
     },
     {
       "page_id": "c17",
-      "page": "17_fx_lowering_to_inductor_ir.md",
+      "page": "fx_lowering_to_inductor_ir_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "inductor_ir",

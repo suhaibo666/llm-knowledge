@@ -1,6 +1,6 @@
 # 18 · Inductor IR：Value、Loop、Layout 与 Buffer
 
-> 前置：[[17_fx_lowering_to_inductor_ir]]
+> 前置：[[fx_lowering_to_inductor_ir_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -371,13 +371,13 @@ stdout中的六项`*_observed`必须全为`True`，否则脚本直接`AssertionE
 
 ## 学习顺序
 
-- 上一篇：[[17_fx_lowering_to_inductor_ir]]
+- 上一篇：[[fx_lowering_to_inductor_ir_analysis]]
 - 下一篇：[[19_buffer_liveness_memory_planning_and_reuse]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[17_fx_lowering_to_inductor_ir]]
+- [[fx_lowering_to_inductor_ir_analysis]]
 - [[19_buffer_liveness_memory_planning_and_reuse]]
 - [[20_scheduler_dependency_graph_fusion_and_ordering]]
-- [[lowering_analysis]]
+- [[fx_lowering_to_inductor_ir_analysis]]

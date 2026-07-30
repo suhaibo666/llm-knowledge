@@ -6,6 +6,46 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 8 组 C（C17 vs lowering_analysis 归一）
+
+**Type**: Move + Redundancy Merge（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 8 组 C）
+
+C17（435 行）`git mv` 为 `02_compile_stack/04_inductor/fx_lowering_to_inductor_ir_analysis.md`
+（同目录内平移，标题保留原"17 ·"前缀）。
+
+**vs `lowering_analysis.md`（448 行）判重**：两页体裁互补——C17 是"GraphLowering 怎样把
+FX 解释成 IR"的机制权威页（Interpreter 状态模型、决策树式 `call_function` 选择、
+realization 时机），`lowering_analysis` 是函数/API 级完整参考。用本地 pinned pytorch
+checkout（`e8f97c1a6e...`）逐条核验后：
+
+- §一/§二/§四/Call Chain/Data Flow/Key Design Decisions/Beginner Summary：与 C17 §1-§4
+  概念重叠，且部分表述（"fallback 兜底保证编译永不失败"）已被 C17 §6 证伪，页内自身也已用
+  `[!注]` 标注这些旧结论不成立并指回 C17——删除，不搬运。
+- §2.2/2.2.1/2.2.2 完整注册 API 面（`register_pointwise`/`register_foreach_pointwise`/
+  `add_needs_realized_inputs`/`add_layout_constraint`/`make_fallback` 等 C17 §4 未点名的
+  API）+ 两个实操接入示例（纯 fallback 接入、复用已有 lowering 组合新 op）：**独有，
+  改写并入 C17 新增 §4.3**，全部函数位置逐一核验现存（行号相对旧参考漂移 200-1500 行
+  不等，以函数名定位为准，页内注明）。
+- §三"Lowering 做了什么优化"完整八类目录（Pointwise 融合基础/View 零拷贝家族/Reduction
+  优化含 Welford 与 OnlineSoftmax/常量折叠提升/智能 Fallback/Foreach 水平融合/量化 op
+  融合/Layout 约束优化）：**独有，改写并入 C17 新增 §16**，逐函数核验存在
+  （`make_pointwise`/`make_reduction`/`var_mean_welford_`/`promote_constants`/
+  `maybe_layout_constraints` 等）。
+- §五"自己做 Lowering 要关注的优化点"三级检查清单（基础/高优先级/进阶）+ Questions &
+  Uncertainties（complex tensor 支持不完整、unbacked symbol slice/select 复杂、
+  OnlineSoftmax 不支持 split reduction）：**独有，改写并入 C17 新增 §17**。
+
+**入链修复**：C17 基名改名影响 12 个文件；`lowering_analysis` 删除后 14 个外部文件
+（含 `PyTorch_Inductor_Technical_Analysis`、`torch_compile_architecture`、
+`inductor_reduction_codegen_deep_analysis`、`npu_lowering_guide` 等）重定向到
+[[fx_lowering_to_inductor_ir_analysis]]；changelog 1 处历史活链接降级为反引号
+（另 1 处已是逐项反引号包裹，未受影响）。
+
+**配套改动**：`demo_manifest.json` c17 `page` 字段与 `test_volume_demo_contract.py` 的
+`_C_PAGE_ROOTS` 同步新增 `c17 → 04_inductor`。
+
+**校验**：`python tools/check_links.py`：pages 384→383，broken=0；`pytest tools/ -q`：77 passed。
+
 ## 2026-07-30：知识库结构整改 P4 Task 8 组 B（C09/C10 vs aotautograd_analysis 1460 行归一）
 
 **Type**: Move + Redundancy Merge + New Specialist Page（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 8 组 B）
@@ -790,7 +830,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **方法论升级**：重写 `fx_pass_optimization_methodology`（2026-07-30 起并入 [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]，详见该日期 changelog 条目）的权威主干，完整覆盖 Dynamo → Pre-Grad → AOT/Decomposition → Joint → Post-Grad → Lowering → Scheduler → Codegen；每阶段均回答“是什么、为什么、适合做什么、为什么不放相邻阶段”，新增选择表、放置规则、六问设计法和验证矩阵。
 - **补齐三块缺失内容**：新增 [[dynamo_pass_methodology]]（backend callable/`register_backend` 边界）、[[decomposition_passes_guide]]（decomp table、AOT 注入位置、注册/选择方法）、[[codegen_extension_guide]]（`BaseScheduling` + Wrapper + `DeviceOpOverrides` + `register_backend_for_device`）。
 - **三阶段 Pass 指南纠错**：[[pre_grad_passes_guide]] 订正 non-functional/non-normalized IR、真实执行顺序、`pre_grad_custom_pass(Graph)->None` 和缺失 `PatternMatcherPass` import；[[joint_graph_passes_guide]] 订正 `pass_patterns` 所属模块、两轮顺序、Graph hook 契约和“空 hook 确保加载”错误；[[post_grad_passes_guide]] 补真实全流程、三轮 pattern、inference-aware hook、通信 bucketing 与 reinplace 尾部不变量。
-- **Lowering/Scheduler/Codegen 纠错**：[[lowering_analysis]] 订正“Post-Grad 在 Lowering 之后”的错误顺序并补 `register_lowering`/fallback API 示例；[[scheduler_analysis]] 明确真实接口是 `_pre/_post_fusion_custom_pass(list[BaseSchedulerNode]) -> list[...]`，将 `GraphLowering`/`node.fusable` 旧示例标为 deprecated；[[inductor_codegen_analysis]] 更新固定基线入口并链接完整扩展指南。
+- **Lowering/Scheduler/Codegen 纠错**：`lowering_analysis`（历史活链接，该页已于 2026-07-30 判重并入 [[fx_lowering_to_inductor_ir_analysis]]，按"历史不回写"惯例降级为反引号）订正“Post-Grad 在 Lowering 之后”的错误顺序并补 `register_lowering`/fallback API 示例；[[scheduler_analysis]] 明确真实接口是 `_pre/_post_fusion_custom_pass(list[BaseSchedulerNode]) -> list[...]`，将 `GraphLowering`/`node.fusable` 旧示例标为 deprecated；[[inductor_codegen_analysis]] 更新固定基线入口并链接完整扩展指南。
 - **动态形状方法修正**：把“遇到 SymInt 一律跳过”改为“符号恒等或 ShapeEnv/guard 可证明则支持，无法证明才拒绝”。同步更新 Dynamo/Inductor 索引与交叉链接。
 
 ---

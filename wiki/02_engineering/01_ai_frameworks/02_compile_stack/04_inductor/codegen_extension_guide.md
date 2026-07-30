@@ -218,6 +218,6 @@ register_device_op_overrides("my_accel", MyDeviceOps())
 
 - [[inductor_codegen_analysis]] — 现有 Inductor codegen 调用链与实现分析
 - [[scheduler_analysis]] — 融合组和调度顺序如何形成
-- [[lowering_analysis]] — 新 op 如何进入现有 IR/codegen
+- [[fx_lowering_to_inductor_ir_analysis]] — 新 op 如何进入现有 IR/codegen
 - [[inductor_gpu_kernel_dispatch_model]] — GPU kernel indexing/dispatch 基线
 - [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段放置决策(现含跨框架对照)

@@ -350,4 +350,4 @@ Inductor 的 codegen 对 dynamic shape 的处理是一个**贯穿 kernel 生成�
 - [[unbacked_symint_analysis]] — Unbacked SymInt 深度分析：数据相关 shape 的处理机制
 - [[02_engineering/01_ai_frameworks/index]]
 - [[inductor_codegen_analysis]]
-- [[lowering_analysis]]
+- [[fx_lowering_to_inductor_ir_analysis]]

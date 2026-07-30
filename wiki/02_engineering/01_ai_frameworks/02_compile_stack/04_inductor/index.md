@@ -18,12 +18,12 @@
 | 需求 | 入口 |
 |---|---|
 | 建立“为什么这样设计”的连续心智模型并运行Lab | [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] |
-| FX→IR职责与fallback/custom lowering | [[19_torch_compile_end_to_end/17_fx_lowering_to_inductor_ir]] |
+| FX→IR职责与fallback/custom lowering | [[fx_lowering_to_inductor_ir_analysis]] |
 | IR value/loop/layout/buffer与index | [[19_torch_compile_end_to_end/18_inductor_ir_values_loops_layouts_and_buffers]] |
 | liveness、reuse、静态peak与runtime边界 | [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]] |
 | Scheduler dependency/fusion/reorder | [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering]] |
 | kernel/wrapper/autotune/provenance | [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]] |
-| 查某个子系统的完整函数/API清单 | 本目录下`lowering_analysis`、`scheduler_analysis`、`inductor_codegen_analysis`等专题页 |
+| 查某个子系统的完整函数/API清单 | 本目录下`fx_lowering_to_inductor_ir_analysis`、`scheduler_analysis`、`inductor_codegen_analysis`等专题页 |
 
 autotuning负责搜索/测量候选并选择winner；[[02_compile_stack/06_compile_cache/index]]讨论winner、graph
 artifact与compiled module如何复用。两者相邻但不是同一机制：一次autotune可能写cache，
@@ -54,7 +54,7 @@ artifact与compiled module如何复用。两者相邻但不是同一机制：一
 | 页面 | 核心主题 |
 |------|---------|
 | [[decomposition_passes_guide]] | **Decomposition 开发**：是什么/为什么、AOT 注入位置、关键 API、注册示例、与 Graph Pattern/Lowering 的选择边界 |
-| [[lowering_analysis]] | **FX → Inductor IR**：注册/IR/fallback/layout API、接入示例、为什么在此阶段 |
+| [[fx_lowering_to_inductor_ir_analysis]] | **FX → Inductor IR**：注册/IR/fallback/layout API、接入示例、为什么在此阶段 |
 | [[scheduler_analysis]] | **调度与融合**：依赖/融合决策、`_pre/_post_fusion_custom_pass` 真实签名、错误旧接口辨析 |
 | [[inductor_codegen_analysis]] | 现有代码生成策略、kernel、wrapper 与调用链 |
 | [[codegen_extension_guide]] | **Codegen 开发**：`BaseScheduling`、Wrapper、`DeviceOpOverrides`、设备注册骨架与验证清单 |
@@ -107,7 +107,7 @@ artifact与compiled module如何复用。两者相邻但不是同一机制：一
 - [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 编号化端到端课程：卷 C 的 lowering/codegen 与卷 D 的 artifact/runtime
 - [[02_compile_stack/01_dynamo/index]] — 上游:图捕获
 - [[02_compile_stack/02_aot_autograd/index]] — 上游:前/反向分解
-- [[19_torch_compile_end_to_end/17_fx_lowering_to_inductor_ir]] — 当前基线的 FX → Inductor IR 边界
+- [[fx_lowering_to_inductor_ir_analysis]] — 当前基线的 FX → Inductor IR 边界
 - [[19_torch_compile_end_to_end/18_inductor_ir_values_loops_layouts_and_buffers]] — 当前基线的IR值、循环、layout与buffer
 - [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]] — 当前基线的liveness、reuse与peak边界
 - [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering]] — 当前基线的 scheduler 依赖图、融合与保序

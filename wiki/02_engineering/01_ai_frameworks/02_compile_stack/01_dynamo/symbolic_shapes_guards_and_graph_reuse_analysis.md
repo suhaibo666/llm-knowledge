@@ -490,7 +490,7 @@ def call(args):
 - [[graph_values_metadata_and_signatures_analysis]]
 - [[graph_capture_frontends_and_tracing_analysis]]
 - [[graph_rewrite_legality_validation_and_complexity_analysis]]
-- [[17_fx_lowering_to_inductor_ir]]
+- [[fx_lowering_to_inductor_ir_analysis]]
 - [[21_codegen_kernel_mapping_autotuning_and_provenance]]
 - [[dynamic_shapes_generalization_and_fallback_analysis]] — Dynamo 侧自动泛化行为面
 - [[unbacked_symint_analysis]] — unbacked 专项纵深

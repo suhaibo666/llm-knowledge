@@ -140,7 +140,7 @@ TORCH_COMPILE_DEBUG=1 python train.py
 - 总览:[[torch_compile_architecture]] — Dynamo → AOTAutograd → Inductor 全景
 - compile_fx 编排:[[inductor_compile_fx_orchestration_analysis]] — 为什么先调 AOTAutograd、fw/bw compiler 分工、§0 全链路全景图
 - 调度器:[[scheduler_analysis]] — 融合算法与调度
-- 降级:[[lowering_analysis]] — FX 算子 → Inductor IR
+- 降级:[[fx_lowering_to_inductor_ir_analysis]] — FX 算子 → Inductor IR
 - 动态形状:[[symbolic_shapes_guards_and_graph_reuse_analysis]]
 - 调试:[[02_compile_stack/07_debugging/index]]
 - NPU 后端:[[02_compile_stack/04_inductor/npu/index]]
@@ -151,7 +151,7 @@ TORCH_COMPILE_DEBUG=1 python train.py
 - [[torch_compile_architecture]]
 - [[inductor_compile_fx_orchestration_analysis]]
 - [[scheduler_analysis]]
-- [[lowering_analysis]]
+- [[fx_lowering_to_inductor_ir_analysis]]
 - [[symbolic_shapes_guards_and_graph_reuse_analysis]]
 - [[02_compile_stack/07_debugging/index]]
 - [[02_compile_stack/04_inductor/npu/index]]

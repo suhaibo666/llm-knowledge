@@ -6,7 +6,7 @@
 
 > 聚焦 PyTorch Inductor 中端到端编译管线**未展开**的「后端选择 / IR 设计 / 配置与调优 / 后端扩展」深度主题，基于 upstream 源码分析。
 >
-> 端到端 stage-by-stage 编译流程（Dynamo → AOT Autograd → Decomposition → FX Passes → Lowering → Scheduler → CodeGen）分散在 04_inductor 目录各阶段专题页（[[pre_grad_passes_guide]]/[[joint_graph_passes_guide]]/[[post_grad_passes_guide]]/[[decomposition_passes_guide]]/[[lowering_analysis]]/[[scheduler_analysis]]/[[inductor_codegen_analysis]]，导航见 [[02_compile_stack/04_inductor/index]]）；compile_fx 顶层编排入口见 [[inductor_compile_fx_orchestration_analysis]]。本文聚焦其未深入的 **后端/IR/配置** 深度，不重复 stage 走读。
+> 端到端 stage-by-stage 编译流程（Dynamo → AOT Autograd → Decomposition → FX Passes → Lowering → Scheduler → CodeGen）分散在 04_inductor 目录各阶段专题页（[[pre_grad_passes_guide]]/[[joint_graph_passes_guide]]/[[post_grad_passes_guide]]/[[decomposition_passes_guide]]/[[fx_lowering_to_inductor_ir_analysis]]/[[scheduler_analysis]]/[[inductor_codegen_analysis]]，导航见 [[02_compile_stack/04_inductor/index]]）；compile_fx 顶层编排入口见 [[inductor_compile_fx_orchestration_analysis]]。本文聚焦其未深入的 **后端/IR/配置** 深度，不重复 stage 走读。
 >
 > NPU / 昇腾（Ascend）后端适配见 npu/[[NPU_Inductor_Backend_Analysis]]。
 
@@ -43,7 +43,7 @@ graph TB
     style F fill:#c8e6c9
 ```
 
-各阶段**过程性走读**（每个阶段做了什么、关键 Pass、调用链）已在 04_inductor 目录各专题页（[[pre_grad_passes_guide]]/[[joint_graph_passes_guide]]/[[post_grad_passes_guide]]/[[decomposition_passes_guide]]/[[lowering_analysis]]/[[scheduler_analysis]]/[[inductor_codegen_analysis]]）中逐一覆盖，本文不再重复。本文聚焦以下贯穿/纵深主题：
+各阶段**过程性走读**（每个阶段做了什么、关键 Pass、调用链）已在 04_inductor 目录各专题页（[[pre_grad_passes_guide]]/[[joint_graph_passes_guide]]/[[post_grad_passes_guide]]/[[decomposition_passes_guide]]/[[fx_lowering_to_inductor_ir_analysis]]/[[scheduler_analysis]]/[[inductor_codegen_analysis]]）中逐一覆盖，本文不再重复。本文聚焦以下贯穿/纵深主题：
 
 - **§2 后端选择与配置机制**：`device_codegens` 注册表、`register_backend_for_device`、配置系统与编译模式——决定了「用哪个后端、以什么配置编译」。
 - **§3 Inductor IR 数据结构设计**：`TensorBox`/`Buffer`/`Loops`/`Pointwise`/`Reduction`/`View` 等核心 IR 节点的继承关系与职责。
@@ -204,7 +204,7 @@ compiled_model = torch.compile(
 ---
 
 ## Inductor IR 数据结构设计
-阶段1 Graph Lowering（FX Graph → Inductor IR）的**过程性走读**（`GraphLowering.run_node`、placeholder/call_function 分派、符号形状与 mutation 处理）见 [[lowering_analysis]]。此处只剖析 Lowering 产物——Inductor IR 的核心数据结构设计。
+阶段1 Graph Lowering（FX Graph → Inductor IR）的**过程性走读**（`GraphLowering.run_node`、placeholder/call_function 分派、符号形状与 mutation 处理）见 [[fx_lowering_to_inductor_ir_analysis]]。此处只剖析 Lowering 产物——Inductor IR 的核心数据结构设计。
 
 > **注**：以下结构为简化模型（illustrative），实际实现请以源码为准。类名和成员可能与源码有细微差别，例如 Pointwise 的实现细节、View 存储 offset 的具体形式、Buffer 是否携带 is_constant 标记等。
 
@@ -284,7 +284,7 @@ classDiagram
 > - `Pointwise` → `Loops` → `IRNode`
 > - `Reduction` → `Loops` → `IRNode`
 
-> `TensorBox`/`StorageBox` 如何用「指针摆动（swing）」将 in-place mutation 函数化，以及 `ComputedBuffer`/`ExternKernel`/`FallbackKernel`/`TemplateBuffer` 的职责，见 [[lowering_analysis]]。
+> `TensorBox`/`StorageBox` 如何用「指针摆动（swing）」将 in-place mutation 函数化，以及 `ComputedBuffer`/`ExternKernel`/`FallbackKernel`/`TemplateBuffer` 的职责，见 [[fx_lowering_to_inductor_ir_analysis]]。
 
 ---
 
@@ -1692,7 +1692,7 @@ result = compiled_model(a, b, c)
 
 - [[02_engineering/01_ai_frameworks/index]]
 - [[inductor_compile_fx_orchestration_analysis]] — compile_fx 顶层编排入口（本文聚焦后端/IR 深度，不重复 stage 走读——stage 走读见 04_inductor 目录各专题页）
-- [[lowering_analysis]] — FX → Inductor IR lowering 详解
+- [[fx_lowering_to_inductor_ir_analysis]] — FX → Inductor IR lowering 详解
 - [[scheduler_analysis]] — 调度器与融合决策流程
 - [[inductor_codegen_analysis]] — 代码生成策略与 kernel 融合
 - [[inductor_memory_management_analysis]] — 内存分配管理全栈三层（本文 §6 内存规划/§7 CUDA Graphs 的源码级展开）
