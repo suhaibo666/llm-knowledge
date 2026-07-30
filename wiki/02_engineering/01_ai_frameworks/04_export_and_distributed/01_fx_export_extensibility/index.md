@@ -107,11 +107,13 @@ flowchart LR
 
 ## 页面列表(按层次)
 
+> **段位与阅读顺序**(kb-reorg P4 Task 9.5,2026-07-30):段 0(01-09)入门;段 1(10-19)核心机制——FX/export/custom-op/functorch 综合深潜;段 2(20-29)深潜/专题——custom op 作为编译器边界契约的窄主题深挖,建立在 10 号页对 custom_op/Library 的理解之上。
+
 | 页面 | 层次 | 核心主题 |
 |------|------|---------|
-| [[fx_export_custom_op_quickstart]] | **保留的 quick start** | 最小可用路径:`symbolic_trace` + 遍历/插点改写 `Graph` + `recompile`/`lint`;写一个 `PassBase`;`export` + `dynamic_shapes`(`Dim`)+ 查看 `graph_signature`/`range_constraints`/`module()`;用 `torch.library.custom_op` + `register_kernel`/`register_fake` 注册算子;`vmap`/`functional_call` 用法 |
-| [[fx_graph_export_and_custom_ops_analysis]] | **保留的 deep dive** | 源码级:Proxy 拦截与 `TracerBase.create_proxy`、Node/Graph 双向链表 IR 与 use-def、`GraphModule` 代码生成 + linecache、`PassBase.__call__` 前置/变换/后置、`ExportedProgram` 的 lifted params/buffers 与约束、`Library`/`custom_op` 的分发与 autograd 桥接、functorch 的 BatchedTensor 语义 |
-| [[custom_operators_fake_kernels_and_decompositions_analysis]] | deep dive(专题) | custom op 作为"编译器边界契约"的深度分析:fake kernel 正确性要求、mutation/version 与 ADInplaceOrView、decomposition/direct lowering/fallback 的选择、失败定位分层、测试矩阵;2026-07-30 迁入,与上一篇 §7 判重后保留独立(独有内容 >50%),详见页头判重结论 |
+| [[01_fx_export_custom_op_quickstart]] | **保留的 quick start**(段 0) | 最小可用路径:`symbolic_trace` + 遍历/插点改写 `Graph` + `recompile`/`lint`;写一个 `PassBase`;`export` + `dynamic_shapes`(`Dim`)+ 查看 `graph_signature`/`range_constraints`/`module()`;用 `torch.library.custom_op` + `register_kernel`/`register_fake` 注册算子;`vmap`/`functional_call` 用法 |
+| [[10_fx_graph_export_and_custom_ops_analysis]] | **保留的 deep dive**(段 1) | 源码级:Proxy 拦截与 `TracerBase.create_proxy`、Node/Graph 双向链表 IR 与 use-def、`GraphModule` 代码生成 + linecache、`PassBase.__call__` 前置/变换/后置、`ExportedProgram` 的 lifted params/buffers 与约束、`Library`/`custom_op` 的分发与 autograd 桥接、functorch 的 BatchedTensor 语义 |
+| [[20_custom_operators_fake_kernels_and_decompositions_analysis]] | deep dive(专题,段 2) | custom op 作为"编译器边界契约"的深度分析:fake kernel 正确性要求、mutation/version 与 ADInplaceOrView、decomposition/direct lowering/fallback 的选择、失败定位分层、测试矩阵;2026-07-30 迁入,与上一篇 §7 判重后保留独立(独有内容 >50%),详见页头判重结论 |
 | [[02_compile_stack/03_graph_ir_and_passes/index]] | **cross-domain reference** | FX 图的数据结构、改图原语、PatternMatcher/DCE/保序与合法性验证全套索引(AOT 正反向分图见 [[02_compile_stack/02_aot_autograd/index]] 的 [[11_aotautograd_joint_forward_backward_graphs_analysis]]/[[12_saved_tensors_recompute_and_runtime_abi_analysis]]) |
 | [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] | **current source-faithful series** | 图 IR 设计动机、FX 数据结构/值语义、捕获与规范化、改图原语、PatternMatcher、DCE/保序、合法性与复杂度；旧页冲突时以此系列的固定源码定位为准 |
 
@@ -136,8 +138,8 @@ flowchart LR
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 编号化端到端课程：卷 C 讲 FX 图，卷 F 讲 custom op/backend/AOTI
-- [[fx_export_custom_op_quickstart]] — 本模块 quick start
-- [[fx_graph_export_and_custom_ops_analysis]] — 本模块 deep dive
+- [[01_fx_export_custom_op_quickstart]] — 本模块 quick start
+- [[10_fx_graph_export_and_custom_ops_analysis]] — 本模块 deep dive
 - [[02_compile_stack/03_graph_ir_and_passes/index]] — FX IR 如何进入改图、pattern 与 Inductor 底座（AOT 分图见 [[02_compile_stack/02_aot_autograd/index]]）
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前系统化图编译主线
 - [[02_compile_stack/01_dynamo/index]]

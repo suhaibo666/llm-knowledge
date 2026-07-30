@@ -7,9 +7,11 @@
 
 ## 页面列表
 
+> **段位与阅读顺序**(kb-reorg P4 Task 9.5,2026-07-30):本目录仅 1 篇内容页,无 quickstart/深潜层级差异,作为核心比较内容归入段 1(10)。
+
 | 页面 | 类型 | 核心主题 |
 |------|------|---------|
-| [[mindspore_compiler_analysis]] | Analysis | MindSpore 编译器:ANF 图、MindCompiler Pass、AKG Polyhedral、ParallelAuto(概念级,基于公开资料)[§5.3 含昇腾 NPU 特化] |
+| [[10_mindspore_compiler_analysis]] | Analysis(段 1) | MindSpore 编译器:ANF 图、MindCompiler Pass、AKG Polyhedral、ParallelAuto(概念级,基于公开资料)[§5.3 含昇腾 NPU 特化] |
 
 ---
 

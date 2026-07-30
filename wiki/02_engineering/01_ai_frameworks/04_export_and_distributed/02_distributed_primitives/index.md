@@ -28,7 +28,7 @@
 
 ### 再一层边界:原语本身 vs 与 `torch.compile` 的接入边界
 
-[[c10d_ddp_fsdp_dtensor_analysis]] 讲的是这些原语**本身**怎么实现(Reducer 怎么分桶、FlatParameter 怎么 shard/unshard、DTensor 怎么传播 placement)——不涉及 `torch.compile`。[[ddp_compile_boundaries_and_optimizer_analysis]]、[[fsdp_dtensor_and_distributed_graphs_analysis]] 讲的是这些原语与 Dynamo/AOTAutograd/Inductor **相遇时**新增的一层问题:DDPOptimizer 为什么要按 DDP bucket 反向切分 Dynamo FX 图、FSDP 为什么要求 `use_orig_params=True` 且 Dynamo 需跳过其 wrapper frame、每 rank local graph 与 collective 顺序如何在编译期保持一致。两组页面互补,不重叠——本模块 deep dive 之后若要理解"编译器怎么处理这些原语",接着读后两篇。
+[[10_c10d_ddp_fsdp_dtensor_analysis]] 讲的是这些原语**本身**怎么实现(Reducer 怎么分桶、FlatParameter 怎么 shard/unshard、DTensor 怎么传播 placement)——不涉及 `torch.compile`。[[20_ddp_compile_boundaries_and_optimizer_analysis]]、[[21_fsdp_dtensor_and_distributed_graphs_analysis]] 讲的是这些原语与 Dynamo/AOTAutograd/Inductor **相遇时**新增的一层问题:DDPOptimizer 为什么要按 DDP bucket 反向切分 Dynamo FX 图、FSDP 为什么要求 `use_orig_params=True` 且 Dynamo 需跳过其 wrapper frame、每 rank local graph 与 collective 顺序如何在编译期保持一致。两组页面互补,不重叠——本模块 deep dive 之后若要理解"编译器怎么处理这些原语",接着读后两篇。
 
 ### 通信底座:c10d(ProcessGroup + Backend + Work)
 
@@ -125,12 +125,14 @@ flowchart TB
 
 ## 页面列表(按层次)
 
+> **段位与阅读顺序**(kb-reorg P4 Task 9.5,2026-07-30):段 0(01-09)入门;段 1(10-19)核心机制——原语本身怎么实现(c10d/DDP/FSDP/DTensor);段 2(20-29)深潜/专题——原语与 torch.compile 相遇时新增的编译边界问题,建立在 10 号页对原语本身的理解之上(DDP 边界先于 FSDP/DTensor 边界,与上方"边界"小节的划分顺序一致)。
+
 | 页面 | 层次 | 核心主题 |
 |------|------|---------|
-| [[distributed_primitives_quickstart]] | **quick start** | 怎么用、怎么查、怎么验证:`init_process_group`/`init_device_mesh` 起组;集合原语最小示例(`broadcast`/`all_reduce`/`all_gather`/`reduce_scatter`)与 `async_op` 重叠;DDP 包模型;FSDP2 `fully_shard`;DTensor 的 `Shard`/`Replicate`/`Partial` 与 `distribute_tensor`/`from_local`;TP 的 `parallelize_module` + `ColwiseParallel`/`RowwiseParallel`;`torchrun` 启动与常见排查 |
-| [[c10d_ddp_fsdp_dtensor_analysis]] | deep dive | 源码级机制深析:Backend 注册表与 `register_backend`;collective/p2p → `Work` 的异步分派;DDP 的 C++ `Reducer` 分桶 + 反向 all-reduce 重叠;FSDP1 `FlatParameter` 的 shard/unshard/reshard 与显存核算;FSDP2 non-wrapper 设计;DTensor 的 placement 传播与通信插入;functional collectives + `AsyncCollectiveTensor`;`DeviceMesh` 层级与 `split_group`/`shrink_group`;TP `ParallelStyle` 契约;PP 调度族与 microbatching |
-| [[ddp_compile_boundaries_and_optimizer_analysis]] | deep dive(compile 边界) | DDPOptimizer 为何按 DDP bucket 逆序切分 Dynamo forward 图、bucket 与编译器 split 何时不对齐、optimizer 是否入图的三种边界、与 Compiled Autograd 的组合;2026-07-30 迁入,与 [[c10d_ddp_fsdp_dtensor_analysis]] 互指划界(原语本身 vs 与 compile 的边界) |
-| [[fsdp_dtensor_and_distributed_graphs_analysis]] | deep dive(compile 边界) | 分布式图不是一张全局 FX 图、FSDP1 `use_orig_params=True` 为何是编译前提、Dynamo 为何跳过 FSDP wrapper frame、DTensor 在编译图中的形态、rank 一致性与 guards;2026-07-30 迁入,与上一篇同批互指划界 |
+| [[01_distributed_primitives_quickstart]] | **quick start**(段 0) | 怎么用、怎么查、怎么验证:`init_process_group`/`init_device_mesh` 起组;集合原语最小示例(`broadcast`/`all_reduce`/`all_gather`/`reduce_scatter`)与 `async_op` 重叠;DDP 包模型;FSDP2 `fully_shard`;DTensor 的 `Shard`/`Replicate`/`Partial` 与 `distribute_tensor`/`from_local`;TP 的 `parallelize_module` + `ColwiseParallel`/`RowwiseParallel`;`torchrun` 启动与常见排查 |
+| [[10_c10d_ddp_fsdp_dtensor_analysis]] | deep dive(段 1) | 源码级机制深析:Backend 注册表与 `register_backend`;collective/p2p → `Work` 的异步分派;DDP 的 C++ `Reducer` 分桶 + 反向 all-reduce 重叠;FSDP1 `FlatParameter` 的 shard/unshard/reshard 与显存核算;FSDP2 non-wrapper 设计;DTensor 的 placement 传播与通信插入;functional collectives + `AsyncCollectiveTensor`;`DeviceMesh` 层级与 `split_group`/`shrink_group`;TP `ParallelStyle` 契约;PP 调度族与 microbatching |
+| [[20_ddp_compile_boundaries_and_optimizer_analysis]] | deep dive(compile 边界,段 2) | DDPOptimizer 为何按 DDP bucket 逆序切分 Dynamo forward 图、bucket 与编译器 split 何时不对齐、optimizer 是否入图的三种边界、与 Compiled Autograd 的组合;2026-07-30 迁入,与 [[10_c10d_ddp_fsdp_dtensor_analysis]] 互指划界(原语本身 vs 与 compile 的边界) |
+| [[21_fsdp_dtensor_and_distributed_graphs_analysis]] | deep dive(compile 边界,段 2) | 分布式图不是一张全局 FX 图、FSDP1 `use_orig_params=True` 为何是编译前提、Dynamo 为何跳过 FSDP wrapper frame、DTensor 在编译图中的形态、rank 一致性与 guards;2026-07-30 迁入,与上一篇同批互指划界 |
 
 ---
 
@@ -147,8 +149,8 @@ flowchart TB
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 编号化端到端课程：卷 F 的 DDP、FSDP、DTensor 与分布式图边界
-- [[distributed_primitives_quickstart]] — 本模块 quick start:最小可用路径、关键 API 与可跑示例
-- [[c10d_ddp_fsdp_dtensor_analysis]] — 本模块 deep dive:c10d/DDP/FSDP/DTensor 源码级机制深析
+- [[01_distributed_primitives_quickstart]] — 本模块 quick start:最小可用路径、关键 API 与可跑示例
+- [[10_c10d_ddp_fsdp_dtensor_analysis]] — 本模块 deep dive:c10d/DDP/FSDP/DTensor 源码级机制深析
 - [[02_train_frameworks/index]] — 建立在这些原语之上的训练框架(Megatron/torchtitan)
 - [[01_eager_runtime/06_nn_module_system/index]] — Module 树:DDP/FSDP 的包裹对象
 - [[01_eager_runtime/01_tensor_and_storage/index]] — 张量与存储:DTensor 分片的基座

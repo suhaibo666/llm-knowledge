@@ -2,14 +2,14 @@
 
 > 层次:deep dive
 > 核验基准:PyTorch upstream `E:\97-codes\pytorch\pytorch`(v2.13.0a0, commit 9922478)
-> 最后更新:2026-07-30(补与 [[ddp_compile_boundaries_and_optimizer_analysis]]、[[fsdp_dtensor_and_distributed_graphs_analysis]] 的互指划界)
+> 最后更新:2026-07-30(补与 [[20_ddp_compile_boundaries_and_optimizer_analysis]]、[[21_fsdp_dtensor_and_distributed_graphs_analysis]] 的互指划界)
 
 本页是「torch.distributed 原生原语」模块的 **deep dive**,逐机制拆解 PyTorch 自带的分布式栈:最底层的 c10d 后端/句柄,到三种并行容器(DDP / FSDP1 / FSDP2)、张量级抽象(DTensor / DeviceMesh / TP)与流水线调度(PP)。每个机制按「做什么 / 为什么这么设计 / 怎么实现」展开,所有源码引用形如 `相对路径:行号`(相对 `E:\97-codes\pytorch\pytorch` 根),均已逐一打开核实。
 
-> [!note] 与 [[ddp_compile_boundaries_and_optimizer_analysis]]、[[fsdp_dtensor_and_distributed_graphs_analysis]] 的分工
+> [!note] 与 [[20_ddp_compile_boundaries_and_optimizer_analysis]]、[[21_fsdp_dtensor_and_distributed_graphs_analysis]] 的分工
 > 本页讲这些原语**本身**怎样实现,完全不涉及 `torch.compile`。DDP/FSDP/DTensor 与 Dynamo/AOTAutograd/Inductor **相遇时**新增的一层问题(DDPOptimizer 按 bucket 切分 FX 图、`use_orig_params=True`、Dynamo 跳过 FSDP wrapper frame、rank 一致性与 guards)见上述两篇。
 
-入门用法见 [[distributed_primitives_quickstart]],模块全景见 [[index]]。上层的 Megatron / torchtitan 等训练框架建立在这些原语之上,见 [[02_train_frameworks/index]]。
+入门用法见 [[01_distributed_primitives_quickstart]],模块全景见 [[index]]。上层的 Megatron / torchtitan 等训练框架建立在这些原语之上,见 [[02_train_frameworks/index]]。
 
 ```mermaid
 graph TD
@@ -427,12 +427,12 @@ microbatching 由 `pipelining/microbatch.py` 的 `split_args_kwargs_into_chunks`
 ## Related Pages
 
 - [[index]] — 本模块 overview(并行全景图与页面列表)
-- [[distributed_primitives_quickstart]] — 本模块 quick start(最小可用路径与可跑示例)
+- [[01_distributed_primitives_quickstart]] — 本模块 quick start(最小可用路径与可跑示例)
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — Dispatcher 与 `__torch_dispatch__`:理解 DTensor/AsyncCollectiveTensor 子类拦截算子的底层机制
 - [[01_eager_runtime/01_tensor_and_storage/index]] — Tensor/Storage 内部:`FlatParameter._resize_(0)`、wrapper subclass 的存储语义
 - [[02_compile_stack/01_dynamo/index]] — Dynamo 如何 trace functional collectives
 - [[02_compile_stack/04_inductor/index]] — Inductor 对通信算子的代数优化与计算/通信重叠
 - [[01_eager_runtime/06_nn_module_system/index]] — `nn.Module` / `nn.Parameter`:DDP/FSDP/TP 改造的对象
 - [[02_train_frameworks/index]] — 建立在这些原语之上的 Megatron / torchtitan 等训练框架
-- [[ddp_compile_boundaries_and_optimizer_analysis]] — DDP 与 `torch.compile` 相遇时的编译边界(DDPOptimizer bucket 切图),见页头分工声明
-- [[fsdp_dtensor_and_distributed_graphs_analysis]] — FSDP/DTensor 与 `torch.compile` 相遇时的编译边界(`use_orig_params`、Dynamo skip frame),见页头分工声明
+- [[20_ddp_compile_boundaries_and_optimizer_analysis]] — DDP 与 `torch.compile` 相遇时的编译边界(DDPOptimizer bucket 切图),见页头分工声明
+- [[21_fsdp_dtensor_and_distributed_graphs_analysis]] — FSDP/DTensor 与 `torch.compile` 相遇时的编译边界(`use_orig_params`、Dynamo skip frame),见页头分工声明

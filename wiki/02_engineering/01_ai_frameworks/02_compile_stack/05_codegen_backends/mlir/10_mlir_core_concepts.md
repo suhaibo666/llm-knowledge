@@ -768,4 +768,4 @@ PTX
 - [[11_inductor_ir_values_loops_layouts_and_buffers_analysis]] — Inductor IR 与 Triton 代码生成
 - [[comm_compute_fusion_guide]] — Mesh Dialect 在通算自动融合中的作用
 - [[tilelang_analysis]] — TileLang 与 Triton 3.x MLIR 的 tile-level 概念关系
-- [[mindspore_compiler_analysis]] — MindSpore ANF 图与 MLIR Dialect 的 IR 对比
+- [[10_mindspore_compiler_analysis]] — MindSpore ANF 图与 MLIR Dialect 的 IR 对比

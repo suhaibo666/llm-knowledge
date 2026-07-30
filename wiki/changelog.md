@@ -1721,7 +1721,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - [[auto_parallel_survey_analysis]](罗盘综述):**通用流水线**(策略表示→代价模型→搜索算法→运行时,含 mermaid)、**7 大技术谱系**(算子级搜索 FlexFlow/OptCNN → 编译器传播 GSPMD/PartIR → 联合分层 **Alpa**(inter-op DP + intra-op ILP) → 显存感知 Galvatron/**Aceso** → 原语+约束 **nnScaler** → 异构/动态 Metis/Astra/Sailor → 框架原生 DTensor/veScale/OneFlow-SBP/MindSpore)、**4 个建模维度**(搜索空间 / 代价模型含 α-β 通信与显存约束 LaTeX / 硬件拓扑 / 优化目标)、**5 类搜索算法**(精确 ILP/DP/MILP · 元启发 MCMC/MCTS · 贪心传播 · 分解剪枝 · 模拟器在环)、**关键洞察**(分解是核心招式、代价模型准确性>搜索算法先进性、传播 vs 全局搜索分野)、2024–2026 趋势(显存-并行协同/异构/框架原生/4D→5D MoE)。
 - [[06_auto_parallel/index]] 域索引:罗盘速览 + 后续按系统拆页规划(alpa/nnscaler/galvatron/gspmd/dtensor)。
 
-**整合**:父索引 [[02_engineering/index]] 子领域表新增 `06_auto_parallel` 行;综述页交叉链接 [[megatron-lm/index]](手工 5D 对照组/执行后端)、[[torchtitan/index]](DTensor 原生)、[[mindspore_compiler_analysis]](传播范式)、[[comm_compute_fusion_guide]](overlap 实测)、[[distributed_optimizer_deep_dive]](ZeRO/FSDP 分片)。**校验**:2 页均含 `## Related Pages`,跨链目标页经 glob 确认存在,0 悬空链接;论文出处以 Sources 段外链给出(Alpa/GSPMD/nnScaler/PartIR/Galvatron-BMW/综述/DTensor 等)。
+**整合**:父索引 [[02_engineering/index]] 子领域表新增 `06_auto_parallel` 行;综述页交叉链接 [[megatron-lm/index]](手工 5D 对照组/执行后端)、[[torchtitan/index]](DTensor 原生)、[[10_mindspore_compiler_analysis]](传播范式)、[[comm_compute_fusion_guide]](overlap 实测)、[[distributed_optimizer_deep_dive]](ZeRO/FSDP 分片)。**校验**:2 页均含 `## Related Pages`,跨链目标页经 glob 确认存在,0 悬空链接;论文出处以 Sources 段外链给出(Alpa/GSPMD/nnScaler/PartIR/Galvatron-BMW/综述/DTensor 等)。
 
 ---
 

@@ -6,7 +6,7 @@
 
 **一句话**：`torch.distributed`（c10d）把「多进程之间搬张量」抽象成两层——底层是可插拔的 **ProcessGroup/Backend**（NCCL/Gloo/…，实现在 C++），上层是一组同步语义的 **集合/点对点函数**（`all_reduce`/`broadcast`/`all_gather`/…）；再往上叠出三套常用并行：数据并行 **DDP**、参数分片 **FSDP**、以及围绕 **DeviceMesh + DTensor** 的张量并行 **TP**。本页给最小可跑路径和关键 API，所有引用均指向 `E:\97-codes\pytorch\pytorch` 真实行号。
 
-概念全景与并行家族关系见 [[index]]；源码级深析（Reducer 分桶、FlatParameter、placement 传播、group split/shrink）见 [[c10d_ddp_fsdp_dtensor_analysis]]。
+概念全景与并行家族关系见 [[index]]；源码级深析（Reducer 分桶、FlatParameter、placement 传播、group split/shrink）见 [[10_c10d_ddp_fsdp_dtensor_analysis]]。
 
 ---
 
@@ -124,7 +124,7 @@ handle.wait()                                       # 用 grad 之前必须等
 | `all_gather(tensor_list, tensor, group, async_op)` | 收集全组张量到列表 | `torch/distributed/distributed_c10d.py:4192` |
 | `reduce_scatter(output, input_list, op, group, async_op)` | 规约后按 rank 切片分发 | `torch/distributed/distributed_c10d.py:4790` |
 
-> 想让 `torch.compile` 能 trace 通信并做代数优化？用 **函数式集合**（`torch.distributed._functional_collectives`，返回新张量而非就地，首次使用前自动 `wait`）。机制见 [[c10d_ddp_fsdp_dtensor_analysis]]，编译侧背景见 [[02_compile_stack/01_dynamo/index]] 与 [[02_compile_stack/04_inductor/index]]。
+> 想让 `torch.compile` 能 trace 通信并做代数优化？用 **函数式集合**（`torch.distributed._functional_collectives`，返回新张量而非就地，首次使用前自动 `wait`）。机制见 [[10_c10d_ddp_fsdp_dtensor_analysis]]，编译侧背景见 [[02_compile_stack/01_dynamo/index]] 与 [[02_compile_stack/04_inductor/index]]。
 
 ---
 
@@ -156,7 +156,7 @@ for x, y in loader:                                 # loader 应配 DistributedS
 >>> model = DistributedDataParallel(model, device_ids=[i], output_device=i)
 ```
 
-要点：① 必须先 `init_process_group`（DDP 构造时会检查，见类 docstring `:480`-`481`）；② 每进程一张卡、`device_ids=[local_rank]`；③ 梯度同步默认全开，梯度累积时可用 `ddp_model.no_sync()` 上下文跳过中间步的 all-reduce。分桶/Reducer 的源码级细节见 [[c10d_ddp_fsdp_dtensor_analysis]]。
+要点：① 必须先 `init_process_group`（DDP 构造时会检查，见类 docstring `:480`-`481`）；② 每进程一张卡、`device_ids=[local_rank]`；③ 梯度同步默认全开，梯度累积时可用 `ddp_model.no_sync()` 上下文跳过中间步的 all-reduce。分桶/Reducer 的源码级细节见 [[10_c10d_ddp_fsdp_dtensor_analysis]]。
 
 ---
 
@@ -189,7 +189,7 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 sharded = FSDP(MyModel())
 ```
 
-新项目优先 FSDP2（`fully_shard`）。FlatParameter 切分 / unshard / reshard 的实现细节见 [[c10d_ddp_fsdp_dtensor_analysis]]。
+新项目优先 FSDP2（`fully_shard`）。FlatParameter 切分 / unshard / reshard 的实现细节见 [[10_c10d_ddp_fsdp_dtensor_analysis]]。
 
 ---
 
@@ -282,7 +282,7 @@ tp_model = parallelize_module(
 ## Related Pages
 
 - [[index]] —— 本模块 overview：并行家族全景与页面导航
-- [[c10d_ddp_fsdp_dtensor_analysis]] —— 本模块 deep dive：Reducer 分桶、FlatParameter、placement 传播、group split/shrink 源码级解析
+- [[10_c10d_ddp_fsdp_dtensor_analysis]] —— 本模块 deep dive：Reducer 分桶、FlatParameter、placement 传播、group split/shrink 源码级解析
 - [[01_eager_runtime/06_nn_module_system/index]] —— `nn.Module` 注册与遍历（DDP/FSDP/TP 改造的对象）
 - [[01_eager_runtime/01_tensor_and_storage/index]] —— Tensor 子类与 Storage（DTensor / AsyncCollectiveTensor 的拦截基础）
 - [[02_compile_stack/01_dynamo/index]] —— `torch.compile` 前端如何把集合映射为函数式集合

@@ -366,21 +366,21 @@
     },
     {
       "page_id": "f03",
-      "page": "ddp_compile_boundaries_and_optimizer_analysis.md",
+      "page": "20_ddp_compile_boundaries_and_optimizer_analysis.md",
       "volume": "F",
       "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
       "case": "ddp_compile"
     },
     {
       "page_id": "f04",
-      "page": "fsdp_dtensor_and_distributed_graphs_analysis.md",
+      "page": "21_fsdp_dtensor_and_distributed_graphs_analysis.md",
       "volume": "F",
       "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
       "case": "fsdp_dtensor"
     },
     {
       "page_id": "f05",
-      "page": "custom_operators_fake_kernels_and_decompositions_analysis.md",
+      "page": "20_custom_operators_fake_kernels_and_decompositions_analysis.md",
       "volume": "F",
       "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
       "case": "custom_op_contract"

@@ -2,11 +2,11 @@
 
 > 卷别：F · 训练、分布式、扩展与部署  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[ddp_compile_boundaries_and_optimizer_analysis]]  
-> 后续：[[custom_operators_fake_kernels_and_decompositions_analysis]]  
-> 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,与 [[c10d_ddp_fsdp_dtensor_analysis]] 互指划界)
+> 前置：[[20_ddp_compile_boundaries_and_optimizer_analysis]]  
+> 后续：[[20_custom_operators_fake_kernels_and_decompositions_analysis]]  
+> 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,与 [[10_c10d_ddp_fsdp_dtensor_analysis]] 互指划界)
 
-> [!note] 与 [[c10d_ddp_fsdp_dtensor_analysis]] 的分工
+> [!note] 与 [[10_c10d_ddp_fsdp_dtensor_analysis]] 的分工
 > 该页讲 FSDP/DTensor **原语本身**——`FlatParameter` 怎样 shard/unshard/reshard、DTensor 的 placement 怎样传播与插入通信,不涉及 `torch.compile`。本页讲这些原语与**编译器相遇时**新增的一层问题:为什么 FSDP1 编译要求 `use_orig_params=True`、Dynamo 为什么跳过 FSDP wrapper frame、每 rank local graph 与 collective 顺序如何在编译期保持一致。理解顺序同 F03:先读该页知道原语本身怎样工作,再读本页知道编译器如何处理它。
 
 ## 1. 分布式图不是“一张全局 FX 图”
@@ -217,8 +217,8 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[ddp_compile_boundaries_and_optimizer_analysis]]
-- [[custom_operators_fake_kernels_and_decompositions_analysis]]
+- [[20_ddp_compile_boundaries_and_optimizer_analysis]]
+- [[20_custom_operators_fake_kernels_and_decompositions_analysis]]
 - [[04_export_and_distributed/02_distributed_primitives/index]]
 - [[12_graph_effects_alias_mutation_and_order_analysis]]
 - [[19_production_rollout_fallback_and_monitoring_analysis]]

@@ -10,7 +10,7 @@
 
 本页面向已经会用 `torch.compile` 但想真正理解「图是怎么被捕获、表示、改写、规范化、扩展」的工程师。我们从最底层的 **Proxy 拦截** 一路深挖到 **ExportedProgram 的 AOT 规范化** 与 **torch.library 的算子分发桥接**,每一处机制都给出 `相对路径:行号`(相对 `E:\97-codes\pytorch\pytorch` checkout 根),并解释「做什么 / 为什么这么设计 / 怎么实现」。
 
-上层用法速查见 [[fx_export_custom_op_quickstart]],模块全景与关联域见 [[04_export_and_distributed/01_fx_export_extensibility/index]]。捕获机制的「另一条路」(字节码层)见 [[02_compile_stack/01_dynamo/index]];规范化后的 ATen 分解链见 [[02_compile_stack/02_aot_autograd/index]];算子注册的分发器底座见 [[01_eager_runtime/02_dispatcher_and_device/index]] 与 [[01_eager_runtime/03_op_registration/index]]。
+上层用法速查见 [[01_fx_export_custom_op_quickstart]],模块全景与关联域见 [[04_export_and_distributed/01_fx_export_extensibility/index]]。捕获机制的「另一条路」(字节码层)见 [[02_compile_stack/01_dynamo/index]];规范化后的 ATen 分解链见 [[02_compile_stack/02_aot_autograd/index]];算子注册的分发器底座见 [[01_eager_runtime/02_dispatcher_and_device/index]] 与 [[01_eager_runtime/03_op_registration/index]]。
 
 ---
 
@@ -239,7 +239,7 @@ self.m: Any | None = torch._C._dispatch_library(kind, ns, dispatch_key, filename
 
 算子注册的更完整图景(尤其 NPU/PrivateUse1 侧)见 [[01_eager_runtime/03_op_registration/index]]。
 
-> custom op 作为"编译器边界契约"的更完整深度分析——fake kernel 必须满足的正确性(不止"返回同 shape 空 Tensor")、mutation/version 与 ADInplaceOrView、decomposition/direct lowering/fallback 的选择依据、按阶段分层的失败定位——见 [[custom_operators_fake_kernels_and_decompositions_analysis]]。
+> custom op 作为"编译器边界契约"的更完整深度分析——fake kernel 必须满足的正确性(不止"返回同 shape 空 Tensor")、mutation/version 与 ADInplaceOrView、decomposition/direct lowering/fallback 的选择依据、按阶段分层的失败定位——见 [[20_custom_operators_fake_kernels_and_decompositions_analysis]]。
 
 ```mermaid
 graph LR
@@ -310,9 +310,9 @@ sequenceDiagram
 
 - [[04_export_and_distributed/01_fx_export_extensibility/index]] — 本模块 overview / 目录索引
 - [[02_compile_stack/03_graph_ir_and_passes/index]] — 从 Node/Graph 存储延伸到 PatternMatcher、DCE 与保序（AOT fw/bw 见 [[02_compile_stack/02_aot_autograd/index]]）
-- [[fx_export_custom_op_quickstart]] — 本模块 quickstart(最小可用路径与排查命令)
+- [[01_fx_export_custom_op_quickstart]] — 本模块 quickstart(最小可用路径与排查命令)
 - [[02_compile_stack/01_dynamo/index]] — 另一条捕获路径:PEP-523 字节码层拦截
 - [[02_compile_stack/02_aot_autograd/index]] — export `run_decompositions` 的 ATen 分解栈同源
 - [[01_eager_runtime/03_op_registration/index]] — 算子注册的工程化(含 NPU/PrivateUse1)
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — `__torch_function__`/分发器底座,custom_op 的分发落点
-- [[custom_operators_fake_kernels_and_decompositions_analysis]] — custom op 编译器边界契约的深度分析(§7 的下游对应物,fake kernel 正确性/decomposition 选择/失败定位)
+- [[20_custom_operators_fake_kernels_and_decompositions_analysis]] — custom op 编译器边界契约的深度分析(§7 的下游对应物,fake kernel 正确性/decomposition 选择/失败定位)

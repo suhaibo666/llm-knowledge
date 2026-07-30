@@ -116,9 +116,9 @@ B06 OutputGraph
 |---:|---|---|
 | F01 | [[20_compiled_autograd_analysis]] | Compiled Autograd 与 AOTAutograd 有何不同(2026-07-30 迁入 `01_eager_runtime/05_autograd_engine/`,与 [[10_autograd_engine_analysis]] 互指划界) |
 | F02 | [[20_activation_checkpoint_recompute_and_compile_analysis]] | checkpoint 与 AOT recompute 怎样叠加(2026-07-30 迁入 `02_compile_stack/02_aot_autograd/`,与 [[12_saved_tensors_recompute_and_runtime_abi_analysis]] 互指划界) |
-| F03 | [[ddp_compile_boundaries_and_optimizer_analysis]] | DDP/reducer/optimizer 如何改变 compile region(2026-07-30 迁入 `04_export_and_distributed/02_distributed_primitives/`,与 [[c10d_ddp_fsdp_dtensor_analysis]] 互指划界) |
-| F04 | [[fsdp_dtensor_and_distributed_graphs_analysis]] | shard、placement、collective 与 rank state 如何入图(2026-07-30 迁入同上,与 [[c10d_ddp_fsdp_dtensor_analysis]] 互指划界) |
-| F05 | [[custom_operators_fake_kernels_and_decompositions_analysis]] | custom op 怎样补齐编译契约(2026-07-30 迁入 `04_export_and_distributed/01_fx_export_extensibility/`,与 [[fx_graph_export_and_custom_ops_analysis]] §7 判重后保留独立页+互指) |
+| F03 | [[20_ddp_compile_boundaries_and_optimizer_analysis]] | DDP/reducer/optimizer 如何改变 compile region(2026-07-30 迁入 `04_export_and_distributed/02_distributed_primitives/`,与 [[10_c10d_ddp_fsdp_dtensor_analysis]] 互指划界) |
+| F04 | [[21_fsdp_dtensor_and_distributed_graphs_analysis]] | shard、placement、collective 与 rank state 如何入图(2026-07-30 迁入同上,与 [[10_c10d_ddp_fsdp_dtensor_analysis]] 互指划界) |
+| F05 | [[20_custom_operators_fake_kernels_and_decompositions_analysis]] | custom op 怎样补齐编译契约(2026-07-30 迁入 `04_export_and_distributed/01_fx_export_extensibility/`,与 [[10_fx_graph_export_and_custom_ops_analysis]] §7 判重后保留独立页+互指) |
 | F06 | [[20_custom_backends_and_device_integration_analysis]] | backend/device 怎样接入 lowering 与 codegen(2026-07-30 迁入 `01_eager_runtime/02_dispatcher_and_device/`,与 [[11_privateuse1_device_integration_analysis]]+[[34_codegen_extension_guide]] 三方划界) |
 | F07 | [[28_aotinductor_packaging_and_deployment_analysis]] | AOTInductor 与 JIT compile 的产物和 ABI 有何不同(2026-07-30 迁入 `02_compile_stack/04_inductor/`,纯平移;解答了 [[22_backend_modes_options_stances_and_fullgraph_analysis]] §14.2 的 `use_aoti` todo) |
 | F08 | [[20_training_inference_cudagraph_and_freezing_analysis]] | training/inference/freezing/CUDAGraph 如何组合 |

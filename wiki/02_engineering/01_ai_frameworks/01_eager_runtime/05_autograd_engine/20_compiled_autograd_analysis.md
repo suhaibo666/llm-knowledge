@@ -317,5 +317,5 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[13_aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
 - [[13_aotautograd_and_inductor_failure_localization_analysis]]
 - [[20_activation_checkpoint_recompute_and_compile_analysis]]
-- [[ddp_compile_boundaries_and_optimizer_analysis]]
+- [[20_ddp_compile_boundaries_and_optimizer_analysis]]
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]]
