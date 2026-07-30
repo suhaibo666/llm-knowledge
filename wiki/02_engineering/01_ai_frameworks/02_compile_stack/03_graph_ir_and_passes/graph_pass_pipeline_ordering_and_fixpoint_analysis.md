@@ -1,6 +1,6 @@
 # 15 · Graph Pass 流水线、顺序与 Fixed Point
 
-> 前置：[[08_graph_normalization_decomposition_and_functionalization]]、[[14_dead_code_topology_and_effect_order]]
+> 前置：[[graph_normalization_decomposition_and_functionalization_analysis]]、[[dead_code_topology_and_effect_order_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -442,14 +442,14 @@ hits 均为 0；该路径执行真实 Inductor extern addmm/mm。
 
 ## 学习顺序
 
-- 上一篇：[[14_dead_code_topology_and_effect_order]]
-- 下一篇：[[16_graph_rewrite_legality_validation_and_complexity]]
+- 上一篇：[[dead_code_topology_and_effect_order_analysis]]
+- 下一篇：[[graph_rewrite_legality_validation_and_complexity_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[08_graph_normalization_decomposition_and_functionalization]]
-- [[13_pattern_expression_and_matcher_engine]]
-- [[14_dead_code_topology_and_effect_order]]
-- [[16_graph_rewrite_legality_validation_and_complexity]]
+- [[graph_normalization_decomposition_and_functionalization_analysis]]
+- [[pattern_expression_and_matcher_engine_analysis]]
+- [[dead_code_topology_and_effect_order_analysis]]
+- [[graph_rewrite_legality_validation_and_complexity_analysis]]
 - [[fx_pass_optimization_methodology]]

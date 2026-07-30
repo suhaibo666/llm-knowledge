@@ -418,7 +418,7 @@ AOT fw/bw无跨图edge。Scheduler又是各图lowering后的独立buffer depende
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[13_pattern_expression_and_matcher_engine]]
+- [[pattern_expression_and_matcher_engine_analysis]]
 - [[19_buffer_liveness_memory_planning_and_reuse]]
 - [[21_codegen_kernel_mapping_autotuning_and_provenance]]
 - [[scheduler_analysis]]

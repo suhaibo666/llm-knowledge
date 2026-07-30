@@ -245,5 +245,5 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[variable_tracker_source_and_python_object_model_analysis]]
 - [[guards_cache_lookup_and_recompilation_analysis]]
 - [[graph_break_resume_functions_and_partial_graphs_analysis]]
-- [[02_fx_graph_core_data_model]]
-- [[14_dead_code_topology_and_effect_order]]
+- [[fx_graph_core_data_model_analysis]]
+- [[dead_code_topology_and_effect_order_analysis]]

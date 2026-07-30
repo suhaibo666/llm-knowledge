@@ -3,7 +3,7 @@
 > [!note] 页面角色与审计状态
 > **页面角色**：Inductor post-grad FX graph artifact cache 的 key、guarded multi-entry、bypass 与产物恢复专题；它不与 Dynamo PGO 的决策画像或 AOTAutograd result cache 混为一层。
 > **原始基线**：PyTorch `3bda74318624581502db16e6439c36effdb16481`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **审计状态**：已纳入历史 manifest，但结构 inventory 尚未升级为逐 claim 当前基线复核，cache hit/bypass 也未在本轮环境端到端重跑。图阶段与产物身份见 [[19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance]]，生成 kernel/wrapper 与 provenance 见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]]；缓存领域入口见 [[02_compile_stack/06_compile_cache/index]]。
+> **审计状态**：已纳入历史 manifest，但结构 inventory 尚未升级为逐 claim 当前基线复核，cache hit/bypass 也未在本轮环境端到端重跑。图阶段与产物身份见 [[graph_stage_boundaries_identity_and_provenance_analysis]]，生成 kernel/wrapper 与 provenance 见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]]；缓存领域入口见 [[02_compile_stack/06_compile_cache/index]]。
 
 > **分析对象**：PyTorch Inductor 图级编译缓存 `FxGraphCache`（`torch/_inductor/codecache.py`）——缓存 post-grad FX graph 到编译产物 `CompiledFxGraph`（Python wrapper 代码 + Triton kernels）的映射，命中时跳过 Inductor lowering / codegen / Triton 编译整段。
 > **Source baseline**：PyTorch upstream 本地检出 `E:\97-codes\torch_parallel\pytorch` @ branch `main`, commit `3bda74318624581502db16e6439c36effdb16481`（2026-07-10, version 2.14.0a0）。所有 `file:line` 均对该 commit 逐一开文件核验。
@@ -274,7 +274,7 @@ flowchart TB
 - [[dynamo_pgo_cache_analysis]] — Dynamo 侧 PGO 缓存
 - Mega-cache / precompile：尚未完成独立当前基线审计
 - [[02_compile_stack/06_compile_cache/index]] — 本目录索引
-- [[19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance]] — post-grad FX、Inductor artifact 与跨阶段 identity 边界
+- [[graph_stage_boundaries_identity_and_provenance_analysis]] — post-grad FX、Inductor artifact 与跨阶段 identity 边界
 - [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]] — 被缓存复用的 kernel/wrapper 与 provenance 产物
 - [[torch_compile_architecture]] — torch.compile 整体栈
 - [[inductor_autotuning_analysis]] — autotune 生命周期（获胜 config 即 TritonBundler 打包对象）

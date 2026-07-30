@@ -123,11 +123,11 @@ flowchart LR
 - [[01_eager_runtime/03_op_registration/index]] — 算子注册全景,`custom_op` 的注册去向
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — ATen 分发器,扩展面与 functional ATen 的共同底座
 - [[19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy]] — 图 IR 为什么这样分层
-- [[19_torch_compile_end_to_end/02_fx_graph_core_data_model]] — 当前基线的 FX `Graph` / `Node` / use-def
-- [[19_torch_compile_end_to_end/07_graph_capture_frontends_and_tracing]] — FX、make_fx、Dynamo 与 export 的捕获边界
+- [[fx_graph_core_data_model_analysis]] — 当前基线的 FX `Graph` / `Node` / use-def
+- [[graph_capture_frontends_and_tracing_analysis]] — FX、make_fx、Dynamo 与 export 的捕获边界
 - [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse]] — dynamic shape、guard与图复用
-- [[19_torch_compile_end_to_end/06_structured_outputs_higher_order_and_nested_graphs]] — pytree、HOP与嵌套GraphModule
-- [[19_torch_compile_end_to_end/12_fx_graph_editing_primitives_and_invariants]] — 改图原语与必须维护的不变量
+- [[structured_outputs_higher_order_and_nested_graphs_analysis]] — pytree、HOP与嵌套GraphModule
+- [[fx_graph_editing_primitives_and_invariants_analysis]] — 改图原语与必须维护的不变量
 - [[01_ai_frameworks/index]] — 本域总索引
 
 ---

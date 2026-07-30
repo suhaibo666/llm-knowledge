@@ -1,6 +1,6 @@
 # 06 · 结构化输出、Higher-Order Operator 与嵌套图
 
-> 前置：[[03_graph_values_metadata_and_signatures]]、[[05_graph_effects_alias_mutation_and_order]]
+> 前置：[[graph_values_metadata_and_signatures_analysis]]、[[graph_effects_alias_mutation_and_order_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -74,7 +74,7 @@ Inductor `MultiOutputPattern`描述一个 connected match 有多个外露 root�
 - 一个主输出加一个可选 output。
 
 它不要求某个单 Node 的 runtime value 必须是 tuple。详见
-[[13_pattern_expression_and_matcher_engine]]。
+[[pattern_expression_and_matcher_engine_analysis]]。
 
 ## 5. HigherOrderOperator 为什么存在
 
@@ -416,15 +416,15 @@ Lab 分两部分：
 
 ## 学习顺序
 
-- 上一篇：[[05_graph_effects_alias_mutation_and_order]]
-- 下一篇：[[07_graph_capture_frontends_and_tracing]]
+- 上一篇：[[graph_effects_alias_mutation_and_order_analysis]]
+- 下一篇：[[graph_capture_frontends_and_tracing_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[03_graph_values_metadata_and_signatures]]
-- [[05_graph_effects_alias_mutation_and_order]]
-- [[13_pattern_expression_and_matcher_engine]]
+- [[graph_values_metadata_and_signatures_analysis]]
+- [[graph_effects_alias_mutation_and_order_analysis]]
+- [[pattern_expression_and_matcher_engine_analysis]]
 - [[09_aotautograd_joint_forward_backward_graphs]]
 - [[10_saved_tensors_recompute_and_runtime_abi]]
-- [[14_dead_code_topology_and_effect_order]]
+- [[dead_code_topology_and_effect_order_analysis]]

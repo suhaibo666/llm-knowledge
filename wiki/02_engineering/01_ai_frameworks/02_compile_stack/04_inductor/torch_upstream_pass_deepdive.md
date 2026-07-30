@@ -2,7 +2,7 @@
 
 > **页面角色**：upstream pass全集、Pattern注册和阶段目录参考。
 > **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **课程分工**：本页保留大全式参考；PatternExpr、候选检索、匹配/替换和通用管线的当前主线见 [[19_torch_compile_end_to_end/13_pattern_expression_and_matcher_engine]] 与 [[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint]]。
+> **课程分工**：本页保留大全式参考；PatternExpr、候选检索、匹配/替换和通用管线的当前主线见 [[pattern_expression_and_matcher_engine_analysis]] 与 [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]。
 
 > **Source baseline**: pytorch @ `9922478dffa`（main，2026-07-20 校验）
 > **Dimension**: Deep Dive（mechanism-level）

@@ -1,7 +1,7 @@
 # TorchInductor Decomposition 开发指南
 > **页面角色**：decomposition pass目录、注册API与开发指南。
 > **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **课程分工**：本页保留开发清单；decomposition、functionalization与规范化边界的当前主线见 [[19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization]]。
+> **课程分工**：本页保留开发清单；decomposition、functionalization与规范化边界的当前主线见 [[graph_normalization_decomposition_and_functionalization_analysis]]。
 > **Created**: 2026-07-22
 
 > **Source baseline**: PyTorch `9922478dffa`，核验 `torch/_inductor/decomposition.py:130-156,972-983`、`torch/_inductor/compile_fx.py:2710-2728,3061-3070`。

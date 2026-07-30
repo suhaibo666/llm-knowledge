@@ -457,12 +457,12 @@ continuity:
 ## 学习顺序
 
 - 上一篇：[[10_saved_tensors_recompute_and_runtime_abi]]
-- 下一篇：[[12_fx_graph_editing_primitives_and_invariants]]
+- 下一篇：[[fx_graph_editing_primitives_and_invariants_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[07_graph_capture_frontends_and_tracing]]
+- [[graph_capture_frontends_and_tracing_analysis]]
 - [[09_aotautograd_joint_forward_backward_graphs]]
 - [[10_saved_tensors_recompute_and_runtime_abi]]
 - [[17_fx_lowering_to_inductor_ir]]

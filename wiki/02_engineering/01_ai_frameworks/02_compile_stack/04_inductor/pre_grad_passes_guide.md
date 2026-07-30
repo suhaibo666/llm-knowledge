@@ -3,7 +3,7 @@
 > [!note] 页面角色与审计状态
 > **页面角色**：pre-grad阶段目录、注册方式和扩展点。
 > **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **课程分工**：本页保留阶段清单；当前pass顺序、边界与fixpoint机制见 [[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint]]。
+> **课程分工**：本页保留阶段清单；当前pass顺序、边界与fixpoint机制见 [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]。
 
 > **Updated**: 2026-07-22
 

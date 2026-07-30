@@ -2,7 +2,7 @@
 
 > **页面角色**：跨项目、跨阶段的FX pass工程方法论。
 > **原始基线**：见下方四项目快照；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **课程分工**：本页继续负责多项目综合；PyTorch当前改图原语、阶段顺序、合法性与复杂度见 [[19_torch_compile_end_to_end/12_fx_graph_editing_primitives_and_invariants]]、[[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint]] 和 [[19_torch_compile_end_to_end/16_graph_rewrite_legality_validation_and_complexity]]。
+> **课程分工**：本页继续负责多项目综合；PyTorch当前改图原语、阶段顺序、合法性与复杂度见 [[fx_graph_editing_primitives_and_invariants_analysis]]、[[graph_pass_pipeline_ordering_and_fixpoint_analysis]] 和 [[graph_rewrite_legality_validation_and_complexity_analysis]]。
 
 > **Updated**: 2026-07-22
 

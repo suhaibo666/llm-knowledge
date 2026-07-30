@@ -61,21 +61,21 @@ flowchart LR
 | 编号 | 页面 | 先回答的问题 |
 |---:|---|---|
 | C01 | [[01_graph_ir_motivation_and_taxonomy]] | 为什么需要图；不同“图”的节点、边和生命周期有何不同 |
-| C02 | [[02_fx_graph_core_data_model]] | FX Graph、Node、use-def、图序和 GraphModule 如何协作 |
-| C03 | [[03_graph_values_metadata_and_signatures]] | Node 引用、meta、pytree 和三类 signature 分别表达什么 |
+| C02 | [[fx_graph_core_data_model_analysis]] | FX Graph、Node、use-def、图序和 GraphModule 如何协作 |
+| C03 | [[graph_values_metadata_and_signatures_analysis]] | Node 引用、meta、pytree 和三类 signature 分别表达什么 |
 | C04 | [[04_symbolic_shapes_guards_and_graph_reuse]] | symbolic shape、guard 和图复用怎样形成契约 |
-| C05 | [[05_graph_effects_alias_mutation_and_order]] | 数据边之外的 alias、mutation 和 effect 顺序如何表达 |
-| C06 | [[06_structured_outputs_higher_order_and_nested_graphs]] | 多输出、HOP 与 nested GraphModule 怎样扩展普通 DAG |
-| C07 | [[07_graph_capture_frontends_and_tracing]] | symbolic_trace、make_fx、Dynamo 和 export 为何产生不同图 |
-| C08 | [[08_graph_normalization_decomposition_and_functionalization]] | schema normalization、decomposition 和 functionalization 为何必须分层 |
+| C05 | [[graph_effects_alias_mutation_and_order_analysis]] | 数据边之外的 alias、mutation 和 effect 顺序如何表达 |
+| C06 | [[structured_outputs_higher_order_and_nested_graphs_analysis]] | 多输出、HOP 与 nested GraphModule 怎样扩展普通 DAG |
+| C07 | [[graph_capture_frontends_and_tracing_analysis]] | symbolic_trace、make_fx、Dynamo 和 export 为何产生不同图 |
+| C08 | [[graph_normalization_decomposition_and_functionalization_analysis]] | schema normalization、decomposition 和 functionalization 为何必须分层 |
 | C09 | [[09_aotautograd_joint_forward_backward_graphs]] | AOT joint graph 怎样提取为两张 fresh fw/bw Graph |
 | C10 | [[10_saved_tensors_recompute_and_runtime_abi]] | saved values、recompute 和 fw→bw runtime ABI 如何协作 |
-| C11 | [[11_graph_stage_boundaries_identity_and_provenance]] | Node identity 跨阶段断开后如何维持 provenance |
-| C12 | [[12_fx_graph_editing_primitives_and_invariants]] | replace、erase、copy、lint、recompile 怎样组成安全事务 |
-| C13 | [[13_pattern_expression_and_matcher_engine]] | PatternExpr AST、候选索引和递归 matcher 如何工作 |
-| C14 | [[14_dead_code_topology_and_effect_order]] | dead node、DCE、稳定拓扑和 effect order 有何边界 |
-| C15 | [[15_graph_pass_pipeline_ordering_and_fixpoint]] | pass stage、registration order、迭代与 fixpoint 如何决定结果 |
-| C16 | [[16_graph_rewrite_legality_validation_and_complexity]] | 结构命中后怎样验证 shape、dtype、alias、autograd 和收益 |
+| C11 | [[graph_stage_boundaries_identity_and_provenance_analysis]] | Node identity 跨阶段断开后如何维持 provenance |
+| C12 | [[fx_graph_editing_primitives_and_invariants_analysis]] | replace、erase、copy、lint、recompile 怎样组成安全事务 |
+| C13 | [[pattern_expression_and_matcher_engine_analysis]] | PatternExpr AST、候选索引和递归 matcher 如何工作 |
+| C14 | [[dead_code_topology_and_effect_order_analysis]] | dead node、DCE、稳定拓扑和 effect order 有何边界 |
+| C15 | [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] | pass stage、registration order、迭代与 fixpoint 如何决定结果 |
+| C16 | [[graph_rewrite_legality_validation_and_complexity_analysis]] | 结构命中后怎样验证 shape、dtype、alias、autograd 和收益 |
 | C17 | [[17_fx_lowering_to_inductor_ir]] | GraphLowering 为什么不是 FX Node 的一对一替换 |
 | C18 | [[18_inductor_ir_values_loops_layouts_and_buffers]] | TensorBox、Loops、Layout、Buffer 和 ExternKernel 如何分工 |
 | C19 | [[19_buffer_liveness_memory_planning_and_reuse]] | logical buffer 怎样进入 liveness、free 和 reuse 决策 |

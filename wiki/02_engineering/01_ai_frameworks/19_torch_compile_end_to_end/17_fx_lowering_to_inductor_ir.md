@@ -1,6 +1,6 @@
 # 17 · 从 FX Lowering 到 Inductor IR
 
-> 前置：[[11_graph_stage_boundaries_identity_and_provenance]]、[[16_graph_rewrite_legality_validation_and_complexity]]
+> 前置：[[graph_stage_boundaries_identity_and_provenance_analysis]]、[[graph_rewrite_legality_validation_and_complexity_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -423,13 +423,13 @@ native CPU阻塞结论不能外推为Triton/GPU autotune结论。
 
 ## 学习顺序
 
-- 上一篇：[[16_graph_rewrite_legality_validation_and_complexity]]
+- 上一篇：[[graph_rewrite_legality_validation_and_complexity_analysis]]
 - 下一篇：[[18_inductor_ir_values_loops_layouts_and_buffers]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[11_graph_stage_boundaries_identity_and_provenance]]
+- [[graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[18_inductor_ir_values_loops_layouts_and_buffers]]
 - [[20_scheduler_dependency_graph_fusion_and_ordering]]
 - [[lowering_analysis]]

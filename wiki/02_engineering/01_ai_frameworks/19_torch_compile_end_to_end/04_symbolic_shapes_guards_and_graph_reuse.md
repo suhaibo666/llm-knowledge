@@ -1,6 +1,6 @@
 # 04 · 符号形状、Guards 与图复用
 
-> 前置：[[03_graph_values_metadata_and_signatures]]
+> 前置：[[graph_values_metadata_and_signatures_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -401,15 +401,15 @@ export_range_constraints=1
 
 ## 学习顺序
 
-- 上一篇：[[03_graph_values_metadata_and_signatures]]
-- 下一篇：[[05_graph_effects_alias_mutation_and_order]]
+- 上一篇：[[graph_values_metadata_and_signatures_analysis]]
+- 下一篇：[[graph_effects_alias_mutation_and_order_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[03_graph_values_metadata_and_signatures]]
-- [[07_graph_capture_frontends_and_tracing]]
-- [[16_graph_rewrite_legality_validation_and_complexity]]
+- [[graph_values_metadata_and_signatures_analysis]]
+- [[graph_capture_frontends_and_tracing_analysis]]
+- [[graph_rewrite_legality_validation_and_complexity_analysis]]
 - [[17_fx_lowering_to_inductor_ir]]
 - [[21_codegen_kernel_mapping_autotuning_and_provenance]]
 - [[dynamic_shapes_full_analysis]]

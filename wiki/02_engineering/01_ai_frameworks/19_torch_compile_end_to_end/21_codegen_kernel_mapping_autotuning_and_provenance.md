@@ -497,7 +497,7 @@ Provenance把generated artifacts映回source
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[11_graph_stage_boundaries_identity_and_provenance]]
+- [[graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[20_scheduler_dependency_graph_fusion_and_ordering]]
 - [[19_buffer_liveness_memory_planning_and_reuse]]
 - [[inductor_codegen_analysis]]

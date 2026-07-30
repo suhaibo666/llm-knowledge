@@ -61,7 +61,7 @@ FX 同时有两种结构：
 - `args/kwargs` 中的 Node 引用与反向 `users` 保存 use-def。
 
 它通常是 DAG，但“图顺序”和“数据依赖”不是一个字段。详见
-[[02_fx_graph_core_data_model]]。
+[[fx_graph_core_data_model_analysis]]。
 
 #### 3.2.1 Program graph 与 dataflow graph
 
@@ -359,12 +359,12 @@ fx_call_targets=add,relu,sum
 ## 学习顺序
 
 - 上一篇：[[00_pytorch_graph_series_index]]
-- 下一篇：[[02_fx_graph_core_data_model]]
+- 下一篇：[[fx_graph_core_data_model_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[02_fx_graph_core_data_model]]
+- [[fx_graph_core_data_model_analysis]]
 - [[01_eager_runtime/05_autograd_engine/index]]
 - [[09_aotautograd_joint_forward_backward_graphs]]
 - [[17_fx_lowering_to_inductor_ir]]

@@ -479,13 +479,13 @@ CUDA caching allocator 物理峰值在当前无 CUDA 环境中为 `[B]`；它只
 ## 学习顺序
 
 - 上一篇：[[09_aotautograd_joint_forward_backward_graphs]]
-- 下一篇：[[11_graph_stage_boundaries_identity_and_provenance]]
+- 下一篇：[[graph_stage_boundaries_identity_and_provenance_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
 - [[09_aotautograd_joint_forward_backward_graphs]]
 - [[19_buffer_liveness_memory_planning_and_reuse]]
-- [[11_graph_stage_boundaries_identity_and_provenance]]
+- [[graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[aot_autograd_quickstart]]
 - [[aotautograd_analysis]]

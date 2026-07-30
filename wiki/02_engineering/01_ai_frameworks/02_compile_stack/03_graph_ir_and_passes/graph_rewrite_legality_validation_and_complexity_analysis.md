@@ -1,6 +1,6 @@
 # 16 · Graph Rewrite 的合法性、验证与复杂度
 
-> 前置：[[12_fx_graph_editing_primitives_and_invariants]]、[[15_graph_pass_pipeline_ordering_and_fixpoint]]
+> 前置：[[fx_graph_editing_primitives_and_invariants_analysis]]、[[graph_pass_pipeline_ordering_and_fixpoint_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -443,14 +443,14 @@ Observed artifacts/performance:
 
 ## 学习顺序
 
-- 上一篇：[[15_graph_pass_pipeline_ordering_and_fixpoint]]
+- 上一篇：[[graph_pass_pipeline_ordering_and_fixpoint_analysis]]
 - 下一篇：[[17_fx_lowering_to_inductor_ir]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[12_fx_graph_editing_primitives_and_invariants]]
-- [[13_pattern_expression_and_matcher_engine]]
-- [[14_dead_code_topology_and_effect_order]]
-- [[15_graph_pass_pipeline_ordering_and_fixpoint]]
+- [[fx_graph_editing_primitives_and_invariants_analysis]]
+- [[pattern_expression_and_matcher_engine_analysis]]
+- [[dead_code_topology_and_effect_order_analysis]]
+- [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]
 - [[20_scheduler_dependency_graph_fusion_and_ordering]]

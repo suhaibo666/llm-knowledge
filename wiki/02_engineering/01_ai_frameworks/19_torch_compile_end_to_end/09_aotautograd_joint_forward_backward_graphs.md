@@ -1,6 +1,6 @@
 # 09 · AOTAutograd 的 Joint、Forward 与 Backward Graph
 
-> 前置：[[08_graph_normalization_decomposition_and_functionalization]]
+> 前置：[[graph_normalization_decomposition_and_functionalization_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -542,14 +542,14 @@ partitioner把所需forward-origin nodes普通复制到bw，再按需要重排�
 
 ## 学习顺序
 
-- 上一篇：[[08_graph_normalization_decomposition_and_functionalization]]
+- 上一篇：[[graph_normalization_decomposition_and_functionalization_analysis]]
 - 下一篇：[[10_saved_tensors_recompute_and_runtime_abi]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[08_graph_normalization_decomposition_and_functionalization]]
+- [[graph_normalization_decomposition_and_functionalization_analysis]]
 - [[10_saved_tensors_recompute_and_runtime_abi]]
-- [[11_graph_stage_boundaries_identity_and_provenance]]
+- [[graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[02_compile_stack/02_aot_autograd/index]]
 - [[aotautograd_analysis]]

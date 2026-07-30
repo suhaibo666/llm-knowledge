@@ -445,6 +445,25 @@ _D_PAGE_ROOTS = {
     "d06": ("03_runtime_graphs", "cuda"),
     "d07": ("02_compile_stack", "07_debugging"),
 }
+# Volume C physically scatters out of 19_torch_compile_end_to_end in two
+# batches (kb-reorg P4 Task 7: 12 FX-data-model/pass pages -> new
+# 03_graph_ir_and_passes; Task 8 will move the remaining 9 pages -> 01_dynamo /
+# 02_aot_autograd / 04_inductor). Only list pages that have actually moved;
+# unlisted c-ids fall back to the legacy course directory below.
+_C_PAGE_ROOTS = {
+    "c02": ("02_compile_stack", "03_graph_ir_and_passes"),
+    "c03": ("02_compile_stack", "03_graph_ir_and_passes"),
+    "c05": ("02_compile_stack", "03_graph_ir_and_passes"),
+    "c06": ("02_compile_stack", "03_graph_ir_and_passes"),
+    "c07": ("02_compile_stack", "03_graph_ir_and_passes"),
+    "c08": ("02_compile_stack", "03_graph_ir_and_passes"),
+    "c11": ("02_compile_stack", "03_graph_ir_and_passes"),
+    "c12": ("02_compile_stack", "03_graph_ir_and_passes"),
+    "c13": ("02_compile_stack", "03_graph_ir_and_passes"),
+    "c14": ("02_compile_stack", "03_graph_ir_and_passes"),
+    "c15": ("02_compile_stack", "03_graph_ir_and_passes"),
+    "c16": ("02_compile_stack", "03_graph_ir_and_passes"),
+}
 
 
 def _page_root(labs_root: Path, volume: str, page_id: str | None = None) -> Path:
@@ -457,6 +476,8 @@ def _page_root(labs_root: Path, volume: str, page_id: str | None = None) -> Path
         return ai_frameworks_root / "02_compile_stack" / "01_dynamo"
     if volume == "D" and page_id in _D_PAGE_ROOTS:
         return ai_frameworks_root.joinpath(*_D_PAGE_ROOTS[page_id])
+    if volume == "C" and page_id in _C_PAGE_ROOTS:
+        return ai_frameworks_root.joinpath(*_C_PAGE_ROOTS[page_id])
     if volume == "F" and page_id == "f08":
         return ai_frameworks_root / "03_runtime_graphs" / "cuda"
     return ai_frameworks_root / "19_torch_compile_end_to_end"
@@ -571,10 +592,18 @@ class CourseMarkdownContractTest(unittest.TestCase):
         debugging_root = ai_frameworks_root / "02_compile_stack" / "07_debugging"
         # Volume B physically moved to 01_dynamo (kb-reorg P4 Task 5); same.
         dynamo_root = ai_frameworks_root / "02_compile_stack" / "01_dynamo"
+        # 12 of volume C's 21 pages physically moved to the new
+        # 03_graph_ir_and_passes directory (kb-reorg P4 Task 7); same gates
+        # apply from the new home. The remaining 9 pages stay under
+        # course_root until Task 8 scatters them further.
+        graph_ir_root = (
+            ai_frameworks_root / "02_compile_stack" / "03_graph_ir_and_passes"
+        )
         return (
             sorted(course_root.glob("*.md"))
             + sorted(debugging_root.glob("*.md"))
             + sorted(dynamo_root.glob("*.md"))
+            + sorted(graph_ir_root.glob("*.md"))
         )
 
     def test_list_markers_render_as_commonmark_lists(self) -> None:

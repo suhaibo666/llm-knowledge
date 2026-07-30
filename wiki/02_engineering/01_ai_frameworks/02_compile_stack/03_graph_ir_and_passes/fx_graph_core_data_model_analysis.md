@@ -543,14 +543,14 @@ Lab 证明：
 ## 学习顺序
 
 - 上一篇：[[01_graph_ir_motivation_and_taxonomy]]
-- 下一篇：[[03_graph_values_metadata_and_signatures]]
+- 下一篇：[[graph_values_metadata_and_signatures_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
 - [[01_graph_ir_motivation_and_taxonomy]]
-- [[03_graph_values_metadata_and_signatures]]
-- [[12_fx_graph_editing_primitives_and_invariants]]
-- [[14_dead_code_topology_and_effect_order]]
-- [[13_pattern_expression_and_matcher_engine]]
+- [[graph_values_metadata_and_signatures_analysis]]
+- [[fx_graph_editing_primitives_and_invariants_analysis]]
+- [[dead_code_topology_and_effect_order_analysis]]
+- [[pattern_expression_and_matcher_engine_analysis]]
 - [[04_export_and_distributed/01_fx_export_extensibility/index]]

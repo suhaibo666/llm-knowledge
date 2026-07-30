@@ -217,5 +217,5 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[f03_ddp_compile_boundaries_and_optimizer_analysis]]
 - [[f05_custom_operators_fake_kernels_and_decompositions_analysis]]
 - [[04_export_and_distributed/02_distributed_primitives/index]]
-- [[19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order]]
+- [[graph_effects_alias_mutation_and_order_analysis]]
 - [[production_rollout_fallback_and_monitoring_analysis]]

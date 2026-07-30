@@ -18,12 +18,12 @@
 | 本页原章节 | 新系列主目的地 |
 |---|---|
 | §1 核心结论 | [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] |
-| §2 FX对象模型、边和图序 | [[19_torch_compile_end_to_end/02_fx_graph_core_data_model]]；图序另见 [[19_torch_compile_end_to_end/14_dead_code_topology_and_effect_order]] |
+| §2 FX对象模型、边和图序 | [[fx_graph_core_data_model_analysis]]；图序另见 [[dead_code_topology_and_effect_order_analysis]] |
 | §3 joint→fw/bw与跨图ABI | [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]] |
 | §4 saved/recompute、节点复制与reorder | [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]] |
-| §5–§6 PatternExpr、候选、匹配与替换 | [[19_torch_compile_end_to_end/13_pattern_expression_and_matcher_engine]] |
-| §7–§8 dead、DCE、拓扑与effect order | [[19_torch_compile_end_to_end/14_dead_code_topology_and_effect_order]] |
-| §9–§10 复杂度、合法性与验证 | [[19_torch_compile_end_to_end/16_graph_rewrite_legality_validation_and_complexity]] |
+| §5–§6 PatternExpr、候选、匹配与替换 | [[pattern_expression_and_matcher_engine_analysis]] |
+| §7–§8 dead、DCE、拓扑与effect order | [[dead_code_topology_and_effect_order_analysis]] |
+| §9–§10 复杂度、合法性与验证 | [[graph_rewrite_legality_validation_and_complexity_analysis]] |
 | §11 源码导航 | 上述课程页各自的源码路径、Lab与证据边界 |
 
 旧报告的源码基线与新系列不同，不能用“目标页存在”推断每条历史claim都已无损迁移；
@@ -586,12 +586,12 @@ T_total
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前系统课程入口
-- [[19_torch_compile_end_to_end/02_fx_graph_core_data_model]]
+- [[fx_graph_core_data_model_analysis]]
 - [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]]
 - [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]]
-- [[19_torch_compile_end_to_end/13_pattern_expression_and_matcher_engine]]
-- [[19_torch_compile_end_to_end/14_dead_code_topology_and_effect_order]]
-- [[19_torch_compile_end_to_end/16_graph_rewrite_legality_validation_and_complexity]]
+- [[pattern_expression_and_matcher_engine_analysis]]
+- [[dead_code_topology_and_effect_order_analysis]]
+- [[graph_rewrite_legality_validation_and_complexity_analysis]]
 - [[02_compile_stack/02_aot_autograd/index]] — AOTAutograd 模块索引
 - [[aotautograd_analysis]] — AOTAutograd 全流程与 runtime wrappers 深入分析
 - [[aot_autograd_quickstart]] — 正反向图、joint graph 与重计算的实操查看方法

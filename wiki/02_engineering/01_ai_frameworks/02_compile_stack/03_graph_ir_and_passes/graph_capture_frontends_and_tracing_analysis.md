@@ -1,6 +1,6 @@
 # 07 · 图捕获前端与 Tracing
 
-> 前置：[[02_fx_graph_core_data_model]]、[[04_symbolic_shapes_guards_and_graph_reuse]]
+> 前置：[[fx_graph_core_data_model_analysis]]、[[04_symbolic_shapes_guards_and_graph_reuse]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -319,15 +319,15 @@ export_range_constraints=0
 
 ## 学习顺序
 
-- 上一篇：[[06_structured_outputs_higher_order_and_nested_graphs]]
-- 下一篇：[[08_graph_normalization_decomposition_and_functionalization]]
+- 上一篇：[[structured_outputs_higher_order_and_nested_graphs_analysis]]
+- 下一篇：[[graph_normalization_decomposition_and_functionalization_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[02_fx_graph_core_data_model]]
+- [[fx_graph_core_data_model_analysis]]
 - [[04_symbolic_shapes_guards_and_graph_reuse]]
-- [[08_graph_normalization_decomposition_and_functionalization]]
+- [[graph_normalization_decomposition_and_functionalization_analysis]]
 - [[09_aotautograd_joint_forward_backward_graphs]]
 - [[04_export_and_distributed/01_fx_export_extensibility/index]]
 - [[02_compile_stack/01_dynamo/index]]

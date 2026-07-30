@@ -18,11 +18,11 @@ AOTAutograd(ahead-of-time autograd)在编译期就把一段可微计算的**前�
 
 下列五篇组成按当前固定源码基线核验的课程主线；专题页继续保留各自独有角色：
 
-- [[19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order]] — functionalization之前必须理解的alias、mutation与effect
-- [[19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization]] — functional ATen、decomposition、synthetic base与规范化顺序
+- [[graph_effects_alias_mutation_and_order_analysis]] — functionalization之前必须理解的alias、mutation与effect
+- [[graph_normalization_decomposition_and_functionalization_analysis]] — functional ATen、decomposition、synthetic base与规范化顺序
 - [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]] — joint graph 如何生成并切成两张互不持有对方 `Node` 的 fw/bw 图
 - [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]] — saved tensor ABI、bw placeholder、重计算节点复制与运行时拼接
-- [[19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance]] — 各阶段的图身份、边界、metadata 与 provenance
+- [[graph_stage_boundaries_identity_and_provenance_analysis]] — 各阶段的图身份、边界、metadata 与 provenance
 
 ### 课程主线与专题参考分工
 

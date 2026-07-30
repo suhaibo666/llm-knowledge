@@ -2,7 +2,7 @@
 
 > **页面角色**：joint阶段目录、注册API与切图前约束。
 > **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **课程分工**：本页保留阶段开发参考；当前joint graph、partition与pass边界见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]] 和 [[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint]]。
+> **课程分工**：本页保留阶段开发参考；当前joint graph、partition与pass边界见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]] 和 [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]。
 
 > **Updated**: 2026-07-22
 

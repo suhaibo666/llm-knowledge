@@ -27,11 +27,11 @@
 
 | 问题 | 当前课程页 |
 |---|---|
-| alias、mutation、effect与functionalization前提 | [[19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order]] |
-| decomposition与规范化顺序 | [[19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization]] |
+| alias、mutation、effect与functionalization前提 | [[graph_effects_alias_mutation_and_order_analysis]] |
+| decomposition与规范化顺序 | [[graph_normalization_decomposition_and_functionalization_analysis]] |
 | joint图如何抽取fw/bw | [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]] |
 | saved tensors、recompute与runtime ABI | [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]] |
-| 跨阶段identity与provenance | [[19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance]] |
+| 跨阶段identity与provenance | [[graph_stage_boundaries_identity_and_provenance_analysis]] |
 
 本页未逐段标成current并不等于内容无价值；它表示历史ledger尚未把每个claim、代码块、
 表格与实验都闭环到当前基线。
@@ -1446,11 +1446,11 @@ Dynamo不是用 ProxyTensor替代 Python symbolic interpreter：
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order]]
-- [[19_torch_compile_end_to_end/08_graph_normalization_decomposition_and_functionalization]]
+- [[graph_effects_alias_mutation_and_order_analysis]]
+- [[graph_normalization_decomposition_and_functionalization_analysis]]
 - [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]]
 - [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]]
-- [[19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance]]
+- [[graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[fx_graph_construction_and_transformation_analysis]] — joint graph 如何切成独立 fw/bw、saved-tensor ABI、recompute 抽图与复杂度
 - [[02_engineering/01_ai_frameworks/index]]
 - [[torch_compile_architecture]]

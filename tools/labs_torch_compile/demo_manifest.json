@@ -87,7 +87,7 @@
     },
     {
       "page_id": "c02",
-      "page": "02_fx_graph_core_data_model.md",
+      "page": "fx_graph_core_data_model_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "ir_fx",
@@ -95,7 +95,7 @@
     },
     {
       "page_id": "c03",
-      "page": "03_graph_values_metadata_and_signatures.md",
+      "page": "graph_values_metadata_and_signatures_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "ir_fx",
@@ -111,7 +111,7 @@
     },
     {
       "page_id": "c05",
-      "page": "05_graph_effects_alias_mutation_and_order.md",
+      "page": "graph_effects_alias_mutation_and_order_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "ir_fx",
@@ -119,7 +119,7 @@
     },
     {
       "page_id": "c06",
-      "page": "06_structured_outputs_higher_order_and_nested_graphs.md",
+      "page": "structured_outputs_higher_order_and_nested_graphs_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "ir_fx",
@@ -127,7 +127,7 @@
     },
     {
       "page_id": "c07",
-      "page": "07_graph_capture_frontends_and_tracing.md",
+      "page": "graph_capture_frontends_and_tracing_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "capture_normalize",
@@ -135,7 +135,7 @@
     },
     {
       "page_id": "c08",
-      "page": "08_graph_normalization_decomposition_and_functionalization.md",
+      "page": "graph_normalization_decomposition_and_functionalization_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "capture_normalize",
@@ -159,7 +159,7 @@
     },
     {
       "page_id": "c11",
-      "page": "11_graph_stage_boundaries_identity_and_provenance.md",
+      "page": "graph_stage_boundaries_identity_and_provenance_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "aot_recompute",
@@ -167,7 +167,7 @@
     },
     {
       "page_id": "c12",
-      "page": "12_fx_graph_editing_primitives_and_invariants.md",
+      "page": "fx_graph_editing_primitives_and_invariants_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "pattern_rewrite",
@@ -175,7 +175,7 @@
     },
     {
       "page_id": "c13",
-      "page": "13_pattern_expression_and_matcher_engine.md",
+      "page": "pattern_expression_and_matcher_engine_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "pattern_rewrite",
@@ -183,7 +183,7 @@
     },
     {
       "page_id": "c14",
-      "page": "14_dead_code_topology_and_effect_order.md",
+      "page": "dead_code_topology_and_effect_order_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "pattern_rewrite",
@@ -191,7 +191,7 @@
     },
     {
       "page_id": "c15",
-      "page": "15_graph_pass_pipeline_ordering_and_fixpoint.md",
+      "page": "graph_pass_pipeline_ordering_and_fixpoint_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "pattern_rewrite",
@@ -199,7 +199,7 @@
     },
     {
       "page_id": "c16",
-      "page": "16_graph_rewrite_legality_validation_and_complexity.md",
+      "page": "graph_rewrite_legality_validation_and_complexity_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "pattern_rewrite",
