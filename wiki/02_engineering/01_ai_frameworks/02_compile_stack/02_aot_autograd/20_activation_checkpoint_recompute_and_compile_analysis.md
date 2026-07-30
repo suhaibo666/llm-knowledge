@@ -4,10 +4,10 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[20_compiled_autograd_analysis]]  
 > 后续：[[ddp_compile_boundaries_and_optimizer_analysis]]  
-> 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,与 [[saved_tensors_recompute_and_runtime_abi_analysis]] 互指划界)
+> 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,与 [[12_saved_tensors_recompute_and_runtime_abi_analysis]] 互指划界)
 
-> [!note] 与 [[saved_tensors_recompute_and_runtime_abi_analysis]] 的分工
-> 两页都讲"save vs recompute",但站在不同层：本页站在**用户 API 与策略**层——`torch.utils.checkpoint` 的 reentrant/non-reentrant 语义、Selective AC 的 `CheckpointPolicy`、RNG/device 契约,以及这些用户意图如何经 `node.meta["recompute"]` 影响 partitioner；[[saved_tensors_recompute_and_runtime_abi_analysis]] 站在**partitioner 源码与 runtime ABI**层——min-cut flow network 的拆点边语义、`default_partition`/`solve_min_cut` 的具体判断、fw/bw 之间 saved tensor 的真实 ABI 拼接与生成代码。理解顺序:先读本页知道"为什么/何时"发生重算,再读该页知道"partitioner 具体怎么切、runtime 怎么拼"。
+> [!note] 与 [[12_saved_tensors_recompute_and_runtime_abi_analysis]] 的分工
+> 两页都讲"save vs recompute",但站在不同层：本页站在**用户 API 与策略**层——`torch.utils.checkpoint` 的 reentrant/non-reentrant 语义、Selective AC 的 `CheckpointPolicy`、RNG/device 契约,以及这些用户意图如何经 `node.meta["recompute"]` 影响 partitioner；[[12_saved_tensors_recompute_and_runtime_abi_analysis]] 站在**partitioner 源码与 runtime ABI**层——min-cut flow network 的拆点边语义、`default_partition`/`solve_min_cut` 的具体判断、fw/bw 之间 saved tensor 的真实 ABI 拼接与生成代码。理解顺序:先读本页知道"为什么/何时"发生重算,再读该页知道"partitioner 具体怎么切、runtime 怎么拼"。
 
 ## 1. 两种“重算”必须先分开
 
@@ -225,6 +225,6 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[02_compile_stack/02_aot_autograd/index]] — 本模块 overview
 - [[20_compiled_autograd_analysis]]
 - [[ddp_compile_boundaries_and_optimizer_analysis]]
-- [[saved_tensors_recompute_and_runtime_abi_analysis]] — partitioner 源码与 runtime ABI 层深析(本页用户 API/策略层的下游对应物,见页头分工声明)
-- [[aotautograd_joint_forward_backward_graphs_analysis]]
+- [[12_saved_tensors_recompute_and_runtime_abi_analysis]] — partitioner 源码与 runtime ABI 层深析(本页用户 API/策略层的下游对应物,见页头分工声明)
+- [[11_aotautograd_joint_forward_backward_graphs_analysis]]
 - [[01_theory/02_pretraining/activation_checkpointing_analysis]]

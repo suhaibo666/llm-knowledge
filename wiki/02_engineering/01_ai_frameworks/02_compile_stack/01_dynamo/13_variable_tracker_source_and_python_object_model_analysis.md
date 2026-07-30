@@ -240,5 +240,5 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[12_instruction_translator_and_bytecode_state_machine_analysis]]
 - [[14_output_graph_side_effects_and_graph_emission_analysis]]
 - [[15_guards_cache_lookup_and_recompilation_analysis]]
-- [[fx_graph_core_data_model_analysis]]
-- [[pattern_expression_and_matcher_engine_analysis]]
+- [[10_fx_graph_core_data_model_analysis]]
+- [[22_pattern_expression_and_matcher_engine_analysis]]

@@ -320,5 +320,5 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 - [[aotautograd_and_inductor_failure_localization_analysis]]
 - [[minifier_repro_and_compiler_bisector_analysis]]
 - [[compile_latency_cache_and_steady_state_performance_analysis]]
-- [[graph_effects_alias_mutation_and_order_analysis]]
-- [[graph_rewrite_legality_validation_and_complexity_analysis]]
+- [[12_graph_effects_alias_mutation_and_order_analysis]]
+- [[25_graph_rewrite_legality_validation_and_complexity_analysis]]

@@ -2,7 +2,7 @@
 
 > **页面角色**：AOTAutograd API quick start；示例是否在当前环境运行须以各代码块标注为准。
 > **原始基线**：见下方页头；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **审计状态**：已纳入 Batch 0，尚未逐代码块全部复跑；fw/bw 与 save/recompute 的已验证课程主线见 [[aotautograd_joint_forward_backward_graphs_analysis]] 和 [[saved_tensors_recompute_and_runtime_abi_analysis]]。
+> **审计状态**：已纳入 Batch 0，尚未逐代码块全部复跑；fw/bw 与 save/recompute 的已验证课程主线见 [[11_aotautograd_joint_forward_backward_graphs_analysis]] 和 [[12_saved_tensors_recompute_and_runtime_abi_analysis]]。
 
 > 层次:quick start · 核验基准:PyTorch 上游(`E:\97-codes\pytorch\pytorch`) · 最后更新 2026-06-13
 >
@@ -143,7 +143,7 @@ def aot_export_module(mod, args, *, decompositions=None, trace_joint,
 
 ## 6. 深入阅读导航
 
-- 原理深挖:[[aotautograd_joint_forward_backward_graphs_analysis]] — joint graph 怎样切成独立 fw/bw；[[saved_tensors_recompute_and_runtime_abi_analysis]] — saved values、recompute 与运行时 ABI
+- 原理深挖:[[11_aotautograd_joint_forward_backward_graphs_analysis]] — joint graph 怎样切成独立 fw/bw；[[12_saved_tensors_recompute_and_runtime_abi_analysis]] — saved values、recompute 与运行时 ABI
 - 联合图 passes:[[joint_graph_passes_guide]]
 - 上游(图捕获):[[02_compile_stack/01_dynamo/index]]
 - 下游(代码生成):[[02_compile_stack/04_inductor/index]]
@@ -152,8 +152,8 @@ def aot_export_module(mod, args, *, decompositions=None, trace_joint,
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[01_ai_frameworks/index]]
-- [[aotautograd_joint_forward_backward_graphs_analysis]]
-- [[saved_tensors_recompute_and_runtime_abi_analysis]]
+- [[11_aotautograd_joint_forward_backward_graphs_analysis]]
+- [[12_saved_tensors_recompute_and_runtime_abi_analysis]]
 - [[joint_graph_passes_guide]]
 - [[02_compile_stack/01_dynamo/index]]
 - [[02_compile_stack/04_inductor/index]]

@@ -1,6 +1,6 @@
 # 05 · Effect、Alias、Mutation 与顺序
 
-> 前置：[[fx_graph_core_data_model_analysis]]、[[graph_values_metadata_and_signatures_analysis]]
+> 前置：[[10_fx_graph_core_data_model_analysis]]、[[11_graph_values_metadata_and_signatures_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -265,7 +265,7 @@ Scheduler 在 fusion 前建立 assignment，并禁止跨不同 stream/mempool fu
 - collective order；
 - user stream relation。
 
-详见 [[dead_code_topology_and_effect_order_analysis]]。
+详见 [[23_dead_code_topology_and_effect_order_analysis]]。
 
 ## 11. Pass 合法性边界
 
@@ -478,14 +478,14 @@ Program legality
 ## 学习顺序
 
 - 上一篇：[[20_symbolic_shapes_guards_and_graph_reuse_analysis]]
-- 下一篇：[[structured_outputs_higher_order_and_nested_graphs_analysis]]
+- 下一篇：[[13_structured_outputs_higher_order_and_nested_graphs_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[fx_graph_core_data_model_analysis]]
-- [[graph_normalization_decomposition_and_functionalization_analysis]]
-- [[dead_code_topology_and_effect_order_analysis]]
-- [[graph_rewrite_legality_validation_and_complexity_analysis]]
+- [[10_fx_graph_core_data_model_analysis]]
+- [[15_graph_normalization_decomposition_and_functionalization_analysis]]
+- [[23_dead_code_topology_and_effect_order_analysis]]
+- [[25_graph_rewrite_legality_validation_and_complexity_analysis]]
 - [[buffer_liveness_memory_planning_and_reuse_analysis]]
 - [[01_eager_runtime/05_autograd_engine/index]]

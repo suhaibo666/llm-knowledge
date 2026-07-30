@@ -497,7 +497,7 @@ Provenance把generated artifacts映回source
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[graph_stage_boundaries_identity_and_provenance_analysis]]
+- [[20_graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[buffer_liveness_memory_planning_and_reuse_analysis]]
 - [[inductor_codegen_analysis]] — codegen 双层架构与 wrapper 段的源码级完整参考(本页 §1/§4/§12 的纵深版；§7 另有 CPU kernel 类体系专题)

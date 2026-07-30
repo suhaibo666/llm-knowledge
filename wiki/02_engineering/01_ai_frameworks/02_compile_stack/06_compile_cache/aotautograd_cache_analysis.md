@@ -3,7 +3,7 @@
 > [!note] 页面角色与审计状态
 > **页面角色**：AOTAutograd result cache 的 key、entry、bypass 与 runtime wrapper 重放专题；它回答“哪些构图/分图工作可被缓存跳过”，不是 AOT 正反向图构造本身的课程替代。
 > **原始基线**：PyTorch `3bda74318624581502db16e6439c36effdb16481`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **审计状态**：已纳入历史 manifest，但当前只完成结构 inventory 与导航迁移，尚未把全部 claim/locator 和 cache-hit 实验复核到当前基线。正反向构图见 [[aotautograd_joint_forward_backward_graphs_analysis]]，阶段身份与 artifact 追踪见 [[graph_stage_boundaries_identity_and_provenance_analysis]]；缓存领域入口见 [[02_compile_stack/06_compile_cache/index]]。
+> **审计状态**：已纳入历史 manifest，但当前只完成结构 inventory 与导航迁移，尚未把全部 claim/locator 和 cache-hit 实验复核到当前基线。正反向构图见 [[11_aotautograd_joint_forward_backward_graphs_analysis]]，阶段身份与 artifact 追踪见 [[20_graph_stage_boundaries_identity_and_provenance_analysis]]；缓存领域入口见 [[02_compile_stack/06_compile_cache/index]]。
 
 > **分析对象**：PyTorch AOTAutograd 级编译缓存 `AOTAutogradCache`（`torch/_functorch/_aot_autograd/autograd_cache.py`，1523 行）——缓存 dynamo 输出的 FX graph 到「编译后的 forward/backward + runtime wrapper 元数据」整个编译单元的映射，命中时连 AOTAutograd 的 dispatch/functionalization/metadata 收集/partition 都不再跑。
 > **Source baseline**：PyTorch upstream 本地检出 `E:\97-codes\torch_parallel\pytorch` @ branch `main`, commit `3bda74318624581502db16e6439c36effdb16481`（2026-07-10, version 2.14.0a0）。所有 `file:line` 均对该 commit 逐一开文件核验。
@@ -217,8 +217,8 @@ flowchart TB
 - [[triton_autotune_cache_analysis]] — 远端缓存基础设施（本页 remote 端走同一 `create_cache`）
 - [[dynamo_pgo_cache_analysis]] — Dynamo 侧缓存（本页 key 的输入图由其上游产出）
 - [[02_compile_stack/06_compile_cache/index]] — 本目录索引
-- [[aotautograd_joint_forward_backward_graphs_analysis]] — 被 AOTAutogradCache 命中所跳过的 joint/fw/bw 构图主线
-- [[graph_stage_boundaries_identity_and_provenance_analysis]] — cache entry 与跨阶段 artifact/identity 边界
+- [[11_aotautograd_joint_forward_backward_graphs_analysis]] — 被 AOTAutogradCache 命中所跳过的 joint/fw/bw 构图主线
+- [[20_graph_stage_boundaries_identity_and_provenance_analysis]] — cache entry 与跨阶段 artifact/identity 边界
 - [[torch_compile_architecture]] — torch.compile 整体栈
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — `guards_expr`/backed symint/shape env 的上游机制
 - [[02_compile_stack/04_inductor/index]] — Inductor 编译（默认形态命中时降级为缓存查询的那段）

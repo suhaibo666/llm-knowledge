@@ -1,6 +1,6 @@
 # 17 · 从 FX Lowering 到 Inductor IR
 
-> 前置：[[graph_stage_boundaries_identity_and_provenance_analysis]]、[[graph_rewrite_legality_validation_and_complexity_analysis]]
+> 前置：[[20_graph_stage_boundaries_identity_and_provenance_analysis]]、[[25_graph_rewrite_legality_validation_and_complexity_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -546,13 +546,13 @@ lower 的路径有 fallback 可用。
 
 ## 学习顺序
 
-- 上一篇：[[graph_rewrite_legality_validation_and_complexity_analysis]]
+- 上一篇：[[25_graph_rewrite_legality_validation_and_complexity_analysis]]
 - 下一篇：[[inductor_ir_values_loops_layouts_and_buffers_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[graph_stage_boundaries_identity_and_provenance_analysis]]
+- [[20_graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[inductor_ir_values_loops_layouts_and_buffers_analysis]]
 - [[scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[decomposition_passes_guide]] — 等价 ATen 展开与 lowering 的选择边界

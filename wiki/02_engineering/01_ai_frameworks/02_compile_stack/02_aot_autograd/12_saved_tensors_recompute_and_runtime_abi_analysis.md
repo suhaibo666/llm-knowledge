@@ -1,12 +1,12 @@
 # 10 · Saved Values、Recompute 与正反向 Runtime ABI
 
-> 前置：[[aotautograd_joint_forward_backward_graphs_analysis]]
+> 前置：[[11_aotautograd_joint_forward_backward_graphs_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
-> 最后更新：2026-07-30(补与 [[activation_checkpoint_recompute_and_compile_analysis]] 的互指划界)
+> 最后更新：2026-07-30(补与 [[20_activation_checkpoint_recompute_and_compile_analysis]] 的互指划界)
 
-> [!note] 与 [[activation_checkpoint_recompute_and_compile_analysis]] 的分工
-> 本页站在 partitioner 源码与 runtime ABI 层(min-cut flow network、`default_partition`、saved/recompute 的 fw↔bw 真实拼接);用户层 `torch.utils.checkpoint` 的 reentrant/non-reentrant 语义、Selective AC policy 与用户意图如何影响 partitioner,见 [[activation_checkpoint_recompute_and_compile_analysis]]。
+> [!note] 与 [[20_activation_checkpoint_recompute_and_compile_analysis]] 的分工
+> 本页站在 partitioner 源码与 runtime ABI 层(min-cut flow network、`default_partition`、saved/recompute 的 fw↔bw 真实拼接);用户层 `torch.utils.checkpoint` 的 reentrant/non-reentrant 语义、Selective AC policy 与用户意图如何影响 partitioner,见 [[20_activation_checkpoint_recompute_and_compile_analysis]]。
 
 ## 1. 核心模型
 
@@ -198,9 +198,9 @@ optional effect/RNG state
 的输入/输出接入，`runtime_wrappers.py:1212`）→ `AOTDispatchAutograd`（生成本节描述的
 `torch.autograd.Function`，`runtime_wrappers.py:3624`）。dedupe/synthetic-base 两层
 （`AOTDedupeWrapper`/`AOTSyntheticBaseWrapper`）在 capture/compile **之前**处理、
-post-compile 逆序恢复，属于更早阶段，见 [[graph_effects_alias_mutation_and_order_analysis]]。
+post-compile 逆序恢复，属于更早阶段，见 [[12_graph_effects_alias_mutation_and_order_analysis]]。
 
-输出别名的重建按 `OutputType`（见 [[aotautograd_joint_forward_backward_graphs_analysis]]
+输出别名的重建按 `OutputType`（见 [[11_aotautograd_joint_forward_backward_graphs_analysis]]
 §2）分派到专用 handler，而不是一段大 if/else：`_HANDLER_MAP`把每种 `OutputType`映射到
 `NoopAliasHandler`/`AliasOfInputHandler`/`IsInputHandler`/`AliasOfIntermediateHandler`
 之一，`make_output_handler`按此表构造具体 handler 实例
@@ -520,14 +520,14 @@ CUDA caching allocator 物理峰值在当前无 CUDA 环境中为 `[B]`；它只
 
 ## 学习顺序
 
-- 上一篇：[[aotautograd_joint_forward_backward_graphs_analysis]]
-- 下一篇：[[graph_stage_boundaries_identity_and_provenance_analysis]]
+- 上一篇：[[11_aotautograd_joint_forward_backward_graphs_analysis]]
+- 下一篇：[[20_graph_stage_boundaries_identity_and_provenance_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[aotautograd_joint_forward_backward_graphs_analysis]]
+- [[11_aotautograd_joint_forward_backward_graphs_analysis]]
 - [[buffer_liveness_memory_planning_and_reuse_analysis]]
-- [[graph_stage_boundaries_identity_and_provenance_analysis]]
-- [[aot_autograd_quickstart]]
-- [[activation_checkpoint_recompute_and_compile_analysis]] — 用户 API/策略层(`torch.utils.checkpoint`、Selective AC)的对应物,见页头分工声明
+- [[20_graph_stage_boundaries_identity_and_provenance_analysis]]
+- [[01_aot_autograd_quickstart]]
+- [[20_activation_checkpoint_recompute_and_compile_analysis]] — 用户 API/策略层(`torch.utils.checkpoint`、Selective AC)的对应物,见页头分工声明

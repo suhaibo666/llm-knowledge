@@ -1,6 +1,6 @@
 # 14 · Dead Code、拓扑与 Effect 保序
 
-> 前置：[[graph_effects_alias_mutation_and_order_analysis]]、[[pattern_expression_and_matcher_engine_analysis]]
+> 前置：[[12_graph_effects_alias_mutation_and_order_analysis]]、[[22_pattern_expression_and_matcher_engine_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -344,13 +344,13 @@ topology_repaired_value=8.0
 
 ## 学习顺序
 
-- 上一篇：[[pattern_expression_and_matcher_engine_analysis]]
-- 下一篇：[[graph_pass_pipeline_ordering_and_fixpoint_analysis]]
+- 上一篇：[[22_pattern_expression_and_matcher_engine_analysis]]
+- 下一篇：[[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[graph_effects_alias_mutation_and_order_analysis]]
-- [[fx_graph_editing_primitives_and_invariants_analysis]]
-- [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]
+- [[12_graph_effects_alias_mutation_and_order_analysis]]
+- [[21_fx_graph_editing_primitives_and_invariants_analysis]]
+- [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]]
 - [[buffer_liveness_memory_planning_and_reuse_analysis]]

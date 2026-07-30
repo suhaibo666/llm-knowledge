@@ -226,10 +226,10 @@ C10（491 行）`git mv` 为同目录 `saved_tensors_recompute_and_runtime_abi_a
 | 节 | 判定 | 处置 |
 |---|---|---|
 | §1-§2 概览/工作流 | 与 C09 §1 自带 mermaid、页头「课程主线与本页分工」表完全重叠 | 删除，不搬运 |
-| §3 Phase1 捕获+元数据（含 §3.3 InputAliasInfo/OutputAliasInfo/OutputType dataclass 字段列表） | 用本地 pinned pytorch checkout（`e8f97c1a6e...`）核验：字段基本准确但行号漂移 140-450 行；[[graph_effects_alias_mutation_and_order_analysis]]（C05）已用相同源码位置覆盖同一组 dataclass | 删除，不重复搬运 |
+| §3 Phase1 捕获+元数据（含 §3.3 InputAliasInfo/OutputAliasInfo/OutputType dataclass 字段列表） | 用本地 pinned pytorch checkout（`e8f97c1a6e...`）核验：字段基本准确但行号漂移 140-450 行；[[12_graph_effects_alias_mutation_and_order_analysis]]（C05）已用相同源码位置覆盖同一组 dataclass | 删除，不重复搬运 |
 | §4/§8 functionalization 包装器链、子类解包 | 与 C05 已覆盖的 dedupe/synthetic-base wrapper 顺序重叠（C05 已引用 `runtime_wrappers.py:1586/1844` 等同一组行号） | 删除 |
 | §5 Phase3 分区与编译 | 伪代码/无精确行号，被 C09 §5-§11 的逐行验证内容全面超越 | 删除 |
-| §6 decomposition/常量折叠/DCE/pattern matching | 不属于 C09/C10 主题，分别已被 [[graph_normalization_decomposition_and_functionalization_analysis]]/`pattern_expression_and_matcher_engine_analysis`/`dead_code_topology_and_effect_order_analysis`（Task 7 新页）覆盖 | 删除 |
+| §6 decomposition/常量折叠/DCE/pattern matching | 不属于 C09/C10 主题，分别已被 [[15_graph_normalization_decomposition_and_functionalization_analysis]]/`pattern_expression_and_matcher_engine_analysis`/`dead_code_topology_and_effect_order_analysis`（Task 7 新页）覆盖 | 删除 |
 | §7 Phase5 运行时包装器链 + `_HANDLER_MAP` | 核验 `AOTDedupeWrapper`/`AOTSyntheticBaseWrapper` 已被 C05 覆盖；但 post-compile 链（`RuntimeWrapper:189`/`AOTDispatchSubclassWrapper:1406`/`FunctionalizedRngRuntimeWrapper:1212`/`AOTDispatchAutograd:3624`）与 `_HANDLER_MAP`/`OutputType→Handler` 派发表（`runtime_wrappers.py:320-345`）经核验后确认未被任何现存页覆盖 | **独有，逐字改写并入 C10 新增 §11.1** |
 | §9 AOTConfig/ViewAndMutationMeta/AOTState 数据结构 | ViewAndMutationMeta 行号（446-475）与 C09 已有引用一致；AOTConfig/AOTState 字段无深层机制增量 | 删除 |
 | §10.1 激活检查点/重计算 | 与 C10 §5-§8 min-cut 内容重叠 | 删除 |
@@ -242,7 +242,7 @@ C10（491 行）`git mv` 为同目录 `saved_tensors_recompute_and_runtime_abi_a
 | §13 ProxyTensor/FakeTensor（Task 3 从已删 A04 页迁入） | 本页此前称"未展开"；核验全部 13.1-13.11 引用行号在当前基线漂移 5-20 行内，内容仍准确 | **完整独立成页** `dispatch_modes_proxytensor_faketensor_analysis.md`，不塞进 C09（主题是 dispatch-mode 机制而非 joint 图提取本身），逐字保留 |
 
 **vs `fx_graph_construction_and_transformation_analysis.md`（269 行，Task 7 瘦身后的 AOT 残留页）**：
-§3.1（通用 Proxy/tracer 建 Node 路径）核验已被 [[fx_graph_core_data_model_analysis]] 覆盖（同引用
+§3.1（通用 Proxy/tracer 建 Node 路径）核验已被 [[10_fx_graph_core_data_model_analysis]] 覆盖（同引用
 `torch/fx/proxy.py:600-635`），删除；§3.2-3.4（joint 构造、partition 提取、跨图 ABI）与 C09 §2-§11
 重叠，删除；§4.1（min-cut 选择保存/重算，**计划点名"两轮审查确认为最深版本"**）核验独有事实
 `activation_memory_budget=0/1` 两个边界的快速路径行为（`partitioners.py:3471-3480`，直接读源码确认：
@@ -254,7 +254,7 @@ Node 引用"已是 C10 §16 原文，删除；"bw 不是反向边图"与"阅读�
 **遗留两小项处理**：①该页原 §3.3 "有一处链接被 Task 7 规范化"——核实为历史记录性描述，指向已完成
 的 Task 7 改动，不需要额外动作，此处记录确认。②"GraphNode 非独立节点类型"一句从
 `26aeabb`（Task 6 commit，该 commit 时 fx_graph_construction 文件仍含 §2.1 全文）取回原文，逐字补入
-[[fx_graph_core_data_model_analysis]] §2.2（C02）Node 定义段末尾，标注取回来源与日期。
+[[10_fx_graph_core_data_model_analysis]] §2.2（C02）Node 定义段末尾，标注取回来源与日期。
 
 **入链修复**：C09/C10 基名改名共影响 24 个文件的裸链接/路径限定链接（图系列两个 00 索引表格行、
 自身互指、`graph_stage_boundaries_identity_and_provenance_analysis` 前置行、`aot_autograd_quickstart`、
@@ -322,7 +322,7 @@ unbacked 专项（`torch._check`/`guard_or_*`/size-oblivious）；[[inductor_cod
 `02_compile_stack/01_dynamo/control_flow_capture_analysis.md`（204 行）vs
 [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] 卷 B 的 b04 判重已在
 Task 5 完成（零重叠）；本组补做 vs C06
-（[[structured_outputs_higher_order_and_nested_graphs_analysis]]）的判重，Task 7 组 1-3
+（[[13_structured_outputs_higher_order_and_nested_graphs_analysis]]）的判重，Task 7 组 1-3
 未涉及的最后一项遗留。
 
 **判定**：两页体裁不同——本页讲**捕获前端**：Dynamo 字节码符号执行期间"控制流该不该
@@ -356,9 +356,9 @@ Task 5 完成（零重叠）；本组补做 vs C06
 **Type**: Redundancy Consolidation（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 7）
 
 `04_inductor/fx_pass_optimization_methodology.md`（349 行）+
-`04_inductor/torch_upstream_pass_deepdive.md`（232 行）逐节比对 [[pattern_expression_and_matcher_engine_analysis]]（C13）/
-[[graph_pass_pipeline_ordering_and_fixpoint_analysis]]（C15）/
-[[graph_rewrite_legality_validation_and_complexity_analysis]]（C16）。判重结论：两旧页
+`04_inductor/torch_upstream_pass_deepdive.md`（232 行）逐节比对 [[22_pattern_expression_and_matcher_engine_analysis]]（C13）/
+[[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]]（C15）/
+[[25_graph_rewrite_legality_validation_and_complexity_analysis]]（C16）。判重结论：两旧页
 的机制细节（PatternEntry 三型、序列化缓存、pre/joint/post_grad 三阶段执行顺序、
 `b2b_gemm`/`fused_int_mm_mul` 等具体 pass 的门控与合法性）绝大部分已被 C13/C15/C16
 以**更细粒度的当前基线 locator**覆盖（例如 C13 §15 复杂度已含旧页没有的 mutation-region
@@ -435,7 +435,7 @@ Related Pages 单行，批量改指 C15；`04_inductor/index.md` 表格两行合
 **Type**: Redundancy Review（no merge）（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 7）
 
 `04_inductor/decomposition_passes_guide.md`（163 行）逐节核对 vs
-[[graph_normalization_decomposition_and_functionalization_analysis]]（C08，图规范化/Decomposition/
+[[15_graph_normalization_decomposition_and_functionalization_analysis]]（C08，图规范化/Decomposition/
 Functionalization 机制骨架）：guide 的 §1（decomposition table 结构与 mermaid）、§3（`register_
 decomposition`/`decompositions`/`select_decomp_table`/`torch._decomp.get_decompositions`/
 `compile_fx(decompositions=table)` API 表）、§4（注册并加入编译的可运行代码示例）、§5（写
@@ -466,28 +466,28 @@ Related Pages 描述补充）。
 
 - **§2 FX 对象模型、边和图序**：逐段核对（`Graph`/`Node`/`GraphModule` 三对象表、
   `_update_args_kwargs`/`torch/csrc/fx/node.cpp` C++ 热点实现、`Graph.nodes` 链表遍历、
-  `graph.lint()`、链表 vs 普通 list 的设计动机）均已存在于 [[fx_graph_core_data_model_analysis]]
+  `graph.lint()`、链表 vs 普通 list 的设计动机）均已存在于 [[10_fx_graph_core_data_model_analysis]]
   （locator 一致或仅个位数行号漂移，判定为 drift 非新事实）。唯一未被覆盖的一句独有澄清——
   "`users` 反向邻接"与"AOTAutograd backward `GraphModule`"是两个不同概念、不要混为一谈——
-  逐字并入该页 §4「两种"反向"不要混为一谈」小节，并加一句到 `19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs`（历史活链接，该页已于 2026-07-30 移动为 [[aotautograd_joint_forward_backward_graphs_analysis]]，按"历史不回写"惯例降级为反引号）的互指。原 §2 删除。
+  逐字并入该页 §4「两种"反向"不要混为一谈」小节，并加一句到 `19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs`（历史活链接，该页已于 2026-07-30 移动为 [[11_aotautograd_joint_forward_backward_graphs_analysis]]，按"历史不回写"惯例降级为反引号）的互指。原 §2 删除。
 - **§5-§6 PatternExpr/PatternMatcherPass**：`CallFunction`/`Arg`/`KeywordArg`/`Ignored`/
   `MultiOutputPattern` 语义表、候选桶注册与逆序匹配、三类 Entry（`LoweringPatternEntry`/
   `GraphPatternEntry`/`ReplacementPatternEntry`）、pre/joint/post 阶段收尾差异，均已存在于
-  [[pattern_expression_and_matcher_engine_analysis]] 且粒度更细（如该页额外覆盖了旧页没有的
+  [[22_pattern_expression_and_matcher_engine_analysis]] 且粒度更细（如该页额外覆盖了旧页没有的
   serialized/precompiled pattern 缓存机制）。原 §5-§6 删除，无独有内容需要迁移。
 - **§7-§8 DCE、拓扑与保序**：`Graph.eliminate_dead_code()` 判定条件、`Node.is_impure()`
   规则、DCE 安全前提、`stable_topological_sort` 的 `pending/ready/waiting/cursor` 状态机，
-  均已存在于 [[dead_code_topology_and_effect_order_analysis]]（该页 §7 的算法级走读甚至更完整）。
+  均已存在于 [[23_dead_code_topology_and_effect_order_analysis]]（该页 §7 的算法级走读甚至更完整）。
   原 §7-§8 删除。
-- **§9 复杂度分析（通用表 + §9.1 pattern 总体复杂度）**：已被 [[fx_graph_core_data_model_analysis]]
-  §11、[[pattern_expression_and_matcher_engine_analysis]] §15（含旧页没有的 mutation-region 扫描
+- **§9 复杂度分析（通用表 + §9.1 pattern 总体复杂度）**：已被 [[10_fx_graph_core_data_model_analysis]]
+  §11、[[22_pattern_expression_and_matcher_engine_analysis]] §15（含旧页没有的 mutation-region 扫描
   成本 `M(v)`、非 `call_function` root 扫描成本 `H`、sort-key 比较成本 `Lcmp` 等更严格的界）、
-  [[dead_code_topology_and_effect_order_analysis]] §11 分别覆盖，且新页复杂度分析普遍更严格
+  [[23_dead_code_topology_and_effect_order_analysis]] §11 分别覆盖，且新页复杂度分析普遍更严格
   （旧页多处用未加限定的 `O(N+E)`，新页显式标注仅在 arity/sort-key 有界时才成立）。§9.2
   （AOT 全链路复杂度，含 min-cut max-flow 项）核实已存在于
   `19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs` §14 与
   `10_saved_tensors_recompute_and_runtime_abi` §14 各自的复杂度节。原 §9（含 9.1/9.2）删除。
-- **§10 不变量与排查清单**：§10.1 八条通用不变量已被 [[fx_graph_editing_primitives_and_invariants_analysis]]
+- **§10 不变量与排查清单**：§10.1 八条通用不变量已被 [[21_fx_graph_editing_primitives_and_invariants_analysis]]
   §14（10 项检查清单）覆盖；其中两条 AOT 特有提醒（"不把 bw 叫反向边图"、"不把 saved tensor
   理解为跨图 Node 引用"）保留在本页新 §10「残留提醒」。§10.2「阅读图时的四问」判定为跨
   FX 数据模型/pattern/AOT 三个语境的综合辨析工具，不属于单一目的地页，整节保留。
@@ -708,7 +708,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - a01 → [[01_eager_runtime/01_tensor_and_storage/10_tensor_impl_and_storage_analysis]] §13（differentiable view/DifferentiableViewMeta、mutation 状态机、复杂度记账、常见误解、view→Autograd→编译器的源码跟读）
 - a02 → [[10_pytorch_dispatcher_analysis]] §12（ADInplaceOrView 分层、mutation 算子 rebase 样本、Dispatcher/Autograd Edge/FX data edge 三种"边"辨析）
 - a03 → `b04_instruction_translator_and_bytecode_state_machine_analysis`（P4 Task 5 起更名为 [[12_instruction_translator_and_bytecode_state_machine_analysis]]） §14 + `b03_eval_frame_callback_and_code_cache_analysis`（P4 Task 5 起更名为 [[11_eval_frame_callback_and_code_cache_analysis]]） §13（`bytecode_transformation` 重组子系统、code object/frame/instruction 定义表、C-hook 与 ConvertFrame 边界）
-- a04 → `aotautograd_analysis` §13（P4 Task 8 起独立成页 [[dispatch_modes_proxytensor_faketensor_analysis]]）（`__torch_function__`/`__torch_dispatch__`/ProxyTensor/FakeTensor 四层分工、`track_tensor_tree`、FakeTensorMode 状态、decomposition 落点、数据相关 operator 边界）
+- a04 → `aotautograd_analysis` §13（P4 Task 8 起独立成页 [[10_dispatch_modes_proxytensor_faketensor_analysis]]）（`__torch_function__`/`__torch_dispatch__`/ProxyTensor/FakeTensor 四层分工、`track_tensor_tree`、FakeTensorMode 状态、decomposition 落点、数据相关 operator 边界）
 - a05 → `b01_torch_compile_api_and_first_call_lifecycle_analysis`（P4 Task 5 起更名为 [[10_torch_compile_api_and_first_call_lifecycle_analysis]]） §12 + [[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16（七阶段成本词汇表、cache-entry 查找与 backend handoff 源码补充；参数化成本模型/break-even/四层 cache 对照表与 e07 既有的测量方法论合并，不重复落地两处）
 
 **入链修复**：`f05`（a02/a04 引用改指 pytorch_dispatcher_analysis / aotautograd_analysis）、`b01`/`e07`/`d06`（a05 引用改指内容实际落点）；卷内 a01-a05 互链随整卷删除一并消失；`00_torch_compile_end_to_end_index.md` 的"卷 A"表按 Task 3 约定不做整体重排（留给 Task 10），仅去除失效行并加一行去向说明，避免 broken>0。
@@ -982,7 +982,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Deep Dive（按 PyTorch `ea5655fcebf` 固定基线核对 FX、AOTAutograd 与 Inductor 源码。）
 
-- **新增 `fx_graph_construction_and_transformation_analysis`**（历史活链接，该页已于 2026-07-30 判重删除，AOT 特有内容并入 [[aotautograd_joint_forward_backward_graphs_analysis]]/[[saved_tensors_recompute_and_runtime_abi_analysis]]，FX 数据模型部分此前已并入 [[fx_graph_core_data_model_analysis]]，按"历史不回写"惯例降级为反引号）：统一解释 `Graph` 侵入式双向链表、`Node.args/kwargs`、`_input_nodes/users` 与查找辅助表，区分图序、依赖边和 `GraphModule.forward` 生成代码。
+- **新增 `fx_graph_construction_and_transformation_analysis`**（历史活链接，该页已于 2026-07-30 判重删除，AOT 特有内容并入 [[11_aotautograd_joint_forward_backward_graphs_analysis]]/[[12_saved_tensors_recompute_and_runtime_abi_analysis]]，FX 数据模型部分此前已并入 [[10_fx_graph_core_data_model_analysis]]，按"历史不回写"惯例降级为反引号）：统一解释 `Graph` 侵入式双向链表、`Node.args/kwargs`、`_input_nodes/users` 与查找辅助表，区分图序、依赖边和 `GraphModule.forward` 生成代码。
 - **补全 AOTAutograd 正反向构图**：从 joint function tracing、partition 分类与子图抽取，解释 fw 额外输出 → runtime context → bw placeholder 的跨图 ABI；明确 fw/bw 无对象级 Node 边。
 - **补全 recompute 机制**：说明 min-cut 保存/重算选择、普通 forward 节点复制进 bw，以及 backward recompute reorder 如何缩短临时值生命周期。
 - **补全 PatternMatcher、DCE 与保序**：覆盖 PatternExpr 子类的图场景、候选桶与逆序匹配、三类 PatternEntry、mutation/stream 边界、dead node 定义、稳定拓扑排序、lint/recompile 检查点。
@@ -994,7 +994,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Deep Dive + Correction（按 PyTorch `9922478dffa` 固定基线复核并补齐 pass 放置方法、关键 API、注册示例与阶段注意事项。）
 
-- **方法论升级**：重写 `fx_pass_optimization_methodology`（2026-07-30 起并入 [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]，详见该日期 changelog 条目）的权威主干，完整覆盖 Dynamo → Pre-Grad → AOT/Decomposition → Joint → Post-Grad → Lowering → Scheduler → Codegen；每阶段均回答“是什么、为什么、适合做什么、为什么不放相邻阶段”，新增选择表、放置规则、六问设计法和验证矩阵。
+- **方法论升级**：重写 `fx_pass_optimization_methodology`（2026-07-30 起并入 [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]]，详见该日期 changelog 条目）的权威主干，完整覆盖 Dynamo → Pre-Grad → AOT/Decomposition → Joint → Post-Grad → Lowering → Scheduler → Codegen；每阶段均回答“是什么、为什么、适合做什么、为什么不放相邻阶段”，新增选择表、放置规则、六问设计法和验证矩阵。
 - **补齐三块缺失内容**：新增 [[30_dynamo_pass_methodology]]（backend callable/`register_backend` 边界）、[[decomposition_passes_guide]]（decomp table、AOT 注入位置、注册/选择方法）、[[codegen_extension_guide]]（`BaseScheduling` + Wrapper + `DeviceOpOverrides` + `register_backend_for_device`）。
 - **三阶段 Pass 指南纠错**：[[pre_grad_passes_guide]] 订正 non-functional/non-normalized IR、真实执行顺序、`pre_grad_custom_pass(Graph)->None` 和缺失 `PatternMatcherPass` import；[[joint_graph_passes_guide]] 订正 `pass_patterns` 所属模块、两轮顺序、Graph hook 契约和“空 hook 确保加载”错误；[[post_grad_passes_guide]] 补真实全流程、三轮 pattern、inference-aware hook、通信 bucketing 与 reinplace 尾部不变量。
 - **Lowering/Scheduler/Codegen 纠错**：`lowering_analysis`（历史活链接，该页已于 2026-07-30 判重并入 [[fx_lowering_to_inductor_ir_analysis]]，按"历史不回写"惯例降级为反引号）订正“Post-Grad 在 Lowering 之后”的错误顺序并补 `register_lowering`/fallback API 示例；`scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]，按"历史不回写"惯例降级为反引号）明确真实接口是 `_pre/_post_fusion_custom_pass(list[BaseSchedulerNode]) -> list[...]`，将 `GraphLowering`/`node.fusable` 旧示例标为 deprecated；[[inductor_codegen_analysis]] 更新固定基线入口并链接完整扩展指南。
@@ -1030,10 +1030,10 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Deep Dive（应用户「是否有 upstream pass 分析全集?补一个 torch_upstream_pass_deepdive;vllm/sglang 是否也有大量 pass?并发总结;并归纳 pass 优化开发方法论」。3 路并发 source-audit agent 逐仓核源：upstream `9922478dffa`、vLLM `97a98006b0`、SGLang `d6ef68881e`。）
 
-- **新增 `torch_upstream_pass_deepdive`**（04_inductor，2026-07-30 起判重删除、机制层并入 [[pattern_expression_and_matcher_engine_analysis]]/[[graph_pass_pipeline_ordering_and_fixpoint_analysis]]，详见该日期 changelog 条目）：上游 Inductor pass「全集 + 机制」总纲，补上三份 stage 指南缺的**机制层**——`PatternMatcherPass` 声明式引擎（声明→trace→匹配→改写）、三种 `PatternEntry`（lowering/graph/replacement）、`fwd_only`/`joint_fwd_bwd` 两种 trace、序列化 pattern 缓存（30 个 `_sfdp`）、三阶段驱动器 + `*_custom_*_pass` 钩子 + `GraphTransformObserver`，及 pre/joint/post_grad 全集目录。6 处载荷 `file:line` 已实读复核（`PatternMatcherPass.apply:2352` + 跨 mutation/stream 护栏 2400/2409、`LoweringPatternEntry.apply:1156`↔`graph.py:1372-1376` passthrough、序列化缓存 import 1973-1981、post_grad 三桶 85-89、`_sfdp_init:1487`）。
+- **新增 `torch_upstream_pass_deepdive`**（04_inductor，2026-07-30 起判重删除、机制层并入 [[22_pattern_expression_and_matcher_engine_analysis]]/[[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]]，详见该日期 changelog 条目）：上游 Inductor pass「全集 + 机制」总纲，补上三份 stage 指南缺的**机制层**——`PatternMatcherPass` 声明式引擎（声明→trace→匹配→改写）、三种 `PatternEntry`（lowering/graph/replacement）、`fwd_only`/`joint_fwd_bwd` 两种 trace、序列化 pattern 缓存（30 个 `_sfdp`）、三阶段驱动器 + `*_custom_*_pass` 钩子 + `GraphTransformObserver`，及 pre/joint/post_grad 全集目录。6 处载荷 `file:line` 已实读复核（`PatternMatcherPass.apply:2352` + 跨 mutation/stream 护栏 2400/2409、`LoweringPatternEntry.apply:1156`↔`graph.py:1372-1376` passthrough、序列化缓存 import 1973-1981、post_grad 三桶 85-89、`_sfdp_init:1487`）。
 - **新增 [[sglang_compilation_passes_analysis]]** + 新建 `sglang/` 目录与 index：**核心发现——SGLang `srt/compilation/` 是 vLLM piecewise-cudagraph 管线的近逐文件 fork，但融合 pass 被整个抽空，真实图重写 pass 数=0**；唯一的 `FixFunctionalizationPass.__call__` 是 no-op（`fix_functionalization.py:34-37` 只 `count+=1`，`pass_manager.py:47-51` `configure()` 只挂它、`passes` 恒空）——两处均本人实读复核。含两条 compile 路径、split_ops 切图、CUDA/NPU/XPU piecewise backend 差异。
 - **更新 [[vllm_ir_and_fusion_passes_analysis]]**：新增 §3.5「Pass 全家福 + 三大融合维度」——回答「vLLM 有没有大量 pass：有，约 23 个」（16 融合 + 6 IR/utility + 1 pre-grad），建在 torch `pattern_matcher` 上，朝**厂商 kernel**（FlashInfer/cutlass/symm_mem/AITER）融合，三维度 upstream 没有：**集合通信 / 量化 / KV-cache 写入**；补 pre-grad 钩子 + `compile_range` 门控 + 三种 pattern 注册形态。
-- **新增 `fx_pass_optimization_methodology`**（04_inductor，2026-07-30 起判重删除、内容并入 [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] §14 等处，详见该日期 changelog 条目）：跨四家归纳的 pass 开发方法论——四家现状对照表、四个决策问题（在哪做 Q1 / 匹配什么 Q2 / 怎么落地 Q3 / 怎么保证对 Q4）、**融合朝向谱系**（codegen→厂商库→预融合 kernel，解释 vLLM 写十几个而 SGLang 一个不写）、工业界工程护栏（uuid=源码 hash / 可 bisect / 门控分层 / pattern 对 custom_ops 鲁棒 / 序列化缓存）、开发 checklist、反模式（搬框架≠搬融合、pass 会腐化、跨类别改写会错）。
+- **新增 `fx_pass_optimization_methodology`**（04_inductor，2026-07-30 起判重删除、内容并入 [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] §14 等处，详见该日期 changelog 条目）：跨四家归纳的 pass 开发方法论——四家现状对照表、四个决策问题（在哪做 Q1 / 匹配什么 Q2 / 怎么落地 Q3 / 怎么保证对 Q4）、**融合朝向谱系**（codegen→厂商库→预融合 kernel，解释 vLLM 写十几个而 SGLang 一个不写）、工业界工程护栏（uuid=源码 hash / 可 bisect / 门控分层 / pattern 对 custom_ops 鲁棒 / 序列化缓存）、开发 checklist、反模式（搬框架≠搬融合、pass 会腐化、跨类别改写会错）。
 - **联动**：04_inductor/index 加两页；03_infer_frameworks/index 加 SGLang 子框架行；各页 Related 交叉链接。
 
 ---

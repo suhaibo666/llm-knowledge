@@ -1,6 +1,6 @@
 # 06 · 结构化输出、Higher-Order Operator 与嵌套图
 
-> 前置：[[graph_values_metadata_and_signatures_analysis]]、[[graph_effects_alias_mutation_and_order_analysis]]
+> 前置：[[11_graph_values_metadata_and_signatures_analysis]]、[[12_graph_effects_alias_mutation_and_order_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -74,7 +74,7 @@ Inductor `MultiOutputPattern`描述一个 connected match 有多个外露 root�
 - 一个主输出加一个可选 output。
 
 它不要求某个单 Node 的 runtime value 必须是 tuple。详见
-[[pattern_expression_and_matcher_engine_analysis]]。
+[[22_pattern_expression_and_matcher_engine_analysis]]。
 
 ## 5. HigherOrderOperator 为什么存在
 
@@ -172,7 +172,7 @@ checkpoint 可用 HigherOrderOperator 或 metadata 向 partitioner表达“这�
 backward graph，而不是 runtime 解释一个抽象 `recompute` Node。
 
 region 是捕获/策略表达；copied nodes 是 partitioned backward implementation。详见
-[[saved_tensors_recompute_and_runtime_abi_analysis]]。
+[[12_saved_tensors_recompute_and_runtime_abi_analysis]]。
 
 ## 9. Node 参数如何引用子图
 
@@ -422,16 +422,16 @@ Lab 分两部分：
 
 ## 学习顺序
 
-- 上一篇：[[graph_effects_alias_mutation_and_order_analysis]]
-- 下一篇：[[graph_capture_frontends_and_tracing_analysis]]
+- 上一篇：[[12_graph_effects_alias_mutation_and_order_analysis]]
+- 下一篇：[[14_graph_capture_frontends_and_tracing_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[graph_values_metadata_and_signatures_analysis]]
-- [[graph_effects_alias_mutation_and_order_analysis]]
-- [[pattern_expression_and_matcher_engine_analysis]]
-- [[aotautograd_joint_forward_backward_graphs_analysis]]
-- [[saved_tensors_recompute_and_runtime_abi_analysis]]
-- [[dead_code_topology_and_effect_order_analysis]]
+- [[11_graph_values_metadata_and_signatures_analysis]]
+- [[12_graph_effects_alias_mutation_and_order_analysis]]
+- [[22_pattern_expression_and_matcher_engine_analysis]]
+- [[11_aotautograd_joint_forward_backward_graphs_analysis]]
+- [[12_saved_tensors_recompute_and_runtime_abi_analysis]]
+- [[23_dead_code_topology_and_effect_order_analysis]]
 - [[21_control_flow_capture_analysis]] — Dynamo 侧控制流捕获前端(`speculate_subgraph`、与原生 `if`/`for`/`while` 的路径分野)

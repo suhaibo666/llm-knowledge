@@ -880,7 +880,7 @@ print(metrics.ir_nodes_pre_fusion)   # 融合前节点数，融合后对比见 g
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[pattern_expression_and_matcher_engine_analysis]]
+- [[22_pattern_expression_and_matcher_engine_analysis]]
 - [[buffer_liveness_memory_planning_and_reuse_analysis]]
 - [[codegen_kernel_mapping_autotuning_and_provenance_analysis]]
 - [[codegen_extension_guide]] — 新设备 `BaseScheduling`/Wrapper 注册骨架(§19.3 的完整版本)

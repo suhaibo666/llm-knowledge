@@ -362,7 +362,7 @@ Pattern 的 `_users=1`约束通常也是 distinct user 数，不是参数出现�
   consumer→producer 反过来变成 producer→consumer；
 - **反向传播图**：AOTAutograd 对 joint graph partition 后得到的 backward
   `GraphModule`，是一张独立的 `Graph`，不与 forward 共享 Node，也不是把 forward 的
-  `users` 边"翻转"复用出来的（构造过程见 [[aotautograd_joint_forward_backward_graphs_analysis]]）。
+  `users` 边"翻转"复用出来的（构造过程见 [[11_aotautograd_joint_forward_backward_graphs_analysis]]）。
 
 `users` 只回答"这张图里谁消费了这个值"；它不是、也不会成为另一张图。
 
@@ -557,14 +557,14 @@ Lab 证明：
 ## 学习顺序
 
 - 上一篇：[[01_graph_ir_motivation_and_taxonomy]]
-- 下一篇：[[graph_values_metadata_and_signatures_analysis]]
+- 下一篇：[[11_graph_values_metadata_and_signatures_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
 - [[01_graph_ir_motivation_and_taxonomy]]
-- [[graph_values_metadata_and_signatures_analysis]]
-- [[fx_graph_editing_primitives_and_invariants_analysis]]
-- [[dead_code_topology_and_effect_order_analysis]]
-- [[pattern_expression_and_matcher_engine_analysis]]
+- [[11_graph_values_metadata_and_signatures_analysis]]
+- [[21_fx_graph_editing_primitives_and_invariants_analysis]]
+- [[23_dead_code_topology_and_effect_order_analysis]]
+- [[22_pattern_expression_and_matcher_engine_analysis]]
 - [[04_export_and_distributed/01_fx_export_extensibility/index]]

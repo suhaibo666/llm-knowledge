@@ -2,7 +2,7 @@
 
 > **页面角色**：post-grad阶段目录、注册API与尾部不变量。
 > **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **课程分工**：本页保留阶段开发参考；当前改图不变量、pass管线与合法性见 [[fx_graph_editing_primitives_and_invariants_analysis]]、[[graph_pass_pipeline_ordering_and_fixpoint_analysis]] 和 [[graph_rewrite_legality_validation_and_complexity_analysis]]。
+> **课程分工**：本页保留阶段开发参考；当前改图不变量、pass管线与合法性见 [[21_fx_graph_editing_primitives_and_invariants_analysis]]、[[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] 和 [[25_graph_rewrite_legality_validation_and_complexity_analysis]]。
 
 > **Updated**: 2026-07-30（Pass 19-21 节补第 4 个成员 `dedup_reduce_scatters`，回补自已删除的 `inductor_compiler_pipeline_analysis.md` §4.3.7）
 
@@ -113,7 +113,7 @@ if not torch._dynamo.config.skip_fsdp_hooks:
 
 ### Pass 2: 死代码消除（DCE）
 
-> **注**：“`copy_` 因没有 users 就会被当前 FX DCE 误删”的例子不准确，当前 mutable-schema `OpOverload` 会被 impurity 检测保留；现行规则见 [[dead_code_topology_and_effect_order_analysis#2. FX DCE]] 与 [[dead_code_topology_and_effect_order_analysis#3. Pure + no users]]。
+> **注**：“`copy_` 因没有 users 就会被当前 FX DCE 误删”的例子不准确，当前 mutable-schema `OpOverload` 会被 impurity 检测保留；现行规则见 [[23_dead_code_topology_and_effect_order_analysis#2. FX DCE]] 与 [[23_dead_code_topology_and_effect_order_analysis#3. Pure + no users]]。
 
 **代码位置**：`gm.graph.eliminate_dead_code()`
 
@@ -883,7 +883,7 @@ Post-Grad Passes 是 PyTorch Inductor 编译器的关键阶段，专注于：
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[02_engineering/01_ai_frameworks/index]]
-- [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段放置方法论(现含跨框架对照)
+- [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段放置方法论(现含跨框架对照)
 - [[fx_lowering_to_inductor_ir_analysis]] — Post-Grad 之后的 ATen → IR 边界
 - [[pre_grad_passes_guide]]
 - [[joint_graph_passes_guide]] — §4.5 常量折叠的窄化版 `UniformValueConstantFolder`

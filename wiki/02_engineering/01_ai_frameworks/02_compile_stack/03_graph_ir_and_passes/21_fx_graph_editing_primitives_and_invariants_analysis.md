@@ -1,6 +1,6 @@
 # 12 · FX 改图原语与不变量
 
-> 前置：[[fx_graph_core_data_model_analysis]]、[[graph_effects_alias_mutation_and_order_analysis]]
+> 前置：[[10_fx_graph_core_data_model_analysis]]、[[12_graph_effects_alias_mutation_and_order_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -370,13 +370,13 @@ Part III 持久 artifact 位于 `tools/labs_torch_compile/artifacts/part3/`：`l
 
 ## 学习顺序
 
-- 上一篇：[[graph_stage_boundaries_identity_and_provenance_analysis]]
-- 下一篇：[[pattern_expression_and_matcher_engine_analysis]]
+- 上一篇：[[20_graph_stage_boundaries_identity_and_provenance_analysis]]
+- 下一篇：[[22_pattern_expression_and_matcher_engine_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[fx_graph_core_data_model_analysis]]
-- [[pattern_expression_and_matcher_engine_analysis]]
-- [[dead_code_topology_and_effect_order_analysis]]
-- [[graph_rewrite_legality_validation_and_complexity_analysis]]
+- [[10_fx_graph_core_data_model_analysis]]
+- [[22_pattern_expression_and_matcher_engine_analysis]]
+- [[23_dead_code_topology_and_effect_order_analysis]]
+- [[25_graph_rewrite_legality_validation_and_complexity_analysis]]

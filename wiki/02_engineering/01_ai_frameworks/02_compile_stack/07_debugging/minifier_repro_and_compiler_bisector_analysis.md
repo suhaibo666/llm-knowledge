@@ -225,5 +225,5 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 - [[aotautograd_and_inductor_failure_localization_analysis]]
 - [[compiled_correctness_validation_methodology_analysis]]
 - [[kernel_fusion_memory_and_hardware_performance_analysis]]
-- [[graph_rewrite_legality_validation_and_complexity_analysis]]
+- [[25_graph_rewrite_legality_validation_and_complexity_analysis]]
 - [[22_backend_modes_options_stances_and_fullgraph_analysis]] — §13:`torch.compile()` API 入口如何调用 `CompilerBisector.get_backend()` 覆盖 backend

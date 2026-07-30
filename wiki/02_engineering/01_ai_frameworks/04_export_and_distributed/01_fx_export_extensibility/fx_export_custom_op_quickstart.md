@@ -2,7 +2,7 @@
 
 > **页面角色**：FX/export/custom-op API 实操入口。
 > **原始基线**：见下方页头；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **课程分工**：本页保留API速查；捕获前端、FX数据结构与改图不变量的当前主线见 [[graph_capture_frontends_and_tracing_analysis]]、[[fx_graph_core_data_model_analysis]] 与 [[fx_graph_editing_primitives_and_invariants_analysis]]。
+> **课程分工**：本页保留API速查；捕获前端、FX数据结构与改图不变量的当前主线见 [[14_graph_capture_frontends_and_tracing_analysis]]、[[10_fx_graph_core_data_model_analysis]] 与 [[21_fx_graph_editing_primitives_and_invariants_analysis]]。
 
 > 层次:quick start(用)
 > 核验基准:PyTorch upstream `E:\97-codes\pytorch\pytorch`(v2.13.0a0, commit 9922478)

@@ -70,31 +70,31 @@ flowchart LR
 | 编号 | 页面 | 先解决的问题 |
 |---:|---|---|
 | 01 | [[01_graph_ir_motivation_and_taxonomy]] | 为什么需要图；不同“图”到底差在哪里 |
-| 02 | [[fx_graph_core_data_model_analysis]] | FX 如何同时保存程序顺序与 use-def |
-| 03 | [[graph_values_metadata_and_signatures_analysis]] | 边上传递什么；签名如何对应用户程序 |
+| 02 | [[10_fx_graph_core_data_model_analysis]] | FX 如何同时保存程序顺序与 use-def |
+| 03 | [[11_graph_values_metadata_and_signatures_analysis]] | 边上传递什么；签名如何对应用户程序 |
 | 04 | [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] | 一张图为何只对某些输入成立 |
-| 05 | [[graph_effects_alias_mutation_and_order_analysis]] | 没有数据边为何也可能不能换序或删除 |
-| 06 | [[structured_outputs_higher_order_and_nested_graphs_analysis]] | 多输出、控制流与嵌套图如何扩展普通 DAG |
+| 05 | [[12_graph_effects_alias_mutation_and_order_analysis]] | 没有数据边为何也可能不能换序或删除 |
+| 06 | [[13_structured_outputs_higher_order_and_nested_graphs_analysis]] | 多输出、控制流与嵌套图如何扩展普通 DAG |
 
 ### Part II：捕获、规范化与正反向构造
 
 | 编号 | 页面 | 先解决的问题 |
 |---:|---|---|
-| 07 | [[graph_capture_frontends_and_tracing_analysis]] | symbolic_trace、make_fx、Dynamo、export 为何产生不同图 |
-| 08 | [[graph_normalization_decomposition_and_functionalization_analysis]] | 捕获后为何还要规范化 |
-| 09 | [[aotautograd_joint_forward_backward_graphs_analysis]] | joint 如何切成独立 fw 与 bw |
-| 10 | [[saved_tensors_recompute_and_runtime_abi_analysis]] | 正反向之间保存、重算和传递什么 |
-| 11 | [[graph_stage_boundaries_identity_and_provenance_analysis]] | 节点身份改变后如何跨阶段追踪 |
+| 07 | [[14_graph_capture_frontends_and_tracing_analysis]] | symbolic_trace、make_fx、Dynamo、export 为何产生不同图 |
+| 08 | [[15_graph_normalization_decomposition_and_functionalization_analysis]] | 捕获后为何还要规范化 |
+| 09 | [[11_aotautograd_joint_forward_backward_graphs_analysis]] | joint 如何切成独立 fw 与 bw |
+| 10 | [[12_saved_tensors_recompute_and_runtime_abi_analysis]] | 正反向之间保存、重算和传递什么 |
+| 11 | [[20_graph_stage_boundaries_identity_and_provenance_analysis]] | 节点身份改变后如何跨阶段追踪 |
 
 ### Part III：安全改图、匹配、清理与验证
 
 | 编号 | 页面 | 先解决的问题 |
 |---:|---|---|
-| 12 | [[fx_graph_editing_primitives_and_invariants_analysis]] | 一次最小改图必须同步哪些结构 |
-| 13 | [[pattern_expression_and_matcher_engine_analysis]] | PatternExpr 如何描述可捕获 DAG 共享的子图 |
-| 14 | [[dead_code_topology_and_effect_order_analysis]] | 节点何时真的 dead，拓扑正确为何仍可能错 |
-| 15 | [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] | pass 为什么必须处于正确阶段和顺序 |
-| 16 | [[graph_rewrite_legality_validation_and_complexity_analysis]] | 结构命中后如何证明改写合法、正确且值得 |
+| 12 | [[21_fx_graph_editing_primitives_and_invariants_analysis]] | 一次最小改图必须同步哪些结构 |
+| 13 | [[22_pattern_expression_and_matcher_engine_analysis]] | PatternExpr 如何描述可捕获 DAG 共享的子图 |
+| 14 | [[23_dead_code_topology_and_effect_order_analysis]] | 节点何时真的 dead，拓扑正确为何仍可能错 |
+| 15 | [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] | pass 为什么必须处于正确阶段和顺序 |
+| 16 | [[25_graph_rewrite_legality_validation_and_complexity_analysis]] | 结构命中后如何证明改写合法、正确且值得 |
 
 ### Part IV：从 FX 到 Inductor IR、Scheduler 和 Kernel
 

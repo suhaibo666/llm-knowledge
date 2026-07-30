@@ -18,21 +18,21 @@ AOTAutograd(ahead-of-time autograd)在编译期就把一段可微计算的**前�
 
 下列五篇组成按当前固定源码基线核验的课程主线；专题页继续保留各自独有角色：
 
-- [[graph_effects_alias_mutation_and_order_analysis]] — functionalization之前必须理解的alias、mutation与effect
-- [[graph_normalization_decomposition_and_functionalization_analysis]] — functional ATen、decomposition、synthetic base与规范化顺序
-- [[aotautograd_joint_forward_backward_graphs_analysis]] — joint graph 如何生成并切成两张互不持有对方 `Node` 的 fw/bw 图
-- [[saved_tensors_recompute_and_runtime_abi_analysis]] — saved tensor ABI、bw placeholder、重计算节点复制与运行时拼接
-- [[graph_stage_boundaries_identity_and_provenance_analysis]] — 各阶段的图身份、边界、metadata 与 provenance
+- [[12_graph_effects_alias_mutation_and_order_analysis]] — functionalization之前必须理解的alias、mutation与effect
+- [[15_graph_normalization_decomposition_and_functionalization_analysis]] — functional ATen、decomposition、synthetic base与规范化顺序
+- [[11_aotautograd_joint_forward_backward_graphs_analysis]] — joint graph 如何生成并切成两张互不持有对方 `Node` 的 fw/bw 图
+- [[12_saved_tensors_recompute_and_runtime_abi_analysis]] — saved tensor ABI、bw placeholder、重计算节点复制与运行时拼接
+- [[20_graph_stage_boundaries_identity_and_provenance_analysis]] — 各阶段的图身份、边界、metadata 与 provenance
 
 ### 课程主线与专题参考分工
 
 | 页面 | 保留角色 | 当前审计口径 |
 |---|---|---|
-| [[aot_autograd_quickstart]] | API quick start与日志/config入口 | 示例需看代码块是否current-run；未统一默认视为未复跑 |
-| [[dispatch_modes_proxytensor_faketensor_analysis]] | make_fx 捕获所依赖的 ProxyTensor/FakeTensor dispatch-mode 专题 | 2026-07-30 从原 `aotautograd_analysis` §13 独立成页，逐字保留 |
+| [[01_aot_autograd_quickstart]] | API quick start与日志/config入口 | 示例需看代码块是否current-run；未统一默认视为未复跑 |
+| [[10_dispatch_modes_proxytensor_faketensor_analysis]] | make_fx 捕获所依赖的 ProxyTensor/FakeTensor dispatch-mode 专题 | 2026-07-30 从原 `aotautograd_analysis` §13 独立成页，逐字保留 |
 | [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] | 当前系统课程与可执行Lab | 源码、runtime和mock证据分级 |
 
-> `aotautograd_analysis`（1460 行全量 reference）与 `fx_graph_construction_and_transformation_analysis`（AOT 特有残留页）已于 2026-07-30（kb-reorg P4 Task 8）判重删除：joint/fw/bw 构图并入 [[aotautograd_joint_forward_backward_graphs_analysis]]，saved/recompute/runtime ABI 并入 [[saved_tensors_recompute_and_runtime_abi_analysis]]，ProxyTensor/FakeTensor 独立为 [[dispatch_modes_proxytensor_faketensor_analysis]]；逐节台账见对应 commit 与 changelog。
+> `aotautograd_analysis`（1460 行全量 reference）与 `fx_graph_construction_and_transformation_analysis`（AOT 特有残留页）已于 2026-07-30（kb-reorg P4 Task 8）判重删除：joint/fw/bw 构图并入 [[11_aotautograd_joint_forward_backward_graphs_analysis]]，saved/recompute/runtime ABI 并入 [[12_saved_tensors_recompute_and_runtime_abi_analysis]]，ProxyTensor/FakeTensor 独立为 [[10_dispatch_modes_proxytensor_faketensor_analysis]]；逐节台账见对应 commit 与 changelog。
 
 另见[[02_compile_stack/06_compile_cache/index]]：AOTAutograd cache命中可能复用functionalization、
 joint/partition及其编译结果；必须先确认cache层级，才能解释为什么某次运行没有重新打印
@@ -42,13 +42,16 @@ PatternExpr/PatternMatcherPass、DCE与稳定拓扑排序、rewrite合法性与�
 
 ## 页面列表(按层次)
 
+> **段位与阅读顺序**(kb-reorg P4 Task 9.5,2026-07-30):段 0(01-09)入门;段 1(10-19)核心机制主线——捕获所依赖的 dispatch-mode 机制(10)→ joint graph 构造(11)→ saved/recompute ABI(12)→ 编译产物的运行时 wrapper(13);段 2(20-29)深潜/专题——用户层 activation checkpoint 与 partitioner 的策略叠加。本表补齐此前 index 遗漏的 13 号页(该页此前只在关联域被间接提及,未入表)。
+
 | 页面 | 层次 | 核心主题 |
 |------|------|---------|
-| [[aot_autograd_quickstart]] | **quick start** | 看前/反向图:`backend="aot_eager"` + `TORCH_LOGS=aot_graphs`;看联合图 `aot_joint_graph`;partitioner(min-cut vs default)与重计算;`aot_function` 最小用法;`AOT_PARTITIONER_DEBUG`/activation_memory_budget |
-| [[aotautograd_joint_forward_backward_graphs_analysis]] | deep dive | metadata analysis、joint graph 构造(primals/tangents)、partition 如何抽取 fresh fw/bw Graph、输出/输入 ABI 分层 |
-| [[saved_tensors_recompute_and_runtime_abi_analysis]] | deep dive | saved value 分类、min-cut rematerialization、recompute 节点复制与 reorder、运行时 autograd.Function 拼接 |
-| [[dispatch_modes_proxytensor_faketensor_analysis]] | deep dive(专题) | `__torch_function__`/`__torch_dispatch__`/ProxyTensor/FakeTensor 四层分工，make_fx 怎样协同两套抽象执行状态捕获联合图 |
-| [[activation_checkpoint_recompute_and_compile_analysis]] | deep dive(专题) | 用户层 `torch.utils.checkpoint`(reentrant/non-reentrant、Selective AC policy)如何与 partitioner 的 save/recompute 选择叠加；2026-07-30 迁入,与 [[saved_tensors_recompute_and_runtime_abi_analysis]] 互指划界(用户 API/策略层 vs partitioner 源码/runtime ABI 层) |
+| [[01_aot_autograd_quickstart]] | **quick start**(段 0) | 看前/反向图:`backend="aot_eager"` + `TORCH_LOGS=aot_graphs`;看联合图 `aot_joint_graph`;partitioner(min-cut vs default)与重计算;`aot_function` 最小用法;`AOT_PARTITIONER_DEBUG`/activation_memory_budget |
+| [[10_dispatch_modes_proxytensor_faketensor_analysis]] | deep dive(段 1) | `__torch_function__`/`__torch_dispatch__`/ProxyTensor/FakeTensor 四层分工，make_fx 怎样协同两套抽象执行状态捕获联合图 |
+| [[11_aotautograd_joint_forward_backward_graphs_analysis]] | deep dive(段 1) | metadata analysis、joint graph 构造(primals/tangents)、partition 如何抽取 fresh fw/bw Graph、输出/输入 ABI 分层 |
+| [[12_saved_tensors_recompute_and_runtime_abi_analysis]] | deep dive(段 1) | saved value 分类、min-cut rematerialization、recompute 节点复制与 reorder、运行时 autograd.Function 拼接 |
+| [[13_aot_runtime_wrappers_and_lazy_backward_compile_analysis]] | deep dive(D02,段 1) | fw/bw callable 包回 eager autograd 协议的 runtime wrapper、saved tensor 打包/解包、lazy backward compile 触发时机、input mutation/view/alias 语义恢复 |
+| [[20_activation_checkpoint_recompute_and_compile_analysis]] | deep dive(专题,段 2) | 用户层 `torch.utils.checkpoint`(reentrant/non-reentrant、Selective AC policy)如何与 partitioner 的 save/recompute 选择叠加;2026-07-30 迁入,与 [[12_saved_tensors_recompute_and_runtime_abi_analysis]] 互指划界(用户 API/策略层 vs partitioner 源码/runtime ABI 层) |
 
 > joint graph 上的优化 pass 见 [[joint_graph_passes_guide]](实现于 Inductor `fx_passes/joint_graph.py`)。
 

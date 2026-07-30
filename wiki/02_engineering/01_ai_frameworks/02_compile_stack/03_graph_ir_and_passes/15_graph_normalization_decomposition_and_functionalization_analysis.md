@@ -1,6 +1,6 @@
 # 08 · 图规范化、Decomposition 与 Functionalization
 
-> 前置：[[graph_capture_frontends_and_tracing_analysis]]、[[graph_effects_alias_mutation_and_order_analysis]]
+> 前置：[[14_graph_capture_frontends_and_tracing_analysis]]、[[12_graph_effects_alias_mutation_and_order_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -179,7 +179,7 @@ ShapeEnv/guards证明；不能把 tracing hint直接折叠。
 ```
 
 pass placement本质是选择一个 invariant最合适的层。详见
-[[graph_pass_pipeline_ordering_and_fixpoint_analysis]]。
+[[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]]。
 
 ## 11. 与 AOT joint 的边界
 
@@ -388,14 +388,14 @@ artifact 位于 `tools/labs_torch_compile/artifacts/end_to_end/functional_aten.p
 
 ## 学习顺序
 
-- 上一篇：[[graph_capture_frontends_and_tracing_analysis]]
-- 下一篇：[[aotautograd_joint_forward_backward_graphs_analysis]]
+- 上一篇：[[14_graph_capture_frontends_and_tracing_analysis]]
+- 下一篇：[[11_aotautograd_joint_forward_backward_graphs_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[graph_capture_frontends_and_tracing_analysis]]
-- [[graph_effects_alias_mutation_and_order_analysis]]
-- [[aotautograd_joint_forward_backward_graphs_analysis]]
-- [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]
+- [[14_graph_capture_frontends_and_tracing_analysis]]
+- [[12_graph_effects_alias_mutation_and_order_analysis]]
+- [[11_aotautograd_joint_forward_backward_graphs_analysis]]
+- [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]]
 - [[decomposition_passes_guide]] — 开发者视角的姊妹页:注册 API、代码示例与验证清单(判重结论见该页页头「课程分工」)

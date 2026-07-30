@@ -1,6 +1,6 @@
 # 13 · PatternExpr 与 PatternMatcher 引擎
 
-> 前置：[[fx_graph_editing_primitives_and_invariants_analysis]]、[[structured_outputs_higher_order_and_nested_graphs_analysis]]
+> 前置：[[21_fx_graph_editing_primitives_and_invariants_analysis]]、[[13_structured_outputs_higher_order_and_nested_graphs_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -652,13 +652,13 @@ assert，不是只打印结果。完整命令与全系列证据等级见
 
 ## 学习顺序
 
-- 上一篇：[[fx_graph_editing_primitives_and_invariants_analysis]]
-- 下一篇：[[dead_code_topology_and_effect_order_analysis]]
+- 上一篇：[[21_fx_graph_editing_primitives_and_invariants_analysis]]
+- 下一篇：[[23_dead_code_topology_and_effect_order_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[fx_graph_editing_primitives_and_invariants_analysis]]
-- [[structured_outputs_higher_order_and_nested_graphs_analysis]]
-- [[dead_code_topology_and_effect_order_analysis]]
-- [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]
+- [[21_fx_graph_editing_primitives_and_invariants_analysis]]
+- [[13_structured_outputs_higher_order_and_nested_graphs_analysis]]
+- [[23_dead_code_topology_and_effect_order_analysis]]
+- [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]]

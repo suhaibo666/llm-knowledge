@@ -1,6 +1,6 @@
 # 03 · 图中的值、元数据与签名
 
-> 前置：[[fx_graph_core_data_model_analysis]]
+> 前置：[[10_fx_graph_core_data_model_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -133,7 +133,7 @@ Python 函数可接收/返回 tuple、list、dict 和 dataclass-like pytree。�
 
 这两者与 PatternMatcher 的 `MultiOutputPattern`也不同：后者描述一个 match 有多个外露
 root，不要求某个单 Node 返回 tuple。详见
-[[structured_outputs_higher_order_and_nested_graphs_analysis]]。
+[[13_structured_outputs_higher_order_and_nested_graphs_analysis]]。
 
 ## 6. `node.meta["val"]`
 
@@ -405,15 +405,15 @@ mutation-contract 源码结论。
 
 ## 学习顺序
 
-- 上一篇：[[fx_graph_core_data_model_analysis]]
+- 上一篇：[[10_fx_graph_core_data_model_analysis]]
 - 下一篇：[[20_symbolic_shapes_guards_and_graph_reuse_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[fx_graph_core_data_model_analysis]]
+- [[10_fx_graph_core_data_model_analysis]]
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]]
-- [[structured_outputs_higher_order_and_nested_graphs_analysis]]
-- [[aotautograd_joint_forward_backward_graphs_analysis]]
-- [[graph_stage_boundaries_identity_and_provenance_analysis]]
+- [[13_structured_outputs_higher_order_and_nested_graphs_analysis]]
+- [[11_aotautograd_joint_forward_backward_graphs_analysis]]
+- [[20_graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[04_export_and_distributed/01_fx_export_extensibility/index]]

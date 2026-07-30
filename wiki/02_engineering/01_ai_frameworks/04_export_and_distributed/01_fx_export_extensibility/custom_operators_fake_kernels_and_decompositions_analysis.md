@@ -254,6 +254,6 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[04_export_and_distributed/01_fx_export_extensibility/index]] — 本模块 overview
 - [[fx_graph_export_and_custom_ops_analysis]] — §7 是 custom_op 注册机制的公开入口概述(本页的浅层对照),见页头判重结论
 - [[10_pytorch_dispatcher_analysis]] — schema/dispatcher/ADInplaceOrView 分层
-- [[dispatch_modes_proxytensor_faketensor_analysis]] — ProxyTensor/FakeTensor 两套抽象执行状态（2026-07-30 起独立成页，取代原 `aotautograd_analysis` §13 引用）
+- [[10_dispatch_modes_proxytensor_faketensor_analysis]] — ProxyTensor/FakeTensor 两套抽象执行状态（2026-07-30 起独立成页，取代原 `aotautograd_analysis` §13 引用）
 - [[fsdp_dtensor_and_distributed_graphs_analysis]]
 - [[20_custom_backends_and_device_integration_analysis]]

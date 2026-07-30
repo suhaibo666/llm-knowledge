@@ -2,7 +2,7 @@
 
 > **页面角色**：`make_fx`/AOTAutograd joint capture 所依赖的 dispatch-mode 机制专题——`__torch_function__`/`__torch_dispatch__`/`TorchDispatchMode`/ProxyTensor/FakeTensor 四层如何分工、如何协同把一次 Python 调用同时变成 FX Node 与抽象输出值。
 > **当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **来源**：本页内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a04_dispatch_modes_proxy_tensor_and_fake_tensor_analysis.md`)，2026-07 由 Task 3 逐字迁入 `aotautograd_analysis.md` §13；2026-07-30 kb-reorg P4 Task 8 判重时确认它讲的是 [[aotautograd_joint_forward_backward_graphs_analysis]] §3"图捕获"背后实际使用的 dispatch-mode 机制——该页此前只把 `FakeTensorMode` 作为一个字段提及，未展开 ProxyTensor/FakeTensor 为什么分成两套状态、`track_tensor_tree` 如何绑定、以及 `__torch_dispatch__` 层拦截的完整链路，故独立成页而非塞进 C09。[[10_pytorch_dispatcher_analysis]] 只在 §10.2 给出 `__torch_dispatch__`/`TorchDispatchMode` 的入门介绍，不含 ProxyTensor/FakeTensor 机制本身。
+> **来源**：本页内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a04_dispatch_modes_proxy_tensor_and_fake_tensor_analysis.md`)，2026-07 由 Task 3 逐字迁入 `aotautograd_analysis.md` §13；2026-07-30 kb-reorg P4 Task 8 判重时确认它讲的是 [[11_aotautograd_joint_forward_backward_graphs_analysis]] §3"图捕获"背后实际使用的 dispatch-mode 机制——该页此前只把 `FakeTensorMode` 作为一个字段提及，未展开 ProxyTensor/FakeTensor 为什么分成两套状态、`track_tensor_tree` 如何绑定、以及 `__torch_dispatch__` 层拦截的完整链路，故独立成页而非塞进 C09。[[10_pytorch_dispatcher_analysis]] 只在 §10.2 给出 `__torch_dispatch__`/`TorchDispatchMode` 的入门介绍，不含 ProxyTensor/FakeTensor 机制本身。
 
 ## 1. 四个名字解决四类问题
 
@@ -335,9 +335,9 @@ Dynamo不是用 ProxyTensor替代 Python symbolic interpreter：
 
 ## Related Pages
 
-- [[aotautograd_joint_forward_backward_graphs_analysis]] — joint graph 捕获(`make_fx`)的直接消费者:本页讲清楚 §2-§3 依赖的 dispatch-mode 机制
+- [[11_aotautograd_joint_forward_backward_graphs_analysis]] — joint graph 捕获(`make_fx`)的直接消费者:本页讲清楚 §2-§3 依赖的 dispatch-mode 机制
 - [[10_pytorch_dispatcher_analysis]] — `__torch_dispatch__`/`TorchDispatchMode` 的入门介绍与 Dispatcher key 体系
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — ShapeEnv/SymNode 符号系统(FakeTensorMode 持有 ShapeEnv)
-- [[fx_graph_core_data_model_analysis]] — FX Proxy/Node/Graph 的数据模型本身(本页只讲 Proxy 如何被 dispatch mode 创建)
+- [[10_fx_graph_core_data_model_analysis]] — FX Proxy/Node/Graph 的数据模型本身(本页只讲 Proxy 如何被 dispatch mode 创建)
 - [[02_compile_stack/01_dynamo/index]] — Dynamo 复用 FakeTensor 但不等价于单个 TorchDispatchMode
 - [[02_compile_stack/02_aot_autograd/index]] — 所属模块索引

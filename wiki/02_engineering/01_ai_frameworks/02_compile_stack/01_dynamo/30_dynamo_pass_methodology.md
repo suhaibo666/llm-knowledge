@@ -144,6 +144,6 @@ compiled = torch.compile(model, backend="audit_inductor")
 - [[15_guards_cache_lookup_and_recompilation_analysis]] — guards 与重编译深挖
 - [[14_output_graph_side_effects_and_graph_emission_analysis]] — OutputGraph 深挖
 - [[01_dynamo_quickstart]] — `explain`、graph break 和重编译快速排查
-- [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段 Pass 放置方法论(现含跨框架对照)
+- [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段 Pass 放置方法论(现含跨框架对照)
 - [[inductor_compile_fx_orchestration_analysis]] — compile_fx 如何编排 AOTAutograd 与 fw/bw compiler(Dynamo 之后的调用链入口)
 - [[18_backend_contract_and_custom_backend_analysis]] — backend 契约的源码级机制深挖(本页的开发决策线以此为基础)

@@ -1,6 +1,6 @@
 # 04 · 符号形状、Guards 与图复用
 
-> 前置：[[graph_values_metadata_and_signatures_analysis]]
+> 前置：[[11_graph_values_metadata_and_signatures_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -481,15 +481,15 @@ def call(args):
 
 ## 学习顺序
 
-- 上一篇：[[graph_values_metadata_and_signatures_analysis]]
-- 下一篇：[[graph_effects_alias_mutation_and_order_analysis]]
+- 上一篇：[[11_graph_values_metadata_and_signatures_analysis]]
+- 下一篇：[[12_graph_effects_alias_mutation_and_order_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[graph_values_metadata_and_signatures_analysis]]
-- [[graph_capture_frontends_and_tracing_analysis]]
-- [[graph_rewrite_legality_validation_and_complexity_analysis]]
+- [[11_graph_values_metadata_and_signatures_analysis]]
+- [[14_graph_capture_frontends_and_tracing_analysis]]
+- [[25_graph_rewrite_legality_validation_and_complexity_analysis]]
 - [[fx_lowering_to_inductor_ir_analysis]]
 - [[codegen_kernel_mapping_autotuning_and_provenance_analysis]]
 - [[17_dynamic_shapes_generalization_and_fallback_analysis]] — Dynamo 侧自动泛化行为面

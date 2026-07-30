@@ -2,7 +2,7 @@
 
 > 卷别：F · 训练、分布式、扩展与部署  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[activation_checkpoint_recompute_and_compile_analysis]]  
+> 前置：[[20_activation_checkpoint_recompute_and_compile_analysis]]  
 > 后续：[[fsdp_dtensor_and_distributed_graphs_analysis]]  
 > 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,与 [[c10d_ddp_fsdp_dtensor_analysis]] 互指划界)
 
@@ -227,7 +227,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 
 - [[00_torch_compile_end_to_end_index]]
 - [[20_compiled_autograd_analysis]]
-- [[activation_checkpoint_recompute_and_compile_analysis]]
+- [[20_activation_checkpoint_recompute_and_compile_analysis]]
 - [[fsdp_dtensor_and_distributed_graphs_analysis]]
 - [[04_export_and_distributed/02_distributed_primitives/index]]
 - [[production_rollout_fallback_and_monitoring_analysis]]

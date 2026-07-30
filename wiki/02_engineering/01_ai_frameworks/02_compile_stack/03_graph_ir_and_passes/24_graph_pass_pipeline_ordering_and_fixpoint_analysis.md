@@ -1,6 +1,6 @@
 # 15 · Graph Pass 流水线、顺序与 Fixed Point
 
-> 前置：[[graph_normalization_decomposition_and_functionalization_analysis]]、[[dead_code_topology_and_effect_order_analysis]]
+> 前置：[[15_graph_normalization_decomposition_and_functionalization_analysis]]、[[23_dead_code_topology_and_effect_order_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -232,12 +232,12 @@ counter不是generic `changed` bit；例如joint path的count可能仅统计某�
    下注依据，profiling 先行，不是拍脑袋。
 2. **为什么是这个阶段**：即上面的决策树——依赖信息何时首次出现，为什么相邻阶段不合适。
 3. **等价为什么成立**：dtype、shape、stride/layout、alias/mutation、随机数、异常和数值
-   误差的前提分别是什么，详见 [[graph_rewrite_legality_validation_and_complexity_analysis]]
+   误差的前提分别是什么，详见 [[25_graph_rewrite_legality_validation_and_complexity_analysis]]
    §1–§7。
 4. **动态形状为什么安全**：符号恒等、运行时 guard，还是必须拒绝？"看到 SymInt 就跳过"
    只是临时保守策略，见同页 §7 Fake/meta checks 与 runtime guards。
 5. **收益为什么能兑现**：替换后的 op 是否有 lowering/kernel；scheduler/codegen 是否真的
-   把它融合或发射成目标实现？对应 [[graph_rewrite_legality_validation_and_complexity_analysis]]
+   把它融合或发射成目标实现？对应 [[25_graph_rewrite_legality_validation_and_complexity_analysis]]
    §10 性能值得性与 §8 差异测试矩阵的"收益"行。
 6. **为什么可运维**：是否可开关、可计数、可 dump、可 bisect；缓存 key 是否包含影响生成
    结果的 pass 配置/源码——对应本页上方"GraphTransformObserver"小节的计时/禁用机制。
@@ -602,14 +602,14 @@ epilogue）与 **fallback/换手工算子**（torch_npu 把 attention/通信 fal
 
 ## 学习顺序
 
-- 上一篇：[[dead_code_topology_and_effect_order_analysis]]
-- 下一篇：[[graph_rewrite_legality_validation_and_complexity_analysis]]
+- 上一篇：[[23_dead_code_topology_and_effect_order_analysis]]
+- 下一篇：[[25_graph_rewrite_legality_validation_and_complexity_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[graph_normalization_decomposition_and_functionalization_analysis]]
-- [[pattern_expression_and_matcher_engine_analysis]]
-- [[dead_code_topology_and_effect_order_analysis]]
-- [[graph_rewrite_legality_validation_and_complexity_analysis]]
+- [[15_graph_normalization_decomposition_and_functionalization_analysis]]
+- [[22_pattern_expression_and_matcher_engine_analysis]]
+- [[23_dead_code_topology_and_effect_order_analysis]]
+- [[25_graph_rewrite_legality_validation_and_complexity_analysis]]
 - [[npu_fusion_passes_deepdive]] · [[vllm_ir_and_fusion_passes_analysis]] · [[sglang_compilation_passes_analysis]] — §14 跨框架对照的三个下游代表页

@@ -61,7 +61,7 @@ FX 同时有两种结构：
 - `args/kwargs` 中的 Node 引用与反向 `users` 保存 use-def。
 
 它通常是 DAG，但“图顺序”和“数据依赖”不是一个字段。详见
-[[fx_graph_core_data_model_analysis]]。
+[[10_fx_graph_core_data_model_analysis]]。
 
 #### 3.2.1 Program graph 与 dataflow graph
 
@@ -95,8 +95,8 @@ fresh graph、fresh placeholders 和 old→new 环境映射；该 helper 返回�
 - saved value 由 fw output + bw placeholder + runtime ABI 表达；
 - recompute 是 forward 节点被复制到 bw，不是特殊 opcode。
 
-详见 [[aotautograd_joint_forward_backward_graphs_analysis]] 与
-[[saved_tensors_recompute_and_runtime_abi_analysis]]。
+详见 [[11_aotautograd_joint_forward_backward_graphs_analysis]] 与
+[[12_saved_tensors_recompute_and_runtime_abi_analysis]]。
 
 ### 3.4 Inductor IR
 
@@ -359,14 +359,14 @@ fx_call_targets=add,relu,sum
 ## 学习顺序
 
 - 上一篇：[[00_pytorch_graph_series_index]]
-- 下一篇：[[fx_graph_core_data_model_analysis]]
+- 下一篇：[[10_fx_graph_core_data_model_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[fx_graph_core_data_model_analysis]]
+- [[10_fx_graph_core_data_model_analysis]]
 - [[01_eager_runtime/05_autograd_engine/index]]
-- [[aotautograd_joint_forward_backward_graphs_analysis]]
+- [[11_aotautograd_joint_forward_backward_graphs_analysis]]
 - [[fx_lowering_to_inductor_ir_analysis]]
 - [[scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[03_runtime_graphs/index]]

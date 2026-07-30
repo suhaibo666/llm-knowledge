@@ -1,6 +1,6 @@
 # 09 · AOTAutograd 的 Joint、Forward 与 Backward Graph
 
-> 前置：[[graph_normalization_decomposition_and_functionalization_analysis]]
+> 前置：[[15_graph_normalization_decomposition_and_functionalization_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -564,7 +564,7 @@ metadata 收集阶段在给某个输出分类 `OutputType`（§2）时，需要�
 抛错，理由是"保持共享代码路径简单"（`torch/_functorch/aot_autograd.py:651-657`）。
 
 这与 `torch.compile` 主路径不同：主路径下 metadata mutation 有对应的 `InputAliasInfo`
-分类和处理（见 [[graph_effects_alias_mutation_and_order_analysis]]），只有走
+分类和处理（见 [[12_graph_effects_alias_mutation_and_order_analysis]]），只有走
 `aot_export` 才会被直接禁止。排查 export 相关报错时，若涉及"metadata mutation"字样，
 应先确认是否命中了这条 export 专属限制，而不是套用主路径的 mutation 处理心智模型。
 
@@ -583,14 +583,14 @@ metadata 收集阶段在给某个输出分类 `OutputType`（§2）时，需要�
 
 ## 学习顺序
 
-- 上一篇：[[graph_normalization_decomposition_and_functionalization_analysis]]
-- 下一篇：[[saved_tensors_recompute_and_runtime_abi_analysis]]
+- 上一篇：[[15_graph_normalization_decomposition_and_functionalization_analysis]]
+- 下一篇：[[12_saved_tensors_recompute_and_runtime_abi_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[graph_normalization_decomposition_and_functionalization_analysis]]
-- [[saved_tensors_recompute_and_runtime_abi_analysis]]
-- [[graph_stage_boundaries_identity_and_provenance_analysis]]
+- [[15_graph_normalization_decomposition_and_functionalization_analysis]]
+- [[12_saved_tensors_recompute_and_runtime_abi_analysis]]
+- [[20_graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[02_compile_stack/02_aot_autograd/index]]
-- [[dispatch_modes_proxytensor_faketensor_analysis]] — make_fx 捕获 joint 所依赖的 ProxyTensor/FakeTensor dispatch-mode 机制
+- [[10_dispatch_modes_proxytensor_faketensor_analysis]] — make_fx 捕获 joint 所依赖的 ProxyTensor/FakeTensor dispatch-mode 机制

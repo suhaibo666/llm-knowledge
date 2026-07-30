@@ -87,7 +87,7 @@
     },
     {
       "page_id": "c02",
-      "page": "fx_graph_core_data_model_analysis.md",
+      "page": "10_fx_graph_core_data_model_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "ir_fx",
@@ -95,7 +95,7 @@
     },
     {
       "page_id": "c03",
-      "page": "graph_values_metadata_and_signatures_analysis.md",
+      "page": "11_graph_values_metadata_and_signatures_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "ir_fx",
@@ -111,7 +111,7 @@
     },
     {
       "page_id": "c05",
-      "page": "graph_effects_alias_mutation_and_order_analysis.md",
+      "page": "12_graph_effects_alias_mutation_and_order_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "ir_fx",
@@ -119,7 +119,7 @@
     },
     {
       "page_id": "c06",
-      "page": "structured_outputs_higher_order_and_nested_graphs_analysis.md",
+      "page": "13_structured_outputs_higher_order_and_nested_graphs_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "ir_fx",
@@ -127,7 +127,7 @@
     },
     {
       "page_id": "c07",
-      "page": "graph_capture_frontends_and_tracing_analysis.md",
+      "page": "14_graph_capture_frontends_and_tracing_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "capture_normalize",
@@ -135,7 +135,7 @@
     },
     {
       "page_id": "c08",
-      "page": "graph_normalization_decomposition_and_functionalization_analysis.md",
+      "page": "15_graph_normalization_decomposition_and_functionalization_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "capture_normalize",
@@ -143,7 +143,7 @@
     },
     {
       "page_id": "c09",
-      "page": "aotautograd_joint_forward_backward_graphs_analysis.md",
+      "page": "11_aotautograd_joint_forward_backward_graphs_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "aot_recompute",
@@ -151,7 +151,7 @@
     },
     {
       "page_id": "c10",
-      "page": "saved_tensors_recompute_and_runtime_abi_analysis.md",
+      "page": "12_saved_tensors_recompute_and_runtime_abi_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "aot_recompute",
@@ -159,7 +159,7 @@
     },
     {
       "page_id": "c11",
-      "page": "graph_stage_boundaries_identity_and_provenance_analysis.md",
+      "page": "20_graph_stage_boundaries_identity_and_provenance_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "aot_recompute",
@@ -167,7 +167,7 @@
     },
     {
       "page_id": "c12",
-      "page": "fx_graph_editing_primitives_and_invariants_analysis.md",
+      "page": "21_fx_graph_editing_primitives_and_invariants_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "pattern_rewrite",
@@ -175,7 +175,7 @@
     },
     {
       "page_id": "c13",
-      "page": "pattern_expression_and_matcher_engine_analysis.md",
+      "page": "22_pattern_expression_and_matcher_engine_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "pattern_rewrite",
@@ -183,7 +183,7 @@
     },
     {
       "page_id": "c14",
-      "page": "dead_code_topology_and_effect_order_analysis.md",
+      "page": "23_dead_code_topology_and_effect_order_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "pattern_rewrite",
@@ -191,7 +191,7 @@
     },
     {
       "page_id": "c15",
-      "page": "graph_pass_pipeline_ordering_and_fixpoint_analysis.md",
+      "page": "24_graph_pass_pipeline_ordering_and_fixpoint_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "pattern_rewrite",
@@ -199,7 +199,7 @@
     },
     {
       "page_id": "c16",
-      "page": "graph_rewrite_legality_validation_and_complexity_analysis.md",
+      "page": "25_graph_rewrite_legality_validation_and_complexity_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "pattern_rewrite",
@@ -254,7 +254,7 @@
     },
     {
       "page_id": "d02",
-      "page": "aot_runtime_wrappers_and_lazy_backward_compile_analysis.md",
+      "page": "13_aot_runtime_wrappers_and_lazy_backward_compile_analysis.md",
       "volume": "D",
       "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
       "case": "aot_wrappers_lazy_backward"
@@ -359,7 +359,7 @@
     },
     {
       "page_id": "f02",
-      "page": "activation_checkpoint_recompute_and_compile_analysis.md",
+      "page": "20_activation_checkpoint_recompute_and_compile_analysis.md",
       "volume": "F",
       "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
       "case": "checkpoint_recompute"

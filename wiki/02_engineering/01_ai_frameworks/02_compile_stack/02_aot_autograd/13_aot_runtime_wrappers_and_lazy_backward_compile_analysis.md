@@ -308,8 +308,8 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[aotautograd_joint_forward_backward_graphs_analysis]]
-- [[saved_tensors_recompute_and_runtime_abi_analysis]]
+- [[11_aotautograd_joint_forward_backward_graphs_analysis]]
+- [[12_saved_tensors_recompute_and_runtime_abi_analysis]]
 - [[inductor_compile_fx_orchestration_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
 - [[20_compiled_autograd_analysis]]

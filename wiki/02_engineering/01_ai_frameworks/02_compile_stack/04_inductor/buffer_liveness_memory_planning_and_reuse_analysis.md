@@ -1,6 +1,6 @@
 # 19 · Buffer Liveness、内存规划与复用
 
-> 前置：[[inductor_ir_values_loops_layouts_and_buffers_analysis]]、[[saved_tensors_recompute_and_runtime_abi_analysis]]
+> 前置：[[inductor_ir_values_loops_layouts_and_buffers_analysis]]、[[12_saved_tensors_recompute_and_runtime_abi_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -507,7 +507,7 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[saved_tensors_recompute_and_runtime_abi_analysis]]
+- [[12_saved_tensors_recompute_and_runtime_abi_analysis]]
 - [[inductor_ir_values_loops_layouts_and_buffers_analysis]]
 - [[scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[inductor_memory_allocation_guide]] — 实战版：分配器选型对照、`memory_stats`/snapshot 实测、越界/踩踏排查

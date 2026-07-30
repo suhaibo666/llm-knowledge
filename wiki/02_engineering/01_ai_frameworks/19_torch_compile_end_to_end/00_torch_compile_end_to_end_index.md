@@ -46,7 +46,7 @@ flowchart LR
 
 ## 3. 卷 A：执行模型前置基础（已并入功能页，2026-07-30）
 
-> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/10_tensor_impl_and_storage_analysis]] §13、[[10_pytorch_dispatcher_analysis]] §12、[[11_eval_frame_callback_and_code_cache_analysis]] §13、[[12_instruction_translator_and_bytecode_state_machine_analysis]] §14、[[dispatch_modes_proxytensor_faketensor_analysis]]（2026-07-30 起独立成页，原落点 `aotautograd_analysis` §13）、[[10_torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
+> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/10_tensor_impl_and_storage_analysis]] §13、[[10_pytorch_dispatcher_analysis]] §12、[[11_eval_frame_callback_and_code_cache_analysis]] §13、[[12_instruction_translator_and_bytecode_state_machine_analysis]] §14、[[10_dispatch_modes_proxytensor_faketensor_analysis]]（2026-07-30 起独立成页，原落点 `aotautograd_analysis` §13）、[[10_torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
 
 ## 4. 卷 B：`torch.compile` API 与 TorchDynamo（已迁移至 `02_compile_stack/01_dynamo/`，2026-07-30）
 
@@ -61,21 +61,21 @@ flowchart LR
 | 编号 | 页面 | 先回答的问题 |
 |---:|---|---|
 | C01 | [[01_graph_ir_motivation_and_taxonomy]] | 为什么需要图；不同“图”的节点、边和生命周期有何不同 |
-| C02 | [[fx_graph_core_data_model_analysis]] | FX Graph、Node、use-def、图序和 GraphModule 如何协作 |
-| C03 | [[graph_values_metadata_and_signatures_analysis]] | Node 引用、meta、pytree 和三类 signature 分别表达什么 |
+| C02 | [[10_fx_graph_core_data_model_analysis]] | FX Graph、Node、use-def、图序和 GraphModule 如何协作 |
+| C03 | [[11_graph_values_metadata_and_signatures_analysis]] | Node 引用、meta、pytree 和三类 signature 分别表达什么 |
 | C04 | [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] | symbolic shape、guard 和图复用怎样形成契约 |
-| C05 | [[graph_effects_alias_mutation_and_order_analysis]] | 数据边之外的 alias、mutation 和 effect 顺序如何表达 |
-| C06 | [[structured_outputs_higher_order_and_nested_graphs_analysis]] | 多输出、HOP 与 nested GraphModule 怎样扩展普通 DAG |
-| C07 | [[graph_capture_frontends_and_tracing_analysis]] | symbolic_trace、make_fx、Dynamo 和 export 为何产生不同图 |
-| C08 | [[graph_normalization_decomposition_and_functionalization_analysis]] | schema normalization、decomposition 和 functionalization 为何必须分层 |
-| C09 | [[aotautograd_joint_forward_backward_graphs_analysis]] | AOT joint graph 怎样提取为两张 fresh fw/bw Graph |
-| C10 | [[saved_tensors_recompute_and_runtime_abi_analysis]] | saved values、recompute 和 fw→bw runtime ABI 如何协作 |
-| C11 | [[graph_stage_boundaries_identity_and_provenance_analysis]] | Node identity 跨阶段断开后如何维持 provenance |
-| C12 | [[fx_graph_editing_primitives_and_invariants_analysis]] | replace、erase、copy、lint、recompile 怎样组成安全事务 |
-| C13 | [[pattern_expression_and_matcher_engine_analysis]] | PatternExpr AST、候选索引和递归 matcher 如何工作 |
-| C14 | [[dead_code_topology_and_effect_order_analysis]] | dead node、DCE、稳定拓扑和 effect order 有何边界 |
-| C15 | [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] | pass stage、registration order、迭代与 fixpoint 如何决定结果 |
-| C16 | [[graph_rewrite_legality_validation_and_complexity_analysis]] | 结构命中后怎样验证 shape、dtype、alias、autograd 和收益 |
+| C05 | [[12_graph_effects_alias_mutation_and_order_analysis]] | 数据边之外的 alias、mutation 和 effect 顺序如何表达 |
+| C06 | [[13_structured_outputs_higher_order_and_nested_graphs_analysis]] | 多输出、HOP 与 nested GraphModule 怎样扩展普通 DAG |
+| C07 | [[14_graph_capture_frontends_and_tracing_analysis]] | symbolic_trace、make_fx、Dynamo 和 export 为何产生不同图 |
+| C08 | [[15_graph_normalization_decomposition_and_functionalization_analysis]] | schema normalization、decomposition 和 functionalization 为何必须分层 |
+| C09 | [[11_aotautograd_joint_forward_backward_graphs_analysis]] | AOT joint graph 怎样提取为两张 fresh fw/bw Graph |
+| C10 | [[12_saved_tensors_recompute_and_runtime_abi_analysis]] | saved values、recompute 和 fw→bw runtime ABI 如何协作 |
+| C11 | [[20_graph_stage_boundaries_identity_and_provenance_analysis]] | Node identity 跨阶段断开后如何维持 provenance |
+| C12 | [[21_fx_graph_editing_primitives_and_invariants_analysis]] | replace、erase、copy、lint、recompile 怎样组成安全事务 |
+| C13 | [[22_pattern_expression_and_matcher_engine_analysis]] | PatternExpr AST、候选索引和递归 matcher 如何工作 |
+| C14 | [[23_dead_code_topology_and_effect_order_analysis]] | dead node、DCE、稳定拓扑和 effect order 有何边界 |
+| C15 | [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] | pass stage、registration order、迭代与 fixpoint 如何决定结果 |
+| C16 | [[25_graph_rewrite_legality_validation_and_complexity_analysis]] | 结构命中后怎样验证 shape、dtype、alias、autograd 和收益 |
 | C17 | [[fx_lowering_to_inductor_ir_analysis]] | GraphLowering 为什么不是 FX Node 的一对一替换 |
 | C18 | [[inductor_ir_values_loops_layouts_and_buffers_analysis]] | TensorBox、Loops、Layout、Buffer 和 ExternKernel 如何分工 |
 | C19 | [[buffer_liveness_memory_planning_and_reuse_analysis]] | logical buffer 怎样进入 liveness、free 和 reuse 决策 |
@@ -99,7 +99,7 @@ B06 OutputGraph
 | 编号 | 页面 | 先回答的问题 |
 |---:|---|---|
 | D01 | [[inductor_compile_fx_orchestration_analysis]] | Inductor backend 如何编排 AOT 与 inner compile |
-| D02 | [[aot_runtime_wrappers_and_lazy_backward_compile_analysis]] | forward/backward wrapper 与 lazy bw compile 如何运行 |
+| D02 | [[13_aot_runtime_wrappers_and_lazy_backward_compile_analysis]] | forward/backward wrapper 与 lazy bw compile 如何运行 |
 | D03 | [[async_compile_workers_and_module_loading_analysis]] | 编译任务如何异步完成并加载为 module |
 | D04 | [[02_compile_stack/06_compile_cache/index]] | 各层 cache 的 key、value 和失效边界是什么 |
 | D05 | [[buffer_liveness_memory_planning_and_reuse_analysis]] | wrapper 如何分配、调用、复用和组装输出(2026-07-30 判重并入 C19 §18) |
@@ -115,7 +115,7 @@ B06 OutputGraph
 | 编号 | 页面 | 先回答的问题 |
 |---:|---|---|
 | F01 | [[20_compiled_autograd_analysis]] | Compiled Autograd 与 AOTAutograd 有何不同(2026-07-30 迁入 `01_eager_runtime/05_autograd_engine/`,与 [[10_autograd_engine_analysis]] 互指划界) |
-| F02 | [[activation_checkpoint_recompute_and_compile_analysis]] | checkpoint 与 AOT recompute 怎样叠加(2026-07-30 迁入 `02_compile_stack/02_aot_autograd/`,与 [[saved_tensors_recompute_and_runtime_abi_analysis]] 互指划界) |
+| F02 | [[20_activation_checkpoint_recompute_and_compile_analysis]] | checkpoint 与 AOT recompute 怎样叠加(2026-07-30 迁入 `02_compile_stack/02_aot_autograd/`,与 [[12_saved_tensors_recompute_and_runtime_abi_analysis]] 互指划界) |
 | F03 | [[ddp_compile_boundaries_and_optimizer_analysis]] | DDP/reducer/optimizer 如何改变 compile region(2026-07-30 迁入 `04_export_and_distributed/02_distributed_primitives/`,与 [[c10d_ddp_fsdp_dtensor_analysis]] 互指划界) |
 | F04 | [[fsdp_dtensor_and_distributed_graphs_analysis]] | shard、placement、collective 与 rank state 如何入图(2026-07-30 迁入同上,与 [[c10d_ddp_fsdp_dtensor_analysis]] 互指划界) |
 | F05 | [[custom_operators_fake_kernels_and_decompositions_analysis]] | custom op 怎样补齐编译契约(2026-07-30 迁入 `04_export_and_distributed/01_fx_export_extensibility/`,与 [[fx_graph_export_and_custom_ops_analysis]] §7 判重后保留独立页+互指) |

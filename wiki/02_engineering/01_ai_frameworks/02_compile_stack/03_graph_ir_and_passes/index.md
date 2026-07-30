@@ -11,20 +11,22 @@
 
 ## 页面列表(按层次)
 
+> **段位与阅读顺序**(kb-reorg P4 Task 9.5,2026-07-30):本目录无 quickstart,不占段 0。段 1(10-19)= IR 基础与如何得到这张图(数据模型→值/元数据→effect/alias→结构化输出/HOP→捕获前端→规范化,即 C02/C03/C05/C06/C07/C08 原序);段 2(20-29)= pass 机制层(节点身份/改图原语/pattern matcher/DCE/pass 流水线/合法性校验,即 C11-C16 原序,均建立在段 1 的 IR 基础之上)。
+
 | 页面 | 层次 | 核心主题 |
 |------|------|---------|
-| [[fx_graph_core_data_model_analysis]] | deep dive(C02) | `Graph`/`Node`/`GraphModule` 五个核心对象、侵入式双向链表、`args/kwargs` 与 `users` 反向邻接、lint/recompile |
-| [[graph_values_metadata_and_signatures_analysis]] | deep dive(C03) | Node 引用、`meta["val"]`、pytree 结构化输出与三类 graph signature |
-| [[graph_effects_alias_mutation_and_order_analysis]] | deep dive(C05) | 数据边之外的 alias、mutation、functionalization 与 effect 顺序 |
-| [[structured_outputs_higher_order_and_nested_graphs_analysis]] | deep dive(C06) | 多输出、HOP(`cond`/`while_loop`/`map`)与 nested GraphModule 如何扩展普通 DAG |
-| [[graph_capture_frontends_and_tracing_analysis]] | deep dive(C07) | `symbolic_trace`、`make_fx`、Dynamo、`export` 四种捕获前端为何产生不同图 |
-| [[graph_normalization_decomposition_and_functionalization_analysis]] | deep dive(C08) | schema normalization、decomposition 与 functionalization 为何必须分层 |
-| [[graph_stage_boundaries_identity_and_provenance_analysis]] | deep dive(C11) | Node identity 跨阶段(capture→AOT→Inductor)断开后如何维持 provenance |
-| [[fx_graph_editing_primitives_and_invariants_analysis]] | deep dive(C12) | replace/erase/copy/lint/recompile 组成的安全改图事务、10 项检查清单 |
-| [[pattern_expression_and_matcher_engine_analysis]] | deep dive(C13) | PatternExpr AST、候选桶索引、逆序 matcher、三类 Entry 与序列化 pattern |
-| [[dead_code_topology_and_effect_order_analysis]] | deep dive(C14) | FX DCE/Scheduler DCE、stable topological sort、拓扑正确 ≠ effect 正确 |
-| [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] | deep dive(C15) | pass stage、注册顺序、迭代与 fixpoint 如何决定改写结果 |
-| [[graph_rewrite_legality_validation_and_complexity_analysis]] | deep dive(C16) | 结构命中后 shape/dtype/alias/autograd 的合法性验证、全链路复杂度 |
+| [[10_fx_graph_core_data_model_analysis]] | deep dive(C02,段 1) | `Graph`/`Node`/`GraphModule` 五个核心对象、侵入式双向链表、`args/kwargs` 与 `users` 反向邻接、lint/recompile |
+| [[11_graph_values_metadata_and_signatures_analysis]] | deep dive(C03,段 1) | Node 引用、`meta["val"]`、pytree 结构化输出与三类 graph signature |
+| [[12_graph_effects_alias_mutation_and_order_analysis]] | deep dive(C05,段 1) | 数据边之外的 alias、mutation、functionalization 与 effect 顺序 |
+| [[13_structured_outputs_higher_order_and_nested_graphs_analysis]] | deep dive(C06,段 1) | 多输出、HOP(`cond`/`while_loop`/`map`)与 nested GraphModule 如何扩展普通 DAG |
+| [[14_graph_capture_frontends_and_tracing_analysis]] | deep dive(C07,段 1) | `symbolic_trace`、`make_fx`、Dynamo、`export` 四种捕获前端为何产生不同图 |
+| [[15_graph_normalization_decomposition_and_functionalization_analysis]] | deep dive(C08,段 1) | schema normalization、decomposition 与 functionalization 为何必须分层 |
+| [[20_graph_stage_boundaries_identity_and_provenance_analysis]] | deep dive(C11,段 2) | Node identity 跨阶段(capture→AOT→Inductor)断开后如何维持 provenance |
+| [[21_fx_graph_editing_primitives_and_invariants_analysis]] | deep dive(C12,段 2) | replace/erase/copy/lint/recompile 组成的安全改图事务、10 项检查清单 |
+| [[22_pattern_expression_and_matcher_engine_analysis]] | deep dive(C13,段 2) | PatternExpr AST、候选桶索引、逆序 matcher、三类 Entry 与序列化 pattern |
+| [[23_dead_code_topology_and_effect_order_analysis]] | deep dive(C14,段 2) | FX DCE/Scheduler DCE、stable topological sort、拓扑正确 ≠ effect 正确 |
+| [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] | deep dive(C15,段 2) | pass stage、注册顺序、迭代与 fixpoint 如何决定改写结果 |
+| [[25_graph_rewrite_legality_validation_and_complexity_analysis]] | deep dive(C16,段 2) | 结构命中后 shape/dtype/alias/autograd 的合法性验证、全链路复杂度 |
 
 > 12 篇按 [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] Part I–III 的固定顺序组织
 > (Part IV 的 C17–C21 属 Inductor IR/Scheduler/Codegen,随 Task 8 迁入 `04_inductor/`)。课程化

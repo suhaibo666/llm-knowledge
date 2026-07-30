@@ -112,7 +112,7 @@ flowchart LR
 | [[fx_export_custom_op_quickstart]] | **保留的 quick start** | 最小可用路径:`symbolic_trace` + 遍历/插点改写 `Graph` + `recompile`/`lint`;写一个 `PassBase`;`export` + `dynamic_shapes`(`Dim`)+ 查看 `graph_signature`/`range_constraints`/`module()`;用 `torch.library.custom_op` + `register_kernel`/`register_fake` 注册算子;`vmap`/`functional_call` 用法 |
 | [[fx_graph_export_and_custom_ops_analysis]] | **保留的 deep dive** | 源码级:Proxy 拦截与 `TracerBase.create_proxy`、Node/Graph 双向链表 IR 与 use-def、`GraphModule` 代码生成 + linecache、`PassBase.__call__` 前置/变换/后置、`ExportedProgram` 的 lifted params/buffers 与约束、`Library`/`custom_op` 的分发与 autograd 桥接、functorch 的 BatchedTensor 语义 |
 | [[custom_operators_fake_kernels_and_decompositions_analysis]] | deep dive(专题) | custom op 作为"编译器边界契约"的深度分析:fake kernel 正确性要求、mutation/version 与 ADInplaceOrView、decomposition/direct lowering/fallback 的选择、失败定位分层、测试矩阵;2026-07-30 迁入,与上一篇 §7 判重后保留独立(独有内容 >50%),详见页头判重结论 |
-| [[02_compile_stack/03_graph_ir_and_passes/index]] | **cross-domain reference** | FX 图的数据结构、改图原语、PatternMatcher/DCE/保序与合法性验证全套索引(AOT 正反向分图见 [[02_compile_stack/02_aot_autograd/index]] 的 [[aotautograd_joint_forward_backward_graphs_analysis]]/[[saved_tensors_recompute_and_runtime_abi_analysis]]) |
+| [[02_compile_stack/03_graph_ir_and_passes/index]] | **cross-domain reference** | FX 图的数据结构、改图原语、PatternMatcher/DCE/保序与合法性验证全套索引(AOT 正反向分图见 [[02_compile_stack/02_aot_autograd/index]] 的 [[11_aotautograd_joint_forward_backward_graphs_analysis]]/[[12_saved_tensors_recompute_and_runtime_abi_analysis]]) |
 | [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] | **current source-faithful series** | 图 IR 设计动机、FX 数据结构/值语义、捕获与规范化、改图原语、PatternMatcher、DCE/保序、合法性与复杂度；旧页冲突时以此系列的固定源码定位为准 |
 
 ---
@@ -124,11 +124,11 @@ flowchart LR
 - [[01_eager_runtime/03_op_registration/index]] — 算子注册全景,`custom_op` 的注册去向
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — ATen 分发器,扩展面与 functional ATen 的共同底座
 - [[19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy]] — 图 IR 为什么这样分层
-- [[fx_graph_core_data_model_analysis]] — 当前基线的 FX `Graph` / `Node` / use-def
-- [[graph_capture_frontends_and_tracing_analysis]] — FX、make_fx、Dynamo 与 export 的捕获边界
+- [[10_fx_graph_core_data_model_analysis]] — 当前基线的 FX `Graph` / `Node` / use-def
+- [[14_graph_capture_frontends_and_tracing_analysis]] — FX、make_fx、Dynamo 与 export 的捕获边界
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — dynamic shape、guard与图复用
-- [[structured_outputs_higher_order_and_nested_graphs_analysis]] — pytree、HOP与嵌套GraphModule
-- [[fx_graph_editing_primitives_and_invariants_analysis]] — 改图原语与必须维护的不变量
+- [[13_structured_outputs_higher_order_and_nested_graphs_analysis]] — pytree、HOP与嵌套GraphModule
+- [[21_fx_graph_editing_primitives_and_invariants_analysis]] — 改图原语与必须维护的不变量
 - [[01_ai_frameworks/index]] — 本域总索引
 
 ---
