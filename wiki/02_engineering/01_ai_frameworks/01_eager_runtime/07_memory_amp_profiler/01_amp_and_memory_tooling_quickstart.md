@@ -9,7 +9,7 @@
 > **原始基线**：页内 PyTorch `9922478`（v2.13.0a0）；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
 > **审计状态**：已纳入历史 manifest，但代码块、locator 与当前环境尚未逐项复跑；使用时应保留原基线限定。编译期 logical buffer、liveness 与静态 peak 见 [[buffer_liveness_memory_planning_and_reuse_analysis]]，运行时领域导航见 [[01_eager_runtime/07_memory_amp_profiler/index]]。
 
-本页面向「已经会写训练循环、但还没系统用过 AMP / 显存工具 / Profiler」的工程师,给出**最小可跑路径**、**关键 API + 真实源码锚点**、以及**排查与调参速查**。源码深析见 [[caching_allocator_autocast_profiler_analysis]],三支柱全景见 [[01_eager_runtime/07_memory_amp_profiler/index]]。
+本页面向「已经会写训练循环、但还没系统用过 AMP / 显存工具 / Profiler」的工程师,给出**最小可跑路径**、**关键 API + 真实源码锚点**、以及**排查与调参速查**。源码深析见 [[10_caching_allocator_autocast_profiler_analysis]],三支柱全景见 [[01_eager_runtime/07_memory_amp_profiler/index]]。
 
 > 一句话定位:`autocast`/`GradScaler` 让你**省显存、跑更快**;`memory_stats`/`snapshot` 让你**看清显存被谁吃了**;`torch.profiler` 让你**看清时间花在哪**;`PYTORCH_ALLOC_CONF` 让你**调缓存分配器行为以治碎片**。四者围绕同一个缓存分配器底账协作。
 
@@ -94,7 +94,7 @@ if not sum(v.item() for v in optimizer_state["found_inf_per_device"].values()):
 ### 1.3 易踩的坑
 
 - **`autocast` 不要包 `backward()`**:反向算子会自动沿用前向所用 dtype(`autocast_mode.py:64-66`)。
-- **`step` 之后必须 `update`**:`GradScaler` 内部用 `OptState` 状态机强约束这个次序,详见 [[caching_allocator_autocast_profiler_analysis]]。
+- **`step` 之后必须 `update`**:`GradScaler` 内部用 `OptState` 状态机强约束这个次序,详见 [[10_caching_allocator_autocast_profiler_analysis]]。
 - **缓存语义**:同一 fp32 权重在一次前向里多次用到时,其低精度 cast 结果会被缓存复用;退出最外层 `autocast`(nesting 归零)时自动清缓存(`autocast_mode.py:348-349` 调 `clear_autocast_cache()`)。因此**不要跨 step 持有 autocast 区域里产出的张量**。
 - **不要手动 `model.half()`**:autocast 已在 dispatcher 层做类型转换(`autocast_mode.py:61-62`)。
 
@@ -259,7 +259,7 @@ print("alloc_retries / ooms:", s["num_alloc_retries"], s["num_ooms"])
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[01_eager_runtime/07_memory_amp_profiler/index]] — 本模块 overview(三支柱全景与 mermaid)
-- [[caching_allocator_autocast_profiler_analysis]] — 本模块 deep dive(Block/Expandable Segments/recordStream、autocast dispatch key、Kineto shim 源码级深析)
+- [[10_caching_allocator_autocast_profiler_analysis]] — 本模块 deep dive(Block/Expandable Segments/recordStream、autocast dispatch key、Kineto shim 源码级深析)
 - [[buffer_liveness_memory_planning_and_reuse_analysis]] — Inductor 编译期 logical buffer/liveness；与本页运行时 allocator 观测分层
 - [[03_runtime_graphs/index]] — CUDA Graph 私有池隔离(`reserved_bytes_by_private_pools`、`beginAllocateToPool`)
 - [[01_eager_runtime/01_tensor_and_storage/index]] — `DataPtr`/`Storage` 与分配器的关系

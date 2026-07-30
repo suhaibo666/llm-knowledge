@@ -670,7 +670,7 @@ SymInt——例如 `torch.full((), 11).item()`产生的 unbacked SymInt，如果
 11，后续 `torch.full((unbacked_symint_eq_11,), 0)`就能进一步被折叠。这意味着常量折叠
 不只是"发现字面常量"，还能反向**收紧符号约束**（更新 SizeVarAllocator 的
 replacements/guards），是符号形状系统（见
-[[symbolic_shapes_guards_and_graph_reuse_analysis]]）与图优化之间的一个真实交互点。
+[[20_symbolic_shapes_guards_and_graph_reuse_analysis]]）与图优化之间的一个真实交互点。
 
 ---
 
@@ -887,4 +887,4 @@ Post-Grad Passes 是 PyTorch Inductor 编译器的关键阶段，专注于：
 - [[fx_lowering_to_inductor_ir_analysis]] — Post-Grad 之后的 ATen → IR 边界
 - [[pre_grad_passes_guide]]
 - [[joint_graph_passes_guide]] — §4.5 常量折叠的窄化版 `UniformValueConstantFolder`
-- [[symbolic_shapes_guards_and_graph_reuse_analysis]] — 常量折叠反向收紧 SymInt 约束的符号系统一侧
+- [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — 常量折叠反向收紧 SymInt 约束的符号系统一侧

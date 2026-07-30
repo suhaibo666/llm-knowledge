@@ -477,7 +477,7 @@ Program legality
 
 ## 学习顺序
 
-- 上一篇：[[symbolic_shapes_guards_and_graph_reuse_analysis]]
+- 上一篇：[[20_symbolic_shapes_guards_and_graph_reuse_analysis]]
 - 下一篇：[[structured_outputs_higher_order_and_nested_graphs_analysis]]
 
 ## Related Pages

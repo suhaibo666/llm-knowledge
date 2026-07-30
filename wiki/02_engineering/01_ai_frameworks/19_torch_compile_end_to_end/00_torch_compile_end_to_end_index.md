@@ -46,7 +46,7 @@ flowchart LR
 
 ## 3. 卷 A：执行模型前置基础（已并入功能页，2026-07-30）
 
-> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/10_tensor_impl_and_storage_analysis]] §13、[[10_pytorch_dispatcher_analysis]] §12、[[eval_frame_callback_and_code_cache_analysis]] §13、[[instruction_translator_and_bytecode_state_machine_analysis]] §14、[[dispatch_modes_proxytensor_faketensor_analysis]]（2026-07-30 起独立成页，原落点 `aotautograd_analysis` §13）、[[torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
+> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/10_tensor_impl_and_storage_analysis]] §13、[[10_pytorch_dispatcher_analysis]] §12、[[11_eval_frame_callback_and_code_cache_analysis]] §13、[[12_instruction_translator_and_bytecode_state_machine_analysis]] §14、[[dispatch_modes_proxytensor_faketensor_analysis]]（2026-07-30 起独立成页，原落点 `aotautograd_analysis` §13）、[[10_torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
 
 ## 4. 卷 B：`torch.compile` API 与 TorchDynamo（已迁移至 `02_compile_stack/01_dynamo/`，2026-07-30）
 
@@ -63,7 +63,7 @@ flowchart LR
 | C01 | [[01_graph_ir_motivation_and_taxonomy]] | 为什么需要图；不同“图”的节点、边和生命周期有何不同 |
 | C02 | [[fx_graph_core_data_model_analysis]] | FX Graph、Node、use-def、图序和 GraphModule 如何协作 |
 | C03 | [[graph_values_metadata_and_signatures_analysis]] | Node 引用、meta、pytree 和三类 signature 分别表达什么 |
-| C04 | [[symbolic_shapes_guards_and_graph_reuse_analysis]] | symbolic shape、guard 和图复用怎样形成契约 |
+| C04 | [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] | symbolic shape、guard 和图复用怎样形成契约 |
 | C05 | [[graph_effects_alias_mutation_and_order_analysis]] | 数据边之外的 alias、mutation 和 effect 顺序如何表达 |
 | C06 | [[structured_outputs_higher_order_and_nested_graphs_analysis]] | 多输出、HOP 与 nested GraphModule 怎样扩展普通 DAG |
 | C07 | [[graph_capture_frontends_and_tracing_analysis]] | symbolic_trace、make_fx、Dynamo 和 export 为何产生不同图 |
@@ -120,7 +120,7 @@ B06 OutputGraph
 | F04 | [[fsdp_dtensor_and_distributed_graphs_analysis]] | shard、placement、collective 与 rank state 如何入图(2026-07-30 迁入同上,与 [[c10d_ddp_fsdp_dtensor_analysis]] 互指划界) |
 | F05 | [[custom_operators_fake_kernels_and_decompositions_analysis]] | custom op 怎样补齐编译契约(2026-07-30 迁入 `04_export_and_distributed/01_fx_export_extensibility/`,与 [[fx_graph_export_and_custom_ops_analysis]] §7 判重后保留独立页+互指) |
 | F06 | [[20_custom_backends_and_device_integration_analysis]] | backend/device 怎样接入 lowering 与 codegen(2026-07-30 迁入 `01_eager_runtime/02_dispatcher_and_device/`,与 [[11_privateuse1_device_integration_analysis]]+[[codegen_extension_guide]] 三方划界) |
-| F07 | [[aotinductor_packaging_and_deployment_analysis]] | AOTInductor 与 JIT compile 的产物和 ABI 有何不同(2026-07-30 迁入 `02_compile_stack/04_inductor/`,纯平移;解答了 [[backend_modes_options_stances_and_fullgraph_analysis]] §14.2 的 `use_aoti` todo) |
+| F07 | [[aotinductor_packaging_and_deployment_analysis]] | AOTInductor 与 JIT compile 的产物和 ABI 有何不同(2026-07-30 迁入 `02_compile_stack/04_inductor/`,纯平移;解答了 [[22_backend_modes_options_stances_and_fullgraph_analysis]] §14.2 的 `use_aoti` todo) |
 | F08 | [[training_inference_cudagraph_and_freezing_analysis]] | training/inference/freezing/CUDAGraph 如何组合 |
 
 ## 9. 六卷 Demo 验收入口

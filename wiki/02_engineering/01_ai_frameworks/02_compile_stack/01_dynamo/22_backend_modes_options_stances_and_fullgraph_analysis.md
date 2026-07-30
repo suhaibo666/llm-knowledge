@@ -2,8 +2,8 @@
 
 > 卷别：B · TorchDynamo 捕获  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[torch_compile_api_and_first_call_lifecycle_analysis]]  
-> 后续：[[eval_frame_callback_and_code_cache_analysis]]  
+> 前置：[[10_torch_compile_api_and_first_call_lifecycle_analysis]]  
+> 后续：[[11_eval_frame_callback_and_code_cache_analysis]]  
 > 最后更新：2026-07-30(§13-§14 并入 `torch_compile_source_analysis` 独有的 CompilerBisector 入口钩子、三个 wrapper 类方法级实现与 AOTInductor 变体内容)
 
 ## 1. 为什么这些参数经常被混为一谈
@@ -278,9 +278,9 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[torch_compile_api_and_first_call_lifecycle_analysis]]
-- [[eval_frame_callback_and_code_cache_analysis]]
-- [[guards_cache_lookup_and_recompilation_analysis]]
+- [[10_torch_compile_api_and_first_call_lifecycle_analysis]]
+- [[11_eval_frame_callback_and_code_cache_analysis]]
+- [[15_guards_cache_lookup_and_recompilation_analysis]]
 - [[cudagraph_trees_warmup_record_and_replay_analysis]]
 - [[production_rollout_fallback_and_monitoring_analysis]]
 - [[minifier_repro_and_compiler_bisector_analysis]] — CompilerBisector 内部的二分定位算法

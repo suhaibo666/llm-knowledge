@@ -125,7 +125,7 @@ GraphModule，把 child 注册到 outer tracer，再创建一个 `map_impl` Node
 > _higher_order_ops/cond.py`），不论调用方是 Dynamo、`make_fx` 还是 `torch.export`。
 > Dynamo 在字节码符号执行期间**如何决定该不该走 `cond`**（`speculate_subgraph`、与原生
 > `if` 的路径分野、graph break 交界）是更早一层的问题，见
-> [[control_flow_capture_analysis]]。
+> [[21_control_flow_capture_analysis]]。
 
 概念模型：
 
@@ -434,4 +434,4 @@ Lab 分两部分：
 - [[aotautograd_joint_forward_backward_graphs_analysis]]
 - [[saved_tensors_recompute_and_runtime_abi_analysis]]
 - [[dead_code_topology_and_effect_order_analysis]]
-- [[control_flow_capture_analysis]] — Dynamo 侧控制流捕获前端(`speculate_subgraph`、与原生 `if`/`for`/`while` 的路径分野)
+- [[21_control_flow_capture_analysis]] — Dynamo 侧控制流捕获前端(`speculate_subgraph`、与原生 `if`/`for`/`while` 的路径分野)

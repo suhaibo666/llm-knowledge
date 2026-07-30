@@ -198,8 +198,8 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[graph_break_resume_functions_and_partial_graphs_analysis]]
-- [[dynamic_shapes_generalization_and_fallback_analysis]]
+- [[16_graph_break_resume_functions_and_partial_graphs_analysis]]
+- [[17_dynamic_shapes_generalization_and_fallback_analysis]]
 - [[observability_logs_counters_and_artifact_map_analysis]]
 - [[guard_failure_and_recompile_diagnosis_analysis]]
 - [[aotautograd_and_inductor_failure_localization_analysis]]

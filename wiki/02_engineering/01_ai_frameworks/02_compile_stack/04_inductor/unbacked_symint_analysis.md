@@ -3,7 +3,7 @@
 > 基于 PyTorch 主分支源码与官方文档分析
 > 最后更新: 2026-07-06（原 2026-05-22）
 > 2026-07-06 增补 [§10](#10-2025-2026-进展从-guard_size_oblivious-到显式-size-oblivious-推理原语)：据 pinned pytorch checkout 核验 size-oblivious 推理原语族（全部定位符指向 `torch/fx/experimental/symbolic_shapes.py`）
-> **与概念权威页分工**：backed/unbacked 的一般符号系统（ShapeEnv、SymNode、guard 生成、DimDynamic 分配策略）权威页是 [[symbolic_shapes_guards_and_graph_reuse_analysis]]；本页只深挖 unbacked 这一支——`torch._check` 家族、`guard_or_*`/`statically_known_true` 推理原语、size-oblivious 语义与调用取舍。
+> **与概念权威页分工**：backed/unbacked 的一般符号系统（ShapeEnv、SymNode、guard 生成、DimDynamic 分配策略）权威页是 [[20_symbolic_shapes_guards_and_graph_reuse_analysis]]；本页只深挖 unbacked 这一支——`torch._check` 家族、`guard_or_*`/`statically_known_true` 推理原语、size-oblivious 语义与调用取舍。
 
 ---
 
@@ -363,7 +363,7 @@ unbacked 只有在**既用了数据相关 op、又要求整图不断**时才是�
 
 ## Related Pages
 
-- [[symbolic_shapes_guards_and_graph_reuse_analysis]] — 符号形状/Guard/图复用概念权威页，ShapeEnv 与 Backed Symbol 体系
+- [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — 符号形状/Guard/图复用概念权威页，ShapeEnv 与 Backed Symbol 体系
 - [[inductor_codegen_dynamic_shape_analysis]] — Inductor codegen 中的符号传递机制
 - [[torch_compile_architecture]] — torch.compile 端到端流水线
 - [[02_compile_stack/01_dynamo/index]] — Dynamo 帧捕获与 Guard 系统

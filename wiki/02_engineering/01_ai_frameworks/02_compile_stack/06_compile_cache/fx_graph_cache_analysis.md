@@ -279,5 +279,5 @@ flowchart TB
 - [[torch_compile_architecture]] — torch.compile 整体栈
 - [[inductor_autotuning_analysis]] — autotune 生命周期（获胜 config 即 TritonBundler 打包对象）
 - [[02_compile_stack/04_inductor/index]] — Inductor lowering/codegen（命中时被跳过的那段）
-- [[symbolic_shapes_guards_and_graph_reuse_analysis]] — 动态形状与 guard（§三 guard 校验的上游）
+- [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — 动态形状与 guard（§三 guard 校验的上游）
 - [[aotautograd_joint_forward_backward_graphs_analysis]] — AOTAutograd 前反向切分

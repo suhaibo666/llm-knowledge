@@ -2,8 +2,8 @@
 
 > 卷别：B · TorchDynamo 捕获  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[output_graph_side_effects_and_graph_emission_analysis]]  
-> 后续：[[graph_break_resume_functions_and_partial_graphs_analysis]]  
+> 前置：[[14_output_graph_side_effects_and_graph_emission_analysis]]  
+> 后续：[[16_graph_break_resume_functions_and_partial_graphs_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么 compiled graph必须有 guards
@@ -326,8 +326,8 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[eval_frame_callback_and_code_cache_analysis]]
-- [[variable_tracker_source_and_python_object_model_analysis]]
-- [[dynamic_shapes_generalization_and_fallback_analysis]]
+- [[11_eval_frame_callback_and_code_cache_analysis]]
+- [[13_variable_tracker_source_and_python_object_model_analysis]]
+- [[17_dynamic_shapes_generalization_and_fallback_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
 - [[guard_failure_and_recompile_diagnosis_analysis]]

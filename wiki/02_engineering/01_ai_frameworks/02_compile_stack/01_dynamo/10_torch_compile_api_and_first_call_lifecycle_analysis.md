@@ -2,7 +2,7 @@
 
 > 卷别：B · TorchDynamo 捕获  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 后续：[[backend_modes_options_stances_and_fullgraph_analysis]]  
+> 后续：[[22_backend_modes_options_stances_and_fullgraph_analysis]]  
 > 最后更新：2026-07-30(§12 并入 A05 独有的七阶段成本模型与缓存分层内容;§13 并入 `torch_compile_source_analysis` 独有的 API 入口版本门禁与 `torch.export` 边界内容)
 
 ## 1. 为什么公开入口必须很薄
@@ -144,7 +144,7 @@ Dynamo不是简单把整个 Python函数替换成一个 FX graph。一次捕获�
 5. 保护这一版本的 guards。
 
 这就是“编译 Python frame”而不是“只追踪 Tensor算子列表”。详情见
-[[output_graph_side_effects_and_graph_emission_analysis]]。
+[[14_output_graph_side_effects_and_graph_emission_analysis]]。
 
 ### 7.1 backend 收到 capture 结果后交给谁
 
@@ -288,7 +288,7 @@ elif sysconfig.get_config_var("Py_GIL_DISABLED") == 1 and sys.version_info < (
 
 ### 13.2 `torch.export` 区域内 `torch.compile` 退化为 no-op
 
-`compile()` 从 `options` 中提取 `guard_filter_fn`/`use_aoti`(见 [[backend_modes_options_stances_and_fullgraph_analysis]] §14)之后、实例化 backend wrapper 之前,还有一段边界检查(`torch/__init__.py:3350-3359`):
+`compile()` 从 `options` 中提取 `guard_filter_fn`/`use_aoti`(见 [[22_backend_modes_options_stances_and_fullgraph_analysis]] §14)之后、实例化 backend wrapper 之前,还有一段边界检查(`torch/__init__.py:3350-3359`):
 
 ```python
 if torch.compiler.is_exporting():
@@ -321,9 +321,9 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 
 ## Related Pages
 
-- [[backend_modes_options_stances_and_fullgraph_analysis]]
-- [[eval_frame_callback_and_code_cache_analysis]]
-- [[output_graph_side_effects_and_graph_emission_analysis]]
+- [[22_backend_modes_options_stances_and_fullgraph_analysis]]
+- [[11_eval_frame_callback_and_code_cache_analysis]]
+- [[14_output_graph_side_effects_and_graph_emission_analysis]]
 - [[compile_latency_cache_and_steady_state_performance_analysis]] — 测量场景与统计设计
 - [[02_compile_stack/06_compile_cache/index]] — 多层缓存 key/失效边界
 - [[00_torch_compile_end_to_end_index]]

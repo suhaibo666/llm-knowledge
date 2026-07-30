@@ -4,7 +4,7 @@
 > **Dimension**: Deep Dive(mechanism-level)
 > 最后更新: 2026-06-30
 >
-> 本页回答「`torch.compile` 编译流程里控制流是怎么入图的」。结论先行:**控制流不是只有一种处理方式**。Dynamo 走**两条互不相同的路径**——显式高阶算子(`torch.cond` 等)被投机成子图、在主图留一个节点;原生 Python `if/for/while` 则在字节码层被**特化 / 展开 / 切图**,多数情况根本不以控制流形态入图。上游 Dynamo 字节码符号执行见 [[instruction_translator_and_bytecode_state_machine_analysis]],下游分解见 [[02_compile_stack/02_aot_autograd/index]] / [[02_compile_stack/04_inductor/index]]。
+> 本页回答「`torch.compile` 编译流程里控制流是怎么入图的」。结论先行:**控制流不是只有一种处理方式**。Dynamo 走**两条互不相同的路径**——显式高阶算子(`torch.cond` 等)被投机成子图、在主图留一个节点;原生 Python `if/for/while` 则在字节码层被**特化 / 展开 / 切图**,多数情况根本不以控制流形态入图。上游 Dynamo 字节码符号执行见 [[12_instruction_translator_and_bytecode_state_machine_analysis]],下游分解见 [[02_compile_stack/02_aot_autograd/index]] / [[02_compile_stack/04_inductor/index]]。
 >
 > **与 [[structured_outputs_higher_order_and_nested_graphs_analysis]] 的划界**（P4 Task 7 组 4
 > 判重结论）：本页讲**捕获前端**——Dynamo 如何在字节码符号执行期间决定"这段控制流该不该
@@ -50,7 +50,7 @@ flowchart TB
 
 **Quick start(怎么触发 + 从哪读起)**:
 - 想让分支**进图而非切图**,显式用 `torch.cond(pred, true_fn, false_fn, operands)`,且 `pred` 用 bool 张量 / `SymBool`(用 Python 常量会被特化掉,见下)。
-- 想看捕获结果:`torch._dynamo.explain(fn)(*args)` 或 `TORCH_LOGS=graph_breaks`(见 [[dynamo_quickstart]])。
+- 想看捕获结果:`torch._dynamo.explain(fn)(*args)` 或 `TORCH_LOGS=graph_breaks`(见 [[01_dynamo_quickstart]])。
 - 读源码从 `CondHigherOrderVariable._call_function`(`higher_order_ops.py:2382`)进,核心引擎是 `speculate_subgraph`(`:2004`);原生控制流从 `generic_jump`(`symbolic_convert.py:714`)进。
 
 ---
@@ -212,10 +212,10 @@ flowchart TB
 
 ## Related Pages
 
-- [[eval_frame_callback_and_code_cache_analysis]] — 上游:帧评估与 code cache(本页是其后续「控制流」专题展开)
-- [[instruction_translator_and_bytecode_state_machine_analysis]] — 上游:字节码符号执行状态机
-- [[guards_cache_lookup_and_recompilation_analysis]] — 上游:Guard 与重编译
-- [[dynamo_quickstart]] — `explain` / `graph_breaks` 日志 / `fullgraph` 等定位手段
+- [[11_eval_frame_callback_and_code_cache_analysis]] — 上游:帧评估与 code cache(本页是其后续「控制流」专题展开)
+- [[12_instruction_translator_and_bytecode_state_machine_analysis]] — 上游:字节码符号执行状态机
+- [[15_guards_cache_lookup_and_recompilation_analysis]] — 上游:Guard 与重编译
+- [[01_dynamo_quickstart]] — `explain` / `graph_breaks` 日志 / `fullgraph` 等定位手段
 - [[02_compile_stack/01_dynamo/index]] — Dynamo 图捕获域索引
 - [[02_compile_stack/02_aot_autograd/index]] — 下游:HOP 子图的前/反向分解
 - [[02_compile_stack/04_inductor/index]] — 下游:`Conditional` IR 与控制流 codegen

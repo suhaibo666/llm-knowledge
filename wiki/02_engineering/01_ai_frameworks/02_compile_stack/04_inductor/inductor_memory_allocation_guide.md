@@ -199,7 +199,7 @@ with ind.patch(memory_planning=True):
 - [[02_compile_stack/04_inductor/index]] — Inductor 领域索引
 - [[buffer_liveness_memory_planning_and_reuse_analysis]] — 编译期 logical buffer、liveness、reuse 与静态 peak
 - [[buffer_liveness_memory_planning_and_reuse_analysis]] — **机制深挖**(编译期规划权威页,§16 三层全景 + §17 池大小 + §18 wrapper boxed convention/通信 buffer 池):本指南的理论底座
-- [[caching_allocator_autocast_profiler_analysis]] — 层 2 `CUDACachingAllocator` 的 block/segment/expandable 源码级机制
+- [[10_caching_allocator_autocast_profiler_analysis]] — 层 2 `CUDACachingAllocator` 的 block/segment/expandable 源码级机制
 - [[inductor_codegen_analysis]] — wrapper codegen(`empty_strided`/`alloc_from_pool` 的生成处)
 - [[inductor_gpu_kernel_dispatch_model]] — Triton kernel 骨架与 `mask` 边界掩码(§5 越界防护的来源)
 - [[02_compile_stack/07_debugging/index]] — `TORCH_LOGS`/`TORCH_COMPILE_DEBUG` 编译调试(与 §5 排查互补)

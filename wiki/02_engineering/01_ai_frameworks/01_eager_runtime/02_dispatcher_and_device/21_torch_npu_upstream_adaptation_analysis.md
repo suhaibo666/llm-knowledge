@@ -262,5 +262,5 @@ torch_npu 则维护一套只适配 PyTorch 2.7.1 的 upstream test patch，READM
 - [[op_registration_pipeline_analysis]] —— op-plugin YAML 到 Dispatcher 注册的生成链
 - [[npu_compile_paths_overview]] —— NPU Inductor、ACLGraph 与多编译路径专题
 - [[torch_compile_architecture]] —— upstream torch.compile 端到端流水线
-- [[caching_allocator_autocast_profiler_analysis]] —— allocator、AMP、profiler 的 upstream 通用机制
+- [[10_caching_allocator_autocast_profiler_analysis]] —— allocator、AMP、profiler 的 upstream 通用机制
 - [[c10d_ddp_fsdp_dtensor_analysis]] —— c10d/ProcessGroup 与上层分布式原语

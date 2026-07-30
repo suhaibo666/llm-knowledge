@@ -5,7 +5,7 @@
 > 版本基线：`npu_inductor_2.9.0` 包 + upstream PyTorch 2.9.0
 > 最后更新：2026-06-17
 
-> 本页是 [[npu_inductor_linearize_backend_analysis]] 的动态 shape 分册。哲学：**「编译一次，运行期自适应」**——Linearize 展平 + 固定 `grid[40,1,1]` + group 循环后，只把**真正动态**的 `length`/`divisor` 作为运行时标量实参进签名，静态值折叠 `tl.constexpr`，**同一份 kernel 源码、同一次编译**覆盖所有 runtime shape。Dynamo/sizevars 的符号化前半段（`s0→ks0`、`size_hints`、guard）则**完全继承上游**，见 [[symbolic_shapes_guards_and_graph_reuse_analysis]]。
+> 本页是 [[npu_inductor_linearize_backend_analysis]] 的动态 shape 分册。哲学：**「编译一次，运行期自适应」**——Linearize 展平 + 固定 `grid[40,1,1]` + group 循环后，只把**真正动态**的 `length`/`divisor` 作为运行时标量实参进签名，静态值折叠 `tl.constexpr`，**同一份 kernel 源码、同一次编译**覆盖所有 runtime shape。Dynamo/sizevars 的符号化前半段（`s0→ks0`、`size_hints`、guard）则**完全继承上游**，见 [[20_symbolic_shapes_guards_and_graph_reuse_analysis]]。
 
 ---
 
@@ -134,7 +134,7 @@ def triton_unk_fused_add_permute_0(..., ynumel, y0numel, y1numel, y1divisor, xnu
 
 - [[npu_inductor_linearize_backend_analysis]] — 本后端总览（架构 + Linearize + 融合 + rsplit + 优化点）
 - [[npu_inductor_linearize_vs_builtin_comparison]] — permute+add 三方 output code 逐行对比（§1）
-- [[symbolic_shapes_guards_and_graph_reuse_analysis]] — 上游动态 shape 全链路（ShapeEnv/Guard，本后端继承的前半段）
+- [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — 上游动态 shape 全链路（ShapeEnv/Guard，本后端继承的前半段）
 - [[inductor_codegen_dynamic_shape_analysis]] — 上游 codegen 动态 shape（§2.4 `ks*` 升 i64 vs 本后端 i32）
 - [[npu_compile_paths_overview]] — 内置后端动态 shape 难点（§九 GPU vs NPU）
 - [[02_compile_stack/04_inductor/npu/index]] — NPU Inductor 后端目录索引

@@ -2,8 +2,8 @@
 
 > 卷别：B · TorchDynamo 捕获  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[eval_frame_callback_and_code_cache_analysis]]  
-> 后续：[[variable_tracker_source_and_python_object_model_analysis]]  
+> 前置：[[11_eval_frame_callback_and_code_cache_analysis]]  
+> 后续：[[13_variable_tracker_source_and_python_object_model_analysis]]  
 > 最后更新：2026-07-30(§14 并入 A03 独有的 bytecode_transformation 重组内容；补 §14.4「不变量与失败边界」7 条,此前漏迁,勿与本页 §11 同名小节混淆——后者讲符号执行状态机的不变量;§15 补 `PyTorch_Dynamo_Technical_Analysis` 删除前遗漏的 `remove_dead_code`/`stacksize_analysis` 两个算法,原文无定位符,本次对照 pinned 源码补全)
 
 ## 1. 为什么 Dynamo要解释 Python bytecode
@@ -294,7 +294,7 @@ speculation log用于降低重复工作与保证决策一致。
 
 ## 14. 源码补充：`bytecode_transformation` 如何把 Instructions 重新组装成新 code object
 
-> 本节内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a03_python_frames_code_objects_and_bytecode_analysis.md`),因其"改写后的字节码如何被重新汇编成合法 code object"这一层(`torch/_dynamo/bytecode_transformation.py`)在本页(聚焦符号执行状态机)、[[eval_frame_callback_and_code_cache_analysis]](聚焦 cache)与 [[graph_break_resume_functions_and_partial_graphs_analysis]] 均未覆盖,逐字迁入本页。
+> 本节内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a03_python_frames_code_objects_and_bytecode_analysis.md`),因其"改写后的字节码如何被重新汇编成合法 code object"这一层(`torch/_dynamo/bytecode_transformation.py`)在本页(聚焦符号执行状态机)、[[11_eval_frame_callback_and_code_cache_analysis]](聚焦 cache)与 [[16_graph_break_resume_functions_and_partial_graphs_analysis]] 均未覆盖,逐字迁入本页。
 
 ### 14.1 Dynamo 的 mutable Instruction
 
@@ -406,7 +406,7 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[eval_frame_callback_and_code_cache_analysis]]
-- [[variable_tracker_source_and_python_object_model_analysis]]
-- [[output_graph_side_effects_and_graph_emission_analysis]]
-- [[graph_break_resume_functions_and_partial_graphs_analysis]]
+- [[11_eval_frame_callback_and_code_cache_analysis]]
+- [[13_variable_tracker_source_and_python_object_model_analysis]]
+- [[14_output_graph_side_effects_and_graph_emission_analysis]]
+- [[16_graph_break_resume_functions_and_partial_graphs_analysis]]

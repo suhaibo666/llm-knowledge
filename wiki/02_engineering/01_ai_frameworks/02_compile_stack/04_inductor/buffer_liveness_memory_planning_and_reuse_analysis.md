@@ -363,7 +363,7 @@ profiler与真实generated-kernel执行。现有fusion case也只证明Scheduler
 `expandable_segments`）可调这套档位。**两层关系**：Inductor 的 `del`/`reuse` 减少的是逻辑
 分配次数；即便仍要 `empty_strided` 分配，物理块也由缓存池复用。`Block`/segment 切分链、
 stream 借还、expandable segments、`requested_bytes` vs `allocated_bytes` 碎片度量的源码级
-深页见 [[caching_allocator_autocast_profiler_analysis]] §一「缓存设备分配器」。
+深页见 [[10_caching_allocator_autocast_profiler_analysis]] §一「缓存设备分配器」。
 
 ### 16.2 层 3：`cudagraph_trees` 跨图共享私有池
 
@@ -511,5 +511,5 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 - [[inductor_ir_values_loops_layouts_and_buffers_analysis]]
 - [[scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[inductor_memory_allocation_guide]] — 实战版：分配器选型对照、`memory_stats`/snapshot 实测、越界/踩踏排查
-- [[caching_allocator_autocast_profiler_analysis]] — 层 2 `CUDACachingAllocator` 的 Block/segment/stream/expandable 源码级深页
+- [[10_caching_allocator_autocast_profiler_analysis]] — 层 2 `CUDACachingAllocator` 的 Block/segment/stream/expandable 源码级深页
 - [[cudagraph_trees_warmup_record_and_replay_analysis]] — 层 3 cudagraph_trees 的完整 warmup/record/replay 课程页

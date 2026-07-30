@@ -726,8 +726,8 @@ class CourseMarkdownContractTest(unittest.TestCase):
             ai_frameworks_root / "01_eager_runtime" / "05_autograd_engine"
         )
         target_pages = [
-            (dynamo_root, "instruction_translator_and_bytecode_state_machine_analysis.md"),
-            (dynamo_root, "guards_cache_lookup_and_recompilation_analysis.md"),
+            (dynamo_root, "12_instruction_translator_and_bytecode_state_machine_analysis.md"),
+            (dynamo_root, "15_guards_cache_lookup_and_recompilation_analysis.md"),
             (inductor_root, "inductor_compile_fx_orchestration_analysis.md"),
             (aot_autograd_root, "aot_runtime_wrappers_and_lazy_backward_compile_analysis.md"),
             (cuda_root, "cudagraph_trees_warmup_record_and_replay_analysis.md"),
@@ -777,7 +777,7 @@ class CourseMarkdownContractTest(unittest.TestCase):
             / "02_compile_stack"
             / "01_dynamo"
         )
-        page = dynamo_root / "guards_cache_lookup_and_recompilation_analysis.md"
+        page = dynamo_root / "15_guards_cache_lookup_and_recompilation_analysis.md"
         text = page.read_text(encoding="utf-8")
         self.assertIn(
             "O\\left(\\sum_{i=1}^{C} Q_i\\right)\n"

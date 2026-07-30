@@ -2,8 +2,8 @@
 
 > 卷别：B · TorchDynamo 捕获  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[guards_cache_lookup_and_recompilation_analysis]]  
-> 后续：[[dynamic_shapes_generalization_and_fallback_analysis]]  
+> 前置：[[15_guards_cache_lookup_and_recompilation_analysis]]  
+> 后续：[[17_dynamic_shapes_generalization_and_fallback_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么 graph break不是简单的“停止追踪”
@@ -221,8 +221,8 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[instruction_translator_and_bytecode_state_machine_analysis]]
-- [[output_graph_side_effects_and_graph_emission_analysis]]
-- [[dynamic_shapes_generalization_and_fallback_analysis]]
+- [[12_instruction_translator_and_bytecode_state_machine_analysis]]
+- [[14_output_graph_side_effects_and_graph_emission_analysis]]
+- [[17_dynamic_shapes_generalization_and_fallback_analysis]]
 - [[dynamo_explain_and_graph_break_diagnosis_analysis]]
 - [[graph_stage_boundaries_identity_and_provenance_analysis]]

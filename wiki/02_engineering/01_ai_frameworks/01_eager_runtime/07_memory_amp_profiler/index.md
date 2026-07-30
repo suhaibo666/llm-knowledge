@@ -104,11 +104,13 @@ flowchart TB
 
 ## 页面列表(按层次)
 
+> **段位与阅读顺序**(kb-reorg P4 Task 9.5,2026-07-30):段 0(01-09)入门;段 1(10-19)核心机制。本目录本地内容页仅 2 篇,一篇一段;首行 `19_.../00_pytorch_graph_series_index` 是外部系统主线索引的路径限定交叉引用,不物理位于本目录,不参与编号。
+
 | 页面 | 层次 | 核心主题 |
 |------|------|---------|
-| [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] | **系统主线** | 从 FX/AOT saved activation 进入 Inductor logical buffer、Scheduler last-use、wrapper reuse，并严格区分 runtime allocator 的 physical block/segment |
-| [[amp_and_memory_tooling_quickstart]] | **quick start** | autocast + GradScaler 训练循环最小写法、默认参数与排查;`memory_stats()`/`memory_summary()`/`snapshot` 字段语义;`PYTORCH_ALLOC_CONF`(`max_split_size_mb`/`expandable_segments`)开关;`profile` + `schedule` 用法、`export_chrome_trace`/`tensorboard_trace_handler`/`export_memory_timeline` |
-| [[caching_allocator_autocast_profiler_analysis]] | deep dive | 源码级:`Block`/`malloc`/`free_block`/`process_events`/`recordStream`、Expandable Segments 设计、`DeviceStats`/`TraceEntry`/`SegmentInfo`、`DeviceCachingAllocator`;autocast 的 TLS exclude 与 weakref cast 缓存、逐设备 dtype;`GradScaler` 的 `_unscale_grads_`/`_amp_update_scale_`;`kineto_shim` 与 `_memory_profiler` 时间线归因 |
+| [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] | **系统主线**(外部交叉引用) | 从 FX/AOT saved activation 进入 Inductor logical buffer、Scheduler last-use、wrapper reuse，并严格区分 runtime allocator 的 physical block/segment |
+| [[01_amp_and_memory_tooling_quickstart]] | **quick start**(段 0) | autocast + GradScaler 训练循环最小写法、默认参数与排查;`memory_stats()`/`memory_summary()`/`snapshot` 字段语义;`PYTORCH_ALLOC_CONF`(`max_split_size_mb`/`expandable_segments`)开关;`profile` + `schedule` 用法、`export_chrome_trace`/`tensorboard_trace_handler`/`export_memory_timeline` |
+| [[10_caching_allocator_autocast_profiler_analysis]] | deep dive(段 1) | 源码级:`Block`/`malloc`/`free_block`/`process_events`/`recordStream`、Expandable Segments 设计、`DeviceStats`/`TraceEntry`/`SegmentInfo`、`DeviceCachingAllocator`;autocast 的 TLS exclude 与 weakref cast 缓存、逐设备 dtype;`GradScaler` 的 `_unscale_grads_`/`_amp_update_scale_`;`kineto_shim` 与 `_memory_profiler` 时间线归因 |
 
 ---
 
@@ -126,8 +128,8 @@ flowchart TB
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] — 编号化端到端课程：卷 D–E 连接 wrapper、内存、CUDAGraph、观测与性能
-- [[amp_and_memory_tooling_quickstart]] — 本模块 quick start(怎么用 / 怎么查 / 怎么验证)
-- [[caching_allocator_autocast_profiler_analysis]] — 本模块 deep dive(源码级)
+- [[01_amp_and_memory_tooling_quickstart]] — 本模块 quick start(怎么用 / 怎么查 / 怎么验证)
+- [[10_caching_allocator_autocast_profiler_analysis]] — 本模块 deep dive(源码级)
 - [[03_runtime_graphs/index]] — CUDA / NPU Graphs(图私有内存池消费方)
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — Dispatcher 与 Autocast dispatch key
 - [[01_eager_runtime/01_tensor_and_storage/index]] — Tensor / Storage / DataPtr / Allocator 抽象

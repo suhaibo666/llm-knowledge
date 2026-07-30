@@ -220,7 +220,7 @@ flowchart LR
 3. **运行时 tiling 参数化**——选轴规则编译期定、block 数值运行期定。
 4. **多策略 fallback**——补上类似 cooperative reduction 的「正确但不最优」兜底。
 
-动态 shape 的逐算子退化链与改进方向，详见 [[inductor_codegen_dynamic_shape_analysis]] 与 [[symbolic_shapes_guards_and_graph_reuse_analysis]]。
+动态 shape 的逐算子退化链与改进方向，详见 [[inductor_codegen_dynamic_shape_analysis]] 与 [[20_symbolic_shapes_guards_and_graph_reuse_analysis]]。
 
 ---
 
@@ -353,7 +353,7 @@ flowchart LR
 - [[npu_lowering_guide]] — NPU 特定 lowering 与 fallback 算子映射（§八 的细节）
 - [[npu_compile]] — NPU 编译工作流、Autotune、精度校验（§九 的细节）
 - [[inductor_codegen_dynamic_shape_analysis]] — 代码生成中动态形状处理（§十一 的展开）
-- [[symbolic_shapes_guards_and_graph_reuse_analysis]] — Dynamic Shape 全链路（§十一 的上游机制）
+- [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — Dynamic Shape 全链路（§十一 的上游机制）
 - [[NPU_Inductor_Backend_Analysis]] — NPU 后端内部实现机制
 - [[inductor_compile_fx_orchestration_analysis]] — PyTorch Inductor compile_fx 编排入口（社区基线）
 - [[ascend_kernel_execution_model_analysis]] — tiling、Cube/Vector、L0C 与 FixPipe 的硬件执行模型背景

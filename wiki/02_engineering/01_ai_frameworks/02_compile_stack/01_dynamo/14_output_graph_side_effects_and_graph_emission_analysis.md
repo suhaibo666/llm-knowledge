@@ -2,8 +2,8 @@
 
 > 卷别：B · TorchDynamo 捕获  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[variable_tracker_source_and_python_object_model_analysis]]  
-> 后续：[[guards_cache_lookup_and_recompilation_analysis]]  
+> 前置：[[13_variable_tracker_source_and_python_object_model_analysis]]  
+> 后续：[[15_guards_cache_lookup_and_recompilation_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么 Dynamo不能只输出一张 FX graph
@@ -242,8 +242,8 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[variable_tracker_source_and_python_object_model_analysis]]
-- [[guards_cache_lookup_and_recompilation_analysis]]
-- [[graph_break_resume_functions_and_partial_graphs_analysis]]
+- [[13_variable_tracker_source_and_python_object_model_analysis]]
+- [[15_guards_cache_lookup_and_recompilation_analysis]]
+- [[16_graph_break_resume_functions_and_partial_graphs_analysis]]
 - [[fx_graph_core_data_model_analysis]]
 - [[dead_code_topology_and_effect_order_analysis]]

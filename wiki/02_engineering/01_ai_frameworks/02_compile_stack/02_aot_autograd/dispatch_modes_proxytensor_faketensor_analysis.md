@@ -337,7 +337,7 @@ Dynamo不是用 ProxyTensor替代 Python symbolic interpreter：
 
 - [[aotautograd_joint_forward_backward_graphs_analysis]] — joint graph 捕获(`make_fx`)的直接消费者:本页讲清楚 §2-§3 依赖的 dispatch-mode 机制
 - [[10_pytorch_dispatcher_analysis]] — `__torch_dispatch__`/`TorchDispatchMode` 的入门介绍与 Dispatcher key 体系
-- [[symbolic_shapes_guards_and_graph_reuse_analysis]] — ShapeEnv/SymNode 符号系统(FakeTensorMode 持有 ShapeEnv)
+- [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — ShapeEnv/SymNode 符号系统(FakeTensorMode 持有 ShapeEnv)
 - [[fx_graph_core_data_model_analysis]] — FX Proxy/Node/Graph 的数据模型本身(本页只讲 Proxy 如何被 dispatch mode 创建)
 - [[02_compile_stack/01_dynamo/index]] — Dynamo 复用 FakeTensor 但不等价于单个 TorchDispatchMode
 - [[02_compile_stack/02_aot_autograd/index]] — 所属模块索引

@@ -238,7 +238,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — 本模块 overview
 - [[11_privateuse1_device_integration_analysis]] — 更底层的 eager/dispatcher 设备接入,见页头三方划界
 - [[codegen_extension_guide]] — Inductor device backend 注册的实操指南,见页头三方划界
-- [[backend_contract_and_custom_backend_analysis]]
+- [[18_backend_contract_and_custom_backend_analysis]]
 - [[custom_operators_fake_kernels_and_decompositions_analysis]]
 - [[aotinductor_packaging_and_deployment_analysis]]
 - [[async_compile_workers_and_module_loading_analysis]]
