@@ -274,13 +274,6 @@
       "case": "cache_keys_invalidation"
     },
     {
-      "page_id": "d05",
-      "page": "wrapper_execution_memory_allocation_and_reuse_analysis.md",
-      "volume": "D",
-      "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
-      "case": "wrapper_memory_reuse"
-    },
-    {
       "page_id": "d06",
       "page": "cudagraph_trees_warmup_record_and_replay_analysis.md",
       "volume": "D",

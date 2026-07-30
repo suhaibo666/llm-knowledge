@@ -42,9 +42,8 @@ artifact与compiled module如何复用。两者相邻但不是同一机制：一
 | 页面 | 核心主题 |
 |------|---------|
 | [[inductor_compile_fx_orchestration_analysis]] | **compile_fx 编排入口**:为什么先调用 AOTAutograd、wrapper ABI 归一化、fw/bw compiler 分工、产物层次、`compile_fx→_compile_fx_main→AOTAutograd`源码跟读;§0 附带全链路全景图与各阶段深挖入口导航表(原"脊柱文档" `inductor_compiler_pipeline_analysis` 921 行的逐阶段走读已被本目录各专题页更深入覆盖,判重后删除,2026-07-30) |
-| [[inductor_memory_management_analysis]] | **内存分配管理(全栈三层)**:编译期 buffer 复用/峰值重排/池化规划(`memory_plan_reuse`·`reorder_for_peak_memory`·`memory_planning.py`)→ 运行期 `CUDACachingAllocator` → CUDA Graphs `cudagraph_trees` 跨图共享私有池 + checkpoint;含**池大小如何确定**(§2.6)+ 段大小档位(§3) |
+| [[buffer_liveness_memory_planning_and_reuse_analysis]] | **内存分配管理权威页(全栈三层)**:编译期 realize/last-use/reuse(§1-15,C19 主线)→ 运行期 `CUDACachingAllocator` 物理池(§16.1)→ CUDA Graphs `cudagraph_trees` 跨图共享私有池 + checkpoint(§16.2);含池大小如何确定(§17)+ boxed calling convention/通信 buffer 池(§18)(2026-07-30 起吸收原 `inductor_memory_management_analysis`/`wrapper_execution_memory_allocation_and_reuse_analysis` 独有内容,两页判重删除) |
 | [[inductor_memory_allocation_guide]] | **内存分配实战指南(guide)**:实际分配全过程走查 + 分配器对照(native/cudaMallocAsync/expandable)+ `memory_stats`/snapshot 实测复现 + **内存越界/踩踏排查**(mask/size_asserts 内置防护、compute-sanitizer)+ 实践建议 |
-| [[wrapper_execution_memory_allocation_and_reuse_analysis]] | **Wrapper 执行与 buffer reuse(源码级)**:boxed calling convention、`MemoryPlanningLine` IR(Allocate/FreeIfNotReused/Reuse)、reuse key、view/alias 对 reuse 的限制;与上两页视角重叠,归一进行中(见页头互指) |
 
 > `torch.compile` 源码入口、调用栈、函数签名、mode 对照见 [[02_compile_stack/01_dynamo/index]]（B01/B02，2026-07-30 起随 P4 判重并入,不再在本目录单列）。
 

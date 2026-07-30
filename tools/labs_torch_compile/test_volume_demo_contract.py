@@ -441,7 +441,6 @@ _D_PAGE_ROOTS = {
     "d02": ("02_compile_stack", "02_aot_autograd"),
     "d03": ("02_compile_stack", "04_inductor"),
     "d04": ("02_compile_stack", "06_compile_cache"),
-    "d05": ("02_compile_stack", "04_inductor"),
     "d06": ("03_runtime_graphs", "cuda"),
     "d07": ("02_compile_stack", "07_debugging"),
 }
@@ -501,7 +500,7 @@ class DemoManifestContractTest(unittest.TestCase):
         expected_ids = {
             *(f"b{index:02d}" for index in range(1, 11)),
             *(f"c{index:02d}" for index in range(1, 22)),
-            *(f"d{index:02d}" for index in range(1, 8)),
+            *({f"d{index:02d}" for index in range(1, 8)} - {"d05"}),
             *(f"e{index:02d}" for index in range(1, 10)),
             *(f"f{index:02d}" for index in range(1, 9)),
         }
@@ -512,9 +511,19 @@ class DemoManifestContractTest(unittest.TestCase):
         # that cover their mechanisms. demo_a_execution_model.py and its two
         # VolumeABContractTest cases above still exercise the CPU-mechanism
         # scripts directly (script-level, not page-level), so they're unaffected.
-        self.assertEqual(len(entries), 55)
+        # d05 (wrapper_execution_memory_allocation_and_reuse_analysis.md) was
+        # dropped from the manifest by kb-reorg P4 Task 8 group D (2026-07-30):
+        # the page's unique content was merged verbatim into C19
+        # (buffer_liveness_memory_planning_and_reuse_analysis.md) Sec18, which
+        # already carries c19's own manifest entry with that filename -- the
+        # manifest requires unique page values, so d05 can't point at the same
+        # file. The demo_d_artifact_runtime.py wrapper_memory_reuse case still
+        # runs; C19 Sec18 links to it directly as a pointer instead of a
+        # manifest-checked "## 配套 Demo" section (C pages are exempt from that
+        # check below, same as d05's sibling C-volume pages always were).
+        self.assertEqual(len(entries), 54)
         self.assertEqual({entry["page_id"] for entry in entries}, expected_ids)
-        self.assertEqual(len({entry["page"] for entry in entries}), 55)
+        self.assertEqual(len({entry["page"] for entry in entries}), 54)
 
         modules: dict[str, object] = {}
         for entry in entries:

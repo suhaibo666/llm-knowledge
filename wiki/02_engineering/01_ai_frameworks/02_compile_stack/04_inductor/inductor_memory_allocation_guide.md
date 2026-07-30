@@ -9,7 +9,7 @@
 > **Dimension**: Guide(how-to / 实战走查)
 > 最后更新: 2026-06-30
 >
-> 本页是 [[inductor_memory_management_analysis]](机制深挖)的**动手版**:用一个具体例子走一遍「从编译规划到真正 `cudaMalloc`」、横向比分配器、给出可复现的峰值/分配次数测量方法与实践建议。机制层(三层怎么运作)请读深挖页;本页只讲**怎么观察、怎么选、怎么调**。
+> 本页是 [[buffer_liveness_memory_planning_and_reuse_analysis]] §16-18(机制深挖,2026-07-30 起吸收原 `inductor_memory_management_analysis`/`wrapper_execution_memory_allocation_and_reuse_analysis` 独有内容)的**动手版**:用一个具体例子走一遍「从编译规划到真正 `cudaMalloc`」、横向比分配器、给出可复现的峰值/分配次数测量方法与实践建议。机制层(三层怎么运作)请读该权威页;本页只讲**怎么观察、怎么选、怎么调**。
 
 > [!note] 本页风格吸收自一份外部专家报告(`deep-research-report.md`),保留其「角色边界 → 分配全过程 → 分配器对照表 → 可复现实验」的叙述骨架。但所有断言已对 `5f6df46744a` 源码逐条复核,**报告与源码冲突处以源码为准**,见文末「与原报告的差异订正」。
 
@@ -24,7 +24,7 @@
 | 运行期 | 首次执行触发实际分配,后续复用 | 真实显存占用 |
 | `CUDACachingAllocator`(设备) | 真正向驱动 `cudaMalloc` 拿段、缓存复用 block | 物理显存 |
 
-一句话:**编译期「计划」谁在哪用内存,运行期「执行」这些计划并由缓存分配器申请物理内存。** 机制细节见 [[inductor_memory_management_analysis]] §1。
+一句话:**编译期「计划」谁在哪用内存,运行期「执行」这些计划并由缓存分配器申请物理内存。** 机制细节见 [[buffer_liveness_memory_planning_and_reuse_analysis]] §16。
 
 ---
 
@@ -52,7 +52,7 @@ sequenceDiagram
 - **首次 `empty_strided` → 段分配**:落到 `CUDACachingAllocator`,按 `get_allocation_size`(`CUDACachingAllocator.cpp:3697`)取 2 MiB / 20 MiB / 2 MiB-倍数 段(见深挖页 §3 表)。
 - **后续调用复用**:段缓存在分配器里,不再 `cudaMalloc`。
 
-具体的池布局实例(`pool1 = empty_strided_cuda(...)` + 两个 `alloc_from_pool` + 字节布局图)见 [[inductor_memory_management_analysis]] §2.6——那是本走查的「实际分配」落点。
+具体的池布局实例(`pool1 = empty_strided_cuda(...)` + 两个 `alloc_from_pool` + 字节布局图)见 [[buffer_liveness_memory_planning_and_reuse_analysis]] §17——那是本走查的「实际分配」落点。
 
 ---
 
@@ -198,8 +198,7 @@ with ind.patch(memory_planning=True):
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[02_compile_stack/04_inductor/index]] — Inductor 领域索引
 - [[buffer_liveness_memory_planning_and_reuse_analysis]] — 编译期 logical buffer、liveness、reuse 与静态 peak
-- [[inductor_memory_management_analysis]] — **机制深挖**(三层 + 池大小 §2.6 + 段大小 §3):本指南的理论底座
-- [[wrapper_execution_memory_allocation_and_reuse_analysis]] — wrapper 层 `MemoryPlanningLine`/reuse pool 的源码级机制(归一进行中,见该页页头互指)
+- [[buffer_liveness_memory_planning_and_reuse_analysis]] — **机制深挖**(编译期规划权威页,§16 三层全景 + §17 池大小 + §18 wrapper boxed convention/通信 buffer 池):本指南的理论底座
 - [[caching_allocator_autocast_profiler_analysis]] — 层 2 `CUDACachingAllocator` 的 block/segment/expandable 源码级机制
 - [[inductor_codegen_analysis]] — wrapper codegen(`empty_strided`/`alloc_from_pool` 的生成处)
 - [[inductor_gpu_kernel_dispatch_model]] — Triton kernel 骨架与 `mask` 边界掩码(§5 越界防护的来源)

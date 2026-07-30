@@ -6,6 +6,44 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 8 组 D 步骤 3（C19+D05 内存归一）
+
+**Type**: Redundancy Merge（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 8 组 D）
+
+C19（`buffer_liveness_memory_planning_and_reuse_analysis.md`，编译期 realize/last-use/reuse
+权威页）确立为内存主题骨架，吸收两页独有内容后二者删除：
+
+- **`inductor_memory_management_analysis.md`（278 行）**：C19 此前完全不覆盖运行期
+  `CUDACachingAllocator`（层 2）与 CUDA Graphs `cudagraph_trees` 私有池（层 3）——**独有，
+  逐字改写并入 C19 新增 §16**（三层总览 + 层 2 段大小档位 + 层 3 树结构/共享私有池/地址
+  稳定/checkpoint/graph partition 集成）；其 §2.6 池初始化大小的完整推导 + 真实
+  `test_memory_planning.py` 实例，深于 C19 原有 §7-8 对同一批类的引用式带过——**独有，
+  并入 C19 新增 §17**。该页 §2.1-2.5（编译期规划本身）与 C19 §1-15 重叠，未重复搬运。
+- **`wrapper_execution_memory_allocation_and_reuse_analysis.md`（D05，228 行）**：boxed
+  calling convention（`_BoxedCallable`/`CompiledFxGraph.__call__`）与通信 buffer 独立池
+  两个事实 C19 完全未提——**独有，并入 C19 新增 §18.1/§18.2**；`AllocateLine.plan` 的
+  完整 7 步决策序列比 C19 §6 的概念性描述更程序化——**并入 C19 新增 §18.3**。该页 §1-3/§9-14
+  （boxed wrapper 宏观框架、liveness/reuse 三层区分、复杂度、常见误解）与 C19 §1-2/§6/§13
+  重叠，未重复搬运。
+
+**`inductor_memory_allocation_guide.md`（209 行）判定**：>50% 独有（分配器选型对照表、
+`memory_stats`/snapshot 实测复现代码、§5 完整的内存越界/踩踏排查流程含
+`compute-sanitizer` 工具链、§7 与外部报告的差异订正）——**保留**，6 处指向已删除
+`inductor_memory_management_analysis` 的引用改指 C19 对应新章节（§16/§17）。
+
+**入链修复**：C19 自身新增 3 处 Related Pages；`inductor_memory_management_analysis` 删除后
+6 个外部文件改指；`wrapper_execution_memory_allocation_and_reuse_analysis` 删除后 7 个外部
+文件改指（含 `04_inductor/index.md` 两行表格合并为一行、`00_torch_compile_end_to_end_index.md`
+D05 行改指）；changelog 4 处历史活链接降级为反引号。
+
+**配套改动**：`demo_manifest.json` 移除 d05 条目——其页面已并入 C19，而清单要求
+`page` 字段全局唯一（C19 自己的 c19 条目已占用该文件名）；`test_volume_demo_contract.py`
+的 `expected_ids`/条目计数（55→54）与 `_D_PAGE_ROOTS` 同步；原 d05 demo 用例
+（`demo_d_artifact_runtime.py --case wrapper_memory_reuse`）仍可运行，C19 §18.3 末尾以
+指路形式保留命令（C 卷页本就无需通过 manifest 强制"配套 Demo"小节）。
+
+**校验**：`python tools/check_links.py`：pages 381→379，broken=0；`pytest tools/ -q`：77 passed。
+
 ## 2026-07-30：知识库结构整改 P4 Task 8 组 C（C17 vs lowering_analysis 归一）
 
 **Type**: Move + Redundancy Merge（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 8 组 C）
@@ -1120,7 +1158,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 ## 2026-07-03: [[inductor_memory_allocation_guide]] 新增 §5「内存越界/踩踏排查」— 补第二份社区材料的缺口(纠错版)
 
-**Type**: Enrich（应用户"第二份专家社区材料的第三部分——内存踩踏检测——库里缺,补上,一定忠于事实"。经 gap 分析:材料前两部分已被 [[inductor_memory_management_analysis]] 覆盖且更准,仅第三部分是真缺口;材料本身有错,按源码收敛后再入库）
+**Type**: Enrich（应用户"第二份专家社区材料的第三部分——内存踩踏检测——库里缺,补上,一定忠于事实"。经 gap 分析:材料前两部分已被 `inductor_memory_management_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[buffer_liveness_memory_planning_and_reuse_analysis]]，按"历史不回写"惯例降级为反引号）覆盖且更准,仅第三部分是真缺口;材料本身有错,按源码收敛后再入库）
 
 **源（source-faithful）**：pytorch @ `5f6df46744a` 逐行核对——`config.py:232-237`（`size_asserts`/`nan_asserts`/`scalar_asserts` 默认值）、`codegen/wrapper.py:1793-1827`（`assert_size_stride` 生成 + 延迟到首个 kernel 前）、`ir.py:7817/7845/9152`、`utils.py:161`（`GPU_ALIGN_BYTES=16`）、`codegen/triton.py:5458`（`mask=xindex<xnumel`）、`codegen/common.py:2789`（核内 NaN 断言）。
 
@@ -1194,7 +1232,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **源（source-faithful）**：pytorch @ `5f6df46744a`，逐行核对 `codegen/memory_planning.py`（`AllocationPool`/`get_symbolic_size`/`allocate_at_end`/`codegen_create`）、`c10/core/AllocatorConfig.h:16-24`（段大小常量）、`c10/cuda/CUDACachingAllocator.cpp:3063/3697`（`round_size`/`get_allocation_size`）、`codegen/wrapper.py:1520`（`alloc_from_pool`=`torch.ops.inductor._alloc_from_pool`）、`torch/csrc/inductor/inductor_ops.cpp:36/129`、`test/inductor/test_memory_planning.py:108-142`（真实 codegen 实例）。
 
-- **深挖页 [[inductor_memory_management_analysis]] 新增**:
+- **深挖页 `inductor_memory_management_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[buffer_liveness_memory_planning_and_reuse_analysis]]，按"历史不回写"惯例降级为反引号）新增**:
   - **§2.6 池的初始化大小如何确定**:Inductor `AllocationPool` 大小=编译期 `root.get_symbolic_size()`（`TemporalSplit` 取最大、`SpatialSplit`=`align(left)+right`）、`allocate_at_end` 末尾追加扩容、`codegen_create` 出扁平 1-D buffer;带 `test_memory_planning.py` 真实实例（`pool1 = empty_strided_cuda((4*s27*s77 + align(4*s77*s77),),(1,))` + 两个 `alloc_from_pool`）+ **字节布局 ASCII 图**。
   - **§3 物理段大小**:`empty_strided` 落 `CUDACachingAllocator` 后按 `get_allocation_size` 取段——≤1 MiB→2 MiB、1–10 MiB→20 MiB、≥10 MiB→2 MiB 倍数（`AllocatorConfig.h:16-24`），解释 `reserved` 远大于 `allocated` 的原因。
 - **新建 guide [[inductor_memory_allocation_guide]]**（吸收报告骨架：角色边界→分配全过程 sequence 图→分配器对照表→`memory_stats`/snapshot 实测复现→实践建议）。
@@ -1204,13 +1242,13 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 ---
 
-## 2026-06-30: 新建 [[inductor_memory_management_analysis]] — torch.compile 内存分配管理(全栈三层)
+## 2026-06-30: 新建 `inductor_memory_management_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[buffer_liveness_memory_planning_and_reuse_analysis]]，按"历史不回写"惯例降级为反引号） — torch.compile 内存分配管理(全栈三层)
 
 **Type**: New（应用户提问"torch.compile 的 memory alloc 管理怎么做"→评估知识库覆盖发现"零件散在 3 个域、无统一脊柱、cudagraph_trees 与 codegen 复用链是短板"→开新页补齐。源忠实 + 抓本质）
 
 **源（source-faithful）**：pytorch 本地 checkout @ `5f6df46744a`（trunk, 2026-06-29）。两个并行 writer-agent 分别深挖**编译期**（`codegen/wrapper.py`·`_inductor/memory.py`·`codegen/memory_planning.py`·`config.py`）与 **CUDA Graphs**（`cudagraph_trees.py`·`cudagraph_utils.py`·`compile_fx.py`），每条 `file:line` 开文件核对；coordinator 抽检 `wrapper.py:2480`、`memory.py:1016`、`config.py:252-268`、`cudagraph_trees.py:2301-2302` 全部吻合。
 
-- **新增** [[inductor_memory_management_analysis]]：主线"三层叠加"——
+- **新增** `inductor_memory_management_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[buffer_liveness_memory_planning_and_reuse_analysis]]，按"历史不回写"惯例降级为反引号）：主线"三层叠加"——
   - **层 1 编译期**：默认 `memory_plan_reuse` 两遍把 `Allocate`+`Free` 改写成 `Reuse`（峰值感知 `should_reuse_buffer`；同形状指针别名 / 异形状 `reinterpret_tensor`，`wrapper.py:2436/956/4043`）；scheduler `compute_last_usage`+`free_buffers` 决定释放时机（`scheduler.py:8731/8742`）；`reorder_for_peak_memory` 多拓扑序选最低峰值（`memory.py:1016`，扫描线估峰）；可选池化 `MemoryPlanner` 时分/空分打包（`memory_planning.py:675`，`memory_planning` 默认关）。
   - **层 2 运行期**：`empty_strided` 落 `CUDACachingAllocator` block/segment 缓存池（复用既有深页 [[caching_allocator_autocast_profiler_analysis]]，强调"编译期逻辑复用 + 运行期物理复用叠加"）。
   - **层 3 CUDA Graphs**：`cudagraph_trees` 跨图共享 `graph_pool_handle` 私有池 + 地址稳定（static/managed idx，`:1019/1932`）+ checkpoint 重建分配器簿记（`:3135`）+ graph partition 切出 cudagraph-unsafe 算子（`scheduler.py:8856`）。

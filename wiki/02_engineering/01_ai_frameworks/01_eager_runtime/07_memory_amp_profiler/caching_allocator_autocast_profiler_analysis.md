@@ -382,7 +382,7 @@ storage 的可哈希身份用 `allocation_id`(而非易复用的裸指针)承载
 - [[index]] — 本模块 overview:三支柱全景图与它们如何咬合
 - [[amp_and_memory_tooling_quickstart]] — 本模块 quick start:怎么用 / 怎么查 / 怎么验证
 - [[03_runtime_graphs/index]] — CUDA / NPU Graphs:图私有内存池(`beginAllocateToPool`/`releasePool`)的消费方
-- [[inductor_memory_management_analysis]] — torch.compile 内存管理三层:本页(缓存分配器)是其「层 2 运行期物理池」,上接 Inductor 编译期 `empty_strided` 规划、下接 CUDA Graphs 私有池
+- [[buffer_liveness_memory_planning_and_reuse_analysis]] — torch.compile 内存管理三层(§16):本页(缓存分配器)是其「层 2 运行期物理池」,上接 Inductor 编译期 `empty_strided` 规划、下接 CUDA Graphs 私有池
 - [[saved_tensors_recompute_and_runtime_abi_analysis]] — AOT跨fw/bw的activation save/recompute边界
 - [[buffer_liveness_memory_planning_and_reuse_analysis]] — Inductor logical buffer、静态peak与本页allocator实测的边界
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — Dispatcher:autocast 作为 `Autocast*` dispatch key 在分发层拦截算子
