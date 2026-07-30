@@ -4,7 +4,7 @@
 > **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
 > **课程分工**：本页保留阶段开发参考；当前改图不变量、pass管线与合法性见 [[19_torch_compile_end_to_end/12_fx_graph_editing_primitives_and_invariants]]、[[19_torch_compile_end_to_end/15_graph_pass_pipeline_ordering_and_fixpoint]] 和 [[19_torch_compile_end_to_end/16_graph_rewrite_legality_validation_and_complexity]]。
 
-> **Updated**: 2026-07-22
+> **Updated**: 2026-07-30（Pass 19-21 节补第 4 个成员 `dedup_reduce_scatters`，回补自已删除的 `inductor_compiler_pipeline_analysis.md` §4.3.7）
 
 > **Source baseline**: PyTorch `9922478dffa`，重点核验 `torch/_inductor/fx_passes/post_grad.py:84-89,144-446`、`torch/_inductor/custom_graph_pass.py:73-76,118-145`。
 >
@@ -394,7 +394,8 @@ allow_inputs_outputs = bool(
 
 ### Pass 19-21: 集合通信分桶（Bucketing）
 
-**包含三个 passes**：
+**包含四个 passes**（`dedup_reduce_scatters` 先于下面三个 bucket pass 执行，详见本节末尾）：
+- `dedup_reduce_scatters`
 - `bucket_reduce_scatters`
 - `bucket_all_reduces`
 - `bucket_all_gathers`
@@ -417,6 +418,32 @@ ag1, ag2, ag3 = split_bucket(bucketed_ag)
 **注意事项**：
 - `bucket_all_gathers` 放在最后，因为它引入 mutation
 - 分桶后需要重新拓扑排序
+
+#### 第 4 个成员：`dedup_reduce_scatters`（先于上面三个 bucket pass 执行）
+
+> 本小节内容原属 P4 知识库整改被删除的旧页（`inductor_compiler_pipeline_analysis.md` §4.3.7「Collectives Bucketing」，921 行，已于 Task 6 判重删除）。原文对该 pass 只有一句带定位符的结论——"`dedup_reduce_scatters`: 去重重复的 reduce_scatter"（`post_grad.py:286-343`，该跨度覆盖原文里全部 4 个 pass，非专指本 pass）——以此为基底，以下机制展开为对照本地 pinned 源码（`E:/97-codes/torch_parallel/p`，`e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`）核实后的补充引用。
+
+**代码位置**：`torch/_inductor/fx_passes/post_grad.py:328`（`config.dedup_reduce_scatters` 开关判断，`:331` 调用）→ `torch/_inductor/fx_passes/fsdp.py:167-186`（`dedup_fsdp_reduce_scatter`，实现）
+
+**机制**：`dedup_fsdp_reduce_scatter` 并非逐字面意义的"去重复"，而是利用 reduce_scatter 的**线性可加性**做算子融合——`RS(a) + RS(b) = RS(a + b)`。它注册一个 `PatternMatcherPass`（`_get_dedup_rs_pass`，`fsdp.py:101-163`），匹配如下子图：
+
+```python
+rs_a = reduce_scatter(input_a, ...); wait_a = wait(rs_a)
+rs_b = reduce_scatter(input_b, ...); wait_b = wait(rs_b)
+result = add(wait_a, wait_b)
+```
+
+重写为：
+
+```python
+combined = add(input_a, input_b)
+rs = reduce_scatter(combined, ...)
+result = wait(rs)
+```
+
+把两次通信合并为一次。`extra_check`（`fsdp.py:120-135`）限制三个条件：`reduce_op` 必须属于线性归约集合 `{"sum", "avg"}`（`_LINEAR_REDUCE_OPS`，`fsdp.py:95`）；匹配到的中间节点（`wait_tensor`/`reduce_scatter_tensor`/`add`）必须只有单一 user，否则融合会改变其他消费者看到的中间结果；两路输入的 dtype 必须一致。该 pass 循环调用至不动点（`while dedup_rs_pass.apply(gm): pass`，`fsdp.py:183-184`），以处理 N 路 add 树——每轮只融合一对叶子，多轮收敛后等价于把整棵树的 reduce_scatter 合并为一次。
+
+**为什么在三个 bucket pass 之前执行**：`post_grad.py:328` 的 `dedup_reduce_scatters` 判断先于 `:335` 起的 `bucket_reduce_scatters_fx` 判断。要先把可融合的冗余通信合并掉，后续 bucket 化才不会把本可省略的通信也一并打包进桶——顺序上是"先消除冗余，再对剩余的做批量化"。
 
 ---
 

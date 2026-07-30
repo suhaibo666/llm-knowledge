@@ -6,7 +6,7 @@
 
 > 分析对象：upstream PyTorch Inductor 的 Triton kernel **autotune 生命周期 + 如何驱动 Triton 编译器**（`CachingAutotuner`、config 启发式、`config_of`/AttrsDescriptor、`make_launcher`、`triton.compile`→PTX/cubin、`DeviceProperties`）。
 > 核心代码位置：本地 upstream `E:\97-codes\pytorch\pytorch`：`torch/_inductor/runtime/triton_heuristics.py`、`codegen/triton_utils.py`、`runtime/hints.py`
-> 最后更新：2026-06-17
+> 最后更新：2026-07-30（新增 §六「编译期算法选择基础设施」，回补自已删除的 `inductor_compiler_pipeline_analysis.md` §7.5；此前 §一~五均为运行时 `CachingAutotuner` 视角）
 
 > 填补 [[01_ai_frameworks/index]] 知识空白「Inductor autotuning」。融合成本模型与 `CoordescTuner`（坐标下降）已在 [[PyTorch_Inductor_Technical_Analysis]] §4 详述,本页**不重复**,聚焦 autotune 运行时生命周期、metadata、launcher 与 Triton JIT 编译。
 
@@ -103,6 +103,43 @@ binary = triton.compile(
 
 ---
 
+## 六、编译期算法选择基础设施：ChoiceCaller 与 TuningProcessPool
+
+> 与上文「一~五」不同层次：上文讲的是**运行时**——kernel 已经生成好之后，`CachingAutotuner` 怎样缓存/派发/驱动 Triton 编译；本节讲**编译期**——`max_autotune` 从多个候选 kernel 实现（手写模板、自动生成 Triton、ATen fallback）里挑出最优的那一层算法选择基础设施。两者关系是"选谁"（本节）与"选完之后怎么跑"（上文）。
+>
+> 本节内容原属 P4 知识库整改被删除的旧页（`02_compile_stack/04_inductor/inductor_compiler_pipeline_analysis.md` §7.5，921 行，已于 Task 6 判重删除；该旧页未声明固定源码基线）。以下保留原文文字为基底逐字迁入，行号对照本页固定基线 `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`（本地 pinned checkout `E:/97-codes/torch_parallel/p`）核实——均与原文存在漂移，详见各小节 [!correction] 注。
+
+### 6.1 ChoiceCaller 与 TritonTemplateCaller
+
+**原文代码位置**：`ir.py:5582`
+
+将不同的 kernel 实现（手动模板、自动生成的 Triton、ATen fallback）统一为可比较的 "choice"，通过 benchmark 选择最优。
+
+> [!correction] 对照当前审计基线核实：`ChoiceCaller` 抽象基类位于 `torch/_inductor/ir.py:6185`（非原文 `5582`），其 docstring 明确写子类含 `TritonTemplateCaller`、`CUTLASSTemplateCaller`。`TritonTemplateCallerBase(ChoiceCaller)` 位于同文件 `ir.py:6264`；生成 Triton kernel 的具体子类 `TritonTemplateCaller` 实际定义在另一个文件 `torch/_inductor/select_algorithm.py:3347`（继承 `ir.TritonTemplateCallerBase`）——原文把基类与该子类合并成单一 `ir.py:5582` 引用，与当前基线的跨文件拆分不符。"手写模板/自动生成 Triton/ATen fallback 统一为可比较 choice" 的机制判断本身准确：当前基线下三者分别对应 `CppTemplateCaller`（`codegen/cpp_template_kernel.py:591`，手写 C++ 模板）、`TritonTemplateCaller`（`select_algorithm.py:3347`，自动生成 Triton）、`ExternKernelCaller`（`select_algorithm.py:3455`，ATen/cuDNN fallback），均继承同一个 `ChoiceCaller` 基类，通过统一的 `benchmark()` 接口（`ir.py:6185` 起）比较。
+
+### 6.2 TuningProcessPool
+
+**原文代码位置**：`autotune_process.py:262`
+
+在独立进程中安全地 benchmark kernel 候选：
+- 避免编译错误导致主进程崩溃
+- 支持多设备并行 benchmark
+- 隔离内存状态
+
+```python
+class TuningProcessPool:
+    def __init__(self):
+        devices = self.get_device_list()
+        self.processes = [TuningProcess(device=device) for device in devices]
+        self.executor = ThreadPoolExecutor(max_workers=len(devices))
+```
+
+**为什么用子进程**：
+- Autotuning 需要编译和执行大量 kernel 变体，子进程隔离保证主进程稳定性。
+- Triton 编译可能 segfault，不能放在主进程。
+
+> [!correction] 对照当前审计基线核实：`TuningProcessPool` 位于 `torch/_inductor/autotune_process.py:313`（非原文 `262`）。构造函数体与原文简化版一致（`get_device_list()` → 逐 device 建 `TuningProcess` → `ThreadPoolExecutor(max_workers=len(devices))`），当前源码额外维护一个 `process_queue`（原文简化省略，非错误）。"子进程隔离防主进程崩溃" 的动机在源码里有直接依据：同文件 `BenchmarkRequest` 类的 docstring（`autotune_process.py:497-501`）写道 "Only handle triton template benchmark for now. The extern kernel benchmark can be done inside the same process since they usually don't cause crash"——反面隐含 Triton template kernel 的 benchmark **会**导致崩溃，与原文 "避免编译错误导致主进程崩溃"/"Triton 编译可能 segfault" 的论断吻合。
+
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
@@ -110,5 +147,6 @@ binary = triton.compile(
 - [[inductor_reduction_codegen_deep_analysis]] — reduction config（R0_BLOCK / persistent）
 - [[PyTorch_Inductor_Technical_Analysis]] — §4 融合成本模型 + CoordescTuner 坐标下降（本页不重复）
 - [[inductor_codegen_dynamic_shape_analysis]] — 动态 shape 与 XBLOCK 选择、ks0*ks1 升 i64
+- [[inductor_compile_fx_orchestration_analysis]] — compile_fx 编排全景；§15 组织原则提到"算子后端选择延迟到 CodeGen 阶段 autotuning"与本页 §6 呼应，§16 源码速查表 CodeGen 行含 `select_algorithm.py`/`autotune_process.py`
 - [[npu_inductor_linearize_backend_analysis]] — NPU autotune（UB 过滤 + mspti + 降型）
 - [[02_compile_stack/04_inductor/index]] — 本目录索引

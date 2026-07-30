@@ -24,6 +24,16 @@ All source ingestions and significant wiki updates are logged here.
 
 **校验**:`python tools/check_links.py`:pages 390→388(921 与 D04 两页删除,净 -2),broken=0;`pytest tools/ -q`:77 passed(labs 同步后恢复,过程中三个 manifest/call-chain 测试短暂失败,已在本任务收尾前修复)。
 
+**追记(复核修正,2026-07-30,不改上方历史行)**:
+
+(a) 上文 D01 条"2 条改指更贴切的具体目标——`decomposition_passes_guide`/`wrapper_execution_memory_allocation_and_reuse_analysis`"经复核有误:对照 d8c1a5b 实际 diff,该 commit 只改了 `decomposition_passes_guide.md` 一处(旧链 `[[inductor_compiler_pipeline_analysis]]` → `[[inductor_compile_fx_orchestration_analysis]]` — compile_fx 把 decomposition table 传给 AOTAutograd 的调用点);`wrapper_execution_memory_allocation_and_reuse_analysis.md` 在 d8c1a5b 中未被触碰(该页由更早的 01c1422 移入本目录,与本次改指无关)。实际应为"1 条改指更贴切的具体目标"。
+
+(b) "19 条入链"为**页数**口径(`git grep -l`,d8c1a5b^ 下命中 19 个非 changelog 文件);若按**出现次数**(`git grep -o '\[\[inductor_compiler_pipeline_analysis'`,同一基线,排除 changelog.md 本身)计,实际为 **30** 次。两个数字口径不同,均属实,原文未注明口径,此处补注。
+
+(c) "纯平移四篇"(D02/D03/D05/D07,各条独立标注"纯平移")中,**D05 并非字节对字节平移**:对照 01c1422 实际 diff,`wrapper_execution_memory_allocation_and_reuse_analysis.md` 净 +5 行(6 insertions/1 deletion)——除去 `d05_` 前缀迁移外,页头新增了一段与 `inductor_memory_management_analysis`/`inductor_memory_allocation_guide` 的互指说明(该 commit 消息本身已披露"页头加互指说明",但顶部"纯平移"表述未与此区分,此处复核标注更精确)。D02/D03/D07 复核 diffstat 确认为无额外插入的纯移动。
+
+(d) 本次(kb-reorg P4 Task 6 复核修复)在 D01 判重时被跳过、未落地的 3 处原文事实,已按"逐字为基底+溯源"原则回补:`inductor_compiler_pipeline_analysis.md` §7.4(CPU CodeGen:`CppKernel`/`CppVecKernel`/`CppTile2DKernel` 类体系与向量化判定)→ [[inductor_codegen_analysis]] 新增 §7;§7.5(`ChoiceCaller`/`TritonTemplateCaller` 编译期算法选择基础设施、`TuningProcessPool` 子进程隔离)→ [[inductor_autotuning_analysis]] 新增 §六,并恢复一条指向 [[inductor_compile_fx_orchestration_analysis]] 的 Related Pages 链接(替代被删的旧链);§4.3.7 `dedup_reduce_scatters`(reduce_scatter 线性可加性融合)→ [[post_grad_passes_guide]] Pass 19-21 节补齐第 4 个成员。三处原文均无固定源码基线声明,回补时对照本地 pinned checkout(`E:/97-codes/torch_parallel/p`,`e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`)核实所有行号引用,发现原文行号普遍漂移(如 `ir.py:5582` 实为 `ChoiceCaller` 所在 `ir.py:6185` 与 `TritonTemplateCaller` 所在 `select_algorithm.py:3347` 两处的合并粗写),均以 `[!correction]` 就地标注,不改写原文陈述本身。校验:`python tools/check_links.py` pages 388→388(纯编辑,broken=0);`pytest tools/ -q` 77 passed。
+
 ---
 
 ## 2026-07-30：知识库结构整改 P4 Task 5 spec 审查修复（bytecode_analysis 两算法补落点 + 加速数字弃置例外可见化）

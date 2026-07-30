@@ -4,7 +4,7 @@
 > **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
 > **课程分工**：本页保留纵深实现；当前IR到kernel/wrapper的映射、autotune与provenance见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]]。
 
-> **Updated**: 2026-07-22
+> **Updated**: 2026-07-30（新增 §7「CPU CodeGen」，回补自已删除的 `inductor_compiler_pipeline_analysis.md` §7.4；本页此前的 §1-6/示例均为 Triton/GPU 视角，§7 起补 CPU 侧）
 
 > **Source baseline**: PyTorch `9922478dffa`，入口复核为 `torch/_inductor/graph.py:2620-2637`、`torch/_inductor/scheduler.py:8479-8497,9470-9505`、`torch/_inductor/codegen/common.py:407-472`。
 >
@@ -248,6 +248,31 @@ Inductor 的 **codegen 是其编译流程的最终执行环节**，承担着将�
 - **功能上**：它同时生成 kernel 代码（Triton/C++）和 host wrapper 代码，管理内存生命周期，并支持 AOT 编译。
 - **存在原因**：它是图编译器与底层硬件之间的桥梁，消除了 eager mode 的 Python 调度开销，并通过 kernel fusion 和内存规划实现极致性能。
 - **实现方式**：采用 "Scheduler 遍历 → Backend 分发 → Kernel 生成 → Wrapper 组装 → 动态/静态编译" 的流水线，模块化地支持多后端（GPU/CPU/MPS）和多模式（JIT/AOT）。
+
+## 7. CPU CodeGen（补充：CPU 侧 kernel 类体系与向量化判定）
+
+> 本页 §1-6 均以 Triton/GPU 后端为例；本节补 CPU 后端（`torch/_inductor/codegen/cpp.py`）的 kernel 类体系与向量化判定。内容原属 P4 知识库整改被删除的旧页（`02_compile_stack/04_inductor/inductor_compiler_pipeline_analysis.md` §7.4，921 行，已于 Task 6 判重删除；该旧页未声明固定源码基线）。以下保留原文文字为基底逐字迁入，其中的文件行号对照本页固定基线 `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`（本地 pinned checkout `E:/97-codes/torch_parallel/p`）核实——均与原文存在漂移，判断是旧页写作时对应更早/未固定的上游快照所致，详见下方 [!correction] 注。
+
+### 7.1 CppKernel / CppVecKernel
+
+**原文代码位置**：`cpp.py:2006` / `2741`
+
+- `CppKernel`：生成标量 C++ 代码，支持 OpenMP 多线程
+- `CppVecKernel`：生成向量化 C++ 代码，利用 SIMD 指令（AVX2/AVX512/NEON）
+- `CppTile2DKernel`：二维分块，支持转置以优化连续内存访问
+
+> [!correction] 对照当前审计基线核实：`CppKernel` 实际位于 `torch/_inductor/codegen/cpp.py:2088`（非原文 `2006`）；`CppVecKernel(CppKernel)` 位于 `cpp.py:2856`（非原文 `2741`）；`CppTile2DKernel(CppVecKernel)` 位于 `cpp.py:3834`（原文未给行号，此处为核实后补充）。三者的继承关系（`CppVecKernel` 继承 `CppKernel`，`CppTile2DKernel` 继承 `CppVecKernel`）与原文描述一致，仅行号随上游演进漂移。
+
+### 7.2 向量化决策
+
+CPU CodeGen 的关键决策：
+- 检查数据类型是否支持向量操作
+- 检查索引是否连续（stride-1）
+- 检查操作是否支持向量化
+
+对于不可向量化的操作，生成标量回退版本。
+
+> 原文本节未给出文件行号，以下为核实后的补充引用：数据类型检查见 `cpp.py:4146`（`if any(dtype not in VECTORIZABLE_DTYPES for dtype in all_dtypes): return [], [], KernelOpStats()`）；stride 连续性检查散见于 tiling 选择路径，如 `cpp.py:3904`（`outer_stride == 1`）、`cpp.py:4341`（`elif stride == 1:`）。不可向量化时回退到标量路径的判断与原文一致。
 
 ## Related Pages
 
