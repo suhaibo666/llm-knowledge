@@ -2,8 +2,8 @@
 
 > 卷别：B · TorchDynamo 捕获  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[b01_torch_compile_api_and_first_call_lifecycle_analysis]]  
-> 后续：[[b03_eval_frame_callback_and_code_cache_analysis]]  
+> 前置：[[torch_compile_api_and_first_call_lifecycle_analysis]]  
+> 后续：[[eval_frame_callback_and_code_cache_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么这些参数经常被混为一谈
@@ -197,8 +197,8 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[b01_torch_compile_api_and_first_call_lifecycle_analysis]]
-- [[b03_eval_frame_callback_and_code_cache_analysis]]
-- [[b07_guards_cache_lookup_and_recompilation_analysis]]
+- [[torch_compile_api_and_first_call_lifecycle_analysis]]
+- [[eval_frame_callback_and_code_cache_analysis]]
+- [[guards_cache_lookup_and_recompilation_analysis]]
 - [[d06_cudagraph_trees_warmup_record_and_replay_analysis]]
 - [[production_rollout_fallback_and_monitoring_analysis]]

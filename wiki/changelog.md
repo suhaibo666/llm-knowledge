@@ -6,6 +6,31 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 5 Step 1（19 号 B 卷迁入 01_dynamo，10 篇 2653 行）
+
+**Type**: Structure Reorg（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 5）
+
+**迁移**：`19_torch_compile_end_to_end/b01-b10`（API 与首次编译生命周期、backend 参数/stance/fullgraph、eval-frame callback/code cache、字节码符号执行、VariableTracker/来源、OutputGraph/side effects、guard/cache/recompile、graph break/resume、动态形状泛化/fallback、backend contract，共 2653 行）`git mv` 到 `02_compile_stack/01_dynamo/`，去 `bNN_` 前缀规范重命名（新基名全库唯一，无冲突）：
+
+- `b01_torch_compile_api_and_first_call_lifecycle_analysis.md` → `torch_compile_api_and_first_call_lifecycle_analysis.md`
+- `b02_backend_modes_options_stances_and_fullgraph_analysis.md` → `backend_modes_options_stances_and_fullgraph_analysis.md`
+- `b03_eval_frame_callback_and_code_cache_analysis.md` → `eval_frame_callback_and_code_cache_analysis.md`
+- `b04_instruction_translator_and_bytecode_state_machine_analysis.md` → `instruction_translator_and_bytecode_state_machine_analysis.md`
+- `b05_variable_tracker_source_and_python_object_model_analysis.md` → `variable_tracker_source_and_python_object_model_analysis.md`
+- `b06_output_graph_side_effects_and_graph_emission_analysis.md` → `output_graph_side_effects_and_graph_emission_analysis.md`
+- `b07_guards_cache_lookup_and_recompilation_analysis.md` → `guards_cache_lookup_and_recompilation_analysis.md`
+- `b08_graph_break_resume_functions_and_partial_graphs_analysis.md` → `graph_break_resume_functions_and_partial_graphs_analysis.md`
+- `b09_dynamic_shapes_generalization_and_fallback_analysis.md` → `dynamic_shapes_generalization_and_fallback_analysis.md`
+- `b10_backend_contract_and_custom_backend_analysis.md` → `backend_contract_and_custom_backend_analysis.md`
+
+**入链修复**：十篇互链（前置/后续 + Related Pages）随重命名全库替换（裸基名，新基名唯一）；`00_torch_compile_end_to_end_index.md` 卷 B 表按 Task 3/4 先例压缩为一行式指向（完整表格重建留 Task 10）；`00_pytorch_graph_series_index.md` 未引用卷 B，无需改动；`02_compile_stack/07_debugging/` 内 `dynamo_explain_and_graph_break_diagnosis_analysis.md`/`guard_failure_and_recompile_diagnosis_analysis.md`、`19_torch_compile_end_to_end/d04_compile_cache_hierarchy_keys_and_invalidation_analysis.md`/`f06_custom_backends_and_device_integration_analysis.md` 对十篇的引用改指新基名；`wiki/changelog.md` 里 Task 3 条目（本文件写入当时的历史记载，按本文件"不随后续迁移回写"惯例）中对 `b01`/`b03`/`b04` 的活链接降级为惰性反引号 + 说明新名，不当作活链接维护。
+
+**Labs 同步**：`tools/labs_torch_compile/demo_manifest.json` 的 10 条 B 卷 `page` 字段同步改名（page_id/volume/script/case 不变，55 条不变）；`test_volume_demo_contract.py` 的 `_page_root(labs_root, volume)` 新增 B→`01_dynamo` 分支（Task 4 预留的同一模式）；`CourseMarkdownContractTest._course_pages()` 同步纳入 `01_dynamo/*.md`（含卷内既有的 quickstart/pass-methodology/control-flow/旧大文页，质量门禁全部通过）；`test_call_chain_pages_have_source_walkthroughs`/`test_b07_cache_miss_formula_contains_all_addends` 的 b04/b07 路径改指新家。
+
+**校验**：`python tools/check_links.py`：pages 392→392（纯移动不改变页数），broken=0；`pytest tools/ -q`：77 passed。
+
+---
+
 ## 2026-07-30：知识库结构整改 P4 Task 4（19 号 E 卷迁入 07_debugging，9 篇 2391 行 + 吸收旧 debug 页）
 
 **Type**: Structure Reorg + Redundancy Consolidation（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 4）
@@ -40,9 +65,9 @@ All source ingestions and significant wiki updates are logged here.
 
 - a01 → [[01_eager_runtime/01_tensor_and_storage/tensor_impl_and_storage_analysis]] §13（differentiable view/DifferentiableViewMeta、mutation 状态机、复杂度记账、常见误解、view→Autograd→编译器的源码跟读）
 - a02 → [[pytorch_dispatcher_analysis]] §12（ADInplaceOrView 分层、mutation 算子 rebase 样本、Dispatcher/Autograd Edge/FX data edge 三种"边"辨析）
-- a03 → [[b04_instruction_translator_and_bytecode_state_machine_analysis]] §14 + [[b03_eval_frame_callback_and_code_cache_analysis]] §13（`bytecode_transformation` 重组子系统、code object/frame/instruction 定义表、C-hook 与 ConvertFrame 边界）
+- a03 → `b04_instruction_translator_and_bytecode_state_machine_analysis`（P4 Task 5 起更名为 [[instruction_translator_and_bytecode_state_machine_analysis]]） §14 + `b03_eval_frame_callback_and_code_cache_analysis`（P4 Task 5 起更名为 [[eval_frame_callback_and_code_cache_analysis]]） §13（`bytecode_transformation` 重组子系统、code object/frame/instruction 定义表、C-hook 与 ConvertFrame 边界）
 - a04 → [[aotautograd_analysis]] §13（`__torch_function__`/`__torch_dispatch__`/ProxyTensor/FakeTensor 四层分工、`track_tensor_tree`、FakeTensorMode 状态、decomposition 落点、数据相关 operator 边界）
-- a05 → [[b01_torch_compile_api_and_first_call_lifecycle_analysis]] §12 + [[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16（七阶段成本词汇表、cache-entry 查找与 backend handoff 源码补充；参数化成本模型/break-even/四层 cache 对照表与 e07 既有的测量方法论合并，不重复落地两处）
+- a05 → `b01_torch_compile_api_and_first_call_lifecycle_analysis`（P4 Task 5 起更名为 [[torch_compile_api_and_first_call_lifecycle_analysis]]） §12 + [[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16（七阶段成本词汇表、cache-entry 查找与 backend handoff 源码补充；参数化成本模型/break-even/四层 cache 对照表与 e07 既有的测量方法论合并，不重复落地两处）
 
 **入链修复**：`f05`（a02/a04 引用改指 pytorch_dispatcher_analysis / aotautograd_analysis）、`b01`/`e07`/`d06`（a05 引用改指内容实际落点）；卷内 a01-a05 互链随整卷删除一并消失；`00_torch_compile_end_to_end_index.md` 的"卷 A"表按 Task 3 约定不做整体重排（留给 Task 10），仅去除失效行并加一行去向说明，避免 broken>0。
 

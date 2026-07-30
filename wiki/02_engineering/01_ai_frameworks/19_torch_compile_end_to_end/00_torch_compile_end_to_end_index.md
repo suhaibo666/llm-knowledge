@@ -46,22 +46,11 @@ flowchart LR
 
 ## 3. 卷 A：执行模型前置基础（已并入功能页，2026-07-30）
 
-> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/tensor_impl_and_storage_analysis]] §13、[[pytorch_dispatcher_analysis]] §12、[[b03_eval_frame_callback_and_code_cache_analysis]] §13、[[b04_instruction_translator_and_bytecode_state_machine_analysis]] §14、[[aotautograd_analysis]] §13、[[b01_torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
+> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/tensor_impl_and_storage_analysis]] §13、[[pytorch_dispatcher_analysis]] §12、[[eval_frame_callback_and_code_cache_analysis]] §13、[[instruction_translator_and_bytecode_state_machine_analysis]] §14、[[aotautograd_analysis]] §13、[[torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
 
-## 4. 卷 B：`torch.compile` API 与 TorchDynamo
+## 4. 卷 B：`torch.compile` API 与 TorchDynamo（已迁移至 `02_compile_stack/01_dynamo/`，2026-07-30）
 
-| 编号 | 页面 | 先回答的问题 |
-|---:|---|---|
-| B01 | [[b01_torch_compile_api_and_first_call_lifecycle_analysis]] | wrapper 创建与第一次真正编译如何区分 |
-| B02 | [[b02_backend_modes_options_stances_and_fullgraph_analysis]] | 参数和 stance 分别改变哪一层策略 |
-| B03 | [[b03_eval_frame_callback_and_code_cache_analysis]] | eval-frame callback、code cache 与 frame state 如何协作 |
-| B04 | [[b04_instruction_translator_and_bytecode_state_machine_analysis]] | 如何符号执行 Python bytecode |
-| B05 | [[b05_variable_tracker_source_and_python_object_model_analysis]] | Python 值、身份和来源怎样进入编译状态 |
-| B06 | [[b06_output_graph_side_effects_and_graph_emission_analysis]] | OutputGraph 如何提交 FX、guards 和 side effects |
-| B07 | [[b07_guards_cache_lookup_and_recompilation_analysis]] | guard 如何选择 cache entry 或触发重编译 |
-| B08 | [[b08_graph_break_resume_functions_and_partial_graphs_analysis]] | 切图后 Python 状态如何恢复 |
-| B09 | [[b09_dynamic_shapes_generalization_and_fallback_analysis]] | 动态泛化和 eager fallback 何时发生 |
-| B10 | [[b10_backend_contract_and_custom_backend_analysis]] | backend 接收什么并必须返回什么 |
+> B01-B10 十篇经 P4 知识库整改随两级重组迁移并去前缀重命名到 [[02_compile_stack/01_dynamo/index]]：API 与首次编译生命周期(B01)→backend 参数/stance/fullgraph(B02)→eval-frame callback/code cache(B03)→字节码符号执行(B04)→VariableTracker/来源(B05)→OutputGraph/side effects(B06)→guard/cache/recompile(B07)→graph break/resume(B08)→动态形状泛化/fallback(B09)→backend contract(B10)，阅读顺序不变，完整卷内表格重建见该目录 index.md。本节的导读性重排列入 Task 10。
 
 ## 5. 卷 C：图编译核心
 

@@ -2,8 +2,8 @@
 
 > 卷别：B · TorchDynamo 捕获  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[b04_instruction_translator_and_bytecode_state_machine_analysis]]  
-> 后续：[[b06_output_graph_side_effects_and_graph_emission_analysis]]  
+> 前置：[[instruction_translator_and_bytecode_state_machine_analysis]]  
+> 后续：[[output_graph_side_effects_and_graph_emission_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么只用 `fx.Proxy`不够
@@ -237,8 +237,8 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[b04_instruction_translator_and_bytecode_state_machine_analysis]]
-- [[b06_output_graph_side_effects_and_graph_emission_analysis]]
-- [[b07_guards_cache_lookup_and_recompilation_analysis]]
+- [[instruction_translator_and_bytecode_state_machine_analysis]]
+- [[output_graph_side_effects_and_graph_emission_analysis]]
+- [[guards_cache_lookup_and_recompilation_analysis]]
 - [[02_fx_graph_core_data_model]]
 - [[13_pattern_expression_and_matcher_engine]]

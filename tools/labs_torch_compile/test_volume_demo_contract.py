@@ -430,16 +430,18 @@ class VolumeDEFContractTest(unittest.TestCase):
 
 
 # kb-reorg P4 physically relocates course volumes out of
-# 19_torch_compile_end_to_end one volume at a time (Task 4: E -> 07_debugging).
-# Manifest entries still carry only a bare filename, so resolve each entry's
-# directory from its "volume" field; volumes not yet moved fall back to the
-# legacy course directory.
+# 19_torch_compile_end_to_end one volume at a time (Task 4: E -> 07_debugging;
+# Task 5: B -> 01_dynamo). Manifest entries still carry only a bare filename,
+# so resolve each entry's directory from its "volume" field; volumes not yet
+# moved fall back to the legacy course directory.
 def _page_root(labs_root: Path, volume: str) -> Path:
     ai_frameworks_root = (
         labs_root.parent.parent / "wiki" / "02_engineering" / "01_ai_frameworks"
     )
     if volume == "E":
         return ai_frameworks_root / "02_compile_stack" / "07_debugging"
+    if volume == "B":
+        return ai_frameworks_root / "02_compile_stack" / "01_dynamo"
     return ai_frameworks_root / "19_torch_compile_end_to_end"
 
 
@@ -546,7 +548,13 @@ class CourseMarkdownContractTest(unittest.TestCase):
         # Volume E physically moved to 07_debugging (kb-reorg P4 Task 4); its
         # markdown quality gates below still apply, just from the new home.
         debugging_root = ai_frameworks_root / "02_compile_stack" / "07_debugging"
-        return sorted(course_root.glob("*.md")) + sorted(debugging_root.glob("*.md"))
+        # Volume B physically moved to 01_dynamo (kb-reorg P4 Task 5); same.
+        dynamo_root = ai_frameworks_root / "02_compile_stack" / "01_dynamo"
+        return (
+            sorted(course_root.glob("*.md"))
+            + sorted(debugging_root.glob("*.md"))
+            + sorted(dynamo_root.glob("*.md"))
+        )
 
     def test_list_markers_render_as_commonmark_lists(self) -> None:
         malformed: list[str] = []
@@ -614,20 +622,23 @@ class CourseMarkdownContractTest(unittest.TestCase):
         self.assertEqual(invalid, [])
 
     def test_call_chain_pages_have_source_walkthroughs(self) -> None:
-        course_root = (
+        ai_frameworks_root = (
             Path(__file__).resolve().parent.parent.parent
             / "wiki"
             / "02_engineering"
             / "01_ai_frameworks"
-            / "19_torch_compile_end_to_end"
         )
+        course_root = ai_frameworks_root / "19_torch_compile_end_to_end"
+        # Volume B physically moved to 01_dynamo (kb-reorg P4 Task 5); the two
+        # b04/b07 call-chain pages below now live there.
+        dynamo_root = ai_frameworks_root / "02_compile_stack" / "01_dynamo"
         target_pages = [
-            "b04_instruction_translator_and_bytecode_state_machine_analysis.md",
-            "b07_guards_cache_lookup_and_recompilation_analysis.md",
-            "d01_inductor_compile_fx_orchestration_analysis.md",
-            "d02_aot_runtime_wrappers_and_lazy_backward_compile_analysis.md",
-            "d06_cudagraph_trees_warmup_record_and_replay_analysis.md",
-            "f01_compiled_autograd_analysis.md",
+            (dynamo_root, "instruction_translator_and_bytecode_state_machine_analysis.md"),
+            (dynamo_root, "guards_cache_lookup_and_recompilation_analysis.md"),
+            (course_root, "d01_inductor_compile_fx_orchestration_analysis.md"),
+            (course_root, "d02_aot_runtime_wrappers_and_lazy_backward_compile_analysis.md"),
+            (course_root, "d06_cudagraph_trees_warmup_record_and_replay_analysis.md"),
+            (course_root, "f01_compiled_autograd_analysis.md"),
         ]
         locator = re.compile(
             r"(?:torch|test|tests|functorch|aten|c10|tools)/"
@@ -635,8 +646,8 @@ class CourseMarkdownContractTest(unittest.TestCase):
         )
         missing: list[str] = []
         shallow: list[str] = []
-        for filename in target_pages:
-            lines = (course_root / filename).read_text(encoding="utf-8").splitlines()
+        for root, filename in target_pages:
+            lines = (root / filename).read_text(encoding="utf-8").splitlines()
             start = next(
                 (
                     index
@@ -664,14 +675,16 @@ class CourseMarkdownContractTest(unittest.TestCase):
         self.assertEqual(shallow, [])
 
     def test_b07_cache_miss_formula_contains_all_addends(self) -> None:
-        course_root = (
+        # Volume B physically moved to 01_dynamo (kb-reorg P4 Task 5).
+        dynamo_root = (
             Path(__file__).resolve().parent.parent.parent
             / "wiki"
             / "02_engineering"
             / "01_ai_frameworks"
-            / "19_torch_compile_end_to_end"
+            / "02_compile_stack"
+            / "01_dynamo"
         )
-        page = course_root / "b07_guards_cache_lookup_and_recompilation_analysis.md"
+        page = dynamo_root / "guards_cache_lookup_and_recompilation_analysis.md"
         text = page.read_text(encoding="utf-8")
         self.assertIn(
             "O\\left(\\sum_{i=1}^{C} Q_i\\right)\n"

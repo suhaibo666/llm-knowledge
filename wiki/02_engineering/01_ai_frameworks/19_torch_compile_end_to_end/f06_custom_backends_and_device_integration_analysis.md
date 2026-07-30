@@ -253,7 +253,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[b10_backend_contract_and_custom_backend_analysis]]
+- [[backend_contract_and_custom_backend_analysis]]
 - [[f05_custom_operators_fake_kernels_and_decompositions_analysis]]
 - [[f07_aotinductor_packaging_and_deployment_analysis]]
 - [[d03_async_compile_workers_and_module_loading_analysis]]

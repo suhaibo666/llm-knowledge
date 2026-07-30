@@ -2,8 +2,8 @@
 
 > 卷别：B · TorchDynamo 捕获  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[b08_graph_break_resume_functions_and_partial_graphs_analysis]]  
-> 后续：[[b10_backend_contract_and_custom_backend_analysis]]  
+> 前置：[[graph_break_resume_functions_and_partial_graphs_analysis]]  
+> 后续：[[backend_contract_and_custom_backend_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么“shape动态”不是一个布尔事实
@@ -217,8 +217,8 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[b07_guards_cache_lookup_and_recompilation_analysis]]
-- [[b08_graph_break_resume_functions_and_partial_graphs_analysis]]
+- [[guards_cache_lookup_and_recompilation_analysis]]
+- [[graph_break_resume_functions_and_partial_graphs_analysis]]
 - [[04_symbolic_shapes_guards_and_graph_reuse]]
 - [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
 - [[compile_latency_cache_and_steady_state_performance_analysis]]

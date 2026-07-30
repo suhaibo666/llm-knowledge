@@ -214,8 +214,8 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[b07_guards_cache_lookup_and_recompilation_analysis]]
-- [[b09_dynamic_shapes_generalization_and_fallback_analysis]]
+- [[guards_cache_lookup_and_recompilation_analysis]]
+- [[dynamic_shapes_generalization_and_fallback_analysis]]
 - [[observability_logs_counters_and_artifact_map_analysis]]
 - [[dynamo_explain_and_graph_break_diagnosis_analysis]]
 - [[compile_latency_cache_and_steady_state_performance_analysis]]

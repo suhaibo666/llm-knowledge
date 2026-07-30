@@ -212,7 +212,7 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[b07_guards_cache_lookup_and_recompilation_analysis]]
+- [[guards_cache_lookup_and_recompilation_analysis]]
 - [[d03_async_compile_workers_and_module_loading_analysis]]
 - [[d05_wrapper_execution_memory_allocation_and_reuse_analysis]]
 - [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]]

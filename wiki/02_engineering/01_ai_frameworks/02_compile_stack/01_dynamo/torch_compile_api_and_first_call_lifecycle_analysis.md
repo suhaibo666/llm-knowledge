@@ -2,7 +2,7 @@
 
 > 卷别：B · TorchDynamo 捕获  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 后续：[[b02_backend_modes_options_stances_and_fullgraph_analysis]]  
+> 后续：[[backend_modes_options_stances_and_fullgraph_analysis]]  
 > 最后更新：2026-07-30(§12 并入 A05 独有的七阶段成本模型与缓存分层内容)
 
 ## 1. 为什么公开入口必须很薄
@@ -144,7 +144,7 @@ Dynamo不是简单把整个 Python函数替换成一个 FX graph。一次捕获�
 5. 保护这一版本的 guards。
 
 这就是“编译 Python frame”而不是“只追踪 Tensor算子列表”。详情见
-[[b06_output_graph_side_effects_and_graph_emission_analysis]]。
+[[output_graph_side_effects_and_graph_emission_analysis]]。
 
 ### 7.1 backend 收到 capture 结果后交给谁
 
@@ -273,9 +273,9 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 
 ## Related Pages
 
-- [[b02_backend_modes_options_stances_and_fullgraph_analysis]]
-- [[b03_eval_frame_callback_and_code_cache_analysis]]
-- [[b06_output_graph_side_effects_and_graph_emission_analysis]]
+- [[backend_modes_options_stances_and_fullgraph_analysis]]
+- [[eval_frame_callback_and_code_cache_analysis]]
+- [[output_graph_side_effects_and_graph_emission_analysis]]
 - [[compile_latency_cache_and_steady_state_performance_analysis]] — 测量场景与统计设计
 - [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]] — 多层缓存 key/失效边界
 - [[00_torch_compile_end_to_end_index]]

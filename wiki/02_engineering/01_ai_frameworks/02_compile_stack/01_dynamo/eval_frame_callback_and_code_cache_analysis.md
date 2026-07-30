@@ -2,8 +2,8 @@
 
 > 卷别：B · TorchDynamo 捕获  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[b02_backend_modes_options_stances_and_fullgraph_analysis]]  
-> 后续：[[b04_instruction_translator_and_bytecode_state_machine_analysis]]  
+> 前置：[[backend_modes_options_stances_and_fullgraph_analysis]]  
+> 后续：[[instruction_translator_and_bytecode_state_machine_analysis]]  
 > 最后更新：2026-07-30(§13 并入 A03 独有的 code object/frame/instruction 定义与 C-Hook 边界内容；补 §13.3「`_compile` 为什么同时需要 instructions 和运行时状态」,此前漏迁)
 
 ## 1. 为什么 Dynamo截获 frame，而不是 monkey-patch Tensor算子
@@ -201,7 +201,7 @@ guard内部不是单一常数检查；Tensor metadata、Python对象、字典和
 
 ## 13. 源码补充：Code Object、Frame、Instruction 定义与 C-Hook 边界
 
-> 本节内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a03_python_frames_code_objects_and_bytecode_analysis.md`)。本页 §1-§12 从「eval-frame hook 是什么」讲起,默认读者已知道 code object/frame/instruction 是什么;A 卷该页对这三个概念的定义表,以及 C 扩展 hook 与 Python 侧 `ConvertFrame` 之间的边界细节,在本页与 [[b04_instruction_translator_and_bytecode_state_machine_analysis]] 均未覆盖,逐字迁入本页。
+> 本节内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a03_python_frames_code_objects_and_bytecode_analysis.md`)。本页 §1-§12 从「eval-frame hook 是什么」讲起,默认读者已知道 code object/frame/instruction 是什么;A 卷该页对这三个概念的定义表,以及 C 扩展 hook 与 Python 侧 `ConvertFrame` 之间的边界细节,在本页与 [[instruction_translator_and_bytecode_state_machine_analysis]] 均未覆盖,逐字迁入本页。
 
 ### 13.1 Code object、frame 与 instruction
 
@@ -250,8 +250,8 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[b01_torch_compile_api_and_first_call_lifecycle_analysis]]
-- [[b04_instruction_translator_and_bytecode_state_machine_analysis]]
-- [[b07_guards_cache_lookup_and_recompilation_analysis]]
-- [[b09_dynamic_shapes_generalization_and_fallback_analysis]]
+- [[torch_compile_api_and_first_call_lifecycle_analysis]]
+- [[instruction_translator_and_bytecode_state_machine_analysis]]
+- [[guards_cache_lookup_and_recompilation_analysis]]
+- [[dynamic_shapes_generalization_and_fallback_analysis]]
 - [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
