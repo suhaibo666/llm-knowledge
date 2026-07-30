@@ -258,7 +258,7 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 
 - [[00_torch_compile_end_to_end_index]]
 - [[async_compile_workers_and_module_loading_analysis]]
-- [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
+- [[02_compile_stack/06_compile_cache/index]]
 - [[cudagraph_trees_warmup_record_and_replay_analysis]]
 - [[observability_logs_counters_and_artifact_map_analysis]]
 - [[production_rollout_fallback_and_monitoring_analysis]]

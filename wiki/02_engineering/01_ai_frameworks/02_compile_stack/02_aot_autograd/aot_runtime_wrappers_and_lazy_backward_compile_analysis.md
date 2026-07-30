@@ -311,5 +311,5 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 - [[09_aotautograd_joint_forward_backward_graphs]]
 - [[10_saved_tensors_recompute_and_runtime_abi]]
 - [[d01_inductor_compile_fx_orchestration_analysis]]
-- [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
+- [[02_compile_stack/06_compile_cache/index]]
 - [[f01_compiled_autograd_analysis]]

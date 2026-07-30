@@ -401,7 +401,7 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
+- [[02_compile_stack/06_compile_cache/index]]
 - [[compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[compiled_correctness_validation_methodology_analysis]]
 - [[kernel_fusion_memory_and_hardware_performance_analysis]]

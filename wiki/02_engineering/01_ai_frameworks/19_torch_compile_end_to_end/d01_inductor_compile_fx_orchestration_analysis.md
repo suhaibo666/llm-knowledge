@@ -331,5 +331,5 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 - [[21_codegen_kernel_mapping_autotuning_and_provenance]]
 - [[aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
 - [[async_compile_workers_and_module_loading_analysis]]
-- [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
+- [[02_compile_stack/06_compile_cache/index]]
 - [[09_aotautograd_joint_forward_backward_graphs]]
