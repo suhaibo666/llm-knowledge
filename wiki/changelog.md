@@ -6,6 +6,35 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 7 Step 1（19 号 C 卷第一批迁入 03_graph_ir_and_passes，12 篇）
+
+**Type**: Structure Reorg（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 7）
+
+**迁移**：`19_torch_compile_end_to_end/`下 C 卷 21 篇中的 12 篇（FX 数据模型/改图原语/pattern/DCE/保序部分：C02,03,05,06,07,08,11,12,13,14,15,16）`git mv` 到新建 `02_compile_stack/03_graph_ir_and_passes/`，去数字前缀规范重命名（新基名全库唯一，无冲突）；C 卷其余 9 篇（C01 动机、C04 动态形状、C09/C10 AOT joint/recompute、C17-C21 Inductor IR/Scheduler/Codegen）留 Task 8：
+
+- `02_fx_graph_core_data_model.md` → `fx_graph_core_data_model_analysis.md`
+- `03_graph_values_metadata_and_signatures.md` → `graph_values_metadata_and_signatures_analysis.md`
+- `05_graph_effects_alias_mutation_and_order.md` → `graph_effects_alias_mutation_and_order_analysis.md`
+- `06_structured_outputs_higher_order_and_nested_graphs.md` → `structured_outputs_higher_order_and_nested_graphs_analysis.md`
+- `07_graph_capture_frontends_and_tracing.md` → `graph_capture_frontends_and_tracing_analysis.md`
+- `08_graph_normalization_decomposition_and_functionalization.md` → `graph_normalization_decomposition_and_functionalization_analysis.md`
+- `11_graph_stage_boundaries_identity_and_provenance.md` → `graph_stage_boundaries_identity_and_provenance_analysis.md`
+- `12_fx_graph_editing_primitives_and_invariants.md` → `fx_graph_editing_primitives_and_invariants_analysis.md`
+- `13_pattern_expression_and_matcher_engine.md` → `pattern_expression_and_matcher_engine_analysis.md`
+- `14_dead_code_topology_and_effect_order.md` → `dead_code_topology_and_effect_order_analysis.md`
+- `15_graph_pass_pipeline_ordering_and_fixpoint.md` → `graph_pass_pipeline_ordering_and_fixpoint_analysis.md`
+- `16_graph_rewrite_legality_validation_and_complexity.md` → `graph_rewrite_legality_validation_and_complexity_analysis.md`
+
+**入链修复**：42 个文件、179 处 `[[...]]` 目标随重命名替换（含裸基名与 `19_torch_compile_end_to_end/`-限定两种旧写法，后者一并去路径前缀改裸基名）；两个 00 系列索引（`00_pytorch_graph_series_index.md`、`00_torch_compile_end_to_end_index.md`）按 Task 6（D 卷）先例逐行替换链接目标，不做 B/E 式整段压缩（因 C 卷本次只分发一半，Part IV 与 C01/04/09/10 仍在原目录）；changelog.md 内唯一一处历史提及（反引号引用，非 `[[...]]` 活链接）按惯例不回写。
+
+**Labs 同步**：`demo_manifest.json` 12 条 C 卷 `page` 字段（c02/c03/c05/c06/c07/c08/c11-c16）同步改名；`test_volume_demo_contract.py` 的 `_page_root()` 新增 `_C_PAGE_ROOTS` 字典分支（C 卷仅部分迁移，未列出的 c-id 仍回退旧目录，与 D 卷四散模式同构）；`CourseMarkdownContractTest._course_pages()` 同步纳入 `03_graph_ir_and_passes/*.md`。
+
+新目录 `03_graph_ir_and_passes/index.md` 建成实质内容（替换占位）；`02_compile_stack/index.md`、`01_ai_frameworks` 相关导航行同步更新。
+
+**校验**：`python tools/check_links.py`：pages 388→388（纯移动不改变页数），broken=0；`pytest tools/ -q`：77 passed。
+
+---
+
 ## 2026-07-30：知识库结构整改 P4 Task 6（19 号 D 卷分发,7 篇 1888 行）
 
 **Type**: Redundancy Consolidation + Physical Move（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 6）
