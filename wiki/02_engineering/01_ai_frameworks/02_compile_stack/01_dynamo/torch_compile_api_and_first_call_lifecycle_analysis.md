@@ -3,7 +3,7 @@
 > 卷别：B · TorchDynamo 捕获  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 后续：[[backend_modes_options_stances_and_fullgraph_analysis]]  
-> 最后更新：2026-07-30(§12 并入 A05 独有的七阶段成本模型与缓存分层内容)
+> 最后更新：2026-07-30(§12 并入 A05 独有的七阶段成本模型与缓存分层内容;§13 并入 `torch_compile_source_analysis` 独有的 API 入口版本门禁与 `torch.export` 边界内容)
 
 ## 1. 为什么公开入口必须很薄
 
@@ -256,6 +256,54 @@ stateDiagram-v2
 `ExtraState::lookup_in_list` 会先核对 backend,再运行 entry 的 guard manager(`torch/csrc/dynamo/extra_state.cpp:201-225`)。更外层 lookup 依次查询相应 backend 的 bucket 与 default bucket(`torch/csrc/dynamo/extra_state.cpp:292-316`);命中后还会把 entry 移到链表前端并返回 cached code(`torch/csrc/dynamo/extra_state.cpp:319-323`)。因此"同一 code object"只是 cache 搜索范围,不是充分命中条件。
 
 miss 后,Dynamo 完成 capture 交给 backend 的边界是显式的:`call_user_compiler` 在 `dynamo_timed` 计时区域内调用 `_call_user_compiler`(`torch/_dynamo/output_graph.py:3217-3228`),后者调用 compiler function 并检查返回值必须可调用(`torch/_dynamo/output_graph.py:3286-3293`);除少数允许 fallback 的例外,其余异常在这里统一被归类为 `BackendCompilerFailed`(`torch/_dynamo/output_graph.py:3317-3320`)。code-object entry hit 只保证不再次走这次 Dynamo/backend handoff,不代表 backend 自己的 graph cache、code cache、native compiler 与 lazy backward compile 都不存在。backend handoff 之后各阶段成本的主导参数(codegen/native compile/autotune)见 [[compile_latency_cache_and_steady_state_performance_analysis]] §16。
+
+## 13. 源码补充:API 入口的版本门禁与 `torch.export` 边界
+
+> 本节内容原属 P4 知识库整改被删除的旧大文(`04_inductor/torch_compile_source_analysis.md`)。§1-§12 从"wrapper 是什么"讲起,未覆盖公开函数体最前面的环境门禁,以及被 `torch.export` 包住时的短路行为,逐字迁入本页。
+
+### 13.1 环境门禁先于任何 wrapper 构造
+
+`compile()` 函数体的第一步不是参数归一化,而是两条 `RuntimeError` 门禁和一次遥测调用(`torch/__init__.py:3267-3280`):
+
+```python
+import sysconfig
+
+_C._log_api_usage_once("torch.compile")
+if sys.version_info >= (3, 15):
+    raise RuntimeError("torch.compile is not supported on Python 3.15+")
+elif sysconfig.get_config_var("Py_GIL_DISABLED") == 1 and sys.version_info < (
+    3, 13, 3,
+):
+    raise RuntimeError(
+        "torch.compile is not supported on Python < 3.13.3 built with GIL disabled. "
+        "Please use Python 3.13.3+."
+    )
+```
+
+- `_C._log_api_usage_once("torch.compile")`:C++ 扩展遥测,同一进程只记录一次,不影响控制流;
+- Python 3.15+ 直接拒绝:TorchDynamo 深度依赖 CPython 帧求值机制,新版本需要先适配才能放开;
+- Free-threaded(无 GIL)构建额外要求 3.13.3+:更早的无 GIL 构建与 Dynamo 的 eval-frame 钩子不兼容。
+
+两条门禁都在任何 wrapper 或 backend 对象创建之前执行,失败时函数体尚未触碰 `model`。
+
+### 13.2 `torch.export` 区域内 `torch.compile` 退化为 no-op
+
+`compile()` 从 `options` 中提取 `guard_filter_fn`/`use_aoti`(见 [[backend_modes_options_stances_and_fullgraph_analysis]] §14)之后、实例化 backend wrapper 之前,还有一段边界检查(`torch/__init__.py:3350-3359`):
+
+```python
+if torch.compiler.is_exporting():
+    from torch._higher_order_ops.utils import _in_hop_compile
+
+    if not _in_hop_compile():
+        warnings.warn(
+            "torch.compile is ignored when called inside torch.export region",
+            stacklevel=2,
+        )
+        # torch.compile is a no-op when inside torch.export region
+        return model
+```
+
+`torch.export` 把模型追踪为可序列化 `ExportedProgram`,这个过程里再调用 `torch.compile`本身没有意义——所以默认警告并原样返回 `model`,不组装 wrapper、不安装 eval-frame callback。**例外**:若当前正处于高阶算子(如 `torch.cond`)的子图编译上下文(`_in_hop_compile()` 为真),则放行继续编译,因为 HOP 分支子图仍然需要走正常编译路径。这个短路发生在 backend wrapper 实例化(§7)之前,是"wrapper 未必总会被构造"的另一个具体反例,与 §10"常见误解"中"调用就已经编译"互补。
 
 ## 配套 Demo
 

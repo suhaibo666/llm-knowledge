@@ -6,6 +6,25 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 5 Step 3（删除 torch_compile_source_analysis.md，593 行，独有内容并入 B01/B02）
+
+**Type**: Redundancy Consolidation（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 5）
+
+**判重**：`04_inductor/torch_compile_source_analysis.md`（593 行，`torch.compile()` 函数体逐段源码解析）与 B01/B02 通读比对——**与 A 卷/PyTorch_Dynamo_Technical_Analysis 不同,本页确有实质独有内容**（关键词 grep 核实 `3.15`/`GIL_DISABLED`/`sysconfig`/`_log_api_usage_once`/`CompilerBisector`/`guard_filter_fn`/`use_aoti`/`is_exporting`/`_in_hop_compile`/`_TorchCompileAOTInductorWrapper`/`apply_mode`/`apply_options`/`list_mode_options` 在 B01/B02 及全库均无匹配或仅部分匹配），逐字迁入并对照本地 pinned pytorch checkout（`E:/97-codes/torch_parallel/p`）核验行号：
+
+- §4.1 Python 版本兼容性检查（3.15+ 拒绝、free-threaded GIL<3.13.3 拒绝、`_log_api_usage_once` 遥测）→ [[torch_compile_api_and_first_call_lifecycle_analysis]] 新增 §13.1，核验定位 `torch/__init__.py:3267-3280`
+- §4.6 `torch.export` 兼容性（`is_exporting()`/`_in_hop_compile()` 短路为 no-op）→ 同页新增 §13.2，核验定位 `torch/__init__.py:3350-3359`
+- §4.4 CompilerBisector 二分调试的 API 入口钩子（`bisect_backend := CompilerBisector.get_backend()` 覆盖 backend + vLLM 自定义 backend 保护条件）→ [[backend_modes_options_stances_and_fullgraph_analysis]] 新增 §13，核验定位 `torch/__init__.py:3330-3342`；与 [[minifier_repro_and_compiler_bisector_analysis]] §7（bisector 内部二分算法）互补,双向加回链
+- §4.5 特殊选项提取 + §4.7/§5 三个 wrapper 类的方法级实现（`_TorchCompileInductorWrapper.apply_mode/apply_options/get_compiler_config/reset`、CUDA<12.6 CUPTI workaround、`_TorchCompileAOTInductorWrapper` 子类的 `cpp_wrapper`/`aot_inductor.package`/`V.set_aot_compilation`、`_TorchCompileWrapper` 的 `lookup_backend`+kwargs 透传）→ 同页新增 §14，核验定位 `torch/__init__.py:2907-3096` 区间多段
+- [!todo] §14.2 迁移时发现:`use_aoti=True` 是从 `torch.compile()` **JIT 入口**直接触发的 AOTInductor 打包路径,而 [[f07_aotinductor_packaging_and_deployment_analysis]] §2-§3 记录的公开入口 `aoti_compile_and_package` 明确要求 `ExportedProgram`(export 驱动、部署前离线完成)。两条路径是否共享下游产物、`use_aoti` 这条 JIT 捷径的运维定位,F07 尚未覆盖——本任务范围内未展开核实,双向加回链留待后续处理。
+- §6 编译模式对照表（mode/CUDA Graphs/Triton autotune 布尔矩阵）与 B02 §3 的同一组事实（散文体）重复,不迁移；§7 能力范围与限制、§8 使用示例是已覆盖机制的摘要/演示,不迁移；§2/§3/§4.2/§4.3 是与 B01/B02 完全重复的调用栈图与参数说明,不迁移。
+
+**删除**：`git rm` 该页。**入链修复**：`04_inductor/dynamic_shapes_full_analysis.md` 改指 [[torch_compile_api_and_first_call_lifecycle_analysis]]；`04_inductor/index.md` 移除本页表格行,改为一行式说明指向 [[02_compile_stack/01_dynamo/index]]。
+
+**校验**：`python tools/check_links.py`：pages 391→390，broken=0，orphans=0；`pytest tools/ -q`：77 passed（含新增 §13/§14 的 mermaid/list-marker/locator-length 质量门禁）。
+
+---
+
 ## 2026-07-30：知识库结构整改 P4 Task 5 Step 2（删除 PyTorch_Dynamo_Technical_Analysis.md，2018 行）
 
 **Type**: Redundancy Consolidation（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 5）

@@ -4,7 +4,7 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[torch_compile_api_and_first_call_lifecycle_analysis]]  
 > 后续：[[eval_frame_callback_and_code_cache_analysis]]  
-> 最后更新：2026-07-28
+> 最后更新：2026-07-30(§13-§14 并入 `torch_compile_source_analysis` 独有的 CompilerBisector 入口钩子、三个 wrapper 类方法级实现与 AOTInductor 变体内容)
 
 ## 1. 为什么这些参数经常被混为一谈
 
@@ -180,6 +180,76 @@ flowchart TD
 - **“fullgraph会生成一个 kernel。”** graph数量和 kernel数量是不同层的概念。
 - **“删除 guards只影响性能。”** 它可能扩大错误 artifact的适用域并损害正确性。
 
+## 13. 源码补充:CompilerBisector 对 backend 的入口级覆盖
+
+> 本节内容原属 P4 知识库整改被删除的旧大文(`04_inductor/torch_compile_source_analysis.md`)。本页 §1-§12 讲 backend/mode/options/stance/fullgraph 五个控制面各自的语义,未覆盖 `compile()` 函数体在构造这些控制面**之前**先做的一次 backend 覆盖,逐字迁入本页。
+
+`compile()` 归一化 `mode`/`options` 之后、提取 `guard_filter_fn`/`use_aoti` 之前,会先问 `CompilerBisector` 是否要求覆盖 backend(`torch/__init__.py:3330-3342`):
+
+```python
+from torch._inductor.compiler_bisector import CompilerBisector
+
+if bisect_backend := CompilerBisector.get_backend():
+    import torch._inductor.config as inductor_config
+
+    # don't override the backend for use cases like vllm
+    # which leverages their custom backend.
+    if not (
+        inductor_config.test_configs.bisect_keep_custom_backend_for_inductor
+        and bisect_backend == "inductor"
+        and not isinstance(backend, str)
+    ):
+        backend = bisect_backend
+```
+
+即:若 bisector 处于激活状态(`get_backend()` 返回非空),它可以直接替换用户传入的 `backend` 字符串或 callable——这是一次**API 入口级**的 backend 覆盖,发生在任何 wrapper 类实例化之前。保护条件只有一种情况会拒绝覆盖:用户传入了**非字符串的自定义 backend**(例如 vLLM 的 `VllmBackend`),且 bisector 想切到 `"inductor"`,且配置显式要求保留自定义 backend——这防止 bisector 在第三方框架自带编译后端时错误地把它替换成 Inductor。`CompilerBisector` 自身的二分定位算法(backend 阶梯搜索、subsystem 禁用、pass 级二分)不属于本页范围,见 [[minifier_repro_and_compiler_bisector_analysis]] §7。
+
+## 14. 源码补充:三个 wrapper 类的方法级实现与 AOTInductor 变体
+
+> 本节内容原属 P4 知识库整改被删除的旧大文(`04_inductor/torch_compile_source_analysis.md`)。§2「Backend：定义图的消费者」只讲了 backend 的调用契约,未展开三个具体 wrapper 类各自怎样实现这份契约,逐字迁入本页。
+
+### 14.1 `_TorchCompileInductorWrapper`:mode/options 怎样变成 config
+
+`backend="inductor"`(默认)时实例化的 wrapper 把 `mode`/`options` 归一化为一份 `self.config` 字典(`torch/__init__.py:2907-2941`):
+
+- `apply_mode(mode)`:`mode` 非 `"default"` 时,调用 `list_mode_options(mode, self.dynamic)` 把预设展开成一组 options,再委托给 `apply_options`(`torch/__init__.py:2951-2955`);
+- `apply_options(options)`:逐项核对 key 是否属于 Inductor 已知配置、并按 `config.get_type` 做类型校验,校验通过才写入 `self.config`(`torch/__init__.py:2957-2982`);
+- `__init__` 末尾还会额外 `apply_options(CompilerBisector.get_config_change("inductor"))`,把二分调试期间的临时配置改动叠加进来;
+- 若最终 `config` 里 `triton.cudagraphs=True` 且 CUDA < 12.6(或 CUPTI 懒重初始化探测失败),设置 `DISABLE_CUPTI_LAZY_REINIT=1` + `TEARDOWN_CUPTI=0` 环境变量,规避 CUDA Graph 与 CUPTI teardown 的已知崩溃(`torch/__init__.py:2926-2941`);
+- `__call__(model_, inputs_, config_patches=...)` 把 `self.config` 与调用期 `config_patches` 合并后传给 `compile_fx`(`torch/__init__.py:2984-2999`);
+- `get_compiler_config()` 返回合并后的完整配置快照;`reset()` 在配置了 `triton.cudagraphs` 时重置 CUDAGraph tree(`torch/__init__.py:3001-3013`)。
+
+### 14.2 `_TorchCompileAOTInductorWrapper`:同一入口的另一条打包路径
+
+`use_aoti=True`(从 `options` 中 pop 出的特殊键,`torch/__init__.py:3344-3348`)时,`backend="inductor"` 分支实例化的不是上面的类,而是它的子类(`torch/__init__.py:3016-3054`):
+
+```python
+class _TorchCompileAOTInductorWrapper(_TorchCompileInductorWrapper):
+    compiler_name = "aotinductor"
+
+    def __init__(self, mode, options, dynamic, name=None):
+        super().__init__(mode, options, dynamic, name)
+        self.apply_options({"cpp_wrapper": True})
+        self.apply_options({"aot_inductor.package": True})
+
+    def __call__(self, model_, inputs_, *, config_patches=None):
+        ...
+        with V.set_aot_compilation(True), ctx, torch._inductor.config.patch("enable_autograd_for_aot", True):
+            return super().__call__(model_, inputs_, config_patches=config_patches)
+```
+
+除了复用父类的 `apply_mode`/`apply_options`,它额外强制打开 `cpp_wrapper` 和 `aot_inductor.package`,并在 `__call__` 里用 `V.set_aot_compilation(True)` 包住编译上下文。
+
+> [!todo] 这是从 `torch.compile(..., options={"use_aoti": True})` **JIT 入口**直接触发的 AOTInductor 路径;而 [[f07_aotinductor_packaging_and_deployment_analysis]] §2-§3 记录的公开入口是 `aoti_compile_and_package`,明确要求 `ExportedProgram`(export 驱动,部署前离线完成)。两条路径是否共享下游产物、`use_aoti` 这条 JIT 捷径的运维定位(是否推荐用于生产打包),F07 尚未覆盖,留待后续核实,不在本页展开。
+
+### 14.3 `_TorchCompileWrapper`:非 Inductor backend 怎样接收 mode/options
+
+`backend` 不是 `"inductor"` 时使用这个通用包装器(`torch/__init__.py:3057-3096`):
+
+- 通过 `lookup_backend(backend)` 把字符串或 callable 解析为已注册的 backend callable(`compiler_fn`);
+- `mode`/`options` 不落到某个 `config` 字典,而是原样塞进 `self.kwargs`,`__call__` 时以 `compiler_fn(model_, inputs_, **self.kwargs)` 透传——这印证了 §4 的结论:**options 的键语义完全由 backend 自己定义**,`_TorchCompileWrapper` 不做任何 Inductor 特定的键名/类型校验;
+- `reset()` 只在 `compiler_fn` 自带 `reset` 属性时才转发调用。
+
 ## 配套 Demo
 
 本页对应卷级入口 `tools/labs_torch_compile/demo_b_dynamo_capture.py` 的 `backend_modes_fullgraph` 用例。默认以 CUDA 为验收设备：
@@ -202,3 +272,5 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[guards_cache_lookup_and_recompilation_analysis]]
 - [[d06_cudagraph_trees_warmup_record_and_replay_analysis]]
 - [[production_rollout_fallback_and_monitoring_analysis]]
+- [[minifier_repro_and_compiler_bisector_analysis]] — CompilerBisector 内部的二分定位算法
+- [[f07_aotinductor_packaging_and_deployment_analysis]] — AOTInductor 的 export 驱动打包路径(与 §14.2 的 `use_aoti` JIT 路径待核实关系)

@@ -453,7 +453,7 @@ def call(args):
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[inductor_codegen_dynamic_shape_analysis]] — Inductor codegen 层的动态 shape 处理
 - [[torch_compile_architecture]] — torch.compile 端到端流水线架构
-- [[torch_compile_source_analysis]] — torch.compile 入口源码分析
+- [[torch_compile_api_and_first_call_lifecycle_analysis]] — torch.compile 入口源码分析
 - [[02_compile_stack/01_dynamo/index]] — Dynamo 帧捕获与符号执行
 - [[PyTorch_Inductor_Technical_Analysis]] — Inductor 后端技术全析
 - [[aotautograd_analysis]] — AOT Autograd 前向/反向图分解

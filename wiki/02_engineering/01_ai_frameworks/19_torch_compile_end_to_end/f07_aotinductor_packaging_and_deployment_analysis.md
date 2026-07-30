@@ -290,3 +290,4 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
 - [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[production_rollout_fallback_and_monitoring_analysis]]
+- [[backend_modes_options_stances_and_fullgraph_analysis]] — §14.2:`torch.compile(..., options={"use_aoti": True})` 的 JIT 入口路径,与本页 §2-§3 的 export 驱动打包路径待核实关系
