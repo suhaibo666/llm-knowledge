@@ -31,6 +31,99 @@ GraphLowering.operations
 （`torch/_inductor/scheduler.py:4641-4651`）；它没有复制 FX Node，也没有把 FX `args`
 当作 Scheduler edge。因此 SchedulerNode 的 identity、边与生命周期都属于新的图。
 
+### 1.1 核心类结构
+
+以下类图 2026-07-30 从已删除的 `scheduler_analysis.md` §4 回补（P4 归一时曾整节省略）：
+
+```mermaid
+classDiagram
+    class BaseSchedulerNode {
+        +scheduler: Scheduler
+        +node: ir.Operation
+        +read_writes: ReadWrites
+        +unmet_dependencies: OrderedSet
+        +ancestors: OrderedSet
+        +group: tuple
+        +min_order: int
+        +max_order: int
+        +prune_deps() void
+        +mark_run() void
+        +get_buffer_names() OrderedSet
+        +used_buffer_names() OrderedSet
+        +set_last_usage() void
+    }
+    class SchedulerNode {
+        +_sizes: tuple
+        +_body: LoopBody
+        +_compute_attrs() void
+        +merge_loops() void
+        +apply_new_loop_order() void
+        +reorder_loops_by_dep_pair() bool
+    }
+    class ExternKernelSchedulerNode {
+        +is_extern() bool
+    }
+    class NopKernelSchedulerNode {
+        +is_no_op() bool
+    }
+    class FusedSchedulerNode {
+        +snodes: list
+        +can_fuse_with() bool
+        +fuse() FusedSchedulerNode
+        +get_nodes() list
+    }
+    class FusedMixOrderReductions {
+        +contiguous_node
+        +other_node
+    }
+    class ForeachKernelSchedulerNode {
+        +group_nodes_for_combo_kernels()
+        +combinable_nodes()
+    }
+    class GroupedSchedulerNode {
+        +unpack() list
+    }
+    class Scheduler {
+        +nodes: list
+        +backends: dict
+        +name_to_buf: dict
+        +name_to_node: dict
+        +mutation_renames: dict
+        +fuse_nodes() list
+        +codegen() void
+        +get_backend() BaseScheduling
+        +can_fuse() bool
+        +score_fusion_key() Any
+    }
+    class BaseScheduling {
+        +scheduler: Scheduler
+        +can_fuse_vertical() bool
+        +can_fuse_horizontal() bool
+        +codegen_node() void
+        +codegen_template() void
+        +group_fn() tuple
+        +flush() void
+        +get_fusion_pair_priority() int
+    }
+    class SchedulerBuffer {
+        +scheduler: Scheduler
+        +node: ir.Buffer
+        +defining_op: BaseSchedulerNode
+        +users: list
+    }
+
+    BaseSchedulerNode <|-- SchedulerNode
+    BaseSchedulerNode <|-- ExternKernelSchedulerNode
+    BaseSchedulerNode <|-- NopKernelSchedulerNode
+    BaseSchedulerNode <|-- FusedSchedulerNode
+    BaseSchedulerNode <|-- GroupedSchedulerNode
+    FusedSchedulerNode <|-- FusedMixOrderReductions
+    FusedSchedulerNode <|-- ForeachKernelSchedulerNode
+    Scheduler --> BaseSchedulerNode
+    Scheduler --> BaseScheduling
+    BaseSchedulerNode --> SchedulerBuffer
+```
+
 ## 2. dependency construction
 
 `compute_dependencies()`：
@@ -137,6 +230,11 @@ Scheduler按 `unmet_dependencies`的buffer names DFS，输出producer先于consu
 
 fusion后按min_order排序并再次topological sort
 （`torch/_inductor/scheduler.py:6460-6462`）。
+
+2026-07-30 回补（原 `scheduler_analysis.md` §8.1，P4 归一时曾省略）：每个节点维护
+`min_order` 和 `max_order`（L547-553）。融合后的 `FusedSchedulerNode` 的
+`min_order = min(子节点)`，`max_order = max(子节点)`。这使拓扑排序和循环检测在 O(1) 内
+完成粗筛。§18.6 的 proximity 门控（`|min_order − max_order|` 比较）正是复用这对字段。
 
 该 DFS 对每个节点只访问一次，但源码会对每个节点的
 `unmet_dependencies`按 dependency name 排序。因此更精确的骨架复杂度是：
@@ -412,8 +510,9 @@ AOT fw/bw无跨图edge。Scheduler又是各图lowering后的独立buffer depende
 
 ## 18. 融合算法源码级细节
 
-以下内容 2026-07-30 从已删除的 `scheduler_analysis.md` §7 逐字并入（该页原有 §7.3/§7.4 的
-"旧版简写"提示已随并入本页而失效，一并去除；其余小节保持原文）。
+以下内容 2026-07-30 从已删除的 `scheduler_analysis.md` §7 改写并入本页（示意图与部分代码曾
+省略，经复核回补；该页原有 §7.3/§7.4 的"旧版简写"提示已随并入本页而失效，一并去除；其余
+小节保持原文）。
 
 ### 18.1 主循环（`fuse_nodes`）
 
@@ -439,6 +538,46 @@ nodes = self.fuse_nodes_once(nodes, is_reorder_round=True)
 `config.max_fusion_buffer_group_pairwise_attempts` 控制每组最多检查多少对（避免 O(n²) 爆炸）。
 
 ### 18.3 融合合法性检查（`can_fuse`）
+
+2026-07-30 回补下图（原 `scheduler_analysis.md` §7.3，P4 归一时曾省略）：
+
+> **注**：下图把 legality、priority score 与可选 benchmark 串成单一阈值流程，不能作为当前
+> Scheduler 的执行规范；现行模型见本页 §10/§11（Legality 与 Profitability 分离）。
+
+```mermaid
+flowchart TD
+    A["can_fuse: node1, node2"]
+    B{"FusedMixOrderReductions?"}
+    C{"是 Grouped/Extern/Nop?"}
+    D{"node2 依赖 node1?"}
+    E["检查 device 相同"]
+    F["score_fusion_memory<br/>计算共享 buffer 的内存节省量"]
+    G["V.choices.can_fuse<br/>阈值检查: score >= threshold?"]
+    H["can_fuse_vertical<br/>node2 的所有依赖都能被 node1 覆盖?"]
+    I["backend.can_fuse_vertical"]
+    J["V.choices.can_fuse_horizontal"]
+    K["backend.can_fuse_horizontal"]
+    L["return True"]
+    M["return False"]
+
+    A --> B
+    B -->|Yes| C
+    B -->|No| C
+    C -->|Yes| M
+    C -->|No| E
+    E --> F --> G
+    G -->|score too low| M
+    G -->|OK| D
+    D -->|Yes: 垂直融合| H
+    D -->|No: 水平融合| J
+    H --> I --> L
+    J --> K --> L
+
+    style A fill:#e1f5fe
+    style L fill:#c8e6c9
+    style M fill:#ffcdd2
+    style G fill:#ffe0b2
+```
 
 `can_fuse(node1, node2)` 大致依次：判断是否可组成 `FusedMixOrderReductions`；若是
 Grouped/Extern/Nop 直接拒绝；检查 device 相同；调用 `score_fusion_memory()` 计算共享
@@ -516,7 +655,8 @@ tiled 化）实现融合，需满足严格的大小限制。这是 §11 "mix-ord
 
 ## 19. 自定义指南
 
-以下内容 2026-07-30 从已删除的 `scheduler_analysis.md` §9 逐字并入。
+以下内容 2026-07-30 从已删除的 `scheduler_analysis.md` §9 改写并入本页（示意图与部分代码曾
+省略，经复核回补）。
 
 ### 19.1 自定义融合前/后 Pass
 

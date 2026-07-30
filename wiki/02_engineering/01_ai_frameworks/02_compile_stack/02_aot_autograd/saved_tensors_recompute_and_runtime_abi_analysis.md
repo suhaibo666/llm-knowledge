@@ -207,6 +207,10 @@ view 重建）；`alias_of_intermediate`及其两个变体共用 `AliasOfInterme
 （需要从 saved base 重放 view）。这解释了为什么 §9.2 的 `OutputType`枚举值比表面看起来的
 "输出类型"更精细：它同时是 partition-time 分类，也是 runtime 该走哪条重建路径的 key。
 
+> [!todo] 此处的 view 重放机制由 `gen_alias_from_base`（functional_utils.py:315，
+> runtime_wrappers.py 六处调用）实现，原 aotautograd_analysis §10.2 有展开，归一时未落地；
+> 待补为本节小节。
+
 编译后的 forward/backward glue 本身也不是手写 Python：它由 `PySourceBuilder`按
 `ctx`/`args`/回调签名逐行生成源码再执行（例如 `_codegen_compiled_forward`拼出
 `fw_outs = _compiled_fw_(list(args)); _save_(ctx, fw_outs); return _finalize_(ctx, fw_outs)`

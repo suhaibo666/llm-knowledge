@@ -39,6 +39,36 @@ codegen/kernel 映射/autotuning/provenance 的**总线页**（覆盖面广、�
 内存主题统一入口；C21 与四篇 codegen 碎片页确认分工清晰、只补链接。全组共删除 4 个页面
 （1699+964+278+228 = 3169 行），净新增/改写约 1500 行精炼内容，checker 全程 broken=0。
 
+**追记（复核披露，2026-07-30，不改上方历史行）**：事后复核发现上方步骤 2（8e6a6aa，解体
+`PyTorch_Inductor_Technical_Analysis.md`/`scheduler_analysis.md`，本小结未单列 commit 但已
+计入上面的删除统计）存在两处需要补救的问题，另有两处内容确认为已核实但归一时未落地：
+
+1. **§9 整删决定推翻了 P3（97840f0）的隔离保留裁定**：97840f0 已明确裁定 addmulnorm 自定义
+   融合规则教学"整节仅作历史材料保留"（unresolved-quarantine），8e6a6aa 却以"已自我标注为
+   unverified/fictional"为由整删、未见零痕迹处置的说明。现补救：`codegen_extension_guide.md`
+   新增 §11 隔离存根，记录该教学曾存在、§9.4 现有融合规则引用（`post_grad.py`/`mm_plus_mm.py`
+   等）真实可核、教学主体未验证且含虚构文件名，并指路 `git show 6579658:.../PyTorch_Inductor_Technical_Analysis.md`
+   查原文。
+2. **§8"虚构"定性亦有夸大**：8e6a6aa 的 commit message 把整个 §8 后端扩展教学描述为
+   "uncited/fictional examples"，但复核发现 §8.2 核心数据结构一节确有真实引用
+   （`torch/_inductor/codegen/common.py:313`，`DeviceCodegen`/`device_codegens` 的真实定义
+   行）；"虚构"定性对 §8 整节而言不准确，已在上述 §11 存根中一并披露口径偏差。
+3. **C20（`scheduler_dependency_graph_fusion_and_ordering_analysis.md`）"逐字并入"表述不准
+   确**：§18/§19 原标注"从 `scheduler_analysis.md` §7/§9 逐字并入"，实际该页解体时省略了
+   §7.3 的 `can_fuse` 合法性判定流程图、§4 的 11 类核心类结构类图，§8.1 的 `min_order`/
+   `max_order` O(1) 粗筛 rationale 也未落地——均非逐字。现已回补三处（§1.1 新增类图、§18.3
+   新增流程图并保留 P3 当年对该图"单一阈值流程"误导提示的修正注、原 §5 补 `min_order`/
+   `max_order` 说明），三处新回补内容保留原文 `L<line>` 引用形式；措辞相应改为"改写并入
+   （示意图与部分代码曾省略，经复核回补）"。系统性被剥离的其余 file:line 引用不做全量恢复。
+4. **两处已核实但未落地的内容，本次一并补上**：`saved_tensors_recompute_and_runtime_abi_analysis.md`
+   （C10）§11.1"重放 view"句后加 `[!todo]` 指出该机制由 `gen_alias_from_base`
+   （`functional_utils.py:315`，`runtime_wrappers.py` 六处调用，均已按当前 pinned checkout
+   核验）实现，原 `aotautograd_analysis` §10.2 曾展开、归一时未落地；
+   `buffer_liveness_memory_planning_and_reuse_analysis.md`（C19）§18.1 回补两个被丢的
+   `output_code.py:785-813`/`:817-840` 定位符（对照已删除的 D05 原文位置核实）。
+
+校验：`python tools/check_links.py` pages=379，broken=0；`pytest tools/ -q` 77 passed。
+
 ## 2026-07-30：知识库结构整改 P4 Task 8 组 D 步骤 3（C19+D05 内存归一）
 
 **Type**: Redundancy Merge（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 8 组 D）

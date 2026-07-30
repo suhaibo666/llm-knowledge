@@ -233,6 +233,10 @@ scheduling 实现：`cpu_backend: Literal["cpp", "triton", "halide", "pallas"]`�
 "一个 device 多种 kernel 语言"路径：前者是 config 驱动的整体替换，后者是同一
 scheduling 对象按节点内部委派。
 
+## 11. 历史材料指针
+
+> [!todo] 历史材料指针：原《PyTorch Inductor 技术分析》§9 曾有一份 addmulnorm 自定义融合规则完整教学（注册/lowering pattern/TritonTemplate/多输出/fallback），其中现有融合规则引用（post_grad.py mm_plus_mm 等）真实可核，但教学主体未在固定基线验证、含虚构文件名与个别不存在的 config 字段，P3 曾裁定隔离保留。P4 归一时该页解体，本教学未迁移；需要时见 git `6579658` 该页 §9。真实的融合规则开发以 [[post_grad_passes_guide]] 与本页为准。
+
 ## Related Pages
 
 - [[inductor_codegen_analysis]] — 现有 Inductor codegen 调用链与实现分析

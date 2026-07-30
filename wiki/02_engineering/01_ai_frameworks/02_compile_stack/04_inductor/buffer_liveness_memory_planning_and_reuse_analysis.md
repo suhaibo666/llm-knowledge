@@ -469,8 +469,9 @@ dead buffer、组装 views/aliases 和用户 outputs。核心结论：**steady-s
 `CompiledFxGraph` 的 runtime 入口使用单个 input sequence，源码为这个协议定义
 `_BoxedCallable`（`torch/_inductor/output_code.py:80-95`）；`CompiledFxGraph.__call__`
 最终 `return self.current_callable(inputs)`，并在外层处理 profiler、runtime metrics 和
-first-call autotune cache bundler。boxed list 还允许 runtime 在确认安全时 steal/clear
-input refs 以缩短 lifetime。
+first-call autotune cache bundler（`torch/_inductor/output_code.py:785-813` 与
+`torch/_inductor/output_code.py:817-840`）。boxed list 还允许 runtime 在确认安全时
+steal/clear input refs 以缩短 lifetime。
 
 ### 18.2 通信 buffer 独立池
 
