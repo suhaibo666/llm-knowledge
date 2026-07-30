@@ -247,49 +247,49 @@
     },
     {
       "page_id": "d01",
-      "page": "d01_inductor_compile_fx_orchestration_analysis.md",
+      "page": "inductor_compile_fx_orchestration_analysis.md",
       "volume": "D",
       "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
       "case": "compile_fx_orchestration"
     },
     {
       "page_id": "d02",
-      "page": "d02_aot_runtime_wrappers_and_lazy_backward_compile_analysis.md",
+      "page": "aot_runtime_wrappers_and_lazy_backward_compile_analysis.md",
       "volume": "D",
       "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
       "case": "aot_wrappers_lazy_backward"
     },
     {
       "page_id": "d03",
-      "page": "d03_async_compile_workers_and_module_loading_analysis.md",
+      "page": "async_compile_workers_and_module_loading_analysis.md",
       "volume": "D",
       "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
       "case": "async_compile_loading"
     },
     {
       "page_id": "d04",
-      "page": "d04_compile_cache_hierarchy_keys_and_invalidation_analysis.md",
+      "page": "index.md",
       "volume": "D",
       "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
       "case": "cache_keys_invalidation"
     },
     {
       "page_id": "d05",
-      "page": "d05_wrapper_execution_memory_allocation_and_reuse_analysis.md",
+      "page": "wrapper_execution_memory_allocation_and_reuse_analysis.md",
       "volume": "D",
       "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
       "case": "wrapper_memory_reuse"
     },
     {
       "page_id": "d06",
-      "page": "d06_cudagraph_trees_warmup_record_and_replay_analysis.md",
+      "page": "cudagraph_trees_warmup_record_and_replay_analysis.md",
       "volume": "D",
       "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
       "case": "cudagraph_replay"
     },
     {
       "page_id": "d07",
-      "page": "d07_compiled_artifact_lifecycle_and_runtime_failures_analysis.md",
+      "page": "compiled_artifact_lifecycle_and_runtime_failures_analysis.md",
       "volume": "D",
       "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
       "case": "artifact_lifecycle_failure"
@@ -408,7 +408,7 @@
     },
     {
       "page_id": "f08",
-      "page": "f08_training_inference_cudagraph_and_freezing_analysis.md",
+      "page": "training_inference_cudagraph_and_freezing_analysis.md",
       "volume": "F",
       "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
       "case": "inference_freezing_cudagraph"

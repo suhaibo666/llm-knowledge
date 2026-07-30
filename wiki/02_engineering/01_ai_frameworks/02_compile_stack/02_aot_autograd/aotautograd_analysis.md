@@ -1456,5 +1456,5 @@ Dynamo不是用 ProxyTensor替代 Python symbolic interpreter：
 - [[torch_compile_architecture]]
 - [[02_compile_stack/01_dynamo/index]]
 - [[activation_checkpointing_analysis]]
-- [[inductor_compiler_pipeline_analysis]] — Inductor 端到端编译管线全景（本文 §2 AOT Autograd 阶段）
+- [[inductor_compile_fx_orchestration_analysis]] — compile_fx 如何编排调用 AOTAutograd(forward/backward compiler 回调协议、§11.3 源码跟读)
 - [[pytorch_dispatcher_analysis]] — Dispatcher 机制：AOTAutograd 用 `__torch_dispatch__`（Python key）追踪联合图，本页是其底层基础

@@ -110,6 +110,5 @@ binary = triton.compile(
 - [[inductor_reduction_codegen_deep_analysis]] — reduction config（R0_BLOCK / persistent）
 - [[PyTorch_Inductor_Technical_Analysis]] — §4 融合成本模型 + CoordescTuner 坐标下降（本页不重复）
 - [[inductor_codegen_dynamic_shape_analysis]] — 动态 shape 与 XBLOCK 选择、ks0*ks1 升 i64
-- [[inductor_compiler_pipeline_analysis]] — §7.5 autotuning 基础设施（TuningProcessPool）
 - [[npu_inductor_linearize_backend_analysis]] — NPU autotune（UB 过滤 + mspti + 降型）
 - [[02_compile_stack/04_inductor/index]] — 本目录索引

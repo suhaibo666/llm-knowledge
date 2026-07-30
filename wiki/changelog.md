@@ -6,6 +6,26 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 6（19 号 D 卷分发,7 篇 1888 行）
+
+**Type**: Redundancy Consolidation + Physical Move（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 6）
+
+逐篇处置(每篇/每组一 commit,均去 `dNN_`/`f08_` 前缀):
+
+- **D01**(335 行)→`02_compile_stack/04_inductor/inductor_compile_fx_orchestration_analysis.md`。与`inductor_compiler_pipeline_analysis.md`(921 行,原索引"脊柱文档")逐节判重:该页 §1-§7 逐阶段走读(Dynamo/AOTAutograd/Decomposition/FX Passes/Lowering/Scheduler/CodeGen)已被 04_inductor 目录各阶段专题页(`pre_grad_passes_guide`/`joint_graph_passes_guide`/`post_grad_passes_guide`/`decomposition_passes_guide`/`lowering_analysis`/`scheduler_analysis`/`inductor_codegen_analysis`)、01_dynamo、02_aot_autograd 目录各专题页更深入地覆盖(逐关键词核实,深度均超过原页对应节),判定为冗余,不强并;§0 全景图与§8 设计哲学/§9 文件速查表判定为独有综合价值,吸收为 D01 新增 §0(mermaid 全景图 + 各阶段深挖入口导航表)与 §15/§16。921 页删除,19 条入链逐条改指(9 条改指 D01 并按目标页语境调整描述文字,6 条因链接方本身就是该阶段权威页而判定自引用冗余后直接删除,2 条改指更贴切的具体目标——`decomposition_passes_guide`/`wrapper_execution_memory_allocation_and_reuse_analysis`,2 条改指`02_compile_stack/04_inductor/index`导航)。
+- **D02**(315 行)→`02_compile_stack/02_aot_autograd/aot_runtime_wrappers_and_lazy_backward_compile_analysis.md`。纯平移,无判重对象(spec 缺口补齐)。
+- **D03**(211 行)→`02_compile_stack/04_inductor/async_compile_workers_and_module_loading_analysis.md`。纯平移。
+- **D04**(219 行)→内容改写为`02_compile_stack/06_compile_cache/index.md`的 overview 主体:D04 的 14 节源码级分析(七层 cache 对照表、FXGraphCache key 构造、guard-vs-key 双层策略、序列化边界、AOTAutograd cache 在 FXGraphCache 之上、失效非广播事件、不变量、复杂度、常见误解)置于 index 顶部作 §1-14,原 91 行导航(四层教学表、专题页表、生命周期阅读顺序、课程边界、审计边界)完整保留于后作 §15-19(未删减,含 PGO 行等 D04 未覆盖的互补内容)。D04 文件删除,12 条入链改指`02_compile_stack/06_compile_cache/index`(路径限定,因"index"歧义)。
+- **D05**(224 行)→`02_compile_stack/04_inductor/wrapper_execution_memory_allocation_and_reuse_analysis.md`。纯平移;不做内存归一(留 Task 8 与 C19 一并),页头加互指说明,并与`inductor_memory_management_analysis`/`inductor_memory_allocation_guide`加双向回链。
+- **D06**(320 行)+**F08**(322 行)→`03_runtime_graphs/cuda/`(`cudagraph_trees_warmup_record_and_replay_analysis.md`/`training_inference_cudagraph_and_freezing_analysis.md`)。与`PyTorch_CUDA_Graphs_Complete_Guide.md`"方式2"/"综合比较"节判重:该节内容为伪代码级使用示例与四种用法对比表,未引用`cudagraph_trees.py`/`freezing.py`任何一行;D06/F08 是源码行级机制分析(`CUDAGraphNode`/`CUDAGraphTreeManager`状态机、`freezing.py`变换链与所有权后果),独有内容占比 >>50%,按判定标准保留为专题页,双向加互指(Guide 方式2/综合比较节 + Related Pages 新增两条,`cuda/index.md`新增两行)。
+- **D07**(264 行)→`02_compile_stack/07_debugging/compiled_artifact_lifecycle_and_runtime_failures_analysis.md`。纯平移;`07_debugging/index.md`补为第 10 篇(原"九篇"改"十篇"),插入 aotautograd 失败定位之后、minifier/bisector 之前(生命周期状态机为失败定位提供时序坐标),去除因迁入而冗余的旧"本卷前置卷 D"Related Pages 行。
+
+**labs 同步**:`demo_manifest.json`7 条 D 卷 page 字段(d01-d07)去前缀更新,D04 字段改为`index.md`(因内容并入索引页);`test_volume_demo_contract.py`的`_page_root`新增`_D_PAGE_ROOTS`分支(D 卷四散至 04_inductor/02_aot_autograd/06_compile_cache/03_runtime_graphs::cuda/07_debugging 四个目录,不同于 B/E 整卷单目录迁移,故改按`page_id`路由)与 F08 特判;`CourseMarkdownContractTest.test_call_chain_pages_have_source_walkthroughs`的`target_pages`同步更新三个已迁移页面的根目录。
+
+**校验**:`python tools/check_links.py`:pages 390→388(921 与 D04 两页删除,净 -2),broken=0;`pytest tools/ -q`:77 passed(labs 同步后恢复,过程中三个 manifest/call-chain 测试短暂失败,已在本任务收尾前修复)。
+
+---
+
 ## 2026-07-30：知识库结构整改 P4 Task 5 spec 审查修复（bytecode_analysis 两算法补落点 + 加速数字弃置例外可见化）
 
 **Type**: Redundancy Consolidation 修复（spec 审查发现 2 项：824c5a2 抽验通过、989080c 修剪无删失，另 2 项需修）

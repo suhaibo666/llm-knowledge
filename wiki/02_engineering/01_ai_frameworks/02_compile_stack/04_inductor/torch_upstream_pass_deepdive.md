@@ -229,4 +229,4 @@ Dynamo 抓取 → Torch-IR GraphModule
 - [[npu_vs_upstream_fusion_passes]] — 上游侧 ↔ NPU 侧融合 pass 对照
 - [[vllm_ir_and_fusion_passes_analysis]] · [[sglang_compilation_passes_analysis]] — 工业界推理框架如何复用这套基础设施（post_grad 钩子）
 - [[fx_pass_optimization_methodology]] — 从 npu/vllm/sglang/upstream 归纳的 pass 开发方法论
-- [[inductor_compiler_pipeline_analysis]] — 端到端编译管线（lowering / Scheduler / codegen 下游）
+- [[02_compile_stack/04_inductor/index]] — lowering / Scheduler / codegen 下游各专题页导航

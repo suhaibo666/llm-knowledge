@@ -160,4 +160,4 @@ Decomposition 通常应使用 Tensor 运算和 SymInt-safe 的 shape 表达式�
 - [[joint_graph_passes_guide]] — decomposition 后的联合图改写
 - [[post_grad_passes_guide]] — 切图后的 ATen pattern
 - [[lowering_analysis]] — 保留 op 并实现 lowering/fallback
-- [[inductor_compiler_pipeline_analysis]] — AOTAutograd 与 decomp table 的调用链
+- [[inductor_compile_fx_orchestration_analysis]] — compile_fx 把 decomposition table 传给 AOTAutograd 的调用点(该页 §11.3)

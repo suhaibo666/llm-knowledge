@@ -41,7 +41,7 @@ artifact与compiled module如何复用。两者相邻但不是同一机制：一
 
 | 页面 | 核心主题 |
 |------|---------|
-| [[inductor_compiler_pipeline_analysis]] | **端到端编译管线**:Eager→Dynamo→AOT→Decomp→FX Passes→Lowering→Scheduler→CodeGen 逐阶段源码级走读(脊柱文档) |
+| [[inductor_compile_fx_orchestration_analysis]] | **compile_fx 编排入口**:为什么先调用 AOTAutograd、wrapper ABI 归一化、fw/bw compiler 分工、产物层次、`compile_fx→_compile_fx_main→AOTAutograd`源码跟读;§0 附带全链路全景图与各阶段深挖入口导航表(原"脊柱文档" `inductor_compiler_pipeline_analysis` 921 行的逐阶段走读已被本目录各专题页更深入覆盖,判重后删除,2026-07-30) |
 | [[PyTorch_Inductor_Technical_Analysis]] | **后端选择 & IR 优化深度**:后端选择/配置、Inductor IR 数据结构、融合成本模型与坐标下降 autotune、常量折叠、内存规划/内存池、CUDA Graphs 集成、后端扩展(pipeline 未展开的纵深) |
 | [[inductor_memory_management_analysis]] | **内存分配管理(全栈三层)**:编译期 buffer 复用/峰值重排/池化规划(`memory_plan_reuse`·`reorder_for_peak_memory`·`memory_planning.py`)→ 运行期 `CUDACachingAllocator` → CUDA Graphs `cudagraph_trees` 跨图共享私有池 + checkpoint;含**池大小如何确定**(§2.6)+ 段大小档位(§3) |
 | [[inductor_memory_allocation_guide]] | **内存分配实战指南(guide)**:实际分配全过程走查 + 分配器对照(native/cudaMallocAsync/expandable)+ `memory_stats`/snapshot 实测复现 + **内存越界/踩踏排查**(mask/size_asserts 内置防护、compute-sanitizer)+ 实践建议 |

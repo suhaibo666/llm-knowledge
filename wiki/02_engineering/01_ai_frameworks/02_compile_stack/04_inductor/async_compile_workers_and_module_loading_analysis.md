@@ -204,7 +204,7 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[d01_inductor_compile_fx_orchestration_analysis]]
+- [[inductor_compile_fx_orchestration_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
 - [[compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[compile_latency_cache_and_steady_state_performance_analysis]]

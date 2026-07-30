@@ -430,11 +430,24 @@ class VolumeDEFContractTest(unittest.TestCase):
 
 
 # kb-reorg P4 physically relocates course volumes out of
-# 19_torch_compile_end_to_end one volume at a time (Task 4: E -> 07_debugging;
-# Task 5: B -> 01_dynamo). Manifest entries still carry only a bare filename,
-# so resolve each entry's directory from its "volume" field; volumes not yet
-# moved fall back to the legacy course directory.
-def _page_root(labs_root: Path, volume: str) -> Path:
+# 19_torch_compile_end_to_end one volume (or, for D, one page) at a time
+# (Task 4: E -> 07_debugging; Task 5: B -> 01_dynamo; Task 6: D scatters
+# across four directories per spec appendix A instead of moving wholesale).
+# Manifest entries still carry only a bare filename, so resolve each entry's
+# directory from its "volume" field (and, for D, its "page_id"); volumes/
+# pages not yet moved fall back to the legacy course directory.
+_D_PAGE_ROOTS = {
+    "d01": ("02_compile_stack", "04_inductor"),
+    "d02": ("02_compile_stack", "02_aot_autograd"),
+    "d03": ("02_compile_stack", "04_inductor"),
+    "d04": ("02_compile_stack", "06_compile_cache"),
+    "d05": ("02_compile_stack", "04_inductor"),
+    "d06": ("03_runtime_graphs", "cuda"),
+    "d07": ("02_compile_stack", "07_debugging"),
+}
+
+
+def _page_root(labs_root: Path, volume: str, page_id: str | None = None) -> Path:
     ai_frameworks_root = (
         labs_root.parent.parent / "wiki" / "02_engineering" / "01_ai_frameworks"
     )
@@ -442,6 +455,10 @@ def _page_root(labs_root: Path, volume: str) -> Path:
         return ai_frameworks_root / "02_compile_stack" / "07_debugging"
     if volume == "B":
         return ai_frameworks_root / "02_compile_stack" / "01_dynamo"
+    if volume == "D" and page_id in _D_PAGE_ROOTS:
+        return ai_frameworks_root.joinpath(*_D_PAGE_ROOTS[page_id])
+    if volume == "F" and page_id == "f08":
+        return ai_frameworks_root / "03_runtime_graphs" / "cuda"
     return ai_frameworks_root / "19_torch_compile_end_to_end"
 
 
@@ -472,7 +489,10 @@ class DemoManifestContractTest(unittest.TestCase):
 
         modules: dict[str, object] = {}
         for entry in entries:
-            page_path = _page_root(labs_root, entry["volume"]) / entry["page"]
+            page_path = (
+                _page_root(labs_root, entry["volume"], entry.get("page_id"))
+                / entry["page"]
+            )
             self.assertTrue(page_path.is_file(), page_path)
             module_name = Path(entry["script"]).stem
             module = modules.setdefault(
@@ -489,9 +509,10 @@ class DemoManifestContractTest(unittest.TestCase):
         for entry in entries:
             if entry["volume"] == "C":
                 continue
-            text = (_page_root(labs_root, entry["volume"]) / entry["page"]).read_text(
-                encoding="utf-8"
-            )
+            text = (
+                _page_root(labs_root, entry["volume"], entry.get("page_id"))
+                / entry["page"]
+            ).read_text(encoding="utf-8")
             self.assertIn("## 配套 Demo", text, entry["page"])
             self.assertIn(entry["script"], text, entry["page"])
             self.assertIn(f"--case {entry['case']}", text, entry["page"])
@@ -632,12 +653,18 @@ class CourseMarkdownContractTest(unittest.TestCase):
         # Volume B physically moved to 01_dynamo (kb-reorg P4 Task 5); the two
         # b04/b07 call-chain pages below now live there.
         dynamo_root = ai_frameworks_root / "02_compile_stack" / "01_dynamo"
+        # Volume D physically moved out of 19_torch_compile_end_to_end one page
+        # at a time (kb-reorg P4 Task 6), scattering across four directories
+        # (unlike B/E which each moved wholesale into one directory).
+        inductor_root = ai_frameworks_root / "02_compile_stack" / "04_inductor"
+        aot_autograd_root = ai_frameworks_root / "02_compile_stack" / "02_aot_autograd"
+        cuda_root = ai_frameworks_root / "03_runtime_graphs" / "cuda"
         target_pages = [
             (dynamo_root, "instruction_translator_and_bytecode_state_machine_analysis.md"),
             (dynamo_root, "guards_cache_lookup_and_recompilation_analysis.md"),
-            (course_root, "d01_inductor_compile_fx_orchestration_analysis.md"),
-            (course_root, "d02_aot_runtime_wrappers_and_lazy_backward_compile_analysis.md"),
-            (course_root, "d06_cudagraph_trees_warmup_record_and_replay_analysis.md"),
+            (inductor_root, "inductor_compile_fx_orchestration_analysis.md"),
+            (aot_autograd_root, "aot_runtime_wrappers_and_lazy_backward_compile_analysis.md"),
+            (cuda_root, "cudagraph_trees_warmup_record_and_replay_analysis.md"),
             (course_root, "f01_compiled_autograd_analysis.md"),
         ]
         locator = re.compile(

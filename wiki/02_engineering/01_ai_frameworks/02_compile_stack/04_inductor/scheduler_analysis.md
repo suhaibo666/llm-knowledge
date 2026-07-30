@@ -961,4 +961,3 @@ export TORCH_LOGS="+inductor"
 - [[PyTorch_Inductor_Technical_Analysis]]
 - [[inductor_codegen_analysis]]
 - [[codegen_extension_guide]] — `BaseScheduling`、Wrapper 与设备注册的当前开发接口
-- [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景（本文 §6 Scheduler 阶段）

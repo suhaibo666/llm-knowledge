@@ -70,7 +70,7 @@ Inductor 内部是一条子流水线。从 ATen FX 图到落盘 kernel,大致经
 
 | 阶段 | 一句话职责 | deepdive |
 |------|-----------|----------|
-| **Decomposition** | 把复杂/复合 ATen 算子拆解为一小撮原语算子,收敛 IR 规模,让后续 lowering 只需处理有限算子集 | 见 [[inductor_compiler_pipeline_analysis]] 分解小节 |
+| **Decomposition** | 把复杂/复合 ATen 算子拆解为一小撮原语算子,收敛 IR 规模,让后续 lowering 只需处理有限算子集 | 见 [[decomposition_passes_guide]] |
 | **FX Graph Passes** | 在 FX 图层面做图级优化,分三段:pre-grad(高层重写)、joint-graph(常量折叠/模式匹配)、post-grad(底层融合/设备相关重写) | [[pre_grad_passes_guide]] / [[joint_graph_passes_guide]] / [[post_grad_passes_guide]] |
 | **Lowering** | 把 ATen 算子逐一翻译为 **Inductor IR**(`lowerings[target]` 注册表),用 `Pointwise`/`Reduction` 等循环原语表达计算 | [[lowering_analysis]] |
 | **Scheduler** | 对 IR 节点做依赖分析,决定融合(水平/垂直)、计算顺序、内存规划与缓冲区复用 | [[scheduler_analysis]] |
@@ -129,7 +129,7 @@ Lowering 产出的 IR 进入调度器后,被包成调度节点参与融合决策
 1. **overview(本页)** — 建立全局心智模型。
 2. **上手** → [[inductor_quickstart]]:最小前向+反向示例、`torch.compile` 参数与 `torch._inductor.config` 速查、怎么看生成代码。
 3. **deepdive** —
-   - 端到端全景:[[inductor_compiler_pipeline_analysis]]、[[PyTorch_Inductor_Technical_Analysis]]
+   - compile_fx 编排入口:[[inductor_compile_fx_orchestration_analysis]];后端/IR 深度:[[PyTorch_Inductor_Technical_Analysis]]
    - 各阶段:[[lowering_analysis]] · [[scheduler_analysis]] · [[inductor_codegen_analysis]] · FX passes([[pre_grad_passes_guide]] / [[joint_graph_passes_guide]] / [[post_grad_passes_guide]])
    - 横切专题:[[dynamic_shapes_full_analysis]]、[[unbacked_symint_analysis]]、[[flex_attention_analysis]]、调试 [[02_compile_stack/07_debugging/index]]
 4. **NPU 后端**(Ascend 适配,非 upstream)→ 见 [[02_compile_stack/04_inductor/npu/index]]。
@@ -147,5 +147,5 @@ Lowering 产出的 IR 进入调度器后,被包成调度节点参与融合决策
 - [[01_ai_frameworks/index]] — 本域总索引
 - [[02_engineering/01_ai_frameworks/index]]
 - [[inductor_quickstart]] — 上手:最小示例与参数速查
-- [[inductor_compiler_pipeline_analysis]] — deepdive:端到端编译管线全景
+- [[inductor_compile_fx_orchestration_analysis]] — deepdive:compile_fx 编排入口(为什么先调用 AOTAutograd、fw/bw compiler 分工)
 - [[02_compile_stack/04_inductor/npu/index]] — NPU Inductor 后端(硬件子目录)

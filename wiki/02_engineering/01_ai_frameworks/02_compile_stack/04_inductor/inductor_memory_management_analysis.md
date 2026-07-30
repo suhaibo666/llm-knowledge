@@ -9,7 +9,7 @@
 > **Dimension**: Deep Dive(mechanism-level)
 > 最后更新: 2026-06-30
 >
-> 本页回答「torch.compile 的 memory alloc 是怎么管理的」。核心论点:**不是单一机制,而是三层叠加**——① 编译期 Inductor 规划 `alloc/reuse/free` 的「逻辑」;② 运行期 `CUDACachingAllocator` 管物理块;③ `reduce-overhead`(CUDA Graphs)模式额外用一个跨图共享的私有池 + checkpoint 保证地址稳定。上游图捕获见 [[02_compile_stack/01_dynamo/index]],编译管线全景见 [[inductor_compiler_pipeline_analysis]]。
+> 本页回答「torch.compile 的 memory alloc 是怎么管理的」。核心论点:**不是单一机制,而是三层叠加**——① 编译期 Inductor 规划 `alloc/reuse/free` 的「逻辑」;② 运行期 `CUDACachingAllocator` 管物理块;③ `reduce-overhead`(CUDA Graphs)模式额外用一个跨图共享的私有池 + checkpoint 保证地址稳定。上游图捕获见 [[02_compile_stack/01_dynamo/index]],compile_fx 编排入口见 [[inductor_compile_fx_orchestration_analysis]]。
 
 ---
 
@@ -274,6 +274,5 @@ flowchart TB
 - [[inductor_codegen_analysis]] — wrapper codegen 全景(§4.5 内存规划集成是本页层 1 的简版)
 - [[scheduler_analysis]] — Scheduler 生命周期 / `dead_node_elimination` / `mutation_renames`(本页订正了其中两处行号)
 - [[PyTorch_Inductor_Technical_Analysis]] — §6 内存规划与内存池 / §7 CUDA Graphs(本页是这两节的源码级展开)
-- [[inductor_compiler_pipeline_analysis]] — 端到端编译管线(内存规划在 CodeGen 阶段的位置)
 - [[control_flow_capture_analysis]] — `Conditional`/`WhileLoop` 为何被 graph partition 切出 cudagraph
 - [[PyTorch_CUDA_Graphs_Complete_Guide]] — CUDA Graphs 通用用法(非 `cudagraph_trees` 专属)

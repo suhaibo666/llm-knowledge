@@ -4,7 +4,39 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[21_codegen_kernel_mapping_autotuning_and_provenance]]  
 > 后续：[[aot_runtime_wrappers_and_lazy_backward_compile_analysis]]  
-> 最后更新：2026-07-28
+> 最后更新：2026-07-30(kb-reorg P4 Task 6 迁入本目录,去 d01_ 前缀;与已删除的 `inductor_compiler_pipeline_analysis`(921 行,原"脊柱文档")逐节判重后,吸收其 §0 全景图与 §8/§9 的跨阶段综合为新增 §0、§15;该页 §1-§7 的逐阶段走读已被本目录各阶段专题页——`pre_grad_passes_guide`/`joint_graph_passes_guide`/`post_grad_passes_guide`/`decomposition_passes_guide`/`lowering_analysis`/`scheduler_analysis`/`inductor_codegen_analysis`,以及 01_dynamo、02_aot_autograd 目录各专题页——更深入地覆盖,不再重复,详见 changelog)
+
+## 0. 编译管线全景与本页定位
+
+`torch.compile`默认后端的完整链路跨越五个模块,本页只深挖其中一个交接点——**Inductor
+如何编排调用AOTAutograd并把结果送入自己的lowering/scheduler/codegen**(§1起)。在深入之前
+先给出全景,帮助判断某个具体问题应该去哪一页:
+
+```mermaid
+flowchart TD
+    E["Eager Python 代码"] --> DY["Dynamo:PEP 523 拦截 + 符号执行字节码 → FX Graph + Guards"]
+    DY --> AOT["AOTAutograd:functionalize / joint trace / min-cut partition"]
+    AOT --> DEC["Decomposition:ATen 复合算子拆解为原语"]
+    DEC --> FXP["FX Passes:pre-grad → joint-graph → post-grad"]
+    FXP --> LOW["Lowering:ATen op → Inductor IR，Pointwise/Reduction 等循环原语"]
+    LOW --> SCH["Scheduler:依赖分析、融合、内存规划"]
+    SCH --> CG["CodeGen:Triton/C++ kernel + wrapper,autotuning 选实现"]
+    CG --> OUT["编译产物:CompiledFxGraph / .so"]
+```
+
+本页的范围是 `DY→AOT` 之后、`AOT`如何被 Inductor 的 `compile_fx` **反过来编排调用**的那一段
+(即上图 `AOT`框内部与其和 `DEC`/下游的交接协议),而不是从头到尾复述每个框。各框的源码级
+深挖入口:
+
+| 阶段 | 深挖入口 |
+|---|---|
+| Dynamo | [[02_compile_stack/01_dynamo/index]] |
+| AOTAutograd 捕获/functionalize/partition 本身 | [[02_compile_stack/02_aot_autograd/index]] |
+| Decomposition | [[decomposition_passes_guide]] |
+| FX Passes(pre/joint/post-grad) | [[pre_grad_passes_guide]] / [[joint_graph_passes_guide]] / [[post_grad_passes_guide]] |
+| Lowering | [[lowering_analysis]] |
+| Scheduler | [[scheduler_analysis]] |
+| CodeGen | [[inductor_codegen_analysis]] |
 
 ## 1. 为什么入口位于Inductor，却先调用AOTAutograd
 
@@ -310,6 +342,41 @@ lazy backward把 \(K(B)\)从first forward调用移动到first backward调用，�
 - **“config context退出后backward用默认配置。”** inner compiler被patch保存，并在lazy路径
   重建上下文。
 - **“一份OutputCode代表整个训练step。”** fw/bw可有独立OutputCode与runtime生命周期。
+
+## 15. 全链路视角下的三条组织原则(吸收自已删除的 inductor_compiler_pipeline_analysis §8)
+
+`compile_fx`编排的每一段职责划分,都能在下游 Decomp/FX Passes/Lowering/Scheduler/CodeGen
+里找到同一套原则的重复应用(各阶段专题页有各自更细的版本,这里只留跨阶段共性,不重复
+逐阶段证据):
+
+1. **分层解耦**:Dynamo负责Python语义→FX Graph,AOTAutograd负责自动微分图生成,
+   Decomposition负责算子集收敛,FX Passes负责平台无关优化,Lowering负责ATen→后端无关IR,
+   Scheduler负责全局调度决策,CodeGen负责具体后端代码生成——每层输入输出格式稳定,便于
+   独立开发、测试和替换,这正是§9那张产物层次表背后的动机。
+2. **函数化→优化→inplace化**:AOTAutograd先把inplace操作函数化,所有FX Passes和Scheduler
+   假设函数式IR以简化分析,Post-grad最后的`reinplace`pass才恢复安全的inplace——顺序不可
+   颠倒,因为函数式假设一旦被提前打破,后续优化就要重新处理别名。
+3. **延迟决策**:能延迟的优化决策会被推到最合适的阶段——lazy backward把\(K(B)\)从
+   first-forward调用推迟到first-backward调用(本页§4);算子后端选择延迟到CodeGen阶段
+   autotuning;kernel tiling延迟到CodeGen阶段依据硬件特性决定。延迟不是偷懒,而是让决策
+   在信息最充分时做出。
+
+## 16. 附录:关键源码文件速查(吸收自已删除的 inductor_compiler_pipeline_analysis §9)
+
+跨阶段排障时快速定位该去哪个文件,精确行号见各阶段专题页(会随版本漂移,这里只列文件):
+
+| 阶段 | 文件 |
+|------|------|
+| Dynamo | `torch/_dynamo/eval_frame.py`、`torch/_dynamo/convert_frame.py`、`torch/_dynamo/symbolic_convert.py`、`torch/_dynamo/output_graph.py` |
+| AOTAutograd | `torch/_functorch/aot_autograd.py`、`torch/_functorch/_aot_autograd/partitioners.py`、`torch/_functorch/_aot_autograd/runtime_wrappers.py` |
+| Decomposition | `torch/_inductor/decomposition.py`、`torch/_decomp/__init__.py` |
+| Pre-grad | `torch/_inductor/fx_passes/pre_grad.py` |
+| Joint Graph | `torch/_inductor/fx_passes/joint_graph.py` |
+| Post-grad | `torch/_inductor/fx_passes/post_grad.py` |
+| Lowering | `torch/_inductor/lowering.py`、`torch/_inductor/ir.py` |
+| Scheduler | `torch/_inductor/scheduler.py` |
+| CodeGen | `torch/_inductor/codegen/triton.py`、`torch/_inductor/codegen/cpp.py`、`torch/_inductor/codegen/wrapper.py`、`torch/_inductor/select_algorithm.py`、`torch/_inductor/autotune_process.py` |
+| 总编排(本页) | `torch/_inductor/compile_fx.py`、`torch/_inductor/graph.py`(`GraphLowering`) |
 
 ## 配套 Demo
 

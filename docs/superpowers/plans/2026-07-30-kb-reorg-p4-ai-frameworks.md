@@ -84,7 +84,7 @@
 | d06(320)+f08(322) | `03_runtime_graphs/cuda/`,与 `PyTorch_CUDA_Graphs_Complete_Guide` 对应节(方式2/综合比较)判重合并——注意 P3 已把 Guide 改为权威页,以 Guide 为主干吸收两篇独有内容后两篇删除或降为专题页(按独有量定,台账说明) |
 | d07(264) | `07_debugging/`(runtime failure 族)——缺口补齐 |
 
-- [ ] 逐篇执行(每篇台账);重命名去前缀;入链修复;checker=0;commit
+- [x] 逐篇执行(每篇台账);重命名去前缀;入链修复;checker=0;commit
 
 ## Task 7: C 卷第一批 → 03_graph_ir_and_passes(12 篇:02,03,05,06,07,08,11-16)
 

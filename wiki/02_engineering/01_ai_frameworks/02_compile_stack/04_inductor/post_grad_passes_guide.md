@@ -833,4 +833,3 @@ Post-Grad Passes 是 PyTorch Inductor 编译器的关键阶段，专注于：
 - [[lowering_analysis]] — Post-Grad 之后的 ATen → IR 边界
 - [[pre_grad_passes_guide]]
 - [[joint_graph_passes_guide]]
-- [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景（本文 §4.3 Post-grad Passes）

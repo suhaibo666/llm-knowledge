@@ -446,4 +446,3 @@ flowchart LR
 - [[codegen_extension_guide]] — 复用或扩展目标 Codegen
 - [[PyTorch_Inductor_Technical_Analysis]]
 - [[inductor_codegen_analysis]]
-- [[inductor_compiler_pipeline_analysis]] — 端到端编译管线全景（本文 §5 Lowering 阶段）

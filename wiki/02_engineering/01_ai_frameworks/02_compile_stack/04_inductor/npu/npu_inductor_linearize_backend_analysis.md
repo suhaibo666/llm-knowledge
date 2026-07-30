@@ -14,7 +14,7 @@
 
 ## 一、定位：monkey-patch 复用上游，而非独立框架
 
-`npu_inductor_2.9.0` 的根本取向是**最小侵入地复用上游 Inductor**：不重写调度框架，而是在上游 `SIMDScheduling`/`SIMDKernel`（`TritonScheduling`/`TritonKernel` 基类，见 [[inductor_compiler_pipeline_analysis]]/[[scheduler_analysis]]）的少数扩展点上挂子类 + monkey-patch，**白继承上游已验证的调度、lowering、内存规划**，只在 NPU 真正需要差异化处改写：索引线性化、tiling、融合门控、autotune 计时、类型适配。
+`npu_inductor_2.9.0` 的根本取向是**最小侵入地复用上游 Inductor**：不重写调度框架，而是在上游 `SIMDScheduling`/`SIMDKernel`（`TritonScheduling`/`TritonKernel` 基类，见 [[scheduler_analysis]]）的少数扩展点上挂子类 + monkey-patch，**白继承上游已验证的调度、lowering、内存规划**，只在 NPU 真正需要差异化处改写：索引线性化、tiling、融合门控、autotune 计时、类型适配。
 
 ```mermaid
 flowchart TB

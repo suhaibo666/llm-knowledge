@@ -145,5 +145,5 @@ compiled = torch.compile(model, backend="audit_inductor")
 - [[output_graph_side_effects_and_graph_emission_analysis]] — OutputGraph 深挖
 - [[dynamo_quickstart]] — `explain`、graph break 和重编译快速排查
 - [[fx_pass_optimization_methodology]] — 八阶段 Pass 放置总方法论
-- [[inductor_compiler_pipeline_analysis]] — Dynamo 到 Codegen 的端到端调用链
+- [[inductor_compile_fx_orchestration_analysis]] — compile_fx 如何编排 AOTAutograd 与 fw/bw compiler(Dynamo 之后的调用链入口)
 - [[backend_contract_and_custom_backend_analysis]] — backend 契约的源码级机制深挖(本页的开发决策线以此为基础)
