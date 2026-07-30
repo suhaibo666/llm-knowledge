@@ -222,4 +222,4 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[16_graph_break_resume_functions_and_partial_graphs_analysis]]
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
-- [[compile_latency_cache_and_steady_state_performance_analysis]]
+- [[17_compile_latency_cache_and_steady_state_performance_analysis]]

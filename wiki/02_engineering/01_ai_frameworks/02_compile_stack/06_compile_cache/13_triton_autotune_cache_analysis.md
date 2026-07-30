@@ -9,7 +9,7 @@
 > **Source baseline**：PyTorch upstream 本地检出 `E:\97-codes\torch_parallel\pytorch` @ branch `main`, commit `3bda74318624581502db16e6439c36effdb16481`（2026-07-10, version 2.14.0a0）。所有 `file:line` 均对该 commit 逐一开文件核验。
 > **最后更新**：2026-07-10
 
-本页回答三件事：图级缓存（[[fx_graph_cache_analysis]]）之下还有哪几层 kernel 粒度缓存、各自消灭哪段重复开销；autotune 获胜 config 的 key 怎么算、为什么是 device（arch）相关的；以及 `remote_cache.py` 这套被 fx-graph / autotune / bundled-autotune / PGO 共用的远端设施长什么样。TritonBundler 的动机与打包-回放**接入点**已由 [[fx_graph_cache_analysis]] §4.1 覆盖，本页只写其**内部机制**；`CachingAutotuner` 的运行时生命周期与 config 生成启发式见 [[21_inductor_autotuning_analysis]]，零重复。总览与目录索引见 [[02_compile_stack/06_compile_cache/index]]。
+本页回答三件事：图级缓存（[[12_fx_graph_cache_analysis]]）之下还有哪几层 kernel 粒度缓存、各自消灭哪段重复开销；autotune 获胜 config 的 key 怎么算、为什么是 device（arch）相关的；以及 `remote_cache.py` 这套被 fx-graph / autotune / bundled-autotune / PGO 共用的远端设施长什么样。TritonBundler 的动机与打包-回放**接入点**已由 [[12_fx_graph_cache_analysis]] §4.1 覆盖，本页只写其**内部机制**；`CachingAutotuner` 的运行时生命周期与 config 生成启发式见 [[21_inductor_autotuning_analysis]]，零重复。总览与目录索引见 [[02_compile_stack/06_compile_cache/index]]。
 
 ---
 
@@ -123,7 +123,7 @@ flowchart TB
 
 源码注释直接给出结构（`remote_cache.py:155-177`）：一个 `RemoteCache` 由**控制器**（`RemoteCache` 本身，`:178`）、**serde**（`RemoteCacheSerde`，`:103-110`）、**后端**（`RemoteCacheBackend`，`:66-99`）组成。`put` = serde.encode → backend；`get` = backend → serde.decode。两个设计点：
 
-- **结构化数据统一走 JSON**：`JsonDataTy` 是递归 JSON 类型（`:113-115`），`RemoteCacheJsonSerde` 编码为 ASCII bytes（`:118-123`）；二进制产物（如 FxGraphCache entry）则由调用方 base64 后作为 JSON 字段传入（见 [[fx_graph_cache_analysis]] §六）。`put(None)` 被显式禁止——无法与 miss 区分（`:212-215` 注释）。
+- **结构化数据统一走 JSON**：`JsonDataTy` 是递归 JSON 类型（`:113-115`），`RemoteCacheJsonSerde` 编码为 ASCII bytes（`:118-123`）；二进制产物（如 FxGraphCache entry）则由调用方 base64 后作为 JSON 字段传入（见 [[12_fx_graph_cache_analysis]] §六）。`put(None)` 被显式禁止——无法与 miss 区分（`:212-215` 注释）。
 - **local 文件缓存复用同一 bytes 接口**：`LocalCacheBackend` 把「key 即文件路径」的文件系统实现塞进同一个 `RemoteCacheBackend[bytes]` 抽象（`:134-152`，类注释 `:67-71` 说明大多数 backend 是远端、local 用同一接口）。于是 AutotuneCache 的 local/remote 两侧代码完全对称（§2.3 的 `_read`/`save` 对两个 `(cache, key)` 元组做同样的 get/put）。`LocalCache` 还容忍损坏文件：JSON 解码失败仅告警并当 miss（`:366-377`）。
 - 统一计量：`get`/`put` 都包在 `_WaitCounter` + `cache_stats` 里（`:194-226`），Redis 侧 `ConnectionError` 一次即自我禁用（置 `self._redis = None`，`:302-306/:323-326`）——远端缓存是加速器，绝不允许拖垮编译。
 
@@ -137,7 +137,7 @@ OSS 侧全部远端类都是 `RedisRemoteCache` 的空子类——子类存在�
 |---|---|---|
 | `fx-graph-v1` | `RemoteFxGraphCache`（`remote_cache.py:393`） | `FxGraphCache.get_remote_cache`（`codecache.py:2331`） |
 | `autograd-experimental` | `RemoteAOTAutogradCache`（`:397`） | AOTAutogradCache（`autograd_cache.py:1404-1410`） |
-| `dynamo-pgo` | `RemoteDynamoPGOCache`（`:401`） | Dynamo PGO（`torch/_dynamo/pgo.py:679-684`，见 [[dynamo_pgo_cache_analysis]]） |
+| `dynamo-pgo` | `RemoteDynamoPGOCache`（`:401`） | Dynamo PGO（`torch/_dynamo/pgo.py:679-684`，见 [[10_dynamo_pgo_cache_analysis]]） |
 | 逐 kernel remote key（§2.2） | `RemoteAutotuneCache`（`:385`） | `AutotuneCache._setup_remote_autotune_cache`（`autotune_cache.py:264-269`） |
 | `bundled-autotune-v1` | `RemoteBundledAutotuneCache`（`:389`） | `AutotuneCacheBundler.begin_compile`（`autotune_cache.py:557-562`） |
 | `local-autotune`（走 local 分支） | `LocalAutotuneCache`（`:380`） | `.best_config` 文件读写（`autotune_cache.py:229-232`） |
@@ -165,7 +165,7 @@ config 注释明说：bundled cache「depend on the local cache for local state 
 
 ## 五、TritonBundler 内部机制
 
-接入点（`compile_fx.py` 的 begin/collect、`codecache.py:2019` 命中时 `read_and_emit`、只打包获胜者的动机）见 [[fx_graph_cache_analysis]] §4.1；本节写内部。生命周期五步在类 docstring 里（`triton_bundler.py:99-106`）：begin_compile → 每次 triton 编译 put → 写缓存时 collect → end_compile → 读缓存时 read_and_emit。
+接入点（`compile_fx.py` 的 begin/collect、`codecache.py:2019` 命中时 `read_and_emit`、只打包获胜者的动机）见 [[12_fx_graph_cache_analysis]] §4.1；本节写内部。生命周期五步在类 docstring 里（`triton_bundler.py:99-106`）：begin_compile → 每次 triton 编译 put → 写缓存时 collect → end_compile → 读缓存时 read_and_emit。
 
 **entry 数据结构**（全部 frozen dataclass）：
 
@@ -197,7 +197,7 @@ Triton 本身就有按 kernel hash 组织的磁盘缓存。**纠正一个常见�
 
 既然有这层磁盘缓存,为什么 Inductor 还要把产物 bundle 进 FxGraphCache entry?引入 commit 的源码陈述（`69ea2e726c2`,PR #138239 描述）:「consolidate Triton caching into the Inductor caching so that there can be just one cache that unifies them both, **reducing network requests and increasing success rate**」——两套独立缓存意味着远端场景要打两轮网络请求、且各自可能独立 miss;合并后 FxGraphCache entry 自包含,命中即全有。推断补充(源码未逐条明述):Triton 磁盘缓存是纯本地、无远端形态,跨机器 warm start(CI、集群)时首次必 miss;其目录生命周期也不受 Inductor 控制(用户/系统可随时清理),bundle 让 FxGraphCache 命中不依赖它还在。§五第 2 条的「非空即放弃」则保证两层缓存共存时本地优先、互不踩踏。
 
-> **对照**:注意区分三个 hash 体系——Triton 自己的 kernel hash(决定磁盘缓存子目录名,`triton_hash_to_path_key` 兼容 base64/base32 历史格式,`runtime_utils.py:163-175`)、AutotuneCache 的 key(§2.2,kernel **源码** hash)、FxGraphCache 的图级 key([[fx_graph_cache_analysis]] §二)。三者独立演化,靠 `triton_cache_hash` 字段(§2.1)与 `TritonBundleEntry.kernel_hash` 互相引用。
+> **对照**:注意区分三个 hash 体系——Triton 自己的 kernel hash(决定磁盘缓存子目录名,`triton_hash_to_path_key` 兼容 base64/base32 历史格式,`runtime_utils.py:163-175`)、AutotuneCache 的 key(§2.2,kernel **源码** hash)、FxGraphCache 的图级 key([[12_fx_graph_cache_analysis]] §二)。三者独立演化,靠 `triton_cache_hash` 字段(§2.1)与 `TritonBundleEntry.kernel_hash` 互相引用。
 
 ---
 
@@ -226,9 +226,9 @@ Triton 本身就有按 kernel hash 组织的磁盘缓存。**纠正一个常见�
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[02_compile_stack/06_compile_cache/index]] — 编译缓存总览(本页是最底层)
 - [[02_compile_stack/06_compile_cache/index]] — 本目录索引
-- [[fx_graph_cache_analysis]] — 图级缓存;TritonBundler 的打包-回放接入点在其 §4.1,远端接入点在其 §六
-- [[aotautograd_cache_analysis]] — 上层缓存,复用本页 §三设施(cache id `autograd-experimental`)
-- [[dynamo_pgo_cache_analysis]] — 同样复用 §三设施(cache id `dynamo-pgo`)
+- [[12_fx_graph_cache_analysis]] — 图级缓存;TritonBundler 的打包-回放接入点在其 §4.1,远端接入点在其 §六
+- [[11_aotautograd_cache_analysis]] — 上层缓存,复用本页 §三设施(cache id `autograd-experimental`)
+- [[10_dynamo_pgo_cache_analysis]] — 同样复用 §三设施(cache id `dynamo-pgo`)
 - `AutotuneCacheArtifact` / `CacheArtifactRecorder`整包携带：尚未完成独立当前基线审计
 - [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]] — kernel/wrapper、autotune choices 与 provenance 课程主线
 - [[21_inductor_autotuning_analysis]] — `CachingAutotuner` 生命周期与 config 生成启发式(本页缓存的正是其 benchmark 结果)

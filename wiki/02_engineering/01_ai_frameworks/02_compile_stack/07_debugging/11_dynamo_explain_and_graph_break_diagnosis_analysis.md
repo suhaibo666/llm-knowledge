@@ -2,8 +2,8 @@
 
 > 卷别：E · 调试、正确性与性能  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[observability_logs_counters_and_artifact_map_analysis]]  
-> 后续：[[guard_failure_and_recompile_diagnosis_analysis]]  
+> 前置：[[10_observability_logs_counters_and_artifact_map_analysis]]  
+> 后续：[[12_guard_failure_and_recompile_diagnosis_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. Graph break 的本质
@@ -200,6 +200,6 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 - [[00_torch_compile_end_to_end_index]]
 - [[16_graph_break_resume_functions_and_partial_graphs_analysis]]
 - [[17_dynamic_shapes_generalization_and_fallback_analysis]]
-- [[observability_logs_counters_and_artifact_map_analysis]]
-- [[guard_failure_and_recompile_diagnosis_analysis]]
-- [[aotautograd_and_inductor_failure_localization_analysis]]
+- [[10_observability_logs_counters_and_artifact_map_analysis]]
+- [[12_guard_failure_and_recompile_diagnosis_analysis]]
+- [[13_aotautograd_and_inductor_failure_localization_analysis]]

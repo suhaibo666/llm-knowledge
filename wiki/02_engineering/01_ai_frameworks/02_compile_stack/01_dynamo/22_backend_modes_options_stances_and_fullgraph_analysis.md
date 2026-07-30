@@ -202,7 +202,7 @@ if bisect_backend := CompilerBisector.get_backend():
         backend = bisect_backend
 ```
 
-即:若 bisector 处于激活状态(`get_backend()` 返回非空),它可以直接替换用户传入的 `backend` 字符串或 callable——这是一次**API 入口级**的 backend 覆盖,发生在任何 wrapper 类实例化之前。保护条件只有一种情况会拒绝覆盖:用户传入了**非字符串的自定义 backend**(例如 vLLM 的 `VllmBackend`),且 bisector 想切到 `"inductor"`,且配置显式要求保留自定义 backend——这防止 bisector 在第三方框架自带编译后端时错误地把它替换成 Inductor。`CompilerBisector` 自身的二分定位算法(backend 阶梯搜索、subsystem 禁用、pass 级二分)不属于本页范围,见 [[minifier_repro_and_compiler_bisector_analysis]] §7。
+即:若 bisector 处于激活状态(`get_backend()` 返回非空),它可以直接替换用户传入的 `backend` 字符串或 callable——这是一次**API 入口级**的 backend 覆盖,发生在任何 wrapper 类实例化之前。保护条件只有一种情况会拒绝覆盖:用户传入了**非字符串的自定义 backend**(例如 vLLM 的 `VllmBackend`),且 bisector 想切到 `"inductor"`,且配置显式要求保留自定义 backend——这防止 bisector 在第三方框架自带编译后端时错误地把它替换成 Inductor。`CompilerBisector` 自身的二分定位算法(backend 阶梯搜索、subsystem 禁用、pass 级二分)不属于本页范围,见 [[15_minifier_repro_and_compiler_bisector_analysis]] §7。
 
 ## 14. 源码补充:三个 wrapper 类的方法级实现与 AOTInductor 变体
 
@@ -282,6 +282,6 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[11_eval_frame_callback_and_code_cache_analysis]]
 - [[15_guards_cache_lookup_and_recompilation_analysis]]
 - [[cudagraph_trees_warmup_record_and_replay_analysis]]
-- [[production_rollout_fallback_and_monitoring_analysis]]
-- [[minifier_repro_and_compiler_bisector_analysis]] — CompilerBisector 内部的二分定位算法
+- [[19_production_rollout_fallback_and_monitoring_analysis]]
+- [[15_minifier_repro_and_compiler_bisector_analysis]] — CompilerBisector 内部的二分定位算法
 - [[28_aotinductor_packaging_and_deployment_analysis]] — AOTInductor 的 export 驱动打包路径;与 §14.2 的 `use_aoti` JIT 路径汇合于同一套 `compile_fx`/`CompiledAOTI` 机制,但 runner 是否就绪不对称(`enable_autograd_for_aot` 门控),差异还在捕获来源与是否打包(关系已核实,见 §14.2 note)

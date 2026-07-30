@@ -273,7 +273,7 @@ wrapper包含：
 这些缓存的 invalidation 与 guard 不同：FX graph cache hit 仍要验证 guards；Python/C++ code
 cache围绕生成 source；algorithm cache围绕 choice timings；Triton autotuner围绕 launch
 config。不能用“PyCodeCache缓存一切”或“同一个 graph key 控制所有层”概括。缓存专题见
-[[02_compile_stack/06_compile_cache/fx_graph_cache_analysis]]。
+[[02_compile_stack/06_compile_cache/12_fx_graph_cache_analysis]]。
 
 ## 14. Provenance链
 

@@ -93,7 +93,7 @@ print(f'max diff: {torch.max(torch.abs(output_torch - output_triton))}')   # 期
 ## 3. 逐行讲解：六个必须吃透的点
 
 ### ① `@triton.jit` —— 标记一个 Triton kernel（源 `:29`）
-被它装饰的函数在**首次调用时**被 JIT 编译成 GPU kernel（Triton 是 JIT，见 [[triton_vs_mlir_backend_analysis]]）。函数体内只能用 `tl.*` 的语言子集，不能用任意 Python。
+被它装饰的函数在**首次调用时**被 JIT 编译成 GPU kernel（Triton 是 JIT，见 [[30_triton_vs_mlir_backend_analysis]]）。函数体内只能用 `tl.*` 的语言子集，不能用任意 Python。
 
 ### ② 参数：指针 + 标量 + `constexpr`（源 `:30-35`）
 - `x_ptr` 等：传入的 `torch.Tensor` 会被**隐式转换成指向其首元素的指针**（源注释 `:72`）。kernel 里靠指针算术访问。
@@ -177,4 +177,4 @@ TRITON_INTERPRET=1 python 01-vector-add.py   # CPU 模拟执行，验证语义�
 - [[triton_05_debug_guide]] — `TRITON_INTERPRET` 无 GPU 调试、`device_print`
 - [[cuda_execution_model_guide]] — Grid·Block·Warp·Thread·SM 执行模型（program ≈ block 的来龙去脉）
 - [[gpu_kernel_guide]] — CUDA thread-level 视角对照（warp/coalescing 硬件细节）
-- [[triton_vs_mlir_backend_analysis]] — `@triton.jit` 之后：Triton→PTX 编译流水线
+- [[30_triton_vs_mlir_backend_analysis]] — `@triton.jit` 之后：Triton→PTX 编译流水线

@@ -2,8 +2,8 @@
 
 > 卷别：E · 调试、正确性与性能  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[aotautograd_and_inductor_failure_localization_analysis]]  
-> 后续：[[compiled_correctness_validation_methodology_analysis]]  
+> 前置：[[13_aotautograd_and_inductor_failure_localization_analysis]]  
+> 后续：[[16_compiled_correctness_validation_methodology_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 三个工具解决的不是同一问题
@@ -222,8 +222,8 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[aotautograd_and_inductor_failure_localization_analysis]]
-- [[compiled_correctness_validation_methodology_analysis]]
-- [[kernel_fusion_memory_and_hardware_performance_analysis]]
+- [[13_aotautograd_and_inductor_failure_localization_analysis]]
+- [[16_compiled_correctness_validation_methodology_analysis]]
+- [[18_kernel_fusion_memory_and_hardware_performance_analysis]]
 - [[25_graph_rewrite_legality_validation_and_complexity_analysis]]
 - [[22_backend_modes_options_stances_and_fullgraph_analysis]] — §13:`torch.compile()` API 入口如何调用 `CompilerBisector.get_backend()` 覆盖 backend

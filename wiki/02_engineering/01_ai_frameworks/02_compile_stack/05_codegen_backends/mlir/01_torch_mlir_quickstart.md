@@ -24,7 +24,7 @@ torch-mlir 路线 (5+ 层 IR):
   FX Graph → Torch Dialect → Linalg/TOSA/StableHLO → ... → 目标硬件
 ```
 
-简言之：Inductor 偏「FX 直接 lower 到 Triton，少层、快」；torch-mlir 偏「多层标准 IR 递降，可被多种 MLIR 后端复用」。二者不是替代关系，按目标工具链取舍。逐阶段的概念对等映射见 [[triton_vs_mlir_backend_analysis]]。
+简言之：Inductor 偏「FX 直接 lower 到 Triton，少层、快」；torch-mlir 偏「多层标准 IR 递降，可被多种 MLIR 后端复用」。二者不是替代关系，按目标工具链取舍。逐阶段的概念对等映射见 [[30_triton_vs_mlir_backend_analysis]]。
 
 ---
 
@@ -60,7 +60,7 @@ def my_mlir_backend(gm: torch.fx.GraphModule, example_inputs):
     module = importer.module                     # 得到 MLIR Module（Torch Dialect）
 
     # Step 2: 运行 MLIR Pass 管线，降级到目标后端（Linalg / TOSA / StableHLO）
-    #         见 [[torch_mlir_pass_pipeline_analysis]]
+    #         见 [[11_torch_mlir_pass_pipeline_analysis]]
 
     # Step 3: 把降级后的 MLIR 交给下游（IREE / 自研 runtime）JIT 编译
 
@@ -107,7 +107,7 @@ def my_mlir_backend(gm, example_inputs):
 | `TOSA` | TOSA dialect | 目标后端吃 TOSA（部分推理 / 边缘编译器、移动端） |
 | `STABLEHLO` | StableHLO dialect | 对接 XLA / StableHLO 生态（IREE、跨框架互通） |
 
-经验法则：**不确定就选 `LINALG_ON_TENSORS`**——它消除了全部 Torch 痕迹、被最多下游复用；只有当下游明确要求 TOSA / StableHLO 时才改。`RAW` / `TORCH` 主要用于调试与自定义流水线。各层之间的具体 Pass 序列见 [[torch_mlir_pass_pipeline_analysis]]。
+经验法则：**不确定就选 `LINALG_ON_TENSORS`**——它消除了全部 Torch 痕迹、被最多下游复用；只有当下游明确要求 TOSA / StableHLO 时才改。`RAW` / `TORCH` 主要用于调试与自定义流水线。各层之间的具体 Pass 序列见 [[11_torch_mlir_pass_pipeline_analysis]]。
 
 ---
 
@@ -123,9 +123,9 @@ def my_mlir_backend(gm, example_inputs):
 
 按「概念 → Pass 管线 → 选型对比」递进：
 
-1. [[mlir_core_concepts]] — MLIR 基础：Dialect、Pass、IR 注册、递降原理（先打底）
-2. [[torch_mlir_pass_pipeline_analysis]] — torch-mlir Pass 管线：本页骨架里「运行 Pass 管线」那一步的完整执行序拆解
-3. [[triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR：六阶段概念对等映射与选型指南
+1. [[10_mlir_core_concepts]] — MLIR 基础：Dialect、Pass、IR 注册、递降原理（先打底）
+2. [[11_torch_mlir_pass_pipeline_analysis]] — torch-mlir Pass 管线：本页骨架里「运行 Pass 管线」那一步的完整执行序拆解
+3. [[30_triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR：六阶段概念对等映射与选型指南
 
 > 昇腾 NPU 的 MLIR 后端是另一条带硬件适配的路线（毕昇编译器、monkey-patch），上手见 [[npu_mlir_quickstart]]，深度分析见 [[NPU_MLIR_Backend_Technical_Analysis]]。
 
@@ -133,7 +133,7 @@ def my_mlir_backend(gm, example_inputs):
 
 ## Related Pages
 
-- [[mlir_core_concepts]] — MLIR 核心概念
-- [[torch_mlir_pass_pipeline_analysis]] — torch-mlir Pass 管线完整执行序
-- [[triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR 后端对比
+- [[10_mlir_core_concepts]] — MLIR 核心概念
+- [[11_torch_mlir_pass_pipeline_analysis]] — torch-mlir Pass 管线完整执行序
+- [[30_triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR 后端对比
 - [[01_ai_frameworks/index]] — AI 框架领域入口

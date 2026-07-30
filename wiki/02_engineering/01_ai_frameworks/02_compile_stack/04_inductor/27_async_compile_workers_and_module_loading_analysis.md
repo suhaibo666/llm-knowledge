@@ -206,6 +206,6 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 - [[00_torch_compile_end_to_end_index]]
 - [[15_inductor_compile_fx_orchestration_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
-- [[compiled_artifact_lifecycle_and_runtime_failures_analysis]]
-- [[compile_latency_cache_and_steady_state_performance_analysis]]
+- [[14_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
+- [[17_compile_latency_cache_and_steady_state_performance_analysis]]
 - [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]]

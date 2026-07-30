@@ -46,7 +46,7 @@ flowchart LR
 
 ## 3. 卷 A：执行模型前置基础（已并入功能页，2026-07-30）
 
-> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/10_tensor_impl_and_storage_analysis]] §13、[[10_pytorch_dispatcher_analysis]] §12、[[11_eval_frame_callback_and_code_cache_analysis]] §13、[[12_instruction_translator_and_bytecode_state_machine_analysis]] §14、[[10_dispatch_modes_proxytensor_faketensor_analysis]]（2026-07-30 起独立成页，原落点 `aotautograd_analysis` §13）、[[10_torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
+> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/10_tensor_impl_and_storage_analysis]] §13、[[10_pytorch_dispatcher_analysis]] §12、[[11_eval_frame_callback_and_code_cache_analysis]] §13、[[12_instruction_translator_and_bytecode_state_machine_analysis]] §14、[[10_dispatch_modes_proxytensor_faketensor_analysis]]（2026-07-30 起独立成页，原落点 `aotautograd_analysis` §13）、[[10_torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[17_compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
 
 ## 4. 卷 B：`torch.compile` API 与 TorchDynamo（已迁移至 `02_compile_stack/01_dynamo/`，2026-07-30）
 
@@ -104,7 +104,7 @@ B06 OutputGraph
 | D04 | [[02_compile_stack/06_compile_cache/index]] | 各层 cache 的 key、value 和失效边界是什么 |
 | D05 | [[12_buffer_liveness_memory_planning_and_reuse_analysis]] | wrapper 如何分配、调用、复用和组装输出(2026-07-30 判重并入 C19 §18) |
 | D06 | [[cudagraph_trees_warmup_record_and_replay_analysis]] | warmup、record、replay 与 liveness 如何形成 tree |
-| D07 | [[compiled_artifact_lifecycle_and_runtime_failures_analysis]] | artifact 从创建到失效有哪些状态 |
+| D07 | [[14_compiled_artifact_lifecycle_and_runtime_failures_analysis]] | artifact 从创建到失效有哪些状态 |
 
 ## 7. 卷 E：调试、正确性与性能（已迁移至 `02_compile_stack/07_debugging/`，2026-07-30）
 

@@ -9,7 +9,7 @@
 > **Source baseline**：PyTorch upstream 本地检出 `E:\97-codes\torch_parallel\pytorch` @ branch `main`, commit `3bda74318624581502db16e6439c36effdb16481`（2026-07-10, version 2.14.0a0）。所有 `file:line` 均对该 commit 逐一开文件核验。
 > **最后更新**：2026-07-10
 
-本页回答三件事：进 cache key 的**因素精确清单**及其「为什么必须进」；命中路径上 **shape-env guard** 如何在同一 key 的多个 entry 里挑出正确产物；以及**产物序列化 / bypass 约束 / Triton bundling** 的机制。它是 torch.compile 编译缓存里最古老、最核心的一级——上有 [[aotautograd_cache_analysis]]（缓存整个前反向编译单元、复用本页的 `GuardedCache`），旁有 [[triton_autotune_cache_analysis]]（本页只简述的 autotune/远端缓存设施）。总览与目录索引见 [[02_compile_stack/06_compile_cache/index]]。
+本页回答三件事：进 cache key 的**因素精确清单**及其「为什么必须进」；命中路径上 **shape-env guard** 如何在同一 key 的多个 entry 里挑出正确产物；以及**产物序列化 / bypass 约束 / Triton bundling** 的机制。它是 torch.compile 编译缓存里最古老、最核心的一级——上有 [[11_aotautograd_cache_analysis]]（缓存整个前反向编译单元、复用本页的 `GuardedCache`），旁有 [[13_triton_autotune_cache_analysis]]（本页只简述的 autotune/远端缓存设施）。总览与目录索引见 [[02_compile_stack/06_compile_cache/index]]。
 
 ---
 
@@ -47,7 +47,7 @@ flowchart TB
   lowering --> triton
 ```
 
-> **对照**：`FxGraphCache` 和 `AOTAutogradCache` 是**两级独立**缓存。当 `bundled_autograd_cache` 打开时，Inductor 侧**不自己存**（`compile_fx.py:971` 把它从 `use_cache` 条件里排除），产物直接交给 AOTAutogradCache 打包——但仍用 `TritonBundler`（`compile_fx.py:1042`）。参见 [[aotautograd_cache_analysis]]。
+> **对照**：`FxGraphCache` 和 `AOTAutogradCache` 是**两级独立**缓存。当 `bundled_autograd_cache` 打开时，Inductor 侧**不自己存**（`compile_fx.py:971` 把它从 `use_cache` 条件里排除），产物直接交给 AOTAutogradCache 打包——但仍用 `TritonBundler`（`compile_fx.py:1042`）。参见 [[11_aotautograd_cache_analysis]]。
 
 **Quick Start（最小触发路径 + 从哪读起）**
 
@@ -208,7 +208,7 @@ flowchart TB
 
 - 开关 `bundle_triton_into_fx_graph_cache`（`config.py:125`），OSS 默认 `True`（`config.py:45–49`）；`is_enabled` 还受 `force_disable_caches` 影响（`triton_bundler.py:120`）。
 - 只打包**获胜 config**（`collect` `:285–295`，靠 `put_winner` 标记）——autotune 会编很多候选 kernel，只有胜者进产物，避免 entry 膨胀。
-- 该机制 2024-10-31 引入（commit `69ea2e72`，"Consolidate Triton cache into Inductor cache" #138239），与本页 §六的远端缓存同源，细节属 [[triton_autotune_cache_analysis]]。
+- 该机制 2024-10-31 引入（commit `69ea2e72`，"Consolidate Triton cache into Inductor cache" #138239），与本页 §六的远端缓存同源，细节属 [[13_triton_autotune_cache_analysis]]。
 
 ---
 
@@ -243,7 +243,7 @@ flowchart TB
 - `FxGraphCache.get_remote_cache`（`codecache.py:2326`）：cache id `"fx-graph-v1"`，OSS 用 `RemoteFxGraphCache`、内部 `FbRemoteFxGraphCache`（`create_cache`，`:2332`）。
 - 读顺序：`iterate_over_candidates`（`:1755`）先本地目录、后 remote；写时 `_save_graph` 本地写文件、remote 写 base64 编码的同一 bytes（`:2252–2258`）。remote 命中意味着 local miss（`find_guarded_entry` 的 `_record_result` 统计逻辑，`:1863–1875`）。
 
-远端缓存基础设施（`RemoteCache` 后端、bundled autotune remote cache 等）细节属 [[triton_autotune_cache_analysis]]，本页只标接入点。
+远端缓存基础设施（`RemoteCache` 后端、bundled autotune remote cache 等）细节属 [[13_triton_autotune_cache_analysis]]，本页只标接入点。
 
 ---
 
@@ -269,9 +269,9 @@ flowchart TB
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[02_compile_stack/06_compile_cache/index]] — 编译缓存总览（本页是其最核心一级）
-- [[aotautograd_cache_analysis]] — 上层缓存，复用本页 `GuardedCache`；`bundled_autograd_cache` 下 Inductor 不自存
-- [[triton_autotune_cache_analysis]] — Triton bundling / 远端缓存设施细节
-- [[dynamo_pgo_cache_analysis]] — Dynamo 侧 PGO 缓存
+- [[11_aotautograd_cache_analysis]] — 上层缓存，复用本页 `GuardedCache`；`bundled_autograd_cache` 下 Inductor 不自存
+- [[13_triton_autotune_cache_analysis]] — Triton bundling / 远端缓存设施细节
+- [[10_dynamo_pgo_cache_analysis]] — Dynamo 侧 PGO 缓存
 - Mega-cache / precompile：尚未完成独立当前基线审计
 - [[02_compile_stack/06_compile_cache/index]] — 本目录索引
 - [[20_graph_stage_boundaries_identity_and_provenance_analysis]] — post-grad FX、Inductor artifact 与跨阶段 identity 边界

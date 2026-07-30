@@ -2,7 +2,7 @@
 
 > 卷别：F · 训练、分布式、扩展与部署  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[production_rollout_fallback_and_monitoring_analysis]]  
+> 前置：[[19_production_rollout_fallback_and_monitoring_analysis]]  
 > 后续：[[20_activation_checkpoint_recompute_and_compile_analysis]]  
 > 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,与 [[10_autograd_engine_analysis]] 补充显式分工声明)
 
@@ -315,7 +315,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[01_eager_runtime/05_autograd_engine/index]] — 本模块 overview(eager Engine 全景 + 与本页的分工)
 - [[10_autograd_engine_analysis]] — eager 模式下 C++ Engine 如何直接执行反向 DAG(本页驱动的是同一引擎,录制而非替代)
 - [[13_aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
-- [[aotautograd_and_inductor_failure_localization_analysis]]
+- [[13_aotautograd_and_inductor_failure_localization_analysis]]
 - [[20_activation_checkpoint_recompute_and_compile_analysis]]
 - [[ddp_compile_boundaries_and_optimizer_analysis]]
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]]

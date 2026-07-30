@@ -760,8 +760,8 @@ PTX
 
 ## Related Pages
 
-- [[torch_mlir_pass_pipeline_analysis]] — torch-mlir Pass 管线: 按执行顺序的 34 个 Pass 完整分析
-- [[triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR: 六阶段概念对等映射
+- [[11_torch_mlir_pass_pipeline_analysis]] — torch-mlir Pass 管线: 按执行顺序的 34 个 Pass 完整分析
+- [[30_triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR: 六阶段概念对等映射
 - [[NPU_MLIR_Backend_Technical_Analysis]] — NPU 上 MLIR 后端的完整实现 (TracedGraph、融合、编译)
 - [[20_npu_lowering_guide]] — NPU lowering 与 Triton lowering 架构对比
 - [[02_torch_compile_architecture]] — torch.compile 端到端流水线

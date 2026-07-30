@@ -7,7 +7,7 @@
 
 ## 0. 定位说明: torch-mlir 在 PyTorch 生态中的角色
 
-> 快速上手见 [[torch_mlir_quickstart]]（torch-mlir 在 PyTorch 生态的定位、与 Inductor 的关系、何时用、最小 backend 骨架、output_type 选择）。本节只保留**理解下文 Pass 管线**所需的最小上下文。
+> 快速上手见 [[01_torch_mlir_quickstart]]（torch-mlir 在 PyTorch 生态的定位、与 Inductor 的关系、何时用、最小 backend 骨架、output_type 选择）。本节只保留**理解下文 Pass 管线**所需的最小上下文。
 
 torch-mlir 的标准接法是写一个 `torch.compile(..., backend=...)` 的自定义 backend，把 Dynamo 捕获的 `gm` (GraphModule) 送进 torch-mlir 的导入/降级链。其关键入口函数 `stateless_fx_import(gm, output_type=...)` 接收 Dynamo 产出的 `torch.fx.GraphModule`，不需要经过 `torch.export`:
 
@@ -552,8 +552,8 @@ C++ 端:   DecomposeComplexOps         ← 兜底 (默认跳过)
 
 ## Related Pages
 
-- [[mlir_core_concepts]] — MLIR 核心概念: Dialect、Pass、IR 注册、递降原理
-- [[triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR: 六阶段概念对等映射
+- [[10_mlir_core_concepts]] — MLIR 核心概念: Dialect、Pass、IR 注册、递降原理
+- [[30_triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR: 六阶段概念对等映射
 - [[NPU_MLIR_Backend_Technical_Analysis]] — NPU MLIR 管线分析 (毕昇编译器路线，非 GPU 路线)
 - [[02_torch_compile_architecture]] — torch.compile 端到端流水线
 - [[02_compile_stack/01_dynamo/index]] — Dynamo 帧评估 API、字节码符号执行

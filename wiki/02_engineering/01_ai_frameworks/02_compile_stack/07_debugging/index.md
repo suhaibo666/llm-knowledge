@@ -10,18 +10,20 @@ native/Triton 编译、module load 或 runtime 六个阶段中的任意一个。
 
 ## 十篇一览
 
+> **段位与阅读顺序**(kb-reorg P4 Task 9.5,2026-07-30):十篇恰好填满段 1(10-19)整段,不设 quickstart/深潜/方法论层级差异——本目录的"核心机制主线"就是这条排查工作流本身。编号顺序采用本索引原有的**建议阅读顺序**(而非旧卷内编号 D07/E01-E09 或页头"前置"字面顺序):14 号 `compiled_artifact_lifecycle` 页头仍标其原 D 卷前置为 `cudagraph_trees_...`、且被 10 号页头引用为"前置",但在本目录实际教学顺序中排第 5 位(失败分层定位之后、minifier/bisector 工具之前),故编号落在 14 而非最前——这是本次编号中唯一一处"页头前置字段"与"实际阅读顺序"不一致的目录,以下表与本节顺序为准。
+
 | 页面 | 一句话定位 |
 |---|---|
-| [[observability_logs_counters_and_artifact_map_analysis]] | 建立证据层级：log、artifact、counter 分别能证明什么、不能证明什么 |
-| [[dynamo_explain_and_graph_break_diagnosis_analysis]] | 用 `explain` 与 `graph_breaks` 定位捕获失败与切图原因 |
-| [[guard_failure_and_recompile_diagnosis_analysis]] | 定位 recompile storm：cache entry 选择失败的根因分类与修复 |
-| [[aotautograd_and_inductor_failure_localization_analysis]] | 用 backend 阶梯（eager→aot_eager→decomp/partition→inductor）做失败分层二分 |
-| [[compiled_artifact_lifecycle_and_runtime_failures_analysis]] | 编译产物 build/serialize/load/post-compile/first-call/replay 状态机与六类 failure taxonomy（D 卷，为失败定位提供生命周期坐标） |
-| [[minifier_repro_and_compiler_bisector_analysis]] | Repro、Minifier 与 Compiler Bisector 三个正交工具的选用边界 |
-| [[compiled_correctness_validation_methodology_analysis]] | 值、梯度、mutation、alias、effect 六维正确性验证方法论 |
-| [[compile_latency_cache_and_steady_state_performance_analysis]] | 冷启动、cache hit、稳态三类场景分开测量与 break-even 分析 |
-| [[kernel_fusion_memory_and_hardware_performance_analysis]] | 从图结构到 fusion、内存生命周期、硬件计数器的四层性能归因 |
-| [[production_rollout_fallback_and_monitoring_analysis]] | 分阶段上线、fallback 分级、SLO 与自动回退、回滚演练 |
+| [[10_observability_logs_counters_and_artifact_map_analysis]] | 建立证据层级：log、artifact、counter 分别能证明什么、不能证明什么 |
+| [[11_dynamo_explain_and_graph_break_diagnosis_analysis]] | 用 `explain` 与 `graph_breaks` 定位捕获失败与切图原因 |
+| [[12_guard_failure_and_recompile_diagnosis_analysis]] | 定位 recompile storm：cache entry 选择失败的根因分类与修复 |
+| [[13_aotautograd_and_inductor_failure_localization_analysis]] | 用 backend 阶梯（eager→aot_eager→decomp/partition→inductor）做失败分层二分 |
+| [[14_compiled_artifact_lifecycle_and_runtime_failures_analysis]] | 编译产物 build/serialize/load/post-compile/first-call/replay 状态机与六类 failure taxonomy（D 卷，为失败定位提供生命周期坐标） |
+| [[15_minifier_repro_and_compiler_bisector_analysis]] | Repro、Minifier 与 Compiler Bisector 三个正交工具的选用边界 |
+| [[16_compiled_correctness_validation_methodology_analysis]] | 值、梯度、mutation、alias、effect 六维正确性验证方法论 |
+| [[17_compile_latency_cache_and_steady_state_performance_analysis]] | 冷启动、cache hit、稳态三类场景分开测量与 break-even 分析 |
+| [[18_kernel_fusion_memory_and_hardware_performance_analysis]] | 从图结构到 fusion、内存生命周期、硬件计数器的四层性能归因 |
+| [[19_production_rollout_fallback_and_monitoring_analysis]] | 分阶段上线、fallback 分级、SLO 与自动回退、回滚演练 |
 
 **建议阅读顺序**：observability → explain/graph break → guard failure → failure
 localization → artifact lifecycle → minifier/bisector → correctness → latency/cache →
@@ -33,9 +35,9 @@ compiled_artifact_lifecycle_and_runtime_failures_analysis 页头仍标其原 D �
 
 > 本附录内容迁移自已删除的 `Pytorch_Compile_Debug_Analysis.md`（558 行，原是本卷九篇的
 > 压缩前身）。该页逐节判重后，机制性内容（Dynamo/FX/Guards/AOT/Inductor 各阶段的原理与
-> 定位方法）已被上表九篇更严谨的源码级分析取代——尤其 [[dynamo_explain_and_graph_break_diagnosis_analysis]]、
-> [[guard_failure_and_recompile_diagnosis_analysis]]、
-> [[aotautograd_and_inductor_failure_localization_analysis]] §8 的 backend 阶梯决策树。
+> 定位方法）已被上表九篇更严谨的源码级分析取代——尤其 [[11_dynamo_explain_and_graph_break_diagnosis_analysis]]、
+> [[12_guard_failure_and_recompile_diagnosis_analysis]]、
+> [[13_aotautograd_and_inductor_failure_localization_analysis]] §8 的 backend 阶梯决策树。
 > 但该页提供的**可直接运行的排查脚本**、**分布式专属决策分支**与**kernel/CUDA 层崩溃诊断**
 > 九篇均未覆盖，逐字保留于此，作为九篇分析之外的操作性附件。
 
@@ -100,7 +102,7 @@ echo "Debug run complete. Artifacts collected under ${RUNDIR}/artifacts"
 
 ### Export + Backend 捕获脚本
 
-**目的**：用 API 方式保存可复用的 FX `GraphModule`（用于离线对比），并在 `torch.compile` 时把 backend 接收到的最终 `GraphModule` 写盘。两部分代码分别为 `export_capture.py` 和 `capture_backend.py`。这是公开 `export()` API + 自定义 backend 的轻量方案，与 [[minifier_repro_and_compiler_bisector_analysis]] 描述的官方 `after_dynamo`/`after_aot` repro 生成器是两条正交路径：官方生成器在编译失败时自动触发，这里的脚本用于主动、无需失败即可捕获的离线基线对比。
+**目的**：用 API 方式保存可复用的 FX `GraphModule`（用于离线对比），并在 `torch.compile` 时把 backend 接收到的最终 `GraphModule` 写盘。两部分代码分别为 `export_capture.py` 和 `capture_backend.py`。这是公开 `export()` API + 自定义 backend 的轻量方案，与 [[15_minifier_repro_and_compiler_bisector_analysis]] 描述的官方 `after_dynamo`/`after_aot` repro 生成器是两条正交路径：官方生成器在编译失败时自动触发，这里的脚本用于主动、无需失败即可捕获的离线基线对比。
 
 #### `export_capture.py`（最小可运行）
 
@@ -274,9 +276,9 @@ jq -r '.[]' debug_dumps/export/gm_<ts>/guards.json | sort | uniq -c | sort -nr |
 
 原页决策树共 5 步：GRAPH BREAK 多→Dynamo 问题、recompiles/GUARD FAIL 频繁→guard 问题、
 forward 正常但 backward 异常→AOT 问题、数值/性能异常→Inductor 问题、**仅在多卡/分布式
-出现→分布式问题**。前 4 步已被 [[dynamo_explain_and_graph_break_diagnosis_analysis]]、
-[[guard_failure_and_recompile_diagnosis_analysis]]、
-[[aotautograd_and_inductor_failure_localization_analysis]] §8 的 backend 阶梯决策树取代
+出现→分布式问题**。前 4 步已被 [[11_dynamo_explain_and_graph_break_diagnosis_analysis]]、
+[[12_guard_failure_and_recompile_diagnosis_analysis]]、
+[[13_aotautograd_and_inductor_failure_localization_analysis]] §8 的 backend 阶梯决策树取代
 且更严谨，故不再重复；第 5 步九篇未覆盖，逐字保留：
 
 > 5. **若问题仅在多卡/分布式出现**
@@ -285,8 +287,8 @@ forward 正常但 backward 异常→AOT 问题、数值/性能异常→Inductor 
 
 ### Kernel / Triton / CUDA 层崩溃诊断（最终执行）
 
-九篇中 [[kernel_fusion_memory_and_hardware_performance_analysis]] 只覆盖 kernel/fusion 的
-**性能**归因（roofline、fusion score、occupancy），[[aotautograd_and_inductor_failure_localization_analysis]]
+九篇中 [[18_kernel_fusion_memory_and_hardware_performance_analysis]] 只覆盖 kernel/fusion 的
+**性能**归因（roofline、fusion score、occupancy），[[13_aotautograd_and_inductor_failure_localization_analysis]]
 §5 的 "Native compile/load failure"、"Runtime failure" 只有两句话概述；两者都未覆盖以下
 **崩溃类**故障（segfault、OOM、launch failed、arch mismatch）的具体关键词与修复建议，
 故逐字保留。
@@ -336,7 +338,7 @@ forward 正常但 backward 异常→AOT 问题、数值/性能异常→Inductor 
 
 ### 附：提交问题给 upstream / 报 issue 时要附的最小清单
 
-[[minifier_repro_and_compiler_bisector_analysis]] §11 已给出通用的"交付一个有效 repro"标准
+[[15_minifier_repro_and_compiler_bisector_analysis]] §11 已给出通用的"交付一个有效 repro"标准
 （干净进程可复现、无私有数据、版本明确、predicate 稳定等），偏重 minifier/bisector 场景。
 以下是原页面向 CUDA + 分布式场景给出的具体附件清单，两者互补，不重复列出通用项：
 

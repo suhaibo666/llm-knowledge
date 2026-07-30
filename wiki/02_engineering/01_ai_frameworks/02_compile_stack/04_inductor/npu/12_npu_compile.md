@@ -274,5 +274,5 @@ INDUCTOR_ASCEND_LOG_LEVEL=DEBUG python script.py
 - [[20_npu_lowering_guide]] — NPU lowering op 分流策略、NPU 专有 IR 节点
 - [[10_NPU_Inductor_Backend_Analysis]] — 多后端选择与混合使用
 - [[10_NPU_Inductor_Backend_Analysis]] — MultiTemplateBuffer、Epilogue/Prologue Fusion
-- [[triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR 通用对比
+- [[30_triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR 通用对比
 - [[02_engineering/01_ai_frameworks/index]]

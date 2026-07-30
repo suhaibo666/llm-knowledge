@@ -90,7 +90,7 @@ NVIDIA 的 **Nsight Systems**（`nsys`，时间线/CPU-GPU 重叠/kernel 间隙�
 - 显式：`02-fused-softmax.py:90` 的 `tl.range(row_start, n_rows, row_step, num_stages=num_stages)`，`num_stages` 是 kernel 的 `constexpr` 参数（`:86`），host 端按 SMEM 大小选 `num_stages = 4 if SIZE_SMEM > 200000 else 2`（`:137`）。
 - autotune 搜：`03-matrix-multiplication.py:166-198` 的 configs 里 `num_stages` 取 3/4/5；`06-fused-attention.py:131-141` 的 `NUM_STAGES_OPTIONS=[2,3,4]` 进 autotune 空间。
 
-**权衡**：级数越多预取越深、越能掩盖延迟，但每多一级就多占一份 SRAM 缓冲——SMEM 不够会降占用率甚至编不出来。所以 `02` 才按 `SIZE_SMEM` 动态选，`06` 才交给 autotune。流水线在编译器侧如何下降到 `cp.async`/MMA，见 [[triton_vs_mlir_backend_analysis]]。
+**权衡**：级数越多预取越深、越能掩盖延迟，但每多一级就多占一份 SRAM 缓冲——SMEM 不够会降占用率甚至编不出来。所以 `02` 才按 `SIZE_SMEM` 动态选，`06` 才交给 autotune。流水线在编译器侧如何下降到 `cp.async`/MMA，见 [[30_triton_vs_mlir_backend_analysis]]。
 
 ### ③ `num_warps` —— 占用率的旋钮（治 compute-bound 的并行度）
 
@@ -110,7 +110,7 @@ num_programs = NUM_SM * occupancy                          # :169
 
 ### ⑤ Tensor Core：`tl.dot`（治 compute-bound）
 
-矩阵乘想摸到峰值算力，**唯一入口是 `tl.dot`**——它会被编译器映射到 Tensor Core 的 MMA 指令；用标量循环手写乘加只能跑 CUDA core，差一个数量级。FlashAttention 两处 `tl.dot`：`06:73` 算 $S=QK^\top$、`06:103` 算 $acc \mathrel{+}= P\,V$（第三参数 `acc` 让它做「乘加进累加器」）。`tl.dot→MMA` 的下降细节见 [[triton_vs_mlir_backend_analysis]]。配套技巧：累加器用 fp32（`06:218` `acc = tl.zeros(..., tl.float32)`）保精度，输入在喂给 MMA 前转半精度（`06:101` `p = p.to(dtype)`）。
+矩阵乘想摸到峰值算力，**唯一入口是 `tl.dot`**——它会被编译器映射到 Tensor Core 的 MMA 指令；用标量循环手写乘加只能跑 CUDA core，差一个数量级。FlashAttention 两处 `tl.dot`：`06:73` 算 $S=QK^\top$、`06:103` 算 $acc \mathrel{+}= P\,V$（第三参数 `acc` 让它做「乘加进累加器」）。`tl.dot→MMA` 的下降细节见 [[30_triton_vs_mlir_backend_analysis]]。配套技巧：累加器用 fp32（`06:218` `acc = tl.zeros(..., tl.float32)`）保精度，输入在喂给 MMA 前转半精度（`06:101` `p = p.to(dtype)`）。
 
 ---
 
@@ -294,4 +294,4 @@ proton_viewer.print_tree(tree, metrics)
 - [[triton_knowledge_map]] — 四种能力总纲与自测
 - [[gpu_kernel_guide]] — FlashAttention 硬件层级映射表（§08）、Tensor Core 硬件视角（与本页互补）
 - [[26_flex_attention_analysis]] — attention 变体与 mask/score 修改
-- [[triton_vs_mlir_backend_analysis]] — `tl.dot→MMA`、`num_stages` 流水线在编译器侧的下降
+- [[30_triton_vs_mlir_backend_analysis]] — `tl.dot→MMA`、`num_stages` 流水线在编译器侧的下降

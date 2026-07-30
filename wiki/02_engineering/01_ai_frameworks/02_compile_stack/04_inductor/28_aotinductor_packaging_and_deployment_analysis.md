@@ -288,6 +288,6 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[20_custom_backends_and_device_integration_analysis]]
 - [[training_inference_cudagraph_and_freezing_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
-- [[compiled_artifact_lifecycle_and_runtime_failures_analysis]]
-- [[production_rollout_fallback_and_monitoring_analysis]]
+- [[14_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
+- [[19_production_rollout_fallback_and_monitoring_analysis]]
 - [[22_backend_modes_options_stances_and_fullgraph_analysis]] — §14.2:`torch.compile(..., options={"use_aoti": True})` 的 JIT 入口路径,与本页 §2-§3 的 export 驱动打包路径汇合于同一套 `compile_fx`/`CompiledAOTI` 机制,但 `enable_autograd_for_aot` 门控使 runner 就绪时机不对称;差异还在捕获来源(Dynamo 运行时捕获 vs `ExportedProgram`)与是否打包成 `.pt2`(关系已于该页 §14.2 note 核实)

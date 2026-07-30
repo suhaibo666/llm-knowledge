@@ -224,5 +224,5 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[12_instruction_translator_and_bytecode_state_machine_analysis]]
 - [[14_output_graph_side_effects_and_graph_emission_analysis]]
 - [[17_dynamic_shapes_generalization_and_fallback_analysis]]
-- [[dynamo_explain_and_graph_break_diagnosis_analysis]]
+- [[11_dynamo_explain_and_graph_break_diagnosis_analysis]]
 - [[20_graph_stage_boundaries_identity_and_provenance_analysis]]

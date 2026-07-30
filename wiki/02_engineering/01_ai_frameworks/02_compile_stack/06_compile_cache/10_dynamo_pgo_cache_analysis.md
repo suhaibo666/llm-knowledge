@@ -9,7 +9,7 @@
 > **Source baseline**:PyTorch upstream 本地检出 `E:\97-codes\torch_parallel\pytorch` @ branch `main`, commit `3bda74318624581502db16e6439c36effdb16481`(2026-07-10, version 2.14.0a0)。所有 `file:line` 均对该 commit 逐一开文件核验。
 > **最后更新**:2026-07-10
 
-本页与本目录其它页面有一个本质区别:[[fx_graph_cache_analysis]]/[[aotautograd_cache_analysis]] 缓存的是**编译输出**(命中=跳过编译),PGO 缓存的是**编译决策的输入**(命中=第一次编译就编「对的版本」,编译本身一次也不少跑,但少跑一整轮)。也因此它的正确性模型完全不同:画像允许「soundly stale」——过期的画像不产生错误结果,只会让编译偏保守地多动态化(`torch/_dynamo/config.py:844-848`)。上游概念(automatic dynamic、guard、符号形状)见 [[20_symbolic_shapes_guards_and_graph_reuse_analysis]];总览与目录索引见 [[02_compile_stack/06_compile_cache/index]]。
+本页与本目录其它页面有一个本质区别:[[12_fx_graph_cache_analysis]]/[[11_aotautograd_cache_analysis]] 缓存的是**编译输出**(命中=跳过编译),PGO 缓存的是**编译决策的输入**(命中=第一次编译就编「对的版本」,编译本身一次也不少跑,但少跑一整轮)。也因此它的正确性模型完全不同:画像允许「soundly stale」——过期的画像不产生错误结果,只会让编译偏保守地多动态化(`torch/_dynamo/config.py:844-848`)。上游概念(automatic dynamic、guard、符号形状)见 [[20_symbolic_shapes_guards_and_graph_reuse_analysis]];总览与目录索引见 [[02_compile_stack/06_compile_cache/index]]。
 
 ---
 
@@ -152,7 +152,7 @@ flowchart TB
 ### 4.2 local / remote
 
 - **local**:`<cache_dir>/dynamo/code_state_<cache_key>.pkl`(`code_state_path`,`pgo.py:639-647`;正则把 `<>:"/\|?*` 换成 `_`,是 Windows 路径修复,#147708)。读 `get_local_code_state`(`:814-838`),整包 `pickle.loads`;写 `put_local_code_state`(`:1021-1045`),整包 `pickle.dumps`——没有按 CodeId 的增量 IO,文件头注释自己留了话头:「maybe worry about O(n^2) IO if we updated every compile--let's just instrument this」(`:92-93`)。
-- **remote**:`should_use_remote_dynamo_pgo_cache`(`pgo.py:650-670`)——OSS 下除非显式 env 打开否则 `False`;fbcode 走 justknob 版本比对。`get_remote_cache` 用与 Inductor 远端缓存同一套设施 `create_cache("dynamo-pgo", is_fbcode(), "FbRemoteDynamoPGOCache", "RemoteDynamoPGOCache")`(`:673-684`,cache id 字符串即 `"dynamo-pgo"`;RemoteCache 基础设施细节属 [[triton_autotune_cache_analysis]])。payload 是 base64 进 JSON 的同一份 pickle(`:1073-1076`)。远端读写耗时被单列进 dynamo_compile 遥测列 `pgo_get/put_remote_code_state_time_us`(`:891,1057`)。
+- **remote**:`should_use_remote_dynamo_pgo_cache`(`pgo.py:650-670`)——OSS 下除非显式 env 打开否则 `False`;fbcode 走 justknob 版本比对。`get_remote_cache` 用与 Inductor 远端缓存同一套设施 `create_cache("dynamo-pgo", is_fbcode(), "FbRemoteDynamoPGOCache", "RemoteDynamoPGOCache")`(`:673-684`,cache id 字符串即 `"dynamo-pgo"`;RemoteCache 基础设施细节属 [[13_triton_autotune_cache_analysis]])。payload 是 base64 进 JSON 的同一份 pickle(`:1073-1076`)。远端读写耗时被单列进 dynamo_compile 遥测列 `pgo_get/put_remote_code_state_time_us`(`:891,1057`)。
 
 ### 4.3 sticky key:跨 job 复用画像
 
@@ -216,7 +216,7 @@ collective 本体在 `OutputGraph.run_compiler_collective`(`torch/_dynamo/output
 
 **收益结论**:命中(读到有效画像)省掉的是**一整次全栈重编译**——Dynamo 重追踪 + AOTAutograd 重切分 + Inductor 重 lowering/codegen,而不是栈内某一段。源码的量化陈述在 `job_id` docstring:「the first time you run your program we may compile twice as we discover what inputs are dynamic, and then PGO will save this state so subsequent invocations only need to compile once」(`compiler/config.py:60-64`)——对每个最终动态的 frame,冷启动编译次数 2→1。PGO 自身开销(远端读写耗时、画像字节数)被显式计量进 `pt2_compile_events`/`dynamo_compile`(`pgo.py:828,891,1039,1057,1072`)。
 
-> **推断(非源码明述)**:实际节省与「动态 frame 数 × 单次编译成本」成正比,且与产物缓存正交:PGO 让第一次就编出动态版本,这个动态版本的 key 又更容易被 [[fx_graph_cache_analysis]]/[[aotautograd_cache_analysis]] 跨进程命中(symbolic key + guard,天然覆盖多 shape),两者叠加才是完整的 warm-start 故事;Mega-cache 正是把 PGO 画像与这些产物缓存一起打包搬运(§4.4)。
+> **推断(非源码明述)**:实际节省与「动态 frame 数 × 单次编译成本」成正比,且与产物缓存正交:PGO 让第一次就编出动态版本,这个动态版本的 key 又更容易被 [[12_fx_graph_cache_analysis]]/[[11_aotautograd_cache_analysis]] 跨进程命中(symbolic key + guard,天然覆盖多 shape),两者叠加才是完整的 warm-start 故事;Mega-cache 正是把 PGO 画像与这些产物缓存一起打包搬运(§4.4)。
 
 ---
 
@@ -225,9 +225,9 @@ collective 本体在 `OutputGraph.run_compiler_collective`(`torch/_dynamo/output
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[02_compile_stack/06_compile_cache/index]] — 编译缓存总览(本页是其中唯一「缓存决策而非产物」的一级)
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — automatic dynamic / guard / DimDynamic / ShapeEnv(本页画像的消费下游)
-- [[fx_graph_cache_analysis]] — Inductor 图级产物缓存(与 PGO 正交叠加)
-- [[aotautograd_cache_analysis]] — AOT 级产物缓存
-- [[triton_autotune_cache_analysis]] — `create_cache`/RemoteCache 远端设施(§4.2 复用)
+- [[12_fx_graph_cache_analysis]] — Inductor 图级产物缓存(与 PGO 正交叠加)
+- [[11_aotautograd_cache_analysis]] — AOT 级产物缓存
+- [[13_triton_autotune_cache_analysis]] — `create_cache`/RemoteCache 远端设施(§4.2 复用)
 - Mega-cache打包/重放（`PGOCacheArtifact`挂钩）：尚未完成独立当前基线审计
 - [[02_compile_stack/06_compile_cache/index]] — 本目录索引
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — dynamic shape、guard、重编译与 graph reuse 主线

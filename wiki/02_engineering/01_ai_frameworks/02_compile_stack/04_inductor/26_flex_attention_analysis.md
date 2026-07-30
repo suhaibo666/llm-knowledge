@@ -220,6 +220,6 @@ torch.compile 特殊处理路径（非 _sfdp_init pattern matching）:
 
 - [[31_joint_graph_passes_guide]] — _sfdp_init 的实现（被 FlexAttention 补充）
 - [[30_pre_grad_passes_guide]] — batch_linear_lhs（QKV 融合的上游 Pass）
-- [[triton_vs_mlir_backend_analysis]] — Triton codegen 路径
+- [[30_triton_vs_mlir_backend_analysis]] — Triton codegen 路径
 - [[comm_compute_fusion_guide]] — FlexAttention 在 Context Parallel 中的 WaveEP 集成
 - [[tilelang_analysis]] — Tile-Level IR：FlexAttention 的 block 粒度与 tile 概念的关系

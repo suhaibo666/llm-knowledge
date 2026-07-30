@@ -282,70 +282,70 @@
     },
     {
       "page_id": "d07",
-      "page": "compiled_artifact_lifecycle_and_runtime_failures_analysis.md",
+      "page": "14_compiled_artifact_lifecycle_and_runtime_failures_analysis.md",
       "volume": "D",
       "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
       "case": "artifact_lifecycle_failure"
     },
     {
       "page_id": "e01",
-      "page": "observability_logs_counters_and_artifact_map_analysis.md",
+      "page": "10_observability_logs_counters_and_artifact_map_analysis.md",
       "volume": "E",
       "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
       "case": "logs_artifact_map"
     },
     {
       "page_id": "e02",
-      "page": "dynamo_explain_and_graph_break_diagnosis_analysis.md",
+      "page": "11_dynamo_explain_and_graph_break_diagnosis_analysis.md",
       "volume": "E",
       "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
       "case": "dynamo_explain"
     },
     {
       "page_id": "e03",
-      "page": "guard_failure_and_recompile_diagnosis_analysis.md",
+      "page": "12_guard_failure_and_recompile_diagnosis_analysis.md",
       "volume": "E",
       "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
       "case": "guard_failure"
     },
     {
       "page_id": "e04",
-      "page": "aotautograd_and_inductor_failure_localization_analysis.md",
+      "page": "13_aotautograd_and_inductor_failure_localization_analysis.md",
       "volume": "E",
       "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
       "case": "stage_failure_localization"
     },
     {
       "page_id": "e05",
-      "page": "minifier_repro_and_compiler_bisector_analysis.md",
+      "page": "15_minifier_repro_and_compiler_bisector_analysis.md",
       "volume": "E",
       "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
       "case": "minifier_repro"
     },
     {
       "page_id": "e06",
-      "page": "compiled_correctness_validation_methodology_analysis.md",
+      "page": "16_compiled_correctness_validation_methodology_analysis.md",
       "volume": "E",
       "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
       "case": "correctness_validation"
     },
     {
       "page_id": "e07",
-      "page": "compile_latency_cache_and_steady_state_performance_analysis.md",
+      "page": "17_compile_latency_cache_and_steady_state_performance_analysis.md",
       "volume": "E",
       "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
       "case": "cold_warm_steady"
     },
     {
       "page_id": "e08",
-      "page": "kernel_fusion_memory_and_hardware_performance_analysis.md",
+      "page": "18_kernel_fusion_memory_and_hardware_performance_analysis.md",
       "volume": "E",
       "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
       "case": "fusion_memory_profiler"
     },
     {
       "page_id": "e09",
-      "page": "production_rollout_fallback_and_monitoring_analysis.md",
+      "page": "19_production_rollout_fallback_and_monitoring_analysis.md",
       "volume": "E",
       "script": "tools/labs_torch_compile/demo_e_diagnostics.py",
       "case": "rollout_fallback"

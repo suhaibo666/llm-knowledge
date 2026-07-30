@@ -39,4 +39,4 @@
 - [[../01_ai_frameworks/index]] — AI 框架 (PyTorch 编译栈；Inductor 自动生成 Triton kernel)
 - [[../02_train_frameworks/index]] — 训练框架 (Kernel 是上层掩盖的基础)
 - [[../03_infer_frameworks/index]] — 推理框架 (FlashAttention 等 kernel 是推理性能关键)
-- [[triton_vs_mlir_backend_analysis]] — Triton 作为 torch.compile 后端的编译流水线
+- [[30_triton_vs_mlir_backend_analysis]] — Triton 作为 torch.compile 后端的编译流水线

@@ -243,5 +243,5 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[01_graph_ir_motivation_and_taxonomy]]
 - [[22_pattern_expression_and_matcher_engine_analysis]]
 - [[20_custom_backends_and_device_integration_analysis]]
-- [[compiled_correctness_validation_methodology_analysis]]
+- [[16_compiled_correctness_validation_methodology_analysis]]
 - [[30_dynamo_pass_methodology]] — 开发决策线:何时该/不该在 Dynamo 做、可运行注册代码、改图排错流程、何时该离开 Dynamo

@@ -234,7 +234,7 @@ C10（491 行）`git mv` 为同目录 `saved_tensors_recompute_and_runtime_abi_a
 | §9 AOTConfig/ViewAndMutationMeta/AOTState 数据结构 | ViewAndMutationMeta 行号（446-475）与 C09 已有引用一致；AOTConfig/AOTState 字段无深层机制增量 | 删除 |
 | §10.1 激活检查点/重计算 | 与 C10 §5-§8 min-cut 内容重叠 | 删除 |
 | §10.2 视图重放优化（`gen_alias_from_base`） | 判定为 C05 alias territory，本任务范围外，暂未新落地（记为待核验缺口） | 未迁移，留 `[!todo]` 级别观察项（未写入正文，本条目记录） |
-| §10.3/§10.4 静态输入优化/AOTAutogradCache | AOTAutogradCache 已有专页 [[aotautograd_cache_analysis]] | 删除 |
+| §10.3/§10.4 静态输入优化/AOTAutogradCache | AOTAutogradCache 已有专页 [[11_aotautograd_cache_analysis]] | 删除 |
 | §11.1/§11.2 输入别名/输出别名限制 | synthetic base 已被 C05 覆盖；输出别名 assert 为单行低价值 | 删除 |
 | §11.3 自定义 autograd 函数检测 | 核验：`_is_result_of_custom_autograd_fn` 现已内联（非独立函数），逻辑见 `collect_metadata_analysis.py:479-485`，其对 `OutputType.custom_function_view` 分类的影响见 `:490-497`；未被任何现存页覆盖 | **独有，改写并入 C09 新增 §17** |
 | §11.4 `aot_export` 元数据变异禁令 | 核验现行位置 `aot_autograd.py:651-657`（原引用漂移约 350 行）；未被覆盖 | **独有，并入 C09 新增 §17** |
@@ -591,7 +591,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - [!correction] 原文简化伪代码的定点循环声明 `changed` 却从未赋值为 `True`，若照抄会导致收敛判断恒假、循环跑满 100 轮不提前退出；订正为当前源码的 `FixedPointBox` 判据，不迁移原文这段有缺陷的伪代码。
 - §9"删除死bytecode和无意义跳转"补一句指向 §15 的前向指针。
 
-**修复 2(例外可见化)**：97d19ce 判重台账里"§6.1 加速数字无源、与 e07 论点抵触、不落地"的例外此前只记录在 changelog，页面本身不可见。在 [[compile_latency_cache_and_steady_state_performance_analysis]] §1（"平均耗时没有诊断价值"论点处）补一句注，明示该旧页给出的"2-3x/4x/1.5-2x"数字已按记录弃置、未作 `[!todo]` 保留。
+**修复 2(例外可见化)**：97d19ce 判重台账里"§6.1 加速数字无源、与 e07 论点抵触、不落地"的例外此前只记录在 changelog，页面本身不可见。在 [[17_compile_latency_cache_and_steady_state_performance_analysis]] §1（"平均耗时没有诊断价值"论点处）补一句注，明示该旧页给出的"2-3x/4x/1.5-2x"数字已按记录弃置、未作 `[!todo]` 保留。
 
 **校验**：`python tools/check_links.py`：pages 390→390（纯编辑）,broken=0；`pytest tools/ -q`：77 passed（新增 §15 的 mermaid/list-marker/locator-length 质量门禁通过，所有引用跨度 ≤57 行，未触发 100 行上限）。
 
@@ -617,7 +617,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 - §4.1 Python 版本兼容性检查（3.15+ 拒绝、free-threaded GIL<3.13.3 拒绝、`_log_api_usage_once` 遥测）→ [[10_torch_compile_api_and_first_call_lifecycle_analysis]] 新增 §13.1，核验定位 `torch/__init__.py:3267-3280`
 - §4.6 `torch.export` 兼容性（`is_exporting()`/`_in_hop_compile()` 短路为 no-op）→ 同页新增 §13.2，核验定位 `torch/__init__.py:3350-3359`
-- §4.4 CompilerBisector 二分调试的 API 入口钩子（`bisect_backend := CompilerBisector.get_backend()` 覆盖 backend + vLLM 自定义 backend 保护条件）→ [[22_backend_modes_options_stances_and_fullgraph_analysis]] 新增 §13，核验定位 `torch/__init__.py:3330-3342`；与 [[minifier_repro_and_compiler_bisector_analysis]] §7（bisector 内部二分算法）互补,双向加回链
+- §4.4 CompilerBisector 二分调试的 API 入口钩子（`bisect_backend := CompilerBisector.get_backend()` 覆盖 backend + vLLM 自定义 backend 保护条件）→ [[22_backend_modes_options_stances_and_fullgraph_analysis]] 新增 §13，核验定位 `torch/__init__.py:3330-3342`；与 [[15_minifier_repro_and_compiler_bisector_analysis]] §7（bisector 内部二分算法）互补,双向加回链
 - §4.5 特殊选项提取 + §4.7/§5 三个 wrapper 类的方法级实现（`_TorchCompileInductorWrapper.apply_mode/apply_options/get_compiler_config/reset`、CUDA<12.6 CUPTI workaround、`_TorchCompileAOTInductorWrapper` 子类的 `cpp_wrapper`/`aot_inductor.package`/`V.set_aot_compilation`、`_TorchCompileWrapper` 的 `lookup_backend`+kwargs 透传）→ 同页新增 §14，核验定位 `torch/__init__.py:2907-3096` 区间多段
 - [!todo] §14.2 迁移时发现:`use_aoti=True` 是从 `torch.compile()` **JIT 入口**直接触发的 AOTInductor 打包路径,而 `f07_aotinductor_packaging_and_deployment_analysis`（2026-07-30 起随 kb-reorg P4 Task 9 迁入并改名为 [[28_aotinductor_packaging_and_deployment_analysis]]，本条历史记载不回写活链接）§2-§3 记录的公开入口 `aoti_compile_and_package` 明确要求 `ExportedProgram`(export 驱动、部署前离线完成)。两条路径是否共享下游产物、`use_aoti` 这条 JIT 捷径的运维定位,F07 尚未覆盖——本任务范围内未展开核实,双向加回链留待后续处理。**已于 kb-reorg P4 Task 9(2026-07-30)核实解答**：两者在 `compile_fx`/`CompiledAOTI` 层汇合于同一段代码，但 `CompiledAOTI` 装载成可调用 runner 这一步受 `enable_autograd_for_aot` 门控、并不对称（只有 `use_aoti` 路径强制打开），差异还在前端捕获来源（Dynamo 运行时捕获 vs `ExportedProgram`）与是否额外 `package_aoti` 打包成 `.pt2`；详见 [[22_backend_modes_options_stances_and_fullgraph_analysis]] §14.2 note。
 - §6 编译模式对照表（mode/CUDA Graphs/Triton autotune 布尔矩阵）与 B02 §3 的同一组事实（散文体）重复,不迁移；§7 能力范围与限制、§8 使用示例是已覆盖机制的摘要/演示,不迁移；§2/§3/§4.2/§4.3 是与 B01/B02 完全重复的调用栈图与参数说明,不迁移。
@@ -636,7 +636,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 - §2/§3/§5（eval-frame 拦截、字节码分析转换、符号执行、变量跟踪、Guard 系统、FX 图构建、后端编译 7 阶段机制，含模块依赖图与调用链图）均为 B01-B10 的低精度复述——本页用"简化伪代码"且无 `file:line` 定位符，B 卷十篇逐条给出精确源码定位。抽样核实：本页 §3.1 PEP 523 C 扩展入口链描述（`dynamo_custom_eval_frame_shim → dynamo__custom_eval_frame → set_eval_frame`）缺少 [[11_eval_frame_callback_and_code_cache_analysis]] §2 已给出的更完整更准确的三态协议（`None`/`False`/callable，定位 `torch/csrc/dynamo/eval_frame.c:518-533`/`:616-638`）；本页 §7 列的"未覆盖组件"（VariableBuilder、Source 系统、高阶操作）实际均已被 [[13_variable_tracker_source_and_python_object_model_analysis]]、[[21_control_flow_capture_analysis]] 覆盖。
 - §4 典型示例代码分析（简单函数/nn.Module/动态形状/graph break/循环编译走读,均为未验证的插图式伪代码）被 `tools/labs_torch_compile/demo_b_dynamo_capture.py` 的十个真实可运行 case（compile_lifecycle/backend_modes_fullgraph/eval_frame_cache/bytecode_state_machine/variable_source_guards/output_graph_side_effects/guards_recompile/graph_break_resume/dynamic_shapes/custom_backend_contract）与 B 卷各篇「源码跟读」「配套 Demo」小节取代，不重复落地插图代码。
-- §6.1"性能提升"给出的"典型模型 2-3 倍/Transformer 4 倍/小模型 1.5-2 倍"加速比**无源可查**（`raw/` 下仅 `dynamo.eddx`/`torch.compile.eddx` 图示源，非可引用的实测数据）；且与 [[compile_latency_cache_and_steady_state_performance_analysis]] §1 的核心论点（"平均耗时没有诊断价值，必须拆分测量场景"）直接抵触，判断为不应作为事实迁移的营销式泛化断言，不落地（不同于常规"无源可疑声明转 [!todo]"处理，因为该断言的方法论本身已被后继页的论点否定，保留只会误导读者）。
+- §6.1"性能提升"给出的"典型模型 2-3 倍/Transformer 4 倍/小模型 1.5-2 倍"加速比**无源可查**（`raw/` 下仅 `dynamo.eddx`/`torch.compile.eddx` 图示源，非可引用的实测数据）；且与 [[17_compile_latency_cache_and_steady_state_performance_analysis]] §1 的核心论点（"平均耗时没有诊断价值，必须拆分测量场景"）直接抵触，判断为不应作为事实迁移的营销式泛化断言，不落地（不同于常规"无源可疑声明转 [!todo]"处理，因为该断言的方法论本身已被后继页的论点否定，保留只会误导读者）。
 - §6.5"性能优化技术"（算子融合/内存布局/循环展开/并行化）实际描述的是 Inductor 层优化,不属于 Dynamo 机制,且与 B 卷主题不符,留待后续 Inductor 相关任务处理,本任务不落地。
 - §5.1 模块依赖关系图（`torch._dynamo` 包结构树）经抽样核对本地 pinned pytorch checkout（`eval_frame.py`/`config.py`/`convert_frame.py`/`bytecode_analysis.py`/`bytecode_transformation.py`/`codegen.py`/`backends/`/`variables/` 均存在）大体准确，但属于可从源码树直接重建的编排性示意图（非独有事实），且 B 卷各篇「源码阅读顺序」「源码补充」小节已提供更具体的逐机制文件路径，不单独迁移。
 
@@ -689,7 +689,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - `e08_kernel_fusion_memory_and_hardware_performance_analysis.md` → `kernel_fusion_memory_and_hardware_performance_analysis.md`
 - `e09_production_rollout_fallback_and_monitoring_analysis.md` → `production_rollout_fallback_and_monitoring_analysis.md`
 
-**删除并吸收**：`02_compile_stack/04_inductor/Pytorch_Compile_Debug_Analysis.md`（558 行，E 卷的压缩前身）逐节判重后删除。机制性内容（Dynamo/FX/Guards/AOT/Inductor 各阶段原理与定位方法、通用决策树前 4 步）已被上述九篇更严谨的源码级分析取代，不重复落地；但该页提供的**可运行排查脚本**、**分布式专属决策分支**与**kernel/CUDA 层崩溃诊断**九篇均未覆盖，逐字迁入新建的 `02_compile_stack/07_debugging/index.md` 附录：`run_debug.sh`（环境变量一键启动）、`export_capture.py`/`capture_backend.py`（DIY GraphModule 捕获，与官方 `after_dynamo`/`after_aot` repro 生成器正交互补）、`collect_artifacts.sh`、`diff_rank_logs.sh`（多 rank 日志对比，九篇未提供任何等价工具）、决策树第 5 分支（仅分布式场景复现）、kernel/CUDA 崩溃关键词与修复清单（segfault/OOM/launch failed/arch mismatch，[[kernel_fusion_memory_and_hardware_performance_analysis]] 只覆盖性能不覆盖崩溃）、工程化使用流程、小技巧、upstream issue 附件清单（与 [[minifier_repro_and_compiler_bisector_analysis]] §11 的通用 repro 标准互补，不重复）。
+**删除并吸收**：`02_compile_stack/04_inductor/Pytorch_Compile_Debug_Analysis.md`（558 行，E 卷的压缩前身）逐节判重后删除。机制性内容（Dynamo/FX/Guards/AOT/Inductor 各阶段原理与定位方法、通用决策树前 4 步）已被上述九篇更严谨的源码级分析取代，不重复落地；但该页提供的**可运行排查脚本**、**分布式专属决策分支**与**kernel/CUDA 层崩溃诊断**九篇均未覆盖，逐字迁入新建的 `02_compile_stack/07_debugging/index.md` 附录：`run_debug.sh`（环境变量一键启动）、`export_capture.py`/`capture_backend.py`（DIY GraphModule 捕获，与官方 `after_dynamo`/`after_aot` repro 生成器正交互补）、`collect_artifacts.sh`、`diff_rank_logs.sh`（多 rank 日志对比，九篇未提供任何等价工具）、决策树第 5 分支（仅分布式场景复现）、kernel/CUDA 崩溃关键词与修复清单（segfault/OOM/launch failed/arch mismatch，[[18_kernel_fusion_memory_and_hardware_performance_analysis]] 只覆盖性能不覆盖崩溃）、工程化使用流程、小技巧、upstream issue 附件清单（与 [[15_minifier_repro_and_compiler_bisector_analysis]] §11 的通用 repro 标准互补，不重复）。
 
 **入链修复**：九篇互链（前置/后续 + Related Pages）随重命名全库替换（裸基名，新基名唯一）；`00_torch_compile_end_to_end_index.md` 卷 E 表按 Task 3 先例压缩为一行式指向（完整表格重建留 Task 10）；`b01/b02/b07/b08/b09/b10/d03/d05/d06/d07/f01/f03/f04/f07/f08` 对九篇的引用改指新基名；`04_inductor/index.md`、`inductor_memory_allocation_guide.md`、`inductor_quickstart.md`（3 处）、`npu/npu_debug_guide.md`、`torch_compile_architecture.md`（2 处）、`19_torch_compile_end_to_end/11_graph_stage_boundaries_identity_and_provenance.md` 对旧 debug 页的引用改指 `02_compile_stack/07_debugging/index`；changelog 历史条目（2026-07 更早的一条）按本文件「历史不回写」惯例改为惰性反引号 + 说明去向，不当作活链接维护。
 
@@ -709,7 +709,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - a02 → [[10_pytorch_dispatcher_analysis]] §12（ADInplaceOrView 分层、mutation 算子 rebase 样本、Dispatcher/Autograd Edge/FX data edge 三种"边"辨析）
 - a03 → `b04_instruction_translator_and_bytecode_state_machine_analysis`（P4 Task 5 起更名为 [[12_instruction_translator_and_bytecode_state_machine_analysis]]） §14 + `b03_eval_frame_callback_and_code_cache_analysis`（P4 Task 5 起更名为 [[11_eval_frame_callback_and_code_cache_analysis]]） §13（`bytecode_transformation` 重组子系统、code object/frame/instruction 定义表、C-hook 与 ConvertFrame 边界）
 - a04 → `aotautograd_analysis` §13（P4 Task 8 起独立成页 [[10_dispatch_modes_proxytensor_faketensor_analysis]]）（`__torch_function__`/`__torch_dispatch__`/ProxyTensor/FakeTensor 四层分工、`track_tensor_tree`、FakeTensorMode 状态、decomposition 落点、数据相关 operator 边界）
-- a05 → `b01_torch_compile_api_and_first_call_lifecycle_analysis`（P4 Task 5 起更名为 [[10_torch_compile_api_and_first_call_lifecycle_analysis]]） §12 + [[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16（七阶段成本词汇表、cache-entry 查找与 backend handoff 源码补充；参数化成本模型/break-even/四层 cache 对照表与 e07 既有的测量方法论合并，不重复落地两处）
+- a05 → `b01_torch_compile_api_and_first_call_lifecycle_analysis`（P4 Task 5 起更名为 [[10_torch_compile_api_and_first_call_lifecycle_analysis]]） §12 + [[17_compile_latency_cache_and_steady_state_performance_analysis]] §12-§16（七阶段成本词汇表、cache-entry 查找与 backend handoff 源码补充；参数化成本模型/break-even/四层 cache 对照表与 e07 既有的测量方法论合并，不重复落地两处）
 
 **入链修复**：`f05`（a02/a04 引用改指 pytorch_dispatcher_analysis / aotautograd_analysis）、`b01`/`e07`/`d06`（a05 引用改指内容实际落点）；卷内 a01-a05 互链随整卷删除一并消失；`00_torch_compile_end_to_end_index.md` 的"卷 A"表按 Task 3 约定不做整体重排（留给 Task 10），仅去除失效行并加一行去向说明，避免 broken>0。
 
@@ -1470,7 +1470,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - [[triton_06_optimization_profiling_guide]] — L4 会优化：roofline 驱动 + proton（`09-persistent-matmul.py` 真实用法）+ FlashAttention online-softmax（锚 `06-fused-attention.py:69-110`，HBM 流量 O(N²)→O(N·d)）
   - [[triton_knowledge_map]] — 总纲：四能力知识点清单 + 分级自测 + 进阶（tutorials 04-11 + gluon）+ 真实资源
 - **生产方式**：协调者自写 index/00/01/knowledge_map + 5 个并行 writer-agent（严格契约：各锚定指定真实 tutorial 文件、以 01 为模板、mermaid 图、demo 忠实源 API）。**抽查定位符均真实**（`06:84 alpha=tl.math.exp2`、`autotuner.py:351` 默认值、`05-layer-norm.py` 锁式并行归约）。
-- **整合**：更新 `05_gpu_kernel/index.md`（新增 Triton 表）、`wiki/index.md`（GPU Kernel 计数 1→10 + Triton 子条目 + 主题导航）；交叉链向 [[gpu_kernel_guide]]/[[triton_vs_mlir_backend_analysis]]/[[20_inductor_codegen_analysis]]/[[21_inductor_autotuning_analysis]]/[[26_flex_attention_analysis]]。
+- **整合**：更新 `05_gpu_kernel/index.md`（新增 Triton 表）、`wiki/index.md`（GPU Kernel 计数 1→10 + Triton 子条目 + 主题导航）；交叉链向 [[gpu_kernel_guide]]/[[30_triton_vs_mlir_backend_analysis]]/[[20_inductor_codegen_analysis]]/[[21_inductor_autotuning_analysis]]/[[26_flex_attention_analysis]]。
 - **校验**：9 页内部 `[[链接]]` 全部互指存在页；外链目标均已存在；**0 悬挂链**。
 
 ---

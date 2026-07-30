@@ -254,12 +254,14 @@ cache位于既有阶段的入口/出口,不是新的IR阶段。调试时从最�
 
 ## 17. 专题页与保留角色
 
+> **段位与阅读顺序**(kb-reorg P4 Task 9.5,2026-07-30):段 1(10-19),四篇均为核心机制、无 quickstart/深潜/方法论层级差异,按 §16 编译生命周期顺序排列(捕获前决策 PGO → AOT 结果 → Inductor FX graph artifact → Triton kernel 级),即下表顺序。overview 主体已在本页(index.md 本身,2026-07-30 由旧 D04 页迁入改写),不单独占页故不编号。
+
 | 页面 | 页面角色 |
 |---|---|
-| [[dynamo_pgo_cache_analysis]] | PGO画像的状态合并、local/remote/sticky key与"soundly stale"边界 |
-| [[aotautograd_cache_analysis]] | AOT级key、entry形态、命中wrapper链与bypass条件 |
-| [[fx_graph_cache_analysis]] | post-grad图指纹、GuardedCache、CompiledFxGraph与Triton bundling |
-| [[triton_autotune_cache_analysis]] | kernel级autotune winner、remote cache与Triton磁盘cache |
+| [[10_dynamo_pgo_cache_analysis]] | PGO画像的状态合并、local/remote/sticky key与"soundly stale"边界 |
+| [[11_aotautograd_cache_analysis]] | AOT级key、entry形态、命中wrapper链与bypass条件 |
+| [[12_fx_graph_cache_analysis]] | post-grad图指纹、GuardedCache、CompiledFxGraph与Triton bundling |
+| [[13_triton_autotune_cache_analysis]] | kernel级autotune winner、remote cache与Triton磁盘cache |
 
 这些是保留的deep dive,不是废弃材料;但其历史行号和schema尚未全部迁移到当前课程基线。
 尚缺独立、当前基线核验的Mega-cache/precompile专题,现阶段按明确知识缺口处理,不创建

@@ -133,6 +133,6 @@ anir_config.compile_mode = "complete_fallback"   # 调试时整图退回 eager
 
 - [[01_npu_compile_paths_overview]] — torch.compile 三路径全景（Triton / MLIR / ACLGraph）
 - [[NPU_MLIR_Backend_Technical_Analysis]] — MLIR 后端深度分析
-- [[triton_vs_mlir_backend_analysis]] — Triton vs MLIR 后端对比
+- [[30_triton_vs_mlir_backend_analysis]] — Triton vs MLIR 后端对比
 - [[12_npu_compile]] — Inductor 编译工作流
 - [[01_ai_frameworks/index]] — AI 框架领域入口

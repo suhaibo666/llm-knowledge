@@ -2,8 +2,8 @@
 
 > 卷别：E · 调试、正确性与性能  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[guard_failure_and_recompile_diagnosis_analysis]]  
-> 后续：[[minifier_repro_and_compiler_bisector_analysis]]  
+> 前置：[[12_guard_failure_and_recompile_diagnosis_analysis]]  
+> 后续：[[15_minifier_repro_and_compiler_bisector_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么必须按 backend 阶梯定位
@@ -137,7 +137,7 @@ FX graph
 ### Runtime failure
 
 区分first call触发的autotune/CUDAGraph/lazy bw与稳态kernel执行。compiled artifact的状态
-边界见 [[compiled_artifact_lifecycle_and_runtime_failures_analysis]]。
+边界见 [[14_compiled_artifact_lifecycle_and_runtime_failures_analysis]]。
 
 ## 6. `wrap_compiler_debug`为何放在 AOT 之后
 
@@ -317,6 +317,6 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 - [[00_torch_compile_end_to_end_index]]
 - [[15_inductor_compile_fx_orchestration_analysis]]
 - [[13_aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
-- [[guard_failure_and_recompile_diagnosis_analysis]]
-- [[minifier_repro_and_compiler_bisector_analysis]]
-- [[compiled_correctness_validation_methodology_analysis]]
+- [[12_guard_failure_and_recompile_diagnosis_analysis]]
+- [[15_minifier_repro_and_compiler_bisector_analysis]]
+- [[16_compiled_correctness_validation_methodology_analysis]]

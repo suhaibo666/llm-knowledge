@@ -9,7 +9,7 @@
 > **Source baseline**：PyTorch upstream 本地检出 `E:\97-codes\torch_parallel\pytorch` @ branch `main`, commit `3bda74318624581502db16e6439c36effdb16481`（2026-07-10, version 2.14.0a0）。所有 `file:line` 均对该 commit 逐一开文件核验。
 > **最后更新**：2026-07-10
 
-本页回答四件事：为什么 [[fx_graph_cache_analysis|FxGraphCache]] 命中了还不够、必须在它**上面**再加一级；AOTAutogradCache 的 key 如何在「dynamo 图可含任意 Python callable」的前提下算得安全（白名单 + 名字归一化）；缓存产物如何以**两种形态**（引用 FxGraphCache key vs 直接内嵌 CompiledFxGraph）组织、命中时 runtime wrapper 链如何逐层重放；以及全部 bypass 约束的精确清单。GuardedCache 多 entry 挑选、FxGraphHashDetails 因素清单、TritonBundler 机制均已由 [[fx_graph_cache_analysis]] 覆盖，本页只引用其结论。总览与目录索引见 [[02_compile_stack/06_compile_cache/index]]。
+本页回答四件事：为什么 [[12_fx_graph_cache_analysis|FxGraphCache]] 命中了还不够、必须在它**上面**再加一级；AOTAutogradCache 的 key 如何在「dynamo 图可含任意 Python callable」的前提下算得安全（白名单 + 名字归一化）；缓存产物如何以**两种形态**（引用 FxGraphCache key vs 直接内嵌 CompiledFxGraph）组织、命中时 runtime wrapper 链如何逐层重放；以及全部 bypass 约束的精确清单。GuardedCache 多 entry 挑选、FxGraphHashDetails 因素清单、TritonBundler 机制均已由 [[12_fx_graph_cache_analysis]] 覆盖，本页只引用其结论。总览与目录索引见 [[02_compile_stack/06_compile_cache/index]]。
 
 ---
 
@@ -66,7 +66,7 @@ flowchart TB
 
 ## 二、Cache key——在 FxGraphHashDetails 上叠 AOT 专属因素
 
-`AOTAutogradCacheDetails` **继承** `FxGraphHashDetails`（`autograd_cache.py:449`）：`__init__` 末尾调 `_init_fx_graph_hash_details`（`:535`），先跑 `FxGraphCache._check_can_cache` 预检、再 `super().__init__(gm, example_inputs, fx_config, [])`（`:561-562`），把 Inductor 级的全部因素（gm、输入 metadata、inductor config、torch_version、system info……清单见 [[fx_graph_cache_analysis]] §二）原样纳入；`BypassFxGraphCache` 异常被转成 `BypassAOTAutogradCache`（`:563-565`）——**下层不可缓存则上层也不缓存**（默认形态 entry 只存 key 引用，下层缺席则引用悬空）。在此之上叠加 AOT 专属因素：
+`AOTAutogradCacheDetails` **继承** `FxGraphHashDetails`（`autograd_cache.py:449`）：`__init__` 末尾调 `_init_fx_graph_hash_details`（`:535`），先跑 `FxGraphCache._check_can_cache` 预检、再 `super().__init__(gm, example_inputs, fx_config, [])`（`:561-562`），把 Inductor 级的全部因素（gm、输入 metadata、inductor config、torch_version、system info……清单见 [[12_fx_graph_cache_analysis]] §二）原样纳入；`BypassFxGraphCache` 异常被转成 `BypassAOTAutogradCache`（`:563-565`）——**下层不可缓存则上层也不缓存**（默认形态 entry 只存 key 引用，下层缺席则引用悬空）。在此之上叠加 AOT 专属因素：
 
 | 因素 | 定位 | 为什么必须进 key |
 |---|---|---|
@@ -118,7 +118,7 @@ dynamo 生成的 placeholder 名来自用户源码变量名（如 `L_x_`）：�
 
 **取舍**：默认形态一份 `CompiledFxGraph` 两级共享、不重复占盘，且 FxGraphCache 保持独立可用（AOT 级 bypass 时下层仍可命中）；Bundled 形态**自包含可搬运**——precompile 要的是「单个 artifact 拷到另一台机器就能跑」，不能假设目标机存在同版本 FxGraphCache 目录（`BundledAOTAutogradResult` docstring 明言支持任意 `OutputCode` 含 `RegionalOutputCode`，`:661-694`）。config 注释显示上游曾在两个方向间摇摆：「We will either make this the default with AOTAutogradCache, or we'll just use it in the precompile flow」（`config.py:81-84`）——截至本 baseline，默认仍是引用形态，Bundled 专供 precompile 流。
 
-> **对照 FxGraph 级 guard 的降级**：默认形态命中时对下层的 guard 校验**不是重新求值**而是**字符串相等比较**——`check_exact_guard_match`（`aot_autograd_result.py:185-191`）：「AOTAutogradCache 自己管 guard，这里只把 guard 表达式当第二 key，找回当初存的那一份 entry」。为什么：同一 FxGraph key 下挂多套 guard 的 entry（见 [[fx_graph_cache_analysis]] §三），若按 hint 求值可能命中另一份 guard 也满足、但与本 AOT entry 的 wrapper 元数据不配套的产物。
+> **对照 FxGraph 级 guard 的降级**：默认形态命中时对下层的 guard 校验**不是重新求值**而是**字符串相等比较**——`check_exact_guard_match`（`aot_autograd_result.py:185-191`）：「AOTAutogradCache 自己管 guard，这里只把 guard 表达式当第二 key，找回当初存的那一份 entry」。为什么：同一 FxGraph key 下挂多套 guard 的 entry（见 [[12_fx_graph_cache_analysis]] §三），若按 hint 求值可能命中另一份 guard 也满足、但与本 AOT entry 的 wrapper 元数据不配套的产物。
 
 命中/生成两侧都会把 callable 包进 `SerializableCompiledFunction`（`runtime_wrappers.py:2569`；命中侧 `autograd_cache.py:1034-1036` 用 pickled bytes 闭包、生成侧 `graph_compile.py:568/:2565` 用 entry 闭包）——让产物**再序列化**成为可能，这是 precompile 整包导出的前提。
 
@@ -153,7 +153,7 @@ flowchart TB
 
 1. **入口**：`aot_module_simplified` 判定 `SerializableAOTDispatchCompiler or force_autograd_cache` 且 local/remote 至少一开（`aot_autograd.py:1201-1207`）→ `AOTAutogradCache.try_load`（`:1209`）。
 2. **key**：`autograd_cache_key`（`autograd_cache.py:1020` → `:865`）：`sanitize_gm_for_cache`（含名字归一化）→ `check_cacheable` 白名单（`:880`，§五）→ `_check_triton_cache_version`（`:881`）→ details + pickler → `"a" + hash`（`:891`）。
-3. **guard 挑 entry**：`_lookup`（`:1024` → `:1222`）：`_filter_backed_symints(args)` 取 backed symint、转 hints（`:1236-1237`）→ 复用 [[fx_graph_cache_analysis]] §三的 `GuardedCache.find_guarded_entry`（`:1241-1247`，`codecache.py:1797`），guard 求值器是 `AOTAutogradCache.evaluate_guards`（`:1213-1220`，同样受 `unsafe_skip_cache_dynamic_shape_guards` 短路）。guard 不满足计 `autograd_cache_guard_miss`（`:1249-1250`）。
+3. **guard 挑 entry**：`_lookup`（`:1024` → `:1222`）：`_filter_backed_symints(args)` 取 backed symint、转 hints（`:1236-1237`）→ 复用 [[12_fx_graph_cache_analysis]] §三的 `GuardedCache.find_guarded_entry`（`:1241-1247`，`codecache.py:1797`），guard 求值器是 `AOTAutogradCache.evaluate_guards`（`:1213-1220`，同样受 `unsafe_skip_cache_dynamic_shape_guards` 短路）。guard 不满足计 `autograd_cache_guard_miss`（`:1249-1250`）。
 4. **wrapper 链重建**：命中后 `entry.wrap_post_compile(args, aot_config, fx_config)`（`:1031` → `aot_autograd_result.py:602`），docstring 明言「这里的步骤必须与 aot_dispatch_base / aot_dispatch_autograd 实跑的步骤精确一致」（`:616`），且刻意**不**重放 `DebugAssertWrapper`/`FakifiedOutWrapper`（`:618-621`）。内部三步：
    - `_load_and_post_compile`（`:463`）：先把 fw、bw **都 load 完**再各自 `post_compile`——「避免在 forward、backward 双双命中之前就往 fx_config 里设 BoxedBool」（`:477-480` 注释）；默认形态的 load 即上文 `FxGraphCacheLoadable.load` 查 FxGraphCache，任一 miss 抛 `FXGraphCacheMiss`（`:214`）→ 上层按 **miss 而非 bypass** 计数（`autograd_cache.py:110-112/:1069-1073`）。backward 的 `post_compile` 还要重新套 `torch._dynamo.disable`——「命中时不会调 bw_compiler，原本由它加的 disable 必须重加」（`aot_autograd_result.py:270-275`）。
    - `_apply_runtime_wrappers`（`:510`）：按序重放 `AOTDispatchSubclassWrapper`（`:519-526`）→ `FunctionalizedRngRuntimeWrapper`（`:535-539`）→ autograd 路径 `AOTDispatchAutograd.post_compile` 重建 `autograd.Function`（`:558-572`，`serialized_bw_module` 化为 `CachedAutogradLazyBackwardCompileInfo` 供 compiled autograd 惰性取 bw 图 `:548-552`）或 inference 路径 `RuntimeWrapper`（`:575-581`）→ 最后重放 entry 里存的 `dispatch_wrappers` 链（`:584-589`）。
@@ -181,7 +181,7 @@ flowchart TB
 | SAC `context_fn` 无 `cache_hash` | `:358-365` | §二表；报错信息直接教用户怎么加 hash |
 | memory budget estimator/solver 是裸 callable 或 `uuid()` 返回 None | `:428-432/:437-443` | 影响 partition 却无法进 key；None 是「实现方显式禁缓存」 |
 | triton < 3.2.0 | `:830-843` | triton issue #3729：缓存命中路径会在 autograd 线程上未初始化 CUDA context 就加载 |
-| `FxGraphCache._check_can_cache` 失败 | `:557-565` | 下层黑名单（torchbind、mkldnn、无 uuid 的 custom pass 等，见 [[fx_graph_cache_analysis]] §五）整体继承 |
+| `FxGraphCache._check_can_cache` 失败 | `:557-565` | 下层黑名单（torchbind、mkldnn、无 uuid 的 custom pass 等，见 [[12_fx_graph_cache_analysis]] §五）整体继承 |
 | entry pickle 失败（保存期） | `:1316-1341` | 不 raise，放弃保存并用 `_find_unpicklable_field` 定位坏字段打进 tlparse |
 
 两个反直觉点：① **tensor subclass 不 bypass**——没实现 `_stable_hash_for_caching` 只 warn 并退回 `__tensor_flatten__` 默认 hash（`:677-683`），DTensor 等 PT2 subclass 是重点支持对象（`SAFE_TORCH_FUNCTIONS` 里躺着 `torch.distributed.tensor._api.from_local`，`:174`）；② `try_load` 用**裹全部异常**的 try 实现 bypass（`:1083-1101` 注释：「永远不该硬抛，总能退化为 bypass」），只有 `strict_autograd_cache`/`strict_precompile` 打开才上抛（`:1100`）。AOT precompile 模式下连 key 算不出都可接受——`bypass_autograd_cache_key` 退化为随机 nonce key（`:894-906`，`config.py:87`），因为该模式下 artifact 分发完全由用户掌控。
@@ -212,10 +212,10 @@ flowchart TB
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[02_compile_stack/06_compile_cache/index]] — 编译缓存总览（本页是栈中第二级）
-- [[fx_graph_cache_analysis]] — 下层图级缓存：`FxGraphHashDetails`/`FxGraphCachePickler`/`GuardedCache`/`TritonBundler` 机制均在彼页，本页大量继承复用
+- [[12_fx_graph_cache_analysis]] — 下层图级缓存：`FxGraphHashDetails`/`FxGraphCachePickler`/`GuardedCache`/`TritonBundler` 机制均在彼页，本页大量继承复用
 - Mega-cache / precompile：Bundled entry 的主要消费方；尚未完成独立当前基线审计，作为知识缺口保留
-- [[triton_autotune_cache_analysis]] — 远端缓存基础设施（本页 remote 端走同一 `create_cache`）
-- [[dynamo_pgo_cache_analysis]] — Dynamo 侧缓存（本页 key 的输入图由其上游产出）
+- [[13_triton_autotune_cache_analysis]] — 远端缓存基础设施（本页 remote 端走同一 `create_cache`）
+- [[10_dynamo_pgo_cache_analysis]] — Dynamo 侧缓存（本页 key 的输入图由其上游产出）
 - [[02_compile_stack/06_compile_cache/index]] — 本目录索引
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]] — 被 AOTAutogradCache 命中所跳过的 joint/fw/bw 构图主线
 - [[20_graph_stage_boundaries_identity_and_provenance_analysis]] — cache entry 与跨阶段 artifact/identity 边界

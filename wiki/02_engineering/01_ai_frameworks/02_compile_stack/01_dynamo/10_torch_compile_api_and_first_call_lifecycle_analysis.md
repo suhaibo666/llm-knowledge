@@ -218,7 +218,7 @@ stateDiagram-v2
 
 ## 12. 编译器视角补充：七阶段成本模型与缓存分层
 
-> 本节内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a05_eager_capture_compile_and_replay_cost_model_analysis.md`)。该页的参数化成本模型、四层 cache 对照表与阶段主导参数已迁入 [[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16(与该页既有的 break-even 模型合并,不在本页重复);这里只保留与本页 §1-§11"wrapper creation 与 first call 是两个事件"直接互补、e07 未覆盖的两块:七阶段词汇表,以及 cache 命中之后仍要做的具体工作清单。
+> 本节内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a05_eager_capture_compile_and_replay_cost_model_analysis.md`)。该页的参数化成本模型、四层 cache 对照表与阶段主导参数已迁入 [[17_compile_latency_cache_and_steady_state_performance_analysis]] §12-§16(与该页既有的 break-even 模型合并,不在本页重复);这里只保留与本页 §1-§11"wrapper creation 与 first call 是两个事件"直接互补、e07 未覆盖的两块:七阶段词汇表,以及 cache 命中之后仍要做的具体工作清单。
 
 ### 12.1 七个时间阶段
 
@@ -247,7 +247,7 @@ stateDiagram-v2
 7. kernel/extern calls;
 8. output assembly。
 
-因此 steady-state overhead 不为零。小模型/小 batch 中,guards、Python wrapper、launch 和同步可能比 kernel 本身更显著。跨调用的参数化成本模型、break-even 分析与四层 cache 对照表见 [[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16。
+因此 steady-state overhead 不为零。小模型/小 batch 中,guards、Python wrapper、launch 和同步可能比 kernel 本身更显著。跨调用的参数化成本模型、break-even 分析与四层 cache 对照表见 [[17_compile_latency_cache_and_steady_state_performance_analysis]] §12-§16。
 
 ### 12.3 源码补充:cache entry 查找与 backend handoff 的两处细节
 
@@ -255,7 +255,7 @@ stateDiagram-v2
 
 `ExtraState::lookup_in_list` 会先核对 backend,再运行 entry 的 guard manager(`torch/csrc/dynamo/extra_state.cpp:201-225`)。更外层 lookup 依次查询相应 backend 的 bucket 与 default bucket(`torch/csrc/dynamo/extra_state.cpp:292-316`);命中后还会把 entry 移到链表前端并返回 cached code(`torch/csrc/dynamo/extra_state.cpp:319-323`)。因此"同一 code object"只是 cache 搜索范围,不是充分命中条件。
 
-miss 后,Dynamo 完成 capture 交给 backend 的边界是显式的:`call_user_compiler` 在 `dynamo_timed` 计时区域内调用 `_call_user_compiler`(`torch/_dynamo/output_graph.py:3217-3228`),后者调用 compiler function 并检查返回值必须可调用(`torch/_dynamo/output_graph.py:3286-3293`);除少数允许 fallback 的例外,其余异常在这里统一被归类为 `BackendCompilerFailed`(`torch/_dynamo/output_graph.py:3317-3320`)。code-object entry hit 只保证不再次走这次 Dynamo/backend handoff,不代表 backend 自己的 graph cache、code cache、native compiler 与 lazy backward compile 都不存在。backend handoff 之后各阶段成本的主导参数(codegen/native compile/autotune)见 [[compile_latency_cache_and_steady_state_performance_analysis]] §16。
+miss 后,Dynamo 完成 capture 交给 backend 的边界是显式的:`call_user_compiler` 在 `dynamo_timed` 计时区域内调用 `_call_user_compiler`(`torch/_dynamo/output_graph.py:3217-3228`),后者调用 compiler function 并检查返回值必须可调用(`torch/_dynamo/output_graph.py:3286-3293`);除少数允许 fallback 的例外,其余异常在这里统一被归类为 `BackendCompilerFailed`(`torch/_dynamo/output_graph.py:3317-3320`)。code-object entry hit 只保证不再次走这次 Dynamo/backend handoff,不代表 backend 自己的 graph cache、code cache、native compiler 与 lazy backward compile 都不存在。backend handoff 之后各阶段成本的主导参数(codegen/native compile/autotune)见 [[17_compile_latency_cache_and_steady_state_performance_analysis]] §16。
 
 ## 13. 源码补充:API 入口的版本门禁与 `torch.export` 边界
 
@@ -324,6 +324,6 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[22_backend_modes_options_stances_and_fullgraph_analysis]]
 - [[11_eval_frame_callback_and_code_cache_analysis]]
 - [[14_output_graph_side_effects_and_graph_emission_analysis]]
-- [[compile_latency_cache_and_steady_state_performance_analysis]] — 测量场景与统计设计
+- [[17_compile_latency_cache_and_steady_state_performance_analysis]] — 测量场景与统计设计
 - [[02_compile_stack/06_compile_cache/index]] — 多层缓存 key/失效边界
 - [[00_torch_compile_end_to_end_index]]
