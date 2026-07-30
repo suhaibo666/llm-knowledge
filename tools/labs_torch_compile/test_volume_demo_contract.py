@@ -452,6 +452,7 @@ _D_PAGE_ROOTS = {
 # unlisted c-ids fall back to the legacy course directory below.
 _C_PAGE_ROOTS = {
     "c02": ("02_compile_stack", "03_graph_ir_and_passes"),
+    "c04": ("02_compile_stack", "01_dynamo"),
     "c03": ("02_compile_stack", "03_graph_ir_and_passes"),
     "c05": ("02_compile_stack", "03_graph_ir_and_passes"),
     "c06": ("02_compile_stack", "03_graph_ir_and_passes"),

@@ -78,9 +78,10 @@ artifact与compiled module如何复用。两者相邻但不是同一机制：一
 
 ## deep dive — 动态形状
 
+> 符号形状系统本身(ShapeEnv/SymNode/guard 生成/DimDynamic/backed·unbacked 判定)的概念权威页见 [[02_compile_stack/01_dynamo/index]] 的 [[symbolic_shapes_guards_and_graph_reuse_analysis]](2026-07-30 起随 P4 判重并入,不再在本目录单列)。本目录只保留 Inductor 侧的两篇专项:
+
 | 页面 | 核心主题 |
 |------|---------|
-| [[dynamic_shapes_full_analysis]] | Dynamic Shape 全链路:静态特化→符号化→Guard→渐进动态化,ShapeEnv |
 | [[inductor_codegen_dynamic_shape_analysis]] | 代码生成中的动态形状,XBLOCK 选择与性能代价 |
 | [[unbacked_symint_analysis]] | Unbacked SymInt:数据相关 shape、deferred_runtime_asserts、torch._check() |
 

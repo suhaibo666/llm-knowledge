@@ -4,6 +4,7 @@
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
+> **页面角色**：本页是符号形状系统（ShapeEnv/SymNode/guard 生成/backed·unbacked 判定/DimDynamic 分配策略）的概念权威页。Dynamo 侧的自动泛化行为面（`frame_state`/`record_automatic_dynamic`/`mark_dynamic` 怎样驱动一次调用从静态走向泛化）见 [[dynamic_shapes_generalization_and_fallback_analysis]]；unbacked 专项纵深见 [[unbacked_symint_analysis]]；Inductor codegen 侧符号传递专项见 [[inductor_codegen_dynamic_shape_analysis]]。四页不重复彼此机制细节，只在边界处互链。
 
 ## 1. 核心问题：一张图描述的是函数，还是一次输入？
 
@@ -39,6 +40,12 @@ Guard 不是普通 FX data edge；它是 compiled entry 的适用条件。
 - 每个新 shape 可能 guard miss 并触发重编译；
 - cache entry 数与编译开销增长；
 - serving/sequence length 场景复用差。
+
+静态维度的 guard 由 `GuardBuilder.EQUALS_MATCH` 生成，直接把捕获样例的具体整数写进匹配代码（如
+`arg0.size()[0] == 3`）（`torch/_dynamo/guards.py:2772`）；每个新 shape 因此对应一条新
+guard/新 cache entry。这条增长不是无界的：单个 code object 默认最多保留 `recompile_limit=8`
+个 guarded compiled entries，超过后按配置回退（`torch/_dynamo/config.py:121`）——这是“cache
+entry 数与编译开销增长”在当前默认值下的具体上界，不代表所有版本/配置都固定为 8。
 
 “shape 在 cache key 里”是过度简化。当前 Dynamo 模型是：一个 code object 可关联多个
 guarded compiled entries，运行时执行 check function 选择适用 entry；guard fail 后可能
@@ -140,6 +147,25 @@ source equality/duck sizing/guard 的某种形式成立。它不一定以文字 
 - codegen 需要在运行时定义/bind。
 
 是否有 hint 与是否有 constraint 是两个维度。
+
+### 维度分配策略：`DimDynamic`
+
+backed/unbacked 只是结果状态；决定“这一维该不该分配符号、分配哪种符号”的是每一维的分配策略
+`DimDynamic`，一个五值枚举（`torch/fx/experimental/symbolic_shapes.py:1988`）：
+
+| 取值 | 含义 |
+|---|---|
+| `DYNAMIC` | 始终符号化处理；总是 sound，但可能牺牲 trace/编译期性能 |
+| `DUCK` | 符号化处理，但若某维 hint 与另一动态维相同则统一到同一符号（duck sizing） |
+| `STATIC` | 按 hint 静态处理，不分配符号 |
+| `UNBACKED` | 按 unbacked 处理（无 hint） |
+| `INFER_STRIDE` | 从 size 推断 stride；size 静态则 stride 也静态 |
+
+策略选择依赖上下文而非单一全局开关：eager 模式默认 `DUCK`，`assume_static_by_default` 会把默认
+改为 `STATIC`；export 模式默认 `STATIC`；用户对某维显式约束（如 `mark_dynamic`）会强制该维为
+`DYNAMIC`，与默认策略无关。这解释了“`dynamic=True/False/None` 只是改变默认策略，具体某一维最终
+是 static/duck/dynamic/unbacked 仍由该维自身的分配结果决定”这一点，与本页 §8 的 API 语义互补而
+非重复。
 
 ## 8. `torch.compile` dynamic 策略
 
@@ -399,6 +425,60 @@ export_range_constraints=1
 6. 后端是否又加入 layout/indexing guard？
 7. 固定 candidate/performance 结论是否绑定具体 backend 与 source？
 
+## 15. 端到端案例：`matmul` 的符号形状路径
+
+前面各节分别讲了 symbol 创建、guard 生成、后端约束的分工；这里用一个具体调用把它们串成一条线。
+
+```python
+@torch.compile(dynamic=True)
+def my_matmul(x, y):
+    return x @ y  # x: (B, 64), y: (64, 128) → output: (B, 128)
+```
+
+**Stage 1 — Dynamo 捕获与 FakeTensor 传播。** `dynamic=True` 把 `assume_static_by_default` 设为
+`False`，所有维度默认策略变为 `DimDynamic.DUCK`（§8、上节 `DimDynamic`）。首次调用 `x.shape=(3,
+64)`：dim 0 无固定 hint 匹配，分配符号 `s0`；dim 1 的 hint=64 命中常见静态值，可能被
+`specialize_zero_one` 等策略判为 `STATIC`（取决于具体 heuristic，不是 DUCK 策略的必然结果）。
+Dynamo 据此构造 `FakeTensor(x)`: shape=(s0, 64)、`FakeTensor(y)`: shape=(64, 128)，执行
+`x @ y` 后得到 `FakeTensor(output)`: shape=(s0, 128)，并把这条调用记进 FX 图（`call_function`
+节点 target 为 `torch.matmul`）。
+
+**Stage 2 — ShapeEnv 状态。** 本次编译后 ShapeEnv 大致持有：`backed_var_to_val={s0: 3}`（本次
+hint）、`var_to_range={s0: ValueRanges(2, inf)}`（s0 是 size-like，下界由 §4 的 size-like 语义
+决定，不是 0/1）、尚无 replacement（还没观察到跨输入等式）、guards 为空（首次编译无需验证任何
+既有假设）。
+
+**Stage 3 — Guard 生成。** `produce_guards`/`produce_guards_verbose` 把这份 ShapeEnv 状态翻译
+为绑定输入 source 的 Python 条件（§10 "produce_guards 把内部 expression 重新绑定到输入
+source"）：静态维度检查 `arg0.size()[1] == 64`、`arg1.size() == (64, 128)`，以及 s0 的 range
+检查 `2 <= arg0.size()[0]`；`arg0.size()[0] == arg0.size()[0]` 这类恒真表达式会被化简掉，不会
+出现在最终 guard 里。
+
+**Stage 4 — Inductor codegen。** symbolic dim 在 wrapper 里成为运行时表达式而非常量：
+
+```python
+def call(args):
+    arg0_1, arg1_1 = args
+    assert_size_stride(arg0_1, (s0, 64), (64, 1))   # 见本页 §10
+    xnumel = s0 * 128                                # 动态 numel，s0 作为 SizeArg 传入 kernel
+    grid = (ceildiv(xnumel, XBLOCK), 1, 1)
+    triton_kernel[grid](arg0_1, arg1_1, buf0, xnumel, ...)
+```
+
+符号维度以 `SizeArg` 形式成为 kernel 参数（`torch/_inductor/codegen/common.py:286`），buffer 的
+复用判定同样要按 size-aware key 比较（`buffer_reuse_key`，`torch/_inductor/codegen/wrapper.py:
+123`）——静态维度可以复用“数值相同”的 buffer，符号维度则要看表达式是否等价。
+
+**Stage 5 — 第二次调用换一个 batch size。** `x.shape=(5, 64)` 时：`arg0.size()[1] == 64` 为真、
+`2 <= arg0.size()[0]` 为真（`2 <= 5`）——两条 guard 都通过，直接复用第一次编译的 entry，`s0` 在
+运行时求值为 5，无需重新捕获或编译。
+
+这条路径把符号创建（Stage 1）→ 值域/等式记录（Stage 2）→ 翻译为 source-bound 条件（Stage 3）→
+下沉进 kernel 参数与 wrapper 断言（Stage 4）→ guard 复用（Stage 5）串成一次可回放的观察，但它
+只是 `DimDynamic.DUCK` 策略下的一条样例路径；具体某一维最终是否符号化、guard 数量与 Inductor
+选择的 kernel 策略，仍由输入分布、`mark_dynamic`/`assume_static_by_default` 配置与后端一起决定，
+不能从这一个例子反推所有 `matmul` 调用的行为。
+
 ## 学习顺序
 
 - 上一篇：[[graph_values_metadata_and_signatures_analysis]]
@@ -412,4 +492,6 @@ export_range_constraints=1
 - [[graph_rewrite_legality_validation_and_complexity_analysis]]
 - [[17_fx_lowering_to_inductor_ir]]
 - [[21_codegen_kernel_mapping_autotuning_and_provenance]]
-- [[dynamic_shapes_full_analysis]]
+- [[dynamic_shapes_generalization_and_fallback_analysis]] — Dynamo 侧自动泛化行为面
+- [[unbacked_symint_analysis]] — unbacked 专项纵深
+- [[inductor_codegen_dynamic_shape_analysis]] — Inductor codegen 符号传递专项

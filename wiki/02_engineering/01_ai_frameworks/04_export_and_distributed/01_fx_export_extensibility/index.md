@@ -125,7 +125,7 @@ flowchart LR
 - [[19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy]] — 图 IR 为什么这样分层
 - [[fx_graph_core_data_model_analysis]] — 当前基线的 FX `Graph` / `Node` / use-def
 - [[graph_capture_frontends_and_tracing_analysis]] — FX、make_fx、Dynamo 与 export 的捕获边界
-- [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse]] — dynamic shape、guard与图复用
+- [[symbolic_shapes_guards_and_graph_reuse_analysis]] — dynamic shape、guard与图复用
 - [[structured_outputs_higher_order_and_nested_graphs_analysis]] — pytree、HOP与嵌套GraphModule
 - [[fx_graph_editing_primitives_and_invariants_analysis]] — 改图原语与必须维护的不变量
 - [[01_ai_frameworks/index]] — 本域总索引

@@ -76,7 +76,7 @@ Inductor 内部是一条子流水线。从 ATen FX 图到落盘 kernel,大致经
 | **Scheduler** | 对 IR 节点做依赖分析,决定融合(水平/垂直)、计算顺序、内存规划与缓冲区复用 | [[scheduler_analysis]] |
 | **CodeGen** | 把调度后的 IR 翻译成具体后端代码:Triton kernel(GPU)或 C++/OpenMP(CPU),并生成驱动 kernel 的 Python/C++ wrapper;期间做 autotuning 选最优实现 | [[inductor_codegen_analysis]] |
 
-横切关注点:**动态形状(dynamic shapes)** 贯穿上述每个阶段(符号化 size、guard、`ShapeEnv`、XBLOCK 选择等),单列一条全链路 deepdive,见 [[dynamic_shapes_full_analysis]]。
+横切关注点:**动态形状(dynamic shapes)** 贯穿上述每个阶段(符号化 size、guard、`ShapeEnv`、XBLOCK 选择等),单列一条全链路 deepdive,见 [[symbolic_shapes_guards_and_graph_reuse_analysis]]。
 
 **为什么分这么多阶段?** 关键在于「在哪一层做哪种优化最自然」:图级重写(算子替换、常量折叠)在 FX 图上做最直接;而融合必须先把算子拆成统一的循环表示才能跨算子合并,所以需要一层独立于 ATen、独立于具体硬件的 **Inductor IR**——它向上承接任意前端算子,向下对接 Triton/C++ 等多种 codegen 后端。分层让「优化逻辑」与「目标硬件」解耦:同一套 lowering/scheduler 逻辑,换个 codegen 后端就能支持新设备(这也是 NPU 等后端的接入方式)。
 
@@ -131,7 +131,7 @@ Lowering 产出的 IR 进入调度器后,被包成调度节点参与融合决策
 3. **deepdive** —
    - compile_fx 编排入口:[[inductor_compile_fx_orchestration_analysis]];后端/IR 深度:[[PyTorch_Inductor_Technical_Analysis]]
    - 各阶段:[[lowering_analysis]] · [[scheduler_analysis]] · [[inductor_codegen_analysis]] · FX passes([[pre_grad_passes_guide]] / [[joint_graph_passes_guide]] / [[post_grad_passes_guide]])
-   - 横切专题:[[dynamic_shapes_full_analysis]]、[[unbacked_symint_analysis]]、[[flex_attention_analysis]]、调试 [[02_compile_stack/07_debugging/index]]
+   - 横切专题:[[symbolic_shapes_guards_and_graph_reuse_analysis]]、[[unbacked_symint_analysis]]、[[flex_attention_analysis]]、调试 [[02_compile_stack/07_debugging/index]]
 4. **NPU 后端**(Ascend 适配,非 upstream)→ 见 [[02_compile_stack/04_inductor/npu/index]]。
 
 读完本页,带走三句话即可:

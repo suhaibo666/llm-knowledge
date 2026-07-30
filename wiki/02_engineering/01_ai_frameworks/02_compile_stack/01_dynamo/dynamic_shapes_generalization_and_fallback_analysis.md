@@ -4,7 +4,8 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[graph_break_resume_functions_and_partial_graphs_analysis]]  
 > 后续：[[backend_contract_and_custom_backend_analysis]]  
-> 最后更新：2026-07-28
+> 最后更新：2026-07-28  
+> **与符号系统权威页分工**：本页是 Dynamo 侧行为面——`frame_state`/`record_automatic_dynamic`/`mark_dynamic` 怎样驱动一次调用从静态走向泛化、成本与失败归因怎么看；ShapeEnv/SymNode/guard 生成/DimDynamic 分配策略等符号系统本身的概念权威页是 [[symbolic_shapes_guards_and_graph_reuse_analysis]]，两页不重复彼此机制细节。
 
 ## 1. 为什么“shape动态”不是一个布尔事实
 
@@ -219,6 +220,6 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[00_torch_compile_end_to_end_index]]
 - [[guards_cache_lookup_and_recompilation_analysis]]
 - [[graph_break_resume_functions_and_partial_graphs_analysis]]
-- [[04_symbolic_shapes_guards_and_graph_reuse]]
+- [[symbolic_shapes_guards_and_graph_reuse_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
 - [[compile_latency_cache_and_steady_state_performance_analysis]]

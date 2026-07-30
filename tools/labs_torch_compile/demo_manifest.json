@@ -103,7 +103,7 @@
     },
     {
       "page_id": "c04",
-      "page": "04_symbolic_shapes_guards_and_graph_reuse.md",
+      "page": "symbolic_shapes_guards_and_graph_reuse_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "ir_fx",

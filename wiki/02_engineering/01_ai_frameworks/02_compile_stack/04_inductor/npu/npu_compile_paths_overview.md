@@ -457,5 +457,5 @@ GPU 几乎所有标准 aten op 都有 Triton lowering，dynamic shape 可端到�
 - [[NPU_Inductor_Backend_Analysis]] — NPU 后端内部机制（已有页面）
 - [[npu_compile]] — NPU 编译工作流与配置（已有页面）
 - [[aclgraph]] — ACL Graph 基础集成（已有页面）
-- [[dynamic_shapes_full_analysis]] — PyTorch Dynamic Shape 全链路（GPU 侧参考）
+- [[symbolic_shapes_guards_and_graph_reuse_analysis]] — PyTorch Dynamic Shape 全链路（GPU 侧参考）
 - [[inductor_codegen_dynamic_shape_analysis]] — Inductor codegen 的 XBLOCK 选择机制

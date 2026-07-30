@@ -72,7 +72,7 @@ flowchart LR
 | 01 | [[01_graph_ir_motivation_and_taxonomy]] | 为什么需要图；不同“图”到底差在哪里 |
 | 02 | [[fx_graph_core_data_model_analysis]] | FX 如何同时保存程序顺序与 use-def |
 | 03 | [[graph_values_metadata_and_signatures_analysis]] | 边上传递什么；签名如何对应用户程序 |
-| 04 | [[04_symbolic_shapes_guards_and_graph_reuse]] | 一张图为何只对某些输入成立 |
+| 04 | [[symbolic_shapes_guards_and_graph_reuse_analysis]] | 一张图为何只对某些输入成立 |
 | 05 | [[graph_effects_alias_mutation_and_order_analysis]] | 没有数据边为何也可能不能换序或删除 |
 | 06 | [[structured_outputs_higher_order_and_nested_graphs_analysis]] | 多输出、控制流与嵌套图如何扩展普通 DAG |
 

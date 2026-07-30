@@ -63,7 +63,7 @@ flowchart LR
 | C01 | [[01_graph_ir_motivation_and_taxonomy]] | 为什么需要图；不同“图”的节点、边和生命周期有何不同 |
 | C02 | [[fx_graph_core_data_model_analysis]] | FX Graph、Node、use-def、图序和 GraphModule 如何协作 |
 | C03 | [[graph_values_metadata_and_signatures_analysis]] | Node 引用、meta、pytree 和三类 signature 分别表达什么 |
-| C04 | [[04_symbolic_shapes_guards_and_graph_reuse]] | symbolic shape、guard 和图复用怎样形成契约 |
+| C04 | [[symbolic_shapes_guards_and_graph_reuse_analysis]] | symbolic shape、guard 和图复用怎样形成契约 |
 | C05 | [[graph_effects_alias_mutation_and_order_analysis]] | 数据边之外的 alias、mutation 和 effect 顺序如何表达 |
 | C06 | [[structured_outputs_higher_order_and_nested_graphs_analysis]] | 多输出、HOP 与 nested GraphModule 怎样扩展普通 DAG |
 | C07 | [[graph_capture_frontends_and_tracing_analysis]] | symbolic_trace、make_fx、Dynamo 和 export 为何产生不同图 |

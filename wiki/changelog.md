@@ -6,6 +6,51 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 8 组 A（C04 + 动态形状归一）
+
+**Type**: Move + Redundancy Merge（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 8 组 A）
+
+`19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse.md`（415 行）`git mv`
+到 `02_compile_stack/01_dynamo/symbolic_shapes_guards_and_graph_reuse_analysis.md`，作为符号
+形状系统（ShapeEnv/SymNode/guard 生成/backed·unbacked 判定）的**概念权威页**。
+
+**vs `dynamic_shapes_full_analysis.md`（460 行）判重**：两页覆盖同一主题但视角不同——C04 是
+按机制分层的概念权威叙述，旧页是按 Dynamo→ShapeEnv→Guard→Inductor 链路组织的纵深稿。逐节核对
+后确认旧页 §1-§4、§5.2-5.5 的大部分事实（EQUALS_MATCH、ShapeEnv 字段表、guard 三层生成、
+automatic_dynamic_shapes 渐进策略、关键源码索引表）已被 C04 现有正文以不同措辞覆盖，真正独有
+的三处逐字/改写并入：
+1. `DimDynamic` 五值枚举（DYNAMIC/DUCK/STATIC/UNBACKED/INFER_STRIDE，`torch/fx/experimental/
+   symbolic_shapes.py:1988`，据当前基线 `e8f97c1a6e...` 重新核验行号，原页引用的 1967 已漂移）
+   ——并入 C04 §7 新增子节「维度分配策略：`DimDynamic`」。
+2. `recompile_limit=8` 与 `EQUALS_MATCH`（`torch/_dynamo/guards.py:2772`，原引用 2638 已漂移）
+   ——并入 C04 §2 静态特化缺点段。
+3. `matmul` 端到端案例（Stage 0-5，用户代码→Dynamo 捕获→ShapeEnv 状态→guard 生成→Inductor
+   codegen→第二次调用命中缓存）——改写为 C04 新增 §15，SizeArg/buffer_reuse_key 引用行号据
+   当前基线重新核验（`common.py:286`、`wrapper.py:123`，原引用 291/100 已漂移）。
+其余内容判定为同一事实的不同措辞，不重复搬运。旧页 mermaid 状态图（automatic dynamic 四次调用
+时间线）与 C04 §8 结论重叠且与 b09 §9 的状态机图功能重复，判定为可省略的重复可视化，未搬运。
+
+**与 b09/unbacked_symint/inductor_codegen_dynamic_shape 划界**：四页互相新增分工声明——
+[[dynamic_shapes_generalization_and_fallback_analysis]]（b09）聚焦 Dynamo 侧自动泛化行为
+（`frame_state`/`mark_dynamic`）；C04 是符号系统概念权威页；[[unbacked_symint_analysis]] 聚焦
+unbacked 专项（`torch._check`/`guard_or_*`/size-oblivious）；[[inductor_codegen_dynamic_shape_analysis]]
+聚焦符号如何流入 Inductor kernel/wrapper。四页页头/正文均补互链，不复述彼此机制细节。
+
+**入链修复**：`dynamic_shapes_full_analysis` 删除后，18 处活链接改指新页——
+`fx_graph_cache_analysis`、`dynamo_pgo_cache_analysis`（2 处）、`aotautograd_cache_analysis`、
+`04_inductor/index`（表格行改为一行式说明指向 `01_dynamo/index`）、
+`inductor_codegen_dynamic_shape_analysis`、`inductor_quickstart`（2 处）、
+`npu_compile_paths_overview`、`npu_inductor_linearize_dynamic_shape_analysis`、
+`torch_compile_architecture`（2 处）、`npu_inductor_optimization_analysis`（2 处），另 10 处
+`04_symbolic_shapes_guards_and_graph_reuse` 裸链（图系列两个 00 索引表格行、C02/C03 前后篇
+导航、b09、`06_compile_cache/index`）改指新基名。`wiki/changelog.md` 历史条目中 1 处活链接
+（原 2026-07 中旬 NPU codegen 页条目）按"历史不回写"惯例降级为反引号 + 去向说明。
+
+**配套改动**：`tools/labs_torch_compile/demo_manifest.json` 的 c04 `page` 字段与
+`test_volume_demo_contract.py` 的 `_C_PAGE_ROOTS` 同步新增 `c04 → 01_dynamo`。
+
+**校验**：`python tools/check_links.py`：pages 386→385，broken=0；`pytest tools/ -q`：77 passed。
+
 ## 2026-07-30：知识库结构整改 P4 Task 7 组 4（control_flow_capture_analysis vs C06 收尾判重）
 
 **Type**: Redundancy Review + Boundary Clarification（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 7；Task 5 遗留收尾）
@@ -1556,7 +1601,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **索引/空白更新**：[[04_inductor/index]] 加「codegen 派发与运行时（GPU 基线）」分组 3 行；[[04_inductor/npu/index]] 加实验后端行 + 头注（区分内置/实验、PyTorch 2.9.0 基线）；[[01_ai_frameworks/index]] 空白「Inductor autotuning」「NPU Monkey Patch 演进追踪 v2.9.0」标 ✅ 并指向新页。
 
-**交叉引用**：4 新页均含 `## Related Pages` + `[[wikilink]]`；NPU 页 §六对比直接 backlink 既有 [[npu_inductor_splittiling_backend_analysis]]/[[npu_compile_paths_overview]]/[[npu_inductor_optimization_analysis]]（内置后端细节，不复述）；上游 3 页互链并指向既有 [[scheduler_analysis]]/[[dynamic_shapes_full_analysis]]/[[PyTorch_Inductor_Technical_Analysis]]。
+**交叉引用**：4 新页均含 `## Related Pages` + `[[wikilink]]`；NPU 页 §六对比直接 backlink 既有 [[npu_inductor_splittiling_backend_analysis]]/[[npu_compile_paths_overview]]/[[npu_inductor_optimization_analysis]]（内置后端细节，不复述）；上游 3 页互链并指向既有 [[scheduler_analysis]]/`dynamic_shapes_full_analysis`（历史活链接，该页已于 2026-07-30 并入 [[symbolic_shapes_guards_and_graph_reuse_analysis]]，按"历史不回写"惯例降级为反引号）/[[PyTorch_Inductor_Technical_Analysis]]。
 
 **核验**：所有代码引用带 `file:line`（npu_inductor 包 + upstream `torch/_inductor/`）；零冗余（内置后端/上游已覆盖部分一律 cross-link 而非复述）；纯增，未删改既有页结构。源分析底稿在 pytorch 工作区 `npu_inductor_2.9.0/triton-backend-analysis/`。
 

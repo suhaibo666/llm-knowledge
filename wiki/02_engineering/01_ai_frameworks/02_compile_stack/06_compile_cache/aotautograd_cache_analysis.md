@@ -221,5 +221,5 @@ flowchart TB
 - [[graph_stage_boundaries_identity_and_provenance_analysis]] — cache entry 与跨阶段 artifact/identity 边界
 - [[aotautograd_analysis]] — 命中时被跳过的那整段：dispatch/functionalization/partition
 - [[torch_compile_architecture]] — torch.compile 整体栈
-- [[dynamic_shapes_full_analysis]] — `guards_expr`/backed symint/shape env 的上游机制
+- [[symbolic_shapes_guards_and_graph_reuse_analysis]] — `guards_expr`/backed symint/shape env 的上游机制
 - [[PyTorch_Inductor_Technical_Analysis]] — Inductor 编译（默认形态命中时降级为缓存查询的那段）

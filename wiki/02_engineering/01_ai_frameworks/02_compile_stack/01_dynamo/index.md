@@ -19,7 +19,8 @@
 | [[output_graph_side_effects_and_graph_emission_analysis]] | deep dive(B06) | OutputGraph 所有权边界、SideEffects、FX graph 如何交给 backend |
 | [[guards_cache_lookup_and_recompilation_analysis]] | deep dive(B07) | guard 树、cache lookup 精确顺序、重编译判定与两层上限 |
 | [[graph_break_resume_functions_and_partial_graphs_analysis]] | deep dive(B08) | graph break 触发场景、resume function、partial graph 真实执行形态 |
-| [[dynamic_shapes_generalization_and_fallback_analysis]] | deep dive(B09) | 动态形状泛化状态机、backed/unbacked symbol、泛化失败原因 |
+| [[dynamic_shapes_generalization_and_fallback_analysis]] | deep dive(B09) | 动态形状泛化状态机、backed/unbacked symbol、泛化失败原因(Dynamo 侧行为面;符号系统本身见下一行) |
+| [[symbolic_shapes_guards_and_graph_reuse_analysis]] | deep dive(C04) | 符号形状/Guard/图复用**概念权威页**:ShapeEnv、SymNode、`DimDynamic` 分配策略、guard 生成、backed/unbacked 判定、matmul 端到端案例(2026-07-30 起并入原 `dynamic_shapes_full_analysis` 独有段) |
 | [[backend_contract_and_custom_backend_analysis]] | deep dive(B10) | backend 最小契约、custom backend 与 AOTAutograd 的组合边界 |
 | [[control_flow_capture_analysis]] | deep dive(专题) | 控制流两路径:显式 HOP(`cond`/`while_loop`/`map`/`scan`)投机子图入图 vs 原生 `if`/`for`/`while` 字节码特化/展开/切图 |
 | [[dynamo_pass_methodology]] | **development guide** | Dynamo backend 是什么/为什么、整图改写边界、`register_backend`/callable 注册示例、何时后移到 Inductor 各阶段 |

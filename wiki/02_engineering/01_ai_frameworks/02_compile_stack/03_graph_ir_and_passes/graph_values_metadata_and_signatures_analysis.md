@@ -406,13 +406,13 @@ mutation-contract 源码结论。
 ## 学习顺序
 
 - 上一篇：[[fx_graph_core_data_model_analysis]]
-- 下一篇：[[04_symbolic_shapes_guards_and_graph_reuse]]
+- 下一篇：[[symbolic_shapes_guards_and_graph_reuse_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
 - [[fx_graph_core_data_model_analysis]]
-- [[04_symbolic_shapes_guards_and_graph_reuse]]
+- [[symbolic_shapes_guards_and_graph_reuse_analysis]]
 - [[structured_outputs_higher_order_and_nested_graphs_analysis]]
 - [[09_aotautograd_joint_forward_backward_graphs]]
 - [[graph_stage_boundaries_identity_and_provenance_analysis]]

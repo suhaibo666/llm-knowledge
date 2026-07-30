@@ -2,7 +2,8 @@
 
 > **页面角色**：Inductor codegen dynamic-shape 专题。
 > **原始基线**：baseline-unknown；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **课程分工**：本页继续负责符号shape流入kernel/wrapper的纵深；当前图复用与codegen边界见 [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse]] 和 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]]。
+> **课程分工**：本页继续负责符号shape流入kernel/wrapper的纵深；当前图复用与codegen边界见 [[21_codegen_kernel_mapping_autotuning_and_provenance]]。
+> **与概念权威页分工**：符号系统本身（ShapeEnv/SymNode/guard 生成/backed·unbacked 判定）的权威页是 [[symbolic_shapes_guards_and_graph_reuse_analysis]]；本页只讲符号一旦确定后，如何流入 Inductor 的 kernel/wrapper/grid/C++ codegen——两页不重复彼此的机制细节，只在边界处互链。
 
 ## 1. 概述
 
@@ -345,7 +346,7 @@ Inductor 的 codegen 对 dynamic shape 的处理是一个**贯穿 kernel 生成�
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
-- [[dynamic_shapes_full_analysis]] — Dynamic Shape 全链路: 静态→符号化→Guard→渐进动态化 (ShapeEnv 源码分析)
+- [[symbolic_shapes_guards_and_graph_reuse_analysis]] — Dynamic Shape 全链路: 静态→符号化→Guard→渐进动态化 (ShapeEnv 源码分析)
 - [[unbacked_symint_analysis]] — Unbacked SymInt 深度分析：数据相关 shape 的处理机制
 - [[02_engineering/01_ai_frameworks/index]]
 - [[inductor_codegen_analysis]]
