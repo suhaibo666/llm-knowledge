@@ -104,7 +104,7 @@ B06 OutputGraph
 | D04 | [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]] | 各层 cache 的 key、value 和失效边界是什么 |
 | D05 | [[wrapper_execution_memory_allocation_and_reuse_analysis]] | wrapper 如何分配、调用、复用和组装输出 |
 | D06 | [[d06_cudagraph_trees_warmup_record_and_replay_analysis]] | warmup、record、replay 与 liveness 如何形成 tree |
-| D07 | [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]] | artifact 从创建到失效有哪些状态 |
+| D07 | [[compiled_artifact_lifecycle_and_runtime_failures_analysis]] | artifact 从创建到失效有哪些状态 |
 
 ## 7. 卷 E：调试、正确性与性能（已迁移至 `02_compile_stack/07_debugging/`，2026-07-30）
 

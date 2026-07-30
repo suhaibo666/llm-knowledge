@@ -3,7 +3,7 @@
 > 卷别：D · 编译产物、缓存与运行时  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[wrapper_execution_memory_allocation_and_reuse_analysis]]  
-> 后续：[[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]]  
+> 后续：[[compiled_artifact_lifecycle_and_runtime_failures_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么 runtime CUDA Graph不是FX graph
@@ -314,7 +314,7 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 
 - [[00_torch_compile_end_to_end_index]]
 - [[wrapper_execution_memory_allocation_and_reuse_analysis]]
-- [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
+- [[compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[compile_latency_cache_and_steady_state_performance_analysis]] — warmup/record/replay 在整体成本模型中的位置
 - [[f08_training_inference_cudagraph_and_freezing_analysis]]
 - [[01_eager_runtime/07_memory_amp_profiler/index]]

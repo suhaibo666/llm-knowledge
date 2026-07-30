@@ -1,14 +1,14 @@
 # 07 · 调试与诊断 — 目录索引
 
-> 卷别：`torch.compile` 调试、正确性与性能（原课程卷 E，2026-07-30 随 P4 两级重组物理迁入本目录并去 `eNN_` 前缀）
+> 卷别：`torch.compile` 调试、正确性与性能（原课程卷 E，2026-07-30 随 P4 两级重组物理迁入本目录并去 `eNN_` 前缀；同日 D07 编译产物生命周期页随 D 卷分发一并迁入并去 `d07_` 前缀，补入下表）
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > 最后更新：2026-07-30
 
 `torch.compile` 一次失败或一次变慢，可能落在 Dynamo 捕获、AOTAutograd、Inductor 编译、
-native/Triton 编译、module load 或 runtime 六个阶段中的任意一个。本目录九篇按证据层级、
+native/Triton 编译、module load 或 runtime 六个阶段中的任意一个。本目录十篇按证据层级、
 失败分层定位、修复策略与生产上线组织，从"如何读懂一条日志"到"如何在生产环境安全回滚"。
 
-## 九篇一览
+## 十篇一览
 
 | 页面 | 一句话定位 |
 |---|---|
@@ -16,6 +16,7 @@ native/Triton 编译、module load 或 runtime 六个阶段中的任意一个。
 | [[dynamo_explain_and_graph_break_diagnosis_analysis]] | 用 `explain` 与 `graph_breaks` 定位捕获失败与切图原因 |
 | [[guard_failure_and_recompile_diagnosis_analysis]] | 定位 recompile storm：cache entry 选择失败的根因分类与修复 |
 | [[aotautograd_and_inductor_failure_localization_analysis]] | 用 backend 阶梯（eager→aot_eager→decomp/partition→inductor）做失败分层二分 |
+| [[compiled_artifact_lifecycle_and_runtime_failures_analysis]] | 编译产物 build/serialize/load/post-compile/first-call/replay 状态机与六类 failure taxonomy（D 卷，为失败定位提供生命周期坐标） |
 | [[minifier_repro_and_compiler_bisector_analysis]] | Repro、Minifier 与 Compiler Bisector 三个正交工具的选用边界 |
 | [[compiled_correctness_validation_methodology_analysis]] | 值、梯度、mutation、alias、effect 六维正确性验证方法论 |
 | [[compile_latency_cache_and_steady_state_performance_analysis]] | 冷启动、cache hit、稳态三类场景分开测量与 break-even 分析 |
@@ -23,9 +24,10 @@ native/Triton 编译、module load 或 runtime 六个阶段中的任意一个。
 | [[production_rollout_fallback_and_monitoring_analysis]] | 分阶段上线、fallback 分级、SLO 与自动回退、回滚演练 |
 
 **建议阅读顺序**：observability → explain/graph break → guard failure → failure
-localization → minifier/bisector → correctness → latency/cache → kernel/硬件性能 →
-production rollout。九篇按此顺序互为前置/后续（见各页头部"前置/后续"行），先建立证据
-层级和分层定位方法，再进入具体的正确性/性能验收和上线策略。
+localization → artifact lifecycle → minifier/bisector → correctness → latency/cache →
+kernel/硬件性能 → production rollout。十篇按此顺序互为前置/后续（见各页头部"前置/后续"行；
+compiled_artifact_lifecycle_and_runtime_failures_analysis 页头仍标其原 D 卷前置/后续，与此处
+顺序并存），先建立证据层级和分层定位方法，再进入具体的正确性/性能验收和上线策略。
 
 ## 附录：分布式 + torch.compile 全链路排查包
 
@@ -353,4 +355,3 @@ forward 正常但 backward 异常→AOT 问题、数值/性能异常→Inductor 
 - [[02_compile_stack/index]] — torch.compile 编译栈领域索引
 - [[02_compile_stack/04_inductor/index]] — Inductor 领域索引（本卷 CUDA 排查与 §5 越界排查互补）
 - [[02_compile_stack/04_inductor/npu/npu_debug_guide]] — NPU 侧调试（本附录是纯 upstream/CUDA 视角）
-- [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]] — 编译产物生命周期与 runtime failure（本卷前置卷 D）

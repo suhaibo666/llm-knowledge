@@ -137,7 +137,7 @@ FX graph
 ### Runtime failure
 
 区分first call触发的autotune/CUDAGraph/lazy bw与稳态kernel执行。compiled artifact的状态
-边界见 [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]]。
+边界见 [[compiled_artifact_lifecycle_and_runtime_failures_analysis]]。
 
 ## 6. `wrap_compiler_debug`为何放在 AOT 之后
 

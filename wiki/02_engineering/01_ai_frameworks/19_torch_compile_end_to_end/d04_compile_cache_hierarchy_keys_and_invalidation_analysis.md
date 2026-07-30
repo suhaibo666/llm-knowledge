@@ -215,5 +215,5 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 - [[guards_cache_lookup_and_recompilation_analysis]]
 - [[async_compile_workers_and_module_loading_analysis]]
 - [[wrapper_execution_memory_allocation_and_reuse_analysis]]
-- [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
+- [[compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
