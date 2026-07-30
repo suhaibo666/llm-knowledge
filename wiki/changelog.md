@@ -6,6 +6,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 5 Step 4-5（control_flow_capture_analysis 判重结论 + dynamo_pass_methodology 与 B10 互链）
+
+**Type**: Redundancy Consolidation（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 5）
+
+**Step 4 判重结论**：`control_flow_capture_analysis.md`(204 行,已在 01_dynamo/)vs B04(`instruction_translator_and_bytecode_state_machine_analysis`)——关键词核查（`generic_jump`/`FOR_ITER`/`speculate_subgraph`/`higher_order`/`torch.cond`/`CondHigherOrderVariable`/`POP_JUMP_IF`/`evaluate_expr`/`guard_bool`/`install_subgraph` 在 B04 全部零命中）确认**零重叠**：B04 讲字节码解释器的通用状态机（`run→step→dispatch`，以 `CALL` 为例），本页讲控制流两条路径的专题机制（HOP `speculate_subgraph`/`torch.cond` 深挖、原生 `if/for` 的 `generic_jump`/`FOR_ITER`），两页视角完全互补。按任务指示**不动本页内容**（Step 2 已做的入链机械修复保留）。与 C06 的判重按计划原文注明留 Task 7 收尾。
+
+**Step 5 判重结论**：`dynamo_pass_methodology.md`(152 行,已在 01_dynamo/)vs B10(`backend_contract_and_custom_backend_analysis`)——两页主题重叠（都在讲 Dynamo backend 扩展）但**层次不同**：B10 是契约机制的源码级深挖（registry/gm 形态/example inputs/返回值语义/mode-options 传递/可选 context 接口/failure 分层，全部带 `file:line`），本页是"要不要在 Dynamo 做这件事"的开发决策指南（适合/不适合决策表、可运行注册代码示例、改图排错流程、离开 Dynamo 的路由表），两者是 CLAUDE.md Page Types 里 Entity(deep dive) vs Guide 的正常搭配,不构成重复共存。**收窄重叠表述**：§1 删除与 B10 §1 重复的契约机制复述,改为精简结论 + 指向 B10;§4 API 速查表后加指针注明源码级实现见 B10 §2/§7;§6 改图规则清单后加指针注明完整正确性清单见 B10 §13、IR 方言边界见 B10 §10。**新增互链**：两页此前互相都没有链接对方（各自 Related Pages 检索确认零命中）——本任务修复,双向加回链。
+
+**校验**：`python tools/check_links.py`：pages 390→390（零删除、纯编辑）,broken=0；`pytest tools/ -q`：77 passed。
+
+---
+
 ## 2026-07-30：知识库结构整改 P4 Task 5 Step 3（删除 torch_compile_source_analysis.md，593 行，独有内容并入 B01/B02）
 
 **Type**: Redundancy Consolidation（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 5）
