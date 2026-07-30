@@ -270,7 +270,7 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 - [[torch_compile_api_and_first_call_lifecycle_analysis]]
 - [[eval_frame_callback_and_code_cache_analysis]]
 - [[guards_cache_lookup_and_recompilation_analysis]]
-- [[d06_cudagraph_trees_warmup_record_and_replay_analysis]]
+- [[cudagraph_trees_warmup_record_and_replay_analysis]]
 - [[production_rollout_fallback_and_monitoring_analysis]]
 - [[minifier_repro_and_compiler_bisector_analysis]] — CompilerBisector 内部的二分定位算法
 - [[f07_aotinductor_packaging_and_deployment_analysis]] — AOTInductor 的 export 驱动打包路径(与 §14.2 的 `use_aoti` JIT 路径待核实关系)

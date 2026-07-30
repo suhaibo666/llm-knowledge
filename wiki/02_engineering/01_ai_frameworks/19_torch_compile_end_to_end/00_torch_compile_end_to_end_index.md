@@ -103,7 +103,7 @@ B06 OutputGraph
 | D03 | [[async_compile_workers_and_module_loading_analysis]] | 编译任务如何异步完成并加载为 module |
 | D04 | [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]] | 各层 cache 的 key、value 和失效边界是什么 |
 | D05 | [[wrapper_execution_memory_allocation_and_reuse_analysis]] | wrapper 如何分配、调用、复用和组装输出 |
-| D06 | [[d06_cudagraph_trees_warmup_record_and_replay_analysis]] | warmup、record、replay 与 liveness 如何形成 tree |
+| D06 | [[cudagraph_trees_warmup_record_and_replay_analysis]] | warmup、record、replay 与 liveness 如何形成 tree |
 | D07 | [[compiled_artifact_lifecycle_and_runtime_failures_analysis]] | artifact 从创建到失效有哪些状态 |
 
 ## 7. 卷 E：调试、正确性与性能（已迁移至 `02_compile_stack/07_debugging/`，2026-07-30）
@@ -121,7 +121,7 @@ B06 OutputGraph
 | F05 | [[f05_custom_operators_fake_kernels_and_decompositions_analysis]] | custom op 怎样补齐编译契约 |
 | F06 | [[f06_custom_backends_and_device_integration_analysis]] | backend/device 怎样接入 lowering 与 codegen |
 | F07 | [[f07_aotinductor_packaging_and_deployment_analysis]] | AOTInductor 与 JIT compile 的产物和 ABI 有何不同 |
-| F08 | [[f08_training_inference_cudagraph_and_freezing_analysis]] | training/inference/freezing/CUDAGraph 如何组合 |
+| F08 | [[training_inference_cudagraph_and_freezing_analysis]] | training/inference/freezing/CUDAGraph 如何组合 |
 
 ## 9. 六卷 Demo 验收入口
 

@@ -3,7 +3,7 @@
 > 卷别：D · 编译产物、缓存与运行时  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]  
-> 后续：[[d06_cudagraph_trees_warmup_record_and_replay_analysis]]  
+> 后续：[[cudagraph_trees_warmup_record_and_replay_analysis]]  
 > 最后更新：2026-07-30(kb-reorg P4 Task 6 迁入本目录,去 d05_ 前缀)
 >
 > **内存规划相关页归一进行中**:本页讲 wrapper 层 `MemoryPlanningLine`/reuse pool 的源码级机制,与
@@ -224,5 +224,5 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 - [[19_buffer_liveness_memory_planning_and_reuse]]
 - [[20_scheduler_dependency_graph_fusion_and_ordering]]
 - [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
-- [[d06_cudagraph_trees_warmup_record_and_replay_analysis]]
+- [[cudagraph_trees_warmup_record_and_replay_analysis]]
 - [[kernel_fusion_memory_and_hardware_performance_analysis]]

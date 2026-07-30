@@ -3,7 +3,7 @@
 > 卷别：F · 训练、分布式、扩展与部署  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[f06_custom_backends_and_device_integration_analysis]]  
-> 后续：[[f08_training_inference_cudagraph_and_freezing_analysis]]  
+> 后续：[[training_inference_cudagraph_and_freezing_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么还需要 AOTInductor
@@ -286,7 +286,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 
 - [[00_torch_compile_end_to_end_index]]
 - [[f06_custom_backends_and_device_integration_analysis]]
-- [[f08_training_inference_cudagraph_and_freezing_analysis]]
+- [[training_inference_cudagraph_and_freezing_analysis]]
 - [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
 - [[compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[production_rollout_fallback_and_monitoring_analysis]]

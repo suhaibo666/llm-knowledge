@@ -2,7 +2,7 @@
 
 > 卷别：D · 编译产物、缓存与运行时  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[d06_cudagraph_trees_warmup_record_and_replay_analysis]]  
+> 前置：[[cudagraph_trees_warmup_record_and_replay_analysis]]  
 > 后续：[[observability_logs_counters_and_artifact_map_analysis]]  
 > 最后更新：2026-07-28
 
@@ -259,6 +259,6 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 - [[00_torch_compile_end_to_end_index]]
 - [[async_compile_workers_and_module_loading_analysis]]
 - [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
-- [[d06_cudagraph_trees_warmup_record_and_replay_analysis]]
+- [[cudagraph_trees_warmup_record_and_replay_analysis]]
 - [[observability_logs_counters_and_artifact_map_analysis]]
 - [[production_rollout_fallback_and_monitoring_analysis]]
