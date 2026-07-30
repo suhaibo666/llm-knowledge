@@ -3,7 +3,7 @@
 > 卷别：D · 编译产物、缓存与运行时  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[d01_inductor_compile_fx_orchestration_analysis]]  
-> 后续：[[d03_async_compile_workers_and_module_loading_analysis]]  
+> 后续：[[async_compile_workers_and_module_loading_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么两张FX图还需要一个runtime wrapper

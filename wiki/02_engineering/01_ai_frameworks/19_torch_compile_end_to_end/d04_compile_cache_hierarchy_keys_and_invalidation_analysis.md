@@ -2,7 +2,7 @@
 
 > 卷别：D · 编译产物、缓存与运行时  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[d03_async_compile_workers_and_module_loading_analysis]]  
+> 前置：[[async_compile_workers_and_module_loading_analysis]]  
 > 后续：[[d05_wrapper_execution_memory_allocation_and_reuse_analysis]]  
 > 最后更新：2026-07-28
 
@@ -213,7 +213,7 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 
 - [[00_torch_compile_end_to_end_index]]
 - [[guards_cache_lookup_and_recompilation_analysis]]
-- [[d03_async_compile_workers_and_module_loading_analysis]]
+- [[async_compile_workers_and_module_loading_analysis]]
 - [[d05_wrapper_execution_memory_allocation_and_reuse_analysis]]
 - [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
