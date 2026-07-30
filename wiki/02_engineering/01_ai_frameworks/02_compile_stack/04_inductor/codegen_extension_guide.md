@@ -51,7 +51,7 @@ flowchart LR
 
 | API/类 | 作用 | 必须关注 |
 |---|---|---|
-| `register_backend_for_device(device, scheduling, wrapper, ...)` | 注册设备到 kernel scheduling 和 wrapper 的映射 | 是 Codegen 后端总入口；内部 API |
+| `register_backend_for_device(device, scheduling, wrapper, ...)` | 注册设备到 kernel scheduling 和 wrapper 的映射;还接受两个可选关键字 `device_custom_pass: CustomGraphModulePass \| None` 与 `device_custom_config: ConfigModule \| None`,分别写入独立的全局注册表 `custom_backend_passes`/`custom_backend_codegen_configs`(`torch/_inductor/codegen/common.py:389-418` 与 `:419-434`) | 是 Codegen 后端总入口；内部 API |
 | `BaseScheduling` | Scheduler 与设备 kernel codegen 的协议 | fusion feasibility、`codegen_node`、template、flush、feature |
 | `PythonWrapperCodegen` | 默认 Python host wrapper 基类 | 可继承并覆盖设备特定定义/调用 |
 | `CppWrapper*` / `WrapperFxCodegen` | C++/AOT 与 FX wrapper | 只有支持相应输出模式时才提供 |
@@ -133,6 +133,8 @@ register_backend_for_device(
 
 注册必须在创建 `GraphLowering`/首次编译目标设备图之前完成。固定基线的 `init_backend_registration()` 会注册 CPU、CUDA、XPU、MPS、MTIA 等内建映射；PrivateUse1 还会尝试从设备模块获取 `Scheduling`、`PythonWrapperCodegen`、`CppWrapperCodegen`、`WrapperFxCodegen`。
 
+上面的示例只传了必须的三个位置参数,但 `register_backend_for_device` 登记的其实是四类东西：device scheduling；Python/C++/FX wrapper constructors；custom graph pass；custom config。后两者容易被忽略——`device_custom_pass`(类型 `CustomGraphModulePass | None`)与 `device_custom_config`(类型 `ConfigModule | None`)是两个独立的可选关键字参数,分别写入模块级全局字典 `custom_backend_passes[device]`/`custom_backend_codegen_configs[device]`,供后端在通用 pass 管线/config 之外挂自己的定制项(`torch/_inductor/codegen/common.py:389-418` 与 `:419-434`);`device_custom_config` 若提供还会被断言必须是 `ConfigModule` 实例且不能与默认 `config` 是同一对象。
+
 > [!warning]
 > `register_backend_for_device` 是按 `device.type` 的全局映射。覆盖已有设备会影响进程内所有后续编译，不适合作为局部 Pass 开关；实验时用独立设备名或隔离进程。
 
@@ -163,7 +165,9 @@ class MyDeviceOps(DeviceOpOverrides):
 register_device_op_overrides("my_accel", MyDeviceOps())
 ```
 
-不要只根据抽象类列出的方法机械实现。先追踪所选 Python/CPP/FX wrapper 实际调用哪些 overrides，再为每种输出模式补齐并测试。
+不要只根据抽象类列出的方法机械实现。先追踪所选 Python/CPP/FX wrapper 实际调用哪些 overrides，再为每种输出模式补齐并测试。`DeviceOpOverrides` 除上面几个常见方法外，还有一组只在 AOTI/C++/TMA 相关 wrapper 路径下才用到的更专项方法——`cpp_aoti_stream_guard`/`aoti_get_stream`/`tma_descriptor_helpers`/`cpp_scratch` 等（`torch/_inductor/codegen/common.py:321-382`），纯 Python wrapper 场景通常用不到，但支持 AOTInductor 打包时必须补齐。
+
+
 
 ---
 

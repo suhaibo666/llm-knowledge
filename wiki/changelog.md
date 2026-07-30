@@ -23,20 +23,37 @@ f01-f07（除已在 Task 6 随 D06 迁走的 f08）从 `19_torch_compile_end_to_
 | f07（292 行）AOTInductor 打包部署 | `02_compile_stack/04_inductor/aotinductor_packaging_and_deployment_analysis.md` | 纯平移,无判重需要 |
 
 **B02 `use_aoti` todo 解答**（`backend_modes_options_stances_and_fullgraph_analysis.md` §14.2,
-Task 5 遗留,原 `[!todo]`）：读 F07 源码后对照本地 pinned pytorch checkout 核实——
-`_TorchCompileAOTInductorWrapper.__call__` 最终调用与普通 JIT 编译相同的 `compile_fx(...)`
-（`torch/__init__.py:3016-3054` → 父类 `__call__`）；`aoti_compile_and_package` 底层的
-`compile_fx_aot`（`torch/_inductor/compile_fx.py:2221`）内部同样调用 `compile_fx(...)`
-（`:2282-2284`）。两条路径在 `compile_fx` 内部汇合于同一段代码：`V.aot_compilation` 为真时
-直接返回 `CompiledAOTI(filename=compiled_fn, device_type=graph.device_type)`
+Task 5 遗留,原 `[!todo]`；**同日据 spec 复核修正**,见下方"复核修正"段）：读 F07 源码后对照
+本地 pinned pytorch checkout 核实——`_TorchCompileAOTInductorWrapper.__call__` 最终调用与普通
+JIT 编译相同的 `compile_fx(...)`（`torch/__init__.py:3016-3054` → 父类 `__call__`）；
+`aoti_compile_and_package` 底层的 `compile_fx_aot`（`torch/_inductor/compile_fx.py:2221`）内部
+同样调用 `compile_fx(...)`（`:2282-2284`）。两条路径在 `compile_fx` 内部汇合于同一段代码：
+`V.aot_compilation` 为真时直接返回 `CompiledAOTI(filename=compiled_fn, device_type=graph.device_type)`
 （`compile_fx.py:1849-1859`），是 `compile_fx_aot` 断言并解包 `.filename` 的同一个
-`CompiledAOTI` 类型（`:2285-2289`）——两条路径共享完全相同的 AOT 代码生成产物类型与 C ABI
-runner（`CompiledAOTI.__post_init__` 自动构造 `AOTIModelContainerRunner{Cuda,Xpu,Cpu}`，即
-F07 §8 讲的同一个 `model_container_runner.cpp` runner，`output_code.py:1061-1138`）。差异仅在
-前端捕获来源（Dynamo 运行时捕获 vs `torch.export.export()` 产出的 `ExportedProgram`）与是否
-额外 `package_aoti` 打包成可跨进程加载的 `.pt2` 归档（`use_aoti` 路径在 `__post_init__` 阶段
-即同进程内自动加载，不打包）。结论写入 B02 §14.2 note，双向加回链；旧 `[!todo]` 原文保留、
-标注已解答（本文件"不回写活链接"惯例，`f07...` 引用降级为惰性反引号）。
+`CompiledAOTI` 类型（`:2285-2289`）——两条路径汇合于同一套 AOT 代码生成/artifact 机制,但
+`CompiledAOTI` 是否被真正装载成可调用 runner **不对称**：`__post_init__` 只有在
+`config.enable_autograd_for_aot`（默认 `False`,`config.py:1696`）为真时才构造
+`AOTIModelContainerRunner{Cuda,Xpu,Cpu}`（F07 §8 讲的同一个 `model_container_runner.cpp`
+runner）并装进 `current_callable`；只有 use_aoti 路径会用 `config.patch("enable_autograd_for_aot", True)`
+显式临时打开这个门（因为它必须马上把结果当 compiled callable 用），plain 的
+export/package 路径不打这个 patch,`current_callable` 保持 `None`（但该路径本就只取
+`.filename`，不依赖 `current_callable`）。差异还在前端捕获来源（Dynamo 运行时捕获 vs
+`torch.export.export()` 产出的 `ExportedProgram`）与是否额外 `package_aoti` 打包成可跨进程
+加载的 `.pt2` 归档。结论写入 B02 §14.2 note，双向加回链；旧 `[!todo]` 原文保留、标注已解答
+（本文件"不回写活链接"惯例，`f07...` 引用降级为惰性反引号）。
+
+**复核修正**（同日,spec 审查发现并修复,1 commit）：上一段与 B02 §14.2 note 最初表述为
+"两条路径共享完全相同的 C ABI runner、`CompiledAOTI` 本身就是可直接调用对象"，忽略了
+`enable_autograd_for_aot` 门控——已按上文改为不对称表述，并据此修正 F07/B02 两页互指
+Related Pages 的措辞。另据复核，f06 迁移时 §5 收缩丢失了 `register_backend_for_device` 的
+`device_custom_pass: CustomGraphModulePass`/`device_custom_config: ConfigModule` 两个可选
+参数与其写入的独立全局注册表 `custom_backend_passes`/`custom_backend_codegen_configs`
+事实（原引用 `common.py:389-418`/`:419-434` 经核精确）——已逐字取自 f06 迁移前版本
+（`git show ffdff43:19_torch_compile_end_to_end/f06_...md` §5）落回
+`codegen_extension_guide.md` §3 表格行 + §4 补充段；§6 被压缩掉的 `DeviceOpOverrides` 专项
+方法名（`cpp_aoti_stream_guard`/`aoti_get_stream`/`tma_descriptor_helpers`/`cpp_scratch`,
+`common.py:321-382`）也补回该指南 §5。校验：`checker` pages=379 broken=0；`pytest tools/ -q`
+77 passed。
 
 **入链修复**：六批共修复 20+ 处 inbound wikilink 到新基名（各篇自身前置/后续互链、course
 index 表格逐行更新为新基名 + 迁移/划界说明、`00_torch_compile_end_to_end_index.md` §8）。
@@ -602,7 +619,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - §4.6 `torch.export` 兼容性（`is_exporting()`/`_in_hop_compile()` 短路为 no-op）→ 同页新增 §13.2，核验定位 `torch/__init__.py:3350-3359`
 - §4.4 CompilerBisector 二分调试的 API 入口钩子（`bisect_backend := CompilerBisector.get_backend()` 覆盖 backend + vLLM 自定义 backend 保护条件）→ [[backend_modes_options_stances_and_fullgraph_analysis]] 新增 §13，核验定位 `torch/__init__.py:3330-3342`；与 [[minifier_repro_and_compiler_bisector_analysis]] §7（bisector 内部二分算法）互补,双向加回链
 - §4.5 特殊选项提取 + §4.7/§5 三个 wrapper 类的方法级实现（`_TorchCompileInductorWrapper.apply_mode/apply_options/get_compiler_config/reset`、CUDA<12.6 CUPTI workaround、`_TorchCompileAOTInductorWrapper` 子类的 `cpp_wrapper`/`aot_inductor.package`/`V.set_aot_compilation`、`_TorchCompileWrapper` 的 `lookup_backend`+kwargs 透传）→ 同页新增 §14，核验定位 `torch/__init__.py:2907-3096` 区间多段
-- [!todo] §14.2 迁移时发现:`use_aoti=True` 是从 `torch.compile()` **JIT 入口**直接触发的 AOTInductor 打包路径,而 `f07_aotinductor_packaging_and_deployment_analysis`（2026-07-30 起随 kb-reorg P4 Task 9 迁入并改名为 [[aotinductor_packaging_and_deployment_analysis]]，本条历史记载不回写活链接）§2-§3 记录的公开入口 `aoti_compile_and_package` 明确要求 `ExportedProgram`(export 驱动、部署前离线完成)。两条路径是否共享下游产物、`use_aoti` 这条 JIT 捷径的运维定位,F07 尚未覆盖——本任务范围内未展开核实,双向加回链留待后续处理。**已于 kb-reorg P4 Task 9(2026-07-30)核实解答**：两者在 `compile_fx`/`CompiledAOTI`/C ABI runner 层完全共享同一段代码，差异仅在前端捕获来源（Dynamo 运行时捕获 vs `ExportedProgram`）与是否额外 `package_aoti` 打包成 `.pt2`；详见 [[backend_modes_options_stances_and_fullgraph_analysis]] §14.2 note。
+- [!todo] §14.2 迁移时发现:`use_aoti=True` 是从 `torch.compile()` **JIT 入口**直接触发的 AOTInductor 打包路径,而 `f07_aotinductor_packaging_and_deployment_analysis`（2026-07-30 起随 kb-reorg P4 Task 9 迁入并改名为 [[aotinductor_packaging_and_deployment_analysis]]，本条历史记载不回写活链接）§2-§3 记录的公开入口 `aoti_compile_and_package` 明确要求 `ExportedProgram`(export 驱动、部署前离线完成)。两条路径是否共享下游产物、`use_aoti` 这条 JIT 捷径的运维定位,F07 尚未覆盖——本任务范围内未展开核实,双向加回链留待后续处理。**已于 kb-reorg P4 Task 9(2026-07-30)核实解答**：两者在 `compile_fx`/`CompiledAOTI` 层汇合于同一段代码，但 `CompiledAOTI` 装载成可调用 runner 这一步受 `enable_autograd_for_aot` 门控、并不对称（只有 `use_aoti` 路径强制打开），差异还在前端捕获来源（Dynamo 运行时捕获 vs `ExportedProgram`）与是否额外 `package_aoti` 打包成 `.pt2`；详见 [[backend_modes_options_stances_and_fullgraph_analysis]] §14.2 note。
 - §6 编译模式对照表（mode/CUDA Graphs/Triton autotune 布尔矩阵）与 B02 §3 的同一组事实（散文体）重复,不迁移；§7 能力范围与限制、§8 使用示例是已覆盖机制的摘要/演示,不迁移；§2/§3/§4.2/§4.3 是与 B01/B02 完全重复的调用栈图与参数说明,不迁移。
 
 **删除**：`git rm` 该页。**入链修复**：`04_inductor/dynamic_shapes_full_analysis.md` 改指 [[torch_compile_api_and_first_call_lifecycle_analysis]]；`04_inductor/index.md` 移除本页表格行,改为一行式说明指向 [[02_compile_stack/01_dynamo/index]]。
