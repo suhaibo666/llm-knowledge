@@ -454,7 +454,7 @@ def call(args):
 - [[inductor_codegen_dynamic_shape_analysis]] — Inductor codegen 层的动态 shape 处理
 - [[torch_compile_architecture]] — torch.compile 端到端流水线架构
 - [[torch_compile_source_analysis]] — torch.compile 入口源码分析
-- [[PyTorch_Dynamo_Technical_Analysis]] — Dynamo 帧捕获与符号执行
+- [[02_compile_stack/01_dynamo/index]] — Dynamo 帧捕获与符号执行
 - [[PyTorch_Inductor_Technical_Analysis]] — Inductor 后端技术全析
 - [[aotautograd_analysis]] — AOT Autograd 前向/反向图分解
 - [[01_ai_frameworks/index]] — AI 框架域总索引

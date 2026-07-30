@@ -365,4 +365,4 @@ unbacked 只有在**既用了数据相关 op、又要求整图不断**时才是�
 - [[dynamic_shapes_full_analysis]] — Dynamic Shape 全链路，ShapeEnv 与 Backed Symbol 体系
 - [[inductor_codegen_dynamic_shape_analysis]] — Inductor codegen 中的符号传递机制
 - [[torch_compile_architecture]] — torch.compile 端到端流水线
-- [[PyTorch_Dynamo_Technical_Analysis]] — Dynamo 帧捕获与 Guard 系统
+- [[02_compile_stack/01_dynamo/index]] — Dynamo 帧捕获与 Guard 系统

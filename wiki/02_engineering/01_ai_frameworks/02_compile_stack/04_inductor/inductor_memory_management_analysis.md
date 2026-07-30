@@ -9,7 +9,7 @@
 > **Dimension**: Deep Dive(mechanism-level)
 > 最后更新: 2026-06-30
 >
-> 本页回答「torch.compile 的 memory alloc 是怎么管理的」。核心论点:**不是单一机制,而是三层叠加**——① 编译期 Inductor 规划 `alloc/reuse/free` 的「逻辑」;② 运行期 `CUDACachingAllocator` 管物理块;③ `reduce-overhead`(CUDA Graphs)模式额外用一个跨图共享的私有池 + checkpoint 保证地址稳定。上游图捕获见 [[PyTorch_Dynamo_Technical_Analysis]],编译管线全景见 [[inductor_compiler_pipeline_analysis]]。
+> 本页回答「torch.compile 的 memory alloc 是怎么管理的」。核心论点:**不是单一机制,而是三层叠加**——① 编译期 Inductor 规划 `alloc/reuse/free` 的「逻辑」;② 运行期 `CUDACachingAllocator` 管物理块;③ `reduce-overhead`(CUDA Graphs)模式额外用一个跨图共享的私有池 + checkpoint 保证地址稳定。上游图捕获见 [[02_compile_stack/01_dynamo/index]],编译管线全景见 [[inductor_compiler_pipeline_analysis]]。
 
 ---
 

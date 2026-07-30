@@ -1454,7 +1454,7 @@ Dynamo不是用 ProxyTensor替代 Python symbolic interpreter：
 - [[fx_graph_construction_and_transformation_analysis]] — joint graph 如何切成独立 fw/bw、saved-tensor ABI、recompute 抽图与复杂度
 - [[02_engineering/01_ai_frameworks/index]]
 - [[torch_compile_architecture]]
-- [[PyTorch_Dynamo_Technical_Analysis]]
+- [[02_compile_stack/01_dynamo/index]]
 - [[activation_checkpointing_analysis]]
 - [[inductor_compiler_pipeline_analysis]] — Inductor 端到端编译管线全景（本文 §2 AOT Autograd 阶段）
 - [[pytorch_dispatcher_analysis]] — Dispatcher 机制：AOTAutograd 用 `__torch_dispatch__`（Python key）追踪联合图，本页是其底层基础

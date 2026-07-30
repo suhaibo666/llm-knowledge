@@ -1,6 +1,6 @@
 # NPU 算子入图判别指南（dynamo / inductor+triton / aclgraph 三关）
 
-> **判别视角**：给定一个算子，如何判断它能否「入图」、会卡在哪一关、用什么命令验证。这不是路径实现介绍（实现全景见 [[npu_compile_paths_overview]]、各关深度见 [[npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / [[PyTorch_Dynamo_Technical_Analysis]]），而是一份面向「这个算子能不能入图」的可操作判别清单。
+> **判别视角**：给定一个算子，如何判断它能否「入图」、会卡在哪一关、用什么命令验证。这不是路径实现介绍（实现全景见 [[npu_compile_paths_overview]]、各关深度见 [[npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / [[02_compile_stack/01_dynamo/index]]），而是一份面向「这个算子能不能入图」的可操作判别清单。
 >
 > 基于版本：`E:\97-codes\pytorch\torch_npu` 当前 checkout
 > 分析日期：2026-06-12
@@ -267,5 +267,5 @@ graph TD
 - [[npu_inductor_splittiling_backend_analysis]] —— 第二关 Triton/Inductor default 路径深度分析
 - [[aclgraph_deep_analysis]] —— 第三关 ACLGraph 图捕获/重放深度分析
 - [[aclgraph_multistream_rng_analysis]] —— 第三关中的多流闭合、通信流边界与随机数状态协议
-- [[PyTorch_Dynamo_Technical_Analysis]] —— 第一关 dynamo 图捕获机制
+- [[02_compile_stack/01_dynamo/index]] —— 第一关 dynamo 图捕获机制
 - [[npu_lowering_guide]] —— 第二关 NPU lowering 与算子映射细节

@@ -232,5 +232,6 @@ collective 本体在 `OutputGraph.run_compiler_collective`(`torch/_dynamo/output
 - [[02_compile_stack/06_compile_cache/index]] — 本目录索引
 - [[19_torch_compile_end_to_end/04_symbolic_shapes_guards_and_graph_reuse]] — dynamic shape、guard、重编译与 graph reuse 主线
 - [[torch_compile_architecture]] — torch.compile 整体栈
-- [[PyTorch_Dynamo_Technical_Analysis]] — Dynamo 追踪机制(`VariableBuilder`/guard 的宿主)
+- [[variable_tracker_source_and_python_object_model_analysis]] — VariableBuilder 与 VariableTracker 追踪机制
+- [[guards_cache_lookup_and_recompilation_analysis]] — guard 的宿主与重编译判定
 - [[dynamo_quickstart]] — Dynamo 入门

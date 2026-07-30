@@ -915,7 +915,7 @@ Inductor 的优化哲学是"尽可能融合"：
 - [[lowering_analysis]] — FX → Inductor IR lowering 详解（本文 §5）
 - [[scheduler_analysis]] — 调度器与融合决策（本文 §6）
 - [[inductor_codegen_analysis]] — 代码生成策略与 kernel 融合（本文 §7）
-- [[PyTorch_Dynamo_Technical_Analysis]] — Dynamo 图捕获技术详解（本文 §1）
+- [[02_compile_stack/01_dynamo/index]] — Dynamo 图捕获技术详解（本文 §1）
 - [[PyTorch_Inductor_Technical_Analysis]] — Inductor 总体架构与 IR 设计
 - [[torch_compile_architecture]] — torch.compile 端到端流水线概览
 - [[02_engineering/01_ai_frameworks/index]] — AI 框架总索引

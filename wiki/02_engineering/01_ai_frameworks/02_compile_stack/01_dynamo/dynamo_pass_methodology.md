@@ -146,7 +146,9 @@ compiled = torch.compile(model, backend="audit_inductor")
 
 ## Related Pages
 
-- [[PyTorch_Dynamo_Technical_Analysis]] — 字节码符号执行、guards 与 OutputGraph 深挖
+- [[instruction_translator_and_bytecode_state_machine_analysis]] — 字节码符号执行深挖
+- [[guards_cache_lookup_and_recompilation_analysis]] — guards 与重编译深挖
+- [[output_graph_side_effects_and_graph_emission_analysis]] — OutputGraph 深挖
 - [[dynamo_quickstart]] — `explain`、graph break 和重编译快速排查
 - [[fx_pass_optimization_methodology]] — 八阶段 Pass 放置总方法论
 - [[inductor_compiler_pipeline_analysis]] — Dynamo 到 Codegen 的端到端调用链

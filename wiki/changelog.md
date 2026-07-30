@@ -6,6 +6,26 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 5 Step 2（删除 PyTorch_Dynamo_Technical_Analysis.md，2018 行）
+
+**Type**: Redundancy Consolidation（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 5）
+
+**判重**：`02_compile_stack/01_dynamo/PyTorch_Dynamo_Technical_Analysis.md`（2018 行，早期"演示代码 + 简化伪源码"风格全景页）逐节通读（§1 概述、§2 核心架构 7 阶段、§3 技术实现细节、§4 典型示例代码、§5 核心模块架构与工作流程、§6 生态角色与应用、§7 覆盖度声明、总结）后与 B 卷十篇逐一核对，**全篇无独有事实需要迁移**：
+
+- §2/§3/§5（eval-frame 拦截、字节码分析转换、符号执行、变量跟踪、Guard 系统、FX 图构建、后端编译 7 阶段机制，含模块依赖图与调用链图）均为 B01-B10 的低精度复述——本页用"简化伪代码"且无 `file:line` 定位符，B 卷十篇逐条给出精确源码定位。抽样核实：本页 §3.1 PEP 523 C 扩展入口链描述（`dynamo_custom_eval_frame_shim → dynamo__custom_eval_frame → set_eval_frame`）缺少 [[eval_frame_callback_and_code_cache_analysis]] §2 已给出的更完整更准确的三态协议（`None`/`False`/callable，定位 `torch/csrc/dynamo/eval_frame.c:518-533`/`:616-638`）；本页 §7 列的"未覆盖组件"（VariableBuilder、Source 系统、高阶操作）实际均已被 [[variable_tracker_source_and_python_object_model_analysis]]、[[control_flow_capture_analysis]] 覆盖。
+- §4 典型示例代码分析（简单函数/nn.Module/动态形状/graph break/循环编译走读,均为未验证的插图式伪代码）被 `tools/labs_torch_compile/demo_b_dynamo_capture.py` 的十个真实可运行 case（compile_lifecycle/backend_modes_fullgraph/eval_frame_cache/bytecode_state_machine/variable_source_guards/output_graph_side_effects/guards_recompile/graph_break_resume/dynamic_shapes/custom_backend_contract）与 B 卷各篇「源码跟读」「配套 Demo」小节取代，不重复落地插图代码。
+- §6.1"性能提升"给出的"典型模型 2-3 倍/Transformer 4 倍/小模型 1.5-2 倍"加速比**无源可查**（`raw/` 下仅 `dynamo.eddx`/`torch.compile.eddx` 图示源，非可引用的实测数据）；且与 [[compile_latency_cache_and_steady_state_performance_analysis]] §1 的核心论点（"平均耗时没有诊断价值，必须拆分测量场景"）直接抵触，判断为不应作为事实迁移的营销式泛化断言，不落地（不同于常规"无源可疑声明转 [!todo]"处理，因为该断言的方法论本身已被后继页的论点否定，保留只会误导读者）。
+- §6.5"性能优化技术"（算子融合/内存布局/循环展开/并行化）实际描述的是 Inductor 层优化,不属于 Dynamo 机制,且与 B 卷主题不符,留待后续 Inductor 相关任务处理,本任务不落地。
+- §5.1 模块依赖关系图（`torch._dynamo` 包结构树）经抽样核对本地 pinned pytorch checkout（`eval_frame.py`/`config.py`/`convert_frame.py`/`bytecode_analysis.py`/`bytecode_transformation.py`/`codegen.py`/`backends/`/`variables/` 均存在）大体准确，但属于可从源码树直接重建的编排性示意图（非独有事实），且 B 卷各篇「源码阅读顺序」「源码补充」小节已提供更具体的逐机制文件路径，不单独迁移。
+
+**删除**：`git rm` 该页。**入链修复**（18 个外部文件的活链接，均为泛指性"参见 Dynamo 帧评估/字节码/Guard"式指针，按 Task 3 a05 先例改指 [[02_compile_stack/01_dynamo/index]]）：`pytorch_dispatcher_analysis`、`npu_operator_graph_eligibility_guide`（2 处）、`op_registration_pipeline_analysis`、`aotautograd_analysis`、`dynamic_shapes_full_analysis`、`inductor_compiler_pipeline_analysis`、`inductor_memory_management_analysis`、`torch_compile_source_analysis`、`unbacked_symint_analysis`、`torch_mlir_pass_pipeline_analysis`、`vllm/index`、`vllm_compilation_cudagraph_analysis`（2 处）、`vllm_ir_and_fusion_passes_analysis`、`wiki/index`；`dynamo_pgo_cache_analysis` 按其"VariableBuilder/guard 的宿主"原描述精确改指 [[variable_tracker_source_and_python_object_model_analysis]] + [[guards_cache_lookup_and_recompilation_analysis]] 两篇。域内三篇（`control_flow_capture_analysis`、`dynamo_pass_methodology`、`dynamo_quickstart`）的 Related Pages 按原描述拆成对应的具体 B 卷页链接（如"帧评估、字节码符号执行、Guard 与重编译"拆为三条精确链接），比泛指索引更精确。`wiki/changelog.md` 里 3 处写入当时的历史活链接（2026-06-30/2026-06-12 更早条目）按"历史不回写"惯例降级为惰性反引号 + 去向说明；另 2 处（2026-07-17 前后两条）本就是反引号包裹的非活链接，未受影响。
+
+**索引重建**：`02_compile_stack/01_dynamo/index.md` 页面列表从 4 行重建为 13 行（quickstart + B01-B10 + control_flow 专题 + dynamo_pass_methodology development guide），移除 `PyTorch_Dynamo_Technical_Analysis` 行；页头摘要与最后更新同步。
+
+**校验**：`python tools/check_links.py`：pages 392→391，broken=0，orphans=0；`pytest tools/ -q`：77 passed。
+
+---
+
 ## 2026-07-30：知识库结构整改 P4 Task 5 Step 1（19 号 B 卷迁入 01_dynamo，10 篇 2653 行）
 
 **Type**: Structure Reorg（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 5）
@@ -756,10 +776,10 @@ All source ingestions and significant wiki updates are logged here.
   - **路径 B 原生控制流**：`generic_jump`（`symbolic_convert.py:714`）四种结局（常量拍平/SymBool guard 特化/数据依赖切图/`fullgraph` 硬报错）；`FOR_ITER`（`:2485`）循环展开。
   - [!correction] **纠正常见误解**：Dynamo **不会**自动把数据依赖 `if` 转成 `cond`——源码里只有"切图"或"报错提示手写 `torch.cond`"两条出路（`symbolic_convert.py:769`/`:937`）。
 
-**整合**：`[[02_dynamo/index]]` 页面列表新增本页；[[PyTorch_Dynamo_Technical_Analysis]] Related Pages 加回链。**校验**：所有 `file:line` 均本会话内开文件核对；3 个 mermaid 块按本库规范逐条扫（标签无裸 `[]()`、特殊形状无嵌套定界符、连线文字无引号/括号/`|`）；交叉链接目标经 glob 确认存在。
+**整合**：`[[02_dynamo/index]]` 页面列表新增本页；`PyTorch_Dynamo_Technical_Analysis`（该页已于 P4 Task 5 判重删除，内容并入 [[02_compile_stack/01_dynamo/index]]）Related Pages 加回链。**校验**：所有 `file:line` 均本会话内开文件核对；3 个 mermaid 块按本库规范逐条扫（标签无裸 `[]()`、特殊形状无嵌套定界符、连线文字无引号/括号/`|`）；交叉链接目标经 glob 确认存在。
 
 **追加（同日，应用户连续追问澄清编译期/运行期边界）**：
-- [[PyTorch_Dynamo_Technical_Analysis]] §6.6「动态控制流」加 `> [!deprecated]` 指引转向本页（原演示内容按 never-delete 保留）。
+- `PyTorch_Dynamo_Technical_Analysis`（该页已于 P4 Task 5 判重删除，内容并入 [[02_compile_stack/01_dynamo/index]]）§6.6「动态控制流」加 `> [!deprecated]` 指引转向本页（原演示内容按 never-delete 保留）。
 - 本页新增 **§2.5「trace 两支 / 编译两支 / 运行只跑一支」**：拆解三个常见误解——① 「捕获条件」是把 `pred` 接成 cond 节点运行时输入（`pred.as_proxy()` `:2588`），非 trace 期选支；② 「Dynamo 编译两个子图」不准——Dynamo 只 trace、产 **1 张父图**（两子图为嵌套 `GraphModule`），编译成 kernel 是下游 Inductor 一次编译产两段；③ 按 pred 选支是 cond 算子 lowering 在**运行期**做（`cond_op_dense` `cond.py:310-313`）。附 `cond` vs graph-break 六维对照表。新增锚点 `cond.py:301-313`、`higher_order_ops.py:2588` 均本会话开文件核对。
 
 ---
@@ -1580,7 +1600,7 @@ All source ingestions and significant wiki updates are logged here.
 **索引与交叉引用**:
 
 - `01_ai_frameworks/index.md` —— 子目录表新增 `[[07_op_registration/npu/index]]`;页面列表新增「op-plugin 算子接入」区(3 行);页头摘要与最后更新改 2026-06-12
-- 交叉引用:三篇互链,并 link 到既有 [[npu_compile_paths_overview]] / [[npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / [[PyTorch_Dynamo_Technical_Analysis]] / [[npu_lowering_guide]]。入图判别页明确定位为「判别视角」,与既有「路径实现全景」页互补、不重复
+- 交叉引用:三篇互链,并 link 到既有 [[npu_compile_paths_overview]] / [[npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / `PyTorch_Dynamo_Technical_Analysis`（该页已于 P4 Task 5 判重删除，内容并入 [[02_compile_stack/01_dynamo/index]]） / [[npu_lowering_guide]]。入图判别页明确定位为「判别视角」,与既有「路径实现全景」页互补、不重复
 
 ---
 

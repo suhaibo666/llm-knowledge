@@ -4,7 +4,7 @@
 > **Dimension**: Deep Dive(mechanism-level)
 > 最后更新: 2026-06-30
 >
-> 本页回答「`torch.compile` 编译流程里控制流是怎么入图的」。结论先行:**控制流不是只有一种处理方式**。Dynamo 走**两条互不相同的路径**——显式高阶算子(`torch.cond` 等)被投机成子图、在主图留一个节点;原生 Python `if/for/while` 则在字节码层被**特化 / 展开 / 切图**,多数情况根本不以控制流形态入图。上游 Dynamo 捕获见 [[PyTorch_Dynamo_Technical_Analysis]],下游分解见 [[02_compile_stack/02_aot_autograd/index]] / [[02_compile_stack/04_inductor/index]]。
+> 本页回答「`torch.compile` 编译流程里控制流是怎么入图的」。结论先行:**控制流不是只有一种处理方式**。Dynamo 走**两条互不相同的路径**——显式高阶算子(`torch.cond` 等)被投机成子图、在主图留一个节点;原生 Python `if/for/while` 则在字节码层被**特化 / 展开 / 切图**,多数情况根本不以控制流形态入图。上游 Dynamo 字节码符号执行见 [[instruction_translator_and_bytecode_state_machine_analysis]],下游分解见 [[02_compile_stack/02_aot_autograd/index]] / [[02_compile_stack/04_inductor/index]]。
 
 ---
 
@@ -196,7 +196,9 @@ flowchart TB
 
 ## Related Pages
 
-- [[PyTorch_Dynamo_Technical_Analysis]] — 上游:帧评估、字节码符号执行、Guard 与重编译(本页是其「控制流」专题展开)
+- [[eval_frame_callback_and_code_cache_analysis]] — 上游:帧评估与 code cache(本页是其后续「控制流」专题展开)
+- [[instruction_translator_and_bytecode_state_machine_analysis]] — 上游:字节码符号执行状态机
+- [[guards_cache_lookup_and_recompilation_analysis]] — 上游:Guard 与重编译
 - [[dynamo_quickstart]] — `explain` / `graph_breaks` 日志 / `fullgraph` 等定位手段
 - [[02_compile_stack/01_dynamo/index]] — Dynamo 图捕获域索引
 - [[02_compile_stack/02_aot_autograd/index]] — 下游:HOP 子图的前/反向分解

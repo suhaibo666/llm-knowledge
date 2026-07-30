@@ -590,4 +590,4 @@ compiled_model = torch.compile(model, disable=True)  # no-op
 
 - [[02_engineering/01_ai_frameworks/index]]
 - [[torch_compile_architecture]]
-- [[PyTorch_Dynamo_Technical_Analysis]]
+- [[02_compile_stack/01_dynamo/index]]
