@@ -6,6 +6,81 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 10（课程页化 + 19 号目录解散 + 全 index 终校，P4 收官）
+
+**Type**: Course-page Consolidation + Directory Removal + Index Audit（设计：
+`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 10；
+`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §6 课程页规则）
+
+**课程页化**：新建 `wiki/courses/torch_compile_end_to_end.md`（spec §6 定义的纯导读页——只含
+阅读顺序、链接与一句话导读，不承载正文）：开篇(是什么/前置/三段式流水线速览) → 按目录顺序
+(0 前置 eager_runtime → 1 Dynamo → 2 AOTAutograd → 3 Graph IR/Passes → 4 Inductor(内含五阶段
+一览表) → 5 编译缓存 → 6 调试诊断 → 7 CUDA Graphs → 8 图导出/算子扩展 → 9 分布式原语 → 10
+训练扩展收尾)、段位递进(0→1→2→3)排布的阅读路线表(链接全用编号后新基名，一句话导读复用各
+目录自己 index.md 已有的表述) → 三条捷径 → labs 使用说明(六卷 demo 入口表 + 运行契约 + PASS/
+BLOCKED/FAIL 语义) → 与功能树的关系说明(courses/ 是纯索引层，功能树为唯一权威)。
+
+**删除清单**（导读/动机价值并入课程页后删除源文件，`git rm`）：
+
+| 文件 | 行数 | 去向 |
+|---|---|---|
+| `19_torch_compile_end_to_end/00_torch_compile_end_to_end_index.md` | 221 | A-F 六卷学习路径故事线 → 课程页开篇 + 阅读路线表 |
+| `19_torch_compile_end_to_end/00_pytorch_graph_series_index.md` | 302 | 卷 C Part I-IV 结构 → 课程页 §3 Graph IR / §4 Inductor 分节 |
+| `19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy.md`（C01） | 372 | "为什么需要图 IR"动机段 → 课程页 §3 末尾导读级要点；逐项核对确认全篇技术细节（autograd Edge、FX Node opcode、AOT partition、Inductor lowering、Scheduler 工厂、torch.cond HOP、`Graph.lint`、复杂度分析、reverse-topological order）均已被 `03_graph_ir_and_passes`/`01_eager_runtime/05_autograd_engine` 对应深潜页独立引用同一批源码定位，无需逐字搬运 |
+| `02_compile_stack/04_inductor/02_torch_compile_architecture.md`（overview 四写之一） | 151 | 五阶段全景表 → 课程页 §4 Inductor 小节；`04_inductor/index.md` 补一段简短 is-what/why 段落承接 overview 角色，不留空洞 |
+
+`19_torch_compile_end_to_end/index.md`（孤儿页）随目录一并 `git rm -r` 删除，19 号目录清空。
+
+**入链修复**：一次性脚本批量重写全库 127 处 `[[...]]` 目标（94 个文件），全部改指
+`courses/torch_compile_end_to_end` 或 `02_compile_stack/04_inductor/index`；随后逐文件人工核查
+消除批量替换产生的相邻重复条目（约 12 处，如同一 Related Pages 列表里两个旧索引坍缩成同一个
+课程页链接）；`01_ai_frameworks/index.md` 删除"过渡期"19 号指向块，课程入口改指
+`[[courses/torch_compile_end_to_end|torch.compile 端到端课程]]`；`wiki/index.md` 新增 courses
+入口小节。changelog 历史条目中 4 处指向已删除页的活链接按"历史不回写"惯例降级为惰性反引号 +
+去向说明（不计入上方 127 处）。
+
+**pytest 侧修复**：`tools/labs_torch_compile/demo_manifest.json` 的 `c01` 条目 `page` 字段改指
+`torch_compile_end_to_end.md`；`test_volume_demo_contract.py` 的 `_page_root()` 为 `volume=="C" and
+page_id=="c01"` 特判路由到 `wiki/courses/`，末尾兜底分支从"回退到 19 号目录"改为
+`raise AssertionError`（19 号目录已删除，理应不可达）；`CourseMarkdownContractTest._course_pages()`
+的 `course_root` glob 目标同步改为 `wiki/courses`。labs README/`NATIVE_BACKEND_RUNBOOK.md` 对
+`00_pytorch_graph_series_index` 的 2 处引用同步改指课程页。
+
+**遗留小修**（上一任务审查移交的 5 处旧基名/层次标注遗留，均为反引号/prose 引用，未被
+`check_links.py` 覆盖，故未在此前批量修复中被发现）：`04_inductor/index.md` 表格单元格 3 个旧
+基名补前缀；`15_inductor_compile_fx_orchestration_analysis.md`"最后更新"注里 7 个旧基名补前缀/
+改指现存后继页（`scheduler_analysis` 已随 Task 8 判重删除，改指其内容实际归宿
+`13_scheduler_dependency_graph_fusion_and_ordering_analysis`）；`npu/30_npu_vs_upstream_fusion_passes.md`
+的 `npu_compile_paths_overview.md` 引用补 `01_` 前缀；`npu/32_npu_debug_guide.md` 页头"层次"由
+"quick start"改为"方法论/排查实践(段 3)"，与 Task 9.5 changelog 记载的编号判段结论对齐（该页头
+此前遗漏同步）。
+
+**全 index 终校**：`01_ai_frameworks/index.md` 五层表填平 Task 7/Task 4 完成后仍标"待填充"的
+Graph IR/Passes 与调试诊断两格；`02_compile_stack/index.md`、`04_inductor/index.md`（Task 8 自查
+点名重点通读，确认无遗留问题）及其余 26 个模块/层 index 逐一核对：脚本核实每个 index.md 均已
+提及其目录下全部同级 `.md` 文件（0 处缺失）；`04_inductor/index.md`、`02_aot_autograd/index.md`、
+`01_fx_export_extensibility/index.md` 三个当日实际编辑过内容的模块 index 补"最后更新"日期至
+2026-07-30；`01_eager_runtime/index.md`/`02_compile_stack/index.md`/`04_export_and_distributed/index.md`
+三个 Task 2 建立的架构层壳 index 确认按设计无日期字段，非遗漏。`wiki/index.md`：AI框架页数按
+`find wiki/02_engineering/01_ai_frameworks -name "*.md" ! -name SUPERSEDED.md` 实数重算，
+174→**150**（子域 TorchInductor 39→36、运行时图 10→12，均为 Task 3-9.5 期间累积漂移的一次性
+对账，非本任务新增改动）；统计日期同步到 2026-07-30。
+
+**自查披露**：`grep -rn "19_torch_compile_end_to_end" wiki/ --include="*.md" | grep -v changelog`
+非零命中——8 处，均为 Task 3（A 卷迁移）遗留的历史出处脚注（形如"本节内容原属 P4 知识库整改
+被删除的 A 卷回顾页(`19_torch_compile_end_to_end/aXX_....md`)"），在反引号内、非 `[[wikilink]]`、
+明确注明"已删除"，起 changelog 同等的溯源作用；均早于本任务存在（`git show e5cc60a` 可验证），
+本任务未新增此类残留，按惯例不追溯改写，留痕供控制者复核。
+
+**P4 阶段小结**（Task 1-10 全阶段，本任务收官）：`01_ai_frameworks` 从 18 个平铺目录重组为 5
+个架构层两级目录；`19_torch_compile_end_to_end`（63 篇/2.05 万行）经 A→E→B→D→C→F 六卷逐批
+判重解散，独有内容验证后并入功能树对应页，课程导读价值最终归一到单一 `courses/` 纯导读页；
+`checker` 全程 `broken=0`（Task 1 基线 pages=398 → 本任务终态 pages=375，净 -23 主要来自判重
+删除的重复大文与本任务的 4 页课程化收口，非内容流失）；`pytest tools/` 全程 77 passed。
+
+**校验**：`python tools/check_links.py`：pages=375，broken=0，ambiguous=69，bare_index=69，
+orphans=0；`pytest tools/ -q`：77 passed。
+
 ## 2026-07-30：知识库结构整改 P4 Task 9.5（目录内分段编号，用户追加需求）
 
 **Type**: Naming Convention（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 9.5、

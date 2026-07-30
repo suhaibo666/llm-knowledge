@@ -33,9 +33,9 @@
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| AI框架 | [[02_engineering/01_ai_frameworks/index]] | 174 | 活跃 |
-| └─ TorchInductor | [[02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/index]] | 39 | 活跃 |
-| └─ 运行时图(CUDA/NPU) | [[02_engineering/01_ai_frameworks/03_runtime_graphs/index]] | 10 | 活跃 |
+| AI框架 | [[02_engineering/01_ai_frameworks/index]] | 150 | 活跃 |
+| └─ TorchInductor | [[02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/index]] | 36 | 活跃 |
+| └─ 运行时图(CUDA/NPU) | [[02_engineering/01_ai_frameworks/03_runtime_graphs/index]] | 12 | 活跃 |
 | └─ Codegen 后端(MLIR) | [[02_engineering/01_ai_frameworks/02_compile_stack/05_codegen_backends/mlir/index]] | 8 | 活跃 |
 | 训练框架 | [[02_engineering/02_train_frameworks/index]] | 60 | 活跃 |
 | └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 30 | 活跃 |
@@ -51,7 +51,7 @@
 | 自动并行 | [[02_engineering/06_auto_parallel/index]] | 2 | 活跃 |
 | 训练可靠性 | [[02_engineering/07_training_reliability/index]] | 4 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-07-29。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-07-30。
 
 ### 03 后训练纵向学习域
 

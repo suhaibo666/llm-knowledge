@@ -37,7 +37,7 @@ PyTorch 可拆成相互支撑的两条主轴——**① eager 运行时地基**(
 | 层 | 目录 | 功能 |
 |---|------|------|
 | ① eager 运行时地基 | [[01_eager_runtime/index]] | 张量表达、Dispatcher/PrivateUse1 设备接入、算子接入供给侧(op-plugin)、ATen 算子定义与执行、eager 反向自动微分引擎、torch.nn 模块体系、运行时横切(缓存分配器/AMP/Profiler) |
-| ② torch.compile 编译栈 | [[02_compile_stack/index]] | Dynamo 图捕获、AOTAutograd 前/反向分解、Graph IR/Passes(待填充)、TorchInductor lowering/调度/codegen(`npu/` NPU 后端)、codegen 后端(MLIR)、跨阶段编译缓存、调试诊断(待填充) |
+| ② torch.compile 编译栈 | [[02_compile_stack/index]] | Dynamo 图捕获、AOTAutograd 前/反向分解、Graph IR/Passes(FX 数据模型/改图原语/PatternMatcher/DCE)、TorchInductor lowering/调度/codegen(`npu/` NPU 后端)、codegen 后端(MLIR)、跨阶段编译缓存、调试诊断(证据层级/失败分层定位/正确性与性能验收/生产上线) |
 | ③ 运行时图捕获 | [[03_runtime_graphs/index]] | CUDA Graphs / NPU Graphs(ACLGraph),与 Inductor `mode="reduce-overhead"` 经 cudagraph trees 集成 |
 | ④ 图导出与分布式 | [[04_export_and_distributed/index]] | torch.fx(eager 图 IR)、torch.export(ExportedProgram)、torch.library/custom_op、functorch(vmap/grad);torch.distributed 原生原语:c10d/ProcessGroup、DDP、FSDP/FSDP2、DTensor/DeviceMesh、TP/PP(**[[02_train_frameworks/index]] 的底座**) |
 | ⑤ 其它框架对照 | [[05_other_frameworks/index]] | 非 PyTorch 框架编译器/架构分析(MindSpore 等),与本域横向对照 |

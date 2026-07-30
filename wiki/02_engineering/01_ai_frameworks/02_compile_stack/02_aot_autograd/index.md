@@ -2,7 +2,7 @@
 
 > 介于 Dynamo 与 Inductor 之间:functionalization、前/反向联合图(joint graph)生成与 min-cut partition。
 > 知识分层:overview(本索引)→ quick start → deep dive(约定见 [[01_ai_frameworks/index]])。
-> 最后更新: 2026-07-27
+> 最后更新: 2026-07-30(kb-reorg P4 Task 10:Related Pages 课程链接改指 [[courses/torch_compile_end_to_end]])
 
 ---
 

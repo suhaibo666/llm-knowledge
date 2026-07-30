@@ -2,7 +2,7 @@
 
 > 层次:overview(浅)
 > 核验基准:PyTorch upstream `E:\97-codes\pytorch\pytorch`(v2.13.0a0, commit 9922478)
-> 最后更新:2026-07-27
+> 最后更新:2026-07-30(kb-reorg P4 Task 10:课程链接改指 [[courses/torch_compile_end_to_end]])
 
 ---
 

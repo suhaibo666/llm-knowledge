@@ -2,7 +2,7 @@
 
 > PyTorch 编译全链路扩展面:Dynamo backend → Pre-Grad → AOT/Decomposition → Joint → Post-Grad → Lowering(FX→Inductor IR) → Scheduler(调度/融合) → CodeGen。
 > 阅读路径 **overview → quick start → deep dive**(约定见 [[01_ai_frameworks/index]])。本目录为 **upstream**;**NPU Inductor 后端**单独见 [[02_compile_stack/04_inductor/npu/index]]。
-> 最后更新: 2026-07-27
+> 最后更新: 2026-07-30(kb-reorg P4 Task 10:段 0 移除 `02_torch_compile_architecture` 自引用行,overview 补 is-what/why 段落,五阶段全景表迁往 [[courses/torch_compile_end_to_end]])
 
 ---
 
