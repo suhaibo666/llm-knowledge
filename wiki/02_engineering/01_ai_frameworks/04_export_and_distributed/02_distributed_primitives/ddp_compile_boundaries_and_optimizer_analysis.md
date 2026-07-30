@@ -3,8 +3,11 @@
 > 卷别：F · 训练、分布式、扩展与部署  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[activation_checkpoint_recompute_and_compile_analysis]]  
-> 后续：[[f04_fsdp_dtensor_and_distributed_graphs_analysis]]  
-> 最后更新：2026-07-28
+> 后续：[[fsdp_dtensor_and_distributed_graphs_analysis]]  
+> 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,与 [[c10d_ddp_fsdp_dtensor_analysis]] 互指划界)
+
+> [!note] 与 [[c10d_ddp_fsdp_dtensor_analysis]] 的分工
+> 该页讲 DDP **原语本身**——C++ `Reducer` 怎样分桶、`all_reduce` 怎样与反向重叠,不涉及 `torch.compile`。本页讲 DDP 与**编译器相遇时**新增的一层问题:`DDPOptimizer` 为什么要按 DDP bucket 边界反向切分 Dynamo 捕获的 forward FX 图、bucket 与编译器 split 何时不对齐、以及 optimizer 是否入图的取舍。理解顺序:先读该页知道 DDP 本身怎样分桶通信,再读本页知道编译器如何据此切图。
 
 ## 1. DDP 为什么会反过来影响图切分
 
@@ -225,6 +228,6 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[00_torch_compile_end_to_end_index]]
 - [[compiled_autograd_analysis]]
 - [[activation_checkpoint_recompute_and_compile_analysis]]
-- [[f04_fsdp_dtensor_and_distributed_graphs_analysis]]
+- [[fsdp_dtensor_and_distributed_graphs_analysis]]
 - [[04_export_and_distributed/02_distributed_primitives/index]]
 - [[production_rollout_fallback_and_monitoring_analysis]]

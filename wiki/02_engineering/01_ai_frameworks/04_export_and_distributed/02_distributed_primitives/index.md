@@ -26,6 +26,10 @@
 
 一句话划界:**本模块 = PyTorch 仓库里 `torch/distributed/` 与 `torch/nn/parallel/` 内的原生能力**;凡是「把这些原语按某种配方拼起来训大模型」的工程,归 [[02_train_frameworks/index]]。
 
+### 再一层边界:原语本身 vs 与 `torch.compile` 的接入边界
+
+[[c10d_ddp_fsdp_dtensor_analysis]] 讲的是这些原语**本身**怎么实现(Reducer 怎么分桶、FlatParameter 怎么 shard/unshard、DTensor 怎么传播 placement)——不涉及 `torch.compile`。[[ddp_compile_boundaries_and_optimizer_analysis]]、[[fsdp_dtensor_and_distributed_graphs_analysis]] 讲的是这些原语与 Dynamo/AOTAutograd/Inductor **相遇时**新增的一层问题:DDPOptimizer 为什么要按 DDP bucket 反向切分 Dynamo FX 图、FSDP 为什么要求 `use_orig_params=True` 且 Dynamo 需跳过其 wrapper frame、每 rank local graph 与 collective 顺序如何在编译期保持一致。两组页面互补,不重叠——本模块 deep dive 之后若要理解"编译器怎么处理这些原语",接着读后两篇。
+
 ### 通信底座:c10d(ProcessGroup + Backend + Work)
 
 最底层叫 **c10d**(c10 distributed)。它的 Python 入口几乎只是从 C 扩展导入符号——`ProcessGroup`(`torch/distributed/distributed_c10d.py:41`)、`Work`(`distributed_c10d.py:47`)的真正实现都在 C++(`torch/csrc/distributed/c10d/`),Python 侧只做参数封装与分派。三个核心概念:
@@ -125,6 +129,8 @@ flowchart TB
 |------|------|---------|
 | [[distributed_primitives_quickstart]] | **quick start** | 怎么用、怎么查、怎么验证:`init_process_group`/`init_device_mesh` 起组;集合原语最小示例(`broadcast`/`all_reduce`/`all_gather`/`reduce_scatter`)与 `async_op` 重叠;DDP 包模型;FSDP2 `fully_shard`;DTensor 的 `Shard`/`Replicate`/`Partial` 与 `distribute_tensor`/`from_local`;TP 的 `parallelize_module` + `ColwiseParallel`/`RowwiseParallel`;`torchrun` 启动与常见排查 |
 | [[c10d_ddp_fsdp_dtensor_analysis]] | deep dive | 源码级机制深析:Backend 注册表与 `register_backend`;collective/p2p → `Work` 的异步分派;DDP 的 C++ `Reducer` 分桶 + 反向 all-reduce 重叠;FSDP1 `FlatParameter` 的 shard/unshard/reshard 与显存核算;FSDP2 non-wrapper 设计;DTensor 的 placement 传播与通信插入;functional collectives + `AsyncCollectiveTensor`;`DeviceMesh` 层级与 `split_group`/`shrink_group`;TP `ParallelStyle` 契约;PP 调度族与 microbatching |
+| [[ddp_compile_boundaries_and_optimizer_analysis]] | deep dive(compile 边界) | DDPOptimizer 为何按 DDP bucket 逆序切分 Dynamo forward 图、bucket 与编译器 split 何时不对齐、optimizer 是否入图的三种边界、与 Compiled Autograd 的组合;2026-07-30 迁入,与 [[c10d_ddp_fsdp_dtensor_analysis]] 互指划界(原语本身 vs 与 compile 的边界) |
+| [[fsdp_dtensor_and_distributed_graphs_analysis]] | deep dive(compile 边界) | 分布式图不是一张全局 FX 图、FSDP1 `use_orig_params=True` 为何是编译前提、Dynamo 为何跳过 FSDP wrapper frame、DTensor 在编译图中的形态、rank 一致性与 guards;2026-07-30 迁入,与上一篇同批互指划界 |
 
 ---
 

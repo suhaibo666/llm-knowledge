@@ -2,7 +2,7 @@
 
 > 卷别：F · 训练、分布式、扩展与部署  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[f04_fsdp_dtensor_and_distributed_graphs_analysis]]  
+> 前置：[[fsdp_dtensor_and_distributed_graphs_analysis]]  
 > 后续：[[f06_custom_backends_and_device_integration_analysis]]  
 > 最后更新：2026-07-28
 
@@ -250,6 +250,6 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[00_torch_compile_end_to_end_index]]
 - [[pytorch_dispatcher_analysis]] — schema/dispatcher/ADInplaceOrView 分层
 - [[dispatch_modes_proxytensor_faketensor_analysis]] — ProxyTensor/FakeTensor 两套抽象执行状态（2026-07-30 起独立成页，取代原 `aotautograd_analysis` §13 引用）
-- [[f04_fsdp_dtensor_and_distributed_graphs_analysis]]
+- [[fsdp_dtensor_and_distributed_graphs_analysis]]
 - [[f06_custom_backends_and_device_integration_analysis]]
 - [[04_export_and_distributed/01_fx_export_extensibility/index]]
