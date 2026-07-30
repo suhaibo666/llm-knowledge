@@ -330,7 +330,7 @@ sequenceDiagram
 
 ## 13. 编译器视角:View 语义为什么必须跨 TensorImpl、AutogradMeta 和编译期表示建模
 
-> 本节内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a01_tensor_storage_layout_and_views_analysis.md`),因其"编译器为什么关心这些字段"视角在本模块与 [[01_eager_runtime/05_autograd_engine/index]] 均无覆盖,逐字迁入本页。
+> 本节内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a01_tensor_storage_layout_and_views_analysis.md`),因其"编译器为什么关心这些字段"视角在本模块与 [[01_eager_runtime/05_autograd_engine/index]] 均无覆盖,逐字迁入本页。来源页固定源码基线为 `e8f97c1a`,与本页核验基准 `9922478` 不同;本节引用的符号在两个基线间抽样核验兼容,未见语义或行号漂移。
 
 ### 13.1 View 是共享 Storage 加额外语义
 

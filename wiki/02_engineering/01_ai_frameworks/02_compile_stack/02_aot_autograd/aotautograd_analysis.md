@@ -3,7 +3,7 @@
 > **页面角色**：AOTAutograd 全量 reference 与 edge-case 集合，不是历史废页。
 > **原始基线**：baseline-unknown；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
 > **审计状态**：已纳入 Batch 0，但逐结构单元迁移仍有 unresolved；当前机制主线见 [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]，本页继续承载宽口径源码参考。
-> **2026-07-30**：§13 并入 P4 整改删除的 A04 页独有的 ProxyTensor/FakeTensor 机制内容。
+> **2026-07-30**：§13 并入 P4 整改删除的 A04 页独有的 ProxyTensor/FakeTensor 机制内容；补 §13.9(状态与所有权)、§13.10(复杂度)、§13.11(与 Dynamo 的关系)——此三节此前漏迁。
 
 ## 目录
 1. [概述与架构总览](#1-概述与架构总览)
@@ -1372,6 +1372,48 @@ output binding"哪一步，而不是笼统归因于 `__torch_dispatch__`。
 | `__torch_function__`和 `__torch_dispatch__`相同 | 前者偏 public API，后者偏 operator dispatcher |
 | TorchDispatchMode 必须包装 inputs | mode 是动态作用域，能拦截 factory op |
 | Dynamo 就是 ProxyTorchDispatchMode | Dynamo还解释 Python bytecode、objects、guards 和 resume |
+
+### 13.9 状态与所有权
+
+| 状态 | Owner | 生命周期 |
+|---|---|---|
+| mode stack | thread-local dispatch infrastructure | 动态作用域 |
+| fake tensor memo/cache/ShapeEnv | FakeTensorMode | 一次或多次相关 trace |
+| proxy slot | traced value + tracer relation | 当前 trace |
+| FX Graph/Node | tracer/GraphModule | trace 产物 |
+| constant real value | FakeTensor/Proxy metadata | 条件允许时 |
+| unbacked symbol bindings | ShapeEnv/proxy metadata | symbolic trace 与 guards/runtime asserts |
+
+跨 trace 复用 FakeTensorMode 时必须尊重 epoch；跨 Graph 也不能按 Proxy object identity
+推断值相同。
+
+### 13.10 复杂度
+
+设一次 operator 的 pytree 输出有 \(m\) 个 leaves：
+
+- mode stack dispatch 深度与激活 modes/subclasses 数相关；
+- fake/meta kernel 成本通常远低于真实 Tensor data kernel，但仍取决于 operator metadata
+  算法，不保证常数；
+- `track_tensor_tree`遍历输出结构为 \(O(m)\)；
+- decomposition展开为 \(d\) 个 operator 时，trace/node/meta 成本按 \(d\) 增长；
+- dispatch cache 可以跳过重复 fake dispatch构造，但 key 生成与 cache bypass 仍有成本。
+
+不能从"没有真实数据"推断 trace 免费；复杂 shape algebra、decomposition 和 Python
+object modeling 仍可能主导 compile latency。
+
+### 13.11 与 Dynamo 的关系
+
+Dynamo不是用 ProxyTensor替代 Python symbolic interpreter：
+
+- InstructionTranslator建模 Python stack/locals/control flow；
+- VariableTracker建模 Python/Tensor values；
+- OutputGraph/SubgraphTracer生成 FX；
+- FakeTensor为 TensorVariable提供 metadata execution；
+- operator-level modes处理 decomposition/functionalization 等变换。
+
+也就是说，Dynamo位于更高的 Python program 层，但会复用较低层的 FakeTensor/FX 工具。
+把 Dynamo 简化成"一个 TorchDispatchMode"会丢失 graph break、resume bytecode、guards
+和 Python object state。
 
 ## 附录
 

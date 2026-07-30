@@ -525,7 +525,7 @@ z = x + y * 2     # 预期打印: [dispatch] aten::mul  然后  [dispatch] aten:
 
 ## 12. 深入④：ADInplaceOrView 分层与 mutation 算子的 rebase(手写 wrapper 样本)
 
-> 本节内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a02_operator_schema_dispatch_and_autograd_analysis.md`),因其"Autograd 与 ADInplaceOrView 为什么分层、mutation 算子在 wrapper 层多做了什么"的手写样本在本页与 [[01_eager_runtime/05_autograd_engine/index]] 均无覆盖,逐字迁入本页。
+> 本节内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a02_operator_schema_dispatch_and_autograd_analysis.md`),因其"Autograd 与 ADInplaceOrView 为什么分层、mutation 算子在 wrapper 层多做了什么"的手写样本在本页与 [[01_eager_runtime/05_autograd_engine/index]] 均无覆盖,逐字迁入本页。本节沿用来源页的行号引用风格,基线 e8f97c1a(与本页页头"行号随版本漂移不标注"的约定不同,此为例外)。
 
 ### 12.1 Autograd dispatch wrapper 做什么
 

@@ -4,7 +4,7 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[b03_eval_frame_callback_and_code_cache_analysis]]  
 > 后续：[[b05_variable_tracker_source_and_python_object_model_analysis]]  
-> 最后更新：2026-07-30(§14 并入 A03 独有的 bytecode_transformation 重组内容)
+> 最后更新：2026-07-30(§14 并入 A03 独有的 bytecode_transformation 重组内容；补 §14.4「不变量与失败边界」7 条,此前漏迁,勿与本页 §11 同名小节混淆——后者讲符号执行状态机的不变量)
 
 ## 1. 为什么 Dynamo要解释 Python bytecode
 
@@ -353,6 +353,16 @@ assemble 前要：
 这一层解释了 §9 "Transformed code怎样形成"中 `OutputGraph.output_instructions`替换原
 instruction列表之后，具体是靠这套 clone→transform→fixpoint-reassemble 流程才产出一个
 CPython 可以合法执行的新 code object，而不是简单地把字节数组拼接起来。
+
+### 14.4 不变量与失败边界
+
+- transformed code 的 locals 数必须与 `co_varnames`一致；
+- jump target 必须引用当前 instruction array；
+- exception table entries 必须有效；
+- stack-size analysis 必须覆盖重写后控制流；
+- generator/coroutine 的 resume 语义有额外限制；
+- code object/cache identity 不能用函数名代替；
+- Python 版本改变 opcode/exception-table 格式，源码结论必须绑定版本与 commit。
 
 ## 配套 Demo
 

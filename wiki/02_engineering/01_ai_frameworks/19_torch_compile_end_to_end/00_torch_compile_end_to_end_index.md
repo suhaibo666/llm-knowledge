@@ -46,7 +46,7 @@ flowchart LR
 
 ## 3. 卷 A：执行模型前置基础（已并入功能页，2026-07-30）
 
-> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/tensor_impl_and_storage_analysis]] §13、[[pytorch_dispatcher_analysis]] §12、[[b03_eval_frame_callback_and_code_cache_analysis]] §13、[[b04_instruction_translator_and_bytecode_state_machine_analysis]] §14、[[aotautograd_analysis]] §12.5、[[b01_torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[e07_compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
+> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/tensor_impl_and_storage_analysis]] §13、[[pytorch_dispatcher_analysis]] §12、[[b03_eval_frame_callback_and_code_cache_analysis]] §13、[[b04_instruction_translator_and_bytecode_state_machine_analysis]] §14、[[aotautograd_analysis]] §13、[[b01_torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[e07_compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
 
 ## 4. 卷 B：`torch.compile` API 与 TorchDynamo
 

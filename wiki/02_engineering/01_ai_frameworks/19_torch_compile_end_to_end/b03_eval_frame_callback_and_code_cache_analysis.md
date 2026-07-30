@@ -4,7 +4,7 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[b02_backend_modes_options_stances_and_fullgraph_analysis]]  
 > 后续：[[b04_instruction_translator_and_bytecode_state_machine_analysis]]  
-> 最后更新：2026-07-30(§13 并入 A03 独有的 code object/frame/instruction 定义与 C-Hook 边界内容)
+> 最后更新：2026-07-30(§13 并入 A03 独有的 code object/frame/instruction 定义与 C-Hook 边界内容；补 §13.3「`_compile` 为什么同时需要 instructions 和运行时状态」,此前漏迁)
 
 ## 1. 为什么 Dynamo截获 frame，而不是 monkey-patch Tensor算子
 
@@ -219,6 +219,19 @@ guard内部不是单一常数检查；Tensor metadata、Python对象、字典和
 C 扩展把 callback 存在线程局部状态;`None`、`False` 和 callable 分别表示不同 eval-frame 策略(`torch/csrc/dynamo/eval_frame.c:616-638`,与本页 §2 引用同一处协议定义)。当 frame 到达时,Python 侧 `CatchErrorsWrapper` 先检查 frame 是否应跳过、当前 compile mode 是否允许处理等边界(`torch/_dynamo/convert_frame.py:2517-2561`),再进入真正的 ConvertFrame。
 
 `ConvertFrameAssert.__call__` 接收 code object、cache entries 与 cache size 等信息(`torch/_dynamo/convert_frame.py:632-656`)。这说明 cache identity 的锚点是 code object 及其 entry 集合,不是一次性的 frame 实例;frame 提供本次 locals/stack,code object 提供可复用程序身份——这也是 §3-§7 讨论的 `ExtraState`/`CacheEntry` 挂在 code object 而非 frame 上的调用侧起点。
+
+### 13.3 `_compile` 为什么同时需要 instructions 和运行时状态
+
+`_compile` 的参数契约同时包含 code、globals、locals、builtins、compiler function、
+one-graph/export 选项和 frame state
+（`torch/_dynamo/convert_frame.py:1647-1680`）。只读取 bytecode 不能决定 Tensor
+shape、Python object identity 或分支结果；只读取运行时对象又没有 instruction pointer
+和控制流结构。Dynamo 必须把两者放进同一次 symbolic execution。
+
+内部 `compile_inner` 返回 transformed code、OutputGraph 等结果，随后更新 code state
+（`torch/_dynamo/convert_frame.py:2115-2138`）。ConvertFrame 外层再把这些行为包入统一
+异常与 replay/diagnostic 处理，而不是让每个 opcode handler自行决定 fallback
+（`torch/_dynamo/convert_frame.py:2295-2337`）。
 
 ## 配套 Demo
 
