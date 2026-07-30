@@ -85,10 +85,12 @@ flowchart TD
 
 ## 页面列表(按层次)
 
+> **段位与阅读顺序**(kb-reorg P4 Task 9.5,2026-07-30):段 0(01-09)入门;段 1(10-19)核心机制。本目录仅 2 篇,一篇一段。
+
 | 页面 | 层次 | 核心主题 |
 |------|------|---------|
-| [[adding_an_aten_operator_guide]] | **quick start** | 怎么加/查/验证一个 ATen 算子:`func` 与参数类型映射(`README.md:31-90`)、`variants`(202-226)、`annotations` 的 `Tensor(a!)`(227-272)、`dispatch` 表与默认 `CompositeImplicitAutograd`(274-309)、选 Composite vs 逐后端(338-380)、`autogen`(478-498)、用 `PythonDispatcher` 验证分发表(599-607);生成产物定位(`build/.../RegisterCPU.cpp` 等);结构化三件套范例(`native_functions.yaml:536-573`) |
-| [[aten_codegen_and_structured_kernels_analysis]] | deep dive | 源码级深析:`NativeFunction`/`NativeFunctionsGroup` AST 不变式、`DispatchKey` 运行时 vs alias、`OperatorEntry.cpp:352-471` 分发表计算全文、结构化 `meta`/`impl` + `TensorIteratorBase` + precomputed、`BackendIndex`/`BackendMetadata` 逐后端特化、boxing/unboxing 与 `fallthrough_kernel`、autogen 变体生成、变异标注与 functionalization |
+| [[01_adding_an_aten_operator_guide]] | **quick start**(段 0) | 怎么加/查/验证一个 ATen 算子:`func` 与参数类型映射(`README.md:31-90`)、`variants`(202-226)、`annotations` 的 `Tensor(a!)`(227-272)、`dispatch` 表与默认 `CompositeImplicitAutograd`(274-309)、选 Composite vs 逐后端(338-380)、`autogen`(478-498)、用 `PythonDispatcher` 验证分发表(599-607);生成产物定位(`build/.../RegisterCPU.cpp` 等);结构化三件套范例(`native_functions.yaml:536-573`) |
+| [[10_aten_codegen_and_structured_kernels_analysis]] | deep dive(段 1) | 源码级深析:`NativeFunction`/`NativeFunctionsGroup` AST 不变式、`DispatchKey` 运行时 vs alias、`OperatorEntry.cpp:352-471` 分发表计算全文、结构化 `meta`/`impl` + `TensorIteratorBase` + precomputed、`BackendIndex`/`BackendMetadata` 逐后端特化、boxing/unboxing 与 `fallthrough_kernel`、autogen 变体生成、变异标注与 functionalization |
 
 ---
 
@@ -104,8 +106,8 @@ flowchart TD
 
 ## Related Pages
 
-- [[adding_an_aten_operator_guide]] — 本模块 quickstart
-- [[aten_codegen_and_structured_kernels_analysis]] — 本模块 deepdive
+- [[01_adding_an_aten_operator_guide]] — 本模块 quickstart
+- [[10_aten_codegen_and_structured_kernels_analysis]] — 本模块 deepdive
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — 运行时路由
 - [[10_pytorch_dispatcher_analysis]] — Dispatcher 优先级/redispatch/boxed-unboxed 深析
 - [[01_eager_runtime/03_op_registration/index]] — NPU 算子注册特化实例

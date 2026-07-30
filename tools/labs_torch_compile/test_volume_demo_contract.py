@@ -731,7 +731,7 @@ class CourseMarkdownContractTest(unittest.TestCase):
             (inductor_root, "inductor_compile_fx_orchestration_analysis.md"),
             (aot_autograd_root, "aot_runtime_wrappers_and_lazy_backward_compile_analysis.md"),
             (cuda_root, "cudagraph_trees_warmup_record_and_replay_analysis.md"),
-            (autograd_engine_root, "compiled_autograd_analysis.md"),
+            (autograd_engine_root, "20_compiled_autograd_analysis.md"),
         ]
         locator = re.compile(
             r"(?:torch|test|tests|functorch|aten|c10|tools)/"

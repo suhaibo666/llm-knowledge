@@ -6,7 +6,7 @@
 
 **一句话**:每个 ATen 算子的「签名 + 后端映射 + 自动生成意图」都集中声明在 `aten/src/ATen/native/native_functions.yaml` 这一份 YAML 里;`torchgen` 读它,生成全部 C++/Python 样板(`m.def`/`m.impl` 注册、method/function 绑定、结构化 meta/impl 签名)。本页只讲「怎么写一条 `func`、怎么填 `dispatch`、怎么选 dispatch key、怎么声明结构化 out-function、生成产物落在哪、怎么验证」。所有引用都指向上述 checkout 的真实行号。
 
-机制层的「为什么这么设计」(分发表优先级、AST 不变式、boxing/unboxing)在 [[aten_codegen_and_structured_kernels_analysis]];端到端生命周期总览在 [[index]]。
+机制层的「为什么这么设计」(分发表优先级、AST 不变式、boxing/unboxing)在 [[10_aten_codegen_and_structured_kernels_analysis]];端到端生命周期总览在 [[index]]。
 
 ---
 
@@ -266,7 +266,7 @@ print(dispatcher.dispatchTable())   # 打印:每个后端最终落到哪个 kern
 ## Related Pages
 
 - [[index]] — 本模块 overview:ATen 算子定义与执行 端到端生命周期
-- [[aten_codegen_and_structured_kernels_analysis]] — 本模块 deepdive:torchgen AST 不变式、分发表优先级计算、结构化 meta/impl、boxing/unboxing
+- [[10_aten_codegen_and_structured_kernels_analysis]] — 本模块 deepdive:torchgen AST 不变式、分发表优先级计算、结构化 meta/impl、boxing/unboxing
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — 运行时 Dispatcher 按 DispatchKey 路由
 - [[10_pytorch_dispatcher_analysis]] — 分发器、alias 键、fallback 的设计与实现
 - [[01_eager_runtime/03_op_registration/index]] — `TORCH_LIBRARY` / `m.def` / `m.impl` 实操与设备特化注册

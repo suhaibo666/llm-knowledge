@@ -138,10 +138,12 @@ graph TD
 
 ## 页面列表(按层次)
 
+> **段位与阅读顺序**(kb-reorg P4 Task 9.5,2026-07-30):段 0(01-09)入门;段 1(10-19)核心机制。本目录仅 2 篇,一篇一段。
+
 | 页面 | 层次 | 核心主题 |
 |------|------|---------|
-| [[nn_module_quickstart]] | **quick start** | 搭模块与注册(`register_parameter`/`register_buffer`/`add_module`);遍历族(`parameters`/`buffers`/`children`/`modules`);存取(`state_dict`/`load_state_dict` 的 strict/assign);`train`/`eval` 模式切换;forward/backward hook;容器(`Sequential`/`ModuleList`/`ModuleDict`);优化器循环与分组 lr;可跑的最小示例 |
-| [[nn_module_and_optimizer_analysis]] | deep dive | `__setattr__`/`__getattr__` 分派内核;`_apply` 变换流水线三路径(swap_tensors vs `.data=` 与 grad 保留);`_call_impl` 的 hook 执行编排(顺序/短路/`always_call`);`_save/_load_from_state_dict` 与 `_named_members` 去重引擎;Lazy 物化(`UninitializedParameter`/`materialize`/`cls_to_become`);Parameter/Buffer 元类;Optimizer 深水区(`defaults` 合并、param_groups 隔离、foreach/fused) |
+| [[01_nn_module_quickstart]] | **quick start**(段 0) | 搭模块与注册(`register_parameter`/`register_buffer`/`add_module`);遍历族(`parameters`/`buffers`/`children`/`modules`);存取(`state_dict`/`load_state_dict` 的 strict/assign);`train`/`eval` 模式切换;forward/backward hook;容器(`Sequential`/`ModuleList`/`ModuleDict`);优化器循环与分组 lr;可跑的最小示例 |
+| [[10_nn_module_and_optimizer_analysis]] | deep dive(段 1) | `__setattr__`/`__getattr__` 分派内核;`_apply` 变换流水线三路径(swap_tensors vs `.data=` 与 grad 保留);`_call_impl` 的 hook 执行编排(顺序/短路/`always_call`);`_save/_load_from_state_dict` 与 `_named_members` 去重引擎;Lazy 物化(`UninitializedParameter`/`materialize`/`cls_to_become`);Parameter/Buffer 元类;Optimizer 深水区(`defaults` 合并、param_groups 隔离、foreach/fused) |
 
 ---
 
@@ -154,8 +156,8 @@ graph TD
 
 ## Related Pages
 
-- [[nn_module_quickstart]] — 本模块 quick start:怎么用、怎么查、怎么验证
-- [[nn_module_and_optimizer_analysis]] — 本模块 deep dive:源码级机制深析
+- [[01_nn_module_quickstart]] — 本模块 quick start:怎么用、怎么查、怎么验证
+- [[10_nn_module_and_optimizer_analysis]] — 本模块 deep dive:源码级机制深析
 - [[01_eager_runtime/01_tensor_and_storage/index]] — 张量与存储基座
 - [[01_eager_runtime/05_autograd_engine/index]] — eager autograd 基座
 - [[02_compile_stack/02_aot_autograd/index]] — 编译期 autograd 与无状态 functional 语境

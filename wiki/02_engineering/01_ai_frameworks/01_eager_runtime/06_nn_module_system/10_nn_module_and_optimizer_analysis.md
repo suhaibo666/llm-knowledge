@@ -6,7 +6,7 @@
 
 ---
 
-本页是 [[index]] 概念全景与 [[nn_module_quickstart]] 用法之后的源码层。聚焦 7 个锚点最密集的核心机制:`__setattr__` 注册分派、`_apply` 变换流水线、hook 执行编排、`train()` 递归、Lazy 物化、Parameter/Buffer 元类、Optimizer 深水区,以及 `nn.functional` 的无状态解耦。所有 `路径:行号` 均相对 `E:\97-codes\pytorch\pytorch` 根,落笔前逐一打开核实。
+本页是 [[index]] 概念全景与 [[01_nn_module_quickstart]] 用法之后的源码层。聚焦 7 个锚点最密集的核心机制:`__setattr__` 注册分派、`_apply` 变换流水线、hook 执行编排、`train()` 递归、Lazy 物化、Parameter/Buffer 元类、Optimizer 深水区,以及 `nn.functional` 的无状态解耦。所有 `路径:行号` 均相对 `E:\97-codes\pytorch\pytorch` 根,落笔前逐一打开核实。
 
 ---
 
@@ -410,7 +410,7 @@ def dropout(input, p=0.5, training=True, inplace=False):
 ## Related Pages
 
 - [[index]] — 本模块 overview:Module 树、注册表、状态 vs 计算的概念全景
-- [[nn_module_quickstart]] — 本模块 quick start:搭模块、遍历、存取、hook、优化器循环的可跑示例
+- [[01_nn_module_quickstart]] — 本模块 quick start:搭模块、遍历、存取、hook、优化器循环的可跑示例
 - [[01_eager_runtime/01_tensor_and_storage/index]] — 基座:Parameter / Buffer 都是 `torch.Tensor` 子类,`_apply` 的搬运语义源于此
 - [[01_eager_runtime/05_autograd_engine/index]] — 基座:Parameter 作为 autograd 叶子,`_apply` 须保叶子性与 `.grad`;optimizer `step` 在 `no_grad` 内推进
 - [[02_compile_stack/02_aot_autograd/index]] — 下游语境:`nn.functional` 无状态设计利于 FX tracing 与编译期联合图

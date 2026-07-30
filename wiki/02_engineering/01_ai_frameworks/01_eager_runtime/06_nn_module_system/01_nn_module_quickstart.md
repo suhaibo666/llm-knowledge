@@ -6,7 +6,7 @@
 
 **一句话**：`nn.Module` 是「带结构化状态的可调用对象」——你把 `Parameter`（可学习）、`Buffer`（持久但不学习）、子 `Module` 赋成实例属性，它自动登记进三张内部表，于是 `parameters()` / `state_dict()` / `.to()` / `train()` 全都能按类别递归。`Optimizer` 消费 `model.parameters()` 并按 `param_groups` 分组更新。本页给出最小可跑路径，所有引用均指向 `E:\97-codes\pytorch\pytorch` 真实行号。
 
-概念背景与全景图见 [[index]]；源码级深析见 [[nn_module_and_optimizer_analysis]]。
+概念背景与全景图见 [[index]]；源码级深析见 [[10_nn_module_and_optimizer_analysis]]。
 
 ---
 
@@ -207,7 +207,7 @@ for h in (h1, h2, h3):
 | `with_kwargs=True` | hook 也能看到 forward 的 kwargs | 签名变 `hook(module, args, kwargs, output)` |
 | `always_call=True` | 即便 forward 抛异常也补跑该 forward hook | 仅 `register_forward_hook` 有 |
 
-补充锚点：forward-pre hook `module.py:1624`；full-backward-pre hook `register_full_backward_pre_hook`（`module.py:1385`，在梯度计算前触发）。**注意**：旧式 `register_backward_hook` 已弃用，新代码用 `register_full_backward_hook`（`module.py:1460`）。无任何 hook 时，`__call__` 会短路直接进 `forward`（性能路径，见 [[nn_module_and_optimizer_analysis]]）。
+补充锚点：forward-pre hook `module.py:1624`；full-backward-pre hook `register_full_backward_pre_hook`（`module.py:1385`，在梯度计算前触发）。**注意**：旧式 `register_backward_hook` 已弃用，新代码用 `register_full_backward_hook`（`module.py:1460`）。无任何 hook 时，`__call__` 会短路直接进 `forward`（性能路径，见 [[10_nn_module_and_optimizer_analysis]]）。
 
 ---
 
@@ -307,14 +307,14 @@ opt.add_param_group({"params": net.bn.parameters(), "lr": 5e-3})  # optimizer.py
 | 推理精度异常 | 忘了 `model.eval()` | Dropout/BN 仍在训练态（见 §4） |
 | 优化器对某参数没更新 | 该参数没进任何 param_group / `requires_grad=False` | `for g in opt.param_groups: ...` + `named_parameters()` 看 `requires_grad` |
 | 共享权重被「更新两次」的担心 | 实际不会，`_named_members` 已去重 | 见 §2 去重说明（`module.py:2645`） |
-| 改了 `param.data` 后梯度异常 | `.data=` 旁路了 autograd | 优先 `.to()` / `swap_tensors`，细节见 [[nn_module_and_optimizer_analysis]] |
+| 改了 `param.data` 后梯度异常 | `.data=` 旁路了 autograd | 优先 `.to()` / `swap_tensors`，细节见 [[10_nn_module_and_optimizer_analysis]] |
 
 ---
 
 ## Related Pages
 
 - [[index]] — NN · 模块体系 总览（全景图、页面列表、关联域）
-- [[nn_module_and_optimizer_analysis]] — 源码级深析（`__setattr__` 分派、`_apply` 三路径、hook 编排、lazy 物化、optimizer foreach/fused）
+- [[10_nn_module_and_optimizer_analysis]] — 源码级深析（`__setattr__` 分派、`_apply` 三路径、hook 编排、lazy 物化、optimizer foreach/fused）
 - [[01_eager_runtime/01_tensor_and_storage/index]] — Parameter/Buffer 是张量子类，理解其底层先看张量与 storage
 - [[01_eager_runtime/05_autograd_engine/index]] — `loss.backward()` 填 `.grad`、backward hook 的来龙去脉
 - [[02_compile_stack/02_aot_autograd/index]] — 训练图捕获与函数化，把 nn.functional 的「无状态计算」推到编译期

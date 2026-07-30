@@ -6,7 +6,7 @@
 
 本页深入 eager 模式下反向自动微分的 C++ 引擎实现:前向运行时如何「磁带式」动态长出反向 DAG、单次 `backward()`/`grad()` 的执行上下文 `GraphTask`、多线程 `Engine` 与每设备 `ReadyQueue` 的优先级调度与可重入反向、`InputBuffer` 的梯度累积与跨流同步、叶子汇点 `AccumulateGrad` 的 layout 契约,以及 `SavedVariable`、`ForwardGrad`、`PyNode` 等关键配件。
 
-阅读前建议先看本模块 [[01_eager_runtime/05_autograd_engine/index]](概念定位)与 [[autograd_engine_quickstart]](API 用法)。本页所有引用写作「相对路径:行号」,相对 `E:\97-codes\pytorch\pytorch` 仓库根。
+阅读前建议先看本模块 [[01_eager_runtime/05_autograd_engine/index]](概念定位)与 [[01_autograd_engine_quickstart]](API 用法)。本页所有引用写作「相对路径:行号」,相对 `E:\97-codes\pytorch\pytorch` 仓库根。
 
 ---
 
@@ -464,7 +464,7 @@ eager 引擎是「运行时、动态、Python/C++ 混跑」的反向执行器;[[
 
 ## 12. 与 Compiled Autograd 的边界(同一引擎的第三种运行模式)
 
-Compiled Autograd 不是 AOTAutograd 的变体,而是**本页描述的这台 C++ `Engine` 自身**在调度反向时多出的一条路径:`.backward()` 触发时,`Engine` 仍按 §3-§5 的 `GraphTask`/`ReadyQueue`/`evaluate_function` 建立依赖并驱动执行顺序,但不再对每个就绪 `Node` 直接调 `apply()` 求值,而是把它代理给一个 Python `AutogradCompilerInstance`,把这次运行时反向"录制"成一张 FX 图,交给 Dynamo/Inductor 编译后再整体执行(cache 命中时甚至不重放这张 DAG)。因此三者的关系是:eager(本页,直接执行)与 Compiled Autograd(同一引擎,录制后编译执行)共享驱动机制与调度顺序,只是终端动作不同;AOTAutograd(§11)则是完全独立的编译期 trace,不经过本页的 `Engine::execute`。细节见 [[compiled_autograd_analysis]]。
+Compiled Autograd 不是 AOTAutograd 的变体,而是**本页描述的这台 C++ `Engine` 自身**在调度反向时多出的一条路径:`.backward()` 触发时,`Engine` 仍按 §3-§5 的 `GraphTask`/`ReadyQueue`/`evaluate_function` 建立依赖并驱动执行顺序,但不再对每个就绪 `Node` 直接调 `apply()` 求值,而是把它代理给一个 Python `AutogradCompilerInstance`,把这次运行时反向"录制"成一张 FX 图,交给 Dynamo/Inductor 编译后再整体执行(cache 命中时甚至不重放这张 DAG)。因此三者的关系是:eager(本页,直接执行)与 Compiled Autograd(同一引擎,录制后编译执行)共享驱动机制与调度顺序,只是终端动作不同;AOTAutograd(§11)则是完全独立的编译期 trace,不经过本页的 `Engine::execute`。细节见 [[20_compiled_autograd_analysis]]。
 
 ---
 
@@ -478,9 +478,9 @@ Compiled Autograd 不是 AOTAutograd 的变体,而是**本页描述的这台 C++
 ## Related Pages
 
 - [[01_eager_runtime/05_autograd_engine/index]] — 本模块概览(是什么 / 与 AOT 的区别 / 全景图)
-- [[autograd_engine_quickstart]] — API 用法、最小示例与排错命令
+- [[01_autograd_engine_quickstart]] — API 用法、最小示例与排错命令
 - [[02_compile_stack/02_aot_autograd/index]] — 编译期 AOT 捕获前/反向联合图
 - [[aotautograd_joint_forward_backward_graphs_analysis]] — AOTAutograd 源码级深析(对照本页理解 eager vs 编译)
-- [[compiled_autograd_analysis]] — 同一引擎的第三种运行模式:运行时录制反向为 FX 图再编译(§12 边界声明)
+- [[20_compiled_autograd_analysis]] — 同一引擎的第三种运行模式:运行时录制反向为 FX 图再编译(§12 边界声明)
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — Dispatcher:VariableType 层在此建反向图
 - [[01_eager_runtime/01_tensor_and_storage/index]] — Tensor / AutogradMeta 的底层数据结构
