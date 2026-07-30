@@ -81,6 +81,23 @@ replacement若隐含contiguous，必须插入合法copy/constraint或拒绝。In
 只比较returned tensor数值无法发现alias contract改变。测试要比较data_ptr/storage relation与
 mutation后的可观察状态。
 
+### 三条可复用的安全判据
+
+跨项目（upstream/torch_npu/vLLM/SGLang）反复独立收敛出同样三条判据，说明它们不是某个
+实现的偶然选择，而是 alias/mutation 安全改写的通用底线：
+
+1. **算子类别不变式**：只在共享某条不变式的一类算子内改写——例如 view 类＝扁平序/元素数
+   不变，masked 类＝掩码互补，bool 索引＝按位选择。绝不跨类别改写（不碰 permute、真
+   broadcast 这些会重排元素的算子）。这是"只改元数据、不重算数值"这条捷径成立的根据；
+   一旦目标算子改变元素排布或数值语义，同一套"只改 meta"的改写就不再等价。
+2. **边局部改写 + 纯函数前提**：post-functionalization 的图是 SSA 式纯算子图，改写只需
+   动本节点的入边（`replace_input_with` 一类 API），对 DAG 的其余扇出天然安全——因为
+   每个 consumer 各自持有自己的 `args` 引用，改一条边不会波及其他 consumer。
+3. **单用户门槛判据**：改写只动"自己的入边"（换掉自己读哪个值）不需要检查 `users` 数；
+   但如果改写要"吃掉/改动前驱节点本身"（把前驱内联进自己或删除前驱），就必须先确认
+   前驱只有自己这一个 user，否则会破坏其他 consumer 仍需要的语义。这条判据把"何时必须
+   查 `len(node.users)`"从直觉变成可检查的结构条件。
+
 ## 6. Autograd
 
 forward等价不保证gradient等价。至少覆盖：
@@ -122,7 +139,11 @@ FakeTensor可低成本验证shape/dtype/device传播；ShapeEnv可证明symbolic
 - alias/non-alias inputs；
 - mutation/no mutation；
 - NaN/Inf/extreme values；
-- deterministic/random seeds。
+- deterministic/random seeds；
+- **收益**：pass 开/关 A/B 对比——命中计数、kernel 数与端到端性能。前八项回答"改写是否
+  正确"，这一项回答"改写是否值得"：结构性收益（少 N 个 kernel、少一次拷贝、转零拷贝）
+  不是加速比，几乎没有 pass 自带 benchmark/counter，上线前必须用"开/关该 pass"实测，
+  不能只凭"命中过"就假定有收益（对照 §10 性能值得性）。
 
 ## 9. 失败原子性
 

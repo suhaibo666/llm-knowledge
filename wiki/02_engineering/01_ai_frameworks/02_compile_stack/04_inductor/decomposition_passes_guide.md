@@ -156,7 +156,7 @@ Decomposition 通常应使用 Tensor 运算和 SymInt-safe 的 shape 表达式�
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
-- [[fx_pass_optimization_methodology]] — 八阶段放置决策
+- [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段放置决策(现含跨框架对照)
 - [[joint_graph_passes_guide]] — decomposition 后的联合图改写
 - [[post_grad_passes_guide]] — 切图后的 ATen pattern
 - [[lowering_analysis]] — 保留 op 并实现 lowering/fallback

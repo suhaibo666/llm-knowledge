@@ -17,5 +17,5 @@
 
 - [[../vllm/index]] — vLLM(SGLang compile 层的血缘来源)
 - [[../index]] — 推理框架总索引
-- [[../../01_ai_frameworks/02_compile_stack/04_inductor/torch_upstream_pass_deepdive]] — 上游 Inductor pass 基座
-- [[../../01_ai_frameworks/02_compile_stack/04_inductor/fx_pass_optimization_methodology]] — pass 开发方法论
+- [[pattern_expression_and_matcher_engine_analysis]] — 上游 Inductor PatternMatcher 引擎基座
+- [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] — pass 开发方法论(含跨框架对照)

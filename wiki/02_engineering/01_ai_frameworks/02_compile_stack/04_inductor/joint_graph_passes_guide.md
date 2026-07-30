@@ -1011,7 +1011,7 @@ Joint Graph Passes 是 PyTorch Inductor 优化的核心阶段，通过系统化�
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[02_engineering/01_ai_frameworks/index]]
-- [[fx_pass_optimization_methodology]] — 八阶段放置方法论
+- [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段放置方法论(现含跨框架对照)
 - [[decomposition_passes_guide]] — Joint 图的算子集来源
 - [[pre_grad_passes_guide]]
 - [[post_grad_passes_guide]]

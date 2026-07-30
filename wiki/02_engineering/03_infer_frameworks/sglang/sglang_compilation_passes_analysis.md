@@ -2,7 +2,8 @@
 
 > **Source baseline**: sglang @ `d6ef68881e`（main，拉取 2026-07-20）
 > **Dimension**: Deep Dive（mechanism-level，逐函数读源）
-> 本页回答：SGLang `srt/compilation/` 这套 torch.compile / FX pass 体系到底做了什么、由谁驱动、门控在哪；它与 vLLM 的血缘有多深；以及一个反直觉但确凿的结论——**SGLang 出厂的真实「图重写 pass」数量是 0**。与 [[vllm_ir_and_fusion_passes_analysis]] 正好互为对照：vLLM 把重心放在 pattern-matching fusion，SGLang 只搬了 piecewise cudagraph 的管线骨架。方法论层面的定位见 [[fx_pass_optimization_methodology]]，上游基线见 [[torch_upstream_pass_deepdive]]。
+> 本页回答：SGLang `srt/compilation/` 这套 torch.compile / FX pass 体系到底做了什么、由谁驱动、门控在哪；它与 vLLM 的血缘有多深；以及一个反直觉但确凿的结论——**SGLang 出厂的真实「图重写 pass」数量是 0**。与 [[vllm_ir_and_fusion_passes_analysis]] 正好互为对照：vLLM 把重心放在 pattern-matching fusion，SGLang 只搬了 piecewise cudagraph 的管线骨架。方法论层面的定位见 [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] §14（跨框架对照），
+上游基线见 [[pattern_expression_and_matcher_engine_analysis]]。
 
 ---
 
@@ -192,6 +193,5 @@ def __call__(self, graph):                       # fix_functionalization.py:28-5
 ## Related Pages
 
 - [[vllm_ir_and_fusion_passes_analysis]] — 对照面：vLLM 的 IR/fusion pass 全家桶（本页反复引用其 `passes/fusion`、`passes/utility` 作为血缘对照）
-- [[torch_upstream_pass_deepdive]] — 上游 Inductor pass 全集与机制（SGLang/vLLM pass 框架的共同基座 `CustomGraphPass`/`post_grad_custom_post_pass`）
-- [[fx_pass_optimization_methodology]] — 工业界 pass 开发方法论归纳（SGLang 是「把融合下推到 kernel/inductor」这一路线的代表）
+- [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 上游 Inductor pass 机制与三阶段 driver（SGLang/vLLM pass 框架的共同基座 `post_grad_custom_post_pass`）+ 工业界 pass 开发方法论归纳（§14：SGLang 是「把融合下推到 kernel/inductor」这一路线的代表）
 - [[aclgraph]] — NPU 侧「捕获-回放静态图」范式，与 `NPUPiecewiseBackend` 相邻

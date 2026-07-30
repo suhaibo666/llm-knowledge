@@ -71,12 +71,10 @@ artifact与compiled module如何复用。两者相邻但不是同一机制：一
 
 | 页面 | 核心主题 |
 |------|---------|
-| [[torch_upstream_pass_deepdive]] | **上游 Pass 全集与机制**(总纲):PatternMatcher 引擎(声明→trace→匹配→改写)、三种 PatternEntry、fwd_only/joint_fwd_bwd、序列化 pattern 缓存、三阶段驱动器 + custom 钩子、全集目录;下面三份 stage 指南的上层 |
-| [[02_compile_stack/03_graph_ir_and_passes/index]] | **FX 构图与改图底座**:Node/Graph 双向 use-def、PatternExpr AST、候选桶与逆序匹配、DCE、稳定拓扑排序、rewrite 合法性与复杂度(AOT fw/bw/recompute 见 [[02_compile_stack/02_aot_autograd/index]]) |
+| [[02_compile_stack/03_graph_ir_and_passes/index]] | **FX 构图与改图底座 + Pass 方法论总纲**:Node/Graph 双向 use-def、PatternExpr AST(含 `fwd_only`/`joint_fwd_bwd`)、候选桶与逆序匹配、序列化 pattern 缓存、DCE、稳定拓扑排序、三阶段 driver 机制(`GraphTransformObserver`/`GroupBatchFusionBase`)、八阶段选型方法论、rewrite 合法性与复杂度、跨框架(torch_npu/vLLM/SGLang)对照(AOT fw/bw/recompute 见 [[02_compile_stack/02_aot_autograd/index]]) |
 | [[pre_grad_passes_guide]] | Pre-Grad 真实顺序、主要 Pass、关键 API、custom/Pattern 注册示例与动态形状边界 |
 | [[joint_graph_passes_guide]] | Joint 真实顺序、两轮 `pass_patterns`、切图前方法论与 custom hook 示例 |
 | [[post_grad_passes_guide]] | Post-Grad 真实顺序、三轮 pattern、通信/mutation 尾部约束与 inference-aware hook |
-| [[fx_pass_optimization_methodology]] | **八阶段 Pass 开发方法论**：Dynamo/Pre/Decomp/Joint/Post/Lowering/Scheduler/Codegen 的是什么、为什么、适合做什么、为什么不放相邻阶段 |
 
 ## deep dive — 动态形状
 

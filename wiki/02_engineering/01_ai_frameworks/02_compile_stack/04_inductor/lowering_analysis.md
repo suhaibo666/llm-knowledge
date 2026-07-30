@@ -440,7 +440,7 @@ flowchart LR
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[02_engineering/01_ai_frameworks/index]]
-- [[fx_pass_optimization_methodology]] — 八阶段放置方法论
+- [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段放置方法论(现含跨框架对照)
 - [[decomposition_passes_guide]] — 等价 ATen 展开与 Lowering 的选择边界
 - [[scheduler_analysis]] — IR 产出后的依赖与融合
 - [[codegen_extension_guide]] — 复用或扩展目标 Codegen

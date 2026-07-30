@@ -192,6 +192,26 @@ stage driver可能递归处理HOP/subgraphs；单个PatternMatcherPass不自动�
 counter不是generic `changed` bit；例如joint path的count可能仅统计某类match，不能据此推断
 其他custom pass是否修改图。
 
+### `GraphTransformObserver`：三个 driver 共用的包裹机制
+
+上面三个 driver 的源码跟读都提到"经 observer 包裹执行"，机制在
+`GraphTransformObserver`（`torch/fx/passes/graph_transform_observer.py:22`）：
+
+- **计时**：`apply_gm_pass`/`apply_graph_pass`（同文件 79/93）内部用
+  `dynamo_timed(f"pass.{subsystem}.{passname}"` — 若无 `subsystem` 则退化为
+  `f"pass.{passname}"`（85-88、98-101）——所以同一个 pass 名在不同 driver 下的计时
+  标签不同（例如 joint 阶段是 `pass.joint_graph_passes.<name>`），不能跨 driver 直接
+  比较原始 `passname` 聚合出的统计。
+- **可禁用**：调用前先过 `_check_disable_pass()`（105-116）：按名——`passname.upper()`
+  是否出现在 `config.disabled_passes.upper()`（108）；按子系统——若构造时传了
+  `subsystem`，还会问 `CompilerBisector.disable_subsystem("inductor", subsystem, ...)`
+  （114-116）。两条判据任一命中就整个跳过该次 `pass_fn` 调用，返回 `None`——这是
+  "怀疑某 pass 引入 bug/劣化"时一键排查的抓手：先按名关，定位不到再按子系统整段关。
+- **构造时机决定它管不管这个 pass**：`GraphTransformObserver` 不是全局单例，是每个
+  driver 在调用点手工 `functools.partial(...)` 或直接 `GraphTransformObserver(gm, name,
+  subsystem=...)` 构造出来的——**没有被这样包裹调用的 pass，天然不受计时、按名/按
+  子系统禁用约束**，上面 post-grad 小节里 `b2b_gemm`/`micro_pipeline_tp` 就是具体反例。
+
 ## 11. 选择stage的决策树
 
 1. 是否需要Python/module语义？→ Dynamo/pre-grad。
@@ -203,6 +223,25 @@ counter不是generic `changed` bit；例如joint path的count可能仅统计某�
 
 若多个stage都可实现，选择invariant最强、规则最局部、验证最容易的一层。
 
+### 选对 stage 之后，还有六个必须回答的"为什么"
+
+"放在哪个 stage"只是第一问；一个可合入、可维护的 pass 设计至少还要写清另外六件事——
+下面每条给出它在本系列的落点，不是本页新开一套独立标准：
+
+1. **收益为什么存在**：减少 launch、HBM 往返、同步、重排，还是暴露更强 kernel？这是
+   下注依据，profiling 先行，不是拍脑袋。
+2. **为什么是这个阶段**：即上面的决策树——依赖信息何时首次出现，为什么相邻阶段不合适。
+3. **等价为什么成立**：dtype、shape、stride/layout、alias/mutation、随机数、异常和数值
+   误差的前提分别是什么，详见 [[graph_rewrite_legality_validation_and_complexity_analysis]]
+   §1–§7。
+4. **动态形状为什么安全**：符号恒等、运行时 guard，还是必须拒绝？"看到 SymInt 就跳过"
+   只是临时保守策略，见同页 §7 Fake/meta checks 与 runtime guards。
+5. **收益为什么能兑现**：替换后的 op 是否有 lowering/kernel；scheduler/codegen 是否真的
+   把它融合或发射成目标实现？对应 [[graph_rewrite_legality_validation_and_complexity_analysis]]
+   §10 性能值得性与 §8 差异测试矩阵的"收益"行。
+6. **为什么可运维**：是否可开关、可计数、可 dump、可 bisect；缓存 key 是否包含影响生成
+   结果的 pass 配置/源码——对应本页上方"GraphTransformObserver"小节的计时/禁用机制。
+
 ## 源码跟读：三个 driver 怎样把 stage contract 写进 pass 顺序
 
 ### 1. Pre-grad 源码首先警告“尚未 functional/normalized”
@@ -210,6 +249,15 @@ counter不是generic `changed` bit；例如joint path的count可能仅统计某�
 `pre_grad_passes` 的 docstring 明确要求规则自行处理 alias、mutation 和所有参数 schema，并
 建议优先考虑 functionalization/normalization 后的 joint/post-grad
 （`torch/_inductor/fx_passes/pre_grad.py:336-351`）。
+
+整段 pass 处理还有一层前置门控：`pre_grad_passes()` 先查 `config.pattern_matcher`（默认
+`True`，`torch/_inductor/config.py:290`），关闭时整个 pre-grad pattern 体系（含下面的
+`lazy_init`）都不会跑（`pre_grad.py:353`）。门控通过后先调用 `lazy_init()`
+（`pre_grad.py:354`，其定义见下方），再按 `config.is_predispatch` 分岔成两条互斥路径
+（`pre_grad.py:360-361`）：predispatch 路径转去 `_run_pre_dispatch_passes()`
+（`pre_grad.py:200-205`），执行一份显式的 `default_pass_list`（`pre_grad.py:220-224` 起，
+"order matters" 注释标明这是有序列表，而非任意顺序的规则集合）；非 predispatch（OSS）
+路径才是下面这条更常读到的顺序。
 
 实际顺序中，非 pre-dispatch 路径先做 numpy compatibility、`fuse_fx`，再强制
 normalization pattern 优先；之后是 group batch fusion 与 configured pattern passes。
@@ -220,10 +268,22 @@ normalization pattern 优先；之后是 group batch fusion 与 configured patte
 最后 custom passes 才运行，随后统一 stable topological sort、quant lift、lint、recompile
 （`torch/_inductor/fx_passes/pre_grad.py:421-433`）。
 
+`lazy_init()` 本身只做一次性注册：装饰器 `@init_once_fakemode` 保证幂等，函数体 `import`
+`apply_gumbel_max_trick`、`efficient_conv_bn_eval`、`split_cat` 三个子模块以触发它们的
+pattern 注册副作用，`fbcode` 环境下还多 `import fb`（`pre_grad.py:174-182`）。这是
+"lazy"的准确含义：不是延迟到真正需要时才注册，而是延迟到第一次调用、此后不再重复。
+
 这给出两个实现事实：
 
 - counter 是显式 bounded repeat，不是 matcher 自己 fixed point；
 - pre-grad cleanup 是 driver 尾声，不是每个 PatternEntry 自动执行。
+
+> [!note] `binary_folding` 不属于 `pre_grad_passes()`
+> `binary_folding.py` 的 pattern 经 `register_binary_folding_pattern` 注册进
+> **freezing**（`torch/_inductor/fx_passes/freezing_patterns.py:98-101,115`），由
+> `config.enable_linear_binary_folding` 门控（`config.py:1670`），`pre_grad_passes()` 本身
+> 不引用它。freezing 是推理场景下的独立预处理阶段，不是 pre-grad 流水线的一部分——
+> 名字相邻不代表属于同一 driver，必须以谁调用谁为准。
 
 ### 2. Joint driver 把“必须先 canonicalize”和“有 change 才 cleanup”写进控制流
 
@@ -238,6 +298,25 @@ lint、recompile（`torch/_inductor/fx_passes/joint_graph.py:768-772`）。
 这里的 `count` 是 driver 自己累积的变化信号。新增 custom pass 若无条件 `count += 1`，
 即使它内部没改图也会触发 cleanup；反过来，若某修改路径未正确计数，可能跳过预期尾声。
 所以不能把任意 counter 当成精确“实际修改 Node 数”。
+
+`joint_graph_passes()` 的 `lazy_init()`（`@init_once_fakemode`，joint_graph.py:81-89）与
+pre-grad 那份是两个不同函数，各自注册各自阶段的 pattern：它 `import` 并调用
+`_pad_mm_init`/`_sfdp_init`/`_misc_patterns_init` 三个子模块的初始化函数，这才是 SDPA/
+pad_mm 等 pattern 真正登记进 `pass_patterns` 桶的位置。AutoChunker 必须在 pad_mm 之前跑，
+源码注释直接写明原因——"Make sure AutoChunker happens before pad_mm so we don't need to
+handle padding when searching for chunking patterns"（joint_graph.py:733-734，即§4.2 的
+`config.auto_chunker.enable` 检查处）：chunk 搜索本身不想再处理 padding 过的形状。
+
+`joint_graph_passes()` 入口还把 `GraphTransformObserver` 偏特化成
+`subsystem="joint_graph_passes"` 的局部别名（`functools.partial(...)`，joint_graph.py:706-709），
+custom-pre/remove_noop/constant-fold/`pass_patterns`/custom-post 全部经它包裹执行——
+这是 §7/§10 讨论的 observer 机制在 joint 阶段的具体落点，见下方"GraphTransformObserver"
+小节。
+
+> [!note] `decompose_mem_bound_mm.py` 不是 joint pass
+> `joint_graph.py` 只 `import` 了它的 `check_device` 辅助函数用于 pad_mm 相关判断
+> （joint_graph.py:40,989），并未把 `decompose_mem_bound_mm` 本身注册进 joint 的任何
+> `pass_patterns` 桶——那是 post-grad 侧的 pass（见下方 post-grad 小节）。
 
 ### 3. Post-grad 的输入契约最强，但尾部又主动重新引入 mutation
 
@@ -259,7 +338,37 @@ HOP decomposition，最终 recompile + lint
 
 所以“post-grad 是 functional graph”是该 driver **入口/大部分 pass 的 invariant**，不是
 最终 graph 永远无 mutation。late reinplace 依赖前面的分析结果，在结束前受控恢复更高效
-的 in-place 形式。
+的 in-place 形式——具体是 `reinplace_inplaceable_ops`，源码用它自己的函数名当依据，明确
+要求排在收尾附近（当前基线调用点 post_grad.py:451-452）。
+
+post-grad 的三轮 `pass_patterns`（`PatternMatcherPass()` 列表，post_grad.py:85-88）不是
+临时分组：`register_lowering_pattern` 默认落 `pass_number=1`，桶 `[0]` 在 OSS 默认路径
+下经常是空的，靠 freezing/早期量化一类前置阶段去填充；三桶严格按 `[0]→[1]→[2]` 顺序
+执行（§3.1「桶内有序」的源码依据）。
+
+`post_grad_passes()` 入口同样把 `GraphTransformObserver` 偏特化为局部别名
+（post_grad.py:172-173），DCE/locality/custom-pre/noop/pattern 桶/`b2b_gemm`/通信
+bucketing/custom-post/stable-sort/`reinplace_inplaceable_ops` 等几乎每一步都经它包裹
+执行并计时——但**不是全部**：
+
+> [!note] 两个 pass 没有走 `GraphTransformObserver`
+> `config.b2b_gemm_pass` 门控的 `B2B_GEMM_PASS.apply(gm.graph)` 与 `config._micro_pipeline_tp`
+> 门控的 `micro_pipeline_tp_pass(gm.graph)` 都是直接函数调用，不经过
+> `GraphTransformObserver(...).apply_graph_pass(...)`（post_grad.py:266-270，对照同文件其余
+> 几十处一律用 observer 包裹的写法）。这意味着这两个 pass **不会**出现在 observer 驱动的
+> 计时、按名/按子系统禁用（见下方"GraphTransformObserver"小节）或 dump 链路里；排查它们
+> 只能用各自的 `config` 开关，不能假设"所有 post-grad pass 都能被 bisect 关掉"。
+
+> [!note] `fused_int_mm_mul` 已是孤儿函数，`config.decompose_mem_bound_mm` 名不副实
+> `check_shape_cuda_and_fused_int_mm_mul_enabled`（post_grad.py:2048，读
+> `config.force_fuse_int_mm_with_mul`）在当前基线**没有任何 `register_*` 调用引用它**——
+> 全仓库 `grep` 只命中它自己的定义，是死代码。另外，`config.decompose_mem_bound_mm`
+> （`config.py:1636`，默认 `False`）看名字像是门控 `decompose_mem_bound_mm.py` 这个 pass，
+> 但实际门控是 `lazy_init()` 里的 `torch._C._has_mkldnn` 判断（post_grad.py:833-838，仅决定
+> 是否 `import` 该模块）与 `post_grad_fusion_options` 字典里是否包含对应 key
+> （post_grad.py:244）——`config.decompose_mem_bound_mm` 这个 bool 本身在这条路径上不起
+> 门控作用。两条都是"配置名字暗示的语义"与"源码实际行为"不一致的例子，说明**只信名字、
+> 不读调用点会得出错误结论**，这条经验对任何一个 pass 都成立，不只是这两个。
 
 ### 4. 为什么同一个规则跨 stage 不能只改注册位置
 
@@ -331,6 +440,27 @@ PassManager fixed point
 Graph/GM 变化。它不会自动把独立 capture、AOT partition 或后端 lowering 串成连续对象链。
 调试 artifact 要同时记录 stage、graph identity/run id、pass name、before/after 与 cleanup，
 才能解释“这次命中发生在哪张图”。
+
+### 8. `GroupBatchFusionBase`：与 `PatternExpr` 并存的另一套 pass 结构
+
+group_batch/split_cat 家族（pre-grad 与 post-grad 都有）不是 `PatternExpr` 声明式匹配的
+实例，而是另一套独立的类层级机制（`torch/_inductor/fx_passes/group_batch_fusion.py`）：
+
+- `GroupBatchFusionBase`（101）只定义 `match`/`fuse` 两个抽象方法；两个语义子类
+  `GroupFusion`（153，"任意形状，用 fbgemm 一类 op 做组融合"）与 `BatchFusion`
+  （159，"同形状，用 batched op 做批融合"）。
+- 注册用 `@register_fusion(name, pre_grad=...)`（118）装饰子类，按 `pre_grad` 填进
+  `PRE_GRAD_FUSIONS` 或 `POST_GRAD_FUSIONS`（114-115）两张独立表，而不是 `PatternExpr`
+  用的 `(op, target)` 候选桶。
+- 驱动链路：`group_batch_fusion_passes`（1677）→ `generate_fusion_from_config`（1664，
+  只挑 `options` 里已注册的名）→ 对每条规则 `apply_group_batch_fusion`（1615）：逆序遍历
+  节点，收集候选，`find_independent_subset_greedy`（1488，受 `min_fuse_set_size` 约束）
+  贪心找互不依赖的子集，再调用 `rule.fuse`。
+
+这是"目录里 batch_\*/group_\* 那一排"背后的统一机制：与 §2.1 起讨论的 PatternExpr
+声明式匹配是两条并行的改图基础设施，都能被同一个 driver（pre_grad_passes/
+post_grad_passes）调用，但注册表、候选选取和改写落地方式完全不同——读到
+`register_fusion`/`GroupBatchFusionBase` 时不要套用 `PatternEntry` 的心智模型。
 
 ### 源码边界
 
@@ -440,6 +570,36 @@ hits 均为 0；该路径执行真实 Inductor extern addmm/mm。
 
 该 Lab 没有生成、编译或执行 Inductor 生成的 native C++ kernel，因而不提供这一级证据。
 
+## 14. 跨框架方法论对照（历史保留，基线独立于本页）
+
+> [!note] 与本页其余内容的基线关系
+> 本节归纳自四篇独立分析——upstream 本身即上表 Pattern 引擎的固定基线；torch_npu
+> `b3c8a815b`（v2.7.1）、vLLM `97a98006b0`、SGLang `d6ef68881e`（均约 2026-07-20 前后核验）
+> ——这三个下游基线**不随本页 PyTorch upstream 基线同步更新**，具体机制细节以各自专题页
+> （下方链接）为准；本节只保留跨框架都成立的方法论结论。
+
+四家对 "pass 放在哪、怎么声明匹配、命中后怎么落地" 给出了不同答案，但都能投影到同一组
+问题上：
+
+| 维度 | upstream Inductor | torch_npu | vLLM | SGLang |
+|---|---|---|---|---|
+| **主引擎** | 声明式 `PatternMatcherPass`（自建，§2.1） | 官方钩子 + 手工遍历（自建 `ascend_custom_passes` 注册表） | **复用** torch 的 `pattern_matcher` + `VllmInductorPass` 包装 | **fork vLLM 骨架，但抽空**融合层 |
+| **落点** | pre/joint/post_grad + lowering | post_grad/pre_grad **custom 钩子**（仅推理为主） | `post_grad_custom_post_pass` 钩子 + pre_grad IR functionalization | `post_grad_custom_post_pass` 钩子（但 pass 为 no-op） |
+| **融合朝向** | codegen（Triton/C++ 模板） | **厂商手工库 ACLNN** + Cube 模板/DVM | **厂商/手写 kernel**（FlashInfer/cutlass/symm_mem/AITER/`_C.*`） | 预融合 kernel + inductor 原生 `combo_kernels` |
+| **代表页** | 本系列 C13/C15/C16 | [[npu_fusion_passes_deepdive]] | [[vllm_ir_and_fusion_passes_analysis]] | [[sglang_compilation_passes_analysis]] |
+
+**一句话读法**：upstream 造引擎、定义在哪三阶段落地；三家下游都从 `post_grad_custom_post_pass`
+这个官方钩子接进去（§2.6 已给出该钩子在本页固定基线下的确切 config 位置），然后各自决定
+"融合朝向什么"——这个选择直接决定了要不要写融合 pass（vLLM 写十几个、SGLang 一个不写，
+不是能力差异，而是"把融合放在编译层还是 kernel 层"的路线选择）。
+
+命中后怎么落地，除本页 C13 已详述的三种 upstream 落地形态（graph-pattern/lowering-pattern/
+replacement）外，下游还有两种本页未覆盖、因为它们不是 upstream 机制的形态：**rewrite-
+existing-op**（让已有 kernel 多干一步，例如 vLLM 把 quant 塞进 attention kernel 的
+epilogue）与 **fallback/换手工算子**（torch_npu 把 attention/通信 fallback 到 ACLNN；vLLM
+换 FlashInfer/AITER）。选择哪种朝向不是 upstream 单方面能决定的问题，取决于目标硬件是否
+已有极致手工 kernel。
+
 ## 学习顺序
 
 - 上一篇：[[dead_code_topology_and_effect_order_analysis]]
@@ -452,4 +612,4 @@ hits 均为 0；该路径执行真实 Inductor extern addmm/mm。
 - [[pattern_expression_and_matcher_engine_analysis]]
 - [[dead_code_topology_and_effect_order_analysis]]
 - [[graph_rewrite_legality_validation_and_complexity_analysis]]
-- [[fx_pass_optimization_methodology]]
+- [[npu_fusion_passes_deepdive]] · [[vllm_ir_and_fusion_passes_analysis]] · [[sglang_compilation_passes_analysis]] — §14 跨框架对照的三个下游代表页

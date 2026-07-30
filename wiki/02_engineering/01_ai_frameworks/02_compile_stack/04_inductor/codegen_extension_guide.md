@@ -220,4 +220,4 @@ register_device_op_overrides("my_accel", MyDeviceOps())
 - [[scheduler_analysis]] — 融合组和调度顺序如何形成
 - [[lowering_analysis]] — 新 op 如何进入现有 IR/codegen
 - [[inductor_gpu_kernel_dispatch_model]] — GPU kernel indexing/dispatch 基线
-- [[fx_pass_optimization_methodology]] — 八阶段放置决策
+- [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段放置决策(现含跨框架对照)

@@ -444,6 +444,40 @@ successful rewrite                   Q + U + local erase
 逆序不是额外 DFS；主要额外成本是候选排序。只有 root 数、pattern size、arity、fan-out、
 sort-key compare length 和 callback 成本都有界时，结构部分才接近图/候选线性。
 
+### 10. `fwd_only` 与 `joint_fwd_bwd`：`register_replacement` 匹配的是哪张图
+
+`register_replacement` 的 `trace_fn` 决定 pattern 匹配推理图还是训练图，这是与 §7（二次
+trace 用真实 shape 复核）正交的另一个维度——前者回答"pattern 要不要重 trace 核对"，
+后者回答"pattern 一开始就该从哪种图 trace 出来"：
+
+- `fwd_only`（`torch/_inductor/pattern_matcher.py:2583`）：`make_fx(fn, decomps,
+  tracing_mode="real")` 直接 trace，再跑 `remove_noop_ops` + `eliminate_dead_code`，得到
+  "规范化推理图"。
+- `joint_fwd_bwd`（`pattern_matcher.py:2613`）：走 `aot_function` + `default_partition`，用
+  `record_joint_graph`（2623）截下联合 fwd+bwd 图，跑 `remove_noop_ops` 与
+  `early_patterns.apply`（2649）后作为训练 pattern。
+
+SDPA、pad_mm 等融合都各自注册 `_training`（`joint_fwd_bwd`）与 `_inference`（`fwd_only`）
+两个版本；`joint_fwd_bwd` 的训练 pattern 在推理模式下直接跳过（1809-1813）。选错 trace
+模式会让 pattern 在另一种图上完全不命中，而不是命中但结果不同。
+
+### 11. 两条并存的改图路线：声明式 pattern vs 手工遍历
+
+`PatternExpr` AST 不是表达"改图"的唯一方式。工程上有两条路线，判据是"能不能用一对
+`search_fn`/`replace_fn` 例子函数表达"：
+
+- **声明式 pattern**（`register_replacement` 从例子函数 trace 出 pattern，或手写
+  `PatternExpr` 语法树）——能用一对例子表达的融合走这条：声明即正确，还能走 §13 的
+  序列化缓存避免每次 trace。
+- **手工 `graph.find_nodes` 遍历**——结构归一化、布局重排、无法用"一个子图例子"表达的
+  改写走这条：直接查 `(op, target)` 候选桶后自定义遍历/判断/改图，不经过 `PatternExpr`
+  的匹配协议。
+
+一个反复出现的配套技巧：**为"归一化"单开一个前置 pass 给"融合"pass 铺路**——先把图
+整理成 pattern 能对上的规范形态（例如统一 view/split/cat 的参数 spelling），融合命中率
+才高；归一化 pass 本身常走手工遍历路线（结构改写而非"匹配一个例子"），融合 pass 则走
+声明式路线。两条路线不互斥，同一 pass 集合里常见前者为后者铺路。
+
 ### 源码边界
 
 这条调用链证明的是 matcher 的结构语义与调度方式。它不证明某条 rewrite 对所有输入合法。
@@ -628,4 +662,3 @@ assert，不是只打印结果。完整命令与全系列证据等级见
 - [[structured_outputs_higher_order_and_nested_graphs_analysis]]
 - [[dead_code_topology_and_effect_order_analysis]]
 - [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]
-- [[torch_upstream_pass_deepdive]]
