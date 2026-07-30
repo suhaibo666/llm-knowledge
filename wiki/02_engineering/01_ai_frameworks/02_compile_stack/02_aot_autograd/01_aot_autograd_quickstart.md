@@ -144,7 +144,7 @@ def aot_export_module(mod, args, *, decompositions=None, trace_joint,
 ## 6. 深入阅读导航
 
 - 原理深挖:[[11_aotautograd_joint_forward_backward_graphs_analysis]] — joint graph 怎样切成独立 fw/bw；[[12_saved_tensors_recompute_and_runtime_abi_analysis]] — saved values、recompute 与运行时 ABI
-- 联合图 passes:[[joint_graph_passes_guide]]
+- 联合图 passes:[[31_joint_graph_passes_guide]]
 - 上游(图捕获):[[02_compile_stack/01_dynamo/index]]
 - 下游(代码生成):[[02_compile_stack/04_inductor/index]]
 
@@ -154,6 +154,6 @@ def aot_export_module(mod, args, *, decompositions=None, trace_joint,
 - [[01_ai_frameworks/index]]
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]]
 - [[12_saved_tensors_recompute_and_runtime_abi_analysis]]
-- [[joint_graph_passes_guide]]
+- [[31_joint_graph_passes_guide]]
 - [[02_compile_stack/01_dynamo/index]]
 - [[02_compile_stack/04_inductor/index]]

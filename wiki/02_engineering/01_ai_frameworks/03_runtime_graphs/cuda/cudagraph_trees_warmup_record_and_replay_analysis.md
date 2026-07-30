@@ -2,7 +2,7 @@
 
 > 卷别：D · 编译产物、缓存与运行时  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[buffer_liveness_memory_planning_and_reuse_analysis]]  
+> 前置：[[12_buffer_liveness_memory_planning_and_reuse_analysis]]  
 > 后续：[[compiled_artifact_lifecycle_and_runtime_failures_analysis]]  
 > 最后更新：2026-07-30(kb-reorg P4 Task 6 迁入本目录,去 d06_ 前缀;判重 vs [[PyTorch_CUDA_Graphs_Complete_Guide]] 方式2/综合比较节——独有内容(源码级 Tree 状态机、`cudagraph_trees.py` 行级证据)>50%,保留为专题页,详见该页方式2 小节互指)
 
@@ -313,7 +313,7 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[buffer_liveness_memory_planning_and_reuse_analysis]]
+- [[12_buffer_liveness_memory_planning_and_reuse_analysis]]
 - [[compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[compile_latency_cache_and_steady_state_performance_analysis]] — warmup/record/replay 在整体成本模型中的位置
 - [[training_inference_cudagraph_and_freezing_analysis]]

@@ -221,7 +221,7 @@ Kernel CodeGen（Triton/CUDA）：
 ## Related Pages
 
 - [[comm_compute_fusion_guide]] — WaveEP 中 TileLang 的通算融合应用
-- [[flex_attention_analysis]] — FlexAttention 的 BlockMask 与 tile-level 概念
+- [[26_flex_attention_analysis]] — FlexAttention 的 BlockMask 与 tile-level 概念
 - [[mlir_core_concepts]] — MLIR Linalg Tiling（tile-level IR 的 MLIR 实现）
 - [[triton_vs_mlir_backend_analysis]] — Triton DSL 与 TileLang 的定位对比
 - [[NPU_MLIR_Backend_Technical_Analysis]] — NPU 端 tile-level 优化的不同路径

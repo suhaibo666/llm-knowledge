@@ -15,7 +15,7 @@
 | [[01_device_integration_quickstart]] | **quick start**(段 0) | 最小 PrivateUse1 接入步骤(`rename_privateuse1_backend`/`generate_methods_for_privateuse1_backend` + C++ DeviceGuardImpl/`TORCH_LIBRARY_IMPL(...,PrivateUse1,...)`,基于 torch_openreg);9 接入点速查;dispatch 排查命令(`_dispatch_dump`/`_dispatch_has_kernel_for_dispatch_key`/`__torch_dispatch__`) |
 | [[10_pytorch_dispatcher_analysis]] | deep dive(段 1) | DispatchKey/KeySet 优先级、redispatch 洋葱、boxed/unboxed、torchgen 代码生成、`__torch_dispatch__` 自定义分发 |
 | [[11_privateuse1_device_integration_analysis]] | deep dive(段 1) | PrivateUse1 设备键、9 个接入点(device/guard/hooks/operators/amp/autoload/profiler/distributed/ci)、torch_openreg 参考实现 |
-| [[20_custom_backends_and_device_integration_analysis]] | deep dive(专题,段 2) | 设备接入 `torch.compile` 的另一层契约:Dynamo backend / Inductor device backend(含 `DeviceInterface`)/ dispatcher-custom-op backend 三者怎样分层组合;2026-07-30 迁入,与本目录 [[11_privateuse1_device_integration_analysis]]、`04_inductor` 的 [[codegen_extension_guide]] 三方划界(见页头 note) |
+| [[20_custom_backends_and_device_integration_analysis]] | deep dive(专题,段 2) | 设备接入 `torch.compile` 的另一层契约:Dynamo backend / Inductor device backend(含 `DeviceInterface`)/ dispatcher-custom-op backend 三者怎样分层组合;2026-07-30 迁入,与本目录 [[11_privateuse1_device_integration_analysis]]、`04_inductor` 的 [[34_codegen_extension_guide]] 三方划界(见页头 note) |
 | [[21_torch_npu_upstream_adaptation_analysis]] | overview / comparison(段 2) | torch_npu 相对 upstream 的三层边界：标准插件面、Ascend 硬件实现面、Dynamo/Inductor/Graph/Distributed 兼容补丁面；当前差异分类与收敛优先级 |
 
 ---

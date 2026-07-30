@@ -465,6 +465,6 @@ continuity:
 - [[14_graph_capture_frontends_and_tracing_analysis]]
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]]
 - [[12_saved_tensors_recompute_and_runtime_abi_analysis]]
-- [[fx_lowering_to_inductor_ir_analysis]]
-- [[codegen_kernel_mapping_autotuning_and_provenance_analysis]]
+- [[10_fx_lowering_to_inductor_ir_analysis]]
+- [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]]
 - [[02_compile_stack/07_debugging/index]]

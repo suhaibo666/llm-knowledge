@@ -175,7 +175,7 @@ $$O_i = \frac{acc}{\ell_i},\qquad \text{并存 logsumexp } m_i \mathrel{+}= \log
 
 直觉上 FlashAttention 把 HBM 流量从「被 $N^2$ 的分数矩阵支配」降到「只与 Q/K/V/O 的 $N\cdot d$ 同阶」。**严格表述**（FA 论文 arXiv:2205.14135，`:11`）：设片上 SRAM 大小为 $M$，FA 的 HBM 访问量是 $\Theta(N^2 d^2 / M)$，而标准实现是 $\Theta(Nd + N^2)$——因为 K/V 会被各个 query 块重复读，所以并非字面 $O(Nd)$，但当 $d^2\ll M$ 时 FA 的 $N^2$ 系数被 $d^2/M$ 显著压小。这正是 attention 从 memory-bound 受益于融合的根本原因。
 
-> 与 [[gpu_kernel_guide]] §08 的关系：那页已给出 FlashAttention 的硬件层级映射表（Grid/Block/SRAM/Warp/Register/Tile 各落到哪）。本页**不重复**那张表，只补「Triton 实现视角」——上面的 `m_i/l_i/acc` 三状态与 `alpha` 重标定，就是该表里「SRAM 常驻状态」一行的代码级真相。attention 的其它变体见 [[flex_attention_analysis]]。
+> 与 [[gpu_kernel_guide]] §08 的关系：那页已给出 FlashAttention 的硬件层级映射表（Grid/Block/SRAM/Warp/Register/Tile 各落到哪）。本页**不重复**那张表，只补「Triton 实现视角」——上面的 `m_i/l_i/acc` 三状态与 `alpha` 重标定，就是该表里「SRAM 常驻状态」一行的代码级真相。attention 的其它变体见 [[26_flex_attention_analysis]]。
 
 ### 4.3 configs 解读：把杠杆②③④交给 autotune
 
@@ -293,5 +293,5 @@ proton_viewer.print_tree(tree, metrics)
 - [[triton_05_debug_guide]] — 优化引入 bug 时回这里（interpreter / assert）
 - [[triton_knowledge_map]] — 四种能力总纲与自测
 - [[gpu_kernel_guide]] — FlashAttention 硬件层级映射表（§08）、Tensor Core 硬件视角（与本页互补）
-- [[flex_attention_analysis]] — attention 变体与 mask/score 修改
+- [[26_flex_attention_analysis]] — attention 变体与 mask/score 修改
 - [[triton_vs_mlir_backend_analysis]] — `tl.dot→MMA`、`num_stages` 流水线在编译器侧的下降

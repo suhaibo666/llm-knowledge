@@ -527,7 +527,7 @@ CUDA caching allocator 物理峰值在当前无 CUDA 环境中为 `[B]`；它只
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]]
-- [[buffer_liveness_memory_planning_and_reuse_analysis]]
+- [[12_buffer_liveness_memory_planning_and_reuse_analysis]]
 - [[20_graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[01_aot_autograd_quickstart]]
 - [[20_activation_checkpoint_recompute_and_compile_analysis]] — 用户 API/策略层(`torch.utils.checkpoint`、Selective AC)的对应物,见页头分工声明

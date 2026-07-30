@@ -2,8 +2,8 @@
 
 > 卷别：D · 编译产物、缓存与运行时  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[inductor_compile_fx_orchestration_analysis]]  
-> 后续：[[async_compile_workers_and_module_loading_analysis]]  
+> 前置：[[15_inductor_compile_fx_orchestration_analysis]]  
+> 后续：[[27_async_compile_workers_and_module_loading_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么两张FX图还需要一个runtime wrapper
@@ -310,6 +310,6 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 - [[00_torch_compile_end_to_end_index]]
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]]
 - [[12_saved_tensors_recompute_and_runtime_abi_analysis]]
-- [[inductor_compile_fx_orchestration_analysis]]
+- [[15_inductor_compile_fx_orchestration_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
 - [[20_compiled_autograd_analysis]]

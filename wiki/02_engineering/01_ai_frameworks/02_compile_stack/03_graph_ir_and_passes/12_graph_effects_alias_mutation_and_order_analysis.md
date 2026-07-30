@@ -487,5 +487,5 @@ Program legality
 - [[15_graph_normalization_decomposition_and_functionalization_analysis]]
 - [[23_dead_code_topology_and_effect_order_analysis]]
 - [[25_graph_rewrite_legality_validation_and_complexity_analysis]]
-- [[buffer_liveness_memory_planning_and_reuse_analysis]]
+- [[12_buffer_liveness_memory_planning_and_reuse_analysis]]
 - [[01_eager_runtime/05_autograd_engine/index]]

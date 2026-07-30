@@ -272,7 +272,7 @@ cache位于既有阶段的入口/出口,不是新的IR阶段。调试时从最�
 | [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] | guard定义"同一graph entry何时可复用";PGO影响第一次如何选择dynamic策略 |
 | [[11_aotautograd_joint_forward_backward_graphs_analysis]] | AOT cache hit可能跳过joint/fw/bw的重新构造,但不改变其语义ABI |
 | [[20_graph_stage_boundaries_identity_and_provenance_analysis]] | cache加载会让对象identity、dump存在性与本次编译阶段更加不连续 |
-| [[codegen_kernel_mapping_autotuning_and_provenance_analysis]] | autotune是搜索/选择过程,cache是winner/artifact复用;两者不能合并成一个概念 |
+| [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]] | autotune是搜索/选择过程,cache是winner/artifact复用;两者不能合并成一个概念 |
 
 ## 19. 审计边界
 
@@ -294,5 +294,5 @@ claim candidate。也就是说,旧的 `TBD destination` 统计已被更精确的
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]]
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]]
 - [[20_graph_stage_boundaries_identity_and_provenance_analysis]]
-- [[codegen_kernel_mapping_autotuning_and_provenance_analysis]]
+- [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]]
 - [[15_guards_cache_lookup_and_recompilation_analysis]] — Dynamo guard树与recompile决策(本页§2的Dynamo cache一侧)

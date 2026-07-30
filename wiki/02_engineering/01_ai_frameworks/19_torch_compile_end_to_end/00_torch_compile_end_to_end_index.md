@@ -76,11 +76,11 @@ flowchart LR
 | C14 | [[23_dead_code_topology_and_effect_order_analysis]] | dead node、DCE、稳定拓扑和 effect order 有何边界 |
 | C15 | [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] | pass stage、registration order、迭代与 fixpoint 如何决定结果 |
 | C16 | [[25_graph_rewrite_legality_validation_and_complexity_analysis]] | 结构命中后怎样验证 shape、dtype、alias、autograd 和收益 |
-| C17 | [[fx_lowering_to_inductor_ir_analysis]] | GraphLowering 为什么不是 FX Node 的一对一替换 |
-| C18 | [[inductor_ir_values_loops_layouts_and_buffers_analysis]] | TensorBox、Loops、Layout、Buffer 和 ExternKernel 如何分工 |
-| C19 | [[buffer_liveness_memory_planning_and_reuse_analysis]] | logical buffer 怎样进入 liveness、free 和 reuse 决策 |
-| C20 | [[scheduler_dependency_graph_fusion_and_ordering_analysis]] | Scheduler dependency、fusion candidate、legality 和 ordering 如何协作 |
-| C21 | [[codegen_kernel_mapping_autotuning_and_provenance_analysis]] | Scheduler group 怎样映射到 kernel、wrapper、autotune 和 provenance |
+| C17 | [[10_fx_lowering_to_inductor_ir_analysis]] | GraphLowering 为什么不是 FX Node 的一对一替换 |
+| C18 | [[11_inductor_ir_values_loops_layouts_and_buffers_analysis]] | TensorBox、Loops、Layout、Buffer 和 ExternKernel 如何分工 |
+| C19 | [[12_buffer_liveness_memory_planning_and_reuse_analysis]] | logical buffer 怎样进入 liveness、free 和 reuse 决策 |
+| C20 | [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]] | Scheduler dependency、fusion candidate、legality 和 ordering 如何协作 |
+| C21 | [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]] | Scheduler group 怎样映射到 kernel、wrapper、autotune 和 provenance |
 
 关键桥接：
 
@@ -98,11 +98,11 @@ B06 OutputGraph
 
 | 编号 | 页面 | 先回答的问题 |
 |---:|---|---|
-| D01 | [[inductor_compile_fx_orchestration_analysis]] | Inductor backend 如何编排 AOT 与 inner compile |
+| D01 | [[15_inductor_compile_fx_orchestration_analysis]] | Inductor backend 如何编排 AOT 与 inner compile |
 | D02 | [[13_aot_runtime_wrappers_and_lazy_backward_compile_analysis]] | forward/backward wrapper 与 lazy bw compile 如何运行 |
-| D03 | [[async_compile_workers_and_module_loading_analysis]] | 编译任务如何异步完成并加载为 module |
+| D03 | [[27_async_compile_workers_and_module_loading_analysis]] | 编译任务如何异步完成并加载为 module |
 | D04 | [[02_compile_stack/06_compile_cache/index]] | 各层 cache 的 key、value 和失效边界是什么 |
-| D05 | [[buffer_liveness_memory_planning_and_reuse_analysis]] | wrapper 如何分配、调用、复用和组装输出(2026-07-30 判重并入 C19 §18) |
+| D05 | [[12_buffer_liveness_memory_planning_and_reuse_analysis]] | wrapper 如何分配、调用、复用和组装输出(2026-07-30 判重并入 C19 §18) |
 | D06 | [[cudagraph_trees_warmup_record_and_replay_analysis]] | warmup、record、replay 与 liveness 如何形成 tree |
 | D07 | [[compiled_artifact_lifecycle_and_runtime_failures_analysis]] | artifact 从创建到失效有哪些状态 |
 
@@ -119,8 +119,8 @@ B06 OutputGraph
 | F03 | [[ddp_compile_boundaries_and_optimizer_analysis]] | DDP/reducer/optimizer 如何改变 compile region(2026-07-30 迁入 `04_export_and_distributed/02_distributed_primitives/`,与 [[c10d_ddp_fsdp_dtensor_analysis]] 互指划界) |
 | F04 | [[fsdp_dtensor_and_distributed_graphs_analysis]] | shard、placement、collective 与 rank state 如何入图(2026-07-30 迁入同上,与 [[c10d_ddp_fsdp_dtensor_analysis]] 互指划界) |
 | F05 | [[custom_operators_fake_kernels_and_decompositions_analysis]] | custom op 怎样补齐编译契约(2026-07-30 迁入 `04_export_and_distributed/01_fx_export_extensibility/`,与 [[fx_graph_export_and_custom_ops_analysis]] §7 判重后保留独立页+互指) |
-| F06 | [[20_custom_backends_and_device_integration_analysis]] | backend/device 怎样接入 lowering 与 codegen(2026-07-30 迁入 `01_eager_runtime/02_dispatcher_and_device/`,与 [[11_privateuse1_device_integration_analysis]]+[[codegen_extension_guide]] 三方划界) |
-| F07 | [[aotinductor_packaging_and_deployment_analysis]] | AOTInductor 与 JIT compile 的产物和 ABI 有何不同(2026-07-30 迁入 `02_compile_stack/04_inductor/`,纯平移;解答了 [[22_backend_modes_options_stances_and_fullgraph_analysis]] §14.2 的 `use_aoti` todo) |
+| F06 | [[20_custom_backends_and_device_integration_analysis]] | backend/device 怎样接入 lowering 与 codegen(2026-07-30 迁入 `01_eager_runtime/02_dispatcher_and_device/`,与 [[11_privateuse1_device_integration_analysis]]+[[34_codegen_extension_guide]] 三方划界) |
+| F07 | [[28_aotinductor_packaging_and_deployment_analysis]] | AOTInductor 与 JIT compile 的产物和 ABI 有何不同(2026-07-30 迁入 `02_compile_stack/04_inductor/`,纯平移;解答了 [[22_backend_modes_options_stances_and_fullgraph_analysis]] §14.2 的 `use_aoti` todo) |
 | F08 | [[training_inference_cudagraph_and_freezing_analysis]] | training/inference/freezing/CUDAGraph 如何组合 |
 
 ## 9. 六卷 Demo 验收入口

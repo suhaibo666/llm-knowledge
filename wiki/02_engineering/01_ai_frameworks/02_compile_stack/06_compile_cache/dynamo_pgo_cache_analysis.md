@@ -231,7 +231,7 @@ collective 本体在 `OutputGraph.run_compiler_collective`(`torch/_dynamo/output
 - Mega-cache打包/重放（`PGOCacheArtifact`挂钩）：尚未完成独立当前基线审计
 - [[02_compile_stack/06_compile_cache/index]] — 本目录索引
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — dynamic shape、guard、重编译与 graph reuse 主线
-- [[torch_compile_architecture]] — torch.compile 整体栈
+- [[02_torch_compile_architecture]] — torch.compile 整体栈
 - [[13_variable_tracker_source_and_python_object_model_analysis]] — VariableBuilder 与 VariableTracker 追踪机制
 - [[15_guards_cache_lookup_and_recompilation_analysis]] — guard 的宿主与重编译判定
 - [[01_dynamo_quickstart]] — Dynamo 入门

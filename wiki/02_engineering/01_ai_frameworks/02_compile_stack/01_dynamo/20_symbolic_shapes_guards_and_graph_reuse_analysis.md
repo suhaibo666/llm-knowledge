@@ -4,7 +4,7 @@
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
-> **页面角色**：本页是符号形状系统（ShapeEnv/SymNode/guard 生成/backed·unbacked 判定/DimDynamic 分配策略）的概念权威页。Dynamo 侧的自动泛化行为面（`frame_state`/`record_automatic_dynamic`/`mark_dynamic` 怎样驱动一次调用从静态走向泛化）见 [[17_dynamic_shapes_generalization_and_fallback_analysis]]；unbacked 专项纵深见 [[unbacked_symint_analysis]]；Inductor codegen 侧符号传递专项见 [[inductor_codegen_dynamic_shape_analysis]]。四页不重复彼此机制细节，只在边界处互链。
+> **页面角色**：本页是符号形状系统（ShapeEnv/SymNode/guard 生成/backed·unbacked 判定/DimDynamic 分配策略）的概念权威页。Dynamo 侧的自动泛化行为面（`frame_state`/`record_automatic_dynamic`/`mark_dynamic` 怎样驱动一次调用从静态走向泛化）见 [[17_dynamic_shapes_generalization_and_fallback_analysis]]；unbacked 专项纵深见 [[25_unbacked_symint_analysis]]；Inductor codegen 侧符号传递专项见 [[24_inductor_codegen_dynamic_shape_analysis]]。四页不重复彼此机制细节，只在边界处互链。
 
 ## 1. 核心问题：一张图描述的是函数，还是一次输入？
 
@@ -490,8 +490,8 @@ def call(args):
 - [[11_graph_values_metadata_and_signatures_analysis]]
 - [[14_graph_capture_frontends_and_tracing_analysis]]
 - [[25_graph_rewrite_legality_validation_and_complexity_analysis]]
-- [[fx_lowering_to_inductor_ir_analysis]]
-- [[codegen_kernel_mapping_autotuning_and_provenance_analysis]]
+- [[10_fx_lowering_to_inductor_ir_analysis]]
+- [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]]
 - [[17_dynamic_shapes_generalization_and_fallback_analysis]] — Dynamo 侧自动泛化行为面
-- [[unbacked_symint_analysis]] — unbacked 专项纵深
-- [[inductor_codegen_dynamic_shape_analysis]] — Inductor codegen 符号传递专项
+- [[25_unbacked_symint_analysis]] — unbacked 专项纵深
+- [[24_inductor_codegen_dynamic_shape_analysis]] — Inductor codegen 符号传递专项

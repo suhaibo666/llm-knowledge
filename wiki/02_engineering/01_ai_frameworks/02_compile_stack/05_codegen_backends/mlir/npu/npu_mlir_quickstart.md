@@ -16,7 +16,7 @@
 | `mlir` | **MLIR / ascend_npu_ir 本页主角** | `NpuMlirScheduling` → 毕昇编译器 `bishengir-compile` |
 | `dvm` | DVM 融合 | `NpuMlirScheduling` + dvm |
 
-MLIR 路径把 FX 子图经 torch-mlir 转成 MLIR，再交毕昇编译器生成融合算子（`.o`/`.so`），适合「想要算子级深度融合 + 自动 tiling 调优、且已装好 torch-mlir 与毕昇编译器」的场景。三条路径的取舍详见 [[npu_compile_paths_overview]]（含 ACLGraph 图执行路径对比）。
+MLIR 路径把 FX 子图经 torch-mlir 转成 MLIR，再交毕昇编译器生成融合算子（`.o`/`.so`），适合「想要算子级深度融合 + 自动 tiling 调优、且已装好 torch-mlir 与毕昇编译器」的场景。三条路径的取舍详见 [[01_npu_compile_paths_overview]]（含 ACLGraph 图执行路径对比）。
 
 > 前置：MLIR 路径依赖 `torch-mlir`（`torch_npu/_inductor/__init__.py:48-52` 未装会直接 `ImportError`），以及毕昇编译器 `bishengir-compile`（由 env `BISHENG_INSTALL_PATH` 定位，见 §4）。
 
@@ -124,15 +124,15 @@ anir_config.compile_mode = "complete_fallback"   # 调试时整图退回 eager
 ## 6. 深入导航
 
 - [[NPU_MLIR_Backend_Technical_Analysis]] — MLIR 后端架构、TracedGraph、融合规则、毕昇编译、monkey patch 全解（deep dive）
-- [[npu_compile]] — NPU Inductor 编译工作流
+- [[12_npu_compile]] — NPU Inductor 编译工作流
 - [[02_compile_stack/04_inductor/npu/index]] — NPU Inductor 文档入口
 
 ---
 
 ## Related Pages
 
-- [[npu_compile_paths_overview]] — torch.compile 三路径全景（Triton / MLIR / ACLGraph）
+- [[01_npu_compile_paths_overview]] — torch.compile 三路径全景（Triton / MLIR / ACLGraph）
 - [[NPU_MLIR_Backend_Technical_Analysis]] — MLIR 后端深度分析
 - [[triton_vs_mlir_backend_analysis]] — Triton vs MLIR 后端对比
-- [[npu_compile]] — Inductor 编译工作流
+- [[12_npu_compile]] — Inductor 编译工作流
 - [[01_ai_frameworks/index]] — AI 框架领域入口

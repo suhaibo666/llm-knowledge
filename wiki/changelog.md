@@ -205,7 +205,7 @@ checkout（`e8f97c1a6e...`）逐条核验后：
 **入链修复**：C17 基名改名影响 12 个文件；`lowering_analysis` 删除后 14 个外部文件
 （含 `PyTorch_Inductor_Technical_Analysis`、`torch_compile_architecture`、
 `inductor_reduction_codegen_deep_analysis`、`npu_lowering_guide` 等）重定向到
-[[fx_lowering_to_inductor_ir_analysis]]；changelog 1 处历史活链接降级为反引号
+[[10_fx_lowering_to_inductor_ir_analysis]]；changelog 1 处历史活链接降级为反引号
 （另 1 处已是逐项反引号包裹，未受影响）。
 
 **配套改动**：`demo_manifest.json` c17 `page` 字段与 `test_volume_demo_contract.py` 的
@@ -296,8 +296,8 @@ automatic_dynamic_shapes 渐进策略、关键源码索引表）已被 C04 现�
 
 **与 b09/unbacked_symint/inductor_codegen_dynamic_shape 划界**：四页互相新增分工声明——
 [[17_dynamic_shapes_generalization_and_fallback_analysis]]（b09）聚焦 Dynamo 侧自动泛化行为
-（`frame_state`/`mark_dynamic`）；C04 是符号系统概念权威页；[[unbacked_symint_analysis]] 聚焦
-unbacked 专项（`torch._check`/`guard_or_*`/size-oblivious）；[[inductor_codegen_dynamic_shape_analysis]]
+（`frame_state`/`mark_dynamic`）；C04 是符号系统概念权威页；[[25_unbacked_symint_analysis]] 聚焦
+unbacked 专项（`torch._check`/`guard_or_*`/size-oblivious）；[[24_inductor_codegen_dynamic_shape_analysis]]
 聚焦符号如何流入 Inductor kernel/wrapper。四页页头/正文均补互链，不复述彼此机制细节。
 
 **入链修复**：`dynamic_shapes_full_analysis` 删除后，18 处活链接改指新页——
@@ -570,13 +570,13 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **追记(复核修正,2026-07-30,不改上方历史行)**:
 
-(a) 上文 D01 条"2 条改指更贴切的具体目标——`decomposition_passes_guide`/`wrapper_execution_memory_allocation_and_reuse_analysis`"经复核有误:对照 d8c1a5b 实际 diff,该 commit 只改了 `decomposition_passes_guide.md` 一处(旧链 `[[inductor_compiler_pipeline_analysis]]` → `[[inductor_compile_fx_orchestration_analysis]]` — compile_fx 把 decomposition table 传给 AOTAutograd 的调用点);`wrapper_execution_memory_allocation_and_reuse_analysis.md` 在 d8c1a5b 中未被触碰(该页由更早的 01c1422 移入本目录,与本次改指无关)。实际应为"1 条改指更贴切的具体目标"。
+(a) 上文 D01 条"2 条改指更贴切的具体目标——`decomposition_passes_guide`/`wrapper_execution_memory_allocation_and_reuse_analysis`"经复核有误:对照 d8c1a5b 实际 diff,该 commit 只改了 `decomposition_passes_guide.md` 一处(旧链 `[[inductor_compiler_pipeline_analysis]]` → `[[15_inductor_compile_fx_orchestration_analysis]]` — compile_fx 把 decomposition table 传给 AOTAutograd 的调用点);`wrapper_execution_memory_allocation_and_reuse_analysis.md` 在 d8c1a5b 中未被触碰(该页由更早的 01c1422 移入本目录,与本次改指无关)。实际应为"1 条改指更贴切的具体目标"。
 
 (b) "19 条入链"为**页数**口径(`git grep -l`,d8c1a5b^ 下命中 19 个非 changelog 文件);若按**出现次数**(`git grep -o '\[\[inductor_compiler_pipeline_analysis'`,同一基线,排除 changelog.md 本身)计,实际为 **30** 次。两个数字口径不同,均属实,原文未注明口径,此处补注。
 
 (c) "纯平移四篇"(D02/D03/D05/D07,各条独立标注"纯平移")中,**D05 并非字节对字节平移**:对照 01c1422 实际 diff,`wrapper_execution_memory_allocation_and_reuse_analysis.md` 净 +5 行(6 insertions/1 deletion)——除去 `d05_` 前缀迁移外,页头新增了一段与 `inductor_memory_management_analysis`/`inductor_memory_allocation_guide` 的互指说明(该 commit 消息本身已披露"页头加互指说明",但顶部"纯平移"表述未与此区分,此处复核标注更精确)。D02/D03/D07 复核 diffstat 确认为无额外插入的纯移动。
 
-(d) 本次(kb-reorg P4 Task 6 复核修复)在 D01 判重时被跳过、未落地的 3 处原文事实,已按"逐字为基底+溯源"原则回补:`inductor_compiler_pipeline_analysis.md` §7.4(CPU CodeGen:`CppKernel`/`CppVecKernel`/`CppTile2DKernel` 类体系与向量化判定)→ [[inductor_codegen_analysis]] 新增 §7;§7.5(`ChoiceCaller`/`TritonTemplateCaller` 编译期算法选择基础设施、`TuningProcessPool` 子进程隔离)→ [[inductor_autotuning_analysis]] 新增 §六,并恢复一条指向 [[inductor_compile_fx_orchestration_analysis]] 的 Related Pages 链接(替代被删的旧链);§4.3.7 `dedup_reduce_scatters`(reduce_scatter 线性可加性融合)→ [[post_grad_passes_guide]] Pass 19-21 节补齐第 4 个成员。三处原文均无固定源码基线声明,回补时对照本地 pinned checkout(`E:/97-codes/torch_parallel/p`,`e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`)核实所有行号引用,发现原文行号普遍漂移(如 `ir.py:5582` 实为 `ChoiceCaller` 所在 `ir.py:6185` 与 `TritonTemplateCaller` 所在 `select_algorithm.py:3347` 两处的合并粗写),均以 `[!correction]` 就地标注,不改写原文陈述本身。校验:`python tools/check_links.py` pages 388→388(纯编辑,broken=0);`pytest tools/ -q` 77 passed。
+(d) 本次(kb-reorg P4 Task 6 复核修复)在 D01 判重时被跳过、未落地的 3 处原文事实,已按"逐字为基底+溯源"原则回补:`inductor_compiler_pipeline_analysis.md` §7.4(CPU CodeGen:`CppKernel`/`CppVecKernel`/`CppTile2DKernel` 类体系与向量化判定)→ [[20_inductor_codegen_analysis]] 新增 §7;§7.5(`ChoiceCaller`/`TritonTemplateCaller` 编译期算法选择基础设施、`TuningProcessPool` 子进程隔离)→ [[21_inductor_autotuning_analysis]] 新增 §六,并恢复一条指向 [[15_inductor_compile_fx_orchestration_analysis]] 的 Related Pages 链接(替代被删的旧链);§4.3.7 `dedup_reduce_scatters`(reduce_scatter 线性可加性融合)→ [[32_post_grad_passes_guide]] Pass 19-21 节补齐第 4 个成员。三处原文均无固定源码基线声明,回补时对照本地 pinned checkout(`E:/97-codes/torch_parallel/p`,`e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`)核实所有行号引用,发现原文行号普遍漂移(如 `ir.py:5582` 实为 `ChoiceCaller` 所在 `ir.py:6185` 与 `TritonTemplateCaller` 所在 `select_algorithm.py:3347` 两处的合并粗写),均以 `[!correction]` 就地标注,不改写原文陈述本身。校验:`python tools/check_links.py` pages 388→388(纯编辑,broken=0);`pytest tools/ -q` 77 passed。
 
 ---
 
@@ -619,7 +619,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - §4.6 `torch.export` 兼容性（`is_exporting()`/`_in_hop_compile()` 短路为 no-op）→ 同页新增 §13.2，核验定位 `torch/__init__.py:3350-3359`
 - §4.4 CompilerBisector 二分调试的 API 入口钩子（`bisect_backend := CompilerBisector.get_backend()` 覆盖 backend + vLLM 自定义 backend 保护条件）→ [[22_backend_modes_options_stances_and_fullgraph_analysis]] 新增 §13，核验定位 `torch/__init__.py:3330-3342`；与 [[minifier_repro_and_compiler_bisector_analysis]] §7（bisector 内部二分算法）互补,双向加回链
 - §4.5 特殊选项提取 + §4.7/§5 三个 wrapper 类的方法级实现（`_TorchCompileInductorWrapper.apply_mode/apply_options/get_compiler_config/reset`、CUDA<12.6 CUPTI workaround、`_TorchCompileAOTInductorWrapper` 子类的 `cpp_wrapper`/`aot_inductor.package`/`V.set_aot_compilation`、`_TorchCompileWrapper` 的 `lookup_backend`+kwargs 透传）→ 同页新增 §14，核验定位 `torch/__init__.py:2907-3096` 区间多段
-- [!todo] §14.2 迁移时发现:`use_aoti=True` 是从 `torch.compile()` **JIT 入口**直接触发的 AOTInductor 打包路径,而 `f07_aotinductor_packaging_and_deployment_analysis`（2026-07-30 起随 kb-reorg P4 Task 9 迁入并改名为 [[aotinductor_packaging_and_deployment_analysis]]，本条历史记载不回写活链接）§2-§3 记录的公开入口 `aoti_compile_and_package` 明确要求 `ExportedProgram`(export 驱动、部署前离线完成)。两条路径是否共享下游产物、`use_aoti` 这条 JIT 捷径的运维定位,F07 尚未覆盖——本任务范围内未展开核实,双向加回链留待后续处理。**已于 kb-reorg P4 Task 9(2026-07-30)核实解答**：两者在 `compile_fx`/`CompiledAOTI` 层汇合于同一段代码，但 `CompiledAOTI` 装载成可调用 runner 这一步受 `enable_autograd_for_aot` 门控、并不对称（只有 `use_aoti` 路径强制打开），差异还在前端捕获来源（Dynamo 运行时捕获 vs `ExportedProgram`）与是否额外 `package_aoti` 打包成 `.pt2`；详见 [[22_backend_modes_options_stances_and_fullgraph_analysis]] §14.2 note。
+- [!todo] §14.2 迁移时发现:`use_aoti=True` 是从 `torch.compile()` **JIT 入口**直接触发的 AOTInductor 打包路径,而 `f07_aotinductor_packaging_and_deployment_analysis`（2026-07-30 起随 kb-reorg P4 Task 9 迁入并改名为 [[28_aotinductor_packaging_and_deployment_analysis]]，本条历史记载不回写活链接）§2-§3 记录的公开入口 `aoti_compile_and_package` 明确要求 `ExportedProgram`(export 驱动、部署前离线完成)。两条路径是否共享下游产物、`use_aoti` 这条 JIT 捷径的运维定位,F07 尚未覆盖——本任务范围内未展开核实,双向加回链留待后续处理。**已于 kb-reorg P4 Task 9(2026-07-30)核实解答**：两者在 `compile_fx`/`CompiledAOTI` 层汇合于同一段代码，但 `CompiledAOTI` 装载成可调用 runner 这一步受 `enable_autograd_for_aot` 门控、并不对称（只有 `use_aoti` 路径强制打开），差异还在前端捕获来源（Dynamo 运行时捕获 vs `ExportedProgram`）与是否额外 `package_aoti` 打包成 `.pt2`；详见 [[22_backend_modes_options_stances_and_fullgraph_analysis]] §14.2 note。
 - §6 编译模式对照表（mode/CUDA Graphs/Triton autotune 布尔矩阵）与 B02 §3 的同一组事实（散文体）重复,不迁移；§7 能力范围与限制、§8 使用示例是已覆盖机制的摘要/演示,不迁移；§2/§3/§4.2/§4.3 是与 B01/B02 完全重复的调用栈图与参数说明,不迁移。
 
 **删除**：`git rm` 该页。**入链修复**：`04_inductor/dynamic_shapes_full_analysis.md` 改指 [[10_torch_compile_api_and_first_call_lifecycle_analysis]]；`04_inductor/index.md` 移除本页表格行,改为一行式说明指向 [[02_compile_stack/01_dynamo/index]]。
@@ -995,9 +995,9 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **Type**: Deep Dive + Correction（按 PyTorch `9922478dffa` 固定基线复核并补齐 pass 放置方法、关键 API、注册示例与阶段注意事项。）
 
 - **方法论升级**：重写 `fx_pass_optimization_methodology`（2026-07-30 起并入 [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]]，详见该日期 changelog 条目）的权威主干，完整覆盖 Dynamo → Pre-Grad → AOT/Decomposition → Joint → Post-Grad → Lowering → Scheduler → Codegen；每阶段均回答“是什么、为什么、适合做什么、为什么不放相邻阶段”，新增选择表、放置规则、六问设计法和验证矩阵。
-- **补齐三块缺失内容**：新增 [[30_dynamo_pass_methodology]]（backend callable/`register_backend` 边界）、[[decomposition_passes_guide]]（decomp table、AOT 注入位置、注册/选择方法）、[[codegen_extension_guide]]（`BaseScheduling` + Wrapper + `DeviceOpOverrides` + `register_backend_for_device`）。
-- **三阶段 Pass 指南纠错**：[[pre_grad_passes_guide]] 订正 non-functional/non-normalized IR、真实执行顺序、`pre_grad_custom_pass(Graph)->None` 和缺失 `PatternMatcherPass` import；[[joint_graph_passes_guide]] 订正 `pass_patterns` 所属模块、两轮顺序、Graph hook 契约和“空 hook 确保加载”错误；[[post_grad_passes_guide]] 补真实全流程、三轮 pattern、inference-aware hook、通信 bucketing 与 reinplace 尾部不变量。
-- **Lowering/Scheduler/Codegen 纠错**：`lowering_analysis`（历史活链接，该页已于 2026-07-30 判重并入 [[fx_lowering_to_inductor_ir_analysis]]，按"历史不回写"惯例降级为反引号）订正“Post-Grad 在 Lowering 之后”的错误顺序并补 `register_lowering`/fallback API 示例；`scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]，按"历史不回写"惯例降级为反引号）明确真实接口是 `_pre/_post_fusion_custom_pass(list[BaseSchedulerNode]) -> list[...]`，将 `GraphLowering`/`node.fusable` 旧示例标为 deprecated；[[inductor_codegen_analysis]] 更新固定基线入口并链接完整扩展指南。
+- **补齐三块缺失内容**：新增 [[30_dynamo_pass_methodology]]（backend callable/`register_backend` 边界）、[[33_decomposition_passes_guide]]（decomp table、AOT 注入位置、注册/选择方法）、[[34_codegen_extension_guide]]（`BaseScheduling` + Wrapper + `DeviceOpOverrides` + `register_backend_for_device`）。
+- **三阶段 Pass 指南纠错**：[[30_pre_grad_passes_guide]] 订正 non-functional/non-normalized IR、真实执行顺序、`pre_grad_custom_pass(Graph)->None` 和缺失 `PatternMatcherPass` import；[[31_joint_graph_passes_guide]] 订正 `pass_patterns` 所属模块、两轮顺序、Graph hook 契约和“空 hook 确保加载”错误；[[32_post_grad_passes_guide]] 补真实全流程、三轮 pattern、inference-aware hook、通信 bucketing 与 reinplace 尾部不变量。
+- **Lowering/Scheduler/Codegen 纠错**：`lowering_analysis`（历史活链接，该页已于 2026-07-30 判重并入 [[10_fx_lowering_to_inductor_ir_analysis]]，按"历史不回写"惯例降级为反引号）订正“Post-Grad 在 Lowering 之后”的错误顺序并补 `register_lowering`/fallback API 示例；`scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]，按"历史不回写"惯例降级为反引号）明确真实接口是 `_pre/_post_fusion_custom_pass(list[BaseSchedulerNode]) -> list[...]`，将 `GraphLowering`/`node.fusable` 旧示例标为 deprecated；[[20_inductor_codegen_analysis]] 更新固定基线入口并链接完整扩展指南。
 - **动态形状方法修正**：把“遇到 SymInt 一律跳过”改为“符号恒等或 ShapeEnv/guard 可证明则支持，无法证明才拒绝”。同步更新 Dynamo/Inductor 索引与交叉链接。
 
 ---
@@ -1010,11 +1010,11 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **新增 [[cuda_gemm_kernel_analysis]]**：以 SM80 / A100 代表性配置串起 Grid→CTA→Warp→MMA、M/N 空间切块与 K 时间归约、`cp.async` 完成语义、每线程约 232 寄存器账本、shared-memory epilogue 与生产级 kernel 骨架。
 - **新增 [[cuda_nonmatmul_kernels_analysis]]**：以 roofline + 五类数据依赖为统一分类，覆盖 elementwise、reduction、norm、FlashAttention、stencil、scan、gather/scatter/sort，明确 shape 会让同一算子跨 compute-/memory-/latency-bound 阵营。
 - **新增 [[ascend_kernel_execution_model_analysis]]**：把 CUDA 两篇映射到 DaVinci AI Core 的 Cube/Vector/Scalar/MTE、GM→L1→L0→UB 显式缓冲链、Queue 双缓冲、FixPipe，以及 compute / memory / communication 三条训练优化主线；明确其为平台对照材料、非官方文档。
-- **可核验性与图形**：三页逐章附 raw HTML 行号范围和快照哈希；19 个内嵌 SVG 已渲染为 PNG。更新 GPU Kernel、工程与总索引，并向 [[gpu_kernel_guide]]、[[cuda_execution_model_guide]]、[[triton_03_matmul_guide]]、[[operator_optimization_guide]]、[[mindspeed_ascend_affinity_analysis]]、[[npu_inductor_optimization_analysis]] 补回链；未发现需标记的既有内容冲突。
+- **可核验性与图形**：三页逐章附 raw HTML 行号范围和快照哈希；19 个内嵌 SVG 已渲染为 PNG。更新 GPU Kernel、工程与总索引，并向 [[gpu_kernel_guide]]、[[cuda_execution_model_guide]]、[[triton_03_matmul_guide]]、[[operator_optimization_guide]]、[[mindspeed_ascend_affinity_analysis]]、[[21_npu_inductor_optimization_analysis]] 补回链；未发现需标记的既有内容冲突。
 
 ---
 
-## 2026-07-20（四次更新）：[[npu_fusion_passes_deepdive]] §5 后端级融合大幅展开——加「决策链 + 代价模型」
+## 2026-07-20（四次更新）：[[22_npu_fusion_passes_deepdive]] §5 后端级融合大幅展开——加「决策链 + 代价模型」
 
 **Type**: Update（应用户「§5 后端 pass 需展开:当前后端优化都做了哪些?怎么建模选择最终的融合方式?」。1 路 source-audit agent 核 scheduler/select_algorithm/tiling 决策链 + 本人抽验 7 处载荷 file:line。）
 
@@ -1038,7 +1038,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 ---
 
-## 2026-07-20（二次更新）：[[npu_fusion_passes_deepdive]] 新增 §7「改图操作原语与 pass 通用原理（机制总纲）」
+## 2026-07-20（二次更新）：[[22_npu_fusion_passes_deepdive]] 新增 §7「改图操作原语与 pass 通用原理（机制总纲）」
 
 **Type**: Update（应用户「补充这个改图的操作，以及 pass 主要操作的原理是什么」——承接对 `view_fold_pass` 的连续追问：多个 view 如何变一个、如何保证等价、DAG 扇出/多后继怎么处理。）
 
@@ -1049,24 +1049,24 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 ---
 
-## 2026-07-20：新增 [[npu_fusion_passes_deepdive]] —— 自定义融合 Pass 逐个深挖（场景·问题·优化·效果）
+## 2026-07-20：新增 [[22_npu_fusion_passes_deepdive]] —— 自定义融合 Pass 逐个深挖（场景·问题·优化·效果）
 
-**Type**: Deep Dive（应用户反馈「[[npu_vs_upstream_fusion_passes]] 对每个 pass 的 why/场景/效果讲得不够——需要具体代码场景、为什么这么优化、优化带来什么效果」。三路并发 source-audit agent 逐函数读 `ascend_graph_pass.py`(2548 行)全部 26 个 pass + helper。）
+**Type**: Deep Dive（应用户反馈「[[30_npu_vs_upstream_fusion_passes]] 对每个 pass 的 why/场景/效果讲得不够——需要具体代码场景、为什么这么优化、优化带来什么效果」。三路并发 source-audit agent 逐函数读 `ascend_graph_pass.py`(2548 行)全部 26 个 pass + helper。）
 
-- **新增 [[npu_fusion_passes_deepdive]]**：对 26 个自定义 pass（4 PRE + 22 POST）+ 3 个后端融合机制（CATLASS EVG epilogue / DVM 图级分区融合 / `NPUTritonScheduling.can_fuse`）逐个给「**触发场景（含 before 代码）→ 待优化问题 → 优化机制（after）→ 效果**」四拍，每条带 `file:line`。重点展开 9 个「真·融合」pass：`masked_add_compose`（互补掩码相加→单 where）、`bool_cast_mul_to_where`（bool cast×→where）、`sign_diff_hamming_fuse`（符号位汉明距离 6 算子链→gt/gt/ne/sum）、`batch_embedding_fusion`（N 段 embed+reduce→单次 reshape→embedding→reduce）、`cat_to_view`/`repeat_to_expand`（cat/repeat→零拷贝 view/expand/roll）等。
+- **新增 [[22_npu_fusion_passes_deepdive]]**：对 26 个自定义 pass（4 PRE + 22 POST）+ 3 个后端融合机制（CATLASS EVG epilogue / DVM 图级分区融合 / `NPUTritonScheduling.can_fuse`）逐个给「**触发场景（含 before 代码）→ 待优化问题 → 优化机制（after）→ 效果**」四拍，每条带 `file:line`。重点展开 9 个「真·融合」pass：`masked_add_compose`（互补掩码相加→单 where）、`bool_cast_mul_to_where`（bool cast×→where）、`sign_diff_hamming_fuse`（符号位汉明距离 6 算子链→gt/gt/ne/sum）、`batch_embedding_fusion`（N 段 embed+reduce→单次 reshape→embedding→reduce）、`cat_to_view`/`repeat_to_expand`（cat/repeat→零拷贝 view/expand/roll）等。
 - **效果口径诚实边界**（核心方法论）：逐函数 grep 确认**全文除 CATLASS `catlass_epilogue_fusion_counter` 外无任何计数器/benchmark**，故所有效果均为**结构性**（少 N kernel / 少一次拷贝 / 转零拷贝 / int32 索引），非实测加速；多个 pass 带**中文 docstring 直述动机**（标「原文」，可信度最高），而源文件**无硬件注释**，凡「因为达芬奇/UB/i64」因果均标 [硬件推断]；`fold_four_op`/`fold_where` 经 `get_binary_fold_result` 会留一个 clone、非零成本。
-- **校正**：`fusion_attention_v3_pass` 是 **基础版 `npu_fusion_attention.default` → `v3.default`**（本 baseline 无 `_v2`），非「v2→v3」——同步订正 [[npu_vs_upstream_fusion_passes]] §6 措辞。
-- **联动**：[[npu_vs_upstream_fusion_passes]] §3.4 加深挖页指针、Related 补链；更新 [[04_inductor/npu/index]] deep dive 表。
+- **校正**：`fusion_attention_v3_pass` 是 **基础版 `npu_fusion_attention.default` → `v3.default`**（本 baseline 无 `_v2`），非「v2→v3」——同步订正 [[30_npu_vs_upstream_fusion_passes]] §6 措辞。
+- **联动**：[[30_npu_vs_upstream_fusion_passes]] §3.4 加深挖页指针、Related 补链；更新 [[04_inductor/npu/index]] deep dive 表。
 
 ---
 
-## 2026-07-17（五次更新）：新增 [[npu_vs_upstream_fusion_passes]] —— torch_npu vs 上游 Inductor 融合 Pass 全流程对照
+## 2026-07-17（五次更新）：新增 [[30_npu_vs_upstream_fusion_passes]] —— torch_npu vs 上游 Inductor 融合 Pass 全流程对照
 
 **Type**: Deep Dive（应用户「总结为一个新页，从 FX pass 到后端全流程比较 torch_npu 与 upstream 融合 pass 的差异、谁有谁无及原因，稽核源码」。逐行核验两套 checkout：torch_npu `b3c8a815b`(v2.7.1) + upstream `9922478dffa`(main)，三路并发 source-audit agent + 主体自审。）
 
-- **新增 [[npu_vs_upstream_fusion_passes]]**：主线「torch_npu 不重写上游 pass 管线，而是三处介入 + 重活下沉后端」。逐层对照 pre_grad / joint_graph / post_grad / lowering-decomp / 后端 scheduler；三张「谁有谁无谁不同」总表；`is_gpu`/`GPU_TYPES` 门控如何决定上游 pass 在 NPU 上跑不跑（`patch_is_gpu` 追加 `"npu"`，但硬编码 `.is_cuda` 的 pad_mm/b2b_gemm/decompose_mm 仍不跑）；26 个 `ascend_custom_passes` 全清单（4 PRE + 22 POST，仅推理）；根因收敛到 Cube 专用单元 / ACLNN 手工库 / 达芬奇布局约束 / 集成方式四条。
-- **源码级校正（source-wins）**：① `patch_pattern_mm_plus_mm` 是**删除**上游 `mm_plus_mm`（注释「torch_npu does not support」）而非添加——纠正 [[npu_compile_paths_overview]] §2.5 旧记法；② fallback 实测 **932**(340+592) 而非旧「约 963」；③ persistent reduction 内置后端是**阈值门控非恒关**（恒关的是实验性 Linearize 后端）；④ [[npu_inductor_optimization_analysis]] §12.4 自定义 pass 清单已过时（`unfold_dual_reduction_pass` 不在此 head，新增 `sign_diff_hamming_fuse_pass`/`batch_embedding_fusion_pass` 等）；⑤ `pattern_match/npu_fusion_attention_graph.py` 在此 checkout **未接线**（无生产代码 import），真正生效的 attention 改写是 v2→v3 的 `fusion_attention_v3_pass`。
-- **联动**：更新 [[04_inductor/npu/index]] deep dive 表；为 [[npu_compile_paths_overview]] 与 [[npu_inductor_optimization_analysis]] 补 `## Related Pages` 反向链接。
+- **新增 [[30_npu_vs_upstream_fusion_passes]]**：主线「torch_npu 不重写上游 pass 管线，而是三处介入 + 重活下沉后端」。逐层对照 pre_grad / joint_graph / post_grad / lowering-decomp / 后端 scheduler；三张「谁有谁无谁不同」总表；`is_gpu`/`GPU_TYPES` 门控如何决定上游 pass 在 NPU 上跑不跑（`patch_is_gpu` 追加 `"npu"`，但硬编码 `.is_cuda` 的 pad_mm/b2b_gemm/decompose_mm 仍不跑）；26 个 `ascend_custom_passes` 全清单（4 PRE + 22 POST，仅推理）；根因收敛到 Cube 专用单元 / ACLNN 手工库 / 达芬奇布局约束 / 集成方式四条。
+- **源码级校正（source-wins）**：① `patch_pattern_mm_plus_mm` 是**删除**上游 `mm_plus_mm`（注释「torch_npu does not support」）而非添加——纠正 [[01_npu_compile_paths_overview]] §2.5 旧记法；② fallback 实测 **932**(340+592) 而非旧「约 963」；③ persistent reduction 内置后端是**阈值门控非恒关**（恒关的是实验性 Linearize 后端）；④ [[21_npu_inductor_optimization_analysis]] §12.4 自定义 pass 清单已过时（`unfold_dual_reduction_pass` 不在此 head，新增 `sign_diff_hamming_fuse_pass`/`batch_embedding_fusion_pass` 等）；⑤ `pattern_match/npu_fusion_attention_graph.py` 在此 checkout **未接线**（无生产代码 import），真正生效的 attention 改写是 v2→v3 的 `fusion_attention_v3_pass`。
+- **联动**：更新 [[04_inductor/npu/index]] deep dive 表；为 [[01_npu_compile_paths_overview]] 与 [[21_npu_inductor_optimization_analysis]] 补 `## Related Pages` 反向链接。
 
 ---
 
@@ -1153,7 +1153,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **口径订正**：旧页“Ascend 三路径 vs 社区统一 Triton”已加 `[!deprecated]`；当前 upstream CUDA/XPU 也采用 combined scheduling 混合多 codegen，差异应看公开注册接口与私有 patch 的边界。
 - **upstream 新方向**：核实 AcceleratorHooks/`torch.accelerator`、实验性 Python PrivateUse1 hooks/guard、Inductor custom pass/config 与 device-module 自动 codegen 注册、`CUDAGraphPolicy`、distributed backend entry point、OpenReg 可执行规格；据此给出 P0-P2 收敛路线。
 - **现场约束**：torch_npu 严格 pin PyTorch 2.7.1，而对照为 upstream main，页内明确区分版本差异与硬件差异；op-plugin 工作树未停在 gitlink commit，正文只引用 git 对象中可核验的记录版本配置。
-- **联动**：更新 `01_dispatcher_and_device/index`、AI framework 总索引；为 [[11_privateuse1_device_integration_analysis]] 增反链；[[npu_compile_paths_overview]] 增过时口径提示与反链。
+- **联动**：更新 `01_dispatcher_and_device/index`、AI framework 总索引；为 [[11_privateuse1_device_integration_analysis]] 增反链；[[01_npu_compile_paths_overview]] 增过时口径提示与反链。
 
 ---
 
@@ -1206,7 +1206,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 ---
 
-## 2026-07-06: [[unbacked_symint_analysis]] 增补 §10 —— unbacked 处理的最新进展（`guard_size_oblivious` → 显式 size-oblivious 原语族）
+## 2026-07-06: [[25_unbacked_symint_analysis]] 增补 §10 —— unbacked 处理的最新进展（`guard_size_oblivious` → 显式 size-oblivious 原语族）
 
 **Type**: Update（应用户「根据最新技术更新知识库」。源忠实——全部新断言据 pinned pytorch checkout `torch/fx/experimental/symbolic_shapes.py` 逐个核验签名/行号/docstring/`__all__` 导出，只扩展不删除）
 
@@ -1285,16 +1285,16 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 ---
 
-## 2026-07-03: [[inductor_memory_allocation_guide]] 新增 §5「内存越界/踩踏排查」— 补第二份社区材料的缺口(纠错版)
+## 2026-07-03: [[35_inductor_memory_allocation_guide]] 新增 §5「内存越界/踩踏排查」— 补第二份社区材料的缺口(纠错版)
 
-**Type**: Enrich（应用户"第二份专家社区材料的第三部分——内存踩踏检测——库里缺,补上,一定忠于事实"。经 gap 分析:材料前两部分已被 `inductor_memory_management_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[buffer_liveness_memory_planning_and_reuse_analysis]]，按"历史不回写"惯例降级为反引号）覆盖且更准,仅第三部分是真缺口;材料本身有错,按源码收敛后再入库）
+**Type**: Enrich（应用户"第二份专家社区材料的第三部分——内存踩踏检测——库里缺,补上,一定忠于事实"。经 gap 分析:材料前两部分已被 `inductor_memory_management_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[12_buffer_liveness_memory_planning_and_reuse_analysis]]，按"历史不回写"惯例降级为反引号）覆盖且更准,仅第三部分是真缺口;材料本身有错,按源码收敛后再入库）
 
 **源（source-faithful）**：pytorch @ `5f6df46744a` 逐行核对——`config.py:232-237`（`size_asserts`/`nan_asserts`/`scalar_asserts` 默认值）、`codegen/wrapper.py:1793-1827`（`assert_size_stride` 生成 + 延迟到首个 kernel 前）、`ir.py:7817/7845/9152`、`utils.py:161`（`GPU_ALIGN_BYTES=16`）、`codegen/triton.py:5458`（`mask=xindex<xnumel`）、`codegen/common.py:2789`（核内 NaN 断言）。
 
 - **guide 新增 §5 内存越界/踩踏排查**（原 §5/§6 顺延为 §6/§7）：§5.1 自动核内置防护（Triton `mask` + `assert_size_stride`/`assert_alignment`/scalar·nan_asserts,多为默认 ON）· §5.2 真正越界来源（自定义算子/手写 Triton/错误 stride·offset/unbacked symint）· §5.3 工具（`compute-sanitizer` 取代 cuda-memcheck + `CUDA_LAUNCH_BLOCKING`）· §5.4 排查步骤。
 - [!correction] **订正该社区材料**（源 > 材料，均已核实）：① 「Inductor 对越界无内置保护」**错**——mask + size/alignment/scalar 断言多为默认 ON;② 「规划池用 `_cuda_beginAllocateToPool` 申请」**错**——该 API 全库仅在 `cudagraph_trees.py`（CUDA Graphs 私有池）,规划池是普通 `empty_strided`;③ `cuda-memcheck` 已被 `compute-sanitizer` 取代。**材料对的部分**（保留）：16 字节对齐确有其事（`GPU_ALIGN_BYTES=16`）。前两部分（池初始化/复用）不收录——深挖页已覆盖且更源忠实。
 
-**整合**：[[04_inductor/index]] guide 条目补「越界/踩踏排查」;guide Related 增 [[inductor_gpu_kernel_dispatch_model]]/`Pytorch_Compile_Debug_Analysis`(该页已于 P4 Task 4 判重删除，内容并入 [[02_compile_stack/07_debugging/index]])/[[unbacked_symint_analysis]] 回链。**校验**：所有 `file:line`/常量值本会话开文件核对;新增段无 mermaid。
+**整合**：[[04_inductor/index]] guide 条目补「越界/踩踏排查」;guide Related 增 [[23_inductor_gpu_kernel_dispatch_model]]/`Pytorch_Compile_Debug_Analysis`(该页已于 P4 Task 4 判重删除，内容并入 [[02_compile_stack/07_debugging/index]])/[[25_unbacked_symint_analysis]] 回链。**校验**：所有 `file:line`/常量值本会话开文件核对;新增段无 mermaid。
 
 ---
 
@@ -1355,35 +1355,35 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 ---
 
-## 2026-06-30: 新建 [[inductor_memory_allocation_guide]] + 深挖页补「池大小如何确定」—— 吸收外部专家报告
+## 2026-06-30: 新建 [[35_inductor_memory_allocation_guide]] + 深挖页补「池大小如何确定」—— 吸收外部专家报告
 
 **Type**: Ingest + Enrich（应用户"把外部报告 `deep-research-report.md` 的原理分析风格吸收进库 + 回答 pool 初始化大小如何确定 + 补例子/演示图"。源忠实 + 抓本质）
 
 **源（source-faithful）**：pytorch @ `5f6df46744a`，逐行核对 `codegen/memory_planning.py`（`AllocationPool`/`get_symbolic_size`/`allocate_at_end`/`codegen_create`）、`c10/core/AllocatorConfig.h:16-24`（段大小常量）、`c10/cuda/CUDACachingAllocator.cpp:3063/3697`（`round_size`/`get_allocation_size`）、`codegen/wrapper.py:1520`（`alloc_from_pool`=`torch.ops.inductor._alloc_from_pool`）、`torch/csrc/inductor/inductor_ops.cpp:36/129`、`test/inductor/test_memory_planning.py:108-142`（真实 codegen 实例）。
 
-- **深挖页 `inductor_memory_management_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[buffer_liveness_memory_planning_and_reuse_analysis]]，按"历史不回写"惯例降级为反引号）新增**:
+- **深挖页 `inductor_memory_management_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[12_buffer_liveness_memory_planning_and_reuse_analysis]]，按"历史不回写"惯例降级为反引号）新增**:
   - **§2.6 池的初始化大小如何确定**:Inductor `AllocationPool` 大小=编译期 `root.get_symbolic_size()`（`TemporalSplit` 取最大、`SpatialSplit`=`align(left)+right`）、`allocate_at_end` 末尾追加扩容、`codegen_create` 出扁平 1-D buffer;带 `test_memory_planning.py` 真实实例（`pool1 = empty_strided_cuda((4*s27*s77 + align(4*s77*s77),),(1,))` + 两个 `alloc_from_pool`）+ **字节布局 ASCII 图**。
   - **§3 物理段大小**:`empty_strided` 落 `CUDACachingAllocator` 后按 `get_allocation_size` 取段——≤1 MiB→2 MiB、1–10 MiB→20 MiB、≥10 MiB→2 MiB 倍数（`AllocatorConfig.h:16-24`），解释 `reserved` 远大于 `allocated` 的原因。
-- **新建 guide [[inductor_memory_allocation_guide]]**（吸收报告骨架：角色边界→分配全过程 sequence 图→分配器对照表→`memory_stats`/snapshot 实测复现→实践建议）。
+- **新建 guide [[35_inductor_memory_allocation_guide]]**（吸收报告骨架：角色边界→分配全过程 sequence 图→分配器对照表→`memory_stats`/snapshot 实测复现→实践建议）。
   - [!correction] **订正原报告 4 处**（源 > 报告）：① 池化 `memory_planning` 非默认、仅 inference（默认是逐 buffer 复用）;② 实验开关应 `memory_planning=True` 而非 `memory_efficient_fusion`;③ 数分配次数用 `allocation.all.allocated`/`segment.all.allocated` 而非 `allocation.all.current`;④ `expandable_segments` 是 native 子开关、非独立后端。报告对 `alloc_from_pool` 的描述确认正确。
 
 **整合**：[[04_inductor/index]] 新增两页条目;两页互相回链;深挖页 §2.6/§3 增补。**校验**：所有新 `file:line`/常量值本会话开文件核对（含 `AllocatorConfig.h:16-24` 数值、`test_memory_planning.py:108` 的 `@config.patch(memory_planning=True)`）；guide 的 1 个 sequenceDiagram 按规范扫（消息无 `[]`/`()`/`|`，participant 用英文 id + alias）；字节布局用 ASCII 非 mermaid。
 
 ---
 
-## 2026-06-30: 新建 `inductor_memory_management_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[buffer_liveness_memory_planning_and_reuse_analysis]]，按"历史不回写"惯例降级为反引号） — torch.compile 内存分配管理(全栈三层)
+## 2026-06-30: 新建 `inductor_memory_management_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[12_buffer_liveness_memory_planning_and_reuse_analysis]]，按"历史不回写"惯例降级为反引号） — torch.compile 内存分配管理(全栈三层)
 
 **Type**: New（应用户提问"torch.compile 的 memory alloc 管理怎么做"→评估知识库覆盖发现"零件散在 3 个域、无统一脊柱、cudagraph_trees 与 codegen 复用链是短板"→开新页补齐。源忠实 + 抓本质）
 
 **源（source-faithful）**：pytorch 本地 checkout @ `5f6df46744a`（trunk, 2026-06-29）。两个并行 writer-agent 分别深挖**编译期**（`codegen/wrapper.py`·`_inductor/memory.py`·`codegen/memory_planning.py`·`config.py`）与 **CUDA Graphs**（`cudagraph_trees.py`·`cudagraph_utils.py`·`compile_fx.py`），每条 `file:line` 开文件核对；coordinator 抽检 `wrapper.py:2480`、`memory.py:1016`、`config.py:252-268`、`cudagraph_trees.py:2301-2302` 全部吻合。
 
-- **新增** `inductor_memory_management_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[buffer_liveness_memory_planning_and_reuse_analysis]]，按"历史不回写"惯例降级为反引号）：主线"三层叠加"——
+- **新增** `inductor_memory_management_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[12_buffer_liveness_memory_planning_and_reuse_analysis]]，按"历史不回写"惯例降级为反引号）：主线"三层叠加"——
   - **层 1 编译期**：默认 `memory_plan_reuse` 两遍把 `Allocate`+`Free` 改写成 `Reuse`（峰值感知 `should_reuse_buffer`；同形状指针别名 / 异形状 `reinterpret_tensor`，`wrapper.py:2436/956/4043`）；scheduler `compute_last_usage`+`free_buffers` 决定释放时机（`scheduler.py:8731/8742`）；`reorder_for_peak_memory` 多拓扑序选最低峰值（`memory.py:1016`，扫描线估峰）；可选池化 `MemoryPlanner` 时分/空分打包（`memory_planning.py:675`，`memory_planning` 默认关）。
   - **层 2 运行期**：`empty_strided` 落 `CUDACachingAllocator` block/segment 缓存池（复用既有深页 [[10_caching_allocator_autocast_profiler_analysis]]，强调"编译期逻辑复用 + 运行期物理复用叠加"）。
   - **层 3 CUDA Graphs**：`cudagraph_trees` 跨图共享 `graph_pool_handle` 私有池 + 地址稳定（static/managed idx，`:1019/1932`）+ checkpoint 重建分配器簿记（`:3135`）+ graph partition 切出 cudagraph-unsafe 算子（`scheduler.py:8856`）。
-  - [!correction] 据 `5f6df46744a` **订正 `scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]，按"历史不回写"惯例降级为反引号）两处行号**：`reorder_for_peak_memory` 实定义在 `memory.py:1016`（非 `scheduler.py:2986`）；`mutation_renames` 在 `scheduler.py:4197/4770`（非 `:2913-2928`）——符号名对、行号随版本漂移；并澄清 `memory.py` 是"区间+扫描线估峰驱动重排"而非区间图着色（着色在 `memory_planning.py`，默认关）。
+  - [!correction] 据 `5f6df46744a` **订正 `scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]，按"历史不回写"惯例降级为反引号）两处行号**：`reorder_for_peak_memory` 实定义在 `memory.py:1016`（非 `scheduler.py:2986`）；`mutation_renames` 在 `scheduler.py:4197/4770`（非 `:2913-2928`）——符号名对、行号随版本漂移；并澄清 `memory.py` 是"区间+扫描线估峰驱动重排"而非区间图着色（着色在 `memory_planning.py`，默认关）。
 
-**整合**：[[04_inductor/index]] 概览区新增本页；`PyTorch_Inductor_Technical_Analysis`（§6/§7 概念版，该页已于 2026-07-30 判重删除，§6/§7 被本页确认冗余未迁移，按"历史不回写"惯例降级为反引号）、[[10_caching_allocator_autocast_profiler_analysis]]（层 2）各加回链；本页另链 `scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]，按"历史不回写"惯例降级为反引号）/[[inductor_codegen_analysis]]/[[21_control_flow_capture_analysis]]。**校验**：3 个 mermaid 块按本库规范逐条扫（subgraph 标题无 `[]`/`|`、各 `end` 单独闭合、连线标签无引号/括号/`|`、节点标签无裸 `[]()`）；交叉链接目标经 grep 确认存在。
+**整合**：[[04_inductor/index]] 概览区新增本页；`PyTorch_Inductor_Technical_Analysis`（§6/§7 概念版，该页已于 2026-07-30 判重删除，§6/§7 被本页确认冗余未迁移，按"历史不回写"惯例降级为反引号）、[[10_caching_allocator_autocast_profiler_analysis]]（层 2）各加回链；本页另链 `scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]，按"历史不回写"惯例降级为反引号）/[[20_inductor_codegen_analysis]]/[[21_control_flow_capture_analysis]]。**校验**：3 个 mermaid 块按本库规范逐条扫（subgraph 标题无 `[]`/`|`、各 `end` 单独闭合、连线标签无引号/括号/`|`、节点标签无裸 `[]()`）；交叉链接目标经 grep 确认存在。
 
 ---
 
@@ -1470,7 +1470,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - [[triton_06_optimization_profiling_guide]] — L4 会优化：roofline 驱动 + proton（`09-persistent-matmul.py` 真实用法）+ FlashAttention online-softmax（锚 `06-fused-attention.py:69-110`，HBM 流量 O(N²)→O(N·d)）
   - [[triton_knowledge_map]] — 总纲：四能力知识点清单 + 分级自测 + 进阶（tutorials 04-11 + gluon）+ 真实资源
 - **生产方式**：协调者自写 index/00/01/knowledge_map + 5 个并行 writer-agent（严格契约：各锚定指定真实 tutorial 文件、以 01 为模板、mermaid 图、demo 忠实源 API）。**抽查定位符均真实**（`06:84 alpha=tl.math.exp2`、`autotuner.py:351` 默认值、`05-layer-norm.py` 锁式并行归约）。
-- **整合**：更新 `05_gpu_kernel/index.md`（新增 Triton 表）、`wiki/index.md`（GPU Kernel 计数 1→10 + Triton 子条目 + 主题导航）；交叉链向 [[gpu_kernel_guide]]/[[triton_vs_mlir_backend_analysis]]/[[inductor_codegen_analysis]]/[[inductor_autotuning_analysis]]/[[flex_attention_analysis]]。
+- **整合**：更新 `05_gpu_kernel/index.md`（新增 Triton 表）、`wiki/index.md`（GPU Kernel 计数 1→10 + Triton 子条目 + 主题导航）；交叉链向 [[gpu_kernel_guide]]/[[triton_vs_mlir_backend_analysis]]/[[20_inductor_codegen_analysis]]/[[21_inductor_autotuning_analysis]]/[[26_flex_attention_analysis]]。
 - **校验**：9 页内部 `[[链接]]` 全部互指存在页；外链目标均已存在；**0 悬挂链**。
 
 ---
@@ -1779,10 +1779,10 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Rename（应用户「内置后端加 `_splittiling` 对称区分」；仅改唯一真·Split-Tiling 页，MLIR/DVM/总览/通用页保持原名以免误标；`git mv` + 全 wiki `[[link]]` 同步）
 
-为与实验性 [[npu_inductor_linearize_backend_analysis]] 成「方案对称对」，把内置 default 后端唯一描述 **Triton / Split-Tiling 路径**的深度页改名：
-- `npu_triton_backend_deep_analysis` → [[npu_inductor_splittiling_backend_analysis]]
+为与实验性 [[23_npu_inductor_linearize_backend_analysis]] 成「方案对称对」，把内置 default 后端唯一描述 **Triton / Split-Tiling 路径**的深度页改名：
+- `npu_triton_backend_deep_analysis` → [[11_npu_inductor_splittiling_backend_analysis]]
 
-**刻意未改名（非单一方案，加后缀会误标）**：[[npu_compile_paths_overview]]（Triton/ACLGraph/MLIR 三路径）、[[NPU_Inductor_Backend_Analysis]]（5 后端融合规则）、[[npu_inductor_optimization_analysis]]（跨 Triton/MLIR/DVM）、[[npu_lowering_guide]] / [[npu_compile]] / [[npu_debug_guide]]（通用）。
+**刻意未改名（非单一方案，加后缀会误标）**：[[01_npu_compile_paths_overview]]（Triton/ACLGraph/MLIR 三路径）、[[10_NPU_Inductor_Backend_Analysis]]（5 后端融合规则）、[[21_npu_inductor_optimization_analysis]]（跨 Triton/MLIR/DVM）、[[20_npu_lowering_guide]] / [[12_npu_compile]] / [[32_npu_debug_guide]]（通用）。
 
 **同步**：该页有 10 处跨目录入链（04_inductor / 05_codegen_backends / 07_op_registration / changelog），全部 `[[link]]` 用 perl 同步；页头加 `> [!note]` 指向实验 Linearize 对照页；[[04_inductor/npu/index]] 行标「内置 default（Split-Tiling）」。校验：0 残留旧名、0 新增悬空链接。
 
@@ -1808,9 +1808,9 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **Type**: Rename（应用户「区分方案」要求，避免与 torch_npu 内置后端页混淆；`git mv` + 全 wiki `[[link]]` 同步）
 
 把实验性 `npu_inductor_2.9.0`（**Linearize 方案**）的页统一为 `npu_inductor_linearize_*` 前缀，与内置 default（**Split-Tiling**）的 `npu_inductor_*`/`npu_triton_*` 区分：
-- `npu_inductor_dynamic_shape_analysis` → [[npu_inductor_linearize_dynamic_shape_analysis]]
-- `npu_inductor_vs_builtin_comparison` → [[npu_inductor_linearize_vs_builtin_comparison]]
-- [[npu_inductor_linearize_backend_analysis]] 本已合规，不变。
+- `npu_inductor_dynamic_shape_analysis` → [[24_npu_inductor_linearize_dynamic_shape_analysis]]
+- `npu_inductor_vs_builtin_comparison` → [[31_npu_inductor_linearize_vs_builtin_comparison]]
+- [[23_npu_inductor_linearize_backend_analysis]] 本已合规，不变。
 
 全 wiki `[[link]]`（index / changelog / 三页互链）同步更新；校验：0 处残留旧名、0 新增悬空链接。
 
@@ -1823,11 +1823,11 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **背景**：同日先前的「Inductor 后端分析合入」条为控冗余而**压缩过度，存在明显知识熵减**——丢了 §0 全套实测对标表、§1 GPU/内置/本后端三方 output code 逐行对比、四遍折叠的 dual-decomp 实例、动态 shape 三情形 A/B/C 完整代码、上游 G2 融合的 prologue/epilogue/foreach/proximity 细节。本次按「完整录入」扩写还原。
 
 **NPU 侧：1 页 → 3 页系列**：
-- [[npu_inductor_linearize_backend_analysis]] 扩为完整版：装配顺序全表、Linearize 恒等式 + `_apply_linearize` 主干 + 四遍折叠表 + **dual-decomp 折叠实例**（softmax-bw + sum(0) + permute，4 独立轴 → 2 基础轴的完整除/模映射 + 地址文本修复）、索引线性化全 6 pass、40-CU group dispatch prologue 完整代码、融合门控（病灶数据 + 别名坑）、r 轴 rsplit（partial + combine）、**全 5 处类型降型**、白名单 lowering + 算子专项、**完整可优化点**。
-- [[npu_inductor_linearize_dynamic_shape_analysis]]（新）—— 编译一次 vs gears 分桶、签名 numel/divisor 代码、header 三件套、**三情形 A/B/C 完整代码 + 对照表**、配套（fold_trivial / 符号 split / static split block）、permute 产物。
-- [[npu_inductor_linearize_vs_builtin_comparison]]（新，comparison）—— **§1 三方 output code 逐行对比**（GPU / 内置 Split-Tiling / 本后端 Linearize 完整 kernel + 逐项差异表）+ **§0 全套实测**（torchbench 34 模型总体 / 逐模型、京东 OneRec 4 backbone、test_all 60 算子 case）+ 逐维综合矩阵。
+- [[23_npu_inductor_linearize_backend_analysis]] 扩为完整版：装配顺序全表、Linearize 恒等式 + `_apply_linearize` 主干 + 四遍折叠表 + **dual-decomp 折叠实例**（softmax-bw + sum(0) + permute，4 独立轴 → 2 基础轴的完整除/模映射 + 地址文本修复）、索引线性化全 6 pass、40-CU group dispatch prologue 完整代码、融合门控（病灶数据 + 别名坑）、r 轴 rsplit（partial + combine）、**全 5 处类型降型**、白名单 lowering + 算子专项、**完整可优化点**。
+- [[24_npu_inductor_linearize_dynamic_shape_analysis]]（新）—— 编译一次 vs gears 分桶、签名 numel/divisor 代码、header 三件套、**三情形 A/B/C 完整代码 + 对照表**、配套（fold_trivial / 符号 split / static split block）、permute 产物。
+- [[31_npu_inductor_linearize_vs_builtin_comparison]]（新，comparison）—— **§1 三方 output code 逐行对比**（GPU / 内置 Split-Tiling / 本后端 Linearize 完整 kernel + 逐项差异表）+ **§0 全套实测**（torchbench 34 模型总体 / 逐模型、京东 OneRec 4 backbone、test_all 60 算子 case）+ 逐维综合矩阵。
 
-**上游侧补全**：`scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除，本条所述 §7.6 内容已逐字并入 [[scheduler_dependency_graph_fusion_and_ordering_analysis]] §18.6，按"历史不回写"惯例降级为反引号）新增 §7.6——组兼容（numel/rnumel + tiling 一致）、proximity 门控（>64）、模板 prologue/epilogue 融合、foreach 融合、`_LoopMutationTracker` 回滚 + 循环重排；`> [!note]` 指向 NPU 后端的 read 门控 / proximity 收 20。
+**上游侧补全**：`scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除，本条所述 §7.6 内容已逐字并入 [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]] §18.6，按"历史不回写"惯例降级为反引号）新增 §7.6——组兼容（numel/rnumel + tiling 一致）、proximity 门控（>64）、模板 prologue/epilogue 融合、foreach 融合、`_LoopMutationTracker` 回滚 + 循环重排；`> [!note]` 指向 NPU 后端的 read 门控 / proximity 收 20。
 
 **索引/校验**：[[04_inductor/npu/index]] 补 2 新页行；3 个 NPU 页互链 + backlink 既有内置后端页；无悬空链接；§0/§1 数据均回读原始设计文档精确还原并标注口径（本库未独立复跑）。
 
@@ -1856,16 +1856,16 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **背景**：用户在 pytorch 工作区完成了对 NPU 实验性后端 `npu_inductor_2.9.0`（独立 monkey-patch 包，≠ torch_npu 内置 `_inductor`）及其上游 GPU 基线的源码级分析，需按知识库约定（NPU↔upstream 分开、overview→quickstart→deepdive、零冗余）合入。只读 agent 确认：既有 `04_inductor/npu/` 8 页全部讲 **torch_npu 内置**后端（Split-Tiling/CATLASS，v2.7.1.post5），**零提及** Linearize / `npu_inductor_2.9.0`；既有上游页已覆盖后端注册/融合/动态 shape 符号化，**缺** GPU kernel 派发模型、reduction codegen、autotune 三块（后者即本域 index 列出的「Inductor autotuning」空白）。
 
 **新增 4 页**：
-- [[npu_inductor_linearize_backend_analysis]]（NPU）—— 实验性 `npu_inductor_2.9.0`：import 即 patch + `disable_register_inductor_npu()` 关掉内置后端、Linearize（多维→40-CU `bin[40,1,1]` group dispatch）+ 索引线性化、编译一次动态 shape（3 情形）、`NPU_MAX_FUSED_READS` 融合门控、r 轴 rsplit、类型降型、白名单 lowering、与内置后端逐维对比、可优化点。
-- [[inductor_gpu_kernel_dispatch_model]]（upstream）—— GPU kernel 骨架（`program_id→offset→mask`，无循环）、`IterationRanges` 树、stride-1 tiling、`Grid1D/2D/2DWithYZOverflow/CooperativeReductionGrid`。
-- [[inductor_reduction_codegen_deep_analysis]]（upstream）—— persistent/looped/split/cooperative reduction（semaphore barrier）、block ptr/TMA。
-- [[inductor_autotuning_analysis]]（upstream）—— `CachingAutotuner` 生命周期、config 启发式、`config_of`/AttrsDescriptor、`make_launcher`、`triton.compile(ASTSource,GPUTarget)`→PTX/cubin、`DeviceProperties`（填补「Inductor autotuning」空白）。
+- [[23_npu_inductor_linearize_backend_analysis]]（NPU）—— 实验性 `npu_inductor_2.9.0`：import 即 patch + `disable_register_inductor_npu()` 关掉内置后端、Linearize（多维→40-CU `bin[40,1,1]` group dispatch）+ 索引线性化、编译一次动态 shape（3 情形）、`NPU_MAX_FUSED_READS` 融合门控、r 轴 rsplit、类型降型、白名单 lowering、与内置后端逐维对比、可优化点。
+- [[23_inductor_gpu_kernel_dispatch_model]]（upstream）—— GPU kernel 骨架（`program_id→offset→mask`，无循环）、`IterationRanges` 树、stride-1 tiling、`Grid1D/2D/2DWithYZOverflow/CooperativeReductionGrid`。
+- [[22_inductor_reduction_codegen_deep_analysis]]（upstream）—— persistent/looped/split/cooperative reduction（semaphore barrier）、block ptr/TMA。
+- [[21_inductor_autotuning_analysis]]（upstream）—— `CachingAutotuner` 生命周期、config 启发式、`config_of`/AttrsDescriptor、`make_launcher`、`triton.compile(ASTSource,GPUTarget)`→PTX/cubin、`DeviceProperties`（填补「Inductor autotuning」空白）。
 
-**增补 1 处**：[[inductor_codegen_dynamic_shape_analysis]] 新增 §2.4——`s0→ks0` 重命名 + `signature_to_meta._decide_tl_dtype` 把动态 `ks*` 升 `tl.int64` 防 `ks0*ks1` 溢出；加 `> [!contradiction]` 指向 NPU 后端的 i32 降型（GPU↔NPU 动态 shape 整型的根本分歧）。
+**增补 1 处**：[[24_inductor_codegen_dynamic_shape_analysis]] 新增 §2.4——`s0→ks0` 重命名 + `signature_to_meta._decide_tl_dtype` 把动态 `ks*` 升 `tl.int64` 防 `ks0*ks1` 溢出；加 `> [!contradiction]` 指向 NPU 后端的 i32 降型（GPU↔NPU 动态 shape 整型的根本分歧）。
 
 **索引/空白更新**：[[04_inductor/index]] 加「codegen 派发与运行时（GPU 基线）」分组 3 行；[[04_inductor/npu/index]] 加实验后端行 + 头注（区分内置/实验、PyTorch 2.9.0 基线）；[[01_ai_frameworks/index]] 空白「Inductor autotuning」「NPU Monkey Patch 演进追踪 v2.9.0」标 ✅ 并指向新页。
 
-**交叉引用**：4 新页均含 `## Related Pages` + `[[wikilink]]`；NPU 页 §六对比直接 backlink 既有 [[npu_inductor_splittiling_backend_analysis]]/[[npu_compile_paths_overview]]/[[npu_inductor_optimization_analysis]]（内置后端细节，不复述）；上游 3 页互链并指向既有 `scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]，按"历史不回写"惯例降级为反引号）/`dynamic_shapes_full_analysis`（历史活链接，该页已于 2026-07-30 并入 [[20_symbolic_shapes_guards_and_graph_reuse_analysis]]，按"历史不回写"惯例降级为反引号）/`PyTorch_Inductor_Technical_Analysis`（历史活链接，该页已于 2026-07-30 判重删除，按"历史不回写"惯例降级为反引号）。
+**交叉引用**：4 新页均含 `## Related Pages` + `[[wikilink]]`；NPU 页 §六对比直接 backlink 既有 [[11_npu_inductor_splittiling_backend_analysis]]/[[01_npu_compile_paths_overview]]/[[21_npu_inductor_optimization_analysis]]（内置后端细节，不复述）；上游 3 页互链并指向既有 `scheduler_analysis`（历史活链接，该页已于 2026-07-30 判重删除并入 [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]，按"历史不回写"惯例降级为反引号）/`dynamic_shapes_full_analysis`（历史活链接，该页已于 2026-07-30 并入 [[20_symbolic_shapes_guards_and_graph_reuse_analysis]]，按"历史不回写"惯例降级为反引号）/`PyTorch_Inductor_Technical_Analysis`（历史活链接，该页已于 2026-07-30 判重删除，按"历史不回写"惯例降级为反引号）。
 
 **核验**：所有代码引用带 `file:line`（npu_inductor 包 + upstream `torch/_inductor/`）；零冗余（内置后端/上游已覆盖部分一律 cross-link 而非复述）；纯增，未删改既有页结构。源分析底稿在 pytorch 工作区 `npu_inductor_2.9.0/triton-backend-analysis/`。
 
@@ -1990,7 +1990,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **审计**:对 01_ai_frameworks 全部模块核查三项——冗余/雷同、overview→quick start→deep dive 分层、NPU↔upstream 分离;32 个 agent,每条可执行发现经对抗式验证(默认怀疑,排除「`input` 含 npu 子串」等假阳性),确认 16 条。
 
 **修复（7 模块,纯增改无删除/重命名）**:
-- **04_inductor**:`Pytorch_Compile_Debug_Analysis` 残留的 NPU 平台声明 + 脚本块(`DEVICE_TYPE=npu` / ASCEND/HCCL env)清除 → 纯 upstream(NPU 调试已在 [[npu_debug_guide]])
+- **04_inductor**:`Pytorch_Compile_Debug_Analysis` 残留的 NPU 平台声明 + 脚本块(`DEVICE_TYPE=npu` / ASCEND/HCCL env)清除 → 纯 upstream(NPU 调试已在 [[32_npu_debug_guide]])
 - **06_graphs**:`cuda/README` 移除混入的「NPU Graphs 对比/系统要求/参考资源」段 + 失实目录树 → 纯 CUDA,对比指向 [[comparison]];与 cuda/index(导航)分工
 - **05_codegen_backends/mlir**:新建 `torch_mlir_quickstart`(quick start 层),`torch_mlir_pass_pipeline_analysis` §0 去重定位说明
 - **03_aot_autograd**:index 补「模块概述」(定义/栈位置/三职责),quickstart §1 精简为「快速导航」
@@ -2169,7 +2169,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **矛盾标注（保留双方）**：
 
-- fallback / patch 计数口径差异——本页（2.7 来源）fallback ~635 / patch 30+，本库 [[npu_inductor_splittiling_backend_analysis]]（v2.7.1 源码核查）fallback 859 / patch 35+；已在页内 `> [!contradiction]` 标注，深入以 v2.7.1 源码页为准
+- fallback / patch 计数口径差异——本页（2.7 来源）fallback ~635 / patch 30+，本库 [[11_npu_inductor_splittiling_backend_analysis]]（v2.7.1 源码核查）fallback 859 / patch 35+；已在页内 `> [!contradiction]` 标注，深入以 v2.7.1 源码页为准
 
 ---
 
@@ -2204,7 +2204,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **更新文件**:
 
-- `op_plugin/npu_operator_graph_eligibility_guide.md` —— 新增 §8「三关的硬性不变量:为什么进不去」(不变量层层收紧:第一关形状可预测 / 第二关计算可表达 / 第三关执行可录制;aclnn-only 铁律的 `aclopCompileAndExecute` 根因;`allow_internal_format=False` 为何救场;TORCH_NATIVE vs NPU_EXTRA 的「通用限制 vs 昇腾待补齐」之分;A2/A3-SIMD vs A5-SIMT 间接访存硬件根因)+ §9「面向新算子的前瞻判据」(决策树 Mermaid + 三关自检 checklist);原速查表顺延为 §10;目录补两项;新增 [[unbacked_symint_analysis]] 交叉引用
+- `op_plugin/npu_operator_graph_eligibility_guide.md` —— 新增 §8「三关的硬性不变量:为什么进不去」(不变量层层收紧:第一关形状可预测 / 第二关计算可表达 / 第三关执行可录制;aclnn-only 铁律的 `aclopCompileAndExecute` 根因;`allow_internal_format=False` 为何救场;TORCH_NATIVE vs NPU_EXTRA 的「通用限制 vs 昇腾待补齐」之分;A2/A3-SIMD vs A5-SIMT 间接访存硬件根因)+ §9「面向新算子的前瞻判据」(决策树 Mermaid + 三关自检 checklist);原速查表顺延为 §10;目录补两项;新增 [[25_unbacked_symint_analysis]] 交叉引用
 
 ---
 
@@ -2222,7 +2222,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **索引与交叉引用**:
 
 - `01_ai_frameworks/index.md` —— 子目录表新增 `[[07_op_registration/npu/index]]`;页面列表新增「op-plugin 算子接入」区(3 行);页头摘要与最后更新改 2026-06-12
-- 交叉引用:三篇互链,并 link 到既有 [[npu_compile_paths_overview]] / [[npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / `PyTorch_Dynamo_Technical_Analysis`（该页已于 P4 Task 5 判重删除，内容并入 [[02_compile_stack/01_dynamo/index]]） / [[npu_lowering_guide]]。入图判别页明确定位为「判别视角」,与既有「路径实现全景」页互补、不重复
+- 交叉引用:三篇互链,并 link 到既有 [[01_npu_compile_paths_overview]] / [[11_npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / `PyTorch_Dynamo_Technical_Analysis`（该页已于 P4 Task 5 判重删除，内容并入 [[02_compile_stack/01_dynamo/index]]） / [[20_npu_lowering_guide]]。入图判别页明确定位为「判别视角」,与既有「路径实现全景」页互补、不重复
 
 ---
 
@@ -2832,7 +2832,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - **SymInt/SymNode**: Python-level symbolic integer wrapping sympy.Expr, transparent tracking of all shape arithmetic
   - **automatic_dynamic_shapes**: Progressive dynamism — static first, recompile with dynamic on wobble, exclusion guards preserve static cache
 
-- Cross-referenced with `[[inductor_codegen_dynamic_shape_analysis]]`, `[[torch_compile_architecture]]`, `[[PyTorch_Dynamo_Technical_Analysis]]`
+- Cross-referenced with `[[24_inductor_codegen_dynamic_shape_analysis]]`, `[[02_torch_compile_architecture]]`, `[[PyTorch_Dynamo_Technical_Analysis]]`
 
 ---
 
@@ -2842,7 +2842,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 - **Created**: `wiki/02_engineering/01_ai_frameworks/inductor/inductor_compiler_pipeline_analysis.md` — PyTorch Inductor 后端编译流程深度分析（中文）
 - **Updated**: `wiki/02_engineering/01_ai_frameworks/inductor/index.md` — 架构与流程表格新增条目
-- **Cross-referenced**: 新页面与现有 10 个分阶段分析页面建立双向链接（`[[aotautograd_analysis]]`, `[[pre_grad_passes_guide]]`, `[[joint_graph_passes_guide]]`, `[[post_grad_passes_guide]]`, `[[lowering_analysis]]`, `[[scheduler_analysis]]`, `[[inductor_codegen_analysis]]`, `[[PyTorch_Dynamo_Technical_Analysis]]`, `[[PyTorch_Inductor_Technical_Analysis]]`, `[[torch_compile_architecture]]`）
+- **Cross-referenced**: 新页面与现有 10 个分阶段分析页面建立双向链接（`[[aotautograd_analysis]]`, `[[30_pre_grad_passes_guide]]`, `[[31_joint_graph_passes_guide]]`, `[[32_post_grad_passes_guide]]`, `[[lowering_analysis]]`, `[[scheduler_analysis]]`, `[[20_inductor_codegen_analysis]]`, `[[PyTorch_Dynamo_Technical_Analysis]]`, `[[PyTorch_Inductor_Technical_Analysis]]`, `[[02_torch_compile_architecture]]`）
 
 **Key topics**:
   - **§1 Dynamo**: PEP 523 帧拦截、符号化执行字节码（`InstructionTranslator`）、VariableTracker 体系、Guards 机制（C++ `RootGuardManager`）、Graph Break 处理

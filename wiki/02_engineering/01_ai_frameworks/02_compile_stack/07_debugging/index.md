@@ -354,4 +354,4 @@ forward 正常但 backward 异常→AOT 问题、数值/性能异常→Inductor 
 - [[00_torch_compile_end_to_end_index]] — 端到端课程总索引
 - [[02_compile_stack/index]] — torch.compile 编译栈领域索引
 - [[02_compile_stack/04_inductor/index]] — Inductor 领域索引（本卷 CUDA 排查与 §5 越界排查互补）
-- [[02_compile_stack/04_inductor/npu/npu_debug_guide]] — NPU 侧调试（本附录是纯 upstream/CUDA 视角）
+- [[02_compile_stack/04_inductor/npu/32_npu_debug_guide]] — NPU 侧调试（本附录是纯 upstream/CUDA 视角）

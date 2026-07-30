@@ -27,7 +27,7 @@
 | [[22_backend_modes_options_stances_and_fullgraph_analysis]] | deep dive(B02,段 2) | backend/mode/options/stance/fullgraph 五个控制面怎样互不覆盖 |
 | [[30_dynamo_pass_methodology]] | **development guide**(段 3) | Dynamo backend 是什么/为什么、整图改写边界、`register_backend`/callable 注册示例、何时后移到 Inductor 各阶段 |
 
-> 端到端流水线(Dynamo→AOTAutograd→Inductor)见 [[torch_compile_architecture]]。B01-B10 的课程化阅读顺序与配套 Demo 见 [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] §4。
+> 端到端流水线(Dynamo→AOTAutograd→Inductor)见 [[02_torch_compile_architecture]]。B01-B10 的课程化阅读顺序与配套 Demo 见 [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]] §4。
 
 ---
 

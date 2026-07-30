@@ -195,4 +195,4 @@ graph TD
 - [[op_plugin_config_and_classification_guide]] —— 本页注册的算子，其 yaml 配置（official/custom、acl_op/op_api、gen_opapi）如何决定生成哪种胶水
 - [[npu_operator_graph_eligibility_guide]] —— 注册进 dispatcher 只是 eager 可用；要「入图」还要过 dynamo/inductor/aclgraph 三关
 - [[02_compile_stack/01_dynamo/index]] —— dispatcher 与 PrivateUse1 key 在 torch.compile 下的角色
-- [[npu_compile_paths_overview]] —— torch_npu torch.compile 三条后端路径全景
+- [[01_npu_compile_paths_overview]] —— torch_npu torch.compile 三条后端路径全景

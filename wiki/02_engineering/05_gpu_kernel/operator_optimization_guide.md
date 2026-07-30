@@ -818,13 +818,13 @@ Step 6  回归 Profile
 
 ## Related Pages
 
-- [[torch_compile_architecture]] — torch.compile 端到端编译流水线（Dynamo → Inductor）
-- [[flex_attention_analysis]] — FlexAttention 可组合注意力融合机制
+- [[02_torch_compile_architecture]] — torch.compile 端到端编译流水线（Dynamo → Inductor）
+- [[26_flex_attention_analysis]] — FlexAttention 可组合注意力融合机制
 - [[tilelang_analysis]] — TileLang Tile-Level IR 与 Host Codegen
-- [[npu_compile_paths_overview]] — NPU torch.compile 三条路径（Triton/ACLGraph/MLIR）
+- [[01_npu_compile_paths_overview]] — NPU torch.compile 三条路径（Triton/ACLGraph/MLIR）
 - [[NPU_MLIR_Backend_Technical_Analysis]] — NPU MLIR 六阶段编译管线
-- [[npu_compile]] — NPU 编译工作流与 Autotune
-- [[npu_lowering_guide]] — NPU 特定算子 Lowering 指南
+- [[12_npu_compile]] — NPU 编译工作流与 Autotune
+- [[20_npu_lowering_guide]] — NPU 特定算子 Lowering 指南
 - [[PyTorch_CUDA_Graphs_Complete_Guide]] — CUDA Graphs 图捕获/重放机制
 - [[torch_compile_npugraphs_deep_dive]] — NPU Graphs + torch.compile 深度分析
 - [[aclgraph_deep_analysis]] — ACLGraph 图捕获与 Super Kernel

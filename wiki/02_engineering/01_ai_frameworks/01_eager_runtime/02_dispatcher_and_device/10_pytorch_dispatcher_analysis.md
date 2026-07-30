@@ -628,6 +628,6 @@ Autograd Edge、mutation history 或 dispatch behavior 也保持不变。
 
 - [[01_ai_frameworks/index]] — PyTorch Compilation Stack 目录索引
 - [[10_dispatch_modes_proxytensor_faketensor_analysis]] — AOTAutograd 用 `__torch_dispatch__`（`Python` key）+ ProxyTensor/FakeTensor 两套抽象执行状态追踪联合图，是本页机制的直接消费者
-- [[torch_compile_architecture]] — torch.compile 端到端流水线建立在 dispatcher 之上
+- [[02_torch_compile_architecture]] — torch.compile 端到端流水线建立在 dispatcher 之上
 - [[02_compile_stack/01_dynamo/index]] — Dynamo 在「帧/字节码」层捕获，与 dispatcher 在「算子」层分发互补
 - [[torchtitan_ac_analysis]] — SAC 激活重计算用 `TorchDispatchMode` 缓存/回放 save-op，是 §11 模式的工程应用

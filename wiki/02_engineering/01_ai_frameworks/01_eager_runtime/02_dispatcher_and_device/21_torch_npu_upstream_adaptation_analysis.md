@@ -120,7 +120,7 @@ torch_npu 的 Inductor 有 `default`、`mlir`、`dvm` 三个 loader（`torch_npu
 因为 upstream `main` 自己也已经不是单一路径：`CUDACombinedScheduling` 同时持有 Triton、CUTLASS、ROCm C++、CuteDSL、NV Universal GEMM scheduler，并逐 node 选择（upstream `torch/_inductor/codegen/cuda_combined_scheduling.py:40-72`）；XPU 也在 Triton 与 CUTLASS 之间委派（`torch/_inductor/codegen/xpu/xpu_combined_scheduling.py:32-53`）。
 
 > [!contradiction]
-> 旧页 [[npu_compile_paths_overview]] 的“Ascend 三条路径 vs 社区统一 Triton 路径”只适用于较早观察口径，不能代表 2026-07-15 的 upstream `main`。当前真正应比较的是：各 codegen 是否通过标准 scheduling/wrapper/custom-pass 接口组合，还是通过 patch 私有实现完成组合。
+> 旧页 [[01_npu_compile_paths_overview]] 的“Ascend 三条路径 vs 社区统一 Triton 路径”只适用于较早观察口径，不能代表 2026-07-15 的 upstream `main`。当前真正应比较的是：各 codegen 是否通过标准 scheduling/wrapper/custom-pass 接口组合，还是通过 patch 私有实现完成组合。
 
 ### 3.4 ACLGraph 与 CUDAGraph 的行为映射不是简单改名
 
@@ -260,7 +260,7 @@ torch_npu 则维护一套只适配 PyTorch 2.7.1 的 upstream test patch，READM
 
 - [[11_privateuse1_device_integration_analysis]] —— upstream 为 out-of-tree accelerator 提供的设备/Dispatcher 基础契约
 - [[op_registration_pipeline_analysis]] —— op-plugin YAML 到 Dispatcher 注册的生成链
-- [[npu_compile_paths_overview]] —— NPU Inductor、ACLGraph 与多编译路径专题
-- [[torch_compile_architecture]] —— upstream torch.compile 端到端流水线
+- [[01_npu_compile_paths_overview]] —— NPU Inductor、ACLGraph 与多编译路径专题
+- [[02_torch_compile_architecture]] —— upstream torch.compile 端到端流水线
 - [[10_caching_allocator_autocast_profiler_analysis]] —— allocator、AMP、profiler 的 upstream 通用机制
 - [[c10d_ddp_fsdp_dtensor_analysis]] —— c10d/ProcessGroup 与上层分布式原语

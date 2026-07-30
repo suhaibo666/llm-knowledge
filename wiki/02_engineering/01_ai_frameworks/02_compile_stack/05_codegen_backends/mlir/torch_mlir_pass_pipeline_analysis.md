@@ -555,5 +555,5 @@ C++ 端:   DecomposeComplexOps         ← 兜底 (默认跳过)
 - [[mlir_core_concepts]] — MLIR 核心概念: Dialect、Pass、IR 注册、递降原理
 - [[triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR: 六阶段概念对等映射
 - [[NPU_MLIR_Backend_Technical_Analysis]] — NPU MLIR 管线分析 (毕昇编译器路线，非 GPU 路线)
-- [[torch_compile_architecture]] — torch.compile 端到端流水线
+- [[02_torch_compile_architecture]] — torch.compile 端到端流水线
 - [[02_compile_stack/01_dynamo/index]] — Dynamo 帧评估 API、字节码符号执行

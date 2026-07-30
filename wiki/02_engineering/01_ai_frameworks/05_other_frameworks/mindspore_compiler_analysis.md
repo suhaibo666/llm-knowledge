@@ -344,4 +344,4 @@ context.set_auto_parallel_context(
 - [[NPU_MLIR_Backend_Technical_Analysis]] — NPU（昇腾）的 MLIR 编译路径
 - [[mlir_core_concepts]] — MLIR Dialect 基础（与 MindSpore ANF 的 IR 对比）
 - [[comm_compute_fusion_guide]] — 通算融合：ParallelAuto 与自动通算重叠的关系
-- [[pre_grad_passes_guide]] — PyTorch Pre-Grad Passes（与 MindCompiler 硬件无关 Pass 对比）
+- [[30_pre_grad_passes_guide]] — PyTorch Pre-Grad Passes（与 MindCompiler 硬件无关 Pass 对比）

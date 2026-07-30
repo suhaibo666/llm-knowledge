@@ -53,7 +53,7 @@ PatternExpr/PatternMatcherPass、DCE与稳定拓扑排序、rewrite合法性与�
 | [[13_aot_runtime_wrappers_and_lazy_backward_compile_analysis]] | deep dive(D02,段 1) | fw/bw callable 包回 eager autograd 协议的 runtime wrapper、saved tensor 打包/解包、lazy backward compile 触发时机、input mutation/view/alias 语义恢复 |
 | [[20_activation_checkpoint_recompute_and_compile_analysis]] | deep dive(专题,段 2) | 用户层 `torch.utils.checkpoint`(reentrant/non-reentrant、Selective AC policy)如何与 partitioner 的 save/recompute 选择叠加;2026-07-30 迁入,与 [[12_saved_tensors_recompute_and_runtime_abi_analysis]] 互指划界(用户 API/策略层 vs partitioner 源码/runtime ABI 层) |
 
-> joint graph 上的优化 pass 见 [[joint_graph_passes_guide]](实现于 Inductor `fx_passes/joint_graph.py`)。
+> joint graph 上的优化 pass 见 [[31_joint_graph_passes_guide]](实现于 Inductor `fx_passes/joint_graph.py`)。
 
 ---
 

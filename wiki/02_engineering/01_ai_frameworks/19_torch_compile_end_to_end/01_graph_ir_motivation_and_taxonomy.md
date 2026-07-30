@@ -106,7 +106,7 @@ GraphLowering 作为 FX Interpreter 执行 lowering。环境值可能是 lazy
 `torch/_inductor/graph.py:1925-2000`）。
 
 loop-level `Pointwise`/`Reduction` 是 fusion-friendly 核心，但不是唯一 IR；extern、
-template、multi-output 等有不同表示。详见 [[fx_lowering_to_inductor_ir_analysis]]。
+template、multi-output 等有不同表示。详见 [[10_fx_lowering_to_inductor_ir_analysis]]。
 
 ### 3.5 Scheduler dependency graph
 
@@ -127,7 +127,7 @@ alias、mutation rename、weak ordering 等建立依赖
 - view/alias/mutation 会改变 buffer 依赖；
 - stream、mempool、collective 等可引入额外顺序限制。
 
-详见 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]。
+详见 [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]。
 
 ### 3.6 Runtime CUDA Graph
 
@@ -367,6 +367,6 @@ fx_call_targets=add,relu,sum
 - [[10_fx_graph_core_data_model_analysis]]
 - [[01_eager_runtime/05_autograd_engine/index]]
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]]
-- [[fx_lowering_to_inductor_ir_analysis]]
-- [[scheduler_dependency_graph_fusion_and_ordering_analysis]]
+- [[10_fx_lowering_to_inductor_ir_analysis]]
+- [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[03_runtime_graphs/index]]

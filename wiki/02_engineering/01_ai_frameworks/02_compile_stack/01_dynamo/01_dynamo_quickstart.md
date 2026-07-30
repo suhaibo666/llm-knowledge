@@ -133,7 +133,7 @@ TORCH_LOGS="bytecode" python script.py  # 看字节码改写(默认关,排查 co
 ## 6. 深入导航
 
 - [[02_compile_stack/01_dynamo/index]] — deep dive 十篇:API 生命周期、backend 五控制面、帧评估/code cache、字节码符号执行、VariableTracker、OutputGraph、Guard/重编译、graph break、动态形状、backend 契约。
-- [[torch_compile_architecture]] — 端到端流水线 Dynamo → AOTAutograd → Inductor。
+- [[02_torch_compile_architecture]] — 端到端流水线 Dynamo → AOTAutograd → Inductor。
 - [[02_compile_stack/02_aot_autograd/index]] — 下一阶段:前/反向分解。
 
 ---
@@ -141,6 +141,6 @@ TORCH_LOGS="bytecode" python script.py  # 看字节码改写(默认关,排查 co
 ## Related Pages
 
 - [[02_compile_stack/01_dynamo/index]]
-- [[torch_compile_architecture]]
+- [[02_torch_compile_architecture]]
 - [[02_compile_stack/02_aot_autograd/index]]
 - [[01_ai_frameworks/index]]

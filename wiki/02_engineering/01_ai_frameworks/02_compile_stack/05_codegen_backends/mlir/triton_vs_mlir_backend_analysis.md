@@ -315,10 +315,10 @@ linalg.generic (已融合)
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
-- [[fx_lowering_to_inductor_ir_analysis]] — Inductor lowering 的完整技术分析
-- [[scheduler_dependency_graph_fusion_and_ordering_analysis]] — Scheduler 融合算法详解
-- [[inductor_codegen_analysis]] — Triton codegen 流程
+- [[10_fx_lowering_to_inductor_ir_analysis]] — Inductor lowering 的完整技术分析
+- [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]] — Scheduler 融合算法详解
+- [[20_inductor_codegen_analysis]] — Triton codegen 流程
 - [[02_compile_stack/04_inductor/index]] — Inductor 完整编译流水线
 - [[NPU_MLIR_Backend_Technical_Analysis]] — NPU 上的 MLIR 后端实现（TracedGraph 机制）
-- [[npu_lowering_guide]] — NPU lowering 与 Triton lowering 的差异
-- [[torch_compile_architecture]] — torch.compile 端到端架构
+- [[20_npu_lowering_guide]] — NPU lowering 与 Triton lowering 的差异
+- [[02_torch_compile_architecture]] — torch.compile 端到端架构

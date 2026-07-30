@@ -1,6 +1,6 @@
 # NPU 算子入图判别指南（dynamo / inductor+triton / aclgraph 三关）
 
-> **判别视角**：给定一个算子，如何判断它能否「入图」、会卡在哪一关、用什么命令验证。这不是路径实现介绍（实现全景见 [[npu_compile_paths_overview]]、各关深度见 [[npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / [[02_compile_stack/01_dynamo/index]]），而是一份面向「这个算子能不能入图」的可操作判别清单。
+> **判别视角**：给定一个算子，如何判断它能否「入图」、会卡在哪一关、用什么命令验证。这不是路径实现介绍（实现全景见 [[01_npu_compile_paths_overview]]、各关深度见 [[11_npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / [[02_compile_stack/01_dynamo/index]]），而是一份面向「这个算子能不能入图」的可操作判别清单。
 >
 > 基于版本：`E:\97-codes\pytorch\torch_npu` 当前 checkout
 > 分析日期：2026-06-12
@@ -36,7 +36,7 @@
 | 路线 | backend | 图引擎 | 「能否入图」由谁决定 | 深度页 |
 |------|---------|--------|---------------------|--------|
 | **torchair** | `"npu"` | CANN GE 整图 | torchair 的 `ge_converter`（把 aten/npu IR 翻成 GE 节点）+ meta | — |
-| **inductor+triton** | `"inductor"` | inductor → Triton-Ascend | dynamo meta + inductor lowering/fallback | [[npu_inductor_splittiling_backend_analysis]] |
+| **inductor+triton** | `"inductor"` | inductor → Triton-Ascend | dynamo meta + inductor lowering/fallback | [[11_npu_inductor_splittiling_backend_analysis]] |
 | **aclgraph** | `"inductor"` + `mode="reduce-overhead"` | NPUGraph（CANN `AclmdlRI*` capture/replay） | 上两关 + capture 约束 | [[aclgraph_deep_analysis]] |
 | **npugraphs / npugraph_ex** | `"npugraphs"` / `"npugraph_ex"` | 直接 capture FX 图 / 独立外部包 | 同 aclgraph 门禁 | [[torch_compile_npugraphs_deep_dive]] |
 
@@ -106,7 +106,7 @@ with FakeTensorMode():
 - 黑名单：`torch_npu/_inductor/lowering_fallback_list.py`——`NPU_EXTRA_FALLBACK_LIST`（`:40` 起，通信 `_c10d_functional.*`、位运算、`acos/atan/erfc` 等超越函数、卷积/池化、随机数、inplace 系）+ `TORCH_NATIVE_FALLBACK_LIST`（`:658` 起，SDPA/linalg/sort 等上游本就 fallback），`FALLBACK_LIST` 合并于 `:1009`。
 - **第三道隐性门槛**：生成的 Triton 还要能被 triton-ascend（`triton-ascend/third_party/ascend/backend/compiler.py`，ttir→linalg→bishengir）编译；不支持的 Triton 语义会在编译期挂掉，与「能否 lower」是两回事。
 
-> 关于 fallback 规模：当前 checkout 有近千个 aten/prims 算子被强制 fallback，统计与机制详见 [[npu_compile_paths_overview]] §2.3 与 [[npu_lowering_guide]]。
+> 关于 fallback 规模：当前 checkout 有近千个 aten/prims 算子被强制 fallback，统计与机制详见 [[01_npu_compile_paths_overview]] §2.3 与 [[20_npu_lowering_guide]]。
 
 **判别方法**：
 ```python
@@ -167,7 +167,7 @@ NPUGraph = CANN `AclmdlRICaptureBegin/End/ExecuteAsync`（`torch_npu/csrc/core/n
 dynamo 抓图时不在 NPU 上真执行，而是用 FakeTensor（只有 shape/dtype/device 的「假张量」）走一遍，借此推出每个算子的输出形态、记成 FX 节点。
 
 - **缺 meta → 推不出 → 断**：自定义算子没注册 meta，FakeTensor 不知道输出 shape/dtype；且 `npu`/`atb` 命名空间不在 fake_tensor 的 fallback 白名单（`pytorch/torch/_subclasses/fake_tensor.py:3104`），直接抛 `UnsupportedOperatorException`（`:3057-3120`）→ graph break。**这就是新自定义算子必须手写 meta（`op_plugin/python/meta/_meta_registrations.py`）的根因。**
-- **输出依赖数值 → 天然推不出**：`nonzero`/`.item()` 这类，输出形状 = 非零元素个数 / 标量真值，假执行时数据还没算，shape 无法符号化（→ unbacked symint 或 `DataDependentException`）。这**不是补个 meta 能解决的**——它违反了不变量本身。详见 [[unbacked_symint_analysis]]。
+- **输出依赖数值 → 天然推不出**：`nonzero`/`.item()` 这类，输出形状 = 非零元素个数 / 标量真值，假执行时数据还没算，shape 无法符号化（→ unbacked symint 或 `DataDependentException`）。这**不是补个 meta 能解决的**——它违反了不变量本身。详见 [[25_unbacked_symint_analysis]]。
 
 ### 8.2 inductor+triton —— 为什么只能 codegen「可表达成 IR 原语」的算子
 
@@ -263,9 +263,9 @@ graph TD
 
 - [[op_plugin_config_and_classification_guide]] —— 算子的 `op_api`/`acl_op` 配置（第三关 aclnn-only 铁律的源头）
 - [[op_registration_pipeline_analysis]] —— eager 注册与 acl_op/op_api 运行时三层选择
-- [[npu_compile_paths_overview]] —— 三条后端路径实现全景（本页的判别对象）
-- [[npu_inductor_splittiling_backend_analysis]] —— 第二关 Triton/Inductor default 路径深度分析
+- [[01_npu_compile_paths_overview]] —— 三条后端路径实现全景（本页的判别对象）
+- [[11_npu_inductor_splittiling_backend_analysis]] —— 第二关 Triton/Inductor default 路径深度分析
 - [[aclgraph_deep_analysis]] —— 第三关 ACLGraph 图捕获/重放深度分析
 - [[aclgraph_multistream_rng_analysis]] —— 第三关中的多流闭合、通信流边界与随机数状态协议
 - [[02_compile_stack/01_dynamo/index]] —— 第一关 dynamo 图捕获机制
-- [[npu_lowering_guide]] —— 第二关 NPU lowering 与算子映射细节
+- [[20_npu_lowering_guide]] —— 第二关 NPU lowering 与算子映射细节

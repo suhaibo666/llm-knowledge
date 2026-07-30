@@ -100,11 +100,11 @@ flowchart LR
 
 | 编号 | 页面 | 先解决的问题 |
 |---:|---|---|
-| 17 | [[fx_lowering_to_inductor_ir_analysis]] | 为什么 FX 与代码生成之间还需要一层 IR |
-| 18 | [[inductor_ir_values_loops_layouts_and_buffers_analysis]] | loop、寻址、layout 与 storage 如何表达 |
-| 19 | [[buffer_liveness_memory_planning_and_reuse_analysis]] | Buffer 何时物化、何时释放、如何复用 |
-| 20 | [[scheduler_dependency_graph_fusion_and_ordering_analysis]] | Scheduler 边为何不同于 FX users |
-| 21 | [[codegen_kernel_mapping_autotuning_and_provenance_analysis]] | fusion group 如何成为 kernel 并映射回源码 |
+| 17 | [[10_fx_lowering_to_inductor_ir_analysis]] | 为什么 FX 与代码生成之间还需要一层 IR |
+| 18 | [[11_inductor_ir_values_loops_layouts_and_buffers_analysis]] | loop、寻址、layout 与 storage 如何表达 |
+| 19 | [[12_buffer_liveness_memory_planning_and_reuse_analysis]] | Buffer 何时物化、何时释放、如何复用 |
+| 20 | [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]] | Scheduler 边为何不同于 FX users |
+| 21 | [[14_codegen_kernel_mapping_autotuning_and_provenance_analysis]] | fusion group 如何成为 kernel 并映射回源码 |
 
 ## 每篇前置依赖与学习成果
 

@@ -131,12 +131,12 @@ compiled = torch.compile(model, backend="audit_inductor")
 
 | 你的条件首次出现于 | 去哪里 |
 |---|---|
-| 高层 `F.linear`/module 结构 | [[pre_grad_passes_guide]] |
-| functionalized 前反向联合 ATen 图 | [[joint_graph_passes_guide]] |
-| 切分后的精确 ATen 图 | [[post_grad_passes_guide]] |
-| ATen → IR、layout/realization | [[fx_lowering_to_inductor_ir_analysis]] |
-| buffer 依赖、融合组、stream | [[scheduler_dependency_graph_fusion_and_ordering_analysis]] |
-| target kernel/wrapper ABI | [[codegen_extension_guide]] |
+| 高层 `F.linear`/module 结构 | [[30_pre_grad_passes_guide]] |
+| functionalized 前反向联合 ATen 图 | [[31_joint_graph_passes_guide]] |
+| 切分后的精确 ATen 图 | [[32_post_grad_passes_guide]] |
+| ATen → IR、layout/realization | [[10_fx_lowering_to_inductor_ir_analysis]] |
+| buffer 依赖、融合组、stream | [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]] |
+| target kernel/wrapper ABI | [[34_codegen_extension_guide]] |
 
 ## Related Pages
 
@@ -145,5 +145,5 @@ compiled = torch.compile(model, backend="audit_inductor")
 - [[14_output_graph_side_effects_and_graph_emission_analysis]] — OutputGraph 深挖
 - [[01_dynamo_quickstart]] — `explain`、graph break 和重编译快速排查
 - [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 八阶段 Pass 放置方法论(现含跨框架对照)
-- [[inductor_compile_fx_orchestration_analysis]] — compile_fx 如何编排 AOTAutograd 与 fw/bw compiler(Dynamo 之后的调用链入口)
+- [[15_inductor_compile_fx_orchestration_analysis]] — compile_fx 如何编排 AOTAutograd 与 fw/bw compiler(Dynamo 之后的调用链入口)
 - [[18_backend_contract_and_custom_backend_analysis]] — backend 契约的源码级机制深挖(本页的开发决策线以此为基础)

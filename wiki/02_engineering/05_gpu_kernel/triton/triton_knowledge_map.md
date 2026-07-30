@@ -128,7 +128,7 @@ flowchart TD
 | 程序化依赖启动 | `11-programmatic-dependent-launch.py` | PDL、kernel 间依赖 |
 | Gluon | `tutorials/gluon/` | Triton 新一代更底层的 tile 语言 |
 
-再往下：读 [[triton_vs_mlir_backend_analysis]] 理解 Triton→PTX 编译栈；读 [[inductor_codegen_analysis]] 看 `torch.compile` 如何**自动生成** Triton；迁移到 NPU 见 [[gpu_kernel_guide]] §09。
+再往下：读 [[triton_vs_mlir_backend_analysis]] 理解 Triton→PTX 编译栈；读 [[20_inductor_codegen_analysis]] 看 `torch.compile` 如何**自动生成** Triton；迁移到 NPU 见 [[gpu_kernel_guide]] §09。
 
 ---
 
@@ -150,4 +150,4 @@ flowchart TD
 - [[triton_05_debug_guide]] — L3 会debug
 - [[triton_06_optimization_profiling_guide]] — L4 会优化
 - [[gpu_kernel_guide]] — CUDA/NPU Kernel 工程总览
-- [[triton_vs_mlir_backend_analysis]] · [[inductor_codegen_analysis]] — Triton 作为编译后端
+- [[triton_vs_mlir_backend_analysis]] · [[20_inductor_codegen_analysis]] — Triton 作为编译后端

@@ -465,7 +465,7 @@ Observed artifacts/performance:
 ## 学习顺序
 
 - 上一篇：[[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]]
-- 下一篇：[[fx_lowering_to_inductor_ir_analysis]]
+- 下一篇：[[10_fx_lowering_to_inductor_ir_analysis]]
 
 ## Related Pages
 
@@ -474,4 +474,4 @@ Observed artifacts/performance:
 - [[22_pattern_expression_and_matcher_engine_analysis]]
 - [[23_dead_code_topology_and_effect_order_analysis]]
 - [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]]
-- [[scheduler_dependency_graph_fusion_and_ordering_analysis]]
+- [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]

@@ -254,5 +254,5 @@ deprecated:
 
 - [[op_registration_pipeline_analysis]] —— 本页定义的算子，是如何经两段 codegen 生成注册胶水、在 `import torch_npu` 时挂进 dispatcher 的（含 acl_op/op_api 运行时三层选择）
 - [[npu_operator_graph_eligibility_guide]] —— 本页的 `op_api`(aclnn) / `acl_op`(aclop) 区分，如何一路决定算子能否「入图」（尤其 aclgraph 只接受 aclnn）
-- [[npu_lowering_guide]] —— eager 适配之外，算子进入 Inductor 编译路径时的 lowering 行为
-- [[npu_compile_paths_overview]] —— torch_npu torch.compile 三条后端路径全景
+- [[20_npu_lowering_guide]] —— eager 适配之外，算子进入 Inductor 编译路径时的 lowering 行为
+- [[01_npu_compile_paths_overview]] —— torch_npu torch.compile 三条后端路径全景

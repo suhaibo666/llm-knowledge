@@ -207,7 +207,7 @@
     },
     {
       "page_id": "c17",
-      "page": "fx_lowering_to_inductor_ir_analysis.md",
+      "page": "10_fx_lowering_to_inductor_ir_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "inductor_ir",
@@ -215,7 +215,7 @@
     },
     {
       "page_id": "c18",
-      "page": "inductor_ir_values_loops_layouts_and_buffers_analysis.md",
+      "page": "11_inductor_ir_values_loops_layouts_and_buffers_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "inductor_ir",
@@ -223,7 +223,7 @@
     },
     {
       "page_id": "c19",
-      "page": "buffer_liveness_memory_planning_and_reuse_analysis.md",
+      "page": "12_buffer_liveness_memory_planning_and_reuse_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "inductor_ir",
@@ -231,7 +231,7 @@
     },
     {
       "page_id": "c20",
-      "page": "scheduler_dependency_graph_fusion_and_ordering_analysis.md",
+      "page": "13_scheduler_dependency_graph_fusion_and_ordering_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "inductor_ir",
@@ -239,7 +239,7 @@
     },
     {
       "page_id": "c21",
-      "page": "codegen_kernel_mapping_autotuning_and_provenance_analysis.md",
+      "page": "14_codegen_kernel_mapping_autotuning_and_provenance_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "inductor_ir",
@@ -247,7 +247,7 @@
     },
     {
       "page_id": "d01",
-      "page": "inductor_compile_fx_orchestration_analysis.md",
+      "page": "15_inductor_compile_fx_orchestration_analysis.md",
       "volume": "D",
       "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
       "case": "compile_fx_orchestration"
@@ -261,7 +261,7 @@
     },
     {
       "page_id": "d03",
-      "page": "async_compile_workers_and_module_loading_analysis.md",
+      "page": "27_async_compile_workers_and_module_loading_analysis.md",
       "volume": "D",
       "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
       "case": "async_compile_loading"
@@ -394,7 +394,7 @@
     },
     {
       "page_id": "f07",
-      "page": "aotinductor_packaging_and_deployment_analysis.md",
+      "page": "28_aotinductor_packaging_and_deployment_analysis.md",
       "volume": "F",
       "script": "tools/labs_torch_compile/demo_f_advanced_topics.py",
       "case": "aotinductor_package"

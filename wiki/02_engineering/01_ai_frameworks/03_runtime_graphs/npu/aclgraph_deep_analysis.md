@@ -613,7 +613,7 @@ void OpCommand::RunOpApi(...) { ... }
 - **根因**：aclop 在执行期做**主机侧 JIT 编译**（`:135-137`），而 capture 只记录 device 任务下发，host 侧 JIT 行为无法被录制 → 必须禁止；aclnn 是预编译 kernel，纯下发，故可捕获。
 - **internal format 放大**：私有格式（NZ 等）常把算子打到 aclop 路径，故报错提示 `torch.npu.config.allow_internal_format = False`（`NPUGraphsUtils.h:100`），逼出 aclnn。
 - **官方口径**：`pytorch_compile_npugraph_desc.md:53` "仅支持 NN 算子：所有算子必须为 aclnn 算子方可入图"。
-- **与 fallback 关连通**：见 [[npu_lowering_guide]] §9——**一个 fallback 到 aclop 的算子，既破坏 inductor 融合，又会直接让 aclgraph 捕获报错**；走 aclnn 的 `ExternKernel` 则两关都安全。aclnn/aclop 是 inductor fallback 关与 aclgraph 捕获关的公共枢纽。
+- **与 fallback 关连通**：见 [[20_npu_lowering_guide]] §9——**一个 fallback 到 aclop 的算子，既破坏 inductor 融合，又会直接让 aclgraph 捕获报错**；走 aclnn 的 `ExternKernel` 则两关都安全。aclnn/aclop 是 inductor fallback 关与 aclgraph 捕获关的公共枢纽。
 
 **capture_begin 的其它硬前置**（`NPUGraph.cpp`，均无 CUDA 对应或语义不同）：
 
@@ -644,9 +644,9 @@ ACLGraph 是 torch_npu 与社区差异**中等但很关键**的一条路径。�
 
 ## Related Pages
 
-- [[npu_compile_paths_overview]] — torch_npu 三条编译路径全景概览（上级分析）
+- [[01_npu_compile_paths_overview]] — torch_npu 三条编译路径全景概览（上级分析）
 - [[aclgraph]] — ACL Graph 基础集成（已有页面）
 - [[comparison]] — CUDA Graphs vs NPU Graphs 特性对比
 - [[torch_compile_npugraphs_deep_dive]] — NPU Graphs 与 torch.compile 集成深度分析；§3.4-3.8 内存管理与复用；reduce_overhead vs npugraphs 对比
 - [[aclgraph_multistream_rng_analysis]] — 多流依赖、通信流边界与 graph-safe RNG 算子适配
-- [[npu_lowering_guide]] — NPU lowering 与 fallback（§9）；差异 8 的 aclnn/aclop 把 fallback 关与捕获关连通
+- [[20_npu_lowering_guide]] — NPU lowering 与 fallback（§9）；差异 8 的 aclnn/aclop 把 fallback 关与捕获关连通
