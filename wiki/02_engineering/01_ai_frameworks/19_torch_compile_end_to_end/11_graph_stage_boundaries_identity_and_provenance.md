@@ -310,8 +310,8 @@ Node Python object只在一次Graph生命周期中稳定。跨进程/序列化/p
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\series_artifact_bundle.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\end_to_end
+python -B tools\labs_torch_compile\series_artifact_bundle.py `
+  --output-dir tools\labs_torch_compile\artifacts\end_to_end
 ```
 
 `UnifiedGraphModel.forward`调用同一个 `backend_core`，稳定计算前缀包含 parameter、buffer、
@@ -361,8 +361,8 @@ kernel”；可以声称的是“同一计算已有分阶段实物，并且 AOT 
 `extern_matmul_only` Lab：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part2_continuous_aot_inductor.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\part2_continuous_aot_inductor
+python -B tools\labs_torch_compile\part2_continuous_aot_inductor.py `
+  --output-dir tools\labs_torch_compile\artifacts\part2_continuous_aot_inductor
 ```
 
 它在同一次 `torch.compile` 中包装真实 partition、fw/bw compiler、`GraphLowering.__init__`
@@ -405,7 +405,7 @@ callback Graph不是同一个 Python对象，audit token集合仍完整保留。
 AOT 的 runtime slot/ownership 证据在 `aot_partition_abi.json`，其中3条 saved output
 slots分别绑定3个 fresh backward placeholders；每一对携带相同 joint audit origin，
 且 cross-graph Node refs为0。完整 artifact 树与环境见
-[`labs/README.md`](labs/README.md)。
+[`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 post-grad→generated source 的 provenance 在
 `backend/inductor_provenance_tracking_node_mappings.json`；它随 mock compiler/no-op

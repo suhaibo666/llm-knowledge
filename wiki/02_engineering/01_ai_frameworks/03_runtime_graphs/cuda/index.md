@@ -1,0 +1,24 @@
+# 06 · CUDA Graphs — 目录索引
+
+> CUDA Graphs 使用指南、捕获/回放时序、API 与最佳实践。
+> 知识分层:overview→deep dive(约定见 [[01_ai_frameworks/index]])。
+> 核验基准:PyTorch 上游 `torch/cuda/graphs.py`、`torch/_inductor/cudagraph_trees.py`
+> 最后更新: 2026-07-30
+
+---
+
+## 页面列表(按层次)
+
+| 页面 | 层次 | 核心主题 |
+|------|------|---------|
+| [[PyTorch_CUDA_Graphs_Complete_Guide]] | **overview → deep dive** | CUDA Graphs 完整指南:四种用法(`backend="cudagraphs"`/`inductor + reduce-overhead`/`torch.cuda.graph()`/`make_graphed_callables`)、实现原理、各方式 Mermaid 时序图(原 Timing_Diagrams 页已并入对应小节)、综合比较(功能/硬件要求/使用场景/性能)、最佳实践(已并入原 README 的速览与差异内容) |
+
+> 代码示例:`cudagraphs_usage_guide.py`、`run_cudagraphs_examples.py`(同目录)。
+
+---
+
+## 关联域
+
+- [[03_runtime_graphs/npu/index]] — NPU Graphs(对比)
+- [[03_runtime_graphs/index]] — 运行时图捕获总索引
+- [[01_ai_frameworks/index]] — 本域总索引

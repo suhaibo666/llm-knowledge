@@ -302,8 +302,8 @@ stable topo才接近线性。没有degree、sort-key长度、nested reference与
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part1_effects_alias.py
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part3_passes.py
+python -B tools\labs_torch_compile\part1_effects_alias.py
+python -B tools\labs_torch_compile\part3_passes.py
 ```
 
 正例/边界矩阵：
@@ -329,8 +329,8 @@ topology_repaired_value=8.0
 
 自动合同 `EffectAndFunctionalizationContractTest`与
 `EditingAndPassManagerContractTest`对字段做 assertions。stdout 可保存到
-`labs/artifacts/logs/`；贯穿 pass 的 before/after graph 和 failure-atomicity 结果位于
-`labs/artifacts/part3/`。完整命令与环境见 [`labs/README.md`](labs/README.md)。
+`tools/labs_torch_compile/artifacts/logs/`；贯穿 pass 的 before/after graph 和 failure-atomicity 结果位于
+`tools/labs_torch_compile/artifacts/part3/`。完整命令与环境见 [`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 ## 13. 排查问题
 

@@ -233,12 +233,12 @@ T_{\text{total}}
 
 ## 配套 Demo
 
-本页对应卷级入口 `labs/demo_f_advanced_topics.py` 的 `custom_op_contract` 用例。默认以 CUDA 为验收设备：
+本页对应卷级入口 `tools/labs_torch_compile/demo_f_advanced_topics.py` 的 `custom_op_contract` 用例。默认以 CUDA 为验收设备：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_f_advanced_topics.py `
+python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
   --case custom_op_contract --device cuda `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\f05
+  --output-dir tools\labs_torch_compile\artifacts\volume_demos\f05
 ```
 
 先用 `--list --json` 查看用例声明的能力要求。无 CUDA 的机器可把 `--device` 改为 `cpu` 探索设备无关机制；CUDA/Triton/多卡专属用例会返回 `BLOCKED`，且不会执行用例正文。不要把 `BLOCKED` 写成 `PASS`。
@@ -252,4 +252,4 @@ python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\
 - [[a04_dispatch_modes_proxy_tensor_and_fake_tensor_analysis]]
 - [[f04_fsdp_dtensor_and_distributed_graphs_analysis]]
 - [[f06_custom_backends_and_device_integration_analysis]]
-- [[14_fx_export_and_extensibility/index]]
+- [[04_export_and_distributed/01_fx_export_extensibility/index]]

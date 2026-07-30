@@ -273,7 +273,7 @@ wrapper包含：
 这些缓存的 invalidation 与 guard 不同：FX graph cache hit 仍要验证 guards；Python/C++ code
 cache围绕生成 source；algorithm cache围绕 choice timings；Triton autotuner围绕 launch
 config。不能用“PyCodeCache缓存一切”或“同一个 graph key 控制所有层”概括。缓存专题见
-[[17_compile_cache/fx_graph_cache_analysis]]。
+[[02_compile_stack/06_compile_cache/fx_graph_cache_analysis]]。
 
 ## 14. Provenance链
 
@@ -366,11 +366,11 @@ compile+benchmark 之和；只写 `O(K)`会遗漏主导项。
 ### 17.1 命令
 
 ```powershell
-python wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part4_artifact_bundle.py `
-  --output-dir wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4
+python tools/labs_torch_compile/part4_artifact_bundle.py `
+  --output-dir tools/labs_torch_compile/artifacts/part4
 
-python wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part4_ir_scheduler_analysis.py `
-  --output-dir wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4_ir
+python tools/labs_torch_compile/part4_ir_scheduler_analysis.py `
+  --output-dir tools/labs_torch_compile/artifacts/part4_ir
 ```
 
 ### 17.2 实际结果
@@ -404,12 +404,12 @@ no-op callable实际被调用，但generated C++未编译、未执行，返回�
 原生证据由独立合同工具约束，不能靠手写 `PASS` JSON 补齐：
 
 ```powershell
-python wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/native_backend_contract.py probe `
-  --output wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/native_backend/local_capability_diagnostic.json
+python tools/labs_torch_compile/native_backend_contract.py probe `
+  --output tools/labs_torch_compile/artifacts/native_backend/local_capability_diagnostic.json
 ```
 
 完整 CPU/CUDA producer 与 validator 命令见
-[`labs/NATIVE_BACKEND_RUNBOOK.md`](labs/NATIVE_BACKEND_RUNBOOK.md)。合同要求 producer
+[`tools/labs_torch_compile/NATIVE_BACKEND_RUNBOOK.md`](tools/labs_torch_compile/NATIVE_BACKEND_RUNBOOK.md)。合同要求 producer
 真实执行 compile/load/kernel、逐 workload 数值对照与 timing；GPU 还必须保存至少两个
 参数不同的 candidate、真实 timing、winner、cache 与 allocator snapshot/trace。文件存在、
 hash 正确或字符串 `status=PASS` 都不足以通过。
@@ -502,4 +502,4 @@ Provenance把generated artifacts映回source
 - [[19_buffer_liveness_memory_planning_and_reuse]]
 - [[inductor_codegen_analysis]]
 - [[inductor_autotuning_analysis]]
-- [[04_inductor/index]]
+- [[02_compile_stack/04_inductor/index]]

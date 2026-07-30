@@ -92,7 +92,7 @@ Expected: 文档可准确说明 `torch.compile(backend=callable)` 的 FX GraphMo
 ### Task 2: 重构完整选层方法论
 
 **Files:**
-- Modify: `wiki/02_engineering/01_ai_frameworks/04_inductor/fx_pass_optimization_methodology.md`
+- Modify: `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/fx_pass_optimization_methodology.md`
 
 **Interfaces:**
 - Consumes: Task 1 的八阶段源码定位；现有 `torch_upstream_pass_deepdive.md`、NPU、vLLM、SGLang 分析。
@@ -137,7 +137,7 @@ Expected: 文档可准确说明 `torch.compile(backend=callable)` 的 FX GraphMo
 ### Task 3: 修订 Pre-Grad 阶段指南
 
 **Files:**
-- Modify: `wiki/02_engineering/01_ai_frameworks/04_inductor/pre_grad_passes_guide.md`
+- Modify: `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/pre_grad_passes_guide.md`
 
 **Interfaces:**
 - Consumes: `pre_grad.py` 驱动顺序、`PatternMatcherPass` 和 `pre_grad_custom_pass` 签名。
@@ -168,7 +168,7 @@ Expected: 文档可准确说明 `torch.compile(backend=callable)` 的 FX GraphMo
 ### Task 4: 修订 Joint Graph 阶段指南
 
 **Files:**
-- Modify: `wiki/02_engineering/01_ai_frameworks/04_inductor/joint_graph_passes_guide.md`
+- Modify: `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/joint_graph_passes_guide.md`
 
 **Interfaces:**
 - Consumes: `joint_graph.py` 驱动顺序、`fwd_only`/`joint_fwd_bwd` trace 机制和 joint custom hooks。
@@ -199,7 +199,7 @@ Expected: 文档可准确说明 `torch.compile(backend=callable)` 的 FX GraphMo
 ### Task 5: 修订 Post-Grad 阶段指南
 
 **Files:**
-- Modify: `wiki/02_engineering/01_ai_frameworks/04_inductor/post_grad_passes_guide.md`
+- Modify: `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/post_grad_passes_guide.md`
 
 **Interfaces:**
 - Consumes: `post_grad.py` 驱动顺序、Graph/Lowering Pattern 差异、post custom hook 签名。
@@ -230,7 +230,7 @@ Expected: 文档可准确说明 `torch.compile(backend=callable)` 的 FX GraphMo
 ### Task 6: 新增 Decomposition 指南
 
 **Files:**
-- Create: `wiki/02_engineering/01_ai_frameworks/04_inductor/decomposition_passes_guide.md`
+- Create: `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/decomposition_passes_guide.md`
 
 **Interfaces:**
 - Consumes: `torch/_inductor/decomposition.py`、AOTAutograd decomposition table 和 NPU“保持整块”案例。
@@ -257,8 +257,8 @@ Expected: 文档可准确说明 `torch.compile(backend=callable)` 的 FX GraphMo
 ### Task 7: 修订 Lowering 与 Scheduler 指南
 
 **Files:**
-- Modify: `wiki/02_engineering/01_ai_frameworks/04_inductor/lowering_analysis.md`
-- Modify: `wiki/02_engineering/01_ai_frameworks/04_inductor/scheduler_analysis.md`
+- Modify: `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/lowering_analysis.md`
+- Modify: `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/scheduler_analysis.md`
 
 **Interfaces:**
 - Consumes: Lowering 注册表、Scheduler 融合合法性/评分、custom Scheduler pass 和 Backend 接口。
@@ -289,8 +289,8 @@ API 表覆盖 `can_fuse`、`can_fuse_vertical`、`can_fuse_horizontal`、`score_
 ### Task 8: 新增 Dynamo 阶段方法论与接入指南
 
 **Files:**
-- Create: `wiki/02_engineering/01_ai_frameworks/02_dynamo/dynamo_pass_methodology.md`
-- Modify: `wiki/02_engineering/01_ai_frameworks/02_dynamo/index.md`
+- Create: `wiki/02_engineering/01_ai_frameworks/02_compile_stack/01_dynamo/dynamo_pass_methodology.md`
+- Modify: `wiki/02_engineering/01_ai_frameworks/02_compile_stack/01_dynamo/index.md`
 
 **Interfaces:**
 - Consumes: Dynamo Backend registry、OutputGraph→compiler_fn 调用和 FX GraphModule 接口。
@@ -317,8 +317,8 @@ API 表覆盖 `can_fuse`、`can_fuse_vertical`、`can_fuse_horizontal`、`score_
 ### Task 9: 新增 Codegen 扩展指南并补导航
 
 **Files:**
-- Create: `wiki/02_engineering/01_ai_frameworks/04_inductor/codegen_extension_guide.md`
-- Modify: `wiki/02_engineering/01_ai_frameworks/04_inductor/inductor_codegen_analysis.md`
+- Create: `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/codegen_extension_guide.md`
+- Modify: `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/inductor_codegen_analysis.md`
 
 **Interfaces:**
 - Consumes: `BaseScheduling`/Backend 注册、`codegen_node`/`codegen_template`/Wrapper 机制。
@@ -349,8 +349,8 @@ API 表覆盖 `can_fuse`、`can_fuse_vertical`、`can_fuse_horizontal`、`score_
 ### Task 10: 集成索引、交叉引用和 changelog
 
 **Files:**
-- Modify: `wiki/02_engineering/01_ai_frameworks/04_inductor/index.md`
-- Modify: `wiki/02_engineering/01_ai_frameworks/02_dynamo/index.md`
+- Modify: `wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/index.md`
+- Modify: `wiki/02_engineering/01_ai_frameworks/02_compile_stack/01_dynamo/index.md`
 - Modify: `wiki/changelog.md`
 - Modify: Task 2–9 涉及页面的 `## Related Pages`
 
@@ -391,8 +391,8 @@ API 表覆盖 `can_fuse`、`can_fuse_vertical`、`can_fuse_horizontal`、`score_
 Run:
 
 ```powershell
-rg -n "Dynamo|Pre-Grad|Joint Graph|Post-Grad|Decomposition|Lowering|Scheduler|Codegen" wiki/02_engineering/01_ai_frameworks/04_inductor/fx_pass_optimization_methodology.md
-rg -n "关键 API|注册|接入|为什么|适合做|不适合做" wiki/02_engineering/01_ai_frameworks/04_inductor/pre_grad_passes_guide.md wiki/02_engineering/01_ai_frameworks/04_inductor/joint_graph_passes_guide.md wiki/02_engineering/01_ai_frameworks/04_inductor/post_grad_passes_guide.md wiki/02_engineering/01_ai_frameworks/04_inductor/decomposition_passes_guide.md wiki/02_engineering/01_ai_frameworks/04_inductor/lowering_analysis.md wiki/02_engineering/01_ai_frameworks/04_inductor/scheduler_analysis.md wiki/02_engineering/01_ai_frameworks/02_dynamo/dynamo_pass_methodology.md wiki/02_engineering/01_ai_frameworks/04_inductor/codegen_extension_guide.md
+rg -n "Dynamo|Pre-Grad|Joint Graph|Post-Grad|Decomposition|Lowering|Scheduler|Codegen" wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/fx_pass_optimization_methodology.md
+rg -n "关键 API|注册|接入|为什么|适合做|不适合做" wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/pre_grad_passes_guide.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/joint_graph_passes_guide.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/post_grad_passes_guide.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/decomposition_passes_guide.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/lowering_analysis.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/scheduler_analysis.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/01_dynamo/dynamo_pass_methodology.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/codegen_extension_guide.md
 ```
 
 Expected: 八阶段均出现；每个阶段页都能定位 API、接入示例和方法论章节。
@@ -402,7 +402,7 @@ Expected: 八阶段均出现；每个阶段页都能定位 API、接入示例和
 Run:
 
 ```powershell
-rg -n "joint_custom_pre_pass = debug_graph_pass|config\.pre_fusion_custom_pass|node\.fusable|from torch\._inductor\.pattern_matcher import.*pass_patterns" wiki/02_engineering/01_ai_frameworks/04_inductor
+rg -n "joint_custom_pre_pass = debug_graph_pass|config\.pre_fusion_custom_pass|node\.fusable|from torch\._inductor\.pattern_matcher import.*pass_patterns" wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor
 ```
 
 Expected: 命中只存在于明确的 deprecated/contradiction 说明中；正确示例不再使用这些写法。
@@ -422,18 +422,18 @@ foreach ($file in $all) {
     $rels[$rel] = $true
 }
 $changed = @(
-    'wiki/02_engineering/01_ai_frameworks/02_dynamo/dynamo_pass_methodology.md',
-    'wiki/02_engineering/01_ai_frameworks/02_dynamo/index.md',
-    'wiki/02_engineering/01_ai_frameworks/04_inductor/fx_pass_optimization_methodology.md',
-    'wiki/02_engineering/01_ai_frameworks/04_inductor/pre_grad_passes_guide.md',
-    'wiki/02_engineering/01_ai_frameworks/04_inductor/joint_graph_passes_guide.md',
-    'wiki/02_engineering/01_ai_frameworks/04_inductor/post_grad_passes_guide.md',
-    'wiki/02_engineering/01_ai_frameworks/04_inductor/decomposition_passes_guide.md',
-    'wiki/02_engineering/01_ai_frameworks/04_inductor/lowering_analysis.md',
-    'wiki/02_engineering/01_ai_frameworks/04_inductor/scheduler_analysis.md',
-    'wiki/02_engineering/01_ai_frameworks/04_inductor/codegen_extension_guide.md',
-    'wiki/02_engineering/01_ai_frameworks/04_inductor/inductor_codegen_analysis.md',
-    'wiki/02_engineering/01_ai_frameworks/04_inductor/index.md'
+    'wiki/02_engineering/01_ai_frameworks/02_compile_stack/01_dynamo/dynamo_pass_methodology.md',
+    'wiki/02_engineering/01_ai_frameworks/02_compile_stack/01_dynamo/index.md',
+    'wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/fx_pass_optimization_methodology.md',
+    'wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/pre_grad_passes_guide.md',
+    'wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/joint_graph_passes_guide.md',
+    'wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/post_grad_passes_guide.md',
+    'wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/decomposition_passes_guide.md',
+    'wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/lowering_analysis.md',
+    'wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/scheduler_analysis.md',
+    'wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/codegen_extension_guide.md',
+    'wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/inductor_codegen_analysis.md',
+    'wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/index.md'
 )
 $missing = @()
 foreach ($path in $changed) {
@@ -458,7 +458,7 @@ Run:
 
 ```powershell
 git diff --check
-rg -n "```mermaid|subgraph|-->\||\.->\|" wiki/02_engineering/01_ai_frameworks/04_inductor/fx_pass_optimization_methodology.md wiki/02_engineering/01_ai_frameworks/04_inductor/*.md wiki/02_engineering/01_ai_frameworks/02_dynamo/*.md
+rg -n "```mermaid|subgraph|-->\||\.->\|" wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/fx_pass_optimization_methodology.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/*.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/01_dynamo/*.md
 ```
 
 Expected: `git diff --check` exit code 0；逐个新增 Mermaid 块通过仓库定界符人工清单。
@@ -480,7 +480,7 @@ Expected: 用户的 CUDA 文档仍为未暂存修改；本任务只修改计划�
 Run:
 
 ```powershell
-git add -- docs/superpowers/plans/2026-07-22-torch-compile-pass-methodology.md wiki/02_engineering/01_ai_frameworks/02_dynamo/dynamo_pass_methodology.md wiki/02_engineering/01_ai_frameworks/02_dynamo/index.md wiki/02_engineering/01_ai_frameworks/04_inductor/fx_pass_optimization_methodology.md wiki/02_engineering/01_ai_frameworks/04_inductor/pre_grad_passes_guide.md wiki/02_engineering/01_ai_frameworks/04_inductor/joint_graph_passes_guide.md wiki/02_engineering/01_ai_frameworks/04_inductor/post_grad_passes_guide.md wiki/02_engineering/01_ai_frameworks/04_inductor/decomposition_passes_guide.md wiki/02_engineering/01_ai_frameworks/04_inductor/lowering_analysis.md wiki/02_engineering/01_ai_frameworks/04_inductor/scheduler_analysis.md wiki/02_engineering/01_ai_frameworks/04_inductor/codegen_extension_guide.md wiki/02_engineering/01_ai_frameworks/04_inductor/inductor_codegen_analysis.md wiki/02_engineering/01_ai_frameworks/04_inductor/index.md wiki/changelog.md
+git add -- docs/superpowers/plans/2026-07-22-torch-compile-pass-methodology.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/01_dynamo/dynamo_pass_methodology.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/01_dynamo/index.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/fx_pass_optimization_methodology.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/pre_grad_passes_guide.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/joint_graph_passes_guide.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/post_grad_passes_guide.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/decomposition_passes_guide.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/lowering_analysis.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/scheduler_analysis.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/codegen_extension_guide.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/inductor_codegen_analysis.md wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/index.md wiki/changelog.md
 git diff --cached --name-only
 git diff --cached --check
 ```

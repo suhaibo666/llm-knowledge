@@ -277,9 +277,9 @@ Python callback、symbolic algebra、guard evaluation 和重新编译是外生�
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part2_capture_frontends.py
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\series_artifact_bundle.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\end_to_end
+python -B tools\labs_torch_compile\part2_capture_frontends.py
+python -B tools\labs_torch_compile\series_artifact_bundle.py `
+  --output-dir tools\labs_torch_compile\artifacts\end_to_end
 ```
 
 第一个脚本对同一 Linear Module 比较四种前端，检查 Dynamo guards 和
@@ -303,10 +303,10 @@ export_range_constraints=0
 此模型的 Linear 有 weight/bias 两个 parameters且未声明dynamic shape，所以最后两行正好反映
 该输入/约束设计，不是Export对所有模型的固定数量。
 
-持久 artifact 位于 `labs/artifacts/end_to_end/symbolic_fx.py`、`dynamo_fx.py`、
+持久 artifact 位于 `tools/labs_torch_compile/artifacts/end_to_end/symbolic_fx.py`、`dynamo_fx.py`、
 `dynamo_guards.txt`、`exported_program.py`与 `export_graph_signature.json`。自动合同
 `CaptureFrontendContractTest`对正例、guard/meta 与 graph-break 边界做 assertion。环境和
-命令见 [`labs/README.md`](labs/README.md)。
+命令见 [`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 ## 13. 选择指南
 
@@ -329,5 +329,5 @@ export_range_constraints=0
 - [[04_symbolic_shapes_guards_and_graph_reuse]]
 - [[08_graph_normalization_decomposition_and_functionalization]]
 - [[09_aotautograd_joint_forward_backward_graphs]]
-- [[14_fx_export_and_extensibility/index]]
-- [[02_dynamo/index]]
+- [[04_export_and_distributed/01_fx_export_extensibility/index]]
+- [[02_compile_stack/01_dynamo/index]]

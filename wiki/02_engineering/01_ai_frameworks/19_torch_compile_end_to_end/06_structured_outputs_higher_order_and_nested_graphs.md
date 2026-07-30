@@ -372,9 +372,9 @@ outer graph拓扑正确不证明：
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part1_structured_hop.py
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\series_artifact_bundle.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\end_to_end
+python -B tools\labs_torch_compile\part1_structured_hop.py
+python -B tools\labs_torch_compile\series_artifact_bundle.py `
+  --output-dir tools\labs_torch_compile\artifacts\end_to_end
 ```
 
 正例捕获 tuple→dict 输出与合法 `torch.cond`，并对两个 child GraphModule 分别 lint。错误/
@@ -399,9 +399,9 @@ Lab 分两部分：
 - 自动合同还断言 `hop_invalid_branch_rejected=True`，避免只验证两个合法 predicate 值却
   没有验证 branch contract。
 
-持久 artifact 位于 `labs/artifacts/end_to_end/hop_exported_program.py`、
+持久 artifact 位于 `tools/labs_torch_compile/artifacts/end_to_end/hop_exported_program.py`、
 `model_source.py`与 `model_contract.json`。命令、环境和 HOP 独立变体的原因见
-[`labs/README.md`](labs/README.md)。
+[`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 ## 16. 排查清单
 

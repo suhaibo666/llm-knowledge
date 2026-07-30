@@ -358,9 +358,9 @@ symbolic reasoning 不是免费抽象：
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part1_symbolic_shapes.py
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\series_artifact_bundle.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\end_to_end
+python -B tools\labs_torch_compile\part1_symbolic_shapes.py
+python -B tools\labs_torch_compile\series_artifact_bundle.py `
+  --output-dir tools\labs_torch_compile\artifacts\end_to_end
 ```
 
 第一个脚本以 batch 3、4、5 为正例，用自定义 backend 只记录 GraphModule，避免混入
@@ -384,10 +384,10 @@ export_range_constraints=1
 这是 Lab 环境的观察，不承诺所有版本/程序恰好产生相同 compilation count；控制流、
 配置、PGO 和 guard policy 会改变结果。
 
-持久 artifact 位于 `labs/artifacts/end_to_end/dynamo_fx.py`、
+持久 artifact 位于 `tools/labs_torch_compile/artifacts/end_to_end/dynamo_fx.py`、
 `dynamo_guards.txt`和 `export_graph_signature.json`；自动合同还断言
 `export_out_of_range_rejected=True`。环境、命令和 runtime/source 版本差异见
-[`labs/README.md`](labs/README.md)。
+[`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 ## 14. 排查清单
 

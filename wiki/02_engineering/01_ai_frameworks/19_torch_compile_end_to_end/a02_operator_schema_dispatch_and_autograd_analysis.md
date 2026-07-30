@@ -326,12 +326,12 @@ history 或 dispatch behavior 也保持不变。
 
 ## 配套 Demo
 
-本页对应卷级入口 `labs/demo_a_execution_model.py` 的 `dispatcher_autograd` 用例。默认以 CUDA 为验收设备：
+本页对应卷级入口 `tools/labs_torch_compile/demo_a_execution_model.py` 的 `dispatcher_autograd` 用例。默认以 CUDA 为验收设备：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_a_execution_model.py `
+python -B tools\labs_torch_compile\demo_a_execution_model.py `
   --case dispatcher_autograd --device cuda `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\a02
+  --output-dir tools\labs_torch_compile\artifacts\volume_demos\a02
 ```
 
 先用 `--list --json` 查看用例声明的能力要求。无 CUDA 的机器可把 `--device` 改为 `cpu` 探索设备无关机制；CUDA/Triton/多卡专属用例会返回 `BLOCKED`，且不会执行用例正文。不要把 `BLOCKED` 写成 `PASS`。
@@ -346,5 +346,5 @@ python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\
 - [[a04_dispatch_modes_proxy_tensor_and_fake_tensor_analysis]] — dispatch mode 与 fake/proxy
 - [[19_torch_compile_end_to_end/01_graph_ir_motivation_and_taxonomy]] — 不同图类型
 - [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]] — AOT fw/bw
-- [[01_dispatcher_and_device/index]] — Dispatcher 领域资料
-- [[10_eager_autograd/index]] — eager autograd 领域资料
+- [[01_eager_runtime/02_dispatcher_and_device/index]] — Dispatcher 领域资料
+- [[01_eager_runtime/05_autograd_engine/index]] — eager autograd 领域资料

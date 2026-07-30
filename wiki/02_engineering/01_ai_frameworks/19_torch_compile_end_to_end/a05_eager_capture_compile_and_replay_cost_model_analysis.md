@@ -389,12 +389,12 @@ Tensor/Storage
 
 ## 配套 Demo
 
-本页对应卷级入口 `labs/demo_a_execution_model.py` 的 `eager_compile_cost` 用例。默认以 CUDA 为验收设备：
+本页对应卷级入口 `tools/labs_torch_compile/demo_a_execution_model.py` 的 `eager_compile_cost` 用例。默认以 CUDA 为验收设备：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_a_execution_model.py `
+python -B tools\labs_torch_compile\demo_a_execution_model.py `
   --case eager_compile_cost --device cuda `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\a05
+  --output-dir tools\labs_torch_compile\artifacts\volume_demos\a05
 ```
 
 先用 `--list --json` 查看用例声明的能力要求。无 CUDA 的机器可把 `--device` 改为 `cpu` 探索设备无关机制；CUDA/Triton/多卡专属用例会返回 `BLOCKED`，且不会执行用例正文。不要把 `BLOCKED` 写成 `PASS`。
@@ -409,4 +409,4 @@ python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\
 - [[b07_guards_cache_lookup_and_recompilation_analysis]] — cache/guard
 - [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]] — 多层缓存
 - [[e07_compile_latency_cache_and_steady_state_performance_analysis]] — 性能测量
-- [[17_compile_cache/index]] — 编译缓存领域资料
+- [[02_compile_stack/06_compile_cache/index]] — 编译缓存领域资料

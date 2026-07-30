@@ -326,10 +326,10 @@ whole-graph DCE/lint/recompile：各自再扫描相应图与生成源码
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part1_fx_core.py
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part3_passes.py
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part3_end_to_end_pass.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\part3
+python -B tools\labs_torch_compile\part1_fx_core.py
+python -B tools\labs_torch_compile\part3_passes.py
+python -B tools\labs_torch_compile\part3_end_to_end_pass.py `
+  --output-dir tools\labs_torch_compile\artifacts\part3
 ```
 
 覆盖关系：
@@ -350,10 +350,10 @@ failure_atomicity_matches=True
 second_run_modified=False
 ```
 
-Part III 持久 artifact 位于 `labs/artifacts/part3/`：`legal_before.py`、
+Part III 持久 artifact 位于 `tools/labs_torch_compile/artifacts/part3/`：`legal_before.py`、
 `legal_after.py`、两份 illegal graph、`results.json`与 `manifest.json`。自动合同
 `EditingAndPassManagerContractTest`和 `EndToEndPassContractTest`做 assertions。完整命令、
-环境与正/边界案例见 [`labs/README.md`](labs/README.md)。
+环境与正/边界案例见 [`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 ## 14. 检查清单
 

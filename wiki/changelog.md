@@ -627,7 +627,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **Type**: New（应用户"在 01_theory 加分布式并行原理解读，从分布式原语→TP→EP→PP→ZeRO 等基本概念；演示图用 SVG→PNG"。抓本质 + 引擎无关的原理层，与已有工程页分工）
 
-**定位**：新建理论簇 `01_theory/06_distributed_parallelism/`，**原理（principle）层、引擎无关**——只讲「为什么这么切、代价函数长什么样、为什么不选替代」，两根主线贯穿全簇：**$\alpha$-$\beta$ 通信代价模型** + **显存账本（参数/梯度/优化器态/激活）**；「源码怎么实现」一律交叉链接到 [[02_engineering/index]] 已有的源级页（[[15_distributed_primitives/index]]、[[megatron-lm/index]]、[[torchtitan/index]] 等），不重复。填补「理论层无分布式并行原理页」的空白。
+**定位**：新建理论簇 `01_theory/06_distributed_parallelism/`，**原理（principle）层、引擎无关**——只讲「为什么这么切、代价函数长什么样、为什么不选替代」，两根主线贯穿全簇：**$\alpha$-$\beta$ 通信代价模型** + **显存账本（参数/梯度/优化器态/激活）**；「源码怎么实现」一律交叉链接到 [[02_engineering/index]] 已有的源级页（`[[15_distributed_primitives/index]]`、[[megatron-lm/index]]、[[torchtitan/index]] 等），不重复。填补「理论层无分布式并行原理页」的空白。
 
 - **新增 index + 6 内容页**：
   - [[collectives_analysis]] — 六大原语语义、$\alpha$-$\beta(-\gamma)$ 模型、核心恒等式 **all-reduce = reduce-scatter + all-gather**、ring 每卡搬运 $2(N{-}1)/N\cdot M$ 的带宽最优性、ring vs tree、all-to-all/p2p 代价（全簇「代价词汇表」）。
@@ -640,7 +640,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **工具改动**：`render_figs.mjs` 加 `FIGS_OUT` 环境变量支持自定义输出目录（默认仍指 GLM assets，向后兼容），本簇渲染到 `06_distributed_parallelism/assets/`。
 
-**整合**：[[01_theory/index]] 子领域表加「06 分布式并行原理」一行；[[15_distributed_primitives/index]] 与 [[06_auto_parallel/index]] 各加回链（理论↔实现互指）。**校验**：9 张 PNG 逐张实渲肉眼核对（SVG 经 Edge 所见即所得，天然规避 mermaid 定界符坑）；本簇内 `[[链接]]` 与指向工程页的跨域链接经 grep/文件核对存在。
+**整合**：[[01_theory/index]] 子领域表加「06 分布式并行原理」一行；`[[15_distributed_primitives/index]]` 与 [[06_auto_parallel/index]] 各加回链（理论↔实现互指）。**校验**：9 张 PNG 逐张实渲肉眼核对（SVG 经 Edge 所见即所得，天然规避 mermaid 定界符坑）；本簇内 `[[链接]]` 与指向工程页的跨域链接经 grep/文件核对存在。
 
 ---
 
@@ -687,7 +687,7 @@ All source ingestions and significant wiki updates are logged here.
   - **路径 B 原生控制流**：`generic_jump`（`symbolic_convert.py:714`）四种结局（常量拍平/SymBool guard 特化/数据依赖切图/`fullgraph` 硬报错）；`FOR_ITER`（`:2485`）循环展开。
   - [!correction] **纠正常见误解**：Dynamo **不会**自动把数据依赖 `if` 转成 `cond`——源码里只有"切图"或"报错提示手写 `torch.cond`"两条出路（`symbolic_convert.py:769`/`:937`）。
 
-**整合**：[[02_dynamo/index]] 页面列表新增本页；[[PyTorch_Dynamo_Technical_Analysis]] Related Pages 加回链。**校验**：所有 `file:line` 均本会话内开文件核对；3 个 mermaid 块按本库规范逐条扫（标签无裸 `[]()`、特殊形状无嵌套定界符、连线文字无引号/括号/`|`）；交叉链接目标经 glob 确认存在。
+**整合**：`[[02_dynamo/index]]` 页面列表新增本页；[[PyTorch_Dynamo_Technical_Analysis]] Related Pages 加回链。**校验**：所有 `file:line` 均本会话内开文件核对；3 个 mermaid 块按本库规范逐条扫（标签无裸 `[]()`、特殊形状无嵌套定界符、连线文字无引号/括号/`|`）；交叉链接目标经 glob 确认存在。
 
 **追加（同日，应用户连续追问澄清编译期/运行期边界）**：
 - [[PyTorch_Dynamo_Technical_Analysis]] §6.6「动态控制流」加 `> [!deprecated]` 指引转向本页（原演示内容按 never-delete 保留）。
@@ -1258,13 +1258,13 @@ All source ingestions and significant wiki updates are logged here.
 **审计结论**：01_ai_frameworks 此前几乎全是 torch.compile 编译栈 + dispatcher/op 注册,**整层 eager 运行时地基缺失**（用户点名 autograd 引擎、tensor 表达机制）。13 个 agent 对照源码核实后产出 8 项优先级缺口路线图。
 
 **新增（7 模块,P0+P1,纯增无删改）**：
-- **[P0] [[00_tensor_and_storage/index]]**：张量表达机制 — `Tensor=intrusive_ptr<TensorImpl>`、Storage/视图别名、sizes/strides/dtype、张量上的 DispatchKeySet（overview + quickstart + deepdive）
-- **[P0] [[10_eager_autograd/index]]**：eager 反向引擎 — Node/Edge DAG、多线程 Engine、AccumulateGrad、SavedVariable、自定义 Function；**含与 03_aot_autograd 的对照表**（运行时磁带 vs 编译期联合图）
-- **[P1] [[11_aten_op_execution/index]]**：ATen 算子定义/执行 — native_functions.yaml、torchgen、结构化 kernel、boxing（07 的上游通用版）
-- **[P1] [[12_nn_module_system/index]]**：torch.nn — Module/Parameter/state_dict/hooks/容器/lazy/Optimizer
-- **[P1] [[13_runtime_memory_amp_profiler/index]]**：缓存分配器 / AMP+GradScaler / Kineto Profiler
-- **[P1] [[14_fx_export_and_extensibility/index]]**：torch.fx / torch.export / torch.library custom_op / functorch
-- **[P1] [[15_distributed_primitives/index]]**：c10d/DDP/FSDP/DTensor/TP/PP（[[02_train_frameworks/index]] 的底座）
+- **[P0] `[[00_tensor_and_storage/index]]`**：张量表达机制 — `Tensor=intrusive_ptr<TensorImpl>`、Storage/视图别名、sizes/strides/dtype、张量上的 DispatchKeySet（overview + quickstart + deepdive）
+- **[P0] `[[10_eager_autograd/index]]`**：eager 反向引擎 — Node/Edge DAG、多线程 Engine、AccumulateGrad、SavedVariable、自定义 Function；**含与 03_aot_autograd 的对照表**（运行时磁带 vs 编译期联合图）
+- **[P1] `[[11_aten_op_execution/index]]`**：ATen 算子定义/执行 — native_functions.yaml、torchgen、结构化 kernel、boxing（07 的上游通用版）
+- **[P1] `[[12_nn_module_system/index]]`**：torch.nn — Module/Parameter/state_dict/hooks/容器/lazy/Optimizer
+- **[P1] `[[13_runtime_memory_amp_profiler/index]]`**：缓存分配器 / AMP+GradScaler / Kineto Profiler
+- **[P1] `[[14_fx_export_and_extensibility/index]]`**：torch.fx / torch.export / torch.library custom_op / functorch
+- **[P1] `[[15_distributed_primitives/index]]`**：c10d/DDP/FSDP/DTensor/TP/PP（[[02_train_frameworks/index]] 的底座）
 
 **索引与规划**：域 [[01_ai_frameworks/index]] 重构为「两条主轴（eager 地基 / 编译栈）+ 三层功能目录」,「知识空白」扩写为带优先级的规划路线图（P2 序列化遗留 `16_serialization_and_legacy`、各新模块 NPU 特化 `npu/` 下沉等留痕）。
 
@@ -1510,7 +1510,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **索引与交叉引用**:
 
-- `01_ai_frameworks/index.md` —— 子目录表新增 [[07_op_registration/npu/index]];页面列表新增「op-plugin 算子接入」区(3 行);页头摘要与最后更新改 2026-06-12
+- `01_ai_frameworks/index.md` —— 子目录表新增 `[[07_op_registration/npu/index]]`;页面列表新增「op-plugin 算子接入」区(3 行);页头摘要与最后更新改 2026-06-12
 - 交叉引用:三篇互链,并 link 到既有 [[npu_compile_paths_overview]] / [[npu_inductor_splittiling_backend_analysis]] / [[aclgraph_deep_analysis]] / [[PyTorch_Dynamo_Technical_Analysis]] / [[npu_lowering_guide]]。入图判别页明确定位为「判别视角」,与既有「路径实现全景」页互补、不重复
 
 ---

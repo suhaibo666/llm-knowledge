@@ -147,7 +147,7 @@ read具有不同索引表达式，从而把“发生了broadcast”落实到寻�
 （`torch/_inductor/dependencies.py:571-601`）。具体 broadcast case 中
 `x[i,0]`、`y[0,j]`对应不同 `MemoryDep.index`，则是
 `part4_ir_scheduler_analysis.py`实际运行后写入
-`labs/artifacts/part4_ir/ir_matrix.json`的 `[R]` 级观察，不应标为只读源码即可推出的
+`tools/labs_torch_compile/artifacts/part4_ir/ir_matrix.json`的 `[R]` 级观察，不应标为只读源码即可推出的
 `[S]` 事实。
 
 ## 6. Layout
@@ -336,8 +336,8 @@ SymPy canonicalization、loop reorder 与 template 特有分析另计，不能�
 ### 17.1 命令
 
 ```powershell
-python wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part4_ir_scheduler_analysis.py `
-  --output-dir wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4_ir
+python tools/labs_torch_compile/part4_ir_scheduler_analysis.py `
+  --output-dir tools/labs_torch_compile/artifacts/part4_ir
 ```
 
 ### 17.2 覆盖矩阵
@@ -356,9 +356,9 @@ buffer、layout、read/write index与output：
 
 stdout中的六项`*_observed`必须全为`True`，否则脚本直接`AssertionError`。关键产物是：
 
-- `labs/artifacts/part4_ir/ir_matrix.json`：完整case矩阵；
-- `labs/artifacts/part4_ir/environment.json`：runtime与源码基线；
-- `labs/artifacts/part4_ir/manifest.json`：命令、schema和证据边界。
+- `tools/labs_torch_compile/artifacts/part4_ir/ir_matrix.json`：完整case矩阵；
+- `tools/labs_torch_compile/artifacts/part4_ir/environment.json`：runtime与源码基线；
+- `tools/labs_torch_compile/artifacts/part4_ir/manifest.json`：命令、schema和证据边界。
 
 ### 17.3 证据边界
 

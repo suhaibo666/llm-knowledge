@@ -46,7 +46,7 @@ Eager 前向执行真实算子，同时根据需要创建 autograd `Node`，其 
 Python forward program。
 
 可观察入口是 Tensor 的 `grad_fn` 与其 `next_functions`。这张图中的 Node 表示反向函数，
-而不是 `aten.add` 之类的 forward callsite。它属于 [[10_eager_autograd/index]] 的运行时模型。
+而不是 `aten.add` 之类的 forward callsite。它属于 [[01_eager_runtime/05_autograd_engine/index]] 的运行时模型。
 
 ### 3.2 FX program graph
 
@@ -133,7 +133,7 @@ alias、mutation rename、weak ordering 等建立依赖
 
 CUDA Graph 捕获的是一段已经准备好的设备工作和内存地址关系，以便之后低开销回放。
 它不是编译器 program IR，也不等价于 Scheduler graph。它关心固定地址、stream capture、
-重放和内存池；FX 关心程序与值依赖。运行时图见 [[06_graphs/index]]。
+重放和内存池；FX 关心程序与值依赖。运行时图见 [[03_runtime_graphs/index]]。
 
 ## 源码跟读：为什么这些“图”不能合并成一个通用 Graph 类
 
@@ -310,9 +310,9 @@ AOTAutograd 的价值正是把原本由 eager autograd 动态执行的梯度计�
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part1_graph_taxonomy.py
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\series_artifact_bundle.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\end_to_end
+python -B tools\labs_torch_compile\part1_graph_taxonomy.py
+python -B tools\labs_torch_compile\series_artifact_bundle.py `
+  --output-dir tools\labs_torch_compile\artifacts\end_to_end
 ```
 
 最小输入是一个可求导的 `add→relu→sum`函数；正例同时观察 eager backward tape 与 FX
@@ -337,12 +337,12 @@ fx_call_targets=add,relu,sum
 
 持久 artifact 位于：
 
-- `labs/artifacts/end_to_end/dynamo_fx.py`；
-- `labs/artifacts/end_to_end/dynamo_guards.txt`；
-- `labs/artifacts/end_to_end/stage_node_mapping.json`。
+- `tools/labs_torch_compile/artifacts/end_to_end/dynamo_fx.py`；
+- `tools/labs_torch_compile/artifacts/end_to_end/dynamo_guards.txt`；
+- `tools/labs_torch_compile/artifacts/end_to_end/stage_node_mapping.json`。
 
 源码结论仍绑定页头 pinned SHA；上述文件绑定 Lab runtime。完整环境和实际命令保存在
-`labs/artifacts/end_to_end/environment.json`及 [`labs/README.md`](labs/README.md)。
+`tools/labs_torch_compile/artifacts/end_to_end/environment.json`及 [`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 ## 10. 本篇检查清单
 
@@ -365,8 +365,8 @@ fx_call_targets=add,relu,sum
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
 - [[02_fx_graph_core_data_model]]
-- [[10_eager_autograd/index]]
+- [[01_eager_runtime/05_autograd_engine/index]]
 - [[09_aotautograd_joint_forward_backward_graphs]]
 - [[17_fx_lowering_to_inductor_ir]]
 - [[20_scheduler_dependency_graph_fusion_and_ordering]]
-- [[06_graphs/index]]
+- [[03_runtime_graphs/index]]

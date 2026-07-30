@@ -85,7 +85,7 @@ DP / FSDP（最外，跨机）
 
 ## 关联域
 
-- [[../../02_engineering/01_ai_frameworks/15_distributed_primitives/index]] — **实现层**：c10d / DDP / FSDP / DTensor·TP·PP 的 PyTorch 源码
+- [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：c10d / DDP / FSDP / DTensor·TP·PP 的 PyTorch 源码
 - [[../../02_engineering/02_train_frameworks/index]] — **实现层**：Megatron-LM / torchtitan 把这些原语组合成端到端训练配方
 - [[../../02_engineering/06_auto_parallel/index]] — 自动并行：自动求解 N 维布局
 - [[../02_pretraining/index]] — 预训练技术：优化器、低精度、激活重计算（与并行正交的另一组显存/算力手段）

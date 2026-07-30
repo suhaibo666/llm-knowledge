@@ -22,7 +22,7 @@
 ### Task 1: 锁定复检结构缺陷
 
 **Files:**
-- Modify: `wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/test_volume_demo_contract.py`
+- Modify: `tools/labs_torch_compile/test_volume_demo_contract.py`
 - Modify: `wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/f03_ddp_compile_boundaries_and_optimizer_analysis.md`
 - Modify: `wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs.md`
 

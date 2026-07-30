@@ -182,12 +182,12 @@ flowchart TD
 
 ## 配套 Demo
 
-本页对应卷级入口 `labs/demo_b_dynamo_capture.py` 的 `backend_modes_fullgraph` 用例。默认以 CUDA 为验收设备：
+本页对应卷级入口 `tools/labs_torch_compile/demo_b_dynamo_capture.py` 的 `backend_modes_fullgraph` 用例。默认以 CUDA 为验收设备：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_b_dynamo_capture.py `
+python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
   --case backend_modes_fullgraph --device cuda `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\b02
+  --output-dir tools\labs_torch_compile\artifacts\volume_demos\b02
 ```
 
 先用 `--list --json` 查看用例声明的能力要求。无 CUDA 的机器可把 `--device` 改为 `cpu` 探索设备无关机制；CUDA/Triton/多卡专属用例会返回 `BLOCKED`，且不会执行用例正文。不要把 `BLOCKED` 写成 `PASS`。

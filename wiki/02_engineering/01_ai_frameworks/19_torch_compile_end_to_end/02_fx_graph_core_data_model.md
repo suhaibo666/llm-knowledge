@@ -489,7 +489,7 @@ gm.recompile()
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part1_fx_core.py
+python -B tools\labs_torch_compile\part1_fx_core.py
 ```
 
 最小正例手工构造 `x+x`再乘常数，完成 replace、erase、lint 与 recompile；两个故意失败的
@@ -521,9 +521,9 @@ Lab 证明：
 - 跨图 Node 引用会被 lint 拒绝。
 
 该小脚本的 artifact 是 stdout；可用 `Tee-Object`保存为
-`labs/artifacts/logs/part1_fx_core.txt`。同一核心数据结构在贯穿模型中的持久图位于
-`labs/artifacts/end_to_end/symbolic_fx.py`。环境、完整命令与证据等级见
-[`labs/README.md`](labs/README.md)。本 Lab 验证结构不变量，不声称验证 alias/effect
+`tools/labs_torch_compile/artifacts/logs/part1_fx_core.txt`。同一核心数据结构在贯穿模型中的持久图位于
+`tools/labs_torch_compile/artifacts/end_to_end/symbolic_fx.py`。环境、完整命令与证据等级见
+[`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。本 Lab 验证结构不变量，不声称验证 alias/effect
 语义；这些属于第 05、16 篇的独立 verifier。
 
 ## 13. 实战检查清单
@@ -553,4 +553,4 @@ Lab 证明：
 - [[12_fx_graph_editing_primitives_and_invariants]]
 - [[14_dead_code_topology_and_effect_order]]
 - [[13_pattern_expression_and_matcher_engine]]
-- [[14_fx_export_and_extensibility/index]]
+- [[04_export_and_distributed/01_fx_export_extensibility/index]]

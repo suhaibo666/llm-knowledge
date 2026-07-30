@@ -367,13 +367,13 @@ distributed 选项决定。文档可以陈述 driver 中的相对顺序与 invar
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part3_passes.py
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part3_end_to_end_pass.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\part3
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part3_real_stage_hooks.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\part3_real_stage_hooks
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\series_artifact_bundle.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\end_to_end
+python -B tools\labs_torch_compile\part3_passes.py
+python -B tools\labs_torch_compile\part3_end_to_end_pass.py `
+  --output-dir tools\labs_torch_compile\artifacts\part3
+python -B tools\labs_torch_compile\part3_real_stage_hooks.py `
+  --output-dir tools\labs_torch_compile\artifacts\part3_real_stage_hooks
+python -B tools\labs_torch_compile\series_artifact_bundle.py `
+  --output-dir tools\labs_torch_compile\artifacts\end_to_end
 ```
 
 `part3_passes.py`构造：
@@ -416,8 +416,8 @@ second_run_code_unchanged=True
 `CountToThree`在第三次返回 stable 后提前停止，没有机械跑满4次；oscillation pair 则跑到
 显式上限。新增 stage-contract 项由 `part3_passes.py`自身做 assertions；自动合同
 `EditingAndPassManagerContractTest`与 `EndToEndPassContractTest`继续覆盖既有编辑、
-PassManager 与贯穿 rewrite 合同。Part III artifact 位于 `labs/artifacts/part3/`；环境、
-命令与 stage artifact 见 [`labs/README.md`](labs/README.md)。
+PassManager 与贯穿 rewrite 合同。Part III artifact 位于 `tools/labs_torch_compile/artifacts/part3/`；环境、
+命令与 stage artifact 见 [`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 真实 hook Lab 另行安装 scoped config patch：
 

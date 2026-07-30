@@ -54,24 +54,24 @@ CUDAGraph replay 的真实测量不能由源码结构或 generated source 外推
 六卷分别由一个统一入口承载，每个入口包含多个可独立选择的 case：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_a_execution_model.py --list --json
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_b_dynamo_capture.py --list --json
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_c_graph_compiler.py --list --json
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_d_artifact_runtime.py --list --json
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_e_diagnostics.py --list --json
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_f_advanced_topics.py --list --json
+python -B tools\labs_torch_compile\demo_a_execution_model.py --list --json
+python -B tools\labs_torch_compile\demo_b_dynamo_capture.py --list --json
+python -B tools\labs_torch_compile\demo_c_graph_compiler.py --list --json
+python -B tools\labs_torch_compile\demo_d_artifact_runtime.py --list --json
+python -B tools\labs_torch_compile\demo_e_diagnostics.py --list --json
+python -B tools\labs_torch_compile\demo_f_advanced_topics.py --list --json
 ```
 
 默认设备为 CUDA；无 CUDA 时返回 `BLOCKED`，不会伪造执行。设备无关机制可显式传
 `--device cpu` 做本地预检。完整用法、状态语义与 60 页映射见
-[[19_torch_compile_end_to_end/labs/README]] 和 `labs/demo_manifest.json`。
+`tools/labs_torch_compile/README.md` 和 `tools/labs_torch_compile/demo_manifest.json`。
 
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]] — 六卷总索引
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 卷 C
-- [[19_torch_compile_end_to_end/labs/README]] — 六卷 Demo 入口与证据边界
-- [[02_dynamo/index]] — Dynamo 领域资料
-- [[17_compile_cache/index]] — 编译缓存领域资料
-- [[15_distributed_primitives/index]] — 分布式原语
+- `tools/labs_torch_compile/README.md` — 六卷 Demo 入口与证据边界
+- [[02_compile_stack/01_dynamo/index]] — Dynamo 领域资料
+- [[02_compile_stack/06_compile_cache/index]] — 编译缓存领域资料
+- [[04_export_and_distributed/02_distributed_primitives/index]] — 分布式原语
 - [[01_ai_frameworks/index]] — 框架知识总图

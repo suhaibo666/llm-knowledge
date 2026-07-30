@@ -238,12 +238,12 @@ decomposition可降低直接lowering数量，但会增加图规模；fallback提
 
 ## 配套 Demo
 
-本页对应卷级入口 `labs/demo_f_advanced_topics.py` 的 `custom_backend` 用例。默认以 CUDA 为验收设备：
+本页对应卷级入口 `tools/labs_torch_compile/demo_f_advanced_topics.py` 的 `custom_backend` 用例。默认以 CUDA 为验收设备：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_f_advanced_topics.py `
+python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
   --case custom_backend --device cuda `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\f06
+  --output-dir tools\labs_torch_compile\artifacts\volume_demos\f06
 ```
 
 先用 `--list --json` 查看用例声明的能力要求。无 CUDA 的机器可把 `--device` 改为 `cpu` 探索设备无关机制；CUDA/Triton/多卡专属用例会返回 `BLOCKED`，且不会执行用例正文。不要把 `BLOCKED` 写成 `PASS`。

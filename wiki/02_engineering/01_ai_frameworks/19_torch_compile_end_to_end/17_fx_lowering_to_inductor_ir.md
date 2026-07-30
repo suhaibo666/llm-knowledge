@@ -360,11 +360,11 @@ T_lowering = O(N_fx + A) + Σ_i T_lowering(i) + T_realize + T_choice
 在仓库根目录执行：
 
 ```powershell
-python wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part4_ir_scheduler_analysis.py `
-  --output-dir wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4_ir
+python tools/labs_torch_compile/part4_ir_scheduler_analysis.py `
+  --output-dir tools/labs_torch_compile/artifacts/part4_ir
 
-python wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part4_artifact_bundle.py `
-  --output-dir wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4
+python tools/labs_torch_compile/part4_artifact_bundle.py `
+  --output-dir tools/labs_torch_compile/artifacts/part4
 ```
 
 ### 15.2 正例与边界例
@@ -384,7 +384,7 @@ matmul_extern_observed=True
 MSVC `cl`不影响这些运行时内部观察。
 
 这些 IR 类型与数量关系的直接证据来自
-`labs/artifacts/part4_ir/ir_matrix.json`，其 producer 是
+`tools/labs_torch_compile/artifacts/part4_ir/ir_matrix.json`，其 producer 是
 `part4_ir_scheduler_analysis.py`；不能把它归因给下面的 artifact bundle。
 
 `part4_artifact_bundle.py`另行验证：
@@ -408,11 +408,11 @@ kernel没有执行计算，所以这些文件只属于`[M] 机制走通、非真
 
 ### 15.3 产物
 
-- `labs/artifacts/part4_ir/ir_matrix.json`：FX、IR operation/buffer/layout与Scheduler node；
-- `labs/artifacts/part4/summary.json`：真实extern/fallback结果与证据边界；
-- `labs/artifacts/part4/fallback_eigvals/ir_pre_fusion.txt`：unsupported op的fallback IR；
-- `labs/artifacts/part4/custom_lowering/ir_pre_fusion.txt`：custom lowering后的IR；
-- `labs/artifacts/part4/*/output_code.py`与`captured_cpp_kernel.cpp`：仅codegen、未执行；
+- `tools/labs_torch_compile/artifacts/part4_ir/ir_matrix.json`：FX、IR operation/buffer/layout与Scheduler node；
+- `tools/labs_torch_compile/artifacts/part4/summary.json`：真实extern/fallback结果与证据边界；
+- `tools/labs_torch_compile/artifacts/part4/fallback_eigvals/ir_pre_fusion.txt`：unsupported op的fallback IR；
+- `tools/labs_torch_compile/artifacts/part4/custom_lowering/ir_pre_fusion.txt`：custom lowering后的IR；
+- `tools/labs_torch_compile/artifacts/part4/*/output_code.py`与`captured_cpp_kernel.cpp`：仅codegen、未执行；
 - 两个目录内的`environment.json`记录runtime、源码基线、CUDA与MSVC状态。
 
 失败边界是明确的：当前机器只能证明native C++ pointwise编译被`cl`缺失阻塞。

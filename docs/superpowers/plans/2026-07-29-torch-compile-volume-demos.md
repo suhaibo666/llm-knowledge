@@ -24,9 +24,9 @@
 ### Task 1: Shared Harness and Manifest Contract
 
 **Files:**
-- Create: `wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/test_volume_demo_contract.py`
-- Create: `wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/demo_harness.py`
-- Create: `wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/demo_manifest.json`
+- Create: `tools/labs_torch_compile/test_volume_demo_contract.py`
+- Create: `tools/labs_torch_compile/demo_harness.py`
+- Create: `tools/labs_torch_compile/demo_manifest.json`
 
 **Interfaces:**
 - Produces: `CaseSpec`, `DemoContext`, `CaseResult`, `CapabilitySnapshot`, `run_volume_cli(volume, cases, argv=None) -> int`.
@@ -273,7 +273,7 @@ Expected: claim count equals decision count; validation errors 0.
 
 ```powershell
 python -m unittest discover `
-  -s wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs `
+  -s tools\labs_torch_compile `
   -p "test_volume_demo_contract.py" -v
 ```
 
@@ -281,7 +281,7 @@ python -m unittest discover `
 
 ```powershell
 python -m unittest discover -s docs\audits\pytorch_graph_series\tools -p "test_*.py" -v
-python -m unittest discover -s wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs -p "test_*.py" -v
+python -m unittest discover -s tools\labs_torch_compile -p "test_*.py" -v
 ```
 
 - [ ] **Step 5: Run structure/link validation**

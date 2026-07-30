@@ -458,9 +458,9 @@ recompute Node 怎样落入 backward graph。
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part2_aot_graphs.py
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\series_artifact_bundle.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\end_to_end
+python -B tools\labs_torch_compile\part2_aot_graphs.py
+python -B tools\labs_torch_compile\series_artifact_bundle.py `
+  --output-dir tools\labs_torch_compile\artifacts\end_to_end
 ```
 
 机制脚本正例使用 custom partition wrapper与 fw/bw compiler捕获三张图并比较梯度；边界/不变量
@@ -482,7 +482,7 @@ gradient_matches_eager=True
 
 贯穿 bundle进一步保存逐阶段 Node 表与：
 
-- `labs/artifacts/end_to_end/aot_joint.py`；
+- `tools/labs_torch_compile/artifacts/end_to_end/aot_joint.py`；
 - `aot_forward.py`、`aot_backward.py`；
 - `aot_partition_abi.json`；
 - `aot_joint_to_fw_bw_node_mapping.json`；
@@ -524,7 +524,7 @@ joint→partition fw/bw→compiler callback 是同一次 AOT 运行内的连续�
 一次独立的 `torch.compile(backend_core)`运行，并没有直接消费这里保存的 `aot_forward`
 GraphModule。`stage_node_mapping.json`只记录这些关系与各阶段 Node 表，不把独立 capture
 伪装成一条连续编译。环境与命令见
-[`labs/README.md`](labs/README.md)。
+[`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 ## 16. 回答开篇问题
 
@@ -551,5 +551,5 @@ partitioner把所需forward-origin nodes普通复制到bw，再按需要重排�
 - [[08_graph_normalization_decomposition_and_functionalization]]
 - [[10_saved_tensors_recompute_and_runtime_abi]]
 - [[11_graph_stage_boundaries_identity_and_provenance]]
-- [[03_aot_autograd/index]]
+- [[02_compile_stack/02_aot_autograd/index]]
 - [[aotautograd_analysis]]

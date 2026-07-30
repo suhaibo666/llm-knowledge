@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 消除 `wiki/02_engineering/01_ai_frameworks/06_graphs/` 内 4 组自重复(spec §3.3):删 2 个 README、时序图页并入 Guide、npu Graph Tree 双写合并、comparison 收缩为差异表。14 页 → 10 页,净删 ≈3000 行。
+**Goal:** 消除 `wiki/02_engineering/01_ai_frameworks/03_runtime_graphs/` 内 4 组自重复(spec §3.3):删 2 个 README、时序图页并入 Guide、npu Graph Tree 双写合并、comparison 收缩为差异表。14 页 → 10 页,净删 ≈3000 行。
 
 **Architecture:** 纯编辑类合并,每个合并对独立 commit(可单独回退)。目录本身不移动(P4 才改名为 03_runtime_graphs),所有操作在当前路径进行。
 
@@ -23,13 +23,13 @@
 ### Task 1: 删 `cuda/README.md`(与 index/Guide 职能重复)
 
 **Files:**
-- Delete: `wiki/.../06_graphs/cuda/README.md`(288 行,H1 与 Guide 一字不差)
-- Modify: `wiki/.../06_graphs/cuda/index.md`(26 行)
+- Delete: `wiki/.../03_runtime_graphs/cuda/README.md`(288 行,H1 与 Guide 一字不差)
+- Modify: `wiki/.../03_runtime_graphs/cuda/index.md`(26 行)
 
 - [ ] **Step 1: 对照三个文件的结构**
 
 ```bash
-cd /e/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/06_graphs/cuda
+cd /e/97-codes/torch_parallel/llm-knowledge/wiki/02_engineering/01_ai_frameworks/03_runtime_graphs/cuda
 grep -n "^#" README.md
 grep -n "^#" index.md
 grep -n "^#" PyTorch_CUDA_Graphs_Complete_Guide.md | head -20
@@ -42,7 +42,7 @@ grep -n "^#" PyTorch_CUDA_Graphs_Complete_Guide.md | head -20
 ```bash
 cd /e/97-codes/torch_parallel/llm-knowledge
 python tools/check_links.py --json | grep -i "cuda/README"   # 找入链(README 基名有歧义,注意甄别指向本目录的)
-git rm wiki/02_engineering/01_ai_frameworks/06_graphs/cuda/README.md
+git rm wiki/02_engineering/01_ai_frameworks/03_runtime_graphs/cuda/README.md
 python tools/check_links.py    # broken 不升
 ```
 
@@ -74,8 +74,8 @@ grep -n "方式\|^#" PyTorch_CUDA_Graphs_Complete_Guide.md
 ### Task 3: 删 `npu/README.md`(三写 overview 归一)
 
 **Files:**
-- Delete: `wiki/.../06_graphs/npu/README.md`(125 行)
-- Modify: `wiki/.../06_graphs/npu/aclgraph.md`(269 行,承接 overview 职能)、`wiki/.../06_graphs/npu/index.md`(31 行,纯导航)
+- Delete: `wiki/.../03_runtime_graphs/npu/README.md`(125 行)
+- Modify: `wiki/.../03_runtime_graphs/npu/aclgraph.md`(269 行,承接 overview 职能)、`wiki/.../03_runtime_graphs/npu/index.md`(31 行,纯导航)
 
 - [ ] **Step 1:** `grep -n "^#" npu/README.md npu/aclgraph.md npu/index.md` 对照;README 中 aclgraph.md 没有的段(预期:「与 CUDA Graphs 的对应关系」小节)并入 aclgraph.md;与 [[comparison]] 重复的对照内容不并,改为链接(Task 5 会收缩 comparison)。
 - [ ] **Step 2:** 改入链 → `git rm npu/README.md` → checker 不升。
@@ -134,7 +134,7 @@ grep -n "^#" npugraphs_memory_reuse_analysis.md
 ### Task 7: 目录 index 刷新 + 阶段门 + 合回 main
 
 **Files:**
-- Modify: `wiki/.../06_graphs/index.md`(22 行)、`cuda/index.md`、`npu/index.md`
+- Modify: `wiki/.../03_runtime_graphs/index.md`(22 行)、`cuda/index.md`、`npu/index.md`
 
 - [ ] **Step 1:** 三个 index 更新为删并后的真实页面清单(cuda:Guide + index;npu:aclgraph、aclgraph_deep_analysis、aclgraph_multistream_rng_analysis、torch_compile_npugraphs_deep_dive、npugraphs_make_graphed_callables_deep_dive、comparison + index),每条带一句话定位。
 - [ ] **Step 2: 阶段门**
@@ -142,7 +142,7 @@ grep -n "^#" npugraphs_memory_reuse_analysis.md
 ```bash
 python -m pytest tools/test_check_links.py -q
 python tools/check_links.py        # broken ≤ P3 起始值;06_graphs 下 md 数 = 10
-ls wiki/02_engineering/01_ai_frameworks/06_graphs -R
+ls wiki/02_engineering/01_ai_frameworks/03_runtime_graphs -R
 git status --short
 ```
 

@@ -352,9 +352,9 @@ metadata 与 boundary ABI。
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part1_values_signatures.py
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\series_artifact_bundle.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\end_to_end
+python -B tools\labs_torch_compile\part1_values_signatures.py
+python -B tools\labs_torch_compile\series_artifact_bundle.py `
+  --output-dir tools\labs_torch_compile\artifacts\end_to_end
 ```
 
 最小正例含一个 parameter、一个只读 buffer 和一个用户输入。错误/边界例是直接调用
@@ -387,9 +387,9 @@ Lab 使用一个 parameter、一个只读 buffer 和一个用户输入，展示�
 本 Lab 的 `2.9.1`只验证 state lifting，不用旧运行环境替代当前 main 的
 mutation-contract 源码结论。
 
-持久 artifact 是 `labs/artifacts/end_to_end/export_graph_signature.json`、
+持久 artifact 是 `tools/labs_torch_compile/artifacts/end_to_end/export_graph_signature.json`、
 `exported_program.py`与 `model_contract.json`；环境和命令见
-[`labs/README.md`](labs/README.md)。
+[`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 ## 13. 阅读 dump 的顺序
 
@@ -416,4 +416,4 @@ mutation-contract 源码结论。
 - [[06_structured_outputs_higher_order_and_nested_graphs]]
 - [[09_aotautograd_joint_forward_backward_graphs]]
 - [[11_graph_stage_boundaries_identity_and_provenance]]
-- [[14_fx_export_and_extensibility/index]]
+- [[04_export_and_distributed/01_fx_export_extensibility/index]]

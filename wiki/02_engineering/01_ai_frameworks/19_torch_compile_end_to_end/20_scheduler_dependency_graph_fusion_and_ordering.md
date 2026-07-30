@@ -328,11 +328,11 @@ score 排序为 `O(C_r log C_r)`；所以这里给的是参数化成本模型，
 ### 16.1 命令
 
 ```powershell
-python wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part4_ir_scheduler_analysis.py `
-  --output-dir wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4_ir
+python tools/labs_torch_compile/part4_ir_scheduler_analysis.py `
+  --output-dir tools/labs_torch_compile/artifacts/part4_ir
 
-python wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part4_artifact_bundle.py `
-  --output-dir wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4
+python tools/labs_torch_compile/part4_artifact_bundle.py `
+  --output-dir tools/labs_torch_compile/artifacts/part4
 ```
 
 ### 16.2 dependency与fusion group
@@ -350,7 +350,7 @@ max_fusion_size=1:  scheduler node_count=2, has_fused_scheduler_node=False
 ```
 
 每个node的`reads`、`writes`、dependency index、operation names与`last_usage`写入
-`labs/artifacts/part4_ir/scheduler_dependencies.json`和
+`tools/labs_torch_compile/artifacts/part4_ir/scheduler_dependencies.json`和
 `fusion_comparison.json`。
 
 该JSON是从当前Scheduler `read_writes`重建的便于阅读的producer→consumer视图；它保留
@@ -369,7 +369,7 @@ on:  [op1, op0, op2], estimated_peak_bytes=263172
 
 case让小matmul分支与大reduction分支在最终add前独立可调序。脚本同时断言开/关两种顺序
 都满足producer先于consumer；当前heuristic把大输入可尽早释放的分支提前，静态估计降低
-1020 bytes。完整记录位于 `labs/artifacts/part4_ir/reorder_comparison.json`。
+1020 bytes。完整记录位于 `tools/labs_torch_compile/artifacts/part4_ir/reorder_comparison.json`。
 
 该结果只覆盖这个固定case的Scheduler静态模型；它不能保证所有图都改变顺序，也不等于
 物理allocator峰值或性能一定改善。

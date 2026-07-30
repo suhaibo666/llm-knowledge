@@ -380,8 +380,8 @@ memory budget 与后续 DCE 都可能改变结果。反过来，bw 中出现 for
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part2_aot_recompute_analysis.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\part2_recompute
+python -B tools\labs_torch_compile\part2_aot_recompute_analysis.py `
+  --output-dir tools\labs_torch_compile\artifacts\part2_recompute
 ```
 
 模型是可微的 `sum(mm(cos(x), weight))`。正例在
@@ -415,16 +415,16 @@ physical_allocator_peak_measured=False
 
 `saved_bytes`是 fw saved output tensor metadata 推得的**逻辑字节和**，不是 CPU/CUDA allocator
 peak；alias/view slot、allocator rounding 和 backend buffer reuse 都可能使物理峰值不同。
-持久 artifact 位于 `labs/artifacts/part2_recompute/`，其中
+持久 artifact 位于 `tools/labs_torch_compile/artifacts/part2_recompute/`，其中
 `partition_comparison.json`定义每个 slot 与计算口径，四个 graph 文件可直接比较 high/low
 fw/bw。自动合同 `PartTwoAotRecomputeContractTest`做 assertions；环境与命令见
-[`labs/README.md`](labs/README.md)。
+[`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 同一个模型还有一组运行时 saved-tensor hook 测量：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part2_activation_peak.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\part2_activation_peak
+python -B tools\labs_torch_compile\part2_activation_peak.py `
+  --output-dir tools\labs_torch_compile\artifacts\part2_activation_peak
 ```
 
 它在 `pack`/`unpack` 事件上维护两条独立曲线：

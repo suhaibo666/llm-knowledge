@@ -123,12 +123,12 @@ tools/html2md/node_modules/
 .worktrees/
 
 # Locally generated torch.compile A-F demo evidence
-wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/volume_demos/**
-!wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/volume_demos/acceptance/
-!wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/volume_demos/acceptance/e/
-!wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/volume_demos/acceptance/e/SUPERSEDED.md
-!wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/volume_demos/acceptance/f/
-!wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/volume_demos/acceptance/f/SUPERSEDED.md
+tools/labs_torch_compile/artifacts/volume_demos/**
+!tools/labs_torch_compile/artifacts/volume_demos/acceptance/
+!tools/labs_torch_compile/artifacts/volume_demos/acceptance/e/
+!tools/labs_torch_compile/artifacts/volume_demos/acceptance/e/SUPERSEDED.md
+!tools/labs_torch_compile/artifacts/volume_demos/acceptance/f/
+!tools/labs_torch_compile/artifacts/volume_demos/acceptance/f/SUPERSEDED.md
 
 # torch.compile 运行时自动生成的调试输出
 torch_compile_debug/

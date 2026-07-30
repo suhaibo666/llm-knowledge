@@ -349,12 +349,12 @@ output binding”哪一步，而不是笼统归因于 `__torch_dispatch__`。
 
 ## 配套 Demo
 
-本页对应卷级入口 `labs/demo_a_execution_model.py` 的 `proxy_fake_tensor` 用例。默认以 CUDA 为验收设备：
+本页对应卷级入口 `tools/labs_torch_compile/demo_a_execution_model.py` 的 `proxy_fake_tensor` 用例。默认以 CUDA 为验收设备：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_a_execution_model.py `
+python -B tools\labs_torch_compile\demo_a_execution_model.py `
   --case proxy_fake_tensor --device cuda `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\a04
+  --output-dir tools\labs_torch_compile\artifacts\volume_demos\a04
 ```
 
 先用 `--list --json` 查看用例声明的能力要求。无 CUDA 的机器可把 `--device` 改为 `cpu` 探索设备无关机制；CUDA/Triton/多卡专属用例会返回 `BLOCKED`，且不会执行用例正文。不要把 `BLOCKED` 写成 `PASS`。

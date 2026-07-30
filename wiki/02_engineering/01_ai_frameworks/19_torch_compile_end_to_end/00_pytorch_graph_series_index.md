@@ -181,7 +181,7 @@ layout、mutation、stream/mempool 等消费者位置。系列正文会把这类
 
 ## 贯穿示例
 
-全系列使用 `labs/series_artifact_bundle.py`中的一个稳定计算前缀，包含：
+全系列使用 `tools/labs_torch_compile/series_artifact_bundle.py`中的一个稳定计算前缀，包含：
 
 - parameter、buffer 与 lifted state；
 - matmul、pointwise、reduction；
@@ -196,7 +196,7 @@ GraphModule 有独立 ownership/signature 边界，并不伪装成和普通 FX �
 
 当前有 21 个机制/贯穿脚本、1 个原生后端证据合同工具和两组自动合同。可复现命令、
 正例、边界例与 artifact 树见
-[`labs/README.md`](labs/README.md)。本仓库不把不同 PyTorch 版本、CPU/GPU 后端或未安装的
+[`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。本仓库不把不同 PyTorch 版本、CPU/GPU 后端或未安装的
 本地编译器伪装成一次“全链路实测”。当前证据分五类：
 
 - `[S]` pinned main 源码事实；
@@ -238,10 +238,10 @@ peak 与去重 backing-storage peak；两者也都不等于 CUDA allocator peak�
 生成或回归检查：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\series_artifact_bundle.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\end_to_end
+python -B tools\labs_torch_compile\series_artifact_bundle.py `
+  --output-dir tools\labs_torch_compile\artifacts\end_to_end
 python -m unittest discover `
-  -s wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs `
+  -s tools\labs_torch_compile `
   -p test_series_contract.py -v
 ```
 
@@ -293,10 +293,10 @@ main 的实现定位。内部 API 示例只有在当前环境实际运行后才�
 
 - [[19_torch_compile_end_to_end/00_torch_compile_end_to_end_index]]
 - [[01_ai_frameworks/index]]
-- [[03_aot_autograd/index]]
-- [[04_inductor/index]]
-- [[14_fx_export_and_extensibility/index]]
-- [[13_runtime_memory_amp_profiler/index]]
-- [[17_compile_cache/index]]
-- [[10_eager_autograd/index]]
-- [[06_graphs/index]]
+- [[02_compile_stack/02_aot_autograd/index]]
+- [[02_compile_stack/04_inductor/index]]
+- [[04_export_and_distributed/01_fx_export_extensibility/index]]
+- [[01_eager_runtime/07_memory_amp_profiler/index]]
+- [[02_compile_stack/06_compile_cache/index]]
+- [[01_eager_runtime/05_autograd_engine/index]]
+- [[03_runtime_graphs/index]]

@@ -496,12 +496,12 @@ arity与fan-out均有界时，结构部分才可近似看作候选线性；没�
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part3_pattern.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\part3_pattern
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part3_end_to_end_pass.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\part3
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part4_artifact_bundle.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\part4
+python -B tools\labs_torch_compile\part3_pattern.py `
+  --output-dir tools\labs_torch_compile\artifacts\part3_pattern
+python -B tools\labs_torch_compile\part3_end_to_end_pass.py `
+  --output-dir tools\labs_torch_compile\artifacts\part3
+python -B tools\labs_torch_compile\part4_artifact_bundle.py `
+  --output-dir tools\labs_torch_compile\artifacts\part4
 ```
 
 ### 16.1 最小输入与覆盖矩阵
@@ -598,7 +598,7 @@ lowering_original_add_erased=True
 lowering_native_kernel_executed=False
 ```
 
-本Lab artifact位于 `labs/artifacts/part3_pattern/`：
+本Lab artifact位于 `tools/labs_torch_compile/artifacts/part3_pattern/`：
 
 - `summary.json`：环境、所有assertion与证据边界；
 - `graph_pattern_after.txt`：handler图手术后的FX graph；
@@ -614,7 +614,7 @@ kernel已编译或执行的证据。
 
 自动合同 `PatternMatcherContractTest`同时检查本Lab既有关键输出；脚本自身对新增路径逐项
 assert，不是只打印结果。完整命令与全系列证据等级见
-[`labs/README.md`](labs/README.md)。
+[`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 ## 学习顺序
 

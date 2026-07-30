@@ -420,8 +420,8 @@ pass 合法性检查必须先确认当前 stage 已经把哪些 effect 显式化
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part1_effects_alias.py
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part2_normalization.py
+python -B tools\labs_torch_compile\part1_effects_alias.py
+python -B tools\labs_torch_compile\part2_normalization.py
 ```
 
 第一个脚本构造 unused pure add 与 unused `copy_`，并把两个都写同一 storage、但彼此没有
@@ -455,11 +455,11 @@ functional_input_semantics_match=True
 
 这不证明默认 DCE 对所有自定义副作用 sound；源码警告仍成立。
 
-stdout 可持久化到 `labs/artifacts/logs/part1_effects_alias.txt`与
+stdout 可持久化到 `tools/labs_torch_compile/artifacts/logs/part1_effects_alias.txt`与
 `part2_normalization.txt`；统一模型的 functional ATen 图在
-`labs/artifacts/end_to_end/functional_aten.py`。自动合同
+`tools/labs_torch_compile/artifacts/end_to_end/functional_aten.py`。自动合同
 `EffectAndFunctionalizationContractTest`对上述关键字段做 assertion。环境与命令见
-[`labs/README.md`](labs/README.md)。
+[`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 ## 14. 本篇心智模型
 
@@ -488,4 +488,4 @@ Program legality
 - [[14_dead_code_topology_and_effect_order]]
 - [[16_graph_rewrite_legality_validation_and_complexity]]
 - [[19_buffer_liveness_memory_planning_and_reuse]]
-- [[10_eager_autograd/index]]
+- [[01_eager_runtime/05_autograd_engine/index]]

@@ -199,12 +199,12 @@ compute重叠。
 
 ## 配套 Demo
 
-本页对应卷级入口 `labs/demo_f_advanced_topics.py` 的 `fsdp_dtensor` 用例。默认以 CUDA 为验收设备：
+本页对应卷级入口 `tools/labs_torch_compile/demo_f_advanced_topics.py` 的 `fsdp_dtensor` 用例。默认以 CUDA 为验收设备：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_f_advanced_topics.py `
+python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
   --case fsdp_dtensor --device cuda `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\f04
+  --output-dir tools\labs_torch_compile\artifacts\volume_demos\f04
 ```
 
 先用 `--list --json` 查看用例声明的能力要求。无 CUDA 的机器可把 `--device` 改为 `cpu` 探索设备无关机制；CUDA/Triton/多卡专属用例会返回 `BLOCKED`，且不会执行用例正文。不要把 `BLOCKED` 写成 `PASS`。
@@ -216,6 +216,6 @@ python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\
 - [[00_torch_compile_end_to_end_index]]
 - [[f03_ddp_compile_boundaries_and_optimizer_analysis]]
 - [[f05_custom_operators_fake_kernels_and_decompositions_analysis]]
-- [[15_distributed_primitives/index]]
+- [[04_export_and_distributed/02_distributed_primitives/index]]
 - [[19_torch_compile_end_to_end/05_graph_effects_alias_mutation_and_order]]
 - [[e09_production_rollout_fallback_and_monitoring_analysis]]

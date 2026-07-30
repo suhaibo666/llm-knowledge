@@ -379,8 +379,8 @@ authoritative claim 必须逐项说明：依赖哪个 stage invariant、哪个�
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part3_end_to_end_pass.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\part3
+python -B tools\labs_torch_compile\part3_end_to_end_pass.py `
+  --output-dir tools\labs_torch_compile\artifacts\part3
 ```
 
 pass只在可证明的窄域做：
@@ -419,9 +419,9 @@ alias 与 mutation 是 eager-vs-rewrite relation/snapshot 差分，不再只是�
 当前 predicate 不是 dynamic FakeTensor/guard proof，也未覆盖 GPU/device-specific
 accumulation、effectful inputs 或随机 shape 矩阵，因此不声称完成 L5–L7。
 
-持久 artifact 位于 `labs/artifacts/part3/`，包括 before/after/rejected graph、
+持久 artifact 位于 `tools/labs_torch_compile/artifacts/part3/`，包括 before/after/rejected graph、
 `results.json`、环境与 manifest。自动合同 `EndToEndPassContractTest`失败会返回非零；
-完整命令与证据等级见 [`labs/README.md`](labs/README.md)。
+完整命令与证据等级见 [`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 ## 14. Review模板
 

@@ -269,11 +269,11 @@ reuse key 的实际字段是 device、dtype、符号 storage size、alignment、
 ### 14.1 命令
 
 ```powershell
-python wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part4_ir_scheduler_analysis.py `
-  --output-dir wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part4_ir
+python tools/labs_torch_compile/part4_ir_scheduler_analysis.py `
+  --output-dir tools/labs_torch_compile/artifacts/part4_ir
 
-python wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/part2_aot_recompute_analysis.py `
-  --output-dir wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/artifacts/part2_recompute
+python tools/labs_torch_compile/part2_aot_recompute_analysis.py `
+  --output-dir tools/labs_torch_compile/artifacts/part2_recompute
 ```
 
 ### 14.2 三组对照
@@ -299,11 +299,11 @@ estimated_peak_bytes=512
 
 ### 14.3 产物与未覆盖边界
 
-- `labs/artifacts/part4_ir/liveness_peak.json`：静态timeline、buffer与node planning信息；
-- `labs/artifacts/part4_ir/fusion_comparison.json`：fusion group对照；
-- `labs/artifacts/part4_ir/reorder_comparison.json`：peak-memory reorder开/关的顺序与静态peak；
-- `labs/artifacts/part4_ir/ir_matrix.json`：view/copy的ownership差异；
-- `labs/artifacts/part2_recompute/partition_comparison.json`：save/recompute签名、重算节点与逻辑bytes；
+- `tools/labs_torch_compile/artifacts/part4_ir/liveness_peak.json`：静态timeline、buffer与node planning信息；
+- `tools/labs_torch_compile/artifacts/part4_ir/fusion_comparison.json`：fusion group对照；
+- `tools/labs_torch_compile/artifacts/part4_ir/reorder_comparison.json`：peak-memory reorder开/关的顺序与静态peak；
+- `tools/labs_torch_compile/artifacts/part4_ir/ir_matrix.json`：view/copy的ownership差异；
+- `tools/labs_torch_compile/artifacts/part2_recompute/partition_comparison.json`：save/recompute签名、重算节点与逻辑bytes；
 - 两个目录的`environment.json`：runtime/source边界。
 
 该Lab没有声称测得physical allocator peak、wrapper实际地址复用、native kernel性能或CUDA

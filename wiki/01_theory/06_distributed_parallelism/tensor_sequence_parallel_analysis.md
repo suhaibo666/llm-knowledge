@@ -2,7 +2,7 @@
 
 > 层次：原理（principle）· 引擎无关
 > 前置：[[collectives_analysis]]（all-reduce / all-gather / reduce-scatter 代价）
-> 实现见 [[../../02_engineering/02_train_frameworks/megatron-lm/index]]（Megatron 手工 TP/SP）与 [[../../02_engineering/01_ai_frameworks/15_distributed_primitives/index]]（DTensor/TP）
+> 实现见 [[../../02_engineering/02_train_frameworks/megatron-lm/index]]（Megatron 手工 TP/SP）与 [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]]（DTensor/TP）
 > 最后更新：2026-07-01
 
 ---
@@ -128,4 +128,4 @@ CP 与 TP **正交**（一个切序列、一个切隐藏维），可组合成 `C
 - [[index]] — TP/SP/CP 共同占据 N 维布局的「机内维」
 - [[../01_models/deepseek/deepseek_v4_cp_analysis]] — CP 在长上下文模型中的实践
 - [[../../02_engineering/02_train_frameworks/megatron-lm/index]] — **实现层**：Megatron 手工 TP/SP 的 ColumnParallel/RowParallel
-- [[../../02_engineering/01_ai_frameworks/15_distributed_primitives/index]] — **实现层**：DTensor/TP 的 `parallelize_module`、ColwiseParallel/RowwiseParallel
+- [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：DTensor/TP 的 `parallelize_module`、ColwiseParallel/RowwiseParallel

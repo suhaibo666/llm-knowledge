@@ -157,19 +157,19 @@ B06 OutputGraph
 
 | 卷 | 入口 | 主题 |
 |---|---|---|
-| A | `labs/demo_a_execution_model.py` | Tensor/dispatcher/frame/Proxy-FakeTensor/成本 |
-| B | `labs/demo_b_dynamo_capture.py` | lifecycle/cache/bytecode/guard/break/dynamic/backend |
-| C | `labs/demo_c_graph_compiler.py` | 编排既有 Part I–IV 与贯穿 bundle |
-| D | `labs/demo_d_artifact_runtime.py` | compile_fx/AOT wrapper/cache/module load/memory/CUDAGraph |
-| E | `labs/demo_e_diagnostics.py` | explain/recompile/故障分层/repro/正确性/性能/回退 |
-| F | `labs/demo_f_advanced_topics.py` | compiled autograd/checkpoint/distributed/custom/AOTI |
+| A | `tools/labs_torch_compile/demo_a_execution_model.py` | Tensor/dispatcher/frame/Proxy-FakeTensor/成本 |
+| B | `tools/labs_torch_compile/demo_b_dynamo_capture.py` | lifecycle/cache/bytecode/guard/break/dynamic/backend |
+| C | `tools/labs_torch_compile/demo_c_graph_compiler.py` | 编排既有 Part I–IV 与贯穿 bundle |
+| D | `tools/labs_torch_compile/demo_d_artifact_runtime.py` | compile_fx/AOT wrapper/cache/module load/memory/CUDAGraph |
+| E | `tools/labs_torch_compile/demo_e_diagnostics.py` | explain/recompile/故障分层/repro/正确性/性能/回退 |
+| F | `tools/labs_torch_compile/demo_f_advanced_topics.py` | compiled autograd/checkpoint/distributed/custom/AOTI |
 
 统一运行契约：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_b_dynamo_capture.py `
+python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
   --case guards_recompile --device cuda `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\b07
+  --output-dir tools\labs_torch_compile\artifacts\volume_demos\b07
 ```
 
 - `PASS`：case 正文真实执行，且内置断言全部通过；
@@ -179,7 +179,7 @@ python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\
 
 默认 `--device cuda`。无 CUDA 的开发机可用 `--device cpu` 预检设备无关机制，但这不能替代
 GPU、Triton、CUDAGraph、allocator 或多卡验收。页面到 case 的完整映射固定在
-`labs/demo_manifest.json`；卷 C 同时保留原有更细粒度脚本与证据目录。
+`tools/labs_torch_compile/demo_manifest.json`；卷 C 同时保留原有更细粒度脚本与证据目录。
 
 ## 10. 三条推荐路径
 
@@ -240,9 +240,9 @@ A05
 
 - [[index]] — 本域入口
 - [[00_pytorch_graph_series_index]] — 卷 C 完整课程
-- [[02_dynamo/index]] — Dynamo 领域索引
-- [[03_aot_autograd/index]] — AOTAutograd 领域索引
-- [[04_inductor/index]] — Inductor 领域索引
-- [[17_compile_cache/index]] — 编译缓存索引
-- [[15_distributed_primitives/index]] — 分布式原语索引
-- [[19_torch_compile_end_to_end/labs/README]] — Demo 命令、状态和证据说明
+- [[02_compile_stack/01_dynamo/index]] — Dynamo 领域索引
+- [[02_compile_stack/02_aot_autograd/index]] — AOTAutograd 领域索引
+- [[02_compile_stack/04_inductor/index]] — Inductor 领域索引
+- [[02_compile_stack/06_compile_cache/index]] — 编译缓存索引
+- [[04_export_and_distributed/02_distributed_primitives/index]] — 分布式原语索引
+- `tools/labs_torch_compile/README.md` — Demo 命令、状态和证据说明

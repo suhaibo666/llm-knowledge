@@ -340,10 +340,10 @@ disable_functionalization、subclass、mutation 类型等配置会选择不同�
 从知识库根目录运行：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part2_capture_frontends.py
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\part2_normalization.py
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\series_artifact_bundle.py `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\end_to_end
+python -B tools\labs_torch_compile\part2_capture_frontends.py
+python -B tools\labs_torch_compile\part2_normalization.py
+python -B tools\labs_torch_compile\series_artifact_bundle.py `
+  --output-dir tools\labs_torch_compile\artifacts\end_to_end
 ```
 
 `part2_capture_frontends.py`负责 symbolic_trace 与 make_fx 的 op 粒度对照；原版正文把这项
@@ -370,9 +370,9 @@ functionalized callable在边界仍恢复原函数对输入的可观察mutation�
 
 正例是 `silu` decomposition 与 functionalized output；错误/边界输入是对 view 做 in-place
 mutation，脚本必须同时比较 output 和 input mutation，不能只 grep graph string。持久
-artifact 位于 `labs/artifacts/end_to_end/functional_aten.py`，自动合同
+artifact 位于 `tools/labs_torch_compile/artifacts/end_to_end/functional_aten.py`，自动合同
 `EffectAndFunctionalizationContractTest`对上述等价性做 assertion。环境与命令见
-[`labs/README.md`](labs/README.md)。
+[`tools/labs_torch_compile/README.md`](tools/labs_torch_compile/README.md)。
 
 ## 15. 选择机制
 

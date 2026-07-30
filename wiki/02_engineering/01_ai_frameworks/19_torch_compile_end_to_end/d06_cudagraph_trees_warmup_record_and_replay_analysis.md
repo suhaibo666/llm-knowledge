@@ -298,12 +298,12 @@ liveness状态。
 
 ## 配套 Demo
 
-本页对应卷级入口 `labs/demo_d_artifact_runtime.py` 的 `cudagraph_replay` 用例。默认以 CUDA 为验收设备：
+本页对应卷级入口 `tools/labs_torch_compile/demo_d_artifact_runtime.py` 的 `cudagraph_replay` 用例。默认以 CUDA 为验收设备：
 
 ```powershell
-python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\demo_d_artifact_runtime.py `
+python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
   --case cudagraph_replay --device cuda `
-  --output-dir wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\artifacts\volume_demos\d06
+  --output-dir tools\labs_torch_compile\artifacts\volume_demos\d06
 ```
 
 先用 `--list --json` 查看用例声明的能力要求。无 CUDA 的机器可把 `--device` 改为 `cpu` 探索设备无关机制；CUDA/Triton/多卡专属用例会返回 `BLOCKED`，且不会执行用例正文。不要把 `BLOCKED` 写成 `PASS`。
@@ -317,4 +317,4 @@ python -B wiki\02_engineering\01_ai_frameworks\19_torch_compile_end_to_end\labs\
 - [[d07_compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[a05_eager_capture_compile_and_replay_cost_model_analysis]]
 - [[f08_training_inference_cudagraph_and_freezing_analysis]]
-- [[13_runtime_memory_amp_profiler/index]]
+- [[01_eager_runtime/07_memory_amp_profiler/index]]
