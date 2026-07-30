@@ -15,7 +15,7 @@ All source ingestions and significant wiki updates are logged here.
 - a01 → [[01_eager_runtime/01_tensor_and_storage/tensor_impl_and_storage_analysis]] §13（differentiable view/DifferentiableViewMeta、mutation 状态机、复杂度记账、常见误解、view→Autograd→编译器的源码跟读）
 - a02 → [[pytorch_dispatcher_analysis]] §12（ADInplaceOrView 分层、mutation 算子 rebase 样本、Dispatcher/Autograd Edge/FX data edge 三种"边"辨析）
 - a03 → [[b04_instruction_translator_and_bytecode_state_machine_analysis]] §14 + [[b03_eval_frame_callback_and_code_cache_analysis]] §13（`bytecode_transformation` 重组子系统、code object/frame/instruction 定义表、C-hook 与 ConvertFrame 边界）
-- a04 → [[aotautograd_analysis]] §12.5（`__torch_function__`/`__torch_dispatch__`/ProxyTensor/FakeTensor 四层分工、`track_tensor_tree`、FakeTensorMode 状态）
+- a04 → [[aotautograd_analysis]] §13（`__torch_function__`/`__torch_dispatch__`/ProxyTensor/FakeTensor 四层分工、`track_tensor_tree`、FakeTensorMode 状态、decomposition 落点、数据相关 operator 边界）
 - a05 → [[b01_torch_compile_api_and_first_call_lifecycle_analysis]] §12 + [[e07_compile_latency_cache_and_steady_state_performance_analysis]] §12-§16（七阶段成本词汇表、cache-entry 查找与 backend handoff 源码补充；参数化成本模型/break-even/四层 cache 对照表与 e07 既有的测量方法论合并，不重复落地两处）
 
 **入链修复**：`f05`（a02/a04 引用改指 pytorch_dispatcher_analysis / aotautograd_analysis）、`b01`/`e07`/`d06`（a05 引用改指内容实际落点）；卷内 a01-a05 互链随整卷删除一并消失；`00_torch_compile_end_to_end_index.md` 的"卷 A"表按 Task 3 约定不做整体重排（留给 Task 10），仅去除失效行并加一行去向说明，避免 broken>0。
