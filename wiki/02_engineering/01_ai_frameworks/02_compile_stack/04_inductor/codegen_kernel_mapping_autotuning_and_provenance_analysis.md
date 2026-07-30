@@ -500,6 +500,8 @@ Provenance把generated artifacts映回source
 - [[graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[buffer_liveness_memory_planning_and_reuse_analysis]]
-- [[inductor_codegen_analysis]]
-- [[inductor_autotuning_analysis]]
+- [[inductor_codegen_analysis]] — codegen 双层架构与 wrapper 段的源码级完整参考(本页 §1/§4/§12 的纵深版；§7 另有 CPU kernel 类体系专题)
+- [[inductor_gpu_kernel_dispatch_model]] — 本页 §6"Loop codegen"未展开的 GPU kernel 骨架/IterationRanges/tiling/grid 类型
+- [[inductor_reduction_codegen_deep_analysis]] — reduction codegen 专题(persistent/looped/split/cooperative)
+- [[inductor_autotuning_analysis]] — 本页 §8"两层autotuning"的运行时纵深(CachingAutotuner 生命周期、config 启发式、Triton 编译链、§七 CoordescTuner)
 - [[02_compile_stack/04_inductor/index]]

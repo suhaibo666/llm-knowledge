@@ -82,6 +82,7 @@ rsplit_start = rsplit_chunk * rsplit_id
 
 - [[inductor_gpu_kernel_dispatch_model]] — kernel 骨架与 grid（CooperativeReductionGrid 在此）
 - [[inductor_codegen_analysis]] — codegen 概览
+- [[codegen_kernel_mapping_autotuning_and_provenance_analysis]] — codegen/kernel 映射/autotuning/provenance 总线页（本页是其 §6"Loop codegen"的 reduction 纵深）
 - [[fx_lowering_to_inductor_ir_analysis]] — Reduction IR（make_reduction / Welford）
 - [[scheduler_dependency_graph_fusion_and_ordering_analysis]] — 融合（含 MixOrderReductions）
 - [[inductor_autotuning_analysis]] — reduction config（R0_BLOCK / num_warps）

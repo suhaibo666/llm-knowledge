@@ -6,6 +6,39 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 8 组 D 步骤 4（C21 vs codegen 碎片四页，收尾）
+
+**Type**: Cross-link Reconciliation（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 8 组 D）
+
+C21（`codegen_kernel_mapping_autotuning_and_provenance_analysis.md`，505 行）定位为
+codegen/kernel 映射/autotuning/provenance 的**总线页**（覆盖面广、单点纵深浅）。逐页核对
+四篇碎片，均判定独有内容 >50%，**保留为专项，不合并**：
+
+| 碎片页 | 独有度判定 | 依据 |
+|---|---|---|
+| `inductor_codegen_analysis.md`（283 行，含 Task 6 回补的 §7 CPU CodeGen） | 独有 | §7 CPU kernel 类体系（`CppKernel`/`CppVecKernel`/`CppTile2DKernel`）与向量化判定完全不被 C21 覆盖；§2.2 后端文件清单、§4.4 wrapper `IndentedBuffer` 段拆分、§4.3 `TritonKernel.codegen_kernel()` 内部结构均比 C21 对应段落更具体 |
+| `inductor_gpu_kernel_dispatch_model.md`（98 行） | 独有 | `program_id→offset→index→mask` kernel 骨架、`IterationRanges` 树、`select_tiling` 打分算法、`GridExpr`/Y-Z 溢出族，全篇贯穿 NPU 对照，C21 §6"Loop codegen"仅 10 行概念性带过 |
+| `inductor_reduction_codegen_deep_analysis.md`（89 行） | 独有 | persistent/looped/split/cooperative reduction 四种形态的具体代码生成与阈值，C21 未涉及 reduction codegen 细节 |
+| `inductor_autotuning_analysis.md`（152 行，含 Task 6 回补的 §六 ChoiceCaller/TuningProcessPool，本任务组 D 步骤 2 新增 §七 CoordescTuner） | 独有 | `CachingAutotuner` 生命周期、config 启发式、`AttrsDescriptor`、Triton 编译链、NPU 对照表，C21 §8"两层autotuning"只有 20 行提及两层机制存在 |
+
+**处置**：不做内容合并，只补齐此前缺失的双向交叉链接——C21 Related Pages 新增到
+`inductor_gpu_kernel_dispatch_model`/`inductor_reduction_codegen_deep_analysis` 的链接
+（此前只链 `inductor_codegen_analysis`/`inductor_autotuning_analysis`）；后两篇各自新增
+回链 C21。四篇碎片页 Task 6 回补的独有内容（CPU codegen、ChoiceCaller/TuningProcessPool）
+确认原样保留，未被本任务触碰或覆盖。
+
+**校验**：`python tools/check_links.py`：pages=379（无净变化，纯加链接），broken=0；
+`pytest tools/ -q`：77 passed。
+
+**Task 8 组 D 全组小结**（步骤 1-4 共 4 commit）：C18-C21 从 `19_torch_compile_end_to_end`
+纯移动至 `04_inductor/`；`PyTorch_Inductor_Technical_Analysis.md`（1699 行）与
+`scheduler_analysis.md`（964 行）两个大型综合参考页判重后完全解体，独有内容分别落地到
+`codegen_extension_guide`/`inductor_autotuning_analysis`/`post_grad_passes_guide`/C20 四页；
+`inductor_memory_management_analysis.md`（278 行）与
+`wrapper_execution_memory_allocation_and_reuse_analysis.md`（D05，228 行）并入 C19 成为
+内存主题统一入口；C21 与四篇 codegen 碎片页确认分工清晰、只补链接。全组共删除 4 个页面
+（1699+964+278+228 = 3169 行），净新增/改写约 1500 行精炼内容，checker 全程 broken=0。
+
 ## 2026-07-30：知识库结构整改 P4 Task 8 组 D 步骤 3（C19+D05 内存归一）
 
 **Type**: Redundancy Merge（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 8 组 D）

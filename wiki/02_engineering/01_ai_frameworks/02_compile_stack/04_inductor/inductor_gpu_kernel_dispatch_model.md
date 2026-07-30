@@ -90,6 +90,7 @@ GPU dispatch 模型把「分块、派发、Y/Z 溢出」交给 grid + 硬件调�
 ## Related Pages
 
 - [[inductor_codegen_analysis]] — Inductor codegen 概览（本页是其 GPU 派发细节）
+- [[codegen_kernel_mapping_autotuning_and_provenance_analysis]] — codegen/kernel 映射/autotuning/provenance 总线页（本页是其 §6"Loop codegen"的 GPU 派发纵深）
 - [[inductor_codegen_dynamic_shape_analysis]] — §3 grid 动态计算（本页补 kernel 骨架/IterationRanges）
 - [[inductor_reduction_codegen_deep_analysis]] — reduction codegen（persistent/looped/cooperative + CooperativeReductionGrid）
 - [[inductor_autotuning_analysis]] — autotune 选 BLOCK/grid 与 Triton 编译
