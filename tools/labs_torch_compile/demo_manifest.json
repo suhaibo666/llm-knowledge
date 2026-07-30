@@ -215,7 +215,7 @@
     },
     {
       "page_id": "c18",
-      "page": "18_inductor_ir_values_loops_layouts_and_buffers.md",
+      "page": "inductor_ir_values_loops_layouts_and_buffers_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "inductor_ir",
@@ -223,7 +223,7 @@
     },
     {
       "page_id": "c19",
-      "page": "19_buffer_liveness_memory_planning_and_reuse.md",
+      "page": "buffer_liveness_memory_planning_and_reuse_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "inductor_ir",
@@ -231,7 +231,7 @@
     },
     {
       "page_id": "c20",
-      "page": "20_scheduler_dependency_graph_fusion_and_ordering.md",
+      "page": "scheduler_dependency_graph_fusion_and_ordering_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "inductor_ir",
@@ -239,7 +239,7 @@
     },
     {
       "page_id": "c21",
-      "page": "21_codegen_kernel_mapping_autotuning_and_provenance.md",
+      "page": "codegen_kernel_mapping_autotuning_and_provenance_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "inductor_ir",

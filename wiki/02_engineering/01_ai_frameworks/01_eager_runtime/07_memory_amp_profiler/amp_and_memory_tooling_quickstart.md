@@ -7,7 +7,7 @@
 > [!note] 页面角色与审计状态
 > **页面角色**：AMP 训练循环、allocator 观测、Profiler 导出与运行时调参的实操入口；它保留用户 API 和排障流程，不承担 Inductor 编译期 buffer planner 的机制证明。
 > **原始基线**：页内 PyTorch `9922478`（v2.13.0a0）；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **审计状态**：已纳入历史 manifest，但代码块、locator 与当前环境尚未逐项复跑；使用时应保留原基线限定。编译期 logical buffer、liveness 与静态 peak 见 [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]]，运行时领域导航见 [[01_eager_runtime/07_memory_amp_profiler/index]]。
+> **审计状态**：已纳入历史 manifest，但代码块、locator 与当前环境尚未逐项复跑；使用时应保留原基线限定。编译期 logical buffer、liveness 与静态 peak 见 [[buffer_liveness_memory_planning_and_reuse_analysis]]，运行时领域导航见 [[01_eager_runtime/07_memory_amp_profiler/index]]。
 
 本页面向「已经会写训练循环、但还没系统用过 AMP / 显存工具 / Profiler」的工程师,给出**最小可跑路径**、**关键 API + 真实源码锚点**、以及**排查与调参速查**。源码深析见 [[caching_allocator_autocast_profiler_analysis]],三支柱全景见 [[01_eager_runtime/07_memory_amp_profiler/index]]。
 
@@ -260,7 +260,7 @@ print("alloc_retries / ooms:", s["num_alloc_retries"], s["num_ooms"])
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[01_eager_runtime/07_memory_amp_profiler/index]] — 本模块 overview(三支柱全景与 mermaid)
 - [[caching_allocator_autocast_profiler_analysis]] — 本模块 deep dive(Block/Expandable Segments/recordStream、autocast dispatch key、Kineto shim 源码级深析)
-- [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]] — Inductor 编译期 logical buffer/liveness；与本页运行时 allocator 观测分层
+- [[buffer_liveness_memory_planning_and_reuse_analysis]] — Inductor 编译期 logical buffer/liveness；与本页运行时 allocator 观测分层
 - [[03_runtime_graphs/index]] — CUDA Graph 私有池隔离(`reserved_bytes_by_private_pools`、`beginAllocateToPool`)
 - [[01_eager_runtime/01_tensor_and_storage/index]] — `DataPtr`/`Storage` 与分配器的关系
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — autocast 作为 dispatch key 的拦截机制背景

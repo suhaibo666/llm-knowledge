@@ -2,7 +2,7 @@
 
 > **页面角色**：TorchInductor Scheduler子系统完整源码参考。
 > **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **课程分工**：本页保留纵深实现清单；当前依赖图、融合约束、保序与复杂度见 [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering]]。
+> **课程分工**：本页保留纵深实现清单；当前依赖图、融合约束、保序与复杂度见 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]。
 
 > **Updated**: 2026-07-22
 
@@ -367,7 +367,7 @@ flowchart LR
 
 ### 依赖计算关键逻辑（`compute_dependencies`, L3170）
 
-> **注**：`WeakDep` 仍可约束调度，只是在 lifetime/DCE 等消费者中具有弱语义，`StarDep` 也不是所有 mutation 的通用“全局边”；现行结论见 [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering#3. Dependency类型]]。
+> **注**：`WeakDep` 仍可约束调度，只是在 lifetime/DCE 等消费者中具有弱语义，`StarDep` 也不是所有 mutation 的通用“全局边”；现行结论见 [[scheduler_dependency_graph_fusion_and_ordering_analysis#3. Dependency类型]]。
 
 `compute_dependencies` 遍历所有节点，通过分析 `ReadWrites` 建立 `unmet_dependencies`：
 
@@ -406,7 +406,7 @@ nodes = self.fuse_nodes_once(nodes, is_reorder_round=True)
 
 ### 7.3 融合合法性检查（`can_fuse`, L5333）
 
-> **注**：下图把 legality、priority score 与可选 benchmark 串成单一阈值流程,不能作为当前 Scheduler 的执行规范;现行模型见 [[20_scheduler_dependency_graph_fusion_and_ordering]] §10/§11(Legality 与 Profitability 分离)。
+> **注**：下图把 legality、priority score 与可选 benchmark 串成单一阈值流程,不能作为当前 Scheduler 的执行规范;现行模型见 [[scheduler_dependency_graph_fusion_and_ordering_analysis]] §10/§11(Legality 与 Profitability 分离)。
 
 ```mermaid
 flowchart TD
@@ -448,7 +448,7 @@ flowchart TD
 
 ### 7.4 融合评分（`score_fusion_memory`, L5657）
 
-> **注**：下式是旧版简写;当前评分还区分 exact dependency、同 buffer overlap 与 mix-order reduction,template 路径还可能另做 benchmark,不能归结为普通集合交集大小,见 [[20_scheduler_dependency_graph_fusion_and_ordering]] §11。
+> **注**：下式是旧版简写;当前评分还区分 exact dependency、同 buffer overlap 与 mix-order reduction,template 路径还可能另做 benchmark,不能归结为普通集合交集大小,见 [[scheduler_dependency_graph_fusion_and_ordering_analysis]] §11。
 
 ```
 score = Σ size(共享 memory dep)

@@ -1,6 +1,6 @@
 # 20 · Scheduler 依赖图、Fusion 与顺序
 
-> 前置：[[18_inductor_ir_values_loops_layouts_and_buffers]]、[[19_buffer_liveness_memory_planning_and_reuse]]
+> 前置：[[inductor_ir_values_loops_layouts_and_buffers_analysis]]、[[buffer_liveness_memory_planning_and_reuse_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -412,13 +412,13 @@ AOT fw/bw无跨图edge。Scheduler又是各图lowering后的独立buffer depende
 
 ## 学习顺序
 
-- 上一篇：[[19_buffer_liveness_memory_planning_and_reuse]]
-- 下一篇：[[21_codegen_kernel_mapping_autotuning_and_provenance]]
+- 上一篇：[[buffer_liveness_memory_planning_and_reuse_analysis]]
+- 下一篇：[[codegen_kernel_mapping_autotuning_and_provenance_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
 - [[pattern_expression_and_matcher_engine_analysis]]
-- [[19_buffer_liveness_memory_planning_and_reuse]]
-- [[21_codegen_kernel_mapping_autotuning_and_provenance]]
+- [[buffer_liveness_memory_planning_and_reuse_analysis]]
+- [[codegen_kernel_mapping_autotuning_and_provenance_analysis]]
 - [[scheduler_analysis]]

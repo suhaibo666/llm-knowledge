@@ -474,4 +474,4 @@ Observed artifacts/performance:
 - [[pattern_expression_and_matcher_engine_analysis]]
 - [[dead_code_topology_and_effect_order_analysis]]
 - [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]
-- [[20_scheduler_dependency_graph_fusion_and_ordering]]
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]]

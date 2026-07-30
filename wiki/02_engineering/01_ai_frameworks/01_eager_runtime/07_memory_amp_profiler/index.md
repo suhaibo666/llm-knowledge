@@ -36,7 +36,7 @@
 
 对应主线分别见
 [[saved_tensors_recompute_and_runtime_abi_analysis]]与
-[[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]]。排查peak时必须先说
+[[buffer_liveness_memory_planning_and_reuse_analysis]]。排查peak时必须先说
 清是哪一层；AOT逻辑saved bytes、Scheduler静态peak和allocator snapshot不能混成同一个数。
 
 ### 三支柱全景图
@@ -118,7 +118,7 @@ flowchart TB
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — Dispatcher:autocast 正是作为 `Autocast*` **dispatch key** 在分发层拦截算子
 - [[01_eager_runtime/01_tensor_and_storage/index]] — `Tensor`/`Storage`/`DataPtr`:分配器交付的内存句柄(`Allocator`/`DataPtr` 抽象)与 storage 是 profiler 内存归因的统计单元
 - [[saved_tensors_recompute_and_runtime_abi_analysis]] — AOT saved activation与recompute
-- [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]] — Inductor logical buffer、last-use、reuse与静态peak
+- [[buffer_liveness_memory_planning_and_reuse_analysis]] — Inductor logical buffer、last-use、reuse与静态peak
 - [[01_ai_frameworks/index]] — 本域总索引
 
 ---
@@ -132,4 +132,4 @@ flowchart TB
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — Dispatcher 与 Autocast dispatch key
 - [[01_eager_runtime/01_tensor_and_storage/index]] — Tensor / Storage / DataPtr / Allocator 抽象
 - [[saved_tensors_recompute_and_runtime_abi_analysis]]
-- [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]]
+- [[buffer_liveness_memory_planning_and_reuse_analysis]]

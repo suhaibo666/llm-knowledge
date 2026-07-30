@@ -1,6 +1,6 @@
 # 21 · Codegen、Kernel 映射、Autotuning 与 Provenance
 
-> 前置：[[20_scheduler_dependency_graph_fusion_and_ordering]]
+> 前置：[[scheduler_dependency_graph_fusion_and_ordering_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -491,15 +491,15 @@ Provenance把generated artifacts映回source
 
 ## 学习顺序
 
-- 上一篇：[[20_scheduler_dependency_graph_fusion_and_ordering]]
+- 上一篇：[[scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - 返回总索引：[[00_pytorch_graph_series_index]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
 - [[graph_stage_boundaries_identity_and_provenance_analysis]]
-- [[20_scheduler_dependency_graph_fusion_and_ordering]]
-- [[19_buffer_liveness_memory_planning_and_reuse]]
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]]
+- [[buffer_liveness_memory_planning_and_reuse_analysis]]
 - [[inductor_codegen_analysis]]
 - [[inductor_autotuning_analysis]]
 - [[02_compile_stack/04_inductor/index]]

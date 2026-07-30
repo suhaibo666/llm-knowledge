@@ -3,7 +3,7 @@
 > [!note] 页面角色与审计状态
 > **页面角色**：Triton winner config、kernel artifact bundling 与 RemoteCache 基础设施专题；它解释搜索结果如何复用，不替代 autotuning 搜索过程或 kernel codegen 机制。
 > **原始基线**：PyTorch `3bda74318624581502db16e6439c36effdb16481`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **审计状态**：已纳入历史 manifest，但全部 key/remote/bundling claim 尚未迁到当前基线复核，本轮 CPU/no-CUDA 环境也未执行 Triton autotune cache hit。kernel、wrapper、autotune 与 provenance 主线见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]]；缓存领域入口见 [[02_compile_stack/06_compile_cache/index]]。
+> **审计状态**：已纳入历史 manifest，但全部 key/remote/bundling claim 尚未迁到当前基线复核，本轮 CPU/no-CUDA 环境也未执行 Triton autotune cache hit。kernel、wrapper、autotune 与 provenance 主线见 [[codegen_kernel_mapping_autotuning_and_provenance_analysis]]；缓存领域入口见 [[02_compile_stack/06_compile_cache/index]]。
 
 > **分析对象**：torch.compile 缓存栈最底层的 kernel 粒度缓存与远端基础设施——`AutotuneCache`（每 kernel 获胜 config，`torch/_inductor/runtime/autotune_cache.py`）、`AutotuneCacheBundler`（整图打包的 autotune 远端缓存）、`TritonBundler` 内部机制（`torch/_inductor/triton_bundler.py`）、以及它们共用的 `RemoteCache` 抽象（`torch/_inductor/remote_cache.py`）。
 > **Source baseline**：PyTorch upstream 本地检出 `E:\97-codes\torch_parallel\pytorch` @ branch `main`, commit `3bda74318624581502db16e6439c36effdb16481`（2026-07-10, version 2.14.0a0）。所有 `file:line` 均对该 commit 逐一开文件核验。
@@ -230,7 +230,7 @@ Triton 本身就有按 kernel hash 组织的磁盘缓存。**纠正一个常见�
 - [[aotautograd_cache_analysis]] — 上层缓存,复用本页 §三设施(cache id `autograd-experimental`)
 - [[dynamo_pgo_cache_analysis]] — 同样复用 §三设施(cache id `dynamo-pgo`)
 - `AutotuneCacheArtifact` / `CacheArtifactRecorder`整包携带：尚未完成独立当前基线审计
-- [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]] — kernel/wrapper、autotune choices 与 provenance 课程主线
+- [[codegen_kernel_mapping_autotuning_and_provenance_analysis]] — kernel/wrapper、autotune choices 与 provenance 课程主线
 - [[inductor_autotuning_analysis]] — `CachingAutotuner` 生命周期与 config 生成启发式(本页缓存的正是其 benchmark 结果)
 - [[torch_compile_architecture]] — torch.compile 整体栈
 - [[PyTorch_Inductor_Technical_Analysis]] — Inductor lowering/codegen

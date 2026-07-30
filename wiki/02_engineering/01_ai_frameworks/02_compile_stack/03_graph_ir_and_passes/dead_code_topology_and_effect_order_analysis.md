@@ -353,4 +353,4 @@ topology_repaired_value=8.0
 - [[graph_effects_alias_mutation_and_order_analysis]]
 - [[fx_graph_editing_primitives_and_invariants_analysis]]
 - [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]
-- [[19_buffer_liveness_memory_planning_and_reuse]]
+- [[buffer_liveness_memory_planning_and_reuse_analysis]]

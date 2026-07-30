@@ -127,7 +127,7 @@ alias、mutation rename、weak ordering 等建立依赖
 - view/alias/mutation 会改变 buffer 依赖；
 - stream、mempool、collective 等可引入额外顺序限制。
 
-详见 [[20_scheduler_dependency_graph_fusion_and_ordering]]。
+详见 [[scheduler_dependency_graph_fusion_and_ordering_analysis]]。
 
 ### 3.6 Runtime CUDA Graph
 
@@ -368,5 +368,5 @@ fx_call_targets=add,relu,sum
 - [[01_eager_runtime/05_autograd_engine/index]]
 - [[aotautograd_joint_forward_backward_graphs_analysis]]
 - [[fx_lowering_to_inductor_ir_analysis]]
-- [[20_scheduler_dependency_graph_fusion_and_ordering]]
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[03_runtime_graphs/index]]

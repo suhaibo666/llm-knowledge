@@ -372,12 +372,12 @@ stdout中的六项`*_observed`必须全为`True`，否则脚本直接`AssertionE
 ## 学习顺序
 
 - 上一篇：[[fx_lowering_to_inductor_ir_analysis]]
-- 下一篇：[[19_buffer_liveness_memory_planning_and_reuse]]
+- 下一篇：[[buffer_liveness_memory_planning_and_reuse_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
 - [[fx_lowering_to_inductor_ir_analysis]]
-- [[19_buffer_liveness_memory_planning_and_reuse]]
-- [[20_scheduler_dependency_graph_fusion_and_ordering]]
+- [[buffer_liveness_memory_planning_and_reuse_analysis]]
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[fx_lowering_to_inductor_ir_analysis]]

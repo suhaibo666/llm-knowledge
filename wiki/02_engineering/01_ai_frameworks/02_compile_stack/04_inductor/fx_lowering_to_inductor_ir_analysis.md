@@ -547,14 +547,14 @@ lower 的路径有 fallback 可用。
 ## 学习顺序
 
 - 上一篇：[[graph_rewrite_legality_validation_and_complexity_analysis]]
-- 下一篇：[[18_inductor_ir_values_loops_layouts_and_buffers]]
+- 下一篇：[[inductor_ir_values_loops_layouts_and_buffers_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
 - [[graph_stage_boundaries_identity_and_provenance_analysis]]
-- [[18_inductor_ir_values_loops_layouts_and_buffers]]
-- [[20_scheduler_dependency_graph_fusion_and_ordering]]
+- [[inductor_ir_values_loops_layouts_and_buffers_analysis]]
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[decomposition_passes_guide]] — 等价 ATen 展开与 lowering 的选择边界
 - [[scheduler_analysis]] — IR 产出后的依赖与融合
 - [[codegen_extension_guide]] — 复用或扩展目标 codegen

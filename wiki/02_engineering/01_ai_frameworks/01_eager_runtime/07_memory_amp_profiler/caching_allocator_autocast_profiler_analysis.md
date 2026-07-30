@@ -3,7 +3,7 @@
 > [!note] 页面角色与审计状态
 > **页面角色**：运行时物理分配器、AMP dispatch 与 Kineto Profiler 的联合源码专题；它解释 allocator block/segment 和运行时观测，不把这些对象等同于 Inductor 编译期 logical buffer。
 > **原始基线**：页内 PyTorch `9922478`（v2.13.0a0）；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **审计状态**：已纳入历史 manifest，但逐结构单元、跨基线 locator 与实验复跑尚未闭合；页内原基线结论不得自动视为当前基线事实。当前课程的 saved activation 边界见 [[saved_tensors_recompute_and_runtime_abi_analysis]]，Inductor buffer/liveness 与静态 peak 见 [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]]；运行时领域入口见 [[01_eager_runtime/07_memory_amp_profiler/index]]。
+> **审计状态**：已纳入历史 manifest，但逐结构单元、跨基线 locator 与实验复跑尚未闭合；页内原基线结论不得自动视为当前基线事实。当前课程的 saved activation 边界见 [[saved_tensors_recompute_and_runtime_abi_analysis]]，Inductor buffer/liveness 与静态 peak 见 [[buffer_liveness_memory_planning_and_reuse_analysis]]；运行时领域入口见 [[01_eager_runtime/07_memory_amp_profiler/index]]。
 
 > 层次:deep dive(深)
 > 核验基准:PyTorch upstream `E:\97-codes\pytorch\pytorch`(v2.13.0a0, commit 9922478)
@@ -384,6 +384,6 @@ storage 的可哈希身份用 `allocation_id`(而非易复用的裸指针)承载
 - [[03_runtime_graphs/index]] — CUDA / NPU Graphs:图私有内存池(`beginAllocateToPool`/`releasePool`)的消费方
 - [[inductor_memory_management_analysis]] — torch.compile 内存管理三层:本页(缓存分配器)是其「层 2 运行期物理池」,上接 Inductor 编译期 `empty_strided` 规划、下接 CUDA Graphs 私有池
 - [[saved_tensors_recompute_and_runtime_abi_analysis]] — AOT跨fw/bw的activation save/recompute边界
-- [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]] — Inductor logical buffer、静态peak与本页allocator实测的边界
+- [[buffer_liveness_memory_planning_and_reuse_analysis]] — Inductor logical buffer、静态peak与本页allocator实测的边界
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — Dispatcher:autocast 作为 `Autocast*` dispatch key 在分发层拦截算子
 - [[01_eager_runtime/01_tensor_and_storage/index]] — Tensor / Storage / DataPtr / Allocator 抽象:分配器交付的内存句柄与 profiler 归因的统计单元

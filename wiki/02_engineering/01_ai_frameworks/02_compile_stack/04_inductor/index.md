@@ -19,10 +19,10 @@
 |---|---|
 | 建立“为什么这样设计”的连续心智模型并运行Lab | [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] |
 | FX→IR职责与fallback/custom lowering | [[fx_lowering_to_inductor_ir_analysis]] |
-| IR value/loop/layout/buffer与index | [[19_torch_compile_end_to_end/18_inductor_ir_values_loops_layouts_and_buffers]] |
-| liveness、reuse、静态peak与runtime边界 | [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]] |
-| Scheduler dependency/fusion/reorder | [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering]] |
-| kernel/wrapper/autotune/provenance | [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]] |
+| IR value/loop/layout/buffer与index | [[inductor_ir_values_loops_layouts_and_buffers_analysis]] |
+| liveness、reuse、静态peak与runtime边界 | [[buffer_liveness_memory_planning_and_reuse_analysis]] |
+| Scheduler dependency/fusion/reorder | [[scheduler_dependency_graph_fusion_and_ordering_analysis]] |
+| kernel/wrapper/autotune/provenance | [[codegen_kernel_mapping_autotuning_and_provenance_analysis]] |
 | 查某个子系统的完整函数/API清单 | 本目录下`fx_lowering_to_inductor_ir_analysis`、`scheduler_analysis`、`inductor_codegen_analysis`等专题页 |
 
 autotuning负责搜索/测量候选并选择winner；[[02_compile_stack/06_compile_cache/index]]讨论winner、graph
@@ -108,10 +108,10 @@ artifact与compiled module如何复用。两者相邻但不是同一机制：一
 - [[02_compile_stack/01_dynamo/index]] — 上游:图捕获
 - [[02_compile_stack/02_aot_autograd/index]] — 上游:前/反向分解
 - [[fx_lowering_to_inductor_ir_analysis]] — 当前基线的 FX → Inductor IR 边界
-- [[19_torch_compile_end_to_end/18_inductor_ir_values_loops_layouts_and_buffers]] — 当前基线的IR值、循环、layout与buffer
-- [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]] — 当前基线的liveness、reuse与peak边界
-- [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering]] — 当前基线的 scheduler 依赖图、融合与保序
-- [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]] — 当前基线的 codegen、autotune 与 provenance
+- [[inductor_ir_values_loops_layouts_and_buffers_analysis]] — 当前基线的IR值、循环、layout与buffer
+- [[buffer_liveness_memory_planning_and_reuse_analysis]] — 当前基线的liveness、reuse与peak边界
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]] — 当前基线的 scheduler 依赖图、融合与保序
+- [[codegen_kernel_mapping_autotuning_and_provenance_analysis]] — 当前基线的 codegen、autotune 与 provenance
 - [[02_compile_stack/06_compile_cache/index]] — 跨阶段cache与artifact复用
 - [[02_compile_stack/05_codegen_backends/index]] — codegen 后端(MLIR/Triton)
 - [[03_runtime_graphs/index]] — 运行时图捕获

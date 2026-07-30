@@ -208,4 +208,4 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 - [[02_compile_stack/06_compile_cache/index]]
 - [[compiled_artifact_lifecycle_and_runtime_failures_analysis]]
 - [[compile_latency_cache_and_steady_state_performance_analysis]]
-- [[21_codegen_kernel_mapping_autotuning_and_provenance]]
+- [[codegen_kernel_mapping_autotuning_and_provenance_analysis]]

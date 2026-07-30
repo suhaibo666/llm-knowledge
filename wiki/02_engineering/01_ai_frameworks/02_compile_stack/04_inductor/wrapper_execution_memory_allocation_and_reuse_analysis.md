@@ -221,8 +221,8 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[19_buffer_liveness_memory_planning_and_reuse]]
-- [[20_scheduler_dependency_graph_fusion_and_ordering]]
+- [[buffer_liveness_memory_planning_and_reuse_analysis]]
+- [[scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
 - [[cudagraph_trees_warmup_record_and_replay_analysis]]
 - [[kernel_fusion_memory_and_hardware_performance_analysis]]

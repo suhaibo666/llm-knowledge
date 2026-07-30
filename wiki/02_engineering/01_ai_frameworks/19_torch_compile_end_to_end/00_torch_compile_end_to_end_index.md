@@ -77,10 +77,10 @@ flowchart LR
 | C15 | [[graph_pass_pipeline_ordering_and_fixpoint_analysis]] | pass stage、registration order、迭代与 fixpoint 如何决定结果 |
 | C16 | [[graph_rewrite_legality_validation_and_complexity_analysis]] | 结构命中后怎样验证 shape、dtype、alias、autograd 和收益 |
 | C17 | [[fx_lowering_to_inductor_ir_analysis]] | GraphLowering 为什么不是 FX Node 的一对一替换 |
-| C18 | [[18_inductor_ir_values_loops_layouts_and_buffers]] | TensorBox、Loops、Layout、Buffer 和 ExternKernel 如何分工 |
-| C19 | [[19_buffer_liveness_memory_planning_and_reuse]] | logical buffer 怎样进入 liveness、free 和 reuse 决策 |
-| C20 | [[20_scheduler_dependency_graph_fusion_and_ordering]] | Scheduler dependency、fusion candidate、legality 和 ordering 如何协作 |
-| C21 | [[21_codegen_kernel_mapping_autotuning_and_provenance]] | Scheduler group 怎样映射到 kernel、wrapper、autotune 和 provenance |
+| C18 | [[inductor_ir_values_loops_layouts_and_buffers_analysis]] | TensorBox、Loops、Layout、Buffer 和 ExternKernel 如何分工 |
+| C19 | [[buffer_liveness_memory_planning_and_reuse_analysis]] | logical buffer 怎样进入 liveness、free 和 reuse 决策 |
+| C20 | [[scheduler_dependency_graph_fusion_and_ordering_analysis]] | Scheduler dependency、fusion candidate、legality 和 ordering 如何协作 |
+| C21 | [[codegen_kernel_mapping_autotuning_and_provenance_analysis]] | Scheduler group 怎样映射到 kernel、wrapper、autotune 和 provenance |
 
 关键桥接：
 

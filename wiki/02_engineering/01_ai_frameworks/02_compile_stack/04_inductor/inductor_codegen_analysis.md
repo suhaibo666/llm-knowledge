@@ -2,7 +2,7 @@
 
 > **页面角色**：codegen、kernel与wrapper子系统完整源码参考。
 > **原始基线**：见下方`9922478dffa`；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **课程分工**：本页保留纵深实现；当前IR到kernel/wrapper的映射、autotune与provenance见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]]。
+> **课程分工**：本页保留纵深实现；当前IR到kernel/wrapper的映射、autotune与provenance见 [[codegen_kernel_mapping_autotuning_and_provenance_analysis]]。
 
 > **Updated**: 2026-07-30（新增 §7「CPU CodeGen」，回补自已删除的 `inductor_compiler_pipeline_analysis.md` §7.4；本页此前的 §1-6/示例均为 Triton/GPU 视角，§7 起补 CPU 侧）
 
@@ -114,7 +114,7 @@ Inductor 支持 `aot_inductor` 模式（`cpp_wrapper=True`），此时 codegen �
 
 ### 3.4 内存复用与峰值控制
 
-> **注**：训练走默认 wrapper reuse，而 `config.memory_planning` 只选择可选的 inference pooled planner；现行结论见 [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse#C. 可选pooled static planner]]。
+> **注**：训练走默认 wrapper reuse，而 `config.memory_planning` 只选择可选的 inference pooled planner；现行结论见 [[buffer_liveness_memory_planning_and_reuse_analysis#C. 可选pooled static planner]]。
 
 通过 `memory_planning.py`，codegen 在 wrapper 中显式插入 `AllocateLine`、`FreeIfNotReusedLine`、`ReuseLine` 等指令，基于 tensor 的 live range 分析实现**内存池复用**，这对于大模型推理和训练的峰值内存控制至关重要。
 
@@ -201,7 +201,7 @@ for node in nodes:
 
 ### 4.5 内存规划集成
 
-> **注**：本节把默认 `memory_plan_reuse()` 的两遍 Allocate/Free/Reuse 改写与 `memory_planning.py` 的 pooled planner 混写；前者也用于训练，后者仅在 inference 且开关启用时选择。三套机制边界见 [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse#6. 三套不能混写的“memory planning”]]。
+> **注**：本节把默认 `memory_plan_reuse()` 的两遍 Allocate/Free/Reuse 改写与 `memory_planning.py` 的 pooled planner 混写；前者也用于训练，后者仅在 inference 且开关启用时选择。三套机制边界见 [[buffer_liveness_memory_planning_and_reuse_analysis#6. 三套不能混写的“memory planning”]]。
 
 在 wrapper 的 `lines` 列表中，内存分配以 `WrapperLine` 子类对象表示：
 

@@ -2,7 +2,7 @@
 
 > **页面角色**：Triton autotune生命周期专题。
 > **原始基线**：见下方2026-06-17快照；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **课程分工**：本页保留autotune纵深；当前codegen/autotune边界与本机未测GPU限制见 [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]]。
+> **课程分工**：本页保留autotune纵深；当前codegen/autotune边界与本机未测GPU限制见 [[codegen_kernel_mapping_autotuning_and_provenance_analysis]]。
 
 > 分析对象：upstream PyTorch Inductor 的 Triton kernel **autotune 生命周期 + 如何驱动 Triton 编译器**（`CachingAutotuner`、config 启发式、`config_of`/AttrsDescriptor、`make_launcher`、`triton.compile`→PTX/cubin、`DeviceProperties`）。
 > 核心代码位置：本地 upstream `E:\97-codes\pytorch\pytorch`：`torch/_inductor/runtime/triton_heuristics.py`、`codegen/triton_utils.py`、`runtime/hints.py`
