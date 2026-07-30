@@ -227,6 +227,6 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 - [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering]]
 - [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]]
 - [[19_torch_compile_end_to_end/21_codegen_kernel_mapping_autotuning_and_provenance]]
-- [[d05_wrapper_execution_memory_allocation_and_reuse_analysis]]
+- [[wrapper_execution_memory_allocation_and_reuse_analysis]]
 - [[compile_latency_cache_and_steady_state_performance_analysis]]
 - [[production_rollout_fallback_and_monitoring_analysis]]

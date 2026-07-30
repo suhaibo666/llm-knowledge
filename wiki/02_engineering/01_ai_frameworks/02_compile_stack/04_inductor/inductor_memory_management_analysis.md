@@ -269,6 +269,7 @@ flowchart TB
 - [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]] — logical buffer、last use、reuse 与静态 peak 课程主线
 - [[19_torch_compile_end_to_end/20_scheduler_dependency_graph_fusion_and_ordering]] — Scheduler dependency、fusion 与 reorder
 - [[inductor_memory_allocation_guide]] — **实战指南**:实际分配走查 / 分配器选型对照 / `memory_stats` 实测复现 / 实践建议(本页的动手版)
+- [[wrapper_execution_memory_allocation_and_reuse_analysis]] — wrapper 层 `MemoryPlanningLine`/reuse pool 的源码级机制(与本页视角重叠,归一进行中,见该页页头互指)
 - [[caching_allocator_autocast_profiler_analysis]] — **层 2 深页**:`CUDACachingAllocator` 的 Block/segment/stream/expandable 源码级机制
 - [[inductor_codegen_analysis]] — wrapper codegen 全景(§4.5 内存规划集成是本页层 1 的简版)
 - [[scheduler_analysis]] — Scheduler 生命周期 / `dead_node_elimination` / `mutation_renames`(本页订正了其中两处行号)

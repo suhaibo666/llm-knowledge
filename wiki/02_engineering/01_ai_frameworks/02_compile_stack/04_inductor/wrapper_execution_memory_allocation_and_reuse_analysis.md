@@ -4,7 +4,11 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]  
 > 后续：[[d06_cudagraph_trees_warmup_record_and_replay_analysis]]  
-> 最后更新：2026-07-28
+> 最后更新：2026-07-30(kb-reorg P4 Task 6 迁入本目录,去 d05_ 前缀)
+>
+> **内存规划相关页归一进行中**:本页讲 wrapper 层 `MemoryPlanningLine`/reuse pool 的源码级机制,与
+> [[inductor_memory_management_analysis]](编译期规划→`CUDACachingAllocator`→CUDA Graph 池三层全景)、
+> [[inductor_memory_allocation_guide]](分配器实战与越界排查)存在视角重叠,尚未按 Task 8 计划与 C19 一并归一,暂各自独立成页,先在此互指。
 
 ## 1. 为什么kernel之外还需要host wrapper
 
