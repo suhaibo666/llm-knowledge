@@ -6,6 +6,71 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 7 组 1（fx_graph_construction_and_transformation_analysis 判重归一）
+
+**Type**: Redundancy Consolidation（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 7）
+
+`02_compile_stack/02_aot_autograd/fx_graph_construction_and_transformation_analysis.md`（2026-07-23
+综合报告快照，601 行）自带「阅读定位与迁移去向」节，按其自述逐节判重 vs Task 7 Step 1
+迁入的 C02/03/05/12/13/14/16：
+
+- **§2 FX 对象模型、边和图序**：逐段核对（`Graph`/`Node`/`GraphModule` 三对象表、
+  `_update_args_kwargs`/`torch/csrc/fx/node.cpp` C++ 热点实现、`Graph.nodes` 链表遍历、
+  `graph.lint()`、链表 vs 普通 list 的设计动机）均已存在于 [[fx_graph_core_data_model_analysis]]
+  （locator 一致或仅个位数行号漂移，判定为 drift 非新事实）。唯一未被覆盖的一句独有澄清——
+  "`users` 反向邻接"与"AOTAutograd backward `GraphModule`"是两个不同概念、不要混为一谈——
+  逐字并入该页 §4「两种"反向"不要混为一谈」小节，并加一句到 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]] 的互指。原 §2 删除。
+- **§5-§6 PatternExpr/PatternMatcherPass**：`CallFunction`/`Arg`/`KeywordArg`/`Ignored`/
+  `MultiOutputPattern` 语义表、候选桶注册与逆序匹配、三类 Entry（`LoweringPatternEntry`/
+  `GraphPatternEntry`/`ReplacementPatternEntry`）、pre/joint/post 阶段收尾差异，均已存在于
+  [[pattern_expression_and_matcher_engine_analysis]] 且粒度更细（如该页额外覆盖了旧页没有的
+  serialized/precompiled pattern 缓存机制）。原 §5-§6 删除，无独有内容需要迁移。
+- **§7-§8 DCE、拓扑与保序**：`Graph.eliminate_dead_code()` 判定条件、`Node.is_impure()`
+  规则、DCE 安全前提、`stable_topological_sort` 的 `pending/ready/waiting/cursor` 状态机，
+  均已存在于 [[dead_code_topology_and_effect_order_analysis]]（该页 §7 的算法级走读甚至更完整）。
+  原 §7-§8 删除。
+- **§9 复杂度分析（通用表 + §9.1 pattern 总体复杂度）**：已被 [[fx_graph_core_data_model_analysis]]
+  §11、[[pattern_expression_and_matcher_engine_analysis]] §15（含旧页没有的 mutation-region 扫描
+  成本 `M(v)`、非 `call_function` root 扫描成本 `H`、sort-key 比较成本 `Lcmp` 等更严格的界）、
+  [[dead_code_topology_and_effect_order_analysis]] §11 分别覆盖，且新页复杂度分析普遍更严格
+  （旧页多处用未加限定的 `O(N+E)`，新页显式标注仅在 arity/sort-key 有界时才成立）。§9.2
+  （AOT 全链路复杂度，含 min-cut max-flow 项）核实已存在于
+  `19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs` §14 与
+  `10_saved_tensors_recompute_and_runtime_abi` §14 各自的复杂度节。原 §9（含 9.1/9.2）删除。
+- **§10 不变量与排查清单**：§10.1 八条通用不变量已被 [[fx_graph_editing_primitives_and_invariants_analysis]]
+  §14（10 项检查清单）覆盖；其中两条 AOT 特有提醒（"不把 bw 叫反向边图"、"不把 saved tensor
+  理解为跨图 Node 引用"）保留在本页新 §10「残留提醒」。§10.2「阅读图时的四问」判定为跨
+  FX 数据模型/pattern/AOT 三个语境的综合辨析工具，不属于单一目的地页，整节保留。
+- **§11 关键源码导航**：通用行（Node/Graph/lint/DCE/Proxy tracing/pattern 相关）已核实存在于
+  对应课程页各自的源码路径引用中；AOT 特有行（joint capture/partitioners/runtime_wrappers）
+  与本页保留的 §3/§4 正文内联引用重复，压缩为一张 4 行 mini 表，标题改「AOT 特有部分」。
+
+**属 AOTAutograd 特有、本组不处理**：§1 中 2/7 条（AOTAutograd 两张独立 GraphModule、
+recompute 非特殊节点类型）、§3（joint→fw/bw 构造与跨图 ABI）、§4（recompute 选择/构图/reorder，
+含 min-cut partition §4.1 细节）——按计划要求原样保留，留给 Task 8 与
+`09_aotautograd_joint_forward_backward_graphs`/`10_saved_tensors_recompute_and_runtime_abi`
+（C09/C10）归一；本组未改动这两节正文一字。
+
+页面净变化：601 → 269 行；标题从「FX Graph 构图与改图机制 — AOTAutograd 正反向分图、
+PatternMatcher、DCE 与保序」改为「AOTAutograd Joint Graph 构造与 Recompute — 正反向分图、
+Saved-Tensor ABI 与 Min-Cut Partition」以反映瘦身后范围；文件名不变（`fx_graph_construction_
+and_transformation_analysis.md`，Task 8 可能进一步处置）。
+
+**入链改指**（9 处非 changelog 入链逐条核实内容落点后精确改）：
+`aotautograd_analysis.md` 描述句删去已迁移的"复杂度"表述；`02_aot_autograd/index.md`
+两处表格行更新为反映瘦身范围+互指新目录；`04_inductor/index.md`「FX Passes」表格行改指
+[[02_compile_stack/03_graph_ir_and_passes/index]]；`torch_upstream_pass_deepdive.md`
+Related Pages 一行改指同一索引；`fx_graph_export_and_custom_ops_analysis.md` Related Pages
+一行改指同一索引（AOT 部分保留旁注）；`01_fx_export_extensibility/index.md` 两处（页面列表表格行 +
+Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_autograd/index`。
+
+新目录 `03_graph_ir_and_passes/index.md` 补充「与旧页的关系」一节说明本次归一决策；
+`02_aot_autograd/index.md` 新增一句互指该索引。
+
+**校验**：`python tools/check_links.py`：pages 388→388，broken=0；`pytest tools/ -q`：77 passed。
+
+---
+
 ## 2026-07-30：知识库结构整改 P4 Task 7 Step 1（19 号 C 卷第一批迁入 03_graph_ir_and_passes，12 篇）
 
 **Type**: Structure Reorg（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 7）

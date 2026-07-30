@@ -30,12 +30,14 @@ AOTAutograd(ahead-of-time autograd)在编译期就把一段可微计算的**前�
 |---|---|---|
 | [[aot_autograd_quickstart]] | API quick start与日志/config入口 | 示例需看代码块是否current-run；未统一默认视为未复跑 |
 | [[aotautograd_analysis]] | 全量reference与edge-case集合 | Batch 0逐结构审计未闭环 |
-| [[fx_graph_construction_and_transformation_analysis]] | 2026-07-23综合报告快照 | 已增加原章节→课程页去向表 |
+| [[fx_graph_construction_and_transformation_analysis]] | 2026-07-23综合报告快照，已瘦身为AOT特有残留页 | joint→fw/bw构图与saved/recompute部分保留；FX数据模型/PatternMatcher/DCE/保序/合法性部分已迁至 [[02_compile_stack/03_graph_ir_and_passes/index]]（kb-reorg P4 Task 7） |
 | [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] | 当前系统课程与可执行Lab | 源码、runtime和mock证据分级 |
 
 另见[[02_compile_stack/06_compile_cache/index]]：AOTAutograd cache命中可能复用functionalization、
 joint/partition及其编译结果；必须先确认cache层级，才能解释为什么某次运行没有重新打印
-fw/bw图。
+fw/bw图。另见[[02_compile_stack/03_graph_ir_and_passes/index]]：FX `Graph`/`Node`数据模型、
+PatternExpr/PatternMatcherPass、DCE与稳定拓扑排序、rewrite合法性与复杂度的当前系统主线，
+本模块的joint graph/partition建立在这套底座之上。
 
 ## 页面列表(按层次)
 
@@ -43,7 +45,7 @@ fw/bw图。
 |------|------|---------|
 | [[aot_autograd_quickstart]] | **quick start** | 看前/反向图:`backend="aot_eager"` + `TORCH_LOGS=aot_graphs`;看联合图 `aot_joint_graph`;partitioner(min-cut vs default)与重计算;`aot_function` 最小用法;`AOT_PARTITIONER_DEBUG`/activation_memory_budget |
 | [[aotautograd_analysis]] | deep dive | aot_function/aot_module、joint graph 构建、partitioner、functionalization、runtime wrappers |
-| [[fx_graph_construction_and_transformation_analysis]] | **deep dive / design report** | FX Node/Graph/GraphModule 数据结构；joint→fw/bw 构图；saved-tensor ABI 与 recompute；PatternExpr/PatternMatcherPass；DCE、稳定拓扑排序、保序与全链路复杂度 |
+| [[fx_graph_construction_and_transformation_analysis]] | **deep dive / design report(AOT特有残留）** | joint→fw/bw 构图；saved-tensor ABI 与 recompute；min-cut partition 细节。FX Node/Graph 数据结构、PatternExpr/PatternMatcherPass、DCE/稳定拓扑排序见 [[02_compile_stack/03_graph_ir_and_passes/index]] |
 
 > joint graph 上的优化 pass 见 [[joint_graph_passes_guide]](实现于 Inductor `fx_passes/joint_graph.py`)。
 

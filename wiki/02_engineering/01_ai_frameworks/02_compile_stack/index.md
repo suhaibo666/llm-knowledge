@@ -8,7 +8,7 @@
 |------|---------|
 | [[01_dynamo/index]] | torch.compile 前端:帧评估图捕获、Guard、字节码符号执行 |
 | [[02_aot_autograd/index]] | 前/反向图分解、partition、functionalization(编译期 autograd) |
-| [[03_graph_ir_and_passes/index]] | Graph IR 与 Passes(P4 后续任务填充) |
+| [[03_graph_ir_and_passes/index]] | Graph IR 与 Passes:FX 数据模型、捕获前端、改图原语、PatternMatcher、DCE/保序与合法性验证 |
 | [[04_inductor/index]] | 编译后端核心:lowering、调度、codegen、FX passes、动态形状;`npu/` NPU Inductor 后端 |
 | [[05_codegen_backends/index]] | codegen 后端:MLIR(及 Triton 对比) |
 | [[06_compile_cache/index]] | 跨阶段编译缓存:Dynamo PGO、AOTAutograd result、Inductor FX graph artifact、Triton autotune cache |

@@ -307,7 +307,7 @@ sequenceDiagram
 ## Related Pages
 
 - [[04_export_and_distributed/01_fx_export_extensibility/index]] — 本模块 overview / 目录索引
-- [[fx_graph_construction_and_transformation_analysis]] — 从 Node/Graph 存储延伸到 AOT fw/bw、PatternMatcher、DCE 与保序
+- [[02_compile_stack/03_graph_ir_and_passes/index]] — 从 Node/Graph 存储延伸到 PatternMatcher、DCE 与保序（AOT fw/bw 见 [[02_compile_stack/02_aot_autograd/index]]）
 - [[fx_export_custom_op_quickstart]] — 本模块 quickstart(最小可用路径与排查命令)
 - [[02_compile_stack/01_dynamo/index]] — 另一条捕获路径:PEP-523 字节码层拦截
 - [[02_compile_stack/02_aot_autograd/index]] — export `run_decompositions` 的 ATen 分解栈同源

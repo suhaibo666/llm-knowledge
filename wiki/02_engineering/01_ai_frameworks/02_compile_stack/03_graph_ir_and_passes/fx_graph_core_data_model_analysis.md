@@ -352,6 +352,16 @@ Pattern 的 `_users=1`约束通常也是 distinct user 数，不是参数出现�
 若只有 consumer→producer 参数引用，找 producer 很快，但找所有 consumer 要扫描整图。
 `users`让 DCE、replace、liveness 和 pattern user-count 可快速访问反向关系。
 
+### 两种“反向”不要混为一谈
+
+- **反向邻接**：同一张图内 producer 的 `users` 集合，仍在这张图里，只是查找方向从
+  consumer→producer 反过来变成 producer→consumer；
+- **反向传播图**：AOTAutograd 对 joint graph partition 后得到的 backward
+  `GraphModule`，是一张独立的 `Graph`，不与 forward 共享 Node，也不是把 forward 的
+  `users` 边"翻转"复用出来的（构造过程见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]]）。
+
+`users` 只回答"这张图里谁消费了这个值"；它不是、也不会成为另一张图。
+
 ## 5. 更新参数为何必须走 Node API
 
 当 `args/kwargs` 改变时，必须同时：

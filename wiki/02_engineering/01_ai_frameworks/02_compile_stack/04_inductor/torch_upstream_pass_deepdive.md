@@ -222,7 +222,7 @@ Dynamo 抓取 → Torch-IR GraphModule
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
-- [[fx_graph_construction_and_transformation_analysis]] — PatternExpr/候选桶/逆序匹配背后的 FX 数据结构，以及 DCE、保序和复杂度
+- [[02_compile_stack/03_graph_ir_and_passes/index]] — PatternExpr/候选桶/逆序匹配背后的 FX 数据结构，以及 DCE、保序和复杂度的当前系统主线
 - [[pre_grad_passes_guide]] — pre_grad 阶段逐 pass 细节
 - [[joint_graph_passes_guide]] — joint 阶段（SDPA/pad_mm/常量折叠）细节
 - [[post_grad_passes_guide]] — post_grad 阶段逐 pass 细节

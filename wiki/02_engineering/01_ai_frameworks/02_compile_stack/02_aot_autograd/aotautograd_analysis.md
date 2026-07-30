@@ -1451,7 +1451,7 @@ Dynamo不是用 ProxyTensor替代 Python symbolic interpreter：
 - [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]]
 - [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]]
 - [[graph_stage_boundaries_identity_and_provenance_analysis]]
-- [[fx_graph_construction_and_transformation_analysis]] — joint graph 如何切成独立 fw/bw、saved-tensor ABI、recompute 抽图与复杂度
+- [[fx_graph_construction_and_transformation_analysis]] — joint graph 如何切成独立 fw/bw、saved-tensor ABI 与 recompute 抽图（min-cut partition 细节）
 - [[02_engineering/01_ai_frameworks/index]]
 - [[torch_compile_architecture]]
 - [[02_compile_stack/01_dynamo/index]]
