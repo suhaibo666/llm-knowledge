@@ -309,7 +309,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[d02_aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
+- [[aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
 - [[aotautograd_and_inductor_failure_localization_analysis]]
 - [[f02_activation_checkpoint_recompute_and_compile_analysis]]
 - [[f03_ddp_compile_boundaries_and_optimizer_analysis]]

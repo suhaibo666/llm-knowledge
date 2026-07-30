@@ -2,7 +2,7 @@
 
 > 卷别：D · 编译产物、缓存与运行时  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[d02_aot_runtime_wrappers_and_lazy_backward_compile_analysis]]  
+> 前置：[[aot_runtime_wrappers_and_lazy_backward_compile_analysis]]  
 > 后续：[[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]  
 > 最后更新：2026-07-28
 

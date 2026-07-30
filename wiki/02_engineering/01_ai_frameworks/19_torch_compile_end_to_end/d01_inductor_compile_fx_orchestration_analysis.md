@@ -3,7 +3,7 @@
 > 卷别：D · 编译产物、缓存与运行时  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[21_codegen_kernel_mapping_autotuning_and_provenance]]  
-> 后续：[[d02_aot_runtime_wrappers_and_lazy_backward_compile_analysis]]  
+> 后续：[[aot_runtime_wrappers_and_lazy_backward_compile_analysis]]  
 > 最后更新：2026-07-28
 
 ## 1. 为什么入口位于Inductor，却先调用AOTAutograd
@@ -329,7 +329,7 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 
 - [[00_torch_compile_end_to_end_index]]
 - [[21_codegen_kernel_mapping_autotuning_and_provenance]]
-- [[d02_aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
+- [[aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
 - [[d03_async_compile_workers_and_module_loading_analysis]]
 - [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]]
 - [[09_aotautograd_joint_forward_backward_graphs]]

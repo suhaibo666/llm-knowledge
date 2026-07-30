@@ -316,7 +316,7 @@ python -B tools\labs_torch_compile\demo_e_diagnostics.py `
 
 - [[00_torch_compile_end_to_end_index]]
 - [[d01_inductor_compile_fx_orchestration_analysis]]
-- [[d02_aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
+- [[aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
 - [[guard_failure_and_recompile_diagnosis_analysis]]
 - [[minifier_repro_and_compiler_bisector_analysis]]
 - [[compiled_correctness_validation_methodology_analysis]]

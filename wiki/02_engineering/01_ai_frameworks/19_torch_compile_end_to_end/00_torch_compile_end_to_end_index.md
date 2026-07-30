@@ -99,7 +99,7 @@ B06 OutputGraph
 | 编号 | 页面 | 先回答的问题 |
 |---:|---|---|
 | D01 | [[d01_inductor_compile_fx_orchestration_analysis]] | Inductor backend 如何编排 AOT 与 inner compile |
-| D02 | [[d02_aot_runtime_wrappers_and_lazy_backward_compile_analysis]] | forward/backward wrapper 与 lazy bw compile 如何运行 |
+| D02 | [[aot_runtime_wrappers_and_lazy_backward_compile_analysis]] | forward/backward wrapper 与 lazy bw compile 如何运行 |
 | D03 | [[d03_async_compile_workers_and_module_loading_analysis]] | 编译任务如何异步完成并加载为 module |
 | D04 | [[d04_compile_cache_hierarchy_keys_and_invalidation_analysis]] | 各层 cache 的 key、value 和失效边界是什么 |
 | D05 | [[d05_wrapper_execution_memory_allocation_and_reuse_analysis]] | wrapper 如何分配、调用、复用和组装输出 |
