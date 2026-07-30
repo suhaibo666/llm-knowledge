@@ -6,6 +6,74 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 9.5（目录内分段编号，用户追加需求）
+
+**Type**: Naming Convention（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 9.5、
+`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §5）
+
+对 `01_ai_frameworks` 下 19 个已定型模块目录（含 2 个硬件子目录）逐目录施行两位数字段位前缀命名：
+段 0（01-09）入门/导览、段 1（10-19）核心机制主线（按该子系统执行流水线/依赖顺序排列）、段 2
+（20-29）深潜/专题、段 3（30-39）方法论/对照/工程实践；`index.md` 不编号，仅在其中新增"段位与
+阅读顺序"小节定段位表。纯改名，不改内容；跨 8 个 commit 分批完成，每批 checker broken=0 +
+pytest 77 后提交：
+
+| 目录 | 篇数 | 段位分布 | 编号区间 |
+|---|---|---|---|
+| `01_eager_runtime/01_tensor_and_storage` | 2 | 0段1/1段1 | 01,10 |
+| `01_eager_runtime/02_dispatcher_and_device` | 5 | 0段1/1段2/2段2 | 01,10-11,20-21 |
+| `01_eager_runtime/03_op_registration` | 0（未编号） | — | 顶层 0 篇内容页；`npu/` 3 篇低于 ≥4 递归阈值，两者均不编号 |
+| `01_eager_runtime/04_aten_op_execution` | 2 | 0段1/1段1 | 01,10 |
+| `01_eager_runtime/05_autograd_engine` | 3 | 0段1/1段1/2段1 | 01,10,20 |
+| `01_eager_runtime/06_nn_module_system` | 2 | 0段1/1段1 | 01,10 |
+| `01_eager_runtime/07_memory_amp_profiler` | 2 | 0段1/1段1 | 01,10 |
+| `02_compile_stack/01_dynamo` | 14 | 0段1/1段9/2段3/3段1 | 01,10-18,20-22,30 |
+| `02_compile_stack/02_aot_autograd` | 6 | 0段1/1段4/2段1 | 01,10-13,20 |
+| `02_compile_stack/03_graph_ir_and_passes` | 12 | 1段6/2段6 | 10-15,20-25 |
+| `02_compile_stack/04_inductor` | 23 | 0段2/1段6/2段9/3段6 | 01-02,10-15,20-28,30-35 |
+| `02_compile_stack/04_inductor/npu` | 12 | 0段1/1段3/2段5/3段3 | 01,10-12,20-24,30-32 |
+| `02_compile_stack/05_codegen_backends/mlir` | 4 | 0段1/1段2/3段1 | 01,10-11,30 |
+| `02_compile_stack/05_codegen_backends/mlir/npu` | 0（未编号） | — | 2 篇低于 ≥4 递归阈值，不编号 |
+| `02_compile_stack/06_compile_cache` | 4 | 1段4 | 10-13 |
+| `02_compile_stack/07_debugging` | 10 | 1段10 | 10-19（见下方说明） |
+| `03_runtime_graphs/cuda` | 3 | 0段1/1段1/2段1 | 01,10,20 |
+| `03_runtime_graphs/npu` | 6 | 0段1/1段2/2段2/3段1 | 01,10-11,20-21,30 |
+| `04_export_and_distributed/01_fx_export_extensibility` | 3 | 0段1/1段1/2段1 | 01,10,20 |
+| `04_export_and_distributed/02_distributed_primitives` | 4 | 0段1/1段1/2段2 | 01,10,20-21 |
+| `05_other_frameworks` | 1 | 1段1 | 10 |
+
+共 118 篇内容页改名，全库改写裸基名 `[[wikilink]]` 链接约 1570 处（含 labs `demo_manifest.json` 的 `page`
+字段与 `test_volume_demo_contract.py` 硬编码文件名字面量同步，涉及原 B/C/D/E/F 卷 page_id）。
+
+**判段说明**（内容实质优先于文件名后缀/既有体裁标签）：
+
+- `01_eager_runtime/04_aten_op_execution/adding_an_aten_operator_guide.md`：`_guide` 后缀但内容
+  是 native_functions.yaml 速查实操，按内容实质入段 0（非默认的段 2/3）。
+- `02_compile_stack/04_inductor/npu/npu_compile.md`、`.../npu_debug_guide.md`：目录旧三层
+  （overview/quick start/deep dive）均标两者为 quick start；按内容实质改判——`npu_compile`
+  是编译工作流/Autotune/精度校验等机制性叙述入段 1，`npu_debug_guide` 是排查方法论入段 3。
+- `03_runtime_graphs/npu/npugraphs_make_graphed_callables_deep_dive.md`：旧体裁标 quick start，
+  内容是窄 API 的六阶段实现级深挖，按内容实质改判段 2。
+- `02_compile_stack/07_debugging`：十篇不做 quickstart/深潜/方法论层级切分——本目录的"核心机制
+  主线"就是排查工作流本身，全部落段 1（10-19）恰好填满整段。编号顺序采用 index.md 原有的
+  "建议阅读顺序"，而非旧卷内编号 D07/E01-E09 顺序：`14_compiled_artifact_lifecycle`（原 D07）
+  页头仍标其原 D 卷前置为 `cudagraph_trees_...`、且被 `10_observability` 页头引用为"前置"，但
+  在本目录实际教学顺序中排第 5 位（失败分层定位之后、minifier/bisector 工具之前）——是本次编号
+  中唯一一处"页头前置字段"与"实际阅读顺序"不一致的目录，过程中发现后已改正（初次按 D07 在前
+  的旧卷顺序命名，随即按 index.md 建议阅读顺序重排，同批提交前完成，无需回滚）。
+
+**验证口径**：任务书给出的验证命令
+`find wiki/02_engineering/01_ai_frameworks -name "*.md" ! -name "index.md" ! -path "*19_torch*" |
+grep -v -E "/[0-9]{2}_"` 因按**完整路径**匹配（父目录如 `01_eager_runtime/`、`02_compile_stack/`
+本身即带两位数字前缀），对本次未编号的 5 个文件（3 篇 `03_op_registration/npu/` + 2 篇
+`05_codegen_backends/mlir/npu/`）不会显式列出——命令按此口径运行确为空。若改按**文件基名**匹配
+（`basename | grep -v -E "^[0-9]{2}_"`），会精确列出这 5 个文件；它们是符合 spec §5"npu/cuda 子
+目录页多（≥4 内容页）时递归适用，页少不编"规则的预期例外，非遗漏。
+
+**校验**：`python tools/check_links.py`：pages=379，broken=0（8 个 commit 均独立核验）；
+`pytest tools/ -q`：77 passed（8 个 commit 均独立核验）。
+
+---
+
 ## 2026-07-30：知识库结构整改 P4 Task 9（19 号 F 卷分发，6 篇 1504 行）
 
 **Type**: Volume Migration + Boundary Reconciliation（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 9）
