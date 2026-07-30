@@ -221,6 +221,6 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[00_torch_compile_end_to_end_index]]
 - [[f01_compiled_autograd_analysis]]
 - [[f03_ddp_compile_boundaries_and_optimizer_analysis]]
-- [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]]
-- [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]]
+- [[saved_tensors_recompute_and_runtime_abi_analysis]]
+- [[aotautograd_joint_forward_backward_graphs_analysis]]
 - [[01_theory/02_pretraining/activation_checkpointing_analysis]]

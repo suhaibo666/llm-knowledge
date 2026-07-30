@@ -540,16 +540,57 @@ partition后是两张独立图；之前有一张joint图作为输入。
 
 partitioner把所需forward-origin nodes普通复制到bw，再按需要重排。详见下一篇。
 
+## 17. Metadata 分类的两个边界情况
+
+### 自定义 `torch.autograd.Function` 的输出会被特殊标记
+
+metadata 收集阶段在给某个输出分类 `OutputType`（§2）时，需要判断它是否是自定义
+`torch.autograd.Function`（而非普通 ATen operator）的结果。做法不是维护一张 op 名单，
+而是在访问该输出的 `.grad_fn` 后按类型判断：`grad_fn` 的类型名是 `"CppFunction"`，或
+它是 `torch.autograd.function.BackwardCFunction` 的实例，就判定
+`is_result_of_custom_autograd_fn=True`
+（`torch/_functorch/_aot_autograd/collect_metadata_analysis.py:479-485`）。
+
+这个判断直接影响后续 alias 分类：若该输出同时满足"与某输入共享 storage 且有
+`grad_fn`"，`is_result_of_custom_autograd_fn` 会参与决定它归为 `custom_function_view`
+还是普通 `alias_of_input`（同文件 `:490-497`）。原因是自定义 `Function` 的
+`backward` 无法像普通 ATen op 那样被直接 trace 进联合图，需要单独的 alias/view 处理
+路径，不能与"寻常 view 输出"用同一套 handler。
+
+### `aot_export` 显式禁止输入 metadata mutation
+
+`aot_export`（导出路径）当前显式拒绝携带 `mutates_metadata=True` 的输入——若某输入经
+`.resize_()`、`.transpose_()` 等调用发生了 metadata mutation，直接在 `is_export` 分支
+抛错，理由是"保持共享代码路径简单"（`torch/_functorch/aot_autograd.py:651-657`）。
+
+这与 `torch.compile` 主路径不同：主路径下 metadata mutation 有对应的 `InputAliasInfo`
+分类和处理（见 [[graph_effects_alias_mutation_and_order_analysis]]），只有走
+`aot_export` 才会被直接禁止。排查 export 相关报错时，若涉及"metadata mutation"字样，
+应先确认是否命中了这条 export 专属限制，而不是套用主路径的 mutation 处理心智模型。
+
+## 18. 阅读图时的四问（跨 Dynamo/joint/partition 术语辨析）
+
+以下四问覆盖 FX 数据模型、pattern 匹配与 AOT 语境交叉处最容易混淆的术语，是刻意保留的
+综合辨析工具：
+
+1. 当前看到的是 Dynamo forward graph、AOT joint graph，还是 partition 后 fw/bw？
+2. 某个值是普通用户输出、saved value、tangent，还是重计算边界输入？
+3. 所谓"反向"是 `users` 反向邻接、逆序遍历，还是 backward GraphModule？bw 图内部的边仍是
+   producer 指向 consumer，不要把它读成"前向边被反转"。
+4. 当前 pass 的收尾责任在 entry、自定义 handler，还是阶段 driver？
+
+回答这四问，基本可以避免把三种"反向"和两种"图连接"混为一谈。
+
 ## 学习顺序
 
 - 上一篇：[[graph_normalization_decomposition_and_functionalization_analysis]]
-- 下一篇：[[10_saved_tensors_recompute_and_runtime_abi]]
+- 下一篇：[[saved_tensors_recompute_and_runtime_abi_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
 - [[graph_normalization_decomposition_and_functionalization_analysis]]
-- [[10_saved_tensors_recompute_and_runtime_abi]]
+- [[saved_tensors_recompute_and_runtime_abi_analysis]]
 - [[graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[02_compile_stack/02_aot_autograd/index]]
-- [[aotautograd_analysis]]
+- [[dispatch_modes_proxytensor_faketensor_analysis]] — make_fx 捕获 joint 所依赖的 ProxyTensor/FakeTensor dispatch-mode 机制

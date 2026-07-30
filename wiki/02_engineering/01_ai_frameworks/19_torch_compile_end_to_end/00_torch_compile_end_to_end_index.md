@@ -46,7 +46,7 @@ flowchart LR
 
 ## 3. 卷 A：执行模型前置基础（已并入功能页，2026-07-30）
 
-> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/tensor_impl_and_storage_analysis]] §13、[[pytorch_dispatcher_analysis]] §12、[[eval_frame_callback_and_code_cache_analysis]] §13、[[instruction_translator_and_bytecode_state_machine_analysis]] §14、[[aotautograd_analysis]] §13、[[torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
+> A01-A05 五篇回顾页(Tensor/Storage/View、operator/dispatcher/autograd、Python frame/bytecode、dispatch mode/ProxyTensor/FakeTensor、cost model)经 P4 知识库整改判重后删除：其"编译器为什么在乎"独有分析已逐字迁入对应功能页——[[01_eager_runtime/01_tensor_and_storage/tensor_impl_and_storage_analysis]] §13、[[pytorch_dispatcher_analysis]] §12、[[eval_frame_callback_and_code_cache_analysis]] §13、[[instruction_translator_and_bytecode_state_machine_analysis]] §14、[[dispatch_modes_proxytensor_faketensor_analysis]]（2026-07-30 起独立成页，原落点 `aotautograd_analysis` §13）、[[torch_compile_api_and_first_call_lifecycle_analysis]] §12、[[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16；与功能页重复的机制说明未搬运。本节的导读性重排列入 Task 10（课程页 + 索引重建）。
 
 ## 4. 卷 B：`torch.compile` API 与 TorchDynamo（已迁移至 `02_compile_stack/01_dynamo/`，2026-07-30）
 
@@ -68,8 +68,8 @@ flowchart LR
 | C06 | [[structured_outputs_higher_order_and_nested_graphs_analysis]] | 多输出、HOP 与 nested GraphModule 怎样扩展普通 DAG |
 | C07 | [[graph_capture_frontends_and_tracing_analysis]] | symbolic_trace、make_fx、Dynamo 和 export 为何产生不同图 |
 | C08 | [[graph_normalization_decomposition_and_functionalization_analysis]] | schema normalization、decomposition 和 functionalization 为何必须分层 |
-| C09 | [[09_aotautograd_joint_forward_backward_graphs]] | AOT joint graph 怎样提取为两张 fresh fw/bw Graph |
-| C10 | [[10_saved_tensors_recompute_and_runtime_abi]] | saved values、recompute 和 fw→bw runtime ABI 如何协作 |
+| C09 | [[aotautograd_joint_forward_backward_graphs_analysis]] | AOT joint graph 怎样提取为两张 fresh fw/bw Graph |
+| C10 | [[saved_tensors_recompute_and_runtime_abi_analysis]] | saved values、recompute 和 fw→bw runtime ABI 如何协作 |
 | C11 | [[graph_stage_boundaries_identity_and_provenance_analysis]] | Node identity 跨阶段断开后如何维持 provenance |
 | C12 | [[fx_graph_editing_primitives_and_invariants_analysis]] | replace、erase、copy、lint、recompile 怎样组成安全事务 |
 | C13 | [[pattern_expression_and_matcher_engine_analysis]] | PatternExpr AST、候选索引和递归 matcher 如何工作 |

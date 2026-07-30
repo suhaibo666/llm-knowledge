@@ -313,4 +313,4 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[aotautograd_and_inductor_failure_localization_analysis]]
 - [[f02_activation_checkpoint_recompute_and_compile_analysis]]
 - [[f03_ddp_compile_boundaries_and_optimizer_analysis]]
-- [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]]
+- [[aotautograd_joint_forward_backward_graphs_analysis]]

@@ -399,4 +399,4 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 - [[aot_runtime_wrappers_and_lazy_backward_compile_analysis]]
 - [[async_compile_workers_and_module_loading_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
-- [[09_aotautograd_joint_forward_backward_graphs]]
+- [[aotautograd_joint_forward_backward_graphs_analysis]]

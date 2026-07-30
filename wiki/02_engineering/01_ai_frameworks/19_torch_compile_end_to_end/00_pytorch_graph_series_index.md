@@ -82,8 +82,8 @@ flowchart LR
 |---:|---|---|
 | 07 | [[graph_capture_frontends_and_tracing_analysis]] | symbolic_trace、make_fx、Dynamo、export 为何产生不同图 |
 | 08 | [[graph_normalization_decomposition_and_functionalization_analysis]] | 捕获后为何还要规范化 |
-| 09 | [[09_aotautograd_joint_forward_backward_graphs]] | joint 如何切成独立 fw 与 bw |
-| 10 | [[10_saved_tensors_recompute_and_runtime_abi]] | 正反向之间保存、重算和传递什么 |
+| 09 | [[aotautograd_joint_forward_backward_graphs_analysis]] | joint 如何切成独立 fw 与 bw |
+| 10 | [[saved_tensors_recompute_and_runtime_abi_analysis]] | 正反向之间保存、重算和传递什么 |
 | 11 | [[graph_stage_boundaries_identity_and_provenance_analysis]] | 节点身份改变后如何跨阶段追踪 |
 
 ### Part III：安全改图、匹配、清理与验证

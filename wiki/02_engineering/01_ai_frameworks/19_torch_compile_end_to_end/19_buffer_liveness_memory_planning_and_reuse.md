@@ -1,6 +1,6 @@
 # 19 · Buffer Liveness、内存规划与复用
 
-> 前置：[[18_inductor_ir_values_loops_layouts_and_buffers]]、[[10_saved_tensors_recompute_and_runtime_abi]]
+> 前置：[[18_inductor_ir_values_loops_layouts_and_buffers]]、[[saved_tensors_recompute_and_runtime_abi_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -329,7 +329,7 @@ profiler与真实generated-kernel执行。现有fusion case也只证明Scheduler
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[10_saved_tensors_recompute_and_runtime_abi]]
+- [[saved_tensors_recompute_and_runtime_abi_analysis]]
 - [[18_inductor_ir_values_loops_layouts_and_buffers]]
 - [[20_scheduler_dependency_graph_fusion_and_ordering]]
 - [[inductor_memory_management_analysis]]

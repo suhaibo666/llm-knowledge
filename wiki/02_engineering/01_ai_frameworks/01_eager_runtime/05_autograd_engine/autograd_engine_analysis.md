@@ -460,7 +460,7 @@ flowchart LR
 
 ## 11. 与 AOTAutograd 的边界
 
-eager 引擎是「运行时、动态、Python/C++ 混跑」的反向执行器;[[aotautograd_analysis]] 描述的 AOTAutograd 则在 `torch.compile` 编译期用 `__torch_dispatch__` 一次性 trace 出前向+反向联合图,交 partitioner 切分、再交 Inductor 编译。二者共享 `Node`/`Edge`/`SavedVariable` 抽象,但 AOT 路径下反向不再走本页的 `Engine::execute` 逐 op 调度,而是执行已编译好的反向 kernel。建图所依赖的 dispatch 机制见 [[01_eager_runtime/02_dispatcher_and_device/index]],Tensor/`AutogradMeta` 的底层载体见 [[01_eager_runtime/01_tensor_and_storage/index]]。
+eager 引擎是「运行时、动态、Python/C++ 混跑」的反向执行器;[[aotautograd_joint_forward_backward_graphs_analysis]] 描述的 AOTAutograd 则在 `torch.compile` 编译期用 `__torch_dispatch__` 一次性 trace 出前向+反向联合图,交 partitioner 切分、再交 Inductor 编译（`__torch_dispatch__`/ProxyTensor/FakeTensor 分层机制见 [[dispatch_modes_proxytensor_faketensor_analysis]]）。二者共享 `Node`/`Edge`/`SavedVariable` 抽象,但 AOT 路径下反向不再走本页的 `Engine::execute` 逐 op 调度,而是执行已编译好的反向 kernel。建图所依赖的 dispatch 机制见 [[01_eager_runtime/02_dispatcher_and_device/index]],Tensor/`AutogradMeta` 的底层载体见 [[01_eager_runtime/01_tensor_and_storage/index]]。
 
 ---
 
@@ -476,6 +476,6 @@ eager 引擎是「运行时、动态、Python/C++ 混跑」的反向执行器;[[
 - [[01_eager_runtime/05_autograd_engine/index]] — 本模块概览(是什么 / 与 AOT 的区别 / 全景图)
 - [[autograd_engine_quickstart]] — API 用法、最小示例与排错命令
 - [[02_compile_stack/02_aot_autograd/index]] — 编译期 AOT 捕获前/反向联合图
-- [[aotautograd_analysis]] — AOTAutograd 源码级深析(对照本页理解 eager vs 编译)
+- [[aotautograd_joint_forward_backward_graphs_analysis]] — AOTAutograd 源码级深析(对照本页理解 eager vs 编译)
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — Dispatcher:VariableType 层在此建反向图
 - [[01_eager_runtime/01_tensor_and_storage/index]] — Tensor / AutogradMeta 的底层数据结构

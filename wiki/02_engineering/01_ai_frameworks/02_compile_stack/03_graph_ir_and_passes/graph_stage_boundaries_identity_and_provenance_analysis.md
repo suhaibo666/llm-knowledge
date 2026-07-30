@@ -1,6 +1,6 @@
 # 11 · 图阶段边界、节点身份与 Provenance
 
-> 前置：[[09_aotautograd_joint_forward_backward_graphs]]、[[10_saved_tensors_recompute_and_runtime_abi]]
+> 前置：[[aotautograd_joint_forward_backward_graphs_analysis]]、[[saved_tensors_recompute_and_runtime_abi_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -456,15 +456,15 @@ continuity:
 
 ## 学习顺序
 
-- 上一篇：[[10_saved_tensors_recompute_and_runtime_abi]]
+- 上一篇：[[saved_tensors_recompute_and_runtime_abi_analysis]]
 - 下一篇：[[fx_graph_editing_primitives_and_invariants_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
 - [[graph_capture_frontends_and_tracing_analysis]]
-- [[09_aotautograd_joint_forward_backward_graphs]]
-- [[10_saved_tensors_recompute_and_runtime_abi]]
+- [[aotautograd_joint_forward_backward_graphs_analysis]]
+- [[saved_tensors_recompute_and_runtime_abi_analysis]]
 - [[17_fx_lowering_to_inductor_ir]]
 - [[21_codegen_kernel_mapping_autotuning_and_provenance]]
 - [[02_compile_stack/07_debugging/index]]

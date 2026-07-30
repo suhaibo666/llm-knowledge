@@ -3,7 +3,7 @@
 > [!note] 页面角色与审计状态
 > **页面角色**：用户侧 activation checkpoint、Megatron-LM 重入式 checkpoint 与训练策略专题；它保留框架/API、RNG 和分布式重计算细节，不等同于 AOTAutograd partitioner 自动选择的 min-cut recompute。
 > **原始基线**：baseline-unknown（原页未固定 PyTorch 与 Megatron commit）；**当前审计基线**：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`。
-> **审计状态**：已纳入历史 manifest，但 PyTorch/Megatron 两侧 locator、代码块和版本边界尚未逐结构单元闭合，不能据页名推定为当前实现全量验证。AOT saved-value ABI 与 partition-time recompute 见 [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]]；预训练领域入口见 [[01_theory/02_pretraining/index]]。
+> **审计状态**：已纳入历史 manifest，但 PyTorch/Megatron 两侧 locator、代码块和版本边界尚未逐结构单元闭合，不能据页名推定为当前实现全量验证。AOT saved-value ABI 与 partition-time recompute 见 [[saved_tensors_recompute_and_runtime_abi_analysis]]；预训练领域入口见 [[01_theory/02_pretraining/index]]。
 
 > 从 PyTorch autograd 保存机制 → Megatron-LM CheckpointFunction 源码实现 → 选择性重计算策略 → view/cast/slice 的 ctx 特性 → 理论显存评估的完整链路分析。
 
@@ -534,11 +534,11 @@ Time →
 
 - [[02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/00_pytorch_graph_series_index]] — 当前固定基线的图编译系统化课程入口
 - [[01_theory/02_pretraining/index]] — 预训练领域索引
-- [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]] — AOTAutograd saved-value、min-cut partition 与 backward recompute 边界
+- [[saved_tensors_recompute_and_runtime_abi_analysis]] — AOTAutograd saved-value、min-cut partition 与 backward recompute 边界
 - [[torchtitan_ac_analysis]] — torchtitan/PyTorch 工程侧:非重入 `checkpoint_wrapper` 票据机制、SAC dispatch 缓存回放、显存预估(与本文 Megatron `CheckpointFunction` 重入路径互补)
 - [[megatron_recompute_analysis]] — Selective Recomputation、Fine-Grained Offloading、Checkpoint Resharding（原 Exam Q12/Q13/Q30 内容已并入此页）
 - [[mHC]] — mHC 的选择性重计算实现与 CheckpointManager 的应用
-- [[aotautograd_analysis]] — §10.1 激活检查点与重计算、§10.2 视图重放优化
+- [[saved_tensors_recompute_and_runtime_abi_analysis]] — AOTAutograd 编译期 min-cut/激活检查点、重计算与 runtime ABI（2026-07-30 起取代原 `aotautograd_analysis` §10.1 引用）
 - [[deepseek_v3_analysis]] — V3 的 RMSNorm + MLA up-projection 重计算
 - [[deepseek_v4_analysis]] — V4 的 selective recomputation 与 SWA KV 策略
 - [[deepseek_v4_cp_analysis]] — CP 场景的尾部 token 重计算策略

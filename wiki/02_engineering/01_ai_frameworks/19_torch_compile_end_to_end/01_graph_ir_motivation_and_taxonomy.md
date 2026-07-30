@@ -95,8 +95,8 @@ fresh graph、fresh placeholders 和 old→new 环境映射；该 helper 返回�
 - saved value 由 fw output + bw placeholder + runtime ABI 表达；
 - recompute 是 forward 节点被复制到 bw，不是特殊 opcode。
 
-详见 [[09_aotautograd_joint_forward_backward_graphs]] 与
-[[10_saved_tensors_recompute_and_runtime_abi]]。
+详见 [[aotautograd_joint_forward_backward_graphs_analysis]] 与
+[[saved_tensors_recompute_and_runtime_abi_analysis]]。
 
 ### 3.4 Inductor IR
 
@@ -366,7 +366,7 @@ fx_call_targets=add,relu,sum
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
 - [[fx_graph_core_data_model_analysis]]
 - [[01_eager_runtime/05_autograd_engine/index]]
-- [[09_aotautograd_joint_forward_backward_graphs]]
+- [[aotautograd_joint_forward_backward_graphs_analysis]]
 - [[17_fx_lowering_to_inductor_ir]]
 - [[20_scheduler_dependency_graph_fusion_and_ordering]]
 - [[03_runtime_graphs/index]]

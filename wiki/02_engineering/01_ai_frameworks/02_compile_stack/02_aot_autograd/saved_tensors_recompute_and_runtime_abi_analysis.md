@@ -1,6 +1,6 @@
 # 10 · Saved Values、Recompute 与正反向 Runtime ABI
 
-> 前置：[[09_aotautograd_joint_forward_backward_graphs]]
+> 前置：[[aotautograd_joint_forward_backward_graphs_analysis]]
 > 当前实现基线：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
@@ -105,6 +105,13 @@ budget控制partition cost trade-off，但例如 `0.4`不表示“保留模型�
 
 应把它理解为partition算法的相对资源约束，不是用户层物理字节百分比承诺。
 
+两个边界值有专门快速路径，不经过 knapsack 求解：`activation_memory_budget=0`直接返回
+`node_info.inputs`（只保留原始输入，倾向最大重算）；`activation_memory_budget=1`直接返回
+`solve_min_cut`的结果（不再叠加 knapsack 折中）；只有 `0`到 `1`之间的值才会用两者的
+activation size 做归一化后进 knapsack 求解
+（`torch/_functorch/partitioners.py:3471-3480`）。这一步的"边"是 partition 算法临时
+构造的 flow-network 边，不是最终 fw/bw GraphModule 的跨图边。
+
 ## 8. Recompute如何进入bw
 
 partition extraction为bw创建fresh graph/env。需要重算的joint forward nodes像普通节点一样：
@@ -178,6 +185,34 @@ optional effect/RNG state
 
 最终外层还有RuntimeWrapper恢复原pytree、mutation、alias、subclass calling convention
 （`torch/_functorch/_aot_autograd/runtime_wrappers.py:3806-3816`）。
+
+### 11.1 post-compile wrapper 链与输出别名的 handler 派发
+
+上面说的"RuntimeWrapper"不是唯一一层。post-compile 阶段按顺序叠加多个 `CompilerWrapper`
+子类，各自负责不同的 ABI 归一化职责：`RuntimeWrapper`（恢复用户可见 calling convention，
+`runtime_wrappers.py:189`）→ `AOTDispatchSubclassWrapper`（张量子类的扁平化/反扁平化，
+`runtime_wrappers.py:1406`）→ `FunctionalizedRngRuntimeWrapper`（functionalized RNG 状态
+的输入/输出接入，`runtime_wrappers.py:1212`）→ `AOTDispatchAutograd`（生成本节描述的
+`torch.autograd.Function`，`runtime_wrappers.py:3624`）。dedupe/synthetic-base 两层
+（`AOTDedupeWrapper`/`AOTSyntheticBaseWrapper`）在 capture/compile **之前**处理、
+post-compile 逆序恢复，属于更早阶段，见 [[graph_effects_alias_mutation_and_order_analysis]]。
+
+输出别名的重建按 `OutputType`（见 [[aotautograd_joint_forward_backward_graphs_analysis]]
+§2）分派到专用 handler，而不是一段大 if/else：`_HANDLER_MAP`把每种 `OutputType`映射到
+`NoopAliasHandler`/`AliasOfInputHandler`/`IsInputHandler`/`AliasOfIntermediateHandler`
+之一，`make_output_handler`按此表构造具体 handler 实例
+（`torch/_functorch/_aot_autograd/runtime_wrappers.py:320-345`）。`non_alias`/
+`unsafe_view_alias`/`custom_function_view`共用 `NoopAliasHandler`（直接返回，不需要
+view 重建）；`alias_of_intermediate`及其两个变体共用 `AliasOfIntermediateHandler`
+（需要从 saved base 重放 view）。这解释了为什么 §9.2 的 `OutputType`枚举值比表面看起来的
+"输出类型"更精细：它同时是 partition-time 分类，也是 runtime 该走哪条重建路径的 key。
+
+编译后的 forward/backward glue 本身也不是手写 Python：它由 `PySourceBuilder`按
+`ctx`/`args`/回调签名逐行生成源码再执行（例如 `_codegen_compiled_forward`拼出
+`fw_outs = _compiled_fw_(list(args)); _save_(ctx, fw_outs); return _finalize_(ctx, fw_outs)`
+这类调用序列，`torch/_functorch/_aot_autograd/runtime_wrappers.py:3215-3256`），backward
+prologue 同理生成。理解这一点后，`CompiledFunction.forward/backward`的"实现"应到生成的
+source 里找，而不是在 `runtime_wrappers.py`里找一个固定的函数体。
 
 ## 12. Saved tensor hooks
 
@@ -478,14 +513,13 @@ CUDA caching allocator 物理峰值在当前无 CUDA 环境中为 `[B]`；它只
 
 ## 学习顺序
 
-- 上一篇：[[09_aotautograd_joint_forward_backward_graphs]]
+- 上一篇：[[aotautograd_joint_forward_backward_graphs_analysis]]
 - 下一篇：[[graph_stage_boundaries_identity_and_provenance_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
-- [[09_aotautograd_joint_forward_backward_graphs]]
+- [[aotautograd_joint_forward_backward_graphs_analysis]]
 - [[19_buffer_liveness_memory_planning_and_reuse]]
 - [[graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[aot_autograd_quickstart]]
-- [[aotautograd_analysis]]

@@ -115,7 +115,7 @@ flowchart LR
 | 能否图级优化反向 | 不能——反向只是运行时一串 Tensor 调用,编译器插不进手 | 能——反向成为显式图,可做融合、重计算换显存、decomposition |
 | Python/C++ | 混跑(`PyNode` 桥接到 Python) | trace 后纯 ATen 图,functionalize 掉副作用 |
 
-一句话:**eager = 「前向边跑边记磁带,反向时 C++ 引擎重放磁带」;AOTAutograd = 「编译期把前向+反向一起 trace 成联合 FX 图、min-cut 切成两张图交给后端编译」**。后者是前者在 `torch.compile` 流水线里的**编译期对应物**,深入对照见 [[aotautograd_analysis]]。
+一句话:**eager = 「前向边跑边记磁带,反向时 C++ 引擎重放磁带」;AOTAutograd = 「编译期把前向+反向一起 trace 成联合 FX 图、min-cut 切成两张图交给后端编译」**。后者是前者在 `torch.compile` 流水线里的**编译期对应物**,深入对照见 [[aotautograd_joint_forward_backward_graphs_analysis]]。
 
 > 关系而非替代:`torch.compile` 路径下,AOTAutograd 仍**复用** eager autograd 的机制来 trace 出反向(它在 trace 期跑一遍带 autograd 的前向以采集反向),只是把结果固化成了静态图。理解 eager autograd 是理解 03 的前提。
 
@@ -144,6 +144,6 @@ flowchart LR
 - [[autograd_engine_quickstart]] — 本模块 quick start(怎么用)
 - [[autograd_engine_analysis]] — 本模块 deep dive(源码级)
 - [[02_compile_stack/02_aot_autograd/index]] — AOTAutograd:编译期反向图
-- [[aotautograd_analysis]] — AOTAutograd 深析(joint graph / partitioner)
+- [[aotautograd_joint_forward_backward_graphs_analysis]] — AOTAutograd 深析(joint graph / partitioner)
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — Dispatcher 与 Autograd key
 - [[01_eager_runtime/01_tensor_and_storage/index]] — Tensor / Storage / 版本计数

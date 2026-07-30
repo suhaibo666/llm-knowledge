@@ -172,7 +172,7 @@ checkpoint 可用 HigherOrderOperator 或 metadata 向 partitioner表达“这�
 backward graph，而不是 runtime 解释一个抽象 `recompute` Node。
 
 region 是捕获/策略表达；copied nodes 是 partitioned backward implementation。详见
-[[10_saved_tensors_recompute_and_runtime_abi]]。
+[[saved_tensors_recompute_and_runtime_abi_analysis]]。
 
 ## 9. Node 参数如何引用子图
 
@@ -431,7 +431,7 @@ Lab 分两部分：
 - [[graph_values_metadata_and_signatures_analysis]]
 - [[graph_effects_alias_mutation_and_order_analysis]]
 - [[pattern_expression_and_matcher_engine_analysis]]
-- [[09_aotautograd_joint_forward_backward_graphs]]
-- [[10_saved_tensors_recompute_and_runtime_abi]]
+- [[aotautograd_joint_forward_backward_graphs_analysis]]
+- [[saved_tensors_recompute_and_runtime_abi_analysis]]
 - [[dead_code_topology_and_effect_order_analysis]]
 - [[control_flow_capture_analysis]] — Dynamo 侧控制流捕获前端(`speculate_subgraph`、与原生 `if`/`for`/`while` 的路径分野)

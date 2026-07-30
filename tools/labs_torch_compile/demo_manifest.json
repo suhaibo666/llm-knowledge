@@ -143,7 +143,7 @@
     },
     {
       "page_id": "c09",
-      "page": "09_aotautograd_joint_forward_backward_graphs.md",
+      "page": "aotautograd_joint_forward_backward_graphs_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "aot_recompute",
@@ -151,7 +151,7 @@
     },
     {
       "page_id": "c10",
-      "page": "10_saved_tensors_recompute_and_runtime_abi.md",
+      "page": "saved_tensors_recompute_and_runtime_abi_analysis.md",
       "volume": "C",
       "script": "tools/labs_torch_compile/demo_c_graph_compiler.py",
       "case": "aot_recompute",

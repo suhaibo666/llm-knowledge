@@ -280,4 +280,4 @@ flowchart TB
 - [[inductor_autotuning_analysis]] — autotune 生命周期（获胜 config 即 TritonBundler 打包对象）
 - [[PyTorch_Inductor_Technical_Analysis]] — Inductor lowering/codegen（命中时被跳过的那段）
 - [[symbolic_shapes_guards_and_graph_reuse_analysis]] — 动态形状与 guard（§三 guard 校验的上游）
-- [[aotautograd_analysis]] — AOTAutograd 前反向切分
+- [[aotautograd_joint_forward_backward_graphs_analysis]] — AOTAutograd 前反向切分

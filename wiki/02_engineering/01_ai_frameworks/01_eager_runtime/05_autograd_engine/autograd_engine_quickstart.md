@@ -316,6 +316,6 @@ y.sum().backward()    # RuntimeError: ... modified by an inplace operation ...
 
 - [[index]] — 本模块概述:Node/Edge/AutogradMeta 全景与 DAG 三要素
 - [[autograd_engine_analysis]] — 源码级深析:建图、SavedVariable、GraphTask、多线程 Engine、AccumulateGrad、前向模式 AD
-- [[02_compile_stack/02_aot_autograd/index]] · [[aotautograd_analysis]] — 编译期 AOT 捕获前/反向联合图(对比:eager 逐 op 动态长磁带,无预捕获)
+- [[02_compile_stack/02_aot_autograd/index]] · [[aotautograd_joint_forward_backward_graphs_analysis]] — 编译期 AOT 捕获前/反向联合图(对比:eager 逐 op 动态长磁带,无预捕获)
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — 前向算子经 dispatcher 的 `VariableType` 层建反向边
 - [[01_eager_runtime/01_tensor_and_storage/index]] — Tensor/AutogradMeta/版本计数的存储底座

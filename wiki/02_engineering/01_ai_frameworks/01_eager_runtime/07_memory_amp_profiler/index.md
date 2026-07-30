@@ -35,7 +35,7 @@
 | runtime allocator | storage、block、segment、stream event | 实际allocated/reserved/active与物理峰值 | 某个FX value为何被save或fusion |
 
 对应主线分别见
-[[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]]与
+[[saved_tensors_recompute_and_runtime_abi_analysis]]与
 [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]]。排查peak时必须先说
 清是哪一层；AOT逻辑saved bytes、Scheduler静态peak和allocator snapshot不能混成同一个数。
 
@@ -117,7 +117,7 @@ flowchart TB
 - [[03_runtime_graphs/index]] — 运行时图捕获:复用本模块分配器的**图私有内存池**(`beginAllocateToPool`/`releasePool`)保证重放地址稳定
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — Dispatcher:autocast 正是作为 `Autocast*` **dispatch key** 在分发层拦截算子
 - [[01_eager_runtime/01_tensor_and_storage/index]] — `Tensor`/`Storage`/`DataPtr`:分配器交付的内存句柄(`Allocator`/`DataPtr` 抽象)与 storage 是 profiler 内存归因的统计单元
-- [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]] — AOT saved activation与recompute
+- [[saved_tensors_recompute_and_runtime_abi_analysis]] — AOT saved activation与recompute
 - [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]] — Inductor logical buffer、last-use、reuse与静态peak
 - [[01_ai_frameworks/index]] — 本域总索引
 
@@ -131,5 +131,5 @@ flowchart TB
 - [[03_runtime_graphs/index]] — CUDA / NPU Graphs(图私有内存池消费方)
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — Dispatcher 与 Autocast dispatch key
 - [[01_eager_runtime/01_tensor_and_storage/index]] — Tensor / Storage / DataPtr / Allocator 抽象
-- [[19_torch_compile_end_to_end/10_saved_tensors_recompute_and_runtime_abi]]
+- [[saved_tensors_recompute_and_runtime_abi_analysis]]
 - [[19_torch_compile_end_to_end/19_buffer_liveness_memory_planning_and_reuse]]

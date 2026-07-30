@@ -453,6 +453,8 @@ _D_PAGE_ROOTS = {
 _C_PAGE_ROOTS = {
     "c02": ("02_compile_stack", "03_graph_ir_and_passes"),
     "c04": ("02_compile_stack", "01_dynamo"),
+    "c09": ("02_compile_stack", "02_aot_autograd"),
+    "c10": ("02_compile_stack", "02_aot_autograd"),
     "c03": ("02_compile_stack", "03_graph_ir_and_passes"),
     "c05": ("02_compile_stack", "03_graph_ir_and_passes"),
     "c06": ("02_compile_stack", "03_graph_ir_and_passes"),

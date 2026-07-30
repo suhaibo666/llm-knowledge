@@ -328,6 +328,6 @@ export_range_constraints=0
 - [[fx_graph_core_data_model_analysis]]
 - [[symbolic_shapes_guards_and_graph_reuse_analysis]]
 - [[graph_normalization_decomposition_and_functionalization_analysis]]
-- [[09_aotautograd_joint_forward_backward_graphs]]
+- [[aotautograd_joint_forward_backward_graphs_analysis]]
 - [[04_export_and_distributed/01_fx_export_extensibility/index]]
 - [[02_compile_stack/01_dynamo/index]]

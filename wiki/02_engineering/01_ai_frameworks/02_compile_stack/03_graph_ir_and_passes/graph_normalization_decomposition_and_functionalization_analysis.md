@@ -389,13 +389,13 @@ artifact 位于 `tools/labs_torch_compile/artifacts/end_to_end/functional_aten.p
 ## 学习顺序
 
 - 上一篇：[[graph_capture_frontends_and_tracing_analysis]]
-- 下一篇：[[09_aotautograd_joint_forward_backward_graphs]]
+- 下一篇：[[aotautograd_joint_forward_backward_graphs_analysis]]
 
 ## Related Pages
 
 - [[19_torch_compile_end_to_end/00_pytorch_graph_series_index]]
 - [[graph_capture_frontends_and_tracing_analysis]]
 - [[graph_effects_alias_mutation_and_order_analysis]]
-- [[09_aotautograd_joint_forward_backward_graphs]]
+- [[aotautograd_joint_forward_backward_graphs_analysis]]
 - [[graph_pass_pipeline_ordering_and_fixpoint_analysis]]
 - [[decomposition_passes_guide]] — 开发者视角的姊妹页:注册 API、代码示例与验证清单(判重结论见该页页头「课程分工」)

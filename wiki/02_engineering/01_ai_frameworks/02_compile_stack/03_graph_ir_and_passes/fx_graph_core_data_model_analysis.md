@@ -49,6 +49,10 @@ Node 既表示一个操作 callsite，也代表该操作产生的值。六种普
 
 Node 的 `name` 是图内 SSA-like value 名；`target` 是被调用实体，两者不能混淆。
 
+FX 核心公开类型叫 `torch.fx.Node`；"GraphNode"通常只是泛称，并非这套 IR 的另一种基础
+节点类型（2026-07-30 从 kb-reorg P4 Task 7/8 判重过程中一份历史稿 §2.1 取回，此前未落地
+本页，因该稿已删除而在此补齐）。
+
 ### 2.3 GraphModule
 
 `GraphModule` 把 `Graph` 与 parameter/buffer/submodule/attribute root 组合成可执行
@@ -358,7 +362,7 @@ Pattern 的 `_users=1`约束通常也是 distinct user 数，不是参数出现�
   consumer→producer 反过来变成 producer→consumer；
 - **反向传播图**：AOTAutograd 对 joint graph partition 后得到的 backward
   `GraphModule`，是一张独立的 `Graph`，不与 forward 共享 Node，也不是把 forward 的
-  `users` 边"翻转"复用出来的（构造过程见 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]]）。
+  `users` 边"翻转"复用出来的（构造过程见 [[aotautograd_joint_forward_backward_graphs_analysis]]）。
 
 `users` 只回答"这张图里谁消费了这个值"；它不是、也不会成为另一张图。
 

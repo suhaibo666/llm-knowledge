@@ -6,6 +6,63 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-30：知识库结构整改 P4 Task 8 组 B（C09/C10 vs aotautograd_analysis 1460 行归一）
+
+**Type**: Move + Redundancy Merge + New Specialist Page（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 8 组 B）
+
+C09（555 行）`git mv` 为 `02_compile_stack/02_aot_autograd/aotautograd_joint_forward_backward_graphs_analysis.md`；
+C10（491 行）`git mv` 为同目录 `saved_tensors_recompute_and_runtime_abi_analysis.md`。标题保留原
+"09 ·"/"10 ·" 编号前缀（沿用 Task 5/7 惯例：文件名去前缀、标题不去）。
+
+**vs `aotautograd_analysis.md`（1460 行 = 原 1127 + Task 3 补的 §13）逐节台账**：
+
+| 节 | 判定 | 处置 |
+|---|---|---|
+| §1-§2 概览/工作流 | 与 C09 §1 自带 mermaid、页头「课程主线与本页分工」表完全重叠 | 删除，不搬运 |
+| §3 Phase1 捕获+元数据（含 §3.3 InputAliasInfo/OutputAliasInfo/OutputType dataclass 字段列表） | 用本地 pinned pytorch checkout（`e8f97c1a6e...`）核验：字段基本准确但行号漂移 140-450 行；[[graph_effects_alias_mutation_and_order_analysis]]（C05）已用相同源码位置覆盖同一组 dataclass | 删除，不重复搬运 |
+| §4/§8 functionalization 包装器链、子类解包 | 与 C05 已覆盖的 dedupe/synthetic-base wrapper 顺序重叠（C05 已引用 `runtime_wrappers.py:1586/1844` 等同一组行号） | 删除 |
+| §5 Phase3 分区与编译 | 伪代码/无精确行号，被 C09 §5-§11 的逐行验证内容全面超越 | 删除 |
+| §6 decomposition/常量折叠/DCE/pattern matching | 不属于 C09/C10 主题，分别已被 [[graph_normalization_decomposition_and_functionalization_analysis]]/`pattern_expression_and_matcher_engine_analysis`/`dead_code_topology_and_effect_order_analysis`（Task 7 新页）覆盖 | 删除 |
+| §7 Phase5 运行时包装器链 + `_HANDLER_MAP` | 核验 `AOTDedupeWrapper`/`AOTSyntheticBaseWrapper` 已被 C05 覆盖；但 post-compile 链（`RuntimeWrapper:189`/`AOTDispatchSubclassWrapper:1406`/`FunctionalizedRngRuntimeWrapper:1212`/`AOTDispatchAutograd:3624`）与 `_HANDLER_MAP`/`OutputType→Handler` 派发表（`runtime_wrappers.py:320-345`）经核验后确认未被任何现存页覆盖 | **独有，逐字改写并入 C10 新增 §11.1** |
+| §9 AOTConfig/ViewAndMutationMeta/AOTState 数据结构 | ViewAndMutationMeta 行号（446-475）与 C09 已有引用一致；AOTConfig/AOTState 字段无深层机制增量 | 删除 |
+| §10.1 激活检查点/重计算 | 与 C10 §5-§8 min-cut 内容重叠 | 删除 |
+| §10.2 视图重放优化（`gen_alias_from_base`） | 判定为 C05 alias territory，本任务范围外，暂未新落地（记为待核验缺口） | 未迁移，留 `[!todo]` 级别观察项（未写入正文，本条目记录） |
+| §10.3/§10.4 静态输入优化/AOTAutogradCache | AOTAutogradCache 已有专页 [[aotautograd_cache_analysis]] | 删除 |
+| §11.1/§11.2 输入别名/输出别名限制 | synthetic base 已被 C05 覆盖；输出别名 assert 为单行低价值 | 删除 |
+| §11.3 自定义 autograd 函数检测 | 核验：`_is_result_of_custom_autograd_fn` 现已内联（非独立函数），逻辑见 `collect_metadata_analysis.py:479-485`，其对 `OutputType.custom_function_view` 分类的影响见 `:490-497`；未被任何现存页覆盖 | **独有，改写并入 C09 新增 §17** |
+| §11.4 `aot_export` 元数据变异禁令 | 核验现行位置 `aot_autograd.py:651-657`（原引用漂移约 350 行）；未被覆盖 | **独有，并入 C09 新增 §17** |
+| §12/附录 总结、术语表、参考资料 | 通用摘要，无独有事实 | 删除 |
+| §13 ProxyTensor/FakeTensor（Task 3 从已删 A04 页迁入） | 本页此前称"未展开"；核验全部 13.1-13.11 引用行号在当前基线漂移 5-20 行内，内容仍准确 | **完整独立成页** `dispatch_modes_proxytensor_faketensor_analysis.md`，不塞进 C09（主题是 dispatch-mode 机制而非 joint 图提取本身），逐字保留 |
+
+**vs `fx_graph_construction_and_transformation_analysis.md`（269 行，Task 7 瘦身后的 AOT 残留页）**：
+§3.1（通用 Proxy/tracer 建 Node 路径）核验已被 [[fx_graph_core_data_model_analysis]] 覆盖（同引用
+`torch/fx/proxy.py:600-635`），删除；§3.2-3.4（joint 构造、partition 提取、跨图 ABI）与 C09 §2-§11
+重叠，删除；§4.1（min-cut 选择保存/重算，**计划点名"两轮审查确认为最深版本"**）核验独有事实
+`activation_memory_budget=0/1` 两个边界的快速路径行为（`partitioners.py:3471-3480`，直接读源码确认：
+`==0` 返回 `node_info.inputs`，`==1` 直接返回 `solve_min_cut` 结果不再进 knapsack）——**逐字改写并入
+C10 §7 新增段**；§4.2-4.3 与 C10 §8-§10 重叠，删除；§10「残留提醒」两条中"saved tensor 不是跨图
+Node 引用"已是 C10 §16 原文，删除；"bw 不是反向边图"与"阅读图时的四问"改写并入 C09 新增 §18；
+§11 源码导航表全部行已是正文内联引用，删除独立表格。
+
+**遗留两小项处理**：①该页原 §3.3 "有一处链接被 Task 7 规范化"——核实为历史记录性描述，指向已完成
+的 Task 7 改动，不需要额外动作，此处记录确认。②"GraphNode 非独立节点类型"一句从
+`26aeabb`（Task 6 commit，该 commit 时 fx_graph_construction 文件仍含 §2.1 全文）取回原文，逐字补入
+[[fx_graph_core_data_model_analysis]] §2.2（C02）Node 定义段末尾，标注取回来源与日期。
+
+**入链修复**：C09/C10 基名改名共影响 24 个文件的裸链接/路径限定链接（图系列两个 00 索引表格行、
+自身互指、`graph_stage_boundaries_identity_and_provenance_analysis` 前置行、`aot_autograd_quickstart`、
+`aotautograd_cache_analysis`、`memory_amp_profiler`/`activation_checkpointing_analysis` 等）；
+`aotautograd_analysis` 删除后 15 个外部文件重定向（按引用内容精确改指 C09/C10/新
+`dispatch_modes_proxytensor_faketensor_analysis` 三个目标之一，而非笼统指回同一处）；
+`fx_graph_construction_and_transformation_analysis` 删除后 2 个外部文件改指；`02_aot_autograd/index.md`
+两处表格重写；changelog 3 处历史活链接按"历史不回写"惯例降级为反引号+去向说明。
+
+**配套改动**：`demo_manifest.json` c09/c10 `page` 字段与 `test_volume_demo_contract.py` 的
+`_C_PAGE_ROOTS` 同步新增 `c09/c10 → 02_aot_autograd`。
+
+**校验**：`python tools/check_links.py`：pages 385→384（净减 1，两页删除、一页新增），broken=0；
+`pytest tools/ -q`：77 passed。
+
 ## 2026-07-30：知识库结构整改 P4 Task 8 组 A（C04 + 动态形状归一）
 
 **Type**: Move + Redundancy Merge（设计：`docs/superpowers/plans/2026-07-30-kb-reorg-p4-ai-frameworks.md` Task 8 组 A）
@@ -205,7 +262,7 @@ Related Pages 描述补充）。
   `graph.lint()`、链表 vs 普通 list 的设计动机）均已存在于 [[fx_graph_core_data_model_analysis]]
   （locator 一致或仅个位数行号漂移，判定为 drift 非新事实）。唯一未被覆盖的一句独有澄清——
   "`users` 反向邻接"与"AOTAutograd backward `GraphModule`"是两个不同概念、不要混为一谈——
-  逐字并入该页 §4「两种"反向"不要混为一谈」小节，并加一句到 [[19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs]] 的互指。原 §2 删除。
+  逐字并入该页 §4「两种"反向"不要混为一谈」小节，并加一句到 `19_torch_compile_end_to_end/09_aotautograd_joint_forward_backward_graphs`（历史活链接，该页已于 2026-07-30 移动为 [[aotautograd_joint_forward_backward_graphs_analysis]]，按"历史不回写"惯例降级为反引号）的互指。原 §2 删除。
 - **§5-§6 PatternExpr/PatternMatcherPass**：`CallFunction`/`Arg`/`KeywordArg`/`Ignored`/
   `MultiOutputPattern` 语义表、候选桶注册与逆序匹配、三类 Entry（`LoweringPatternEntry`/
   `GraphPatternEntry`/`ReplacementPatternEntry`）、pre/joint/post 阶段收尾差异，均已存在于
@@ -444,7 +501,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - a01 → [[01_eager_runtime/01_tensor_and_storage/tensor_impl_and_storage_analysis]] §13（differentiable view/DifferentiableViewMeta、mutation 状态机、复杂度记账、常见误解、view→Autograd→编译器的源码跟读）
 - a02 → [[pytorch_dispatcher_analysis]] §12（ADInplaceOrView 分层、mutation 算子 rebase 样本、Dispatcher/Autograd Edge/FX data edge 三种"边"辨析）
 - a03 → `b04_instruction_translator_and_bytecode_state_machine_analysis`（P4 Task 5 起更名为 [[instruction_translator_and_bytecode_state_machine_analysis]]） §14 + `b03_eval_frame_callback_and_code_cache_analysis`（P4 Task 5 起更名为 [[eval_frame_callback_and_code_cache_analysis]]） §13（`bytecode_transformation` 重组子系统、code object/frame/instruction 定义表、C-hook 与 ConvertFrame 边界）
-- a04 → [[aotautograd_analysis]] §13（`__torch_function__`/`__torch_dispatch__`/ProxyTensor/FakeTensor 四层分工、`track_tensor_tree`、FakeTensorMode 状态、decomposition 落点、数据相关 operator 边界）
+- a04 → `aotautograd_analysis` §13（P4 Task 8 起独立成页 [[dispatch_modes_proxytensor_faketensor_analysis]]）（`__torch_function__`/`__torch_dispatch__`/ProxyTensor/FakeTensor 四层分工、`track_tensor_tree`、FakeTensorMode 状态、decomposition 落点、数据相关 operator 边界）
 - a05 → `b01_torch_compile_api_and_first_call_lifecycle_analysis`（P4 Task 5 起更名为 [[torch_compile_api_and_first_call_lifecycle_analysis]]） §12 + [[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16（七阶段成本词汇表、cache-entry 查找与 backend handoff 源码补充；参数化成本模型/break-even/四层 cache 对照表与 e07 既有的测量方法论合并，不重复落地两处）
 
 **入链修复**：`f05`（a02/a04 引用改指 pytorch_dispatcher_analysis / aotautograd_analysis）、`b01`/`e07`/`d06`（a05 引用改指内容实际落点）；卷内 a01-a05 互链随整卷删除一并消失；`00_torch_compile_end_to_end_index.md` 的"卷 A"表按 Task 3 约定不做整体重排（留给 Task 10），仅去除失效行并加一行去向说明，避免 broken>0。
@@ -718,7 +775,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Deep Dive（按 PyTorch `ea5655fcebf` 固定基线核对 FX、AOTAutograd 与 Inductor 源码。）
 
-- **新增 [[fx_graph_construction_and_transformation_analysis]]**：统一解释 `Graph` 侵入式双向链表、`Node.args/kwargs`、`_input_nodes/users` 与查找辅助表，区分图序、依赖边和 `GraphModule.forward` 生成代码。
+- **新增 `fx_graph_construction_and_transformation_analysis`**（历史活链接，该页已于 2026-07-30 判重删除，AOT 特有内容并入 [[aotautograd_joint_forward_backward_graphs_analysis]]/[[saved_tensors_recompute_and_runtime_abi_analysis]]，FX 数据模型部分此前已并入 [[fx_graph_core_data_model_analysis]]，按"历史不回写"惯例降级为反引号）：统一解释 `Graph` 侵入式双向链表、`Node.args/kwargs`、`_input_nodes/users` 与查找辅助表，区分图序、依赖边和 `GraphModule.forward` 生成代码。
 - **补全 AOTAutograd 正反向构图**：从 joint function tracing、partition 分类与子图抽取，解释 fw 额外输出 → runtime context → bw placeholder 的跨图 ABI；明确 fw/bw 无对象级 Node 边。
 - **补全 recompute 机制**：说明 min-cut 保存/重算选择、普通 forward 节点复制进 bw，以及 backward recompute reorder 如何缩短临时值生命周期。
 - **补全 PatternMatcher、DCE 与保序**：覆盖 PatternExpr 子类的图场景、候选桶与逆序匹配、三类 PatternEntry、mutation/stream 边界、dead node 定义、稳定拓扑排序、lint/recompile 检查点。
