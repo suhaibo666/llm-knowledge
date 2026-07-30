@@ -705,8 +705,8 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **删除**：`19_torch_compile_end_to_end/a01-a05`（Tensor/Storage/View、operator/schema/dispatcher/autograd、Python frame/code object/bytecode、dispatch mode/ProxyTensor/FakeTensor、eager-capture-compile-replay 成本模型，共 1790 行）。这五篇是"执行模型前置基础回顾"，判重发现约 60-70% 内容与 `01_eager_runtime` 各功能页重复，但**逐句核查后确认每篇均有编译器视角的独有分析**（不可盲信"回顾=重复"），已逐字迁入对应功能页新增小节，不是简单删除：
 
-- a01 → [[01_eager_runtime/01_tensor_and_storage/tensor_impl_and_storage_analysis]] §13（differentiable view/DifferentiableViewMeta、mutation 状态机、复杂度记账、常见误解、view→Autograd→编译器的源码跟读）
-- a02 → [[pytorch_dispatcher_analysis]] §12（ADInplaceOrView 分层、mutation 算子 rebase 样本、Dispatcher/Autograd Edge/FX data edge 三种"边"辨析）
+- a01 → [[01_eager_runtime/01_tensor_and_storage/10_tensor_impl_and_storage_analysis]] §13（differentiable view/DifferentiableViewMeta、mutation 状态机、复杂度记账、常见误解、view→Autograd→编译器的源码跟读）
+- a02 → [[10_pytorch_dispatcher_analysis]] §12（ADInplaceOrView 分层、mutation 算子 rebase 样本、Dispatcher/Autograd Edge/FX data edge 三种"边"辨析）
 - a03 → `b04_instruction_translator_and_bytecode_state_machine_analysis`（P4 Task 5 起更名为 [[instruction_translator_and_bytecode_state_machine_analysis]]） §14 + `b03_eval_frame_callback_and_code_cache_analysis`（P4 Task 5 起更名为 [[eval_frame_callback_and_code_cache_analysis]]） §13（`bytecode_transformation` 重组子系统、code object/frame/instruction 定义表、C-hook 与 ConvertFrame 边界）
 - a04 → `aotautograd_analysis` §13（P4 Task 8 起独立成页 [[dispatch_modes_proxytensor_faketensor_analysis]]）（`__torch_function__`/`__torch_dispatch__`/ProxyTensor/FakeTensor 四层分工、`track_tensor_tree`、FakeTensorMode 状态、decomposition 落点、数据相关 operator 边界）
 - a05 → `b01_torch_compile_api_and_first_call_lifecycle_analysis`（P4 Task 5 起更名为 [[torch_compile_api_and_first_call_lifecycle_analysis]]） §12 + [[compile_latency_cache_and_steady_state_performance_analysis]] §12-§16（七阶段成本词汇表、cache-entry 查找与 backend handoff 源码补充；参数化成本模型/break-even/四层 cache 对照表与 e07 既有的测量方法论合并，不重复落地两处）
@@ -1145,7 +1145,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 ---
 
-## 2026-07-15: 新增 [[torch_npu_upstream_adaptation_analysis]] — Ascend out-of-tree 适配与 PyTorch upstream 差异全景
+## 2026-07-15: 新增 [[21_torch_npu_upstream_adaptation_analysis]] — Ascend out-of-tree 适配与 PyTorch upstream 差异全景
 
 **Type**: Ingest / codebase comparison（应用户“结合工作区 torch_npu 和 PyTorch 源码梳理 Ascend 适配主要点与上游差异”。基线：`torch_npu v2.7.1@b3c8a815`、其记录的 `op-plugin@6ef73e399`、PyTorch `main@2b460d01`，均按本地源码逐点核实行号）
 
@@ -1153,7 +1153,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **口径订正**：旧页“Ascend 三路径 vs 社区统一 Triton”已加 `[!deprecated]`；当前 upstream CUDA/XPU 也采用 combined scheduling 混合多 codegen，差异应看公开注册接口与私有 patch 的边界。
 - **upstream 新方向**：核实 AcceleratorHooks/`torch.accelerator`、实验性 Python PrivateUse1 hooks/guard、Inductor custom pass/config 与 device-module 自动 codegen 注册、`CUDAGraphPolicy`、distributed backend entry point、OpenReg 可执行规格；据此给出 P0-P2 收敛路线。
 - **现场约束**：torch_npu 严格 pin PyTorch 2.7.1，而对照为 upstream main，页内明确区分版本差异与硬件差异；op-plugin 工作树未停在 gitlink commit，正文只引用 git 对象中可核验的记录版本配置。
-- **联动**：更新 `01_dispatcher_and_device/index`、AI framework 总索引；为 [[privateuse1_device_integration_analysis]] 增反链；[[npu_compile_paths_overview]] 增过时口径提示与反链。
+- **联动**：更新 `01_dispatcher_and_device/index`、AI framework 总索引；为 [[11_privateuse1_device_integration_analysis]] 增反链；[[npu_compile_paths_overview]] 增过时口径提示与反链。
 
 ---
 

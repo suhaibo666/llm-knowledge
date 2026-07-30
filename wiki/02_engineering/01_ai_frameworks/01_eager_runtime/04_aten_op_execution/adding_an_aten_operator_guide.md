@@ -219,7 +219,7 @@ functionalization 依赖「functional / inplace / out」变体集完整。用 `a
 
 > 这些文件在源码 checkout 里不存在,只有完整构建后才会出现在 `build/aten/src/ATen/` 下。要找某算子最终注册到哪、生成了什么 `m.impl(...)`,构建后在对应 `Register*.cpp` 里搜算子名即可。codegen 入口与可用键清单都在 `torchgen/gen.py`(`README.md:311-312`)。
 
-设备特化的实战(如 NPU 的逐后端 kernel)见 [[01_eager_runtime/03_op_registration/index]];运行时按 key 路由的机制见 [[01_eager_runtime/02_dispatcher_and_device/index]] 与 [[pytorch_dispatcher_analysis]]。
+设备特化的实战(如 NPU 的逐后端 kernel)见 [[01_eager_runtime/03_op_registration/index]];运行时按 key 路由的机制见 [[01_eager_runtime/02_dispatcher_and_device/index]] 与 [[10_pytorch_dispatcher_analysis]]。
 
 ---
 
@@ -268,7 +268,7 @@ print(dispatcher.dispatchTable())   # 打印:每个后端最终落到哪个 kern
 - [[index]] — 本模块 overview:ATen 算子定义与执行 端到端生命周期
 - [[aten_codegen_and_structured_kernels_analysis]] — 本模块 deepdive:torchgen AST 不变式、分发表优先级计算、结构化 meta/impl、boxing/unboxing
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — 运行时 Dispatcher 按 DispatchKey 路由
-- [[pytorch_dispatcher_analysis]] — 分发器、alias 键、fallback 的设计与实现
+- [[10_pytorch_dispatcher_analysis]] — 分发器、alias 键、fallback 的设计与实现
 - [[01_eager_runtime/03_op_registration/index]] — `TORCH_LIBRARY` / `m.def` / `m.impl` 实操与设备特化注册
 - [[01_eager_runtime/01_tensor_and_storage/index]] — Tensor/Storage 内部结构(算子操作的对象)
 - [[02_compile_stack/02_aot_autograd/index]] — autograd / functionalization 如何消费这些算子定义

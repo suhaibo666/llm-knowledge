@@ -55,7 +55,7 @@ class NPUCombinedScheduling(CUDACombinedScheduling):
 
 ### 2.2 三条编译路径 vs 社区的统一 Triton 路径
 
-> [!deprecated] Updated by [[torch_npu_upstream_adaptation_analysis]]
+> [!deprecated] Updated by [[21_torch_npu_upstream_adaptation_analysis]]
 > “社区统一 Triton 路径”是较早版本口径。2026-07-15 的 upstream `main` 中，CUDA/XPU 也已通过 combined scheduling 混合 Triton、CUTLASS、CuteDSL、C++ 等 codegen；当前核心差异应改看“公开 scheduling/wrapper/policy 接口”与“直接 patch 私有实现”的边界。本节保留原文作为 v2.7.1 时点记录。
 
 NPU 的 Inductor 有三条互斥路径，由 `TORCHINDUCTOR_NPU_BACKEND` 控制：
@@ -449,7 +449,7 @@ GPU 几乎所有标准 aten op 都有 Triton lowering，dynamic shape 可端到�
 ## Related Pages
 
 - [[npu_vs_upstream_fusion_passes]] —— torch_npu vs 上游融合 Pass 全流程对照（本页 §2 差异的 pass 级逐条展开；订正本页 §2.5 `patch_pattern_mm_plus_mm` 与 §2.3 fallback 计数旧口径）
-- [[torch_npu_upstream_adaptation_analysis]] —— 跨 eager/compile/graph/distributed 的 upstream 对照与补丁债分类，并订正“社区统一 Triton”旧口径
+- [[21_torch_npu_upstream_adaptation_analysis]] —— 跨 eager/compile/graph/distributed 的 upstream 对照与补丁债分类，并订正“社区统一 Triton”旧口径
 - [[npu_inductor_splittiling_backend_analysis]] — Triton/Inductor default 路径深度分析（本文的三条路径之一）
 - [[NPU_MLIR_Backend_Technical_Analysis]] — MLIR 路径深度分析（本文的三条路径之一；含六阶段适配全景）
 - [[aclgraph_deep_analysis]] — ACLGraph 路径深度分析（本文的三条路径之一）

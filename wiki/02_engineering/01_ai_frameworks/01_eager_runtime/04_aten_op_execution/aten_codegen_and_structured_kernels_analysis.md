@@ -6,7 +6,7 @@
 
 本页是模块「ATen 算子定义与执行」的深潜页,面向已读过 [[01_eager_runtime/04_aten_op_execution/index]] 端到端生命周期、想看到源码级机理的读者。我们沿着**声明期(torchgen 解析 + 不变式)→ emit 期(注册样板与结构化签名)→ 运行期(Dispatcher 计算分发表 + boxing/unboxing 调用)** 三段,逐机制回答「做什么 / 为什么这么设计 / 怎么实现」,并对每个论断给出 `相对路径:行号`(相对 `E:\97-codes\pytorch\pytorch` 根)。
 
-声明式入口与最小用法在 [[adding_an_aten_operator_guide]];运行时分发器的整体路由在 [[01_eager_runtime/02_dispatcher_and_device/index]] 与 [[pytorch_dispatcher_analysis]];本页只聚焦「算子如何被定义、如何被翻译成 kernel 表条目、运行时如何被选中」这条主线。
+声明式入口与最小用法在 [[adding_an_aten_operator_guide]];运行时分发器的整体路由在 [[01_eager_runtime/02_dispatcher_and_device/index]] 与 [[10_pytorch_dispatcher_analysis]];本页只聚焦「算子如何被定义、如何被翻译成 kernel 表条目、运行时如何被选中」这条主线。
 
 ---
 
@@ -263,7 +263,7 @@ sequenceDiagram
 - [[01_eager_runtime/04_aten_op_execution/index]] —— 本模块 overview:ATen 算子端到端生命周期与全景图
 - [[adding_an_aten_operator_guide]] —— 本模块 quickstart:如何声明/查表/验证一个 ATen 算子
 - [[01_eager_runtime/02_dispatcher_and_device/index]] —— 分发器与设备路由总览
-- [[pytorch_dispatcher_analysis]] —— DispatchKeySet 与运行时路由深析
+- [[10_pytorch_dispatcher_analysis]] —— DispatchKeySet 与运行时路由深析
 - [[01_eager_runtime/03_op_registration/index]] —— 算子注册(含外部后端 / NPU 特化)
 - [[01_eager_runtime/01_tensor_and_storage/index]] —— Tensor/Storage 内部表示(结构化内核写入的对象)
 - [[02_compile_stack/02_aot_autograd/index]] —— functionalization 与 AOTAutograd 如何消费变体/变异标注

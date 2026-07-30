@@ -107,7 +107,7 @@ flowchart TD
 - [[adding_an_aten_operator_guide]] — 本模块 quickstart
 - [[aten_codegen_and_structured_kernels_analysis]] — 本模块 deepdive
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — 运行时路由
-- [[pytorch_dispatcher_analysis]] — Dispatcher 优先级/redispatch/boxed-unboxed 深析
+- [[10_pytorch_dispatcher_analysis]] — Dispatcher 优先级/redispatch/boxed-unboxed 深析
 - [[01_eager_runtime/03_op_registration/index]] — NPU 算子注册特化实例
 - [[01_eager_runtime/01_tensor_and_storage/index]] — Tensor/Storage 内部表示
 - [[02_compile_stack/02_aot_autograd/index]] — functionalization 与变体集下游

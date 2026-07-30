@@ -91,16 +91,18 @@ flowchart TD
 
 ## 二、页面列表(按层次)
 
+> **段位与阅读顺序**(kb-reorg P4 Task 9.5,2026-07-30):文件名两位数字前缀 = 段位,段 0(01-09)入门导览、段 1(10-19)核心机制。本目录仅 2 篇,一篇一段,无超容/占位。
+
 | 页面 | 层次 | 核心主题 |
 |------|------|---------|
-| [[tensor_internals_quickstart]] | **quick start** | 怎么"看穿"一个张量:从 Python 读 `sizes()`/`strides()`/`storage_offset()`/`is_contiguous()`/`dtype`/`device`(访问器 `TensorImpl.h:615/783/749/856/1731/1293`);用 `.untyped_storage().data_ptr()` 验证视图共享数据;`MemoryFormat` 枚举易错点(`Contiguous=0, Preserve=1`,`torch/headeronly/core/MemoryFormat.h:29-35`);`TensorOptions` → dispatch key(`c10/core/TensorOptions.h:136/447`);dtype 的 `TypeMeta ↔ ScalarType` 桥接 |
-| [[tensor_impl_and_storage_analysis]] | deep dive | `TensorImpl` 字段与位域全景、`SizesAndStrides` 紧凑存储、访问器 fastpath/policy 机制、contiguity 缓存与 memory-format 推断、视图/`shallow_copy`/版本计数共享、`DispatchKeySet`(functionality 位 vs backend 位、为何取并派发)、`SymInt` 符号形状、`AutogradMeta` 解耦与惰性初始化、`PyObjectSlot`/intrusive 引用计数与 PyObject 保活、未初始化态与 `UndefinedTensorImpl` 单例 |
+| [[01_tensor_internals_quickstart]] | **quick start**(段 0) | 怎么"看穿"一个张量:从 Python 读 `sizes()`/`strides()`/`storage_offset()`/`is_contiguous()`/`dtype`/`device`(访问器 `TensorImpl.h:615/783/749/856/1731/1293`);用 `.untyped_storage().data_ptr()` 验证视图共享数据;`MemoryFormat` 枚举易错点(`Contiguous=0, Preserve=1`,`torch/headeronly/core/MemoryFormat.h:29-35`);`TensorOptions` → dispatch key(`c10/core/TensorOptions.h:136/447`);dtype 的 `TypeMeta ↔ ScalarType` 桥接 |
+| [[10_tensor_impl_and_storage_analysis]] | deep dive(段 1) | `TensorImpl` 字段与位域全景、`SizesAndStrides` 紧凑存储、访问器 fastpath/policy 机制、contiguity 缓存与 memory-format 推断、视图/`shallow_copy`/版本计数共享、`DispatchKeySet`(functionality 位 vs backend 位、为何取并派发)、`SymInt` 符号形状、`AutogradMeta` 解耦与惰性初始化、`PyObjectSlot`/intrusive 引用计数与 PyObject 保活、未初始化态与 `UndefinedTensorImpl` 单例 |
 
 ---
 
 ## 三、关联域
 
-- [[01_eager_runtime/02_dispatcher_and_device/index]] —— dispatcher 如何消费 `TensorImpl::key_set_`;`TensorOptions::computeDispatchKey` 如何把 dtype/layout/device 归一化为 backend key。深析见 [[pytorch_dispatcher_analysis]]。
+- [[01_eager_runtime/02_dispatcher_and_device/index]] —— dispatcher 如何消费 `TensorImpl::key_set_`;`TensorOptions::computeDispatchKey` 如何把 dtype/layout/device 归一化为 backend key。深析见 [[10_pytorch_dispatcher_analysis]]。
 - [[01_eager_runtime/05_autograd_engine/index]] —— `autograd_meta_` 与 `version_counter_` 如何支撑反向图与原地修改检测;为何版本计数放在 `TensorImpl` 而非 `AutogradMeta`。
 - [[02_compile_stack/02_aot_autograd/index]] —— `SymInt` 符号形状(`has_symbolic_sizes_strides_`)在 export / AOTAutograd 动态形状下的角色。
 - [[01_eager_runtime/03_op_registration/index]] —— 算子注册的供给侧:算子最终读写的正是本层的 `sizes`/`strides`/`storage`。
@@ -110,10 +112,10 @@ flowchart TD
 
 ## Related Pages
 
-- [[tensor_internals_quickstart]]
-- [[tensor_impl_and_storage_analysis]]
+- [[01_tensor_internals_quickstart]]
+- [[10_tensor_impl_and_storage_analysis]]
 - [[01_eager_runtime/02_dispatcher_and_device/index]]
-- [[pytorch_dispatcher_analysis]]
+- [[10_pytorch_dispatcher_analysis]]
 - [[02_compile_stack/02_aot_autograd/index]]
 - [[01_eager_runtime/03_op_registration/index]]
 - [[01_eager_runtime/05_autograd_engine/index]]

@@ -1,6 +1,6 @@
 # 03 · 算子接入(算子供给侧)— 目录索引
 
-> 算子如何从定义进入 PyTorch dispatcher 并最终「入图」。通用注册机制(`TORCH_LIBRARY`/torchgen)见 [[pytorch_dispatcher_analysis]];**NPU 的算子供给侧(op-plugin)** 见 [[01_eager_runtime/03_op_registration/npu/index]]。
+> 算子如何从定义进入 PyTorch dispatcher 并最终「入图」。通用注册机制(`TORCH_LIBRARY`/torchgen)见 [[10_pytorch_dispatcher_analysis]];**NPU 的算子供给侧(op-plugin)** 见 [[01_eager_runtime/03_op_registration/npu/index]]。
 > 最后更新: 2026-06-13
 
 ---

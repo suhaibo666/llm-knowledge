@@ -2,7 +2,7 @@
 
 > 卷别：F · 训练、分布式、扩展与部署  
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
-> 前置：[[custom_backends_and_device_integration_analysis]]  
+> 前置：[[20_custom_backends_and_device_integration_analysis]]  
 > 后续：[[training_inference_cudagraph_and_freezing_analysis]]  
 > 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,纯平移;解答 [[backend_modes_options_stances_and_fullgraph_analysis]] §14.2 的 `use_aoti` todo)
 
@@ -285,7 +285,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 ## Related Pages
 
 - [[00_torch_compile_end_to_end_index]]
-- [[custom_backends_and_device_integration_analysis]]
+- [[20_custom_backends_and_device_integration_analysis]]
 - [[training_inference_cudagraph_and_freezing_analysis]]
 - [[02_compile_stack/06_compile_cache/index]]
 - [[compiled_artifact_lifecycle_and_runtime_failures_analysis]]

@@ -4,7 +4,7 @@
 > 核验基准:PyTorch upstream `E:\97-codes\pytorch\pytorch`(v2.13.0a0, commit 9922478)
 > 最后更新:2026-07-30(§13 并入 A01 独有的 View/Autograd/编译器视角内容)
 
-本页是 [[index]] 模块的深入页,假设你已读过 overview 的三层全景(`Tensor → TensorImpl → StorageImpl → Allocator`)与 [[tensor_internals_quickstart]] 的访问器用法。这里逐机制深入 `TensorImpl` 的字段布局、视图与浅拷贝、contiguity 缓存、`DispatchKeySet` 设计、符号形状、autograd 解耦与 PyObject 保活——每一处都对照 `c10/core` 下的真实源码。
+本页是 [[index]] 模块的深入页,假设你已读过 overview 的三层全景(`Tensor → TensorImpl → StorageImpl → Allocator`)与 [[01_tensor_internals_quickstart]] 的访问器用法。这里逐机制深入 `TensorImpl` 的字段布局、视图与浅拷贝、contiguity 缓存、`DispatchKeySet` 设计、符号形状、autograd 解耦与 PyObject 保活——每一处都对照 `c10/core` 下的真实源码。
 
 ---
 
@@ -254,7 +254,7 @@ flowchart LR
     K --> TBL["算子 dispatch table"]
 ```
 
-派发的完整故事见 [[01_eager_runtime/02_dispatcher_and_device/index]] 与 [[pytorch_dispatcher_analysis]];本层只负责给出每个张量的 `key_set_`。
+派发的完整故事见 [[01_eager_runtime/02_dispatcher_and_device/index]] 与 [[10_pytorch_dispatcher_analysis]];本层只负责给出每个张量的 `key_set_`。
 
 ---
 
@@ -564,9 +564,9 @@ effect、graph users 和 runtime ABI。
 ## Related Pages
 
 - [[index]]
-- [[tensor_internals_quickstart]]
+- [[01_tensor_internals_quickstart]]
 - [[01_eager_runtime/02_dispatcher_and_device/index]]
-- [[pytorch_dispatcher_analysis]]
+- [[10_pytorch_dispatcher_analysis]]
 - [[02_compile_stack/02_aot_autograd/index]]
 - [[01_eager_runtime/03_op_registration/index]]
 - [[01_eager_runtime/05_autograd_engine/index]]

@@ -276,7 +276,7 @@ inline DispatchKey computeDispatchKey(
 DispatchKeySet key_set_;
 ```
 
-Autograd 由独立的 functionality 位管理;dispatcher 在调用时对所有输入张量的 keyset 取并、再选最高优先级派发 —— 这套 functionality 位 vs backend 位的设计,以及为什么这样能避免「平方爆炸」,见 [[pytorch_dispatcher_analysis]]。
+Autograd 由独立的 functionality 位管理;dispatcher 在调用时对所有输入张量的 keyset 取并、再选最高优先级派发 —— 这套 functionality 位 vs backend 位的设计,以及为什么这样能避免「平方爆炸」,见 [[10_pytorch_dispatcher_analysis]]。
 
 ```mermaid
 flowchart LR
@@ -311,17 +311,17 @@ flowchart LR
 ## 8. 深入导航
 
 - [[01_eager_runtime/01_tensor_and_storage/index]] —— 本模块 overview:Tensor / TensorImpl / Storage / intrusive_ptr 全景与字段分布。
-- [[tensor_impl_and_storage_analysis]] —— deep dive:字段位域、contiguity 缓存刷新链、shallow_copy / 版本计数、SymInt、AutogradMeta 解耦、PyObject 保活等源码级展开。
-- [[pytorch_dispatcher_analysis]] —— key_set 如何被 dispatcher 取并、functionality 位 vs backend 位。
+- [[10_tensor_impl_and_storage_analysis]] —— deep dive:字段位域、contiguity 缓存刷新链、shallow_copy / 版本计数、SymInt、AutogradMeta 解耦、PyObject 保活等源码级展开。
+- [[10_pytorch_dispatcher_analysis]] —— key_set 如何被 dispatcher 取并、functionality 位 vs backend 位。
 
 ---
 
 ## Related Pages
 
 - [[01_eager_runtime/01_tensor_and_storage/index]]
-- [[tensor_impl_and_storage_analysis]]
+- [[10_tensor_impl_and_storage_analysis]]
 - [[01_eager_runtime/02_dispatcher_and_device/index]]
-- [[pytorch_dispatcher_analysis]]
+- [[10_pytorch_dispatcher_analysis]]
 - [[02_compile_stack/02_aot_autograd/index]]
 - [[01_eager_runtime/03_op_registration/index]]
 - [[01_eager_runtime/05_autograd_engine/index]]

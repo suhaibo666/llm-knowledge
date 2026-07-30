@@ -258,7 +258,7 @@ torch_npu 则维护一套只适配 PyTorch 2.7.1 的 upstream test patch，READM
 
 ## Related Pages
 
-- [[privateuse1_device_integration_analysis]] —— upstream 为 out-of-tree accelerator 提供的设备/Dispatcher 基础契约
+- [[11_privateuse1_device_integration_analysis]] —— upstream 为 out-of-tree accelerator 提供的设备/Dispatcher 基础契约
 - [[op_registration_pipeline_analysis]] —— op-plugin YAML 到 Dispatcher 注册的生成链
 - [[npu_compile_paths_overview]] —— NPU Inductor、ACLGraph 与多编译路径专题
 - [[torch_compile_architecture]] —— upstream torch.compile 端到端流水线

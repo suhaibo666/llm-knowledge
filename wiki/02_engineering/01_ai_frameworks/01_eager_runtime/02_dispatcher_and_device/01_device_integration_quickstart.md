@@ -149,8 +149,8 @@ torch._C._dispatch_kernel_for_dispatch_key_is_fallthrough("aten::add.Tensor", "P
 
 ## 4. 深入导航
 
-- [[privateuse1_device_integration_analysis]] —— deep dive:9 个接入点逐一展开(做什么/为什么/怎么做)+ torch_npu 生产实现对照
-- [[pytorch_dispatcher_analysis]] —— deep dive:Dispatcher 内部机制、PrivateUse1 key 如何被分发
+- [[11_privateuse1_device_integration_analysis]] —— deep dive:9 个接入点逐一展开(做什么/为什么/怎么做)+ torch_npu 生产实现对照
+- [[10_pytorch_dispatcher_analysis]] —— deep dive:Dispatcher 内部机制、PrivateUse1 key 如何被分发
 - [[01_eager_runtime/03_op_registration/index]] —— 算子供给侧:yaml→codegen→TORCH_LIBRARY_IMPL 注册链路
 
 ---
@@ -158,6 +158,6 @@ torch._C._dispatch_kernel_for_dispatch_key_is_fallthrough("aten::add.Tensor", "P
 ## Related Pages
 
 - [[01_ai_frameworks/index]]
-- [[privateuse1_device_integration_analysis]]
-- [[pytorch_dispatcher_analysis]]
+- [[11_privateuse1_device_integration_analysis]]
+- [[10_pytorch_dispatcher_analysis]]
 - [[01_eager_runtime/03_op_registration/index]]

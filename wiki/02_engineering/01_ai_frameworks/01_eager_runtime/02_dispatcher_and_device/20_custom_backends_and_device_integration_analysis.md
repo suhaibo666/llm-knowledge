@@ -4,16 +4,16 @@
 > 固定源码：PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`  
 > 前置：[[custom_operators_fake_kernels_and_decompositions_analysis]]  
 > 后续：[[aotinductor_packaging_and_deployment_analysis]]  
-> 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,与 [[privateuse1_device_integration_analysis]]+[[codegen_extension_guide]] 三方划界)
+> 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,与 [[11_privateuse1_device_integration_analysis]]+[[codegen_extension_guide]] 三方划界)
 
-> [!note] 三方划界:本页 vs [[privateuse1_device_integration_analysis]] vs [[codegen_extension_guide]]
+> [!note] 三方划界:本页 vs [[11_privateuse1_device_integration_analysis]] vs [[codegen_extension_guide]]
 > 三页讲的是完全不同的"设备接入"层次,容易被同一个词"device backend"混为一谈:
 >
-> - [[privateuse1_device_integration_analysis]] 讲**eager/dispatcher 层**——第三方加速器如何在完全不碰 `torch.compile` 的前提下,通过 Guard/Hooks/Operators/AMP/Autoload/Profiler/Distributed backend 九个接入点接入 PyTorch dispatcher。它通篇不涉及 Dynamo/Inductor。
+> - [[11_privateuse1_device_integration_analysis]] 讲**eager/dispatcher 层**——第三方加速器如何在完全不碰 `torch.compile` 的前提下,通过 Guard/Hooks/Operators/AMP/Autoload/Profiler/Distributed backend 九个接入点接入 PyTorch dispatcher。它通篇不涉及 Dynamo/Inductor。
 > - 本页讲**编译栈的三层 backend 契约**——Dynamo backend(接收 FX GraphModule、可完全绕过 Inductor)、Inductor device backend(scheduler/codegen/wrapper)、dispatcher/custom op backend(单算子)如何分层且可独立组合,以及 §4 `DeviceInterface` 这个 Inductor 用来设备无关地查询 runtime(event/stream/device)的抽象——这两点(三层划分、`DeviceInterface`)是另外两页都未覆盖的内容。
 > - [[codegen_extension_guide]] 是 Inductor device backend **怎么注册**的实操指南(`register_backend_for_device`/`DeviceOpOverrides`/`BackendFeature` 的具体调用、代码样例、验证清单),与本页 §5/§6/§8 在"注册什么"上有真实重叠——重叠部分已收缩为指向该页,本页只保留该指南未覆盖的框架性判断(三层 backend 如何组合、`DeviceInterface` 与 wrapper codegen 的层次区别、cache/ABI 与测试梯度)。
 >
-> 阅读顺序:先读 [[privateuse1_device_integration_analysis]] 理解设备怎样先接入 dispatcher(前提),再读本页理解 `torch.compile` 的三层 backend 契约怎样架在其上,细节实操翻 [[codegen_extension_guide]]。
+> 阅读顺序:先读 [[11_privateuse1_device_integration_analysis]] 理解设备怎样先接入 dispatcher(前提),再读本页理解 `torch.compile` 的三层 backend 契约怎样架在其上,细节实操翻 [[codegen_extension_guide]]。
 
 ## 1. 三种“backend”不要混为一层
 
@@ -236,7 +236,7 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 
 - [[00_torch_compile_end_to_end_index]]
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — 本模块 overview
-- [[privateuse1_device_integration_analysis]] — 更底层的 eager/dispatcher 设备接入,见页头三方划界
+- [[11_privateuse1_device_integration_analysis]] — 更底层的 eager/dispatcher 设备接入,见页头三方划界
 - [[codegen_extension_guide]] — Inductor device backend 注册的实操指南,见页头三方划界
 - [[backend_contract_and_custom_backend_analysis]]
 - [[custom_operators_fake_kernels_and_decompositions_analysis]]
