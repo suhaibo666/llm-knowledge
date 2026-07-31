@@ -1,7 +1,7 @@
 # 数据并行 DP — 原理解读
 
 > 层次：原理（principle）· 引擎无关
-> 前置：[[collectives_analysis]]（all-reduce 的代价模型）
+> 前置：[[10_collectives_analysis]]（all-reduce 的代价模型）
 > 实现见 [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]]（`DistributedDataParallel` 源码级机制）
 > 最后更新：2026-07-01
 
@@ -9,7 +9,7 @@
 
 ## 罗盘：一句话定位
 
-**数据并行（Data Parallelism, DP）＝ 每张卡放一份完整模型，各自吃一部分数据，反向时把梯度 all-reduce 求平均。** 它是最简单、最先该上的并行：模型结构一动不动，只是把一个大 batch 切成 $N$ 份分给 $N$ 卡并行算，再把梯度对一遍答案。它扩展性极好（通信量与卡数几乎无关，见下），**但一分显存都不省**——每卡都扛着完整的参数、梯度、优化器态。这条局限直接催生了 ZeRO（见 [[zero_fsdp_analysis]]）。
+**数据并行（Data Parallelism, DP）＝ 每张卡放一份完整模型，各自吃一部分数据，反向时把梯度 all-reduce 求平均。** 它是最简单、最先该上的并行：模型结构一动不动，只是把一个大 batch 切成 $N$ 份分给 $N$ 卡并行算，再把梯度对一遍答案。它扩展性极好（通信量与卡数几乎无关，见下），**但一分显存都不省**——每卡都扛着完整的参数、梯度、优化器态。这条局限直接催生了 ZeRO（见 [[12_zero_fsdp_analysis]]）。
 
 ---
 
@@ -42,7 +42,7 @@ $$g = \frac{1}{N}\sum_{r=0}^{N-1} \underbrace{\Big(\frac{N}{B}\sum_{i\in \text{s
 
 ## 代价：通信与参数量挂钩，与 batch 无关
 
-**通信量**：一次 all-reduce 规约的是整份梯度，大小 $\propto \Psi$（参数量）。用 [[collectives_analysis]] 的 ring 结论，每卡每步搬运：
+**通信量**：一次 all-reduce 规约的是整份梯度，大小 $\propto \Psi$（参数量）。用 [[10_collectives_analysis]] 的 ring 结论，每卡每步搬运：
 
 $$V_{\text{DP}} \approx 2\cdot\frac{N-1}{N}\cdot \Psi \cdot b \;\xrightarrow{N\text{ 大}}\; 2\Psi b \quad(b=\text{每参数字节})$$
 
@@ -66,7 +66,7 @@ DP 复制的是**整个模型状态**。以混合精度 Adam 训练、参数量 
 | 优化器态（fp32：参数副本 + m + v） | $12\Psi$ | Adam 三份 fp32 |
 | **合计（不含激活）** | $\mathbf{16\Psi}$ | **每卡都是这么多，$N$ 卡冗余 $N$ 份** |
 
-一个 7.5B 模型光模型状态就 120GB，单卡放不下——**DP 完全帮不上忙，因为它把这 $16\Psi$ 在每张卡上复制了一遍。** 这就是 DP 的天花板，也是 [[zero_fsdp_analysis]] 的出发点：既然这 $16\Psi$ 在 $N$ 卡间完全冗余，为什么不把它**切开**、每卡只存 $1/N$？
+一个 7.5B 模型光模型状态就 120GB，单卡放不下——**DP 完全帮不上忙，因为它把这 $16\Psi$ 在每张卡上复制了一遍。** 这就是 DP 的天花板，也是 [[12_zero_fsdp_analysis]] 的出发点：既然这 $16\Psi$ 在 $N$ 卡间完全冗余，为什么不把它**切开**、每卡只存 $1/N$？
 
 > **一句话对照**：DP 省的是**时间**（并行算数据），费的是**显存**（复制模型）；ZeRO 在 DP 基础上，用**额外一点通信**把这份显存也省了。二者是同一根「数据轴」上的两个点。
 
@@ -88,9 +88,9 @@ DP 复制的是**整个模型状态**。以混合精度 Adam 训练、参数量 
 
 ## Related Pages
 
-- [[collectives_analysis]] — all-reduce 的 ring 代价模型（本页通信量的来源）
-- [[zero_fsdp_analysis]] — **直接续篇**：把 DP 复制的 $16\Psi$ 状态切开，同一数据轴的省显存版
-- [[tensor_sequence_parallel_analysis]] — TP：当单份模型都放不下时，切模型本身
-- [[pipeline_parallel_analysis]] — PP：另一条「切模型」的路
+- [[10_collectives_analysis]] — all-reduce 的 ring 代价模型（本页通信量的来源）
+- [[12_zero_fsdp_analysis]] — **直接续篇**：把 DP 复制的 $16\Psi$ 状态切开，同一数据轴的省显存版
+- [[13_tensor_sequence_parallel_analysis]] — TP：当单份模型都放不下时，切模型本身
+- [[15_pipeline_parallel_analysis]] — PP：另一条「切模型」的路
 - [[index]] — N 维并行里 DP 通常是最外层维度
 - [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：`DistributedDataParallel` 的 `Reducer` 分桶与反向 all-reduce 重叠

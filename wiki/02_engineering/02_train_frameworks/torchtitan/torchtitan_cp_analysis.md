@@ -3,7 +3,7 @@
 > **代码基准**:torchtitan `main` @ `cf3c4312` · PyTorch CP 内核(版本差异见下方"版本说明")
 > **最后更新**:2026-07-31 · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
 >
-> **划界声明**:CP 通用机制(为什么要切序列、折叠/头尾负载均衡的数学证明、因果块裁剪、Ring 主循环 + online-softmax、通信掩盖原理、通信量代数)已归一到 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]]——事实上,本文的 Ring 主循环伪代码、负载均衡量化算例、通信掩盖时序图正是该理论页对应章节的骨架来源。**本页只保留 torchtitan/PyTorch CP 的框架实现差异**:trainer/parallelize 接入点、SDPA-ring 与 FlexAttention-allgather 两条路径的取舍(torchtitan 独有的双路径架构)、DTensor dispatcher 接线、以及"不手写 CUDA stream、靠 functional collectives 实现异步"这一 PyTorch 特有的工程选择。
+> **划界声明**:CP 通用机制(为什么要切序列、折叠/头尾负载均衡的数学证明、因果块裁剪、Ring 主循环 + online-softmax、通信掩盖原理、通信量代数)已归一到 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]——事实上,本文的 Ring 主循环伪代码、负载均衡量化算例、通信掩盖时序图正是该理论页对应章节的骨架来源。**本页只保留 torchtitan/PyTorch CP 的框架实现差异**:trainer/parallelize 接入点、SDPA-ring 与 FlexAttention-allgather 两条路径的取舍(torchtitan 独有的双路径架构)、DTensor dispatcher 接线、以及"不手写 CUDA stream、靠 functional collectives 实现异步"这一 PyTorch 特有的工程选择。
 >
 > 行号约定:torchtitan 以 `torchtitan/` 为根;PyTorch CP 实现以 `[pt]` 前缀。
 
@@ -169,11 +169,11 @@ Ring 主循环、online-softmax、通信掩盖、反向双环 —— 见理论�
 - **`BlockMask` 独立切分**:`attention_masks` 走 `seq_dim=2`,与 `inputs/labels/positions` 的 `seq_dim=1` 不同(§2)。
 - **torchtitan 独有的双路径架构**:SDPA→ring(`Shard(2)` DTensor + `_templated_ring_attention`)与 FlexAttention→all-gather(`flex_cp_allgather` custom op)是两条完全独立的实现,按 inner attention 类型分派,四框架中仅此一家(§4)。
 - **异步靠 functional collectives,不手写 stream**:`AsyncCollectiveTensor` 延迟 `wait()` 是 PyTorch 生态特有的重叠实现路径,与 Megatron/TE 的独立 `cp_stream`、MindSpeed 的 `isend`/`irecv` 并列为三种不同的异步落地方式(§7)。
-- **通用机制**(为什么切序列、折叠/头尾负载均衡、因果裁剪、Ring 主循环+online-softmax、通信掩盖原理、反向双环)见 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]]。
+- **通用机制**(为什么切序列、折叠/头尾负载均衡、因果裁剪、Ring 主循环+online-softmax、通信掩盖原理、反向双环)见 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]。
 
 ## Related Pages
 
-- [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]] —— CP/Ring Attention 通用机制(本页多节的骨架来源页)
+- [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]] —— CP/Ring Attention 通用机制(本页多节的骨架来源页)
 - [[torchtitan/index]] · [[torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
 - [[torchtitan_tp_analysis]] · [[torchtitan_pp_analysis]] —— 相邻并行维度
 - [[megatron_cp_analysis]] —— Megatron-LM 上下文并行实现差异(`cp_comm_type` 四选一 + TE 透传)

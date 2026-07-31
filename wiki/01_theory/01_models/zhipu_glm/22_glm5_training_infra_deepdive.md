@@ -53,7 +53,7 @@ GLM-5 的训练基础设施围绕一个现实约束：模型翻倍到 **744B 总
 
 **效果**：消除冗余通信，并**显著降低 optimizer 相关的峰值显存**（§2.4.1, p9）。
 
-**为什么 Muon 特别需要这件事**：Muon 的更新要对权重矩阵做正交化（Newton–Schulz 迭代），是**矩阵级**而非逐元素操作，因此朴素分布式实现倾向于"先把整块参数 all-gather 回来再算"，这正是峰值尖刺与冗余通信的根源。把 all-gather 收缩到自有分片、并用 overlap 把通信藏进本地计算，就把 Muon 的分布式代价压到与普通 ZeRO 优化器相当。Muon / Muon Split 的优化器原理见 [[muon_analysis]]，它在 GLM-5 架构里的作用见 [[20_glm5_architecture_deepdive]]。
+**为什么 Muon 特别需要这件事**：Muon 的更新要对权重矩阵做正交化（Newton–Schulz 迭代），是**矩阵级**而非逐元素操作，因此朴素分布式实现倾向于"先把整块参数 all-gather 回来再算"，这正是峰值尖刺与冗余通信的根源。把 all-gather 收缩到自有分片、并用 overlap 把通信藏进本地计算，就把 Muon 的分布式代价压到与普通 ZeRO 优化器相当。Muon / Muon Split 的优化器原理见 [[11_muon_analysis]]，它在 GLM-5 架构里的作用见 [[20_glm5_architecture_deepdive]]。
 
 ### 2.4 ④ Pipeline 激活 offload —— 把 warmup 期的长寿命激活搬到 host
 
@@ -127,6 +127,6 @@ GLM-5 的训练基础设施围绕一个现实约束：模型翻倍到 **744B 总
 - [[26_glm5_low_precision_chip_deepdive]] — INT4 QAT / FP8 / W4A8 / 国产芯片（§2.4.3 归属此页）
 
 **相邻主题**：
-- [[muon_analysis]] — Muon 优化器原理（②③ 中 Muon 分布式优化器的基础）
+- [[11_muon_analysis]] — Muon 优化器原理（②③ 中 Muon 分布式优化器的基础）
 - [[megatron_ep_analysis]] — 流水线并行 / 专家并行（梯度 overlap、wgrad 解耦、层级 all-to-all 的同源实现）
 - [[zhipu_glm/index]] — GLM 家族总览

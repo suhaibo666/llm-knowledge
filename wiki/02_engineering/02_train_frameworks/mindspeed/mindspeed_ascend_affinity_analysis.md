@@ -633,7 +633,7 @@ for i, param in enumerate(var):
 ### 8.2 低精度优化器 / Muon / QAT
 
 - **低精度优化器**(`--quant-states {fp8,hif8,mxfp8}` / `--quant-grads`,O0):把优化器状态 / 梯度量化存储,补丁覆盖 `MixedPrecisionOptimizer.{prepare_grads,step,...}`;属"内存×亲和"交叉,内存视角见 [[mindspeed_memory_optimization_analysis]]。
-- **Muon**(`--optimizer muon`,O0):把 Muon(对动量做 Newton-Schulz 正交化的矩阵更新)反向移植到 Megatron 0.12.x(`muon_optimizer_feature.py:30-32`)。NS 旋钮:`--muon-num-ns-steps`(默认 5,`:77-82`)、`--muon-scale-mode {spectral,unit_rms_norm,shape_scaling}`(`:57-63`)、`--muon-tp-mode {blockwise,duplicated,distributed}`(决定 TP 切分权重如何做 NS,`:83-89`)、`--muon-fp32-matmul-prec`(`:64-70`);非矩阵参数回退 `--muon-scalar-optimizer {adam,lion}`(`:96-102`)。NS 迭代是纯 matmul,跑在 NPU Cube 核上;算法本身见 [[muon_analysis]]。
+- **Muon**(`--optimizer muon`,O0):把 Muon(对动量做 Newton-Schulz 正交化的矩阵更新)反向移植到 Megatron 0.12.x(`muon_optimizer_feature.py:30-32`)。NS 旋钮:`--muon-num-ns-steps`(默认 5,`:77-82`)、`--muon-scale-mode {spectral,unit_rms_norm,shape_scaling}`(`:57-63`)、`--muon-tp-mode {blockwise,duplicated,distributed}`(决定 TP 切分权重如何做 NS,`:83-89`)、`--muon-fp32-matmul-prec`(`:64-70`);非矩阵参数回退 `--muon-scalar-optimizer {adam,lion}`(`:96-102`)。NS 迭代是纯 matmul,跑在 NPU Cube 核上;算法本身见 [[11_muon_analysis]]。
 - **QAT**(`--qat-scheme {w4a16-mxfp4,w8a16-mxfp8,...}`,O2):量化感知训练,把 `LinearWithGradAccumulationAndAsyncCommunication.forward/backward` 换成量化线性核;要求至少开 `gradient-accumulation-fusion` / `async-tp-allreduce` / `sequence-parallel` 之一才接管,否则仅告警。
 
 ---
@@ -659,5 +659,5 @@ for i, param in enumerate(var):
 - [[mindspeed_comm_overlap_analysis]] —— 通算掩盖(MC2/CoC/lcal 是"融合通信"的亲和核,与本页"融合计算"互补)
 - [[mindspeed_memory_optimization_analysis]] —— 内存优化(低精度优化器、swap-optimizer 复用本页的融合优化器核)
 - [[megatron-lm/megatron_fusion_operators_analysis]] —— 被替换前的 Megatron/NVIDIA 原生融合算子(对照阅读:同一接口,CUDA vs NPU 两套核)
-- [[muon_analysis]] —— Muon 优化器(Newton-Schulz)算法原理
+- [[11_muon_analysis]] —— Muon 优化器(Newton-Schulz)算法原理
 - [[ascend_kernel_execution_model_analysis]] —— 本页 Cube/Vector、融合算子与 HCCL 优化背后的 DaVinci 执行模型

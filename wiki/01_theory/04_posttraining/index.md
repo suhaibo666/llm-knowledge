@@ -129,7 +129,7 @@
 - [[courses/posttraining_frontier]] — LLM 后训练前沿阅读课程(D01→D12 顺序索引 + 六级能力门槛)
 - [[07_training_reliability/index]] — 万卡训练确定性与可靠性（问题 2「训推数值不一致 / batch 不变性」与本域 TIM 簇直接接壤）
 - [[04_posttrain_frameworks/index]] — 后训练框架与 RL Infra（verl / sandbox / 效率）
-- [[02_pretraining/index]] — 预训练技术（优化器、低精度训练；[[low_precision_training_analysis]] 与 [[RL_Training_Inference_Precision_Analysis]] 现居此处）
+- [[02_pretraining/index]] — 预训练技术（优化器、低精度训练；[[13_low_precision_training_analysis]] 与 [[20_rl_training_inference_precision_analysis]] 现居此处）
 - [[02_train_frameworks/megatron-lm/index]] — 分布式训练基础设施
 - [[01_ai_frameworks/index]] — torch.compile 与图编译优化
 

@@ -188,4 +188,4 @@ The 67B Chat model with DPO achieves **MT-Bench 8.76**, approaching GPT-4 territ
 - [[20_deepseek_moe_analysis]] — MoE architecture details
 - [[25_mhc_analysis]] — Manifold-Constrained Hyper-Connections used in DeepSeek-V3 MoE
 - [[29_engram_analysis]] — DeepSeek Engram memory mechanism
-- [[llm_initiliaze_analysis]] — Weight initialization practices referenced in DeepSeek training
+- [[10_llm_initiliaze_analysis]] — Weight initialization practices referenced in DeepSeek training

@@ -1,7 +1,7 @@
 # 张量并行 TP / 序列并行 SP / 上下文并行 CP — 原理解读
 
 > 层次：原理（principle）· 引擎无关
-> 前置：[[collectives_analysis]]（all-reduce / all-gather / reduce-scatter 代价）
+> 前置：[[10_collectives_analysis]]（all-reduce / all-gather / reduce-scatter 代价）
 > 实现见 [[../../02_engineering/02_train_frameworks/megatron-lm/index]]（Megatron 手工 TP/SP）与 [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]]（DTensor/TP）
 > 最后更新：2026-07-01
 
@@ -87,7 +87,7 @@ Megatron 把通信抽象成两个共轭算子，插在 TP 区的入口和出口�
 
 $$\underbrace{\text{all-reduce}}_{\text{纯 TP}} \;=\; \underbrace{\text{reduce-scatter}}_{\text{TP}\to\text{SP 边界}} \;+\; \underbrace{\text{all-gather}}_{\text{SP}\to\text{TP 边界}}$$
 
-这正是 [[collectives_analysis]] 的核心恒等式在起作用。**总通信量与纯 TP 完全相同**（一次 all-reduce 的字节 = 一次 RS + 一次 AG），但换来了：**SP 区激活显存从 $B\cdot S\cdot d$ 降到 $B\cdot S\cdot d/N$**。所以 SP 是「**零额外通信换激活显存**」的白捡优化——因此实践中 **TP 几乎总是和 SP 一起开**。
+这正是 [[10_collectives_analysis]] 的核心恒等式在起作用。**总通信量与纯 TP 完全相同**（一次 all-reduce 的字节 = 一次 RS + 一次 AG），但换来了：**SP 区激活显存从 $B\cdot S\cdot d$ 降到 $B\cdot S\cdot d/N$**。所以 SP 是「**零额外通信换激活显存**」的白捡优化——因此实践中 **TP 几乎总是和 SP 一起开**。
 
 ---
 
@@ -120,11 +120,11 @@ CP 与 TP **正交**（一个切序列、一个切隐藏维），可组合成 `C
 
 ## Related Pages
 
-- [[collectives_analysis]] — all-reduce = reduce-scatter + all-gather（SP 边界拆分的根据）
-- [[data_parallel_analysis]] — DP：复制模型；TP 是它放不下时的下一步
-- [[pipeline_parallel_analysis]] — PP：另一条切模型的路（切层而非切层内）
-- [[zero_fsdp_analysis]] — ZeRO：切状态，常与 TP 正交组合
-- [[expert_parallel_analysis]] — EP：MoE 场景常与 TP 组合
+- [[10_collectives_analysis]] — all-reduce = reduce-scatter + all-gather（SP 边界拆分的根据）
+- [[11_data_parallel_analysis]] — DP：复制模型；TP 是它放不下时的下一步
+- [[15_pipeline_parallel_analysis]] — PP：另一条切模型的路（切层而非切层内）
+- [[12_zero_fsdp_analysis]] — ZeRO：切状态，常与 TP 正交组合
+- [[14_expert_parallel_analysis]] — EP：MoE 场景常与 TP 组合
 - [[index]] — TP/SP/CP 共同占据 N 维布局的「机内维」
 - [[../01_models/deepseek/23_deepseek_v4_cp_analysis]] — CP 在长上下文模型中的实践
 - [[../../02_engineering/02_train_frameworks/megatron-lm/index]] — **实现层**：Megatron 手工 TP/SP 的 ColumnParallel/RowParallel

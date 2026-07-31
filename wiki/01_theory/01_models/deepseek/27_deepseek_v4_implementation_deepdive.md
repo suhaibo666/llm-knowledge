@@ -4,7 +4,7 @@
 > **维度**: 实现级 Deep Dive —— V4 五大核心组件的**源忠实伪代码 + 数据流**，每段代码逐步标注其实现的论文 §/Eq/page。
 > **整页重写**: 2026-06-25。旧版为预发布期 AI 臆造的通用伪代码（路由专家写成 128、HCA 写成 `compression_ratio=0.1`、Sinkhorn `max_iter=100`、"Muon" 实为 Adam、量化写成 INT8、臆造 DualPath/PCA-KV/task_classifier 动态-k），已整页废弃；审计见 [[30_deepseek_v4_audit_analysis]]。
 >
-> **本页定位**: V4 把"百万 token 上下文效率"拆进四类机制——CSA/HCA 沿**序列维**把 KV 压成 $1/m$、$1/m'$（再叠 DSA top-k）；mHC 用**双随机矩阵**约束残差混合保证深堆叠稳定；Muon 用**混合 Newton-Schulz** 正交化更新；DeepSeekMoE 把亲和度激活换成 $\sqrt{\mathrm{Softplus}(\cdot)}$ 并对前 3 层 MoE 用哈希路由。本页给每个机制的逐步伪代码并锚定到论文方程，是 [[13_deepseek_v4_analysis]] 的**实现级补充**；架构综述见 [[13_deepseek_v4_analysis]]，对比与图示见 [[26_deepseek_v4_technical_deepdive]] / [[28_deepseek_v4_architecture_analysis]]，mHC/Muon 数学细节见 [[25_mhc_analysis]] / [[muon_analysis]]。
+> **本页定位**: V4 把"百万 token 上下文效率"拆进四类机制——CSA/HCA 沿**序列维**把 KV 压成 $1/m$、$1/m'$（再叠 DSA top-k）；mHC 用**双随机矩阵**约束残差混合保证深堆叠稳定；Muon 用**混合 Newton-Schulz** 正交化更新；DeepSeekMoE 把亲和度激活换成 $\sqrt{\mathrm{Softplus}(\cdot)}$ 并对前 3 层 MoE 用哈希路由。本页给每个机制的逐步伪代码并锚定到论文方程，是 [[13_deepseek_v4_analysis]] 的**实现级补充**；架构综述见 [[13_deepseek_v4_analysis]]，对比与图示见 [[26_deepseek_v4_technical_deepdive]] / [[28_deepseek_v4_architecture_analysis]]，mHC/Muon 数学细节见 [[25_mhc_analysis]] / [[11_muon_analysis]]。
 
 > [!note] 伪代码的可信度约定
 > 下列伪代码是对论文方程的**忠实重构**（reconstruction）：控制流/张量重排为**演示性骨架**，但每一行的算子、张量形状、常量都映射到论文已核验的 §/Eq/page，并在行内注释标出。常量取自 **§4.2.1 Model Setups（p24–25）**，凡两规格不同处给出 `Flash | Pro` 双值。论文同时开源了推理实现（HuggingFace `DeepSeek-V4-Pro/inference`，§2.3 脚注），用于消歧极细节——本页对这些「未在正文给出公式」之处会显式标注 *(实现细节/演示)*。
@@ -292,7 +292,7 @@ def hybrid_newton_schulz(X):
     return M
 ```
 
-**要点**：① `HybridNewtonSchulz` 是**真实的多项式迭代正交化**（旧版把 Muon 写成带 bias-correction 的 Adam，完全错误）；② 沿用 Liu et al. (2025) 的 Nesterov + update-RMS 重标定以复用 AdamW 学习率，但**改用 hybrid（两段系数）NS 迭代**；③ **不使用 QK-Clip**——因为 CSA/HCA 已直接对 Q/KV 做 RMSNorm，足以防 logit 爆炸（§2.4, p14）。AdamW 超参（§4.2.2）：$\beta_1=0.9,\beta_2=0.95,\varepsilon=10^{-20},\text{wd}=0.1$。更多分布式实现见 [[muon_analysis]]。
+**要点**：① `HybridNewtonSchulz` 是**真实的多项式迭代正交化**（旧版把 Muon 写成带 bias-correction 的 Adam，完全错误）；② 沿用 Liu et al. (2025) 的 Nesterov + update-RMS 重标定以复用 AdamW 学习率，但**改用 hybrid（两段系数）NS 迭代**；③ **不使用 QK-Clip**——因为 CSA/HCA 已直接对 Q/KV 做 RMSNorm，足以防 logit 爆炸（§2.4, p14）。AdamW 超参（§4.2.2）：$\beta_1=0.9,\beta_2=0.95,\varepsilon=10^{-20},\text{wd}=0.1$。更多分布式实现见 [[11_muon_analysis]]。
 
 ---
 
@@ -357,6 +357,6 @@ k2 = block // m_prime                   # 该 block 产出的 HCA 压缩 entry �
 - [[24_deepseek_v4_fp4_qat_analysis]] —— FP4/MXFP4 量化感知训练（§5.2.1，后训练技术）
 - [[30_deepseek_v4_audit_analysis]] —— 本页旧伪代码的逐项审计与订正依据
 - [[25_mhc_analysis]] —— 流形约束超连接的完整数学与稳定性分析（§5 的展开）
-- [[muon_analysis]] —— Muon 原理与分布式实现（§6 的展开）
+- [[11_muon_analysis]] —— Muon 原理与分布式实现（§6 的展开）
 - [[20_deepseek_moe_analysis]] —— DeepSeekMoE 路由与负载均衡（§7 的展开）
 - [[12_deepseek_v3_analysis]] —— 前代架构（MLA、FP8 训练、DualPipe），V4 的对照基线

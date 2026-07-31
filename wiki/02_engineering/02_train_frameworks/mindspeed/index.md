@@ -50,7 +50,7 @@ flowchart TB
 | 维度 | 页面 | 覆盖特性(代表) |
 |------|------|----------------|
 | **并行** | [[mindspeed_parallelism_analysis]] | CP(Ulysses/Ring/自适应/KV-cache)、TP(非对齐/TP-2D/vocab)、PP(分层布局/noop/可变序列/非对齐/num-layer-list)、MoE-EP(GMM/tp-extend-ep/共享专家/专家放置/负载均衡)、DP & 分布式(LayerZero/Custom-FSDP/Torch-FSDP)、分层解耦训练(U-split/VDP/VTP) |
-| **并行·CP 深挖** | [[mindspeed_context_parallel_analysis]] | CP 家族专题:分派脊柱、Ring 双环(outer/inner window)、Adaptive 调度驱动 P2P、KV-cache CP 显存换通信(四框架中仅此一家);通用机制见 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis\|ring_attention_and_context_parallel_analysis]] |
+| **并行·CP 深挖** | [[mindspeed_context_parallel_analysis]] | CP 家族专题:分派脊柱、Ring 双环(outer/inner window)、Adaptive 调度驱动 P2P、KV-cache CP 显存换通信(四框架中仅此一家);通用机制见 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis\|20_ring_attention_and_context_parallel_analysis]] |
 | **计算通信掩盖** | [[mindspeed_comm_overlap_analysis]] | MC2(matmul+通信融合)、CoC(communication-over-computation)、MoE 通算重叠(allgather/alltoall/fb-overlap/alltoall-mc2)、PP 调度掩盖(DualPipeV/RiPipe/optimize-p2p/send-recv)、async-log-allreduce |
 | **内存优化** | [[mindspeed_memory_optimization_analysis]] | 重计算(激活/norm/按 PP-rank/选择性)、Swap(smart-swap/swap-attention/swap-optimizer)、reuse-fp32-param、MoE-zero-memory、压缩(activation/optimizer/ANS-dense)、virtual-optimizer、chunk-loss、ckpt 加速 |
 | **昇腾亲和** | [[mindspeed_ascend_affinity_analysis]] | 融合算子(GMM/swiglu/softmax/RoPE/moe-permute)、Flash-Attention(FA v1/v2/alibi/mask/MLA/DSA)、HCCL buffer 管理、affinity(交叉熵 NPU 亲和改写,非绑核)、QoS、TE-on-NPU、op_builder/ops 自定义算子、融合优化器(Muon/EMA-AdamW/低精度)、QAT |

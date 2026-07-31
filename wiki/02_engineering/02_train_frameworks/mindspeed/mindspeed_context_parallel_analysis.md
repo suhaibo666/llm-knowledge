@@ -4,7 +4,7 @@
 > 本页只讲 MindSpeed 的 **CP 家族**:运行期怎么把 attention 分派到 Ulysses / Ring(双环)/ Hybrid / Adaptive / KV-cache 五条路,每条路在卡间搬什么、按因果性怎么裁剪、通信量与序列长度 $S$/CP 度的代数关系、各自的约束与选型。**每个 CP 变体都按统一四件套拆解**:① 机制 ② 卡间数据流 / before-after 图示 ③ `> [!tip] 优化点` callout(量化收益)④ 源码解读(实际调用 + autograd + `file:line`)。行号均经实际打开核对。
 > 属 [[mindspeed/index]] 系列;并行总览见 [[mindspeed_parallelism_analysis]](本页是其 §2 CP 一节的深挖展开)。Megatron 原生 CP 对照见 [[megatron_cp_analysis]];通算掩盖(send-recv overlap)归 [[mindspeed_comm_overlap_analysis]]。亲和 FA 核(`npu_fusion_attention`)见 [[mindspeed_ascend_affinity_analysis]]。
 >
-> **划界声明**:CP/Ring Attention 通用机制(为什么切序列、折叠/头尾负载均衡的数学证明、因果块裁剪、Ring 单环主循环 + online-softmax、Ulysses 换轴机制与通信量代数、分层混合的分组构造、RoPE 位置编码切分不变量)已归一到 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]]——本页多处正是该理论页对应章节(§3.3 负载均衡定量证明、§3.5 位置编码不变量、§4.1 因果三分支裁剪、§5.2 在线 softmax 公式、§7 Ulysses 全套机制、§8.1/§8.3 分层混合)的骨架来源。**本页只保留 MindSpeed 独有的框架实现差异**:五算法运行期分派脊柱、Ring 的**双环(outer/inner window)**结构与反向双 dKV 环、**Adaptive CP**(调度驱动、rank 重映射)、**KV-cache CP**(显存换反向通信)—— 这四项在其它三个框架页均不存在;此外还有各算法的源码级实现细节(GQA 头补齐、变长 a2a、CP×TP-2D 合并域等)。
+> **划界声明**:CP/Ring Attention 通用机制(为什么切序列、折叠/头尾负载均衡的数学证明、因果块裁剪、Ring 单环主循环 + online-softmax、Ulysses 换轴机制与通信量代数、分层混合的分组构造、RoPE 位置编码切分不变量)已归一到 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]——本页多处正是该理论页对应章节(§3.3 负载均衡定量证明、§3.5 位置编码不变量、§4.1 因果三分支裁剪、§5.2 在线 softmax 公式、§7 Ulysses 全套机制、§8.1/§8.3 分层混合)的骨架来源。**本页只保留 MindSpeed 独有的框架实现差异**:五算法运行期分派脊柱、Ring 的**双环(outer/inner window)**结构与反向双 dKV 环、**Adaptive CP**(调度驱动、rank 重映射)、**KV-cache CP**(显存换反向通信)—— 这四项在其它三个框架页均不存在;此外还有各算法的源码级实现细节(GQA 头补齐、变长 a2a、CP×TP-2D 合并域等)。
 
 ---
 
@@ -326,7 +326,7 @@ $V_{ulysses}/V_{ring}=\frac{2}{cp}\cdot\frac{a}{a_{kv}}$:MHA 大 $cp$ 选 Ulysse
 - **双环**(§4)是 MindSpeed 对 Ring 的独有扩展:outer(窗口间)× inner(窗口内)两级 P2P + 双 dKV 反向环,四框架中仅此一家。
 - **Adaptive**(§6)是 MindSpeed 独有的第五套算法:调度驱动 P2P、按真实算量拉平 straggler,应对任意不规则掩码。
 - **KV-cache CP**(§7)是 MindSpeed 独有的正交叠加项:显存换反向通信,可叠在前四种算法之上。
-- **通用机制**(为什么切序列、折叠/头尾负载均衡、因果裁剪、Ulysses 换轴、分层混合分组、通信量代数)见 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]]。
+- **通用机制**(为什么切序列、折叠/头尾负载均衡、因果裁剪、Ulysses 换轴、分层混合分组、通信量代数)见 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]。
 
 ---
 
@@ -334,7 +334,7 @@ $V_{ulysses}/V_{ring}=\frac{2}{cp}\cdot\frac{a}{a_{kv}}$:MHA 大 $cp$ 选 Ulysse
 
 ## Related Pages
 
-- [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]] —— CP/Ring Attention 通用机制(本页多节的骨架来源页)
+- [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]] —— CP/Ring Attention 通用机制(本页多节的骨架来源页)
 - [[mindspeed/index]] —— MindSpeed×MindSpeed-LLM 特性总罗盘(四大类入口)
 - [[mindspeed_parallelism_analysis]] —— 并行总览;本页是其 §2 CP 一节的深挖展开(TP/PP/MoE-EP/DP 见该页)
 - [[mindspeed_comm_overlap_analysis]] —— CP 的 send-recv overlap、双环 intra/inter 重叠、RingP2P 异步掩盖

@@ -195,8 +195,8 @@ Megatron 的 MoE Grouped GEMM 低精度支持：
 - [[02_engineering/02_train_frameworks/megatron-lm/index]] — Megatron-LM 知识地图
 - [[02_engineering/02_train_frameworks/megatron-lm/megatron_precision_cudagraph_fusion_analysis]] — FP8 低精度训练与 CUDA Graph 融合
 - [[02_engineering/02_train_frameworks/megatron-lm/megatron_comm_overlap_analysis]] — 通信掩盖中的 FP8 支持
-- [[01_theory/02_pretraining/transformer_engine_analysis]] — Transformer Engine 技术分析
+- [[01_theory/02_pretraining/14_transformer_engine_analysis]] — Transformer Engine 技术分析
 - [[01_theory/01_models/deepseek/24_deepseek_v4_fp4_qat_analysis]] — DeepSeek-V4 FP4 QAT
 - [[01_theory/01_models/deepseek/12_deepseek_v3_analysis]] — DeepSeek-V3 FP8 实践
-- [[01_theory/02_pretraining/activation_checkpointing_analysis]] — 激活检查点与精度
-- [[01_theory/02_pretraining/RL_Training_Inference_Precision_Analysis]] — RL 训练推理数值一致性
+- [[01_theory/02_pretraining/12_activation_checkpointing_analysis]] — 激活检查点与精度
+- [[01_theory/02_pretraining/20_rl_training_inference_precision_analysis]] — RL 训练推理数值一致性

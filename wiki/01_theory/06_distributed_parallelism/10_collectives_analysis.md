@@ -72,7 +72,7 @@ $$T(n) = \alpha + \frac{n}{B_w}$$
 
 > **核心恒等式（记住这一个，后面全通）**：
 > $$\textbf{All-Reduce} = \textbf{Reduce-Scatter} + \textbf{All-Gather}$$
-> 先 reduce-scatter 让每卡拿到「求和结果的一片」，再 all-gather 把所有片拼回全量。这不只是数学等式——它是 ring all-reduce 的**实际实现方式**，也是 ZeRO 能把 DP 的 all-reduce「拆开省显存」的根本原因（见 [[zero_fsdp_analysis]]）。
+> 先 reduce-scatter 让每卡拿到「求和结果的一片」，再 all-gather 把所有片拼回全量。这不只是数学等式——它是 ring all-reduce 的**实际实现方式**，也是 ZeRO 能把 DP 的 all-reduce「拆开省显存」的根本原因（见 [[12_zero_fsdp_analysis]]）。
 
 ---
 
@@ -112,9 +112,9 @@ NCCL/HCCL 等库会按消息大小、拓扑**自动选算法**——这是「实
 **All-to-All（EP 的命脉）**：每卡把自己的数据按目标 rank 切成 $N$ 块，第 $j$ 块发给 rank $j$，同时收下所有卡发来的第 $i$ 块。若每卡总发送量为 $M$，则每卡发/收各 $\frac{N-1}{N}M \approx M$。它本质是一次**分布式转置**。代价敏感点有二：
 
 - 它天然是**全连接通信**（每对 rank 都有流量），机间做 all-to-all 极易打满、打偏网络 → EP 特别怕**负载不均**（某些专家爆热）。
-- 它有两次（发、收），且夹在专家计算前后 → EP 的墙钟＝`a2a_dispatch + expert_compute + a2a_combine`，两次 a2a 常是瓶颈。这解释了 DeepEP 等库为什么要做分层/重叠的 all-to-all（见 [[expert_parallel_analysis]]）。
+- 它有两次（发、收），且夹在专家计算前后 → EP 的墙钟＝`a2a_dispatch + expert_compute + a2a_combine`，两次 a2a 常是瓶颈。这解释了 DeepEP 等库为什么要做分层/重叠的 all-to-all（见 [[14_expert_parallel_analysis]]）。
 
-**P2P（PP 的命脉）**：只在指定 src↔dst 两方之间 send/recv，代价就是最朴素的 $T=\alpha+n/B_w$，**不涉及全组**。传的是相邻 stage 之间的**激活**（前向）和**激活梯度**（反向），大小 $\propto B\cdot S\cdot d$（批 × 序列 × 隐藏维），与总层数无关。正因为 p2p 通信量小、只跨一对卡，**PP 是唯一敢大方跨机、甚至跨机架的并行维**（见 [[pipeline_parallel_analysis]]）。
+**P2P（PP 的命脉）**：只在指定 src↔dst 两方之间 send/recv，代价就是最朴素的 $T=\alpha+n/B_w$，**不涉及全组**。传的是相邻 stage 之间的**激活**（前向）和**激活梯度**（反向），大小 $\propto B\cdot S\cdot d$（批 × 序列 × 隐藏维），与总层数无关。正因为 p2p 通信量小、只跨一对卡，**PP 是唯一敢大方跨机、甚至跨机架的并行维**（见 [[15_pipeline_parallel_analysis]]）。
 
 ---
 
@@ -145,9 +145,9 @@ NCCL/HCCL 等库会按消息大小、拓扑**自动选算法**——这是「实
 ## Related Pages
 
 - [[index]] — 本簇总览：N 维并行全景与显存/通信总账
-- [[data_parallel_analysis]] — DP：all-reduce 梯度的最基本用法
-- [[tensor_sequence_parallel_analysis]] — TP/SP/CP：all-gather/reduce-scatter 的层内切分
-- [[expert_parallel_analysis]] — EP：all-to-all 的专家路由
-- [[pipeline_parallel_analysis]] — PP：p2p 的 stage 间传递
-- [[zero_fsdp_analysis]] — ZeRO：把 all-reduce 拆成 reduce-scatter + all-gather 省显存
+- [[11_data_parallel_analysis]] — DP：all-reduce 梯度的最基本用法
+- [[13_tensor_sequence_parallel_analysis]] — TP/SP/CP：all-gather/reduce-scatter 的层内切分
+- [[14_expert_parallel_analysis]] — EP：all-to-all 的专家路由
+- [[15_pipeline_parallel_analysis]] — PP：p2p 的 stage 间传递
+- [[12_zero_fsdp_analysis]] — ZeRO：把 all-reduce 拆成 reduce-scatter + all-gather 省显存
 - [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：这些原语在 c10d/PyTorch 里怎么下发（ProcessGroup / Work / functional collectives）

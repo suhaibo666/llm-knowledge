@@ -73,8 +73,8 @@
 |------|---------|
 | Transformer 原理 | [[attention_is_all_you_need_analysis]] |
 | 缩放定律 | [[scaling_laws_analysis]], [[long_context_scaling_law_analysis]] |
-| 优化器 | [[muon_analysis]] |
-| 低精度训练 | [[low_precision_training_analysis]], [[transformer_engine_analysis]], [[24_deepseek_v4_fp4_qat_analysis]] |
+| 优化器 | [[11_muon_analysis]] |
+| 低精度训练 | [[13_low_precision_training_analysis]], [[14_transformer_engine_analysis]], [[24_deepseek_v4_fp4_qat_analysis]] |
 | 对齐/RLHF | [[10_instructgpt_rlhf_analysis]], [[12_dpo_analysis]], [[20_grpo_analysis]], [[11_ppo_analysis]] |
 | DeepSeek 模型 | [[13_deepseek_v4_analysis]], [[12_deepseek_v3_analysis]], [[14_deepseek_r1_analysis]] |
 | LongCat (美团) | [[meituan_longcat/index]], [[longcat_flash_analysis]], [[longcat_2_analysis]] |
@@ -89,7 +89,7 @@
 | 非 GEMM Kernel 优化 | [[cuda_nonmatmul_kernels_analysis]], [[gpu_kernel_guide]], [[triton_00_gpu_essentials_guide]] |
 | vLLM 推理引擎 | [[vllm/index]], [[vllm_engine_architecture_analysis]], [[vllm_scheduler_analysis]], [[vllm_kv_cache_management_analysis]], [[vllm_feature_optimizations_overview]] |
 | vLLM 图编译/算子融合 | [[vllm_fused_ops_and_kernels_analysis]], [[vllm_ir_and_fusion_passes_analysis]], [[vllm_compilation_cudagraph_analysis]] |
-| PPO/GRPO RL 训练 | [[10_rl_ppo_loss_and_grpo_analysis]], [[RL_Training_Inference_Precision_Analysis]] |
+| PPO/GRPO RL 训练 | [[10_rl_ppo_loss_and_grpo_analysis]], [[20_rl_training_inference_precision_analysis]] |
 | RL 训练框架 (verl/HybridFlow) | [[verl/index]], [[01_verl_architecture_overview_analysis]], [[20_verl_ray_trainer_analysis]], [[15_verl_rl_algorithms_analysis]] |
 | Coding RL「脏活」系列 | [[31_reward_hacking_defense_analysis]], [[11_rl_sandbox_design_analysis]], [[12_rl_infra_efficiency_analysis]] |
 | LLM 后训练前沿 D01–D06 | [[courses/posttraining_frontier]], [[01_posttraining_frontier_map_analysis]], [[13_reasoning_rl_algorithm_evolution_analysis]], [[24_agentic_rl_algorithm_analysis]], [[25_on_policy_off_policy_staleness_analysis]], [[01_posttraining_infra_mechanism_analysis]], [[30_rl_framework_comparison]] |

@@ -1,7 +1,7 @@
 # 流水线并行 PP — 原理解读
 
 > 层次：原理（principle）· 引擎无关
-> 前置：[[collectives_analysis]]（p2p 的代价）
+> 前置：[[10_collectives_analysis]]（p2p 的代价）
 > 实现见 [[../../02_engineering/02_train_frameworks/megatron-lm/megatron_pp_schedulers_analysis]]、[[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_pp_analysis]]
 > 最后更新：2026-07-01
 
@@ -17,7 +17,7 @@
 
 Transformer 是 $L$ 层顺序堆叠，$\text{layer}_{i+1}$ 的输入是 $\text{layer}_i$ 的输出——**层间是天然的顺序数据流**。把连续几层打包成一个 stage、stage 之间首尾相接，就得到一条流水线。通信只发生在**相邻 stage 的接缝**：前向传一份激活、反向传一份激活梯度，大小都 $\propto B\cdot S\cdot d$，**与总层数无关**，且一次迭代只发 $O(P)$ 次。
 
-对比 [[tensor_sequence_parallel_analysis|TP]]（每层 4 次 all-reduce、在关键路径）：PP 的 p2p **又小又稀、只跨一对卡** → 可以放在带宽最差的机间/机架间链路。这就是 N 维并行里「**TP 待机内、PP 跨机**」分工的物理根源。
+对比 [[13_tensor_sequence_parallel_analysis|TP]]（每层 4 次 all-reduce、在关键路径）：PP 的 p2p **又小又稀、只跨一对卡** → 可以放在带宽最差的机间/机架间链路。这就是 N 维并行里「**TP 待机内、PP 跨机**」分工的物理根源。
 
 ---
 
@@ -71,11 +71,11 @@ $$\text{bubble ratio} = \frac{P-1}{m + P - 1}$$
 
 ## Related Pages
 
-- [[collectives_analysis]] — p2p 的代价（本页通信量的来源）
-- [[tensor_sequence_parallel_analysis]] — TP：另一条切模型的路（切层内 vs PP 切层），二者常组合
-- [[data_parallel_analysis]] — DP：PP 通常嵌在 DP 之内
-- [[zero_fsdp_analysis]] — ZeRO：与 PP 正交，进一步省状态显存
+- [[10_collectives_analysis]] — p2p 的代价（本页通信量的来源）
+- [[13_tensor_sequence_parallel_analysis]] — TP：另一条切模型的路（切层内 vs PP 切层），二者常组合
+- [[11_data_parallel_analysis]] — DP：PP 通常嵌在 DP 之内
+- [[12_zero_fsdp_analysis]] — ZeRO：与 PP 正交，进一步省状态显存
 - [[index]] — N 维布局里 PP 占据「跨机维」
 - [[../../02_engineering/02_train_frameworks/megatron-lm/megatron_pp_schedulers_analysis]] — **实现层**：Megatron 的 GPipe/1F1B/interleaved 调度器
 - [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_pp_analysis]] — **实现层**：torchtitan 的 PP 调度
-- [[hw_friendly_llm_codesign_analysis]] — 推理侧特化：Chunked Pipeline Parallelism 压长上下文首 token 延迟
+- [[21_hw_friendly_llm_codesign_analysis]] — 推理侧特化：Chunked Pipeline Parallelism 压长上下文首 token 延迟

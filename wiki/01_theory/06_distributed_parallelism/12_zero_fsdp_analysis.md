@@ -1,7 +1,7 @@
 # ZeRO / FSDP — 原理解读
 
 > 层次：原理（principle）· 引擎无关
-> 前置：[[data_parallel_analysis]]（DP 的 $16\Psi$ 显存账本）、[[collectives_analysis]]（all-reduce = reduce-scatter + all-gather）
+> 前置：[[11_data_parallel_analysis]]（DP 的 $16\Psi$ 显存账本）、[[10_collectives_analysis]]（all-reduce = reduce-scatter + all-gather）
 > 实现见 [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_fsdp_analysis]]、[[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]]（FSDP1/FSDP2）
 > 最后更新：2026-07-01
 
@@ -15,13 +15,13 @@
 
 ## 出发点：DP 的 $16\Psi$ 全是冗余
 
-回顾 [[data_parallel_analysis]] 的账本：混合精度 Adam 下，每卡都独立存着模型状态（$\Psi$ = 参数量）：
+回顾 [[11_data_parallel_analysis]] 的账本：混合精度 Adam 下，每卡都独立存着模型状态（$\Psi$ = 参数量）：
 
 $$\underbrace{2\Psi}_{\text{fp16 参数}} + \underbrace{2\Psi}_{\text{fp16 梯度}} + \underbrace{12\Psi}_{\text{fp32 优化器态: 参数副本+m+v}} = 16\Psi$$
 
 关键观察：**这 $16\Psi$ 在 $N$ 张卡上是逐位相同的冗余副本。** DP 需要各卡参数一致，但它并不需要各卡**同时**持有完整副本——优化器更新时，每张卡完全可以只负责更新参数的一个分片。既然如此，为什么不把这 $16\Psi$ 切成 $N$ 份、每卡只存 $16\Psi/N$？这就是 ZeRO 的全部动机。
 
-**能这么做的技术支点**是 [[collectives_analysis]] 的核心恒等式：DP 那次 all-reduce 梯度，本就等于 **reduce-scatter + all-gather**。ZeRO 把这两半拆开用——reduce-scatter 让每卡只拿到「自己负责分片」的梯度和，于是它只需更新那一片、只需存那一片的优化器态。
+**能这么做的技术支点**是 [[10_collectives_analysis]] 的核心恒等式：DP 那次 all-reduce 梯度，本就等于 **reduce-scatter + all-gather**。ZeRO 把这两半拆开用——reduce-scatter 让每卡只拿到「自己负责分片」的梯度和，于是它只需更新那一片、只需存那一片的优化器态。
 
 ---
 
@@ -72,10 +72,10 @@ PyTorch 的 **FSDP（Fully Sharded Data Parallel）** 是 ZeRO-3 的框架实现
 
 ## Related Pages
 
-- [[data_parallel_analysis]] — **直接前篇**：DP 的 $16\Psi$ 账本与「冗余复制」问题
-- [[collectives_analysis]] — all-reduce = reduce-scatter + all-gather（ZeRO 拆分的技术支点）
-- [[tensor_sequence_parallel_analysis]] — TP：与 FSDP 正交组合（FSDP×TP）
-- [[pipeline_parallel_analysis]] — PP：与 ZeRO 正交，进一步摊深度
+- [[11_data_parallel_analysis]] — **直接前篇**：DP 的 $16\Psi$ 账本与「冗余复制」问题
+- [[10_collectives_analysis]] — all-reduce = reduce-scatter + all-gather（ZeRO 拆分的技术支点）
+- [[13_tensor_sequence_parallel_analysis]] — TP：与 FSDP 正交组合（FSDP×TP）
+- [[15_pipeline_parallel_analysis]] — PP：与 ZeRO 正交，进一步摊深度
 - [[index]] — N 维布局里 ZeRO/FSDP 占据数据轴
 - [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_fsdp_analysis]] — **实现层**：torchtitan/FSDP2 的分片与通信
 - [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_fsdp_prefetch_overlap_memory_analysis]] — **实现层**：预取重叠与显存核算

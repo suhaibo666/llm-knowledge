@@ -1,7 +1,7 @@
 # Ring Attention 与上下文并行(Context Parallelism)—— 通用机制
 
 > 层次:原理(principle)· 引擎无关
-> 前置:[[collectives_analysis]](all-gather / reduce-scatter / all-to-all 代价)、[[tensor_sequence_parallel_analysis]](CP 在 TP/SP 之后的位置)
+> 前置:[[10_collectives_analysis]](all-gather / reduce-scatter / all-to-all 代价)、[[13_tensor_sequence_parallel_analysis]](CP 在 TP/SP 之后的位置)
 > **本页定位**:抽出 CP/Ring-Attention 在 Megatron-LM、torchtitan、MindSpeed、DeepSeek-V4(Megatron 实现)四份工程分析页里**重复讲的通用机制**——序列怎么切、因果负载怎么拉平、Ring/All-gather/Ulysses/分层混合四种通信调度怎么工作、通信量的代数关系。**本页是纯搬运合成**:每节骨架逐字取自四页中讲得最深/最完整的那一页,differences 与补充逐段注明来源;不新造任何机制。四框架各自的源码走读、性能实测、配置项与限制留在各自页面,只在本页留指针。
 > 四份实现页(各自只保留框架特有内容 + 指回本页):[[../../02_engineering/02_train_frameworks/megatron-lm/megatron_cp_analysis|Megatron-LM CP]] · [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_cp_analysis|torchtitan CP]] · [[../../02_engineering/02_train_frameworks/mindspeed/mindspeed_context_parallel_analysis|MindSpeed CP]] · [[../../02_engineering/02_train_frameworks/megatron-lm/deepseek_v4_context_parallel_analysis|DeepSeek-V4 CP(Megatron 实现)]]
 > 最后更新:2026-07-31
@@ -664,9 +664,9 @@ Dynamic CP 是"要不要切、切多少度"这一决策层的机制,与 §3-§9 
 
 ## Related Pages
 
-- [[collectives_analysis]] —— 集合通信原语与 α-β 代价模型(本页所有通信量公式的前置)
-- [[tensor_sequence_parallel_analysis]] —— TP/SP/CP 原理总览,CP 在其中的位置
-- [[expert_parallel_analysis]] —— EP:CP 与 MoE 的组合(Parallel Folding)
+- [[10_collectives_analysis]] —— 集合通信原语与 α-β 代价模型(本页所有通信量公式的前置)
+- [[13_tensor_sequence_parallel_analysis]] —— TP/SP/CP 原理总览,CP 在其中的位置
+- [[14_expert_parallel_analysis]] —— EP:CP 与 MoE 的组合(Parallel Folding)
 - [[../../02_engineering/02_train_frameworks/megatron-lm/megatron_cp_analysis|megatron_cp_analysis]] —— Megatron-LM 实现差异
 - [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_cp_analysis|torchtitan_cp_analysis]] —— torchtitan 实现差异
 - [[../../02_engineering/02_train_frameworks/mindspeed/mindspeed_context_parallel_analysis|mindspeed_context_parallel_analysis]] —— MindSpeed 实现差异

@@ -286,5 +286,5 @@ KDA 层自己:              降到"噪声级"(定长状态,~MB 量级/层/序列
 - [[11_kimi_k2_analysis]] — K2 的 MuonClip 与训练系统基线
 - [[13_kimi_k2_5_analysis]] — K2.5(INT4 沿用、Agent Swarm)
 - [[12_kimi_linear_analysis]] — KDA 的效率证据与 vLLM day-0 集成
-- [[muon_analysis]] — Muon 优化器原理(Per-Head Muon 的基座)
+- [[11_muon_analysis]] — Muon 优化器原理(Per-Head Muon 的基座)
 - [[moonshot_kimi/index]] — Kimi/Moonshot 技术路线总览

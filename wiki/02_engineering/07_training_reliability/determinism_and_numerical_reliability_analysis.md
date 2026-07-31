@@ -20,9 +20,9 @@
 
 **第 2 层：算子内规约拆分（split-K 与算法自动选择）。** 先看 GEMM 在 GPU 上的常规并行方式：输出矩阵 C 被切成二维 tile，每个 thread block 负责一块 C tile，沿 K 维在 block **内部顺序**累加——这条路径的加法顺序固定，本身确定。问题出在 M、N 较小而 K 很大的形状（万卡训练里大量出现：小 micro-batch 的线性层、decode 阶段的 GEMV）：此时输出 tile 数量不足以喂满上百个 SM，库会启用 **split-K**——把 K 维切成 S 段分给不同 block 并行算部分和，最后跨 block 合并。合并有两种实现：用原子累加（顺序随调度漂移，直接非确定）；或写入独立 workspace 再由第二个 kernel 归约（单次运行确定，但 S 是启发式按占用率选的——shape、SM 数量、可用 workspace 大小都影响选择，S 一变结合顺序就变）。cuBLAS/cuDNN 的 autotuning 把这件事进一步一般化：它们按 shape、对齐、硬件状态在多个算法实现间自动选择，而**不同算法就是不同的规约树**——今天选 algo 7、明天选 algo 3，结果比特级不同，但两者都「对」。
 
-**第 3 层：通信库规约（NCCL/HCCL 的算法与在网计算）。** 集合通信的 AllReduce 本质也是一棵加法树，树的形态由算法决定。Ring AllReduce 分两阶段：reduce-scatter 阶段每个 rank 把数据切成 N 块，沿环形拓扑逐跳传递，每跳把收到的块与本地块相加——**累加顺序就是环上的邻居顺序**，rank 0 的贡献总在固定位置进入求和链；随后 allgather 阶段把归约完的块沿环分发。Tree 算法则做递归二分（recursive halving/doubling），加法的括号结构完全不同。所以：同一算法、同一规模、同一拓扑下，NCCL 是**运行间确定**的；但库会按消息大小、节点数、拓扑在 Ring/Tree/CollNet/NVLS 间自动切换，且**规模一变（弹性扩缩容、改 DP 度）规约树形态必变**，跨规模的比特一致在数学上就不成立。更棘手的是在网规约（NVLS 依托 NVSwitch、SHARP 依托 IB 交换机）：加法被卸载到交换机的 ALU 上执行，各端口数据到达交换机的先后由链路时序决定，**软件层没有任何手段固定这个顺序**——这是确定性模式必须排除在网规约的根本原因，不仅是工程取舍。（规约树机理详见 [[collectives_analysis]]。）
+**第 3 层：通信库规约（NCCL/HCCL 的算法与在网计算）。** 集合通信的 AllReduce 本质也是一棵加法树，树的形态由算法决定。Ring AllReduce 分两阶段：reduce-scatter 阶段每个 rank 把数据切成 N 块，沿环形拓扑逐跳传递，每跳把收到的块与本地块相加——**累加顺序就是环上的邻居顺序**，rank 0 的贡献总在固定位置进入求和链；随后 allgather 阶段把归约完的块沿环分发。Tree 算法则做递归二分（recursive halving/doubling），加法的括号结构完全不同。所以：同一算法、同一规模、同一拓扑下，NCCL 是**运行间确定**的；但库会按消息大小、节点数、拓扑在 Ring/Tree/CollNet/NVLS 间自动切换，且**规模一变（弹性扩缩容、改 DP 度）规约树形态必变**，跨规模的比特一致在数学上就不成立。更棘手的是在网规约（NVLS 依托 NVSwitch、SHARP 依托 IB 交换机）：加法被卸载到交换机的 ALU 上执行，各端口数据到达交换机的先后由链路时序决定，**软件层没有任何手段固定这个顺序**——这是确定性模式必须排除在网规约的根本原因，不仅是工程取舍。（规约树机理详见 [[10_collectives_analysis]]。）
 
-**第 4 层：动态路由类模块（MoE dispatch/combine）。** MoE 前向要把 (token, expert) 对按 expert 分桶，这一步靠排序实现。若使用**不稳定排序**（unstable sort，如基数排序的某些并行实现、bitonic sort），相同 key（同一 expert）的元素相对次序不保证——同一 expert 收到的 token 排列每次运行都可能不同，combine 端做 $\sum w_i \cdot x_i$ 加权求和的顺序随之改变。此外，带 capacity 限制的 MoE 在超容时要丢 token，「丢谁」直接依赖这个不稳定的顺序——这已经不是 ULP 级差异，而是**输入内容级**的不确定。这就是 MoE 模型成为不可复现重灾区、LongCat 把 MoE 列入自研确定性算子清单的原因。（MoE all-to-all 排序详见 [[expert_parallel_analysis]]。）
+**第 4 层：动态路由类模块（MoE dispatch/combine）。** MoE 前向要把 (token, expert) 对按 expert 分桶，这一步靠排序实现。若使用**不稳定排序**（unstable sort，如基数排序的某些并行实现、bitonic sort），相同 key（同一 expert）的元素相对次序不保证——同一 expert 收到的 token 排列每次运行都可能不同，combine 端做 $\sum w_i \cdot x_i$ 加权求和的顺序随之改变。此外，带 capacity 限制的 MoE 在超容时要丢 token，「丢谁」直接依赖这个不稳定的顺序——这已经不是 ULP 级差异，而是**输入内容级**的不确定。这就是 MoE 模型成为不可复现重灾区、LongCat 把 MoE 列入自研确定性算子清单的原因。（MoE all-to-all 排序详见 [[14_expert_parallel_analysis]]。）
 
 **第 5 层：框架级随机性。** dropout 种子管理、DataLoader 多 worker 的取数交错顺序、TP 组内 RNG 状态不同步、Python hash 随机化（影响某些 dict 遍历序）。这一层与浮点无关，纯粹是状态管理问题，但只要漏掉一处，前四层做得再好也白费。
 
@@ -129,7 +129,7 @@ export HCCL_DETERMINISTIC=true   # HCCL 集合通信确定性计算模式
 
 于是系统级不确定性的完整链条是：**服务器负载不确定 → 动态 batching 凑出的 batch 大小不确定 → kernel 规约拆分不确定 → 同一请求结果不确定**。每个 kernel 单独看都是运行间确定的，拼成推理系统就不确定了——这是 Thinking Machines 2025 年 9 月分析的核心论点：temperature=0 不可复现的主因不是笼统的「浮点 + 并发」，而是 batch 依赖性这个可修的工程缺陷。
 
-RL 训练把这个问题从「体验问题」升级为「正确性问题」：rollout 引擎（vLLM/SGLang）与训练引擎（Megatron/FSDP）是**两套 kernel 栈**——不同的 GEMM 实现、不同的 attention kernel、不同的规约顺序，同一 (prompt, response) 算出的 per-token log-prob 存在系统性偏差。名义上的 on-policy RL（假设样本恰好采自当前策略）实际在做隐式 off-policy 更新，而算法里没有任何机制在校正这个偏差。（RL 训推精度细节见 [[RL_Training_Inference_Precision_Analysis]]、[[10_rl_ppo_loss_and_grpo_analysis]]；batch 不变性的算子级实现见 [[batch_invariance_guide]]。）
+RL 训练把这个问题从「体验问题」升级为「正确性问题」：rollout 引擎（vLLM/SGLang）与训练引擎（Megatron/FSDP）是**两套 kernel 栈**——不同的 GEMM 实现、不同的 attention kernel、不同的规约顺序，同一 (prompt, response) 算出的 per-token log-prob 存在系统性偏差。名义上的 on-policy RL（假设样本恰好采自当前策略）实际在做隐式 off-policy 更新，而算法里没有任何机制在校正这个偏差。（RL 训推精度细节见 [[20_rl_training_inference_precision_analysis]]、[[10_rl_ppo_loss_and_grpo_analysis]]；batch 不变性的算子级实现见 [[batch_invariance_guide]]。）
 
 ### 影响
 
@@ -185,7 +185,7 @@ loss 中乘以     min(rₜ, C)        # C 为截断上限
 
 FP8 在硬件层还有第三个坑：**tensor core 的内部累加精度受限**。Hopper 上 FP8 GEMM 的累加器并非完整 FP32——DeepSeek-V3 报告实测约 **14 位**有效累加精度，并给出量化后果：K=4096 的累加最大相对误差可接近 **2%**。也就是说即使你在软件里写着 `accum=fp32`，硬件路径上真实的累加精度是打折的。
 
-规约链条遍布全栈：GEMM 的 K 维累加、LayerNorm/softmax 的行规约、梯度 allreduce（万卡 DP 下链条极长）、optimizer 二阶矩累积、MoE combine 的加权求和——每一处都同时暴露在病一与病二之下。（低精度格式与误差治理见 [[low_precision_training_analysis]]。）
+规约链条遍布全栈：GEMM 的 K 维累加、LayerNorm/softmax 的行规约、梯度 allreduce（万卡 DP 下链条极长）、optimizer 二阶矩累积、MoE combine 的加权求和——每一处都同时暴露在病一与病二之下。（低精度格式与误差治理见 [[13_low_precision_training_analysis]]。）
 
 ### 影响
 
@@ -325,10 +325,10 @@ A_c = [ A  ]          B_r = [ B , B·e ]        （e 为全 1 向量）
 - [[training_dynamics_stability_analysis]] — 姊妹页：第三部分（问题 9）训练动力学稳定性
 - [[longcat_2_analysis]] — LongCat 确定性算子 / 二叉树分段累加 / bit-flip 检测（问题 1、3、4 的一手落地）
 - [[longcat_flash_analysis]] — LongCat 的 SDC 检测（问题 4 第三层 ABFT 热点算子保护）
-- [[low_precision_training_analysis]] — 低精度训练格式与误差治理（问题 3 背景）
+- [[13_low_precision_training_analysis]] — 低精度训练格式与误差治理（问题 3 背景）
 - [[12_deepseek_v3_analysis]] — FP8 两级累加 / block-wise scaling / DeepGEMM（问题 3 方案 3）
-- [[RL_Training_Inference_Precision_Analysis]] · [[10_rl_ppo_loss_and_grpo_analysis]] — 训推一致与重要性采样（问题 2）
+- [[20_rl_training_inference_precision_analysis]] · [[10_rl_ppo_loss_and_grpo_analysis]] — 训推一致与重要性采样（问题 2）
 - [[batch_invariance_guide]] — batch 不变性的算子级实现:双内核 Attention、DeepGEMM 1D1D、MoE 反向确定性累加（问题 2 的 kernel 层落地）
-- [[collectives_analysis]] — ring/tree allreduce 规约树（问题 1 第 3 层通信规约顺序）
-- [[expert_parallel_analysis]] — MoE all-to-all 与排序不确定（问题 1 第 4 层动态路由）
+- [[10_collectives_analysis]] — ring/tree allreduce 规约树（问题 1 第 3 层通信规约顺序）
+- [[14_expert_parallel_analysis]] — MoE all-to-all 与排序不确定（问题 1 第 4 层动态路由）
 - [[02_engineering/02_train_frameworks/megatron-lm/index]] — Megatron-LM 确定性模式与 FP32 main_grad 实现

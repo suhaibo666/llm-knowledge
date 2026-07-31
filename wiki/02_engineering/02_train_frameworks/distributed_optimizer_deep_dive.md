@@ -181,5 +181,5 @@ def newtonschulz5(G, steps=5):
 - [[torchtitan_fsdp_analysis]] — torchtitan/PyTorch FSDP2 机制标杆篇（切分/预取/掩盖/异步四问）
 - [[torchtitan_hsdp_backward_overlap_analysis]] — torchtitan HSDP 反向双流掩盖
 - [[mindspeed_comm_overlap_analysis]] — MindSpeed 计算通信掩盖（含 DP 侧 async-log-allreduce）
-- [[muon_analysis]] — Muon 优化器本身的数学原理（Newton-Schulz 正交化）
+- [[11_muon_analysis]] — Muon 优化器本身的数学原理（Newton-Schulz 正交化）
 - [[comm_compute_overlap_analysis]] — 跨框架计算-通信掩盖对比（本页姊妹横向页，聚焦"掩盖"而非"分片"）

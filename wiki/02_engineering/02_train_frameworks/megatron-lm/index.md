@@ -29,7 +29,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 | [[megatron_vllm_weight_sync_analysis]] | verl 框架 Megatron→vLLM 权重同步、Gather-Broadcast-Load、colocation、HF 格式重组(与 [[megatron_rl_posttraining_consistency_analysis]] 的内部 Refit 互补) |
 | [[mooncake_analysis]] | (跨域,推理框架目录)Mooncake KVCache 中心化分离式服务架构 |
 | [[deepseek_v4_tensor_parallel_analysis]] | **DeepSeek-V4 TP 切分实现**:DSv4 Hybrid Attention 强制 `tp==1` 的架构动因、Compressor/Indexer duplicated、mHC 非 TP-aware 梯度同步、MoE Shared/Routed expert TP 约束、通信量修正(2026-06-25 自父目录移入)。模型侧架构见 [[../../../01_theory/01_models/deepseek/13_deepseek_v4_analysis\|13_deepseek_v4_analysis]] |
-| [[deepseek_v4_context_parallel_analysis]] | **DeepSeek-V4 CP 实现**:MLA 对 CP 通信量降低 ~128 倍、CSA/HCA 压缩注意力与 CP 的论文↔代码 gap 审计、RoPE 的 CP 感知、TE CP 的 cp_stream 双缓冲、Dynamic CP 对 MLA 的不支持(2026-06-25 自父目录移入)。CP 通用机制见 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis\|ring_attention_and_context_parallel_analysis]];论文级 CP 算法见 [[../../../01_theory/01_models/deepseek/23_deepseek_v4_cp_analysis\|23_deepseek_v4_cp_analysis]] |
+| [[deepseek_v4_context_parallel_analysis]] | **DeepSeek-V4 CP 实现**:MLA 对 CP 通信量降低 ~128 倍、CSA/HCA 压缩注意力与 CP 的论文↔代码 gap 审计、RoPE 的 CP 感知、TE CP 的 cp_stream 双缓冲、Dynamic CP 对 MLA 的不支持(2026-06-25 自父目录移入)。CP 通用机制见 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis\|20_ring_attention_and_context_parallel_analysis]];论文级 CP 算法见 [[../../../01_theory/01_models/deepseek/23_deepseek_v4_cp_analysis\|23_deepseek_v4_cp_analysis]] |
 
 ## 源码级系统分析系列(Megatron-LM `dev` @ `232c478d4`, 2026-06 刷新)
 
@@ -75,7 +75,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 | [[megatron_pp_schedulers_analysis]] | 流水线并行 5 调度器:无流水线 / 1F1B / 交错 VPP / P2P-overlap / combined-1F1B;气泡公式推导、流水线模拟图(附调度模拟器 `_pp_sim.py`) |
 | [[megatron_ep_analysis]] | 专家并行:AllGather / AllToAll / Flex(DeepEP/HybridEP)三种 token dispatcher;MoE Parallel Folding;通信量与负载均衡 |
 | [[megatron_tp_analysis]] | 张量并行:ColumnParallel/RowParallel 共轭算子 f/g、MLP/Attention 切分;Sequence Parallelism |
-| [[megatron_cp_analysis]] | 上下文并行:`cp_comm_type` 四选一(p2p/all_gather/a2a/a2a+p2p)配置接口、TE 透传架构、选型决策树;通用机制见 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis\|ring_attention_and_context_parallel_analysis]] |
+| [[megatron_cp_analysis]] | 上下文并行:`cp_comm_type` 四选一(p2p/all_gather/a2a/a2a+p2p)配置接口、TE 透传架构、选型决策树;通用机制见 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis\|20_ring_attention_and_context_parallel_analysis]] |
 
 > 数据并行 + 分布式优化器(ZeRO-0/1/2/3 四阶段、梯度分桶重叠、HSDP)2026-07-31 起并入 [[megatron_distributed_optimizer_analysis]](见下方「专题深挖」),不再单列本区。
 
@@ -115,11 +115,11 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 
 ## Cross-Domain Links
 
-- Distributed parallelism concepts connect to [[muon_analysis]] in the LLM domain (Muon's ZeRO incompatibility)
-- MoE zero-redundancy dispatch relates to [[llm_initiliaze_analysis]] (MoE expert initialization)
+- Distributed parallelism concepts connect to [[11_muon_analysis]] in the LLM domain (Muon's ZeRO incompatibility)
+- MoE zero-redundancy dispatch relates to [[10_llm_initiliaze_analysis]] (MoE expert initialization)
 - CUDA Graphs usage in Megatron connects to [[10_pytorch_cuda_graphs_complete_guide]] in the CUDA Graphs sub-domain
 - Weight sync patterns relate to inference optimization topics in the torch_compile domain
-- FP8/low-precision training connects to [[low_precision_training_analysis]] and [[transformer_engine_analysis]] in the training domain
+- FP8/low-precision training connects to [[13_low_precision_training_analysis]] and [[14_transformer_engine_analysis]] in the training domain
 - Distributed optimizer state sharding relates to ZeRO strategies in [[megatron_distributed_optimizer_analysis]]
 - Memory optimization techniques coalesce around [[megatron_memory_optimization_analysis]]
 - Fusion operators complement communication overlap patterns in [[megatron_comm_overlap_analysis]] and [[megatron_fusion_operators_analysis]]
@@ -130,8 +130,8 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 These topics are referenced but lack dedicated wiki pages:
 
 - ~~**Context Parallelism deep dive**~~ → 专文 [[megatron_cp_analysis]](4 种 cp_comm_type + zigzag 负载均衡);另见 [[megatron_pp_schedulers_analysis]]
-- **TransformerEngine integration** — ~~referenced but not documented~~ → addressed by [[transformer_engine_analysis]]
-- **Low-precision training** — ~~FP8/FP4 scattered across exam and V4 pages~~ → consolidated in [[low_precision_training_analysis]];另见 [[megatron_precision_cudagraph_fusion_analysis]]
+- **TransformerEngine integration** — ~~referenced but not documented~~ → addressed by [[14_transformer_engine_analysis]]
+- **Low-precision training** — ~~FP8/FP4 scattered across exam and V4 pages~~ → consolidated in [[13_low_precision_training_analysis]];另见 [[megatron_precision_cudagraph_fusion_analysis]]
 - ~~**Megatron-LM checkpoint format**~~ → 专文 [[megatron_dist_checkpointing_analysis]](ShardedTensor、并行无关存档)
 - ~~**Distributed optimizer** — no standalone analysis~~ → addressed by [[megatron_distributed_optimizer_analysis]](2026-07-31 合一页)
 - ~~**Memory optimization panorama** — scattered across multiple pages~~ → addressed by [[megatron_memory_optimization_analysis]];另见 [[megatron_recompute_analysis]]

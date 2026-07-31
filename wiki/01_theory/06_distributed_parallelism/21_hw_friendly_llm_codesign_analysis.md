@@ -73,16 +73,16 @@ flowchart TB
 
 - **立场偏差**: 阈值(K>3072、N>2560、128/256/512 对齐)全部是 GB300 + NVFP4 的实测,别当跨硬件常数;工具解全部指向自家 TensorRT-LLM。定性结论(方阵、对齐、宽深、解耦)是 roofline 层面的通用原理,可移植。
 - **与细粒度 MoE 路线的张力**: 博客 Table 2 的"小 K 反例"(K=512)恰是 DeepSeek 系细粒度专家路线的日常形态——原文自己的和解方案是 §五: 小专家的 GEMM-M 靠宽 EP 的并发聚合抬起来,并明说细粒度 MoE 该用 EP 而非 TP。对照 [[hy3_analysis]]: Hy3 专家中间维 1536(= 6×256,对齐达标)但作为 FFN-2 的 K 仍远低于 3072 阈值——同样要靠 EP 并发兜底,印证两条路线的耦合关系。
-- **训练视角缺位**: 全文只谈推理;宽深比、维度对齐同样影响训练效率,但训练侧的约束(如 PP 气泡对 micro-batch 的要求、MFU)不在其范围,本域训练侧原理见 [[pipeline_parallel_analysis]] / [[expert_parallel_analysis]]。
+- **训练视角缺位**: 全文只谈推理;宽深比、维度对齐同样影响训练效率,但训练侧的约束(如 PP 气泡对 micro-batch 的要求、MFU)不在其范围,本域训练侧原理见 [[15_pipeline_parallel_analysis]] / [[14_expert_parallel_analysis]]。
 - **attention 内核不在本篇**: 长上下文象限时间大头在 attention(其 Fig. 2 自述),但本篇只给了并行化(Helix)一条路,稀疏化路线见 [[stem_sparse_attention_analysis]] 一类工作,属互补维度。
 
 ## Related Pages
 
 - [[index]] — 分布式并行原理域入口(α-β 代价模型是本页 roofline 记账的姊妹尺)
-- [[expert_parallel_analysis]] — EP 原理与 all-to-all 代价,本页 §五的原理底座
-- [[pipeline_parallel_analysis]] — PP 气泡与调度,CPP 是其推理 prefill 特化
-- [[tensor_sequence_parallel_analysis]] — TP/SP/CP 原理;Helix 的序列维 KV 切分与 CP 同轴
-- [[collectives_analysis]] — AllReduce/all-to-all 原语代价
+- [[14_expert_parallel_analysis]] — EP 原理与 all-to-all 代价,本页 §五的原理底座
+- [[15_pipeline_parallel_analysis]] — PP 气泡与调度,CPP 是其推理 prefill 特化
+- [[13_tensor_sequence_parallel_analysis]] — TP/SP/CP 原理;Helix 的序列维 KV 切分与 CP 同轴
+- [[10_collectives_analysis]] — AllReduce/all-to-all 原语代价
 - [[24_deepseek_v4_fp4_qat_analysis]] — FP4 的训练侧实践(QAT),与 §四 NVFP4 部署侧互补
 - [[12_deepseek_v3_analysis]] — 博客通篇的实验模型 DeepSeek-R1 之底座(256 专家 top-8)
 - [[hy3_analysis]] — §七评注的对照样本(1536 专家维 vs K>3072 阈值)

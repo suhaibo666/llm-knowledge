@@ -641,7 +641,7 @@ fully_shard(sub_module, mesh=device_mesh, reshard_after_forward=True)
 - ✗ 推理阶段（不需要 backward 激活）
 - ✗ 极致低延迟需求（~33% 额外计算）
 
-详细分析见 [[activation_checkpointing_analysis]]。
+详细分析见 [[12_activation_checkpointing_analysis]]。
 
 ---
 
@@ -677,7 +677,7 @@ MoE 的参数量是稠密模型的 N×（N=expert 数量），在 671B MoE 中 F
 
 激活融合算子（SwiGLU, GEGLU）支持 `fp8_input_store`——forward 中将 backward 需要的输入转为 FP8 存储（节省 50% 激活显存），backward 时恢复。对 MoE 每层的 [10K tokens, 2×8192 hidden] 节省 ~164MB。
 
-详细分析见 [[low_precision_training_analysis]] 和 [[transformer_engine_analysis]]。
+详细分析见 [[13_low_precision_training_analysis]] 和 [[14_transformer_engine_analysis]]。
 
 ---
 
@@ -991,9 +991,9 @@ TP=8, PP=32, EP=32, DP=8, CP=4
 - [[megatron_parallelism_orchestration_analysis]]
 - [[megatron_ep_analysis]]
 - [[megatron_pp_schedulers_analysis]]
-- [[activation_checkpointing_analysis]]
-- [[low_precision_training_analysis]]
-- [[transformer_engine_analysis]]
+- [[12_activation_checkpointing_analysis]]
+- [[13_low_precision_training_analysis]]
+- [[14_transformer_engine_analysis]]
 - [[megatron_ep_analysis]]
 - [[megatron_precision_cudagraph_fusion_analysis]]
 - [[megatron_training_stability_observability_analysis]]

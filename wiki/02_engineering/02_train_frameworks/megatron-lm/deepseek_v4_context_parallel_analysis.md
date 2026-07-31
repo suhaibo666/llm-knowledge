@@ -5,7 +5,7 @@
 > **源基线**: Megatron-LM `dev` @ `232c478d4`（2026-06-16）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`parallel_state.py`、`dot_product_attention_context_parallel.py` 等。
 > **维度**: 工程实现（框架层）。**审计/移库**: 2026-06-25（自 `02_train_frameworks/` 移入 `megatron-lm/`；citation 已对照当前 HEAD 抽查，少量行号随源码漂移）。
 > **与模型页的分工**: 论文级 CP *算法*（两阶段压缩感知 CP、可见性控制）见模型页 [[23_deepseek_v4_cp_analysis]]（§3.4.3）；本页讲 Megatron 的 *实现* 与 *代码↔论文 gap*（见 §五 5.5、§九 特征 5）。
-> **划界声明**: CP/Ring Attention 通用机制（p2p/all_gather/a2a/a2a+p2p 四种通信调度的算法本体、因果 zigzag 裁剪、通信量代数、分层 CP 的 N 级分组构造）已归一到 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]]——本页的 Native CP 源码 walkthrough（§三）与分层分组构造代码（§1.2）正是该理论页对应章节的骨架来源。**本页只保留 DeepSeek-V4/MLA/CSA/HCA 特有内容**：MLA 对 CP 通信量降低 ~128 倍的推导、CSA/HCA 压缩注意力与 CP 交互的论文↔代码 gap 审计（本页核心贡献）、RoPE 的 CP 感知、Dynamic CP 对 MLA 的不支持、CP 与 EP 的带宽竞争、TE CP 的 cp_stream 双缓冲机制（四页中仅此一页覆盖）。
+> **划界声明**: CP/Ring Attention 通用机制（p2p/all_gather/a2a/a2a+p2p 四种通信调度的算法本体、因果 zigzag 裁剪、通信量代数、分层 CP 的 N 级分组构造）已归一到 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]——本页的 Native CP 源码 walkthrough（§三）与分层分组构造代码（§1.2）正是该理论页对应章节的骨架来源。**本页只保留 DeepSeek-V4/MLA/CSA/HCA 特有内容**：MLA 对 CP 通信量降低 ~128 倍的推导、CSA/HCA 压缩注意力与 CP 交互的论文↔代码 gap 审计（本页核心贡献）、RoPE 的 CP 感知、Dynamic CP 对 MLA 的不支持、CP 与 EP 的带宽竞争、TE CP 的 cp_stream 双缓冲机制（四页中仅此一页覆盖）。
 
 > 本报告基于 Megatron-LM dev 分支中 DeepSeek-V4 的实际源码实现，系统分析其 Context Parallelism（CP）机制。涵盖 CP 进程组拓扑、四种通信类型（p2p/all_gather/a2a/a2a+p2p）的实现差异、TransformerEngine 的 fused flash attention + CP 路径、Native CP 的 autograd 实现、以及 DSv4（MLA + CSA/HCA）架构对 CP 的特殊适配与限制。
 
@@ -49,7 +49,7 @@ CP 组与 TP 组、PP 组、EP 组正交。一个典型的 4D 并行拓扑中，
 
 ### 1.2 Hierarchical CP：NVLink + IBLink 分层
 
-Megatron-LM 支持 **Hierarchical Context Parallelism**，通过 `hierarchical_context_parallel_sizes` 参数创建多层级的 CP 子组，以匹配集群的物理拓扑（CP size=16、`[2,2,4]` 三级分组示例；`create_hierarchical_groups` 用 einops `rearrange` 做张量维度分解生成各级子组，避免手动枚举）——这套 N 级分层分组构造是本页对通用机制页的独家贡献，完整代码与算例已整体迁移收录到 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]] §8.2（来源：`megatron/core/parallel_state.py:982-995`）。低层通信走 NVLink（~600GB/s）、高层走 IB（~50GB/s），与 `a2a+p2p` 通信类型配合实现物理拓扑感知的通信调度——这一分层机制在 MindSpeed 的二级 Hybrid（内 Ulysses、外 Ring）中有另一具体实例，见理论页 §8.3。
+Megatron-LM 支持 **Hierarchical Context Parallelism**，通过 `hierarchical_context_parallel_sizes` 参数创建多层级的 CP 子组，以匹配集群的物理拓扑（CP size=16、`[2,2,4]` 三级分组示例；`create_hierarchical_groups` 用 einops `rearrange` 做张量维度分解生成各级子组，避免手动枚举）——这套 N 级分层分组构造是本页对通用机制页的独家贡献，完整代码与算例已整体迁移收录到 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]] §8.2（来源：`megatron/core/parallel_state.py:982-995`）。低层通信走 NVLink（~600GB/s）、高层走 IB（~50GB/s），与 `a2a+p2p` 通信类型配合实现物理拓扑感知的通信调度——这一分层机制在 MindSpeed 的二级 Hybrid（内 Ulysses、外 Ring）中有另一具体实例，见理论页 §8.3。
 
 ### 1.3 CP 与其他并行维度的关系
 
@@ -601,7 +601,7 @@ Dynamic CP 允许在 training 过程中根据输入序列长度动态调整 CP s
 ## 相关页面
 
 **通用机制（理论层）**：
-- [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]] — CP/Ring Attention 通用机制(p2p/all_gather/a2a/a2a+p2p 四种调度、因果裁剪、通信量代数、分层分组构造);本页 §三、§1.2、§6.2 的骨架来源页
+- [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]] — CP/Ring Attention 通用机制(p2p/all_gather/a2a/a2a+p2p 四种调度、因果裁剪、通信量代数、分层分组构造);本页 §三、§1.2、§6.2 的骨架来源页
 
 **模型侧（论文级，01_theory）** — 本页讲实现，下列讲算法/架构：
 - [[23_deepseek_v4_cp_analysis]] — V4 CP 的**论文算法**（§3.4.3 两阶段压缩感知 CP、packed sequences、三层可见性控制）。与本页对照阅读：论文设计 ↔ Megatron 实现 gap（见本页 §五 5.5、§九 特征 5）。

@@ -146,7 +146,7 @@ Muon 路线与 [[11_kimi_k2_analysis]](MuonClip)、[[01_glm_5_analysis]](Muon Sp
 
 **4. 技术层面的潜在冲击**: 若 Inkling 的架构选择被验证有效,可能松动几个"事实标准"——RoPE(→ 学习相对 PE)、MLA(→ 滑窗/全局非对称 KV)、纯 Transformer MoE(→ 掺 SConv)、重型视觉编码器(→ encoder-free)。它给了社区一个**非 DeepSeek 血统的千亿级开源参照系**,对生态多样性本身有价值。
 
-**5. 生态铺满(day-0)**: Together AI / Fireworks / Modal / Databricks / Baseten 首日可推理;SGLang / vLLM / llama.cpp / transformers 已适配;另发 12B 激活的 **Inkling-Small**(276B 总参,同后训练栈)预览,主打低延迟低成本。NVFP4 checkpoint 直接对接 Blackwell 部署(见 [[hw_friendly_llm_codesign_analysis]] 的 NVFP4 双层缩放)。
+**5. 生态铺满(day-0)**: Together AI / Fireworks / Modal / Databricks / Baseten 首日可推理;SGLang / vLLM / llama.cpp / transformers 已适配;另发 12B 激活的 **Inkling-Small**(276B 总参,同后训练栈)预览,主打低延迟低成本。NVFP4 checkpoint 直接对接 Blackwell 部署(见 [[21_hw_friendly_llm_codesign_analysis]] 的 NVFP4 双层缩放)。
 
 **需打折看待**: 官方自认非 SOTA;全项对比只放 Nemotron 3 Ultra 一个详细基线;encoder-free 多模态在视觉上已见落后(§四);8 MTP 层实际接受率、无 RoPE 在 1M 的真实外推质量,均无第三方复现;无正式技术报告,机制层"为什么"披露有限。
 
@@ -169,4 +169,4 @@ Muon 路线与 [[11_kimi_k2_analysis]](MuonClip)、[[01_glm_5_analysis]](Muon Sp
 - [[11_kimi_k2_analysis]] — Muon 训练路线同源(MuonClip)
 - [[01_glm_5_analysis]] — Muon + 稀疏注意力路线对照(DSA vs 滑窗交错)
 - [[longcat_flash_analysis]] — 另一"小激活参数"工业实践对照
-- [[hw_friendly_llm_codesign_analysis]] — Inkling NVFP4 checkpoint 对应的 Blackwell 部署侧原理
+- [[21_hw_friendly_llm_codesign_analysis]] — Inkling NVFP4 checkpoint 对应的 Blackwell 部署侧原理

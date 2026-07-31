@@ -125,7 +125,7 @@ sequenceDiagram
 ## Related Pages
 
 - [[01_theory/index]]
-- [[llm_initiliaze_analysis]]
+- [[10_llm_initiliaze_analysis]]
 - [[megatron_distributed_optimizer_analysis]]
 - [[../../02_engineering/02_train_frameworks/distributed_optimizer_deep_dive|distributed_optimizer_deep_dive]] — Adam vs Muon 分布式内存/通信影响的跨框架对比
 - [[25_mhc_analysis]]

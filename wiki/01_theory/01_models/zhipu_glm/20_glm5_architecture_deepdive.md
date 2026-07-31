@@ -76,7 +76,7 @@ $$W^{UQ},W^{UK},W^{UV} \;\longrightarrow\; \{W_h\}_{h=1}^{H}\;\text{（每头一
 
 **效果（两个层面）**：
 1. 精度上，MLA + Muon Split 追平甚至反超 GQA-8（Table 1）。
-2. **稳定性红利**：论文报告，配合 Muon Split，GLM-5 的 attention logits 在整个预训练过程**保持稳定，无需任何 clipping 策略**（§2.1, p5）。这是个重要的工程收益——省掉了 logit 软上限这类常见的稳定性补丁。详见 [[25_glm5_training_stability_deepdive]] 与优化器原理 [[muon_analysis]]。
+2. **稳定性红利**：论文报告，配合 Muon Split，GLM-5 的 attention logits 在整个预训练过程**保持稳定，无需任何 clipping 策略**（§2.1, p5）。这是个重要的工程收益——省掉了 logit 软上限这类常见的稳定性补丁。详见 [[25_glm5_training_stability_deepdive]] 与优化器原理 [[11_muon_analysis]]。
 
 ### 3.3 MLA-256：把"解码贵"这件事按硬件 roofline 重新设计
 
@@ -154,7 +154,7 @@ continual-train 190B token（64K 上下文、高效层:全注意力 = 1:1）后�
 - [[26_glm5_low_precision_chip_deepdive]] — INT4 QAT / FP8 / W4A8 / 国产芯片
 
 **相邻主题**：
-- [[muon_analysis]] — Muon 优化器原理（Muon Split 的基础）
+- [[11_muon_analysis]] — Muon 优化器原理（Muon Split 的基础）
 - [[12_deepseek_v3_analysis]] — MLA / MTP 的来源
 - [[20_deepseek_moe_analysis]] — MoE 与专家并行
 - [[zhipu_glm/index]] — GLM 家族总览

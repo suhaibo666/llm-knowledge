@@ -41,7 +41,7 @@ GLM-5 的稳定性工程不是单点补丁，而是按「失稳从哪里来」�
 
 **为什么**：整体正交化把所有头绑到**同一更新尺度**，尺度不匹配的头会被推向过大的内积，注意力 logits 因此随训练放大、易出现数值爆炸；按头独立正交化解开这层耦合，每个头都在「适合自己」的尺度上更新，从源头上避免了 logit blow-up——稳定性是它精度收益（MLA 追平 GQA-8）之外的**附带红利**。
 
-> 完整的 Muon Split 机制（含 Table 1 消融、MLA-256 解码优化）见 [[20_glm5_architecture_deepdive]]；Muon 优化器本身的正交化原理见 [[muon_analysis]]。本页只取其「稳定性」一面。
+> 完整的 Muon Split 机制（含 Table 1 消融、MLA-256 解码优化）见 [[20_glm5_architecture_deepdive]]；Muon 优化器本身的正交化原理见 [[11_muon_analysis]]。本页只取其「稳定性」一面。
 
 ---
 
@@ -69,7 +69,7 @@ $$r_{i,t}=\frac{\pi^{\text{train}}_{\theta}(y_{i,t}\mid x,y_{i,<t})}{\pi^{\text{
 
 超参 $\beta=2,\ \epsilon_{\text{low}}=0.2,\ \epsilon_{\text{high}}=0.28$，**完全 on-policy**，group size 与 batch size 均为 32（§3.2, p12）。
 
-**为什么有效**：推理引擎（如 SGLang）与训练引擎在数值实现上不可能逐 token 等价，$\rho$ 衡量「这个 token 在两套引擎下的概率差多大」。失配过大的 token 上，重要性比已不可信，强行回传梯度会放大数值噪声；`pop` 直接把它们清零，相当于**只在训练-推理一致的 token 上学习**。详见 [[20_grpo_analysis]] 与 [[RL_Training_Inference_Precision_Analysis]]。
+**为什么有效**：推理引擎（如 SGLang）与训练引擎在数值实现上不可能逐 token 等价，$\rho$ 衡量「这个 token 在两套引擎下的概率差多大」。失配过大的 token 上，重要性比已不可信，强行回传梯度会放大数值噪声；`pop` 直接把它们清零，相当于**只在训练-推理一致的 token 上学习**。详见 [[20_grpo_analysis]] 与 [[20_rl_training_inference_precision_analysis]]。
 
 ### 3.2 DSA indexer：确定性 top-k 是 RL 稳定的关键
 
@@ -202,7 +202,7 @@ $$f(x;\epsilon_\ell,\epsilon_h)=\begin{cases}x, & 1-\epsilon_\ell<x<1+\epsilon_h
 - [[zhipu_glm/index]] — GLM 家族总览
 
 **相邻主题**：
-- [[muon_analysis]] — Muon 优化器与正交化原理（Muon Split 的基础）
+- [[11_muon_analysis]] — Muon 优化器与正交化原理（Muon Split 的基础）
 - [[20_grpo_analysis]] — GRPO 损失与组归一化优势（IcePop / 双边 IS 的骨干）
-- [[RL_Training_Inference_Precision_Analysis]] — 训练-推理精度失配的成因与对策
+- [[20_rl_training_inference_precision_analysis]] — 训练-推理精度失配的成因与对策
 - [[31_reward_hacking_defense_analysis]] — reward hacking 防御谱系（混合奖励 / grounded 取值）

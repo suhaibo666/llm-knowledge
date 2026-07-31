@@ -96,7 +96,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **Type**: Structure Reorg / Dedup（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.5；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 2）
 
-- **新建** `01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis.md`（655 行）：抽取四份框架 CP 分析页（`megatron_cp_analysis` 391、`torchtitan_cp_analysis` 345、`mindspeed_context_parallel_analysis` 420、`deepseek_v4_context_parallel_analysis` 853，合计 2009 行）里重复讲的通用机制——CP 动机（attention `O(S²)` 墙）、与 TP/PP/DP/EP 的组合关系、序列切分（朴素连续切分 + 折叠/头尾配对负载均衡定量证明 + PTRR 任意稀疏掩码均衡 + RoPE 切分不变量）、因果 mask 三分支裁剪、四种通信调度（Ring P2P + online-softmax、All-gather 双缓冲、Ulysses 头维换轴、分层混合 N 级分组构造）、通信量代数统一对比、Dynamic CP 通用机制。逐段择"最深最完整版本"逐字为骨架并注明来源：MindSpeed 提供负载均衡定量证明 + RoPE 不变量 + 因果三分支裁剪 + online-softmax 公式 + Ulysses 全套机制 + Hybrid 量化论证；torchtitan 提供 Ring 主循环伪代码 + 通信掩盖时序 + 反向双环原理 + PTRR；DeepSeek-V4 提供 Native CP AllGather 代码 + 分层分组构造代码 + 通信量统一公式；Megatron-LM 提供 CP 动机 + 并行组合关系。其余版本的独有补充/口径差异（如 Ulysses 通信量"2 次"vs"4 次"计数粒度、通信量公式是否显式含 `/TP` 因子）逐段并注，不强行合并掩盖。
+- **新建** `01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis.md`（655 行）：抽取四份框架 CP 分析页（`megatron_cp_analysis` 391、`torchtitan_cp_analysis` 345、`mindspeed_context_parallel_analysis` 420、`deepseek_v4_context_parallel_analysis` 853，合计 2009 行）里重复讲的通用机制——CP 动机（attention `O(S²)` 墙）、与 TP/PP/DP/EP 的组合关系、序列切分（朴素连续切分 + 折叠/头尾配对负载均衡定量证明 + PTRR 任意稀疏掩码均衡 + RoPE 切分不变量）、因果 mask 三分支裁剪、四种通信调度（Ring P2P + online-softmax、All-gather 双缓冲、Ulysses 头维换轴、分层混合 N 级分组构造）、通信量代数统一对比、Dynamic CP 通用机制。逐段择"最深最完整版本"逐字为骨架并注明来源：MindSpeed 提供负载均衡定量证明 + RoPE 不变量 + 因果三分支裁剪 + online-softmax 公式 + Ulysses 全套机制 + Hybrid 量化论证；torchtitan 提供 Ring 主循环伪代码 + 通信掩盖时序 + 反向双环原理 + PTRR；DeepSeek-V4 提供 Native CP AllGather 代码 + 分层分组构造代码 + 通信量统一公式；Megatron-LM 提供 CP 动机 + 并行组合关系。其余版本的独有补充/口径差异（如 Ulysses 通信量"2 次"vs"4 次"计数粒度、通信量公式是否显式含 `/TP` 因子）逐段并注，不强行合并掩盖。
 - **四页收缩**（通用段替换为一句定位 + 链接，页头补划界声明，各自实现差异/源码走读/性能数据/配置全保留）：
   - `megatron_cp_analysis.md` 391→131 行：保留 `cp_comm_type` 四选一配置接口、TE 透传架构、选型决策树、Dynamic CP 的 dispatcher 兼容/CUDA Graph 守卫等 Megatron 特有源码细节。
   - `torchtitan_cp_analysis.md` 345→181 行：保留 SDPA-ring 与 FlexAttention-allgather 双路径架构（torchtitan 独有）、DTensor dispatcher 接线、`functional collectives`/`AsyncCollectiveTensor` 异步实现（不手写 CUDA stream）。
@@ -737,7 +737,7 @@ Node 引用"已是 C10 §16 原文，删除；"bw 不是反向边图"与"阅读�
 
 **入链修复**：C09/C10 基名改名共影响 24 个文件的裸链接/路径限定链接（图系列两个 00 索引表格行、
 自身互指、`graph_stage_boundaries_identity_and_provenance_analysis` 前置行、`aot_autograd_quickstart`、
-`aotautograd_cache_analysis`、`memory_amp_profiler`/`activation_checkpointing_analysis` 等）；
+`aotautograd_cache_analysis`、`memory_amp_profiler`/`12_activation_checkpointing_analysis` 等）；
 `aotautograd_analysis` 删除后 15 个外部文件重定向（按引用内容精确改指 C09/C10/新
 `dispatch_modes_proxytensor_faketensor_analysis` 三个目标之一，而非笼统指回同一处）；
 `fx_graph_construction_and_transformation_analysis` 删除后 2 个外部文件改指；`02_aot_autograd/index.md`
@@ -1227,7 +1227,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **主干新增结构**：§三新增 3.4 TreeManagerContainer 单例生命周期、3.5 C++ 层数据结构(NPUGraph/PrivatePool/Checkpoint 快照)、3.6 Checkpoint 恢复流程与内存复用三分类、3.7 内存复用策略(Liveness/弱引用/别名检测)、3.8 案例分析(graph-break 分支完整生命周期);3.1 补充内存优化公式;3.2.3 加一句指向 §3.6 的前向引用。全部新增 mermaid(1 flowchart + 1 sequenceDiagram)经 `@mermaid-js/mermaid-cli` 实渲验证。
 
-**收尾**：5 处入站 wikilink 改指(`activation_checkpointing_analysis`/`aclgraph_deep_analysis`/`aclgraph_multistream_rng_analysis`/`npugraphs_make_graphed_callables_deep_dive`/主干自身的 Related Pages 自链接一并清除);`06_graphs/npu/index.md` 删行+承接说明+日期 bump 至 2026-07-30。体量:两页合计 1698+317=2015 行变动,净删 1698-317=1381 行(≥1200 目标);主干净增 317 行(≤500 目标)。链接检查 broken 0→0、orphans 1→1(与本次改动无关的既有孤儿页)。
+**收尾**：5 处入站 wikilink 改指(`12_activation_checkpointing_analysis`/`aclgraph_deep_analysis`/`aclgraph_multistream_rng_analysis`/`npugraphs_make_graphed_callables_deep_dive`/主干自身的 Related Pages 自链接一并清除);`06_graphs/npu/index.md` 删行+承接说明+日期 bump 至 2026-07-30。体量:两页合计 1698+317=2015 行变动,净删 1698-317=1381 行(≥1200 目标);主干净增 317 行(≤500 目标)。链接检查 broken 0→0、orphans 1→1(与本次改动无关的既有孤儿页)。
 
 **追记(质量审查回补)**：上表 2714 行为本条目写入当时的统计;后续质量审查中对本次合并做了三处小修正回补(§3.6 措辞澄清、Related Pages 去重等),回补后终值为 **2809 行**(非 2714)。审查过程中还发现 §3.8 案例分析里有一处推断性事件描述并非源码可验证事实,已就地删除——记此一笔作为本次合并的自纠记录。
 
@@ -1621,7 +1621,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   3. **SConv**(核 4)+ **encoder-free 四模态**(vision hMLP patchify 40×40 / audio 离散 dMel 16 级)+ **8 层 MTP**(vs DeepSeek/Hy3 的 1)。
   4. 路由沿用 sigmoid 免辅助损失,但 `route_scale=8.0` 异常大;Muon+Adam 混合训练 + muP。
 - **影响力判断**(§五,已与事实分离): 前 OpenAI CTO 首发即开源(Apache 2.0)的象征意义;Tinker 微调变现的商业模式创新;抗审查/校准的差异化卡位;encoder-free 在视觉基准上已见代价(MMMU Pro 落后)。
-- **联动反链**: [[hy3_analysis]](保守 vs 差异化对照)、[[12_deepseek_v3_analysis]](选择性继承)、[[13_kimi_k2_5_analysis]](多模态路线对照 + K2.5 合成数据冷启动)、[[hw_friendly_llm_codesign_analysis]](NVFP4 部署)。
+- **联动反链**: [[hy3_analysis]](保守 vs 差异化对照)、[[12_deepseek_v3_analysis]](选择性继承)、[[13_kimi_k2_5_analysis]](多模态路线对照 + K2.5 合成数据冷启动)、[[21_hw_friendly_llm_codesign_analysis]](NVFP4 部署)。
 - **校验**: config 行号逐一对 raw/ 核对;基准表从 HF 模型卡原表摘录(非二手);mermaid 结构图按库规范自查(首行 flowchart TB、英文 id、subgraph 标题无 `[]|`、标签无裸定界符)通过;无技术报告故"为什么"部分推断已显式标注。页 <300 行。
 
 ---
@@ -1638,13 +1638,13 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 ---
 
-## 2026-07-15: 新增 [[hw_friendly_llm_codesign_analysis]] — NVIDIA 硬件友好 LLM 设计指南(软硬协同,系列第一篇)
+## 2026-07-15: 新增 [[21_hw_friendly_llm_codesign_analysis]] — NVIDIA 硬件友好 LLM 设计指南(软硬协同,系列第一篇)
 
 **Type**: Ingest(应用户「总结该 blog 并加入知识库」。源 = NVIDIA Developer Blog 2026-07-10,HTML 快照已存 `raw/01_theory/06_distributed_parallelism/`;正文经本地 HTML→文本提取逐行核验,7 条 Guideline、公式、Table 1/2、Fig. 4/5/7/9 图注均照原文录入,未依赖 WebFetch 小模型转述——两次转述在"对齐 128/256/512"表述上确有出入,以原文为准)
 
 - **落位裁定**: 本库 `05_inference` 域定义为 CoT/RAG/Agent(推理=reasoning,见 01_theory/index),故本页落 **06_distributed_parallelism**(兄弟页 EP/PP/TP 直接对应博客 §五/§六);raw 同步新建 `06_distributed_parallelism/` 目录。
 - **页面要点**: 主线"模型超参(H/H'/L/对齐/精度)= 部署性能参数";roofline 记账 + Table 2 小 K 反例(H'=512 全程 memory-bound)+ Fig. 4 阈值(80% 吞吐需 K>3072/N>2560,GB300+NVFP4)+ tile 量化(128/256/512)+ NVFP4 双层缩放(16 值 micro-block E4M3 + FP32)+ 宽 EP 的 GEMM-M 公式 + CPP/Helix。§7 单列**立场评注**(NVIDIA 硬件本位、阈值不可跨硬件搬运)并对照 [[hy3_analysis]] 专家维 1536 与 K>3072 阈值的张力。
-- **联动**: 06 index 页面列表增行、日期 bump;[[expert_parallel_analysis]] / [[pipeline_parallel_analysis]] Related 区各加反链;mermaid 决策图按库规范自查通过。
+- **联动**: 06 index 页面列表增行、日期 bump;[[14_expert_parallel_analysis]] / [[15_pipeline_parallel_analysis]] Related 区各加反链;mermaid 决策图按库规范自查通过。
 
 ---
 
@@ -1811,7 +1811,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - **效果**：全评测表（LongCat-2.0 vs Gemini 3.1 Pro / GPT-5.5 / Claude Opus 4.6/4.7/4.8）——**SWE-bench Pro 59.5 > GPT-5.5 58.6**、Terminal-Bench 2.1 70.8、GPQA-diamond 88.9；整体落后 Claude Opus 4.8。
   - **§9 源忠实修正**：[!contradiction] 二手报道称「动态激活 33–56B / zero-compute experts」——博客只提训练期 padding→zero-expert（省显存），激活即 ~48B，疑似把 LongCat-Flash 机制张冠李戴；[!contradiction] 训练算力 README「加速器·小时」vs 博客渲染「天」24× 分歧，FLOPs 粗算支持「小时」。
 
-**整合**：[[01_theory/01_models/index]] 新增「LongCat / Meituan」家族区；[[index]]（总索引）模型行 28→30、加「LongCat (美团)」子行与「按主题查找」条目、更新日期至 2026-07-02；两新页与 [[01_glm_5_analysis]]/[[12_deepseek_v3_analysis]]/[[13_deepseek_v4_analysis]]/[[11_kimi_k2_analysis]]/[[muon_analysis]]/[[expert_parallel_analysis]] 等互链。**校验**：全用 ASIC——图表用 **ASCII**（与 GLM-5/Kimi 同系列风格，零 mermaid 定界符风险）；跨链目标经 grep 核对；因源为渲染提取，数值保真度与未披露项已在页头/§9 显式声明，不臆造未披露量。
+**整合**：[[01_theory/01_models/index]] 新增「LongCat / Meituan」家族区；[[index]]（总索引）模型行 28→30、加「LongCat (美团)」子行与「按主题查找」条目、更新日期至 2026-07-02；两新页与 [[01_glm_5_analysis]]/[[12_deepseek_v3_analysis]]/[[13_deepseek_v4_analysis]]/[[11_kimi_k2_analysis]]/[[11_muon_analysis]]/[[14_expert_parallel_analysis]] 等互链。**校验**：全用 ASIC——图表用 **ASCII**（与 GLM-5/Kimi 同系列风格，零 mermaid 定界符风险）；跨链目标经 grep 核对；因源为渲染提取，数值保真度与未披露项已在页头/§9 显式声明，不臆造未披露量。
 
 ---
 
@@ -1822,12 +1822,12 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **定位**：新建理论簇 `01_theory/06_distributed_parallelism/`，**原理（principle）层、引擎无关**——只讲「为什么这么切、代价函数长什么样、为什么不选替代」，两根主线贯穿全簇：**$\alpha$-$\beta$ 通信代价模型** + **显存账本（参数/梯度/优化器态/激活）**；「源码怎么实现」一律交叉链接到 [[02_engineering/index]] 已有的源级页（`[[15_distributed_primitives/index]]`、[[megatron-lm/index]]、[[torchtitan/index]] 等），不重复。填补「理论层无分布式并行原理页」的空白。
 
 - **新增 index + 6 内容页**：
-  - [[collectives_analysis]] — 六大原语语义、$\alpha$-$\beta(-\gamma)$ 模型、核心恒等式 **all-reduce = reduce-scatter + all-gather**、ring 每卡搬运 $2(N{-}1)/N\cdot M$ 的带宽最优性、ring vs tree、all-to-all/p2p 代价（全簇「代价词汇表」）。
-  - [[data_parallel_analysis]] — DP：复制模型/切数据、all-reduce 梯度的等价性、通信 $\propto\Psi$ 与 batch/卡数无关、$16\Psi$ 显存账本（引出 ZeRO）、分桶重叠 + 梯度累积。
-  - [[zero_fsdp_analysis]] — ZeRO 1/2/3 逐级切优化器态/梯度/参数、通信 vs DP 增量（1/2 免费、3 多 ~50% AG）、ZeRO-3 = FSDP 的 unshard→compute→reshard。
-  - [[tensor_sequence_parallel_analysis]] — TP（Megatron 列切→行切 + f/g 共轭算子、每层 4 次 all-reduce、只敢机内）、SP（拆 all-reduce 为 RS+AG，零额外通信换激活显存）、CP（ring-attention 交换 KV 攻长序列）。
-  - [[expert_parallel_analysis]] — EP：路由 + 两次 all-to-all（分发/回收）、负载不均与容量因子、分层 a2a。
-  - [[pipeline_parallel_analysis]] — PP：microbatching、气泡率 $(P{-}1)/(m{+}P{-}1)$、GPipe vs 1F1B（同气泡、显存 $\propto m$ vs $\propto P$）vs interleaved（真降气泡）、zero-bubble。
+  - [[10_collectives_analysis]] — 六大原语语义、$\alpha$-$\beta(-\gamma)$ 模型、核心恒等式 **all-reduce = reduce-scatter + all-gather**、ring 每卡搬运 $2(N{-}1)/N\cdot M$ 的带宽最优性、ring vs tree、all-to-all/p2p 代价（全簇「代价词汇表」）。
+  - [[11_data_parallel_analysis]] — DP：复制模型/切数据、all-reduce 梯度的等价性、通信 $\propto\Psi$ 与 batch/卡数无关、$16\Psi$ 显存账本（引出 ZeRO）、分桶重叠 + 梯度累积。
+  - [[12_zero_fsdp_analysis]] — ZeRO 1/2/3 逐级切优化器态/梯度/参数、通信 vs DP 增量（1/2 免费、3 多 ~50% AG）、ZeRO-3 = FSDP 的 unshard→compute→reshard。
+  - [[13_tensor_sequence_parallel_analysis]] — TP（Megatron 列切→行切 + f/g 共轭算子、每层 4 次 all-reduce、只敢机内）、SP（拆 all-reduce 为 RS+AG，零额外通信换激活显存）、CP（ring-attention 交换 KV 攻长序列）。
+  - [[14_expert_parallel_analysis]] — EP：路由 + 两次 all-to-all（分发/回收）、负载不均与容量因子、分层 a2a。
+  - [[15_pipeline_parallel_analysis]] — PP：microbatching、气泡率 $(P{-}1)/(m{+}P{-}1)$、GPipe vs 1F1B（同气泡、显存 $\propto m$ vs $\propto P$）vs interleaved（真降气泡）、zero-bubble。
 - **演示图 9 张 SVG→PNG**（手绘 HTML+SVG，走 `.html2md/render_figs.mjs` 无头 Edge 2× 截图）：六原语语义、ring all-reduce 分解、DP 数据流、Megatron 列/行切+f/g、TP+SP 激活切分、ring-attention、EP 三段 a2a+负载不均、GPipe/1F1B 甘特气泡对比、ZeRO 0/1/2/3 显存分区、N 维正交布局（DP2×PP2×TP4）。原理演示图统一走 SVG（按用户约定：代码调用/类/逻辑图才用 mermaid）。
 
 **工具改动**：`render_figs.mjs` 加 `FIGS_OUT` 环境变量支持自定义输出目录（默认仍指 GLM assets，向后兼容），本簇渲染到 `06_distributed_parallelism/assets/`。
@@ -1963,7 +1963,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **重指(按内容去向,非一键)**：
   - 重计算/卸载/resharding 类 → [[megatron_recompute_analysis]]（activation_checkpointing 的 Q12/Q13/Q30）
   - FP8 / CUDA Graph 类 → [[megatron_precision_cudagraph_fusion_analysis]]（low_precision Q15、transformer_engine Q14/Q15）
-  - Muon/Layer-Wise 优化器 → [[megatron_distributed_optimizer_analysis]]（muon_analysis）
+  - Muon/Layer-Wise 优化器 → [[megatron_distributed_optimizer_analysis]]（11_muon_analysis）
   - 泛 5D 并行综合 → [[megatron_parallelism_orchestration_analysis]]（distributed_optimizer/memory_optimization/moe_training/tflops 的「相关页面」、`wiki/index.md`「Megatron 分布式」导航）
 - **散文出处改写**：low_precision §4.1、transformer_engine §10 的「来自 `...Exam.md` Q19/Q14：」改为中性引导句（删去已失效的源文件名,内容保留）。
 - **校验**：全 wiki **0 处**仍指向 `Megatron-LM_Distributed_Parallel_Exam`（changelog 4 条历史记录按惯例保留）；5 个后继目标页均存在,**未引入新 dangling link**。
@@ -2058,7 +2058,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - [[26_glm5_low_precision_chip_deepdive]] — §2.4.3+§3.6.2+§5 INT4 QAT→FP8→W4A8 + 昇腾三支柱（2 图）
 - **流程图工具链**：新增 `.html2md/render_figs.mjs`（复用 Edge/puppeteer 2× 截图）+ `figs/figstyle.css`；图源 HTML 在 gitignored `.html2md/figs/`，14 张 PNG 落 `assets/`（house 风格:奶白卡片 + 彩色圆角节点 + 灰箭头）。
 - **整合**：父索引 [[zhipu_glm/index]] 新增「§四之补 GLM-5 论文深挖页矩阵」(7 页表) + §六 GLM-5 行改指矩阵；概要页 [[01_glm_5_analysis]] 补「逐章深挖」Related 段，并对 §五 估算基准加 `> [!contradiction]` 用 Table 7 真值订正（SWE-bench Verified 77.8 / τ²-Bench 89.7 / AA Index 50 等）。
-- **校验**：7 页 + 索引/概要的 `[[]]` 链接脚本提取，同系列 7 个 `glm5_*_deepdive` + 既有 [[muon_analysis]]/`grpo_analysis`（历史活链接，已于 2026-07-31 因 kb-reorg P5 Task 8 再编号为 [[20_grpo_analysis]]，按"历史不回写"惯例降级为反引号）/[[megatron_ep_analysis]]/[[verl/index]]/[[low_precision_training_analysis]] 等均存在，0 悬空；14 图 `assets/*` 引用解析正常；agentic_rl 两图 note 内误写的 `[[]]` 已改纯文本并重渲。
+- **校验**：7 页 + 索引/概要的 `[[]]` 链接脚本提取，同系列 7 个 `glm5_*_deepdive` + 既有 [[11_muon_analysis]]/`grpo_analysis`（历史活链接，已于 2026-07-31 因 kb-reorg P5 Task 8 再编号为 [[20_grpo_analysis]]，按"历史不回写"惯例降级为反引号）/[[megatron_ep_analysis]]/[[verl/index]]/[[13_low_precision_training_analysis]] 等均存在，0 悬空；14 图 `assets/*` 引用解析正常；agentic_rl 两图 note 内误写的 `[[]]` 已改纯文本并重渲。
 
 ---
 
@@ -2066,7 +2066,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: New（GLM-5 架构深挖页:论文 §2.1 的"规模 × 长上下文成本"权衡——744B/40B MoE 扩专家减层、MLA→Muon Split→MLA-256、MTP 参数共享、DSA 两阶段续训与高效注意力消融,含 2 图）
 
-**整合**:父索引 [[zhipu_glm/index]] §六 论文索引 GLM-5 行新增架构深挖链接(概要 [[01_glm_5_analysis]] + 架构深挖 [[20_glm5_architecture_deepdive]])。**校验**:2 张图 `assets/glm5_architecture_fig{1,2}.png` 引用解析正常;`## Related` 段含同系列深挖页前向引用(6 个 `glm5_*_deepdive` 为规划中页面,标记式前向链接)+ 既有页([[01_glm_5_analysis]]/[[muon_analysis]]/[[12_deepseek_v3_analysis]]/[[20_deepseek_moe_analysis]])均存在。
+**整合**:父索引 [[zhipu_glm/index]] §六 论文索引 GLM-5 行新增架构深挖链接(概要 [[01_glm_5_analysis]] + 架构深挖 [[20_glm5_architecture_deepdive]])。**校验**:2 张图 `assets/glm5_architecture_fig{1,2}.png` 引用解析正常;`## Related` 段含同系列深挖页前向引用(6 个 `glm5_*_deepdive` 为规划中页面,标记式前向链接)+ 既有页([[01_glm_5_analysis]]/[[11_muon_analysis]]/[[12_deepseek_v3_analysis]]/[[20_deepseek_moe_analysis]])均存在。
 
 ---
 
@@ -2732,7 +2732,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 - `torchtitan/index.md` —— 新增「深挖伴篇」表(2 行);系列篇数 7→9;并行施加管线 `apply_ac()` 挂链;Related Pages 补两页;最后更新 2026-06-11
 - `torchtitan_fsdp_analysis.md` —— Related Pages 首行新增深挖伴篇反链
-- `01_theory/02_pretraining/activation_checkpointing_analysis.md` —— Related Pages 首行新增 [[torchtitan_ac_analysis]](工程侧非重入/SAC,与该页 Megatron 重入路径互补)
+- `01_theory/02_pretraining/12_activation_checkpointing_analysis.md` —— Related Pages 首行新增 [[torchtitan_ac_analysis]](工程侧非重入/SAC,与该页 Megatron 重入路径互补)
 
 ---
 
@@ -2932,7 +2932,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **交叉引用更新**:
 
 - `02_train_frameworks/index.md` — 页面列表新增条目
-- `01_theory/02_pretraining/muon_analysis.md` — Related Pages 新增回链
+- `01_theory/02_pretraining/11_muon_analysis.md` — Related Pages 新增回链
 
 ---
 
@@ -3550,12 +3550,12 @@ raw/ & wiki/ 镜像
 
 **Type**: Knowledge Synthesis（Megatron-LM 源码 + TE GitHub 仓库 + DeepSeek-V4 FP4 QAT）
 
-- **Created**: `wiki/llm/02_training/low_precision_training_analysis.md` — Megatron 低精度训练全栈分析（中文）
-- **Created**: `wiki/llm/02_training/transformer_engine_analysis.md` — NVIDIA Transformer Engine 技术分析（中文）
+- **Created**: `wiki/llm/02_training/13_low_precision_training_analysis.md` — Megatron 低精度训练全栈分析（中文）
+- **Created**: `wiki/llm/02_training/14_transformer_engine_analysis.md` — NVIDIA Transformer Engine 技术分析（中文）
 - **Updated**: `wiki/llm/index.md` — Optimizers & Training Algorithms 表格新增 3 条目
 - **Updated**: `wiki/llm/06_infra/megatron-lm/index.md` — Knowledge Gaps 更新（TE 集成、低精度训练标记为已解决），Cross-Domain Links 扩展
 
-**Key topics (low_precision_training_analysis)**:
+**Key topics (13_low_precision_training_analysis)**:
   - 精度格式全览（FP32 → BF16 → FP16 → FP8 → MXFP8 → FP4）
   - 五种 FP8 Recipe（tensorwise/delayed/blockwise/mxfp8/custom）及对比
   - FP8 Primary Weights（fp8_param_gather）显存节省分析（6N → 5N bytes）
@@ -3566,7 +3566,7 @@ raw/ & wiki/ 镜像
   - Scaling MoE 论文精度实践总结
   - 配置速查表
 
-**Key topics (transformer_engine_analysis)**:
+**Key topics (14_transformer_engine_analysis)**:
   - TE 两层架构（Python API + C++/CUDA Kernel）
   - 精度格式矩阵：FP8(E4M3/E5M2/HYBRID) / MXFP8 / NVFP4 / BF16/FP16
   - Recipe 系统（DelayedScaling → Float8CurrentScaling → MXFP8BlockScaling → NVFP4BlockScaling2D）
@@ -3664,7 +3664,7 @@ raw/ & wiki/ 镜像
 
 **Type**: Knowledge Synthesis（PyTorch autograd 机制 + Megatron-LM 源码分析）
 
-- **Created**: `wiki/llm/02_training/activation_checkpointing_analysis.md` — 激活重计算完整分析（中文）
+- **Created**: `wiki/llm/02_training/12_activation_checkpointing_analysis.md` — 激活重计算完整分析（中文）
 - **Updated**: `wiki/llm/index.md` — Optimizers & Training Algorithms 表格新增条目
 - **Updated**: `wiki/llm/06_infra/megatron-lm/Megatron-LM_Distributed_Parallel_Exam.md` — Q12 考点添加交叉引用
 - **Key topics**:
@@ -3750,7 +3750,7 @@ The following pages were created before the changelog was established. Dates are
 
 ### ~2026-02: Muon Optimizer
 
-- Created `wiki/llm/muon_analysis.md` — Source: `raw/MUON IS SCALABLE FOR LLM TRAINING-2502.16982v1.pdf`
+- Created `wiki/llm/11_muon_analysis.md` — Source: `raw/MUON IS SCALABLE FOR LLM TRAINING-2502.16982v1.pdf`
 - Created `wiki/megatron-lm/Megatron_LM_TFLOPS_Analysis.md` — TFLOPS estimation methodology
 
 ### ~2026-01: DeepSeek & Memory Architectures
@@ -3760,7 +3760,7 @@ The following pages were created before the changelog was established. Dates are
 
 ### ~2025-12: Weight Initialization & KIMI
 
-- Created `wiki/llm/llm_initiliaze_analysis.md` — Dense & MoE initialization
+- Created `wiki/llm/10_llm_initiliaze_analysis.md` — Dense & MoE initialization
 
 ---
 
@@ -3771,7 +3771,7 @@ The following pages were created before the changelog was established. Dates are
 - **Source**: `raw/mHC-2512.24880v2.pdf` (DeepSeek-AI, arXiv:2512.24880v2)
 - **Created**: `wiki/llm/mHC.md` — Manifold-Constrained Hyper-Connections analysis (in Chinese)
 - **Updated**: `wiki/llm/index.md` — Added mHC entry and cross-domain links
-- **Cross-referenced**: Added backlinks to `muon_analysis.md`, `llm_initiliaze_analysis.md`, `Megatron-LM_MoE_Zero_Redundancy_Analysis.md`
+- **Cross-referenced**: Added backlinks to `11_muon_analysis.md`, `10_llm_initiliaze_analysis.md`, `Megatron-LM_MoE_Zero_Redundancy_Analysis.md`
 - **Key topics**: doubly stochastic matrix, Sinkhorn-Knopp projection, residual stream expansion, DeepSeek-V3 MoE, kernel fusion, selective recomputing
 
 ### ~2025-11: Training-Inference Integration
@@ -3817,7 +3817,7 @@ The following pages were created before the changelog was established. Dates are
 - **Updated**: `wiki/llm/index.md` — Added V4 to DeepSeek model family section
 - **Updated**: `wiki/llm/12_deepseek_v3_analysis.md` — Added backlink to V4
 - **Updated**: `wiki/llm/11_deepseek_v2_analysis.md` — Added backlink to V4
-- **Cross-referenced**: `mHC.md`, `muon_analysis.md`, `12_deepseek_v3_analysis.md`, `11_deepseek_v2_analysis.md`
+- **Cross-referenced**: `mHC.md`, `11_muon_analysis.md`, `12_deepseek_v3_analysis.md`, `11_deepseek_v2_analysis.md`
 - **Key topics**: CSA (Compressed Sparse Attention), HCA (Heavily Compressed Attention), hybrid attention architecture, DSA (DeepSeek Sparse Attention), Lightning Indexer, million-token context, mHC integration, Muon optimizer, Anticipatory Routing, SwiGLU clamping, wave-based EP overlap, TileLang kernels, FP4 QAT, heterogeneous KV cache management, on-disk KV cache storage
 
 ---

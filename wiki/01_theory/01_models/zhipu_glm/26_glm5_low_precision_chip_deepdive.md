@@ -37,7 +37,7 @@ GLM-5 在三个训练/部署阶段都用了「降比特」，但**每一处低�
 - 若 QAT 用的伪量化 kernel 与最终部署 kernel 数值不同，QAT 学到的补偿就「对不上」真实部署路径，红利打折。
 - GLM-5 同时满足「QAT」+「训推 kernel bitwise-identical」两个条件，才能把 INT4 的精度损失压到可接受。这条训练端的 QAT，正是 §5 部署端 W4A8 能「无明显精度损失」的前置铺垫（见 §4）。
 
-> 相关对比：把量化提前进训练目标，是当前低精度训练的共识方向，参见 [[low_precision_training_analysis]] 与 [[24_deepseek_v4_fp4_qat_analysis]]（FP4 QAT 的同类思路）。
+> 相关对比：把量化提前进训练目标，是当前低精度训练的共识方向，参见 [[13_low_precision_training_analysis]] 与 [[24_deepseek_v4_fp4_qat_analysis]]（FP4 QAT 的同类思路）。
 
 ---
 
@@ -138,7 +138,7 @@ GLM-5 从第一天起就**全栈适配七家国产芯片平台**：华为昇腾�
 - [[zhipu_glm/index]] — GLM 家族总览
 
 **相邻主题**：
-- [[low_precision_training_analysis]] — 低精度训练总览（QAT/PTQ/FP8 谱系）
+- [[13_low_precision_training_analysis]] — 低精度训练总览（QAT/PTQ/FP8 谱系）
 - [[24_deepseek_v4_fp4_qat_analysis]] — FP4 QAT（把量化提前进训练目标的同类思路）
-- [[transformer_engine_analysis]] — FP8 训练/推理 kernel 基础设施
+- [[14_transformer_engine_analysis]] — FP8 训练/推理 kernel 基础设施
 - [[mindspeed/index]] — 昇腾 NPU 加速特性（融合算子 / 并行 / 调度 的国产侧实现）

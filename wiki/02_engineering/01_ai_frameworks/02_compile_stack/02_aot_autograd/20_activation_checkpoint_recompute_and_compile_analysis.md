@@ -227,4 +227,4 @@ python -B tools\labs_torch_compile\demo_f_advanced_topics.py `
 - [[20_ddp_compile_boundaries_and_optimizer_analysis]]
 - [[12_saved_tensors_recompute_and_runtime_abi_analysis]] — partitioner 源码与 runtime ABI 层深析(本页用户 API/策略层的下游对应物,见页头分工声明)
 - [[11_aotautograd_joint_forward_backward_graphs_analysis]]
-- [[01_theory/02_pretraining/activation_checkpointing_analysis]]
+- [[01_theory/02_pretraining/12_activation_checkpointing_analysis]]

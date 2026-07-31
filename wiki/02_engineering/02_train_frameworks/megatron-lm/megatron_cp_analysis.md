@@ -6,7 +6,7 @@
 > 配套阅读:`megatron_pp_schedulers_analysis.md`、`megatron_ep_analysis.md`、`megatron_tp_analysis.md`
 > 适用读者:已了解 transformer 训练与 TP/PP/DP,想吃透 Megatron 上下文并行实现的工程师。
 >
-> **划界声明**:CP 通用机制(序列切分、因果负载均衡、因果块裁剪、Ring/All-gather/Ulysses/分层混合四种通信调度、通信量代数、与 TP/PP/DP/EP 的组合关系)已归一到 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]]。**本页只保留 Megatron-LM 的框架实现差异**:`cp_comm_type` 配置接口与按层配置、TE 透传架构、原生 all_gather 回退实现的配置约束、选型决策树,以及 Dynamic CP 的 Megatron 特有源码细节。
+> **划界声明**:CP 通用机制(序列切分、因果负载均衡、因果块裁剪、Ring/All-gather/Ulysses/分层混合四种通信调度、通信量代数、与 TP/PP/DP/EP 的组合关系)已归一到 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]。**本页只保留 Megatron-LM 的框架实现差异**:`cp_comm_type` 配置接口与按层配置、TE 透传架构、原生 all_gather 回退实现的配置约束、选型决策树,以及 Dynamic CP 的 Megatron 特有源码细节。
 
 ---
 
@@ -129,7 +129,7 @@ Megatron 把序列切分(通用机制,见理论页 §3)与因果掩码处理(理
 
 ## Related Pages
 
-- [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]] —— CP/Ring Attention 通用机制(序列切分、因果裁剪、四种通信调度、通信量代数、并行组合关系)
+- [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]] —— CP/Ring Attention 通用机制(序列切分、因果裁剪、四种通信调度、通信量代数、并行组合关系)
 - [[megatron_pp_schedulers_analysis]] · [[megatron_ep_analysis]] · [[megatron_tp_analysis]] · [[megatron_packed_dataset_dynamic_cp_analysis]]
 - [[deepseek_v4_context_parallel_analysis]] —— DeepSeek-V4 在同一套 Megatron CP 基础设施上的模型特有适配(MLA/CSA/HCA)
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

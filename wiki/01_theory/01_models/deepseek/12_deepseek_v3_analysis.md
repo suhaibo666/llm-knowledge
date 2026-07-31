@@ -308,7 +308,7 @@ With only **37B activated parameters** (vs 405B dense), V3-Base surpasses LLaMA-
 - [[20_deepseek_moe_analysis]] — MoE architecture and routing analysis
 - [[25_mhc_analysis]] — Manifold-Constrained Hyper-Connections (related DeepSeek architecture research)
 - [[megatron_ep_analysis]] — Expert parallelism infrastructure
-- [[activation_checkpointing_analysis]] — V3 backward 中重计算 RMSNorm 和 MLA up-projections 的实现原理
+- [[12_activation_checkpointing_analysis]] — V3 backward 中重计算 RMSNorm 和 MLA up-projections 的实现原理
 - [[dspark_analysis]] — DSpark speculative decoding: V3's MTP becomes the MTP-1 baseline that DSpark's semi-autoregressive drafter supersedes
 - [[speculative_decoding/index]] — Drafter evolution overview MTP → Eagle3 → DFlash → DSpark
 - [[hy3_analysis]] — 腾讯 Hy3 (295B/21B) 原样采用 V3 的 sigmoid+bias 免辅助损失路由与 MTP 投机解码,是该配方成为开源 MoE 事实标准的例证

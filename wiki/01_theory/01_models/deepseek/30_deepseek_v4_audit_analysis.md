@@ -146,4 +146,4 @@ FP32 master → FP4 → **无损反量化到 FP8** 计算，反向 STE 回 FP32�
 - [[26_deepseek_v4_technical_deepdive]] · [[27_deepseek_v4_implementation_deepdive]] · [[28_deepseek_v4_architecture_analysis]] — 已据正式版整页重写（原 Tier-B）
 - [[12_deepseek_v3_analysis]] — V3 基线（MLA / FP8 / DualPipe / MTP）
 - [[20_deepseek_moe_analysis]] — DeepSeekMoE（细粒度专家 + 共享专家）
-- [[muon_analysis]] — Muon 优化器
+- [[11_muon_analysis]] — Muon 优化器

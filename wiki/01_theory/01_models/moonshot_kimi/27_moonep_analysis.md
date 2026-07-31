@@ -224,7 +224,7 @@ K3 在算法侧用 Quantile Balancing（QB）让 router 本身更均衡，在系
 
 换个角度说：**QB 让偏斜变小，MoonEP 让偏斜不再要紧。** 报告把两者放在不同章节，也没有声称 MoonEP 的完全均衡由 QB 保证——这一点在 [[23_kimi_k3_infra_deepdive]] §2.2 已经强调过，源码进一步佐证：planner 完全不假设路由分布，benchmark 反而**故意**在 maxvio 高到 20 的极端偏斜下测试。
 
-这也解释了 [[01_theory/06_distributed_parallelism/expert_parallel_analysis|EP 原理页]]里"EP 最大的敌人是负载不均"这一判断在 2026 年的新答案：既往路线是**减小**不均（aux loss、bias 启发式、EPLB 静态冗余），MoonEP 则是**吸收**不均——代价是多搬 `B` 份专家权重和一次反向梯度回收。
+这也解释了 [[01_theory/06_distributed_parallelism/14_expert_parallel_analysis|EP 原理页]]里"EP 最大的敌人是负载不均"这一判断在 2026 年的新答案：既往路线是**减小**不均（aux loss、bias 启发式、EPLB 静态冗余），MoonEP 则是**吸收**不均——代价是多搬 `B` 份专家权重和一次反向梯度回收。
 
 ---
 
@@ -241,8 +241,8 @@ K3 在算法侧用 Quantile Balancing（QB）让 router 本身更均衡，在系
 
 ## Related Pages
 
-- [[01_theory/06_distributed_parallelism/expert_parallel_analysis]] — EP 原理与"负载不均是命脉"的基础判断（本页是该问题的 2026 年新解法）
-- [[01_theory/06_distributed_parallelism/collectives_analysis]] — all-to-all 的代价结构
+- [[01_theory/06_distributed_parallelism/14_expert_parallel_analysis]] — EP 原理与"负载不均是命脉"的基础判断（本页是该问题的 2026 年新解法）
+- [[01_theory/06_distributed_parallelism/10_collectives_analysis]] — all-to-all 的代价结构
 - [[23_kimi_k3_infra_deepdive]] — K3 报告 §5.2.1 的项目级描述与本页的源码兑现
 - [[22_kimi_k3_architecture_deepdive]] — Stable LatentMoE 与 Quantile Balancing（MoonEP 的算法侧搭档）
 - [[26_kimi_k3_open_source_stack_analysis]] — K3 随发布开源的 kernel/工具链全景（MoonEP 在其中的位置）

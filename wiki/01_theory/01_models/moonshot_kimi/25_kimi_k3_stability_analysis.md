@@ -193,6 +193,6 @@ K2.5 及既往实践都从 SigLIP 一类对比预训练模型初始化视觉编�
 - [[14_kimi_k3_analysis]] — K3 发布总览
 - [[26_kimi_k3_open_source_stack_analysis]] — 本次开源的仓库全景与证据等级
 - [[11_kimi_k2_analysis]] — MuonClip / QK-Clip 与"零 loss spike"基线
-- [[muon_analysis]] — Muon 优化器原理（Per-Head Muon 的基座）
+- [[11_muon_analysis]] — Muon 优化器原理（Per-Head Muon 的基座）
 - [[27_moonep_analysis]] — 执行侧的负载均衡硬保证（QB 的系统侧搭档）
-- [[01_theory/02_pretraining/low_precision_training_analysis]] — 低精度训练与溢出风险的一般背景
+- [[01_theory/02_pretraining/13_low_precision_training_analysis]] — 低精度训练与溢出风险的一般背景

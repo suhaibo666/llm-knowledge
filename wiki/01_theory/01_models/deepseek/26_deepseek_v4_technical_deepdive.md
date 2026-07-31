@@ -282,7 +282,7 @@ $$
 - [[28_deepseek_v4_architecture_analysis]] — V4 架构结构图（补充参考）
 - [[27_deepseek_v4_implementation_deepdive]] — V4 实现要点（补充参考）
 - [[25_mhc_analysis]] — 流形约束超连接（残差层，与注意力并列的另一架构升级）
-- [[muon_analysis]] — Muon 优化器（Q/KV RMSNorm 取代 QK-Clip 的依据）
+- [[11_muon_analysis]] — Muon 优化器（Q/KV RMSNorm 取代 QK-Clip 的依据）
 - [[11_deepseek_v2_analysis]] — MLA 起源、KV cache `≈9·d_h·l` 对照
 - [[12_deepseek_v3_analysis]] — 前代（V3/V3.2 沿用 MLA + V3.2 引入 DSA）
 - [[20_deepseek_moe_analysis]] — MoE 路由与负载均衡（V4 affinity 改 `√Softplus`、前 3 层 Hash 路由）

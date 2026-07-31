@@ -976,9 +976,9 @@ FSDP 的 shard 在 **DP 维度**上执行(即 `world_size / (TP × CP × PP × E
 
 ## Related Pages
 
-- [[megatron_parallelism_orchestration_analysis]] · [[megatron_memory_optimization_analysis]] · [[low_precision_training_analysis]] · [[megatron_ep_analysis]]
+- [[megatron_parallelism_orchestration_analysis]] · [[megatron_memory_optimization_analysis]] · [[13_low_precision_training_analysis]] · [[megatron_ep_analysis]]
 - [[megatron_tp_analysis]] · [[megatron_tp_fsdp_resharding_supplements_analysis]] · [[megatron_pp_schedulers_analysis]] · [[megatron_cp_analysis]]
 - [[megatron_precision_cudagraph_fusion_analysis]] · [[megatron_dist_checkpointing_analysis]] · [[megatron_comm_overlap_analysis]]
 - [[../distributed_optimizer_deep_dive|distributed_optimizer_deep_dive]] — FSDP2/ZeRO/MindSpeed 三方对比, 梯度累积通信量分析, Adam vs Muon
-- [[muon_analysis]] — Muon 优化器本身的数学原理(Newton-Schulz 正交化),与本页 §14 的分布式集成互补
+- [[11_muon_analysis]] — Muon 优化器本身的数学原理(Newton-Schulz 正交化),与本页 §14 的分布式集成互补
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
