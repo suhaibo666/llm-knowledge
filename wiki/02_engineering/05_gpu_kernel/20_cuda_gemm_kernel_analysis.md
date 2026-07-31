@@ -297,10 +297,10 @@ A100 / SM80 · FP16 GEMM · 代表性配置 256×128×32 / 64×64×32 / 16×8×1
 
 ## Related Pages
 
-- [[cuda_execution_model_guide]] — CUDA Grid / Block / Warp / SM 的执行模型地基
-- [[cuda_nonmatmul_kernels_analysis]] — 同一执行模型下，非 GEMM 算子的依赖驱动优化轴
-- [[ascend_kernel_execution_model_analysis]] — 把 GEMM 主线映射到 Cube / L0 / MTE / FixPipe
-- [[gpu_kernel_guide]] — GPU/NPU Kernel 工程总览
-- [[triton_03_matmul_guide]] — Triton 分块矩阵乘的可运行实现
-- [[triton_04_autotune_guide]] — tile、warp 与 stage 的自动调优
+- [[10_cuda_execution_model_guide]] — CUDA Grid / Block / Warp / SM 的执行模型地基
+- [[21_cuda_nonmatmul_kernels_analysis]] — 同一执行模型下，非 GEMM 算子的依赖驱动优化轴
+- [[22_ascend_kernel_execution_model_analysis]] — 把 GEMM 主线映射到 Cube / L0 / MTE / FixPipe
+- [[01_gpu_kernel_guide]] — GPU/NPU Kernel 工程总览
+- [[triton_12_matmul_guide]] — Triton 分块矩阵乘的可运行实现
+- [[triton_13_autotune_guide]] — tile、warp 与 stage 的自动调优
 - [[index]] — GPU Kernel 领域索引

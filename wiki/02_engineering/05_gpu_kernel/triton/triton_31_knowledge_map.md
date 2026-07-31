@@ -12,12 +12,12 @@
 
 | 能力 | 一句话定义 | 主战页 | 核心可验证产物 |
 |------|-----------|--------|--------|
-| **① 会写** | 把算法表达成正确的 block kernel | [[triton_01_programming_model_guide]]·[[triton_02_fused_softmax_guide]]·[[triton_03_matmul_guide]] | `torch.allclose` 通过 |
-| **② 会调** | 给 Config 菜单，让 Triton 搜最优 | [[triton_04_autotune_guide]] | autotune 后 TFLOPS/带宽提升 |
-| **③ 会优化** | profile 定瓶颈，拉对的杠杆 | [[triton_06_optimization_profiling_guide]] | 逼近 roofline 上界 |
-| **④ 会debug** | 解释器/打印/断言定位错误 | [[triton_05_debug_guide]] | bug 复现→修复→回归 |
+| **① 会写** | 把算法表达成正确的 block kernel | [[triton_10_programming_model_guide]]·[[triton_11_fused_softmax_guide]]·[[triton_12_matmul_guide]] | `torch.allclose` 通过 |
+| **② 会调** | 给 Config 菜单，让 Triton 搜最优 | [[triton_13_autotune_guide]] | autotune 后 TFLOPS/带宽提升 |
+| **③ 会优化** | profile 定瓶颈，拉对的杠杆 | [[triton_30_optimization_profiling_guide]] | 逼近 roofline 上界 |
+| **④ 会debug** | 解释器/打印/断言定位错误 | [[triton_14_debug_guide]] | bug 复现→修复→回归 |
 
-地基是 [[triton_00_gpu_essentials_guide]]：执行/内存层级 + roofline，四种能力共用的判断坐标系。
+地基是 [[triton_01_gpu_essentials_guide]]：执行/内存层级 + roofline，四种能力共用的判断坐标系。
 
 ---
 
@@ -49,7 +49,7 @@
 
 - [ ] 判别 bound：GB/s 度量=memory-bound，TFLOPS 度量=compute-bound（`01:128` vs `03:438`）
 - [ ] 先 profile：proton（`import triton.profiler as proton`，`09-persistent-matmul.py`）+ Nsight；`do_bench` 自带 warmup/清 L2（`testing.py`）
-- [ ] 杠杆一 fusion：减 HBM 往返（[[triton_02_fused_softmax_guide]]）
+- [ ] 杠杆一 fusion：减 HBM 往返（[[triton_11_fused_softmax_guide]]）
 - [ ] 杠杆二 `num_stages` 流水线：隐藏访存延迟
 - [ ] 杠杆三 `num_warps` 占用率：`occupancy = NUM_REGS//(n_regs*WARP_SIZE*num_warps)`（`02:167`）
 - [ ] 杠杆四 分块&L2：grouped ordering（`03:256-264`，A100 +10%）
@@ -128,7 +128,7 @@ flowchart TD
 | 程序化依赖启动 | `11-programmatic-dependent-launch.py` | PDL、kernel 间依赖 |
 | Gluon | `tutorials/gluon/` | Triton 新一代更底层的 tile 语言 |
 
-再往下：读 [[30_triton_vs_mlir_backend_analysis]] 理解 Triton→PTX 编译栈；读 [[20_inductor_codegen_analysis]] 看 `torch.compile` 如何**自动生成** Triton；迁移到 NPU 见 [[gpu_kernel_guide]] §09。
+再往下：读 [[30_triton_vs_mlir_backend_analysis]] 理解 Triton→PTX 编译栈；读 [[20_inductor_codegen_analysis]] 看 `torch.compile` 如何**自动生成** Triton；迁移到 NPU 见 [[01_gpu_kernel_guide]] §09。
 
 ---
 
@@ -144,10 +144,10 @@ flowchart TD
 ## 相关页面
 
 - [[index]] — Triton 学习路线总索引
-- [[triton_00_gpu_essentials_guide]] — L0 地基
-- [[triton_01_programming_model_guide]] · [[triton_02_fused_softmax_guide]] · [[triton_03_matmul_guide]] — L1 会写
-- [[triton_04_autotune_guide]] — L2 会调
-- [[triton_05_debug_guide]] — L3 会debug
-- [[triton_06_optimization_profiling_guide]] — L4 会优化
-- [[gpu_kernel_guide]] — CUDA/NPU Kernel 工程总览
+- [[triton_01_gpu_essentials_guide]] — L0 地基
+- [[triton_10_programming_model_guide]] · [[triton_11_fused_softmax_guide]] · [[triton_12_matmul_guide]] — L1 会写
+- [[triton_13_autotune_guide]] — L2 会调
+- [[triton_14_debug_guide]] — L3 会debug
+- [[triton_30_optimization_profiling_guide]] — L4 会优化
+- [[01_gpu_kernel_guide]] — CUDA/NPU Kernel 工程总览
 - [[30_triton_vs_mlir_backend_analysis]] · [[20_inductor_codegen_analysis]] — Triton 作为编译后端

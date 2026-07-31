@@ -45,7 +45,7 @@ All source ingestions and significant wiki updates are logged here.
 
 - **Ring Attention/CP 四写归一**：新建理论权威页（674 行，骨架来源逐节标注、公式口径冲突并列披露含一处源内不一致 [!contradiction]）；四框架页收缩为实现差异（DSv4 特有零删减经审查回补后达成）。
 - **横向页矩阵化**：通信掩盖页 271→124（纯对比矩阵+扩 MindSpeed 列）；分布式优化器横向页收缩；**Megatron 优化器三页 1118→984 合并为单页**；FSDP 四页补分工声明。
-- **Roofline/执行模型归一**：六页 2046→1922，执行模型权威=cuda_execution_model_guide，Roofline 权威=operator_optimization_guide §2；昇腾页各留划界。
+- **Roofline/执行模型归一**：六页 2046→1922，执行模型权威=10_cuda_execution_model_guide，Roofline 权威=11_operator_optimization_guide §2；昇腾页各留划界。
 - **npu 三页对上游划界**；中重叠七组全部补齐双向链（含 P3 承诺未落地的一处）。
 - 至此设计盘点的 **13 组高重叠全部清零**。全程 broken=0；wiki 374→373 页。
 
@@ -55,11 +55,11 @@ All source ingestions and significant wiki updates are logged here.
 
 `05_gpu_kernel/` 内 Roofline 讲了 ~4 遍、GPU 执行模型讲了 ~3 遍的六页归一，定两个权威：
 
-- **执行模型权威 = `cuda_execution_model_guide.md`**（280→282 行）：核实其 Grid/Block/Warp/Thread/SM 讲解已完整覆盖 `gpu_kernel_guide.md` §01 与 `triton_00_gpu_essentials_guide.md` §2 直觉一的全部内容，无独有段需吸收；页头新增"本页地位"权威声明。
-- **Roofline 权威 = `operator_optimization_guide.md` §2**（834→760 行，含新增 §2.5）：吸收 `triton_00_gpu_essentials_guide.md` §3 的独有内容——用 Triton 官方 `01/02/03-*.py` benchmark 公式逐项手算 AI 的完整推导（向量加法/融合 softmax/矩阵乘三例，含源码行号引用），逐字迁入新增 §2.5；§2 头新增权威声明。核实 `triton_06_optimization_profiling_guide.md` §1 与 `gpu_kernel_guide.md` 均无 Roofline 独有内容（前者的流程图与优化闭环已被 operator_optimization_guide §3/§8 覆盖，后者仅 §10 诊断清单一句提及）。
-- **四页收缩为指针**：`gpu_kernel_guide.md`(303→299 行) §01 执行层级模型（含 Grid/Tiling 关系一节，该点已由 `cuda_gemm_kernel_analysis` §1 更深覆盖，改指该页）收缩为一句 + 双链接；§02 内存层级核实为无重复的唯一详解，未改动。`triton_00_gpu_essentials_guide.md`(119→90 行) §2 直觉三 + 原 §3 Demo 收缩为一段结论 + 链接（保留"一眼判别法"一句作为课程起点的独立可读锚点，§1/直觉一/直觉二/§3 分工表/§4 动手验证均未改，学习路线连贯性验证通过）。`triton_06_optimization_profiling_guide.md`(297→276 行) §1 的 roofline 循环流程图 + 长引述收缩为一句 + 链接，保留"优化杠杆速查表"（页内导航，非概念复述）。
-- **§6 昇腾段 vs `ascend_kernel_execution_model_analysis.md` 判定**：后者独有内容（四类单元显式缓冲链完整图示、CUDA/Ascend 逐项对位表、GEMM 四层结构对照、片上缓冲预算账本、非 GEMM 算子按类分派表、FlashAttention Cube-Vector 融合、训练层三条主线）远超 50%，判定**各留 + 划界**（非合并）：两页互加"与 XX 的划界"声明——`operator_optimization_guide.md` §6.1/§6.2（834 行版本内约 149→95 行，含 §6 全节）的 AI Core 结构图/存储层次图/CopyIn-Compute-CopyOut 完整代码收缩为摘要 + 指向该深度页，保留独有的 Tiling 约束数值推导（L0A 容量→M 维上限 512）、DataCopy 32-byte 对齐要求、§6.3 GPU 经验迁移 checklist 与 AICPU/host CPU fallback 辨析（后两者深度页未覆盖，全部原样保留）；`ascend_kernel_execution_model_analysis.md`(213→215 行) 页头新增划界声明。
-- **索引**：`05_gpu_kernel/index.md` 补 `operator_optimization_guide` 页面列表行（此前缺失，未入索引）；`cuda_execution_model_guide`/`gpu_kernel_guide`/`triton_00`/`triton_06`/`ascend_kernel_execution_model_analysis` 的 Related Pages 互补权威页链接。
+- **执行模型权威 = `10_cuda_execution_model_guide.md`**（280→282 行）：核实其 Grid/Block/Warp/Thread/SM 讲解已完整覆盖 `01_gpu_kernel_guide.md` §01 与 `triton_01_gpu_essentials_guide.md` §2 直觉一的全部内容，无独有段需吸收；页头新增"本页地位"权威声明。
+- **Roofline 权威 = `11_operator_optimization_guide.md` §2**（834→760 行，含新增 §2.5）：吸收 `triton_01_gpu_essentials_guide.md` §3 的独有内容——用 Triton 官方 `01/02/03-*.py` benchmark 公式逐项手算 AI 的完整推导（向量加法/融合 softmax/矩阵乘三例，含源码行号引用），逐字迁入新增 §2.5；§2 头新增权威声明。核实 `triton_30_optimization_profiling_guide.md` §1 与 `01_gpu_kernel_guide.md` 均无 Roofline 独有内容（前者的流程图与优化闭环已被 11_operator_optimization_guide §3/§8 覆盖，后者仅 §10 诊断清单一句提及）。
+- **四页收缩为指针**：`01_gpu_kernel_guide.md`(303→299 行) §01 执行层级模型（含 Grid/Tiling 关系一节，该点已由 `20_cuda_gemm_kernel_analysis` §1 更深覆盖，改指该页）收缩为一句 + 双链接；§02 内存层级核实为无重复的唯一详解，未改动。`triton_01_gpu_essentials_guide.md`(119→90 行) §2 直觉三 + 原 §3 Demo 收缩为一段结论 + 链接（保留"一眼判别法"一句作为课程起点的独立可读锚点，§1/直觉一/直觉二/§3 分工表/§4 动手验证均未改，学习路线连贯性验证通过）。`triton_30_optimization_profiling_guide.md`(297→276 行) §1 的 roofline 循环流程图 + 长引述收缩为一句 + 链接，保留"优化杠杆速查表"（页内导航，非概念复述）。
+- **§6 昇腾段 vs `22_ascend_kernel_execution_model_analysis.md` 判定**：后者独有内容（四类单元显式缓冲链完整图示、CUDA/Ascend 逐项对位表、GEMM 四层结构对照、片上缓冲预算账本、非 GEMM 算子按类分派表、FlashAttention Cube-Vector 融合、训练层三条主线）远超 50%，判定**各留 + 划界**（非合并）：两页互加"与 XX 的划界"声明——`11_operator_optimization_guide.md` §6.1/§6.2（834 行版本内约 149→95 行，含 §6 全节）的 AI Core 结构图/存储层次图/CopyIn-Compute-CopyOut 完整代码收缩为摘要 + 指向该深度页，保留独有的 Tiling 约束数值推导（L0A 容量→M 维上限 512）、DataCopy 32-byte 对齐要求、§6.3 GPU 经验迁移 checklist 与 AICPU/host CPU fallback 辨析（后两者深度页未覆盖，全部原样保留）；`22_ascend_kernel_execution_model_analysis.md`(213→215 行) 页头新增划界声明。
+- **索引**：`05_gpu_kernel/index.md` 补 `11_operator_optimization_guide` 页面列表行（此前缺失，未入索引）；`10_cuda_execution_model_guide`/`01_gpu_kernel_guide`/`triton_00`/`triton_06`/`22_ascend_kernel_execution_model_analysis` 的 Related Pages 互补权威页链接。
 - **净效果**：六页合计 2046→1922 行（−124，新增 sourced 内容的同时净收缩）；无内容丢失，独有段全部逐字保留或迁移。
 - **验收**：`python tools/check_links.py` pages=373、broken=0（ambiguous=70 为既有裸 index 基线，不属本次范围）；`python -m pytest -q` 77 passed。
 
@@ -1488,10 +1488,10 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **Type**: Source Ingestion（按 `llm-knowledge` 的 raw→wiki→index→backlink→changelog 流程导入用户提供的三份 HTML。）
 
 - **原始资料归档**：新增 `raw/02_engineering/05_gpu_kernel/{cuda_gemm_final,cuda_nonmatmul_kernels_final,ascend_kernels}.html`，保持下载文件字节不变；SHA-256 分别为 `56f589…f85b0`、`ba1ce1…db02`、`1a6b9c…f7f0`。
-- **新增 [[cuda_gemm_kernel_analysis]]**：以 SM80 / A100 代表性配置串起 Grid→CTA→Warp→MMA、M/N 空间切块与 K 时间归约、`cp.async` 完成语义、每线程约 232 寄存器账本、shared-memory epilogue 与生产级 kernel 骨架。
-- **新增 [[cuda_nonmatmul_kernels_analysis]]**：以 roofline + 五类数据依赖为统一分类，覆盖 elementwise、reduction、norm、FlashAttention、stencil、scan、gather/scatter/sort，明确 shape 会让同一算子跨 compute-/memory-/latency-bound 阵营。
-- **新增 [[ascend_kernel_execution_model_analysis]]**：把 CUDA 两篇映射到 DaVinci AI Core 的 Cube/Vector/Scalar/MTE、GM→L1→L0→UB 显式缓冲链、Queue 双缓冲、FixPipe，以及 compute / memory / communication 三条训练优化主线；明确其为平台对照材料、非官方文档。
-- **可核验性与图形**：三页逐章附 raw HTML 行号范围和快照哈希；19 个内嵌 SVG 已渲染为 PNG。更新 GPU Kernel、工程与总索引，并向 [[gpu_kernel_guide]]、[[cuda_execution_model_guide]]、[[triton_03_matmul_guide]]、[[operator_optimization_guide]]、[[13_mindspeed_ascend_affinity_analysis]]、[[21_npu_inductor_optimization_analysis]] 补回链；未发现需标记的既有内容冲突。
+- **新增 [[20_cuda_gemm_kernel_analysis]]**：以 SM80 / A100 代表性配置串起 Grid→CTA→Warp→MMA、M/N 空间切块与 K 时间归约、`cp.async` 完成语义、每线程约 232 寄存器账本、shared-memory epilogue 与生产级 kernel 骨架。
+- **新增 [[21_cuda_nonmatmul_kernels_analysis]]**：以 roofline + 五类数据依赖为统一分类，覆盖 elementwise、reduction、norm、FlashAttention、stencil、scan、gather/scatter/sort，明确 shape 会让同一算子跨 compute-/memory-/latency-bound 阵营。
+- **新增 [[22_ascend_kernel_execution_model_analysis]]**：把 CUDA 两篇映射到 DaVinci AI Core 的 Cube/Vector/Scalar/MTE、GM→L1→L0→UB 显式缓冲链、Queue 双缓冲、FixPipe，以及 compute / memory / communication 三条训练优化主线；明确其为平台对照材料、非官方文档。
+- **可核验性与图形**：三页逐章附 raw HTML 行号范围和快照哈希；19 个内嵌 SVG 已渲染为 PNG。更新 GPU Kernel、工程与总索引，并向 [[01_gpu_kernel_guide]]、[[10_cuda_execution_model_guide]]、[[triton_12_matmul_guide]]、[[11_operator_optimization_guide]]、[[13_mindspeed_ascend_affinity_analysis]]、[[21_npu_inductor_optimization_analysis]] 补回链；未发现需标记的既有内容冲突。
 
 ---
 
@@ -1919,18 +1919,18 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 ---
 
-## 2026-06-26: 新建 [[cuda_execution_model_guide]] — Grid·Block·Warp·Thread·SM 执行模型（概念→深入）
+## 2026-06-26: 新建 [[10_cuda_execution_model_guide]] — Grid·Block·Warp·Thread·SM 执行模型（概念→深入）
 
 **Type**: Ingest（应用户"Grid→Block→Warp→Thread→SM 这条映射链不清楚、会阻塞 GPU 编程理解，从概念到深入解释并入库"。**铁律：真实可靠 + demo**）
 
 **源（source-faithful）**：以 **NVIDIA CUDA C++ Programming Guide v12.9.1（archive）** 为权威源——`§Thread Hierarchy`（Programming Model）+ `§Hardware Implementation / SIMT Architecture`，关键事实逐条 WebFetch 核验后引用（warp=32、Block≤1024 因驻留同一 SM、Block 必须独立执行、warp 一次执行一条公共指令、发散逐路径串行、Independent Thread Scheduling 自 Volta/CC7.0、Cluster 自 CC9.0 最多 8 Block）。**注意**：v13.3 已把单页指南拆成多页，原 `index.html` 仅剩目录；故锚定有完整内容的 archive v12.9.1。
 
-- **新建** `wiki/02_engineering/05_gpu_kernel/cuda_execution_model_guide.md`：
+- **新建** `wiki/02_engineering/05_gpu_kernel/10_cuda_execution_model_guide.md`：
   - 主线：逻辑层级（Grid→Block→Thread，你写的）↔ 物理层级（GPU→SM→Warp，硬件跑的）互相映射，钥匙是 **Warp**。
   - 概念层（公司类比 + 索引变量 + Thread ID 公式）→ 物理层（Block→SM 驻留、SM→Warp 切分）→ 深入层（warp 事实派生：①分支发散 ②合并访问 ③占用率 + ④`__syncthreads` 仅 Block 内 ⑤Block 独立=可扩展）→ 映射到 Triton（program≈block、num_warps、threadIdx 不可见）→ 常见误解纠正（以源为准）。
   - **3 个可运行 demo**：`whoami.cu`（printf 看 Block 被切成 32 一组 warp）、`devinfo.cu`（`cudaGetDeviceProperties` 查真实 SM 数/warpSize/上限）、`triton_whoami.py`（`TRITON_INTERPRET=1` 看 program_id≈blockIdx，无 GPU 可跑）。
-- **整合**：`05_gpu_kernel/index.md` 页面列表新增本页（置于 gpu_kernel_guide 前，作地基）；[[triton_00_gpu_essentials_guide]]（正文执行层级处 + 相关页面）与 [[triton_01_programming_model_guide]]（相关页面）双向补链；`wiki/index.md` GPU Kernel 计数 10→11 + 主题导航新增「GPU 执行模型」行。
-- **校验**：本页外链（gpu_kernel_guide / triton_00 / triton_01 / triton_04 / triton_05 / index）均指向已存在页；**0 悬挂链**。
+- **整合**：`05_gpu_kernel/index.md` 页面列表新增本页（置于 01_gpu_kernel_guide 前，作地基）；[[triton_01_gpu_essentials_guide]]（正文执行层级处 + 相关页面）与 [[triton_10_programming_model_guide]]（相关页面）双向补链；`wiki/index.md` GPU Kernel 计数 10→11 + 主题导航新增「GPU 执行模型」行。
+- **校验**：本页外链（01_gpu_kernel_guide / triton_00 / triton_01 / triton_04 / triton_05 / index）均指向已存在页；**0 悬挂链**。
 
 ---
 
@@ -1942,16 +1942,16 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 - **新建子目录** `wiki/02_engineering/05_gpu_kernel/triton/`，9 页：
   - [[index]] — 学习路线总索引（主线：Triton=block-level 编程，编译器自动管 coalescing/shared mem/warp 划分；四能力闭环图）
-  - [[triton_00_gpu_essentials_guide]] — L0 地基：执行/内存层级 + roofline；**demo 用官方 benchmark 的 GB/s vs TFLOPS 公式手算算术强度判 bound**（锚 `01:128`/`02:225`/`03:438`）
-  - [[triton_01_programming_model_guide]] — L1 会写①：SPMD 五件套；向量加法（锚 `01-vector-add.py:29-75`）。**协调者自写的校准 exemplar**
-  - [[triton_02_fused_softmax_guide]] — L1 会写②：reduction + fusion 省带宽（锚 `02-fused-softmax.py:42-174`）
-  - [[triton_03_matmul_guide]] — L1 会写③+优化：多维指针算术/`tl.dot`/fp32 累加器/L2 grouping（锚 `03-matrix-multiplication.py:232-320`，A100 220→245 TFLOPS @ `:145`）
-  - [[triton_04_autotune_guide]] — L2 会调：`Config`/`num_warps`/`num_stages`/`key`（锚 `runtime/autotuner.py:351,334-340,408` + matmul `:228-231`）
-  - [[triton_05_debug_guide]] — L3 会debug：`TRITON_INTERPRET`（CPU 串行模拟，`knobs.py:471`/`interpreter.py:1410`）+ `device_print`/`static_print`/`static_assert`/`device_assert`（`core.py:3398/3414/3428/3478`）；越界 bug→修复 demo
-  - [[triton_06_optimization_profiling_guide]] — L4 会优化：roofline 驱动 + proton（`09-persistent-matmul.py` 真实用法）+ FlashAttention online-softmax（锚 `06-fused-attention.py:69-110`，HBM 流量 O(N²)→O(N·d)）
-  - [[triton_knowledge_map]] — 总纲：四能力知识点清单 + 分级自测 + 进阶（tutorials 04-11 + gluon）+ 真实资源
+  - [[triton_01_gpu_essentials_guide]] — L0 地基：执行/内存层级 + roofline；**demo 用官方 benchmark 的 GB/s vs TFLOPS 公式手算算术强度判 bound**（锚 `01:128`/`02:225`/`03:438`）
+  - [[triton_10_programming_model_guide]] — L1 会写①：SPMD 五件套；向量加法（锚 `01-vector-add.py:29-75`）。**协调者自写的校准 exemplar**
+  - [[triton_11_fused_softmax_guide]] — L1 会写②：reduction + fusion 省带宽（锚 `02-fused-softmax.py:42-174`）
+  - [[triton_12_matmul_guide]] — L1 会写③+优化：多维指针算术/`tl.dot`/fp32 累加器/L2 grouping（锚 `03-matrix-multiplication.py:232-320`，A100 220→245 TFLOPS @ `:145`）
+  - [[triton_13_autotune_guide]] — L2 会调：`Config`/`num_warps`/`num_stages`/`key`（锚 `runtime/autotuner.py:351,334-340,408` + matmul `:228-231`）
+  - [[triton_14_debug_guide]] — L3 会debug：`TRITON_INTERPRET`（CPU 串行模拟，`knobs.py:471`/`interpreter.py:1410`）+ `device_print`/`static_print`/`static_assert`/`device_assert`（`core.py:3398/3414/3428/3478`）；越界 bug→修复 demo
+  - [[triton_30_optimization_profiling_guide]] — L4 会优化：roofline 驱动 + proton（`09-persistent-matmul.py` 真实用法）+ FlashAttention online-softmax（锚 `06-fused-attention.py:69-110`，HBM 流量 O(N²)→O(N·d)）
+  - [[triton_31_knowledge_map]] — 总纲：四能力知识点清单 + 分级自测 + 进阶（tutorials 04-11 + gluon）+ 真实资源
 - **生产方式**：协调者自写 index/00/01/knowledge_map + 5 个并行 writer-agent（严格契约：各锚定指定真实 tutorial 文件、以 01 为模板、mermaid 图、demo 忠实源 API）。**抽查定位符均真实**（`06:84 alpha=tl.math.exp2`、`autotuner.py:351` 默认值、`05-layer-norm.py` 锁式并行归约）。
-- **整合**：更新 `05_gpu_kernel/index.md`（新增 Triton 表）、`wiki/index.md`（GPU Kernel 计数 1→10 + Triton 子条目 + 主题导航）；交叉链向 [[gpu_kernel_guide]]/[[30_triton_vs_mlir_backend_analysis]]/[[20_inductor_codegen_analysis]]/[[21_inductor_autotuning_analysis]]/[[26_flex_attention_analysis]]。
+- **整合**：更新 `05_gpu_kernel/index.md`（新增 Triton 表）、`wiki/index.md`（GPU Kernel 计数 1→10 + Triton 子条目 + 主题导航）；交叉链向 [[01_gpu_kernel_guide]]/[[30_triton_vs_mlir_backend_analysis]]/[[20_inductor_codegen_analysis]]/[[21_inductor_autotuning_analysis]]/[[26_flex_attention_analysis]]。
 - **校验**：9 页内部 `[[链接]]` 全部互指存在页；外链目标均已存在；**0 悬挂链**。
 
 ---
@@ -2232,7 +2232,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **调度统一**:无独立 prefill/decode 阶段,二者统一为 `num_computed_tokens` 追赶 `num_tokens_with_spec`;分块预填充只是 `min(剩余 prompt, token 预算)` 的自然结果,无独立代码路径。
 - **KV 卸载非独立子系统**:注册名 `OffloadingConnector`,与分离式推理共用 `KVConnectorBase_V1` 抽象;前缀缓存(GPU 内)/KV 卸载(下沉 CPU/盘)/分离式(跨实例)三者正交可叠加。
 
-**整合**:[[vllm/index]] 知识地图(四支点设计哲学 / 三支柱 10 篇表 / 一条请求穿三支柱全景 mermaid / 关键设计速览 / 阅读路径);父索引 [[02_engineering/03_infer_frameworks/index]] 新增 vLLM 子框架行、总索引 [[index]] 更新目录树/计数/快速导航。**校验**:10 页 + index 全部含 `## Related Pages` 且回链 [[vllm/index]];sibling slug 与文件名一一对应;18 个跨域目标页(megatron_inference_engine / mooncake / deepseek_v3 / gpu_kernel_guide / CUDA Graphs / torch.compile 栈等)均经 glob 确认存在,0 悬空链接。
+**整合**:[[vllm/index]] 知识地图(四支点设计哲学 / 三支柱 10 篇表 / 一条请求穿三支柱全景 mermaid / 关键设计速览 / 阅读路径);父索引 [[02_engineering/03_infer_frameworks/index]] 新增 vLLM 子框架行、总索引 [[index]] 更新目录树/计数/快速导航。**校验**:10 页 + index 全部含 `## Related Pages` 且回链 [[vllm/index]];sibling slug 与文件名一一对应;18 个跨域目标页(megatron_inference_engine / mooncake / deepseek_v3 / 01_gpu_kernel_guide / CUDA Graphs / torch.compile 栈等)均经 glob 确认存在,0 悬空链接。
 
 ---
 
@@ -2478,7 +2478,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **05_codegen_backends/mlir**:新建 `torch_mlir_quickstart`(quick start 层),`torch_mlir_pass_pipeline_analysis` §0 去重定位说明
 - **03_aot_autograd**:index 补「模块概述」(定义/栈位置/三职责),quickstart §1 精简为「快速导航」
 - **07_op_registration/npu**:index 补「整体架构」(算子生命周期 + 三维度依赖),`npu_operator_graph_eligibility_guide` §7 去 aclop/aclnn 重述、加交叉引用
-- **08_kernel_optimization**:`operator_optimization_guide` 加「文档结构与阅读路径」+ §2.2/§6 GPU↔NPU 对标标注
+- **08_kernel_optimization**:`11_operator_optimization_guide` 加「文档结构与阅读路径」+ §2.2/§6 GPU↔NPU 对标标注
 - **09_other_frameworks**:`mindspore_compiler_analysis` 补「快速理解」(quick start)+ §5.3 标注昇腾 NPU 特化
 
 **校验**:01_ai_frameworks 全量 wikilink 零断链;`cuda/README` 与 Debug 页 NPU 残留清零。
@@ -2602,7 +2602,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **新结构**：`01_dispatcher_and_device/`、`02_dynamo/`、`03_aot_autograd/`、`04_inductor/`(+`npu/`)、`05_codegen_backends/mlir/`(+`npu/`)、`06_graphs/`(`cuda/`+`npu/`)、`07_op_registration/npu/`、`08_kernel_optimization/`、`09_other_frameworks/`。
 
-**迁移**：52 内容页 + 3 `.py` 经 `git mv` 迁移；重写 16 个 `index.md`（每目录一入口，含硬件分层约定）；裸 `[[index]]`→`[[01_ai_frameworks/index]]`（18 处）；修 `operator_optimization_guide` 相对/路径限定链接；更新 `wiki/index.md` 顶层入口与页数（52）；修 changelog 历史 `[[op_plugin/index]]`→新路径。
+**迁移**：52 内容页 + 3 `.py` 经 `git mv` 迁移；重写 16 个 `index.md`（每目录一入口，含硬件分层约定）；裸 `[[index]]`→`[[01_ai_frameworks/index]]`（18 处）；修 `11_operator_optimization_guide` 相对/路径限定链接；更新 `wiki/index.md` 顶层入口与页数（52）；修 changelog 历史 `[[op_plugin/index]]`→新路径。
 
 **校验**：全库 wikilink 扫描，重组区零真实断链。
 
@@ -2745,9 +2745,9 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **新增文件**(9 篇 `.md` + 44 张 PNG,取代同名 `.html`):
 
 - `02_engineering/02_train_frameworks/`:`21_async_collective_tensor_deepdive.md`(4图)、`30_comm_compute_overlap_analysis.md`(7)、`35_deepseek_v4_context_parallel_analysis.md`(6)、`34_deepseek_v4_tensor_parallel_analysis.md`(1)、`32_distributed_optimizer_deepdive.md`(7)、`20_megatron_pp_parallelism_analysis.md`(4)、`mindformers_moe_token_dispatcher_analysis.md`(7)、`22_muon_sharded_hsdp_analysis.md`(6)
-- `02_engineering/05_gpu_kernel/`:`gpu_kernel_guide.md`(2,`tier-diagram` 与 FlashAttention `fa-flow` 两张 CSS 图)
+- `02_engineering/05_gpu_kernel/`:`01_gpu_kernel_guide.md`(2,`tier-diagram` 与 FlashAttention `fa-flow` 两张 CSS 图)
 
-**删除文件**: 上述 9 篇对应的 `.html` 原件(`21_async_collective_tensor_deepdive.html` 等 8 篇 + `gpu_kernel_guide.html`)。
+**删除文件**: 上述 9 篇对应的 `.html` 原件(`21_async_collective_tensor_deepdive.html` 等 8 篇 + `01_gpu_kernel_guide.html`)。
 
 **索引与链接更新**:
 
@@ -2942,7 +2942,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **入库文件**:
 
-- `wiki/02_engineering/01_ai_frameworks/operator_optimization_guide.md`
+- `wiki/02_engineering/01_ai_frameworks/11_operator_optimization_guide.md`
   - **§1**: 算子编程体系概览（GPU: CUDA/CUTLASS/Triton/TileLang/TVM + NPU: AscendC/TBE/CANN）
   - **§2**: Roofline 性能分析模型（A100/H100/910B Ridge Point、Nsight/msprof Profiling 指标）
   - **§3**: GPU Memory Bound 优化（融合、算法变形、向量化访存）与 Compute Bound 优化（Tiling、软件流水线、Tensor Core）
@@ -3220,7 +3220,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - 与 _sfdp_init 的详细对比，典型 LLM 模型映射表
   - 局限与未来方向（torch.export AOT、NPU 支持）
 
-- `wiki/02_engineering/01_ai_frameworks/tilelang_analysis.md`
+- `wiki/02_engineering/01_ai_frameworks/23_tilelang_analysis.md`
   - TileLang 的定位：填补图 Pass（太高层）和 Kernel（太低层）之间的 Gap
   - DeepSeek V4 mHC 融合 kernel：RMSNorm+Linear+Sinkhorn-Knopp 片上融合，读写量降 3×
   - Host Codegen：<1μs kernel launch overhead（vs Python wrapper 的 5-20μs）

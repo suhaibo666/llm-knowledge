@@ -148,11 +148,11 @@ halo tiling:一次把 tile + 边界搬进 shared memory,块内复用重叠窗口
 
 ## Related Pages
 
-- [[cuda_execution_model_guide]] — 所有 CUDA kernel 共用的执行模型地基
-- [[cuda_gemm_kernel_analysis]] — compute-bound、高复用角落的生产级 GEMM 主线
-- [[ascend_kernel_execution_model_analysis]] — 相同分类法在 Ascend Cube / Vector 上的映射
-- [[gpu_kernel_guide]] — GPU/NPU Kernel 工程总览
-- [[triton_00_gpu_essentials_guide]] — roofline、内存层级与性能估算
-- [[triton_02_fused_softmax_guide]] — reduction + elementwise 融合实例
-- [[triton_06_optimization_profiling_guide]] — profiling 与 FlashAttention 优化路径
+- [[10_cuda_execution_model_guide]] — 所有 CUDA kernel 共用的执行模型地基
+- [[20_cuda_gemm_kernel_analysis]] — compute-bound、高复用角落的生产级 GEMM 主线
+- [[22_ascend_kernel_execution_model_analysis]] — 相同分类法在 Ascend Cube / Vector 上的映射
+- [[01_gpu_kernel_guide]] — GPU/NPU Kernel 工程总览
+- [[triton_01_gpu_essentials_guide]] — roofline、内存层级与性能估算
+- [[triton_11_fused_softmax_guide]] — reduction + elementwise 融合实例
+- [[triton_30_optimization_profiling_guide]] — profiling 与 FlashAttention 优化路径
 - [[index]] — GPU Kernel 领域索引

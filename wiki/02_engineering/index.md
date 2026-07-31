@@ -18,10 +18,10 @@
 
 | 页面 | 来源 | 核心主题 |
 |------|------|---------|
-| [[05_gpu_kernel/gpu_kernel_guide]] | 综合深度分析 | GPU Kernel: 执行层级、内存优化、Tensor Core/MMA、torch.compile、FlashAttention、NPU 差异 |
-| [[05_gpu_kernel/cuda_gemm_kernel_analysis]] | 本地 HTML 快照 | SM80 生产级 GEMM：CTA/Warp/MMA、K 归约、异步流水、寄存器账本与 epilogue |
-| [[05_gpu_kernel/cuda_nonmatmul_kernels_analysis]] | 本地 HTML 快照 | 非 GEMM CUDA 算子：roofline、五类数据依赖与融合/归约/scan/稀疏优化 |
-| [[05_gpu_kernel/ascend_kernel_execution_model_analysis]] | 本地 HTML 快照 | Ascend DaVinci：Cube/Vector/MTE、显式缓冲链、Queue/FixPipe 与训练优化主线 |
+| [[05_gpu_kernel/01_gpu_kernel_guide]] | 综合深度分析 | GPU Kernel: 执行层级、内存优化、Tensor Core/MMA、torch.compile、FlashAttention、NPU 差异 |
+| [[05_gpu_kernel/20_cuda_gemm_kernel_analysis]] | 本地 HTML 快照 | SM80 生产级 GEMM：CTA/Warp/MMA、K 归约、异步流水、寄存器账本与 epilogue |
+| [[05_gpu_kernel/21_cuda_nonmatmul_kernels_analysis]] | 本地 HTML 快照 | 非 GEMM CUDA 算子：roofline、五类数据依赖与融合/归约/scan/稀疏优化 |
+| [[05_gpu_kernel/22_ascend_kernel_execution_model_analysis]] | 本地 HTML 快照 | Ascend DaVinci：Cube/Vector/MTE、显式缓冲链、Queue/FixPipe 与训练优化主线 |
 | [[pin_memory_and_memory_semantics_analysis]] | 综合深度分析 | Pin Memory 与 RDMA 内存语义通信：PyTorch DataLoader、DeepSpeed ZeRO-Offload、vLLM KV Cache、Mooncake TransferEngine、DeepEP、3FS、NCCL 演进 |
 
 ## 关联域

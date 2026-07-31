@@ -117,7 +117,7 @@ flowchart TB
 - [[10_pytorch_cuda_graphs_complete_guide]] · [[02_compile_stack/04_inductor/index]] · [[02_compile_stack/01_dynamo/index]] —— [[23_vllm_compilation_cudagraph_analysis]] / [[25_vllm_ir_and_fusion_passes_analysis]] 依赖的底层编译/图捕获/Pattern-Match 栈
 - [[12_deepseek_v3_analysis]] —— MLA / MTP 模型侧原理,被 [[14_vllm_attention_backends_analysis]](MLA 后端)与 [[20_vllm_speculative_decoding_analysis]](MTP)实现
 - [[13_low_precision_training_analysis]] · [[14_transformer_engine_analysis]] · [[24_deepseek_v4_fp4_qat_analysis]] —— FP8/FP4 低精度原理,对照 [[21_vllm_quantization_analysis]] 的推理量化
-- [[gpu_kernel_guide]] —— FlashAttention / Tensor Core / Triton kernel 链路,支撑 [[14_vllm_attention_backends_analysis]] 与 [[24_vllm_fused_ops_and_kernels_analysis]]
+- [[01_gpu_kernel_guide]] —— FlashAttention / Tensor Core / Triton kernel 链路,支撑 [[14_vllm_attention_backends_analysis]] 与 [[24_vllm_fused_ops_and_kernels_analysis]]
 - [[pin_memory_and_memory_semantics_analysis]] —— KV Cache 内存语义(本库已含 vLLM KV 段),关联 [[12_vllm_kv_cache_management_analysis]]
 
 ## Related Pages

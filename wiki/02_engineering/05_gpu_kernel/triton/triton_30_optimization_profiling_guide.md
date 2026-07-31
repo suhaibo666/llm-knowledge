@@ -2,13 +2,13 @@
 
 > **源基线**: `triton main @ 70e0929`，v3.8.0 ｜ 锚定 `python/tutorials/06-fused-attention.py`（FlashAttention v2）、`05-layer-norm.py`（反向）、`09/10` 的 proton profiler
 > **维度**: 学习路线 L4（会优化）｜ 能力：**会优化**
-> 前四页让你**写对**（L1）、**调好**（L2）、**调通**（L3）。本页回答最后一问：**已经能跑了，怎么让它更快？** 主线是「先 profile 定位瓶颈，再用对的杠杆」。标杆案例是 FlashAttention——融合到底、把 S 留在 SRAM、把 HBM 流量从 $O(N^2)$ 压到 $O(N\cdot d)$。前置：[[triton_00_gpu_essentials_guide]]（roofline）、[[triton_04_autotune_guide]]（`num_warps`/`num_stages`）。
+> 前四页让你**写对**（L1）、**调好**（L2）、**调通**（L3）。本页回答最后一问：**已经能跑了，怎么让它更快？** 主线是「先 profile 定位瓶颈，再用对的杠杆」。标杆案例是 FlashAttention——融合到底、把 S 留在 SRAM、把 HBM 流量从 $O(N^2)$ 压到 $O(N\cdot d)$。前置：[[triton_01_gpu_essentials_guide]]（roofline）、[[triton_13_autotune_guide]]（`num_warps`/`num_stages`）。
 
 ---
 
 ## 1. 前提：先判 Roofline，再选杠杆
 
-Roofline 判据（memory-bound / compute-bound 怎么判）、公式与硬件 Ridge Point 参数见 Roofline 权威页 [[operator_optimization_guide]] §2；「profile → 判 bound → 选对杠杆 → 复测」的通用优化闭环见该页 §8。**不要凭直觉改 kernel，「优化错误的瓶颈」是性能工程第一大浪费。** 本页把这个闭环落到 Triton 实战的五个具体杠杆（下表），逐个杠杆的源码级证据见 §3。
+Roofline 判据（memory-bound / compute-bound 怎么判）、公式与硬件 Ridge Point 参数见 Roofline 权威页 [[11_operator_optimization_guide]] §2；「profile → 判 bound → 选对杠杆 → 复测」的通用优化闭环见该页 §8。**不要凭直觉改 kernel，「优化错误的瓶颈」是性能工程第一大浪费。** 本页把这个闭环落到 Triton 实战的五个具体杠杆（下表），逐个杠杆的源码级证据见 §3。
 
 ### 优化杠杆速查表
 
@@ -60,7 +60,7 @@ NVIDIA 的 **Nsight Systems**（`nsys`，时间线/CPU-GPU 重叠/kernel 间隙�
 
 ### ① Fusion —— 把中间结果留在 SRAM（治 memory-bound）
 
-最有效的省带宽手段：把本要分多个 kernel、靠 HBM 传递中间结果的计算，**合并成一个 kernel**，中间量只在 SRAM 周转。`02-fused-softmax.py` 把 `max→sub→exp→sum→div` 五步融合成一遍读、一遍写（详见 [[triton_02_fused_softmax_guide]]）；FlashAttention 更激进——把整个 `QK^T→softmax→·V` 融合（`06:73,82,103`），连 $N\times N$ 的注意力矩阵都不落 HBM（第 4 节详解）。**为什么有效**：memory-bound kernel 的时间≈HBM 字节数/带宽，融合直接砍掉中间张量的写+读两趟流量。
+最有效的省带宽手段：把本要分多个 kernel、靠 HBM 传递中间结果的计算，**合并成一个 kernel**，中间量只在 SRAM 周转。`02-fused-softmax.py` 把 `max→sub→exp→sum→div` 五步融合成一遍读、一遍写（详见 [[triton_11_fused_softmax_guide]]）；FlashAttention 更激进——把整个 `QK^T→softmax→·V` 融合（`06:73,82,103`），连 $N\times N$ 的注意力矩阵都不落 HBM（第 4 节详解）。**为什么有效**：memory-bound kernel 的时间≈HBM 字节数/带宽，融合直接砍掉中间张量的写+读两趟流量。
 
 ### ② `num_stages` —— 软件流水线隐藏访存延迟（治 compute-bound 的隐藏延迟）
 
@@ -80,11 +80,11 @@ occupancy = min(occupancy, SIZE_SMEM // size_smem)         # :168 受 SMEM 再�
 num_programs = NUM_SM * occupancy                          # :169
 ```
 
-**权衡**：warp 越多，能并行掩盖延迟的线程越多（占用率↑）；但寄存器是定额资源，`num_warps↑` 会摊薄每线程寄存器，多了反而 spill。`06-fused-attention.py:140` 把 `num_warps∈{4,8}` 交给 autotune 搜——因为最优值随 `BLOCK_M/BLOCK_N`/卡而变，没有静态最优。承接 [[triton_04_autotune_guide]]。
+**权衡**：warp 越多，能并行掩盖延迟的线程越多（占用率↑）；但寄存器是定额资源，`num_warps↑` 会摊薄每线程寄存器，多了反而 spill。`06-fused-attention.py:140` 把 `num_warps∈{4,8}` 交给 autotune 搜——因为最优值随 `BLOCK_M/BLOCK_N`/卡而变，没有静态最优。承接 [[triton_13_autotune_guide]]。
 
 ### ④ 分块大小 & L2 复用（治 memory-bound）
 
-块越大，每个 program 复用进 SRAM 的数据越多、对 HBM 的有效访存越少；但块太大挤占 SRAM/寄存器、降占用率——又是权衡。matmul 还有一招超越单块的复用：`GROUP_SIZE_M` 把 program 的执行顺序按「L2 友好」重排，让相邻 program 复用同一批已在 L2 的 A/B 分块（`03-matrix-multiplication.py:166-198` 每个 config 都带 `GROUP_SIZE_M`，原理见 [[triton_03_matmul_guide]] 的 L2 grouping 一节）。
+块越大，每个 program 复用进 SRAM 的数据越多、对 HBM 的有效访存越少；但块太大挤占 SRAM/寄存器、降占用率——又是权衡。matmul 还有一招超越单块的复用：`GROUP_SIZE_M` 把 program 的执行顺序按「L2 友好」重排，让相邻 program 复用同一批已在 L2 的 A/B 分块（`03-matrix-multiplication.py:166-198` 每个 config 都带 `GROUP_SIZE_M`，原理见 [[triton_12_matmul_guide]] 的 L2 grouping 一节）。
 
 ### ⑤ Tensor Core：`tl.dot`（治 compute-bound）
 
@@ -153,7 +153,7 @@ $$O_i = \frac{acc}{\ell_i},\qquad \text{并存 logsumexp } m_i \mathrel{+}= \log
 
 直觉上 FlashAttention 把 HBM 流量从「被 $N^2$ 的分数矩阵支配」降到「只与 Q/K/V/O 的 $N\cdot d$ 同阶」。**严格表述**（FA 论文 arXiv:2205.14135，`:11`）：设片上 SRAM 大小为 $M$，FA 的 HBM 访问量是 $\Theta(N^2 d^2 / M)$，而标准实现是 $\Theta(Nd + N^2)$——因为 K/V 会被各个 query 块重复读，所以并非字面 $O(Nd)$，但当 $d^2\ll M$ 时 FA 的 $N^2$ 系数被 $d^2/M$ 显著压小。这正是 attention 从 memory-bound 受益于融合的根本原因。
 
-> 与 [[gpu_kernel_guide]] §08 的关系：那页已给出 FlashAttention 的硬件层级映射表（Grid/Block/SRAM/Warp/Register/Tile 各落到哪）。本页**不重复**那张表，只补「Triton 实现视角」——上面的 `m_i/l_i/acc` 三状态与 `alpha` 重标定，就是该表里「SRAM 常驻状态」一行的代码级真相。attention 的其它变体见 [[26_flex_attention_analysis]]。
+> 与 [[01_gpu_kernel_guide]] §08 的关系：那页已给出 FlashAttention 的硬件层级映射表（Grid/Block/SRAM/Warp/Register/Tile 各落到哪）。本页**不重复**那张表，只补「Triton 实现视角」——上面的 `m_i/l_i/acc` 三状态与 `alpha` 重标定，就是该表里「SRAM 常驻状态」一行的代码级真相。attention 的其它变体见 [[26_flex_attention_analysis]]。
 
 ### 4.3 configs 解读：把杠杆②③④交给 autotune
 
@@ -257,20 +257,20 @@ proton_viewer.print_tree(tree, metrics)
 - [ ] 看得懂 `06` 的 autotune configs 如何同时拉动分块/流水线/占用率三个杠杆
 - [ ] 懂反向 kernel 的核心难点（梯度并发累加）与解法（分桶+锁的两阶段并行归约）
 
-至此 L0→L4 闭环完成。回到 [[triton_knowledge_map]] 做四种能力的自测与查漏。
+至此 L0→L4 闭环完成。回到 [[triton_31_knowledge_map]] 做四种能力的自测与查漏。
 
 ---
 
 ## 相关页面
 
 - [[index]] — Triton 学习路线总索引
-- [[triton_00_gpu_essentials_guide]] — 前置：roofline / memory vs compute bound 的判据
-- [[operator_optimization_guide]] — **Roofline 权威页**：公式、Ridge Point 参数表、通用优化闭环（§2/§8）
-- [[triton_02_fused_softmax_guide]] — 杠杆①fusion 的最小案例
-- [[triton_03_matmul_guide]] — 杠杆④分块&L2 grouping、`tl.dot` 入门
-- [[triton_04_autotune_guide]] — 杠杆②③：`num_stages`/`num_warps` 的自动搜索
-- [[triton_05_debug_guide]] — 优化引入 bug 时回这里（interpreter / assert）
-- [[triton_knowledge_map]] — 四种能力总纲与自测
-- [[gpu_kernel_guide]] — FlashAttention 硬件层级映射表（§08）、Tensor Core 硬件视角（与本页互补）
+- [[triton_01_gpu_essentials_guide]] — 前置：roofline / memory vs compute bound 的判据
+- [[11_operator_optimization_guide]] — **Roofline 权威页**：公式、Ridge Point 参数表、通用优化闭环（§2/§8）
+- [[triton_11_fused_softmax_guide]] — 杠杆①fusion 的最小案例
+- [[triton_12_matmul_guide]] — 杠杆④分块&L2 grouping、`tl.dot` 入门
+- [[triton_13_autotune_guide]] — 杠杆②③：`num_stages`/`num_warps` 的自动搜索
+- [[triton_14_debug_guide]] — 优化引入 bug 时回这里（interpreter / assert）
+- [[triton_31_knowledge_map]] — 四种能力总纲与自测
+- [[01_gpu_kernel_guide]] — FlashAttention 硬件层级映射表（§08）、Tensor Core 硬件视角（与本页互补）
 - [[26_flex_attention_analysis]] — attention 变体与 mask/score 修改
 - [[30_triton_vs_mlir_backend_analysis]] — `tl.dot→MMA`、`num_stages` 流水线在编译器侧的下降

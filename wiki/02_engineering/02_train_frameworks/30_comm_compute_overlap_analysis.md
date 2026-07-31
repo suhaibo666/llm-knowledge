@@ -121,6 +121,6 @@ MindSpeed 的 fb-overlap 让一个微批的前向层与另一个微批的反向�
 - [[14_torchtitan_pp_analysis]] —— torchtitan PP 调度、ZBV/DualPipeV 的 I/W 拆分与 `OVERLAP_F_B`
 - [[11_mindspeed_comm_overlap_analysis]] —— MindSpeed 通信掩盖权威机制页（MC2/CoC/fb-overlap/DualPipeV/RiPipe，源码 file:line）
 - [[31_comm_compute_fusion_guide]] —— 通算融合（把通信编进单一 kernel）：与本页"掩盖"手段的边界声明见页首
-- [[tilelang_analysis]] —— WaveEP 的 tile-level IR 实现机制
+- [[23_tilelang_analysis]] —— WaveEP 的 tile-level IR 实现机制
 - [[12_deepseek_v3_analysis]] —— DualPipe PP 通算重叠设计
 - [[13_deepseek_v4_analysis]] —— WaveEP 细粒度 EP 重叠（wave-based expert scheduling）

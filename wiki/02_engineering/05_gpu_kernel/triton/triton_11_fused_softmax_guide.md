@@ -2,7 +2,7 @@
 
 > **源基线**: `triton-lang/triton main @ 70e0929`（2026-06-25），v3.8.0 ｜ 锚定 `python/tutorials/02-fused-softmax.py`（逐行可核验）
 > **维度**: 学习路线 L1（会写）｜ 能力：**会写②**（reduction + kernel fusion）
-> 上一页 [[triton_01_programming_model_guide]] 写的是逐元素 kernel（一个输出只依赖一个输入位置）。本页迈出一步：当一行要做 `max` / `sum` 这种**跨元素归约**时怎么写，并用官方读写量公式证明 **kernel fusion 为什么快**。前置：[[triton_00_gpu_essentials_guide]]（roofline / memory-bound）。
+> 上一页 [[triton_10_programming_model_guide]] 写的是逐元素 kernel（一个输出只依赖一个输入位置）。本页迈出一步：当一行要做 `max` / `sum` 这种**跨元素归约**时怎么写，并用官方读写量公式证明 **kernel fusion 为什么快**。前置：[[triton_01_gpu_essentials_guide]]（roofline / memory-bound）。
 
 ---
 
@@ -124,7 +124,7 @@ assert torch.allclose(y_triton, y_torch), (y_triton, y_torch)   # 期望逐元�
 
 ## 3. 逐行讲解：归约 kernel 比逐元素 kernel 多出来的点
 
-> 逐元素五件套（`program_id → block_start → offsets → mask → load/compute/store`，见 [[triton_01_programming_model_guide]]）这里仍在。本节只讲**新增**的四件事。
+> 逐元素五件套（`program_id → block_start → offsets → mask → load/compute/store`，见 [[triton_10_programming_model_guide]]）这里仍在。本节只讲**新增**的四件事。
 
 ### ① `program_id` + `num_programs` —— 持久化网格的「我是谁 / 一共几个」（源 `:88-89`）
 `row_start = tl.program_id(0)`（`:88`）是本 program 的起始行；`row_step = tl.num_programs(0)`（`:89`）是 grid 里 program 的**总数**。两者配合做跨步循环：program 0 处理行 0, step, 2·step…；program 1 处理 1, 1+step…。与 01 页不同——那里 program 数 = 块数（一一对应）；这里 program 数**远小于**行数（`num_programs ≤ NUM_SM·occupancy`，`:169`），所以一个 program 必须循环吞下多行。
@@ -134,7 +134,7 @@ assert torch.allclose(y_triton, y_torch), (y_triton, y_torch)   # 期望逐元�
 
 ### ③ reduction：`tl.max(row, axis=0)` / `tl.sum(numerator, axis=0)`（源 `:101,:104`）
 - `row` 是长度 `BLOCK_SIZE` 的一维块，代表**一整行**。`axis=0` 沿这唯一一个轴归约 → 得到该行的标量 max / sum。这是**块内归约**（block-level reduction）：把整块元素折叠成一个标量。
-- 程序员只写 `tl.max(row, axis=0)`，**编译器自动**把它降成 warp shuffle + block 内 SRAM 归约（跨 `num_warps=8` 个 warp 合并），无需手写树形规约或 `__shfl_down`。这正是 Triton 相对 CUDA 省心的地方——对照 thread 级手写归约见 [[gpu_kernel_guide]]。
+- 程序员只写 `tl.max(row, axis=0)`，**编译器自动**把它降成 warp shuffle + block 内 SRAM 归约（跨 `num_warps=8` 个 warp 合并），无需手写树形规约或 `__shfl_down`。这正是 Triton 相对 CUDA 省心的地方——对照 thread 级手写归约见 [[01_gpu_kernel_guide]]。
 - `tl.max(row, axis=0)` 返回标量后广播相减（`:101`），`tl.sum`（`:104`）同理；中间量 `row_minus_max`、`numerator` 全在寄存器里，对应主线「不落地 HBM」。
 
 ### ④ `other=-float('inf')` —— padding 不污染归约的关键（源 `:99`）
@@ -180,7 +180,7 @@ $$
 \frac{8MN + 4M}{2MN} \;\xrightarrow{\;N \gg 1\;}\; \approx 4\times
 $$
 
-**为什么省的是带宽而不是算力**：softmax 每元素只做一次 `exp` 和几次加减乘除——算术强度极低，是典型 memory-bound（见 [[triton_00_gpu_essentials_guide]] 的 roofline）。benchmark 的度量单位就直接选了 **GB/s** 而非 FLOP/s（源 `:211 ylabel="GB/s"`），其公式
+**为什么省的是带宽而不是算力**：softmax 每元素只做一次 `exp` 和几次加减乘除——算术强度极低，是典型 memory-bound（见 [[triton_01_gpu_essentials_guide]] 的 roofline）。benchmark 的度量单位就直接选了 **GB/s** 而非 FLOP/s（源 `:211 ylabel="GB/s"`），其公式
 
 ```python
 gbps = lambda ms: 2 * x.numel() * x.element_size() * 1e-9 / (ms * 1e-3)   # :225
@@ -212,7 +212,7 @@ num_programs = min(num_programs, n_rows)                     # 行数不够就�
 - SRAM 同理：`SIZE_SMEM // size_smem`（`:168`）。两个约束取 min。
 - `NUM_SM`（`:116`）乘 occupancy 得全卡驻留上限，再 clamp 到 `n_rows`（`:171`，行太少没必要多开）。
 
-> 这套手算硬件资源的逻辑也解释了为什么 `num_warps`（`:134`）和 `num_stages`（`:137`）这里是**手填启发式**（源注释 `:130-133` 明说「come up with manual heuristics yourself」）。**下一页 [[triton_04_autotune_guide]] 会用 `@triton.autotune` 自动搜这两个旋钮**，省掉手算。HIP/CDNA 的寄存器分池细节（VGPR 两类、CDNA 翻倍）见源 `:148-165`，本页不展开。
+> 这套手算硬件资源的逻辑也解释了为什么 `num_warps`（`:134`）和 `num_stages`（`:137`）这里是**手填启发式**（源注释 `:130-133` 明说「come up with manual heuristics yourself」）。**下一页 [[triton_13_autotune_guide]] 会用 `@triton.autotune` 自动搜这两个旋钮**，省掉手算。HIP/CDNA 的寄存器分池细节（VGPR 两类、CDNA 翻倍）见源 `:148-165`，本页不展开。
 
 ---
 
@@ -222,11 +222,11 @@ num_programs = min(num_programs, n_rows)                     # 行数不够就�
 |---|---|---|
 | softmax 结果数值不对（某些全负行尤其错） | padding 用了默认 `other=0` 而非 `-inf`，污染 `max`/`sum` | `tl.load(..., other=-float('inf'))`（源 `:99`） |
 | `tl.arange`/编译报形状错 | `BLOCK_SIZE` 不是 2 的幂，或没标 `constexpr` | `BLOCK_SIZE = triton.next_power_of_2(n_cols)`（`:128`），形参标 `: tl.constexpr` |
-| `n_cols` 大于一行能装下的块 → SRAM 溢出/编译失败 | 本 kernel 假设「一行装进一个块」，行太宽不成立 | 该假设仅适用「行能进 SRAM」的矩阵（源 `:6-7`）；超宽行需分块/online-softmax（见 [[triton_03_matmul_guide]] 的分块思路） |
+| `n_cols` 大于一行能装下的块 → SRAM 溢出/编译失败 | 本 kernel 假设「一行装进一个块」，行太宽不成立 | 该假设仅适用「行能进 SRAM」的矩阵（源 `:6-7`）；超宽行需分块/online-softmax（见 [[triton_12_matmul_guide]] 的分块思路） |
 | 越界写、结果尾部脏 | store 忘了 `mask` | `tl.store(..., mask=mask)`（`:109`） |
 | `axis` 写错，归约结果是向量不是标量 | `tl.max/sum` 的 `axis` 选错维 | 行是一维块，沿 `axis=0` 归约（`:101,:104`） |
 | 改 `num_warps`/`num_stages` 没效果或报参数错 | 当成运行时参数传 | 它们是 meta/`constexpr`，按源签名（`:85-86`）位置/关键字传 |
-| 没 GPU 跑不了 | 缺设备 | `TRITON_INTERPRET=1` CPU 模拟，见 §7 与 [[triton_05_debug_guide]] |
+| 没 GPU 跑不了 | 缺设备 | `TRITON_INTERPRET=1` CPU 模拟，见 §7 与 [[triton_14_debug_guide]] |
 
 ---
 
@@ -243,7 +243,7 @@ python 02-fused-softmax.py     # 先过 assert torch.allclose（:190），再画
 ```bash
 TRITON_INTERPRET=1 python 02-fused-softmax.py   # CPU 解释执行，验证 max/sum/mask 语义（详见 L3）
 ```
-解释器模式下可在 kernel 里用 `print`/`tl.device_print` 看 `row`、`tl.max` 中间值，定位 padding/归约问题——完整调试手段见 [[triton_05_debug_guide]]。
+解释器模式下可在 kernel 里用 `print`/`tl.device_print` 看 `row`、`tl.max` 中间值，定位 padding/归约问题——完整调试手段见 [[triton_14_debug_guide]]。
 
 **改造练习（巩固「会写②」）**：把 `softmax_kernel` 改成 **log-softmax**（`row - tl.max(...) - tl.log(tl.sum(tl.exp(...)))`），只动片上那几行、`load/store`/mask 照搬——体会「归约 kernel 的骨架固定，换的只是片上算式」。
 
@@ -259,18 +259,18 @@ TRITON_INTERPRET=1 python 02-fused-softmax.py   # CPU 解释执行，验证 max/
 - [ ] 看得懂 occupancy 的寄存器/SRAM 双约束，知道 `num_warps`/`num_stages` 是手填、下一页自动搜
 - [ ] 能用 $\frac{8MN+4M}{2MN}\approx 4\times$ 量化解释 memory-bound 算子 fusion 的收益
 
-下一步 → [[triton_03_matmul_guide]]：当计算变成 compute-bound 的矩阵乘、且数据**装不进一个块**时，如何用二维 block + 分块累加；以及 [[triton_04_autotune_guide]] 自动调 `num_warps`/`num_stages`。
+下一步 → [[triton_12_matmul_guide]]：当计算变成 compute-bound 的矩阵乘、且数据**装不进一个块**时，如何用二维 block + 分块累加；以及 [[triton_13_autotune_guide]] 自动调 `num_warps`/`num_stages`。
 
 ---
 
 ## 相关页面
 
 - [[index]] — Triton 学习路线总索引
-- [[triton_knowledge_map]] — 能力坐标图（本页 = L1 会写②）
-- [[triton_00_gpu_essentials_guide]] — 前置：roofline / memory-bound（softmax 属此类）
-- [[triton_01_programming_model_guide]] — 上一步：逐元素 kernel 与 SPMD 五件套
-- [[triton_03_matmul_guide]] — 下一步：二维 block、分块累加、compute-bound
-- [[triton_04_autotune_guide]] — 自动搜索 `num_warps` / `num_stages` / `BLOCK_SIZE`
-- [[triton_05_debug_guide]] — `TRITON_INTERPRET=1`、`tl.device_print` 调试归约/padding
-- [[triton_06_optimization_profiling_guide]] — 带宽/occupancy 实测与 profiling
-- [[gpu_kernel_guide]] — CUDA thread 级视角：手写 warp shuffle 归约对照
+- [[triton_31_knowledge_map]] — 能力坐标图（本页 = L1 会写②）
+- [[triton_01_gpu_essentials_guide]] — 前置：roofline / memory-bound（softmax 属此类）
+- [[triton_10_programming_model_guide]] — 上一步：逐元素 kernel 与 SPMD 五件套
+- [[triton_12_matmul_guide]] — 下一步：二维 block、分块累加、compute-bound
+- [[triton_13_autotune_guide]] — 自动搜索 `num_warps` / `num_stages` / `BLOCK_SIZE`
+- [[triton_14_debug_guide]] — `TRITON_INTERPRET=1`、`tl.device_print` 调试归约/padding
+- [[triton_30_optimization_profiling_guide]] — 带宽/occupancy 实测与 profiling
+- [[01_gpu_kernel_guide]] — CUDA thread 级视角：手写 warp shuffle 归约对照

@@ -388,5 +388,5 @@ chunk_offsets = [0, 1, 2]
 - [[12_kimi_linear_analysis]] — Kimi Linear 模型与实验
 - [[22_kimi_k3_architecture_deepdive]] — KDA 在 Kimi K3 中的结构位置
 - [[23_kimi_k3_infra_deepdive]] — prefix cache、Mooncake 与服务侧瓶颈
-- [[gpu_kernel_guide]] — 通用 GPU kernel 工程方法
-- [[triton_knowledge_map]] — Triton 编程与优化导航
+- [[01_gpu_kernel_guide]] — 通用 GPU kernel 工程方法
+- [[triton_31_knowledge_map]] — Triton 编程与优化导航

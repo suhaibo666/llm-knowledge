@@ -79,7 +79,7 @@ GPU 算子开发形成了从底层到高层的完整层次结构：
 
 Roofline 模型是算子优化的首要分析工具，用于判断瓶颈类型，指导优化方向。
 
-> **本节地位**：本节（§2，含 §2.5）是全库 **Roofline 权威节**（2026-07 归一定稿）——[[triton/triton_00_gpu_essentials_guide]] §2 直觉三、[[triton/triton_06_optimization_profiling_guide]] §1 的 Roofline 阐述均已收缩为指针，指回本节；GPU 执行模型的姊妹权威页是 [[cuda_execution_model_guide]]。
+> **本节地位**：本节（§2，含 §2.5）是全库 **Roofline 权威节**（2026-07 归一定稿）——[[triton/triton_01_gpu_essentials_guide]] §2 直觉三、[[triton/triton_30_optimization_profiling_guide]] §1 的 Roofline 阐述均已收缩为指针，指回本节；GPU 执行模型的姊妹权威页是 [[10_cuda_execution_model_guide]]。
 >
 > **出处**：Williams, Patterson, Waterman, *Roofline: An Insightful Visual Performance Model for Multicore Architectures*, Communications of the ACM, 2009.
 
@@ -198,7 +198,7 @@ torch_npu.npu.profiler.stop()
 
 ### 2.5 Triton 视角：用官方 benchmark 公式手算 AI
 
-> 本节吸收自 [[triton_00_gpu_essentials_guide]] §2 直觉三的原有 Demo（原页已收缩为指针，完整推导迁入本节）。源：`triton main @ 70e0929`，`python/tutorials/01..03-*.py`。
+> 本节吸收自 [[triton_01_gpu_essentials_guide]] §2 直觉三的原有 Demo（原页已收缩为指针，完整推导迁入本节）。源：`triton main @ 70e0929`，`python/tutorials/01..03-*.py`。
 
 三个 Triton 官方入门 tutorial 的 benchmark 度量单位本身就是 roofline 判据的活教材：
 
@@ -220,7 +220,7 @@ torch_npu.npu.profiler.stop()
    $$\text{AI} = \frac{2MNK}{(MN+NK+MK)\times 2\text{ Byte}} \xrightarrow{M,N,K \text{ 大}} \text{很高} \gg 156$$
    → **compute-bound**。所以官方用 TFLOPS 衡量，优化目标是「逼近 Tensor Core 峰值」（cuBLAS/`tl.dot`）。
 
-> 一眼判别法：**官方拿什么单位 benchmark，就告诉了你它在 roofline 哪一侧。** GB/s=memory-bound，TFLOPS=compute-bound。Triton 完整学习路线见 [[triton_00_gpu_essentials_guide]]（本节的姊妹起点页）。
+> 一眼判别法：**官方拿什么单位 benchmark，就告诉了你它在 roofline 哪一侧。** GB/s=memory-bound，TFLOPS=compute-bound。Triton 完整学习路线见 [[triton_01_gpu_essentials_guide]]（本节的姊妹起点页）。
 
 ---
 
@@ -482,7 +482,7 @@ replace_pattern(traced, pattern, replacement)
 > 本节不重复这些通用原理，而是聚焦昇腾硬件特有的设计（Cube / Vector / MTE 等计算与搬运单元）及其约束。
 > GPU 优化经验向 NPU 迁移的适配边界与可迁移性分析，详见 §6.3。
 >
-> **与 [[ascend_kernel_execution_model_analysis]] 的划界**：本节是面向"已读完 §1-5 GPU 优化方法"读者的 NPU **快速定位**——架构要点摘要 + Tiling/对齐硬约束 + §6.3 的 GPU 经验迁移 checklist（含 AICPU/host CPU fallback 辨析，该页未覆盖）。DaVinci 执行模型本身的 source-faithful 深度机制（四类单元显式缓冲链完整图示、CUDA/Ascend 逐项对位表、GEMM 四层结构、非 GEMM 算子按类分派、FlashAttention Cube-Vector 融合、训练层三条主线）在 [[ascend_kernel_execution_model_analysis]]，本节不重复，只摘要+链接。
+> **与 [[22_ascend_kernel_execution_model_analysis]] 的划界**：本节是面向"已读完 §1-5 GPU 优化方法"读者的 NPU **快速定位**——架构要点摘要 + Tiling/对齐硬约束 + §6.3 的 GPU 经验迁移 checklist（含 AICPU/host CPU fallback 辨析，该页未覆盖）。DaVinci 执行模型本身的 source-faithful 深度机制（四类单元显式缓冲链完整图示、CUDA/Ascend 逐项对位表、GEMM 四层结构、非 GEMM 算子按类分派、FlashAttention Cube-Vector 融合、训练层三条主线）在 [[22_ascend_kernel_execution_model_analysis]]，本节不重复，只摘要+链接。
 
 ### 6.1 硬件架构差异
 
@@ -490,7 +490,7 @@ replace_pattern(traced, pattern, replacement)
 
 AI Core 内部是 **Cube（矩阵乘）/ Vector（向量/逐元素）/ Scalar（控制流）** 三类异构单元 + 专用 DMA 引擎 **MTE**；**与 GPU 的根本区别**（HPCA 2021, Section 3）：Cube 和 Vector **不能同时并发执行**，必须靠 Pipeline 交替工作（GPU 的 Tensor Core / CUDA Core 可被不同 warp 同时调度，昇腾没有这个能力）。存储层次 **HBM → L2 → L1 → L0A/L0B → Cube → L0C → UB → HBM** 全部需要显式 `DataCopy` 手动管理，没有任何自动 Cache（GPU 只有 Shared Memory 需要手动管理，L1/L2 对程序员透明）。L0C → UB 阶段的 `FixPipe` 搬运可**免费融合激活函数**（ReLU/Sigmoid），是昇腾架构层面强制支持的 Epilogue Fusion，理念与 CUTLASS epilogue 一致。
 
-四类单元的完整结构图、与 CUDA/SM80 的逐项对位表（Grid→分核、Warp→无对应、Tensor Core→Cube、shared memory→L1/UB、register file→L0C 等）、GEMM 的分核→L1 tile→L0 tile→Cube 指令四层映射、FixPipe 的完整数据流时序，见 [[ascend_kernel_execution_model_analysis]] §1-§4。
+四类单元的完整结构图、与 CUDA/SM80 的逐项对位表（Grid→分核、Warp→无对应、Tensor Core→Cube、shared memory→L1/UB、register file→L0C 等）、GEMM 的分核→L1 tile→L0 tile→Cube 指令四层映射、FixPipe 的完整数据流时序，见 [[22_ascend_kernel_execution_model_analysis]] §1-§4。
 
 > **出处**：HPCA 2021, Figure 4 & Section 3.2-3.3；CANN AscendC 编程指南，"存储模型"/"Matmul 算子 FixPipe 配置"章节（docs.hiascend.com）。
 
@@ -498,7 +498,7 @@ AI Core 内部是 **Cube（矩阵乘）/ Vector（向量/逐元素）/ Scalar（
 
 ### 6.2 AscendC 编程模型
 
-AscendC 要求将算子计算组织为 **CopyIn → Compute → CopyOut** 三段流水（强制编程模式，非可选优化）：MTE 做 HBM↔UB 的 DMA，Vector/Cube 做计算，`TQue` + `BUFFER_NUM=2` 实现双缓冲、`EnQue`/`DeQue` 自动挂 producer/consumer 依赖。涉及矩阵乘时还需额外管理 L1→L0A/L0B 的搬运（MTE2 负责），Cube 计算结果写入 L0C，经 FixPipe 融合激活后到 UB，再由 MTE3 写回 HBM。三段流水的完整 Ascend C 代码（含 Matmul + TQue 双缓冲示例、`EnQue`/`DeQue` 与 CUDA `cp.async` commit/wait_group 的对照）见 [[ascend_kernel_execution_model_analysis]] §7。
+AscendC 要求将算子计算组织为 **CopyIn → Compute → CopyOut** 三段流水（强制编程模式，非可选优化）：MTE 做 HBM↔UB 的 DMA，Vector/Cube 做计算，`TQue` + `BUFFER_NUM=2` 实现双缓冲、`EnQue`/`DeQue` 自动挂 producer/consumer 依赖。涉及矩阵乘时还需额外管理 L1→L0A/L0B 的搬运（MTE2 负责），Cube 计算结果写入 L0C，经 FixPipe 融合激活后到 UB，再由 MTE3 写回 HBM。三段流水的完整 Ascend C 代码（含 Matmul + TQue 双缓冲示例、`EnQue`/`DeQue` 与 CUDA `cp.async` commit/wait_group 的对照）见 [[22_ascend_kernel_execution_model_analysis]] §7。
 
 > **出处**：华为 CANN AscendC 编程指南，"算子开发流程"及"双缓冲优化"章节（docs.hiascend.com）。
 
@@ -746,7 +746,7 @@ Step 6  回归 Profile
 
 - [[02_compile_stack/04_inductor/index]] — torch.compile 端到端编译流水线（Dynamo → Inductor）
 - [[26_flex_attention_analysis]] — FlexAttention 可组合注意力融合机制
-- [[tilelang_analysis]] — TileLang Tile-Level IR 与 Host Codegen
+- [[23_tilelang_analysis]] — TileLang Tile-Level IR 与 Host Codegen
 - [[01_npu_compile_paths_overview]] — NPU torch.compile 三条路径（Triton/ACLGraph/MLIR）
 - [[npu_mlir_backend_technical_analysis]] — NPU MLIR 六阶段编译管线
 - [[12_npu_compile]] — NPU 编译工作流与 Autotune
@@ -754,7 +754,7 @@ Step 6  回归 Profile
 - [[10_pytorch_cuda_graphs_complete_guide]] — CUDA Graphs 图捕获/重放机制
 - [[11_torch_compile_npugraphs_deepdive]] — NPU Graphs + torch.compile 深度分析
 - [[10_aclgraph_deep_analysis]] — ACLGraph 图捕获与 Super Kernel
-- [[ascend_kernel_execution_model_analysis]] — DaVinci AI Core、L1/L0/UB 缓冲链、TQue 与 FixPipe 的执行模型深挖
+- [[22_ascend_kernel_execution_model_analysis]] — DaVinci AI Core、L1/L0/UB 缓冲链、TQue 与 FixPipe 的执行模型深挖
 - [[01_ai_frameworks/index]] — AI 框架领域索引
 - [[02_engineering/index]] — 工程实现领域索引
 - [[changelog]] — 变更日志

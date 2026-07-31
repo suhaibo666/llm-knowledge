@@ -272,6 +272,6 @@ MLA 的 metadata 也专门定制:`MLACommonMetadata`(`mla_attention.py:1275`)显
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links
-- [[gpu_kernel_guide]] —— FlashAttention / Tensor Core kernel 链路
+- [[01_gpu_kernel_guide]] —— FlashAttention / Tensor Core kernel 链路
 - [[12_deepseek_v3_analysis]] —— MLA(多头潜在注意力)模型侧原理
 - [[31_megatron_inference_engine_analysis]] —— 块级 paged KV 对照

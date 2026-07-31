@@ -4,6 +4,7 @@
 > 本地源: `E:/97-codes/torch_parallel/triton`（浅克隆，作 `file:line` 可核验定位符）
 > **维度**: 域入口 / 学习路线总索引
 > 本页是整条 Triton 学习路线的入口与导航。每一页都**锚定官方 tutorial 源码**，每个知识点都配**可运行 demo**——这是本系列的铁律。
+> **段位**(kb-reorg P7 Task 7,2026-07-31):原课程序号 `triton_00`–`triton_06` 规范化为段位前缀(`triton_` 前缀保留)——L0 地基→段 0(01);L1-L3 会写/会调/会debug→段 1(10-14);L4 会优化 + 总纲→段 3(30-31)。
 
 ---
 
@@ -46,18 +47,18 @@ flowchart LR
 
 ## 学习路线（小白 → 专家）
 
-| 阶段 | 页面 | 能力 | 核心 demo（锚定源） | 你将学会 |
-|------|------|------|--------|---------|
-| **L0 认知** | [[triton_00_gpu_essentials_guide]] | 地基 | roofline 手算 + `do_bench` 量带宽 | GPU 执行/内存层级、SIMT、roofline、为什么 kernel 多是 memory-bound |
-| **L1 会写①** | [[triton_01_programming_model_guide]] | 会写 | **向量加法**（`01-vector-add.py`） | `@triton.jit`、`program_id`、`arange`、`mask`、`load/store`、grid lambda |
-| **L1 会写②** | [[triton_02_fused_softmax_guide]] | 会写 | **融合 softmax**（`02-fused-softmax.py`） | reduction（`tl.max/sum`）、kernel fusion 省带宽、`other=-inf` padding |
-| **L1 会写③** | [[triton_03_matmul_guide]] | 会写+优化 | **分块矩阵乘**（`03-matrix-multiplication.py`） | 二维指针算术、`tl.dot`、fp32 累加器、L2 grouping、K 维 masking |
-| **L2 会调** | [[triton_04_autotune_guide]] | 会调 | **autotune matmul**（`@triton.autotune`） | `Config`、`num_warps`、`num_stages`、`key`、剪枝、缓存陷阱 |
-| **L3 会 debug** | [[triton_05_debug_guide]] | 会debug | **解释器模式抓越界**（`TRITON_INTERPRET=1`） | interpreter、`device_print`、`static_assert`、5 类高频 bug 排查 |
-| **L4 会优化** | [[triton_06_optimization_profiling_guide]] | 会优化 | **proton 测 roofline + FlashAttention**（`06-fused-attention.py`） | profiler、占用率、`num_stages` 流水线、online-softmax 融合 |
-| **总纲** | [[triton_knowledge_map]] | 全部 | — | 四种能力对应的完整知识点清单 + 自测题 + 资源 |
+| 阶段 | 页面 | 段位 | 能力 | 核心 demo（锚定源） | 你将学会 |
+|------|------|------|------|--------|---------|
+| **L0 认知** | [[triton_01_gpu_essentials_guide]] | 段 0 | 地基 | roofline 手算 + `do_bench` 量带宽 | GPU 执行/内存层级、SIMT、roofline、为什么 kernel 多是 memory-bound |
+| **L1 会写①** | [[triton_10_programming_model_guide]] | 段 1 | 会写 | **向量加法**（`01-vector-add.py`） | `@triton.jit`、`program_id`、`arange`、`mask`、`load/store`、grid lambda |
+| **L1 会写②** | [[triton_11_fused_softmax_guide]] | 段 1 | 会写 | **融合 softmax**（`02-fused-softmax.py`） | reduction（`tl.max/sum`）、kernel fusion 省带宽、`other=-inf` padding |
+| **L1 会写③** | [[triton_12_matmul_guide]] | 段 1 | 会写+优化 | **分块矩阵乘**（`03-matrix-multiplication.py`） | 二维指针算术、`tl.dot`、fp32 累加器、L2 grouping、K 维 masking |
+| **L2 会调** | [[triton_13_autotune_guide]] | 段 1 | 会调 | **autotune matmul**（`@triton.autotune`） | `Config`、`num_warps`、`num_stages`、`key`、剪枝、缓存陷阱 |
+| **L3 会 debug** | [[triton_14_debug_guide]] | 段 1 | 会debug | **解释器模式抓越界**（`TRITON_INTERPRET=1`） | interpreter、`device_print`、`static_assert`、5 类高频 bug 排查 |
+| **L4 会优化** | [[triton_30_optimization_profiling_guide]] | 段 3 | 会优化 | **proton 测 roofline + FlashAttention**（`06-fused-attention.py`） | profiler、占用率、`num_stages` 流水线、online-softmax 融合 |
+| **总纲** | [[triton_31_knowledge_map]] | 段 3 | 全部 | — | 四种能力对应的完整知识点清单 + 自测题 + 资源 |
 
-> **学习建议**：严格按 L0→L4 顺序。每页末尾的「动手验证」务必亲手跑通 demo（哪怕没有 GPU，L1/L3 的 demo 可用 `TRITON_INTERPRET=1` 在 CPU 上跑，见 [[triton_05_debug_guide]]）。
+> **学习建议**：严格按 L0→L4 顺序。每页末尾的「动手验证」务必亲手跑通 demo（哪怕没有 GPU，L1/L3 的 demo 可用 `TRITON_INTERPRET=1` 在 CPU 上跑，见 [[triton_14_debug_guide]]）。
 
 ---
 
@@ -69,14 +70,14 @@ pip install triton            # 随 torch 一起装通常已自带；单独装�
 python -c "import triton; print(triton.__version__)"   # 本系列基线 3.8.0
 ```
 
-- **没有 GPU 也能学**：`TRITON_INTERPRET=1` 让 kernel 在 CPU 上以 Python 模拟执行（慢但可 `print`/单步），适合学语义、抓越界——详见 [[triton_05_debug_guide]]。
+- **没有 GPU 也能学**：`TRITON_INTERPRET=1` 让 kernel 在 CPU 上以 Python 模拟执行（慢但可 `print`/单步），适合学语义、抓越界——详见 [[triton_14_debug_guide]]。
 - **官方 tutorial 源**就是本系列的真源：`triton/python/tutorials/01..11-*.py`。强烈建议边读 wiki 边对照源文件。
 
 ---
 
 ## 关联域
 
-- [[gpu_kernel_guide]] — GPU/NPU Kernel 工程总览（CUDA thread-level 视角、Tensor Core、NPU 差异）；与本系列**互补**：那页讲 CUDA 手写，本系列讲 Triton 自动化
+- [[01_gpu_kernel_guide]] — GPU/NPU Kernel 工程总览（CUDA thread-level 视角、Tensor Core、NPU 差异）；与本系列**互补**：那页讲 CUDA 手写，本系列讲 Triton 自动化
 - [[30_triton_vs_mlir_backend_analysis]] — Triton 作为 `torch.compile` 后端的编译流水线（FX→Inductor IR→Triton→PTX）
 - [[20_inductor_codegen_analysis]] — TorchInductor 如何**自动生成** Triton kernel（你手写的，编译器也在生成）
 - [[../../01_ai_frameworks/index]] — PyTorch 编译栈

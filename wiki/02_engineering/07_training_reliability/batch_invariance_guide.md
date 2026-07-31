@@ -422,7 +422,7 @@ flowchart LR
 - [[27_deepseek_v4_implementation_deepdive]] — V4 核心组件伪代码实现
 - [[26_deepseek_v4_technical_deepdive]] — CSA/HCA/DSA/MLA 对比
 - [[24_deepseek_v4_fp4_qat_analysis]] — FP4 QAT 训练流程（同属训练基础设施）
-- [[tilelang_analysis]] — TileLang DSL，V4 融合 kernel 开发工具
+- [[23_tilelang_analysis]] — TileLang DSL，V4 融合 kernel 开发工具
 - [[31_comm_compute_fusion_guide]] — 通算融合（WaveEP 等，同属基础设施优化）
 - [[11_rl_sandbox_design_analysis]] — Coding RL Sandbox 设计（同属后训练框架）
 - [[12_rl_infra_efficiency_analysis]] — Coding RL Infra 效率优化（异步训练对 batch invariance 的要求）

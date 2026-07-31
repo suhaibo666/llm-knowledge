@@ -2,7 +2,7 @@
 
 > **源基线**: `triton main @ 70e0929`，v3.8.0 ｜ 锚定 `python/tutorials/03-matrix-multiplication.py`（逐行可核验）
 > **维度**: 学习路线 L1（会写③）+ L2（会优化：L2 cache）｜ 能力：**会写多维 kernel + 会做访存局部性优化**
-> 本页用官方 matmul demo 讲清三件事：① 多维指针算术怎么生成 `[BM,BK]` 指针块；② 为什么用 **fp32 寄存器累加器** + `tl.dot` 沿 K 维累加；③ 一个纯调度顺序的改动（grouped ordering）如何把 L2 命中率拉高、A100 上从 220→245 TFLOPS。前置：[[triton_01_programming_model_guide]]（SPMD/mask/grid）与 [[triton_00_gpu_essentials_guide]]（roofline/compute-bound）。
+> 本页用官方 matmul demo 讲清三件事：① 多维指针算术怎么生成 `[BM,BK]` 指针块；② 为什么用 **fp32 寄存器累加器** + `tl.dot` 沿 K 维累加；③ 一个纯调度顺序的改动（grouped ordering）如何把 L2 命中率拉高、A100 上从 220→245 TFLOPS。前置：[[triton_10_programming_model_guide]]（SPMD/mask/grid）与 [[triton_01_gpu_essentials_guide]]（roofline/compute-bound）。
 
 ---
 
@@ -71,7 +71,7 @@ import torch
 import triton
 import triton.language as tl
 
-@triton.autotune(                       # :228 —— 自动调参（配置细节见 [[triton_04_autotune_guide]]）
+@triton.autotune(                       # :228 —— 自动调参（配置细节见 [[triton_13_autotune_guide]]）
     configs=get_autotune_config(),      # :229
     key=['M', 'N', 'K'],                # :230 —— M/N/K 变化时重新搜索最优配置
 )
@@ -158,7 +158,7 @@ def matmul(a, b, activation=""):
     return c
 ```
 
-> 注意 `:343` 的 grid 是 **1D**：kernel 内部再用 `:256-264` 的算术把一维 `pid` 解码回二维 `(pid_m, pid_n)`。这与 [[triton_01_programming_model_guide]] 的一维向量加法启动语法一脉相承，只是块映射更复杂。
+> 注意 `:343` 的 grid 是 **1D**：kernel 内部再用 `:256-264` 的算术把一维 `pid` 解码回二维 `(pid_m, pid_n)`。这与 [[triton_10_programming_model_guide]] 的一维向量加法启动语法一脉相承，只是块映射更复杂。
 
 ### 2.3 正确性测试（源 `:361-372`）
 
@@ -241,7 +241,7 @@ b = tl.load(b_ptrs, mask=offs_k[:, None] < K - k * BLOCK_SIZE_K, other=0.0)  # :
 
 ## 4. L2 Cache 优化：grouped ordering（90 vs 54 块）
 
-**主题句**：matmul 是 compute-bound（见 §5、[[triton_00_gpu_essentials_guide]]），但 A/B 块要反复从 HBM 经 L2 加载；**计算 C 块的顺序决定了哪些 A/B 块同时"活"在 L2 里，从而决定 L2 命中率**。源把这个纯调度问题量化成一个 9×9 块的例子（源注释 `:137-145`）。
+**主题句**：matmul 是 compute-bound（见 §5、[[triton_01_gpu_essentials_guide]]），但 A/B 块要反复从 HBM 经 L2 加载；**计算 C 块的顺序决定了哪些 A/B 块同时"活"在 L2 里，从而决定 L2 命中率**。源把这个纯调度问题量化成一个 9×9 块的例子（源注释 `:137-145`）。
 
 设 C 是 9×9 个块。要算"前 9 个输出块"：
 
@@ -292,13 +292,13 @@ if ACTIVATION == "leaky_relu":          # :310
 
 `leaky_relu` 用 `tl.where(x >= 0, x, 0.01*x)`（`:326`）——无分支谓词执行。**意义**：matmul+激活本要两趟 kernel（写出中间结果再读回），融合后中间结果从不落 HBM，省一次全量读写。这正是"自己写 kernel"压过调库的地方。
 
-### 5.3 tile 大小的权衡（链 [[triton_00_gpu_essentials_guide]] roofline）
+### 5.3 tile 大小的权衡（链 [[triton_01_gpu_essentials_guide]] roofline）
 - tile 越大 → 每个 program 的算术强度（reuse）越高、越靠近 roofline 的 compute 屋顶，但寄存器 / SRAM 压力越大、occupancy 越低；
 - tile 越小 → occupancy 高但 reuse 差、更易卡在访存。
-- 这是个没有普适最优解的空间，依赖 M/N/K 和硬件——所以源直接用 `@triton.autotune`（`:228-231`）枚举十多组 `BLOCK_SIZE/num_warps/num_stages`（`:164-199`）让运行时自己选。**这些配置项怎么定义、怎么搜，是下一页 [[triton_04_autotune_guide]] 的内容，本页不展开。**
+- 这是个没有普适最优解的空间，依赖 M/N/K 和硬件——所以源直接用 `@triton.autotune`（`:228-231`）枚举十多组 `BLOCK_SIZE/num_warps/num_stages`（`:164-199`）让运行时自己选。**这些配置项怎么定义、怎么搜，是下一页 [[triton_13_autotune_guide]] 的内容，本页不展开。**
 
-### 5.4 它确实是 compute-bound（印证 [[triton_00_gpu_essentials_guide]]）
-benchmark 的度量是 **TFLOPS**（`:418` ylabel、`:438` `perf = 2*M*N*K*1e-12/(ms*1e-3)`），而非 GB/s。用 FLOP 吞吐衡量、且能逼近 cuBLAS（源标题 `:4-5` "on par with cuBLAS"），说明大矩阵 matmul 卡在算力屋顶而非带宽——与 [[triton_00_gpu_essentials_guide]] 的 roofline 判据一致；对照 [[triton_01_programming_model_guide]] 的向量加法（memory-bound，度量 GB/s）。
+### 5.4 它确实是 compute-bound（印证 [[triton_01_gpu_essentials_guide]]）
+benchmark 的度量是 **TFLOPS**（`:418` ylabel、`:438` `perf = 2*M*N*K*1e-12/(ms*1e-3)`），而非 GB/s。用 FLOP 吞吐衡量、且能逼近 cuBLAS（源标题 `:4-5` "on par with cuBLAS"），说明大矩阵 matmul 卡在算力屋顶而非带宽——与 [[triton_01_gpu_essentials_guide]] 的 roofline 判据一致；对照 [[triton_10_programming_model_guide]] 的向量加法（memory-bound，度量 GB/s）。
 
 ---
 
@@ -326,13 +326,13 @@ python 03-matrix-multiplication.py     # 应打印 "✅ Triton and Torch match" 
 
 无 GPU 时（CPU 模拟语义，速度无意义、但能验正确性）：
 ```bash
-TRITON_INTERPRET=1 python 03-matrix-multiplication.py   # 详见 [[triton_05_debug_guide]]
+TRITON_INTERPRET=1 python 03-matrix-multiplication.py   # 详见 [[triton_14_debug_guide]]
 ```
 
 **巩固练习（坐实"会写③"+"会优化"）**：
 1. 把 `matmul(a, b)` 改成 `matmul(a, b, activation="leaky_relu")`，对比 `torch.nn.functional.leaky_relu(torch.matmul(a,b), 0.01)`，体会融合（§5.2）。
 2. 把 `:263-264` 临时换成行主序 `pid_m = pid // num_pid_n; pid_n = pid % num_pid_n`，跑 benchmark 看 TFLOPS 掉多少——亲手复现 §4 的 220→245 故事（你的卡数值会不同）。
-3. 打印某个 program 的 `pid_m, pid_n`（`device_print`，见 [[triton_05_debug_guide]]），确认 grouped 顺序确实是组内列主序。
+3. 打印某个 program 的 `pid_m, pid_n`（`device_print`，见 [[triton_14_debug_guide]]），确认 grouped 顺序确实是组内列主序。
 
 ---
 
@@ -344,22 +344,22 @@ TRITON_INTERPRET=1 python 03-matrix-multiplication.py   # 详见 [[triton_05_deb
 - [ ] 会写 K 维 masking（`other=0.0` 补 0 不影响结果）与指针块平移
 - [ ] 能讲清 grouped ordering 为什么提升 L2 命中（90 vs 54），并知道它零计算成本
 - [ ] 会在累加器仍是 fp32 时融合任意激活，并说明这是相对 cuBLAS 的核心优势
-- [ ] 知道 kernel 头上的 `@triton.autotune` 在做什么（配置细节 → [[triton_04_autotune_guide]]）
+- [ ] 知道 kernel 头上的 `@triton.autotune` 在做什么（配置细节 → [[triton_13_autotune_guide]]）
 
-下一步 → [[triton_04_autotune_guide]]：本页那十几组 `Config(BLOCK_SIZE..., num_warps, num_stages)` 是怎么定义、怎么按 `key=['M','N','K']` 自动搜出最优的。
+下一步 → [[triton_13_autotune_guide]]：本页那十几组 `Config(BLOCK_SIZE..., num_warps, num_stages)` 是怎么定义、怎么按 `key=['M','N','K']` 自动搜出最优的。
 
 ---
 
 ## 相关页面
 
 - [[index]] — Triton 学习路线总索引
-- [[triton_00_gpu_essentials_guide]] — 前置：roofline / compute-bound vs memory-bound（本页 §5.4 印证）
-- [[triton_01_programming_model_guide]] — 前置：SPMD / `program_id` / `mask` / grid（本页是其多维进阶）
-- [[triton_02_fused_softmax_guide]] — 同属"会写"：reduction 与 fusion 的另一面
-- [[triton_04_autotune_guide]] — 下一步：`@triton.autotune` 的 Config / num_warps / num_stages / key
-- [[triton_05_debug_guide]] — `TRITON_INTERPRET` / `device_print` 调试本 kernel
-- [[triton_06_optimization_profiling_guide]] — 更系统的 L2/occupancy/profiling 方法
-- [[triton_knowledge_map]] — Triton 知识全景图
-- [[gpu_kernel_guide]] — CUDA 手写 GEMM tiling 对照（shared memory / register tiling 的硬件视角）
-- [[cuda_gemm_kernel_analysis]] — SM80 生产级 GEMM 的 CTA/Warp/MMA、`cp.async` 与 epilogue 深挖
+- [[triton_01_gpu_essentials_guide]] — 前置：roofline / compute-bound vs memory-bound（本页 §5.4 印证）
+- [[triton_10_programming_model_guide]] — 前置：SPMD / `program_id` / `mask` / grid（本页是其多维进阶）
+- [[triton_11_fused_softmax_guide]] — 同属"会写"：reduction 与 fusion 的另一面
+- [[triton_13_autotune_guide]] — 下一步：`@triton.autotune` 的 Config / num_warps / num_stages / key
+- [[triton_14_debug_guide]] — `TRITON_INTERPRET` / `device_print` 调试本 kernel
+- [[triton_30_optimization_profiling_guide]] — 更系统的 L2/occupancy/profiling 方法
+- [[triton_31_knowledge_map]] — Triton 知识全景图
+- [[01_gpu_kernel_guide]] — CUDA 手写 GEMM tiling 对照（shared memory / register tiling 的硬件视角）
+- [[20_cuda_gemm_kernel_analysis]] — SM80 生产级 GEMM 的 CTA/Warp/MMA、`cp.async` 与 epilogue 深挖
 - [[30_triton_vs_mlir_backend_analysis]] — `tl.dot` 之后：Triton → Tensor Core MMA 的编译路径

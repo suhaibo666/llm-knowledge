@@ -2,7 +2,7 @@
 
 > **源基线**: `triton main @ 70e0929`，v3.8.0 ｜ 锚定 `python/tutorials/01-vector-add.py`（逐行可核验）
 > **维度**: 学习路线 L1（会写）｜ 能力：**会写**
-> 本页用官方最小 demo「向量加法」手把手讲清 Triton 的 SPMD block 编程模型：`@triton.jit` / `program_id` / `arange` / `mask` / `load·store` / grid。读完你能独立写出任意逐元素 kernel。前置：[[triton_00_gpu_essentials_guide]]。
+> 本页用官方最小 demo「向量加法」手把手讲清 Triton 的 SPMD block 编程模型：`@triton.jit` / `program_id` / `arange` / `mask` / `load·store` / grid。读完你能独立写出任意逐元素 kernel。前置：[[triton_01_gpu_essentials_guide]]。
 
 ---
 
@@ -101,7 +101,7 @@ print(f'max diff: {torch.max(torch.abs(output_torch - output_triton))}')   # 期
 - `BLOCK_SIZE: tl.constexpr`：**编译期常量**。标 `constexpr` 才能用作形状（`tl.arange` 的上界必须是 constexpr），且不同取值会触发不同的编译产物。
 
 ### ③ `tl.program_id(axis=0)` —— 定位「我是谁」（源 `:39`）
-SPMD 的核心。1D grid 用 `axis=0`；2D/3D grid 可用 `axis=1/2`（matmul 会用到，见 [[triton_03_matmul_guide]]）。
+SPMD 的核心。1D grid 用 `axis=0`；2D/3D grid 可用 `axis=1/2`（matmul 会用到，见 [[triton_12_matmul_guide]]）。
 
 ### ④ `tl.arange(0, BLOCK_SIZE)` —— 生成一个**块**（源 `:45`）
 这不是标量循环，而是一次性产生 `[0,1,...,BLOCK_SIZE-1]` 的**向量**。`block_start + arange(...)` 得到本 program 负责的 `BLOCK_SIZE` 个全局下标。**「一次操作一整块」正是 block 编程的体现**。⚠️ `BLOCK_SIZE` 必须是 2 的幂（Triton 限制，见 `02-fused-softmax.py:79-81`）。
@@ -122,10 +122,10 @@ SPMD 的核心。1D grid 用 `axis=0`；2D/3D grid 可用 `axis=1/2`（matmul �
 | 设计 | 动机 | 为什么不选「显式 thread」 |
 |---|---|---|
 | program 操作整块（不是单 thread） | 让编译器在块内自由排布线程、合并访存、用 SRAM | 显式 thread（CUDA）把 coalescing/shared mem 的负担全压给程序员，易错且占用心智 |
-| `mask` 而非分支处理边界 | SIMT 下分支会发散；mask 是无发散的谓词执行 | `if offset < n` 会造成 warp divergence（见 [[gpu_kernel_guide]] §04） |
+| `mask` 而非分支处理边界 | SIMT 下分支会发散；mask 是无发散的谓词执行 | `if offset < n` 会造成 warp divergence（见 [[01_gpu_kernel_guide]] §04） |
 | `BLOCK_SIZE` 设为 `constexpr` | 块大小编译期已知 → 编译器能展开、向量化、算 SRAM 用量 | 运行时块大小无法静态优化 |
 
-**为什么 `BLOCK_SIZE=1024` 是合理默认**：向量加法是 memory-bound（[[triton_00_gpu_essentials_guide]] §3 算过 AI≈0.083），大块 → 每个 program 发起更大的连续访存 → 更易打满带宽。最优值因卡而异——这正是下一阶段 [[triton_04_autotune_guide]] 要自动搜索的。
+**为什么 `BLOCK_SIZE=1024` 是合理默认**：向量加法是 memory-bound（[[triton_01_gpu_essentials_guide]] §3 算过 AI≈0.083），大块 → 每个 program 发起更大的连续访存 → 更易打满带宽。最优值因卡而异——这正是下一阶段 [[triton_13_autotune_guide]] 要自动搜索的。
 
 ---
 
@@ -137,7 +137,7 @@ SPMD 的核心。1D grid 用 `axis=0`；2D/3D grid 可用 `axis=1/2`（matmul �
 | `tl.arange` 报错 / 形状错 | `BLOCK_SIZE` 不是 constexpr 或非 2 的幂 | 标 `: tl.constexpr`，取 2 的幂 |
 | 结果全 0 或部分错 | grid 算少了，没覆盖全部元素 | 用 `triton.cdiv` 而非整除 |
 | `BLOCK_SIZE` 改了不生效 | 当成普通参数传 | 必须作关键字 meta 参数：`kernel[grid](..., BLOCK_SIZE=1024)` |
-| 没 GPU 跑不了 | 缺设备 | `TRITON_INTERPRET=1` 在 CPU 模拟，见 [[triton_05_debug_guide]] |
+| 没 GPU 跑不了 | 缺设备 | `TRITON_INTERPRET=1` 在 CPU 模拟，见 [[triton_14_debug_guide]] |
 
 ---
 
@@ -165,16 +165,16 @@ TRITON_INTERPRET=1 python 01-vector-add.py   # CPU 模拟执行，验证语义�
 - [ ] 理解 `mask` 防越界、且无 warp 发散
 - [ ] 能把任意逐元素运算（FMA/ReLU/缩放）改写成 Triton kernel
 
-下一步 → [[triton_02_fused_softmax_guide]]：当一行数据要做 max/sum 这种**跨元素归约**时怎么写，以及 fusion 为什么快。
+下一步 → [[triton_11_fused_softmax_guide]]：当一行数据要做 max/sum 这种**跨元素归约**时怎么写，以及 fusion 为什么快。
 
 ---
 
 ## 相关页面
 
 - [[index]] — Triton 学习路线总索引
-- [[triton_00_gpu_essentials_guide]] — 前置：GPU 执行/内存层级与 roofline
-- [[triton_02_fused_softmax_guide]] — 下一步：reduction 与 kernel fusion
-- [[triton_05_debug_guide]] — `TRITON_INTERPRET` 无 GPU 调试、`device_print`
-- [[cuda_execution_model_guide]] — Grid·Block·Warp·Thread·SM 执行模型（program ≈ block 的来龙去脉）
-- [[gpu_kernel_guide]] — CUDA thread-level 视角对照（warp/coalescing 硬件细节）
+- [[triton_01_gpu_essentials_guide]] — 前置：GPU 执行/内存层级与 roofline
+- [[triton_11_fused_softmax_guide]] — 下一步：reduction 与 kernel fusion
+- [[triton_14_debug_guide]] — `TRITON_INTERPRET` 无 GPU 调试、`device_print`
+- [[10_cuda_execution_model_guide]] — Grid·Block·Warp·Thread·SM 执行模型（program ≈ block 的来龙去脉）
+- [[01_gpu_kernel_guide]] — CUDA thread-level 视角对照（warp/coalescing 硬件细节）
 - [[30_triton_vs_mlir_backend_analysis]] — `@triton.jit` 之后：Triton→PTX 编译流水线

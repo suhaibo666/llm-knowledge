@@ -2,7 +2,7 @@
 
 > **源基线**: `triton main @ 70e0929`（2026-06-25），v3.8.0 ｜ 锚定 `python/tutorials/03-matrix-multiplication.py` 的 autotune 段 + `python/triton/runtime/autotuner.py`（逐行可核验）
 > **维度**: 学习路线 L2（会调）｜ 能力：**会调**
-> 上一阶段 [[triton_03_matmul_guide]] 你已经能写出 matmul kernel，但 `BLOCK_SIZE_M/N/K`、`num_warps` 这些旋钮该取多少？本页讲 Triton 的自动调参机制 `@triton.autotune`：给一份候选菜单，让它在你的真实 shape 上 benchmark 出最优。前置 [[triton_01_programming_model_guide]] 的 meta 参数概念。
+> 上一阶段 [[triton_12_matmul_guide]] 你已经能写出 matmul kernel，但 `BLOCK_SIZE_M/N/K`、`num_warps` 这些旋钮该取多少？本页讲 Triton 的自动调参机制 `@triton.autotune`：给一份候选菜单，让它在你的真实 shape 上 benchmark 出最优。前置 [[triton_10_programming_model_guide]] 的 meta 参数概念。
 
 ---
 
@@ -90,7 +90,7 @@ def __init__(self, kwargs, num_warps=4, num_stages=3, num_ctas=1,
 ```
 
 ### `kwargs` —— meta 参数字典（`BLOCK_SIZE_*` / `GROUP_SIZE_M`）
-第一个位置参数，docstring 称为「a dictionary of meta-parameters to pass to the kernel as keyword arguments」（源 `:332-333`）。matmul 里它装的就是 `{'BLOCK_SIZE_M':..., 'GROUP_SIZE_M':...}`——这些在 kernel 签名里都是 `tl.constexpr`（matmul `:245-246`），决定每个 program 处理多大的 tile、tile 的分组顺序（`GROUP_SIZE_M` 影响 L2 复用，详见 [[triton_03_matmul_guide]]）。**无默认值**，每条 Config 必须显式给。
+第一个位置参数，docstring 称为「a dictionary of meta-parameters to pass to the kernel as keyword arguments」（源 `:332-333`）。matmul 里它装的就是 `{'BLOCK_SIZE_M':..., 'GROUP_SIZE_M':...}`——这些在 kernel 签名里都是 `tl.constexpr`（matmul `:245-246`），决定每个 program 处理多大的 tile、tile 的分组顺序（`GROUP_SIZE_M` 影响 L2 复用，详见 [[triton_12_matmul_guide]]）。**无默认值**，每条 Config 必须显式给。
 
 ### `num_warps` —— 块内并行度（默认 `4`，源 `:351`）
 官方 docstring（源 `:334-337`）：「the number of warps to use for the kernel when compiled for GPUs. For example, if `num_warps=8`, then each kernel instance will be automatically parallelized to cooperatively execute using `8 * 32 = 256` threads.」
@@ -100,7 +100,7 @@ def __init__(self, kwargs, num_warps=4, num_stages=3, num_ctas=1,
 ### `num_stages` —— 软件流水线级数（默认 `3`，源 `:351`）
 官方 docstring（源 `:338-340`）：「the number of stages that the compiler should use when software-pipelining loops. Mostly useful for matrix multiplication workloads on SM80+ GPUs.」
 
-机制：matmul 主循环里每次迭代要从 HBM 把下一块 A/B 搬进 SRAM 再算。`num_stages=N` 让编译器把循环展开成 N 级流水，用 `cp.async`（SM80+ 的异步拷贝）**提前预取后续若干块**，让访存与计算重叠，掩盖 HBM 延迟。代价是每多一级就多占一份 SRAM 缓冲。这与 [[triton_06_optimization_profiling_guide]] 讲的流水线/double-buffering 优化是同一回事，只是这里由 autotune 帮你选级数。docstring 明确它「主要对 SM80+ 上的矩阵乘有用」——对 memory-bound 的逐元素 kernel 调它意义不大。
+机制：matmul 主循环里每次迭代要从 HBM 把下一块 A/B 搬进 SRAM 再算。`num_stages=N` 让编译器把循环展开成 N 级流水，用 `cp.async`（SM80+ 的异步拷贝）**提前预取后续若干块**，让访存与计算重叠，掩盖 HBM 延迟。代价是每多一级就多占一份 SRAM 缓冲。这与 [[triton_30_optimization_profiling_guide]] 讲的流水线/double-buffering 优化是同一回事，只是这里由 autotune 帮你选级数。docstring 明确它「主要对 SM80+ 上的矩阵乘有用」——对 memory-bound 的逐元素 kernel 调它意义不大。
 
 ### `num_ctas` —— block cluster 大小（默认 `1`，源 `:351`）
 docstring（源 `:341-342`）：「number of blocks in a block cluster. SM90+ only.」即 Hopper（SM90）才有的 thread block cluster 特性，多个 block 组成一个 cluster 共享分布式 SRAM。非 Hopper 卡保持默认 `1` 即可。
@@ -207,18 +207,18 @@ print(matmul_kernel.best_config)  # 打印胜出的 Config（含 BLOCK/num_warps
 - [ ] 警惕两大陷阱：首调慢（要 warmup）、动态 shape cache miss（要分桶）
 - [ ] 会用 `TRITON_PRINT_AUTOTUNING=1` 和 `.best_config` 观察谁胜出（`knobs.py:384`；`autotuner.py:269`）
 
-下一步 → [[triton_05_debug_guide]]：kernel 调对了配置但结果不对怎么排查（`TRITON_INTERPRET`、`device_print`）；性能侧的流水线/访存优化见 [[triton_06_optimization_profiling_guide]]。
+下一步 → [[triton_14_debug_guide]]：kernel 调对了配置但结果不对怎么排查（`TRITON_INTERPRET`、`device_print`）；性能侧的流水线/访存优化见 [[triton_30_optimization_profiling_guide]]。
 
 ---
 
 ## 相关页面
 
 - [[index]] — Triton 学习路线总索引
-- [[triton_03_matmul_guide]] — 前置：被调参的 matmul kernel 本体、`GROUP_SIZE_M` 的 L2 复用
-- [[triton_01_programming_model_guide]] — meta 参数 / `constexpr` 的来历
-- [[triton_06_optimization_profiling_guide]] — `num_stages` 背后的软件流水线与访存优化原理
-- [[triton_05_debug_guide]] — 配置对了但结果错的排查路径
-- [[triton_knowledge_map]] — 全图：autotune 在 Triton 能力树中的位置
+- [[triton_12_matmul_guide]] — 前置：被调参的 matmul kernel 本体、`GROUP_SIZE_M` 的 L2 复用
+- [[triton_10_programming_model_guide]] — meta 参数 / `constexpr` 的来历
+- [[triton_30_optimization_profiling_guide]] — `num_stages` 背后的软件流水线与访存优化原理
+- [[triton_14_debug_guide]] — 配置对了但结果错的排查路径
+- [[triton_31_knowledge_map]] — 全图：autotune 在 Triton 能力树中的位置
 - [[21_inductor_autotuning_analysis]] — `torch.compile` 的 max-autotune 在更上层自动做同一件事（自动生成 + benchmark Triton/cutlass 候选）
 - [[20_inductor_codegen_analysis]] — Inductor 如何生成被 autotune 的 Triton kernel
-- [[gpu_kernel_guide]] — occupancy / warp / 寄存器压力的硬件背景（`num_warps`/`maxnreg` 的物理含义）
+- [[01_gpu_kernel_guide]] — occupancy / warp / 寄存器压力的硬件背景（`num_warps`/`maxnreg` 的物理含义）

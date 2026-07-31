@@ -2,7 +2,7 @@
 
 > **源基线**: `triton-lang/triton` `main @ 70e0929`（2026-06-25），v3.8.0 ｜ 本地源根 `E:/97-codes/torch_parallel/triton`
 > **维度**: 学习路线 L3（会 debug）｜ 能力：**会 debug**
-> kernel 在 GPU 上并行跑、中间 IR 不透明，传统 `printf`/断点几乎用不上。本页给出 Triton 自带的全套调试武器：**CPU 解释器模式 `TRITON_INTERPRET=1`**（把 kernel 搬到纯 Python 里逐 program 模拟，`print`/`pdb`/numpy 随便用、无需 GPU）+ 设备端 `device_print` / 编译期 `static_print`·`static_assert` / 运行期 `device_assert`。前置：[[triton_01_programming_model_guide]]。
+> kernel 在 GPU 上并行跑、中间 IR 不透明，传统 `printf`/断点几乎用不上。本页给出 Triton 自带的全套调试武器：**CPU 解释器模式 `TRITON_INTERPRET=1`**（把 kernel 搬到纯 Python 里逐 program 模拟，`print`/`pdb`/numpy 随便用、无需 GPU）+ 设备端 `device_print` / 编译期 `static_print`·`static_assert` / 运行期 `device_assert`。前置：[[triton_10_programming_model_guide]]。
 
 ---
 
@@ -65,14 +65,14 @@ for x in range(grid[0]):
 
 - 在 kernel 体里直接写 Python `print(...)`、`import pdb; pdb.set_trace()` 单步；
 - 打印任意中间张量（它们就是普通 numpy 数组）；
-- **完全不需要 GPU**——这正是「无 GPU 也能学 Triton」的底座（呼应 [[triton_01_programming_model_guide]] §6 的无 GPU 动手验证）。
+- **完全不需要 GPU**——这正是「无 GPU 也能学 Triton」的底座（呼应 [[triton_10_programming_model_guide]] §6 的无 GPU 动手验证）。
 
 异常处理也对调试友好：kernel 体内抛的异常会被包成 `InterpreterError` 并**保留原始报文**（`interpreter.py:1415-1418`），定位比 GPU 上一句 `CUDA error: illegal memory access` 清楚得多。（提示：源同处显示，设 `TRITON_FRONT_END_DEBUGGING` 可让原始异常直接 re-raise，保留完整 traceback。）
 
 **代价 / 局限**（重要，别误用）：
 - **慢**：纯 Python 串行跑每个 program，规模一大就难以忍受——只用最小复现 shape；
 - **串行**：它**不**暴露 GPU 上的并发/竞态问题（race、`atomic`、barrier 时序），这类 bug 解释器抓不到；
-- **并非所有特性都支持**：偏底层/硬件相关的算子在模拟器下可能缺失或行为不完全一致。解释器是**语义**调试器，不是**性能/并发**调试器（性能见 [[triton_06_optimization_profiling_guide]]）。
+- **并非所有特性都支持**：偏底层/硬件相关的算子在模拟器下可能缺失或行为不完全一致。解释器是**语义**调试器，不是**性能/并发**调试器（性能见 [[triton_30_optimization_profiling_guide]]）。
 
 ---
 
@@ -129,7 +129,7 @@ TRITON_DEBUG=1 python my_kernel.py    # 不设这个，上面的 device_assert/a
 
 ## 4. demo：从越界 bug 到修复
 
-取 [[triton_01_programming_model_guide]] 里**已知正确**的向量加法 kernel，**故意删掉 `mask`** 造一个尾块越界 bug，再用解释器 + 打印抓住它。下列 API（`program_id`/`arange`/`load`/`store`/`device_print`）均在源中核实过。
+取 [[triton_10_programming_model_guide]] 里**已知正确**的向量加法 kernel，**故意删掉 `mask`** 造一个尾块越界 bug，再用解释器 + 打印抓住它。下列 API（`program_id`/`arange`/`load`/`store`/`device_print`）均在源中核实过。
 
 ```python
 import torch, triton
@@ -198,7 +198,7 @@ print("max diff:", (out - (x + y)).abs().max())  # 预期 0.0
 | ② | 数值偏差大 / `tl.dot` 类型报错 | dtype 不匹配（fp16 输入喂进 fp32 累加器，或 `.to()` 漏写） | `tl.static_print("x dtype", x.dtype)`（`core.py:3398`）在编译期看推导 dtype | 累加器显式 `tl.float32`，必要处 `x.to(tl.float32)` |
 | ③ | 结果整体错位 / 转置 | 指针-stride 算术错：`[:, None]` 与 `[None, :]` 广播方向反了 | 解释器 + `print(offsets)`，逐 program 对照预期下标 | 校正广播轴与 `stride`，行 `[:,None]`、列 `[None,:]` |
 | ④ | `tl.arange` 报错 / 形状错 / 改值不生效 | `BLOCK_SIZE` 非 2 的幂，或漏标 `: tl.constexpr` | `tl.static_assert(BLOCK_SIZE & (BLOCK_SIZE-1) == 0)`（`core.py:3414`）编译期即拦 | 标 `: tl.constexpr` 且取 2 的幂 |
-| ⑤ | 编译失败 `out of shared memory` | `num_stages` 过大，软件流水占用 SRAM 超额 | 编译期错误信息直指 shared memory 超额；对照卡的 SRAM 容量 | 调小 `num_stages` / `BLOCK_SIZE`，详见 [[triton_04_autotune_guide]] |
+| ⑤ | 编译失败 `out of shared memory` | `num_stages` 过大，软件流水占用 SRAM 超额 | 编译期错误信息直指 shared memory 超额；对照卡的 SRAM 容量 | 调小 `num_stages` / `BLOCK_SIZE`，详见 [[triton_13_autotune_guide]] |
 
 ---
 
@@ -213,7 +213,7 @@ print("max diff:", (out - (x + y)).abs().max())  # 预期 0.0
 6. 回归                    ── 关掉解释器、回 GPU，torch.allclose(out, ref) 验证语义不变
 ```
 
-要点：**先在解释器里把语义调对，再回 GPU 调性能**。解释器只管「算得对不对」，并发/性能问题（race、占用率、流水）属于另一阶段——见 [[triton_06_optimization_profiling_guide]]。
+要点：**先在解释器里把语义调对，再回 GPU 调性能**。解释器只管「算得对不对」，并发/性能问题（race、占用率、流水）属于另一阶段——见 [[triton_30_optimization_profiling_guide]]。
 
 ---
 
@@ -227,19 +227,19 @@ print("max diff:", (out - (x + y)).abs().max())  # 预期 0.0
 - [ ] 能对照「五类高频 bug」表，用正确的工具（解释器 / `static_print` / `static_assert`）定位并修复
 - [ ] 知道解释器的边界：抓不到并发/竞态、不反映真实性能
 
-下一步 → [[triton_06_optimization_profiling_guide]]：语义调对之后，怎么量化并优化 kernel 的性能。
+下一步 → [[triton_30_optimization_profiling_guide]]：语义调对之后，怎么量化并优化 kernel 的性能。
 
 ---
 
 ## 相关页面
 
 - [[index]] — Triton 学习路线总索引
-- [[triton_knowledge_map]] — 能力图谱中本页的位置（L3 会 debug）
-- [[triton_01_programming_model_guide]] — 前置：SPMD/`mask`/`constexpr`，demo 的正确基准
-- [[triton_00_gpu_essentials_guide]] — GPU 执行模型（理解为何 GPU 难直接调试）
-- [[triton_02_fused_softmax_guide]] — reduction kernel，dtype/形状 bug 的常见场景
-- [[triton_03_matmul_guide]] — 指针-stride 算术与广播方向（bug③）的高发地
-- [[triton_04_autotune_guide]] — `num_stages`/`BLOCK_SIZE`（bug④⑤）与 SRAM 约束
-- [[triton_06_optimization_profiling_guide]] — 下一步：语义对了之后调性能
+- [[triton_31_knowledge_map]] — 能力图谱中本页的位置（L3 会 debug）
+- [[triton_10_programming_model_guide]] — 前置：SPMD/`mask`/`constexpr`，demo 的正确基准
+- [[triton_01_gpu_essentials_guide]] — GPU 执行模型（理解为何 GPU 难直接调试）
+- [[triton_11_fused_softmax_guide]] — reduction kernel，dtype/形状 bug 的常见场景
+- [[triton_12_matmul_guide]] — 指针-stride 算术与广播方向（bug③）的高发地
+- [[triton_13_autotune_guide]] — `num_stages`/`BLOCK_SIZE`（bug④⑤）与 SRAM 约束
+- [[triton_30_optimization_profiling_guide]] — 下一步：语义对了之后调性能
 - [[30_triton_vs_mlir_backend_analysis]] — 「中间 IR 不透明」的背景：`@triton.jit` 后的编译流水线
-- [[gpu_kernel_guide]] — CUDA 视角的并发/竞态，解释器抓不到的那一类
+- [[01_gpu_kernel_guide]] — CUDA 视角的并发/竞态，解释器抓不到的那一类

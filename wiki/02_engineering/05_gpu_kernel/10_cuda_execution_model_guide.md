@@ -2,8 +2,8 @@
 
 > **源基线（权威）**: NVIDIA **CUDA C++ Programming Guide v12.9.1**（archive），§*Thread Hierarchy*（Programming Model）+ §*Hardware Implementation / SIMT Architecture*。Triton 对照锚定 `triton main @ 70e0929`。
 > **维度**: GPU 编程地基（概念→深入）｜ 能力：全部能力的前置
-> 本页专门拆掉初学者最容易卡住的那条链：**计算任务的逻辑层级 Grid→Block→Thread，如何映射到物理硬件 SM 上、并以 Warp 为真正的执行单位**。每个概念配可运行 demo。读完再回 [[triton_00_gpu_essentials_guide]] / [[gpu_kernel_guide]] 就通了。
-> **本页地位**：GPU **执行模型权威页**（2026-07 归一定稿）——[[gpu_kernel_guide]] §01、[[triton_00_gpu_essentials_guide]] §2 直觉一的执行层级讲解均已收缩为指针，指回本页；Roofline 的姊妹权威页是 [[operator_optimization_guide]] §2。
+> 本页专门拆掉初学者最容易卡住的那条链：**计算任务的逻辑层级 Grid→Block→Thread，如何映射到物理硬件 SM 上、并以 Warp 为真正的执行单位**。每个概念配可运行 demo。读完再回 [[triton_01_gpu_essentials_guide]] / [[01_gpu_kernel_guide]] 就通了。
+> **本页地位**：GPU **执行模型权威页**（2026-07 归一定稿）——[[01_gpu_kernel_guide]] §01、[[triton_01_gpu_essentials_guide]] §2 直觉一的执行层级讲解均已收缩为指针，指回本页；Roofline 的姊妹权威页是 [[11_operator_optimization_guide]] §2。
 
 ---
 
@@ -164,15 +164,15 @@ if (threadIdx.x % 2 == 0)  a(); else  b();
 if ((threadIdx.x / warpSize) % 2 == 0)  a(); else  b();
 ```
 
-> 推论:**让同一 warp 内的线程尽量走相同路径**。这也解释了 [[triton_01_programming_model_guide]] 为什么用 `mask` 而非 `if` 处理边界——mask 是无发散的谓词执行。
+> 推论:**让同一 warp 内的线程尽量走相同路径**。这也解释了 [[triton_10_programming_model_guide]] 为什么用 `mask` 而非 `if` 处理边界——mask 是无发散的谓词执行。
 
 ### ② 内存合并访问（Coalescing）
 
-warp 的 32 个线程若访问**连续对齐**地址,硬件合并成一次大事务;若跳跃,退化成多次小事务,带宽利用率暴跌。（机制细节见 [[gpu_kernel_guide]] §02。）根因还是「32 线程同时发访存」这个 warp 事实。
+warp 的 32 个线程若访问**连续对齐**地址,硬件合并成一次大事务;若跳跃,退化成多次小事务,带宽利用率暴跌。（机制细节见 [[01_gpu_kernel_guide]] §02。）根因还是「32 线程同时发访存」这个 warp 事实。
 
 ### ③ 占用率（Occupancy）
 
-源（§Hardware Implementation）：**一个 SM 能同时驻留多少 Block / Warp，取决于 kernel 用的寄存器和共享内存,以及 SM 上可用的量;若资源不足,kernel 直接启动失败。** 驻留的 warp 越多 → warp 调度器越有得切 → 越能掩盖访存延迟。这就是「占用率」要调的东西（[[triton_04_autotune_guide]] 的 `num_warps`、[[gpu_kernel_guide]] §03）。
+源（§Hardware Implementation）：**一个 SM 能同时驻留多少 Block / Warp，取决于 kernel 用的寄存器和共享内存,以及 SM 上可用的量;若资源不足,kernel 直接启动失败。** 驻留的 warp 越多 → warp 调度器越有得切 → 越能掩盖访存延迟。这就是「占用率」要调的东西（[[triton_13_autotune_guide]] 的 `num_warps`、[[01_gpu_kernel_guide]] §03）。
 
 ### ④ `__syncthreads()` 只能在 Block 内同步
 
@@ -211,7 +211,7 @@ flowchart TB
 | `__syncthreads` | 块内自动插入 | 编译器 |
 | 合并访问 / bank conflict | 自动 | 编译器 |
 
-> 所以 [[triton_00_gpu_essentials_guide]] 那张「分工表」的底气,正是来自本页:Warp 这层最难最易错的东西,Triton 替你处理了。但**你仍要懂 warp**——否则不知道 `num_warps` 在调什么、为什么用 mask、为什么访问要连续。
+> 所以 [[triton_01_gpu_essentials_guide]] 那张「分工表」的底气,正是来自本页:Warp 这层最难最易错的东西,Triton 替你处理了。但**你仍要懂 warp**——否则不知道 `num_warps` 在调什么、为什么用 mask、为什么访问要连续。
 
 ### Demo 3：在 Triton 里看 program ≈ block（可运行，无 GPU 也行）
 
@@ -232,7 +232,7 @@ out = torch.empty(n, dtype=torch.int32, device=DEVICE)
 whoami[(triton.cdiv(n, BLOCK),)](out, BLOCK_SIZE=BLOCK)  # 启动 4 个 program（≈4 个 Block）
 ```
 
-`program_id` 的输出 0,1,2,3 ↔ CUDA 的 `blockIdx`。`num_warps` 没出现——因为每个 program 用几个 warp 是编译器定的。打印细节见 [[triton_05_debug_guide]]。
+`program_id` 的输出 0,1,2,3 ↔ CUDA 的 `blockIdx`。`num_warps` 没出现——因为每个 program 用几个 warp 是编译器定的。打印细节见 [[triton_14_debug_guide]]。
 
 ---
 
@@ -270,13 +270,13 @@ TRITON_INTERPRET=1 python triton_whoami.py  # 看 program_id ≈ blockIdx（无�
 
 ## 相关页面
 
-- [[gpu_kernel_guide]] — GPU/NPU Kernel 工程总览（本页是其 §01 执行层级的「概念→深入」展开版）
-- [[operator_optimization_guide]] — **Roofline 权威页**：本页是执行模型权威页，与该页 §2（Roofline）互为姊妹权威
-- [[cuda_gemm_kernel_analysis]] — 把执行层级落到 SM80 生产级 Tensor Core GEMM
-- [[cuda_nonmatmul_kernels_analysis]] — 同一执行模型下，按 roofline 与数据依赖切换优化逻辑
-- [[ascend_kernel_execution_model_analysis]] — 对照没有 warp 的 DaVinci AI Core 执行模型
-- [[triton_00_gpu_essentials_guide]] — GPU 编程要素（roofline / 内存层级；本页补齐其「执行层级」前置）
-- [[triton_01_programming_model_guide]] — Triton SPMD 编程模型（program ≈ block 的实战）
-- [[triton_04_autotune_guide]] — `num_warps` / 占用率怎么自动调
-- [[triton_05_debug_guide]] — `device_print` / `TRITON_INTERPRET` 打印细节
+- [[01_gpu_kernel_guide]] — GPU/NPU Kernel 工程总览（本页是其 §01 执行层级的「概念→深入」展开版）
+- [[11_operator_optimization_guide]] — **Roofline 权威页**：本页是执行模型权威页，与该页 §2（Roofline）互为姊妹权威
+- [[20_cuda_gemm_kernel_analysis]] — 把执行层级落到 SM80 生产级 Tensor Core GEMM
+- [[21_cuda_nonmatmul_kernels_analysis]] — 同一执行模型下，按 roofline 与数据依赖切换优化逻辑
+- [[22_ascend_kernel_execution_model_analysis]] — 对照没有 warp 的 DaVinci AI Core 执行模型
+- [[triton_01_gpu_essentials_guide]] — GPU 编程要素（roofline / 内存层级；本页补齐其「执行层级」前置）
+- [[triton_10_programming_model_guide]] — Triton SPMD 编程模型（program ≈ block 的实战）
+- [[triton_13_autotune_guide]] — `num_warps` / 占用率怎么自动调
+- [[triton_14_debug_guide]] — `device_print` / `TRITON_INTERPRET` 打印细节
 - [[index]] — GPU Kernel 领域索引
