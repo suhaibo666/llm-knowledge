@@ -87,8 +87,8 @@
 | Triton kernel 入门→专家 | [[triton_01_programming_model_guide]], [[triton_03_matmul_guide]], [[triton_04_autotune_guide]], [[triton_06_optimization_profiling_guide]], [[triton_knowledge_map]] |
 | GPU/NPU 执行模型与 GEMM | [[cuda_execution_model_guide]], [[cuda_gemm_kernel_analysis]], [[ascend_kernel_execution_model_analysis]] |
 | 非 GEMM Kernel 优化 | [[cuda_nonmatmul_kernels_analysis]], [[gpu_kernel_guide]], [[triton_00_gpu_essentials_guide]] |
-| vLLM 推理引擎 | [[vllm/index]], [[vllm_engine_architecture_analysis]], [[vllm_scheduler_analysis]], [[vllm_kv_cache_management_analysis]], [[vllm_feature_optimizations_overview]] |
-| vLLM 图编译/算子融合 | [[vllm_fused_ops_and_kernels_analysis]], [[vllm_ir_and_fusion_passes_analysis]], [[vllm_compilation_cudagraph_analysis]] |
+| vLLM 推理引擎 | [[vllm/index]], [[10_vllm_engine_architecture_analysis]], [[11_vllm_scheduler_analysis]], [[12_vllm_kv_cache_management_analysis]], [[01_vllm_feature_optimizations_overview]] |
+| vLLM 图编译/算子融合 | [[24_vllm_fused_ops_and_kernels_analysis]], [[25_vllm_ir_and_fusion_passes_analysis]], [[23_vllm_compilation_cudagraph_analysis]] |
 | PPO/GRPO RL 训练 | [[10_rl_ppo_loss_and_grpo_analysis]], [[20_rl_training_inference_precision_analysis]] |
 | RL 训练框架 (verl/HybridFlow) | [[verl/index]], [[01_verl_architecture_overview_analysis]], [[20_verl_ray_trainer_analysis]], [[15_verl_rl_algorithms_analysis]] |
 | Coding RL「脏活」系列 | [[31_reward_hacking_defense_analysis]], [[11_rl_sandbox_design_analysis]], [[12_rl_infra_efficiency_analysis]] |

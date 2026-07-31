@@ -4,7 +4,7 @@
 > **最后更新**:2026-06-22 · **系列**:vLLM 推理引擎源码级分析(见 [[vllm/index]])
 > **分析维度**:Overview → Quick Start → Deep Dive
 >
-> 本页回答:vLLM 是用什么**统一插件框架**把十几种量化方法(AWQ/GPTQ/FP8/FP4/bitsandbytes/compressed-tensors…)接进同一套 `Linear`/`MoE`/`Attention` 层的;一种方法(以 **FP8** 为例)从 config 解析 → 建权重 → 加载后重打包 → 低精度 GEMM 的**端到端**链路;以及 **KV cache 量化**怎么挂到注意力后端。层本身怎么造、权重怎么按 TP 切分加载归 [[vllm_model_library_analysis]];本页只讲**量化这一横切关注点**:`QuantizationConfig → QuantizeMethodBase → create_weights/apply`。
+> 本页回答:vLLM 是用什么**统一插件框架**把十几种量化方法(AWQ/GPTQ/FP8/FP4/bitsandbytes/compressed-tensors…)接进同一套 `Linear`/`MoE`/`Attention` 层的;一种方法(以 **FP8** 为例)从 config 解析 → 建权重 → 加载后重打包 → 低精度 GEMM 的**端到端**链路;以及 **KV cache 量化**怎么挂到注意力后端。层本身怎么造、权重怎么按 TP 切分加载归 [[13_vllm_model_library_analysis]];本页只讲**量化这一横切关注点**:`QuantizationConfig → QuantizeMethodBase → create_weights/apply`。
 
 ---
 
@@ -16,7 +16,7 @@ LLM 解码是**访存瓶颈**(memory-bound):每生成一个 token 都要把全�
 
 - **权重显存减半/减四**:7B 模型 fp16 约 14GB,FP8 约 7GB,INT4 约 3.5GB —— 决定"能不能装下"。
 - **带宽/算力翻倍**:低精度权重搬运更快;若硬件有 FP8/INT8 Tensor Core,GEMM 吞吐也翻倍(weight+activation 量化才吃得到算力红利,weight-only 主要省带宽)。
-- **KV cache 减半**:长上下文场景 KV 占显存比权重还多,fp8 KV 直接让可容纳的并发/序列长度翻倍(详见 [[vllm_kv_cache_management_analysis]])。
+- **KV cache 减半**:长上下文场景 KV 占显存比权重还多,fp8 KV 直接让可容纳的并发/序列长度翻倍(详见 [[12_vllm_kv_cache_management_analysis]])。
 
 代价是精度损失,因此 vLLM 不"自己拍脑袋量化",而是**消费**离线量化工具(AutoAWQ / AutoGPTQ / llm-compressor / ModelOpt / bitsandbytes)产出的 checkpoint,运行时只负责"建对应的量化权重 + 调对应的低精度 kernel"。
 
@@ -238,7 +238,7 @@ x_2d_q, x_s = self.quant_fp8(x_2d, x_s, x_s_ub)   # :161  在线量化激活(Qua
 return self.apply_scaled_mm(A=x_2d_q, B=weight, As=x_s, Bs=weight_scale, ...)  # :162
 ```
 
-- **激活在线量化**走 `QuantFP8`(`input_quant_fp8.py:30`)—— 一个 `CustomOp`,`forward_cuda`(`:84`)按 per-token/per-tensor/per-group 把激活压到 e4m3,`forward_native`(`:184`)是可被 `torch.compile` 融合的纯 PyTorch 参考实现(见 [[vllm_compilation_cudagraph_analysis]])。
+- **激活在线量化**走 `QuantFP8`(`input_quant_fp8.py:30`)—— 一个 `CustomOp`,`forward_cuda`(`:84`)按 per-token/per-tensor/per-group 把激活压到 e4m3,`forward_native`(`:184`)是可被 `torch.compile` 融合的纯 PyTorch 参考实现(见 [[23_vllm_compilation_cudagraph_analysis]])。
 - **GEMM** 在 `CutlassFP8ScaledMMLinearKernel.apply_scaled_mm`(`cutlass.py:243`)里调 `ops.cutlass_scaled_mm(A, B, scale_a, scale_b, bias)`(`cutlass.py:265`)—— 一条 kernel 完成 `dequant(A·B)`(scale 在 epilogue 里乘回)。
 
 至此一条 FP8 Linear 的完整生命:`Fp8Config:99 → get_quant_method:179 → create_weights:322 → process_weights_after_loading:398 → apply:446 → cutlass_scaled_mm`。
@@ -263,7 +263,7 @@ KV 量化与权重量化**正交**:它压的是运行时不断增长的 K/V 张�
 - `process_weights_after_loading`(`kv_cache.py:74`)是核心:把加载到的 k/v scale 收敛成 per-tensor 标量、缺失则回退 1.0 并告警(`kv_cache.py:104-152`),最终写进前向真正用的 `layer._k_scale/_v_scale`(`kv_cache.py:143-146`);**per-token-head 量化**(`fp8_per_token_head`)则 scale 在 kernel 里逐 (token,head) 动态算,checkpoint scale 不用(`kv_cache.py:85-94`)。
 - checkpoint 里的 scale 名(如 `.k_proj.output_scale`)由 `get_cache_scale_mapper`(`fp8.py:223`)统一映射到 vLLM 的 `.attn.k_scale`,加载器自动套用。
 
-**对注意力后端的影响**:写 KV 时按 `_k_scale/_v_scale` 把 K/V 量化进分页 cache;做注意力时 FP8 后端(FlashAttention/FlashInfer)用 `_q_scale/_prob_scale` 跑 FP8 attention。后端能否吃 fp8 KV、以及 `reshape_and_cache` 如何按 dtype 写入,详见 [[vllm_attention_backends_analysis]];块的分配/复用见 [[vllm_kv_cache_management_analysis]]。
+**对注意力后端的影响**:写 KV 时按 `_k_scale/_v_scale` 把 K/V 量化进分页 cache;做注意力时 FP8 后端(FlashAttention/FlashInfer)用 `_q_scale/_prob_scale` 跑 FP8 attention。后端能否吃 fp8 KV、以及 `reshape_and_cache` 如何按 dtype 写入,详见 [[14_vllm_attention_backends_analysis]];块的分配/复用见 [[12_vllm_kv_cache_management_analysis]]。
 
 > `calculate_kv_scales`(`cache.py:110`,已标记 deprecated)曾用于"运行时动态算 KV scale";现在优先从 checkpoint 加载,缺失才用默认值。
 
@@ -280,7 +280,7 @@ MoE 的量化挂在 `RoutedExperts` 上(对应 `get_quant_method` 的第二岔),
 ---
 
 ## Related Pages
-- [[vllm_model_library_analysis]] · [[vllm_attention_backends_analysis]] · [[vllm_feature_optimizations_overview]] · [[vllm_distributed_inference_analysis]]
+- [[13_vllm_model_library_analysis]] · [[14_vllm_attention_backends_analysis]] · [[01_vllm_feature_optimizations_overview]] · [[22_vllm_distributed_inference_analysis]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

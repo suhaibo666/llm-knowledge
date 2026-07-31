@@ -4,7 +4,7 @@
 > **最后更新**:2026-06-22 · **系列**:vLLM 推理引擎源码级分析(见 [[vllm/index]])
 > **分析维度**:Overview → Quick Start → Deep Dive
 >
-> 本页回答:vLLM 把一个模型沿 **TP / PP / EP / DP** 四个维度切到多卡多机时,进程组(`parallel_state`)如何按 5 维 rank 张量切出各通信组、executor 如何把 rank 扇出成 worker、以及 PP 流水线 / MoE 的 DP-attention+EP 在 V1 里到底怎么跑。**层内 TP 怎么切权重(Column/Row)归 [[vllm_model_library_analysis]]**;**executor 如何把一条请求广播给所有 worker 的整体架构归 [[vllm_engine_architecture_analysis]]**;本页只钉死「进程组 + 通信 + PP/DP/EP 机制」这一层。
+> 本页回答:vLLM 把一个模型沿 **TP / PP / EP / DP** 四个维度切到多卡多机时,进程组(`parallel_state`)如何按 5 维 rank 张量切出各通信组、executor 如何把 rank 扇出成 worker、以及 PP 流水线 / MoE 的 DP-attention+EP 在 V1 里到底怎么跑。**层内 TP 怎么切权重(Column/Row)归 [[13_vllm_model_library_analysis]]**;**executor 如何把一条请求广播给所有 worker 的整体架构归 [[10_vllm_engine_architecture_analysis]]**;本页只钉死「进程组 + 通信 + PP/DP/EP 机制」这一层。
 
 ---
 
@@ -152,7 +152,7 @@ all_ranks = torch.arange(world_size).reshape(
 - `broadcast_tensor_dict`(`:845`):TP 组内广播,GPU 张量走 device 组、CPU 元数据走 gloo 组。
 - `next_rank` / `prev_rank`(`:565/572`):PP 环形邻居,P2P 用。
 
-公开函数 `tensor_model_parallel_all_reduce/all_gather/reduce_scatter`(`vllm/distributed/communication_op.py:12/17/24`)只是 `get_tp_group().xxx` 的转发,模型层(RowParallelLinear 等)调的就是它们,具体切分见 [[vllm_model_library_analysis]]。
+公开函数 `tensor_model_parallel_all_reduce/all_gather/reduce_scatter`(`vllm/distributed/communication_op.py:12/17/24`)只是 `get_tp_group().xxx` 的转发,模型层(RowParallelLinear 等)调的就是它们,具体切分见 [[13_vllm_model_library_analysis]]。
 
 ### 3.3 executor → worker 扇出:collective_rpc 广播
 
@@ -287,7 +287,7 @@ MoE 路由天然不均(热门专家被打爆),`EplbState`(`vllm/distributed/eplb
 ---
 
 ## Related Pages
-- [[vllm_model_library_analysis]] · [[vllm_engine_architecture_analysis]] · [[vllm_feature_optimizations_overview]] · [[vllm_attention_backends_analysis]]
+- [[13_vllm_model_library_analysis]] · [[10_vllm_engine_architecture_analysis]] · [[01_vllm_feature_optimizations_overview]] · [[14_vllm_attention_backends_analysis]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

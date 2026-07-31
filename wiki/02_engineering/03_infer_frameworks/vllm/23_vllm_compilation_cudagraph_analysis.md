@@ -4,7 +4,7 @@
 > **最后更新**:2026-06-22 · **系列**:vLLM 推理引擎源码级分析(见 [[vllm/index]])
 > **分析维度**:Overview → Quick Start → Deep Dive
 >
-> 本页回答:vLLM 为什么要把模型 `torch.compile` 一遍、再把整段前向录成 CUDA Graph;`@support_torch_compile` → `VllmBackend` → 分段切图 → 捕获 → 运行时分发这条链路怎么搭;以及 vLLM 的招牌设计——**分段 CUDA Graph(piecewise)**:为什么注意力必须被切出静态图、其余算子如何录进图里 replay。注意力本身"为什么录不进静态图"的后端级证据(`AttentionCGSupport`、varlen/分页 block_table)归 [[vllm_attention_backends_analysis]];本页只讲**编译 + 图捕获**框架,把注意力当作"切点"来看待。
+> 本页回答:vLLM 为什么要把模型 `torch.compile` 一遍、再把整段前向录成 CUDA Graph;`@support_torch_compile` → `VllmBackend` → 分段切图 → 捕获 → 运行时分发这条链路怎么搭;以及 vLLM 的招牌设计——**分段 CUDA Graph(piecewise)**:为什么注意力必须被切出静态图、其余算子如何录进图里 replay。注意力本身"为什么录不进静态图"的后端级证据(`AttentionCGSupport`、varlen/分页 block_table)归 [[14_vllm_attention_backends_analysis]];本页只讲**编译 + 图捕获**框架,把注意力当作"切点"来看待。
 
 ---
 
@@ -179,7 +179,7 @@ self._compiled_callable = torch.compile(
 `VllmBackend.__call__(graph, example_inputs)`(`backends.py:1014`)在 Dynamo 把 forward 转成单张 FX `GraphModule` 后被调用,核心步骤:
 
 1. **算缓存 key**(`:1024-1066`):综合环境因子、`VllmConfig.compute_hash()`、被 trace 的源码内容 hash、编译器 hash,定位 `~/.cache/vllm/torch_compile_cache/<hash>/rank_i_j/<prefix>/`(§3.8)。
-2. **装 post-grad pass**(`configure_post_pass`,`:929`):把 vLLM 的融合 pass(RMSNorm+quant、SiluMul+quant、注意力+quant 等,**详见 [[vllm_fused_ops_and_kernels_analysis]]**)挂进 Inductor 的 `post_grad_custom_post_pass`。
+2. **装 post-grad pass**(`configure_post_pass`,`:929`):把 vLLM 的融合 pass(RMSNorm+quant、SiluMul+quant、注意力+quant 等,**详见 [[24_vllm_fused_ops_and_kernels_analysis]]**)挂进 Inductor 的 `post_grad_custom_post_pass`。
 3. **切图**(`:1165-1171`):
 
 ```python
@@ -221,7 +221,7 @@ submod_names_to_compile = [
 
 注意力段保持为普通 FX 子模块,**运行时走 eager**;其余段各自变成 `PiecewiseBackend` 并被 `CUDAGraphWrapper` 包住(§3.5)。
 
-**为什么注意力录不进静态 CUDA Graph**(本页框架视角,后端证据见 [[vllm_attention_backends_analysis]]):
+**为什么注意力录不进静态 CUDA Graph**(本页框架视角,后端证据见 [[14_vllm_attention_backends_analysis]]):
 
 1. **变长(varlen)**:prefill 时每个请求的 query 长度不同,batch 内 token 总数随请求而变;注意力 kernel 的循环边界 / launch 配置依赖运行时 `seq_lens`、`query_start_loc`,无法在录制时定死。
 2. **动态 block_table**:PagedAttention 的 KV 分页存储,每步新 token 写进新物理块,`block_table` 指向的块号每步都变;CUDA Graph 录制会把指针/形状固定,而注意力 kernel 必须读运行时 block_table。
@@ -267,7 +267,7 @@ else:
 
 ### 3.6 cudagraph_mode 协商:看注意力后端的 AttentionCGSupport
 
-用户给的 `cudagraph_mode` 不一定能用——得看**所有注意力后端能不能把注意力录进图**。每个后端的 builder 声明一个支持级别 `AttentionCGSupport`(`v1/attention/backend.py:548`,详见 [[vllm_attention_backends_analysis]]):
+用户给的 `cudagraph_mode` 不一定能用——得看**所有注意力后端能不能把注意力录进图**。每个后端的 builder 声明一个支持级别 `AttentionCGSupport`(`v1/attention/backend.py:548`,详见 [[14_vllm_attention_backends_analysis]]):
 
 ```
 ALWAYS = 3                       # 任意批(含 mixed prefill-decode)都能进图
@@ -342,10 +342,10 @@ vLLM 实现"分段图"其实有**两条**互斥路线,由 `use_inductor_graph_pa
 
 ## 小结
 
-vLLM 的编译 + CUDA Graph 是两件正交武器协同对付 decode 的 CPU 下发瓶颈:`torch.compile`(经 `VllmBackend` 接管 Inductor)减少 kernel 数与 Python 开销,CUDA Graph 把整段下发录成一次 replay。招牌的**分段 CUDA Graph** 把变长/动态 block_table 的注意力切出静态图走 varlen kernel,其余静态算子录入 CUDA Graph;`FULL_AND_PIECEWISE` 默认让均匀 decode 批走全图、prefill/mixed 走分段。运行时由 `CudagraphDispatcher` 按 padding 后的形状选图、经 `ForwardContext` 下发、`CUDAGraphWrapper` 盲信键 capture/replay。注意力"为什么进不了静态图"的后端级判据(`AttentionCGSupport`)见 [[vllm_attention_backends_analysis]]。
+vLLM 的编译 + CUDA Graph 是两件正交武器协同对付 decode 的 CPU 下发瓶颈:`torch.compile`(经 `VllmBackend` 接管 Inductor)减少 kernel 数与 Python 开销,CUDA Graph 把整段下发录成一次 replay。招牌的**分段 CUDA Graph** 把变长/动态 block_table 的注意力切出静态图走 varlen kernel,其余静态算子录入 CUDA Graph;`FULL_AND_PIECEWISE` 默认让均匀 decode 批走全图、prefill/mixed 走分段。运行时由 `CudagraphDispatcher` 按 padding 后的形状选图、经 `ForwardContext` 下发、`CUDAGraphWrapper` 盲信键 capture/replay。注意力"为什么进不了静态图"的后端级判据(`AttentionCGSupport`)见 [[14_vllm_attention_backends_analysis]]。
 
 ## Related Pages
-- [[vllm_attention_backends_analysis]] · [[vllm_engine_architecture_analysis]] · [[vllm_feature_optimizations_overview]] · [[vllm_speculative_decoding_analysis]]
+- [[14_vllm_attention_backends_analysis]] · [[10_vllm_engine_architecture_analysis]] · [[01_vllm_feature_optimizations_overview]] · [[20_vllm_speculative_decoding_analysis]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

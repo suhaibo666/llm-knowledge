@@ -10,25 +10,25 @@
 
 ## 一、Overview(总览)
 
-vLLM 的"优化"分布在四个层面:**调度层**(前缀缓存、分块预填充)、**采样层**(结构化输出、投机解码)、**权重/算子层**(量化、LoRA、编译&CUDA Graph、算子融合&Triton——见 [[vllm_fused_ops_and_kernels_analysis]])、**内存/集群层**(分布式、分离式 KV、KV 卸载)。所有特性最终都收口到 `VllmConfig` 的子配置对象(`vllm/config/__init__.py` 聚合),由 `EngineArgs`(`vllm/engine/arg_utils.py`)从命令行解析。
+vLLM 的"优化"分布在四个层面:**调度层**(前缀缓存、分块预填充)、**采样层**(结构化输出、投机解码)、**权重/算子层**(量化、LoRA、编译&CUDA Graph、算子融合&Triton——见 [[24_vllm_fused_ops_and_kernels_analysis]])、**内存/集群层**(分布式、分离式 KV、KV 卸载)。所有特性最终都收口到 `VllmConfig` 的子配置对象(`vllm/config/__init__.py` 聚合),由 `EngineArgs`(`vllm/engine/arg_utils.py`)从命令行解析。
 
 ### 1.1 特性总表
 
 | 特性 | 解决什么问题 | 开启 flag(CLI) | 代码位置(相对 `vllm/`) | 深挖页 |
 |------|-------------|-----------------|--------------------------|--------|
-| **前缀缓存** Prefix Caching | 复用相同前缀的 KV,省重复 prefill | `--enable-prefix-caching`(**默认开**) | `config/cache.py:92`;`v1/core/block_pool.py` | [[vllm_kv_cache_management_analysis]] |
-| **分块预填充** Chunked Prefill | 长 prompt 拆块,与 decode 同批,降 TTFT 抖动 | `--enable-chunked-prefill`(**默认开**) | `config/scheduler.py:84`,`:80` | [[vllm_scheduler_analysis]] |
+| **前缀缓存** Prefix Caching | 复用相同前缀的 KV,省重复 prefill | `--enable-prefix-caching`(**默认开**) | `config/cache.py:92`;`v1/core/block_pool.py` | [[12_vllm_kv_cache_management_analysis]] |
+| **分块预填充** Chunked Prefill | 长 prompt 拆块,与 decode 同批,降 TTFT 抖动 | `--enable-chunked-prefill`(**默认开**) | `config/scheduler.py:84`,`:80` | [[11_vllm_scheduler_analysis]] |
 | **结构化/受限解码** | 强制输出符合 JSON/regex/grammar | `--structured-outputs-config '{"backend":"auto"}'` | `v1/structured_output/`;`config/structured_outputs.py` | **本页 §3.2** |
 | **LoRA / 多 LoRA 服务** | 单基座同时服务多个 LoRA 适配器 | `--enable-lora --max-loras N` | `lora/`;`config/lora.py`;`v1/worker/lora_model_runner_mixin.py` | **本页 §3.3** |
 | **分离式推理 / KV 连接器** | P/D 分离、跨实例 KV 复用 | `--kv-transfer-config '{...}'` | `distributed/kv_transfer/`;`config/kv_transfer.py` | **本页 §3.4** |
 | **KV cache 卸载** | KV 溢出到 CPU/分层存储,扩展可缓存上下文 | `--kv-transfer-config '{"kv_connector":"OffloadingConnector",...}'` | `v1/kv_offload/`;`...v1/offloading_connector.py` | **本页 §3.5** |
 | **权重卸载** Weight Offload | 模型权重溢出到 CPU(UVA/prefetch),省显存 | `--cpu-offload-gb N` | `config/offload.py` | 本页 §3.1 |
-| **投机解码** Speculative | draft+verify,降单步延迟 | `--speculative-config '{"method":..,"num_speculative_tokens":N}'` | `config/speculative.py:75` | [[vllm_speculative_decoding_analysis]] |
-| **量化** Quantization | 低比特权重/激活/KV,省显存提吞吐 | `--quantization <method>`(`-q`) | `config/quantization.py`;`config/model.py:197` | [[vllm_quantization_analysis]] |
-| **编译 & CUDA Graph** | torch.compile + 图捕获,削 Python/启动开销 | `--compilation-config '{...}'`(`-cc`) | `config/compilation.py:379` | [[vllm_compilation_cudagraph_analysis]] |
-| **分布式** TP/PP/DP/EP | 模型/数据切分到多卡多机 | `-tp/-pp/-dp`,`--enable-expert-parallel` | `config/parallel.py` | [[vllm_distributed_inference_analysis]] |
+| **投机解码** Speculative | draft+verify,降单步延迟 | `--speculative-config '{"method":..,"num_speculative_tokens":N}'` | `config/speculative.py:75` | [[20_vllm_speculative_decoding_analysis]] |
+| **量化** Quantization | 低比特权重/激活/KV,省显存提吞吐 | `--quantization <method>`(`-q`) | `config/quantization.py`;`config/model.py:197` | [[21_vllm_quantization_analysis]] |
+| **编译 & CUDA Graph** | torch.compile + 图捕获,削 Python/启动开销 | `--compilation-config '{...}'`(`-cc`) | `config/compilation.py:379` | [[23_vllm_compilation_cudagraph_analysis]] |
+| **分布式** TP/PP/DP/EP | 模型/数据切分到多卡多机 | `-tp/-pp/-dp`,`--enable-expert-parallel` | `config/parallel.py` | [[22_vllm_distributed_inference_analysis]] |
 | **多模态** Multimodal | 图/音/视频输入与 MM 缓存 | `--limit-mm-per-prompt '{...}'` | `config/multimodal.py` | 本页 §3.1 |
-| **异步调度** Async Scheduling | 调度与 GPU 执行重叠,削 CPU 空泡 | `--async-scheduling` | `config/scheduler.py:158` | [[vllm_scheduler_analysis]] |
+| **异步调度** Async Scheduling | 调度与 GPU 执行重叠,削 CPU 空泡 | `--async-scheduling` | `config/scheduler.py:158` | [[11_vllm_scheduler_analysis]] |
 
 > [!note] flag 默认值
 > 前缀缓存与分块预填充在 V1 **默认开启**(`enable_prefix_caching: bool = True`,`enable_chunked_prefill: bool = True`),无需手动加 flag;其余特性默认关闭、按需开启。
@@ -110,15 +110,15 @@ vllm serve <model> \
 
 | 特性 | 配置对象 / 行号 | 核心枚举 / 字段 | 深挖页 |
 |------|----------------|----------------|--------|
-| 投机解码 | `config/speculative.py:75` `SpeculativeConfig` | `num_speculative_tokens:81`、`method:87`(ngram/eagle/medusa/draft model) | [[vllm_speculative_decoding_analysis]] |
-| 量化 | `config/quantization.py` + `config/model.py:197` | `quantization` 方法名(fp8/awq/gptq/…) | [[vllm_quantization_analysis]] |
-| 编译&CUDA Graph | `config/compilation.py:379` `CompilationConfig` | `CompilationMode`(`:37` NONE/STOCK/DYNAMO_TRACE_ONCE/**VLLM_COMPILE**)、`CUDAGraphMode`(`:53` NONE/PIECEWISE/FULL/FULL_AND_PIECEWISE) | [[vllm_compilation_cudagraph_analysis]] |
-| 分布式 | `config/parallel.py` | `tensor_parallel_size:122`、`pipeline_parallel_size:120`、`data_parallel_size:126`、`enable_expert_parallel:162` | [[vllm_distributed_inference_analysis]] |
+| 投机解码 | `config/speculative.py:75` `SpeculativeConfig` | `num_speculative_tokens:81`、`method:87`(ngram/eagle/medusa/draft model) | [[20_vllm_speculative_decoding_analysis]] |
+| 量化 | `config/quantization.py` + `config/model.py:197` | `quantization` 方法名(fp8/awq/gptq/…) | [[21_vllm_quantization_analysis]] |
+| 编译&CUDA Graph | `config/compilation.py:379` `CompilationConfig` | `CompilationMode`(`:37` NONE/STOCK/DYNAMO_TRACE_ONCE/**VLLM_COMPILE**)、`CUDAGraphMode`(`:53` NONE/PIECEWISE/FULL/FULL_AND_PIECEWISE) | [[23_vllm_compilation_cudagraph_analysis]] |
+| 分布式 | `config/parallel.py` | `tensor_parallel_size:122`、`pipeline_parallel_size:120`、`data_parallel_size:126`、`enable_expert_parallel:162` | [[22_vllm_distributed_inference_analysis]] |
 
 ### 3.1 小特性回顾(无独立页,本页只占 1 段)
 
-- **前缀缓存**:`enable_prefix_caching`(`config/cache.py:92`,默认 `True`),哈希算法 `prefix_caching_hash_algo`(`:94`,默认 `sha256`)。块级前缀命中由 KV cache 管理器完成,详见 [[vllm_kv_cache_management_analysis]]。
-- **分块预填充**:`enable_chunked_prefill`(`config/scheduler.py:84`,默认 `True`);超过 `long_prefill_token_threshold`(`:80`,默认 `max_model_len*0.04`,见 `:258-259`)的 prompt 被拆块,与 decode token 混入同一 `max_num_batched_tokens` 预算并发执行。详见 [[vllm_scheduler_analysis]]。
+- **前缀缓存**:`enable_prefix_caching`(`config/cache.py:92`,默认 `True`),哈希算法 `prefix_caching_hash_algo`(`:94`,默认 `sha256`)。块级前缀命中由 KV cache 管理器完成,详见 [[12_vllm_kv_cache_management_analysis]]。
+- **分块预填充**:`enable_chunked_prefill`(`config/scheduler.py:84`,默认 `True`);超过 `long_prefill_token_threshold`(`:80`,默认 `max_model_len*0.04`,见 `:258-259`)的 prompt 被拆块,与 decode token 混入同一 `max_num_batched_tokens` 预算并发执行。详见 [[11_vllm_scheduler_analysis]]。
 - **权重卸载**:`config/offload.py` 提供两种后端——`UVAOffloadConfig`(`:16`,零拷贝 `cpu_offload_gb`)与 `PrefetchOffloadConfig`(`:48`,按层分组异步 H2D 预取);`offload_backend="auto"`(`:83`)依非默认字段自动二选一。注意这是**模型权重**卸载,与 §3.5 的 **KV cache** 卸载是两套独立机制。
 - **多模态**:`config/multimodal.py`,`--limit-mm-per-prompt` 限制每 prompt 的各模态数量;LoRA 还支持 `default_mm_loras`(`config/lora.py:52`)按模态绑定适配器。
 
@@ -279,8 +279,8 @@ KV 卸载不是独立子系统,而是注册为名为 `OffloadingConnector` 的 K
 ---
 
 ## Related Pages
-- [[vllm_speculative_decoding_analysis]] · [[vllm_quantization_analysis]] · [[vllm_distributed_inference_analysis]] · [[vllm_compilation_cudagraph_analysis]]
-- [[vllm_scheduler_analysis]] · [[vllm_kv_cache_management_analysis]] · [[vllm_engine_architecture_analysis]]
+- [[20_vllm_speculative_decoding_analysis]] · [[21_vllm_quantization_analysis]] · [[22_vllm_distributed_inference_analysis]] · [[23_vllm_compilation_cudagraph_analysis]]
+- [[11_vllm_scheduler_analysis]] · [[12_vllm_kv_cache_management_analysis]] · [[10_vllm_engine_architecture_analysis]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

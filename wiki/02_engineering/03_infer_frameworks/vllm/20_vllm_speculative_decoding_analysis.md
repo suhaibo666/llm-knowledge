@@ -4,7 +4,7 @@
 > **最后更新**:2026-06-22 · **系列**:vLLM 推理引擎源码级分析(见 [[vllm/index]])
 > **分析维度**:Overview → Quick Start → Deep Dive
 >
-> 本页回答:vLLM V1 如何用「草稿提议器一次提 k 个 token + 目标模型一次前向并行验证 + 拒绝采样接受最长合法前缀」把逐 token 串行解码压缩成几步并行解码。它讲清**验收侧的算法与内核**(提议器家族、草稿时序、拒绝采样数学与 Triton 实现);**调度侧的 lookahead 预留与拒绝回退**由 [[vllm_scheduler_analysis]] 主讲,本页只补「回退如何被验收结果驱动」这一环。
+> 本页回答:vLLM V1 如何用「草稿提议器一次提 k 个 token + 目标模型一次前向并行验证 + 拒绝采样接受最长合法前缀」把逐 token 串行解码压缩成几步并行解码。它讲清**验收侧的算法与内核**(提议器家族、草稿时序、拒绝采样数学与 Triton 实现);**调度侧的 lookahead 预留与拒绝回退**由 [[11_vllm_scheduler_analysis]] 主讲,本页只补「回退如何被验收结果驱动」这一环。
 
 ---
 
@@ -272,7 +272,7 @@ if request.num_computed_tokens > 0:
 
 **(3) 草稿回传(异步与否两条路)**:草稿在 worker 产出后要写回 `request.spec_token_ids` 供下一步调度。同步调度走 `EngineCore.post_step`(`engine/core.py:510`):`take_draft_token_ids`(`gpu_model_runner.py:4726`)→ `scheduler.update_draft_token_ids`(`scheduler.py:1896`);异步调度则在输出阶段走 `update_draft_token_ids_in_output`(`scheduler.py:1918`,`engine/core.py:615-622`)。是否启用由 `check_for_draft_tokens`(`engine/core.py:160`)门控。
 
-**(4) CUDA Graph 配合**:草稿器持有**自己的** `CudagraphDispatcher`(`llm_base_proposer.py:151`),key 由 `initialize_cudagraph_keys`(`:394`)注册;EAGLE 自回归每步前 `_determine_batch_execution_and_padding`(`:1660`)把 batch padding 到已捕获的图尺寸,并选择 PIECEWISE / FULL 运行模式。由于草稿步 batch 形状高度规则(每请求恰 1 query),非常适合 CUDA Graph 重放 —— 细节见 [[vllm_compilation_cudagraph_analysis]]。注意力后端如何在变长 query 下支持验证与草稿,见 [[vllm_attention_backends_analysis]]。
+**(4) CUDA Graph 配合**:草稿器持有**自己的** `CudagraphDispatcher`(`llm_base_proposer.py:151`),key 由 `initialize_cudagraph_keys`(`:394`)注册;EAGLE 自回归每步前 `_determine_batch_execution_and_padding`(`:1660`)把 batch padding 到已捕获的图尺寸,并选择 PIECEWISE / FULL 运行模式。由于草稿步 batch 形状高度规则(每请求恰 1 query),非常适合 CUDA Graph 重放 —— 细节见 [[23_vllm_compilation_cudagraph_analysis]]。注意力后端如何在变长 query 下支持验证与草稿,见 [[14_vllm_attention_backends_analysis]]。
 
 ### 3.7 端到端串联(一次 step 内)
 
@@ -293,7 +293,7 @@ flowchart TD
 ---
 
 ## Related Pages
-- [[vllm_scheduler_analysis]] · [[vllm_compilation_cudagraph_analysis]] · [[vllm_attention_backends_analysis]] · [[vllm_feature_optimizations_overview]]
+- [[11_vllm_scheduler_analysis]] · [[23_vllm_compilation_cudagraph_analysis]] · [[14_vllm_attention_backends_analysis]] · [[01_vllm_feature_optimizations_overview]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

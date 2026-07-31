@@ -4,7 +4,7 @@
 > **最后更新**:2026-06-22 · **系列**:vLLM 推理引擎源码级分析(见 [[vllm/index]])
 > **分析维度**:Overview → Quick Start → Deep Dive
 >
-> 本页回答:vLLM V1 的调度器如何在 **token 粒度**上每一步动态组 batch(连续批处理),如何把长 prompt 切成 chunk 与 decode 混批(分块预填充),以及 KV 不足时如何抢占重算。它是脊梁篇 [[vllm_engine_architecture_analysis]] 中 `EngineCore.step()` 的"大脑",其每一步的产物 `SchedulerOutput` 驱动执行层;而它做调度决策时反复调用的 `allocate_slots` 属于 KV 管理器,细节见 [[vllm_kv_cache_management_analysis]]。
+> 本页回答:vLLM V1 的调度器如何在 **token 粒度**上每一步动态组 batch(连续批处理),如何把长 prompt 切成 chunk 与 decode 混批(分块预填充),以及 KV 不足时如何抢占重算。它是脊梁篇 [[10_vllm_engine_architecture_analysis]] 中 `EngineCore.step()` 的"大脑",其每一步的产物 `SchedulerOutput` 驱动执行层;而它做调度决策时反复调用的 `allocate_slots` 属于 KV 管理器,细节见 [[12_vllm_kv_cache_management_analysis]]。
 
 ---
 
@@ -254,7 +254,7 @@ new_computed_blocks, num_new_local_computed_tokens = \
 ...
 num_computed_tokens = num_new_local_computed_tokens + num_external_computed_tokens  # 746
 ```
-本地命中(`get_computed_blocks`)加上经 KVConnector 的远端命中(P/D 分离场景),共同构成"已算 token"。于是 `num_new_tokens = num_tokens - num_computed_tokens`(`scheduler.py:796`)自动跳过缓存命中的前缀——前缀缓存对调度器是透明的。`allocate_slots`(`scheduler.py:874-886`)再把命中的 `new_computed_blocks` 直接挂到请求上、只为未命中部分分配新块。块的分配/复用/逐出细节见 [[vllm_kv_cache_management_analysis]]。
+本地命中(`get_computed_blocks`)加上经 KVConnector 的远端命中(P/D 分离场景),共同构成"已算 token"。于是 `num_new_tokens = num_tokens - num_computed_tokens`(`scheduler.py:796`)自动跳过缓存命中的前缀——前缀缓存对调度器是透明的。`allocate_slots`(`scheduler.py:874-886`)再把命中的 `new_computed_blocks` 直接挂到请求上、只为未命中部分分配新块。块的分配/复用/逐出细节见 [[12_vllm_kv_cache_management_analysis]]。
 
 ### 3.6 抢占与重算(preemption)
 
@@ -350,16 +350,16 @@ self.waiting.prepend_request(request)     # 1128 插回 waiting 队首
 
 ### 3.11 与投机解码、结构化输出的交互(简述)
 
-- **投机解码**:调度器为草稿 token 预留 `num_lookahead_tokens`(`scheduler.py:231-249`,eagle/draft 模型据 `num_speculative_tokens` 设定),`allocate_slots` 时带上以预分配 KV(`scheduler.py:528`);`scheduled_spec_decode_tokens` 随 `SchedulerOutput` 下发;草稿拒绝在 `update_from_output` 回退 `num_computed_tokens`(3.7)。动态 K 由 `dynamic_sd_lookup` 按 batch 大小查表(`scheduler.py:1052-1057`)。详见 [[vllm_speculative_decoding_analysis]]。
-- **结构化输出**:带 grammar 约束的请求初始处于 `WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR`(`request.py:112`),编译完成才可调度;`get_grammar_bitmask`(`scheduler.py:1440`)在每步为已过 prefill 的结构化请求生成 bitmask 随输出下发。归并于 [[vllm_feature_optimizations_overview]]。
+- **投机解码**:调度器为草稿 token 预留 `num_lookahead_tokens`(`scheduler.py:231-249`,eagle/draft 模型据 `num_speculative_tokens` 设定),`allocate_slots` 时带上以预分配 KV(`scheduler.py:528`);`scheduled_spec_decode_tokens` 随 `SchedulerOutput` 下发;草稿拒绝在 `update_from_output` 回退 `num_computed_tokens`(3.7)。动态 K 由 `dynamic_sd_lookup` 按 batch 大小查表(`scheduler.py:1052-1057`)。详见 [[20_vllm_speculative_decoding_analysis]]。
+- **结构化输出**:带 grammar 约束的请求初始处于 `WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR`(`request.py:112`),编译完成才可调度;`get_grammar_bitmask`(`scheduler.py:1440`)在每步为已过 prefill 的结构化请求生成 bitmask 随输出下发。归并于 [[01_vllm_feature_optimizations_overview]]。
 
 ### 3.12 prefill/decode 的"切换":单实例统一 vs 集群级 PD 分离
 
 vLLM 处理 prefill/decode 有两条**截然相反**的路径,常被混为一谈:
 
-**① 单实例内:不"切换",而是统一追赶 + 混批。** 如 §1.1/§3.2,调度器对 prefill/decode 一视同仁,一个请求是"prefill 态"还是"decode 态"只看 `num_computed_tokens` 是否追平 `num_tokens`(`is_prefill_chunk`,`request.py:168`),**没有模式开关**:追平那一刻自动从"每步几百 token"变成"每步 1 token"。而且同一步里,running(decode,先扣预算)与 waiting(prefill chunk,用剩余预算)落进**同一个 `SchedulerOutput`**,执行层用 varlen attention 一次前向吃下混批(见 [[vllm_attention_backends_analysis]])。
+**① 单实例内:不"切换",而是统一追赶 + 混批。** 如 §1.1/§3.2,调度器对 prefill/decode 一视同仁,一个请求是"prefill 态"还是"decode 态"只看 `num_computed_tokens` 是否追平 `num_tokens`(`is_prefill_chunk`,`request.py:168`),**没有模式开关**:追平那一刻自动从"每步几百 token"变成"每步 1 token"。而且同一步里,running(decode,先扣预算)与 waiting(prefill chunk,用剩余预算)落进**同一个 `SchedulerOutput`**,执行层用 varlen attention 一次前向吃下混批(见 [[14_vllm_attention_backends_analysis]])。
 
-**② 集群级:PD 分离,prefill 与 decode 跑在不同实例。** 通过 KV 连接器(`--kv-transfer-config`)把 prefill 实例算出的 KV 跨实例搬给 decode 实例;decode 侧请求在远端 KV 到齐前待在 `WAITING_FOR_REMOTE_KVS`(`scheduler.py:1805` 的 `_is_blocked_waiting_status` 识别,置于 `skipped_waiting`),远端命中的 token 经 `num_external_computed_tokens` 并入 `num_computed_tokens`(`scheduler.py:746`)。机制详见 [[vllm_feature_optimizations_overview]] §3.4。
+**② 集群级:PD 分离,prefill 与 decode 跑在不同实例。** 通过 KV 连接器(`--kv-transfer-config`)把 prefill 实例算出的 KV 跨实例搬给 decode 实例;decode 侧请求在远端 KV 到齐前待在 `WAITING_FOR_REMOTE_KVS`(`scheduler.py:1805` 的 `_is_blocked_waiting_status` 识别,置于 `skipped_waiting`),远端命中的 token 经 `num_external_computed_tokens` 并入 `num_computed_tokens`(`scheduler.py:746`)。机制详见 [[01_vllm_feature_optimizations_overview]] §3.4。
 
 | 场景 | prefill/decode 关系 | "切换"机制 | 开关 |
 |------|--------|-----------|------|
@@ -372,8 +372,8 @@ vLLM 处理 prefill/decode 有两条**截然相反**的路径,常被混为一谈
 ---
 
 ## Related Pages
-- [[vllm_engine_architecture_analysis]] · [[vllm_kv_cache_management_analysis]] · [[vllm_attention_backends_analysis]] · [[vllm_feature_optimizations_overview]]
-- [[vllm_speculative_decoding_analysis]] · [[vllm_distributed_inference_analysis]]
+- [[10_vllm_engine_architecture_analysis]] · [[12_vllm_kv_cache_management_analysis]] · [[14_vllm_attention_backends_analysis]] · [[01_vllm_feature_optimizations_overview]]
+- [[20_vllm_speculative_decoding_analysis]] · [[22_vllm_distributed_inference_analysis]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

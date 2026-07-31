@@ -50,7 +50,7 @@ flowchart LR
 
 ### 2.1 投机解码的延迟公式与无偏性 —— 三个可拨的杆
 
-投机解码用便宜的**草稿模型 $M_d$** 提 $\gamma$ 个候选 token，**目标模型 $M_t$** 一次前向**并行验证**全部候选，按拒绝采样接受**最长合法前缀**并追加一个 bonus token（p2-3, §2.1）。逐位置接受判据：草稿在位置 $k$ 给出 $x_k$（草稿概率 $p^d_k$、目标概率 $p^t_k$），以 $\min(1,\,p^t_k(x_k)/p^d_k(x_k))$ 接受；首个拒绝位之后全部丢弃。可证复合分布**恰为目标分布**，故投机解码**与目标逐 token 采样严格同分布（无偏）**（验收侧内核与数学详见 [[vllm_speculative_decoding_analysis]] §3.5）。
+投机解码用便宜的**草稿模型 $M_d$** 提 $\gamma$ 个候选 token，**目标模型 $M_t$** 一次前向**并行验证**全部候选，按拒绝采样接受**最长合法前缀**并追加一个 bonus token（p2-3, §2.1）。逐位置接受判据：草稿在位置 $k$ 给出 $x_k$（草稿概率 $p^d_k$、目标概率 $p^t_k$），以 $\min(1,\,p^t_k(x_k)/p^d_k(x_k))$ 接受；首个拒绝位之后全部丢弃。可证复合分布**恰为目标分布**，故投机解码**与目标逐 token 采样严格同分布（无偏）**（验收侧内核与数学详见 [[20_vllm_speculative_decoding_analysis]] §3.5）。
 
 论文把每生成 token 的平均延迟写成（p3, Eq.1）：
 
@@ -238,7 +238,7 @@ DSpark 草稿模型与 DeepSeek-V4-Flash/Pro（preview）**协同部署**：并�
 ## Related Pages
 - [[index]] —— 投机推理演进总览（MTP → Eagle3 → DFlash → DSpark 的横向对比）
 - [[deepspec_codebase_analysis]] —— 开源仓 DeepSpec 源码级分析（论文公式 ↔ 代码逐行核对）
-- [[vllm_speculative_decoding_analysis]] —— 投机解码在 vLLM 引擎里的验收/拒绝采样实现（含 mtp/dflash proposer）
+- [[20_vllm_speculative_decoding_analysis]] —— 投机解码在 vLLM 引擎里的验收/拒绝采样实现（含 mtp/dflash proposer）
 
 ## Cross-Domain Links
 - [[13_deepseek_v4_analysis]] —— DSpark 的底座模型 DeepSeek-V4（arXiv:2606.19348）

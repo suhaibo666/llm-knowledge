@@ -28,7 +28,7 @@ All source ingestions and significant wiki updates are logged here.
 | 组 | 现状 | 处置 |
 |---|---|---|
 | vLLM compilation ↔ `03_runtime_graphs` | 正向链（vLLM→`10_pytorch_cuda_graphs_complete_guide`/`11_torch_compile_npugraphs_deepdive`）P3 已补；反向链缺失 | 补 2 条反向链（CUDA 侧 + NPU 侧回指 vLLM 分段 CUDA Graph 应用实例） |
-| vLLM IR/fusion ↔ pass 页 | 原声明仍在：`vllm_ir_and_fusion_passes_analysis` 已链 `22_pattern_expression_and_matcher_engine_analysis`/`24_graph_pass_pipeline_ordering_and_fixpoint_analysis`/`32_post_grad_passes_guide`；`24_...§14` 跨框架对照表已含 vLLM/sglang/npu 三个代表页双向链 | 已完成，无需改动 |
+| vLLM IR/fusion ↔ pass 页 | 原声明仍在：`25_vllm_ir_and_fusion_passes_analysis` 已链 `22_pattern_expression_and_matcher_engine_analysis`/`24_graph_pass_pipeline_ordering_and_fixpoint_analysis`/`32_post_grad_passes_guide`；`24_...§14` 跨框架对照表已含 vLLM/sglang/npu 三个代表页双向链 | 已完成，无需改动 |
 | sglang ↔ vllm | 健康范本核实：两页头部即互相声明"对照面"，`24_...§14` 表格双向收录 | 已完成，无需改动 |
 | TIM 分层 | `26_tim_causal_chain_analysis` 头部四环因果链声明完整，与 `25_on_policy_off_policy_staleness_analysis` §7 边界区分明确 | 已完成于 P5 |
 | operator_optimization ↔ kernel 页 | 六页归一（Roofline/执行模型双权威 + NPU 段划界） | 已完成于本 P6 Task 4（commit `dbaa37e`） |
@@ -899,7 +899,7 @@ deepdive.md`（232 行）。**入链改指**：非 changelog 入链共 16 处（
 `lowering_analysis`/`post_grad_passes_guide`/`pre_grad_passes_guide` 各 1 处一致模式的
 Related Pages 单行，批量改指 C15；`04_inductor/index.md` 表格两行合并为一行更新描述；
 `sglang/index.md` 两处 `../../` 相对路径链接顺带改为裸基名（分别指向 C13/C15，消除既有
-`../` 违规）；`sglang_compilation_passes_analysis.md`/`vllm_ir_and_fusion_passes_analysis.md`
+`../` 违规）；`sglang_compilation_passes_analysis.md`/`25_vllm_ir_and_fusion_passes_analysis.md`
 各 2-3 处按内容落点分别改指 C13（引擎机制）或 C15 §14（方法论/跨框架对照)）。changelog
 历史条目（2026-07-22、2026-07-20 各一条）中的 3 处活链接按"历史不回写"惯例降级为反引号
 + 说明去向。
@@ -1119,7 +1119,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - §6.5"性能优化技术"（算子融合/内存布局/循环展开/并行化）实际描述的是 Inductor 层优化,不属于 Dynamo 机制,且与 B 卷主题不符,留待后续 Inductor 相关任务处理,本任务不落地。
 - §5.1 模块依赖关系图（`torch._dynamo` 包结构树）经抽样核对本地 pinned pytorch checkout（`eval_frame.py`/`config.py`/`convert_frame.py`/`bytecode_analysis.py`/`bytecode_transformation.py`/`codegen.py`/`backends/`/`variables/` 均存在）大体准确，但属于可从源码树直接重建的编排性示意图（非独有事实），且 B 卷各篇「源码阅读顺序」「源码补充」小节已提供更具体的逐机制文件路径，不单独迁移。
 
-**删除**：`git rm` 该页。**入链修复**（18 个外部文件的活链接，均为泛指性"参见 Dynamo 帧评估/字节码/Guard"式指针，按 Task 3 a05 先例改指 [[02_compile_stack/01_dynamo/index]]）：`pytorch_dispatcher_analysis`、`npu_operator_graph_eligibility_guide`（2 处）、`op_registration_pipeline_analysis`、`aotautograd_analysis`、`dynamic_shapes_full_analysis`、`inductor_compiler_pipeline_analysis`、`inductor_memory_management_analysis`、`torch_compile_source_analysis`、`unbacked_symint_analysis`、`torch_mlir_pass_pipeline_analysis`、`vllm/index`、`vllm_compilation_cudagraph_analysis`（2 处）、`vllm_ir_and_fusion_passes_analysis`、`wiki/index`；`dynamo_pgo_cache_analysis` 按其"VariableBuilder/guard 的宿主"原描述精确改指 [[13_variable_tracker_source_and_python_object_model_analysis]] + [[15_guards_cache_lookup_and_recompilation_analysis]] 两篇。域内三篇（`control_flow_capture_analysis`、`dynamo_pass_methodology`、`dynamo_quickstart`）的 Related Pages 按原描述拆成对应的具体 B 卷页链接（如"帧评估、字节码符号执行、Guard 与重编译"拆为三条精确链接），比泛指索引更精确。`wiki/changelog.md` 里 3 处写入当时的历史活链接（2026-06-30/2026-06-12 更早条目）按"历史不回写"惯例降级为惰性反引号 + 去向说明；另 2 处（2026-07-17 前后两条）本就是反引号包裹的非活链接，未受影响。
+**删除**：`git rm` 该页。**入链修复**（18 个外部文件的活链接，均为泛指性"参见 Dynamo 帧评估/字节码/Guard"式指针，按 Task 3 a05 先例改指 [[02_compile_stack/01_dynamo/index]]）：`pytorch_dispatcher_analysis`、`npu_operator_graph_eligibility_guide`（2 处）、`op_registration_pipeline_analysis`、`aotautograd_analysis`、`dynamic_shapes_full_analysis`、`inductor_compiler_pipeline_analysis`、`inductor_memory_management_analysis`、`torch_compile_source_analysis`、`unbacked_symint_analysis`、`torch_mlir_pass_pipeline_analysis`、`vllm/index`、`23_vllm_compilation_cudagraph_analysis`（2 处）、`25_vllm_ir_and_fusion_passes_analysis`、`wiki/index`；`dynamo_pgo_cache_analysis` 按其"VariableBuilder/guard 的宿主"原描述精确改指 [[13_variable_tracker_source_and_python_object_model_analysis]] + [[15_guards_cache_lookup_and_recompilation_analysis]] 两篇。域内三篇（`control_flow_capture_analysis`、`dynamo_pass_methodology`、`dynamo_quickstart`）的 Related Pages 按原描述拆成对应的具体 B 卷页链接（如"帧评估、字节码符号执行、Guard 与重编译"拆为三条精确链接），比泛指索引更精确。`wiki/changelog.md` 里 3 处写入当时的历史活链接（2026-06-30/2026-06-12 更早条目）按"历史不回写"惯例降级为惰性反引号 + 去向说明；另 2 处（2026-07-17 前后两条）本就是反引号包裹的非活链接，未受影响。
 
 **索引重建**：`02_compile_stack/01_dynamo/index.md` 页面列表从 4 行重建为 13 行（quickstart + B01-B10 + control_flow 专题 + dynamo_pass_methodology development guide），移除 `PyTorch_Dynamo_Technical_Analysis` 行；页头摘要与最后更新同步。
 
@@ -1513,7 +1513,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 - **新增 `torch_upstream_pass_deepdive`**（04_inductor，2026-07-30 起判重删除、机制层并入 [[22_pattern_expression_and_matcher_engine_analysis]]/[[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]]，详见该日期 changelog 条目）：上游 Inductor pass「全集 + 机制」总纲，补上三份 stage 指南缺的**机制层**——`PatternMatcherPass` 声明式引擎（声明→trace→匹配→改写）、三种 `PatternEntry`（lowering/graph/replacement）、`fwd_only`/`joint_fwd_bwd` 两种 trace、序列化 pattern 缓存（30 个 `_sfdp`）、三阶段驱动器 + `*_custom_*_pass` 钩子 + `GraphTransformObserver`，及 pre/joint/post_grad 全集目录。6 处载荷 `file:line` 已实读复核（`PatternMatcherPass.apply:2352` + 跨 mutation/stream 护栏 2400/2409、`LoweringPatternEntry.apply:1156`↔`graph.py:1372-1376` passthrough、序列化缓存 import 1973-1981、post_grad 三桶 85-89、`_sfdp_init:1487`）。
 - **新增 [[sglang_compilation_passes_analysis]]** + 新建 `sglang/` 目录与 index：**核心发现——SGLang `srt/compilation/` 是 vLLM piecewise-cudagraph 管线的近逐文件 fork，但融合 pass 被整个抽空，真实图重写 pass 数=0**；唯一的 `FixFunctionalizationPass.__call__` 是 no-op（`fix_functionalization.py:34-37` 只 `count+=1`，`pass_manager.py:47-51` `configure()` 只挂它、`passes` 恒空）——两处均本人实读复核。含两条 compile 路径、split_ops 切图、CUDA/NPU/XPU piecewise backend 差异。
-- **更新 [[vllm_ir_and_fusion_passes_analysis]]**：新增 §3.5「Pass 全家福 + 三大融合维度」——回答「vLLM 有没有大量 pass：有，约 23 个」（16 融合 + 6 IR/utility + 1 pre-grad），建在 torch `pattern_matcher` 上，朝**厂商 kernel**（FlashInfer/cutlass/symm_mem/AITER）融合，三维度 upstream 没有：**集合通信 / 量化 / KV-cache 写入**；补 pre-grad 钩子 + `compile_range` 门控 + 三种 pattern 注册形态。
+- **更新 [[25_vllm_ir_and_fusion_passes_analysis]]**：新增 §3.5「Pass 全家福 + 三大融合维度」——回答「vLLM 有没有大量 pass：有，约 23 个」（16 融合 + 6 IR/utility + 1 pre-grad），建在 torch `pattern_matcher` 上，朝**厂商 kernel**（FlashInfer/cutlass/symm_mem/AITER）融合，三维度 upstream 没有：**集合通信 / 量化 / KV-cache 写入**；补 pre-grad 钩子 + `compile_range` 门控 + 三种 pattern 注册形态。
 - **新增 `fx_pass_optimization_methodology`**（04_inductor，2026-07-30 起判重删除、内容并入 [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] §14 等处，详见该日期 changelog 条目）：跨四家归纳的 pass 开发方法论——四家现状对照表、四个决策问题（在哪做 Q1 / 匹配什么 Q2 / 怎么落地 Q3 / 怎么保证对 Q4）、**融合朝向谱系**（codegen→厂商库→预融合 kernel，解释 vLLM 写十几个而 SGLang 一个不写）、工业界工程护栏（uuid=源码 hash / 可 bisect / 门控分层 / pattern 对 custom_ops 鲁棒 / 序列化缓存）、开发 checklist、反模式（搬框架≠搬融合、pass 会腐化、跨类别改写会错）。
 - **联动**：04_inductor/index 加两页；03_infer_frameworks/index 加 SGLang 子框架行；各页 Related 交叉链接。
 
@@ -1900,7 +1900,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - [[dspark_analysis]]（论文深挖，exemplar）：两大部件——**半自回归生成**（并行 DFlash 骨干 + Markov/RNN 串行头，Eq.4-6；接受长度相对 Eagle3 +30.9%、DFlash +16.3%）+ **置信度调度验证**（置信头 Eq.7-8 + STS 校准 + 硬件感知前缀调度器 Alg.1，按 SPS 负载曲线全局贪心、早停保无偏）。生产相对 MTP-1 提速 60%–85%（V4-Flash）/57%–78%（V4-Pro）。
   - [[deepspec_codebase_analysis]]（源码级）：一套 `Qwen3DSparkTrainer` 同产三草稿模型——**DFlash = DSpark 关掉串行/置信头的消融**（`config/dflash/*:18-26`，无独立 modeling）；训练前向链、三项损失 ↔ Eq.9-12、推理拒绝采样路径。**关键边界**：开源仓只到「置信头 + 静态阈值裁剪 + bsz=1」，Algorithm 1 多请求调度器/异步 ZOS/变长内核是生产专属。
 
-**整合**：[[03_infer_frameworks/index]] 新增"投机推理"子目录；[[vllm_speculative_decoding_analysis]]（已含 dflash/mtp proposer）加 [[dspark_analysis]] 回链；[[12_deepseek_v3_analysis]]（MTP 起源）、[[13_deepseek_v4_analysis]]（底座模型）各加回链。**校验**：三页所有 `file:line` 已逐一开文件核对；交叉链接经 grep 确认目标存在。
+**整合**：[[03_infer_frameworks/index]] 新增"投机推理"子目录；[[20_vllm_speculative_decoding_analysis]]（已含 dflash/mtp proposer）加 [[dspark_analysis]] 回链；[[12_deepseek_v3_analysis]]（MTP 起源）、[[13_deepseek_v4_analysis]]（底座模型）各加回链。**校验**：三页所有 `file:line` 已逐一开文件核对；交叉链接经 grep 确认目标存在。
 
 ---
 
@@ -2187,10 +2187,10 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Expand（沉淀对话中的源码级追问:图模式 pass 机制 / vllm_ir 自定义算子 / RMSNorm+quant 融合全程 / prefill-decode 切换与 PD 分离;源码核对 @ vLLM `485bbe1c6`）
 
-- **新增** [[vllm_ir_and_fusion_passes_analysis]]([[vllm_fused_ops_and_kernels_analysis]] 的机制深挖伴篇):① vLLM IR 层 `vllm_ir`(`torch.library` 自建命名空间、`CompositeExplicitAutograd` 不分解 + fake ⇒ 被 Dynamo 保留为 opaque 节点、为何不挂 `aten`、provider/lowering);② `PostGradPassManager` pass 流水线与 `-O` 档默认表;③ 经 `backends.py:966` 挂进 Inductor `post_grad_custom_post_pass` 生效;④ RMSNorm+FP8 量化从「用户模型代码 → eager 双 kernel(HBM 往返)→ 手写融合 kernel `_C.rms_norm_static_fp8_quant`」全程走查 + before/after FX 图。
-- **扩充** [[vllm_scheduler_analysis]] §3.12:prefill/decode 在单实例内"不切换"(统一 `num_computed_tokens` 追赶 + 混批),与集群级 **PD 分离**(KV 连接器跨实例)的不同场景对照与两种相反哲学。
+- **新增** [[25_vllm_ir_and_fusion_passes_analysis]]([[24_vllm_fused_ops_and_kernels_analysis]] 的机制深挖伴篇):① vLLM IR 层 `vllm_ir`(`torch.library` 自建命名空间、`CompositeExplicitAutograd` 不分解 + fake ⇒ 被 Dynamo 保留为 opaque 节点、为何不挂 `aten`、provider/lowering);② `PostGradPassManager` pass 流水线与 `-O` 档默认表;③ 经 `backends.py:966` 挂进 Inductor `post_grad_custom_post_pass` 生效;④ RMSNorm+FP8 量化从「用户模型代码 → eager 双 kernel(HBM 往返)→ 手写融合 kernel `_C.rms_norm_static_fp8_quant`」全程走查 + before/after FX 图。
+- **扩充** [[11_vllm_scheduler_analysis]] §3.12:prefill/decode 在单实例内"不切换"(统一 `num_computed_tokens` 追赶 + 混批),与集群级 **PD 分离**(KV 连接器跨实例)的不同场景对照与两种相反哲学。
 
-**整合**:[[vllm/index]] 支柱三新增 IR/Pass 页(11→12 篇)、父索引 [[02_engineering/03_infer_frameworks/index]](→12+index)与总索引 [[index]](推理框架 14 / vLLM 13)计数同步;[[vllm_fused_ops_and_kernels_analysis]] 回链伴篇。校验:新页 `file:line` 均核对,`[[]]` 链接全部解析。
+**整合**:[[vllm/index]] 支柱三新增 IR/Pass 页(11→12 篇)、父索引 [[02_engineering/03_infer_frameworks/index]](→12+index)与总索引 [[index]](推理框架 14 / vLLM 13)计数同步;[[24_vllm_fused_ops_and_kernels_analysis]] 回链伴篇。校验:新页 `file:line` 均核对,`[[]]` 链接全部解析。
 
 ---
 
@@ -2208,11 +2208,11 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 ## 2026-06-22: vLLM 系列补「算子融合与 Triton Kernel」专页(系列增至 11 篇 + index)
 
-**Type**: Expand（应用户提问"融合算子/Triton 等算子特性有介绍吗"——既有 10 篇仅在注意力/量化页顺带提及,无专篇;补 [[vllm_fused_ops_and_kernels_analysis]] 填补真空）
+**Type**: Expand（应用户提问"融合算子/Triton 等算子特性有介绍吗"——既有 10 篇仅在注意力/量化页顺带提及,无专篇;补 [[24_vllm_fused_ops_and_kernels_analysis]] 填补真空）
 
-新增 [[vllm_fused_ops_and_kernels_analysis]](「特性优化」支柱):**CustomOp 多实现派发**(`model_executor/custom_op.py` native/cuda/triton + `custom_ops` 开关,Inductor 下默认走 native 交其自动融合)、**torch.compile 融合 Pass**(`compilation/passes/fusion/`:RMS+quant、SiluMul+quant、AllReduce+RMSNorm/async-TP、attention+quant、SP,经 `PostGradPassManager` 挂进 Inductor `post_grad_custom_post_pass`)、**fused_moe**(grouped GEMM + Triton/CUTLASS/DeepGEMM oracle 派发 + `configs/E=*,N=*,device=*.json` autotune)。与 [[vllm_compilation_cudagraph_analysis]](图捕获)、[[vllm_quantization_analysis]](量化 GEMM)、[[vllm_attention_backends_analysis]](Triton 注意力)形成"被引用→展开"分工;跨域对照 [[21_megatron_fusion_operators_analysis]] / [[23_torchtitan_compute_memory_optimizations_analysis]]。
+新增 [[24_vllm_fused_ops_and_kernels_analysis]](「特性优化」支柱):**CustomOp 多实现派发**(`model_executor/custom_op.py` native/cuda/triton + `custom_ops` 开关,Inductor 下默认走 native 交其自动融合)、**torch.compile 融合 Pass**(`compilation/passes/fusion/`:RMS+quant、SiluMul+quant、AllReduce+RMSNorm/async-TP、attention+quant、SP,经 `PostGradPassManager` 挂进 Inductor `post_grad_custom_post_pass`)、**fused_moe**(grouped GEMM + Triton/CUTLASS/DeepGEMM oracle 派发 + `configs/E=*,N=*,device=*.json` autotune)。与 [[23_vllm_compilation_cudagraph_analysis]](图捕获)、[[21_vllm_quantization_analysis]](量化 GEMM)、[[14_vllm_attention_backends_analysis]](Triton 注意力)形成"被引用→展开"分工;跨域对照 [[21_megatron_fusion_operators_analysis]] / [[23_torchtitan_compute_memory_optimizations_analysis]]。
 
-**整合**:[[vllm/index]] 支柱三增列本页(10→11 篇)、父索引 [[02_engineering/03_infer_frameworks/index]] 与总索引 [[index]] 计数同步;[[vllm_compilation_cudagraph_analysis]] 融合 pass 处回链本页。校验:本页 14 个 `[[]]` 链接全部解析,`file:line` 经核对 @ `485bbe1c6`。
+**整合**:[[vllm/index]] 支柱三增列本页(10→11 篇)、父索引 [[02_engineering/03_infer_frameworks/index]] 与总索引 [[index]] 计数同步;[[23_vllm_compilation_cudagraph_analysis]] 融合 pass 处回链本页。校验:本页 14 个 `[[]]` 链接全部解析,`file:line` 经核对 @ `485bbe1c6`。
 
 ---
 
@@ -2222,9 +2222,9 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 新建目录 `wiki/02_engineering/03_infer_frameworks/vllm/`,按用户视角的「调度 → 模型库 → 特性优化」三支柱,每篇以「Overview → Quick Start → Deep Dive」三维展开,所有非平凡论断带 `file.py:line` 出处:
 
-- **调度(3 篇)**:[[vllm_engine_architecture_analysis]](脊梁篇:解耦双进程 + `EngineCore.step()` 四段忙循环 + ZMQ IPC + Executor→Worker 扇出)、[[vllm_scheduler_analysis]](连续批处理 token 级、`schedule()` 先 running 后 waiting、分块预填充、抢占/重算)、[[vllm_kv_cache_management_analysis]](分页块、BlockPool 引用计数/LRU 驱逐、`allocate_slots`、块哈希前缀缓存、混合 KV、显存 profiling 定块数)
-- **模型库(2 篇)**:[[vllm_model_library_analysis]](模型定义约定 `*ForCausalLM`、懒注册表、惰性流式权重加载 + `packed_modules_mapping`、TP 感知层库)、[[vllm_attention_backends_analysis]]("写 KV + 调后端"两步走、`AttentionMetadata` 桥、PagedAttention 间接寻址、统一变长注意力、FA/FlashInfer/Triton/MLA)
-- **特性优化(5 篇)**:[[vllm_feature_optimizations_overview]](特性总表 + 深挖结构化输出/LoRA/分离式 KV 连接器/KV 卸载)、[[vllm_speculative_decoding_analysis]](draft+verify、n-gram/EAGLE/Medusa/MTP、拒绝采样无偏、调度 lookahead/回退)、[[vllm_quantization_analysis]](`QuantizeMethodBase` 插件框架、FP8/AWQ/GPTQ/FP4、加载期 Marlin repack、KV 量化)、[[vllm_distributed_inference_analysis]](5 维 rank 张量切 TP/PP/EP/DP、`GroupCoordinator`、PP `batch_queue` 虚拟流水线、MoE DP-attention+EP+EPLB)、[[vllm_compilation_cudagraph_analysis]](`@support_torch_compile`→VllmBackend(Inductor)、**分段 CUDA Graph** 注意力切出、`cudagraph_mode` 五态、运行时按形状 dispatch replay)
+- **调度(3 篇)**:[[10_vllm_engine_architecture_analysis]](脊梁篇:解耦双进程 + `EngineCore.step()` 四段忙循环 + ZMQ IPC + Executor→Worker 扇出)、[[11_vllm_scheduler_analysis]](连续批处理 token 级、`schedule()` 先 running 后 waiting、分块预填充、抢占/重算)、[[12_vllm_kv_cache_management_analysis]](分页块、BlockPool 引用计数/LRU 驱逐、`allocate_slots`、块哈希前缀缓存、混合 KV、显存 profiling 定块数)
+- **模型库(2 篇)**:[[13_vllm_model_library_analysis]](模型定义约定 `*ForCausalLM`、懒注册表、惰性流式权重加载 + `packed_modules_mapping`、TP 感知层库)、[[14_vllm_attention_backends_analysis]]("写 KV + 调后端"两步走、`AttentionMetadata` 桥、PagedAttention 间接寻址、统一变长注意力、FA/FlashInfer/Triton/MLA)
+- **特性优化(5 篇)**:[[01_vllm_feature_optimizations_overview]](特性总表 + 深挖结构化输出/LoRA/分离式 KV 连接器/KV 卸载)、[[20_vllm_speculative_decoding_analysis]](draft+verify、n-gram/EAGLE/Medusa/MTP、拒绝采样无偏、调度 lookahead/回退)、[[21_vllm_quantization_analysis]](`QuantizeMethodBase` 插件框架、FP8/AWQ/GPTQ/FP4、加载期 Marlin repack、KV 量化)、[[22_vllm_distributed_inference_analysis]](5 维 rank 张量切 TP/PP/EP/DP、`GroupCoordinator`、PP `batch_queue` 虚拟流水线、MoE DP-attention+EP+EPLB)、[[23_vllm_compilation_cudagraph_analysis]](`@support_torch_compile`→VllmBackend(Inductor)、**分段 CUDA Graph** 注意力切出、`cudagraph_mode` 五态、运行时按形状 dispatch replay)
 
 **HEAD 关键事实(各页据 `485bbe1c6` 源码核实,与多数旧博客不符)**:
 - **V0 独立引擎已移除**:`vllm/engine/llm_engine.py:6` 现仅为 `LLMEngine = V1LLMEngine` 别名;今天 `from vllm import LLMEngine` 拿到的是 V1 兼容外壳,底层跑 V1 `EngineCore`。

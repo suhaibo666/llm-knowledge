@@ -11,7 +11,7 @@
 
 ## 一、一条主线：投机解码在 `L = (T_draft + T_verify) / τ` 上的三代演进
 
-自回归解码的瓶颈是**串行**：生成 N 个 token 要 N 次目标前向。投机解码用便宜草稿器一次提 $\gamma$ 个 token、目标模型一次前向并行验证、拒绝采样接受最长合法前缀（数学无偏，原理见 [[vllm_speculative_decoding_analysis]]）。每 token 平均延迟（DSpark 论文 Eq.1）：
+自回归解码的瓶颈是**串行**：生成 N 个 token 要 N 次目标前向。投机解码用便宜草稿器一次提 $\gamma$ 个 token、目标模型一次前向并行验证、拒绝采样接受最长合法前缀（数学无偏，原理见 [[20_vllm_speculative_decoding_analysis]]）。每 token 平均延迟（DSpark 论文 Eq.1）：
 
 $$L=\frac{T_{\text{draft}}+T_{\text{verify}}}{\tau}\quad\Rightarrow\quad\text{提速三杆：① 降 } T_{\text{draft}}\text{（画得快）② 升 } \tau\text{（画得准）③ 降有效 } T_{\text{verify}}\text{（验得聪明）}$$
 
@@ -70,14 +70,14 @@ flowchart LR
 ## 四、知识缺口（Knowledge Gaps）
 
 - **DFlash 独立深挖**：本库目前从 DSpark 视角（其并行骨干）覆盖 DFlash，尚无独立的 DFlash（块扩散 / block diffusion）论文页。arXiv:2602.06036 在 `raw/` 中暂缺。
-- **Eagle3 独立深挖**：仅在对比表与 [[vllm_speculative_decoding_analysis]] §3.3（EAGLE 时序）中出现，无专页。
+- **Eagle3 独立深挖**：仅在对比表与 [[20_vllm_speculative_decoding_analysis]] §3.3（EAGLE 时序）中出现，无专页。
 - **MTP 模型侧**：原理散见 [[12_deepseek_v3_analysis]]（§Multi-Token Prediction）与 [[13_deepseek_v4_analysis]]，尚未抽成「投机解码视角的 MTP」专页。
 
 ---
 
 ## 关联域
 
-- [[vllm_speculative_decoding_analysis]] —— 投机解码在 vLLM V1 引擎的验收侧实现（proposer 家族含 mtp/dflash、拒绝采样内核）
+- [[20_vllm_speculative_decoding_analysis]] —— 投机解码在 vLLM V1 引擎的验收侧实现（proposer 家族含 mtp/dflash、拒绝采样内核）
 - [[../index]] —— 推理框架目录
 - [[../../../01_theory/01_models/deepseek/index]] —— DeepSeek 模型族（V3 MTP / V4 底座）
 

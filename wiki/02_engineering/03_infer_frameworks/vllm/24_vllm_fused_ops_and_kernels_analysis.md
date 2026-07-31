@@ -4,7 +4,7 @@
 > **最后更新**:2026-06-22 · **系列**:vLLM 推理引擎源码级分析(见 [[vllm/index]])
 > **分析维度**:Overview → Quick Start → Deep Dive
 >
-> 本页回答:vLLM 的"算子层"如何把一个数学算子做成多份实现按平台/开关选择(**CustomOp / vLLM IR op**)、如何在 `torch.compile` 的 **post-grad 阶段**用 pattern matcher 把"逐元素+量化""通信+norm"等融成单 kernel(**融合 Pass**)、以及 MoE 为何要专门的 **fused_moe** grouped GEMM。它是 [[vllm_compilation_cudagraph_analysis]](图怎么捕获)只"点名"的融合 pass 的展开页;量化 GEMM 本身(`scaled_mm`/CUTLASS)见 [[vllm_quantization_analysis]],Triton **注意力**后端见 [[vllm_attention_backends_analysis]],本页只点名链过去,重心是 CustomOp 派发 / 融合 Pass / fused_moe。
+> 本页回答:vLLM 的"算子层"如何把一个数学算子做成多份实现按平台/开关选择(**CustomOp / vLLM IR op**)、如何在 `torch.compile` 的 **post-grad 阶段**用 pattern matcher 把"逐元素+量化""通信+norm"等融成单 kernel(**融合 Pass**)、以及 MoE 为何要专门的 **fused_moe** grouped GEMM。它是 [[23_vllm_compilation_cudagraph_analysis]](图怎么捕获)只"点名"的融合 pass 的展开页;量化 GEMM 本身(`scaled_mm`/CUTLASS)见 [[21_vllm_quantization_analysis]],Triton **注意力**后端见 [[14_vllm_attention_backends_analysis]],本页只点名链过去,重心是 CustomOp 派发 / 融合 Pass / fused_moe。
 
 ---
 
@@ -30,7 +30,7 @@ flowchart TB
     ind["Inductor codegen → Triton"]
   end
   subgraph RT["③ 运行层"]
-    cg["分段 / 全图 CUDA Graph 录制下发<br/>(详见 [[vllm_compilation_cudagraph_analysis]])"]
+    cg["分段 / 全图 CUDA Graph 录制下发<br/>(详见 [[23_vllm_compilation_cudagraph_analysis]])"]
   end
   moe["fused_moe:torch.ops.vllm.fused_experts<br/>grouped GEMM(不透明黑盒,自带 autotune)<br/>fused_moe.py:1490"]
 
@@ -211,7 +211,7 @@ def replacement(input, weight, scale):
 | Q/K RMSNorm + RoPE(+gate) | `fused_qk_norm_rope` 单 Triton kernel | `QKNormRoPEFusionPass` | `fusion/qk_norm_rope_fusion.py:188` | `enable_qk_norm_rope_fusion` |
 | RoPE + KV cache 写入(ROCm/MLA) | AITER 融合 kernel | `RopeKVCacheFusionPass` / `MLARoPEKVCacheCatFusionPass` | `fusion/rope_kvcache_fusion.py:412` | `fuse_rope_kvcache(_cat_mla)` |
 
-序列并行(SP)与 async TP 的算法侧:把 `all_reduce` 拆成 `reduce_scatter` + 局部计算 + `all_gather`,让 RMSNorm/GEMM 只在本 rank 的序列分片上做,通信与计算重叠(`sequence_parallelism.py:153` `FirstAllReduceRMSNormPattern`、`:186` `MiddleAllReduceRMSNormPattern`)。分布式语义见 [[vllm_distributed_inference_analysis]]。量化算子(`scaled_mm`/CUTLASS/nvfp4)本身见 [[vllm_quantization_analysis]],本表只讲"如何把量化与相邻算子融在一起"。
+序列并行(SP)与 async TP 的算法侧:把 `all_reduce` 拆成 `reduce_scatter` + 局部计算 + `all_gather`,让 RMSNorm/GEMM 只在本 rank 的序列分片上做,通信与计算重叠(`sequence_parallelism.py:153` `FirstAllReduceRMSNormPattern`、`:186` `MiddleAllReduceRMSNormPattern`)。分布式语义见 [[22_vllm_distributed_inference_analysis]]。量化算子(`scaled_mm`/CUTLASS/nvfp4)本身见 [[21_vllm_quantization_analysis]],本表只讲"如何把量化与相邻算子融在一起"。
 
 ### 3.4 fused_moe:为什么 MoE 要专门的融合 kernel
 
@@ -264,7 +264,7 @@ else:
 - `get_moe_configs`(`:1015`)优先读 `VLLM_TUNED_CONFIG_FOLDER` 下用户自调的 JSON,再读内置 `configs/`,都没有就 `get_default_config`(`:1203`,按 M/E/dtype 分支给经验块大小,并打印"性能可能次优"警告);
 - `device_name` 由 `current_platform.get_device_name()` 取,H200 系列归一到 `NVIDIA_H200`(`:1004`)。
 
-MoE 算法侧(路由、共享专家、grouped top-k)见 [[20_deepseek_moe_analysis]];EP/DP-attention 并行见 [[vllm_distributed_inference_analysis]]。
+MoE 算法侧(路由、共享专家、grouped top-k)见 [[20_deepseek_moe_analysis]];EP/DP-attention 并行见 [[22_vllm_distributed_inference_analysis]]。
 
 ### 3.5 其它融合层算子
 
@@ -288,23 +288,23 @@ vLLM 大量用 Triton 而非纯手写 CUDA,原因有二:**可移植**(同一 ker
 | `lora/ops/triton_ops/` | LoRA shrink/expand + fused_moe_lora | LoRA 路径 |
 | `kernels/triton/qkv_padded_fp8_quant.py` | QKV padded fp8 量化 | 量化路径 |
 | `triton_utils/`(`importing.py` 等) | 惰性导入守卫、JIT 监控、配置强制 | Triton 基础设施 |
-| `v1/attention/ops/triton_*.py`、`backends/triton_attn.py` | **Triton 注意力**(prefill/decode/MLA/merge states) | **详见 [[vllm_attention_backends_analysis]],本页不展开** |
+| `v1/attention/ops/triton_*.py`、`backends/triton_attn.py` | **Triton 注意力**(prefill/decode/MLA/merge states) | **详见 [[14_vllm_attention_backends_analysis]],本页不展开** |
 
 ### 3.7 协同:谁拼大、谁录图、量化怎么融
 
 把四件事串起来,一条算子从定义到下发经过:
 
 1. **拼大(算子层)**:CustomOp/IR op 决定每个算子用手写 kernel 还是 native 分解;融合 Pass 在 post-grad FX 图上把相邻算子(norm+quant、act+quant、AR+norm、GEMM+comm)pattern-match 成单 kernel;fused_moe 把 E 个小 GEMM 拼成一个 grouped GEMM。**目标:减少 kernel 数与中间张量的内存往返。**
-2. **录图(运行层)**:融合后的图交 Inductor codegen 出 Triton,再由分段/全图 **CUDA Graph** 录制下发,消除 decode 的 CPU 启动开销——录图机制与 `splitting_ops`/`cudagraph_mode` 见 [[vllm_compilation_cudagraph_analysis]]。注意:注意力、`fused_experts` 等 opaque op 是 CUDA Graph 切分点的来源之一。
-3. **量化怎么融**:量化 GEMM 的 kernel(`scaled_mm`/CUTLASS/Marlin/nvfp4)与加载期 repack 属 [[vllm_quantization_analysis]];本页的 norm+quant / act+quant / attn+quant 融合 pass 负责把**量化算子与它前面的逐元素算子拼进同一 kernel**,省掉一次"写 bf16 中间结果再读回量化"的内存往返。两页是"kernel 实现"与"kernel 融合"的分工。
+2. **录图(运行层)**:融合后的图交 Inductor codegen 出 Triton,再由分段/全图 **CUDA Graph** 录制下发,消除 decode 的 CPU 启动开销——录图机制与 `splitting_ops`/`cudagraph_mode` 见 [[23_vllm_compilation_cudagraph_analysis]]。注意:注意力、`fused_experts` 等 opaque op 是 CUDA Graph 切分点的来源之一。
+3. **量化怎么融**:量化 GEMM 的 kernel(`scaled_mm`/CUTLASS/Marlin/nvfp4)与加载期 repack 属 [[21_vllm_quantization_analysis]];本页的 norm+quant / act+quant / attn+quant 融合 pass 负责把**量化算子与它前面的逐元素算子拼进同一 kernel**,省掉一次"写 bf16 中间结果再读回量化"的内存往返。两页是"kernel 实现"与"kernel 融合"的分工。
 
 一句话:**算子层把小算子拼成大 kernel,编译&图捕获层把大 kernel 录成可 replay 的图,量化层提供低精度 kernel——三者在 `VllmBackend` 的一次编译里依次咬合。**
 
 ---
 
 ## Related Pages
-- [[vllm_ir_and_fusion_passes_analysis]] —— **机制深挖伴篇**(vllm_ir IR 层注册 / Pass 流水线如何挂进 Inductor / RMSNorm+quant 融合全程走查)
-- [[vllm_compilation_cudagraph_analysis]] · [[vllm_quantization_analysis]] · [[vllm_attention_backends_analysis]] · [[vllm_model_library_analysis]] · [[vllm_feature_optimizations_overview]]
+- [[25_vllm_ir_and_fusion_passes_analysis]] —— **机制深挖伴篇**(vllm_ir IR 层注册 / Pass 流水线如何挂进 Inductor / RMSNorm+quant 融合全程走查)
+- [[23_vllm_compilation_cudagraph_analysis]] · [[21_vllm_quantization_analysis]] · [[14_vllm_attention_backends_analysis]] · [[13_vllm_model_library_analysis]] · [[01_vllm_feature_optimizations_overview]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

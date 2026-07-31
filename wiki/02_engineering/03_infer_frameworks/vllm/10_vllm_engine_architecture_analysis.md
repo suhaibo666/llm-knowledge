@@ -4,7 +4,7 @@
 > **最后更新**:2026-06-22 · **系列**:vLLM 推理引擎源码级分析(见 [[vllm/index]])
 > **分析维度**:Overview → Quick Start → Deep Dive
 >
-> 本页是 vLLM 系列的脊梁篇:它回答"一条请求从 `LLM.generate()` / HTTP 进来,到 `RequestOutput` 出去,中间穿过了哪些层、跨过了哪个进程边界、在哪个忙循环里被一步步推进"。它把整张架构图钉死,各兄弟页(调度 [[vllm_scheduler_analysis]]、KV 管理 [[vllm_kv_cache_management_analysis]]、注意力后端 [[vllm_attention_backends_analysis]] 等)都是这张图上某个组件的放大镜。
+> 本页是 vLLM 系列的脊梁篇:它回答"一条请求从 `LLM.generate()` / HTTP 进来,到 `RequestOutput` 出去,中间穿过了哪些层、跨过了哪个进程边界、在哪个忙循环里被一步步推进"。它把整张架构图钉死,各兄弟页(调度 [[11_vllm_scheduler_analysis]]、KV 管理 [[12_vllm_kv_cache_management_analysis]]、注意力后端 [[14_vllm_attention_backends_analysis]] 等)都是这张图上某个组件的放大镜。
 
 ---
 
@@ -46,7 +46,7 @@ flowchart TB
     direction TB
     loop["run_busy_loop<br/>core.py:1257"]
     step["step(): schedule→execute→sample→update<br/>core.py:479"]
-    sched["Scheduler.schedule()<br/>[[vllm_scheduler_analysis]]"]
+    sched["Scheduler.schedule()<br/>[[11_vllm_scheduler_analysis]]"]
     exec["Executor.execute_model<br/>executor/abstract.py:221"]
     loop --> step --> sched
     step --> exec
@@ -82,7 +82,7 @@ flowchart TB
 | detokenizer | `IncrementalDetokenizer` · `detokenizer.py:30` | 前端 | 增量解码 token→text |
 | IPC 客户端 | `EngineCoreClient` · `core_client.py:71` | 前端 | 三种形态(见 §3.4)桥接前后端 |
 | **引擎核心** | `EngineCore` / `EngineCoreProc` · `core.py:96 / 894` | **后端** | **忙循环:调度 + 执行 + 输出** |
-| 调度器 | `Scheduler` · `v1/core/sched/scheduler.py` | 后端 | 每步组 batch,详见 [[vllm_scheduler_analysis]] |
+| 调度器 | `Scheduler` · `v1/core/sched/scheduler.py` | 后端 | 每步组 batch,详见 [[11_vllm_scheduler_analysis]] |
 | 执行器 | `Executor` · `executor/abstract.py:37` | 后端 | 向 worker 扇出 `execute_model` |
 | Worker | `Worker` · `worker/gpu_worker.py` | worker | 持有设备、KV cache、ModelRunner |
 | ModelRunner | `GPUModelRunner` · `worker/gpu_model_runner.py` | worker | 组装输入张量、跑前向、采样 |
@@ -267,7 +267,7 @@ engine_core_outputs = self.scheduler.update_from_output(      # :504  回收输�
 return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
 ```
 
-注意 V1 把"前向"和"采样"拆成 `execute_model` + `sample_tokens` 两次调用(:491/:499):前向先算 logits(非阻塞返回 future),拿到 grammar bitmask 后再采样。这让结构化输出(grammar)的 bitmask 计算能与前向重叠。`schedule()` 的内部(连续批处理、分块预填充、抢占)是 [[vllm_scheduler_analysis]] 的主题;`update_from_output` 如何回收 KV、判定完成,见 [[vllm_kv_cache_management_analysis]]。
+注意 V1 把"前向"和"采样"拆成 `execute_model` + `sample_tokens` 两次调用(:491/:499):前向先算 logits(非阻塞返回 future),拿到 grammar bitmask 后再采样。这让结构化输出(grammar)的 bitmask 计算能与前向重叠。`schedule()` 的内部(连续批处理、分块预填充、抢占)是 [[11_vllm_scheduler_analysis]] 的主题;`update_from_output` 如何回收 KV、判定完成,见 [[12_vllm_kv_cache_management_analysis]]。
 
 ### 3.7 PP 流水线:step_with_batch_queue 与 batch_queue
 
@@ -312,7 +312,7 @@ sequenceDiagram
 - 核心一行:`output = self.model_runner.execute_model(scheduler_output, intermediate_tensors)`(:896);
 - 非末个 PP rank:`isend_tensor_dict` 把中间张量发给下一段并返回 None(:918-924)。
 
-`GPUModelRunner.execute_model`(`worker/gpu_model_runner.py:4039`)与 `sample_tokens`(:4418)才是真正组装输入张量、跑 attention/MLP、采样的地方——这些细节(注意力后端、CUDA Graph、量化)分别属于 [[vllm_attention_backends_analysis]]、[[vllm_compilation_cudagraph_analysis]]、[[vllm_quantization_analysis]],本页只钉住调用链的入口锚点。
+`GPUModelRunner.execute_model`(`worker/gpu_model_runner.py:4039`)与 `sample_tokens`(:4418)才是真正组装输入张量、跑 attention/MLP、采样的地方——这些细节(注意力后端、CUDA Graph、量化)分别属于 [[14_vllm_attention_backends_analysis]]、[[23_vllm_compilation_cudagraph_analysis]]、[[21_vllm_quantization_analysis]],本页只钉住调用链的入口锚点。
 
 ### 3.10 请求生命周期端到端
 
@@ -350,13 +350,13 @@ sequenceDiagram
 
 ### 3.11 DP 协调(简述)
 
-数据并行(DP)下,每个 DP rank 有独立的 EngineCore 子进程,由 `DPEngineCoreProc`(`core.py:1743`)承载,其 `run_busy_loop`(:1923)在普通忙循环之外要处理"全局是否还有未完成请求"的同步——即使本 rank 空闲,只要别的 rank 有活,也要跑 dummy batch 以参与集合通信。前端侧由 `DPLBAsyncMPClient` / `DPAsyncMPClient`(`core_client.py:126-131`)在多个 EngineCore 间做负载均衡,`Coordinator`(`coordinator.py`)负责 wave 计数与统计聚合。DP/TP/PP 的完整分布式语义见 [[vllm_distributed_inference_analysis]]。
+数据并行(DP)下,每个 DP rank 有独立的 EngineCore 子进程,由 `DPEngineCoreProc`(`core.py:1743`)承载,其 `run_busy_loop`(:1923)在普通忙循环之外要处理"全局是否还有未完成请求"的同步——即使本 rank 空闲,只要别的 rank 有活,也要跑 dummy batch 以参与集合通信。前端侧由 `DPLBAsyncMPClient` / `DPAsyncMPClient`(`core_client.py:126-131`)在多个 EngineCore 间做负载均衡,`Coordinator`(`coordinator.py`)负责 wave 计数与统计聚合。DP/TP/PP 的完整分布式语义见 [[22_vllm_distributed_inference_analysis]]。
 
 ---
 
 ## Related Pages
-- [[vllm_scheduler_analysis]] · [[vllm_kv_cache_management_analysis]] · [[vllm_model_library_analysis]] · [[vllm_attention_backends_analysis]] · [[vllm_feature_optimizations_overview]]
-- [[vllm_distributed_inference_analysis]] · [[vllm_compilation_cudagraph_analysis]] · [[vllm_speculative_decoding_analysis]] · [[vllm_quantization_analysis]]
+- [[11_vllm_scheduler_analysis]] · [[12_vllm_kv_cache_management_analysis]] · [[13_vllm_model_library_analysis]] · [[14_vllm_attention_backends_analysis]] · [[01_vllm_feature_optimizations_overview]]
+- [[22_vllm_distributed_inference_analysis]] · [[23_vllm_compilation_cudagraph_analysis]] · [[20_vllm_speculative_decoding_analysis]] · [[21_vllm_quantization_analysis]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

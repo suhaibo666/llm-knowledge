@@ -5,7 +5,7 @@
 > **分析维度**:Overview → Quick Start → Deep Dive
 >
 > 本页回答:一个 HuggingFace checkpoint 如何被 vLLM 识别成某个 `*ForCausalLM` 类、权重如何从磁盘流式映射进 vLLM 参数、以及 vLLM 的层库如何把张量并行(TP)切分**内建**进每一个 `Linear`。
-> 分工:KV cache 写入与 attention kernel 细节链到 [[vllm_attention_backends_analysis]];量化感知加载的算子侧链到 [[vllm_quantization_analysis]];TP/PP/EP 的**集合通信与进程组**整体留给 [[vllm_distributed_inference_analysis]],本页只讲"层内权重怎么切、前向插哪个通信原语"。
+> 分工:KV cache 写入与 attention kernel 细节链到 [[14_vllm_attention_backends_analysis]];量化感知加载的算子侧链到 [[21_vllm_quantization_analysis]];TP/PP/EP 的**集合通信与进程组**整体留给 [[22_vllm_distributed_inference_analysis]],本页只讲"层内权重怎么切、前向插哪个通信原语"。
 
 ---
 
@@ -52,7 +52,7 @@ flowchart TD
 | `RowParallelLinear` | 权重按**输入维**切,前向 all-reduce(`Y=ΣX_iA_i`) | `linear.py:1493` |
 | `QKVParallelLinear` | 按 attention head 切;KV head 不足 TP 时复制 | `linear.py:914` |
 | `default_loader` | `load_format=auto/hf/safetensors` 的默认加载器,流式 yield `(name, tensor)` | `default_loader.py:43` |
-| `forward_context` | V1 中模型 `forward` 不再传 `kv_caches`/`attn_metadata`,Attention 层从全局上下文取 | 见 [[vllm_attention_backends_analysis]] |
+| `forward_context` | V1 中模型 `forward` 不再传 `kv_caches`/`attn_metadata`,Attention 层从全局上下文取 | 见 [[14_vllm_attention_backends_analysis]] |
 
 ---
 
@@ -141,7 +141,7 @@ q, k = self.rotary_emb(positions, q, k)                      # :231
 attn_output = self.attn(q, k, v)                             # :232 ← KV cache 写入+attention
 output, _ = self.o_proj(attn_output)                         # :233 RowParallel,内部 all-reduce
 ```
-`self.attn` 是 `layers.attention.Attention`。**V1 引擎的关键简化**:模型的 `forward` 不再接收 `kv_caches` / `attn_metadata` 参数——`LlamaForCausalLM.forward` 的签名只有 `(input_ids, positions, intermediate_tensors, inputs_embeds)`(`:550`)。KV cache 张量与 attention 元数据由**全局 `forward_context`** 在每一步执行前注入,`Attention` 层在内部按当前 backend 取用并完成 KV 写入。这部分(分页 KV、backend dispatch)详见 [[vllm_attention_backends_analysis]] 与 [[vllm_kv_cache_management_analysis]]。
+`self.attn` 是 `layers.attention.Attention`。**V1 引擎的关键简化**:模型的 `forward` 不再接收 `kv_caches` / `attn_metadata` 参数——`LlamaForCausalLM.forward` 的签名只有 `(input_ids, positions, intermediate_tensors, inputs_embeds)`(`:550`)。KV cache 张量与 attention 元数据由**全局 `forward_context`** 在每一步执行前注入,`Attention` 层在内部按当前 backend 取用并完成 KV 写入。这部分(分页 KV、backend dispatch)详见 [[14_vllm_attention_backends_analysis]] 与 [[12_vllm_kv_cache_management_analysis]]。
 
 **(d) 残差与 RMSNorm 融合**。`LlamaDecoderLayer.forward(positions, hidden_states, residual)`(`:313`)采用 **fused add+norm** 风格:首层 `residual=None` 时取 `input_layernorm(hidden_states)`(`:322`),其后调用 `self.post_attention_layernorm(hidden_states, residual)`(`:328`)同时返回归一化结果与更新后的残差。`RMSNorm.forward_native`(`layernorm.py:74`)在带 residual 时走 `fused_add_rms_norm`(`:88`),把"加残差 + RMSNorm"合成一个算子。
 
@@ -152,9 +152,9 @@ def compute_logits(self, hidden_states):
 ```
 它**只产 logits 不做采样**;采样由 runner 侧的 Sampler 完成。`lm_head` 是 `ParallelLMHead`(`:519`),当 `tie_word_embeddings` 时与 `embed_tokens` 共享权重(`tie_weights`,`:526`)。
 
-**(f) PP 切分**。`LlamaModel` 用 `make_layers`(`utils.py:640`)按 `get_pp_indices` 只实例化本 PP stage 的层,其余位置填 `PPMissingLayer`;非首 rank 的 embedding、非末 rank 的 norm/lm_head 同样被替换为占位层(`:374`/`:383`/`:533`)。`@support_torch_compile`(`:337`)装饰 `LlamaModel`,声明 `input_ids`/`positions` 的动态维供编译(链 [[vllm_compilation_cudagraph_analysis]])。
+**(f) PP 切分**。`LlamaModel` 用 `make_layers`(`utils.py:640`)按 `get_pp_indices` 只实例化本 PP stage 的层,其余位置填 `PPMissingLayer`;非首 rank 的 embedding、非末 rank 的 norm/lm_head 同样被替换为占位层(`:374`/`:383`/`:533`)。`@support_torch_compile`(`:337`)装饰 `LlamaModel`,声明 `input_ids`/`positions` 的动态维供编译(链 [[23_vllm_compilation_cudagraph_analysis]])。
 
-**(g) MoE 模型的层接法**(瞥一眼 `qwen3_moe.py`)。稀疏块 `Qwen3MoeSparseMoeBlock`(`:137`)把所有专家收进**单个** `FusedMoE` 层(`:211`),`forward` 直接 `self.experts(hidden_states, router_logits)`(`:239`)。权重加载多一张 `expert_params_mapping`(`:553`,由 `fused_moe_make_expert_params_mapping` 生成,`:519`),在 `load_weights` 的 `for...else` 分支里把每个 `experts.{i}.{gate,up,down}_proj` 路由到融合后的专家参数(`:597`)。EP(专家并行)的 rank 切分与本页无关,见 [[vllm_distributed_inference_analysis]]。
+**(g) MoE 模型的层接法**(瞥一眼 `qwen3_moe.py`)。稀疏块 `Qwen3MoeSparseMoeBlock`(`:137`)把所有专家收进**单个** `FusedMoE` 层(`:211`),`forward` 直接 `self.experts(hidden_states, router_logits)`(`:239`)。权重加载多一张 `expert_params_mapping`(`:553`,由 `fused_moe_make_expert_params_mapping` 生成,`:519`),在 `load_weights` 的 `for...else` 分支里把每个 `experts.{i}.{gate,up,down}_proj` 路由到融合后的专家参数(`:597`)。EP(专家并行)的 rank 切分与本页无关,见 [[22_vllm_distributed_inference_analysis]]。
 
 ### 3.2 模型注册表(`registry.py`)
 
@@ -258,7 +258,7 @@ for name, loaded_weight in weights:
 
 **(f) 分片加载 `ShardedStateLoader`**(`sharded_state_loader.py:29`):为超大 TP 模型提供快路径——每个 worker 只读**自己 rank 的预切分文件** `model-rank-{rank}-part-{part}.safetensors`(`:118`),直接 `param_data.copy_(tensor)`(`:154`),省去重新切分;`_filter_subtensors`(`:56`)处理共享存储的张量;`save_model`(`:178`)用来离线生成这种分片 checkpoint。
 
-**(g) 量化感知**。两处钩子:① 加载前,`initialize_model` 调 `configure_quant_config`,且模型若混入 `SupportsQuant`(`interfaces.py:997`),其 `packed_modules_mapping` 会被 `update` 进 `quant_config`(`:1036`),让量化方法知道哪些权重是合并的;层库在 `LinearBase.__init__`(`linear.py:269`)据 `quant_config` 选 `quant_method`,并在 `create_weights` 时按 `WEIGHT_LOADER_V2_SUPPORTED` 决定用 `weight_loader` 还是 `weight_loader_v2`(`:461`)。② 加载后,`process_weights_after_loading`(`loader/utils.py:100`)遍历模块调用各 `quant_method.process_weights_after_loading`(`:112`,做权重重打包 / Marlin repack / 量化),并对 `Attention`/`MLA` 模块做后处理(`:119`)。算子级细节见 [[vllm_quantization_analysis]]。
+**(g) 量化感知**。两处钩子:① 加载前,`initialize_model` 调 `configure_quant_config`,且模型若混入 `SupportsQuant`(`interfaces.py:997`),其 `packed_modules_mapping` 会被 `update` 进 `quant_config`(`:1036`),让量化方法知道哪些权重是合并的;层库在 `LinearBase.__init__`(`linear.py:269`)据 `quant_config` 选 `quant_method`,并在 `create_weights` 时按 `WEIGHT_LOADER_V2_SUPPORTED` 决定用 `weight_loader` 还是 `weight_loader_v2`(`:461`)。② 加载后,`process_weights_after_loading`(`loader/utils.py:100`)遍历模块调用各 `quant_method.process_weights_after_loading`(`:112`,做权重重打包 / Marlin repack / 量化),并对 `Attention`/`MLA` 模块做后处理(`:119`)。算子级细节见 [[21_vllm_quantization_analysis]]。
 
 ### 3.4 TP 感知层库(`model_executor/layers/`)—— 层内怎么切
 
@@ -282,7 +282,7 @@ for name, loaded_weight in weights:
 
 **(f) `LogitsProcessor`**(`logits_processor.py:19`)。`forward`(`:54`)→ `_get_logits`(`:89`):`lm_head.quant_method.apply` 算出本 rank 的局部 logits(`:96`)→ TP gather/all-gather(`:99`)拼回完整词表 → 切掉 padding 到 `org_vocab_size`(`:103`)→ 按 `scale`/`soft_cap` 缩放。另有 `get_top_tokens`(`:106`)做**词表并行 argmax**:各 rank 算局部 argmax,只 all-gather `(value, index)` 对,通信量从 `O(batch·vocab)` 降到 `O(batch·tp_size)`(对应 `LocalArgmaxMixin`)。
 
-**(g) 其余积木**。`RMSNorm`(`layernorm.py:37`,带 residual 时融合 add+norm,`:88`);`SiluAndMul` 等门控激活(`activation.py:118`);RoPE 工厂 `get_rope`(`rotary_embedding/__init__.py:33`),按 `rope_parameters` 缓存并分派到 `linear_scaling` / `yarn` / `llama3` / `mrope` 等十余种实现(`rotary_embedding/` 目录)。这些层多为 `CustomOp`/`PluggableLayer`,可被编译后端替换(链 [[vllm_compilation_cudagraph_analysis]])。
+**(g) 其余积木**。`RMSNorm`(`layernorm.py:37`,带 residual 时融合 add+norm,`:88`);`SiluAndMul` 等门控激活(`activation.py:118`);RoPE 工厂 `get_rope`(`rotary_embedding/__init__.py:33`),按 `rope_parameters` 缓存并分派到 `linear_scaling` / `yarn` / `llama3` / `mrope` 等十余种实现(`rotary_embedding/` 目录)。这些层多为 `CustomOp`/`PluggableLayer`,可被编译后端替换(链 [[23_vllm_compilation_cudagraph_analysis]])。
 
 **TP 切分速查**:
 
@@ -300,7 +300,7 @@ for name, loaded_weight in weights:
 ---
 
 ## Related Pages
-- [[vllm_attention_backends_analysis]] · [[vllm_quantization_analysis]] · [[vllm_distributed_inference_analysis]] · [[vllm_engine_architecture_analysis]]
+- [[14_vllm_attention_backends_analysis]] · [[21_vllm_quantization_analysis]] · [[22_vllm_distributed_inference_analysis]] · [[10_vllm_engine_architecture_analysis]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

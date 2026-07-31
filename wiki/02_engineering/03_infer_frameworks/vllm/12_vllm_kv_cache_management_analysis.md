@@ -4,7 +4,7 @@
 > **最后更新**:2026-06-22 · **系列**:vLLM 推理引擎源码级分析(见 [[vllm/index]])
 > **分析维度**:Overview → Quick Start → Deep Dive
 >
-> 本页回答「vLLM V1 如何用分页内存管理 KV Cache」:逻辑块/物理块、`BlockPool` 的空闲队列与引用计数、`KVCacheManager.allocate_slots` 的块分配生命周期、automatic prefix caching 的块哈希与命中复用、混合注意力(full / sliding window / mamba)的多类型协调,以及启动期显存测算如何决定 `num_gpu_blocks`。**调度策略**(谁先跑、抢占、chunked prefill)归 [[vllm_scheduler_analysis]];**注意力 kernel / PagedAttention 计算侧**(block_table 如何喂给 kernel)归 [[vllm_attention_backends_analysis]]——本页只讲内存侧。
+> 本页回答「vLLM V1 如何用分页内存管理 KV Cache」:逻辑块/物理块、`BlockPool` 的空闲队列与引用计数、`KVCacheManager.allocate_slots` 的块分配生命周期、automatic prefix caching 的块哈希与命中复用、混合注意力(full / sliding window / mamba)的多类型协调,以及启动期显存测算如何决定 `num_gpu_blocks`。**调度策略**(谁先跑、抢占、chunked prefill)归 [[11_vllm_scheduler_analysis]];**注意力 kernel / PagedAttention 计算侧**(block_table 如何喂给 kernel)归 [[14_vllm_attention_backends_analysis]]——本页只讲内存侧。
 
 > 约定:下文 `文件:行号` 路径均**相对包根 `vllm/`**(例如 `v1/core/block_pool.py:333` 即 `vllm/vllm/v1/core/block_pool.py` 第 333 行)。
 
@@ -89,7 +89,7 @@ allocate_slots(request, num_new_tokens, num_new_computed_tokens=0,
   → KVCacheBlocks | None      # None 表示空闲块不足,请求本 step 无法调度
 ```
 
-调度器侧两个调用点(见 [[vllm_scheduler_analysis]]):
+调度器侧两个调用点(见 [[11_vllm_scheduler_analysis]]):
 - **running 请求**(decode/继续 prefill):`scheduler.py:525`,只传 `num_new_tokens` + `num_lookahead_tokens`;
 - **waiting 请求**(新到/被抢占):先 `get_computed_blocks`(`scheduler.py:711`)拿前缀命中,再 `allocate_slots`(`scheduler.py:874`)带上 `new_computed_blocks` 把命中块挂进请求。
 - 请求结束:`KVCacheManager.free`(`scheduler.py:2087` → `kv_cache_manager.py:460`)。
@@ -127,7 +127,7 @@ allocate_slots(request, num_new_tokens,                # 随后调用
 
 ### 3.1 物理块与空闲队列
 
-**对外句柄 `KVCacheBlocks`**(`kv_cache_manager.py:25`):`KVCacheManager` 的所有公开方法返回它而非裸 `KVCacheBlock`,把内部结构对调度器隐藏。其 `blocks` 字段是 `tuple[Sequence[KVCacheBlock], ...]`——**外层按 KV cache group 索引、内层是该 group 的块列表**(`:33`,之所以 group 在外层,是为将来支持各 group 不同 `block_size`,`:36`)。`get_block_ids`(`:69`)把它摊平成 `tuple[list[int], ...]` 的 **block_table**,这正是喂给 worker / attention kernel 的形态(kernel 侧见 [[vllm_attention_backends_analysis]])。空结果复用预建的 `empty_kv_cache_blocks`(`:177`)以避免 GC 抖动;`create_kv_cache_blocks`(`:599`)仅在非空时新建。
+**对外句柄 `KVCacheBlocks`**(`kv_cache_manager.py:25`):`KVCacheManager` 的所有公开方法返回它而非裸 `KVCacheBlock`,把内部结构对调度器隐藏。其 `blocks` 字段是 `tuple[Sequence[KVCacheBlock], ...]`——**外层按 KV cache group 索引、内层是该 group 的块列表**(`:33`,之所以 group 在外层,是为将来支持各 group 不同 `block_size`,`:36`)。`get_block_ids`(`:69`)把它摊平成 `tuple[list[int], ...]` 的 **block_table**,这正是喂给 worker / attention kernel 的形态(kernel 侧见 [[14_vllm_attention_backends_analysis]])。空结果复用预建的 `empty_kv_cache_blocks`(`:177`)以避免 GC 抖动;`create_kv_cache_blocks`(`:599`)仅在非空时新建。
 
 **`KVCacheBlock`**(`kv_cache_utils.py:117`,`@dataclass(slots=True)`)字段:
 - `block_id`(`:122`)固定物理块编号 `0..num_gpu_blocks-1`;
@@ -268,7 +268,7 @@ BlockHash = hash_fn( (parent_block_hash, curr_block_token_ids_tuple, extra_keys)
 ---
 
 ## Related Pages
-- [[vllm_scheduler_analysis]] · [[vllm_attention_backends_analysis]] · [[vllm_engine_architecture_analysis]] · [[vllm_feature_optimizations_overview]]
+- [[11_vllm_scheduler_analysis]] · [[14_vllm_attention_backends_analysis]] · [[10_vllm_engine_architecture_analysis]] · [[01_vllm_feature_optimizations_overview]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

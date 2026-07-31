@@ -4,7 +4,7 @@
 > **最后更新**:2026-06-22 · **系列**:vLLM 推理引擎源码级分析(见 [[vllm/index]])
 > **分析维度**:Overview → Quick Start → Deep Dive
 >
-> 本页是 [[vllm_fused_ops_and_kernels_analysis]] 的**机制深挖伴篇**,把"图模式下算子怎么被融合"讲到底:① vLLM 自己的算子 IR 层 `vllm_ir`(`torch.library` 注册、为何不挂 `aten`、如何被 Dynamo 保留);② 融合 Pass 流水线 `PostGradPassManager`;③ 它如何挂进 Inductor 生效;④ 以 **RMSNorm + FP8 量化** 为例,从用户模型代码 → eager 双 kernel → 融合 kernel 的完整替换走查。与 [[vllm_compilation_cudagraph_analysis]](图捕获/CUDA Graph)分工:本页讲"改写计算图、合并算子",那页讲"把下发录成 replay"。
+> 本页是 [[24_vllm_fused_ops_and_kernels_analysis]] 的**机制深挖伴篇**,把"图模式下算子怎么被融合"讲到底:① vLLM 自己的算子 IR 层 `vllm_ir`(`torch.library` 注册、为何不挂 `aten`、如何被 Dynamo 保留);② 融合 Pass 流水线 `PostGradPassManager`;③ 它如何挂进 Inductor 生效;④ 以 **RMSNorm + FP8 量化** 为例,从用户模型代码 → eager 双 kernel → 融合 kernel 的完整替换走查。与 [[23_vllm_compilation_cudagraph_analysis]](图捕获/CUDA Graph)分工:本页讲"改写计算图、合并算子",那页讲"把下发录成 replay"。
 
 ---
 
@@ -248,9 +248,9 @@ pm.register_replacement(pattern, replacement, inputs, pm.fwd_only, pm_pass,
 - [[22_pattern_expression_and_matcher_engine_analysis]] —— 上游 Inductor PatternMatcher 机制(vLLM 复用的引擎基座)
 - [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] —— 四家(upstream/npu/vLLM/sglang)pass 开发方法论归纳(§14)
 - [[sglang_compilation_passes_analysis]] —— SGLang:fork vLLM 骨架却抽空融合的反例
-- [[vllm_fused_ops_and_kernels_analysis]] —— 本页的"目录"母篇(CustomOp 派发 / 融合 Pass 全表 / fused_moe / Triton 全景)
-- [[vllm_compilation_cudagraph_analysis]] —— torch.compile→Inductor 链路与分段 CUDA Graph(图捕获侧)
-- [[vllm_quantization_analysis]] · [[vllm_attention_backends_analysis]] · [[vllm_model_library_analysis]]
+- [[24_vllm_fused_ops_and_kernels_analysis]] —— 本页的"目录"母篇(CustomOp 派发 / 融合 Pass 全表 / fused_moe / Triton 全景)
+- [[23_vllm_compilation_cudagraph_analysis]] —— torch.compile→Inductor 链路与分段 CUDA Graph(图捕获侧)
+- [[21_vllm_quantization_analysis]] · [[14_vllm_attention_backends_analysis]] · [[13_vllm_model_library_analysis]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links
