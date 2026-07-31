@@ -184,5 +184,5 @@ flowchart LR
 - [[vllm_speculative_decoding_analysis]] —— 投机解码在推理引擎里的验收/拒绝采样实现
 
 ## Cross-Domain Links
-- [[deepseek_v4_analysis]] —— DSpark 部署的底座模型 DeepSeek-V4
-- [[deepseek_v3_analysis]] —— MTP 模型侧原理（DFlash/DSpark 对比的 MTP-1 基线之源）
+- [[13_deepseek_v4_analysis]] —— DSpark 部署的底座模型 DeepSeek-V4
+- [[12_deepseek_v3_analysis]] —— MTP 模型侧原理（DFlash/DSpark 对比的 MTP-1 基线之源）

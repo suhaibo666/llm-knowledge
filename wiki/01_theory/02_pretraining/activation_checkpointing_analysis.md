@@ -537,10 +537,10 @@ Time →
 - [[12_saved_tensors_recompute_and_runtime_abi_analysis]] — AOTAutograd saved-value、min-cut partition 与 backward recompute 边界
 - [[torchtitan_ac_analysis]] — torchtitan/PyTorch 工程侧:非重入 `checkpoint_wrapper` 票据机制、SAC dispatch 缓存回放、显存预估(与本文 Megatron `CheckpointFunction` 重入路径互补)
 - [[megatron_recompute_analysis]] — Selective Recomputation、Fine-Grained Offloading、Checkpoint Resharding（原 Exam Q12/Q13/Q30 内容已并入此页）
-- [[mHC]] — mHC 的选择性重计算实现与 CheckpointManager 的应用
+- [[25_mhc_analysis]] — mHC 的选择性重计算实现与 CheckpointManager 的应用
 - [[12_saved_tensors_recompute_and_runtime_abi_analysis]] — AOTAutograd 编译期 min-cut/激活检查点、重计算与 runtime ABI（2026-07-30 起取代原 `aotautograd_analysis` §10.1 引用）
-- [[deepseek_v3_analysis]] — V3 的 RMSNorm + MLA up-projection 重计算
-- [[deepseek_v4_analysis]] — V4 的 selective recomputation 与 SWA KV 策略
-- [[deepseek_v4_cp_analysis]] — CP 场景的尾部 token 重计算策略
-- [[11_torch_compile_npugraphs_deep_dive]] — NPU 侧 Joint Graph 中的重计算；§3.5-3.6 内存池 Checkpoint/Restore（同名异义，指 allocator 状态快照）
+- [[12_deepseek_v3_analysis]] — V3 的 RMSNorm + MLA up-projection 重计算
+- [[13_deepseek_v4_analysis]] — V4 的 selective recomputation 与 SWA KV 策略
+- [[23_deepseek_v4_cp_analysis]] — CP 场景的尾部 token 重计算策略
+- [[11_torch_compile_npugraphs_deepdive]] — NPU 侧 Joint Graph 中的重计算；§3.5-3.6 内存池 Checkpoint/Restore（同名异义，指 allocator 状态快照）
 - [[llm_initiliaze_analysis]] — 内存管理与 meta device 初始化

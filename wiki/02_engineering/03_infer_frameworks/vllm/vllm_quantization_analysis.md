@@ -286,4 +286,4 @@ MoE 的量化挂在 `RoutedExperts` 上(对应 `get_quant_method` 的第二岔),
 ## Cross-Domain Links
 - [[low_precision_training_analysis]] —— 低精度(FP8/FP4)训练侧原理
 - [[transformer_engine_analysis]] —— FP8 GEMM/scaling
-- [[deepseek_v4_fp4_qat_analysis]] —— FP4 量化
+- [[24_deepseek_v4_fp4_qat_analysis]] —— FP4 量化

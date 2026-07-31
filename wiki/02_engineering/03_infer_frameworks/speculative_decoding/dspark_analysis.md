@@ -7,7 +7,7 @@
 > 本页回答：DSpark 用「**并行骨干 + 轻量串行头**」的半自回归结构把并行草稿器的后缀崩塌（suffix decay）补回来，又用「**置信度头 + 硬件感知前缀调度器**」按系统负载动态裁剪验证长度，从而在 DeepSeek-V4 生产服务里相对 MTP-1 基线把单用户生成速度提升 60%–85%（V4-Flash）/ 57%–78%（V4-Pro）。投机推理三代（MTP / Eagle3 / DFlash / DSpark）的横向演进见 [[index]]。
 
 > [!warning] 关于 arXiv 编号的订正（源 > 转述）
-> 用户给出的 **arXiv:2606.19348** 经核对是 **DeepSeek-V4 模型论文**（*Towards Highly Efficient Million-Token Context Intelligence*，本库已审计，见 [[deepseek_v4_analysis]]），**不是** DSpark 论文。DSpark 是挂在 V4 checkpoint 上的**投机解码草稿模块**，其论文以 `DSpark_paper.pdf` 形式随开源仓 DeepSpec 发布（HF 模型卡 `DeepSeek-V4-Pro-DSpark` 里引用的 2606.19348 指的是**底座模型**论文）。本页一切定位符指向该 PDF 的页码（`===== PAGE N =====`），与 V4 模型论文无关。
+> 用户给出的 **arXiv:2606.19348** 经核对是 **DeepSeek-V4 模型论文**（*Towards Highly Efficient Million-Token Context Intelligence*，本库已审计，见 [[13_deepseek_v4_analysis]]），**不是** DSpark 论文。DSpark 是挂在 V4 checkpoint 上的**投机解码草稿模块**，其论文以 `DSpark_paper.pdf` 形式随开源仓 DeepSpec 发布（HF 模型卡 `DeepSeek-V4-Pro-DSpark` 里引用的 2606.19348 指的是**底座模型**论文）。本页一切定位符指向该 PDF 的页码（`===== PAGE N =====`），与 V4 模型论文无关。
 
 > [!info] 阅读路径
 > **§1 总览**给「是什么 + 一张图」；**§2 理论基础**补齐读懂 DSpark 必需的前置原理（投机解码的延迟公式与无偏性、自回归 vs 并行草稿器的权衡、DSpark 直接继承的 DFlash 骨干）；**§3 起进入机制级深挖**，逐贡献讲动机/机制/证据/为什么不选。只想要结论看 §1；想懂「为什么这么设计」必读 §2 再读 §3。
@@ -211,7 +211,7 @@ Algorithm 1 假设平滑单峰的 `SPS(B)`，而真实硬件容量是**锯齿台
 
 ## 六、生产部署结果（§5.4, Figure 7-8）
 
-DSpark 草稿模型与 DeepSeek-V4-Flash/Pro（preview）**协同部署**：并行骨干为 **3 个 MoE 层 + mHC（[[mHC]]）+ 滑窗注意力 128**，最大块长 $\gamma{=}5$，用 Markov 头（p16, §5.1）。基线 **MTP-1**（DeepSeek-V3 的单 token 自回归草稿）是 V4-preview 发布时的生产配置，**DSpark 上线后两周即取代之**；MTP-1 之所以长期只用单 token，正因静态多 token（MTP-3/5）在高并发下因过度验证严格降吞吐（p18, §5.4）。
+DSpark 草稿模型与 DeepSeek-V4-Flash/Pro（preview）**协同部署**：并行骨干为 **3 个 MoE 层 + mHC（[[25_mhc_analysis]]）+ 滑窗注意力 128**，最大块长 $\gamma{=}5$，用 Markov 头（p16, §5.1）。基线 **MTP-1**（DeepSeek-V3 的单 token 自回归草稿）是 V4-preview 发布时的生产配置，**DSpark 上线后两周即取代之**；MTP-1 之所以长期只用单 token，正因静态多 token（MTP-3/5）在高并发下因过度验证严格降吞吐（p18, §5.4）。
 
 | 引擎 | 对比基线 | 匹配吞吐下单用户提速 | 严格 SLA 下的「解锁」 | 出处 |
 |---|---|---|---|---|
@@ -241,6 +241,6 @@ DSpark 草稿模型与 DeepSeek-V4-Flash/Pro（preview）**协同部署**：并�
 - [[vllm_speculative_decoding_analysis]] —— 投机解码在 vLLM 引擎里的验收/拒绝采样实现（含 mtp/dflash proposer）
 
 ## Cross-Domain Links
-- [[deepseek_v4_analysis]] —— DSpark 的底座模型 DeepSeek-V4（arXiv:2606.19348）
-- [[deepseek_v3_analysis]] —— MTP（多 token 预测）模型侧原理，即 DSpark 对比的 MTP-1 基线之源
-- [[mHC]] —— 生产骨干用到的 Manifold-Constrained Hyper-Connections
+- [[13_deepseek_v4_analysis]] —— DSpark 的底座模型 DeepSeek-V4（arXiv:2606.19348）
+- [[12_deepseek_v3_analysis]] —— MTP（多 token 预测）模型侧原理，即 DSpark 对比的 MTP-1 基线之源
+- [[25_mhc_analysis]] —— 生产骨干用到的 Manifold-Constrained Hyper-Connections

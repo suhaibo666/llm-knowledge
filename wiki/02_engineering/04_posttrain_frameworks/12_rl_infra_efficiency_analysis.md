@@ -155,7 +155,7 @@ Reward 模型这种**无状态**组件可以塞到 serverless / function compute
 
 只限制 queue 长度会让短样本挤占版本预算；只限制版本会在慢 verifier 下耗尽内存。AReaL 的 `StalenessManager` 同时取 concurrency 和 staleness capacity 的最小值，是一个清楚的参考实现，见 `areal/infra/staleness_manager.py:80-112`。
 
-K3 给出 cache-pressure-aware admission 的另一种信号组合：active request count、queued request count 和 KV utilization 共同调节送入 inference engine 的请求数。早期 context 短时提高并发，轨迹变长、KV 压力升高时自动收紧，而不是用固定"平均完整轨迹长度"静态限流（Kimi K3 Technical Report §5.3.1，p.21；详见 [[kimi_k3_posttraining_case_study_analysis|D12]]）。
+K3 给出 cache-pressure-aware admission 的另一种信号组合：active request count、queued request count 和 KV utilization 共同调节送入 inference engine 的请求数。早期 context 短时提高并发，轨迹变长、KV 压力升高时自动收紧，而不是用固定"平均完整轨迹长度"静态限流（Kimi K3 Technical Report §5.3.1，p.21；详见 [[24_kimi_k3_posttraining_case_study_analysis|D12]]）。
 
 ---
 
@@ -301,7 +301,7 @@ Trajectory C:              [Init][==Exec=][======Eval======]
 ## Related Pages
 
 - [[01_posttraining_infra_mechanism_analysis]] — control/data/weight 三平面与工业正确性不变量；§4 backpressure 接口定义的落地页即本页「优化 6」
-- [[kimi_k3_posttraining_case_study_analysis]] — 「优化 6」cache-pressure-aware admission 的完整案例
+- [[24_kimi_k3_posttraining_case_study_analysis]] — 「优化 6」cache-pressure-aware admission 的完整案例
 - [[25_on_policy_off_policy_staleness_analysis]] — async、staleness、off-policy 与 TIM 的严格区分
 - [[courses/posttraining_frontier]] — 后训练前沿阅读课程(原 D00–D12 学习域已解散,内容归位至功能树)
 - [[31_reward_hacking_defense_analysis]] — 同系列，environment 多样性是 hack 防御 Layer 1

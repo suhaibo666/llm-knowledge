@@ -27,7 +27,7 @@ All source ingestions and significant wiki updates are logged here.
 
 | 组 | 现状 | 处置 |
 |---|---|---|
-| vLLM compilation ↔ `03_runtime_graphs` | 正向链（vLLM→`10_pytorch_cuda_graphs_complete_guide`/`11_torch_compile_npugraphs_deep_dive`）P3 已补；反向链缺失 | 补 2 条反向链（CUDA 侧 + NPU 侧回指 vLLM 分段 CUDA Graph 应用实例） |
+| vLLM compilation ↔ `03_runtime_graphs` | 正向链（vLLM→`10_pytorch_cuda_graphs_complete_guide`/`11_torch_compile_npugraphs_deepdive`）P3 已补；反向链缺失 | 补 2 条反向链（CUDA 侧 + NPU 侧回指 vLLM 分段 CUDA Graph 应用实例） |
 | vLLM IR/fusion ↔ pass 页 | 原声明仍在：`vllm_ir_and_fusion_passes_analysis` 已链 `22_pattern_expression_and_matcher_engine_analysis`/`24_graph_pass_pipeline_ordering_and_fixpoint_analysis`/`32_post_grad_passes_guide`；`24_...§14` 跨框架对照表已含 vLLM/sglang/npu 三个代表页双向链 | 已完成，无需改动 |
 | sglang ↔ vllm | 健康范本核实：两页头部即互相声明"对照面"，`24_...§14` 表格双向收录 | 已完成，无需改动 |
 | TIM 分层 | `26_tim_causal_chain_analysis` 头部四环因果链声明完整，与 `25_on_policy_off_policy_staleness_analysis` §7 边界区分明确 | 已完成于 P5 |
@@ -214,7 +214,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **删除**：`git rm wiki/03_posttraining/00_posttraining_source_reading_guide.md wiki/03_posttraining/index.md`，`wiki/03_posttraining/` 目录随之清空自动移除。
 
-**入链改写**：D00/`03_posttraining/index` 的全部活链接改指 `[[courses/posttraining_frontier]]`，涉及 `kimi_k3_posttraining_case_study_analysis.md`（阅读导航"回到 D00"）、`posttraining_frontier_map_analysis.md`（阅读导航 + 文档顺序表第 1 行 + Related Pages，3 处）、`cuda_ascend_posttraining_stack_comparison.md`（Related Pages）、`dapo_analysis.md`/`grpo_analysis.md`/`gspo_analysis.md`/`rl_infra_efficiency_analysis.md`/`rl_sandbox_design_analysis.md`/`verl/index.md`（各 1 处 Related Pages）。`wiki/changelog.md` 中 2026-07-27 历史条目的 2 处活链接（`03_posttraining/index`、`00_posttraining_source_reading_guide`）按"历史不回写"惯例降级为反引号 + 去向说明。
+**入链改写**：D00/`03_posttraining/index` 的全部活链接改指 `[[courses/posttraining_frontier]]`，涉及 `24_kimi_k3_posttraining_case_study_analysis.md`（阅读导航"回到 D00"）、`posttraining_frontier_map_analysis.md`（阅读导航 + 文档顺序表第 1 行 + Related Pages，3 处）、`cuda_ascend_posttraining_stack_comparison.md`（Related Pages）、`dapo_analysis.md`/`grpo_analysis.md`/`gspo_analysis.md`/`rl_infra_efficiency_analysis.md`/`rl_sandbox_design_analysis.md`/`verl/index.md`（各 1 处 Related Pages）。`wiki/changelog.md` 中 2026-07-27 历史条目的 2 处活链接（`03_posttraining/index`、`00_posttraining_source_reading_guide`）按"历史不回写"惯例降级为反引号 + 去向说明。
 
 **`wiki/index.md` 重建**：删除"03 后训练纵向学习域"整段；courses 表新增 `posttraining_frontier` 行；快速导航"LLM 后训练前沿 D00–D05"/"D06–D12"两行合并改写为"D01–D06"/"D07–D12"（各 7/6 项，去掉已删除的 `03_posttraining/index`、`00_posttraining_source_reading_guide`，D01–D06 行首改指课程页）；"PPO/GRPO RL 训练"行沿用 Task 6 已完成的 `rl_ppo_loss_and_grpo_analysis` 改名。**页数重算**（覆盖全部因 P5 迁移产生偏差的行，不止 Task 7 直接改动的两域）：模型 56→57、Kimi 13→14（D12 迁入，Task 2）、后训练对齐 15→18（+D01/D02/D03/D04，−RL_PPO，Task 2/3/6）、后训练框架 14→21（+D05/D06/D07/D08/D09/D10/D11/RL_PPO，−batch_invariance，Task 2/4/5/6；verl 子计数 10→11）、训练可靠性 4→5（+batch_invariance，Task 6）；两处"统计于"日期改 2026-07-31。
 
@@ -235,7 +235,7 @@ All source ingestions and significant wiki updates are logged here.
 - `git mv wiki/01_theory/04_posttraining/RL_PPO_Loss_and_GRPO_Analysis.md` → `wiki/02_engineering/04_posttrain_frameworks/rl_ppo_loss_and_grpo_analysis.md`（snake_case 化）。该页是 TorchTitan + vLLM 的 PPO Loss / GRPO 流程源码级实现分析，此前误放理论目录，实为框架工程分析。与 verl 域已有的 `verl_rl_algorithms_analysis.md`（同为源码级 PPO/GRPO loss 分析，框架为 verl core_algos 注册表）互补一句话双向链接。
 - `git mv wiki/02_engineering/04_posttrain_frameworks/batch_invariance_guide.md` → `wiki/02_engineering/07_training_reliability/batch_invariance_guide.md`。该页讲批次不变性/确定性算子实现（源自 DeepSeek V4 报告 §3.3 + DeepGEMM 源码），主题属确定性/可靠性问题域而非后训练框架，与 `determinism_and_numerical_reliability_analysis.md` 问题 2（训推数值不一致 / batch 不变性）互为系统侧上游与算子层实现细化的关系，双向补链；`tools/batch_invariance_demo.py` 引用路径为仓库根相对路径文本，两个新旧目录深度相同（均为 `wiki/02_engineering/<domain>/`），无需改写。
 
-**入链改写（裸基名）**：`RL_PPO_Loss_and_GRPO_Analysis` → `rl_ppo_loss_and_grpo_analysis`，涉及 `glm5_posttraining_deepdive.md`（2 处）、`tim_causal_chain_analysis.md`、`rl_infra_efficiency_analysis.md`、`rl_sandbox_design_analysis.md`、`determinism_and_numerical_reliability_analysis.md`、`07_training_reliability/index.md`、`wiki/index.md`。`batch_invariance_guide` 基名不变（同名文件仅换目录），裸基名链接天然不受影响；唯一一处路径限定链接 `01_ai_frameworks/index.md` 的 `[[04_posttrain_frameworks/batch_invariance_guide]]` 改为裸基名 `[[batch_invariance_guide]]`（同域内唯一同名文件，不存在歧义）。`wiki/changelog.md` 中 1 处 2026-05-24 历史活链接（`RL_PPO_Loss_and_GRPO_Analysis`）按"历史不回写"惯例降级为反引号 + 去向说明。
+**入链改写（裸基名）**：`RL_PPO_Loss_and_GRPO_Analysis` → `rl_ppo_loss_and_grpo_analysis`，涉及 `23_glm5_posttraining_deepdive.md`（2 处）、`tim_causal_chain_analysis.md`、`rl_infra_efficiency_analysis.md`、`rl_sandbox_design_analysis.md`、`determinism_and_numerical_reliability_analysis.md`、`07_training_reliability/index.md`、`wiki/index.md`。`batch_invariance_guide` 基名不变（同名文件仅换目录），裸基名链接天然不受影响；唯一一处路径限定链接 `01_ai_frameworks/index.md` 的 `[[04_posttrain_frameworks/batch_invariance_guide]]` 改为裸基名 `[[batch_invariance_guide]]`（同域内唯一同名文件，不存在歧义）。`wiki/changelog.md` 中 1 处 2026-05-24 历史活链接（`RL_PPO_Loss_and_GRPO_Analysis`）按"历史不回写"惯例降级为反引号 + 去向说明。
 
 **索引同步**：`01_theory/04_posttraining/index.md` 移除 RL_PPO 行；`02_engineering/04_posttrain_frameworks/index.md` 「数值与确定性」小节（原仅 batch_invariance_guide 一行）改为「RL 算法源码实现」小节收纳新迁入的 `rl_ppo_loss_and_grpo_analysis`，并注明 batch_invariance_guide 去向；`07_training_reliability/index.md` 问题地图第 2 行「详见」列补 `[[batch_invariance_guide]]`，新增「第四篇：batch 不变性算子实现」小节介绍其归位背景与来源（独立于本域原 wanka 综述素材）。
 
@@ -281,7 +281,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **weight sync 三方划界（只补链不合并，三页正文除本条声明外不动）**：`02_train_frameworks/megatron-lm/megatron_rl_posttraining_consistency_analysis.md`（207 行,Megatron 训练侧 refit/训推一致性）、`megatron_vllm_weight_sync_analysis.md`（182 行,verl 在 Megatron+vLLM 场景下的 Gather-Broadcast-Load 同步实现）与 D05 §6（weight publish 三平面协议）互相在页头/相应节插入同一句「三方分工」声明：D05=三平面机制视角（框架无关）；megatron 两页=训练侧/verl 具体实现；`verl_rollout_resharding_analysis`=verl 自身 resharding/3D-HybridEngine 实现（该页仅在声明句中提及，未改动）。三页 Related Pages 互补链接。
 
-**入链改写**：`03_posttraining/05_posttraining_infra_mechanism_analysis`→`posttraining_infra_mechanism_analysis`、`03_posttraining/06_framework_comparison`→`rl_framework_comparison` 两个路径的全部 wiki-link 目标改为裸基名，涉及 `wiki/index.md`、`03_posttraining/index.md`、`00_posttraining_source_reading_guide.md`、`posttraining_frontier_map_analysis.md`、`on_policy_off_policy_staleness_analysis.md`、`agentic_rl_algorithm_analysis.md`、`dapo_analysis.md`、`kimi_k3_posttraining_case_study_analysis.md`、`07_verl_end_to_end_iteration_analysis.md`、`verl/index.md`、`slime_architecture_analysis.md`、`roll_strategy_and_ascend_analysis.md`、两文件自身的阅读导航与 Related Pages。`03_posttraining/index.md` D05/D06 两行链接目标随批量改写同步生效。`04_posttrain_frameworks/index.md` 新增「后训练框架源码对照」表两行（posttraining_infra_mechanism_analysis / rl_framework_comparison），迁入来源脚注 D08–D11 改为 D05–D11，`Coding RL Sandbox 与 Infra` 表两行补来源(Kimi K3/AReaL)与主题(K3 案例/admission-aware backpressure)。
+**入链改写**：`03_posttraining/05_posttraining_infra_mechanism_analysis`→`posttraining_infra_mechanism_analysis`、`03_posttraining/06_framework_comparison`→`rl_framework_comparison` 两个路径的全部 wiki-link 目标改为裸基名，涉及 `wiki/index.md`、`03_posttraining/index.md`、`00_posttraining_source_reading_guide.md`、`posttraining_frontier_map_analysis.md`、`on_policy_off_policy_staleness_analysis.md`、`agentic_rl_algorithm_analysis.md`、`dapo_analysis.md`、`24_kimi_k3_posttraining_case_study_analysis.md`、`07_verl_end_to_end_iteration_analysis.md`、`verl/index.md`、`slime_architecture_analysis.md`、`roll_strategy_and_ascend_analysis.md`、两文件自身的阅读导航与 Related Pages。`03_posttraining/index.md` D05/D06 两行链接目标随批量改写同步生效。`04_posttrain_frameworks/index.md` 新增「后训练框架源码对照」表两行（posttraining_infra_mechanism_analysis / rl_framework_comparison），迁入来源脚注 D08–D11 改为 D05–D11，`Coding RL Sandbox 与 Infra` 表两行补来源(Kimi K3/AReaL)与主题(K3 案例/admission-aware backpressure)。
 
 **验收**：`tools/check_links.py` broken=0（pages=375，与基线一致）；`python -m pytest -q` 77 passed。
 
@@ -293,7 +293,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **Type**: Content Consolidation（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 3）
 
-`git mv wiki/03_posttraining/02_reasoning_rl_algorithm_evolution_analysis.md` → `wiki/01_theory/04_posttraining/reasoning_rl_algorithm_evolution_analysis.md`，定为 GRPO/DAPO/Dr.GRPO/GSPO/SAO 公式演进与工程语义的**统一权威页**（页头新增"定位"行）。§3.6 K3-MOPD 收缩为一句 + [[kimi_k3_posttraining_case_study_analysis|D12]] 链接：先核实 D12 §1/§2.2/§4 已逐字覆盖 §3.6 的 MOPD 公式（Eq. 15 与 §3.6 完全一致）、reasoning-effort 预算约束公式与"top-k 蒸馏无明确优势"结论，无独有事实需回流。205→187 行。
+`git mv wiki/03_posttraining/02_reasoning_rl_algorithm_evolution_analysis.md` → `wiki/01_theory/04_posttraining/reasoning_rl_algorithm_evolution_analysis.md`，定为 GRPO/DAPO/Dr.GRPO/GSPO/SAO 公式演进与工程语义的**统一权威页**（页头新增"定位"行）。§3.6 K3-MOPD 收缩为一句 + [[24_kimi_k3_posttraining_case_study_analysis|D12]] 链接：先核实 D12 §1/§2.2/§4 已逐字覆盖 §3.6 的 MOPD 公式（Eq. 15 与 §3.6 完全一致）、reasoning-effort 预算约束公式与"top-k 蒸馏无明确优势"结论，无独有事实需回流。205→187 行。
 
 **GRPO/DAPO/GSPO 三篇论文页瘦身**（逐节台账，收缩前均在 D02 找到实际对应段；D02 未给出的公式变体一律保留）：
 
@@ -305,7 +305,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **verl `verl_rl_algorithms_analysis.md` §3.2/§4.1/§4.2 数学部分收缩指 D02**（保留全部代码锚点、14 优势估计器/11 策略损失清单、注册表机制、config key 映射——spec 点名保护项）：GRPO 组内归一化公式（§3.2）、vanilla PPO clip 基础结构（§4.1，dual-clip 扩展因 D02 未给出而保留）、GSPO 序列比公式（§4.2，stop-grad 实现技巧因 D02 未给出而保留）分别收缩为指向 D02 §3.1/§2/§3.4 的一句话，`core_algos.py:xxx` 代码块与行号全部原样保留。§7"与 RL 文献的对应"由散文列表改写为"verl 选型→文献→D02 对应→论文页"表格（轻改，DAPO"在 verl 里不是新损失"的实现洞察保留为表内备注；表中特别标注 verl `sapo`(arXiv 2511.20347)与 D02 §3.5 的 SAO(arXiv 2607.07508)是不同算法，避免同名混淆）。389→382 行（净减 7 行：删除 3 处重复 LaTeX 展示块，新增 §7 对应表 + Related Pages 补链）。
 
-**入链改写**：全库 12 处 `[[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis...]]` 目标改为裸基名 `[[reasoning_rl_algorithm_evolution_analysis]]`，涉及 `wiki/index.md`、`03_posttraining/index.md`、`00_posttraining_source_reading_guide.md`、`agentic_rl_algorithm_analysis.md`(D03 阅读导航+Related Pages)、`posttraining_frontier_map_analysis.md`(D01 阅读导航+文档顺序表)、`on_policy_off_policy_staleness_analysis.md`(D04 Related Pages)、`kimi_k3_posttraining_case_study_analysis.md`(D12 Related Pages)。D02 自身页内指向 grpo/dapo/gspo 的 3 处路径限定链接改裸基名（同目录）。`01_theory/04_posttraining/dapo_analysis.md` 中指向仍在 `03_posttraining/` 的 D05 链接（Task 4 才迁移）保持路径限定不变。
+**入链改写**：全库 12 处 `[[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis...]]` 目标改为裸基名 `[[reasoning_rl_algorithm_evolution_analysis]]`，涉及 `wiki/index.md`、`03_posttraining/index.md`、`00_posttraining_source_reading_guide.md`、`agentic_rl_algorithm_analysis.md`(D03 阅读导航+Related Pages)、`posttraining_frontier_map_analysis.md`(D01 阅读导航+文档顺序表)、`on_policy_off_policy_staleness_analysis.md`(D04 Related Pages)、`24_kimi_k3_posttraining_case_study_analysis.md`(D12 Related Pages)。D02 自身页内指向 grpo/dapo/gspo 的 3 处路径限定链接改裸基名（同目录）。`01_theory/04_posttraining/dapo_analysis.md` 中指向仍在 `03_posttraining/` 的 D05 链接（Task 4 才迁移）保持路径限定不变。
 
 **Index 更新**：`01_theory/04_posttraining/index.md` "GRPO 系列"表前新增定位说明（D02=权威页，四篇论文页=元数据/实验数字档案）；"后训练前沿整合"表插入 D02 行（D01→D02→D03→D04 顺序），迁入来源脚注补 D02。`03_posttraining/index.md` D02 行改指新路径（索引本身按计划保留到 Task 7 删除）。
 
@@ -330,13 +330,13 @@ All source ingestions and significant wiki updates are logged here.
 | `03_posttraining/09_areal_async_architecture_analysis.md` | `02_engineering/04_posttrain_frameworks/areal_async_architecture_analysis.md` |
 | `03_posttraining/10_roll_strategy_and_ascend_analysis.md` | `02_engineering/04_posttrain_frameworks/roll_strategy_and_ascend_analysis.md` |
 | `03_posttraining/11_cuda_ascend_posttraining_stack_comparison.md` | `02_engineering/04_posttrain_frameworks/cuda_ascend_posttraining_stack_comparison.md` |
-| `03_posttraining/12_kimi_k3_posttraining_case_study_analysis.md` | `01_theory/01_models/moonshot_kimi/kimi_k3_posttraining_case_study_analysis.md` |
+| `03_posttraining/12_kimi_k3_posttraining_case_study_analysis.md` | `01_theory/01_models/moonshot_kimi/24_kimi_k3_posttraining_case_study_analysis.md` |
 
 正文零改动（仅两处例外，见下）。**入链改写**：全库 109 处 `[[...]]` 目标从旧编号基名/`03_posttraining/NN_...` 路径限定形式改为新裸基名，涉及 26 个文件（含 `wiki/index.md`、`wiki/03_posttraining/` 内未迁移的 D00/D02/D05/D06/D07/index、moonshot_kimi 五篇 K3 页、`grpo_analysis`/`gspo_analysis`、`rl_infra_efficiency_analysis`/`rl_sandbox_design_analysis`/`verl/index`）；`03_posttraining/index.md` 与 `00_posttraining_source_reading_guide.md` 中指向这 8 篇的行同步改指新位置，但索引本身按计划保留到 Task 7 才删除。`wiki/changelog.md` 中 3 处写入当时的历史活链接（本文件之前记载 D01/D12 新增的条目）按"历史不回写"惯例降级为反引号 + 去向说明，不当作活链接维护。
 
 **例外 1（spec 点名的良性分层，只补链不动正文）**：`on_policy_off_policy_staleness_analysis.md`（D04）§7 TIM 小节新增一句指向 `tim_causal_chain_analysis`（历史活链接，已于 2026-07-31 因 kb-reorg P5 Task 8 再编号为 [[26_tim_causal_chain_analysis]]，按"历史不回写"惯例降级为反引号）的速览提示；`tim_causal_chain_analysis.md` Related Pages 反向补一条指向 `on_policy_off_policy_staleness_analysis` 的链接，说明其覆盖"TIM 与 staleness/off-policy 关系"这一上层概念坐标。
 
-**例外 2（三个承接目录 index 补条目）**：`01_theory/04_posttraining/index.md` 新增"后训练前沿整合"小节（3 条：posttraining_frontier_map/agentic_rl_algorithm/on_policy_off_policy_staleness）；`02_engineering/04_posttrain_frameworks/index.md` 新增"后训练框架源码对照"小节（4 条：slime/areal/roll/cuda_ascend_stack）；`01_theory/01_models/moonshot_kimi/index.md` 在既有 K3 报告行后新增一条专属条目指向 `kimi_k3_posttraining_case_study_analysis`。
+**例外 2（三个承接目录 index 补条目）**：`01_theory/04_posttraining/index.md` 新增"后训练前沿整合"小节（3 条：posttraining_frontier_map/agentic_rl_algorithm/on_policy_off_policy_staleness）；`02_engineering/04_posttrain_frameworks/index.md` 新增"后训练框架源码对照"小节（4 条：slime/areal/roll/cuda_ascend_stack）；`01_theory/01_models/moonshot_kimi/index.md` 在既有 K3 报告行后新增一条专属条目指向 `24_kimi_k3_posttraining_case_study_analysis`。
 
 **验收**：`tools/check_links.py` broken=0（pages=375，与 P4 收官基线一致）；`python -m pytest tools/ -q` 77 passed。
 
@@ -1237,7 +1237,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Redundancy Consolidation(设计:`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md`;P3 阶段收尾编辑)
 
-**A. §四「与 make_graphed_callables 的对比」收缩**：`torch_compile_npugraphs_deep_dive.md` §四(90 行)只留 4.1 功能对比表 + 到 [[20_npugraphs_make_graphed_callables_deep_dive]] 的链接(90→18 行,净删 72)。逐段核对：4.2「实现对比」两幅 ASCII 流程图——`make_graphed_callables` 六步图被承接页「二、完整实现流程(六阶段)」(490-716 行)以远更详细的代码粒度完整覆盖，`torch.compile(backend="npugraphs")` 六步图被本文档自身 §1.3 流程图 + §2.3-2.8 完整覆盖(均原地保留未删)，故两图均丢弃不搬运；4.3「执行时序对比」sequenceDiagram 被本文档自身 §3.2.5(A→B→C 完整执行场景，含 generation/warmup/record/execute 状态转换)以更细粒度完整覆盖，同样丢弃不搬运。核对结论：§四无独有内容需要搬运，承接页 `npugraphs_make_graphed_callables_deep_dive.md` 本次未变动(668→668)。
+**A. §四「与 make_graphed_callables 的对比」收缩**：`torch_compile_npugraphs_deep_dive.md` §四(90 行)只留 4.1 功能对比表 + 到 [[20_npugraphs_make_graphed_callables_deepdive]] 的链接(90→18 行,净删 72)。逐段核对：4.2「实现对比」两幅 ASCII 流程图——`make_graphed_callables` 六步图被承接页「二、完整实现流程(六阶段)」(490-716 行)以远更详细的代码粒度完整覆盖，`torch.compile(backend="npugraphs")` 六步图被本文档自身 §1.3 流程图 + §2.3-2.8 完整覆盖(均原地保留未删)，故两图均丢弃不搬运；4.3「执行时序对比」sequenceDiagram 被本文档自身 §3.2.5(A→B→C 完整执行场景，含 generation/warmup/record/execute 状态转换)以更细粒度完整覆盖，同样丢弃不搬运。核对结论：§四无独有内容需要搬运，承接页 `npugraphs_make_graphed_callables_deep_dive.md` 本次未变动(668→668)。
 
 **B. 附录 A「mode="reduce-overhead" 完整编译流程与双路径对比」收缩**：整改决策(spec §3.3)以 `aclgraph_deep_analysis.md` 为 reduce-overhead 捕获路径权威页。附录 A(759 行)逐段核对：
 - 一、mode 参数澄清(1.1 mode→config 表、1.2 mode/backend 关系) — 承接页原无 mode 参数说明,独有,搬入承接页新增 §1.5「mode 参数与两条路径的触发关系」。
@@ -1255,10 +1255,10 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **承接页接收清单**：
 - `npugraphs_make_graphed_callables_deep_dive.md`：净增 0 行(668→668，§四无独有内容)。
-- `aclgraph_deep_analysis.md`：净增 63 行(569→632)，新增 §1.5「mode 参数与两条路径的触发关系」(并入「一、路径概述」)与 §4.4「与 backend="npugraphs" 路径(路径 B)的对比」(并入「四、这条路径为什么会存在」)，均为小节融入而非尾部堆贴；同步合并 Related Pages 中两行重复的 `[[11_torch_compile_npugraphs_deep_dive]]` 为一行(见下 C.1)。
+- `aclgraph_deep_analysis.md`：净增 63 行(569→632)，新增 §1.5「mode 参数与两条路径的触发关系」(并入「一、路径概述」)与 §4.4「与 backend="npugraphs" 路径(路径 B)的对比」(并入「四、这条路径为什么会存在」)，均为小节融入而非尾部堆贴；同步合并 Related Pages 中两行重复的 `[[11_torch_compile_npugraphs_deepdive]]` 为一行(见下 C.1)。
 
 **C. 三项遗留小修正**(上一任务质量审查发现)：
-1. `aclgraph_deep_analysis.md` Related Pages 两行 `[[11_torch_compile_npugraphs_deep_dive]]` 合并为一行，注释合并为"NPU Graphs 与 torch.compile 集成深度分析；§3.4-3.8 内存管理与复用；reduce_overhead vs npugraphs 对比"。
+1. `aclgraph_deep_analysis.md` Related Pages 两行 `[[11_torch_compile_npugraphs_deepdive]]` 合并为一行，注释合并为"NPU Graphs 与 torch.compile 集成深度分析；§3.4-3.8 内存管理与复用；reduce_overhead vs npugraphs 对比"。
 2. `torch_compile_npugraphs_deep_dive.md` §3.6 加一句区分 checkpoint 恢复三步机制与分类表 dead 行 `_npu_npuCachingAllocator_raw_delete` 为两层释放，不引入新机制断言。
 3. 本 changelog 上条(P3 Task 4)追记回补后终值 2809 行(非 2714)与 §3.8 自纠记录(即上方"追记"段)。
 
@@ -1354,13 +1354,13 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Source Audit（代码）+ Deep Dive + Cross-Document Correction（把 K3 随发布开放的仓库从“报告项目级说法”推进到源码级，并把散落各页的稳定性机制横切成一页。）
 
-- **新增 [[01_theory/01_models/moonshot_kimi/moonep_analysis]]**：固定 `MoonshotAI/MoonEP@0f385f03`（2026-07-28，MIT）做 file:line 级审计。拆出在线规划的五步算法（全局直方图 → `balance` 守恒 → 贪心配额 → 逐专家分配 → 精确落点 + dedup），并从算法本身推出 README 只给结论的那条约束——贪心“一次填满最空接收方”⇒ 每 rank 至多从一个远端 home group 接收 ⇒ 训练时 `B=E/R` 足够。记录工程形态（几乎全部 kernel 用 CUTLASS Python DSL 写，C++ 仅 60 行 pybind + VMM/IPC/multicast；planner 是单个 cooperative kernel，计划全程不下 GPU）、梯度回收闭环、以及源码注释里写明的被否决方案（远端写清零 vs 本地清零的 NVLink 预算权衡，`grad_reduce.py:24-30`）。
-- **新增 [[01_theory/01_models/moonshot_kimi/kimi_k3_open_source_stack_analysis]]**：按 GitHub API 逐仓核对 `created_at`/`pushed_at`，把仓库分成三类（生产栈组件 / K3 自己写的作品 / 评测配套）。**更正一条流传口径**：FlashKDA 建于 2026-04-20、最新 commit `d2ff19a`（2026-05-26），**并非随 K3 新开源、也未为 K3 更新**；真正落在发布窗口的新仓是 MoonEP、AgentENV、minitriton、nano-kpu、PerceptionBench。补齐 AgentENV 的 overlaybd 与 memory ballooning（报告未提）、minitriton 与 nano-kpu 的免责声明与“综合估算而非 P&R”口径。
-- **新增 [[01_theory/01_models/moonshot_kimi/kimi_k3_stability_analysis]]**：按“哪条轴会失稳”重组报告 §2.2/§2.3/§2.4/§2.5/§3.2/§3.3/§3.4/§4.1.2/§4.1.4 与 Appendix C，得出主线——**K3 拒绝的每个替代方案都是“用质量或超参换稳定”，被采纳的机制几乎都同时提升质量或降低开销**（aux loss、sign 更新、BIP、hard clamp、无界 SwiGLU、SigLIP 初始化、WSD 七处取舍指向同一方向）。
-- **修正 [[01_theory/01_models/moonshot_kimi/kimi_k3_infra_deepdive]] §2.1**：原记“Per-Head Muon 如何与 K2 MuonClip 组合仍未知”过窄；报告 §3.3（p.11）明写三者并用（Per-Head Muon + K2 weight-clipping + QB），并给出 cosine + 1% warmup、weight decay 0.1、8k→64k 预训练。“未知”收窄到联合消融与 clip 阈值。§5 事实边界表的 MoonEP 行标为已兑现、AgentENV 行补仓库口径。
-- **补齐 [[01_theory/01_models/moonshot_kimi/kimi_k3_architecture_deepdive]] 两处缺失的“为什么”**：MoonViT-V2 从零训练的**首要动机是训练稳定性**（SigLIP 初始化的 MoonViT-3D 梯度范数持续偏高且频繁 spike，Fig. 6），且视觉质量持平；Block AttnRes 在 K3 的精确配置为 8 块 × 12 层、计入 embedding 共 9 块，开销从 `O(Ld)` 降到 `O(Nd)`。
-- **`D12`（`03_posttraining/12_kimi_k3_posttraining_case_study_analysis`，历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[kimi_k3_posttraining_case_study_analysis]]，按"历史不回写"惯例降级为反引号）新增 §9.1**：AgentENV 仓库侧口径，并标注与报告延迟数字（133/49 ms vs `<100`/`<50 ms`）的口径差异，证据等级升至“可下载实现 + README 自报”，未升 P2/P3。
-- **补写 [[01_theory/01_models/moonshot_kimi/kimi_k3_architecture_deepdive]] §六 SiTU（2026-07-28 追加）**：把原来 5 行的条目扩成完整一节，并新增自绘四联图 `assets/kimi_k3_fig_situ_range.png/.svg`（按报告 §2.3.2 与 Appendix B 公式数值绘制，非复制 Fig. 4）。补出报告 Appendix B 的设计目标原文（bound the SwiGLU product **without discarding the characteristic shape of Swish**——保住原点近线性与消失负尾）、只 cap 线性因子而保留 sigmoid 的理由、Eq. 18 的一阶等价与 Eq. 19 的界，以及 hard clamp 被否决的原因（饱和边界外梯度归零）。**值域主结果**：预激活不变；门支 `(−0.2785,+∞) → (−0.2698, 4)`（下确界只动 3%，cap 实际只作用于正半轴）；up 支 `ℝ → ±25`；输出 `ℝ → (−100,100)`。另加三条本库推算：四角点显示 ±100 两端都由门支饱和到 4 驱动、门支负半轴对输出量级贡献上限仅 6.74；cap 保留线性值的比例只依赖 `z/β`（0.25β→98.0%、1β→76.2%、2β→48.2%），据此说明 `β₁=4` vs `β₂=25` 意味着门被管得比 up 严约 6 倍（取值理由报告未给，标 [推断]）。
+- **新增 [[01_theory/01_models/moonshot_kimi/27_moonep_analysis]]**：固定 `MoonshotAI/MoonEP@0f385f03`（2026-07-28，MIT）做 file:line 级审计。拆出在线规划的五步算法（全局直方图 → `balance` 守恒 → 贪心配额 → 逐专家分配 → 精确落点 + dedup），并从算法本身推出 README 只给结论的那条约束——贪心“一次填满最空接收方”⇒ 每 rank 至多从一个远端 home group 接收 ⇒ 训练时 `B=E/R` 足够。记录工程形态（几乎全部 kernel 用 CUTLASS Python DSL 写，C++ 仅 60 行 pybind + VMM/IPC/multicast；planner 是单个 cooperative kernel，计划全程不下 GPU）、梯度回收闭环、以及源码注释里写明的被否决方案（远端写清零 vs 本地清零的 NVLink 预算权衡，`grad_reduce.py:24-30`）。
+- **新增 [[01_theory/01_models/moonshot_kimi/26_kimi_k3_open_source_stack_analysis]]**：按 GitHub API 逐仓核对 `created_at`/`pushed_at`，把仓库分成三类（生产栈组件 / K3 自己写的作品 / 评测配套）。**更正一条流传口径**：FlashKDA 建于 2026-04-20、最新 commit `d2ff19a`（2026-05-26），**并非随 K3 新开源、也未为 K3 更新**；真正落在发布窗口的新仓是 MoonEP、AgentENV、minitriton、nano-kpu、PerceptionBench。补齐 AgentENV 的 overlaybd 与 memory ballooning（报告未提）、minitriton 与 nano-kpu 的免责声明与“综合估算而非 P&R”口径。
+- **新增 [[01_theory/01_models/moonshot_kimi/25_kimi_k3_stability_analysis]]**：按“哪条轴会失稳”重组报告 §2.2/§2.3/§2.4/§2.5/§3.2/§3.3/§3.4/§4.1.2/§4.1.4 与 Appendix C，得出主线——**K3 拒绝的每个替代方案都是“用质量或超参换稳定”，被采纳的机制几乎都同时提升质量或降低开销**（aux loss、sign 更新、BIP、hard clamp、无界 SwiGLU、SigLIP 初始化、WSD 七处取舍指向同一方向）。
+- **修正 [[01_theory/01_models/moonshot_kimi/23_kimi_k3_infra_deepdive]] §2.1**：原记“Per-Head Muon 如何与 K2 MuonClip 组合仍未知”过窄；报告 §3.3（p.11）明写三者并用（Per-Head Muon + K2 weight-clipping + QB），并给出 cosine + 1% warmup、weight decay 0.1、8k→64k 预训练。“未知”收窄到联合消融与 clip 阈值。§5 事实边界表的 MoonEP 行标为已兑现、AgentENV 行补仓库口径。
+- **补齐 [[01_theory/01_models/moonshot_kimi/22_kimi_k3_architecture_deepdive]] 两处缺失的“为什么”**：MoonViT-V2 从零训练的**首要动机是训练稳定性**（SigLIP 初始化的 MoonViT-3D 梯度范数持续偏高且频繁 spike，Fig. 6），且视觉质量持平；Block AttnRes 在 K3 的精确配置为 8 块 × 12 层、计入 embedding 共 9 块，开销从 `O(Ld)` 降到 `O(Nd)`。
+- **`D12`（`03_posttraining/12_kimi_k3_posttraining_case_study_analysis`，历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[24_kimi_k3_posttraining_case_study_analysis]]，按"历史不回写"惯例降级为反引号）新增 §9.1**：AgentENV 仓库侧口径，并标注与报告延迟数字（133/49 ms vs `<100`/`<50 ms`）的口径差异，证据等级升至“可下载实现 + README 自报”，未升 P2/P3。
+- **补写 [[01_theory/01_models/moonshot_kimi/22_kimi_k3_architecture_deepdive]] §六 SiTU（2026-07-28 追加）**：把原来 5 行的条目扩成完整一节，并新增自绘四联图 `assets/kimi_k3_fig_situ_range.png/.svg`（按报告 §2.3.2 与 Appendix B 公式数值绘制，非复制 Fig. 4）。补出报告 Appendix B 的设计目标原文（bound the SwiGLU product **without discarding the characteristic shape of Swish**——保住原点近线性与消失负尾）、只 cap 线性因子而保留 sigmoid 的理由、Eq. 18 的一阶等价与 Eq. 19 的界，以及 hard clamp 被否决的原因（饱和边界外梯度归零）。**值域主结果**：预激活不变；门支 `(−0.2785,+∞) → (−0.2698, 4)`（下确界只动 3%，cap 实际只作用于正半轴）；up 支 `ℝ → ±25`；输出 `ℝ → (−100,100)`。另加三条本库推算：四角点显示 ±100 两端都由门支饱和到 4 驱动、门支负半轴对输出量级贡献上限仅 6.74；cap 保留线性值的比例只依赖 `z/β`（0.25β→98.0%、1β→76.2%、2β→48.2%），据此说明 `β₁=4` vs `β₂=25` 意味着门被管得比 up 严约 6 倍（取值理由报告未给，标 [推断]）。
 - **证据边界（显眼的缺席）**：K2 有“15.5T tokens 零 loss spike”，**K3 报告没有等价陈述**——无训练 loss 曲线、无 spike 计数、无容错章节；全文唯一 spike 级实测证据是 Fig. 6 的 MoonViT 梯度范数对比。因此“K3 稳定性机制更系统”可说，“K3 训练更稳定”不可说。
 
 ---
@@ -1370,7 +1370,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **Type**: Source Ingest + Industrial Case Study + Cross-Document Correction（固定官方报告 `0797decb`，将算法、trajectory、environment、Infra 与部署精度放回同一个 `wiki/03_posttraining/` 闭环。）
 
 - **原始来源**：新增 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`，SHA-256 `fd6ee35c07766a5eb6104235f1b407e4329f969e3482b8c42937c7b5f2b3efe1`；来源台账补 §4.1、§4.2、§5.3 与 Appendix F 的精确定位。
-- **新增 D12 `03_posttraining/12_kimi_k3_posttraining_case_study_analysis`**（历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[kimi_k3_posttraining_case_study_analysis]]，按"历史不回写"惯例降级为反引号）：串起 SFT → 九个 domain/effort 专家 → MOPD，澄清 partial rollout 保留 prompt 内 \(K\) group，并分析 white-box environment、XTML preserved thinking、MXFP4/MXFP8 QAT、draft model、external KV pool 与 AgentENV。
+- **新增 D12 `03_posttraining/12_kimi_k3_posttraining_case_study_analysis`**（历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[24_kimi_k3_posttraining_case_study_analysis]]，按"历史不回写"惯例降级为反引号）：串起 SFT → 九个 domain/effort 专家 → MOPD，澄清 partial rollout 保留 prompt 内 \(K\) group，并分析 white-box environment、XTML preserved thinking、MXFP4/MXFP8 QAT、draft model、external KV pool 与 AgentENV。
 - **回填统一主线**：更新 D00–D05 与 D11；把 K3 作为项目级工业案例，而不是没有训练源码证据的“第五个开源框架”；D00 与领域/全局索引扩展为 D00–D12 连续编号。
 - **修正事实边界**：量化 scheme 一致只消除该维度 TIM；K3 partial rollout 不是 fully async；Figure 8、MOPD、GRM、external KV 与 AgentENV 均保留未披露超参数、消融或运行条件。
 - **K3 旧页同步**：总览、架构、Infra 与 Moonshot 索引从“报告/权重待发布”更新为 2026-07-28 固定报告，并把后训练机制统一链接到 D12。
@@ -1555,15 +1555,15 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Deep Dive（承接用户连续追问：QKVABZ、$a/b/z$ 设计、RNN 中的 $t$、chunk size 与 $t$ 的关系、chunk 数学等价性、仿射状态是否必须保序，以及当前训练/Prefill/Decode kernel 融合。）
 
-- **新增 [[gdn_kda_linear_attention_analysis]]**：从 $x_t\rightarrow q,k,v,a,b,z$ 开始，逐步解释 raw $a\rightarrow g=\log\alpha$、$b\rightarrow\beta$、$z$ 输出门的职责分离；给出 GDN 标量 decay 与 KDA 逐通道 decay 的五步递推、统一仿射式 $S_t=A_tS_{t-1}+B_t$、$C=3$ 展开，以及 chunk 摘要 $(P,R)$ 的保序结合复合。明确纠正“chunk 状态矩阵直接相乘”和“有结合律即可乱序”两个误解。
-- **新增 [[gdn_kda_kernel_implementation_analysis]]**：训练侧固定 FLA `ccb0ff944cbf`，拆解 autograd chunk forward/backward、gate+cumsum、KKT+solve-tril+W/U、状态 scan、输出和反向重算；推理侧固定 SGLang `7824903417b7`，拆解 QKVABZ 投影融合、Prefill $C=64$ chunk pipeline、Decode fused recurrent 五步、GDN packed-decode 与 speculative verify。明确 SGLang 是推理基线，不用其 forward-only 代码冒充训练反向。
-- **原始来源与联动**：新增 raw 快照 `Gated_Delta_Networks-2412.06464v3.pdf`；修正 [[kimi_linear_analysis]] KDA 公式中 $S_{-1}$ 的下标笔误为 $S_{t-1}$；更新 Moonshot/Kimi 与模型总索引，并为 [[kimi_k3_architecture_deepdive]] 补充双向入口。
-- **后续补充：TND/THD packed 输入**：[[gdn_kda_kernel_implementation_analysis]] 新增 §八，明确 TND/THD 的 $T=\sum_iL_i$、外层 batch=1 与 `cu_seqlens` 状态边界；逐段追踪 Megatron-LM `dev@232c478d43ce` 的 `T×1×D → per-sequence CP→HP → 1×T×N×d → boundary-aware short conv/chunk GDN → per-sequence HP→CP`，并解释为何每条 packed 序列必须独立重置 RNN 状态、chunk 不能跨 pack 边界，以及当前 batch、CP 对齐、FLA 与 inference 限制。
+- **新增 [[20_gdn_kda_linear_attention_analysis]]**：从 $x_t\rightarrow q,k,v,a,b,z$ 开始，逐步解释 raw $a\rightarrow g=\log\alpha$、$b\rightarrow\beta$、$z$ 输出门的职责分离；给出 GDN 标量 decay 与 KDA 逐通道 decay 的五步递推、统一仿射式 $S_t=A_tS_{t-1}+B_t$、$C=3$ 展开，以及 chunk 摘要 $(P,R)$ 的保序结合复合。明确纠正“chunk 状态矩阵直接相乘”和“有结合律即可乱序”两个误解。
+- **新增 [[21_gdn_kda_kernel_implementation_analysis]]**：训练侧固定 FLA `ccb0ff944cbf`，拆解 autograd chunk forward/backward、gate+cumsum、KKT+solve-tril+W/U、状态 scan、输出和反向重算；推理侧固定 SGLang `7824903417b7`，拆解 QKVABZ 投影融合、Prefill $C=64$ chunk pipeline、Decode fused recurrent 五步、GDN packed-decode 与 speculative verify。明确 SGLang 是推理基线，不用其 forward-only 代码冒充训练反向。
+- **原始来源与联动**：新增 raw 快照 `Gated_Delta_Networks-2412.06464v3.pdf`；修正 [[12_kimi_linear_analysis]] KDA 公式中 $S_{-1}$ 的下标笔误为 $S_{t-1}$；更新 Moonshot/Kimi 与模型总索引，并为 [[22_kimi_k3_architecture_deepdive]] 补充双向入口。
+- **后续补充：TND/THD packed 输入**：[[21_gdn_kda_kernel_implementation_analysis]] 新增 §八，明确 TND/THD 的 $T=\sum_iL_i$、外层 batch=1 与 `cu_seqlens` 状态边界；逐段追踪 Megatron-LM `dev@232c478d43ce` 的 `T×1×D → per-sequence CP→HP → 1×T×N×d → boundary-aware short conv/chunk GDN → per-sequence HP→CP`，并解释为何每条 packed 序列必须独立重置 RNN 状态、chunk 不能跨 pack 边界，以及当前 batch、CP 对齐、FLA 与 inference 限制。
 - **TND 代码级追踪**：同页 §8.6 补充最小等价伪代码，并把边界隔离落实到三层实现：Megatron `_unpack_sequence` 与逐序列 CP↔HP、FLA causal-conv 的 `bos/eos + boundary_check`、GDN Triton state kernel 的 `N×head` program grid 与每序列独立 chunk-state 槽。
 
 ---
 
-## 2026-07-17(三次更新): [[kimi_k3_infra_deepdive]] 新增 §四「负载建模」—— 逐模块 roofline 记账与 bound 判定
+## 2026-07-17(三次更新): [[23_kimi_k3_infra_deepdive]] 新增 §四「负载建模」—— 逐模块 roofline 记账与 bound 判定
 
 **Type**: Update(应用户「探讨引入 KDA 后各部分的负载瓶颈与 bound;训练侧按 8K→64K→256K→1M 逐模块计算说明;不压缩合并入库」)
 
@@ -1578,8 +1578,8 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Update(应用户「吸收 gdn-qkvabz-dataflow.svg 并详细解释;总体结构图直接复用原报告的,不要自绘」)
 
-- **[[kimi_k3_architecture_deepdive]] 新增 §2.3「单 token 数据流:q/k/v/a/b/z 六路信号如何各司其职」**:融合投影切六路信号的分工表、状态更新五步拆解("误差修正"读法,并给出与 §2.2 闭式公式的代数等价展开)、GDN→KDA 需改的三处(每 head 标量门→Diag 逐通道门、投影/卷积布局、输出门定位),源码定位补齐(`fla/ops/gated_delta_rule/naive.py:31,54` vs `fla/ops/kda/naive.py:30-31` 等);原 §2.3/2.4 顺延为 §2.4/2.5。图源 `assets/kimi_k3_fig_gdn_qkvabz_dataflow.{svg,png}`(图内标注实现基线 SGLang main@78249034,以图注为准)。
-- **官方架构图原图可渲染了**:从博客 CSS bundle(`78620784116c2822.css`)抽出全部 89 条 `BlockAttnRes-module` 规则,与官方内嵌 SVG 拼装成自包含 wrapper `assets/kimi_k3_official_arch_render.html`,按暗色主题 2× 渲染为 `assets/kimi_k3_official_arch.png`;[[kimi_k3_analysis]] 的总体结构图改用该官方原图,自绘重绘版 `kimi_k3_arch_redrawn.{svg,png}` 删除。原图证实:每个子层是常规残差 (+) 与 AttnRes (w,α) 取回并存,最终 Output 前还有一次 (w,α) 聚合;MoE/KDA 放大面板中的低秩梯形投影清晰可见。
+- **[[22_kimi_k3_architecture_deepdive]] 新增 §2.3「单 token 数据流:q/k/v/a/b/z 六路信号如何各司其职」**:融合投影切六路信号的分工表、状态更新五步拆解("误差修正"读法,并给出与 §2.2 闭式公式的代数等价展开)、GDN→KDA 需改的三处(每 head 标量门→Diag 逐通道门、投影/卷积布局、输出门定位),源码定位补齐(`fla/ops/gated_delta_rule/naive.py:31,54` vs `fla/ops/kda/naive.py:30-31` 等);原 §2.3/2.4 顺延为 §2.4/2.5。图源 `assets/kimi_k3_fig_gdn_qkvabz_dataflow.{svg,png}`(图内标注实现基线 SGLang main@78249034,以图注为准)。
+- **官方架构图原图可渲染了**:从博客 CSS bundle(`78620784116c2822.css`)抽出全部 89 条 `BlockAttnRes-module` 规则,与官方内嵌 SVG 拼装成自包含 wrapper `assets/kimi_k3_official_arch_render.html`,按暗色主题 2× 渲染为 `assets/kimi_k3_official_arch.png`;[[14_kimi_k3_analysis]] 的总体结构图改用该官方原图,自绘重绘版 `kimi_k3_arch_redrawn.{svg,png}` 删除。原图证实:每个子层是常规残差 (+) 与 AttnRes (w,α) 取回并存,最终 Output 前还有一次 (w,α) 聚合;MoE/KDA 放大面板中的低秩梯形投影清晰可见。
 
 ---
 
@@ -1587,12 +1587,12 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Ingest(应用户「kimi3 发布了,总结模型报告 + 结合开源源码分析结构变化点与训推 infra」。**关键事实：K3 权重承诺于 2026-07-27 前发布，完整技术报告尚无明确发布日期**——当前“报告”实体 = 官方发布博客，已快照落 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.{txt,html}`；结构机制的源码证据来自官方声明 K3 所基于的组件仓库，均已实际克隆/打开核验)
 
-- **新页**:[[kimi_k3_analysis]](发布总结:2.8T/896选16/1M 上下文,33 项基准全表与口径脚注,官方自报"位列 Fable 5 与 GPT 5.6 Sol 之后",preserved thinking history 等限制)、[[kimi_k3_architecture_deepdive]](六大变化点各按动机→机制→证据→为何不选替代:KDA 3:1 混合、Gated MLA+NoPE、AttnRes、Stable LatentMoE+Quantile Balancing、SiTU、2.8T/1M/视频)、[[kimi_k3_infra_deepdive]](Per-Head Muon、静态 shape 全平衡 EP、INT4→MXFP4/MXFP8 QAT 演进、Mooncake >90% 命中、KDA prefix caching 进 vLLM 的 PR 链 #27654/#42406、FlashKDA CUTLASS kernel、64+ 卡超节点账)。
+- **新页**:[[14_kimi_k3_analysis]](发布总结:2.8T/896选16/1M 上下文,33 项基准全表与口径脚注,官方自报"位列 Fable 5 与 GPT 5.6 Sol 之后",preserved thinking history 等限制)、[[22_kimi_k3_architecture_deepdive]](六大变化点各按动机→机制→证据→为何不选替代:KDA 3:1 混合、Gated MLA+NoPE、AttnRes、Stable LatentMoE+Quantile Balancing、SiTU、2.8T/1M/视频)、[[23_kimi_k3_infra_deepdive]](Per-Head Muon、静态 shape 全平衡 EP、INT4→MXFP4/MXFP8 QAT 演进、Mooncake >90% 命中、KDA prefix caching 进 vLLM 的 PR 链 #27654/#42406、FlashKDA CUTLASS kernel、64+ 卡超节点账)。
 - **可读性修订**：结合 K3 官方 Tech Blog（当前公开“报告”）重写三页的主线与长段落，明确区分官方事实、组件证据和推断；将 KDA、AttnRes、Per-Head Muon、MXFP4 容量与 Mooncake 成本公式改为独立公式块并补齐符号说明；价格统一写作 `USD/MTok`，避免美元符号与 Markdown LaTeX 定界符冲突。同时订正发布时间口径：7 月 27 日是权重发布期限，不是技术报告的官方承诺日期。
 - **源码核验基线**:Kimi-Linear @`8c1d85e` + HF 48B config/modeling @`e1df551a` + fla @`b328e7c`(KDA 公式↔`fla/ops/kda/naive.py:59-63` 逐行对照;27 层实际 20 KDA:7 MLA;MLA `assert use_nope`);Attention-Residuals @`85e2231`(仓库仅 README+论文,伪代码 README.md:52-91;arXiv 2603.15031v1 全套消融);FlashKDA @`d2ff19a`(CHUNK=16 双 kernel,H20 1.85–2.31×)。
 - **图**:9 张入 `moonshot_kimi/assets/`——官方基准图 2 张(PNG 原件)+ 官方内嵌架构 SVG 原件(aria-label 即 "Block Attention Residuals architecture diagram")+ 按官方风格重绘架构主图 + KDA/AttnRes/LatentMoE/KDA-prefix-cache/Mooncake/MXFP4-QAT 自绘深色 SVG(均 2× 渲染 PNG,已逐张目检)。
-- **索引联动**:[[moonshot_kimi/index]] 家族表/时间线/论文索引增 K3 与 AttnRes 行,知识缺口标注 AttnRes 已覆盖;[[01_theory/01_models/index]] Kimi 段增 4 行(含补录 kimi_linear_analysis);[[kimi_linear_analysis]]/[[kimi_k2.5_analysis]]/[[kimi_k2_analysis]] 增后继回链。
-- **待回填**：激活参数、层数、SiTU/Quantile Balancing/Per-Head Muon 精确定义与训练规模；三页中所有 `[推断]` 项须在完整技术报告发布后核对（报告日期未定，缺口清单见 [[kimi_k3_infra_deepdive]] §4）。
+- **索引联动**:[[moonshot_kimi/index]] 家族表/时间线/论文索引增 K3 与 AttnRes 行,知识缺口标注 AttnRes 已覆盖;[[01_theory/01_models/index]] Kimi 段增 4 行(含补录 12_kimi_linear_analysis);[[12_kimi_linear_analysis]]/[[13_kimi_k2_5_analysis]]/[[11_kimi_k2_analysis]] 增后继回链。
+- **待回填**：激活参数、层数、SiTU/Quantile Balancing/Per-Head Muon 精确定义与训练规模；三页中所有 `[推断]` 项须在完整技术报告发布后核对（报告日期未定，缺口清单见 [[23_kimi_k3_infra_deepdive]] §4）。
 
 ---
 
@@ -1621,7 +1621,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   3. **SConv**(核 4)+ **encoder-free 四模态**(vision hMLP patchify 40×40 / audio 离散 dMel 16 级)+ **8 层 MTP**(vs DeepSeek/Hy3 的 1)。
   4. 路由沿用 sigmoid 免辅助损失,但 `route_scale=8.0` 异常大;Muon+Adam 混合训练 + muP。
 - **影响力判断**(§五,已与事实分离): 前 OpenAI CTO 首发即开源(Apache 2.0)的象征意义;Tinker 微调变现的商业模式创新;抗审查/校准的差异化卡位;encoder-free 在视觉基准上已见代价(MMMU Pro 落后)。
-- **联动反链**: [[hy3_analysis]](保守 vs 差异化对照)、[[deepseek_v3_analysis]](选择性继承)、[[kimi_k2.5_analysis]](多模态路线对照 + K2.5 合成数据冷启动)、[[hw_friendly_llm_codesign_analysis]](NVFP4 部署)。
+- **联动反链**: [[hy3_analysis]](保守 vs 差异化对照)、[[12_deepseek_v3_analysis]](选择性继承)、[[13_kimi_k2_5_analysis]](多模态路线对照 + K2.5 合成数据冷启动)、[[hw_friendly_llm_codesign_analysis]](NVFP4 部署)。
 - **校验**: config 行号逐一对 raw/ 核对;基准表从 HF 模型卡原表摘录(非二手);mermaid 结构图按库规范自查(首行 flowchart TB、英文 id、subgraph 标题无 `[]|`、标签无裸定界符)通过;无技术报告故"为什么"部分推断已显式标注。页 <300 行。
 
 ---
@@ -1665,7 +1665,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **Type**: Ingest(应用户「增加最新的 Hy3 technical report」。**关键事实: 截至 2026-07-14 Hy3 无 arXiv 正式论文**——arXiv API 与 HF papers 索引均核验无果;"technical report" 实体 = 模型卡 + 开源工件 + 官方博客/新闻稿,已全部落入 `raw/01_theory/01_models/tencent_hunyuan/`)
 
 - **新源文件(raw/)**: GitHub README EN/CN(@ `8a12d9af87c6`, 2026-07-06)、`config.json`(HF `tencent/Hy3`)、`chat_template.jinja`、transformers `modeling_hy_v3.py`(@ `295cee3e1d00`)、官方榜图 benchmark.png / benchmark-appendix.png(约 40 基准 × 11 模型全量矩阵)。
-- **新页**: [[hy3_analysis]](主线: 架构冻结、全靠后训练的性价比 Agent 模型)+ [[tencent_hunyuan/index]];[[01_theory/01_models/index]] 增 Hunyuan 段;[[deepseek_v3_analysis]] Related 区加反向链接。
+- **新页**: [[hy3_analysis]](主线: 架构冻结、全靠后训练的性价比 Agent 模型)+ [[tencent_hunyuan/index]];[[01_theory/01_models/index]] 增 Hunyuan 段;[[12_deepseek_v3_analysis]] Related 区加反向链接。
 - **本库独立核验的三个关键发现**:
   1. **preview 与正式版 `config.json` 逐字段完全一致**(实测 diff)——三个月提升纯来自后训练,榜单增量(DeepSWE 0.9→28.0、USAMO 37.3→72.0 等)构成一组罕见的"纯后训练 ablation"。
   2. **路由 = DeepSeek-V3 免辅助损失配方原样采用**(sigmoid L310 + 选择期偏置 L312-313 + 原始分加权),非标处仅 `router_scaling_factor: 2.826`;注意力为 GQA+QK-Norm(保守派,未用 MLA)。
@@ -1811,7 +1811,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - **效果**：全评测表（LongCat-2.0 vs Gemini 3.1 Pro / GPT-5.5 / Claude Opus 4.6/4.7/4.8）——**SWE-bench Pro 59.5 > GPT-5.5 58.6**、Terminal-Bench 2.1 70.8、GPQA-diamond 88.9；整体落后 Claude Opus 4.8。
   - **§9 源忠实修正**：[!contradiction] 二手报道称「动态激活 33–56B / zero-compute experts」——博客只提训练期 padding→zero-expert（省显存），激活即 ~48B，疑似把 LongCat-Flash 机制张冠李戴；[!contradiction] 训练算力 README「加速器·小时」vs 博客渲染「天」24× 分歧，FLOPs 粗算支持「小时」。
 
-**整合**：[[01_theory/01_models/index]] 新增「LongCat / Meituan」家族区；[[index]]（总索引）模型行 28→30、加「LongCat (美团)」子行与「按主题查找」条目、更新日期至 2026-07-02；两新页与 [[glm_5_analysis]]/[[deepseek_v3_analysis]]/[[deepseek_v4_analysis]]/[[kimi_k2_analysis]]/[[muon_analysis]]/[[expert_parallel_analysis]] 等互链。**校验**：全用 ASIC——图表用 **ASCII**（与 GLM-5/Kimi 同系列风格，零 mermaid 定界符风险）；跨链目标经 grep 核对；因源为渲染提取，数值保真度与未披露项已在页头/§9 显式声明，不臆造未披露量。
+**整合**：[[01_theory/01_models/index]] 新增「LongCat / Meituan」家族区；[[index]]（总索引）模型行 28→30、加「LongCat (美团)」子行与「按主题查找」条目、更新日期至 2026-07-02；两新页与 [[01_glm_5_analysis]]/[[12_deepseek_v3_analysis]]/[[13_deepseek_v4_analysis]]/[[11_kimi_k2_analysis]]/[[muon_analysis]]/[[expert_parallel_analysis]] 等互链。**校验**：全用 ASIC——图表用 **ASCII**（与 GLM-5/Kimi 同系列风格，零 mermaid 定界符风险）；跨链目标经 grep 核对；因源为渲染提取，数值保真度与未披露项已在页头/§9 显式声明，不臆造未披露量。
 
 ---
 
@@ -1891,7 +1891,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Ingest（应用户"分析 dspark 论文原理 + 结合开源 dspark 仓 + 总览投机推理演进 mtp/dflash/dspark 区别，归纳入库"。源忠实 + 抓本质）
 
-> [!correction] **arXiv 编号订正（源 > 转述）**：用户给的 **arXiv:2606.19348 经核对是 DeepSeek-V4 模型论文**（本库已审计，见 [[deepseek_v4_audit_report]]），**不是 DSpark**。DSpark 是挂在 V4 checkpoint 上的投机解码草稿模块，其论文以 `DSpark_paper.pdf` 随开源仓 **`github.com/deepseek-ai/DeepSpec`** 发布（标题 *DSpark: Confidence-Scheduled Speculative Decoding with Semi-Autoregressive Generation*，Cheng et al., 北大+DeepSeek-AI）。HF 模型卡 `DeepSeek-V4-Pro-DSpark` 引用 2606.19348 指的是**底座模型**。
+> [!correction] **arXiv 编号订正（源 > 转述）**：用户给的 **arXiv:2606.19348 经核对是 DeepSeek-V4 模型论文**（本库已审计，见 [[30_deepseek_v4_audit_analysis]]），**不是 DSpark**。DSpark 是挂在 V4 checkpoint 上的投机解码草稿模块，其论文以 `DSpark_paper.pdf` 随开源仓 **`github.com/deepseek-ai/DeepSpec`** 发布（标题 *DSpark: Confidence-Scheduled Speculative Decoding with Semi-Autoregressive Generation*，Cheng et al., 北大+DeepSeek-AI）。HF 模型卡 `DeepSeek-V4-Pro-DSpark` 引用 2606.19348 指的是**底座模型**。
 
 **源（source-faithful）**：克隆 `DeepSpec` @ `dd854392`（main, 2026-06-28）到 `E:\97-codes\torch_parallel\DeepSpec`，PDF 抽成页码标记文本逐页核对；论文公式与代码 `file:line` 双向交叉核对（Eq.5 ↔ `markov_head.py:8`、Eq.7 ↔ `modeling.py:268/293`、Eq.8 ↔ `loss.py:69`、Eq.2-3 ↔ `modeling.py:241/104-113`）。
 
@@ -1900,7 +1900,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - [[dspark_analysis]]（论文深挖，exemplar）：两大部件——**半自回归生成**（并行 DFlash 骨干 + Markov/RNN 串行头，Eq.4-6；接受长度相对 Eagle3 +30.9%、DFlash +16.3%）+ **置信度调度验证**（置信头 Eq.7-8 + STS 校准 + 硬件感知前缀调度器 Alg.1，按 SPS 负载曲线全局贪心、早停保无偏）。生产相对 MTP-1 提速 60%–85%（V4-Flash）/57%–78%（V4-Pro）。
   - [[deepspec_codebase_analysis]]（源码级）：一套 `Qwen3DSparkTrainer` 同产三草稿模型——**DFlash = DSpark 关掉串行/置信头的消融**（`config/dflash/*:18-26`，无独立 modeling）；训练前向链、三项损失 ↔ Eq.9-12、推理拒绝采样路径。**关键边界**：开源仓只到「置信头 + 静态阈值裁剪 + bsz=1」，Algorithm 1 多请求调度器/异步 ZOS/变长内核是生产专属。
 
-**整合**：[[03_infer_frameworks/index]] 新增"投机推理"子目录；[[vllm_speculative_decoding_analysis]]（已含 dflash/mtp proposer）加 [[dspark_analysis]] 回链；[[deepseek_v3_analysis]]（MTP 起源）、[[deepseek_v4_analysis]]（底座模型）各加回链。**校验**：三页所有 `file:line` 已逐一开文件核对；交叉链接经 grep 确认目标存在。
+**整合**：[[03_infer_frameworks/index]] 新增"投机推理"子目录；[[vllm_speculative_decoding_analysis]]（已含 dflash/mtp proposer）加 [[dspark_analysis]] 回链；[[12_deepseek_v3_analysis]]（MTP 起源）、[[13_deepseek_v4_analysis]]（底座模型）各加回链。**校验**：三页所有 `file:line` 已逐一开文件核对；交叉链接经 grep 确认目标存在。
 
 ---
 
@@ -1974,12 +1974,12 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Reorg + Audit（应用户"把 02_train 下重复的 deepseek-v4 内容合并/挪过来,模型分析放一起,重复删除、不重复挪,并审核内容"）
 
-**核查结论(先判定再动)**：`02_train_frameworks/` 下两篇 V4 页面经核查**不是重复**——它们是**真实的 Megatron-LM 源码级框架分析**（每节带 `megatron/core/...py:line`，与本地 `../Megatron-LM` 源码核对通过），与论文级模型页 [[deepseek_v4_cp_analysis]] **角度互补**（论文*算法* ↔ 框架*实现*）；TP 页在模型侧无对应。故**无可删的真重复**；缺的是两侧**互相没有交叉链接**。按 wiki「理论/工程」分层 + 用户选定「留工程层 + 双向交叉链接」执行：
+**核查结论(先判定再动)**：`02_train_frameworks/` 下两篇 V4 页面经核查**不是重复**——它们是**真实的 Megatron-LM 源码级框架分析**（每节带 `megatron/core/...py:line`，与本地 `../Megatron-LM` 源码核对通过），与论文级模型页 [[23_deepseek_v4_cp_analysis]] **角度互补**（论文*算法* ↔ 框架*实现*）；TP 页在模型侧无对应。故**无可删的真重复**；缺的是两侧**互相没有交叉链接**。按 wiki「理论/工程」分层 + 用户选定「留工程层 + 双向交叉链接」执行：
 
 - **移库（`git mv` 保留历史）**：`deepseek_v4_tensor_parallel_analysis.md`、`deepseek_v4_context_parallel_analysis.md` + 7 张图 `assets/deepseek_v4_*_fig*.png` 从 `02_train_frameworks/` 移入 `02_train_frameworks/megatron-lm/`（与其余 Megatron 页同处；`assets/` 相对引用保持有效）。
 - **补基线头**：两页原**无 commit 基线**，补 `源基线: Megatron-LM dev @ 232c478d4 (2026-06-16)` + 维度(工程实现) + 与模型页分工说明。
-- **补 `## 相关页面`**：两页原**缺交叉引用节**（违反 wiki 规则），补全——双向链接模型页（[[deepseek_v4_cp_analysis]]/[[deepseek_v4_analysis]]/[[deepseek_v4_technical_deep_dive]]/[[mHC]]）+ 同目录 Megatron 页。
-- **模型页反向链接**：[[deepseek_v4_cp_analysis]] 的「相关页面」新增「框架实现」小节，指向两篇工程页（论文算法 ↔ Megatron 实现对照）。
+- **补 `## 相关页面`**：两页原**缺交叉引用节**（违反 wiki 规则），补全——双向链接模型页（[[23_deepseek_v4_cp_analysis]]/[[13_deepseek_v4_analysis]]/[[26_deepseek_v4_technical_deepdive]]/[[25_mhc_analysis]]）+ 同目录 Megatron 页。
+- **模型页反向链接**：[[23_deepseek_v4_cp_analysis]] 的「相关页面」新增「框架实现」小节，指向两篇工程页（论文算法 ↔ Megatron 实现对照）。
 - **索引**：`02_train_frameworks/index.md` 删去两条目（已移子目录）；`megatron-lm/index.md`「专题深挖」表新增两条目（带跨目录指回模型页）。
 - **内容审核（对照 `../Megatron-LM` @ 232c478d4 抽查）**：✅ `deepseek_v4_hybrid_attention.py:92` `get_pg_size(tp)==1`、`:447` `parallel_mode='duplicated'`；✅ `hyper_connection.py:193/243` mHC 用 `nn.Linear`+`sequence_parallel`（非 TP-sharded）；✅ `experts.py:346` routed-expert `tp_group.size()>1` 约束；✅ `shared_experts.py:123` 标准 TP；✅ §九 特征5「CSA+CP 两阶段压缩 KV all-gather 尚未实现」仍成立（`csa.py` 的 `cp_group` 仅用于 RoPE CP 感知，page §5.1 已记，**非**压缩 KV 通信）。结论：内容真实、源码 grounded、非臆造非重复；仅**行号随源码漂移数行**（已在页头标注）。
 
@@ -1991,24 +1991,24 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **方法**：下载正式版 PDF → 与本地预发布 `raw/.../DeepSeek_V4.pdf` 双双抽成页码标记文本 → diff + 逐项核对超参/基准/章节/机制；4 个并行只读审计 agent 锚定 `GROUND_TRUTH` 事实表逐页查证，关键臆造断言由协调者亲自 grep 正式版复核（`DualPath`=0、`Highly Compressed`=0 vs `Heavily`=7、`task_classifier`=0、`n log n`=0、`INT8`=0 vs `MXFP4`=1、`ablation`=0）。
 
-- **新增** [[deepseek_v4_audit_report]]：审计报告（核对基线 arXiv:2606.19348v1, 2026-04-26）——逐页裁决表 + 核对通过事实(超参/效率/基准全一致) + 章节号位移映射 + 论文中**不存在**的臆造清单(按出处反证)。
+- **新增** [[30_deepseek_v4_audit_analysis]]：审计报告（核对基线 arXiv:2606.19348v1, 2026-04-26）——逐页裁决表 + 核对通过事实(超参/效率/基准全一致) + 章节号位移映射 + 论文中**不存在**的臆造清单(按出处反证)。
 - **核对通过(数字全对)**：超参表(层/维/专家/压缩率)、头条效率(Pro 27%/10%、Flash 10%/7%)、Table 1 基座(MMLU-Pro 65.5/68.3/73.5)、Table 6 后训练(LiveCodeBench 93.5、MRCR 83.5)。
 - **订正(Tier-A，论文真源页面)**：
-  - [[deepseek_v4_analysis]] —— 重订基线头；FP4 标注为**后训练 §5.2.1**(两组件 FP4 + 索引分数 BF16)；正文臆造的「DualPath 推理框架」加 `> [!contradiction]` 标注；评测表「顶尖」措辞按 Table 6 校准为有基线的相对表述；「51×/2048×」标注为本页推导。
-  - [[deepseek_v4_cp_analysis]] —— **章节号位移订正**(CP §3.5.3→§3.4.3、推理框架 §3.6/§3.6.1/§3.6.2→§3.5/§3.5.1/§3.5.2、Muon §3.4.1、mHC §3.4.2，共 ~13 处)；重订基线头；footer 旧路径修正。
-  - [[deepseek_v4_fp4_qat_analysis]] —— 出处 §3.7(两版皆无)订正为 **§5.2.1**；旧路径 `raw/05_model_families/`→`raw/01_theory/01_models/`；「三个组件 FP4」订正为「2 组件 FP4 + 索引分数 BF16」；效果表 ~75%/~2× 标注为估算(论文仅明述 top-k 2×、99.7% 召回)。
-  - [[mHC]] —— 基本一致；补注消融数据源自 mHC 论文(arXiv:2512.24880v2)而非 V4。
+  - [[13_deepseek_v4_analysis]] —— 重订基线头；FP4 标注为**后训练 §5.2.1**(两组件 FP4 + 索引分数 BF16)；正文臆造的「DualPath 推理框架」加 `> [!contradiction]` 标注；评测表「顶尖」措辞按 Table 6 校准为有基线的相对表述；「51×/2048×」标注为本页推导。
+  - [[23_deepseek_v4_cp_analysis]] —— **章节号位移订正**(CP §3.5.3→§3.4.3、推理框架 §3.6/§3.6.1/§3.6.2→§3.5/§3.5.1/§3.5.2、Muon §3.4.1、mHC §3.4.2，共 ~13 处)；重订基线头；footer 旧路径修正。
+  - [[24_deepseek_v4_fp4_qat_analysis]] —— 出处 §3.7(两版皆无)订正为 **§5.2.1**；旧路径 `raw/05_model_families/`→`raw/01_theory/01_models/`；「三个组件 FP4」订正为「2 组件 FP4 + 索引分数 BF16」；效果表 ~75%/~2× 标注为估算(论文仅明述 top-k 2×、99.7% 召回)。
+  - [[25_mhc_analysis]] —— 基本一致；补注消融数据源自 mHC 论文(arXiv:2512.24880v2)而非 V4。
 - **加警示横幅，建议整页重写(Tier-B，预发布 AI 生成、无任何论文引用，确认系统性臆造)**：
-  - [[deepseek_v4_technical_deep_dive]] —— DSA=CSA+HCA 倒置、Highly/Heavily 名错、HCA 10% vs m′=128、臆造分层调度、臆造 MoE 任务路由、DualPath、MLA「V3 引入」(应 V2)、Sinkhorn 100(应 20)。
-  - [[deepseek_v4_implementation_details]] —— 专家 128/激活 8(应 256·384/6)、HCA 0.1、Sinkhorn 100、「Muon」实为 Adam(无 Newton-Schulz)、量化写成 INT8(应 FP4)、臆造 PCA KV 压缩/DualPath。
-  - [[deepseek_v4_architecture_diagrams]] —— 128 专家/K=8–12、5%·35% 任务自适应、领域命名专家、O(n log n)、DualPath/SNIC/CNIC、图缺 MTP、CSA/HCA 误并为一层。
+  - [[26_deepseek_v4_technical_deepdive]] —— DSA=CSA+HCA 倒置、Highly/Heavily 名错、HCA 10% vs m′=128、臆造分层调度、臆造 MoE 任务路由、DualPath、MLA「V3 引入」(应 V2)、Sinkhorn 100(应 20)。
+  - [[27_deepseek_v4_implementation_deepdive]] —— 专家 128/激活 8(应 256·384/6)、HCA 0.1、Sinkhorn 100、「Muon」实为 Adam(无 Newton-Schulz)、量化写成 INT8(应 FP4)、臆造 PCA KV 压缩/DualPath。
+  - [[28_deepseek_v4_architecture_analysis]] —— 128 专家/K=8–12、5%·35% 任务自适应、领域命名专家、O(n log n)、DualPath/SNIC/CNIC、图缺 MTP、CSA/HCA 误并为一层。
 - **Tier-A 遵循 wiki「不删除、仅标注」规则**：臆造内容保留原文 + `> [!warning]`/`> [!contradiction]` 标注 + 指向审计报告。
 - **Tier-B 整页重写完成**（用户确认"基于正式版全部重写 3 篇"后执行）：3 个并行 writer-agent 锚定核验过的机制简报
   （`MECH_BRIEF`：CSA/HCA/DSA Eq 9–27、Muon Alg 1/Eq 28、mHC Eq 1–8、§4.2.1 配置）逐方程重写，每条断言带 §/Eq/page；
   协调者抽查定位符 + 机械校验（横幅已除、`DualPath`/`INT8`/`Highly`/`task_classifier`/`n log n` 清零、跨链无悬挂、图内无 `[[…]]` 泄漏）。
-  - [[deepseek_v4_technical_deep_dive]]（288 行）—— CSA/HCA/DSA/MLA 四机制「动机→机制(LaTeX)→证据→为何不选替代」对比。
-  - [[deepseek_v4_implementation_details]]（362 行）—— 五大组件逐方程伪代码，常量取自 §4.2.1，Flash|Pro 双值。
-  - [[deepseek_v4_architecture_diagrams]]（237 行）—— 复刻 Figure 2/3/4 + §4.2.1 配置表，含 MTP、首-2-层非对称、CSA/HCA 交错。
+  - [[26_deepseek_v4_technical_deepdive]]（288 行）—— CSA/HCA/DSA/MLA 四机制「动机→机制(LaTeX)→证据→为何不选替代」对比。
+  - [[27_deepseek_v4_implementation_deepdive]]（362 行）—— 五大组件逐方程伪代码，常量取自 §4.2.1，Flash|Pro 双值。
+  - [[28_deepseek_v4_architecture_analysis]]（237 行）—— 复刻 Figure 2/3/4 + §4.2.1 配置表，含 MTP、首-2-层非对称、CSA/HCA 交错。
 - **更新** `deepseek/index.md`：V4 专题表加「核对状态」列 + 审计报告入口；3 篇 Tier-B 状态→「✅ 已据正式版整页重写」；最后更新日期→2026-06-25。
 
 ---
@@ -2028,14 +2028,14 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Update（应用户"AI infra 深挖里涉及掩盖、缓存的优化点都配个图示，便于分析理解"。掩盖用时间线(Gantt 前后对比)、缓存用复用流 / 前缀树 / 内存层）
 
-- [[glm5_training_infra_deepdive]] §3.3 新增 **图 3**：计算-通信掩盖时间线——②双缓冲(累积‖梯度同步)、③Muon(本地计算‖分片all-gather)、④激活offload(计算‖搬运)、⑥延迟wgrad(填气泡)、⑦层级all-to-all(节点内‖节点间)，各自把"什么藏进计算"。
-- [[glm5_agentic_rl_deepdive]] 新增 **图 1**（PD 解耦时间线：混部 prefill 抢占 decode vs 解耦后 decode 连续）+ **图 3**（DP-aware routing 的 KV 前缀复用：朴素 O(总上下文) vs 一致性哈希亲和 O(增量)）；原图 1/2 顺延为 **图 2/4** 以保持阅读序。
-- [[glm5_low_precision_chip_deepdive]] §4.3 新增 **图 3**：昇腾掩盖与缓存——左 Lightning Indexer/MLAPO(Vector‖Cube)/异步调度(D2H‖decode准备)/FlashComm(拆AllReduce) 计算掩盖访存通信，右 RadixCache 前缀共享 + Prefix Cache KV 外溢到系统内存。
+- [[22_glm5_training_infra_deepdive]] §3.3 新增 **图 3**：计算-通信掩盖时间线——②双缓冲(累积‖梯度同步)、③Muon(本地计算‖分片all-gather)、④激活offload(计算‖搬运)、⑥延迟wgrad(填气泡)、⑦层级all-to-all(节点内‖节点间)，各自把"什么藏进计算"。
+- [[24_glm5_agentic_rl_deepdive]] 新增 **图 1**（PD 解耦时间线：混部 prefill 抢占 decode vs 解耦后 decode 连续）+ **图 3**（DP-aware routing 的 KV 前缀复用：朴素 O(总上下文) vs 一致性哈希亲和 O(增量)）；原图 1/2 顺延为 **图 2/4** 以保持阅读序。
+- [[26_glm5_low_precision_chip_deepdive]] §4.3 新增 **图 3**：昇腾掩盖与缓存——左 Lightning Indexer/MLAPO(Vector‖Cube)/异步调度(D2H‖decode准备)/FlashComm(拆AllReduce) 计算掩盖访存通信，右 RadixCache 前缀共享 + Prefix Cache KV 外溢到系统内存。
 - **工具链**：`figstyle.css` 增加时间线(`.tl`/`.tl-bar`)与内存层(`.tier`)样式；新增图源 `glm5_infra_overlap` / `glm5_agentic_cache` / `glm5_chip_overlap_cache`.html（gitignored），渲染 5 张 PNG 到 `assets/`。**校验**：5 图逐张肉眼查无溢出/残留链接语法；agentic 页图号顺延后阅读序连续。
 
 ---
 
-## 2026-06-24: [[glm5_architecture_deepdive]] 补完整模型结构图（§1.1，config 实据）
+## 2026-06-24: [[20_glm5_architecture_deepdive]] 补完整模型结构图（§1.1，config 实据）
 
 **Type**: Update（应用户"architecture 里缺一张完整模型结构图"。拉取 released `zai-org/GLM-5` config.json 作实据，新增"宏观层栈 + 单 MoE 解码层放大"的结构图 + config 超参表 + 层数 contradiction）
 
@@ -2047,26 +2047,26 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 ## 2026-06-24: GLM-5 论文逐章深挖补齐 6 篇 + 流程图工具链 + 索引整合
 
-**Type**: New + Deepen（应用户"针对每个章节做 deepdive，解释原理/效果/为什么，并补流程图(SVG→PNG)"。在 [[glm5_architecture_deepdive]] 校准页之上，6 个并行 writer-agent 各写一篇深挖页 + 各自流程图 HTML，coordinator 统一渲染 14 图并整合）
+**Type**: New + Deepen（应用户"针对每个章节做 deepdive，解释原理/效果/为什么，并补流程图(SVG→PNG)"。在 [[20_glm5_architecture_deepdive]] 校准页之上，6 个并行 writer-agent 各写一篇深挖页 + 各自流程图 HTML，coordinator 统一渲染 14 图并整合）
 
 - **新增 6 篇深挖页**（源基线 arXiv 2602.15763v2，逐节 原理/效果/为什么 + §/页码引用）：
-  - [[glm5_data_deepdive]] — §2.2–2.3 数据（双分类器漏斗 + 三段式上下文扩展，2 图）
-  - [[glm5_training_infra_deepdive]] — §2.4 显存五件套 + 长序列并行（2 图）
-  - [[glm5_posttraining_deepdive]] — §3.1–3.5 SFT(三思考模式)/GRPO+IcePop/General RL/跨阶段蒸馏（2 图）
-  - [[glm5_agentic_rl_deepdive]] — §3.6+§4 slime/全异步解耦 RL/三类环境构造（2 图）
-  - [[glm5_training_stability_deepdive]] — 跨章稳定性主线（失配×噪声×故障：TITO/双边IS/staleness/优化器reset/确定性topk，2 图）
-  - [[glm5_low_precision_chip_deepdive]] — §2.4.3+§3.6.2+§5 INT4 QAT→FP8→W4A8 + 昇腾三支柱（2 图）
+  - [[21_glm5_data_deepdive]] — §2.2–2.3 数据（双分类器漏斗 + 三段式上下文扩展，2 图）
+  - [[22_glm5_training_infra_deepdive]] — §2.4 显存五件套 + 长序列并行（2 图）
+  - [[23_glm5_posttraining_deepdive]] — §3.1–3.5 SFT(三思考模式)/GRPO+IcePop/General RL/跨阶段蒸馏（2 图）
+  - [[24_glm5_agentic_rl_deepdive]] — §3.6+§4 slime/全异步解耦 RL/三类环境构造（2 图）
+  - [[25_glm5_training_stability_deepdive]] — 跨章稳定性主线（失配×噪声×故障：TITO/双边IS/staleness/优化器reset/确定性topk，2 图）
+  - [[26_glm5_low_precision_chip_deepdive]] — §2.4.3+§3.6.2+§5 INT4 QAT→FP8→W4A8 + 昇腾三支柱（2 图）
 - **流程图工具链**：新增 `.html2md/render_figs.mjs`（复用 Edge/puppeteer 2× 截图）+ `figs/figstyle.css`；图源 HTML 在 gitignored `.html2md/figs/`，14 张 PNG 落 `assets/`（house 风格:奶白卡片 + 彩色圆角节点 + 灰箭头）。
-- **整合**：父索引 [[zhipu_glm/index]] 新增「§四之补 GLM-5 论文深挖页矩阵」(7 页表) + §六 GLM-5 行改指矩阵；概要页 [[glm_5_analysis]] 补「逐章深挖」Related 段，并对 §五 估算基准加 `> [!contradiction]` 用 Table 7 真值订正（SWE-bench Verified 77.8 / τ²-Bench 89.7 / AA Index 50 等）。
+- **整合**：父索引 [[zhipu_glm/index]] 新增「§四之补 GLM-5 论文深挖页矩阵」(7 页表) + §六 GLM-5 行改指矩阵；概要页 [[01_glm_5_analysis]] 补「逐章深挖」Related 段，并对 §五 估算基准加 `> [!contradiction]` 用 Table 7 真值订正（SWE-bench Verified 77.8 / τ²-Bench 89.7 / AA Index 50 等）。
 - **校验**：7 页 + 索引/概要的 `[[]]` 链接脚本提取，同系列 7 个 `glm5_*_deepdive` + 既有 [[muon_analysis]]/`grpo_analysis`（历史活链接，已于 2026-07-31 因 kb-reorg P5 Task 8 再编号为 [[20_grpo_analysis]]，按"历史不回写"惯例降级为反引号）/[[megatron_ep_analysis]]/[[verl/index]]/[[low_precision_training_analysis]] 等均存在，0 悬空；14 图 `assets/*` 引用解析正常；agentic_rl 两图 note 内误写的 `[[]]` 已改纯文本并重渲。
 
 ---
 
-## 2026-06-24: 新增 [[glm5_architecture_deepdive]] 并入 GLM 索引
+## 2026-06-24: 新增 [[20_glm5_architecture_deepdive]] 并入 GLM 索引
 
 **Type**: New（GLM-5 架构深挖页:论文 §2.1 的"规模 × 长上下文成本"权衡——744B/40B MoE 扩专家减层、MLA→Muon Split→MLA-256、MTP 参数共享、DSA 两阶段续训与高效注意力消融,含 2 图）
 
-**整合**:父索引 [[zhipu_glm/index]] §六 论文索引 GLM-5 行新增架构深挖链接(概要 [[glm_5_analysis]] + 架构深挖 [[glm5_architecture_deepdive]])。**校验**:2 张图 `assets/glm5_architecture_fig{1,2}.png` 引用解析正常;`## Related` 段含同系列深挖页前向引用(6 个 `glm5_*_deepdive` 为规划中页面,标记式前向链接)+ 既有页([[glm_5_analysis]]/[[muon_analysis]]/[[deepseek_v3_analysis]]/[[deepseek_moe_analysis]])均存在。
+**整合**:父索引 [[zhipu_glm/index]] §六 论文索引 GLM-5 行新增架构深挖链接(概要 [[01_glm_5_analysis]] + 架构深挖 [[20_glm5_architecture_deepdive]])。**校验**:2 张图 `assets/glm5_architecture_fig{1,2}.png` 引用解析正常;`## Related` 段含同系列深挖页前向引用(6 个 `glm5_*_deepdive` 为规划中页面,标记式前向链接)+ 既有页([[01_glm_5_analysis]]/[[muon_analysis]]/[[12_deepseek_v3_analysis]]/[[20_deepseek_moe_analysis]])均存在。
 
 ---
 
@@ -2177,7 +2177,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - **`OverlapExpertParallel`**:A/B/C/D 同步钩子 + 异步 a2a 做通算重叠(不改通信量)。
   - 含**三方案通信量总对照表**(拓扑 / 重复次数 / 与 k 关系 / 集合通信 / D2H / 适用瓶颈)。
 
-**整合**:姊妹篇 [[mindformers_moe_token_dispatcher_analysis]] footer 增「PyNative 对照」回链。**校验**:新页 `file:line` 均按当前 checkout 逐一核对;交叉链接 [[mindformers_moe_token_dispatcher_analysis]] / [[megatron_ep_analysis]] / [[torchtitan_ep_analysis]] / [[deepseek_moe_analysis]] 经 glob 确认存在。
+**整合**:姊妹篇 [[mindformers_moe_token_dispatcher_analysis]] footer 增「PyNative 对照」回链。**校验**:新页 `file:line` 均按当前 checkout 逐一核对;交叉链接 [[mindformers_moe_token_dispatcher_analysis]] / [[megatron_ep_analysis]] / [[torchtitan_ep_analysis]] / [[20_deepseek_moe_analysis]] 经 glob 确认存在。
 
 **目录重构(同日)**:为 MindFormers 单建子目录 `02_engineering/02_train_frameworks/mindformers/`,收纳两篇(PyNative EP + Graph 去冗余 dispatcher)及其 7 张图(移入 `mindformers/assets/`,`assets/…figN.png` 相对引用随之保持有效),新建 [[mindformers/index]] 知识地图。父索引 [[02_engineering/02_train_frameworks/index]] 子目录表新增 `[[mindformers/index]]` 行、移除两篇的单独条目;总索引 [[index]] 目录树/领域总览(MindFormers 2 篇)/MoE 快速导航同步。`[[bare filename]]` 链接按文件名解析,移动后不失效。
 
@@ -2384,7 +2384,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - 新系列 19 页加前缀:`ep_analysis`→`megatron_ep_analysis`、`tp_analysis`→`megatron_tp_analysis`、`cp_analysis`→`megatron_cp_analysis`、`pp_schedulers_analysis`→`megatron_pp_schedulers_analysis`、`ddp_optimizer_analysis`→`megatron_ddp_optimizer_analysis`、`recompute_analysis`、`optimizer_internals_analysis`、`precision_cudagraph_fusion_analysis`、`training_stability_observability_analysis`、`rl_posttraining_consistency_analysis`、`inference_engine_analysis`、`model_structure_analysis`、`dataset_analysis`、`packed_dataset_dynamic_cp_analysis`、`dist_checkpointing_analysis`、`parallelism_orchestration_analysis`、`pp_supplements_analysis`、`tp_fsdp_resharding_supplements_analysis`、`moe_training_optimization_report` 均加 `megatron_` 前缀。
 - 旧 CamelCase 2 页规整:`Megatron_LM_TFLOPS_Analysis`→`megatron_tflops_analysis`、`Megatron_vLLM_Weight_Sync_Analysis`→`megatron_vllm_weight_sync_analysis`。
 - 已合规 5 页不动:`megatron_comm_overlap_analysis`、`megatron_fusion_operators_analysis`、`megatron_memory_optimization_analysis`、`megatron_distributed_optimizer_analysis`、`megatron_nonuniform_tp_analysis`。
-- **链接修复**:全 wiki(208 个 md)用 `[[<basename><delimiter>` 锚定的 perl 替换更新所有 `[[wiki link]]` + 反引号/散文中的 `*.md` 文件名提及;锚定保证不误伤 `[[deepseek_v4_cp_analysis]]`/`[[torchtitan_tp_analysis]]`/`[[megatron_nonuniform_tp_analysis]]` 等近名页。
+- **链接修复**:全 wiki(208 个 md)用 `[[<basename><delimiter>` 锚定的 perl 替换更新所有 `[[wiki link]]` + 反引号/散文中的 `*.md` 文件名提及;锚定保证不误伤 `[[23_deepseek_v4_cp_analysis]]`/`[[torchtitan_tp_analysis]]`/`[[megatron_nonuniform_tp_analysis]]` 等近名页。
 
 **③ 修复历史悬空链接**:`[[llm_parallelism_analysis]]`(该页从未以 .md 形式存在,仅旧 .html;changelog 早有记录)全 wiki 重指向 [[megatron_pp_schedulers_analysis]](正反向 DAG + 调度,最贴近其原意);涉及 megatron-lm/index、父级 `02_train_frameworks/index`、torchtitan 多页。
 
@@ -3004,7 +3004,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **修正文件**:
 
-- `wiki/01_theory/01_models/deepseek/deepseek_v4_cp_analysis.md`
+- `wiki/01_theory/01_models/deepseek/23_deepseek_v4_cp_analysis.md`
   - **修正 1**：源文件路径错误 — `raw/05_model_families/deepseek/DeepSeek_V4.pdf` → `raw/01_theory/01_models/deepseek/DeepSeek_V4.pdf`
   - **修正 2**：Stage 1 Step 3 压缩输出数量错误 — `(c+1) 个 compressed entries` → `1（CSA 重叠窗口）或 2（HCA 无重叠）个 boundary compressed entries`（原公式与 2c tokens / ratio c 的数学不一致）
   - **修正 3**：Stage 2 All-Gather 输出长度公式错误 — `总长度 = P × c`（与 S 无关的常数，量级完全错误）→ `总长度 ≈ S/c，即 P × S/(P·c)`
@@ -3028,8 +3028,8 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - 从 `01_ai_frameworks/` 移入: `mlir_core_concepts.md`、`torch_mlir_pass_pipeline_analysis.md`、`triton_vs_mlir_backend_analysis.md`
   - 从 `inductor/` 移入: `npu_mlir_backend_deep_analysis.md`、`npu_mlir_pipeline_analysis.md`、`npu_mlir_backend_technical_analysis.md`
 - **模型论文归位**:
-  - `Engram_Analysis.md` → `deepseek/`
-  - `moba_analysis.md`、`kimi_linear_analysis.md` → `moonshot_kimi/`
+  - `29_engram_analysis.md` → `deepseek/`
+  - `10_moba_analysis.md`、`12_kimi_linear_analysis.md` → `moonshot_kimi/`
 - **跨域移动**:
   - `comm_compute_fusion_guide.md` → `02_train_frameworks/`
   - `mooncake_analysis.md` → `03_infer_frameworks/`
@@ -3264,7 +3264,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **知识来源**:
   - PyTorch 官方文档（FlexAttention, DTensor, torch.export）
-  - `wiki/01_theory/01_models/deepseek/deepseek_v4_analysis.md`（WaveEP、TileLang、DeepEP）
+  - `wiki/01_theory/01_models/deepseek/13_deepseek_v4_analysis.md`（WaveEP、TileLang、DeepEP）
   - `wiki/02_engineering/02_train_frameworks/megatron-lm/moe_training_optimization_report.md`（DeepEP/HybridEP）
   - `wiki/02_engineering/02_train_frameworks/megatron-lm/megatron_comm_overlap_analysis.md`（多维通算重叠）
   - MLIR 官方文档（Mesh Dialect RFC，IREE，StableHLO）
@@ -3433,11 +3433,11 @@ raw/ & wiki/ 镜像
 
 ### 创建的 Wiki 页面
 
-- **Created**: `wiki/llm/05_model_families/zhipu_glm/glm_5_analysis.md` — GLM-5 Vibe Coding 到 Agentic Engineering（中文）
-- **Created**: `wiki/llm/05_model_families/zhipu_glm/glm_5v_turbo_analysis.md` — GLM-5V-Turbo 原生多模态 Agent（中文）
+- **Created**: `wiki/llm/05_model_families/zhipu_glm/01_glm_5_analysis.md` — GLM-5 Vibe Coding 到 Agentic Engineering（中文）
+- **Created**: `wiki/llm/05_model_families/zhipu_glm/10_glm_5v_turbo_analysis.md` — GLM-5V-Turbo 原生多模态 Agent（中文）
 - **Created**: `wiki/llm/05_model_families/zhipu_glm/index.md` — GLM 技术路线总览
 
-**Key topics (glm_5_analysis)**:
+**Key topics (01_glm_5_analysis)**:
   - 744B/40B MoE (256 专家，8 激活)，80 层
   - Muon Split: per-head 独立正交化，MLA 匹配 GQA-8 性能
   - MLA-256: head dim 192→256，头数减少 1/3，解码计算降低
@@ -3450,7 +3450,7 @@ raw/ & wiki/ 镜像
   - 国产 GPU 全栈适配 (7 大平台)
   - SWE-bench ~65, τ²-Bench ~60, HLE ~30
 
-**Key topics (glm_5v_turbo_analysis)**:
+**Key topics (10_glm_5v_turbo_analysis)**:
   - CogViT 视觉编码器：两阶段预训练 (蒸馏 MIM + 对比图文)
   - NaFlex 可变分辨率，64K batch, 80 亿中英图文对
   - MMTP 多模态 MTP：`<|image|>` 共享 token 方案
@@ -3468,11 +3468,11 @@ raw/ & wiki/ 镜像
 
 ### 创建的 Wiki 页面
 
-- **Created**: `wiki/llm/05_model_families/moonshot_kimi/kimi_k2_analysis.md` — Kimi K2 开放 Agent 智能（中文）
-- **Created**: `wiki/llm/05_model_families/moonshot_kimi/kimi_k2.5_analysis.md` — Kimi K2.5 视觉 Agent 智能（中文）
+- **Created**: `wiki/llm/05_model_families/moonshot_kimi/11_kimi_k2_analysis.md` — Kimi K2 开放 Agent 智能（中文）
+- **Created**: `wiki/llm/05_model_families/moonshot_kimi/13_kimi_k2_5_analysis.md` — Kimi K2.5 视觉 Agent 智能（中文）
 - **Updated**: `wiki/llm/05_model_families/moonshot_kimi/index.md` — 论文索引更新，K2/K2.5 标记为已摄入
 
-**Key topics (kimi_k2_analysis)**:
+**Key topics (11_kimi_k2_analysis)**:
   - 1.04T/32.6B MoE，384 专家 (sparsity=48)，64 注意力头
   - MuonClip 优化器：QK-Clip 解决 logits 爆炸，15.5T token 零 loss spike
   - 稀疏度扩展定律：sparsity 48 vs 8 节省 1.69× FLOPs
@@ -3481,7 +3481,7 @@ raw/ & wiki/ 镜像
   - SWE-bench 65.8、τ²-Bench 66.1、AIME 2024 69.6
   - Agent 能力超越 Claude Opus 4 和 GPT-4.1
 
-**Key topics (kimi_k2.5_analysis)**:
+**Key topics (13_kimi_k2_5_analysis)**:
   - MoonViT-3D 视觉编码器：原生分辨率，3D 时空编码，4× 时间压缩
   - 早期融合 + 低视觉比例 (10%:90%) 优于晚期融合
   - Zero-Vision SFT：仅用文本 SFT 激活视觉能力
@@ -3507,8 +3507,8 @@ raw/ & wiki/ 镜像
 ### 创建的 Wiki 页面
 
 - **Created**: `wiki/llm/06_infra/mooncake_analysis.md` — Mooncake KVCache 中心化分离式服务架构（中文）
-- **Created**: `wiki/llm/01_architecture/moba_analysis.md` — MoBA 混合块注意力机制（中文）
-- **Created**: `wiki/llm/01_architecture/kimi_linear_analysis.md` — Kimi Linear/KDA 线性注意力架构（中文）
+- **Created**: `wiki/llm/01_architecture/10_moba_analysis.md` — MoBA 混合块注意力机制（中文）
+- **Created**: `wiki/llm/01_architecture/12_kimi_linear_analysis.md` — Kimi Linear/KDA 线性注意力架构（中文）
 - **Created**: `wiki/llm/03_alignment/kimi_k1.5_analysis.md` — Kimi k1.5 RL 缩放定律（中文）
 - **Created**: `wiki/llm/05_model_families/moonshot_kimi/index.md` — Kimi 技术路线总览
 
@@ -3520,7 +3520,7 @@ raw/ & wiki/ 镜像
   - 预测性早期拒绝解决负载波动
   - 真实负载吞吐量提升 75%，模拟场景 525%
 
-**Key topics (moba_analysis)**:
+**Key topics (10_moba_analysis)**:
   - 将 MoE 原理应用于注意力机制
   - Query 动态路由到 KV Block (top-k 选择)
   - 块路由：mean_pool(K) 亲和度 + 因果掩码
@@ -3528,7 +3528,7 @@ raw/ & wiki/ 镜像
   - 1M 序列 6.5x 加速，10M 序列 16x 加速
   - 已部署支持 Kimi 长上下文请求
 
-**Key topics (kimi_linear_analysis)**:
+**Key topics (12_kimi_linear_analysis)**:
   - KDA: Kimi Delta Attention (通道级细粒度遗忘门)
   - 约束 DPLR 结构，消除数值不稳定，Kernel 速度 ~2x
   - 3:1 KDA-MLA 混合架构，MLA 层使用 NoPE
@@ -3647,15 +3647,15 @@ raw/ & wiki/ 镜像
 
 将 `raw/05_model_families/deepseek/` 下 9 个 V4 相关 MD 文件与 Wiki 现有内容整合：
 
-- **Created**: `wiki/llm/05_model_families/deepseek/deepseek_v4_fp4_qat_analysis.md` — FP4 QAT 完整分析（全新主题）
+- **Created**: `wiki/llm/05_model_families/deepseek/24_deepseek_v4_fp4_qat_analysis.md` — FP4 QAT 完整分析（全新主题）
 - **Moved (3 files)**:
-  - `deepseek_v4_architecture_diagrams.md` — V4 架构 ASCII 结构图（50KB 补充参考）
-  - `deepseek_v4_implementation_details.md` — V4 核心组件伪代码实现（34KB 补充参考）
-  - `deepseek_v4_technical_deep_dive.md` — CSA/HCA/DSA/MLA 对比深度解析（42KB 补充参考）
+  - `28_deepseek_v4_architecture_analysis.md` — V4 架构 ASCII 结构图（50KB 补充参考）
+  - `27_deepseek_v4_implementation_deepdive.md` — V4 核心组件伪代码实现（34KB 补充参考）
+  - `26_deepseek_v4_technical_deepdive.md` — CSA/HCA/DSA/MLA 对比深度解析（42KB 补充参考）
 - **Updated (merged unique content)**:
-  - `deepseek_v4_analysis.md` — 新增 §Compressed KV 数值示例、DualPath 推理框架、Think Modes、Pro-Max 评测
+  - `13_deepseek_v4_analysis.md` — 新增 §Compressed KV 数值示例、DualPath 推理框架、Think Modes、Pro-Max 评测
   - `mHC.md` — 扩展 §动态与静态系数（完整公式 3-8、对比表、训练细节）
-  - `deepseek_v4_cp_analysis.md` — 新增 §9 实现细节（Fused Select-and-Pad、Top-K Selector、传统 CP 对比表）
+  - `23_deepseek_v4_cp_analysis.md` — 新增 §9 实现细节（Fused Select-and-Pad、Top-K Selector、传统 CP 对比表）
 - **Cross-references**: 所有新/更新页面双向链接已更新
 
 ---
@@ -3690,8 +3690,8 @@ raw/ & wiki/ 镜像
 **Type**: Source Ingestion (扩展已有 V4 分析)
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_V4.pdf` §3.5.3, §3.6, §4.1
-- **Created**: `wiki/llm/05_model_families/deepseek/deepseek_v4_cp_analysis.md` — DeepSeek-V4 Context Parallelism 深度分析（中文）
-- **Updated**: `wiki/llm/05_model_families/deepseek/deepseek_v4_analysis.md` — CP 节扩展并添加指向新页面链接
+- **Created**: `wiki/llm/05_model_families/deepseek/23_deepseek_v4_cp_analysis.md` — DeepSeek-V4 Context Parallelism 深度分析（中文）
+- **Updated**: `wiki/llm/05_model_families/deepseek/13_deepseek_v4_analysis.md` — CP 节扩展并添加指向新页面链接
 - **Key topics**:
   - Packed sequences 数据格式与 CP 的三个矛盾（跨 rank 文档切断、压缩窗口跨边界、压缩输出长度不可预测）
   - 两阶段通信协议形式化描述（Stage 1 P2P O(c) 常数通信 + Stage 2 All-Gather 压缩 KV）
@@ -3755,8 +3755,8 @@ The following pages were created before the changelog was established. Dates are
 
 ### ~2026-01: DeepSeek & Memory Architectures
 
-- Created `wiki/llm/Engram_Analysis.md` — Source: `raw/Engram_paper.pdf`
-- Created `wiki/llm/deepseek_math_v2.md` — Self-verifiable math reasoning
+- Created `wiki/llm/29_engram_analysis.md` — Source: `raw/Engram_paper.pdf`
+- Created `wiki/llm/18_deepseek_math_v2_analysis.md` — Self-verifiable math reasoning
 
 ### ~2025-12: Weight Initialization & KIMI
 
@@ -3788,20 +3788,20 @@ The following pages were created before the changelog was established. Dates are
 **Type**: Source Ingestion
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_LLM-2401.02954.pdf` (DeepSeek-AI, arXiv:2401.02954)
-- **Created**: `wiki/llm/deepseek_llm_analysis.md` — DeepSeek LLM analysis
+- **Created**: `wiki/llm/10_deepseek_llm_analysis.md` — DeepSeek LLM analysis
 - **Updated**: `wiki/llm/index.md` — Added DeepSeek model family section
 - **Key topics**: scaling laws with non-embedding FLOPs/token representation, data quality impact on model/data allocation, multi-step LR scheduler, GQA, bilingual pre-training, SFT+DPO alignment
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_V2-2405.04434.pdf` (DeepSeek-AI, arXiv:2405.04434)
-- **Created**: `wiki/llm/deepseek_v2_analysis.md` — DeepSeek-V2 analysis
+- **Created**: `wiki/llm/11_deepseek_v2_analysis.md` — DeepSeek-V2 analysis
 - **Key topics**: MLA (Multi-head Latent Attention), low-rank KV joint compression, decoupled RoPE, DeepSeekMoE, device-limited routing, three-level auxiliary losses, token dropping, GRPO, two-stage RL
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_V3-2412.19437.pdf` (DeepSeek-AI, arXiv:2412.19437)
-- **Created**: `wiki/llm/deepseek_v3_analysis.md` — DeepSeek-V3 analysis
+- **Created**: `wiki/llm/12_deepseek_v3_analysis.md` — DeepSeek-V3 analysis
 - **Key topics**: FP8 mixed precision training, fine-grained quantization (tile/block-wise), DualPipe pipeline parallelism, auxiliary-loss-free load balancing, Multi-Token Prediction (MTP), cross-node all-to-all communication kernels, inference deployment with redundant experts, R1 distillation
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_R1-2501.12948.pdf` (DeepSeek-AI, arXiv:2501.12948)
-- **Created**: `wiki/llm/deepseek_r1_analysis.md` — DeepSeek-R1 analysis
+- **Created**: `wiki/llm/14_deepseek_r1_analysis.md` — DeepSeek-R1 analysis
 - **Key topics**: pure RL reasoning without SFT, GRPO, emergent self-verification/reflection, "aha moment", multi-stage pipeline (cold start → RL → SFT → RL), distillation to Qwen/Llama, rule-based rewards, language consistency reward
 
 **Remaining**: Coder, Coder-V2, Math, MoE, Prover, VL
@@ -3813,11 +3813,11 @@ The following pages were created before the changelog was established. Dates are
 **Type**: Source Ingestion
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_V4.pdf` (DeepSeek-AI, 2025)
-- **Created**: `wiki/llm/deepseek_v4_analysis.md` — DeepSeek-V4 analysis (in Chinese)
+- **Created**: `wiki/llm/13_deepseek_v4_analysis.md` — DeepSeek-V4 analysis (in Chinese)
 - **Updated**: `wiki/llm/index.md` — Added V4 to DeepSeek model family section
-- **Updated**: `wiki/llm/deepseek_v3_analysis.md` — Added backlink to V4
-- **Updated**: `wiki/llm/deepseek_v2_analysis.md` — Added backlink to V4
-- **Cross-referenced**: `mHC.md`, `muon_analysis.md`, `deepseek_v3_analysis.md`, `deepseek_v2_analysis.md`
+- **Updated**: `wiki/llm/12_deepseek_v3_analysis.md` — Added backlink to V4
+- **Updated**: `wiki/llm/11_deepseek_v2_analysis.md` — Added backlink to V4
+- **Cross-referenced**: `mHC.md`, `muon_analysis.md`, `12_deepseek_v3_analysis.md`, `11_deepseek_v2_analysis.md`
 - **Key topics**: CSA (Compressed Sparse Attention), HCA (Heavily Compressed Attention), hybrid attention architecture, DSA (DeepSeek Sparse Attention), Lightning Indexer, million-token context, mHC integration, Muon optimizer, Anticipatory Routing, SwiGLU clamping, wave-based EP overlap, TileLang kernels, FP4 QAT, heterogeneous KV cache management, on-disk KV cache storage
 
 ---
@@ -3827,27 +3827,27 @@ The following pages were created before the changelog was established. Dates are
 **Type**: Source Ingestion
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_Coder-2401.14196.pdf` (DeepSeek-AI, arXiv:2401.14196)
-- **Created**: `wiki/llm/deepseek_coder_analysis.md` — DeepSeek-Coder analysis
+- **Created**: `wiki/llm/15_deepseek_coder_analysis.md` — DeepSeek-Coder analysis
 - **Key topics**: repository-level code corpus, dependency parsing, topological sort, Fill-in-the-Middle (FIM), 87 programming languages, 16K context, GQA
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_Coder_V2-2406.11931.pdf` (DeepSeek-AI, arXiv:2406.11931)
-- **Created**: `wiki/llm/deepseek_coder_v2_analysis.md` — DeepSeek-Coder-V2 analysis
+- **Created**: `wiki/llm/16_deepseek_coder_v2_analysis.md` — DeepSeek-Coder-V2 analysis
 - **Key topics**: MoE code model, 338 languages, 128K context, 6T additional tokens, YaRN extension, GRPO with reward model, SWE-bench >10%
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_Math-2402.03300.pdf` (DeepSeek-AI, arXiv:2402.03300)
-- **Created**: `wiki/llm/deepseek_math_analysis.md` — DeepSeekMath analysis
+- **Created**: `wiki/llm/17_deepseek_math_analysis.md` — DeepSeekMath analysis
 - **Key topics**: 120B math tokens from Common Crawl, iterative fastText pipeline, GRPO origin, unified RL paradigm, MATH 51.7%
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_MoE-2401.06066.pdf` (DeepSeek-AI, arXiv:2401.06066)
-- **Created**: `wiki/llm/deepseek_moe_analysis.md` — DeepSeekMoE architecture analysis
+- **Created**: `wiki/llm/20_deepseek_moe_analysis.md` — DeepSeekMoE architecture analysis
 - **Key topics**: fine-grained expert segmentation, shared expert isolation, expert-level/device-level balance loss, 2B/16B/145B scales
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_Prover-2408.08152.pdf` (DeepSeek-AI, arXiv:2408.08152)
-- **Created**: `wiki/llm/deepseek_prover_analysis.md` — DeepSeek-Prover-V1.5 analysis
+- **Created**: `wiki/llm/22_deepseek_prover_analysis.md` — DeepSeek-Prover-V1.5 analysis
 - **Key topics**: Lean 4 theorem proving, truncate-and-resume mechanism, RMaxTS Monte-Carlo tree search, thought-augmented proofs, RLPAF
 
 - **Source**: `raw/05_model_families/deepseek/DeepSeek_VL-2403.05525.pdf` (DeepSeek-AI, arXiv:2403.05525)
-- **Created**: `wiki/llm/deepseek_vl_analysis.md` — DeepSeek-VL analysis
+- **Created**: `wiki/llm/21_deepseek_vl_analysis.md` — DeepSeek-VL analysis
 - **Key topics**: hybrid vision encoder (SigLIP + SAM), 576 visual tokens, modality warm-up, 70% text preservation, real-world VL taxonomy
 
 - **Note**: `raw/05_model_families/deepseek/DeepSeek_VL2-2412.10322.pdf` was identified as an unrelated physics paper (arXiv:2412.10322v1, hep-lat). No genuine DeepSeek-VL2 source was found.

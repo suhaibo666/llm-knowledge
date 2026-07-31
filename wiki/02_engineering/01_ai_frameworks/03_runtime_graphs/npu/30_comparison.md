@@ -1,6 +1,6 @@
 # CUDA Graphs vs NPU Graphs 差异对比
 
-本文档只保留 CUDA Graphs 与 torch_npu NPU Graphs 之间**可验证的真实差异**（API 映射表、组件对照、捕获/执行行为差异结论）。两侧各自的机制原理、实现细节与可运行代码示例不在本页复述，请查阅权威页：CUDA 侧 [[10_pytorch_cuda_graphs_complete_guide]]；NPU 侧 [[01_aclgraph]] / [[10_aclgraph_deep_analysis]] / [[11_torch_compile_npugraphs_deep_dive]] / [[20_npugraphs_make_graphed_callables_deep_dive]]。
+本文档只保留 CUDA Graphs 与 torch_npu NPU Graphs 之间**可验证的真实差异**（API 映射表、组件对照、捕获/执行行为差异结论）。两侧各自的机制原理、实现细节与可运行代码示例不在本页复述，请查阅权威页：CUDA 侧 [[10_pytorch_cuda_graphs_complete_guide]]；NPU 侧 [[01_aclgraph]] / [[10_aclgraph_deep_analysis]] / [[11_torch_compile_npugraphs_deepdive]] / [[20_npugraphs_make_graphed_callables_deepdive]]。
 
 ---
 
@@ -86,8 +86,8 @@ CUDA 侧的调用层次（`torch.cuda.graph()` → Python 上下文管理器 →
 | 方式 | CUDA 示例 | NPU 示例 |
 |---|---|---|
 | 上下文管理器 | [[10_pytorch_cuda_graphs_complete_guide]] 方式3 | [[01_aclgraph]] §3（含 §3.3 时序图） |
-| `make_graphed_callables` | [[10_pytorch_cuda_graphs_complete_guide]] 方式4 | [[20_npugraphs_make_graphed_callables_deep_dive]]（六阶段实现流程） |
-| `torch.compile(backend=...)` | [[10_pytorch_cuda_graphs_complete_guide]] 方式1/方式2 | [[11_torch_compile_npugraphs_deep_dive]] |
+| `make_graphed_callables` | [[10_pytorch_cuda_graphs_complete_guide]] 方式4 | [[20_npugraphs_make_graphed_callables_deepdive]]（六阶段实现流程） |
+| `torch.compile(backend=...)` | [[10_pytorch_cuda_graphs_complete_guide]] 方式1/方式2 | [[11_torch_compile_npugraphs_deepdive]] |
 
 ---
 

@@ -72,7 +72,7 @@ Kimi K3 的 white-box environment 把 harness 本身也版本化：tools、syste
 
 当 reward judge 可能产生副作用时，K3/AgentENV 的 `Fork` 语义比"复制日志后评分"更强：它从相同 microVM state 派生 judge sandbox，同时让原环境继续运行。报告还区分 `Pause/Resume` 与 `Snapshot`，分别处理 inference 等待和故障恢复（Kimi K3 Technical Report §5.3.2，p.22）。三者对应「故障容错」需求里三种不同的失败/暂停场景，不能用单一"支持续跑"布尔值代替。
 
-机制在三平面模型中的位置见 [[01_posttraining_infra_mechanism_analysis|D05]] 第 7 节、第 8.1 节；K3 完整案例见 [[kimi_k3_posttraining_case_study_analysis|D12]]。
+机制在三平面模型中的位置见 [[01_posttraining_infra_mechanism_analysis|D05]] 第 7 节、第 8.1 节；K3 完整案例见 [[24_kimi_k3_posttraining_case_study_analysis|D12]]。
 
 ---
 
@@ -190,7 +190,7 @@ Sandbox 既是 reward hacking 防御 Layer 1 的物理基础（强隔离 → hac
 
 - [[24_agentic_rl_algorithm_analysis]] — Agentic trajectory、reward event、failure 与 coding sandbox schema
 - [[01_posttraining_infra_mechanism_analysis]] — sandbox 在后训练数据面、故障域和 backpressure 中的位置
-- [[kimi_k3_posttraining_case_study_analysis]] — §2.1 K3 harness 版本化与 Fork/Pause/Snapshot 语义的完整案例
+- [[24_kimi_k3_posttraining_case_study_analysis]] — §2.1 K3 harness 版本化与 Fork/Pause/Snapshot 语义的完整案例
 - [[courses/posttraining_frontier]] — 后训练前沿阅读课程(原 D00–D12 学习域已解散,内容归位至功能树)
 - [[31_reward_hacking_defense_analysis]] — 同系列，sandbox 是 Layer 1 的工程基础
 - [[12_rl_infra_efficiency_analysis]] — 同系列，sandbox 三阶段拆解直接驱动长尾治理

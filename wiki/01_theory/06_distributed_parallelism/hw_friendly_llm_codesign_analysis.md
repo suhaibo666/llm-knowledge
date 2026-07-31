@@ -83,8 +83,8 @@ flowchart TB
 - [[pipeline_parallel_analysis]] — PP 气泡与调度,CPP 是其推理 prefill 特化
 - [[tensor_sequence_parallel_analysis]] — TP/SP/CP 原理;Helix 的序列维 KV 切分与 CP 同轴
 - [[collectives_analysis]] — AllReduce/all-to-all 原语代价
-- [[deepseek_v4_fp4_qat_analysis]] — FP4 的训练侧实践(QAT),与 §四 NVFP4 部署侧互补
-- [[deepseek_v3_analysis]] — 博客通篇的实验模型 DeepSeek-R1 之底座(256 专家 top-8)
+- [[24_deepseek_v4_fp4_qat_analysis]] — FP4 的训练侧实践(QAT),与 §四 NVFP4 部署侧互补
+- [[12_deepseek_v3_analysis]] — 博客通篇的实验模型 DeepSeek-R1 之底座(256 专家 top-8)
 - [[hy3_analysis]] — §七评注的对照样本(1536 专家维 vs K>3072 阈值)
 - [[longcat_flash_analysis]] — 宽 EP + 计算通信重叠的工业实践
-- [[glm5_low_precision_chip_deepdive]] — 低精度与芯片协同的另一家叙事,可对照 NVIDIA 立场
+- [[26_glm5_low_precision_chip_deepdive]] — 低精度与芯片协同的另一家叙事,可对照 NVIDIA 立场

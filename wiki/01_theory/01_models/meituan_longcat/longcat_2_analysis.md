@@ -93,7 +93,7 @@
 | **CLI**（Cross-Layer Indexing） | 利用「**相邻层注意力显著性经验稳定**」——一次索引 pass 服务多个连续层，摊薄索引成本 | 索引的**逐层重复计算** | 需**跨层蒸馏**训练 |
 | **HI**（Hierarchical Indexing） | 两段式 coarse-to-fine：先**块级近似打分粗召回**，再在候选内**细粒度 token 选择**——缩小 indexer 每 query 要处理的候选空间 | **二次方打分成本** | **training-free**，仅对选定的超长上下文任务启用 |
 
-> **为什么不直接用 DSA 的 Lightning Indexer？（源明确点名）** DSA（DeepSeek / GLM-5 的可学习稀疏注意力，见 [[glm_5_analysis]]）用 Lightning Indexer 选 token，但它**输出不连续**会把访存打成随机碎片、**二次方打分**在 1M 下昂贵。LSA 不另起炉灶，而是**针对这两处逐一修复**：SI 管访存形态（→coalesced 访问）、HI 管打分成本（→分层粗筛降二次方）、CLI 再叠一层跨层摊薄。本质是把「稀疏注意力」从「省 FLOPs」重定义为「**省访存 + 省索引**」——这正是带宽受限的国产 ASIC 最吃紧的两处。
+> **为什么不直接用 DSA 的 Lightning Indexer？（源明确点名）** DSA（DeepSeek / GLM-5 的可学习稀疏注意力，见 [[01_glm_5_analysis]]）用 Lightning Indexer 选 token，但它**输出不连续**会把访存打成随机碎片、**二次方打分**在 1M 下昂贵。LSA 不另起炉灶，而是**针对这两处逐一修复**：SI 管访存形态（→coalesced 访问）、HI 管打分成本（→分层粗筛降二次方）、CLI 再叠一层跨层摊薄。本质是把「稀疏注意力」从「省 FLOPs」重定义为「**省访存 + 省索引**」——这正是带宽受限的国产 ASIC 最吃紧的两处。
 
 #### 读图问答（对着上图逐条澄清 LSA 的常见疑问）
 
@@ -164,7 +164,7 @@
 
 - **深度**：3-step 模块，用于**投机解码（speculative decoding）** 加速。
 - **与 LSA 的协同**：MTP 的第 2、3 步**复用第 1 步的注意力索引**（CLI 的延伸）——多预测的 token 不再重复做索引，进一步压低投机解码的开销。
-- MTP 概念与 DeepSeek-V3 一脉相承（见 [[deepseek_v3_analysis]]）。
+- MTP 概念与 DeepSeek-V3 一脉相承（见 [[12_deepseek_v3_analysis]]）。
 
 ---
 
@@ -187,7 +187,7 @@
 2. **DP 状态冗余消除**（DP state redundancy removal）——去掉数据并行副本间的优化器态冗余（类 ZeRO 思路，见 [[zero_fsdp_analysis]]）；
 3. **高效对称矩阵乘 kernel**（symmetric matmul kernel）——为 Muon 的 $G G^\top$ 类运算定制。
 
-> Muon 已成为 2026 年前沿国产/开源大模型的共同选择：Kimi K2 的 **MuonClip**（见 [[kimi_k2_analysis]]）、GLM-5 的 **Muon Split**（见 [[glm_5_analysis]]）、DeepSeek-V4（见 [[deepseek_v4_analysis]]）。LongCat-2.0 的贡献点在**异构 ASIC 上把 Muon 跑到 1.6T 规模并做 TP/DP/kernel 三处适配**。Muon 原理见 [[muon_analysis]]。
+> Muon 已成为 2026 年前沿国产/开源大模型的共同选择：Kimi K2 的 **MuonClip**（见 [[11_kimi_k2_analysis]]）、GLM-5 的 **Muon Split**（见 [[01_glm_5_analysis]]）、DeepSeek-V4（见 [[13_deepseek_v4_analysis]]）。LongCat-2.0 的贡献点在**异构 ASIC 上把 Muon 跑到 1.6T 规模并做 TP/DP/kernel 三处适配**。Muon 原理见 [[muon_analysis]]。
 
 ---
 
@@ -213,7 +213,7 @@
 | **Reasoning Experts** | **数学 / STEM / 多跳推理** | Multi-Hop Reasoning · STEM Reasoning · **Adaptive Computation（自适应算力）** |
 | **Interaction Experts** | 交互 / 通用对话 | Instruction Following（指令遵循）· Human Alignment（人类对齐）· Hallucination Suppression（幻觉抑制） |
 
-> **为什么不用单教师/单目标 RL？** Agentic coding、深推理、通用交互三者的**奖励信号与数据形态差异极大**，混在一个策略里互相拉扯（reward 冲突）。先分群把各自「原子能力」练到位、再蒸馏融合，是把「多目标对齐」从「一个策略硬扛」改成「分而治之 + 融合」。这与 GLM-5 的「分阶段 RL + 跨阶段蒸馏防遗忘」（见 [[glm_5_analysis]] §三）思路相通。
+> **为什么不用单教师/单目标 RL？** Agentic coding、深推理、通用交互三者的**奖励信号与数据形态差异极大**，混在一个策略里互相拉扯（reward 冲突）。先分群把各自「原子能力」练到位、再蒸馏融合，是把「多目标对齐」从「一个策略硬扛」改成「分而治之 + 融合」。这与 GLM-5 的「分阶段 RL + 跨阶段蒸馏防遗忘」（见 [[01_glm_5_analysis]] §三）思路相通。
 >
 > **仍未披露**：on-policy 蒸馏的**具体损失形式**（KL / reverse-KL / 排序？）、是否含显式 RL（奖励模型 / GRPO 等）、各 teacher 群的训练细节与数据量——博客与图均未给。
 
@@ -321,7 +321,7 @@ MoE 层沿 token 维 → chunk A / chunk B
 ## 六、低精度与数值可靠性（重要的源忠实澄清）
 
 > [!contradiction] 「低精度」在 LongCat-2.0 语境下 ≠ FP8/FP4 量化训练
-> 用户常把「低精度」等同于 DeepSeek-V3 的 **FP8 训练**（见 [[low_precision_training_analysis]] / [[deepseek_v3_analysis]]）或 GLM-5 的 **INT4 QAT**（见 [[glm_5_analysis]]）。**官方博客**通篇未提 FP8/FP4/BF16 的训练或推理量化，其「精度」叙事落在**另一侧面：国产 ASIC 上的数值可靠性 / 可复现性**。
+> 用户常把「低精度」等同于 DeepSeek-V3 的 **FP8 训练**（见 [[low_precision_training_analysis]] / [[12_deepseek_v3_analysis]]）或 GLM-5 的 **INT4 QAT**（见 [[01_glm_5_analysis]]）。**官方博客**通篇未提 FP8/FP4/BF16 的训练或推理量化，其「精度」叙事落在**另一侧面：国产 ASIC 上的数值可靠性 / 可复现性**。
 >
 > **✅ 2026-07 代码开源后补正**：**推理确有 FP8**——官方另发 `LongCat-2.0-FP8` 权重、SGLang 以 FP8 权重 + `--kv-cache-dtype bfloat16` 部署（README），`longcat_flash.py` 内有成套 FP8（e4m3fn / block-quant / DeepGEMM）加载与反量化逻辑（:697-808）。但**训练是否用 FP8 仍未披露**——博客「精度」叙事依旧是下面这套数值可靠性，而非低比特训练。
 
@@ -419,11 +419,11 @@ MoE 层沿 token 维 → chunk A / chunk B
 **同域模型（对比阅读）**：
 - [[meituan_longcat/index]] — 美团 LongCat 家族总览（本页所属家族入口）
 - [[longcat_flash_analysis]] — **LongCat-Flash**（本模型的架构前身：ScMoE 短路 + 零计算专家在此首创；2.0 = Flash + LSA/N-gram + 国产 ASIC）
-- [[glm_5_analysis]] — GLM-5：MoE + Muon Split + DSA 稀疏注意力 + INT4 QAT（最相近的对照）
-- [[kimi_k2_analysis]] — Kimi K2：1T MoE + MuonClip + Agentic RL
-- [[deepseek_v3_analysis]] — FP8 训练 · MTP · 671B MoE（低精度/MTP 对照）
-- [[deepseek_v4_analysis]] — CSA/HCA 稀疏注意力 · Muon · 1.6T MoE
-- [[deepseek_moe_analysis]] — MoE 路由与负载均衡原理
+- [[01_glm_5_analysis]] — GLM-5：MoE + Muon Split + DSA 稀疏注意力 + INT4 QAT（最相近的对照）
+- [[11_kimi_k2_analysis]] — Kimi K2：1T MoE + MuonClip + Agentic RL
+- [[12_deepseek_v3_analysis]] — FP8 训练 · MTP · 671B MoE（低精度/MTP 对照）
+- [[13_deepseek_v4_analysis]] — CSA/HCA 稀疏注意力 · Muon · 1.6T MoE
+- [[20_deepseek_moe_analysis]] — MoE 路由与负载均衡原理
 
 **技术原理（机制交叉链接）**：
 - [[muon_analysis]] — Muon 优化器原理

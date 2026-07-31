@@ -1,7 +1,7 @@
 # 专家并行 EP（MoE）— 原理解读
 
 > 层次：原理（principle）· 引擎无关
-> 前置：[[collectives_analysis]]（all-to-all 的代价），MoE 模型见 [[../01_models/deepseek/deepseek_moe_analysis]]
+> 前置：[[collectives_analysis]]（all-to-all 的代价），MoE 模型见 [[../01_models/deepseek/20_deepseek_moe_analysis]]
 > 实现见 [[../../02_engineering/02_train_frameworks/megatron-lm/megatron_ep_analysis]]、[[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_ep_analysis]]
 > 最后更新：2026-07-01
 
@@ -49,7 +49,7 @@ $$T_{\text{MoE}} \approx \underbrace{T_{a2a}^{\text{dispatch}}}_{\text{送 token
 
 **① 负载不均（EP 的头号敌人）**：token 路由由数据决定，某些「热门专家」会收到远超平均的 token，而它们只在一张卡上 → 那张卡的计算和收发都爆满，**其余卡空等**（木桶效应）。缓解手段：
 - **容量因子（capacity factor）**：给每个专家设收 token 上限 $= \text{capacity} \times \frac{\text{tokens}}{E}$。超出的 token 被 **drop**（跳过该专家，走残差）或 **reroute**。容量大 → 浪费算力/通信；容量小 → drop 多、掉质量。这是一个成本-质量的权衡旋钮。
-- **负载均衡损失（aux loss）**：训练时加一项鼓励 gate 把 token 均匀分给各专家的正则（DeepSeek 等还做 aux-loss-free 的偏置调节，见 [[../01_models/deepseek/deepseek_v3_analysis]]）。
+- **负载均衡损失（aux loss）**：训练时加一项鼓励 gate 把 token 均匀分给各专家的正则（DeepSeek 等还做 aux-loss-free 的偏置调节，见 [[../01_models/deepseek/12_deepseek_v3_analysis]]）。
 
 **② 全连接通信打满网络**：机间做 all-to-all 极易把 IB 打满、打偏。所以 **EP 偏好机内**，或采用**分层 all-to-all**（先机内聚合、再机间交换一份），这正是 DeepEP 等库的核心优化——把两次 a2a 分层并与专家计算重叠。
 
@@ -71,10 +71,10 @@ $$T_{\text{MoE}} \approx \underbrace{T_{a2a}^{\text{dispatch}}}_{\text{送 token
 - [[tensor_sequence_parallel_analysis]] — TP：与 EP 争机内带宽，常组合 EP×TP
 - [[data_parallel_analysis]] — DP：与 EP 组合时专家在组间复制
 - [[index]] — N 维布局里 EP 占据机内维
-- [[../01_models/deepseek/deepseek_moe_analysis]] — MoE 模型侧：细粒度专家、共享专家、路由设计
-- [[../01_models/deepseek/deepseek_v3_analysis]] — aux-loss-free 负载均衡的实践
+- [[../01_models/deepseek/20_deepseek_moe_analysis]] — MoE 模型侧：细粒度专家、共享专家、路由设计
+- [[../01_models/deepseek/12_deepseek_v3_analysis]] — aux-loss-free 负载均衡的实践
 - [[../../02_engineering/02_train_frameworks/megatron-lm/megatron_ep_analysis]] — **实现层**：Megatron 的 EP token dispatcher 与 a2a
 - [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_ep_analysis]] — **实现层**：torchtitan 的 EP
 - [[../../02_engineering/02_train_frameworks/mindformers/mindformers_moe_token_dispatcher_analysis]] — **实现层**：token dispatcher 的分发/回收
 - [[hw_friendly_llm_codesign_analysis]] — 推理侧视角：宽 EP 抬 GEMM-M 的定量论证（NVIDIA GB300）
-- [[../01_models/moonshot_kimi/moonep_analysis]] — **本页“最大的敌人是负载不均”的 2026 年新答案**：MoonEP 用动态冗余专家把不均从“减小”改成“吸收”，源码级分析
+- [[../01_models/moonshot_kimi/27_moonep_analysis]] — **本页“最大的敌人是负载不均”的 2026 年新答案**：MoonEP 用动态冗余专家把不均从“减小”改成“吸收”，源码级分析

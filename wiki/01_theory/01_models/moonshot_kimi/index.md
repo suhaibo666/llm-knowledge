@@ -1,6 +1,29 @@
 # Kimi/Moonshot AI 技术路线总览
 
 > Kimi 是 Moonshot AI（月之暗面）开发的大语言模型系列，以长上下文能力和推理能力著称。
+> 最后更新: 2026-07-31（kb-reorg P7 Task 7:目录内分段编号 + `kimi_k2.5_analysis` 消点号→`kimi_k2_5_analysis`）
+
+---
+
+## 页面列表(按层次)
+
+> **段位与阅读顺序**(kb-reorg P7 Task 7,2026-07-31):段 1(10-19)核心机制主线——按发布时间交错排列旗舰模型与其奠基的注意力机制创新(MoBA→K2→Kimi Linear/KDA→K2.5→K3,与下方「技术演进时间线」一致);段 2(20-29)深潜/专题——K3 各切面的源码级/机制级深挖(KDA 机制与 kernel 实现、K3 架构/infra/后训练案例/稳定性/开源栈、MoonEP 专家负载均衡)。
+
+| 页面 | 层次 | 核心主题 |
+|------|------|---------|
+| [[10_moba_analysis]] | 核心机制(段 1) | MoBA:混合块注意力,亚二次 $O(N \cdot B \cdot k)$,已生产部署 |
+| [[11_kimi_k2_analysis]] | 核心机制(段 1) | Kimi K2:1T MoE Agentic 智能,Moonlight 架构 |
+| [[12_kimi_linear_analysis]] | 核心机制(段 1) | Kimi Linear:KDA 线性注意力,3:1 KDA-MLA 混合,6x 解码加速 |
+| [[13_kimi_k2_5_analysis]] | 核心机制(段 1) | Kimi K2.5:1.1T MoE,视觉 Agent 智能融合 |
+| [[14_kimi_k3_analysis]] | 核心机制(段 1) | Kimi K3:2.78T MoE 旗舰,KDA+AttnRes+Stable LatentMoE,1M 上下文 |
+| [[20_gdn_kda_linear_attention_analysis]] | 深潜(段 2) | Gated Delta Networks + KDA 机制深挖:从 QKVABZ 到 chunkwise 仿射扫描 |
+| [[21_gdn_kda_kernel_implementation_analysis]] | 深潜(段 2) | GDN/KDA 训练与推理 Kernel 实现(FLA/SGLang) |
+| [[22_kimi_k3_architecture_deepdive]] | 深潜(段 2) | K3 架构深挖:Attention Residuals、Stable LatentMoE、KDA:Gated MLA 混合比 |
+| [[23_kimi_k3_infra_deepdive]] | 深潜(段 2) | K3 训练/推理基础设施深挖 |
+| [[24_kimi_k3_posttraining_case_study_analysis]] | 深潜(段 2) | K3 后训练案例(原 D12):九专家 RL、MOPD、partial rollout、white-box environment、QAT、百万 token 状态管理 |
+| [[25_kimi_k3_stability_analysis]] | 深潜(段 2) | K3 训练稳定性:七条失稳轴与被拒绝的替代方案 |
+| [[26_kimi_k3_open_source_stack_analysis]] | 深潜(段 2) | K3 开源栈全景,逐仓证据等级核对 |
+| [[27_moonep_analysis]] | 深潜(段 2) | MoonEP:动态冗余专家的全平衡 EP,源码级审计 |
 
 ---
 
@@ -136,7 +159,7 @@ K3 后训练闭环 (2026.07)
 └── 1M infra: external KV pool / auto-throttling / AgentENV
 ```
 
-K3 没有把 partial rollout 换成一套完全异步算法：它仍按迭代和组边界更新，只允许未完成轨迹跨迭代续跑。完整机制、公式、证据边界与源码缺口统一见 [[kimi_k3_posttraining_case_study_analysis|D12]]。
+K3 没有把 partial rollout 换成一套完全异步算法：它仍按迭代和组边界更新，只允许未完成轨迹跨迭代续跑。完整机制、公式、证据边界与源码缺口统一见 [[24_kimi_k3_posttraining_case_study_analysis|D12]]。
 
 ---
 
@@ -205,21 +228,21 @@ K3 没有把 partial rollout 换成一套完全异步算法：它仍按迭代和
 | 论文 | arXiv | Wiki 页面 |
 |------|-------|----------|
 | Mooncake: KVCache-centric Disaggregated Architecture | 2407.00079 | [[02_engineering/03_infer_frameworks/mooncake_analysis]] |
-| MoBA: Mixture of Block Attention | 2502.13189 | [[moba_analysis]] |
+| MoBA: Mixture of Block Attention | 2502.13189 | [[10_moba_analysis]] |
 | Kimi k1.5: Scaling RL with LLMs | 2501.12599 | [[01_theory/04_posttraining/29_kimi_k1_5_analysis]] |
 | Kimi VL Technical Report | 2504.07491 | 待摄入 |
 | Kimi Audio Technical Report | 2504.18425 | 待摄入 |
-| Kimi K2: Open Agentic Intelligence | 2507.20534 | [[kimi_k2_analysis]] |
-| Kimi Linear: Expressive Efficient Attention | 2510.26692 | [[kimi_linear_analysis]] |
-| Gated Delta Networks + KDA 机制深挖 | 2412.06464 / 2510.26692 | [[gdn_kda_linear_attention_analysis]] |
-| GDN/KDA 训练与推理 Kernel 实现 | FLA / SGLang | [[gdn_kda_kernel_implementation_analysis]] |
-| Kimi K2.5: Visual Agentic Intelligence | 2602.02276 | [[kimi_k2.5_analysis]] |
-| Attention Residuals | 2603.15031 | [[kimi_k3_architecture_deepdive]] §4(独立页待建) |
-| Kimi K3: Open Frontier Intelligence Technical Report | 官方报告 2026-07-28 | [[kimi_k3_analysis]] · [[kimi_k3_architecture_deepdive]] · [[kimi_k3_infra_deepdive]] · [[kimi_k3_stability_analysis]] · [[kimi_k3_posttraining_case_study_analysis\|D12]] |
-| K3 后训练案例（kb-reorg P5 迁入,原 D12） | 官方报告 2026-07-28 | [[kimi_k3_posttraining_case_study_analysis]] — 九专家 RL、MOPD、partial rollout、white-box environment、QAT 与百万 token 状态管理的统一综合案例 |
-| K3 训练稳定性（横切报告 §2.3/§2.4/§2.5/§3.2/§3.3/§4.1.2/App. C） | 官方报告 2026-07-28 | [[kimi_k3_stability_analysis]] |
-| K3 开源栈全景（逐仓 GitHub API 核对） | 仓库快照 2026-07-28 | [[kimi_k3_open_source_stack_analysis]] |
-| MoonEP：动态冗余专家的全平衡 EP | `MoonEP@0f385f03` | [[moonep_analysis]] |
+| Kimi K2: Open Agentic Intelligence | 2507.20534 | [[11_kimi_k2_analysis]] |
+| Kimi Linear: Expressive Efficient Attention | 2510.26692 | [[12_kimi_linear_analysis]] |
+| Gated Delta Networks + KDA 机制深挖 | 2412.06464 / 2510.26692 | [[20_gdn_kda_linear_attention_analysis]] |
+| GDN/KDA 训练与推理 Kernel 实现 | FLA / SGLang | [[21_gdn_kda_kernel_implementation_analysis]] |
+| Kimi K2.5: Visual Agentic Intelligence | 2602.02276 | [[13_kimi_k2_5_analysis]] |
+| Attention Residuals | 2603.15031 | [[22_kimi_k3_architecture_deepdive]] §4(独立页待建) |
+| Kimi K3: Open Frontier Intelligence Technical Report | 官方报告 2026-07-28 | [[14_kimi_k3_analysis]] · [[22_kimi_k3_architecture_deepdive]] · [[23_kimi_k3_infra_deepdive]] · [[25_kimi_k3_stability_analysis]] · [[24_kimi_k3_posttraining_case_study_analysis\|D12]] |
+| K3 后训练案例（kb-reorg P5 迁入,原 D12） | 官方报告 2026-07-28 | [[24_kimi_k3_posttraining_case_study_analysis]] — 九专家 RL、MOPD、partial rollout、white-box environment、QAT 与百万 token 状态管理的统一综合案例 |
+| K3 训练稳定性（横切报告 §2.3/§2.4/§2.5/§3.2/§3.3/§4.1.2/App. C） | 官方报告 2026-07-28 | [[25_kimi_k3_stability_analysis]] |
+| K3 开源栈全景（逐仓 GitHub API 核对） | 仓库快照 2026-07-28 | [[26_kimi_k3_open_source_stack_analysis]] |
+| MoonEP：动态冗余专家的全平衡 EP | `MoonEP@0f385f03` | [[27_moonep_analysis]] |
 
 ---
 
@@ -233,11 +256,11 @@ K3 没有把 partial rollout 换成一套完全异步算法：它仍按迭代和
 仍待补齐或独立摄入的 Moonshot AI 材料：
 - Kimi-Dev (2509.23045) — Agentless Training
 - Kimina-Prover (2504.11354) — 形式推理
-- Attention Residuals (2603.15031) — 机制/消融/开销已在 [[kimi_k3_architecture_deepdive]] §4 深度覆盖(2026-07-17,含源码核查);独立 `attnres_analysis` 页待建
-- Kimi K3 技术报告已于 2026-07-28 摄入；尚缺核心 RL trainer/rollout 源码、训练与生产拓扑、关键超参数及隔离消融，统一追踪在 [[kimi_k3_posttraining_case_study_analysis|D12]]
-- K3 开源栈已于 2026-07-28 逐仓核对（见 [[kimi_k3_open_source_stack_analysis]]）：**MoonEP 已做源码级审计**（[[moonep_analysis]]），AgentENV 升至 README 级。**仍无任何开源实现的**：K3 backbone、trainer/rollout、以及 Gated MLA（含 512 head-dim）与 AttnRes 两类 kernel
+- Attention Residuals (2603.15031) — 机制/消融/开销已在 [[22_kimi_k3_architecture_deepdive]] §4 深度覆盖(2026-07-17,含源码核查);独立 `attnres_analysis` 页待建
+- Kimi K3 技术报告已于 2026-07-28 摄入；尚缺核心 RL trainer/rollout 源码、训练与生产拓扑、关键超参数及隔离消融，统一追踪在 [[24_kimi_k3_posttraining_case_study_analysis|D12]]
+- K3 开源栈已于 2026-07-28 逐仓核对（见 [[26_kimi_k3_open_source_stack_analysis]]）：**MoonEP 已做源码级审计**（[[27_moonep_analysis]]），AgentENV 升至 README 级。**仍无任何开源实现的**：K3 backbone、trainer/rollout、以及 Gated MLA（含 512 head-dim）与 AttnRes 两类 kernel
 - AgentENV（`kvcache-ai/AgentENV`）待做 commit 级代码审计；minitriton / nano-kpu 待实际复跑（当前仅按 README 记录，属 K3 能力证物而非基础设施）
-- K3 各稳定性组件的**隔离消融**（RMSNorm / SiTU / QB / Per-Head Muon 各自贡献）报告未给；K3 也**没有** K2 那样的“零 loss spike”级训练稳定性陈述，边界见 [[kimi_k3_stability_analysis]] §4
+- K3 各稳定性组件的**隔离消融**（RMSNorm / SiTU / QB / Per-Head Muon 各自贡献）报告未给；K3 也**没有** K2 那样的“零 loss spike”级训练稳定性陈述，边界见 [[25_kimi_k3_stability_analysis]] §4
 - G1 (2505.13426) — VLM 感知 + RL
 - WorldVQA (2602.02537) — 多模态评测
 - Pixel-Level VLM (2601.19228) — 像素级感知
@@ -249,10 +272,10 @@ K3 没有把 partial rollout 换成一套完全异步算法：它仍按迭代和
 - [[01_theory/index]]
 - [[01_theory/01_models/attention_is_all_you_need_analysis]]
 - [[01_theory/04_posttraining/20_grpo_analysis]]
-- [[kimi_k3_posttraining_case_study_analysis]] — K3 后训练算法、1M Agentic RL infra 与源码边界
+- [[24_kimi_k3_posttraining_case_study_analysis]] — K3 后训练算法、1M Agentic RL infra 与源码边界
 - [[02_engineering/02_train_frameworks/megatron-lm/index]]
-- [[gdn_kda_linear_attention_analysis]] — 从 QKVABZ 到 chunkwise 仿射扫描
-- [[gdn_kda_kernel_implementation_analysis]] — 训练、Prefill、Decode 融合实现
-- [[kimi_k3_stability_analysis]] — K3 稳定性栈：七条失稳轴与被拒绝的替代方案
-- [[kimi_k3_open_source_stack_analysis]] — K3 开源栈全景与各仓证据等级
-- [[moonep_analysis]] — MoonEP 源码级审计（全平衡 EP）
+- [[20_gdn_kda_linear_attention_analysis]] — 从 QKVABZ 到 chunkwise 仿射扫描
+- [[21_gdn_kda_kernel_implementation_analysis]] — 训练、Prefill、Decode 融合实现
+- [[25_kimi_k3_stability_analysis]] — K3 稳定性栈：七条失稳轴与被拒绝的替代方案
+- [[26_kimi_k3_open_source_stack_analysis]] — K3 开源栈全景与各仓证据等级
+- [[27_moonep_analysis]] — MoonEP 源码级审计（全平衡 EP）

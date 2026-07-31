@@ -359,5 +359,5 @@ CP        | 半自动（Ring AG） | FlexAttention 融合   | 序列维度通算
 - [[32_post_grad_passes_guide]] — `micro_pipeline_tp_pass`、`fuse_ddp_communication`、`bucket_*` passes
 - [[megatron_comm_overlap_analysis]] — Megatron-LM 各并行维度通算重叠详细实现
 - [[megatron_moe_training_optimization_report]] — DeepEP/HybridEP 在 Megatron-LM 中的集成
-- [[deepseek_v3_analysis]] — DualPipe PP 通算重叠设计
-- [[deepseek_v4_analysis]] — WaveEP 细粒度 EP 重叠（wave-based expert scheduling）
+- [[12_deepseek_v3_analysis]] — DualPipe PP 通算重叠设计
+- [[13_deepseek_v4_analysis]] — WaveEP 细粒度 EP 重叠（wave-based expert scheduling）

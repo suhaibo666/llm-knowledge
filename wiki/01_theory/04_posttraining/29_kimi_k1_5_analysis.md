@@ -226,4 +226,4 @@ k1.5 为后续模型奠定的基础：
 
 - [[01_theory/index]]
 - [[01_theory/04_posttraining/20_grpo_analysis]]
-- [[01_theory/01_models/deepseek/deepseek_r1_analysis]]
+- [[01_theory/01_models/deepseek/14_deepseek_r1_analysis]]

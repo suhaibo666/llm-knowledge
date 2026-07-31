@@ -5,7 +5,7 @@
 > **最后更新**：2026-06-29
 
 > [!warning] arXiv 编号订正
-> 用户最初给的 **arXiv:2606.19348 是 DeepSeek-V4 模型论文**（见 [[deepseek_v4_analysis]]），**不是 DSpark**。DSpark 论文随开源仓 DeepSpec 以 PDF 发布。详见 [[dspark_analysis]] 顶部说明。
+> 用户最初给的 **arXiv:2606.19348 是 DeepSeek-V4 模型论文**（见 [[13_deepseek_v4_analysis]]），**不是 DSpark**。DSpark 论文随开源仓 DeepSpec 以 PDF 发布。详见 [[dspark_analysis]] 顶部说明。
 
 ---
 
@@ -45,7 +45,7 @@ flowchart LR
 | 验证调度 | **静态**（生产只敢用单 token，MTP-3/5 高并发降吞吐） | 静态/启发式 | 静态固定块 | **置信度头 + 硬件感知前缀调度器**（负载自适应） |
 | 训练范式 | 随主模型联合训练 | 蒸馏（冻结目标，TTT） | 蒸馏（冻结目标，CE-only） | 蒸馏（冻结目标，CE+TV+置信 三损失） |
 | 接受长度 τ（Qwen3-4B 宏均，越大越好） | — | 基线 | 比 Eagle3 高 | **比 Eagle3 高 30.9%、比 DFlash 高 16.3%** |
-| 出处 | DeepSeek-V3 §; [[deepseek_v3_analysis]] | arXiv:2503.01840 | arXiv:2602.06036 | DSpark 论文; [[dspark_analysis]] |
+| 出处 | DeepSeek-V3 §; [[12_deepseek_v3_analysis]] | arXiv:2503.01840 | arXiv:2602.06036 | DSpark 论文; [[dspark_analysis]] |
 
 ### 三者「相互区别」的本质（用户问的重点）
 
@@ -71,7 +71,7 @@ flowchart LR
 
 - **DFlash 独立深挖**：本库目前从 DSpark 视角（其并行骨干）覆盖 DFlash，尚无独立的 DFlash（块扩散 / block diffusion）论文页。arXiv:2602.06036 在 `raw/` 中暂缺。
 - **Eagle3 独立深挖**：仅在对比表与 [[vllm_speculative_decoding_analysis]] §3.3（EAGLE 时序）中出现，无专页。
-- **MTP 模型侧**：原理散见 [[deepseek_v3_analysis]]（§Multi-Token Prediction）与 [[deepseek_v4_analysis]]，尚未抽成「投机解码视角的 MTP」专页。
+- **MTP 模型侧**：原理散见 [[12_deepseek_v3_analysis]]（§Multi-Token Prediction）与 [[13_deepseek_v4_analysis]]，尚未抽成「投机解码视角的 MTP」专页。
 
 ---
 

@@ -154,6 +154,6 @@ This pipeline was later adopted (with variations) by:
 ## Related Pages
 
 - [[11_ppo_analysis]] — PPO algorithm used in Step 3
-- [[deepseek_r1_analysis]] — DeepSeek-R1 replaced PPO with GRPO
+- [[14_deepseek_r1_analysis]] — DeepSeek-R1 replaced PPO with GRPO
 - [[12_dpo_analysis]] — DPO is a simpler alternative to RLHF
 - [[01_theory/index]]

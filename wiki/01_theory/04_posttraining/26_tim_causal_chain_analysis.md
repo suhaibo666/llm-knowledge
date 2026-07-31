@@ -511,5 +511,5 @@ flowchart TB
 - [[07_training_reliability/index]] — 万卡训练确定性与可靠性问题域（问题 2 与本页直接接壤）
 - [[verl/index]] · [[15_verl_rl_algorithms_analysis]] · [[14_verl_rollout_resharding_analysis]] — recomputation / bypass 两条路径在框架中的实现
 - [[vllm/index]] — rollout 引擎侧的 kernel 与调度实现
-- [[deepseek_v4_analysis]] — §3.3 批不变与确定性 kernel 库的完整上下文
+- [[13_deepseek_v4_analysis]] — §3.3 批不变与确定性 kernel 库的完整上下文
 - [[low_precision_training_analysis]] — FP16/BF16/FP8 精度路线的训练侧背景

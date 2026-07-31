@@ -75,12 +75,12 @@ top_k_weights = top_k_weights / (top_k_weights.sum(...) + 1e-20)  # L316 top-k �
 top_k_weights = top_k_weights * self.router_scaling_factor        # L318 ×2.826
 ```
 
-- **机制与为什么**: `e_score_correction_bias` 是逐专家标量 buffer(modeling L369,强制 FP32 保存,L453),训练中按负载动态调整——**只改变专家被选中的概率,不污染加权权重**。这正是 [[deepseek_v3_analysis]] 的 aux-loss-free 负载均衡:淘汰辅助损失是因为它给梯度注入与语言建模目标冲突的噪声。Hy3 原样采用,证明该配方已成 2026 年开源 MoE 的事实标准(GLM-5、Kimi K2 同款思路)。
+- **机制与为什么**: `e_score_correction_bias` 是逐专家标量 buffer(modeling L369,强制 FP32 保存,L453),训练中按负载动态调整——**只改变专家被选中的概率,不污染加权权重**。这正是 [[12_deepseek_v3_analysis]] 的 aux-loss-free 负载均衡:淘汰辅助损失是因为它给梯度注入与语言建模目标冲突的噪声。Hy3 原样采用,证明该配方已成 2026 年开源 MoE 的事实标准(GLM-5、Kimi K2 同款思路)。
 - **非标细节**: `router_scaling_factor = 2.826`(config L38)。sigmoid 分数归一化后总和为 1,比 softmax 路由的期望权重更小,×2.826 把 MoE 分支输出幅度拉回与残差流匹配的量级(作用同 DeepSeek-V3 的 `routed_scaling_factor: 2.5`,数值不同——本条为推断,标度选择官方未解释)。
 
 ### 2.4 注意力: 选 GQA + QK-Norm,不选 MLA
 
-64Q/8KV/dim128 的标准 GQA,q/k 各加逐 head_dim 的 RMSNorm(modeling L248-249、L265-266)。**为什么不是省 KV cache 的 MLA**(源无明说,本库推断): ① GQA 8 KV 头在 256K 上下文下 KV cache = 2×8×128×80×2B ≈ 320KB/token,尚可接受;② GQA 与 vLLM/SGLang 的成熟 kernel 生态零适配成本,与 Hy3"三个月快速迭代 + 产品落地优先"的路线一致;③ QK-Norm 抑制 logits 爆炸,是不引入 MLA 时更便宜的长上下文稳定手段。对照组: [[deepseek_v3_analysis]](MLA)、[[glm_5_analysis]](DSA)、[[longcat_flash_analysis]](MLA+ScMoE)都在注意力上做了改造,Hy3 是刻意的保守派。
+64Q/8KV/dim128 的标准 GQA,q/k 各加逐 head_dim 的 RMSNorm(modeling L248-249、L265-266)。**为什么不是省 KV cache 的 MLA**(源无明说,本库推断): ① GQA 8 KV 头在 256K 上下文下 KV cache = 2×8×128×80×2B ≈ 320KB/token,尚可接受;② GQA 与 vLLM/SGLang 的成熟 kernel 生态零适配成本,与 Hy3"三个月快速迭代 + 产品落地优先"的路线一致;③ QK-Norm 抑制 logits 爆炸,是不引入 MLA 时更便宜的长上下文稳定手段。对照组: [[12_deepseek_v3_analysis]](MLA)、[[01_glm_5_analysis]](DSA)、[[longcat_flash_analysis]](MLA+ScMoE)都在注意力上做了改造,Hy3 是刻意的保守派。
 
 > **注意力的推理侧优化在服务栈里,不在权重里**: 混元团队另发了免训练的 **Stem 稀疏注意力**(arXiv 2603.06274,TPD 位置衰减预算 + OAM 输出感知选块,25% 算力逼近稠密精度、128K prefill 3.7×),在腾讯内部集成进 Hy3 preview 的 vLLM 服务(搭配 HPC-BSA 算子)——开源权重与官方部署配方仍是纯稠密 GQA。机制详见 [[stem_sparse_attention_analysis]]。
 
@@ -146,7 +146,7 @@ top_k_weights = top_k_weights * self.router_scaling_factor        # L318 ×2.826
 
 ## 五、部署形态(README L140-210)
 
-- **推荐栈**: vLLM(`--speculative-config.method mtp, num_speculative_tokens 2`)或 SGLang(以 EAGLE 模式挂 MTP: `--speculative-algorithm EAGLE --speculative-num-steps 2 --speculative-num-draft-tokens 3`)——MTP 层在两个引擎里都作为投机解码 draft 使用,与 [[deepseek_v3_analysis]] 的 MTP 用法一致。
+- **推荐栈**: vLLM(`--speculative-config.method mtp, num_speculative_tokens 2`)或 SGLang(以 EAGLE 模式挂 MTP: `--speculative-algorithm EAGLE --speculative-num-steps 2 --speculative-num-draft-tokens 3`)——MTP 层在两个引擎里都作为投机解码 draft 使用,与 [[12_deepseek_v3_analysis]] 的 MTP 用法一致。
 - **硬件门槛**: BF16 全量 8×H20-3e 级别(README L142);FP8 版本(`Hy3-FP8`)另发,量化工具链开源 AngelSlim。
 - **采样推荐**: `temperature=0.9, top_p=1.0`(README L134);`reasoning_effort` 经 `chat_template_kwargs` 透传(L129)。
 - **许可**: Apache 2.0 无附加条款(preview 曾是限制性许可,正式版放开——腾讯官方新闻稿 2026-07-06)。
@@ -158,9 +158,9 @@ top_k_weights = top_k_weights * self.router_scaling_factor        # L318 ×2.826
 | 模型 | 总参/激活 | 注意力 | 负载均衡 | 差异化要点 |
 |------|------|------|------|------|
 | **Hy3** | 295B/21B(激活率 7.1%) | GQA+QK-Norm | sigmoid+bias 免辅助损失 | 架构最保守,赌注全押后训练与产品反馈闭环 |
-| [[deepseek_v3_analysis]] | 671B/37B | MLA | 同款(原创者) | FP8 训练、MTP 原创 |
-| [[kimi_k2_analysis]] | 1.04T/32B | MLA | 同款思路 | MuonClip、agentic RL 数据合成 |
-| [[glm_5_analysis]] | 744B/40B | DSA 稀疏注意力 | 同款思路 | Muon Split、压 KV 换长上下文 |
+| [[12_deepseek_v3_analysis]] | 671B/37B | MLA | 同款(原创者) | FP8 训练、MTP 原创 |
+| [[11_kimi_k2_analysis]] | 1.04T/32B | MLA | 同款思路 | MuonClip、agentic RL 数据合成 |
+| [[01_glm_5_analysis]] | 744B/40B | DSA 稀疏注意力 | 同款思路 | Muon Split、压 KV 换长上下文 |
 | [[longcat_flash_analysis]] | 560B/27B | MLA | PID 控制器调 bias | ScMoE 短路重叠、零计算专家 |
 
 Hy3 激活参数是这一档里最小的(21B vs 27–40B),官方叙事"21B 激活对标 2–5 倍激活规模旗舰"在 agentic 维度基本成立、在编码/竞赛数学维度不成立(§四)。API 定价 ¥1/M 输入、¥4/M 输出、¥0.25/M 缓存(二手信息,tech360/Lushbinary 报道,未见官方英文源,存疑待核)。
@@ -182,11 +182,11 @@ Hy3 激活参数是这一档里最小的(21B vs 27–40B),官方叙事"21B 激�
 
 - [[index]] — 腾讯混元模型家族入口
 - [[stem_sparse_attention_analysis]] — 混元自研免训练稀疏注意力,Hy3 preview 内部推理服务的 prefill 优化(不在开源权重内)
-- [[deepseek_v3_analysis]] — sigmoid+bias 免辅助损失路由与 MTP 的原创出处,Hy3 的直接技术上游
-- [[deepseek_moe_analysis]] — 共享专家 + 细粒度专家切分的源头
-- [[deepseek_v4_analysis]] — 同期对比: 走架构激进路线(CSA/HCA/mHC)的反面参照
-- [[kimi_k2_analysis]] — 同为 agentic 主打的开源 MoE,RL 配方对照
-- [[kimi_k2.5_analysis]] — 主榜对比模型之一的多模态延伸
-- [[glm_5_analysis]] — 主榜最强同段对手,DSA 注意力路线
+- [[12_deepseek_v3_analysis]] — sigmoid+bias 免辅助损失路由与 MTP 的原创出处,Hy3 的直接技术上游
+- [[20_deepseek_moe_analysis]] — 共享专家 + 细粒度专家切分的源头
+- [[13_deepseek_v4_analysis]] — 同期对比: 走架构激进路线(CSA/HCA/mHC)的反面参照
+- [[11_kimi_k2_analysis]] — 同为 agentic 主打的开源 MoE,RL 配方对照
+- [[13_kimi_k2_5_analysis]] — 主榜对比模型之一的多模态延伸
+- [[01_glm_5_analysis]] — 主榜最强同段对手,DSA 注意力路线
 - [[longcat_flash_analysis]] — 另一"小激活参数"路线: 用 ScMoE 调度而非纯后训练换性价比
 - [[inkling_analysis]] — 反面对照: Hy3 架构最保守赌后训练,Inkling 赌架构差异化(抛 RoPE/MLA)

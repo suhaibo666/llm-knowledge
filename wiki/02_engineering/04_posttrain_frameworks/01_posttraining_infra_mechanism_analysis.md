@@ -103,7 +103,7 @@ Backpressure 至少有四层：
 3. **内存容量**：object store、host RAM、NVMe 和 network queue。
 4. **状态容量**：GPU KV、CPU external KV、KDA recurrent state 和可暂停 sandbox。
 
-这四层容量是 data plane 必须暴露的接口维度；只限制 queue 长度会让短样本挤占版本预算，只限制版本会在慢 verifier 下耗尽内存。具体的准入控制实现——AReaL `StalenessManager` 的 concurrency/staleness 双约束、K3 的 cache-pressure-aware 信号组合（active request count、queued request count、KV utilization 联合调节送入 inference engine 的请求数）——见 [[12_rl_infra_efficiency_analysis|Coding RL Infra 效率优化]] 第 2 节「优化 6」（K3 案例另见 [[kimi_k3_posttraining_case_study_analysis|D12]]）。
+这四层容量是 data plane 必须暴露的接口维度；只限制 queue 长度会让短样本挤占版本预算，只限制版本会在慢 verifier 下耗尽内存。具体的准入控制实现——AReaL `StalenessManager` 的 concurrency/staleness 双约束、K3 的 cache-pressure-aware 信号组合（active request count、queued request count、KV utilization 联合调节送入 inference engine 的请求数）——见 [[12_rl_infra_efficiency_analysis|Coding RL Infra 效率优化]] 第 2 节「优化 6」（K3 案例另见 [[24_kimi_k3_posttraining_case_study_analysis|D12]]）。
 
 ## 5. Dynamic batching 与 group 语义
 
@@ -256,7 +256,7 @@ microVM environment snapshots
 - [[25_on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
 - [[30_rl_framework_comparison|D06 工业后训练框架对比]]
 - [[10_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
-- [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
+- [[24_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[11_rl_sandbox_design_analysis|Coding RL Sandbox 设计]] — §7 harness 版本化与 Fork/Pause/Snapshot 语义的落地页
 - [[12_rl_infra_efficiency_analysis|Coding RL Infra 效率优化]] — §4 backpressure 准入控制信号（AReaL StalenessManager、K3 admission）的落地页
 - [[megatron_rl_posttraining_consistency_analysis]] · [[megatron_vllm_weight_sync_analysis]] — §6 weight publish 的训练侧/verl 实现

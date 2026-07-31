@@ -264,7 +264,7 @@ else:
 - `get_moe_configs`(`:1015`)优先读 `VLLM_TUNED_CONFIG_FOLDER` 下用户自调的 JSON,再读内置 `configs/`,都没有就 `get_default_config`(`:1203`,按 M/E/dtype 分支给经验块大小,并打印"性能可能次优"警告);
 - `device_name` 由 `current_platform.get_device_name()` 取,H200 系列归一到 `NVIDIA_H200`(`:1004`)。
 
-MoE 算法侧(路由、共享专家、grouped top-k)见 [[deepseek_moe_analysis]];EP/DP-attention 并行见 [[vllm_distributed_inference_analysis]]。
+MoE 算法侧(路由、共享专家、grouped top-k)见 [[20_deepseek_moe_analysis]];EP/DP-attention 并行见 [[vllm_distributed_inference_analysis]]。
 
 ### 3.5 其它融合层算子
 
@@ -312,4 +312,4 @@ vLLM 大量用 Triton 而非纯手写 CUDA,原因有二:**可移植**(同一 ker
 - [[torchtitan_compute_memory_optimizations_analysis]] —— torchtitan 融合算子(FusedSwiGLU/grouped GEMM)
 - [[32_post_grad_passes_guide]] · [[02_compile_stack/04_inductor/index]] —— Inductor pattern matcher / post-grad pass
 - [[gpu_kernel_guide]] —— Triton / Tensor Core kernel 链路
-- [[deepseek_moe_analysis]] —— MoE 结构(fused_moe 的算法侧)
+- [[20_deepseek_moe_analysis]] —— MoE 结构(fused_moe 的算法侧)

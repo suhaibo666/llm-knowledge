@@ -218,7 +218,7 @@ pairwise_sum:    递归二分，先求左右半段和再相加     误差 ~ O(lo
 
 这个开关针对的是一条具体的吞位链：梯度累积要把几十个 micro-batch 的 BF16 梯度加在一起，累加器越滚越大、后来的梯度相对越小——纯 BF16 累积到后期，新 micro-batch 的贡献会被部分或整体吞掉。代码层面，Megatron 的 DDP 为每个参数维护 `main_grad`（FP32 buffer），backward hook 中把 BF16 局部梯度**第一时间**加进 FP32 buffer（只做一次 BF16→FP32 转换，之后全程 FP32），梯度累积与 allreduce 均在 FP32 上进行；optimizer 持 FP32 master weights，step 后 cast 回 BF16 参数。master weights 解决的是同一个病的权重版：BF16 相对精度 0.4%，而单步更新量 lr·grad 相对权重常在 1e-4 以下——纯 BF16 权重会出现 `w + Δ == w`，训练「看起来在跑、参数纹丝不动」。（Megatron 实现见 [[02_engineering/02_train_frameworks/megatron-lm/index]]。）
 
-**（3）FP8 的两级累加（DeepSeek 方案）。** 针对 tensor core 累加精度不足，DeepSeek-V3 的做法是分块提升（promotion）：tensor core 只连续累加 K=128 个元素（链条短，14 位累加精度下误差可控），然后把部分和搬到 CUDA core 的 **FP32 寄存器**上继续块间累加——本质上是把长链切成「短链（低精度硬件）× 外层树（FP32）」的两级结构，与（1）的树形思想同源。配合 1×128（激活）/128×128（权重）的 block-wise scaling 抑制 outlier 对量化范围的挤占。开源的 DeepGEMM 即该两级累加的参考实现。这一设计后来直接转化为对硬件厂商的诉求（ISCA'25）：未来加速器应原生支持可配置的高精度累加。（详见 [[deepseek_v3_analysis]]。）
+**（3）FP8 的两级累加（DeepSeek 方案）。** 针对 tensor core 累加精度不足，DeepSeek-V3 的做法是分块提升（promotion）：tensor core 只连续累加 K=128 个元素（链条短，14 位累加精度下误差可控），然后把部分和搬到 CUDA core 的 **FP32 寄存器**上继续块间累加——本质上是把长链切成「短链（低精度硬件）× 外层树（FP32）」的两级结构，与（1）的树形思想同源。配合 1×128（激活）/128×128（权重）的 block-wise scaling 抑制 outlier 对量化范围的挤占。开源的 DeepGEMM 即该两级累加的参考实现。这一设计后来直接转化为对硬件厂商的诉求（ISCA'25）：未来加速器应原生支持可配置的高精度累加。（详见 [[12_deepseek_v3_analysis]]。）
 
 **（4）补偿求和用于优化器。** 纯 BF16 优化器状态的吞位问题（`w + Δ == w`）除了 FP32 master weights，另一条省显存的路是 Kahan 补偿求和（torchao 的 `AnyPrecisionAdamW` 即内置 Kahan buffer）：
 
@@ -326,7 +326,7 @@ A_c = [ A  ]          B_r = [ B , B·e ]        （e 为全 1 向量）
 - [[longcat_2_analysis]] — LongCat 确定性算子 / 二叉树分段累加 / bit-flip 检测（问题 1、3、4 的一手落地）
 - [[longcat_flash_analysis]] — LongCat 的 SDC 检测（问题 4 第三层 ABFT 热点算子保护）
 - [[low_precision_training_analysis]] — 低精度训练格式与误差治理（问题 3 背景）
-- [[deepseek_v3_analysis]] — FP8 两级累加 / block-wise scaling / DeepGEMM（问题 3 方案 3）
+- [[12_deepseek_v3_analysis]] — FP8 两级累加 / block-wise scaling / DeepGEMM（问题 3 方案 3）
 - [[RL_Training_Inference_Precision_Analysis]] · [[10_rl_ppo_loss_and_grpo_analysis]] — 训推一致与重要性采样（问题 2）
 - [[batch_invariance_guide]] — batch 不变性的算子级实现:双内核 Attention、DeepGEMM 1D1D、MoE 反向确定性累加（问题 2 的 kernel 层落地）
 - [[collectives_analysis]] — ring/tree allreduce 规约树（问题 1 第 3 层通信规约顺序）

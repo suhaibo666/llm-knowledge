@@ -23,7 +23,7 @@
 
 SAO 的 single-rollout 是另一组偏差—方差—调度折衷，并没有证明 group rollout 普遍无效。它用 value model 和更严格的 token mask 补回单样本高方差；因此“一个样本”不是免费升级。
 
-Kimi K3 又给出一个工业反例：它仍为每个 prompt 采 \(K\) 条 completion，并在同题 \(K\) 条全部完成后才送优化；partial rollout 打破的是全局 \(N\times K\) 的长尾等待，而不是 \(K\)-response completion/dispatch boundary。报告没有重述所有任务的 advantage estimator，不能把这条调度边界扩大为通用统计公式（Kimi K3 Technical Report §4.1.2，p.13；详见 [[kimi_k3_posttraining_case_study_analysis|D12]]）。
+Kimi K3 又给出一个工业反例：它仍为每个 prompt 采 \(K\) 条 completion，并在同题 \(K\) 条全部完成后才送优化；partial rollout 打破的是全局 \(N\times K\) 的长尾等待，而不是 \(K\)-response completion/dispatch boundary。报告没有重述所有任务的 advantage estimator，不能把这条调度边界扩大为通用统计公式（Kimi K3 Technical Report §4.1.2，p.13；详见 [[24_kimi_k3_posttraining_case_study_analysis|D12]]）。
 
 ## 2. 统一符号
 
@@ -128,7 +128,7 @@ verl 的固定快照已有 GSPO 注册与 sequence clipping：`verl/trainer/ppo/
 
 ### 3.6 Kimi K3：先训练九个专家，再用 MOPD 合并
 
-K3 把“优化一个 policy”和“合并多个 specialist”拆成两个问题：先按三个领域与 `low/high/max` 三档 reasoning effort 训练九个专家，再用 Multi-Teacher On-Policy Distillation（MOPD）让统一 student 在自己采样的 token 上接受对应 teacher 的 clipped dense reward 完成合并；完整 Eq. 15、reasoning-effort 预算约束公式与 partial rollout 的组边界分析见 [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]] §2.2、§3、§4。
+K3 把“优化一个 policy”和“合并多个 specialist”拆成两个问题：先按三个领域与 `low/high/max` 三档 reasoning effort 训练九个专家，再用 Multi-Teacher On-Policy Distillation（MOPD）让统一 student 在自己采样的 token 上接受对应 teacher 的 clipped dense reward 完成合并；完整 Eq. 15、reasoning-effort 预算约束公式与 partial rollout 的组边界分析见 [[24_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]] §2.2、§3、§4。
 
 ## 4. 真正改变了什么
 
@@ -180,7 +180,7 @@ valid_token_count, response_length
 
 - [[24_agentic_rl_algorithm_analysis|D03 Agentic RL 算法与环境]]
 - [[25_on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
-- [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
+- [[24_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[20_grpo_analysis|GRPO 论文分析(元数据/原始实验数字)]]
 - [[21_dapo_analysis|DAPO 论文分析(元数据/原始实验数字)]]
 - [[22_gspo_analysis|GSPO 论文分析(元数据/原始实验数字)]]

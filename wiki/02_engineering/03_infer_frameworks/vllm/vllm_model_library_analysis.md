@@ -305,4 +305,4 @@ for name, loaded_weight in weights:
 
 ## Cross-Domain Links
 - [[megatron_tp_analysis]] —— 张量并行(Column/Row 切分)训练侧对照
-- [[deepseek_v3_analysis]] / [[deepseek_moe_analysis]] —— MLA/MoE 模型结构(被 vLLM 实现)
+- [[12_deepseek_v3_analysis]] / [[20_deepseek_moe_analysis]] —— MLA/MoE 模型结构(被 vLLM 实现)

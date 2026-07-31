@@ -239,7 +239,7 @@ MLA 把 KV 压成一个**低秩潜在向量** `kv_c`(`[Skv, Lkv]`,DeepSeek-V3 �
 - `TRITON_MLA`:`TritonMLAImpl.forward_mqa`(`mla/triton_mla.py:136`)→ `decode_attention_fwd`(`:198`),通用 Triton。
 - 另有 `FLASH_ATTN_MLA` / `CUTLASS_MLA` / `FLASHINFER_MLA` 以及稀疏变体 `FLASHMLA_SPARSE` / `FLASHINFER_MLA_SPARSE`(DeepSeek 稀疏注意力 DSA)。prefill 后端则由 `mla_prefill_backend`(`config/attention.py:45`,FLASH_ATTN/FLASHINFER/TRTLLM_RAGGED)单独选。
 
-MLA 的 metadata 也专门定制:`MLACommonMetadata`(`mla_attention.py:1275`)显式区分 `num_decodes`/`num_decode_tokens`/`num_prefills`(`:1300-1302`),并把 `prefill`(`MLACommonPrefillMetadata:1231`,含 chunked-context 工作区)和 `decode`(`MLACommonDecodeMetadata:1265`)分开携带,正因为 prefill/decode 走两套不同算法。模型侧原理详见 [[deepseek_v3_analysis]]。
+MLA 的 metadata 也专门定制:`MLACommonMetadata`(`mla_attention.py:1275`)显式区分 `num_decodes`/`num_decode_tokens`/`num_prefills`(`:1300-1302`),并把 `prefill`(`MLACommonPrefillMetadata:1231`,含 chunked-context 工作区)和 `decode`(`MLACommonDecodeMetadata:1265`)分开携带,正因为 prefill/decode 走两套不同算法。模型侧原理详见 [[12_deepseek_v3_analysis]]。
 
 ### 3.7 三大标准后端对比(FlashAttention vs FlashInfer vs Triton)
 
@@ -273,5 +273,5 @@ MLA 的 metadata 也专门定制:`MLACommonMetadata`(`mla_attention.py:1275`)显
 
 ## Cross-Domain Links
 - [[gpu_kernel_guide]] —— FlashAttention / Tensor Core kernel 链路
-- [[deepseek_v3_analysis]] —— MLA(多头潜在注意力)模型侧原理
+- [[12_deepseek_v3_analysis]] —— MLA(多头潜在注意力)模型侧原理
 - [[megatron_inference_engine_analysis]] —— 块级 paged KV 对照

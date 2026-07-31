@@ -224,8 +224,8 @@ spike 鉴别把本报告的两条主线焊在一起：
 - [[determinism_and_numerical_reliability_analysis]] — 兄弟页（问题 1-4）：spike 与 SDC / 确定性重放在决策树第 1 步交汇
 - [[fault_tolerance_and_recovery_analysis]] — 兄弟页（问题 5-8）：回滚-跳批依赖 checkpoint 多版本保留与数据迭代器精确回放
 - [[muon_analysis]] — Muon 优化器（本问题第六节「Muon 路线共识」的一手原理）
-- [[kimi_k2_analysis]] — Kimi K2 的 MuonClip / QK-Clip（15.5T token 零 spike）
-- [[deepseek_v4_analysis]] — DeepSeek-V4 的 Muon / mHC / Anticipatory Routing / SwiGLU Clamping
-- [[glm_5_analysis]] — GLM-5 的 slime 异步 RL / TITO / 双边重要性采样
-- [[deepseek_v3_analysis]] — DeepSeek-V3 全程零不可恢复 spike、零回滚
+- [[11_kimi_k2_analysis]] — Kimi K2 的 MuonClip / QK-Clip（15.5T token 零 spike）
+- [[13_deepseek_v4_analysis]] — DeepSeek-V4 的 Muon / mHC / Anticipatory Routing / SwiGLU Clamping
+- [[01_glm_5_analysis]] — GLM-5 的 slime 异步 RL / TITO / 双边重要性采样
+- [[12_deepseek_v3_analysis]] — DeepSeek-V3 全程零不可恢复 spike、零回滚
 - [[RL_Training_Inference_Precision_Analysis]] — RL 训推一致（本问题第六节第四点「RL 稳定性与问题 2 合流」）

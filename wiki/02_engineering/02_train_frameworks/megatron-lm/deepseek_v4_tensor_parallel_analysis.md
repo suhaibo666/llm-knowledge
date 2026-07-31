@@ -4,7 +4,7 @@
 
 > **源基线**: Megatron-LM `dev` @ `232c478d4`（2026-06-16）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`moe/experts.py`、`hyper_connection.py` 等。
 > **维度**: 工程实现（框架层）。**审计/移库**: 2026-06-25（自 `02_train_frameworks/` 移入 `megatron-lm/`；核查 `deepseek_v4_hybrid_attention.py:92` 仍为 `get_pg_size(tp)==1`、`:447` 仍为 `parallel_mode='duplicated'`，行号较旧稿有数行漂移）。
-> **与模型页的分工**: 模型侧无 TP 专页；本页是 V4 在 Megatron 的 *TP 切分实现*（强制 TP=1 的架构动因），与论文级架构 [[deepseek_v4_analysis]] / [[deepseek_v4_technical_deep_dive]] 互补。
+> **与模型页的分工**: 模型侧无 TP 专页；本页是 V4 在 Megatron 的 *TP 切分实现*（强制 TP=1 的架构动因），与论文级架构 [[13_deepseek_v4_analysis]] / [[26_deepseek_v4_technical_deepdive]] 互补。
 
 **目录**
 
@@ -612,10 +612,10 @@ self.linear_proj = build_module(..., tp_comm_buffer_name='proj', ...)
 ## 相关页面
 
 **模型侧（论文级，01_theory）** — 本页讲 Megatron 的 TP 实现，下列讲架构动因：
-- [[deepseek_v4_analysis]] — V4 整体架构（为何弱化 TP、强化 EP+DP）
-- [[deepseek_v4_technical_deep_dive]] — CSA/HCA/DSA 机制（压缩操作的全局性 = TP=1 的根因）
-- [[mHC]] — 流形约束超连接（本页 §四 讲其非 TP-aware 梯度同步）
-- [[deepseek_v4_audit_report]] — V4 wiki 对正式版审计
+- [[13_deepseek_v4_analysis]] — V4 整体架构（为何弱化 TP、强化 EP+DP）
+- [[26_deepseek_v4_technical_deepdive]] — CSA/HCA/DSA 机制（压缩操作的全局性 = TP=1 的根因）
+- [[25_mhc_analysis]] — 流形约束超连接（本页 §四 讲其非 TP-aware 梯度同步）
+- [[30_deepseek_v4_audit_analysis]] — V4 wiki 对正式版审计
 
 **框架侧（Megatron-LM，本目录）**：
 - [[deepseek_v4_context_parallel_analysis]] — V4 CP 实现（姊妹页）

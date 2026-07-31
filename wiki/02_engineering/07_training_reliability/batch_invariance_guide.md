@@ -418,10 +418,10 @@ flowchart LR
 
 - [[07_training_reliability/index]] — 本页新归属目录:万卡级训练确定性与可靠性问题域索引（2026-07-31 kb-reorg P5 从 `04_posttrain_frameworks/` 迁入）
 - [[determinism_and_numerical_reliability_analysis]] — 问题 2「训推数值不一致 / batch 不变性」的系统侧上游分析，本页是其 kernel 层算子级实现细化
-- [[deepseek_v4_analysis]] — DeepSeek V4 整体架构，批次不变性上下文
-- [[deepseek_v4_implementation_details]] — V4 核心组件伪代码实现
-- [[deepseek_v4_technical_deep_dive]] — CSA/HCA/DSA/MLA 对比
-- [[deepseek_v4_fp4_qat_analysis]] — FP4 QAT 训练流程（同属训练基础设施）
+- [[13_deepseek_v4_analysis]] — DeepSeek V4 整体架构，批次不变性上下文
+- [[27_deepseek_v4_implementation_deepdive]] — V4 核心组件伪代码实现
+- [[26_deepseek_v4_technical_deepdive]] — CSA/HCA/DSA/MLA 对比
+- [[24_deepseek_v4_fp4_qat_analysis]] — FP4 QAT 训练流程（同属训练基础设施）
 - [[tilelang_analysis]] — TileLang DSL，V4 融合 kernel 开发工具
 - [[comm_compute_fusion_guide]] — 通算融合（WaveEP 等，同属基础设施优化）
 - [[11_rl_sandbox_design_analysis]] — Coding RL Sandbox 设计（同属后训练框架）

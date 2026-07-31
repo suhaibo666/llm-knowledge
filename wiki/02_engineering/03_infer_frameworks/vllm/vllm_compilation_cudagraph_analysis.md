@@ -351,4 +351,4 @@ vLLM 的编译 + CUDA Graph 是两件正交武器协同对付 decode 的 CPU 下
 ## Cross-Domain Links
 - [[10_pytorch_cuda_graphs_complete_guide]] —— CUDA Graph 原理与捕获/replay
 - [[02_compile_stack/04_inductor/index]] · [[02_compile_stack/01_dynamo/index]] —— torch.compile 栈
-- [[11_torch_compile_npugraphs_deep_dive]] —— NPU 图捕获对照
+- [[11_torch_compile_npugraphs_deepdive]] —— NPU 图捕获对照

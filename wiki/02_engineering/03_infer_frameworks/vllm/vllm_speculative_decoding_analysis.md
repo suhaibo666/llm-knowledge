@@ -178,7 +178,7 @@ draft_token_ids_list.append(draft_token_ids)
 > **新 Speculator 路径**:`DraftModelSpeculator.sample_draft`(`worker/gpu/spec_decode/speculator.py:214`)用 `gumbel_sample`(Gumbel-max)做草稿采样,probabilistic 模式下把处理后的 logits 写进 `draft_logits` 缓冲(`speculator.py:125-133`),与目标侧 Gumbel 噪声对齐(注释见 `speculator.py:226-233`)。EAGLE 在该路径下是 `EagleSpeculator(AutoRegressiveSpeculator)`(`eagle/speculator.py:12`),工厂分发见 `init_speculator`(`worker/gpu/spec_decode/__init__.py:8`)。
 
 > [!note] MTP(多 token 预测)为何复用 EAGLE 路径
-> DeepSeek-V3/Qwen 等模型在主权重里**自带 MTP 模块**(若干个轻量预测头),`SpeculativeConfig.use_eagle()` 把 `mtp` 也算作 EAGLE 类(`speculative.py:1110` 返回 `method in ("eagle","eagle3","mtp","dflash")`),因此经典 runner 直接用 `EagleProposer` 驱动它(`gpu_model_runner.py:600`)。差异仅在「草稿模型从哪来」:EAGLE 需外挂草稿头权重,而 MTP 的草稿头与目标共用同一 checkpoint —— `__post_init__` 把 `self.model` 设为目标模型路径(`speculative.py:604`),再据此构建 `draft_model_config`(`speculative.py:713`,`runner="draft"`)。DeepSeek-V4 的 MTP 还会消费目标的 pre-`hc_head` 残差(`hidden_size *= hc_mult`,`llm_base_proposer.py:89-96`)。模型侧 MTP 的训练与结构原理见 [[deepseek_v3_analysis]]。`gemma4_mtp`/`step3p5_mtp` 是带专用 runner 分支的 MTP 变体(`use_gemma4_mtp` `speculative.py:1093`)。
+> DeepSeek-V3/Qwen 等模型在主权重里**自带 MTP 模块**(若干个轻量预测头),`SpeculativeConfig.use_eagle()` 把 `mtp` 也算作 EAGLE 类(`speculative.py:1110` 返回 `method in ("eagle","eagle3","mtp","dflash")`),因此经典 runner 直接用 `EagleProposer` 驱动它(`gpu_model_runner.py:600`)。差异仅在「草稿模型从哪来」:EAGLE 需外挂草稿头权重,而 MTP 的草稿头与目标共用同一 checkpoint —— `__post_init__` 把 `self.model` 设为目标模型路径(`speculative.py:604`),再据此构建 `draft_model_config`(`speculative.py:713`,`runner="draft"`)。DeepSeek-V4 的 MTP 还会消费目标的 pre-`hc_head` 残差(`hidden_size *= hc_mult`,`llm_base_proposer.py:89-96`)。模型侧 MTP 的训练与结构原理见 [[12_deepseek_v3_analysis]]。`gemma4_mtp`/`step3p5_mtp` 是带专用 runner 分支的 MTP 变体(`use_gemma4_mtp` `speculative.py:1093`)。
 
 ### 3.4 验证侧元数据:SpecDecodeMetadata 与 logits 索引
 
@@ -298,6 +298,6 @@ flowchart TD
 
 ## Cross-Domain Links
 - [[megatron_inference_engine_analysis]] —— 训练框架推理引擎对照
-- [[deepseek_v3_analysis]] —— MTP(多 token 预测)模型侧原理
+- [[12_deepseek_v3_analysis]] —— MTP(多 token 预测)模型侧原理
 - [[dspark_analysis]] —— DSpark:半自回归草稿 + 置信度调度验证(本页 dflash/mtp proposer 的算法演进与生产落地)
 - [[speculative_decoding/index]] —— 投机推理草稿器演进总览(MTP → Eagle3 → DFlash → DSpark)

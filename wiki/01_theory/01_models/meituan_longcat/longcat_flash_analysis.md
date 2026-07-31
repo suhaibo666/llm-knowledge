@@ -72,7 +72,7 @@
 ### 2.4 MTP（Multi-Token Prediction）
 
 - **单个稠密层**的 MTP 头（**非 MoE**，报告 §2.4），mid-training 引入；投机解码**接受率 >90%**——是 §五 高 TPS 的另一半来源。
-- 概念与 DeepSeek-V3 一脉（见 [[deepseek_v3_analysis]]）；2.0 把它扩到 3-step 并让草稿步共用 LSA 索引。
+- 概念与 DeepSeek-V3 一脉（见 [[12_deepseek_v3_analysis]]）；2.0 把它扩到 3-step 并让草稿步共用 LSA 索引。
 
 ---
 
@@ -189,9 +189,9 @@
 
 - [[meituan_longcat/index]] — 美团 LongCat 家族总览（本页所属家族入口）
 - [[longcat_2_analysis]] — **LongCat-2.0**（本模型的后继，架构承袭 + LSA/N-gram/国产 ASIC）
-- [[deepseek_v3_analysis]] — MLA · MTP · FP8 MoE（ScMoE 对标的 DeepSeek-V3；TPOT 基准）
-- [[deepseek_moe_analysis]] — MoE 路由与负载均衡（零计算专家/PID 均衡的对照）
-- [[kimi_k2_analysis]] — 同期 1T MoE Agent 模型（评测对手）
+- [[12_deepseek_v3_analysis]] — MLA · MTP · FP8 MoE（ScMoE 对标的 DeepSeek-V3；TPOT 基准）
+- [[20_deepseek_moe_analysis]] — MoE 路由与负载均衡（零计算专家/PID 均衡的对照）
+- [[11_kimi_k2_analysis]] — 同期 1T MoE Agent 模型（评测对手）
 - [[expert_parallel_analysis]] · [[megatron_ep_analysis]] — EP 全对全（ScMoE 掩盖的通信）
 - [[muon_analysis]] — 优化器（Flash 用 Adam+μP；2.0 用 Muon）
 - [[01_theory/01_models/index]] — 模型架构与家族总索引

@@ -235,5 +235,5 @@ GRPO (Group Relative Policy Optimization), used by DeepSeek-R1, is different fro
 - [[12_dpo_analysis]] — Detailed DPO analysis
 - [[10_instructgpt_rlhf_analysis]] — Original RLHF pipeline
 - [[11_ppo_analysis]] — PPO algorithm
-- [[deepseek_r1_analysis]] — GRPO usage in DeepSeek-R1
+- [[14_deepseek_r1_analysis]] — GRPO usage in DeepSeek-R1
 - [[01_theory/index]]

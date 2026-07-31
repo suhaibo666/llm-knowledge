@@ -102,7 +102,7 @@ $$\underbrace{\text{all-reduce}}_{\text{纯 TP}} \;=\; \underbrace{\text{reduce-
 - **all-gather KV**：直接把所有卡的 K、V 收齐（通信 $\propto B\cdot S\cdot d$），各卡算自己 query 段对全序列的 attention。简单但峰值显存高。
 - **ring-attention**：KV 分块沿环流动，每卡轮流收到一块别人的 KV，算局部 attention 并用 **online-softmax** 增量累积，算完即弃——把 KV 交换与 attention 计算**重叠**，峰值显存低。这是长序列训练的主流。
 
-CP 与 TP **正交**（一个切序列、一个切隐藏维），可组合成 `CP × TP`。它的通信也与激活挂钩、频次高，**同样偏好机内**。DeepSeek-V4 等长上下文模型的 CP 细节见 [[../01_models/deepseek/deepseek_v4_cp_analysis]]。
+CP 与 TP **正交**（一个切序列、一个切隐藏维），可组合成 `CP × TP`。它的通信也与激活挂钩、频次高，**同样偏好机内**。DeepSeek-V4 等长上下文模型的 CP 细节见 [[../01_models/deepseek/23_deepseek_v4_cp_analysis]]。
 
 ---
 
@@ -126,6 +126,6 @@ CP 与 TP **正交**（一个切序列、一个切隐藏维），可组合成 `C
 - [[zero_fsdp_analysis]] — ZeRO：切状态，常与 TP 正交组合
 - [[expert_parallel_analysis]] — EP：MoE 场景常与 TP 组合
 - [[index]] — TP/SP/CP 共同占据 N 维布局的「机内维」
-- [[../01_models/deepseek/deepseek_v4_cp_analysis]] — CP 在长上下文模型中的实践
+- [[../01_models/deepseek/23_deepseek_v4_cp_analysis]] — CP 在长上下文模型中的实践
 - [[../../02_engineering/02_train_frameworks/megatron-lm/index]] — **实现层**：Megatron 手工 TP/SP 的 ColumnParallel/RowParallel
 - [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：DTensor/TP 的 `parallelize_module`、ColwiseParallel/RowwiseParallel
