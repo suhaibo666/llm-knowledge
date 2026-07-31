@@ -1,9 +1,14 @@
 # 后训练框架 — 目录索引
 
-> 覆盖 RLHF/对齐训练基础设施、奖励模型训练框架、Coding RL Sandbox 与 Infra、RL 训练框架源码分析
-> 最后更新: 2026-07-31
+> 覆盖 RLHF/对齐训练基础设施、Coding RL Sandbox 与 Infra、PPO/GRPO 源码级实现、工业 RL 训练框架
+> (verl/slime/AReaL/ROLL)源码分析与 CUDA–Ascend 映射。
+> 最后更新: 2026-07-31(kb-reorg P5 收尾:三域整合完成,`03_posttraining/` 纵向学习域已解散)
 
 ---
+
+阅读路线入口(跨域纯导读页,正文全部归属本表 + `verl/`/`01_theory/04_posttraining`/`moonshot_kimi`
+三处功能树,不计入下表):[[courses/posttraining_frontier|LLM 后训练前沿阅读课程]] —— D01→D12 顺序
+索引 + 六级能力门槛,原 `03_posttraining/` 域(D00–D12)已随 kb-reorg P5 逐任务解散归位于此。
 
 ## 子目录
 
@@ -47,6 +52,8 @@
 
 ## 关联域
 
+- [[courses/posttraining_frontier]] — LLM 后训练前沿阅读课程(D01→D12 顺序索引 + 六级能力门槛)
 - [[../../01_theory/04_posttraining/index]] — 后训练算法理论
+- [[07_training_reliability/index]] — 训练可靠性(`batch_invariance_guide` 现居此处)
 - [[../02_train_frameworks/index]] — 训练框架
 - [[../03_infer_frameworks/index]] — 推理框架

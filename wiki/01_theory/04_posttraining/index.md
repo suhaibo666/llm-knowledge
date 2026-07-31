@@ -1,9 +1,14 @@
-# LLM 对齐与偏好优化 — 目录索引
+# LLM 后训练算法理论 — 目录索引
 
-> 覆盖 RLHF、DPO、GRPO、PPO 等对齐方法及相关前置研究
-> 最后更新: 2026-07-25
+> 覆盖 RLHF、DPO、GRPO/PPO 家族、Reasoning RL 算法演进、Agentic RL、on/off-policy 与 staleness、
+> 训推一致性(TIM)与对齐安全。
+> 最后更新: 2026-07-31(kb-reorg P5 收尾:三域整合完成,`03_posttraining/` 纵向学习域已解散)
 
 ---
+
+阅读路线入口(跨域纯导读页,正文全部归属本表 + `04_posttrain_frameworks`/`verl/`/`moonshot_kimi`
+三处功能树,不计入下表):[[courses/posttraining_frontier|LLM 后训练前沿阅读课程]] —— D01→D12 顺序
+索引 + 六级能力门槛,原 `03_posttraining/` 域(D00–D12)已随 kb-reorg P5 逐任务解散归位于此。
 
 ## 页面列表
 
@@ -92,6 +97,7 @@
 
 ## 关联域
 
+- [[courses/posttraining_frontier]] — LLM 后训练前沿阅读课程(D01→D12 顺序索引 + 六级能力门槛)
 - [[07_training_reliability/index]] — 万卡训练确定性与可靠性（问题 2「训推数值不一致 / batch 不变性」与本域 TIM 簇直接接壤）
 - [[04_posttrain_frameworks/index]] — 后训练框架与 RL Infra（verl / sandbox / 效率）
 - [[02_pretraining/index]] — 预训练技术（优化器、低精度训练；[[low_precision_training_analysis]] 与 [[RL_Training_Inference_Precision_Analysis]] 现居此处）

@@ -6,6 +6,41 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-31：知识库结构整改 P5 Task 7（课程页化，解散 03_posttraining 域）
+
+**Type**: Course-page Consolidation + Directory Removal + Index Rebuild（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2/§6；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 7）
+
+**新建** `wiki/courses/posttraining_frontier.md`：纯导读页，结构参照 `courses/torch_compile_end_to_end.md`（角色横幅 → 这门课是什么 → 阅读路线 → 六级能力门槛 → 与功能树的关系 → Related Pages）。从 `03_posttraining/00_posttraining_source_reading_guide.md`（D00，301 行）吸收阅读路线骨架（三原则、最短闭环 mermaid 流程图、"只想先抓主干"短路线）与六级能力门槛（L1–L6，整体保留为表，每级压缩为核心问题 + 验收物两列）；从 `03_posttraining/index.md` 吸收 S00–S05 阶段叙述，作为阅读路线的六个分段小节（S00 基线与地图…S05 综合验收）；阅读序按 D01→D12 的新位置排列（链接用现基名，Task 8 分段编号后再改一轮，本次不编号）；另从 `03_posttraining/index.md` §5「四个框架的研究分工」吸收一张精简表（verl/slime/AReaL/ROLL 研究角色对照），放在 S03/S04 阅读分组之后。
+
+**D00 独有内容台账**（先核实再删，逐节判定）：
+
+| D00 章节 | 处置 | 理由 |
+|---|---|---|
+| §0 怎样使用这条路线、§1 阅读顺序表 + 最短闭环 + 抓主干短路线 | 吸收入课程页 | 阅读路线骨架，课程页核心内容 |
+| §2 六级能力门槛 L1–L6 | 吸收入课程页（压缩为表） | 门槛定义本身是导读性内容 |
+| §3 论文阅读方法（五问法 + 两个笔记模板） | 不迁移，无单独落地 | 通用研究方法论，不含后训练领域独有事实；与本库 `.claude/skills/source-faithful-analysis` 方法论同类，非本域专属 |
+| §4 源码阅读方法（owner 追踪六步 + 六问表 + 证据记录模板 Repository/Branch/Commit/…） | 不迁移，无单独落地 | 同上；证据记录模板已被 spec §6.3「代码分析页头钉基线」规则取代 |
+| §5 工业实现四级"支持"口径（P1 接口/P2 功能/P3 正确性/P4 性能） | 不迁移，无单独落地 | **核实结论**：已独立复现于 `rl_framework_comparison.md`（D06）§3「四级支持证据」（几乎同一张表，本域权威定义）；`cuda_ascend_posttraining_stack_comparison.md`（D11）§13 进一步实例化为 CUDA→Ascend 专用的 M1–M4 迁移验收；两页均不因 D00 删除而失去定义来源 |
+| §6 学习过程实践题（按 S00–S05 阶段） | 不迁移，无单独落地 | 绑定即将解散的 S00–S05 阶段标签，为个人学习进度工具，非可复用领域事实 |
+| §7 版本与复习节奏（快速变化页面 30 天复核；K3 `0797decb` 复核触发条件） | 不迁移，无单独落地 | CLAUDE.md 已有通用 staleness 复核规则；K3 复核触发条件是操作性元数据非域事实 |
+| §8 最小源码路径与终局验收（各框架最小入口→调用链） | 不迁移，无单独落地 | **核实结论**：verl 入口（`main_ppo.py`→`RayPPOTrainer.fit`）已在 `verl_end_to_end_iteration_analysis`/`verl_ray_trainer_analysis` 逐行覆盖；slime（`train.py`→DataSource/Megatron/SGLang）、AReaL（`PPOTrainer`→workflow/staleness）、ROLL（RLVR/Agentic pipeline→Strategy/device mapping）均已在各自深挖页以真实 `file:line` 覆盖，细致度远超 D00 原一句话摘要 |
+
+`03_posttraining/index.md` 除 S00–S05 阶段叙述外，§1「为什么建立统一领域」并入课程页「这门课是什么」；§4 D00–D12 顺序表、§6 既有知识入口均与 D01（`posttraining_frontier_map_analysis`）自身文档顺序表/既有知识复用规则重复，不重复迁移；§7 维护规则绑定即将解散的目录本身，作废不迁移。
+
+**删除**：`git rm wiki/03_posttraining/00_posttraining_source_reading_guide.md wiki/03_posttraining/index.md`，`wiki/03_posttraining/` 目录随之清空自动移除。
+
+**入链改写**：D00/`03_posttraining/index` 的全部活链接改指 `[[courses/posttraining_frontier]]`，涉及 `kimi_k3_posttraining_case_study_analysis.md`（阅读导航"回到 D00"）、`posttraining_frontier_map_analysis.md`（阅读导航 + 文档顺序表第 1 行 + Related Pages，3 处）、`cuda_ascend_posttraining_stack_comparison.md`（Related Pages）、`dapo_analysis.md`/`grpo_analysis.md`/`gspo_analysis.md`/`rl_infra_efficiency_analysis.md`/`rl_sandbox_design_analysis.md`/`verl/index.md`（各 1 处 Related Pages）。`wiki/changelog.md` 中 2026-07-27 历史条目的 2 处活链接（`03_posttraining/index`、`00_posttraining_source_reading_guide`）按"历史不回写"惯例降级为反引号 + 去向说明。
+
+**`wiki/index.md` 重建**：删除"03 后训练纵向学习域"整段；courses 表新增 `posttraining_frontier` 行；快速导航"LLM 后训练前沿 D00–D05"/"D06–D12"两行合并改写为"D01–D06"/"D07–D12"（各 7/6 项，去掉已删除的 `03_posttraining/index`、`00_posttraining_source_reading_guide`，D01–D06 行首改指课程页）；"PPO/GRPO RL 训练"行沿用 Task 6 已完成的 `rl_ppo_loss_and_grpo_analysis` 改名。**页数重算**（覆盖全部因 P5 迁移产生偏差的行，不止 Task 7 直接改动的两域）：模型 56→57、Kimi 13→14（D12 迁入，Task 2）、后训练对齐 15→18（+D01/D02/D03/D04，−RL_PPO，Task 2/3/6）、后训练框架 14→21（+D05/D06/D07/D08/D09/D10/D11/RL_PPO，−batch_invariance，Task 2/4/5/6；verl 子计数 10→11）、训练可靠性 4→5（+batch_invariance，Task 6）；两处"统计于"日期改 2026-07-31。
+
+**`01_theory/04_posttraining/index.md` 与 `04_posttrain_frameworks/index.md`**：两域此前在 Task 2/3/4/6 已逐批为迁入页补全条目 + 一句话定位（"后训练前沿整合"/"后训练框架源码对照"/"RL 算法源码实现"三张表），本次核对确认条目完整、无缺漏；标题/摘要行改为反映扩容后的真实覆盖范围（前者从"LLM 对齐与偏好优化"扩为"LLM 后训练算法理论"）；两处新增课程页入口段落（仿 `01_ai_frameworks/index.md` 既有惯例："阅读路线入口…不计入下表"）+ 关联域各补一行指向 `courses/posttraining_frontier`；日期改 2026-07-31。
+
+**验收**：`tools/check_links.py` broken=0、orphans=0，`ambiguous`/`bare_index`=69（与基线持平，非本次引入）；pages=374。**pages 对账与计划口径的差异**：计划文本写"375−2=373"，但 Task 7 同时创建 1 篇新文件（课程页）与删除 2 篇（D00 + `03_posttraining/index`），净变化为 375+1−2=374，本报告按实际文件系统状态汇报 374，已在交付报告中显式披露此算术口径差异。`python -m pytest -q` 77 passed。
+
+**自查**：`grep -rn "03_posttraining" wiki/` 除本 changelog 历史条目（已降级反引号）与新课程页/两域 index 的解释性反引号文本外 0 处活 `[[...]]` 链接命中；D00 §5/§8 的"不迁移"判定均先用 grep 核实目标内容已在 `rl_framework_comparison.md`/`cuda_ascend_posttraining_stack_comparison.md`/各框架深挖页独立存在，未凭印象判断。
+
+---
+
 ## 2026-07-31：知识库结构整改 P5 Task 6（错位页归位）
 
 **Type**: Misplaced-page Relocation（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 6）
@@ -1201,8 +1236,8 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Research Baseline + Learning Route（将 Reasoning RL、Agentic/Coding RL、Infra、工业框架源码与 CUDA/Ascend 映射纳入同一研究闭环。）
 
-- **新增统一入口**：建立 [[03_posttraining/index]]，后续 D00–D11 新研究统一写入 `wiki/03_posttraining/`；旧理论与工程页面保持原位，通过链接复用，不再把 RL 算法和 Infra 分散承载。
-- **新增 D00 [[00_posttraining_source_reading_guide]]**：按 D00 → D11 固定推荐阅读顺序，定义 S00–S05 六个研究阶段、六级可验证能力门槛，以及论文、源码、工业“支持等级”和 CUDA→Ascend 适配的阅读方法。
+- **新增统一入口**：建立 `03_posttraining/index`（历史活链接，该域已于 2026-07-31 因 kb-reorg P5 解散并删除，S00–S05 阶段叙述并入 [[courses/posttraining_frontier]]，按"历史不回写"惯例降级为反引号），后续 D00–D11 新研究统一写入 `wiki/03_posttraining/`；旧理论与工程页面保持原位，通过链接复用，不再把 RL 算法和 Infra 分散承载。
+- **新增 D00 `00_posttraining_source_reading_guide`**（历史活链接，该页已于 2026-07-31 因 kb-reorg P5 解散删除，阅读路线骨架 + 六级能力门槛并入 [[courses/posttraining_frontier]]，按"历史不回写"惯例降级为反引号）：按 D00 → D11 固定推荐阅读顺序，定义 S00–S05 六个研究阶段、六级可验证能力门槛，以及论文、源码、工业“支持等级”和 CUDA→Ascend 适配的阅读方法。
 - **新增 D01 `01_posttraining_frontier_map_analysis`**（历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[posttraining_frontier_map_analysis]]，按"历史不回写"惯例降级为反引号）：以优化粒度、on-policy/freshness、训练—推理一致性和 Agentic 环境四组张力组织前沿地图；固定 verl `983cb0f`、slime `aaf5c20`、AReaL `b23fa6c`、ROLL `370cb24` 的 2026-07-27 源码快照。
 - **研究分工**：verl 作为主基线，slime 作为性能/前沿对照，AReaL 作为 fully async/Agentic 对照，ROLL 作为多后端、异构和 Ascend 专项；不使用脱离模型、硬件、配置和 freshness 条件的总榜。
 

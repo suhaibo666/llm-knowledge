@@ -106,7 +106,7 @@ verl 不自己实现并行,而是把 FSDP2 / Megatron-LM 当**训练后端**、v
 
 - [[verl_end_to_end_iteration_analysis]] — verl `983cb0f` 当前基线的端到端主链、角色/资源池机制、算法与 weight refresh(**本域当前基线权威页**;`RayPPOTrainer.fit` 本身在此基线已非默认路径,见该页 `[!contradiction]`)
 - [[rl_framework_comparison]] — verl、slime、AReaL、ROLL 统一机制矩阵
-- [[03_posttraining/index]] — D00–D11 后训练统一学习域
+- [[courses/posttraining_frontier]] — 后训练前沿阅读课程(原 D00–D12 学习域已解散,内容归位至功能树)
 - [[verl_architecture_overview_analysis]] · [[verl_quickstart_guide]] —— 入门两篇(架构总览 + 快速上手,基线 `8a694930`)
 - [[verl_single_controller_analysis]] · [[verl_dataproto_analysis]] · [[verl_ray_trainer_analysis]] · [[verl_workers_engine_analysis]] · [[verl_rollout_resharding_analysis]] —— 实现五篇(控制/数据/编排/计算/生成,基线 `8a694930`)
 - [[verl_rl_algorithms_analysis]] · [[verl_optimization_analysis]] —— 算法与优化两篇(基线 `8a694930`)

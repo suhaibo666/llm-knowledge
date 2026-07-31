@@ -84,5 +84,5 @@ GSPO's position relative to PPO/GRPO/DAPO/Dr. GRPO/SAO across importance-ratio g
 - [[dapo_analysis]] — DAPO improvements to GRPO
 - [[ppo_analysis]] — PPO foundation
 - [[verl_rl_algorithms_analysis]] — verl 源码级实现(注册表 + config key→代码锚点)
-- [[03_posttraining/index]] — D00–D11 后训练统一学习域
+- [[courses/posttraining_frontier]] — 后训练前沿阅读课程(原 D00–D12 学习域已解散,内容归位至功能树)
 - [[01_theory/index]]

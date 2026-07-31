@@ -191,7 +191,7 @@ Sandbox 既是 reward hacking 防御 Layer 1 的物理基础（强隔离 → hac
 - [[agentic_rl_algorithm_analysis]] — Agentic trajectory、reward event、failure 与 coding sandbox schema
 - [[posttraining_infra_mechanism_analysis]] — sandbox 在后训练数据面、故障域和 backpressure 中的位置
 - [[kimi_k3_posttraining_case_study_analysis]] — §2.1 K3 harness 版本化与 Fork/Pause/Snapshot 语义的完整案例
-- [[03_posttraining/index]] — D00–D11 后训练统一学习域
+- [[courses/posttraining_frontier]] — 后训练前沿阅读课程(原 D00–D12 学习域已解散,内容归位至功能树)
 - [[reward_hacking_defense_analysis]] — 同系列，sandbox 是 Layer 1 的工程基础
 - [[rl_infra_efficiency_analysis]] — 同系列，sandbox 三阶段拆解直接驱动长尾治理
 - [[batch_invariance_guide]] — 后训练框架已有页面，训练批次不变性
