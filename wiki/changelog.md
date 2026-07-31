@@ -6,6 +6,17 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-31：知识库结构整改 P5 完成（后训练三域整合收官）
+
+**Type**: Structure Reorg（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；P0-P7 的第六段）
+
+- **`03_posttraining/` 纵向域解散**：D01-D12 按主题分发进功能树（理论算法→`01_theory/04_posttraining/`，框架与 infra→`02_engineering/04_posttrain_frameworks/`，K3 案例→`moonshot_kimi/`）；D00 阅读路线降为 `courses/posttraining_frontier.md` 纯导读页。
+- **GRPO 三写归一**：D02 定位为算法演进权威页；grpo/dapo/gspo 论文页瘦身为"论文档案"（元数据+实验+特有公式）；verl 页保工程锚点——审查中回补 J_GRPO 的 KL 组合项等三处符号级细节。
+- **verl 双基线整合**：D07（`983cb0f`）入主 verl/ 为端到端主链，ray_trainer 保留为 legacy 深潜页；**源码核实发现 `trainer.use_v1` 默认翻转**（旧教学主链在新基线非默认路径），三处 [!contradiction] 双记；其余 8 篇挂基线横幅。
+- **错位页归位**：RL_PPO_Loss（实现分析）→框架域；batch_invariance_guide→训练可靠性域。
+- **三目录分段编号**：01_theory/04_posttraining（17 页）、04_posttrain_frameworks 根（9 页）、verl/（10 页）按 0/1/2/3 段位编号，485 处链接改写。
+- 全程 broken=0；wiki 375→374 页（净 −2 +1 课程页）。
+
 ## 2026-07-31：知识库结构整改 P5 Task 8（三目录分段编号）
 
 **Type**: Naming Convention（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §5；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 8；P4 Task 9.5 同款规程）
