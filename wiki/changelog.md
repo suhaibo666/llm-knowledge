@@ -39,6 +39,16 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-31：知识库结构整改 P6 完成（高重叠清零）
+
+**Type**: Structure Reorg（设计 §3.5/§3.6；P0-P7 的第七段）
+
+- **Ring Attention/CP 四写归一**：新建理论权威页（674 行，骨架来源逐节标注、公式口径冲突并列披露含一处源内不一致 [!contradiction]）；四框架页收缩为实现差异（DSv4 特有零删减经审查回补后达成）。
+- **横向页矩阵化**：通信掩盖页 271→124（纯对比矩阵+扩 MindSpeed 列）；分布式优化器横向页收缩；**Megatron 优化器三页 1118→984 合并为单页**；FSDP 四页补分工声明。
+- **Roofline/执行模型归一**：六页 2046→1922，执行模型权威=cuda_execution_model_guide，Roofline 权威=operator_optimization_guide §2；昇腾页各留划界。
+- **npu 三页对上游划界**；中重叠七组全部补齐双向链（含 P3 承诺未落地的一处）。
+- 至此设计盘点的 **13 组高重叠全部清零**。全程 broken=0；wiki 374→373 页。
+
 ## 2026-07-31：知识库结构整改 P6 Task 4 —— Roofline / GPU 执行模型归一
 
 **Type**: Structure Reorg / Dedup（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.5；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 4）
