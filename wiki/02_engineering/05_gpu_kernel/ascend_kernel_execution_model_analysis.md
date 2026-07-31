@@ -5,6 +5,8 @@
 > **Updated**: 2026-07-22
 >
 > 本页由原始 HTML 完整转换；各节的 `Source locator` 指向不可变 raw 文件中的 HTML 行号。本文是以 CUDA / SM80 两篇为参照的平台对照，不是华为官方文档；容量和配置均按原文标注为代表值。
+>
+> **与 [[operator_optimization_guide]] §6 的划界**：该页 §6 是面向"已掌握 GPU 优化方法"读者的 NPU 快速定位——架构要点摘要 + Tiling/DataCopy 对齐硬约束 + GPU 经验迁移 checklist（含 AICPU 与 host CPU fallback 辨析，本页不覆盖这一实践性区分）。本页是 DaVinci 执行模型本身的 source-faithful 深度机制分析（四类单元显式缓冲链、CUDA/Ascend 逐项对位表、GEMM 四层结构、非 GEMM 算子按类分派、FlashAttention Cube-Vector 融合、训练层三条主线整合），二者不重复正文，互为对方的深潜/速查入口。
 
 以一个 fp16 Cube GEMM 为主线,完整走一遍 Ascend 的四个层面:软件层(分核 / Ascend C / Tiling)、硬件层(AI Core / Cube / Vector / Scalar / MTE)、内存层(GM / L1 / L0A·L0B·L0C / UB)、指令层(DataCopy / Load3D / Mmad / FixPipe)——再把非 GEMM 那一大类接到 Vector 单元这条路上。全篇以 CUDA/SM80 那套为参照,标出*哪里照搬、哪里换词、哪里断层*。
 

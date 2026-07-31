@@ -6,6 +6,22 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-31：知识库结构整改 P6 Task 4 —— Roofline / GPU 执行模型归一
+
+**Type**: Structure Reorg / Dedup（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.5；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 4）
+
+`05_gpu_kernel/` 内 Roofline 讲了 ~4 遍、GPU 执行模型讲了 ~3 遍的六页归一，定两个权威：
+
+- **执行模型权威 = `cuda_execution_model_guide.md`**（280→282 行）：核实其 Grid/Block/Warp/Thread/SM 讲解已完整覆盖 `gpu_kernel_guide.md` §01 与 `triton_00_gpu_essentials_guide.md` §2 直觉一的全部内容，无独有段需吸收；页头新增"本页地位"权威声明。
+- **Roofline 权威 = `operator_optimization_guide.md` §2**（834→760 行，含新增 §2.5）：吸收 `triton_00_gpu_essentials_guide.md` §3 的独有内容——用 Triton 官方 `01/02/03-*.py` benchmark 公式逐项手算 AI 的完整推导（向量加法/融合 softmax/矩阵乘三例，含源码行号引用），逐字迁入新增 §2.5；§2 头新增权威声明。核实 `triton_06_optimization_profiling_guide.md` §1 与 `gpu_kernel_guide.md` 均无 Roofline 独有内容（前者的流程图与优化闭环已被 operator_optimization_guide §3/§8 覆盖，后者仅 §10 诊断清单一句提及）。
+- **四页收缩为指针**：`gpu_kernel_guide.md`(303→299 行) §01 执行层级模型（含 Grid/Tiling 关系一节，该点已由 `cuda_gemm_kernel_analysis` §1 更深覆盖，改指该页）收缩为一句 + 双链接；§02 内存层级核实为无重复的唯一详解，未改动。`triton_00_gpu_essentials_guide.md`(119→90 行) §2 直觉三 + 原 §3 Demo 收缩为一段结论 + 链接（保留"一眼判别法"一句作为课程起点的独立可读锚点，§1/直觉一/直觉二/§3 分工表/§4 动手验证均未改，学习路线连贯性验证通过）。`triton_06_optimization_profiling_guide.md`(297→276 行) §1 的 roofline 循环流程图 + 长引述收缩为一句 + 链接，保留"优化杠杆速查表"（页内导航，非概念复述）。
+- **§6 昇腾段 vs `ascend_kernel_execution_model_analysis.md` 判定**：后者独有内容（四类单元显式缓冲链完整图示、CUDA/Ascend 逐项对位表、GEMM 四层结构对照、片上缓冲预算账本、非 GEMM 算子按类分派表、FlashAttention Cube-Vector 融合、训练层三条主线）远超 50%，判定**各留 + 划界**（非合并）：两页互加"与 XX 的划界"声明——`operator_optimization_guide.md` §6.1/§6.2（834 行版本内约 149→95 行，含 §6 全节）的 AI Core 结构图/存储层次图/CopyIn-Compute-CopyOut 完整代码收缩为摘要 + 指向该深度页，保留独有的 Tiling 约束数值推导（L0A 容量→M 维上限 512）、DataCopy 32-byte 对齐要求、§6.3 GPU 经验迁移 checklist 与 AICPU/host CPU fallback 辨析（后两者深度页未覆盖，全部原样保留）；`ascend_kernel_execution_model_analysis.md`(213→215 行) 页头新增划界声明。
+- **索引**：`05_gpu_kernel/index.md` 补 `operator_optimization_guide` 页面列表行（此前缺失，未入索引）；`cuda_execution_model_guide`/`gpu_kernel_guide`/`triton_00`/`triton_06`/`ascend_kernel_execution_model_analysis` 的 Related Pages 互补权威页链接。
+- **净效果**：六页合计 2046→1922 行（−124，新增 sourced 内容的同时净收缩）；无内容丢失，独有段全部逐字保留或迁移。
+- **验收**：`python tools/check_links.py` pages=373、broken=0（ambiguous=70 为既有裸 index 基线，不属本次范围）；`python -m pytest -q` 77 passed。
+
+---
+
 ## 2026-07-31：知识库结构整改 P6 Task 3（二）—— Megatron 分布式优化器三页合并 + 横向页矩阵化
 
 **Type**: Structure Reorg / Dedup（计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 3 第二部分）

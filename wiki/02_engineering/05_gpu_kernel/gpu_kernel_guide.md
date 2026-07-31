@@ -8,8 +8,7 @@ GPU · NPU · Kernel Engineering
 
 **目录**
 
--   01 · 执行层级模型
-    -   硬件对应关系
+-   01 · 执行层级模型（指针，见执行模型权威页）
 -   02 · 内存层级与访问
     -   Coalesced Access
     -   Shared Memory / Tiling
@@ -28,11 +27,7 @@ GPU · NPU · Kernel Engineering
 
 ## 01 执行层级模型
 
-> CUDA 的执行模型将计算任务组织为 Grid → Block → Warp → Thread 四个逻辑层级，最终映射到物理硬件 SM 上执行。理解这条映射链是所有 kernel 优化的起点。
-
-![diagram](assets/gpu_kernel_guide_fig1.png)
-
-> **Grid/Block 维度与 Tiling 的关系：**两者正交但协同配合。维度决定"怎么分配线程"，Tiling 决定"每批线程处理多大一块数据"。以 GEMM 为例：2D Grid 的 blockIdx.x/y 各对应输出矩阵的列/行方向 tile 编号，Block 内线程协作沿 K 维循环，每次迭代将 tile_A 和 tile_B 搬入 shared memory 后完成片上计算。
+> CUDA 的执行模型（Grid → Block → Warp → Thread 四个逻辑层级如何映射到物理硬件 SM、为何 Warp 才是真正的执行单位）完整讲解见执行模型权威页 [[cuda_execution_model_guide]]；Grid/Block 维度与 GEMM Tiling 的映射关系（2D Grid 的 blockIdx.x/y 对应输出 tile 行列、K 维循环搬运）见 [[cuda_gemm_kernel_analysis]] §1。
 
 ## 02 内存层级与访问优化
 
@@ -295,7 +290,8 @@ GPU Kernel Engineering Reference · 内容来源：对话记录整理 · 所有�
 
 ## Related Pages
 
-- [[cuda_execution_model_guide]] — Grid / Block / Warp / Thread / SM 的执行模型地基
+- [[cuda_execution_model_guide]] — **执行模型权威页**：Grid / Block / Warp / Thread / SM 的执行模型地基（本页 §01 的完整展开版）
+- [[operator_optimization_guide]] — **Roofline 权威页**：公式、Ridge Point 参数表、GPU/NPU profiling 指标
 - [[cuda_gemm_kernel_analysis]] — SM80 生产级 GEMM 的完整切分、流水、寄存器与 epilogue
 - [[cuda_nonmatmul_kernels_analysis]] — 非 GEMM 算子的 roofline 与数据依赖分类
 - [[ascend_kernel_execution_model_analysis]] — DaVinci AI Core、显式缓冲链与 Cube–Vector 路径

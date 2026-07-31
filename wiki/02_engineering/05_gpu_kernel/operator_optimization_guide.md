@@ -28,6 +28,7 @@
 
 1. [算子编程体系概览](#1-算子编程体系概览)
 2. [性能分析基础：Roofline 模型](#2-性能分析基础roofline-模型)
+   - 2.5 Triton 视角：官方 benchmark 公式手算 AI
 3. [GPU 算子优化路径](#3-gpu-算子优化路径)
    - 3.1 Memory Bound 优化
    - 3.2 Compute Bound 优化
@@ -78,6 +79,8 @@ GPU 算子开发形成了从底层到高层的完整层次结构：
 
 Roofline 模型是算子优化的首要分析工具，用于判断瓶颈类型，指导优化方向。
 
+> **本节地位**：本节（§2，含 §2.5）是全库 **Roofline 权威节**（2026-07 归一定稿）——[[triton/triton_00_gpu_essentials_guide]] §2 直觉三、[[triton/triton_06_optimization_profiling_guide]] §1 的 Roofline 阐述均已收缩为指针，指回本节；GPU 执行模型的姊妹权威页是 [[cuda_execution_model_guide]]。
+>
 > **出处**：Williams, Patterson, Waterman, *Roofline: An Insightful Visual Performance Model for Multicore Architectures*, Communications of the ACM, 2009.
 
 ### 2.1 核心公式
@@ -192,6 +195,32 @@ torch_npu.npu.profiler.stop()
 | `AI CPU 占比` | 退化到 CPU 执行的算子比例 | 无对应 | **趋近 0（优先级最高）** |
 
 > **出处**：华为 MindStudio 性能分析工具用户指南（hiascend.com/document/detail/zh/mindstudio）。
+
+### 2.5 Triton 视角：用官方 benchmark 公式手算 AI
+
+> 本节吸收自 [[triton_00_gpu_essentials_guide]] §2 直觉三的原有 Demo（原页已收缩为指针，完整推导迁入本节）。源：`triton main @ 70e0929`，`python/tutorials/01..03-*.py`。
+
+三个 Triton 官方入门 tutorial 的 benchmark 度量单位本身就是 roofline 判据的活教材：
+
+| Kernel | 官方度量公式（逐字摘自源） | 源定位 | 含义 |
+|---|---|---|---|
+| 向量加法 | `gbps = 3 * x.numel() * x.element_size() * 1e-9 / (ms*1e-3)` | `01-vector-add.py:128` | 用 **GB/s** 度量 → 它是 **memory-bound**，比的是带宽 |
+| 融合 softmax | `gbps = 2 * x.numel() * x.element_size() * 1e-9 / (ms*1e-3)` | `02-fused-softmax.py:225` | 同样 **GB/s** → memory-bound；`2`= 融合后只 1 读 1 写 |
+| 矩阵乘 | `perf = 2 * M * N * K * 1e-12 / (ms*1e-3)` | `03-matrix-multiplication.py:438` | 用 **TFLOPS** 度量 → 它是 **compute-bound**，比的是算力 |
+
+**逐项读懂（这就是 AI 的分子分母）**：
+
+1. **向量加法 `z = x + y`**：每个元素读 `x`、读 `y`、写 `z` = 3 次访存（公式里的 `3`），却只做 1 次加法。
+   $$\text{AI} = \frac{N \text{ FLOP}}{3N \times 4 \text{ Byte}} = \frac{1}{12} \approx 0.083 \ \text{FLOP/Byte} \ll 156$$
+   → **极度 memory-bound**。所以官方用 GB/s（不是 TFLOPS）衡量它，优化目标是「打满带宽」。
+
+2. **融合 softmax**：朴素实现读写 `8MN+4M`（源 `02-fused-softmax.py:48-68` 逐行标注了每步读写量），融合后理论上只需 `2MN`，所以官方公式分子是 `2`，预期 ~4× 加速（源 `:68`）。这是 **fusion 省带宽**的量化证据 → 仍 memory-bound。
+
+3. **矩阵乘 (M·N·K)**：算 `2MNK` 次浮点，访存只 `O(MN+NK+MK)`。
+   $$\text{AI} = \frac{2MNK}{(MN+NK+MK)\times 2\text{ Byte}} \xrightarrow{M,N,K \text{ 大}} \text{很高} \gg 156$$
+   → **compute-bound**。所以官方用 TFLOPS 衡量，优化目标是「逼近 Tensor Core 峰值」（cuBLAS/`tl.dot`）。
+
+> 一眼判别法：**官方拿什么单位 benchmark，就告诉了你它在 roofline 哪一侧。** GB/s=memory-bound，TFLOPS=compute-bound。Triton 完整学习路线见 [[triton_00_gpu_essentials_guide]]（本节的姊妹起点页）。
 
 ---
 
@@ -452,129 +481,26 @@ replace_pattern(traced, pattern, replacement)
 > **导航**：前文 §2-5 的通用方法——Roofline 模型、Memory Bound / Compute Bound 分类、融合算子设计与等价替换思想——同样适用于昇腾 NPU。
 > 本节不重复这些通用原理，而是聚焦昇腾硬件特有的设计（Cube / Vector / MTE 等计算与搬运单元）及其约束。
 > GPU 优化经验向 NPU 迁移的适配边界与可迁移性分析，详见 §6.3。
+>
+> **与 [[ascend_kernel_execution_model_analysis]] 的划界**：本节是面向"已读完 §1-5 GPU 优化方法"读者的 NPU **快速定位**——架构要点摘要 + Tiling/对齐硬约束 + §6.3 的 GPU 经验迁移 checklist（含 AICPU/host CPU fallback 辨析，该页未覆盖）。DaVinci 执行模型本身的 source-faithful 深度机制（四类单元显式缓冲链完整图示、CUDA/Ascend 逐项对位表、GEMM 四层结构、非 GEMM 算子按类分派、FlashAttention Cube-Vector 融合、训练层三条主线）在 [[ascend_kernel_execution_model_analysis]]，本节不重复，只摘要+链接。
 
 ### 6.1 硬件架构差异
 
-> **出处**：本节所有架构描述来自 Liao et al., *Ascend: A Scalable and Unified Architecture for Ubiquitous Deep Neural Network Computing*, HPCA 2021（昇腾 Da Vinci 架构唯一主要学术论文）。
+> **出处**：本节架构描述来自 Liao et al., *Ascend: A Scalable and Unified Architecture for Ubiquitous Deep Neural Network Computing*, HPCA 2021。
 
-#### AI Core 内部结构（Da Vinci 架构）
+AI Core 内部是 **Cube（矩阵乘）/ Vector（向量/逐元素）/ Scalar（控制流）** 三类异构单元 + 专用 DMA 引擎 **MTE**；**与 GPU 的根本区别**（HPCA 2021, Section 3）：Cube 和 Vector **不能同时并发执行**，必须靠 Pipeline 交替工作（GPU 的 Tensor Core / CUDA Core 可被不同 warp 同时调度，昇腾没有这个能力）。存储层次 **HBM → L2 → L1 → L0A/L0B → Cube → L0C → UB → HBM** 全部需要显式 `DataCopy` 手动管理，没有任何自动 Cache（GPU 只有 Shared Memory 需要手动管理，L1/L2 对程序员透明）。L0C → UB 阶段的 `FixPipe` 搬运可**免费融合激活函数**（ReLU/Sigmoid），是昇腾架构层面强制支持的 Epilogue Fusion，理念与 CUTLASS epilogue 一致。
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                        AI Core                          │
-│                                                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │  Cube Unit   │  │ Vector Unit  │  │ Scalar Unit  │  │
-│  │  (矩阵乘法)  │  │ (向量/逐元素)│  │   (控制流)   │  │
-│  │ 16×16 MMAD  │  │  128-lane    │  │              │  │
-│  │  per cycle  │  │     SIMD     │  │              │  │
-│  └──────┬───────┘  └──────┬───────┘  └──────────────┘  │
-│         └─────────────────┘                             │
-│  ┌───────────────────────────────────────────────────┐  │
-│  │         MTE（Memory Transfer Engine）              │  │
-│  │         专用 DMA 引擎，负责各级存储数据搬运         │  │
-│  └───────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
-```
+四类单元的完整结构图、与 CUDA/SM80 的逐项对位表（Grid→分核、Warp→无对应、Tensor Core→Cube、shared memory→L1/UB、register file→L0C 等）、GEMM 的分核→L1 tile→L0 tile→Cube 指令四层映射、FixPipe 的完整数据流时序，见 [[ascend_kernel_execution_model_analysis]] §1-§4。
 
-**与 GPU 的根本区别**（HPCA 2021, Section 3）：Cube Unit 和 Vector Unit **不能在同一时刻并发执行**，必须通过 Pipeline 交替工作。GPU 的 Tensor Core 和 CUDA Core 可以被不同 warp 同时调度，而昇腾没有这个能力。
-
-#### 存储层次（必须全部手动管理）
-
-```
-HBM（外部）
-  ↓ DataCopy（MTE1）
-L2 Buffer（芯片级共享，约数 MB）       ← 类比 GPU L2 Cache（但需手动搬运）
-  ↓ DataCopy（MTE2）
-L1 Buffer（每 AI Core，约 1 MB）       ← Cube 输入暂存
-  ↓ DataCopy（MTE2）
-L0A / L0B（Cube 输入缓冲，约 16 KB）   ← Cube Unit 直接读取
-L0C（Cube 输出/累加缓冲，约 256 KB）   ← Cube Unit 写入
-  ↓ FixPipe（可融合激活函数）
-UB（Unified Buffer，约 256 KB）        ← Vector Unit 使用
-  ↓ DataCopy（MTE3）
-HBM（写回）
-```
-
-**关键差异**：GPU 的 L1/L2 Cache 对程序员透明，只有 Shared Memory 需要手动管理。昇腾的**所有存储层次**都需要显式 `DataCopy`，没有任何自动 Cache。
-
-> **出处**：HPCA 2021, Figure 4 & Section 3.2；CANN AscendC 编程指南，"存储模型"章节（docs.hiascend.com）。
-
-#### FixPipe 机制
-
-L0C → UB 阶段的 `FixPipe` 搬运可以**免费融合激活函数**（ReLU、Sigmoid 等）：
-
-```
-正常路径：L0C → UB → 单独 Vector kernel 计算激活 → HBM
-FixPipe  ：L0C → (激活融合) → UB → HBM   ← 节省一次 Vector Unit 调用
-```
-
-这是昇腾的 Epilogue Fusion 机制，与 CUTLASS 的 epilogue 设计理念一致，但在架构层面强制支持。
-
-> **出处**：HPCA 2021, Section 3.3（FixPipe 描述）；CANN AscendC 编程指南，"Matmul 算子 FixPipe 配置"章节。
+> **出处**：HPCA 2021, Figure 4 & Section 3.2-3.3；CANN AscendC 编程指南，"存储模型"/"Matmul 算子 FixPipe 配置"章节（docs.hiascend.com）。
 
 ---
 
 ### 6.2 AscendC 编程模型
 
-#### 核心抽象：三段 Pipeline 流水线
-
-AscendC 要求将算子计算组织为 **CopyIn → Compute → CopyOut** 三段流水，这是强制编程模式，不是可选优化：
-
-```cpp
-class KernelAdd {
-public:
-    __aicore__ inline void Init(GM_ADDR x, GM_ADDR y, GM_ADDR z, ...) {
-        // 初始化 HBM 上的全局 Tensor 视图
-        xGm.SetGlobalBuffer((__gm__ half*)x);
-        yGm.SetGlobalBuffer((__gm__ half*)y);
-        zGm.SetGlobalBuffer((__gm__ half*)z);
-
-        // 在 UB 中分配局部缓冲，BUFFER_NUM=2 即双缓冲
-        pipe.InitBuffer(inQueueX, /*BUFFER_NUM=*/2, TILE_LENGTH * sizeof(half));
-        pipe.InitBuffer(inQueueY, /*BUFFER_NUM=*/2, TILE_LENGTH * sizeof(half));
-        pipe.InitBuffer(outQueueZ,/*BUFFER_NUM=*/2, TILE_LENGTH * sizeof(half));
-    }
-
-    __aicore__ inline void Process() {
-        for (int32_t i = 0; i < loopCount; i++) {
-            CopyIn(i);   // MTE DMA: HBM → UB
-            Compute(i);  // Vector Unit 计算
-            CopyOut(i);  // MTE DMA: UB → HBM
-        }
-    }
-
-private:
-    __aicore__ inline void CopyIn(int32_t progress) {
-        // DataCopy 是显式 DMA 调用，不会自动发生
-        LocalTensor<half> xLocal = inQueueX.AllocTensor<half>();
-        DataCopy(xLocal, xGm[progress * TILE_LENGTH], TILE_LENGTH);
-        inQueueX.EnQue(xLocal);  // 入队，通知 Compute 阶段数据已就绪
-    }
-
-    __aicore__ inline void Compute(int32_t progress) {
-        LocalTensor<half> xLocal = inQueueX.DeQue<half>();
-        LocalTensor<half> zLocal = outQueueZ.AllocTensor<half>();
-        Add(zLocal, xLocal, yLocal, TILE_LENGTH);  // Vector Unit 执行
-        inQueueX.FreeTensor(xLocal);
-        outQueueZ.EnQue(zLocal);
-    }
-};
-```
+AscendC 要求将算子计算组织为 **CopyIn → Compute → CopyOut** 三段流水（强制编程模式，非可选优化）：MTE 做 HBM↔UB 的 DMA，Vector/Cube 做计算，`TQue` + `BUFFER_NUM=2` 实现双缓冲、`EnQue`/`DeQue` 自动挂 producer/consumer 依赖。涉及矩阵乘时还需额外管理 L1→L0A/L0B 的搬运（MTE2 负责），Cube 计算结果写入 L0C，经 FixPipe 融合激活后到 UB，再由 MTE3 写回 HBM。三段流水的完整 Ascend C 代码（含 Matmul + TQue 双缓冲示例、`EnQue`/`DeQue` 与 CUDA `cp.async` commit/wait_group 的对照）见 [[ascend_kernel_execution_model_analysis]] §7。
 
 > **出处**：华为 CANN AscendC 编程指南，"算子开发流程"及"双缓冲优化"章节（docs.hiascend.com）。
-
-#### Cube 算子的额外存储路径
-
-涉及矩阵乘时，需要额外管理 L1 → L0A/L0B 的搬运：
-
-```
-HBM → L1（DataCopy，MTE1 负责）
-L1 → L0A、L0B（DataCopy，MTE2 负责，为 Cube Unit 喂数据）
-Cube Unit 计算 → 结果写入 L0C
-L0C → UB（FixPipe，可融合 ReLU 等激活）
-UB → HBM（DataCopy，MTE3 负责）
-```
 
 **Tiling 约束**（硬约束，不满足时编译失败）：
 

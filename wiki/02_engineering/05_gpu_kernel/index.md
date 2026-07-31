@@ -9,7 +9,8 @@
 
 | 页面 | 来源 | 核心主题 |
 |------|------|---------|
-| [[cuda_execution_model_guide]] | CUDA C++ Programming Guide v12.9.1 | **执行模型地基**：Grid·Block·Warp·Thread·SM 逻辑↔物理映射（概念→深入），warp=32 锁步、Block→SM 驻留、分支发散/合并访问/占用率三推论、`__syncthreads` 与 Block 独立性、映射到 Triton；3 个可运行 demo |
+| [[cuda_execution_model_guide]] | CUDA C++ Programming Guide v12.9.1 | **执行模型权威页**：Grid·Block·Warp·Thread·SM 逻辑↔物理映射（概念→深入），warp=32 锁步、Block→SM 驻留、分支发散/合并访问/占用率三推论、`__syncthreads` 与 Block 独立性、映射到 Triton；3 个可运行 demo |
+| [[operator_optimization_guide]] | 论文+官方文档综合整理 | **Roofline 权威页**：公式/Ridge Point 硬件参数表/常见算子理论 AI/GPU+NPU profiling 指标（§2）；GPU Memory/Compute Bound 优化路径（§3）；融合算子识别与等价替换（§4-5）；昇腾 NPU 优化路径速查+GPU 经验迁移 checklist（§6）；与 torch.compile 关系、完整工作流对比（§7-8） |
 | [[cuda_gemm_kernel_analysis]] | 本地 HTML 快照（SM80 / A100） | **生产级 CUDA GEMM**：Grid/CTA/Warp/MMA 四层切分、M/N 空间 tile 与 K 时间归约、`cp.async` 多级流水、每线程寄存器账本、shared-memory epilogue、完整教学 kernel |
 | [[cuda_nonmatmul_kernels_analysis]] | 本地 HTML 快照（CUDA） | **非 GEMM 优化轴**：roofline + 五类数据依赖；elementwise、reduction、norm、FlashAttention、stencil、scan、gather/scatter/sort 的结构、瓶颈与边界 |
 | [[ascend_kernel_execution_model_analysis]] | 本地 HTML 快照（DaVinci / 910B-class） | **Ascend 执行模型**：AI Core 的 Cube/Vector/Scalar/MTE、GM→L1→L0→UB 显式缓冲链、Queue 双缓冲、FixPipe、CUDA↔Ascend 映射与训练三条优化主线 |
