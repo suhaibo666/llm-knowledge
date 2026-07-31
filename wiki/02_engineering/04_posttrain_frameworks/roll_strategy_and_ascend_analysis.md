@@ -228,5 +228,5 @@ driver and firmware
 
 - [[areal_async_architecture_analysis|D09 AReaL Fully Async]]
 - [[cuda_ascend_posttraining_stack_comparison|D11 CUDA–Ascend 后训练栈对照]]
-- [[03_posttraining/06_framework_comparison|D06 工业后训练框架对比]]
+- [[rl_framework_comparison|D06 工业后训练框架对比]]
 - [[02_engineering/04_posttrain_frameworks/rl_sandbox_design_analysis|既有 RL Sandbox 设计]]

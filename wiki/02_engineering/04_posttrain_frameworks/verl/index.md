@@ -99,7 +99,7 @@ verl 不自己实现并行,而是把 FSDP2 / Megatron-LM 当**训练后端**、v
 ## Related Pages
 
 - [[03_posttraining/07_verl_end_to_end_iteration_analysis]] — verl `983cb0f` 当前 baseline 的同步主链、算法与 weight refresh
-- [[03_posttraining/06_framework_comparison]] — verl、slime、AReaL、ROLL 统一机制矩阵
+- [[rl_framework_comparison]] — verl、slime、AReaL、ROLL 统一机制矩阵
 - [[03_posttraining/index]] — D00–D11 后训练统一学习域
 - [[verl_architecture_overview_analysis]] · [[verl_quickstart_guide]] —— 入门两篇(架构总览 + 快速上手)
 - [[verl_single_controller_analysis]] · [[verl_dataproto_analysis]] · [[verl_ray_trainer_analysis]] · [[verl_workers_engine_analysis]] · [[verl_rollout_resharding_analysis]] —— 实现五篇(控制/数据/编排/计算/生成)

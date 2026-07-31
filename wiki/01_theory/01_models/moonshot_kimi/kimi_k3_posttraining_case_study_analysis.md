@@ -381,7 +381,9 @@ AgentENV 用 dirty-page incremental checkpoint；报告给出的最低 checkpoin
 - [[reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]
 - [[agentic_rl_algorithm_analysis|D03 Agentic RL 算法与环境]]
 - [[on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
-- [[03_posttraining/05_posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
+- [[posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
+- [[rl_sandbox_design_analysis]] — §2.1 harness 版本化与 Fork/Pause/Snapshot 语义（本页 §4.2.1/§4.2.6/§5.3.2 回流）
+- [[rl_infra_efficiency_analysis]] — §2「优化 6」cache-pressure-aware admission（本页 §5.3.1 回流）
 - [[cuda_ascend_posttraining_stack_comparison|D11 CUDA–Ascend 后训练栈对照]]
 - [[01_theory/01_models/moonshot_kimi/kimi_k3_analysis|Kimi K3 模型总览]]
 - [[01_theory/01_models/moonshot_kimi/kimi_k3_architecture_deepdive|Kimi K3 架构深析]]

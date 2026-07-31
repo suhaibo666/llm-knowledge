@@ -227,3 +227,4 @@ flowchart LR
 - [[megatron-lm/index]] —— Megatron-LM;verl 的另一训练后端(大规模 MoE / 5D 并行)
 - [[distributed_optimizer_deep_dive]] —— FSDP2 / ZeRO / MindSpeed 对比,理解 verl 训练后端的显存切分底座
 - [[02_engineering/04_posttrain_frameworks/index]] —— 后训练框架目录索引(本系列所在)
+- [[rl_framework_comparison]] —— D06 框架对比 §4.1 verl 段的详情来源

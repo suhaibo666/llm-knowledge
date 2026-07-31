@@ -44,8 +44,8 @@ flowchart LR
 | 3 | D02 [[reasoning_rl_algorithm_evolution_analysis|Reasoning RL 算法演进]] | S01 | GRPO、DAPO、GSPO 等方法改变了哪个估计量、clip 或采样假设 | policy gradient、KL、importance sampling | 从公式推导 loss 所需字段，并指出它对 rollout batch 的要求 | 已完成 |
 | 4 | D03 [[agentic_rl_algorithm_analysis|Agentic RL 算法与环境]] | S01 | 多轮工具调用和 coding task 怎样改变 trajectory、reward 与 credit | D02；MDP/trajectory 基础 | 为一个 coding agent 定义 trajectory schema、reward 时点和失败处理 | 已完成 |
 | 5 | D04 [[on_policy_off_policy_staleness_analysis|On-policy、Off-policy 与 Staleness]] | S01 | policy lag、importance ratio 与 train–inference mismatch 怎样相互作用 | D02、D03；概率比 | 给出样本版本规则，判断一个异步方案在什么意义下偏离 on-policy | 已完成 |
-| 6 | D05 [[03_posttraining/05_posttraining_infra_mechanism_analysis|后训练 Infra 核心机制]] | S01 | control/data/weight 三平面怎样协同，bubble、backpressure 和故障怎样产生 | D04；分布式通信基础 | 画出一次迭代的消息时序并标明数据、权重和状态的 owner | 已完成 |
-| 7 | D06 [[03_posttraining/06_framework_comparison|工业后训练框架对比]] | S02/S05 | 怎样用统一术语比较 verl、slime、AReaL、ROLL | D05 | 不依赖 README 口径，完成一张机制与证据等级对比表 | 已完成 |
+| 6 | D05 [[posttraining_infra_mechanism_analysis|后训练 Infra 核心机制]] | S01 | control/data/weight 三平面怎样协同，bubble、backpressure 和故障怎样产生 | D04；分布式通信基础 | 画出一次迭代的消息时序并标明数据、权重和状态的 owner | 已完成 |
+| 7 | D06 [[rl_framework_comparison|工业后训练框架对比]] | S02/S05 | 怎样用统一术语比较 verl、slime、AReaL、ROLL | D05 | 不依赖 README 口径，完成一张机制与证据等级对比表 | 已完成 |
 | 8 | D07 [[03_posttraining/07_verl_end_to_end_iteration_analysis|verl 端到端训练迭代]] | S02 | 一批 prompt 怎样穿过 rollout、reward、advantage、update 与权重刷新 | D06；Ray；FSDP/Megatron 基础 | 从配置/入口追到关键类与函数，并指出扩展 loss 或 rollout 的位置 | 已完成 |
 | 9 | D08 [[slime_architecture_analysis|slime 高性能与异步架构]] | S03 | Megatron、SGLang、DataSource、buffer 和 async producer 怎样组合 | D07 | 对照 verl 解释 slime 的吞吐来源及其 freshness/correctness 代价 | 已完成 |
 | 10 | D09 [[areal_async_architecture_analysis|AReaL Fully Async 与 Agentic 架构]] | S03 | 服务化 training/inference/agent/weight update 如何维持在线 RL 闭环 | D08 | 定位 staleness 控制、agent trajectory 和 weight service 的所有权边界 | 已完成 |

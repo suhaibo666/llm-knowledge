@@ -200,5 +200,5 @@ slime 的强项是自定义 rollout function 进入同一 DataSource：
 
 - [[03_posttraining/07_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
 - [[areal_async_architecture_analysis|D09 AReaL Fully Async]]
-- [[03_posttraining/06_framework_comparison|D06 工业后训练框架对比]]
+- [[rl_framework_comparison|D06 工业后训练框架对比]]
 - [[02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis|既有 RL Infra 效率分析]]

@@ -380,3 +380,4 @@ GRPO/DAPO/GSPO 的公式演进、系统约束与跨算法对照统一维护在 [
 - [[verl_architecture_overview_analysis]] —— core_algos 在 HybridFlow 整体中的位置
 - [[verl_optimization_analysis]] —— 损失聚合 `agg_loss` 与并行度不变性
 - [[verl/index]] —— verl 系列总览
+- [[rl_framework_comparison]] —— D06 框架对比 §4.1 verl 段的详情来源(registry 机制)

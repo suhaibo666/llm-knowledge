@@ -6,6 +6,28 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-31：知识库结构整改 P5 Task 4（D05/D06 迁入收缩 + weight sync 三方划界）
+
+**Type**: Content Consolidation + Boundary Linking（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 4）
+
+`git mv wiki/03_posttraining/05_posttraining_infra_mechanism_analysis.md` → `wiki/02_engineering/04_posttrain_frameworks/posttraining_infra_mechanism_analysis.md`；`git mv wiki/03_posttraining/06_framework_comparison.md` → `wiki/02_engineering/04_posttrain_frameworks/rl_framework_comparison.md`（comparison 类型命名）。两文件标题保留 D05/D06 前缀（沿用 D01–D04 迁移惯例），页头阅读导航与内部互链改裸基名。
+
+**D05 §7（Reward/Environment/Sandbox）逐句对照 `rl_sandbox_design_analysis.md`（190 行）**：两页实为不同来源（D05 引 Kimi K3 Technical Report `0797decb`；rl_sandbox 引 RollArt/ProRL/Anthropic），逐句核对后**未发现字面重复**——reward-as-service 契约字段与「需要防」六条威胁清单是 D05 独有的三平面接口定义，予以保留；K3 white-box harness 版本化段落与 Fork/Pause/Resume/Snapshot 语义段落判定为「生产 sandbox 实现细节」而非「三平面接口」，逐字回流至 `rl_sandbox_design_analysis.md` 新增 §2.1「K3 案例：harness 版本化与故障恢复语义」（同步补 `关键资料`/`入库日期`/`Related Pages`）。D05 §7 更名「...的接口视角」，末尾改为指向 §2.1 的一句链接。262 行 → 该节从 26 行压缩到约 17 行，无事实删除。
+
+**D05 §4（数据面 backpressure）逐句对照 `rl_infra_efficiency_analysis.md`（301 行）**：同样未发现字面重复——buffer schema 与四层容量定义（并发/staleness/内存/状态）是 D05 独有的 data plane 接口定义，予以保留；AReaL `StalenessManager` 源码引用（`areal/infra/staleness_manager.py:80-112`）与 K3 cache-pressure-aware admission 信号组合段落判定为「准入控制机制实现」，逐字回流至 `rl_infra_efficiency_analysis.md` 新增「优化 6: Admission-aware Backpressure」（`## 2. 五个核心优化`→`## 2. 核心优化`，因新增第 6 项去掉"五个"；同步补 `关键资料`/`入库日期`/`Related Pages`）。D05 §4 末尾改为指向该节的一句链接。
+
+**D06 §4.1（verl 控制面）压缩**：先验 `verl_architecture_overview_analysis.md`（229 行）覆盖情况——`RayPPOTrainer.fit` 主循环（其 §6）、`DataProto` 贯穿角色边界（其 §3）均逐字覆盖；"算法 registry 含 GRPO/GSPO/SAPO/CISPO/REINFORCE"中的 SAPO 一项在该页未直接出现，改核 `verl_rl_algorithms_analysis.md`（已含 SAPO 注册表条目）覆盖，判定为全覆盖。原「优点/代价」两段散文压缩为一个二行摘要表 + 双链接（`verl_architecture_overview_analysis` 架构总览 + `verl_rl_algorithms_analysis` registry 机制），4.2/4.3/4.4（slime/AReaL/ROLL）不动。反向在两篇 verl 页 Related Pages 补 D06 回链。
+
+**weight sync 三方划界（只补链不合并，三页正文除本条声明外不动）**：`02_train_frameworks/megatron-lm/megatron_rl_posttraining_consistency_analysis.md`（207 行,Megatron 训练侧 refit/训推一致性）、`megatron_vllm_weight_sync_analysis.md`（182 行,verl 在 Megatron+vLLM 场景下的 Gather-Broadcast-Load 同步实现）与 D05 §6（weight publish 三平面协议）互相在页头/相应节插入同一句「三方分工」声明：D05=三平面机制视角（框架无关）；megatron 两页=训练侧/verl 具体实现；`verl_rollout_resharding_analysis`=verl 自身 resharding/3D-HybridEngine 实现（该页仅在声明句中提及，未改动）。三页 Related Pages 互补链接。
+
+**入链改写**：`03_posttraining/05_posttraining_infra_mechanism_analysis`→`posttraining_infra_mechanism_analysis`、`03_posttraining/06_framework_comparison`→`rl_framework_comparison` 两个路径的全部 wiki-link 目标改为裸基名，涉及 `wiki/index.md`、`03_posttraining/index.md`、`00_posttraining_source_reading_guide.md`、`posttraining_frontier_map_analysis.md`、`on_policy_off_policy_staleness_analysis.md`、`agentic_rl_algorithm_analysis.md`、`dapo_analysis.md`、`kimi_k3_posttraining_case_study_analysis.md`、`07_verl_end_to_end_iteration_analysis.md`、`verl/index.md`、`slime_architecture_analysis.md`、`roll_strategy_and_ascend_analysis.md`、两文件自身的阅读导航与 Related Pages。`03_posttraining/index.md` D05/D06 两行链接目标随批量改写同步生效。`04_posttrain_frameworks/index.md` 新增「后训练框架源码对照」表两行（posttraining_infra_mechanism_analysis / rl_framework_comparison），迁入来源脚注 D08–D11 改为 D05–D11，`Coding RL Sandbox 与 Infra` 表两行补来源(Kimi K3/AReaL)与主题(K3 案例/admission-aware backpressure)。
+
+**验收**：`tools/check_links.py` broken=0（pages=375，与基线一致）；`python -m pytest -q` 77 passed。
+
+**自查**：D05 §4/§7、D06 §4.1 三处压缩均先做逐句/逐段对照，实测无字面重复，因此本次"收缩"不含事实删除——D05 两节的所有独有事实全部逐字迁移到承接页（rl_sandbox_design_analysis §2.1、rl_infra_efficiency_analysis「优化 6」）并补溯源，D06 §4.1 的收缩基于承接页已覆盖的验证结论（含 SAPO 单项二次核实）。weight sync 三方划界未改动任何一页的既有分析正文，只加边界声明与互链。`grep -rn '03_posttraining/05_posttraining_infra_mechanism_analysis\|03_posttraining/06_framework_comparison' wiki/` 0 处活链接命中。
+
+---
+
 ## 2026-07-31：知识库结构整改 P5 Task 3（D02 演进权威页 + GRPO 三写归一）
 
 **Type**: Content Consolidation（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 3）

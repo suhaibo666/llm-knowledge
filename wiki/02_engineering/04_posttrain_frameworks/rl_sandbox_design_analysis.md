@@ -8,8 +8,9 @@
 - *ProRL Agent: Rollout-as-a-Service for RL Training of Multi-Turn LLM Agents*（NVIDIA NeMo Gym, 2026-03）
 - Anthropic Claude 系列基础设施公开材料
 - 姚顺宇 张小珺访谈第 140 期（2026-03）
+- Kimi K3 Technical Report `0797decb`（§2.1 补充，引自 [[posttraining_infra_mechanism_analysis|D05]] 证据基线）
 
-**入库日期**: 2026-05-24
+**入库日期**: 2026-05-24（2026-07-31 补 §2.1 K3 案例，kb-reorg P5 D05 §7 回流）
 
 ---
 
@@ -64,6 +65,14 @@
 8. **故障容错**：单个 sandbox 挂掉不能影响其他 / 不能丢 trajectory
 
 > 这些需求和 [[reward_hacking_defense_analysis]] 中 Layer 1 的「环境加固」直接对接——sandbox 决定了攻击面大小。强隔离 + 测试文件不可写 + 默认 deny-all 网络，是 hack 路径不存在的物理保证。
+
+### 2.1 K3 案例：harness 版本化与故障恢复语义
+
+Kimi K3 的 white-box environment 把 harness 本身也版本化：tools、system prompt、context management、skills、memories 和 subagents 都是可组合模块，训练时会动态构造不同 scaffold；AET 则把 public/hidden verifier、提交预算和最终 environment state 纳入 reward contract（Kimi K3 Technical Report §4.2.1、§4.2.6，pp.14–16）。这是「可观测」需求在 harness 层面的具体落地——不止记录 syscall/文件/网络，连 agent 用的工具集本身也要能溯源版本。
+
+当 reward judge 可能产生副作用时，K3/AgentENV 的 `Fork` 语义比"复制日志后评分"更强：它从相同 microVM state 派生 judge sandbox，同时让原环境继续运行。报告还区分 `Pause/Resume` 与 `Snapshot`，分别处理 inference 等待和故障恢复（Kimi K3 Technical Report §5.3.2，p.22）。三者对应「故障容错」需求里三种不同的失败/暂停场景，不能用单一"支持续跑"布尔值代替。
+
+机制在三平面模型中的位置见 [[posttraining_infra_mechanism_analysis|D05]] 第 7 节、第 8.1 节；K3 完整案例见 [[kimi_k3_posttraining_case_study_analysis|D12]]。
 
 ---
 
@@ -180,7 +189,8 @@ Sandbox 既是 reward hacking 防御 Layer 1 的物理基础（强隔离 → hac
 ## Related Pages
 
 - [[agentic_rl_algorithm_analysis]] — Agentic trajectory、reward event、failure 与 coding sandbox schema
-- [[03_posttraining/05_posttraining_infra_mechanism_analysis]] — sandbox 在后训练数据面、故障域和 backpressure 中的位置
+- [[posttraining_infra_mechanism_analysis]] — sandbox 在后训练数据面、故障域和 backpressure 中的位置
+- [[kimi_k3_posttraining_case_study_analysis]] — §2.1 K3 harness 版本化与 Fork/Pause/Snapshot 语义的完整案例
 - [[03_posttraining/index]] — D00–D11 后训练统一学习域
 - [[reward_hacking_defense_analysis]] — 同系列，sandbox 是 Layer 1 的工程基础
 - [[rl_infra_efficiency_analysis]] — 同系列，sandbox 三阶段拆解直接驱动长尾治理

@@ -5,7 +5,7 @@
 > **快照日期**：2026-07-28
 > **证据基线**：四框架 S00 commit、Async/Freshness 固定论文版本与 Kimi K3 Technical Report `0797decb`，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
 > **结论先行**：工业 RL infra 的最小完整模型不是 actor/rollout 两个进程，而是 control、data、weight 三个平面，加上一组跨平面的版本提交与恢复不变量。
-> **阅读导航**：[[on_policy_off_policy_staleness_analysis|上一篇 D04]] · [[03_posttraining/06_framework_comparison|下一篇 D06]]
+> **阅读导航**：[[on_policy_off_policy_staleness_analysis|上一篇 D04]] · [[rl_framework_comparison|下一篇 D06]]
 
 ---
 
@@ -103,9 +103,7 @@ Backpressure 至少有四层：
 3. **内存容量**：object store、host RAM、NVMe 和 network queue。
 4. **状态容量**：GPU KV、CPU external KV、KDA recurrent state 和可暂停 sandbox。
 
-只限制 queue 长度会让短样本挤占版本预算；只限制版本会在慢 verifier 下耗尽内存。AReaL 的 `StalenessManager` 同时取 concurrency 和 staleness capacity 的最小值，是一个清楚的参考实现，见 `areal/infra/staleness_manager.py:80-112`。
-
-K3 给出 cache-pressure-aware admission 的另一种信号组合：active request count、queued request count 和 KV utilization 共同调节送入 inference engine 的请求数。早期 context 短时提高并发，轨迹变长、KV 压力升高时自动收紧，而不是用固定“平均完整轨迹长度”静态限流（Kimi K3 Technical Report §5.3.1，p.21；详见 [[kimi_k3_posttraining_case_study_analysis|D12]]）。
+这四层容量是 data plane 必须暴露的接口维度；只限制 queue 长度会让短样本挤占版本预算，只限制版本会在慢 verifier 下耗尽内存。具体的准入控制实现——AReaL `StalenessManager` 的 concurrency/staleness 双约束、K3 的 cache-pressure-aware 信号组合（active request count、queued request count、KV utilization 联合调节送入 inference engine 的请求数）——见 [[rl_infra_efficiency_analysis|Coding RL Infra 效率优化]] 第 2 节「优化 6」（K3 案例另见 [[kimi_k3_posttraining_case_study_analysis|D12]]）。
 
 ## 5. Dynamic batching 与 group 语义
 
@@ -154,9 +152,11 @@ RETIRE
 
 slime 展示 full NCCL、tensor、disk 和 disk delta 的多 transport；AReaL v2 把 training/inference pair 和 version 交给 weight-update gateway；ROLL 用 `ModelUpdateGroup` 连接 source/target cluster；verl stable path 则由 trainer 调 worker/rollout update。
 
-## 7. Reward、Environment 与 Sandbox
+> [!note] 三方分工 本节是三平面机制视角下的 weight publish 协议（阶段划分与跨框架不变量，框架无关）。Megatron 训练侧的 refit / 训推一致性实现见 [[megatron_rl_posttraining_consistency_analysis]]；verl 在 Megatron+vLLM 场景下的 Gather-Broadcast-Load 同步调用链见 [[megatron_vllm_weight_sync_analysis]]；verl 自身的 resharding / 3D-HybridEngine 见 [[verl_rollout_resharding_analysis]]。
 
-应把 reward worker 当作可版本化服务：
+## 7. Reward、Environment 与 Sandbox 的接口视角
+
+三平面模型下，reward/environment/sandbox 对 data plane 暴露的是一份可版本化契约：
 
 ```text
 reward = f
@@ -167,7 +167,7 @@ reward = f
   normalization config
 ```
 
-需要防：
+这份契约需要防：
 
 - verifier 与训练共享可写目录；
 - model output 注入 grader；
@@ -176,9 +176,7 @@ reward = f
 - 环境失败被计为负 reward；
 - slow reward 把 buffer 推向 stale。
 
-K3 的 white-box environment 还要求把 harness 本身版本化：tools、system prompt、context management、skills、memories 和 subagents 都是可组合模块，训练时会动态构造不同 scaffold。AET 则把 public/hidden verifier、提交预算和最终 environment state 纳入 reward contract（Kimi K3 Technical Report §4.2.1、§4.2.6，pp.14–16）。
-
-当 reward judge 可能产生副作用时，K3/AgentENV 的 `Fork` 语义比“复制日志后评分”更强：它从相同 microVM state 派生 judge sandbox，同时让原环境继续运行。报告还区分 `Pause/Resume` 与 `Snapshot`，分别处理 inference 等待和故障恢复（Kimi K3 Technical Report §5.3.2，p.22）。
+harness 本身的版本化（K3 white-box environment 的 tools/system prompt/scaffold 可组合模块）与故障恢复的 Fork/Pause/Resume/Snapshot 语义，是这份契约在生产 sandbox 里的具体实现，见 [[rl_sandbox_design_analysis|Coding RL Sandbox 设计]] 第 2 节。
 
 ## 8. Checkpoint 与恢复
 
@@ -256,7 +254,9 @@ microVM environment snapshots
 ## Related Pages
 
 - [[on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
-- [[03_posttraining/06_framework_comparison|D06 工业后训练框架对比]]
+- [[rl_framework_comparison|D06 工业后训练框架对比]]
 - [[03_posttraining/07_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
 - [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
-- [[02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis|既有 RL Infra 效率分析]]
+- [[rl_sandbox_design_analysis|Coding RL Sandbox 设计]] — §7 harness 版本化与 Fork/Pause/Snapshot 语义的落地页
+- [[rl_infra_efficiency_analysis|Coding RL Infra 效率优化]] — §4 backpressure 准入控制信号（AReaL StalenessManager、K3 admission）的落地页
+- [[megatron_rl_posttraining_consistency_analysis]] · [[megatron_vllm_weight_sync_analysis]] — §6 weight publish 的训练侧/verl 实现

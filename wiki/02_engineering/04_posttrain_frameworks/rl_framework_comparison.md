@@ -5,7 +5,7 @@
 > **快照日期**：2026-07-27
 > **证据基线**：verl `983cb0f`、slime `aaf5c20`、AReaL `b23fa6c`、ROLL `370cb24`
 > **结论先行**：verl、slime、AReaL、ROLL 不是同一目标函数下的排行榜；它们分别优化通用可组合性、Megatron+SGLang 深集成、fully async 服务化和多 Strategy/异构硬件。
-> **阅读导航**：[[03_posttraining/05_posttraining_infra_mechanism_analysis|上一篇 D05]] · [[03_posttraining/07_verl_end_to_end_iteration_analysis|下一篇 D07]]
+> **阅读导航**：[[posttraining_infra_mechanism_analysis|上一篇 D05]] · [[03_posttraining/07_verl_end_to_end_iteration_analysis|下一篇 D07]]
 
 ---
 
@@ -55,17 +55,12 @@
 
 ### 4.1 verl
 
-优点：
+| 维度 | 摘要 |
+|---|---|
+| 优点 | `RayPPOTrainer` 主循环可读地串起 reward/advantage/actor update/weight refresh；`DataProto` 贯穿 role 边界；算法 registry 已含 GRPO、GSPO、SAPO、CISPO、REINFORCE 等十余种 estimator/policy-loss |
+| 代价 | abstraction 层和配置面较大；stable 同步链与 experimental fully async 是两条架构路径；理解性能问题需要跨 trainer、worker、rollout backend |
 
-- `RayPPOTrainer` 把 reward、advantage、actor update 和 weight refresh 放在可读主循环；
-- `DataProto` 贯穿 role 边界；
-- 算法 registry 已包含 GRPO、GSPO、SAPO、CISPO、REINFORCE 等。
-
-代价：
-
-- abstraction 层和配置面较大；
-- stable 同步链与 experimental fully async 是两条架构路径；
-- 理解性能问题需要跨 trainer、worker、rollout backend。
+详见 [[verl_architecture_overview_analysis|verl 架构总览]]（hybrid-controller、`fit` 主循环、`DataProto`）与 [[verl_rl_algorithms_analysis|verl RL 算法]]（registry 机制、config key→代码锚点）。
 
 ### 4.2 slime
 
@@ -189,7 +184,7 @@ flowchart TD
 
 ## Related Pages
 
-- [[03_posttraining/05_posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
+- [[posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
 - [[03_posttraining/07_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
 - [[slime_architecture_analysis|D08 slime 架构]]
 - [[areal_async_architecture_analysis|D09 AReaL 架构]]

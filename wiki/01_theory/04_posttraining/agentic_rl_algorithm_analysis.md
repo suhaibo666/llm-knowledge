@@ -194,6 +194,6 @@ K3 展示了更完整的恢复目标：暂停 rollout 时既要保存模型侧 K
 
 - [[reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]
 - [[on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
-- [[03_posttraining/05_posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
+- [[posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
 - [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[02_engineering/04_posttrain_frameworks/rl_sandbox_design_analysis|既有 RL Sandbox 设计]]

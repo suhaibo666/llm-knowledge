@@ -257,8 +257,8 @@ K3 不加入这张“工业源码样本”表。其官方仓库 `0797decb` 提�
 | 3 | D02 [[reasoning_rl_algorithm_evolution_analysis|Reasoning RL 算法演进]] | S01 | GRPO、DAPO、GSPO 及后续方法究竟改变了什么估计量与约束 | 已完成 |
 | 4 | D03 [[agentic_rl_algorithm_analysis|Agentic RL 算法与环境]] | S01 | 多轮 trajectory、工具调用和 coding task 怎样改变 reward 与 credit | 已完成 |
 | 5 | D04 [[on_policy_off_policy_staleness_analysis|On-policy、Off-policy 与 Staleness]] | S01 | policy lag 如何测量、校正和限制；TIM 如何影响 ratio | 已完成 |
-| 6 | D05 [[03_posttraining/05_posttraining_infra_mechanism_analysis|后训练 Infra 核心机制]] | S01 | control/data/weight 三平面的所有权、并发和故障语义是什么 | 已完成 |
-| 7 | D06 [[03_posttraining/06_framework_comparison|四框架机制对比]] | S02/S05 | 在统一术语和约束下，各框架的真实能力边界是什么 | 已完成 |
+| 6 | D05 [[posttraining_infra_mechanism_analysis|后训练 Infra 核心机制]] | S01 | control/data/weight 三平面的所有权、并发和故障语义是什么 | 已完成 |
+| 7 | D06 [[rl_framework_comparison|四框架机制对比]] | S02/S05 | 在统一术语和约束下，各框架的真实能力边界是什么 | 已完成 |
 | 8 | D07 [[03_posttraining/07_verl_end_to_end_iteration_analysis|verl 单次迭代端到端源码]] | S02 | 一批数据怎样穿过 rollout、reward、advantage、update 和 weight sync | 已完成 |
 | 9 | D08 [[slime_architecture_analysis|slime 架构与高性能路径]] | S03 | DataSource、buffer、Megatron/SGLang 与 async producer 怎样协同 | 已完成 |
 | 10 | D09 [[areal_async_architecture_analysis|AReaL Fully Async 架构]] | S03 | 微服务、Hermes、staleness control 与 agent trajectory 怎样闭环 | 已完成 |

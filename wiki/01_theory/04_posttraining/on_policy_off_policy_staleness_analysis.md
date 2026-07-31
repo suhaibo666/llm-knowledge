@@ -5,7 +5,7 @@
 > **快照日期**：2026-07-28
 > **证据基线**：固定 arXiv 版本与四框架 S00 commit，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
 > **结论先行**：异步是执行结构，staleness 是版本年龄，off-policy 是分布关系，TIM 是同参数下的实现差异；四者相关但绝不等价。
-> **阅读导航**：[[agentic_rl_algorithm_analysis|上一篇 D03]] · [[03_posttraining/05_posttraining_infra_mechanism_analysis|下一篇 D05]]
+> **阅读导航**：[[agentic_rl_algorithm_analysis|上一篇 D03]] · [[posttraining_infra_mechanism_analysis|下一篇 D05]]
 
 ---
 
@@ -181,6 +181,6 @@ weight publish commits atomically before new-version rollout
 
 - [[reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]
 - [[agentic_rl_algorithm_analysis|D03 Agentic RL 算法与环境]]
-- [[03_posttraining/05_posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
+- [[posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
 - [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis|既有 RL Infra 效率分析]]

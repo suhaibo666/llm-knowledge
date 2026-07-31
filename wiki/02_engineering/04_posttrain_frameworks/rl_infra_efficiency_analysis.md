@@ -9,8 +9,9 @@
 - *RollPacker: Mitigating Long-Tail Rollouts*（2025-09）
 - Sholto Douglas & Trenton Bricken on Claude 4（Dwarkesh Patel 访谈, 2025-05）
 - 姚顺宇 张小珺访谈第 140 期（2026-03）
+- AReaL `areal/infra/staleness_manager.py`、Kimi K3 Technical Report `0797decb`（§2「优化 6」补充，引自 [[posttraining_infra_mechanism_analysis|D05]] 证据基线）
 
-**入库日期**: 2026-05-24
+**入库日期**: 2026-05-24（2026-07-31 补「优化 6」，kb-reorg P5 D05 §4 回流）
 
 ---
 
@@ -41,7 +42,7 @@
 
 ---
 
-## 2. 五个核心优化
+## 2. 核心优化
 
 ### 优化 1: 异步训练（Async RL）
 
@@ -142,6 +143,19 @@ Reward 模型这种**无状态**组件可以塞到 serverless / function compute
 构建这种规模的高质量 environment 池，是个**数据工程问题**而不是算法问题。可能比设计算法本身耗费更多人力。
 
 > 环境多样性同时是 [[reward_hacking_defense_analysis]] Layer 1 的关键——多样化环境让 hack 路径无法在所有任务上通用，模型必须真的学解题。
+
+### 优化 6: Admission-aware Backpressure（准入与容量管理）
+
+前五个优化解决"怎么让 GPU 别等"，这一个解决"buffer 该在什么时候拒绝新样本"——顺着 [[posttraining_infra_mechanism_analysis|D05]] 三平面模型的 data plane 接口定义（一个可恢复 buffer 至少要知道 producer role、sample policy version、group/trajectory completeness、consumer reservation、accepted/rejected state、retry count、checkpoint watermark），准入控制至少要卡四层容量：
+
+1. **并发容量**：同时执行多少 rollout；
+2. **staleness 容量**：最多预生成多少未来 batch；
+3. **内存容量**：object store、host RAM、NVMe 和 network queue；
+4. **状态容量**：GPU KV、CPU external KV、KDA recurrent state 和可暂停 sandbox。
+
+只限制 queue 长度会让短样本挤占版本预算；只限制版本会在慢 verifier 下耗尽内存。AReaL 的 `StalenessManager` 同时取 concurrency 和 staleness capacity 的最小值，是一个清楚的参考实现，见 `areal/infra/staleness_manager.py:80-112`。
+
+K3 给出 cache-pressure-aware admission 的另一种信号组合：active request count、queued request count 和 KV utilization 共同调节送入 inference engine 的请求数。早期 context 短时提高并发，轨迹变长、KV 压力升高时自动收紧，而不是用固定"平均完整轨迹长度"静态限流（Kimi K3 Technical Report §5.3.1，p.21；详见 [[kimi_k3_posttraining_case_study_analysis|D12]]）。
 
 ---
 
@@ -286,7 +300,8 @@ Trajectory C:              [Init][==Exec=][======Eval======]
 
 ## Related Pages
 
-- [[03_posttraining/05_posttraining_infra_mechanism_analysis]] — control/data/weight 三平面与工业正确性不变量
+- [[posttraining_infra_mechanism_analysis]] — control/data/weight 三平面与工业正确性不变量；§4 backpressure 接口定义的落地页即本页「优化 6」
+- [[kimi_k3_posttraining_case_study_analysis]] — 「优化 6」cache-pressure-aware admission 的完整案例
 - [[on_policy_off_policy_staleness_analysis]] — async、staleness、off-policy 与 TIM 的严格区分
 - [[03_posttraining/index]] — D00–D11 后训练统一学习域
 - [[reward_hacking_defense_analysis]] — 同系列，environment 多样性是 hack 防御 Layer 1
