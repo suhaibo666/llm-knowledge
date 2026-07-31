@@ -266,7 +266,7 @@ TRITON_INTERPRET=1 python 02-fused-softmax.py   # CPU 解释执行，验证 max/
 ## 相关页面
 
 - [[index]] — Triton 学习路线总索引
-- [[triton_31_knowledge_map]] — 能力坐标图（本页 = L1 会写②）
+- [[triton_31_knowledge_guide]] — 能力坐标图（本页 = L1 会写②）
 - [[triton_01_gpu_essentials_guide]] — 前置：roofline / memory-bound（softmax 属此类）
 - [[triton_10_programming_model_guide]] — 上一步：逐元素 kernel 与 SPMD 五件套
 - [[triton_12_matmul_guide]] — 下一步：二维 block、分块累加、compute-bound

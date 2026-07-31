@@ -268,7 +268,7 @@ BlockHash = hash_fn( (parent_block_hash, curr_block_token_ids_tuple, extra_keys)
 ---
 
 ## Related Pages
-- [[11_vllm_scheduler_analysis]] · [[14_vllm_attention_backends_analysis]] · [[10_vllm_engine_architecture_analysis]] · [[01_vllm_feature_optimizations_overview]]
+- [[11_vllm_scheduler_analysis]] · [[14_vllm_attention_backends_analysis]] · [[10_vllm_engine_architecture_analysis]] · [[01_vllm_feature_optimizations_guide]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

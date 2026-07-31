@@ -304,7 +304,7 @@ vLLM 大量用 Triton 而非纯手写 CUDA,原因有二:**可移植**(同一 ker
 
 ## Related Pages
 - [[25_vllm_ir_and_fusion_passes_analysis]] —— **机制深挖伴篇**(vllm_ir IR 层注册 / Pass 流水线如何挂进 Inductor / RMSNorm+quant 融合全程走查)
-- [[23_vllm_compilation_cudagraph_analysis]] · [[21_vllm_quantization_analysis]] · [[14_vllm_attention_backends_analysis]] · [[13_vllm_model_library_analysis]] · [[01_vllm_feature_optimizations_overview]]
+- [[23_vllm_compilation_cudagraph_analysis]] · [[21_vllm_quantization_analysis]] · [[14_vllm_attention_backends_analysis]] · [[13_vllm_model_library_analysis]] · [[01_vllm_feature_optimizations_guide]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

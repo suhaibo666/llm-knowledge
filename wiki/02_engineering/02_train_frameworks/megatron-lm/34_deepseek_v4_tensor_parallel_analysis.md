@@ -619,4 +619,4 @@ self.linear_proj = build_module(..., tp_comm_buffer_name='proj', ...)
 
 **框架侧（Megatron-LM，本目录）**：
 - [[35_deepseek_v4_context_parallel_analysis]] — V4 CP 实现（姊妹页）
-- [[12_megatron_tp_analysis]] — 通用 TP 机制　· [[25_megatron_nonuniform_tp_analysis]] — 非均匀 TP　· [[14_megatron_ep_analysis]] — 专家并行　· [[01_megatron_moe_training_optimization_report]] — MoE 训练优化
+- [[12_megatron_tp_analysis]] — 通用 TP 机制　· [[25_megatron_nonuniform_tp_analysis]] — 非均匀 TP　· [[14_megatron_ep_analysis]] — 专家并行　· [[01_megatron_moe_training_optimization_analysis]] — MoE 训练优化

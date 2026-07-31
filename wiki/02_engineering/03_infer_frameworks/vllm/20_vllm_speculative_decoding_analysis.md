@@ -293,7 +293,7 @@ flowchart TD
 ---
 
 ## Related Pages
-- [[11_vllm_scheduler_analysis]] · [[23_vllm_compilation_cudagraph_analysis]] · [[14_vllm_attention_backends_analysis]] · [[01_vllm_feature_optimizations_overview]]
+- [[11_vllm_scheduler_analysis]] · [[23_vllm_compilation_cudagraph_analysis]] · [[14_vllm_attention_backends_analysis]] · [[01_vllm_feature_optimizations_guide]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

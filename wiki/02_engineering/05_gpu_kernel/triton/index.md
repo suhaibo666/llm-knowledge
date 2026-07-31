@@ -56,7 +56,7 @@ flowchart LR
 | **L2 会调** | [[triton_13_autotune_guide]] | 段 1 | 会调 | **autotune matmul**（`@triton.autotune`） | `Config`、`num_warps`、`num_stages`、`key`、剪枝、缓存陷阱 |
 | **L3 会 debug** | [[triton_14_debug_guide]] | 段 1 | 会debug | **解释器模式抓越界**（`TRITON_INTERPRET=1`） | interpreter、`device_print`、`static_assert`、5 类高频 bug 排查 |
 | **L4 会优化** | [[triton_30_optimization_profiling_guide]] | 段 3 | 会优化 | **proton 测 roofline + FlashAttention**（`06-fused-attention.py`） | profiler、占用率、`num_stages` 流水线、online-softmax 融合 |
-| **总纲** | [[triton_31_knowledge_map]] | 段 3 | 全部 | — | 四种能力对应的完整知识点清单 + 自测题 + 资源 |
+| **总纲** | [[triton_31_knowledge_guide]] | 段 3 | 全部 | — | 四种能力对应的完整知识点清单 + 自测题 + 资源 |
 
 > **学习建议**：严格按 L0→L4 顺序。每页末尾的「动手验证」务必亲手跑通 demo（哪怕没有 GPU，L1/L3 的 demo 可用 `TRITON_INTERPRET=1` 在 CPU 上跑，见 [[triton_14_debug_guide]]）。
 

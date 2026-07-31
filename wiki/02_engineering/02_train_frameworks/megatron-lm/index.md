@@ -10,7 +10,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 
 | 段 | 编号 | 页面 |
 |---|---|---|
-| 0 | 01 | [[01_megatron_moe_training_optimization_report]] |
+| 0 | 01 | [[01_megatron_moe_training_optimization_analysis]] |
 | 1 | 10-19 | [[10_megatron_model_structure_analysis]] · [[11_megatron_dataset_analysis]] · [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[14_megatron_ep_analysis]] · [[15_megatron_pp_schedulers_analysis]] · [[16_megatron_distributed_optimizer_analysis]] · [[17_megatron_parallelism_orchestration_analysis]] · [[18_megatron_recompute_analysis]] · [[19_megatron_dist_checkpointing_analysis]] |
 | 2 | 20-29 | [[20_megatron_comm_overlap_analysis]] · [[21_megatron_fusion_operators_analysis]] · [[22_megatron_memory_optimization_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]] · [[24_megatron_linear_cross_entropy_analysis]] · [[25_megatron_nonuniform_tp_analysis]] · [[26_megatron_pp_supplements_analysis]] · [[27_megatron_tp_fsdp_resharding_supplements_analysis]] · [[28_megatron_training_stability_observability_analysis]] · [[29_megatron_packed_dataset_dynamic_cp_analysis]] |
 | 3 | 30-35 | [[30_megatron_rl_posttraining_consistency_analysis]] · [[31_megatron_inference_engine_analysis]] · [[32_megatron_tflops_analysis]] · [[33_megatron_vllm_weight_sync_analysis]] · [[34_deepseek_v4_tensor_parallel_analysis]] · [[35_deepseek_v4_context_parallel_analysis]] |
@@ -25,7 +25,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 
 | Page | Key Concepts |
 |------|-------------|
-| [[01_megatron_moe_training_optimization_report]] | 7 维 MoE 训练优化全景(TP/PP/EP/CP、分布式优化器、重计算、低精度 FP8/FP4、通信 Overlap、显存、融合算子);跨 ~13 篇深挖的导航 capstone,覆盖 50B → 1.xT MoE 规模 |
+| [[01_megatron_moe_training_optimization_analysis]] | 7 维 MoE 训练优化全景(TP/PP/EP/CP、分布式优化器、重计算、低精度 FP8/FP4、通信 Overlap、显存、融合算子);跨 ~13 篇深挖的导航 capstone,覆盖 50B → 1.xT MoE 规模 |
 
 ### 专题深挖(系列外)
 

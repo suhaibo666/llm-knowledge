@@ -44,7 +44,7 @@ vLLM 不是"一个快 kernel",而是**四件正交武器叠加**。一句话纲�
 
 | 页面 | 维度重心 | 核心机制 |
 |------|---------|---------|
-| [[01_vllm_feature_optimizations_overview]] | **全景导航(段 0)** | 特性总表(问题→flag→代码→深挖页)+ 按瓶颈选优化;深挖无独立页的特性:结构化输出、LoRA、分离式 KV 连接器、KV 卸载 |
+| [[01_vllm_feature_optimizations_guide]] | **全景导航(段 0)** | 特性总表(问题→flag→代码→深挖页)+ 按瓶颈选优化;深挖无独立页的特性:结构化输出、LoRA、分离式 KV 连接器、KV 卸载 |
 | [[20_vllm_speculative_decoding_analysis]] | 投机解码(段 2) | draft+verify、提议器家族(n-gram/EAGLE/Medusa/MTP/draft model)、拒绝采样无偏性、与调度的 lookahead/回退配合 |
 | [[21_vllm_quantization_analysis]] | 量化(段 2) | `QuantizationConfig`+`QuantizeMethodBase` 插件框架、FP8/AWQ/GPTQ/compressed-tensors/FP4、加载期 Marlin repack、KV cache 量化 |
 | [[22_vllm_distributed_inference_analysis]] | 分布式(段 2) | 5 维 rank 张量切 TP/PP/EP/DP、`GroupCoordinator` 通信门面、PP `batch_queue` 虚拟流水线、MoE 的 DP-attention+EP+EPLB |
@@ -73,7 +73,7 @@ flowchart TB
   subgraph WK["Worker(每 TP/PP/EP/DP rank)"]
     runner["GPUModelRunner:组装输入张量 + AttentionMetadata"]
     model["model.forward<br/>层库(TP) [[13_vllm_model_library_analysis]]<br/>注意力后端 [[14_vllm_attention_backends_analysis]]"]
-    feats["特性:投机草稿 / 量化 GEMM / 融合算子 / 分段 CUDA Graph replay<br/>[[01_vllm_feature_optimizations_overview]]"]
+    feats["特性:投机草稿 / 量化 GEMM / 融合算子 / 分段 CUDA Graph replay<br/>[[01_vllm_feature_optimizations_guide]]"]
   end
   user --> api --> tok -->|ZMQ| sched
   sched --> kv --> exec -->|collective_rpc 广播| runner --> model --> feats
@@ -102,7 +102,7 @@ flowchart TB
 ## 阅读路径建议(按 Overview → Quick Start → Deep Dive)
 
 - **想先建立全局观**:[[10_vllm_engine_architecture_analysis]] 的 §一 Overview → 各页 §一,横向扫一遍三支柱的"定位"。
-- **想动手起服务**:各页 §二 Quick Start 的 flag 速查,先看 [[01_vllm_feature_optimizations_overview]] §二的"推荐起步配置"。
+- **想动手起服务**:各页 §二 Quick Start 的 flag 速查,先看 [[01_vllm_feature_optimizations_guide]] §二的"推荐起步配置"。
 - **想读懂源码**:从脊梁篇 [[10_vllm_engine_architecture_analysis]] §三 的 `EngineCore.step()`(`core.py:479`)入,再按忙循环每段跳到 [[11_vllm_scheduler_analysis]] / [[12_vllm_kv_cache_management_analysis]] / [[14_vllm_attention_backends_analysis]] 的 §三 Deep Dive。
 - **想读懂"为什么快"**:[[24_vllm_fused_ops_and_kernels_analysis]] + [[25_vllm_ir_and_fusion_passes_analysis]] + [[23_vllm_compilation_cudagraph_analysis]] 一起看(算子怎么拼大、图怎么改写、下发怎么录图)。
 
@@ -124,5 +124,5 @@ flowchart TB
 
 - 调度:[[10_vllm_engine_architecture_analysis]] · [[11_vllm_scheduler_analysis]] · [[12_vllm_kv_cache_management_analysis]]
 - 模型库:[[13_vllm_model_library_analysis]] · [[14_vllm_attention_backends_analysis]]
-- 特性优化:[[01_vllm_feature_optimizations_overview]] · [[20_vllm_speculative_decoding_analysis]] · [[21_vllm_quantization_analysis]] · [[22_vllm_distributed_inference_analysis]] · [[23_vllm_compilation_cudagraph_analysis]] · [[24_vllm_fused_ops_and_kernels_analysis]] · [[25_vllm_ir_and_fusion_passes_analysis]]
+- 特性优化:[[01_vllm_feature_optimizations_guide]] · [[20_vllm_speculative_decoding_analysis]] · [[21_vllm_quantization_analysis]] · [[22_vllm_distributed_inference_analysis]] · [[23_vllm_compilation_cudagraph_analysis]] · [[24_vllm_fused_ops_and_kernels_analysis]] · [[25_vllm_ir_and_fusion_passes_analysis]]
 - [[../index]] —— 推理框架目录索引 · [[mooncake_analysis]] —— 姊妹页(分离式服务)

@@ -359,7 +359,7 @@ TRITON_INTERPRET=1 python 03-matrix-multiplication.py   # 详见 [[triton_14_deb
 - [[triton_13_autotune_guide]] — 下一步：`@triton.autotune` 的 Config / num_warps / num_stages / key
 - [[triton_14_debug_guide]] — `TRITON_INTERPRET` / `device_print` 调试本 kernel
 - [[triton_30_optimization_profiling_guide]] — 更系统的 L2/occupancy/profiling 方法
-- [[triton_31_knowledge_map]] — Triton 知识全景图
+- [[triton_31_knowledge_guide]] — Triton 知识全景图
 - [[01_gpu_kernel_guide]] — CUDA 手写 GEMM tiling 对照（shared memory / register tiling 的硬件视角）
 - [[20_cuda_gemm_kernel_analysis]] — SM80 生产级 GEMM 的 CTA/Warp/MMA、`cp.async` 与 epilogue 深挖
 - [[30_triton_vs_mlir_backend_analysis]] — `tl.dot` 之后：Triton → Tensor Core MMA 的编译路径

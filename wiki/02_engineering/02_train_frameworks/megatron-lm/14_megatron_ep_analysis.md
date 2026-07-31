@@ -374,7 +374,7 @@ T2 = prob(E0)·out0[T2] + prob(E3)·out3[T2]
 …（每 token 由其 topk 个专家的输出加权求和）
 ```
 
-> 一句话:**token 按专家归属"精确投递",参数零复制、激活零广播**——通信量 `∝ topk`、显存 `÷ EP`,与 AllGather 的"收全量"形成对比(§②.4 / [[01_megatron_moe_training_optimization_report]] §2.4.1 给出精确公式 `2·S·B·H·K·(E-1)/E²`)。
+> 一句话:**token 按专家归属"精确投递",参数零复制、激活零广播**——通信量 `∝ topk`、显存 `÷ EP`,与 AllGather 的"收全量"形成对比(§②.4 / [[01_megatron_moe_training_optimization_analysis]] §2.4.1 给出精确公式 `2·S·B·H·K·(E-1)/E²`)。
 
 ### ②.4 开销分析
 
@@ -512,7 +512,7 @@ $$
 \boxed{\ \text{IB 加速比}=\dfrac{k/P}{\,1-(1-1/P)^k\,}\ }
 $$
 
-dispatch 与 combine 对称(`fused_combine` 凭 `handle` 反向),前向 ×2、含反向 ×2 → 总系数 4,与 §②.4 / [[01_megatron_moe_training_optimization_report]] §2.4.1 标准 A2A 的 `4·S·B·H·K·(E−1)/E²` 同构,差别在把"按专家"换成"按远端 node"。
+dispatch 与 combine 对称(`fused_combine` 凭 `handle` 反向),前向 ×2、含反向 ×2 → 总系数 4,与 §②.4 / [[01_megatron_moe_training_optimization_analysis]] §2.4.1 标准 A2A 的 `4·S·B·H·K·(E−1)/E²` 同构,差别在把"按专家"换成"按远端 node"。
 
 #### ③.3.3 数值走查(2 node × 2 GPU,8 专家,EP=4,topk=4)
 
@@ -749,5 +749,5 @@ dispatch/combine 的 A2A **默认在关键路径上**:计算流必须等 token �
 ## Related Pages
 
 - [[15_megatron_pp_schedulers_analysis]] · [[10_megatron_model_structure_analysis]] · [[17_megatron_parallelism_orchestration_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]]
-- [[14_megatron_ep_analysis]] · [[01_megatron_moe_training_optimization_report]] · [[20_megatron_comm_overlap_analysis]] · [[13_megatron_cp_analysis]]
+- [[14_megatron_ep_analysis]] · [[01_megatron_moe_training_optimization_analysis]] · [[20_megatron_comm_overlap_analysis]] · [[13_megatron_cp_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

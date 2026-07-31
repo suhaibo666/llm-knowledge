@@ -287,7 +287,7 @@ MoE 路由天然不均(热门专家被打爆),`EplbState`(`vllm/distributed/eplb
 ---
 
 ## Related Pages
-- [[13_vllm_model_library_analysis]] · [[10_vllm_engine_architecture_analysis]] · [[01_vllm_feature_optimizations_overview]] · [[14_vllm_attention_backends_analysis]]
+- [[13_vllm_model_library_analysis]] · [[10_vllm_engine_architecture_analysis]] · [[01_vllm_feature_optimizations_guide]] · [[14_vllm_attention_backends_analysis]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

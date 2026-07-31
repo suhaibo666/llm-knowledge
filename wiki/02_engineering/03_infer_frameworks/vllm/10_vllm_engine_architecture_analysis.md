@@ -355,7 +355,7 @@ sequenceDiagram
 ---
 
 ## Related Pages
-- [[11_vllm_scheduler_analysis]] · [[12_vllm_kv_cache_management_analysis]] · [[13_vllm_model_library_analysis]] · [[14_vllm_attention_backends_analysis]] · [[01_vllm_feature_optimizations_overview]]
+- [[11_vllm_scheduler_analysis]] · [[12_vllm_kv_cache_management_analysis]] · [[13_vllm_model_library_analysis]] · [[14_vllm_attention_backends_analysis]] · [[01_vllm_feature_optimizations_guide]]
 - [[22_vllm_distributed_inference_analysis]] · [[23_vllm_compilation_cudagraph_analysis]] · [[20_vllm_speculative_decoding_analysis]] · [[21_vllm_quantization_analysis]]
 - [[vllm/index]] · [[../index]]
 

@@ -234,7 +234,7 @@ print("max diff:", (out - (x + y)).abs().max())  # 预期 0.0
 ## 相关页面
 
 - [[index]] — Triton 学习路线总索引
-- [[triton_31_knowledge_map]] — 能力图谱中本页的位置（L3 会 debug）
+- [[triton_31_knowledge_guide]] — 能力图谱中本页的位置（L3 会 debug）
 - [[triton_10_programming_model_guide]] — 前置：SPMD/`mask`/`constexpr`，demo 的正确基准
 - [[triton_01_gpu_essentials_guide]] — GPU 执行模型（理解为何 GPU 难直接调试）
 - [[triton_11_fused_softmax_guide]] — reduction kernel，dtype/形状 bug 的常见场景

@@ -280,7 +280,7 @@ MoE 的量化挂在 `RoutedExperts` 上(对应 `get_quant_method` 的第二岔),
 ---
 
 ## Related Pages
-- [[13_vllm_model_library_analysis]] · [[14_vllm_attention_backends_analysis]] · [[01_vllm_feature_optimizations_overview]] · [[22_vllm_distributed_inference_analysis]]
+- [[13_vllm_model_library_analysis]] · [[14_vllm_attention_backends_analysis]] · [[01_vllm_feature_optimizations_guide]] · [[22_vllm_distributed_inference_analysis]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

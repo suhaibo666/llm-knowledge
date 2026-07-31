@@ -268,7 +268,7 @@ MLA 的 metadata 也专门定制:`MLACommonMetadata`(`mla_attention.py:1275`)显
 ---
 
 ## Related Pages
-- [[12_vllm_kv_cache_management_analysis]] · [[13_vllm_model_library_analysis]] · [[11_vllm_scheduler_analysis]] · [[01_vllm_feature_optimizations_overview]]
+- [[12_vllm_kv_cache_management_analysis]] · [[13_vllm_model_library_analysis]] · [[11_vllm_scheduler_analysis]] · [[01_vllm_feature_optimizations_guide]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links

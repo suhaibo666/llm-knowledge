@@ -87,4 +87,4 @@ python 03-matrix-multiplication.py   # 看 TFLOPS 曲线：Triton vs cuBLAS
 - [[triton_10_programming_model_guide]] — 下一步：用 `program_id`/`mask`/`load` 写第一个 kernel
 - [[triton_11_fused_softmax_guide]] — fusion 如何把 memory-bound kernel 的访存量砍半
 - [[triton_12_matmul_guide]] — compute-bound kernel 如何用 `tl.dot` 逼近峰值
-- [[triton_31_knowledge_map]] — 全部知识点清单
+- [[triton_31_knowledge_guide]] — 全部知识点清单

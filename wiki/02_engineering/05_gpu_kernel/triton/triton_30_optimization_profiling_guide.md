@@ -257,7 +257,7 @@ proton_viewer.print_tree(tree, metrics)
 - [ ] 看得懂 `06` 的 autotune configs 如何同时拉动分块/流水线/占用率三个杠杆
 - [ ] 懂反向 kernel 的核心难点（梯度并发累加）与解法（分桶+锁的两阶段并行归约）
 
-至此 L0→L4 闭环完成。回到 [[triton_31_knowledge_map]] 做四种能力的自测与查漏。
+至此 L0→L4 闭环完成。回到 [[triton_31_knowledge_guide]] 做四种能力的自测与查漏。
 
 ---
 
@@ -270,7 +270,7 @@ proton_viewer.print_tree(tree, metrics)
 - [[triton_12_matmul_guide]] — 杠杆④分块&L2 grouping、`tl.dot` 入门
 - [[triton_13_autotune_guide]] — 杠杆②③：`num_stages`/`num_warps` 的自动搜索
 - [[triton_14_debug_guide]] — 优化引入 bug 时回这里（interpreter / assert）
-- [[triton_31_knowledge_map]] — 四种能力总纲与自测
+- [[triton_31_knowledge_guide]] — 四种能力总纲与自测
 - [[01_gpu_kernel_guide]] — FlashAttention 硬件层级映射表（§08）、Tensor Core 硬件视角（与本页互补）
 - [[26_flex_attention_analysis]] — attention 变体与 mask/score 修改
 - [[30_triton_vs_mlir_backend_analysis]] — `tl.dot→MMA`、`num_stages` 流水线在编译器侧的下降

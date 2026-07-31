@@ -36,7 +36,7 @@
 | [[triton_13_autotune_guide]] | 段 1 | L2 会调 | autotune（`@triton.autotune`） |
 | [[triton_14_debug_guide]] | 段 1 | L3 会debug | 解释器抓越界（`TRITON_INTERPRET=1`） |
 | [[triton_30_optimization_profiling_guide]] | 段 3 | L4 会优化 | proton + FlashAttention（`06-fused-attention.py`） |
-| [[triton_31_knowledge_map]] | 段 3 | 总纲 | 四能力知识点清单 + 自测 + 进阶 |
+| [[triton_31_knowledge_guide]] | 段 3 | 总纲 | 四能力知识点清单 + 自测 + 进阶 |
 
 ---
 

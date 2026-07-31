@@ -218,7 +218,7 @@ print(matmul_kernel.best_config)  # 打印胜出的 Config（含 BLOCK/num_warps
 - [[triton_10_programming_model_guide]] — meta 参数 / `constexpr` 的来历
 - [[triton_30_optimization_profiling_guide]] — `num_stages` 背后的软件流水线与访存优化原理
 - [[triton_14_debug_guide]] — 配置对了但结果错的排查路径
-- [[triton_31_knowledge_map]] — 全图：autotune 在 Triton 能力树中的位置
+- [[triton_31_knowledge_guide]] — 全图：autotune 在 Triton 能力树中的位置
 - [[21_inductor_autotuning_analysis]] — `torch.compile` 的 max-autotune 在更上层自动做同一件事（自动生成 + benchmark Triton/cutlass 候选）
 - [[20_inductor_codegen_analysis]] — Inductor 如何生成被 autotune 的 Triton kernel
 - [[01_gpu_kernel_guide]] — occupancy / warp / 寄存器压力的硬件背景（`num_warps`/`maxnreg` 的物理含义）

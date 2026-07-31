@@ -345,7 +345,7 @@ vLLM 实现"分段图"其实有**两条**互斥路线,由 `use_inductor_graph_pa
 vLLM 的编译 + CUDA Graph 是两件正交武器协同对付 decode 的 CPU 下发瓶颈:`torch.compile`(经 `VllmBackend` 接管 Inductor)减少 kernel 数与 Python 开销,CUDA Graph 把整段下发录成一次 replay。招牌的**分段 CUDA Graph** 把变长/动态 block_table 的注意力切出静态图走 varlen kernel,其余静态算子录入 CUDA Graph;`FULL_AND_PIECEWISE` 默认让均匀 decode 批走全图、prefill/mixed 走分段。运行时由 `CudagraphDispatcher` 按 padding 后的形状选图、经 `ForwardContext` 下发、`CUDAGraphWrapper` 盲信键 capture/replay。注意力"为什么进不了静态图"的后端级判据(`AttentionCGSupport`)见 [[14_vllm_attention_backends_analysis]]。
 
 ## Related Pages
-- [[14_vllm_attention_backends_analysis]] · [[10_vllm_engine_architecture_analysis]] · [[01_vllm_feature_optimizations_overview]] · [[20_vllm_speculative_decoding_analysis]]
+- [[14_vllm_attention_backends_analysis]] · [[10_vllm_engine_architecture_analysis]] · [[01_vllm_feature_optimizations_guide]] · [[20_vllm_speculative_decoding_analysis]]
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links
