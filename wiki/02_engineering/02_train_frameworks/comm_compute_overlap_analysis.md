@@ -36,6 +36,8 @@
 | **PP 气泡消除** | 传统 1F1B + P2P overlap（无 ZB/DualPipe 内置支持） | **ZBV/DualPipeV**：I/W 拆分（按 autograd 目标而非模型结构）+ `OVERLAP_F_B`（F/B 计算本身重叠发起）→ 本页§三、[[torchtitan_pp_analysis]] §7 | **DualPipeV**（双向切半，气泡占比 $O(P)/O(m)$）+ **RiPipe**（气泡内做重计算，近乎零代价）→ [[mindspeed_comm_overlap_analysis]] §5.1-5.2 |
 | **A2A 专用融合内核** | DeepEP/HybridEP：两级通信去冗余（跨节点走 RDMA、节点内走 NVLink），"加速通信"而非"掩盖通信" → [[megatron_comm_overlap_analysis]] §5.6 | MinimalAsyncEP：symm-mem + 自写 Triton，**不做**通算重叠（明确声明），lever 是融合 barrier + CUDA graph/compile 去 launch 开销 → [[torchtitan_comm_optimizations_overlap_analysis]] §4 | alltoall-MC2：`npu_alltoallv_gmm`/`npu_gmm_alltoallv` 把 a2a-v 与专家 GEMM 编进单 kernel，与所有软流水 MoE-overlap 互斥 → [[mindspeed_comm_overlap_analysis]] §4.4 |
 
+> **Megatron EP 行补注**：`overlap_dispatch_backward_with_experts_wgrad`（`moe_layer.py:441`、`519`，专用 `_delayed_wgrad_stream` 把专家 wgrad 与 dispatch 反向 A2A 重叠）见 [[megatron_ep_analysis]] §5.3。它与"EP（跨 microbatch）+ PP 打通"行的 combined_1f1b delay-wgrad（`delay_wgrad_compute`）是**两个相互独立、互斥**的机制（`transformer_config.py:2713`）：前者**不耦合 PP**，纯 EP 内 wgrad-vs-dispatch-A2A 重叠；后者是 combined_1f1b 内**跨 microbatch**的 wgrad 延迟，二选一。
+
 ## 三 combined_1f1b 与 ZBV/DualPipeV：两种"打通"哲学
 
 Megatron combined_1f1b 与 torchtitan ZBV/DualPipeV、MindSpeed fb-overlap+DualPipeV 都在解决"跨 microbatch 打通掩盖"，但路线不同——完整源码级机制见各自权威页（[[megatron_comm_overlap_analysis]] §5、[[torchtitan_pp_analysis]] §4/§7、[[mindspeed_comm_overlap_analysis]] §4.3/§5.1），本节只讲架构差异。
