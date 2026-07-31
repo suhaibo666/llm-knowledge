@@ -6,6 +6,97 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-01：知识库结构整改 P7 Task 7 —— 全库编号/命名推广
+
+**Type**: Naming Convention（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §5；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 7；P4 Task 9.5 / P5 Task 8 同款规程）
+
+对 P4/P5 尚未覆盖的 13 个目录逐目录施行两位数字段位前缀命名：段 0（01-09）导览/概览、段 1（10-19）
+核心机制主线、段 2（20-29）深潜/专题、段 3（30-39）方法论/对照/工程实践；`index.md` 不编号，仅在
+各目录 index 新增"段位与阅读顺序"小节或"段位速查"表。纯改名，不改内容；跨 9 个 commit 分批完成
+（含 1 个 batch0 隔离修复 + 7 个目录批 + 1 个后清收批），每批 checker broken=0 + pytest 77 后提交：
+
+| 目录 | 篇数 | 段位分布 | 编号区间 |
+|---|---|---|---|
+| `01_theory/01_models/deepseek` | 20 | 1段9/2段10/3段1 | 10-18,20-29,30 |
+| `01_theory/01_models/moonshot_kimi` | 13 | 1段5/2段8 | 10-14,20-27 |
+| `01_theory/01_models/zhipu_glm` | 9 | 0段1/1段1/2段7 | 01,10,20-26 |
+| `01_theory/02_pretraining` | 6 | 1段5/2段1 | 10-14,20 |
+| `01_theory/06_distributed_parallelism` | 8 | 1段6/2段2 | 10-15,20-21 |
+| `02_engineering/02_train_frameworks`（根） | 7 | 2段3/3段4 | 20-22,30-33 |
+| `02_engineering/02_train_frameworks/megatron-lm` | 27 | 0段1/1段10/2段10/3段6 | 01,10-19,20-29,30-35 |
+| `02_engineering/02_train_frameworks/torchtitan` | 12 | 1段6/2段6 | 10-15,20-25 |
+| `02_engineering/02_train_frameworks/mindspeed` | 5 | 1段4/2段1 | 10-13,20 |
+| `02_engineering/03_infer_frameworks/vllm` | 12 | 0段1/1段5/2段6 | 01,10-14,20-25 |
+| `02_engineering/05_gpu_kernel`（根） | 7 | 0段1/1段2/2段4 | 01,10-11,20-23 |
+| `02_engineering/05_gpu_kernel/triton` | 8 | 0段1/1段5/3段2 | 01,10-14,30-31 |
+| `02_engineering/07_training_reliability` | 4 | 1段3/2段1 | 10-12,20 |
+
+共 138 篇内容页施行/调整编号，全库改写裸基名 `[[wikilink]]` 链接与正文字面路径约 3025 处（含
+`wiki/courses/` 两页、`wiki/index.md` 快速导航、`tools/labs_torch_compile/demo_manifest.json` 的
+`page` 字段与 `test_volume_demo_contract.py` 硬编码文件名字面量同步）。
+
+**豁免清单**（<4 内容页目录，按 spec §5 门槛不编号，仅数页确认）：`01_theory/01_models` 根（3）、
+`tencent_hunyuan`（2）、`meituan_longcat`（2）、`thinking_machines`（1）、`02_train_frameworks/mindformers`
+（2）、`03_infer_frameworks` 根（1）、`speculative_decoding`（2）、`sglang`（1）、`06_auto_parallel`（1）、
+`02_compile_stack/05_codegen_backends/mlir/npu`（2，P4 既定豁免，本次仅修正大小写见下）。
+
+**Batch0：孤立大小写/点号残留修复**（在既定编号目录内，Task 7 清单明文列出，独立于本次 13 目录扫描）：
+
+- `04_inductor/npu/10_NPU_Inductor_Backend_Analysis` → `10_npu_inductor_backend_analysis`（P4 已编号目录，仅改大小写）
+- `05_codegen_backends/mlir/npu/NPU_MLIR_Backend_Technical_Analysis` → `npu_mlir_backend_technical_analysis`（豁免目录，仅改大小写，不加编号）
+- `03_runtime_graphs/cuda/01_PyTorch_CUDA_Graphs_Complete_Guide` → `10_pytorch_cuda_graphs_complete_guide`：判段修正——该页是四种用法+实现原理的核心机制主线而非纯入门页，从段 0 移入段 1；同目录 `10_cudagraph_trees_warmup_record_and_replay_analysis` 顺延为 `11_...` 保持流水线顺序
+- `01_theory/04_posttraining/29_kimi_k1.5_analysis` → `29_kimi_k1_5_analysis`（P5 Task 8 changelog 原文明确"点号未消除…属 P7 范围非本任务"，本次补齐）
+
+**snake_case / 非法后缀修复清单**（编号时一并处理，含 deepseek 目录内 4 处非法后缀就近改名）：
+
+| 旧名 | 新名 | 说明 |
+|---|---|---|
+| `mHC.md` | `25_mhc_analysis.md` | 大写+无后缀 |
+| `Engram_Analysis.md` | `29_engram_analysis.md` | 驼峰大写 |
+| `deepseek_math_v2.md` | `18_deepseek_math_v2_analysis.md` | 缺 `_analysis` 后缀 |
+| `deepseek_v4_technical_deep_dive.md` | `26_deepseek_v4_technical_deepdive.md` | `_deep_dive`→`_deepdive` |
+| `deepseek_v4_implementation_details.md` | `27_deepseek_v4_implementation_deepdive.md` | 非法后缀 `_details`→`_deepdive`（内容自称"实现级 Deep Dive"） |
+| `deepseek_v4_architecture_diagrams.md` | `28_deepseek_v4_architecture_analysis.md` | 非法后缀 `_diagrams`→`_analysis` |
+| `deepseek_v4_audit_report.md` | `30_deepseek_v4_audit_analysis.md` | 非法后缀 `_report`→`_analysis` |
+| `kimi_k2.5_analysis.md` | `13_kimi_k2_5_analysis.md` | 点号消除 |
+| `RL_Training_Inference_Precision_Analysis.md` | `20_rl_training_inference_precision_analysis.md` | 全大写 |
+| `async_collective_tensor_deep_dive.md` | `21_async_collective_tensor_deepdive.md` | `_deep_dive`→`_deepdive` |
+| `muon_sharded_hsdp_report.md` | `22_muon_sharded_hsdp_analysis.md` | 非法后缀 `_report`→`_analysis` |
+| `distributed_optimizer_deep_dive.md` | `32_distributed_optimizer_deepdive.md` | `_deep_dive`→`_deepdive` |
+| `megatron_moe_training_optimization_report.md` | `01_megatron_moe_training_optimization_analysis.md` | 非法后缀 `_report`→`_analysis` |
+| `vllm_feature_optimizations_overview.md` | `01_vllm_feature_optimizations_guide.md` | 非法后缀 `_overview`→`_guide`（内容是"问题→flag→代码→深挖页"决策指南） |
+| `triton_knowledge_map.md` | `triton_31_knowledge_guide.md` | 非法后缀 `_map`→`_guide`（同目录其余 7 篇均用 `_guide`） |
+| `triton_00`–`triton_06` | `triton_01`/`triton_10-14`/`triton_30-31` | 课程序号规范化为段位（`triton_` 前缀保留，见下方判段说明） |
+
+`_deep_dive`（5 篇）→`_deepdive` 全库清零；非 snake_case 全库清零（`find wiki -name "*.md" | grep -E "[A-Z]"` 为空）。
+
+**遇到的一处误伤自查**：`mHC`→`25_mhc_analysis` 的全库替换脚本第一遍执行时，误将约 20 篇文件中作为
+**技术缩写术语**裸出现的 "mHC"（如"该方案称为 mHC"）也替换成了文件名——因为原文件名恰好就是不带
+后缀的裸词 "mHC"。发现后写了第二遍脚本：仅保护 `[[...]]` 链接span 内的替换结果，把 span 外的
+"25_mhc_analysis" 字面量改回 "mHC"，回退 139 处误伤，链接本身不受影响（validate: checker broken=0、
+pytest 77 通过）。其余各批次的旧文件名均已带 `_analysis`/`_guide`/`_report` 等后缀，词形唯一，未复现此问题。
+
+**判段说明（内容实质优先于文件名后缀/既有体裁标签，同 P4 Task 9.5 / P5 Task 8 规程）**：
+
+- `triton/` 目录的原课程序号 `triton_00`–`triton_06` 是计划书明文交办的特例处置：00（L0 地基）
+  →段 0；01-05（L1 会写×3/L2 会调/L3 会debug）→段 1；06（L4 会优化，profiling 方法论）→段 3；
+  未编号的 `triton_knowledge_map`（总纲/自测/资源）判定为方法论参考，同入段 3（31），并顺带补上
+  述后缀修复。
+- `02_train_frameworks/megatron-lm/megatron_pp_parallelism_analysis`（根目录内）：与
+  `megatron-lm/15_megatron_pp_schedulers_analysis` 存在 spec §3.4 记载的三页合并待办（本次未执行,
+  见 2026-07-29 设计文档 §3.4）——该合并未落地，页面仍按现状原地编号（`20_`），不属本任务范围。
+- `05_gpu_kernel` 根：`cuda_execution_model_guide`/`operator_optimization_guide` 是 P6 Task 4 归一
+  后的两篇"权威页"，判入段 1（核心机制主线）而非段 3；`gpu_kernel_guide` 内容覆盖面最广（执行层级
+  /内存/Tensor Core/torch.compile/NPU 差异全景），判入段 0 作全域入口。
+- `02_train_frameworks/mindspeed`：四大类特性(并行/通算掩盖/内存/昇腾亲和)判入段 1（index 原文
+  称"四大类特性"为并列体裁）；仅 CP 深挖一篇（index 原文自称"并行·CP 深挖"）判入段 2。
+
+**校验**：`python tools/check_links.py`：pages=373，broken=0（9 个 commit 均独立核验，ambiguous=70/
+bare_index=70 为既有基线，P7 Task 8 处理范围）；`pytest tools/ -q`：77 passed（9 个 commit 均独立
+核验，含 labs demo_manifest 契约测试）。
+
+---
+
 ## 2026-07-31：知识库结构整改 P6 Task 5 —— NPU 三页划界 + 中重叠七组扫尾
 
 **Type**: Structure Reorg / Dedup（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.5/§3.6；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 5）
