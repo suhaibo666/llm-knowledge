@@ -94,7 +94,7 @@
 | 非 GEMM Kernel 优化 | [[cuda_nonmatmul_kernels_analysis]], [[gpu_kernel_guide]], [[triton_00_gpu_essentials_guide]] |
 | vLLM 推理引擎 | [[vllm/index]], [[vllm_engine_architecture_analysis]], [[vllm_scheduler_analysis]], [[vllm_kv_cache_management_analysis]], [[vllm_feature_optimizations_overview]] |
 | vLLM 图编译/算子融合 | [[vllm_fused_ops_and_kernels_analysis]], [[vllm_ir_and_fusion_passes_analysis]], [[vllm_compilation_cudagraph_analysis]] |
-| PPO/GRPO RL 训练 | [[RL_PPO_Loss_and_GRPO_Analysis]], [[RL_Training_Inference_Precision_Analysis]] |
+| PPO/GRPO RL 训练 | [[rl_ppo_loss_and_grpo_analysis]], [[RL_Training_Inference_Precision_Analysis]] |
 | RL 训练框架 (verl/HybridFlow) | [[verl/index]], [[verl_architecture_overview_analysis]], [[verl_ray_trainer_analysis]], [[verl_rl_algorithms_analysis]] |
 | Coding RL「脏活」系列 | [[reward_hacking_defense_analysis]], [[rl_sandbox_design_analysis]], [[rl_infra_efficiency_analysis]] |
 | LLM 后训练前沿 D00–D05 | [[03_posttraining/index]], [[03_posttraining/00_posttraining_source_reading_guide]], [[posttraining_frontier_map_analysis]], [[reasoning_rl_algorithm_evolution_analysis]], [[agentic_rl_algorithm_analysis]], [[on_policy_off_policy_staleness_analysis]], [[posttraining_infra_mechanism_analysis]] |

@@ -196,5 +196,5 @@ Sandbox 既是 reward hacking 防御 Layer 1 的物理基础（强隔离 → hac
 - [[rl_infra_efficiency_analysis]] — 同系列，sandbox 三阶段拆解直接驱动长尾治理
 - [[batch_invariance_guide]] — 后训练框架已有页面，训练批次不变性
 - [[grpo_analysis]] — GRPO 训练的 rollout 上下文
-- [[RL_PPO_Loss_and_GRPO_Analysis]] — PPO / GRPO 的源码级训练流程
+- [[rl_ppo_loss_and_grpo_analysis]] — PPO / GRPO 的源码级训练流程
 - [[02_engineering/04_posttrain_frameworks/index]] — 后训练框架入口

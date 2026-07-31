@@ -6,6 +6,23 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-31：知识库结构整改 P5 Task 6（错位页归位）
+
+**Type**: Misplaced-page Relocation（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 6）
+
+两篇此前放错域的页面归位，均为纯搬运（正文零改动，仅补链接）：
+
+- `git mv wiki/01_theory/04_posttraining/RL_PPO_Loss_and_GRPO_Analysis.md` → `wiki/02_engineering/04_posttrain_frameworks/rl_ppo_loss_and_grpo_analysis.md`（snake_case 化）。该页是 TorchTitan + vLLM 的 PPO Loss / GRPO 流程源码级实现分析，此前误放理论目录，实为框架工程分析。与 verl 域已有的 `verl_rl_algorithms_analysis.md`（同为源码级 PPO/GRPO loss 分析，框架为 verl core_algos 注册表）互补一句话双向链接。
+- `git mv wiki/02_engineering/04_posttrain_frameworks/batch_invariance_guide.md` → `wiki/02_engineering/07_training_reliability/batch_invariance_guide.md`。该页讲批次不变性/确定性算子实现（源自 DeepSeek V4 报告 §3.3 + DeepGEMM 源码），主题属确定性/可靠性问题域而非后训练框架，与 `determinism_and_numerical_reliability_analysis.md` 问题 2（训推数值不一致 / batch 不变性）互为系统侧上游与算子层实现细化的关系，双向补链；`tools/batch_invariance_demo.py` 引用路径为仓库根相对路径文本，两个新旧目录深度相同（均为 `wiki/02_engineering/<domain>/`），无需改写。
+
+**入链改写（裸基名）**：`RL_PPO_Loss_and_GRPO_Analysis` → `rl_ppo_loss_and_grpo_analysis`，涉及 `glm5_posttraining_deepdive.md`（2 处）、`tim_causal_chain_analysis.md`、`rl_infra_efficiency_analysis.md`、`rl_sandbox_design_analysis.md`、`determinism_and_numerical_reliability_analysis.md`、`07_training_reliability/index.md`、`wiki/index.md`。`batch_invariance_guide` 基名不变（同名文件仅换目录），裸基名链接天然不受影响；唯一一处路径限定链接 `01_ai_frameworks/index.md` 的 `[[04_posttrain_frameworks/batch_invariance_guide]]` 改为裸基名 `[[batch_invariance_guide]]`（同域内唯一同名文件，不存在歧义）。`wiki/changelog.md` 中 1 处 2026-05-24 历史活链接（`RL_PPO_Loss_and_GRPO_Analysis`）按"历史不回写"惯例降级为反引号 + 去向说明。
+
+**索引同步**：`01_theory/04_posttraining/index.md` 移除 RL_PPO 行；`02_engineering/04_posttrain_frameworks/index.md` 「数值与确定性」小节（原仅 batch_invariance_guide 一行）改为「RL 算法源码实现」小节收纳新迁入的 `rl_ppo_loss_and_grpo_analysis`，并注明 batch_invariance_guide 去向；`07_training_reliability/index.md` 问题地图第 2 行「详见」列补 `[[batch_invariance_guide]]`，新增「第四篇：batch 不变性算子实现」小节介绍其归位背景与来源（独立于本域原 wanka 综述素材）。
+
+**验收**：`tools/check_links.py` broken=0、orphans=0（pages=375，与基线一致，纯搬运不增删文件）；`python -m pytest -q` 77 passed。
+
+---
+
 ## 2026-07-31：知识库结构整改 P5 Task 5（verl 端到端整合，双基线调和）
 
 **Type**: Content Consolidation + Baseline Reconciliation（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 5）
@@ -2557,7 +2574,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **主线观点**: Coding 大模型训练的护城河来自三块「脏活」——Sandbox 决定能不能稳定跑、RL Infra 决定能跑多大多快、Reward Hacking 防御决定训出来的是不是你想要的。三者强耦合，单点短板即整体瓶颈；国内玩家真实差距在 infra 与 reward 体系而非算法。
 
-**交叉引用**: 三篇互链，并与 [[grpo_analysis]] / [[ppo_analysis]] / [[dapo_analysis]] / [[gspo_analysis]] / [[rlhf_foundations_analysis]] / [[kimi_k1.5_analysis]] / [[batch_invariance_guide]] / [[RL_PPO_Loss_and_GRPO_Analysis]] 等既有页交叉引用。
+**交叉引用**: 三篇互链，并与 [[grpo_analysis]] / [[ppo_analysis]] / [[dapo_analysis]] / [[gspo_analysis]] / [[rlhf_foundations_analysis]] / [[kimi_k1.5_analysis]] / [[batch_invariance_guide]] / `RL_PPO_Loss_and_GRPO_Analysis`（历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移改名为 [[rl_ppo_loss_and_grpo_analysis]]，按"历史不回写"惯例降级为反引号）等既有页交叉引用。
 
 ---
 

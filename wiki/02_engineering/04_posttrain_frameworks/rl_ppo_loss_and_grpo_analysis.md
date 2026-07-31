@@ -231,3 +231,12 @@ $$L^{CLIP}(\theta) = \mathbb{E}t \left[ \min(r_t(\theta) A_t, \text{clip}(r_t(\t
 策略梯度定理：告诉我们梯度方向是 $\nabla \log \pi \cdot A$。
 重要性采样：为了能用旧数据更新新模型，引入了比率 $\frac{\pi_{new}}{\pi_{old}}$ 来修正概率分布的偏差。
 直观意义：根据动作的好坏 ($A$)，成比例地放大或缩小该动作在新策略中的出现概率 ($\text{Ratio}$)。
+
+---
+
+## Related Pages
+
+- [[verl_rl_algorithms_analysis]] — 同类源码级 PPO/GRPO loss 分析,框架为 verl(注册表选型机制)而非 TorchTitan + vLLM
+- [[reasoning_rl_algorithm_evolution_analysis]] — GRPO/PPO 公式演进与跨算法系统约束的权威页
+- [[grpo_analysis]] — GRPO 论文原理背景
+- [[batch_invariance_guide]] — 本页 §"关键总结"第 4 点提到的 batch_invariant 断言的算子级实现

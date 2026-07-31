@@ -311,6 +311,6 @@ Trajectory C:              [Init][==Exec=][======Eval======]
 - [[dapo_analysis]] — DAPO 的动态采样与长尾治理思路
 - [[gspo_analysis]] — 序列级 importance ratio，影响 staleness 容忍度
 - [[kimi_k1.5_analysis]] — Kimi 长上下文 RL 训练
-- [[RL_PPO_Loss_and_GRPO_Analysis]] — PPO/GRPO 源码级实现
+- [[rl_ppo_loss_and_grpo_analysis]] — PPO/GRPO 源码级实现
 - [[batch_invariance_guide]] — 后训练框架数值稳定性
 - [[02_engineering/04_posttrain_frameworks/index]] — 后训练框架入口

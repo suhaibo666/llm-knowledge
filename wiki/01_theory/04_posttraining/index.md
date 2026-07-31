@@ -61,7 +61,6 @@
 |------|------|---------|
 | [[vapo_analysis]] | VAPO (2504.05118) | 基于价值模型的 RL, AIME 60.4 |
 | [[rlhf_foundations_analysis]] | 多篇综合 | ReMax, Weak-to-Strong, RM Overoptimization, RigorLLM |
-| [[RL_PPO_Loss_and_GRPO_Analysis]] | 源码分析 | PPO Loss 与 GRPO 的代码级对比 |
 | [[kimi_k1.5_analysis]] | Kimi K1.5 | 长上下文 RL 推理训练 |
 
 ### 对齐安全

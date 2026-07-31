@@ -374,6 +374,7 @@ GRPO/DAPO/GSPO 的公式演进、系统约束与跨算法对照统一维护在 [
 ## Related Pages
 
 - [[reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]] —— GRPO/DAPO/GSPO 公式演进与跨算法系统约束对照的权威页
+- [[rl_ppo_loss_and_grpo_analysis]] —— 同类源码级 PPO/GRPO loss 分析,框架为 TorchTitan + vLLM 而非 verl 的 core_algos 注册表
 - [[grpo_analysis]] · [[dapo_analysis]] · [[gspo_analysis]] —— 对应论文的元数据、原始实验数字与消融
 - [[verl_ray_trainer_analysis]] —— `compute_advantage` / `apply_kl_penalty` 的调用方与主训练循环
 - [[verl_workers_engine_analysis]] —— `policy_loss` / `value_loss` 在 actor/critic 引擎中的执行

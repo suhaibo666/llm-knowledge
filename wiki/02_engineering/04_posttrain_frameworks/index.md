@@ -15,11 +15,13 @@
 
 ## 页面列表
 
-### 数值与确定性
+### RL 算法源码实现（kb-reorg P5 归位）
+
+> `batch_invariance_guide` 已迁至 [[07_training_reliability/index]]（训练批次不变性属确定性/可靠性问题域，非框架源码分析）。
 
 | 页面 | 来源 | 核心主题 |
 |------|------|---------|
-| [[batch_invariance_guide]] | 综合分析 | 训练批次不变性: 数学定义、数值稳定性、loss 聚合顺序依赖 |
+| [[rl_ppo_loss_and_grpo_analysis]] | TorchTitan + vLLM 源码 | PPO Loss 计算与 GRPO 训练流程的代码级走查(与 verl 的 [[verl_rl_algorithms_analysis]] 同类、框架不同) |
 
 ### Coding RL Sandbox 与 Infra
 

@@ -505,7 +505,7 @@ flowchart TB
 - [[determinism_and_numerical_reliability_analysis]] — 第一环的系统侧上游（问题 1-4：浮点非确定性五层来源、batch 不变性、低精度长链累加、SDC）
 - [[batch_invariance_guide]] — batch 不变性的数学定义与 loss 聚合顺序依赖
 - [[RL_Training_Inference_Precision_Analysis]] — 本库既有的训推精度页，本页为其 2025-2026 一代的延伸
-- [[RL_PPO_Loss_and_GRPO_Analysis]] · [[grpo_analysis]] · [[gspo_analysis]] · [[dapo_analysis]] — 被本页各修法修改的基础目标
+- [[rl_ppo_loss_and_grpo_analysis]] · [[grpo_analysis]] · [[gspo_analysis]] · [[dapo_analysis]] — 被本页各修法修改的基础目标
 - [[on_policy_off_policy_staleness_analysis]] — §7 覆盖 TIM 与 staleness/off-policy 的关系区分，是本页四环因果链的上层概念坐标
 - [[training_dynamics_stability_analysis]] — 第四环的下游（loss spike / NaN / 发散的四类根因与四层防线）
 - [[07_training_reliability/index]] — 万卡训练确定性与可靠性问题域（问题 2 与本页直接接壤）
