@@ -19,6 +19,21 @@ All source ingestions and significant wiki updates are logged here.
 - **索引与入链**：`06_distributed_parallelism/index.md` 补条目（页面列表 + 建议阅读顺序 + 显存通信总账 CP 行 + 关联域指向四份框架页）；`megatron-lm/index.md`、`torchtitan/index.md`、`mindspeed/index.md` 三处描述同步指向理论页；四页 Related Pages 与理论页 Related Pages 双向互链。
 - **验收**：`python tools/check_links.py` pages=375（374+1）、broken=0、orphans=0；`ambiguous`/`bare_index` 69→70（新页 Related Pages 末尾沿用同目录 8 个既有页面的裸 `[[index]]` 惯例，与本次改动前基线持平 +1，属 P7 Task 8 全库裸 index 清零范围，非本次引入的新问题）。`python -m pytest tools/ -q` 77 passed。
 
+## 2026-07-31：P6 Task 2 逐句复核修复（六项）
+
+**Type**: Correction（对上一条目 P6 Task 2 归一结果的逐句审查，`git show 70d096e:...` 逐字取回原文核对）
+
+复核发现归一/收缩过程中丢失或失真的六处，逐项修复（不改上一条历史记录，按追加惯例新增本条）：
+
+1. **A1 回补**：旧 `deepseek_v4_context_parallel_analysis.md` §2.4.2 的 All-gather"关键缺陷"半句——KV buffer 显存代价公式（原 `2×S×B×Hₖ×D`）在收缩时全库丢失。补回理论页 §6.2「显存代价」新增段（All-gather 机制的通用属性，非 DSv4 专属）。
+2. **A2 回补**：旧 DSv4 §2.4.4 的 a2a+p2p 三级递进数据流（Level 1 Pair A2A(2-GPU) → Level 2 Quad A2A(4-GPU，建立在 Level 1 之上) → Level 3 跨节点 P2P 环）及"NVLink 承担大部分通信量"的关键优势说明，收缩后两处均只剩两级描述。逐字补回理论页 §8.2 末尾新增「执行序」段。
+3. **虚假指针修正**：`deepseek_v4_context_parallel_analysis.md:565` 与理论页 §11 声称 `resolve_cp_group`/`PackedSeqParams` 源码"已并入 `megatron_cp_analysis.md` §3"，但收缩时该源码级细节（`packed_seq_params.py:23-24`/`:69`、`transformer_engine.py:1798`、#5215 修复 `:1886`、`GPTModel`/`GatedDeltaNet`/MTP 消费者清单）被误删且全库无处收留。采用方案 (a)：逐字恢复进 `megatron_cp_analysis.md` §3.1「机制（源码）」，两处指针随之变为如实表述（391→131→135 行）。
+4. **理论页 §9 补充口径差异第三条**：核实 DSv4 与 MindSpeed 的 Ulysses/a2a 通信量公式在扣除已知的 TP 因子、fwd/bwd 口径两项调整后仍残留 **cp 倍**未归因差异（Ring 行同样两项调整后可精确抵消至 2 倍，Ulysses/a2a 行不能）——新增 `[!contradiction]` callout 如实披露，不假装已解释，提示读者两页公式不可直接换算。
+5. **符号消歧**：§9 开头补充说明本节 $h$ 指头数，与 §0 全局记号表的 $h$（隐藏维度）是两个不同的量（本节 $h\times d$ 才对应 §0 的 $h$）。
+6. **引用来源订正**：理论页 §4.1 "从朴素 $cp\cdot$(全块)降到约一半"一句的引用来源从 `mindspeed_context_parallel_analysis.md §4.3` 订正为 `§4.3/§4.4`（三分支裁剪机制本体在 §4.3，但该精确量化措辞的原始出处是 §4.4 通信量代数节的 `[!tip]` 优化点 callout）。
+
+**验收**：`python tools/check_links.py` pages=375、broken=0（不变）；`python -m pytest tools/ -q` 77 passed。
+
 ---
 
 ## 2026-07-31：知识库结构整改 P5 完成（后训练三域整合收官）

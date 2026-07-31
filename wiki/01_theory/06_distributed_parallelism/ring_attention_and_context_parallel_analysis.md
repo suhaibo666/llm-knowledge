@@ -192,7 +192,7 @@ RoPE 位置编码必须按**和 token 完全相同**的方式切到 CP rank,否�
 
 ### 4.1 三分支裁剪算法
 
-> 唯一深入来源 `mindspeed_context_parallel_analysis.md` §4.3——四页中量化最完整(给出"近一半"的具体收益)、且给出显式三分支代码逻辑的版本。
+> 唯一深入来源 `mindspeed_context_parallel_analysis.md` §4.3/§4.4——四页中量化最完整、且给出显式三分支代码逻辑的版本;三分支裁剪机制本体在 §4.3,但"从朴素 $cp\cdot$(全块)降到约一半"这句精确量化陈述的原始措辞出自 §4.4 通信量代数节的 `[!tip]` 优化点 callout(该 callout 的③即引用§4.3 三分支),下方沿用其原话。
 
 2·cp 配对切分(§3.3)让每个 KV 块相对当前 Q 块**要么全可见、要么全不可见、要么只半可见**,据此三分支裁剪:
 
@@ -402,7 +402,7 @@ CP 下的 attention mask 同样需要 §3.3 的 zigzag 重排(`to_zz_mask_attn_b
 
 ### 6.2 通信量与不可重叠性
 
-> 骨架取自 `deepseek_v4_context_parallel_analysis.md` §3.2 注记(显式公式);`megatron_cp_analysis.md` 调度器②.3-②.4 补充定性开销表与适用场景判断。
+> 骨架取自 `deepseek_v4_context_parallel_analysis.md` §3.2 注记(显式公式)+ §2.4.2"关键缺陷"(KV buffer 显存代价);`megatron_cp_analysis.md` 调度器②.3-②.4 补充定性开销表与适用场景判断。
 
 **通信量(每 head stride)**:
 
@@ -415,6 +415,14 @@ $$
 $$
 
 (这里的 $S$ 是每个 CP rank 持有的序列长度;总量随 head 数线性增长,效率低于 §5/§7/§8 的方案。)
+
+**显存代价(不只是通信量的问题)**:All-gather 完成后,**每个 rank 都要物化完整的全局 KV**——不再是分片的 $S/cp$,而是完整 $S$。KV buffer 的显存占用量级为
+
+$$
+\text{KV buffer} \approx 2 \times S \times b \times h_{kv} \times d \quad (\text{K + V,按全局序列长度 } S)
+$$
+
+这正是 All-gather CP 相对 Ring/Ulysses"省显存"初衷的抵消项:Ring 任意时刻每 rank 只持 1~2 份 $S/cp$ 分片,All-gather 却让每 rank 都退化回持有 $O(S)$ 的 KV——序列越长、CP 度越大,这份 buffer 越不划算。
 
 **不可重叠的根源**:虽然 `AllGatherComm.all_gather` 是异步发起的(`async_op=True`),但 `wait()` 在 attention 计算前必须完成,通信与计算是**伪并行**——只能重叠"下一个 head-stride 批次的通信"与"当前批次的计算",而不是整体重叠。Megatron 侧的定性判断与此一致:`transformer_config.py:935` 明确写 "not async, cannot be overlapped"。
 
@@ -554,6 +562,14 @@ rearranged_ranks = einops.rearrange(
 
 这种基于张量维度分解的方法避免了手动枚举各级子组的复杂性,天然支持任意层级深度(不限于二级)。
 
+**执行序:数据在各级间怎么流动**(唯一来源 `deepseek_v4_context_parallel_analysis.md` §2.4.4,四页中仅此一页给出分层混合运行时的逐级数据流,以三级为例):
+
+- **Level 1(Pair A2A,NVLink)**:每对 GPU 内部先做一次 All-to-All,交换 seq/head 片段;Q/K/V 全部参与。
+- **Level 2(Quad A2A,NVLink)**:在 Level 1 构成的 pair 基础上,4-GPU 组内再做一次 A2A,把每个 rank 的序列覆盖范围进一步扩大——即 Level 2 的 A2A 是在 Level 1 已合并的 2-GPU 单元之上递进扩组,而非独立于 Level 1 重新分组。
+- **Level 3(Cross-Node P2P,IB)**:跨节点的 KV Ring 传递,Q 不动,K/V 在节点间轮转;与标准 p2p(§5)机制相同,但发生在前两级 A2A 已合并出的更大 chunk 上。
+
+**关键优势**:NVLink 上的 A2A 带宽高(~600GB/s),**承担了分层方案里的大部分通信量**;IB 上的 P2P 只传输经过前两级压缩/聚合后的粗粒度 KV,减少了慢链路上的数据量——这是分层混合"把贵的留在快链路、把慢链路流量降到最小"这一设计目标的直接体现,和 §8.1 的动机论证互为印证。
+
 ### 8.3 二级具体实例:Ulysses × Ring 的 rank 布局
 
 > 唯一来源 `mindspeed_context_parallel_analysis.md` §5.1、§5.3——四页中仅此一页给出二级混合(内层 Ulysses、外层 Ring)的具体 rank 分组代码,作为 §8.2 通用 N 级机制在二级场景下的一个具体实例。
@@ -582,7 +598,7 @@ for m in range(ulysses_degree):                 # ring 子组:跨步 stride=u(�
 
 > 骨架取自 `deepseek_v4_context_parallel_analysis.md` §6(唯一给出四种模式统一符号表+公式对照的版本);与 §5.2/§7.2 引用的 MindSpeed LaTeX 公式在**是否显式含 $/TP$ 因子**上有系统性差异,原样并列、不强行统一。
 
-**符号**:$S$ 总序列长度,$B$ batch size,$h/h_{kv}$ 头数/KV 头数,$d$ head dim,$C$(即 $cp$)CP size。
+**符号**:$S$ 总序列长度,$B$ batch size,$h/h_{kv}$ 头数/KV 头数,$d$ head dim,$C$(即 $cp$)CP size。**注意本节的 $h$ 是"头数"**(沿用 `deepseek_v4_context_parallel_analysis.md` §6.1 原始符号表的定义),与 §0 全局记号表里 $h$="隐藏维度"是**两个不同的量**——本节公式里出现的 $h\times d$ 之积才对应 §0 的隐藏维度(即 §0 的 $h \equiv$ 本节的 $h\times d$)。跨节引用时留意这处符号复用,不要把两节的 $h$ 直接相等。
 
 | 模式 | 通信量(per layer,forward+backward) |
 |------|------|
@@ -590,7 +606,10 @@ for m in range(ulysses_degree):                 # ring 子组:跨步 stride=u(�
 | Ulysses(a2a) | $8\times\dfrac{C-1}{C}\times B\times S\times h\times d$ |
 | All-gather(Native) | $4\times\dfrac{C-1}{C}\times B\times S\times h_{kv}\times d$ |
 
-**与 §5.2/§7.2 的差异说明(如实并列,不合并)**:上表来自 `deepseek_v4_context_parallel_analysis.md`,**未显式扣除 TP 分头因子**(隐含 $TP=1$ 或已在 $h/h_{kv}$ 里折算);§5.2/§7.2 引用的 MindSpeed 公式显式带 $/TP$(因为 MindSpeed 的 CP 运行在 TP 先切过的 $a/TP$ 头上)。此外上表的 Ring 公式是"forward+backward 合计双向流量"口径,而 MindSpeed 的 $V_{ring}=2\cdot\frac{cp-1}{cp}\cdot\frac{bSh_{kv}}{TP}$ 是**单向前向逻辑数据量**口径——两者相差的因子对应"是否计入收发两个方向的总线流量"这一统计口径选择,不是矛盾,读者按各自场景选用对应口径。
+**与 §5.2/§7.2 的差异说明(如实并列,不合并)**:上表来自 `deepseek_v4_context_parallel_analysis.md`,**未显式扣除 TP 分头因子**(隐含 $TP=1$ 或已在 $h/h_{kv}$ 里折算);§5.2/§7.2 引用的 MindSpeed 公式显式带 $/TP$(因为 MindSpeed 的 CP 运行在 TP 先切过的 $a/TP$ 头上)。此外上表的 Ring 公式是"forward+backward 合计双向流量"口径,而 MindSpeed 的 $V_{ring}=2\cdot\frac{cp-1}{cp}\cdot\frac{bSh_{kv}}{TP}$ 是**单向前向逻辑数据量**口径——两者相差的因子对应"是否计入收发两个方向的总线流量"这一统计口径选择,不是矛盾,读者按各自场景选用对应口径。**这条"×2(fwd+bwd)"的解释对 Ring 行是自洽的**:令 $TP=1$ 代入两式相除,$\dfrac{4(C-1)/C}{2(cp-1)/cp}=2$,不多不少,fwd+bwd 这一个因子就说清了全部差距。
+
+> [!contradiction] Ulysses/a2a 行未能同样自洽解释,如实披露
+> 对 Ulysses(a2a)行做同样的比值检验:令 $TP=1$、$C=cp$ 代入本表 $8\cdot\frac{C-1}{C}BSh$(此处 $h$=头数,即隐藏维度 $/d$;严格代入隐藏维度记法后与 §7.2 的 $V_{ulysses}=4\cdot\frac{cp-1}{cp}\cdot\frac{bSh_{hidden}}{cp}$ 比较)与 §7.2 公式相除,**结果是 $2cp$,不是 $2$**——比 Ring 行多出一个 $cp$ 因子。即便再套用"fwd+bwd 减半"把 DSv4 值折成前向口径($\div 2$)去匹配 MindSpeed 显式标注的"前向"口径,残差仍是 **$cp$ 倍**,且 DSv4 §6.2 对 a2a 行的原始逐项列式(`QKV A2A` 3 项 + `Output A2A` 1 项,共 4 次 a2a)本身看起来就是纯前向操作,与其所在 §6.2 段落标题"forward+backward"的字面并不一致——这处 $cp$ 倍差既不能用已知的 TP 因子解释,也不能用已知的 fwd/bwd 口径解释,两页现有文字不足以确证其来源(可能是某一页的换算笔误,也可能是未写明的额外假设)。**如实标注为未归因的差异,不在本页强行弥合**:读者需要该行数值时,请分别按 `deepseek_v4_context_parallel_analysis.md` §6.2 或 `mindspeed_context_parallel_analysis.md` §3.3 各自的原始公式独立核算,不要跨页换算/混用系数。
 
 **MLA 的特殊效应(DeepSeek-V4 专属,不外推为通用机制)**:MLA 的 KV 压缩(等效 $h_{kv}=1$)使 CP 通信量相比标准 MHA 降低约 128 倍(V4:$h_{kv}=128, d=64, d_v=64$)——这是 MLA 架构本身的性质,不是 CP 调度机制的性质,留在 `deepseek_v4_context_parallel_analysis.md` §6.3。
 

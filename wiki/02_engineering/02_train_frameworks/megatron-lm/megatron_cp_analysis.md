@@ -106,10 +106,14 @@ Megatron 把序列切分(通用机制,见理论页 §3)与因果掩码处理(理
 ## 3. 动态上下文并行(Dynamic CP)—— Megatron 特有源码细节
 
 > [!update] 2026-06-16 · dev@232c478d4
-> ee3f1ff 之后引入并持续完善 **动态上下文并行(Dynamic Context Parallelism, DCP)**——在 THD(packed varlen)训练中**逐 microbatch / 逐样本动态选择 CP 度**,而非全程固定 `cp`(#4226 / #5215 / #5123)。通用机制(动机、`packed_seq_params.cp_group` 切换/恢复原理)见理论页 §10;本节只记 Megatron 侧未在理论页展开的源码细节。
+> ee3f1ff 之后引入并持续完善 **动态上下文并行(Dynamic Context Parallelism, DCP)**——在 THD(packed varlen)训练中**逐 microbatch / 逐样本动态选择 CP 度**,而非全程固定 `cp`(#4226 / #5215 / #5123)。通用机制(动机、`packed_seq_params.cp_group` 切换/恢复原理)见理论页 §10;本节记 Megatron 侧的源码级细节(理论页 §10.2 只narrative 复述了字段与解析逻辑的存在,未展开到函数名/行号级别,以下为完整源码定位)。
 
-### 3.1 与其它特性的交互(Megatron 特有)
+### 3.1 机制(源码)
 
+- **`PackedSeqParams` 新增两字段**(`packed_seq_params.py:23-24`):`local_cp_size`(本 microbatch 实际 CP 度)与 `cp_group`(对应的 CP 进程子组),由调度器 `DefaultDynamicCPScheduler` 按样本长度算出。
+- **`resolve_cp_group(static_cp_group, packed_seq_params)`**(`packed_seq_params.py:69`,#4226):统一"**优先用 `packed_seq_params.cp_group`,否则回退建图期静态 CP 组**"的解析逻辑,供 `GPTModel`、`GatedDeltaNet`、MTP 层共用(此前各处分散硬编码 `self.pg_collection.cp`)。
+- **TE attention 接入**(`extensions/transformer_engine.py:1798`):`TEDotProductAttention.forward` 按 `packed_seq_params.local_cp_size` **切换 TE 内部的 CP 组** —— `local_cp_size==1` → `set_context_parallel_group(None,...)`(该样本关 CP);否则换成 `packed_seq_params.cp_group`。
+  - **#5215 修复**(`transformer_engine.py:1886`):forward **开头先保存原始 CP 组**(`_te_orig_cp_group`),**结尾再恢复**。否则被换掉的动态 CP 组会**泄漏**到后续不带 dynamic CP 的 microbatch,导致 attention 用错组、结果错误。
 - **dispatcher 兼容**:sequence packing(THD)原仅支持 `alltoall` dispatcher,现已放宽到 `flex`(#4816,见 [[megatron_ep_analysis]] §③ 增量更新);THD 下 HybridEP 会把各 rank 不齐的 token 数补齐到组内最大值。
 - **CUDA Graph 守卫**(#4226,`training/utils.py`):`cuda_graph_impl=full_iteration` 与 `cu_seqlens`(THD 变长)互斥,`_broadcast_cu_seqlens` 直接短路返回 `None`。
 
