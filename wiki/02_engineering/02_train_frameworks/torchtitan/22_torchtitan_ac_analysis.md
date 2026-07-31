@@ -351,7 +351,7 @@ AC **不改任何算子**,纯靠两个通用扩展点拼出来——一个在 au
 
 - [[12_activation_checkpointing_analysis]] —— 理论侧/Megatron 视角:`CheckpointFunction`(重入路径)、view/cast ctx 特性、理论显存评估;与本文(torch 非重入 + SAC 工程实现)互补
 - [[torchtitan/index]] —— torchtitan 多维并行知识地图(`apply_ac` 在并行施加管线第 4 步)
-- [[torchtitan_fsdp_analysis]] / [[torchtitan_fsdp_prefetch_overlap_memory_analysis]] —— FSDP 与 AC 正交叠加:AC 省激活,FSDP 省参数/梯度/优化器
-- [[torchtitan_tp_analysis]] —— DTensor 同样寄生 `__torch_dispatch__`,与 SAC 的 dispatch mode 是同一设计哲学
-- [[torchtitan_ep_analysis]] —— MoE 的 D2H 元数据正是 policy 里 `_to_copy(cuda→cpu)` MUST_SAVE 的来源
+- [[11_torchtitan_fsdp_analysis]] / [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]] —— FSDP 与 AC 正交叠加:AC 省激活,FSDP 省参数/梯度/优化器
+- [[12_torchtitan_tp_analysis]] —— DTensor 同样寄生 `__torch_dispatch__`,与 SAC 的 dispatch mode 是同一设计哲学
+- [[15_torchtitan_ep_analysis]] —— MoE 的 D2H 元数据正是 policy 里 `_to_copy(cuda→cpu)` MUST_SAVE 的来源
 - [[12_saved_tensors_recompute_and_runtime_abi_analysis]] —— `memory_budget` 模式背后的 AOTAutograd min-cut partitioner 与 saved/recompute 选择

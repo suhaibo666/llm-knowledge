@@ -223,7 +223,7 @@ dist.all_reduce(_logprobs, op=dist.ReduceOp.SUM, group=tp_group)   # 跨分片�
 
 两者都为"不物化全量词表 logits",但机制与适用面不同:
 
-| | MindSpeed `chunk_loss`(见 [[mindspeed_memory_optimization_analysis]] §8) | Megatron `linear` |
+| | MindSpeed `chunk_loss`(见 [[12_mindspeed_memory_optimization_analysis]] §8) | Megatron `linear` |
 |---|---|---|
 | 切分维 | **序列维**(沿 `dim=1` 分 chunk) | **词表维**(`vocab_per_split=512`) |
 | 实现层 | 框架层 `torch.func.grad_and_value`,**前向即出梯度** | **kernel 层** CuTe/CUTLASS 融合核 + online-softmax + 反向重算 |
@@ -239,5 +239,5 @@ dist.all_reduce(_logprobs, op=dist.ReduceOp.SUM, group=tp_group)   # 跨分片�
 
 - [[21_megatron_fusion_operators_analysis]] —— Megatron 融合算子总览(本页是其 Linear+CrossEntropy 一项的深挖)
 - [[22_megatron_memory_optimization_analysis]] —— Megatron 省显存手段(重计算/卸载等),本页是损失侧的一块
-- [[mindspeed_memory_optimization_analysis]] —— MindSpeed `chunk_loss`(序列分块版),§7 对照
+- [[12_mindspeed_memory_optimization_analysis]] —— MindSpeed `chunk_loss`(序列分块版),§7 对照
 - [[megatron-lm/index]] —— Megatron-LM 知识地图

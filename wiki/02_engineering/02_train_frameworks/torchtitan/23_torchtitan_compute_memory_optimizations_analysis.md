@@ -3,7 +3,7 @@
 > **代码基准**:torchtitan `main` @ `61c010fcb` · PyTorch `2.9.1`;低精度依赖 torchao
 > **最后更新**:2026-06-16 · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
 >
-> 本篇聚焦**算力/显存**侧的非并行性能手段;**通信**侧(对称内存、Async-TP、重叠矩阵、MinimalAsyncEP)见 [[torchtitan_comm_optimizations_overlap_analysis]]。
+> 本篇聚焦**算力/显存**侧的非并行性能手段;**通信**侧(对称内存、Async-TP、重叠矩阵、MinimalAsyncEP)见 [[24_torchtitan_comm_optimizations_overlap_analysis]]。
 > 行号约定:torchtitan 以 `torchtitan/torchtitan/` 为根;PyTorch 2.9.1 以 `[pt]` 前缀。torchao 未安装在本机,fp8 内部 casting 只在调用点引用。
 
 ---
@@ -124,7 +124,7 @@ return torch._grouped_mm(h_RF, w2_EDF..., offs=offsets_E).type_as(x_RD)
 | Varlen | **融合(FA3)** | `varlen_attn`,Hopper 上强制 FA3 | `attention.py:73-164` |
 | gpt_oss swiglu | 省中间分配 | `torch.addcmul` 替 `out*(x+1)`,免物化大中间(`#3454`) | `gpt_oss/moe.py:43-50` |
 
-> 唯一的**自写 Triton kernel** 在 `distributed/minimal_async_ep/kernels.py`(MoE permute/combine,见 [[torchtitan_comm_optimizations_overlap_analysis]] §5),不是通用模型算子。
+> 唯一的**自写 Triton kernel** 在 `distributed/minimal_async_ep/kernels.py`(MoE permute/combine,见 [[24_torchtitan_comm_optimizations_overlap_analysis]] §5),不是通用模型算子。
 
 ---
 
@@ -158,7 +158,7 @@ for layer_id, transformer_block in model.layers.named_children():
 - **融合在哪发生**:默认 `backend="inductor"`,每个被 compile 的 block 由 inductor 做 pointwise/epilogue 融合 + Triton codegen——stock FeedForward 的 `silu*up`、RoPE elementwise、norm 等都在这里被融合。
 - regional inductor:`_maybe_regional_inductor_backend`(`:61-96`)在非 inductor 外层后端下,只把标注 `compile_with_inductor` 的 FlexAttention 区域降到 inductor(`#3563`)。
 - gate:`compile_config.enable and "model" in compile_config.components`(`parallelize.py:65-67`)。配置 `compile.enable=False` / `components=["model","loss"]` / `backend="inductor"`(`configs.py:258-264`)。
-- **依赖关系**:Float8 高性能要 compile(§1.6);Async-TP **必须** compile(见 [[torchtitan_comm_optimizations_overlap_analysis]] §3)。
+- **依赖关系**:Float8 高性能要 compile(§1.6);Async-TP **必须** compile(见 [[24_torchtitan_comm_optimizations_overlap_analysis]] §3)。
 
 ---
 
@@ -185,13 +185,13 @@ for layer_id, transformer_block in model.layers.named_children():
 
 ### 6.2 混合精度(非 autocast)
 
-`MixedPrecisionPolicy(param_dtype, reduce_dtype, cast_forward_inputs=False)`(`fsdp.py:136-140`),`param=bf16 / reduce=fp32`(`configs.py:58-70`)。核心训练循环**不用 `torch.autocast`**(只在 DDP/单卡路径与 MoE 路由强制 fp32 score 处用)。这与 [[torchtitan_hsdp_backward_overlap_analysis]] §9 的 fp32 reduce 暂存一致。
+`MixedPrecisionPolicy(param_dtype, reduce_dtype, cast_forward_inputs=False)`(`fsdp.py:136-140`),`param=bf16 / reduce=fp32`(`configs.py:58-70`)。核心训练循环**不用 `torch.autocast`**(只在 DDP/单卡路径与 MoE 路由强制 fp32 score 处用)。这与 [[21_torchtitan_hsdp_backward_overlap_analysis]] §9 的 fp32 reduce 暂存一致。
 
 ### 6.3 训练循环其它手段(含一处重要纠正)
 
 - **梯度累积**:`gradient_accumulation_steps = global_batch // (local_batch × batch_degree)`(`trainer.py:348-351`),循环内逐 microbatch `backward`,循环后一次 clip+step(`:799-809`)。microbatch 在 **CPU 收集、逐个上 GPU**,省累积显存(`:574-577`)。
 - ⚠️ **纠正常见假设**:torchtitan 核心训练循环**不**在 microbatch 间延迟 FSDP 规约——全仓无 `no_sync` / `set_requires_gradient_sync(False)` / `set_is_last_backward` 在 microbatch 循环里。**每个 microbatch 的反向都触发 reduce-scatter**(只有 `ChunkedCELoss` 在 *chunk* 级做了合并,§5)。
-- 全局 token 缩放:loss 用 `reduction="sum"`,再除以 **batch mesh 上 all-reduce 出的全局有效 token 数**(`trainer.py:766-781`、`loss.py:289-292`);因此 `disable_fsdp_gradient_division` 关掉 FSDP 按 world_size 除(见 [[torchtitan_hsdp_backward_overlap_analysis]] §7)。
+- 全局 token 缩放:loss 用 `reduction="sum"`,再除以 **batch mesh 上 all-reduce 出的全局有效 token 数**(`trainer.py:766-781`、`loss.py:289-292`);因此 `disable_fsdp_gradient_division` 关掉 FSDP 按 world_size 除(见 [[21_torchtitan_hsdp_backward_overlap_analysis]] §7)。
 - 确定性代价:`set_determinism`(`utils.py:124-168`)开 `use_deterministic_algorithms`、关 cuDNN benchmark/flex max-autotune,注释明示"expect perf degradation"。
 
 ---
@@ -222,15 +222,15 @@ for layer_id, transformer_block in model.layers.named_children():
 - **算力**:① 低精度 GEMM(Float8 rowwise / MXFP8 块缩放,`_scaled_mm`/`_scaled_grouped_mm`,SM89/SM100,需 compile;**通信仍高精度**);② 显式融合算子(FusedSwiGLU gate+up 合一、MoE `torch._grouped_mm`、FusedQKVLinear、RMSNorm aten);③ 编译即融合(逐 block inductor);④ 融合 Adam(默认 fused)。
 - **显存**:⑤ ChunkedCELoss(不物化完整 logits + chunk 级单次 RS);⑥ CPU offload(D2H 与计算重叠);⑦ 混合精度(MixedPrecisionPolicy,非 autocast)。
 - **薄封装哲学**:重活在 torchao / `torch._grouped_mm` / inductor / `torch.optim`;torchtitan 决定接入时机、模块范围、与并行/编译的顺序。
-- 通信侧的性能手段(对称内存、Async-TP 微流水、跨维度重叠矩阵、MinimalAsyncEP)见 [[torchtitan_comm_optimizations_overlap_analysis]]。
+- 通信侧的性能手段(对称内存、Async-TP 微流水、跨维度重叠矩阵、MinimalAsyncEP)见 [[24_torchtitan_comm_optimizations_overlap_analysis]]。
 
 ---
 
 ## Related Pages
 
-- [[torchtitan_comm_optimizations_overlap_analysis]] —— 通信侧性能手段(对称内存/Async-TP/重叠矩阵),与本篇互补
-- [[torchtitan_fsdp_analysis]] —— FSDP2 标杆篇
-- [[torchtitan_hsdp_backward_overlap_analysis]] —— HSDP 反向 fp32 reduce 暂存与峰值
-- [[torchtitan_ac_analysis]] —— 激活重计算(另一类省显存手段)
+- [[24_torchtitan_comm_optimizations_overlap_analysis]] —— 通信侧性能手段(对称内存/Async-TP/重叠矩阵),与本篇互补
+- [[11_torchtitan_fsdp_analysis]] —— FSDP2 标杆篇
+- [[21_torchtitan_hsdp_backward_overlap_analysis]] —— HSDP 反向 fp32 reduce 暂存与峰值
+- [[22_torchtitan_ac_analysis]] —— 激活重计算(另一类省显存手段)
 - [[21_megatron_fusion_operators_analysis]] —— Megatron 融合算子对照(跨框架)
 - [[torchtitan/index]] —— torchtitan 多维并行知识地图

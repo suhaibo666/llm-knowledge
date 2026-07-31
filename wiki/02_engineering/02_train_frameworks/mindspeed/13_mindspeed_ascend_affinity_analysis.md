@@ -1,7 +1,7 @@
 # MindSpeed 昇腾亲和特性与融合算子 — 源码级分析
 
 > **代码基线**:MindSpeed core `master` @ `1432cb09`(patch Megatron `core_r0.17.0`)· MindSpeed-LLM `master` @ `0c16322d` · 阅读日期 2026-06-23
-> **范围**:本页只讲"是什么让 MindSpeed *亲和昇腾(Ascend/NPU)*"——把通用算子换成 `torch_npu.*` / 自研 CANN 融合核的那条线。**每个融合算子都按统一四件套拆解**:① 融合内容(哪些散算子合进一个核)② before/after 图示 ③ 优化点 callout ④ 源码解读(实际调用 + autograd + 底层 `npu_*`)。并行切分见 [[mindspeed_parallelism_analysis]],通算掩盖(MC2/CoC/lcal)见 [[mindspeed_comm_overlap_analysis]],内存手段见 [[mindspeed_memory_optimization_analysis]],本页只交叉引用、不重复。属 [[mindspeed/index]] 系列。每条非平凡结论带 `file:line`,行号均经实际打开核对。
+> **范围**:本页只讲"是什么让 MindSpeed *亲和昇腾(Ascend/NPU)*"——把通用算子换成 `torch_npu.*` / 自研 CANN 融合核的那条线。**每个融合算子都按统一四件套拆解**:① 融合内容(哪些散算子合进一个核)② before/after 图示 ③ 优化点 callout ④ 源码解读(实际调用 + autograd + 底层 `npu_*`)。并行切分见 [[10_mindspeed_parallelism_analysis]],通算掩盖(MC2/CoC/lcal)见 [[11_mindspeed_comm_overlap_analysis]],内存手段见 [[12_mindspeed_memory_optimization_analysis]],本页只交叉引用、不重复。属 [[mindspeed/index]] 系列。每条非平凡结论带 `file:line`,行号均经实际打开核对。
 
 ---
 
@@ -303,7 +303,7 @@ def forward(self, x):
     return self.unfused_rmsnorm(x)
 ```
 
-`npu_rms_norm` 是 `torch_npu` 内置融合核;`op_builder/__init__.py:8` 另有 `RmsNormOpBuilder` 给需要 JIT 自研变体的场景(如 `add_rms_norm` 通算融合,见 [[mindspeed_comm_overlap_analysis]])。
+`npu_rms_norm` 是 `torch_npu` 内置融合核;`op_builder/__init__.py:8` 另有 `RmsNormOpBuilder` 给需要 JIT 自研变体的场景(如 `add_rms_norm` 通算融合,见 [[11_mindspeed_comm_overlap_analysis]])。
 
 ### 3.4 Fused RoPE —— cos/sin 旋转单核
 
@@ -466,7 +466,7 @@ Q,K ─matmul─▶ S[S×S] ─×scale─▶ ─+mask─▶          Q,K,V(分�
 > [!tip] 优化点(Flash-Attention)
 > ① **最大的赢点是显存:O(S²)→O(S)**——`S×S` 注意力矩阵从不物化到 HBM,长序列训练的显存墙被推开(这是它和上面逐元素融合的本质区别:省的不是 launch,是**整张二次方矩阵**);② kernel launch **7+→1**;③ online-softmax 让 max/sum 在分块流水中增量更新,无需对 S×S 做全局 reduce;④ TND 布局下多条变长样本拼一条、用 `actual_seq_*` 切回,**免 padding**(`adaptor.py:49-56`)。
 
-**源码解读**:`FusionAttentionFeature`(O2,`--use-flash-attn`)**仅当 CP 关闭时**才接管 `DotProductAttention.forward`(`fusion_attention_v1_feature.py:58-68`);CP 开启时由 [[mindspeed_context_parallel_analysis]] 的 ring/ulysses 注意力接管。实现体先按 packed 与否选布局,再调融合核(`flash_attention/adaptor.py`):
+**源码解读**:`FusionAttentionFeature`(O2,`--use-flash-attn`)**仅当 CP 关闭时**才接管 `DotProductAttention.forward`(`fusion_attention_v1_feature.py:58-68`);CP 开启时由 [[20_mindspeed_context_parallel_analysis]] 的 ring/ulysses 注意力接管。实现体先按 packed 与否选布局,再调融合核(`flash_attention/adaptor.py`):
 
 ```python
 # core/transformer/flash_attention/flash_attention/adaptor.py:43-83
@@ -584,7 +584,7 @@ else:                                                     # 非 A3:只设 RoCE �
 FP8:`--fp8-format` 扩出 `hif8`,`--fp8-recipe` 扩出 `blockwise`/`mxfp8-32x32`(`:47-49`);开 FP8 时补丁 TE 的 `Format`/`Float8CurrentScaling`/`MXFP8BlockScaling`/`TEDelayedScaling`/`Fp8Padding`(`:202-214`)。MC2 仅在 mxfp8 recipe 下兼容 FP8(`:90-91`)。
 
 > [!tip] 优化点(TE-on-NPU)
-> 不是新融合,而是**接口级整体替换**:借 TE 的同名类签名,把 CUDA TE 的 FP8 cast / 融合线性 / DPA 全部替成 NPU 实现,使 Megatron 模型层零改动即可在昇腾跑 FP8 训练;`--te-gmm-mode performance` 进一步换成高性能 GroupedLinear(`:129-164`)。MC2 融合通算线性层细节见 [[mindspeed_comm_overlap_analysis]]。
+> 不是新融合,而是**接口级整体替换**:借 TE 的同名类签名,把 CUDA TE 的 FP8 cast / 融合线性 / DPA 全部替成 NPU 实现,使 Megatron 模型层零改动即可在昇腾跑 FP8 训练;`--te-gmm-mode performance` 进一步换成高性能 GroupedLinear(`:129-164`)。MC2 融合通算线性层细节见 [[11_mindspeed_comm_overlap_analysis]]。
 
 ---
 
@@ -628,11 +628,11 @@ for i, param in enumerate(var):
         lr, ema_decay, beta1, beta2, eps, mode, bias_correction, weight_decay)
 ```
 
-`npu_apply_fused_ema_adamw` 由 `FusedEmaAdamWOpBuilder` JIT 编 `ops/csrc/cann/npu_apply_fused_ema_adamw.cpp`,Python 封装一次返回四元组(`ops/npu_apply_fused_ema_adamw.py:9-24`)。`step()` 里 EMA decay 还做了 warmup:`ema_decay = min(ema_decay, (1+n)/(10+n))`(`fused_ema_adamw.py:136-139`)。同源的 `npu_apply_fused_adamw_v2` 被 swap-optimizer 复用(见 [[mindspeed_memory_optimization_analysis]])。
+`npu_apply_fused_ema_adamw` 由 `FusedEmaAdamWOpBuilder` JIT 编 `ops/csrc/cann/npu_apply_fused_ema_adamw.cpp`,Python 封装一次返回四元组(`ops/npu_apply_fused_ema_adamw.py:9-24`)。`step()` 里 EMA decay 还做了 warmup:`ema_decay = min(ema_decay, (1+n)/(10+n))`(`fused_ema_adamw.py:136-139`)。同源的 `npu_apply_fused_adamw_v2` 被 swap-optimizer 复用(见 [[12_mindspeed_memory_optimization_analysis]])。
 
 ### 8.2 低精度优化器 / Muon / QAT
 
-- **低精度优化器**(`--quant-states {fp8,hif8,mxfp8}` / `--quant-grads`,O0):把优化器状态 / 梯度量化存储,补丁覆盖 `MixedPrecisionOptimizer.{prepare_grads,step,...}`;属"内存×亲和"交叉,内存视角见 [[mindspeed_memory_optimization_analysis]]。
+- **低精度优化器**(`--quant-states {fp8,hif8,mxfp8}` / `--quant-grads`,O0):把优化器状态 / 梯度量化存储,补丁覆盖 `MixedPrecisionOptimizer.{prepare_grads,step,...}`;属"内存×亲和"交叉,内存视角见 [[12_mindspeed_memory_optimization_analysis]]。
 - **Muon**(`--optimizer muon`,O0):把 Muon(对动量做 Newton-Schulz 正交化的矩阵更新)反向移植到 Megatron 0.12.x(`muon_optimizer_feature.py:30-32`)。NS 旋钮:`--muon-num-ns-steps`(默认 5,`:77-82`)、`--muon-scale-mode {spectral,unit_rms_norm,shape_scaling}`(`:57-63`)、`--muon-tp-mode {blockwise,duplicated,distributed}`(决定 TP 切分权重如何做 NS,`:83-89`)、`--muon-fp32-matmul-prec`(`:64-70`);非矩阵参数回退 `--muon-scalar-optimizer {adam,lion}`(`:96-102`)。NS 迭代是纯 matmul,跑在 NPU Cube 核上;算法本身见 [[11_muon_analysis]]。
 - **QAT**(`--qat-scheme {w4a16-mxfp4,w8a16-mxfp8,...}`,O2):量化感知训练,把 `LinearWithGradAccumulationAndAsyncCommunication.forward/backward` 换成量化线性核;要求至少开 `gradient-accumulation-fusion` / `async-tp-allreduce` / `sequence-parallel` 之一才接管,否则仅告警。
 
@@ -654,10 +654,10 @@ for i, param in enumerate(var):
 ## Related Pages
 
 - [[mindspeed/index]] —— MindSpeed 特性总罗盘与 `MindSpeedFeature` 契约(本页是"昇腾亲和"维度的深挖)
-- [[mindspeed_parallelism_analysis]] —— 并行切分(CP 下的 ring/ulysses 注意力会接管 FA;MoE-EP 用 GMM)
-- [[mindspeed_context_parallel_analysis]] —— 上下文并行(CP 内核全在 `npu_fusion_attention` 层自实现,与本页 FA 互补)
-- [[mindspeed_comm_overlap_analysis]] —— 通算掩盖(MC2/CoC/lcal 是"融合通信"的亲和核,与本页"融合计算"互补)
-- [[mindspeed_memory_optimization_analysis]] —— 内存优化(低精度优化器、swap-optimizer 复用本页的融合优化器核)
+- [[10_mindspeed_parallelism_analysis]] —— 并行切分(CP 下的 ring/ulysses 注意力会接管 FA;MoE-EP 用 GMM)
+- [[20_mindspeed_context_parallel_analysis]] —— 上下文并行(CP 内核全在 `npu_fusion_attention` 层自实现,与本页 FA 互补)
+- [[11_mindspeed_comm_overlap_analysis]] —— 通算掩盖(MC2/CoC/lcal 是"融合通信"的亲和核,与本页"融合计算"互补)
+- [[12_mindspeed_memory_optimization_analysis]] —— 内存优化(低精度优化器、swap-optimizer 复用本页的融合优化器核)
 - [[megatron-lm/21_megatron_fusion_operators_analysis]] —— 被替换前的 Megatron/NVIDIA 原生融合算子(对照阅读:同一接口,CUDA vs NPU 两套核)
 - [[11_muon_analysis]] —— Muon 优化器(Newton-Schulz)算法原理
 - [[ascend_kernel_execution_model_analysis]] —— 本页 Cube/Vector、融合算子与 HCCL 优化背后的 DaVinci 执行模型

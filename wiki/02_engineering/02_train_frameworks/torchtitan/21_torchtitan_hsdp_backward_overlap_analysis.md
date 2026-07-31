@@ -3,9 +3,9 @@
 > **代码基准**:torchtitan `main` @ `61c010fcb` · PyTorch `2.9.1`(FSDP2 内核 `torch/distributed/fsdp/_fully_shard/`)
 > **最后更新**:2026-06-16 · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
 >
-> 本文是 [[torchtitan_fsdp_analysis]] §4.4/§6.2 的展开篇,把 HSDP 反向 reduce-scatter→all-reduce 的跨流编排逐行讲清。配套预取/显存专题见 [[torchtitan_fsdp_prefetch_overlap_memory_analysis]]。
+> 本文是 [[11_torchtitan_fsdp_analysis]] §4.4/§6.2 的展开篇,把 HSDP 反向 reduce-scatter→all-reduce 的跨流编排逐行讲清。配套预取/显存专题见 [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]]。
 >
-> **四页分工**(2026-07-31 补):本页专注 **HSDP**(dp_replicate × fsdp 双轴)反向双流掩盖这一个切面;单轴 FSDP 的标杆机制见 [[torchtitan_fsdp_analysis]],其预取/显存深挖见 [[torchtitan_fsdp_prefetch_overlap_memory_analysis]];编译器友好的 DTensor-collective 替代方案见 [[torchtitan_simple_fsdp_analysis]]。
+> **四页分工**(2026-07-31 补):本页专注 **HSDP**(dp_replicate × fsdp 双轴)反向双流掩盖这一个切面;单轴 FSDP 的标杆机制见 [[11_torchtitan_fsdp_analysis]],其预取/显存深挖见 [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]];编译器友好的 DTensor-collective 替代方案见 [[25_torchtitan_simple_fsdp_analysis]]。
 > 行号约定:torchtitan 以 `torchtitan/torchtitan/` 为根;PyTorch FSDP2(2.9.1)以 `[pt]` 前缀,根目录 `torch/distributed/fsdp/_fully_shard/`。所有结论基于本机源码逐条复核(见复核表)。
 
 ---
@@ -312,7 +312,7 @@ if not overflow_risk and not force_sum:
 ```
 
 - 反向暂存比"1 组完整梯度"更重:因 reduce 走 fp32,`reduce_scatter_input` 是 2p(字节)。
-- 对比前向(见 [[torchtitan_fsdp_prefetch_overlap_memory_analysis]]):前向峰值 ≈ 2 组完整参数(bf16);反向再叠 ~2–3p 的 fp32 梯度暂存,**通常是整轮训练的显存峰值所在**。
+- 对比前向(见 [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]]):前向峰值 ≈ 2 组完整参数(bf16);反向再叠 ~2–3p 的 fp32 梯度暂存,**通常是整轮训练的显存峰值所在**。
 - 通用情形提醒:若 `reduce_dtype=bf16` 而参数 fp32(非 torchtitan 默认),`view-out` 的 `_to_dtype_if_needed`(`:577`)会另开 fp32 输出、`_all_reduce_state` 暂留 bf16 输入(+p/S,见 §8)。
 
 ---
@@ -360,8 +360,8 @@ if not overflow_risk and not force_sum:
 
 ## Related Pages
 
-- [[torchtitan_fsdp_analysis]] —— FSDP2 标杆篇:本文是其 HSDP 反向的展开
-- [[torchtitan_fsdp_prefetch_overlap_memory_analysis]] —— FSDP 预取/掩盖/显存深挖伴篇
-- [[torchtitan_compute_memory_optimizations_analysis]] —— 计算/显存性能手段(低精度/融合/编译)
-- [[torchtitan_comm_optimizations_overlap_analysis]] —— 通信优化与跨维度重叠矩阵
+- [[11_torchtitan_fsdp_analysis]] —— FSDP2 标杆篇:本文是其 HSDP 反向的展开
+- [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]] —— FSDP 预取/掩盖/显存深挖伴篇
+- [[23_torchtitan_compute_memory_optimizations_analysis]] —— 计算/显存性能手段(低精度/融合/编译)
+- [[24_torchtitan_comm_optimizations_overlap_analysis]] —— 通信优化与跨维度重叠矩阵
 - [[torchtitan/index]] —— torchtitan 多维并行知识地图

@@ -2,7 +2,7 @@
 
 > 层次：原理（principle）· 引擎无关
 > 前置：[[10_collectives_analysis]]（p2p 的代价）
-> 实现见 [[../../02_engineering/02_train_frameworks/megatron-lm/15_megatron_pp_schedulers_analysis]]、[[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_pp_analysis]]
+> 实现见 [[../../02_engineering/02_train_frameworks/megatron-lm/15_megatron_pp_schedulers_analysis]]、[[../../02_engineering/02_train_frameworks/torchtitan/14_torchtitan_pp_analysis]]
 > 最后更新：2026-07-01
 
 ---
@@ -77,5 +77,5 @@ $$\text{bubble ratio} = \frac{P-1}{m + P - 1}$$
 - [[12_zero_fsdp_analysis]] — ZeRO：与 PP 正交，进一步省状态显存
 - [[index]] — N 维布局里 PP 占据「跨机维」
 - [[../../02_engineering/02_train_frameworks/megatron-lm/15_megatron_pp_schedulers_analysis]] — **实现层**：Megatron 的 GPipe/1F1B/interleaved 调度器
-- [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_pp_analysis]] — **实现层**：torchtitan 的 PP 调度
+- [[../../02_engineering/02_train_frameworks/torchtitan/14_torchtitan_pp_analysis]] — **实现层**：torchtitan 的 PP 调度
 - [[21_hw_friendly_llm_codesign_analysis]] — 推理侧特化：Chunked Pipeline Parallelism 压长上下文首 token 延迟

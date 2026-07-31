@@ -337,4 +337,4 @@ flowchart TD
 - [[15_verl_rl_algorithms_analysis]] —— `ppo_loss` 背后的 `core_algos` 策略损失族
 - [[30_verl_optimization_analysis]] —— 显存/吞吐系统级优化全景
 - [[02_verl_quickstart_guide]] —— 跑起来一条 PPO 的最小路径
-- 后端内核:[[torchtitan_fsdp_analysis]] · [[megatron-lm/index]] · [[32_distributed_optimizer_deepdive]]
+- 后端内核:[[11_torchtitan_fsdp_analysis]] · [[megatron-lm/index]] · [[32_distributed_optimizer_deepdive]]

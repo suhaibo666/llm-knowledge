@@ -302,8 +302,8 @@ pp_schedule.step(inputs, target)
 
 ## Related Pages
 
-- [[torchtitan/index]] · [[torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
-- [[torchtitan_cp_analysis]] · [[torchtitan_ep_analysis]] —— 相邻并行维度
+- [[torchtitan/index]] · [[10_torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
+- [[13_torchtitan_cp_analysis]] · [[15_torchtitan_ep_analysis]] —— 相邻并行维度
 - [[15_megatron_pp_schedulers_analysis]] —— Megatron-LM 流水线 5 调度器、气泡公式推导、流水线模拟图
 - [[20_megatron_pp_parallelism_analysis]] —— PP 并行:1F1B/VPP/Combined 调度、P2P 通信、Bubble 分析
 - [[30_comm_compute_overlap_analysis]] —— combined_1f1b vs ZBV/DualPipe、sub-layer 级调度

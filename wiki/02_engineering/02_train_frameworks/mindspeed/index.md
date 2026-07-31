@@ -1,7 +1,7 @@
 # MindSpeed × MindSpeed-LLM 训练优化特性 — 知识地图
 
 > **代码基线**:MindSpeed `master` @ `1432cb09`(基于 Megatron `core_r0.17.0`,2026-06-22) · MindSpeed-LLM `master` @ `0c16322d`(2026-06-22)
-> **最后更新**:2026-06-23(新建子目录;架构总览 + 四大类特性深挖 4 篇)
+> **最后更新**:2026-07-31(kb-reorg P7 Task 7:目录内分段编号——段 1(10-19)四大类特性深挖;段 2(20-29)CP 专题深挖)
 > 华为昇腾(Ascend/NPU)训练加速栈的源码级特性综述。回答:MindSpeed 里到底有哪些训练优化特性、各自解决什么瓶颈、怎么实现。按用户关心的四类组织——**并行 / 计算通信掩盖 / 内存优化 / 昇腾亲和**——逐类深挖,本页是总罗盘。
 
 ---
@@ -45,15 +45,15 @@ flowchart TB
 - **总表与分组**:`create_features_list()` 把 ~70 个特性按域分组装配(`mindspeed/features_manager/__init__.py:367-398`),这张分组表正是本知识库四大类的来源。
 - **生效时机**:`megatron_adaptor.py:39-42` 在适配入口调用 `apply_features_pre_patches` / `apply_features_patches`,遍历 `FEATURES_LIST` 对命中的特性 `register_patches` 后统一 `apply_patches()`。
 
-## 2. 四大类特性 → 四篇深挖
+## 2. 四大类特性 → 四篇深挖(段 1)+ 一篇 CP 专题(段 2)
 
-| 维度 | 页面 | 覆盖特性(代表) |
-|------|------|----------------|
-| **并行** | [[mindspeed_parallelism_analysis]] | CP(Ulysses/Ring/自适应/KV-cache)、TP(非对齐/TP-2D/vocab)、PP(分层布局/noop/可变序列/非对齐/num-layer-list)、MoE-EP(GMM/tp-extend-ep/共享专家/专家放置/负载均衡)、DP & 分布式(LayerZero/Custom-FSDP/Torch-FSDP)、分层解耦训练(U-split/VDP/VTP) |
-| **并行·CP 深挖** | [[mindspeed_context_parallel_analysis]] | CP 家族专题:分派脊柱、Ring 双环(outer/inner window)、Adaptive 调度驱动 P2P、KV-cache CP 显存换通信(四框架中仅此一家);通用机制见 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis\|20_ring_attention_and_context_parallel_analysis]] |
-| **计算通信掩盖** | [[mindspeed_comm_overlap_analysis]] | MC2(matmul+通信融合)、CoC(communication-over-computation)、MoE 通算重叠(allgather/alltoall/fb-overlap/alltoall-mc2)、PP 调度掩盖(DualPipeV/RiPipe/optimize-p2p/send-recv)、async-log-allreduce |
-| **内存优化** | [[mindspeed_memory_optimization_analysis]] | 重计算(激活/norm/按 PP-rank/选择性)、Swap(smart-swap/swap-attention/swap-optimizer)、reuse-fp32-param、MoE-zero-memory、压缩(activation/optimizer/ANS-dense)、virtual-optimizer、chunk-loss、ckpt 加速 |
-| **昇腾亲和** | [[mindspeed_ascend_affinity_analysis]] | 融合算子(GMM/swiglu/softmax/RoPE/moe-permute)、Flash-Attention(FA v1/v2/alibi/mask/MLA/DSA)、HCCL buffer 管理、affinity(交叉熵 NPU 亲和改写,非绑核)、QoS、TE-on-NPU、op_builder/ops 自定义算子、融合优化器(Muon/EMA-AdamW/低精度)、QAT |
+| 维度 | 页面 | 层次 | 覆盖特性(代表) |
+|------|------|------|----------------|
+| **并行** | [[10_mindspeed_parallelism_analysis]] | 核心机制(段 1) | CP(Ulysses/Ring/自适应/KV-cache)、TP(非对齐/TP-2D/vocab)、PP(分层布局/noop/可变序列/非对齐/num-layer-list)、MoE-EP(GMM/tp-extend-ep/共享专家/专家放置/负载均衡)、DP & 分布式(LayerZero/Custom-FSDP/Torch-FSDP)、分层解耦训练(U-split/VDP/VTP) |
+| **并行·CP 深挖** | [[20_mindspeed_context_parallel_analysis]] | 深潜(段 2) | CP 家族专题:分派脊柱、Ring 双环(outer/inner window)、Adaptive 调度驱动 P2P、KV-cache CP 显存换通信(四框架中仅此一家);通用机制见 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis\|20_ring_attention_and_context_parallel_analysis]] |
+| **计算通信掩盖** | [[11_mindspeed_comm_overlap_analysis]] | 核心机制(段 1) | MC2(matmul+通信融合)、CoC(communication-over-computation)、MoE 通算重叠(allgather/alltoall/fb-overlap/alltoall-mc2)、PP 调度掩盖(DualPipeV/RiPipe/optimize-p2p/send-recv)、async-log-allreduce |
+| **内存优化** | [[12_mindspeed_memory_optimization_analysis]] | 核心机制(段 1) | 重计算(激活/norm/按 PP-rank/选择性)、Swap(smart-swap/swap-attention/swap-optimizer)、reuse-fp32-param、MoE-zero-memory、压缩(activation/optimizer/ANS-dense)、virtual-optimizer、chunk-loss、ckpt 加速 |
+| **昇腾亲和** | [[13_mindspeed_ascend_affinity_analysis]] | 核心机制(段 1) | 融合算子(GMM/swiglu/softmax/RoPE/moe-permute)、Flash-Attention(FA v1/v2/alibi/mask/MLA/DSA)、HCCL buffer 管理、affinity(交叉熵 NPU 亲和改写,非绑核)、QoS、TE-on-NPU、op_builder/ops 自定义算子、融合优化器(Muon/EMA-AdamW/低精度)、QAT |
 
 ## 3. 全特性罗盘(create_features_list 分组)
 
@@ -92,5 +92,5 @@ flowchart TB
 
 ## Related Pages
 
-- [[mindspeed_parallelism_analysis]] · [[mindspeed_comm_overlap_analysis]] · [[mindspeed_memory_optimization_analysis]] · [[mindspeed_ascend_affinity_analysis]]
+- [[10_mindspeed_parallelism_analysis]] · [[11_mindspeed_comm_overlap_analysis]] · [[12_mindspeed_memory_optimization_analysis]] · [[13_mindspeed_ascend_affinity_analysis]]
 - [[02_engineering/02_train_frameworks/index]] —— 训练框架目录索引

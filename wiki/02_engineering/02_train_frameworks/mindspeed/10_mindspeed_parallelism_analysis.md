@@ -2,7 +2,7 @@
 
 > **代码基线**:MindSpeed core `master` @ `1432cb09`(猴补丁 Megatron `core_r0.17.0`)· MindSpeed-LLM `master` @ `0c16322d` · 阅读日期 2026-06-23
 > 本页只讲 MindSpeed 在各并行维度上**怎么切、切到哪个 rank、谁替换了 Megatron 的哪段划分逻辑**(TP/PP/MoE-EP/DP/分层解耦)。**每个并行特性都按统一四件套拆解**:① 机制(切到哪个 rank、替换了谁)② before/after 或 dataflow 图示 ③ `> [!tip] 优化点` callout(量化:切分比 / 通信模式 / 内存 ÷ / 何时赢)④ 源码解读(`file:line`,行号均经实际打开核对;路径相对各自仓库根:`mindspeed/...` 属 MindSpeed core,`mindspeed_llm/...` 属 MindSpeed-LLM)。
-> **范围边界**:CP 上下文并行已独立成页 [[mindspeed_context_parallel_analysis]](见 §2);并行结构上的**通算掩盖**(send-recv overlap、MC2、CoC、MoE fb-overlap、DualPipeV/RiPipe 调度)归 [[mindspeed_comm_overlap_analysis]];KV-cache/重计算/Swap 等省显存手段归 [[mindspeed_memory_optimization_analysis]];融合算子(GMM/FA 内核)归 [[mindspeed_ascend_affinity_analysis]]。本页只在交界处交叉引用。属 [[mindspeed/index]] 系列。
+> **范围边界**:CP 上下文并行已独立成页 [[20_mindspeed_context_parallel_analysis]](见 §2);并行结构上的**通算掩盖**(send-recv overlap、MC2、CoC、MoE fb-overlap、DualPipeV/RiPipe 调度)归 [[11_mindspeed_comm_overlap_analysis]];KV-cache/重计算/Swap 等省显存手段归 [[12_mindspeed_memory_optimization_analysis]];融合算子(GMM/FA 内核)归 [[13_mindspeed_ascend_affinity_analysis]]。本页只在交界处交叉引用。属 [[mindspeed/index]] 系列。
 
 ---
 
@@ -52,7 +52,7 @@ flowchart LR
 
 ## 2. CP — 上下文并行(已独立成页)
 
-CP 是 MindSpeed 改动最厚的并行维度(Ulysses / Ring 双环 / Hybrid / Adaptive / KV-cache 五套搬运策略 + 2·cp 因果配对切分 + RoPE 切分不变量 + 通信量代数与选型),已**独立成页深挖**,见 **[[mindspeed_context_parallel_analysis]]**。一句话定位:它把序列维 $s$ 切到 CP 组,让每卡只算 $s/cp$ 的 attention;难点是 attention 全局算子需跨卡交换 Q/K/V,MindSpeed 用 `--context-parallel-algo` 在五套自研内核(全在 PyTorch+`npu_fusion_attention` 层,不走 TE)间运行期分派。本页不再展开。
+CP 是 MindSpeed 改动最厚的并行维度(Ulysses / Ring 双环 / Hybrid / Adaptive / KV-cache 五套搬运策略 + 2·cp 因果配对切分 + RoPE 切分不变量 + 通信量代数与选型),已**独立成页深挖**,见 **[[20_mindspeed_context_parallel_analysis]]**。一句话定位:它把序列维 $s$ 切到 CP 组,让每卡只算 $s/cp$ 的 attention;难点是 attention 全局算子需跨卡交换 Q/K/V,MindSpeed 用 `--context-parallel-algo` 在五套自研内核(全在 PyTorch+`npu_fusion_attention` 层,不走 TE)间运行期分派。本页不再展开。
 
 ---
 
@@ -97,7 +97,7 @@ matmul_res = torch.matmul(total_input, weight.t())
 matmul_res = sync_reduce_scatter_along_first_dim(matmul_res, rs_comm_intf)
 ```
 
-`ParallelLinear2D`(`parallel_linear_2d.py:24-85`)封装该 autograd,持 `ag_comm_intf`(X 向 AllGather)与 `rs_comm_intf`(Y 向 ReduceScatter)两套通信域(`:76-79`)。X/Y 及 ND1/ND2 通信组在 `parallel_state_2d.py` 构造(`_TP_X_PARALLEL_RING_RANKS`/`_TP_Y_...` 与 `_TENSOR_MODEL_PARALLEL_GROUP_FOR_ND1/ND2_*`,`:15-28`);`initialize_ndmm_parallel_group(nd1_dim1_size=tp_x, nd2_dim1_size=tp_y)`(`:94-100`)给 **ND1**(列并行 fc1,主切轴 $x$)与 **ND2**(行并行 fc2,主切轴 $y$)两套独立子组——fc1 的输出切轴正是 fc2 的输入切轴,链式相消、两层间无需 all-gather 回全量,这是 "2D" 真省通信的结构前提。Feature 把 MLP/SelfAttention/Embedding/norm/PP 张量形状全换成 2D 版(`tp_2d.py:44-94`),并建 `TensorParallelYUnionCP`(tp_y∪cp 联合域,`:101-116`)供 CP 换组(见 [[mindspeed_context_parallel_analysis]])。**反向**是双集合流水(时序注释 `:142-150`):先 AG(grad_output 沿 Y)+ AG(activation_input 沿 X)两路异步取全量,再 MM 算 partial grad_input、RS 聚成完整 grad_input,同时 MM 算 grad_weight(grad-accum-fusion 走 `wgrad_gemm_accum_fp32/fp16`,`:219-231`)。开 `coc_fused_kernel` 时前向三步融成一次 `coc_ops.all_gather_matmul_reduce_scatter`(`:121-127`,省两次中间张量 HBM 往返),物理摆放由 `get_comm_domain_rank`(`:28-38`)按 TFTF/FTFT 把 device id 映射到 `(comm_domain, coc_rank)`(重叠细节归 [[mindspeed_comm_overlap_analysis]])。
+`ParallelLinear2D`(`parallel_linear_2d.py:24-85`)封装该 autograd,持 `ag_comm_intf`(X 向 AllGather)与 `rs_comm_intf`(Y 向 ReduceScatter)两套通信域(`:76-79`)。X/Y 及 ND1/ND2 通信组在 `parallel_state_2d.py` 构造(`_TP_X_PARALLEL_RING_RANKS`/`_TP_Y_...` 与 `_TENSOR_MODEL_PARALLEL_GROUP_FOR_ND1/ND2_*`,`:15-28`);`initialize_ndmm_parallel_group(nd1_dim1_size=tp_x, nd2_dim1_size=tp_y)`(`:94-100`)给 **ND1**(列并行 fc1,主切轴 $x$)与 **ND2**(行并行 fc2,主切轴 $y$)两套独立子组——fc1 的输出切轴正是 fc2 的输入切轴,链式相消、两层间无需 all-gather 回全量,这是 "2D" 真省通信的结构前提。Feature 把 MLP/SelfAttention/Embedding/norm/PP 张量形状全换成 2D 版(`tp_2d.py:44-94`),并建 `TensorParallelYUnionCP`(tp_y∪cp 联合域,`:101-116`)供 CP 换组(见 [[20_mindspeed_context_parallel_analysis]])。**反向**是双集合流水(时序注释 `:142-150`):先 AG(grad_output 沿 Y)+ AG(activation_input 沿 X)两路异步取全量,再 MM 算 partial grad_input、RS 聚成完整 grad_input,同时 MM 算 grad_weight(grad-accum-fusion 走 `wgrad_gemm_accum_fp32/fp16`,`:219-231`)。开 `coc_fused_kernel` 时前向三步融成一次 `coc_ops.all_gather_matmul_reduce_scatter`(`:121-127`,省两次中间张量 HBM 往返),物理摆放由 `get_comm_domain_rank`(`:28-38`)按 TFTF/FTFT 把 device id 映射到 `(comm_domain, coc_rank)`(重叠细节归 [[11_mindspeed_comm_overlap_analysis]])。
 
 前向是 AG→MM→RS、反向是 (AG‖AG)→MM→(RS‖MM),两个方向都把集合通信与 matmul 交错错峰(`linear_2d_split_along_first_dim.py:142-150` 的时序注释):
 
@@ -147,7 +147,7 @@ Megatron(散点写 index_put_):              MindSpeed(逻辑取反 × 乘,向�
 ```
 
 > [!tip] 优化点(Vocab-ReplaceIndexPut)
-> 把"被 mask 元素置零"从 `index_put_`/scatter 换成 `*= ~mask` 的**规整逐元素乘**——避开 NPU 散点写的同步惩罚与非确定性。两个取数分支各有取舍:`deterministic_mode` 走 `weight[masked_input]`(可复现、反向确定,`:39`),否则走 `F.embedding`(bf16 累加精度更高但反向非确定,`:43`);开 SP 时用 `reduce_scatter`(输出已沿序列切,省一次 scatter,`:52`)否则 `all_reduce`(`:55`)。**不改数值,纯访存规整化**;与 [[mindspeed_ascend_affinity_analysis]] §6 的 cross-entropy 亲和(同样 scatter→乘)同源。
+> 把"被 mask 元素置零"从 `index_put_`/scatter 换成 `*= ~mask` 的**规整逐元素乘**——避开 NPU 散点写的同步惩罚与非确定性。两个取数分支各有取舍:`deterministic_mode` 走 `weight[masked_input]`(可复现、反向确定,`:39`),否则走 `F.embedding`(bf16 累加精度更高但反向非确定,`:43`);开 SP 时用 `reduce_scatter`(输出已沿序列切,省一次 scatter,`:52`)否则 `all_reduce`(`:55`)。**不改数值,纯访存规整化**;与 [[13_mindspeed_ascend_affinity_analysis]] §6 的 cross-entropy 亲和(同样 scatter→乘)同源。
 
 ```python
 # vocab_parallel.py:29-47
@@ -169,7 +169,7 @@ output_parallel *= ~input_mask[..., None]   # 屏蔽越界行
 
 ## 4. PP 划分
 
-> 这里只覆盖**层如何分到 stage**;DualPipeV/RiPipe/optimize-p2p 等**调度与气泡掩盖**归 [[mindspeed_comm_overlap_analysis]]。共同瓶颈:Megatron 默认每 stage 等分层数,但首尾要带 embedding/loss/MTP、MoE 层更贵,等分必致气泡。
+> 这里只覆盖**层如何分到 stage**;DualPipeV/RiPipe/optimize-p2p 等**调度与气泡掩盖**归 [[11_mindspeed_comm_overlap_analysis]]。共同瓶颈:Megatron 默认每 stage 等分层数,但首尾要带 embedding/loss/MTP、MoE 层更贵,等分必致气泡。
 
 ### 4.1 noop 占位层 — 用零算力假层拉平负载
 
@@ -268,7 +268,7 @@ GMM(快):          tokens_per_expert=[t0,t1,t2,t3]
 ```
 
 > [!tip] 优化点(GMM)
-> kernel launch **E→1**:E=64/256 个专家时省掉 launch 风暴,把"调度密集"变"算力密集"拉满 Cube;变长分组**免 padding**(直接吃真实 `tokens_per_expert`)。关键设计:专家权重**不再按 tp_size 切**(`gmm/experts.py:21-22` 注释 "avoid splitting by tp_size")——每个专家跑完整 GEMM(矩阵大、算得满),为 §5.2 tp-extend-ep 铺路。两条工程旁路:**空 rank 守卫**(`tokens_per_expert` 全零时退化成普通 `torch.matmul`,避免空分组崩内核,`:124-151`)、**激活重算**(`should_recompute_activation` 命中且非通算重叠路径时,fc1 后激活走 `CheckpointWithoutOutput`+`discard_output`+反向 hook 重算,`:103-109`、`:153-161`)。`npu_gmm` 内核的 op_builder/autograd/反向权重梯度融合细节见 [[mindspeed_ascend_affinity_analysis]] §3.1。
+> kernel launch **E→1**:E=64/256 个专家时省掉 launch 风暴,把"调度密集"变"算力密集"拉满 Cube;变长分组**免 padding**(直接吃真实 `tokens_per_expert`)。关键设计:专家权重**不再按 tp_size 切**(`gmm/experts.py:21-22` 注释 "avoid splitting by tp_size")——每个专家跑完整 GEMM(矩阵大、算得满),为 §5.2 tp-extend-ep 铺路。两条工程旁路:**空 rank 守卫**(`tokens_per_expert` 全零时退化成普通 `torch.matmul`,避免空分组崩内核,`:124-151`)、**激活重算**(`should_recompute_activation` 命中且非通算重叠路径时,fc1 后激活走 `CheckpointWithoutOutput`+`discard_output`+反向 hook 重算,`:103-109`、`:153-161`)。`npu_gmm` 内核的 op_builder/autograd/反向权重梯度融合细节见 [[13_mindspeed_ascend_affinity_analysis]] §3.1。
 
 ### 5.2 tp-extend-ep:用 TP 组扩 EP
 
@@ -446,7 +446,7 @@ flowchart LR
 | **expert-placement** | **需**分布式优化器;EP>1 | `experts_placement.py:28-31` |
 | **fix-router** | `expert_model_parallel_size > 1` | `moe_fix_router.py:19-20` |
 | **reset-bucket-order** | **需** `--overlap-param-gather` | `reset_bucket_group_order_feature.py:21-22` |
-| **swap-optimizer / reuse-fp32** | 与本页分片正交但共用 master/态布局,见 [[mindspeed_memory_optimization_analysis]] §9 | — |
+| **swap-optimizer / reuse-fp32** | 与本页分片正交但共用 master/态布局,见 [[12_mindspeed_memory_optimization_analysis]] §9 | — |
 
 **可叠加的典型组合**:tp-2d(打 TP)+ CP(经 `TensorParallelYUnionCP` 联动)+ PP noop/num-layer-list(打 stage 负载)+ LayerZeRO/分布式优化器(打 P/G/O 冗余),四维互不接管对方的划分点。**MoE 是最多互斥点**:tp-2d、unaligned-linear 都明确不支持 MoE,MoE 自己的 tp-extend-ep/balanced 又对分发器和 grouped-gemm 有硬要求。
 
@@ -487,9 +487,9 @@ DP:  只切优化器态(默认)               → Megatron 分布式优化器(Ze
 ## Related Pages
 
 - [[mindspeed/index]] —— MindSpeed×MindSpeed-LLM 特性总罗盘(四大类入口)
-- [[mindspeed_context_parallel_analysis]] —— CP 上下文并行独立深挖(分派脊柱、双环前向/反向、通信量代数、TND 变长裁剪、RoPE 不变量、选型)
-- [[mindspeed_comm_overlap_analysis]] —— 本页所有并行结构上的**通算掩盖**(CP send-recv overlap、MC2/CoC、TP-2D AG/RS 重叠、MoE fb-overlap、PP DualPipeV/RiPipe 调度)
-- [[mindspeed_memory_optimization_analysis]] —— 重计算/Swap/MoE-zero-memory 等省显存手段(与 LayerZeRO/CustomFSDP 分片互补)
-- [[mindspeed_ascend_affinity_analysis]] —— GMM/FlashAttention/swiglu 等昇腾融合算子(TP/MoE 的计算原语;§3.1 是本页 GMM 的内核侧)
+- [[20_mindspeed_context_parallel_analysis]] —— CP 上下文并行独立深挖(分派脊柱、双环前向/反向、通信量代数、TND 变长裁剪、RoPE 不变量、选型)
+- [[11_mindspeed_comm_overlap_analysis]] —— 本页所有并行结构上的**通算掩盖**(CP send-recv overlap、MC2/CoC、TP-2D AG/RS 重叠、MoE fb-overlap、PP DualPipeV/RiPipe 调度)
+- [[12_mindspeed_memory_optimization_analysis]] —— 重计算/Swap/MoE-zero-memory 等省显存手段(与 LayerZeRO/CustomFSDP 分片互补)
+- [[13_mindspeed_ascend_affinity_analysis]] —— GMM/FlashAttention/swiglu 等昇腾融合算子(TP/MoE 的计算原语;§3.1 是本页 GMM 的内核侧)
 - [[14_megatron_ep_analysis]] —— Megatron 原生 MoE 专家并行(三种 dispatcher、Parallel Folding),与本页 §5 跨框架对照
 - [[megatron-lm/index]] —— 被打补丁的宿主框架;对照阅读原生 5D 并行

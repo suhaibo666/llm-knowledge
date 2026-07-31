@@ -610,4 +610,4 @@ Dynamic CP 允许在 training 过程中根据输入序列长度动态调整 CP s
 **框架侧（Megatron-LM，本目录）**：
 - [[34_deepseek_v4_tensor_parallel_analysis]] — V4 TP=1 切分实现（姊妹页）
 - [[13_megatron_cp_analysis]] — Megatron CP 框架实现差异(`cp_comm_type` 配置接口)　· [[29_megatron_packed_dataset_dynamic_cp_analysis]] — Dynamic CP / packed dataset　· [[14_megatron_ep_analysis]] — 专家并行　· [[20_megatron_comm_overlap_analysis]] — 通信掩盖
-- [[torchtitan_cp_analysis]] · [[mindspeed_context_parallel_analysis]] — 其它框架的 CP 实现差异
+- [[13_torchtitan_cp_analysis]] · [[20_mindspeed_context_parallel_analysis]] — 其它框架的 CP 实现差异

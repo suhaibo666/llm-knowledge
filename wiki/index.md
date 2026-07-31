@@ -81,7 +81,7 @@
 | Megatron 分布式 | [[17_megatron_parallelism_orchestration_analysis]], [[20_megatron_comm_overlap_analysis]] |
 | MoE | [[14_megatron_ep_analysis]], [[20_deepseek_moe_analysis]] |
 | MoE 专家并行 (MindFormers) | [[mindformers/index]], [[mindformers_pynative_ep_analysis]], [[mindformers_moe_token_dispatcher_analysis]] |
-| 昇腾训练加速 (MindSpeed) | [[mindspeed/index]], [[mindspeed_parallelism_analysis]], [[mindspeed_context_parallel_analysis]], [[mindspeed_comm_overlap_analysis]], [[mindspeed_memory_optimization_analysis]], [[mindspeed_ascend_affinity_analysis]] |
+| 昇腾训练加速 (MindSpeed) | [[mindspeed/index]], [[10_mindspeed_parallelism_analysis]], [[20_mindspeed_context_parallel_analysis]], [[11_mindspeed_comm_overlap_analysis]], [[12_mindspeed_memory_optimization_analysis]], [[13_mindspeed_ascend_affinity_analysis]] |
 | torch.compile | [[courses/torch_compile_end_to_end]], [[02_compile_stack/01_dynamo/index]], [[02_compile_stack/04_inductor/index]] |
 | CUDA/NPU Graphs | [[10_pytorch_cuda_graphs_complete_guide]], [[11_torch_compile_npugraphs_deepdive]] |
 | Triton kernel 入门→专家 | [[triton_01_programming_model_guide]], [[triton_03_matmul_guide]], [[triton_04_autotune_guide]], [[triton_06_optimization_profiling_guide]], [[triton_knowledge_map]] |

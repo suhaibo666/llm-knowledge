@@ -77,7 +77,7 @@ assert dp_replicate * dp_shard * cp * tp * pp == self.world_size, ...
 
 约束式是 `dp_replicate × dp_shard × cp × tp × pp == world_size`,**`ep` 缺席**。
 
-这意味着 EP 不是"第 6 个独立维度",而是**对 `dp_shard × cp × tp` 这块 GPU 子网格的重新切分**。`ep` 必须整除 `dp_shard × cp × tp`。这一点是后面理解 `sparse_mesh` 的钥匙(见 [[torchtitan_ep_analysis]])。
+这意味着 EP 不是"第 6 个独立维度",而是**对 `dp_shard × cp × tp` 这块 GPU 子网格的重新切分**。`ep` 必须整除 `dp_shard × cp × tp`。这一点是后面理解 `sparse_mesh` 的钥匙(见 [[15_torchtitan_ep_analysis]])。
 
 ### 3.3 序列长度约束
 
@@ -90,7 +90,7 @@ def seq_len_divisor(self):
 
 `seq_len` 必须被 `tp × 2cp` 整除:
 - **`× tp`**:Sequence Parallel 要求序列维能被 TP 度整除。
-- **`× 2cp`**:CP 的负载均衡(默认开启)把序列切成 `2×cp` 段做"头尾配对"(见 [[torchtitan_cp_analysis]])。
+- **`× 2cp`**:CP 的负载均衡(默认开启)把序列切成 `2×cp` 段做"头尾配对"(见 [[13_torchtitan_cp_analysis]])。
 
 ---
 
@@ -241,7 +241,7 @@ if not self.full_dtensor:
     axes_list = [axis for axis in axes_list if axis in in_band]
 ```
 
-含义:**传统路径下,TP/EP 由 DTensor 显式处理(带内),DP/CP 由 FSDP/CP 包装隐式处理(带外)**。这条规则在 [[torchtitan_tp_analysis]] 会再次出现。
+含义:**传统路径下,TP/EP 由 DTensor 显式处理(带内),DP/CP 由 FSDP/CP 包装隐式处理(带外)**。这条规则在 [[12_torchtitan_tp_analysis]] 会再次出现。
 
 ---
 
@@ -315,6 +315,6 @@ ParallelDims.from_config(parallelism_config, world_size)
 ## Related Pages
 
 - [[torchtitan/index]] —— torchtitan 多维并行知识地图(本系列入口)
-- [[torchtitan_fsdp_analysis]] · [[torchtitan_tp_analysis]] · [[torchtitan_cp_analysis]] · [[torchtitan_pp_analysis]] · [[torchtitan_ep_analysis]] —— 五个并行维度的机制级深度分析
+- [[11_torchtitan_fsdp_analysis]] · [[12_torchtitan_tp_analysis]] · [[13_torchtitan_cp_analysis]] · [[14_torchtitan_pp_analysis]] · [[15_torchtitan_ep_analysis]] —— 五个并行维度的机制级深度分析
 - [[17_megatron_parallelism_orchestration_analysis]] —— Megatron-LM 进程组编排 capstone(RankGenerator、正交分组),与 `ParallelDims` 同类
 - [[15_megatron_pp_schedulers_analysis]] —— LLM 正反向计算依赖 DAG 与 TP/SP/EP/CP 通信依赖

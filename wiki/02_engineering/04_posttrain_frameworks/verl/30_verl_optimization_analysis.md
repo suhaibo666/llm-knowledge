@@ -220,7 +220,7 @@ attn_output  = gather_heads_scatter_seq(attn_output, seq_dim=1, head_dim=2)     
 
 `gather_seq_scatter_heads/gather_heads_scatter_seq`(`ulysses.py:66-105`)底层调 `SeqAllToAll.apply`(`ulysses.py:169-195`)——一次 `dist.all_to_all`(`all_to_all_tensor:137-156`)把 seq 维聚齐、head 维散开。约束:`num_heads % sp_size == 0`(`validate_ulysses_config:337-341`)。开关 `ulysses_sequence_parallel_size`(`config/actor.py:307` / `FSDPEngineConfig:258`),默认 1(不启用)。
 
-> **为什么用 all-to-all 而非 all-gather**:Ulysses 把通信量摊在 head 维,**单次 all-to-all 的通信量与 SP 大小无关**(每 rank 收发 1/SP),比沿 seq 维全量 all-gather KV 省;代价是 head 数必须能被 SP 整除。这与 [[torchtitan_cp_analysis]] 的 Ring/All-gather CP 是不同取舍。
+> **为什么用 all-to-all 而非 all-gather**:Ulysses 把通信量摊在 head 维,**单次 all-to-all 的通信量与 SP 大小无关**(每 rank 收发 1/SP),比沿 seq 维全量 all-gather KV 省;代价是 head 数必须能被 SP 整除。这与 [[13_torchtitan_cp_analysis]] 的 Ring/All-gather CP 是不同取舍。
 
 ---
 
@@ -356,6 +356,6 @@ flowchart TB
 - [[01_verl_architecture_overview_analysis]] —— 总体架构与本目录定位
 - [[verl/index]] —— verl 系列知识地图
 - [[32_distributed_optimizer_deepdive]] —— 分布式优化器(Megatron `use_distributed_optimizer` 对照)
-- [[torchtitan_fsdp_analysis]] —— FSDP2 标杆篇(offload_policy/混合精度跨框架对照)
-- [[torchtitan_cp_analysis]] —— Context Parallel 对照(Ulysses vs Ring/All-gather CP 取舍)
+- [[11_torchtitan_fsdp_analysis]] —— FSDP2 标杆篇(offload_policy/混合精度跨框架对照)
+- [[13_torchtitan_cp_analysis]] —— Context Parallel 对照(Ulysses vs Ring/All-gather CP 取舍)
 - [[30_comm_compute_overlap_analysis]] —— 通信-计算重叠的跨框架视角(异步 RL 的更一般化)

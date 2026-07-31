@@ -2,7 +2,7 @@
 
 *Megatron-LM combined_1f1b · torchtitan ZBV/DualPipe · MindSpeed fb-overlap/DualPipeV · TP/DP/PP/EP 掩盖维度全览*
 
-> 本页是 **Megatron-LM / torchtitan / MindSpeed** 三个分布式训练框架计算通信掩盖机制的**横向对比矩阵页**：逐维度机制细节（含源码 file:line）已下沉到各框架的权威机制页——[[20_megatron_comm_overlap_analysis]]、[[torchtitan_comm_optimizations_overlap_analysis]]、[[mindspeed_comm_overlap_analysis]]——本页只保留三页都没有的**合成视图**：跨框架维度矩阵、combined_1f1b vs ZBV/DualPipeV 的架构差异分析、可达性矩阵。查具体机制请跳转子页；查"哪个框架用什么手段掩盖哪种通信"，本页即终点。
+> 本页是 **Megatron-LM / torchtitan / MindSpeed** 三个分布式训练框架计算通信掩盖机制的**横向对比矩阵页**：逐维度机制细节（含源码 file:line）已下沉到各框架的权威机制页——[[20_megatron_comm_overlap_analysis]]、[[24_torchtitan_comm_optimizations_overlap_analysis]]、[[11_mindspeed_comm_overlap_analysis]]——本页只保留三页都没有的**合成视图**：跨框架维度矩阵、combined_1f1b vs ZBV/DualPipeV 的架构差异分析、可达性矩阵。查具体机制请跳转子页；查"哪个框架用什么手段掩盖哪种通信"，本页即终点。
 >
 > **与"通算融合"的边界**：本页讲的是**掩盖**——通信与计算独立发生、靠调度/多 stream 重叠隐藏延迟（源码层仍是两次算子调用）；把通信编进**同一个 kernel** 的**融合**手段（WaveEP、DeepEP、MC2）见 [[31_comm_compute_fusion_guide]]。
 
@@ -22,25 +22,25 @@
 
 *图 1：掩盖机制的三层金字塔*
 
-三个框架实现这些层次的**载体**不同，[[mindspeed_comm_overlap_analysis]] §1 给出的三分类同样适用于跨框架理解：**融合**（把通信编进单一 kernel，如 Megatron/MindSpeed 的 MC2、DeepEP `FusedDispatch`——参见 [[31_comm_compute_fusion_guide]]）、**软件流水**（chunk 切分 + 双 stream 异步 handle，如 Megatron TP Bulk/Pipelined、MindSpeed CoC、torchtitan `AsyncCollectiveTensor`）、**换调度**（PP/EP 调度层面重排，如 combined_1f1b、ZBV/DualPipeV、MindSpeed fb-overlap+DualPipeV）。下面按维度逐一对照。
+三个框架实现这些层次的**载体**不同，[[11_mindspeed_comm_overlap_analysis]] §1 给出的三分类同样适用于跨框架理解：**融合**（把通信编进单一 kernel，如 Megatron/MindSpeed 的 MC2、DeepEP `FusedDispatch`——参见 [[31_comm_compute_fusion_guide]]）、**软件流水**（chunk 切分 + 双 stream 异步 handle，如 Megatron TP Bulk/Pipelined、MindSpeed CoC、torchtitan `AsyncCollectiveTensor`）、**换调度**（PP/EP 调度层面重排，如 combined_1f1b、ZBV/DualPipeV、MindSpeed fb-overlap+DualPipeV）。下面按维度逐一对照。
 
 ## 二 跨框架掩盖维度矩阵
 
 | 维度 | Megatron-LM | torchtitan | MindSpeed |
 | --- | --- | --- | --- |
-| **TP** | Bulk（`ub_bulk_wgrad`/`ub_bulk_dgrad`：dgrad/wgrad 与 AG/RS 无依赖侧并行）+ Pipelined（chunk 流水，`tp_comm_overlap`，依赖 TE User Buffer）→ [[20_megatron_comm_overlap_analysis]] §二 | Async-TP 微流水（inductor pass，拆 `all-gather+matmul`/`matmul+reduce-scatter` 为 `symm_mem.fused_*` 融合算子，需 `enable_async_tensor_parallel`+compile+Hopper 对称内存）→ [[torchtitan_comm_optimizations_overlap_analysis]] §2 | MC2（单一融合大算子，`npu_all_gather_base_mm`/`npu_mm_reduce_scatter_base`）或 CoC（PyTorch 层 chunk 软流水/lcal 融合核，粒度可调）→ [[mindspeed_comm_overlap_analysis]] §2-3 |
-| **DP（梯度/参数）** | Bucket 异步 ReduceScatter（`overlap_grad_reduce`）+ Prefetch AllGather（`overlap_param_gather`），forward pre-hook 驱动 → [[20_megatron_comm_overlap_analysis]] §三 | FSDP 独立 AG/RS stream + 反向逆序预取；HSDP 反向另开 all-reduce stream → [[torchtitan_fsdp_analysis]] §4/§6、[[torchtitan_hsdp_backward_overlap_analysis]] §5 | 梯度/参数 AG-RS 沿用 Megatron distributed optimizer（未在本域单列）；MindSpeed 自身新增 **async-log-allreduce**——掩盖的不是梯度而是 **loss 日志 all-reduce**，延迟到取值才 wait → [[mindspeed_comm_overlap_analysis]] §6 |
-| **PP** | 异步 P2P（`overlap_p2p_comm`，even/odd rank 分组实现真并发；⚠️ 默认关闭）→ [[20_megatron_comm_overlap_analysis]] §四 | Action-based runtime：`RECV` 早发起、用前才 wait，`SEND` 发起不等 → [[torchtitan_pp_analysis]] §8 | optimize-p2p-comm（关 `batch_p2p_comm` 拆独立 isend/irecv）/ optimize-send-recv-comm（专用 P2P stream + 进程组，细粒度重叠）→ [[mindspeed_comm_overlap_analysis]] §5.3 |
-| **EP（同 microbatch 内）** | Shared Expert 独立 stream 状态机（`moe_shared_expert_overlap`，与 EP+PP 交叉掩盖是**独立**开关）→ [[20_megatron_comm_overlap_analysis]] §5.8 | `AsyncCollectiveTensor` 延迟 wait：`combine()` 把 `shared_experts(x)` 塞进 a2a enqueue 到结果首用之间的窗口 → [[torchtitan_ep_analysis]] §4-5 | alltoall-overlap/allgather-overlap：异步 handle 藏进同微批 `op_dx`/`op_dw` GroupedMatMul → [[mindspeed_comm_overlap_analysis]] §4.1-4.2 |
-| **EP（跨 microbatch）+ PP 打通** | **combined_1f1b**：Layer 拆 5 子节点，双 stream 交错 + delay-wgrad，硬编码模型内部结构 → 本页§三、[[20_megatron_comm_overlap_analysis]] §5.2-5.4/5.8 | ✗ 无——PP 调度（ZBV/DualPipe）不感知 EP 内部结构，EP 掩盖停留在 mb 内层次 | **fb-overlap**：微批 i 前向 ∥ 微批 i-1 反向 + `WeightGradStore` 延迟 dw；DualPipeV 的 overlap 稳态段直接调用 fb-overlap 函数，二者深度协同 → 本页§三、[[mindspeed_comm_overlap_analysis]] §4.3/§5.1 |
-| **PP 气泡消除** | 传统 1F1B + P2P overlap（无 ZB/DualPipe 内置支持） | **ZBV/DualPipeV**：I/W 拆分（按 autograd 目标而非模型结构）+ `OVERLAP_F_B`（F/B 计算本身重叠发起）→ 本页§三、[[torchtitan_pp_analysis]] §7 | **DualPipeV**（双向切半，气泡占比 $O(P)/O(m)$）+ **RiPipe**（气泡内做重计算，近乎零代价）→ [[mindspeed_comm_overlap_analysis]] §5.1-5.2 |
-| **A2A 专用融合内核** | DeepEP/HybridEP：两级通信去冗余（跨节点走 RDMA、节点内走 NVLink），"加速通信"而非"掩盖通信" → [[20_megatron_comm_overlap_analysis]] §5.6 | MinimalAsyncEP：symm-mem + 自写 Triton，**不做**通算重叠（明确声明），lever 是融合 barrier + CUDA graph/compile 去 launch 开销 → [[torchtitan_comm_optimizations_overlap_analysis]] §4 | alltoall-MC2：`npu_alltoallv_gmm`/`npu_gmm_alltoallv` 把 a2a-v 与专家 GEMM 编进单 kernel，与所有软流水 MoE-overlap 互斥 → [[mindspeed_comm_overlap_analysis]] §4.4 |
+| **TP** | Bulk（`ub_bulk_wgrad`/`ub_bulk_dgrad`：dgrad/wgrad 与 AG/RS 无依赖侧并行）+ Pipelined（chunk 流水，`tp_comm_overlap`，依赖 TE User Buffer）→ [[20_megatron_comm_overlap_analysis]] §二 | Async-TP 微流水（inductor pass，拆 `all-gather+matmul`/`matmul+reduce-scatter` 为 `symm_mem.fused_*` 融合算子，需 `enable_async_tensor_parallel`+compile+Hopper 对称内存）→ [[24_torchtitan_comm_optimizations_overlap_analysis]] §2 | MC2（单一融合大算子，`npu_all_gather_base_mm`/`npu_mm_reduce_scatter_base`）或 CoC（PyTorch 层 chunk 软流水/lcal 融合核，粒度可调）→ [[11_mindspeed_comm_overlap_analysis]] §2-3 |
+| **DP（梯度/参数）** | Bucket 异步 ReduceScatter（`overlap_grad_reduce`）+ Prefetch AllGather（`overlap_param_gather`），forward pre-hook 驱动 → [[20_megatron_comm_overlap_analysis]] §三 | FSDP 独立 AG/RS stream + 反向逆序预取；HSDP 反向另开 all-reduce stream → [[11_torchtitan_fsdp_analysis]] §4/§6、[[21_torchtitan_hsdp_backward_overlap_analysis]] §5 | 梯度/参数 AG-RS 沿用 Megatron distributed optimizer（未在本域单列）；MindSpeed 自身新增 **async-log-allreduce**——掩盖的不是梯度而是 **loss 日志 all-reduce**，延迟到取值才 wait → [[11_mindspeed_comm_overlap_analysis]] §6 |
+| **PP** | 异步 P2P（`overlap_p2p_comm`，even/odd rank 分组实现真并发；⚠️ 默认关闭）→ [[20_megatron_comm_overlap_analysis]] §四 | Action-based runtime：`RECV` 早发起、用前才 wait，`SEND` 发起不等 → [[14_torchtitan_pp_analysis]] §8 | optimize-p2p-comm（关 `batch_p2p_comm` 拆独立 isend/irecv）/ optimize-send-recv-comm（专用 P2P stream + 进程组，细粒度重叠）→ [[11_mindspeed_comm_overlap_analysis]] §5.3 |
+| **EP（同 microbatch 内）** | Shared Expert 独立 stream 状态机（`moe_shared_expert_overlap`，与 EP+PP 交叉掩盖是**独立**开关）→ [[20_megatron_comm_overlap_analysis]] §5.8 | `AsyncCollectiveTensor` 延迟 wait：`combine()` 把 `shared_experts(x)` 塞进 a2a enqueue 到结果首用之间的窗口 → [[15_torchtitan_ep_analysis]] §4-5 | alltoall-overlap/allgather-overlap：异步 handle 藏进同微批 `op_dx`/`op_dw` GroupedMatMul → [[11_mindspeed_comm_overlap_analysis]] §4.1-4.2 |
+| **EP（跨 microbatch）+ PP 打通** | **combined_1f1b**：Layer 拆 5 子节点，双 stream 交错 + delay-wgrad，硬编码模型内部结构 → 本页§三、[[20_megatron_comm_overlap_analysis]] §5.2-5.4/5.8 | ✗ 无——PP 调度（ZBV/DualPipe）不感知 EP 内部结构，EP 掩盖停留在 mb 内层次 | **fb-overlap**：微批 i 前向 ∥ 微批 i-1 反向 + `WeightGradStore` 延迟 dw；DualPipeV 的 overlap 稳态段直接调用 fb-overlap 函数，二者深度协同 → 本页§三、[[11_mindspeed_comm_overlap_analysis]] §4.3/§5.1 |
+| **PP 气泡消除** | 传统 1F1B + P2P overlap（无 ZB/DualPipe 内置支持） | **ZBV/DualPipeV**：I/W 拆分（按 autograd 目标而非模型结构）+ `OVERLAP_F_B`（F/B 计算本身重叠发起）→ 本页§三、[[14_torchtitan_pp_analysis]] §7 | **DualPipeV**（双向切半，气泡占比 $O(P)/O(m)$）+ **RiPipe**（气泡内做重计算，近乎零代价）→ [[11_mindspeed_comm_overlap_analysis]] §5.1-5.2 |
+| **A2A 专用融合内核** | DeepEP/HybridEP：两级通信去冗余（跨节点走 RDMA、节点内走 NVLink），"加速通信"而非"掩盖通信" → [[20_megatron_comm_overlap_analysis]] §5.6 | MinimalAsyncEP：symm-mem + 自写 Triton，**不做**通算重叠（明确声明），lever 是融合 barrier + CUDA graph/compile 去 launch 开销 → [[24_torchtitan_comm_optimizations_overlap_analysis]] §4 | alltoall-MC2：`npu_alltoallv_gmm`/`npu_gmm_alltoallv` 把 a2a-v 与专家 GEMM 编进单 kernel，与所有软流水 MoE-overlap 互斥 → [[11_mindspeed_comm_overlap_analysis]] §4.4 |
 
 > **Megatron EP 行补注**：`overlap_dispatch_backward_with_experts_wgrad`（`moe_layer.py:441`、`519`，专用 `_delayed_wgrad_stream` 把专家 wgrad 与 dispatch 反向 A2A 重叠）见 [[14_megatron_ep_analysis]] §5.3。它与"EP（跨 microbatch）+ PP 打通"行的 combined_1f1b delay-wgrad（`delay_wgrad_compute`）是**两个相互独立、互斥**的机制（`transformer_config.py:2713`）：前者**不耦合 PP**，纯 EP 内 wgrad-vs-dispatch-A2A 重叠；后者是 combined_1f1b 内**跨 microbatch**的 wgrad 延迟，二选一。
 
 ## 三 combined_1f1b 与 ZBV/DualPipeV：两种"打通"哲学
 
-Megatron combined_1f1b 与 torchtitan ZBV/DualPipeV、MindSpeed fb-overlap+DualPipeV 都在解决"跨 microbatch 打通掩盖"，但路线不同——完整源码级机制见各自权威页（[[20_megatron_comm_overlap_analysis]] §5、[[torchtitan_pp_analysis]] §4/§7、[[mindspeed_comm_overlap_analysis]] §4.3/§5.1），本节只讲架构差异。
+Megatron combined_1f1b 与 torchtitan ZBV/DualPipeV、MindSpeed fb-overlap+DualPipeV 都在解决"跨 microbatch 打通掩盖"，但路线不同——完整源码级机制见各自权威页（[[20_megatron_comm_overlap_analysis]] §5、[[14_torchtitan_pp_analysis]] §4/§7、[[11_mindspeed_comm_overlap_analysis]] §4.3/§5.1），本节只讲架构差异。
 
 ### 3.1 Megatron combined_1f1b：硬编码模型结构换 sub-layer 级掩盖
 
@@ -98,7 +98,7 @@ MindSpeed 的 fb-overlap 让一个微批的前向层与另一个微批的反向�
 | EP+PP 交叉 | ✓ combined_1f1b（sub-layer） | ✗ | ✓ fb-overlap+DualPipeV（layer 级协同） |
 | PP bubble 消除 | 传统 1F1B + P2P overlap | ✓ ZBV / DualPipe（更先进） | ✓ DualPipeV（双向切半）+ RiPipe（气泡填重计算） |
 | 模型支持 | GPTModel（含 MTP） | llama3/4, qwen3, deepseek_v3, gpt_oss, flux | Megatron-patch 生态（Ascend/NPU 训练场景） |
-| 代码复杂度 | 高（~1200 行调度 + 模型改造） | 低（调度在上游，模型无改造） | 高（大量 `MindSpeedFeature` 互斥矩阵，见 [[mindspeed_comm_overlap_analysis]] §7） |
+| 代码复杂度 | 高（~1200 行调度 + 模型改造） | 低（调度在上游，模型无改造） | 高（大量 `MindSpeedFeature` 互斥矩阵，见 [[11_mindspeed_comm_overlap_analysis]] §7） |
 | 与 compile 兼容 | 部分冲突（CUDA Graph 禁用） | ✓（co-design，Async-TP 甚至要求 compile） | 面向 NPU 亲和路线，非 torch.compile 生态 |
 
 ### 5.2 适用场景
@@ -116,10 +116,10 @@ MindSpeed 的 fb-overlap 让一个微批的前向层与另一个微批的反向�
 ## Related Pages
 
 - [[20_megatron_comm_overlap_analysis]] —— Megatron-LM 通信掩盖权威机制页（TP/DP/PP/EP/CP 全维度，源码 file:line）
-- [[torchtitan_comm_optimizations_overlap_analysis]] —— torchtitan 通信优化权威机制页（跨维度矩阵 + Async-TP/对称内存/MinimalAsyncEP）
-- [[torchtitan_ep_analysis]] —— torchtitan EP token all-to-all 与 `AsyncCollectiveTensor` 掩盖机制
-- [[torchtitan_pp_analysis]] —— torchtitan PP 调度、ZBV/DualPipeV 的 I/W 拆分与 `OVERLAP_F_B`
-- [[mindspeed_comm_overlap_analysis]] —— MindSpeed 通信掩盖权威机制页（MC2/CoC/fb-overlap/DualPipeV/RiPipe，源码 file:line）
+- [[24_torchtitan_comm_optimizations_overlap_analysis]] —— torchtitan 通信优化权威机制页（跨维度矩阵 + Async-TP/对称内存/MinimalAsyncEP）
+- [[15_torchtitan_ep_analysis]] —— torchtitan EP token all-to-all 与 `AsyncCollectiveTensor` 掩盖机制
+- [[14_torchtitan_pp_analysis]] —— torchtitan PP 调度、ZBV/DualPipeV 的 I/W 拆分与 `OVERLAP_F_B`
+- [[11_mindspeed_comm_overlap_analysis]] —— MindSpeed 通信掩盖权威机制页（MC2/CoC/fb-overlap/DualPipeV/RiPipe，源码 file:line）
 - [[31_comm_compute_fusion_guide]] —— 通算融合（把通信编进单一 kernel）：与本页"掩盖"手段的边界声明见页首
 - [[tilelang_analysis]] —— WaveEP 的 tile-level IR 实现机制
 - [[12_deepseek_v3_analysis]] —— DualPipe PP 通算重叠设计

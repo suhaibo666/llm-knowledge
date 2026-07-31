@@ -2,7 +2,7 @@
 
 > **代码基线**:MindSpeed core `master` @ `1432cb09`(猴补丁 Megatron `core_r0.17.0`)· 2026-06-23
 > 本页只讲 MindSpeed 的 **CP 家族**:运行期怎么把 attention 分派到 Ulysses / Ring(双环)/ Hybrid / Adaptive / KV-cache 五条路,每条路在卡间搬什么、按因果性怎么裁剪、通信量与序列长度 $S$/CP 度的代数关系、各自的约束与选型。**每个 CP 变体都按统一四件套拆解**:① 机制 ② 卡间数据流 / before-after 图示 ③ `> [!tip] 优化点` callout(量化收益)④ 源码解读(实际调用 + autograd + `file:line`)。行号均经实际打开核对。
-> 属 [[mindspeed/index]] 系列;并行总览见 [[mindspeed_parallelism_analysis]](本页是其 §2 CP 一节的深挖展开)。Megatron 原生 CP 对照见 [[13_megatron_cp_analysis]];通算掩盖(send-recv overlap)归 [[mindspeed_comm_overlap_analysis]]。亲和 FA 核(`npu_fusion_attention`)见 [[mindspeed_ascend_affinity_analysis]]。
+> 属 [[mindspeed/index]] 系列;并行总览见 [[10_mindspeed_parallelism_analysis]](本页是其 §2 CP 一节的深挖展开)。Megatron 原生 CP 对照见 [[13_megatron_cp_analysis]];通算掩盖(send-recv overlap)归 [[11_mindspeed_comm_overlap_analysis]]。亲和 FA 核(`npu_fusion_attention`)见 [[13_mindspeed_ascend_affinity_analysis]]。
 >
 > **划界声明**:CP/Ring Attention 通用机制(为什么切序列、折叠/头尾负载均衡的数学证明、因果块裁剪、Ring 单环主循环 + online-softmax、Ulysses 换轴机制与通信量代数、分层混合的分组构造、RoPE 位置编码切分不变量)已归一到 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]——本页多处正是该理论页对应章节(§3.3 负载均衡定量证明、§3.5 位置编码不变量、§4.1 因果三分支裁剪、§5.2 在线 softmax 公式、§7 Ulysses 全套机制、§8.1/§8.3 分层混合)的骨架来源。**本页只保留 MindSpeed 独有的框架实现差异**:五算法运行期分派脊柱、Ring 的**双环(outer/inner window)**结构与反向双 dKV 环、**Adaptive CP**(调度驱动、rank 重映射)、**KV-cache CP**(显存换反向通信)—— 这四项在其它三个框架页均不存在;此外还有各算法的源码级实现细节(GQA 头补齐、变长 a2a、CP×TP-2D 合并域等)。
 
@@ -94,7 +94,7 @@ else:
 
 > patch 侧还有个分流:`kvallgather` 与 `ulysses` 把 `TEDotProductAttention` 替成轻量 `MindSpeedTEDotProductAttention`,其余算法替成完整 `MindSpeedCPDotProductAttention`(`context_parallel_feature.py:106-111`)。
 
-> **`sparse_mode` 的就地设定**:`forward` 开头按掩码类型给 `config.sparse_mode` 赋值——causal → `2`(`dot_product_attention.py:147`),`reset_attention_mask` 的 general 掩码 → `2`,但若开了 CP 且非 ulysses 则改 `1`(`:149-153`),`no_mask` → `0`(`:180-181`)。这个码直接喂给 `npu_fusion_attention` 选 mask 形态,是 CP 内核与亲和 FA 核(见 [[mindspeed_ascend_affinity_analysis]] §3.5)的接口约定。
+> **`sparse_mode` 的就地设定**:`forward` 开头按掩码类型给 `config.sparse_mode` 赋值——causal → `2`(`dot_product_attention.py:147`),`reset_attention_mask` 的 general 掩码 → `2`,但若开了 CP 且非 ulysses 则改 `1`(`:149-153`),`no_mask` → `0`(`:180-181`)。这个码直接喂给 `npu_fusion_attention` 选 mask 形态,是 CP 内核与亲和 FA 核(见 [[13_mindspeed_ascend_affinity_analysis]] §3.5)的接口约定。
 
 > **CP × TP-2D 的合并域**:开 `tp_2d` 且 `tp_y>1` 时,CP 不再是独立通信域,而是与 TP 的 y 方向合成一个 `TensorParallelYUnionCP` 联合组——`tp_y_cp_sz = cp·tp_y`(`dot_product_attention.py:185-189`、`adaptor.py:30-33`)。此时序列切分也要按 `2·tp_y_cp_sz` 配对再 reshape 回 `[cp, s/cp]`(`get_batch_utils.py:206-241`),Ulysses 的 a2a 组取 `tp_y_cp.group`、Ring 走 `tp_y_cp.overlap_group`(`dot_product_attention.py:218-222`、`:247-248`)。这是 CP 与 TP-2D 正交叠加时唯一需要"换组"的地方,四框架中仅 MindSpeed 有这一耦合。
 
@@ -284,7 +284,7 @@ full:        缓存 K+V ─┘      反向 0 轮 KV 通信(全命中缓存)  →
 - **Ulysses 侧**:自定义 autograd `UlyssesAttnWithKVCache`(`ulysses_context_parallel.py:560-758`)。前向按策略缓存:`full` 存 a2a **前**的 `key/value`、`half` 存 `key` + a2a 后的 `v`、`None` 存 a2a 后的 `k/v`(`:625-630`);backward 用 `recomm_backward` 只对缓存块重做一次 a2a(`:715-723`),省掉一轮反向通信。
 
 约束:`cp>1` 且必须 `use_flash_attn`;`cache_interval < num_layers`;allgather-kv 仅 ulysses + GQA(`features_manager/.../context_parallel_kv_cache.py:29-66`)。
-> cache 的**省显存**量化与重计算权衡见 [[mindspeed_memory_optimization_analysis]];本页只记其改变了 CP 的通信结构。
+> cache 的**省显存**量化与重计算权衡见 [[12_mindspeed_memory_optimization_analysis]];本页只记其改变了 CP 的通信结构。
 
 ---
 
@@ -336,10 +336,10 @@ $V_{ulysses}/V_{ring}=\frac{2}{cp}\cdot\frac{a}{a_{kv}}$:MHA 大 $cp$ 选 Ulysse
 
 - [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]] —— CP/Ring Attention 通用机制(本页多节的骨架来源页)
 - [[mindspeed/index]] —— MindSpeed×MindSpeed-LLM 特性总罗盘(四大类入口)
-- [[mindspeed_parallelism_analysis]] —— 并行总览;本页是其 §2 CP 一节的深挖展开(TP/PP/MoE-EP/DP 见该页)
-- [[mindspeed_comm_overlap_analysis]] —— CP 的 send-recv overlap、双环 intra/inter 重叠、RingP2P 异步掩盖
-- [[mindspeed_memory_optimization_analysis]] —— KV-cache CP 的省显存量化、重计算与 CP 的互补
-- [[mindspeed_ascend_affinity_analysis]] —— 昇腾亲和融合核(`npu_fusion_attention` 即 CP 内核的本地 FA),四件套对照阅读
+- [[10_mindspeed_parallelism_analysis]] —— 并行总览;本页是其 §2 CP 一节的深挖展开(TP/PP/MoE-EP/DP 见该页)
+- [[11_mindspeed_comm_overlap_analysis]] —— CP 的 send-recv overlap、双环 intra/inter 重叠、RingP2P 异步掩盖
+- [[12_mindspeed_memory_optimization_analysis]] —— KV-cache CP 的省显存量化、重计算与 CP 的互补
+- [[13_mindspeed_ascend_affinity_analysis]] —— 昇腾亲和融合核(`npu_fusion_attention` 即 CP 内核的本地 FA),四件套对照阅读
 - [[13_megatron_cp_analysis]] —— Megatron 原生 CP 实现差异(`cp_comm_type` 四选一,内核在 TE),与本页逐条对照
 - [[29_megatron_packed_dataset_dynamic_cp_analysis]] —— packed/THD 变长数据与动态 CP(本页 EoD/TND 切分的数据侧)
 - [[megatron-lm/index]] —— 被打补丁的宿主框架;对照阅读原生 5D 并行

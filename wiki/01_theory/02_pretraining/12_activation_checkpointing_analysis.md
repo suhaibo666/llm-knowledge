@@ -535,7 +535,7 @@ Time →
 - [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[01_theory/02_pretraining/index]] — 预训练领域索引
 - [[12_saved_tensors_recompute_and_runtime_abi_analysis]] — AOTAutograd saved-value、min-cut partition 与 backward recompute 边界
-- [[torchtitan_ac_analysis]] — torchtitan/PyTorch 工程侧:非重入 `checkpoint_wrapper` 票据机制、SAC dispatch 缓存回放、显存预估(与本文 Megatron `CheckpointFunction` 重入路径互补)
+- [[22_torchtitan_ac_analysis]] — torchtitan/PyTorch 工程侧:非重入 `checkpoint_wrapper` 票据机制、SAC dispatch 缓存回放、显存预估(与本文 Megatron `CheckpointFunction` 重入路径互补)
 - [[18_megatron_recompute_analysis]] — Selective Recomputation、Fine-Grained Offloading、Checkpoint Resharding（原 Exam Q12/Q13/Q30 内容已并入此页）
 - [[25_mhc_analysis]] — mHC 的选择性重计算实现与 CheckpointManager 的应用
 - [[12_saved_tensors_recompute_and_runtime_abi_analysis]] — AOTAutograd 编译期 min-cut/激活检查点、重计算与 runtime ABI（2026-07-30 起取代原 `aotautograd_analysis` §10.1 引用）

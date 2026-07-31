@@ -2,7 +2,7 @@
 
 > 层次：原理（principle）· 引擎无关
 > 前置：[[11_data_parallel_analysis]]（DP 的 $16\Psi$ 显存账本）、[[10_collectives_analysis]]（all-reduce = reduce-scatter + all-gather）
-> 实现见 [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_fsdp_analysis]]、[[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]]（FSDP1/FSDP2）
+> 实现见 [[../../02_engineering/02_train_frameworks/torchtitan/11_torchtitan_fsdp_analysis]]、[[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]]（FSDP1/FSDP2）
 > 最后更新：2026-07-01
 
 ---
@@ -56,7 +56,7 @@ PyTorch 的 **FSDP（Fully Sharded Data Parallel）** 是 ZeRO-3 的框架实现
 2. **compute**：用完整参数做该层前向/反向；
 3. **reshard**：立即释放非本卡分片，参数退回 $1/N$；反向的梯度用 `reduce_scatter` 规约到负责卡。
 
-峰值显存 = 常驻分片（$16\Psi/N$）+ 当前层临时全量 buffer（一层的参数，很小）。工程上靠**预取（prefetch）**下一层的 all-gather 与当前层计算**重叠**来掩盖通信——实现细节见 [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_fsdp_prefetch_overlap_memory_analysis]]。
+峰值显存 = 常驻分片（$16\Psi/N$）+ 当前层临时全量 buffer（一层的参数，很小）。工程上靠**预取（prefetch）**下一层的 all-gather 与当前层计算**重叠**来掩盖通信——实现细节见 [[../../02_engineering/02_train_frameworks/torchtitan/20_torchtitan_fsdp_prefetch_overlap_memory_analysis]]。
 
 ---
 
@@ -77,6 +77,6 @@ PyTorch 的 **FSDP（Fully Sharded Data Parallel）** 是 ZeRO-3 的框架实现
 - [[13_tensor_sequence_parallel_analysis]] — TP：与 FSDP 正交组合（FSDP×TP）
 - [[15_pipeline_parallel_analysis]] — PP：与 ZeRO 正交，进一步摊深度
 - [[index]] — N 维布局里 ZeRO/FSDP 占据数据轴
-- [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_fsdp_analysis]] — **实现层**：torchtitan/FSDP2 的分片与通信
-- [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_fsdp_prefetch_overlap_memory_analysis]] — **实现层**：预取重叠与显存核算
+- [[../../02_engineering/02_train_frameworks/torchtitan/11_torchtitan_fsdp_analysis]] — **实现层**：torchtitan/FSDP2 的分片与通信
+- [[../../02_engineering/02_train_frameworks/torchtitan/20_torchtitan_fsdp_prefetch_overlap_memory_analysis]] — **实现层**：预取重叠与显存核算
 - [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：FSDP1 `FlatParameter` 与 FSDP2 `fully_shard`

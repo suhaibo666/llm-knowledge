@@ -13,7 +13,7 @@
 
 **EP(专家并行)** 服务于 MoE 模型(llama4、deepseek_v3、gpt_oss)。MoE 有几十~几百个专家(expert),全部复制到每张卡显存会爆。EP 把**专家分散到不同卡**,每卡只持有一部分专家。
 
-如 [[torchtitan_parallel_dims_analysis]] 所述,EP 不占 `world_size` 乘积——它是对 `dp_shard × cp × tp` 子网格的重新切分,专家参数活在 `sparse_mesh` 上。
+如 [[10_torchtitan_parallel_dims_analysis]] 所述,EP 不占 `world_size` 乘积——它是对 `dp_shard × cp × tp` 子网格的重新切分,专家参数活在 `sparse_mesh` 上。
 
 **一条贯穿全文的主线 —— EP 与 TP 的切分对偶**:
 
@@ -226,7 +226,7 @@ DeepEP 不用 ACT,而是 DeepEP 库自己的 event 机制。`DeepEPTokenDispatch
 
 非专家参数(attention、norm、router gate、shared experts)在 `dp_mesh` 上做 FSDP。但专家参数已被 `ExpertParallel` 沿 `Shard(0)` 切到 `ep` mesh——它的 FSDP 必须在"扣掉 EP 后剩余的 DP 维"上做。
 
-[[torchtitan_parallel_dims_analysis]] 给出这个维度:`efsdp = dp_shard × cp × tp / ep`。`sparse_mesh = [pp, dp_replicate, efsdp, ep]` 专门给专家参数。`tp` 进了 `efsdp`——因为 EP 开启时 TP 不切专家权重,TP 维对专家就是额外可用的 FSDP 维。
+[[10_torchtitan_parallel_dims_analysis]] 给出这个维度:`efsdp = dp_shard × cp × tp / ep`。`sparse_mesh = [pp, dp_replicate, efsdp, ep]` 专门给专家参数。`tp` 进了 `efsdp`——因为 EP 开启时 TP 不切专家权重,TP 维对专家就是额外可用的 FSDP 维。
 
 ### 7.2 `shard_placement_fn` 分流
 
@@ -240,13 +240,13 @@ def _shard_placement_fn(param, ...):
         return ShardPlacementResult(placement=Shard(0), mesh_info=dp_mesh_info)           # 其它 → dp_mesh
 ```
 
-即:**同一个 `fully_shard(transformer_block)` 调用里,专家参数在 `edp_mesh` 上分片、其余参数在 `dp_mesh` 上分片**(`expert_placement` 按 FSDP 度数与专家数的关系选 `Shard(0)` 或 `Shard(1)` 避免 padding)。详见 [[torchtitan_fsdp_analysis]] §8.4。
+即:**同一个 `fully_shard(transformer_block)` 调用里,专家参数在 `edp_mesh` 上分片、其余参数在 `dp_mesh` 上分片**(`expert_placement` 按 FSDP 度数与专家数的关系选 `Shard(0)` 或 `Shard(1)` 避免 padding)。详见 [[11_torchtitan_fsdp_analysis]] §8.4。
 
 ### 7.3 为何 EP 开启要显式预取
 
 `apply_fsdp` 末尾(`llama4/parallelize.py:319`):`if ep_degree == 1: return`,即只有 EP>1 才做下面的显式预取。
 
-**根本原因**:FSDP2 的隐式预取依赖 **CPU 跑在 GPU 前面**——CPU 提前发射下一层的 all-gather(见 [[torchtitan_fsdp_analysis]] §3.5)。但 EP 的 dispatch 里有**多次 D2H 同步**(§3.1 ② 的 `input_splits/output_splits`),D2H 同步会**阻塞 CPU 线程**——CPU 卡住就没法及时发射下一层 FSDP 的 all-gather,隐式预取被打断,通信暴露。
+**根本原因**:FSDP2 的隐式预取依赖 **CPU 跑在 GPU 前面**——CPU 提前发射下一层的 all-gather(见 [[11_torchtitan_fsdp_analysis]] §3.5)。但 EP 的 dispatch 里有**多次 D2H 同步**(§3.1 ② 的 `input_splits/output_splits`),D2H 同步会**阻塞 CPU 线程**——CPU 卡住就没法及时发射下一层 FSDP 的 all-gather,隐式预取被打断,通信暴露。
 
 **解决**:用 `set_modules_to_forward_prefetch` / `set_modules_to_backward_prefetch` **手工显式预取**,把下一层 all-gather 的发起**提前到 D2H 同步之前**。
 
@@ -336,9 +336,9 @@ a2a 的 backward = split 参数互换的 a2a;combine 反向 ≡ dispatch 正向
 
 ## Related Pages
 
-- [[torchtitan/index]] · [[torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
-- [[torchtitan_fsdp_analysis]] —— MoE 专家的 `edp_mesh` FSDP 与显式预取
-- [[torchtitan_pp_analysis]] —— 相邻并行维度
+- [[torchtitan/index]] · [[10_torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
+- [[11_torchtitan_fsdp_analysis]] —— MoE 专家的 `edp_mesh` FSDP 与显式预取
+- [[14_torchtitan_pp_analysis]] —— 相邻并行维度
 - [[14_megatron_ep_analysis]] —— Megatron-LM 专家并行(AllGather/AllToAll/Flex 三种 token dispatcher)
 - [[14_megatron_ep_analysis]] —— MoE 零冗余通信、AlltoAll token dispatch
 - [[21_async_collective_tensor_deepdive]] —— `AsyncCollectiveTensor` 源码追踪

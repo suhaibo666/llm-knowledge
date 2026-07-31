@@ -52,7 +52,7 @@ torchtitan 提供两个 `load_balancer` 实现,由 `apply_cp_to_forward` 按 att
 - **`_HeadTailLoadBalancer`**(SDPA 路径默认):机制见理论页 §3.3。
 - **`_PTRRLoadBalancer`**(FlexAttention 路径):机制见理论页 §3.4。
 
-> **`seq_len` 必须被 `2·cp` 整除**([[torchtitan_parallel_dims_analysis]] 的 `seq_len_divisor`):头尾配对要把序列切成 `2·cp` 个等长 chunk,这条约束在 torchtitan 里由 `ParallelDims` 校验层强制检查——这是理论页未展开的 torchtitan 特有配置校验入口。
+> **`seq_len` 必须被 `2·cp` 整除**([[10_torchtitan_parallel_dims_analysis]] 的 `seq_len_divisor`):头尾配对要把序列切成 `2·cp` 个等长 chunk,这条约束在 torchtitan 里由 `ParallelDims` 校验层强制检查——这是理论页未展开的 torchtitan 特有配置校验入口。
 
 ---
 
@@ -124,7 +124,7 @@ if isinstance(first, FlexAttention):
 - `_AllToAllRotater.exchange_buffers` 调 `ft_c.permute_tensor(...)`(`ft_c` = functional collectives),底层走 `torch.ops._c10d_functional.*`,**返回一个 `AsyncCollectiveTensor`(ACT)**。通信在 c10d 的通信 stream 上发起,**不阻塞当前计算 stream**。
 - `next_buffer` 里 `_maybe_wait(tensor)`:若是 ACT 就 `.wait()`。`ACT.wait()` 触发 `wait_tensor` op,在通信 stream 与计算 stream 之间插入跨 stream 同步。
 
-所以重叠的本质:**(B) 在通信 stream 上发起 collective 并立即返回 ACT;(C) 的 SDPA kernel 同时在计算 stream 上跑;下一轮 (A) 的 `wait()` 才在两条 stream 间同步**。这与 [[torchtitan_fsdp_analysis]] FSDP 的"手写多 stream"是不同的实现风格——CP 复用了 functional collective 内建的通信 stream + ACT 延迟 wait 机制。
+所以重叠的本质:**(B) 在通信 stream 上发起 collective 并立即返回 ACT;(C) 的 SDPA kernel 同时在计算 stream 上跑;下一轮 (A) 的 `wait()` 才在两条 stream 间同步**。这与 [[11_torchtitan_fsdp_analysis]] FSDP 的"手写多 stream"是不同的实现风格——CP 复用了 functional collective 内建的通信 stream + ACT 延迟 wait 机制。
 
 `_AllGatherRotater` 同理:第一步 `all_gather_tensor` 返回 ACT,只有第 0 步那次 all-gather 能和第 0 步 SDPA 重叠。
 
@@ -174,8 +174,8 @@ Ring 主循环、online-softmax、通信掩盖、反向双环 —— 见理论�
 ## Related Pages
 
 - [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]] —— CP/Ring Attention 通用机制(本页多节的骨架来源页)
-- [[torchtitan/index]] · [[torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
-- [[torchtitan_tp_analysis]] · [[torchtitan_pp_analysis]] —— 相邻并行维度
+- [[torchtitan/index]] · [[10_torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
+- [[12_torchtitan_tp_analysis]] · [[14_torchtitan_pp_analysis]] —— 相邻并行维度
 - [[13_megatron_cp_analysis]] —— Megatron-LM 上下文并行实现差异(`cp_comm_type` 四选一 + TE 透传)
 - [[35_deepseek_v4_context_parallel_analysis]] —— DeepSeek-V4 CP 实现、Native/TE CP、Dynamic CP
-- [[mindspeed_context_parallel_analysis]] —— MindSpeed 上下文并行实现差异(五算法运行期分派)
+- [[20_mindspeed_context_parallel_analysis]] —— MindSpeed 上下文并行实现差异(五算法运行期分派)

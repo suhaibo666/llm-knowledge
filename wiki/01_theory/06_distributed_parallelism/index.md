@@ -90,7 +90,7 @@ DP / FSDP（最外，跨机）
 ## 关联域
 
 - [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：c10d / DDP / FSDP / DTensor·TP·PP 的 PyTorch 源码
-- [[../../02_engineering/02_train_frameworks/index]] — **实现层**：Megatron-LM / torchtitan 把这些原语组合成端到端训练配方；CP/Ring Attention 各框架实现差异见 [[../../02_engineering/02_train_frameworks/megatron-lm/13_megatron_cp_analysis|Megatron-LM]] · [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_cp_analysis|torchtitan]] · [[../../02_engineering/02_train_frameworks/mindspeed/mindspeed_context_parallel_analysis|MindSpeed]] · [[../../02_engineering/02_train_frameworks/megatron-lm/35_deepseek_v4_context_parallel_analysis|DeepSeek-V4]]（通用机制见 [[20_ring_attention_and_context_parallel_analysis]]）
+- [[../../02_engineering/02_train_frameworks/index]] — **实现层**：Megatron-LM / torchtitan 把这些原语组合成端到端训练配方；CP/Ring Attention 各框架实现差异见 [[../../02_engineering/02_train_frameworks/megatron-lm/13_megatron_cp_analysis|Megatron-LM]] · [[../../02_engineering/02_train_frameworks/torchtitan/13_torchtitan_cp_analysis|torchtitan]] · [[../../02_engineering/02_train_frameworks/mindspeed/20_mindspeed_context_parallel_analysis|MindSpeed]] · [[../../02_engineering/02_train_frameworks/megatron-lm/35_deepseek_v4_context_parallel_analysis|DeepSeek-V4]]（通用机制见 [[20_ring_attention_and_context_parallel_analysis]]）
 - [[../../02_engineering/06_auto_parallel/index]] — 自动并行：自动求解 N 维布局
 - [[../02_pretraining/index]] — 预训练技术：优化器、低精度、激活重计算（与并行正交的另一组显存/算力手段）
 - [[../01_models/moonshot_kimi/27_moonep_analysis]] — **EP 负载均衡的 2026 年新解法（源码级）**：MoonEP 用动态冗余专家把“每 rank 恰收 `S×K`”变成硬保证；因属 Kimi K3 栈，页面收在模型目录

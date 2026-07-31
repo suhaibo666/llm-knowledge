@@ -5,9 +5,9 @@
 >
 > 本文是对 `fully_shard`(FSDP2)一系列追问的整理稿,**所有结论基于 PyTorch 2.9.1 源码逐条复核**。
 > 行号约定:torchtitan 以 `torchtitan/` 为根;PyTorch FSDP2 以 `[pt]` 前缀,根目录 `torch/distributed/fsdp/_fully_shard/`。
-> 配套总览见 [[torchtitan_fsdp_analysis]](标杆篇);本文是其**深挖伴篇**,聚焦**预取、掩盖、显存**三件事并配两张机制图。
+> 配套总览见 [[11_torchtitan_fsdp_analysis]](标杆篇);本文是其**深挖伴篇**,聚焦**预取、掩盖、显存**三件事并配两张机制图。
 >
-> **四页分工**(2026-07-31 补):四页均讲 torchtitan 的数据并行分片,分工不重叠——标杆总览见 [[torchtitan_fsdp_analysis]];HSDP 反向双流掩盖的展开见 [[torchtitan_hsdp_backward_overlap_analysis]];编译器友好的 DTensor-collective 替代方案见 [[torchtitan_simple_fsdp_analysis]]。
+> **四页分工**(2026-07-31 补):四页均讲 torchtitan 的数据并行分片,分工不重叠——标杆总览见 [[11_torchtitan_fsdp_analysis]];HSDP 反向双流掩盖的展开见 [[21_torchtitan_hsdp_backward_overlap_analysis]];编译器友好的 DTensor-collective 替代方案见 [[25_torchtitan_simple_fsdp_analysis]]。
 
 ---
 
@@ -167,7 +167,7 @@ eager 模式下 `init_unsharded_param`(`[pt]_fsdp_param.py:501-502`):`unsharded_
 
 **两层既有复用(源码已核)**:
 
-1. **对象级——CO 侧只分配一次,之后 storage 缩放**。`init_all_gather_outputs` 有早退守卫(`[pt]_fsdp_param.py:443-444`:`if not force_recreate and len(self.all_gather_outputs) > 0: return`)——逐参数 buffer 的**张量对象只在首迭代创建**;此后每层每迭代只是 `alloc_storage/free_storage`(`:866-874`)把**同一张量的 storage 在 0↔满之间 `resize_`**(即 [[torchtitan_fsdp_analysis]] §3.4 的 storage-resizing 技巧)。
+1. **对象级——CO 侧只分配一次,之后 storage 缩放**。`init_all_gather_outputs` 有早退守卫(`[pt]_fsdp_param.py:443-444`:`if not force_recreate and len(self.all_gather_outputs) > 0: return`)——逐参数 buffer 的**张量对象只在首迭代创建**;此后每层每迭代只是 `alloc_storage/free_storage`(`:866-874`)把**同一张量的 storage 在 0↔满之间 `resize_`**(即 [[11_torchtitan_fsdp_analysis]] §3.4 的 storage-resizing 技巧)。
 2. **物理级——caching allocator 池命中**。CI 的扁平 buffer 虽每次都是新 `torch.empty`(对象级新),但 `torch.empty` ≠ `cudaMalloc`:物理块来自 CUDA caching allocator 池。transformer 结构规整 → 每层 buffer 大小完全相同 → **稳态次次池命中,不触发 cudaMalloc**,分配只剩 µs 级池查找。
 
 **为什么 FSDP2 不自管持久池**:
@@ -225,9 +225,9 @@ eager 模式下 `init_unsharded_param`(`[pt]_fsdp_param.py:501-502`):`unsharded_
 
 ## Related Pages
 
-- [[torchtitan_fsdp_analysis]] —— FSDP2 总览标杆篇(参数切分、钩子链、reduce-scatter、HSDP);本文为其深挖伴篇
+- [[11_torchtitan_fsdp_analysis]] —— FSDP2 总览标杆篇(参数切分、钩子链、reduce-scatter、HSDP);本文为其深挖伴篇
 - [[torchtitan/index]] —— torchtitan 多维并行知识地图
-- [[torchtitan_ac_analysis]] —— 激活重计算:与 FSDP 正交叠加,AC 省激活、FSDP 省参数/梯度/优化器
-- [[torchtitan_ep_analysis]] —— EP 的 token all-to-all 含 D2H 同步,正是打断隐式预取、需显式预取的实例
+- [[22_torchtitan_ac_analysis]] —— 激活重计算:与 FSDP 正交叠加,AC 省激活、FSDP 省参数/梯度/优化器
+- [[15_torchtitan_ep_analysis]] —— EP 的 token all-to-all 含 D2H 同步,正是打断隐式预取、需显式预取的实例
 - [[30_comm_compute_overlap_analysis]] —— 跨框架计算通信掩盖对比
 - [[32_distributed_optimizer_deepdive]] —— FSDP2 / ZeRO / MindSpeed 三方对比

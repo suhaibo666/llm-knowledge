@@ -3,7 +3,7 @@
 > **代码基准**:torchtitan `main` @ `61c010fcb` · PyTorch `2.9.1+cpu`(个别更新版 API 已标注)
 > **最后更新**:2026-06-16 · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
 >
-> 本篇聚焦**通信**侧性能手段;**算力/显存**侧(低精度、算子融合、编译、ChunkedCE)见 [[torchtitan_compute_memory_optimizations_analysis]]。
+> 本篇聚焦**通信**侧性能手段;**算力/显存**侧(低精度、算子融合、编译、ChunkedCE)见 [[23_torchtitan_compute_memory_optimizations_analysis]]。
 > 行号约定:torchtitan 以 `torchtitan/torchtitan/` 为根;PyTorch 2.9.1 以 `[pt]` 前缀。
 
 ---
@@ -26,14 +26,14 @@
 
 | 维度 | 被掩盖的通信 | 藏在谁的影子里 | 机制 | 详见 |
 |---|---|---|---|---|
-| **FSDP** 前向 | all-gather(N+1) | compute(N) | 独立 AG 流 + CPU 跑在 GPU 前 + 预取 | [[torchtitan_fsdp_analysis]] §4、[[torchtitan_fsdp_prefetch_overlap_memory_analysis]] §3 |
-| **FSDP** 前向 | copy-in(N+1) | all-gather(N) | 独立 copy_in 流 + AllGatherState 双缓冲 | [[torchtitan_fsdp_prefetch_overlap_memory_analysis]] §5.3 |
-| **FSDP** 反向 | reduce-scatter(N) | compute(N-1) | 独立 RS 流 + 反向逆序预取 | [[torchtitan_fsdp_analysis]] §6 |
-| **HSDP** 反向 | all-reduce(N) | compute(N-1) + RS(N-1) | 第 5 条 all_reduce 流(不同网络资源) | [[torchtitan_hsdp_backward_overlap_analysis]] §5 |
-| **TP** | all-gather / reduce-scatter | 同层 matmul | `async_op` 机会主义;**Async-TP 真重叠**(§3) | [[torchtitan_tp_analysis]] §5 |
-| **CP** | 下一步 K/V 的 ring P2P | 当前步 SDPA | functional collective + ring 轮转 | [[torchtitan_cp_analysis]] §6 |
-| **PP** | stage 间激活/梯度 P2P | 相邻 microbatch 的 F/B | action-based runtime + isend/irecv | [[torchtitan_pp_analysis]] §5 |
-| **EP** | combine all-to-all | `shared_experts(x)` | AsyncCollectiveTensor 延迟 wait / DeepEP `sync_combine` | [[torchtitan_ep_analysis]] §5 |
+| **FSDP** 前向 | all-gather(N+1) | compute(N) | 独立 AG 流 + CPU 跑在 GPU 前 + 预取 | [[11_torchtitan_fsdp_analysis]] §4、[[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]] §3 |
+| **FSDP** 前向 | copy-in(N+1) | all-gather(N) | 独立 copy_in 流 + AllGatherState 双缓冲 | [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]] §5.3 |
+| **FSDP** 反向 | reduce-scatter(N) | compute(N-1) | 独立 RS 流 + 反向逆序预取 | [[11_torchtitan_fsdp_analysis]] §6 |
+| **HSDP** 反向 | all-reduce(N) | compute(N-1) + RS(N-1) | 第 5 条 all_reduce 流(不同网络资源) | [[21_torchtitan_hsdp_backward_overlap_analysis]] §5 |
+| **TP** | all-gather / reduce-scatter | 同层 matmul | `async_op` 机会主义;**Async-TP 真重叠**(§3) | [[12_torchtitan_tp_analysis]] §5 |
+| **CP** | 下一步 K/V 的 ring P2P | 当前步 SDPA | functional collective + ring 轮转 | [[13_torchtitan_cp_analysis]] §6 |
+| **PP** | stage 间激活/梯度 P2P | 相邻 microbatch 的 F/B | action-based runtime + isend/irecv | [[14_torchtitan_pp_analysis]] §5 |
+| **EP** | combine all-to-all | `shared_experts(x)` | AsyncCollectiveTensor 延迟 wait / DeepEP `sync_combine` | [[15_torchtitan_ep_analysis]] §5 |
 
 **共性**:全靠"独立 stream / functional collective + 把通信发起提前到计算之前 + 用 event/ACT 界定 wait 时机"。本篇 §3–§5 补的是**比上表更激进**的两类:把通信**拆进算子**(Async-TP)、把集合通信换成**更快的基座**(对称内存),以及**编译期重排**(reorder pass)。
 
@@ -41,7 +41,7 @@
 
 ## 2. Async Tensor Parallel:把 all-gather / reduce-scatter 拆进 matmul
 
-[[torchtitan_tp_analysis]] §5.2 已点出 Async-TP;这里补**机制全貌**。入口 `maybe_enable_async_tp`(`distributed/tensor_parallel.py:102-115`)只做两件事:
+[[12_torchtitan_tp_analysis]] §5.2 已点出 Async-TP;这里补**机制全貌**。入口 `maybe_enable_async_tp`(`distributed/tensor_parallel.py:102-115`)只做两件事:
 
 ```python
 if not parallelism.enable_async_tensor_parallel: return        # :105
@@ -94,7 +94,7 @@ Async-TP 的融合算子要求该集合的进程组**已注册对称内存**,否
 
 ## 4. MinimalAsyncEP:symm-mem + Triton 的 EP dispatch(新后端)
 
-[[torchtitan_ep_analysis]] 讲了 DeepEP/HybridEP;`#3561` 新增的 **MinimalAsyncEP** 是第三个 EP token-dispatch 后端,纯 PyTorch(symmetric memory + Triton),无 `deep_ep` 外部依赖。
+[[15_torchtitan_ep_analysis]] 讲了 DeepEP/HybridEP;`#3561` 新增的 **MinimalAsyncEP** 是第三个 EP token-dispatch 后端,纯 PyTorch(symmetric memory + Triton),无 `deep_ep` 外部依赖。
 
 - **做什么**:用对称内存的 all-to-allv 把路由 token **直接写进对端 rank 的接收缓冲、且已是最终 expert-major 布局**,跳过标准路径的"rank-major 物化 + `_permute()`"(`minimal_async_ep/api.py:529-531`)。
 - **8 个自写 Triton kernel**(`minimal_async_ep/kernels.py`):count 交换、dispatch/combine 元数据、核心的 permute+scatter+P2P-put(`_copy_rows_to_peer_ptrs_kernel`)、top-k combine 规约(fp32 累加)及其反向。这是**全仓唯一的自写 Triton**。
@@ -106,7 +106,7 @@ Async-TP 的融合算子要求该集合的进程组**已注册对称内存**,否
 
 ## 5. full_dtensor / spmd_types:整网 DTensor 的 SPMD 后端
 
-`parallelism.spmd_backend: Literal["default","full_dtensor","spmd_types"]="default"`(`configs.py:142-149`)。[[torchtitan_parallel_dims_analysis]] §8 提过 `full_dtensor`,这里补定位与动机。
+`parallelism.spmd_backend: Literal["default","full_dtensor","spmd_types"]="default"`(`configs.py:142-149`)。[[10_torchtitan_parallel_dims_analysis]] §8 提过 `full_dtensor`,这里补定位与动机。
 
 - **default(默认/legacy)**:把 `dp_shard×cp` 折成一个 `fsdp` 轴,**只有 TP/EP 表达成 DTensor**,DP/CP "out of band"(在 DTensor 程序外用 FSDP/CP 命令式处理)(`parallel_dims.py:322-329/536-539`)。
 - **full_dtensor**:**整张 SPMD mesh(dp_replicate/dp_shard/cp/tp)都表达成 DTensor**,参数/buffer/输入全是 DTensor(`full_dtensor.py:7-16`)。dense mesh 不折叠 dp_shard/cp(`parallel_dims.py:286-296`);`fully_shard` 拿 `DataParallelMeshDims` 自己在初始化时折叠 dp_shard+cp(`fsdp.py:123-130`)。输入也经 `parallelize_inputs` 包成 DTensor(`full_dtensor.py:128-167`)。
@@ -114,7 +114,7 @@ Async-TP 的融合算子要求该集合的进程组**已注册对称内存**,否
 - **动机(性能/正确性)**:把整网分片**一次性、声明式**表达成单一 DTensor/SPMD 程序,便于 compile / autoparallel,取代 DP/CP 命令式 out-of-band 应用;`fully_shard` 从显式 `DataParallelMeshDims` 做单发分片折叠。
 - **状态**:**实验性、过渡中**,`default` 才是出货路径(多处 `TODO ... after full_dtensor backend is removed` / `once migration to spmd_types is complete`)。MinimalAsyncEP 明确拒绝 full_dtensor(§4)。
 
-> 相关:graph_trainer 实验的 **SimpleFSDP**(把整个数据并行表达成可追踪的 DTensor 集合通信、交编译器分桶重叠)是同一「整网 DTensor + 编译器」方向的近亲,详见专题 [[torchtitan_simple_fsdp_analysis]]。
+> 相关:graph_trainer 实验的 **SimpleFSDP**(把整个数据并行表达成可追踪的 DTensor 集合通信、交编译器分桶重叠)是同一「整网 DTensor + 编译器」方向的近亲,详见专题 [[25_torchtitan_simple_fsdp_analysis]]。
 
 ---
 
@@ -156,17 +156,17 @@ Async-TP 的融合算子要求该集合的进程组**已注册对称内存**,否
 - **对称内存(§3)**:NVLink 零拷贝 / multimem 一发集合的基座,Async-TP 与 FSDP 对称内存共用;FSDP 侧 `force_sum_reduction` + `set_symm_mem_for_comm`(后者需 >2.9.1),限 Hopper+。
 - **MinimalAsyncEP(§4)**:新 EP 后端,symm-mem 直写 E-major + 自写 Triton + 融合 barrier;**不重叠通信计算**,lever 是 CUDA graph/compile 去 launch 开销——与 DeepEP(combine 重叠 shared_experts)路线不同。
 - **full_dtensor(§5)**:把整网表达成单一 DTensor/SPMD 程序的实验后端,为 compile/autoparallel 铺路;默认仍是 DP/CP out-of-band 的 legacy 路径。
-- 算力/显存侧手段见 [[torchtitan_compute_memory_optimizations_analysis]]。
+- 算力/显存侧手段见 [[23_torchtitan_compute_memory_optimizations_analysis]]。
 
 ---
 
 ## Related Pages
 
-- [[torchtitan_compute_memory_optimizations_analysis]] —— 算力/显存侧性能手段,与本篇互补
-- [[torchtitan_tp_analysis]] —— TP 通信与 Async-TP 入口
-- [[torchtitan_ep_analysis]] —— EP token all-to-all(DeepEP/HybridEP),MinimalAsyncEP 的对照
-- [[torchtitan_hsdp_backward_overlap_analysis]] —— HSDP 反向双流掩盖
-- [[torchtitan_simple_fsdp_analysis]] —— 编译器友好 FSDP(整网 DTensor 近亲)
+- [[23_torchtitan_compute_memory_optimizations_analysis]] —— 算力/显存侧性能手段,与本篇互补
+- [[12_torchtitan_tp_analysis]] —— TP 通信与 Async-TP 入口
+- [[15_torchtitan_ep_analysis]] —— EP token all-to-all(DeepEP/HybridEP),MinimalAsyncEP 的对照
+- [[21_torchtitan_hsdp_backward_overlap_analysis]] —— HSDP 反向双流掩盖
+- [[25_torchtitan_simple_fsdp_analysis]] —— 编译器友好 FSDP(整网 DTensor 近亲)
 - [[21_async_collective_tensor_deepdive]] —— AsyncCollectiveTensor 源码追踪(异步通信底座)
 - [[30_comm_compute_overlap_analysis]] —— 跨框架计算-通信掩盖对比
 - [[torchtitan/index]] —— torchtitan 多维并行知识地图

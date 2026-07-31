@@ -312,7 +312,7 @@ Loss Parallel:logits 不动 → 前向 3 次 [B,S,1]/[B,S] 微 all-reduce → �
 
 新路径的核心是 `Module.parallelize()`(`torchtitan/protocols/module.py:176`):递归遍历模块树,对每个带 `sharding_config` 的模块:
 
-1. `_shard_states`:用 `distribute_tensor` 把参数变成 DTensor。每个参数独立 `resolve_mesh(axes)`——**非 full_dtensor 路径下只保留 `tp`/`ep` 轴为"带内"**(DP/CP 属带外,交给 FSDP/CP),见 [[torchtitan_parallel_dims_analysis]] §7。
+1. `_shard_states`:用 `distribute_tensor` 把参数变成 DTensor。每个参数独立 `resolve_mesh(axes)`——**非 full_dtensor 路径下只保留 `tp`/`ep` 轴为"带内"**(DP/CP 属带外,交给 FSDP/CP),见 [[10_torchtitan_parallel_dims_analysis]] §7。
 2. 把 `forward` 包成 `redistribute 输入 → [local_map] → forward → redistribute 输出`。
 
 `ShardingConfig`(`torchtitan/protocols/sharding.py`)的字段:`state_shardings`(参数切法)、`in_src/in_dst_shardings`(输入 redistribute)、`out_src/out_dst_shardings`(输出 redistribute)、`local_map`(attention 内核用,把 DTensor 转本地张量再跑 SDPA/Flex)。`decoder_sharding.py` 提供 `colwise_config()`/`rowwise_config()`/`norm_config()` 等工厂,`llama3/sharding.py` 把它们填到各层 Config 上。
@@ -360,9 +360,9 @@ loss_parallel():logits 保持 Shard(vocab),交叉熵用 3 次微 all-reduce 算�
 
 ## Related Pages
 
-- [[torchtitan/index]] · [[torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
-- [[torchtitan_fsdp_analysis]] —— FSDP 与 TP 的 DTensor 叠加
-- [[torchtitan_ep_analysis]] —— MoE 专家的 TP 切法(`Shard(1)/Shard(2)`)对比
+- [[torchtitan/index]] · [[10_torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
+- [[11_torchtitan_fsdp_analysis]] —— FSDP 与 TP 的 DTensor 叠加
+- [[15_torchtitan_ep_analysis]] —— MoE 专家的 TP 切法(`Shard(1)/Shard(2)`)对比
 - [[12_megatron_tp_analysis]] —— Megatron-LM 张量并行(`ColumnParallel`/`RowParallel` 共轭算子 f/g)
 - [[21_async_collective_tensor_deepdive]] —— `AsyncCollectiveTensor` 源码追踪(`__torch_dispatch__`、`wait_tensor`)
 - [[30_comm_compute_overlap_analysis]] —— 计算通信掩盖对比分析

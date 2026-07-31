@@ -1,7 +1,7 @@
 # MindSpeed 计算通信掩盖(通算重叠)— 源码级深度解析
 
 > **代码基线**:MindSpeed core `master` @ `1432cb09`(patch Megatron `core_r0.17.0`) · MindSpeed-LLM `master` @ `0c16322d` · 阅读日期 2026-06-23
-> **范围**:本页只讲"如何把集合通信藏到计算背后"——TP 的 all-gather/reduce-scatter、EP 的 all-to-all、PP 的 P2P、DP 的日志 all-reduce 各自被哪种特性、用什么机制掩盖。**每个掩盖特性都按统一四件套拆解**:① 机制(谁藏谁)② 时间线 / before-after 图示 ③ `> [!tip] 优化点` callout(量化:掩盖比例 / 气泡公式 / 隐藏的通信量)④ 源码解读(实际调用 + autograd + `file:line`,行号均经实际打开核对)。**并行的切分结构本身**(为什么要这些通信)归姊妹页 [[mindspeed_parallelism_analysis]],融合算子底座(MC2/lcal/GMM 的算子层)归 [[mindspeed_ascend_affinity_analysis]],这里只交叉引用、不重复。属 [[mindspeed/index]] 系列。
+> **范围**:本页只讲"如何把集合通信藏到计算背后"——TP 的 all-gather/reduce-scatter、EP 的 all-to-all、PP 的 P2P、DP 的日志 all-reduce 各自被哪种特性、用什么机制掩盖。**每个掩盖特性都按统一四件套拆解**:① 机制(谁藏谁)② 时间线 / before-after 图示 ③ `> [!tip] 优化点` callout(量化:掩盖比例 / 气泡公式 / 隐藏的通信量)④ 源码解读(实际调用 + autograd + `file:line`,行号均经实际打开核对)。**并行的切分结构本身**(为什么要这些通信)归姊妹页 [[10_mindspeed_parallelism_analysis]],融合算子底座(MC2/lcal/GMM 的算子层)归 [[13_mindspeed_ascend_affinity_analysis]],这里只交叉引用、不重复。属 [[mindspeed/index]] 系列。
 
 ---
 
@@ -301,7 +301,7 @@ alltoall_out, shared_expert_mm2_out = torch_npu.npu_gmm_alltoallv(
 | **fb-overlap** | 双 stream + dw 延迟 | **对侧微批**前向/反向 + dw 填尾 | 是 | 低(最彻底) | `fwdbwd.py:37,203-205,239` |
 | alltoall-MC2 | NPU 融合大算子 | 算子内部 tile(a2a-v⊕GMM) | 否 | 低(融合,粒度不可调) | `mc2_fuse_a2a.py:39,130` |
 
-直觉:前三条是"流水掩盖"(异步 handle / 跨微批交错),最后一条是"融合掩盖"(单 kernel);fb-overlap 暴露最低但约束最重,alltoall-MC2 与所有软流水路线互斥。EP all-to-all 的语义/切分与跨框架对照见 [[mindformers_moe_token_dispatcher_analysis]] 与 [[mindspeed_parallelism_analysis]]。
+直觉:前三条是"流水掩盖"(异步 handle / 跨微批交错),最后一条是"融合掩盖"(单 kernel);fb-overlap 暴露最低但约束最重,alltoall-MC2 与所有软流水路线互斥。EP all-to-all 的语义/切分与跨框架对照见 [[mindformers_moe_token_dispatcher_analysis]] 与 [[10_mindspeed_parallelism_analysis]]。
 
 ---
 
@@ -452,10 +452,10 @@ return val
 ## Related Pages
 
 - [[mindspeed/index]] —— MindSpeed × MindSpeed-LLM 特性总罗盘与 `MindSpeedFeature` 契约
-- [[mindspeed_parallelism_analysis]] —— 并行切分结构(TP/EP/PP/CP):本页通信的"来源",姊妹页
-- [[mindspeed_context_parallel_analysis]] —— CP 家族的 send-recv overlap、双环 intra/inter 重叠、RingP2P 异步
-- [[mindspeed_memory_optimization_analysis]] —— 重计算/Swap/zero-memory;fb-overlap、RiPipe、MC2-recompute 与之深度耦合
-- [[mindspeed_ascend_affinity_analysis]] —— GroupedMatMul、融合算子、HCCL buffer、lcal/torch_npu 算子底座(MC2/CoC 依赖)
+- [[10_mindspeed_parallelism_analysis]] —— 并行切分结构(TP/EP/PP/CP):本页通信的"来源",姊妹页
+- [[20_mindspeed_context_parallel_analysis]] —— CP 家族的 send-recv overlap、双环 intra/inter 重叠、RingP2P 异步
+- [[12_mindspeed_memory_optimization_analysis]] —— 重计算/Swap/zero-memory;fb-overlap、RiPipe、MC2-recompute 与之深度耦合
+- [[13_mindspeed_ascend_affinity_analysis]] —— GroupedMatMul、融合算子、HCCL buffer、lcal/torch_npu 算子底座(MC2/CoC 依赖)
 - [[30_comm_compute_overlap_analysis]] —— 通算掩盖的跨框架综述(对照视角)
 - [[20_megatron_comm_overlap_analysis]] —— 被打补丁的宿主 Megatron 原生通算重叠(MC2/CoC/DualPipeV 即在其上替换)
 - [[mindformers_moe_token_dispatcher_analysis]] —— MindSpore 侧 MoE token dispatch/all-to-all 对照

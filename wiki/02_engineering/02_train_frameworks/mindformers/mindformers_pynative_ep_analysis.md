@@ -218,7 +218,7 @@ PyNative 还有第三个 EP 类 `OverlapExpertParallel`(`ep_overlap.py:77`),它*
 
 - [[mindformers_moe_token_dispatcher_analysis]] —— Graph 模式去冗余 dispatcher 的逐算子图解(本文的姊妹篇,机制更细)
 - [[14_megatron_ep_analysis]] —— Megatron-LM 的 EP / token dispatcher 对照
-- [[torchtitan_ep_analysis]] —— torchtitan 的 EP(AllToAll / DeepEP 路径)对照
+- [[15_torchtitan_ep_analysis]] —— torchtitan 的 EP(AllToAll / DeepEP 路径)对照
 - [[20_deepseek_moe_analysis]] —— DeepSeek MoE 路由与共享专家(k、E 的来源)
 - [[02_engineering/02_train_frameworks/index]] —— 训练框架域入口
 

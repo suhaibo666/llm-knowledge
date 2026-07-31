@@ -70,9 +70,9 @@ All source ingestions and significant wiki updates are logged here.
 **Type**: Structure Reorg / Dedup（计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 3 第二部分）
 
 - **三页合并为一**：`megatron-lm/megatron_ddp_optimizer_analysis.md`(446)、`megatron-lm/megatron_optimizer_internals_analysis.md`(227)逐字并入 `megatron-lm/16_megatron_distributed_optimizer_analysis.md`(原 445→合并后 984 行),文件名保留最通用者。以 `megatron_ddp_optimizer_analysis` 的 ZeRO 0-3 阶梯框架(§0-§5,含「阶段①-④」命名,供全库既有引用免改)为骨架;`megatron_optimizer_internals_analysis` 的优化器类层次/混合精度/step 五步/Loss Scaling/梯度裁剪/LR 调度整体并入为新 §6-§11;本页原稿(通信组定义/FP8-FP4/CPU offload/三种 FSDP 实现对比/Layer-Wise+Muon 集成)保留为 §2.8-§2.11、§12-§14,真正重复的段落(通信量 P 记号复述、类继承结构的简化版)删除、仅保留 2026-06-16 增量更新的独有更正。三页内部原有的跨页 `[[wiki link]]` 互指(如"详见 xxx §A.7 的更新")已改写为同页 §N 引用。
-- **两个 torchtitan FSDP 四页补分工声明**(不合并,`02_train_frameworks/torchtitan/torchtitan_fsdp_analysis.md`/`torchtitan_simple_fsdp_analysis.md`/`torchtitan_fsdp_prefetch_overlap_memory_analysis.md`/`torchtitan_hsdp_backward_overlap_analysis.md` 各页头补一句"四页分工"声明,标杆篇/深挖伴篇/HSDP 展开篇/编译器路径替代方案互指)。
+- **两个 torchtitan FSDP 四页补分工声明**(不合并,`02_train_frameworks/torchtitan/11_torchtitan_fsdp_analysis.md`/`25_torchtitan_simple_fsdp_analysis.md`/`20_torchtitan_fsdp_prefetch_overlap_memory_analysis.md`/`21_torchtitan_hsdp_backward_overlap_analysis.md` 各页头补一句"四页分工"声明,标杆篇/深挖伴篇/HSDP 展开篇/编译器路径替代方案互指)。
 - **横向页收缩**:`32_distributed_optimizer_deepdive.md`(194→185 行)§一 的 ZeRO-1 因果链完整推导(与合并后的 megatron 页 §阶段② 重复)收缩为一段 + 指针,保留 §二(梯度累积 K 倍通信量表)、§三(FSDP2/Megatron/MindSpeed 三方对比矩阵,核心矩阵型内容)、§四(MindSpeed param 临时化,全库唯一出处,未改)、§五/§六(Adam vs Muon 内存与系统影响,通用理论、未在任何子页找到对应,未改)、§七(选型决策树)原样保留;补 §六.3 指向合并后 megatron 页 §14.1 的 Muon 具体解法指针;补齐全页此前缺失的 `## Related Pages` 区块(6 条)。
-- **入链改写**:全库 12 个引用 `megatron_ddp_optimizer_analysis`/`megatron_optimizer_internals_analysis` 的文件(含 `megatron-lm/index.md` 的系列计数 18→16、`torchtitan/index.md`、`19_megatron_dist_checkpointing_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`、`15_megatron_pp_schedulers_analysis.md`、`12_megatron_tp_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md`、`23_megatron_precision_cudagraph_fusion_analysis.md`、`28_megatron_training_stability_observability_analysis.md`、`torchtitan_fsdp_analysis.md`、本 changelog 历史条目的链接目标)全部改指 `16_megatron_distributed_optimizer_analysis`,原两处独立 Related Pages 行合并去重;`megatron-lm/index.md` 移除两行系列表格行(补一句"已并入"说明)。
+- **入链改写**:全库 12 个引用 `megatron_ddp_optimizer_analysis`/`megatron_optimizer_internals_analysis` 的文件(含 `megatron-lm/index.md` 的系列计数 18→16、`torchtitan/index.md`、`19_megatron_dist_checkpointing_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`、`15_megatron_pp_schedulers_analysis.md`、`12_megatron_tp_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md`、`23_megatron_precision_cudagraph_fusion_analysis.md`、`28_megatron_training_stability_observability_analysis.md`、`11_torchtitan_fsdp_analysis.md`、本 changelog 历史条目的链接目标)全部改指 `16_megatron_distributed_optimizer_analysis`,原两处独立 Related Pages 行合并去重;`megatron-lm/index.md` 移除两行系列表格行(补一句"已并入"说明)。
 - **验收**:`python tools/check_links.py` pages=373(375−2)、broken=0;`python -m pytest -q` 77 passed。
 
 ---
@@ -81,10 +81,10 @@ All source ingestions and significant wiki updates are logged here.
 
 **Type**: Structure Reorg / Dedup（计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 3 第一部分）
 
-- `02_train_frameworks/30_comm_compute_overlap_analysis.md`(271→124 行)由"基于 Megatron/torchtitan 两框架源码分析"的机制正文页,收缩为 **Megatron-LM/torchtitan/MindSpeed 三框架计算通信掩盖跨维度对比矩阵页**:与三个框架的通信掩盖权威机制页([[20_megatron_comm_overlap_analysis]] 740 行、[[torchtitan_comm_optimizations_overlap_analysis]] 170 行、[[mindspeed_comm_overlap_analysis]] 461 行)逐节核对,机制正文找到子页对应即收缩为一句 + 链接;子页缺失的机制段逐字下沉(注明来源):
+- `02_train_frameworks/30_comm_compute_overlap_analysis.md`(271→124 行)由"基于 Megatron/torchtitan 两框架源码分析"的机制正文页,收缩为 **Megatron-LM/torchtitan/MindSpeed 三框架计算通信掩盖跨维度对比矩阵页**:与三个框架的通信掩盖权威机制页([[20_megatron_comm_overlap_analysis]] 740 行、[[24_torchtitan_comm_optimizations_overlap_analysis]] 170 行、[[11_mindspeed_comm_overlap_analysis]] 461 行)逐节核对,机制正文找到子页对应即收缩为一句 + 链接;子页缺失的机制段逐字下沉(注明来源):
   - `20_megatron_comm_overlap_analysis.md` 新增 §5.8(Shared Expert 独立 stream 状态机,`moe_shared_expert_overlap`)、§5.3 补 Layer→5 子节点拆解/`stream_acquire_context()`/镜像层配对三段、§5.6 补 DeepEP/HybridEP 硬件后端速查表(图片迁至 `megatron-lm/assets/`)。
-  - `torchtitan_pp_analysis.md` §7.2/§7.3 补 I/W 拆分"非按模型结构"要点与 `OVERLAP_F_B` 源码 + "非真并发"澄清。
-  - `torchtitan_comm_optimizations_overlap_analysis.md` §3.3 补 Graph Trainer FSDP AG/RS 重排 pass 一句。
+  - `14_torchtitan_pp_analysis.md` §7.2/§7.3 补 I/W 拆分"非按模型结构"要点与 `OVERLAP_F_B` 源码 + "非真并发"澄清。
+  - `24_torchtitan_comm_optimizations_overlap_analysis.md` §3.3 补 Graph Trainer FSDP AG/RS 重排 pass 一句。
   - 新增 §四"MindSpeed 掩盖机制概览"(此前该页完全未提及 MindSpeed)。
 - 保留三子页均无的合成视图:概念分层图(§一)、combined_1f1b vs ZBV/DualPipeV 架构差异分析(新 §三,含 MindSpeed fb-overlap+DualPipeV 定位)、Sub-Layer 级掩盖可达性矩阵(§四,补 MindSpeed 列)、框架差异总结表(§五,补 MindSpeed 行)。
 - `31_comm_compute_fusion_guide.md` 与本页头各补一句"融合"(单 kernel)vs"掩盖"(独立调度重叠)边界声明,互指。
@@ -96,11 +96,11 @@ All source ingestions and significant wiki updates are logged here.
 
 **Type**: Structure Reorg / Dedup（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.5；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 2）
 
-- **新建** `01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis.md`（655 行）：抽取四份框架 CP 分析页（`13_megatron_cp_analysis` 391、`torchtitan_cp_analysis` 345、`mindspeed_context_parallel_analysis` 420、`35_deepseek_v4_context_parallel_analysis` 853，合计 2009 行）里重复讲的通用机制——CP 动机（attention `O(S²)` 墙）、与 TP/PP/DP/EP 的组合关系、序列切分（朴素连续切分 + 折叠/头尾配对负载均衡定量证明 + PTRR 任意稀疏掩码均衡 + RoPE 切分不变量）、因果 mask 三分支裁剪、四种通信调度（Ring P2P + online-softmax、All-gather 双缓冲、Ulysses 头维换轴、分层混合 N 级分组构造）、通信量代数统一对比、Dynamic CP 通用机制。逐段择"最深最完整版本"逐字为骨架并注明来源：MindSpeed 提供负载均衡定量证明 + RoPE 不变量 + 因果三分支裁剪 + online-softmax 公式 + Ulysses 全套机制 + Hybrid 量化论证；torchtitan 提供 Ring 主循环伪代码 + 通信掩盖时序 + 反向双环原理 + PTRR；DeepSeek-V4 提供 Native CP AllGather 代码 + 分层分组构造代码 + 通信量统一公式；Megatron-LM 提供 CP 动机 + 并行组合关系。其余版本的独有补充/口径差异（如 Ulysses 通信量"2 次"vs"4 次"计数粒度、通信量公式是否显式含 `/TP` 因子）逐段并注，不强行合并掩盖。
+- **新建** `01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis.md`（655 行）：抽取四份框架 CP 分析页（`13_megatron_cp_analysis` 391、`13_torchtitan_cp_analysis` 345、`20_mindspeed_context_parallel_analysis` 420、`35_deepseek_v4_context_parallel_analysis` 853，合计 2009 行）里重复讲的通用机制——CP 动机（attention `O(S²)` 墙）、与 TP/PP/DP/EP 的组合关系、序列切分（朴素连续切分 + 折叠/头尾配对负载均衡定量证明 + PTRR 任意稀疏掩码均衡 + RoPE 切分不变量）、因果 mask 三分支裁剪、四种通信调度（Ring P2P + online-softmax、All-gather 双缓冲、Ulysses 头维换轴、分层混合 N 级分组构造）、通信量代数统一对比、Dynamic CP 通用机制。逐段择"最深最完整版本"逐字为骨架并注明来源：MindSpeed 提供负载均衡定量证明 + RoPE 不变量 + 因果三分支裁剪 + online-softmax 公式 + Ulysses 全套机制 + Hybrid 量化论证；torchtitan 提供 Ring 主循环伪代码 + 通信掩盖时序 + 反向双环原理 + PTRR；DeepSeek-V4 提供 Native CP AllGather 代码 + 分层分组构造代码 + 通信量统一公式；Megatron-LM 提供 CP 动机 + 并行组合关系。其余版本的独有补充/口径差异（如 Ulysses 通信量"2 次"vs"4 次"计数粒度、通信量公式是否显式含 `/TP` 因子）逐段并注，不强行合并掩盖。
 - **四页收缩**（通用段替换为一句定位 + 链接，页头补划界声明，各自实现差异/源码走读/性能数据/配置全保留）：
   - `13_megatron_cp_analysis.md` 391→131 行：保留 `cp_comm_type` 四选一配置接口、TE 透传架构、选型决策树、Dynamic CP 的 dispatcher 兼容/CUDA Graph 守卫等 Megatron 特有源码细节。
-  - `torchtitan_cp_analysis.md` 345→181 行：保留 SDPA-ring 与 FlexAttention-allgather 双路径架构（torchtitan 独有）、DTensor dispatcher 接线、`functional collectives`/`AsyncCollectiveTensor` 异步实现（不手写 CUDA stream）。
-  - `mindspeed_context_parallel_analysis.md` 420→345 行：保留五算法运行期分派脊柱、Ring **双环**（outer/inner window + 双 dKV 反向环）、**Adaptive CP**（调度驱动 + rank 重映射）、**KV-cache CP**（显存换反向通信）——后三项四框架中仅 MindSpeed 独有。
+  - `13_torchtitan_cp_analysis.md` 345→181 行：保留 SDPA-ring 与 FlexAttention-allgather 双路径架构（torchtitan 独有）、DTensor dispatcher 接线、`functional collectives`/`AsyncCollectiveTensor` 异步实现（不手写 CUDA stream）。
+  - `20_mindspeed_context_parallel_analysis.md` 420→345 行：保留五算法运行期分派脊柱、Ring **双环**（outer/inner window + 双 dKV 反向环）、**Adaptive CP**（调度驱动 + rank 重映射）、**KV-cache CP**（显存换反向通信）——后三项四框架中仅 MindSpeed 独有。
   - `35_deepseek_v4_context_parallel_analysis.md` 853→613 行：只裁掉与理论页字面重复的 Native CP AllGather 源码 walkthrough、Hierarchical CP 分组构造代码、标准 attention 通信量公式；MLA 降低 CP 通信量 ~128 倍的推导、CSA/HCA 压缩注意力与 CP 交互的论文↔代码 gap 审计（本页核心贡献）、RoPE 的 CP 感知、TE `cp_stream` 双缓冲机制、Dynamic CP 对 MLA 的不支持、CP 与 EP 带宽竞争等 DSv4 特有内容零删减。
 - **索引与入链**：`06_distributed_parallelism/index.md` 补条目（页面列表 + 建议阅读顺序 + 显存通信总账 CP 行 + 关联域指向四份框架页）；`megatron-lm/index.md`、`torchtitan/index.md`、`mindspeed/index.md` 三处描述同步指向理论页；四页 Related Pages 与理论页 Related Pages 双向互链。
 - **验收**：`python tools/check_links.py` pages=375（374+1）、broken=0、orphans=0；`ambiguous`/`bare_index` 69→70（新页 Related Pages 末尾沿用同目录 8 个既有页面的裸 `[[index]]` 惯例，与本次改动前基线持平 +1，属 P7 Task 8 全库裸 index 清零范围，非本次引入的新问题）。`python -m pytest tools/ -q` 77 passed。
@@ -116,7 +116,7 @@ All source ingestions and significant wiki updates are logged here.
 3. **虚假指针修正**：`35_deepseek_v4_context_parallel_analysis.md:565` 与理论页 §11 声称 `resolve_cp_group`/`PackedSeqParams` 源码"已并入 `13_megatron_cp_analysis.md` §3"，但收缩时该源码级细节（`packed_seq_params.py:23-24`/`:69`、`transformer_engine.py:1798`、#5215 修复 `:1886`、`GPTModel`/`GatedDeltaNet`/MTP 消费者清单）被误删且全库无处收留。采用方案 (a)：逐字恢复进 `13_megatron_cp_analysis.md` §3.1「机制（源码）」，两处指针随之变为如实表述（391→131→135 行）。
 4. **理论页 §9 补充口径差异第三条**：核实 DSv4 与 MindSpeed 的 Ulysses/a2a 通信量公式在扣除已知的 TP 因子、fwd/bwd 口径两项调整后仍残留 **cp 倍**未归因差异（Ring 行同样两项调整后可精确抵消至 2 倍，Ulysses/a2a 行不能）——新增 `[!contradiction]` callout 如实披露，不假装已解释，提示读者两页公式不可直接换算。
 5. **符号消歧**：§9 开头补充说明本节 $h$ 指头数，与 §0 全局记号表的 $h$（隐藏维度）是两个不同的量（本节 $h\times d$ 才对应 §0 的 $h$）。
-6. **引用来源订正**：理论页 §4.1 "从朴素 $cp\cdot$(全块)降到约一半"一句的引用来源从 `mindspeed_context_parallel_analysis.md §4.3` 订正为 `§4.3/§4.4`（三分支裁剪机制本体在 §4.3，但该精确量化措辞的原始出处是 §4.4 通信量代数节的 `[!tip]` 优化点 callout）。
+6. **引用来源订正**：理论页 §4.1 "从朴素 $cp\cdot$(全块)降到约一半"一句的引用来源从 `20_mindspeed_context_parallel_analysis.md §4.3` 订正为 `§4.3/§4.4`（三分支裁剪机制本体在 §4.3，但该精确量化措辞的原始出处是 §4.4 通信量代数节的 `[!tip]` 优化点 callout）。
 
 **验收**：`python tools/check_links.py` pages=375、broken=0（不变）；`python -m pytest tools/ -q` 77 passed。
 
@@ -1491,7 +1491,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **新增 [[cuda_gemm_kernel_analysis]]**：以 SM80 / A100 代表性配置串起 Grid→CTA→Warp→MMA、M/N 空间切块与 K 时间归约、`cp.async` 完成语义、每线程约 232 寄存器账本、shared-memory epilogue 与生产级 kernel 骨架。
 - **新增 [[cuda_nonmatmul_kernels_analysis]]**：以 roofline + 五类数据依赖为统一分类，覆盖 elementwise、reduction、norm、FlashAttention、stencil、scan、gather/scatter/sort，明确 shape 会让同一算子跨 compute-/memory-/latency-bound 阵营。
 - **新增 [[ascend_kernel_execution_model_analysis]]**：把 CUDA 两篇映射到 DaVinci AI Core 的 Cube/Vector/Scalar/MTE、GM→L1→L0→UB 显式缓冲链、Queue 双缓冲、FixPipe，以及 compute / memory / communication 三条训练优化主线；明确其为平台对照材料、非官方文档。
-- **可核验性与图形**：三页逐章附 raw HTML 行号范围和快照哈希；19 个内嵌 SVG 已渲染为 PNG。更新 GPU Kernel、工程与总索引，并向 [[gpu_kernel_guide]]、[[cuda_execution_model_guide]]、[[triton_03_matmul_guide]]、[[operator_optimization_guide]]、[[mindspeed_ascend_affinity_analysis]]、[[21_npu_inductor_optimization_analysis]] 补回链；未发现需标记的既有内容冲突。
+- **可核验性与图形**：三页逐章附 raw HTML 行号范围和快照哈希；19 个内嵌 SVG 已渲染为 PNG。更新 GPU Kernel、工程与总索引，并向 [[gpu_kernel_guide]]、[[cuda_execution_model_guide]]、[[triton_03_matmul_guide]]、[[operator_optimization_guide]]、[[13_mindspeed_ascend_affinity_analysis]]、[[21_npu_inductor_optimization_analysis]] 补回链；未发现需标记的既有内容冲突。
 
 ---
 
@@ -1915,7 +1915,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - **Blackwell 融合核**(`linear_cross_entropy/blackwell/`):`entry.py:147-151` 按 `vocab_per_split=512` 切 `num_splits` 块、逐块 online-softmax(`fwd_mainloop.py:40-53`),`:246/253` 跨 TP `all_reduce(MAX/SUM)`;**硬件门控仅算力 10.x**(`:34-40` 非 Blackwell `raise`)——[!warning] 标注。
   - **对照** MindSpeed `chunk_loss`(序列维框架层 autograd,可移植 NPU)vs Megatron `linear`(词表维 kernel 融合,绑 Blackwell);同属 Flash-Attention 式"online-softmax + 不物化大矩阵 + 反向重算"。
 
-**整合**:[[megatron-lm/index]] 专题深挖区(融合算子项下)新增条目;[[mindspeed_memory_optimization_analysis]] §8 chunk-loss 增"跨框架对照"回链。**校验**:`model_parallel_config.py:257/262`、`gpt_model.py:157-160/263/799-802`、`fused_linear_cross_entropy.py:34-40/161-181`、`blackwell/entry.py:147-151/246/253`、`language_module.py:157/180` 均逐一开文件核对;交叉链接 4 个目标经 find 确认存在。
+**整合**:[[megatron-lm/index]] 专题深挖区(融合算子项下)新增条目;[[12_mindspeed_memory_optimization_analysis]] §8 chunk-loss 增"跨框架对照"回链。**校验**:`model_parallel_config.py:257/262`、`gpt_model.py:157-160/263/799-802`、`fused_linear_cross_entropy.py:34-40/161-181`、`blackwell/entry.py:147-151/246/253`、`language_module.py:157/180` 均逐一开文件核对;交叉链接 4 个目标经 find 确认存在。
 
 ---
 
@@ -2087,11 +2087,11 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Deepen（用户第三轮反馈"每个都比较浅显,每种优化特性最好补对应图示和优化点说明;融合算子说明融合了哪些内容 + 补源码解读"。先把 affinity 页定为新标尺(每算子四件套:融合内容→before/after 图示→`[!tip] 优化点`→源码解读),再以它为 in-house exemplar 并行重写其余 4 篇。源码核对 @ MindSpeed 1432cb09 / MindSpeed-LLM 0c16322d)
 
-- **[[mindspeed_ascend_affinity_analysis]]**(468→**662 行**,10 图,12 优化点 callout):融合算子每个补**融合内容**(N 个散算子→1 核)——GMM(E 次切片+GEMM→1 变长分组,反向 dgrad 累加进 main_grad)、SwiGLU(chunk+SiLU+⊙→`npu_swiglu`)、RMSNorm(x²+mean+rsqrt+×→`npu_rms_norm`)、RoPE(rotate_half+cos/sin→`npu_rotary_position_embedding`)、Softmax(scale+mask+softmax 7 趟→`npu_scaled_masked_softmax`,带 fp16/sk≤4096 硬约束)、MoE-permute、Flash-Attention(**O(S²)→O(S),S×S 不物化**)、Fused-EMA-AdamW(一核回写 param/m/v/s);每个带 before/after 图 + 量化优化点。
-- **[[mindspeed_context_parallel_analysis]]**(373→**420 行**,7 优化点 callout):Ulysses/Ring-双环/Hybrid/Adaptive/KV-cache/2·cp 负载均衡 每变体补量化优化点(通信量比、overlap、straggler 消除)。
-- **[[mindspeed_parallelism_analysis]]**(469→**495 行**,18 优化点 callout,~20 图):TP-2D/非对齐/vocab/PP 划分/MoE-EP/LayerZeRO/Custom-FSDP/分层解耦(U-split/VDP/VTP)每特性补图 + 量化优化点。
-- **[[mindspeed_comm_overlap_analysis]]**(406→**461 行**,9 优化点 callout):MC2/CoC/MoE-overlap/fb-overlap/alltoall-MC2/DualPipeV/RiPipe/optimize-p2p/async-log 每特性补时序图 + 量化优化点(气泡比、隐藏率)。
-- **[[mindspeed_memory_optimization_analysis]]**(248→**422 行**,15 优化点 callout):重计算/Swap/reuse-fp32/MoE-zero-mem/压缩/virtual-opt/chunk-loss 每特性补 before/after 图 + 省显存 Δ 公式。
+- **[[13_mindspeed_ascend_affinity_analysis]]**(468→**662 行**,10 图,12 优化点 callout):融合算子每个补**融合内容**(N 个散算子→1 核)——GMM(E 次切片+GEMM→1 变长分组,反向 dgrad 累加进 main_grad)、SwiGLU(chunk+SiLU+⊙→`npu_swiglu`)、RMSNorm(x²+mean+rsqrt+×→`npu_rms_norm`)、RoPE(rotate_half+cos/sin→`npu_rotary_position_embedding`)、Softmax(scale+mask+softmax 7 趟→`npu_scaled_masked_softmax`,带 fp16/sk≤4096 硬约束)、MoE-permute、Flash-Attention(**O(S²)→O(S),S×S 不物化**)、Fused-EMA-AdamW(一核回写 param/m/v/s);每个带 before/after 图 + 量化优化点。
+- **[[20_mindspeed_context_parallel_analysis]]**(373→**420 行**,7 优化点 callout):Ulysses/Ring-双环/Hybrid/Adaptive/KV-cache/2·cp 负载均衡 每变体补量化优化点(通信量比、overlap、straggler 消除)。
+- **[[10_mindspeed_parallelism_analysis]]**(469→**495 行**,18 优化点 callout,~20 图):TP-2D/非对齐/vocab/PP 划分/MoE-EP/LayerZeRO/Custom-FSDP/分层解耦(U-split/VDP/VTP)每特性补图 + 量化优化点。
+- **[[11_mindspeed_comm_overlap_analysis]]**(406→**461 行**,9 优化点 callout):MC2/CoC/MoE-overlap/fb-overlap/alltoall-MC2/DualPipeV/RiPipe/optimize-p2p/async-log 每特性补时序图 + 量化优化点(气泡比、隐藏率)。
+- **[[12_mindspeed_memory_optimization_analysis]]**(248→**422 行**,15 优化点 callout):重计算/Swap/reuse-fp32/MoE-zero-mem/压缩/virtual-opt/chunk-loss 每特性补 before/after 图 + 省显存 Δ 公式。
 
 **校验**:各 agent 透明纠正若干行号(mc2 CoC 互斥 `:21-22`、planner greedy `:127-142`、flexible_schedules 路径 `core/pipeline_parallel/`、compress pdf/ratio),coordinator 抽样复核均命中;5 页 `[[]]` 链接脚本提取确认 0 悬空。MindSpeed 系列累计约 **2460 行**(index 除外)。
 
@@ -2140,11 +2140,11 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Deepen（用户反馈"大纲有了,针对特性的 deep dive 分析缺少,参考 megatron-llm / torchtitan"。校准:`14_megatron_ep_analysis`(753 行,单机制)/`13_megatron_cp_analysis`(391)是深度标尺——每机制需 命题→源码片段+`file:line`→数据流图→通信/显存代数→权衡。原 4 篇每机制仅 ~15-30 行,远不及。并行 writer-agent 逐页重写,coordinator 抽样核验引用)
 
-- **新增** [[mindspeed_context_parallel_analysis]](373 行,对标 [[13_megatron_cp_analysis]]):CP 家族专页——分派脊柱 `dot_product_attention.py:134-322` 路由五变体;**Ulysses**(头维 `single_all_to_all` 换轴 `:83-108`,通信量 vs Ring 推为 `(2/cp)·(a/a_kv)`)、**Ring/双环**(KV 环形 P2P + online-softmax `utils.py:77-119`、因果块跳过 `ring_context_parallel.py:16-33`、双环窗口 `model_parallel_utils.py:121-212`)、**Hybrid**(Ulysses×Ring 2D)、**Adaptive**、**KV-cache**;含 2·cp 因果负载均衡(`get_batch_utils.py:244-263`)与各变体整除约束(Ulysses `a%(cp·TP)==0`、megatron-cp `seq%(2cp)==0` 等)。
-- **重写加深** [[mindspeed_parallelism_analysis]](241→469 行):CP 段收为指针(导向新 CP 专页),腾出篇幅深挖 **TP-2D**(`linear_2d_split_along_first_dim.py:128-150` AG→MM→RS 二维流水)、**PP 划分**(noop/非对齐/布局)、**MoE-EP**(GMM 原语 `gmm/experts.py:124-151`、tp-extend-ep、专家放置贪心重排 `expert_placement/planner.py:111-150`)、**LayerZeRO3**(`zero3/fsdp.py`)/Custom-FSDP、**分层解耦训练**(U-split/VDP/VTP)。
-- **重写加深** [[mindspeed_comm_overlap_analysis]](267→406 行):三母题各配时序图+代数——*算子融合*(MC2 `npu_all_gather_base_mm`/`npu_mm_reduce_scatter_base`、alltoall-MC2 `npu_alltoallv_gmm`)、*软件流水*(CoC chunk 双流 `coc_utils.py:200-248`、MoE async-handle、fb-overlap 跨微批 + WeightGradStore 解耦 `:203-205`)、*换调度*(DualPipeV 7 段 `:310-344`、RiPipe、optimize-p2p)。
-- **重写加深** [[mindspeed_ascend_affinity_analysis]](233→468 行,代码块 2→15、配图 4):补足代码走读——op_builder JIT(`builder.py:65-77` `cpp_extension.load`、GMM 三 dispatch key→CANN `GroupedMatmul`)、融合算子(`npu_swiglu`/`npu_scaled_masked_softmax`/`npu_rms_norm`/`npu_fusion_attention`)、HCCL buffer/QoS、`npu_apply_fused_ema_adamw`;保留 affinity 勘误([!warning])。
-- [[mindspeed_memory_optimization_analysis]] 维持(原已达深度标尺)。
+- **新增** [[20_mindspeed_context_parallel_analysis]](373 行,对标 [[13_megatron_cp_analysis]]):CP 家族专页——分派脊柱 `dot_product_attention.py:134-322` 路由五变体;**Ulysses**(头维 `single_all_to_all` 换轴 `:83-108`,通信量 vs Ring 推为 `(2/cp)·(a/a_kv)`)、**Ring/双环**(KV 环形 P2P + online-softmax `utils.py:77-119`、因果块跳过 `ring_context_parallel.py:16-33`、双环窗口 `model_parallel_utils.py:121-212`)、**Hybrid**(Ulysses×Ring 2D)、**Adaptive**、**KV-cache**;含 2·cp 因果负载均衡(`get_batch_utils.py:244-263`)与各变体整除约束(Ulysses `a%(cp·TP)==0`、megatron-cp `seq%(2cp)==0` 等)。
+- **重写加深** [[10_mindspeed_parallelism_analysis]](241→469 行):CP 段收为指针(导向新 CP 专页),腾出篇幅深挖 **TP-2D**(`linear_2d_split_along_first_dim.py:128-150` AG→MM→RS 二维流水)、**PP 划分**(noop/非对齐/布局)、**MoE-EP**(GMM 原语 `gmm/experts.py:124-151`、tp-extend-ep、专家放置贪心重排 `expert_placement/planner.py:111-150`)、**LayerZeRO3**(`zero3/fsdp.py`)/Custom-FSDP、**分层解耦训练**(U-split/VDP/VTP)。
+- **重写加深** [[11_mindspeed_comm_overlap_analysis]](267→406 行):三母题各配时序图+代数——*算子融合*(MC2 `npu_all_gather_base_mm`/`npu_mm_reduce_scatter_base`、alltoall-MC2 `npu_alltoallv_gmm`)、*软件流水*(CoC chunk 双流 `coc_utils.py:200-248`、MoE async-handle、fb-overlap 跨微批 + WeightGradStore 解耦 `:203-205`)、*换调度*(DualPipeV 7 段 `:310-344`、RiPipe、optimize-p2p)。
+- **重写加深** [[13_mindspeed_ascend_affinity_analysis]](233→468 行,代码块 2→15、配图 4):补足代码走读——op_builder JIT(`builder.py:65-77` `cpp_extension.load`、GMM 三 dispatch key→CANN `GroupedMatmul`)、融合算子(`npu_swiglu`/`npu_scaled_masked_softmax`/`npu_rms_norm`/`npu_fusion_attention`)、HCCL buffer/QoS、`npu_apply_fused_ema_adamw`;保留 affinity 勘误([!warning])。
+- [[12_mindspeed_memory_optimization_analysis]] 维持(原已达深度标尺)。
 
 **整合**:[[mindspeed/index]] 四大类表新增「并行·CP 深挖」行;父索引 [[02_engineering/02_train_frameworks/index]](4→5 篇)与总索引 [[index]] 领域总览(MindSpeed 6)/快速导航(增 CP 页)同步。**校验**:各 agent 透明纠正了若干行号(expert_placement 路径、U-shaped loss 行、gmm dispatch 行),coordinator 抽样复核 `planner.py:111`(greedy)、`schedules.py:300`(U-loss)、`gmm.py:153`(@impl PrivateUse1)、`mc2_fuse_a2a.py:39`(npu_alltoallv_gmm)均命中;5 页 `[[]]` 链接经脚本提取确认 0 悬空。
 
@@ -2156,10 +2156,10 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 新建 `wiki/02_engineering/02_train_frameworks/mindspeed/`:
 - [[mindspeed/index]](知识地图):**猴补丁式 Megatron 加速层**定位、`MindSpeedFeature` 契约(register_args/register_patches/validate、O0/O1/O2 优化等级门控 `feature.py:12-20`)、`create_features_list()` ~70 特性总账(`features_manager/__init__.py:367-398`)、两层结构(core 通用 + LLM 模型/任务层)、四大类罗盘。
-- [[mindspeed_parallelism_analysis]](241 行):CP(Ulysses 头切 all-to-all / Ring / 自适应 / KV-cache,2·CP 因果负载均衡)、TP(非对齐线性 / TP-2D `[h/y,E/x]` / vocab ReplaceIndexPut)、PP 划分(noop/布局/非对齐/num-layer-list)、MoE-EP(tp-extend-ep + GMM 原语 + 专家放置 EMA 预测)、DP/分布式(LayerZeRO3 / Custom-FSDP)、分层解耦训练(U-split/VDP/VTP)。
-- [[mindspeed_comm_overlap_analysis]](267 行):两大母题——chunk-GEMM 流水异步通信(CoC/MoE-overlap)与 matmul+集合通信单核融合(MC2 `npu_all_gather_base_mm`/`npu_mm_reduce_scatter_base`、alltoall-MC2 `npu_alltoallv_gmm`);PP 换调度消/填气泡(DualPipeV 7 段 / RiPipe 重算填泡 / optimize-p2p)。**勘误**:async-log-allreduce 掩盖的是 loss 日志 all-reduce,非梯度规约。
-- [[mindspeed_memory_optimization_analysis]](248 行):统一原语 `untyped_storage().resize_(0)` + 反向重填;重计算(激活/norm/按 PP-rank/block-uniform)、Swap(smart-swap/swap-attention saved_tensors_hooks/swap-optimizer 态常驻 CPU)、reuse-fp32-param(fp32↔bf16 共享存储 `reuse_data_ptr`)、MoE-zero-memory、压缩(HANS/换尾数)、virtual-optimizer、chunk-loss。
-- [[mindspeed_ascend_affinity_analysis]](233 行):**算子替换层**——op_builder JIT(`cpp_extension.load` 编 CANN 核)、融合算子(GMM 三 dispatch key→`GroupedMatmul`、`npu_swiglu`/`npu_scaled_masked_softmax`/`npu_rms_norm`)、Flash-Attention(`npu_fusion_attention` SBH/TND)、HCCL buffer/QoS 调优、融合优化器(`npu_apply_fused_ema_adamw`)。**重要勘误**:`AffinityFeature` 并非 CPU 绑核(两仓 grep `sched_setaffinity/numa` 皆空),而是 VocabParallel 交叉熵的 NPU 亲和改写(`affinity.py:13-17` 补丁 `calculate_predicted_logits`)——已据此修正 index 描述。
+- [[10_mindspeed_parallelism_analysis]](241 行):CP(Ulysses 头切 all-to-all / Ring / 自适应 / KV-cache,2·CP 因果负载均衡)、TP(非对齐线性 / TP-2D `[h/y,E/x]` / vocab ReplaceIndexPut)、PP 划分(noop/布局/非对齐/num-layer-list)、MoE-EP(tp-extend-ep + GMM 原语 + 专家放置 EMA 预测)、DP/分布式(LayerZeRO3 / Custom-FSDP)、分层解耦训练(U-split/VDP/VTP)。
+- [[11_mindspeed_comm_overlap_analysis]](267 行):两大母题——chunk-GEMM 流水异步通信(CoC/MoE-overlap)与 matmul+集合通信单核融合(MC2 `npu_all_gather_base_mm`/`npu_mm_reduce_scatter_base`、alltoall-MC2 `npu_alltoallv_gmm`);PP 换调度消/填气泡(DualPipeV 7 段 / RiPipe 重算填泡 / optimize-p2p)。**勘误**:async-log-allreduce 掩盖的是 loss 日志 all-reduce,非梯度规约。
+- [[12_mindspeed_memory_optimization_analysis]](248 行):统一原语 `untyped_storage().resize_(0)` + 反向重填;重计算(激活/norm/按 PP-rank/block-uniform)、Swap(smart-swap/swap-attention saved_tensors_hooks/swap-optimizer 态常驻 CPU)、reuse-fp32-param(fp32↔bf16 共享存储 `reuse_data_ptr`)、MoE-zero-memory、压缩(HANS/换尾数)、virtual-optimizer、chunk-loss。
+- [[13_mindspeed_ascend_affinity_analysis]](233 行):**算子替换层**——op_builder JIT(`cpp_extension.load` 编 CANN 核)、融合算子(GMM 三 dispatch key→`GroupedMatmul`、`npu_swiglu`/`npu_scaled_masked_softmax`/`npu_rms_norm`)、Flash-Attention(`npu_fusion_attention` SBH/TND)、HCCL buffer/QoS 调优、融合优化器(`npu_apply_fused_ema_adamw`)。**重要勘误**:`AffinityFeature` 并非 CPU 绑核(两仓 grep `sched_setaffinity/numa` 皆空),而是 VocabParallel 交叉熵的 NPU 亲和改写(`affinity.py:13-17` 补丁 `calculate_predicted_logits`)——已据此修正 index 描述。
 
 **整合**:父索引 [[02_engineering/02_train_frameworks/index]] 子目录表新增 `[[mindspeed/index]]` 行并更新日期;总索引 [[index]] 目录树 + 领域总览(MindSpeed 5 篇)+ 快速导航「昇腾训练加速」行同步。**校验**:抽样核对各页 `file:line`(affinity 勘误、recompute `resize_(0)`、op_builder `load`、`npu_swiglu`、Ulysses forward 均逐一开文件确认);5 页全部 `[[]]` 链接经脚本提取后确认目标存在,0 悬空(路径式 `[[megatron-lm/index]]` 等按 Obsidian 后缀匹配解析)。
 
@@ -2177,7 +2177,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - **`OverlapExpertParallel`**:A/B/C/D 同步钩子 + 异步 a2a 做通算重叠(不改通信量)。
   - 含**三方案通信量总对照表**(拓扑 / 重复次数 / 与 k 关系 / 集合通信 / D2H / 适用瓶颈)。
 
-**整合**:姊妹篇 [[mindformers_moe_token_dispatcher_analysis]] footer 增「PyNative 对照」回链。**校验**:新页 `file:line` 均按当前 checkout 逐一核对;交叉链接 [[mindformers_moe_token_dispatcher_analysis]] / [[14_megatron_ep_analysis]] / [[torchtitan_ep_analysis]] / [[20_deepseek_moe_analysis]] 经 glob 确认存在。
+**整合**:姊妹篇 [[mindformers_moe_token_dispatcher_analysis]] footer 增「PyNative 对照」回链。**校验**:新页 `file:line` 均按当前 checkout 逐一核对;交叉链接 [[mindformers_moe_token_dispatcher_analysis]] / [[14_megatron_ep_analysis]] / [[15_torchtitan_ep_analysis]] / [[20_deepseek_moe_analysis]] 经 glob 确认存在。
 
 **目录重构(同日)**:为 MindFormers 单建子目录 `02_engineering/02_train_frameworks/mindformers/`,收纳两篇(PyNative EP + Graph 去冗余 dispatcher)及其 7 张图(移入 `mindformers/assets/`,`assets/…figN.png` 相对引用随之保持有效),新建 [[mindformers/index]] 知识地图。父索引 [[02_engineering/02_train_frameworks/index]] 子目录表新增 `[[mindformers/index]]` 行、移除两篇的单独条目;总索引 [[index]] 目录树/领域总览(MindFormers 2 篇)/MoE 快速导航同步。`[[bare filename]]` 链接按文件名解析,移动后不失效。
 
@@ -2210,7 +2210,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Expand（应用户提问"融合算子/Triton 等算子特性有介绍吗"——既有 10 篇仅在注意力/量化页顺带提及,无专篇;补 [[vllm_fused_ops_and_kernels_analysis]] 填补真空）
 
-新增 [[vllm_fused_ops_and_kernels_analysis]](「特性优化」支柱):**CustomOp 多实现派发**(`model_executor/custom_op.py` native/cuda/triton + `custom_ops` 开关,Inductor 下默认走 native 交其自动融合)、**torch.compile 融合 Pass**(`compilation/passes/fusion/`:RMS+quant、SiluMul+quant、AllReduce+RMSNorm/async-TP、attention+quant、SP,经 `PostGradPassManager` 挂进 Inductor `post_grad_custom_post_pass`)、**fused_moe**(grouped GEMM + Triton/CUTLASS/DeepGEMM oracle 派发 + `configs/E=*,N=*,device=*.json` autotune)。与 [[vllm_compilation_cudagraph_analysis]](图捕获)、[[vllm_quantization_analysis]](量化 GEMM)、[[vllm_attention_backends_analysis]](Triton 注意力)形成"被引用→展开"分工;跨域对照 [[21_megatron_fusion_operators_analysis]] / [[torchtitan_compute_memory_optimizations_analysis]]。
+新增 [[vllm_fused_ops_and_kernels_analysis]](「特性优化」支柱):**CustomOp 多实现派发**(`model_executor/custom_op.py` native/cuda/triton + `custom_ops` 开关,Inductor 下默认走 native 交其自动融合)、**torch.compile 融合 Pass**(`compilation/passes/fusion/`:RMS+quant、SiluMul+quant、AllReduce+RMSNorm/async-TP、attention+quant、SP,经 `PostGradPassManager` 挂进 Inductor `post_grad_custom_post_pass`)、**fused_moe**(grouped GEMM + Triton/CUTLASS/DeepGEMM oracle 派发 + `configs/E=*,N=*,device=*.json` autotune)。与 [[vllm_compilation_cudagraph_analysis]](图捕获)、[[vllm_quantization_analysis]](量化 GEMM)、[[vllm_attention_backends_analysis]](Triton 注意力)形成"被引用→展开"分工;跨域对照 [[21_megatron_fusion_operators_analysis]] / [[23_torchtitan_compute_memory_optimizations_analysis]]。
 
 **整合**:[[vllm/index]] 支柱三增列本页(10→11 篇)、父索引 [[02_engineering/03_infer_frameworks/index]] 与总索引 [[index]] 计数同步;[[vllm_compilation_cudagraph_analysis]] 融合 pass 处回链本页。校验:本页 14 个 `[[]]` 链接全部解析,`file:line` 经核对 @ `485bbe1c6`。
 
@@ -2254,7 +2254,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - rollout 退役 SPMD 同步模式,改异步 server(`ServerAdapter.generate_sequences` 直接 raise),生成由 `LLMServerManager`/`AgentLoopManager` 驱动。
 - `Role` enum 实际在 `trainer/ppo/utils.py:27`(ray_trainer 仅 re-export);`compute_policy_loss`(core_algos:1203)已废弃,实际分发走 `workers/utils/losses.py` 的 `get_policy_loss_fn`。
 
-**整合**:[[verl/index]] 知识地图(五平面表/9 篇三层表/五角色表/RL 数据流图/与训练后端的 cross-domain 链接);父索引 [[02_engineering/04_posttrain_frameworks/index]] 新增 verl 子目录行、总索引 [[index]] 更新目录树/计数/快速导航;9 篇互链 + 跨域链(→ [[torchtitan_fsdp_analysis]]/[[megatron-lm/index]]/[[32_distributed_optimizer_deepdive]] 等)。**校验**:9 页全部含 `## Related Pages`、均回链 [[verl/index]];所用 sibling slug 与文件名一一对应;跨域目标页均存在,0 悬空链接。
+**整合**:[[verl/index]] 知识地图(五平面表/9 篇三层表/五角色表/RL 数据流图/与训练后端的 cross-domain 链接);父索引 [[02_engineering/04_posttrain_frameworks/index]] 新增 verl 子目录行、总索引 [[index]] 更新目录树/计数/快速导航;9 篇互链 + 跨域链(→ [[11_torchtitan_fsdp_analysis]]/[[megatron-lm/index]]/[[32_distributed_optimizer_deepdive]] 等)。**校验**:9 页全部含 `## Related Pages`、均回链 [[verl/index]];所用 sibling slug 与文件名一一对应;跨域目标页均存在,0 悬空链接。
 
 ---
 
@@ -2358,14 +2358,14 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Expand(对照 torchtitan `main` @ `61c010fcb` `experiments/graph_trainer/` 源码逐行核实;纯增不改既有结构)
 
-**背景**:`[[torchtitan_simple_fsdp_analysis]]` 原 §5 偏"概念入门",未讲清编译流程 / 通信 pass / 加 pass 阶段 / 掩盖机制。用户追问后,读透 `compile.py` / `passes.py` / `fsdp_passes.py` / `trainer.py` / `make_fx_tracer.py`,把 §5 从一节扩成 5.1–5.4 源码级深挖:
+**背景**:`[[25_torchtitan_simple_fsdp_analysis]]` 原 §5 偏"概念入门",未讲清编译流程 / 通信 pass / 加 pass 阶段 / 掩盖机制。用户追问后,读透 `compile.py` / `passes.py` / `fsdp_passes.py` / `trainer.py` / `make_fx_tracer.py`,把 §5 从一节扩成 5.1–5.4 源码级深挖:
 
 - **5.1 编译流程**:`aot_fx_trace` 首步 `minimal_fx_tracer`(make_fx)把 fwd+loss+bwd 追成**一张 joint FX 图**(redistribute 落成 `all_gather_into_tensor`/`reduce_scatter_tensor` 节点),`apply_graph_passes` 跑 `compile_time_passes` 流水线改写图(只跑一次),之后每步 `run_traced` 复用;给出 10 步 pass 流水线,标出两个通信 pass 在**第 6/7 位**(显存策略之后、inductor 之前)。
 - **5.2 通信 pass ①** `reassign_collective_pgs_pass`:把 AG 改派到额外 NCCL PG(同 ranks、`use_local_synchronization`)→ 独立 CUDA 流 → **AG∥RS∥compute**(等价 FSDP2 多流)。
 - **5.3 通信 pass ②** `joint_transformer_block_bucketing_reordering_pass`(`JointManualOverlapScheduler`):按 block/方向/FSDP2 参数序**分桶**(每 block 合 1 AG+1 RS)+ `overlap_deps` **重排**(AG 逆序预取、RS 延后 wait 越过计算)。
 - **5.4** 一图收束 + 纠正:`autobucketing_/transformer_block_bucketing` 是已废弃 JIT 后端的非 joint 版,默认 aot_fx_trace 走 joint 版。
 
-**更新**:`[[torchtitan_simple_fsdp_analysis]]` §5 重写、复核表补 8 条(编译流程 + 两 pass)、§9 小结补编译流程条;同步源文档 `llm_repo/torchtitan/docs/parallelism-analysis/simple-fsdp.md`。页头日期 → 2026-06-17。
+**更新**:`[[25_torchtitan_simple_fsdp_analysis]]` §5 重写、复核表补 8 条(编译流程 + 两 pass)、§9 小结补编译流程条;同步源文档 `llm_repo/torchtitan/docs/parallelism-analysis/simple-fsdp.md`。页头日期 → 2026-06-17。
 
 **追加(同日,应用户「补充通信粒度 + 配图」)**:新增 **§5.5 通信粒度**——讲清 SimpleFSDP **trace 时逐参数(一参一次,无 eager 分组)→ 编译期 bucketing pass 按 block 合成每块 1 AG+1 RS**;「分层统一通信」是编译期优化产物、非天生(不开 compile 即退化逐参数)。修正 §6 对比表「通信单位」行。新增 **2 张 SVG→PNG 机制图**(入 `torchtitan/assets/`):`simple-fsdp-compile-flow`(编译流程 + 10 步 pass 流水线,高亮第 6/7 通信 pass)、`simple-fsdp-bucketing-overlap`(逐参数 → 每块 1AG+1RS 的三流并发时间线)。复核表补「参数化逐参数 getter」行。
 
@@ -2384,7 +2384,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - 新系列 19 页加前缀:`ep_analysis`→`14_megatron_ep_analysis`、`tp_analysis`→`12_megatron_tp_analysis`、`cp_analysis`→`13_megatron_cp_analysis`、`pp_schedulers_analysis`→`15_megatron_pp_schedulers_analysis`、`ddp_optimizer_analysis`→`megatron_ddp_optimizer_analysis`、`recompute_analysis`、`optimizer_internals_analysis`、`precision_cudagraph_fusion_analysis`、`training_stability_observability_analysis`、`rl_posttraining_consistency_analysis`、`inference_engine_analysis`、`model_structure_analysis`、`dataset_analysis`、`packed_dataset_dynamic_cp_analysis`、`dist_checkpointing_analysis`、`parallelism_orchestration_analysis`、`pp_supplements_analysis`、`tp_fsdp_resharding_supplements_analysis`、`moe_training_optimization_report` 均加 `megatron_` 前缀。
 - 旧 CamelCase 2 页规整:`Megatron_LM_TFLOPS_Analysis`→`32_megatron_tflops_analysis`、`Megatron_vLLM_Weight_Sync_Analysis`→`33_megatron_vllm_weight_sync_analysis`。
 - 已合规 5 页不动:`20_megatron_comm_overlap_analysis`、`21_megatron_fusion_operators_analysis`、`22_megatron_memory_optimization_analysis`、`16_megatron_distributed_optimizer_analysis`、`25_megatron_nonuniform_tp_analysis`。
-- **链接修复**:全 wiki(208 个 md)用 `[[<basename><delimiter>` 锚定的 perl 替换更新所有 `[[wiki link]]` + 反引号/散文中的 `*.md` 文件名提及;锚定保证不误伤 `[[23_deepseek_v4_cp_analysis]]`/`[[torchtitan_tp_analysis]]`/`[[25_megatron_nonuniform_tp_analysis]]` 等近名页。
+- **链接修复**:全 wiki(208 个 md)用 `[[<basename><delimiter>` 锚定的 perl 替换更新所有 `[[wiki link]]` + 反引号/散文中的 `*.md` 文件名提及;锚定保证不误伤 `[[23_deepseek_v4_cp_analysis]]`/`[[12_torchtitan_tp_analysis]]`/`[[25_megatron_nonuniform_tp_analysis]]` 等近名页。
 
 **③ 修复历史悬空链接**:`[[llm_parallelism_analysis]]`(该页从未以 .md 形式存在,仅旧 .html;changelog 早有记录)全 wiki 重指向 [[15_megatron_pp_schedulers_analysis]](正反向 DAG + 调度,最贴近其原意);涉及 megatron-lm/index、父级 `02_train_frameworks/index`、torchtitan 多页。
 
@@ -2432,10 +2432,10 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **背景**:torchtitan 上游迭代后,既有 8 篇(01–06 + AC + FSDP 预取)未覆盖一批性能手段。审计(对照 HEAD `61c010fcb`)确认遗漏:HSDP 反向双流掩盖、低精度(Float8/MXFP8)、算子融合、编译、对称内存、Async-TP、MinimalAsyncEP、full_dtensor、SimpleFSDP。
 
 **新增(4 页,均带 file:line 源码复核表)**:
-- [[torchtitan_hsdp_backward_overlap_analysis]] — HSDP 反向 reduce-scatter 与 all-reduce 双流掩盖:`foreach_reduce` 跨流编排、host 端算子下发顺序、AR∥RS 并发的正确性证明、reduce 路径 fp32 暂存与显存峰值;**带 3 张 SVG→PNG 机制图**(时间线 / 正确性分解 / 显存)
-- [[torchtitan_compute_memory_optimizations_analysis]] — 算力/显存:Float8 rowwise/MXFP8、FusedSwiGLU/MoE grouped GEMM/FusedQKV、逐 block 编译即融合、融合 Adam、ChunkedCELoss、CPU offload
-- [[torchtitan_comm_optimizations_overlap_analysis]] — 通信:跨维度计算-通信掩盖矩阵、Async-TP 微流水、对称内存、MinimalAsyncEP、full_dtensor SPMD
-- [[torchtitan_simple_fsdp_analysis]] — SimpleFSDP(graph_trainer 实验,arXiv:2411.00284):分片即 DTensor `redistribute` 进图、编译器 pass 分桶重叠;与 FSDP2 eager 多流编排逐项对比
+- [[21_torchtitan_hsdp_backward_overlap_analysis]] — HSDP 反向 reduce-scatter 与 all-reduce 双流掩盖:`foreach_reduce` 跨流编排、host 端算子下发顺序、AR∥RS 并发的正确性证明、reduce 路径 fp32 暂存与显存峰值;**带 3 张 SVG→PNG 机制图**(时间线 / 正确性分解 / 显存)
+- [[23_torchtitan_compute_memory_optimizations_analysis]] — 算力/显存:Float8 rowwise/MXFP8、FusedSwiGLU/MoE grouped GEMM/FusedQKV、逐 block 编译即融合、融合 Adam、ChunkedCELoss、CPU offload
+- [[24_torchtitan_comm_optimizations_overlap_analysis]] — 通信:跨维度计算-通信掩盖矩阵、Async-TP 微流水、对称内存、MinimalAsyncEP、full_dtensor SPMD
+- [[25_torchtitan_simple_fsdp_analysis]] — SimpleFSDP(graph_trainer 实验,arXiv:2411.00284):分片即 DTensor `redistribute` 进图、编译器 pass 分桶重叠;与 FSDP2 eager 多流编排逐项对比
 
 **纠正的常见误解(已写入)**:① Float8 rowwise 下通信仍高精度,本版无 fp8 all-gather;② torchtitan 核心循环不在 microbatch 间延迟 FSDP 规约(每 mb 都 reduce-scatter);③ MinimalAsyncEP 不做通信-计算重叠;④ `set_symm_mem_for_comm` 在 torch 2.9.1 不存在(追踪更新版 torch)。
 
@@ -2715,7 +2715,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **更新文件**:
 
-- `torchtitan/torchtitan_fsdp_prefetch_overlap_memory_analysis.md` —— ① §5.2 修正误导表述:"+p" 是显存占用增量而非"每次新分配"(逐参数 buffer 张量仅首迭代创建,此后 storage resize 0↔满;扁平 buffer 物理块稳态来自 caching allocator 池命中,无 cudaMalloc);② 新增 §5.5 勘误与补充:两层既有复用、FSDP 为何不自管持久池(allocator 等效/跨流 event/尺寸不齐/reserved 反升)、社区机制清单(storage-resize、expandable_segments、async_op 挪流、custom allocate 钩子、PG 缓冲注册、MemPool、compile 消 resize+copy、Megatron 持久缓冲先例)、自建持久池的场景判断(NPU 栈最值得);③ §7 复核表扩 5 行;页头日期更新
+- `torchtitan/20_torchtitan_fsdp_prefetch_overlap_memory_analysis.md` —— ① §5.2 修正误导表述:"+p" 是显存占用增量而非"每次新分配"(逐参数 buffer 张量仅首迭代创建,此后 storage resize 0↔满;扁平 buffer 物理块稳态来自 caching allocator 池命中,无 cudaMalloc);② 新增 §5.5 勘误与补充:两层既有复用、FSDP 为何不自管持久池(allocator 等效/跨流 event/尺寸不齐/reserved 反升)、社区机制清单(storage-resize、expandable_segments、async_op 挪流、custom allocate 钩子、PG 缓冲注册、MemPool、compile 消 resize+copy、Megatron 持久缓冲先例)、自建持久池的场景判断(NPU 栈最值得);③ §7 复核表扩 5 行;页头日期更新
 
 ---
 
@@ -2725,14 +2725,14 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **新增文件**(2 篇 `.md` + 16 个图文件,`torchtitan/assets/` 为新建目录):
 
-- `02_engineering/02_train_frameworks/torchtitan/torchtitan_fsdp_prefetch_overlap_memory_analysis.md` —— [[torchtitan_fsdp_analysis]] 的深挖伴篇(2 图):串行 vs 多流预取掩盖时序、唯一跨流同步点 `wait_event(_fsdp_collectives.py:361)`、copy-in 三步(narrow 视图巧思 + `_foreach_copy_` 方向)、flat 双缓冲 ping-pong(为何延迟释放)、"完整参数 ≤2 份不会 3 份"的 reshard-先于-unshard 时序证明、CI/AG/CO 各阶段显存账
-- `02_engineering/02_train_frameworks/torchtitan/torchtitan_ac_analysis.md` —— 激活重计算原理 + 代码解读(6 图):AC vs DCP 两种 checkpoint 区分、`checkpoint_wrapper` 接口链路(module 在两次 `next(gen)` 之间跑)、票据机制(`weak_holders`/`recomputed`/`recomp_counter` 下标对齐,发票→重算绑票→兑票)、SAC 双 dispatch mode 缓存回放 + torchtitan policy(奇偶 mm/SDPA/comm 恒存)+ attention 端到端走查、显存预估三法(full 手算 / SAC 加总 save-op / memory_budget Pareto)、粒度控制五法(含 config 驱动模块级方案)、横跨 autograd(`saved_tensors_hooks`)×dispatch(`TorchDispatchMode`)两核心、`ActivationCheckpointConfig` 全字段速查
+- `02_engineering/02_train_frameworks/torchtitan/20_torchtitan_fsdp_prefetch_overlap_memory_analysis.md` —— [[11_torchtitan_fsdp_analysis]] 的深挖伴篇(2 图):串行 vs 多流预取掩盖时序、唯一跨流同步点 `wait_event(_fsdp_collectives.py:361)`、copy-in 三步(narrow 视图巧思 + `_foreach_copy_` 方向)、flat 双缓冲 ping-pong(为何延迟释放)、"完整参数 ≤2 份不会 3 份"的 reshard-先于-unshard 时序证明、CI/AG/CO 各阶段显存账
+- `02_engineering/02_train_frameworks/torchtitan/22_torchtitan_ac_analysis.md` —— 激活重计算原理 + 代码解读(6 图):AC vs DCP 两种 checkpoint 区分、`checkpoint_wrapper` 接口链路(module 在两次 `next(gen)` 之间跑)、票据机制(`weak_holders`/`recomputed`/`recomp_counter` 下标对齐,发票→重算绑票→兑票)、SAC 双 dispatch mode 缓存回放 + torchtitan policy(奇偶 mm/SDPA/comm 恒存)+ attention 端到端走查、显存预估三法(full 手算 / SAC 加总 save-op / memory_budget Pareto)、粒度控制五法(含 config 驱动模块级方案)、横跨 autograd(`saved_tensors_hooks`)×dispatch(`TorchDispatchMode`)两核心、`ActivationCheckpointConfig` 全字段速查
 
 **索引与交叉引用**:
 
 - `torchtitan/index.md` —— 新增「深挖伴篇」表(2 行);系列篇数 7→9;并行施加管线 `apply_ac()` 挂链;Related Pages 补两页;最后更新 2026-06-11
-- `torchtitan_fsdp_analysis.md` —— Related Pages 首行新增深挖伴篇反链
-- `01_theory/02_pretraining/12_activation_checkpointing_analysis.md` —— Related Pages 首行新增 [[torchtitan_ac_analysis]](工程侧非重入/SAC,与该页 Megatron 重入路径互补)
+- `11_torchtitan_fsdp_analysis.md` —— Related Pages 首行新增深挖伴篇反链
+- `01_theory/02_pretraining/12_activation_checkpointing_analysis.md` —— Related Pages 首行新增 [[22_torchtitan_ac_analysis]](工程侧非重入/SAC,与该页 Megatron 重入路径互补)
 
 ---
 
@@ -2773,7 +2773,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **主线观点**: 两级 EP 的设计目标是把「不规则 + D2H」关进快的机内 NVLink(变长 AlltoAllV),跨机 IB 只走定形、免 D2H 的规则 collective(AllGather/ReduceScatter);去冗余 = 跨机全量 AllGather + 本地 mask 筛选,以通信冗余换取规则性与零 D2H。
 
-**交叉引用**: 与 [[torchtitan/torchtitan_ep_analysis]](token all-to-all dispatch/combine、DeepEP/HybridEP)、[[21_async_collective_tensor_deepdive]](ACT 延迟 wait)、[[30_comm_compute_overlap_analysis]](DeepEP/HybridEP 通信掩盖)互为对照(MindSpore 静态图 vs PyTorch eager+compile)。
+**交叉引用**: 与 [[torchtitan/15_torchtitan_ep_analysis]](token all-to-all dispatch/combine、DeepEP/HybridEP)、[[21_async_collective_tensor_deepdive]](ACT 延迟 wait)、[[30_comm_compute_overlap_analysis]](DeepEP/HybridEP 通信掩盖)互为对照(MindSpore 静态图 vs PyTorch eager+compile)。
 
 ---
 
@@ -2809,12 +2809,12 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **新增文件**:
 
 - `torchtitan/index.md` — torchtitan 多维并行知识地图:设计哲学(一组 GPU 多重视图)、三张 DeviceMesh、并行施加管线、组合建议
-- `torchtitan/torchtitan_parallel_dims_analysis.md` — 并行基座:`ParallelDims` 维度约束、`build_mesh` 三张逻辑 mesh(dataloading/dense/sparse)、`fake` backend、mesh 查询接口
-- `torchtitan/torchtitan_fsdp_analysis.md` — **标杆篇** DP/FSDP2:`FSDPParam` 逐参数切分、`FSDPParamGroup` 分组、all-gather 预取(隐式/显式)、五条 CUDA stream 异步编排、reduce-scatter 梯度规约、反向钩子链
-- `torchtitan/torchtitan_tp_analysis.md` — TP:`distribute_tensor` 切分、`redistribute` 通信选择、列并行→行并行配对、Sequence Parallel、Async TP(`_micro_pipeline_tp` inductor pass)、Loss Parallel
-- `torchtitan/torchtitan_cp_analysis.md` — CP:`_context_parallel_shard` 序列切分、HeadTail/PTRR 负载均衡、Ring Attention K/V 环形轮转、在线 softmax 合并、通信掩盖
-- `torchtitan/torchtitan_pp_analysis.md` — PP:`_split_module` 模型切分、P2P send/recv、调度气泡对比(GPipe/1F1B/Interleaved/ZBV/DualPipeV)、action-based runtime、Zero Bubble(I/W 拆分)
-- `torchtitan/torchtitan_ep_analysis.md` — EP:`ExpertParallel` 专家权重 `Shard(0)`、token all-to-all dispatch/combine、`AsyncCollectiveTensor` 延迟 wait、shared_experts 通信掩盖、DeepEP/HybridEP、`edp_mesh` FSDP
+- `torchtitan/10_torchtitan_parallel_dims_analysis.md` — 并行基座:`ParallelDims` 维度约束、`build_mesh` 三张逻辑 mesh(dataloading/dense/sparse)、`fake` backend、mesh 查询接口
+- `torchtitan/11_torchtitan_fsdp_analysis.md` — **标杆篇** DP/FSDP2:`FSDPParam` 逐参数切分、`FSDPParamGroup` 分组、all-gather 预取(隐式/显式)、五条 CUDA stream 异步编排、reduce-scatter 梯度规约、反向钩子链
+- `torchtitan/12_torchtitan_tp_analysis.md` — TP:`distribute_tensor` 切分、`redistribute` 通信选择、列并行→行并行配对、Sequence Parallel、Async TP(`_micro_pipeline_tp` inductor pass)、Loss Parallel
+- `torchtitan/13_torchtitan_cp_analysis.md` — CP:`_context_parallel_shard` 序列切分、HeadTail/PTRR 负载均衡、Ring Attention K/V 环形轮转、在线 softmax 合并、通信掩盖
+- `torchtitan/14_torchtitan_pp_analysis.md` — PP:`_split_module` 模型切分、P2P send/recv、调度气泡对比(GPipe/1F1B/Interleaved/ZBV/DualPipeV)、action-based runtime、Zero Bubble(I/W 拆分)
+- `torchtitan/15_torchtitan_ep_analysis.md` — EP:`ExpertParallel` 专家权重 `Shard(0)`、token all-to-all dispatch/combine、`AsyncCollectiveTensor` 延迟 wait、shared_experts 通信掩盖、DeepEP/HybridEP、`edp_mesh` FSDP
 
 **统一分析粒度**: 每篇按 `fully_shard` 标杆粒度展开——参数/数据切分 → 通信原语 → 通信掩盖 → 异步实现 → 反向传播,带 `文件:行号` 引用与 ASCII 流程图。
 

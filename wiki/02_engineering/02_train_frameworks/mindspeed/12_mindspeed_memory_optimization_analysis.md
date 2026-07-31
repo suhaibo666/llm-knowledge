@@ -2,7 +2,7 @@
 
 > **代码基线**:MindSpeed core `master` @ `1432cb09`(猴补丁 Megatron `core_r0.17.0`)· MindSpeed-LLM `master` @ `0c16322d` · 2026-06-23
 > 本页只讲 MindSpeed 怎么把训练的**设备(NPU/HBM)显存占用降下来**:重计算、Swap 卸载、参数存储复用、MoE 零冗余、无损压缩、虚拟内存优化器、分块 loss。**每个特性按统一四件套拆解**:① 机制 ② before/after 图示 ③ `> [!tip] 优化点` callout(带省下的显存公式 / Δ)④ 源码解读(实际调用 + autograd,带 `file:line`)。每条非平凡结论的行号均经实际打开核对(路径相对各自仓库根:`mindspeed/...` 属 MindSpeed core,`mindspeed_llm/...` 属 MindSpeed-LLM)。
-> **范围边界**:LayerZero / Custom-FSDP 的省显存来自参数/梯度分片,归 [[mindspeed_parallelism_analysis]];MoE 前反向重叠(fb-overlap)、通算掩盖归 [[mindspeed_comm_overlap_analysis]];融合算子(顺带省激活)归 [[mindspeed_ascend_affinity_analysis]]。本页只在交界处交叉引用。属 [[mindspeed/index]] 系列。
+> **范围边界**:LayerZero / Custom-FSDP 的省显存来自参数/梯度分片,归 [[10_mindspeed_parallelism_analysis]];MoE 前反向重叠(fb-overlap)、通算掩盖归 [[11_mindspeed_comm_overlap_analysis]];融合算子(顺带省激活)归 [[13_mindspeed_ascend_affinity_analysis]]。本页只在交界处交叉引用。属 [[mindspeed/index]] 系列。
 
 ---
 
@@ -416,9 +416,9 @@ HBM 峰值: B·S·V·sizeof                        HBM 峰值: chunk·V·sizeof
 ## Related Pages
 
 - [[mindspeed/index]] — MindSpeed × MindSpeed-LLM 特性总罗盘(四大类入口)
-- [[mindspeed_parallelism_analysis]] — 并行划分(LayerZero/Custom-FSDP 的分片省显存在此)
-- [[mindspeed_context_parallel_analysis]] — 上下文并行(长序列下激活主峰 $M_A$ 的另一条压法:沿序列切分)
-- [[mindspeed_comm_overlap_analysis]] — 通算掩盖(MoE fb-overlap、swap/压缩用到的副流重叠思想)
-- [[mindspeed_ascend_affinity_analysis]] — 昇腾亲和(融合算子、HANS/empty_with_swapped_memory 等 PTA 能力;swap-optimizer 复用其融合优化器核)
+- [[10_mindspeed_parallelism_analysis]] — 并行划分(LayerZero/Custom-FSDP 的分片省显存在此)
+- [[20_mindspeed_context_parallel_analysis]] — 上下文并行(长序列下激活主峰 $M_A$ 的另一条压法:沿序列切分)
+- [[11_mindspeed_comm_overlap_analysis]] — 通算掩盖(MoE fb-overlap、swap/压缩用到的副流重叠思想)
+- [[13_mindspeed_ascend_affinity_analysis]] — 昇腾亲和(融合算子、HANS/empty_with_swapped_memory 等 PTA 能力;swap-optimizer 复用其融合优化器核)
 - [[32_distributed_optimizer_deepdive]] — Megatron 分布式优化器 P/G/O 分片(reuse/swap/virtual optimizer 的基底)
 - [[megatron-lm/index]] — 被补丁的宿主:原生重计算与混合精度优化器实现

@@ -3,9 +3,9 @@
 > **代码基准**:torchtitan `main` @ `61c010fcb`(`experiments/graph_trainer/`)· PyTorch nightly(实验件)
 > **最后更新**:2026-06-17(§5 扩写为编译流程 + 两个通信 pass + 掩盖机制源码级深挖,新增 §5.5 通信粒度 + 2 张 SVG→PNG 机制图)· **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
 >
-> 对象是 torchtitan `experiments/graph_trainer/` 的 SimpleFSDP(论文 arXiv:2411.00284),FSDP2 的编译器友好替代:把 all-gather/reduce-scatter 表达成 DTensor `redistribute` 进图,交编译器分桶重叠。对照 [[torchtitan_fsdp_analysis]] / [[torchtitan_hsdp_backward_overlap_analysis]]。
+> 对象是 torchtitan `experiments/graph_trainer/` 的 SimpleFSDP(论文 arXiv:2411.00284),FSDP2 的编译器友好替代:把 all-gather/reduce-scatter 表达成 DTensor `redistribute` 进图,交编译器分桶重叠。对照 [[11_torchtitan_fsdp_analysis]] / [[21_torchtitan_hsdp_backward_overlap_analysis]]。
 >
-> **四页分工**(2026-07-31 补):本页是唯一走**编译器路径**的一支——FSDP2 原生 eager 机制(手写 hook+event 编排)的标杆篇是 [[torchtitan_fsdp_analysis]],其预取/掩盖/显存源码级深挖是 [[torchtitan_fsdp_prefetch_overlap_memory_analysis]],HSDP 双流展开是 [[torchtitan_hsdp_backward_overlap_analysis]];本页讲的是把这套手写编排换成**声明式 DTensor collective + 编译器 pass**的实验分支,与前三页的 eager 机制互补而非替代。
+> **四页分工**(2026-07-31 补):本页是唯一走**编译器路径**的一支——FSDP2 原生 eager 机制(手写 hook+event 编排)的标杆篇是 [[11_torchtitan_fsdp_analysis]],其预取/掩盖/显存源码级深挖是 [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]],HSDP 双流展开是 [[21_torchtitan_hsdp_backward_overlap_analysis]];本页讲的是把这套手写编排换成**声明式 DTensor collective + 编译器 pass**的实验分支,与前三页的 eager 机制互补而非替代。
 > 行号约定:实验代码以 `graph_trainer/`(= `torchtitan/torchtitan/experiments/graph_trainer/`)为根;PyTorch 以 `[pt]` 前缀。
 
 ---
@@ -77,7 +77,7 @@ if not self.full_dtensor:
   - `hybrid_shard`(HSDP):两者混合(组内 RS + 组间 AR)。
   - 代码注释明示(`:190-193`):"gradients are partial tensors that need reduction (DDP: allreduce, FSDP: reduce_scatter, HSDP: mix of both)"。
 
-> 对照 [[torchtitan_hsdp_backward_overlap_analysis]]:FSDP2 用 `foreach_reduce` 在 RS/AR 两条流上手写 HSDP 反向;**SimpleFSDP 只声明 `grad_placements=Partial(sum)`,RS/AR 由 DTensor 反向 + 编译器 pass 生成**。语义等价,实现路径完全不同。
+> 对照 [[21_torchtitan_hsdp_backward_overlap_analysis]]:FSDP2 用 `foreach_reduce` 在 RS/AR 两条流上手写 HSDP 反向;**SimpleFSDP 只声明 `grad_placements=Partial(sum)`,RS/AR 由 DTensor 反向 + 编译器 pass 生成**。语义等价,实现路径完全不同。
 
 - `forward_dtype/backward_dtype`(`:212-213`):把混合精度(`param=bf16 / reduce=fp32`)**编进 redistribute**,无需 FSDP2 的 `MixedPrecisionPolicy` 钩子。
 - `full_dtensor=True` 时输出保持 DTensor(不 `to_local`,`:238-239`),用于整网 DTensor/autoparallel 路径;nD 并行下未实现(`:197-200`)。
@@ -86,7 +86,7 @@ if not self.full_dtensor:
 
 `_register_parametrization`(`:135`)不是用 `nn.utils.parametrize`,而是**动态造一个子类** `SimpleFSDP{ClassName}`,把参数名变成 `property` getter,getter 调 `parametrization(self._parameters[pn])`(`:145-164`)。
 
-- **按 `(原类, 参数名集合)` 缓存**(`_wrap_class_cache`,`:130-132/151-163`):同类型模块共享同一个 SimpleFSDP 子类 → `torch.compile` 只需编译一次、复用到每层(与 [[torchtitan_compute_memory_optimizations_analysis]] §4 逐 block compile 复用同理)。
+- **按 `(原类, 参数名集合)` 缓存**(`_wrap_class_cache`,`:130-132/151-163`):同类型模块共享同一个 SimpleFSDP 子类 → `torch.compile` 只需编译一次、复用到每层(与 [[23_torchtitan_compute_memory_optimizations_analysis]] §4 逐 block compile 复用同理)。
 - 子类注入 `sys.modules` 让 pickle/GraphPickler 能解析(为 precompile 序列化,`:160-162`)。
 - 为何不用官方 `parametrize`:为兼容 DCP(分布式 checkpoint),`state_dict` 直接从 `self._parameters` 取分片参数、不触发 getter(`:138-143`)。
 
@@ -101,7 +101,7 @@ if not self.full_dtensor:
 当参数已被 TP/EP 切成 DTensor,DP 不能再 `distribute_tensor` 重切,而是组合 **outer=DP mesh / inner=TP/EP mesh**(`_distribute_dtensor`,`simple_fsdp.py:48`):
 
 - 用 `DeviceMesh._concatenate([outer, inner])` 拼出跨 mesh(`:61`),placement = `(DP_placement,) + inner_spec.placements`。
-- DP 分片维与 inner 分片有嵌套时用 `_StridedShard(shard_dim, split_factor=inner.num_shards_map[shard_dim])` 表达"先 TP 切、再 FSDP 切"的顺序(`:70-94`)——与 FSDP2 在 [[torchtitan_fsdp_analysis]] §2.3 用 `_StridedShard` 叠 TP 是同一思想。
+- DP 分片维与 inner 分片有嵌套时用 `_StridedShard(shard_dim, split_factor=inner.num_shards_map[shard_dim])` 表达"先 TP 切、再 FSDP 切"的顺序(`:70-94`)——与 FSDP2 在 [[11_torchtitan_fsdp_analysis]] §2.3 用 `_StridedShard` 叠 TP 是同一思想。
 - 支持 FSDP/DDP/HSDP × EP/TP/EP+TP(`:54-94`)。
 
 运行时若有 TP/EP 轴(`non_dp_mesh_dims>0`,`:194-230`):先把 2D DTensor **重包成 dp_mesh 上的 1D DTensor** 做高效 all-gather,redistribute 后再重包回 non_dp_mesh(注释 TODO:DTensor 应原生支持这种 mesh 折叠,`:216-217`)。
@@ -146,7 +146,7 @@ pass 流水线(`compile_time_passes`,`passes.py:134-190`,按序):
 5  selective_activation_remat     按标复算
 6  reassign_collective_pgs_pass   ★通信 pass ①:AG 改派独立 PG/流              ← §5.2
 7  joint_transformer_block_bucketing_reordering_pass  ★通信 pass ②:分桶 + 重排/预取  ← §5.3
-8  [若开 async-TP] async_tensor_parallel_pass   micro_pipeline_tp(见 [[torchtitan_comm_optimizations_overlap_analysis]] §2)
+8  [若开 async-TP] async_tensor_parallel_pass   micro_pipeline_tp(见 [[24_torchtitan_comm_optimizations_overlap_analysis]] §2)
 9  inductor(regional/full)+ FlexAttention/RMSNorm 标注  → Triton 融合
 10 [若开 cudagraph] insert_kernel_annotations + cudagraph_pass
 ```
@@ -167,7 +167,7 @@ pass 流水线(`compile_time_passes`,`passes.py:134-190`,按序):
 
 > "Each PG runs on its own CUDA stream, so moving a collective to an extra PG (same ranks) lets it overlap with the collectives left on the original PG — e.g. all-gathers overlapping reduce-scatters in backward."
 
-每个 NCCL PG 在 GPU 上对应一条独立 stream。把 AG 挪到额外 PG → AG 在一条流、RS 留在原流 → **AG∥RS 并发**。这正是 FSDP2 反向用"独立 all_gather 流 / reduce_scatter 流"换来的 AG∥RS([[torchtitan_hsdp_backward_overlap_analysis]] §2),SimpleFSDP 改由"图里换 PG"实现——**编译期决定,而非运行时建流**。
+每个 NCCL PG 在 GPU 上对应一条独立 stream。把 AG 挪到额外 PG → AG 在一条流、RS 留在原流 → **AG∥RS 并发**。这正是 FSDP2 反向用"独立 all_gather 流 / reduce_scatter 流"换来的 AG∥RS([[21_torchtitan_hsdp_backward_overlap_analysis]] §2),SimpleFSDP 改由"图里换 PG"实现——**编译期决定,而非运行时建流**。
 
 ### 5.3 通信 pass ②:`joint_transformer_block_bucketing_reordering_pass` —— 分桶 + 重排/预取
 
@@ -217,7 +217,7 @@ pass 流水线(`compile_time_passes`,`passes.py:134-190`,按序):
 
 ## 6. 与 FSDP2 的对比
 
-| 维度 | FSDP2(`fully_shard`,[[torchtitan_fsdp_analysis]]/[[torchtitan_hsdp_backward_overlap_analysis]]) | SimpleFSDP(本篇) |
+| 维度 | FSDP2(`fully_shard`,[[11_torchtitan_fsdp_analysis]]/[[21_torchtitan_hsdp_backward_overlap_analysis]]) | SimpleFSDP(本篇) |
 |---|---|---|
 | 通信单位 | `FSDPParamGroup`(eager 建组,天生每块 1 AG+1 RS) | **trace 逐参数 → 编译期 bucketing 合成每块 1 AG+1 RS**(见 §5.5) |
 | 取回参数 | `unshard()` 钩子发 all-gather | 前向 `redistribute(Replicate)` 进图 |
@@ -234,7 +234,7 @@ pass 流水线(`compile_time_passes`,`passes.py:134-190`,按序):
 
 ## 7. 接入、组合与约束
 
-- **接入**:`apply_simple_fsdp(model, parallel_dims, training)`(`common_utils.py:217`)按 `parallel_dims` 选 mesh 与 mode(`dp_replicate+dp_shard/cp` → `hybrid_shard`;仅 `dp_replicate` → `replicate`;否则 `fully_shard`,`:228-237`),对模型整体 `data_parallel`(`:273`);MoE 的 `moe.experts` 在 EP 开启时单独用 `edp_mesh` 包(`:265-271`)——与 FSDP2 的 `edp_mesh` 思想一致([[torchtitan_ep_analysis]] §7)。
+- **接入**:`apply_simple_fsdp(model, parallel_dims, training)`(`common_utils.py:217`)按 `parallel_dims` 选 mesh 与 mode(`dp_replicate+dp_shard/cp` → `hybrid_shard`;仅 `dp_replicate` → `replicate`;否则 `fully_shard`,`:228-237`),对模型整体 `data_parallel`(`:273`);MoE 的 `moe.experts` 在 EP 开启时单独用 `edp_mesh` 包(`:265-271`)——与 FSDP2 的 `edp_mesh` 思想一致([[15_torchtitan_ep_analysis]] §7)。
 - **组合现状**(README:200-218 composability 表,`aot_fx_trace`):Meta init / AC / 混合精度 / TP / CP / EP / DCP / CUDAGraph 已 ✅;Float8/MXFP8、EP+AC、EP+PP、图级 PP、microbatch overlap、precompile 仍 🚧。
 - **AutoParallel**:可用 `--compile.enable_autoparallel` 让 AutoParallel 解 SPMD placement,再走同一 `aot_fx_trace` 流水(README:87-126);numerics 与 eager 紧密一致但不要求逐位相同。
 - **约束**:需 PyTorch nightly(README:26);走编译路径;`full_dtensor` 的 nD 并行未实现(`simple_fsdp.py:197-200`)。
@@ -274,7 +274,7 @@ pass 流水线(`compile_time_passes`,`passes.py:134-190`,按序):
 - **编译流程**:`aot_fx_trace` 首步用 `minimal_fx_tracer`(make_fx)把 fwd+loss+bwd 追成**一张 joint 图**(redistribute 落成 `all_gather_into_tensor`/`reduce_scatter_tensor` 节点),`apply_graph_passes` 跑一遍 pass 流水线改写图,之后每步 `run_traced` 复用。
 - **怎么掩盖**(两个通信 pass,流水线第 6/7 位):① `reassign_collective_pgs_pass` 把 AG 改派额外 NCCL PG → 独立 CUDA 流 → AG∥RS∥compute(等价 FSDP2 多流);② `joint_transformer_block_bucketing_reordering_pass` 按 block 分桶(每 block 合 1 AG+1 RS,像 FSDP2 ParamGroup)+ 用 `overlap_deps` 把 AG-start 提前、collective-wait 推后越过计算(等价 FSDP2 预取)。全在**编译期图变换**上完成。
 - **怎么组合**:与 TP/EP 用 `_distribute_dtensor`+`_StridedShard` 嵌套;混合精度编进 redistribute dtype;AC/CUDAGraph/CPU-offload/Async-TP 都是同一张图上的 pass。
-- **与 FSDP2 的关系**:**语义等价、实现哲学相反**——FSDP2 运行时手写编排(主路径、eager),SimpleFSDP 编译期图变换(实验、需 nightly)。它是 graph_trainer "Every optimization is a graph pass" 哲学在数据并行上的落地,也是 [[torchtitan_comm_optimizations_overlap_analysis]] §5 `full_dtensor`/autoparallel 方向的近亲。
+- **与 FSDP2 的关系**:**语义等价、实现哲学相反**——FSDP2 运行时手写编排(主路径、eager),SimpleFSDP 编译期图变换(实验、需 nightly)。它是 graph_trainer "Every optimization is a graph pass" 哲学在数据并行上的落地,也是 [[24_torchtitan_comm_optimizations_overlap_analysis]] §5 `full_dtensor`/autoparallel 方向的近亲。
 
 > 图源:`assets/simple-fsdp-compile-flow.svg`、`assets/simple-fsdp-bucketing-overlap.svg`(可用 `@resvg/resvg-js` 以 zoom=2 导出 PNG)。
 
@@ -282,7 +282,7 @@ pass 流水线(`compile_time_passes`,`passes.py:134-190`,按序):
 
 ## Related Pages
 
-- [[torchtitan_fsdp_analysis]] —— FSDP2 eager 实现(SimpleFSDP 的对照对象)
-- [[torchtitan_hsdp_backward_overlap_analysis]] —— HSDP 反向多流(SimpleFSDP 用 placement 表达)
-- [[torchtitan_comm_optimizations_overlap_analysis]] —— 编译器通信优化 / full_dtensor 近亲
+- [[11_torchtitan_fsdp_analysis]] —— FSDP2 eager 实现(SimpleFSDP 的对照对象)
+- [[21_torchtitan_hsdp_backward_overlap_analysis]] —— HSDP 反向多流(SimpleFSDP 用 placement 表达)
+- [[24_torchtitan_comm_optimizations_overlap_analysis]] —— 编译器通信优化 / full_dtensor 近亲
 - [[torchtitan/index]] —— torchtitan 多维并行知识地图

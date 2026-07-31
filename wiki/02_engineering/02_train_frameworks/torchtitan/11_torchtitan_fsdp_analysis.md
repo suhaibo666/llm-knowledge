@@ -5,7 +5,7 @@
 >
 > 本文是机制级分析的**标杆篇**。它回答四个问题:**参数怎么切?切完怎么预取回来?哪些通信能掩盖?异步通信怎么实现?**
 >
-> **四页分工**(2026-07-31 补):本页是 FSDP2(PyTorch 原生 eager 路径)的标杆机制篇,覆盖切分/预取/掩盖/异步四问的完整轮廓;预取时序、掩盖窗口与显存生命周期的源码级深挖见 [[torchtitan_fsdp_prefetch_overlap_memory_analysis]](深挖伴篇);HSDP 反向 reduce-scatter→all-reduce 双流掩盖的展开见 [[torchtitan_hsdp_backward_overlap_analysis]](本页 §4.4/§6.2 的展开篇);编译器友好、把集合通信表达进计算图的替代方案见 [[torchtitan_simple_fsdp_analysis]]。
+> **四页分工**(2026-07-31 补):本页是 FSDP2(PyTorch 原生 eager 路径)的标杆机制篇,覆盖切分/预取/掩盖/异步四问的完整轮廓;预取时序、掩盖窗口与显存生命周期的源码级深挖见 [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]](深挖伴篇);HSDP 反向 reduce-scatter→all-reduce 双流掩盖的展开见 [[21_torchtitan_hsdp_backward_overlap_analysis]](本页 §4.4/§6.2 的展开篇);编译器友好、把集合通信表达进计算图的替代方案见 [[25_torchtitan_simple_fsdp_analysis]]。
 >
 > torchtitan 的 `apply_fsdp` 只是薄封装,真正的机制在 PyTorch FSDP2。本文行号约定:
 > - torchtitan:`torchtitan/...`,以 `torchtitan/` 为根。
@@ -102,7 +102,7 @@ self.sharded_param = nn.Parameter(self.to_sharded_dtensor(sharded_param))
 | **HSDP** | 普通参数,2D dp mesh | `(Replicate(), Shard(0))` |
 | **FSDP+TP/EP** | 参数已是 `DTensor`(被 TP/EP 先切过) | `(_StridedShard 或 Shard, *tp_placements)` |
 
-第三种最关键:当 TP 已把参数切成 DTensor(见 [[torchtitan_tp_analysis]]),FSDP 不能再"重切",而是构造一个**组合 mesh**(`_spmd_mesh`,DP 轴 + TP 轴)和**组合 placement**。当 FSDP 分片维与 TP 分片维相同时,用 `_StridedShard`(带 `split_factor`)表达"先按 TP 切、再按 FSDP 切"的嵌套顺序(`[pt]_fsdp_param.py:312-319`)。这就是 FSDP 与 TP/EP 在同一参数上叠加的底层接口——**FSDP 要求 DP 与 TP/EP 的 mesh 有共同父 mesh**(`[pt]_fsdp_param.py:290-296`),这正是 [[torchtitan_parallel_dims_analysis]] 里三张 mesh 出自同一 world mesh 的原因。
+第三种最关键:当 TP 已把参数切成 DTensor(见 [[12_torchtitan_tp_analysis]]),FSDP 不能再"重切",而是构造一个**组合 mesh**(`_spmd_mesh`,DP 轴 + TP 轴)和**组合 placement**。当 FSDP 分片维与 TP 分片维相同时,用 `_StridedShard`(带 `split_factor`)表达"先按 TP 切、再按 FSDP 切"的嵌套顺序(`[pt]_fsdp_param.py:312-319`)。这就是 FSDP 与 TP/EP 在同一参数上叠加的底层接口——**FSDP 要求 DP 与 TP/EP 的 mesh 有共同父 mesh**(`[pt]_fsdp_param.py:290-296`),这正是 [[10_torchtitan_parallel_dims_analysis]] 里三张 mesh 出自同一 world mesh 的原因。
 
 ### 2.4 三种分片状态:`ShardedState`
 
@@ -426,11 +426,11 @@ loss.backward()
 
 ### 8.4 MoE:`shard_placement_fn` 按参数分流
 
-MoE 模型(llama4/deepseek_v3)的 `apply_fsdp`(`llama4/parallelize.py:143`)对含专家的 block 用 `shard_placement_fn`,把**专家参数**路由到 `edp_mesh`、**非专家参数**路由到 `dp_mesh`,并按 FSDP 度数与专家数的关系选 `Shard(0)` 或 `Shard(1)`(避免 padding)。详见 [[torchtitan_ep_analysis]]。
+MoE 模型(llama4/deepseek_v3)的 `apply_fsdp`(`llama4/parallelize.py:143`)对含专家的 block 用 `shard_placement_fn`,把**专家参数**路由到 `edp_mesh`、**非专家参数**路由到 `dp_mesh`,并按 FSDP 度数与专家数的关系选 `Shard(0)` 或 `Shard(1)`(避免 padding)。详见 [[15_torchtitan_ep_analysis]]。
 
 ### 8.5 MoE:显式预取
 
-EP 开启时,`apply_fsdp` 末尾(`llama4/parallelize.py:319-364`)用 `set_modules_to_forward_prefetch` / `set_modules_to_backward_prefetch` 显式串联各层预取。原因:EP 的 token all-to-all 里有 **D2H 同步**,会阻塞 CPU 线程,打断 FSDP 的隐式预取(隐式预取依赖 CPU 跑在 GPU 前面,见 §3.5)。显式预取把下一层 all-gather 的发起**提前到 D2H 同步之前**。详见 [[torchtitan_ep_analysis]] §6。
+EP 开启时,`apply_fsdp` 末尾(`llama4/parallelize.py:319-364`)用 `set_modules_to_forward_prefetch` / `set_modules_to_backward_prefetch` 显式串联各层预取。原因:EP 的 token all-to-all 里有 **D2H 同步**,会阻塞 CPU 线程,打断 FSDP 的隐式预取(隐式预取依赖 CPU 跑在 GPU 前面,见 §3.5)。显式预取把下一层 all-gather 的发起**提前到 D2H 同步之前**。详见 [[15_torchtitan_ep_analysis]] §6。
 
 ---
 
@@ -470,9 +470,9 @@ optimizer.step():在分片参数(DTensor)上更新,优化器状态只占 1/N
 
 ## Related Pages
 
-- [[torchtitan_fsdp_prefetch_overlap_memory_analysis]] —— **深挖伴篇**(配图):预取/掩盖时序、copy-in 三步与唯一跨流同步点、flat 双缓冲、完整参数 ≤2 份证明
-- [[torchtitan/index]] · [[torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
-- [[torchtitan_tp_analysis]] —— FSDP 与 TP 在同一参数上叠加(DTensor 嵌套、`_StridedShard`)
-- [[torchtitan_ep_analysis]] —— MoE 专家的 `edp_mesh` FSDP 与显式预取
+- [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]] —— **深挖伴篇**(配图):预取/掩盖时序、copy-in 三步与唯一跨流同步点、flat 双缓冲、完整参数 ≤2 份证明
+- [[torchtitan/index]] · [[10_torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
+- [[12_torchtitan_tp_analysis]] —— FSDP 与 TP 在同一参数上叠加(DTensor 嵌套、`_StridedShard`)
+- [[15_torchtitan_ep_analysis]] —— MoE 专家的 `edp_mesh` FSDP 与显式预取
 - [[16_megatron_distributed_optimizer_analysis]] —— Megatron-LM 数据并行 + 分布式优化器(ZeRO-0/1/2/3 四阶段、Reduce-Scatter + All-Gather)
 - [[32_distributed_optimizer_deepdive]] —— FSDP2 / ZeRO / MindSpeed 三方对比

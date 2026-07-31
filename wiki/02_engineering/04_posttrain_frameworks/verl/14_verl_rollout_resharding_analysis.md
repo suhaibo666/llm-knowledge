@@ -344,5 +344,5 @@ $$\text{Peak} \approx \max\!\left(\frac{P+O+G}{N}\ ,\ P_{\text{bf16}}+\text{KV}\
 - [[11_verl_single_controller_analysis]] —— `RayWorkerGroup` / Dispatch 如何把 `update_weights` 派发到各 worker
 - [[12_verl_dataproto_analysis]] —— `generate_sequences` 的 `DataProto` 输入/输出契约
 - [[30_verl_optimization_analysis]] —— sleep/wake、offload、IPC、bucket 等显存/通信优化合集
-- [[torchtitan_fsdp_analysis]] —— FSDP2 逐参数分片与 `DTensor.full_tensor()`,即训练侧重分片的底层机制
+- [[11_torchtitan_fsdp_analysis]] —— FSDP2 逐参数分片与 `DTensor.full_tensor()`,即训练侧重分片的底层机制
 - [[megatron-lm/index]] —— Megatron TP/PP 切分,`bridge.export_hf_weights` 反算的来源
