@@ -280,8 +280,8 @@ RoCE（RDMA over Converged Ethernet，承载在以太网上的 RDMA）无损网�
 ## Related Pages
 
 - [[07_training_reliability/index]] — 本簇目录索引（9 个问题 × 两条主线、问题地图、一手来源）
-- [[determinism_and_numerical_reliability_analysis]] — 姊妹页（问题 1–4）：浮点非确定性、batch 不变性/RL 一致、低精度长链累加、SDC/比特翻转四层检测（确定性是「重放定界」的地基，本页的 step 级重放/临终裁决以其为前提）
-- [[training_dynamics_stability_analysis]] — 姊妹页（问题 9）：loss spike/NaN 的根因、监控与四层防线（spike 鉴别与故障定界在排查流程上闭环）
+- [[10_determinism_and_numerical_reliability_analysis]] — 姊妹页（问题 1–4）：浮点非确定性、batch 不变性/RL 一致、低精度长链累加、SDC/比特翻转四层检测（确定性是「重放定界」的地基，本页的 step 级重放/临终裁决以其为前提）
+- [[12_training_dynamics_stability_analysis]] — 姊妹页（问题 9）：loss spike/NaN 的根因、监控与四层防线（spike 鉴别与故障定界在排查流程上闭环）
 - [[longcat_2_analysis]] — LongCat 链路无感切流 / 弹性扩缩卡 / 自动容错的一手深挖（本页问题 5/8 的运行主线）
 - [[10_collectives_analysis]] — 集合通信阻塞语义（问题 6 hang 的机理根源：AllReduce/AllGather 全员到齐才完成）
 - [[14_expert_parallel_analysis]] — 大 EP 的容错真空地带（专家状态无天然副本，弹性缩容与负载均衡交互无成熟方案）

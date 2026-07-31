@@ -417,7 +417,7 @@ flowchart LR
 ## 相关页面
 
 - [[07_training_reliability/index]] — 本页新归属目录:万卡级训练确定性与可靠性问题域索引（2026-07-31 kb-reorg P5 从 `04_posttrain_frameworks/` 迁入）
-- [[determinism_and_numerical_reliability_analysis]] — 问题 2「训推数值不一致 / batch 不变性」的系统侧上游分析，本页是其 kernel 层算子级实现细化
+- [[10_determinism_and_numerical_reliability_analysis]] — 问题 2「训推数值不一致 / batch 不变性」的系统侧上游分析，本页是其 kernel 层算子级实现细化
 - [[13_deepseek_v4_analysis]] — DeepSeek V4 整体架构，批次不变性上下文
 - [[27_deepseek_v4_implementation_deepdive]] — V4 核心组件伪代码实现
 - [[26_deepseek_v4_technical_deepdive]] — CSA/HCA/DSA/MLA 对比

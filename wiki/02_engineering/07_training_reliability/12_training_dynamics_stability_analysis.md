@@ -221,8 +221,8 @@ spike 鉴别把本报告的两条主线焊在一起：
 ## Related Pages
 
 - [[07_training_reliability/index]] — 本簇目录索引（9 个问题 × 两条主线）
-- [[determinism_and_numerical_reliability_analysis]] — 兄弟页（问题 1-4）：spike 与 SDC / 确定性重放在决策树第 1 步交汇
-- [[fault_tolerance_and_recovery_analysis]] — 兄弟页（问题 5-8）：回滚-跳批依赖 checkpoint 多版本保留与数据迭代器精确回放
+- [[10_determinism_and_numerical_reliability_analysis]] — 兄弟页（问题 1-4）：spike 与 SDC / 确定性重放在决策树第 1 步交汇
+- [[11_fault_tolerance_and_recovery_analysis]] — 兄弟页（问题 5-8）：回滚-跳批依赖 checkpoint 多版本保留与数据迭代器精确回放
 - [[11_muon_analysis]] — Muon 优化器（本问题第六节「Muon 路线共识」的一手原理）
 - [[11_kimi_k2_analysis]] — Kimi K2 的 MuonClip / QK-Clip（15.5T token 零 spike）
 - [[13_deepseek_v4_analysis]] — DeepSeek-V4 的 Muon / mHC / Anticipatory Routing / SwiGLU Clamping

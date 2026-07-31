@@ -129,7 +129,7 @@ All source ingestions and significant wiki updates are logged here.
 - **`03_posttraining/` 纵向域解散**：D01-D12 按主题分发进功能树（理论算法→`01_theory/04_posttraining/`，框架与 infra→`02_engineering/04_posttrain_frameworks/`，K3 案例→`moonshot_kimi/`）；D00 阅读路线降为 `courses/posttraining_frontier.md` 纯导读页。
 - **GRPO 三写归一**：D02 定位为算法演进权威页；grpo/dapo/gspo 论文页瘦身为"论文档案"（元数据+实验+特有公式）；verl 页保工程锚点——审查中回补 J_GRPO 的 KL 组合项等三处符号级细节。
 - **verl 双基线整合**：D07（`983cb0f`）入主 verl/ 为端到端主链，ray_trainer 保留为 legacy 深潜页；**源码核实发现 `trainer.use_v1` 默认翻转**（旧教学主链在新基线非默认路径），三处 [!contradiction] 双记；其余 8 篇挂基线横幅。
-- **错位页归位**：RL_PPO_Loss（实现分析）→框架域；batch_invariance_guide→训练可靠性域。
+- **错位页归位**：RL_PPO_Loss（实现分析）→框架域；20_batch_invariance_guide→训练可靠性域。
 - **三目录分段编号**：01_theory/04_posttraining（17 页）、04_posttrain_frameworks 根（9 页）、verl/（10 页）按 0/1/2/3 段位编号，485 处链接改写。
 - 全程 broken=0；wiki 375→374 页（净 −2 +1 课程页）。
 
@@ -233,11 +233,11 @@ All source ingestions and significant wiki updates are logged here.
 两篇此前放错域的页面归位，均为纯搬运（正文零改动，仅补链接）：
 
 - `git mv wiki/01_theory/04_posttraining/RL_PPO_Loss_and_GRPO_Analysis.md` → `wiki/02_engineering/04_posttrain_frameworks/rl_ppo_loss_and_grpo_analysis.md`（snake_case 化）。该页是 TorchTitan + vLLM 的 PPO Loss / GRPO 流程源码级实现分析，此前误放理论目录，实为框架工程分析。与 verl 域已有的 `verl_rl_algorithms_analysis.md`（同为源码级 PPO/GRPO loss 分析，框架为 verl core_algos 注册表）互补一句话双向链接。
-- `git mv wiki/02_engineering/04_posttrain_frameworks/batch_invariance_guide.md` → `wiki/02_engineering/07_training_reliability/batch_invariance_guide.md`。该页讲批次不变性/确定性算子实现（源自 DeepSeek V4 报告 §3.3 + DeepGEMM 源码），主题属确定性/可靠性问题域而非后训练框架，与 `determinism_and_numerical_reliability_analysis.md` 问题 2（训推数值不一致 / batch 不变性）互为系统侧上游与算子层实现细化的关系，双向补链；`tools/batch_invariance_demo.py` 引用路径为仓库根相对路径文本，两个新旧目录深度相同（均为 `wiki/02_engineering/<domain>/`），无需改写。
+- `git mv wiki/02_engineering/04_posttrain_frameworks/20_batch_invariance_guide.md` → `wiki/02_engineering/07_training_reliability/20_batch_invariance_guide.md`。该页讲批次不变性/确定性算子实现（源自 DeepSeek V4 报告 §3.3 + DeepGEMM 源码），主题属确定性/可靠性问题域而非后训练框架，与 `10_determinism_and_numerical_reliability_analysis.md` 问题 2（训推数值不一致 / batch 不变性）互为系统侧上游与算子层实现细化的关系，双向补链；`tools/batch_invariance_demo.py` 引用路径为仓库根相对路径文本，两个新旧目录深度相同（均为 `wiki/02_engineering/<domain>/`），无需改写。
 
-**入链改写（裸基名）**：`RL_PPO_Loss_and_GRPO_Analysis` → `rl_ppo_loss_and_grpo_analysis`，涉及 `23_glm5_posttraining_deepdive.md`（2 处）、`tim_causal_chain_analysis.md`、`rl_infra_efficiency_analysis.md`、`rl_sandbox_design_analysis.md`、`determinism_and_numerical_reliability_analysis.md`、`07_training_reliability/index.md`、`wiki/index.md`。`batch_invariance_guide` 基名不变（同名文件仅换目录），裸基名链接天然不受影响；唯一一处路径限定链接 `01_ai_frameworks/index.md` 的 `[[04_posttrain_frameworks/batch_invariance_guide]]` 改为裸基名 `[[batch_invariance_guide]]`（同域内唯一同名文件，不存在歧义）。`wiki/changelog.md` 中 1 处 2026-05-24 历史活链接（`RL_PPO_Loss_and_GRPO_Analysis`）按"历史不回写"惯例降级为反引号 + 去向说明。
+**入链改写（裸基名）**：`RL_PPO_Loss_and_GRPO_Analysis` → `rl_ppo_loss_and_grpo_analysis`，涉及 `23_glm5_posttraining_deepdive.md`（2 处）、`tim_causal_chain_analysis.md`、`rl_infra_efficiency_analysis.md`、`rl_sandbox_design_analysis.md`、`10_determinism_and_numerical_reliability_analysis.md`、`07_training_reliability/index.md`、`wiki/index.md`。`20_batch_invariance_guide` 基名不变（同名文件仅换目录），裸基名链接天然不受影响；唯一一处路径限定链接 `01_ai_frameworks/index.md` 的 `[[04_posttrain_frameworks/20_batch_invariance_guide]]` 改为裸基名 `[[20_batch_invariance_guide]]`（同域内唯一同名文件，不存在歧义）。`wiki/changelog.md` 中 1 处 2026-05-24 历史活链接（`RL_PPO_Loss_and_GRPO_Analysis`）按"历史不回写"惯例降级为反引号 + 去向说明。
 
-**索引同步**：`01_theory/04_posttraining/index.md` 移除 RL_PPO 行；`02_engineering/04_posttrain_frameworks/index.md` 「数值与确定性」小节（原仅 batch_invariance_guide 一行）改为「RL 算法源码实现」小节收纳新迁入的 `rl_ppo_loss_and_grpo_analysis`，并注明 batch_invariance_guide 去向；`07_training_reliability/index.md` 问题地图第 2 行「详见」列补 `[[batch_invariance_guide]]`，新增「第四篇：batch 不变性算子实现」小节介绍其归位背景与来源（独立于本域原 wanka 综述素材）。
+**索引同步**：`01_theory/04_posttraining/index.md` 移除 RL_PPO 行；`02_engineering/04_posttrain_frameworks/index.md` 「数值与确定性」小节（原仅 20_batch_invariance_guide 一行）改为「RL 算法源码实现」小节收纳新迁入的 `rl_ppo_loss_and_grpo_analysis`，并注明 20_batch_invariance_guide 去向；`07_training_reliability/index.md` 问题地图第 2 行「详见」列补 `[[20_batch_invariance_guide]]`，新增「第四篇：batch 不变性算子实现」小节介绍其归位背景与来源（独立于本域原 wanka 综述素材）。
 
 **验收**：`tools/check_links.py` broken=0、orphans=0（pages=375，与基线一致，纯搬运不增删文件）；`python -m pytest -q` 77 passed。
 
@@ -1446,7 +1446,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Source Ingestion + Deep Dive（严格路线：所有断言带一手来源与 §/Fig/Table/Eq 级定位符；未核实项显式标注，不做推测补齐。）
 
-- **新增 `tim_causal_chain_analysis`**（515 行，历史活链接，已于 2026-07-31 因 kb-reorg P5 Task 8 再编号为 [[26_tim_causal_chain_analysis]]，按"历史不回写"惯例降级为反引号）：打通本库此前断掉的一环——「kernel 非确定性 → logprob 偏差 → 重要性比方差放大 → 训练崩溃」。上游（浮点非确定性、batch 不变性）已由 [[determinism_and_numerical_reliability_analysis]] 覆盖，下游（loss spike 治理）已由 [[training_dynamics_stability_analysis]] 覆盖，本页补中间两环与算法侧修法全谱。
+- **新增 `tim_causal_chain_analysis`**（515 行，历史活链接，已于 2026-07-31 因 kb-reorg P5 Task 8 再编号为 [[26_tim_causal_chain_analysis]]，按"历史不回写"惯例降级为反引号）：打通本库此前断掉的一环——「kernel 非确定性 → logprob 偏差 → 重要性比方差放大 → 训练崩溃」。上游（浮点非确定性、batch 不变性）已由 [[10_determinism_and_numerical_reliability_analysis]] 覆盖，下游（loss spike 治理）已由 [[12_training_dynamics_stability_analysis]] 覆盖，本页补中间两环与算法侧修法全谱。
 - **归因框架**：采用 Qwen 2512.01374 §2.4 的二因子分解（训推数值分歧 × 策略陈旧度）作为全页坐标系，据此把 PPO clip、TIS/TRM/ALP/MIPU、batch-invariant kernel、TBIK、FP16、MoE 路由回放归位到各自作用的因子上。
 - **六类病因逐条落定位符**：引擎间 kernel 差异、batch 触发不同 tiling、**TP size 改变累加顺序**（本库此前未覆盖）、BF16 尾数不足、MoE 路由分歧、量化 rollout。其中 TBIK Table 1/2 的对照实验证明「只做 batch 不变，对跨 TP 数值发散几乎无效」（Llama-3.1-8B 上 BIO 的 27.54 甚至高于 BF16 的 26.48）。
 - **崩溃形态学**：首次在本库区分 recomputation 与 bypass 两条路径的不同崩溃曲线（多阶段 vs 单阶段、是否伴随 loss spike），并记录一条对工程有直接影响的发现——**K1/K3 KL 对 recomputation 型崩溃是盲的**（前 700 步几乎平坦而 reward 已在退化），而 recomputation 正是 verl 等框架的常见默认路径。
@@ -1706,9 +1706,9 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **Type**: Enrich（应用户「三类文章基于原始 technical report 补图示、提升可读性」。据原文机制 + 其引用的技术报告绘制）
 
 - 手绘 HTML+CSS/SVG → 本库无头 Edge 2× 渲染 **7 图**（源 `.html2md/figs/training_reliability_figs.html`，gitignored）：
-  - **确定性&数值页**（[[determinism_and_numerical_reliability_analysis]]）：`tr_det_fig1` 浮点非确定性五层来源 · `tr_det_fig2` 长链累加病(顺序 O(n·ε) 吞位,BF16 Σ1000×1.0=256)与药(树形 O(log n·ε) + DeepSeek FP8 两级累加) · `tr_det_fig3` SDC 四层检测 + Gemini split-phase 确定性重放闭环。
-  - **容错&恢复页**（[[fault_tolerance_and_recovery_analysis]]）：`tr_ft_fig1` 恢复粒度坐标系(8 环恢复链路 + Job/Pod/进程内/Step 各级砍环时间轴) · `tr_ft_fig2` hang 症状/病灶空间分离 + Flight Recorder seq 对账定位。
-  - **训练动力学页**（[[training_dynamics_stability_analysis]]）：`tr_dyn_fig1` spike/NaN 排查决策树(确定性重放为核心分岔) · `tr_dyn_fig2` spike 治理四层防线(架构/优化器/数据/运维)。
+  - **确定性&数值页**（[[10_determinism_and_numerical_reliability_analysis]]）：`tr_det_fig1` 浮点非确定性五层来源 · `tr_det_fig2` 长链累加病(顺序 O(n·ε) 吞位,BF16 Σ1000×1.0=256)与药(树形 O(log n·ε) + DeepSeek FP8 两级累加) · `tr_det_fig3` SDC 四层检测 + Gemini split-phase 确定性重放闭环。
+  - **容错&恢复页**（[[11_fault_tolerance_and_recovery_analysis]]）：`tr_ft_fig1` 恢复粒度坐标系(8 环恢复链路 + Job/Pod/进程内/Step 各级砍环时间轴) · `tr_ft_fig2` hang 症状/病灶空间分离 + Flight Recorder seq 对账定位。
+  - **训练动力学页**（[[12_training_dynamics_stability_analysis]]）：`tr_dyn_fig1` spike/NaN 排查决策树(确定性重放为核心分岔) · `tr_dyn_fig2` spike 治理四层防线(架构/优化器/数据/运维)。
 - 各图嵌入对应小节（背景 / 如何发现 / 排查思路 / 解决方案）。**校验**：7 张 PNG 逐张实渲肉眼核对（恢复链路时间轴、seq 对账暗框、决策树双通道分支均正常，无溢出/无裸定界符）；图片用标准 `![](assets/*.png)`（SVG 渲染，非 mermaid）。
 
 ---
@@ -1721,9 +1721,9 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 - **新建 `02_engineering/07_training_reliability/` 簇（index + 3 内容页）**，按原文四部分/9 问题拆解：
   - [[07_training_reliability/index]]（**coordinator 手写的 exemplar**）：问题地图（9 问题×两主线）+「确定性是故障定界的地基」主线 + 趋势与开放问题（原文第四部分）+ 与本库已有页的交叉表。
-  - [[determinism_and_numerical_reliability_analysis]]（问题 1-4）：浮点非确定性五层来源（atomicAdd/split-K/通信规约树/MoE 排序/框架随机性）、batch 不变性与 RL 确定性（Thinking Machines、Anthropic top-k 事故、TIS）、低精度长链累加（pairwise/树形、FP32 main_grad、DeepSeek FP8 两级累加/DeepGEMM、Kahan）、SDC 四层检测体系（压测/统计/ABFT+DP hash/确定性重放）。
-  - [[fault_tolerance_and_recovery_analysis]]（问题 5-8）：goodput/ETTR + 五级恢复坐标系（Job/Pod/Node/进程/Step + 算子链路级）+ 各家术语对照（华为 MindIO TFT 的 TTP/UCE/ARF、NVRx in-process restart、torchft、Gemini slice 弹性…）、hang/straggler（flight recorder/栈聚类/straggler 打分）、Checkpoint（异步+原子提交/本地分层/临终/数据回放）、网络链路（PFC 风暴/ECMP hash/链路级快恢/流量工程）。
-  - [[training_dynamics_stability_analysis]]（问题 9）：loss spike/NaN 四类根因、分层监控+前兆指标、排查决策树、四层防线（QK-Norm/z-loss/soft-capping/EGS、MuonClip/AdaGC/ZClip、数据指纹、运维自动化）、2026 前沿（Muon 路线共识、DeepSeek-V4 Anticipatory Routing/mHC、Kimi K2.5 与 GLM-5 的 RL 稳定性与问题 2 合流）。
+  - [[10_determinism_and_numerical_reliability_analysis]]（问题 1-4）：浮点非确定性五层来源（atomicAdd/split-K/通信规约树/MoE 排序/框架随机性）、batch 不变性与 RL 确定性（Thinking Machines、Anthropic top-k 事故、TIS）、低精度长链累加（pairwise/树形、FP32 main_grad、DeepSeek FP8 两级累加/DeepGEMM、Kahan）、SDC 四层检测体系（压测/统计/ABFT+DP hash/确定性重放）。
+  - [[11_fault_tolerance_and_recovery_analysis]]（问题 5-8）：goodput/ETTR + 五级恢复坐标系（Job/Pod/Node/进程/Step + 算子链路级）+ 各家术语对照（华为 MindIO TFT 的 TTP/UCE/ARF、NVRx in-process restart、torchft、Gemini slice 弹性…）、hang/straggler（flight recorder/栈聚类/straggler 打分）、Checkpoint（异步+原子提交/本地分层/临终/数据回放）、网络链路（PFC 风暴/ECMP hash/链路级快恢/流量工程）。
+  - [[12_training_dynamics_stability_analysis]]（问题 9）：loss spike/NaN 四类根因、分层监控+前兆指标、排查决策树、四层防线（QK-Norm/z-loss/soft-capping/EGS、MuonClip/AdaGC/ZClip、数据指纹、运维自动化）、2026 前沿（Muon 路线共识、DeepSeek-V4 Anticipatory Routing/mHC、Kimi K2.5 与 GLM-5 的 RL 稳定性与问题 2 合流）。
 - **并行 writer-agent 契约**：3 内容页由 3 个 subagent 并行写，各读 raw 指定行段（Part1/2/3），严格「不加源外事实、保留全部数字/env-var/代码/出处、只用给定交叉链、无 mermaid」，结构化回报。
 
 **整合**：[[02_engineering/index]] 子领域表加 07 行；[[index]] 目录树加 07、工程域表加「训练可靠性 4」行、按主题查找加一行。**校验**：3 页 grep 确认关键 env-var/数字/机制在位（CUBLAS_WORKSPACE_CONFIG、TORCH_NCCL_TRACE_BUFFER_SIZE、五级坐标系、MuonClip/Anticipatory Routing/129.3 MWh 等）；4 页全部 `[[链接]]` 机械核对**零死链**；4 页 grep 确认**零 mermaid**（全用 ASCII/代码/表）；抽读 determinism 页头+§1 核对源忠实与房风格。
@@ -2792,11 +2792,11 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - `wiki/01_theory/04_posttraining/index.md` — 新增「对齐安全」小节，加入 reward_hacking_defense_analysis；最后更新日期改为 2026-05-24
 - `wiki/02_engineering/04_posttrain_frameworks/index.md` — 拆分为「数值与确定性」「Coding RL Sandbox 与 Infra」两小节，新增 rl_sandbox_design_analysis 与 rl_infra_efficiency_analysis；最后更新日期改为 2026-05-24
 - `wiki/index.md` — 后训练对齐页数 13→14、后训练框架页数 1→3；快速导航加入「Coding RL『脏活』系列」一行；最后更新日期改为 2026-05-24
-- `wiki/02_engineering/04_posttrain_frameworks/batch_invariance_guide.md` — 相关页面增加 RL Sandbox 与 Infra 两页 backlink
+- `wiki/02_engineering/04_posttrain_frameworks/20_batch_invariance_guide.md` — 相关页面增加 RL Sandbox 与 Infra 两页 backlink
 
 **主线观点**: Coding 大模型训练的护城河来自三块「脏活」——Sandbox 决定能不能稳定跑、RL Infra 决定能跑多大多快、Reward Hacking 防御决定训出来的是不是你想要的。三者强耦合，单点短板即整体瓶颈；国内玩家真实差距在 infra 与 reward 体系而非算法。
 
-**交叉引用**: 三篇互链，并与 `grpo_analysis` / `ppo_analysis` / `dapo_analysis` / `gspo_analysis` / `rlhf_foundations_analysis` / `kimi_k1.5_analysis`（以上 6 处历史活链接已于 2026-07-31 因 kb-reorg P5 Task 8 分段编号，现况见 [[01_theory/04_posttraining/index]]，按"历史不回写"惯例降级为反引号）/ [[batch_invariance_guide]] / `RL_PPO_Loss_and_GRPO_Analysis`（历史活链接，已于 2026-07-31 因 kb-reorg P5 先迁移改名为 `rl_ppo_loss_and_grpo_analysis`、同日 Task 8 再编号为 [[10_rl_ppo_loss_and_grpo_analysis]]，按"历史不回写"惯例降级为反引号）等既有页交叉引用。
+**交叉引用**: 三篇互链，并与 `grpo_analysis` / `ppo_analysis` / `dapo_analysis` / `gspo_analysis` / `rlhf_foundations_analysis` / `kimi_k1.5_analysis`（以上 6 处历史活链接已于 2026-07-31 因 kb-reorg P5 Task 8 分段编号，现况见 [[01_theory/04_posttraining/index]]，按"历史不回写"惯例降级为反引号）/ [[20_batch_invariance_guide]] / `RL_PPO_Loss_and_GRPO_Analysis`（历史活链接，已于 2026-07-31 因 kb-reorg P5 先迁移改名为 `rl_ppo_loss_and_grpo_analysis`、同日 Task 8 再编号为 [[10_rl_ppo_loss_and_grpo_analysis]]，按"历史不回写"惯例降级为反引号）等既有页交叉引用。
 
 ---
 
@@ -3033,7 +3033,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **跨域移动**:
   - `31_comm_compute_fusion_guide.md` → `02_train_frameworks/`
   - `mooncake_analysis.md` → `03_infer_frameworks/`
-  - `batch_invariance_guide.md` → `04_posttrain_frameworks/`
+  - `20_batch_invariance_guide.md` → `04_posttrain_frameworks/`
 - **索引更新**: 所有受影响的 `index.md` 已同步更新
 
 ## 2026-05-15: DeepSeek-V4 Tensor Parallel 分析重大修正（基于 Megatron-LM dev 源码）

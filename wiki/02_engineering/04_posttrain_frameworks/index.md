@@ -41,7 +41,7 @@
 
 ### RL 算法源码实现（kb-reorg P5 归位）
 
-> `batch_invariance_guide` 已迁至 [[07_training_reliability/index]]（训练批次不变性属确定性/可靠性问题域，非框架源码分析）。
+> `20_batch_invariance_guide` 已迁至 [[07_training_reliability/index]]（训练批次不变性属确定性/可靠性问题域，非框架源码分析）。
 
 | 页面 | 来源 | 核心主题 |
 |------|------|---------|
@@ -73,6 +73,6 @@
 
 - [[courses/posttraining_frontier]] — LLM 后训练前沿阅读课程(D01→D12 顺序索引 + 六级能力门槛)
 - [[../../01_theory/04_posttraining/index]] — 后训练算法理论
-- [[07_training_reliability/index]] — 训练可靠性(`batch_invariance_guide` 现居此处)
+- [[07_training_reliability/index]] — 训练可靠性(`20_batch_invariance_guide` 现居此处)
 - [[../02_train_frameworks/index]] — 训练框架
 - [[../03_infer_frameworks/index]] — 推理框架

@@ -94,7 +94,7 @@
 | Coding RL「脏活」系列 | [[31_reward_hacking_defense_analysis]], [[11_rl_sandbox_design_analysis]], [[12_rl_infra_efficiency_analysis]] |
 | LLM 后训练前沿 D01–D06 | [[courses/posttraining_frontier]], [[01_posttraining_frontier_map_analysis]], [[13_reasoning_rl_algorithm_evolution_analysis]], [[24_agentic_rl_algorithm_analysis]], [[25_on_policy_off_policy_staleness_analysis]], [[01_posttraining_infra_mechanism_analysis]], [[30_rl_framework_comparison]] |
 | LLM 后训练前沿 D07–D12 | [[10_verl_end_to_end_iteration_analysis]], [[20_slime_architecture_analysis]], [[21_areal_async_architecture_analysis]], [[22_roll_strategy_and_ascend_analysis]], [[31_cuda_ascend_posttraining_stack_comparison]], [[24_kimi_k3_posttraining_case_study_analysis]] |
-| 万卡训练确定性与可靠性 | [[07_training_reliability/index]], [[determinism_and_numerical_reliability_analysis]], [[fault_tolerance_and_recovery_analysis]], [[training_dynamics_stability_analysis]] |
+| 万卡训练确定性与可靠性 | [[07_training_reliability/index]], [[10_determinism_and_numerical_reliability_analysis]], [[11_fault_tolerance_and_recovery_analysis]], [[12_training_dynamics_stability_analysis]] |
 
 ### 按原始来源
 
