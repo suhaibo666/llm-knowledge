@@ -1,7 +1,9 @@
 # 通算融合（Compute-Communication Co-Fusion）完全指南
 
 > 从手动调优到编译器自动化：WaveEP、DeepEP 与通算自动编译的演进路线
-> 最后更新: 2026-05-12
+> 最后更新: 2026-05-12（2026-07-31 补边界声明）
+
+> **与"计算通信掩盖"的边界**：本页讲的是把通信与计算编进**同一个 kernel**的**融合**（如 WaveEP 的 wave-tile 绑定、DeepEP `FusedDispatch`、MC2 的 `npu_all_gather_base_mm`）——源码层已不存在独立的两次算子调用。仅通过调度/多 stream 让**各自独立**的通信与计算并发执行、互相隐藏延迟的**掩盖**手段，见 [[comm_compute_overlap_analysis]]。
 
 ---
 

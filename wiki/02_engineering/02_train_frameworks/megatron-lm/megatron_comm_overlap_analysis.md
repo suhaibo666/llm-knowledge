@@ -470,6 +470,42 @@ def combined_1f1b_schedule_for_no_pipelining(...):
 ```
 > MB N+1 前向的 attn_fwd 与 MB N 反向的 combine_bwd 完全重叠(2u),mlp_bwd 启动后与 dispatch_fwd 重叠(1u),t=5 处仅通信无计算可被 delay-wgrad 填补。
 
+> [!note] 补充(2026-07-31 · 由 [[comm_compute_overlap_analysis]] 收缩合并)以下三段细化"§5.3 双 Stream 调度"的模型改造与调度实现来源,原属跨框架横向页,现下沉本页。
+
+#### 模型层改造：Layer → 5 子节点
+
+`fine_grained_callables.py:466-707` 的 `build_transformer_layer_callables()` 将每个 TransformerLayer 手工拆解为 5 个可调度子节点(attn_fwd/mlp_fwd/mlp_bwd/mlp_bwd_dw/attn_bwd,对应 §5.3 时间线里的计算任务),使 §5.3 的双 Stream 交错得以在**子层粒度**发生,而非整层原子调度：
+
+![Layer 的 5 子节点拆解](assets/megatron_comm_overlap_layer_5node_split.png)
+
+*图：TransformerLayer 的 5 子节点拆解*
+
+#### 调度算子：`stream_acquire_context()`
+
+§5.3 的 `TransformerLayerSchedulePlan.run()`(`model_chunk_schedule_plan.py:229-297`)把一个 f_layer(forward)和一个 b_layer(backward)在两个 stream 上交错，每个节点的 stream 上下文通过如下上下文管理器切换：
+
+```python
+def stream_acquire_context(self, name):
+    self.event.wait(self.stream)          # 等待 event → 确保前序完成
+    with torch.cuda.stream(self.stream):  # 切换到目标 stream
+        yield
+    self.event.record(self.stream)        # 记录完成 → 后续节点 wait 此 event
+```
+
+![单层 f_layer + b_layer 的双 stream 交错调度](assets/megatron_comm_overlap_flb_stream_interleave.png)
+
+*图：单层 f_layer + b_layer 的双 stream 交错调度*
+
+#### Model Chunk 级调度：镜像层配对
+
+`TransformerModelChunkSchedulePlan.run()` 将 forward 层和 backward 层按**镜像位置**配对：
+
+![Chunk 内的镜像层配对调度](assets/megatron_comm_overlap_mirror_layer_pairing.png)
+
+*图：Chunk 内的镜像层配对调度*
+
+> **P2P 掩盖联动**：PP 的 forward send 放在 comm_stream（与 attn_bwd 重叠），backward send 放在 comp_stream（与 attn_wgrad 重叠）。最后一层 attn 的 wgrad 被延迟到 P2P backward send 之后才执行，最大化掩盖。
+
 ### 5.4 delay-wgrad-compute 的详细流水线
 
 #### 5.4.1 标准反向 vs delay-wgrad（单层内部）
@@ -622,6 +658,13 @@ $$
 
 > **与"掩盖"的关系**：两级拆分让 A2A 的长极（跨节点 RDMA 段）与廉价的 NVLink 段在不同引擎上推进；配合 §5.7 的 `high_priority_a2a_comm_stream`（让 A2A kernel 优先抢 SM）与 `moe_hybridep_num_sms_preprocessing`（调元数据扫描 SM 数），可在 §5.1 的 1F1B overlap 之上进一步压短 A2A 暴露在关键路径上的尾延迟。即：**§5.6 降 A2A 绝对耗时（去冗余 + 两级）+ §5.1 把剩余 A2A 掩盖到计算后面**，二者叠加。
 
+#### 5.6.2 后端硬件映射速查（补充,2026-07-31 · 由 [[comm_compute_overlap_analysis]] 收缩合并）
+
+| Backend | 硬件 | 核心函数 |
+| --- | --- | --- |
+| `deepep` | H100 / NVLink Switch | `fused_dispatch` / `fused_combine`（`_DeepepManager`） |
+| `hybridep` | GB200 / NVLink72 | `hybrid_ep_dispatch` / `hybrid_ep_combine`（`_HybridEPManager`，GPU-side overflow flag） |
+
 ### 5.7 增量更新（ee3f1ff → dev@232c478d4）
 
 > [!update] 2026-06-16 · dev@232c478d4 — 高优先级 A2A 通信流
@@ -635,6 +678,22 @@ $$
 
 > [!update] 2026-06-16 · dev@232c478d4 — flex 后端配置补充
 > §八配置速查表的 `moe_flex_dispatcher_backend` 现多一个取值 `"deepepv2"`（DeepEP v2 ElasticBuffer 后端，#4793）；`moe_deepep_num_sms` 默认从 `20` 改为 `None`（自适应）。详见 [[megatron_ep_analysis]] §③ 增量更新。
+
+### 5.8 Shared Expert：独立 Stream 状态机重叠（`moe_shared_expert_overlap`，补充,2026-07-31 · 由 [[comm_compute_overlap_analysis]] 收缩合并）
+
+**与 §5.1-5.7 的区别**：本节是与 combined_1f1b（`overlap_moe_expert_parallel_comm`）**独立的另一个开关** `moe_shared_expert_overlap`，掩盖的是 Shared Expert 计算与 token dispatch/combine 的 AlltoAll——即便不开 EP+PP 交叉掩盖，单独开此开关也生效。
+
+- **文件**：`transformer/moe/token_dispatcher.py`、`transformer/moe/shared_experts.py`
+
+Shared Expert MLP 在独立 CUDA stream 上运行，通过状态机与 token dispatch/combine 的 AlltoAll 流水线交错：
+
+![Shared Expert 通过专属 stream 与 A2A 通信交错](assets/megatron_comm_overlap_shared_expert_state_machine.png)
+
+*图：Shared Expert 通过专属 stream 与 A2A 通信交错*
+
+Shared Expert 使用**状态机**管理调用顺序：`IDLE → PRE_FORWARD_COMM_DONE → FC1_FORWARD_DONE → FC2_FORWARD_DONE → POST_FORWARD_COMM_DONE → IDLE`，确保在不同 dispatcher 类型下正确同步。
+
+> 相关：deepseek_v4 场景下 Shared Expert 启用 TP（`T_shared>1`）时该开关会额外关闭 TP 的 AG/RS、改走手动调度，见 [[deepseek_v4_tensor_parallel_analysis]] §7.2（`shared_experts.py:147-159`）——两处描述的是同一 `moe_shared_expert_overlap` 机制在不同场景下的效果。
 
 ---
 
@@ -737,4 +796,6 @@ args.context_parallel_size = 2       # CP > 1 时自动启用 attention overlap
 
 - [[megatron_tp_analysis]] · [[megatron_cp_analysis]] · [[megatron_ep_analysis]] · [[megatron_pp_schedulers_analysis]] · [[megatron_ddp_optimizer_analysis]]
 - [[megatron_distributed_optimizer_analysis]] · [[megatron_parallelism_orchestration_analysis]]
+- [[deepseek_v4_tensor_parallel_analysis]] —— Shared Expert Overlap 在 TP>1 场景下的效果（§7.2）
+- [[comm_compute_overlap_analysis]] —— 跨框架（Megatron/torchtitan/MindSpeed）通算掩盖对比矩阵，本页是其 Megatron 权威机制页
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

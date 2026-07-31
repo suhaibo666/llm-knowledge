@@ -343,3 +343,4 @@ a2a 的 backward = split 参数互换的 a2a;combine 反向 ≡ dispatch 正向
 - [[megatron_ep_analysis]] —— MoE 零冗余通信、AlltoAll token dispatch
 - [[async_collective_tensor_deep_dive]] —— `AsyncCollectiveTensor` 源码追踪
 - [[comm_compute_fusion_guide]] —— 通算融合:WaveEP、DeepEP、各维度重叠
+- [[comm_compute_overlap_analysis]] —— 跨框架(Megatron/torchtitan/MindSpeed)通算掩盖对比矩阵,本页是其 torchtitan EP 掩盖机制来源(§4-5)
