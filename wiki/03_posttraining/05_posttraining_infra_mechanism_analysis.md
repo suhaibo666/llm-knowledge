@@ -5,7 +5,7 @@
 > **快照日期**：2026-07-28
 > **证据基线**：四框架 S00 commit、Async/Freshness 固定论文版本与 Kimi K3 Technical Report `0797decb`，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
 > **结论先行**：工业 RL infra 的最小完整模型不是 actor/rollout 两个进程，而是 control、data、weight 三个平面，加上一组跨平面的版本提交与恢复不变量。
-> **阅读导航**：[[03_posttraining/04_on_policy_off_policy_staleness_analysis|上一篇 D04]] · [[03_posttraining/06_framework_comparison|下一篇 D06]]
+> **阅读导航**：[[on_policy_off_policy_staleness_analysis|上一篇 D04]] · [[03_posttraining/06_framework_comparison|下一篇 D06]]
 
 ---
 
@@ -105,7 +105,7 @@ Backpressure 至少有四层：
 
 只限制 queue 长度会让短样本挤占版本预算；只限制版本会在慢 verifier 下耗尽内存。AReaL 的 `StalenessManager` 同时取 concurrency 和 staleness capacity 的最小值，是一个清楚的参考实现，见 `areal/infra/staleness_manager.py:80-112`。
 
-K3 给出 cache-pressure-aware admission 的另一种信号组合：active request count、queued request count 和 KV utilization 共同调节送入 inference engine 的请求数。早期 context 短时提高并发，轨迹变长、KV 压力升高时自动收紧，而不是用固定“平均完整轨迹长度”静态限流（Kimi K3 Technical Report §5.3.1，p.21；详见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]]）。
+K3 给出 cache-pressure-aware admission 的另一种信号组合：active request count、queued request count 和 KV utilization 共同调节送入 inference engine 的请求数。早期 context 短时提高并发，轨迹变长、KV 压力升高时自动收紧，而不是用固定“平均完整轨迹长度”静态限流（Kimi K3 Technical Report §5.3.1，p.21；详见 [[kimi_k3_posttraining_case_study_analysis|D12]]）。
 
 ## 5. Dynamic batching 与 group 语义
 
@@ -255,8 +255,8 @@ microVM environment snapshots
 
 ## Related Pages
 
-- [[03_posttraining/04_on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
+- [[on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
 - [[03_posttraining/06_framework_comparison|D06 工业后训练框架对比]]
 - [[03_posttraining/07_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
-- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
+- [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis|既有 RL Infra 效率分析]]

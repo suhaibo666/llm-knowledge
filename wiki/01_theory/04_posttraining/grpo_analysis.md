@@ -153,7 +153,7 @@ GRPO demonstrated that:
 - **Emergent behaviors** can surpass human-designed reasoning patterns
 - **Small models can be distilled** from large reasoning models
 
-> **2026-07-27 更新说明**：本文保留 GRPO 的历史原理介绍。关于 response-length/group-std 偏置、DAPO/GSPO/SAO 演进，以及 group rollout 是否“过时”的当前判断，统一阅读 [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]；on/off-policy 与 TIM 见 [[03_posttraining/04_on_policy_off_policy_staleness_analysis|D04]]。
+> **2026-07-27 更新说明**：本文保留 GRPO 的历史原理介绍。关于 response-length/group-std 偏置、DAPO/GSPO/SAO 演进，以及 group rollout 是否“过时”的当前判断，统一阅读 [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]；on/off-policy 与 TIM 见 [[on_policy_off_policy_staleness_analysis|D04]]。
 
 ## Related Pages
 

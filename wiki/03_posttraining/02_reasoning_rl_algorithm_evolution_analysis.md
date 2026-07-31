@@ -5,7 +5,7 @@
 > **快照日期**：2026-07-28
 > **证据基线**：固定 arXiv 版本与四框架 S00 commit，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
 > **结论先行**：前沿不是简单地从 GRPO 换一个缩写，而是在修正四类对象：统计单位、有效样本分布、行为策略比率和训练—推理一致性。
-> **阅读导航**：[[03_posttraining/01_posttraining_frontier_map_analysis|上一篇 D01]] · [[03_posttraining/03_agentic_rl_algorithm_analysis|下一篇 D03]]
+> **阅读导航**：[[posttraining_frontier_map_analysis|上一篇 D01]] · [[agentic_rl_algorithm_analysis|下一篇 D03]]
 
 ---
 
@@ -22,7 +22,7 @@
 
 SAO 的 single-rollout 是另一组偏差—方差—调度折衷，并没有证明 group rollout 普遍无效。它用 value model 和更严格的 token mask 补回单样本高方差；因此“一个样本”不是免费升级。
 
-Kimi K3 又给出一个工业反例：它仍为每个 prompt 采 \(K\) 条 completion，并在同题 \(K\) 条全部完成后才送优化；partial rollout 打破的是全局 \(N\times K\) 的长尾等待，而不是 \(K\)-response completion/dispatch boundary。报告没有重述所有任务的 advantage estimator，不能把这条调度边界扩大为通用统计公式（Kimi K3 Technical Report §4.1.2，p.13；详见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]]）。
+Kimi K3 又给出一个工业反例：它仍为每个 prompt 采 \(K\) 条 completion，并在同题 \(K\) 条全部完成后才送优化；partial rollout 打破的是全局 \(N\times K\) 的长尾等待，而不是 \(K\)-response completion/dispatch boundary。报告没有重述所有任务的 advantage estimator，不能把这条调度边界扩大为通用统计公式（Kimi K3 Technical Report §4.1.2，p.13；详见 [[kimi_k3_posttraining_case_study_analysis|D12]]）。
 
 ## 2. 统一符号
 
@@ -197,9 +197,9 @@ valid_token_count, response_length
 
 ## Related Pages
 
-- [[03_posttraining/03_agentic_rl_algorithm_analysis|D03 Agentic RL 算法与环境]]
-- [[03_posttraining/04_on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
-- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
+- [[agentic_rl_algorithm_analysis|D03 Agentic RL 算法与环境]]
+- [[on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
+- [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[01_theory/04_posttraining/grpo_analysis|既有 GRPO 分析]]
 - [[01_theory/04_posttraining/dapo_analysis|既有 DAPO 分析]]
 - [[01_theory/04_posttraining/gspo_analysis|既有 GSPO 分析]]

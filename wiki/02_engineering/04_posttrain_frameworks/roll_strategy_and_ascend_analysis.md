@@ -5,7 +5,7 @@
 > **源码基线**：ROLL `370cb24c1036ea9145365478fcc40612b2186fc8`
 > **核验日期**：2026-07-27
 > **结论先行**：ROLL 的核心抽象是 Pipeline 编排、Cluster 执行、Strategy 后端和显式 device mapping；这能统一控制接口，但硬件与后端的 kernel、dtype、collective 和权重布局仍需要分别验证。
-> **阅读导航**：[[03_posttraining/09_areal_async_architecture_analysis|上一篇 D09]] · [[03_posttraining/11_cuda_ascend_posttraining_stack_comparison|下一篇 D11]]
+> **阅读导航**：[[areal_async_architecture_analysis|上一篇 D09]] · [[cuda_ascend_posttraining_stack_comparison|下一篇 D11]]
 
 ---
 
@@ -226,7 +226,7 @@ driver and firmware
 
 ## Related Pages
 
-- [[03_posttraining/09_areal_async_architecture_analysis|D09 AReaL Fully Async]]
-- [[03_posttraining/11_cuda_ascend_posttraining_stack_comparison|D11 CUDA–Ascend 后训练栈对照]]
+- [[areal_async_architecture_analysis|D09 AReaL Fully Async]]
+- [[cuda_ascend_posttraining_stack_comparison|D11 CUDA–Ascend 后训练栈对照]]
 - [[03_posttraining/06_framework_comparison|D06 工业后训练框架对比]]
 - [[02_engineering/04_posttrain_frameworks/rl_sandbox_design_analysis|既有 RL Sandbox 设计]]

@@ -5,7 +5,7 @@
 > **快照日期**：2026-07-28
 > **证据基线**：固定 arXiv 版本与四框架 S00 commit，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
 > **结论先行**：异步是执行结构，staleness 是版本年龄，off-policy 是分布关系，TIM 是同参数下的实现差异；四者相关但绝不等价。
-> **阅读导航**：[[03_posttraining/03_agentic_rl_algorithm_analysis|上一篇 D03]] · [[03_posttraining/05_posttraining_infra_mechanism_analysis|下一篇 D05]]
+> **阅读导航**：[[agentic_rl_algorithm_analysis|上一篇 D03]] · [[03_posttraining/05_posttraining_infra_mechanism_analysis|下一篇 D05]]
 
 ---
 
@@ -120,6 +120,8 @@ K3 报告称 K2.5-style policy optimization 通过逐 token regularization 把�
 
 ## 7. TIM：同一 checkpoint 也可能是两个 policy
 
+> 本节只覆盖 TIM 与 staleness/off-policy 的关系；kernel 非确定性 → logprob 偏差 → 重要性比方差放大 → 训练崩溃的完整四环因果链见 [[tim_causal_chain_analysis]]。
+
 [Diagnosing TIM v1](https://arxiv.org/abs/2605.14220v1) §3.1 用 VeXact 统一模型与 kernel，并使用 batch-invariant kernel 建立零 mismatch 对照；§3.2 与 Fig. 2 显示，小 token 概率差在对照实验中即可独立触发不稳定。§4.1 还区分：
 
 - **recompute**：trainer 用自己的 kernel 重算 old log-prob；
@@ -178,7 +180,7 @@ weight publish commits atomically before new-version rollout
 ## Related Pages
 
 - [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]
-- [[03_posttraining/03_agentic_rl_algorithm_analysis|D03 Agentic RL 算法与环境]]
+- [[agentic_rl_algorithm_analysis|D03 Agentic RL 算法与环境]]
 - [[03_posttraining/05_posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
-- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
+- [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis|既有 RL Infra 效率分析]]

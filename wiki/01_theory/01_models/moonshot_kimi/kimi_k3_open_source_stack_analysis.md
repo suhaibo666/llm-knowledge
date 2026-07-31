@@ -72,7 +72,7 @@ K3 报告 §5.3.2 把它描述为支撑 agentic RL 的 microVM 沙箱层，并�
 - 要求 Linux kernel 6.8+ 与 `/dev/kvm`。
 
 > [!important] 两组数字口径不同，不要混用
-> 报告给的是"最低 133 ms / 49 ms"，README 给的是"< 100 ms / < 50 ms"，且 README 明确把 <50 ms 限定为 **snapshot-backed** 的启动或恢复。二者不矛盾但统计口径不同（报告是训练期实测最小值，README 是产品指标），**都没有给出分位数、硬件与 sandbox 内存规格**，因此仍不能用于外部容量规划——这条限制在 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]] §9 已经写明，本页只是补上了源码侧口径。
+> 报告给的是"最低 133 ms / 49 ms"，README 给的是"< 100 ms / < 50 ms"，且 README 明确把 <50 ms 限定为 **snapshot-backed** 的启动或恢复。二者不矛盾但统计口径不同（报告是训练期实测最小值，README 是产品指标），**都没有给出分位数、硬件与 sandbox 内存规格**，因此仍不能用于外部容量规划——这条限制在 [[kimi_k3_posttraining_case_study_analysis|D12]] §9 已经写明，本页只是补上了源码侧口径。
 >
 > 另外：**overlaybd 与 memory ballooning 是报告里没有提到的两个机制**，属于仓库独有信息。前者解释了"1,505,678 个 image"为何在工程上可行——按需加载而非全量落盘；后者是 6.5× 超分的实现基础。
 
@@ -151,7 +151,7 @@ flowchart TB
     D1 --> D2
 ```
 
-**这张图的信息在"未开源"那几个框上**：K3 公开了**通信**（MoonEP）、**环境**（AgentENV）、**服务**（Mooncake）和**一个注意力 kernel 的 prefill 路径**（FlashKDA），但没有公开 **backbone 实现、trainer、rollout、weight-sync 接线，以及 MLA/AttnRes 两类 kernel**。所以 [[kimi_k3_infra_deepdive]] §5 与 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]] §10.2 的"仍待源码确认"清单，在本次开源后**只被划掉了 MoonEP 与 AgentENV 两行**，其余原样保留。
+**这张图的信息在"未开源"那几个框上**：K3 公开了**通信**（MoonEP）、**环境**（AgentENV）、**服务**（Mooncake）和**一个注意力 kernel 的 prefill 路径**（FlashKDA），但没有公开 **backbone 实现、trainer、rollout、weight-sync 接线，以及 MLA/AttnRes 两类 kernel**。所以 [[kimi_k3_infra_deepdive]] §5 与 [[kimi_k3_posttraining_case_study_analysis|D12]] §10.2 的"仍待源码确认"清单，在本次开源后**只被划掉了 MoonEP 与 AgentENV 两行**，其余原样保留。
 
 ---
 
@@ -175,7 +175,7 @@ flowchart TB
 - [[kimi_k3_architecture_deepdive]] — 结构层：KDA / Gated MLA / AttnRes / LatentMoE / SiTU
 - [[kimi_k3_infra_deepdive]] — 训推基础设施；§3.3 FlashKDA 机制、§5 事实边界表
 - [[kimi_k3_stability_analysis]] — K3 的训练稳定性栈
-- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]] — D12：后训练与 1M Agentic RL 闭环（AgentENV 的上游语境）
+- [[kimi_k3_posttraining_case_study_analysis]] — D12：后训练与 1M Agentic RL 闭环（AgentENV 的上游语境）
 - [[mooncake_analysis]] — Mooncake 分离式推理
 - [[gdn_kda_kernel_implementation_analysis]] — GDN/KDA 训推 kernel 的实现拆解
 - [[moonshot_kimi/index]] — Kimi/Moonshot 技术路线总览

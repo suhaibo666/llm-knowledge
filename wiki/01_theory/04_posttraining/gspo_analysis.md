@@ -113,7 +113,7 @@ GSPO was tested on Qwen3-30B-A3B-Base (MoE model):
 3. **Simplifies infrastructure**: No need for complex stabilization strategies
 4. **Scales better**: Sequence-level optimization is more principled for long responses
 
-> **2026-07-27 更新说明**：本文的“稳定性”表述代表论文固定实验条件，不是所有模型/框架的无条件结论。sequence ratio/clip 的公式—batch schema 对照见 [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|D02]]，与 staleness/TIM 的组合语义见 [[03_posttraining/04_on_policy_off_policy_staleness_analysis|D04]]。
+> **2026-07-27 更新说明**：本文的“稳定性”表述代表论文固定实验条件，不是所有模型/框架的无条件结论。sequence ratio/clip 的公式—batch schema 对照见 [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|D02]]，与 staleness/TIM 的组合语义见 [[on_policy_off_policy_staleness_analysis|D04]]。
 
 ## Relationship to Other Methods
 

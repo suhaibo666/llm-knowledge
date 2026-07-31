@@ -4,7 +4,7 @@
 > **文档编号**：D00
 > **快照日期**：2026-07-28
 > **适用目标**：理解 Reasoning RL、Agentic/Coding RL 的前沿机制，并具备阅读、修改和评估工业级后训练框架的能力
-> **阅读导航**：[[03_posttraining/index|上一篇：后训练纵向学习域首页]] · [[03_posttraining/01_posttraining_frontier_map_analysis|下一篇：D01 后训练前沿全景地图]]
+> **阅读导航**：[[03_posttraining/index|上一篇：后训练纵向学习域首页]] · [[posttraining_frontier_map_analysis|下一篇：D01 后训练前沿全景地图]]
 
 ---
 
@@ -40,18 +40,18 @@ flowchart LR
 | 顺序 | 文档 | 阶段 | 学习问题 | 前置知识 | 读完后应能完成的任务 | 状态 |
 |---:|---|---|---|---|---|---|
 | 1 | D00 本文 | S00/S05 | 整个研究域怎样组织，什么算真正掌握 | PyTorch 基础；LLM 训练/推理常识 | 根据自己的薄弱点标出阅读路径和验收物 | 已完成 |
-| 2 | D01 [[03_posttraining/01_posttraining_frontier_map_analysis|后训练前沿全景地图]] | S00 | 当前前沿为什么同时是算法、在线数据和系统问题 | D00 | 画出五层闭环，并把一个新工作定位到算法/数据/系统/硬件层 | 已完成 |
+| 2 | D01 [[posttraining_frontier_map_analysis|后训练前沿全景地图]] | S00 | 当前前沿为什么同时是算法、在线数据和系统问题 | D00 | 画出五层闭环，并把一个新工作定位到算法/数据/系统/硬件层 | 已完成 |
 | 3 | D02 [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|Reasoning RL 算法演进]] | S01 | GRPO、DAPO、GSPO 等方法改变了哪个估计量、clip 或采样假设 | policy gradient、KL、importance sampling | 从公式推导 loss 所需字段，并指出它对 rollout batch 的要求 | 已完成 |
-| 4 | D03 [[03_posttraining/03_agentic_rl_algorithm_analysis|Agentic RL 算法与环境]] | S01 | 多轮工具调用和 coding task 怎样改变 trajectory、reward 与 credit | D02；MDP/trajectory 基础 | 为一个 coding agent 定义 trajectory schema、reward 时点和失败处理 | 已完成 |
-| 5 | D04 [[03_posttraining/04_on_policy_off_policy_staleness_analysis|On-policy、Off-policy 与 Staleness]] | S01 | policy lag、importance ratio 与 train–inference mismatch 怎样相互作用 | D02、D03；概率比 | 给出样本版本规则，判断一个异步方案在什么意义下偏离 on-policy | 已完成 |
+| 4 | D03 [[agentic_rl_algorithm_analysis|Agentic RL 算法与环境]] | S01 | 多轮工具调用和 coding task 怎样改变 trajectory、reward 与 credit | D02；MDP/trajectory 基础 | 为一个 coding agent 定义 trajectory schema、reward 时点和失败处理 | 已完成 |
+| 5 | D04 [[on_policy_off_policy_staleness_analysis|On-policy、Off-policy 与 Staleness]] | S01 | policy lag、importance ratio 与 train–inference mismatch 怎样相互作用 | D02、D03；概率比 | 给出样本版本规则，判断一个异步方案在什么意义下偏离 on-policy | 已完成 |
 | 6 | D05 [[03_posttraining/05_posttraining_infra_mechanism_analysis|后训练 Infra 核心机制]] | S01 | control/data/weight 三平面怎样协同，bubble、backpressure 和故障怎样产生 | D04；分布式通信基础 | 画出一次迭代的消息时序并标明数据、权重和状态的 owner | 已完成 |
 | 7 | D06 [[03_posttraining/06_framework_comparison|工业后训练框架对比]] | S02/S05 | 怎样用统一术语比较 verl、slime、AReaL、ROLL | D05 | 不依赖 README 口径，完成一张机制与证据等级对比表 | 已完成 |
 | 8 | D07 [[03_posttraining/07_verl_end_to_end_iteration_analysis|verl 端到端训练迭代]] | S02 | 一批 prompt 怎样穿过 rollout、reward、advantage、update 与权重刷新 | D06；Ray；FSDP/Megatron 基础 | 从配置/入口追到关键类与函数，并指出扩展 loss 或 rollout 的位置 | 已完成 |
-| 9 | D08 [[03_posttraining/08_slime_architecture_analysis|slime 高性能与异步架构]] | S03 | Megatron、SGLang、DataSource、buffer 和 async producer 怎样组合 | D07 | 对照 verl 解释 slime 的吞吐来源及其 freshness/correctness 代价 | 已完成 |
-| 10 | D09 [[03_posttraining/09_areal_async_architecture_analysis|AReaL Fully Async 与 Agentic 架构]] | S03 | 服务化 training/inference/agent/weight update 如何维持在线 RL 闭环 | D08 | 定位 staleness 控制、agent trajectory 和 weight service 的所有权边界 | 已完成 |
-| 11 | D10 [[03_posttraining/10_roll_strategy_and_ascend_analysis|ROLL Strategy、异构与 Ascend]] | S04 | Strategy/AutoDeviceMapping 能屏蔽哪些后端差异，哪些不能 | D09；Ascend 软件栈常识 | 从 CUDA 配置映射到 Ascend，列出需要改动和需要实测的组件 | 已完成 |
-| 12 | D11 [[03_posttraining/11_cuda_ascend_posttraining_stack_comparison|CUDA–Ascend 后训练栈对照]] | S04 | 通信、推理、并行、权重同步、kernel 与诊断的差距在哪里 | D10 | 独立评估一个后训练方案的 NPU 可行性、风险和验证矩阵 | 已完成 |
-| 13 | D12 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\|Kimi K3 后训练案例]] | S05 | 九专家、MOPD、partial rollout、white-box environment、QAT 与百万 token 状态怎样形成一条工业闭环 | D02–D05、D11 | 区分报告事实、机制推导和源码未知项，并画出跨 GPU/CPU/NVMe/sandbox 的状态生命周期 | 已完成 |
+| 9 | D08 [[slime_architecture_analysis|slime 高性能与异步架构]] | S03 | Megatron、SGLang、DataSource、buffer 和 async producer 怎样组合 | D07 | 对照 verl 解释 slime 的吞吐来源及其 freshness/correctness 代价 | 已完成 |
+| 10 | D09 [[areal_async_architecture_analysis|AReaL Fully Async 与 Agentic 架构]] | S03 | 服务化 training/inference/agent/weight update 如何维持在线 RL 闭环 | D08 | 定位 staleness 控制、agent trajectory 和 weight service 的所有权边界 | 已完成 |
+| 11 | D10 [[roll_strategy_and_ascend_analysis|ROLL Strategy、异构与 Ascend]] | S04 | Strategy/AutoDeviceMapping 能屏蔽哪些后端差异，哪些不能 | D09；Ascend 软件栈常识 | 从 CUDA 配置映射到 Ascend，列出需要改动和需要实测的组件 | 已完成 |
+| 12 | D11 [[cuda_ascend_posttraining_stack_comparison|CUDA–Ascend 后训练栈对照]] | S04 | 通信、推理、并行、权重同步、kernel 与诊断的差距在哪里 | D10 | 独立评估一个后训练方案的 NPU 可行性、风险和验证矩阵 | 已完成 |
+| 13 | D12 [[kimi_k3_posttraining_case_study_analysis\|Kimi K3 后训练案例]] | S05 | 九专家、MOPD、partial rollout、white-box environment、QAT 与百万 token 状态怎样形成一条工业闭环 | D02–D05、D11 | 区分报告事实、机制推导和源码未知项，并画出跨 GPU/CPU/NVMe/sandbox 的状态生命周期 | 已完成 |
 
 ### 1.1 如果只想先抓主干
 
@@ -292,8 +292,8 @@ Inference vs verified fact:
 
 ## Related Pages
 
-- [[03_posttraining/01_posttraining_frontier_map_analysis|D01 后训练前沿全景地图]]
-- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
+- [[posttraining_frontier_map_analysis|D01 后训练前沿全景地图]]
+- [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[01_theory/04_posttraining/index|旧后训练理论入口]]
 - [[02_engineering/04_posttrain_frameworks/index|旧后训练框架入口]]
 - [[02_engineering/04_posttrain_frameworks/verl/index|verl 既有分析索引]]

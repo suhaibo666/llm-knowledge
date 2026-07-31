@@ -6,6 +6,33 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-31：知识库结构整改 P5 Task 2（后训练三域整合，纯迁移批 D01/D03/D04/D08–D12）
+
+**Type**: Pure Migration（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 2）
+
+`wiki/03_posttraining/` 解散工作的开局批次，把 8 篇纵向学习域文档 `git mv` 到功能树对应位置并去编号前缀：
+
+| 旧路径 | 新路径 |
+|---|---|
+| `03_posttraining/01_posttraining_frontier_map_analysis.md` | `01_theory/04_posttraining/posttraining_frontier_map_analysis.md` |
+| `03_posttraining/03_agentic_rl_algorithm_analysis.md` | `01_theory/04_posttraining/agentic_rl_algorithm_analysis.md` |
+| `03_posttraining/04_on_policy_off_policy_staleness_analysis.md` | `01_theory/04_posttraining/on_policy_off_policy_staleness_analysis.md` |
+| `03_posttraining/08_slime_architecture_analysis.md` | `02_engineering/04_posttrain_frameworks/slime_architecture_analysis.md` |
+| `03_posttraining/09_areal_async_architecture_analysis.md` | `02_engineering/04_posttrain_frameworks/areal_async_architecture_analysis.md` |
+| `03_posttraining/10_roll_strategy_and_ascend_analysis.md` | `02_engineering/04_posttrain_frameworks/roll_strategy_and_ascend_analysis.md` |
+| `03_posttraining/11_cuda_ascend_posttraining_stack_comparison.md` | `02_engineering/04_posttrain_frameworks/cuda_ascend_posttraining_stack_comparison.md` |
+| `03_posttraining/12_kimi_k3_posttraining_case_study_analysis.md` | `01_theory/01_models/moonshot_kimi/kimi_k3_posttraining_case_study_analysis.md` |
+
+正文零改动（仅两处例外，见下）。**入链改写**：全库 109 处 `[[...]]` 目标从旧编号基名/`03_posttraining/NN_...` 路径限定形式改为新裸基名，涉及 26 个文件（含 `wiki/index.md`、`wiki/03_posttraining/` 内未迁移的 D00/D02/D05/D06/D07/index、moonshot_kimi 五篇 K3 页、`grpo_analysis`/`gspo_analysis`、`rl_infra_efficiency_analysis`/`rl_sandbox_design_analysis`/`verl/index`）；`03_posttraining/index.md` 与 `00_posttraining_source_reading_guide.md` 中指向这 8 篇的行同步改指新位置，但索引本身按计划保留到 Task 7 才删除。`wiki/changelog.md` 中 3 处写入当时的历史活链接（本文件之前记载 D01/D12 新增的条目）按"历史不回写"惯例降级为反引号 + 去向说明，不当作活链接维护。
+
+**例外 1（spec 点名的良性分层，只补链不动正文）**：`on_policy_off_policy_staleness_analysis.md`（D04）§7 TIM 小节新增一句指向 [[tim_causal_chain_analysis]] 的速览提示；`tim_causal_chain_analysis.md` Related Pages 反向补一条指向 `on_policy_off_policy_staleness_analysis` 的链接，说明其覆盖"TIM 与 staleness/off-policy 关系"这一上层概念坐标。
+
+**例外 2（三个承接目录 index 补条目）**：`01_theory/04_posttraining/index.md` 新增"后训练前沿整合"小节（3 条：posttraining_frontier_map/agentic_rl_algorithm/on_policy_off_policy_staleness）；`02_engineering/04_posttrain_frameworks/index.md` 新增"后训练框架源码对照"小节（4 条：slime/areal/roll/cuda_ascend_stack）；`01_theory/01_models/moonshot_kimi/index.md` 在既有 K3 报告行后新增一条专属条目指向 `kimi_k3_posttraining_case_study_analysis`。
+
+**验收**：`tools/check_links.py` broken=0（pages=375，与 P4 收官基线一致）；`python -m pytest tools/ -q` 77 passed。
+
+---
+
 ## 2026-07-30：知识库结构整改 P4 Task 10（课程页化 + 19 号目录解散 + 全 index 终校，P4 收官）
 
 **Type**: Course-page Consolidation + Directory Removal + Index Audit（设计：
@@ -1023,7 +1050,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **新增 [[01_theory/01_models/moonshot_kimi/kimi_k3_stability_analysis]]**：按“哪条轴会失稳”重组报告 §2.2/§2.3/§2.4/§2.5/§3.2/§3.3/§3.4/§4.1.2/§4.1.4 与 Appendix C，得出主线——**K3 拒绝的每个替代方案都是“用质量或超参换稳定”，被采纳的机制几乎都同时提升质量或降低开销**（aux loss、sign 更新、BIP、hard clamp、无界 SwiGLU、SigLIP 初始化、WSD 七处取舍指向同一方向）。
 - **修正 [[01_theory/01_models/moonshot_kimi/kimi_k3_infra_deepdive]] §2.1**：原记“Per-Head Muon 如何与 K2 MuonClip 组合仍未知”过窄；报告 §3.3（p.11）明写三者并用（Per-Head Muon + K2 weight-clipping + QB），并给出 cosine + 1% warmup、weight decay 0.1、8k→64k 预训练。“未知”收窄到联合消融与 clip 阈值。§5 事实边界表的 MoonEP 行标为已兑现、AgentENV 行补仓库口径。
 - **补齐 [[01_theory/01_models/moonshot_kimi/kimi_k3_architecture_deepdive]] 两处缺失的“为什么”**：MoonViT-V2 从零训练的**首要动机是训练稳定性**（SigLIP 初始化的 MoonViT-3D 梯度范数持续偏高且频繁 spike，Fig. 6），且视觉质量持平；Block AttnRes 在 K3 的精确配置为 8 块 × 12 层、计入 embedding 共 9 块，开销从 `O(Ld)` 降到 `O(Nd)`。
-- **[[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]] 新增 §9.1**：AgentENV 仓库侧口径，并标注与报告延迟数字（133/49 ms vs `<100`/`<50 ms`）的口径差异，证据等级升至“可下载实现 + README 自报”，未升 P2/P3。
+- **`D12`（`03_posttraining/12_kimi_k3_posttraining_case_study_analysis`，历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[kimi_k3_posttraining_case_study_analysis]]，按"历史不回写"惯例降级为反引号）新增 §9.1**：AgentENV 仓库侧口径，并标注与报告延迟数字（133/49 ms vs `<100`/`<50 ms`）的口径差异，证据等级升至“可下载实现 + README 自报”，未升 P2/P3。
 - **补写 [[01_theory/01_models/moonshot_kimi/kimi_k3_architecture_deepdive]] §六 SiTU（2026-07-28 追加）**：把原来 5 行的条目扩成完整一节，并新增自绘四联图 `assets/kimi_k3_fig_situ_range.png/.svg`（按报告 §2.3.2 与 Appendix B 公式数值绘制，非复制 Fig. 4）。补出报告 Appendix B 的设计目标原文（bound the SwiGLU product **without discarding the characteristic shape of Swish**——保住原点近线性与消失负尾）、只 cap 线性因子而保留 sigmoid 的理由、Eq. 18 的一阶等价与 Eq. 19 的界，以及 hard clamp 被否决的原因（饱和边界外梯度归零）。**值域主结果**：预激活不变；门支 `(−0.2785,+∞) → (−0.2698, 4)`（下确界只动 3%，cap 实际只作用于正半轴）；up 支 `ℝ → ±25`；输出 `ℝ → (−100,100)`。另加三条本库推算：四角点显示 ±100 两端都由门支饱和到 4 驱动、门支负半轴对输出量级贡献上限仅 6.74；cap 保留线性值的比例只依赖 `z/β`（0.25β→98.0%、1β→76.2%、2β→48.2%），据此说明 `β₁=4` vs `β₂=25` 意味着门被管得比 up 严约 6 倍（取值理由报告未给，标 [推断]）。
 - **证据边界（显眼的缺席）**：K2 有“15.5T tokens 零 loss spike”，**K3 报告没有等价陈述**——无训练 loss 曲线、无 spike 计数、无容错章节；全文唯一 spike 级实测证据是 Fig. 6 的 MoonViT 梯度范数对比。因此“K3 稳定性机制更系统”可说，“K3 训练更稳定”不可说。
 
@@ -1034,7 +1061,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **Type**: Source Ingest + Industrial Case Study + Cross-Document Correction（固定官方报告 `0797decb`，将算法、trajectory、environment、Infra 与部署精度放回同一个 `wiki/03_posttraining/` 闭环。）
 
 - **原始来源**：新增 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`，SHA-256 `fd6ee35c07766a5eb6104235f1b407e4329f969e3482b8c42937c7b5f2b3efe1`；来源台账补 §4.1、§4.2、§5.3 与 Appendix F 的精确定位。
-- **新增 D12 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]]**：串起 SFT → 九个 domain/effort 专家 → MOPD，澄清 partial rollout 保留 prompt 内 \(K\) group，并分析 white-box environment、XTML preserved thinking、MXFP4/MXFP8 QAT、draft model、external KV pool 与 AgentENV。
+- **新增 D12 `03_posttraining/12_kimi_k3_posttraining_case_study_analysis`**（历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[kimi_k3_posttraining_case_study_analysis]]，按"历史不回写"惯例降级为反引号）：串起 SFT → 九个 domain/effort 专家 → MOPD，澄清 partial rollout 保留 prompt 内 \(K\) group，并分析 white-box environment、XTML preserved thinking、MXFP4/MXFP8 QAT、draft model、external KV pool 与 AgentENV。
 - **回填统一主线**：更新 D00–D05 与 D11；把 K3 作为项目级工业案例，而不是没有训练源码证据的“第五个开源框架”；D00 与领域/全局索引扩展为 D00–D12 连续编号。
 - **修正事实边界**：量化 scheme 一致只消除该维度 TIM；K3 partial rollout 不是 fully async；Figure 8、MOPD、GRM、external KV 与 AgentENV 均保留未披露超参数、消融或运行条件。
 - **K3 旧页同步**：总览、架构、Infra 与 Moonshot 索引从“报告/权重待发布”更新为 2026-07-28 固定报告，并把后训练机制统一链接到 D12。
@@ -1087,7 +1114,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 - **新增统一入口**：建立 [[03_posttraining/index]]，后续 D00–D11 新研究统一写入 `wiki/03_posttraining/`；旧理论与工程页面保持原位，通过链接复用，不再把 RL 算法和 Infra 分散承载。
 - **新增 D00 [[00_posttraining_source_reading_guide]]**：按 D00 → D11 固定推荐阅读顺序，定义 S00–S05 六个研究阶段、六级可验证能力门槛，以及论文、源码、工业“支持等级”和 CUDA→Ascend 适配的阅读方法。
-- **新增 D01 [[01_posttraining_frontier_map_analysis]]**：以优化粒度、on-policy/freshness、训练—推理一致性和 Agentic 环境四组张力组织前沿地图；固定 verl `983cb0f`、slime `aaf5c20`、AReaL `b23fa6c`、ROLL `370cb24` 的 2026-07-27 源码快照。
+- **新增 D01 `01_posttraining_frontier_map_analysis`**（历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[posttraining_frontier_map_analysis]]，按"历史不回写"惯例降级为反引号）：以优化粒度、on-policy/freshness、训练—推理一致性和 Agentic 环境四组张力组织前沿地图；固定 verl `983cb0f`、slime `aaf5c20`、AReaL `b23fa6c`、ROLL `370cb24` 的 2026-07-27 源码快照。
 - **研究分工**：verl 作为主基线，slime 作为性能/前沿对照，AReaL 作为 fully async/Agentic 对照，ROLL 作为多后端、异构和 Ascend 专项；不使用脱离模型、硬件、配置和 freshness 条件的总榜。
 
 ---

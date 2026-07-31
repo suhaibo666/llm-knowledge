@@ -5,7 +5,7 @@
 > **快照日期**：2026-07-28
 > **证据基线**：固定 arXiv 版本与四框架 S00 commit，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
 > **结论先行**：Agentic RL 的主要变化不是“多轮 prompt”，而是 policy action、环境状态、credit、版本和失败恢复不再与单条 token 序列天然对齐。
-> **阅读导航**：[[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|上一篇 D02]] · [[03_posttraining/04_on_policy_off_policy_staleness_analysis|下一篇 D04]]
+> **阅读导航**：[[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|上一篇 D02]] · [[on_policy_off_policy_staleness_analysis|下一篇 D04]]
 
 ---
 
@@ -44,7 +44,7 @@ artifacts: patch, test_log, sandbox_snapshot, kv_continuation
 
 `policy_version_per_call` 是必要字段：fully async 下，一条 trajectory 可能跨多次 weight refresh。把整条 trajectory 只标一个版本会掩盖 partial rollout。
 
-K3 还说明 `history_mode` 不是展示层元数据：XTML 的 thinking mode 会把历史 `think` channel 始终保留，哪怕内容为空。删除 thinking history 会改变下一次 LLM call 的 observation，应与 tool result 一样进入可重放 trajectory contract（Kimi K3 Technical Report Appendix F，pp.46–47；详见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]]）。
+K3 还说明 `history_mode` 不是展示层元数据：XTML 的 thinking mode 会把历史 `think` channel 始终保留，哪怕内容为空。删除 thinking history 会改变下一次 LLM call 的 observation，应与 tool result 一样进入可重放 trajectory contract（Kimi K3 Technical Report Appendix F，pp.46–47；详见 [[kimi_k3_posttraining_case_study_analysis|D12]]）。
 
 ## 3. Agentic 闭环
 
@@ -193,7 +193,7 @@ K3 展示了更完整的恢复目标：暂停 rollout 时既要保存模型侧 K
 ## Related Pages
 
 - [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]
-- [[03_posttraining/04_on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
+- [[on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
 - [[03_posttraining/05_posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
-- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
+- [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[02_engineering/04_posttrain_frameworks/rl_sandbox_design_analysis|既有 RL Sandbox 设计]]

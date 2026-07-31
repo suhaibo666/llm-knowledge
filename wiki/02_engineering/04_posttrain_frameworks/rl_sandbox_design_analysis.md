@@ -179,7 +179,7 @@ Sandbox 既是 reward hacking 防御 Layer 1 的物理基础（强隔离 → hac
 
 ## Related Pages
 
-- [[03_posttraining/03_agentic_rl_algorithm_analysis]] — Agentic trajectory、reward event、failure 与 coding sandbox schema
+- [[agentic_rl_algorithm_analysis]] — Agentic trajectory、reward event、failure 与 coding sandbox schema
 - [[03_posttraining/05_posttraining_infra_mechanism_analysis]] — sandbox 在后训练数据面、故障域和 backpressure 中的位置
 - [[03_posttraining/index]] — D00–D11 后训练统一学习域
 - [[reward_hacking_defense_analysis]] — 同系列，sandbox 是 Layer 1 的工程基础

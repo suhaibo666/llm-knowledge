@@ -30,7 +30,7 @@
 ## 2. 从这里开始
 
 1. 先读 [[03_posttraining/00_posttraining_source_reading_guide|D00 LLM 后训练前沿源码学习路线]]，了解完整顺序和六级能力门槛。
-2. 再读 [[03_posttraining/01_posttraining_frontier_map_analysis|D01 后训练前沿全景地图]]，建立算法—数据—系统—硬件的统一坐标。
+2. 再读 [[posttraining_frontier_map_analysis|D01 后训练前沿全景地图]]，建立算法—数据—系统—硬件的统一坐标。
 3. 按 D02 → D11 顺序进入机制、源码与硬件深挖，最后用 D12 完成算法—环境—Infra—部署综合案例复核。
 
 如果已经熟悉 policy gradient，可使用 D00 中的短路线：`D00 → D01 → D02 → D04 → D05 → D07 → D11 → D12`。
@@ -55,18 +55,18 @@
 | 编号 | 文档 | 阶段 | 角色 | 状态 |
 |---|---|---|---|---|
 | D00 | [[03_posttraining/00_posttraining_source_reading_guide|LLM 后训练前沿源码学习路线]] | S00/S05 | 总入口、能力门槛和阅读方法 | 已完成 |
-| D01 | [[03_posttraining/01_posttraining_frontier_map_analysis|后训练前沿全景地图]] | S00 | 当前前沿、基线和深挖队列 | 已完成 |
+| D01 | [[posttraining_frontier_map_analysis|后训练前沿全景地图]] | S00 | 当前前沿、基线和深挖队列 | 已完成 |
 | D02 | [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|Reasoning RL 算法演进]] | S01 | GRPO、DAPO、GSPO 及后续演进 | 已完成 |
-| D03 | [[03_posttraining/03_agentic_rl_algorithm_analysis|Agentic RL 算法与环境]] | S01 | trajectory、reward、credit 与 agent runtime | 已完成 |
-| D04 | [[03_posttraining/04_on_policy_off_policy_staleness_analysis|On-policy、Off-policy 与 Staleness]] | S01 | policy lag、correction 与 TIM | 已完成 |
+| D03 | [[agentic_rl_algorithm_analysis|Agentic RL 算法与环境]] | S01 | trajectory、reward、credit 与 agent runtime | 已完成 |
+| D04 | [[on_policy_off_policy_staleness_analysis|On-policy、Off-policy 与 Staleness]] | S01 | policy lag、correction 与 TIM | 已完成 |
 | D05 | [[03_posttraining/05_posttraining_infra_mechanism_analysis|后训练 Infra 核心机制]] | S01 | control/data/weight 三平面 | 已完成 |
 | D06 | [[03_posttraining/06_framework_comparison|工业后训练框架对比]] | S02/S05 | 四框架的统一机制矩阵 | 已完成 |
 | D07 | [[03_posttraining/07_verl_end_to_end_iteration_analysis|verl 端到端训练迭代]] | S02 | 主基线的真实源码调用链 | 已完成 |
-| D08 | [[03_posttraining/08_slime_architecture_analysis|slime 高性能与异步架构]] | S03 | 性能、数据面与 staleness 对照 | 已完成 |
-| D09 | [[03_posttraining/09_areal_async_architecture_analysis|AReaL Fully Async 与 Agentic 架构]] | S03 | fully async 与服务化 agent loop | 已完成 |
-| D10 | [[03_posttraining/10_roll_strategy_and_ascend_analysis|ROLL Strategy、异构与 Ascend]] | S04 | 多后端 Strategy 和 NPU 专项 | 已完成 |
-| D11 | [[03_posttraining/11_cuda_ascend_posttraining_stack_comparison|CUDA–Ascend 后训练栈对照]] | S04 | 跨硬件的能力与差距矩阵 | 已完成 |
-| D12 | [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\|Kimi K3 后训练案例]] | S05 | 九专家、MOPD、partial rollout、white-box environment、QAT 与百万 token 状态管理 | 已完成 |
+| D08 | [[slime_architecture_analysis|slime 高性能与异步架构]] | S03 | 性能、数据面与 staleness 对照 | 已完成 |
+| D09 | [[areal_async_architecture_analysis|AReaL Fully Async 与 Agentic 架构]] | S03 | fully async 与服务化 agent loop | 已完成 |
+| D10 | [[roll_strategy_and_ascend_analysis|ROLL Strategy、异构与 Ascend]] | S04 | 多后端 Strategy 和 NPU 专项 | 已完成 |
+| D11 | [[cuda_ascend_posttraining_stack_comparison|CUDA–Ascend 后训练栈对照]] | S04 | 跨硬件的能力与差距矩阵 | 已完成 |
+| D12 | [[kimi_k3_posttraining_case_study_analysis\|Kimi K3 后训练案例]] | S05 | 九专家、MOPD、partial rollout、white-box environment、QAT 与百万 token 状态管理 | 已完成 |
 
 ---
 
@@ -124,8 +124,8 @@ Kimi K3 不作为第五个源码框架。其 `0797decb` 官方报告提供项目
 ## Related Pages
 
 - [[03_posttraining/00_posttraining_source_reading_guide|D00 LLM 后训练前沿源码学习路线]]
-- [[03_posttraining/01_posttraining_frontier_map_analysis|D01 后训练前沿全景地图]]
-- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
+- [[posttraining_frontier_map_analysis|D01 后训练前沿全景地图]]
+- [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [知识库总索引](../index.md)
 - [[01_theory/04_posttraining/index|旧后训练理论目录]]
 - [[02_engineering/04_posttrain_frameworks/index|旧后训练框架目录]]

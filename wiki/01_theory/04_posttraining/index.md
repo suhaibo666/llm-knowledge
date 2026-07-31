@@ -30,6 +30,16 @@
 | [[gspo_analysis]] | GSPO (2507.18071) | 序列级重要性比, 修复 GRPO token 级不稳定 |
 | [[rloo_analysis]] | RLOO (2402.14740) | REINFORCE + leave-one-out baseline |
 
+### 后训练前沿整合（kb-reorg P5 迁入）
+
+> 2026-07-31 从 `wiki/03_posttraining/`（原 D01/D03/D04）迁入,是后训练三域整合的一部分。
+
+| 页面 | 核心主题 |
+|------|---------|
+| [[posttraining_frontier_map_analysis]] | 后训练前沿全景地图:优化粒度、on-policy/freshness、训练—推理一致性、Agentic 环境四组张力 |
+| [[agentic_rl_algorithm_analysis]] | Agentic RL 算法与环境:多轮 trajectory、工具调用、reward 与 credit assignment |
+| [[on_policy_off_policy_staleness_analysis]] | On-policy、Off-policy 与 Staleness:policy lag、correction 方案与 TIM 的严格区分 |
+
 ### 训推一致性（TIM）与 RL 稳定性
 
 > 2026-07 新建簇。覆盖「kernel 非确定性 → logprob 偏差 → 重要性比方差放大 → 训练崩溃」这条因果链，及其算法侧与系统侧修法。与 [[07_training_reliability/index]] 问题 2 直接接壤（后者讲系统侧上游，本簇讲中间两环与算法侧修法）。

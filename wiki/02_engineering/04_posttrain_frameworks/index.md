@@ -28,6 +28,17 @@
 | [[rl_sandbox_design_analysis]] | RollArt / ProRL Agent / Anthropic 公开资料 | 10 万级并发 sandbox, Firecracker microVM, Disaggregated 架构, Rollout 三阶段 |
 | [[rl_infra_efficiency_analysis]] | RollArt / RollPacker / ProRL Agent / Claude 4 访谈 | 异步训练、长尾治理（redundant rollouts）、hardware-aware 调度、in-flight reward、environment 池十万级 |
 
+### 后训练框架源码对照（kb-reorg P5 迁入）
+
+> 2026-07-31 从 `wiki/03_posttraining/`（原 D08–D11）迁入,是后训练三域整合的一部分。
+
+| 页面 | 核心主题 |
+|------|---------|
+| [[slime_architecture_analysis]] | slime 高性能与异步架构:Megatron + SGLang、DataSource/buffer、weight transport、async producer |
+| [[areal_async_architecture_analysis]] | AReaL Fully Async 与 Agentic 架构:微服务、Hermes、policy lag、agent trajectory |
+| [[roll_strategy_and_ascend_analysis]] | ROLL Strategy、异构与 Ascend:多后端 Strategy、AutoDeviceMapping、RLVR 与 Agentic async 差异 |
+| [[cuda_ascend_posttraining_stack_comparison]] | CUDA–Ascend 后训练栈对照:通信、推理、并行、权重同步、kernel 与诊断的能力与差距矩阵 |
+
 ---
 
 ## 关联域

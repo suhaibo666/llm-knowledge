@@ -5,7 +5,7 @@
 > **源码基线**：verl `983cb0f24443f87b3d161fad318445130a620b07`
 > **核验日期**：2026-07-27
 > **结论先行**：学习 verl 应先贯通 stable `RayPPOTrainer.fit` 的同步主链，再单独研究 experimental fully async；不要把两条路径拼成一个不存在的调用链。
-> **阅读导航**：[[03_posttraining/06_framework_comparison|上一篇 D06]] · [[03_posttraining/08_slime_architecture_analysis|下一篇 D08]]
+> **阅读导航**：[[03_posttraining/06_framework_comparison|上一篇 D06]] · [[slime_architecture_analysis|下一篇 D08]]
 
 ---
 
@@ -220,6 +220,6 @@ checkpoint and profiler
 ## Related Pages
 
 - [[03_posttraining/06_framework_comparison|D06 工业后训练框架对比]]
-- [[03_posttraining/08_slime_architecture_analysis|D08 slime 高性能与异步架构]]
+- [[slime_architecture_analysis|D08 slime 高性能与异步架构]]
 - [[02_engineering/04_posttrain_frameworks/verl/index|既有 verl 分析索引]]
-- [[03_posttraining/04_on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
+- [[on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]

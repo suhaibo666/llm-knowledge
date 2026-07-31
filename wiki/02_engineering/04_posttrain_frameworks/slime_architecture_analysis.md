@@ -5,7 +5,7 @@
 > **源码基线**：slime `aaf5c2092b01219fa0d5c2d323741d409086ca32`
 > **核验日期**：2026-07-27
 > **结论先行**：slime 的核心设计赌注是保持 Megatron 与 SGLang 的原生能力，同时用很薄的 Ray/DataSource 层闭合 RL 循环；它的优势是路径短、后端深，代价是可移植性更依赖这两个上游。
-> **阅读导航**：[[03_posttraining/07_verl_end_to_end_iteration_analysis|上一篇 D07]] · [[03_posttraining/09_areal_async_architecture_analysis|下一篇 D09]]
+> **阅读导航**：[[03_posttraining/07_verl_end_to_end_iteration_analysis|上一篇 D07]] · [[areal_async_architecture_analysis|下一篇 D09]]
 
 ---
 
@@ -199,6 +199,6 @@ slime 的强项是自定义 rollout function 进入同一 DataSource：
 ## Related Pages
 
 - [[03_posttraining/07_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
-- [[03_posttraining/09_areal_async_architecture_analysis|D09 AReaL Fully Async]]
+- [[areal_async_architecture_analysis|D09 AReaL Fully Async]]
 - [[03_posttraining/06_framework_comparison|D06 工业后训练框架对比]]
 - [[02_engineering/04_posttrain_frameworks/rl_infra_efficiency_analysis|既有 RL Infra 效率分析]]

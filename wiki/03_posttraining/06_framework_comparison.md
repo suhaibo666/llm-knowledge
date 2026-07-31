@@ -191,6 +191,6 @@ flowchart TD
 
 - [[03_posttraining/05_posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
 - [[03_posttraining/07_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
-- [[03_posttraining/08_slime_architecture_analysis|D08 slime 架构]]
-- [[03_posttraining/09_areal_async_architecture_analysis|D09 AReaL 架构]]
-- [[03_posttraining/10_roll_strategy_and_ascend_analysis|D10 ROLL 与 Ascend]]
+- [[slime_architecture_analysis|D08 slime 架构]]
+- [[areal_async_architecture_analysis|D09 AReaL 架构]]
+- [[roll_strategy_and_ascend_analysis|D10 ROLL 与 Ascend]]
