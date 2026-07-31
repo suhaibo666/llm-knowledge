@@ -3,6 +3,7 @@
 > **源基线（权威）**: NVIDIA **CUDA C++ Programming Guide v12.9.1**（archive），§*Thread Hierarchy*（Programming Model）+ §*Hardware Implementation / SIMT Architecture*。Triton 对照锚定 `triton main @ 70e0929`。
 > **维度**: GPU 编程地基（概念→深入）｜ 能力：全部能力的前置
 > 本页专门拆掉初学者最容易卡住的那条链：**计算任务的逻辑层级 Grid→Block→Thread，如何映射到物理硬件 SM 上、并以 Warp 为真正的执行单位**。每个概念配可运行 demo。读完再回 [[triton_00_gpu_essentials_guide]] / [[gpu_kernel_guide]] 就通了。
+> **本页地位**：GPU **执行模型权威页**（2026-07 归一定稿）——[[gpu_kernel_guide]] §01、[[triton_00_gpu_essentials_guide]] §2 直觉一的执行层级讲解均已收缩为指针，指回本页；Roofline 的姊妹权威页是 [[operator_optimization_guide]] §2。
 
 ---
 
@@ -270,6 +271,7 @@ TRITON_INTERPRET=1 python triton_whoami.py  # 看 program_id ≈ blockIdx（无�
 ## 相关页面
 
 - [[gpu_kernel_guide]] — GPU/NPU Kernel 工程总览（本页是其 §01 执行层级的「概念→深入」展开版）
+- [[operator_optimization_guide]] — **Roofline 权威页**：本页是执行模型权威页，与该页 §2（Roofline）互为姊妹权威
 - [[cuda_gemm_kernel_analysis]] — 把执行层级落到 SM80 生产级 Tensor Core GEMM
 - [[cuda_nonmatmul_kernels_analysis]] — 同一执行模型下，按 roofline 与数据依赖切换优化逻辑
 - [[ascend_kernel_execution_model_analysis]] — 对照没有 warp 的 DaVinci AI Core 执行模型

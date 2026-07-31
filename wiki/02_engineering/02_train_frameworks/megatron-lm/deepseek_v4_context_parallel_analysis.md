@@ -5,6 +5,7 @@
 > **源基线**: Megatron-LM `dev` @ `232c478d4`（2026-06-16）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`parallel_state.py`、`dot_product_attention_context_parallel.py` 等。
 > **维度**: 工程实现（框架层）。**审计/移库**: 2026-06-25（自 `02_train_frameworks/` 移入 `megatron-lm/`；citation 已对照当前 HEAD 抽查，少量行号随源码漂移）。
 > **与模型页的分工**: 论文级 CP *算法*（两阶段压缩感知 CP、可见性控制）见模型页 [[deepseek_v4_cp_analysis]]（§3.4.3）；本页讲 Megatron 的 *实现* 与 *代码↔论文 gap*（见 §五 5.5、§九 特征 5）。
+> **划界声明**: CP/Ring Attention 通用机制（p2p/all_gather/a2a/a2a+p2p 四种通信调度的算法本体、因果 zigzag 裁剪、通信量代数、分层 CP 的 N 级分组构造）已归一到 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]]——本页的 Native CP 源码 walkthrough（§三）与分层分组构造代码（§1.2）正是该理论页对应章节的骨架来源。**本页只保留 DeepSeek-V4/MLA/CSA/HCA 特有内容**：MLA 对 CP 通信量降低 ~128 倍的推导、CSA/HCA 压缩注意力与 CP 交互的论文↔代码 gap 审计（本页核心贡献）、RoPE 的 CP 感知、Dynamic CP 对 MLA 的不支持、CP 与 EP 的带宽竞争、TE CP 的 cp_stream 双缓冲机制（四页中仅此一页覆盖）。
 
 > 本报告基于 Megatron-LM dev 分支中 DeepSeek-V4 的实际源码实现，系统分析其 Context Parallelism（CP）机制。涵盖 CP 进程组拓扑、四种通信类型（p2p/all_gather/a2a/a2a+p2p）的实现差异、TransformerEngine 的 fused flash attention + CP 路径、Native CP 的 autograd 实现、以及 DSv4（MLA + CSA/HCA）架构对 CP 的特殊适配与限制。
 
@@ -48,47 +49,7 @@ CP 组与 TP 组、PP 组、EP 组正交。一个典型的 4D 并行拓扑中，
 
 ### 1.2 Hierarchical CP：NVLink + IBLink 分层
 
-Megatron-LM 支持 **Hierarchical Context Parallelism**，通过 `hierarchical_context_parallel_sizes` 参数创建多层级的 CP 子组，以匹配集群的物理拓扑：
-
-```
-if hierarchical_context_parallel_sizes:
-    assert np.prod(hierarchical_context_parallel_sizes) == context_parallel_size
-    global _HIERARCHICAL_CONTEXT_PARALLEL_GROUPS
-    hierarchical_groups, _ = create_hierarchical_groups(
-        rank, ranks,
-        hierarchical_context_parallel_sizes,
-        create_gloo_process_groups=False,
-        pg_options=get_nccl_options("hcp", nccl_comm_cfgs),
-        timeout=timeout,
-        group_desc="CONTEXT_PARALLEL_GROUP",
-    )
-    if rank in ranks:
-        _HIERARCHICAL_CONTEXT_PARALLEL_GROUPS = hierarchical_groups
-```
-
-来源：megatron/core/parallel_state.py:982-995
-
-> **Hierarchical CP 示例**：CP size = 16，`hierarchical_context_parallel_sizes = [2, 2, 4]`：
-> 
-> -   Level-1（NVLink）：8 个子组，每组 2 GPU — \[g0,g1\], \[g2,g3\], ...
-> -   Level-2（NVLink）：8 个子组，每组 2 GPU — \[g0,g2\], \[g1,g3\], ...
-> -   Level-3（IBLink）：4 个子组，每组 4 GPU — \[g0,g4,g8,g12\], ...
-> 
-> 这种分层使得低层通信走 NVLink（~600GB/s），高层走 IB（~50GB/s），与 `a2a+p2p` 通信类型配合实现物理拓扑感知的通信调度。
-
-> **分层子组的创建算法**：`create_hierarchical_groups` 使用 einops 的 `rearrange` 对 rank 列表进行张量重排：
-> 
-> ```
-> rearranged_ranks = einops.rearrange(
->     np.array(ranks),
->     "(l s u) -> (l u) s",
->     u=int(np.prod(hierarchical_group_sizes[:level])),
->     s=hierarchical_group_sizes[level],
->     l=int(np.prod(hierarchical_group_sizes[level + 1 :])),
-> ).tolist()
-> ```
-> 
-> 这种基于张量维度分解的方法优雅地生成了各级子组，避免了手动枚举的复杂性。
+Megatron-LM 支持 **Hierarchical Context Parallelism**，通过 `hierarchical_context_parallel_sizes` 参数创建多层级的 CP 子组，以匹配集群的物理拓扑（CP size=16、`[2,2,4]` 三级分组示例；`create_hierarchical_groups` 用 einops `rearrange` 做张量维度分解生成各级子组，避免手动枚举）——这套 N 级分层分组构造是本页对通用机制页的独家贡献，完整代码与算例已整体迁移收录到 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]] §8.2（来源：`megatron/core/parallel_state.py:982-995`）。低层通信走 NVLink（~600GB/s）、高层走 IB（~50GB/s），与 `a2a+p2p` 通信类型配合实现物理拓扑感知的通信调度——这一分层机制在 MindSpeed 的二级 Hybrid（内 Ulysses、外 Ring）中有另一具体实例，见理论页 §8.3。
 
 ### 1.3 CP 与其他并行维度的关系
 
@@ -183,61 +144,31 @@ self.self_attention = build_module(
 
 ## 二·附 四种 CP 方法的 QKV 交互图示
 
-以下图示详细展示每种 CP 通信类型下，Q/K/V 如何在 CP rank 之间流动，以及计算发生在什么阶段、基于什么数据。
+以下图示展示每种 CP 通信类型下 Q/K/V 如何在 CP rank 之间流动；每种模式的通用机制（谁通信、通信量、backward 的对应集合通信）已归一到理论页对应章节（p2p→§5、all_gather→§6、a2a→§7、a2a+p2p→§8），此处只保留图示本身与速查表，不再重复文字总结。
 
 ### 2.4.1 p2p：Ring Attention — Q 固定，K/V 轮转
 
 ![图 3：p2p Ring Attention 的 QKV 交互（Q 固定，K/V 轮转，4 步覆盖全部 KV）](assets/deepseek_v4_context_parallel_analysis_fig1.png)
 
-*图 3：p2p Ring Attention 的 QKV 交互（Q 固定，K/V 轮转，4 步覆盖全部 KV）*
-
-> **p2p 通信总结**：
-> 
-> -   **发送**：每个 rank 发送自己的 Kᵢ, Vᵢ chunk 给下一个 rank（顺时针）
-> -   **接收**：每个 rank 从前一个 rank 接收 Kⱼ, Vⱼ chunk（逆时针）
-> -   **Q 不通信**：Q 始终停留在本地，每个 rank 只用自己的 Q 计算输出 Oᵢ
-> -   **Backward**：dQ 需要等价 AllGather（通过反向 P2P 累积），dK/dV 需要 ReduceScatter（通过反向 P2P 分发）
+*图 3：p2p Ring Attention 的 QKV 交互（Q 固定，K/V 轮转，4 步覆盖全部 KV）——机制见理论页 §5*
 
 ### 2.4.2 all_gather：先聚合完整 KV，再计算
 
 ![图 4：all_gather 模式的 QKV 交互（先 AllGather K/V，再用本地 Q 计算）](assets/deepseek_v4_context_parallel_analysis_fig2.png)
 
-*图 4：all_gather 模式的 QKV 交互（先 AllGather K/V，再用本地 Q 计算）*
-
-> **all_gather 通信总结**：
-> 
-> -   **发送**：每个 rank 发送 Kᵢ, Vᵢ 到 AllGather 集合（隐式广播到所有 rank）
-> -   **接收**：每个 rank 接收完整的 K=\[K₀..K₃\], V=\[V₀..V₃\]
-> -   **Q 不通信**：Q 始终本地，但每个 rank 只计算自己的 Sₗₒcₐₗ 对应的输出
-> -   **Backward**：ReduceScatter(dK, dV) 将完整梯度分片回各 rank
-> -   **关键缺陷**：AllGather 是同步操作，无法与计算重叠；KV buffer 占用显存大（2×S×B×Hₖ×D）
+*图 4：all_gather 模式的 QKV 交互（先 AllGather K/V，再用本地 Q 计算）——机制见理论页 §6*
 
 ### 2.4.3 a2a：Ulysses 风格 — 交换序列与 Head 维度
 
 ![图 5：a2a（Ulysses）模式的 QKV 交互（All-to-All 交换序列/Head 维度，计算后换回来）](assets/deepseek_v4_context_parallel_analysis_fig3.png)
 
-*图 5：a2a（Ulysses）模式的 QKV 交互（All-to-All 交换序列/Head 维度，计算后换回来）*
-
-> **a2a 通信总结**：
-> 
-> -   **发送**：每个 rank 发送自己的局部 seq 的 Q/K/V 片段给其他所有 rank（按 head 分段）
-> -   **接收**：每个 rank 接收完整序列的 Q/K/V，但只保留自己负责的 head 子集
-> -   **Q/K/V 全部参与 A2A**：三种 tensor 都经历 All-to-All 交换
-> -   **计算优势**：attention 计算时每个 rank 拥有完整序列，无需额外的 KV 通信；计算按 head 并行
-> -   **通信量**：2 次 A2A（forward QKV + backward O），总通信量 ≈ 8 × (C-1)/C × B × S × H × D
+*图 5：a2a（Ulysses）模式的 QKV 交互（All-to-All 交换序列/Head 维度，计算后换回来）——机制见理论页 §7；本模式合计通信量 ≈ 8 × (C-1)/C × B × S × H × D（forward QKV A2A + backward O A2A 合计口径，与理论页 §9 统一对比表一致）*
 
 ### 2.4.4 a2a+p2p：分层通信 — 低层 A2A + 高层 P2P
 
 ![图 6：a2a+p2p 分层模式的 QKV 交互（低层 NVLink A2A + 高层 IB P2P Ring）](assets/deepseek_v4_context_parallel_analysis_fig4.png)
 
-*图 6：a2a+p2p 分层模式的 QKV 交互（低层 NVLink A2A + 高层 IB P2P Ring）*
-
-> **a2a+p2p 通信总结**：
-> 
-> -   **Level 1（Pair A2A，NVLink）**：每对 GPU 内部 All-to-All，交换 seq/head 片段；Q/K/V 全部参与
-> -   **Level 2（Quad A2A，NVLink）**：4-GPU 组内再次 A2A，进一步扩大每个 rank 的序列覆盖范围
-> -   **Level 3（Cross-Node P2P，IB）**：跨节点的 KV Ring 传递，Q 不动，K/V 在节点间轮转；与标准 p2p 类似，但发生在更大的 chunk 上
-> -   **关键优势**：NVLink 上的 A2A 带宽高（~600GB/s），承担了大部分通信量；IB 上的 P2P 只传输粗粒度聚合后的 KV，减少了慢链路上的数据量
+*图 6：a2a+p2p 分层模式的 QKV 交互（低层 NVLink A2A + 高层 IB P2P Ring）——分组构造见 §1.2 → 理论页 §8.2*
 
 > **四种方法对比速查表**：
 > 
@@ -250,118 +181,11 @@ self.self_attention = build_module(
 
 ## 三 Native CP 实现：dot_product_attention_context_parallel
 
-### 3.1 AttentionFuncionWithContextParallel 概览
+> **划界**：`AttentionFuncionWithContextParallel` 的完整 forward/backward 源码 walkthrough（head-stride 双缓冲 AllGather、ReduceScatter 梯度、通信量公式）与 zig-zag mask 机制已整体迁移收录到理论页 §6（本页正是骨架来源）。本节只保留索引式摘要，避免与理论页正文重复；DSv4 特有的下游适配见 §五。
 
-当 `transformer_impl="local"`（即不使用 TransformerEngine）时，CP 通过 `AttentionFuncionWithContextParallel` 实现。这是一个 `torch.autograd.Function`，在 forward 中 AllGather KV，在 backward 中 ReduceScatter 梯度。
+当 `transformer_impl="local"`（即不使用 TransformerEngine）时，CP 通过 `AttentionFuncionWithContextParallel`（`torch.autograd.Function`，`dot_product_attention_context_parallel.py:150-165`）实现:forward 按 head stride 迭代 AllGather KV(理论页 §6.1)，backward 用 ReduceScatter 分片 dK/dV(理论页 §6.3)，attention mask 用 zig-zag pattern 匹配 AllGather 后的 KV 顺序(理论页 §3.3)。通信量公式见理论页 §6.2 / §9。
 
-```
-class AttentionFuncionWithContextParallel(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, q, k, v, attention_mask, attention_dropout, softmax_scale, pg):
-        cp_size = 1
-        if pg is not None:
-            cp_size = torch.distributed.get_world_size(pg)
-        comm = AllGatherComm(group=pg)
-        # ...
-```
-
-来源：megatron/core/transformer/dot_product_attention_context_parallel.py:150-165
-
-### 3.2 Forward：按 head stride 迭代的 AllGather
-
-Native CP 的 forward 采用 **double-buffering + head-stride 迭代** 策略：
-
-1.  **初始化 KV buffer**：大小为 `[2, b*cp_size, sk, heads_k_stride, hn]`，用于 double-buffering
-2.  **发起首个 AllGather**：将本地 KV 的第 0 个 head stride 发送到 buffer_copy
-3.  **按 head stride 迭代**：
-    -   Wait 前一个 AllGather 完成
-    -   Swap buffer 和 buffer_copy
-    -   发起下一个 head stride 的 AllGather（异步）
-    -   用当前 buffer 中的完整 KV 计算 attention
-
-```
-kv_buffer = torch.empty(
-    (2, k.shape[0] * cp_size, k.shape[1], heads_k_stride, k.shape[3]),
-    dtype=k.dtype, device=k.device,
-)
-kv_buffer_copy = torch.empty_like(kv_buffer)
-
-# All-gather first chunk
-k_0 = k[:, :, :heads_k_stride].contiguous()
-v_0 = v[:, :, :heads_k_stride].contiguous()
-comm.all_gather(kv_buffer_copy[0], k_0)
-comm.all_gather(kv_buffer_copy[1], v_0)
-
-for i in range(0, nheads_k, heads_k_stride):
-    comm.wait()
-    kv_buffer, kv_buffer_copy = kv_buffer_copy, kv_buffer
-
-    # All-gather next chunk (async)
-    if i < nheads_k - heads_k_stride:
-        send_k = k[:, :, kvsl:kvsr].contiguous()
-        send_v = v[:, :, kvsl:kvsr].contiguous()
-        comm.all_gather(kv_buffer_copy[0], send_k)
-        comm.all_gather(kv_buffer_copy[1], send_v)
-
-    # Compute attention with full KV
-    out_i, probs_i = eager_attn_fwd(q_i, k_i, v_i, attn_bias, ...)
-```
-
-来源：megatron/core/transformer/dot_product_attention_context_parallel.py:174-224
-
-### 3.3 Backward：ReduceScatter dK/dV
-
-Backward 与 forward 结构对称，但额外引入了 **ReduceScatter** 对 dK/dV 梯度进行分片：
-
-```
-if pg is None:
-    dk_i = _dk_i
-    dv_i = _dv_i
-else:
-    # Reduce-scatter gradients if CP > 1
-    dk_i = torch.zeros(
-        (k_i.shape[1] // cp_size, k_i.shape[0], k_i.shape[2], k_i.shape[3]),
-        device=k_i.device, dtype=k_i.dtype,
-    )
-    dv_i = torch.zeros(
-        (v_i.shape[1] // cp_size, v_i.shape[0], v_i.shape[2], v_i.shape[3]),
-        device=v_i.device, dtype=v_i.dtype,
-    )
-    torch.distributed.reduce_scatter_tensor(dk_i, _dk_i, group=pg)
-    torch.distributed.reduce_scatter_tensor(dv_i, _dv_i, group=pg)
-```
-
-来源：megatron/core/transformer/dot_product_attention_context_parallel.py:318-334
-
-> **Native CP 的通信量**：
-> 
-> -   **Forward**：每 head stride 一次 AllGather(K) + AllGather(V) = 2 × b × S × h_k_stride × d × (cp-1)/cp
-> -   **Backward**：同 forward 的 AllGather + ReduceScatter(dK) + ReduceScatter(dV)
-> -   **Total**：≈ 4 × nheads_k/head_stride × b × S × h_k_stride × d × (cp-1)/cp
-> 
-> 注意：这里的 `S` 是每个 CP rank 持有的序列长度（总长度 / cp_size）。Native CP 路径的通信量与 head 数成正比，效率较低。
-
-### 3.4 CP Attention Mask：Zig-Zag Pattern
-
-CP 下每个 rank 只持有序列的一部分，但 attention mask 需要覆盖完整序列。`to_zz_mask_attn_bias` 将标准 mask 转换为 **zig-zag pattern**，匹配 CP rank 上 AllGather 后的 KV 顺序：
-
-```
-def to_zz_mask_attn_bias(attention_mask, cp_size, nheads, nheads_k, ...):
-    if cp_size == 1:
-        zz_mask = attention_mask
-    else:
-        chunked = attention_mask.chunk(dim=3, chunks=cp_size * 2)
-        zz_mask = [_x for _p in zip(chunked[:cp_size], reversed(chunked[cp_size:]))
-                   for _x in _p]
-        zz_mask = torch.cat(zz_mask, dim=3)
-    attn_bias = torch.zeros(zz_mask.shape, device=device, dtype=dtype)
-    attn_bias.masked_fill_(zz_mask, float('-inf'))
-    return attn_bias
-```
-
-来源：megatron/core/transformer/dot_product_attention_context_parallel.py:135-147
-
-> **Zig-Zag Pattern 原理**：CP 组内 rank 按 `[0, 1, ..., cp-1, cp-1, ..., 1, 0]` 的顺序排列 KV chunk。这种对称排列使得 causal mask 的计算更均匀，减少尾部 rank 的负载不均衡。例如 cp=4 时，KV 顺序为 \[chunk0, chunk1, chunk2, chunk3, chunk3, chunk2, chunk1, chunk0\]。
+<!-- 原 3.2-3.4(AllGather 双缓冲代码、ReduceScatter 代码、zig-zag mask 代码、通信量公式)已整体并入理论页 §6，不在本页重复；索引式摘要见上。 -->
 
 ## 四 TransformerEngine 中的 CP 支持
 
@@ -652,21 +476,7 @@ if self.compressor is not None and self.compress_ratio > 1:
 
 ### 6.2 Standard Attention 的 CP 通信量
 
-> **TE p2p 模式（per layer, forward + backward）:**  
-> KV P2P exchange: 2 × (C-1) × B × Slocal × hk × d × 2 (K+V)  
-> \= 4 × (C-1)/C × B × S × hk × d  
->   
-> **TE a2a 模式（Ulysses）:**  
-> QKV A2A: 3 × B × S × h × d × 2(C-1)/C  
-> Output A2A: B × S × h × d × 2(C-1)/C  
-> **Total ≈ 8 × (C-1)/C × B × S × h × d**  
->   
-> **Native all_gather 模式:**  
-> AllGather(K): B × S × hk × d × (C-1)/C  
-> AllGather(V): B × S × hk × d × (C-1)/C  
-> ReduceScatter(dK): B × S × hk × d × (C-1)/C  
-> ReduceScatter(dV): B × S × hk × d × (C-1)/C  
-> **Total ≈ 4 × (C-1)/C × B × S × hk × d**
+TE p2p / TE a2a(Ulysses) / Native all_gather 三种模式的通信量公式（`4×(C-1)/C×B×S×hk×d`、`8×(C-1)/C×B×S×h×d`、`4×(C-1)/C×B×S×hk×d`）与 MindSpeed 侧显式含 $/TP$ 因子的公式对照，已统一收录到理论页 §9（含两套公式统计口径差异的说明）。下面 §6.3/§6.4 的 MLA/CSA 通信量分析均以标准 attention 的这套公式为基线展开。
 
 ### 6.3 MLA + CP 的通信量
 
@@ -714,7 +524,7 @@ TE 的 `p2p` 模式通过独立的 `cp_stream` 实现通信与计算的异步并
 
 ### 7.2 Native CP 的 AllGather 不可重叠
 
-Native CP 路径（`dot_product_attention_context_parallel.py`）使用 `AllGatherComm` 类，其 `all_gather` 调用是异步的（`async_op=True`），但 `wait()` 在计算前阻塞：
+Native CP 的"伪并行"局限（异步发起但 `wait()` 在计算前阻塞,只能 overlap 相邻 chunk）已在理论页 §6.2 概述;这里补充 `AllGatherComm` 的具体类实现作为源码级证据:
 
 ```
 class AllGatherComm:
@@ -750,63 +560,9 @@ class AllGatherComm:
 
 ## 八 Dynamic CP：动态序列长度适配
 
-### 8.1 Dynamic CP 的配置
+### 8.1-8.2 Dynamic CP 的通用机制(配置 + forward 期 cp_group 切换/恢复)
 
-Dynamic CP 允许在 training 过程中根据输入序列长度动态调整 CP size：
-
-```
-dynamic_context_parallel: bool = False
-min_dynamic_context_parallel_size: int = 1
-```
-
-来源：megatron/core/model_parallel_config.py:68, 76
-
-启用 Dynamic CP 需要设置 `sequence_packing_scheduler='default_dynamic_cp'`：
-
-```
-if self.dynamic_context_parallel:
-    if self.sequence_packing_scheduler is None:
-        self.sequence_packing_scheduler = 'default_dynamic_cp'
-    if self.sequence_packing_scheduler != 'default_dynamic_cp':
-        raise ValueError(
-            'Dynamic context parallelism requires '
-            'sequence_packing_scheduler=default_dynamic_cp'
-        )
-    if self.min_dynamic_context_parallel_size < 1:
-        raise ValueError(
-            f"min_dynamic_context_parallel_size must be >= 1, "
-            f"got {self.min_dynamic_context_parallel_size}"
-        )
-```
-
-来源：megatron/core/model_parallel_config.py:451-464
-
-### 8.2 Dynamic CP 的运行时机制
-
-在 Attention forward 中，Dynamic CP 通过 `packed_seq_params.cp_group` 动态替换 `pg_collection.cp`：
-
-```
-_orig_cp_group = self.pg_collection.cp
-if packed_seq_params is not None and packed_seq_params.local_cp_size is not None:
-    assert packed_seq_params.cp_group is not None, "cp_group must be set in dynamic-cp mode"
-    self.pg_collection.cp = packed_seq_params.cp_group
-
-# ... attention compute ...
-
-# restore original cp group
-self.pg_collection.cp = _orig_cp_group
-```
-
-来源：megatron/core/transformer/attention.py:1080-1084
-
-> **Dynamic CP 的工作流程**：
-> 
-> 1.  `sequence_packing_scheduler` 根据输入序列长度计算所需的 CP size（例如短序列用 CP=1，长序列用 CP=4）
-> 2.  Scheduler 创建临时的 CP 进程组（`packed_seq_params.cp_group`）
-> 3.  Attention forward 中临时替换 `pg_collection.cp`
-> 4.  计算完成后恢复原始 CP 组
-> 
-> 这种机制使得同一 batch 内不同序列可以使用不同的 CP 粒度，避免了"短序列也必须用最大 CP size"的浪费。
+Dynamic CP 允许在 training 过程中根据输入序列长度动态调整 CP size(`dynamic_context_parallel`/`sequence_packing_scheduler='default_dynamic_cp'` 配置校验、Attention forward 中 `packed_seq_params.cp_group` 临时替换 `pg_collection.cp` 且结束后恢复的完整代码)是 Megatron 通用机制,非 DSv4 特有,已整体归一到理论页 §10(该节正是以本页 `attention.py:1080-1084` 的 save/restore 代码为骨架之一,并与 `megatron_cp_analysis.md` §3 的 `PackedSeqParams`/`resolve_cp_group` 源码合并)。DSv4 对该机制的下游限制见 §8.3。
 
 ### 8.3 Dynamic CP 对 DSv4 的限制
 
@@ -844,10 +600,14 @@ self.pg_collection.cp = _orig_cp_group
 
 ## 相关页面
 
+**通用机制（理论层）**：
+- [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]] — CP/Ring Attention 通用机制(p2p/all_gather/a2a/a2a+p2p 四种调度、因果裁剪、通信量代数、分层分组构造);本页 §三、§1.2、§6.2 的骨架来源页
+
 **模型侧（论文级，01_theory）** — 本页讲实现，下列讲算法/架构：
 - [[deepseek_v4_cp_analysis]] — V4 CP 的**论文算法**（§3.4.3 两阶段压缩感知 CP、packed sequences、三层可见性控制）。与本页对照阅读：论文设计 ↔ Megatron 实现 gap（见本页 §五 5.5、§九 特征 5）。
 - [[deepseek_v4_analysis]] — V4 整体架构　· [[deepseek_v4_technical_deep_dive]] — CSA/HCA/DSA/MLA 机制　· [[mHC]] — 流形约束超连接　· [[deepseek_v4_audit_report]] — V4 wiki 对正式版审计
 
 **框架侧（Megatron-LM，本目录）**：
 - [[deepseek_v4_tensor_parallel_analysis]] — V4 TP=1 切分实现（姊妹页）
-- [[megatron_cp_analysis]] — 通用 CP 机制　· [[megatron_packed_dataset_dynamic_cp_analysis]] — Dynamic CP / packed dataset　· [[megatron_ep_analysis]] — 专家并行　· [[megatron_comm_overlap_analysis]] — 通信掩盖
+- [[megatron_cp_analysis]] — Megatron CP 框架实现差异(`cp_comm_type` 配置接口)　· [[megatron_packed_dataset_dynamic_cp_analysis]] — Dynamic CP / packed dataset　· [[megatron_ep_analysis]] — 专家并行　· [[megatron_comm_overlap_analysis]] — 通信掩盖
+- [[torchtitan_cp_analysis]] · [[mindspeed_context_parallel_analysis]] — 其它框架的 CP 实现差异

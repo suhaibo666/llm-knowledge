@@ -4,6 +4,8 @@
 > **最后更新**:2026-06-17(§5 扩写为编译流程 + 两个通信 pass + 掩盖机制源码级深挖,新增 §5.5 通信粒度 + 2 张 SVG→PNG 机制图)· **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
 >
 > 对象是 torchtitan `experiments/graph_trainer/` 的 SimpleFSDP(论文 arXiv:2411.00284),FSDP2 的编译器友好替代:把 all-gather/reduce-scatter 表达成 DTensor `redistribute` 进图,交编译器分桶重叠。对照 [[torchtitan_fsdp_analysis]] / [[torchtitan_hsdp_backward_overlap_analysis]]。
+>
+> **四页分工**(2026-07-31 补):本页是唯一走**编译器路径**的一支——FSDP2 原生 eager 机制(手写 hook+event 编排)的标杆篇是 [[torchtitan_fsdp_analysis]],其预取/掩盖/显存源码级深挖是 [[torchtitan_fsdp_prefetch_overlap_memory_analysis]],HSDP 双流展开是 [[torchtitan_hsdp_backward_overlap_analysis]];本页讲的是把这套手写编排换成**声明式 DTensor collective + 编译器 pass**的实验分支,与前三页的 eager 机制互补而非替代。
 > 行号约定:实验代码以 `graph_trainer/`(= `torchtitan/torchtitan/experiments/graph_trainer/`)为根;PyTorch 以 `[pt]` 前缀。
 
 ---

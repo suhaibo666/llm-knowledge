@@ -1,9 +1,9 @@
 # 上下文并行 CP —— 机制级深度分析
 
 > **代码基准**:torchtitan `main` @ `cf3c4312` · PyTorch CP 内核(版本差异见下方"版本说明")
-> **最后更新**:2026-05-22 · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
+> **最后更新**:2026-07-31 · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
 >
-> 本文按统一结构回答:**序列怎么切?切完怎么通信?哪些通信能掩盖?异步怎么实现?** 重点是 Ring Attention。
+> **划界声明**:CP 通用机制(为什么要切序列、折叠/头尾负载均衡的数学证明、因果块裁剪、Ring 主循环 + online-softmax、通信掩盖原理、通信量代数)已归一到 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]]——事实上,本文的 Ring 主循环伪代码、负载均衡量化算例、通信掩盖时序图正是该理论页对应章节的骨架来源。**本页只保留 torchtitan/PyTorch CP 的框架实现差异**:trainer/parallelize 接入点、SDPA-ring 与 FlexAttention-allgather 两条路径的取舍(torchtitan 独有的双路径架构)、DTensor dispatcher 接线、以及"不手写 CUDA stream、靠 functional collectives 实现异步"这一 PyTorch 特有的工程选择。
 >
 > 行号约定:torchtitan 以 `torchtitan/` 为根;PyTorch CP 实现以 `[pt]` 前缀。
 
@@ -13,7 +13,7 @@
 
 ## 1. 功能范围与定位
 
-**CP(上下文并行)** 把**序列维度**切到多张卡上,让超长序列(128k+ token)的 attention 能放下——attention 的显存/计算随序列长度增长,长序列单卡放不下。CP 切的是 seq 维,与 TP(切 feature 维)、DP(切 batch 维)正交。
+**CP(上下文并行)** 把**序列维度**切到多张卡上,让超长序列(128k+ token)的 attention 能放下——通用动机见理论页 §1。
 
 CP 在 torchtitan 里只做**两件事**(`torchtitan/distributed/context_parallel.py`):
 
@@ -24,9 +24,9 @@ CP 在 torchtitan 里只做**两件事**(`torchtitan/distributed/context_paralle
 
 ---
 
-## 2. 数据切分:`_context_parallel_shard` 怎么把序列切到 CP ranks
+## 2. 数据切分入口:`cp_shard`
 
-### 2.1 torchtitan 入口 `cp_shard`
+> 序列如何均匀切分(`distribute_tensor(Shard(seq_dim))`,不产生通信)是通用机制,见理论页 §3.1。本节只记 torchtitan 的调用链与它对 `BlockMask` 的特殊处理。
 
 `cp_shard`(`torchtitan/distributed/context_parallel.py:155`):
 
@@ -39,79 +39,26 @@ inputs = _context_parallel_shard(mesh=cp_mesh, buffers=inputs,
 masks = _context_parallel_shard(mesh=cp_mesh, buffers=masks, seq_dims=(2,)*len(masks), ...)
 ```
 
-### 2.2 PyTorch `_context_parallel_shard` 内部
-
-核心 `_context_parallel_buffers`:
-
-```python
-load_balance_indices = load_balancer._generate_indices() if load_balancer else None
-for buffer, seq_dim in zip(buffers, buffer_seq_dims):
-    if load_balance_indices is not None:
-        buffer = torch.gather(buffer, dim=seq_dim, index=indices)   # ① 用索引重排序列
-    sharded_buffer = distribute_tensor(buffer, mesh, [Shard(seq_dim)], src_data_rank=None).to_local()  # ②
-```
-
-**每个 rank 持有哪一段?** 由 `distribute_tensor(buffer, mesh, [Shard(seq_dim)])` 决定——把张量沿 `seq_dim` 均匀切成 `cp_size` 段,rank `r` 拿第 `r` 段:
-
-- **不开负载均衡**:rank `r` 直接拿 `seq[r·S/cp : (r+1)·S/cp]`——序列的第 r 个**连续**段。
-- **开负载均衡**:先 `torch.gather` 按重排索引把序列**打乱**(头尾交错),再均匀切。rank `r` 物理上拿到的是"原序列的某个头段 + 某个尾段"组合(见 §3)。
-
-> `_context_parallel_shard` 本身**不做通信**(`src_data_rank=None` 时 `distribute_tensor` 等价于本地 slice)。真正的跨 rank 通信发生在 attention 计算阶段(§5)。
+**注意 `attention_masks` 走独立的 `seq_dim=2`**——`BlockMask` 的形状是 `[B,H,Q,KV]`,只能切 Q 维,不能像 `inputs/labels/positions` 那样统一按 `seq_dim=1` 切,这是 torchtitan 数据切分入口里唯一的框架特殊处理。
 
 ---
 
-## 3. 负载均衡:因果掩码的三角形问题
+## 3. 负载均衡:torchtitan 的两个 Balancer 类
 
-### 3.1 为什么需要负载均衡
+> 折叠/头尾配对的数学证明、量化算例、PTRR(任意稀疏掩码处理时间均衡)算法均已归一到理论页 §3.2-§3.4——本文的算例正是理论页 §3.2/§3.4 的骨架来源。本节只记 torchtitan 侧的 API/配置入口。
 
-因果掩码下 `mask[i,j]=1 ⟺ q_idx ≥ kv_idx`,计算量正比于矩阵里 1 的个数。`seq_len=8, cp=2` 朴素均分:
+torchtitan 提供两个 `load_balancer` 实现,由 `apply_cp_to_forward` 按 attention 类型选择:
 
-```
-            KV_index
-   [1,0,0,0,0,0,0,0]
-   [1,1,0,0,0,0,0,0]
-   [1,1,1,0,0,0,0,0]   rank0 → 1+2+3+4 = 10 次计算
-   [1,1,1,1,0,0,0,0]
- ──────────────────────
-   [1,1,1,1,1,0,0,0]
-   [1,1,1,1,1,1,0,0]   rank1 → 5+6+7+8 = 26 次计算
-   [1,1,1,1,1,1,1,0]
-   [1,1,1,1,1,1,1,1]
-```
+- **`_HeadTailLoadBalancer`**(SDPA 路径默认):机制见理论页 §3.3。
+- **`_PTRRLoadBalancer`**(FlexAttention 路径):机制见理论页 §3.4。
 
-**后段 rank 的 Q 行更靠下,要 attend 的 KV 更多**——rank1 工作量是 rank0 的 2.6 倍。在 ring attention 里所有 rank 每步同步,最慢的 rank 成为 straggler 拖垮整组。
-
-### 3.2 `_HeadTailLoadBalancer`(SDPA 路径默认)
-
-算法核心是**头尾配对**:把序列切成 `2·cp` 个等长 chunk,**rank `r` 领取 chunk `r`(头)和 chunk `2cp-1-r`(尾)**。
-
-`seq_len=8, cp=2`:4 个 chunk(每个长 2),`head_idx=[0,1]`、`tail_idx=[3,2]`,重排索引 `[0,7,1,6,2,5,3,4]`。重排后:
-
-```
-   rank0:chunk0(行0,1)+chunk3(行6,7) → 1+8+2+7 = 18
-   rank1:chunk1(行2,3)+chunk2(行4,5) → 3+6+4+5 = 18    ← 完全均衡
-```
-
-直觉:第 r 个头 chunk(轻)配第 r 个尾 chunk(重),头重之和对每个 rank 恒定。
-
-> **这就是 `seq_len` 必须被 `2·cp` 整除的原因**([[torchtitan_parallel_dims_analysis]] 的 `seq_len_divisor`):头尾配对要把序列切成 `2·cp` 个等长 chunk;且每个 rank 拿"1 头 + 1 尾"= 2 个 chunk,在 ring attention 里被当作 2 个 round-robin 子块处理。
-
-### 3.3 `_PTRRLoadBalancer`(FlexAttention 路径)
-
-PTRR = Processing-Time based Round-Robin。HeadTail 假定掩码是标准因果三角(纯几何规则);PTRR 面对**任意稀疏 `BlockMask`**(滑动窗口、文档掩码等),无法用固定几何,必须**真去数每个 Q-block 的实际计算量**:
-
-1. 从 `BlockMask` 取 `non_sparse_kv_num_blocks`(每个 Q-block 实际要算的 KV-block 数)作为"处理时间"。
-2. `ptrr_scheduling`:按处理时间降序排,每 `cp_size` 个一组做"蛇形(serpentine)正逆交替"分配——把最大的和次小的配在一起摊平,经典 LPT 多机调度近似。
-
-PTRR 返回 `(B, seq_len)` 索引(每个样本 BlockMask 不同,重排逐样本不同),HeadTail 返回 `(1, seq_len)`(纯因果与样本内容无关,全 batch 共用)。
-
-> **负载均衡只改"数据怎么切"**——切分前一次 `gather` 重排,完全不碰 ring 通信本身。它与 ring 算法、与通信掩盖都正交。
+> **`seq_len` 必须被 `2·cp` 整除**([[torchtitan_parallel_dims_analysis]] 的 `seq_len_divisor`):头尾配对要把序列切成 `2·cp` 个等长 chunk,这条约束在 torchtitan 里由 `ParallelDims` 校验层强制检查——这是理论页未展开的 torchtitan 特有配置校验入口。
 
 ---
 
-## 4. 两条 attention 路径
+## 4. 两条 attention 路径(torchtitan 独有架构)
 
-`apply_cp_to_forward`(`context_parallel.py:35`)按 inner attention 类型分两条路径。
+`apply_cp_to_forward`(`context_parallel.py:35`)按 inner attention 类型分两条路径——**这是 torchtitan/PyTorch CP 特有的设计**:Megatron/MindSpeed/DeepSeek-V4 都没有按"attention 实现类型"分派两条独立 CP 路径的架构。
 
 ### 4.1 SDPA 路径:Ring Attention
 
@@ -126,7 +73,7 @@ elif isinstance(first, ScaledDotProductAttention):
         return orig_fn(q, k, v, **kwargs).to_local()
 ```
 
-`ScaledDotProductAttention.forward` 先把布局 transpose 成 `[B,H,S,D]`,所以序列维是 **dim 2** → `Shard(2)`。`_enable_context_parallel_dispatcher` 把 6 个 aten SDPA op(flash/efficient/cudnn 的 fwd+bwd)映射到 `_sdpa_handler`,后者把 `Shard(2)` 的 SDPA 路由到 `_templated_ring_attention`。
+`ScaledDotProductAttention.forward` 先把布局 transpose 成 `[B,H,S,D]`,所以序列维是 **dim 2** → `Shard(2)`。`_enable_context_parallel_dispatcher` 把 6 个 aten SDPA op(flash/efficient/cudnn 的 fwd+bwd)映射到 `_sdpa_handler`,后者把 `Shard(2)` 的 SDPA 路由到 `_templated_ring_attention`(主循环机制见理论页 §5)。
 
 ### 4.2 FlexAttention 路径:all-gather K/V
 
@@ -138,7 +85,7 @@ if isinstance(first, FlexAttention):
         return orig_fn(q, global_k, global_v, **kwargs)            # Q 是本地分片,K/V 是全局
 ```
 
-`seq_dim` 传 `1`:`apply_cp_to_forward` 包的是 `FlexAttention.forward` 外层,此时 q/k/v 还是 `[B,S,H,D]` 布局。`flex_cp_allgather` 是注册过的 custom op(为了支持 `torch.compile` 与 autograd)。
+`seq_dim` 传 `1`:`apply_cp_to_forward` 包的是 `FlexAttention.forward` 外层,此时 q/k/v 还是 `[B,S,H,D]` 布局。`flex_cp_allgather` 是注册过的 custom op(为了支持 `torch.compile` 与 autograd)——与理论页 §6 描述的 Megatron 原生 all-gather CP 是**同一大类机制**(先收齐 KV 再单次计算),但 torchtitan 用 custom op 而非 `torch.autograd.Function` 实现,这是 PyTorch 生态里的实现差异。
 
 ### 4.3 两条路径的取舍
 
@@ -150,113 +97,27 @@ if isinstance(first, FlexAttention):
 | 负载均衡 | `_PTRRLoadBalancer`(数 BlockMask 实际计算量) | `_HeadTailLoadBalancer`(因果三角几何配对) |
 | 掩码 | 任意稀疏 `BlockMask` | 只支持 `is_causal` 布尔 |
 
-**一句话**:Flex 路径用"K/V 全量复制 + 一次 all-gather"换实现简单和任意稀疏掩码,代价是 K/V 显存退化成 `O(S)`;SDPA ring 路径用"K/V 分片 + 多步轮转 + 在线 softmax"保住 `O(S/cp)` 显存并天然重叠通信。**CP 省显存的核心收益在 SDPA ring 路径上才完整。** 下面 §5-§7 主讲 ring 路径。
+**一句话**:Flex 路径用"K/V 全量复制 + 一次 all-gather"换实现简单和任意稀疏掩码,代价是 K/V 显存退化成 `O(S)`;SDPA ring 路径用"K/V 分片 + 多步轮转 + 在线 softmax"保住 `O(S/cp)` 显存并天然重叠通信。**CP 省显存的核心收益在 SDPA ring 路径上才完整。**
 
 ---
 
-## 5. 通信原语:Ring Attention 的 K/V 环形轮转
+## 5. Ring 通信调度:torchtitan 的接线
 
-### 5.1 `_templated_ring_attention` 主循环
+> Ring 主循环(`_templated_ring_attention`)、在线 softmax 合并、演算图均已归一到理论页 §5.1-§5.2(本文正是骨架来源)。本节只记 §4.1 之外 torchtitan 特有的调度器接线细节。
 
-`[pt] _context_parallel/_attention.py:_templated_ring_attention`:
-
-```python
-rank = dist.get_rank(group);  size = dist.get_world_size(group)
-sdpa_merger = _SDPAMerger(convert_to_f32=True, seq_dim=seq_dim)
-rotater = _create_rotater(group, 2)                       # 默认 _AllGatherRotater
-
-for i in range(size):                                     # size = cp_world_size 步
-    if i > 0:
-        next_kv = rotater.next_buffer()                   # (A) 取上一步发起的传输结果
-        key, value = 从 next_kv 切出
-    if i < size - 1:
-        next_kv = torch.cat([key.flatten(), value.flatten()])
-        next_kv = rotater.exchange_buffers(next_kv)       # (B) 发起下一步要用的 K/V 传输(异步)
-    is_causal_behavior = _is_causal_behavior(rank, size, i, is_causal)
-    if is_causal_behavior == _CausalBehavior.SKIP:
-        continue
-    ... 选 q/k/v 子块 ...
-    out, lse, *rest = op(q, k, v, is_causal=..., **kwargs) # (C) 当前步 SDPA 计算
-    sdpa_merger.step(out, lse, partial)                   # (D) 在线 softmax 合并
-return *sdpa_merger.results(), *rest
-```
-
-**核心思想**:Q 不动(每个 rank 永远只算自己那段 Q),K/V 在 CP 组内**环形传递**。第 `i` 步 rank `r` 手里的 K/V 来自 rank `(r-i) mod size`。跑满 `size` 步后,每个 rank 的 Q 都和**全部** K/V 算过一遍,在线 softmax 把 `size` 次局部结果合并成最终输出。
-
-### 5.2 K/V 环形轮转图(cp=4)
-
-```
-初始(step 0):每个 rank 用自己的 K/V
-┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐
-│rank0 │  │rank1 │  │rank2 │  │rank3 │
-│Q0 KV0│  │Q1 KV1│  │Q2 KV2│  │Q3 KV3│
-└──┬───┘  └──┬───┘  └──┬───┘  └──┬───┘
-   │ KV0     │ KV1     │ KV2     │ KV3      每步把当前 KV 发给右邻
-   └───►─────┴───►─────┴───►─────┴──►─(绕回 rank0)
-
-step 1:KV 环转一格,rank_r 收到 KV[(r-1) mod 4]
-   rank0: Q0×KV3   rank1: Q1×KV0   rank2: Q2×KV1   rank3: Q3×KV2
-step 2:rank0: Q0×KV2  rank1: Q1×KV3  rank2: Q2×KV0  rank3: Q3×KV1
-step 3:rank0: Q0×KV1  rank1: Q1×KV2  rank2: Q2×KV3  rank3: Q3×KV0
-
-N=4 步后每个 Q_r 都与 KV0..KV3 全部相乘过;每步的 (out,lse) 由 _SDPAMerger 在线合并。
-```
-
-### 5.3 在线 softmax 合并 `_SDPAMerger`
-
-每步 SDPA 产出局部 `(out, lse)`(lse = log-sum-exp),`_SDPAMerger.step` 用数值稳定公式增量合并:
-
-```python
-out = out - sigmoid(block_lse - lse) * (out - block_out)
-lse = lse - logsigmoid(lse - block_lse)
-```
-
-`convert_to_f32=True` 全程 fp32 累加避免误差。这就是 ring attention 不需要一次性持有完整 K/V 的关键——用在线 softmax 把"分 `size` 步、每步一段 K/V"的局部结果正确合并成"全量 K/V"的结果。
-
-### 5.4 两种轮转器(rotater)
-
-`_create_rotater` 按 `rotate_method` 选(torchtitan config `context_parallel_rotate_method`,默认 `"allgather"`):
-
-| | `_AllToAllRotater`(`"alltoall"`) | `_AllGatherRotater`(`"allgather"`,默认) |
-|---|---|---|
-| 原语 | 每步一次 `permute_tensor`(P2P 式置换,送右邻) | 第一步一次 `all_gather_tensor` 收齐全部 K/V |
-| 每步开销 | 传 1 份 K/V(共 `size-1` 次) | 一次性传 `size` 份,后续 `next_buffer` 只是本地 `chunk()` |
-| 重叠 | 真正逐步 P2P 重叠 | 仅第一次 all-gather 与第 0 步 SDPA 重叠 |
-
-### 5.5 `_is_causal_behavior`:每步选掩码
-
-第 `i` 步该用什么掩码:`i==0` 用标准因果(本地 Q×本地 KV);`i>0` 且传来的 KV 全在 Q 之前 → 不掩码算满;`i>0` 不开负载均衡且 KV 全在 Q 之后 → `SKIP`(因果下全被 mask)。**开了 HeadTail 后永远不会 SKIP**(每个 rank 的本地块含头+尾,任何一步都有非空计算)——这就是负载均衡的运行期体现。
+`_create_rotater(group, 2)` 按 `rotate_method` 选择两种轮转器(`_AllToAllRotater` / `_AllGatherRotater`,默认后者),两者的取舍见理论页 §5.4;torchtitan 侧的配置项是 `context_parallel_rotate_method`。`_is_causal_behavior` 每步选掩码(含 SKIP 分支)的机制见理论页 §4.2。
 
 ---
 
-## 6. 通信掩盖:下一步 P2P 与当前步 SDPA 重叠
+## 6. 通信掩盖
 
-这是 ring attention 性能的命门。看 §5.1 循环体的**指令顺序**:
-
-```
-for i in range(size):
-    (A) next_buffer()        ← 收割上一步发起的传输(这里才 wait)
-    (B) exchange_buffers()   ← 发起"下一步要用的 K/V"传输 —— 异步,不阻塞
-    (C) op(q,k,v)            ← 当前步 SDPA 计算
-    (D) sdpa_merger.step()   ← 合并
-```
-
-关键:**(B) 在 (C) 之前发起,且是异步的**。`exchange_buffers` 返回不等待,所以 (B) 发起的集合通信与 (C) 的 SDPA 计算**在硬件上并行**。到下一轮的 (A) `next_buffer()` 才真正 `wait()`。
-
-即:**第 `i` 步发起第 `i+1` 步要用的 K/V 传输,然后立刻算第 `i` 步的 attention,传输与计算重叠;第 `i+1` 步开头才收割传输结果。** 这一步 SDPA 的耗时把上一步发起的 K/V 传输延迟"藏"了进去。
-
-```
-            step i              step i+1            step i+2
-计算流:    [SDPA(i)        ]   [SDPA(i+1)      ]   [SDPA(i+2)      ]
-通信流:    [exchange KV→i+1]   [exchange KV→i+2]   [exchange KV→i+3]
-                ↑ 第 i 步发起的传输,与第 i 步 SDPA 并行,第 i+1 步开头收割
-```
+机制(为什么下一步传输能与当前步计算重叠、指令顺序 (A)(B)(C)(D))已归一到理论页 §5.3——本文正是该节骨架来源,不再重复。torchtitan 侧唯一需要补充的是它**用什么实现这份异步**,见 §7。
 
 ---
 
-## 7. 异步实现:靠 functional collective,不是手写 stream
+## 7. 异步实现:靠 functional collective,不是手写 stream(torchtitan/PyTorch 特有)
 
-> **关键澄清**:torchtitan / PyTorch 的 CP **没有手写 CUDA stream**。重叠完全靠 `torch.distributed._functional_collectives` 的异步语义——容易被误以为是"显式多 stream"。
+> **关键澄清**:torchtitan / PyTorch 的 CP **没有手写 CUDA stream**。重叠完全靠 `torch.distributed._functional_collectives` 的异步语义——容易被误以为是"显式多 stream"。这是 PyTorch 生态独有的工程选择,Megatron/TE 用独立 `cp_stream` + `cudaEvent`、MindSpeed 用 `isend`/`irecv` 实现同一条通用原则(见理论页 §5.3 末尾的三框架对照),三者互不相同,不构成重复。
 
 机制:
 
@@ -269,77 +130,52 @@ for i in range(size):
 
 ---
 
-## 8. 反向传播:CP 在 backward 的通信
+## 8. 反向传播
 
-### 8.1 SDPA ring 的反向 `_templated_ring_attention_backward`
+### 8.1 SDPA ring 的反向
 
-它**同时维护两个环**:
+机制(两个环、为什么 dKV 环强制 all-to-all)已归一到理论页 §5.5——本文正是该节骨架来源,不再重复。
 
-```python
-kv_rotater  = _create_rotater(group, 2)                        # K/V 前向轮转(同 fwd)
-dkv_rotater = _create_rotater(group, 2, method=ALL_TO_ALL)     # K/V 梯度轮转,强制 all-to-all
-grad_query/grad_key/grad_value = zeros(fp32)
-```
+### 8.2 FlexAttention all-gather 路径的反向(torchtitan 特有实现)
 
-每步 `i` 做两件事:
-
-1. **K/V 本身环形轮转**(同 forward):重演 forward 时那对 `(Q_local, KV_from_rank_(r-i))` 才能算梯度。
-2. **K/V 梯度的环形规约**:某段 K/V 在 forward 里被**每个** rank 的 Q attend 过,其梯度是所有 rank 局部贡献之和——DTensor 意义上的 `Partial` 规约。ring backward 把 dK/dV 跟着 K/V 一起绕环,每经过一个 rank 就把该 rank 的局部贡献累加进去。绕满 `size` 步后得到完整的 `grad_key/grad_value`。
-
-`grad_query` 不需要环规约——Q 是每个 rank 独占的分片,直接 `+=` 累加。
-
-> **为什么 `dkv_rotater` 强制 all-to-all 而不能用 all-gather**:梯度必须**逐 rank 顺序累加**(每步 = 上一 rank 的部分和 + 本 rank 贡献),all-gather 一次性收齐就没法做这个增量累加。
-
-### 8.2 FlexAttention all-gather 路径的反向
-
-`flex_cp_allgather` custom op 注册了 autograd:forward 是 `all_gather`(本地 K/V 分片 → 全局 K/V),所以 backward 必须是 **`reduce_scatter`**(全局 K/V 梯度 → 规约求和 + 散回各 rank 本地分片)。这正是 all-gather 的标准转置算子,也是 K/V 梯度 `Partial → Shard(seq)` 规约的体现。
+`flex_cp_allgather` custom op 注册了 autograd:forward 是 `all_gather`(本地 K/V 分片 → 全局 K/V),所以 backward 必须是 **`reduce_scatter`**(全局 K/V 梯度 → 规约求和 + 散回各 rank 本地分片)。这与理论页 §6.3 描述的 Megatron 原生 all-gather CP 反向是**同一种 adjoint 模式**(all-gather 的转置算子是 reduce-scatter),但 torchtitan 用**注册了 autograd 的 custom op**(而非 `torch.autograd.Function` 子类)实现——这是为了让 `flex_cp_allgather` 能被 `torch.compile` 追踪,是 torchtitan/PyTorch 特有的工程约束。
 
 ---
 
-## 9. 完整流程图
+## 9. 完整流程图(torchtitan 自身的调用链)
 
 ```
 ═══ 每个训练 step:数据切分 ═══
 trainer.py:618  prepare_context_parallel_input → cp_shard
-   │ load_balancer 生成重排索引(HeadTail 头尾配对 / PTRR 处理时间均衡)
+   │ load_balancer 生成重排索引(§3)
    │ torch.gather 按索引重排序列  →  distribute_tensor(Shard(seq)) 均匀切
-   ▼ 每个 CP rank 拿到序列的一段(开 LB 时是"头段+尾段"组合)
+   ▼ 每个 CP rank 拿到序列的一段
 
 ═══ 建模期:forward 包装 ═══
 apply_cp_to_forward(inner_attention 列表, cp_mesh)
-   ├─ FlexAttention → cp_forward 里 flex_cp_allgather 全量 K/V
+   ├─ FlexAttention → cp_forward 里 flex_cp_allgather 全量 K/V(§4.2)
    └─ SDPA → _enable_context_parallel_dispatcher,q/k/v 包成 Shard(2) DTensor
-              → _sdpa_handler 路由到 _templated_ring_attention
+              → _sdpa_handler 路由到 _templated_ring_attention(主循环见理论页 §5)
 
-═══ 前向期:Ring Attention(SDPA 路径) ═══
-for i in range(cp_size):
-   next_buffer()            ← 收割上一步的 K/V 传输(wait)
-   exchange_buffers()       ← 异步发起下一步 K/V 传输 ┐
-   op(q, k, v) SDPA 计算    ← 与上面的传输并行          ┘ 通信掩盖
-   sdpa_merger.step()       ← 在线 softmax 合并
-跑满 cp_size 步 → 每个 Q 段见过全部 K/V
-
-═══ 反向期 ═══
-_templated_ring_attention_backward:两个环并行
-   kv_rotater  轮转 K/V(重演 forward)
-   dkv_rotater 轮转 + 累加 K/V 梯度(Partial 规约,强制 all-to-all)
+═══ 前向 / 反向期 ═══
+Ring 主循环、online-softmax、通信掩盖、反向双环 —— 见理论页 §5
 ```
 
 ---
 
-## 10. 小结
+## 10. torchtitan 特有小结
 
-- **序列切分**:`cp_shard` → `_context_parallel_shard`,用 `distribute_tensor(Shard(seq_dim))` 把序列均匀切到 CP ranks。开负载均衡时先 `torch.gather` 按索引重排再切。本身不通信。
-- **负载均衡**:解决因果掩码三角形导致的后段 rank 计算量大的问题。`_HeadTailLoadBalancer` 用"头尾配对"(几何规则,故 `seq_len` 须被 `2·cp` 整除);`_PTRRLoadBalancer` 数 `BlockMask` 实际计算量做处理时间均衡。负载均衡只改数据切法,与 ring 通信正交。
-- **通信原语**:SDPA 路径用 **Ring Attention**——Q 不动,K/V 在 CP 组内环形轮转 `cp_size` 步,在线 softmax 合并各步局部结果。两种轮转器:all-to-all(逐步 P2P)/ all-gather(一次性)。
-- **通信掩盖**:ring 主循环里"**先异步发起下一步 K/V 传输,再算当前步 SDPA**",传输与计算重叠,下一步开头才收割。
-- **异步实现**:**不是手写 CUDA stream**——靠 `functional_collectives` 返回 `AsyncCollectiveTensor`,通信在 c10d 通信 stream 上发起,`wait()` 延迟到下一步。
-- **两条路径**:FlexAttention all-gather(K/V 全量复制,`O(S)` 显存,支持任意稀疏掩码)vs SDPA ring(K/V 分片,`O(S/cp)` 显存,只支持因果)。CP 省显存的收益在 ring 路径上才完整。
-- **反向**:ring backward 同时维护"K/V 轮转环"和"K/V 梯度规约环"(后者强制 all-to-all 做增量累加)。
+- **两个数据入口**:`cp_shard`(trainer 侧)+ `apply_cp_to_forward`(parallelize 侧),`context_parallel.py` 注释自陈是过渡到 `ShardingConfig` 前的临时方案(§1)。
+- **`BlockMask` 独立切分**:`attention_masks` 走 `seq_dim=2`,与 `inputs/labels/positions` 的 `seq_dim=1` 不同(§2)。
+- **torchtitan 独有的双路径架构**:SDPA→ring(`Shard(2)` DTensor + `_templated_ring_attention`)与 FlexAttention→all-gather(`flex_cp_allgather` custom op)是两条完全独立的实现,按 inner attention 类型分派,四框架中仅此一家(§4)。
+- **异步靠 functional collectives,不手写 stream**:`AsyncCollectiveTensor` 延迟 `wait()` 是 PyTorch 生态特有的重叠实现路径,与 Megatron/TE 的独立 `cp_stream`、MindSpeed 的 `isend`/`irecv` 并列为三种不同的异步落地方式(§7)。
+- **通用机制**(为什么切序列、折叠/头尾负载均衡、因果裁剪、Ring 主循环+online-softmax、通信掩盖原理、反向双环)见 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]]。
 
 ## Related Pages
 
+- [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis|ring_attention_and_context_parallel_analysis]] —— CP/Ring Attention 通用机制(本页多节的骨架来源页)
 - [[torchtitan/index]] · [[torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
 - [[torchtitan_tp_analysis]] · [[torchtitan_pp_analysis]] —— 相邻并行维度
-- [[megatron_cp_analysis]] —— Megatron-LM 上下文并行(4 种 `cp_comm_type` + 因果 zigzag 负载均衡)
+- [[megatron_cp_analysis]] —— Megatron-LM 上下文并行实现差异(`cp_comm_type` 四选一 + TE 透传)
 - [[deepseek_v4_context_parallel_analysis]] —— DeepSeek-V4 CP 实现、Native/TE CP、Dynamic CP
+- [[mindspeed_context_parallel_analysis]] —— MindSpeed 上下文并行实现差异(五算法运行期分派)

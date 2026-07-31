@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/fp8_utils.py`、`fp4_utils.py`、`enums.py`、`transformer/cuda_graphs.py`、`full_cuda_graph.py`、`fusions/`、`num_microbatches_calculator.py`
-> 配套阅读:五份并行文档 + `megatron_recompute_analysis.md` + `megatron_optimizer_internals_analysis.md`
+> 配套阅读:五份并行文档 + `megatron_recompute_analysis.md` + `megatron_distributed_optimizer_analysis.md`
 > 定位:"第二层补遗"第③份。这三块是与并行轴正交的**性能基建** —— 不改变并行策略,而是在精度、内核调度、内核形态三个层面榨吞吐与显存。
 
 ---
@@ -198,10 +198,11 @@ num_microbatches = global_batch_size / (micro_batch_size · data_parallel_size)
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。FP8/FP4 的 GEMM 内核位于 TransformerEngine。配套文档:五份并行分析 + `megatron_recompute_analysis.md` + `megatron_optimizer_internals_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。FP8/FP4 的 GEMM 内核位于 TransformerEngine。配套文档:五份并行分析 + `megatron_recompute_analysis.md` + `megatron_distributed_optimizer_analysis.md`。*
 
 ## Related Pages
 
-- [[megatron_ep_analysis]] · [[megatron_recompute_analysis]] · [[megatron_optimizer_internals_analysis]]
+- [[megatron_ep_analysis]] · [[megatron_recompute_analysis]] · [[megatron_distributed_optimizer_analysis]]
 - [[megatron_fusion_operators_analysis]]
+- [[01_PyTorch_CUDA_Graphs_Complete_Guide]] — CUDA Graph 通用机制权威页（capture/replay、地址不变式、失败与回退；本页 §2 是训练框架侧的具体应用）
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

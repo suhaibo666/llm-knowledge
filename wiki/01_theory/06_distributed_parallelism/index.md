@@ -1,8 +1,8 @@
 # 分布式并行原理 — 目录索引
 
-> 覆盖：分布式集合原语 → DP → TP/SP/CP → EP → PP → ZeRO/FSDP → N 维组合
+> 覆盖：分布式集合原语 → DP → TP/SP/CP → EP → PP → ZeRO/FSDP → N 维组合 → Ring Attention/CP 通用机制深挖
 > 层次：**原理（principle）· 引擎无关**——讲「为什么这么切、代价函数长什么样」；「源码怎么实现」交叉链接到 [[../../02_engineering/index|工程实现]] 各页，不重复
-> 最后更新：2026-07-15
+> 最后更新：2026-07-31
 
 ---
 
@@ -34,7 +34,7 @@
 | **ZeRO-3 / FSDP** | + 参数 | RS + AG（多一次 AG） | $\approx 1.5\times$ DP | 状态 → $16\Psi/N$ | 可跨机 | [[zero_fsdp_analysis]] |
 | **TP** | 层内权重（隐藏维/头） | all-reduce（4 次/层） | $\propto B\!\cdot\!S\!\cdot\!d$，频次极高 | 权重+激活 → $1/N$ | **机内** | [[tensor_sequence_parallel_analysis]] |
 | **SP** | 序列维激活（TP 区外） | RS + AG（替代 TP 的 AR） | 同 TP | 激活 → $1/N$ | 机内 | [[tensor_sequence_parallel_analysis]] |
-| **CP** | 序列维 Q/K/V | ring 交换 / AG KV | $\propto B\!\cdot\!S\!\cdot\!d$ | 长序列激活 → $1/N$ | 机内 | [[tensor_sequence_parallel_analysis]] |
+| **CP** | 序列维 Q/K/V | ring 交换 / AG KV | $\propto B\!\cdot\!S\!\cdot\!d$ | 长序列激活 → $1/N$ | 机内 | [[tensor_sequence_parallel_analysis]] · [[ring_attention_and_context_parallel_analysis|深挖]] |
 | **EP** | 专家（MoE） | all-to-all（×2） | $\propto$ 组外 token 数 | 专家参数 → $1/N$ | 机内（怕不均） | [[expert_parallel_analysis]] |
 | **PP** | 层（stage） | p2p（相邻 stage） | $\propto B\!\cdot\!S\!\cdot\!d$，频次最低 | 模型深度摊到多机 | **可跨机/机架** | [[pipeline_parallel_analysis]] |
 
@@ -47,9 +47,10 @@
 1. **[[collectives_analysis]]** — 分布式原语 + $\alpha$-$\beta$ 代价模型（**先读**，后面都引用它的记法）
 2. **[[data_parallel_analysis]]** — DP：最简单的并行，引出「显存冗余」问题
 3. **[[zero_fsdp_analysis]]** — ZeRO/FSDP：DP 的省显存版（同一数据轴）
-4. **[[tensor_sequence_parallel_analysis]]** — TP/SP/CP：当模型本身放不下时切层内 / 序列
+4. **[[tensor_sequence_parallel_analysis]]** — TP/SP/CP：当模型本身放不下时切层内 / 序列(CP 的完整通信调度机制深挖见 [[ring_attention_and_context_parallel_analysis]])
 5. **[[expert_parallel_analysis]]** — EP：MoE 的专家路由（读完可接 [[../01_models/moonshot_kimi/moonep_analysis|MoonEP 源码级分析]]，看“负载不均”这个老问题在 2026 年被怎样从“减小不均”改成“吸收不均”）
 6. **[[pipeline_parallel_analysis]]** — PP：切层、气泡与调度
+7. **[[ring_attention_and_context_parallel_analysis]]** — CP/Ring Attention 深挖:序列切分、因果负载均衡与块裁剪、Ring/All-gather/Ulysses/分层混合四种通信调度、通信量代数(从 Megatron-LM/torchtitan/MindSpeed/DeepSeek-V4 四份工程分析页归一而来)
 
 ---
 
@@ -64,6 +65,7 @@
 | [[expert_parallel_analysis]] | EP：路由 + 两次 all-to-all、容量因子、负载均衡 |
 | [[pipeline_parallel_analysis]] | PP：microbatching、气泡率、GPipe / 1F1B / interleaved |
 | [[hw_friendly_llm_codesign_analysis]] | NVIDIA 软硬协同指南：GEMM roofline 定维、tile 对齐、NVFP4、宽 EP、CPP、Helix（推理侧视角） |
+| [[ring_attention_and_context_parallel_analysis]] | CP/Ring Attention 通用机制深挖:因果负载均衡(zigzag/头尾配对)、因果块裁剪、Ring/All-gather/Ulysses/分层混合四种通信调度、通信量代数;归一自四份框架工程分析页 |
 
 ---
 
@@ -86,7 +88,7 @@ DP / FSDP（最外，跨机）
 ## 关联域
 
 - [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：c10d / DDP / FSDP / DTensor·TP·PP 的 PyTorch 源码
-- [[../../02_engineering/02_train_frameworks/index]] — **实现层**：Megatron-LM / torchtitan 把这些原语组合成端到端训练配方
+- [[../../02_engineering/02_train_frameworks/index]] — **实现层**：Megatron-LM / torchtitan 把这些原语组合成端到端训练配方；CP/Ring Attention 各框架实现差异见 [[../../02_engineering/02_train_frameworks/megatron-lm/megatron_cp_analysis|Megatron-LM]] · [[../../02_engineering/02_train_frameworks/torchtitan/torchtitan_cp_analysis|torchtitan]] · [[../../02_engineering/02_train_frameworks/mindspeed/mindspeed_context_parallel_analysis|MindSpeed]] · [[../../02_engineering/02_train_frameworks/megatron-lm/deepseek_v4_context_parallel_analysis|DeepSeek-V4]]（通用机制见 [[ring_attention_and_context_parallel_analysis]]）
 - [[../../02_engineering/06_auto_parallel/index]] — 自动并行：自动求解 N 维布局
 - [[../02_pretraining/index]] — 预训练技术：优化器、低精度、激活重计算（与并行正交的另一组显存/算力手段）
 - [[../01_models/moonshot_kimi/moonep_analysis]] — **EP 负载均衡的 2026 年新解法（源码级）**：MoonEP 用动态冗余专家把“每 rank 恰收 `S×K`”变成硬保证；因属 Kimi K3 栈，页面收在模型目录

@@ -6,31 +6,9 @@
 
 ---
 
-## 1. 一条主线：优化是 roofline 驱动的循环
+## 1. 前提：先判 Roofline，再选杠杆
 
-> **不要凭直觉改 kernel。先用 profiler 测出它是 memory-bound 还是 compute-bound，再用对应的杠杆，改完复测——这是一个闭环，不是一锤子买卖。** 「优化错误的瓶颈」是性能工程第一大浪费。
-
-[[triton_00_gpu_essentials_guide]] 已建立 roofline 直觉：一个 kernel 的算术强度（FLOP/Byte）决定它落在屋顶图的哪一段。**memory-bound**（左斜坡，多数逐元素/归约 kernel）只有减少 HBM 往返才有用；**compute-bound**（右平顶，大 matmul）只有喂饱 Tensor Core 才有用。用错杠杆 = 白干。
-
-```mermaid
-flowchart TD
-    P["① profile<br/>do_bench / proton<br/>量 TFLOPS·带宽·占用"] --> J{"② 判 bound"}
-    J -->|"算术强度低<br/>带宽已打满"| MB["memory-bound"]
-    J -->|"算术强度高<br/>Tensor Core 未喂满"| CB["compute-bound"]
-    MB --> L1["融合相邻 kernel<br/>减 HBM 往返"]
-    MB --> L2["加大分块 / 改访存<br/>提数据复用·L2 命中"]
-    CB --> L3["tl.dot 上 Tensor Core"]
-    CB --> L4["num_stages 软件流水<br/>num_warps 提占用率"]
-    L1 --> R["③ 复测"]
-    L2 --> R
-    L3 --> R
-    L4 --> R
-    R --> J
-    classDef mb fill:#e3f2fd
-    classDef cb fill:#e8f5e9
-    class MB,L1,L2 mb
-    class CB,L3,L4 cb
-```
+Roofline 判据（memory-bound / compute-bound 怎么判）、公式与硬件 Ridge Point 参数见 Roofline 权威页 [[operator_optimization_guide]] §2；「profile → 判 bound → 选对杠杆 → 复测」的通用优化闭环见该页 §8。**不要凭直觉改 kernel，「优化错误的瓶颈」是性能工程第一大浪费。** 本页把这个闭环落到 Triton 实战的五个具体杠杆（下表），逐个杠杆的源码级证据见 §3。
 
 ### 优化杠杆速查表
 
@@ -287,6 +265,7 @@ proton_viewer.print_tree(tree, metrics)
 
 - [[index]] — Triton 学习路线总索引
 - [[triton_00_gpu_essentials_guide]] — 前置：roofline / memory vs compute bound 的判据
+- [[operator_optimization_guide]] — **Roofline 权威页**：公式、Ridge Point 参数表、通用优化闭环（§2/§8）
 - [[triton_02_fused_softmax_guide]] — 杠杆①fusion 的最小案例
 - [[triton_03_matmul_guide]] — 杠杆④分块&L2 grouping、`tl.dot` 入门
 - [[triton_04_autotune_guide]] — 杠杆②③：`num_stages`/`num_warps` 的自动搜索

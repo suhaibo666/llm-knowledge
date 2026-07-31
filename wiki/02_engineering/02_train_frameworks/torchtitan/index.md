@@ -21,7 +21,7 @@ torchtitan 的并行体系不是"5 套独立机制",而是**一套统一的 `Dev
 | [[torchtitan_parallel_dims_analysis]] | **基座** | `ParallelDims` + 三张 `DeviceMesh`(dataloading / dense / sparse);维度约束、`fake` backend |
 | [[torchtitan_fsdp_analysis]] | **DP** | FSDP2 `fully_shard`:逐参数切分、all-gather 预取、五条 CUDA stream 异步编排(**标杆篇**) |
 | [[torchtitan_tp_analysis]] | **TP** | DTensor `redistribute` 通信选择、列并行→行并行配对、Sequence Parallel、Async TP 微流水、Loss Parallel |
-| [[torchtitan_cp_analysis]] | **CP** | 序列维切分 + 负载均衡、Ring Attention K/V 环形轮转、`AsyncCollectiveTensor` 重叠 |
+| [[torchtitan_cp_analysis]] | **CP** | SDPA-ring 与 FlexAttention-allgather 双路径架构、DTensor dispatcher 接线、`AsyncCollectiveTensor` 异步实现;通用机制见 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis\|ring_attention_and_context_parallel_analysis]] |
 | [[torchtitan_pp_analysis]] | **PP** | 模型按层切 stage、P2P send/recv、调度气泡(GPipe/1F1B/Interleaved/ZBV/DualPipeV)、Zero Bubble |
 | [[torchtitan_ep_analysis]] | **EP** | 专家权重 `Shard(0)`、token all-to-all dispatch/combine、`AsyncCollectiveTensor` 延迟 wait、DeepEP |
 
@@ -105,7 +105,7 @@ torchtitan 的并行体系不是"5 套独立机制",而是**一套统一的 `Dev
 
 ## Cross-Domain Links
 
-- [[megatron_tp_analysis]] / [[megatron_cp_analysis]] / [[megatron_ep_analysis]] / [[megatron_pp_schedulers_analysis]] / [[megatron_ddp_optimizer_analysis]] —— Megatron-LM 同维度源码级分析,可与本系列对照(CUDA/Megatron 生态 vs PyTorch-native)
+- [[megatron_tp_analysis]] / [[megatron_cp_analysis]] / [[megatron_ep_analysis]] / [[megatron_pp_schedulers_analysis]] / [[megatron_distributed_optimizer_analysis]] —— Megatron-LM 同维度源码级分析,可与本系列对照(CUDA/Megatron 生态 vs PyTorch-native)
 - [[megatron_parallelism_orchestration_analysis]] —— Megatron-LM 进程组编排,与 `ParallelDims` 同类
 - [[async_collective_tensor_deep_dive]] —— `AsyncCollectiveTensor` 源码追踪,是 TP/CP/EP 异步通信的共同底座
 - [[comm_compute_overlap_analysis]] —— 计算通信掩盖对比(含 torchtitan 源码)

@@ -5,6 +5,8 @@
 >
 > 本文是机制级分析的**标杆篇**。它回答四个问题:**参数怎么切?切完怎么预取回来?哪些通信能掩盖?异步通信怎么实现?**
 >
+> **四页分工**(2026-07-31 补):本页是 FSDP2(PyTorch 原生 eager 路径)的标杆机制篇,覆盖切分/预取/掩盖/异步四问的完整轮廓;预取时序、掩盖窗口与显存生命周期的源码级深挖见 [[torchtitan_fsdp_prefetch_overlap_memory_analysis]](深挖伴篇);HSDP 反向 reduce-scatter→all-reduce 双流掩盖的展开见 [[torchtitan_hsdp_backward_overlap_analysis]](本页 §4.4/§6.2 的展开篇);编译器友好、把集合通信表达进计算图的替代方案见 [[torchtitan_simple_fsdp_analysis]]。
+>
 > torchtitan 的 `apply_fsdp` 只是薄封装,真正的机制在 PyTorch FSDP2。本文行号约定:
 > - torchtitan:`torchtitan/...`,以 `torchtitan/` 为根。
 > - PyTorch FSDP2(2.9.1):`[pt]` 前缀,根目录 `torch/distributed/fsdp/_fully_shard/`。
@@ -472,6 +474,5 @@ optimizer.step():在分片参数(DTensor)上更新,优化器状态只占 1/N
 - [[torchtitan/index]] · [[torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
 - [[torchtitan_tp_analysis]] —— FSDP 与 TP 在同一参数上叠加(DTensor 嵌套、`_StridedShard`)
 - [[torchtitan_ep_analysis]] —— MoE 专家的 `edp_mesh` FSDP 与显式预取
-- [[megatron_ddp_optimizer_analysis]] —— Megatron-LM 数据并行 + 分布式优化器(ZeRO-0/1/2/3 四阶段)
+- [[megatron_distributed_optimizer_analysis]] —— Megatron-LM 数据并行 + 分布式优化器(ZeRO-0/1/2/3 四阶段、Reduce-Scatter + All-Gather)
 - [[distributed_optimizer_deep_dive]] —— FSDP2 / ZeRO / MindSpeed 三方对比
-- [[megatron_distributed_optimizer_analysis]] —— ZeRO 优化器状态分片、Reduce-Scatter + All-Gather

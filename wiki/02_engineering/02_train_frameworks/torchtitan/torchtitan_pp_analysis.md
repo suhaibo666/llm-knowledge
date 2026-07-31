@@ -235,9 +235,30 @@ Zero Bubble:      F F F F I I I I          I 在关键路径
 
 runtime 侧:`BACKWARD_INPUT` 动作调 `backward_one_chunk(full_backward=False)`,`BACKWARD_WEIGHT` 动作调 `backward_weight_one_chunk`。schedule 生成器负责把 `I` 排在关键路径、把 `W` 排进气泡时隙。
 
+> [!note] 补充(2026-07-31 · 由 [[comm_compute_overlap_analysis]] 收缩合并)**I/W 拆分的本质**:不是按模型结构(attn vs mlp vs moe_dispatch)拆分,而是按 **autograd 的计算目标**(dInput vs dWeight)拆分。一个 stage 可能包含多层 Transformer,但 I 统一是所有层的 dInput,W 统一是所有层的 dWeight。这也是 Zero Bubble 调度能做到"通用于任意模型结构"的原因——它不需要知道 attention/MLP/MoE dispatch 的内部边界,只依赖 autograd 图本身能否分离 dInput 与 dWeight 的计算(与 Megatron combined_1f1b 需要硬编码模型内部结构形成对照,见 [[comm_compute_overlap_analysis]] §六)。
+
 ### 7.3 DualPipeV 的进一步压榨
 
 DualPipeV 在 ZBV(每 rank 2 stage + V 折叠 + I/W 拆分)基础上再加 **`OVERLAP_F_B`**:把一个 stage 的 forward 和另一个 stage 的 backward 打包,**计算本身重叠发起**——一个 forward 的 GEMM 和一个 backward 的 GEMM 同时占用 SM,把"forward 在算时 backward 单元闲着"的浪费也消除。配合双向流水,DualPipeV 的气泡占比是所有内置 schedule 里最低的。
+
+> [!note] 补充(2026-07-31 · 由 [[comm_compute_overlap_analysis]] 收缩合并) DualPipeV 调度分 8 个阶段(`schedules.py:3387-3545`),核心即 Step 4 的 `OVERLAP_F_B`:
+>
+> ```python
+> # Step 4 (稳态): F0B1 - F1B0
+> for i in range(num_chunks - num_ranks * 2 + rank + 1):
+>     add_overlap_f_b(F(stage0), B(stage1))   # chunk0 forward + chunk1 backward
+>     add_overlap_f_b(F(stage1), B(stage0))   # chunk1 forward + chunk0 backward
+>
+> # OVERLAP_F_B 的内部构造：
+> def add_overlap_f_b(actions, forward_stage, backward_stage):
+>     sub_actions = (
+>         _Action(forward_stage,  FORWARD,        f_mb),
+>         _Action(backward_stage, FULL_BACKWARD,   b_mb),
+>     )
+>     actions.append(_Action(-1, OVERLAP_F_B, None, sub_actions))
+> ```
+>
+> **OVERLAP_F_B 不是真正的并发**：执行时两个子 action **串行**执行（先 F 后 B），并非不同 CUDA stream 上的并发。"overlap" 来源于不同 rank 之间的 P2P 异步通信——当 rank 0 在做 B(stage1) 时，rank 1 正在做 F(stage0)，两者的通信可以重叠。
 
 ---
 

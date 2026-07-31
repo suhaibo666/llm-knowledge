@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/rerun_state_machine.py`、`fault_injector.py`、`energy_monitor.py`、`timers.py`、`optimizer/qk_clip.py`、`optimizer/grad_scaler.py`、`optimizer/clip_grads.py`、`transformer/moe/moe_logging.py`、`transformer/moe/router_replay.py`;训练循环日志在 `megatron/training/training.py`
-> 配套阅读:`megatron_optimizer_internals_analysis.md`、五份并行分析、`megatron_tp_fsdp_resharding_supplements_analysis.md`
+> 配套阅读:`megatron_distributed_optimizer_analysis.md`、五份并行分析、`megatron_tp_fsdp_resharding_supplements_analysis.md`
 > 定位:系统性专题。前面所有文档讲"怎么把模型并行训起来、训得快";本文讲**怎么让它训得稳、出问题怎么发现、看哪些指标判断健康**。
 
 > [!update] 2026-06-16 · dev@232c478d4
@@ -32,7 +32,7 @@ Megatron 对应有三套机制,本文依次拆解:
 
 ### 1.1 数值溢出防护:loss scaling + inf/nan 跳步
 
-(详见 `megatron_optimizer_internals_analysis.md` §3–4,此处定位为"稳定性"视角)
+(详见 `megatron_distributed_optimizer_analysis.md` §8–9,此处定位为"稳定性"视角)
 
 fp16 训练里梯度可能**下溢成 0** 或**上溢成 inf**。两道防线:
 - **Loss scaling**:loss 乘 `S`,把小梯度抬出下溢区;`DynamicGradScaler` 自适应 `S`(`grad_scaler.py:64`)。
@@ -306,5 +306,5 @@ MoE 健康?     overload factor 接近 1;若远大于 1 → 调大 aux_loss 系�
 
 ## Related Pages
 
-- [[megatron_optimizer_internals_analysis]] · [[megatron_tp_fsdp_resharding_supplements_analysis]] · [[megatron_rl_posttraining_consistency_analysis]]
+- [[megatron_distributed_optimizer_analysis]] · [[megatron_tp_fsdp_resharding_supplements_analysis]] · [[megatron_rl_posttraining_consistency_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

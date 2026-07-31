@@ -41,45 +41,15 @@ Triton 里这层的体现：
 
 ### 直觉三：Roofline —— 优化的指挥棒
 
-每个 kernel 落在两种状态之一，由**算术强度**（Arithmetic Intensity, AI）决定：
-
-$$\text{AI} = \frac{\text{计算量 (FLOPs)}}{\text{访存量 (Bytes)}} \quad(\text{单位 FLOP/Byte})$$
-
-- **AI 低 → memory-bound**（瓶颈是带宽）→ 优化方向：**减少 HBM 访问、提高复用、合并访问、fusion**
-- **AI 高 → compute-bound**（瓶颈是算力）→ 优化方向：**用 Tensor Core（`tl.dot`）、减少指令**
-- 交叉点 = 硬件的「峰值算力 / 峰值带宽」（A100 ≈ 312 TFLOPS / 2 TB/s ≈ 156 FLOP/Byte）
+每个 kernel 落在两种状态之一，由**算术强度**（Arithmetic Intensity, AI = FLOPs/Bytes）决定：**AI 低 → memory-bound**（瓶颈带宽，靠减少 HBM 访问/fusion）；**AI 高 → compute-bound**（瓶颈算力，靠 Tensor Core `tl.dot`）；交叉点 = 硬件 Ridge Point（A100 ≈ 156 FLOP/Byte）。
 
 > **永远不要优化不是瓶颈的东西。** 先判断在 roofline 哪一侧，再动手。
 
----
-
-## 3. Demo：用官方 benchmark 公式手算 roofline（真实、可核验）
-
-三个官方 tutorial 的 benchmark 里，**性能换算公式本身就是 roofline 的活教材**。把它们排在一起：
-
-| Kernel | 官方度量公式（逐字摘自源） | 源定位 | 含义 |
-|---|---|---|---|
-| 向量加法 | `gbps = 3 * x.numel() * x.element_size() * 1e-9 / (ms*1e-3)` | `01-vector-add.py:128` | 用 **GB/s** 度量 → 它是 **memory-bound**，比的是带宽 |
-| 融合 softmax | `gbps = 2 * x.numel() * x.element_size() * 1e-9 / (ms*1e-3)` | `02-fused-softmax.py:225` | 同样 **GB/s** → memory-bound；`2`= 融合后只 1 读 1 写 |
-| 矩阵乘 | `perf = 2 * M * N * K * 1e-12 / (ms*1e-3)` | `03-matrix-multiplication.py:438` | 用 **TFLOPS** 度量 → 它是 **compute-bound**，比的是算力 |
-
-**逐项读懂（这就是 AI 的分子分母）**：
-
-1. **向量加法 `z = x + y`**：每个元素读 `x`、读 `y`、写 `z` = 3 次访存（公式里的 `3`），却只做 1 次加法。
-   $$\text{AI} = \frac{N \text{ FLOP}}{3N \times 4 \text{ Byte}} = \frac{1}{12} \approx 0.083 \ \text{FLOP/Byte} \ll 156$$
-   → **极度 memory-bound**。所以官方用 GB/s（不是 TFLOPS）衡量它，优化目标是「打满带宽」。
-
-2. **融合 softmax**：朴素实现读写 `8MN+4M`（源 `02-fused-softmax.py:48-68` 逐行标注了每步读写量），融合后理论上只需 `2MN`，所以官方公式分子是 `2`，预期 ~4× 加速（源 `:68`）。这是 **fusion 省带宽**的量化证据 → 仍 memory-bound。
-
-3. **矩阵乘 (M·N·K)**：算 `2MNK` 次浮点，访存只 `O(MN+NK+MK)`。
-   $$\text{AI} = \frac{2MNK}{(MN+NK+MK)\times 2\text{ Byte}} \xrightarrow{M,N,K \text{ 大}} \text{很高} \gg 156$$
-   → **compute-bound**。所以官方用 TFLOPS 衡量，优化目标是「逼近 Tensor Core 峰值」（cuBLAS/`tl.dot`）。
-
-> 一眼判别法：**官方拿什么单位 benchmark，就告诉了你它在 roofline 哪一侧。** GB/s=memory-bound，TFLOPS=compute-bound。这是贯穿 L1→L4 的判断准绳。
+Roofline 公式、Ridge Point 硬件参数表、GPU/NPU 双平台 profiling 指标，以及用 Triton 官方 `01/02/03-*.py` 三个 tutorial 的 benchmark 公式逐项手算 AI 的完整推导（向量加法极度 memory-bound、融合 softmax 省带宽、矩阵乘 compute-bound——「官方拿什么单位 benchmark 就告诉了你它在 roofline 哪一侧」），见 Roofline 权威页 [[operator_optimization_guide]] §2（§2.5 是本页这组 demo 的完整版）。
 
 ---
 
-## 4. 这些要素在 Triton 里的「分工表」
+## 3. 这些要素在 Triton 里的「分工表」
 
 | GPU 编程要素 | 谁负责 | 你在 Triton 里的动作 |
 |---|---|---|
@@ -95,7 +65,7 @@ $$\text{AI} = \frac{\text{计算量 (FLOPs)}}{\text{访存量 (Bytes)}} \quad(\t
 
 ---
 
-## 5. 动手验证
+## 4. 动手验证
 
 ```bash
 cd triton/python/tutorials
@@ -113,6 +83,7 @@ python 03-matrix-multiplication.py   # 看 TFLOPS 曲线：Triton vs cuBLAS
 - [[index]] — Triton 学习路线总索引
 - [[cuda_execution_model_guide]] — **前置地基**：Grid·Block·Warp·Thread·SM 执行模型（概念→深入）
 - [[gpu_kernel_guide]] — GPU/NPU Kernel 工程总览（执行/内存层级的硬件细节、Tensor Core、NPU 差异、CUDA 手写视角）
+- [[operator_optimization_guide]] — Roofline 权威页（公式、Ridge Point 参数表、GPU/NPU profiling 指标、§2.5 是本页 Roofline demo 的完整推导）
 - [[triton_01_programming_model_guide]] — 下一步：用 `program_id`/`mask`/`load` 写第一个 kernel
 - [[triton_02_fused_softmax_guide]] — fusion 如何把 memory-bound kernel 的访存量砍半
 - [[triton_03_matmul_guide]] — compute-bound kernel 如何用 `tl.dot` 逼近峰值

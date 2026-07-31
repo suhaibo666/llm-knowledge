@@ -380,3 +380,4 @@ Part III 持久 artifact 位于 `tools/labs_torch_compile/artifacts/part3/`：`l
 - [[22_pattern_expression_and_matcher_engine_analysis]]
 - [[23_dead_code_topology_and_effect_order_analysis]]
 - [[25_graph_rewrite_legality_validation_and_complexity_analysis]]
+- [[npu/22_npu_fusion_passes_deepdive]] — torch_npu 26 个自定义 pass 对本页原语的应用侧（NPU 视角）

@@ -318,6 +318,6 @@ TP 不像 PP 有流水线气泡。它的低效来自:**每层 4 次通信的延�
 
 ## Related Pages
 
-- [[megatron_pp_schedulers_analysis]] · [[megatron_ep_analysis]] · [[megatron_cp_analysis]] · [[megatron_ddp_optimizer_analysis]] · [[megatron_parallelism_orchestration_analysis]]
+- [[megatron_pp_schedulers_analysis]] · [[megatron_ep_analysis]] · [[megatron_cp_analysis]] · [[megatron_distributed_optimizer_analysis]] · [[megatron_parallelism_orchestration_analysis]]
 - [[megatron_nonuniform_tp_analysis]] · [[megatron_comm_overlap_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
