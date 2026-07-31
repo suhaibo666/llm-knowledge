@@ -6,6 +6,21 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-31：知识库结构整改 P6 Task 2 —— CP/Ring Attention 归一
+
+**Type**: Structure Reorg / Dedup（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.5；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 2）
+
+- **新建** `01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis.md`（655 行）：抽取四份框架 CP 分析页（`megatron_cp_analysis` 391、`torchtitan_cp_analysis` 345、`mindspeed_context_parallel_analysis` 420、`deepseek_v4_context_parallel_analysis` 853，合计 2009 行）里重复讲的通用机制——CP 动机（attention `O(S²)` 墙）、与 TP/PP/DP/EP 的组合关系、序列切分（朴素连续切分 + 折叠/头尾配对负载均衡定量证明 + PTRR 任意稀疏掩码均衡 + RoPE 切分不变量）、因果 mask 三分支裁剪、四种通信调度（Ring P2P + online-softmax、All-gather 双缓冲、Ulysses 头维换轴、分层混合 N 级分组构造）、通信量代数统一对比、Dynamic CP 通用机制。逐段择"最深最完整版本"逐字为骨架并注明来源：MindSpeed 提供负载均衡定量证明 + RoPE 不变量 + 因果三分支裁剪 + online-softmax 公式 + Ulysses 全套机制 + Hybrid 量化论证；torchtitan 提供 Ring 主循环伪代码 + 通信掩盖时序 + 反向双环原理 + PTRR；DeepSeek-V4 提供 Native CP AllGather 代码 + 分层分组构造代码 + 通信量统一公式；Megatron-LM 提供 CP 动机 + 并行组合关系。其余版本的独有补充/口径差异（如 Ulysses 通信量"2 次"vs"4 次"计数粒度、通信量公式是否显式含 `/TP` 因子）逐段并注，不强行合并掩盖。
+- **四页收缩**（通用段替换为一句定位 + 链接，页头补划界声明，各自实现差异/源码走读/性能数据/配置全保留）：
+  - `megatron_cp_analysis.md` 391→131 行：保留 `cp_comm_type` 四选一配置接口、TE 透传架构、选型决策树、Dynamic CP 的 dispatcher 兼容/CUDA Graph 守卫等 Megatron 特有源码细节。
+  - `torchtitan_cp_analysis.md` 345→181 行：保留 SDPA-ring 与 FlexAttention-allgather 双路径架构（torchtitan 独有）、DTensor dispatcher 接线、`functional collectives`/`AsyncCollectiveTensor` 异步实现（不手写 CUDA stream）。
+  - `mindspeed_context_parallel_analysis.md` 420→345 行：保留五算法运行期分派脊柱、Ring **双环**（outer/inner window + 双 dKV 反向环）、**Adaptive CP**（调度驱动 + rank 重映射）、**KV-cache CP**（显存换反向通信）——后三项四框架中仅 MindSpeed 独有。
+  - `deepseek_v4_context_parallel_analysis.md` 853→613 行：只裁掉与理论页字面重复的 Native CP AllGather 源码 walkthrough、Hierarchical CP 分组构造代码、标准 attention 通信量公式；MLA 降低 CP 通信量 ~128 倍的推导、CSA/HCA 压缩注意力与 CP 交互的论文↔代码 gap 审计（本页核心贡献）、RoPE 的 CP 感知、TE `cp_stream` 双缓冲机制、Dynamic CP 对 MLA 的不支持、CP 与 EP 带宽竞争等 DSv4 特有内容零删减。
+- **索引与入链**：`06_distributed_parallelism/index.md` 补条目（页面列表 + 建议阅读顺序 + 显存通信总账 CP 行 + 关联域指向四份框架页）；`megatron-lm/index.md`、`torchtitan/index.md`、`mindspeed/index.md` 三处描述同步指向理论页；四页 Related Pages 与理论页 Related Pages 双向互链。
+- **验收**：`python tools/check_links.py` pages=375（374+1）、broken=0、orphans=0；`ambiguous`/`bare_index` 69→70（新页 Related Pages 末尾沿用同目录 8 个既有页面的裸 `[[index]]` 惯例，与本次改动前基线持平 +1，属 P7 Task 8 全库裸 index 清零范围，非本次引入的新问题）。`python -m pytest tools/ -q` 77 passed。
+
+---
+
 ## 2026-07-31：知识库结构整改 P5 完成（后训练三域整合收官）
 
 **Type**: Structure Reorg（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；P0-P7 的第六段）

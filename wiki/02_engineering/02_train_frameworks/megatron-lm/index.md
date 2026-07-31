@@ -29,7 +29,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 | [[megatron_vllm_weight_sync_analysis]] | verl 框架 Megatron→vLLM 权重同步、Gather-Broadcast-Load、colocation、HF 格式重组(与 [[megatron_rl_posttraining_consistency_analysis]] 的内部 Refit 互补) |
 | [[mooncake_analysis]] | (跨域,推理框架目录)Mooncake KVCache 中心化分离式服务架构 |
 | [[deepseek_v4_tensor_parallel_analysis]] | **DeepSeek-V4 TP 切分实现**:DSv4 Hybrid Attention 强制 `tp==1` 的架构动因、Compressor/Indexer duplicated、mHC 非 TP-aware 梯度同步、MoE Shared/Routed expert TP 约束、通信量修正(2026-06-25 自父目录移入)。模型侧架构见 [[../../../01_theory/01_models/deepseek/deepseek_v4_analysis\|deepseek_v4_analysis]] |
-| [[deepseek_v4_context_parallel_analysis]] | **DeepSeek-V4 CP 实现**:CP 进程组/Hierarchical CP、四种通信类型(p2p/all_gather/a2a/a2a+p2p)、Native+TE CP autograd、DSv4 适配与 Dynamic CP 限制、代码↔论文 gap(2026-06-25 自父目录移入)。论文级 CP 算法见 [[../../../01_theory/01_models/deepseek/deepseek_v4_cp_analysis\|deepseek_v4_cp_analysis]] |
+| [[deepseek_v4_context_parallel_analysis]] | **DeepSeek-V4 CP 实现**:MLA 对 CP 通信量降低 ~128 倍、CSA/HCA 压缩注意力与 CP 的论文↔代码 gap 审计、RoPE 的 CP 感知、TE CP 的 cp_stream 双缓冲、Dynamic CP 对 MLA 的不支持(2026-06-25 自父目录移入)。CP 通用机制见 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis\|ring_attention_and_context_parallel_analysis]];论文级 CP 算法见 [[../../../01_theory/01_models/deepseek/deepseek_v4_cp_analysis\|deepseek_v4_cp_analysis]] |
 
 ## 源码级系统分析系列(Megatron-LM `dev` @ `232c478d4`, 2026-06 刷新)
 
@@ -75,7 +75,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 | [[megatron_pp_schedulers_analysis]] | 流水线并行 5 调度器:无流水线 / 1F1B / 交错 VPP / P2P-overlap / combined-1F1B;气泡公式推导、流水线模拟图(附调度模拟器 `_pp_sim.py`) |
 | [[megatron_ep_analysis]] | 专家并行:AllGather / AllToAll / Flex(DeepEP/HybridEP)三种 token dispatcher;MoE Parallel Folding;通信量与负载均衡 |
 | [[megatron_tp_analysis]] | 张量并行:ColumnParallel/RowParallel 共轭算子 f/g、MLP/Attention 切分;Sequence Parallelism |
-| [[megatron_cp_analysis]] | 上下文并行:p2p(ring)/ all_gather / a2a(Ulysses)/ a2a+p2p 四种 cp_comm_type;因果 zigzag 负载均衡 |
+| [[megatron_cp_analysis]] | 上下文并行:`cp_comm_type` 四选一(p2p/all_gather/a2a/a2a+p2p)配置接口、TE 透传架构、选型决策树;通用机制见 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis\|ring_attention_and_context_parallel_analysis]] |
 | [[megatron_ddp_optimizer_analysis]] | 数据并行 + 分布式优化器:ZeRO-0/1/2/3 四阶段、梯度分桶重叠、HSDP |
 
 ### 编排与补遗(3)
