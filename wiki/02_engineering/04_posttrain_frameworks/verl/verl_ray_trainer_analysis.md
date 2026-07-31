@@ -7,6 +7,8 @@
 >
 > 行号约定:所有 `path.py:line` 均相对 verl **内层包根** `verl/`(即 `trainer/ppo/ray_trainer.py` 实际位于 `verl/verl/trainer/ppo/ray_trainer.py`)。
 
+> [!note] 本页基线 verl `8a694930`;端到端迭代以 [[verl_end_to_end_iteration_analysis]](基线 `983cb0f`)为准,两基线间机制差异以新基线页为先。
+
 ---
 
 ## 1. 功能范围与定位
@@ -31,8 +33,11 @@ def fit(self):
 - **分发机制**:worker group 的 `spawn` / dispatch / colocate 由 single-controller 提供,见 [[verl_single_controller_analysis]]。
 - **算法内核**:advantage / KL / loss 的具体数学在 `core_algos.py`,本页只记入口,细节见 [[verl_rl_algorithms_analysis]]。
 
-> [!note] 版本定位:这是默认路径,但被标记为待废弃
+> [!note] 版本定位:这是默认路径,但被标记为待废弃(基线 `8a694930` 下)
 > `RayPPOTrainer` 类带 `@deprecated` 装饰(`trainer/ppo/ray_trainer.py:285`),提示 "Legacy trainer ... 将在 v0.9.0 移除,请用 `trainer.use_v1=True`"。但配置默认 `trainer.use_v1: false`(`trainer/config/ppo_trainer.yaml:201`),`main_ppo.py:161` 的分支据此走向 `main_ppo_v0.py`,后者在 `trainer/main_ppo_v0.py:217` 实例化本类。也就是说:**本类目前仍是默认跑的 PPO 编排器**,V1(`TaskRunnerV1`)是并行存在的新实现。本页文档化的是 main @ `8a694930` 下这份事实主循环。
+>
+> [!contradiction] 到 `983cb0f`,默认值已反转
+> [[verl_end_to_end_iteration_analysis]] 的基线 `983cb0f` 上,`trainer.use_v1` 默认值已从 `false` 反转为 `true`(`trainer/config/ppo_trainer.yaml:219`),`main_ppo.py:184-193` 因此**默认改道 `TaskRunnerV1`**(`verl/trainer/ppo/v1/*`,TransferQueue 驱动)。本页记录的 `RayPPOTrainer.fit` 降级为需要显式 `trainer.use_v1=false` 才会执行的 legacy 路径——这是版本演进而非本页描述有误;`@deprecated` 装饰器本身未变。本页与整套 9 篇深潜文档仍以此 legacy 路径为教学主线,`TaskRunnerV1`/TransferQueue 路径本系列尚无专页覆盖。
 
 ---
 
@@ -344,6 +349,7 @@ sequenceDiagram
 ## Related Pages
 
 - [[verl/index]] —— verl 系列总入口
+- [[verl_end_to_end_iteration_analysis]] —— 当前基线(`983cb0f`)的端到端主链、`use_v1` 默认反转记录,本页 legacy 深潜的对照页
 - [[verl_architecture_overview_analysis]] —— HybridFlow / single-controller 架构总览,本页是其"主循环"具体化
 - [[verl_single_controller_analysis]] —— worker group、`spawn`、colocate、dispatch(`make_nd_compute_dataproto_dispatch_fn`)机制
 - [[verl_dataproto_analysis]] —— `DataProto` / `TensorDict` 数据载体,本页所有 `union/repeat/pop` 的语义

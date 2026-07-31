@@ -324,6 +324,6 @@ Ascend 路径已具备工业深挖价值，尤其是：
 
 - [[roll_strategy_and_ascend_analysis|D10 ROLL、异构与 Ascend]]
 - [[areal_async_architecture_analysis|D09 AReaL Fully Async]]
-- [[03_posttraining/07_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
+- [[verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
 - [[03_posttraining/00_posttraining_source_reading_guide|D00 学习路线]]
 - [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]

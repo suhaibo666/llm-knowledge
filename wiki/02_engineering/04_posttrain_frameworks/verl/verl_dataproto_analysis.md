@@ -5,6 +5,8 @@
 >
 > verl 的 single-controller 模式里,driver 进程在一根 Python 主线程上"指挥"成百上千个 worker。要让"指挥"成立,driver 和 worker 之间必须有一种**自描述、可切分、可拼接、可序列化**的数据载体。这个载体就是 `DataProto`。本文逐方法剖析 `verl/protocol.py`(1346 行),它是整个数据面的单一事实来源。
 
+> [!note] 本页基线 verl `8a694930`;端到端迭代以 [[verl_end_to_end_iteration_analysis]](基线 `983cb0f`)为准,两基线间机制差异以新基线页为先。
+
 ---
 
 ## 1. 功能范围与定位

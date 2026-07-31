@@ -7,6 +7,8 @@
 >
 > 行号约定:除特别标注外,所有 `file:line` 均指 `verl/trainer/ppo/core_algos.py`。
 
+> [!note] 本页基线 verl `8a694930`;端到端迭代以 [[verl_end_to_end_iteration_analysis]](基线 `983cb0f`)为准,两基线间机制差异以新基线页为先。
+
 ---
 
 ## 1. 功能范围与定位

@@ -6,6 +6,8 @@
 > 本文是 verl 系列的**上手篇**。目标:让一个从未跑过 verl 的人,理解"装什么、从哪进、配置怎么拼、一条命令到底改了哪些 key、训练循环每一步在做什么",并能照着跑通一次 GRPO。
 > 行号约定:包内文件以 inner `verl/` 为根(如 `trainer/main_ppo.py:144`);仓库根文件(`examples/`、`pyproject.toml`、`setup.py`、`requirements.txt`)标注 `(repo-root)` 前缀。
 
+> [!note] 本页基线 verl `8a694930`;端到端迭代以 [[verl_end_to_end_iteration_analysis]](基线 `983cb0f`)为准,两基线间机制差异以新基线页为先。
+
 ---
 
 ## 1. 适用场景与前置

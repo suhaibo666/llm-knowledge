@@ -7,6 +7,8 @@
 >
 > **本文最重要的结论(与旧版 verl 有重大出入,务必先读)**:在 `8a694930` 上,`workers/engine_workers.py` **只有两个 worker 类**——底层的 `TrainingWorker` 与混合 worker `ActorRolloutRefWorker`。**已不存在独立的 `CriticWorker` / `RewardModelWorker` 类**,critic 只是"`model_type="value_model"` + `value_loss`"的另一个 `TrainingWorker`;reward 走 `experimental/reward_loop` 与 `workers/reward_manager`。rollout 也**只剩 async server 模式**,`generate_sequences` 不再是 worker 的 `@register` 方法。
 
+> [!note] 本页基线 verl `8a694930`;端到端迭代以 [[verl_end_to_end_iteration_analysis]](基线 `983cb0f`)为准,两基线间机制差异以新基线页为先。
+
 ---
 
 ## 1. 功能范围与定位

@@ -6,6 +6,8 @@
 > on-policy RL 的吞吐由 **rollout 长尾** 与 **train/generate 显存拉锯** 共同主导。本篇是 verl 性能/显存手段的**横切目录**:每个机制给一个代码锚点 + "为什么",不重复 3D-HybridEngine 的重分片细节(见 [[verl_rollout_resharding_analysis]])。
 > 行号约定:默认以**内层包** `verl/`(即 `E:\...\verl\verl\`)为根;仓库根文件(如 `README.md`)显式标注 `[repo]`。
 
+> [!note] 本页基线 verl `8a694930`;端到端迭代以 [[verl_end_to_end_iteration_analysis]](基线 `983cb0f`)为准,两基线间机制差异以新基线页为先。
+
 ---
 
 ## 1. 功能范围与定位

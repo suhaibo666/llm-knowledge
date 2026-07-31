@@ -5,7 +5,7 @@
 > **快照日期**：2026-07-27
 > **证据基线**：verl `983cb0f`、slime `aaf5c20`、AReaL `b23fa6c`、ROLL `370cb24`
 > **结论先行**：verl、slime、AReaL、ROLL 不是同一目标函数下的排行榜；它们分别优化通用可组合性、Megatron+SGLang 深集成、fully async 服务化和多 Strategy/异构硬件。
-> **阅读导航**：[[posttraining_infra_mechanism_analysis|上一篇 D05]] · [[03_posttraining/07_verl_end_to_end_iteration_analysis|下一篇 D07]]
+> **阅读导航**：[[posttraining_infra_mechanism_analysis|上一篇 D05]] · [[verl_end_to_end_iteration_analysis|下一篇 D07]]
 
 ---
 
@@ -185,7 +185,7 @@ flowchart TD
 ## Related Pages
 
 - [[posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
-- [[03_posttraining/07_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
+- [[verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
 - [[slime_architecture_analysis|D08 slime 架构]]
 - [[areal_async_architecture_analysis|D09 AReaL 架构]]
 - [[roll_strategy_and_ascend_analysis|D10 ROLL 与 Ascend]]

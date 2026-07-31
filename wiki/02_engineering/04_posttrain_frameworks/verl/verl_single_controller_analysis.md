@@ -7,6 +7,8 @@
 >
 > 主要源文件:`single_controller/base/worker.py`(349 行)、`single_controller/base/worker_group.py`(256 行)、`single_controller/base/decorator.py`(445 行)、`single_controller/ray/base.py`(1128 行)
 
+> [!note] 本页基线 verl `8a694930`;端到端迭代以 [[verl_end_to_end_iteration_analysis]](基线 `983cb0f`)为准,两基线间机制差异以新基线页为先。
+
 ---
 
 ## 1. 功能范围与定位

@@ -61,7 +61,7 @@
 | D04 | [[on_policy_off_policy_staleness_analysis|On-policy、Off-policy 与 Staleness]] | S01 | policy lag、correction 与 TIM | 已完成 |
 | D05 | [[posttraining_infra_mechanism_analysis|后训练 Infra 核心机制]] | S01 | control/data/weight 三平面 | 已完成 |
 | D06 | [[rl_framework_comparison|工业后训练框架对比]] | S02/S05 | 四框架的统一机制矩阵 | 已完成 |
-| D07 | [[03_posttraining/07_verl_end_to_end_iteration_analysis|verl 端到端训练迭代]] | S02 | 主基线的真实源码调用链 | 已完成 |
+| D07 | [[verl_end_to_end_iteration_analysis|verl 端到端训练迭代]] | S02 | 主基线的真实源码调用链 | 已完成 |
 | D08 | [[slime_architecture_analysis|slime 高性能与异步架构]] | S03 | 性能、数据面与 staleness 对照 | 已完成 |
 | D09 | [[areal_async_architecture_analysis|AReaL Fully Async 与 Agentic 架构]] | S03 | fully async 与服务化 agent loop | 已完成 |
 | D10 | [[roll_strategy_and_ascend_analysis|ROLL Strategy、异构与 Ascend]] | S04 | 多后端 Strategy 和 NPU 专项 | 已完成 |

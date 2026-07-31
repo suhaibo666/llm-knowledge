@@ -6,6 +6,30 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-31：知识库结构整改 P5 Task 5（verl 端到端整合，双基线调和）
+
+**Type**: Content Consolidation + Baseline Reconciliation（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 5）
+
+`git mv wiki/03_posttraining/07_verl_end_to_end_iteration_analysis.md` → `wiki/02_engineering/04_posttrain_frameworks/verl/verl_end_to_end_iteration_analysis.md`（D07，基线 verl `983cb0f`，225 行）。verl 域此前已有 `verl_ray_trainer_analysis.md`（354 行，基线 `8a694930`）逐方法源码走读 `RayPPOTrainer.fit`；两页覆盖同一主题但基线不同、深度不同，本次逐节台账后**不合并、保留双页**并调和。
+
+**与 `verl_ray_trainer_analysis.md` 逐节台账**：重叠区（fit 主循环、一步 PPO 字段流转、advantage/loss 数学）以 D07 为准，不回填 ray_trainer 的逐行细节（D07 §4/§5 的高层表已经是权威账本）。ray_trainer §2（Role 枚举/`ResourcePoolManager`/`init_workers` 的 `create_colocated_worker_cls`/`WorkerDict` colocate 机制）、§3–§6（fit() 逐行追踪、`_balance_batch`、时序图、dispatch 表）在 `983cb0f` 本地 checkout（`E:\97-codes\torch_parallel\verl`）核对后确认为**独有、且体量远超 40%**（全篇 354 行里仅"fit 主循环顺序/advantage 数学"这类主题级重叠，method 级源码走读几乎全部独有）——判定**保留残页**：`verl_ray_trainer_analysis.md` 不删除，作为 `8a694930` legacy 深潜companion 页保留;仅将其中直接回答 D07 §2 自身"colocate or disaggregate"清单的**核心机制结论**（Role 枚举、`need_critic`/`need_reference_policy` 判定、`create_colocated_worker_cls` 合并 WorkerDict 机制、`ref_in_actor`）逐字并入 D07 §2，全部按 `983cb0f` 重新核对行号（utils.py:27-107、single_controller/ray/base.py:185-233、ray_trainer.py:343-360,772-907，与 `8a694930` 相应位置逐一比对，多数行号完全一致，`fit()` 因 `983cb0f` 新增代码整体下移 21 行）。
+
+**基线冲突（`[!contradiction]` 双记）**：核对 `main_ppo.py` 发现两基线间存在真实机制反转——`trainer.use_v1` 默认值从 `8a694930` 的 `false`（legacy `RayPPOTrainer.fit` 为默认执行路径）反转为 `983cb0f` 的 `true`（`config/ppo_trainer.yaml:201`→`:219`；`main_ppo.py:184-193` 默认改道 `TaskRunnerV1`/TransferQueue）。这不是页面撰写错误而是版本演进，按规程在 D07 §1、`verl_ray_trainer_analysis.md` §1 版本定位note、`verl/index.md`「HEAD 架构演进提示」三处以 `[!contradiction]` 双记：`RayPPOTrainer.fit`（本系列 9+1 篇文档共同的教学主链）在 `983cb0f` 已非默认路径，需显式 `trainer.use_v1=false` 才会执行；`TaskRunnerV1`/TransferQueue 路径本知识库尚无覆盖。`@deprecated` 装饰器本身两基线间未变（均在 `ray_trainer.py:285`）。
+
+**D07 §3/§6 收缩（先验两专页覆盖，Task 4 同款流程）**：`verl_dataproto_analysis.md`（325 行）与 `verl_rollout_resharding_analysis.md`（347 行）均已全面覆盖 D07 §3/§6 的全部事实（前者到方法级，后者到 CUDA IPC bucket/CheckpointEngine 两条路径的机制级），未发现 D07 独有细节。§3（DataProto）57→70 行原文压缩为「容器契约表 + 四条不变量」+ `[[verl_dataproto_analysis]]` 链接；§6（权重刷新）保留原有 `983cb0f` 专属行号（`engine_workers.py:705-725,783-787`、`vllm_rollout.py:271-320,278`）改写为时序代码块，补 `[[verl_rollout_resharding_analysis]]` 链接。
+
+**verl 域其余 8 篇（`verl_architecture_overview_analysis`/`verl_quickstart_guide`/`verl_single_controller_analysis`/`verl_dataproto_analysis`/`verl_workers_engine_analysis`/`verl_rollout_resharding_analysis`/`verl_rl_algorithms_analysis`/`verl_optimization_analysis`）页头加基线横幅**：`> [!note] 本页基线 verl \`8a694930\`；端到端迭代以 [[verl_end_to_end_iteration_analysis]]（基线 \`983cb0f\`）为准，两基线间机制差异以新基线页为先。`；`verl_ray_trainer_analysis.md`（D07 对手方，保留残页）同样加此横幅，另加上述 `[!contradiction]` 版本反转记录。
+
+**verl/index.md 重建**：新增「端到端主链（当前基线）」表段承接 D07；「由浅入深三层」「深挖实现」「算法与优化」三表标注基线 `8a694930`；「五条平面」入口/驱动行、「经典 RL 数据流」承接句、Related Pages 均补 D07 双链接；「HEAD 架构演进提示」callout 补 `use_v1` 反转记录；页数 9→10；原对 D07 的 `[[03_posttraining/07_verl_end_to_end_iteration_analysis]]` 引用改裸基名 `[[verl_end_to_end_iteration_analysis]]`。`04_posttrain_frameworks/index.md` 子目录表 verl 行页数同步改「9 篇 8a694930 深潜 + 端到端主链页基线 983cb0f」。
+
+**入链改写（裸基名）**：`03_posttraining/07_verl_end_to_end_iteration_analysis` → `verl_end_to_end_iteration_analysis`，涉及 `posttraining_frontier_map_analysis.md`、`cuda_ascend_posttraining_stack_comparison.md`、`posttraining_infra_mechanism_analysis.md`、`rl_framework_comparison.md`（阅读导航+正文两处）、`slime_architecture_analysis.md`（阅读导航+正文两处）、`00_posttraining_source_reading_guide.md`、`03_posttraining/index.md`、`wiki/index.md`。D07 自身阅读导航（`[[rl_framework_comparison|上一篇 D06]]` · `[[slime_architecture_analysis|下一篇 D08]]`）此前已是裸基名，无需改写。
+
+**验收**：`tools/check_links.py` broken=0、orphans=0（pages=375，与基线一致，本次只搬运不新增/删除文件）；`python -m pytest -q` 77 passed。
+
+**自查**：verl 本地 git checkout（`E:\97-codes\torch_parallel\verl`）同时含 `983cb0f24443f87b3d161fad318445130a620b0` 与 `8a694930` 两个 commit，本次全部行号引用与「机制未变/已反转」判断均用 `git show <sha>:<path>` 现场核对，未依赖两页文本互证兜底。ray_trainer 页保留判定基于逐节主题映射后的独有内容占比估算（远超 40% 阈值），非精确计数；D07 §2 新增内容与 D07 §3/§6 收缩前均逐一核对对应专页/源码覆盖,未发现事实丢失。`grep -rn '03_posttraining/07_verl_end_to_end_iteration_analysis' wiki/` 除 `changelog.md`（历史记录，规则豁免不回写）与 `verl/index.md` 的一处历史路径纯文本提及（非 wiki-link）外 0 处活链接命中。
+
+---
+
 ## 2026-07-31：知识库结构整改 P5 Task 4（D05/D06 迁入收缩 + weight sync 三方划界）
 
 **Type**: Content Consolidation + Boundary Linking（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 4）

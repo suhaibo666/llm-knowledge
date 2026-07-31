@@ -5,6 +5,8 @@
 >
 > 本文回答一个问题:**verl 把一套 PPO/GRPO 的 RLHF 数据流,是如何拆成"驱动进程上的中心化编排"+"GPU 上的 SPMD 计算"两层,并把 Actor/Rollout/Reference/Critic/Reward 五个角色编织成一个训练步的?** 这是 verl 系列的阅读入口,概念为主、逐句溯源;子系统细节交给各专题页。
 
+> [!note] 本页基线 verl `8a694930`;端到端迭代以 [[verl_end_to_end_iteration_analysis]](基线 `983cb0f`)为准,两基线间机制差异以新基线页为先。
+
 ---
 
 ## 1. 功能范围与定位

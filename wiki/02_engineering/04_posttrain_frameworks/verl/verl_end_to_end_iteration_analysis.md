@@ -30,6 +30,11 @@ flowchart LR
 - `verl/trainer/ppo/ray_trainer.py:772`：初始化 workers；
 - `verl/trainer/ppo/ray_trainer.py:1380`：`fit` 主循环。
 
+> [!contradiction] `trainer.use_v1` 默认值在两基线间反转
+> [[verl_ray_trainer_analysis]]（基线 `8a694930`）记录的状态是：`RayPPOTrainer`（`ray_trainer.py:285` 带 `@deprecated`）"目前仍是默认跑的 PPO 编排器"，因为当时 `trainer.use_v1` 默认 `false`（`trainer/config/ppo_trainer.yaml:201`），`main_ppo.py` 因此默认落到 `main_ppo_v0.TaskRunner` → 本页的 `RayPPOTrainer.fit`。
+> 到本页基线 `983cb0f`，该默认值已反转为 `use_v1: true`（`trainer/config/ppo_trainer.yaml:219`），`main_ppo.py:184-193` 因此**默认改道 `TaskRunnerV1`**（`verl/trainer/ppo/v1/*`，TransferQueue 驱动，`main_ppo.py:103-164`）；本页与 [[verl_ray_trainer_analysis]] 走读的 `RayPPOTrainer.fit` 降级为需要显式设置 `trainer.use_v1=false` 才会执行的 legacy 路径，且仍带 `main_ppo_v0.py` 的移除预告（v0.9.0）。`@deprecated` 装饰器本身在两基线间未变，变的只是路由默认值。
+> 本页仍以 `RayPPOTrainer.fit` 为教学主链（源码结构最完整、有 [[verl_ray_trainer_analysis]] 的逐行深潜），但**不代表它是本基线下的默认执行路径**；`TaskRunnerV1`/TransferQueue 路径本系列尚无专页覆盖。
+
 ## 2. 启动与角色创建
 
 `verl/trainer/main_ppo.py` 的职责是：
@@ -52,22 +57,25 @@ training backend
 rollout backend
 ```
 
+角色枚举与资源池的实际映射机制（`verl/trainer/ppo/utils.py`、`verl/single_controller/ray/base.py`，本页基线下行号）：
+
+- **Role 枚举**（`trainer/ppo/utils.py:27-56`）：`Actor`/`Rollout`/`ActorRollout`/`Critic`/`RefPolicy`/`RewardModel`/`ActorRolloutRef`/`TeacherModel`，`__str__` 给出配置里用的短名（`actor`/`rollout`/`critic`/`ref`/`rm`/`actor_rollout_ref`/`teacher`）。
+- **要不要这个角色**由四个 `need_*` 纯函数从 config 推出（`utils.py:75-107`）：`need_reference_policy`（`use_kl_in_reward` 或 `actor.use_kl_loss`）、`need_reward_model`（`reward.reward_model.enable`）、`need_critic`（显式 `critic.enable`，否则仅当 `adv_estimator==GAE` 才需要——GRPO 等 critic-free 算法据此自动关掉 critic）。`RayPPOTrainer.__init__` 把结果缓存成 `use_reference_policy`/`use_rm`/`use_critic`（`ray_trainer.py:343-348`）。
+- **colocate 还是 disaggregate**：资源池由 `ResourcePoolManager`（`single_controller/ray/base.py:185`）管理，`create_resource_pool()`（`:195`）按 spec 建池，FSDP 后端 `max_colocate_count=3`（actor_critic_ref/rollout/reward 三类 WorkerGroup 共享一组 GPU），Megatron 后端用 >1 分池。真正实现"同 GPU 多角色"的是 `init_workers()`（`ray_trainer.py:772`）里的 `create_colocated_worker_cls(class_dict)`（`:873`）——把落在同一资源池下的各角色类合并成一个 `WorkerDict`，在**一个 Ray actor 内实例化多个子 worker**，子 worker 方法以 `{prefix}_{method}` 形式挂到外层（dispatch 机制见 [[verl_single_controller_analysis]]）；随后 `wg_dict.spawn(...)`（`:879`）把合并 group 拆回按角色寻址的句柄字典。LoRA 打开时 `ref_in_actor=True`（`ray_trainer.py:356-360`），参考策略直接复用不挂 adapter 的 actor，无需单独起 ref worker group。
+
+`init_workers()` 完整初始化顺序（建池 → 注册 actor/critic/ref 类 → 合并建 WorkerGroup → 分发句柄 → 各角色 `init_model()`）的逐行追踪见 [[verl_ray_trainer_analysis]] §2（旧基线 `8a694930`，机制未变、行号有漂移）。
+
 ## 3. DataProto 是跨 role 契约
 
-[`verl/protocol.py:318`](https://github.com/verl-project/verl/blob/983cb0f24443f87b3d161fad318445130a620b07/verl/protocol.py#L318) 定义 `DataProto`。常用变换：
+[`verl/protocol.py:318`](https://github.com/verl-project/verl/blob/983cb0f24443f87b3d161fad318445130a620b07/verl/protocol.py#L318) 定义的 `DataProto` 是 driver 与所有 worker 之间的唯一数据契约；构造、chunk/concat、padding、`DataProtoFuture`、序列化成本的方法级剖析见 [[verl_dataproto_analysis]]。
 
-- `pop`：`verl/protocol.py:721`；
-- `union`：`verl/protocol.py:781`；
-- `reorder`：`verl/protocol.py:963`；
-- `repeat`：`verl/protocol.py:971`。
+| 容器 | 装什么 | 本页涉及的关键操作 |
+|---|---|---|
+| `batch`（TensorDict） | 等长张量：`input_ids`/`log_probs`/`advantages`… | `union`（`:781`）逐跳并入新字段、`reorder`（`:963`）负载均衡后复原顺序 |
+| `non_tensor_batch`（numpy object） | 逐样本非张量数据：`uid`、原始 prompt、reward 附加信息 | `repeat`（`:971`）按 `rollout.n` 复制、`pop`（`:721`）抽出送 rollout 的子集 |
+| `meta_info` | 与样本无关的全局元信息：`temperature`、policy version | 切分时整体复制给每个分片，不参与拼接维度 |
 
-它同时装 tensor batch、non-tensor batch 与 meta info。工业修改必须维护：
-
-- batch 第一维一致；
-- prompt 重复后 group uid 不丢；
-- response mask 与 log-prob shape 对齐；
-- reorder 后 reward/advantage 同步重排；
-- policy version 和 sampling meta 不被 `pop/union` 丢失。
+工业修改必须维护的四条不变量：batch 第一维一致；prompt 重复后 group uid 不丢；response mask 与 log-prob shape 对齐；reorder 后 reward/advantage 同步重排；policy version 和 sampling meta 不被 `pop`/`union` 丢失。
 
 ## 4. 一轮 `fit` 的真实顺序
 
@@ -123,13 +131,16 @@ policy loss registry 在 `verl/trainer/ppo/core_algos.py`：
 
 ## 6. 权重刷新
 
-`RayPPOTrainer` 在 actor update 后触发 rollout weight refresh。worker 承重点：
+`RayPPOTrainer` 在 actor update 后触发 rollout weight refresh；完整搬运机制（3D-HybridEngine、CUDA IPC bucket、`CheckpointEngine` 两条路径、sleep/wake 显存接力、经济性测算）见 [[verl_rollout_resharding_analysis]]。本基线的时序承重点：
 
-- [`verl/workers/engine_workers.py:705-725`](https://github.com/verl-project/verl/blob/983cb0f24443f87b3d161fad318445130a620b07/verl/workers/engine_workers.py#L705-L725)：actor update 与 rollout sleep/wake 边界；
-- `verl/workers/engine_workers.py:783-787`：调用 rollout `update_weights`；
-- [`verl/workers/rollout/vllm_rollout/vllm_rollout.py:271-320`](https://github.com/verl-project/verl/blob/983cb0f24443f87b3d161fad318445130a620b07/verl/workers/rollout/vllm_rollout/vllm_rollout.py#L271-L320)：异步权重接收、bucket、cache reset 和 generation 入口。
+```text
+actor update 完成
+  → engine_workers.py:705-725  sleep/wake 边界：rollout resume(weights)
+  → engine_workers.py:783-787  调用 rollout update_weights
+  → vllm_rollout.py:271-320    异步权重接收、bucket、cache reset、开放 generation
+```
 
-`verl/workers/rollout/vllm_rollout/vllm_rollout.py:278` 说明 CUDA IPC 不可用时可 fallback 到 shared memory。它描述传输实现，不等于跨节点任意 layout 自动兼容。
+`vllm_rollout.py:278` 说明 CUDA IPC 不可用时可 fallback 到 shared memory——这是传输实现细节，不等于跨节点任意 layout 自动兼容。
 
 评审 weight refresh 时要找：
 
@@ -219,7 +230,12 @@ checkpoint and profiler
 
 ## Related Pages
 
+- [[verl/index]] —— verl 系列总入口与知识地图
+- [[verl_ray_trainer_analysis]] —— `RayPPOTrainer.fit` 逐方法源码走读（旧基线 `8a694930`），角色/资源池/`init_workers` 与本页 §2 互补
+- [[verl_dataproto_analysis]] —— `DataProto` 完整方法级剖析，本页 §3 契约表的展开
+- [[verl_rollout_resharding_analysis]] —— 3D-HybridEngine 权重重分片完整机制，本页 §6 时序的展开
+- [[verl_single_controller_analysis]] —— colocate WorkerDict、dispatch/collect 装饰器机制
+- [[verl_rl_algorithms_analysis]] —— 优势估计与策略损失注册表，本页 §5 的数学细节
 - [[rl_framework_comparison|D06 工业后训练框架对比]]
 - [[slime_architecture_analysis|D08 slime 高性能与异步架构]]
-- [[02_engineering/04_posttrain_frameworks/verl/index|既有 verl 分析索引]]
 - [[on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]

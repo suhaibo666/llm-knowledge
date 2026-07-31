@@ -1,8 +1,8 @@
 # verl(HybridFlow)RLHF 框架 — 知识地图
 
-> **代码基准**:verl `main` @ `8a694930` · 配套 Ray / vLLM / SGLang / FSDP2 / Megatron-LM 后端
-> **最后更新**:2026-06-22(新建:9 篇 verl 源码级分析,从架构→实现→优化、overview→quickstart→deep dive)
-> 一套 9 篇 verl(开源版 **HybridFlow**,EuroSys'25,arXiv:2409.19256)源码级分析。verl 是 RL **后训练(RLHF)编排框架**,与预训练并行框架 [[torchtitan/index]] / [[megatron-lm/index]] 互补——后两者是 verl 的**训练后端**,verl 在其上编排「生成(rollout)→ 打分(reward)→ 优势(advantage)→ 更新(actor/critic)」的强化学习数据流。
+> **代码基准**:verl `main` @ `8a694930`(9 篇实现深潜的基线)+ `983cb0f`(端到端迭代主链,见 [[verl_end_to_end_iteration_analysis]]) · 配套 Ray / vLLM / SGLang / FSDP2 / Megatron-LM 后端
+> **最后更新**:2026-07-31(kb-reorg P5:并入 verl 端到端迭代主链页——原 `wiki/03_posttraining/07_verl_end_to_end_iteration_analysis.md`,基线 `983cb0f`;9 篇 `8a694930` 深潜页头加基线横幅互指,`use_v1` 默认值两基线间反转以 `[!contradiction]` 双记)· 原建 2026-06-22(9 篇 verl 源码级分析,从架构→实现→优化、overview→quickstart→deep dive)
+> 一套 **10 篇** verl(开源版 **HybridFlow**,EuroSys'25,arXiv:2409.19256)源码级分析:9 篇基线 `8a694930` 的实现深潜 + 1 篇基线 `983cb0f` 的端到端迭代主链([[verl_end_to_end_iteration_analysis]])。verl 是 RL **后训练(RLHF)编排框架**,与预训练并行框架 [[torchtitan/index]] / [[megatron-lm/index]] 互补——后两者是 verl 的**训练后端**,verl 在其上编排「生成(rollout)→ 打分(reward)→ 优势(advantage)→ 更新(actor/critic)」的强化学习数据流。两基线机制若有出入,以新基线页 [[verl_end_to_end_iteration_analysis]] 为先(该页 `[!contradiction]` 记录了已知差异)。
 
 ---
 
@@ -18,33 +18,39 @@ verl 的核心是 **HybridFlow 混合控制器(hybrid-controller)编程模型**:
 
 | 平面 | 位置 | 职责 | 主分析页 |
 |------|------|------|---------|
-| **入口/驱动** | `trainer/main_ppo.py` · `trainer/ppo/ray_trainer.py` | Hydra 启动、Ray 初始化、`RayPPOTrainer.fit()` 主循环 | [[verl_ray_trainer_analysis]] |
+| **入口/驱动** | `trainer/main_ppo.py` · `trainer/ppo/ray_trainer.py` | Hydra 启动、Ray 初始化、`RayPPOTrainer.fit()` 主循环(`983cb0f` 起 `use_v1` 默认反转为 `true`,默认改道 `TaskRunnerV1`) | [[verl_end_to_end_iteration_analysis]] · [[verl_ray_trainer_analysis]] |
 | **控制面** | `single_controller/` | `Worker`/`WorkerGroup`/`RayWorkerGroup` + `@register` dispatch/collect | [[verl_single_controller_analysis]] |
 | **数据面** | `protocol.py` | `DataProto` / `DataProtoFuture`:driver↔worker 的统一数据契约 | [[verl_dataproto_analysis]] |
 | **计算面** | `workers/engine_workers.py` · `workers/engine/*` | 统一 Worker(actor+rollout+ref 混合)+ FSDP/Megatron/... 引擎抽象 | [[verl_workers_engine_analysis]] |
 | **生成面** | `workers/rollout/*` | vLLM/SGLang 异步推理服务 + 3D-HybridEngine 权重重分片 | [[verl_rollout_resharding_analysis]] |
 | **算法面** | `trainer/ppo/core_algos.py` | 14 种优势估计 + 11 种 policy loss + KL 惩罚 | [[verl_rl_algorithms_analysis]] |
 
-## 文档系列(9 篇)
+## 文档系列(10 篇)
 
-### 由浅入深三层(overview → quick start → deep dive)
+### 端到端主链(当前基线)
+
+| 页面 | 层次 | 核心机制 |
+|------|------|---------|
+| [[verl_end_to_end_iteration_analysis]] | **End-to-End · 当前基线 `983cb0f`** | 一轮 PPO/GRPO 迭代的端到端调用链、角色/资源池创建机制、DataProto 契约表、advantage/policy-loss 注册表、权重刷新时序、on-policy/TIM 诊断、`use_v1` 默认反转的 `[!contradiction]` 记录 |
+
+### 由浅入深三层(overview → quick start → deep dive,基线 `8a694930`)
 
 | 页面 | 层次 | 核心机制 |
 |------|------|---------|
 | [[verl_architecture_overview_analysis]] | **Overview · 架构** | HybridFlow 混合控制器、五平面映射、五角色与混合 worker、v0/v1 入口分裂、master 架构图(**阅读起点**) |
 | [[verl_quickstart_guide]] | **Quick Start** | 安装、`python -m verl.trainer.main_ppo` Hydra 启动、config 体系、一次 GRPO 端到端走查、后端/算法切换旋钮 |
 
-### 深挖实现(deep dive · implementation)
+### 深挖实现(deep dive · implementation,基线 `8a694930`)
 
 | 页面 | 子系统 | 核心机制 |
 |------|--------|---------|
 | [[verl_single_controller_analysis]] | **控制面** | `Worker`/`WorkerGroup`、`_bind_worker_method`、`@register`+8 种 `Dispatch` 模式、`DP_COMPUTE_PROTO` chunk/concat、`RayWorkerGroup`+placement group、colocate(`create_colocated_worker_cls`/`FusedWorker`) |
 | [[verl_dataproto_analysis]] | **数据面** | `DataProto`(batch/non_tensor_batch/meta_info)、chunk/concat/union/repeat/pad、`BatchData` 类型分发、`DataProtoFuture` 异步句柄 |
-| [[verl_ray_trainer_analysis]] | **编排** | `Role`/`ResourcePoolManager`/`init_workers`、`fit()` 逐步追踪(gen→reward→old/ref logprob→values→KL→advantage→update_critic→update_actor→update_weights)、PPO/GRPO 数据流时序图 |
+| [[verl_ray_trainer_analysis]] | **编排(legacy 深潜)** | `Role`/`ResourcePoolManager`/`init_workers`、`fit()` 逐步追踪(gen→reward→old/ref logprob→values→KL→advantage→update_critic→update_actor→update_weights)、PPO/GRPO 数据流时序图;`983cb0f` 起 `use_v1` 默认反转,本页记录的是需显式关闭 v1 才会跑的路径,当前默认主链见 [[verl_end_to_end_iteration_analysis]] |
 | [[verl_workers_engine_analysis]] | **计算面** | `TrainingWorker`/`ActorRolloutRefWorker`、`BaseEngine` 模板方法(train_batch/infer_batch)、FSDP/Megatron 引擎、`update_actor` 策略梯度路径、worker 级 offload |
 | [[verl_rollout_resharding_analysis]] | **生成面 + 优化** | `BaseRollout`/异步 server(`ServerAdapter`)、vLLM/SGLang 集成、sleep/wake KV 释放、**3D-HybridEngine 重分片**(`get_per_tensor_param`+`CheckpointEngine`+CUDA-IPC bucketed transfer) |
 
-### 算法与优化(algorithms & optimization)
+### 算法与优化(algorithms & optimization,基线 `8a694930`)
 
 | 页面 | 主题 | 核心机制 |
 |------|------|---------|
@@ -65,7 +71,7 @@ verl 把 RLHF 的模型职责拆成五个**逻辑角色**,但物理上高度 col
 
 > [!note] HEAD 架构演进提示
 > 本系列基准 `8a694930` 的代码已显著重构,与多数博客描述的「经典 HybridFlow」有出入,各页已逐一标注:
-> - `RayPPOTrainer`(`ray_trainer.py`)被标 `@deprecated`,但默认 `trainer.use_v1=false` 仍走它,故仍是讲清数据流的**最佳教学入口**;新路径为 `trainer.use_v1=True` → `TaskRunnerV1` + TransferQueue + `AgentLoopManager`。
+> - `RayPPOTrainer`(`ray_trainer.py`)被标 `@deprecated`;在 `8a694930` 上默认 `trainer.use_v1=false` 仍走它,**但到 [[verl_end_to_end_iteration_analysis]] 的基线 `983cb0f`,该默认值已反转为 `use_v1=true`**——默认执行路径变成 `TaskRunnerV1`(TransferQueue + `AgentLoopManager` 驱动),legacy `RayPPOTrainer.fit` 降级为需要显式 `trainer.use_v1=false` 才会跑的路径(详见该页的 `[!contradiction]` 记录)。本系列 9 篇深潜文档仍以 legacy 路径为教学主线(结构最完整、逐行有源码),v1/TransferQueue 路径本系列尚无专页覆盖。
 > - **不存在独立的 `CriticWorker`/`RewardModelWorker` 类**——critic 是带 value head 的 `TrainingWorker`,reward 走 reward_manager/reward_loop。
 > - rollout 已退役 SPMD 同步模式,改为**异步 server**;生成由 `LLMServerManager`/`AgentLoopManager` 驱动,而非 worker RPC。
 
@@ -84,7 +90,7 @@ flowchart LR
     UA -->|update_weights 重分片| R
 ```
 
-每一步对应「driver 调 worker 方法 → dispatch 切分 DataProto → SPMD 执行 → collect 回填字段」;完整逐行追踪见 [[verl_ray_trainer_analysis]],dispatch 机制见 [[verl_single_controller_analysis]],优势/损失数学见 [[verl_rl_algorithms_analysis]]。
+每一步对应「driver 调 worker 方法 → dispatch 切分 DataProto → SPMD 执行 → collect 回填字段」;当前基线(`983cb0f`)的端到端主链见 [[verl_end_to_end_iteration_analysis]],`8a694930` 逐行追踪见 [[verl_ray_trainer_analysis]],dispatch 机制见 [[verl_single_controller_analysis]],优势/损失数学见 [[verl_rl_algorithms_analysis]]。
 
 ## 与训练后端的关系(Cross-Domain Links)
 
@@ -98,11 +104,11 @@ verl 不自己实现并行,而是把 FSDP2 / Megatron-LM 当**训练后端**、v
 
 ## Related Pages
 
-- [[03_posttraining/07_verl_end_to_end_iteration_analysis]] — verl `983cb0f` 当前 baseline 的同步主链、算法与 weight refresh
+- [[verl_end_to_end_iteration_analysis]] — verl `983cb0f` 当前基线的端到端主链、角色/资源池机制、算法与 weight refresh(**本域当前基线权威页**;`RayPPOTrainer.fit` 本身在此基线已非默认路径,见该页 `[!contradiction]`)
 - [[rl_framework_comparison]] — verl、slime、AReaL、ROLL 统一机制矩阵
 - [[03_posttraining/index]] — D00–D11 后训练统一学习域
-- [[verl_architecture_overview_analysis]] · [[verl_quickstart_guide]] —— 入门两篇(架构总览 + 快速上手)
-- [[verl_single_controller_analysis]] · [[verl_dataproto_analysis]] · [[verl_ray_trainer_analysis]] · [[verl_workers_engine_analysis]] · [[verl_rollout_resharding_analysis]] —— 实现五篇(控制/数据/编排/计算/生成)
-- [[verl_rl_algorithms_analysis]] · [[verl_optimization_analysis]] —— 算法与优化两篇
+- [[verl_architecture_overview_analysis]] · [[verl_quickstart_guide]] —— 入门两篇(架构总览 + 快速上手,基线 `8a694930`)
+- [[verl_single_controller_analysis]] · [[verl_dataproto_analysis]] · [[verl_ray_trainer_analysis]] · [[verl_workers_engine_analysis]] · [[verl_rollout_resharding_analysis]] —— 实现五篇(控制/数据/编排/计算/生成,基线 `8a694930`)
+- [[verl_rl_algorithms_analysis]] · [[verl_optimization_analysis]] —— 算法与优化两篇(基线 `8a694930`)
 - [[02_engineering/04_posttrain_frameworks/index]] —— 后训练框架目录索引(本系列所在)
 - [[02_engineering/02_train_frameworks/index]] · [[torchtitan/index]] · [[megatron-lm/index]] —— 训练框架(verl 的训练后端)

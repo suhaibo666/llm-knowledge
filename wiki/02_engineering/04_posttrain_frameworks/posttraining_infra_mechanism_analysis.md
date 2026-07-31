@@ -255,7 +255,7 @@ microVM environment snapshots
 
 - [[on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
 - [[rl_framework_comparison|D06 工业后训练框架对比]]
-- [[03_posttraining/07_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
+- [[verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
 - [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[rl_sandbox_design_analysis|Coding RL Sandbox 设计]] — §7 harness 版本化与 Fork/Pause/Snapshot 语义的落地页
 - [[rl_infra_efficiency_analysis|Coding RL Infra 效率优化]] — §4 backpressure 准入控制信号（AReaL StalenessManager、K3 admission）的落地页
