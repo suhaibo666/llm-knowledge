@@ -294,7 +294,7 @@ sequenceDiagram
 
 > 本节的编译流程与 CUDA Graph 集成为简化示意(伪代码)。真实的 `cudagraph_trees` 运行时是一棵
 > 按 memory-path 组织的树(warmup→record→replay 状态机、按 static input 地址与动态整数 key
-> 分流的多份 recording、fallback 而非重新编译),源码级机制见 [[10_cudagraph_trees_warmup_record_and_replay_analysis]];
+> 分流的多份 recording、fallback 而非重新编译),源码级机制见 [[11_cudagraph_trees_warmup_record_and_replay_analysis]];
 > training/inference/freezing 与 CUDA Graph 的组合边界(freezing 变换链、地址不变式、组合矩阵)见
 > [[20_training_inference_cudagraph_and_freezing_analysis]]。
 
@@ -1726,7 +1726,7 @@ PyTorch 提供了多种使用 CUDA Graphs 的方式，每种方式都有其适�
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
-- [[10_cudagraph_trees_warmup_record_and_replay_analysis]] — 方式2 CUDA Graph 集成的源码级机制(`cudagraph_trees.py`:Tree 状态机、warmup/record/replay、按整数 key 分流的多份 recording)
+- [[11_cudagraph_trees_warmup_record_and_replay_analysis]] — 方式2 CUDA Graph 集成的源码级机制(`cudagraph_trees.py`:Tree 状态机、warmup/record/replay、按整数 key 分流的多份 recording)
 - [[20_training_inference_cudagraph_and_freezing_analysis]] — training/inference/freezing 与 CUDA Graph 的组合边界、地址不变式、失败与回退
 - [[30_comparison]]
 - [[vllm_compilation_cudagraph_analysis]] — 生产推理框架的应用实例:vLLM 分段 CUDA Graph(`CUDAGraphWrapper`)、`CudagraphDispatcher` 按形状选图

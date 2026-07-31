@@ -189,8 +189,8 @@ Inductor 内部五阶段一览(原 overview 页要点,`compile_fx` 编排入口�
 
 | 页面 | 段位 | 一句话 |
 |---|---|---|
-| [[01_PyTorch_CUDA_Graphs_Complete_Guide]] | 0 | CUDA Graphs 完整指南:四种用法、实现原理、时序图、综合比较、最佳实践 |
-| [[10_cudagraph_trees_warmup_record_and_replay_analysis]] | 1 | `CUDAGraphNode`/`CUDAGraphTreeManager`、按静态输入地址分流的多份 recording、warmup→record→replay→fallback 状态机 |
+| [[10_pytorch_cuda_graphs_complete_guide]] | 0 | CUDA Graphs 完整指南:四种用法、实现原理、时序图、综合比较、最佳实践 |
+| [[11_cudagraph_trees_warmup_record_and_replay_analysis]] | 1 | `CUDAGraphNode`/`CUDAGraphTreeManager`、按静态输入地址分流的多份 recording、warmup→record→replay→fallback 状态机 |
 | [[20_training_inference_cudagraph_and_freezing_analysis]] | 2 | training/inference/freezing/CUDA Graph 四轴组合边界、`freezing.py` 变换链、`cudagraphify` 地址不变式 |
 
 > NPU Graphs(ACLGraph)是另一硬件线,见 [[03_runtime_graphs/npu/index]],本课程只覆盖

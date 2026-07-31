@@ -275,7 +275,7 @@
     },
     {
       "page_id": "d06",
-      "page": "10_cudagraph_trees_warmup_record_and_replay_analysis.md",
+      "page": "11_cudagraph_trees_warmup_record_and_replay_analysis.md",
       "volume": "D",
       "script": "tools/labs_torch_compile/demo_d_artifact_runtime.py",
       "case": "cudagraph_replay"

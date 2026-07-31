@@ -6,7 +6,7 @@
 > 最后更新：2026-06-17
 
 > [!important] 两个「NPU Inductor」别混淆
-> 本页讲的是**独立实验性**的 monkey-patch 后端 `npu_inductor_2.9.0`；torch_npu **内置**的 `_inductor`（Split-Tiling / CATLASS / MLIR / DVM 多后端框架）见 [[01_npu_compile_paths_overview]]、[[11_npu_inductor_splittiling_backend_analysis]]、[[10_NPU_Inductor_Backend_Analysis]]。二者是**两条注册时互斥的路线**——本后端 `import` 时主动调 `torch_npu.utils._dynamo.disable_register_inductor_npu()` 关掉内置后端（`npu_inductor/__init__.py:87-101`），运行时只有一个生效。
+> 本页讲的是**独立实验性**的 monkey-patch 后端 `npu_inductor_2.9.0`；torch_npu **内置**的 `_inductor`（Split-Tiling / CATLASS / MLIR / DVM 多后端框架）见 [[01_npu_compile_paths_overview]]、[[11_npu_inductor_splittiling_backend_analysis]]、[[10_npu_inductor_backend_analysis]]。二者是**两条注册时互斥的路线**——本后端 `import` 时主动调 `torch_npu.utils._dynamo.disable_register_inductor_npu()` 关掉内置后端（`npu_inductor/__init__.py:87-101`），运行时只有一个生效。
 >
 > 本系列分三页：**本页**（架构 + Linearize + 融合门控 + rsplit + 类型适配 + 可优化点）、[[24_npu_inductor_linearize_dynamic_shape_analysis]]（动态 shape 编译一次 + 三情形 + permute 产物）、[[31_npu_inductor_linearize_vs_builtin_comparison]]（三方 output code 逐行对比 + 实测对标）。
 
@@ -238,7 +238,7 @@ can_fuse_horizontal = can_fuse
 - [[01_npu_compile_paths_overview]] — torch_npu 内置三条编译路径全景（§九 GPU vs NPU 动态 shape）
 - [[11_npu_inductor_splittiling_backend_analysis]] — torch_npu 内置 Triton/Split-Tiling 路径深度
 - [[21_npu_inductor_optimization_analysis]] — 内置后端「硬件特性→优化思想→案例」
-- [[10_NPU_Inductor_Backend_Analysis]] — 内置 NPU Inductor 后端集成架构与融合规则
+- [[10_npu_inductor_backend_analysis]] — 内置 NPU Inductor 后端集成架构与融合规则
 - [[20_npu_lowering_guide]] — NPU 特定 lowering / fallback（与本后端白名单对照）
 - [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]] — 上游融合模型（本后端复用并加门控）
 - [[23_inductor_gpu_kernel_dispatch_model]] — 上游 GPU 派发模型（本后端 Linearize 替换的对象）

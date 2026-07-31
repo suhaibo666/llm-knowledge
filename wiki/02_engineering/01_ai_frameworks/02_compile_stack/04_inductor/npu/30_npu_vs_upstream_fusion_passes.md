@@ -285,4 +285,4 @@ flowchart TB
 - [[30_pre_grad_passes_guide]] · [[32_post_grad_passes_guide]] · [[31_joint_graph_passes_guide]] — 上游三阶段 pass 详解（本页 §3–§4 对照的上游侧）
 - [[10_fx_lowering_to_inductor_ir_analysis]] — 上游 lowering/decomposition 通用机制（§3.5 对照的上游侧）
 - [[20_npu_lowering_guide]] — NPU 特定 lowering 与 fallback 算子映射（§3.5 的细节）
-- [[10_NPU_Inductor_Backend_Analysis]] — 五后端融合规则与后端混合使用机制
+- [[10_npu_inductor_backend_analysis]] — 五后端融合规则与后端混合使用机制

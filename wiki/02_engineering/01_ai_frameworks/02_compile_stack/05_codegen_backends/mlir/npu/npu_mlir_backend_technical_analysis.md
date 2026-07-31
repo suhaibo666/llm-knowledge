@@ -1396,5 +1396,5 @@ Codegen 层 fallback (kernel 级别):
 - [[02_engineering/01_ai_frameworks/index]]
 - [[10_mlir_core_concepts]]
 - [[30_triton_vs_mlir_backend_analysis]]
-- [[10_NPU_Inductor_Backend_Analysis]]
+- [[10_npu_inductor_backend_analysis]]
 - [[12_npu_compile]]

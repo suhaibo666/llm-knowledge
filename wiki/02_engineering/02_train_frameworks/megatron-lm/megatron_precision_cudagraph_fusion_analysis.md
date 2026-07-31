@@ -204,5 +204,5 @@ num_microbatches = global_batch_size / (micro_batch_size · data_parallel_size)
 
 - [[megatron_ep_analysis]] · [[megatron_recompute_analysis]] · [[megatron_distributed_optimizer_analysis]]
 - [[megatron_fusion_operators_analysis]]
-- [[01_PyTorch_CUDA_Graphs_Complete_Guide]] — CUDA Graph 通用机制权威页（capture/replay、地址不变式、失败与回退；本页 §2 是训练框架侧的具体应用）
+- [[10_pytorch_cuda_graphs_complete_guide]] — CUDA Graph 通用机制权威页（capture/replay、地址不变式、失败与回退；本页 §2 是训练框架侧的具体应用）
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

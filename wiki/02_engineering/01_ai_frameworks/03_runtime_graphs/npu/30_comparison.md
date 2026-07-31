@@ -1,6 +1,6 @@
 # CUDA Graphs vs NPU Graphs 差异对比
 
-本文档只保留 CUDA Graphs 与 torch_npu NPU Graphs 之间**可验证的真实差异**（API 映射表、组件对照、捕获/执行行为差异结论）。两侧各自的机制原理、实现细节与可运行代码示例不在本页复述，请查阅权威页：CUDA 侧 [[01_PyTorch_CUDA_Graphs_Complete_Guide]]；NPU 侧 [[01_aclgraph]] / [[10_aclgraph_deep_analysis]] / [[11_torch_compile_npugraphs_deep_dive]] / [[20_npugraphs_make_graphed_callables_deep_dive]]。
+本文档只保留 CUDA Graphs 与 torch_npu NPU Graphs 之间**可验证的真实差异**（API 映射表、组件对照、捕获/执行行为差异结论）。两侧各自的机制原理、实现细节与可运行代码示例不在本页复述，请查阅权威页：CUDA 侧 [[10_pytorch_cuda_graphs_complete_guide]]；NPU 侧 [[01_aclgraph]] / [[10_aclgraph_deep_analysis]] / [[11_torch_compile_npugraphs_deep_dive]] / [[20_npugraphs_make_graphed_callables_deep_dive]]。
 
 ---
 
@@ -17,7 +17,7 @@
 
 ## 概述
 
-CUDA Graphs 是 NVIDIA 提供的图捕获/重放优化技术，机制与完整 API 详见 [[01_PyTorch_CUDA_Graphs_Complete_Guide]]。NPU Graphs 是 torch_npu 基于 ACL Graph API 的对应实现，机制与完整 API 详见 [[01_aclgraph]]。
+CUDA Graphs 是 NVIDIA 提供的图捕获/重放优化技术，机制与完整 API 详见 [[10_pytorch_cuda_graphs_complete_guide]]。NPU Graphs 是 torch_npu 基于 ACL Graph API 的对应实现，机制与完整 API 详见 [[01_aclgraph]]。
 
 ### 核心概念对比
 
@@ -52,7 +52,7 @@ CUDA Graphs 是 NVIDIA 提供的图捕获/重放优化技术，机制与完整 A
 
 ## 实现原理对比
 
-CUDA 侧的调用层次（`torch.cuda.graph()` → Python 上下文管理器 → `CUDAGraph`(C++) → CUDA Runtime API）见 [[01_PyTorch_CUDA_Graphs_Complete_Guide]]「方式3: torch.cuda.graph() 上下文管理器」§实现原理。NPU 侧的调用层次（`torch_npu.npu.graph()` → Python 上下文管理器 → `NPUGraph`(C++) → ACL Graph API）见 [[01_aclgraph]] §3.2 调用流程图。
+CUDA 侧的调用层次（`torch.cuda.graph()` → Python 上下文管理器 → `CUDAGraph`(C++) → CUDA Runtime API）见 [[10_pytorch_cuda_graphs_complete_guide]]「方式3: torch.cuda.graph() 上下文管理器」§实现原理。NPU 侧的调用层次（`torch_npu.npu.graph()` → Python 上下文管理器 → `NPUGraph`(C++) → ACL Graph API）见 [[01_aclgraph]] §3.2 调用流程图。
 
 ### 核心组件对比
 
@@ -67,7 +67,7 @@ CUDA 侧的调用层次（`torch.cuda.graph()` → Python 上下文管理器 →
 
 ## 捕获/执行时序差异
 
-两侧的捕获→重放模型结构一致：捕获期只记录不执行，重放期一次性提交整个图。完整时序图：CUDA 侧见 [[01_PyTorch_CUDA_Graphs_Complete_Guide]]「方式3」的「代码调用流程时序图」（初始化→捕获→执行全流程）；NPU 侧见 [[01_aclgraph]] §3.3「详细调用时序图」。
+两侧的捕获→重放模型结构一致：捕获期只记录不执行，重放期一次性提交整个图。完整时序图：CUDA 侧见 [[10_pytorch_cuda_graphs_complete_guide]]「方式3」的「代码调用流程时序图」（初始化→捕获→执行全流程）；NPU 侧见 [[01_aclgraph]] §3.3「详细调用时序图」。
 
 两侧在时序细节上的真实行为差异（源码核验，详见 [[10_aclgraph_deep_analysis]]）：
 
@@ -85,9 +85,9 @@ CUDA 侧的调用层次（`torch.cuda.graph()` → Python 上下文管理器 →
 
 | 方式 | CUDA 示例 | NPU 示例 |
 |---|---|---|
-| 上下文管理器 | [[01_PyTorch_CUDA_Graphs_Complete_Guide]] 方式3 | [[01_aclgraph]] §3（含 §3.3 时序图） |
-| `make_graphed_callables` | [[01_PyTorch_CUDA_Graphs_Complete_Guide]] 方式4 | [[20_npugraphs_make_graphed_callables_deep_dive]]（六阶段实现流程） |
-| `torch.compile(backend=...)` | [[01_PyTorch_CUDA_Graphs_Complete_Guide]] 方式1/方式2 | [[11_torch_compile_npugraphs_deep_dive]] |
+| 上下文管理器 | [[10_pytorch_cuda_graphs_complete_guide]] 方式3 | [[01_aclgraph]] §3（含 §3.3 时序图） |
+| `make_graphed_callables` | [[10_pytorch_cuda_graphs_complete_guide]] 方式4 | [[20_npugraphs_make_graphed_callables_deep_dive]]（六阶段实现流程） |
+| `torch.compile(backend=...)` | [[10_pytorch_cuda_graphs_complete_guide]] 方式1/方式2 | [[11_torch_compile_npugraphs_deep_dive]] |
 
 ---
 
@@ -112,7 +112,7 @@ CUDA 侧的调用层次（`torch.cuda.graph()` → Python 上下文管理器 →
 
 1. **API 设计**：两者 API 设计高度相似，除命名空间和后端字符串外几乎一一对应
 2. **捕获/重放模型**：都是"捕获期只记录、重放期一次性提交"
-3. **优化机制**：都通过消除 kernel launch 开销、减少 CPU-设备交互、静态内存分配来降低总执行时间；量化数字（30-70%）未附实测来源，见 [[01_PyTorch_CUDA_Graphs_Complete_Guide]] 概述
+3. **优化机制**：都通过消除 kernel launch 开销、减少 CPU-设备交互、静态内存分配来降低总执行时间；量化数字（30-70%）未附实测来源，见 [[10_pytorch_cuda_graphs_complete_guide]] 概述
 
 ### 差异性
 
@@ -130,7 +130,7 @@ CUDA 侧的调用层次（`torch.cuda.graph()` → Python 上下文管理器 →
 - [PyTorch CUDA Graphs 文档](https://pytorch.org/docs/stable/generated/torch.cuda.graph.html)
 - [NVIDIA CUDA Graphs 文档](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#cuda-graphs)
 - [PyTorch 2.0 性能优化指南](https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html)
-- 完整时序图：已并入 [[01_PyTorch_CUDA_Graphs_Complete_Guide]] 各"方式"小节的"代码调用流程时序图"
+- 完整时序图：已并入 [[10_pytorch_cuda_graphs_complete_guide]] 各"方式"小节的"代码调用流程时序图"
 
 ### NPU Graphs
 
@@ -140,6 +140,6 @@ CUDA 侧的调用层次（`torch.cuda.graph()` → Python 上下文管理器 →
 ## Related Pages
 
 - [[02_engineering/01_ai_frameworks/index]]
-- [[01_PyTorch_CUDA_Graphs_Complete_Guide]]
+- [[10_pytorch_cuda_graphs_complete_guide]]
 - [[01_aclgraph]]
 - [[10_aclgraph_deep_analysis]]

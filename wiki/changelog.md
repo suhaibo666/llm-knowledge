@@ -27,13 +27,13 @@ All source ingestions and significant wiki updates are logged here.
 
 | 组 | 现状 | 处置 |
 |---|---|---|
-| vLLM compilation ↔ `03_runtime_graphs` | 正向链（vLLM→`01_PyTorch_CUDA_Graphs_Complete_Guide`/`11_torch_compile_npugraphs_deep_dive`）P3 已补；反向链缺失 | 补 2 条反向链（CUDA 侧 + NPU 侧回指 vLLM 分段 CUDA Graph 应用实例） |
+| vLLM compilation ↔ `03_runtime_graphs` | 正向链（vLLM→`10_pytorch_cuda_graphs_complete_guide`/`11_torch_compile_npugraphs_deep_dive`）P3 已补；反向链缺失 | 补 2 条反向链（CUDA 侧 + NPU 侧回指 vLLM 分段 CUDA Graph 应用实例） |
 | vLLM IR/fusion ↔ pass 页 | 原声明仍在：`vllm_ir_and_fusion_passes_analysis` 已链 `22_pattern_expression_and_matcher_engine_analysis`/`24_graph_pass_pipeline_ordering_and_fixpoint_analysis`/`32_post_grad_passes_guide`；`24_...§14` 跨框架对照表已含 vLLM/sglang/npu 三个代表页双向链 | 已完成，无需改动 |
 | sglang ↔ vllm | 健康范本核实：两页头部即互相声明"对照面"，`24_...§14` 表格双向收录 | 已完成，无需改动 |
 | TIM 分层 | `26_tim_causal_chain_analysis` 头部四环因果链声明完整，与 `25_on_policy_off_policy_staleness_analysis` §7 边界区分明确 | 已完成于 P5 |
 | operator_optimization ↔ kernel 页 | 六页归一（Roofline/执行模型双权威 + NPU 段划界） | 已完成于本 P6 Task 4（commit `dbaa37e`） |
 | D05 ↔ sandbox/infra | `01_posttraining_infra_mechanism_analysis` §4/§7 与 `11_rl_sandbox_design_analysis`/`12_rl_infra_efficiency_analysis` 逐句对照、独有内容迁移、三方划界声明均已生效并核实链接有效 | 已完成于 P5 Task 4 |
-| megatron_precision_cudagraph ↔ Guide | 核查发现**未补链**（P3 遗留待办未落地）：`megatron_precision_cudagraph_fusion_analysis.md` Related Pages 无任何指向 `01_PyTorch_CUDA_Graphs_Complete_Guide` 的链接 | 补双向链（训练框架应用实例 ↔ CUDA Graph 通用机制权威页） |
+| megatron_precision_cudagraph ↔ Guide | 核查发现**未补链**（P3 遗留待办未落地）：`megatron_precision_cudagraph_fusion_analysis.md` Related Pages 无任何指向 `10_pytorch_cuda_graphs_complete_guide` 的链接 | 补双向链（训练框架应用实例 ↔ CUDA Graph 通用机制权威页） |
 
 **验收**：`python tools/check_links.py` pages=373、broken=0（ambiguous=70 不变，属既有裸 index 基线，P7 Task 8 范围）；`python -m pytest -q` 77 passed。
 
@@ -2265,7 +2265,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 为与实验性 [[23_npu_inductor_linearize_backend_analysis]] 成「方案对称对」，把内置 default 后端唯一描述 **Triton / Split-Tiling 路径**的深度页改名：
 - `npu_triton_backend_deep_analysis` → [[11_npu_inductor_splittiling_backend_analysis]]
 
-**刻意未改名（非单一方案，加后缀会误标）**：[[01_npu_compile_paths_overview]]（Triton/ACLGraph/MLIR 三路径）、[[10_NPU_Inductor_Backend_Analysis]]（5 后端融合规则）、[[21_npu_inductor_optimization_analysis]]（跨 Triton/MLIR/DVM）、[[20_npu_lowering_guide]] / [[12_npu_compile]] / [[32_npu_debug_guide]]（通用）。
+**刻意未改名（非单一方案，加后缀会误标）**：[[01_npu_compile_paths_overview]]（Triton/ACLGraph/MLIR 三路径）、[[10_npu_inductor_backend_analysis]]（5 后端融合规则）、[[21_npu_inductor_optimization_analysis]]（跨 Triton/MLIR/DVM）、[[20_npu_lowering_guide]] / [[12_npu_compile]] / [[32_npu_debug_guide]]（通用）。
 
 **同步**：该页有 10 处跨目录入链（04_inductor / 05_codegen_backends / 07_op_registration / changelog），全部 `[[link]]` 用 perl 同步；页头加 `> [!note]` 指向实验 Linearize 对照页；[[04_inductor/npu/index]] 行标「内置 default（Split-Tiling）」。校验：0 残留旧名、0 新增悬空链接。
 
@@ -2556,7 +2556,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **合并（7 篇并入，内容无损）**：
 - 04_inductor/npu：`NPU_Inductor_Backend_Mechanism`（25-35% 重叠）→ `NPU_Inductor_Backend_Analysis`（并入 MultiTemplateBuffer / Prologue Fusion / 4 实战场景 / 融合性能 / 配置；2265 行）
 - 04_inductor：`scheduler_fusion_strategies` → `scheduler_analysis`（并入自定义融合 Pass + 排查指南）
-- 05_codegen_backends/mlir/npu：`npu_mlir_backend_deep_analysis` + `npu_mlir_pipeline_analysis`（65-75% 重叠）→ `NPU_MLIR_Backend_Technical_Analysis`（并入社区遵循/打破、三层 Pass、15 patch 分组、双通道 fallback、六阶段主线、演进建议；1400 行）
+- 05_codegen_backends/mlir/npu：`npu_mlir_backend_deep_analysis` + `npu_mlir_pipeline_analysis`（65-75% 重叠）→ `npu_mlir_backend_technical_analysis`（并入社区遵循/打破、三层 Pass、15 patch 分组、双通道 fallback、六阶段主线、演进建议；1400 行）
 - 06_graphs/cuda：`SUMMARY`（99% 同 README）→ `README`
 - 06_graphs/npu：`npugraphs_memory_management_analysis`（60%）→ `npugraphs_memory_reuse_analysis`；`torch_compile_mode_reduce_overhead_vs_backend_npugraphs`（45%）→ `torch_compile_npugraphs_deep_dive`（附录 A：双路径对比）
 
@@ -3026,7 +3026,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 - **新建 `mlir/` 子目录** (`wiki/02_engineering/01_ai_frameworks/mlir/`)
   - 从 `01_ai_frameworks/` 移入: `mlir_core_concepts.md`、`torch_mlir_pass_pipeline_analysis.md`、`triton_vs_mlir_backend_analysis.md`
-  - 从 `inductor/` 移入: `npu_mlir_backend_deep_analysis.md`、`npu_mlir_pipeline_analysis.md`、`NPU_MLIR_Backend_Technical_Analysis.md`
+  - 从 `inductor/` 移入: `npu_mlir_backend_deep_analysis.md`、`npu_mlir_pipeline_analysis.md`、`npu_mlir_backend_technical_analysis.md`
 - **模型论文归位**:
   - `Engram_Analysis.md` → `deepseek/`
   - `moba_analysis.md`、`kimi_linear_analysis.md` → `moonshot_kimi/`
@@ -3378,7 +3378,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   核心内容: 三层 Pass 架构 (FX/Inductor/毕昇)、15 个 Monkey Patch 五组分类、编译模式状态机、Fallback 双通道、Autotune 60 配置
 - 重写 `wiki/02_engineering/01_ai_frameworks/inductor/npu_compile.md`（原为 10 行存根）
   — 完整 NPU 编译工作流: 三种编译模式 (auto_fallback/default/complete_fallback)、毕昇编译器接口 (-enable-hfusion-compile 等)、60 维 Autotune、在线精度对比 (ANIR_ONLINE_ACC_COMP)、芯片感知 (910B1/310B1/910_9391)
-- 更新 `inductor/index.md`、`01_ai_frameworks/index.md`、`NPU_MLIR_Backend_Technical_Analysis.md`、`npu_lowering_guide.md` 交叉引用
+- 更新 `inductor/index.md`、`01_ai_frameworks/index.md`、`npu_mlir_backend_technical_analysis.md`、`npu_lowering_guide.md` 交叉引用
 
 ## 2026-05-08: 知识库目录结构重构
 
@@ -3415,7 +3415,7 @@ raw/ & wiki/ 镜像
   — Triton 与 Torch-MLIR 在 Dynamo→AOT Eager→Decomposition→Lowering→Scheduler→Codegen 六个阶段的概念级对等映射表和优劣势分析
 - 新建 `wiki/02_engineering/01_ai_frameworks/mlir_core_concepts.md`
   — MLIR 三核心机制: Dialect 词汇表、Pass 变换引擎、IR 注册链路 (TableGen→C++→MLIRContext)，含递降完整示例
-- 更新 `wiki/02_engineering/01_ai_frameworks/index.md`、`inductor/index.md` 和 `NPU_MLIR_Backend_Technical_Analysis.md` 的交叉引用
+- 更新 `wiki/02_engineering/01_ai_frameworks/index.md`、`inductor/index.md` 和 `npu_mlir_backend_technical_analysis.md` 的交叉引用
 
 ## 2026-05-08: 训练/推理框架目录页创建
 

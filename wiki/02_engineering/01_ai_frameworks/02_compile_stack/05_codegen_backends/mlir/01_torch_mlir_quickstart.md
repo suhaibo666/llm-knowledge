@@ -127,7 +127,7 @@ def my_mlir_backend(gm, example_inputs):
 2. [[11_torch_mlir_pass_pipeline_analysis]] — torch-mlir Pass 管线：本页骨架里「运行 Pass 管线」那一步的完整执行序拆解
 3. [[30_triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR：六阶段概念对等映射与选型指南
 
-> 昇腾 NPU 的 MLIR 后端是另一条带硬件适配的路线（毕昇编译器、monkey-patch），上手见 [[npu_mlir_quickstart]]，深度分析见 [[NPU_MLIR_Backend_Technical_Analysis]]。
+> 昇腾 NPU 的 MLIR 后端是另一条带硬件适配的路线（毕昇编译器、monkey-patch），上手见 [[npu_mlir_quickstart]]，深度分析见 [[npu_mlir_backend_technical_analysis]]。
 
 ---
 

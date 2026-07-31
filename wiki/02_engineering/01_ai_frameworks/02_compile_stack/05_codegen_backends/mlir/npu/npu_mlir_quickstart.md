@@ -123,7 +123,7 @@ anir_config.compile_mode = "complete_fallback"   # 调试时整图退回 eager
 
 ## 6. 深入导航
 
-- [[NPU_MLIR_Backend_Technical_Analysis]] — MLIR 后端架构、TracedGraph、融合规则、毕昇编译、monkey patch 全解（deep dive）
+- [[npu_mlir_backend_technical_analysis]] — MLIR 后端架构、TracedGraph、融合规则、毕昇编译、monkey patch 全解（deep dive）
 - [[12_npu_compile]] — NPU Inductor 编译工作流
 - [[02_compile_stack/04_inductor/npu/index]] — NPU Inductor 文档入口
 
@@ -132,7 +132,7 @@ anir_config.compile_mode = "complete_fallback"   # 调试时整图退回 eager
 ## Related Pages
 
 - [[01_npu_compile_paths_overview]] — torch.compile 三路径全景（Triton / MLIR / ACLGraph）
-- [[NPU_MLIR_Backend_Technical_Analysis]] — MLIR 后端深度分析
+- [[npu_mlir_backend_technical_analysis]] — MLIR 后端深度分析
 - [[30_triton_vs_mlir_backend_analysis]] — Triton vs MLIR 后端对比
 - [[12_npu_compile]] — Inductor 编译工作流
 - [[01_ai_frameworks/index]] — AI 框架领域入口

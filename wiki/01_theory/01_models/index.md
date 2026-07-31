@@ -38,7 +38,7 @@
 | 页面 | 核心主题 |
 |------|---------|
 | [[moonshot_kimi/index]] | Kimi 技术路线总览 |
-| [[29_kimi_k1.5_analysis]] | k1.5 RL 缩放定律, 128K 上下文 RL |
+| [[29_kimi_k1_5_analysis]] | k1.5 RL 缩放定律, 128K 上下文 RL |
 | [[kimi_k2_analysis]] | K2 1.04T MoE, MuonClip, Agentic RL |
 | [[kimi_k2.5_analysis]] | K2.5 视觉 Agent, MoonViT-3D, Agent Swarm |
 | [[kimi_linear_analysis]] | Kimi Linear 48B/3B, KDA 线性注意力, 3:1 混合, K3 注意力前身 |

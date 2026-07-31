@@ -354,6 +354,6 @@ flowchart LR
 - [[12_npu_compile]] — NPU 编译工作流、Autotune、精度校验（§九 的细节）
 - [[24_inductor_codegen_dynamic_shape_analysis]] — 代码生成中动态形状处理（§十一 的展开）
 - [[20_symbolic_shapes_guards_and_graph_reuse_analysis]] — Dynamic Shape 全链路（§十一 的上游机制）
-- [[10_NPU_Inductor_Backend_Analysis]] — NPU 后端内部实现机制
+- [[10_npu_inductor_backend_analysis]] — NPU 后端内部实现机制
 - [[15_inductor_compile_fx_orchestration_analysis]] — PyTorch Inductor compile_fx 编排入口（社区基线）
 - [[ascend_kernel_execution_model_analysis]] — tiling、Cube/Vector、L0C 与 FixPipe 的硬件执行模型背景

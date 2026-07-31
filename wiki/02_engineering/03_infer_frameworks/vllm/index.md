@@ -114,7 +114,7 @@ flowchart TB
 - [[mooncake_analysis]] —— Mooncake 分离式推理(P/D 分离、中心化 KV Cache),与 vLLM 的 KV 连接器 / 分离式 prefill 互为实现与架构对照
 - [[megatron_tp_analysis]] · [[megatron_ep_analysis]] · [[megatron_cp_analysis]] —— 训练侧 TP/EP/CP 源码级分析,与 [[vllm_distributed_inference_analysis]] 的推理侧并行对照
 - [[megatron_fusion_operators_analysis]] · [[torchtitan_compute_memory_optimizations_analysis]] —— 训练侧融合算子目录,与 [[vllm_fused_ops_and_kernels_analysis]] / [[vllm_ir_and_fusion_passes_analysis]] 的推理侧融合对照
-- [[01_PyTorch_CUDA_Graphs_Complete_Guide]] · [[02_compile_stack/04_inductor/index]] · [[02_compile_stack/01_dynamo/index]] —— [[vllm_compilation_cudagraph_analysis]] / [[vllm_ir_and_fusion_passes_analysis]] 依赖的底层编译/图捕获/Pattern-Match 栈
+- [[10_pytorch_cuda_graphs_complete_guide]] · [[02_compile_stack/04_inductor/index]] · [[02_compile_stack/01_dynamo/index]] —— [[vllm_compilation_cudagraph_analysis]] / [[vllm_ir_and_fusion_passes_analysis]] 依赖的底层编译/图捕获/Pattern-Match 栈
 - [[deepseek_v3_analysis]] —— MLA / MTP 模型侧原理,被 [[vllm_attention_backends_analysis]](MLA 后端)与 [[vllm_speculative_decoding_analysis]](MTP)实现
 - [[low_precision_training_analysis]] · [[transformer_engine_analysis]] · [[deepseek_v4_fp4_qat_analysis]] —— FP8/FP4 低精度原理,对照 [[vllm_quantization_analysis]] 的推理量化
 - [[gpu_kernel_guide]] —— FlashAttention / Tensor Core / Triton kernel 链路,支撑 [[vllm_attention_backends_analysis]] 与 [[vllm_fused_ops_and_kernels_analysis]]

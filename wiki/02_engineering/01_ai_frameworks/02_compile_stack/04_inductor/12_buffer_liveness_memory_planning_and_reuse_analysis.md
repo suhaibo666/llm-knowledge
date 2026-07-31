@@ -512,4 +512,4 @@ python -B tools\labs_torch_compile\demo_d_artifact_runtime.py `
 - [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[35_inductor_memory_allocation_guide]] — 实战版：分配器选型对照、`memory_stats`/snapshot 实测、越界/踩踏排查
 - [[10_caching_allocator_autocast_profiler_analysis]] — 层 2 `CUDACachingAllocator` 的 Block/segment/stream/expandable 源码级深页
-- [[10_cudagraph_trees_warmup_record_and_replay_analysis]] — 层 3 cudagraph_trees 的完整 warmup/record/replay 课程页
+- [[11_cudagraph_trees_warmup_record_and_replay_analysis]] — 层 3 cudagraph_trees 的完整 warmup/record/replay 课程页

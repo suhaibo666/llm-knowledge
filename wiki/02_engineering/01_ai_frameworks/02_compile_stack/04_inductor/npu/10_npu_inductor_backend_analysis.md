@@ -2437,4 +2437,4 @@ model = torch.compile(
 
 - [[02_engineering/01_ai_frameworks/index]]
 - [[20_npu_lowering_guide]]
-- [[NPU_MLIR_Backend_Technical_Analysis]]
+- [[npu_mlir_backend_technical_analysis]]

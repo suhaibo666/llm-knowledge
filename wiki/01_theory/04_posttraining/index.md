@@ -35,7 +35,7 @@
 | 2 | [[26_tim_causal_chain_analysis]] | TIM 因果链深潜 |
 | 2 | [[27_vapo_analysis]] | VAPO 论文档案 |
 | 2 | [[28_rlhf_foundations_analysis]] | RLHF 基础方法多论文综合档案 |
-| 2 | [[29_kimi_k1.5_analysis]] | Kimi K1.5 案例档案 |
+| 2 | [[29_kimi_k1_5_analysis]] | Kimi K1.5 案例档案 |
 | 3 | [[30_preference_optimization_analysis]] | DPO 家族对照(IPO/SimPO/ORPO/KTO/MODPO) |
 | 3 | [[31_reward_hacking_defense_analysis]] | Reward Hacking 防御方法论 |
 
@@ -95,7 +95,7 @@
 |------|------|---------|
 | [[27_vapo_analysis]] | VAPO (2504.05118) | 基于价值模型的 RL, AIME 60.4 |
 | [[28_rlhf_foundations_analysis]] | 多篇综合 | ReMax, Weak-to-Strong, RM Overoptimization, RigorLLM |
-| [[29_kimi_k1.5_analysis]] | Kimi K1.5 | 长上下文 RL 推理训练 |
+| [[29_kimi_k1_5_analysis]] | Kimi K1.5 | 长上下文 RL 推理训练 |
 
 ### 对齐安全
 
