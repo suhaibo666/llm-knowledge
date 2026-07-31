@@ -118,5 +118,5 @@ Task 10 起,原 19 号课程目录已整体解散,内容归并进上表 5 层)�
 - [[02_train_frameworks/megatron-lm/index]] — Megatron-LM(CUDA Graphs 使用场景)
 - [[02_train_frameworks/index]] — 训练框架:建立在 [[04_export_and_distributed/02_distributed_primitives/index]] 之上的并行应用层
 - [[05_gpu_kernel/index]] — GPU Kernel 开发(执行层级、内存优化、NPU 差异)
-- [[04_posttrain_frameworks/batch_invariance_guide]] — 批不变性与 torch.compile
+- [[batch_invariance_guide]] — 批不变性与 torch.compile
 - [[01_theory/index]] — 理论研究

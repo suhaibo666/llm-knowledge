@@ -5,7 +5,7 @@
 > - 结构组件的论文与源码证据：见 [[kimi_k3_architecture_deepdive]]。
 > - 训练与推理基础设施：见 [[kimi_k3_infra_deepdive]]。
 > **维度**：模型发布总览。本页回答“K3 是什么、表现如何、官方如何定位”；机制层面的“为什么”由两篇 deep dive 展开。
-> **更新**：2026-07-28，已回填正式报告中的模型结构、后训练与 Infra 事实；后训练统一案例见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]]。
+> **更新**：2026-07-28，已回填正式报告中的模型结构、后训练与 Infra 事实；后训练统一案例见 [[kimi_k3_posttraining_case_study_analysis]]。
 
 > [!deprecated]
 > 本页 2026-07-17 初版的“技术报告与权重尚未发布”状态已被 2026-07-28 官方报告和权重取代。仍未披露的训练超参数与源码边界保留在第七节。
@@ -87,7 +87,7 @@ K3 的所有结果都使用 `reasoning effort=max`、`temperature=1.0`、`top-p=
 
 报告已确认 104.2B 激活参数、93 层、7,168 hidden dimension、69 KDA + 24 Gated MLA、MoonViT-V2、Per-Head Muon、Quantile Balancing、SiTU-GLU 和 Stable LatentMoE 的机制主体（报告 §2、§3，pp.3–12；Table 1，p.11）。
 
-后训练则明确为 SFT → 三领域 × 三 effort 的九个 RL experts → MOPD，并公开 partial rollout、reasoning budget、Agentic GRM、white-box environments、MXFP4/MXFP8 QAT、draft model 和 1M Agentic RL Infra（报告 §4.1–4.2，pp.12–16；§5.3，pp.21–22；Appendix F，pp.46–47）。完整机制统一放在 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]]，避免在模型目录再形成一套割裂的 RL 资料。
+后训练则明确为 SFT → 三领域 × 三 effort 的九个 RL experts → MOPD，并公开 partial rollout、reasoning budget、Agentic GRM、white-box environments、MXFP4/MXFP8 QAT、draft model 和 1M Agentic RL Infra（报告 §4.1–4.2，pp.12–16；§5.3，pp.21–22；Appendix F，pp.46–47）。完整机制统一放在 [[kimi_k3_posttraining_case_study_analysis|D12]]，避免在模型目录再形成一套割裂的 RL 资料。
 
 仍未披露的关键项包括：RL 的 \(N,K,\lambda,\tau,\sigma,R_{\max}\)、总 RL FLOPs、逐 token stale-data regularizer 的完整公式、GRM 训练细节、MOPD 隔离消融、训练/rollout/weight-sync 源码，以及若干 Infra 指标的硬件和分位数条件。现有 `[推断]` 必须逐项对照正式报告；报告仍未给出的内容不能自动升级为事实。
 
@@ -98,7 +98,7 @@ K3 的所有结果都使用 `reasoning effort=max`、`temperature=1.0`、`top-p=
 - [[kimi_k3_stability_analysis]] — 稳定性栈横切：七条失稳轴、七处被拒绝的替代方案，以及“K3 没有 K2 那样的零 spike 陈述”这条边界
 - [[kimi_k3_open_source_stack_analysis]] — 随发布开放的仓库全景（含“FlashKDA 并非本次新开源”的更正）与各仓证据等级
 - [[moonep_analysis]] — MoonEP 源码级审计：报告 §5.2.1 的七条说法逐条兑现
-- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]] — 九专家 RL、MOPD、partial rollout、white-box environment 与 1M Agentic RL Infra 的统一案例
+- [[kimi_k3_posttraining_case_study_analysis]] — 九专家 RL、MOPD、partial rollout、white-box environment 与 1M Agentic RL Infra 的统一案例
 - [[kimi_linear_analysis]] — KDA 与 3:1 混合架构的原始论文(K3 注意力主干的前身)
 - [[kimi_k2.5_analysis]] — 直接前代(1.04T MoE + MoonViT 原生视觉)
 - [[kimi_k2_analysis]] — 2.5× scaling 效率宣称的对照基线(MuonClip、15.5T tokens)

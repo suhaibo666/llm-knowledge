@@ -2,7 +2,7 @@
 
 > **来源基线**（每条断言均已在报告原文定位并逐句核对，未从他页转引）：[Kimi K3 Technical Report `0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2)（2026-07-28，47 页），本地快照 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`；K2 基线为 arXiv 2507.20534。
 > **维度**：Deep Dive（专题横切）。K3 的稳定性机制在报告里分散于 §2.2、§2.3、§2.4、§2.5、§3.2、§3.3、§3.4、§4.1.2、§4.1.4 与 Appendix C，本页把它们按"哪条轴会失稳"重新组织，回答"K3 到底做了哪些稳定性研究、各自解决什么失效模式、拒绝了什么替代方案"。
-> **与其它页的分工**：结构机制本身见 [[kimi_k3_architecture_deepdive]]，系统实现见 [[kimi_k3_infra_deepdive]]，后训练闭环见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]]。本页不重复机制推导，只做稳定性视角的横切与证据边界。
+> **与其它页的分工**：结构机制本身见 [[kimi_k3_architecture_deepdive]]，系统实现见 [[kimi_k3_infra_deepdive]]，后训练闭环见 [[kimi_k3_posttraining_case_study_analysis|D12]]。本页不重复机制推导，只做稳定性视角的横切与证据边界。
 > **更新**：2026-07-28 建页。
 
 ---
@@ -131,7 +131,7 @@ K2.5 及既往实践都从 SigLIP 一类对比预训练模型初始化视觉编�
 
 ### 2.7 精度轴与 RL 轴
 
-**精度轴**（§4.1.4，p.14）：MoE routed-expert 权重用 MXFP4、其输入激活用 MXFP8，attention 投影、latent-MoE 投影、shared experts 与 router 保持更高精度；**QAT 从 SFT 开始贯穿整个后训练，且 RL 的 rollout 与 training 使用同一量化方案**。报告据此称消除了 train–inference mismatch——严格讲，这只覆盖**量化方案不一致**这一条因果路径，并未证明 batch 相关 kernel、并行布局或 sampling backend 造成的 TIM 也为零（这一限定在 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]] §7.1 已写明）。SiTU 的 soft cap 与这条轴直接耦合：把激活钉在 `‖f(x)‖_∞ ≤ 100` 正是低精度算术不溢出的前提。
+**精度轴**（§4.1.4，p.14）：MoE routed-expert 权重用 MXFP4、其输入激活用 MXFP8，attention 投影、latent-MoE 投影、shared experts 与 router 保持更高精度；**QAT 从 SFT 开始贯穿整个后训练，且 RL 的 rollout 与 training 使用同一量化方案**。报告据此称消除了 train–inference mismatch——严格讲，这只覆盖**量化方案不一致**这一条因果路径，并未证明 batch 相关 kernel、并行布局或 sampling backend 造成的 TIM 也为零（这一限定在 [[kimi_k3_posttraining_case_study_analysis|D12]] §7.1 已写明）。SiTU 的 soft cap 与这条轴直接耦合：把激活钉在 `‖f(x)‖_∞ ≤ 100` 正是低精度算术不溢出的前提。
 
 **RL 轴**（§4.1.2，p.13）：partial rollout 让一条长轨迹跨多个 iteration，**引入威胁训练稳定性的数据陈旧**。报告的处理是——
 
@@ -189,7 +189,7 @@ K2.5 及既往实践都从 SigLIP 一类对比预训练模型初始化视觉编�
 
 - [[kimi_k3_architecture_deepdive]] — KDA / Gated MLA / AttnRes / Stable LatentMoE / SiTU 的机制推导与消融
 - [[kimi_k3_infra_deepdive]] — Per-Head Muon、QAT、全平衡 EP 的系统侧落地；§5 事实边界表
-- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]] — D12：RL 轴的完整闭环（partial rollout、MOPD、anti-hacking）
+- [[kimi_k3_posttraining_case_study_analysis]] — D12：RL 轴的完整闭环（partial rollout、MOPD、anti-hacking）
 - [[kimi_k3_analysis]] — K3 发布总览
 - [[kimi_k3_open_source_stack_analysis]] — 本次开源的仓库全景与证据等级
 - [[kimi_k2_analysis]] — MuonClip / QK-Clip 与"零 loss spike"基线

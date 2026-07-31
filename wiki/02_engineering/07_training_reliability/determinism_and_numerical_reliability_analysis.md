@@ -129,7 +129,7 @@ export HCCL_DETERMINISTIC=true   # HCCL 集合通信确定性计算模式
 
 于是系统级不确定性的完整链条是：**服务器负载不确定 → 动态 batching 凑出的 batch 大小不确定 → kernel 规约拆分不确定 → 同一请求结果不确定**。每个 kernel 单独看都是运行间确定的，拼成推理系统就不确定了——这是 Thinking Machines 2025 年 9 月分析的核心论点：temperature=0 不可复现的主因不是笼统的「浮点 + 并发」，而是 batch 依赖性这个可修的工程缺陷。
 
-RL 训练把这个问题从「体验问题」升级为「正确性问题」：rollout 引擎（vLLM/SGLang）与训练引擎（Megatron/FSDP）是**两套 kernel 栈**——不同的 GEMM 实现、不同的 attention kernel、不同的规约顺序，同一 (prompt, response) 算出的 per-token log-prob 存在系统性偏差。名义上的 on-policy RL（假设样本恰好采自当前策略）实际在做隐式 off-policy 更新，而算法里没有任何机制在校正这个偏差。（RL 训推精度细节见 [[RL_Training_Inference_Precision_Analysis]]、[[RL_PPO_Loss_and_GRPO_Analysis]]。）
+RL 训练把这个问题从「体验问题」升级为「正确性问题」：rollout 引擎（vLLM/SGLang）与训练引擎（Megatron/FSDP）是**两套 kernel 栈**——不同的 GEMM 实现、不同的 attention kernel、不同的规约顺序，同一 (prompt, response) 算出的 per-token log-prob 存在系统性偏差。名义上的 on-policy RL（假设样本恰好采自当前策略）实际在做隐式 off-policy 更新，而算法里没有任何机制在校正这个偏差。（RL 训推精度细节见 [[RL_Training_Inference_Precision_Analysis]]、[[10_rl_ppo_loss_and_grpo_analysis]]；batch 不变性的算子级实现见 [[batch_invariance_guide]]。）
 
 ### 影响
 
@@ -327,7 +327,8 @@ A_c = [ A  ]          B_r = [ B , B·e ]        （e 为全 1 向量）
 - [[longcat_flash_analysis]] — LongCat 的 SDC 检测（问题 4 第三层 ABFT 热点算子保护）
 - [[low_precision_training_analysis]] — 低精度训练格式与误差治理（问题 3 背景）
 - [[deepseek_v3_analysis]] — FP8 两级累加 / block-wise scaling / DeepGEMM（问题 3 方案 3）
-- [[RL_Training_Inference_Precision_Analysis]] · [[RL_PPO_Loss_and_GRPO_Analysis]] — 训推一致与重要性采样（问题 2）
+- [[RL_Training_Inference_Precision_Analysis]] · [[10_rl_ppo_loss_and_grpo_analysis]] — 训推一致与重要性采样（问题 2）
+- [[batch_invariance_guide]] — batch 不变性的算子级实现:双内核 Attention、DeepGEMM 1D1D、MoE 反向确定性累加（问题 2 的 kernel 层落地）
 - [[collectives_analysis]] — ring/tree allreduce 规约树（问题 1 第 3 层通信规约顺序）
 - [[expert_parallel_analysis]] — MoE all-to-all 与排序不确定（问题 1 第 4 层动态路由）
 - [[02_engineering/02_train_frameworks/megatron-lm/index]] — Megatron-LM 确定性模式与 FP32 main_grad 实现

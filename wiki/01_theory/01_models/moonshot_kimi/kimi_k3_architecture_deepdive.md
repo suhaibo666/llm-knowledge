@@ -6,7 +6,7 @@
 > - AttnRes：arXiv **2603.15031v1**（2026-03-16）；`MoonshotAI/Attention-Residuals@85e2231`。仓库只有 README 和论文 PDF，**没有 `.py` 实现**；`README.md:52-91` 的伪代码对应论文 Fig. 2。
 > - FlashKDA：`MoonshotAI/FlashKDA@d2ff19a`；LatentMoE：NVIDIA arXiv **2601.18089v1**。
 > **事实边界**：K3 技术报告与权重均已发布，但官方仓库仍未公开 K3 backbone、训练器或 RL 源码。结构事实以报告和权重配置为准；独立组件实现只证明其对应机制，不等于 K3 本体调用链。
-> **更新**：2026-07-28，已用正式报告替换 NoPE、Stable LatentMoE、Quantile Balancing、SiTU 和 MoonViT-V2 的预发布推断；后训练见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]]。
+> **更新**：2026-07-28，已用正式报告替换 NoPE、Stable LatentMoE、Quantile Balancing、SiTU 和 MoonViT-V2 的预发布推断；后训练见 [[kimi_k3_posttraining_case_study_analysis]]。
 
 > [!deprecated]
 > 2026-07-17 初版的“完整技术报告待发布”事实边界已过期；报告仍未披露或未开源的项目改写为“2026-07-28 报告未披露/仓库未开源”。
@@ -341,7 +341,7 @@ SwiGLU 在 **\(x=10\) 就已经达到 100**，此后按 \(x^2\) 继续涨；SiTU
 - [[kimi_k3_stability_analysis]] — 七条失稳轴的横切：本页各结构组件的稳定性动机与被拒绝的替代方案
 - [[kimi_k3_open_source_stack_analysis]] — 哪些结构有开源 kernel、哪些没有
 - [[moonep_analysis]] — Stable LatentMoE 在执行侧的均衡保障(Quantile Balancing 的系统侧搭档)
-- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]] — K3 后训练算法、环境、Infra 与部署闭环
+- [[kimi_k3_posttraining_case_study_analysis]] — K3 后训练算法、环境、Infra 与部署闭环
 - [[kimi_linear_analysis]] — KDA/3:1 混合的原始论文分析
 - [[kimi_k2.5_analysis]] / [[kimi_k2_analysis]] — 直接前代与 2.5× 效率基线
 - [[moba_analysis]] — Moonshot 前一代长上下文注意力(块稀疏路线)

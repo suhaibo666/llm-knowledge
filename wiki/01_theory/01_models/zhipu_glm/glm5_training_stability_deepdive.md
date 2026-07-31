@@ -69,7 +69,7 @@ $$r_{i,t}=\frac{\pi^{\text{train}}_{\theta}(y_{i,t}\mid x,y_{i,<t})}{\pi^{\text{
 
 超参 $\beta=2,\ \epsilon_{\text{low}}=0.2,\ \epsilon_{\text{high}}=0.28$，**完全 on-policy**，group size 与 batch size 均为 32（§3.2, p12）。
 
-**为什么有效**：推理引擎（如 SGLang）与训练引擎在数值实现上不可能逐 token 等价，$\rho$ 衡量「这个 token 在两套引擎下的概率差多大」。失配过大的 token 上，重要性比已不可信，强行回传梯度会放大数值噪声；`pop` 直接把它们清零，相当于**只在训练-推理一致的 token 上学习**。详见 [[grpo_analysis]] 与 [[RL_Training_Inference_Precision_Analysis]]。
+**为什么有效**：推理引擎（如 SGLang）与训练引擎在数值实现上不可能逐 token 等价，$\rho$ 衡量「这个 token 在两套引擎下的概率差多大」。失配过大的 token 上，重要性比已不可信，强行回传梯度会放大数值噪声；`pop` 直接把它们清零，相当于**只在训练-推理一致的 token 上学习**。详见 [[20_grpo_analysis]] 与 [[RL_Training_Inference_Precision_Analysis]]。
 
 ### 3.2 DSA indexer：确定性 top-k 是 RL 稳定的关键
 
@@ -159,7 +159,7 @@ $$f(x;\epsilon_\ell,\epsilon_h)=\begin{cases}x, & 1-\epsilon_\ell<x<1+\epsilon_h
 | **ORM**（结果奖励模型） | 低方差、训练高效 | **更易被 reward hacking**（策略钻表面模式而非真升能力） |
 | **GRM**（生成式奖励模型） | **对这类钻空子更鲁棒** | 方差偏高 |
 
-**为什么混合**：三者各有死角，**单独用 ORM 易被 hacking、单独用 GRM 方差大**；把三类信号融合，可在**精度、效率、鲁棒性**间取得平衡，抵消任一单一组件的弱点（§3.4, p13）。本质是**用方差换抗 hacking**——再用 rule/ORM 把 GRM 的方差压回去。reward hacking 的通用防御谱系见 [[reward_hacking_defense_analysis]]。
+**为什么混合**：三者各有死角，**单独用 ORM 易被 hacking、单独用 GRM 方差大**；把三类信号融合，可在**精度、效率、鲁棒性**间取得平衡，抵消任一单一组件的弱点（§3.4, p13）。本质是**用方差换抗 hacking**——再用 rule/ORM 把 GRM 的方差压回去。reward hacking 的通用防御谱系见 [[31_reward_hacking_defense_analysis]]。
 
 ### 5.2 Slides RL：用「运行时渲染的真实取值」对抗版式 hacking
 
@@ -203,6 +203,6 @@ $$f(x;\epsilon_\ell,\epsilon_h)=\begin{cases}x, & 1-\epsilon_\ell<x<1+\epsilon_h
 
 **相邻主题**：
 - [[muon_analysis]] — Muon 优化器与正交化原理（Muon Split 的基础）
-- [[grpo_analysis]] — GRPO 损失与组归一化优势（IcePop / 双边 IS 的骨干）
+- [[20_grpo_analysis]] — GRPO 损失与组归一化优势（IcePop / 双边 IS 的骨干）
 - [[RL_Training_Inference_Precision_Analysis]] — 训练-推理精度失配的成因与对策
-- [[reward_hacking_defense_analysis]] — reward hacking 防御谱系（混合奖励 / grounded 取值）
+- [[31_reward_hacking_defense_analysis]] — reward hacking 防御谱系（混合奖励 / grounded 取值）

@@ -6,6 +6,226 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-31：知识库结构整改 P5 完成（后训练三域整合收官）
+
+**Type**: Structure Reorg（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；P0-P7 的第六段）
+
+- **`03_posttraining/` 纵向域解散**：D01-D12 按主题分发进功能树（理论算法→`01_theory/04_posttraining/`，框架与 infra→`02_engineering/04_posttrain_frameworks/`，K3 案例→`moonshot_kimi/`）；D00 阅读路线降为 `courses/posttraining_frontier.md` 纯导读页。
+- **GRPO 三写归一**：D02 定位为算法演进权威页；grpo/dapo/gspo 论文页瘦身为"论文档案"（元数据+实验+特有公式）；verl 页保工程锚点——审查中回补 J_GRPO 的 KL 组合项等三处符号级细节。
+- **verl 双基线整合**：D07（`983cb0f`）入主 verl/ 为端到端主链，ray_trainer 保留为 legacy 深潜页；**源码核实发现 `trainer.use_v1` 默认翻转**（旧教学主链在新基线非默认路径），三处 [!contradiction] 双记；其余 8 篇挂基线横幅。
+- **错位页归位**：RL_PPO_Loss（实现分析）→框架域；batch_invariance_guide→训练可靠性域。
+- **三目录分段编号**：01_theory/04_posttraining（17 页）、04_posttrain_frameworks 根（9 页）、verl/（10 页）按 0/1/2/3 段位编号，485 处链接改写。
+- 全程 broken=0；wiki 375→374 页（净 −2 +1 课程页）。
+
+## 2026-07-31：知识库结构整改 P5 Task 8（三目录分段编号）
+
+**Type**: Naming Convention（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §5；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 8；P4 Task 9.5 同款规程）
+
+对 P5 已重构定型的三个目录施行 §5 分段编号（文件名两位数字前缀 = 段位：段 0(01-09)入门导览、段 1(10-19)核心机制主线（按流水线/学习顺序）、段 2(20-29)深潜/专题、段 3(30-39)方法论/对照/工程实践；`index.md` 不编号）：`01_theory/04_posttraining/`、`02_engineering/04_posttrain_frameworks/`（根）、`02_engineering/04_posttrain_frameworks/verl/`。每目录先在 index.md 定段位表，再 `git mv`，全库改链，checker=0。判段按内容实质而非文件名后缀/既有体裁标签。`moonshot_kimi/`、`07_training_reliability/` 本次不编号（P7 全库推广时处理）。
+
+### 段位表 1：`01_theory/04_posttraining/`（17 篇内容页）
+
+| 段 | 编号区间 | 页面 |
+|---|---|---|
+| 0 | 01 | posttraining_frontier_map_analysis |
+| 1 | 10–13 | instructgpt_rlhf_analysis、ppo_analysis、dpo_analysis、reasoning_rl_algorithm_evolution_analysis |
+| 2 | 20–29 | grpo_analysis、dapo_analysis、gspo_analysis、rloo_analysis、agentic_rl_algorithm_analysis、on_policy_off_policy_staleness_analysis、tim_causal_chain_analysis、vapo_analysis、rlhf_foundations_analysis、kimi_k1.5_analysis |
+| 3 | 30–31 | preference_optimization_analysis、reward_hacking_defense_analysis |
+
+段 1 按学习序排列——InstructGPT 三步 RLHF 基础 → PPO-Clip → DPO → Reasoning RL 算法演进权威页（`13`，P5 Task 3 已定为 GRPO/DAPO/GSPO/SAO 谱系统一权威页）。段 2 恰好填满 10 格：GRPO/DAPO/GSPO/RLOO 四篇论文档案（Task 3 已瘦身为元数据/原始实验数字，公式与动机指向 `13`）+ agentic RL/staleness/TIM 因果链三个专题 + VAPO/RLHF 多论文综合/Kimi K1.5 三篇档案页。
+
+### 段位表 2：`02_engineering/04_posttrain_frameworks/`（根，9 篇内容页；`verl/` 子目录见表 3）
+
+| 段 | 编号区间 | 页面 |
+|---|---|---|
+| 0 | 01 | posttraining_infra_mechanism_analysis |
+| 1 | 10–12 | rl_ppo_loss_and_grpo_analysis、rl_sandbox_design_analysis、rl_infra_efficiency_analysis |
+| 2 | 20–22 | slime_architecture_analysis、areal_async_architecture_analysis、roll_strategy_and_ascend_analysis |
+| 3 | 30–31 | rl_framework_comparison、cuda_ascend_posttraining_stack_comparison |
+
+### 段位表 3：`verl/`（10 篇内容页）
+
+| 段 | 编号区间 | 页面 |
+|---|---|---|
+| 0 | 01–02 | verl_architecture_overview_analysis、verl_quickstart_guide |
+| 1 | 10–15 | verl_end_to_end_iteration_analysis、verl_single_controller_analysis、verl_dataproto_analysis、verl_workers_engine_analysis、verl_rollout_resharding_analysis、verl_rl_algorithms_analysis |
+| 2 | 20 | verl_ray_trainer_analysis |
+| 3 | 30 | verl_optimization_analysis |
+
+段 1 按 index.md 既有「五条平面」表的管线顺序排列（入口/驱动当前基线主链 → 控制面 → 数据面 → 计算面 → 生成面 → 算法面）。
+
+**判段说明**（内容实质优先于文件名后缀/既有体裁标签，同 P4 Task 9.5 规程）：
+
+- `posttraining_infra_mechanism_analysis`（D05）：`_analysis` 后缀但内容是 control/data/weight 三平面模型这一域级总览，与 `posttraining_frontier_map_analysis` 在理论域的段 0 定位同构，判入段 0；与之相邻的 `rl_framework_comparison`（明确 comparison 类）分列段 3，两者不会同段竞争。
+- `preference_optimization_analysis`：`_analysis` 后缀但内容是 DPO/IPO/SimPO/ORPO/KTO/MODPO 横向对比表，按内容判入段 3（对照类）而非段 1/2。
+- `reward_hacking_defense_analysis`：内容是环境/penalty/inoculation prompting/agentic safety 四层防御体系，属方法论/工程实践，判入段 3。
+- `rlhf_foundations_analysis`：`_analysis` 后缀但结构是 ReMax/Weak-to-Strong/RM Overoptimization/RigorLLM 等多篇独立论文的综合档案，与 grpo/dapo/gspo/rloo 四篇论文档案同类，判入段 2 而非段 1。
+- `verl_ray_trainer_analysis`：verl/index.md「深挖实现」分组的一员，但该页自身层次列与页头横幅均明确自称 `8a694930` **legacy 深潜**（当前默认主链已切至 `verl_end_to_end_iteration_analysis` 的 `983cb0f`），故不与同组其余四篇（single_controller/dataproto/workers_engine/rollout_resharding）一起入段 1 主线，单独判入段 2。
+- `verl_rl_algorithms_analysis`：虽在 verl/index.md 旧「算法与优化」分组与 `verl_optimization_analysis` 并列，但按「五条平面」表它是管线终点的算法面，判入段 1 主线；`verl_optimization_analysis` 是横切性能/显存方法论，判入段 3。
+
+### 执行
+
+`git mv` 36 个文件（17+9+10，均为「两位数字前缀 + 原基名」，不改文件名其余部分——含 `kimi_k1.5_analysis.md` 的点号未消除，naming §5 命名统一属 P7 范围非本任务）。全库改写裸基名 `[[wikilink]]` 链接 **485 处**（53 个文件，含 `courses/posttraining_frontier.md` 全部 D01–D12 阅读序链接、三目录自身 index.md 与页内互链、`wiki/index.md` 快速导航两行）。`wiki/changelog.md` 中 **6 处历史条目共 20 个 wikilink**（2026-05-24 交叉引用行、2026-06-22 verl 系列创建条目 9 处、2026-06-24 GLM-5 校验行、2026-07-25 TIM 首篇创建行、2026-07-27 D01 创建行，以及本 P5 序列内 Task 2 自身条目 1 处）按"历史不回写"惯例降级为反引号 + 去向说明；Task 3/4/5/7 自身条目中的相关链接此前已用反引号包裹（元描述文本），未被本次渲染判定为活链接，无需处理。
+
+**顺带修订（Task 7 changelog 条目审查移交的两处）**：pages 口径句"计划文本写'375−2=373'"改为"按本次执行前的推算 375−2（未计新增课程页 +1）"，不改历史行结构，只修正误引；六级能力门槛压缩措辞补一句"压缩保留主干，个别子弹与前置/任务两列未 1:1 保留，实质由链接的深潜页承载"。
+
+**验收**：`tools/check_links.py` broken=0、orphans=0（pages=374，纯改名不增减文件数）；`ambiguous`=69、`bare_index`=69（与 Task 7 基线持平，本次未引入）。`python -m pytest -q` 77 passed。
+
+**自查**：三张段位表在编号前均先读取各页正文首屏/已有 index 描述定段（详见上方「判段说明」五条），非凭文件名猜测；`python tools/check_links.py --json` 全量 JSON 核对 broken 列表为空；链接重写脚本按 `check_links.py` 同款 fence/inline-code 豁免逻辑逐行处理，避免误改示例代码块内的字面 `[[...]]` 文本；`grep -rn` 全库确认无 markdown 式 `](...)` 链接指向本次改名的 36 个文件（本库仅用 Obsidian `[[wikilink]]`，无需额外处理）。
+
+---
+
+## 2026-07-31：知识库结构整改 P5 Task 7（课程页化，解散 03_posttraining 域）
+
+**Type**: Course-page Consolidation + Directory Removal + Index Rebuild（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2/§6；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 7）
+
+**新建** `wiki/courses/posttraining_frontier.md`：纯导读页，结构参照 `courses/torch_compile_end_to_end.md`（角色横幅 → 这门课是什么 → 阅读路线 → 六级能力门槛 → 与功能树的关系 → Related Pages）。从 `03_posttraining/00_posttraining_source_reading_guide.md`（D00，301 行）吸收阅读路线骨架（三原则、最短闭环 mermaid 流程图、"只想先抓主干"短路线）与六级能力门槛（L1–L6，整体保留为表，每级压缩为核心问题 + 验收物两列；压缩保留主干，个别子弹与前置/任务两列未 1:1 保留，实质由链接的深潜页承载）；从 `03_posttraining/index.md` 吸收 S00–S05 阶段叙述，作为阅读路线的六个分段小节（S00 基线与地图…S05 综合验收）；阅读序按 D01→D12 的新位置排列（链接用现基名，Task 8 分段编号后再改一轮，本次不编号）；另从 `03_posttraining/index.md` §5「四个框架的研究分工」吸收一张精简表（verl/slime/AReaL/ROLL 研究角色对照），放在 S03/S04 阅读分组之后。
+
+**D00 独有内容台账**（先核实再删，逐节判定）：
+
+| D00 章节 | 处置 | 理由 |
+|---|---|---|
+| §0 怎样使用这条路线、§1 阅读顺序表 + 最短闭环 + 抓主干短路线 | 吸收入课程页 | 阅读路线骨架，课程页核心内容 |
+| §2 六级能力门槛 L1–L6 | 吸收入课程页（压缩为表） | 门槛定义本身是导读性内容 |
+| §3 论文阅读方法（五问法 + 两个笔记模板） | 不迁移，无单独落地 | 通用研究方法论，不含后训练领域独有事实；与本库 `.claude/skills/source-faithful-analysis` 方法论同类，非本域专属 |
+| §4 源码阅读方法（owner 追踪六步 + 六问表 + 证据记录模板 Repository/Branch/Commit/…） | 不迁移，无单独落地 | 同上；证据记录模板已被 spec §6.3「代码分析页头钉基线」规则取代 |
+| §5 工业实现四级"支持"口径（P1 接口/P2 功能/P3 正确性/P4 性能） | 不迁移，无单独落地 | **核实结论**：已独立复现于 `rl_framework_comparison.md`（D06）§3「四级支持证据」（几乎同一张表，本域权威定义）；`cuda_ascend_posttraining_stack_comparison.md`（D11）§13 进一步实例化为 CUDA→Ascend 专用的 M1–M4 迁移验收；两页均不因 D00 删除而失去定义来源 |
+| §6 学习过程实践题（按 S00–S05 阶段） | 不迁移，无单独落地 | 绑定即将解散的 S00–S05 阶段标签，为个人学习进度工具，非可复用领域事实 |
+| §7 版本与复习节奏（快速变化页面 30 天复核；K3 `0797decb` 复核触发条件） | 不迁移，无单独落地 | CLAUDE.md 已有通用 staleness 复核规则；K3 复核触发条件是操作性元数据非域事实 |
+| §8 最小源码路径与终局验收（各框架最小入口→调用链） | 不迁移，无单独落地 | **核实结论**：verl 入口（`main_ppo.py`→`RayPPOTrainer.fit`）已在 `verl_end_to_end_iteration_analysis`/`verl_ray_trainer_analysis` 逐行覆盖；slime（`train.py`→DataSource/Megatron/SGLang）、AReaL（`PPOTrainer`→workflow/staleness）、ROLL（RLVR/Agentic pipeline→Strategy/device mapping）均已在各自深挖页以真实 `file:line` 覆盖，细致度远超 D00 原一句话摘要 |
+
+`03_posttraining/index.md` 除 S00–S05 阶段叙述外，§1「为什么建立统一领域」并入课程页「这门课是什么」；§4 D00–D12 顺序表、§6 既有知识入口均与 D01（`posttraining_frontier_map_analysis`）自身文档顺序表/既有知识复用规则重复，不重复迁移；§7 维护规则绑定即将解散的目录本身，作废不迁移。
+
+**删除**：`git rm wiki/03_posttraining/00_posttraining_source_reading_guide.md wiki/03_posttraining/index.md`，`wiki/03_posttraining/` 目录随之清空自动移除。
+
+**入链改写**：D00/`03_posttraining/index` 的全部活链接改指 `[[courses/posttraining_frontier]]`，涉及 `kimi_k3_posttraining_case_study_analysis.md`（阅读导航"回到 D00"）、`posttraining_frontier_map_analysis.md`（阅读导航 + 文档顺序表第 1 行 + Related Pages，3 处）、`cuda_ascend_posttraining_stack_comparison.md`（Related Pages）、`dapo_analysis.md`/`grpo_analysis.md`/`gspo_analysis.md`/`rl_infra_efficiency_analysis.md`/`rl_sandbox_design_analysis.md`/`verl/index.md`（各 1 处 Related Pages）。`wiki/changelog.md` 中 2026-07-27 历史条目的 2 处活链接（`03_posttraining/index`、`00_posttraining_source_reading_guide`）按"历史不回写"惯例降级为反引号 + 去向说明。
+
+**`wiki/index.md` 重建**：删除"03 后训练纵向学习域"整段；courses 表新增 `posttraining_frontier` 行；快速导航"LLM 后训练前沿 D00–D05"/"D06–D12"两行合并改写为"D01–D06"/"D07–D12"（各 7/6 项，去掉已删除的 `03_posttraining/index`、`00_posttraining_source_reading_guide`，D01–D06 行首改指课程页）；"PPO/GRPO RL 训练"行沿用 Task 6 已完成的 `rl_ppo_loss_and_grpo_analysis` 改名。**页数重算**（覆盖全部因 P5 迁移产生偏差的行，不止 Task 7 直接改动的两域）：模型 56→57、Kimi 13→14（D12 迁入，Task 2）、后训练对齐 15→18（+D01/D02/D03/D04，−RL_PPO，Task 2/3/6）、后训练框架 14→21（+D05/D06/D07/D08/D09/D10/D11/RL_PPO，−batch_invariance，Task 2/4/5/6；verl 子计数 10→11）、训练可靠性 4→5（+batch_invariance，Task 6）；两处"统计于"日期改 2026-07-31。
+
+**`01_theory/04_posttraining/index.md` 与 `04_posttrain_frameworks/index.md`**：两域此前在 Task 2/3/4/6 已逐批为迁入页补全条目 + 一句话定位（"后训练前沿整合"/"后训练框架源码对照"/"RL 算法源码实现"三张表），本次核对确认条目完整、无缺漏；标题/摘要行改为反映扩容后的真实覆盖范围（前者从"LLM 对齐与偏好优化"扩为"LLM 后训练算法理论"）；两处新增课程页入口段落（仿 `01_ai_frameworks/index.md` 既有惯例："阅读路线入口…不计入下表"）+ 关联域各补一行指向 `courses/posttraining_frontier`；日期改 2026-07-31。
+
+**验收**：`tools/check_links.py` broken=0、orphans=0，`ambiguous`/`bare_index`=69（与基线持平，非本次引入）；pages=374。**pages 对账与计划口径的差异**：按本次执行前的推算 375−2（未计新增课程页 +1），但 Task 7 同时创建 1 篇新文件（课程页）与删除 2 篇（D00 + `03_posttraining/index`），净变化为 375+1−2=374，本报告按实际文件系统状态汇报 374，已在交付报告中显式披露此算术口径差异。`python -m pytest -q` 77 passed。
+
+**自查**：`grep -rn "03_posttraining" wiki/` 除本 changelog 历史条目（已降级反引号）与新课程页/两域 index 的解释性反引号文本外 0 处活 `[[...]]` 链接命中；D00 §5/§8 的"不迁移"判定均先用 grep 核实目标内容已在 `rl_framework_comparison.md`/`cuda_ascend_posttraining_stack_comparison.md`/各框架深挖页独立存在，未凭印象判断。
+
+---
+
+## 2026-07-31：知识库结构整改 P5 Task 6（错位页归位）
+
+**Type**: Misplaced-page Relocation（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 6）
+
+两篇此前放错域的页面归位，均为纯搬运（正文零改动，仅补链接）：
+
+- `git mv wiki/01_theory/04_posttraining/RL_PPO_Loss_and_GRPO_Analysis.md` → `wiki/02_engineering/04_posttrain_frameworks/rl_ppo_loss_and_grpo_analysis.md`（snake_case 化）。该页是 TorchTitan + vLLM 的 PPO Loss / GRPO 流程源码级实现分析，此前误放理论目录，实为框架工程分析。与 verl 域已有的 `verl_rl_algorithms_analysis.md`（同为源码级 PPO/GRPO loss 分析，框架为 verl core_algos 注册表）互补一句话双向链接。
+- `git mv wiki/02_engineering/04_posttrain_frameworks/batch_invariance_guide.md` → `wiki/02_engineering/07_training_reliability/batch_invariance_guide.md`。该页讲批次不变性/确定性算子实现（源自 DeepSeek V4 报告 §3.3 + DeepGEMM 源码），主题属确定性/可靠性问题域而非后训练框架，与 `determinism_and_numerical_reliability_analysis.md` 问题 2（训推数值不一致 / batch 不变性）互为系统侧上游与算子层实现细化的关系，双向补链；`tools/batch_invariance_demo.py` 引用路径为仓库根相对路径文本，两个新旧目录深度相同（均为 `wiki/02_engineering/<domain>/`），无需改写。
+
+**入链改写（裸基名）**：`RL_PPO_Loss_and_GRPO_Analysis` → `rl_ppo_loss_and_grpo_analysis`，涉及 `glm5_posttraining_deepdive.md`（2 处）、`tim_causal_chain_analysis.md`、`rl_infra_efficiency_analysis.md`、`rl_sandbox_design_analysis.md`、`determinism_and_numerical_reliability_analysis.md`、`07_training_reliability/index.md`、`wiki/index.md`。`batch_invariance_guide` 基名不变（同名文件仅换目录），裸基名链接天然不受影响；唯一一处路径限定链接 `01_ai_frameworks/index.md` 的 `[[04_posttrain_frameworks/batch_invariance_guide]]` 改为裸基名 `[[batch_invariance_guide]]`（同域内唯一同名文件，不存在歧义）。`wiki/changelog.md` 中 1 处 2026-05-24 历史活链接（`RL_PPO_Loss_and_GRPO_Analysis`）按"历史不回写"惯例降级为反引号 + 去向说明。
+
+**索引同步**：`01_theory/04_posttraining/index.md` 移除 RL_PPO 行；`02_engineering/04_posttrain_frameworks/index.md` 「数值与确定性」小节（原仅 batch_invariance_guide 一行）改为「RL 算法源码实现」小节收纳新迁入的 `rl_ppo_loss_and_grpo_analysis`，并注明 batch_invariance_guide 去向；`07_training_reliability/index.md` 问题地图第 2 行「详见」列补 `[[batch_invariance_guide]]`，新增「第四篇：batch 不变性算子实现」小节介绍其归位背景与来源（独立于本域原 wanka 综述素材）。
+
+**验收**：`tools/check_links.py` broken=0、orphans=0（pages=375，与基线一致，纯搬运不增删文件）；`python -m pytest -q` 77 passed。
+
+---
+
+## 2026-07-31：知识库结构整改 P5 Task 5（verl 端到端整合，双基线调和）
+
+**Type**: Content Consolidation + Baseline Reconciliation（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 5）
+
+`git mv wiki/03_posttraining/07_verl_end_to_end_iteration_analysis.md` → `wiki/02_engineering/04_posttrain_frameworks/verl/verl_end_to_end_iteration_analysis.md`（D07，基线 verl `983cb0f`，225 行）。verl 域此前已有 `verl_ray_trainer_analysis.md`（354 行，基线 `8a694930`）逐方法源码走读 `RayPPOTrainer.fit`；两页覆盖同一主题但基线不同、深度不同，本次逐节台账后**不合并、保留双页**并调和。
+
+**与 `verl_ray_trainer_analysis.md` 逐节台账**：重叠区（fit 主循环、一步 PPO 字段流转、advantage/loss 数学）以 D07 为准，不回填 ray_trainer 的逐行细节（D07 §4/§5 的高层表已经是权威账本）。ray_trainer §2（Role 枚举/`ResourcePoolManager`/`init_workers` 的 `create_colocated_worker_cls`/`WorkerDict` colocate 机制）、§3–§6（fit() 逐行追踪、`_balance_batch`、时序图、dispatch 表）在 `983cb0f` 本地 checkout（`E:\97-codes\torch_parallel\verl`）核对后确认为**独有、且体量远超 40%**（全篇 354 行里仅"fit 主循环顺序/advantage 数学"这类主题级重叠，method 级源码走读几乎全部独有）——判定**保留残页**：`verl_ray_trainer_analysis.md` 不删除，作为 `8a694930` legacy 深潜companion 页保留;仅将其中直接回答 D07 §2 自身"colocate or disaggregate"清单的**核心机制结论**（Role 枚举、`need_critic`/`need_reference_policy` 判定、`create_colocated_worker_cls` 合并 WorkerDict 机制、`ref_in_actor`）逐字并入 D07 §2，全部按 `983cb0f` 重新核对行号（utils.py:27-107、single_controller/ray/base.py:185-233、ray_trainer.py:343-360,772-907，与 `8a694930` 相应位置逐一比对，多数行号完全一致，`fit()` 因 `983cb0f` 新增代码整体下移 21 行）。
+
+**基线冲突（`[!contradiction]` 双记）**：核对 `main_ppo.py` 发现两基线间存在真实机制反转——`trainer.use_v1` 默认值从 `8a694930` 的 `false`（legacy `RayPPOTrainer.fit` 为默认执行路径）反转为 `983cb0f` 的 `true`（`config/ppo_trainer.yaml:201`→`:219`；`main_ppo.py:184-193` 默认改道 `TaskRunnerV1`/TransferQueue）。这不是页面撰写错误而是版本演进，按规程在 D07 §1、`verl_ray_trainer_analysis.md` §1 版本定位note、`verl/index.md`「HEAD 架构演进提示」三处以 `[!contradiction]` 双记：`RayPPOTrainer.fit`（本系列 9+1 篇文档共同的教学主链）在 `983cb0f` 已非默认路径，需显式 `trainer.use_v1=false` 才会执行；`TaskRunnerV1`/TransferQueue 路径本知识库尚无覆盖。`@deprecated` 装饰器本身两基线间未变（均在 `ray_trainer.py:285`）。
+
+**D07 §3/§6 收缩（先验两专页覆盖，Task 4 同款流程）**：`verl_dataproto_analysis.md`（325 行）与 `verl_rollout_resharding_analysis.md`（347 行）均已全面覆盖 D07 §3/§6 的全部事实（前者到方法级，后者到 CUDA IPC bucket/CheckpointEngine 两条路径的机制级），未发现 D07 独有细节。§3（DataProto）57→70 行原文压缩为「容器契约表 + 四条不变量」+ `[[verl_dataproto_analysis]]` 链接；§6（权重刷新）保留原有 `983cb0f` 专属行号（`engine_workers.py:705-725,783-787`、`vllm_rollout.py:271-320,278`）改写为时序代码块，补 `[[verl_rollout_resharding_analysis]]` 链接。
+
+**verl 域其余 8 篇（`verl_architecture_overview_analysis`/`verl_quickstart_guide`/`verl_single_controller_analysis`/`verl_dataproto_analysis`/`verl_workers_engine_analysis`/`verl_rollout_resharding_analysis`/`verl_rl_algorithms_analysis`/`verl_optimization_analysis`）页头加基线横幅**：`> [!note] 本页基线 verl \`8a694930\`；端到端迭代以 [[verl_end_to_end_iteration_analysis]]（基线 \`983cb0f\`）为准，两基线间机制差异以新基线页为先。`；`verl_ray_trainer_analysis.md`（D07 对手方，保留残页）同样加此横幅，另加上述 `[!contradiction]` 版本反转记录。
+
+**verl/index.md 重建**：新增「端到端主链（当前基线）」表段承接 D07；「由浅入深三层」「深挖实现」「算法与优化」三表标注基线 `8a694930`；「五条平面」入口/驱动行、「经典 RL 数据流」承接句、Related Pages 均补 D07 双链接；「HEAD 架构演进提示」callout 补 `use_v1` 反转记录；页数 9→10；原对 D07 的 `[[03_posttraining/07_verl_end_to_end_iteration_analysis]]` 引用改裸基名 `[[verl_end_to_end_iteration_analysis]]`。`04_posttrain_frameworks/index.md` 子目录表 verl 行页数同步改「9 篇 8a694930 深潜 + 端到端主链页基线 983cb0f」。
+
+**入链改写（裸基名）**：`03_posttraining/07_verl_end_to_end_iteration_analysis` → `verl_end_to_end_iteration_analysis`，涉及 `posttraining_frontier_map_analysis.md`、`cuda_ascend_posttraining_stack_comparison.md`、`posttraining_infra_mechanism_analysis.md`、`rl_framework_comparison.md`（阅读导航+正文两处）、`slime_architecture_analysis.md`（阅读导航+正文两处）、`00_posttraining_source_reading_guide.md`、`03_posttraining/index.md`、`wiki/index.md`。D07 自身阅读导航（`[[rl_framework_comparison|上一篇 D06]]` · `[[slime_architecture_analysis|下一篇 D08]]`）此前已是裸基名，无需改写。
+
+**验收**：`tools/check_links.py` broken=0、orphans=0（pages=375，与基线一致，本次只搬运不新增/删除文件）；`python -m pytest -q` 77 passed。
+
+**自查**：verl 本地 git checkout（`E:\97-codes\torch_parallel\verl`）同时含 `983cb0f24443f87b3d161fad318445130a620b0` 与 `8a694930` 两个 commit，本次全部行号引用与「机制未变/已反转」判断均用 `git show <sha>:<path>` 现场核对，未依赖两页文本互证兜底。ray_trainer 页保留判定基于逐节主题映射后的独有内容占比估算（远超 40% 阈值），非精确计数；D07 §2 新增内容与 D07 §3/§6 收缩前均逐一核对对应专页/源码覆盖,未发现事实丢失。`grep -rn '03_posttraining/07_verl_end_to_end_iteration_analysis' wiki/` 除 `changelog.md`（历史记录，规则豁免不回写）与 `verl/index.md` 的一处历史路径纯文本提及（非 wiki-link）外 0 处活链接命中。
+
+---
+
+## 2026-07-31：知识库结构整改 P5 Task 4（D05/D06 迁入收缩 + weight sync 三方划界）
+
+**Type**: Content Consolidation + Boundary Linking（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 4）
+
+`git mv wiki/03_posttraining/05_posttraining_infra_mechanism_analysis.md` → `wiki/02_engineering/04_posttrain_frameworks/posttraining_infra_mechanism_analysis.md`；`git mv wiki/03_posttraining/06_framework_comparison.md` → `wiki/02_engineering/04_posttrain_frameworks/rl_framework_comparison.md`（comparison 类型命名）。两文件标题保留 D05/D06 前缀（沿用 D01–D04 迁移惯例），页头阅读导航与内部互链改裸基名。
+
+**D05 §7（Reward/Environment/Sandbox）逐句对照 `rl_sandbox_design_analysis.md`（190 行）**：两页实为不同来源（D05 引 Kimi K3 Technical Report `0797decb`；rl_sandbox 引 RollArt/ProRL/Anthropic），逐句核对后**未发现字面重复**——reward-as-service 契约字段与「需要防」六条威胁清单是 D05 独有的三平面接口定义，予以保留；K3 white-box harness 版本化段落与 Fork/Pause/Resume/Snapshot 语义段落判定为「生产 sandbox 实现细节」而非「三平面接口」，逐字回流至 `rl_sandbox_design_analysis.md` 新增 §2.1「K3 案例：harness 版本化与故障恢复语义」（同步补 `关键资料`/`入库日期`/`Related Pages`）。D05 §7 更名「...的接口视角」，末尾改为指向 §2.1 的一句链接。262 行 → 该节从 26 行压缩到约 17 行，无事实删除。
+
+**D05 §4（数据面 backpressure）逐句对照 `rl_infra_efficiency_analysis.md`（301 行）**：同样未发现字面重复——buffer schema 与四层容量定义（并发/staleness/内存/状态）是 D05 独有的 data plane 接口定义，予以保留；AReaL `StalenessManager` 源码引用（`areal/infra/staleness_manager.py:80-112`）与 K3 cache-pressure-aware admission 信号组合段落判定为「准入控制机制实现」，逐字回流至 `rl_infra_efficiency_analysis.md` 新增「优化 6: Admission-aware Backpressure」（`## 2. 五个核心优化`→`## 2. 核心优化`，因新增第 6 项去掉"五个"；同步补 `关键资料`/`入库日期`/`Related Pages`）。D05 §4 末尾改为指向该节的一句链接。
+
+**D06 §4.1（verl 控制面）压缩**：先验 `verl_architecture_overview_analysis.md`（229 行）覆盖情况——`RayPPOTrainer.fit` 主循环（其 §6）、`DataProto` 贯穿角色边界（其 §3）均逐字覆盖；"算法 registry 含 GRPO/GSPO/SAPO/CISPO/REINFORCE"中的 SAPO 一项在该页未直接出现，改核 `verl_rl_algorithms_analysis.md`（已含 SAPO 注册表条目）覆盖，判定为全覆盖。原「优点/代价」两段散文压缩为一个二行摘要表 + 双链接（`verl_architecture_overview_analysis` 架构总览 + `verl_rl_algorithms_analysis` registry 机制），4.2/4.3/4.4（slime/AReaL/ROLL）不动。反向在两篇 verl 页 Related Pages 补 D06 回链。
+
+**weight sync 三方划界（只补链不合并，三页正文除本条声明外不动）**：`02_train_frameworks/megatron-lm/megatron_rl_posttraining_consistency_analysis.md`（207 行,Megatron 训练侧 refit/训推一致性）、`megatron_vllm_weight_sync_analysis.md`（182 行,verl 在 Megatron+vLLM 场景下的 Gather-Broadcast-Load 同步实现）与 D05 §6（weight publish 三平面协议）互相在页头/相应节插入同一句「三方分工」声明：D05=三平面机制视角（框架无关）；megatron 两页=训练侧/verl 具体实现；`verl_rollout_resharding_analysis`=verl 自身 resharding/3D-HybridEngine 实现（该页仅在声明句中提及，未改动）。三页 Related Pages 互补链接。
+
+**入链改写**：`03_posttraining/05_posttraining_infra_mechanism_analysis`→`posttraining_infra_mechanism_analysis`、`03_posttraining/06_framework_comparison`→`rl_framework_comparison` 两个路径的全部 wiki-link 目标改为裸基名，涉及 `wiki/index.md`、`03_posttraining/index.md`、`00_posttraining_source_reading_guide.md`、`posttraining_frontier_map_analysis.md`、`on_policy_off_policy_staleness_analysis.md`、`agentic_rl_algorithm_analysis.md`、`dapo_analysis.md`、`kimi_k3_posttraining_case_study_analysis.md`、`07_verl_end_to_end_iteration_analysis.md`、`verl/index.md`、`slime_architecture_analysis.md`、`roll_strategy_and_ascend_analysis.md`、两文件自身的阅读导航与 Related Pages。`03_posttraining/index.md` D05/D06 两行链接目标随批量改写同步生效。`04_posttrain_frameworks/index.md` 新增「后训练框架源码对照」表两行（posttraining_infra_mechanism_analysis / rl_framework_comparison），迁入来源脚注 D08–D11 改为 D05–D11，`Coding RL Sandbox 与 Infra` 表两行补来源(Kimi K3/AReaL)与主题(K3 案例/admission-aware backpressure)。
+
+**验收**：`tools/check_links.py` broken=0（pages=375，与基线一致）；`python -m pytest -q` 77 passed。
+
+**自查**：D05 §4/§7、D06 §4.1 三处压缩均先做逐句/逐段对照，实测无字面重复，因此本次"收缩"不含事实删除——D05 两节的所有独有事实全部逐字迁移到承接页（rl_sandbox_design_analysis §2.1、rl_infra_efficiency_analysis「优化 6」）并补溯源，D06 §4.1 的收缩基于承接页已覆盖的验证结论（含 SAPO 单项二次核实）。weight sync 三方划界未改动任何一页的既有分析正文，只加边界声明与互链。`grep -rn '03_posttraining/05_posttraining_infra_mechanism_analysis\|03_posttraining/06_framework_comparison' wiki/` 0 处活链接命中。
+
+---
+
+## 2026-07-31：知识库结构整改 P5 Task 3（D02 演进权威页 + GRPO 三写归一）
+
+**Type**: Content Consolidation（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 3）
+
+`git mv wiki/03_posttraining/02_reasoning_rl_algorithm_evolution_analysis.md` → `wiki/01_theory/04_posttraining/reasoning_rl_algorithm_evolution_analysis.md`，定为 GRPO/DAPO/Dr.GRPO/GSPO/SAO 公式演进与工程语义的**统一权威页**（页头新增"定位"行）。§3.6 K3-MOPD 收缩为一句 + [[kimi_k3_posttraining_case_study_analysis|D12]] 链接：先核实 D12 §1/§2.2/§4 已逐字覆盖 §3.6 的 MOPD 公式（Eq. 15 与 §3.6 完全一致）、reasoning-effort 预算约束公式与"top-k 蒸馏无明确优势"结论，无独有事实需回流。205→187 行。
+
+**GRPO/DAPO/GSPO 三篇论文页瘦身**（逐节台账，收缩前均在 D02 找到实际对应段；D02 未给出的公式变体一律保留）：
+
+| 页面 | 收缩(D02 对应) | 保留(论文特有/D02 未给出的公式) | 行数 |
+|---|---|---|---|
+| `grpo_analysis` | Key Innovation 段落(D02 §3.1 $\hat A_i$ 公式)、GRPO Objective 的 clip-surrogate 结构(D02 §2)、Why GRPO Works Well 动机叙述(D02 §1/§3.1)、Practical Implementation 玩具伪代码(改指 verl `core_algos.py:268/1279` 真实代码锚点) | 论文元数据、KL 低方差无偏估计量(D02 未给)、DeepSeek-R1-Zero 训练配置表/涌现行为/性能、R1 全流程、GRPO vs DPO 对比表、Impact | 165→119 |
+| `dapo_analysis` | Clip-Higher 与 Dynamic Sampling 两段动机叙述(公式与 D02 §2/§3.2 重复)、Relationship to Other Methods 表(与 D02 §4 重复) | 论文元数据、"30 分失败三症状"诊断段、Token-Level Loss 的 $J_{DAPO}$/$J_{GRPO}$ 显式求和公式(D02 无)、Overlong Reward Shaping 分段惩罚公式(D02 无)、DAPO Algorithm 伪代码、Training Configuration/Progressive Results 两张原始数字表、KL 移除动机、数据集细节、Key Insights | 187→157 |
+| `gspo_analysis` | Problem 段 5 点缺陷列表压缩为一段(D02 §3.4)、Sequence-Level Ratio 公式与 GSPO Objective(D02 §3.4/§2 完全一致)、Key Difference 表与 Relationship to Other Methods 表(均与 D02 §4 重复) | 论文元数据、Gradient Comparison 的 $\nabla J$ 显式梯度公式(D02 无)、GSPO-token stop-gradient 变体公式(D02 无)、Clipping Range Difference 原始超参数表(3e-4/4e-4)、Empirical Results 原始实验数据、Why GSPO Matters | 133→88 |
+
+**verl `verl_rl_algorithms_analysis.md` §3.2/§4.1/§4.2 数学部分收缩指 D02**（保留全部代码锚点、14 优势估计器/11 策略损失清单、注册表机制、config key 映射——spec 点名保护项）：GRPO 组内归一化公式（§3.2）、vanilla PPO clip 基础结构（§4.1，dual-clip 扩展因 D02 未给出而保留）、GSPO 序列比公式（§4.2，stop-grad 实现技巧因 D02 未给出而保留）分别收缩为指向 D02 §3.1/§2/§3.4 的一句话，`core_algos.py:xxx` 代码块与行号全部原样保留。§7"与 RL 文献的对应"由散文列表改写为"verl 选型→文献→D02 对应→论文页"表格（轻改，DAPO"在 verl 里不是新损失"的实现洞察保留为表内备注；表中特别标注 verl `sapo`(arXiv 2511.20347)与 D02 §3.5 的 SAO(arXiv 2607.07508)是不同算法，避免同名混淆）。389→382 行（净减 7 行：删除 3 处重复 LaTeX 展示块，新增 §7 对应表 + Related Pages 补链）。
+
+**入链改写**：全库 12 处 `[[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis...]]` 目标改为裸基名 `[[reasoning_rl_algorithm_evolution_analysis]]`，涉及 `wiki/index.md`、`03_posttraining/index.md`、`00_posttraining_source_reading_guide.md`、`agentic_rl_algorithm_analysis.md`(D03 阅读导航+Related Pages)、`posttraining_frontier_map_analysis.md`(D01 阅读导航+文档顺序表)、`on_policy_off_policy_staleness_analysis.md`(D04 Related Pages)、`kimi_k3_posttraining_case_study_analysis.md`(D12 Related Pages)。D02 自身页内指向 grpo/dapo/gspo 的 3 处路径限定链接改裸基名（同目录）。`01_theory/04_posttraining/dapo_analysis.md` 中指向仍在 `03_posttraining/` 的 D05 链接（Task 4 才迁移）保持路径限定不变。
+
+**Index 更新**：`01_theory/04_posttraining/index.md` "GRPO 系列"表前新增定位说明（D02=权威页，四篇论文页=元数据/实验数字档案）；"后训练前沿整合"表插入 D02 行（D01→D02→D03→D04 顺序），迁入来源脚注补 D02。`03_posttraining/index.md` D02 行改指新路径（索引本身按计划保留到 Task 7 删除）。
+
+**验收**：`tools/check_links.py` broken=0（pages=375，与 P4/Task 2 基线一致；ambiguous=69/bare_index=69 均为存量未变）；`python -m pytest -q` 77 passed。
+
+**自查**：`grep -rn '\[\[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis' wiki/` 0 处活链接命中（唯一残留的 3 处字符串是本条目自身的反引号内说明文字，非 `[[wikilink]]`，`check_links.py` 的行内代码豁免规则不计入 broken）；本次改动前该旧路径从未出现在此前的历史 changelog 条目中，无需"历史不回写"降级处理。
+
+---
+
+## 2026-07-31：知识库结构整改 P5 Task 2（后训练三域整合，纯迁移批 D01/D03/D04/D08–D12）
+
+**Type**: Pure Migration（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 2）
+
+`wiki/03_posttraining/` 解散工作的开局批次，把 8 篇纵向学习域文档 `git mv` 到功能树对应位置并去编号前缀：
+
+| 旧路径 | 新路径 |
+|---|---|
+| `03_posttraining/01_posttraining_frontier_map_analysis.md` | `01_theory/04_posttraining/posttraining_frontier_map_analysis.md` |
+| `03_posttraining/03_agentic_rl_algorithm_analysis.md` | `01_theory/04_posttraining/agentic_rl_algorithm_analysis.md` |
+| `03_posttraining/04_on_policy_off_policy_staleness_analysis.md` | `01_theory/04_posttraining/on_policy_off_policy_staleness_analysis.md` |
+| `03_posttraining/08_slime_architecture_analysis.md` | `02_engineering/04_posttrain_frameworks/slime_architecture_analysis.md` |
+| `03_posttraining/09_areal_async_architecture_analysis.md` | `02_engineering/04_posttrain_frameworks/areal_async_architecture_analysis.md` |
+| `03_posttraining/10_roll_strategy_and_ascend_analysis.md` | `02_engineering/04_posttrain_frameworks/roll_strategy_and_ascend_analysis.md` |
+| `03_posttraining/11_cuda_ascend_posttraining_stack_comparison.md` | `02_engineering/04_posttrain_frameworks/cuda_ascend_posttraining_stack_comparison.md` |
+| `03_posttraining/12_kimi_k3_posttraining_case_study_analysis.md` | `01_theory/01_models/moonshot_kimi/kimi_k3_posttraining_case_study_analysis.md` |
+
+正文零改动（仅两处例外，见下）。**入链改写**：全库 109 处 `[[...]]` 目标从旧编号基名/`03_posttraining/NN_...` 路径限定形式改为新裸基名，涉及 26 个文件（含 `wiki/index.md`、`wiki/03_posttraining/` 内未迁移的 D00/D02/D05/D06/D07/index、moonshot_kimi 五篇 K3 页、`grpo_analysis`/`gspo_analysis`、`rl_infra_efficiency_analysis`/`rl_sandbox_design_analysis`/`verl/index`）；`03_posttraining/index.md` 与 `00_posttraining_source_reading_guide.md` 中指向这 8 篇的行同步改指新位置，但索引本身按计划保留到 Task 7 才删除。`wiki/changelog.md` 中 3 处写入当时的历史活链接（本文件之前记载 D01/D12 新增的条目）按"历史不回写"惯例降级为反引号 + 去向说明，不当作活链接维护。
+
+**例外 1（spec 点名的良性分层，只补链不动正文）**：`on_policy_off_policy_staleness_analysis.md`（D04）§7 TIM 小节新增一句指向 `tim_causal_chain_analysis`（历史活链接，已于 2026-07-31 因 kb-reorg P5 Task 8 再编号为 [[26_tim_causal_chain_analysis]]，按"历史不回写"惯例降级为反引号）的速览提示；`tim_causal_chain_analysis.md` Related Pages 反向补一条指向 `on_policy_off_policy_staleness_analysis` 的链接，说明其覆盖"TIM 与 staleness/off-policy 关系"这一上层概念坐标。
+
+**例外 2（三个承接目录 index 补条目）**：`01_theory/04_posttraining/index.md` 新增"后训练前沿整合"小节（3 条：posttraining_frontier_map/agentic_rl_algorithm/on_policy_off_policy_staleness）；`02_engineering/04_posttrain_frameworks/index.md` 新增"后训练框架源码对照"小节（4 条：slime/areal/roll/cuda_ascend_stack）；`01_theory/01_models/moonshot_kimi/index.md` 在既有 K3 报告行后新增一条专属条目指向 `kimi_k3_posttraining_case_study_analysis`。
+
+**验收**：`tools/check_links.py` broken=0（pages=375，与 P4 收官基线一致）；`python -m pytest tools/ -q` 77 passed。
+
+---
+
 ## 2026-07-30：知识库结构整改 P4 Task 10（课程页化 + 19 号目录解散 + 全 index 终校，P4 收官）
 
 **Type**: Course-page Consolidation + Directory Removal + Index Audit（设计：
@@ -1023,7 +1243,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **新增 [[01_theory/01_models/moonshot_kimi/kimi_k3_stability_analysis]]**：按“哪条轴会失稳”重组报告 §2.2/§2.3/§2.4/§2.5/§3.2/§3.3/§3.4/§4.1.2/§4.1.4 与 Appendix C，得出主线——**K3 拒绝的每个替代方案都是“用质量或超参换稳定”，被采纳的机制几乎都同时提升质量或降低开销**（aux loss、sign 更新、BIP、hard clamp、无界 SwiGLU、SigLIP 初始化、WSD 七处取舍指向同一方向）。
 - **修正 [[01_theory/01_models/moonshot_kimi/kimi_k3_infra_deepdive]] §2.1**：原记“Per-Head Muon 如何与 K2 MuonClip 组合仍未知”过窄；报告 §3.3（p.11）明写三者并用（Per-Head Muon + K2 weight-clipping + QB），并给出 cosine + 1% warmup、weight decay 0.1、8k→64k 预训练。“未知”收窄到联合消融与 clip 阈值。§5 事实边界表的 MoonEP 行标为已兑现、AgentENV 行补仓库口径。
 - **补齐 [[01_theory/01_models/moonshot_kimi/kimi_k3_architecture_deepdive]] 两处缺失的“为什么”**：MoonViT-V2 从零训练的**首要动机是训练稳定性**（SigLIP 初始化的 MoonViT-3D 梯度范数持续偏高且频繁 spike，Fig. 6），且视觉质量持平；Block AttnRes 在 K3 的精确配置为 8 块 × 12 层、计入 embedding 共 9 块，开销从 `O(Ld)` 降到 `O(Nd)`。
-- **[[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]] 新增 §9.1**：AgentENV 仓库侧口径，并标注与报告延迟数字（133/49 ms vs `<100`/`<50 ms`）的口径差异，证据等级升至“可下载实现 + README 自报”，未升 P2/P3。
+- **`D12`（`03_posttraining/12_kimi_k3_posttraining_case_study_analysis`，历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[kimi_k3_posttraining_case_study_analysis]]，按"历史不回写"惯例降级为反引号）新增 §9.1**：AgentENV 仓库侧口径，并标注与报告延迟数字（133/49 ms vs `<100`/`<50 ms`）的口径差异，证据等级升至“可下载实现 + README 自报”，未升 P2/P3。
 - **补写 [[01_theory/01_models/moonshot_kimi/kimi_k3_architecture_deepdive]] §六 SiTU（2026-07-28 追加）**：把原来 5 行的条目扩成完整一节，并新增自绘四联图 `assets/kimi_k3_fig_situ_range.png/.svg`（按报告 §2.3.2 与 Appendix B 公式数值绘制，非复制 Fig. 4）。补出报告 Appendix B 的设计目标原文（bound the SwiGLU product **without discarding the characteristic shape of Swish**——保住原点近线性与消失负尾）、只 cap 线性因子而保留 sigmoid 的理由、Eq. 18 的一阶等价与 Eq. 19 的界，以及 hard clamp 被否决的原因（饱和边界外梯度归零）。**值域主结果**：预激活不变；门支 `(−0.2785,+∞) → (−0.2698, 4)`（下确界只动 3%，cap 实际只作用于正半轴）；up 支 `ℝ → ±25`；输出 `ℝ → (−100,100)`。另加三条本库推算：四角点显示 ±100 两端都由门支饱和到 4 驱动、门支负半轴对输出量级贡献上限仅 6.74；cap 保留线性值的比例只依赖 `z/β`（0.25β→98.0%、1β→76.2%、2β→48.2%），据此说明 `β₁=4` vs `β₂=25` 意味着门被管得比 up 严约 6 倍（取值理由报告未给，标 [推断]）。
 - **证据边界（显眼的缺席）**：K2 有“15.5T tokens 零 loss spike”，**K3 报告没有等价陈述**——无训练 loss 曲线、无 spike 计数、无容错章节；全文唯一 spike 级实测证据是 Fig. 6 的 MoonViT 梯度范数对比。因此“K3 稳定性机制更系统”可说，“K3 训练更稳定”不可说。
 
@@ -1034,7 +1254,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **Type**: Source Ingest + Industrial Case Study + Cross-Document Correction（固定官方报告 `0797decb`，将算法、trajectory、environment、Infra 与部署精度放回同一个 `wiki/03_posttraining/` 闭环。）
 
 - **原始来源**：新增 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`，SHA-256 `fd6ee35c07766a5eb6104235f1b407e4329f969e3482b8c42937c7b5f2b3efe1`；来源台账补 §4.1、§4.2、§5.3 与 Appendix F 的精确定位。
-- **新增 D12 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]]**：串起 SFT → 九个 domain/effort 专家 → MOPD，澄清 partial rollout 保留 prompt 内 \(K\) group，并分析 white-box environment、XTML preserved thinking、MXFP4/MXFP8 QAT、draft model、external KV pool 与 AgentENV。
+- **新增 D12 `03_posttraining/12_kimi_k3_posttraining_case_study_analysis`**（历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[kimi_k3_posttraining_case_study_analysis]]，按"历史不回写"惯例降级为反引号）：串起 SFT → 九个 domain/effort 专家 → MOPD，澄清 partial rollout 保留 prompt 内 \(K\) group，并分析 white-box environment、XTML preserved thinking、MXFP4/MXFP8 QAT、draft model、external KV pool 与 AgentENV。
 - **回填统一主线**：更新 D00–D05 与 D11；把 K3 作为项目级工业案例，而不是没有训练源码证据的“第五个开源框架”；D00 与领域/全局索引扩展为 D00–D12 连续编号。
 - **修正事实边界**：量化 scheme 一致只消除该维度 TIM；K3 partial rollout 不是 fully async；Figure 8、MOPD、GRM、external KV 与 AgentENV 均保留未披露超参数、消融或运行条件。
 - **K3 旧页同步**：总览、架构、Infra 与 Moonshot 索引从“报告/权重待发布”更新为 2026-07-28 固定报告，并把后训练机制统一链接到 D12。
@@ -1085,9 +1305,9 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Research Baseline + Learning Route（将 Reasoning RL、Agentic/Coding RL、Infra、工业框架源码与 CUDA/Ascend 映射纳入同一研究闭环。）
 
-- **新增统一入口**：建立 [[03_posttraining/index]]，后续 D00–D11 新研究统一写入 `wiki/03_posttraining/`；旧理论与工程页面保持原位，通过链接复用，不再把 RL 算法和 Infra 分散承载。
-- **新增 D00 [[00_posttraining_source_reading_guide]]**：按 D00 → D11 固定推荐阅读顺序，定义 S00–S05 六个研究阶段、六级可验证能力门槛，以及论文、源码、工业“支持等级”和 CUDA→Ascend 适配的阅读方法。
-- **新增 D01 [[01_posttraining_frontier_map_analysis]]**：以优化粒度、on-policy/freshness、训练—推理一致性和 Agentic 环境四组张力组织前沿地图；固定 verl `983cb0f`、slime `aaf5c20`、AReaL `b23fa6c`、ROLL `370cb24` 的 2026-07-27 源码快照。
+- **新增统一入口**：建立 `03_posttraining/index`（历史活链接，该域已于 2026-07-31 因 kb-reorg P5 解散并删除，S00–S05 阶段叙述并入 [[courses/posttraining_frontier]]，按"历史不回写"惯例降级为反引号），后续 D00–D11 新研究统一写入 `wiki/03_posttraining/`；旧理论与工程页面保持原位，通过链接复用，不再把 RL 算法和 Infra 分散承载。
+- **新增 D00 `00_posttraining_source_reading_guide`**（历史活链接，该页已于 2026-07-31 因 kb-reorg P5 解散删除，阅读路线骨架 + 六级能力门槛并入 [[courses/posttraining_frontier]]，按"历史不回写"惯例降级为反引号）：按 D00 → D11 固定推荐阅读顺序，定义 S00–S05 六个研究阶段、六级可验证能力门槛，以及论文、源码、工业“支持等级”和 CUDA→Ascend 适配的阅读方法。
+- **新增 D01 `01_posttraining_frontier_map_analysis`**（历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 `posttraining_frontier_map_analysis`、同日 Task 8 再编号为 [[01_posttraining_frontier_map_analysis]]，按"历史不回写"惯例降级为反引号）：以优化粒度、on-policy/freshness、训练—推理一致性和 Agentic 环境四组张力组织前沿地图；固定 verl `983cb0f`、slime `aaf5c20`、AReaL `b23fa6c`、ROLL `370cb24` 的 2026-07-27 源码快照。
 - **研究分工**：verl 作为主基线，slime 作为性能/前沿对照，AReaL 作为 fully async/Agentic 对照，ROLL 作为多后端、异构和 Ascend 专项；不使用脱离模型、硬件、配置和 freshness 条件的总榜。
 
 ---
@@ -1110,7 +1330,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Source Ingestion + Deep Dive（严格路线：所有断言带一手来源与 §/Fig/Table/Eq 级定位符；未核实项显式标注，不做推测补齐。）
 
-- **新增 [[tim_causal_chain_analysis]]**（515 行）：打通本库此前断掉的一环——「kernel 非确定性 → logprob 偏差 → 重要性比方差放大 → 训练崩溃」。上游（浮点非确定性、batch 不变性）已由 [[determinism_and_numerical_reliability_analysis]] 覆盖，下游（loss spike 治理）已由 [[training_dynamics_stability_analysis]] 覆盖，本页补中间两环与算法侧修法全谱。
+- **新增 `tim_causal_chain_analysis`**（515 行，历史活链接，已于 2026-07-31 因 kb-reorg P5 Task 8 再编号为 [[26_tim_causal_chain_analysis]]，按"历史不回写"惯例降级为反引号）：打通本库此前断掉的一环——「kernel 非确定性 → logprob 偏差 → 重要性比方差放大 → 训练崩溃」。上游（浮点非确定性、batch 不变性）已由 [[determinism_and_numerical_reliability_analysis]] 覆盖，下游（loss spike 治理）已由 [[training_dynamics_stability_analysis]] 覆盖，本页补中间两环与算法侧修法全谱。
 - **归因框架**：采用 Qwen 2512.01374 §2.4 的二因子分解（训推数值分歧 × 策略陈旧度）作为全页坐标系，据此把 PPO clip、TIS/TRM/ALP/MIPU、batch-invariant kernel、TBIK、FP16、MoE 路由回放归位到各自作用的因子上。
 - **六类病因逐条落定位符**：引擎间 kernel 差异、batch 触发不同 tiling、**TP size 改变累加顺序**（本库此前未覆盖）、BF16 尾数不足、MoE 路由分歧、量化 rollout。其中 TBIK Table 1/2 的对照实验证明「只做 batch 不变，对跨 TP 数值发散几乎无效」（Llama-3.1-8B 上 BIO 的 27.54 甚至高于 BF16 的 26.48）。
 - **崩溃形态学**：首次在本库区分 recomputation 与 bypass 两条路径的不同崩溃曲线（多阶段 vs 单阶段、是否伴随 loss spike），并记录一条对工程有直接影响的发现——**K1/K3 KL 对 recomputation 型崩溃是盲的**（前 700 步几乎平坦而 reward 已在退化），而 recomputation 正是 verl 等框架的常见默认路径。
@@ -1722,7 +1942,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - [[glm5_low_precision_chip_deepdive]] — §2.4.3+§3.6.2+§5 INT4 QAT→FP8→W4A8 + 昇腾三支柱（2 图）
 - **流程图工具链**：新增 `.html2md/render_figs.mjs`（复用 Edge/puppeteer 2× 截图）+ `figs/figstyle.css`；图源 HTML 在 gitignored `.html2md/figs/`，14 张 PNG 落 `assets/`（house 风格:奶白卡片 + 彩色圆角节点 + 灰箭头）。
 - **整合**：父索引 [[zhipu_glm/index]] 新增「§四之补 GLM-5 论文深挖页矩阵」(7 页表) + §六 GLM-5 行改指矩阵；概要页 [[glm_5_analysis]] 补「逐章深挖」Related 段，并对 §五 估算基准加 `> [!contradiction]` 用 Table 7 真值订正（SWE-bench Verified 77.8 / τ²-Bench 89.7 / AA Index 50 等）。
-- **校验**：7 页 + 索引/概要的 `[[]]` 链接脚本提取，同系列 7 个 `glm5_*_deepdive` + 既有 [[muon_analysis]]/[[grpo_analysis]]/[[megatron_ep_analysis]]/[[verl/index]]/[[low_precision_training_analysis]] 等均存在，0 悬空；14 图 `assets/*` 引用解析正常；agentic_rl 两图 note 内误写的 `[[]]` 已改纯文本并重渲。
+- **校验**：7 页 + 索引/概要的 `[[]]` 链接脚本提取，同系列 7 个 `glm5_*_deepdive` + 既有 [[muon_analysis]]/`grpo_analysis`（历史活链接，已于 2026-07-31 因 kb-reorg P5 Task 8 再编号为 [[20_grpo_analysis]]，按"历史不回写"惯例降级为反引号）/[[megatron_ep_analysis]]/[[verl/index]]/[[low_precision_training_analysis]] 等均存在，0 悬空；14 图 `assets/*` 引用解析正常；agentic_rl 两图 note 内误写的 `[[]]` 已改纯文本并重渲。
 
 ---
 
@@ -1906,9 +2126,11 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 新建目录 `wiki/02_engineering/04_posttrain_frameworks/verl/`(verl 是 RL **后训练(RLHF)**编排框架,归入「后训练框架」而非「训练框架」——后者 Megatron-LM/torchtitan 为预训练并行框架,是 verl 的训练后端),从「架构→实现→优化」「overview→quickstart→deep dive」由浅入深拆 9 篇,每篇所有非平凡论断均带 `file.py:line` 出处:
 
-- **入门两篇**:[[verl_architecture_overview_analysis]](HybridFlow 混合控制器、五平面、五角色、v0/v1 入口、master 架构图)、[[verl_quickstart_guide]](安装/Hydra 启动/config 体系/一次 GRPO 端到端走查/后端切换旋钮)
-- **实现五篇**:[[verl_single_controller_analysis]](`@register`+8 种 Dispatch、`DP_COMPUTE_PROTO` chunk/concat、RayWorkerGroup/colocate)、[[verl_dataproto_analysis]](`DataProto`/`BatchData`/`DataProtoFuture`)、[[verl_ray_trainer_analysis]](`RayPPOTrainer.fit()` 逐步追踪 + 数据流时序图)、[[verl_workers_engine_analysis]](`TrainingWorker`/`ActorRolloutRefWorker` + `BaseEngine` 模板方法 + FSDP/Megatron 引擎)、[[verl_rollout_resharding_analysis]](vLLM/SGLang 异步 server + 3D-HybridEngine:`get_per_tensor_param`+`CheckpointEngine`+CUDA-IPC bucketed transfer)
-- **算法与优化两篇**:[[verl_rl_algorithms_analysis]](`core_algos` 14 种优势估计 + 11 种 policy loss + KL k1/k2/k3,均含 LaTeX)、[[verl_optimization_analysis]](placement/offload/序列打包/Ulysses SP/异步 RL 旋钮目录)
+- **入门两篇**:`verl_architecture_overview_analysis`(HybridFlow 混合控制器、五平面、五角色、v0/v1 入口、master 架构图)、`verl_quickstart_guide`(安装/Hydra 启动/config 体系/一次 GRPO 端到端走查/后端切换旋钮)
+- **实现五篇**:`verl_single_controller_analysis`(`@register`+8 种 Dispatch、`DP_COMPUTE_PROTO` chunk/concat、RayWorkerGroup/colocate)、`verl_dataproto_analysis`(`DataProto`/`BatchData`/`DataProtoFuture`)、`verl_ray_trainer_analysis`(`RayPPOTrainer.fit()` 逐步追踪 + 数据流时序图)、`verl_workers_engine_analysis`(`TrainingWorker`/`ActorRolloutRefWorker` + `BaseEngine` 模板方法 + FSDP/Megatron 引擎)、`verl_rollout_resharding_analysis`(vLLM/SGLang 异步 server + 3D-HybridEngine:`get_per_tensor_param`+`CheckpointEngine`+CUDA-IPC bucketed transfer)
+- **算法与优化两篇**:`verl_rl_algorithms_analysis`(`core_algos` 14 种优势估计 + 11 种 policy loss + KL k1/k2/k3,均含 LaTeX)、`verl_optimization_analysis`(placement/offload/序列打包/Ulysses SP/异步 RL 旋钮目录)
+
+> 以上 9 篇标题内的历史活链接已于 2026-07-31 因 kb-reorg P5 Task 8 施行分段编号（`verl_architecture_overview_analysis`→[[01_verl_architecture_overview_analysis]]、`verl_quickstart_guide`→[[02_verl_quickstart_guide]]、`verl_single_controller_analysis`→[[11_verl_single_controller_analysis]]、`verl_dataproto_analysis`→[[12_verl_dataproto_analysis]]、`verl_ray_trainer_analysis`→[[20_verl_ray_trainer_analysis]]、`verl_workers_engine_analysis`→[[13_verl_workers_engine_analysis]]、`verl_rollout_resharding_analysis`→[[14_verl_rollout_resharding_analysis]]、`verl_rl_algorithms_analysis`→[[15_verl_rl_algorithms_analysis]]、`verl_optimization_analysis`→[[30_verl_optimization_analysis]]；现况总览见 [[verl/index]]），按"历史不回写"惯例本条目内原 9 处链接降级为反引号。
 
 **HEAD 关键勘误(各页已标注,与多数博客的「经典 HybridFlow」描述不符)**:
 - `RayPPOTrainer` 已 `@deprecated`(`ray_trainer.py:285`)但默认 `trainer.use_v1=false` 仍走它;新路径为 `TaskRunnerV1`+TransferQueue+`AgentLoopManager`。
@@ -2458,7 +2680,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **主线观点**: Coding 大模型训练的护城河来自三块「脏活」——Sandbox 决定能不能稳定跑、RL Infra 决定能跑多大多快、Reward Hacking 防御决定训出来的是不是你想要的。三者强耦合，单点短板即整体瓶颈；国内玩家真实差距在 infra 与 reward 体系而非算法。
 
-**交叉引用**: 三篇互链，并与 [[grpo_analysis]] / [[ppo_analysis]] / [[dapo_analysis]] / [[gspo_analysis]] / [[rlhf_foundations_analysis]] / [[kimi_k1.5_analysis]] / [[batch_invariance_guide]] / [[RL_PPO_Loss_and_GRPO_Analysis]] 等既有页交叉引用。
+**交叉引用**: 三篇互链，并与 `grpo_analysis` / `ppo_analysis` / `dapo_analysis` / `gspo_analysis` / `rlhf_foundations_analysis` / `kimi_k1.5_analysis`（以上 6 处历史活链接已于 2026-07-31 因 kb-reorg P5 Task 8 分段编号，现况见 [[01_theory/04_posttraining/index]]，按"历史不回写"惯例降级为反引号）/ [[batch_invariance_guide]] / `RL_PPO_Loss_and_GRPO_Analysis`（历史活链接，已于 2026-07-31 因 kb-reorg P5 先迁移改名为 `rl_ppo_loss_and_grpo_analysis`、同日 Task 8 再编号为 [[10_rl_ppo_loss_and_grpo_analysis]]，按"历史不回写"惯例降级为反引号）等既有页交叉引用。
 
 ---
 

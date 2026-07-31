@@ -9,7 +9,7 @@
 > **更新**：2026-07-28，回填正式技术报告中的 Per-Head Muon、MoonEP、全后训练 QAT、KDA Context Parallelism 与统一 cache layout；§四保留为报告发布前的敏感性分析档案，不再作为 K3 容量规划依据。
 
 > [!important]
-> 正式报告已经解决“是否做了什么”的主要缺口，但没有公开完整 trainer、rollout、部署配置和生产拓扑。本文只把项目级设计提升为官方证据；实现级判断仍需分别核查 MoonEP、FLA/vLLM、AgentENV 等源码。K3 后训练算法与 1M Agentic RL 闭环统一见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis|D12]]。
+> 正式报告已经解决“是否做了什么”的主要缺口，但没有公开完整 trainer、rollout、部署配置和生产拓扑。本文只把项目级设计提升为官方证据；实现级判断仍需分别核查 MoonEP、FLA/vLLM、AgentENV 等源码。K3 后训练算法与 1M Agentic RL 闭环统一见 [[kimi_k3_posttraining_case_study_analysis|D12]]。
 
 ---
 
@@ -263,7 +263,7 @@ KDA 层自己:              降到"噪声级"(定长状态,~MB 量级/层/序列
 | Quantile Balancing | balanced assignment 推导、token/expert 两轴分位数更新、部署时 frozen bias + Top-k（§2.3.3；App. C） | trainer 代码、超参数、独立消融 |
 | MoonEP | 每 rank 恰收 `S×K` token；最多 `E/R` 冗余专家槽；GPU planning、zero-copy、静态 shape、无逐层 host sync（§5.2.1） | **✅ 已兑现（2026-07-28）**：七条说法逐条对上 `MoonEP@0f385f03` 源码，见 [[moonep_analysis]]。**仍缺**：K3 生产配置（896 选 16、实际 EP 度、卡型、跨节点）下的端到端数据——仓库基准是 `E=384,K=8` 的 K2 档、单机 H20、EP=8 |
 | MXFP4/MXFP8 QAT | QAT 覆盖 SFT + RL；routed expert 权重 MXFP4、输入 MXFP8；rollout 与 training 同量化方案（§4.1.4） | fake/native quant 边界、trainer kernel、硬件和吞吐 |
-| 1M Agentic RL infra | co-located + partial rollout；external KV pool、auto-throttling、gradient-buffer reuse；AgentENV（§5.3） | **AgentENV 已开源**（`kvcache-ai/AgentENV`，Rust/MIT，2026-07-23 建仓）：Firecracker microVM、overlaybd 按需镜像、memory ballooning、E2B 兼容 API，见 [[kimi_k3_open_source_stack_analysis]] §3.2。**仍缺**：核心 trainer/rollout 源码、生产配置与复现实验；详见 [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis\|D12]] |
+| 1M Agentic RL infra | co-located + partial rollout；external KV pool、auto-throttling、gradient-buffer reuse；AgentENV（§5.3） | **AgentENV 已开源**（`kvcache-ai/AgentENV`，Rust/MIT，2026-07-23 建仓）：Firecracker microVM、overlaybd 按需镜像、memory ballooning、E2B 兼容 API，见 [[kimi_k3_open_source_stack_analysis]] §3.2。**仍缺**：核心 trainer/rollout 源码、生产配置与复现实验；详见 [[kimi_k3_posttraining_case_study_analysis\|D12]] |
 | K3 训练集群/成本 | 无任何可靠数字(TechCrunch 亦无)| 卡型、规模、token 数 |
 | KDA-aware prefix cache | KDA/MLA 共用 paged pool 与 page 生命周期；head-contiguous；跨不同 TP degree 在传输路径 re-layout（§5.4.1） | vLLM/Mooncake 生产接线、page 参数和调度源码 |
 | 2.5× scaling 效率 | Fig. 7 的 fitted validation-loss–FLOPs 曲线给出整体 scaling efficiency [官方] | 各结构、数据与训练改进的隔离归因 |
@@ -281,7 +281,7 @@ KDA 层自己:              降到"噪声级"(定长状态,~MB 量级/层/序列
 - [[moonep_analysis]] — §2.2 全平衡 EP 的源码级兑现(算法五步、CuTe DSL 形态、代价清单)
 - [[kimi_k3_open_source_stack_analysis]] — K3 开源栈全景与各仓证据等级
 - [[kimi_k3_stability_analysis]] — 七条失稳轴的横切(Per-Head Muon、QB、SiTU、QAT 在其中的位置)
-- [[03_posttraining/12_kimi_k3_posttraining_case_study_analysis]] — D12：K3 后训练与 1M Agentic RL 统一案例
+- [[kimi_k3_posttraining_case_study_analysis]] — D12：K3 后训练与 1M Agentic RL 统一案例
 - [[mooncake_analysis]] — Mooncake 论文级分析(FAST'25)
 - [[kimi_k2_analysis]] — K2 的 MuonClip 与训练系统基线
 - [[kimi_k2.5_analysis]] — K2.5(INT4 沿用、Agent Swarm)

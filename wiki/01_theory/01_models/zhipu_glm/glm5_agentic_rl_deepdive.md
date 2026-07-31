@@ -99,7 +99,7 @@ $$\mathcal{L}(\theta)=\mathbb{E}_{x\sim D}\!\left[\frac{1}{K}\sum_{i=1}^{K}\big(
 
 **off-policy 兜底（一句带过）**：异步意味着同一批轨迹可能由**不同版本模型**生成，带来严重 off-policy 问题；GLM-5 因此在每次推理引擎权重更新后**重置优化器**，并配套 TITO 网关 / 双边重要性采样 / 丢弃过期·噪声样本等机制——这些**稳定性机制本页不展开**，详见 **[[glm5_training_stability_deepdive]]**（§4.1.1–4.1.2, p16–17）。
 
-**为什么解耦+异步**：长尾 rollout 下「同步等齐」=「按最慢样本计费」；把推理与训练放到不同设备并让推理不停产轨迹、训练攒够就更新，就把 GPU 空转换成了持续利用。代价是 off-policy 偏差——用「周期性同步 + 优化器重置 + 重要性采样」把这层代价限制在可控范围。与 verl 等异步 RL 框架的对照见 [[verl/index]]、[[rl_infra_efficiency_analysis]]。
+**为什么解耦+异步**：长尾 rollout 下「同步等齐」=「按最慢样本计费」；把推理与训练放到不同设备并让推理不停产轨迹、训练攒够就更新，就把 GPU 空转换成了持续利用。代价是 off-policy 偏差——用「周期性同步 + 优化器重置 + 重要性采样」把这层代价限制在可控范围。与 verl 等异步 RL 框架的对照见 [[verl/index]]、[[12_rl_infra_efficiency_analysis]]。
 
 ### 4.3 Multi-Task Rollout Orchestrator：把任务异构隔离在训练环之外（§4.1.1, p16）
 
@@ -152,7 +152,7 @@ GLM-5 用两条互补 pipeline 在规模上造终端 agent 环境，均产出 **
 - **(a) 种子合成**：三阶段——**task-draft 生成 / 具体任务实现 / 迭代任务优化**。从真实 SWE 与终端 computer-use 场景采的种子任务出发，用 LLM 头脑风暴出大量可验证终端任务草稿；由 **construction agent** 实例化成 Harbor 格式的具体任务（含 Docker 环境与测试脚本）；再由 **refine agent** 按人工定义的 rubric 反复检查、迭代，保证 Docker 镜像可可靠构建、测例与任务一致、环境不被 shortcut 钻空子。整条 pipeline 的 **Docker 构建准确率 >90%**（§4.2.2, p18）。
 - **(b) web 语料自验证闭环**：一个**闭环**设计——**构造 agent 同时兼任自己产出的「一审评测者」**。先收集代码相关网页、用质量分类器过滤、分层采样保证多样性；再给一个 coding agent 喂 Harbor 任务构造规范 + 某个源网页，要求它 (i) 基于网页内容**合成完整终端任务**，(ii) **对自己的产出跑 Harbor 校验脚本**；校验失败就自行诊断修订、迭代直到通过——**只有通过这层自验证闭环的任务才进入最终数据集**（§4.2.2, p18）。
 
-**为什么**：让构造者同时是首轮评测者，把「任务可不可验证」前移到了构造阶段——不通过校验的任务根本进不来，从源头压低了不可验证/有漏洞环境的比例。沙盒稳定性与噪声样本的剔除属于稳定性主线，见 **[[glm5_training_stability_deepdive]]**、[[rl_sandbox_design_analysis]]。
+**为什么**：让构造者同时是首轮评测者，把「任务可不可验证」前移到了构造阶段——不通过校验的任务根本进不来，从源头压低了不可验证/有漏洞环境的比例。沙盒稳定性与噪声样本的剔除属于稳定性主线，见 **[[glm5_training_stability_deepdive]]**、[[11_rl_sandbox_design_analysis]]。
 
 ### 6.3 Search 深度搜索环境（WKG, §4.2.3, p18–19）
 
@@ -205,6 +205,6 @@ GLM-5 用两条互补 pipeline 在规模上造终端 agent 环境，均产出 **
 
 **相邻主题**：
 - [[verl/index]] — 异步 RL 框架对照
-- [[rl_infra_efficiency_analysis]] — RL 基础设施效率（异步/解耦/吞吐）
-- [[rl_sandbox_design_analysis]] — 可验证沙盒/环境设计
+- [[12_rl_infra_efficiency_analysis]] — RL 基础设施效率（异步/解耦/吞吐）
+- [[11_rl_sandbox_design_analysis]] — 可验证沙盒/环境设计
 - [[zhipu_glm/index]] — GLM 家族总览

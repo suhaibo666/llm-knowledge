@@ -108,7 +108,7 @@ $$
 
 **为什么**：当某 token 上 $\rho_{i,t}$ 落在 $[1/\beta,\beta]$ 之外，说明该 token 在推理引擎与训练引擎下的概率差得太多（典型由实现差异/量化/算子不一致引起），此时其梯度不可信；pop 把该 token 的贡献**直接清零**，只在"训推一致"的 token 上回传梯度——这是在不引入 KL 软约束的前提下，用**硬门控**稳住 off-distribution 偏差。
 
-**超参数**：$\beta=2$，$\epsilon_{low}=0.2$，$\epsilon_{high}=0.28$；训练**完全 on-policy**，**group size = 32**，**batch size = 32**（§3.2, p12）。注意 $\epsilon_{high}>\epsilon_{low}$ 的非对称裁剪鼓励上探。GRPO 本身的原理见 [[grpo_analysis]] 与 [[RL_PPO_Loss_and_GRPO_Analysis]]。
+**超参数**：$\beta=2$，$\epsilon_{low}=0.2$，$\epsilon_{high}=0.28$；训练**完全 on-policy**，**group size = 32**，**batch size = 32**（§3.2, p12）。注意 $\epsilon_{high}>\epsilon_{low}$ 的非对称裁剪鼓励上探。GRPO 本身的原理见 [[20_grpo_analysis]] 与 [[10_rl_ppo_loss_and_grpo_analysis]]。
 
 ### 3.3 混域 Reasoning RL：四域均衡 + 难度过滤
 
@@ -202,6 +202,6 @@ $$
 - [[glm5_low_precision_chip_deepdive]] — INT4 QAT / FP8 rollout / W4A8 / 国产芯片
 
 **相邻主题**：
-- [[grpo_analysis]] — GRPO 原理（Reasoning RL 与蒸馏的算法骨干）
-- [[RL_PPO_Loss_and_GRPO_Analysis]] — PPO/GRPO 损失与裁剪机制
+- [[20_grpo_analysis]] — GRPO 原理（Reasoning RL 与蒸馏的算法骨干）
+- [[10_rl_ppo_loss_and_grpo_analysis]] — PPO/GRPO 损失与裁剪机制
 - [[zhipu_glm/index]] — GLM 家族总览
