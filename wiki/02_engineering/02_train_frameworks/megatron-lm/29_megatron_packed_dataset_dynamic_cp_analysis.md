@@ -2,8 +2,8 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/datasets/data_schedule.py`(954 行)、`data_schedule_utils.py`(1020 行);`packed_seq_params.py`;`pipeline_parallel/hybrid_cp_schedule.py`
-> 配套阅读:`11_megatron_dataset_analysis.md` §3、`26_megatron_pp_supplements_analysis.md` §3、`13_megatron_cp_analysis.md`
-> 定位:**勘误 + 补全**。`11_megatron_dataset_analysis.md` 把序列打包当主角、`26_megatron_pp_supplements_analysis.md` §3 把动态 CP 当独立特性,分两处讲。本文说清楚:**在代码里它俩是同一条流水线、同一个类继承链** —— 动态 CP 不是和打包并列协作的特性,而是打包调度器的一个子类。
+> 配套阅读:`11_megatron_dataset_analysis.md` §3、`15_megatron_pp_schedulers_analysis.md` §6.1、`13_megatron_cp_analysis.md`
+> 定位:**勘误 + 补全**。`11_megatron_dataset_analysis.md` 把序列打包当主角、`15_megatron_pp_schedulers_analysis.md` §6.1(原 `26_megatron_pp_supplements_analysis.md` §3,2026-08-01 合并入 15_)把动态 CP 当独立特性,分两处讲。本文说清楚:**在代码里它俩是同一条流水线、同一个类继承链** —— 动态 CP 不是和打包并列协作的特性,而是打包调度器的一个子类。
 
 ---
 
@@ -90,7 +90,7 @@ while sample_id_seqlens:
 - `next_hdp_group` + `dcp_make_buckets_equal`:把样本贪心打包成一个个 **hdp 组**(hybrid DP 组),使每个 DP×CP rank 的总工作量大致相等。
 - `align_sample_id_groups`:VPP 时对齐组数。
 
-> `hybrid_cp_schedule.py` 的 `BalancedCPScheduler`(`26_megatron_pp_supplements_analysis.md` §3 分析过)是同一套均衡逻辑的**类形态兄弟**;`data_schedule.py` 的 `DefaultDynamicCPScheduler` 实际用的是 `data_schedule_utils.py` 里的**函数形态** `dcp_*` + `next_hdp_group`。二者算法一致,是并行实现。**真正把打包与动态 CP 缝在一起的集成点,是 `DefaultDynamicCPScheduler`。**
+> `hybrid_cp_schedule.py` 的 `BalancedCPScheduler`(`15_megatron_pp_schedulers_analysis.md` §6.1 分析过)是同一套均衡逻辑的**类形态兄弟**;`data_schedule.py` 的 `DefaultDynamicCPScheduler` 实际用的是 `data_schedule_utils.py` 里的**函数形态** `dcp_*` + `next_hdp_group`。二者算法一致,是并行实现。**真正把打包与动态 CP 缝在一起的集成点,是 `DefaultDynamicCPScheduler`。**
 
 ### 2.3 两者对照
 
@@ -171,7 +171,7 @@ while sample_id_seqlens:
 | 文档 | 原表述 | 修正 |
 |------|--------|------|
 | `11_megatron_dataset_analysis.md` §3.3 | "packed dataset 配 `BalancedCPScheduler`" | 不是"配",而是 `DefaultDynamicCPScheduler` **本身就是** packing 调度器的子类;动态 CP = `is_dynamic_cp=True` 档 |
-| `26_megatron_pp_supplements_analysis.md` §3 | 把 `hybrid_cp_schedule.py` `BalancedCPScheduler` 当作"动态 CP"主体 | 那只是均衡逻辑的**类形态兄弟**;集成入口在 `data_schedule.py` `DefaultDynamicCPScheduler`,用 `data_schedule_utils.py` 的 `dcp_*` 函数 |
+| `15_megatron_pp_schedulers_analysis.md` §6.1 | 把 `hybrid_cp_schedule.py` `BalancedCPScheduler` 当作"动态 CP"主体 | 那只是均衡逻辑的**类形态兄弟**;集成入口在 `data_schedule.py` `DefaultDynamicCPScheduler`,用 `data_schedule_utils.py` 的 `dcp_*` 函数 |
 
 建议在那两份文档对应位置各加一行指针:"打包与动态 CP 的统一流水线见 `29_megatron_packed_dataset_dynamic_cp_analysis.md`"。
 
@@ -189,9 +189,9 @@ while sample_id_seqlens:
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`11_megatron_dataset_analysis.md`、`26_megatron_pp_supplements_analysis.md` §3、`13_megatron_cp_analysis.md`、`packed_seq_params` 见 `11_megatron_dataset_analysis.md` §3.2。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`11_megatron_dataset_analysis.md`、`15_megatron_pp_schedulers_analysis.md` §6.1、`13_megatron_cp_analysis.md`、`packed_seq_params` 见 `11_megatron_dataset_analysis.md` §3.2。*
 
 ## Related Pages
 
-- [[11_megatron_dataset_analysis]] · [[26_megatron_pp_supplements_analysis]] · [[13_megatron_cp_analysis]]
+- [[11_megatron_dataset_analysis]] · [[15_megatron_pp_schedulers_analysis]] · [[13_megatron_cp_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

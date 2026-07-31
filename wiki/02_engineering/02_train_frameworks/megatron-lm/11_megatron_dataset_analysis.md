@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/datasets/` 下 `gpt_dataset.py`(907 行)、`indexed_dataset.py`、`blended_dataset.py`、`blended_megatron_dataset_builder.py`、`data_schedule.py`(954 行);`megatron/core/packed_seq_params.py`
-> 配套阅读:`26_megatron_pp_supplements_analysis.md` §3(混合 CP 动态调度)、`13_megatron_cp_analysis.md`
+> 配套阅读:`15_megatron_pp_schedulers_analysis.md` §6.1(混合 CP 动态调度)、`13_megatron_cp_analysis.md`
 > 范围:**只讲 LLM(GPT)路径**。`bert_dataset.py` / `t5_dataset.py` / `masked_dataset.py` / `multimodal_dataset.py` 不展开。
 
 ---
@@ -125,7 +125,7 @@ PackedSeqParams:
 
 `data_schedule.py` 的 `BasePackingScheduler` / `build_packed_microbatches`:
 - 把一批变长样本**贪心 bin-pack** 成定长 microbatch(尽量塞满,减少 padding)。
-- 配 `BalancedCPScheduler`(`26_megatron_pp_supplements_analysis.md` §3 的混合 CP 动态调度):变长数据下,长序列分更多 CP 卡,并让各 DP×CP 组的 `seq²/cp` 工作量均衡。
+- 配 `BalancedCPScheduler`(`15_megatron_pp_schedulers_analysis.md` §6.1 的混合 CP 动态调度):变长数据下,长序列分更多 CP 卡,并让各 DP×CP 组的 `seq²/cp` 工作量均衡。
 - `PackedSeqParams` 里的 `cp_group` / `local_cp_size` —— 打包**与 CP 协同**:一条打包子序列还能再被 CP 切到多卡(`get_cp_slice_for_thd`)。
 - 产出对齐到 PP 组的数据迭代器(`broadcast_to_pp_group`、`create_data_iterator`)。
 
@@ -169,9 +169,9 @@ PackedSeqParams:
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。本文只覆盖 GPT/LLM 路径;BERT/T5/多模态数据集见 `bert_dataset.py` / `t5_dataset.py` / `multimodal_dataset.py`。配套文档:`26_megatron_pp_supplements_analysis.md` §3、`13_megatron_cp_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。本文只覆盖 GPT/LLM 路径;BERT/T5/多模态数据集见 `bert_dataset.py` / `t5_dataset.py` / `multimodal_dataset.py`。配套文档:`15_megatron_pp_schedulers_analysis.md` §6.1、`13_megatron_cp_analysis.md`。*
 
 ## Related Pages
 
-- [[29_megatron_packed_dataset_dynamic_cp_analysis]] · [[26_megatron_pp_supplements_analysis]] · [[13_megatron_cp_analysis]]
+- [[29_megatron_packed_dataset_dynamic_cp_analysis]] · [[15_megatron_pp_schedulers_analysis]] · [[13_megatron_cp_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/transformer/transformer_block.py`(`_checkpointed_forward`)、`tensor_parallel/random.py`(`checkpoint`)、`transformer_config.py`(`recompute_*` 配置)
-> 配套阅读:`26_megatron_pp_supplements_analysis.md` §2(激活换出 offloading)、五份并行文档
+> 配套阅读:`22_megatron_memory_optimization_analysis.md` §2.3(激活换出 offloading)、五份并行文档
 > 定位:"第二层补遗"第①份。激活重计算是与并行轴正交的**省显存**手段。
 
 ---
@@ -20,7 +20,7 @@
 | 手段 | 换什么 | 文档 |
 |------|--------|------|
 | **重计算 recompute** | 用**算力**换显存(反向多跑一遍前向) | 本文 |
-| **换出 offload** | 用 **PCIe 带宽**换显存(激活搬 CPU) | `26_megatron_pp_supplements_analysis.md` §2 |
+| **换出 offload** | 用 **PCIe 带宽**换显存(激活搬 CPU) | `22_megatron_memory_optimization_analysis.md` §2.3 |
 
 二者正交,可叠加。算力有余量、显存紧 → recompute;PCIe 有余量 → offload。
 
@@ -205,6 +205,6 @@ selective 下有**两种**底层机制(README MoE §Fine-grained Recomputation �
 
 ## Related Pages
 
-- [[26_megatron_pp_supplements_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]]
+- [[23_megatron_precision_cudagraph_fusion_analysis]] · [[15_megatron_pp_schedulers_analysis]]
 - [[22_megatron_memory_optimization_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

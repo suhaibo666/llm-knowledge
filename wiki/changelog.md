@@ -6,6 +6,39 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-01：知识库结构整改 —— spec §3.4 Megatron PP 三页合并（补执行，覆盖遗漏修复）
+
+**Type**: Structure Reorg / Dedup（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.4；分支 `reorg/p7`）
+
+**背景 —— 覆盖遗漏的发现与归因**：spec §3.4 明文裁定"以 `megatron-lm/15_megatron_pp_schedulers_analysis.md`（771 行，基线 `ee3f1ff`）为权威，吸收 `02_train_frameworks/20_megatron_pp_parallelism_analysis.md`（740）与 `megatron-lm/26_megatron_pp_supplements_analysis.md`（229）的增量后删除两者"，划归 P6 Task 3（§3.4+§3.5+§3.6 横向页收缩批）。但 `docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 3 的实际执行范围只覆盖了 §3.5 的两项（`comm_compute_overlap_analysis` 矩阵化 + megatron 优化器三页合并，见 commit `2dd9772`/`50afc2b`），§3.4 的 PP 三页合并**从未被排进任何 P6/P7 任务清单、也从未执行**。P7 Task 7（全库编号推广,commit `68415c2` 前置链）在给 `20_megatron_pp_parallelism_analysis.md` 判段编号时命中此空档，在 changelog 该条目"判段说明"里显式记录"该合并未落地……不属本任务范围"（见上一条目 2026-08-01 P7 Task 7 记录），并原地保留 `20_` 编号（未移入 `megatron-lm/` 子目录、未删除）—— 即本次任务标题所称的"发现者"。本条目是对这一遗漏的**补执行**。
+
+### 三页逐节台账
+
+以 `15_` 为骨架逐节核对 `20_`（740 行）与 `26_`（229 行）：
+
+- **1F1B / Interleaved 1F1B / Combined 1F1B / VPP 层分布 / bubble 公式 / P2P 通信 / activation offload** 七大主题在三页间**逐项对应**（盘点当时判定属实）：`20_` §二/三/四/六/七/八 与 `15_` 调度器①-⑤ + §0.3 同一套源码（`schedules.py`/`combined_1f1b.py`/`p2p_communication.py`）的复述,判重删除；`26_` §1 P2P 内部与 `20_` §五同题,二者合并去重。
+- **`20_` 独有增量**（判定后原样/改写吸收）：§一 PP 进程组与拓扑（`parallel_state.py` 建组、Embedding/Position Embedding 组、UCC 后端）→ 新增 `15_` §0.4；§3.3 Grad Sync 与 Bubble 重叠（非首 stage 梯度 AllReduce 借 cooldown bubble 异步执行）→ 并入 `15_` §②.2；§6.4 Combined-1F1B 的 FP8 支持（`use_outer_fp8_context`）→ 并入 `15_` §⑤.2.1 不变量callout；§7.3 PP P2P 与 EP A2A 的带宽竞争 → 新增 `15_` §⑤.6；§8.1 Partial Activation Checkpointing（`max_outstanding_backprops` 自适应窗口）→ 并入 `15_` §②.2（`18_megatron_recompute_analysis.md` 此前已预置指向此处的引用,验证判位准确）；§8.3 Defer Embedding WGrad → 并入 `15_` §0.4；§10.3 配置速查表 → 改写为 `15_` §8.4。
+- **`26_` 独有增量**：§1 P2P 内部（`_p2p_ops`/`_batched_p2p_ops`、even/odd 死锁规避、WORLD group 技巧、变长序列形状交换）与 `20_` §五合并后扩写进 `15_` §0.3；§3 混合 CP 动态调度（`hybrid_cp_schedule.py` `BalancedCPScheduler`）与 §4 多模块/多模态流水线（`BridgeCommunicator`/`MultiModulePipelineCommunicator`,含 2026-06-16 `bridge_pg` 更新）→ 新增 `15_` §6（目录周边设施），与 `29_megatron_packed_dataset_dynamic_cp_analysis.md` 互链澄清"类形态兄弟 vs 真正集成入口"关系（不推翻 29 号页已有勘误）。
+- **判定跳过、不吸收**：`20_` §9 细粒度激活换出（`PipelineOffloadManager`）与 `26_` §2 同题——核实 `22_megatron_memory_optimization_analysis.md` §2.3 已是**更新、更全**的现行权威页（含 `min_offloaded_tensor_size`/`offload_margin`/`ChunkOffloadHandler`/2026-06-16 `max_inflight_offloads` 节流,`20_`/`26_` 均无这些细节），故不重复搬入 `15_`，改为一句话+链接指向 `22_` §2.3（`15_` §0.3 尾段），避免制造新重复。
+
+### 跨框架段处置
+
+按任务书要求排查 `20_`（740 行）是否含跨框架视角段（如 torchtitan 对照）：全文 grep `torchtitan|TorchTitan|跨框架|vLLM|DeepSpeed` **零命中**——`20_` 通篇是 Megatron-LM 单框架源码分析,无需迁出至横向对比页,不适用"迁入 `30_comm_compute_overlap_analysis` 同款对比页"或"根目录留瘦对比页"的处置分支。
+
+### 图资产处置
+
+`20_` 引用的 4 张 PNG（`assets/megatron_pp_parallelism_analysis_fig1-4.png`）经逐张查看：内容均为 `15_` 已有 ASCII 时序图/决策树的低精度复述（`15_` 的空间-时间图精确到逐 op 槽位、决策树含 MoE/EP 分支,严格更完整），且仅被 `20_` 自身引用，判定为无独有信息、随页删除。
+
+### 合并结果
+
+- `15_megatron_pp_schedulers_analysis.md`：771 → 896 行，新增 §0.4（PP 进程组与拓扑）、§6（目录周边设施：混合 CP 动态调度 + 多模块流水线）、§⑤.6（PP P2P/EP 资源竞争）、§8.4（配置速查表）,§0.3/§②.2/§⑤.2.1 就地扩写；旧 §6/§7 顺延为 §7/§8（`见第 6 节` 内部引用同步改 `见第 7 节`）。
+- 删除 `02_train_frameworks/20_megatron_pp_parallelism_analysis.md`(740)、`megatron-lm/26_megatron_pp_supplements_analysis.md`(229) 及其 4 张图资产；`02_train_frameworks/index.md`、`megatron-lm/index.md` 段位表同步（`20`/`26` 两个编号空出、不重新分配，表内注明）。
+- **入链改写 9 处文件**（曾用名 `20_megatron_pp_parallelism_analysis`/`26_megatron_pp_supplements_analysis` 及其 §编号指针全部改写为 `15_megatron_pp_schedulers_analysis` 对应新 §）：`megatron-lm/11_megatron_dataset_analysis.md`、`megatron-lm/27_megatron_tp_fsdp_resharding_supplements_analysis.md`、`megatron-lm/18_megatron_recompute_analysis.md`（激活换出指针改指 `22_` §2.3,非 `15_`）、`megatron-lm/29_megatron_packed_dataset_dynamic_cp_analysis.md`、`megatron-lm/17_megatron_parallelism_orchestration_analysis.md`、`02_train_frameworks/index.md`、`megatron-lm/index.md`、`torchtitan/14_torchtitan_pp_analysis.md`（原双链 15_/20_ 去重为单链）、`15_megatron_pp_schedulers_analysis.md` 自身 Related Pages（移除自引用，新增 `29_`/`22_` 互链）。
+
+**校验**：`python tools/check_links.py`：pages=371（373−2）,broken=0,orphans=0（ambiguous=70/bare_index=70 为既有基线,未变化,P7 Task 8 处理范围）；`pytest -q`：77 passed。
+
+---
+
 ## 2026-08-01：知识库结构整改 P7 Task 7 —— 全库编号/命名推广
 
 **Type**: Naming Convention（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §5；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 7；P4 Task 9.5 / P5 Task 8 同款规程）

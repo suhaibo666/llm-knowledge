@@ -6,13 +6,14 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 
 ## 段位速查(kb-reorg P7 Task 7)
 
-> 段 0(01)导览/capstone;段 1(10-19)16 篇源码级系统分析系列中最贴近核心流水线的 10 篇——模型结构→数据→TP/CP/EP/PP 四并行轴→分布式优化器→编排→重计算→存档;段 2(20-29)系列剩余的深挖/补遗/系统专题共 10 篇,以及 Core Topics 的专题深挖(除 audit 外);段 3(30-35)RL/推理集成、度量方法论与两篇 DeepSeek-V4 案例研究。与下文按主题分组的表格是同一组页面的两种视图。
+> 段 0(01)导览/capstone;段 1(10-19)16 篇源码级系统分析系列中最贴近核心流水线的 10 篇——模型结构→数据→TP/CP/EP/PP 四并行轴→分布式优化器→编排→重计算→存档;段 2(20-29)系列剩余的深挖/补遗/系统专题共 9 篇,以及 Core Topics 的专题深挖(除 audit 外);段 3(30-35)RL/推理集成、度量方法论与两篇 DeepSeek-V4 案例研究。与下文按主题分组的表格是同一组页面的两种视图。
+> **26 号编号空出**(2026-08-01,spec §3.4 补执行):`26_megatron_pp_supplements_analysis.md` 已并入 [[15_megatron_pp_schedulers_analysis]](§0.4 进程组拓扑、§6 混合 CP 动态调度/多模块流水线、§0.3/⑤.6/②.2 等增量)并删除;父目录 `20_megatron_pp_parallelism_analysis.md` 同批一并删除。`26` 号不重新分配,详见 `wiki/changelog.md`。
 
 | 段 | 编号 | 页面 |
 |---|---|---|
 | 0 | 01 | [[01_megatron_moe_training_optimization_analysis]] |
 | 1 | 10-19 | [[10_megatron_model_structure_analysis]] · [[11_megatron_dataset_analysis]] · [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[14_megatron_ep_analysis]] · [[15_megatron_pp_schedulers_analysis]] · [[16_megatron_distributed_optimizer_analysis]] · [[17_megatron_parallelism_orchestration_analysis]] · [[18_megatron_recompute_analysis]] · [[19_megatron_dist_checkpointing_analysis]] |
-| 2 | 20-29 | [[20_megatron_comm_overlap_analysis]] · [[21_megatron_fusion_operators_analysis]] · [[22_megatron_memory_optimization_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]] · [[24_megatron_linear_cross_entropy_analysis]] · [[25_megatron_nonuniform_tp_analysis]] · [[26_megatron_pp_supplements_analysis]] · [[27_megatron_tp_fsdp_resharding_supplements_analysis]] · [[28_megatron_training_stability_observability_analysis]] · [[29_megatron_packed_dataset_dynamic_cp_analysis]] |
+| 2 | 20-25,27-29(26 空出) | [[20_megatron_comm_overlap_analysis]] · [[21_megatron_fusion_operators_analysis]] · [[22_megatron_memory_optimization_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]] · [[24_megatron_linear_cross_entropy_analysis]] · [[25_megatron_nonuniform_tp_analysis]] · [[27_megatron_tp_fsdp_resharding_supplements_analysis]] · [[28_megatron_training_stability_observability_analysis]] · [[29_megatron_packed_dataset_dynamic_cp_analysis]] |
 | 3 | 30-35 | [[30_megatron_rl_posttraining_consistency_analysis]] · [[31_megatron_inference_engine_analysis]] · [[32_megatron_tflops_analysis]] · [[33_megatron_vllm_weight_sync_analysis]] · [[34_deepseek_v4_tensor_parallel_analysis]] · [[35_deepseek_v4_context_parallel_analysis]] |
 
 ## Core Topics（系列外的全景报告与专题深挖）
@@ -85,20 +86,21 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 
 | Page | Key Concepts |
 |------|-------------|
-| [[15_megatron_pp_schedulers_analysis]] | 流水线并行 5 调度器:无流水线 / 1F1B / 交错 VPP / P2P-overlap / combined-1F1B;气泡公式推导、流水线模拟图(附调度模拟器 `_pp_sim.py`) |
+| [[15_megatron_pp_schedulers_analysis]] | 流水线并行 5 调度器:无流水线 / 1F1B / 交错 VPP / P2P-overlap / combined-1F1B;气泡公式推导、流水线模拟图(附调度模拟器 `_pp_sim.py`);2026-08-01 吸收 PP 进程组拓扑、P2P 内部实现、混合 CP 动态调度、多模块/多模态流水线(原 20/26 号页,已删除) |
 | [[14_megatron_ep_analysis]] | 专家并行:AllGather / AllToAll / Flex(DeepEP/HybridEP)三种 token dispatcher;MoE Parallel Folding;通信量与负载均衡 |
 | [[12_megatron_tp_analysis]] | 张量并行:ColumnParallel/RowParallel 共轭算子 f/g、MLP/Attention 切分;Sequence Parallelism |
 | [[13_megatron_cp_analysis]] | 上下文并行:`cp_comm_type` 四选一(p2p/all_gather/a2a/a2a+p2p)配置接口、TE 透传架构、选型决策树;通用机制见 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis\|20_ring_attention_and_context_parallel_analysis]] |
 
 > 数据并行 + 分布式优化器(ZeRO-0/1/2/3 四阶段、梯度分桶重叠、HSDP)2026-07-31 起并入 [[16_megatron_distributed_optimizer_analysis]](见下方「专题深挖」),不再单列本区。
 
-### 编排与补遗(3)
+### 编排与补遗(2)
 
 | Page | Key Concepts |
 |------|-------------|
 | [[17_megatron_parallelism_orchestration_analysis]] | 进程组编排 capstone:RankGenerator、order 字符串、正交分组数学、双 RankGenerator(MoE Folding)、parallel_state/ProcessGroupCollection/HyperCommGrid 三层抽象 |
-| [[26_megatron_pp_supplements_analysis]] | PP 补遗:P2P 通信内部、激活换出、混合 CP 动态调度、多模块/多模态流水线 |
 | [[27_megatron_tp_fsdp_resharding_supplements_analysis]] | Megatron-FSDP 内部(ZeRO-2/3 流水线)、Nonuniform TP 容错、Resharding/Refit |
+
+> PP 补遗(P2P 通信内部、混合 CP 动态调度、多模块/多模态流水线)2026-08-01 起并入 [[15_megatron_pp_schedulers_analysis]] §0.4/§6,不再单列本区;激活换出见 [[22_megatron_memory_optimization_analysis]] §2.3。
 
 ### 性能基建(2)
 

@@ -75,6 +75,55 @@ get_forward_backward_func
 shape = [ seq_len / (cp_size · tp_size_if_sequence_parallel),  micro_batch_size,  hidden_size ]
 ```
 
+**P2P 通信的两种底层实现**(`p2p_communication.py`,决定调度器④能否开启):
+
+| 实现 | 触发条件 | 机制 |
+|------|---------|------|
+| `_batched_p2p_ops`(`:17`) | `batch_p2p_comm=True`(默认) | 把本次要发的方向打包成一组 `P2POp`,一次 `torch.distributed.batch_isend_irecv` 发出;简单规整,但**不能与 `overlap_p2p_comm` 共存** |
+| `_p2p_ops`(`:55`) | `batch_p2p_comm=False` | 逐个 `isend`/`irecv`,按 **even/odd rank 错开收发顺序**避免死锁(若所有 rank 同时先发会互等对方 recv);返回带名字的 `reqs` 字典供延迟 `wait()` —— **这是调度器④ `overlap_p2p_comm` 的必需路径** |
+
+细节:`group.size()==2` 且非 UCC 后端时,借全局 `WORLD` group 跑其中一个方向 —— 单个 NCCL 通信器内两个 P2P 会串行化,借 WORLD group 让两个方向真正并行。
+
+`P2PCommunicator`(`:140`)对外暴露的完整方法表:
+
+| 方法 | 方向 | 用途 |
+|------|------|------|
+| `recv_forward` / `send_forward` | prev↔current / current↔next | 单向激活收发,首/末 stage 自动跳过 |
+| `recv_backward` / `send_backward` | next↔current / current↔prev | 单向梯度收发 |
+| `send_forward_recv_backward` / `send_backward_recv_forward` | 双向 | 稳态 1F1B 核心融合算子 |
+| `send_forward_recv_forward` / `send_backward_recv_backward` | 双向 | warmup/cooldown 用 |
+| `send_forward_backward_recv_forward_backward` | 四向 | VPP overlap 优化(调度器④) |
+
+**变长序列:先换形状再换张量**:`config.variable_seq_lengths=True` 时,每个 microbatch 序列长度可能不同,`get_tensor_shapes` 无法静态算出形状。`_communicate_shapes`(`p2p_communication.py:186`)先用一轮 3 元素 int64 tensor 交换形状元数据,再按收到的形状分配 buffer 做真正的张量 P2P;固定长度时跳过这步。
+
+**Hyper Connections 对通信形状的影响**:`config.enable_hyper_connections=True` 时,中间 stage 的 P2P tensor shape 从 `[S,B,H]` 扩为 `[S,B,H×num_residual_streams]`(hyper connection 模块扩展了残差流数量),但只在中间 stage 生效,首/末 stage 仍是标准 `H`(`schedules.py:2123-2182`;结构见 `10_megatron_model_structure_analysis.md` §`HyperConnectionTransformerLayer`)。
+
+**与激活换出的关系**:PP/VPP 显存不够时,除了减小 `pp`/`vp`,还可以用**细粒度激活换出**(`fine_grained_activation_offload.py` 的 `PipelineOffloadManager`,D2H/H2D 异步双流,与重计算正交可叠加)把部分层的激活挪到 CPU pinned memory;`schedules.py` 每步收尾调 `off_interface.reset()`,与 PP/VPP 调度天然兼容。完整机制(`OffloadTensorPool`、`--offload-modules` 模块级粒度、`activation_offload_fraction`/`offload_margin` 调参)见 `22_megatron_memory_optimization_analysis.md` §2.3(现行权威页,含 2026-06-16 `max_inflight_offloads` 节流更新)。
+
+### 0.4 PP 进程组与拓扑结构
+
+**进程组创建**(`parallel_state.py:1094`,`initialize_model_parallel` 内):遍历 `decoder_rank_generator.get_ranks('pp')` 生成的 rank 列表逐组 `create_group`,支持三种后端:
+
+| 后端 | 触发 | 说明 |
+|------|------|------|
+| `None`(默认) | 不设置 | PyTorch 默认 NCCL 后端 |
+| `nccl` | 显式指定 | 启用 NCCL 选项优化(`get_nccl_options("pp", ...)`) |
+| `ucc` | `pipeline_model_parallel_comm_backend="ucc"` | UCC 统一通信层,需 `CUDA_DEVICE_MAX_CONNECTIONS>1`,设置 `UCX_RNDV_THRESH=0` 等环境变量 |
+
+**Embedding / Position Embedding 组**(`parallel_state.py:1123`):创建 PP 组的同时,额外建 `EMBEDDING_GROUP`(`get_embedding_ranks`)和 `POSITION_EMBEDDING_GROUP`(`get_position_embedding_ranks`)两个辅助组,用于在 PP **首尾 stage**(权重共享 embedding 与末层 output 常合并成同一份参数)之间同步梯度。
+
+**Defer Embedding WGrad**:embedding 权重梯度是大 GEMM(`vocab_size×hidden_size`,vocab 常 128K),计算耗时但不需要立即完成。`config.defer_embedding_wgrad_compute=True` 时,`drain_embedding_wgrad_compute`(`schedules.py:772`)把这部分 GEMM 推迟到**pipeline flush 阶段**才执行 —— 利用 cooldown 的 bubble 隐藏这段计算延迟,与"用调度隐藏通信/计算"是同一套设计哲学。
+
+**PP 与其他并行维度的关系**:
+
+| 并行维度 | 通信组 | 物理链路 | 与 PP 的交互 |
+|----------|--------|---------|--------------|
+| TP | tp_group | NVLink | TP 在 PP stage 内切分 head;PP 在 stage 边界通信 |
+| DP | dp_group | IB / NVLink | 梯度同步在 PP 的 backward flush 后进行(见 §②.2 Grad Sync) |
+| CP | cp_group | NVLink / IB | CP 切分 seq 后,PP 的 P2P 通信量降低 CP 倍(见 §0.3 通信张量形状) |
+| EP | ep_group | IB All-to-All | MoE 层 EP A2A 可与 PP 1F1B 重叠(调度器⑤ combined-1F1B) |
+| PP | pp_group | NVLink / IB P2P | 层间切分,stage 间 send/recv 激活值 |
+
 ---
 
 ## 调度器① — 无流水线 `forward_backward_no_pipelining`
@@ -186,6 +235,14 @@ for i in range(num_warmup_microbatches):
         deallocate_output_tensor(output_tensor, config.deallocate_pipeline_outputs)
 ```
 
+> **Partial Activation Checkpointing(仅影响 warmup 段的显存-计算权衡)**:当 `config.num_microbatches_with_partial_activation_checkpoints` 不为空时(`schedules.py:2324`),`max_outstanding_backprops = num_warmup_microbatches + 1`;`forward_step` 据此决定每个 microbatch 是否 checkpoint:
+> ```python
+> checkpoint_activations_microbatch = (
+>     i % max_outstanding_backprops >= config.num_microbatches_with_partial_activation_checkpoints
+> )
+> ```
+> **原理**:warmup 阶段 outstanding backprop 数量逐渐增加(最多 `num_warmup_microbatches+1`),越早进入的 microbatch 在世时间越长、显存压力越大。前 `num_microbatches_with_partial_activation_checkpoints` 个 microbatch 落在 window 内不做 checkpoint(省重算开销),其余 microbatch 做 full checkpointing —— 这是"重计算 × microbatch 维度"的自适应窗口策略(配套阅读:`18_megatron_recompute_analysis.md`)。
+
 **③ 稳态 1F1B**(`schedules.py:2426`),核心是用**融合通信**把"发激活"和"收梯度"合并:
 ```python
 for i in range(num_microbatches_remaining):
@@ -209,6 +266,8 @@ for i in range(num_microbatches_remaining):
 **④ Cooldown —— 只反向**(`schedules.py:2499`):把队列里剩下的 `warmup` 个 microbatch 清空。
 
 最后 `finalize_model_grads_func`(`schedules.py:2540`)做 DP 梯度规约、SP 的 layernorm all-reduce、PP 首尾 stage 共享 embedding 的 all-reduce。
+
+**Grad Sync 与 Bubble 的重叠**:稳态 1F1B 中,DP 梯度 AllReduce 默认通过 `no_sync_func` 禁用,直到最后一个 microbatch 的 backward 完成才由 `enable_grad_sync()`(`schedules.py:2501`)启用。关键在**非首 stage**:它们在 cooldown 阶段还有若干 backward 要做,梯度 AllReduce 被安排在这些 cooldown microbatch 的 bubble 期间**异步执行**,把 DP 通信开销藏进 idle time;首 stage 因为最早耗尽 warmup、最早进入 flush,梯度同步只能在 flush 时完成,没有 bubble 可借。
 
 **流程图**
 
@@ -529,7 +588,7 @@ comm  ···· |isend/irecv| |isend/irecv| ...    通信在后台并行,被计�
 **combined-1F1B 的动机**:在**层粒度**上,把 microbatch `i+1` 的**前向**和 microbatch `i` 的**反向**配对、共同调度。利用一个简单事实 —— **前向的 A2A 通信** 可以和 **反向的计算** 在 GPU 上并行,反之亦然。于是:
 > 前向的 dispatch/combine A2A 被反向的 attention/MLP 计算掩盖;反向的 A2A 被前向计算掩盖。
 
-它还配合 `delay_wgrad_compute`(`transformer_config.py:2702`):把反向拆成 **dgrad**(算输入梯度,在关键路径上)和 **wgrad**(算权重梯度,可延后),让 wgrad 去填 P2P 通信的缝隙 —— 这正是 "zero-bubble" 系工作的核心拆分思想(见第 6 节)。
+它还配合 `delay_wgrad_compute`(`transformer_config.py:2702`):把反向拆成 **dgrad**(算输入梯度,在关键路径上)和 **wgrad**(算权重梯度,可延后),让 wgrad 去填 P2P 通信的缝隙 —— 这正是 "zero-bubble" 系工作的核心拆分思想(见第 7 节)。
 
 ### ⑤.2 源码与流程
 
@@ -600,7 +659,7 @@ TransformerLayerSchedulePlan.run(f_layer, b_layer)
 
 **④ 角色化节点 + 双流 + event 同步**(承 §⑤.2):一层拆成 `attn / moe_dispatch / mlp / moe_combine` 四个 `ScheduleNode`,A2A 节点绑 `comm_stream`、计算节点绑 `comp_stream`;跨流靠 CUDA event(`record_current_stream`/`wait_current_stream`,`model_chunk_schedule_plan.py:427-435`)保证依赖正确。于是 forward 层的 A2A 与配对 backward 层的计算在不同 stream 上真并行,而 autograd 正确性不受影响(forward 仍建图、backward 仍真反向)。
 
-> 不变量:不支持 `checkpoint_activations_microbatch`(`combined_1f1b.py:343` assert);VPP>1 + Megatron-FSDP 显式不支持;FSDP `optim_grads_params` 下因绕过 `TransformerLayer.forward` 的 hook,要给每层显式挂 reshard 回调(`combined_1f1b.py:407-414`,见 [[16_megatron_distributed_optimizer_analysis]] / [[20_megatron_comm_overlap_analysis]] §5.7)。
+> 不变量:不支持 `checkpoint_activations_microbatch`(`combined_1f1b.py:343` assert);VPP>1 + Megatron-FSDP 显式不支持;FSDP `optim_grads_params` 下因绕过 `TransformerLayer.forward` 的 hook,要给每层显式挂 reshard 回调(`combined_1f1b.py:407-414`,见 [[16_megatron_distributed_optimizer_analysis]] / [[20_megatron_comm_overlap_analysis]] §5.7);FP8 仅 `delayed` recipe 支持 —— `use_outer_fp8_context = config.fp8 and config.fp8_recipe == Fp8Recipe.delayed` 为真时,整个 combined step 被包在外层 `get_fp8_context(config)` 里(`combined_1f1b.py:338-403, 441-442`),否则退化为 `nullcontext()`。
 
 > [!update] 2026-06-16 · dev@232c478d4 — combined-1F1B 的三处增量(MTP 排序 / 显存释放 / 死代码清理)
 >
@@ -681,13 +740,63 @@ comm |comb_b|  disp_f | disp_b | comb_f |     ← A2A 全程被对侧计算掩�
 - **可与 PP=1 或 VPP 叠加**:小规模 MoE 用 `PP=1 + combined_1f1b`;大规模 MoE 用 `VPP + combined_1f1b + overlap_p2p_comm` 全家桶。
 - **不推荐**:稠密(非 MoE)模型;需要 full recomputation 的极限显存场景;torch 版本过低。
 
+### ⑤.6 与 PP P2P 的资源竞争
+
+MoE 层里,PP 的 P2P(激活/梯度收发)与 EP 的 All-to-All(dispatch/combine)可能同时发生,争抢同一条 NVLink/IB 带宽:
+
+| 场景 | PP 通信 | EP 通信 | 竞争分析 |
+|------|---------|---------|---------|
+| 标准 1F1B(无 combined) | P2P send/recv 激活值 | A2A dispatch/combine | 直接竞争带宽 |
+| combined-1F1B | P2P 与计算交错 | A2A 被反向计算掩盖 | 理想情况下 A2A 不占用带宽窗口,PP P2P 独享 |
+| 首/末 stage | 单向 P2P(缺 backward 或 forward 一侧) | 全量 A2A | 首 stage 无 backward P2P,可更专注 EP 通信 |
+
+缓解手段:PP P2P 走独立 CUDA stream(`overlap_p2p_comm`,调度器④),与 EP A2A 的 `comm_stream`(§⑤.2)分离;combined-1F1B 本身通过 layer 级交错,让 EP A2A 尽量发生在计算密集阶段而非 PP P2P 密集阶段。对非 MoE 层(纯 attention),PP P2P 是唯一的跨 rank 通信,不存在此竞争。
+
 ---
 
-## 6. 概念补充:DualPipe / DualPipeV / Zero-Bubble(本仓库**未实现**)
+## 6. 目录周边设施:混合 CP 动态调度与多模块流水线
+
+`pipeline_parallel/` 目录里,除 5 个调度器 + P2P/进程组基础设施(§0)外,还有两块相对独立的周边机制,借调度器②的 `is_multimodule` 分支 / `backward_step_multimodule` 挂钩接入主流程。
+
+### 6.1 变长序列的混合 CP 动态调度(`hybrid_cp_schedule.py`)
+
+**动机**:固定 CP 度(`13_megatron_cp_analysis.md`)假设所有样本切同一个 `cp`,但**变长序列训练**(SFT、文档级语料、多分辨率多模态)样本长度差异巨大 —— 短样本用大 CP 是浪费,长样本用小 CP 又放不下,且 attention `O(S²)` 负载在 DP×CP 组间严重不均。
+
+`BalancedCPScheduler`(`hybrid_cp_schedule.py:14`)按样本长度动态决定 CP 度,并把样本打包成各组工作量均衡的批:
+
+```python
+def gpus_needed(self, seq_len):              # 该样本需要几张卡做 CP
+    return max(1, 2 ** ceil(log2(seq_len / self.max_seq_len_per_rank)))
+
+def get_total_workload(self, seq_length, cp_size):
+    return (seq_length ** 2) / cp_size        # attention O(S²) 负载估计,除以 CP 摊分
+```
+
+`make_buckets_equal`(`:55`)/ `next_hdp_group`(`:104`)用 `seq²/cp` 做工作量估计,贪心打包成若干"hdp"(hybrid data parallel)组,使各组总工作量大致相等(`delta` 控制 5% 松弛);`hybrid_context_parallel_forward_backward`(`:477`)是配套的前向反向调度入口。
+
+> **与 `29_megatron_packed_dataset_dynamic_cp_analysis.md` 的关系**:`data_schedule.py` 的 `DefaultDynamicCPScheduler`(打包调度器的 `is_dynamic_cp=True` 子类,用 `dcp_*` 函数)才是动态 CP 真正的**集成入口** —— 序列打包与动态 CP 在那里被缝进同一条 `run()` 九步流水线。本节的 `BalancedCPScheduler` 是同一套均衡逻辑的**类形态兄弟**(独立实现,算法一致),两者不是"谁包含谁",是并行存在的两套实现。完整集成流程见 29 号页;13 号页讲固定 CP 的通用机制。
+
+### 6.2 多模块/多模态流水线(`bridge_communicator.py` + `multimodule_communicator.py`)
+
+**动机**:标准 `P2PCommunicator`(§0.3)假设上下游 PP stage 共享同一并行网格,TP/DP/CP 一致、激活形状对得上。但**多模态模型**的视觉编码器、LLM 主干、生成头是不同子模型,各自可能用完全不同并行配置(如编码器 TP=2/PP=1,LLM TP=8/PP=4),甚至张量维数不同(视觉编码器常出 2D `[b·s,h]`,LLM 要 3D `[s,b,h]`)。
+
+`BridgeCommunicator`(`bridge_communicator.py:39`)连接一对 `HyperCommGrid`(源→目标网格,见 `17_megatron_parallelism_orchestration_analysis.md` §4):`build_comm_map` 算出源网格哪些 rank 该发给目标网格哪些 rank,fan-in/fan-out 处理两侧 batch/并行度不同(用缓存的 broadcast 进程组);`dim_mapping`/`tensor_ndim` 处理 2D/3D 差异;对外暴露与 `P2PCommunicator` 同名接口(`send_forward`/`recv_forward`/`send_forward_recv_backward`/...),上层调度无感切换。当前限制:CP 暂不支持(两侧须 CP=1)。
+
+`MultiModulePipelineCommunicator`(`multimodule_communicator.py:110`)把多个子模块组织成一张 DAG(如 `image_encoder/audio_encoder → llm → generator`),为每条边建一个 `BridgeCommunicator`,张量以 `Dict[str, Tensor]` 按模块名组织传递 —— 使调度器②的非交错 1F1B 可以无感驱动一条跨异构子模型的流水线。
+
+> [!update] 2026-06-16 · dev@232c478d4 — 跨网格 P2P 改走专用进程组(#5234)
+>
+> `ee3f1ff` 时跨网格 `dist.send/recv`/`P2POp` 不带 `group=` 参数,隐式走全局 `WORLD` 组,与其它集合通信共用 NCCL 通信器,有串行化/标签冲突风险。#5234 为每条桥接边新建专用进程组 `bridge_pg`(`bridge_communicator.py:167-168`,取源/目标网格 TP leader 并集排序后 `dist.new_group`),类级缓存 `_bridge_pg_cache` 避免重复建组;此后所有桥接 `send_forward`/`recv_forward`/`send_backward`/`recv_backward` 及融合 `P2POp` 均显式传 `group=self.bridge_pg`(12 处站点)。意义:把跨网格 leader↔leader 的 P2P 从全局组隔离到独立通信器,避免与子网格内部 TP/PP/DP 集合通信争用 NCCL 资源。配套:`HyperCommGrid` 本身也在 #5148 获得 named views,为异构子模型提供几何基础(详见 [[17_megatron_parallelism_orchestration_analysis]] §4③)。
+
+**适用场景**:VLM、音频-语言、encoder-decoder 等多模态/异构模型;纯单模型(GPT)走标准 `P2PCommunicator`,用不到这两个类。
+
+---
+
+## 7. 概念补充:DualPipe / DualPipeV / Zero-Bubble(本仓库**未实现**)
 
 > 全仓库 case-insensitive 搜索 `dualpipe`、`zero bubble`、`zbh1`、`zbv` 均无命中。本节为**纯原理介绍**,不对应本仓库源码,供横向理解。
 
-### 6.1 Zero-Bubble(ZB-H1 / ZB-H2 / ZBV)
+### 7.1 Zero-Bubble(ZB-H1 / ZB-H2 / ZBV)
 
 - **来源**:Qi et al., *Zero Bubble Pipeline Parallelism*, ICLR 2024(中科大 / Sea AI Lab)。
 - **核心思想**:把反向 `B` 拆成两半 —— **`B_dgrad`(算输入梯度,有数据依赖,必须在关键路径上)** 和 **`B_wgrad`(算权重梯度,只依赖本层激活,可任意延后)**。`W` 没有跨 stage 依赖,于是可以拿它去**填满气泡**。
@@ -696,7 +805,7 @@ comm |comb_b|  disp_f | disp_b | comb_f |     ← A2A 全程被对侧计算掩�
   - **ZBV(V-shape)**:把 chunk 排成 V 形(类似 DualPipeV),在与 1F1B 同等显存下逼近零气泡。
 - **与 Megatron 的关系**:Megatron 当前 `dev` 分支**没有** ZB 调度,但调度器⑤的 `delay_wgrad_compute`(F/B/W 三段拆分)正是 ZB 那套 `B = B_dgrad + B_wgrad` 拆分思想的局部应用 —— 只是用于 A2A 重叠,而非系统性消除气泡。
 
-### 6.2 DualPipe / DualPipeV
+### 7.2 DualPipe / DualPipeV
 
 - **来源**:DeepSeek-V3 技术报告(2024)。
 - **核心思想**:**双向流水** —— 同时从流水线两端注入 microbatch,一批从 stage 0→pp-1,另一批从 pp-1→0,两个方向的前向/反向在中间相遇并对冲掩盖。配合把计算拆成 attention / all-to-all / MLP / PP-comm 等细粒度块两两重叠,几乎完全隐藏通信。
@@ -704,7 +813,7 @@ comm |comb_b|  disp_f | disp_b | comb_f |     ← A2A 全程被对侧计算掩�
 - **代价**:DualPipe 需在每个设备上**保留两份模型参数**(双向各一套),`参数显存 ≈ 2×`;实现复杂度高;最适合 DeepSeek-V3 那种超大 MoE + 跨节点 EP 的场景。
 - **与 Megatron 的关系**:截至本 commit,Megatron-LM 主线**未合入** DualPipe/DualPipeV;若需可关注上游 PR 或 DeepSeek 开源的 `DualPipe` 仓库。
 
-### 6.3 三类思路定位对比
+### 7.3 三类思路定位对比
 
 | 方案 | 气泡 | 峰值显存 | 是否在本仓库 |
 |------|------|---------|------------|
@@ -717,9 +826,9 @@ comm |comb_b|  disp_f | disp_b | comb_f |     ← A2A 全程被对侧计算掩�
 
 ---
 
-## 7. 横向对比与选型决策
+## 8. 横向对比与选型决策
 
-### 7.1 总对比表
+### 8.1 总对比表
 
 | 调度器 | 气泡率 | 峰值激活显存 | PP 通信量 | 关键收益 | 主要代价 |
 |--------|--------|-------------|----------|---------|---------|
@@ -729,7 +838,7 @@ comm |comb_b|  disp_f | disp_b | comb_f |     ← A2A 全程被对侧计算掩�
 | ④ P2P-overlap | `(pp-1)/(m·vp)` | VPP + recv buffer | 同 VPP(被隐藏) | 通信移出关键路径 | 额外缓冲;须 `batch_p2p_comm=False` |
 | ⑤ combined-1F1B | 继承宿主 | 宿主 + 1 个 microbatch + plan | 同宿主 | 掩盖 MoE A2A(省 20-40% 层时) | 激活峰值升高;仅限 MoE+EP |
 
-### 7.2 选型决策树
+### 8.2 选型决策树
 
 ```
 模型 + 激活单卡(或单 TP 组)能放下?
@@ -751,7 +860,7 @@ comm |comb_b|  disp_f | disp_b | comb_f |     ← A2A 全程被对侧计算掩�
              若为 MoE:再叠加 EP + combined-1F1B
 ```
 
-### 7.3 一句话总结
+### 8.3 一句话总结
 
 - **①→②**:用相同气泡,把模型态显存除以 `pp`,并让 PP 能廉价跨节点扩展。
 - **②→③**:用 `vp×` 通信 + 略增显存,把气泡率除以 `vp`。
@@ -759,13 +868,29 @@ comm |comb_b|  disp_f | disp_b | comb_f |     ← A2A 全程被对侧计算掩�
 - **⑤**:正交于上面四个 —— 专门为 MoE 把 all-to-all 通信用 F/B 互相掩盖掉。
 - **DualPipe / Zero-Bubble**:把气泡推向 0 的下一代思路,本仓库尚未实现,但 `delay_wgrad_compute` 已借用其 `B=B_dgrad+B_wgrad` 拆分。
 
+### 8.4 关键配置速查表
+
+| 配置项 | 推荐值 | 对应调度器/机制 |
+|--------|--------|-----------------|
+| `pipeline_model_parallel_size` | 按模型层数/显存确定,常 4~16 | 调度器②③④⑤ 共用 |
+| `virtual_pipeline_model_parallel_size` | 2~4(大模型气泡高时) | 调度器③ VPP |
+| `num_microbatches` | `≥4×pp`,保证气泡率可接受 | 调度器②③ 气泡公式(§②.4/§③.4) |
+| `microbatch_group_size_per_vp_stage` | 默认 `=pp`(深度优先) | 调度器③,受 §③.2④约束 |
+| `overlap_p2p_comm` | `True`(跨节点必开) | 调度器④,须配合下一行 |
+| `batch_p2p_comm` | `False`(若开 overlap) | 与 `overlap_p2p_comm` 互斥,见 §0.3 |
+| `deallocate_pipeline_outputs` | `True` | §0.3 显存优化原语 |
+| `defer_embedding_wgrad_compute` | 大 vocab 时 `True` | §0.4 |
+| `overlap_moe_expert_parallel_comm` | `True`(MoE 模型) | 调度器⑤ combined-1F1B |
+| `num_microbatches_with_partial_activation_checkpoints` | 按显存压力设窗口 | §②.2 Partial Checkpointing |
+| `--offload-modules` / fine-grained offloading | 显存墙严重时开 | 见 §0.3 与 `22_megatron_memory_optimization_analysis.md` §2.3 |
+
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准,后续版本可能漂移。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准,后续版本可能漂移。2026-08-01 由 `20_megatron_pp_parallelism_analysis.md`(740 行)、`26_megatron_pp_supplements_analysis.md`(229 行)吸收增量后合并而成 —— spec §3.4(kb-reorg P6 阶段遗漏,P7 收尾期补执行),详见 `wiki/changelog.md`。*
 
 ## Related Pages
 
 - [[14_megatron_ep_analysis]] · [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[16_megatron_distributed_optimizer_analysis]]
-- [[17_megatron_parallelism_orchestration_analysis]] · [[26_megatron_pp_supplements_analysis]]
-- [[20_megatron_comm_overlap_analysis]]
+- [[17_megatron_parallelism_orchestration_analysis]] · [[29_megatron_packed_dataset_dynamic_cp_analysis]](混合 CP 动态调度的集成入口)
+- [[20_megatron_comm_overlap_analysis]] · [[22_megatron_memory_optimization_analysis]](细粒度激活换出权威页,§2.3)
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

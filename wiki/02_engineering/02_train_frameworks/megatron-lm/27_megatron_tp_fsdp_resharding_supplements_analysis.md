@@ -168,13 +168,13 @@ swap_model_weights(src_model, target_model, refit_method="nccl")
 | **Nonuniform TP** | 千卡级长训练要扛 TP 组单点故障 | `12_megatron_tp_analysis.md` 的容错扩展;非侵入式子类 |
 | **Resharding / Refit** | RL 训练,训练模型↔推理模型布局不同 | 独立工具,跨 `17_megatron_parallelism_orchestration_analysis.md` 描述的两套布局搬权重 |
 
-至此"第一层补遗"3 份文档全部完成:① 并行编排 capstone、② PP 补遗、③ TP·FSDP·resharding 补遗。
+至此"第一层补遗"3 份文档全部完成:① 并行编排 capstone、② PP 补遗(2026-08-01 起并入 `15_megatron_pp_schedulers_analysis.md` §0.4/§6,原页已删除)、③ TP·FSDP·resharding 补遗(本页)。
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`12_megatron_tp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`、`26_megatron_pp_supplements_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`12_megatron_tp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`、`15_megatron_pp_schedulers_analysis.md`。*
 
 ## Related Pages
 
-- [[12_megatron_tp_analysis]] · [[16_megatron_distributed_optimizer_analysis]] · [[17_megatron_parallelism_orchestration_analysis]] · [[30_megatron_rl_posttraining_consistency_analysis]] · [[19_megatron_dist_checkpointing_analysis]]
+- [[12_megatron_tp_analysis]] · [[16_megatron_distributed_optimizer_analysis]] · [[17_megatron_parallelism_orchestration_analysis]] · [[30_megatron_rl_posttraining_consistency_analysis]] · [[19_megatron_dist_checkpointing_analysis]] · [[15_megatron_pp_schedulers_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

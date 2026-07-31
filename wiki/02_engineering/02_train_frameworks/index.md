@@ -17,12 +17,12 @@
 ## 页面列表
 
 > **段位**(kb-reorg P7 Task 7,2026-07-31):子目录索引不编号;段 2(20-29)特定框架/组件的机制深挖;段 3(30-39)跨框架对比矩阵与方法论指南。
+> **20 号编号空出**(2026-08-01,spec §3.4 补执行):`20_megatron_pp_parallelism_analysis.md` 已并入 `megatron-lm/15_megatron_pp_schedulers_analysis.md`(§0.4/§6/其余增量)并删除,`megatron-lm/26_megatron_pp_supplements_analysis.md` 同批一并删除;`20` 号不重新分配,详见 `wiki/changelog.md`。
 
 | 页面 | 层次 | 来源 | 核心主题 |
 |------|------|------|---------|
 | [[megatron-lm/index]] | 子目录 | Megatron-LM 源码 | 分布式并行、通信优化、MoE |
 | [[torchtitan/index]] | 子目录 | torchtitan 源码 | DP/TP/CP/EP/PP 多维并行机制级分析(参数切分/预取/通信掩盖/异步)+ HSDP 反向双流掩盖、低精度/算子融合/编译、对称内存/Async-TP、SimpleFSDP |
-| [[20_megatron_pp_parallelism_analysis]] | 深潜(段 2) | Megatron-LM 源码 | PP 并行: 1F1B/VPP/Combined 调度, P2P 通信, Bubble 分析, 激活优化与卸载 |
 | [[21_async_collective_tensor_deepdive]] | 深潜(段 2) | PyTorch 源码 (_functional_collectives.py) | ACT 源码追踪: __torch_dispatch__, wait_tensor, stream 级执行过程, 与 Megatron 手动 stream 对比 |
 | [[22_muon_sharded_hsdp_analysis]] | 深潜(段 2) | Cursor Composer 2.5 博客 | 分片 Muon + 双网格 HSDP: all-to-all N-S、EP/CP 解耦、异步流水线、非专家分工优化 |
 | [[30_comm_compute_overlap_analysis]] | 方法论(段 3) | Megatron-LM / torchtitan 源码 | 计算通信掩盖: combined_1f1b vs ZBV/DualPipe, sub-layer 级调度, DeepEP/HybridEP |
