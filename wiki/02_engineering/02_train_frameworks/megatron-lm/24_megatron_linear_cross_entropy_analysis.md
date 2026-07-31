@@ -237,7 +237,7 @@ dist.all_reduce(_logprobs, op=dist.ReduceOp.SUM, group=tp_group)   # 跨分片�
 
 ## Related Pages
 
-- [[megatron_fusion_operators_analysis]] —— Megatron 融合算子总览(本页是其 Linear+CrossEntropy 一项的深挖)
-- [[megatron_memory_optimization_analysis]] —— Megatron 省显存手段(重计算/卸载等),本页是损失侧的一块
+- [[21_megatron_fusion_operators_analysis]] —— Megatron 融合算子总览(本页是其 Linear+CrossEntropy 一项的深挖)
+- [[22_megatron_memory_optimization_analysis]] —— Megatron 省显存手段(重计算/卸载等),本页是损失侧的一块
 - [[mindspeed_memory_optimization_analysis]] —— MindSpeed `chunk_loss`(序列分块版),§7 对照
 - [[megatron-lm/index]] —— Megatron-LM 知识地图

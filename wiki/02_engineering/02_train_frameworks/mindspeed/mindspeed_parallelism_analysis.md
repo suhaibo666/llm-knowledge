@@ -235,7 +235,7 @@ VariableSeq: 发方序列变长 → 先发 shape 头 ──▶ 收方据此分�
 
 ## 5. MoE-EP 结构
 
-**机制**:专家并行把 `num_experts` 个专家分到 EP 组各 rank,token 经 router 后 all-to-all 到目标专家所在 rank 计算(EP 总览与三种 dispatcher 对照见 [[megatron_ep_analysis]])。MindSpeed 在"专家怎么算(GMM)、EP 怎么扩(tp-extend-ep)、负载怎么均(placement/balanced)"三处做文章。
+**机制**:专家并行把 `num_experts` 个专家分到 EP 组各 rank,token 经 router 后 all-to-all 到目标专家所在 rank 计算(EP 总览与三种 dispatcher 对照见 [[14_megatron_ep_analysis]])。MindSpeed 在"专家怎么算(GMM)、EP 怎么扩(tp-extend-ep)、负载怎么均(placement/balanced)"三处做文章。
 
 ```mermaid
 flowchart LR
@@ -491,5 +491,5 @@ DP:  只切优化器态(默认)               → Megatron 分布式优化器(Ze
 - [[mindspeed_comm_overlap_analysis]] —— 本页所有并行结构上的**通算掩盖**(CP send-recv overlap、MC2/CoC、TP-2D AG/RS 重叠、MoE fb-overlap、PP DualPipeV/RiPipe 调度)
 - [[mindspeed_memory_optimization_analysis]] —— 重计算/Swap/MoE-zero-memory 等省显存手段(与 LayerZeRO/CustomFSDP 分片互补)
 - [[mindspeed_ascend_affinity_analysis]] —— GMM/FlashAttention/swiglu 等昇腾融合算子(TP/MoE 的计算原语;§3.1 是本页 GMM 的内核侧)
-- [[megatron_ep_analysis]] —— Megatron 原生 MoE 专家并行(三种 dispatcher、Parallel Folding),与本页 §5 跨框架对照
+- [[14_megatron_ep_analysis]] —— Megatron 原生 MoE 专家并行(三种 dispatcher、Parallel Folding),与本页 §5 跨框架对照
 - [[megatron-lm/index]] —— 被打补丁的宿主框架;对照阅读原生 5D 并行

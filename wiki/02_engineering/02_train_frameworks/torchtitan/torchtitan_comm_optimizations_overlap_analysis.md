@@ -88,7 +88,7 @@ Async-TP 的融合算子要求该集合的进程组**已注册对称内存**,否
 
 `reorder_for_compute_comm_overlap`(`#3020`)是另一类 inductor 手段:把集合通信节点在图里**往前挪**,塞进前面的计算影子。它与 Async-TP 微流水互补(§2 里 pass 会避开已能被它掩盖的集合),共同构成编译期的通信掩盖。
 
-> [!note] 补充(2026-07-31 · 由 [[comm_compute_overlap_analysis]] 收缩合并) `experiments/graph_trainer/fsdp_passes.py` 是这类重排 pass 针对 **FSDP** 的专用实现:在 Inductor 图级别把 FSDP 的 AG/RS 重新排布,并额外开一条 NCCL process group 实现与主计算流的并发——与 §3.2 提到的 `experiments/graph_trainer/passes.py` 显式 symm-mem 注册同属 graph_trainer 实验分支,尚未进入 torchtitan 出货路径。
+> [!note] 补充(2026-07-31 · 由 [[30_comm_compute_overlap_analysis]] 收缩合并) `experiments/graph_trainer/fsdp_passes.py` 是这类重排 pass 针对 **FSDP** 的专用实现:在 Inductor 图级别把 FSDP 的 AG/RS 重新排布,并额外开一条 NCCL process group 实现与主计算流的并发——与 §3.2 提到的 `experiments/graph_trainer/passes.py` 显式 symm-mem 注册同属 graph_trainer 实验分支,尚未进入 torchtitan 出货路径。
 
 ---
 
@@ -167,6 +167,6 @@ Async-TP 的融合算子要求该集合的进程组**已注册对称内存**,否
 - [[torchtitan_ep_analysis]] —— EP token all-to-all(DeepEP/HybridEP),MinimalAsyncEP 的对照
 - [[torchtitan_hsdp_backward_overlap_analysis]] —— HSDP 反向双流掩盖
 - [[torchtitan_simple_fsdp_analysis]] —— 编译器友好 FSDP(整网 DTensor 近亲)
-- [[async_collective_tensor_deep_dive]] —— AsyncCollectiveTensor 源码追踪(异步通信底座)
-- [[comm_compute_overlap_analysis]] —— 跨框架计算-通信掩盖对比
+- [[21_async_collective_tensor_deepdive]] —— AsyncCollectiveTensor 源码追踪(异步通信底座)
+- [[30_comm_compute_overlap_analysis]] —— 跨框架计算-通信掩盖对比
 - [[torchtitan/index]] —— torchtitan 多维并行知识地图

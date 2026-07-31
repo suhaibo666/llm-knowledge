@@ -16,7 +16,7 @@
 
 ## 一 ZeRO 分片体系：通信量与内存统一分析
 
-所有 ZeRO 优化的起点是恒等式 **all-reduce(grad) = reduce-scatter(grad) + all-gather(grad)**(通信量 **2P** = **P** + **P**)——ZeRO-1 把这个恒等式拆成"反向后 RS + 更新后 AG"，用 AG(param) 替换 AG(grad)，通信总量不变，却把优化器状态切成了 `1/dp`。完整的因果链推导（为什么切 optimizer state 就够、RS/AG 各自对应哪一步）与源码级验证见 [[megatron_distributed_optimizer_analysis]] §阶段②——本页往下直接进入三框架的**横向对比**（下同）。
+所有 ZeRO 优化的起点是恒等式 **all-reduce(grad) = reduce-scatter(grad) + all-gather(grad)**(通信量 **2P** = **P** + **P**)——ZeRO-1 把这个恒等式拆成"反向后 RS + 更新后 AG"，用 AG(param) 替换 AG(grad)，通信总量不变，却把优化器状态切成了 `1/dp`。完整的因果链推导（为什么切 optimizer state 就够、RS/AG 各自对应哪一步）与源码级验证见 [[16_megatron_distributed_optimizer_analysis]] §阶段②——本页往下直接进入三框架的**横向对比**（下同）。
 
 ![图 1：ZeRO 各 stage 通信原语与通信量对比](assets/distributed_optimizer_deep_dive_fig1.png)
 
@@ -149,7 +149,7 @@ def newtonschulz5(G, steps=5):
 
 ### 6.3 Muon 对分布式训练的系统性影响
 
-> **影响 1：flat buffer shard 不再自由** — Adam 时代 flat buffer 可按字节均分，Muon 要求 shard 边界对齐 layer boundary（不能切断 weight matrix）。Megatron 的具体解法（`LayerWiseDistributedOptimizer` 的 shard-aligned bucket + LPT 贪心装箱）见 [[megatron_distributed_optimizer_analysis]] §14.1。
+> **影响 1：flat buffer shard 不再自由** — Adam 时代 flat buffer 可按字节均分，Muon 要求 shard 边界对齐 layer boundary（不能切断 weight matrix）。Megatron 的具体解法（`LayerWiseDistributedOptimizer` 的 shard-aligned bucket + LPT 贪心装箱）见 [[16_megatron_distributed_optimizer_analysis]] §14.1。
 
 > **影响 2：梯度累积推向 ZeRO-1** — NS 是非线性操作：NS(G₁)+NS(G₂) ≠ NS(G₁+G₂)。必须先在 full buffer 上累积所有 micro-batch 的 grad，做一次 NS，再 RS。
 
@@ -177,9 +177,9 @@ def newtonschulz5(G, steps=5):
 
 ## Related Pages
 
-- [[megatron_distributed_optimizer_analysis]] — Megatron-LM ZeRO 0-3 四阶段源码级机制、优化器内部（fp32 master/step 流程）、三种 FSDP 实现对比、Layer-Wise/Muon 集成（§14）
+- [[16_megatron_distributed_optimizer_analysis]] — Megatron-LM ZeRO 0-3 四阶段源码级机制、优化器内部（fp32 master/step 流程）、三种 FSDP 实现对比、Layer-Wise/Muon 集成（§14）
 - [[torchtitan_fsdp_analysis]] — torchtitan/PyTorch FSDP2 机制标杆篇（切分/预取/掩盖/异步四问）
 - [[torchtitan_hsdp_backward_overlap_analysis]] — torchtitan HSDP 反向双流掩盖
 - [[mindspeed_comm_overlap_analysis]] — MindSpeed 计算通信掩盖（含 DP 侧 async-log-allreduce）
 - [[11_muon_analysis]] — Muon 优化器本身的数学原理（Newton-Schulz 正交化）
-- [[comm_compute_overlap_analysis]] — 跨框架计算-通信掩盖对比（本页姊妹横向页，聚焦"掩盖"而非"分片"）
+- [[30_comm_compute_overlap_analysis]] — 跨框架计算-通信掩盖对比（本页姊妹横向页，聚焦"掩盖"而非"分片"）

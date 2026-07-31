@@ -360,5 +360,5 @@ sequenceDiagram
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links
-- [[megatron_inference_engine_analysis]] —— Megatron-LM 推理引擎(连续批处理 / 分页 KV)对照,看另一套训练框架内建的推理路径
+- [[31_megatron_inference_engine_analysis]] —— Megatron-LM 推理引擎(连续批处理 / 分页 KV)对照,看另一套训练框架内建的推理路径
 - [[mooncake_analysis]] —— 分离式(prefill/decode 分离)推理服务架构,与本页的"单引擎双进程"形成规模化对照

@@ -247,5 +247,5 @@ K3 在算法侧用 Quantile Balancing（QB）让 router 本身更均衡，在系
 - [[22_kimi_k3_architecture_deepdive]] — Stable LatentMoE 与 Quantile Balancing（MoonEP 的算法侧搭档）
 - [[26_kimi_k3_open_source_stack_analysis]] — K3 随发布开源的 kernel/工具链全景（MoonEP 在其中的位置）
 - [[14_kimi_k3_analysis]] — K3 发布总览
-- [[02_engineering/02_train_frameworks/megatron-lm/megatron_ep_analysis]] — Megatron 的 EP token dispatcher 实现对照
-- [[02_engineering/02_train_frameworks/comm_compute_overlap_analysis]] — 通信-计算重叠的一般机制
+- [[02_engineering/02_train_frameworks/megatron-lm/14_megatron_ep_analysis]] — Megatron 的 EP token dispatcher 实现对照
+- [[02_engineering/02_train_frameworks/30_comm_compute_overlap_analysis]] — 通信-计算重叠的一般机制

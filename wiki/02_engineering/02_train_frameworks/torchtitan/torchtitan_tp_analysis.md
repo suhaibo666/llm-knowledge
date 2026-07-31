@@ -363,7 +363,7 @@ loss_parallel():logits 保持 Shard(vocab),交叉熵用 3 次微 all-reduce 算�
 - [[torchtitan/index]] · [[torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
 - [[torchtitan_fsdp_analysis]] —— FSDP 与 TP 的 DTensor 叠加
 - [[torchtitan_ep_analysis]] —— MoE 专家的 TP 切法(`Shard(1)/Shard(2)`)对比
-- [[megatron_tp_analysis]] —— Megatron-LM 张量并行(`ColumnParallel`/`RowParallel` 共轭算子 f/g)
-- [[async_collective_tensor_deep_dive]] —— `AsyncCollectiveTensor` 源码追踪(`__torch_dispatch__`、`wait_tensor`)
-- [[comm_compute_overlap_analysis]] —— 计算通信掩盖对比分析
-- [[megatron_pp_schedulers_analysis]] —— TP/SP 通信依赖与正反向 DAG
+- [[12_megatron_tp_analysis]] —— Megatron-LM 张量并行(`ColumnParallel`/`RowParallel` 共轭算子 f/g)
+- [[21_async_collective_tensor_deepdive]] —— `AsyncCollectiveTensor` 源码追踪(`__torch_dispatch__`、`wait_tensor`)
+- [[30_comm_compute_overlap_analysis]] —— 计算通信掩盖对比分析
+- [[15_megatron_pp_schedulers_analysis]] —— TP/SP 通信依赖与正反向 DAG

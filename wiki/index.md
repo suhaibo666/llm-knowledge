@@ -78,8 +78,8 @@
 | 对齐/RLHF | [[10_instructgpt_rlhf_analysis]], [[12_dpo_analysis]], [[20_grpo_analysis]], [[11_ppo_analysis]] |
 | DeepSeek 模型 | [[13_deepseek_v4_analysis]], [[12_deepseek_v3_analysis]], [[14_deepseek_r1_analysis]] |
 | LongCat (美团) | [[meituan_longcat/index]], [[longcat_flash_analysis]], [[longcat_2_analysis]] |
-| Megatron 分布式 | [[megatron_parallelism_orchestration_analysis]], [[megatron_comm_overlap_analysis]] |
-| MoE | [[megatron_ep_analysis]], [[20_deepseek_moe_analysis]] |
+| Megatron 分布式 | [[17_megatron_parallelism_orchestration_analysis]], [[20_megatron_comm_overlap_analysis]] |
+| MoE | [[14_megatron_ep_analysis]], [[20_deepseek_moe_analysis]] |
 | MoE 专家并行 (MindFormers) | [[mindformers/index]], [[mindformers_pynative_ep_analysis]], [[mindformers_moe_token_dispatcher_analysis]] |
 | 昇腾训练加速 (MindSpeed) | [[mindspeed/index]], [[mindspeed_parallelism_analysis]], [[mindspeed_context_parallel_analysis]], [[mindspeed_comm_overlap_analysis]], [[mindspeed_memory_optimization_analysis]], [[mindspeed_ascend_affinity_analysis]] |
 | torch.compile | [[courses/torch_compile_end_to_end]], [[02_compile_stack/01_dynamo/index]], [[02_compile_stack/04_inductor/index]] |

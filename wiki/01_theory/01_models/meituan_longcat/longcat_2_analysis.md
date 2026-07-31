@@ -149,7 +149,7 @@
 3. **稠密链**：`mlp0 → attn1 → mlp1`（`forward_mlp`, :463-500）；
 4. **相加** `hidden = moe_out + dense_out`（:460）。
 
-> **为什么这么接（ScMoE 的本质）**：MoE 的 all-to-all（分发/回收 token）是长延迟通信。把 MoE 作为**短路分支**与稠密链（mlp0→attn1→mlp1）**并行**，其通信就被稠密计算**掩盖**——这就是博客「per-core 显式控制 → dense/MoE 全并行」的落地，也是 §5「+35% 吞吐」的架构侧来源。承袭 LongCat-Flash 的 Shortcut-connected MoE。（EP 的 all-to-all 原理见 [[14_expert_parallel_analysis]] / [[megatron_ep_analysis]]。）
+> **为什么这么接（ScMoE 的本质）**：MoE 的 all-to-all（分发/回收 token）是长延迟通信。把 MoE 作为**短路分支**与稠密链（mlp0→attn1→mlp1）**并行**，其通信就被稠密计算**掩盖**——这就是博客「per-core 显式控制 → dense/MoE 全并行」的落地，也是 §5「+35% 吞吐」的架构侧来源。承袭 LongCat-Flash 的 Shortcut-connected MoE。（EP 的 all-to-all 原理见 [[14_expert_parallel_analysis]] / [[14_megatron_ep_analysis]]。）
 >
 > **可重叠窗口要说精确（易错点）**：`clone` 发生在 `attn0` **之后**（:449），故被掩盖 MoE 通信的窗口 = **稠密FFN₁(mlp0) + MLA-attn1(self_attn[1]) + 稠密FFN₂(mlp1)** 这三个模块，**attn0（MLA₁）不在窗口内**——它是 fork 之前算完、其输出同时喂给两支的**共享前置**。换言之 shortcut 只负责**建立数据依赖上的自由度**（MoE 输入在 attn0 后即就绪、输出到层尾才被消费）；窗口内部**怎么切、谁盖 dispatch、谁盖 combine**，是**调度层**的选择，且**训练与推理选了两套不同方案**——详见 **§5.5**。
 
@@ -238,7 +238,7 @@
 ```
 
 - **EMBP 是本模型独有的第 6 维**：135B 的 N-gram Embedding 若挤在 TP/DP 里会破坏负载均衡，故单列一维专门分片。这是「架构创新（N-gram 扩参）倒逼 Infra 创新（新并行维）」的典型。
-- 相关原理：TP/CP/SP 见 [[13_tensor_sequence_parallel_analysis]]，EP 见 [[14_expert_parallel_analysis]]，PP 见 [[15_pipeline_parallel_analysis]]，通信重叠工程参照 [[megatron_comm_overlap_analysis]]。
+- 相关原理：TP/CP/SP 见 [[13_tensor_sequence_parallel_analysis]]，EP 见 [[14_expert_parallel_analysis]]，PP 见 [[15_pipeline_parallel_analysis]]，通信重叠工程参照 [[20_megatron_comm_overlap_analysis]]。
 
 ### 5.2 推理·模型专属优化（Model-Specific）
 
@@ -430,7 +430,7 @@ MoE 层沿 token 维 → chunk A / chunk B
 - [[13_low_precision_training_analysis]] — FP8 低精度训练（与本模型「数值可靠性」路线对照）
 - [[20_rl_training_inference_precision_analysis]] — 训练-推理精度一致性
 - [[14_expert_parallel_analysis]] · [[13_tensor_sequence_parallel_analysis]] · [[15_pipeline_parallel_analysis]] — 6D 并行的原理层
-- [[megatron_ep_analysis]] · [[megatron_comm_overlap_analysis]] — EP 与通信重叠工程
+- [[14_megatron_ep_analysis]] · [[20_megatron_comm_overlap_analysis]] — EP 与通信重叠工程
 - [[02_engineering/03_infer_frameworks/vllm/index]] — PD 分离推理（工程对照）
 
 **上级索引**：

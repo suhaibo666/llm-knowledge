@@ -3,7 +3,7 @@
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心:`megatron/core/transformer/dot_product_attention_context_parallel.py`(原生 all-gather 实现)、
 > `transformer_config.py:927`(`cp_comm_type`)、`attention.py`(CP 接入点)
-> 配套阅读:`megatron_pp_schedulers_analysis.md`、`megatron_ep_analysis.md`、`megatron_tp_analysis.md`
+> 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`
 > 适用读者:已了解 transformer 训练与 TP/PP/DP,想吃透 Megatron 上下文并行实现的工程师。
 >
 > **划界声明**:CP 通用机制(序列切分、因果负载均衡、因果块裁剪、Ring/All-gather/Ulysses/分层混合四种通信调度、通信量代数、与 TP/PP/DP/EP 的组合关系)已归一到 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]。**本页只保留 Megatron-LM 的框架实现差异**:`cp_comm_type` 配置接口与按层配置、TE 透传架构、原生 all_gather 回退实现的配置约束、选型决策树,以及 Dynamic CP 的 Megatron 特有源码细节。
@@ -18,7 +18,7 @@
 
 ### 0.2 CP 在并行体系中的位置
 
-与 TP/PP/DP/EP 的组合关系(显存账本对照表)见理论页 §2.1;CP 折叠进 EP(MoE Parallel Folding)见理论页 §2.2 + [[megatron_ep_analysis]] §6。
+与 TP/PP/DP/EP 的组合关系(显存账本对照表)见理论页 §2.1;CP 折叠进 EP(MoE Parallel Folding)见理论页 §2.2 + [[14_megatron_ep_analysis]] §6。
 
 ### 0.3 记号约定
 
@@ -57,7 +57,7 @@ Megatron 把序列切分(通用机制,见理论页 §3)与因果掩码处理(理
 
 ### 1.5 `a2a+p2p`(分层混合)—— Megatron 侧配置
 
-机制(N 级分层分组构造)见理论页 §8.2,该构造代码实际收录在 [[deepseek_v4_context_parallel_analysis]] §1.2(源码级最完整版本)。Megatron 侧配置:`transformer_config.py:938` 描述"低层 CP 组用 A2A(如经 NVLink)、高层 CP 组用 P2P(如经 IBLink)"。**推荐**:跨多节点的超长上下文(128K、1M)训练首选;单节点则 `a2a` 或 `p2p` 足够。
+机制(N 级分层分组构造)见理论页 §8.2,该构造代码实际收录在 [[35_deepseek_v4_context_parallel_analysis]] §1.2(源码级最完整版本)。Megatron 侧配置:`transformer_config.py:938` 描述"低层 CP 组用 A2A(如经 NVLink)、高层 CP 组用 P2P(如经 IBLink)"。**推荐**:跨多节点的超长上下文(128K、1M)训练首选;单节点则 `a2a` 或 `p2p` 足够。
 
 ---
 
@@ -92,7 +92,7 @@ Megatron 把序列切分(通用机制,见理论页 §3)与因果掩码处理(理
 
 并行组合(README Guideline 5):
   - CP 与 TP/PP/DP/EP 正交,可任意叠加
-  - MoE:attention 用 TP×CP×DP,CP 折叠进 EP(MoE Parallel Folding,见 megatron_ep_analysis.md §6)
+  - MoE:attention 用 TP×CP×DP,CP 折叠进 EP(MoE Parallel Folding,见 14_megatron_ep_analysis.md §6)
   - CP 与 TP 同属高带宽通信,优先压在 NVLink 域内
 ```
 
@@ -114,22 +114,22 @@ Megatron 把序列切分(通用机制,见理论页 §3)与因果掩码处理(理
 - **`resolve_cp_group(static_cp_group, packed_seq_params)`**(`packed_seq_params.py:69`,#4226):统一"**优先用 `packed_seq_params.cp_group`,否则回退建图期静态 CP 组**"的解析逻辑,供 `GPTModel`、`GatedDeltaNet`、MTP 层共用(此前各处分散硬编码 `self.pg_collection.cp`)。
 - **TE attention 接入**(`extensions/transformer_engine.py:1798`):`TEDotProductAttention.forward` 按 `packed_seq_params.local_cp_size` **切换 TE 内部的 CP 组** —— `local_cp_size==1` → `set_context_parallel_group(None,...)`(该样本关 CP);否则换成 `packed_seq_params.cp_group`。
   - **#5215 修复**(`transformer_engine.py:1886`):forward **开头先保存原始 CP 组**(`_te_orig_cp_group`),**结尾再恢复**。否则被换掉的动态 CP 组会**泄漏**到后续不带 dynamic CP 的 microbatch,导致 attention 用错组、结果错误。
-- **dispatcher 兼容**:sequence packing(THD)原仅支持 `alltoall` dispatcher,现已放宽到 `flex`(#4816,见 [[megatron_ep_analysis]] §③ 增量更新);THD 下 HybridEP 会把各 rank 不齐的 token 数补齐到组内最大值。
+- **dispatcher 兼容**:sequence packing(THD)原仅支持 `alltoall` dispatcher,现已放宽到 `flex`(#4816,见 [[14_megatron_ep_analysis]] §③ 增量更新);THD 下 HybridEP 会把各 rank 不齐的 token 数补齐到组内最大值。
 - **CUDA Graph 守卫**(#4226,`training/utils.py`):`cuda_graph_impl=full_iteration` 与 `cu_seqlens`(THD 变长)互斥,`_broadcast_cu_seqlens` 直接短路返回 `None`。
 
 ### 3.2 入口与示例
 
 - 开关:`--dynamic-context-parallel --sequence-packing-scheduler default_dynamic_cp --max-seqlen-per-dp-cp-rank N`。
 - 基准示例(#5123):`examples/dynamic_context_parallel/`(`benchmark_dcp.sh`),对比 `dp_balanced` 定长 packed 与 DCP 两条 run,复用 `pretrain_gpt.py` + `MockVarlenDataset`,不引入新模型/数据集类。
-- **数据集/调度器侧的完整机制**(packing、`max-seqlen-per-dp-cp-rank` 分配)见 [[megatron_packed_dataset_dynamic_cp_analysis]];本节只覆盖 CP/attention 侧的接入。
+- **数据集/调度器侧的完整机制**(packing、`max-seqlen-per-dp-cp-rank` 分配)见 [[29_megatron_packed_dataset_dynamic_cp_analysis]];本节只覆盖 CP/attention 侧的接入。
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`(§3 增量基准 `dev@232c478d4`)。源码行号以对应 commit 为准。`p2p`/`a2a`/`a2a+p2p` 的实际 attention 内核位于 TransformerEngine,Megatron 透传 `cp_comm_type`;原生 `all_gather` 实现见 `dot_product_attention_context_parallel.py`,通用机制骨架已归一至理论页。配套文档:`megatron_pp_schedulers_analysis.md`、`megatron_ep_analysis.md`、`megatron_tp_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`(§3 增量基准 `dev@232c478d4`)。源码行号以对应 commit 为准。`p2p`/`a2a`/`a2a+p2p` 的实际 attention 内核位于 TransformerEngine,Megatron 透传 `cp_comm_type`;原生 `all_gather` 实现见 `dot_product_attention_context_parallel.py`,通用机制骨架已归一至理论页。配套文档:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`。*
 
 ## Related Pages
 
 - [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]] —— CP/Ring Attention 通用机制(序列切分、因果裁剪、四种通信调度、通信量代数、并行组合关系)
-- [[megatron_pp_schedulers_analysis]] · [[megatron_ep_analysis]] · [[megatron_tp_analysis]] · [[megatron_packed_dataset_dynamic_cp_analysis]]
-- [[deepseek_v4_context_parallel_analysis]] —— DeepSeek-V4 在同一套 Megatron CP 基础设施上的模型特有适配(MLA/CSA/HCA)
+- [[15_megatron_pp_schedulers_analysis]] · [[14_megatron_ep_analysis]] · [[12_megatron_tp_analysis]] · [[29_megatron_packed_dataset_dynamic_cp_analysis]]
+- [[35_deepseek_v4_context_parallel_analysis]] —— DeepSeek-V4 在同一套 Megatron CP 基础设施上的模型特有适配(MLA/CSA/HCA)
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

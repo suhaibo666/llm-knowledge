@@ -105,13 +105,13 @@ torchtitan 的并行体系不是"5 套独立机制",而是**一套统一的 `Dev
 
 ## Cross-Domain Links
 
-- [[megatron_tp_analysis]] / [[megatron_cp_analysis]] / [[megatron_ep_analysis]] / [[megatron_pp_schedulers_analysis]] / [[megatron_distributed_optimizer_analysis]] —— Megatron-LM 同维度源码级分析,可与本系列对照(CUDA/Megatron 生态 vs PyTorch-native)
-- [[megatron_parallelism_orchestration_analysis]] —— Megatron-LM 进程组编排,与 `ParallelDims` 同类
-- [[async_collective_tensor_deep_dive]] —— `AsyncCollectiveTensor` 源码追踪,是 TP/CP/EP 异步通信的共同底座
-- [[comm_compute_overlap_analysis]] —— 计算通信掩盖对比(含 torchtitan 源码)
-- [[comm_compute_fusion_guide]] —— 通算融合路线图
-- [[distributed_optimizer_deep_dive]] —— FSDP2 / ZeRO / MindSpeed 三方对比
-- [[megatron_pp_schedulers_analysis]] —— LLM 并行通信依赖 DAG
+- [[12_megatron_tp_analysis]] / [[13_megatron_cp_analysis]] / [[14_megatron_ep_analysis]] / [[15_megatron_pp_schedulers_analysis]] / [[16_megatron_distributed_optimizer_analysis]] —— Megatron-LM 同维度源码级分析,可与本系列对照(CUDA/Megatron 生态 vs PyTorch-native)
+- [[17_megatron_parallelism_orchestration_analysis]] —— Megatron-LM 进程组编排,与 `ParallelDims` 同类
+- [[21_async_collective_tensor_deepdive]] —— `AsyncCollectiveTensor` 源码追踪,是 TP/CP/EP 异步通信的共同底座
+- [[30_comm_compute_overlap_analysis]] —— 计算通信掩盖对比(含 torchtitan 源码)
+- [[31_comm_compute_fusion_guide]] —— 通算融合路线图
+- [[32_distributed_optimizer_deepdive]] —— FSDP2 / ZeRO / MindSpeed 三方对比
+- [[15_megatron_pp_schedulers_analysis]] —— LLM 并行通信依赖 DAG
 
 ## Related Pages
 

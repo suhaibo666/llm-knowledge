@@ -119,9 +119,9 @@ verl 不自己实现并行,而是把 FSDP2 / Megatron-LM 当**训练后端**、v
 
 - [[torchtitan/index]] / [[torchtitan_fsdp_analysis]] —— FSDP2 `fully_shard` 逐参数分片、`DTensor.full_tensor()`(verl 训练侧重分片的底座)
 - [[megatron-lm/index]] —— Megatron TP/PP/EP 分片(verl Megatron 后端;`bridge.export_hf_weights` 反分片回 HF 权重)
-- [[distributed_optimizer_deep_dive]] —— FSDP2/ZeRO/MindSpeed 优化器分片与 offload,对应 [[30_verl_optimization_analysis]] 的显存手段
+- [[32_distributed_optimizer_deepdive]] —— FSDP2/ZeRO/MindSpeed 优化器分片与 offload,对应 [[30_verl_optimization_analysis]] 的显存手段
 - [[torchtitan_cp_analysis]] —— 序列/上下文并行,对照 [[30_verl_optimization_analysis]] 的 Ulysses 序列并行
-- [[comm_compute_overlap_analysis]] —— 通信掩盖,对照 verl 异步 RL 的生成-训练重叠
+- [[30_comm_compute_overlap_analysis]] —— 通信掩盖,对照 verl 异步 RL 的生成-训练重叠
 
 ## Related Pages
 

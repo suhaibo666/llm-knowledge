@@ -377,6 +377,6 @@ vLLM 处理 prefill/decode 有两条**截然相反**的路径,常被混为一谈
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links
-- [[megatron_inference_engine_analysis]] —— Megatron 推理引擎连续批处理/分块预填充对照
+- [[31_megatron_inference_engine_analysis]] —— Megatron 推理引擎连续批处理/分块预填充对照
 - [[mooncake_analysis]] —— Mooncake P/D 分离架构,与本页 KVConnector 远端前缀命中、抢占重算形成对照
 - [[../../../01_theory/05_inference/index]] —— 推理技术理论(连续批处理、PagedAttention 原理)

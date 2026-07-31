@@ -470,7 +470,7 @@ def combined_1f1b_schedule_for_no_pipelining(...):
 ```
 > MB N+1 前向的 attn_fwd 与 MB N 反向的 combine_bwd 完全重叠(2u),mlp_bwd 启动后与 dispatch_fwd 重叠(1u),t=5 处仅通信无计算可被 delay-wgrad 填补。
 
-> [!note] 补充(2026-07-31 · 由 [[comm_compute_overlap_analysis]] 收缩合并)以下三段细化"§5.3 双 Stream 调度"的模型改造与调度实现来源,原属跨框架横向页,现下沉本页。
+> [!note] 补充(2026-07-31 · 由 [[30_comm_compute_overlap_analysis]] 收缩合并)以下三段细化"§5.3 双 Stream 调度"的模型改造与调度实现来源,原属跨框架横向页,现下沉本页。
 
 #### 模型层改造：Layer → 5 子节点
 
@@ -654,11 +654,11 @@ $$
 \boxed{\ \text{IB 加速比}=\dfrac{k/P}{\,1-(1-1/P)^k\,}\ }\quad(P=\text{node 数},\ M=H\times\text{bytes/elt})
 $$
 
-例：2 node、topk=4 → 跨节点 IB 流量约降到 1/2.13；topk=8 → ≈1/4。专家越多、topk 越大、目标越聚集在少数远端 node，省得越多（DeepSeek-V3 256 专家/topk8 即此场景）。**完整逐字节走查 + 两级公式推导见 [[megatron_ep_analysis]] §③.3**。
+例：2 node、topk=4 → 跨节点 IB 流量约降到 1/2.13；topk=8 → ≈1/4。专家越多、topk 越大、目标越聚集在少数远端 node，省得越多（DeepSeek-V3 256 专家/topk8 即此场景）。**完整逐字节走查 + 两级公式推导见 [[14_megatron_ep_analysis]] §③.3**。
 
 > **与"掩盖"的关系**：两级拆分让 A2A 的长极（跨节点 RDMA 段）与廉价的 NVLink 段在不同引擎上推进；配合 §5.7 的 `high_priority_a2a_comm_stream`（让 A2A kernel 优先抢 SM）与 `moe_hybridep_num_sms_preprocessing`（调元数据扫描 SM 数），可在 §5.1 的 1F1B overlap 之上进一步压短 A2A 暴露在关键路径上的尾延迟。即：**§5.6 降 A2A 绝对耗时（去冗余 + 两级）+ §5.1 把剩余 A2A 掩盖到计算后面**，二者叠加。
 
-#### 5.6.2 后端硬件映射速查（补充,2026-07-31 · 由 [[comm_compute_overlap_analysis]] 收缩合并）
+#### 5.6.2 后端硬件映射速查（补充,2026-07-31 · 由 [[30_comm_compute_overlap_analysis]] 收缩合并）
 
 | Backend | 硬件 | 核心函数 |
 | --- | --- | --- |
@@ -668,18 +668,18 @@ $$
 ### 5.7 增量更新（ee3f1ff → dev@232c478d4）
 
 > [!update] 2026-06-16 · dev@232c478d4 — 高优先级 A2A 通信流
-> 新增 `high_priority_a2a_comm_stream`（默认 `False`，`transformer_config.py:686`，#4694）。combined-1F1B 的 `set_streams` 现接受 `high_priority` 形参（`pipeline_parallel/utils.py:336`）：打开后，§5.3 那条专跑 dispatch/combine A2A 的 `comm_stream` 以 **CUDA 高优先级**创建（`torch.cuda.Stream.priority_range()` 的 high 端）。目的：让 A2A 通信 kernel 优先抢 SM，减少被同设备的计算 kernel 卡住的尾延迟。`combined_1f1b.py` 的两个 schedule（no-pipelining / interleaved）都按 `config.high_priority_a2a_comm_stream` 透传。配套地，HybridEP 还新增 `moe_hybridep_num_sms_preprocessing`（默认 108，metadata scan kernel 的 SM 数，见 [[megatron_ep_analysis]] §③ 增量更新）。
+> 新增 `high_priority_a2a_comm_stream`（默认 `False`，`transformer_config.py:686`，#4694）。combined-1F1B 的 `set_streams` 现接受 `high_priority` 形参（`pipeline_parallel/utils.py:336`）：打开后，§5.3 那条专跑 dispatch/combine A2A 的 `comm_stream` 以 **CUDA 高优先级**创建（`torch.cuda.Stream.priority_range()` 的 high 端）。目的：让 A2A 通信 kernel 优先抢 SM，减少被同设备的计算 kernel 卡住的尾延迟。`combined_1f1b.py` 的两个 schedule（no-pipelining / interleaved）都按 `config.high_priority_a2a_comm_stream` 透传。配套地，HybridEP 还新增 `moe_hybridep_num_sms_preprocessing`（默认 108，metadata scan kernel 的 SM 数，见 [[14_megatron_ep_analysis]] §③ 增量更新）。
 
 > [!update] 2026-06-16 · dev@232c478d4 — A2A Overlap 支持 Megatron-FSDP
-> EP A2A 重叠（combined-1F1B）现可与 **Megatron-FSDP** 共用（#3797，`combined_1f1b.py`、`model_chunk_schedule_plan.py:176`）。难点：细粒度 overlap schedule **绕过** `TransformerLayer.forward`（直接调子模块），从而绕过 FSDP 注册在 unit module 上的 forward/backward hook —— all-gather 出来的分片参数不会被正常释放。解法：`TransformerLayerSchedulePlan.set_fsdp_reshard_hooks` 给单个 schedule node 显式挂"释放参数"回调（最后一个前向 node 后 `post_forward_release_module`，最后一个反向 node（attn）后 `post_backward_release_module`）；`combined_forward_backward_step` 在反向前后调 `fsdp_wrapper.pre/post_backward()`，并在调度前 `_replace_param_with_raw_if_needed()`。仅 `optim_grads_params`（参数分片）策略需逐层 reshard hook。**限制**：交错式 PP（VPP>1）+ FSDP 暂不支持（显式 assert）。FSDP 内部分片/reshard 细节见 [[megatron_distributed_optimizer_analysis]]。
+> EP A2A 重叠（combined-1F1B）现可与 **Megatron-FSDP** 共用（#3797，`combined_1f1b.py`、`model_chunk_schedule_plan.py:176`）。难点：细粒度 overlap schedule **绕过** `TransformerLayer.forward`（直接调子模块），从而绕过 FSDP 注册在 unit module 上的 forward/backward hook —— all-gather 出来的分片参数不会被正常释放。解法：`TransformerLayerSchedulePlan.set_fsdp_reshard_hooks` 给单个 schedule node 显式挂"释放参数"回调（最后一个前向 node 后 `post_forward_release_module`，最后一个反向 node（attn）后 `post_backward_release_module`）；`combined_forward_backward_step` 在反向前后调 `fsdp_wrapper.pre/post_backward()`，并在调度前 `_replace_param_with_raw_if_needed()`。仅 `optim_grads_params`（参数分片）策略需逐层 reshard hook。**限制**：交错式 PP（VPP>1）+ FSDP 暂不支持（显式 assert）。FSDP 内部分片/reshard 细节见 [[16_megatron_distributed_optimizer_analysis]]。
 
 > [!update] 2026-06-16 · dev@232c478d4 — FSDP 双缓冲 wgrad 竞态修复
-> 修复 FSDP 双缓冲（`fsdp_double_buffer`）下的 wgrad 竞态（#5222，`megatron_fsdp/param_and_grad_buffer.py:2727`）。原先在反向 hook 里**预先**调 `_enforce_double_buffer_limit` 腾 bucket；改为把该调用下沉进懒加载的 `main_grad_getter` —— 即**真正 fetch 到 incoming bucket 的那一刻**才腾退旧 bucket，使双缓冲 reduce-scatter 流水线的 bucket 生命周期与梯度写入精确对齐，消除"buffer 还在被 wgrad 写就被双缓冲分配器回收"的竞态。属 FSDP 内部正确性修复，与本页"通信重叠不改数值"前提一致；FSDP 缓冲机制详见 [[megatron_distributed_optimizer_analysis]]。
+> 修复 FSDP 双缓冲（`fsdp_double_buffer`）下的 wgrad 竞态（#5222，`megatron_fsdp/param_and_grad_buffer.py:2727`）。原先在反向 hook 里**预先**调 `_enforce_double_buffer_limit` 腾 bucket；改为把该调用下沉进懒加载的 `main_grad_getter` —— 即**真正 fetch 到 incoming bucket 的那一刻**才腾退旧 bucket，使双缓冲 reduce-scatter 流水线的 bucket 生命周期与梯度写入精确对齐，消除"buffer 还在被 wgrad 写就被双缓冲分配器回收"的竞态。属 FSDP 内部正确性修复，与本页"通信重叠不改数值"前提一致；FSDP 缓冲机制详见 [[16_megatron_distributed_optimizer_analysis]]。
 
 > [!update] 2026-06-16 · dev@232c478d4 — flex 后端配置补充
-> §八配置速查表的 `moe_flex_dispatcher_backend` 现多一个取值 `"deepepv2"`（DeepEP v2 ElasticBuffer 后端，#4793）；`moe_deepep_num_sms` 默认从 `20` 改为 `None`（自适应）。详见 [[megatron_ep_analysis]] §③ 增量更新。
+> §八配置速查表的 `moe_flex_dispatcher_backend` 现多一个取值 `"deepepv2"`（DeepEP v2 ElasticBuffer 后端，#4793）；`moe_deepep_num_sms` 默认从 `20` 改为 `None`（自适应）。详见 [[14_megatron_ep_analysis]] §③ 增量更新。
 
-### 5.8 Shared Expert：独立 Stream 状态机重叠（`moe_shared_expert_overlap`，补充,2026-07-31 · 由 [[comm_compute_overlap_analysis]] 收缩合并）
+### 5.8 Shared Expert：独立 Stream 状态机重叠（`moe_shared_expert_overlap`，补充,2026-07-31 · 由 [[30_comm_compute_overlap_analysis]] 收缩合并）
 
 **与 §5.1-5.7 的区别**：本节是与 combined_1f1b（`overlap_moe_expert_parallel_comm`）**独立的另一个开关** `moe_shared_expert_overlap`，掩盖的是 Shared Expert 计算与 token dispatch/combine 的 AlltoAll——即便不开 EP+PP 交叉掩盖，单独开此开关也生效。
 
@@ -693,7 +693,7 @@ Shared Expert MLP 在独立 CUDA stream 上运行，通过状态机与 token dis
 
 Shared Expert 使用**状态机**管理调用顺序：`IDLE → PRE_FORWARD_COMM_DONE → FC1_FORWARD_DONE → FC2_FORWARD_DONE → POST_FORWARD_COMM_DONE → IDLE`，确保在不同 dispatcher 类型下正确同步。
 
-> 相关：deepseek_v4 场景下 Shared Expert 启用 TP（`T_shared>1`）时该开关会额外关闭 TP 的 AG/RS、改走手动调度，见 [[deepseek_v4_tensor_parallel_analysis]] §7.2（`shared_experts.py:147-159`）——两处描述的是同一 `moe_shared_expert_overlap` 机制在不同场景下的效果。
+> 相关：deepseek_v4 场景下 Shared Expert 启用 TP（`T_shared>1`）时该开关会额外关闭 TP 的 AG/RS、改走手动调度，见 [[34_deepseek_v4_tensor_parallel_analysis]] §7.2（`shared_experts.py:147-159`）——两处描述的是同一 `moe_shared_expert_overlap` 机制在不同场景下的效果。
 
 ---
 
@@ -794,8 +794,8 @@ args.context_parallel_size = 2       # CP > 1 时自动启用 attention overlap
 
 ## Related Pages
 
-- [[megatron_tp_analysis]] · [[megatron_cp_analysis]] · [[megatron_ep_analysis]] · [[megatron_pp_schedulers_analysis]]
-- [[megatron_distributed_optimizer_analysis]] · [[megatron_parallelism_orchestration_analysis]]
-- [[deepseek_v4_tensor_parallel_analysis]] —— Shared Expert Overlap 在 TP>1 场景下的效果（§7.2）
-- [[comm_compute_overlap_analysis]] —— 跨框架（Megatron/torchtitan/MindSpeed）通算掩盖对比矩阵，本页是其 Megatron 权威机制页
+- [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[14_megatron_ep_analysis]] · [[15_megatron_pp_schedulers_analysis]]
+- [[16_megatron_distributed_optimizer_analysis]] · [[17_megatron_parallelism_orchestration_analysis]]
+- [[34_deepseek_v4_tensor_parallel_analysis]] —— Shared Expert Overlap 在 TP>1 场景下的效果（§7.2）
+- [[30_comm_compute_overlap_analysis]] —— 跨框架（Megatron/torchtitan/MindSpeed）通算掩盖对比矩阵，本页是其 Megatron 权威机制页
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

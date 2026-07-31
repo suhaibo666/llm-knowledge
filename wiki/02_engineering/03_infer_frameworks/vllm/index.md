@@ -110,10 +110,10 @@ flowchart TB
 
 ## Cross-Domain Links
 
-- [[megatron_inference_engine_analysis]] —— Megatron-LM **内置**推理引擎(连续批处理 / 块级 paged KV / 分块预填充)对照:训练框架自带推理 vs 专用推理引擎
+- [[31_megatron_inference_engine_analysis]] —— Megatron-LM **内置**推理引擎(连续批处理 / 块级 paged KV / 分块预填充)对照:训练框架自带推理 vs 专用推理引擎
 - [[mooncake_analysis]] —— Mooncake 分离式推理(P/D 分离、中心化 KV Cache),与 vLLM 的 KV 连接器 / 分离式 prefill 互为实现与架构对照
-- [[megatron_tp_analysis]] · [[megatron_ep_analysis]] · [[megatron_cp_analysis]] —— 训练侧 TP/EP/CP 源码级分析,与 [[vllm_distributed_inference_analysis]] 的推理侧并行对照
-- [[megatron_fusion_operators_analysis]] · [[torchtitan_compute_memory_optimizations_analysis]] —— 训练侧融合算子目录,与 [[vllm_fused_ops_and_kernels_analysis]] / [[vllm_ir_and_fusion_passes_analysis]] 的推理侧融合对照
+- [[12_megatron_tp_analysis]] · [[14_megatron_ep_analysis]] · [[13_megatron_cp_analysis]] —— 训练侧 TP/EP/CP 源码级分析,与 [[vllm_distributed_inference_analysis]] 的推理侧并行对照
+- [[21_megatron_fusion_operators_analysis]] · [[torchtitan_compute_memory_optimizations_analysis]] —— 训练侧融合算子目录,与 [[vllm_fused_ops_and_kernels_analysis]] / [[vllm_ir_and_fusion_passes_analysis]] 的推理侧融合对照
 - [[10_pytorch_cuda_graphs_complete_guide]] · [[02_compile_stack/04_inductor/index]] · [[02_compile_stack/01_dynamo/index]] —— [[vllm_compilation_cudagraph_analysis]] / [[vllm_ir_and_fusion_passes_analysis]] 依赖的底层编译/图捕获/Pattern-Match 栈
 - [[12_deepseek_v3_analysis]] —— MLA / MTP 模型侧原理,被 [[vllm_attention_backends_analysis]](MLA 后端)与 [[vllm_speculative_decoding_analysis]](MTP)实现
 - [[13_low_precision_training_analysis]] · [[14_transformer_engine_analysis]] · [[24_deepseek_v4_fp4_qat_analysis]] —— FP8/FP4 低精度原理,对照 [[vllm_quantization_analysis]] 的推理量化

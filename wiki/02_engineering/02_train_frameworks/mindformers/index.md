@@ -42,10 +42,10 @@ MoE dispatch 的物理事实只有两条:**token 散在各 rank、专家也散�
 
 ## Cross-Domain Links
 
-- [[megatron_ep_analysis]] —— Megatron-LM 的 EP / token dispatcher 源码级分析(CUDA 生态对照)
+- [[14_megatron_ep_analysis]] —— Megatron-LM 的 EP / token dispatcher 源码级分析(CUDA 生态对照)
 - [[torchtitan_ep_analysis]] —— torchtitan EP(AllToAll / DeepEP 路径,PyTorch-native 对照)
 - [[20_deepseek_moe_analysis]] —— DeepSeek MoE 路由与共享专家(k、E 的来源)
-- [[comm_compute_overlap_analysis]] —— 计算通信掩盖对比(含 DeepEP/HybridEP)
+- [[30_comm_compute_overlap_analysis]] —— 计算通信掩盖对比(含 DeepEP/HybridEP)
 
 ## Related Pages
 

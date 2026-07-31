@@ -272,7 +272,7 @@ for name, loaded_weight in weights:
 - `weight_loader`(`:1597`):在 `input_dim` 维 `narrow`(`:1606-1609`)。
 - `forward`(`:1628`):`output_parallel = quant_method.apply(...)` 后,若 `reduce_results` 则 **all-reduce**(`:1647`)把各 rank 的部分和累加为完整结果;bias 只在 rank 0 加(`:1643`,避免重复)。
 
-> **Column→Row 配对**是 vLLM(及 Megatron)TP 的标准范式:Attention 里 `qkv_proj`(Column,无 gather)→ `o_proj`(Row,all-reduce);MLP 里 `gate_up_proj`(Column)→ `down_proj`(Row,all-reduce)。整个 block 每 TP rank 只在末端通信一次。训练侧对照见 [[megatron_tp_analysis]]。
+> **Column→Row 配对**是 vLLM(及 Megatron)TP 的标准范式:Attention 里 `qkv_proj`(Column,无 gather)→ `o_proj`(Row,all-reduce);MLP 里 `gate_up_proj`(Column)→ `down_proj`(Row,all-reduce)。整个 block 每 TP rank 只在末端通信一次。训练侧对照见 [[12_megatron_tp_analysis]]。
 
 **(c) `MergedColumnParallelLinear`**(`:577`)—— 多个 Column 投影拼一个 GEMM(如 gate+up)。`output_sizes=[inter, inter]`(`llama.py:97`),`weight_loader(param, w, loaded_shard_id)`(`:662`)按 `loaded_shard_id` 算出该子块在合并张量里的 `shard_offset/shard_size`(再各自除以 tp_size,`:747-750`),把 HF 的 `gate_proj`/`up_proj` 分别写入合并参数的前半 / 后半。
 
@@ -304,5 +304,5 @@ for name, loaded_weight in weights:
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links
-- [[megatron_tp_analysis]] —— 张量并行(Column/Row 切分)训练侧对照
+- [[12_megatron_tp_analysis]] —— 张量并行(Column/Row 切分)训练侧对照
 - [[12_deepseek_v3_analysis]] / [[20_deepseek_moe_analysis]] —— MLA/MoE 模型结构(被 vLLM 实现)

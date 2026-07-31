@@ -472,8 +472,8 @@ MAX_JOBS=16                         # 并行编译线程数
 
 - [[01_theory/02_pretraining/13_low_precision_training_analysis]] — Megatron 低精度训练全栈
 - [[02_engineering/02_train_frameworks/megatron-lm/index]] — Megatron-LM 知识地图
-- [[02_engineering/02_train_frameworks/megatron-lm/megatron_comm_overlap_analysis]] — TP 通信重叠中的 TE User Buffer
-- [[02_engineering/02_train_frameworks/megatron-lm/megatron_precision_cudagraph_fusion_analysis]] — CUDA Graphs + FP8 精度
+- [[02_engineering/02_train_frameworks/megatron-lm/20_megatron_comm_overlap_analysis]] — TP 通信重叠中的 TE User Buffer
+- [[02_engineering/02_train_frameworks/megatron-lm/23_megatron_precision_cudagraph_fusion_analysis]] — CUDA Graphs + FP8 精度
 - [[01_theory/01_models/deepseek/24_deepseek_v4_fp4_qat_analysis]] — FP4 QAT 实现
 - [[01_theory/02_pretraining/12_activation_checkpointing_analysis]] — TE checkpoint 与 FP8 激活重计算
 - [[01_theory/02_pretraining/20_rl_training_inference_precision_analysis]] — RL 训练推理精度对齐

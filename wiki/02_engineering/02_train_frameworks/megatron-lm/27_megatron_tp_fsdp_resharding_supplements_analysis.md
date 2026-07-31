@@ -2,12 +2,12 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/distributed/fsdp/`(Megatron-FSDP,~9500 行)、`distributed/nonuniform_tp.py`(1463 行)、`resharding/`(~2000 行)
-> 配套阅读:`megatron_tp_analysis.md`、`megatron_distributed_optimizer_analysis.md`、`megatron_parallelism_orchestration_analysis.md`
+> 配套阅读:`12_megatron_tp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`
 > 定位:"第一层补遗"第③份。补齐 3 块前面只点了名的内容。先做一处**勘误**:tier-1 清单里把它们叫"非均匀 TP / 弹性 resharding",读源码后更准确的命名是 ——
 
 | tier-1 旧称 | 准确含义 |
 |------------|---------|
-| Megatron-FSDP 内部 | ZeRO-2/3 的**具体实现机器**(`megatron_distributed_optimizer_analysis.md` 只给了概念) |
+| Megatron-FSDP 内部 | ZeRO-2/3 的**具体实现机器**(`16_megatron_distributed_optimizer_analysis.md` 只给了概念) |
 | "非均匀 TP" | **Nonuniform TP(NTP)= TP 级容错**:备用 rank 顶替故障 rank |
 | "弹性 resharding" | **Resharding / Refit = 跨并行配置搬运权重**,主用于 RL 的训练→推理 |
 
@@ -25,13 +25,13 @@
 
 ## 1. Megatron-FSDP 内部实现(ZeRO-2/3 的机器)
 
-### 1.1 动机:`megatron_distributed_optimizer_analysis.md` 只讲了概念
+### 1.1 动机:`16_megatron_distributed_optimizer_analysis.md` 只讲了概念
 
 DDP 文档把 ZeRO-2/3 讲成"梯度也切 / 参数也切,逐层 all-gather 出参数、用完释放"。但**怎么切、怎么 gather、怎么不让通信拖慢**,实现细节全在 `megatron/core/distributed/fsdp/`。本节补齐这台"机器"。
 
 ### 1.2 `MegatronFSDP` —— FSDP 包装器
 
-`megatron_fsdp.py:106`。包住模型,按 `data_parallel_sharding_strategy` 选 ZeRO 阶段(`no_shard`/`optim`/`optim_grads`/`optim_grads_params`,对应 ZeRO-0/1/2/3,见 `megatron_distributed_optimizer_analysis.md` §0.3)。一个 `TrainingState` 状态机(`:63`)跟踪"此刻参数/梯度处于分片还是聚合态"。
+`megatron_fsdp.py:106`。包住模型,按 `data_parallel_sharding_strategy` 选 ZeRO 阶段(`no_shard`/`optim`/`optim_grads`/`optim_grads_params`,对应 ZeRO-0/1/2/3,见 `16_megatron_distributed_optimizer_analysis.md` §0.3)。一个 `TrainingState` 状态机(`:63`)跟踪"此刻参数/梯度处于分片还是聚合态"。
 
 关键默认值(`:318`):
 - `optim_grads` / `optim_grads_params` → **默认开启梯度 reduce-scatter 重叠**(切了梯度就必须重叠,否则严重掉速)。
@@ -66,12 +66,12 @@ ZeRO-3 一层的前向(AllGatherPipeline):
 - **DTensor 分片**:`fully_shard.py` 用 torch 的 `DeviceMesh` / `DTensor` 表达分片,`--ckpt-format fsdp_dtensor`。
 - **不整除分片**:`uneven_dtensor.py`(483 行)处理参数 numel 不能被 DP 组整除的情况。
 - **混合精度**:`mixed_precision.py` 的 `MixedPrecisionPolicy`,含 fp8 transpose cache。
-- **HSDP**:`outer_dp_sharding_strategy`(内层节点内分片、外层跨节点复制),见 `megatron_distributed_optimizer_analysis.md` §3。
+- **HSDP**:`outer_dp_sharding_strategy`(内层节点内分片、外层跨节点复制),见 `16_megatron_distributed_optimizer_analysis.md` §3。
 - **接入**:`mcore_fsdp_adapter.py` 把 Megatron-FSDP 缝进 Megatron-LM(`--use-megatron-fsdp`)。
 
 ### 1.6 与 DDP 文档的衔接
 
-`megatron_distributed_optimizer_analysis.md` 的阶段③④(`optim_grads`/`optim_grads_params`)说"由 Megatron-FSDP 实现" —— 实现就是本节:`ParamAndGradBuffer` + `AllGatherPipeline`(预取重叠)+ `GradReducePipeline` + 临时桶分配器。ZeRO-3 通信 1.5× 不掉速,全靠这套预取流水线。
+`16_megatron_distributed_optimizer_analysis.md` 的阶段③④(`optim_grads`/`optim_grads_params`)说"由 Megatron-FSDP 实现" —— 实现就是本节:`ParamAndGradBuffer` + `AllGatherPipeline`(预取重叠)+ `GradReducePipeline` + 临时桶分配器。ZeRO-3 通信 1.5× 不掉速,全靠这套预取流水线。
 
 ---
 
@@ -164,17 +164,17 @@ swap_model_weights(src_model, target_model, refit_method="nccl")
 
 | 主题 | 何时关心 | 与已有文档的关系 |
 |------|---------|-----------------|
-| **Megatron-FSDP 内部** | 用 ZeRO-2/3(`--use-megatron-fsdp`) | 是 `megatron_distributed_optimizer_analysis.md` 阶段③④的实现机器:预取流水线 AG/RS + 临时桶分配器 |
-| **Nonuniform TP** | 千卡级长训练要扛 TP 组单点故障 | `megatron_tp_analysis.md` 的容错扩展;非侵入式子类 |
-| **Resharding / Refit** | RL 训练,训练模型↔推理模型布局不同 | 独立工具,跨 `megatron_parallelism_orchestration_analysis.md` 描述的两套布局搬权重 |
+| **Megatron-FSDP 内部** | 用 ZeRO-2/3(`--use-megatron-fsdp`) | 是 `16_megatron_distributed_optimizer_analysis.md` 阶段③④的实现机器:预取流水线 AG/RS + 临时桶分配器 |
+| **Nonuniform TP** | 千卡级长训练要扛 TP 组单点故障 | `12_megatron_tp_analysis.md` 的容错扩展;非侵入式子类 |
+| **Resharding / Refit** | RL 训练,训练模型↔推理模型布局不同 | 独立工具,跨 `17_megatron_parallelism_orchestration_analysis.md` 描述的两套布局搬权重 |
 
 至此"第一层补遗"3 份文档全部完成:① 并行编排 capstone、② PP 补遗、③ TP·FSDP·resharding 补遗。
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`megatron_tp_analysis.md`、`megatron_distributed_optimizer_analysis.md`、`megatron_parallelism_orchestration_analysis.md`、`megatron_pp_supplements_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`12_megatron_tp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`、`26_megatron_pp_supplements_analysis.md`。*
 
 ## Related Pages
 
-- [[megatron_tp_analysis]] · [[megatron_distributed_optimizer_analysis]] · [[megatron_parallelism_orchestration_analysis]] · [[megatron_rl_posttraining_consistency_analysis]] · [[megatron_dist_checkpointing_analysis]]
+- [[12_megatron_tp_analysis]] · [[16_megatron_distributed_optimizer_analysis]] · [[17_megatron_parallelism_orchestration_analysis]] · [[30_megatron_rl_posttraining_consistency_analysis]] · [[19_megatron_dist_checkpointing_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

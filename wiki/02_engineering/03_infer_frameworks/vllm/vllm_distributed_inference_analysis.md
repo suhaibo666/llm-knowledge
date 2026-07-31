@@ -291,6 +291,6 @@ MoE 路由天然不均(热门专家被打爆),`EplbState`(`vllm/distributed/eplb
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links
-- [[megatron_tp_analysis]] · [[megatron_ep_analysis]] · [[megatron_cp_analysis]] —— 训练侧 TP/EP/CP 源码级对照
-- [[megatron_inference_engine_analysis]] —— 训练框架推理引擎并行对照
+- [[12_megatron_tp_analysis]] · [[14_megatron_ep_analysis]] · [[13_megatron_cp_analysis]] —— 训练侧 TP/EP/CP 源码级对照
+- [[31_megatron_inference_engine_analysis]] —— 训练框架推理引擎并行对照
 - [[mooncake_analysis]] —— 分离式服务 / 跨节点 KV

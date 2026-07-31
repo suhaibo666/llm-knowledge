@@ -355,7 +355,7 @@ flowchart TB
 - [[15_verl_rl_algorithms_analysis]] —— GRPO/PPO 与 advantage(prefix-grouper/uid 与之相关)
 - [[01_verl_architecture_overview_analysis]] —— 总体架构与本目录定位
 - [[verl/index]] —— verl 系列知识地图
-- [[distributed_optimizer_deep_dive]] —— 分布式优化器(Megatron `use_distributed_optimizer` 对照)
+- [[32_distributed_optimizer_deepdive]] —— 分布式优化器(Megatron `use_distributed_optimizer` 对照)
 - [[torchtitan_fsdp_analysis]] —— FSDP2 标杆篇(offload_policy/混合精度跨框架对照)
 - [[torchtitan_cp_analysis]] —— Context Parallel 对照(Ulysses vs Ring/All-gather CP 取舍)
-- [[comm_compute_overlap_analysis]] —— 通信-计算重叠的跨框架视角(异步 RL 的更一般化)
+- [[30_comm_compute_overlap_analysis]] —— 通信-计算重叠的跨框架视角(异步 RL 的更一般化)

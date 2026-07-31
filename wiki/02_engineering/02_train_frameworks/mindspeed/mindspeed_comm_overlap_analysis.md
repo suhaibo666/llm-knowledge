@@ -456,6 +456,6 @@ return val
 - [[mindspeed_context_parallel_analysis]] —— CP 家族的 send-recv overlap、双环 intra/inter 重叠、RingP2P 异步
 - [[mindspeed_memory_optimization_analysis]] —— 重计算/Swap/zero-memory;fb-overlap、RiPipe、MC2-recompute 与之深度耦合
 - [[mindspeed_ascend_affinity_analysis]] —— GroupedMatMul、融合算子、HCCL buffer、lcal/torch_npu 算子底座(MC2/CoC 依赖)
-- [[comm_compute_overlap_analysis]] —— 通算掩盖的跨框架综述(对照视角)
-- [[megatron_comm_overlap_analysis]] —— 被打补丁的宿主 Megatron 原生通算重叠(MC2/CoC/DualPipeV 即在其上替换)
+- [[30_comm_compute_overlap_analysis]] —— 通算掩盖的跨框架综述(对照视角)
+- [[20_megatron_comm_overlap_analysis]] —— 被打补丁的宿主 Megatron 原生通算重叠(MC2/CoC/DualPipeV 即在其上替换)
 - [[mindformers_moe_token_dispatcher_analysis]] —— MindSpore 侧 MoE token dispatch/all-to-all 对照

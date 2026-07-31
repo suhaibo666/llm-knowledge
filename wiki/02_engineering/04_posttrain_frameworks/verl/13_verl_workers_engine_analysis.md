@@ -205,7 +205,7 @@ for micro_batch in micro_batches:
 
 ### 4.3 Megatron:复用同一契约,内核换成 mcore
 
-`MegatronEngine(BaseEngine)`(`megatron/transformer_impl.py:77`)在 `_init_device_mesh` 里调 `mpu.initialize_model_parallel`,一次性铺开 TP/PP/VPP/CP/EP/ETP(`:155-165`);模型经 mbridge 从 HF config 转 mcore(`:188-241`)。`forward_backward_batch`(`:608`)不再自己写微批循环,而是把 `forward_step` 喂给 Megatron 的 `get_forward_backward_func()`(PP 调度器,`:645-683`),并为 MoE 接入 router replay(`:661-668`)。但**对外接口与 FSDP 完全一致**——`train_batch`/`optimizer_step`/`get_per_tensor_param`/`to` 同名同义,这正是 worker 层能对后端无感的根因。详见 [[megatron-lm/index]] 与 [[distributed_optimizer_deep_dive]]。
+`MegatronEngine(BaseEngine)`(`megatron/transformer_impl.py:77`)在 `_init_device_mesh` 里调 `mpu.initialize_model_parallel`,一次性铺开 TP/PP/VPP/CP/EP/ETP(`:155-165`);模型经 mbridge 从 HF config 转 mcore(`:188-241`)。`forward_backward_batch`(`:608`)不再自己写微批循环,而是把 `forward_step` 喂给 Megatron 的 `get_forward_backward_func()`(PP 调度器,`:645-683`),并为 MoE 接入 router replay(`:661-668`)。但**对外接口与 FSDP 完全一致**——`train_batch`/`optimizer_step`/`get_per_tensor_param`/`to` 同名同义,这正是 worker 层能对后端无感的根因。详见 [[megatron-lm/index]] 与 [[32_distributed_optimizer_deepdive]]。
 
 ---
 
@@ -337,4 +337,4 @@ flowchart TD
 - [[15_verl_rl_algorithms_analysis]] —— `ppo_loss` 背后的 `core_algos` 策略损失族
 - [[30_verl_optimization_analysis]] —— 显存/吞吐系统级优化全景
 - [[02_verl_quickstart_guide]] —— 跑起来一条 PPO 的最小路径
-- 后端内核:[[torchtitan_fsdp_analysis]] · [[megatron-lm/index]] · [[distributed_optimizer_deep_dive]]
+- 后端内核:[[torchtitan_fsdp_analysis]] · [[megatron-lm/index]] · [[32_distributed_optimizer_deepdive]]

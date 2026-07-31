@@ -2,14 +2,14 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/inference/` 下 `engines/`(`dynamic_engine.py` 2446 行、`static_engine.py`)、`contexts/dynamic_context.py`(3785 行)、`contexts/kv_block_allocator.py`、`scheduler.py`
-> 配套阅读:`megatron_rl_posttraining_consistency_analysis.md`(RL rollout 用的就是本引擎)、`megatron_precision_cudagraph_fusion_analysis.md`、`megatron_ep_analysis.md`
-> 定位:系统性专题。`megatron_rl_posttraining_consistency_analysis.md` 把推理引擎当作 RL rollout 的积木一笔带过,本文拆开它内部。
+> 配套阅读:`30_megatron_rl_posttraining_consistency_analysis.md`(RL rollout 用的就是本引擎)、`23_megatron_precision_cudagraph_fusion_analysis.md`、`14_megatron_ep_analysis.md`
+> 定位:系统性专题。`30_megatron_rl_posttraining_consistency_analysis.md` 把推理引擎当作 RL rollout 的积木一笔带过,本文拆开它内部。
 
 ---
 
 ## 0. 总览
 
-推理(自回归生成)与训练是**两种不同的负载**:训练是一次大前向+反向、batch 固定、要可微;推理是**逐 token 生成**、请求动态来去、不需反向、要低延迟高吞吐。所以 Megatron 有一套独立的推理引擎(`megatron/core/inference/`),配 `transformer_impl='inference_optimized'`(见 `megatron_rl_posttraining_consistency_analysis.md` §4)。
+推理(自回归生成)与训练是**两种不同的负载**:训练是一次大前向+反向、batch 固定、要可微;推理是**逐 token 生成**、请求动态来去、不需反向、要低延迟高吞吐。所以 Megatron 有一套独立的推理引擎(`megatron/core/inference/`),配 `transformer_impl='inference_optimized'`(见 `30_megatron_rl_posttraining_consistency_analysis.md` §4)。
 
 两个引擎变体,本文当作"调度器/dispatcher"那样逐个解读:
 
@@ -155,7 +155,7 @@ seq B 的 KV  →  block table = [blk1, blk2]
 
 - LRU 驱逐:`prefix_cache_lru_clock` 单调时钟给块排序,显存紧时淘汰最久未用的前缀块。
 - 命中统计:`prefix_cache_hits`、`prefix_cache_blocks_matched`。
-- **对 RL rollout 收益巨大**:GRPO 对同一 prompt 采样多条 response(`megatron_ep_analysis.md` / `megatron_rl_posttraining_consistency_analysis.md`),prompt 前缀的 KV 算一次共享给所有 rollout;聊天服务里共享的 system prompt 同理。
+- **对 RL rollout 收益巨大**:GRPO 对同一 prompt 采样多条 response(`14_megatron_ep_analysis.md` / `30_megatron_rl_posttraining_consistency_analysis.md`),prompt 前缀的 KV 算一次共享给所有 rollout;聊天服务里共享的 system prompt 同理。
 
 > [!update] 2026-06-16 · dev@232c478d4:**prefix cache / MTP 统计改为「整个引擎生命周期累计」**(#4101,`dynamic_engine.py`)。`DynamicInferenceContext.prefix_cache_hits` / `prefix_cache_blocks_matched` 是**每 step 清零**的瞬时量;引擎现把它们累加进生命周期级累加器 `self._prefix_cache_hits` / `_prefix_cache_blocks_matched`(`:344`,每步 `+=` 后把 context 计数清零,`:1952`),`get_metrics` 上报累计值(`inference/prefix_cache_hits` 等,`:1999`)。意义:metric 不再只反映最后一步,而是反映整个服务期的真实命中。
 
@@ -163,7 +163,7 @@ seq B 的 KV  →  block table = [blk1, blk2]
 
 ## 7. CUDA Graph 在推理里
 
-decode step 是"逐 token、kernel 小而多",CPU 启动开销占比极高 —— 正是 CUDA Graph 的主场(见 `megatron_precision_cudagraph_fusion_analysis.md` §2)。
+decode step 是"逐 token、kernel 小而多",CPU 启动开销占比极高 —— 正是 CUDA Graph 的主场(见 `23_megatron_precision_cudagraph_fusion_analysis.md` §2)。
 
 但 CUDA Graph 要求形状固定,而连续批处理的"当前 batch 里有几个请求"是变化的。`DynamicInferenceEngine` 的解法(`create_cuda_graphs`,`dynamic_engine.py:325`):
 - 预先枚举一组**典型的 batch 维度**(`cuda_graph_batch_dimensions_list`,不同 request count)。
@@ -210,9 +210,9 @@ decode step 是"逐 token、kernel 小而多",CPU 启动开销占比极高 —�
 | `unified_memory.py` | KV cache 用统一内存,引擎 `suspend`/`resume` 时把 KV 换出(RL 里训练相不需要推理引擎时腾显存) |
 | `async_stream.py` / `async_zmq_communicator.py` | 异步、流式、ZMQ 通信 |
 
-`suspend`/`resume`(`dynamic_engine.py:719/768`)对 **RL collocated 部署**很关键:训练相和推理相在同一批卡上轮流跑,推理引擎 suspend 时删 CUDA Graph、把 KV cache 换出统一内存,让出显存给训练;resume 时再恢复(见 `megatron_rl_posttraining_consistency_analysis.md` §7)。
+`suspend`/`resume`(`dynamic_engine.py:719/768`)对 **RL collocated 部署**很关键:训练相和推理相在同一批卡上轮流跑,推理引擎 suspend 时删 CUDA Graph、把 KV cache 换出统一内存,让出显存给训练;resume 时再恢复(见 `30_megatron_rl_posttraining_consistency_analysis.md` §7)。
 
-> [!update] 2026-06-16 · dev@232c478d4:**「是否在推理」统一为一个进程级全局开关 `InferenceMode`**(#4617,`megatron/core/inference/utils.py:20`)。引擎进入推理时 `InferenceMode.set_active()`(`dynamic_engine.py:292`/`:838`、`static_engine.py:133`)、退出时 `unset_active()`(`dynamic_engine.py:787`),并提供 `with InferenceMode.active():` 上下文管理器。**为什么**:模型各模块此前靠 `self.training` / `torch.is_grad_enabled()` / `inference_context is not None` 来猜"现在是不是推理",这三者都不可靠(尤其 RL 训练相用 `eval()`+`no_grad` 重算 logprob 时会被误判)。改为单一标志后,`gpt_model`、`attention`、`moe_layer`/`router`/`experts`、`mamba_*`、`transformer_layer`(`inference_fuse_tp_communication`)等全部改读 `InferenceMode.is_active()` 决定走推理 kernel/dispatcher 还是训练路径。**对本文与 RL 页的影响**:`megatron_rl_posttraining_consistency_analysis.md` §4 所述 MoE 推理 dispatcher 的切换**不再**由 `MoELayer.train()` 重写驱动(该重写已删),而由 `MoELayer.forward` 入口的 `InferenceMode.is_active()` 决定——详见该页 §4 的 `[!deprecated]` 批注。
+> [!update] 2026-06-16 · dev@232c478d4:**「是否在推理」统一为一个进程级全局开关 `InferenceMode`**(#4617,`megatron/core/inference/utils.py:20`)。引擎进入推理时 `InferenceMode.set_active()`(`dynamic_engine.py:292`/`:838`、`static_engine.py:133`)、退出时 `unset_active()`(`dynamic_engine.py:787`),并提供 `with InferenceMode.active():` 上下文管理器。**为什么**:模型各模块此前靠 `self.training` / `torch.is_grad_enabled()` / `inference_context is not None` 来猜"现在是不是推理",这三者都不可靠(尤其 RL 训练相用 `eval()`+`no_grad` 重算 logprob 时会被误判)。改为单一标志后,`gpt_model`、`attention`、`moe_layer`/`router`/`experts`、`mamba_*`、`transformer_layer`(`inference_fuse_tp_communication`)等全部改读 `InferenceMode.is_active()` 决定走推理 kernel/dispatcher 还是训练路径。**对本文与 RL 页的影响**:`30_megatron_rl_posttraining_consistency_analysis.md` §4 所述 MoE 推理 dispatcher 的切换**不再**由 `MoELayer.train()` 重写驱动(该重写已删),而由 `MoELayer.forward` 入口的 `InferenceMode.is_active()` 决定——详见该页 §4 的 `[!deprecated]` 批注。
 
 ---
 
@@ -230,9 +230,9 @@ decode step 是"逐 token、kernel 小而多",CPU 启动开销占比极高 —�
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`megatron_rl_posttraining_consistency_analysis.md`、`megatron_precision_cudagraph_fusion_analysis.md`、`megatron_ep_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`30_megatron_rl_posttraining_consistency_analysis.md`、`23_megatron_precision_cudagraph_fusion_analysis.md`、`14_megatron_ep_analysis.md`。*
 
 ## Related Pages
 
-- [[megatron_rl_posttraining_consistency_analysis]] · [[megatron_precision_cudagraph_fusion_analysis]] · [[megatron_ep_analysis]] · [[megatron_model_structure_analysis]]
+- [[30_megatron_rl_posttraining_consistency_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]] · [[14_megatron_ep_analysis]] · [[10_megatron_model_structure_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

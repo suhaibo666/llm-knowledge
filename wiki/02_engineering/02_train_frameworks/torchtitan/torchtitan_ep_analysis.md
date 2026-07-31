@@ -339,8 +339,8 @@ a2a 的 backward = split 参数互换的 a2a;combine 反向 ≡ dispatch 正向
 - [[torchtitan/index]] · [[torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
 - [[torchtitan_fsdp_analysis]] —— MoE 专家的 `edp_mesh` FSDP 与显式预取
 - [[torchtitan_pp_analysis]] —— 相邻并行维度
-- [[megatron_ep_analysis]] —— Megatron-LM 专家并行(AllGather/AllToAll/Flex 三种 token dispatcher)
-- [[megatron_ep_analysis]] —— MoE 零冗余通信、AlltoAll token dispatch
-- [[async_collective_tensor_deep_dive]] —— `AsyncCollectiveTensor` 源码追踪
-- [[comm_compute_fusion_guide]] —— 通算融合:WaveEP、DeepEP、各维度重叠
-- [[comm_compute_overlap_analysis]] —— 跨框架(Megatron/torchtitan/MindSpeed)通算掩盖对比矩阵,本页是其 torchtitan EP 掩盖机制来源(§4-5)
+- [[14_megatron_ep_analysis]] —— Megatron-LM 专家并行(AllGather/AllToAll/Flex 三种 token dispatcher)
+- [[14_megatron_ep_analysis]] —— MoE 零冗余通信、AlltoAll token dispatch
+- [[21_async_collective_tensor_deepdive]] —— `AsyncCollectiveTensor` 源码追踪
+- [[31_comm_compute_fusion_guide]] —— 通算融合:WaveEP、DeepEP、各维度重叠
+- [[30_comm_compute_overlap_analysis]] —— 跨框架(Megatron/torchtitan/MindSpeed)通算掩盖对比矩阵,本页是其 torchtitan EP 掩盖机制来源(§4-5)

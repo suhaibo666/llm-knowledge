@@ -250,5 +250,5 @@ INIT(0) → NORMAL(1) ──┬─→ ABNORMAL(2)  # 自报故障(_on_exception)
 - [[mindspeed/index]] —— MindSpeed 特性总览(TTP/high-availability 归此栈)
 - [[mindformers/index]] —— MindFormers(MindSpore 生态)
 - [[megatron-lm/index]] —— Megatron-LM(NVRx 容错宿主)
-- [[distributed_optimizer_deep_dive]] —— 优化器态分片(replica 冗余建立在其上)
+- [[32_distributed_optimizer_deepdive]] —— 优化器态分片(replica 冗余建立在其上)
 - [[02_engineering/02_train_frameworks/index]] —— 训练框架目录索引

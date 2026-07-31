@@ -45,7 +45,7 @@ GLM-5 的训练基础设施围绕一个现实约束：模型翻倍到 **744B 总
 
 **效果**：把持久梯度显存压到"每 stage 的分片 buffer + 仅 2 个用于滚动累积的 full buffer"，且**实测无额外同步开销**（without additional synchronization overhead in practice）（§2.4.1, p9）。
 
-**为什么不会增加同步开销**：朴素思路下"先累积完再同步"会让通信串行在关键路径上；双缓冲把"buffer A 累积"与"buffer B 同步"在时间上**重叠**，于是梯度 all-reduce 的通信被藏在下一个 stage 的累积计算背后——既省下了"每 stage 一份 full buffer"的显存，又没把通信暴露出来。这与 Megatron 分布式优化器里"梯度 reduce-scatter 与反向计算 overlap"的思路同源，详见 [[megatron_ep_analysis]]。
+**为什么不会增加同步开销**：朴素思路下"先累积完再同步"会让通信串行在关键路径上；双缓冲把"buffer A 累积"与"buffer B 同步"在时间上**重叠**，于是梯度 all-reduce 的通信被藏在下一个 stage 的累积计算背后——既省下了"每 stage 一份 full buffer"的显存，又没把通信暴露出来。这与 Megatron 分布式优化器里"梯度 reduce-scatter 与反向计算 overlap"的思路同源，详见 [[14_megatron_ep_analysis]]。
 
 ### 2.3 ③ Muon 分布式优化器的零冗余通信 —— all-gather 只取自己那一份
 
@@ -61,7 +61,7 @@ GLM-5 的训练基础设施围绕一个现实约束：模型翻倍到 **744B 总
 
 **效果**：大幅降低激活显存占用，且**近零开销**（near-zero overhead）（§2.4.1, p9）。
 
-**为什么要"避让" P2P 与 MoE routing**：PCIe/NVLink 带宽是共享资源。pipeline 的 P2P send/recv 与 MoE 的 all-to-all（dispatch/combine，见 [[megatron_ep_analysis]]）本身就吃带宽，如果激活 offload/reload 与它们撞车，反而会拖慢关键路径。GLM-5 把搬运调度到这些通信的空档里，才换来"近零开销"——这是 offload 能不能落地的关键工程细节，而非简单地"放到 host 就行"。offload + 细粒度重算是互补的两种省激活手段：重算用算力换显存、offload 用带宽换显存，组合起来覆盖不同层。
+**为什么要"避让" P2P 与 MoE routing**：PCIe/NVLink 带宽是共享资源。pipeline 的 P2P send/recv 与 MoE 的 all-to-all（dispatch/combine，见 [[14_megatron_ep_analysis]]）本身就吃带宽，如果激活 offload/reload 与它们撞车，反而会拖慢关键路径。GLM-5 把搬运调度到这些通信的空档里，才换来"近零开销"——这是 offload 能不能落地的关键工程细节，而非简单地"放到 host 就行"。offload + 细粒度重算是互补的两种省激活手段：重算用算力换显存、offload 用带宽换显存，组合起来覆盖不同层。
 
 ### 2.5 ⑤ 序列分块输出投影 —— 用分块把输出层的瞬时峰值摊平
 
@@ -81,7 +81,7 @@ GLM-5 的训练基础设施围绕一个现实约束：模型翻倍到 **744B 总
 
 **效果**：吞吐提升，同时显存开销被控制在有界范围（§2.4.2, p9）。
 
-**为什么能削气泡**：反向传播里每层有两类计算——**激活梯度（dgrad，决定能否继续往前传）**与**权重梯度（wgrad，只用于最后更新参数）**。wgrad 不在"把梯度往上一层传"的依赖链上，因此可以从关键路径剥离、推迟到流水线的空闲气泡里再算，从而把原本闲置的 bubble 时间利用起来。代价是被 defer 的 wgrad 需要暂存其输入，所以论文强调"优化过的存储 + 通信 overlap"和"显存有界"——即在削气泡与省显存之间取平衡。这类"wgrad 与 dgrad 解耦调度"的思想在 Megatron 系流水线里也有对应实现，参见 [[megatron_ep_analysis]]。
+**为什么能削气泡**：反向传播里每层有两类计算——**激活梯度（dgrad，决定能否继续往前传）**与**权重梯度（wgrad，只用于最后更新参数）**。wgrad 不在"把梯度往上一层传"的依赖链上，因此可以从关键路径剥离、推迟到流水线的空闲气泡里再算，从而把原本闲置的 bubble 时间利用起来。代价是被 defer 的 wgrad 需要暂存其输入，所以论文强调"优化过的存储 + 通信 overlap"和"显存有界"——即在削气泡与省显存之间取平衡。这类"wgrad 与 dgrad 解耦调度"的思想在 Megatron 系流水线里也有对应实现，参见 [[14_megatron_ep_analysis]]。
 
 ### 3.2 ⑦ 高效长序列训练 —— 可变大小 CP 组 + 层级 all-to-all
 
@@ -97,7 +97,7 @@ GLM-5 的训练基础设施围绕一个现实约束：模型翻倍到 **744B 总
 
 **效果**：缓解长序列下 DP/PP 组间的负载不均，并降低 QKV 通信延迟（§2.4.2, p10）。
 
-**为什么需要"可变大小"的 CP 组**：长序列训练里，不同样本的有效长度天差地别，若用**固定大小**的 CP 组切分，短序列那一组会闲置、长序列那一组成为瓶颈——这就是 DP/PP 组间不均的来源。允许 CP 组**大小可变**，就能把"长序列分给更多 rank、短序列用更少 rank"，让每个 rank 的注意力计算量趋于一致；再叠加 workload-aware 重排与注意力再分配，把不均从源头摊平。而 CP 切分必然要在组内 all-to-all 交换 QKV，**层级 all-to-all** 把"先在节点内聚合、再跨节点交换"两层通信重叠起来，避免跨节点带宽成为新瓶颈——这与 MoE EP 里层级 all-to-all 的优化动机一致（见 [[megatron_ep_analysis]]）。
+**为什么需要"可变大小"的 CP 组**：长序列训练里，不同样本的有效长度天差地别，若用**固定大小**的 CP 组切分，短序列那一组会闲置、长序列那一组成为瓶颈——这就是 DP/PP 组间不均的来源。允许 CP 组**大小可变**，就能把"长序列分给更多 rank、短序列用更少 rank"，让每个 rank 的注意力计算量趋于一致；再叠加 workload-aware 重排与注意力再分配，把不均从源头摊平。而 CP 切分必然要在组内 all-to-all 交换 QKV，**层级 all-to-all** 把"先在节点内聚合、再跨节点交换"两层通信重叠起来，避免跨节点带宽成为新瓶颈——这与 MoE EP 里层级 all-to-all 的优化动机一致（见 [[14_megatron_ep_analysis]]）。
 
 ### 3.3 一图回顾：把 §2.4 的掩盖点放到一条时间线上
 
@@ -128,5 +128,5 @@ GLM-5 的训练基础设施围绕一个现实约束：模型翻倍到 **744B 总
 
 **相邻主题**：
 - [[11_muon_analysis]] — Muon 优化器原理（②③ 中 Muon 分布式优化器的基础）
-- [[megatron_ep_analysis]] — 流水线并行 / 专家并行（梯度 overlap、wgrad 解耦、层级 all-to-all 的同源实现）
+- [[14_megatron_ep_analysis]] — 流水线并行 / 专家并行（梯度 overlap、wgrad 解耦、层级 all-to-all 的同源实现）
 - [[zhipu_glm/index]] — GLM 家族总览

@@ -237,4 +237,4 @@ Decoupled modular architecture with four phases:
 - [[22_deepseek_prover_analysis]] — Formal theorem proving with GRPO and RMaxTS
 - [[21_deepseek_vl_analysis]] — Vision-language understanding
 - [[25_mhc_analysis]] — Manifold-Constrained Hyper-Connections architecture research
-- [[megatron_ep_analysis]] — Expert parallelism infrastructure
+- [[14_megatron_ep_analysis]] — Expert parallelism infrastructure

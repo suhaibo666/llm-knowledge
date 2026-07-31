@@ -316,5 +316,5 @@ ParallelDims.from_config(parallelism_config, world_size)
 
 - [[torchtitan/index]] —— torchtitan 多维并行知识地图(本系列入口)
 - [[torchtitan_fsdp_analysis]] · [[torchtitan_tp_analysis]] · [[torchtitan_cp_analysis]] · [[torchtitan_pp_analysis]] · [[torchtitan_ep_analysis]] —— 五个并行维度的机制级深度分析
-- [[megatron_parallelism_orchestration_analysis]] —— Megatron-LM 进程组编排 capstone(RankGenerator、正交分组),与 `ParallelDims` 同类
-- [[megatron_pp_schedulers_analysis]] —— LLM 正反向计算依赖 DAG 与 TP/SP/EP/CP 通信依赖
+- [[17_megatron_parallelism_orchestration_analysis]] —— Megatron-LM 进程组编排 capstone(RankGenerator、正交分组),与 `ParallelDims` 同类
+- [[15_megatron_pp_schedulers_analysis]] —— LLM 正反向计算依赖 DAG 与 TP/SP/EP/CP 通信依赖

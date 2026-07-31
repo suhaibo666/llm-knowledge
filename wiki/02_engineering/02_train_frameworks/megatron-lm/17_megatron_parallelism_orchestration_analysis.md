@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/parallel_state.py`(2255 行)、`process_groups_config.py`(718 行)、`hyper_comm_grid.py`(273 行)
-> 配套阅读:`megatron_pp_schedulers_analysis.md`、`megatron_ep_analysis.md`、`megatron_tp_analysis.md`、`megatron_cp_analysis.md`、`megatron_distributed_optimizer_analysis.md`
+> 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`、`13_megatron_cp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`
 > 定位:**这是收口文档**。前五份各讲一个并行轴,都默认了"每张 GPU 同时属于 TP/PP/CP/EP/DP 的某个组"。本文讲清楚这套**几何**是怎么从 `world_size` 个裸 GPU 构造出来的。
 
 ---
@@ -164,7 +164,7 @@ rank 布局(order=tp-dp-pp):
 
 ## 3. MoE Parallel Folding 的编排实现:两个 RankGenerator
 
-`RankGenerator.__init__` 第一行断言 `ep == 1 or cp == 1` —— **EP 和 CP 不能在同一个 RankGenerator 里同时 > 1**。原因:attention 层用 CP、MoE 层用 EP,二者是**同一组 GPU 的两套不同分解**(即 `megatron_ep_analysis.md` §6 的 MoE Parallel Folding)。
+`RankGenerator.__init__` 第一行断言 `ep == 1 or cp == 1` —— **EP 和 CP 不能在同一个 RankGenerator 里同时 > 1**。原因:attention 层用 CP、MoE 层用 EP,二者是**同一组 GPU 的两套不同分解**(即 `14_megatron_ep_analysis.md` §6 的 MoE Parallel Folding)。
 
 `initialize_model_parallel`(`parallel_state.py:545`)因此构造**两个** RankGenerator:
 
@@ -194,7 +194,7 @@ expert_decoder_rank_generator = RankGenerator(
        == expert_decoder_rank_generator.get_ranks("pp")
 ```
 
-PP 是两套分解唯一共享的轴(模型按层切,attention 层和 MoE 层在同一条流水线上)。这就是编排层如何实现"attention 和 MoE 用不同并行度"的 —— `megatron_ep_analysis.md` §6 描述的能力,落地点就在这两个 RankGenerator。
+PP 是两套分解唯一共享的轴(模型按层切,attention 层和 MoE 层在同一条流水线上)。这就是编排层如何实现"attention 和 MoE 用不同并行度"的 —— `14_megatron_ep_analysis.md` §6 描述的能力,落地点就在这两个 RankGenerator。
 
 ---
 
@@ -265,7 +265,7 @@ dp_cp_group = grid.create_pg(["cp", "dp"], pg_options=..., group_desc="...")
 > - **`create_pg` / `get_pg` / `get_rank_enum` 新增 `view="..."` 关键字参数**(`:206`、`:287`、`:313`,默认 `base` view)。base view 的组仍按「短横线拼接的维名」做键;view 私有组用 `(view_name, dims)` 元组做键;若某组只涉及 `shared_dims`,会**复用 base view 的同一进程组**(单键存储,`destroy` 时只销毁一次,`_canonical_pg_key_and_enum_view` `:418`)。
 > - **底层去掉 einops 依赖**:`_gen_rank_enum` 重构为 `_gen_rank_enum_for(shape, dim_names, dims)`(`:356`),用 `numpy.arange + reshape + moveaxis` 直接生成 rank 枚举,不再 `einops.rearrange`。语义与原 MCore 约定(`dim_names` 逆序)一致,行为不变。
 >
-> 这是上文「演进方向」的落地一步:`HyperCommGrid` 从「单一 N 维网格」升级为「一段 rank 上挂多套命名分解」,正是多模态/异构子模型(见 [[megatron_pp_supplements_analysis]] §4 BridgeCommunicator)所需的几何基础。
+> 这是上文「演进方向」的落地一步:`HyperCommGrid` 从「单一 N 维网格」升级为「一段 rank 上挂多套命名分解」,正是多模态/异构子模型(见 [[26_megatron_pp_supplements_analysis]] §4 BridgeCommunicator)所需的几何基础。
 
 ---
 
@@ -295,10 +295,10 @@ MoE 侧:
 ```
 给定 order="tp-cp-ep-dp-pp",一张 global_rank 的卡同时属于:
   TP 组   ← tensor_parallel.py 的 ColumnParallel/RowParallel all-reduce 域
-  CP 组   ← attention 的 KV 搬运域(megatron_cp_analysis.md)
-  EP 组   ← MoE dispatch/combine 的 A2A 域(megatron_ep_analysis.md)—— 走 expert RankGenerator
-  DP 组   ← 梯度 all-reduce / ZeRO 分片域(megatron_distributed_optimizer_analysis.md)
-  PP 组   ← 流水线 P2P 邻居(megatron_pp_schedulers_analysis.md)
+  CP 组   ← attention 的 KV 搬运域(13_megatron_cp_analysis.md)
+  EP 组   ← MoE dispatch/combine 的 A2A 域(14_megatron_ep_analysis.md)—— 走 expert RankGenerator
+  DP 组   ← 梯度 all-reduce / ZeRO 分片域(16_megatron_distributed_optimizer_analysis.md)
+  PP 组   ← 流水线 P2P 邻居(15_megatron_pp_schedulers_analysis.md)
   + 组合组:dp_cp(梯度规约含 CP)、tp_ep(MoE AllGather dispatcher 域)、
             embd(PP 首尾共享 embedding)、mp(tp+pp,模型并行整体)…
 ```
@@ -309,11 +309,11 @@ MoE 侧:
 
 | 文档 | 它假设的"几何",由本文哪个机制提供 |
 |------|-----------------------------------|
-| `megatron_tp_analysis.md` | `tp_group` ← decoder RankGenerator 的 `get_ranks("tp")`,`order` 第一位保证机内 |
-| `megatron_pp_schedulers_analysis.md` | `pp_group`、`get_pipeline_model_parallel_next/prev_rank` ← `get_ranks("pp")` |
-| `megatron_cp_analysis.md` | `cp_group` ← decoder RankGenerator(`ep=1`)的 `get_ranks("cp")` |
-| `megatron_ep_analysis.md` | `ep_group`/`tp_ep` ← **expert** RankGenerator(`cp=1`);MoE Parallel Folding = §3 的双 generator |
-| `megatron_distributed_optimizer_analysis.md` | `dp`/`dp_cp` 组、HSDP 的内外层 ← `get_ranks("dp")` / `setup_process_groups_for_ddp` |
+| `12_megatron_tp_analysis.md` | `tp_group` ← decoder RankGenerator 的 `get_ranks("tp")`,`order` 第一位保证机内 |
+| `15_megatron_pp_schedulers_analysis.md` | `pp_group`、`get_pipeline_model_parallel_next/prev_rank` ← `get_ranks("pp")` |
+| `13_megatron_cp_analysis.md` | `cp_group` ← decoder RankGenerator(`ep=1`)的 `get_ranks("cp")` |
+| `14_megatron_ep_analysis.md` | `ep_group`/`tp_ep` ← **expert** RankGenerator(`cp=1`);MoE Parallel Folding = §3 的双 generator |
+| `16_megatron_distributed_optimizer_analysis.md` | `dp`/`dp_cp` 组、HSDP 的内外层 ← `get_ranks("dp")` / `setup_process_groups_for_ddp` |
 
 ### 6.1 一句话总结
 
@@ -329,5 +329,5 @@ MoE 侧:
 
 ## Related Pages
 
-- [[megatron_pp_schedulers_analysis]] · [[megatron_ep_analysis]] · [[megatron_tp_analysis]] · [[megatron_cp_analysis]] · [[megatron_distributed_optimizer_analysis]]
+- [[15_megatron_pp_schedulers_analysis]] · [[14_megatron_ep_analysis]] · [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[16_megatron_distributed_optimizer_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

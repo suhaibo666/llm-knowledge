@@ -142,6 +142,6 @@ Empirical validation confirms that:
 - [[11_deepseek_v2_analysis]] — DeepSeek-V2 scales DeepSeekMoE to 236B with MLA attention
 - [[12_deepseek_v3_analysis]] — DeepSeek-V3 further scales to 671B with auxiliary-loss-free load balancing
 - [[16_deepseek_coder_v2_analysis]] — DeepSeek-Coder-V2 uses DeepSeek-V2 MoE architecture
-- [[megatron_ep_analysis]] — Expert parallelism infrastructure for MoE training
+- [[14_megatron_ep_analysis]] — Expert parallelism infrastructure for MoE training
 - [[25_mhc_analysis]] — Manifold-Constrained Hyper-Connections (related DeepSeek architecture research)
 

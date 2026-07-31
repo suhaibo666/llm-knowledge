@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心目录:`megatron/core/transformer/moe/`(`moe_layer.py` 855 行、`token_dispatcher.py` 1624 行、`router.py`、`experts.py`)
-> 配套阅读:`megatron_pp_schedulers_analysis.md`(EP A2A 重叠 = 该文档的调度器⑤ combined-1F1B)
+> 配套阅读:`15_megatron_pp_schedulers_analysis.md`(EP A2A 重叠 = 该文档的调度器⑤ combined-1F1B)
 > 适用读者:已了解 transformer 训练与 TP/DP/PP,想吃透 Megatron MoE 专家并行实现的工程师。
 
 ---
@@ -374,7 +374,7 @@ T2 = prob(E0)·out0[T2] + prob(E3)·out3[T2]
 …（每 token 由其 topk 个专家的输出加权求和）
 ```
 
-> 一句话:**token 按专家归属"精确投递",参数零复制、激活零广播**——通信量 `∝ topk`、显存 `÷ EP`,与 AllGather 的"收全量"形成对比(§②.4 / [[megatron_moe_training_optimization_report]] §2.4.1 给出精确公式 `2·S·B·H·K·(E-1)/E²`)。
+> 一句话:**token 按专家归属"精确投递",参数零复制、激活零广播**——通信量 `∝ topk`、显存 `÷ EP`,与 AllGather 的"收全量"形成对比(§②.4 / [[01_megatron_moe_training_optimization_report]] §2.4.1 给出精确公式 `2·S·B·H·K·(E-1)/E²`)。
 
 ### ②.4 开销分析
 
@@ -512,7 +512,7 @@ $$
 \boxed{\ \text{IB 加速比}=\dfrac{k/P}{\,1-(1-1/P)^k\,}\ }
 $$
 
-dispatch 与 combine 对称(`fused_combine` 凭 `handle` 反向),前向 ×2、含反向 ×2 → 总系数 4,与 §②.4 / [[megatron_moe_training_optimization_report]] §2.4.1 标准 A2A 的 `4·S·B·H·K·(E−1)/E²` 同构,差别在把"按专家"换成"按远端 node"。
+dispatch 与 combine 对称(`fused_combine` 凭 `handle` 反向),前向 ×2、含反向 ×2 → 总系数 4,与 §②.4 / [[01_megatron_moe_training_optimization_report]] §2.4.1 标准 A2A 的 `4·S·B·H·K·(E−1)/E²` 同构,差别在把"按专家"换成"按远端 node"。
 
 #### ③.3.3 数值走查(2 node × 2 GPU,8 专家,EP=4,topk=4)
 
@@ -590,7 +590,7 @@ $R(X)=\{B\}$,$g_B(X)=2$(GPU2、GPU3),$g_s(X)=1$(GPU1)。
 >
 > 4. **新增 `moe_hybridep_pad_variable_tokens` 开关**(#5048,`transformer_config.py:889`)。把上条的"补齐到组内最大 token 数"从"仅当启用 `sequence_packing_scheduler`"解耦:当前端自供本地 packed THD(不走 Megatron-Core 的 sequence packing 调度器)、但各 rank token 数仍不齐时,可单独打开此开关触发同样 padding。
 >
-> 5. **新增 `moe_hybridep_num_sms_preprocessing`(默认 108)**(#4694,`transformer_config.py:959`)。HybridEP 元数据扫描(preprocessing / metadata scan)kernel 占用的 SM 数,透传到 `init_hybrid_ep_buffer` / `hybrid_ep_dispatch`。与 `high_priority_a2a_comm_stream`(见 [[megatron_comm_overlap_analysis]] §5.7)配合,细调 A2A 与计算抢 SM 的平衡。
+> 5. **新增 `moe_hybridep_num_sms_preprocessing`(默认 108)**(#4694,`transformer_config.py:959`)。HybridEP 元数据扫描(preprocessing / metadata scan)kernel 占用的 SM 数,透传到 `init_hybrid_ep_buffer` / `hybrid_ep_dispatch`。与 `high_priority_a2a_comm_stream`(见 [[20_megatron_comm_overlap_analysis]] §5.7)配合,细调 A2A 与计算抢 SM 的平衡。
 >
 > 6. **移除 HybridEP IB 硬件上限的 Python 侧守卫**(#4846 移除;此前 #4719 添加、#4718 又 revert 过早期版本)。dev 一度在 `fused_a2a.py` 加过 `_validate_hybrid_ep_ib_tx_depth`,多节点(走 RDMA)且 per-rank token 过大时提前报"IB dispatch QP depth 超 65535 硬件上限"。**HEAD(dev@232c478d4)已彻底删除该检查**,不再有 Python 侧 IB token 上限校验(交底层库)。若多节点 HybridEP 报 QP depth 错误,需自行降 per-rank token(减 seq/micro-batch 或增 TP/CP)。
 >
@@ -634,7 +634,7 @@ dispatch/combine 的 A2A **默认在关键路径上**:计算流必须等 token �
 
 ### 5.1 EP A2A Overlap(combined-1F1B)
 
-**这正是 `megatron_pp_schedulers_analysis.md` 里的调度器⑤。** 一句话回顾:把 microbatch `i+1` 的前向与 microbatch `i` 的反向**在层粒度配对**,用一个的计算掩盖另一个的 A2A —— 前向 dispatch/combine 的 A2A 藏进反向 attention/MLP 计算里,反之亦然。
+**这正是 `15_megatron_pp_schedulers_analysis.md` 里的调度器⑤。** 一句话回顾:把 microbatch `i+1` 的前向与 microbatch `i` 的反向**在层粒度配对**,用一个的计算掩盖另一个的 A2A —— 前向 dispatch/combine 的 A2A 藏进反向 attention/MLP 计算里,反之亦然。
 
 - 开关:`--overlap-moe-expert-parallel-comm --delay-wgrad-compute`。
 - 双 CUDA 流:`comm_stream` 跑 dispatch/combine A2A,`comp_stream` 跑 attn/mlp。
@@ -744,10 +744,10 @@ dispatch/combine 的 A2A **默认在关键路径上**:计算流必须等 token �
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准,后续版本可能漂移。配套文档:`megatron_pp_schedulers_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准,后续版本可能漂移。配套文档:`15_megatron_pp_schedulers_analysis.md`。*
 
 ## Related Pages
 
-- [[megatron_pp_schedulers_analysis]] · [[megatron_model_structure_analysis]] · [[megatron_parallelism_orchestration_analysis]] · [[megatron_precision_cudagraph_fusion_analysis]]
-- [[megatron_ep_analysis]] · [[megatron_moe_training_optimization_report]] · [[megatron_comm_overlap_analysis]] · [[megatron_cp_analysis]]
+- [[15_megatron_pp_schedulers_analysis]] · [[10_megatron_model_structure_analysis]] · [[17_megatron_parallelism_orchestration_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]]
+- [[14_megatron_ep_analysis]] · [[01_megatron_moe_training_optimization_report]] · [[20_megatron_comm_overlap_analysis]] · [[13_megatron_cp_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

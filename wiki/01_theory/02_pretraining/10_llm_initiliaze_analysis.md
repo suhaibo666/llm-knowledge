@@ -545,5 +545,5 @@ y = W x,\quad W\in\mathbb{R}^{n_\text{out}\times n_\text{in}},
 
 - [[01_theory/index]]
 - [[11_muon_analysis]]
-- [[megatron_ep_analysis]]
+- [[14_megatron_ep_analysis]]
 - [[25_mhc_analysis]]

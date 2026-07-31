@@ -274,4 +274,4 @@ BlockHash = hash_fn( (parent_block_hash, curr_block_token_ids_tuple, extra_keys)
 ## Cross-Domain Links
 - [[pin_memory_and_memory_semantics_analysis]] —— vLLM KV Cache 内存语义(本库已提及 vLLM KV)
 - [[mooncake_analysis]] —— 分布式 KV Cache / 前缀缓存复用
-- [[megatron_inference_engine_analysis]] —— 块级 paged KV 对照
+- [[31_megatron_inference_engine_analysis]] —— 块级 paged KV 对照

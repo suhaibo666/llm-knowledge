@@ -152,7 +152,7 @@ RETIRE
 
 slime 展示 full NCCL、tensor、disk 和 disk delta 的多 transport；AReaL v2 把 training/inference pair 和 version 交给 weight-update gateway；ROLL 用 `ModelUpdateGroup` 连接 source/target cluster；verl stable path 则由 trainer 调 worker/rollout update。
 
-> [!note] 三方分工 本节是三平面机制视角下的 weight publish 协议（阶段划分与跨框架不变量，框架无关）。Megatron 训练侧的 refit / 训推一致性实现见 [[megatron_rl_posttraining_consistency_analysis]]；verl 在 Megatron+vLLM 场景下的 Gather-Broadcast-Load 同步调用链见 [[megatron_vllm_weight_sync_analysis]]；verl 自身的 resharding / 3D-HybridEngine 见 [[14_verl_rollout_resharding_analysis]]。
+> [!note] 三方分工 本节是三平面机制视角下的 weight publish 协议（阶段划分与跨框架不变量，框架无关）。Megatron 训练侧的 refit / 训推一致性实现见 [[30_megatron_rl_posttraining_consistency_analysis]]；verl 在 Megatron+vLLM 场景下的 Gather-Broadcast-Load 同步调用链见 [[33_megatron_vllm_weight_sync_analysis]]；verl 自身的 resharding / 3D-HybridEngine 见 [[14_verl_rollout_resharding_analysis]]。
 
 ## 7. Reward、Environment 与 Sandbox 的接口视角
 
@@ -259,4 +259,4 @@ microVM environment snapshots
 - [[24_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[11_rl_sandbox_design_analysis|Coding RL Sandbox 设计]] — §7 harness 版本化与 Fork/Pause/Snapshot 语义的落地页
 - [[12_rl_infra_efficiency_analysis|Coding RL Infra 效率优化]] — §4 backpressure 准入控制信号（AReaL StalenessManager、K3 admission）的落地页
-- [[megatron_rl_posttraining_consistency_analysis]] · [[megatron_vllm_weight_sync_analysis]] — §6 weight publish 的训练侧/verl 实现
+- [[30_megatron_rl_posttraining_consistency_analysis]] · [[33_megatron_vllm_weight_sync_analysis]] — §6 weight publish 的训练侧/verl 实现

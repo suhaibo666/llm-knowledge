@@ -647,7 +647,7 @@ for i, param in enumerate(var):
 3. **运行时 / 通信调优(系统级)**——不换算子,而是调 HCCL buffer 尺寸、算子展开模式、网络 QoS 优先级,以及规避 NPU 低效模式(scatter→乘法的 cross-entropy)(§5、§6)。
 
 > [!note] 与 Megatron 原生融合算子的关系
-> 第 1、2 层替换的"上游"——即被换掉的 NVIDIA/apex 融合核——见 [[megatron-lm/megatron_fusion_operators_analysis]]。两页对照可看出:同一个 `apply_rotary_pos_emb` / `bias_swiglu` / `DotProductAttention` 接口,Megatron 用 CUDA/TE 核,MindSpeed 用 `torch_npu`/CANN 核,接口签名兼容、实现整体替换;**融合内容(哪些散算子合一)是一致的,差别只在底层核的供应商**。
+> 第 1、2 层替换的"上游"——即被换掉的 NVIDIA/apex 融合核——见 [[megatron-lm/21_megatron_fusion_operators_analysis]]。两页对照可看出:同一个 `apply_rotary_pos_emb` / `bias_swiglu` / `DotProductAttention` 接口,Megatron 用 CUDA/TE 核,MindSpeed 用 `torch_npu`/CANN 核,接口签名兼容、实现整体替换;**融合内容(哪些散算子合一)是一致的,差别只在底层核的供应商**。
 
 ---
 
@@ -658,6 +658,6 @@ for i, param in enumerate(var):
 - [[mindspeed_context_parallel_analysis]] —— 上下文并行(CP 内核全在 `npu_fusion_attention` 层自实现,与本页 FA 互补)
 - [[mindspeed_comm_overlap_analysis]] —— 通算掩盖(MC2/CoC/lcal 是"融合通信"的亲和核,与本页"融合计算"互补)
 - [[mindspeed_memory_optimization_analysis]] —— 内存优化(低精度优化器、swap-optimizer 复用本页的融合优化器核)
-- [[megatron-lm/megatron_fusion_operators_analysis]] —— 被替换前的 Megatron/NVIDIA 原生融合算子(对照阅读:同一接口,CUDA vs NPU 两套核)
+- [[megatron-lm/21_megatron_fusion_operators_analysis]] —— 被替换前的 Megatron/NVIDIA 原生融合算子(对照阅读:同一接口,CUDA vs NPU 两套核)
 - [[11_muon_analysis]] —— Muon 优化器(Newton-Schulz)算法原理
 - [[ascend_kernel_execution_model_analysis]] —— 本页 Cube/Vector、融合算子与 HCCL 优化背后的 DaVinci 执行模型

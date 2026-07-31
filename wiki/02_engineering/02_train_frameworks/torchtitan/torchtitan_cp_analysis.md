@@ -176,6 +176,6 @@ Ring 主循环、online-softmax、通信掩盖、反向双环 —— 见理论�
 - [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]] —— CP/Ring Attention 通用机制(本页多节的骨架来源页)
 - [[torchtitan/index]] · [[torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
 - [[torchtitan_tp_analysis]] · [[torchtitan_pp_analysis]] —— 相邻并行维度
-- [[megatron_cp_analysis]] —— Megatron-LM 上下文并行实现差异(`cp_comm_type` 四选一 + TE 透传)
-- [[deepseek_v4_context_parallel_analysis]] —— DeepSeek-V4 CP 实现、Native/TE CP、Dynamic CP
+- [[13_megatron_cp_analysis]] —— Megatron-LM 上下文并行实现差异(`cp_comm_type` 四选一 + TE 透传)
+- [[35_deepseek_v4_context_parallel_analysis]] —— DeepSeek-V4 CP 实现、Native/TE CP、Dynamic CP
 - [[mindspeed_context_parallel_analysis]] —— MindSpeed 上下文并行实现差异(五算法运行期分派)

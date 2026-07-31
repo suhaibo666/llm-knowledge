@@ -87,8 +87,8 @@ flowchart TB
 - [[megatron-lm/index]] —— 被 MindSpeed 打补丁的宿主框架,5D 并行/MoE/通信掩盖原生实现(对照阅读)
 - [[mindformers/index]] —— 华为另一条昇腾训练栈(MindSpore 生态)的 MoE EP 分析,与 MindSpeed(PyTorch+NPU 生态)互为对照
 - [[torchtitan/index]] —— PyTorch-native 并行栈,FSDP2/DTensor 对照
-- [[comm_compute_overlap_analysis]] / [[comm_compute_fusion_guide]] —— 通算掩盖/融合的跨框架综述
-- [[distributed_optimizer_deep_dive]] —— ZeRO/FSDP/MindSpeed 分布式优化器对比
+- [[30_comm_compute_overlap_analysis]] / [[31_comm_compute_fusion_guide]] —— 通算掩盖/融合的跨框架综述
+- [[32_distributed_optimizer_deepdive]] —— ZeRO/FSDP/MindSpeed 分布式优化器对比
 
 ## Related Pages
 

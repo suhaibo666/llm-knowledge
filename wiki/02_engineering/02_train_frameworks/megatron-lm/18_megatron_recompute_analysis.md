@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/transformer/transformer_block.py`(`_checkpointed_forward`)、`tensor_parallel/random.py`(`checkpoint`)、`transformer_config.py`(`recompute_*` 配置)
-> 配套阅读:`megatron_pp_supplements_analysis.md` §2(激活换出 offloading)、五份并行文档
+> 配套阅读:`26_megatron_pp_supplements_analysis.md` §2(激活换出 offloading)、五份并行文档
 > 定位:"第二层补遗"第①份。激活重计算是与并行轴正交的**省显存**手段。
 
 ---
@@ -20,7 +20,7 @@
 | 手段 | 换什么 | 文档 |
 |------|--------|------|
 | **重计算 recompute** | 用**算力**换显存(反向多跑一遍前向) | 本文 |
-| **换出 offload** | 用 **PCIe 带宽**换显存(激活搬 CPU) | `megatron_pp_supplements_analysis.md` §2 |
+| **换出 offload** | 用 **PCIe 带宽**换显存(激活搬 CPU) | `26_megatron_pp_supplements_analysis.md` §2 |
 
 二者正交,可叠加。算力有余量、显存紧 → recompute;PCIe 有余量 → offload。
 
@@ -38,7 +38,7 @@ recompute_granularity ─┬─ "full"      整层重计算 ──┬─ recompu
 
 一个 transformer 层前向产生大量中间激活:QKV、attention 分数矩阵 `[s,s]`、softmax 输出、FFN 中间 `[s,b,H]`……总量随**层数 `L`** 线性、随**序列 `s`** 线性(attention 分数甚至 `O(s²)`)。
 
-并行轴只能部分缓解:TP 切 `1/t`(配 SP)、CP 切 `1/cp`、PP 用 1F1B 把在世激活压到 `O(p)`(见 `megatron_pp_schedulers_analysis.md`)。但当这些都用上仍然 OOM,就需要**直接丢弃激活、反向重算** —— 这是与并行正交的最后一道省显存手段。
+并行轴只能部分缓解:TP 切 `1/t`(配 SP)、CP 切 `1/cp`、PP 用 1F1B 把在世激活压到 `O(p)`(见 `15_megatron_pp_schedulers_analysis.md`)。但当这些都用上仍然 OOM,就需要**直接丢弃激活、反向重算** —— 这是与并行正交的最后一道省显存手段。
 
 **代价量化**:反向计算量 ≈ 2× 前向。不重计算时一步 = 前向 1 + 反向 2 = 3 个单位;**整层重计算**时反向里要重跑一遍前向 → 1 + (2+1) = 4 个单位 ≈ **+33% 计算**。所以重计算不是免费的,要按需用。
 
@@ -75,7 +75,7 @@ for layer_idx in range(num_layers_per_pipeline_rank):
         hidden_states, context = custom(layer_idx, layer_idx + 1)(...)                 # 这些层不重计算
 ```
 
-特点:**部分层重计算**。动机 —— 配合 1F1B,越靠前的 PP stage 在世 microbatch 越多(`megatron_pp_schedulers_analysis.md` §②.4),激活压力越大;`block` 让你**只把恰好装不下的那几层重计算**,其余层省下重算开销。"fully use the device memory removing redundant re-computation"(源码注释)。
+特点:**部分层重计算**。动机 —— 配合 1F1B,越靠前的 PP stage 在世 microbatch 越多(`15_megatron_pp_schedulers_analysis.md` §②.4),激活压力越大;`block` 让你**只把恰好装不下的那几层重计算**,其余层省下重算开销。"fully use the device memory removing redundant re-computation"(源码注释)。
 
 ### 2.3 `uniform` vs `block`
 
@@ -152,7 +152,7 @@ selective 下有**两种**底层机制(README MoE §Fine-grained Recomputation �
 
 ### 4.1 PP 的部分激活检查点
 
-`num_microbatches_with_partial_activation_checkpoints`(见 `megatron_pp_schedulers_analysis.md` §②.2 `max_outstanding_backprops`):1F1B 里**早期 microbatch 多、激活压力大**,可只对前若干个 microbatch 做(部分)重计算,后面的不做。这是"重计算 × microbatch 维度"的精细调度。
+`num_microbatches_with_partial_activation_checkpoints`(见 `15_megatron_pp_schedulers_analysis.md` §②.2 `max_outstanding_backprops`):1F1B 里**早期 microbatch 多、激活压力大**,可只对前若干个 microbatch 做(部分)重计算,后面的不做。这是"重计算 × microbatch 维度"的精细调度。
 
 ### 4.2 与并行轴的关系
 
@@ -205,6 +205,6 @@ selective 下有**两种**底层机制(README MoE §Fine-grained Recomputation �
 
 ## Related Pages
 
-- [[megatron_pp_supplements_analysis]] · [[megatron_precision_cudagraph_fusion_analysis]]
-- [[megatron_memory_optimization_analysis]]
+- [[26_megatron_pp_supplements_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]]
+- [[22_megatron_memory_optimization_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

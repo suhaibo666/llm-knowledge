@@ -618,5 +618,5 @@ self.linear_proj = build_module(..., tp_comm_buffer_name='proj', ...)
 - [[30_deepseek_v4_audit_analysis]] — V4 wiki 对正式版审计
 
 **框架侧（Megatron-LM，本目录）**：
-- [[deepseek_v4_context_parallel_analysis]] — V4 CP 实现（姊妹页）
-- [[megatron_tp_analysis]] — 通用 TP 机制　· [[megatron_nonuniform_tp_analysis]] — 非均匀 TP　· [[megatron_ep_analysis]] — 专家并行　· [[megatron_moe_training_optimization_report]] — MoE 训练优化
+- [[35_deepseek_v4_context_parallel_analysis]] — V4 CP 实现（姊妹页）
+- [[12_megatron_tp_analysis]] — 通用 TP 机制　· [[25_megatron_nonuniform_tp_analysis]] — 非均匀 TP　· [[14_megatron_ep_analysis]] — 专家并行　· [[01_megatron_moe_training_optimization_report]] — MoE 训练优化

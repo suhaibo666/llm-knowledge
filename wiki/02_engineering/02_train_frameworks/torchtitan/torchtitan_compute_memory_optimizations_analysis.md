@@ -232,5 +232,5 @@ for layer_id, transformer_block in model.layers.named_children():
 - [[torchtitan_fsdp_analysis]] —— FSDP2 标杆篇
 - [[torchtitan_hsdp_backward_overlap_analysis]] —— HSDP 反向 fp32 reduce 暂存与峰值
 - [[torchtitan_ac_analysis]] —— 激活重计算(另一类省显存手段)
-- [[megatron_fusion_operators_analysis]] —— Megatron 融合算子对照(跨框架)
+- [[21_megatron_fusion_operators_analysis]] —— Megatron 融合算子对照(跨框架)
 - [[torchtitan/index]] —— torchtitan 多维并行知识地图

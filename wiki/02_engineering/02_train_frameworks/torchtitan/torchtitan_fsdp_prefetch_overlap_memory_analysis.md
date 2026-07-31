@@ -229,5 +229,5 @@ eager 模式下 `init_unsharded_param`(`[pt]_fsdp_param.py:501-502`):`unsharded_
 - [[torchtitan/index]] —— torchtitan 多维并行知识地图
 - [[torchtitan_ac_analysis]] —— 激活重计算:与 FSDP 正交叠加,AC 省激活、FSDP 省参数/梯度/优化器
 - [[torchtitan_ep_analysis]] —— EP 的 token all-to-all 含 D2H 同步,正是打断隐式预取、需显式预取的实例
-- [[comm_compute_overlap_analysis]] —— 跨框架计算通信掩盖对比
-- [[distributed_optimizer_deep_dive]] —— FSDP2 / ZeRO / MindSpeed 三方对比
+- [[30_comm_compute_overlap_analysis]] —— 跨框架计算通信掩盖对比
+- [[32_distributed_optimizer_deepdive]] —— FSDP2 / ZeRO / MindSpeed 三方对比

@@ -254,6 +254,6 @@ mHC 通过**流形约束**解决了 HC 的核心痛点：
 
 - [[01_theory/index]]
 - [[10_llm_initiliaze_analysis]]
-- [[megatron_ep_analysis]]
+- [[14_megatron_ep_analysis]]
 - [[11_muon_analysis]]
 - [[12_activation_checkpointing_analysis]]

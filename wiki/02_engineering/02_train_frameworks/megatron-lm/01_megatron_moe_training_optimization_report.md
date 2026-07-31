@@ -13,23 +13,23 @@
 
 ### 通信 / EP 维度 — Token Dispatcher 后端扩张
 
-`moe_flex_dispatcher_backend` 由原来的 `{deepep, hybridep}` 扩为 **`{deepep, deepepv2, hybridep}`** 三选一（`transformer_config.py:881`，#4793）。新增的 `deepepv2` 后端走 DeepEP v2 的 **ElasticBuffer** API（`_DeepepV2Manager` 见 `token_dispatcher.py:1470`，`get_elastic_buffer` 见 `fused_a2a.py:90`），与 v1 的 `Buffer` 完全隔离，仅支持 `float32` probs（须配 `--moe-router-dtype=fp32`）。配套地 `moe_deepep_num_sms` 默认值从固定 `20` 改为 `None`（`transformer_config.py:942`）——v1 回退到 20，v2 使用其理论默认。此外 deepep/hybridep 现已支持 **thd（sequence-packing / varlen）格式训练**（#4816），以及 **high-priority A2A stream**（`high_priority_a2a_comm_stream`，`transformer_config.py:686`；`set_streams(high_priority=…)` 见 `pipeline_parallel/utils.py`）与 **HybridEP 预处理 SM 数**可调（`moe_hybridep_num_sms_preprocessing=108`，`transformer_config.py:959`，#4694）；dispatcher 内 `all_to_all` 新增 `use_nccl_stream` 形参（shared-experts 场景置 True）。详见 [[megatron_ep_analysis]]。
+`moe_flex_dispatcher_backend` 由原来的 `{deepep, hybridep}` 扩为 **`{deepep, deepepv2, hybridep}`** 三选一（`transformer_config.py:881`，#4793）。新增的 `deepepv2` 后端走 DeepEP v2 的 **ElasticBuffer** API（`_DeepepV2Manager` 见 `token_dispatcher.py:1470`，`get_elastic_buffer` 见 `fused_a2a.py:90`），与 v1 的 `Buffer` 完全隔离，仅支持 `float32` probs（须配 `--moe-router-dtype=fp32`）。配套地 `moe_deepep_num_sms` 默认值从固定 `20` 改为 `None`（`transformer_config.py:942`）——v1 回退到 20，v2 使用其理论默认。此外 deepep/hybridep 现已支持 **thd（sequence-packing / varlen）格式训练**（#4816），以及 **high-priority A2A stream**（`high_priority_a2a_comm_stream`，`transformer_config.py:686`；`set_streams(high_priority=…)` 见 `pipeline_parallel/utils.py`）与 **HybridEP 预处理 SM 数**可调（`moe_hybridep_num_sms_preprocessing=108`，`transformer_config.py:959`，#4694）；dispatcher 内 `all_to_all` 新增 `use_nccl_stream` 形参（shared-experts 场景置 True）。详见 [[14_megatron_ep_analysis]]。
 
 ### 显存维度 — Paged Stash 落地 + EP 显存估算修正
 
-第 7.2 节预告的 **Paged Stash** 已作为完整特性落地（新模块 `moe/paged_stash.py`，~1486 行，#4247）：开关 `moe_paged_stash`（`transformer_config.py:1312`），`moe_paged_stash_page_size=64`、`*_buffer_size_factor_cuda=1.10`、`*_cpu=0.0`，并**要求同时设置 `moe_expert_rank_capacity_factor`**；与 `cpu_offloading` 互斥，且 `offload_modules` 不得再包含 `expert_fc1`/`moe_act`（已由 paged stash 接管）。理论显存估算 `theoretical_memory_usage.py` 现**正确区分 EP-sharded 路由专家参数与复制参数**，按 `ETP×EP` 切分路由专家（#4687）；Megatron-FSDP 的 grouped expert 权重 padding 也被收紧（#5013）。详见 [[megatron_memory_optimization_analysis]]。
+第 7.2 节预告的 **Paged Stash** 已作为完整特性落地（新模块 `moe/paged_stash.py`，~1486 行，#4247）：开关 `moe_paged_stash`（`transformer_config.py:1312`），`moe_paged_stash_page_size=64`、`*_buffer_size_factor_cuda=1.10`、`*_cpu=0.0`，并**要求同时设置 `moe_expert_rank_capacity_factor`**；与 `cpu_offloading` 互斥，且 `offload_modules` 不得再包含 `expert_fc1`/`moe_act`（已由 paged stash 接管）。理论显存估算 `theoretical_memory_usage.py` 现**正确区分 EP-sharded 路由专家参数与复制参数**，按 `ETP×EP` 切分路由专家（#4687）；Megatron-FSDP 的 grouped expert 权重 padding 也被收紧（#5013）。详见 [[22_megatron_memory_optimization_analysis]]。
 
 ### 精度 / 融合维度 — ClampedSwiGLU 与 Dense+Grouped GEMM 融合
 
-DeepSeek-V4 的 **ClampedSwiGLU** 接入 MoE mlp_op_fuser：当 `activation_func_clamp_value` 非空时，SwiGLU 走 TE 的 `ScaledClampedQGeGLU(alpha=1.0, limit=clamp)`（cuDNN geglu kernel 是 swiglu 的超集，`moe/experts.py:422`，需 TE≥2.17.0.dev0，#5130）。新增 **TEFusedDenseMLP**：`use_grouped_gemm_for_dense_mlp`（`transformer_config.py:830`）令 dense MLP 走 `GroupedLinear(num_groups=1)`，在 SM100+ / MXFP8 下触发 `ForwardGroupedMLP_CuTeGEMMSwiGLU_MXFP8` 融合（须 `use_te_op_fuser=True`，#4318）。详见 [[megatron_precision_cudagraph_fusion_analysis]] 与 [[megatron_fusion_operators_analysis]]。
+DeepSeek-V4 的 **ClampedSwiGLU** 接入 MoE mlp_op_fuser：当 `activation_func_clamp_value` 非空时，SwiGLU 走 TE 的 `ScaledClampedQGeGLU(alpha=1.0, limit=clamp)`（cuDNN geglu kernel 是 swiglu 的超集，`moe/experts.py:422`，需 TE≥2.17.0.dev0，#5130）。新增 **TEFusedDenseMLP**：`use_grouped_gemm_for_dense_mlp`（`transformer_config.py:830`）令 dense MLP 走 `GroupedLinear(num_groups=1)`，在 SM100+ / MXFP8 下触发 `ForwardGroupedMLP_CuTeGEMMSwiGLU_MXFP8` 融合（须 `use_te_op_fuser=True`，#4318）。详见 [[23_megatron_precision_cudagraph_fusion_analysis]] 与 [[21_megatron_fusion_operators_analysis]]。
 
 ### 训练稳定性 / 可观测性维度 — 梯度缩放修正 + 日志重构
 
-修复 **TP>1 时 MoE aux_loss / z_loss 梯度缩放错误**（`moe/router.py:479-555`，#5047）：在 `calculate_per_token_loss` 路径下，aux/z loss 现按 `num_local_tokens × tp_cp_group.size()` 预乘，抵消 `finalize_model_grads` 中 `total_global_tokens` 除子里隐含的 `tp_cp` 因子，使有效缩放回到目标的 `1/(num_micro_batches × dp_size)`。MoE 日志被抽出为独立模块 **`moe/moe_logging.py`**（`MoEMetricsTracker`，逐层 metric 采集 + 跨 rank 规约 + TensorBoard/W&B，#3431），`moe_utils.py` 相应瘦身。此外 hash routing 新增 **force-balance / force-biased**（`moe_router_force_load_balancing` / `moe_router_force_biased`，用随机 topk 覆盖路由，`moe/router.py:641`，#5130）。详见 [[megatron_training_stability_observability_analysis]]。
+修复 **TP>1 时 MoE aux_loss / z_loss 梯度缩放错误**（`moe/router.py:479-555`，#5047）：在 `calculate_per_token_loss` 路径下，aux/z loss 现按 `num_local_tokens × tp_cp_group.size()` 预乘，抵消 `finalize_model_grads` 中 `total_global_tokens` 除子里隐含的 `tp_cp` 因子，使有效缩放回到目标的 `1/(num_micro_batches × dp_size)`。MoE 日志被抽出为独立模块 **`moe/moe_logging.py`**（`MoEMetricsTracker`，逐层 metric 采集 + 跨 rank 规约 + TensorBoard/W&B，#3431），`moe_utils.py` 相应瘦身。此外 hash routing 新增 **force-balance / force-biased**（`moe_router_force_load_balancing` / `moe_router_force_biased`，用随机 topk 覆盖路由，`moe/router.py:641`，#5130）。详见 [[28_megatron_training_stability_observability_analysis]]。
 
 ### 模型结构 / 配方维度 — MoE Recipes 与性能基线
 
-新增 `examples/moe_recipes/`（#4890 / #5012 / #5289），覆盖 **DeepSeek-V3 / DeepSeek-V4-Flash / Qwen3-235B-A22B / Qwen3-30B-A3B** 的可复现 YAML 配方，并给出 **Median TFLOP/s/GPU** 基线：如 DeepSeek-V3 GB300 MXFP8（256GPU, TP1/PP4/EP64, HybridEP+partial CG）≈ **1357.7**，Qwen3-235B GB300 full CG ≈ **1323.1**，DeepSeek-V4-Flash GB200（128GPU, EP64, paged stash + full CG + HybridEP）≈ **646.4**。这些配方把上文各维度（HybridEP/DeepEP、paged stash、partial/full CUDA Graph、EP overlap、MXFP8）组合成端到端可跑的样例，是第 9 章"各规模推荐配置"的真实对照。详见 [[megatron_model_structure_analysis]]。
+新增 `examples/moe_recipes/`（#4890 / #5012 / #5289），覆盖 **DeepSeek-V3 / DeepSeek-V4-Flash / Qwen3-235B-A22B / Qwen3-30B-A3B** 的可复现 YAML 配方，并给出 **Median TFLOP/s/GPU** 基线：如 DeepSeek-V3 GB300 MXFP8（256GPU, TP1/PP4/EP64, HybridEP+partial CG）≈ **1357.7**，Qwen3-235B GB300 full CG ≈ **1323.1**，DeepSeek-V4-Flash GB200（128GPU, EP64, paged stash + full CG + HybridEP）≈ **646.4**。这些配方把上文各维度（HybridEP/DeepEP、paged stash、partial/full CUDA Graph、EP overlap、MXFP8）组合成端到端可跑的样例，是第 9 章"各规模推荐配置"的真实对照。详见 [[10_megatron_model_structure_analysis]]。
 
 ---
 
@@ -551,7 +551,7 @@ _d2h_stream: GPU grad → CPU (async)
 - 100B+ 模型：+ `overlap_param_gather=True` + `overlap_grad_reduce=True`
 - 极端显存紧张：+ `optimizer_cpu_offload` 或 `offload_optimizer_states`
 
-详细分析见 [[megatron_distributed_optimizer_analysis]]。
+详细分析见 [[16_megatron_distributed_optimizer_analysis]]。
 
 ### 3.5 三种梯度/参数分片策略对比
 
@@ -732,7 +732,7 @@ Forward Layer 2: wait for bucket 2 → trigger bucket 3 AllGather (async)
 
 MoE 的通信密度远高于稠密模型——每个 MoE layer 额外需要 2 次 All-to-All（dispatch + combine）。在 8 个 expert 的场景，如果 EP=8，每个 rank 的 All-to-All 通信量约为 `S×B×H×2 bytes`。Overlap 将这部分通信隐藏在 expert compute 或相邻层的计算中，实际上是"免费"的。
 
-详细分析见 [[megatron_comm_overlap_analysis]]。
+详细分析见 [[20_megatron_comm_overlap_analysis]]。
 
 ---
 
@@ -805,7 +805,7 @@ Layer 4（~10-30% 速度损失）: CPU Offloading (Optimizer States + Activation
   → 进一步押榨 GPU 显存
 ```
 
-详细分析见 [[megatron_memory_optimization_analysis]]。
+详细分析见 [[22_megatron_memory_optimization_analysis]]。
 
 ---
 
@@ -865,7 +865,7 @@ SwiGLU/GEGLU 的 forward 中将输入转为 FP8 保存（1 byte vs 2 bytes），
 - ✗ 极小的 hidden size（LayerNorm 融合的 persistent kernel 不支持则回退）
 - ✗ 非 Blackwell GPU（Linear+CrossEntropy CUTLASS 不可用）
 
-详细分析见 [[megatron_fusion_operators_analysis]]。
+详细分析见 [[21_megatron_fusion_operators_analysis]]。
 
 ---
 
@@ -984,17 +984,17 @@ TP=8, PP=32, EP=32, DP=8, CP=4
 
 ## Related Pages
 
-- [[megatron_distributed_optimizer_analysis]]
-- [[megatron_memory_optimization_analysis]]
-- [[megatron_fusion_operators_analysis]]
-- [[megatron_comm_overlap_analysis]]
-- [[megatron_parallelism_orchestration_analysis]]
-- [[megatron_ep_analysis]]
-- [[megatron_pp_schedulers_analysis]]
+- [[16_megatron_distributed_optimizer_analysis]]
+- [[22_megatron_memory_optimization_analysis]]
+- [[21_megatron_fusion_operators_analysis]]
+- [[20_megatron_comm_overlap_analysis]]
+- [[17_megatron_parallelism_orchestration_analysis]]
+- [[14_megatron_ep_analysis]]
+- [[15_megatron_pp_schedulers_analysis]]
 - [[12_activation_checkpointing_analysis]]
 - [[13_low_precision_training_analysis]]
 - [[14_transformer_engine_analysis]]
-- [[megatron_ep_analysis]]
-- [[megatron_precision_cudagraph_fusion_analysis]]
-- [[megatron_training_stability_observability_analysis]]
-- [[megatron_model_structure_analysis]]
+- [[14_megatron_ep_analysis]]
+- [[23_megatron_precision_cudagraph_fusion_analysis]]
+- [[28_megatron_training_stability_observability_analysis]]
+- [[10_megatron_model_structure_analysis]]

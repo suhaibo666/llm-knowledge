@@ -2,9 +2,9 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`(2026-06-16 增量对照 `dev@232c478d4` 刷新)
 > 核心文件:`megatron/core/distributed/distributed_data_parallel.py`、`param_and_grad_buffer.py`、`distributed_data_parallel_config.py`、`megatron/core/optimizer/distrib_optimizer.py`、`optimizer.py`、`grad_scaler.py`、`clip_grads.py`、`optimizer_param_scheduler.py`、`cpu_offloading/`
-> 配套阅读:`megatron_pp_schedulers_analysis.md`、`megatron_ep_analysis.md`、`megatron_tp_analysis.md`、`megatron_cp_analysis.md`
+> 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`、`13_megatron_cp_analysis.md`
 >
-> **2026-07-31 合并说明**:本页由原三篇高度交叠的独立页合并而成——`megatron_ddp_optimizer_analysis.md`(DP/DDP/ZeRO 分片"怎么切")、`megatron_optimizer_internals_analysis.md`(单个优化器实例内部"算什么")、以及本页原有的 `megatron_distributed_optimizer_analysis.md`(通信组/FP8-FP4/CPU offload/三种 FSDP 实现对比/Layer-Wise+Muon 集成)。三页原本已通过大量"配套阅读"互相指路,现按逐节台账去重合并为一页,保留篇幅更全面者(原 `megatron_ddp_optimizer_analysis.md` 的 ZeRO 阶梯框架)为骨架,其余两页独有段落逐字并入(见各节"补充"标注),文件名保留最通用的 `megatron_distributed_optimizer_analysis`。原两篇已删除,全库入链已改写指向本页。
+> **2026-07-31 合并说明**:本页由原三篇高度交叠的独立页合并而成——`megatron_ddp_optimizer_analysis.md`(DP/DDP/ZeRO 分片"怎么切")、`megatron_optimizer_internals_analysis.md`(单个优化器实例内部"算什么")、以及本页原有的 `16_megatron_distributed_optimizer_analysis.md`(通信组/FP8-FP4/CPU offload/三种 FSDP 实现对比/Layer-Wise+Muon 集成)。三页原本已通过大量"配套阅读"互相指路,现按逐节台账去重合并为一页,保留篇幅更全面者(原 `megatron_ddp_optimizer_analysis.md` 的 ZeRO 阶梯框架)为骨架,其余两页独有段落逐字并入(见各节"补充"标注),文件名保留最通用的 `16_megatron_distributed_optimizer_analysis`。原两篇已删除,全库入链已改写指向本页。
 >
 > **更正记录(2026-05-22)**:原稿把模型态字节数写作 `16Ψ`(套用 ZeRO 论文假设 fp16 梯度)。经源码二次核查更正为 **`18Ψ`** —— `arguments.py:1296-1310` 中 bf16 训练强制 `accumulate_allreduce_grads_in_fp32`,梯度 buffer 为 fp32(4 字节)。详见 §0.4、§2.5。
 
@@ -168,7 +168,7 @@ def hook(*unused):
 - 理由(cfg`:49-51`):*"larger DP sizes need larger buckets to ensure collectives do not become latency-bound"* —— ring 算法每 rank 实际报文 = `bucket_size / dp_size`(cfg`:61`),DP 越大报文越小,桶须放大才吃满带宽。可改用 `num_buckets`(cfg`:53`,与 bucket_size 二选一)。
 - distopt 约束:每桶须可分片,`assert numel % data_parallel_world_size == 0`(PGB`:1059`);非 distopt 零 padding(`:1062-1063`)。`pad_buckets_for_high_nccl_busbw` 把桶凑到 `2^16` 倍数拉高 NCCL busbw(cfg`:58-62`)。
 
-> [!note] 补充(2026-07-31 · 由原 `megatron_distributed_optimizer_analysis.md` §2.3.5 并入)2026-06-16 · dev@232c478d4 — bucket 对齐/尺寸的两处更正
+> [!note] 补充(2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §2.3.5 并入)2026-06-16 · dev@232c478d4 — bucket 对齐/尺寸的两处更正
 > **① 65536 对齐是条件性的,不是恒定的**:bucket 末端对齐 divisor 现集中在 `param_layout.py:29-33` `bucket_end_divisor()`,只有 `pad_buckets_for_high_nccl_busbw=True` 时才是 `lcm(dp, 128, 2**16)`;否则只对齐到 `lcm(dp, 128)`。即上文的 `65536` 项是"高 NCCL busbw"开关下的产物,默认未必启用。
 > **② 默认 `bucket_size` 公式改由 pg_collection 计算**(#5006,`dist_utils.py:249`):`max(40000000, 1000000 * pg_collection.dp_cp.size())` —— 数值口径与原 `1000000 * dp_size` 一致,但来源从全局 `mpu.get_data_parallel_world_size()` 换成显式 `pg_collection.dp_cp.size()`(同时 `pp_rank`、`expert_data_parallel_world_size` 等也都改走 pg_collection)。`pg_collection` 现在对 Megatron-FSDP 与 DistributedOptimizer **两条路径都会传入**(原仅 FSDP 传)。
 
@@ -211,9 +211,9 @@ RS 流  :          └RS_g0┘ └RS_g1┘ … └RS_last┘        逆序桶,�
 | **align_param_gather**(cfg`:24`) | 不开时各 PP stage 自行发 AG 可能互抢 | — | 开启由 `schedules.py` 统一调度跨 stage 对齐(pre-hook `skip_next_bucket_dispatch`,DDP`:439-444`) |
 | **暴露的头尾** | — | — | 头(首桶 gather)可经 `overlap_param_gather_with_optimizer_step` 塞进 step;尾(末桶 RS)由 `finish_grad_sync` 收 |
 
-**一句话**:bucket 把整块 DP 通信切成 N 段并按执行序排好,hook 让"算第 i 段"自动等齐第 i 段并预取第 i+1 段;bucket_size 定 N —— 太小没东西可重叠、太大每段通信低效,默认 `max(40M, 1M·dp_size)` 在"够大到带宽受限"与"够多到首段早发、仅末段尾巴暴露"间取平衡。通信调度与 1F1B 重叠的全局视角见 [[megatron_comm_overlap_analysis]]。
+**一句话**:bucket 把整块 DP 通信切成 N 段并按执行序排好,hook 让"算第 i 段"自动等齐第 i 段并预取第 i+1 段;bucket_size 定 N —— 太小没东西可重叠、太大每段通信低效,默认 `max(40M, 1M·dp_size)` 在"够大到带宽受限"与"够多到首段早发、仅末段尾巴暴露"间取平衡。通信调度与 1F1B 重叠的全局视角见 [[20_megatron_comm_overlap_analysis]]。
 
-### 2.8 分片边界与参数视图:不按参数对齐(补充,2026-07-31 · 由原 `megatron_distributed_optimizer_analysis.md` §2.2 并入)
+### 2.8 分片边界与参数视图:不按参数对齐(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §2.2 并入)
 
 `distrib_optimizer.py:155-182` 核心映射 `_build_model_gbuf_param_range_map`:
 
@@ -225,7 +225,7 @@ param_local_end = min(gbuf_world_range.size, param_world_end - gbuf_world_range.
 
 分片边界可能"切"在参数的中间。一个参数的不同部分由不同 DP rank 维护优化器状态。这意味着每个 rank 上的参数只是一个 view/shard,不是完整的参数——这是 §2.1 连续扁平缓冲区在 DistributedOptimizer(ZeRO-1)层面的具体切法:buffer 按 `dp_world_size` 等大块切分(与桶边界无关),每个 rank "拥有"对应块上的参数子集,负责① reduce-scatter 归约到自己分片、② 仅为自己分片存 Adam state、③ all-gather 把更新后参数广播回全体。
 
-### 2.9 通信组定义(补充,2026-07-31 · 由原 `megatron_distributed_optimizer_analysis.md` §2.3.1 并入)
+### 2.9 通信组定义(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §2.3.1 并入)
 
 | 通信组 | 获取函数 | 组成员 | 通信操作 |
 |--------|---------|--------|---------|
@@ -245,7 +245,7 @@ get_expert_data_parallel_group()
 
 Intra-Instance / Inter-Instance 两组是 §3 HSDP 的通信基础;EP DP Group 是 EP 场景下专家参数独立于稠密参数的分片域(见 §13.5)。
 
-### 2.10 FP8/FP4 参数对通信量与实现的影响(补充,2026-07-31 · 由原 `megatron_distributed_optimizer_analysis.md` §2.3.4+§3.4 并入)
+### 2.10 FP8/FP4 参数对通信量与实现的影响(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §2.3.4+§3.4 并入)
 
 | 参数精度 | AllGather 通信量 | ReduceScatter 通信量 | 总通信节省 |
 |---------|-----------------|---------------------|-----------|
@@ -267,7 +267,7 @@ Intra-Instance / Inter-Instance 两组是 §3 HSDP 的通信基础;EP DP Group �
 > - **MXFP8 共享 buffer 的 all-gather 后处理被抽函数**(#4771,`distributed_data_parallel.py:492` `_start_bucket_group_param_sync`):原内联在 `start_param_sync` 里的"把 all-gather 出的 MXFP8 参数从共享 buffer 拷回 `param.data` 并清零 buffer 供梯度累加"逻辑被抽成单 bucket-group 方法,便于 LayerWise+DistOpt 链式各自只同步自己的 bucket。
 > - **ChainedOptimizer 的 MXFP8 defer-sync 改为探测 DDP config**(#4982,`optimizer.py:1456`):`_should_defer_mxfp8_param_sync` 不再信 `OptimizerConfig.overlap_param_gather`,而是逐个探测子 `DistributedOptimizer.ddp_config.overlap_param_gather`(详见 §6.1 的 2026-06-16 更新)。
 
-### 2.11 精度感知优化器:decoupled_grad(补充,2026-07-31 · 由原 `megatron_distributed_optimizer_analysis.md` §3.3 并入)
+### 2.11 精度感知优化器:decoupled_grad(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §3.3 并入)
 
 **标准混合精度**:模型 BF16 → 主权重 FP32 → 梯度从 BF16 转 FP32
 ```python
@@ -333,7 +333,7 @@ ZeRO-1 一步:
   ④ all-gather:各 rank 把更新后的参数分片 all-gather,拿回全量参数供下一步前向
 ```
 
-关键恒等式:**`all-reduce = reduce-scatter + all-gather`**。所以 ZeRO-1 把 DDP 的一次 all-reduce 拆成"反向后 RS + 更新后 AG",**通信总量不变**,却把 `12Ψ` 优化器状态切成了 `1/dp`。这是"几乎免费"的显存节省 —— 也是 README 把 `--use-distributed-optimizer` 列为通用性能项的原因(跨框架视角下"用 AG(param) 替换 AG(grad)"这一表述见 [[distributed_optimizer_deep_dive]] §一)。
+关键恒等式:**`all-reduce = reduce-scatter + all-gather`**。所以 ZeRO-1 把 DDP 的一次 all-reduce 拆成"反向后 RS + 更新后 AG",**通信总量不变**,却把 `12Ψ` 优化器状态切成了 `1/dp`。这是"几乎免费"的显存节省 —— 也是 README 把 `--use-distributed-optimizer` 列为通用性能项的原因(跨框架视角下"用 AG(param) 替换 AG(grad)"这一表述见 [[32_distributed_optimizer_deepdive]] §一)。
 
 ### ②.3 开销
 
@@ -411,7 +411,7 @@ ZeRO-3:参数也只存 1/dp
 
 > [!update] 2026-06-16 · dev@232c478d4 — Megatron-FSDP 的 A2A Overlap(ZeRO-3 + MoE 的通信重叠)(#3797,`megatron_fsdp.py`、`mcore_fsdp_adapter.py`、`combined_1f1b.py`)
 > ZeRO-3 与 MoE 叠加时,**两层通信**同时存在:FSDP 的逐层参数 all-gather / 梯度 reduce-scatter(DP 轴)与 MoE 的 dispatch/combine **All-to-All**(EP 轴)。#3797 让二者**重叠**:把 FSDP 的 `post_forward_release_module` / `post_backward_release_module` 等 hook 暴露出来交给 1F1B overlap pipeline 手动调度,并新增 `enable_fine_grained_param_gather_backward_hook` 支持 backward 侧细粒度参数 gather;配合 `delayed_wgrad`(expert 权重梯度延迟到 dispatch-backward 后再 reduce-scatter,见 §13.2)最大化 EP-A2A 与 DP-梯度同步的重叠。
-> 这是对 §④.3"参数 AG 必须靠 prefetch/计算重叠掩盖"的 FSDP-内部强化。通信调度/1F1B 重叠角度详见 [[megatron_comm_overlap_analysis]]。
+> 这是对 §④.3"参数 AG 必须靠 prefetch/计算重叠掩盖"的 FSDP-内部强化。通信调度/1F1B 重叠角度详见 [[20_megatron_comm_overlap_analysis]]。
 
 ---
 
@@ -433,7 +433,7 @@ HSDP:DP 组 = 外层(跨节点,replicate)× 内层(节点内,shard)
 
 效果:分片只在节点内(高带宽 NVLink)发生,跨节点只走轻量的副本同步 —— 兼顾 ZeRO 的省显存与跨节点通信效率。类比 CP 的 `a2a+p2p` 分层思想。
 
-### 3.1 通信量视角(补充,2026-07-31 · 由原 `megatron_distributed_optimizer_analysis.md` §2.3.2/§2.3.3/§3.2 并入)
+### 3.1 通信量视角(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §2.3.2/§2.3.3/§3.2 并入)
 
 用 §2.9 的通信组记号,设 `num_distributed_optimizer_instances = K`,`D` 为 DP 世界大小、`P` 为参数总量(元素个数,= `Ψ`):
 
@@ -526,7 +526,7 @@ DP 无流水线气泡。低效来源是**通信暴露**:
 - **关键恒等式**:`all-reduce = reduce-scatter + all-gather` —— ZeRO-1/2 只是把 DDP 的一次 all-reduce 拆两半,所以通信零增量。
 - **HSDP**:分片压在节点内 NVLink、跨节点只做副本,兼顾省显存与跨节点效率。
 
-### 5.3 按规模的具体配置(补充,2026-07-31 · 由原 `megatron_distributed_optimizer_analysis.md` §5 并入)
+### 5.3 按规模的具体配置(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §5 并入)
 
 | 场景 | 推荐配置 |
 |------|---------|
@@ -536,7 +536,7 @@ DP 无流水线气泡。低效来源是**通信暴露**:
 | 极端规模(H100/Blackwell) | 全开 overlap, `fp4`/`fp8_param`, 复用 `reuse_grad_buf_for_mxfp8_param_ag` |
 | 显存仍然不足 | 启用 `optimizer_cpu_offload` 或 `offload_optimizer_states`(§12) |
 
-### 5.4 何时适用 checklist(补充,2026-07-31 · 由原 `megatron_distributed_optimizer_analysis.md` §6 并入)
+### 5.4 何时适用 checklist(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §6 并入)
 
 - ✓ 任何使用 Adam/AdamW 的场景
 - ✓ 模型越大收益越高(优化器状态占比随参数量线性增长)
@@ -625,7 +625,7 @@ MegatronOptimizer (ABC, :100)              抽象基类:clip_grad_norm / get_los
 
 ## 8. `optimizer.step()` 流程
 
-在展开 `optimizer.step()` 内部五步之前,先看它在**整个训练迭代**里的位置(补充,2026-07-31 · 由原 `megatron_distributed_optimizer_analysis.md` §3.5 并入)——这条流程串起了 §2(DP 通信)与本节(优化器内部):
+在展开 `optimizer.step()` 内部五步之前,先看它在**整个训练迭代**里的位置(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §3.5 并入)——这条流程串起了 §2(DP 通信)与本节(优化器内部):
 
 ```
 Forward(参数 All-Gather 可与计算 overlap,见 §2.3)
@@ -732,7 +732,7 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 
 ---
 
-## 12. CPU Offloading 机制(补充,2026-07-31 · 由原 `megatron_distributed_optimizer_analysis.md` §4 并入)
+## 12. CPU Offloading 机制(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §4 并入)
 
 ### 12.1 HybridDeviceOptimizer
 
@@ -743,7 +743,7 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 - 支持 `param_update_in_fp32`:CPU 上做 FP32 更新
 - 通过 step hooks 自动化参数回拷
 
-名字里的 "Hybrid":一部分参数的优化器状态/更新在 GPU、一部分在 CPU,按显存压力混合 —— 用 PCIe 带宽 + CPU 算力换 GPU 显存(类比激活 offload 的思路,见 `megatron_recompute_analysis.md` §0.2)。
+名字里的 "Hybrid":一部分参数的优化器状态/更新在 GPU、一部分在 CPU,按显存压力混合 —— 用 PCIe 带宽 + CPU 算力换 GPU 显存(类比激活 offload 的思路,见 `18_megatron_recompute_analysis.md` §0.2)。
 
 ### 12.2 OptimizerStateOffloader
 
@@ -757,7 +757,7 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 
 ## 13. 三种梯度/参数分片实现方案对比:DistributedOptimizer / TorchFullyShardedDataParallel / MegatronFSDP
 
-(补充,2026-07-31 · 由原 `megatron_distributed_optimizer_analysis.md` 附录 A 并入,提升为正式章节)Megatron-LM 现有 **三套** 并行梯度/参数分片方案,适用于不同场景:
+(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` 附录 A 并入,提升为正式章节)Megatron-LM 现有 **三套** 并行梯度/参数分片方案,适用于不同场景:
 
 ### 13.1 三套方案概览
 
@@ -823,7 +823,7 @@ outer_dp_sharding_strategy="no_shard"                 # 组间无分片(复制)
 > **① `no_shard`(ZeRO-0)收敛性修复**(#3835/#3754,`megatron_fsdp.py:1234`、`optimizer/__init__.py:1060`):`no_shard` 下参数本就在各 DP rank 复制,故 ① `start_param_sync` 对 `no_shard` 直接 return(无需 all-gather);② 梯度统计/范数只能在 **TP/PP(model_parallel_group)** 上规约,**不能**再在 DP 维度规约(梯度已是 all-reduce 后的复制值,再 reduce 会**虚高 grad norm 致不收敛**)—— 通过 `effective_intra_dist_opt_group = mp_group if no_shard else intra_dist_opt_group` 实现。另禁止 `no_shard` 配 meta-device 初始化。详见「阶段①」小节的 2026-06-16 更新。
 > **② grouped expert 权重减少 padding**(#5013,`fsdp/.../param_and_grad_buffer.py:1404`):当 ≥3D 的 grouped-expert 张量与异构 chunk-size-factor 混在同一 bucket 时,LCM 对齐会**放大 padding**;修复把这类 grouped-expert 张量拆到独立 bucket,避免 LCM 膨胀。利好大规模 MoE(见 §13.5)。
 > **③ 跨 AllGatherPipeline reset 保留非-FSDP-unit bucket**(#4717,`fsdp/.../param_and_grad_buffer.py`):pipeline reset 时不再误清非 FSDP-unit 的 bucket。
-> **④ A2A Overlap**(#3797):把 MoE 的 All-to-All dispatch/combine 与 FSDP 的参数 all-gather / 梯度 reduce-scatter 重叠,详见「阶段④」小节与 [[megatron_comm_overlap_analysis]]。
+> **④ A2A Overlap**(#3797):把 MoE 的 All-to-All dispatch/combine 与 FSDP 的参数 all-gather / 梯度 reduce-scatter 重叠,详见「阶段④」小节与 [[20_megatron_comm_overlap_analysis]]。
 
 ### 13.3 TorchFullyShardedDataParallel 详细分析 (`torch_fully_sharded_data_parallel.py`)
 
@@ -899,7 +899,7 @@ FSDP 的 shard 在 **DP 维度**上执行(即 `world_size / (TP × CP × PP × E
 
 ## 14. Layer-Wise 分布式优化器与 Muon 集成
 
-(补充,2026-07-31 · 由原 `megatron_distributed_optimizer_analysis.md` 附录 A.7 与原 `megatron_optimizer_internals_analysis.md` §7 合并——前者讲"分片布局怎么整合进 DDP buffer",后者讲"优化器数学实现本身与版本更新",互补)
+(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` 附录 A.7 与原 `megatron_optimizer_internals_analysis.md` §7 合并——前者讲"分片布局怎么整合进 DDP buffer",后者讲"优化器数学实现本身与版本更新",互补)
 
 ### 14.1 ChainedOptimizer 分片布局整合(原 §A.7)
 
@@ -925,7 +925,7 @@ FSDP 的 shard 在 **DP 维度**上执行(即 `world_size / (TP × CP × PP × E
 >
 > **② 非-Muon 参数改由独立的 `DistributedOptimizer` 按字节级分片管理**(#4771)。新增 `is_managed_by_layer_wise_optimizer(param)`(`layer_wise_optimizer.py:37`):2D 矩阵权重且非 embedding/output → Muon/LayerWise 接管;embedding、bias、LayerNorm 等 → **路由到一个独立的 `DistributedOptimizer`**(真正的 ZeRO 字节级分片,见 §阶段②)。`BufferKey` 增加 `is_managed_by_layer_wise_optimizer` 维度(`param_and_grad_buffer.py:863`),让两类参数落进不同 buffer;`DistributedOptimizer.start_param_sync_for_bucket_group_subset()` 只同步自己那批 bucket group,避免与 sibling LayerWise 重复 all-gather。最终 `LayerWiseDistributedOptimizer`(Muon)+ `DistributedOptimizer`(Adam)由 `ChainedOptimizer`(§6.1)串成一个。
 >
-> **结论(对上文 Muon/ZeRO 框架的修正)**:Muon 现在**可以与 ZeRO 分片共存**。Muon 管的矩阵权重经 LayerWise 走 shard-aligned 的 reduce-scatter/all-gather(等效 ZeRO-1/2 沿 DP 分片优化器状态与梯度),非-Muon 参数走标准 `DistributedOptimizer`。早期"Muon 对 ZeRO 切分的根本性挑战"指的是 Newton-Schulz 正交化需要**整块矩阵**、无法像 Adam 那样按字节随意切;LayerWise 的解法正是 **shard-aligned bucket + 按层/按整参数分配**,让每个矩阵整体落在某个 shard 内,从而既正交化又分片(跨框架的 Muon/ZeRO 张力综述见 [[distributed_optimizer_deep_dive]] §六)。
+> **结论(对上文 Muon/ZeRO 框架的修正)**:Muon 现在**可以与 ZeRO 分片共存**。Muon 管的矩阵权重经 LayerWise 走 shard-aligned 的 reduce-scatter/all-gather(等效 ZeRO-1/2 沿 DP 分片优化器状态与梯度),非-Muon 参数走标准 `DistributedOptimizer`。早期"Muon 对 ZeRO 切分的根本性挑战"指的是 Newton-Schulz 正交化需要**整块矩阵**、无法像 Adam 那样按字节随意切;LayerWise 的解法正是 **shard-aligned bucket + 按层/按整参数分配**,让每个矩阵整体落在某个 shard 内,从而既正交化又分片(跨框架的 Muon/ZeRO 张力综述见 [[32_distributed_optimizer_deepdive]] §六)。
 >
 > **限制**:此 split 路径要求 `use_layer_wise_param_layout=True`(默认开;`--no-use-layer-wise-param-layout` 回退到 legacy ping-pong)、`num_distributed_optimizer_instances == 1`、且不支持 expert-parallel 的非-Muon 参数组与 `overlap_param_gather_with_optimizer_step`(`optimizer/__init__.py:761` 断言)。
 
@@ -972,13 +972,13 @@ FSDP 的 shard 在 **DP 维度**上执行(即 `world_size / (TP × CP × PP × E
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`,2026-06-16 增量对照 `dev@232c478d4` 刷新。源码行号以标注的 commit 为准。2026-07-31 由三篇原始页(`megatron_ddp_optimizer_analysis.md`、`megatron_optimizer_internals_analysis.md`、本页原稿)合并而成,配套文档:`megatron_pp_schedulers_analysis.md`、`megatron_ep_analysis.md`、`megatron_tp_analysis.md`、`megatron_cp_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`,2026-06-16 增量对照 `dev@232c478d4` 刷新。源码行号以标注的 commit 为准。2026-07-31 由三篇原始页(`megatron_ddp_optimizer_analysis.md`、`megatron_optimizer_internals_analysis.md`、本页原稿)合并而成,配套文档:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`、`13_megatron_cp_analysis.md`。*
 
 ## Related Pages
 
-- [[megatron_parallelism_orchestration_analysis]] · [[megatron_memory_optimization_analysis]] · [[13_low_precision_training_analysis]] · [[megatron_ep_analysis]]
-- [[megatron_tp_analysis]] · [[megatron_tp_fsdp_resharding_supplements_analysis]] · [[megatron_pp_schedulers_analysis]] · [[megatron_cp_analysis]]
-- [[megatron_precision_cudagraph_fusion_analysis]] · [[megatron_dist_checkpointing_analysis]] · [[megatron_comm_overlap_analysis]]
-- [[../distributed_optimizer_deep_dive|distributed_optimizer_deep_dive]] — FSDP2/ZeRO/MindSpeed 三方对比, 梯度累积通信量分析, Adam vs Muon
+- [[17_megatron_parallelism_orchestration_analysis]] · [[22_megatron_memory_optimization_analysis]] · [[13_low_precision_training_analysis]] · [[14_megatron_ep_analysis]]
+- [[12_megatron_tp_analysis]] · [[27_megatron_tp_fsdp_resharding_supplements_analysis]] · [[15_megatron_pp_schedulers_analysis]] · [[13_megatron_cp_analysis]]
+- [[23_megatron_precision_cudagraph_fusion_analysis]] · [[19_megatron_dist_checkpointing_analysis]] · [[20_megatron_comm_overlap_analysis]]
+- [[../32_distributed_optimizer_deepdive|32_distributed_optimizer_deepdive]] — FSDP2/ZeRO/MindSpeed 三方对比, 梯度累积通信量分析, Adam vs Muon
 - [[11_muon_analysis]] — Muon 优化器本身的数学原理(Newton-Schulz 正交化),与本页 §14 的分布式集成互补
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

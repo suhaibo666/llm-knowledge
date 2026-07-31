@@ -3,7 +3,7 @@
 > 从手动调优到编译器自动化：WaveEP、DeepEP 与通算自动编译的演进路线
 > 最后更新: 2026-05-12（2026-07-31 补边界声明）
 
-> **与"计算通信掩盖"的边界**：本页讲的是把通信与计算编进**同一个 kernel**的**融合**（如 WaveEP 的 wave-tile 绑定、DeepEP `FusedDispatch`、MC2 的 `npu_all_gather_base_mm`）——源码层已不存在独立的两次算子调用。仅通过调度/多 stream 让**各自独立**的通信与计算并发执行、互相隐藏延迟的**掩盖**手段，见 [[comm_compute_overlap_analysis]]。
+> **与"计算通信掩盖"的边界**：本页讲的是把通信与计算编进**同一个 kernel**的**融合**（如 WaveEP 的 wave-tile 绑定、DeepEP `FusedDispatch`、MC2 的 `npu_all_gather_base_mm`）——源码层已不存在独立的两次算子调用。仅通过调度/多 stream 让**各自独立**的通信与计算并发执行、互相隐藏延迟的**掩盖**手段，见 [[30_comm_compute_overlap_analysis]]。
 
 ---
 
@@ -357,7 +357,7 @@ CP        | 半自动（Ring AG） | FlexAttention 融合   | 序列维度通算
 - [[26_flex_attention_analysis]] — Context Parallel 中的 FlexAttention + WaveEP 集成
 - [[10_mlir_core_concepts]] — MLIR Mesh Dialect 基础
 - [[32_post_grad_passes_guide]] — `micro_pipeline_tp_pass`、`fuse_ddp_communication`、`bucket_*` passes
-- [[megatron_comm_overlap_analysis]] — Megatron-LM 各并行维度通算重叠详细实现
-- [[megatron_moe_training_optimization_report]] — DeepEP/HybridEP 在 Megatron-LM 中的集成
+- [[20_megatron_comm_overlap_analysis]] — Megatron-LM 各并行维度通算重叠详细实现
+- [[01_megatron_moe_training_optimization_report]] — DeepEP/HybridEP 在 Megatron-LM 中的集成
 - [[12_deepseek_v3_analysis]] — DualPipe PP 通算重叠设计
 - [[13_deepseek_v4_analysis]] — WaveEP 细粒度 EP 重叠（wave-based expert scheduling）

@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/dist_checkpointing/` 下 `mapping.py`(`ShardedTensor`)、`serialization.py`(`save`/`load`)、`strategies/`、`validation.py`
-> 配套阅读:`megatron_parallelism_orchestration_analysis.md`、`megatron_distributed_optimizer_analysis.md`、`megatron_tp_fsdp_resharding_supplements_analysis.md` §3(resharding)
+> 配套阅读:`17_megatron_parallelism_orchestration_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §3(resharding)
 > 定位:模型/优化器状态如何**存盘与读取**。
 
 ---
@@ -11,7 +11,7 @@
 
 两者都处理"并行布局不同",但:
 
-| | **dist_checkpointing**(本文) | **resharding / refit**(`megatron_tp_fsdp_resharding_supplements_analysis.md` §3) |
+| | **dist_checkpointing**(本文) | **resharding / refit**(`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §3) |
 |--|------------------------------|--------------------------------|
 | 干什么 | 模型/优化器状态**存盘 / 从盘读取** | 两个**运行中**的模型之间**实时**搬权重 |
 | 介质 | 磁盘 | GPU↔GPU(NCCL/NVSHMEM/Gloo) |
@@ -54,7 +54,7 @@ class ShardedTensor(ShardedBase):
 读法:`(global_shape, global_offset, local_shape)` 三者一起,精确说明"本 rank 的 `data` 是全局张量 `key` 的哪一块"。关键字段:
 - **`replica_id`**:DP 副本持有**完全相同**的数据。存档时只让 `replica_id` 为某个值的副本真正写盘,其余跳过 —— **避免 DP 冗余写**。
 - **`prepend_axis_num`**:MoE 专家权重等,局部张量是单个专家、全局多了一个"专家"轴 —— 用前置轴表达。
-- **`flattened_range`**:DDP 的扁平梯度 buffer、分布式优化器的扁平状态(见 `megatron_distributed_optimizer_analysis.md`)—— 局部片是大扁平 buffer 的一段,用这个字段定位。
+- **`flattened_range`**:DDP 的扁平梯度 buffer、分布式优化器的扁平状态(见 `16_megatron_distributed_optimizer_analysis.md`)—— 局部片是大扁平 buffer 的一段,用这个字段定位。
 - `from_rank_offsets`(`:190`):便捷构造器,从"本 rank 在各并行轴的 rank 号"直接算出 offset。
 - `narrow`(`:262`):把一个 ShardedTensor 再切窄(load 时按需取子片)。
 
@@ -78,7 +78,7 @@ class ShardedTensor(ShardedBase):
 
 普通 PyTorch 模型用 `state_dict()` 返回 `{名字: 张量}`。Megatron 的每个模块额外实现 **`sharded_state_dict()`** —— 返回的 dict 里每个张量被包成 `ShardedTensor`,带上正确的"局部↔全局"映射。
 
-前面文档见过的例子:`ColumnParallelLinear.sharded_state_dict`(`megatron_tp_analysis.md`,权重按输出维切→沿 axis 0 分片)、`RowParallelLinear.sharded_state_dict`(沿 axis 1)、`DistributedOptimizer.sharded_state_dict`(`megatron_distributed_optimizer_analysis.md`,优化器状态按 DP 切→用 `flattened_range`)、`TEGroupedMLP` 的专家用 `prepend_axis_num` 表达专家轴。
+前面文档见过的例子:`ColumnParallelLinear.sharded_state_dict`(`12_megatron_tp_analysis.md`,权重按输出维切→沿 axis 0 分片)、`RowParallelLinear.sharded_state_dict`(沿 axis 1)、`DistributedOptimizer.sharded_state_dict`(`16_megatron_distributed_optimizer_analysis.md`,优化器状态按 DP 切→用 `flattened_range`)、`TEGroupedMLP` 的专家用 `prepend_axis_num` 表达专家轴。
 
 所以 `sharded_state_dict` 是**模型对"我的每一片在全局的哪个位置"的自我声明** —— dist_checkpointing 的 `save`/`load` 完全靠它驱动。
 
@@ -123,7 +123,7 @@ save(sharded_state_dict, checkpoint_dir, ...):
 
 `async` 与 `fully-parallel` 是两个关键性能特性:前者把存档延迟**藏进计算**,后者把存档 I/O **摊到所有卡**。大模型 checkpoint 动辄 TB 级,这两者让"每隔 N 步存一次"不至于拖垮吞吐。
 
-> Megatron-FSDP 另用 `fsdp_dtensor` 格式(基于 DTensor,见 `megatron_tp_fsdp_resharding_supplements_analysis.md` §1.5)。
+> Megatron-FSDP 另用 `fsdp_dtensor` 格式(基于 DTensor,见 `27_megatron_tp_fsdp_resharding_supplements_analysis.md` §1.5)。
 
 ---
 
@@ -150,9 +150,9 @@ save(sharded_state_dict, checkpoint_dir, ...):
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`megatron_parallelism_orchestration_analysis.md`、`megatron_distributed_optimizer_analysis.md`、`megatron_tp_fsdp_resharding_supplements_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`17_megatron_parallelism_orchestration_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md`。*
 
 ## Related Pages
 
-- [[megatron_parallelism_orchestration_analysis]] · [[megatron_distributed_optimizer_analysis]] · [[megatron_tp_fsdp_resharding_supplements_analysis]]
+- [[17_megatron_parallelism_orchestration_analysis]] · [[16_megatron_distributed_optimizer_analysis]] · [[27_megatron_tp_fsdp_resharding_supplements_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

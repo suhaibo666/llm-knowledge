@@ -308,7 +308,7 @@ vLLM 大量用 Triton 而非纯手写 CUDA,原因有二:**可移植**(同一 ker
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links
-- [[megatron_fusion_operators_analysis]] —— Megatron-LM 融合算子全目录(训练侧直接对照)
+- [[21_megatron_fusion_operators_analysis]] —— Megatron-LM 融合算子全目录(训练侧直接对照)
 - [[torchtitan_compute_memory_optimizations_analysis]] —— torchtitan 融合算子(FusedSwiGLU/grouped GEMM)
 - [[32_post_grad_passes_guide]] · [[02_compile_stack/04_inductor/index]] —— Inductor pattern matcher / post-grad pass
 - [[gpu_kernel_guide]] —— Triton / Tensor Core kernel 链路

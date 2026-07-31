@@ -83,7 +83,7 @@ $$M_{\text{fp8\_primary}} = \underbrace{4N}_{\text{FP32 optimizer states}} + \un
 
 ### 2.4 TP 通信与 FP8 的协同
 
-来自 `megatron_comm_overlap_analysis.md` §2.2-2.5：
+来自 `20_megatron_comm_overlap_analysis.md` §2.2-2.5：
 
 - TE 预分配静态 **User Buffer**，在训练初始化时注册
 - `initialize_ub(use_fp8=(args.fp8 is not None))` 根据精度配置调整 buffer
@@ -193,8 +193,8 @@ Megatron 的 MoE Grouped GEMM 低精度支持：
 ## 7. 相关页面
 
 - [[02_engineering/02_train_frameworks/megatron-lm/index]] — Megatron-LM 知识地图
-- [[02_engineering/02_train_frameworks/megatron-lm/megatron_precision_cudagraph_fusion_analysis]] — FP8 低精度训练与 CUDA Graph 融合
-- [[02_engineering/02_train_frameworks/megatron-lm/megatron_comm_overlap_analysis]] — 通信掩盖中的 FP8 支持
+- [[02_engineering/02_train_frameworks/megatron-lm/23_megatron_precision_cudagraph_fusion_analysis]] — FP8 低精度训练与 CUDA Graph 融合
+- [[02_engineering/02_train_frameworks/megatron-lm/20_megatron_comm_overlap_analysis]] — 通信掩盖中的 FP8 支持
 - [[01_theory/02_pretraining/14_transformer_engine_analysis]] — Transformer Engine 技术分析
 - [[01_theory/01_models/deepseek/24_deepseek_v4_fp4_qat_analysis]] — DeepSeek-V4 FP4 QAT
 - [[01_theory/01_models/deepseek/12_deepseek_v3_analysis]] — DeepSeek-V3 FP8 实践

@@ -2,7 +2,7 @@
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
 > 核心文件:`megatron/core/tensor_parallel/layers.py`(1392 行)、`mappings.py`(617 行)
-> 配套阅读:`megatron_pp_schedulers_analysis.md`、`megatron_ep_analysis.md`
+> 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`
 > 适用读者:已了解 transformer 训练与 DP/PP,想吃透 Megatron 张量并行实现的工程师。
 
 ---
@@ -139,7 +139,7 @@ def forward(self, input_, ...):                                # layers.py:985
 > [!update] 2026-06-16 · dev@232c478d4
 > **非融合 vocab-parallel 交叉熵现在显式接收 TP 组**(#5128,`tensor_parallel/cross_entropy.py:213`、`language_module.py:184`)。
 > 词表并行(输出投影按词表维切到各 TP rank)后,损失计算 `vocab_parallel_cross_entropy` 要在 TP 组内做 **3 次 all-reduce**(`logits_max` 取 MAX、`predicted_logits`/`sum_exp_logits` 取 SUM)以跨分片拼出全词表 softmax 的分母。原实现把通信组写死为全局 `get_tensor_model_parallel_group()`;此 PR 给 `vocab_parallel_cross_entropy(..., tp_group=None)` 增加可选 `tp_group` 形参(`cross_entropy.py:217`),并改用 `get_pg_rank/get_pg_size(tp_group)` 取 rank/world_size(`:135-136`,替换原 `get_tensor_model_parallel_rank/world_size`)。`LanguageModule.compute_language_model_loss` 现传入 `self.tp_group`(`language_module.py:184`)。
-> **意义**:与非均匀/异构 TP(每层 TP 组可不同,见 [[megatron_nonuniform_tp_analysis]])解耦 —— CE 的 all-reduce 不再强制走全局 TP 组,而跟随调用方实际的 TP 子组;`tp_group=None` 时回退全局组,旧行为不变。融合实现(`fused_vocab_parallel_cross_entropy`)早已通过 `self.pg_collection.tp` 传组,本 PR 把非融合路径对齐。
+> **意义**:与非均匀/异构 TP(每层 TP 组可不同,见 [[25_megatron_nonuniform_tp_analysis]])解耦 —— CE 的 all-reduce 不再强制走全局 TP 组,而跟随调用方实际的 TP 子组;`tp_group=None` 时回退全局组,旧行为不变。融合实现(`fused_vocab_parallel_cross_entropy`)早已通过 `self.pg_collection.tp` 传组,本 PR 把非融合路径对齐。
 
 ---
 
@@ -296,7 +296,7 @@ TP 不像 PP 有流水线气泡。它的低效来自:**每层 4 次通信的延�
 | 单层能放进单卡 | ❌ 不用 | TP 引入高频关键路径通信,纯亏;用 DP |
 | 单层放不下 / 想降单层延迟 | ✅ 用 TP | 唯一能在层内并行的手段 |
 | 跨机扩展 | ❌ TP 不跨机 | 通信扛不住 IB;改用 PP 跨机 |
-| MoE 专家层 | ⚠️ 优先 EP | 细粒度专家被 TP 切碎,GEMM 效率低(见 `megatron_ep_analysis.md`) |
+| MoE 专家层 | ⚠️ 优先 EP | 细粒度专家被 TP 切碎,GEMM 效率低(见 `14_megatron_ep_analysis.md`) |
 
 **经验法则(见 MoE README Guidelines)**:
 - `TP × (EP) ≤ 单机卡数`,吃满 NVLink。
@@ -314,10 +314,10 @@ TP 不像 PP 有流水线气泡。它的低效来自:**每层 4 次通信的延�
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`megatron_pp_schedulers_analysis.md`、`megatron_ep_analysis.md`、`megatron_cp_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`13_megatron_cp_analysis.md`。*
 
 ## Related Pages
 
-- [[megatron_pp_schedulers_analysis]] · [[megatron_ep_analysis]] · [[megatron_cp_analysis]] · [[megatron_distributed_optimizer_analysis]] · [[megatron_parallelism_orchestration_analysis]]
-- [[megatron_nonuniform_tp_analysis]] · [[megatron_comm_overlap_analysis]]
+- [[15_megatron_pp_schedulers_analysis]] · [[14_megatron_ep_analysis]] · [[13_megatron_cp_analysis]] · [[16_megatron_distributed_optimizer_analysis]] · [[17_megatron_parallelism_orchestration_analysis]]
+- [[25_megatron_nonuniform_tp_analysis]] · [[20_megatron_comm_overlap_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

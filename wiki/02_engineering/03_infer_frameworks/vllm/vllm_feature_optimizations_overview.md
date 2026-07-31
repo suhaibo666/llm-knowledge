@@ -284,5 +284,5 @@ KV 卸载不是独立子系统,而是注册为名为 `OffloadingConnector` 的 K
 - [[vllm/index]] · [[../index]]
 
 ## Cross-Domain Links
-- [[megatron_inference_engine_analysis]] —— 训练框架内置推理引擎的优化对照
+- [[31_megatron_inference_engine_analysis]] —— 训练框架内置推理引擎的优化对照
 - [[mooncake_analysis]] —— 分离式推理(P/D 分离、KV 复用)
