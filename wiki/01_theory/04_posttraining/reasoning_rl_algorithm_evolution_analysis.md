@@ -6,6 +6,7 @@
 > **证据基线**：固定 arXiv 版本与四框架 S00 commit，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
 > **结论先行**：前沿不是简单地从 GRPO 换一个缩写，而是在修正四类对象：统计单位、有效样本分布、行为策略比率和训练—推理一致性。
 > **阅读导航**：[[posttraining_frontier_map_analysis|上一篇 D01]] · [[agentic_rl_algorithm_analysis|下一篇 D03]]
+> **定位**（2026-07-31 kb-reorg P5）：本页是 GRPO/DAPO/Dr.GRPO/GSPO/SAO 公式演进与工程语义的统一权威页。各算法的论文元数据、原始实验数字与消融见 [[grpo_analysis]]/[[dapo_analysis]]/[[gspo_analysis]]；verl 的注册表实现与 config key→代码锚点见 [[verl_rl_algorithms_analysis]]。
 
 ---
 
@@ -127,27 +128,7 @@ verl 的固定快照已有 GSPO 注册与 sequence clipping：`verl/trainer/ppo/
 
 ### 3.6 Kimi K3：先训练九个专家，再用 MOPD 合并
 
-K3 把“优化一个 policy”和“合并多个 specialist”拆成两个问题。它先按三个领域与 `low/high/max` 三档 reasoning effort 训练九个专家，再让统一 student 自己采样，由对应 teacher 在 student 实际访问的 prefix 上提供逐 token dense reward（Kimi K3 Technical Report §4.1.2–4.1.3，pp.12–14）。
-
-\[
-r_{\mathrm{opd}}^d(y_t\mid e,x,y_{<t})
-=
-\operatorname{clip}
-\left(
-\operatorname{sg}
-\left[
-\log
-\frac{\pi_{\mathrm{teacher}}^{(d,e)}(y_t\mid x,y_{<t})}
-{\pi_\theta(y_t\mid e,x,y_{<t})}
-\right],
--R_{\max},
-R_{\max}
-\right).
-\]
-
-Eq. 15 的关键不是“又一种 PPO ratio”：student token 才是训练数据，teacher/student log-ratio 被当作 stop-gradient reward，并以 \(R_{\max}\) 截断极端信号。它解决的是能力 consolidation，可与 K2.5-style policy optimization 和 partial rollout 组合；报告还称 top-k 蒸馏在其设置下没有明确优势，但没有给出数值消融（Kimi K3 Technical Report §4.1.3、Eq. 15，pp.13–14）。
-
-reasoning-effort expert 则由相对预算约束形成：对问题 \(x\) 估计 cold-start budget \(b_0(x)\)，若 \(T(y)>\tau b_0(x)\) 就把任务 reward 覆盖为 \(-1\)，随后逐阶段减小 \(\tau\) 得到 max、high、low experts。general task 的 \(T(y)\) 只计 thinking tokens，agentic task 则计 reasoning 与 tool arguments 的累计输出（Kimi K3 Technical Report §4.1.2，p.13）。
+K3 把“优化一个 policy”和“合并多个 specialist”拆成两个问题：先按三个领域与 `low/high/max` 三档 reasoning effort 训练九个专家，再用 Multi-Teacher On-Policy Distillation（MOPD）让统一 student 在自己采样的 token 上接受对应 teacher 的 clipped dense reward 完成合并；完整 Eq. 15、reasoning-effort 预算约束公式与 partial rollout 的组边界分析见 [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]] §2.2、§3、§4。
 
 ## 4. 真正改变了什么
 
@@ -200,6 +181,7 @@ valid_token_count, response_length
 - [[agentic_rl_algorithm_analysis|D03 Agentic RL 算法与环境]]
 - [[on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
 - [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
-- [[01_theory/04_posttraining/grpo_analysis|既有 GRPO 分析]]
-- [[01_theory/04_posttraining/dapo_analysis|既有 DAPO 分析]]
-- [[01_theory/04_posttraining/gspo_analysis|既有 GSPO 分析]]
+- [[grpo_analysis|GRPO 论文分析(元数据/原始实验数字)]]
+- [[dapo_analysis|DAPO 论文分析(元数据/原始实验数字)]]
+- [[gspo_analysis|GSPO 论文分析(元数据/原始实验数字)]]
+- [[verl_rl_algorithms_analysis|verl RL 算法全家桶(注册表+代码锚点)]]

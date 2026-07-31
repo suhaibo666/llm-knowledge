@@ -23,6 +23,8 @@
 
 ### GRPO 系列
 
+> **定位**（2026-07-31 kb-reorg P5）：[[reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]] 是 GRPO/DAPO/Dr.GRPO/GSPO/SAO 公式演进、系统约束与跨算法对照的统一权威页；下表各篇瘦身为对应论文的元数据、原始实验数字与消融档案，重叠的公式推导/动机叙述已收缩为指向 D02 的一句话。
+
 | 页面 | 来源 | 核心主题 |
 |------|------|---------|
 | [[grpo_analysis]] | DeepSeek-R1 (2501.12948) | 组相对优势, 无价值函数, 纯 RL 推理 |
@@ -32,11 +34,12 @@
 
 ### 后训练前沿整合（kb-reorg P5 迁入）
 
-> 2026-07-31 从 `wiki/03_posttraining/`（原 D01/D03/D04）迁入,是后训练三域整合的一部分。
+> 2026-07-31 从 `wiki/03_posttraining/`（原 D01/D02/D03/D04）迁入,是后训练三域整合的一部分。
 
 | 页面 | 核心主题 |
 |------|---------|
 | [[posttraining_frontier_map_analysis]] | 后训练前沿全景地图:优化粒度、on-policy/freshness、训练—推理一致性、Agentic 环境四组张力 |
+| [[reasoning_rl_algorithm_evolution_analysis]] | Reasoning RL 算法演进(**GRPO 系列权威页**):统计单位、有效样本分布、行为策略比率、训练—推理一致性四类修正谱系 |
 | [[agentic_rl_algorithm_analysis]] | Agentic RL 算法与环境:多轮 trajectory、工具调用、reward 与 credit assignment |
 | [[on_policy_off_policy_staleness_analysis]] | On-policy、Off-policy 与 Staleness:policy lag、correction 方案与 TIM 的严格区分 |
 

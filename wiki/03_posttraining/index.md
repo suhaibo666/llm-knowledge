@@ -56,7 +56,7 @@
 |---|---|---|---|---|
 | D00 | [[03_posttraining/00_posttraining_source_reading_guide|LLM 后训练前沿源码学习路线]] | S00/S05 | 总入口、能力门槛和阅读方法 | 已完成 |
 | D01 | [[posttraining_frontier_map_analysis|后训练前沿全景地图]] | S00 | 当前前沿、基线和深挖队列 | 已完成 |
-| D02 | [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|Reasoning RL 算法演进]] | S01 | GRPO、DAPO、GSPO 及后续演进 | 已完成 |
+| D02 | [[reasoning_rl_algorithm_evolution_analysis|Reasoning RL 算法演进]] | S01 | GRPO、DAPO、GSPO 及后续演进 | 已完成 |
 | D03 | [[agentic_rl_algorithm_analysis|Agentic RL 算法与环境]] | S01 | trajectory、reward、credit 与 agent runtime | 已完成 |
 | D04 | [[on_policy_off_policy_staleness_analysis|On-policy、Off-policy 与 Staleness]] | S01 | policy lag、correction 与 TIM | 已完成 |
 | D05 | [[03_posttraining/05_posttraining_infra_mechanism_analysis|后训练 Infra 核心机制]] | S01 | control/data/weight 三平面 | 已完成 |

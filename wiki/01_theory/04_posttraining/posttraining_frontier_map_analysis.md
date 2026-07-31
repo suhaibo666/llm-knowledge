@@ -5,7 +5,7 @@
 > **快照日期**：2026-07-28
 > **研究主线**：Reasoning RL + Agentic/Coding RL
 > **工程视角**：NVIDIA/CUDA 为上游基线，Ascend/NPU 作为映射与差距分析对象
-> **阅读导航**：[[03_posttraining/00_posttraining_source_reading_guide|上一篇 D00]] · [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|下一篇 D02]]
+> **阅读导航**：[[03_posttraining/00_posttraining_source_reading_guide|上一篇 D00]] · [[reasoning_rl_algorithm_evolution_analysis|下一篇 D02]]
 
 ---
 
@@ -254,7 +254,7 @@ K3 不加入这张“工业源码样本”表。其官方仓库 `0797decb` 提�
 |---:|---|---|---|---|
 | 1 | D00 [[03_posttraining/00_posttraining_source_reading_guide|后训练源码阅读指南与学习路线]] | S00/S05 | 应按什么先修关系阅读，怎样从论文定位到源码和运行证据 | 已完成 |
 | 2 | D01 本文 | S00 | 前沿问题怎样由算法、数据、系统和硬件共同定义 | 已完成 |
-| 3 | D02 [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|Reasoning RL 算法演进]] | S01 | GRPO、DAPO、GSPO 及后续方法究竟改变了什么估计量与约束 | 已完成 |
+| 3 | D02 [[reasoning_rl_algorithm_evolution_analysis|Reasoning RL 算法演进]] | S01 | GRPO、DAPO、GSPO 及后续方法究竟改变了什么估计量与约束 | 已完成 |
 | 4 | D03 [[agentic_rl_algorithm_analysis|Agentic RL 算法与环境]] | S01 | 多轮 trajectory、工具调用和 coding task 怎样改变 reward 与 credit | 已完成 |
 | 5 | D04 [[on_policy_off_policy_staleness_analysis|On-policy、Off-policy 与 Staleness]] | S01 | policy lag 如何测量、校正和限制；TIM 如何影响 ratio | 已完成 |
 | 6 | D05 [[03_posttraining/05_posttraining_infra_mechanism_analysis|后训练 Infra 核心机制]] | S01 | control/data/weight 三平面的所有权、并发和故障语义是什么 | 已完成 |

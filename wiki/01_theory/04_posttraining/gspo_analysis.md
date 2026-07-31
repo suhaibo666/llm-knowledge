@@ -12,55 +12,13 @@ Proposes **GSPO**, a sequence-level RL algorithm that fixes the fundamental inst
 
 ## Problem: Why GRPO is Fundamentally Ill-Posed
 
-GRPO applies token-level importance weights:
-
-```
-w_i,t(theta) = pi_theta(y_i,t | x, y_i,<t) / pi_theta_old(y_i,t | x, y_i,<t)
-```
-
-**Critical flaw**: This weight is based on a **single sample** from each next-token distribution. Importance sampling requires averaging over multiple samples (N >> 1) from the behavior distribution to correct for distributional mismatch. With a single sample, the token-level weight:
-
-1. Fails to perform distribution correction
-2. Introduces **high-variance noise** into gradients
-3. Noise **accumulates over long sequences**
-4. Exacerbated by clipping mechanism
-5. Leads to **irreversible model collapse** on large models
-
-**Core principle violated**: The unit of optimization objective should match the unit of reward. Since reward is granted to the entire sequence, token-level off-policy correction is problematic.
+GRPO's token-level importance weight `w_i,t = pi_theta(y_i,t|...) / pi_theta_old(y_i,t|...)` is based on a **single sample** from each next-token distribution, so it cannot perform the distribution correction importance sampling normally requires (N >> 1 samples). The resulting high-variance noise accumulates over long sequences, is exacerbated by clipping, and can produce irreversible collapse on large models — the core principle violated is that the unit of the optimization objective should match the unit that receives reward (the whole sequence, not each token). This diagnosis and GSPO's fix are unified with GRPO/DAPO/Dr. GRPO/SAO's own statistical-unit issues in [[reasoning_rl_algorithm_evolution_analysis|D02]] §3.4.
 
 ## GSPO Algorithm
 
-### Sequence-Level Importance Ratio
+### Sequence-Level Importance Ratio, Objective and Key Difference from GRPO
 
-```
-s_i(theta) = (pi_theta(y_i | x) / pi_theta_old(y_i | x))^(1/|y_i|)
-           = exp(1/|y_i| * sum_t log(pi_theta(y_i,t | x, y_i,<t) / pi_theta_old(y_i,t | x, y_i,<t)))
-```
-
-**Length normalization** is critical:
-- Reduces variance
-- Keeps ratios in a unified numerical range
-- Without it, a few token likelihood changes cause dramatic fluctuations
-
-### GSPO Objective
-
-```
-J_GSPO(theta) = E[1/G * sum_i min(s_i(theta) * A_i, clip(s_i(theta), 1-eps, 1+eps) * A_i)]
-```
-
-where:
-- `s_i(theta)` = sequence-level importance ratio (length-normalized)
-- `A_i = (r(x, y_i) - mean({r})) / std({r})` = group-relative advantage
-- All tokens in a response share the same advantage
-
-### Key Difference from GRPO
-
-| Aspect | GRPO | GSPO |
-|--------|------|------|
-| Importance ratio | Token-level: `w_i,t` | Sequence-level: `s_i` |
-| Clipping | Per token | Per sequence |
-| Gradient weighting | Unequal token weights | Equal token weights |
-| Stability | Unstable on large models | Stable |
+GSPO replaces the token-level ratio with a length-normalized **sequence-level** ratio `s_i(theta) = (pi_theta(y_i|x)/pi_theta_old(y_i|x))^(1/|y_i|)`, applied inside the same clipped-surrogate template as GRPO (all tokens in a response now share both the advantage and the clip decision). The exact formula, why length normalization is critical, and the full GRPO-vs-GSPO comparison (importance ratio/clipping granularity/gradient weighting/stability) are unified in [[reasoning_rl_algorithm_evolution_analysis|D02]] §3.4, §4 — this notation is D02 §2's general clipped surrogate with `s_i` substituted for the token ratio.
 
 ### Gradient Comparison
 
@@ -113,21 +71,18 @@ GSPO was tested on Qwen3-30B-A3B-Base (MoE model):
 3. **Simplifies infrastructure**: No need for complex stabilization strategies
 4. **Scales better**: Sequence-level optimization is more principled for long responses
 
-> **2026-07-27 更新说明**：本文的“稳定性”表述代表论文固定实验条件，不是所有模型/框架的无条件结论。sequence ratio/clip 的公式—batch schema 对照见 [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|D02]]，与 staleness/TIM 的组合语义见 [[on_policy_off_policy_staleness_analysis|D04]]。
+> **2026-07-27 更新说明**：本文的“稳定性”表述代表论文固定实验条件，不是所有模型/框架的无条件结论。sequence ratio/clip 的公式—batch schema 对照见 [[reasoning_rl_algorithm_evolution_analysis|D02]]，与 staleness/TIM 的组合语义见 [[on_policy_off_policy_staleness_analysis|D04]]。
 
 ## Relationship to Other Methods
 
-| Method | Importance Ratio | Clipping Level | Stability |
-|--------|-----------------|----------------|-----------|
-| PPO | Token-level | Token | Moderate |
-| GRPO | Token-level | Token | Poor (large models) |
-| DAPO | Token-level | Token (decoupled) | Good |
-| **GSPO** | **Sequence-level** | **Sequence** | **Excellent** |
+GSPO's position relative to PPO/GRPO/DAPO/Dr. GRPO/SAO across importance-ratio granularity, clipping level and the systemic invariant each preserves is tabulated in [[reasoning_rl_algorithm_evolution_analysis|D02]] §4.
 
 ## Related Pages
 
+- [[reasoning_rl_algorithm_evolution_analysis|D02 演进权威页]] — 公式演进、系统约束与跨算法对照
 - [[grpo_analysis]] — GRPO algorithm that GSPO fixes
 - [[dapo_analysis]] — DAPO improvements to GRPO
 - [[ppo_analysis]] — PPO foundation
+- [[verl_rl_algorithms_analysis]] — verl 源码级实现(注册表 + config key→代码锚点)
 - [[03_posttraining/index]] — D00–D11 后训练统一学习域
 - [[01_theory/index]]

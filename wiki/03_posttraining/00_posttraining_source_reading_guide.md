@@ -41,7 +41,7 @@ flowchart LR
 |---:|---|---|---|---|---|---|
 | 1 | D00 本文 | S00/S05 | 整个研究域怎样组织，什么算真正掌握 | PyTorch 基础；LLM 训练/推理常识 | 根据自己的薄弱点标出阅读路径和验收物 | 已完成 |
 | 2 | D01 [[posttraining_frontier_map_analysis|后训练前沿全景地图]] | S00 | 当前前沿为什么同时是算法、在线数据和系统问题 | D00 | 画出五层闭环，并把一个新工作定位到算法/数据/系统/硬件层 | 已完成 |
-| 3 | D02 [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|Reasoning RL 算法演进]] | S01 | GRPO、DAPO、GSPO 等方法改变了哪个估计量、clip 或采样假设 | policy gradient、KL、importance sampling | 从公式推导 loss 所需字段，并指出它对 rollout batch 的要求 | 已完成 |
+| 3 | D02 [[reasoning_rl_algorithm_evolution_analysis|Reasoning RL 算法演进]] | S01 | GRPO、DAPO、GSPO 等方法改变了哪个估计量、clip 或采样假设 | policy gradient、KL、importance sampling | 从公式推导 loss 所需字段，并指出它对 rollout batch 的要求 | 已完成 |
 | 4 | D03 [[agentic_rl_algorithm_analysis|Agentic RL 算法与环境]] | S01 | 多轮工具调用和 coding task 怎样改变 trajectory、reward 与 credit | D02；MDP/trajectory 基础 | 为一个 coding agent 定义 trajectory schema、reward 时点和失败处理 | 已完成 |
 | 5 | D04 [[on_policy_off_policy_staleness_analysis|On-policy、Off-policy 与 Staleness]] | S01 | policy lag、importance ratio 与 train–inference mismatch 怎样相互作用 | D02、D03；概率比 | 给出样本版本规则，判断一个异步方案在什么意义下偏离 on-policy | 已完成 |
 | 6 | D05 [[03_posttraining/05_posttraining_infra_mechanism_analysis|后训练 Infra 核心机制]] | S01 | control/data/weight 三平面怎样协同，bubble、backpressure 和故障怎样产生 | D04；分布式通信基础 | 画出一次迭代的消息时序并标明数据、权重和状态的 owner | 已完成 |

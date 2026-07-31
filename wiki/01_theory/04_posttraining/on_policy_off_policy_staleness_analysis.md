@@ -179,7 +179,7 @@ weight publish commits atomically before new-version rollout
 
 ## Related Pages
 
-- [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]
+- [[reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]
 - [[agentic_rl_algorithm_analysis|D03 Agentic RL 算法与环境]]
 - [[03_posttraining/05_posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
 - [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]

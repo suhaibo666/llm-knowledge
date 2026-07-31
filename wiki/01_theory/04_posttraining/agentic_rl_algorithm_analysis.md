@@ -5,7 +5,7 @@
 > **快照日期**：2026-07-28
 > **证据基线**：固定 arXiv 版本与四框架 S00 commit，完整台账见 `docs/research/2026-07-27-posttraining-source-ledger.md`
 > **结论先行**：Agentic RL 的主要变化不是“多轮 prompt”，而是 policy action、环境状态、credit、版本和失败恢复不再与单条 token 序列天然对齐。
-> **阅读导航**：[[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|上一篇 D02]] · [[on_policy_off_policy_staleness_analysis|下一篇 D04]]
+> **阅读导航**：[[reasoning_rl_algorithm_evolution_analysis|上一篇 D02]] · [[on_policy_off_policy_staleness_analysis|下一篇 D04]]
 
 ---
 
@@ -192,7 +192,7 @@ K3 展示了更完整的恢复目标：暂停 rollout 时既要保存模型侧 K
 
 ## Related Pages
 
-- [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]
+- [[reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]
 - [[on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
 - [[03_posttraining/05_posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
 - [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]

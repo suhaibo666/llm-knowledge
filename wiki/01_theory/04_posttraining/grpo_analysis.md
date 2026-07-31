@@ -14,30 +14,11 @@
 
 ### Key Innovation: Group-Relative Advantages
 
-Instead of training a separate value function (like PPO), GRPO computes advantages from a group of outputs:
-
-```
-For each question q:
-    Sample G outputs {o_1, o_2, ..., o_G} from old policy pi_theta_old
-    Compute rewards {r_1, r_2, ..., r_G} for each output
-    Compute advantage: A_i = (r_i - mean({r})) / std({r})
-```
-
-**This eliminates the need for a value function** — the group mean serves as the baseline.
+GRPO replaces PPO's separate value function with a group-relative baseline: sample $G$ outputs per question, then normalize each output's reward by the group mean/std to get its advantage — the group mean itself serves as the baseline. The full formula, the two systemic constraints this creates (group is an indivisible statistical unit; all-0/all-1 reward groups carry no signal), and how DAPO/Dr. GRPO/GSPO/SAO each modify this estimator are unified in [[reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]] §3.1.
 
 ### GRPO Objective
 
-```
-J_GRPO(theta) = E[q~P(Q), {o_i}~pi_theta_old] [
-    (1/G) * sum_i min(
-        (pi_theta(o_i|q) / pi_theta_old(o_i|q)) * A_i,
-        clip(pi_theta(o_i|q) / pi_theta_old(o_i|q), 1-eps, 1+eps) * A_i
-    )
-    - beta * D_KL(pi_theta || pi_ref)
-]
-```
-
-where:
+The overall clipped-surrogate structure (token-ratio × advantage, two-sided clip, KL regularization against a reference policy) follows the same template as D02 §2's unified notation — see [[reasoning_rl_algorithm_evolution_analysis|D02]] for the general form shared across the GRPO family. GRPO's own contribution not restated there is its **low-variance unbiased KL divergence estimator** (Schulman's k3 form):
 
 ```
 D_KL(pi_theta || pi_ref) = pi_ref/pi_theta - log(pi_ref/pi_theta) - 1
@@ -100,10 +81,7 @@ To address R1-Zero's limitations, DeepSeek-R1 uses a multi-stage pipeline:
 
 ## Why GRPO Works Well for Reasoning
 
-1. **Verifiable rewards**: Math/code problems have clear correct/incorrect answers
-2. **Group comparison**: Relative ranking within a group is more informative than absolute rewards
-3. **No value function**: Reasoning trajectories are long and complex; value function estimation is difficult
-4. **Exploration**: Pure RL without SFT allows discovery of non-human reasoning strategies
+Verifiable rule-based rewards, an informative group-relative comparison signal, and freedom from hard-to-estimate value functions on long reasoning trajectories combine to make GRPO well suited to reasoning tasks. The systemic constraints this creates — and where later methods (DAPO, Dr. GRPO, GSPO, SAO) relax them — are analyzed in [[reasoning_rl_algorithm_evolution_analysis|D02]] §1, §3.1.
 
 ## GRPO vs DPO Family
 
@@ -117,33 +95,7 @@ To address R1-Zero's limitations, DeepSeek-R1 uses a multi-stage pipeline:
 
 ## Practical Implementation
 
-```python
-# Pseudocode for GRPO
-for q in questions:
-    # Sample group of outputs
-    outputs = [model.generate(q) for _ in range(G)]
-    
-    # Compute rewards (e.g., correctness)
-    rewards = [compute_reward(o, ground_truth) for o in outputs]
-    
-    # Compute group-relative advantages
-    mean_r = mean(rewards)
-    std_r = std(rewards)
-    advantages = [(r - mean_r) / std_r for r in rewards]
-    
-    # Compute GRPO loss
-    for o_i, adv_i in zip(outputs, advantages):
-        ratio = pi_theta(o_i|q) / pi_theta_old(o_i|q)
-        clipped_ratio = clip(ratio, 1-eps, 1+eps)
-        loss += -min(ratio * adv_i, clipped_ratio * adv_i)
-    
-    # Add KL penalty
-    loss += beta * KL(pi_theta || pi_ref)
-    
-    # Update policy
-    loss.backward()
-    optimizer.step()
-```
+The computation above maps directly to production code in verl's `core_algos.py`: group-relative normalization is `compute_grpo_outcome_advantage` (`core_algos.py:268`), and the clipped surrogate (with an added dual-clip safeguard for negative advantages) is `compute_policy_loss_vanilla` (`core_algos.py:1279`). See [[verl_rl_algorithms_analysis]] §3.2, §4.1 for the source-level walkthrough and the registry keys (`adv_estimator=grpo`, `loss_mode=vanilla`) that select this path.
 
 ## Impact
 
@@ -153,13 +105,15 @@ GRPO demonstrated that:
 - **Emergent behaviors** can surpass human-designed reasoning patterns
 - **Small models can be distilled** from large reasoning models
 
-> **2026-07-27 更新说明**：本文保留 GRPO 的历史原理介绍。关于 response-length/group-std 偏置、DAPO/GSPO/SAO 演进，以及 group rollout 是否“过时”的当前判断，统一阅读 [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]；on/off-policy 与 TIM 见 [[on_policy_off_policy_staleness_analysis|D04]]。
+> **2026-07-27 更新说明**：本文保留 GRPO 的历史原理介绍。关于 response-length/group-std 偏置、DAPO/GSPO/SAO 演进，以及 group rollout 是否“过时”的当前判断，统一阅读 [[reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]；on/off-policy 与 TIM 见 [[on_policy_off_policy_staleness_analysis|D04]]。
 
 ## Related Pages
 
+- [[reasoning_rl_algorithm_evolution_analysis|D02 演进权威页]] — 公式演进、系统约束与跨算法对照
 - [[ppo_analysis]] — PPO algorithm that GRPO simplifies
 - [[deepseek_r1_analysis]] — DeepSeek-R1 training details
 - [[deepseek_math_analysis]] — DeepSeekMath where GRPO was first proposed
 - [[preference_optimization_analysis]] — DPO family (offline alternative)
+- [[verl_rl_algorithms_analysis]] — verl 源码级实现(注册表 + config key→代码锚点)
 - [[03_posttraining/index]] — D00–D11 后训练统一学习域
 - [[01_theory/index]]

@@ -121,11 +121,7 @@ for t in reversed(range(gen_len)):
 
 ### 3.2 GRPO —— 组内归一化
 
-`compute_grpo_outcome_advantage`(`core_algos.py:268`)。同一 prompt 采样 $G$ 条回答构成一组(按 `index`=uid 分组),整条回答的标量奖励 $r_i=\sum_t r_{i,t}$ 用组均值/标准差归一,再广播回每个 token:
-
-$$
-A_i = \frac{r_i - \operatorname{mean}(\{r\}_g)}{\operatorname{std}(\{r\}_g) + \epsilon}
-$$
+`compute_grpo_outcome_advantage`(`core_algos.py:268`)。同一 prompt 采样 $G$ 条回答构成一组(按 `index`=uid 分组),整条回答的标量奖励 $r_i=\sum_t r_{i,t}$ 用组均值/标准差归一(公式与 [[reasoning_rl_algorithm_evolution_analysis|D02]] §3.1 的 $\hat A_i$ 一致),再广播回每个 token:
 
 ```python
 # core_algos.py:324
@@ -137,7 +133,7 @@ for i in range(bsz):
 scores = scores.unsqueeze(-1) * response_mask
 ```
 
-`norm_adv_by_std_in_grpo=False` 时退化为只减均值不除标准差,即 **Dr.GRPO**(`core_algos.py:296`,arXiv 2503.20783)。`grpo_vectorized`(`core_algos.py:335`)是等价的张量化实现,用 `group_mean_std` 一次算完所有组,避免 Python 逐样本循环。
+`norm_adv_by_std_in_grpo=False` 时退化为只减均值不除标准差,即 **Dr.GRPO**(`core_algos.py:296`,arXiv 2503.20783,对应 D02 §3.3 的 loss reducer 讨论)。`grpo_vectorized`(`core_algos.py:335`)是等价的张量化实现,用 `group_mean_std` 一次算完所有组,避免 Python 逐样本循环。
 
 ### 3.3 GDPO —— 多维奖励解耦归一化
 
@@ -203,13 +199,7 @@ if response_num > 1:
 
 ### 4.1 vanilla —— 标准 PPO clip + dual-clip
 
-`compute_policy_loss_vanilla`(`core_algos.py:1279`)。记比值 $r_t=\exp(\log\pi_\theta-\log\pi_{\text{old}})$。标准 PPO 双侧裁剪取悲观上界:
-
-$$
-L^{\text{clip}}_t=\max\big(-A_t r_t,\ -A_t\,\text{clip}(r_t,1-\epsilon_{\text{low}},1+\epsilon_{\text{high}})\big)
-$$
-
-dual-clip 仅在 $A_t<0$ 时再加一道下界 $-A_t\cdot c$($c=$`clip_ratio_c`>1),防止负优势 token 的比值爆炸:
+`compute_policy_loss_vanilla`(`core_algos.py:1279`)。记比值 $r_t=\exp(\log\pi_\theta-\log\pi_{\text{old}})$,标准 PPO 双侧裁剪取悲观上界,与 [[reasoning_rl_algorithm_evolution_analysis|D02]] §2 的统一 clipped surrogate 记号一致(D02 的 $\min$ 写成 loss 的 $\max$,同一优化方向)。verl 额外实现的 **dual-clip**(D02 未给出这一形式)仅在 $A_t<0$ 时再加一道下界 $-A_t\cdot c$($c=$`clip_ratio_c`>1),防止负优势 token 的比值爆炸:
 
 ```python
 # core_algos.py:1340
@@ -220,16 +210,11 @@ clip_pg_losses2 = torch.min(pg_losses3, clip_pg_losses1)
 pg_losses = torch.where(advantages < 0, clip_pg_losses2, clip_pg_losses1)  # core_algos.py:1354
 ```
 
-`negative_approx_kl` 先 clamp 到 $[-20,20]$ 防溢出(`core_algos.py:1331`)。clip 上下限分离(`clip_ratio_low`/`clip_ratio_high`)正是 **DAPO 的 clip-higher** 技巧的载体。
+`negative_approx_kl` 先 clamp 到 $[-20,20]$ 防溢出(`core_algos.py:1331`)。clip 上下限分离(`clip_ratio_low`/`clip_ratio_high`)正是 [[reasoning_rl_algorithm_evolution_analysis|D02]] §3.2 **DAPO clip-higher** 技巧的载体。
 
 ### 4.2 GSPO —— 序列级重要性比
 
-`compute_policy_loss_gspo`(`core_algos.py:1539`,arXiv 2507.18071)。把 token 级比值换成**长度归一的序列级比值**,再以"序列比的 stop-grad × 当前 token 概率"组合,从而梯度仍流经每个 token:
-
-$$
-s_i(\theta)=\Big(\tfrac{\pi_\theta(y_i|x)}{\pi_{\text{old}}(y_i|x)}\Big)^{1/|y_i|}
-=\exp\!\Big(\tfrac{1}{|y_i|}\sum_t (\log\pi_\theta-\log\pi_{\text{old}})\Big)
-$$
+`compute_policy_loss_gspo`(`core_algos.py:1539`,arXiv 2507.18071)。把 token 级比值换成**长度归一的序列级比值** $s_i(\theta)$,公式与 [[reasoning_rl_algorithm_evolution_analysis|D02]] §3.4 一致;verl 的实现细节(D02 未给出)是以"序列比的 stop-grad × 当前 token 概率"组合,从而梯度仍流经每个 token:
 
 ```python
 # core_algos.py:1576
@@ -367,19 +352,27 @@ return backward_score - backward_score.detach() + forward_score.detach()
 
 ---
 
-## 7. 与 RL 文献的对应(高层)
+## 7. 与 RL 文献的对应
 
-- **GRPO**:DeepSeekMath 提出的组相对策略优化,免 critic,用组内基线代替价值函数。Dr.GRPO(去掉除标准差)修正其长度/难度偏置。
-- **DAPO**:在 GRPO 上引入 clip-higher(`clip_ratio_high`>`low`)、dynamic sampling(`filter_groups`)、token-level loss、overlong shaping;在 verl 里它**不是新损失**,而是 `grpo`+`vanilla`+一组旋钮。
-- **GSPO**(Qwen):序列级重要性采样,缓解 token 级 IS 在长序列上的高方差与训练崩溃。
-- **GMPO**:几何平均比值,对离群 token 比值更鲁棒。
-- **RLOO**:留一法基线的纯策略梯度;**REINFORCE++** 在其上加全局优势白化与 KL,提升稳定性。
-- **CISPO / SAPO / Clip-Cov / KL-Cov / DPPO**:都是围绕"如何裁剪/平滑重要性比、如何抑制熵塌缩、如何处理 rollout-train 失配"的不同变体,共享同一套 PPO 骨架,只换 token 级权重函数。
+GRPO/DAPO/GSPO 的公式演进、系统约束与跨算法对照统一维护在 [[reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]];各自的论文元数据、原始实验数字与消融见对应论文页。verl 算法↔文献的对应表:
+
+| verl 选型(`adv_estimator`+`loss_mode`) | 对应文献/概念 | D02 对应 | 论文页 |
+|---|---|---|---|
+| `grpo`+`vanilla` | GRPO(DeepSeekMath) | §3.1 | [[grpo_analysis]] |
+| `grpo`(`norm_adv_by_std_in_grpo=False`)+`vanilla` | Dr.GRPO(arXiv 2503.20783,去 std 偏置) | §3.3 | — |
+| `grpo`+`vanilla`(clip-higher/`filter_groups`/token-level loss/overlong 旋钮组合) | DAPO(**verl 里不是新损失**,是配置组合,见 §2.1、§6) | §3.2 | [[dapo_analysis]] |
+| `grpo`+`gspo` | GSPO(Qwen,arXiv 2507.18071) | §3.4 | [[gspo_analysis]] |
+| `rloo`/`rloo_vectorized`、`reinforce_plus_plus`(_baseline) | RLOO(arXiv 2402.14740)、REINFORCE++(arXiv 2501.03262) | 未覆盖 | — |
+| `geo_mean`(GMPO)、`cispo`、`sapo`、`clip_cov`/`kl_cov`、`dppo_tv`/`dppo_kl` | 各自 arXiv(§4.3–§4.7) | 未覆盖(`sapo` 与 D02 §3.5 的 SAO 是不同算法、不同 arXiv,勿混淆) | — |
+
+未被 D02 覆盖的算法共享同一套 PPO clip 骨架(§4),只替换 token/序列级权重函数;机制细节见各自 §4.x 小节,此处不重复。
 
 ---
 
 ## Related Pages
 
+- [[reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]] —— GRPO/DAPO/GSPO 公式演进与跨算法系统约束对照的权威页
+- [[grpo_analysis]] · [[dapo_analysis]] · [[gspo_analysis]] —— 对应论文的元数据、原始实验数字与消融
 - [[verl_ray_trainer_analysis]] —— `compute_advantage` / `apply_kl_penalty` 的调用方与主训练循环
 - [[verl_workers_engine_analysis]] —— `policy_loss` / `value_loss` 在 actor/critic 引擎中的执行
 - [[verl_rollout_resharding_analysis]] —— bypass_mode 用到的 rollout 校正(IS/RS)与 rollout-train 失配

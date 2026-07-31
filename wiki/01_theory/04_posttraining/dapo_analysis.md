@@ -22,39 +22,11 @@ Starting from naive GRPO on Qwen2.5-32B, initial results achieved only **30 poin
 
 ### 1. Clip-Higher (Decoupled Clipping)
 
-**Problem**: Standard PPO/GRPO uses symmetric clipping (epsilon = 0.2). The upper clip restricts exploration tokens:
-- For a token with pi_old = 0.01, max increase is to 0.012 (barely any room)
-- For a token with pi_old = 0.9, max increase is to 1.08 (easily saturated)
-
-**Solution**: Decouple lower and upper clipping bounds:
-
-```
-clip(r_t(theta), 1 - eps_low, 1 + eps_high)
-```
-
-where `eps_low = 0.2` (unchanged) and `eps_high = 0.28` (increased).
-
-**Effect**:
-- Maintains entropy throughout training
-- Allows low-probability "exploration" tokens to increase more freely
-- Prevents premature determinism
+Standard PPO/GRPO's symmetric clip (`eps=0.2`) leaves low-probability "exploration" tokens almost no room to increase (0.01 → 0.012) while high-probability tokens saturate easily (0.9 → 1.08). DAPO decouples the bounds — `clip(r_t(theta), 1-eps_low, 1+eps_high)` with `eps_low=0.2`, `eps_high=0.28` (see Training Configuration below) — to keep entropy up and delay premature determinism. This asymmetric-clip notation is exactly D02 §2's unified $\epsilon_l/\epsilon_h$; the systemic risk (a higher upper bound does not always prevent entropy collapse) is analyzed in [[reasoning_rl_algorithm_evolution_analysis|D02]] §3.2.
 
 ### 2. Dynamic Sampling
 
-**Problem**: When all G outputs for a prompt are correct (accuracy = 1) or all wrong (accuracy = 0), the group-relative advantage becomes zero — providing **no gradient signal**. As training progresses, more prompts reach accuracy = 1, reducing effective batch size.
-
-**Solution**: Oversample and filter out prompts with accuracy = 0 or 1:
-
-```
-Constraint: 0 < |{o_i | is_equivalent(a, o_i)}| < G
-```
-
-Only keep prompts where some outputs are correct and some are wrong — these provide the most informative gradients.
-
-**Effect**:
-- Consistent number of effective prompts per batch
-- Lower gradient variance
-- Faster convergence (fewer training steps needed)
+All-correct or all-wrong response groups give a zero group-relative advantage — no gradient signal — and grow more common as training progresses, shrinking the effective batch. DAPO oversamples and filters to keep only prompts with a mix of correct/incorrect outputs (`0 < |{o_i correct}| < G`), trading extra rollout compute for a consistent effective batch size and lower gradient variance. The infra requirements this creates (buffer, resample budget, group-completeness bookkeeping) and its risk (the training distribution is now filtered by current learnability) are analyzed in [[reasoning_rl_algorithm_evolution_analysis|D02]] §3.2.
 
 ### 3. Token-Level Policy Gradient Loss
 
@@ -166,22 +138,20 @@ In RLHF, KL penalty keeps the policy close to the SFT model. But for long-CoT re
 
 ## Relationship to Other Methods
 
-| Method | Clipping | Sampling | Loss Level | Reward Shaping |
-|--------|----------|----------|------------|----------------|
-| PPO | Symmetric | Fixed | Sample | None |
-| GRPO | Symmetric | Fixed | Sample | None |
-| **DAPO** | **Decoupled** | **Dynamic** | **Token** | **Soft overlong** |
+DAPO's position relative to PPO/GRPO/Dr. GRPO/GSPO/SAO across optimization unit, advantage estimator, ratio/clip and sampling structure is tabulated in [[reasoning_rl_algorithm_evolution_analysis|D02]] §4.
 
 ## Impact
 
 DAPO is the **first fully open-source** large-scale RL system for LLM reasoning that matches/exceeds DeepSeek-R1 results. All code, data, and training details are released, enabling reproducibility and further research.
 
-> **2026-07-27 更新说明**：上面的 AIME 数字属于论文完整 recipe 与固定模型/采样条件，不应外推为单一组件收益。DAPO 与 Dr. GRPO、GSPO、SAO 的统计单位和系统约束对照见 [[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis|D02]]；dynamic sampling 的 buffer/backpressure 见 [[03_posttraining/05_posttraining_infra_mechanism_analysis|D05]]。
+> **2026-07-27 更新说明**：上面的 AIME 数字属于论文完整 recipe 与固定模型/采样条件，不应外推为单一组件收益。DAPO 与 Dr. GRPO、GSPO、SAO 的统计单位和系统约束对照见 [[reasoning_rl_algorithm_evolution_analysis|D02]]；dynamic sampling 的 buffer/backpressure 见 [[03_posttraining/05_posttraining_infra_mechanism_analysis|D05]]。
 
 ## Related Pages
 
+- [[reasoning_rl_algorithm_evolution_analysis|D02 演进权威页]] — 公式演进、系统约束与跨算法对照
 - [[grpo_analysis]] — GRPO algorithm that DAPO improves upon
 - [[ppo_analysis]] — PPO foundation
 - [[deepseek_r1_analysis]] — DeepSeek-R1 comparison
+- [[verl_rl_algorithms_analysis]] — verl 源码级实现(注册表 + config key→代码锚点)
 - [[03_posttraining/index]] — D00–D11 后训练统一学习域
 - [[01_theory/index]]

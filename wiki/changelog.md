@@ -6,6 +6,32 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-31：知识库结构整改 P5 Task 3（D02 演进权威页 + GRPO 三写归一）
+
+**Type**: Content Consolidation（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 3）
+
+`git mv wiki/03_posttraining/02_reasoning_rl_algorithm_evolution_analysis.md` → `wiki/01_theory/04_posttraining/reasoning_rl_algorithm_evolution_analysis.md`，定为 GRPO/DAPO/Dr.GRPO/GSPO/SAO 公式演进与工程语义的**统一权威页**（页头新增"定位"行）。§3.6 K3-MOPD 收缩为一句 + [[kimi_k3_posttraining_case_study_analysis|D12]] 链接：先核实 D12 §1/§2.2/§4 已逐字覆盖 §3.6 的 MOPD 公式（Eq. 15 与 §3.6 完全一致）、reasoning-effort 预算约束公式与"top-k 蒸馏无明确优势"结论，无独有事实需回流。205→187 行。
+
+**GRPO/DAPO/GSPO 三篇论文页瘦身**（逐节台账，收缩前均在 D02 找到实际对应段；D02 未给出的公式变体一律保留）：
+
+| 页面 | 收缩(D02 对应) | 保留(论文特有/D02 未给出的公式) | 行数 |
+|---|---|---|---|
+| `grpo_analysis` | Key Innovation 段落(D02 §3.1 $\hat A_i$ 公式)、GRPO Objective 的 clip-surrogate 结构(D02 §2)、Why GRPO Works Well 动机叙述(D02 §1/§3.1)、Practical Implementation 玩具伪代码(改指 verl `core_algos.py:268/1279` 真实代码锚点) | 论文元数据、KL 低方差无偏估计量(D02 未给)、DeepSeek-R1-Zero 训练配置表/涌现行为/性能、R1 全流程、GRPO vs DPO 对比表、Impact | 165→119 |
+| `dapo_analysis` | Clip-Higher 与 Dynamic Sampling 两段动机叙述(公式与 D02 §2/§3.2 重复)、Relationship to Other Methods 表(与 D02 §4 重复) | 论文元数据、"30 分失败三症状"诊断段、Token-Level Loss 的 $J_{DAPO}$/$J_{GRPO}$ 显式求和公式(D02 无)、Overlong Reward Shaping 分段惩罚公式(D02 无)、DAPO Algorithm 伪代码、Training Configuration/Progressive Results 两张原始数字表、KL 移除动机、数据集细节、Key Insights | 187→157 |
+| `gspo_analysis` | Problem 段 5 点缺陷列表压缩为一段(D02 §3.4)、Sequence-Level Ratio 公式与 GSPO Objective(D02 §3.4/§2 完全一致)、Key Difference 表与 Relationship to Other Methods 表(均与 D02 §4 重复) | 论文元数据、Gradient Comparison 的 $\nabla J$ 显式梯度公式(D02 无)、GSPO-token stop-gradient 变体公式(D02 无)、Clipping Range Difference 原始超参数表(3e-4/4e-4)、Empirical Results 原始实验数据、Why GSPO Matters | 133→88 |
+
+**verl `verl_rl_algorithms_analysis.md` §3.2/§4.1/§4.2 数学部分收缩指 D02**（保留全部代码锚点、14 优势估计器/11 策略损失清单、注册表机制、config key 映射——spec 点名保护项）：GRPO 组内归一化公式（§3.2）、vanilla PPO clip 基础结构（§4.1，dual-clip 扩展因 D02 未给出而保留）、GSPO 序列比公式（§4.2，stop-grad 实现技巧因 D02 未给出而保留）分别收缩为指向 D02 §3.1/§2/§3.4 的一句话，`core_algos.py:xxx` 代码块与行号全部原样保留。§7"与 RL 文献的对应"由散文列表改写为"verl 选型→文献→D02 对应→论文页"表格（轻改，DAPO"在 verl 里不是新损失"的实现洞察保留为表内备注；表中特别标注 verl `sapo`(arXiv 2511.20347)与 D02 §3.5 的 SAO(arXiv 2607.07508)是不同算法，避免同名混淆）。389→382 行（净减 7 行：删除 3 处重复 LaTeX 展示块，新增 §7 对应表 + Related Pages 补链）。
+
+**入链改写**：全库 12 处 `[[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis...]]` 目标改为裸基名 `[[reasoning_rl_algorithm_evolution_analysis]]`，涉及 `wiki/index.md`、`03_posttraining/index.md`、`00_posttraining_source_reading_guide.md`、`agentic_rl_algorithm_analysis.md`(D03 阅读导航+Related Pages)、`posttraining_frontier_map_analysis.md`(D01 阅读导航+文档顺序表)、`on_policy_off_policy_staleness_analysis.md`(D04 Related Pages)、`kimi_k3_posttraining_case_study_analysis.md`(D12 Related Pages)。D02 自身页内指向 grpo/dapo/gspo 的 3 处路径限定链接改裸基名（同目录）。`01_theory/04_posttraining/dapo_analysis.md` 中指向仍在 `03_posttraining/` 的 D05 链接（Task 4 才迁移）保持路径限定不变。
+
+**Index 更新**：`01_theory/04_posttraining/index.md` "GRPO 系列"表前新增定位说明（D02=权威页，四篇论文页=元数据/实验数字档案）；"后训练前沿整合"表插入 D02 行（D01→D02→D03→D04 顺序），迁入来源脚注补 D02。`03_posttraining/index.md` D02 行改指新路径（索引本身按计划保留到 Task 7 删除）。
+
+**验收**：`tools/check_links.py` broken=0（pages=375，与 P4/Task 2 基线一致；ambiguous=69/bare_index=69 均为存量未变）；`python -m pytest -q` 77 passed。
+
+**自查**：`grep -rn '\[\[03_posttraining/02_reasoning_rl_algorithm_evolution_analysis' wiki/` 0 处活链接命中（唯一残留的 3 处字符串是本条目自身的反引号内说明文字，非 `[[wikilink]]`，`check_links.py` 的行内代码豁免规则不计入 broken）；本次改动前该旧路径从未出现在此前的历史 changelog 条目中，无需"历史不回写"降级处理。
+
+---
+
 ## 2026-07-31：知识库结构整改 P5 Task 2（后训练三域整合，纯迁移批 D01/D03/D04/D08–D12）
 
 **Type**: Pure Migration（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.2；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p5-posttraining.md` Task 2）
