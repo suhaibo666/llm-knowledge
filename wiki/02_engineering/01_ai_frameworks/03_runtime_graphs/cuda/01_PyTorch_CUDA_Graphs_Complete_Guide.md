@@ -1729,3 +1729,5 @@ PyTorch 提供了多种使用 CUDA Graphs 的方式，每种方式都有其适�
 - [[10_cudagraph_trees_warmup_record_and_replay_analysis]] — 方式2 CUDA Graph 集成的源码级机制(`cudagraph_trees.py`:Tree 状态机、warmup/record/replay、按整数 key 分流的多份 recording)
 - [[20_training_inference_cudagraph_and_freezing_analysis]] — training/inference/freezing 与 CUDA Graph 的组合边界、地址不变式、失败与回退
 - [[30_comparison]]
+- [[vllm_compilation_cudagraph_analysis]] — 生产推理框架的应用实例:vLLM 分段 CUDA Graph(`CUDAGraphWrapper`)、`CudagraphDispatcher` 按形状选图
+- [[megatron_precision_cudagraph_fusion_analysis]] — 生产训练框架的应用实例:Megatron-LM 三粒度 CUDA Graph(local/transformer_engine/full_iteration)、RNG 状态与 VPP chunk 处理

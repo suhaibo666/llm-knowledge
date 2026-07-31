@@ -6,6 +6,39 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-31：知识库结构整改 P6 Task 5 —— NPU 三页划界 + 中重叠七组扫尾
+
+**Type**: Structure Reorg / Dedup（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.5/§3.6；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 5）
+
+### 一、npu/ 三页 vs 上游新页划界
+
+`02_compile_stack/04_inductor/npu/` 的 `20_npu_lowering_guide.md`(884)/`22_npu_fusion_passes_deepdive.md`(425)/`30_npu_vs_upstream_fusion_passes.md`(287) 逐节核对 vs 上游 `10_fx_lowering_to_inductor_ir_analysis.md`（原 C17，GraphLowering/call_function 决策树/lowering 注册 API）与 `03_graph_ir_and_passes/` pass 页（`21_fx_graph_editing_primitives_and_invariants_analysis.md` FX 改图原语与不变量、`12_graph_effects_alias_mutation_and_order_analysis.md` functionalization）：
+
+- `20_npu_lowering_guide.md`(884→869) §1.1「什么是 Lowering」的通用 FX→IR 管线示意图（与 §1-§5 讲的是同一套 `GraphLowering` 机制）收缩为一句 + 链接指向 `10_fx_lowering_to_inductor_ir_analysis`；§1.2 起的 torch_npu monkey-patch 策略、§2-§9（架构对比表、fallback 分流、专有 IR 节点、配置体系、v2.7.1 源码复核）**全部核实为 NPU 特有内容，未删改**。
+- `22_npu_fusion_passes_deepdive.md`(425→428) §7「改图操作原语与 pass 通用原理」核对：`replace_all_uses_with`/`erase_node`/insertion point 语义及事务化改图状态机是 PyTorch FX **通用**设计，已在 §7 顶部新增划界声明指向 `21_fx_graph_editing_primitives_and_invariants_analysis`（原语通用语义）与 `12_graph_effects_alias_mutation_and_order_analysis`（post-grad 图 functionalization 基础）；§7.1 原语表『代表用处』列（`ascend_graph_pass.py` file:line）、§7.3 `view_fold_pass` 逐 pass 走查（含 DAG 扇出 mermaid）、§7.4 三条贯穿原理判定为 **NPU 应用侧独有内容，全部保留**（该表/走查在上游页无对应物——是"用这些通用原语具体怎么改某个 NPU pass"而非重讲原语本身）。
+- `30_npu_vs_upstream_fusion_passes.md`(287→288) 核实为**已是范本**：全篇以 file:line 逐层对照上游三阶段 pass（§3.1-3.3 已链 `30_pre_grad_passes_guide`/`31_joint_graph_passes_guide`/`32_post_grad_passes_guide`），无需收缩；§3.5 补一句 + 链接 `10_fx_lowering_to_inductor_ir_analysis`（lowering/decomposition 通用机制侧）。
+- **双向链回补**：`10_fx_lowering_to_inductor_ir_analysis`、`21_fx_graph_editing_primitives_and_invariants_analysis` 此前均未反向链接 npu/ 三页，补 Related Pages 各一条。
+
+三页合计 1596→1585 行；无独有内容删除，全部核实后原样保留。
+
+### 二、中重叠 7 组现状核查（spec §3.6 残余）
+
+逐组 grep 现状，只补缺失的双向链，已处理的记录出处：
+
+| 组 | 现状 | 处置 |
+|---|---|---|
+| vLLM compilation ↔ `03_runtime_graphs` | 正向链（vLLM→`01_PyTorch_CUDA_Graphs_Complete_Guide`/`11_torch_compile_npugraphs_deep_dive`）P3 已补；反向链缺失 | 补 2 条反向链（CUDA 侧 + NPU 侧回指 vLLM 分段 CUDA Graph 应用实例） |
+| vLLM IR/fusion ↔ pass 页 | 原声明仍在：`vllm_ir_and_fusion_passes_analysis` 已链 `22_pattern_expression_and_matcher_engine_analysis`/`24_graph_pass_pipeline_ordering_and_fixpoint_analysis`/`32_post_grad_passes_guide`；`24_...§14` 跨框架对照表已含 vLLM/sglang/npu 三个代表页双向链 | 已完成，无需改动 |
+| sglang ↔ vllm | 健康范本核实：两页头部即互相声明"对照面"，`24_...§14` 表格双向收录 | 已完成，无需改动 |
+| TIM 分层 | `26_tim_causal_chain_analysis` 头部四环因果链声明完整，与 `25_on_policy_off_policy_staleness_analysis` §7 边界区分明确 | 已完成于 P5 |
+| operator_optimization ↔ kernel 页 | 六页归一（Roofline/执行模型双权威 + NPU 段划界） | 已完成于本 P6 Task 4（commit `dbaa37e`） |
+| D05 ↔ sandbox/infra | `01_posttraining_infra_mechanism_analysis` §4/§7 与 `11_rl_sandbox_design_analysis`/`12_rl_infra_efficiency_analysis` 逐句对照、独有内容迁移、三方划界声明均已生效并核实链接有效 | 已完成于 P5 Task 4 |
+| megatron_precision_cudagraph ↔ Guide | 核查发现**未补链**（P3 遗留待办未落地）：`megatron_precision_cudagraph_fusion_analysis.md` Related Pages 无任何指向 `01_PyTorch_CUDA_Graphs_Complete_Guide` 的链接 | 补双向链（训练框架应用实例 ↔ CUDA Graph 通用机制权威页） |
+
+**验收**：`python tools/check_links.py` pages=373、broken=0（ambiguous=70 不变，属既有裸 index 基线，P7 Task 8 范围）；`python -m pytest -q` 77 passed。
+
+---
+
 ## 2026-07-31：知识库结构整改 P6 Task 4 —— Roofline / GPU 执行模型归一
 
 **Type**: Structure Reorg / Dedup（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.5；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 4）

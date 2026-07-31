@@ -308,9 +308,11 @@ block/sub-block 大小不靠运行期 autotune，而在 codegen 时算死成固�
 
 ---
 
-## 7. 附：改图操作原语与 pass 通用原理（机制总纲）
+## 7. 附：改图操作原语与 pass 通用原理（NPU 应用视角）
 
 前面 26 个 pass 形态各异，但「怎么改图」只用同一小组 FX 原语、走同一个改写套路。这一节把它抽出来，回答两个问题：**这些 pass 具体在图上做什么操作，以及这些操作的通用原理是什么。**
+
+> **与上游通用机制页的划界**：这些 FX 原语本身（`replace_all_uses_with` 为何先 snapshot users、`erase_node` 的 zero-user 前提、insertion point 语义、事务化改图的完整状态机 ANALYZE→BUILD→RECONNECT→ERASE→CLEANUP→VERIFY→MATERIALIZE）是 PyTorch FX 的**通用**设计，权威讲解见 [[21_fx_graph_editing_primitives_and_invariants_analysis]]；post-grad 图为何是纯函数式（functionalization）见 [[12_graph_effects_alias_mutation_and_order_analysis]]。本节**不重复**这套通用原理，只回答"torch_npu 这 26 个 pass 具体怎么用它们"——下表『代表用处』列（`ascend_graph_pass.py` file:line）与 §7.3 的逐 pass 走查是本节独有价值所在。
 
 ### 7.1 FX 改图操作原语（这些 pass 到底「怎么改图」）
 
@@ -423,3 +425,4 @@ flowchart TB
 - [[11_npu_inductor_splittiling_backend_analysis]] — 内置 default 路径 what/how（golden_var_list、CATLASS、tiling）
 - [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]] — Scheduler 融合策略与自定义 Pass（§5.2 can_fuse / §5.3 speedup_by_fusion 的上游基线）
 - [[32_post_grad_passes_guide]] · [[30_pre_grad_passes_guide]] — 上游 pass 详解（对照上游侧）
+- [[21_fx_graph_editing_primitives_and_invariants_analysis]] — §7 改图原语的上游通用机制权威页

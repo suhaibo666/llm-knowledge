@@ -144,7 +144,7 @@ flowchart TB
 
 ### 3.5 lowering / decomposition 层
 
-这是 NPU「用手工库替代融合」的核心一层。
+这是 NPU「用手工库替代融合」的核心一层。lowering 注册/decomposition 边界/`GraphLowering.call_function` 选择顺序等**上游通用机制**见 [[10_fx_lowering_to_inductor_ir_analysis]]；本节只讲 torch_npu 在这层具体做了什么改动。
 
 **分解阶梯（保持整块，不打碎再融合）**：`_register_triton_decompositions` 构造 `DECOMPOSITION_OVERLOAD_OP` 并把它们从全局 `decompositions` 字典里 `del` 掉（`decomposition.py:26-49`），让这些算子保持整块、走 lowering 或 fallback 到 ACLNN，而不是被上游拆成 pointwise+reduction 再融合：
 
@@ -283,5 +283,6 @@ flowchart TB
 - [[23_npu_inductor_linearize_backend_analysis]] — 实验性 Linearize 后端（persistent 恒关的那个）
 - [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]] — Scheduler 融合策略、自定义 Pass 与排查（§3.6 的上游基线）
 - [[30_pre_grad_passes_guide]] · [[32_post_grad_passes_guide]] · [[31_joint_graph_passes_guide]] — 上游三阶段 pass 详解（本页 §3–§4 对照的上游侧）
+- [[10_fx_lowering_to_inductor_ir_analysis]] — 上游 lowering/decomposition 通用机制（§3.5 对照的上游侧）
 - [[20_npu_lowering_guide]] — NPU 特定 lowering 与 fallback 算子映射（§3.5 的细节）
 - [[10_NPU_Inductor_Backend_Analysis]] — 五后端融合规则与后端混合使用机制

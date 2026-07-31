@@ -554,8 +554,8 @@ lower 的路径有 fallback 可用。
 - [[courses/torch_compile_end_to_end]]
 - [[20_graph_stage_boundaries_identity_and_provenance_analysis]]
 - [[11_inductor_ir_values_loops_layouts_and_buffers_analysis]]
-- [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]]
 - [[33_decomposition_passes_guide]] — 等价 ATen 展开与 lowering 的选择边界
 - [[13_scheduler_dependency_graph_fusion_and_ordering_analysis]] — IR 产出后的依赖与融合
 - [[34_codegen_extension_guide]] — 复用或扩展目标 codegen
 - [[21_inductor_autotuning_analysis]] — matmul/conv 等 template/algorithm choice 的 autotune 生命周期
+- [[npu/20_npu_lowering_guide]] — torch_npu 在本页机制之上的 monkey-patch 覆盖（NPU 应用侧）

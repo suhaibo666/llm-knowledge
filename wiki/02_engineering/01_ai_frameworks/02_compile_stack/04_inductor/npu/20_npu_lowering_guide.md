@@ -17,22 +17,7 @@
 
 ### 1.1 什么是 Lowering
 
-Lowering（降级）是 TorchInductor 编译器中将 **ATen 算子**翻译为 **Inductor IR 节点**的过程。它是从 FX Graph 到代码生成之间的核心桥梁：
-
-```
-torch.compile / torch._dynamo
-  ↓ (FX Graph with ATen ops)
-Decomposition → Pre-grad passes
-  ↓ (Simplified ATen ops)
-GraphLowering.call_function()
-  ↓
-┌────────────────────────────────────┐
-│  lowerings[target](*args, **kwargs)│ ← Lowering 核心
-│  将 ATen op → IR Node              │
-└────────────────────────────────────┘
-  ↓ (IR Nodes: Pointwise, Reduction, ExternKernel, FallbackKernel...)
-Post-grad passes → Scheduler → Codegen
-```
+Lowering（降级）是 TorchInductor 编译器中将 **ATen 算子**翻译为 **Inductor IR 节点**的过程，是 FX Graph 到代码生成之间的核心桥梁。这套机制（`GraphLowering` 作为 FX Interpreter、`call_function` 选择顺序、注册 API、fallback 语义、realization）是**上游通用设计**，权威讲解见 [[10_fx_lowering_to_inductor_ir_analysis]]；本页只讲 torch_npu 在这层之上做了什么。
 
 ### 1.2 torch_npu Lowering 的特殊性
 
