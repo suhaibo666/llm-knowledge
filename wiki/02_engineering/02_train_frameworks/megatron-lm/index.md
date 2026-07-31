@@ -4,7 +4,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 
 ## Core Topics（系列外的全景报告与专题深挖）
 
-> 本节列出 18 篇「源码级系统分析系列」(见下文)**之外**的全景报告与跨切面专题深挖。并行轴(TP/PP/EP/CP/DP)、重计算、训练稳定性、RL、模型结构等逐维度深挖请直接看下文的系列。
+> 本节列出 16 篇「源码级系统分析系列」(见下文)**之外**的全景报告与跨切面专题深挖。并行轴(TP/PP/EP/CP/DP)、重计算、训练稳定性、RL、模型结构等逐维度深挖请直接看下文的系列。
 >
 > 命名约定:本目录所有页统一为 `megatron_<topic>_analysis`(小写 snake_case,对齐 torchtitan 的 `torchtitan_<topic>_analysis` 风格)。
 
@@ -18,7 +18,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 
 | Page | Key Concepts |
 |------|-------------|
-| [[megatron_distributed_optimizer_analysis]] | ZeRO-1/2 状态切分、RS+AG、**FP8/FP4 量化参数、CPU offload(HybridDeviceOptimizer/StateOffloader)、precision-aware optimizer、三种 FSDP 实现对比 + Layer-Wise/Muon(§A.7)** —— 系列的 [[megatron_ddp_optimizer_analysis]]/[[megatron_optimizer_internals_analysis]] 是其精简版,本页为深版 |
+| [[megatron_distributed_optimizer_analysis]] | **合一页**(2026-07-31 由原「DDP/ZeRO 分片」+「优化器内部」+ 本页三篇合并):DP/DDP/ZeRO 0-3 四阶段(§0-§5)、优化器类层次与 step 内部(fp32 master/loss scaling/梯度裁剪/LR 调度,§6-§11)、CPU offload(§12)、三种 FSDP 实现对比(§13)、Layer-Wise/Muon 集成(§14) |
 | [[../distributed_optimizer_deep_dive\|distributed_optimizer_deep_dive]] | (跨框架,父目录)FSDP2/ZeRO/MindSpeed 三方对比, 梯度累积通信量 (K×P), Adam vs Muon 内存估算 (18→14 bytes/param) |
 | [[megatron_memory_optimization_analysis]] | 显存手段全survey:NCCL memory pool、MoE Paged Stash、细粒度激活 offload、param/grad buffer 复用(MXFP8/NVFP4)、FP8/FP4 参数精度、CUDA graph buffer 复用、resharding(与 [[megatron_recompute_analysis]] 互补) |
 | [[megatron_fusion_operators_analysis]] | 融合算子全目录:Bias+激活(GEGLU/SwiGLU/GELU)、fused LayerNorm/Softmax、MoE 融合、fused Cross-Entropy、fused All-to-All(DeepEP/HybridEP)、FP8 input store、Triton/CUTLASS/cuTile —— 系列的 [[megatron_precision_cudagraph_fusion_analysis]] §3 是其精简版 |
@@ -33,18 +33,18 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 
 ## 源码级系统分析系列(Megatron-LM `dev` @ `232c478d4`, 2026-06 刷新)
 
-> 一套 18 篇源码级系统分析,基于 Megatron-LM `dev` 分支,逐层覆盖并行体系、性能基建、训练稳定性、数据、推理与 RL、模型结构与存档。各篇互为 `[[wiki link]]` 交叉引用,自成体系。
+> 一套 16 篇源码级系统分析,基于 Megatron-LM `dev` 分支,逐层覆盖并行体系、性能基建、训练稳定性、数据、推理与 RL、模型结构与存档。各篇互为 `[[wiki link]]` 交叉引用,自成体系。
 >
 > **基线**:初版基于 commit `ee3f1ff`(2026-05-19);**2026-06-16 已对照 `dev@232c478d4` 全量刷新**,逐页核实并增补 `ee3f1ff..232c478d4`(298 commits)的增量(每处增补带 `> [!update] 2026-06-16` 标注 + `path:line` + `(#PR)`)。
 
 > [!note] 2026-06-16 · 去重与命名整合
 > - **命名统一**:本目录所有页重命名为 `megatron_<topic>_analysis`(小写 snake_case,对齐 [[torchtitan/index|torchtitan]] 的 `torchtitan_<topic>_analysis` 风格);如 `ep_analysis`→`megatron_ep_analysis`、`Megatron_LM_TFLOPS_Analysis`→`megatron_tflops_analysis`。
 > - **去重删除**:`Megatron-LM_MoE_Zero_Redundancy_Analysis` 的零冗余 AllToAll 知识已被 [[megatron_ep_analysis]] 完全涵盖(深度更高),其独有的「EP=4 逐 token 数值走查」并入 [[megatron_ep_analysis]] §②.3.1 后,该页**已删除**。
-> - **审计结论(保留)**:`megatron_fusion_operators_analysis`(融合深版)、`megatron_nonuniform_tp_analysis`(NTP 深版)、`megatron_distributed_optimizer_analysis`(FP8/FP4/CPU-offload 深版)、`megatron_memory_optimization_analysis`(显存 survey)均为**深版**,系列内对应页(precision §3 / tp_fsdp_resharding §2 / ddp_optimizer / recompute)是其精简digest——二者**互补非重复**,故保留。
+> - **审计结论(保留)**:`megatron_fusion_operators_analysis`(融合深版)、`megatron_nonuniform_tp_analysis`(NTP 深版)、`megatron_memory_optimization_analysis`(显存 survey)均为**深版**,系列内对应页(precision §3 / tp_fsdp_resharding §2)是其精简digest——二者**互补非重复**,故保留。`megatron_distributed_optimizer_analysis` 2026-07-31 起已合并原「DDP/ZeRO 分片」与「优化器内部」两篇系列页,不再是"深版 vs 精简版"关系,详见 Core Topics 行。
 > - 索引已收敛:并行轴/重计算/RL/模型结构等逐维深挖见下文系列;上方「Core Topics」仅列系列外的全景报告与专题深版。
 
 > [!update] 2026-06-23 · DDP/分布式优化器 bucketing 与 overlap 机制深挖
-> [[megatron_ddp_optimizer_analysis]] 新增 §2.7「bucketing 算法与 overlap 调度」:逆序贪心分桶(`param_and_grad_buffer.py:891-939`)、bucket_size 默认 `max(40M,1M·dp)` 与 ring 报文 `bucket_size/dp` 调参(`distributed_data_parallel_config.py:49-61`)、反向 `register_grad_ready`(就绪**计数器**,非填数据;填数据是 `main_grad.add_` 原地累加,main_grad 为 buffer 视图)集齐 golden-count 才触发 RS(`:802`)、前向 forward-pre-hook → `finish_param_sync` wait + 预取下一桶(`:496/:531`、DDP`:413`)。基线 dev@232c478d4。
+> [[megatron_distributed_optimizer_analysis]] §2.7「bucketing 算法与 overlap 调度」(原属已并入的 `megatron_ddp_optimizer_analysis.md`):逆序贪心分桶(`param_and_grad_buffer.py:891-939`)、bucket_size 默认 `max(40M,1M·dp)` 与 ring 报文 `bucket_size/dp` 调参(`distributed_data_parallel_config.py:49-61`)、反向 `register_grad_ready`(就绪**计数器**,非填数据;填数据是 `main_grad.add_` 原地累加,main_grad 为 buffer 视图)集齐 golden-count 才触发 RS(`:802`)、前向 forward-pre-hook → `finish_param_sync` wait + 预取下一桶(`:496/:531`、DDP`:413`)。基线 dev@232c478d4。
 
 > [!update] 2026-06-23 · DeepEP 通信量图解(配 DeepEP 源码核实)
 > [[megatron_ep_analysis]] 新增 §③.3.5「通信量图解」三图(SVG→PNG):①按专家 vs 按节点发、②两级通信量分解 + 逐 token 公式、③2node×2GPU 数值走查 + IB 加速比。配图源码基线 **DeepEP @ `af9a040`**(legacy v1 `Buffer` 内核),并据 `internode.cu`(`notify_dispatch` :314/:313、`SourceMeta` :22、`kRDMAAndNVLForwarder` :971、:826 落地卡同号)对 §③.3.2 的「−1 免费落地卡」做了上界纠正。
@@ -68,7 +68,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 > 3. **moe_layer `train()` 重写已删除**:dispatcher 不再按 train/eval 模式切换,改由 `InferenceMode.is_active()` 在 `MoELayer.forward` 判定(#4617)。
 > 4. **GDN 统一 A2A(#4913)未在当前源码**:被后续 dev↔main 合并回退,GDN 前向仍用 per-section A2A 循环(已标 `[!contradiction]`)。
 
-### 并行轴(5)
+### 并行轴(4)
 
 | Page | Key Concepts |
 |------|-------------|
@@ -76,7 +76,8 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 | [[megatron_ep_analysis]] | 专家并行:AllGather / AllToAll / Flex(DeepEP/HybridEP)三种 token dispatcher;MoE Parallel Folding;通信量与负载均衡 |
 | [[megatron_tp_analysis]] | 张量并行:ColumnParallel/RowParallel 共轭算子 f/g、MLP/Attention 切分;Sequence Parallelism |
 | [[megatron_cp_analysis]] | 上下文并行:`cp_comm_type` 四选一(p2p/all_gather/a2a/a2a+p2p)配置接口、TE 透传架构、选型决策树;通用机制见 [[../../../01_theory/06_distributed_parallelism/ring_attention_and_context_parallel_analysis\|ring_attention_and_context_parallel_analysis]] |
-| [[megatron_ddp_optimizer_analysis]] | 数据并行 + 分布式优化器:ZeRO-0/1/2/3 四阶段、梯度分桶重叠、HSDP |
+
+> 数据并行 + 分布式优化器(ZeRO-0/1/2/3 四阶段、梯度分桶重叠、HSDP)2026-07-31 起并入 [[megatron_distributed_optimizer_analysis]](见下方「专题深挖」),不再单列本区。
 
 ### 编排与补遗(3)
 
@@ -86,13 +87,14 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 | [[megatron_pp_supplements_analysis]] | PP 补遗:P2P 通信内部、激活换出、混合 CP 动态调度、多模块/多模态流水线 |
 | [[megatron_tp_fsdp_resharding_supplements_analysis]] | Megatron-FSDP 内部(ZeRO-2/3 流水线)、Nonuniform TP 容错、Resharding/Refit |
 
-### 性能基建(3)
+### 性能基建(2)
 
 | Page | Key Concepts |
 |------|-------------|
 | [[megatron_recompute_analysis]] | 激活重计算:full(uniform/block)vs selective;标准 vs 输出丢弃 checkpointing |
-| [[megatron_optimizer_internals_analysis]] | 优化器内部:混合精度 fp32 master、step 五步、Loss Scaling、梯度裁剪、LR 调度 |
 | [[megatron_precision_cudagraph_fusion_analysis]] | FP8/FP4 四 recipe、CUDA Graph 三 impl、算子融合 |
+
+> 优化器内部(混合精度 fp32 master、step 五步、Loss Scaling、梯度裁剪、LR 调度)2026-07-31 起并入 [[megatron_distributed_optimizer_analysis]] §6-§11,不再单列本区。
 
 ### 系统专题(3)
 
@@ -131,7 +133,7 @@ These topics are referenced but lack dedicated wiki pages:
 - **TransformerEngine integration** — ~~referenced but not documented~~ → addressed by [[transformer_engine_analysis]]
 - **Low-precision training** — ~~FP8/FP4 scattered across exam and V4 pages~~ → consolidated in [[low_precision_training_analysis]];另见 [[megatron_precision_cudagraph_fusion_analysis]]
 - ~~**Megatron-LM checkpoint format**~~ → 专文 [[megatron_dist_checkpointing_analysis]](ShardedTensor、并行无关存档)
-- ~~**Distributed optimizer** — no standalone analysis~~ → addressed by [[megatron_distributed_optimizer_analysis]] 与 [[megatron_ddp_optimizer_analysis]]
+- ~~**Distributed optimizer** — no standalone analysis~~ → addressed by [[megatron_distributed_optimizer_analysis]](2026-07-31 合一页)
 - ~~**Memory optimization panorama** — scattered across multiple pages~~ → addressed by [[megatron_memory_optimization_analysis]];另见 [[megatron_recompute_analysis]]
 - ~~**Fusion operators** — no dedicated page~~ → addressed by [[megatron_fusion_operators_analysis]]
 - ~~**Sequence Parallelism implementation details**~~ → 专门章节见 [[megatron_tp_analysis]] §4;另见 [[megatron_pp_schedulers_analysis]]、[[megatron_comm_overlap_analysis]]
@@ -140,6 +142,6 @@ These topics are referenced but lack dedicated wiki pages:
 
 ## Related Pages
 
-- [[megatron_pp_schedulers_analysis]] · [[megatron_ep_analysis]] · [[megatron_tp_analysis]] · [[megatron_cp_analysis]] · [[megatron_ddp_optimizer_analysis]]
+- [[megatron_pp_schedulers_analysis]] · [[megatron_ep_analysis]] · [[megatron_tp_analysis]] · [[megatron_cp_analysis]] · [[megatron_distributed_optimizer_analysis]]
 - [[megatron_parallelism_orchestration_analysis]] · [[megatron_model_structure_analysis]] · [[megatron_nonuniform_tp_analysis]]
 - [[02_engineering/01_ai_frameworks/index]]

@@ -6,6 +6,33 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-07-31：知识库结构整改 P6 Task 3（二）—— Megatron 分布式优化器三页合并 + 横向页矩阵化
+
+**Type**: Structure Reorg / Dedup（计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 3 第二部分）
+
+- **三页合并为一**：`megatron-lm/megatron_ddp_optimizer_analysis.md`(446)、`megatron-lm/megatron_optimizer_internals_analysis.md`(227)逐字并入 `megatron-lm/megatron_distributed_optimizer_analysis.md`(原 445→合并后 984 行),文件名保留最通用者。以 `megatron_ddp_optimizer_analysis` 的 ZeRO 0-3 阶梯框架(§0-§5,含「阶段①-④」命名,供全库既有引用免改)为骨架;`megatron_optimizer_internals_analysis` 的优化器类层次/混合精度/step 五步/Loss Scaling/梯度裁剪/LR 调度整体并入为新 §6-§11;本页原稿(通信组定义/FP8-FP4/CPU offload/三种 FSDP 实现对比/Layer-Wise+Muon 集成)保留为 §2.8-§2.11、§12-§14,真正重复的段落(通信量 P 记号复述、类继承结构的简化版)删除、仅保留 2026-06-16 增量更新的独有更正。三页内部原有的跨页 `[[wiki link]]` 互指(如"详见 xxx §A.7 的更新")已改写为同页 §N 引用。
+- **两个 torchtitan FSDP 四页补分工声明**(不合并,`02_train_frameworks/torchtitan/torchtitan_fsdp_analysis.md`/`torchtitan_simple_fsdp_analysis.md`/`torchtitan_fsdp_prefetch_overlap_memory_analysis.md`/`torchtitan_hsdp_backward_overlap_analysis.md` 各页头补一句"四页分工"声明,标杆篇/深挖伴篇/HSDP 展开篇/编译器路径替代方案互指)。
+- **横向页收缩**:`distributed_optimizer_deep_dive.md`(194→185 行)§一 的 ZeRO-1 因果链完整推导(与合并后的 megatron 页 §阶段② 重复)收缩为一段 + 指针,保留 §二(梯度累积 K 倍通信量表)、§三(FSDP2/Megatron/MindSpeed 三方对比矩阵,核心矩阵型内容)、§四(MindSpeed param 临时化,全库唯一出处,未改)、§五/§六(Adam vs Muon 内存与系统影响,通用理论、未在任何子页找到对应,未改)、§七(选型决策树)原样保留;补 §六.3 指向合并后 megatron 页 §14.1 的 Muon 具体解法指针;补齐全页此前缺失的 `## Related Pages` 区块(6 条)。
+- **入链改写**:全库 12 个引用 `megatron_ddp_optimizer_analysis`/`megatron_optimizer_internals_analysis` 的文件(含 `megatron-lm/index.md` 的系列计数 18→16、`torchtitan/index.md`、`megatron_dist_checkpointing_analysis.md`、`megatron_parallelism_orchestration_analysis.md`、`megatron_pp_schedulers_analysis.md`、`megatron_tp_analysis.md`、`megatron_tp_fsdp_resharding_supplements_analysis.md`、`megatron_precision_cudagraph_fusion_analysis.md`、`megatron_training_stability_observability_analysis.md`、`torchtitan_fsdp_analysis.md`、本 changelog 历史条目的链接目标)全部改指 `megatron_distributed_optimizer_analysis`,原两处独立 Related Pages 行合并去重;`megatron-lm/index.md` 移除两行系列表格行(补一句"已并入"说明)。
+- **验收**:`python tools/check_links.py` pages=373(375−2)、broken=0;`python -m pytest -q` 77 passed。
+
+---
+
+## 2026-07-31：知识库结构整改 P6 Task 3（一）—— 通信掩盖横向页收缩为跨框架矩阵
+
+**Type**: Structure Reorg / Dedup（计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 3 第一部分）
+
+- `02_train_frameworks/comm_compute_overlap_analysis.md`(271→124 行)由"基于 Megatron/torchtitan 两框架源码分析"的机制正文页,收缩为 **Megatron-LM/torchtitan/MindSpeed 三框架计算通信掩盖跨维度对比矩阵页**:与三个框架的通信掩盖权威机制页([[megatron_comm_overlap_analysis]] 740 行、[[torchtitan_comm_optimizations_overlap_analysis]] 170 行、[[mindspeed_comm_overlap_analysis]] 461 行)逐节核对,机制正文找到子页对应即收缩为一句 + 链接;子页缺失的机制段逐字下沉(注明来源):
+  - `megatron_comm_overlap_analysis.md` 新增 §5.8(Shared Expert 独立 stream 状态机,`moe_shared_expert_overlap`)、§5.3 补 Layer→5 子节点拆解/`stream_acquire_context()`/镜像层配对三段、§5.6 补 DeepEP/HybridEP 硬件后端速查表(图片迁至 `megatron-lm/assets/`)。
+  - `torchtitan_pp_analysis.md` §7.2/§7.3 补 I/W 拆分"非按模型结构"要点与 `OVERLAP_F_B` 源码 + "非真并发"澄清。
+  - `torchtitan_comm_optimizations_overlap_analysis.md` §3.3 补 Graph Trainer FSDP AG/RS 重排 pass 一句。
+  - 新增 §四"MindSpeed 掩盖机制概览"(此前该页完全未提及 MindSpeed)。
+- 保留三子页均无的合成视图:概念分层图(§一)、combined_1f1b vs ZBV/DualPipeV 架构差异分析(新 §三,含 MindSpeed fb-overlap+DualPipeV 定位)、Sub-Layer 级掩盖可达性矩阵(§四,补 MindSpeed 列)、框架差异总结表(§五,补 MindSpeed 行)。
+- `comm_compute_fusion_guide.md` 与本页头各补一句"融合"(单 kernel)vs"掩盖"(独立调度重叠)边界声明,互指。
+- **验收**:`python tools/check_links.py` pages=375、broken=0;`python -m pytest -q` 77 passed。
+
+---
+
 ## 2026-07-31：知识库结构整改 P6 Task 2 —— CP/Ring Attention 归一
 
 **Type**: Structure Reorg / Dedup（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.5；计划：`docs/superpowers/plans/2026-07-31-kb-reorg-p6-p7-finale.md` Task 2）
@@ -1984,11 +2011,11 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 ---
 
-## 2026-06-23: [[megatron_ddp_optimizer_analysis]] 新增 §2.7「bucketing 算法与 overlap 调度」(机制级深挖)
+## 2026-06-23: [[megatron_distributed_optimizer_analysis]] 新增 §2.7「bucketing 算法与 overlap 调度」(机制级深挖)
 
 **Type**: Update（应用户提问"Megatron distributed optimizer 如何 bucket、如何调计算与 bucket 让计算 overlap 掉参数通信",现读 Megatron-LM `dev@232c478d4` 源码后补全;既有 §2.1–2.3 只到高层轮廓）
 
-- **新增** [[megatron_ddp_optimizer_analysis]] §2.7,补三件源码层细节:
+- **新增**(原 `megatron_ddp_optimizer_analysis.md`,2026-07-31 并入 [[megatron_distributed_optimizer_analysis]])§2.7,补三件源码层细节:
   - **分桶算法**:逆序贪心 `_compute_default_per_buffer_param_layout`(`param_and_grad_buffer.py:891-939`)—— `params[::-1]` 逆序(backprop 序,末层落 bucket 0)、累计 ≥ bucket_size 即封桶;三级结构 Buffer / Bucket / BucketGroup(后者为一次 NCCL collective 粒度,`_coalescing_manager` 合并)。
   - **bucket_size 调参**:默认 `max(40M, 1M·dp_size)`(`distributed_data_parallel.py:68-69`)、ring 每 rank 报文 = `bucket_size/dp_size`(`..._config.py:61`)、distopt 可分片约束 `numel % dp == 0`(`param_and_grad_buffer.py:1059`)、`pad_buckets_for_high_nccl_busbw` 凑 2^16。
   - **双向 overlap 的 hook 调度**:反向 backward-post-hook → `register_grad_ready` golden-count 满才发异步 RS(`param_and_grad_buffer.py:802-824`);前向 forward-pre-hook(`distributed_data_parallel.py:413`)→ `finish_param_sync` wait 本组 AG + 预取 `next_param_gather_bucket_group`(`param_and_grad_buffer.py:496/:531`),链按前向序串于 `distributed_data_parallel.py:295-308`。附理想时间线 ASCII 图 + 调节点表(bucket_size / 桶序=执行序 / align_param_gather / 头尾暴露)。
@@ -2736,7 +2763,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 - `wiki/02_engineering/02_train_frameworks/index.md` — 子目录表与页面列表加入 `torchtitan/index` 条目
 
-**交叉引用**: torchtitan 系列与 Megatron-LM 源码级系列([[megatron_tp_analysis]]/[[megatron_cp_analysis]]/[[megatron_ep_analysis]]/[[megatron_pp_schedulers_analysis]]/[[megatron_ddp_optimizer_analysis]])互为对照(PyTorch-native vs CUDA/Megatron 生态),并与 [[async_collective_tensor_deep_dive]]、[[comm_compute_overlap_analysis]] 等既有页交叉引用。
+**交叉引用**: torchtitan 系列与 Megatron-LM 源码级系列([[megatron_tp_analysis]]/[[megatron_cp_analysis]]/[[megatron_ep_analysis]]/[[megatron_pp_schedulers_analysis]]/[[megatron_distributed_optimizer_analysis]])互为对照(PyTorch-native vs CUDA/Megatron 生态),并与 [[async_collective_tensor_deep_dive]]、[[comm_compute_overlap_analysis]] 等既有页交叉引用。
 
 ---
 

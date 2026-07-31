@@ -105,7 +105,7 @@ torchtitan 的并行体系不是"5 套独立机制",而是**一套统一的 `Dev
 
 ## Cross-Domain Links
 
-- [[megatron_tp_analysis]] / [[megatron_cp_analysis]] / [[megatron_ep_analysis]] / [[megatron_pp_schedulers_analysis]] / [[megatron_ddp_optimizer_analysis]] —— Megatron-LM 同维度源码级分析,可与本系列对照(CUDA/Megatron 生态 vs PyTorch-native)
+- [[megatron_tp_analysis]] / [[megatron_cp_analysis]] / [[megatron_ep_analysis]] / [[megatron_pp_schedulers_analysis]] / [[megatron_distributed_optimizer_analysis]] —— Megatron-LM 同维度源码级分析,可与本系列对照(CUDA/Megatron 生态 vs PyTorch-native)
 - [[megatron_parallelism_orchestration_analysis]] —— Megatron-LM 进程组编排,与 `ParallelDims` 同类
 - [[async_collective_tensor_deep_dive]] —— `AsyncCollectiveTensor` 源码追踪,是 TP/CP/EP 异步通信的共同底座
 - [[comm_compute_overlap_analysis]] —— 计算通信掩盖对比(含 torchtitan 源码)

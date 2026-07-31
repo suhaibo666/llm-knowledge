@@ -6,6 +6,8 @@
 > 本文是对 `fully_shard`(FSDP2)一系列追问的整理稿,**所有结论基于 PyTorch 2.9.1 源码逐条复核**。
 > 行号约定:torchtitan 以 `torchtitan/` 为根;PyTorch FSDP2 以 `[pt]` 前缀,根目录 `torch/distributed/fsdp/_fully_shard/`。
 > 配套总览见 [[torchtitan_fsdp_analysis]](标杆篇);本文是其**深挖伴篇**,聚焦**预取、掩盖、显存**三件事并配两张机制图。
+>
+> **四页分工**(2026-07-31 补):四页均讲 torchtitan 的数据并行分片,分工不重叠——标杆总览见 [[torchtitan_fsdp_analysis]];HSDP 反向双流掩盖的展开见 [[torchtitan_hsdp_backward_overlap_analysis]];编译器友好的 DTensor-collective 替代方案见 [[torchtitan_simple_fsdp_analysis]]。
 
 ---
 

@@ -600,7 +600,7 @@ TransformerLayerSchedulePlan.run(f_layer, b_layer)
 
 **④ 角色化节点 + 双流 + event 同步**(承 §⑤.2):一层拆成 `attn / moe_dispatch / mlp / moe_combine` 四个 `ScheduleNode`,A2A 节点绑 `comm_stream`、计算节点绑 `comp_stream`;跨流靠 CUDA event(`record_current_stream`/`wait_current_stream`,`model_chunk_schedule_plan.py:427-435`)保证依赖正确。于是 forward 层的 A2A 与配对 backward 层的计算在不同 stream 上真并行,而 autograd 正确性不受影响(forward 仍建图、backward 仍真反向)。
 
-> 不变量:不支持 `checkpoint_activations_microbatch`(`combined_1f1b.py:343` assert);VPP>1 + Megatron-FSDP 显式不支持;FSDP `optim_grads_params` 下因绕过 `TransformerLayer.forward` 的 hook,要给每层显式挂 reshard 回调(`combined_1f1b.py:407-414`,见 [[megatron_ddp_optimizer_analysis]] / [[megatron_comm_overlap_analysis]] §5.7)。
+> 不变量:不支持 `checkpoint_activations_microbatch`(`combined_1f1b.py:343` assert);VPP>1 + Megatron-FSDP 显式不支持;FSDP `optim_grads_params` 下因绕过 `TransformerLayer.forward` 的 hook,要给每层显式挂 reshard 回调(`combined_1f1b.py:407-414`,见 [[megatron_distributed_optimizer_analysis]] / [[megatron_comm_overlap_analysis]] §5.7)。
 
 > [!update] 2026-06-16 · dev@232c478d4 — combined-1F1B 的三处增量(MTP 排序 / 显存释放 / 死代码清理)
 >
@@ -765,7 +765,7 @@ comm |comb_b|  disp_f | disp_b | comb_f |     ← A2A 全程被对侧计算掩�
 
 ## Related Pages
 
-- [[megatron_ep_analysis]] · [[megatron_tp_analysis]] · [[megatron_cp_analysis]] · [[megatron_ddp_optimizer_analysis]]
+- [[megatron_ep_analysis]] · [[megatron_tp_analysis]] · [[megatron_cp_analysis]] · [[megatron_distributed_optimizer_analysis]]
 - [[megatron_parallelism_orchestration_analysis]] · [[megatron_pp_supplements_analysis]]
 - [[megatron_comm_overlap_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

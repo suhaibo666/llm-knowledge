@@ -127,5 +127,6 @@ sequenceDiagram
 - [[01_theory/index]]
 - [[llm_initiliaze_analysis]]
 - [[megatron_distributed_optimizer_analysis]]
+- [[../../02_engineering/02_train_frameworks/distributed_optimizer_deep_dive|distributed_optimizer_deep_dive]] — Adam vs Muon 分布式内存/通信影响的跨框架对比
 - [[mHC]]
 - [[../../02_engineering/02_train_frameworks/muon_sharded_hsdp_report]] — 分片 Muon 与双网格 HSDP 工程实现分析
