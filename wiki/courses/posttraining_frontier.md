@@ -5,7 +5,7 @@
 > (框架源码,含 `verl/` 子目录)与 `01_theory/01_models/moonshot_kimi`(K3 工业案例);本页过时
 > 只改链接/顺序,不要在此加正文。
 > 四个工业框架的固定基线 commit(verl `983cb0f`、slime `aaf5c20`、AReaL `b23fa6c`、
-> ROLL `370cb24`)与工程定位见 [[posttraining_frontier_map_analysis|D01]] §3,本页不重复。
+> ROLL `370cb24`)与工程定位见 [[01_posttraining_frontier_map_analysis|D01]] §3,本页不重复。
 > 最后更新:2026-07-31(kb-reorg P5 Task 7:课程页化,原 `wiki/03_posttraining/` 纵向学习域
 > (D00–D12 共 13 篇)解散,D00 的阅读路线骨架 + 六级能力门槛与 `03_posttraining/index.md` 的
 > S00–S05 阶段叙述并入本页,`03_posttraining/` 目录整体删除)
@@ -57,23 +57,23 @@ CUDA 方案迁移到 Ascend 时的判断框架,最后用一份最新工业报告
 
 | 顺序 | 页面 | 位置 | 一句话 |
 |---:|---|---|---|
-| D01 | [[posttraining_frontier_map_analysis]] | `01_theory/04_posttraining/` | 当前前沿为什么同时是算法、在线数据和系统问题:五层后训练栈与四个工业源码样本的固定基线 |
+| D01 | [[01_posttraining_frontier_map_analysis]] | `01_theory/04_posttraining/` | 当前前沿为什么同时是算法、在线数据和系统问题:五层后训练栈与四个工业源码样本的固定基线 |
 
 ### S01 · 算法与 Infra 的统一坐标系
 
 | 顺序 | 页面 | 位置 | 一句话 |
 |---:|---|---|---|
-| D02 | [[reasoning_rl_algorithm_evolution_analysis]] | `01_theory/04_posttraining/` | GRPO、DAPO、GSPO 等方法改变了哪个估计量、clip 或采样假设(**GRPO 系列权威页**,`grpo_analysis`/`dapo_analysis`/`gspo_analysis` 公式细节已收缩指向本页) |
-| D03 | [[agentic_rl_algorithm_analysis]] | `01_theory/04_posttraining/` | 多轮工具调用和 coding task 怎样改变 trajectory、reward 与 credit assignment |
-| D04 | [[on_policy_off_policy_staleness_analysis]] | `01_theory/04_posttraining/` | policy lag、importance ratio 与 train–inference mismatch(TIM)怎样相互作用 |
-| D05 | [[posttraining_infra_mechanism_analysis]] | `02_engineering/04_posttrain_frameworks/` | control/data/weight 三平面怎样协同,bubble、backpressure 和故障怎样产生 |
+| D02 | [[13_reasoning_rl_algorithm_evolution_analysis]] | `01_theory/04_posttraining/` | GRPO、DAPO、GSPO 等方法改变了哪个估计量、clip 或采样假设(**GRPO 系列权威页**,`grpo_analysis`/`dapo_analysis`/`gspo_analysis` 公式细节已收缩指向本页) |
+| D03 | [[24_agentic_rl_algorithm_analysis]] | `01_theory/04_posttraining/` | 多轮工具调用和 coding task 怎样改变 trajectory、reward 与 credit assignment |
+| D04 | [[25_on_policy_off_policy_staleness_analysis]] | `01_theory/04_posttraining/` | policy lag、importance ratio 与 train–inference mismatch(TIM)怎样相互作用 |
+| D05 | [[01_posttraining_infra_mechanism_analysis]] | `02_engineering/04_posttrain_frameworks/` | control/data/weight 三平面怎样协同,bubble、backpressure 和故障怎样产生 |
 
 ### S02 · 框架矩阵与 verl 主链贯通
 
 | 顺序 | 页面 | 位置 | 一句话 |
 |---:|---|---|---|
-| D06 | [[rl_framework_comparison]] | `02_engineering/04_posttrain_frameworks/` | 怎样用统一术语和四级支持证据(P1 接口/P2 功能/P3 正确性/P4 性能)比较 verl、slime、AReaL、ROLL |
-| D07 | [[verl_end_to_end_iteration_analysis]] | `02_engineering/04_posttrain_frameworks/verl/` | 一批 prompt 怎样穿过 rollout、reward、advantage、update 与权重刷新(主基线 `983cb0f`;与 `verl_ray_trainer_analysis`〔`8a694930`〕逐节调和,详情见该页) |
+| D06 | [[30_rl_framework_comparison]] | `02_engineering/04_posttrain_frameworks/` | 怎样用统一术语和四级支持证据(P1 接口/P2 功能/P3 正确性/P4 性能)比较 verl、slime、AReaL、ROLL |
+| D07 | [[10_verl_end_to_end_iteration_analysis]] | `02_engineering/04_posttrain_frameworks/verl/` | 一批 prompt 怎样穿过 rollout、reward、advantage、update 与权重刷新(主基线 `983cb0f`;与 `verl_ray_trainer_analysis`〔`8a694930`〕逐节调和,详情见该页) |
 
 ### S03 · 高性能与 Fully Async 对照
 
@@ -81,8 +81,8 @@ CUDA 方案迁移到 Ascend 时的判断框架,最后用一份最新工业报告
 
 | 顺序 | 页面 | 位置 | 一句话 |
 |---:|---|---|---|
-| D08 | [[slime_architecture_analysis]] | `02_engineering/04_posttrain_frameworks/` | Megatron、SGLang、DataSource、buffer 和 async producer 怎样组合 |
-| D09 | [[areal_async_architecture_analysis]] | `02_engineering/04_posttrain_frameworks/` | 服务化 training/inference/agent/weight update 如何维持在线 RL 闭环 |
+| D08 | [[20_slime_architecture_analysis]] | `02_engineering/04_posttrain_frameworks/` | Megatron、SGLang、DataSource、buffer 和 async producer 怎样组合 |
+| D09 | [[21_areal_async_architecture_analysis]] | `02_engineering/04_posttrain_frameworks/` | 服务化 training/inference/agent/weight update 如何维持在线 RL 闭环 |
 
 ### S04 · 异构、多后端与 Ascend
 
@@ -90,8 +90,8 @@ CUDA 方案迁移到 Ascend 时的判断框架,最后用一份最新工业报告
 
 | 顺序 | 页面 | 位置 | 一句话 |
 |---:|---|---|---|
-| D10 | [[roll_strategy_and_ascend_analysis]] | `02_engineering/04_posttrain_frameworks/` | Strategy/AutoDeviceMapping 能屏蔽哪些后端差异,哪些不能 |
-| D11 | [[cuda_ascend_posttraining_stack_comparison]] | `02_engineering/04_posttrain_frameworks/` | 通信、推理、并行、权重同步、kernel 与诊断的差距在哪里(§13 四级迁移验收 M1–M4) |
+| D10 | [[22_roll_strategy_and_ascend_analysis]] | `02_engineering/04_posttrain_frameworks/` | Strategy/AutoDeviceMapping 能屏蔽哪些后端差异,哪些不能 |
+| D11 | [[31_cuda_ascend_posttraining_stack_comparison]] | `02_engineering/04_posttrain_frameworks/` | 通信、推理、并行、权重同步、kernel 与诊断的差距在哪里(§13 四级迁移验收 M1–M4) |
 
 ### S05 · 综合验收:工业案例
 
@@ -142,18 +142,18 @@ D12 迁入 `moonshot_kimi/`(Task 2)。D00(阅读路线 + 六级能力门槛)与 
 
 D00 §3(论文阅读五问法)、§4(源码阅读六问法与证据记录模板)、§6(阶段实践题)、§7(版本复习节奏)
 为通用研究方法论,不含后训练领域独有事实,未迁移;§5(四级支持口径 P1–P4)与 §8(各框架最小源码
-路径)已分别独立复现于 [[rl_framework_comparison|D06]] §3「四级支持证据」与各框架深挖页(D07/D08/
+路径)已分别独立复现于 [[30_rl_framework_comparison|D06]] §3「四级支持证据」与各框架深挖页(D07/D08/
 D09/D10 自身的入口—调用链描述细致度均超过 D00 原表),核对后未发现独有信息丢失。
 
 ---
 
 ## Related Pages
 
-- [[posttraining_frontier_map_analysis]] — D01,五层后训练栈与四个工业源码样本的固定基线
-- [[reasoning_rl_algorithm_evolution_analysis]] — D02,GRPO 系列演进权威页
-- [[rl_framework_comparison]] — D06,四框架统一机制矩阵与四级支持证据
-- [[verl_end_to_end_iteration_analysis]] — D07,verl 端到端主基线(`983cb0f`)
-- [[cuda_ascend_posttraining_stack_comparison]] — D11,CUDA–Ascend 差距矩阵与四级迁移验收
+- [[01_posttraining_frontier_map_analysis]] — D01,五层后训练栈与四个工业源码样本的固定基线
+- [[13_reasoning_rl_algorithm_evolution_analysis]] — D02,GRPO 系列演进权威页
+- [[30_rl_framework_comparison]] — D06,四框架统一机制矩阵与四级支持证据
+- [[10_verl_end_to_end_iteration_analysis]] — D07,verl 端到端主基线(`983cb0f`)
+- [[31_cuda_ascend_posttraining_stack_comparison]] — D11,CUDA–Ascend 差距矩阵与四级迁移验收
 - [[kimi_k3_posttraining_case_study_analysis]] — D12,Kimi K3 工业闭环案例
 - [[01_theory/04_posttraining/index]] — 后训练算法理论域索引
 - [[02_engineering/04_posttrain_frameworks/index]] — 后训练框架域索引

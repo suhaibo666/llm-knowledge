@@ -7,7 +7,7 @@
 > **本地原文**：`raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`
 > **证据边界**：本文分析官方技术报告中的项目级设计与项目方自报数据；K3 仓库未公开 RL trainer、rollout 或 MOPD 训练源码，不能据此赋予 P1–P4 源码实现等级。
 > **结论先行**：K3 的主要增量不是又发明一个 GRPO 变体，而是把“能力分化、在线合并、长轨迹状态管理和部署精度”放进同一条后训练闭环。
-> **阅读导航**：[[cuda_ascend_posttraining_stack_comparison|上一篇 D11]] · [[courses/posttraining_frontier|回到课程导读]]
+> **阅读导航**：[[31_cuda_ascend_posttraining_stack_comparison|上一篇 D11]] · [[courses/posttraining_frontier|回到课程导读]]
 
 ---
 
@@ -377,14 +377,14 @@ AgentENV 用 dirty-page incremental checkpoint；报告给出的最低 checkpoin
 
 ## Related Pages
 
-- [[posttraining_frontier_map_analysis|D01 后训练前沿全景地图]]
-- [[reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]
-- [[agentic_rl_algorithm_analysis|D03 Agentic RL 算法与环境]]
-- [[on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
-- [[posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
-- [[rl_sandbox_design_analysis]] — §2.1 harness 版本化与 Fork/Pause/Snapshot 语义（本页 §4.2.1/§4.2.6/§5.3.2 回流）
-- [[rl_infra_efficiency_analysis]] — §2「优化 6」cache-pressure-aware admission（本页 §5.3.1 回流）
-- [[cuda_ascend_posttraining_stack_comparison|D11 CUDA–Ascend 后训练栈对照]]
+- [[01_posttraining_frontier_map_analysis|D01 后训练前沿全景地图]]
+- [[13_reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]]
+- [[24_agentic_rl_algorithm_analysis|D03 Agentic RL 算法与环境]]
+- [[25_on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
+- [[01_posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
+- [[11_rl_sandbox_design_analysis]] — §2.1 harness 版本化与 Fork/Pause/Snapshot 语义（本页 §4.2.1/§4.2.6/§5.3.2 回流）
+- [[12_rl_infra_efficiency_analysis]] — §2「优化 6」cache-pressure-aware admission（本页 §5.3.1 回流）
+- [[31_cuda_ascend_posttraining_stack_comparison|D11 CUDA–Ascend 后训练栈对照]]
 - [[01_theory/01_models/moonshot_kimi/kimi_k3_analysis|Kimi K3 模型总览]]
 - [[01_theory/01_models/moonshot_kimi/kimi_k3_architecture_deepdive|Kimi K3 架构深析]]
 - [[01_theory/01_models/moonshot_kimi/kimi_k3_infra_deepdive|Kimi K3 训推基础设施深析]]

@@ -206,7 +206,7 @@ K3 没有把 partial rollout 换成一套完全异步算法：它仍按迭代和
 |------|-------|----------|
 | Mooncake: KVCache-centric Disaggregated Architecture | 2407.00079 | [[02_engineering/03_infer_frameworks/mooncake_analysis]] |
 | MoBA: Mixture of Block Attention | 2502.13189 | [[moba_analysis]] |
-| Kimi k1.5: Scaling RL with LLMs | 2501.12599 | [[01_theory/04_posttraining/kimi_k1.5_analysis]] |
+| Kimi k1.5: Scaling RL with LLMs | 2501.12599 | [[01_theory/04_posttraining/29_kimi_k1.5_analysis]] |
 | Kimi VL Technical Report | 2504.07491 | 待摄入 |
 | Kimi Audio Technical Report | 2504.18425 | 待摄入 |
 | Kimi K2: Open Agentic Intelligence | 2507.20534 | [[kimi_k2_analysis]] |
@@ -248,7 +248,7 @@ K3 没有把 partial rollout 换成一套完全异步算法：它仍按迭代和
 
 - [[01_theory/index]]
 - [[01_theory/01_models/attention_is_all_you_need_analysis]]
-- [[01_theory/04_posttraining/grpo_analysis]]
+- [[01_theory/04_posttraining/20_grpo_analysis]]
 - [[kimi_k3_posttraining_case_study_analysis]] — K3 后训练算法、1M Agentic RL infra 与源码边界
 - [[02_engineering/02_train_frameworks/megatron-lm/index]]
 - [[gdn_kda_linear_attention_analysis]] — 从 QKVABZ 到 chunkwise 仿射扫描

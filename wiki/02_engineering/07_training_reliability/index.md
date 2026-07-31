@@ -67,7 +67,7 @@
 | 本簇问题 | 关联的一手/深挖页 |
 |---------|------------------|
 | 问题 1（确定性）· 问题 3-4 | [[longcat_2_analysis]] §6-7（确定性算子/二叉树累加/bit-flip）· [[longcat_flash_analysis]] §3.2（SDC 检测） |
-| 问题 2（训推一致） | [[RL_Training_Inference_Precision_Analysis]] · [[rl_ppo_loss_and_grpo_analysis]] · [[batch_invariance_guide]] |
+| 问题 2（训推一致） | [[RL_Training_Inference_Precision_Analysis]] · [[10_rl_ppo_loss_and_grpo_analysis]] · [[batch_invariance_guide]] |
 | 问题 3（低精度） | [[low_precision_training_analysis]] · [[deepseek_v3_analysis]]（FP8 两级累加/DeepGEMM） |
 | 问题 1 第 3 层（通信规约树） | [[collectives_analysis]]（ring/tree allreduce）· [[expert_parallel_analysis]]（MoE all-to-all） |
 | 问题 9（spike / Muon 系） | [[muon_analysis]] · [[kimi_k2_analysis]]（MuonClip）· [[deepseek_v4_analysis]] · [[glm_5_analysis]] |

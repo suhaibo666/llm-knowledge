@@ -4,7 +4,7 @@
 > 核心:`megatron/core/resharding/`(refit)、`inference/`(推理引擎)、`inference/quantization/`(MXFP8)、`post_training/modelopt/`、`transformer_config.py`(`transformer_impl='inference_optimized'`)
 > 配套阅读:`megatron_tp_fsdp_resharding_supplements_analysis.md` §3(refit 基础)、`megatron_parallelism_orchestration_analysis.md`、`megatron_ep_analysis.md`
 > 定位:系统性专题。前面文档讲预训练;本文讲 **RL 后训练**(RLHF / GRPO / PPO)对 Megatron 提出的特殊需求,以及核心难题 **训推一致性(train-inference consistency)**。
-> **三方分工**:本文是 Megatron 训练侧的 refit / 训推一致性实现(逐项收敛 gap);三平面机制视角(weight publish 协议、跨框架不变量)见 [[posttraining_infra_mechanism_analysis]] 第 6 节;verl 在 Megatron+vLLM 场景下的具体同步调用链见 [[megatron_vllm_weight_sync_analysis]]。
+> **三方分工**:本文是 Megatron 训练侧的 refit / 训推一致性实现(逐项收敛 gap);三平面机制视角(weight publish 协议、跨框架不变量)见 [[01_posttraining_infra_mechanism_analysis]] 第 6 节;verl 在 Megatron+vLLM 场景下的具体同步调用链见 [[megatron_vllm_weight_sync_analysis]]。
 
 ---
 
@@ -205,5 +205,5 @@ collocated(同卡同时持训练+推理模型):
 
 - [[megatron_tp_fsdp_resharding_supplements_analysis]] · [[megatron_inference_engine_analysis]] · [[megatron_ep_analysis]] · [[megatron_parallelism_orchestration_analysis]]
 - [[megatron_vllm_weight_sync_analysis]] — verl 在 Megatron+vLLM 场景下的权重同步实现(本文的下游消费者之一)
-- [[posttraining_infra_mechanism_analysis]] — 第 6 节「Weight publish 协议」,三平面机制视角(框架无关)
+- [[01_posttraining_infra_mechanism_analysis]] — 第 6 节「Weight publish 协议」,三平面机制视角(框架无关)
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

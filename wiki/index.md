@@ -75,7 +75,7 @@
 | 缩放定律 | [[scaling_laws_analysis]], [[long_context_scaling_law_analysis]] |
 | 优化器 | [[muon_analysis]] |
 | 低精度训练 | [[low_precision_training_analysis]], [[transformer_engine_analysis]], [[deepseek_v4_fp4_qat_analysis]] |
-| 对齐/RLHF | [[instructgpt_rlhf_analysis]], [[dpo_analysis]], [[grpo_analysis]], [[ppo_analysis]] |
+| 对齐/RLHF | [[10_instructgpt_rlhf_analysis]], [[12_dpo_analysis]], [[20_grpo_analysis]], [[11_ppo_analysis]] |
 | DeepSeek 模型 | [[deepseek_v4_analysis]], [[deepseek_v3_analysis]], [[deepseek_r1_analysis]] |
 | LongCat (美团) | [[meituan_longcat/index]], [[longcat_flash_analysis]], [[longcat_2_analysis]] |
 | Megatron 分布式 | [[megatron_parallelism_orchestration_analysis]], [[megatron_comm_overlap_analysis]] |
@@ -89,11 +89,11 @@
 | 非 GEMM Kernel 优化 | [[cuda_nonmatmul_kernels_analysis]], [[gpu_kernel_guide]], [[triton_00_gpu_essentials_guide]] |
 | vLLM 推理引擎 | [[vllm/index]], [[vllm_engine_architecture_analysis]], [[vllm_scheduler_analysis]], [[vllm_kv_cache_management_analysis]], [[vllm_feature_optimizations_overview]] |
 | vLLM 图编译/算子融合 | [[vllm_fused_ops_and_kernels_analysis]], [[vllm_ir_and_fusion_passes_analysis]], [[vllm_compilation_cudagraph_analysis]] |
-| PPO/GRPO RL 训练 | [[rl_ppo_loss_and_grpo_analysis]], [[RL_Training_Inference_Precision_Analysis]] |
-| RL 训练框架 (verl/HybridFlow) | [[verl/index]], [[verl_architecture_overview_analysis]], [[verl_ray_trainer_analysis]], [[verl_rl_algorithms_analysis]] |
-| Coding RL「脏活」系列 | [[reward_hacking_defense_analysis]], [[rl_sandbox_design_analysis]], [[rl_infra_efficiency_analysis]] |
-| LLM 后训练前沿 D01–D06 | [[courses/posttraining_frontier]], [[posttraining_frontier_map_analysis]], [[reasoning_rl_algorithm_evolution_analysis]], [[agentic_rl_algorithm_analysis]], [[on_policy_off_policy_staleness_analysis]], [[posttraining_infra_mechanism_analysis]], [[rl_framework_comparison]] |
-| LLM 后训练前沿 D07–D12 | [[verl_end_to_end_iteration_analysis]], [[slime_architecture_analysis]], [[areal_async_architecture_analysis]], [[roll_strategy_and_ascend_analysis]], [[cuda_ascend_posttraining_stack_comparison]], [[kimi_k3_posttraining_case_study_analysis]] |
+| PPO/GRPO RL 训练 | [[10_rl_ppo_loss_and_grpo_analysis]], [[RL_Training_Inference_Precision_Analysis]] |
+| RL 训练框架 (verl/HybridFlow) | [[verl/index]], [[01_verl_architecture_overview_analysis]], [[20_verl_ray_trainer_analysis]], [[15_verl_rl_algorithms_analysis]] |
+| Coding RL「脏活」系列 | [[31_reward_hacking_defense_analysis]], [[11_rl_sandbox_design_analysis]], [[12_rl_infra_efficiency_analysis]] |
+| LLM 后训练前沿 D01–D06 | [[courses/posttraining_frontier]], [[01_posttraining_frontier_map_analysis]], [[13_reasoning_rl_algorithm_evolution_analysis]], [[24_agentic_rl_algorithm_analysis]], [[25_on_policy_off_policy_staleness_analysis]], [[01_posttraining_infra_mechanism_analysis]], [[30_rl_framework_comparison]] |
+| LLM 后训练前沿 D07–D12 | [[10_verl_end_to_end_iteration_analysis]], [[20_slime_architecture_analysis]], [[21_areal_async_architecture_analysis]], [[22_roll_strategy_and_ascend_analysis]], [[31_cuda_ascend_posttraining_stack_comparison]], [[kimi_k3_posttraining_case_study_analysis]] |
 | 万卡训练确定性与可靠性 | [[07_training_reliability/index]], [[determinism_and_numerical_reliability_analysis]], [[fault_tolerance_and_recovery_analysis]], [[training_dynamics_stability_analysis]] |
 
 ### 按原始来源
