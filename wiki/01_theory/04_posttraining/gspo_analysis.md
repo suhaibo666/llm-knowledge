@@ -75,7 +75,7 @@ GSPO was tested on Qwen3-30B-A3B-Base (MoE model):
 
 ## Relationship to Other Methods
 
-GSPO's position relative to PPO/GRPO/DAPO/Dr. GRPO/SAO across importance-ratio granularity, clipping level and the systemic invariant each preserves is tabulated in [[reasoning_rl_algorithm_evolution_analysis|D02]] §4.
+GSPO's position relative to PPO/GRPO/DAPO/Dr. GRPO/SAO across importance-ratio granularity, clipping level and the systemic invariant each preserves is tabulated in [[reasoning_rl_algorithm_evolution_analysis|D02]] §4 — D02's table does not rank qualitative training stability. This paper's own stability ordering across that same method set is: PPO moderate, GRPO poor at scale, DAPO good, **GSPO excellent**.
 
 ## Related Pages
 

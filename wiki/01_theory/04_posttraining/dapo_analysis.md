@@ -138,7 +138,7 @@ In RLHF, KL penalty keeps the policy close to the SFT model. But for long-CoT re
 
 ## Relationship to Other Methods
 
-DAPO's position relative to PPO/GRPO/Dr. GRPO/GSPO/SAO across optimization unit, advantage estimator, ratio/clip and sampling structure is tabulated in [[reasoning_rl_algorithm_evolution_analysis|D02]] §4.
+DAPO's position relative to PPO/GRPO/Dr. GRPO/GSPO/SAO across optimization unit, advantage estimator, ratio/clip and sampling structure is tabulated in [[reasoning_rl_algorithm_evolution_analysis|D02]] §4 — D02's table does not track a reward-shaping dimension. On that dimension DAPO is the outlier among these methods: it is the only one that applies **soft overlong reward shaping** (a length-aware penalty inside a cache window near the max-length cutoff, see §4 above) rather than a flat truncation penalty or no shaping at all.
 
 ## Impact
 

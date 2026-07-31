@@ -18,7 +18,11 @@ GRPO replaces PPO's separate value function with a group-relative baseline: samp
 
 ### GRPO Objective
 
-The overall clipped-surrogate structure (token-ratio × advantage, two-sided clip, KL regularization against a reference policy) follows the same template as D02 §2's unified notation — see [[reasoning_rl_algorithm_evolution_analysis|D02]] for the general form shared across the GRPO family. GRPO's own contribution not restated there is its **low-variance unbiased KL divergence estimator** (Schulman's k3 form):
+```
+J_GRPO(theta) = E[ (1/G) * sum_i min(r_i * A_i, clip(r_i, 1-eps, 1+eps) * A_i) ] - beta * D_KL(pi_theta || pi_ref)
+```
+
+The clip-and-advantage core matches D02 §2's unified clipped-surrogate shape (min of raw and clipped ratio×advantage) — see [[reasoning_rl_algorithm_evolution_analysis|D02]] for the general form and how later methods modify it. Two things D02's generic template does **not** carry, both original to GRPO's own formulation: the **`-beta * D_KL(pi_theta || pi_ref)`** regularization term added outside the clip (D02 §2 has no KL term at all), and the fact that `r_i = pi_theta(o_i|q) / pi_theta_old(o_i|q)` here is a **whole-output** ratio with no token subscript — the paper's own pseudocode treats each sampled output `o_i` atomically, whereas D02 §2's unified notation is explicitly **token-level** (`r_{i,t}`, summed over `i,t`). GRPO's KL term uses a **low-variance unbiased estimator** (Schulman's k3 form):
 
 ```
 D_KL(pi_theta || pi_ref) = pi_ref/pi_theta - log(pi_ref/pi_theta) - 1
@@ -81,7 +85,7 @@ To address R1-Zero's limitations, DeepSeek-R1 uses a multi-stage pipeline:
 
 ## Why GRPO Works Well for Reasoning
 
-Verifiable rule-based rewards, an informative group-relative comparison signal, and freedom from hard-to-estimate value functions on long reasoning trajectories combine to make GRPO well suited to reasoning tasks. The systemic constraints this creates — and where later methods (DAPO, Dr. GRPO, GSPO, SAO) relax them — are analyzed in [[reasoning_rl_algorithm_evolution_analysis|D02]] §1, §3.1.
+Verifiable rule-based rewards, an informative group-relative comparison signal, freedom from hard-to-estimate value functions on long reasoning trajectories, and skipping SFT so pure RL is free to explore reasoning strategies a human-labeled curriculum might never have shown — together make GRPO well suited to reasoning tasks. The systemic constraints this creates — and where later methods (DAPO, Dr. GRPO, GSPO, SAO) relax them — are analyzed in [[reasoning_rl_algorithm_evolution_analysis|D02]] §1, §3.1.
 
 ## GRPO vs DPO Family
 
