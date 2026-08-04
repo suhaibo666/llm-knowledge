@@ -1,6 +1,6 @@
 # LLM Knowledge Wiki — 知识库总索引
 
-> 最后更新: 2026-07-31
+> 最后更新: 2026-08-04
 
 ---
 
@@ -25,9 +25,9 @@
 | SFT & 低参微调 | [[01_theory/03_sft/index]] | 1 | 待建设 |
 | 后训练对齐 | [[01_theory/04_posttraining/index]] | 18 | 活跃 |
 | 推理技术 | [[01_theory/05_inference/index]] | 1 | 待建设 |
-| 分布式并行理论 | [[01_theory/06_distributed_parallelism/index]] | 8 | 活跃 |
+| 分布式并行理论 | [[01_theory/06_distributed_parallelism/index]] | 9 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-07-31（kb-reorg P5 收尾）。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-08-04（kb-reorg P7 收尾）。
 
 ### 02 工程实现
 
@@ -37,8 +37,8 @@
 | └─ TorchInductor | [[02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/index]] | 36 | 活跃 |
 | └─ 运行时图(CUDA/NPU) | [[02_engineering/01_ai_frameworks/03_runtime_graphs/index]] | 12 | 活跃 |
 | └─ Codegen 后端(MLIR) | [[02_engineering/01_ai_frameworks/02_compile_stack/05_codegen_backends/mlir/index]] | 8 | 活跃 |
-| 训练框架 | [[02_engineering/02_train_frameworks/index]] | 60 | 活跃 |
-| └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 30 | 活跃 |
+| 训练框架 | [[02_engineering/02_train_frameworks/index]] | 56 | 活跃 |
+| └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 27 | 活跃 |
 | └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 13 | 活跃 |
 | └─ MindFormers | [[02_engineering/02_train_frameworks/mindformers/index]] | 3 | 活跃 |
 | └─ MindSpeed | [[02_engineering/02_train_frameworks/mindspeed/index]] | 6 | 活跃 |
@@ -46,12 +46,12 @@
 | └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index]] | 13 | 活跃 |
 | 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 21 | 活跃 |
 | └─ verl (HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index]] | 11 | 活跃 |
-| GPU Kernel | [[02_engineering/05_gpu_kernel/index]] | 15 | 活跃 |
+| GPU Kernel | [[02_engineering/05_gpu_kernel/index]] | 17 | 活跃 |
 | └─ Triton 学习路线 | [[02_engineering/05_gpu_kernel/triton/index]] | 9 | 活跃 |
 | 自动并行 | [[02_engineering/06_auto_parallel/index]] | 2 | 活跃 |
 | 训练可靠性 | [[02_engineering/07_training_reliability/index]] | 5 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-07-31（kb-reorg P5 收尾）。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-08-04（kb-reorg P7 收尾）。
 
 ### courses 课程入口
 
