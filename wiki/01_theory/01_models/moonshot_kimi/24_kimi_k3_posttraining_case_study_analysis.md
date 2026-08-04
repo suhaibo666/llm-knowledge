@@ -180,7 +180,7 @@ R_{\max}
 
 ### 4.2 MOPD 不是 GRPO 的替代品
 
-GRPO、GSPO 或 K2.5-style policy optimization回答“怎样用 reward 更新 policy”；MOPD 回答“九个 expert 的能力怎样进入一个 student”。K3 把 teacher log-ratio变成 dense reward 后接入同一 RL infra，说明二者位于不同层级，可以组合而非互斥（报告 §4.1.2–4.1.3，pp.13–14）。
+GRPO、GSPO 或 K2.5-style policy optimization 回答“如何用 reward 更新 policy”；MOPD 回答“如何把九个 expert 的能力转移给一个 student”。K3 将 teacher log-ratio 转换为 dense reward，再接入同一套 RL infra，说明二者位于不同层级，可以组合而非互斥（报告 §4.1.2–4.1.3，pp.13–14）。
 
 ---
 

@@ -86,7 +86,7 @@ else:
     output = torch_npu.npu_fusion_attention(query, key, value, n_head, shape_order, ...)
 ```
 
-**这里有个反直觉的接线**:`else` 分支(`:303`)的"纯 Ulysses"看似没做任何跨卡通信——因为 Ulysses 的 4 次 all-to-all 不在这里,而是在**建模期**就把 `core_attention` 包了一层 `UlyssesContextAttention`(`adaptor.py:43`,由 `attention_init_wrapper` 注入)。运行时是 `UlyssesContextAttention.forward` 先做 a2a、再调 `self.local_attn`(即本 `forward`)算本地 FA。于是:
+**这里的调用关系有些反直觉**：`else` 分支（`:303`）中的“纯 Ulysses”看起来没有执行任何跨卡通信。原因是 4 次 all-to-all 并不在这里发生；系统早在**建模阶段**就通过 `attention_init_wrapper` 注入了一层 `UlyssesContextAttention`，用于包装 `core_attention`（`adaptor.py:43`）。运行时，`UlyssesContextAttention.forward` 先执行 a2a，再调用 `self.local_attn`（即当前的 `forward`）计算本地 FA。因此：
 
 - **纯 Ulysses**:a2a 在外层 wrapper,内层 `forward` 走 `:303` 的 plain FA;
 - **Ulysses+KV-cache**:wrapper 检测到 `use_custom_ulysses_backward` 直接调 `local_attn`(`ulysses_context_parallel.py:172-179`),把通信让给 `:207` 的自定义 autograd `ulyssesattn_context_parallel` 自己管;

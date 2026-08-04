@@ -1,4 +1,4 @@
-# NPU 编译工作流: 毕昇编译器、Autotune、精度校验
+# NPU 编译工作流：毕昇编译器、Autotune、精度校验
 
 > 覆盖 NPU MLIR 后端的编译执行全链路：三种编译模式、60 维 Autotune、在线精度对比、缓存管理
 > 最后更新: 2026-05-09
@@ -128,7 +128,7 @@ def bisheng_compile(self, input_path, output_path,
 
 ---
 
-## Autotune: 60 种编译配置
+## Autotune：60 种编译配置
 
 NPU 的 autotune 不同于 GPU Triton 的运行时 benchmark 搜索。它是**编译时参数搜索**：不同的编译选项组合产生不同的 kernel binary，首次执行时 benchmark 选最优。
 

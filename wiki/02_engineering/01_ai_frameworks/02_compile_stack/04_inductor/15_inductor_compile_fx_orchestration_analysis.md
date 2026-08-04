@@ -100,15 +100,15 @@ CUDA/XPU输入还会尽早唤醒AsyncCompile pool，以便与前端/AOT工作重
 
 `_maybe_wrap_and_compile_fx_main`在实际工作前递归处理：
 
-- graph output不是tuple；
-- Dynamo export的PyTreeCodeGen；
+- graph output 不是 tuple；
+- Dynamo export 的 PyTreeCodeGen；
 - 嵌套Python input结构；
-- AOTI/CPP/FX wrapper等模式。
+- AOTI/CPP/FX wrapper 等模式。
 
 最后才进入 `_compile_fx_main`，见 `torch/_inductor/compile_fx.py:3030-3056` 与
 `torch/_inductor/compile_fx.py:3058-3070`。
 
-这是为了让核心pipeline面对稳定的flat/tuple ABI，而不是在每个pass里重复处理用户pytree。
+这样可以让核心 pipeline 面对稳定的 flat/tuple ABI，避免每个 pass 都重复处理用户 pytree。
 
 ## 5. Forward compiler负责什么
 
@@ -133,7 +133,7 @@ CUDA/XPU输入还会尽早唤醒AsyncCompile pool，以便与前端/AOT工作重
 
 它还区分：
 
-- partition后从inline代码保存的activations：地址不固定；
+- partition 后由 inline 代码保存的 activations：地址不固定；
 - primals/params/buffers：可作为static inputs；
 - tangents；
 - backward cudagraph override。
@@ -146,8 +146,8 @@ CUDA/XPU输入还会尽早唤醒AsyncCompile pool，以便与前端/AOT工作重
 
 - cpp wrapper config；
 - disabled dispatch modes；
-- lazy GraphModule策略；
-- compiler计时；
+- lazy GraphModule 策略；
+- compiler 计时；
 - fresh cache context；
 - debug context。
 
@@ -164,10 +164,10 @@ CUDA/XPU输入还会尽早唤醒AsyncCompile pool，以便与前端/AOT工作重
 
 - 正常走Inductor；
 - 测试时替换为记录/断言compiler；
-- compiler bisector关闭某层；
-- AOTAutograd分别调用fw/bw compiler；
-- config patch装饰延迟backward；
-- cache层在inner compile前后插入。
+- compiler bisector 关闭某一层；
+- AOTAutograd 分别调用 fw/bw compiler；
+- config patch 装饰延迟执行的 backward；
+- cache 层在 inner compile 前后插入。
 
 回调结构还解释了“forward和backward是否同时编译”不是固定答案：AOT trace/partition可先
 完成，bw lowering可以延迟到第一次backward。
@@ -213,7 +213,7 @@ flowchart TD
 
 `compile_fx`的签名把 `inner_compile`显式作为参数，并声明接管 `model_`所有权
 （`torch/_inductor/compile_fx.py:2889-2907`）。这不是普通依赖注入而已：同一个
-`inner_compile`随后会被做成 inference、training forward、backward三个回调，所以 cache、
+`inner_compile` 随后会被封装成 inference、training forward、backward 三个回调，因此 cache、
 debug wrapper、bisector或测试替身能以同一协议覆盖三个方向。
 
 有 `config_patches`时，入口在 patch作用域内递归调用自己，并把经过
@@ -223,7 +223,7 @@ debug wrapper、bisector或测试替身能以同一协议覆盖三个方向。
 - 当前 `compile_fx`同步执行的 AOT trace需要外层 config context；
 - lazy backward可能在函数返回后才调用 `inner_compile`，只能靠装饰后的 callable重新进入
   相同 config；
-- `compile_region_name`被做成 partial参数但刻意不进入 graph kwargs，避免只用于诊断的名字
+- `compile_region_name` 被封装为 partial 参数，但不会进入 graph kwargs，以免只用于诊断的名称
   扰动 FX cache key。
 
 ### 11.2 wrapper递归是在收敛 ABI，不是在重复编译
@@ -308,13 +308,13 @@ fresh-cache、debug context，才调用 `_compile_fx_inner`
 ## 12. 不变量与失败边界
 
 - `compile_fx`可修改输入gm，调用方不能依赖原Node identity；
-- config必须跨lazy backward保存；
-- inference和training forward metadata不同；
-- fw/bw分别lowering，不存在跨Graph的Node边；
-- output tuple/flat ABI在主pipeline前归一化；
-- backward static address假设不能错误覆盖saved activations；
-- inner compile要在正确FakeTensor/ShapeEnv上下文运行；
-- cache/load后还要执行post-compile包装，不能把序列化对象直接当最终callable。
+- config 必须跨 lazy backward 保存；
+- inference 和 training forward 的 metadata 不同；
+- fw/bw 分别执行 lowering，不存在跨 Graph 的 Node 边；
+- output tuple/flat ABI 在主 pipeline 前归一化；
+- backward static address 假设不能错误覆盖 saved activations；
+- inner compile 必须在正确的 FakeTensor/ShapeEnv 上下文中运行；
+- cache/load 后还要执行 post-compile 包装，不能将序列化对象直接作为最终 callable。
 
 ## 13. 复杂度
 
@@ -361,7 +361,7 @@ lazy backward把 \(K(B)\)从first forward调用移动到first backward调用，�
    autotuning;kernel tiling延迟到CodeGen阶段依据硬件特性决定。延迟不是偷懒,而是让决策
    在信息最充分时做出。
 
-## 16. 附录:关键源码文件速查(吸收自已删除的 inductor_compiler_pipeline_analysis §9)
+## 16. 附录：关键源码文件速查（吸收自已删除的 inductor_compiler_pipeline_analysis §9）
 
 跨阶段排障时快速定位该去哪个文件,精确行号见各阶段专题页(会随版本漂移,这里只列文件):
 

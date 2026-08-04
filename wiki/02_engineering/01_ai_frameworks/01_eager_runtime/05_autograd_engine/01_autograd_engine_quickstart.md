@@ -210,7 +210,7 @@ print(gradcheck(Square.apply, (x,)))   # True
 - `backward` 必须**为 forward 的每个输入返回一项**;不可导/非张量输入返回 `None`。
 - `backward` 与 `vjp` 是同一方法的别名(`function.py:462`),二选一实现;前向模式 AD 实现 `jvp`(`function.py:491`)。
 - 反向时引擎实际调用的是元类自动生成的 `SquareBackward`(`BackwardCFunction`,`function.py:297`;其 `apply` 在 `function.py:313`,由 `FunctionMeta.__init__` 生成,`function.py:355`)。
-- **不支持二阶导的反向**应加 `@torch.autograd.function.once_differentiable` 装饰 `backward`,这样误用 `create_graph=True` 时会明确报错。
+- **不支持二阶导的反向**：应使用 `@torch.autograd.function.once_differentiable` 装饰 `backward`，这样误用 `create_graph=True` 时会明确报错。
 
 > C++ 侧等价物:`torch::autograd::Function<T>`(`torch/csrc/autograd/custom_function.h:98`),用 `AutogradContext`(`custom_function.h:122`)的 `save_for_backward`(`custom_function.h:137`),契约与 Python 一一对应。
 

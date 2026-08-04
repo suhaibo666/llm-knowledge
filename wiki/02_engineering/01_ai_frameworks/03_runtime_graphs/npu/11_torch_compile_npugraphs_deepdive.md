@@ -1302,7 +1302,7 @@ elif self.mode == CompilationMode.BACKWARD:
 
 自动的 generation 机制在**大多数场景**下工作良好：推理时每次调用 `torch.compile` 函数自动递增 generation；训练时通过 `running_forwards_with_pending_backwards` 保护 forward-backward 对。但在以下场景中，自动启发式会**失效**：
 
-让我们通过一个实际测试用例来理解这个问题：
+下面通过一个实际测试用例说明这个问题：
 
 ```python
 # 测试用例1：backend="npugraphs"（同一函数多次调用）
@@ -1665,9 +1665,9 @@ flowchart TD
 
 `_npu_setCheckpointPoolState`（`NPUCachingAllocator.cpp:L1893-L1941`）在 C++ 层分三步完成"回退到录制结束时的内存布局"：
 
-1. **先释放**池中当前所有 allocated blocks（`freeBlocksAllocatedToPool`）；
+1. **先释放池中当前所有 allocated blocks**（`freeBlocksAllocatedToPool`）；
 2. **再按快照重建** block 结构（`setSegmentStateToCheckpoint`）；
-3. **最后释放**快照中标记为非 live 的 blocks。
+3. **最后释放快照中标记为非 live 的 blocks**。
 
 这三步保证了恢复后的 block 划分与录制结束时完全一致，同时通过 `live_storages` 参数保护了仍在使用的 tensor 不被步骤 1 误释放。
 

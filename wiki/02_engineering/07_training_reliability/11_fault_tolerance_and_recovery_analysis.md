@@ -222,7 +222,7 @@ checkpoint 是所有容错手段的最终兜底，但自身成为瓶颈。先算
 --ckpt-format torch_dist --async-save
 ```
 
-机制拆解：训练线程只承担 D2H 拷贝（把状态从 HBM 复制到 host 内存，秒级），序列化与写存储由后台进程完成，训练几乎不停顿。PyTorch 原生对应物是 `torch.distributed.checkpoint.async_save(state_dict, checkpoint_id=...)`。必须处理的竞态：**保存进行中恰好发生故障**会留下写了一半的 checkpoint——若恢复时误加载它，等于加载了一个不存在的模型状态。解法是原子提交协议：
+机制拆解：训练线程只承担 D2H 拷贝（把状态从 HBM 复制到 host 内存，耗时为秒级），序列化和写入存储均由后台进程完成，因此训练几乎无需停顿。PyTorch 原生提供的对应接口是 `torch.distributed.checkpoint.async_save(state_dict, checkpoint_id=...)`。这里必须处理一种竞态：**如果保存尚未完成时恰好发生故障**，就会留下只写了一部分的 checkpoint；恢复时若误加载该文件，得到的将是一个实际并不存在的模型状态。解决办法是采用原子提交协议：
 
 ```text
 1) 写入临时目录 tmp_step_N/
@@ -234,7 +234,7 @@ checkpoint 是所有容错手段的最终兜底，但自身成为瓶颈。先算
 
 这些在 Megatron dist-ckpt 与 NVRx 的实现中均已内置，但自研保存路径时是最常见的翻车点。
 
-**（2）分层/本地 checkpoint：不依赖共享存储。** 共享存储的带宽与稳定性是保存频率的天花板，绕开它的办法是就近存：NVRx local checkpointing 让每节点把自己那份分片写到**本地 SSD/内存盘**（带宽高一个量级，可以存得非常勤），再向小组内邻居节点复制副本（LazyCliqueReplication：节点分组成 clique，组内互备）——单节点彻底失联时，顶替它的新节点从其副本邻居拉取分片恢复。学术源头是 Gemini（SOSP'23，与 Google 模型重名的检查点论文）的内存 checkpoint；Gemini 1.0 报告披露的经验与之一致：模型状态的内存冗余使非计划故障的恢复速度显著提升——**恢复不必然经过磁盘**。字节 ByteCheckpoint 解决另一维度：把训练态的存储表示与并行布局**解耦**（按逻辑张量而非按 rank 组织分片），故障后换一种 TP/PP/DP 配置也能加载并自动重切分——这是问题 5 弹性缩容能落地的前提。
+**（2）分层/本地 checkpoint：不依赖共享存储。** 共享存储的带宽和稳定性决定了保存频率的上限，绕开这一限制的办法是就近保存：NVRx local checkpointing 让每个节点把自己的分片写入**本地 SSD/内存盘**（带宽高一个量级，因此可以更频繁地保存），再向小组内的邻居节点复制副本（LazyCliqueReplication：将节点分成多个 clique，组内互为备份）。当单个节点彻底失联时，替代它的新节点可从持有副本的邻居拉取分片并恢复。该思路的学术源头是 Gemini（SOSP'23，与 Google 模型重名的 checkpoint 论文）提出的内存 checkpoint；Gemini 1.0 报告披露的经验也与此一致：在内存中冗余模型状态能显著加快非计划故障后的恢复，说明**恢复并不一定要经过磁盘**。字节 ByteCheckpoint 解决的是另一个维度的问题：它把训练状态的存储表示与并行布局**解耦**（按逻辑张量而非 rank 组织分片），使 checkpoint 能在故障后由另一种 TP/PP/DP 配置加载并自动重新切分；这是问题 5 中弹性缩容能够落地的前提。
 
 **（3）故障感知与临终保存。** 两个互补机制：其一，**先存后退**——收到抢占/维护信号时保存再退出（Megatron `--exit-signal-handler`，收到 SIGTERM 终止信号触发保存），把「计划内中断」的回滚损失清零；其二，**临终 checkpoint**——故障已经发生、但状态还有救时的抢救式落盘。可行性来自冗余：单 rank 崩溃时，其余 rank 的显存/host 内存里仍持有完整的最新训练态（DP 复制、或优化器分片的跨副本冗余），控制面在故障时刻触发从**存活副本**紧急落盘，把「回滚到上个 checkpoint」变成「回滚到故障前一刻」。昇腾生态的 MindIO TTP 即此类能力（配合副本机制做故障时刻的训练态抢救），ByteRobust 的 fault-aware checkpointing 同属此类。
 

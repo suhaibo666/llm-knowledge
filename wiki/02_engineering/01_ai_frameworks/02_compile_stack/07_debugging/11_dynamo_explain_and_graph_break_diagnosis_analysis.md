@@ -26,7 +26,7 @@ Dynamo对一个 Python frame做符号执行。遇到无法或不应继续建图�
 （`torch/_dynamo/eval_frame.py:1869-1898` 与
 `torch/_dynamo/eval_frame.py:1900-1928`）。
 
-这意味着 `explain`主要观察 **Dynamo capture边界**：
+因此，`explain` 主要观察 **Dynamo capture 边界**：
 
 - 它不以Inductor优化性能为目的；
 - 图数量来自backend被调用的次数；

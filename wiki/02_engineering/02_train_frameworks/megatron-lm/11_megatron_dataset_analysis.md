@@ -129,7 +129,7 @@ PackedSeqParams:
 - `PackedSeqParams` 里的 `cp_group` / `local_cp_size` —— 打包**与 CP 协同**:一条打包子序列还能再被 CP 切到多卡(`get_cp_slice_for_thd`)。
 - 产出对齐到 PP 组的数据迭代器(`broadcast_to_pp_group`、`create_data_iterator`)。
 
-所以 packed dataset 不只是"打包数据",而是**打包 + 变长 CP 负载均衡 + microbatch 调度**一整套 —— 服务于 SFT、长文档、RL 等变长场景。
+所以，packed dataset 不只是“打包数据”，而是一套由**打包、变长 CP 负载均衡和 microbatch 调度**组成的完整方案，用于支撑 SFT、长文档、RL 等变长场景。
 
 > **打包与动态 CP 的统一流水线**(`DefaultDynamicCPScheduler` 如何作为打包调度器的子类把二者缝在一起)见专文 `29_megatron_packed_dataset_dynamic_cp_analysis.md`。
 

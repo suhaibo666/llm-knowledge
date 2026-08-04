@@ -5,7 +5,7 @@
 > Lab 环境：PyTorch `2.9.1+cpu`
 > 最后更新：2026-07-28
 
-## 1. Pass位置由可用不变量决定
+## 1. Pass 的位置由可用不变量决定
 
 | stage | 常见可见形态 | 适合 |
 |---|---|---|
@@ -18,9 +18,9 @@
 | Scheduler | realized buffer deps | fusion/reorder/liveness |
 | codegen | backend kernel/wrapper | tiling/indexing/launch |
 
-“能在某stage写出来”不等于“应放在那里”。
+“能在某个 stage 实现”并不等于“应该放在这个 stage”。
 
-## 2. 三个Inductor FX driver不同
+## 2. 三个 Inductor FX driver 的差异
 
 ### pre-grad
 
@@ -40,7 +40,7 @@ recompile（`torch/_inductor/fx_passes/pre_grad.py:336-433`）。
 `torch/_inductor/fx_passes/post_grad.py:385-474`）。最后一段才覆盖 late
 reinplace/alias 修正与 final lint/recompile；只读 main-pattern 范围不足以证明 mutation tail。
 
-不能用一个“所有pass都pattern match→DCE→sort”图替代。
+不能用一张“所有 pass 都执行 pattern match → DCE → sort”的流程图来概括这三者。
 
 ## 3. 同一语义规则不能原样跨 stage 搬运
 
@@ -101,33 +101,33 @@ placement 证据。
 
 ## 4. Registration order
 
-同root bucket中rules按registration order尝试。若先应用宽pattern，可能erase root，使后续
-更专用rule无机会。优先级需要：
+同一 root bucket 中的 rules 按 registration order 依次尝试。若先应用宽泛的 pattern，可能会 erase root，使后续
+更专用的 rule 无法执行。因此，优先级应满足：
 
-- 更具体rule先；
-- canonicalization先于依赖canonical form的fusion；
-- destructive rewrite后重新建立必要metadata；
-- mutation/effect tail pass最后。
+- 更具体的 rule 优先；
+- canonicalization 先于依赖 canonical form 的 fusion；
+- destructive rewrite 后重新建立必要的 metadata；
+- mutation/effect tail pass 最后执行。
 
 ## 5. Single round、bounded repeat、fixed point
 
 ### single round
 
-PatternMatcherPass一次snapshot candidates并逆序遍历；new roots不重访
+PatternMatcherPass 会先对 candidates 做一次 snapshot，再逆序遍历；不会重新访问 new roots
 （`torch/_inductor/pattern_matcher.py:2627-2645`）。
 
 ### bounded repeat
 
-driver显式运行N次，例如pre-grad counter。
+driver 显式运行 N 次，例如 pre-grad counter。
 
 ### fixed point
 
-重复直到所有pass `modified=False`，但通常还有max steps防止不收敛。
-FX `PassManager`默认 `steps=1`；只在configured steps内根据modified提前停止
+重复执行，直到所有 pass 都满足 `modified=False`；但通常还会设置 max steps，以防无法收敛。
+FX `PassManager` 默认 `steps=1`；只会在 configured steps 范围内根据 modified 提前停止
 （`torch/fx/passes/infra/pass_manager.py:154-195`;
 `torch/fx/passes/infra/pass_manager.py:254-317`）。
 
-`PassResult.modified=True`本身不触发无限迭代。
+`PassResult.modified=True` 本身不会触发无限迭代。
 
 ## 6. 幂等性
 
@@ -137,14 +137,14 @@ FX `PassManager`默认 `steps=1`；只在configured steps内根据modified提前
 P(P(graph)) == P(graph)
 ```
 
-fusion/replacement也应避免匹配自己的输出，除非driver有明确fixed-point语义。
+fusion/replacement 也应避免匹配自己的输出，除非 driver 明确定义了 fixed-point 语义。
 
 非幂等风险：
 
-- A→B与另一个pass B→A；
-- 每轮插入新cast/view；
-- name/meta变化让同语义Node重复生成；
-- replacement root仍匹配search pattern。
+- A→B 与另一个 pass 的 B→A 相互循环；
+- 每轮都插入新的 cast/view；
+- name/meta 变化导致语义相同的 Node 被重复生成；
+- replacement root 仍然匹配 search pattern。
 
 ## 7. Candidate lifecycle
 
@@ -157,40 +157,40 @@ fusion/replacement也应避免匹配自己的输出，除非driver有明确fixed
 5. apply；
 6. 不加入新candidates。
 
-这使单轮复杂度和行为可控。需要新结果继续优化时，driver必须再调用一轮。
+因此，单轮执行的复杂度和行为都可控。如果还要继续优化新产生的结果，driver 必须再执行一轮。
 
 ## 8. Pass冲突
 
 常见冲突：
 
-- decomposition暴露pattern，但也摧毁专用op；
-- CSE合并sharing，改变 `_users`约束；
-- DCE先删diagnostic/effect被误判Node；
-- layout pass插copy使fusion pattern断开；
-- partition前rewrite改变save cost；
-- post-grad reinplace恢复mutation，后续rules需effect-aware。
+- decomposition 暴露 pattern，但也会破坏专用 op；
+- CSE 合并 sharing，改变 `_users` 约束；
+- DCE 先删除被误判为无效的 diagnostic/effect Node；
+- layout pass 插入 copy，使 fusion pattern 断开；
+- partition 前的 rewrite 改变 save cost；
+- post-grad reinplace 恢复 mutation，后续 rules 需要具备 effect awareness。
 
-解决方式是明确输入/输出invariant与ordering dependency，而不是只靠import顺序。
+解决方法是明确输入/输出 invariant 与 ordering dependency，而不是只依赖 import 顺序。
 
 ## 9. Recursion
 
-stage driver可能递归处理HOP/subgraphs；单个PatternMatcherPass不自动代表整个nested tree。
-每个child需独立Graph ownership、cleanup、lint/recompile。
+stage driver 可能递归处理 HOP/subgraphs；单个 PatternMatcherPass 不会自动覆盖整个 nested tree。
+每个 child 都需要独立处理 Graph ownership、cleanup 和 lint/recompile。
 
 ## 10. Observer、counter与debug
 
 可靠pass应记录：
 
 - attempted/matched/applied；
-- rejection原因；
-- before/after Node数；
-- stage与graph id；
+- rejection 原因；
+- before/after Node 数；
+- stage 与 graph id；
 - pattern name；
 - generated artifact；
 - compile time。
 
-counter不是generic `changed` bit；例如joint path的count可能仅统计某类match，不能据此推断
-其他custom pass是否修改图。
+counter 不是通用的 `changed` bit；例如 joint path 的 count 可能只统计某类 match，不能据此推断
+其他 custom pass 是否修改了图。
 
 ### `GraphTransformObserver`：三个 driver 共用的包裹机制
 
@@ -480,7 +480,7 @@ distributed 选项决定。文档可以陈述 driver 中的相对顺序与 invar
 
 - fixed `k`轮对相应 stage 乘 `k`；
 - until-stable `r`轮乘实际 `r`，且 `r`必须有上界或单调 measure；
-- pattern candidate snapshot降低单轮重入，但重复driver仍会重新查询/sort；
+- pattern candidate snapshot 降低了单轮重入的可能性，但重复执行 driver 时仍会重新查询/sort；
 - custom handler、extra check、FakeTensor trace 与 backend compile 是外生成本。
 
 没有 pass 命中率、graph size 与 convergence rounds 分布时，期望复杂度未定义。
@@ -488,8 +488,8 @@ distributed 选项决定。文档可以陈述 driver 中的相对顺序与 invar
 证明收敛常用单调measure：
 
 - 某类Node数严格下降；
-- expression canonical rank下降；
-- rewrite只从高level到低level；
+- expression canonical rank 下降；
+- rewrite 只从高 level 指向低 level；
 - bounded counter。
 
 ## 13. 已验证 Lab

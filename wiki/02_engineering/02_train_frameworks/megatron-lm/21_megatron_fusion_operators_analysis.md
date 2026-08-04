@@ -150,7 +150,7 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 **融合**: `chunk(y, 2) → activation(y1) → *y2 [+ bias] [+ weighting]`
 **场景**: FFN 的门控激活（SwiGLU = LLaMA/Mistral/Qwen 默认，GEGLU = PaLM）
 **优化**: 
-- Clamped variant（`fused_bias_swiglu.py:52-65`）：对数值进行夹持防止 FP8 溢出
+- Clamped variant（`fused_bias_swiglu.py:52-65`）：夹紧数值，防止 FP8 溢出
 - MoE 加权变体：将 routing probability 直接融入激活计算
 - `cpu_offload_input`: 将 backward 需要的 input 暂存 CPU（`fused_bias_swiglu.py:165`）
 

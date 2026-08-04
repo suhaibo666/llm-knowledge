@@ -11,7 +11,7 @@
 
 ## 1. 功能范围与定位
 
-**EP(专家并行)** 服务于 MoE 模型(llama4、deepseek_v3、gpt_oss)。MoE 有几十~几百个专家(expert),全部复制到每张卡显存会爆。EP 把**专家分散到不同卡**,每卡只持有一部分专家。
+**EP（专家并行）**面向 llama4、deepseek_v3、gpt_oss 等 MoE 模型。MoE 通常包含几十到几百个专家（expert），如果在每张卡上都保留完整副本，显存会很快耗尽。EP 将**专家分散到不同卡上**，使每张卡只持有部分专家。
 
 如 [[10_torchtitan_parallel_dims_analysis|ParallelDims 与 DeviceMesh]] 所述,EP 不占 `world_size` 乘积——它是对 `dp_shard × cp × tp` 子网格的重新切分,专家参数活在 `sparse_mesh` 上。
 

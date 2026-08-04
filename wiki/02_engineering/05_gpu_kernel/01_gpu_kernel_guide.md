@@ -170,10 +170,10 @@ Triton 的 `tl.load` 搭配 `prefetch` 提示，CUTLASS 3.x 的 Collective API�
 
 ### 导致回退 eager 执行的常见场景
 
--   Python 动态控制流（带数据依赖的 `if`、`while`） FX 图无法静态表示数据相关分支，遇到时自动断裂。
--   访问 tensor `.item()` 强制同步 将标量拉回 CPU 触发图断裂，常见于 loss 打印、早停条件判断。
--   未注册 FakeTensor 的自定义 `autograd.Function` 形状推导失败导致断裂；需用 `torch.library.impl_abstract` 注册 meta kernel。
--   不支持的 Python 内置操作（如 `len()`、`isinstance()`） Dynamo 无法 trace 时断裂；用 `torch._dynamo.explain(fn)(...)` 定位具体原因。
+-   **Python 动态控制流**：FX 图无法静态表示依赖数据的 `if`、`while` 分支，遇到此类控制流时会自动断裂。
+-   **访问 tensor 的 `.item()` 强制同步**：将标量拉回 CPU 会触发图断裂，常见于打印 loss、判断早停条件等场景。
+-   **自定义 `autograd.Function` 未注册 FakeTensor**：形状推导失败会导致图断裂；需用 `torch.library.impl_abstract` 注册 meta kernel。
+-   **不支持的 Python 内置操作**：Dynamo 无法 trace `len()`、`isinstance()` 等操作时会断裂；可用 `torch._dynamo.explain(fn)(...)` 定位具体原因。
 
 定位图断裂
 
@@ -276,13 +276,13 @@ FlashAttention 中各层概念的完整映射：
 
 > 写完 kernel 后，按以下顺序逐步排查性能瓶颈。从宏观到微观，先确定瓶颈类型再针对性优化。
 
--   Roofline 分析：是 compute-bound 还是 memory-bound？ 工具：`ncu --metrics l1tex__t_bytes_pipe_lsu_mem_global_op_ld.sum,sm__cycles_active.avg`。若 arithmetic intensity 低于 roofline 交叉点则是 memory-bound，优先优化访存。
--   Coalescing 检查 NSight Compute 指标：`l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum` 与请求数之比，接近 1 说明合并良好；比值高则有跨步访问。
--   Shared memory bank conflict 指标：`l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum`。有冲突则检查 tile 布局，考虑 padding 1 列。
--   Warp 效率（分支发散检查） 指标：`smsp__thread_inst_executed_per_inst_executed`。接近 1.0 说明分支少；接近 0.5 说明约一半线程被 mask。
--   Occupancy 分析 NSight Compute 的 Occupancy 面板。查看 achieved vs theoretical occupancy，以及限制因素（寄存器 / shared mem / block size）。
--   torch.compile：查看 fusion 是否生效 用 `torch.profiler` + `export_chrome_trace` 查 kernel launch 数量；kernel 数量少说明 fusion 正常。用 `torch._dynamo.explain` 查图断裂点。
--   Register spill 检查 编译时加 `--ptxas-options=-v`，查看 "spills" 行。有 spill 则考虑拆分 kernel 或减少寄存器使用，而非继续增大 tile 大小。
+-   **Roofline 分析**：判断算子受 compute 还是 memory 限制。可使用 `ncu --metrics l1tex__t_bytes_pipe_lsu_mem_global_op_ld.sum,sm__cycles_active.avg`；若 arithmetic intensity 低于 roofline 交叉点，则属于 memory-bound，应优先优化访存。
+-   **Coalescing 检查**：查看 NSight Compute 指标 `l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum` 与请求数之比。比值接近 1 表示合并良好；比值较高则存在跨步访问。
+-   **Shared memory bank conflict 检查**：查看指标 `l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum`。若存在冲突，应检查 tile 布局，并考虑增加 1 列 padding。
+-   **Warp 效率检查**：查看分支发散指标 `smsp__thread_inst_executed_per_inst_executed`。接近 1.0 表示分支较少；接近 0.5 表示约一半线程被 mask。
+-   **Occupancy 分析**：在 NSight Compute 的 Occupancy 面板中查看 achieved occupancy、theoretical occupancy 及其限制因素（寄存器 / shared mem / block size）。
+-   **检查 torch.compile 的 fusion 是否生效**：用 `torch.profiler` + `export_chrome_trace` 查看 kernel launch 数量；kernel 数量较少通常说明 fusion 正常。用 `torch._dynamo.explain` 检查图断裂点。
+-   **Register spill 检查**：编译时添加 `--ptxas-options=-v`，查看 "spills" 行。若发生 spill，应考虑拆分 kernel 或减少寄存器使用，而不是继续增大 tile。
 
 > **通用优化优先级（经验顺序）：**① 修复 non-coalesced access → ② 引入 shared memory tiling → ③ 消除 bank conflict → ④ 减少 warp divergence → ⑤ 调整 occupancy（tile size / register 用量） → ⑥ 引入 async pipeline（cp.async）→ ⑦ 切换 Tensor Core MMA 指令。
 

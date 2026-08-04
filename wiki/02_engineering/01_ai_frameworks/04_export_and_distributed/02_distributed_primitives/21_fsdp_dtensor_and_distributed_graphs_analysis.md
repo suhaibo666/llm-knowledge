@@ -125,8 +125,8 @@ placement包括Shard、Replicate和Partial；operator dispatch会传播placement
 （`torch/distributed/tensor/_dispatch.py:575-603` 与
 `torch/distributed/tensor/_dispatch.py:604-629`）。
 
-这意味着“用户代码没有显式collective”不代表没有通信：placement不兼容会在operator
-dispatch中引入reshard。
+因此，“用户代码没有显式 collective”并不等于没有通信：placement 不兼容时，operator
+dispatch 会引入 reshard。
 
 ShardingPropagator维护op→rule、op→strategy和带schema信息的cache；shape/stride参数还需按
 global/local语义调整

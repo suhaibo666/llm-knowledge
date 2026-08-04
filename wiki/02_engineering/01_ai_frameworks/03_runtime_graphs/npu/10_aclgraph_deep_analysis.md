@@ -221,7 +221,7 @@ def _apply_npugraph_tree_methods():
     torch.compiler.npugraph_mark_step_begin = npugraph_mark_step_begin
 ```
 
-NPU 没有独立的 graph tree 注册接口，而是**直接 monkey-patch 上游的 cudagraphify 函数**。这意味着 ACLGraph 的激活依赖于替换 PyTorch 内部符号。
+NPU 没有独立的 graph tree 注册接口，而是**直接 monkey-patch 上游的 cudagraphify 函数**。因此，激活 ACLGraph 依赖于替换 PyTorch 内部符号。
 
 **为什么必须 patch**：社区 `cudagraphify` 在 `torch/_inductor/compile_fx.py` 中是模块级函数，没有 backend 注册机制，只能通过替换实现。
 
@@ -350,7 +350,7 @@ void graph_task_update_begin(c10_npu::NPUStream stream, NPUTaskGroupHandle handl
 }
 ```
 
-CANN 支持**任务分组捕获**和**分组动态更新**。这使得部分子图可以在不重新捕获整个 graph 的情况下被替换。CUDA Graph 在 CUDA 12.x 之前没有这种"部分更新"能力（CUDA Graph 有条件节点但语义不同）。
+CANN 支持**任务分组捕获**和**分组动态更新**，因此可以替换部分子图，而不必重新捕获整个 graph。CUDA Graph 在 CUDA 12.x 之前没有这种"部分更新"能力（CUDA Graph 有条件节点，但语义不同）。
 
 #### 差异 7：Stream Attribute 的 Cache Op Info 设置
 

@@ -111,15 +111,15 @@ objects。不存在 `N_fx == N_ir == N_scheduler`不变量。
   （`torch/_inductor/lowering.py:481-510`；
   `torch/_inductor/lowering.py:511-532`）。
 
-lowering的职责是返回合法IR/value，不是独立做全局fusion decision。
-这里的wrapper也不是decomposition pass；算子分解发生在前面的FX/ATen规范化阶段。
+lowering 的职责是返回合法的 IR/value，而不是独立完成全局 fusion decision。
+这里的 wrapper 也不是 decomposition pass；算子分解发生在前面的 FX/ATen 规范化阶段。
 
 ### 4.1 注册器为什么还要包一层 wrapper
 
-`register_lowering()`不是简单执行 `lowerings[op] = fn`。源码先为每个 overload 建立统一
+`register_lowering()` 并不是简单执行 `lowerings[op] = fn`。源码会先为每个 overload 建立统一
 wrapper，再按注册参数对输入做广播和类型提升，调用真正的 lowering，最后用
-`validate_ir()`检查返回结构。一个 lowering 作者因此只需实现“规范输入 → 合法 IR
-value”的局部语义，不必在每个算子里重复输入标准化
+`validate_ir()` 检查返回结构。因此，lowering 作者只需实现“规范输入 → 合法 IR
+value”的局部语义，不必在每个算子中重复执行输入标准化
 （`torch/_inductor/lowering.py:497-525`）。
 
 这个设计由 FX 图中的三个场景共同决定：

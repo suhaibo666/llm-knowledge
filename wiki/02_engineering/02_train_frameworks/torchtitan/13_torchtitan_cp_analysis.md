@@ -3,7 +3,7 @@
 > **代码基准**:torchtitan `main` @ `cf3c4312` · PyTorch CP 内核(版本差异见下方"版本说明")
 > **最后更新**:2026-07-31 · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
 >
-> **划界声明**:CP 通用机制(为什么要切序列、折叠/头尾负载均衡的数学证明、因果块裁剪、Ring 主循环 + online-softmax、通信掩盖原理、通信量代数)已归一到 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]——事实上,本文的 Ring 主循环伪代码、负载均衡量化算例、通信掩盖时序图正是该理论页对应章节的骨架来源。**本页只保留 torchtitan/PyTorch CP 的框架实现差异**:trainer/parallelize 接入点、SDPA-ring 与 FlexAttention-allgather 两条路径的取舍(torchtitan 独有的双路径架构)、DTensor dispatcher 接线、以及"不手写 CUDA stream、靠 functional collectives 实现异步"这一 PyTorch 特有的工程选择。
+> **划界声明**：CP 的通用机制（切分序列的原因、折叠/头尾负载均衡的数学证明、因果块裁剪、Ring 主循环与 online-softmax、通信掩盖原理和通信量代数）已统一收录在 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]。其中，Ring 主循环伪代码、负载均衡量化算例和通信掩盖时序图均源自本文相应内容。**本页只讨论 torchtitan/PyTorch CP 在框架实现上的差异**：trainer/parallelize 接入点、SDPA-ring 与 FlexAttention-allgather 两条路径的取舍（torchtitan 特有的双路径架构）、DTensor dispatcher 接线，以及“不手写 CUDA stream，而依靠 functional collectives 实现异步”这一 PyTorch 特有的工程选择。
 >
 > 行号约定:torchtitan 以 `torchtitan/` 为根;PyTorch CP 实现以 `[pt]` 前缀。
 

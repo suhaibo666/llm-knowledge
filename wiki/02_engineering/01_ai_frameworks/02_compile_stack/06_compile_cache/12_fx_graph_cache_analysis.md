@@ -30,7 +30,7 @@
 | `CacheabilityValidator` | 集中判定「能不能缓存」，不能就抛 `BypassFxGraphCache` | `codecache.py:1038` |
 | `TritonBundler` | 把 Triton 编译产物打包进 cache entry | `triton_bundler.py:92` |
 
-架构位置（谁在谁之下）：
+架构层级关系：
 
 ```mermaid
 flowchart TB

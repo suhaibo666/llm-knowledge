@@ -634,7 +634,7 @@ comm_stream:  combine_bwd │ dispatch_fwd ─► dispatch_bwd │ combine_fwd
 comp_stream:  attn_fwd    │ mlp_bwd ─► mlp_bwd_dw ─► mlp_fwd │ attn_bwd
               ↑ 前向 attn 计算掩盖反向 combine 的 A2A;反向 mlp 计算掩盖前向 dispatch 的 A2A
 ```
-`mlp_bwd_dw`(`backward_dw`)即 `delay_wgrad_compute` 拆出的权重梯度,被刻意排在两次 A2A 之间填缝。最后一层的 `attn.backward_dw()` 还被特意延后(`is_last_layer_in_bwd`),用来重叠 P2P 通信。
+`mlp_bwd_dw`（`backward_dw`）就是 `delay_wgrad_compute` 拆出的权重梯度计算，它被刻意安排在两次 A2A 之间，用于填补空隙。最后一层的 `attn.backward_dw()` 还会通过 `is_last_layer_in_bwd` 延后执行，以便与 P2P 通信重叠。
 
 **流程图**
 

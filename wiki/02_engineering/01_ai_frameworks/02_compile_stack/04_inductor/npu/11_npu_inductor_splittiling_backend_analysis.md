@@ -305,7 +305,7 @@ NPU 从上游 decomposition 表中**移除**了 `nll_loss_forward`、`log_softma
 
 ### 3.3 总体判断
 
-NPU Triton 路径在**宏观架构**上遵循了社区 Inductor 的设计模式（backend registration → lowering → scheduling → codegen → runtime），但在**微观实现**上几乎每一个阶段都需要 override。这不是 torch_npu 团队的问题，而是**社区 Inductor 在 v2.7.1 时期的设备抽象确实没有为 "非 CUDA SIMT 架构" 做好准备**。
+NPU Triton 路径在**宏观架构**上沿用了社区 Inductor 的设计模式（backend registration → lowering → scheduling → codegen → runtime），但在**微观实现**上，几乎每个阶段都需要 override。根本原因并不在 torch_npu 团队，而在于**社区 Inductor 在 v2.7.1 时期的设备抽象尚未充分支持“非 CUDA SIMT 架构”**。
 
 ---
 

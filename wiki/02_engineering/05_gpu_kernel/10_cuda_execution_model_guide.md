@@ -113,7 +113,7 @@ int main() {
 
 - **warp size = 32**（NVIDIA GPU 固定值；AMD 的 wavefront 是 64，见 §6）。
 - Block 按**连续 threadIdx** 切 warp：warp 0 = 线程 0–31，warp 1 = 线程 32–63……（Demo 1 已亲眼可见）。
-- **Warp 才是真正的执行/调度单位**：源说「一个 warp 一次执行一条公共指令」（one common instruction at a time）。SM 的 warp 调度器在多个 warp 间快速切换,用「换班组干活」来**掩盖访存延迟**——这就是 GPU 吞吐机器的运作方式。
+- **Warp 才是真正的执行/调度单位**：源文指出“一个 warp 一次执行一条公共指令”（one common instruction at a time）。SM 的 warp 调度器会在多个 warp 之间快速切换，以**隐藏访存延迟**；这正是 GPU 吞吐式执行模型的工作方式。
 
 ### Demo 2：查出你这张卡的真实硬件数字（可运行）
 

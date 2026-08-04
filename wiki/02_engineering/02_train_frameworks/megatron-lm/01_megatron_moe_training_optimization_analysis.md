@@ -582,7 +582,7 @@ FORWARD → PRE_BACKWARD → POST_BACKWARD → IDLE
 ```
 
 **关键特性**：
-- **与 Activation Checkpointing 协同**（`:127-130`）：重算整个 Layer 时参数 Gather 一次，同时服务于重算和 Backward
+- **与 Activation Checkpointing 协同**（`:127-130`）：重算整个 Layer 时只 Gather 一次参数，供重算和 Backward 共同使用
 - **Delayed Wgrad Overlap**（`:77-103`）：expert 参数的梯度 reduce-scatter 延迟到 MoE dispatch backward 完成，最大化 EP+DP 通信重叠
 - **NCCL UserBuffer**（`:164-168`）：`nccl_ub=True` 使用 NCCL UB 减少 SM 占用，自动开启双缓冲
 - **HSDP 分层**：组内 ZeRO-3 + 组间复制（`outer_dp_sharding_strategy`）
@@ -970,7 +970,7 @@ TP=8, PP=32, EP=32, DP=8, CP=4
 
 ### 9.4 核心洞察
 
-1. **EP 是 MoE 训练的第一性原理**——没有 EP，大规模 MoE 根本无法装入 GPU。EP 与其他所有维度正交，且通信可以被重叠。
+1. **EP 是 MoE 训练的第一性原理**——没有 EP，大规模 MoE 根本无法装入 GPU。EP 与其他所有维度正交，而且通信可以与计算重叠。
 
 2. **通信 Overlap 是免费的午餐**——在 MoE 密集的通信模式下（DP + TP + EP + CP），Overlap 能将相当一部分通信隐藏在计算中。Megatron-LM 的 6 维 Overlap 是所有优化中 ROI 最高的。
 
@@ -978,7 +978,7 @@ TP=8, PP=32, EP=32, DP=8, CP=4
 
 4. **融合算子是积少成多**——单个融合可能只节省 5-10μs，但在 80 层 × 多个 element-wise 操作的累积下，每天训练可节省数小时。
 
-5. **MoE 梯度 = 专家独立性**——每个 expert 的梯度和激活是独立的，这使得 Paged Stash 和 per-expert 的显存管理成为可能，也是 MoE 相比稠密模型最大的优化自由度。
+5. **MoE 梯度 = 专家独立性**——每个 expert 的梯度和激活彼此独立，因此可以采用 Paged Stash 和 per-expert 显存管理；这也是 MoE 相比稠密模型最主要的优化空间。
 
 ---
 

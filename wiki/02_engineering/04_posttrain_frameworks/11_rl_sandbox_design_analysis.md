@@ -32,7 +32,7 @@
 - 可清理可重置
 - 可观测可审计
 
-如果以为这就是 `docker run` 一下，那基本可以告别 RL coding 训练。
+如果只把这理解为执行一次 `docker run`，系统将无法支撑 RL coding 训练。
 
 ### 1.2 Sandbox 没做好的真实失败模式
 
@@ -86,13 +86,13 @@ Kimi K3 的 white-box environment 把 harness 本身也版本化：tools、syste
 | Kata Containers | 极强 | 几秒 | 中 | K8s 友好 |
 | Bare 容器 + seccomp | 弱 | 极快 | 极低 | 完全可信代码 |
 
-Anthropic、OpenAI 这个层级，基本都用 Firecracker 或类似 microVM 方案。隔离 + 冷启都够，性能也够好。
+Anthropic、OpenAI 这类规模的系统，基本都采用 Firecracker 或类似的 microVM 方案。这类方案可以同时满足隔离性、冷启动时延和性能需求。
 
 ---
 
 ## 4. Disaggregated 架构（2025 RL Infra 共识）
 
-2025 年所有严肃 RL infra 论文都收敛到了同一个架构：**rollout 和 training 物理分离**。
+2025 年所有严谨的 RL infra 研究都收敛到同一类架构：**rollout 和 training 物理分离**。
 
 ```
 ┌─────────────────────┐
@@ -141,10 +141,10 @@ I/O 密集型           GPU 推理密集型              CPU 密集型
 三个阶段的**资源诉求和时延特征完全不同**：
 
 - **Phase 1**：I/O 密集，可大批量并行预启
-- **Phase 2**：GPU 推理密集，要打到 inference cluster
+- **Phase 2**：GPU 推理密集，需要调度到 inference cluster
 - **Phase 3**：CPU 密集，**方差极大**——trivial 任务 100ms 跑完、跑全量 CI 套件要 5 分钟
 
-现代设计让三阶段独立排队、独立调度。Phase 3 的方差是 long-tail 杀手，直接驱动 [[12_rl_infra_efficiency_analysis]] 中的长尾治理手段（redundant rollouts、trajectory-level scheduling、早停、严格 timeout）。
+现代设计让三个阶段独立排队、独立调度。Phase 3 的高方差是产生长尾的主要原因，直接促成了 [[12_rl_infra_efficiency_analysis]] 中的长尾治理手段（redundant rollouts、trajectory-level scheduling、早停、严格 timeout）。
 
 ---
 

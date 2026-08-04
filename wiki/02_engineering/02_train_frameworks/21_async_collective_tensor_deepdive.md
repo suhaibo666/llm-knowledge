@@ -208,7 +208,7 @@ def wait_tensor(tensor):
 
 *图 3：ACT 的能力边界*
 
-> **根本原因**：ACT 是一个**惰性同步**机制——它让"发起通信"和"等待通信完成"之间可以被其他计算填充。但这个填充的计算必须在**同一个调用栈**内、在等待点之前。跨 micro-batch 需要的是**调度机制**——一个外部控制器能在不同 micro-batch 的不同 sub-stage 之间来回切换，这是 ZBV/DualPipe/_step_microbatches 做不到的，因为它们的最小调度单元是 stage 级的 F/I/W。
+> **根本原因**：ACT 是一种**惰性同步**机制——它允许在“发起通信”和“等待通信完成”之间插入其他计算，但这些计算必须位于**同一个调用栈**内，并且出现在等待点之前。跨 micro-batch 则需要一种**调度机制**：由外部控制器在不同 micro-batch 的不同 sub-stage 之间切换。ZBV、DualPipe 和 _step_microbatches 无法做到这一点，因为它们最小的调度单元是 stage 级的 F/I/W。
 
 ## 五 对比：Megatron 如何绕过 ACT 的限制
 

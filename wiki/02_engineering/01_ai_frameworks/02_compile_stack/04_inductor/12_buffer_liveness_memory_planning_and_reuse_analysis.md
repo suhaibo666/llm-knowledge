@@ -16,10 +16,10 @@ FX logical value
 
 不是每个FX value都占独立buffer；也不是每个buffer都对应独立allocator allocation：
 
-- fusion可让intermediate不落地；
-- view可alias；
-- reuse可让两个不重叠lifetime buffers共享storage；
-- external/output constraints可阻止reuse。
+- fusion 可以避免 intermediate 落地；
+- view 可以形成 alias；
+- reuse 可以让两个 lifetime 不重叠的 buffer 共享 storage；
+- external/output constraints 可以阻止 reuse。
 
 ## 2. 从users到liveness
 
@@ -94,13 +94,13 @@ name，最后减去未来仍会使用的集合
 
 - graph output；
 - input/parameter ownership；
-- alias/view仍存活；
+- alias/view 仍然存活；
 - mutation target/version；
 - MultiOutput layout；
-- external library持有；
-- stream/mempool不兼容；
-- alignment/dtype/device/size不兼容；
-- communication buffer专用pool。
+- 被 external library 持有；
+- stream/mempool 不兼容；
+- alignment/dtype/device/size 不兼容；
+- communication buffer 使用专用 pool。
 
 ## 6. 三套不能混写的“memory planning”
 
@@ -244,9 +244,9 @@ recompute减少saved bytes但bw新增operations/buffers
   alias 关系；集合哈希操作按均摊常数计；
 - 普通reuse字典匹配近线性，但当前line构造用 `scheduler.nodes.index(current)`，可使构造最坏
   达 `O(BV)`；
-- peak reorder多heuristics，LPMF path可二次；
-- pooled planner排序+allocation tree search最坏超线性；
-- symbolic size comparison依赖expression simplification。
+- peak reorder 采用多种 heuristics，LPMF path 可以执行两次；
+- pooled planner 的排序和 allocation tree search 在最坏情况下超过线性复杂度；
+- symbolic size comparison 依赖 expression simplification。
 
 普通 wrapper reuse 的数据路径是：
 
@@ -463,7 +463,7 @@ buf1  = alloc_from_pool(pool1, align(4*s77*s77),  ...)
 boxed inputs、检查/对齐 size/stride/alignment、建立 symbolic scalar、分配中间
 buffer/workspace、依次 launch kernel/extern op、处理 stream/device context、释放或复用
 dead buffer、组装 views/aliases 和用户 outputs。核心结论：**steady-state compiled call
-不是单 kernel 调用；generated wrapper 是一段 runtime program**，负责把 Scheduler 结果和
+不是单次 kernel 调用；generated wrapper 是一段 runtime program**，用于将 Scheduler 结果和
 内存生命周期变成可执行顺序。
 
 `CompiledFxGraph` 的 runtime 入口使用单个 input sequence，源码为这个协议定义

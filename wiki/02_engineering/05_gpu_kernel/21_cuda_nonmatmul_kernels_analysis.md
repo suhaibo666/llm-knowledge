@@ -1,4 +1,4 @@
-# 非 GEMM 类算子:统一的执行模型,不同的优化逻辑
+# 非 GEMM 类算子：统一的执行模型，不同的优化逻辑
 
 > **Source baseline**: `raw/02_engineering/05_gpu_kernel/cuda_nonmatmul_kernels_final.html`，本地快照 2026-07-22，SHA-256 `ba1ce1f99adf1d9921da29e73485ecc1239238fe133b27fb05e84d883f7bdb02`
 > **Dimension**: Deep Dive（mechanism-level）
@@ -6,15 +6,15 @@
 >
 > 本页由原始 HTML 完整转换；各节的 `Source locator` 指向不可变 raw 文件中的 HTML 行号。roofline 图与算子位置是定性模型，除非正文另行给出，不代表实测性能。
 
-grid / block / thread / warp / SM、SIMT、合并访存、occupancy 这一层,任何 kernel 都一样。但 GEMM 那套打法(shared memory 分块复用、warp tile、MMA、寄存器分块、多级流水)是"计算受限 + 高复用"这一特定处境的产物,换到别的算子基本不迁移。
+所有 kernel 都采用相同的 grid / block / thread / warp / SM、SIMT、合并访存和 occupancy 模型。但 GEMM 的优化方法（shared memory 分块复用、warp tile、MMA、寄存器分块、多级流水）源于“计算受限 + 高复用”这一特定场景，基本无法直接迁移到其他算子。
 
-> **第一层分类,看两个首要维度:** ① *算术强度(FLOP/byte)→ roofline 位置*:计算受限还是访存受限;② *数据依赖模式*:逐点无关 / 多对一通信 / 邻域复用 / 前缀依赖 / 不规则。这两个维度定下 kernel 的*基本结构*;实际调优还受问题规模与 shape、可用并行度、launch 开销、原子竞争、warp divergence、缓存命中、执行管线差异、数值确定性等影响(散见各节"坑")。GEMM 恰好是"高算术强度 + 强复用"的角落,大多数其他算子落在另一头。
+> **第一层分类主要考察两个维度：**① *算术强度（FLOP/byte）所处的 roofline 位置*：计算受限还是访存受限；② *数据依赖模式*：逐点无关 / 多对一通信 / 邻域复用 / 前缀依赖 / 不规则。这两个维度决定 kernel 的*基本结构*；实际调优还受问题规模与 shape、可用并行度、launch 开销、原子竞争、warp divergence、缓存命中、执行管线差异、数值确定性等因素影响（散见各节“坑”）。GEMM 恰好位于“高算术强度 + 强复用”的一端，大多数其他算子则位于另一端。
 
-## 1. 先定位:roofline 上,大多数非 GEMM 算子在左边
+## 1. 先定位：在 roofline 上，大多数非 GEMM 算子位于左侧
 
 > **Source locator**: `cuda_nonmatmul_kernels_final.html:74-127`
 
-屋顶线把算子分成两个世界。*左侧带宽受限(斜线区)*:性能上限 = 带宽 × 算术强度,你只是在搬数据,优化=减少 HBM 往返;*右侧计算受限(水平屋顶区)*:算术吞吐成为上限——数据复用已让每字节对应足够多的计算,继续省 HBM 流量收益有限,优化重点转为计算流水线 / Tensor Core / ILP 的利用率。*大尺寸、形状良好的* GEMM 通常在最右(靠 Tensor Core 把天花板顶得更高);但 GEMV、瘦 GEMM、小 batch、decode 阶段的线性层会落回左侧甚至 latency-bound——位置取决于形状,不取决于算子名字。elementwise / reduction / softmax / scan 挤在最左。
+屋顶线将算子分成两类。*左侧为带宽受限区（斜线区）*：性能上限 = 带宽 × 算术强度，主要开销来自数据搬运，因此应优先减少 HBM 往返。*右侧为计算受限区（水平屋顶区）*：数据复用已使每字节对应足够多的计算，算术吞吐成为上限，继续减少 HBM 流量的收益有限，优化重点转向提高计算流水线、Tensor Core 和 ILP 的利用率。*尺寸较大、形状规整的* GEMM 通常位于最右侧（Tensor Core 会进一步抬高其性能上限）；但 GEMV、瘦 GEMM、小 batch 以及 decode 阶段的线性层会回到左侧，甚至变成 latency-bound。算子的位置取决于形状，而不是算子名称。elementwise、reduction、softmax 和 scan 通常位于最左侧。
 
 ![算术强度 FLOP/byte →](assets/cuda_nonmatmul_kernels_analysis_fig1.png)
 
@@ -22,23 +22,23 @@ grid / block / thread / warp / SM、SIMT、合并访存、occupancy 这一层,�
 
 同一条带宽斜线,两级计算天花板。Tensor Core 把 GEMM 的天花板顶高、把 ridge 推右;左侧算子受斜线约束,再优化也只能贴着带宽跑。
 
-## 2. 再看依赖:五种数据依赖形状,五套 kernel 结构
+## 2. 再看依赖：五种数据依赖形态，五套 kernel 结构
 
 > **Source locator**: `cuda_nonmatmul_kernels_final.html:128-195`
 
-算子之间真正的区别是*数据依赖*——一个输出要看哪些输入。形状不同,能不能并行、要不要跨线程通信、能不能复用,就全不同。
+算子之间真正的区别在于*数据依赖*，也就是一个输出依赖哪些输入。依赖形态不同，可并行程度、是否需要跨线程通信以及数据能否复用也会随之变化。
 
 ![逐点 1→1](assets/cuda_nonmatmul_kernels_analysis_fig2.png)
 
 依赖形状定下 kernel 的基本结构:1→1 全并行(无复用);N→1 必须通信;邻域重叠才有复用(像 GEMM);前缀是串行链(⊗ 需结合律);不规则靠间接寻址。
 
-> 下面把每一类都按"依赖 → kernel 结构 → 关键技术 → 坑"展开,各配一张图。reduction 与 softmax 的详图见后续小节。
+> 下面按照“依赖 → kernel 结构 → 关键技术 → 常见问题”的顺序展开各类算子，并分别配图说明。reduction 与 softmax 的详图见后续小节。
 
-## 3. Elementwise:全并行,瓶颈是带宽 // 激活、加、缩放、cast、dropout
+## 3. Elementwise：完全并行，瓶颈在带宽——激活、加法、缩放、cast、dropout
 
 > **Source locator**: `cuda_nonmatmul_kernels_final.html:196-259`
 
-**依赖**:无,每个输出只看对应输入,embarrassingly parallel。**结构**:grid-stride loop,一套 launch 配置吃任意 N,还便于线程复用、摊薄启动开销。**关键技术**:① 合并访存优先——warp 内相邻线程访问相邻地址即可形成完全合并的内存事务,*标量 float 也能打满带宽*;在对齐与尾部处理允许时,`float4`/128-bit 向量化能进一步减少指令数、地址计算与循环开销,是有益的优化而非达到高带宽的必要条件;② occupancy 只要"够用"盖住访存延迟即可,不追求最大化、更不追求大 tile;③ 最大杠杆是 *融合*——把一串 elementwise、或并进 GEMM 的 epilogue、或并进 norm/reduction,合成一个 kernel,省掉反复读写 HBM。**坑**:elementwise 往往不值得单独成 kernel——编译器(Triton / Inductor)会把它并进相邻算子;瓶颈是 HBM 带宽,不是算力。GEMM 的 warp tile / MMA 在这里一个都用不上。
+**依赖**：无，每个输出只依赖对应位置的输入，可以完全并行。**结构**：采用 grid-stride loop，一套 launch 配置即可处理任意 N，同时便于复用线程并摊薄启动开销。**关键技术**：① 优先保证合并访存——warp 内相邻线程访问相邻地址即可形成完全合并的内存事务，*即使使用标量 float 也能打满带宽*；在对齐和尾部处理允许时，`float4`/128-bit 向量化还能进一步减少指令数、地址计算和循环开销，但它不是达到高带宽的必要条件。② occupancy 只需足以隐藏访存延迟，不必追求最大值，也不必使用大 tile。③ 最有效的手段是*融合*——将一串 elementwise 操作，或将其并入 GEMM 的 epilogue、norm/reduction，合并为一个 kernel，从而避免反复读写 HBM。**常见问题**：elementwise 往往不值得单独生成 kernel，编译器（Triton / Inductor）通常会将它并入相邻算子；其瓶颈是 HBM 带宽，而不是算力。GEMM 的 warp tile / MMA 在这里并不适用。
 
 ![映射:grid-stride loop + 向量化](assets/cuda_nonmatmul_kernels_analysis_fig3.png)
 
@@ -46,7 +46,7 @@ float4 / grid-stride 分配 未融合(HBM 往返多) 融合(1 读 1 写)
 
 每线程跨步搬多个 float4,一套配置吃任意 N;真正省时间的是把相邻 elementwise 融成一个 kernel。
 
-## 4. Reduction:多对一通信,四级漏斗 // sum、max、norm、softmax 分母
+## 4. Reduction：多对一通信，四级漏斗——sum、max、norm、softmax 分母
 
 > **Source locator**: `cuda_nonmatmul_kernels_final.html:260-311`
 
@@ -58,7 +58,7 @@ warp 级(洗牌） block 级(shared mem） grid 级(atomic）
 
 线程 → warp → block → grid,漏斗式逐级收窄。每层换一种通信原语:寄存器洗牌 → shared memory → 原子/二次 kernel。
 
-## 5. Softmax / LayerNorm / RMSNorm:reduction + 逐点,融合成单遍 // 访存受限的第一杠杆
+## 5. Softmax / LayerNorm / RMSNorm：reduction + 逐点，融合成单遍——访存受限算子的首要优化手段
 
 > **Source locator**: `cuda_nonmatmul_kernels_final.html:312-363`
 
@@ -68,9 +68,9 @@ warp 级(洗牌） block 级(shared mem） grid 级(atomic）
 
 朴素多遍(HBM 往返多） 融合单遍(HBM 往返少）
 
-带宽受限下,HBM 流量就是一切。online-softmax / Welford 让"多遍"塌缩成"单遍"(前提:整行驻留片上;超长行需分块重读或多 CTA 协作)。
+在带宽受限场景下，HBM 流量是主要瓶颈。online-softmax / Welford 可以将“多遍”处理压缩为“单遍”（前提是整行能够驻留片上；超长行仍需分块重读或由多个 CTA 协作）。
 
-## 6. Attention / FlashAttention:两套逻辑合流 // 训练里最关键的融合 kernel
+## 6. Attention / FlashAttention：两套逻辑合流——训练中最关键的融合 kernel
 
 > **Source locator**: `cuda_nonmatmul_kernels_final.html:364-412`
 
@@ -78,9 +78,9 @@ warp 级(洗牌） block 级(shared mem） grid 级(atomic）
 
 ![Qᵢ 块](assets/cuda_nonmatmul_kernels_analysis_fig6.png)
 
-Q 分块常驻,K/V 块流式进来;每来一块就算局部 attention、用 online softmax 修正、累加进输出——两套逻辑在一个 kernel 里合流。
+Q 分块常驻片上，K/V 分块以流式方式载入；每载入一块，就计算局部 attention、用 online softmax 修正并累加到输出中，从而将两套逻辑合并到一个 kernel 中。
 
-## 7. Stencil / 卷积:邻域复用,最像 GEMM // halo tiling
+## 7. Stencil / 卷积：邻域复用，最接近 GEMM——halo tiling
 
 > **Source locator**: `cuda_nonmatmul_kernels_final.html:413-447`
 
@@ -90,7 +90,7 @@ Q 分块常驻,K/V 块流式进来;每来一块就算局部 attention、用 onli
 
 halo tiling:一次把 tile + 边界搬进 shared memory,块内复用重叠窗口——机制上最接近 GEMM,但是否计算受限取决于算术强度。
 
-## 8. Scan / 前缀和:前缀依赖,并行扫描 // cumsum、MoE 容量、采样
+## 8. Scan / 前缀和：前缀依赖，并行扫描——cumsum、MoE 容量、采样
 
 > **Source locator**: `cuda_nonmatmul_kernels_final.html:448-480`
 
@@ -100,7 +100,7 @@ halo tiling:一次把 tile + 边界搬进 shared memory,块内复用重叠窗口
 
 前缀依赖靠三级并行扫描拆开:warp 内 shfl_up、block 内加偏移、grid 用 decoupled look-back 单遍完成。
 
-## 9. Gather / Scatter / 稀疏 / Sort:不规则寻址与流式重排 // MoE 路由、embedding、稀疏
+## 9. Gather / Scatter / 稀疏 / Sort：不规则寻址与流式重排——MoE 路由、embedding、稀疏
 
 > **Source locator**: `cuda_nonmatmul_kernels_final.html:481-547`
 
@@ -110,7 +110,7 @@ halo tiling:一次把 tile + 边界搬进 shared memory,块内复用重叠窗口
 
 不规则访存:gather 读发散、scatter 写冲突要 atomic;MoE 路由和 embedding 查表就是这类,常落在 roofline 之下。
 
-## 10. 汇总:一张对照表
+## 10. 汇总：一张对照表
 
 > **Source locator**: `cuda_nonmatmul_kernels_final.html:548-567`
 
@@ -126,7 +126,7 @@ halo tiling:一次把 tile + 边界搬进 shared memory,块内复用重叠窗口
 
 > 倾向的反差(非绝对) **GEMM 常故意跑低 occupancy + 大 tile**(为最大化复用、把状态塞满寄存器,延迟隐藏靠 ILP);**访存受限的算子通常要足够的 occupancy 去压满带宽**——但"每线程状态越少越好"并不成立:它们同样能从每线程多元素、向量化、地址复用、ILP 中获益。共同的准则是*资源 × 延迟隐藏的平衡*:occupancy 不是越高越好,低 occupancy 也能靠 ILP 盖延迟——两类算子只是权衡的落点不同,不存在一刀切的相反方向。
 
-## 11. 落到训练:一个 transformer step 的两条主线
+## 11. 落到训练：一个 transformer step 的两条主线
 
 > **Source locator**: `cuda_nonmatmul_kernels_final.html:568-586`
 
@@ -139,7 +139,7 @@ halo tiling:一次把 tile + 边界搬进 shared memory,块内复用重叠窗口
 
 > 同一算子会换阵营:decode 阶段的线性层(GEMV / 瘦 GEMM)与 attention 都偏 KV-cache 带宽与延迟;小 batch、skinny 形状的 GEMM 也可能 memory-bound。roofline 位置取决于形状与场景,不取决于算子名字。
 
-> **所以"编程逻辑是否一样"的答案是:** 底层执行模型(grid/block/thread/warp/SM)统一,但*优化逻辑几乎完全不同*。GEMM 那套(tiling / 复用 / MMA / 寄存器分块)是"计算受限 + 高复用"的专属打法;其余大多数算子是访存受限,主战场是**融合与向量化**——编译器(Triton、Inductor、XLA)的核心工作,和 GEMM 里"选 tile"是两条不同的线。
+> **因此，“编程逻辑是否相同”的答案是：**底层执行模型（grid/block/thread/warp/SM）统一，但*优化逻辑几乎完全不同*。GEMM 的 tiling、复用、MMA 和寄存器分块是“计算受限 + 高复用”场景的专用方法；其余大多数算子受访存限制，优化重点是**融合与向量化**。这是编译器（Triton、Inductor、XLA）的核心工作，与 GEMM 中的“选择 tile”属于两条不同的优化主线。
 
 ---
 

@@ -1,6 +1,6 @@
 # 01 · Eager 运行时地基 — 目录索引
 
-> PyTorch 默认即时执行(eager mode)所依赖的数据模型与机制:张量表达、算子分发、算子定义与执行、反向自动微分、`torch.nn` 模块体系、运行时横切设施(缓存分配器/AMP/Profiler)。torch.compile 编译栈(见 [[02_compile_stack/index]])建立在这套地基之上。
+> PyTorch 默认即时执行（eager mode）所依赖的数据模型与机制：张量表达、算子分发、算子定义与执行、反向自动微分、`torch.nn` 模块体系，以及运行时横切设施（缓存分配器/AMP/Profiler）。torch.compile 编译栈（见 [[02_compile_stack/index]]）建立在这套地基之上。
 
 ## 子目录
 
@@ -16,5 +16,5 @@
 
 ## Related Pages
 
-- [[01_ai_frameworks/index]] — 本域总索引(5 层架构导航)
-- [[02_compile_stack/index]] — torch.compile 编译栈(建立在本层之上)
+- [[01_ai_frameworks/index]] — 本域总索引（5 层架构导航）
+- [[02_compile_stack/index]] — torch.compile 编译栈（建立在本层之上）

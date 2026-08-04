@@ -1,13 +1,13 @@
 # TileLang：Tile-Level IR 与新一代 Kernel 编程范式
 
-> 填补图 Pass（太高层）和 Kernel 代码（太低层）之间的 Gap
+> 填补图 Pass（层次过高）与 Kernel 代码（层次过低）之间的空白
 > 最后更新: 2026-05-12
 >
 > 注：本文为基于公开资料（论文/官方文档）的概念分析，本地代码库不含对应实现源码，具体以上游为准。
 
 ---
 
-## 1. 背景：当前编译栈的 Gap
+## 1. 背景：当前编译栈的抽象层次缺口
 
 ```
 图 Pass 层（FX Graph / ATen IR）
@@ -23,10 +23,10 @@ Kernel 层（Triton DSL / CUDA C++）
 
 **具体问题**：
 
-- FlashAttention 的 tile 大小（BLOCK_M, BLOCK_K）与 A2A 的 chunk 粒度是独立决定的
-- WaveEP 的 wave 粒度（tokens per wave）与 Expert GEMM 的 tile 大小理想情况应联合优化
+- FlashAttention 的 tile 大小（BLOCK_M, BLOCK_K）与 A2A 的 chunk 粒度分别独立确定
+- 理想情况下，WaveEP 的 wave 粒度（tokens per wave）应与 Expert GEMM 的 tile 大小联合优化
 - 图 Pass 决定"融合哪些算子"，但不能决定"如何 tile 这个融合 kernel"
-- Triton kernel 知道 tile 大小，但不知道自己在全局通算 schedule 中的位置
+- Triton kernel 知道 tile 大小，却不了解自身在全局通算调度中的位置
 
 ---
 
@@ -121,7 +121,7 @@ TileLang 编译时 → 生成 C++ launch 代码（预计算所有 grid/block/sme
 Runtime: 直接调用 C++ launch，<1μs
 ```
 
-**意义**：对于 WaveEP 这样需要频繁触发小 wave 的场景，launch overhead 是瓶颈。<1μs 使得细粒度 wave（如 64 tokens/wave）变得可行。
+**意义**：在 WaveEP 这类需要频繁触发小 wave 的场景中，launch overhead 会成为瓶颈。将开销降至 <1μs 后，细粒度 wave（如 64 tokens/wave）才具备可行性。
 
 ### 3.3 Z3 SMT 整数分析
 
@@ -137,7 +137,7 @@ TileLang 在编译时使用 Z3 SMT 求解器验证：
 # 如果不满足，编译时报错，而非运行时 silent error
 ```
 
-这解决了 Triton kernel 中大量手写 `assert seq_len % BLOCK_SIZE == 0` 的问题。
+这样可以避免在 Triton kernel 中大量手写 `assert seq_len % BLOCK_SIZE == 0`。
 
 ---
 

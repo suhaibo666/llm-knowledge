@@ -1,6 +1,6 @@
 # 自动并行(Auto-Parallelism)业界研究综述
 
-> 自动为大模型在分布式集群上搜索最优并行策略：搜索空间、代价模型、搜索算法的全景罗盘
+> 面向分布式大模型训练的并行策略自动搜索综述：搜索空间、代价模型与搜索算法
 > 最后更新: 2026-06-22
 >
 > 注：本文为基于公开论文/官方文档的领域综述（非本地源码分析），用于建立"自动并行"知识地图；各系统具体实现以其上游为准。
@@ -35,7 +35,7 @@ flowchart LR
     F --> G[运行时执行<br/>插入集合通信/重切分]
 ```
 
-决定成败的从来不是"搜索算法"本身，而是三件事的质量：**① 策略表示是否够表达又不爆炸；② 代价模型是否准（尤其通信与显存）；③ 怎么把问题分解。**
+决定最终效果的不只是搜索算法本身，更取决于三点：**① 策略表示是否具备足够的表达能力，同时保持规模可控；② 代价模型是否准确，尤其是通信和显存模型；③ 问题能否得到合理分解。**
 
 ---
 
@@ -112,7 +112,7 @@ flowchart LR
 - **Inter-operator（算子间 / 图切分）**：PP（GPipe / 1F1B / interleaved / zero-bubble）+ 设备放置。
 - **表示语言**决定空间大小与可表达性：SOAP(FlexFlow)、SBP(OneFlow)、Shard/Replicate/Partial(DTensor/GSPMD)、op-trans/assign/order(nnScaler)。
 
-### B. 代价模型（"每个方案多贵"）—— 三大成本
+### B. 代价模型（“每个方案的成本是多少”）——三大成本
 
 **① 计算时间**：按 FLOPs 估，或 profiling 真实 kernel 时间。
 
@@ -140,7 +140,7 @@ $$M_{\text{param}} + M_{\text{grad}} + M_{\text{opt}} + M_{\text{act}} + M_{\tex
 
 ### D. 优化目标
 
-- 主流：**最大化吞吐 / 最小化单步时间**，subject to 显存容量。
+- 主流目标：在显存容量约束下，**最大化吞吐或最小化单步时间**。
 - 新方向：异构集群上**最小化成本($)**，或满足动态资源约束（Astra/Sailor）。
 
 ---
@@ -152,8 +152,8 @@ $$M_{\text{param}} + M_{\text{grad}} + M_{\text{opt}} + M_{\text{act}} + M_{\tex
 | **精确最优化** | Alpa(intra-op **ILP**)、Alpa/Galvatron/PipeDream(**DP**)、MILP 算子级规划 | 把子问题建成 ILP/MILP/DP 求全局最优，可解到数万算子 |
 | **元启发式** | FlexFlow(**MCMC**)、PartIR(MCTS)、Aceso(**迭代扰动**)、模拟退火/进化 | 空间太大时随机/启发式逼近 |
 | **贪心传播** | GSPMD(优先级传播)、OneFlow(SBP)、MindSpore(双递归) | 从少量标注沿图传播补全，近似线性复杂度 |
-| **分解 + 剪枝** | Alpa(inter/intra **分层**)、nnScaler(**约束剪枝**)、Galvatron(决策树剪枝) | 把空间按拓扑层次/约束切小，是驯服爆炸的关键 |
-| **模拟器在环** | FlexFlow simulator、ASTRA-sim、profile-based | 用模拟/预 profiling 代替真跑来评估代价 |
+| **分解 + 剪枝** | Alpa(inter/intra **分层**)、nnScaler(**约束剪枝**)、Galvatron(决策树剪枝) | 按拓扑层次或约束缩小搜索空间，是控制组合爆炸的关键 |
+| **模拟器纳入搜索闭环** | FlexFlow simulator、ASTRA-sim、profile-based | 用模拟或预 profiling 代替实际运行来评估代价 |
 
 ---
 
@@ -170,7 +170,7 @@ $$M_{\text{param}} + M_{\text{grad}} + M_{\text{opt}} + M_{\text{act}} + M_{\tex
 
 1. **从"找并行"到"并行 + 显存协同"**：Aceso、Mist 把激活重计算/offload 纳入联合搜索。
 2. **从同构走向异构/动态/地理分布式**：Metis、Astra、Sailor。
-3. **从独立框架走向框架原生**：PyTorch DTensor/AutoParallel、veScale —— auto-parallel 正"内化"进主流训练栈，而非独立编译器。
+3. **从独立框架走向框架原生**：PyTorch DTensor/AutoParallel、veScale——auto-parallel 正逐步融入主流训练栈，而不再只以独立编译器的形式存在。
 4. **MoE 把 4D 推到 5D**：在 DP/TP/PP/CP 之上加 **EP(专家并行)**，all-to-all 通信建模更复杂。
 5. **通用搜索空间**：nnScaler 让用户自定义空间，跳出固定模板。
 

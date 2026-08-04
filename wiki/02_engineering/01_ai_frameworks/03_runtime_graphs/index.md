@@ -1,7 +1,7 @@
-# 03 · 运行时图捕获(CUDA / NPU Graphs)— 目录索引
+# 03 · 运行时图捕获（CUDA / NPU Graphs）— 目录索引
 
-> 运行时计算图的捕获与回放,消除 host 侧算子下发开销。CUDA Graphs 与 NPU Graphs(ACLGraph)按硬件分列。本层建立在 [[02_compile_stack/index]] 之上(`mode="reduce-overhead"` 经 cudagraph trees 集成),硬件子目录不再二级细分,直接作为架构层。
-> 最后更新: 2026-07-30
+> 捕获并回放运行时计算图，以消除 host 侧的算子下发开销。CUDA Graphs 与 NPU Graphs（ACLGraph）按硬件分列。本层建立在 [[02_compile_stack/index]] 之上（`mode="reduce-overhead"` 经 cudagraph trees 集成）；硬件子目录不再二级细分，直接作为架构层。
+> 最后更新：2026-07-30
 
 ---
 
@@ -16,7 +16,7 @@
 
 ## 关联域
 
-- [[02_compile_stack/04_inductor/index]] — Inductor(`mode="reduce-overhead"` 经 cudagraph trees 集成)
-- [[02_compile_stack/04_inductor/npu/index]] — NPU Inductor(ACLGraph 为其路径之一)
-- [[02_train_frameworks/megatron-lm/index]] — Megatron-LM(CUDA Graphs 使用场景)
+- [[02_compile_stack/04_inductor/index]] — Inductor（`mode="reduce-overhead"` 经 cudagraph trees 集成）
+- [[02_compile_stack/04_inductor/npu/index]] — NPU Inductor（ACLGraph 为其路径之一）
+- [[02_train_frameworks/megatron-lm/index]] — Megatron-LM（CUDA Graphs 使用场景）
 - [[01_ai_frameworks/index]] — 本域总索引

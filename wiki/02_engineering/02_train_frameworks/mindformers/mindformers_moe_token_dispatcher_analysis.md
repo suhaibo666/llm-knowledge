@@ -21,11 +21,11 @@ class MoEAlltoAllDeredundencyTokenDispatcher(MoETokenDispatcher)
 
 § 00
 
-## 一切的根源:MoE dispatch 是"邮局分拣"
+## 一切的根源：MoE dispatch 就像“邮局分拣”
 
 > 训练时的物理事实只有两条:**token 分散在各 rank 上**,**专家也分散在各 rank 上**。而路由是乱序的——rank0 上的某个 token,可能被路由到住在 rank3 上的专家 7。
 
-于是产生一个硬需求:每个 token 必须"长途跋涉"到它的专家所在 rank,算完再原路送回。因为"谁去谁那"是任意的多对多,这天生就是一次 *all-to-all*。这份 dispatcher 的全部巧思,都是为了驯服两个麻烦:
+于是产生一个硬需求：每个 token 必须“长途跋涉”到对应专家所在的 rank，计算完成后再原路送回。由于 token 与专家之间是任意的多对多关系，这天然需要一次 *all-to-all*。这套 dispatcher 的设计，主要是为了解决两个麻烦：
 
 > 麻烦一 · 变长
 > 
@@ -35,11 +35,11 @@ class MoEAlltoAllDeredundencyTokenDispatcher(MoETokenDispatcher)
 > 
 > 机内卡间是 NVLink/HCCS(快),跨机是 IB/RoCE(慢一个量级)。让**不规则的、需要 D2H 的 all-to-all 跑在跨机链路上**,是大规模 MoE 的头号瓶颈。
 
-核心思想一句话:*把"不规则 + D2H"关进快的机内;跨机只留定形、免 D2H 的规则 collective。*下面层层拆开。
+核心思想可以概括为一句话：*把“不规则通信 + D2H”限制在高速机内链路中；跨机链路只保留形状固定、无需 D2H 的规则 collective。* 下面逐层展开。
 
 § 01
 
-## 两级 EP 布局:oep / iep
+## 两级 EP 布局：oep / iep
 
 专家并行组 `ep` 被分解成**外层 oep(跨节点)**和**内层 iep(节点内)**。专家则按节点分块:节点 A 拥有专家 `[0,4)`,节点 B 拥有 `[4,8)`;节点内再由两张卡细分。
 
@@ -60,14 +60,14 @@ self.oep_group = get_oep_group_name(self.rank_id, self.ep, self.iep)  # 跨机�
 self.iep_group = get_iep_group_name(self.rank_id, self.iep)          # 机内组
 ```
 
--   iep / oep**iep** 是节点内 NPU 数(快链路域),**oep** 是节点数(慢链路域)。整套设计的全部出发点就是这条**带宽不对称**。
--   a, b把专家先按 **oep 个节点**切成连续块,每节点 `node_expert_num` 个。`[a,b)` 是"本节点负责的专家区间",同节点两张卡共享它、再二次细分。
+-   **iep / oep**：**iep** 是节点内的 NPU 数（高速链路域），**oep** 是节点数（低速链路域）。整套设计的出发点正是这种**带宽不对称**。
+-   **a, b**：先按 **oep 个节点**把专家切成连续块，每个节点分配 `node_expert_num` 个专家。`[a,b)` 是“本节点负责的专家区间”，再由同一节点内的两张卡进一步划分。
 
 § 02
 
-## 一个 token 的旅程:一次跨机 + 一次机内
+## 一个 token 的旅程：一次跨机 + 一次机内
 
-把宏观流程浓缩成一个 token 的两跳。token **T** 在 rank3,被路由到**专家 1**(住在 rank0)。它绝不会在跨机链路上做不规则投递——而是先被一次**规则 AllGather** 捎到正确的节点,再由一次**机内 AlltoAllV** 精确落到专家卡。
+从单个 token 的视角看，宏观流程可以浓缩为两跳。token **T** 位于 rank3，却被路由到 rank0 上的**专家 1**。系统不会在跨机链路上进行不规则投递，而是先通过一次**规则 AllGather** 将它送到目标节点，再通过一次**机内 AlltoAllV** 精确送达专家所在的卡。
 
 ![图 2 每个 token 严格一次跨机(AllGather)+ 一次机内(AlltoAllV)。跨机链路上从不出现不规则 all-to-all。](assets/mindformers_moe_token_dispatcher_analysis_fig2.png)
 
@@ -75,13 +75,13 @@ self.iep_group = get_iep_group_name(self.rank_id, self.iep)          # 机内组
 
 > 为什么这样拆
 > 
-> 跨机只用**定形**的 AllGather/ReduceScatter:split 是 rank 数的固定函数,HCCL/NCCL 用 ring 打满带宽,**且不需要 host 端 split → 零 D2H**。不规则的变长 AlltoAllV 与那点 D2H,全部关进快的机内。
+> 跨机只使用**形状固定**的 AllGather/ReduceScatter：split 是 rank 数的固定函数，HCCL/NCCL 可以通过 ring 充分利用带宽，**而且不需要在 host 端准备 split，因此没有 D2H**。不规则的变长 AlltoAllV 及其少量 D2H 则全部限制在高速机内链路中。
 
 § 03
 
-## dispatch 全流程:3 次 AllGather + 3 次 AlltoAllV
+## dispatch 全流程：3 次 AllGather + 3 次 AlltoAllV
 
-不是冗余,而是 `x` / `expert_id` / `router_coeff` 三个对齐张量各走一遍同一个搬运变换,外加一次纯计数交换。下面的泳道图按时间轴铺开,并标出那次小 D2H 如何**藏在跨机 AllGather 的阴影里**。
+这并非重复工作：`x`、`expert_id` 和 `router_coeff` 三个相互对齐的张量都要经过相同的数据搬运，此外还需要一次纯计数交换。下面的泳道图沿时间轴展开，并标出少量 D2H 如何**隐藏在跨机 AllGather 的执行窗口内**。
 
 ![图 3 dispatch 泳道时序。跨机(橙)只做定形 AllGather;机内(绿)做变长 AlltoAllV;那次小 D2H(粉)被 Depend 钉在 [C][D] 之间,藏进跨机通信阴影。](assets/mindformers_moe_token_dispatcher_analysis_fig3.png)
 
@@ -100,7 +100,7 @@ self.iep_group = get_iep_group_name(self.rank_id, self.iep)          # 机内组
 
 § 04
 
-## 去冗余图解:mask + NonZero + IndexSelect
+## 去冗余图解：mask + NonZero + IndexSelect
 
 "冗余"指什么:跨机 AllGather 把**全部** token 广播给 oep 组里每张卡,但每张卡只该计算路由到**自己专家块**的那些。多出来的就是冗余,必须在本地精确剔除。下面以 rank0(`a=0, b=4`,top_k=1)的视角,用具体数字走完 `get_exdispatch_idx`。
 
@@ -121,10 +121,10 @@ sorted_expert_ids   = IndexSelect()(sorted_expert_ids,       0, idx)
 sorted_router_coeff = IndexSelect()(sorted_router_coeff,     0, idx)
 ```
 
--   sort**先排序**:同一专家的 token 排到一起(grouped GEMM 和按专家的 AlltoAllV split 都要求连续)。`dispatch_idx` 是 argsort,记录"排序后第 i 位来自原来哪个 token"。
--   // K**top_k 的灵魂**:reshape(-1) 后位置 p 对应 token p//K。`dispatch_idx // K` 把展平槽位映射回 token 行号——同一 token 若有多个本块专家,就会被 IndexSelect **重复索引**,这正是"一个 token 复制给多个专家"。
--   mask因为已排序,`[a,b)` 在排序数组里**必然是一段连续 True**,不会东一个西一个。
--   NonZero把布尔掩码变成**整数下标**,再用同一组下标从三个排序数组里切片,保证 token / 专家号 / 门控系数**始终对齐**。
+-   **sort——先排序**：将分配给同一专家的 token 排在一起（grouped GEMM 和按专家划分的 AlltoAllV split 都要求数据连续）。`dispatch_idx` 是 argsort 的结果，记录“排序后的第 i 个位置来自原来的哪个 token”。
+-   **// K——还原 token 下标**：reshape(-1) 后，位置 p 对应 token p//K。`dispatch_idx // K` 将展平后的槽位映射回 token 行号；如果同一 token 命中了本节点的多个专家，IndexSelect 就会**重复索引**该 token，这正是“把一个 token 复制给多个专家”的实现方式。
+-   **mask——筛选本节点专家**：由于数据已经排序，`[a,b)` 对应的元素在排序数组中**必然形成一段连续的 True**，不会零散分布。
+-   **NonZero——生成整数下标**：将布尔掩码转换为**整数下标**，再用同一组下标切片三个排序数组，从而保证 token、专家号和门控系数**始终对齐**。
 
 § 05
 
@@ -151,9 +151,9 @@ router_coeff = ops.Depend()(router_coeff, (exsl, exrl))  # 控制边:D2H 先发�
 router_coeff = ops.AllGather(group=self.oep_group)(router_coeff)  # [C] 大通信,D2H 在其阴影完成
 ```
 
--   为何搬这是"**先换计数、再换数据**"两段式里的"换计数",只不过搬到机内:把按专家的直方图转成按目标卡的计数,才填得出 \[E\] 的 split。
--   免 D2H\[B\] 搬的是**直方图**(每专家一个计数),bin 个数 = 专家个数 = config 常量 → split `iepones` 是编译期常量,本就在 host。
--   Depend静态图执行器按依赖 DAG 自由重排。`Depend(a,b)` 插入控制边:强制 D2H **先发起**、消费方 AlltoAllV **排到 AllGather 之后**。中间隔着跨机大通信,小 D2H 在其**时间阴影**里完成 → 不阻塞主流。
+-   **为什么要交换计数**：这是“**先交换计数，再交换数据**”两阶段流程中的第一阶段，只是被限制在机内完成。只有把按专家统计的直方图转换为按目标卡统计的计数，才能得到 \[E\] 所需的 split。
+-   **为什么 \[B\] 无需 D2H**：\[B\] 交换的是**直方图**（每个专家对应一个计数），bin 数量等于专家数，属于配置常量。因此 split `iepones` 是编译期常量，原本就在 host 上。
+-   **Depend 如何隐藏 D2H**：静态图执行器可按依赖 DAG 自由重排。`Depend(a,b)` 插入一条控制边，强制 D2H **先发起**，并让消费结果的 AlltoAllV **排在 AllGather 之后**。两者之间隔着耗时较长的跨机通信，少量 D2H 可以在这段**执行窗口**内完成，不阻塞主执行流。
 
 > 一句话戳破
 > 
@@ -179,9 +179,9 @@ x = excombine_whiteboard.index_add_(0, exdispatch_idx.reshape(-1), x)  # 散回 
 x = ops.ReduceScatter(group=self.oep_group)(x)                       # 跨节点求和 + 散回原主
 ```
 
--   whiteboard`excombine_whiteboard = x * 0.0` 是 dispatch 里造的**全零画板**。每个 (token,专家) 贡献只出现在**拥有该专家的节点**的画板里,别处全 0——这是求和不重不漏的关键。
--   index_add同节点两张卡的 top-k 贡献:机内 AlltoAllV 回送到 gather 它的卡,`index_add` 在同位置**累加**(同下标多次 add 即求和)。
--   ReduceScatter**Reduce**:跨 oep 求和,因非拥有方置零,恰好凑齐 token 散在各节点的贡献。**Scatter**:把结果切片送回原属主卡(AllGather 拼接的逆)。求和后每卡只需自己那批,故用 ReduceScatter 而非 AllReduce。
+-   **whiteboard**：`excombine_whiteboard = x * 0.0` 是 dispatch 阶段创建的**全零画板**。每个 (token, 专家) 贡献只会出现在**拥有该专家的节点**所持有的画板中，其余位置均为 0；这是确保求和不重不漏的关键。
+-   **index_add**：机内 AlltoAllV 将同一节点两张卡上的 top-k 贡献送回执行 gather 的卡，`index_add` 再在相同位置**累加**；同一下标被多次 add，效果就是求和。
+-   **ReduceScatter**：**Reduce** 在 oep 组内跨节点求和。由于不拥有相应专家的节点保持为零，求和结果恰好汇集了该 token 分散在各节点上的贡献。**Scatter** 再把结果切片送回原属主卡，也就是 AllGather 拼接过程的逆操作。求和后每张卡只需要属于自己的那一部分，因此使用 ReduceScatter 而不是 AllReduce。
 
 ### 梯度反向:每个前向算子的伴随(adjoint)
 
@@ -191,10 +191,10 @@ x = ops.ReduceScatter(group=self.oep_group)(x)                       # 跨节点
 
 *图 7 combine 的梯度反向:每个前向算子取伴随、逆序执行。ReduceScatter↔AllGather、scatter↔gather 互为共轭;mul(probs) 分叉出 dprobs 回流 router。*
 
--   RS → AG**ReduceScatter 的伴随是 AllGather**:前向把各节点部分结果求和后散回属主;反向把每个属主的输出梯度**跨机复制**回所有相关节点,让每个专家拿到完整的下游梯度。
--   scatter → gather`index_add_` 前向是 `out[idx] += x`(scatter-add);其伴随是 `grad_x = grad_out[idx]`(**gather**)——把画板上对应位置的梯度取回给每个 token 的专家输出。
--   dprobs`mul(probs)` 按乘法法则分叉:*× probs* 给专家输入,*Σₕ(x·g)* 给门控系数。后者是 **router 唯一的梯度来源**——路由打分网络正是靠它学习"该把 token 送给谁"。
--   a2a 对调机内 `AlltoAllV` 的伴随仍是 AlltoAllV,只是**收发 split 互换**(exrl↔exsl);置换类算子(unsort/sort)的伴随是其**逆置换**。整条链在 autograd 里闭环。
+-   **RS → AG**：**ReduceScatter 的伴随是 AllGather**。前向把各节点的部分结果求和后散回属主；反向则把每个属主的输出梯度**跨机复制**到所有相关节点，使每个专家都能取得完整的下游梯度。
+-   **scatter → gather**：`index_add_` 的前向操作是 `out[idx] += x`（scatter-add），其伴随是 `grad_x = grad_out[idx]`（**gather**），即从画板的对应位置取回每个 token 专家输出的梯度。
+-   **dprobs**：`mul(probs)` 按乘法法则分成两路梯度：*× probs* 传给专家输入，*Σₕ(x·g)* 传给门控系数。后者是 **router 唯一的梯度来源**，路由打分网络正是依靠它学习“应该把 token 送给谁”。
+-   **a2a 对调**：机内 `AlltoAllV` 的伴随仍是 AlltoAllV，只是**收发 split 互换**（exrl↔exsl）；置换类算子（unsort/sort）的伴随则是其**逆置换**。整条链由此在 autograd 中闭环。
 
 § 07
 

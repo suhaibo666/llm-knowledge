@@ -83,7 +83,7 @@ Claude 这个量级的训练，几乎可以确定走的就是异步。
 后面 32 条丢弃（cost 浪费 20%，但 wall-clock 时间砍掉 50%+）
 ```
 
-CPU sandbox 便宜、GPU 训练贵，这个 trade-off 大部分时候是赚的。
+CPU sandbox 成本较低，GPU 训练成本较高，因此这种 trade-off 在大多数场景中是合算的。
 
 #### B. Trajectory-level Scheduling
 
@@ -91,7 +91,7 @@ CPU sandbox 便宜、GPU 训练贵，这个 trade-off 大部分时候是赚的�
 
 #### C. 早停启发式
 
-如果 trajectory 已经明显跑偏（比如中期 reward 信号判定希望渺茫、token 数超阈值、明显在死循环），直接砍掉，不浪费 sandbox 资源。
+如果 trajectory 已经明显偏离目标（例如中期 reward 信号显示成功希望渺茫、token 数超过阈值或陷入死循环），则直接终止，避免继续占用 sandbox 资源。
 
 #### D. Timeout 严格执行
 
@@ -111,11 +111,11 @@ RollArt 论文里有个挺精细的发现：**同一个 rollout 里不同 trajec
 
 Reward 模型这种**无状态**组件可以塞到 serverless / function compute 上，按需扩缩，不占常驻 GPU。
 
-> **原理**：不同卡的性价比和性能特征本来就不同——Prefill 阶段算力受限 → 用 H800/H100；decode 阶段带宽受限 → 用 H20。**让每张卡跑它擅长的活**，整体成本/性能可以优化 30%+。
+> **原理**：不同卡的性价比和性能特征本来就不同——Prefill 阶段算力受限 → 用 H800/H100；decode 阶段带宽受限 → 用 H20。**让每张卡承担与其特性匹配的工作负载**，整体成本/性能可以优化 30%+。
 
 ### 优化 4: In-flight Reward Computation（流水线 reward）
 
-**传统做法**：trajectory 跑完 → 喂给 reward model → 算 advantage → 训练。reward 计算是阻塞的。
+**传统做法**：trajectory 完成 → 传入 reward model → 计算 advantage → 训练。reward 计算会阻塞整体流程。
 
 **优化做法**：
 
@@ -123,7 +123,7 @@ Reward 模型这种**无状态**组件可以塞到 serverless / function compute
 - Trajectory 一结束**立刻 async 触发 reward 计算**，不阻塞下一轮 rollout
 - Reward 计算本身可以拆成多个 stage（语法 → 测试 → judge LLM）并行做
 
-实测能把 reward 计算的时间几乎完全 overlap 掉，端到端时间砍掉 20-30%。
+实测中，reward 计算时间几乎可以通过 overlap 完全隐藏，端到端时间可缩短 20-30%。
 
 ### 优化 5: 环境多样性（容易被忽略）
 
@@ -279,7 +279,7 @@ Trajectory C:              [Init][==Exec=][======Eval======]
 ### 5.3 对 Coding 大模型方向的判断
 
 1. **模型层短期内不会同质化**：SWE-bench 这种基准上三家头部模型分数接近，但**实际 agentic coding 体验差异巨大**。这种差异主要来自三件事：reward 信号干净度、environment 池规模和质量、长 trajectory 训练经验。这些都不是几个月能追赶的
-2. **中国玩家的真实差距在 infra 而不是算法**：国内常说「算法追上来了」——纸面上是。但 RL infra（disaggregated 架构、长尾治理、稳定异步训练）和 reward hacking 体系，国内大厂普遍还在补课阶段。这是真正的差距，而且**没有 shortcut 可以走**
+2. **国内团队的差距主要在 infra，而非算法**：国内常说「算法追上来了」，纸面指标确实如此。但 RL infra（disaggregated 架构、长尾治理、稳定异步训练）和 reward hacking 体系仍普遍处于追赶阶段。这才是实际差距，而且**没有捷径**。
 3. **Long horizon + Multi-modal 是下一个战场**：让模型用有限 context 做近似无限长任务、把 coding 能力扩展到 computer use、机器人控制等其他工具使用场景
 4. **数据飞轮终于在 coding 形成**：Claude Code、Cursor 这些产品的真实用户使用，正在反哺训练数据。**第一次**在 LLM 历史上出现真正的「用得越多越好用」的飞轮——之前 chatbot 没形成这个，因为 chat 反馈信号太弱
 5. **行业进入「工程比拼」阶段**：algorithm 创新的边际收益在递减，工程能力（infra、数据、environment、反馈系统）的边际收益在递增。这正好是姚顺宇说的「AI 这行不需要脑子，需要靠谱」的现实含义

@@ -184,7 +184,7 @@ config 注释明说：bundled cache「depend on the local cache for local state 
 **read_and_emit（读路径）**（`:356-434`）的目录约定与并发安全：
 
 1. 目标目录 = `triton_cache_dir(device)/kernel_hash`（`:381-382`）——与 Triton 自己写缓存的布局完全一致,所以写回后 `triton.compile` 直接命中。
-2. **目录已存在且非空则整体放弃**该 kernel（`:384-391`）,docstring 明确假设对目标目录有排他访问（`:363-368`）——本地已有的 Triton 缓存优先,bundle 只补缺。
+2. **目录已存在且非空则整体放弃该 kernel**（`:384-391`）：docstring 明确假设当前进程对目标目录拥有排他访问权（`:363-368`）。本地已有的 Triton 缓存优先，bundle 只补缺。
 3. 原子落盘：先写 `tmp.{uuid}` 临时目录,再 `os.replace` 改名（POSIX 原子,`:396-424`）;Windows 上 `os.replace` 对目录不可覆盖,改用 `FileLock` + 先删后换（`:416-420`）。
 
 **静态 launcher 与缓存的关系**（确认相关,写入）：开 `use_static_triton_launcher`（`use_static_cuda_launcher` 的别名,OSS 默认开,`config.py:1429-1436/:56-68`）时,bundle 除了产物文件还直接塞入**整个 `CachingAutotuner` 对象**：`put_static_autotuner` 在 precompile 时深拷贝并剥掉不可 pickle 字段（`triton_bundler.py:184-207`,挂接点 `triton_heuristics.py:739-740`,前提 `is_statically_launchable`）。读侧 `load_autotuners`（`:224-262`）先对每个对象 `reload_cubin_path` 校验 cubin 已按第 1 条落地（`:243-246`;cubin 路径按 `triton_cache_dir` 重算,`triton_heuristics.py:2909-2919`）,然后包成 `StaticAutotunerFuture` 塞进 `CompiledTritonKernels._cache`（`:253-259`;Future 化的理由注释:让缓存未命中的 kernel 不被阻塞,`:253-256`）。`StaticAutotunerFuture.result` 还会 `recheck_autotune_cache`（`codecache.py:5430/5453` → `triton_heuristics.py:673-708`）——静态对象里存的可能是多个 compile_results,要用 §二的 autotune cache 收敛到获胜者。净效果:FxGraphCache 命中后连「反序列化 kernel 源码 + 重建 CachingAutotuner + make_launcher」都跳过。

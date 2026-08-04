@@ -252,7 +252,7 @@ ir.Pointwise.constant_to_device = _patch_pointwise_constant_to_device  # ir.py:6
 ir.Reduction.create = _patch_reduction_create                          # ir.py:80-200+
 ```
 
-**关键机制**：`_post_init_setattr` 可以在dataclass冻结后动态添加属性，这使得NPU能在不修改原生IR类定义的情况下，将`traced_graph`附加到每个IR节点上。
+**关键机制**：`_post_init_setattr` 可以在 dataclass 冻结后动态添加属性，因此 NPU 无需修改原生 IR 类定义，就能将 `traced_graph` 附加到每个 IR 节点上。
 
 ---
 

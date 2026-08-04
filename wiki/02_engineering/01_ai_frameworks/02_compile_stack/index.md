@@ -1,6 +1,6 @@
 # 02 · torch.compile 编译栈 — 目录索引
 
-> 把 eager 计算(见 [[01_eager_runtime/index]])捕获、分解、编译成 kernel 的完整链路:Dynamo 图捕获 → AOTAutograd 前/反向分解 → Graph IR/Passes → TorchInductor lowering/调度/codegen → codegen 后端 → 跨阶段编译缓存 → 调试诊断。
+> 将 eager 计算（见 [[01_eager_runtime/index]]）捕获、分解并编译成 kernel 的完整链路：Dynamo 图捕获 → AOTAutograd 前/反向分解 → Graph IR/Passes → TorchInductor lowering/调度/codegen → codegen 后端 → 跨阶段编译缓存 → 调试诊断。
 
 ## 子目录
 
@@ -16,6 +16,6 @@
 
 ## Related Pages
 
-- [[01_ai_frameworks/index]] — 本域总索引(5 层架构导航)
-- [[01_eager_runtime/index]] — eager 运行时地基(本层的底座)
-- [[03_runtime_graphs/index]] — 运行时图捕获(与 Inductor `mode="reduce-overhead"` 集成)
+- [[01_ai_frameworks/index]] — 本域总索引（5 层架构导航）
+- [[01_eager_runtime/index]] — eager 运行时地基（本层的底座）
+- [[03_runtime_graphs/index]] — 运行时图捕获（与 Inductor `mode="reduce-overhead"` 集成）

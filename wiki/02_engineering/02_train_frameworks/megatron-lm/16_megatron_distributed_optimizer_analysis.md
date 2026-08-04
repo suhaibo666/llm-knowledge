@@ -800,7 +800,7 @@ class TrainingState(Enum):
 FSDP Unit 是最小可释放模型单元。参数按 Unit 分组——在 Forward 进入 Unit 时 AllGather 参数,离开时释放;Backward 进入时重新 AllGather。默认 Unit = `TransformerLayer`。
 
 **与 Activation Checkpointing 的协同**(`megatron_fsdp.py:127-130`):
-> 重算整个 Transformer Layer 时,参数只需 Gather 一次,同时服务于重算和 Backward 计算。
+> 重算整个 Transformer Layer 时，参数只需 Gather 一次，随后可供重算和 Backward 计算共同使用。
 
 **Delayed Wgrad Overlap**(`megatron_fsdp.py:77-103`):
 当启用 `overlap_dispatch_backward_with_experts_wgrad` 时,expert 参数的梯度 reduce-scatter 延迟到 MoE dispatch backward 完成后再执行,最大化 EP 通信与 DP 梯度同步的重叠。

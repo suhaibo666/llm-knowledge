@@ -1,6 +1,6 @@
 # 03 · Graph IR 与 Passes — 目录索引
 
-> FX 图的数据模型、捕获前端、改图原语、PatternMatcher 与 pass 安全改写机制;不含 AOTAutograd
+> FX 图的数据模型、捕获前端、改图原语、PatternMatcher 与 pass 安全改写机制；不含 AOTAutograd
 > joint/正反向分图(见 [[02_compile_stack/02_aot_autograd/index]])、Inductor IR/scheduler/codegen
 > (见 [[02_compile_stack/04_inductor/index]])。
 > 知识分层:overview(本索引)→ deep dive(约定见 [[01_ai_frameworks/index]])。
@@ -11,7 +11,7 @@
 
 ## 页面列表(按层次)
 
-> **段位与阅读顺序**(kb-reorg P4 Task 9.5,2026-07-30):本目录无 quickstart,不占段 0。段 1(10-19)= IR 基础与如何得到这张图(数据模型→值/元数据→effect/alias→结构化输出/HOP→捕获前端→规范化,即 C02/C03/C05/C06/C07/C08 原序);段 2(20-29)= pass 机制层(节点身份/改图原语/pattern matcher/DCE/pass 流水线/合法性校验,即 C11-C16 原序,均建立在段 1 的 IR 基础之上)。
+> **段位与阅读顺序**（kb-reorg P4 Task 9.5，2026-07-30）：本目录没有 quickstart，不占用段 0。段 1（10-19）介绍 IR 基础以及如何获得这张图（数据模型→值/元数据→effect/alias→结构化输出/HOP→捕获前端→规范化，即 C02/C03/C05/C06/C07/C08 的原始顺序）；段 2（20-29）介绍 pass 机制（节点身份/改图原语/pattern matcher/DCE/pass 流水线/合法性校验，即 C11-C16 的原始顺序），所有内容都建立在段 1 的 IR 基础之上。
 
 | 页面 | 层次 | 核心主题 |
 |------|------|---------|
@@ -32,27 +32,27 @@
 > (Part IV 的 C17–C21 属 Inductor IR/Scheduler/Codegen,随 Task 8 迁入 `04_inductor/`)。课程化
 > 阅读顺序、前置依赖表与配套 Demo 见该系列索引 §"四部分知识地图"与 §"每篇前置依赖与学习成果"。
 
-## 与旧页的关系(P4 Task 7 四组判重归一,逐组 commit 台账见各自 commit message)
+## 与旧页的关系（P4 Task 7 四组判重归一，逐组 commit 台账见各自 commit message）
 
 - **组 1**:`02_aot_autograd/fx_graph_construction_and_transformation_analysis.md`
   (2026-07-23 综合报告快照,601 行)的 FX 数据模型、PatternExpr/PatternMatcherPass、DCE、
-  稳定拓扑排序、合法性/复杂度部分已核实并入上表对应页;该页瘦身为 269 行,现仅存
+  稳定拓扑排序、合法性/复杂度部分已核实并入上表对应页；该页已精简为 269 行，目前仅保留
   AOTAutograd joint→fw/bw 构图与 saved-tensor/recompute 专题,留给 Task 8 与 C09/C10 归一。
 - **组 2**:`04_inductor/fx_pass_optimization_methodology.md`(349 行)+
   `04_inductor/torch_upstream_pass_deepdive.md`(232 行)判重后**均删除**,独有事实(八阶段
   placement 细节缺口、`fwd_only`/`joint_fwd_bwd`、`GraphTransformObserver`、
   `GroupBatchFusionBase`、四则 pass 注册取证式脚注、跨框架方法论对照)分别并入 C13/C15/C16。
 - **组 3**:`04_inductor/decomposition_passes_guide.md`(163 行)vs C08 判重后**保留双页**——
-  guide 是开发者 API/checklist 视角,与 C08 的捕获期机制解释体裁不同,独有内容 >50%。
+  guide 采用开发者 API/checklist 视角，与 C08 对捕获期机制的说明体裁不同，独有内容 >50%。
 - **组 4**:`02_compile_stack/01_dynamo/control_flow_capture_analysis.md`(204 行)vs C06
   判重后**基本保留**,只在 `torch.cond` 的 `FakeTensorMode`/`ProxyTorchDispatchMode` 重叠段
-  收缩为互指(该页讲 Dynamo 捕获前端,C06 讲 IR 层结构,体裁不同、几乎零重叠)。
+  收缩为相互引用（该页介绍 Dynamo 捕获前端，C06 介绍 IR 层结构，体裁不同，几乎没有重叠）。
 
 ---
 
-## 附录:跨图类型对照(源自已删除的课程页 C01,逐字保留)
+## 附录：跨图类型对照（源自已删除的课程页 C01，逐字保留）
 
-> 出处:原 19 号课程 `01_graph_ir_motivation_and_taxonomy.md`(见 git `e5cc60a`)。各类型的机制细节由本目录与关联页分别承载;此处保留其**跨类型合成视图**——功能树中没有天然"同时讲六类图"的页,这两张对照表以附录形式存活于此。
+> 出处：原 19 号课程 `01_graph_ir_motivation_and_taxonomy.md`（见 git `e5cc60a`）。各类型的机制细节分别由本目录及关联页面承载；此处保留其**跨类型综合视图**——功能树中没有天然“同时介绍六类图”的页面，因此将这两张对照表作为附录保留。
 
 ### 四个基本问题(看任何"图"先问)
 

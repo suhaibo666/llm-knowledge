@@ -11,7 +11,7 @@
 
 ## 1. 功能范围与定位
 
-**PP(流水线并行)** 把模型**按层(深度)**切成多个 stage,每个 stage 一组卡,microbatch 在 stage 间像流水线一样依次流过。它服务于"层数极多、跨大量节点"的场景——PP 在 stage 边界**只传激活/梯度**(P2P,数据量小),是最省跨节点带宽的并行方式,适合放在最慢的网络层级。
+**PP（流水线并行）**沿模型的**层（深度）维度**切分出多个 stage，每个 stage 由一组卡承载，microbatch 再像流水线一样依次经过各个 stage。它适合“模型层数很多、训练跨越大量节点”的场景：PP 在 stage 边界**只传输激活和梯度**（P2P，数据量较小），跨节点带宽需求较低，因此适合映射到速度最慢的网络层级。
 
 torchtitan 侧只做**模型切分 + schedule 工厂**(`torchtitan/distributed/pipeline_parallel.py`,入口 `pipeline_llm`),真正的调度执行机制全在 PyTorch `pipelining` 包。
 
@@ -132,7 +132,7 @@ rank3: ...... F0 B0 F1 B1 F2 B2 F3 B3 F4 B4 F5 B5 F6 B6 F7 B7
 
 ### 4.4 Zero Bubble V(`ScheduleZBVZeroBubble`)
 
-多段调度,**强制每 rank 恰好 2 个 stage**,`v` 风格映射。它直接生成含 `I`(BACKWARD_INPUT)和 `W`(BACKWARD_WEIGHT)的动作流——**把 backward 拆成 I 和 W 两步**,`W` 可被推迟去填气泡(原理见 §7)。
+多段调度，**强制每个 rank 恰好包含 2 个 stage**，并采用 `v` 形映射。它直接生成包含 `I`（BACKWARD_INPUT）和 `W`（BACKWARD_WEIGHT）的动作流，即**把 backward 拆成 I 和 W 两步**；`W` 可以延后执行，用于填补气泡（原理见 §7）。
 
 气泡占比:理论上当 `T_F ≈ T_I ≈ T_W` 时**接近 0**。真实模型三者不等,所以只是"接近"。V 形 + 早做 I 还让激活更早释放,显存优于 1F1B。
 

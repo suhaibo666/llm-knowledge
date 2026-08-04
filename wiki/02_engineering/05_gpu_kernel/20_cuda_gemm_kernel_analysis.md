@@ -1,4 +1,4 @@
-# 生产级 CUDA GEMM 完整解读:执行模型 · 寄存器 · 代码
+# 生产级 CUDA GEMM 完整解读：执行模型 · 寄存器 · 代码
 
 > **Source baseline**: `raw/02_engineering/05_gpu_kernel/cuda_gemm_final.html`，本地快照 2026-07-22，SHA-256 `56f589a025ebf39622fdd224a6a49ef1e234466b51d5f4af10b64368ac2f85b0`
 > **Dimension**: Deep Dive（mechanism-level）
@@ -12,7 +12,7 @@
 
 > **一句话总纲:** tile 大小和线程数不是一一对应,但也*不是完全独立*。生产 kernel 由 **CTA tile、warp tile、MMA shape、pipeline stage 数和硬件资源约束**共同定死执行配置——没有哪个是能单独随便拧的旋钮。另有两条最易混淆的分界:**K tile(⌈K/32⌉ 个 mainloop 迭代)≠ pipeline stage(3 个循环复用的 buffer slot)**;**Grid(实际启动的 CTA 集合)≠ Tile Scheduler(逻辑 tile → CTA 的映射策略)**。
 
-## 1. 四层结构:Grid(调度)→ CTA → Warp → MMA
+## 1. 四层结构：Grid（调度）→ CTA → Warp → MMA
 
 > **Source locator**: `cuda_gemm_final.html:83-155`
 
@@ -44,7 +44,7 @@ M/N 空间 tile(并行） K tile / buffer slot 常驻 accumulator
 
 M/N:把输出切块,一次并行算清。K:沿时间循环归约,把部分积不断累加进同一批寄存器 accumulator。
 
-## 3. 完整数据流:cp.async 的正确完成语义 + epilogue
+## 3. 完整数据流：cp.async 的正确完成语义 + epilogue
 
 > **Source locator**: `cuda_gemm_final.html:223-297`
 
@@ -56,7 +56,7 @@ M/N:把输出切块,一次并行算清。K:沿时间循环归约,把部分积不
 
 wait_group 等异步拷贝完成,__syncthreads 做 CTA 同步 + shared mem 可见性(不等拷贝)——两者分工。epilogue 里 accumulator 先经 shared mem 重排,再融合 α/β/bias/激活,向量化写回。
 
-## 4. 寄存器:accumulator、fragment 与 occupancy 的完整账本
+## 4. 寄存器：accumulator、fragment 与 occupancy 的完整账本
 
 > **Source locator**: `cuda_gemm_final.html:298-383`
 
@@ -104,7 +104,7 @@ accumulator A/B fragment fragment 双缓冲 地址 / 控制
 
 > 代表性 ≠ 标准 **这只是一个有代表性的配置,不是唯一"标准"。** 生产库(cuBLAS / CUTLASS）会为同一个 GEMM 准备一堆候选:`128×128×32`、`128×256×32`、`256×128×32`、`64×128×64` …… 再按 M/N/K 尺寸、A/B 布局、对齐、dtype、shared mem、寄存器压力、occupancy、split-K / persistent 调度和*实测 benchmark* 选择。不存在一个 tile 尺寸适合所有 GEMM。
 
-## 6. 生产级 kernel 代码解析:从理论到实践
+## 6. 生产级 kernel 代码解析：从理论到实践
 
 > **Source locator**: `cuda_gemm_final.html:403-530`
 
@@ -138,7 +138,7 @@ int warp_m = warp_id % 4, warp_n = warp_id / 4;   // 该 warp 负责 (warp_m*64,
 
 > 对照第 1 章:warp 数与线程数不是选的,是 `(BM/WM)×(BN/WN)` 推导出来的。对照第 4 章:padding 版 smem ≈85.5 KiB,这就是为什么生产版要用 swizzle——同样功能不胀容量(72 KiB),给更深的流水留空间。
 
-### 6.2 Global → Shared:cp.async 搬运层
+### 6.2 Global → Shared：cp.async 搬运层
 
 > **Source locator**: `cuda_gemm_final.html:428-452`
 
@@ -169,7 +169,7 @@ __device__ void load_tile_async(int slot, int kt, const __half* A, const __half*
 
 > 对照第 3 章:`cp.async` 直通 shared memory、不过普通寄存器——所以第 4 章的预算里没有"staging 数据"这一项,访存不占记分板。"搬运的线程分工"与"计算的线程分工"是两套独立映射:搬按合并定,算按 fragment 定。
 
-### 6.3 Prologue:预填流水
+### 6.3 Prologue：预填流水
 
 > **Source locator**: `cuda_gemm_final.html:453-460`
 
@@ -182,7 +182,7 @@ for (int s = 0; s < STAGES-1; ++s) {
 }
 ```
 
-### 6.4 Mainloop:wait → ldmatrix → mma → prefetch
+### 6.4 Mainloop：wait → ldmatrix → mma → prefetch
 
 > **Source locator**: `cuda_gemm_final.html:461-488`
 
@@ -237,7 +237,7 @@ asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"
 
 > 操作数形状与第 4 章 fragment 表逐位对上:A 4 个 .b32 = 8 fp16;B 2 个 .b32 = 4 fp16;C/D 4 个 .f32。每轮 K16 的寄存器账:4 次 ldmatrix.x4 → a\[4\]\[4\] = 16 个;4 次 → b\[8\]\[2\] = 16 个。`"+f"` 读改写约束让 accumulator 从头到尾待在原寄存器里——这就是"常驻"在指令层的实现。生产 kernel 最烧脑的部分在 ldmatrix 的*地址计算*:swizzle 布局下每个 lane 的行地址要做 XOR 变换,教学版用 padding 绕开了它。
 
-### 6.6 Epilogue:重排与写回
+### 6.6 Epilogue：重排与写回
 
 > **Source locator**: `cuda_gemm_final.html:504-515`
 

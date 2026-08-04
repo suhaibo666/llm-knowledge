@@ -11,7 +11,7 @@
 
 ## 1. 功能范围与定位
 
-**TP(张量并行)** 把**单个算子(矩阵乘)**切到多张卡上——既降低单卡权重/激活显存,又把 matmul 并行化。它服务于"单层太大、单卡 matmul 太慢"的场景,典型用在节点内 NVLink。
+**TP（张量并行）**将**单个算子（矩阵乘）**拆分到多张卡上，既降低单卡的权重和激活显存占用，又并行执行 matmul。它适合“单层规模过大、单卡 matmul 过慢”的场景，通常部署在节点内的 NVLink 域中。
 
 torchtitan 当前有**两条 TP 实现并存**,写代码时务必区分:
 
@@ -230,7 +230,7 @@ Async TP(fused_matmul_reduce_scatter):
 | 行并行 / SP 输出侧的 **reduce-scatter** | 能(`fuse_matmul_reduce_scatter`) |
 | 行并行输出 `Partial→Replicate` 的 **all-reduce** | **不能**——Async TP 的 pattern matcher 只匹配 `all_gather_into_tensor` 和 `reduce_scatter_tensor` |
 
-这给出一个重要工程结论:**Async TP 几乎总要和 SP 一起用**。因为 SP 把"出 TP 区域"的 all-reduce 换成了可流水化的 reduce-scatter——纯 TP 的 all-reduce 无法被 Async TP 掩盖,SP 才让它变得可掩盖。
+由此可以得到一个重要的工程结论：**Async TP 几乎总要与 SP 配合使用**。SP 把“离开 TP 区域”时的 all-reduce 替换为可流水化的 reduce-scatter；纯 TP 的 all-reduce 无法被 Async TP 掩盖，引入 SP 后才具备掩盖条件。
 
 ---
 

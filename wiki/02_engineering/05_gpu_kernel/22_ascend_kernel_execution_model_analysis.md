@@ -1,4 +1,4 @@
-# 生产级 Ascend 算子完整解读:达芬奇执行模型 · 片上缓冲 · 流水
+# 生产级 Ascend 算子完整解读：达芬奇执行模型 · 片上缓冲 · 流水
 
 > **Source baseline**: `raw/02_engineering/05_gpu_kernel/ascend_kernels.html`，本地快照 2026-07-22，SHA-256 `1a6b9c36c7bea192be773cbd5687700233818cfbb440a2945d5dda02a380f7f0`
 > **Dimension**: Deep Dive（mechanism-level）
@@ -8,17 +8,17 @@
 >
 > **与 [[11_operator_optimization_guide]] §6 的划界**：该页 §6 是面向"已掌握 GPU 优化方法"读者的 NPU 快速定位——架构要点摘要 + Tiling/DataCopy 对齐硬约束 + GPU 经验迁移 checklist（含 AICPU 与 host CPU fallback 辨析，本页不覆盖这一实践性区分）。本页是 DaVinci 执行模型本身的 source-faithful 深度机制分析（四类单元显式缓冲链、CUDA/Ascend 逐项对位表、GEMM 四层结构、非 GEMM 算子按类分派、FlashAttention Cube-Vector 融合、训练层三条主线整合），二者不重复正文，互为对方的深潜/速查入口。
 
-以一个 fp16 Cube GEMM 为主线,完整走一遍 Ascend 的四个层面:软件层(分核 / Ascend C / Tiling)、硬件层(AI Core / Cube / Vector / Scalar / MTE)、内存层(GM / L1 / L0A·L0B·L0C / UB)、指令层(DataCopy / Load3D / Mmad / FixPipe)——再把非 GEMM 那一大类接到 Vector 单元这条路上。全篇以 CUDA/SM80 那套为参照,标出*哪里照搬、哪里换词、哪里断层*。
+本文以一个 fp16 Cube GEMM 为主线，完整介绍 Ascend 的四个层面：软件层（分核 / Ascend C / Tiling）、硬件层（AI Core / Cube / Vector / Scalar / MTE）、内存层（GM / L1 / L0A·L0B·L0C / UB）和指令层（DataCopy / Load3D / Mmad / FixPipe），再说明非 GEMM 算子如何映射到 Vector 单元。全文以 CUDA/SM80 为参照，标出*哪些机制可以沿用、哪些只是术语不同、哪些存在根本差异*。
 
 代表性配置:AI Core = **Cube + Vector + Scalar + 3×MTE** · Cube 基础 shape **16×16×16**(int8→16×16×32) · 缓冲链 **GM→L1→L0A/L0B→Cube→L0C→UB→GM** · fp16→fp32
 
-> **一句话总纲:** 把 CUDA 的 **SIMT / warp / occupancy** 世界先忘掉——达芬奇没有 warp,也没有 occupancy 这个旋钮。AI Core 里 **Cube / Vector / Scalar / MTE 四类单元物理并行**,延迟隐藏靠*单元间 overlap + 片上缓冲双缓冲*,不是靠多 warp 轮转。GEMM 那套(tiling / 复用 / 累加常驻)照搬,只是介质从 shared memory / 寄存器换成 **L1 / L0 / UB**;非 GEMM 那套(融合 / 砍 HBM 往返)也照搬,只是全走 **Vector 单元 + UB**。两条最易错的分界:**K 循环迭代数 ≠ Queue 双缓冲深度**;**分核(实际启动的 block 数)≠ Tiling(逻辑 tile → AI Core 的切分策略)**。
+> **一句话总纲：**理解达芬奇架构时，需要先放下 CUDA 的 **SIMT / warp / occupancy** 模型——达芬奇没有 warp，也没有 occupancy 这一调节项。AI Core 中的 **Cube / Vector / Scalar / MTE 四类单元在物理上并行工作**，通过*单元间 overlap + 片上双缓冲*隐藏延迟，而不是依靠多个 warp 轮转。GEMM 的 tiling、复用和累加常驻机制仍然适用，只是存储介质从 shared memory / 寄存器换成 **L1 / L0 / UB**；非 GEMM 算子的融合和减少 HBM 往返同样适用，但主要通过 **Vector 单元 + UB** 实现。最容易混淆的两个边界是：**K 循环迭代数 ≠ Queue 双缓冲深度**；**分核（实际启动的 block 数）≠ Tiling（将逻辑 tile 映射到 AI Core 的切分策略）**。
 
-## 1. 达芬奇 AI Core:四类单元,一条显式缓冲链
+## 1. 达芬奇 AI Core：四类单元，一条显式缓冲链
 
 > **Source locator**: `ascend_kernels.html:85-191`
 
-CUDA 的 SM 里是一堆同构的 CUDA core + Tensor Core,靠调度器塞 warp;达芬奇的 AI Core 里是*四类各司其职的异构单元*,它们之间用一条**程序员/编译器显式管理的片上缓冲链**串起来。没有自动 L1 缓存兜底——数据什么时候从 GM 搬到 L1、从 L1 搬到 L0,全是 MTE 按指令做的。
+CUDA 的 SM 由同构的 CUDA Core 和 Tensor Core 组成，并由调度器分派 warp；达芬奇 AI Core 则包含*四类各司其职的异构单元*，通过一条由**程序员或编译器显式管理的片上缓冲链**连接。这里没有自动 L1 缓存兜底：数据何时从 GM 搬到 L1、何时从 L1 搬到 L0，都由 MTE 按照显式指令完成。
 
 ![Global Memory · HBM](assets/ascend_kernel_execution_model_analysis_fig1.png)
 
@@ -40,7 +40,7 @@ GM ↔ AI Core;核内 Cube/Vector/Scalar 三类算力 + 三条 MTE 搬运通道 
 | cp.async + commit/wait_group | MTE 异步搬运 + Queue 双缓冲 | 完成语义靠 EnQue/DeQue 或 set_flag/wait_flag |
 | epilogue(经 smem 重排 + α/β/act) | FixPipe / 随路后处理 | L0C→UB 路上做量化 / 激活 / bias,省掉独立 elementwise kernel |
 
-## 2. GEMM 映射:分核 → L1 tile → L0 tile → Cube 指令
+## 2. GEMM 映射：分核 → L1 tile → L0 tile → Cube 指令
 
 > **Source locator**: `ascend_kernels.html:192-252`
 
@@ -62,7 +62,7 @@ GM ↔ AI Core;核内 Cube/Vector/Scalar 三类算力 + 三条 MTE 搬运通道 
 
 M/N 把输出切块并行算清;K 沿时间循环归约,部分积不断累加进常驻的 L0C——这条分界与 CUDA GEMM 一字不差,只是介质从寄存器换成 L0C。
 
-## 4. 完整数据流:MTE 异步搬运 + Queue 双缓冲 + FixPipe epilogue
+## 4. 完整数据流：MTE 异步搬运 + Queue 双缓冲 + FixPipe epilogue
 
 > **Source locator**: `ascend_kernels.html:310-377`
 
@@ -72,11 +72,11 @@ M/N 把输出切块并行算清;K 沿时间循环归约,部分积不断累加进
 
 MTE 异步预取 + Queue 双缓冲让搬运与 Cube 计算错开;set_flag/wait_flag 保证"搬完才读";FixPipe 在 L0C→UB 路上随路做 α/β/act,省掉独立 elementwise kernel。
 
-## 5. 片上缓冲预算:L0C 是地板,"换 tile"是唯一出路
+## 5. 片上缓冲预算：L0C 是下限，“更换 tile”是唯一出路
 
 > **Source locator**: `ascend_kernels.html:378-433`
 
-第一篇最硬核的一章是"寄存器账本"——128 个 fp32 accumulator 铺了地板,其余是操作数与控制的天花板。Ascend 上这本账换成*片上缓冲容量账*:L0C 的容量决定单核一次能算多大的 M×N 输出(那批 fp32 accumulator 必须放得下),L1/UB 的容量决定搬运块和 Vector 工作集的大小。**没有寄存器 spill 到 local memory 这回事,但一旦 tile 超出缓冲,只能换小一号 tile 重调形**——和 CUDA "别硬压寄存器换 occupancy、真要降压就换小 warp tile"的结论完全一致。
+第一篇的核心内容之一是“寄存器账本”：128 个 fp32 accumulator 构成基础占用，其余寄存器用于操作数和控制状态。在 Ascend 上，对应的是*片上缓冲容量账本*：L0C 容量决定单核一次能够计算多大的 M×N 输出（必须容纳相应的 fp32 accumulator），L1/UB 容量决定搬运块和 Vector 工作集的大小。**这里没有寄存器 spill 到 local memory 的机制；一旦 tile 超出缓冲容量，只能缩小 tile 并重新调整形状**。这与 CUDA 中“不要为了提高 occupancy 强行压缩寄存器；确需降低压力时应缩小 warp tile”的结论一致。
 
 ![单个 AI Core 的片上缓冲占用 vs 容量上限(示意 · 代表值,随代际不同)](assets/ascend_kernel_execution_model_analysis_fig5.png)
 
@@ -98,7 +98,7 @@ MTE 异步预取 + Queue 双缓冲让搬运与 Cube 计算错开;set_flag/wait_f
 
 > **代表性 ≠ 标准。** 和 cuBLAS/CUTLASS 一样,生产库(CANN 的 GEMM / ATB / AscendC Matmul 模板)会为同一个 GEMM 备一堆候选 tile,按 M/N/K、dtype、缓冲、MTE 带宽、FixPipe 能力和*实测*选择。不存在一个 tile 适合所有 GEMM。
 
-## 7. Ascend C kernel 骨架:CopyIn → Compute → CopyOut
+## 7. Ascend C kernel 骨架：CopyIn → Compute → CopyOut
 
 > **Source locator**: `ascend_kernels.html:447-493`
 
@@ -148,11 +148,11 @@ class MatmulKernel {
 
 > 教学版省略、生产版必有:边界与非对齐(尾块补零 / K 余数轮)、更细的 pipe 同步(手工 set_flag/wait_flag 拆 producer/consumer)、多核负载均衡、dtype × 布局 × 对齐的模板特化与自动调 tiling。骨架相同,工程量在这些边角。
 
-## 8. 非 GEMM:统一执行模型,Vector 单元这条路// roofline 左侧 · 融合砍 HBM
+## 8. 非 GEMM：统一执行模型，走 Vector 单元路径——roofline 左侧 · 通过融合减少 HBM 流量
 
 > **Source locator**: `ascend_kernels.html:494-516`
 
-第二篇 CUDA 文档的核心结论——*底层执行模型统一,优化逻辑随算子处境而变*——在 Ascend 上完全成立。GEMM 那套(tiling / 复用 / Cube / L0C 分块)是"计算受限 + 高复用"的专属打法;**其余大多数算子访存受限,全走 Vector 单元 + UB,主战场是融合与向量化**。roofline 框架照搬:GEMV / 瘦 GEMM / decode 线性层落回左侧,位置取决于形状不取决于算子名字。
+第二篇 CUDA 文档的核心结论——*底层执行模型统一，优化逻辑随算子所处场景而变化*——在 Ascend 上同样成立。GEMM 的 tiling、复用、Cube 和 L0C 分块是“计算受限 + 高复用”场景的专用方法；**其余大多数算子受访存限制，主要使用 Vector 单元 + UB，优化重点是融合与向量化**。roofline 框架也可以直接沿用：GEMV、瘦 GEMM 和 decode 线性层会落回左侧，其位置取决于形状，而不是算子名称。
 
 但几处因为"没有 warp"而换了打法,逐类标出:
 
@@ -168,11 +168,11 @@ class MatmulKernel {
 
 > 坑 · 确定性 **归约顺序在 Ascend 上更容易不可复现。** 浮点归约不满足结合律,这条在 CUDA 里就有;Ascend 的跨核归约走 GM/workspace、顺序更不定,问题只会更突出。要位级可复现,就得**固定 tiling + 固定归约树 + 关掉非确定性的核间累加路径**。这也是训练侧做 bit-level reproducibility 时的主线——单核 kernel 视角刚好给了它一个"为什么"。
 
-## 9. FlashAttention:Cube–Vector 融合// 训练里最关键的融合 kernel
+## 9. FlashAttention：Cube–Vector 融合——训练中最关键的融合 kernel
 
 > **Source locator**: `ascend_kernels.html:517-570`
 
-第二篇把 FlashAttention 称作"两套逻辑合流"——右侧的分块 GEMM 和左侧的 online reduction 挤进一个 kernel。Ascend 上这正好落在*一个 AI Core 里 Cube 和 Vector 两类单元的协作*:Cube 算 S=Q·Kᵀ 和 P·V,Vector 做 online-softmax,中间量常驻 L1/UB,**永不物化完整的 N×N**。torch_npu 里对应 `npu_fusion_attention`(底层 FlashAttentionScore 融合算子)。
+第二篇将 FlashAttention 概括为“两套逻辑合流”，即把分块 GEMM 与 online reduction 合并到一个 kernel 中。在 Ascend 上，这正好对应*同一 AI Core 内 Cube 与 Vector 两类单元的协作*：Cube 计算 S=Q·Kᵀ 和 P·V，Vector 执行 online-softmax，中间结果常驻 L1/UB，**始终不会物化完整的 N×N 矩阵**。torch_npu 中对应的算子是 `npu_fusion_attention`（底层 FlashAttentionScore 融合算子）。
 
 ![Qᵢ 块](assets/ascend_kernel_execution_model_analysis_fig6.png)
 
@@ -180,7 +180,7 @@ Qᵢ 常驻,K/V 块流式进来;每来一块 Cube 算局部 attention、Vector �
 
 > 反向用重计算换显存(不存 S),和 CUDA 一致。场景要分开:prefill 长序列偏 compute-bound(喂满 Cube);decode 的 attention 受 KV-cache 带宽与延迟约束,落回左侧——和第二篇的判断相同。
 
-## 10. 落到训练:两条主线 + 万卡的第三条
+## 10. 落到训练：两条主线 + 万卡规模下的第三条主线
 
 > **Source locator**: `ascend_kernels.html:571-598`
 

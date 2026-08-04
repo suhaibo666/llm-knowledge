@@ -15,7 +15,7 @@
 
 ## 一、总览
 
-**一条主线**:automatic_dynamic 机制下(`torch/_dynamo/config.py:180-187`,默认开),一个 frame 第一次见到 `shape=A` 时**按全静态编译**;第二次见到 `shape=B` 时 guard 失败,才推断该维是动态的并**重编一个动态版本**。这意味着每个「实际上是动态」的 frame,冷启动都要付**两次**全栈编译(Dynamo 追踪 + AOTAutograd + Inductor)。PGO 的做法:把「第二次才学到的结论」——每个输入 source 的 scalar/size/stride 哪些位置见过多个不同值——用一个**有界半格(semilattice)上的 union** 聚合成画像,编译成功后 pickle 到磁盘/远端(`put_code_state`,`torch/_dynamo/convert_frame.py:2127`);下个进程首次编译时读回画像(`get_code_state`,`torch/_dynamo/pgo.py:939`),`VariableBuilder` 建 tensor/int 变量时直接按画像把对应维 mark 成 dynamic(`torch/_dynamo/variables/builder.py:4655`)——冷启动编译次数从 2 回到 1。
+**一条主线**：在 automatic_dynamic 机制下（`torch/_dynamo/config.py:180-187`，默认开启），一个 frame 第一次遇到 `shape=A` 时会**按全静态方式编译**；第二次遇到 `shape=B` 并发生 guard 失败后，系统才推断该维是动态维，并**重新编译一个动态版本**。因此，每个「实际上是动态的」frame 在冷启动时都要执行**两次**完整编译（Dynamo 追踪 + AOTAutograd + Inductor）。PGO 会把「第二次才学到的结论」聚合成画像：记录每个输入 source 的 scalar/size/stride 中，哪些位置出现过多个不同值，并在**有界半格（semilattice）上做 union**。编译成功后，画像会被 pickle 到磁盘或远端（`put_code_state`，`torch/_dynamo/convert_frame.py:2127`）；下一个进程首次编译时读回画像（`get_code_state`，`torch/_dynamo/pgo.py:939`），`VariableBuilder` 构造 tensor/int 变量时便可直接按画像将对应维标记为 dynamic（`torch/_dynamo/variables/builder.py:4655`），使冷启动编译次数从 2 次降为 1 次。
 
 | 概念 | 说明 | 定位 |
 |---|---|---|

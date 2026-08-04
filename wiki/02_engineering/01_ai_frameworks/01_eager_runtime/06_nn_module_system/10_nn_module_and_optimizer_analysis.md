@@ -43,7 +43,7 @@ else:
 几个易踩坑的设计点:
 
 - **先 `remove_from` 再注册**(`module.py:1986`)。同一个属性名换类型(比如先是 buffer 后赋 Parameter)时,必须先从其它三张表里删掉旧条目,否则同名属性会同时存在于两张表,污染遍历与 `state_dict`。
-- **赋普通 `Tensor` 不进任何表**。判定链最后才落到 buffer 分支,而该分支只在 `isinstance(value, Buffer)`(带 `_is_buffer` 标记)**或** `name` 已是已注册 buffer 名时命中(`module.py:2031`)。一个裸 `torch.Tensor` 两者都不满足,于是 `super().__setattr__` 把它存成普通 Python 属性——这正是 RNN 隐藏态等临时缓存不该被当成参数训练的体现。要把普通 Tensor 注册成 buffer,得显式走 `register_buffer`(`module.py:528`)。
+- **给属性赋值普通 `Tensor` 时，不会写入任何注册表**。判定链最后才落到 buffer 分支，而该分支只在 `isinstance(value, Buffer)`（带 `_is_buffer` 标记）**或** `name` 已是注册过的 buffer 名时命中（`module.py:2031`）。裸 `torch.Tensor` 不满足这两个条件，因此 `super().__setattr__` 会将它保存为普通 Python 属性。这正好保证 RNN 隐藏态等临时缓存不会被当作参数训练。要把普通 Tensor 注册为 buffer，必须显式调用 `register_buffer`（`module.py:528`）。
 - **Module 注册触发全局 hook**(`module.py:2013`)。子模块写入前会过一遍 `_global_module_registration_hooks`,框架可借此做全局 instrumentation。
 - `register_parameter`(`module.py:592`)/ `register_buffer`(`module.py:528`)/ `add_module`(`module.py:642`)是三条分派目标的「正门」,`__setattr__` 只是它们的语法糖。
 
@@ -96,8 +96,8 @@ for key, param in self._parameters.items():
 
 **三条路径的取舍**:
 
-- **路径 B(`.data =`,`module.py:994`)是当前默认**。`compute_should_use_set_data`(`module.py:937`)在新旧张量「shallow-copy 兼容」且**不是** FakeTensor 时返回 `True`。它原地改 `param.data`,保留同一个 Parameter 对象身份与 `.grad`,开销最低。
-- **路径 A(`swap_tensors`,`module.py:975`)是未来方向 / 子类必经路**。三种情况触发:全局 future flag `torch.__future__.get_swap_module_params_on_conversion()`(`module.py:953`)打开;`param_applied` 是 traceable wrapper subclass;或原 `param` 是 FakeTensor。它用 `torch.utils.swap_tensors` 原地交换两个张量的底层 `TensorImpl`。**关键细节**:swap 前必须 `param.grad = None`(`module.py:980`),因为访问 `param.grad` 会让其底层 `at::Tensor` 的 `use_count` 变 2,阻止交换;失败时在 `except` 里把 grad 还原(`module.py:988`)。
+- **路径 B（`.data =`，`module.py:994`）是当前默认路径**。`compute_should_use_set_data`（`module.py:937`）在新旧张量「shallow-copy 兼容」且**不是** FakeTensor 时返回 `True`。它会原地修改 `param.data`，保留 Parameter 对象身份与 `.grad`，开销最低。
+- **路径 A（`swap_tensors`，`module.py:975`）是未来方向，也是子类的必经路径**。有三种触发条件：全局 future flag `torch.__future__.get_swap_module_params_on_conversion()`（`module.py:953`）已打开；`param_applied` 是 traceable wrapper subclass；原 `param` 是 FakeTensor。它通过 `torch.utils.swap_tensors` 原地交换两个张量的底层 `TensorImpl`。**关键细节**：swap 前必须执行 `param.grad = None`（`module.py:980`），因为访问 `param.grad` 会将其底层 `at::Tensor` 的 `use_count` 增至 2，导致交换失败；如果交换失败，则在 `except` 中还原 grad（`module.py:988`）。
 - **路径 C(重建 `Parameter`,`module.py:1003`)是兜底**,前置 `assert param.is_leaf`。
 
 `param.grad` 的搬运走与参数**对应的**路径(`module.py:1006` 起):swap 路径对 grad 也 `swap_tensors`(`module.py:1015`),set_data 路径走 `out_param.grad.data = grad_applied`(`module.py:1024`),否则重建 grad 并 `requires_grad_`。buffer 没有叶子/grad 顾虑,直接覆盖即可:

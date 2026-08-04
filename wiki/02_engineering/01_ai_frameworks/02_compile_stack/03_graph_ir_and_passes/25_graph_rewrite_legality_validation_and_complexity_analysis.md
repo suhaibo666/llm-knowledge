@@ -7,7 +7,7 @@
 
 ## 1. 结构命中只是第一关
 
-一个rewrite正确需同时满足：
+一次 rewrite 要保证正确，必须同时满足以下条件：
 
 ```text
 结构命中
@@ -21,19 +21,19 @@
 
 任何一项失败都应保留原图。
 
-## 2. Shape与broadcast
+## 2. Shape 与 broadcast
 
-`add(matmul(x,w), b)`看似可融合，但需确认：
+`add(matmul(x,w), b)` 看似可以融合，但还需确认：
 
-- matmul rank与batch semantics；
-- b broadcast axes；
-- symbolic equality/range可证明；
+- matmul 的 rank 与 batch semantics；
+- b 的 broadcast axes；
+- symbolic equality/range 是否可证明；
 - empty/zero-size；
 - output shape；
-- replacement是否支持dynamic。
+- replacement 是否支持 dynamic。
 
-无法compile-time证明时，要么extra_check拒绝，要么由正确层产生runtime guard；不能用trace
-hint假装恒真。
+无法在 compile time 证明时，要么由 extra_check 拒绝，要么由正确的层生成 runtime guard；不能将 trace
+hint 当作恒真条件。
 
 ## 3. Dtype与数值
 
@@ -45,14 +45,14 @@ hint假装恒真。
 - complex/conjugate；
 - autocast；
 - NaN/Inf/signed zero；
-- reduction order与associativity；
-- fast-math容忍度。
+- reduction order 与 associativity；
+- fast-math 的容忍度。
 
-bitwise equality、`allclose`和训练收敛是不同validation等级。
+bitwise equality、`allclose` 和训练收敛属于不同的 validation 等级。
 
 ## 4. Device、layout、stride与alignment
 
-同shape Tensor可有不同：
+shape 相同的 Tensor 仍可能具有不同的：
 
 - device；
 - contiguous/channels-last；
@@ -61,25 +61,25 @@ bitwise equality、`allclose`和训练收敛是不同validation等级。
 - alignment；
 - pinned memory。
 
-replacement若隐含contiguous，必须插入合法copy/constraint或拒绝。Inductor GraphLowering在
-调用lowering前可施加layout constraints；fallback backward还可能保守require contiguous
+如果 replacement 隐含 contiguous 条件，就必须插入合法的 copy/constraint，否则应拒绝改写。Inductor GraphLowering 在
+调用 lowering 前可以施加 layout constraints；fallback backward 还可能保守地要求 contiguous
 （`torch/_inductor/graph.py:1435-1465`;
 `torch/_inductor/graph.py:1478-1515`）。
 
-## 5. Alias、mutation与effect
+## 5. Alias、mutation 与 effect
 
 验证：
 
-- output alias输入吗；
-- mutation目标/次数/顺序；
+- output 是否 alias 输入；
+- mutation 的目标/次数/顺序；
 - view metadata；
 - version counter；
 - RNG/collective/I/O；
 - stream/mempool；
 - input/output escape。
 
-只比较returned tensor数值无法发现alias contract改变。测试要比较data_ptr/storage relation与
-mutation后的可观察状态。
+只比较 returned tensor 的数值，无法发现 alias contract 的变化。测试还要比较 data_ptr/storage relation，以及
+mutation 后的可观察状态。
 
 ### 三条可复用的安全判据
 
@@ -100,22 +100,22 @@ mutation后的可观察状态。
 
 ## 6. Autograd
 
-forward等价不保证gradient等价。至少覆盖：
+forward 等价并不保证 gradient 等价。至少应覆盖：
 
 - first-order grads；
 - multiple outputs/tangents；
 - None/non-differentiable；
 - gradgrad；
-- input mutation与leaf rules；
+- input mutation 与 leaf rules；
 - custom autograd.Function；
 - saved tensor/version behavior。
 
-可用eager differential、`gradcheck`、`gradgradcheck`，并比较compiled fw/bw。
+可以使用 eager differential、`gradcheck`、`gradgradcheck`，并比较 compiled fw/bw。
 
 ## 7. Fake/meta checks与runtime guards
 
-FakeTensor可低成本验证shape/dtype/device传播；ShapeEnv可证明symbolic predicates。
-但Fake execution不验证：
+FakeTensor 可以低成本验证 shape/dtype/device 的传播；ShapeEnv 可以证明 symbolic predicates。
+但 Fake execution 无法验证：
 
 - real numerical accuracy；
 - backend kernel race；
@@ -123,19 +123,19 @@ FakeTensor可低成本验证shape/dtype/device传播；ShapeEnv可证明symbolic
 - actual memory alignment；
 - performance。
 
-它是早期filter，不是最终proof。
+它只是早期 filter，而不是最终 proof。
 
 ## 8. Differential testing矩阵
 
 维度至少包含：
 
 - static/dynamic shapes；
-- rank边界；
+- rank 边界；
 - empty/size-1/非整除；
 - contiguous/transposed/sliced；
-- dtype与autocast；
-- CPU/GPU或目标backend；
-- requires_grad组合；
+- dtype 与 autocast；
+- CPU/GPU 或目标 backend；
+- requires_grad 的组合；
 - alias/non-alias inputs；
 - mutation/no mutation；
 - NaN/Inf/extreme values；
@@ -147,24 +147,24 @@ FakeTensor可低成本验证shape/dtype/device传播；ShapeEnv可证明symbolic
 
 ## 9. 失败原子性
 
-`extra_check`应在graph mutation前完成。若handler内部可能失败：
+`extra_check` 应在 graph mutation 前完成。如果 handler 内部可能失败：
 
 - 在临时Graph构造replacement；
 - 全部成功后copy/commit；
 - 或显式rollback；
 - 永远不要捕获异常后留下半连接Node。
 
-普通MatchContext rollback只覆盖pattern binding，不回滚handler graph surgery。
+普通的 MatchContext rollback 只覆盖 pattern binding，不会回滚 handler 执行的 graph surgery。
 
 ## 10. 性能值得性
 
-合法rewrite也可能更慢。评估：
+合法的 rewrite 也可能更慢。评估时应考虑：
 
-- kernel launch减少；
+- kernel launch 的减少量；
 - materialization bytes；
 - recompute FLOPs；
-- register/shared memory压力；
-- template/extern选择；
+- register/shared memory 压力；
+- template/extern 的选择；
 - compile/autotune cost；
 - dynamic shape reuse；
 - peak memory。
@@ -198,8 +198,8 @@ multi-output/user anchor探索 `A(p,v)`、replacement大小 `Q`、被重连 uses
 
 ### 不能忽略的最坏项
 
-- transitive ancestor sets可 `Θ(V²)`；
-- matcher首次apply可扫描全图计算mutation region；非 `call_function` 的带target查询还会
+- transitive ancestor sets 的复杂度可达 `Θ(V²)`；
+- matcher 首次 apply 时可能扫描全图，以计算 mutation region；非 `call_function` 且带 target 的查询还会
   按注册root key过滤相应op桶，不能一概写成 `O(C)`候选查找
   （`torch/_inductor/pattern_matcher.py:2416-2425`、
   `torch/_inductor/pattern_matcher.py:2619-2645`、`torch/fx/graph.py:1360-1393`）；
@@ -207,11 +207,11 @@ multi-output/user anchor探索 `A(p,v)`、replacement大小 `Q`、被重连 uses
   不能简写成严格 `O(C log C)`，stable topo移动Node时也会复制/重建key
   （`torch/fx/node.py:441-450`、`torch/csrc/fx/node.cpp:429-449`、
   `torch/csrc/fx/node.cpp:454-463`）；
-- alias merge/all-pairs fusion可超线性；
-- symbolic algebra不由V线性控制；
-- autotune wall time由compile+benchmark candidates主导；
-- nested graph需对所有children求和；
-- trace本身执行的tensor计算可能远大于结构遍历。
+- alias merge/all-pairs fusion 的复杂度可能超过线性；
+- symbolic algebra 的复杂度不受 V 线性约束；
+- autotune wall time 主要取决于 compile + benchmark candidates；
+- nested graph 需要对所有 children 求和；
+- trace 本身执行的 tensor 计算可能远大于结构遍历。
 
 `extra_check`、custom handler、FakeTensor/meta kernel 与 traced replacement 是任意外部
 计算，不能塞进只依赖 `V/E`的严格上界。没有 bucket/fan-out/round 分布时，期望复杂度
@@ -250,16 +250,16 @@ Entry.apply；应用后还按 entry 类型刷新 mutation-region 信息
 
 这层能证明：
 
-- replacement 没跨越已知 mutation barrier；
-- matched operations 位于兼容 stream/mempool context；
-- rule 自己声明的 extra predicate 成立。
+- replacement 未跨越已知的 mutation barrier；
+- matched operations 位于兼容的 stream/mempool context；
+- rule 声明的 extra predicate 成立。
 
 它不能证明：
 
 - 任意 storage alias 等价；
 - 数值/梯度等价；
 - 未被 region metadata 建模的 effect；
-- backend kernel 在目标设备正确。
+- backend kernel 在目标设备上运行正确。
 
 ### 2. Traced replacement 会用真实 match 的 fake values 再 trace 一次
 
@@ -371,7 +371,7 @@ try/except 后删除“看起来是新建的 Nodes”并不稳健，因为 handl
 
 - `extra_check(match)` 可运行任意 Python/symbolic reasoning；
 - specific search/replacement `trace_fn` 会执行 fake/meta operator；
-- layout constraint 可 normalize 大型 pytree并插入 copy/realize；
+- layout constraint 可以 normalize 大型 pytree，并插入 copy/realize；
 - differential/gradcheck/randomized matrix 会执行真实 Tensor computation；
 - backend compile/autotune 由候选 kernel、编译器和设备测量主导。
 

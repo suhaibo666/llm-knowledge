@@ -68,7 +68,7 @@ self.linear_wq_b = build_module(..., parallel_mode="duplicated")  # csa.py:460
 
 来源：megatron/core/transformer/experimental_attention_variant/csa.py
 
-> **关键结论**：即使 Attention 的其他部分（q_up_proj/kv_proj/output_proj）做了 TP 切分，**Compressor 和 Indexer 仍需在每个 rank 上持有完整输入并重复计算**。这会使得 TP 的收益大打折扣——线性层的 FLOPs 可以分摊，但压缩和索引的计算无法分摊。
+> **关键结论**：即使 Attention 的其他部分（q_up_proj/kv_proj/output_proj）做了 TP 切分，**Compressor 和 Indexer 仍需在每个 rank 上持有完整输入并重复计算**。因此，TP 的收益会大幅降低：线性层的 FLOPs 可以分摊，但压缩和索引的计算无法分摊。
 
 ### 1.2 q_down_proj 的 duplicated 设计：需要完整 hidden states 做压缩
 
@@ -599,7 +599,7 @@ self.linear_proj = build_module(..., tp_comm_buffer_name='proj', ...)
 
 ### 8.3 与 V3 设计哲学的延续
 
-> **一句话总结**：DeepSeek-V4 在 Megatron-LM dev 分支中的当前实现延续了 V3 "弱化 TP、强化 EP+DP" 的设计哲学。DSv4 Hybrid Attention 强制 TP=1，Compressor/Indexer 采用 duplicated 模式，mHC 使用非 TP-aware 的 nn.Linear，Routed Expert 的 fused 路径不支持 TP > 1。这使得 V4 的跨 rank 通信主要由 EP All-to-All 和 CP Ring-AG 承载，而非 TP 的 AllGather/ReduceScatter。Shared Expert 是唯一的标准 TP 切分点，但可通过 overlap 与 EP 通信隐藏。
+> **一句话总结**：DeepSeek-V4 在 Megatron-LM dev 分支中的当前实现延续了 V3 "弱化 TP、强化 EP+DP" 的设计哲学。DSv4 Hybrid Attention 强制 TP=1，Compressor/Indexer 采用 duplicated 模式，mHC 使用非 TP-aware 的 nn.Linear，Routed Expert 的 fused 路径不支持 TP > 1。因此，V4 的跨 rank 通信主要由 EP All-to-All 和 CP Ring-AG 承载，而非 TP 的 AllGather/ReduceScatter。Shared Expert 是唯一的标准 TP 切分点，但可通过 overlap 与 EP 通信隐藏。
 
 > **Future Work**：若未来需要在大规模集群（>1024 GPU）上训练 V4 且单卡显存成为瓶颈，可考虑：  
 > 1\. 移除 `DSv4HybridAttention` 的 `assert tp == 1` 限制，激活 q_up_proj/kv_proj 的 ColumnParallel 和 output_proj 的 RowParallel。  

@@ -1,13 +1,13 @@
 # PyTorch 编译与运行时架构 — 知识地图
 
-> 本域(`01_ai_frameworks`)按 **PyTorch 编译/运行时架构**组织。每个功能目录下,**硬件无关的通用机制**置于该目录层级,**硬件特定实现**下沉到 `npu/`、`cuda/` 等硬件子目录。
-> 最后更新: 2026-07-30
+> 本域（`01_ai_frameworks`）按 **PyTorch 编译/运行时架构**组织。每个功能目录下，**硬件无关的通用机制**置于该目录层级，**硬件特定实现**下沉到 `npu/`、`cuda/` 等硬件子目录。
+> 最后更新：2026-07-30
 
 ---
 
-## 架构总览:两条主轴
+## 架构总览：两条主轴
 
-PyTorch 可拆成相互支撑的两条主轴——**① eager 运行时地基**(默认即时执行所依赖的数据模型与机制)与 **② torch.compile 编译栈**(把 eager 计算捕获、分解、编译成 kernel)。编译栈始终建立在地基之上,二者共享同一套 Tensor/Dispatcher 底座。
+PyTorch 可拆成两条相互支撑的主轴：**① eager 运行时地基**（默认即时执行所依赖的数据模型与机制）与 **② torch.compile 编译栈**（把 eager 计算捕获、分解并编译成 kernel）。编译栈始终建立在运行时地基之上，二者共享同一套 Tensor/Dispatcher 底座。
 
 ```
                          ┌─────────────────── ② torch.compile 编译栈(02_compile_stack) ───────────────────┐
@@ -25,14 +25,14 @@ PyTorch 可拆成相互支撑的两条主轴——**① eager 运行时地基**(
    (04_export_and_distributed:torch.fx/export/扩展、torch.distributed 原语 —— 见 ④ 图导出与分布式)
 ```
 
-> 关键对照:**01_eager_runtime/05_autograd_engine**(运行时动态磁带 + C++ 引擎)是 **02_compile_stack/02_aot_autograd**(编译期前/反向联合 FX 图)的 eager 对应物;两者易混,见各自 index 的对照表。
-> 编译栈端到端流水线详见 [[02_compile_stack/04_inductor/index]];eager 地基从 [[01_eager_runtime/01_tensor_and_storage/index]] 读起。
+> 关键对照：**01_eager_runtime/05_autograd_engine**（运行时动态磁带 + C++ 引擎）是 **02_compile_stack/02_aot_autograd**（编译期前/反向联合 FX 图）的 eager 对应物。两者容易混淆，具体区别见各自 index 中的对照表。
+> 编译栈端到端流水线详见 [[02_compile_stack/04_inductor/index]]；eager 地基从 [[01_eager_runtime/01_tensor_and_storage/index]] 读起。
 
 ---
 
-## 功能目录(五层架构导航)
+## 功能目录（五层架构导航）
 
-`01_ai_frameworks` 按 5 个架构层两级组织,每层目录下再分功能子目录(逐子目录导航见各层自己的 `index.md`)。
+`01_ai_frameworks` 按 5 个架构层、两级目录组织，每层目录下再划分功能子目录（逐级导航见各层的 `index.md`）。
 
 | 层 | 目录 | 功能 |
 |---|------|------|
@@ -42,7 +42,7 @@ PyTorch 可拆成相互支撑的两条主轴——**① eager 运行时地基**(
 | ④ 图导出与分布式 | [[04_export_and_distributed/index]] | torch.fx(eager 图 IR)、torch.export(ExportedProgram)、torch.library/custom_op、functorch(vmap/grad);torch.distributed 原生原语:c10d/ProcessGroup、DDP、FSDP/FSDP2、DTensor/DeviceMesh、TP/PP(**[[02_train_frameworks/index]] 的底座**) |
 | ⑤ 其它框架对照 | [[05_other_frameworks/index]] | 非 PyTorch 框架编译器/架构分析(MindSpore 等),与本域横向对照 |
 
-缓存(② 层 `06_compile_cache`)不是 codegen 之后新增的一种 IR 阶段,而是横跨生命周期的"跳过既有工作"机制:
+缓存（② 层 `06_compile_cache`）不是 codegen 之后新增的 IR 阶段，而是横跨整个生命周期、用于“跳过既有工作”的机制：
 
 ```text
 Dynamo PGO → 复用动态行为/shape经验
@@ -51,35 +51,35 @@ Inductor FX graph cache → 复用lowering/codegen artifact
 Triton autotune/kernel cache → 复用候选winner与已编译kernel
 ```
 
-阅读顺序仍是捕获→AOT→Inductor→codegen；随后从[[02_compile_stack/06_compile_cache/index]]反向检查每一层
-cache hit究竟跳过了哪些阶段，不能把“命中cache”笼统理解成整条编译栈都未运行。
+阅读顺序仍是捕获 → AOT → Inductor → codegen；随后从 [[02_compile_stack/06_compile_cache/index]] 反向检查每一层的
+cache hit 究竟跳过了哪些阶段，不能把“命中 cache”笼统理解为整条编译栈都未运行。
 
-课程入口(跨 5 层的纯导读页,正文全部归属上表功能树,不计入上表):[[courses/torch_compile_end_to_end|torch.compile 端到端课程]] ——
-从 eager 地基到 Dynamo 捕获、AOTAutograd 分解、Graph IR/Passes、Inductor 编译、跨阶段缓存、
-调试诊断、运行时图捕获、导出与分布式的完整阅读路线 + labs 对应表(2026-07-30 kb-reorg P4
-Task 10 起,原 19 号课程目录已整体解散,内容归并进上表 5 层)。
+课程入口（跨 5 层的纯导读页，正文全部归属上表功能树，不计入上表）：[[courses/torch_compile_end_to_end|torch.compile 端到端课程]]——
+提供从 eager 地基、Dynamo 捕获、AOTAutograd 分解、Graph IR/Passes、Inductor 编译、跨阶段缓存，
+到调试诊断、运行时图捕获、导出与分布式的完整阅读路线及 labs 对应表（自 2026-07-30 kb-reorg P4
+Task 10 起，原 19 号课程目录已整体解散，内容归并到上表 5 层）。
 
 ---
 
 ## 硬件分层约定
 
-- **通用页**(无硬件后缀)位于功能目录层级,描述 PyTorch 上游通用机制。
-- **NPU 特定页**位于 `<功能>/npu/`,基于 `torch_npu` / `op-plugin`(当前核验基准 = **v2.7.1.post5**)。
+- **通用页**（无硬件后缀）位于功能目录层级，描述 PyTorch 上游通用机制。
+- **NPU 特定页**位于 `<功能>/npu/`，基于 `torch_npu` / `op-plugin`（当前核验基准 = **v2.7.1.post5**）。
 - **CUDA 特定页**位于 `<功能>/cuda/`。
-- 跨硬件对比页(如 NPU vs CUDA Graphs)放硬件目录内并双向 backlink。
-- eager 地基模块(00/10–13)当前均为 upstream 通用页(核验基准 = PyTorch `E:\97-codes\pytorch\pytorch`,v2.13.0a0);其 NPU 特化(NPU 分配器、HCCL ProcessGroup、AutogradPrivateUse1 等)按需下沉到各自 `npu/`(见下方路线图)。
+- 跨硬件对比页（如 NPU vs CUDA Graphs）放在硬件目录内，并添加双向 backlink。
+- eager 地基模块（00/10–13）当前均为 upstream 通用页（核验基准 = PyTorch `E:\97-codes\pytorch\pytorch`，v2.13.0a0）；其 NPU 特化内容（NPU 分配器、HCCL ProcessGroup、AutogradPrivateUse1 等）按需下沉到各自的 `npu/`（见下方路线图）。
 
 ---
 
-## 知识分层约定(overview → quick start → deep dive)
+## 知识分层约定（overview → quick start → deep dive）
 
-每个(子)模块内的知识按「深入浅出」分三层,索引页用 **层次** 列标注:
+每个（子）模块内的知识按由浅入深的顺序分为三层，索引页使用 **层次** 列标注：
 
-- **overview**(浅):该模块是什么 / 为什么 / 全景图 / 如何选型,5 分钟通读;通常即各目录的 `index.md` 或显式 overview 页。
-- **quick start**(用):最小可用路径、关键 API、可跑示例、常见开关(并非每模块都有,按需)。
-- **deep dive**(深):源码级深度分析(多为既有大文),按主题拆分,一概念一页。
+- **overview**（浅）：说明模块是什么、为什么需要它、全景结构和选型方法，通常是各目录的 `index.md` 或显式 overview 页，约 5 分钟可读完。
+- **quick start**（用）：提供最小可用路径、关键 API、可运行示例和常用开关；并非每个模块都需要。
+- **deep dive**（深）：源码级深度分析（多为既有长文），按主题拆分，每页聚焦一个概念。
 
-阅读建议:先 overview 建立全局 → 需要动手看 quick start → 钻研细节看 deep dive。
+阅读建议：先通过 overview 建立全局认识，需要动手时看 quick start，钻研细节时再看 deep dive。
 
 ---
 
