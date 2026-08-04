@@ -155,4 +155,4 @@ halo tiling:一次把 tile + 边界搬进 shared memory,块内复用重叠窗口
 - [[triton_01_gpu_essentials_guide]] — roofline、内存层级与性能估算
 - [[triton_11_fused_softmax_guide]] — reduction + elementwise 融合实例
 - [[triton_30_optimization_profiling_guide]] — profiling 与 FlashAttention 优化路径
-- [[index]] — GPU Kernel 领域索引
+- [[02_engineering/05_gpu_kernel/index|GPU Kernel 开发]] — GPU Kernel 领域索引

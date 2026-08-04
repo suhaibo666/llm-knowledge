@@ -20,7 +20,7 @@
 4. 用 `torch.library.custom_op` **定义 + 注册**一个自定义算子(schema 自动推断 + backend impl + fake)。
 5. `vmap` 自动向量化 与 `functional_call` 无状态调用。
 
-机制层面的"为什么这么设计"在 [[10_fx_graph_export_and_custom_ops_analysis]];本模块全景见 [[index]]。
+机制层面的"为什么这么设计"在 [[10_fx_graph_export_and_custom_ops_analysis|FX/export 扩展机制源码级深析]];本模块全景见 [[02_engineering/01_ai_frameworks/04_export_and_distributed/01_fx_export_extensibility/index|FX 图 IR·torch.export·算子扩展]]。
 
 三条捕获路径的取舍(选哪条,见 overview 全景图):
 
@@ -346,7 +346,7 @@ print({k: v.shape for k, v in grads.items()})
 ## Related Pages
 
 - [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
-- [[index]] — 本模块 overview(FX / export / 扩展机制全景与捕获路径对比)
+- [[02_engineering/01_ai_frameworks/04_export_and_distributed/01_fx_export_extensibility/index|FX 图 IR·torch.export·算子扩展]] — 本模块 overview(FX / export / 扩展机制全景与捕获路径对比)
 - [[10_fx_graph_export_and_custom_ops_analysis]] — 本模块 deepdive(Proxy 拦截、Node/Graph IR、代码生成、分发桥接源码级深析)
 - [[02_compile_stack/01_dynamo/index]] — Dynamo:字节码帧求值的另一条图捕获路径
 - [[02_compile_stack/02_aot_autograd/index]] — AOT Autograd / 分解栈(`run_decompositions` 衔接处)

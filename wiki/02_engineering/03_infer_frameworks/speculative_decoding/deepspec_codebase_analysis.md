@@ -180,7 +180,7 @@ flowchart LR
 
 ## Related Pages
 - [[dspark_analysis]] —— DSpark 论文机制深挖（公式与「为什么」；本页是其代码对照）
-- [[index]] —— 投机推理演进总览（MTP → Eagle3 → DFlash → DSpark）
+- [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理演进]] —— 投机推理演进总览（MTP → Eagle3 → DFlash → DSpark）
 - [[20_vllm_speculative_decoding_analysis]] —— 投机解码在推理引擎里的验收/拒绝采样实现
 
 ## Cross-Domain Links

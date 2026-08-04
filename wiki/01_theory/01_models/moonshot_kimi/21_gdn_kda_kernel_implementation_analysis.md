@@ -1,7 +1,7 @@
 # GDN/KDA 融合 Kernel：训练、Prefill 与 Decode 的实现拆解
 
 > **更新日期**：2026-07-17
-> **原理前置**：[[20_gdn_kda_linear_attention_analysis]]
+> **原理前置**：[[20_gdn_kda_linear_attention_analysis|GDN/KDA 线性注意力]]
 > **训练实现基线**：flash-linear-attention `main@ccb0ff944cbff035fa59ac47a4cc8fd2e079bb17`
 > **推理实现基线**：SGLang `main@7824903417b7398ffaf9befe8a221080627e152f`
 > **TND/THD 集成基线**：Megatron-LM `dev@232c478d43ce2f8b4c8db3507d3623fa82f55823`

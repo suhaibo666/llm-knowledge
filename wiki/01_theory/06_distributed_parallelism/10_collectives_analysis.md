@@ -50,7 +50,7 @@ $$T(n) = \alpha + \frac{n}{B_w}$$
 
 大模型的梯度/激活张量都是「大消息」，所以**训练几乎永远是带宽受限**——这解释了后面所有并行策略「拼命省字节、拼命重叠」的动机。
 
-> **拓扑不是均质的（贯穿全篇的隐含前提）**：机内 NVLink/NVSwitch 的 $B_w$ 可达数百 GB/s，机间 InfiniBand/以太只有它的 1/5 ～ 1/50，且 $\alpha$ 更大。所以「用哪个原语」之外还有「在哪一层用」：**通信量大、频次高的并行（TP/SP）必须待在机内高带宽域；通信量小的（DP/PP）才敢跨机**。这条约束是 N 维并行布局（见 [[index]]）的物理根源。
+> **拓扑不是均质的（贯穿全篇的隐含前提）**：机内 NVLink/NVSwitch 的 $B_w$ 可达数百 GB/s，机间 InfiniBand/以太只有它的 1/5 ～ 1/50，且 $\alpha$ 更大。所以「用哪个原语」之外还有「在哪一层用」：**通信量大、频次高的并行（TP/SP）必须待在机内高带宽域；通信量小的（DP/PP）才敢跨机**。这条约束是 N 维并行布局（见 [[01_theory/06_distributed_parallelism/index|分布式并行原理]]）的物理根源。
 
 ---
 
@@ -144,7 +144,7 @@ NCCL/HCCL 等库会按消息大小、拓扑**自动选算法**——这是「实
 
 ## Related Pages
 
-- [[index]] — 本簇总览：N 维并行全景与显存/通信总账
+- [[01_theory/06_distributed_parallelism/index|分布式并行原理]] — 本簇总览：N 维并行全景与显存/通信总账
 - [[11_data_parallel_analysis]] — DP：all-reduce 梯度的最基本用法
 - [[13_tensor_sequence_parallel_analysis]] — TP/SP/CP：all-gather/reduce-scatter 的层内切分
 - [[14_expert_parallel_analysis]] — EP：all-to-all 的专家路由

@@ -78,7 +78,7 @@ flowchart TB
 
 ## Related Pages
 
-- [[index]] — 分布式并行原理域入口(α-β 代价模型是本页 roofline 记账的姊妹尺)
+- [[01_theory/06_distributed_parallelism/index|分布式并行原理]] — 分布式并行原理域入口(α-β 代价模型是本页 roofline 记账的姊妹尺)
 - [[14_expert_parallel_analysis]] — EP 原理与 all-to-all 代价,本页 §五的原理底座
 - [[15_pipeline_parallel_analysis]] — PP 气泡与调度,CPP 是其推理 prefill 特化
 - [[13_tensor_sequence_parallel_analysis]] — TP/SP/CP 原理;Helix 的序列维 KV 切分与 CP 同轴

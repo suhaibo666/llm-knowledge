@@ -213,7 +213,7 @@ def lower_bias_sigmoid(x, bias):
 
 这里传入 `lowerings[...]`的参数已经是 Inductor IR（而非 FakeTensor/FX Node），所以只能
 在 lowering 内部这样组合；若目标只是表达一个等价 ATen 公式，应优先写
-[[33_decomposition_passes_guide]]，不要把纯语义展开硬塞进 lowering。
+[[33_decomposition_passes_guide|Decomposition Pass 指南]]，不要把纯语义展开硬塞进 lowering。
 
 ## 5. `call_function`选择顺序
 

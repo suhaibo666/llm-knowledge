@@ -671,4 +671,4 @@ Dynamic CP 是"要不要切、切多少度"这一决策层的机制,与 §3-§9 
 - [[../../02_engineering/02_train_frameworks/torchtitan/13_torchtitan_cp_analysis|13_torchtitan_cp_analysis]] —— torchtitan 实现差异
 - [[../../02_engineering/02_train_frameworks/mindspeed/20_mindspeed_context_parallel_analysis|20_mindspeed_context_parallel_analysis]] —— MindSpeed 实现差异
 - [[../../02_engineering/02_train_frameworks/megatron-lm/35_deepseek_v4_context_parallel_analysis|35_deepseek_v4_context_parallel_analysis]] —— DeepSeek-V4 实现差异
-- [[index]] —— 分布式并行原理目录索引
+- [[01_theory/06_distributed_parallelism/index|分布式并行原理]] —— 分布式并行原理目录索引

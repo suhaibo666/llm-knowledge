@@ -4,7 +4,7 @@
 > 核心代码位置：本地 upstream `E:\97-codes\pytorch\pytorch`：`torch/_inductor/codegen/triton.py`、`codegen/simd.py`、`ir.py`
 > 最后更新：2026-06-17
 
-> 这是 [[20_inductor_codegen_analysis]] / [[10_fx_lowering_to_inductor_ir_analysis]] 未展开的 reduction codegen 细节，也是 [[23_npu_inductor_linearize_backend_analysis]] 中 NPU「persistent 恒关 + r 轴 rsplit」的**上游基线**。
+> 这是 [[20_inductor_codegen_analysis]] / [[10_fx_lowering_to_inductor_ir_analysis]] 未展开的 reduction codegen 细节，也是 [[23_npu_inductor_linearize_backend_analysis|NPU 实验性 Linearize 后端]] 中 NPU「persistent 恒关 + r 轴 rsplit」的**上游基线**。
 
 ---
 

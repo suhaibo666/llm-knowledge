@@ -4,7 +4,7 @@
 > **最后更新**:2026-06-22 · **系列**:vLLM 推理引擎源码级分析(见 [[vllm/index]])
 > **分析维度**:Overview → Quick Start → Deep Dive
 >
-> 本页是 [[24_vllm_fused_ops_and_kernels_analysis]] 的**机制深挖伴篇**,把"图模式下算子怎么被融合"讲到底:① vLLM 自己的算子 IR 层 `vllm_ir`(`torch.library` 注册、为何不挂 `aten`、如何被 Dynamo 保留);② 融合 Pass 流水线 `PostGradPassManager`;③ 它如何挂进 Inductor 生效;④ 以 **RMSNorm + FP8 量化** 为例,从用户模型代码 → eager 双 kernel → 融合 kernel 的完整替换走查。与 [[23_vllm_compilation_cudagraph_analysis]](图捕获/CUDA Graph)分工:本页讲"改写计算图、合并算子",那页讲"把下发录成 replay"。
+> 本页是 [[24_vllm_fused_ops_and_kernels_analysis|vLLM 算子融合与 Triton Kernel]] 的**机制深挖伴篇**,把"图模式下算子怎么被融合"讲到底:① vLLM 自己的算子 IR 层 `vllm_ir`(`torch.library` 注册、为何不挂 `aten`、如何被 Dynamo 保留);② 融合 Pass 流水线 `PostGradPassManager`;③ 它如何挂进 Inductor 生效;④ 以 **RMSNorm + FP8 量化** 为例,从用户模型代码 → eager 双 kernel → 融合 kernel 的完整替换走查。与 [[23_vllm_compilation_cudagraph_analysis]](图捕获/CUDA Graph)分工:本页讲"改写计算图、合并算子",那页讲"把下发录成 replay"。
 
 ---
 

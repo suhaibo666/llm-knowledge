@@ -9,7 +9,7 @@
 > 本页所有 API / backend / 日志键 / config 均对照真实源码核实,标注 `path:line`。深入原理见文末导航。
 
 ## 1. 快速导航
-> 「AOTAutograd 是什么、在栈中的位置、三大职责(functionalization / joint graph / partition)」见 [[index]] 模块概述。本页聚焦上手:下面给出主要入口、核心概念与常用配置的索引,细节落在后续小节。
+> 「AOTAutograd 是什么、在栈中的位置、三大职责(functionalization / joint graph / partition)」见 [[02_engineering/01_ai_frameworks/02_compile_stack/02_aot_autograd/index|AOTAutograd]] 模块概述。本页聚焦上手:下面给出主要入口、核心概念与常用配置的索引,细节落在后续小节。
 
 - **主要入口**:`aot_function` / `aot_module`(均在 `torch/_functorch/aot_autograd.py`)。走 `torch.compile` 时通常不直接调用,用 `backend="aot_eager"` 即可触发 AOTAutograd 全流程(见 §2);`aot_function` 的 docstring 写明它 ahead-of-time trace 前向 + 反向、生成联合图,再由 `partition_fn` 切分(`aot_autograd.py:723-728`)。
 - **核心概念**:partitioner 有 `min_cut_rematerialization_partition`(默认,以重计算换显存)与 `default_partition`(多 save、少重算)两种(§3);看图用 `TORCH_LOGS` 的 `aot_graphs`(切分后的前/反向图)与 `aot_joint_graph`(切分前的联合图)(§2)。

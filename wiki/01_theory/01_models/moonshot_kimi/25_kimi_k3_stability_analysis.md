@@ -79,7 +79,7 @@ K3 把稀疏度推到 **56**（896 专家选 16）。报告直言这种极端稀
 **Per-Head Muon**（§2.5，p.10）：对 Q/K/V 投影，不再对完整 momentum 矩阵做 Newton–Schulz 正交化，而是沿 head 维切分后逐 head block 独立正交化。报告给出的直觉是：整矩阵正交化把所有 head 当成一个耦合块，**梯度或 momentum 尺度较大的 head 会主导共享的更新方向，而小尺度 head 得到的归一化不足**；按头正交化令各 head 的更新尺度均衡。声称收益有三：跨 head 学习动态更均衡、**大规模下训练稳定性提升**、以及 optimizer overhead 略降（高瘦的 per-head block 上做 NS 迭代比整个投影矩阵便宜）。
 
 > [!note] 这条更正了本库先前的一处"未知"
-> [[23_kimi_k3_infra_deepdive]] §2.1 曾记："报告没有给出 Per-Head Muon 与 QK-Clip 的联合消融……它如何与 K2 的 MuonClip 组合仍未知。"
+> [[23_kimi_k3_infra_deepdive|Kimi K3 训推基础设施]] §2.1 曾记："报告没有给出 Per-Head Muon 与 QK-Clip 的联合消融……它如何与 K2 的 MuonClip 组合仍未知。"
 > **报告 §3.3（p.11）其实明确写了组合方式**："We optimize the model using the Per-Head Muon optimizer (§2.5) **together with the weight-clipping mechanism introduced in Kimi K2**, while adopting QB (§2.3.3) for MoE load balancing."
 > 即：**K3 = Per-Head Muon + K2 的 weight-clipping + QB 三者并用**，clip 机制被保留而非被替代（K2 的 weight-clipping 机制即 QK-Clip，见 [[11_kimi_k2_analysis]]）。仍然未公开的是**联合消融、阈值 `τ` 与实现**——"未知"应收窄到这一层，不再是"是否组合"。
 

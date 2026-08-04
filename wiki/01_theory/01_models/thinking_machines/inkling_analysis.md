@@ -162,7 +162,7 @@ Muon 路线与 [[11_kimi_k2_analysis]](MuonClip)、[[01_glm_5_analysis]](Muon Sp
 
 ## Related Pages
 
-- [[index]] — Thinking Machines 家族入口
+- [[01_theory/01_models/thinking_machines/index|Thinking Machines Lab]] — Thinking Machines 家族入口
 - [[hy3_analysis]] — 反面对照: 架构最保守(全程 GQA+RoPE)、赌后训练;Inkling 赌架构差异化
 - [[12_deepseek_v3_analysis]] — 被 Inkling 部分沿用(免辅助损失路由)、部分抛弃(MLA/RoPE/单 MTP)的技术上游
 - [[13_kimi_k2_5_analysis]] — 多模态对照: 保留 MoonViT-3D 重编码器 vs Inkling encoder-free;且 Inkling SFT 用 Kimi K2.5 合成数据冷启动

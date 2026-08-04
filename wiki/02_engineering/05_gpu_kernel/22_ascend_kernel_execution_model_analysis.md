@@ -212,4 +212,4 @@ Qᵢ 常驻,K/V 块流式进来;每来一块 Cube 算局部 attention、Vector �
 - [[11_operator_optimization_guide]] — CUDA 与 Ascend 算子优化方法及 FixPipe / TQue 背景
 - [[13_mindspeed_ascend_affinity_analysis]] — 训练框架中的 Ascend 融合算子与硬件亲和路径
 - [[21_npu_inductor_optimization_analysis]] — torch.compile NPU 后端的 tiling、融合与 codegen
-- [[index]] — GPU Kernel 领域索引
+- [[02_engineering/05_gpu_kernel/index|GPU Kernel 开发]] — GPU Kernel 领域索引

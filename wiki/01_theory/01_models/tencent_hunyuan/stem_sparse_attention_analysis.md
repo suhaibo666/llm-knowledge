@@ -83,7 +83,7 @@ flowchart LR
 ## Related Pages
 
 - [[hy3_analysis]] — 宿主模型;其 §2.4 记录了开源权重为稠密 GQA,本页是其推理服务侧的注意力优化
-- [[index]] — 腾讯混元家族入口
+- [[01_theory/01_models/tencent_hunyuan/index|腾讯混元]] — 腾讯混元家族入口
 - [[01_glm_5_analysis]] — 对照: DSA 训练态稀疏注意力路线(Stem 在 DeepSeek-V3.2 的 DSA 上叠加实验见 Table 3)
 - [[longcat_2_analysis]] — 对照: LSA 训练态稀疏注意力,另一条"改模型"而非"改部署"的路
 - [[12_kimi_linear_analysis]] — 对照: 线性注意力路线,从算子复杂度层面消解同一瓶颈

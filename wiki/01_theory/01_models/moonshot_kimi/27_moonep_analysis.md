@@ -2,7 +2,7 @@
 
 > **来源基线**（所有 `file:line` 均已打开核对）：`MoonshotAI/MoonEP@0f385f038fc33bec22e3bcf5a07a8a22693e754c`（2026-07-28 09:37 +0800，"Add AcclEP into Acknowledgments"），MIT License。仓库共 12,723 行，本地审计快照为 clone 后的工作副本。
 > **维度**：Deep Dive（机制级 + 源码级）。本页回答"MoonEP 到底做了什么、算法怎么跑、为什么这样设计、代价是什么"。
-> **上游语境**：Kimi K3 技术报告 §5.2.1 只给出项目级描述（每 rank 恰收 `S×K`、最多 `E/R` 冗余槽、GPU planning、zero-copy、静态 shape、无逐层 host 同步）。本页把这些描述**逐条落到源码**，是 [[23_kimi_k3_infra_deepdive]] §5 "仍待源码或运行证据确认"表中 MoonEP 一行的兑现。
+> **上游语境**：Kimi K3 技术报告 §5.2.1 只给出项目级描述（每 rank 恰收 `S×K`、最多 `E/R` 冗余槽、GPU planning、zero-copy、静态 shape、无逐层 host 同步）。本页把这些描述**逐条落到源码**，是 [[23_kimi_k3_infra_deepdive|Kimi K3 训推基础设施]] §5 "仍待源码或运行证据确认"表中 MoonEP 一行的兑现。
 > **标记**：`[源码]` 已在上述 commit 中核对；`[README]` 项目方自述但本页未独立复现；`[推断]` 基于已核实事实的推理。
 > **更新**：2026-07-28 建页。
 
@@ -222,7 +222,7 @@ K3 在算法侧用 Quantile Balancing（QB）让 router 本身更均衡，在系
 | 失效后果 | 专家利用率与质量受损 | 若无此层：straggler + 动态 shape + host 同步 + 碎片化 |
 | 出处 | 报告 §2.3.3、Appendix C | 报告 §5.2.1；本页源码 |
 
-换个角度说：**QB 让偏斜变小，MoonEP 让偏斜不再要紧。** 报告把两者放在不同章节，也没有声称 MoonEP 的完全均衡由 QB 保证——这一点在 [[23_kimi_k3_infra_deepdive]] §2.2 已经强调过，源码进一步佐证：planner 完全不假设路由分布，benchmark 反而**故意**在 maxvio 高到 20 的极端偏斜下测试。
+换个角度说：**QB 让偏斜变小，MoonEP 让偏斜不再要紧。** 报告把两者放在不同章节，也没有声称 MoonEP 的完全均衡由 QB 保证——这一点在 [[23_kimi_k3_infra_deepdive|Kimi K3 训推基础设施]] §2.2 已经强调过，源码进一步佐证：planner 完全不假设路由分布，benchmark 反而**故意**在 maxvio 高到 20 的极端偏斜下测试。
 
 这也解释了 [[01_theory/06_distributed_parallelism/14_expert_parallel_analysis|EP 原理页]]里"EP 最大的敌人是负载不均"这一判断在 2026 年的新答案：既往路线是**减小**不均（aux loss、bias 启发式、EPLB 静态冗余），MoonEP 则是**吸收**不均——代价是多搬 `B` 份专家权重和一次反向梯度回收。
 

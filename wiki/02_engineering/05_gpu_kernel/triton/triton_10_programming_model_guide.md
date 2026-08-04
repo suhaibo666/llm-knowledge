@@ -171,7 +171,7 @@ TRITON_INTERPRET=1 python 01-vector-add.py   # CPU 模拟执行，验证语义�
 
 ## 相关页面
 
-- [[index]] — Triton 学习路线总索引
+- [[02_engineering/05_gpu_kernel/triton/index|Triton 学习路线]] — Triton 学习路线总索引
 - [[triton_01_gpu_essentials_guide]] — 前置：GPU 执行/内存层级与 roofline
 - [[triton_11_fused_softmax_guide]] — 下一步：reduction 与 kernel fusion
 - [[triton_14_debug_guide]] — `TRITON_INTERPRET` 无 GPU 调试、`device_print`

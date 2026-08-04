@@ -61,7 +61,7 @@ flowchart LR
 
 | 阶段 | 页面 | 类型 | 核心 |
 |---|---|---|---|
-| **Overview** | 本页 [[index]] | 总览/演进 | 投机推理四代演进主线 + 横向对比 + 三者区别本质 |
+| **Overview** | 本页 [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理演进]] | 总览/演进 | 投机推理四代演进主线 + 横向对比 + 三者区别本质 |
 | **Theory + Deep Dive** | [[dspark_analysis]] | 论文深挖 | 页内自带 **Overview（§1）→ Theory 理论基础（§2：延迟公式/草稿器谱系/DFlash 骨干）→ Deep Dive（§3 起，两大部件四拍）** |
 | **Deep Dive（源码）** | [[deepspec_codebase_analysis]] | 源码分析 | 开源仓 DeepSpec：Overview → Quick Start → Deep Dive；一套框架产 Eagle3/DFlash/DSpark，论文公式 ↔ 代码逐行核对，开源 vs 生产边界 |
 

@@ -4,7 +4,7 @@
 > Million-Token Context Intelligence」, DeepSeek-AI, 提交于 **2026-04-26**。
 > **审计日期**: 2026-06-25　**维度**: 审计 / 核对 / 订正（Reconciliation）
 > 本页回答：wiki 中既有的 ~7 篇 DeepSeek-V4 页面，哪些断言/数字/出处与**正式发表版**一致，哪些
-> 是**预发布残留**或**未源于论文的臆造**。它是对 [[13_deepseek_v4_analysis]] 及其专题页的一次源忠实复核。
+> 是**预发布残留**或**未源于论文的臆造**。它是对 [[13_deepseek_v4_analysis|DeepSeek-V4 深度解析]] 及其专题页的一次源忠实复核。
 
 ---
 
@@ -122,9 +122,9 @@ FP32 master → FP4 → **无损反量化到 FP8** 计算，反向 STE 回 FP32�
 | 「O(n log n) 复杂度」 | technical_deep_dive、architecture_diagrams | `n log n`=0。DSA 是固定 top-k（512/1024）选择 |
 | MLA「DeepSeek-V3 引入」 | technical_deep_dive | MLA 源自 **V2**；且 V4 用 CSA/HCA，不用 MLA |
 
-> [!note] **不是臆造、但需标注为「本页推导」**：[[23_deepseek_v4_cp_analysis]] 的「CSA ~51× / HCA ~2048× 通信节省」
+> [!note] **不是臆造、但需标注为「本页推导」**：[[23_deepseek_v4_cp_analysis|Context Parallelism 分析]] 的「CSA ~51× / HCA ~2048× 通信节省」
 > 与 [[24_deepseek_v4_fp4_qat_analysis]] 的「~75% 内存 / ~2×」是页面**自身的公式推导/估算**，论文未给出该数字；保留但应明确标为推断。
-> [[25_mhc_analysis]] 的「~3000× / ~1.6× 信号放大、6.7% 开销」来自 **mHC 论文实验**，非 V4 论文。
+> [[25_mhc_analysis|流形约束超连接]] 的「~3000× / ~1.6× 信号放大、6.7% 开销」来自 **mHC 论文实验**，非 V4 论文。
 
 ---
 

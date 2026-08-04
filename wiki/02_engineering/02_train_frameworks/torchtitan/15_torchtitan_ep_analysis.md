@@ -13,7 +13,7 @@
 
 **EP(专家并行)** 服务于 MoE 模型(llama4、deepseek_v3、gpt_oss)。MoE 有几十~几百个专家(expert),全部复制到每张卡显存会爆。EP 把**专家分散到不同卡**,每卡只持有一部分专家。
 
-如 [[10_torchtitan_parallel_dims_analysis]] 所述,EP 不占 `world_size` 乘积——它是对 `dp_shard × cp × tp` 子网格的重新切分,专家参数活在 `sparse_mesh` 上。
+如 [[10_torchtitan_parallel_dims_analysis|ParallelDims 与 DeviceMesh]] 所述,EP 不占 `world_size` 乘积——它是对 `dp_shard × cp × tp` 子网格的重新切分,专家参数活在 `sparse_mesh` 上。
 
 **一条贯穿全文的主线 —— EP 与 TP 的切分对偶**:
 
@@ -226,7 +226,7 @@ DeepEP 不用 ACT,而是 DeepEP 库自己的 event 机制。`DeepEPTokenDispatch
 
 非专家参数(attention、norm、router gate、shared experts)在 `dp_mesh` 上做 FSDP。但专家参数已被 `ExpertParallel` 沿 `Shard(0)` 切到 `ep` mesh——它的 FSDP 必须在"扣掉 EP 后剩余的 DP 维"上做。
 
-[[10_torchtitan_parallel_dims_analysis]] 给出这个维度:`efsdp = dp_shard × cp × tp / ep`。`sparse_mesh = [pp, dp_replicate, efsdp, ep]` 专门给专家参数。`tp` 进了 `efsdp`——因为 EP 开启时 TP 不切专家权重,TP 维对专家就是额外可用的 FSDP 维。
+[[10_torchtitan_parallel_dims_analysis|ParallelDims 与 DeviceMesh]] 给出这个维度:`efsdp = dp_shard × cp × tp / ep`。`sparse_mesh = [pp, dp_replicate, efsdp, ep]` 专门给专家参数。`tp` 进了 `efsdp`——因为 EP 开启时 TP 不切专家权重,TP 维对专家就是额外可用的 FSDP 维。
 
 ### 7.2 `shard_placement_fn` 分流
 

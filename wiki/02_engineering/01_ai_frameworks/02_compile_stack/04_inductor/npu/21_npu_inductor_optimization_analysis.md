@@ -6,7 +6,7 @@
 > 最后更新：2026-06-13
 
 > [!note] 代码位置说明
-> §一–§十一 的 `file:line` 沿用来源文档体系的标注（torch_npu 2.7 分支），**文件名 + 函数名为准，行号为指示性**（不同版本/分支会漂移，本库 [[11_npu_inductor_splittiling_backend_analysis]] 的同名逻辑行号即与此不同）。**§十二「实战」的行号已用本地 `pta_suhaibo/torch_npu` checkout（v2.7.1，commit `8bcbe1939`）逐一核验**，可直接 `git grep` 对照。
+> §一–§十一 的 `file:line` 沿用来源文档体系的标注（torch_npu 2.7 分支），**文件名 + 函数名为准，行号为指示性**（不同版本/分支会漂移，本库 [[11_npu_inductor_splittiling_backend_analysis|Triton/default 路径深度分析]] 的同名逻辑行号即与此不同）。**§十二「实战」的行号已用本地 `pta_suhaibo/torch_npu` checkout（v2.7.1，commit `8bcbe1939`）逐一核验**，可直接 `git grep` 对照。
 
 ---
 

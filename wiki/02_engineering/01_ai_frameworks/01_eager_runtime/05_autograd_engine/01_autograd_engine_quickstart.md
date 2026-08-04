@@ -6,7 +6,7 @@
 
 本页面向已经会用 `loss.backward()`、但想搞清「叶子/非叶子、`grad_fn`、`retain_graph`/`create_graph`、自定义 `Function`、grad 模式、NaN/inplace 排查」的工程师。每个结论都对照上游源码标注 `相对路径:行号`(相对 `E:\97-codes\pytorch\pytorch` 根)。
 
-> 概念全景(Node/Edge/AutogradMeta、与编译期 AOTAutograd 的区别)见 [[index]];源码级深析见 [[10_autograd_engine_analysis]]。
+> 概念全景(Node/Edge/AutogradMeta、与编译期 AOTAutograd 的区别)见 [[02_engineering/01_ai_frameworks/01_eager_runtime/05_autograd_engine/index|Eager 反向自动微分引擎]];源码级深析见 [[10_autograd_engine_analysis]]。
 
 ## 0. 30 秒最小可用路径
 
@@ -314,7 +314,7 @@ y.sum().backward()    # RuntimeError: ... modified by an inplace operation ...
 
 ## Related Pages
 
-- [[index]] — 本模块概述:Node/Edge/AutogradMeta 全景与 DAG 三要素
+- [[02_engineering/01_ai_frameworks/01_eager_runtime/05_autograd_engine/index|Eager 反向自动微分引擎]] — 本模块概述:Node/Edge/AutogradMeta 全景与 DAG 三要素
 - [[10_autograd_engine_analysis]] — 源码级深析:建图、SavedVariable、GraphTask、多线程 Engine、AccumulateGrad、前向模式 AD
 - [[02_compile_stack/02_aot_autograd/index]] · [[11_aotautograd_joint_forward_backward_graphs_analysis]] — 编译期 AOT 捕获前/反向联合图(对比:eager 逐 op 动态长磁带,无预捕获)
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — 前向算子经 dispatcher 的 `VariableType` 层建反向边

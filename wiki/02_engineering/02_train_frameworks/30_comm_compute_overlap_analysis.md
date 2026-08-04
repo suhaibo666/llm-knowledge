@@ -22,7 +22,7 @@
 
 *图 1：掩盖机制的三层金字塔*
 
-三个框架实现这些层次的**载体**不同，[[11_mindspeed_comm_overlap_analysis]] §1 给出的三分类同样适用于跨框架理解：**融合**（把通信编进单一 kernel，如 Megatron/MindSpeed 的 MC2、DeepEP `FusedDispatch`——参见 [[31_comm_compute_fusion_guide]]）、**软件流水**（chunk 切分 + 双 stream 异步 handle，如 Megatron TP Bulk/Pipelined、MindSpeed CoC、torchtitan `AsyncCollectiveTensor`）、**换调度**（PP/EP 调度层面重排，如 combined_1f1b、ZBV/DualPipeV、MindSpeed fb-overlap+DualPipeV）。下面按维度逐一对照。
+三个框架实现这些层次的**载体**不同，[[11_mindspeed_comm_overlap_analysis|MindSpeed 计算通信掩盖]] §1 给出的三分类同样适用于跨框架理解：**融合**（把通信编进单一 kernel，如 Megatron/MindSpeed 的 MC2、DeepEP `FusedDispatch`——参见 [[31_comm_compute_fusion_guide]]）、**软件流水**（chunk 切分 + 双 stream 异步 handle，如 Megatron TP Bulk/Pipelined、MindSpeed CoC、torchtitan `AsyncCollectiveTensor`）、**换调度**（PP/EP 调度层面重排，如 combined_1f1b、ZBV/DualPipeV、MindSpeed fb-overlap+DualPipeV）。下面按维度逐一对照。
 
 ## 二 跨框架掩盖维度矩阵
 

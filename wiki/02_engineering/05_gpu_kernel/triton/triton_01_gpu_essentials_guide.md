@@ -80,7 +80,7 @@ python 03-matrix-multiplication.py   # 看 TFLOPS 曲线：Triton vs cuBLAS
 
 ## 相关页面
 
-- [[index]] — Triton 学习路线总索引
+- [[02_engineering/05_gpu_kernel/triton/index|Triton 学习路线]] — Triton 学习路线总索引
 - [[10_cuda_execution_model_guide]] — **前置地基**：Grid·Block·Warp·Thread·SM 执行模型（概念→深入）
 - [[01_gpu_kernel_guide]] — GPU/NPU Kernel 工程总览（执行/内存层级的硬件细节、Tensor Core、NPU 差异、CUDA 手写视角）
 - [[11_operator_optimization_guide]] — Roofline 权威页（公式、Ridge Point 参数表、GPU/NPU profiling 指标、§2.5 是本页 Roofline demo 的完整推导）

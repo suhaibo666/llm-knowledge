@@ -3,7 +3,7 @@
 > **代码基准**:torchtitan `main` @ `61c010fcb` · PyTorch `2.9.1`(FSDP2 内核 `torch/distributed/fsdp/_fully_shard/`)
 > **最后更新**:2026-06-16 · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
 >
-> 本文是 [[11_torchtitan_fsdp_analysis]] §4.4/§6.2 的展开篇,把 HSDP 反向 reduce-scatter→all-reduce 的跨流编排逐行讲清。配套预取/显存专题见 [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]]。
+> 本文是 [[11_torchtitan_fsdp_analysis|FSDP2 机制深度分析]] §4.4/§6.2 的展开篇,把 HSDP 反向 reduce-scatter→all-reduce 的跨流编排逐行讲清。配套预取/显存专题见 [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]]。
 >
 > **四页分工**(2026-07-31 补):本页专注 **HSDP**(dp_replicate × fsdp 双轴)反向双流掩盖这一个切面;单轴 FSDP 的标杆机制见 [[11_torchtitan_fsdp_analysis]],其预取/显存深挖见 [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]];编译器友好的 DTensor-collective 替代方案见 [[25_torchtitan_simple_fsdp_analysis]]。
 > 行号约定:torchtitan 以 `torchtitan/torchtitan/` 为根;PyTorch FSDP2(2.9.1)以 `[pt]` 前缀,根目录 `torch/distributed/fsdp/_fully_shard/`。所有结论基于本机源码逐条复核(见复核表)。

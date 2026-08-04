@@ -279,4 +279,4 @@ TRITON_INTERPRET=1 python triton_whoami.py  # 看 program_id ≈ blockIdx（无�
 - [[triton_10_programming_model_guide]] — Triton SPMD 编程模型（program ≈ block 的实战）
 - [[triton_13_autotune_guide]] — `num_warps` / 占用率怎么自动调
 - [[triton_14_debug_guide]] — `device_print` / `TRITON_INTERPRET` 打印细节
-- [[index]] — GPU Kernel 领域索引
+- [[02_engineering/05_gpu_kernel/index|GPU Kernel 开发]] — GPU Kernel 领域索引

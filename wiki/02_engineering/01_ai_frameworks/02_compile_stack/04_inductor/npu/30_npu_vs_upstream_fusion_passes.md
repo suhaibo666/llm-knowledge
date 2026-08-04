@@ -258,7 +258,7 @@ flowchart TB
 本页基于 torch_npu **v2.7.1 @ `b3c8a815b`** 逐行核验，纠正/更新了几处既有页面的旧口径：
 
 > [!contradiction] `patch_pattern_mm_plus_mm` 是「删除」不是「添加」
-> [[01_npu_compile_paths_overview]] §2.5 patch 清单把 `patch_pattern_mm_plus_mm()` 记为「`mm + mm` pattern fusion」，易读成 NPU **添加**了该融合。源码 `fx_passes/post_grad.py:23-29` 显示它 `.pop()` **删除**上游 `mm_plus_mm`，注释明言 NPU 不支持。**以本页为准。**
+> [[01_npu_compile_paths_overview|torch_npu 三条编译路径全景]] §2.5 patch 清单把 `patch_pattern_mm_plus_mm()` 记为「`mm + mm` pattern fusion」，易读成 NPU **添加**了该融合。源码 `fx_passes/post_grad.py:23-29` 显示它 `.pop()` **删除**上游 `mm_plus_mm`，注释明言 NPU 不支持。**以本页为准。**
 
 > [!contradiction] fallback 计数
 > [[21_npu_inductor_optimization_analysis]] §八 / [[01_npu_compile_paths_overview]] §2.3 给「约 963（348 native + 615 npu-extra）」。本 commit 实测 `FALLBACK_LIST` = **932（340 native + 592 npu-extra）**，条件项再 +1(isnan)/+23(indirect)（`lowering_fallback_list.py:978-1012`）。差异属版本漂移 + 计数口径（是否计条件项/按 packet 还是 overload），两者均保留，**深入核查以本页 v2.7.1 数为准**。
@@ -267,7 +267,7 @@ flowchart TB
 > 部分页面把 NPU persistent reduction 说成「昇腾不支持/恒 False」。需区分：**内置 default 后端**是阈值门控（`config.triton.persistent_reductions` + 阈值 4096，`codegen/triton.py:1297-1321`），**实验性 Linearize 后端** `npu_inductor_2.9.0` 才 `should_use_persistent_reduction` 恒 False（见 [[23_npu_inductor_linearize_backend_analysis]]）。
 
 > [!note] §12.4 的自定义 pass 清单已过时
-> [[21_npu_inductor_optimization_analysis]] §12.4 列的 pass（含 `unfold_dual_reduction_pass`）基于更早状态。本 commit `ascend_graph_pass.py` 已长到 26 个 pass、`unfold_dual_reduction_pass` 不在此 head，并新增 `sign_diff_hamming_fuse_pass`/`batch_embedding_fusion_pass`/`masked_add_compose_pass`/`broadcast_const_mask_compress`/`fold_iota_arithmetic_pass` 等（全表见 §3.4）。
+> [[21_npu_inductor_optimization_analysis|NPU Inductor 优化思想全景]] §12.4 列的 pass（含 `unfold_dual_reduction_pass`）基于更早状态。本 commit `ascend_graph_pass.py` 已长到 26 个 pass、`unfold_dual_reduction_pass` 不在此 head，并新增 `sign_diff_hamming_fuse_pass`/`batch_embedding_fusion_pass`/`masked_add_compose_pass`/`broadcast_const_mask_compress`/`fold_iota_arithmetic_pass` 等（全表见 §3.4）。
 
 > [!note] `pattern_match/npu_fusion_attention_graph.py` 在本 checkout 未接线
 > 该文件定义了一个包住 `npu_fusion_attention` 的 autograd `Function`（`fx_passes/pattern_match/npu_fusion_attention_graph.py:93-155`），但除自身 `__init__` 与测试外**无生产代码 import** 它（`ascend_custom_passes` 的 `pkgutil` 只遍历自身包，不含 sibling `pattern_match`）。因此 NPU 侧**并没有**「softmax→npu_fusion_attention 的 SDPA pattern-match FX pass」在跑；真正生效的 attention 改写是 `fusion_attention_v3_pass`，它把**基础版 `npu_fusion_attention.default` → `v3.default`**（本 baseline 无 `_v2`，故非「v2→v3」；args/meta 原样透传，见 [[22_npu_fusion_passes_deepdive]] §2.4）。

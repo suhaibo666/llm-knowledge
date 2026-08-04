@@ -3,7 +3,7 @@
 > **核对基线**: arXiv:**2606.19348v1** (DeepSeek-AI, **2026-04-26**) ＝ `raw/01_theory/01_models/deepseek/DeepSeek_V4.pdf`  
 > **作者**: DeepSeek-AI　**初稿摄入**: 2026-04-24（基于预发布 PDF）　**对正式版复核/订正**: 2026-06-25  
 >
-> [!note] 本页超参表与基准数字已逐项对正式发表版核对（[[30_deepseek_v4_audit_analysis]]），结论：**数字全部一致**；
+> [!note] 本页超参表与基准数字已逐项对正式发表版核对（[[30_deepseek_v4_audit_analysis|V4 审计报告]]），结论：**数字全部一致**；
 > 已订正预发布残留（FP4 归属、章节口径），并对正文混入的 1 处臆造小节加 `> [!contradiction]` 标注。
 
 ---
@@ -216,7 +216,7 @@ V4 引入 [[25_mhc_analysis]]（流形约束超连接）来增强残差连接：
 
 ## Muon 优化器
 
-V4 对大部分模块采用 [[11_muon_analysis]]：
+V4 对大部分模块采用 [[11_muon_analysis|Muon 优化器]]：
 
 - **AdamW** 保留用于：embedding、prediction head、mHC 静态偏置/门控、RMSNorm 权重
 - **Muon** 用于其余所有模块
@@ -247,7 +247,7 @@ V4 对大部分模块采用 [[11_muon_analysis]]：
 
 通信节省：All-gather 传输的是**压缩后 KV**，相比标准 CP（传输未压缩 KV），通信量随压缩率 $c$ 线性缩减。
 
-> [!note] 「CSA ~51×、HCA ~2048×」是 [[23_deepseek_v4_cp_analysis]] 据通信量公式（$\approx 1/(P\cdot c)$，取 $P{=}8$）的**本页推导/估算**，正式版论文未直接给出该数字。
+> [!note] 「CSA ~51×、HCA ~2048×」是 [[23_deepseek_v4_cp_analysis|Context Parallelism 深度分析]] 据通信量公式（$\approx 1/(P\cdot c)$，取 $P{=}8$）的**本页推导/估算**，正式版论文未直接给出该数字。
 
 > 完整分析见 [[23_deepseek_v4_cp_analysis]]，涵盖 packed sequences 数据格式、三层可见性控制（sample-level mask → block causal → precomputed rules/Top-K selector）、训练/推理尾部 token 处理差异、通信量公式推导和数值示例。
 

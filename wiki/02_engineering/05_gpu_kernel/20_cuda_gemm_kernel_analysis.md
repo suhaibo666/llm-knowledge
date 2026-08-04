@@ -303,4 +303,4 @@ A100 / SM80 · FP16 GEMM · 代表性配置 256×128×32 / 64×64×32 / 16×8×1
 - [[01_gpu_kernel_guide]] — GPU/NPU Kernel 工程总览
 - [[triton_12_matmul_guide]] — Triton 分块矩阵乘的可运行实现
 - [[triton_13_autotune_guide]] — tile、warp 与 stage 的自动调优
-- [[index]] — GPU Kernel 领域索引
+- [[02_engineering/05_gpu_kernel/index|GPU Kernel 开发]] — GPU Kernel 领域索引

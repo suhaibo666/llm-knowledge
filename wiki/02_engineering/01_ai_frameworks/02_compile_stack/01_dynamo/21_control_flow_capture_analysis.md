@@ -127,7 +127,7 @@ Dynamo 发射的 `torch.ops.higher_order.cond` 是个 `HigherOrderOperator`(`tor
   `GraphModule` 属性、不产生跨图 Node 边）这两条 dispatch 路径本页不再展开——它们是
   `cond` 算子自身的捕获/推断机制，与本页 §2.1-§2.2 讨论的 **Dynamo 侧** `speculate_subgraph`
   是两层不同的实现，完整源码跟读见
-  [[13_structured_outputs_higher_order_and_nested_graphs_analysis]] §6 与其"源码跟读"§1-§3
+  [[13_structured_outputs_higher_order_and_nested_graphs_analysis|结构化输出/HOP/嵌套图]] §6 与其"源码跟读"§1-§3
   （`trace_cond` 的 `reenter_make_fx`/`register_module`、FakeTensor merge 的 TreeSpec/metadata
   校验，locator 一致）。
 - **`py_functionalize_impl`**(`cond.py:710`):对两分支做函数化;cond 默认不允许输入突变(除非走 `auto_functionalize`,`:721`)。

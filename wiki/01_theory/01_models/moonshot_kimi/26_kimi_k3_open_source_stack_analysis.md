@@ -1,7 +1,7 @@
 # Kimi K3 开源栈全景：哪些是生产组件、哪些是模型自己的作品、哪些根本不是新开的
 
 > **来源基线**：GitHub REST API 于 2026-07-28 取数（`api.github.com/orgs/MoonshotAI/repos`，逐仓核对 `created_at` / `pushed_at` / `license`）；各仓 README 为其默认分支当日快照。逐仓固定 commit 见下表。
-> **维度**：Overview（栈级地图）。本页回答"K3 发布同时到底开了什么、每个仓在 K3 栈里站哪个位置、能支撑到什么证据强度"。单仓机制级分析另开页：[[27_moonep_analysis]]。
+> **维度**：Overview（栈级地图）。本页回答"K3 发布同时到底开了什么、每个仓在 K3 栈里站哪个位置、能支撑到什么证据强度"。单仓机制级分析另开页：[[27_moonep_analysis|MoonEP 源码级分析]]。
 > **标记**：`[官方]` 第一手仓库/报告；`[三方]` 媒体或社交转述；`[推断]` 基于已核实事实的推理。
 > **更新**：2026-07-28 建页。
 
@@ -109,7 +109,7 @@ Python DSL → AST → tile builder → MLIR passes → PTX → CUDA binary，�
 Verilog，Apache-2.0，由 Kimi-K3 设计。实现的是一个 **hybrid-attention MoE transformer** 推理处理器：KDA 线性注意力 + NoPE MLA + sigmoid 路由 MoE（top-2 + shared expert）+ INT4 group-128 量化权重，面向逐 token 解码（teacher forcing）。仓库分 `rtl/`（含 Python 定点仿真辅助）、`harness/`（Verilator 验证与性能评估）、`reference/`（浮点 golden model）、`docs/`。工具链是 Verilator 5.x + yosys + Nangate45 标准单元库`[官方]`。
 
 > [!warning] 一处关键口径
-> README 明确说明：**面积与时序数字来自综合估算，而非完整 place-and-route**，自称是"保守、可复现的基线"。因此 [[14_kimi_k3_analysis]] §四第 3 条转述的博客数字（4 mm²、100 MHz、146 万标准单元、0.277 MB SRAM、8,700 token/s 仿真解码）应当按**综合级估算**理解，不是流片级结论。
+> README 明确说明：**面积与时序数字来自综合估算，而非完整 place-and-route**，自称是"保守、可复现的基线"。因此 [[14_kimi_k3_analysis|K3 发布总览与能力案例]] §四第 3 条转述的博客数字（4 mm²、100 MHz、146 万标准单元、0.277 MB SRAM、8,700 token/s 仿真解码）应当按**综合级估算**理解，不是流片级结论。
 
 顺带一提：nano-kpu 实现的架构（KDA + NoPE MLA + sigmoid MoE + INT4）本身就是 K3 结构的一个**缩微自证**——它从侧面确认了 NoPE 与 sigmoid 路由这两项结构选择，与报告 §2.1.2、§2.3.3 一致。
 
@@ -151,7 +151,7 @@ flowchart TB
     D1 --> D2
 ```
 
-**这张图的信息在"未开源"那几个框上**：K3 公开了**通信**（MoonEP）、**环境**（AgentENV）、**服务**（Mooncake）和**一个注意力 kernel 的 prefill 路径**（FlashKDA），但没有公开 **backbone 实现、trainer、rollout、weight-sync 接线，以及 MLA/AttnRes 两类 kernel**。所以 [[23_kimi_k3_infra_deepdive]] §5 与 [[24_kimi_k3_posttraining_case_study_analysis|D12]] §10.2 的"仍待源码确认"清单，在本次开源后**只被划掉了 MoonEP 与 AgentENV 两行**，其余原样保留。
+**这张图的信息在"未开源"那几个框上**：K3 公开了**通信**（MoonEP）、**环境**（AgentENV）、**服务**（Mooncake）和**一个注意力 kernel 的 prefill 路径**（FlashKDA），但没有公开 **backbone 实现、trainer、rollout、weight-sync 接线，以及 MLA/AttnRes 两类 kernel**。所以 [[23_kimi_k3_infra_deepdive|训推基础设施]] §5 与 [[24_kimi_k3_posttraining_case_study_analysis|D12]] §10.2 的"仍待源码确认"清单，在本次开源后**只被划掉了 MoonEP 与 AgentENV 两行**，其余原样保留。
 
 ---
 

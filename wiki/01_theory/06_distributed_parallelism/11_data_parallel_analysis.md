@@ -42,7 +42,7 @@ $$g = \frac{1}{N}\sum_{r=0}^{N-1} \underbrace{\Big(\frac{N}{B}\sum_{i\in \text{s
 
 ## 代价：通信与参数量挂钩，与 batch 无关
 
-**通信量**：一次 all-reduce 规约的是整份梯度，大小 $\propto \Psi$（参数量）。用 [[10_collectives_analysis]] 的 ring 结论，每卡每步搬运：
+**通信量**：一次 all-reduce 规约的是整份梯度，大小 $\propto \Psi$（参数量）。用 [[10_collectives_analysis|集合通信代价模型]] 的 ring 结论，每卡每步搬运：
 
 $$V_{\text{DP}} \approx 2\cdot\frac{N-1}{N}\cdot \Psi \cdot b \;\xrightarrow{N\text{ 大}}\; 2\Psi b \quad(b=\text{每参数字节})$$
 
@@ -82,7 +82,7 @@ DP 复制的是**整个模型状态**。以混合精度 Adam 训练、参数量 
 
 ## DP 度数与整体布局
 
-一次训练的 **DP 度数** $= \text{global batch} / (\text{micro batch} \times \text{梯度累积步数})$。在 N 维并行里（见 [[index]]），DP 通常是**最外层**维度：先用 TP/PP/EP 把「单个模型副本」塞进一组卡，再用 DP 把这一组「整体复制」多份并行吃数据。因为 DP 通信量小（$\propto\Psi$、频次每步一次）且可跨机，把它放在带宽最差的机间维度最划算。
+一次训练的 **DP 度数** $= \text{global batch} / (\text{micro batch} \times \text{梯度累积步数})$。在 N 维并行里（见 [[01_theory/06_distributed_parallelism/index|分布式并行原理]]），DP 通常是**最外层**维度：先用 TP/PP/EP 把「单个模型副本」塞进一组卡，再用 DP 把这一组「整体复制」多份并行吃数据。因为 DP 通信量小（$\propto\Psi$、频次每步一次）且可跨机，把它放在带宽最差的机间维度最划算。
 
 ---
 
@@ -92,5 +92,5 @@ DP 复制的是**整个模型状态**。以混合精度 Adam 训练、参数量 
 - [[12_zero_fsdp_analysis]] — **直接续篇**：把 DP 复制的 $16\Psi$ 状态切开，同一数据轴的省显存版
 - [[13_tensor_sequence_parallel_analysis]] — TP：当单份模型都放不下时，切模型本身
 - [[15_pipeline_parallel_analysis]] — PP：另一条「切模型」的路
-- [[index]] — N 维并行里 DP 通常是最外层维度
+- [[01_theory/06_distributed_parallelism/index|分布式并行原理]] — N 维并行里 DP 通常是最外层维度
 - [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：`DistributedDataParallel` 的 `Reducer` 分桶与反向 all-reduce 重叠

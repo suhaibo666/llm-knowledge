@@ -45,7 +45,7 @@
 
 $$T_{\text{MoE}} \approx \underbrace{T_{a2a}^{\text{dispatch}}}_{\text{送 token 去}} + \underbrace{T_{\text{expert}}}_{\text{本地 FFN}} + \underbrace{T_{a2a}^{\text{combine}}}_{\text{送结果回}}$$
 
-两次 all-to-all 常是瓶颈。通信量 $\propto$（路由到**组外**的 token 数）$\times d$。由 [[10_collectives_analysis]]，all-to-all 是**全连接通信**（每对 rank 都有流量），这带来两个尖锐问题：
+两次 all-to-all 常是瓶颈。通信量 $\propto$（路由到**组外**的 token 数）$\times d$。由 [[10_collectives_analysis|分布式原语与通信代价模型]]，all-to-all 是**全连接通信**（每对 rank 都有流量），这带来两个尖锐问题：
 
 **① 负载不均（EP 的头号敌人）**：token 路由由数据决定，某些「热门专家」会收到远超平均的 token，而它们只在一张卡上 → 那张卡的计算和收发都爆满，**其余卡空等**（木桶效应）。缓解手段：
 - **容量因子（capacity factor）**：给每个专家设收 token 上限 $= \text{capacity} \times \frac{\text{tokens}}{E}$。超出的 token 被 **drop**（跳过该专家，走残差）或 **reroute**。容量大 → 浪费算力/通信；容量小 → drop 多、掉质量。这是一个成本-质量的权衡旋钮。
@@ -61,7 +61,7 @@ $$T_{\text{MoE}} \approx \underbrace{T_{a2a}^{\text{dispatch}}}_{\text{送 token
 - **EP × DP**：专家在 EP 组内切分、在 DP 组间复制；一个 token 的 batch 维走 DP，专家维走 EP。
 - **EP 度数** 受专家数 $E$ 与可用卡数约束，且因负载不均，实际有效并行度常低于理论值 → EP 的调优核心是**让 token 尽量均匀、让 a2a 尽量重叠**。
 
-在 N 维布局里（见 [[index]]），EP 与 TP 争抢「机内高带宽维」——因为二者都吃机内带宽、都在关键路径。
+在 N 维布局里（见 [[01_theory/06_distributed_parallelism/index|分布式并行原理]]），EP 与 TP 争抢「机内高带宽维」——因为二者都吃机内带宽、都在关键路径。
 
 ---
 
@@ -70,7 +70,7 @@ $$T_{\text{MoE}} \approx \underbrace{T_{a2a}^{\text{dispatch}}}_{\text{送 token
 - [[10_collectives_analysis]] — all-to-all 的代价与「全连接、怕不均」的由来
 - [[13_tensor_sequence_parallel_analysis]] — TP：与 EP 争机内带宽，常组合 EP×TP
 - [[11_data_parallel_analysis]] — DP：与 EP 组合时专家在组间复制
-- [[index]] — N 维布局里 EP 占据机内维
+- [[01_theory/06_distributed_parallelism/index|分布式并行原理]] — N 维布局里 EP 占据机内维
 - [[../01_models/deepseek/20_deepseek_moe_analysis]] — MoE 模型侧：细粒度专家、共享专家、路由设计
 - [[../01_models/deepseek/12_deepseek_v3_analysis]] — aux-loss-free 负载均衡的实践
 - [[../../02_engineering/02_train_frameworks/megatron-lm/14_megatron_ep_analysis]] — **实现层**：Megatron 的 EP token dispatcher 与 a2a

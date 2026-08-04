@@ -2,7 +2,7 @@
 
 > **源基线**: `triton main @ 70e0929`，v3.8.0 ｜ 锚定 `python/tutorials/01..11-*.py` + `python/triton/{language,runtime}/`
 > **维度**: 学习路线总纲（能力清单 + 自测 + 进阶 + 资源）｜ 能力：四者汇总
-> 本页把整条路线的知识点按**四种能力**收口成一张可勾选的地图，配自测题、进阶方向与**真实可查的官方资源**。建议学完 L0–L4 后用本页查漏补缺。前置：[[index]]。
+> 本页把整条路线的知识点按**四种能力**收口成一张可勾选的地图，配自测题、进阶方向与**真实可查的官方资源**。建议学完 L0–L4 后用本页查漏补缺。前置：[[02_engineering/05_gpu_kernel/triton/index|Triton 学习路线]]。
 
 ---
 
@@ -143,7 +143,7 @@ flowchart TD
 
 ## 相关页面
 
-- [[index]] — Triton 学习路线总索引
+- [[02_engineering/05_gpu_kernel/triton/index|Triton 学习路线]] — Triton 学习路线总索引
 - [[triton_01_gpu_essentials_guide]] — L0 地基
 - [[triton_10_programming_model_guide]] · [[triton_11_fused_softmax_guide]] · [[triton_12_matmul_guide]] — L1 会写
 - [[triton_13_autotune_guide]] — L2 会调

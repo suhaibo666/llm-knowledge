@@ -296,4 +296,4 @@ GPU Kernel Engineering Reference · 内容来源：对话记录整理 · 所有�
 - [[21_cuda_nonmatmul_kernels_analysis]] — 非 GEMM 算子的 roofline 与数据依赖分类
 - [[22_ascend_kernel_execution_model_analysis]] — DaVinci AI Core、显式缓冲链与 Cube–Vector 路径
 - [[triton/index]] — Triton 从入门到优化的学习路线
-- [[index]] — GPU Kernel 领域索引
+- [[02_engineering/05_gpu_kernel/index|GPU Kernel 开发]] — GPU Kernel 领域索引

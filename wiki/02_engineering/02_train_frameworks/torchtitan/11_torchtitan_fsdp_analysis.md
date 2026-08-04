@@ -102,7 +102,7 @@ self.sharded_param = nn.Parameter(self.to_sharded_dtensor(sharded_param))
 | **HSDP** | 普通参数,2D dp mesh | `(Replicate(), Shard(0))` |
 | **FSDP+TP/EP** | 参数已是 `DTensor`(被 TP/EP 先切过) | `(_StridedShard 或 Shard, *tp_placements)` |
 
-第三种最关键:当 TP 已把参数切成 DTensor(见 [[12_torchtitan_tp_analysis]]),FSDP 不能再"重切",而是构造一个**组合 mesh**(`_spmd_mesh`,DP 轴 + TP 轴)和**组合 placement**。当 FSDP 分片维与 TP 分片维相同时,用 `_StridedShard`(带 `split_factor`)表达"先按 TP 切、再按 FSDP 切"的嵌套顺序(`[pt]_fsdp_param.py:312-319`)。这就是 FSDP 与 TP/EP 在同一参数上叠加的底层接口——**FSDP 要求 DP 与 TP/EP 的 mesh 有共同父 mesh**(`[pt]_fsdp_param.py:290-296`),这正是 [[10_torchtitan_parallel_dims_analysis]] 里三张 mesh 出自同一 world mesh 的原因。
+第三种最关键:当 TP 已把参数切成 DTensor(见 [[12_torchtitan_tp_analysis]]),FSDP 不能再"重切",而是构造一个**组合 mesh**(`_spmd_mesh`,DP 轴 + TP 轴)和**组合 placement**。当 FSDP 分片维与 TP 分片维相同时,用 `_StridedShard`(带 `split_factor`)表达"先按 TP 切、再按 FSDP 切"的嵌套顺序(`[pt]_fsdp_param.py:312-319`)。这就是 FSDP 与 TP/EP 在同一参数上叠加的底层接口——**FSDP 要求 DP 与 TP/EP 的 mesh 有共同父 mesh**(`[pt]_fsdp_param.py:290-296`),这正是 [[10_torchtitan_parallel_dims_analysis|torchtitan 并行基座]] 里三张 mesh 出自同一 world mesh 的原因。
 
 ### 2.4 三种分片状态:`ShardedState`
 

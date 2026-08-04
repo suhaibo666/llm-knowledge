@@ -4,7 +4,7 @@
 > **维度**: 实现级 Deep Dive —— V4 五大核心组件的**源忠实伪代码 + 数据流**，每段代码逐步标注其实现的论文 §/Eq/page。
 > **整页重写**: 2026-06-25。旧版为预发布期 AI 臆造的通用伪代码（路由专家写成 128、HCA 写成 `compression_ratio=0.1`、Sinkhorn `max_iter=100`、"Muon" 实为 Adam、量化写成 INT8、臆造 DualPath/PCA-KV/task_classifier 动态-k），已整页废弃；审计见 [[30_deepseek_v4_audit_analysis]]。
 >
-> **本页定位**: V4 把"百万 token 上下文效率"拆进四类机制——CSA/HCA 沿**序列维**把 KV 压成 $1/m$、$1/m'$（再叠 DSA top-k）；mHC 用**双随机矩阵**约束残差混合保证深堆叠稳定；Muon 用**混合 Newton-Schulz** 正交化更新；DeepSeekMoE 把亲和度激活换成 $\sqrt{\mathrm{Softplus}(\cdot)}$ 并对前 3 层 MoE 用哈希路由。本页给每个机制的逐步伪代码并锚定到论文方程，是 [[13_deepseek_v4_analysis]] 的**实现级补充**；架构综述见 [[13_deepseek_v4_analysis]]，对比与图示见 [[26_deepseek_v4_technical_deepdive]] / [[28_deepseek_v4_architecture_analysis]]，mHC/Muon 数学细节见 [[25_mhc_analysis]] / [[11_muon_analysis]]。
+> **本页定位**: V4 把"百万 token 上下文效率"拆进四类机制——CSA/HCA 沿**序列维**把 KV 压成 $1/m$、$1/m'$（再叠 DSA top-k）；mHC 用**双随机矩阵**约束残差混合保证深堆叠稳定；Muon 用**混合 Newton-Schulz** 正交化更新；DeepSeekMoE 把亲和度激活换成 $\sqrt{\mathrm{Softplus}(\cdot)}$ 并对前 3 层 MoE 用哈希路由。本页给每个机制的逐步伪代码并锚定到论文方程，是 [[13_deepseek_v4_analysis|DeepSeek-V4 深度解析]] 的**实现级补充**；架构综述见 [[13_deepseek_v4_analysis]]，对比与图示见 [[26_deepseek_v4_technical_deepdive]] / [[28_deepseek_v4_architecture_analysis]]，mHC/Muon 数学细节见 [[25_mhc_analysis]] / [[11_muon_analysis]]。
 
 > [!note] 伪代码的可信度约定
 > 下列伪代码是对论文方程的**忠实重构**（reconstruction）：控制流/张量重排为**演示性骨架**，但每一行的算子、张量形状、常量都映射到论文已核验的 §/Eq/page，并在行内注释标出。常量取自 **§4.2.1 Model Setups（p24–25）**，凡两规格不同处给出 `Flash | Pro` 双值。论文同时开源了推理实现（HuggingFace `DeepSeek-V4-Pro/inference`，§2.3 脚注），用于消歧极细节——本页对这些「未在正文给出公式」之处会显式标注 *(实现细节/演示)*。

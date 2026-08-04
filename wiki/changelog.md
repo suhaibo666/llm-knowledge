@@ -1868,7 +1868,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - [[12_training_dynamics_stability_analysis]]（问题 9）：loss spike/NaN 四类根因、分层监控+前兆指标、排查决策树、四层防线（QK-Norm/z-loss/soft-capping/EGS、MuonClip/AdaGC/ZClip、数据指纹、运维自动化）、2026 前沿（Muon 路线共识、DeepSeek-V4 Anticipatory Routing/mHC、Kimi K2.5 与 GLM-5 的 RL 稳定性与问题 2 合流）。
 - **并行 writer-agent 契约**：3 内容页由 3 个 subagent 并行写，各读 raw 指定行段（Part1/2/3），严格「不加源外事实、保留全部数字/env-var/代码/出处、只用给定交叉链、无 mermaid」，结构化回报。
 
-**整合**：[[02_engineering/index]] 子领域表加 07 行；[[index]] 目录树加 07、工程域表加「训练可靠性 4」行、按主题查找加一行。**校验**：3 页 grep 确认关键 env-var/数字/机制在位（CUBLAS_WORKSPACE_CONFIG、TORCH_NCCL_TRACE_BUFFER_SIZE、五级坐标系、MuonClip/Anticipatory Routing/129.3 MWh 等）；4 页全部 `[[链接]]` 机械核对**零死链**；4 页 grep 确认**零 mermaid**（全用 ASCII/代码/表）；抽读 determinism 页头+§1 核对源忠实与房风格。
+**整合**：[[02_engineering/index]] 子领域表加 07 行；[[./index|总索引]] 目录树加 07、工程域表加「训练可靠性 4」行、按主题查找加一行。**校验**：3 页 grep 确认关键 env-var/数字/机制在位（CUBLAS_WORKSPACE_CONFIG、TORCH_NCCL_TRACE_BUFFER_SIZE、五级坐标系、MuonClip/Anticipatory Routing/129.3 MWh 等）；4 页全部 `[[链接]]` 机械核对**零死链**；4 页 grep 确认**零 mermaid**（全用 ASCII/代码/表）；抽读 determinism 页头+§1 核对源忠实与房风格。
 
 ---
 
@@ -1887,7 +1887,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - **§八 Flash→2.0 演进对照表**：Flash(560B/27B·28 层·MLA 全注意力·512+256 专家·128K·H800) → 2.0(1.6T/48B·38 层·MLA+**LSA**·768+128·**N-gram**·1M·**国产 ASIC**)。
   - [!correction] 订正本人先前假设：**Flash 亦用 MLA**（非 MHA/GQA）——config `attention_method:"MLA"` 坐实；ScMoE/零计算专家为两代共享、SGLang `longcat_flash.py` 同一份代码。
 
-**整合**：[[meituan_longcat/index]] §一家族表 Flash 行改为已摄入、§五缺口更新；[[01_theory/01_models/index]] LongCat 区加 Flash 行；[[index]] 模型 30→31、LongCat 子域 2→3、导航加 [[longcat_flash_analysis]]；[[longcat_2_analysis]] Related 加前身回链。**校验**：9 个交叉链接目标本会话/前序 grep 核对存在；纯文本+表+ASCII，无 mermaid；数值带 arXiv §/Eq./Table 或 config 定位。
+**整合**：[[meituan_longcat/index]] §一家族表 Flash 行改为已摄入、§五缺口更新；[[01_theory/01_models/index]] LongCat 区加 Flash 行；[[./index|总索引]] 模型 30→31、LongCat 子域 2→3、导航加 [[longcat_flash_analysis]]；[[longcat_2_analysis]] Related 加前身回链。**校验**：9 个交叉链接目标本会话/前序 grep 核对存在；纯文本+表+ASCII，无 mermaid；数值带 arXiv §/Eq./Table 或 config 定位。
 
 ---
 
@@ -1953,7 +1953,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
   - **效果**：全评测表（LongCat-2.0 vs Gemini 3.1 Pro / GPT-5.5 / Claude Opus 4.6/4.7/4.8）——**SWE-bench Pro 59.5 > GPT-5.5 58.6**、Terminal-Bench 2.1 70.8、GPQA-diamond 88.9；整体落后 Claude Opus 4.8。
   - **§9 源忠实修正**：[!contradiction] 二手报道称「动态激活 33–56B / zero-compute experts」——博客只提训练期 padding→zero-expert（省显存），激活即 ~48B，疑似把 LongCat-Flash 机制张冠李戴；[!contradiction] 训练算力 README「加速器·小时」vs 博客渲染「天」24× 分歧，FLOPs 粗算支持「小时」。
 
-**整合**：[[01_theory/01_models/index]] 新增「LongCat / Meituan」家族区；[[index]]（总索引）模型行 28→30、加「LongCat (美团)」子行与「按主题查找」条目、更新日期至 2026-07-02；两新页与 [[01_glm_5_analysis]]/[[12_deepseek_v3_analysis]]/[[13_deepseek_v4_analysis]]/[[11_kimi_k2_analysis]]/[[11_muon_analysis]]/[[14_expert_parallel_analysis]] 等互链。**校验**：全用 ASIC——图表用 **ASCII**（与 GLM-5/Kimi 同系列风格，零 mermaid 定界符风险）；跨链目标经 grep 核对；因源为渲染提取，数值保真度与未披露项已在页头/§9 显式声明，不臆造未披露量。
+**整合**：[[01_theory/01_models/index]] 新增「LongCat / Meituan」家族区；[[./index|总索引]]模型行 28→30、加「LongCat (美团)」子行与「按主题查找」条目、更新日期至 2026-07-02；两新页与 [[01_glm_5_analysis]]/[[12_deepseek_v3_analysis]]/[[13_deepseek_v4_analysis]]/[[11_kimi_k2_analysis]]/[[11_muon_analysis]]/[[14_expert_parallel_analysis]] 等互链。**校验**：全用 ASIC——图表用 **ASCII**（与 GLM-5/Kimi 同系列风格，零 mermaid 定界符风险）；跨链目标经 grep 核对；因源为渲染提取，数值保真度与未披露项已在页头/§9 显式声明，不臆造未披露量。
 
 ---
 
@@ -2038,7 +2038,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **源（source-faithful）**：克隆 `DeepSpec` @ `dd854392`（main, 2026-06-28）到 `E:\97-codes\torch_parallel\DeepSpec`，PDF 抽成页码标记文本逐页核对；论文公式与代码 `file:line` 双向交叉核对（Eq.5 ↔ `markov_head.py:8`、Eq.7 ↔ `modeling.py:268/293`、Eq.8 ↔ `loss.py:69`、Eq.2-3 ↔ `modeling.py:241/104-113`）。
 
 - **新建目录** `wiki/02_engineering/03_infer_frameworks/speculative_decoding/`（3 页）：
-  - [[index]]（本专题总览/演进survey）：投机解码在 `L=(T_draft+T_verify)/τ` 上的三代演进——① 自回归（MTP/Eagle3，升 τ 但 T_draft∝γ）→ ② 并行（Medusa/DFlash，降 T_draft 但后缀崩塌）→ ③ DSpark（半自回归补 τ + 置信度调度降有效 T_verify）。四代横向对比表 + 三者区别本质。
+  - [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理演进]]（本专题总览/演进survey）：投机解码在 `L=(T_draft+T_verify)/τ` 上的三代演进——① 自回归（MTP/Eagle3，升 τ 但 T_draft∝γ）→ ② 并行（Medusa/DFlash，降 T_draft 但后缀崩塌）→ ③ DSpark（半自回归补 τ + 置信度调度降有效 T_verify）。四代横向对比表 + 三者区别本质。
   - [[dspark_analysis]]（论文深挖，exemplar）：两大部件——**半自回归生成**（并行 DFlash 骨干 + Markov/RNN 串行头，Eq.4-6；接受长度相对 Eagle3 +30.9%、DFlash +16.3%）+ **置信度调度验证**（置信头 Eq.7-8 + STS 校准 + 硬件感知前缀调度器 Alg.1，按 SPS 负载曲线全局贪心、早停保无偏）。生产相对 MTP-1 提速 60%–85%（V4-Flash）/57%–78%（V4-Pro）。
   - [[deepspec_codebase_analysis]]（源码级）：一套 `Qwen3DSparkTrainer` 同产三草稿模型——**DFlash = DSpark 关掉串行/置信头的消融**（`config/dflash/*:18-26`，无独立 modeling）；训练前向链、三项损失 ↔ Eq.9-12、推理拒绝采样路径。**关键边界**：开源仓只到「置信头 + 静态阈值裁剪 + bsz=1」，Algorithm 1 多请求调度器/异步 ZOS/变长内核是生产专属。
 
@@ -2083,7 +2083,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **源与方法（source-faithful）**：父目录无 Triton checkout，故按本库「上游 checkout 放父目录」惯例**浅克隆官方 `triton-lang/triton` 到 `../triton`**，钉死基线 **`main @ 70e0929`（2026-06-25）, v3.8.0**，作 `file:line` 可核验定位符。每个 demo 逐字锚定官方 tutorial，绝不凭记忆写。
 
 - **新建子目录** `wiki/02_engineering/05_gpu_kernel/triton/`，9 页：
-  - [[index]] — 学习路线总索引（主线：Triton=block-level 编程，编译器自动管 coalescing/shared mem/warp 划分；四能力闭环图）
+  - [[02_engineering/05_gpu_kernel/triton/index|Triton 学习路线]] — 学习路线总索引（主线：Triton=block-level 编程，编译器自动管 coalescing/shared mem/warp 划分；四能力闭环图）
   - [[triton_01_gpu_essentials_guide]] — L0 地基：执行/内存层级 + roofline；**demo 用官方 benchmark 的 GB/s vs TFLOPS 公式手算算术强度判 bound**（锚 `01:128`/`02:225`/`03:438`）
   - [[triton_10_programming_model_guide]] — L1 会写①：SPMD 五件套；向量加法（锚 `01-vector-add.py:29-75`）。**协调者自写的校准 exemplar**
   - [[triton_11_fused_softmax_guide]] — L1 会写②：reduction + fusion 省带宽（锚 `02-fused-softmax.py:42-174`）
@@ -2288,7 +2288,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **重写加深** [[13_mindspeed_ascend_affinity_analysis]](233→468 行,代码块 2→15、配图 4):补足代码走读——op_builder JIT(`builder.py:65-77` `cpp_extension.load`、GMM 三 dispatch key→CANN `GroupedMatmul`)、融合算子(`npu_swiglu`/`npu_scaled_masked_softmax`/`npu_rms_norm`/`npu_fusion_attention`)、HCCL buffer/QoS、`npu_apply_fused_ema_adamw`;保留 affinity 勘误([!warning])。
 - [[12_mindspeed_memory_optimization_analysis]] 维持(原已达深度标尺)。
 
-**整合**:[[mindspeed/index]] 四大类表新增「并行·CP 深挖」行;父索引 [[02_engineering/02_train_frameworks/index]](4→5 篇)与总索引 [[index]] 领域总览(MindSpeed 6)/快速导航(增 CP 页)同步。**校验**:各 agent 透明纠正了若干行号(expert_placement 路径、U-shaped loss 行、gmm dispatch 行),coordinator 抽样复核 `planner.py:111`(greedy)、`schedules.py:300`(U-loss)、`gmm.py:153`(@impl PrivateUse1)、`mc2_fuse_a2a.py:39`(npu_alltoallv_gmm)均命中;5 页 `[[]]` 链接经脚本提取确认 0 悬空。
+**整合**:[[mindspeed/index]] 四大类表新增「并行·CP 深挖」行;父索引 [[02_engineering/02_train_frameworks/index]](4→5 篇)与总索引 [[./index|总索引]] 领域总览(MindSpeed 6)/快速导航(增 CP 页)同步。**校验**:各 agent 透明纠正了若干行号(expert_placement 路径、U-shaped loss 行、gmm dispatch 行),coordinator 抽样复核 `planner.py:111`(greedy)、`schedules.py:300`(U-loss)、`gmm.py:153`(@impl PrivateUse1)、`mc2_fuse_a2a.py:39`(npu_alltoallv_gmm)均命中;5 页 `[[]]` 链接经脚本提取确认 0 悬空。
 
 ---
 
@@ -2303,7 +2303,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - [[12_mindspeed_memory_optimization_analysis]](248 行):统一原语 `untyped_storage().resize_(0)` + 反向重填;重计算(激活/norm/按 PP-rank/block-uniform)、Swap(smart-swap/swap-attention saved_tensors_hooks/swap-optimizer 态常驻 CPU)、reuse-fp32-param(fp32↔bf16 共享存储 `reuse_data_ptr`)、MoE-zero-memory、压缩(HANS/换尾数)、virtual-optimizer、chunk-loss。
 - [[13_mindspeed_ascend_affinity_analysis]](233 行):**算子替换层**——op_builder JIT(`cpp_extension.load` 编 CANN 核)、融合算子(GMM 三 dispatch key→`GroupedMatmul`、`npu_swiglu`/`npu_scaled_masked_softmax`/`npu_rms_norm`)、Flash-Attention(`npu_fusion_attention` SBH/TND)、HCCL buffer/QoS 调优、融合优化器(`npu_apply_fused_ema_adamw`)。**重要勘误**:`AffinityFeature` 并非 CPU 绑核(两仓 grep `sched_setaffinity/numa` 皆空),而是 VocabParallel 交叉熵的 NPU 亲和改写(`affinity.py:13-17` 补丁 `calculate_predicted_logits`)——已据此修正 index 描述。
 
-**整合**:父索引 [[02_engineering/02_train_frameworks/index]] 子目录表新增 `[[mindspeed/index]]` 行并更新日期;总索引 [[index]] 目录树 + 领域总览(MindSpeed 5 篇)+ 快速导航「昇腾训练加速」行同步。**校验**:抽样核对各页 `file:line`(affinity 勘误、recompute `resize_(0)`、op_builder `load`、`npu_swiglu`、Ulysses forward 均逐一开文件确认);5 页全部 `[[]]` 链接经脚本提取后确认目标存在,0 悬空(路径式 `[[megatron-lm/index]]` 等按 Obsidian 后缀匹配解析)。
+**整合**:父索引 [[02_engineering/02_train_frameworks/index]] 子目录表新增 `[[mindspeed/index]]` 行并更新日期;总索引 [[./index|总索引]] 目录树 + 领域总览(MindSpeed 5 篇)+ 快速导航「昇腾训练加速」行同步。**校验**:抽样核对各页 `file:line`(affinity 勘误、recompute `resize_(0)`、op_builder `load`、`npu_swiglu`、Ulysses forward 均逐一开文件确认);5 页全部 `[[]]` 链接经脚本提取后确认目标存在,0 悬空(路径式 `[[megatron-lm/index]]` 等按 Obsidian 后缀匹配解析)。
 
 ---
 
@@ -2321,7 +2321,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **整合**:姊妹篇 [[mindformers_moe_token_dispatcher_analysis]] footer 增「PyNative 对照」回链。**校验**:新页 `file:line` 均按当前 checkout 逐一核对;交叉链接 [[mindformers_moe_token_dispatcher_analysis]] / [[14_megatron_ep_analysis]] / [[15_torchtitan_ep_analysis]] / [[20_deepseek_moe_analysis]] 经 glob 确认存在。
 
-**目录重构(同日)**:为 MindFormers 单建子目录 `02_engineering/02_train_frameworks/mindformers/`,收纳两篇(PyNative EP + Graph 去冗余 dispatcher)及其 7 张图(移入 `mindformers/assets/`,`assets/…figN.png` 相对引用随之保持有效),新建 [[mindformers/index]] 知识地图。父索引 [[02_engineering/02_train_frameworks/index]] 子目录表新增 `[[mindformers/index]]` 行、移除两篇的单独条目;总索引 [[index]] 目录树/领域总览(MindFormers 2 篇)/MoE 快速导航同步。`[[bare filename]]` 链接按文件名解析,移动后不失效。
+**目录重构(同日)**:为 MindFormers 单建子目录 `02_engineering/02_train_frameworks/mindformers/`,收纳两篇(PyNative EP + Graph 去冗余 dispatcher)及其 7 张图(移入 `mindformers/assets/`,`assets/…figN.png` 相对引用随之保持有效),新建 [[mindformers/index]] 知识地图。父索引 [[02_engineering/02_train_frameworks/index]] 子目录表新增 `[[mindformers/index]]` 行、移除两篇的单独条目;总索引 [[./index|总索引]] 目录树/领域总览(MindFormers 2 篇)/MoE 快速导航同步。`[[bare filename]]` 链接按文件名解析,移动后不失效。
 
 ---
 
@@ -2332,7 +2332,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **新增** [[25_vllm_ir_and_fusion_passes_analysis]]([[24_vllm_fused_ops_and_kernels_analysis]] 的机制深挖伴篇):① vLLM IR 层 `vllm_ir`(`torch.library` 自建命名空间、`CompositeExplicitAutograd` 不分解 + fake ⇒ 被 Dynamo 保留为 opaque 节点、为何不挂 `aten`、provider/lowering);② `PostGradPassManager` pass 流水线与 `-O` 档默认表;③ 经 `backends.py:966` 挂进 Inductor `post_grad_custom_post_pass` 生效;④ RMSNorm+FP8 量化从「用户模型代码 → eager 双 kernel(HBM 往返)→ 手写融合 kernel `_C.rms_norm_static_fp8_quant`」全程走查 + before/after FX 图。
 - **扩充** [[11_vllm_scheduler_analysis]] §3.12:prefill/decode 在单实例内"不切换"(统一 `num_computed_tokens` 追赶 + 混批),与集群级 **PD 分离**(KV 连接器跨实例)的不同场景对照与两种相反哲学。
 
-**整合**:[[vllm/index]] 支柱三新增 IR/Pass 页(11→12 篇)、父索引 [[02_engineering/03_infer_frameworks/index]](→12+index)与总索引 [[index]](推理框架 14 / vLLM 13)计数同步;[[24_vllm_fused_ops_and_kernels_analysis]] 回链伴篇。校验:新页 `file:line` 均核对,`[[]]` 链接全部解析。
+**整合**:[[vllm/index]] 支柱三新增 IR/Pass 页(11→12 篇)、父索引 [[02_engineering/03_infer_frameworks/index]](→12+index)与总索引 [[./index|总索引]](推理框架 14 / vLLM 13)计数同步;[[24_vllm_fused_ops_and_kernels_analysis]] 回链伴篇。校验:新页 `file:line` 均核对,`[[]]` 链接全部解析。
 
 ---
 
@@ -2354,7 +2354,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 新增 [[24_vllm_fused_ops_and_kernels_analysis]](「特性优化」支柱):**CustomOp 多实现派发**(`model_executor/custom_op.py` native/cuda/triton + `custom_ops` 开关,Inductor 下默认走 native 交其自动融合)、**torch.compile 融合 Pass**(`compilation/passes/fusion/`:RMS+quant、SiluMul+quant、AllReduce+RMSNorm/async-TP、attention+quant、SP,经 `PostGradPassManager` 挂进 Inductor `post_grad_custom_post_pass`)、**fused_moe**(grouped GEMM + Triton/CUTLASS/DeepGEMM oracle 派发 + `configs/E=*,N=*,device=*.json` autotune)。与 [[23_vllm_compilation_cudagraph_analysis]](图捕获)、[[21_vllm_quantization_analysis]](量化 GEMM)、[[14_vllm_attention_backends_analysis]](Triton 注意力)形成"被引用→展开"分工;跨域对照 [[21_megatron_fusion_operators_analysis]] / [[23_torchtitan_compute_memory_optimizations_analysis]]。
 
-**整合**:[[vllm/index]] 支柱三增列本页(10→11 篇)、父索引 [[02_engineering/03_infer_frameworks/index]] 与总索引 [[index]] 计数同步;[[23_vllm_compilation_cudagraph_analysis]] 融合 pass 处回链本页。校验:本页 14 个 `[[]]` 链接全部解析,`file:line` 经核对 @ `485bbe1c6`。
+**整合**:[[vllm/index]] 支柱三增列本页(10→11 篇)、父索引 [[02_engineering/03_infer_frameworks/index]] 与总索引 [[./index|总索引]] 计数同步;[[23_vllm_compilation_cudagraph_analysis]] 融合 pass 处回链本页。校验:本页 14 个 `[[]]` 链接全部解析,`file:line` 经核对 @ `485bbe1c6`。
 
 ---
 
@@ -2374,7 +2374,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - **调度统一**:无独立 prefill/decode 阶段,二者统一为 `num_computed_tokens` 追赶 `num_tokens_with_spec`;分块预填充只是 `min(剩余 prompt, token 预算)` 的自然结果,无独立代码路径。
 - **KV 卸载非独立子系统**:注册名 `OffloadingConnector`,与分离式推理共用 `KVConnectorBase_V1` 抽象;前缀缓存(GPU 内)/KV 卸载(下沉 CPU/盘)/分离式(跨实例)三者正交可叠加。
 
-**整合**:[[vllm/index]] 知识地图(四支点设计哲学 / 三支柱 10 篇表 / 一条请求穿三支柱全景 mermaid / 关键设计速览 / 阅读路径);父索引 [[02_engineering/03_infer_frameworks/index]] 新增 vLLM 子框架行、总索引 [[index]] 更新目录树/计数/快速导航。**校验**:10 页 + index 全部含 `## Related Pages` 且回链 [[vllm/index]];sibling slug 与文件名一一对应;18 个跨域目标页(megatron_inference_engine / mooncake / deepseek_v3 / 01_gpu_kernel_guide / CUDA Graphs / torch.compile 栈等)均经 glob 确认存在,0 悬空链接。
+**整合**:[[vllm/index]] 知识地图(四支点设计哲学 / 三支柱 10 篇表 / 一条请求穿三支柱全景 mermaid / 关键设计速览 / 阅读路径);父索引 [[02_engineering/03_infer_frameworks/index]] 新增 vLLM 子框架行、总索引 [[./index|总索引]] 更新目录树/计数/快速导航。**校验**:10 页 + index 全部含 `## Related Pages` 且回链 [[vllm/index]];sibling slug 与文件名一一对应;18 个跨域目标页(megatron_inference_engine / mooncake / deepseek_v3 / 01_gpu_kernel_guide / CUDA Graphs / torch.compile 栈等)均经 glob 确认存在,0 悬空链接。
 
 ---
 
@@ -2396,7 +2396,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 - rollout 退役 SPMD 同步模式,改异步 server(`ServerAdapter.generate_sequences` 直接 raise),生成由 `LLMServerManager`/`AgentLoopManager` 驱动。
 - `Role` enum 实际在 `trainer/ppo/utils.py:27`(ray_trainer 仅 re-export);`compute_policy_loss`(core_algos:1203)已废弃,实际分发走 `workers/utils/losses.py` 的 `get_policy_loss_fn`。
 
-**整合**:[[verl/index]] 知识地图(五平面表/9 篇三层表/五角色表/RL 数据流图/与训练后端的 cross-domain 链接);父索引 [[02_engineering/04_posttrain_frameworks/index]] 新增 verl 子目录行、总索引 [[index]] 更新目录树/计数/快速导航;9 篇互链 + 跨域链(→ [[11_torchtitan_fsdp_analysis]]/[[megatron-lm/index]]/[[32_distributed_optimizer_deepdive]] 等)。**校验**:9 页全部含 `## Related Pages`、均回链 [[verl/index]];所用 sibling slug 与文件名一一对应;跨域目标页均存在,0 悬空链接。
+**整合**:[[verl/index]] 知识地图(五平面表/9 篇三层表/五角色表/RL 数据流图/与训练后端的 cross-domain 链接);父索引 [[02_engineering/04_posttrain_frameworks/index]] 新增 verl 子目录行、总索引 [[./index|总索引]] 更新目录树/计数/快速导航;9 篇互链 + 跨域链(→ [[11_torchtitan_fsdp_analysis]]/[[megatron-lm/index]]/[[32_distributed_optimizer_deepdive]] 等)。**校验**:9 页全部含 `## Related Pages`、均回链 [[verl/index]];所用 sibling slug 与文件名一一对应;跨域目标页均存在,0 悬空链接。
 
 ---
 

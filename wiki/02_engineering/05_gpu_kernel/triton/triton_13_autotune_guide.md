@@ -213,7 +213,7 @@ print(matmul_kernel.best_config)  # 打印胜出的 Config（含 BLOCK/num_warps
 
 ## 相关页面
 
-- [[index]] — Triton 学习路线总索引
+- [[02_engineering/05_gpu_kernel/triton/index|Triton 学习路线]] — Triton 学习路线总索引
 - [[triton_12_matmul_guide]] — 前置：被调参的 matmul kernel 本体、`GROUP_SIZE_M` 的 L2 复用
 - [[triton_10_programming_model_guide]] — meta 参数 / `constexpr` 的来历
 - [[triton_30_optimization_profiling_guide]] — `num_stages` 背后的软件流水线与访存优化原理

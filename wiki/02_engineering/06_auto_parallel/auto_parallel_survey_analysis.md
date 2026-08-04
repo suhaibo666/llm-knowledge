@@ -207,7 +207,7 @@ $$M_{\text{param}} + M_{\text{grad}} + M_{\text{opt}} + M_{\text{act}} + M_{\tex
 
 ## Related Pages
 
-- [[index]] — 自动并行域索引（罗盘入口）
+- [[02_engineering/06_auto_parallel/index|自动并行]] — 自动并行域索引（罗盘入口）
 - [[megatron-lm/index]] — Megatron-LM 手工 5D 并行（对照组 / 执行后端）
 - [[torchtitan/index]] — torchtitan DTensor/FSDP2 原生并行
 - [[10_mindspore_compiler_analysis]] — MindSpore 自动并行（传播范式）

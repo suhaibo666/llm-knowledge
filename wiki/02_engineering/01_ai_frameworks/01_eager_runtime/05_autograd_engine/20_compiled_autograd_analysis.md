@@ -7,7 +7,7 @@
 > 最后更新：2026-07-30(kb-reorg P4 Task 9 迁入本目录,与 [[10_autograd_engine_analysis]] 补充显式分工声明)
 
 > [!note] 与 [[10_autograd_engine_analysis]] 的分工
-> 两页共享同一个 C++ `Engine`/`Node`/`Edge`/`GraphTask`/`AccumulateGrad` 底层抽象(定义与执行细节见 [[10_autograd_engine_analysis]]),但描述的是**同一引擎的两种运行模式**：[[10_autograd_engine_analysis]] 讲 eager 模式——`Engine::execute` 在 `.backward()` 时直接遍历 DAG、逐 Node 调 `apply` 执行,不产生任何可编译产物；本页讲 **Compiled Autograd** 模式——同一个 C++ engine 在调度反向时改为驱动一个 Python `AutogradCompilerInstance`（`PythonKeyTracer`）把这次运行时反向"录制"成一张 FX 图，再交给 Dynamo/Inductor 编译执行，命中 cache 后不再重放 eager DAG。换言之：**eager 引擎负责"驱动/调度"，Compiled Autograd 只是给这次驱动接上一个"录制器"**，不是另一套独立反向机制。
+> 两页共享同一个 C++ `Engine`/`Node`/`Edge`/`GraphTask`/`AccumulateGrad` 底层抽象(定义与执行细节见 [[10_autograd_engine_analysis]]),但描述的是**同一引擎的两种运行模式**：[[10_autograd_engine_analysis|Eager 反向自动微分引擎]] 讲 eager 模式——`Engine::execute` 在 `.backward()` 时直接遍历 DAG、逐 Node 调 `apply` 执行,不产生任何可编译产物；本页讲 **Compiled Autograd** 模式——同一个 C++ engine 在调度反向时改为驱动一个 Python `AutogradCompilerInstance`（`PythonKeyTracer`）把这次运行时反向"录制"成一张 FX 图，再交给 Dynamo/Inductor 编译执行，命中 cache 后不再重放 eager DAG。换言之：**eager 引擎负责"驱动/调度"，Compiled Autograd 只是给这次驱动接上一个"录制器"**，不是另一套独立反向机制。
 
 ## 1. 它为什么不是 AOTAutograd 的别名
 

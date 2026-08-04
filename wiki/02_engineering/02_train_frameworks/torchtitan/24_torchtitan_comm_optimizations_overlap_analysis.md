@@ -41,7 +41,7 @@
 
 ## 2. Async Tensor Parallel:把 all-gather / reduce-scatter 拆进 matmul
 
-[[12_torchtitan_tp_analysis]] §5.2 已点出 Async-TP;这里补**机制全貌**。入口 `maybe_enable_async_tp`(`distributed/tensor_parallel.py:102-115`)只做两件事:
+[[12_torchtitan_tp_analysis|torchtitan TP 分析]] §5.2 已点出 Async-TP;这里补**机制全貌**。入口 `maybe_enable_async_tp`(`distributed/tensor_parallel.py:102-115`)只做两件事:
 
 ```python
 if not parallelism.enable_async_tensor_parallel: return        # :105
@@ -94,7 +94,7 @@ Async-TP 的融合算子要求该集合的进程组**已注册对称内存**,否
 
 ## 4. MinimalAsyncEP:symm-mem + Triton 的 EP dispatch(新后端)
 
-[[15_torchtitan_ep_analysis]] 讲了 DeepEP/HybridEP;`#3561` 新增的 **MinimalAsyncEP** 是第三个 EP token-dispatch 后端,纯 PyTorch(symmetric memory + Triton),无 `deep_ep` 外部依赖。
+[[15_torchtitan_ep_analysis|torchtitan EP 分析]] 讲了 DeepEP/HybridEP;`#3561` 新增的 **MinimalAsyncEP** 是第三个 EP token-dispatch 后端,纯 PyTorch(symmetric memory + Triton),无 `deep_ep` 外部依赖。
 
 - **做什么**:用对称内存的 all-to-allv 把路由 token **直接写进对端 rank 的接收缓冲、且已是最终 expert-major 布局**,跳过标准路径的"rank-major 物化 + `_permute()`"(`minimal_async_ep/api.py:529-531`)。
 - **8 个自写 Triton kernel**(`minimal_async_ep/kernels.py`):count 交换、dispatch/combine 元数据、核心的 permute+scatter+P2P-put(`_copy_rows_to_peer_ptrs_kernel`)、top-k combine 规约(fp32 累加)及其反向。这是**全仓唯一的自写 Triton**。
@@ -106,7 +106,7 @@ Async-TP 的融合算子要求该集合的进程组**已注册对称内存**,否
 
 ## 5. full_dtensor / spmd_types:整网 DTensor 的 SPMD 后端
 
-`parallelism.spmd_backend: Literal["default","full_dtensor","spmd_types"]="default"`(`configs.py:142-149`)。[[10_torchtitan_parallel_dims_analysis]] §8 提过 `full_dtensor`,这里补定位与动机。
+`parallelism.spmd_backend: Literal["default","full_dtensor","spmd_types"]="default"`(`configs.py:142-149`)。[[10_torchtitan_parallel_dims_analysis|torchtitan 并行基座]] §8 提过 `full_dtensor`,这里补定位与动机。
 
 - **default(默认/legacy)**:把 `dp_shard×cp` 折成一个 `fsdp` 轴,**只有 TP/EP 表达成 DTensor**,DP/CP "out of band"(在 DTensor 程序外用 FSDP/CP 命令式处理)(`parallel_dims.py:322-329/536-539`)。
 - **full_dtensor**:**整张 SPMD mesh(dp_replicate/dp_shard/cp/tp)都表达成 DTensor**,参数/buffer/输入全是 DTensor(`full_dtensor.py:7-16`)。dense mesh 不折叠 dp_shard/cp(`parallel_dims.py:286-296`);`fully_shard` 拿 `DataParallelMeshDims` 自己在初始化时折叠 dp_shard+cp(`fsdp.py:123-130`)。输入也经 `parallelize_inputs` 包成 DTensor(`full_dtensor.py:128-167`)。

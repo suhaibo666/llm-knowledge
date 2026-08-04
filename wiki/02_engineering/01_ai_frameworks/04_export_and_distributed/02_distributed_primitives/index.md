@@ -28,7 +28,7 @@
 
 ### 再一层边界:原语本身 vs 与 `torch.compile` 的接入边界
 
-[[10_c10d_ddp_fsdp_dtensor_analysis]] 讲的是这些原语**本身**怎么实现(Reducer 怎么分桶、FlatParameter 怎么 shard/unshard、DTensor 怎么传播 placement)——不涉及 `torch.compile`。[[20_ddp_compile_boundaries_and_optimizer_analysis]]、[[21_fsdp_dtensor_and_distributed_graphs_analysis]] 讲的是这些原语与 Dynamo/AOTAutograd/Inductor **相遇时**新增的一层问题:DDPOptimizer 为什么要按 DDP bucket 反向切分 Dynamo FX 图、FSDP 为什么要求 `use_orig_params=True` 且 Dynamo 需跳过其 wrapper frame、每 rank local graph 与 collective 顺序如何在编译期保持一致。两组页面互补,不重叠——本模块 deep dive 之后若要理解"编译器怎么处理这些原语",接着读后两篇。
+[[10_c10d_ddp_fsdp_dtensor_analysis|c10d/DDP/FSDP/DTensor 原语源码深析]] 讲的是这些原语**本身**怎么实现(Reducer 怎么分桶、FlatParameter 怎么 shard/unshard、DTensor 怎么传播 placement)——不涉及 `torch.compile`。[[20_ddp_compile_boundaries_and_optimizer_analysis|DDP 与 torch.compile 编译边界]]、[[21_fsdp_dtensor_and_distributed_graphs_analysis]] 讲的是这些原语与 Dynamo/AOTAutograd/Inductor **相遇时**新增的一层问题:DDPOptimizer 为什么要按 DDP bucket 反向切分 Dynamo FX 图、FSDP 为什么要求 `use_orig_params=True` 且 Dynamo 需跳过其 wrapper frame、每 rank local graph 与 collective 顺序如何在编译期保持一致。两组页面互补,不重叠——本模块 deep dive 之后若要理解"编译器怎么处理这些原语",接着读后两篇。
 
 ### 通信底座:c10d(ProcessGroup + Backend + Work)
 

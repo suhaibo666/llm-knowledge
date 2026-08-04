@@ -6,7 +6,7 @@
 
 **一句话**：`torch.distributed`（c10d）把「多进程之间搬张量」抽象成两层——底层是可插拔的 **ProcessGroup/Backend**（NCCL/Gloo/…，实现在 C++），上层是一组同步语义的 **集合/点对点函数**（`all_reduce`/`broadcast`/`all_gather`/…）；再往上叠出三套常用并行：数据并行 **DDP**、参数分片 **FSDP**、以及围绕 **DeviceMesh + DTensor** 的张量并行 **TP**。本页给最小可跑路径和关键 API，所有引用均指向 `E:\97-codes\pytorch\pytorch` 真实行号。
 
-概念全景与并行家族关系见 [[index]]；源码级深析（Reducer 分桶、FlatParameter、placement 传播、group split/shrink）见 [[10_c10d_ddp_fsdp_dtensor_analysis]]。
+概念全景与并行家族关系见 [[02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index|torch.distributed 原生原语]]；源码级深析（Reducer 分桶、FlatParameter、placement 传播、group split/shrink）见 [[10_c10d_ddp_fsdp_dtensor_analysis]]。
 
 ---
 
@@ -281,7 +281,7 @@ tp_model = parallelize_module(
 
 ## Related Pages
 
-- [[index]] —— 本模块 overview：并行家族全景与页面导航
+- [[02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index|torch.distributed 原生原语]] —— 本模块 overview：并行家族全景与页面导航
 - [[10_c10d_ddp_fsdp_dtensor_analysis]] —— 本模块 deep dive：Reducer 分桶、FlatParameter、placement 传播、group split/shrink 源码级解析
 - [[01_eager_runtime/06_nn_module_system/index]] —— `nn.Module` 注册与遍历（DDP/FSDP/TP 改造的对象）
 - [[01_eager_runtime/01_tensor_and_storage/index]] —— Tensor 子类与 Storage（DTensor / AsyncCollectiveTensor 的拦截基础）

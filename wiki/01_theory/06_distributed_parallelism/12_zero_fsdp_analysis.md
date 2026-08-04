@@ -63,7 +63,7 @@ PyTorch 的 **FSDP（Fully Sharded Data Parallel）** 是 ZeRO-3 的框架实现
 ## 与其它并行的关系
 
 - **与 DP 同轴**：ZeRO/FSDP 就是 DP 这根「数据轴」上、把状态切开的版本。N 维布局里它占据 DP 的位置。
-- **与 TP/PP/EP 正交、可叠加**：常见组合是 **FSDP × TP**（FSDP 切状态、TP 切层内），或 **FSDP × PP**。用 `DeviceMesh` 描述各维布局（见 [[index]]）。
+- **与 TP/PP/EP 正交、可叠加**：常见组合是 **FSDP × TP**（FSDP 切状态、TP 切层内），或 **FSDP × PP**。用 `DeviceMesh` 描述各维布局（见 [[01_theory/06_distributed_parallelism/index|分布式并行原理]]）。
 - **Offload（ZeRO-Infinity）**：把切出去的优化器态/参数进一步搬到 CPU 内存甚至 NVMe，用主机带宽换更大模型——极致省显存、更慢，属工程权衡。
 
 **与 DP 的收尾对照**：DP 省时间、费显存（复制 $16\Psi$）；ZeRO 沿同一轴，用 reduce-scatter/all-gather 把这份显存也省了——ZeRO-1/2 不加通信，ZeRO-3 加约 50% 通信换到 $16\Psi/N$。二者是「数据并行」这枚硬币的两面。
@@ -76,7 +76,7 @@ PyTorch 的 **FSDP（Fully Sharded Data Parallel）** 是 ZeRO-3 的框架实现
 - [[10_collectives_analysis]] — all-reduce = reduce-scatter + all-gather（ZeRO 拆分的技术支点）
 - [[13_tensor_sequence_parallel_analysis]] — TP：与 FSDP 正交组合（FSDP×TP）
 - [[15_pipeline_parallel_analysis]] — PP：与 ZeRO 正交，进一步摊深度
-- [[index]] — N 维布局里 ZeRO/FSDP 占据数据轴
+- [[01_theory/06_distributed_parallelism/index|分布式并行原理]] — N 维布局里 ZeRO/FSDP 占据数据轴
 - [[../../02_engineering/02_train_frameworks/torchtitan/11_torchtitan_fsdp_analysis]] — **实现层**：torchtitan/FSDP2 的分片与通信
 - [[../../02_engineering/02_train_frameworks/torchtitan/20_torchtitan_fsdp_prefetch_overlap_memory_analysis]] — **实现层**：预取重叠与显存核算
 - [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：FSDP1 `FlatParameter` 与 FSDP2 `fully_shard`

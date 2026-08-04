@@ -23,7 +23,7 @@
 
 ## Triton 学习路线（`triton/` 子目录）
 
-> 以 **Triton（block-level GPU 编程）** 为切入点的手把手系列，锚定官方 `triton-lang/triton main @ 70e0929`（v3.8.0）的真实 tutorial 源码，每页配可运行 demo。入口：[[index]]（本子目录的 `triton/index.md`）。
+> 以 **Triton（block-level GPU 编程）** 为切入点的手把手系列，锚定官方 `triton-lang/triton main @ 70e0929`（v3.8.0）的真实 tutorial 源码，每页配可运行 demo。入口：[[02_engineering/05_gpu_kernel/triton/index|Triton 学习路线]]（本子目录的 `triton/index.md`）。
 >
 > **段位**(kb-reorg P7 Task 7,2026-07-31):原课程序号 `triton_00`–`triton_06` 规范化为段位前缀(文件名 `triton_` 前缀保留)——00 入门→段 0(01);01-05 会写/会调/会debug 主线→段 1(10-14);06 会优化(profiling 方法论)+ 总纲→段 3(30-31,方法论/参考)。
 

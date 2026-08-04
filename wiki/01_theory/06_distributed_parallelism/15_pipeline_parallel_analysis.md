@@ -65,7 +65,7 @@ $$\text{bubble ratio} = \frac{P-1}{m + P - 1}$$
 - **主要开销是气泡**，靠增大 $m$、选 1F1B/interleaved/zero-bubble 压缩。
 - **PP 度数 = stage 数**；受层数与「切点能否让各 stage 计算量均衡」约束（切不匀会加剧气泡）。
 
-在 N 维布局里（见 [[index]]），典型嵌套是 **DP（最外·跨机）× PP（跨机/机架）× TP·EP（机内）**：PP 承担「把太深的模型摊到多机」，与吃机内带宽的 TP/EP 井水不犯河水。
+在 N 维布局里（见 [[01_theory/06_distributed_parallelism/index|分布式并行原理]]），典型嵌套是 **DP（最外·跨机）× PP（跨机/机架）× TP·EP（机内）**：PP 承担「把太深的模型摊到多机」，与吃机内带宽的 TP/EP 井水不犯河水。
 
 ---
 
@@ -75,7 +75,7 @@ $$\text{bubble ratio} = \frac{P-1}{m + P - 1}$$
 - [[13_tensor_sequence_parallel_analysis]] — TP：另一条切模型的路（切层内 vs PP 切层），二者常组合
 - [[11_data_parallel_analysis]] — DP：PP 通常嵌在 DP 之内
 - [[12_zero_fsdp_analysis]] — ZeRO：与 PP 正交，进一步省状态显存
-- [[index]] — N 维布局里 PP 占据「跨机维」
+- [[01_theory/06_distributed_parallelism/index|分布式并行原理]] — N 维布局里 PP 占据「跨机维」
 - [[../../02_engineering/02_train_frameworks/megatron-lm/15_megatron_pp_schedulers_analysis]] — **实现层**：Megatron 的 GPipe/1F1B/interleaved 调度器
 - [[../../02_engineering/02_train_frameworks/torchtitan/14_torchtitan_pp_analysis]] — **实现层**：torchtitan 的 PP 调度
 - [[21_hw_friendly_llm_codesign_analysis]] — 推理侧特化：Chunked Pipeline Parallelism 压长上下文首 token 延迟

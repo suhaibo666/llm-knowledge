@@ -142,7 +142,7 @@ Reward 模型这种**无状态**组件可以塞到 serverless / function compute
 
 构建这种规模的高质量 environment 池，是个**数据工程问题**而不是算法问题。可能比设计算法本身耗费更多人力。
 
-> 环境多样性同时是 [[31_reward_hacking_defense_analysis]] Layer 1 的关键——多样化环境让 hack 路径无法在所有任务上通用，模型必须真的学解题。
+> 环境多样性同时是 [[31_reward_hacking_defense_analysis|Reward Hacking 防御体系]] Layer 1 的关键——多样化环境让 hack 路径无法在所有任务上通用，模型必须真的学解题。
 
 ### 优化 6: Admission-aware Backpressure（准入与容量管理）
 

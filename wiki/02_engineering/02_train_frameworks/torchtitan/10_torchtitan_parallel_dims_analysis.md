@@ -241,7 +241,7 @@ if not self.full_dtensor:
     axes_list = [axis for axis in axes_list if axis in in_band]
 ```
 
-含义:**传统路径下,TP/EP 由 DTensor 显式处理(带内),DP/CP 由 FSDP/CP 包装隐式处理(带外)**。这条规则在 [[12_torchtitan_tp_analysis]] 会再次出现。
+含义:**传统路径下,TP/EP 由 DTensor 显式处理(带内),DP/CP 由 FSDP/CP 包装隐式处理(带外)**。这条规则在 [[12_torchtitan_tp_analysis|torchtitan TP 分析]] 会再次出现。
 
 ---
 

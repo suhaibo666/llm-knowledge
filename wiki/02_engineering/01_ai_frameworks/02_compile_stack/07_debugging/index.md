@@ -287,8 +287,8 @@ forward 正常但 backward 异常→AOT 问题、数值/性能异常→Inductor 
 
 ### Kernel / Triton / CUDA 层崩溃诊断（最终执行）
 
-九篇中 [[18_kernel_fusion_memory_and_hardware_performance_analysis]] 只覆盖 kernel/fusion 的
-**性能**归因（roofline、fusion score、occupancy），[[13_aotautograd_and_inductor_failure_localization_analysis]]
+九篇中 [[18_kernel_fusion_memory_and_hardware_performance_analysis|Kernel/Fusion/Memory/Hardware 性能归因]] 只覆盖 kernel/fusion 的
+**性能**归因（roofline、fusion score、occupancy），[[13_aotautograd_and_inductor_failure_localization_analysis|AOTAutograd/Inductor Failure 分层定位]]
 §5 的 "Native compile/load failure"、"Runtime failure" 只有两句话概述；两者都未覆盖以下
 **崩溃类**故障（segfault、OOM、launch failed、arch mismatch）的具体关键词与修复建议，
 故逐字保留。
@@ -338,7 +338,7 @@ forward 正常但 backward 异常→AOT 问题、数值/性能异常→Inductor 
 
 ### 附：提交问题给 upstream / 报 issue 时要附的最小清单
 
-[[15_minifier_repro_and_compiler_bisector_analysis]] §11 已给出通用的"交付一个有效 repro"标准
+[[15_minifier_repro_and_compiler_bisector_analysis|Minifier/Repro/Compiler Bisector]] §11 已给出通用的"交付一个有效 repro"标准
 （干净进程可复现、无私有数据、版本明确、predicate 稳定等），偏重 minifier/bisector 场景。
 以下是原页面向 CUDA + 分布式场景给出的具体附件清单，两者互补，不重复列出通用项：
 

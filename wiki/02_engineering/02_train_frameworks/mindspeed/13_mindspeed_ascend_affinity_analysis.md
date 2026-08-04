@@ -466,7 +466,7 @@ Q,K ─matmul─▶ S[S×S] ─×scale─▶ ─+mask─▶          Q,K,V(分�
 > [!tip] 优化点(Flash-Attention)
 > ① **最大的赢点是显存:O(S²)→O(S)**——`S×S` 注意力矩阵从不物化到 HBM,长序列训练的显存墙被推开(这是它和上面逐元素融合的本质区别:省的不是 launch,是**整张二次方矩阵**);② kernel launch **7+→1**;③ online-softmax 让 max/sum 在分块流水中增量更新,无需对 S×S 做全局 reduce;④ TND 布局下多条变长样本拼一条、用 `actual_seq_*` 切回,**免 padding**(`adaptor.py:49-56`)。
 
-**源码解读**:`FusionAttentionFeature`(O2,`--use-flash-attn`)**仅当 CP 关闭时**才接管 `DotProductAttention.forward`(`fusion_attention_v1_feature.py:58-68`);CP 开启时由 [[20_mindspeed_context_parallel_analysis]] 的 ring/ulysses 注意力接管。实现体先按 packed 与否选布局,再调融合核(`flash_attention/adaptor.py`):
+**源码解读**:`FusionAttentionFeature`(O2,`--use-flash-attn`)**仅当 CP 关闭时**才接管 `DotProductAttention.forward`(`fusion_attention_v1_feature.py:58-68`);CP 开启时由 [[20_mindspeed_context_parallel_analysis|MindSpeed 上下文并行]] 的 ring/ulysses 注意力接管。实现体先按 packed 与否选布局,再调融合核(`flash_attention/adaptor.py`):
 
 ```python
 # core/transformer/flash_attention/flash_attention/adaptor.py:43-83

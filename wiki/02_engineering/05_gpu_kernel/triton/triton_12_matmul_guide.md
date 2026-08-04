@@ -352,7 +352,7 @@ TRITON_INTERPRET=1 python 03-matrix-multiplication.py   # 详见 [[triton_14_deb
 
 ## 相关页面
 
-- [[index]] — Triton 学习路线总索引
+- [[02_engineering/05_gpu_kernel/triton/index|Triton 学习路线]] — Triton 学习路线总索引
 - [[triton_01_gpu_essentials_guide]] — 前置：roofline / compute-bound vs memory-bound（本页 §5.4 印证）
 - [[triton_10_programming_model_guide]] — 前置：SPMD / `program_id` / `mask` / grid（本页是其多维进阶）
 - [[triton_11_fused_softmax_guide]] — 同属"会写"：reduction 与 fusion 的另一面

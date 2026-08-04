@@ -153,7 +153,7 @@ attention.py:516  unified_attention_with_output(query, key, value, output, layer
 
 `AttentionImpl`(`backend.py:812`)定义标准注意力的 `forward(layer, q, k, v, kv_cache, attn_metadata, output, ...)`(`backend.py:839`)。层在 `__init__` 里 `impl_cls = self.attn_backend.get_impl_cls()` 然后实例化 `self.impl`(`attention.py:387-388`)。
 
-`AttentionMetadataBuilder`(`backend.py:565`)的核心是 `build(common_prefix_len, common_attn_metadata, fast_build)`(`backend.py:632`),把通用 metadata 编译成后端私有 metadata。它还携带 CUDA Graph 支持级别 `AttentionCGSupport`(`backend.py:548`:ALWAYS/UNIFORM_BATCH/UNIFORM_SINGLE_TOKEN_DECODE/NEVER)和 `reorder_batch_threshold`——这两者深刻影响 [[23_vllm_compilation_cudagraph_analysis]] 和批次重排。
+`AttentionMetadataBuilder`(`backend.py:565`)的核心是 `build(common_prefix_len, common_attn_metadata, fast_build)`(`backend.py:632`),把通用 metadata 编译成后端私有 metadata。它还携带 CUDA Graph 支持级别 `AttentionCGSupport`(`backend.py:548`:ALWAYS/UNIFORM_BATCH/UNIFORM_SINGLE_TOKEN_DECODE/NEVER)和 `reorder_batch_threshold`——这两者深刻影响 [[23_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] 和批次重排。
 
 ### 3.3 AttentionMetadata:连接调度/KV 管理与 kernel 的桥
 
@@ -259,7 +259,7 @@ MLA 的 metadata 也专门定制:`MLACommonMetadata`(`mla_attention.py:1275`)显
 
 同样是分页 KV cache,不同后端对**块内维度顺序**的偏好不同:`NHD`(num_kv_heads, head_size)还是 `HND`(head_size 在前)。逻辑形状由 `get_kv_cache_shape`(`backend.py:89`)给出,而**物理内存排布**由 `get_kv_cache_stride_order`(`backend.py:118`)返回一个置换来描述。FlashAttention 据 `get_kv_cache_layout()` 在 `NHD`/`HND` 间切换并给出对应 stride 置换(`flash_attn.py:151-170`)。
 
-一致性由 selector 兜底:选定后端后,`_cached_get_attn_backend` 读 `backend.get_required_kv_cache_layout()`(`selector.py:133` → `backend.py:377`),若后端要求特定布局就全局 `set_kv_cache_layout(...)`(`selector.py:135-142`、`utils.py:112`)。`indexes_kv_by_block_stride()`(`backend.py:204`)进一步判断"num_blocks 是否物理最外维",决定能否跨层统一分配 / 页大小填充。这套布局协商保证了 [[12_vllm_kv_cache_management_analysis]] 分配的物理块能被选中的 kernel 正确解读。
+一致性由 selector 兜底:选定后端后,`_cached_get_attn_backend` 读 `backend.get_required_kv_cache_layout()`(`selector.py:133` → `backend.py:377`),若后端要求特定布局就全局 `set_kv_cache_layout(...)`(`selector.py:135-142`、`utils.py:112`)。`indexes_kv_by_block_stride()`(`backend.py:204`)进一步判断"num_blocks 是否物理最外维",决定能否跨层统一分配 / 页大小填充。这套布局协商保证了 [[12_vllm_kv_cache_management_analysis|KV Cache 管理]] 分配的物理块能被选中的 kernel 正确解读。
 
 ### 3.9 第三方/自定义后端
 

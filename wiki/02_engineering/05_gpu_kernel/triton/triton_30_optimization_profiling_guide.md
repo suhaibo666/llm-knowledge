@@ -263,7 +263,7 @@ proton_viewer.print_tree(tree, metrics)
 
 ## 相关页面
 
-- [[index]] — Triton 学习路线总索引
+- [[02_engineering/05_gpu_kernel/triton/index|Triton 学习路线]] — Triton 学习路线总索引
 - [[triton_01_gpu_essentials_guide]] — 前置：roofline / memory vs compute bound 的判据
 - [[11_operator_optimization_guide]] — **Roofline 权威页**：公式、Ridge Point 参数表、通用优化闭环（§2/§8）
 - [[triton_11_fused_softmax_guide]] — 杠杆①fusion 的最小案例

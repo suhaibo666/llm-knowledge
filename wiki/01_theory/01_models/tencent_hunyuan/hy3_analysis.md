@@ -180,7 +180,7 @@ Hy3 激活参数是这一档里最小的(21B vs 27–40B),官方叙事"21B 激�
 
 ## Related Pages
 
-- [[index]] — 腾讯混元模型家族入口
+- [[01_theory/01_models/tencent_hunyuan/index|腾讯混元]] — 腾讯混元模型家族入口
 - [[stem_sparse_attention_analysis]] — 混元自研免训练稀疏注意力,Hy3 preview 内部推理服务的 prefill 优化(不在开源权重内)
 - [[12_deepseek_v3_analysis]] — sigmoid+bias 免辅助损失路由与 MTP 的原创出处,Hy3 的直接技术上游
 - [[20_deepseek_moe_analysis]] — 共享专家 + 细粒度专家切分的源头

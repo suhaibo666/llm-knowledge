@@ -6,7 +6,7 @@
 
 **一句话**：`nn.Module` 是「带结构化状态的可调用对象」——你把 `Parameter`（可学习）、`Buffer`（持久但不学习）、子 `Module` 赋成实例属性，它自动登记进三张内部表，于是 `parameters()` / `state_dict()` / `.to()` / `train()` 全都能按类别递归。`Optimizer` 消费 `model.parameters()` 并按 `param_groups` 分组更新。本页给出最小可跑路径，所有引用均指向 `E:\97-codes\pytorch\pytorch` 真实行号。
 
-概念背景与全景图见 [[index]]；源码级深析见 [[10_nn_module_and_optimizer_analysis]]。
+概念背景与全景图见 [[02_engineering/01_ai_frameworks/01_eager_runtime/06_nn_module_system/index|torch.nn 模块体系]]；源码级深析见 [[10_nn_module_and_optimizer_analysis]]。
 
 ---
 
@@ -313,7 +313,7 @@ opt.add_param_group({"params": net.bn.parameters(), "lr": 5e-3})  # optimizer.py
 
 ## Related Pages
 
-- [[index]] — NN · 模块体系 总览（全景图、页面列表、关联域）
+- [[02_engineering/01_ai_frameworks/01_eager_runtime/06_nn_module_system/index|torch.nn 模块体系]] — NN · 模块体系 总览（全景图、页面列表、关联域）
 - [[10_nn_module_and_optimizer_analysis]] — 源码级深析（`__setattr__` 分派、`_apply` 三路径、hook 编排、lazy 物化、optimizer foreach/fused）
 - [[01_eager_runtime/01_tensor_and_storage/index]] — Parameter/Buffer 是张量子类，理解其底层先看张量与 storage
 - [[01_eager_runtime/05_autograd_engine/index]] — `loss.backward()` 填 `.grad`、backward hook 的来龙去脉

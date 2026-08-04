@@ -4,7 +4,7 @@
 > **分析维度（路径）**：**Overview 总览（§1）→ Theory 理论基础（§2）→ Deep Dive 机制级深挖（§3–§7，逐贡献四拍：动机 → 机制 → 证据 → 为什么不选替代）**
 > **最后更新**：2026-06-29
 >
-> 本页回答：DSpark 用「**并行骨干 + 轻量串行头**」的半自回归结构把并行草稿器的后缀崩塌（suffix decay）补回来，又用「**置信度头 + 硬件感知前缀调度器**」按系统负载动态裁剪验证长度，从而在 DeepSeek-V4 生产服务里相对 MTP-1 基线把单用户生成速度提升 60%–85%（V4-Flash）/ 57%–78%（V4-Pro）。投机推理三代（MTP / Eagle3 / DFlash / DSpark）的横向演进见 [[index]]。
+> 本页回答：DSpark 用「**并行骨干 + 轻量串行头**」的半自回归结构把并行草稿器的后缀崩塌（suffix decay）补回来，又用「**置信度头 + 硬件感知前缀调度器**」按系统负载动态裁剪验证长度，从而在 DeepSeek-V4 生产服务里相对 MTP-1 基线把单用户生成速度提升 60%–85%（V4-Flash）/ 57%–78%（V4-Pro）。投机推理三代（MTP / Eagle3 / DFlash / DSpark）的横向演进见 [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理演进]]。
 
 > [!warning] 关于 arXiv 编号的订正（源 > 转述）
 > 用户给出的 **arXiv:2606.19348** 经核对是 **DeepSeek-V4 模型论文**（*Towards Highly Efficient Million-Token Context Intelligence*，本库已审计，见 [[13_deepseek_v4_analysis]]），**不是** DSpark 论文。DSpark 是挂在 V4 checkpoint 上的**投机解码草稿模块**，其论文以 `DSpark_paper.pdf` 形式随开源仓 DeepSpec 发布（HF 模型卡 `DeepSeek-V4-Pro-DSpark` 里引用的 2606.19348 指的是**底座模型**论文）。本页一切定位符指向该 PDF 的页码（`===== PAGE N =====`），与 V4 模型论文无关。
@@ -70,7 +70,7 @@ $$L=\frac{T_{\text{draft}}+T_{\text{verify}}}{\tau}$$
 - **自回归**靠显式依赖拿到强建模能力（高 $\tau$），但 $T_{\text{draft}}\propto\gamma$ 逼着它用小 $\gamma$ + 浅架构；为补短块，树验证（tree verification, Miao et al. 2024）把候选展成树、用 tree attention 验多条路径，但验证 token 暴涨又压低服务吞吐。
 - **并行**一次出全块、$T_{\text{draft}}$ 与块长解耦，于是**能上深网络 + 大块**（如 $\gamma{=}16$）。代价是每位置**边缘化所有可能前驱**而非条件于实际采样的前缀，产生「多模态碰撞」、后缀崩塌；且「产得多」不等于「该验这么多」——高并发下盲验尾 token 挤占目标 batch 容量（p1-2, §1）。
 
-> 这张权衡表就是 DSpark 的出发点：**§3 用半自回归同时吃下「并行的 $O(1)$ 草稿延迟 + 首 token 深网络容量」与「自回归的块内依赖」**；**§4 用置信度调度解决「并行大块该验多长」**。投机推理四代（MTP/Eagle3/DFlash/DSpark）沿这两轴的完整演进见 [[index]]。
+> 这张权衡表就是 DSpark 的出发点：**§3 用半自回归同时吃下「并行的 $O(1)$ 草稿延迟 + 首 token 深网络容量」与「自回归的块内依赖」**；**§4 用置信度调度解决「并行大块该验多长」**。投机推理四代（MTP/Eagle3/DFlash/DSpark）沿这两轴的完整演进见 [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理演进]]。
 
 ### 2.3 DSpark 继承的并行骨干 —— DFlash 的 KV 注入与 anchor/mask
 
@@ -236,7 +236,7 @@ DSpark 草稿模型与 DeepSeek-V4-Flash/Pro（preview）**协同部署**：并�
 ---
 
 ## Related Pages
-- [[index]] —— 投机推理演进总览（MTP → Eagle3 → DFlash → DSpark 的横向对比）
+- [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理演进]] —— 投机推理演进总览（MTP → Eagle3 → DFlash → DSpark 的横向对比）
 - [[deepspec_codebase_analysis]] —— 开源仓 DeepSpec 源码级分析（论文公式 ↔ 代码逐行核对）
 - [[20_vllm_speculative_decoding_analysis]] —— 投机解码在 vLLM 引擎里的验收/拒绝采样实现（含 mtp/dflash proposer）
 
