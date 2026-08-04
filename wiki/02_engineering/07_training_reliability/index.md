@@ -1,7 +1,7 @@
 # 万卡级训练：确定性与可靠性问题域 — 目录索引
 
 > 覆盖「万卡级 LLM 训练」中**确定性 / 数值可靠性 / 故障容错 / 训练动力学稳定性**四大问题域，以**问题为纲**（背景→影响→如何发现→解决方案→代码实现）逐个讲透机理。
-> 最后更新: 2026-07-06
+> 最后更新: 2026-07-31(kb-reorg P7 Task 7:目录内分段编号——段 1(10-12)=下方「三张内容页」,按问题 1-4→5-8→9 顺序;段 2(20)=第四篇 batch 不变性算子实现,是问题 2 的算子级细化专题)
 
 ---
 
@@ -17,15 +17,15 @@
 
 | # | 问题 | 主线 | 代表性工作 | 详见 |
 |---|------|------|-----------|------|
-| 1 | 训练比特级不可复现（浮点非确定性） | 确定性 | Google 全确定性栈、LongCat 确定性算子、Megatron `--deterministic-mode` | [[determinism_and_numerical_reliability_analysis]] |
-| 2 | 训推数值不一致 / batch 不变性 | 确定性 | Thinking Machines、SGLang/vLLM 确定性推理、Anthropic top-k 事故 | [[determinism_and_numerical_reliability_analysis]] · [[batch_invariance_guide]] |
-| 3 | 低精度长链累加误差 | 数值可靠性 | DeepSeek FP8 两级累加、LongCat 二叉树规约、Megatron FP32 main_grad | [[determinism_and_numerical_reliability_analysis]] |
-| 4 | 静默数据损坏 SDC / 比特翻转 | 数值可靠性 | Gemini 确定性重放+checksum、ABFT、LongCat 比特翻转检测 | [[determinism_and_numerical_reliability_analysis]] |
-| 5 | 显式故障高频化与恢复链路开销 | 容错 | Llama 3 故障统计、NVRx in-process restart、Gemini slice 弹性 | [[fault_tolerance_and_recovery_analysis]] |
-| 6 | 隐式故障：hang / 慢节点 / 性能劣化 | 容错 | ByteRobust 栈聚类、NCCL Flight Recorder、NVRx straggler | [[fault_tolerance_and_recovery_analysis]] |
-| 7 | Checkpoint 保存开销与恢复窗口 | 容错 | Megatron async dist-ckpt、NVRx local ckpt、MindIO 临终保存 | [[fault_tolerance_and_recovery_analysis]] |
-| 8 | 网络链路故障的识别、切流与定界 | 容错 | LongCat 无感切流、华为 1-3-10、Alibaba C4/Aegis | [[fault_tolerance_and_recovery_analysis]] |
-| 9 | 训练动力学：loss spike / NaN / 发散 | 训练动力学 | PaLM 回滚跳批、GLM-130B EGS、Kimi K2 MuonClip、DeepSeek-V3 零 spike | [[training_dynamics_stability_analysis]] |
+| 1 | 训练比特级不可复现（浮点非确定性） | 确定性 | Google 全确定性栈、LongCat 确定性算子、Megatron `--deterministic-mode` | [[10_determinism_and_numerical_reliability_analysis]] |
+| 2 | 训推数值不一致 / batch 不变性 | 确定性 | Thinking Machines、SGLang/vLLM 确定性推理、Anthropic top-k 事故 | [[10_determinism_and_numerical_reliability_analysis]] · [[20_batch_invariance_guide]] |
+| 3 | 低精度长链累加误差 | 数值可靠性 | DeepSeek FP8 两级累加、LongCat 二叉树规约、Megatron FP32 main_grad | [[10_determinism_and_numerical_reliability_analysis]] |
+| 4 | 静默数据损坏 SDC / 比特翻转 | 数值可靠性 | Gemini 确定性重放+checksum、ABFT、LongCat 比特翻转检测 | [[10_determinism_and_numerical_reliability_analysis]] |
+| 5 | 显式故障高频化与恢复链路开销 | 容错 | Llama 3 故障统计、NVRx in-process restart、Gemini slice 弹性 | [[11_fault_tolerance_and_recovery_analysis]] |
+| 6 | 隐式故障：hang / 慢节点 / 性能劣化 | 容错 | ByteRobust 栈聚类、NCCL Flight Recorder、NVRx straggler | [[11_fault_tolerance_and_recovery_analysis]] |
+| 7 | Checkpoint 保存开销与恢复窗口 | 容错 | Megatron async dist-ckpt、NVRx local ckpt、MindIO 临终保存 | [[11_fault_tolerance_and_recovery_analysis]] |
+| 8 | 网络链路故障的识别、切流与定界 | 容错 | LongCat 无感切流、华为 1-3-10、Alibaba C4/Aegis | [[11_fault_tolerance_and_recovery_analysis]] |
+| 9 | 训练动力学：loss spike / NaN / 发散 | 训练动力学 | PaLM 回滚跳批、GLM-130B EGS、Kimi K2 MuonClip、DeepSeek-V3 零 spike | [[12_training_dynamics_stability_analysis]] |
 
 ---
 
@@ -42,13 +42,13 @@
 
 ## 三张内容页
 
-- **[[determinism_and_numerical_reliability_analysis]]** — 第一部分（问题 1-4）：浮点非确定性五层来源、batch 不变性与 RL 确定性、低精度长链累加（树形/pairwise、FP32 main_grad、DeepSeek FP8 两级累加、Kahan）、SDC/比特翻转四层检测体系。
-- **[[fault_tolerance_and_recovery_analysis]]** — 第二部分（问题 5-8）：goodput/ETTR 与五级恢复坐标系（Job/Pod/Node/进程/Step）、hang/straggler 的发现与定界（flight recorder / 栈聚类 / straggler 打分）、Checkpoint 体系（异步/本地/临终/数据回放）、网络链路故障（PFC 风暴、ECMP hash、链路级快恢、流量工程）。
-- **[[training_dynamics_stability_analysis]]** — 第三部分（问题 9）：loss spike/NaN 的四类根因、分层监控+前兆指标、排查决策树、四层防线（架构 QK-Norm/z-loss、优化器 MuonClip/自适应 clip、数据、运维），及 2026 前沿一代（Muon 路线、DeepSeek-V4 Anticipatory Routing、Kimi K2.5 / GLM-5 RL 稳定性）。
+- **[[10_determinism_and_numerical_reliability_analysis]]** — 第一部分（问题 1-4）：浮点非确定性五层来源、batch 不变性与 RL 确定性、低精度长链累加（树形/pairwise、FP32 main_grad、DeepSeek FP8 两级累加、Kahan）、SDC/比特翻转四层检测体系。
+- **[[11_fault_tolerance_and_recovery_analysis]]** — 第二部分（问题 5-8）：goodput/ETTR 与五级恢复坐标系（Job/Pod/Node/进程/Step）、hang/straggler 的发现与定界（flight recorder / 栈聚类 / straggler 打分）、Checkpoint 体系（异步/本地/临终/数据回放）、网络链路故障（PFC 风暴、ECMP hash、链路级快恢、流量工程）。
+- **[[12_training_dynamics_stability_analysis]]** — 第三部分（问题 9）：loss spike/NaN 的四类根因、分层监控+前兆指标、排查决策树、四层防线（架构 QK-Norm/z-loss、优化器 MuonClip/自适应 clip、数据、运维），及 2026 前沿一代（Muon 路线、DeepSeek-V4 Anticipatory Routing、Kimi K2.5 / GLM-5 RL 稳定性）。
 
 ## 第四篇：batch 不变性算子实现（kb-reorg P5 归位）
 
-- **[[batch_invariance_guide]]**（2026-07-31 从 `04_posttrain_frameworks/` 迁入）— 源自 DeepSeek V4 报告 §3.3 + DeepGEMM 源码分析，独立于上述 wanka 综述素材，与 `determinism_and_numerical_reliability_analysis` 问题 2 互为算子级实现细化：双内核 Attention（单 SM 一条序列 vs 多 SM 协作 + 固定顺序归约）、DeepGEMM 1D1D 布局替代 cuBLAS split-k、MoE 反向的 per-SM 独立缓冲区 + 确定性全局求和。
+- **[[20_batch_invariance_guide]]**（2026-07-31 从 `04_posttrain_frameworks/` 迁入）— 源自 DeepSeek V4 报告 §3.3 + DeepGEMM 源码分析，独立于上述 wanka 综述素材，与 `10_determinism_and_numerical_reliability_analysis` 问题 2 互为算子级实现细化：双内核 Attention（单 SM 一条序列 vs 多 SM 协作 + 固定顺序归约）、DeepGEMM 1D1D 布局替代 cuBLAS split-k、MoE 反向的 per-SM 独立缓冲区 + 确定性全局求和。
 
 ---
 
@@ -67,10 +67,10 @@
 | 本簇问题 | 关联的一手/深挖页 |
 |---------|------------------|
 | 问题 1（确定性）· 问题 3-4 | [[longcat_2_analysis]] §6-7（确定性算子/二叉树累加/bit-flip）· [[longcat_flash_analysis]] §3.2（SDC 检测） |
-| 问题 2（训推一致） | [[RL_Training_Inference_Precision_Analysis]] · [[10_rl_ppo_loss_and_grpo_analysis]] · [[batch_invariance_guide]] |
-| 问题 3（低精度） | [[low_precision_training_analysis]] · [[deepseek_v3_analysis]]（FP8 两级累加/DeepGEMM） |
-| 问题 1 第 3 层（通信规约树） | [[collectives_analysis]]（ring/tree allreduce）· [[expert_parallel_analysis]]（MoE all-to-all） |
-| 问题 9（spike / Muon 系） | [[muon_analysis]] · [[kimi_k2_analysis]]（MuonClip）· [[deepseek_v4_analysis]] · [[glm_5_analysis]] |
+| 问题 2（训推一致） | [[20_rl_training_inference_precision_analysis]] · [[10_rl_ppo_loss_and_grpo_analysis]] · [[20_batch_invariance_guide]] |
+| 问题 3（低精度） | [[13_low_precision_training_analysis]] · [[12_deepseek_v3_analysis]]（FP8 两级累加/DeepGEMM） |
+| 问题 1 第 3 层（通信规约树） | [[10_collectives_analysis]]（ring/tree allreduce）· [[14_expert_parallel_analysis]]（MoE all-to-all） |
+| 问题 9（spike / Muon 系） | [[11_muon_analysis]] · [[11_kimi_k2_analysis]]（MuonClip）· [[13_deepseek_v4_analysis]] · [[01_glm_5_analysis]] |
 | 容错 / 分布式框架 | [[02_engineering/02_train_frameworks/megatron-lm/index]] |
 
 ## 附：主要一手来源
@@ -82,6 +82,6 @@
 ## Related Pages
 
 - [[02_engineering/index]] — 工程实现总索引
-- [[determinism_and_numerical_reliability_analysis]] · [[fault_tolerance_and_recovery_analysis]] · [[training_dynamics_stability_analysis]] — 本簇三页
+- [[10_determinism_and_numerical_reliability_analysis]] · [[11_fault_tolerance_and_recovery_analysis]] · [[12_training_dynamics_stability_analysis]] — 本簇三页
 - [[longcat_2_analysis]] · [[longcat_flash_analysis]] — 引出本簇的 LongCat 稳定性主线
 - [[01_theory/06_distributed_parallelism/index]] — 分布式并行原理（通信原语/EP 与本簇的规约树/容错语义相接）

@@ -183,8 +183,8 @@ $$M_{\text{param}} + M_{\text{grad}} + M_{\text{opt}} + M_{\text{act}} + M_{\tex
 - [[megatron-lm/index]] — **手工** 5D 并行的工业标杆，是自动并行的"对照组"与执行后端。
 - [[torchtitan/index]] — DTensor/FSDP2 的 PyTorch 原生实现，是框架原生 auto-parallel 的载体。
 - [[10_mindspore_compiler_analysis]] — sharding 传播式半自动并行的代表。
-- [[comm_compute_fusion_guide]] — 通信/计算 overlap，是代价模型 B 维度的实测依据。
-- [[distributed_optimizer_deep_dive]] — ZeRO/FSDP 分片，是 intra-op 搜索空间的一部分。
+- [[31_comm_compute_fusion_guide]] — 通信/计算 overlap，是代价模型 B 维度的实测依据。
+- [[32_distributed_optimizer_deepdive]] — ZeRO/FSDP 分片，是 intra-op 搜索空间的一部分。
 
 后续可按系统拆专页（建议优先级）：`alpa_analysis`（ILP+DP 范式）、`nnscaler_analysis`（原语+约束）、`galvatron_analysis`（显存感知 DP）、`gspmd_sharding_propagation_analysis`（传播范式）、`pytorch_dtensor_autoparallel_analysis`（框架原生）。
 
@@ -207,10 +207,10 @@ $$M_{\text{param}} + M_{\text{grad}} + M_{\text{opt}} + M_{\text{act}} + M_{\tex
 
 ## Related Pages
 
-- [[index]] — 自动并行域索引（罗盘入口）
+- [[02_engineering/06_auto_parallel/index|自动并行]] — 自动并行域索引（罗盘入口）
 - [[megatron-lm/index]] — Megatron-LM 手工 5D 并行（对照组 / 执行后端）
 - [[torchtitan/index]] — torchtitan DTensor/FSDP2 原生并行
 - [[10_mindspore_compiler_analysis]] — MindSpore 自动并行（传播范式）
-- [[comm_compute_fusion_guide]] — 通信/计算融合与 overlap
-- [[distributed_optimizer_deep_dive]] — ZeRO/FSDP 分片
+- [[31_comm_compute_fusion_guide]] — 通信/计算融合与 overlap
+- [[32_distributed_optimizer_deepdive]] — ZeRO/FSDP 分片
 - [[../index]] — 工程实现知识地图

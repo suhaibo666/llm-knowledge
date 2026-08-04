@@ -15,8 +15,8 @@
 |------|------|---------|
 | [[01_aclgraph]] | **overview**(段 0) | ACL Graph(昇腾计算语言)集成基础:是什么、调用流程、使用限制与注意事项、与 CUDA Graph 关系(已并入原 README) |
 | [[10_aclgraph_deep_analysis]] | deep dive(段 1) | ACLGraph 深度:图捕获/重放、Super Kernel、NpuGraphOpHandler、aclop/aclnn 捕获门禁、与社区差异及演进;**mode="reduce-overhead" 捕获路径权威页**(§1.5 mode 参数与两条路径触发关系、§4.4 与 backend="npugraphs" 路径对比,已并入原 reduce_overhead_vs_backend 的独有内容) |
-| [[11_torch_compile_npugraphs_deep_dive]] | deep dive(段 1) | NPU Graphs × torch.compile:Path B(backend=npugraphs)完整链路;§三 NPU Graph Tree 核心机制(状态机、内存池共享、TreeManagerContainer 生命周期、C++ 层数据结构、Checkpoint 恢复与内存复用三分类、Liveness/弱引用/别名检测、graph-break 案例,已并入原 memory_reuse);§四/附录 A 已收缩为结论表+摘要,详情见 [[20_npugraphs_make_graphed_callables_deep_dive]] 与 [[10_aclgraph_deep_analysis]] |
-| [[20_npugraphs_make_graphed_callables_deep_dive]] | deep dive(专题,段 2) | make_graphed_callables API:六阶段实现流程、内存峰值 debug 方法(原体裁标 quick start,按内容实质改判段 2,见上方段位说明) |
+| [[11_torch_compile_npugraphs_deepdive]] | deep dive(段 1) | NPU Graphs × torch.compile:Path B(backend=npugraphs)完整链路;§三 NPU Graph Tree 核心机制(状态机、内存池共享、TreeManagerContainer 生命周期、C++ 层数据结构、Checkpoint 恢复与内存复用三分类、Liveness/弱引用/别名检测、graph-break 案例,已并入原 memory_reuse);§四/附录 A 已收缩为结论表+摘要,详情见 [[20_npugraphs_make_graphed_callables_deepdive]] 与 [[10_aclgraph_deep_analysis]] |
+| [[20_npugraphs_make_graphed_callables_deepdive]] | deep dive(专题,段 2) | make_graphed_callables API:六阶段实现流程、内存峰值 debug 方法(原体裁标 quick start,按内容实质改判段 2,见上方段位说明) |
 | [[21_aclgraph_multistream_rng_analysis]] | deep dive(专题,段 2) | ACLGraph 状态化捕获:Event fork/join、多流/通信流边界、graph-safe Philox RNG、dropout 联合路径与算子测试矩阵 |
 | [[30_comparison]] | overview(对照,段 3) | CUDA Graphs vs NPU Graphs 真差异表(API 映射/组件对照/捕获时序行为差异);机制原理见 [[01_aclgraph]] 等权威页 |
 

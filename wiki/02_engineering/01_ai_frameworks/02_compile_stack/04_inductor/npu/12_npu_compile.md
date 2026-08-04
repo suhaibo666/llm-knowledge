@@ -17,7 +17,7 @@ Scheduler 融合完成后的 SchedulerNode (含 traced_graph)
     → 执行
 ```
 
-详见 [[NPU_MLIR_Backend_Technical_Analysis]] 六阶段全景分析。
+详见 [[npu_mlir_backend_technical_analysis]] 六阶段全景分析。
 
 ---
 
@@ -270,9 +270,9 @@ INDUCTOR_ASCEND_LOG_LEVEL=DEBUG python script.py
 
 ## Related Pages
 
-- [[NPU_MLIR_Backend_Technical_Analysis]] — TracedGraph 机制、Monkey Patch 清单、编译模式状态机、六阶段适配全景
+- [[npu_mlir_backend_technical_analysis]] — TracedGraph 机制、Monkey Patch 清单、编译模式状态机、六阶段适配全景
 - [[20_npu_lowering_guide]] — NPU lowering op 分流策略、NPU 专有 IR 节点
-- [[10_NPU_Inductor_Backend_Analysis]] — 多后端选择与混合使用
-- [[10_NPU_Inductor_Backend_Analysis]] — MultiTemplateBuffer、Epilogue/Prologue Fusion
+- [[10_npu_inductor_backend_analysis]] — 多后端选择与混合使用
+- [[10_npu_inductor_backend_analysis]] — MultiTemplateBuffer、Epilogue/Prologue Fusion
 - [[30_triton_vs_mlir_backend_analysis]] — Triton vs Torch-MLIR 通用对比
 - [[02_engineering/01_ai_frameworks/index]]

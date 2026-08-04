@@ -1,6 +1,25 @@
 # GLM/智谱 AI 技术路线总览
 
 > GLM (General Language Model) 是智谱 AI (Zhipu AI) 与清华大学 KEG 实验室开发的大语言模型系列。
+> 最后更新: 2026-07-31（kb-reorg P7 Task 7:目录内分段编号）
+
+---
+
+## 页面列表(按层次)
+
+> **段位与阅读顺序**(kb-reorg P7 Task 7,2026-07-31):段 0(01-09)入门/概要——`glm_5_analysis` 是 GLM-5 论文的概要总览,也是下方 7 篇逐章深挖矩阵的入口;段 1(10-19)核心机制主线——`glm_5v_turbo_analysis` 是唯一的第二款旗舰模型独立条目;段 2(20-29)深潜/专题——GLM-5 逐章深挖矩阵,按论文章节顺序排列(架构→数据→训练 infra→后训练→Agentic RL→训练稳定性→低精度/国产芯片,详见下方「四之补」表)。
+
+| 页面 | 层次 | 核心主题 |
+|------|------|---------|
+| [[01_glm_5_analysis]] | 概要总览(段 0) | GLM-5 论文概要,7 篇逐章深挖的入口 |
+| [[10_glm_5v_turbo_analysis]] | 核心机制(段 1) | GLM-5V-Turbo:原生多模态 Agent,CogViT + MMTP + 30+ 任务联合 RL |
+| [[20_glm5_architecture_deepdive]] | 深潜(段 2) | §2.1 模型结构:规模/MLA·Muon Split·MLA-256·MTP·DSA·高效注意力消融 |
+| [[21_glm5_data_deepdive]] | 深潜(段 2) | §2.2–2.3 预训练/中训练/长上下文数据 |
+| [[22_glm5_training_infra_deepdive]] | 深潜(段 2) | §2.4 训练 AI Infra:显存五件套 + 并行效率 |
+| [[23_glm5_posttraining_deepdive]] | 深潜(段 2) | §3.1–3.5 后训练:SFT/Reasoning RL/General RL/跨阶段蒸馏 |
+| [[24_glm5_agentic_rl_deepdive]] | 深潜(段 2) | §3.6+§4 RL Infra:slime/全异步解耦 RL/环境扩展 |
+| [[25_glm5_training_stability_deepdive]] | 深潜(段 2) | 训练稳定性:跨章主线,失配 × 噪声 × 故障 |
+| [[26_glm5_low_precision_chip_deepdive]] | 深潜(段 2) | §2.4.3+§3.6.2+§5 低精度+国产芯片:INT4 QAT→FP8→W4A8 |
 
 ---
 
@@ -176,18 +195,18 @@ GLM-5 RL 框架:
 
 ## 四之补、GLM-5 论文深挖页矩阵
 
-> 对论文 arXiv 2602.15763v2 的逐章机制级深挖，每页均按「原理 / 效果 / 为什么」展开并配 SVG→PNG 流程图；概要总览见 [[glm_5_analysis]]。
+> 对论文 arXiv 2602.15763v2 的逐章机制级深挖，每页均按「原理 / 效果 / 为什么」展开并配 SVG→PNG 流程图；概要总览见 [[01_glm_5_analysis]]。
 
 | 维度 | 深挖页 | 覆盖章节 |
 |------|--------|---------|
-| 概要总览 | [[glm_5_analysis]] | 全文 |
-| 模型结构 | [[glm5_architecture_deepdive]] | §2.1 规模/MLA·Muon Split·MLA-256·MTP·DSA·高效注意力消融 |
-| 数据 | [[glm5_data_deepdive]] | §2.2–2.3 预训练/中训练/长上下文数据 |
-| AI Infra（训练） | [[glm5_training_infra_deepdive]] | §2.4 显存五件套 + 并行效率 |
-| 后训练 | [[glm5_posttraining_deepdive]] | §3.1–3.5 SFT/Reasoning RL/General RL/跨阶段蒸馏 |
-| AI Infra（RL） | [[glm5_agentic_rl_deepdive]] | §3.6+§4 slime/全异步解耦 RL/环境扩展 |
-| 训练稳定性 | [[glm5_training_stability_deepdive]] | 跨章主线：失配 × 噪声 × 故障 |
-| 低精度 + 国产芯片 | [[glm5_low_precision_chip_deepdive]] | §2.4.3+§3.6.2+§5 INT4 QAT→FP8→W4A8 |
+| 概要总览 | [[01_glm_5_analysis]] | 全文 |
+| 模型结构 | [[20_glm5_architecture_deepdive]] | §2.1 规模/MLA·Muon Split·MLA-256·MTP·DSA·高效注意力消融 |
+| 数据 | [[21_glm5_data_deepdive]] | §2.2–2.3 预训练/中训练/长上下文数据 |
+| AI Infra（训练） | [[22_glm5_training_infra_deepdive]] | §2.4 显存五件套 + 并行效率 |
+| 后训练 | [[23_glm5_posttraining_deepdive]] | §3.1–3.5 SFT/Reasoning RL/General RL/跨阶段蒸馏 |
+| AI Infra（RL） | [[24_glm5_agentic_rl_deepdive]] | §3.6+§4 slime/全异步解耦 RL/环境扩展 |
+| 训练稳定性 | [[25_glm5_training_stability_deepdive]] | 跨章主线：失配 × 噪声 × 故障 |
+| 低精度 + 国产芯片 | [[26_glm5_low_precision_chip_deepdive]] | §2.4.3+§3.6.2+§5 INT4 QAT→FP8→W4A8 |
 
 ---
 
@@ -231,8 +250,8 @@ GLM-5 RL 框架:
 | CharacterGLM | 2311.16832 | 待摄入 |
 | GLM-4 Voice | 2412.02612 | 待摄入 |
 | GLM-TTS | 2512.14291 | 待摄入 |
-| **GLM-5** | **2602.15763** | **[[glm_5_analysis]]**（概要）· 7 篇逐章深挖见 [§四之补](#四之补glm-5-论文深挖页矩阵) |
-| **GLM-5V-Turbo** | **2604.26752** | **[[glm_5v_turbo_analysis]]** |
+| **GLM-5** | **2602.15763** | **[[01_glm_5_analysis]]**（概要）· 7 篇逐章深挖见 [§四之补](#四之补glm-5-论文深挖页矩阵) |
+| **GLM-5V-Turbo** | **2604.26752** | **[[10_glm_5v_turbo_analysis]]** |
 
 ---
 

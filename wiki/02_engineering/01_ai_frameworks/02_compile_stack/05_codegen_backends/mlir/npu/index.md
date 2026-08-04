@@ -12,9 +12,9 @@
 | 页面 | 层次 | 核心主题 |
 |------|------|---------|
 | [[npu_mlir_quickstart]] | **quick start** | 启用 MLIR 后端(`TORCHINDUCTOR_NPU_BACKEND=mlir` / `config.npu_backend` / `options`)、`compile_mode`/`enable_graph_trace`/autotune/精度校验等真实开关、bishengir-compile、如何确认走了 MLIR 路径 |
-| [[NPU_MLIR_Backend_Technical_Analysis]] | deep dive | NPU MLIR 后端综合分析:架构与组件、TracedGraph 机制、融合规则、毕昇编译与 60 维 autotune、编译模式状态机;六阶段适配主线、三层 Pass、15 Monkey Patch 分组、Fallback 双通道、与社区遵循/打破、演进建议。Triton 门控已订正(`patch_has_triton` 对 NPU 返回 True,非强制禁用) |
+| [[npu_mlir_backend_technical_analysis]] | deep dive | NPU MLIR 后端综合分析:架构与组件、TracedGraph 机制、融合规则、毕昇编译与 60 维 autotune、编译模式状态机;六阶段适配主线、三层 Pass、15 Monkey Patch 分组、Fallback 双通道、与社区遵循/打破、演进建议。Triton 门控已订正(`patch_has_triton` 对 NPU 返回 True,非强制禁用) |
 
-> deep dive 由原 `NPU_MLIR_Backend_Technical_Analysis` + `npu_mlir_pipeline_analysis`(六阶段)+ `npu_mlir_backend_deep_analysis`(社区对齐/演进)三篇合并而成。
+> deep dive 由原 `npu_mlir_backend_technical_analysis` + `npu_mlir_pipeline_analysis`(六阶段)+ `npu_mlir_backend_deep_analysis`(社区对齐/演进)三篇合并而成。
 
 ---
 

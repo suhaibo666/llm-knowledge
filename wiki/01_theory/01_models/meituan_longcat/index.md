@@ -44,10 +44,10 @@ MTP 3-step (复用 LSA 索引)     (Agent/Reasoning/Interact) bit-flip 检测 + 
 | 模型 | 稀疏注意力 | 优化器 | 低精度路线 | 硬件 | Wiki |
 |------|-----------|--------|-----------|------|------|
 | **LongCat-2.0** | **MLA + LSA** (SI/CLI/HI) | Muon | 推理 FP8 + 数值可靠性 | **国产 ASIC** | [[longcat_2_analysis]] |
-| GLM-5 | DSA | Muon Split | INT4 QAT | 多家国产 GPU | [[glm_5_analysis]] |
-| DeepSeek-V3 | MLA | AdamW | **FP8 训练** | NVIDIA | [[deepseek_v3_analysis]] |
-| DeepSeek-V4 | CSA/HCA | Muon | FP4 QAT | NVIDIA | [[deepseek_v4_analysis]] |
-| Kimi K2 | MLA | MuonClip | — | NVIDIA | [[kimi_k2_analysis]] |
+| GLM-5 | DSA | Muon Split | INT4 QAT | 多家国产 GPU | [[01_glm_5_analysis]] |
+| DeepSeek-V3 | MLA | AdamW | **FP8 训练** | NVIDIA | [[12_deepseek_v3_analysis]] |
+| DeepSeek-V4 | CSA/HCA | Muon | FP4 QAT | NVIDIA | [[13_deepseek_v4_analysis]] |
+| Kimi K2 | MLA | MuonClip | — | NVIDIA | [[11_kimi_k2_analysis]] |
 
 ---
 
@@ -72,5 +72,5 @@ MTP 3-step (复用 LSA 索引)     (Agent/Reasoning/Interact) bit-flip 检测 + 
 
 - [[01_theory/01_models/index]] — 模型架构与家族总索引
 - [[longcat_2_analysis]] — LongCat-2.0 深度分析
-- [[glm_5_analysis]] · [[deepseek_v3_analysis]] · [[kimi_k2_analysis]] — 同期大模型对照
+- [[01_glm_5_analysis]] · [[12_deepseek_v3_analysis]] · [[11_kimi_k2_analysis]] — 同期大模型对照
 - [[01_theory/index]] — 理论研究总览

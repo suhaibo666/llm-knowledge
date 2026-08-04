@@ -586,7 +586,7 @@ hits 均为 0；该路径执行真实 Inductor extern addmm/mm。
 | **主引擎** | 声明式 `PatternMatcherPass`（自建，§2.1） | 官方钩子 + 手工遍历（自建 `ascend_custom_passes` 注册表） | **复用** torch 的 `pattern_matcher` + `VllmInductorPass` 包装 | **fork vLLM 骨架，但抽空**融合层 |
 | **落点** | pre/joint/post_grad + lowering | post_grad/pre_grad **custom 钩子**（仅推理为主） | `post_grad_custom_post_pass` 钩子 + pre_grad IR functionalization | `post_grad_custom_post_pass` 钩子（但 pass 为 no-op） |
 | **融合朝向** | codegen（Triton/C++ 模板） | **厂商手工库 ACLNN** + Cube 模板/DVM | **厂商/手写 kernel**（FlashInfer/cutlass/symm_mem/AITER/`_C.*`） | 预融合 kernel + inductor 原生 `combo_kernels` |
-| **代表页** | 本系列 C13/C15/C16 | [[22_npu_fusion_passes_deepdive]] | [[vllm_ir_and_fusion_passes_analysis]] | [[sglang_compilation_passes_analysis]] |
+| **代表页** | 本系列 C13/C15/C16 | [[22_npu_fusion_passes_deepdive]] | [[25_vllm_ir_and_fusion_passes_analysis]] | [[sglang_compilation_passes_analysis]] |
 
 **一句话读法**：upstream 造引擎、定义在哪三阶段落地；三家下游都从 `post_grad_custom_post_pass`
 这个官方钩子接进去（§2.6 已给出该钩子在本页固定基线下的确切 config 位置），然后各自决定
@@ -612,4 +612,4 @@ epilogue）与 **fallback/换手工算子**（torch_npu 把 attention/通信 fal
 - [[22_pattern_expression_and_matcher_engine_analysis]]
 - [[23_dead_code_topology_and_effect_order_analysis]]
 - [[25_graph_rewrite_legality_validation_and_complexity_analysis]]
-- [[22_npu_fusion_passes_deepdive]] · [[vllm_ir_and_fusion_passes_analysis]] · [[sglang_compilation_passes_analysis]] — §14 跨框架对照的三个下游代表页
+- [[22_npu_fusion_passes_deepdive]] · [[25_vllm_ir_and_fusion_passes_analysis]] · [[sglang_compilation_passes_analysis]] — §14 跨框架对照的三个下游代表页

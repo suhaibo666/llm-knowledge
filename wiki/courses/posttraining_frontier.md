@@ -97,7 +97,7 @@ CUDA 方案迁移到 Ascend 时的判断框架,最后用一份最新工业报告
 
 | 顺序 | 页面 | 位置 | 一句话 |
 |---:|---|---|---|
-| D12 | [[kimi_k3_posttraining_case_study_analysis]] | `01_theory/01_models/moonshot_kimi/` | 九专家、MOPD、partial rollout、white-box environment、QAT 与百万 token 状态怎样形成一条工业闭环 |
+| D12 | [[24_kimi_k3_posttraining_case_study_analysis]] | `01_theory/01_models/moonshot_kimi/` | 九专家、MOPD、partial rollout、white-box environment、QAT 与百万 token 状态怎样形成一条工业闭环 |
 
 ### 框架阅读分工(选读 D08–D10 前先看这张表)
 
@@ -154,7 +154,7 @@ D09/D10 自身的入口—调用链描述细致度均超过 D00 原表),核对�
 - [[30_rl_framework_comparison]] — D06,四框架统一机制矩阵与四级支持证据
 - [[10_verl_end_to_end_iteration_analysis]] — D07,verl 端到端主基线(`983cb0f`)
 - [[31_cuda_ascend_posttraining_stack_comparison]] — D11,CUDA–Ascend 差距矩阵与四级迁移验收
-- [[kimi_k3_posttraining_case_study_analysis]] — D12,Kimi K3 工业闭环案例
+- [[24_kimi_k3_posttraining_case_study_analysis]] — D12,Kimi K3 工业闭环案例
 - [[01_theory/04_posttraining/index]] — 后训练算法理论域索引
 - [[02_engineering/04_posttrain_frameworks/index]] — 后训练框架域索引
 - [[02_engineering/04_posttrain_frameworks/verl/index]] — verl 系列分析索引

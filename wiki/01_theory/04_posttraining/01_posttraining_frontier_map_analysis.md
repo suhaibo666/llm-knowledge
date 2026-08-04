@@ -264,7 +264,7 @@ K3 不加入这张“工业源码样本”表。其官方仓库 `0797decb` 提�
 | 10 | D09 [[21_areal_async_architecture_analysis|AReaL Fully Async 架构]] | S03 | 微服务、Hermes、staleness control 与 agent trajectory 怎样闭环 | 已完成 |
 | 11 | D10 [[22_roll_strategy_and_ascend_analysis|ROLL Strategy、异构与 Ascend]] | S04 | Strategy 抽象、AutoDeviceMapping 和 Ascend 路径的真实边界 | 已完成 |
 | 12 | D11 [[31_cuda_ascend_posttraining_stack_comparison|CUDA–Ascend 后训练栈对照]] | S04 | 算子、通信、推理、并行、诊断和性能差距分别在哪里 | 已完成 |
-| 13 | D12 [[kimi_k3_posttraining_case_study_analysis\|Kimi K3 后训练案例]] | S05 | 九专家与 MOPD、partial rollout、1M agent state、QAT 和 draft model 怎样形成部署闭环 | 已完成 |
+| 13 | D12 [[24_kimi_k3_posttraining_case_study_analysis\|Kimi K3 后训练案例]] | S05 | 九专家与 MOPD、partial rollout、1M agent state、QAT 和 draft model 怎样形成部署闭环 | 已完成 |
 
 ---
 
@@ -304,7 +304,7 @@ K3 不加入这张“工业源码样本”表。其官方仓库 `0797decb` 提�
 ## Related Pages
 
 - [[courses/posttraining_frontier|LLM 后训练前沿阅读课程]] — 阅读路线与六级能力门槛(原 D00)
-- [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
+- [[24_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
 - [[01_theory/04_posttraining/index|后训练旧目录索引]]
 - [[02_engineering/04_posttrain_frameworks/verl/index|verl 既有分析索引]]
 - [[02_engineering/04_posttrain_frameworks/12_rl_infra_efficiency_analysis|RL Infra 效率分析]]

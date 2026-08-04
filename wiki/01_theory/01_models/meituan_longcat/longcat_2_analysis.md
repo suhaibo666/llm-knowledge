@@ -93,7 +93,7 @@
 | **CLI**（Cross-Layer Indexing） | 利用「**相邻层注意力显著性经验稳定**」——一次索引 pass 服务多个连续层，摊薄索引成本 | 索引的**逐层重复计算** | 需**跨层蒸馏**训练 |
 | **HI**（Hierarchical Indexing） | 两段式 coarse-to-fine：先**块级近似打分粗召回**，再在候选内**细粒度 token 选择**——缩小 indexer 每 query 要处理的候选空间 | **二次方打分成本** | **training-free**，仅对选定的超长上下文任务启用 |
 
-> **为什么不直接用 DSA 的 Lightning Indexer？（源明确点名）** DSA（DeepSeek / GLM-5 的可学习稀疏注意力，见 [[glm_5_analysis]]）用 Lightning Indexer 选 token，但它**输出不连续**会把访存打成随机碎片、**二次方打分**在 1M 下昂贵。LSA 不另起炉灶，而是**针对这两处逐一修复**：SI 管访存形态（→coalesced 访问）、HI 管打分成本（→分层粗筛降二次方）、CLI 再叠一层跨层摊薄。本质是把「稀疏注意力」从「省 FLOPs」重定义为「**省访存 + 省索引**」——这正是带宽受限的国产 ASIC 最吃紧的两处。
+> **为什么不直接用 DSA 的 Lightning Indexer？（源明确点名）** DSA（DeepSeek / GLM-5 的可学习稀疏注意力，见 [[01_glm_5_analysis]]）用 Lightning Indexer 选 token，但它**输出不连续**会把访存打成随机碎片、**二次方打分**在 1M 下昂贵。LSA 不另起炉灶，而是**针对这两处逐一修复**：SI 管访存形态（→coalesced 访问）、HI 管打分成本（→分层粗筛降二次方）、CLI 再叠一层跨层摊薄。本质是把「稀疏注意力」从「省 FLOPs」重定义为「**省访存 + 省索引**」——这正是带宽受限的国产 ASIC 最吃紧的两处。
 
 #### 读图问答（对着上图逐条澄清 LSA 的常见疑问）
 
@@ -149,7 +149,7 @@
 3. **稠密链**：`mlp0 → attn1 → mlp1`（`forward_mlp`, :463-500）；
 4. **相加** `hidden = moe_out + dense_out`（:460）。
 
-> **为什么这么接（ScMoE 的本质）**：MoE 的 all-to-all（分发/回收 token）是长延迟通信。把 MoE 作为**短路分支**与稠密链（mlp0→attn1→mlp1）**并行**，其通信就被稠密计算**掩盖**——这就是博客「per-core 显式控制 → dense/MoE 全并行」的落地，也是 §5「+35% 吞吐」的架构侧来源。承袭 LongCat-Flash 的 Shortcut-connected MoE。（EP 的 all-to-all 原理见 [[expert_parallel_analysis]] / [[megatron_ep_analysis]]。）
+> **为什么这么接（ScMoE 的本质）**：MoE 的 all-to-all（分发/回收 token）是长延迟通信。把 MoE 作为**短路分支**与稠密链（mlp0→attn1→mlp1）**并行**，其通信就被稠密计算**掩盖**——这就是博客「per-core 显式控制 → dense/MoE 全并行」的落地，也是 §5「+35% 吞吐」的架构侧来源。承袭 LongCat-Flash 的 Shortcut-connected MoE。（EP 的 all-to-all 原理见 [[14_expert_parallel_analysis]] / [[14_megatron_ep_analysis]]。）
 >
 > **可重叠窗口要说精确（易错点）**：`clone` 发生在 `attn0` **之后**（:449），故被掩盖 MoE 通信的窗口 = **稠密FFN₁(mlp0) + MLA-attn1(self_attn[1]) + 稠密FFN₂(mlp1)** 这三个模块，**attn0（MLA₁）不在窗口内**——它是 fork 之前算完、其输出同时喂给两支的**共享前置**。换言之 shortcut 只负责**建立数据依赖上的自由度**（MoE 输入在 attn0 后即就绪、输出到层尾才被消费）；窗口内部**怎么切、谁盖 dispatch、谁盖 combine**，是**调度层**的选择，且**训练与推理选了两套不同方案**——详见 **§5.5**。
 
@@ -164,7 +164,7 @@
 
 - **深度**：3-step 模块，用于**投机解码（speculative decoding）** 加速。
 - **与 LSA 的协同**：MTP 的第 2、3 步**复用第 1 步的注意力索引**（CLI 的延伸）——多预测的 token 不再重复做索引，进一步压低投机解码的开销。
-- MTP 概念与 DeepSeek-V3 一脉相承（见 [[deepseek_v3_analysis]]）。
+- MTP 概念与 DeepSeek-V3 一脉相承（见 [[12_deepseek_v3_analysis]]）。
 
 ---
 
@@ -184,10 +184,10 @@
 博客明确「**在加速器上大规模部署 Muon**」，并做了三项针对性优化：
 
 1. **TP 并行下的处理**——Muon 的正交化/Newton-Schulz 迭代涉及矩阵运算，需在张量并行切分下正确高效执行；
-2. **DP 状态冗余消除**（DP state redundancy removal）——去掉数据并行副本间的优化器态冗余（类 ZeRO 思路，见 [[zero_fsdp_analysis]]）；
+2. **DP 状态冗余消除**（DP state redundancy removal）——去掉数据并行副本间的优化器态冗余（类 ZeRO 思路，见 [[12_zero_fsdp_analysis]]）；
 3. **高效对称矩阵乘 kernel**（symmetric matmul kernel）——为 Muon 的 $G G^\top$ 类运算定制。
 
-> Muon 已成为 2026 年前沿国产/开源大模型的共同选择：Kimi K2 的 **MuonClip**（见 [[kimi_k2_analysis]]）、GLM-5 的 **Muon Split**（见 [[glm_5_analysis]]）、DeepSeek-V4（见 [[deepseek_v4_analysis]]）。LongCat-2.0 的贡献点在**异构 ASIC 上把 Muon 跑到 1.6T 规模并做 TP/DP/kernel 三处适配**。Muon 原理见 [[muon_analysis]]。
+> Muon 已成为 2026 年前沿国产/开源大模型的共同选择：Kimi K2 的 **MuonClip**（见 [[11_kimi_k2_analysis]]）、GLM-5 的 **Muon Split**（见 [[01_glm_5_analysis]]）、DeepSeek-V4（见 [[13_deepseek_v4_analysis]]）。LongCat-2.0 的贡献点在**异构 ASIC 上把 Muon 跑到 1.6T 规模并做 TP/DP/kernel 三处适配**。Muon 原理见 [[11_muon_analysis]]。
 
 ---
 
@@ -204,7 +204,7 @@
 > [!contradiction] MOPD 的展开以官方图为准：Multi-Teacher On-Policy Distillation
 > 二手摘要（DeepWiki 等）曾把 MOPD 解作「**Multi-Objective Policy Distribution**（多目标策略分布）」；但**官方博客架构图**副标题白纸黑字写的是 **"Multi-Teacher On-Policy Distill(ation)"（多教师在线策略蒸馏）**。以官方图为准——本页早期版本与首次 changelog 的「多目标策略分布」为二手误读，特此订正。
 
-- **MOPD = Multi-Teacher On-Policy Distillation（多教师在线策略蒸馏）**：以三组 teacher 为多教师、对**学生自己生成的轨迹（on-policy）** 做蒸馏，把三者能力融进统一学生。**on-policy 是关键**——在学生自身分布上蒸馏（而非离线照抄 teacher 输出），能针对学生**真实会犯的错**纠偏、规避训练-推理分布错配（与 [[RL_Training_Inference_Precision_Analysis]] 同源问题）。
+- **MOPD = Multi-Teacher On-Policy Distillation（多教师在线策略蒸馏）**：以三组 teacher 为多教师、对**学生自己生成的轨迹（on-policy）** 做蒸馏，把三者能力融进统一学生。**on-policy 是关键**——在学生自身分布上蒸馏（而非离线照抄 teacher 输出），能针对学生**真实会犯的错**纠偏、规避训练-推理分布错配（与 [[20_rl_training_inference_precision_analysis]] 同源问题）。
 - **三组 teacher expert groups**（原子能力据官方图逐一列全）：
 
 | 专家群 | 目标域 | 优化的「原子能力」（图中列举） |
@@ -213,7 +213,7 @@
 | **Reasoning Experts** | **数学 / STEM / 多跳推理** | Multi-Hop Reasoning · STEM Reasoning · **Adaptive Computation（自适应算力）** |
 | **Interaction Experts** | 交互 / 通用对话 | Instruction Following（指令遵循）· Human Alignment（人类对齐）· Hallucination Suppression（幻觉抑制） |
 
-> **为什么不用单教师/单目标 RL？** Agentic coding、深推理、通用交互三者的**奖励信号与数据形态差异极大**，混在一个策略里互相拉扯（reward 冲突）。先分群把各自「原子能力」练到位、再蒸馏融合，是把「多目标对齐」从「一个策略硬扛」改成「分而治之 + 融合」。这与 GLM-5 的「分阶段 RL + 跨阶段蒸馏防遗忘」（见 [[glm_5_analysis]] §三）思路相通。
+> **为什么不用单教师/单目标 RL？** Agentic coding、深推理、通用交互三者的**奖励信号与数据形态差异极大**，混在一个策略里互相拉扯（reward 冲突）。先分群把各自「原子能力」练到位、再蒸馏融合，是把「多目标对齐」从「一个策略硬扛」改成「分而治之 + 融合」。这与 GLM-5 的「分阶段 RL + 跨阶段蒸馏防遗忘」（见 [[01_glm_5_analysis]] §三）思路相通。
 >
 > **仍未披露**：on-policy 蒸馏的**具体损失形式**（KL / reverse-KL / 排序？）、是否含显式 RL（奖励模型 / GRPO 等）、各 teacher 群的训练细节与数据量——博客与图均未给。
 
@@ -238,7 +238,7 @@
 ```
 
 - **EMBP 是本模型独有的第 6 维**：135B 的 N-gram Embedding 若挤在 TP/DP 里会破坏负载均衡，故单列一维专门分片。这是「架构创新（N-gram 扩参）倒逼 Infra 创新（新并行维）」的典型。
-- 相关原理：TP/CP/SP 见 [[tensor_sequence_parallel_analysis]]，EP 见 [[expert_parallel_analysis]]，PP 见 [[pipeline_parallel_analysis]]，通信重叠工程参照 [[megatron_comm_overlap_analysis]]。
+- 相关原理：TP/CP/SP 见 [[13_tensor_sequence_parallel_analysis]]，EP 见 [[14_expert_parallel_analysis]]，PP 见 [[15_pipeline_parallel_analysis]]，通信重叠工程参照 [[20_megatron_comm_overlap_analysis]]。
 
 ### 5.2 推理·模型专属优化（Model-Specific）
 
@@ -321,7 +321,7 @@ MoE 层沿 token 维 → chunk A / chunk B
 ## 六、低精度与数值可靠性（重要的源忠实澄清）
 
 > [!contradiction] 「低精度」在 LongCat-2.0 语境下 ≠ FP8/FP4 量化训练
-> 用户常把「低精度」等同于 DeepSeek-V3 的 **FP8 训练**（见 [[low_precision_training_analysis]] / [[deepseek_v3_analysis]]）或 GLM-5 的 **INT4 QAT**（见 [[glm_5_analysis]]）。**官方博客**通篇未提 FP8/FP4/BF16 的训练或推理量化，其「精度」叙事落在**另一侧面：国产 ASIC 上的数值可靠性 / 可复现性**。
+> 用户常把「低精度」等同于 DeepSeek-V3 的 **FP8 训练**（见 [[13_low_precision_training_analysis]] / [[12_deepseek_v3_analysis]]）或 GLM-5 的 **INT4 QAT**（见 [[01_glm_5_analysis]]）。**官方博客**通篇未提 FP8/FP4/BF16 的训练或推理量化，其「精度」叙事落在**另一侧面：国产 ASIC 上的数值可靠性 / 可复现性**。
 >
 > **✅ 2026-07 代码开源后补正**：**推理确有 FP8**——官方另发 `LongCat-2.0-FP8` 权重、SGLang 以 FP8 权重 + `--kv-cache-dtype bfloat16` 部署（README），`longcat_flash.py` 内有成套 FP8（e4m3fn / block-quant / DeepGEMM）加载与反量化逻辑（:697-808）。但**训练是否用 FP8 仍未披露**——博客「精度」叙事依旧是下面这套数值可靠性，而非低比特训练。
 
@@ -331,7 +331,7 @@ MoE 层沿 token 维 → chunk A / chunk B
 - **二叉树分段累加**（binary-tree segmented accumulation）：所有 **reduction 类算子**用此策略**降低浮点误差累积**——大规模求和顺序敏感，分段树累加把误差控制住。
 - **对齐高精度基线验证**：在**真实 LLM 负载**下，把 ASIC 的计算精度**对齐一个严格的高精度基线**做验证（确认国产芯片算得「对」）。
 
-> 与 RL 训练里「训练-推理精度不一致」问题（见 [[RL_Training_Inference_Precision_Analysis]]）同源：都是「同一模型在不同执行路径上数值必须一致」。LongCat-2.0 把这条做到训练算子级的 bitwise 确定性。
+> 与 RL 训练里「训练-推理精度不一致」问题（见 [[20_rl_training_inference_precision_analysis]]）同源：都是「同一模型在不同执行路径上数值必须一致」。LongCat-2.0 把这条做到训练算子级的 bitwise 确定性。
 
 ---
 
@@ -419,18 +419,18 @@ MoE 层沿 token 维 → chunk A / chunk B
 **同域模型（对比阅读）**：
 - [[meituan_longcat/index]] — 美团 LongCat 家族总览（本页所属家族入口）
 - [[longcat_flash_analysis]] — **LongCat-Flash**（本模型的架构前身：ScMoE 短路 + 零计算专家在此首创；2.0 = Flash + LSA/N-gram + 国产 ASIC）
-- [[glm_5_analysis]] — GLM-5：MoE + Muon Split + DSA 稀疏注意力 + INT4 QAT（最相近的对照）
-- [[kimi_k2_analysis]] — Kimi K2：1T MoE + MuonClip + Agentic RL
-- [[deepseek_v3_analysis]] — FP8 训练 · MTP · 671B MoE（低精度/MTP 对照）
-- [[deepseek_v4_analysis]] — CSA/HCA 稀疏注意力 · Muon · 1.6T MoE
-- [[deepseek_moe_analysis]] — MoE 路由与负载均衡原理
+- [[01_glm_5_analysis]] — GLM-5：MoE + Muon Split + DSA 稀疏注意力 + INT4 QAT（最相近的对照）
+- [[11_kimi_k2_analysis]] — Kimi K2：1T MoE + MuonClip + Agentic RL
+- [[12_deepseek_v3_analysis]] — FP8 训练 · MTP · 671B MoE（低精度/MTP 对照）
+- [[13_deepseek_v4_analysis]] — CSA/HCA 稀疏注意力 · Muon · 1.6T MoE
+- [[20_deepseek_moe_analysis]] — MoE 路由与负载均衡原理
 
 **技术原理（机制交叉链接）**：
-- [[muon_analysis]] — Muon 优化器原理
-- [[low_precision_training_analysis]] — FP8 低精度训练（与本模型「数值可靠性」路线对照）
-- [[RL_Training_Inference_Precision_Analysis]] — 训练-推理精度一致性
-- [[expert_parallel_analysis]] · [[tensor_sequence_parallel_analysis]] · [[pipeline_parallel_analysis]] — 6D 并行的原理层
-- [[megatron_ep_analysis]] · [[megatron_comm_overlap_analysis]] — EP 与通信重叠工程
+- [[11_muon_analysis]] — Muon 优化器原理
+- [[13_low_precision_training_analysis]] — FP8 低精度训练（与本模型「数值可靠性」路线对照）
+- [[20_rl_training_inference_precision_analysis]] — 训练-推理精度一致性
+- [[14_expert_parallel_analysis]] · [[13_tensor_sequence_parallel_analysis]] · [[15_pipeline_parallel_analysis]] — 6D 并行的原理层
+- [[14_megatron_ep_analysis]] · [[20_megatron_comm_overlap_analysis]] — EP 与通信重叠工程
 - [[02_engineering/03_infer_frameworks/vllm/index]] — PD 分离推理（工程对照）
 
 **上级索引**：

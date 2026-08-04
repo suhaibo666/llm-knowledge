@@ -115,8 +115,8 @@ GRPO demonstrated that:
 
 - [[13_reasoning_rl_algorithm_evolution_analysis|D02 演进权威页]] — 公式演进、系统约束与跨算法对照
 - [[11_ppo_analysis]] — PPO algorithm that GRPO simplifies
-- [[deepseek_r1_analysis]] — DeepSeek-R1 training details
-- [[deepseek_math_analysis]] — DeepSeekMath where GRPO was first proposed
+- [[14_deepseek_r1_analysis]] — DeepSeek-R1 training details
+- [[17_deepseek_math_analysis]] — DeepSeekMath where GRPO was first proposed
 - [[30_preference_optimization_analysis]] — DPO family (offline alternative)
 - [[15_verl_rl_algorithms_analysis]] — verl 源码级实现(注册表 + config key→代码锚点)
 - [[courses/posttraining_frontier]] — 后训练前沿阅读课程(原 D00–D12 学习域已解散,内容归位至功能树)

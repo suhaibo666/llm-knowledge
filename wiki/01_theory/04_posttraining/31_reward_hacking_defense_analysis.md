@@ -204,5 +204,5 @@ Anthropic 已经在用 Interpretability Agent 去识别「邪恶模型」内部�
 - [[11_ppo_analysis]] — PPO Loss 与 reward 信号设计
 - [[12_dpo_analysis]] — DPO 与 reward 信号绕开思路
 - [[10_instructgpt_rlhf_analysis]] — RLHF 三步流程的 reward model 训练
-- [[29_kimi_k1.5_analysis]] — 长上下文 RL 中的奖励设计
+- [[29_kimi_k1_5_analysis]] — 长上下文 RL 中的奖励设计
 - [[01_theory/04_posttraining/index]] — 后训练对齐入口

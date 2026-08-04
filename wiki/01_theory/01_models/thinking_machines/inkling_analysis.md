@@ -12,7 +12,7 @@
 
 **Inkling 的一条主线: 在"MLA + RoPE + sigmoid 免辅助损失路由"已成 2026 年开源 MoE 事实标准的背景下,它在注意力、位置编码、多模态接入三处集体走了不同的路;而产品叙事上明确放弃争榜首,把模型定位成"可微调的开源底座",靠 Tinker 微调服务变现。** 三个硬证据:
 
-1. **架构反共识**(§二,全部对 config 核验): 抛 RoPE 用学习式相对位置编码(`d_rel=16, rel_extent=1024`,L16-17);抛 MLA 用 Gemma 式滑窗/全局 5:1 交错注意力(`local_layer_ids` 55 层 + 11 全局,L24-80);塞入短卷积(`use_sconv=true, sconv_kernel_size=4`,L82-83);encoder-free 原生多模态(vision hMLP patchify + audio 离散 dMel,L103-121)。对照 [[hy3_analysis]] / [[deepseek_v3_analysis]] / [[glm_5_analysis]] 的"改一处注意力、其余照抄",Inkling 是系统性另起炉灶。
+1. **架构反共识**(§二,全部对 config 核验): 抛 RoPE 用学习式相对位置编码(`d_rel=16, rel_extent=1024`,L16-17);抛 MLA 用 Gemma 式滑窗/全局 5:1 交错注意力(`local_layer_ids` 55 层 + 11 全局,L24-80);塞入短卷积(`use_sconv=true, sconv_kernel_size=4`,L82-83);encoder-free 原生多模态(vision hMLP patchify + audio 离散 dMel,L103-121)。对照 [[hy3_analysis]] / [[12_deepseek_v3_analysis]] / [[01_glm_5_analysis]] 的"改一处注意力、其余照抄",Inkling 是系统性另起炉灶。
 2. **官方自认非 SOTA**: 公告原话 "Inkling is not the strongest overall model available today",卖点是"multimodal + efficient thinking + Tinker 可微调"的组合价值,而非单点最强(模型卡基准表也印证,见 §四)。
 3. **商业模式明牌**: 模型 Apache 2.0 免费开源,收入来自 **Tinker**(微调服务)——"customization, not leaderboard dominance"。这与"模型即产品"的闭源逻辑、以及中国开源模型"开源引流+API变现"都不同。
 
@@ -73,7 +73,7 @@ flowchart TB
 - **全局层** 8 KV 头(L14),KV cache 省;靠 `log_scaling`(>128K 后按 log 比例放大 logits,L20-21)撑 1M 外推。
 - **滑窗层** 反而 16 KV 头(L89)但只覆盖 512 窗口(L90)——局部信息密、KV 便宜(窗口小)。
 
-**为什么不是 MLA**(源无明说,本库推断): DeepSeek 系用 MLA 压 KV cache;Inkling 改用"便宜全局(少 KV 头)+ 密集局部(小窗口)"的分工,达到类似的 KV 预算而无需 MLA 的低秩投影复杂度。这是与 [[glm_5_analysis]](DSA)、[[deepseek_v3_analysis]](MLA)、[[longcat_flash_analysis]](MLA)都不同的第三条路。
+**为什么不是 MLA**(源无明说,本库推断): DeepSeek 系用 MLA 压 KV cache;Inkling 改用"便宜全局(少 KV 头)+ 密集局部(小窗口)"的分工,达到类似的 KV 预算而无需 MLA 的低秩投影复杂度。这是与 [[01_glm_5_analysis]](DSA)、[[12_deepseek_v3_analysis]](MLA)、[[longcat_flash_analysis]](MLA)都不同的第三条路。
 
 ### 2.4 位置编码: 学习式相对,非 RoPE
 
@@ -85,17 +85,17 @@ config 无 rope_theta,取而代之 `d_rel=16, rel_extent=1024`(L16-17)——位�
 
 ### 2.6 MoE 路由: 大体沿用免辅助损失,但缩放因子异常大
 
-sigmoid 门(L99)+ 门偏置免辅助损失负载均衡(L98,同 [[deepseek_v3_analysis]] 配方)+ top-k 后归一(L100)+ 2 共享专家(L93)+ `shared_expert_sink=true`(L94,共享专家兼作路由 sink,本库推断)。非标处: `route_scale=8.0`(L97),显著大于 Hy3 的 2.826 / DeepSeek 的 2.5——sigmoid 归一后需要更大标度把 MoE 输出拉回残差流量级(推断)。
+sigmoid 门(L99)+ 门偏置免辅助损失负载均衡(L98,同 [[12_deepseek_v3_analysis]] 配方)+ top-k 后归一(L100)+ 2 共享专家(L93)+ `shared_expert_sink=true`(L94,共享专家兼作路由 sink,本库推断)。非标处: `route_scale=8.0`(L97),显著大于 Hy3 的 2.826 / DeepSeek 的 2.5——sigmoid 归一后需要更大标度把 MoE 输出拉回残差流量级(推断)。
 
 ### 2.7 多模态: encoder-free 原生四模态
 
 - **图像/视频**: 40×40 像素 patch(L116)、视频 2 帧一组(L117 `temporal_patch_size`),经 4 层 hMLP(L119)直接投进 6144 维主干——**无独立 ViT**。
 - **音频**: 离散 dMel 频谱(L111 `audio_mode=dmel`),80 mel bins 量化到 16 级(L105-106),与文本 token 联合处理——**无独立音频编码器**。
-- 四模态在 45T token 预训练里原生联合,不是训完贴 adapter。**这是最大胆的一注**: 对照 [[kimi_k2.5_analysis]] 仍保留 MoonViT-3D 重型视觉编码器,Inkling 把多模态接入压到最薄。代价见 §五(细粒度视觉可能吃亏)。
+- 四模态在 45T token 预训练里原生联合,不是训完贴 adapter。**这是最大胆的一注**: 对照 [[13_kimi_k2_5_analysis]] 仍保留 MoonViT-3D 重型视觉编码器,Inkling 把多模态接入压到最薄。代价见 §五(细粒度视觉可能吃亏)。
 
 ### 2.8 激进的 8 层 MTP
 
-`num_nextn_predict_layers=8`(L123)——8 个多 token 预测层,而 [[deepseek_v3_analysis]] / [[hy3_analysis]] 只有 1 个。为投机解码提供更长 draft,吞吐意图明确;MTP 子结构自身也用滑窗(L125-132)。
+`num_nextn_predict_layers=8`(L123)——8 个多 token 预测层,而 [[12_deepseek_v3_analysis]] / [[hy3_analysis]] 只有 1 个。为投机解码提供更长 draft,吞吐意图明确;MTP 子结构自身也用滑窗(L125-132)。
 
 ---
 
@@ -109,7 +109,7 @@ sigmoid 门(L99)+ 门偏置免辅助损失负载均衡(L98,同 [[deepseek_v3_ana
 | SFT | 用开源模型(**点名 Kimi K2.5**)生成的合成数据冷启动 |
 | RL | 合成 + 人造环境上 **3000 万+ rollout**;推理能力 log-linear 提升,CoT 自发变简洁(未显式约束长度) |
 
-Muon 路线与 [[kimi_k2_analysis]](MuonClip)、[[glm_5_analysis]](Muon Split)同源,佐证 Muon 已成 2026 年前沿开源训练的主流优化器选择。
+Muon 路线与 [[11_kimi_k2_analysis]](MuonClip)、[[01_glm_5_analysis]](Muon Split)同源,佐证 Muon 已成 2026 年前沿开源训练的主流优化器选择。
 
 ---
 
@@ -146,7 +146,7 @@ Muon 路线与 [[kimi_k2_analysis]](MuonClip)、[[glm_5_analysis]](Muon Split)�
 
 **4. 技术层面的潜在冲击**: 若 Inkling 的架构选择被验证有效,可能松动几个"事实标准"——RoPE(→ 学习相对 PE)、MLA(→ 滑窗/全局非对称 KV)、纯 Transformer MoE(→ 掺 SConv)、重型视觉编码器(→ encoder-free)。它给了社区一个**非 DeepSeek 血统的千亿级开源参照系**,对生态多样性本身有价值。
 
-**5. 生态铺满(day-0)**: Together AI / Fireworks / Modal / Databricks / Baseten 首日可推理;SGLang / vLLM / llama.cpp / transformers 已适配;另发 12B 激活的 **Inkling-Small**(276B 总参,同后训练栈)预览,主打低延迟低成本。NVFP4 checkpoint 直接对接 Blackwell 部署(见 [[hw_friendly_llm_codesign_analysis]] 的 NVFP4 双层缩放)。
+**5. 生态铺满(day-0)**: Together AI / Fireworks / Modal / Databricks / Baseten 首日可推理;SGLang / vLLM / llama.cpp / transformers 已适配;另发 12B 激活的 **Inkling-Small**(276B 总参,同后训练栈)预览,主打低延迟低成本。NVFP4 checkpoint 直接对接 Blackwell 部署(见 [[21_hw_friendly_llm_codesign_analysis]] 的 NVFP4 双层缩放)。
 
 **需打折看待**: 官方自认非 SOTA;全项对比只放 Nemotron 3 Ultra 一个详细基线;encoder-free 多模态在视觉上已见落后(§四);8 MTP 层实际接受率、无 RoPE 在 1M 的真实外推质量,均无第三方复现;无正式技术报告,机制层"为什么"披露有限。
 
@@ -162,11 +162,11 @@ Muon 路线与 [[kimi_k2_analysis]](MuonClip)、[[glm_5_analysis]](Muon Split)�
 
 ## Related Pages
 
-- [[index]] — Thinking Machines 家族入口
+- [[01_theory/01_models/thinking_machines/index|Thinking Machines Lab]] — Thinking Machines 家族入口
 - [[hy3_analysis]] — 反面对照: 架构最保守(全程 GQA+RoPE)、赌后训练;Inkling 赌架构差异化
-- [[deepseek_v3_analysis]] — 被 Inkling 部分沿用(免辅助损失路由)、部分抛弃(MLA/RoPE/单 MTP)的技术上游
-- [[kimi_k2.5_analysis]] — 多模态对照: 保留 MoonViT-3D 重编码器 vs Inkling encoder-free;且 Inkling SFT 用 Kimi K2.5 合成数据冷启动
-- [[kimi_k2_analysis]] — Muon 训练路线同源(MuonClip)
-- [[glm_5_analysis]] — Muon + 稀疏注意力路线对照(DSA vs 滑窗交错)
+- [[12_deepseek_v3_analysis]] — 被 Inkling 部分沿用(免辅助损失路由)、部分抛弃(MLA/RoPE/单 MTP)的技术上游
+- [[13_kimi_k2_5_analysis]] — 多模态对照: 保留 MoonViT-3D 重编码器 vs Inkling encoder-free;且 Inkling SFT 用 Kimi K2.5 合成数据冷启动
+- [[11_kimi_k2_analysis]] — Muon 训练路线同源(MuonClip)
+- [[01_glm_5_analysis]] — Muon + 稀疏注意力路线对照(DSA vs 滑窗交错)
 - [[longcat_flash_analysis]] — 另一"小激活参数"工业实践对照
-- [[hw_friendly_llm_codesign_analysis]] — Inkling NVFP4 checkpoint 对应的 Blackwell 部署侧原理
+- [[21_hw_friendly_llm_codesign_analysis]] — Inkling NVFP4 checkpoint 对应的 Blackwell 部署侧原理

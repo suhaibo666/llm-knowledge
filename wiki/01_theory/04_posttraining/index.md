@@ -35,7 +35,7 @@
 | 2 | [[26_tim_causal_chain_analysis]] | TIM 因果链深潜 |
 | 2 | [[27_vapo_analysis]] | VAPO 论文档案 |
 | 2 | [[28_rlhf_foundations_analysis]] | RLHF 基础方法多论文综合档案 |
-| 2 | [[29_kimi_k1.5_analysis]] | Kimi K1.5 案例档案 |
+| 2 | [[29_kimi_k1_5_analysis]] | Kimi K1.5 案例档案 |
 | 3 | [[30_preference_optimization_analysis]] | DPO 家族对照(IPO/SimPO/ORPO/KTO/MODPO) |
 | 3 | [[31_reward_hacking_defense_analysis]] | Reward Hacking 防御方法论 |
 
@@ -95,7 +95,7 @@
 |------|------|---------|
 | [[27_vapo_analysis]] | VAPO (2504.05118) | 基于价值模型的 RL, AIME 60.4 |
 | [[28_rlhf_foundations_analysis]] | 多篇综合 | ReMax, Weak-to-Strong, RM Overoptimization, RigorLLM |
-| [[29_kimi_k1.5_analysis]] | Kimi K1.5 | 长上下文 RL 推理训练 |
+| [[29_kimi_k1_5_analysis]] | Kimi K1.5 | 长上下文 RL 推理训练 |
 
 ### 对齐安全
 
@@ -108,7 +108,7 @@
 ## Knowledge Gaps
 
 > 本节记录**已确认在公开文献中无一手来源**的问题。按 CLAUDE.md 的 Query Workflow，这些缺口不应用推测填补；若日后出现相关工作，应先入 `raw/` 再补页。
-> 2026-07-25 首次建立，来源为 [[26_tim_causal_chain_analysis]] 的系统性检索。
+> 2026-07-25 首次建立，来源为 [[26_tim_causal_chain_analysis|TIM 因果链深潜]] 的系统性检索。
 
 | # | 缺口 | 现状与最接近的替代证据 |
 |---|------|----------------------|
@@ -129,7 +129,7 @@
 - [[courses/posttraining_frontier]] — LLM 后训练前沿阅读课程(D01→D12 顺序索引 + 六级能力门槛)
 - [[07_training_reliability/index]] — 万卡训练确定性与可靠性（问题 2「训推数值不一致 / batch 不变性」与本域 TIM 簇直接接壤）
 - [[04_posttrain_frameworks/index]] — 后训练框架与 RL Infra（verl / sandbox / 效率）
-- [[02_pretraining/index]] — 预训练技术（优化器、低精度训练；[[low_precision_training_analysis]] 与 [[RL_Training_Inference_Precision_Analysis]] 现居此处）
+- [[02_pretraining/index]] — 预训练技术（优化器、低精度训练；[[13_low_precision_training_analysis]] 与 [[20_rl_training_inference_precision_analysis]] 现居此处）
 - [[02_train_frameworks/megatron-lm/index]] — 分布式训练基础设施
 - [[01_ai_frameworks/index]] — torch.compile 与图编译优化
 

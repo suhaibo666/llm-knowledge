@@ -15,7 +15,7 @@
 | 段 | 页面 | 核心主题 |
 |---|------|---------|
 | 0 | [[01_npu_compile_paths_overview]] | NPU compile 路径全景:三条路径(Triton/ACLGraph/MLIR)差异、收益、演进;GPU vs NPU Dynamic Shape 难易度对比 |
-| 1 | [[10_NPU_Inductor_Backend_Analysis]] | NPU Inductor 后端集成架构;5 后端融合规则与性能对比;后端混合使用机制(MultiTemplateBuffer、Prologue/Epilogue Fusion、4 实战场景);**NPU 适配补充**(后端注册/初始化/RNG patch/特定配置,来自 upstream 技术分析迁入) |
+| 1 | [[10_npu_inductor_backend_analysis]] | NPU Inductor 后端集成架构;5 后端融合规则与性能对比;后端混合使用机制(MultiTemplateBuffer、Prologue/Epilogue Fusion、4 实战场景);**NPU 适配补充**(后端注册/初始化/RNG patch/特定配置,来自 upstream 技术分析迁入) |
 | 1 | [[11_npu_inductor_splittiling_backend_analysis]] | **内置 default（Split-Tiling 方案）**：Triton/default 路径深度——golden_var_list、CATLASS/CK GEMM、monkey patch、NPUIndexTritonKernel（对照实验 [[23_npu_inductor_linearize_backend_analysis]]） |
 | 1 | [[12_npu_compile]] | NPU 编译工作流、三种编译模式、毕昇编译器接口、Autotune、在线精度校验 |
 | 2 | [[20_npu_lowering_guide]] | NPU 特定 lowering 与算子映射;FALLBACK_LIST 黑名单策略;§9 当前源码复核 |

@@ -1,6 +1,6 @@
 # LLM Knowledge Wiki — 知识库总索引
 
-> 最后更新: 2026-07-31
+> 最后更新: 2026-08-04
 
 ---
 
@@ -25,9 +25,9 @@
 | SFT & 低参微调 | [[01_theory/03_sft/index]] | 1 | 待建设 |
 | 后训练对齐 | [[01_theory/04_posttraining/index]] | 18 | 活跃 |
 | 推理技术 | [[01_theory/05_inference/index]] | 1 | 待建设 |
-| 分布式并行理论 | [[01_theory/06_distributed_parallelism/index]] | 8 | 活跃 |
+| 分布式并行理论 | [[01_theory/06_distributed_parallelism/index]] | 9 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-07-31（kb-reorg P5 收尾）。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-08-04（kb-reorg P7 收尾）。
 
 ### 02 工程实现
 
@@ -37,8 +37,8 @@
 | └─ TorchInductor | [[02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/index]] | 36 | 活跃 |
 | └─ 运行时图(CUDA/NPU) | [[02_engineering/01_ai_frameworks/03_runtime_graphs/index]] | 12 | 活跃 |
 | └─ Codegen 后端(MLIR) | [[02_engineering/01_ai_frameworks/02_compile_stack/05_codegen_backends/mlir/index]] | 8 | 活跃 |
-| 训练框架 | [[02_engineering/02_train_frameworks/index]] | 60 | 活跃 |
-| └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 30 | 活跃 |
+| 训练框架 | [[02_engineering/02_train_frameworks/index]] | 56 | 活跃 |
+| └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 27 | 活跃 |
 | └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 13 | 活跃 |
 | └─ MindFormers | [[02_engineering/02_train_frameworks/mindformers/index]] | 3 | 活跃 |
 | └─ MindSpeed | [[02_engineering/02_train_frameworks/mindspeed/index]] | 6 | 活跃 |
@@ -46,12 +46,12 @@
 | └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index]] | 13 | 活跃 |
 | 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 21 | 活跃 |
 | └─ verl (HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index]] | 11 | 活跃 |
-| GPU Kernel | [[02_engineering/05_gpu_kernel/index]] | 15 | 活跃 |
+| GPU Kernel | [[02_engineering/05_gpu_kernel/index]] | 17 | 活跃 |
 | └─ Triton 学习路线 | [[02_engineering/05_gpu_kernel/triton/index]] | 9 | 活跃 |
 | 自动并行 | [[02_engineering/06_auto_parallel/index]] | 2 | 活跃 |
 | 训练可靠性 | [[02_engineering/07_training_reliability/index]] | 5 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-07-31（kb-reorg P5 收尾）。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-08-04（kb-reorg P7 收尾）。
 
 ### courses 课程入口
 
@@ -73,28 +73,28 @@
 |------|---------|
 | Transformer 原理 | [[attention_is_all_you_need_analysis]] |
 | 缩放定律 | [[scaling_laws_analysis]], [[long_context_scaling_law_analysis]] |
-| 优化器 | [[muon_analysis]] |
-| 低精度训练 | [[low_precision_training_analysis]], [[transformer_engine_analysis]], [[deepseek_v4_fp4_qat_analysis]] |
+| 优化器 | [[11_muon_analysis]] |
+| 低精度训练 | [[13_low_precision_training_analysis]], [[14_transformer_engine_analysis]], [[24_deepseek_v4_fp4_qat_analysis]] |
 | 对齐/RLHF | [[10_instructgpt_rlhf_analysis]], [[12_dpo_analysis]], [[20_grpo_analysis]], [[11_ppo_analysis]] |
-| DeepSeek 模型 | [[deepseek_v4_analysis]], [[deepseek_v3_analysis]], [[deepseek_r1_analysis]] |
+| DeepSeek 模型 | [[13_deepseek_v4_analysis]], [[12_deepseek_v3_analysis]], [[14_deepseek_r1_analysis]] |
 | LongCat (美团) | [[meituan_longcat/index]], [[longcat_flash_analysis]], [[longcat_2_analysis]] |
-| Megatron 分布式 | [[megatron_parallelism_orchestration_analysis]], [[megatron_comm_overlap_analysis]] |
-| MoE | [[megatron_ep_analysis]], [[deepseek_moe_analysis]] |
+| Megatron 分布式 | [[17_megatron_parallelism_orchestration_analysis]], [[20_megatron_comm_overlap_analysis]] |
+| MoE | [[14_megatron_ep_analysis]], [[20_deepseek_moe_analysis]] |
 | MoE 专家并行 (MindFormers) | [[mindformers/index]], [[mindformers_pynative_ep_analysis]], [[mindformers_moe_token_dispatcher_analysis]] |
-| 昇腾训练加速 (MindSpeed) | [[mindspeed/index]], [[mindspeed_parallelism_analysis]], [[mindspeed_context_parallel_analysis]], [[mindspeed_comm_overlap_analysis]], [[mindspeed_memory_optimization_analysis]], [[mindspeed_ascend_affinity_analysis]] |
+| 昇腾训练加速 (MindSpeed) | [[mindspeed/index]], [[10_mindspeed_parallelism_analysis]], [[20_mindspeed_context_parallel_analysis]], [[11_mindspeed_comm_overlap_analysis]], [[12_mindspeed_memory_optimization_analysis]], [[13_mindspeed_ascend_affinity_analysis]] |
 | torch.compile | [[courses/torch_compile_end_to_end]], [[02_compile_stack/01_dynamo/index]], [[02_compile_stack/04_inductor/index]] |
-| CUDA/NPU Graphs | [[01_PyTorch_CUDA_Graphs_Complete_Guide]], [[11_torch_compile_npugraphs_deep_dive]] |
-| Triton kernel 入门→专家 | [[triton_01_programming_model_guide]], [[triton_03_matmul_guide]], [[triton_04_autotune_guide]], [[triton_06_optimization_profiling_guide]], [[triton_knowledge_map]] |
-| GPU/NPU 执行模型与 GEMM | [[cuda_execution_model_guide]], [[cuda_gemm_kernel_analysis]], [[ascend_kernel_execution_model_analysis]] |
-| 非 GEMM Kernel 优化 | [[cuda_nonmatmul_kernels_analysis]], [[gpu_kernel_guide]], [[triton_00_gpu_essentials_guide]] |
-| vLLM 推理引擎 | [[vllm/index]], [[vllm_engine_architecture_analysis]], [[vllm_scheduler_analysis]], [[vllm_kv_cache_management_analysis]], [[vllm_feature_optimizations_overview]] |
-| vLLM 图编译/算子融合 | [[vllm_fused_ops_and_kernels_analysis]], [[vllm_ir_and_fusion_passes_analysis]], [[vllm_compilation_cudagraph_analysis]] |
-| PPO/GRPO RL 训练 | [[10_rl_ppo_loss_and_grpo_analysis]], [[RL_Training_Inference_Precision_Analysis]] |
+| CUDA/NPU Graphs | [[10_pytorch_cuda_graphs_complete_guide]], [[11_torch_compile_npugraphs_deepdive]] |
+| Triton kernel 入门→专家 | [[triton_10_programming_model_guide]], [[triton_12_matmul_guide]], [[triton_13_autotune_guide]], [[triton_30_optimization_profiling_guide]], [[triton_31_knowledge_guide]] |
+| GPU/NPU 执行模型与 GEMM | [[10_cuda_execution_model_guide]], [[20_cuda_gemm_kernel_analysis]], [[22_ascend_kernel_execution_model_analysis]] |
+| 非 GEMM Kernel 优化 | [[21_cuda_nonmatmul_kernels_analysis]], [[01_gpu_kernel_guide]], [[triton_01_gpu_essentials_guide]] |
+| vLLM 推理引擎 | [[vllm/index]], [[10_vllm_engine_architecture_analysis]], [[11_vllm_scheduler_analysis]], [[12_vllm_kv_cache_management_analysis]], [[01_vllm_feature_optimizations_guide]] |
+| vLLM 图编译/算子融合 | [[24_vllm_fused_ops_and_kernels_analysis]], [[25_vllm_ir_and_fusion_passes_analysis]], [[23_vllm_compilation_cudagraph_analysis]] |
+| PPO/GRPO RL 训练 | [[10_rl_ppo_loss_and_grpo_analysis]], [[20_rl_training_inference_precision_analysis]] |
 | RL 训练框架 (verl/HybridFlow) | [[verl/index]], [[01_verl_architecture_overview_analysis]], [[20_verl_ray_trainer_analysis]], [[15_verl_rl_algorithms_analysis]] |
 | Coding RL「脏活」系列 | [[31_reward_hacking_defense_analysis]], [[11_rl_sandbox_design_analysis]], [[12_rl_infra_efficiency_analysis]] |
 | LLM 后训练前沿 D01–D06 | [[courses/posttraining_frontier]], [[01_posttraining_frontier_map_analysis]], [[13_reasoning_rl_algorithm_evolution_analysis]], [[24_agentic_rl_algorithm_analysis]], [[25_on_policy_off_policy_staleness_analysis]], [[01_posttraining_infra_mechanism_analysis]], [[30_rl_framework_comparison]] |
-| LLM 后训练前沿 D07–D12 | [[10_verl_end_to_end_iteration_analysis]], [[20_slime_architecture_analysis]], [[21_areal_async_architecture_analysis]], [[22_roll_strategy_and_ascend_analysis]], [[31_cuda_ascend_posttraining_stack_comparison]], [[kimi_k3_posttraining_case_study_analysis]] |
-| 万卡训练确定性与可靠性 | [[07_training_reliability/index]], [[determinism_and_numerical_reliability_analysis]], [[fault_tolerance_and_recovery_analysis]], [[training_dynamics_stability_analysis]] |
+| LLM 后训练前沿 D07–D12 | [[10_verl_end_to_end_iteration_analysis]], [[20_slime_architecture_analysis]], [[21_areal_async_architecture_analysis]], [[22_roll_strategy_and_ascend_analysis]], [[31_cuda_ascend_posttraining_stack_comparison]], [[24_kimi_k3_posttraining_case_study_analysis]] |
+| 万卡训练确定性与可靠性 | [[07_training_reliability/index]], [[10_determinism_and_numerical_reliability_analysis]], [[11_fault_tolerance_and_recovery_analysis]], [[12_training_dynamics_stability_analysis]] |
 
 ### 按原始来源
 

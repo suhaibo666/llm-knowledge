@@ -5,7 +5,7 @@
 > 版本基线：`npu_inductor_2.9.0` 包 + PyTorch 2.9.0；内置后端 = torch_npu v2.7.1.post5。
 > 最后更新：2026-06-17
 
-> 本页是 [[23_npu_inductor_linearize_backend_analysis]] 系列的对标分册。机制原理见主页与 [[24_npu_inductor_linearize_dynamic_shape_analysis]]；内置后端细节见 [[11_npu_inductor_splittiling_backend_analysis]]；GPU 上游基线见 [[23_inductor_gpu_kernel_dispatch_model]]。
+> 本页是 [[23_npu_inductor_linearize_backend_analysis|NPU Inductor Linearize 后端分析]] 系列的对标分册。机制原理见主页与 [[24_npu_inductor_linearize_dynamic_shape_analysis]]；内置后端细节见 [[11_npu_inductor_splittiling_backend_analysis]]；GPU 上游基线见 [[23_inductor_gpu_kernel_dispatch_model]]。
 >
 > [!note] 实测数据口径
 > §二实测数字均为作者在仓库内的实测记录（本知识库未独立复跑），以实际环境为准。**只对比算子加速比/设备 kernel 耗时**（直接反映 codegen 质量）；E2E 因两侧 aclgraph 开关不一致**不可比**，不纳入。

@@ -5,7 +5,7 @@
 > **快照日期**：2026-07-28
 > **证据基线**：四框架 S00 commit、2026-07-27 官方 Ascend/PyTorch/vLLM/SGLang 文档快照与 Kimi K3 Technical Report `0797decb`
 > **结论先行**：Ascend 已不是“只能训练、不能 rollout”的早期状态：torch_npu、HCCL、MindSpeed、vLLM-Ascend、SGLang NPU 和后训练框架都有可达路径；但迁移单位必须是整套版本矩阵与正确性闭环，不能只替换 `cuda` 字符串。
-> **阅读导航**：[[22_roll_strategy_and_ascend_analysis|上一篇 D10]] · [[kimi_k3_posttraining_case_study_analysis|下一篇 D12]]
+> **阅读导航**：[[22_roll_strategy_and_ascend_analysis|上一篇 D10]] · [[24_kimi_k3_posttraining_case_study_analysis|下一篇 D12]]
 
 ---
 
@@ -218,7 +218,7 @@ CUDA train + CUDA rollout 已可能因 kernel、batch、precision 有 TIM；Asce
 
 算法 patch 不能替代 engine-level calibration。
 
-K3 提供了“部署精度前移”的工业案例：MoE expert weights 使用 MXFP4、expert input activations 使用 MXFP8，QAT 覆盖 SFT 和 RL，且 RL rollout/training 采用相同 quantization scheme（Kimi K3 Technical Report §4.1.1，p.12；§4.1.4，p.14；详见 [[kimi_k3_posttraining_case_study_analysis|D12]]）。迁移到 Ascend 时，验收单位因此不能只是“模型能以 FP4/FP8 加载”，而应同时核对：
+K3 提供了“部署精度前移”的工业案例：MoE expert weights 使用 MXFP4、expert input activations 使用 MXFP8，QAT 覆盖 SFT 和 RL，且 RL rollout/training 采用相同 quantization scheme（Kimi K3 Technical Report §4.1.1，p.12；§4.1.4，p.14；详见 [[24_kimi_k3_posttraining_case_study_analysis|D12]]）。迁移到 Ascend 时，验收单位因此不能只是“模型能以 FP4/FP8 加载”，而应同时核对：
 
 ```text
 expert and non-expert precision boundary
@@ -326,4 +326,4 @@ Ascend 路径已具备工业深挖价值，尤其是：
 - [[21_areal_async_architecture_analysis|D09 AReaL Fully Async]]
 - [[10_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
 - [[courses/posttraining_frontier|LLM 后训练前沿阅读课程]] — 阅读路线与六级能力门槛(原 D00)
-- [[kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
+- [[24_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]

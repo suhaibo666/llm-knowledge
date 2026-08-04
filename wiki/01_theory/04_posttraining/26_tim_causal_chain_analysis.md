@@ -1,6 +1,6 @@
 # 训推不一致（TIM）：从 kernel 非确定性到训练崩溃的完整因果链
 
-> 本页打通一条在本库中**上下游都已有页、中间是断的**链路：kernel 非确定性 → logprob 偏差 → 重要性比方差放大 → 训练崩溃。上游（浮点非确定性、batch 不变性、推理引擎实现）见 [[determinism_and_numerical_reliability_analysis]] 与 [[vllm/index]]；下游（loss spike / 发散的治理）见 [[training_dynamics_stability_analysis]]。本页补的是中间两环，以及把四环串起来的归因框架。
+> 本页打通一条在本库中**上下游都已有页、中间是断的**链路：kernel 非确定性 → logprob 偏差 → 重要性比方差放大 → 训练崩溃。上游（浮点非确定性、batch 不变性、推理引擎实现）见 [[10_determinism_and_numerical_reliability_analysis]] 与 [[vllm/index]]；下游（loss spike / 发散的治理）见 [[12_training_dynamics_stability_analysis]]。本页补的是中间两环，以及把四环串起来的归因框架。
 >
 > **保真度说明**：本页每条断言均标注一手来源与 §/Fig/Table/Eq 级定位符。凡标 `†` 的数字取自论文**图内标注**（PDF 文本层），正文未复述；凡标 `[未量化]` 的是论文明确没有给出的数据，不做推测补齐。跨论文拼接得出的结论一律显式标注为「本页推断」。
 >
@@ -81,7 +81,7 @@ $$\frac{\pi_\theta(y_t\mid x,y_{<t})}{\mu_{\theta_{\text{old}}}(y_t\mid x,y_{<t}
 > "changes in **batch size** can trigger different **launch-grid configurations through auto-tuning**, thereby altering GPU tiling strategies."
 > "Since floating-point accumulation is **non-associative** under finite precision, these changes in execution order can ultimately lead to numerically different results."
 
-这是 batch invariance 议题的完整来源，已在 [[batch_invariance_guide]] 与 [[determinism_and_numerical_reliability_analysis]]（问题 2）展开，此处不重复。
+这是 batch invariance 议题的完整来源，已在 [[20_batch_invariance_guide]] 与 [[10_determinism_and_numerical_reliability_analysis]]（问题 2）展开，此处不重复。
 
 ### 2.3 TP size 改变累加顺序 —— batch 不变性覆盖不到的那一块
 
@@ -502,14 +502,14 @@ flowchart TB
 ## Related Pages
 
 - [[01_theory/04_posttraining/index]] — 后训练算法理论入口
-- [[determinism_and_numerical_reliability_analysis]] — 第一环的系统侧上游（问题 1-4：浮点非确定性五层来源、batch 不变性、低精度长链累加、SDC）
-- [[batch_invariance_guide]] — batch 不变性的数学定义与 loss 聚合顺序依赖
-- [[RL_Training_Inference_Precision_Analysis]] — 本库既有的训推精度页，本页为其 2025-2026 一代的延伸
+- [[10_determinism_and_numerical_reliability_analysis]] — 第一环的系统侧上游（问题 1-4：浮点非确定性五层来源、batch 不变性、低精度长链累加、SDC）
+- [[20_batch_invariance_guide]] — batch 不变性的数学定义与 loss 聚合顺序依赖
+- [[20_rl_training_inference_precision_analysis]] — 本库既有的训推精度页，本页为其 2025-2026 一代的延伸
 - [[10_rl_ppo_loss_and_grpo_analysis]] · [[20_grpo_analysis]] · [[22_gspo_analysis]] · [[21_dapo_analysis]] — 被本页各修法修改的基础目标
 - [[25_on_policy_off_policy_staleness_analysis]] — §7 覆盖 TIM 与 staleness/off-policy 的关系区分，是本页四环因果链的上层概念坐标
-- [[training_dynamics_stability_analysis]] — 第四环的下游（loss spike / NaN / 发散的四类根因与四层防线）
+- [[12_training_dynamics_stability_analysis]] — 第四环的下游（loss spike / NaN / 发散的四类根因与四层防线）
 - [[07_training_reliability/index]] — 万卡训练确定性与可靠性问题域（问题 2 与本页直接接壤）
 - [[verl/index]] · [[15_verl_rl_algorithms_analysis]] · [[14_verl_rollout_resharding_analysis]] — recomputation / bypass 两条路径在框架中的实现
 - [[vllm/index]] — rollout 引擎侧的 kernel 与调度实现
-- [[deepseek_v4_analysis]] — §3.3 批不变与确定性 kernel 库的完整上下文
-- [[low_precision_training_analysis]] — FP16/BF16/FP8 精度路线的训练侧背景
+- [[13_deepseek_v4_analysis]] — §3.3 批不变与确定性 kernel 库的完整上下文
+- [[13_low_precision_training_analysis]] — FP16/BF16/FP8 精度路线的训练侧背景

@@ -187,7 +187,7 @@ flowchart TB
 | 调用目标 | `compile_fx(model_, inputs_, config_patches=self.config)` | `self.compiler_fn(model_, inputs_, **self.kwargs)` |
 | reset 行为 | 调用 `reset_cudagraph_trees()` | 调用后端的 `reset()` 方法 |
 
-当使用 `torch.compile(model, backend="npugraphs", mode="reduce-overhead")` 时：`_TorchCompileWrapper.__init__` 把 `mode` 存入 `self.kwargs = {"mode": "reduce-overhead"}`；`__call__` 时执行 `self.compiler_fn(model_, inputs_, mode="reduce-overhead")` → `NpugraphsBackend.__call__(model, inputs, mode="reduce-overhead")` → `npugraphs(model, inputs)`。但 `NpugraphsBackend.__call__` 的签名是 `def __call__(model, inputs)`，并不接受 `mode` 参数——按 Python 的函数调用机制，若该 `@staticmethod` 方法不接受额外 kwargs，这会导致 **TypeError**，而不是简单的"静默忽略"。因此 `mode` 参数在 `backend="npugraphs"` 时实际上**不应与非默认 mode 组合使用**，这是一个真实的 footgun——这是本页分析对象（路径 A：`mode="reduce-overhead"`，经 Inductor）与 [[11_torch_compile_npugraphs_deep_dive]] 正文分析对象（路径 B：`backend="npugraphs"`，绕开 Inductor）分道的起点，两条路径的完整对比见 §四·4.4。
+当使用 `torch.compile(model, backend="npugraphs", mode="reduce-overhead")` 时：`_TorchCompileWrapper.__init__` 把 `mode` 存入 `self.kwargs = {"mode": "reduce-overhead"}`；`__call__` 时执行 `self.compiler_fn(model_, inputs_, mode="reduce-overhead")` → `NpugraphsBackend.__call__(model, inputs, mode="reduce-overhead")` → `npugraphs(model, inputs)`。但 `NpugraphsBackend.__call__` 的签名是 `def __call__(model, inputs)`，并不接受 `mode` 参数——按 Python 的函数调用机制，若该 `@staticmethod` 方法不接受额外 kwargs，这会导致 **TypeError**，而不是简单的"静默忽略"。因此 `mode` 参数在 `backend="npugraphs"` 时实际上**不应与非默认 mode 组合使用**，这是一个真实的 footgun——这是本页分析对象（路径 A：`mode="reduce-overhead"`，经 Inductor）与 [[11_torch_compile_npugraphs_deepdive]] 正文分析对象（路径 B：`backend="npugraphs"`，绕开 Inductor）分道的起点，两条路径的完整对比见 §四·4.4。
 
 ---
 
@@ -481,7 +481,7 @@ ACLGraph 路径在**用户语义**上完全遵循了社区 CUDA Graph 的设计�
 | 3 | `_compile_fx_main` | `compile_fx.py`（第2650行） | pre-grad passes → 构造 `fw_compiler`/`bw_compiler`/`inference_compiler` → `aot_autograd(..., cudagraphs=BoxedBool(True))` |
 | 4 | `_compile_fx_inner`（Inductor Codegen） | `compile_fx.py`（第829行） | `graph_lowering` → Scheduling（算子融合/内存规划）→ Triton/C++ Codegen，产出 `CompiledFxGraph`（`current_callable` + `cudagraph_info`） |
 | 5 | `cudagraph_post_compile` | `torch/_inductor/output_code.py`（第195行） | 检查 `cudagraph_fail_reasons`；可行则把 `current_callable`（Triton 内核）传入 `cudagraphify`（已被 torch_npu monkey-patch 为 `npugraphify`，见 §二·差异1）包装进 NPU Graph；不可行则 `BoxedBool.disable(cudagraphs)` 退化为普通执行 |
-| 6-8 | NPU Graph Tree（与路径 B 共享） | `torch_npu/npu/_graph_tree.py` | Warmup → Record → Replay，与 [[11_torch_compile_npugraphs_deep_dive]] 正文 Phase 5-8（§2.5-2.8）完全相同的实现 |
+| 6-8 | NPU Graph Tree（与路径 B 共享） | `torch_npu/npu/_graph_tree.py` | Warmup → Record → Replay，与 [[11_torch_compile_npugraphs_deepdive]] 正文 Phase 5-8（§2.5-2.8）完全相同的实现 |
 
 Phase 4 的 Inductor 编译阶段是路径 B 没有的，各阶段对性能的影响：
 
@@ -494,7 +494,7 @@ Phase 4 的 Inductor 编译阶段是路径 B 没有的，各阶段对性能的�
 | **Triton Codegen** | 生成高性能 Triton GPGPU 内核 | 单内核执行效率更高 |
 | **Memory Planning** | 静态内存分配、buffer 复用 | 减少内存碎片 |
 
-路径 B（`backend="npugraphs"`，详见 [[11_torch_compile_npugraphs_deep_dive]] 正文）跳过 Phase 2-5，AOT Autograd 分离出前向/反向后直接用 `boxed_nop` 解释执行原始 FX 图，再进入同一套 Phase 6-8 Graph Tree。两条路径录制进图的内容、稳态表现差异：
+路径 B（`backend="npugraphs"`，详见 [[11_torch_compile_npugraphs_deepdive]] 正文）跳过 Phase 2-5，AOT Autograd 分离出前向/反向后直接用 `boxed_nop` 解释执行原始 FX 图，再进入同一套 Phase 6-8 Graph Tree。两条路径录制进图的内容、稳态表现差异：
 
 | 维度 | 路径 A：`mode="reduce-overhead"` | 路径 B：`backend="npugraphs"` |
 |---|---|---|
@@ -647,6 +647,6 @@ ACLGraph 是 torch_npu 与社区差异**中等但很关键**的一条路径。�
 - [[01_npu_compile_paths_overview]] — torch_npu 三条编译路径全景概览（上级分析）
 - [[01_aclgraph]] — ACL Graph 基础集成（已有页面）
 - [[30_comparison]] — CUDA Graphs vs NPU Graphs 特性对比
-- [[11_torch_compile_npugraphs_deep_dive]] — NPU Graphs 与 torch.compile 集成深度分析；§3.4-3.8 内存管理与复用；reduce_overhead vs npugraphs 对比
+- [[11_torch_compile_npugraphs_deepdive]] — NPU Graphs 与 torch.compile 集成深度分析；§3.4-3.8 内存管理与复用；reduce_overhead vs npugraphs 对比
 - [[21_aclgraph_multistream_rng_analysis]] — 多流依赖、通信流边界与 graph-safe RNG 算子适配
 - [[20_npu_lowering_guide]] — NPU lowering 与 fallback（§9）；差异 8 的 aclnn/aclop 把 fallback 关与捕获关连通

@@ -11,7 +11,7 @@
 
 ---
 
-本页对运行时三根支柱做**源码级**拆解,逐机制回答「做什么 / 为什么这么设计 / 怎么实现」,并密集挂上 `路径:行号`(均相对 `E:\97-codes\pytorch\pytorch` 实际打开核实)。想先看「怎么用 / 怎么查 / 怎么验证」请回 [[01_amp_and_memory_tooling_quickstart]];想看三支柱如何咬合的全景图请回 [[index]]。
+本页对运行时三根支柱做**源码级**拆解,逐机制回答「做什么 / 为什么这么设计 / 怎么实现」,并密集挂上 `路径:行号`(均相对 `E:\97-codes\pytorch\pytorch` 实际打开核实)。想先看「怎么用 / 怎么查 / 怎么验证」请回 [[01_amp_and_memory_tooling_quickstart]];想看三支柱如何咬合的全景图请回 [[02_engineering/01_ai_frameworks/01_eager_runtime/07_memory_amp_profiler/index|运行时:缓存分配器/AMP/Profiler]]。
 
 > 配置层全局提醒(读源码先建立的心智模型):分配器的配置真身已**下沉**到设备无关的 `c10/core/AllocatorConfig.h:162 AcceleratorAllocatorConfig`;`c10/cuda/CUDAAllocatorConfig.h` 里很多同名静态方法现在只是带 `C10_DEPRECATED_MESSAGE` 的**转发壳**(如 `pinned_use_background_threads()` 在 `CUDAAllocatorConfig.h:85-90` 直接转发到 `AcceleratorAllocatorConfig`)。环境变量主名升级为通用的 **`PYTORCH_ALLOC_CONF`**,旧名 `PYTORCH_CUDA_ALLOC_CONF` 仅低优先级兼容(`AllocatorConfig.h:156-159`)。本页凡说「配置」,指的是下沉后的真身。
 
@@ -379,7 +379,7 @@ storage 的可哈希身份用 `allocation_id`(而非易复用的裸指针)承载
 
 - [[courses/torch_compile_end_to_end]] — 当前固定基线的图编译系统化课程入口
 - [[01_eager_runtime/07_memory_amp_profiler/index]] — runtime memory、AMP 与 profiler 领域索引
-- [[index]] — 本模块 overview:三支柱全景图与它们如何咬合
+- [[02_engineering/01_ai_frameworks/01_eager_runtime/07_memory_amp_profiler/index|运行时:缓存分配器/AMP/Profiler]] — 本模块 overview:三支柱全景图与它们如何咬合
 - [[01_amp_and_memory_tooling_quickstart]] — 本模块 quick start:怎么用 / 怎么查 / 怎么验证
 - [[03_runtime_graphs/index]] — CUDA / NPU Graphs:图私有内存池(`beginAllocateToPool`/`releasePool`)的消费方
 - [[12_buffer_liveness_memory_planning_and_reuse_analysis]] — torch.compile 内存管理三层(§16):本页(缓存分配器)是其「层 2 运行期物理池」,上接 Inductor 编译期 `empty_strided` 规划、下接 CUDA Graphs 私有池

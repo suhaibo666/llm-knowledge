@@ -20,41 +20,41 @@
 | 页面 | 核心主题 |
 |------|---------|
 | [[deepseek/index]] | DeepSeek 模型家族总览 |
-| [[deepseek_llm_analysis]] | DeepSeek LLM (7B/67B), GQA, 双语预训练 |
-| [[deepseek_v2_analysis]] | MLA, DeepSeekMoE, 236B/21B |
-| [[deepseek_v3_analysis]] | FP8 训练, 671B MoE, MTP |
-| [[deepseek_v4_analysis]] | CSA/HCA, mHC, Muon, 1.6T MoE |
-| [[deepseek_r1_analysis]] | 纯 RL 推理, GRPO, 冷启动蒸馏 |
-| [[deepseek_coder_analysis]] | 代码预训练, 2T tokens, 项目级 FIM |
-| [[deepseek_coder_v2_analysis]] | MoE 代码模型, 338 语言, GRPO |
-| [[deepseek_math_analysis]] | DeepSeekMath, 120B 数学 tokens, GRPO |
-| [[deepseek_math_v2]] | 自验证, Generator-Verifier, RL 微调 |
-| [[deepseek_moe_analysis]] | MoE 架构, 专家路由, 负载均衡 |
-| [[deepseek_prover_analysis]] | Lean 4 定理证明, truncate-and-resume |
-| [[deepseek_vl_analysis]] | 视觉-语言对齐, 混合编码器 |
+| [[10_deepseek_llm_analysis]] | DeepSeek LLM (7B/67B), GQA, 双语预训练 |
+| [[11_deepseek_v2_analysis]] | MLA, DeepSeekMoE, 236B/21B |
+| [[12_deepseek_v3_analysis]] | FP8 训练, 671B MoE, MTP |
+| [[13_deepseek_v4_analysis]] | CSA/HCA, mHC, Muon, 1.6T MoE |
+| [[14_deepseek_r1_analysis]] | 纯 RL 推理, GRPO, 冷启动蒸馏 |
+| [[15_deepseek_coder_analysis]] | 代码预训练, 2T tokens, 项目级 FIM |
+| [[16_deepseek_coder_v2_analysis]] | MoE 代码模型, 338 语言, GRPO |
+| [[17_deepseek_math_analysis]] | DeepSeekMath, 120B 数学 tokens, GRPO |
+| [[18_deepseek_math_v2_analysis]] | 自验证, Generator-Verifier, RL 微调 |
+| [[20_deepseek_moe_analysis]] | MoE 架构, 专家路由, 负载均衡 |
+| [[22_deepseek_prover_analysis]] | Lean 4 定理证明, truncate-and-resume |
+| [[21_deepseek_vl_analysis]] | 视觉-语言对齐, 混合编码器 |
 
 ### Kimi / Moonshot AI
 
 | 页面 | 核心主题 |
 |------|---------|
 | [[moonshot_kimi/index]] | Kimi 技术路线总览 |
-| [[29_kimi_k1.5_analysis]] | k1.5 RL 缩放定律, 128K 上下文 RL |
-| [[kimi_k2_analysis]] | K2 1.04T MoE, MuonClip, Agentic RL |
-| [[kimi_k2.5_analysis]] | K2.5 视觉 Agent, MoonViT-3D, Agent Swarm |
-| [[kimi_linear_analysis]] | Kimi Linear 48B/3B, KDA 线性注意力, 3:1 混合, K3 注意力前身 |
-| [[gdn_kda_linear_attention_analysis]] | GDN/KDA: QKVABZ、矩阵 RNN、门控 Delta Rule、chunk 数学等价性 |
-| [[gdn_kda_kernel_implementation_analysis]] | GDN/KDA 训练、Prefill、Decode 融合 kernel 与源码调用链 |
-| [[kimi_k3_analysis]] | K3 2.8T MoE(896 选 16), 首个开源 3T 级, KDA+AttnRes, 1M 上下文, 2.5× scaling 效率 |
-| [[kimi_k3_architecture_deepdive]] | K3 六大结构变化点: KDA 3:1 / Gated MLA / AttnRes / Stable LatentMoE / SiTU(源码级溯源) |
-| [[kimi_k3_infra_deepdive]] | K3 训推 infra: Per-Head Muon, MXFP4/MXFP8 QAT, 全平衡 EP, Mooncake, KDA prefix cache, 64+ 卡超节点 |
+| [[29_kimi_k1_5_analysis]] | k1.5 RL 缩放定律, 128K 上下文 RL |
+| [[11_kimi_k2_analysis]] | K2 1.04T MoE, MuonClip, Agentic RL |
+| [[13_kimi_k2_5_analysis]] | K2.5 视觉 Agent, MoonViT-3D, Agent Swarm |
+| [[12_kimi_linear_analysis]] | Kimi Linear 48B/3B, KDA 线性注意力, 3:1 混合, K3 注意力前身 |
+| [[20_gdn_kda_linear_attention_analysis]] | GDN/KDA: QKVABZ、矩阵 RNN、门控 Delta Rule、chunk 数学等价性 |
+| [[21_gdn_kda_kernel_implementation_analysis]] | GDN/KDA 训练、Prefill、Decode 融合 kernel 与源码调用链 |
+| [[14_kimi_k3_analysis]] | K3 2.8T MoE(896 选 16), 首个开源 3T 级, KDA+AttnRes, 1M 上下文, 2.5× scaling 效率 |
+| [[22_kimi_k3_architecture_deepdive]] | K3 六大结构变化点: KDA 3:1 / Gated MLA / AttnRes / Stable LatentMoE / SiTU(源码级溯源) |
+| [[23_kimi_k3_infra_deepdive]] | K3 训推 infra: Per-Head Muon, MXFP4/MXFP8 QAT, 全平衡 EP, Mooncake, KDA prefix cache, 64+ 卡超节点 |
 
 ### GLM / Zhipu AI
 
 | 页面 | 核心主题 |
 |------|---------|
 | [[zhipu_glm/index]] | GLM 技术路线总览 |
-| [[glm_5_analysis]] | GLM-5 744B/40B MoE, Muon Split, DSA |
-| [[glm_5v_turbo_analysis]] | GLM-5V-Turbo, CogViT, MMTP, 多模态 Agent |
+| [[01_glm_5_analysis]] | GLM-5 744B/40B MoE, Muon Split, DSA |
+| [[10_glm_5v_turbo_analysis]] | GLM-5V-Turbo, CogViT, MMTP, 多模态 Agent |
 
 ### Hunyuan / 腾讯混元
 

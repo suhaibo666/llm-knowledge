@@ -9,7 +9,7 @@
 > [!note] 与 [[20_ddp_compile_boundaries_and_optimizer_analysis]]、[[21_fsdp_dtensor_and_distributed_graphs_analysis]] 的分工
 > 本页讲这些原语**本身**怎样实现,完全不涉及 `torch.compile`。DDP/FSDP/DTensor 与 Dynamo/AOTAutograd/Inductor **相遇时**新增的一层问题(DDPOptimizer 按 bucket 切分 FX 图、`use_orig_params=True`、Dynamo 跳过 FSDP wrapper frame、rank 一致性与 guards)见上述两篇。
 
-入门用法见 [[01_distributed_primitives_quickstart]],模块全景见 [[index]]。上层的 Megatron / torchtitan 等训练框架建立在这些原语之上,见 [[02_train_frameworks/index]]。
+入门用法见 [[01_distributed_primitives_quickstart]],模块全景见 [[02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index|torch.distributed 原生原语]]。上层的 Megatron / torchtitan 等训练框架建立在这些原语之上,见 [[02_train_frameworks/index]]。
 
 ```mermaid
 graph TD
@@ -426,7 +426,7 @@ microbatching 由 `pipelining/microbatch.py` 的 `split_args_kwargs_into_chunks`
 
 ## Related Pages
 
-- [[index]] — 本模块 overview(并行全景图与页面列表)
+- [[02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index|torch.distributed 原生原语]] — 本模块 overview(并行全景图与页面列表)
 - [[01_distributed_primitives_quickstart]] — 本模块 quick start(最小可用路径与可跑示例)
 - [[01_eager_runtime/02_dispatcher_and_device/index]] — Dispatcher 与 `__torch_dispatch__`:理解 DTensor/AsyncCollectiveTensor 子类拦截算子的底层机制
 - [[01_eager_runtime/01_tensor_and_storage/index]] — Tensor/Storage 内部:`FlatParameter._resize_(0)`、wrapper subclass 的存储语义

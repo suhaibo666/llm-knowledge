@@ -5,13 +5,13 @@
 > **最后更新**：2026-06-29
 
 > [!warning] arXiv 编号订正
-> 用户最初给的 **arXiv:2606.19348 是 DeepSeek-V4 模型论文**（见 [[deepseek_v4_analysis]]），**不是 DSpark**。DSpark 论文随开源仓 DeepSpec 以 PDF 发布。详见 [[dspark_analysis]] 顶部说明。
+> 用户最初给的 **arXiv:2606.19348 是 DeepSeek-V4 模型论文**（见 [[13_deepseek_v4_analysis]]），**不是 DSpark**。DSpark 论文随开源仓 DeepSpec 以 PDF 发布。详见 [[dspark_analysis]] 顶部说明。
 
 ---
 
 ## 一、一条主线：投机解码在 `L = (T_draft + T_verify) / τ` 上的三代演进
 
-自回归解码的瓶颈是**串行**：生成 N 个 token 要 N 次目标前向。投机解码用便宜草稿器一次提 $\gamma$ 个 token、目标模型一次前向并行验证、拒绝采样接受最长合法前缀（数学无偏，原理见 [[vllm_speculative_decoding_analysis]]）。每 token 平均延迟（DSpark 论文 Eq.1）：
+自回归解码的瓶颈是**串行**：生成 N 个 token 要 N 次目标前向。投机解码用便宜草稿器一次提 $\gamma$ 个 token、目标模型一次前向并行验证、拒绝采样接受最长合法前缀（数学无偏，原理见 [[20_vllm_speculative_decoding_analysis]]）。每 token 平均延迟（DSpark 论文 Eq.1）：
 
 $$L=\frac{T_{\text{draft}}+T_{\text{verify}}}{\tau}\quad\Rightarrow\quad\text{提速三杆：① 降 } T_{\text{draft}}\text{（画得快）② 升 } \tau\text{（画得准）③ 降有效 } T_{\text{verify}}\text{（验得聪明）}$$
 
@@ -45,7 +45,7 @@ flowchart LR
 | 验证调度 | **静态**（生产只敢用单 token，MTP-3/5 高并发降吞吐） | 静态/启发式 | 静态固定块 | **置信度头 + 硬件感知前缀调度器**（负载自适应） |
 | 训练范式 | 随主模型联合训练 | 蒸馏（冻结目标，TTT） | 蒸馏（冻结目标，CE-only） | 蒸馏（冻结目标，CE+TV+置信 三损失） |
 | 接受长度 τ（Qwen3-4B 宏均，越大越好） | — | 基线 | 比 Eagle3 高 | **比 Eagle3 高 30.9%、比 DFlash 高 16.3%** |
-| 出处 | DeepSeek-V3 §; [[deepseek_v3_analysis]] | arXiv:2503.01840 | arXiv:2602.06036 | DSpark 论文; [[dspark_analysis]] |
+| 出处 | DeepSeek-V3 §; [[12_deepseek_v3_analysis]] | arXiv:2503.01840 | arXiv:2602.06036 | DSpark 论文; [[dspark_analysis]] |
 
 ### 三者「相互区别」的本质（用户问的重点）
 
@@ -61,7 +61,7 @@ flowchart LR
 
 | 阶段 | 页面 | 类型 | 核心 |
 |---|---|---|---|
-| **Overview** | 本页 [[index]] | 总览/演进 | 投机推理四代演进主线 + 横向对比 + 三者区别本质 |
+| **Overview** | 本页 [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理演进]] | 总览/演进 | 投机推理四代演进主线 + 横向对比 + 三者区别本质 |
 | **Theory + Deep Dive** | [[dspark_analysis]] | 论文深挖 | 页内自带 **Overview（§1）→ Theory 理论基础（§2：延迟公式/草稿器谱系/DFlash 骨干）→ Deep Dive（§3 起，两大部件四拍）** |
 | **Deep Dive（源码）** | [[deepspec_codebase_analysis]] | 源码分析 | 开源仓 DeepSpec：Overview → Quick Start → Deep Dive；一套框架产 Eagle3/DFlash/DSpark，论文公式 ↔ 代码逐行核对，开源 vs 生产边界 |
 
@@ -70,14 +70,14 @@ flowchart LR
 ## 四、知识缺口（Knowledge Gaps）
 
 - **DFlash 独立深挖**：本库目前从 DSpark 视角（其并行骨干）覆盖 DFlash，尚无独立的 DFlash（块扩散 / block diffusion）论文页。arXiv:2602.06036 在 `raw/` 中暂缺。
-- **Eagle3 独立深挖**：仅在对比表与 [[vllm_speculative_decoding_analysis]] §3.3（EAGLE 时序）中出现，无专页。
-- **MTP 模型侧**：原理散见 [[deepseek_v3_analysis]]（§Multi-Token Prediction）与 [[deepseek_v4_analysis]]，尚未抽成「投机解码视角的 MTP」专页。
+- **Eagle3 独立深挖**：仅在对比表与 [[20_vllm_speculative_decoding_analysis]] §3.3（EAGLE 时序）中出现，无专页。
+- **MTP 模型侧**：原理散见 [[12_deepseek_v3_analysis]]（§Multi-Token Prediction）与 [[13_deepseek_v4_analysis]]，尚未抽成「投机解码视角的 MTP」专页。
 
 ---
 
 ## 关联域
 
-- [[vllm_speculative_decoding_analysis]] —— 投机解码在 vLLM V1 引擎的验收侧实现（proposer 家族含 mtp/dflash、拒绝采样内核）
+- [[20_vllm_speculative_decoding_analysis]] —— 投机解码在 vLLM V1 引擎的验收侧实现（proposer 家族含 mtp/dflash、拒绝采样内核）
 - [[../index]] —— 推理框架目录
 - [[../../../01_theory/01_models/deepseek/index]] —— DeepSeek 模型族（V3 MTP / V4 底座）
 

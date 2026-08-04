@@ -9,7 +9,7 @@
 > 权威来源：① 官方指南 `pytorch/docs/source/accelerator/*.md`；② 官方参考后端 `pytorch/test/cpp_extensions/open_registration_extension/torch_openreg/`（下称 **OpenReg**，是 in-tree 的 PrivateUse1 测试后端 + 接入范例）；③ 生产实现 torch_npu。
 
 > [!note] 与 [[20_custom_backends_and_device_integration_analysis]] 的分工
-> 本页讲第三方加速器如何在**完全不涉及 `torch.compile`** 的前提下接入 PyTorch dispatcher(Guard/Hooks/Operators/AMP/Autoload/Profiler/Distributed backend 九个接入点)。[[20_custom_backends_and_device_integration_analysis]] 讲的是设备接入 `torch.compile` 编译栈时的另一层契约——Dynamo backend、Inductor device backend(含 `DeviceInterface`)、dispatcher/custom op backend 三者如何分层组合。二者是先后关系:先按本页接入 dispatcher,再按该页接入编译栈。
+> 本页讲第三方加速器如何在**完全不涉及 `torch.compile`** 的前提下接入 PyTorch dispatcher(Guard/Hooks/Operators/AMP/Autoload/Profiler/Distributed backend 九个接入点)。[[20_custom_backends_and_device_integration_analysis|设备接入 torch.compile 编译栈]] 讲的是设备接入 `torch.compile` 编译栈时的另一层契约——Dynamo backend、Inductor device backend(含 `DeviceInterface`)、dispatcher/custom op backend 三者如何分层组合。二者是先后关系:先按本页接入 dispatcher,再按该页接入编译栈。
 
 ---
 

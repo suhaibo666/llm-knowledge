@@ -2,7 +2,7 @@
 
 > **Source baseline**: sglang @ `d6ef68881e`（main，拉取 2026-07-20）
 > **Dimension**: Deep Dive（mechanism-level，逐函数读源）
-> 本页回答：SGLang `srt/compilation/` 这套 torch.compile / FX pass 体系到底做了什么、由谁驱动、门控在哪；它与 vLLM 的血缘有多深；以及一个反直觉但确凿的结论——**SGLang 出厂的真实「图重写 pass」数量是 0**。与 [[vllm_ir_and_fusion_passes_analysis]] 正好互为对照：vLLM 把重心放在 pattern-matching fusion，SGLang 只搬了 piecewise cudagraph 的管线骨架。方法论层面的定位见 [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] §14（跨框架对照），
+> 本页回答：SGLang `srt/compilation/` 这套 torch.compile / FX pass 体系到底做了什么、由谁驱动、门控在哪；它与 vLLM 的血缘有多深；以及一个反直觉但确凿的结论——**SGLang 出厂的真实「图重写 pass」数量是 0**。与 [[25_vllm_ir_and_fusion_passes_analysis]] 正好互为对照：vLLM 把重心放在 pattern-matching fusion，SGLang 只搬了 piecewise cudagraph 的管线骨架。方法论层面的定位见 [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] §14（跨框架对照），
 上游基线见 [[22_pattern_expression_and_matcher_engine_analysis]]。
 
 ---
@@ -123,7 +123,7 @@ def configure(self):                      # pass_manager.py:47-51
 
 ### 3.1 它本应干什么（vLLM 语义）
 
-在 vLLM 里，inductor 会把带原地 mutation 的自定义算子（rms_norm、rotary_embedding、silu_and_mul…）包成 HOP `auto_functionalized` 以满足函数式化，代价是额外张量拷贝。`FixFunctionalizationPass` 的职责是**在 post-grad 阶段把这些节点「去函数式化」**：用 `defunctionalize()` 换回原地算子、把 `getitem` 用户重定向到被 mutate 的实参、删冗余节点，消掉拷贝。vLLM 版 `__call__` 是一条很长的 if-elif 链，对每类算子分别 `defunctionalize(...)`（见 [[vllm_ir_and_fusion_passes_analysis]] 引用的 `utility/fix_functionalization.py`）。
+在 vLLM 里，inductor 会把带原地 mutation 的自定义算子（rms_norm、rotary_embedding、silu_and_mul…）包成 HOP `auto_functionalized` 以满足函数式化，代价是额外张量拷贝。`FixFunctionalizationPass` 的职责是**在 post-grad 阶段把这些节点「去函数式化」**：用 `defunctionalize()` 换回原地算子、把 `getitem` 用户重定向到被 mutate 的实参、删冗余节点，消掉拷贝。vLLM 版 `__call__` 是一条很长的 if-elif 链，对每类算子分别 `defunctionalize(...)`（见 [[25_vllm_ir_and_fusion_passes_analysis]] 引用的 `utility/fix_functionalization.py`）。
 
 ### 3.2 它在 SGLang 里实际干什么：**什么都不改写**
 
@@ -154,7 +154,7 @@ def __call__(self, graph):                       # fix_functionalization.py:28-5
 跨整个 `srt/` grep `register_graph_pattern|PatternMatcherPass|register_replacement|CustomGraphPass|post_grad_custom_post_pass`，命中仅 `compilation/` 内部六个文件 + `utils/patch_torch.py`（后者仅设 `_cacheable`）。**没有任何 rmsnorm/quant/attention/rope/collective fusion、noop elimination 的 pattern-matching pass**。结论：
 
 - SGLang 出厂**真实图重写 pass 数 = 0**（唯一的 fix_functionalization 是 no-op）；算「框架上挂着的」则 = 1，但它不改图。
-- 对比 vLLM：`compilation/passes/fusion/` 下**十余个**融合 pass + IR/utility 支撑 pass 若干，`pass_manager.configure()` 按条件挂载十余个真实 pass（完整目录见 [[vllm_ir_and_fusion_passes_analysis]]）。
+- 对比 vLLM：`compilation/passes/fusion/` 下**十余个**融合 pass + IR/utility 支撑 pass 若干，`pass_manager.configure()` 按条件挂载十余个真实 pass（完整目录见 [[25_vllm_ir_and_fusion_passes_analysis]]）。
 
 **SGLang 用什么替代 fusion pass？** 两条：(1) 预融合好的 kernel（flashinfer / sgl-kernel / 上游 fused op 如 `unified_attention_with_output`、fused rmsnorm）；(2) inductor **原生**能力——`combo_kernels`+`benchmark_combo_kernel`（`compilation_config.py:59-61`，仅 `compiler="inductor"` 时开）把 q_norm+k_norm 之类 sibling op 水平融合，以及专门尺寸下的 `max_autotune`。即 SGLang 把「融合」下推到 kernel 层与 inductor 层，不在 FX pass 层做。
 
@@ -192,6 +192,6 @@ def __call__(self, graph):                       # fix_functionalization.py:28-5
 
 ## Related Pages
 
-- [[vllm_ir_and_fusion_passes_analysis]] — 对照面：vLLM 的 IR/fusion pass 全家桶（本页反复引用其 `passes/fusion`、`passes/utility` 作为血缘对照）
+- [[25_vllm_ir_and_fusion_passes_analysis]] — 对照面：vLLM 的 IR/fusion pass 全家桶（本页反复引用其 `passes/fusion`、`passes/utility` 作为血缘对照）
 - [[24_graph_pass_pipeline_ordering_and_fixpoint_analysis]] — 上游 Inductor pass 机制与三阶段 driver（SGLang/vLLM pass 框架的共同基座 `post_grad_custom_post_pass`）+ 工业界 pass 开发方法论归纳（§14：SGLang 是「把融合下推到 kernel/inductor」这一路线的代表）
 - [[01_aclgraph]] — NPU 侧「捕获-回放静态图」范式，与 `NPUPiecewiseBackend` 相邻

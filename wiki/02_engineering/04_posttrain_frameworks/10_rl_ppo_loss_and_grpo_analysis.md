@@ -239,4 +239,4 @@ $$L^{CLIP}(\theta) = \mathbb{E}t \left[ \min(r_t(\theta) A_t, \text{clip}(r_t(\t
 - [[15_verl_rl_algorithms_analysis]] — 同类源码级 PPO/GRPO loss 分析,框架为 verl(注册表选型机制)而非 TorchTitan + vLLM
 - [[13_reasoning_rl_algorithm_evolution_analysis]] — GRPO/PPO 公式演进与跨算法系统约束的权威页
 - [[20_grpo_analysis]] — GRPO 论文原理背景
-- [[batch_invariance_guide]] — 本页 §"关键总结"第 4 点提到的 batch_invariant 断言的算子级实现
+- [[20_batch_invariance_guide]] — 本页 §"关键总结"第 4 点提到的 batch_invariant 断言的算子级实现
