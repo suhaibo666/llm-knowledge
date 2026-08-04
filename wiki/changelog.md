@@ -8,6 +8,16 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-04：知识库结构整改 P7 完成——整改全程收官（P0-P7）
+
+**Type**: Structure Reorg 终章（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md`）
+
+- **全库分段编号完成**：P7 推广 13 目录 ~130 页（加上 P4/P5 共约 28 个目录、280+ 页），全库内容页按「0 导览/1 主线/2 深潜/3 方法论」编号，文件名即学习路径；snake_case/后缀/点号残余全部清零。
+- **spec §3.4 补执行**：Megatron PP 三页（1740 行）合并为单权威页（审查回补五处后完整）。
+- **链接治理终态**：裸 `[[index]]` 70 处全部路径限定+语义显示名；58 处句主位裸编号链接补显示名；检查器四项全零（broken/ambiguous/bare_index/orphans = 0）。
+- **治理文档定稿**：CLAUDE.md 全面修订（Courses 规则/页面类型与编号约定/链接新规/溯源政策/索引维护）；changelog 按季度归档（Q2 及更早 2112 行入 `changelog/`）；README 与总索引重算定稿。
+- **整改总账（2026-07-29 至 2026-08-04）**：wiki 402→372 页；13 组高重叠全部清零；坏链 160→0 并保持；仓库瘦身 ~55MB;图表可再生；`01_ai_frameworks` 18 平铺目录→5 架构层;19 号课程目录与 03_posttraining 纵向域解散为 2 个 courses 导读页;全程每次合并经对抗审查，累计回补 40+ 组险丢失的独有事实。
+
 ## 2026-08-04：spec §3.4 PP 三页合并 —— 逐行审查修正（吸收不完整的五处回补）
 
 **Type**: Correction（对 2026-08-01 条目的订正；协调者逐行核对 `git show 68415c2:` 两源页原文后判定该次合并 ❌ 五处吸收不完整）
