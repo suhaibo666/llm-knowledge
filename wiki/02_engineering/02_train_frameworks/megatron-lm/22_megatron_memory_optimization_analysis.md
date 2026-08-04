@@ -117,6 +117,65 @@ moe_paged_stash_buffer_size_factor_cpu: float = 0.0    # CPU buffer 比例
                           mlp_norm, expert_fc1, moe_act
 ```
 
+**Autograd 挂钩与执行流程**（`:384-420` 类初始化 + `:916-1011`）：`PipelineOffloadManager` 是单例管理器，通过 `saved_tensors_hooks` 拦截 autograd 的 save/retrieve 操作，在两条独立 CUDA stream 上做异步搬运：
+
+```python
+# fine_grained_activation_offload.py:384-420
+class PipelineOffloadManager:
+    def __init__(self):
+        self._d2h_stream = torch.cuda.Stream()  # GPU→CPU
+        self._h2d_stream = torch.cuda.Stream()  # CPU→GPU
+        self._cpu_tensor_pool = OffloadTensorPool()  # 复用 pinned CPU buffer
+        self._is_warmup = True
+        self._offload_margin = 0  # 保留在 GPU 上的 group 数
+```
+
+1. **Forward 阶段**：`on_save_for_backward(tensor)` 将 tensor 推入当前 forward chunk；当 layer group 完成时，`bulk_offload_group` 在 `_d2h_stream` 上执行异步 D2H 拷贝。
+2. **Backward 阶段**：`on_get_saved_tensor(saved_state)` 从当前 backward chunk 弹出 tensor；如果已被 offload，`bulk_reload_group` 在 `_h2d_stream` 上执行异步 H2D 拷贝。
+
+```python
+# fine_grained_activation_offload.py:916-1011
+def tensor_push(self, tensor):
+    tag = self._next_tag
+    self._current_group.append((tag, tensor))
+    return tag
+
+def tensor_pop(self, tensor_tag):
+    _, saved = self._groups[tensor_tag].pop(0)
+    if isinstance(saved, tuple):  # offloaded
+        return self.reload(saved)
+    return saved
+
+def bulk_offload_group(self, group_to_offload):
+    for tag, tensor in group_to_offload:
+        cpu_tensor = self._cpu_tensor_pool.allocate(tensor.shape, tensor.dtype)
+        cpu_tensor.copy_(tensor, non_blocking=True)
+        ...
+
+def bulk_reload_group(self):
+    for tag, (cpu_tensor, event) in self._pending_reload.items():
+        gpu_tensor = torch.empty_like(cpu_tensor, device="cuda")
+        gpu_tensor.copy_(cpu_tensor, non_blocking=True)
+        ...
+```
+
+**`OffloadTensorGroup` —— 一组激活 + 双 CUDA event 同步**：把一个模块的激活打包成 group，持有 `offload_event` / `reload_event` 两个 CUDA event。前向 D2H 拷完 `record_offload_event`；反向用之前 `wait_reload_event` 确保 H2D 拷回完成才用 —— 这是 D2H/H2D 传输与计算重叠、又不产生数据竞争的同步机制。
+
+**Warmup 后的自适应调优**（`post_warmup_callback`，`:543-624`）：第一个 iteration（warmup）完成后，根据实际观测到的 tensor 大小和 group 分布计算最优 offload 策略：
+
+```python
+# fine_grained_activation_offload.py:543-624
+def post_warmup_callback(self):
+    self._is_warmup = False
+    # 计算 _offload_margin：保留在 GPU 上的 group 数，避免 reload 阻塞 compute stream
+    self._offload_margin = max_deduplicated_groups
+    # 平衡各 PP rank 的 offload bytes
+    keep_on_gpu_bytes = total_bytes * activation_offload_fraction
+    # 禁用最后几个同名 group 的 offloading（防止 reload 阻塞）
+```
+
+下方「关键设计」第 2 条的 `offload_margin` 正是由此在 warmup 后自适应算出，而非静态配置常量。
+
 **关键设计**：
 
 1. **OffloadTensorPool**（`:99`）：基于 deque 的 pinned CPU memory pool

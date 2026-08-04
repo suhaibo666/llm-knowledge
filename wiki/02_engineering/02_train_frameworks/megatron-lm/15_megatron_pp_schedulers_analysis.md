@@ -98,7 +98,7 @@ shape = [ seq_len / (cp_size · tp_size_if_sequence_parallel),  micro_batch_size
 
 **Hyper Connections 对通信形状的影响**:`config.enable_hyper_connections=True` 时,中间 stage 的 P2P tensor shape 从 `[S,B,H]` 扩为 `[S,B,H×num_residual_streams]`(hyper connection 模块扩展了残差流数量),但只在中间 stage 生效,首/末 stage 仍是标准 `H`(`schedules.py:2123-2182`;结构见 `10_megatron_model_structure_analysis.md` §`HyperConnectionTransformerLayer`)。
 
-**与激活换出的关系**:PP/VPP 显存不够时,除了减小 `pp`/`vp`,还可以用**细粒度激活换出**(`fine_grained_activation_offload.py` 的 `PipelineOffloadManager`,D2H/H2D 异步双流,与重计算正交可叠加)把部分层的激活挪到 CPU pinned memory;`schedules.py` 每步收尾调 `off_interface.reset()`,与 PP/VPP 调度天然兼容。完整机制(`OffloadTensorPool`、`--offload-modules` 模块级粒度、`activation_offload_fraction`/`offload_margin` 调参)见 `22_megatron_memory_optimization_analysis.md` §2.3(现行权威页,含 2026-06-16 `max_inflight_offloads` 节流更新)。
+**与激活换出的关系**:PP/VPP 显存不够时,除了减小 `pp`/`vp`,还可以用**细粒度激活换出**(`fine_grained_activation_offload.py` 的 `PipelineOffloadManager`,D2H/H2D 异步双流,与重计算正交可叠加)把部分层的激活挪到 CPU pinned memory;`schedules.py` 每步收尾调 `off_interface.reset()`,与 PP/VPP 调度天然兼容。参数与机制见 `22_megatron_memory_optimization_analysis.md` §2.3(现行权威页;含 `saved_tensors_hooks` 挂钩、`OffloadTensorGroup` 双 event、`post_warmup_callback` 自适应调优等机制细节,及 2026-06-16 `max_inflight_offloads` 节流更新)。
 
 ### 0.4 PP 进程组与拓扑结构
 
@@ -108,7 +108,7 @@ shape = [ seq_len / (cp_size · tp_size_if_sequence_parallel),  micro_batch_size
 |------|------|------|
 | `None`(默认) | 不设置 | PyTorch 默认 NCCL 后端 |
 | `nccl` | 显式指定 | 启用 NCCL 选项优化(`get_nccl_options("pp", ...)`) |
-| `ucc` | `pipeline_model_parallel_comm_backend="ucc"` | UCC 统一通信层,需 `CUDA_DEVICE_MAX_CONNECTIONS>1`,设置 `UCX_RNDV_THRESH=0` 等环境变量 |
+| `ucc` | `pipeline_model_parallel_comm_backend="ucc"` | UCC 统一通信层,需 `CUDA_DEVICE_MAX_CONNECTIONS>1`,设置 `UCX_RNDV_THRESH=0`、`UCC_CL_BASIC_TLS=^sharp,nccl` 等 UCX/UCC 环境变量,利用 UCC 的通用通信层实现跨平台优化 |
 
 **Embedding / Position Embedding 组**(`parallel_state.py:1123`):创建 PP 组的同时,额外建 `EMBEDDING_GROUP`(`get_embedding_ranks`)和 `POSITION_EMBEDDING_GROUP`(`get_position_embedding_ranks`)两个辅助组,用于在 PP **首尾 stage**(权重共享 embedding 与末层 output 常合并成同一份参数)之间同步梯度。
 
@@ -336,6 +336,8 @@ $$M_{\text{model}}^{\text{per-device}} = \frac{16\cdot N_{\text{params}}}{pp}\ \
 
 $$\boxed{\text{Bubble}_{\text{1F1B}} = \frac{t_{\text{bubble}}}{t_{\text{id}}} = \frac{(pp-1)(t_f+t_b)}{m(t_f+t_b)} = \frac{pp-1}{m}}$$
 
+**示例**:`pp=4, m=8` → Bubble `= 3/8 = 37.5%`;`pp=4, m=32` → Bubble `= 3/32 = 9.4%` —— 印证"`m` 越大气泡越小"。
+
 **通信量**:每个 microbatch 前向穿 `pp-1` 个边界、反向穿 `pp-1` 个边界,每次传一个 `[s/(cp·tp), b, h]` 张量:
 $$\text{P2P 传输次数} = 2m(pp-1),\quad \text{单次量} = \frac{s\cdot b\cdot h}{cp\cdot tp}\ \text{元素}$$
 
@@ -368,7 +370,16 @@ $$\text{P2P 传输次数} = 2m(pp-1),\quad \text{单次量} = \frac{s\cdot b\cdo
 
 ### ③.2 源码与流程
 
-`schedules.py:1007`。`model` 参数变成一个 module 列表(`len(model) = vp`)。
+`schedules.py:1007`。`model` 参数变成一个 module 列表(`len(model) = vp`)。VPP 把每张卡负责的连续层段拆成 `vp` 个**不连续的 model chunk**,分散在模型不同深度,而不是整段连续层。例如 `pp=4, vp=2, 16` 层:
+
+| 物理 GPU | VPP Stage 0 | VPP Stage 1 |
+|----------|-------------|-------------|
+| GPU 0 | layers 1-2 | layers 9-10 |
+| GPU 1 | layers 3-4 | layers 11-12 |
+| GPU 2 | layers 5-6 | layers 13-14 |
+| GPU 3 | layers 7-8 | layers 15-16 |
+
+一般规则:GPU `r`(0-indexed)持有的 `vp` 个 chunk 里,第 `c` 个(0-indexed)覆盖层区间 `[c·pp·(L/pp/vp) + r·(L/pp/vp), c·pp·(L/pp/vp) + (r+1)·(L/pp/vp))`(`L` 为总层数,每个 chunk 厚度 `L/(pp·vp)` 层);这种交错放置让每个物理 stage 内部有多个独立的 forward/backward 流可以交替执行,从而把 pipeline bubble 打得更碎(即 §③.1 的"气泡率除以 `vp`")。
 
 **① 热身数量**(`get_pp_rank_microbatches`,`schedules.py:822`):
 ```python
@@ -453,6 +464,8 @@ Dev3  .. .. .. f0 f1 f2 f3 F0 B0 F1 B1 F2 B2 F3 B3 f4 b0 f5 b1 f6 b2 f7 b3 F4 B4
 **气泡推导**:一个 microbatch 在单个"设备-块"上前向只需 `t_f/vp`。重复 1F1B 的推导,填充/排空时间整体除以 `vp`:
 $$t_{\text{bubble}}^{\text{VPP}} = \frac{(pp-1)(t_f+t_b)}{vp}$$
 $$\boxed{\text{Bubble}_{\text{VPP}} = \frac{1}{vp}\cdot\frac{pp-1}{m} = \frac{pp-1}{m\cdot vp}}$$
+
+**示例**:`pp=4, vp=2, m=8` → Bubble `= 3/(8×2) = 18.75%`(同 `pp,m` 下比标准 1F1B 的 `37.5%` 减半)。
 
 **峰值激活显存**:rank 0 热身数 `warmup = 2(pp-1)+(vp-1)N`(取 `N=pp`),每个囤积单元是一个 chunk(`A/vp`):
 $$M_{\text{act}}^{\text{VPP}} \approx \big[2(pp-1)+(vp-1)pp+1\big]\cdot\frac{A}{vp} \approx \Big(1+\frac{1}{vp}\Big)\,pp\,A$$
@@ -774,6 +787,17 @@ def get_total_workload(self, seq_length, cp_size):
 
 `make_buckets_equal`(`:55`)/ `next_hdp_group`(`:104`)用 `seq²/cp` 做工作量估计,贪心打包成若干"hdp"(hybrid data parallel)组,使各组总工作量大致相等(`delta` 控制 5% 松弛);`hybrid_context_parallel_forward_backward`(`:477`)是配套的前向反向调度入口。
 
+这是 CP 在**变长数据**下的负载均衡机制,与其他轴的均衡手段并列:
+
+| 并行轴 | 负载不均衡的来源 | 均衡手段 |
+|--------|----------------|---------|
+| PP | microbatch 填充/排空 | VPP(本文调度器③) |
+| CP | 因果掩码 | zigzag 切分(`13_megatron_cp_analysis.md` §2.2) |
+| **CP(变长)** | **样本长度差异** | **本节:动态 CP 度 + 工作量均衡分桶** |
+| EP | 路由不均 | aux_loss / 容量因子(`14_megatron_ep_analysis.md` §4) |
+
+适用:变长序列训练 —— SFT、长文档预训练、多分辨率多模态。固定长度的标准预训练用不到。
+
 > **与 `29_megatron_packed_dataset_dynamic_cp_analysis.md` 的关系**:`data_schedule.py` 的 `DefaultDynamicCPScheduler`(打包调度器的 `is_dynamic_cp=True` 子类,用 `dcp_*` 函数)才是动态 CP 真正的**集成入口** —— 序列打包与动态 CP 在那里被缝进同一条 `run()` 九步流水线。本节的 `BalancedCPScheduler` 是同一套均衡逻辑的**类形态兄弟**(独立实现,算法一致),两者不是"谁包含谁",是并行存在的两套实现。完整集成流程见 29 号页;13 号页讲固定 CP 的通用机制。
 
 ### 6.2 多模块/多模态流水线(`bridge_communicator.py` + `multimodule_communicator.py`)
@@ -879,6 +903,7 @@ def get_total_workload(self, seq_length, cp_size):
 | `overlap_p2p_comm` | `True`(跨节点必开) | 调度器④,须配合下一行 |
 | `batch_p2p_comm` | `False`(若开 overlap) | 与 `overlap_p2p_comm` 互斥,见 §0.3 |
 | `deallocate_pipeline_outputs` | `True` | §0.3 显存优化原语 |
+| `pipeline_dtype` | 与模型一致 | `pp>1` 时必填 |
 | `defer_embedding_wgrad_compute` | 大 vocab 时 `True` | §0.4 |
 | `overlap_moe_expert_parallel_comm` | `True`(MoE 模型) | 调度器⑤ combined-1F1B |
 | `num_microbatches_with_partial_activation_checkpoints` | 按显存压力设窗口 | §②.2 Partial Checkpointing |

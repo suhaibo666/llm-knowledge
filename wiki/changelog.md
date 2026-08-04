@@ -6,6 +6,24 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-04：spec §3.4 PP 三页合并 —— 逐行审查修正（吸收不完整的五处回补）
+
+**Type**: Correction（对 2026-08-01 条目的订正；协调者逐行核对 `git show 68415c2:` 两源页原文后判定该次合并 ❌ 五处吸收不完整）
+
+**披露 —— 上条目的一处失实断言**：2026-08-01 条目判定"细粒度激活换出" `20_` §9/`26_` §2 已被 `22_megatron_memory_optimization_analysis.md` §2.3 完全覆盖、故不重复搬入 `15_`。经协调者反向 grep 核实：该判断**只在参数/配置面成立**（`min_offloaded_tensor_size`/`activation_offload_fraction`/`offload_margin`/`max_inflight_offloads` 22 页确实都有），但**机制/代码面 22 页当时完全没有** —— `saved_tensors_hooks` autograd 挂钩、`on_save_for_backward`/`tensor_push`/`tensor_pop`/`bulk_offload_group`/`bulk_reload_group` 的具体实现、`OffloadTensorGroup` 双 CUDA event 同步设计、`post_warmup_callback` 自适应调优逻辑，这些在 `20_`/`26_` 原文中存在但 22 页没有。"22 已覆盖"的判断因此是**不完整的**，构成一次遗漏。本条目订正。
+
+**五处回补**（原文取自 `git show 68415c2:` 两源页,逐字/保留行号核对无误后落地）：
+
+1. **VPP 层分布示例表**（原 `20_` §4.1）：`pp=4, vp=2, 16` 层时 GPU0-3 各持哪两个不连续层段（GPU0: layers1-2/9-10 …）→ 补回 `15_megatron_pp_schedulers_analysis.md` §③.2，表后加一句一般化规则（起始层 `= c·pp·(L/pp/vp) + r·(L/pp/vp)`，代入验证与原表吻合）。
+2. **§8.4 配置速查表**补 `pipeline_dtype` 行（"与模型一致 | `pp>1` 时必填"）。
+3. **offload 机制小节回补到 `22_megatron_memory_optimization_analysis.md` §2.3**（而非 15 页 —— 22 页是 offload 权威页，机制该在它那）：新增"Autograd 挂钩与执行流程"（`PipelineOffloadManager` 类初始化、`saved_tensors_hooks` 拦截、`tensor_push`/`tensor_pop`/`bulk_offload_group`/`bulk_reload_group` 逐字代码）、`OffloadTensorGroup` 双 event 同步说明、`post_warmup_callback` 自适应调优代码，并挂钩既有"关键设计"第 2 条 `offload_margin` 参数的来源。`15_` §0.3 的指针措辞同步改为"参数与机制见 `22_` §2.3"。
+4. **CP 负载不均衡四轴对比表**（原 `26_` §3.3：PP/CP/CP变长/EP 的不均衡来源→均衡手段）→ 补回 `15_` §6.1，自引用文案按落点调整（"本文调度器③"/"本节"）。
+5. **气泡率数值例**（`pp=4,m=8→37.5%`、`pp=4,m=32→9.4%`、`pp=4,vp=2,m=8→18.75%`）补进 `15_` §②.4/§③.4 公式旁；**UCC 环境变量全称** `UCC_CL_BASIC_TLS=^sharp,nccl` 补回 `15_` §0.4 的 UCC 后端行（该事实的落点是 §0.4 的进程组/后端表，非 §0.3；`0.4` 沿用了原 `20_` §1.1 段落的内容边界）。
+
+**校验**：`python tools/check_links.py`：pages=371,broken=0,orphans=0（ambiguous=70/bare_index=70 仍为既有基线,未变化）；`pytest -q`：77 passed。
+
+---
+
 ## 2026-08-01：知识库结构整改 —— spec §3.4 Megatron PP 三页合并（补执行，覆盖遗漏修复）
 
 **Type**: Structure Reorg / Dedup（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3.4；分支 `reorg/p7`）
