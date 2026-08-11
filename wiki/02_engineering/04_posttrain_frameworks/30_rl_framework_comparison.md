@@ -182,8 +182,16 @@ flowchart TD
 - ROLL NPU 主树有较多 P1/P2 证据，但目标模型的 P3/P4 仍需按官方 Ascend guide 和真实硬件复测。
 - 所有快速变化结论在 2026-08-26 后引用前应重验。
 
-> [!warning] 有效期临近(2026-08-10 状态检查)
-> 本页快照基线为 2026-07-27,自设复核期 **2026-08-26,距今约 2 周**。到期前需重跑四框架的 commit 比对;逾期未重验则本页的矩阵结论应降级为「历史快照」而非现状描述。
+> [!warning] 有效期临近,且 verl 列已有确证的过期项(2026-08-11 状态检查)
+> 本页快照基线为 2026-07-27,自设复核期 **2026-08-26,距今约 2 周**。逾期未重验则本页矩阵应降级为「历史快照」而非现状描述。
+>
+> **本次已确证 verl 列至少有两项过期**(依据 verl 官方 v0.8.0 release notes 与 v0.7 release blog,2026-08-11 核):
+> 1. **入口脚本已更名**:"`main_ppo.py` is deprecated with a warning in favor of `main_ppo_sync.py`"。本页「控制面」一行的描述以 legacy 入口为准。
+> 2. **数据面新增了 TransferQueue 通路**:v0.8.0 交付了 "New sync trainer with **TransferQueue** to decouple control flow and data flow in the single controller",而本页「核心数据」一行只记了 `DataProto`。
+>
+> **同时确证一项"未过期"**——避免反向误判:v0.7 blog 曾称计划"make this the default transmission method in v0.8",但 **v0.8.0 实际未使 TransferQueue 成为默认**(release notes 注明 "TBD: Fully async trainer with TransferQueue will be in next release")。故本页把 verl 数据面记为 `DataProto` 在**默认路径**上仍然正确,只是不再完整。展开见 [[16_verl_v1_transfer_queue_analysis]]。
+>
+> **重验时的已知障碍**:四框架的 commit 比对需要访问 GitHub,本次会话所处环境无法访问,故只能从官方文档侧做部分核验。slime / AReaL / ROLL 三列本次**未做任何重验**。
 >
 > 另有两项已知边界,重验时一并处理:
 > 1. **verl 列的基线与本库 verl 深潜页不一致**——本页 verl 列锁 `983cb0f`,而 [[verl/index]] 下 10 篇中有 7 篇深潜页基线是 `8a694930`。跨页引用 verl 结论时须先对齐基线。

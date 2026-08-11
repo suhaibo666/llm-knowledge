@@ -92,7 +92,14 @@ verl 把 RLHF 的模型职责拆成五个**逻辑角色**,但物理上高度 col
 
 > [!note] HEAD 架构演进提示
 > 本系列基准 `8a694930` 的代码已显著重构,与多数博客描述的「经典 HybridFlow」有出入,各页已逐一标注:
-> - `RayPPOTrainer`(`ray_trainer.py`)被标 `@deprecated`;在 `8a694930` 上默认 `trainer.use_v1=false` 仍走它,**但到 [[10_verl_end_to_end_iteration_analysis]] 的基线 `983cb0f`,该默认值已反转为 `use_v1=true`**——默认执行路径变成 `TaskRunnerV1`(TransferQueue + `AgentLoopManager` 驱动),legacy `RayPPOTrainer.fit` 降级为需要显式 `trainer.use_v1=false` 才会跑的路径(详见该页的 `[!contradiction]` 记录)。本系列 9 篇深潜文档仍以 legacy 路径为教学主线(结构最完整、逐行有源码),v1/TransferQueue 路径本系列尚无专页覆盖。
+> - `RayPPOTrainer`(`ray_trainer.py`)被标 `@deprecated`;在 `8a694930` 上默认 `trainer.use_v1=false` 仍走它,**但到 [[10_verl_end_to_end_iteration_analysis]] 的基线 `983cb0f`,该默认值已反转为 `use_v1=true`**(详见该页的 `[!contradiction]` 记录)。本系列 9 篇深潜文档以 legacy 路径为教学主线(结构最完整、逐行有源码);v1/TransferQueue 路径的**文档级**覆盖见 [[16_verl_v1_transfer_queue_analysis]],**源码级走查仍是待建项**。
+
+> [!warning] 2026-08-11 更正:此前对该演进的表述过度,请按下述范围理解
+> **旧表述的两处问题**:
+> 1. 把 `use_v1`、`TaskRunnerV1` 与 TransferQueue 当作同一件事。核对官方文档后:TransferQueue 是 verl-core 四组件之一的**数据系统**,而 `use_v1`/`TaskRunnerV1` 是**源码树里的配置项与类名**——**这三个名字在 verl 官方文档与 v0.7/v0.8 release notes 中均查无此名**。官方侧可查证的对应事实是入口更名:v0.8.0 release notes 原文 "`main_ppo.py` is deprecated with a warning in favor of `main_ppo_sync.py`"。
+> 2. 由「默认路径已切换」推出「本系列 9 篇失效」。**该推论不成立**。受影响的只是**编排层与数据搬运层**([[20_verl_ray_trainer_analysis]]、[[01_verl_architecture_overview_analysis]] 的主链,以及 [[11_verl_single_controller_analysis]] 的「数据流经 driver」前提);而**计算面**([[13_verl_workers_engine_analysis]])、**权重面**([[14_verl_rollout_resharding_analysis]])、**算法面**([[15_verl_rl_algorithms_analysis]])、**数据契约**([[12_verl_dataproto_analysis]],官方称经 `RemoteBatch` 与 TransferQueue 兼容共存)均不受影响。逐条对照见 [[16_verl_v1_transfer_queue_analysis]] §5。
+>
+> 另据官方 v0.7 blog 与 v0.8.0 release notes:TransferQueue 在 v0.7 为**实验性**引入,blog 称"计划在 v0.8 成为默认传输方式",而 **v0.8.0 实际只交付了"带 TransferQueue 的 sync trainer",并注明 fully-async 版本推迟到下个 release**——即截至 2026-08 **TransferQueue 仍非默认传输方式**。凡"verl 已默认走 TransferQueue"的说法无官方依据。
 > - **不存在独立的 `CriticWorker`/`RewardModelWorker` 类**——critic 是带 value head 的 `TrainingWorker`,reward 走 reward_manager/reward_loop。
 > - rollout 已退役 SPMD 同步模式,改为**异步 server**;生成由 `LLMServerManager`/`AgentLoopManager` 驱动,而非 worker RPC。
 
@@ -131,5 +138,6 @@ verl 不自己实现并行,而是把 FSDP2 / Megatron-LM 当**训练后端**、v
 - [[01_verl_architecture_overview_analysis]] · [[02_verl_quickstart_guide]] —— 入门两篇(架构总览 + 快速上手,基线 `8a694930`)
 - [[11_verl_single_controller_analysis]] · [[12_verl_dataproto_analysis]] · [[20_verl_ray_trainer_analysis]] · [[13_verl_workers_engine_analysis]] · [[14_verl_rollout_resharding_analysis]] —— 实现五篇(控制/数据/编排/计算/生成,基线 `8a694930`)
 - [[15_verl_rl_algorithms_analysis]] · [[30_verl_optimization_analysis]] —— 算法与优化两篇(基线 `8a694930`)
+- [[16_verl_v1_transfer_queue_analysis]] —— **v1 执行路径与 TransferQueue 数据系统(文档级,非源码级)**:三个概念的厘清、TransferQueue 三层架构与四种存储后端、版本状态(v0.8 仍非默认)、以及**对本系列 9 篇影响范围的逐条界定**
 - [[02_engineering/04_posttrain_frameworks/index]] —— 后训练框架目录索引(本系列所在)
 - [[02_engineering/02_train_frameworks/index]] · [[torchtitan/index]] · [[megatron-lm/index]] —— 训练框架(verl 的训练后端)
