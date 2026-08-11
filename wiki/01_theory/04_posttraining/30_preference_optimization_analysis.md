@@ -151,14 +151,23 @@ Based on **prospect theory** (Kahneman & Tversky, 1992): humans perceive gains a
 
 ### Loss Function
 
-```
-L_KTO = -E[z(x, y) * lambda(x) * sigma(beta * (r(x, y) - r_ref))]
-```
+论文原式（arXiv:2402.01306 §4 Eq. 8，`raw/01_theory/04_posttraining/KTO_Kahneman_Tversky_Optimization-2402.01306.pdf`）：
 
-where:
-- z(x, y) = +1 for desirable outputs, -1 for undesirable
-- lambda(x) = loss aversion coefficient (different for gains vs losses)
-- r_ref = reference reward (KL term)
+$$L_{\text{KTO}}(\pi_\theta,\pi_{\text{ref}})=\mathbb{E}_{x,y\sim D}\big[\lambda_y-v(x,y)\big]$$
+
+其中
+
+$$r_\theta(x,y)=\log\frac{\pi_\theta(y\mid x)}{\pi_{\text{ref}}(y\mid x)},\qquad z_0=\mathrm{KL}\big(\pi_\theta(y'\mid x)\,\|\,\pi_{\text{ref}}(y'\mid x)\big)$$
+
+$$v(x,y)=\begin{cases}\lambda_D\,\sigma\big(\beta\,(r_\theta(x,y)-z_0)\big) & y\sim y_{\text{desirable}}\mid x\\[4pt]\lambda_U\,\sigma\big(\beta\,(z_0-r_\theta(x,y))\big) & y\sim y_{\text{undesirable}}\mid x\end{cases}$$
+
+要点：
+- `r_θ` 是隐式 reward（策略与参考策略的 log 比），`z_0` 是同 prompt 下的 KL 参考项，起 baseline 作用
+- **正负样本的符号翻转发生在 σ 的参数内部**（`r_θ − z_0` 与 `z_0 − r_θ` 互换），不是在 σ 外乘 ±1
+- `λ_D` / `λ_U` 分别是 desirable / undesirable 的损失厌恶权重；损失取 `λ_y − v`，最小化它等价于最大化 `v`
+
+> [!deprecated] 2026-08-10 更正（回原文核对）
+> 此前写作 `L_KTO = -E[z(x, y) * lambda(x) * sigma(beta * (r - r_ref))]`，用 `z = ±1` 在 **σ 之外**翻转符号。这与 Eq. 8 的形式不符，且后果不只是记号差异：σ 是单调递增且值域 `(0,1)`，把它整体乘 −1 与把其参数取反**不等价**——按旧式实现，undesirable 样本会得到方向相反的优化信号。现按原文改为分段 `v(x,y)`。
 
 ### Key Properties
 

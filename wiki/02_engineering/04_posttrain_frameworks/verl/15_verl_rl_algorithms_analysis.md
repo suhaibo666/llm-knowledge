@@ -287,7 +287,11 @@ pg_losses = -gate_function(ratio, taus) * advantages
 
 ### 4.9 bypass_mode —— rollout 校正调度入口
 
-`compute_policy_loss_bypass_mode`(`core_algos.py:2352`)。bypass 语义:trainer 令 `old_log_prob = rollout_log_prob`(省掉一次 old_logp 前向,3 策略变 2 策略)。它先调 `compute_rollout_correction_and_rejection_mask`(`core_algos.py:2435`)算 IS 权重与拒绝采样掩码,再按 `loss_type` 分派:`reinforce` 显式乘 IS 权重(`core_algos.py:2457`),`ppo_clip` 则复用 vanilla 且**不再乘 IS**(比值本身已含校正,避免双重计数,`core_algos.py:2471`)。详细 IS/RS 预设见 [[14_verl_rollout_resharding_analysis]]。
+`compute_policy_loss_bypass_mode`(`core_algos.py:2352`)。bypass 语义:trainer 令 `old_log_prob = rollout_log_prob`(省掉一次 old_logp 前向,3 策略变 2 策略)。它先调 `compute_rollout_correction_and_rejection_mask`(`core_algos.py:2435`)算 IS 权重与拒绝采样掩码,再按 `loss_type` 分派:`reinforce` 显式乘 IS 权重(`core_algos.py:2457`),`ppo_clip` 则复用 vanilla 且**不再乘 IS**(比值本身已含校正,避免双重计数,`core_algos.py:2471`)。
+> [!warning] 2026-08-10 核对:此处的下游指针原本悬空
+> 本节此前写「详细 IS/RS 预设见 [[14_verl_rollout_resharding_analysis]]」,但 14 号页对 `importance` / `rollout_is` / `rollout_rs` / `rejection` / `校正` / `correction` 的命中数**均为 0**——它讲的是权重重分片与 rollout 引擎生命周期,不含训推失配校正。结果是 **rollout correction 的实现走查在 verl 簇内无人承担**:`rollout_corr_helper.py` 全簇仅 1 处提及(见 [[10_verl_end_to_end_iteration_analysis]] §7 的行号区间),`compute_rollout_correction_and_rejection_mask`(`core_algos.py:2435`)从未展开,token 级与序列级拒绝采样的判据与阈值语义亦无说明。
+>
+> 算法侧的完整谱系(TIS / MIS / 序列级拒绝采样 / TRM / ALP / MIPU 的机制、适用条件与代价)见 [[26_tim_causal_chain_analysis]] §6.3;**verl 的对应实现走查是已确认的缺口**,已记入待建清单。
 
 ---
 

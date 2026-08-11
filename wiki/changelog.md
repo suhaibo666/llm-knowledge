@@ -8,6 +8,42 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-10：后训练两域审计与事实性修复（回一手 PDF 裁决）
+
+**Type**: Audit + Correction（对 `01_theory/04_posttraining` 与 `02_engineering/04_posttrain_frameworks` 共 39 页做全量精读审计；所有更正均回 `raw/` 中的原始 PDF 逐条裁决，冲突处按 CLAUDE.md 加 `[!deprecated]` / `[!warning]` 标注并保留原说法，不静默改写。）
+
+### 一、六处事实性矛盾的裁决结果
+
+- **[[20_grpo_analysis]] —— GRPO 比值粒度（原表述错误，已更正）**：此前称比值是「whole-output ratio with no token subscript」。据 DeepSeekMath **arXiv:2402.03300v3 §4.1.1 式 (3)**，分子分母均为 `pi(o_{i,t} | q, o_{i,<t})`，外层为 `1/G Σ_i 1/|o_i| Σ_t`，clip 为**对称** `[1-eps, 1+eps]`；Algorithm 1 第 9 行亦写明 "Compute Â_{i,t} for the **t-th token** of o_i"。该错误此前与 [[22_gspo_analysis]] 的全部论证前提及 [[13_reasoning_rl_algorithm_evolution_analysis]] 的记号直接冲突，现统一为 token 级。
+- **[[22_gspo_analysis]] —— clip 值 0.2/0.27（原数字正确，标签误导，已加注）**：核对 GSPO 论文 §5.1，0.2/0.27 是 GSPO 作者为公平对比而「carefully tuned」的 **GRPO 实验基线设定**，非 GRPO 固有配置。新增注记区分三者：GRPO 本身对称 `eps`；本表 0.2/0.27 属 GSPO 实验设定；DAPO 的 Clip-Higher 是 0.2/0.28（另一篇论文的另一个数字，非笔误）。
+- **[[23_rloo_analysis]] —— RLOO 与 GRPO 的时序（原表述错误，已更正）**：此前称「RLOO is the theoretical foundation for GRPO」。arXiv 编号按投稿顺序递增，GRPO 出自 **2402.03300**、RLOO 为 **2402.14740**，前者早于后者公开，不构成继承关系。改为「同期独立工作，共享 leave-one-out baseline 思路」，Impact 节的「paving the way for GRPO」同步更正为并列表述。
+- **[[21_dapo_analysis]] —— batch 配置（审计误判，原页无误，已加口径说明）**：`Prompt batch size 512` 与 `Mini-batch size 512 (16 updates)` 并不矛盾——前者数 prompt（512 × 每 prompt 16 条 = 8192 条序列），后者数序列，8192/512 = 16 次更新。按 DAPO §5 原文补口径说明。
+- **[[27_vapo_analysis]] —— 步数与崩溃断言（三处更正 + 空壳补齐）**：① 「50% fewer training steps than DAPO」错误，论文 §5 实为「using only **60% of DAPO's steps**」且指的是**追平 DAPO 的 50 分**、非达到 60.4；② 表中 DAPO `~8,000` / R1-Zero `~10,400` 是页面自行换算，论文只给相对比例，且 `~10,400` 属 **DeepSeek-R1-Zero（V3-base）** 与此处的 **R1-Zero-Qwen-32B** 不是同一次运行；③ `Crashes: Yes` 是对他方系统的无源断言，论文只声明 VAPO 自身零崩溃。同时把三个 Challenge 的空句 "Solution" 与四条名词式 "VAPO Framework" 替换为 §4.1–4.3 的具体机制与 **§5.1 的七项修改清单**（含 Value-Pretraining 50 步预热、Decoupled-GAE、Length-Adaptive GAE `λ = 1 − 1/(αl)` 与 `α = 0.05`、Clip-Higher 0.2/0.28、token-level loss、Positive-example LM loss 权重 0.1、Group-Sampling 512×16）。
+- **[[30_preference_optimization_analysis]] —— KTO loss 形式（原式错误，已更正）**：此前写作 `L_KTO = -E[z(x,y) * lambda(x) * sigma(beta*(r - r_ref))]`，用 `z = ±1` 在 σ **之外**翻转符号。据 KTO **arXiv:2402.01306 §4 Eq. 8**，符号翻转发生在 σ **参数内部**（`r_θ − z_0` 与 `z_0 − r_θ` 互换），损失形如 `E[λ_y − v(x,y)]`。σ 单调递增且值域 (0,1)，整体乘 −1 与参数取反**不等价**——按旧式实现，undesirable 样本会得到方向相反的优化信号。已改为原文分段形式并补 LaTeX。
+
+### 二、内容缺口的就地补齐
+
+- **[[22_gspo_analysis]]**：把「长度归一化为什么关键」的论证从 D02 **收回本地**——核对后 D02 §4 的跨算法表只有 6 列，**没有 gradient weighting 与 stability 列**，D02 §3.4 也不含该推导，原转指指向不存在的内容。本地补入 GSPO §4.1 原文引证。Empirical Results 节此前零数字，现补 §5.1 实验设定与 §5.2 唯一的硬量化结论（GSPO 与 GRPO 的 clipping fraction 相差**两个数量级**，而 GSPO 训练效率反而更高），并说明该论文本身不提供基准分数表、结果仅以曲线呈现。
+
+### 三、卫生与失效指针
+
+- **[[15_verl_rl_algorithms_analysis]]**：「详细 IS/RS 预设见 14」为悬空指针——14 号页对 `importance`/`rollout_is`/`rollout_rs`/`rejection`/`correction` 的命中数**均为 0**。已改为显式标注 **rollout correction 的实现走查在 verl 簇内无人承担**，并把算法侧谱系指向 [[26_tim_causal_chain_analysis]] §6.3。
+- **[[01_verl_architecture_overview_analysis]]**：延伸阅读表把 profiler 指向 30 号页，但该页 `profil*` 词频为 0。已拆行并标注为未覆盖。
+- **[[13_verl_workers_engine_analysis]]**：本页 `engine_workers.py` 行号与簇内其余四页存在系统性 **+3**（`update_weights` 为 +1）偏移，此前无任何约定说明。已加警示并给出推测（本页记 `def` 行、其余记 `@register` 装饰器行，待在固定 checkout 上核实），要求跨页跳转按 ±3 行窗口查找。
+- **[[30_verl_optimization_analysis]]**：删除页头泄漏的作者本机路径（`E:\...\verl\verl\` → `repo 根下的 verl/verl/`）。
+- **[[30_rl_framework_comparison]]**：自设复核期 2026-08-26 仅剩约两周，已加有效期警示；同时标注两项已知边界——本页 verl 列锁 `983cb0f` 而 verl 簇 10 篇中 7 篇深潜页基线为 `8a694930`；对比集为四框架封闭集，Miles/SkyRL/NeMo-RL 全库零命中、PRIME-RL 未进入本页。
+
+### 四、审计中被证伪的「问题」（记录以免重复排查）
+
+- **wikilink 零断裂**：全库复扫两目录 39 个文件，未解析目标 **0 种**。此前疑似断链（K3 案例页、courses、batch_invariance、megatron 两页、source-ledger、verl dataproto/quickstart）经核实**全部存在**，只是改用了带编号的新文件名，或是扫描脚本未处理表格中转义的 `\|`。
+- **`areal-project/AReaL` 是正确的组织名**，非笔误。
+
+### 五、附带效果
+
+本次以 **LF** 行尾写回，使 `verl/01`、`verl/13`、`verl/15`、`verl/30` 四页脱离仓库既有的 CRLF 幻影 diff（各自从约 500 行整文件改动降为 2–6 行真实改动）。仓库仍有约 120 个文件处于 worktree CRLF 与 git HEAD LF 不一致的状态，建议择期 `git add --renormalize .` 或补 `.gitattributes` 统一处理。
+
+---
+
 ## 2026-08-04：知识库结构整改 P7 完成——整改全程收官（P0-P7）
 
 **Type**: Structure Reorg 终章（设计：`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md`）

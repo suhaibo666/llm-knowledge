@@ -216,7 +216,8 @@ flowchart LR
 | TrainingWorker / 多后端(FSDP/Megatron)模型引擎 | [[13_verl_workers_engine_analysis]] | 计算面 `workers/engine_workers.py` + `workers/engine/*` |
 | 训练↔生成权重 resharding、3D-HybridEngine | [[14_verl_rollout_resharding_analysis]] | 采样面 `workers/rollout/*` |
 | advantage / policy-loss / KL / rollout correction | [[15_verl_rl_algorithms_analysis]] | 算法面 `trainer/ppo/core_algos.py` |
-| 序列均衡、显存/吞吐调优、profiler | [[30_verl_optimization_analysis]] | 跨平面性能手段 |
+| 序列均衡、显存/吞吐调优 | [[30_verl_optimization_analysis]] | 跨平面性能手段 |
+| profiler / tracing | **本系列尚无覆盖** | 2026-08-10 核对:`30_verl_optimization_analysis` 全页 `profil*` 词频为 0,此前本行把它列为去处属**空承诺**。verl 的 profiler 接入待补 |
 
 ---
 

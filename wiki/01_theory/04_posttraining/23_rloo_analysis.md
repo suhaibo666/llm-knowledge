@@ -63,7 +63,10 @@ This is essentially the same as GRPO's advantage computation, but derived from a
 | Clipping | None (original) | Yes |
 | Normalization | None | Standard deviation |
 
-**RLOO is the theoretical foundation for GRPO** — both use group-relative advantages without a value function.
+**RLOO 与 GRPO 是同期独立工作**，共享「用组内其余样本构造 baseline、免去 value model」这一思路，但不存在先后继承关系。
+
+> [!deprecated] 2026-08-10 更正（时序核对）
+> 本行此前写作「**RLOO is the theoretical foundation for GRPO**」，与两页自印的 arXiv 编号冲突：GRPO 出自 DeepSeekMath **arXiv:2402.03300**，RLOO 为 **arXiv:2402.14740**——同为 2024 年 2 月，但 arXiv 编号按投稿顺序递增，`03300 < 14740`，即 GRPO 的提出**早于** RLOO 公开。两文各自把 leave-one-out baseline 追溯到更早的文献，不互为基础。下文 Impact 节的「paving the way for GRPO」同此更正。
 
 ## Experimental Results
 
@@ -74,9 +77,9 @@ This is essentially the same as GRPO's advantage computation, but derived from a
 
 ## Impact
 
-RLOO demonstrated that **simple REINFORCE with a good baseline** is sufficient for RLHF, paving the way for:
-- GRPO (which added clipping and normalization)
-- DAPO (which further improved clipping and sampling)
+RLOO demonstrated that **simple REINFORCE with a good baseline** is sufficient for RLHF。它与下列工作共同构成 2024 年「去 critic 化」这条线（**并列关系，非因果**，见上文时序更正）：
+- GRPO（arXiv:2402.03300，早于本文公开；用组均值/标准差归一化 + clipping）
+- DAPO（arXiv:2503.14476，在 GRPO 上改 clipping 与采样）
 - The broader trend toward simpler RL algorithms for LLMs
 
 ## Related Pages

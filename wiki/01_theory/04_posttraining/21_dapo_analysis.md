@@ -96,6 +96,7 @@ Output: pi_theta
 | Prompt batch size | 512 |
 | Group size (G) | 16 |
 | Mini-batch size | 512 (16 gradient updates per rollout) |
+| *（口径说明）* | *`Prompt batch size = 512` 数的是 **prompt**，每 prompt 采 16 条 → 每个 rollout step 共 **8192 条序列**；`Mini-batch size = 512` 数的是 **序列**，故 8192 / 512 = **16 次梯度更新**。两个 512 量纲不同，不是笔误。原文 §5：「the prompt batch size is 512 and we sample 16 responses for each prompt. For training, the mini-batch size is set to 512, i.e., 16 gradient updates for each rollout step.」* |
 | Learning rate | 1e-6 (AdamW, constant) |
 | eps_low | 0.2 |
 | eps_high | 0.28 |

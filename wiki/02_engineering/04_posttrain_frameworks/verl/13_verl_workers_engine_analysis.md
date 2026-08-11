@@ -5,6 +5,8 @@
 >
 > verl 把"谁来跑模型计算"拆成两层:**Worker**(`single_controller` 的 `Worker` 子类,被 driver 通过 `@register` 方法远程调用,负责编排 mini-batch / 损失 / checkpoint)与 **Engine**(FSDP / Megatron / TorchTitan / VeOmni / ... 后端,负责真正的 forward / backward / optimizer step / 切分 / offload)。本文行号约定:以 verl 内层包 `verl/` 为根。
 >
+> **⚠️ 本页 `engine_workers.py` 的行号与簇内其它页有系统性偏移(2026-08-10 核对)**:同为基线 `8a694930`,本页记 `compute_ref_log_prob:640` / `compute_log_prob:647` / `update_actor:655` / `update_weights:670`,而 [[01_verl_architecture_overview_analysis]]、[[11_verl_single_controller_analysis]]、[[14_verl_rollout_resharding_analysis]]、[[20_verl_ray_trainer_analysis]] 记的是 `637 / 644 / 652 / 669`——前三个整齐相差 **+3**,`update_weights` 相差 **+1**。**推测**(待在固定 checkout 上核实)本页记的是 `def` 行、其余页记的是其上方 `@register(...)` 装饰器起始行,`update_weights` 的装饰器参数少一行故差 1。在核实并统一之前,**跨页跳转请以 ±3 行的窗口查找函数名**,不要把任一侧当作唯一正确值。
+>
 > **本文最重要的结论(与旧版 verl 有重大出入,务必先读)**:在 `8a694930` 上,`workers/engine_workers.py` **只有两个 worker 类**——底层的 `TrainingWorker` 与混合 worker `ActorRolloutRefWorker`。**已不存在独立的 `CriticWorker` / `RewardModelWorker` 类**,critic 只是"`model_type="value_model"` + `value_loss`"的另一个 `TrainingWorker`;reward 走 `experimental/reward_loop` 与 `workers/reward_manager`。rollout 也**只剩 async server 模式**,`generate_sequences` 不再是 worker 的 `@register` 方法。
 
 > [!note] 本页基线 verl `8a694930`;端到端迭代以 [[10_verl_end_to_end_iteration_analysis]](基线 `983cb0f`)为准,两基线间机制差异以新基线页为先。
