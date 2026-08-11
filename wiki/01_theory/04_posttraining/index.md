@@ -2,7 +2,7 @@
 
 > 覆盖 RLHF、DPO、GRPO/PPO 家族、Reasoning RL 算法演进、Agentic RL、on/off-policy 与 staleness、
 > 训推一致性(TIM)与对齐安全。
-> 最后更新: 2026-07-31(kb-reorg P5 收尾:三域整合完成,`03_posttraining/` 纵向学习域已解散)
+> 最后更新: 2026-08-11(kb-reorg P5 收尾:三域整合完成,`03_posttraining/` 纵向学习域已解散)
 
 ---
 
@@ -26,6 +26,8 @@
 | 1 | [[11_ppo_analysis]] | PPO-Clip、surrogate loss、GAE |
 | 1 | [[12_dpo_analysis]] | DPO 直接偏好优化 |
 | 1 | [[13_reasoning_rl_algorithm_evolution_analysis]] | Reasoning RL 算法演进权威页(GRPO/DAPO/GSPO/SAO 谱系) |
+| 1 | [[14_on_policy_distillation_analysis]] | OPD 主线权威页:形式化、与 KL 约束 RL 的统一视角推导、两条实现路线 |
+| 1 | [[15_opd_divergence_and_objective_evolution_analysis]] | OPD 散度与目标函数演进六步(FKL→RKL→JSD/f→skew→自适应→奖励视角) |
 | 2 | [[20_grpo_analysis]] | GRPO 论文档案(元数据/实验数字) |
 | 2 | [[21_dapo_analysis]] | DAPO 论文档案 |
 | 2 | [[22_gspo_analysis]] | GSPO 论文档案 |
@@ -38,6 +40,8 @@
 | 2 | [[29_kimi_k1_5_analysis]] | Kimi K1.5 案例档案 |
 | 3 | [[30_preference_optimization_analysis]] | DPO 家族对照(IPO/SimPO/ORPO/KTO/MODPO) |
 | 3 | [[31_reward_hacking_defense_analysis]] | Reward Hacking 防御方法论 |
+| 3 | [[32_opd_industrial_landscape_analysis]] | OPD 工业实践全景:厂商谱系、四类用途、教师五类来源与生产经济学 |
+| 3 | [[33_opd_effectiveness_and_failure_modes_analysis]] | OPD 何时有效与失败模式全谱、scaling、决策框架、安全治理 |
 
 ## 页面列表
 
@@ -88,6 +92,19 @@
 **待建页面**
 
 - `moe_routing_replay_analysis` — R2 / R3 / PR² / RSPO 谱系，MoE 路由漂移的机理与系统侧利用（ReLibra / ForeMoE）。相关 raw 已列入 `docs/research/INGEST_MANIFEST_block1_tim.md`。
+
+### 在线策略蒸馏（OPD）
+
+> 2026-08 新建簇。OPD = **学生自采样轨迹 + 教师逐 token 分布监督**，填的是「采样分布 × 信号密度」2×2 表中长期空缺的一格。2026 年它从压缩技巧升格为旗舰后训练的主干阶段（DeepSeek-V4 以 OPD **整段替换** mixed RL），是 [[13_reasoning_rl_algorithm_evolution_analysis]] 那条 RL 主干的姊妹线——**RL 创造能力，OPD 搬运能力**。工程侧见 [[13_opd_infra_mechanism_analysis]] 与 [[32_opd_framework_support_comparison]]。
+
+| 页面 | 段位 | 核心主题 |
+|------|------|---------|
+| [[14_on_policy_distillation_analysis]] | 1 | 定义与 2×2 坐标、暴露偏差 $O(\epsilon T^2)$ 推导、**OPD ≡ KL 约束 RL 的完整推导**（不动点即教师；$\lambda$ 外推是超越教师的形式化入口）、两条实现路线与三种 clip 的区分 |
+| [[15_opd_divergence_and_objective_evolution_analysis]] | 1 | 散度演进六步的因果链，含 mass-covering / mode-seeking 的推导、skew KL 梯度有界性证明、KL-to-mixture 家族同构、AKL 对 mode-seeking 叙事的证伪 |
+| [[32_opd_industrial_landscape_analysis]] | 3 | Qwen/DeepSeek/GLM/小米/Kimi/NVIDIA/Google 等逐厂商深读、四类用途、教师五类来源、路线之争的一手证据对立、未采用与不披露阵营 |
+| [[33_opd_effectiveness_and_failure_modes_analysis]] | 3 | 三层有效性证据、可利用差距原理与四项训前诊断、**16 条失败模式按五族逐条展开机理**、scaling、on/off-policy/直接 RL 决策框架、subliminal learning 与蒸馏攻击 |
+
+**原始来源**：仓库外的 OPD 调研稿目录 `opd-survey/`（2026-08-10 基线，主稿 + 姊妹篇 + 八份底稿共 10 份；**按用户决定未纳入 `raw/`**，引用时请自行取用该目录）（2026-08-10 基线的 OPD 综述调研稿 + 八份底稿，含逐字引文与复核记录）。本簇在其之上做了独立复核（发现并更正六处事实错误、降级一处无法核实的逐字引语）与数学补全（源稿只陈述结论的推导已补齐），详见 [[14_on_policy_distillation_analysis]] §7。
 
 ### 高级方法
 

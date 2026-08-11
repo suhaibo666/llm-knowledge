@@ -2,7 +2,7 @@
 
 > 覆盖 RLHF/对齐训练基础设施、Coding RL Sandbox 与 Infra、PPO/GRPO 源码级实现、工业 RL 训练框架
 > (verl/slime/AReaL/ROLL)源码分析与 CUDA–Ascend 映射。
-> 最后更新: 2026-07-31(kb-reorg P5 收尾:三域整合完成,`03_posttraining/` 纵向学习域已解散)
+> 最后更新: 2026-08-11(kb-reorg P5 收尾:三域整合完成,`03_posttraining/` 纵向学习域已解散)
 
 ---
 
@@ -31,11 +31,13 @@
 | 1 | [[10_rl_ppo_loss_and_grpo_analysis]] | TorchTitan + vLLM PPO Loss/GRPO 源码实现 |
 | 1 | [[11_rl_sandbox_design_analysis]] | Coding RL Sandbox 架构设计 |
 | 1 | [[12_rl_infra_efficiency_analysis]] | RL Infra 效率优化机制 |
+| 1 | [[13_opd_infra_mechanism_analysis]] | OPD 基础设施机制:带宽账与八项工程工作 W1-W8 |
 | 2 | [[20_slime_architecture_analysis]] | slime 框架架构专题 |
 | 2 | [[21_areal_async_architecture_analysis]] | AReaL 框架架构专题 |
 | 2 | [[22_roll_strategy_and_ascend_analysis]] | ROLL 框架架构专题 |
 | 3 | [[30_rl_framework_comparison]] | 工业框架统一机制矩阵对比 |
 | 3 | [[31_cuda_ascend_posttraining_stack_comparison]] | CUDA–Ascend 后训练栈对照 |
+| 3 | [[32_opd_framework_support_comparison]] | 六框架 OPD 支持对照与选型(veRL/slime/TRL/NeMo-RL/Tinker/KDFlow) |
 
 ## 页面列表
 
@@ -66,6 +68,17 @@
 | [[21_areal_async_architecture_analysis]] | AReaL Fully Async 与 Agentic 架构:微服务、Hermes、policy lag、agent trajectory |
 | [[22_roll_strategy_and_ascend_analysis]] | ROLL Strategy、异构与 Ascend:多后端 Strategy、AutoDeviceMapping、RLVR 与 Agentic async 差异 |
 | [[31_cuda_ascend_posttraining_stack_comparison]] | CUDA–Ascend 后训练栈对照:通信、推理、并行、权重同步、kernel 与诊断的能力与差距矩阵 |
+
+### 在线策略蒸馏（OPD）的系统侧（2026-08 新建）
+
+> OPD 对基建的要求可概括为「**RL 的回路，加一个新角色**」——学生 rollout、权重同步与 PPO/GRPO 完全同构，唯一新增的是**教师**：一个只做 prefill 打分、不做 decode 的推理服务。压力集中在带宽/存储、调度、一致性三处。算法侧见 [[14_on_policy_distillation_analysis]]。
+
+| 页面 | 核心主题 |
+|------|---------|
+| [[13_opd_infra_mechanism_analysis]] | 与 SFT/RL 的系统需求对照（critic 消失是省出的预算）、**信号格式四档带宽账**（全词表 vs 采样 token 相差约 5 个数量级）、成本模型与教师刷新率 $\rho$、**八项工作清单 W1–W8**、为何 OPD 的 staleness 容忍窗口比 RLHF 更窄 |
+| [[32_opd_framework_support_comparison]] | veRL/slime/TRL/NeMo-RL/Tinker/KDFlow 逐项支持矩阵与选型、OpenRLHF「可用而非原生支持」辨析、生产系统自研层、六条生态 Gap、预算分配三段模式 |
+
+**原始来源**：仓库外的 OPD 调研稿目录 `opd-survey/OPD-Infra-Survey-2026-08.md` 及其 `research-notes/` 底稿（**按用户决定未纳入 `raw/`**）。
 
 ---
 
