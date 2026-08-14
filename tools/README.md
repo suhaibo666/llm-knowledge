@@ -3,6 +3,7 @@
 | 内容 | 用途 |
 |---|---|
 | `check_links.py` | Obsidian 链接健康检查（broken/ambiguous/裸 index/孤儿页）。`python tools/check_links.py`，`--json` 全量，`--strict` 做门禁 |
+| `check_math.py` | Obsidian/MathJax 公式检查。`python tools/check_math.py --strict <文件或目录>` 检查指定内容，`python tools/check_math.py --changed --strict` 检查 Git 变更 |
 | `figs/*.html` + `figstyle.css` | wiki 内 png/svg 图表的**可编辑源**（dp_*、glm5_*、longcat2、training_reliability 等；deepep/ 子目录同） |
 | `html2md/*.mjs` | html→md 转换与图表渲染脚本（convert / convert_kernel_sources / fix_links / gen_pp_fig） |
 | `batch_invariance_demo.py` | 配套 `wiki/.../batch_invariance_guide.md` 的可执行 demo |
