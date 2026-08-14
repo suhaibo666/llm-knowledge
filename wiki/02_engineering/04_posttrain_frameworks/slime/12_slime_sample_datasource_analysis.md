@@ -83,13 +83,13 @@ teacher_log_probs / multimodal_train_inputs / source_names
 
 ### 5.1 为什么要在这里算 `rollout_mask_sums`
 
-对逻辑 rollout \(g\)，训练目标使用完整 denominator：
+对逻辑 rollout $g$，训练目标使用完整 denominator：
 
-\[
+$$
 d_g=\sum_{i\in g}\sum_t m_{it}.
-\]
+$$
 
-每个 sibling 都携带相同 \(d_g\)，即使 later packing 把它们拆到不同 DP rank/mbs，各处 numerator 累加后仍只得到一次 rollout mean。预计算见 [`rollout.py:799-814`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L799-L814)。
+每个 sibling 都携带相同 $d_g$，即使 later packing 把它们拆到不同 DP rank/mbs，各处 numerator 累加后仍只得到一次 rollout mean。预计算见 [`rollout.py:799-814`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L799-L814)。
 
 ### 5.2 behavior metadata 是条件 ABI
 

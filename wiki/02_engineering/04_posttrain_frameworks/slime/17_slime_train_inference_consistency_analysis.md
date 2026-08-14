@@ -67,7 +67,7 @@ compact/subagent 一条 rollout 可 fanout 多个训练 sample。RolloutManager 
 
 rollout 请求把 temperature/top-p/top-k 放入 SGLang sampling params，并要求返回 token logprob。[`sglang_rollout.py:94-107`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L94-L107) 训练侧计算 response logprob 前同样用 `rollout_temperature` 缩放 logits。[`loss.py:513-544`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L513-L544)
 
-若忽略 temperature，比较的就不是同一个分布：训练侧 \(\log\pi_\theta(y\mid x)\) 与 rollout 的 \(\log\pi^{(T)}(y\mid x)\) 会出现系统偏差，TIS ratio 会把采样变换误认为 policy lag。
+若忽略 temperature，比较的就不是同一个分布：训练侧 $\log\pi_\theta(y\mid x)$ 与 rollout 的 $\log\pi^{(T)}(y\mid x)$ 会出现系统偏差，TIS ratio 会把采样变换误认为 policy lag。
 
 ### 4.2 Top-p nucleus replay
 
@@ -85,7 +85,7 @@ rollout 请求把 temperature/top-p/top-k 放入 SGLang sampling params，并要
 |---|---|---|---|
 | 默认重算 | actor 在训练侧重算的 old logprob | 可与 rollout logprob 比较 | 同权重但检查 TIM |
 | `use_rollout_logprobs` | rollout logprob 直接作为 old policy | 不再额外 TIS | 把 behavior distribution直接纳入 ratio |
-| `use_tis` | PPO old 仍是 train recompute | \(\exp(\log p_{train-old}-\log p_{rollout})\) | 用 IS 修正 TIM/off-policy |
+| `use_tis` | PPO old 仍是 train recompute | $\exp(\log p_{\mathrm{train,old}}-\log p_{\mathrm{rollout}})$ | 用 IS 修正 TIM/off-policy |
 
 参数校验禁止 `use_rollout_logprobs` 与 `use_tis` 同时开启，防止同一 behavior correction 被重复使用。[`arguments.py:1049-1083`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1049-L1083) [`arguments.py:1849-1860`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1849-L1860)
 
@@ -141,11 +141,17 @@ layerwise hook捕获 input ids 与指定 decoder/module 输出，缺失层会直
 
 vanilla TIS 用
 
-\[
-w=\operatorname{clip}\left(\exp(\log p_{train-old}-\log p_{rollout}), C_{low}, C_{high}\right)
-\]
+$$
+\begin{aligned}
+w
+&=\operatorname{clip}\!\left(
+\exp\!\left(\log p_{\mathrm{train,old}}-\log p_{\mathrm{rollout}}\right),
+C_{\mathrm{low}}, C_{\mathrm{high}}
+\right).
+\end{aligned}
+$$
 
-乘 policy loss，并报告 ratio、clip fraction 与 \(|w-1|\)。[`loss.py:884-905`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L884-L905) ICEPOP 则把区间外 ratio 权重置 0，相当于 rejection，而非继续用边界值；方差更受控，但丢弃信号更多。[`loss.py:908-931`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L908-L931)
+乘 policy loss，并报告 ratio、clip fraction 与 $\lvert w-1\rvert$。[`loss.py:884-905`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L884-L905) ICEPOP 则把区间外 ratio 权重置 0，相当于 rejection，而非继续用边界值；方差更受控，但丢弃信号更多。[`loss.py:908-931`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L908-L931)
 
 当 custom TIS/RS 改 loss mask 时，slime 为 backprop 重建 reducer，但 mismatch 指标仍用 rejection 前 mask 聚合，避免“被拒 token 不进 denominator，truncate_fraction 人为变 0”。[`loss.py:1049-1092`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L1049-L1092) [`loss.py:1156-1163`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L1156-L1163)
 

@@ -55,7 +55,8 @@ flowchart LR
 这揭示了当前限制的真实成本：
 
 $$
-\text{module compute/memory per TP group}\approx TP\_size\times\text{single-module cost},
+C_{\text{module per TP group}}
+\approx N_{\mathrm{TP}}\times C_{\text{single module}}.
 $$
 
 而不是把 module 权重和 GEMM 真正 sharding。Attention 占比小时可能可接受；新模块若占主体计算，重复开销会迅速吞掉 Megatron 的扩展收益。

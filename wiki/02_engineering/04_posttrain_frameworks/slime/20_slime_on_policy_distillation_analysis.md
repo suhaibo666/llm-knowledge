@@ -12,12 +12,15 @@ slime 的 OPD 不是让 teacher 生成另一批轨迹，而是让**学生当前�
 
 ## 2. 数学对象与代码对象
 
-对学生采样的 $a_t \sim \pi_\theta(\cdot|h_t)$，实现使用单 token Monte Carlo 贡献：
+对学生采样的 $a_t \sim \pi_\theta(\cdot\mid h_t)$，实现使用单 token Monte Carlo 贡献：
 
 $$
-\hat d_t = \log \pi_\theta(a_t|h_t)-\log \pi_T(a_t|h_t),
-\qquad
-\hat A_t=A_t-\lambda_{opd}\hat d_t.
+\begin{aligned}
+\hat d_t
+&=\log \pi_\theta(a_t\mid h_t)-\log \pi_T(a_t\mid h_t), \\
+\hat A_t
+&=A_t-\lambda_{\mathrm{OPD}}\hat d_t.
+\end{aligned}
 $$
 
 `apply_opd_kl_to_advantages` 逐 sample 取 student/teacher logprob，计算 `reverse_kl` 并原地修改 advantages，同时保留 `opd_reverse_kl` 用于日志。[`loss.py:663-701`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L663-L701)

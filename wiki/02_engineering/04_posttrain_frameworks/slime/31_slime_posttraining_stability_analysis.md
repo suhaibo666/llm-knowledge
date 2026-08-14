@@ -24,11 +24,12 @@ slime 当前改动最值得注意的是第二、三层的结合：它不再假�
 
 GRPO/GSPO/CISPO 与 REINFORCE++ baseline 的默认 reward postprocess 先按 `n_samples_per_prompt` reshape group，减 group mean；GRPO/GSPO/CISPO 可再除 `std + 1e-6`。如果 sample 数不规则，则当前实现会把全部 reward 视成一个 group。[`rollout.py:722-747`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L722-L747)
 
-\[
-\hat r_i = r_i-\bar r_g,
-\qquad
-\hat r_i^{std}=\frac{r_i-\bar r_g}{s_g+10^{-6}}.
-\]
+$$
+\begin{aligned}
+\hat r_i &= r_i-\bar r_g, \\
+\hat r_i^{\mathrm{std}}&=\frac{r_i-\bar r_g}{s_g+10^{-6}}.
+\end{aligned}
+$$
 
 这里有三个稳定性旋钮：
 
@@ -61,16 +62,18 @@ GRPO/GSPO/CISPO 与 REINFORCE++ baseline 的默认 reward postprocess 先按 `n_
 
 RolloutManager 因此先在完整 step 上累计每个 `rollout_id` 的所有 loss-mask totals，再把同一个 `rollout_mask_sums` denominator复制到该 rollout 的每个 sibling。[`rollout.py:799-815`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L799-L815)
 
-对 rollout \(g\) 的目标是：
+对 rollout $g$ 的目标是：
 
-\[
-L_g=\frac{\sum_{i\in g}\sum_t m_{it}\ell_{it}}
-          {\max(1,\sum_{i\in g}\sum_t m_{it})},
-\qquad
-L=\sum_g L_g.
-\]
+$$
+\begin{aligned}
+L_g
+&=\frac{\sum_{i\in g}\sum_t m_{it}\ell_{it}}
+        {\max\!\left(1,\sum_{i\in g}\sum_t m_{it}\right)}, \\
+L&=\sum_g L_g.
+\end{aligned}
+$$
 
-每个 mbs 只贡献自己持有的 numerator，但都除以完整 rollout denominator；跨 mbs/DP 累加后恰好恢复一次 \(L_g\)。`get_sum_of_sample_mean` 的 docstring明确说明为什么 denominator 必须在 step 级预计算，而不能在 mbs 内临时算。[`cp_utils.py:47-81`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/cp_utils.py#L47-L81) CP 路径对本 rank 的 zigzag mask slice 做同一 denominator 的 partial contribution。[`cp_utils.py:91-124`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/cp_utils.py#L91-L124)
+每个 mbs 只贡献自己持有的 numerator，但都除以完整 rollout denominator；跨 mbs/DP 累加后恰好恢复一次 $L_g$。`get_sum_of_sample_mean` 的 docstring明确说明为什么 denominator 必须在 step 级预计算，而不能在 mbs 内临时算。[`cp_utils.py:47-81`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/cp_utils.py#L47-L81) CP 路径对本 rank 的 zigzag mask slice 做同一 denominator 的 partial contribution。[`cp_utils.py:91-124`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/cp_utils.py#L91-L124)
 
 ### 4.2 Step normalization 不再依赖每 rank 相同 N
 
@@ -97,7 +100,7 @@ metrics reducer 同样区分 per-token 与 per-rollout：前者 all-reduce token
 
 ### 6.1 PPO asymmetric 与 dual clip
 
-普通 PPO 用 \(r=\exp(-\mathrm{ppo\_kl})\) 和 `[1-eps_low, 1+eps_high]` 非对称区间；设置 `eps_clip_c>1` 后，对负 advantage 增加 dual-clip 下界，限制极端 ratio 让负优势 loss 继续放大。[`ppo_utils.py:124-148`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/ppo_utils.py#L124-L148) `loss.py` 确实把 `eps_clip_c` 转发给 policy loss。[`loss.py:1035-1044`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L1035-L1044)
+普通 PPO 用 $r=\exp(-\operatorname{ppo\_kl})$ 和 `[1-eps_low, 1+eps_high]` 非对称区间；设置 `eps_clip_c>1` 后，对负 advantage 增加 dual-clip 下界，限制极端 ratio 让负优势 loss 继续放大。[`ppo_utils.py:124-148`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/ppo_utils.py#L124-L148) `loss.py` 确实把 `eps_clip_c` 转发给 policy loss。[`loss.py:1035-1044`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L1035-L1044)
 
 ### 6.2 CISPO 与 GSPO
 

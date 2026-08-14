@@ -13,9 +13,13 @@
 
 一轮 wall time 不能只写成 generation latency。更有用的分解是：
 
-\[
-T_{round}=T_{prompt/decode}+T_{reward/verifier}+T_{tail}+T_{data}+T_{train}+T_{weight}-T_{overlap}.
-\]
+$$
+\begin{aligned}
+T_{\mathrm{round}}
+&=T_{\mathrm{prompt/decode}}+T_{\mathrm{reward/verifier}}+T_{\mathrm{tail}} \\
+&\quad +T_{\mathrm{data}}+T_{\mathrm{train}}+T_{\mathrm{weight}}-T_{\mathrm{overlap}}.
+\end{aligned}
+$$
 
 slime 分别在这些项上提供：SGLang caching/routing/PD/spec decode；async semaphore 与 first-completed 消费；动态 oversampling/filter；NIXL 数据搬运；Megatron 动态 batch；NCCL/IPC/disk/delta 权重更新；以及 `train_async.py` 的 generate/train overlap。框架选择原生透传，意味着多数 serving 优化直接来自当前 SGLang，而 slime 自己重点处理 RL 的数据、同步和正确性。[`README_zh.md:36-50`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L36-L50)
 
@@ -52,9 +56,11 @@ slime 分别在这些项上提供：SGLang caching/routing/PD/spec decode；asyn
 
 因此有效成本应按下式报告，而不是只报接受样本的 token/s：
 
-\[
-C_{effective}=\frac{\text{全部生成 token + RM/tool 成本}}{\text{进入训练的有效 rollout 数}}.
-\]
+$$
+C_{\mathrm{effective}}
+=\frac{\text{全部生成 token + RM/tool 成本}}
+       {\text{进入训练的有效 rollout 数}}.
+$$
 
 ## 4. 第三层：partial rollout 回收长响应
 

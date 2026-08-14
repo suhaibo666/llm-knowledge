@@ -57,10 +57,10 @@ actor/critic 都先 deepcopy 公共 args，再应用相应 role 的 overrides；
 
 默认 on-policy recipe 的核心约束是：
 
-\[
-B_{rollout}\times n_{sample/prompt}
-=B_{global}\times N_{step/rollout}.
-\]
+$$
+B_{\mathrm{rollout}}\times n_{\mathrm{sample/prompt}}
+=B_{\mathrm{global}}\times N_{\mathrm{step/rollout}}.
+$$
 
 左边是一次 rollout 产出的 response 数，右边是这一批数据支撑的 optimizer steps 消耗量。官方 quickstart 明确区分 optimizer update 和 training→inference weight sync，两者不是同一个“更新”。[`quick_start.md:151-172`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/get_started/quick_start.md#L151-L172)
 

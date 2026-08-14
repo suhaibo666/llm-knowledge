@@ -33,7 +33,7 @@ GRPO/GSPO/CISPO/reinforce++ baseline 的 group reward normalization 在 RolloutM
 
 ## 3. PPO、GSPO 与 CISPO 目标
 
-普通 PPO 使用 token ratio \(r=\exp(\log\pi_\theta-\log\pi_{old})\)，取 unclipped/clipped surrogate 的最大值；可选 dual clip 只作用于负 advantage。[`ppo_utils.py:124-148`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/ppo_utils.py#L124-L148)
+普通 PPO 使用 token ratio $r=\exp(\log\pi_\theta-\log\pi_{\mathrm{old}})$，取 unclipped/clipped surrogate 的最大值；可选 dual clip 只作用于负 advantage。[`ppo_utils.py:124-148`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/ppo_utils.py#L124-L148)
 
 GSPO 先在完整 sequence 上计算 masked mean log-ratio，再把同一 sequence-level KL 展开回本地 tokens；CP 情况必须先 all-gather full logprobs。[`ppo_utils.py:95-121`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/ppo_utils.py#L95-L121) [`loss.py:991-1033`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L991-L1033)
 
@@ -56,13 +56,16 @@ TIS/custom rejection 修改 response masks 后，源码重建 pg-loss reducer，
 
 ## 6. Rollout-aware reducer
 
-对于 rollout \(g\) 的 fragments \(i\)，目标是：
+对于 rollout $g$ 的 fragments $i$，目标是：
 
-\[
-L_g=\frac{\sum_{i\in g}\sum_t m_{it}\ell_{it}}
-          {\max(1,\sum_{i\in g}\sum_t m_{it})},
-\qquad L=\sum_g L_g.
-\]
+$$
+\begin{aligned}
+L_g
+&=\frac{\sum_{i\in g}\sum_t m_{it}\ell_{it}}
+        {\max\!\left(1,\sum_{i\in g}\sum_t m_{it}\right)}, \\
+L&=\sum_g L_g.
+\end{aligned}
+$$
 
 RolloutManager 在完整 step 上算 denominator 并复制给 siblings。[`rollout.py:799-814`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L799-L814) `get_sum_of_sample_mean` 让每个 micro-batch 只贡献本地 numerator，却除以同一个完整 rollout denominator；CP 版本对本 rank 两段 zigzag response mask 做同样处理。[`cp_utils.py:47-124`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/cp_utils.py#L47-L124)
 

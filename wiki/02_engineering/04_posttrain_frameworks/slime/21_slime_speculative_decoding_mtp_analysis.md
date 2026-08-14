@@ -49,11 +49,15 @@ Qwen3-Next 的 Megatron→HF converter 又处理 MTP wrapper 权重、`eh_proj` 
 
 ## 4. 接受率如何进入训练观测
 
-`Sample.SpecInfo` 累积 accepted/drafted token、verify 次数和 completion token 数，并派生：
+`Sample.SpecInfo` 累积 accepted/drafted token、verify 次数和 completion token 数，并派生接受率 $r_{\mathrm{accept}}$（`accept_rate`）与平均接受长度 $\ell_{\mathrm{accept}}$（`accept_length`）：
 
 $$
-accept\_rate=\frac{accepted}{drafted},\qquad
-accept\_length=\frac{completion\_tokens}{verify\_count}.
+\begin{aligned}
+r_{\mathrm{accept}}
+&=\frac{N_{\mathrm{accepted}}}{N_{\mathrm{drafted}}}, \\
+\ell_{\mathrm{accept}}
+&=\frac{N_{\mathrm{completion}}}{N_{\mathrm{verify}}}.
+\end{aligned}
 $$
 
 [`types.py:153-188`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L153-L188)

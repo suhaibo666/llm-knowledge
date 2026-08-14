@@ -26,9 +26,9 @@ singleton state 持有 tokenizer/processor、sampling params、全局 semaphore�
 
 semaphore 容量为：
 
-\[
-C_{request}=C_{server}\times N_{engine}.
-\]
+$$
+C_{\mathrm{request}}=C_{\mathrm{server}}\times N_{\mathrm{engine}}.
+$$
 
 它限制同时占用 HTTP generate 的 samples；这与 SGLang 自己的 continuous batching 并不冲突，而是防止客户端无限提交导致排队、内存和超时失控。SGLang DP rank context 每次挑当前计数最小的 rank，随机打破并列，退出时归还计数。[`sglang_rollout.py:94-129`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L94-L129)
 
