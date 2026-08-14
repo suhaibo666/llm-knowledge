@@ -5,7 +5,7 @@
 > **源码基线**：AReaL `b23fa6cf9c8edfebcf055079ab78913128bc4579`
 > **核验日期**：2026-07-27
 > **结论先行**：AReaL 的核心不是一个 async 关键字，而是把 rollout workflow、freshness admission、train engine 和 weight update 分成可独立演进的 owner；当前源码又在向 v2 服务化迁移，阅读必须分代。
-> **阅读导航**：[[20_slime_architecture_analysis|上一篇 D08]] · [[22_roll_strategy_and_ascend_analysis|下一篇 D10]]
+> **阅读导航**：[[01_slime_architecture_overview_analysis|上一篇 D08]] · [[22_roll_strategy_and_ascend_analysis|下一篇 D10]]
 
 ---
 
@@ -208,7 +208,7 @@ observation boundary
 
 ## Related Pages
 
-- [[20_slime_architecture_analysis|D08 slime 高性能与异步架构]]
+- [[01_slime_architecture_overview_analysis|D08 slime 高性能与异步架构]]
 - [[22_roll_strategy_and_ascend_analysis|D10 ROLL、异构与 Ascend]]
 - [[25_on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
 - [[31_cuda_ascend_posttraining_stack_comparison|D11 CUDA–Ascend 对照]]

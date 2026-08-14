@@ -311,4 +311,4 @@ $$C_{off}\approx N\,(F_{T}+F_{S}+B_{S}),\qquad C_{on}\approx N\,(G_{S}+\rho F_{T
 - [[11_rl_sandbox_design_analysis]] —— 沙箱与环境设计（W4 长程 agent 的环境侧）
 - [[01_posttraining_infra_mechanism_analysis]] —— 后训练基础设施总览（本页的上位页）
 - [[verl/index]] —— veRL 框架索引
-- [[20_slime_architecture_analysis]] —— slime 架构分析
+- [[slime/index]] —— slime 软件架构与实现分析

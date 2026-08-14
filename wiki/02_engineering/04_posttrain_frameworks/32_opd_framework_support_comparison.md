@@ -76,7 +76,7 @@
 
 **社区讨论中暴露的真实问题**（可作为落地时的踩坑预告）：issue #1068（open，2025-12-09）质疑为何用 reward-based loss 而非直接 KL、为何不经 rollout 传教师 logits；issue #1449（closed，2026-01-18）讨论 advantage 是否应 detach，讨论中直接引 MiMo-V2-Flash 技报。
 
-**适合**：已在用 slime/Megatron 栈、路线 B 明确的团队。**要自己查的**：异步窗口与截断 IS 钩子（[[13_opd_infra_mechanism_analysis]] W3）；多教师文档未见。架构细节见 [[20_slime_architecture_analysis]]。
+**适合**：已在用 slime/Megatron 栈、路线 B 明确的团队。**要自己查的**：异步窗口与截断 IS 钩子（[[13_opd_infra_mechanism_analysis]] W3）；多教师文档未见。架构细节见 [[slime/index]]。
 
 ### 3.3 TRL —— 单机事实标准 + 唯一开源跨词表实现
 
@@ -225,7 +225,7 @@
 - [[30_rl_framework_comparison]] —— 通用 RL 框架横评（本页只覆盖 OPD 维度）
 - [[02_engineering/04_posttrain_frameworks/index]] —— 后训练框架索引
 - [[verl/index]] —— veRL 框架索引（§3.1 的展开）
-- [[20_slime_architecture_analysis]] —— slime 架构分析（§3.2 的展开）
+- [[slime/index]] —— slime 软件架构与实现分析（§3.2 的展开）
 - [[14_on_policy_distillation_analysis]] —— OPD 算法总览
 - [[15_opd_divergence_and_objective_evolution_analysis]] —— 散度与目标函数演化（§1.1 路线之争的算法侧）
 - [[32_opd_industrial_landscape_analysis]] —— 厂商采用格局与教师来源（§6 自研层的产业背景）

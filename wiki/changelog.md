@@ -8,6 +8,75 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-14：vime vLLM 衍生架构与支持度源码审计
+
+**Type**: Derivative Architecture Analysis + Support Maturity Audit
+
+- 固定 `vllm-project/vime@8144096e3f4fb0fb670c37b8f2d84015f7e92320` 与 `THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9` 两条基线，新增 [[25_vime_vllm_backend_support_analysis]]：将 vime 定位为保留 slime 训练、数据、算法与 Agent 上层、但深度改写 rollout 控制、vLLM server/router 请求路径和权重同步的衍生框架，而不是 slime 内可热切换的轻量 rollout 插件。
+- 按 P1 接口、P2 功能、P3 正确性、P4 生产与性能四级口径审计 vLLM 参数面、内置/外部 engine、TP/PP/DP、PD/EPD、多模型、token/logprob、多模态、session affinity、top-p/MoE replay、custom generate/rollout、同步/一拍异步/fully async 与故障恢复。
+- 追踪四条权重路径（NCCL、colocate IPC、全量磁盘、delta 磁盘）及 pause/flush/version/resume 事务；记录多模型只选择首个可更新 server、`check_weights()` 未实现和磁盘 CI 未做逐 tensor 等价验证等 P3/P4 缺口。
+- 对照官方文档与源码标出三处边界：worker 类型文档滞后于 encoder-prefill 实现；`vllm-config` 示例混入 SGLang 风格键；“多模型可更新”不能据文档推导为所有 `update_weights: true` 模型都会同步。平台成熟度按 H100/H200、B 系列、A100/A800、AMD 与 Ascend 的不同证据强度分别表述。
+- 把 vime 页面接入 [[19_slime_rollout_backend_extension_analysis]]、[[slime/index]]、[[02_engineering/04_posttrain_frameworks/index]]、[[courses/posttraining_frontier]] 与总索引；slime 子域现为 21 页，后训练框架域 44 页，全 wiki 399 页。
+- 校验：21 篇 slime/vime 页面共 585 个固定 commit `path:line` 引用（slime 491、vime 94），仓库、commit、文件与行号范围 issues=0；严格链接检查 pages=399，broken/ambiguous/bare_index/orphans 均为 0；知识库测试 77 passed；`git diff --check` 无空白错误。vime 审计副本 remote 为官方仓库且工作树 clean，`HEAD=8144096e3f4fb0fb670c37b8f2d84015f7e92320`；GPU/vLLM/Megatron 能力以固定源码、文档和 CI 定义为证据，不冒充当前 Windows 主机实跑。
+
+---
+
+## 2026-08-14：slime 官方支持特性源码解读补齐
+
+**Type**: Official Feature Coverage Audit + Source-level Deep Dive
+
+- 以固定基线 `THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9` 对照官方 `docs/zh` 特性导航，补齐 6 篇实现分析：[[19_slime_rollout_backend_extension_analysis]]、[[20_slime_on_policy_distillation_analysis]]、[[21_slime_speculative_decoding_mtp_analysis]]、[[22_slime_low_precision_training_rollout_analysis]]、[[23_slime_model_architecture_extension_analysis]]、[[24_slime_agent_workflow_examples_analysis]]。
+- 明确 rollout 扩展分为 custom generate、整轮 rollout function、external SGLang 与完整 backend replacement 四层；主仓库是 SGLang single-backend，external engine 仍是外部管理的 SGLang，vime 证明可派生替换而非运行时插件切换。
+- 把 OPD 两类 teacher、在线 MTP 的训练—转换—同步—acceptance 闭环、BF16/FP8/INT4/KV 三条精度轴、ModuleSpec + HF wrapper 的无 module-TP 限制，以及 agent adapter/trajectory/harness/sandbox/fan-out 逐项追到源码。
+- 增强 [[18_slime_fault_tolerance_observability_analysis]]：区分 W&B/TensorBoard step aggregate、sample trace 与 Prometheus time series，并记录固定提交下官方页面列出 `request/count`、源码默认路径却未实际发出的差异。
+- [[slime/index]] 新增官方特性覆盖矩阵；slime 子域由 14 页增至 20 页，后训练框架域由 37 页增至 43 页。
+- 校验：20 篇 slime 页面共 491 个固定 commit `path:line` 引用，文件与行号范围 issues=0；严格链接检查 pages=398，broken/ambiguous/bare_index/orphans 均为 0；知识库测试 77 passed；`git diff --check` 无空白错误。slime 源码树保持 clean，`HEAD` 与 `origin/HEAD` 均为 `681b3adc`；GPU/Megatron/SGLang 结论仍以源码与 CI 审阅为证据，不冒充当前 Windows 主机实跑。
+
+---
+
+## 2026-08-14：slime 建立独立软件架构与实现知识域
+
+**Type**: Knowledge Domain Refactor + Source-level Implementation Analysis
+
+- 将原有四篇 slime 专题迁入 [[slime/index]]，形成与 `verl/` 对等的独立子目录；保留固定源码基线 `THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`。
+- 新增配置与 Quickstart、端到端迭代、Ray 控制面、`Sample`/`DataSource`、SGLang rollout engine、Megatron 训练、loss/并行、权重同步、容错/可观测性九篇实现分析；连同总览和三个横切专题，子域共 14 页。
+- 软件架构分析明确拆出控制、数据、rollout、训练、权重、正确性与可观测性平面，并逐段追踪同步/一拍异步执行、逻辑 rollout reducer、四类权重 transport、engine recovery 和扩展 ABI。
+- 更新后训练框架索引、D08 课程路线、全库快速导航、框架对照页以及 verl/AReaL 相邻导航；迁移后的旧链接全部改指新位置。
+- 后训练框架域按当前文件树递归计为 37 页，其中 `verl/` 12 页、`slime/` 14 页。
+- 校验：14 页共 381 个固定 commit `path:line` 引用，文件存在与行号范围 issues=0；严格链接检查 pages=392、broken/ambiguous/bare_index/orphans 均为 0；知识库测试 77 passed；`git diff --check` 无空白错误。slime 源码树保持 clean，仍固定在 `main@681b3adc`；GPU/Ray 集成边界沿用下条重验记录，不冒充本机实跑。
+
+---
+
+## 2026-08-14：slime 主分支重验 —— Rollout 优化、四层训推一致性与后训练稳定性
+
+**Type**: Source Revalidation + Architecture Deep Dive + Correction
+
+### 一、来源基线与旧结论纠偏
+
+- 将 slime 源码基线从 `aaf5c209` 更新到本地干净主分支 `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`（提交时间 2026-08-12T16:50:12+07:00，核验 2026-08-14）。
+- 重写 [[01_slime_architecture_overview_analysis]]：以 control/data/weight 三平面贯通 `train.py`、`train_async.py`、RolloutManager、DataSource/Sample、Megatron actor 与四类 weight transport。
+- 更正 fully-async 的描述：当前 physical output queue 为故意无界，backpressure 在 producer loop；每次只 drain 目标 group 并把 surplus 留给下一轮。外层 `train_async.py` 只是 generate(N+1)/train(N) 一拍 overlap，换权重前仍等待 generation，不能写成无边界 policy-lag trainer。
+
+### 二、新增三篇专题
+
+- **[[30_slime_rollout_optimization_analysis]]**：把 rollout 吞吐拆成 SGLang 请求并发、first-completed/oversampling、dynamic filter、partial+SSE streaming、fully-async warm queue、phase overlap、PD/speculative/FP8、DP packing/NIXL 与 weight-sync 九组机制，并给出 attempted→accepted 有效样本成本口径。
+- **[[17_slime_train_inference_consistency_analysis]]**：建立 weight snapshot、token/mask contract、sampling distribution、kernel/MoE numerical path 四层一致性模型；覆盖 temperature/top-p exact replay、MoE top-k order/R3、GLM-5 layerwise exact-zero 与 e2e `<1e-6` gate，以及 TIS/ICEPOP/OPSM 的补偿边界。
+- **[[31_slime_posttraining_stability_analysis]]**：以逻辑 rollout 而非物理 sample/mbs 为统计单位，解释 `rollout_mask_sums`、DP×CP advantage whitening、step-global reducer、PPO/GSPO/CISPO/KL/TIS/OPSM、空 token autograd liveness、FP8 zero-block guard、engine recovery 与 debug replay。
+
+### 三、索引与对照页
+
+- 更新后训练框架域 index、D08 课程路线与 wiki 快速导航；该域递归页面数按当前文件树更新为 27。
+- 更新 [[30_rl_framework_comparison]] 的 slime commit、TIM 与 async 语义；AReaL/ROLL 仍保留 2026-07-27 固定快照，未借 slime 重验外推其他框架。
+
+### 四、校验
+
+- 四篇 slime 页面共 175 个固定 commit `path:line` 引用，逐一校验文件存在且行号未越界：issues=0。
+- `python tools/check_links.py --strict`：pages=382，broken=0，ambiguous=0，bare_index=0，orphans=0。
+- 知识库 `pytest -q`：77 passed；`git diff --check`：0 errors。
+- slime 当前 Windows 环境可运行的契约测试：29 passed（DP schedule 9、top-p/CP response span 5、Sample contract 12、FP8 zero-block 3）。fully-async/process-rollout/routing-replay 三个 Ray 相关测试文件因本机未安装 `ray` 在 collection 阶段阻塞，未把它们记录为通过；GPU/GLM-5 门禁只核验固定源码与测试定义，未在本机执行。
+
+---
+
 ## 2026-08-11（二）：修复三条「会误导读者」的结构性问题，并更正上一轮审计自身的过度结论
 
 **Type**: Correction（三条均出自 2026-08-10 的两域审计第一层。本次核对 verl 官方文档后，发现**审计自身的一条结论说过头了**，一并更正。）

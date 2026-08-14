@@ -1,6 +1,6 @@
 # LLM Knowledge Wiki — 知识库总索引
 
-> 最后更新: 2026-08-04
+> 最后更新: 2026-08-14
 
 ---
 
@@ -44,14 +44,15 @@
 | └─ MindSpeed | [[02_engineering/02_train_frameworks/mindspeed/index]] | 6 | 活跃 |
 | 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 20 | 活跃 |
 | └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index]] | 13 | 活跃 |
-| 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 21 | 活跃 |
-| └─ verl (HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index]] | 11 | 活跃 |
+| 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 44 | 活跃 |
+| └─ verl (HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index]] | 12 | 活跃 |
+| └─ slime | [[02_engineering/04_posttrain_frameworks/slime/index]] | 21 | 活跃 |
 | GPU Kernel | [[02_engineering/05_gpu_kernel/index]] | 17 | 活跃 |
 | └─ Triton 学习路线 | [[02_engineering/05_gpu_kernel/triton/index]] | 9 | 活跃 |
 | 自动并行 | [[02_engineering/06_auto_parallel/index]] | 2 | 活跃 |
 | 训练可靠性 | [[02_engineering/07_training_reliability/index]] | 5 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-08-04（kb-reorg P7 收尾）。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根）；后训练框架于 2026-08-14 随 `slime/` 官方特性源码解读与 vime/vLLM 支持度审计增至 44 页，其中 `verl/` 12 页、`slime/` 21 页；其余工程域沿用最近一次域级统计。
 
 ### courses 课程入口
 
@@ -61,7 +62,7 @@
 | 课程 | 入口 | 覆盖范围 |
 |------|------|---------|
 | torch.compile 端到端 | [[courses/torch_compile_end_to_end]] | `01_ai_frameworks` 五层功能树(eager 地基→Dynamo→AOTAutograd→Graph IR/Passes→Inductor→缓存→调试→运行时图→导出/分布式) |
-| LLM 后训练前沿 | [[courses/posttraining_frontier]] | `01_theory/04_posttraining`(算法)+ `02_engineering/04_posttrain_frameworks`(框架源码,含 `verl/`)+ `moonshot_kimi`(K3 工业案例)三处功能树(D01→D12:全景地图→算法演进→Agentic→staleness→Infra→框架对比→verl 主链→slime→AReaL→ROLL→CUDA–Ascend→K3 综合案例) |
+| LLM 后训练前沿 | [[courses/posttraining_frontier]] | `01_theory/04_posttraining`(算法)+ `02_engineering/04_posttrain_frameworks`(框架源码,含 `verl/`、`slime/`)+ `moonshot_kimi`(K3 工业案例)三处功能树(D01→D12:全景地图→算法演进→Agentic→staleness→Infra→框架对比→verl 主链→slime→AReaL→ROLL→CUDA–Ascend→K3 综合案例) |
 
 ---
 
@@ -93,7 +94,7 @@
 | RL 训练框架 (verl/HybridFlow) | [[verl/index]], [[01_verl_architecture_overview_analysis]], [[20_verl_ray_trainer_analysis]], [[15_verl_rl_algorithms_analysis]] |
 | Coding RL「脏活」系列 | [[31_reward_hacking_defense_analysis]], [[11_rl_sandbox_design_analysis]], [[12_rl_infra_efficiency_analysis]] |
 | LLM 后训练前沿 D01–D06 | [[courses/posttraining_frontier]], [[01_posttraining_frontier_map_analysis]], [[13_reasoning_rl_algorithm_evolution_analysis]], [[24_agentic_rl_algorithm_analysis]], [[25_on_policy_off_policy_staleness_analysis]], [[01_posttraining_infra_mechanism_analysis]], [[30_rl_framework_comparison]] |
-| LLM 后训练前沿 D07–D12 | [[10_verl_end_to_end_iteration_analysis]], [[20_slime_architecture_analysis]], [[21_areal_async_architecture_analysis]], [[22_roll_strategy_and_ascend_analysis]], [[31_cuda_ascend_posttraining_stack_comparison]], [[24_kimi_k3_posttraining_case_study_analysis]] |
+| LLM 后训练前沿 D07–D12 | [[10_verl_end_to_end_iteration_analysis]], [[slime/index]], [[01_slime_architecture_overview_analysis]], [[30_slime_rollout_optimization_analysis]], [[17_slime_train_inference_consistency_analysis]], [[31_slime_posttraining_stability_analysis]], [[25_vime_vllm_backend_support_analysis]], [[21_areal_async_architecture_analysis]], [[22_roll_strategy_and_ascend_analysis]], [[31_cuda_ascend_posttraining_stack_comparison]], [[24_kimi_k3_posttraining_case_study_analysis]] |
 | 万卡训练确定性与可靠性 | [[07_training_reliability/index]], [[10_determinism_and_numerical_reliability_analysis]], [[11_fault_tolerance_and_recovery_analysis]], [[12_training_dynamics_stability_analysis]] |
 
 ### 按原始来源

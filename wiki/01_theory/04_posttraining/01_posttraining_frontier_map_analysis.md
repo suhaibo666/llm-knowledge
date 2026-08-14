@@ -260,7 +260,7 @@ K3 不加入这张“工业源码样本”表。其官方仓库 `0797decb` 提�
 | 6 | D05 [[01_posttraining_infra_mechanism_analysis|后训练 Infra 核心机制]] | S01 | control/data/weight 三平面的所有权、并发和故障语义是什么 | 已完成 |
 | 7 | D06 [[30_rl_framework_comparison|四框架机制对比]] | S02/S05 | 在统一术语和约束下，各框架的真实能力边界是什么 | 已完成 |
 | 8 | D07 [[10_verl_end_to_end_iteration_analysis|verl 单次迭代端到端源码]] | S02 | 一批数据怎样穿过 rollout、reward、advantage、update 和 weight sync | 已完成 |
-| 9 | D08 [[20_slime_architecture_analysis|slime 架构与高性能路径]] | S03 | DataSource、buffer、Megatron/SGLang 与 async producer 怎样协同 | 已完成 |
+| 9 | D08 [[01_slime_architecture_overview_analysis|slime 架构与高性能路径]] | S03 | DataSource、buffer、Megatron/SGLang 与 async producer 怎样协同 | 已完成；完整实现域见 [[slime/index]] |
 | 10 | D09 [[21_areal_async_architecture_analysis|AReaL Fully Async 架构]] | S03 | 微服务、Hermes、staleness control 与 agent trajectory 怎样闭环 | 已完成 |
 | 11 | D10 [[22_roll_strategy_and_ascend_analysis|ROLL Strategy、异构与 Ascend]] | S04 | Strategy 抽象、AutoDeviceMapping 和 Ascend 路径的真实边界 | 已完成 |
 | 12 | D11 [[31_cuda_ascend_posttraining_stack_comparison|CUDA–Ascend 后训练栈对照]] | S04 | 算子、通信、推理、并行、诊断和性能差距分别在哪里 | 已完成 |

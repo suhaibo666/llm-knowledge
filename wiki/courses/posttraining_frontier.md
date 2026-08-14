@@ -4,11 +4,10 @@
 > 已归属功能树三处:`01_theory/04_posttraining`(算法理论)、`02_engineering/04_posttrain_frameworks`
 > (框架源码,含 `verl/` 子目录)与 `01_theory/01_models/moonshot_kimi`(K3 工业案例);本页过时
 > 只改链接/顺序,不要在此加正文。
-> 四个工业框架的固定基线 commit(verl `983cb0f`、slime `aaf5c20`、AReaL `b23fa6c`、
+> 四个工业框架的固定基线 commit(verl `983cb0f`、slime `681b3adc`、AReaL `b23fa6c`、
 > ROLL `370cb24`)与工程定位见 [[01_posttraining_frontier_map_analysis|D01]] §3,本页不重复。
-> 最后更新:2026-07-31(kb-reorg P5 Task 7:课程页化,原 `wiki/03_posttraining/` 纵向学习域
-> (D00–D12 共 13 篇)解散,D00 的阅读路线骨架 + 六级能力门槛与 `03_posttraining/index.md` 的
-> S00–S05 阶段叙述并入本页,`03_posttraining/` 目录整体删除)
+> 最后更新:2026-08-14（在 D08 增补 vime/vLLM 衍生实现的源码审计；课程骨架仍沿用
+> kb-reorg P5 Task 7 合并后的 D01–D12 与 S00–S05 路线）
 
 ---
 
@@ -81,7 +80,11 @@ CUDA 方案迁移到 Ascend 时的判断框架,最后用一份最新工业报告
 
 | 顺序 | 页面 | 位置 | 一句话 |
 |---:|---|---|---|
-| D08 | [[20_slime_architecture_analysis]] | `02_engineering/04_posttrain_frameworks/` | Megatron、SGLang、DataSource、buffer 和 async producer 怎样组合 |
+| D08 | [[01_slime_architecture_overview_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | Megatron、SGLang、Ray/DataSource、同步/一拍异步主链与 versioned weight commit 怎样闭环；backend 扩展、OPD、MTP、低精度、新架构、Agent 与 vime/vLLM 衍生实现的源码矩阵见 [[slime/index]] |
+| D08a | [[30_slime_rollout_optimization_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | 请求并发、动态补采、partial/streaming、warm queue、phase overlap、PD/spec/FP8 分别优化哪段吞吐 |
+| D08b | [[17_slime_train_inference_consistency_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | 权重快照、token/mask、sampling distribution 与 kernel/MoE 路径怎样逐层对齐 |
+| D08c | [[31_slime_posttraining_stability_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | rollout-aware denominator、DP×CP whitening、clip/mask 与 recovery 怎样阻止静默漂移 |
+| D08d | [[25_vime_vllm_backend_support_analysis]] | `02_engineering/04_posttrain_frameworks/slime/` | vime 如何保留 slime 上层而把 rollout、路由和权重同步改造成 vLLM 原生实现；按 P1 接口/P2 功能/P3 正确性/P4 生产与性能判断实际支持度 |
 | D09 | [[21_areal_async_architecture_analysis]] | `02_engineering/04_posttrain_frameworks/` | 服务化 training/inference/agent/weight update 如何维持在线 RL 闭环 |
 
 ### S04 · 异构、多后端与 Ascend
@@ -106,7 +109,7 @@ CUDA 方案迁移到 Ascend 时的判断框架,最后用一份最新工业报告
 | 框架 | 研究角色 | 重点问题 |
 |---|---|---|
 | verl(D07) | 覆盖面和可读性主基线 | 一次训练迭代、角色编排、算法扩展、weight sync/reshard |
-| slime(D08) | 高性能训练—生成解耦对照 | Megatron + SGLang、DataSource/buffer、weight transport、async producer |
+| slime(D08/D08a–d) | 高性能训练—生成解耦、正确性与 vLLM 衍生实现对照 | Megatron + SGLang、DataSource/buffer、rollout stack、backend 扩展边界、vime/vLLM、OPD/MTP/低精度/Agent、四层训推一致性、rollout-aware reducer、weight transport |
 | AReaL(D09) | Fully async/Agentic 对照 | 微服务、Hermes、policy lag、agent trajectory |
 | ROLL(D10) | 多后端/异构/Ascend 专项 | Strategy、AutoDeviceMapping、RLVR 与 Agentic async 差异 |
 

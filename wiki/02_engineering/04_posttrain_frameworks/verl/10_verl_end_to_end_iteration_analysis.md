@@ -5,7 +5,7 @@
 > **源码基线**：verl `983cb0f24443f87b3d161fad318445130a620b07`
 > **核验日期**：2026-07-27
 > **结论先行**：学习 verl 应先贯通 stable `RayPPOTrainer.fit` 的同步主链，再单独研究 experimental fully async；不要把两条路径拼成一个不存在的调用链。
-> **阅读导航**：[[30_rl_framework_comparison|上一篇 D06]] · [[20_slime_architecture_analysis|下一篇 D08]]
+> **阅读导航**：[[30_rl_framework_comparison|上一篇 D06]] · [[01_slime_architecture_overview_analysis|下一篇 D08]]
 
 ---
 
@@ -237,5 +237,5 @@ checkpoint and profiler
 - [[11_verl_single_controller_analysis]] —— colocate WorkerDict、dispatch/collect 装饰器机制
 - [[15_verl_rl_algorithms_analysis]] —— 优势估计与策略损失注册表，本页 §5 的数学细节
 - [[30_rl_framework_comparison|D06 工业后训练框架对比]]
-- [[20_slime_architecture_analysis|D08 slime 高性能与异步架构]]
+- [[01_slime_architecture_overview_analysis|D08 slime 高性能与异步架构]]
 - [[25_on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]

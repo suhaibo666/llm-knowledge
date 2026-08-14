@@ -2,8 +2,8 @@
 
 > **阶段**：S02–S05
 > **文档编号**：D06
-> **快照日期**：2026-07-27
-> **证据基线**：verl `983cb0f`、slime `aaf5c20`、AReaL `b23fa6c`、ROLL `370cb24`
+> **快照日期**：2026-07-27；slime 列于 2026-08-14 单独重验
+> **证据基线**：verl `983cb0f`、slime `681b3adc`、AReaL `b23fa6c`、ROLL `370cb24`
 > **结论先行**：verl、slime、AReaL、ROLL 不是同一目标函数下的排行榜；它们分别优化通用可组合性、Megatron+SGLang 深集成、fully async 服务化和多 Strategy/异构硬件。
 > **阅读导航**：[[01_posttraining_infra_mechanism_analysis|上一篇 D05]] · [[10_verl_end_to_end_iteration_analysis|下一篇 D07]]
 
@@ -14,7 +14,7 @@
 | 框架 | commit | 本文角色 |
 |---|---|---|
 | verl | `983cb0f24443f87b3d161fad318445130a620b07` | 主 baseline，先贯通稳定同步链 |
-| slime | `aaf5c2092b01219fa0d5c2d323741d409086ca32` | Megatron+SGLang 性能与新机制对照 |
+| slime | `681b3adca54105d5ecd3fb822fa0dc58a427e0f9` | Megatron+SGLang 性能、训推一致性与稳定性对照；2026-08-14 重验 |
 | AReaL | `b23fa6cf9c8edfebcf055079ab78913128bc4579` | fully async、agent service、freshness 对照 |
 | ROLL | `370cb24c1036ea9145365478fcc40612b2186fc8` | 多 Strategy、资源映射、Ascend 对照 |
 
@@ -32,7 +32,7 @@
 | 同步主线 | 成熟 | 成熟 | 可配为同步 | 成熟 |
 | fully async | experimental 独立路径 | warm queue rollout path | 核心设计与 freshness manager | `async_pipeline` 与 agentic 分支 |
 | Agentic | rollout interface/loop 扩展 | custom generate + agent harness | workflow + online agent service | env manager + tools + proxy |
-| TIM 工具 | correction/bypass/metrics | rollout log-prob、routing replay | behave/proximal 分离 | train-infer corrections |
+| TIM 工具 | correction/bypass/metrics | rollout log-prob、temperature/top-p replay、routing replay、TIS/OPSM 与 GLM-5 strict gate | behave/proximal 分离 | train-infer corrections |
 | NPU | 官方 Ascend 扩展列出 vLLM/SGLang + FSDP/FSDP2/Megatron/MindSpeed；固定 upstream commit 仍需逐后端核验 | 本快照非主路径 | 独立 Ascend 文档/分支 + vLLM-Ascend | 主树 platform 抽象与 vLLM-Ascend |
 
 ## 3. 四级支持证据
@@ -73,7 +73,7 @@
 代价：
 
 - 单 rollout backend 的设计降低通用后端可替换性；
-- fully async 当前主要改变 rollout producer，主 trainer 仍按 rollout id 消费；
+- fully async 当前主要让 rollout producer/queue 跨轮保温；`train_async.py` 只做一拍 generate/train overlap，换权重前仍等待生成完成；
 - README 中生态项目能力不能自动算进 slime core。
 
 ### 4.3 AReaL
@@ -109,7 +109,7 @@
 | 框架 | 可确认实现 | 不是 |
 |---|---|---|
 | verl | experimental fully async policy 拥有单独 main/queue/rollouter/trainer | stable `RayPPOTrainer.fit` 自动 fully async |
-| slime | background asyncio worker 持续产组，queue 跨调用保温 | 无版本上限的任意 replay |
+| slime | background asyncio worker 持续产组、逻辑 backpressure、surplus 跨调用保温；另有一拍 generate/train overlap | 无版本 admission 上限的任意 replay，或生成中途换权重 |
 | AReaL | producer admission + version staleness + workflow executor | 单纯把 `asyncio` 包在 rollout 外 |
 | ROLL | pipeline flag 控制 generate/model update 与 scheduler pause | 所有 agent env 都天然 on-policy |
 
@@ -193,6 +193,8 @@ flowchart TD
 >
 > **重验时的已知障碍**:四框架的 commit 比对需要访问 GitHub,本次会话所处环境无法访问,故只能从官方文档侧做部分核验。slime / AReaL / ROLL 三列本次**未做任何重验**。
 >
+> **后续状态（2026-08-14）**：slime 本地 `origin/main@681b3adc` 已完成源码重验，本页 slime commit、TIM 与 async 语义已更新；AReaL / ROLL 仍维持 2026-07-27 快照。slime 的完整证据链见 [[slime/index]] 独立知识域。
+>
 > 另有两项已知边界,重验时一并处理:
 > 1. **verl 列的基线与本库 verl 深潜页不一致**——本页 verl 列锁 `983cb0f`,而 [[verl/index]] 下 10 篇中有 7 篇深潜页基线是 `8a694930`。跨页引用 verl 结论时须先对齐基线。
 > 2. **对比集是四框架封闭集**（verl / slime / AReaL / ROLL）。Miles、SkyRL、NeMo-RL 在全库零命中,PRIME-RL 未进入本页。矩阵不覆盖 = 未评估,不等于不存在或不重要。
@@ -201,6 +203,6 @@ flowchart TD
 
 - [[01_posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
 - [[10_verl_end_to_end_iteration_analysis|D07 verl 端到端训练迭代]]
-- [[20_slime_architecture_analysis|D08 slime 架构]]
+- [[01_slime_architecture_overview_analysis|D08 slime 架构]]
 - [[21_areal_async_architecture_analysis|D09 AReaL 架构]]
 - [[22_roll_strategy_and_ascend_analysis|D10 ROLL 与 Ascend]]
