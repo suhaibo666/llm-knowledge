@@ -90,3 +90,30 @@ def test_cli_strict_turns_warnings_into_failure(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr("sys.argv", ["check_math.py", "--strict", str(note)])
     assert check_math.main() == 1
+
+
+def test_delta_ignores_preexisting_diagnostic_after_line_shift():
+    base = "旧记录。\n历史公式 \\(x+y\\)。\n下一行。\n"
+    current = "新增的干净记录。\n" + base
+
+    assert check_math.new_diagnostics_since(base, current, "changelog.md") == []
+
+
+def test_delta_reports_new_issue_and_deleted_display_closer():
+    clean_base = "旧记录。\n"
+    new_legacy = clean_base + "新增公式 \\(z\\)。\n"
+    assert {
+        item.code
+        for item in check_math.new_diagnostics_since(
+            clean_base, new_legacy, "changelog.md"
+        )
+    } == {"MATH001"}
+
+    closed_display = "$$\nx+y\n$$\n"
+    unclosed_display = "$$\nx+y\n"
+    assert "MATH002" in {
+        item.code
+        for item in check_math.new_diagnostics_since(
+            closed_display, unclosed_display, "note.md"
+        )
+    }

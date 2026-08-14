@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -387,6 +388,41 @@ def check_file(path: Path) -> list[Diagnostic]:
     return check_text(path.read_text(encoding="utf-8"), str(path))
 
 
+def _diagnostic_fingerprint(
+    diagnostic: Diagnostic, text: str
+) -> tuple[str, str, str, tuple[str, ...]]:
+    """Identify the same finding across unrelated line-number shifts."""
+
+    lines = text.splitlines()
+    index = min(max(diagnostic.line - 1, 0), max(len(lines) - 1, 0))
+    context = tuple(line.strip() for line in lines[index : index + 3])
+    return (
+        diagnostic.severity,
+        diagnostic.code,
+        diagnostic.message,
+        context,
+    )
+
+
+def new_diagnostics_since(
+    base_text: str, current_text: str, path: str
+) -> list[Diagnostic]:
+    """Return findings introduced since base_text, ignoring shifted legacy debt."""
+
+    base_counts = Counter(
+        _diagnostic_fingerprint(item, base_text)
+        for item in check_text(base_text, path)
+    )
+    introduced: list[Diagnostic] = []
+    for item in check_text(current_text, path):
+        fingerprint = _diagnostic_fingerprint(item, current_text)
+        if base_counts[fingerprint]:
+            base_counts[fingerprint] -= 1
+        else:
+            introduced.append(item)
+    return introduced
+
+
 def _git_paths(repo_root: Path, arguments: list[str]) -> list[Path]:
     result = subprocess.run(
         ["git", *arguments, "-z"],
@@ -415,6 +451,23 @@ def collect_changed_markdown(repo_root: Path) -> list[Path]:
         for path in candidates
         if path.suffix.lower() == ".md" and path.is_file()
     )
+
+
+def _read_head_text(repo_root: Path, path: Path) -> str | None:
+    try:
+        relative = path.resolve().relative_to(repo_root.resolve()).as_posix()
+    except ValueError:
+        return None
+    result = subprocess.run(
+        ["git", "show", f"HEAD:{relative}"],
+        cwd=repo_root,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode:
+        return None
+    return result.stdout.decode("utf-8", errors="surrogateescape")
 
 
 def _collect_explicit_paths(values: Iterable[str]) -> list[Path]:
@@ -449,19 +502,31 @@ def _parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = _parser().parse_args()
     repo_root = Path(__file__).resolve().parents[1]
-    files = set(_collect_explicit_paths(args.paths))
+    explicit_files = set(_collect_explicit_paths(args.paths))
+    changed_files: set[Path] = set()
     if args.changed or not args.paths:
         try:
-            files.update(collect_changed_markdown(repo_root))
+            changed_files.update(collect_changed_markdown(repo_root))
         except subprocess.CalledProcessError as error:
             print(error.stderr.decode("utf-8", errors="replace").strip())
             return 2
 
-    diagnostics = [
+    diagnostics: list[Diagnostic] = [
         diagnostic
-        for path in sorted(files)
+        for path in sorted(explicit_files)
         for diagnostic in check_file(path)
     ]
+    for path in sorted(changed_files - explicit_files):
+        current_text = path.read_text(encoding="utf-8")
+        base_text = _read_head_text(repo_root, path)
+        if base_text is None:
+            diagnostics.extend(check_text(current_text, str(path)))
+        else:
+            diagnostics.extend(
+                new_diagnostics_since(base_text, current_text, str(path))
+            )
+
+    files = explicit_files | changed_files
     for diagnostic in diagnostics:
         print(diagnostic.render())
 

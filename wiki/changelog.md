@@ -8,6 +8,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-14：slime/vime 公式整改与 Obsidian 数学质量门禁
+
+**Type**: Documentation Remediation + Repository Skill + Automated Quality Gate
+
+- 审计 [[slime/index]] 下 21 篇 slime/vime 页面，定位四类主要问题：混用 `\(...\)` / `\[...\]` 与 dollar 定界符、多字母语义下标被当作斜体变量或减法、API 标识符用裸 `\_` 塞入公式，以及条件竖线/多行推导未使用语义化 MathJax 写法。
+- 整改实际命中问题的 10 篇 slime 页面：统一为 `$...$` 和起止独占行的 `$$`，用 `\mathrm` / `\text` / `\operatorname` 表达语义标签，以 `\mid`、`\lvert...\rvert` 和 `aligned` 修复条件概率、绝对值及多行公式；VIME 支持分析页经检查无需改写。
+- 新增 `tools/check_math.py`：忽略代码围栏与行内代码，区分高置信度结构错误和启发式排版警告，支持显式文件/目录及 Git 变更文件检查；`--strict` 将警告一并纳入门禁，并对货币金额等常见非公式 `$` 写法做豁免。
+- 新增 `.agents/skills/writing-obsidian-math/` 并同步 `.claude/skills/` 镜像，覆盖定界符、语义下标、API 名、表格、callout、多行对齐和强制自检流程；`CLAUDE.md` 与 `tools/README.md` 接入相同要求。
+- 校验：公式检查器与 skill 集成测试共 12 passed；两份 skill 通过 `quick_validate.py` 且内容逐字节一致；21 篇 slime/vime 页面严格公式检查为 0 error / 0 warning。
+
+---
+
 ## 2026-08-14：vime vLLM 衍生架构与支持度源码审计
 
 **Type**: Derivative Architecture Analysis + Support Maturity Audit
