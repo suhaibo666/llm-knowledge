@@ -47,11 +47,25 @@ response loss mask 先左 pad `prompt_length-1`、右 pad 1，以对齐 next-tok
 
 因此 data packing 不改变目标语义的前提是：sequence boundary、next-token shift 和 response mask 三者同时变换，不能只拼 tokens。
 
+### 3.3 Dynamic batching：固定的是 token budget，不是序列条数
+
+在进入 `get_batch` 前，RolloutManager 已经用每条 sample 的 total length 构建 schedule。静态模式按 `micro_batch_size` 条数切分；`use_dynamic_batch_size` 模式忽略这个条数，用 first-fit 将变长 samples 装进不超过 `max_tokens_per_gpu * cp_size` 的 bins。[`dp_schedule.py:55-79`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L55-L79) [`dp_schedule.py:117-120`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L117-L120)
+
+随后 scheduler 把 micro-batch 数补齐到 DP×VPP group 的倍数，再按 strided round-robin 或 workload balancing 分发给 DP ranks，保证各 rank/VPP stage 执行相同数量的 pipeline micro-batches。[`dp_schedule.py:122-125`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L122-L125) [`dp_schedule.py:167-207`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L167-L207) 因此 train engine 不要求输入先变成固定 `[B,S]`；它要求的是每个 step 的逻辑 rollout 数正确、每个 micro-batch 的 packed token workload 可执行。
+
 ## 4. Forward-only 是训练流程的一等阶段
 
 actor/ref/teacher/critic values 都通过 `forward_only` 复用 Megatron pipeline schedule，而不是在 driver 上另起 HF model。它把 model 切到 eval、reset iterators，调用 `get_batch`，再由回调提取 logprob/entropy 或 values。[`model.py:345-417`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L345-L417)
 
 `compute_log_prob` 默认开启 rollout top-p replay，使训练侧重算的 logprob 与实际 nucleus distribution 对齐。[`actor.py:356-372`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L356-L372)
+
+### 4.1 全词表 logits 在哪里，为什么没有被长期存下来
+
+从 rollout 传来的 behavior logprob 已经是单条 `[R_i]` selected-token scalar。训练侧重算 current/ref/teacher logprob 时，LM head 的 `parallel_output=True` 让最后一维按 TP 切分；每个 TP rank 短暂持有的主要张量近似为 `[T, V_{\mathrm{local}}]`，其中 $V_{\mathrm{local}}\approx V/\mathrm{TP}$，而不是每卡复制完整 `[B,S,V]`。[`model_provider.py:200-209`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model_provider.py#L200-L209)
+
+vocab-parallel logprob kernel 对每行执行 TP all-reduce max/sum，只 all-reduce 已选 target logit 的标量，最后输出 `[T,1]` logprob；softmax 复用 normalized-logits storage，避免同时保留三份 full-vocab buffer。[`ppo_utils.py:187-229`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/ppo_utils.py#L187-L229) [`ppo_utils.py:273-296`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/ppo_utils.py#L273-L296)
+
+这不表示 vocab logits 的峰值显存“免费”：反向仍需保存各 chunk 的局部 softmax，合计量级仍是 $O(TV_{\mathrm{local}})$。slime 的控制手段是 TP shard、packed/dynamic token budget，以及 `log_probs_chunk_size` 按 token 维分块；chunk 实现限制单次 softmax 的临时峰值，最终只拼接 `[T]` logprob/entropy，但不会把反向所需的词表级状态降成 $O(T)$。[`arguments.py:238-245`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L238-L245) [`ppo_utils.py:718-769`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/ppo_utils.py#L718-L769) 当 entropy 只用于指标、`entropy_coef=0` 时，代码还避免为 entropy backward 长期保存额外 full-vocab tensors。[`loss.py:545-551`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L545-L551) [`ppo_utils.py:277-295`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/ppo_utils.py#L277-L295)
 
 ## 5. Critic 路径
 

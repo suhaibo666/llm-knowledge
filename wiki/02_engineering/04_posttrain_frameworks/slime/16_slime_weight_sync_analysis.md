@@ -86,21 +86,71 @@ full disk 的优点是跨环境/异构 GPU、external serving 友好，且 `rele
 
 ## 7. Delta disk 路径
 
+### 7.1 baseline 如何建立
+
 第一次调用只捕获 baseline，不发布；baseline优先来自 SGLang host materialize 的 HF checkpoint，以保证 snapshot 与 engine base 一致，缺失 tensor才回退到当前 gathered weights。[`update_weight_from_disk_delta.py:82-125`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_disk_delta.py#L82-L125)
 
-后续每轮：diff/compress changed tensors → 写 canonical safetensors shards → index 记录 `version/base_version/encoding/checksum` → host pull/apply → pause/flush → ordinary disk reload → resume。[`update_weight_from_disk_delta.py:127-190`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_disk_delta.py#L127-L190)
+这里有两个同步发生的“base”：trainer 持有上一版本的 CPU byte snapshot；每个 SGLang host 的 local checkpoint 也 materialize version 0。后续 version $v$ 只能基于 $v-1$ 生成和应用，所以它不是任意两个 checkpoint 之间的 stateless diff。
+
+### 7.2 delta 权重 diff 到底怎样生成
+
+trainer 仍先把 Megatron TP/EP shards gather/convert 成逐 tensor HF 视图，再把新 tensor contiguous 后按 `uint8` 展平。对旧 snapshot $w^{(8)}(v-1)$ 与新权重 $w^{(8)}(v)$，支持两种编码：
+
+$$
+d^{\mathrm{xor}}(v)=w^{(8)}(v)\oplus w^{(8)}(v-1).
+$$
+
+- `xor`：保存逐字节 XOR；未变化字节为 0，zstd 很容易压缩，但同一 delta 只能对正确 base 应用一次。
+- `overwrite`：先找 `new != old` 的 byte positions，再编码“changed count + uint32 positions + new byte values”；体积通常更大，但重复写相同位置是幂等的。[`disk_delta.py:21-25`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/disk_delta.py#L21-L25)
+
+GPU→CPU copy 使用 pinned buffer pool，并与 CPU thread-pool 的 diff/zstd level-1/checksum 流水；整个 tensor 未变化就不写入 delta shard。每轮完成后，新 byte array 替换 snapshot，成为下一版 base。[`update_weight_from_disk_delta.py:199-273`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_disk_delta.py#L199-L273)
+
+之后写 canonical safetensors shards，index 记录 `version/base_version/encoding/checksum`；SGLang host 解压后在 local checkpoint 的 mmap region 原位 XOR 或 overwrite，校验新 tensor checksum，再走普通 disk reload。[`update_weight_from_disk_delta.py:127-190`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_disk_delta.py#L127-L190) [`sglang-pull_weights.patch:426-545`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docker/patch/latest/sglang-pull_weights.patch#L426-L545)
+
+### 7.3 为什么 push/pull 变小，哪些成本没有变小
+
+所谓“减少 push/pull”准确地说，是减少 **trainer 发布到 shared filesystem 的 bytes** 和 **每个 serving host 拉取的 network/storage bytes**：不变 tensor 完全省略，变化 tensor 只传压缩后的 byte diff；`pull_weights(version)` 这个 Ray RPC 本身只是控制面，真正 payload 是 host 读取 version directory 并在本地 base 上 apply。[`sglang-pull_weights.patch:197-215`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docker/patch/latest/sglang-pull_weights.patch#L197-L215)
+
+它**不会**减少以下成本：Megatron→HF 的全 tensor gather/convert、GPU→CPU 的全量扫描、trainer 上一版完整 CPU snapshot、每个 host 的完整 local checkpoint，以及 apply 后 SGLang 把完整模型重新装入 serving HBM。换言之，delta 优化的是跨 host 的 wire/storage I/O，不是把模型在 HBM 中变成稀疏增量更新。
+
+固定基线也没有按 density 自动回退 full checkpoint：updater 在初始化时已由 mode/transport 固定选择，delta 每轮都执行 byte diff/compress。[`actor.py:151-174`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L151-L174) 若更新后几乎每个 byte 都改变，zstd 后 wire bytes 可能接近甚至因 metadata 略高于 full；必须看框架已经记录的 density/wire 指标再决定是否使用。
 
 文件先写 `.tmp`、flush+fsync，再 `os.replace`，防 reader 看见半文件。[`update_weight_from_disk_delta.py:297-303`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_disk_delta.py#L297-L303) 它还记录 changed density 与 wire bytes，让“delta 是否真的更省”可观测。[`update_weight_from_disk_delta.py:275-294`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_disk_delta.py#L275-L294)
 
 `xor` delta 最小但必须对正确 base 恰好应用一次；`overwrite` 更大但幂等。base_version/checksum/host lock 是 delta 正确性的必要部分，不能把它理解为普通增量 checkpoint。
 
-## 8. 量化权重的额外阶段
+## 8. 同步时长、关键路径与 overlap
+
+没有一个脱离模型大小、TP/EP、网络、shared FS 和量化方式的固定同步占比。`actor.update_weights` 被 timer 包裹，日志键为 `perf/update_weights_time`；delta 还额外上报 `perf/update_weights_density` 与 `perf/update_weights_wire_bytes`。[`actor.py:591-653`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L591-L653) [`train_metric_utils.py:13-50`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/train_metric_utils.py#L13-L50) 但 full-disk path 的 actor RPC 只负责 publish，RayTrainGroup 在 RPC 返回后另做 host pull/reload；这部分不在该 timer 内，必须用 driver/outer-iteration wall-clock 补测。[`actor_group.py:162-173`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L162-L173)
+
+同步主链可先用以下 wall-clock 口径评估：
+
+$$
+\rho_{\mathrm{sync}}=
+\frac{T_{\mathrm{update}}}
+{T_{\mathrm{rollout}}+T_{\mathrm{train}}+T_{\mathrm{update}}}.
+$$
+
+上线前只能做带假设的下界估算：令实际跨通道字节数为 $D_{\mathrm{wire}}$、有效带宽为 $\mathrm{BW}_{\mathrm{eff}}$，则 $T_{\mathrm{transport}}\gtrsim D_{\mathrm{wire}}/\mathrm{BW}_{\mathrm{eff}}$。full path 的 $D_{\mathrm{wire}}$ 至少是一个模型权重体量的量级，delta path 则应直接使用 `perf/update_weights_wire_bytes`；实际时间还要加 shard gather/conversion、barrier、cache flush、host apply、engine reload 和量化后处理，因此这个公式只能做容量规划下界，不能替代 timer。
+
+若启用一拍异步，则分母应改成实测 outer-iteration wall time，不能再把 rollout 与 train 简单相加。另一个日志细节是：actor 在本轮 train 末尾 flush perf metrics，而 driver 随后才调用 weight update，因此刚产生的 actor-side `update_weights_time` 通常在下一次 actor perf flush 才出现。[`actor.py:514-564`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L514-L564) [`train.py:53-85`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L53-L85)
+
+| 阶段 | 能否 overlap | 固定基线的边界 |
+|---|---|---|
+| rollout N+1 与 train N | 可以 | `train_async.py` 的一拍 pipeline |
+| full/delta disk 的 host pull/apply | 部分可以 | 在 pause 前预拉到 local checkpoint，可与 generation overlap |
+| pause→flush→online transfer/reload→resume | 不可以 | serving commit barrier；保证单请求不跨 version |
+| `update_weights_interval > 1` | 属于频率摊薄，不是单次掩盖 | 减少平均同步次数，但增加 behavior-policy staleness |
+
+同步路径的优先优化顺序应是：先用 timer 拆出占比；再看 NCCL bucket/拓扑或 disk wire/density；最后才调大 update interval，因为后者改变的是 on-policy 新鲜度，不只是性能。
+
+## 9. 量化权重的额外阶段
 
 compressed-tensors INT4/FP4 在加载前先 restore original weights、加载后再 quantize postprocess，因此在线 updater必须把这两个动作包在同一次 pause/resume 事务中。[`update_weight_from_distributed.py:109-134`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L109-L134)
 
 量化 ignore list 错误可能让 MoE gate 等非 Linear 2D tensor被转成 SGLang不识别的名字而静默跳过；`check_weight_update_equal` 和首轮 rollout/logprob 对齐是必要门禁，而不是仅看 update RPC 成功。
 
-## 9. 选择建议
+## 10. 选择建议
 
 | 场景 | 首选 | 原因 | 主要风险 |
 |---|---|---|---|

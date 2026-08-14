@@ -8,6 +8,20 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-14：补齐 slime rollout batch、数据通道、logprob 与 delta 同步问答
+
+**Type**: Source-level FAQ Enrichment + Mechanism Clarification
+
+- 扩写 [[10_slime_end_to_end_iteration_analysis]]，统一解释 `rollout_batch_size`、训练 global batch、micro-batch/梯度累计、optimizer step、外层 rollout 与 epoch 的边界；明确 actor 每个 train step 更新，而 SGLang 权重在整轮 train 后一次提交。
+- 补齐 GRPO 的 $R\times G$ 采样、group reward normalization 与 train-step split 关系，并解释变长轨迹如何经过 token-budget first-fit、DP/VPP 对齐和 THD packed sequence 进入 Megatron。
+- 扩写 [[12_slime_sample_datasource_analysis]] 与 [[13_slime_sglang_rollout_engine_analysis]]：区分 SGLang `/generate` 返回与 Slime rollout 子系统最终 Sample，说明 reward 可来自 remote/custom/group/built-in verifier，复合格式/正确性/工具奖励需要显式组合；固定基线的数据路径是 CPU tensorize → Ray object store/NIXL → trainer CPU → CUDA，而非 NCCL HBM 直传。
+- 纠正 logprob 量级误解：持久化 rollout logprob 是每个已选 response token 一个 float32，单条 shape 为 `[R_i]`，不是 `[B,S,V]`；[[14_slime_megatron_training_analysis]] 进一步说明训练侧 full-vocab logits 只在当前 micro-batch 内以 TP shard 短暂存在，并由 in-place vocab-parallel softmax、token chunk 与 dynamic token budget 控制峰值。
+- 深化 [[16_slime_weight_sync_analysis]]：逐字节说明 delta baseline、XOR/overwrite、zstd、checksum、host-local mmap apply，区分 wire/storage bytes 的节省与全量 gather/CPU snapshot/最终 HBM reload 等未节省成本；补四条权重路径的关键路径、可重叠阶段、timer 口径和同步占比下界估算。
+- 因 changelog 本次进入 changed-file 公式门禁，顺手机械修复该历史文件中既有的 4 个旧定界符错误和 5 个语义下标警告；只调整 MathJax 写法，不改变历史结论。
+- 校验：6 个 changed Markdown 严格公式检查为 0 error / 0 warning；5 篇 Slime 页面共 176 个固定 commit `path:line` 引用，文件与行号范围 issues=0；全库链接检查 pages=401，broken/ambiguous/bare_index/orphans 均为 0；公式/链接相关测试 22 passed；`git diff --check` 无空白错误。
+
+---
+
 ## 2026-08-14：slime/vime 公式整改与 Obsidian 数学质量门禁
 
 **Type**: Documentation Remediation + Repository Skill + Automated Quality Gate
@@ -684,7 +698,7 @@ bare_index=70 为既有基线，P7 Task 8 处理范围）；`pytest tools/ -q`�
 | 页面 | 收缩(D02 对应) | 保留(论文特有/D02 未给出的公式) | 行数 |
 |---|---|---|---|
 | `grpo_analysis` | Key Innovation 段落(D02 §3.1 $\hat A_i$ 公式)、GRPO Objective 的 clip-surrogate 结构(D02 §2)、Why GRPO Works Well 动机叙述(D02 §1/§3.1)、Practical Implementation 玩具伪代码(改指 verl `core_algos.py:268/1279` 真实代码锚点) | 论文元数据、KL 低方差无偏估计量(D02 未给)、DeepSeek-R1-Zero 训练配置表/涌现行为/性能、R1 全流程、GRPO vs DPO 对比表、Impact | 165→119 |
-| `dapo_analysis` | Clip-Higher 与 Dynamic Sampling 两段动机叙述(公式与 D02 §2/§3.2 重复)、Relationship to Other Methods 表(与 D02 §4 重复) | 论文元数据、"30 分失败三症状"诊断段、Token-Level Loss 的 $J_{DAPO}$/$J_{GRPO}$ 显式求和公式(D02 无)、Overlong Reward Shaping 分段惩罚公式(D02 无)、DAPO Algorithm 伪代码、Training Configuration/Progressive Results 两张原始数字表、KL 移除动机、数据集细节、Key Insights | 187→157 |
+| `dapo_analysis` | Clip-Higher 与 Dynamic Sampling 两段动机叙述(公式与 D02 §2/§3.2 重复)、Relationship to Other Methods 表(与 D02 §4 重复) | 论文元数据、"30 分失败三症状"诊断段、Token-Level Loss 的 $J_{\mathrm{DAPO}}$/$J_{\mathrm{GRPO}}$ 显式求和公式(D02 无)、Overlong Reward Shaping 分段惩罚公式(D02 无)、DAPO Algorithm 伪代码、Training Configuration/Progressive Results 两张原始数字表、KL 移除动机、数据集细节、Key Insights | 187→157 |
 | `gspo_analysis` | Problem 段 5 点缺陷列表压缩为一段(D02 §3.4)、Sequence-Level Ratio 公式与 GSPO Objective(D02 §3.4/§2 完全一致)、Key Difference 表与 Relationship to Other Methods 表(均与 D02 §4 重复) | 论文元数据、Gradient Comparison 的 $\nabla J$ 显式梯度公式(D02 无)、GSPO-token stop-gradient 变体公式(D02 无)、Clipping Range Difference 原始超参数表(3e-4/4e-4)、Empirical Results 原始实验数据、Why GSPO Matters | 133→88 |
 
 **verl `verl_rl_algorithms_analysis.md` §3.2/§4.1/§4.2 数学部分收缩指 D02**（保留全部代码锚点、14 优势估计器/11 策略损失清单、注册表机制、config key 映射——spec 点名保护项）：GRPO 组内归一化公式（§3.2）、vanilla PPO clip 基础结构（§4.1，dual-clip 扩展因 D02 未给出而保留）、GSPO 序列比公式（§4.2，stop-grad 实现技巧因 D02 未给出而保留）分别收缩为指向 D02 §3.1/§2/§3.4 的一句话，`core_algos.py:xxx` 代码块与行号全部原样保留。§7"与 RL 文献的对应"由散文列表改写为"verl 选型→文献→D02 对应→论文页"表格（轻改，DAPO"在 verl 里不是新损失"的实现洞察保留为表内备注；表中特别标注 verl `sapo`(arXiv 2511.20347)与 D02 §3.5 的 SAO(arXiv 2607.07508)是不同算法，避免同名混淆）。389→382 行（净减 7 行：删除 3 处重复 LaTeX 展示块，新增 §7 对应表 + Related Pages 补链）。
@@ -1754,7 +1768,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **Type**: Source Ingest + Industrial Case Study + Cross-Document Correction（固定官方报告 `0797decb`，将算法、trajectory、environment、Infra 与部署精度放回同一个 `wiki/03_posttraining/` 闭环。）
 
 - **原始来源**：新增 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`，SHA-256 `fd6ee35c07766a5eb6104235f1b407e4329f969e3482b8c42937c7b5f2b3efe1`；来源台账补 §4.1、§4.2、§5.3 与 Appendix F 的精确定位。
-- **新增 D12 `03_posttraining/12_kimi_k3_posttraining_case_study_analysis`**（历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[24_kimi_k3_posttraining_case_study_analysis]]，按"历史不回写"惯例降级为反引号）：串起 SFT → 九个 domain/effort 专家 → MOPD，澄清 partial rollout 保留 prompt 内 \(K\) group，并分析 white-box environment、XTML preserved thinking、MXFP4/MXFP8 QAT、draft model、external KV pool 与 AgentENV。
+- **新增 D12 `03_posttraining/12_kimi_k3_posttraining_case_study_analysis`**（历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[24_kimi_k3_posttraining_case_study_analysis]]，按"历史不回写"惯例降级为反引号）：串起 SFT → 九个 domain/effort 专家 → MOPD，澄清 partial rollout 保留 prompt 内 $K$ group，并分析 white-box environment、XTML preserved thinking、MXFP4/MXFP8 QAT、draft model、external KV pool 与 AgentENV。
 - **回填统一主线**：更新 D00–D05 与 D11；把 K3 作为项目级工业案例，而不是没有训练源码证据的“第五个开源框架”；D00 与领域/全局索引扩展为 D00–D12 连续编号。
 - **修正事实边界**：量化 scheme 一致只消除该维度 TIM；K3 partial rollout 不是 fully async；Figure 8、MOPD、GRM、external KV 与 AgentENV 均保留未披露超参数、消融或运行条件。
 - **K3 旧页同步**：总览、架构、Infra 与 Moonshot 索引从“报告/权重待发布”更新为 2026-07-28 固定报告，并把后训练机制统一链接到 D12。
@@ -1939,9 +1953,9 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Deep Dive（承接用户连续追问：QKVABZ、$a/b/z$ 设计、RNN 中的 $t$、chunk size 与 $t$ 的关系、chunk 数学等价性、仿射状态是否必须保序，以及当前训练/Prefill/Decode kernel 融合。）
 
-- **新增 [[20_gdn_kda_linear_attention_analysis]]**：从 $x_t\rightarrow q,k,v,a,b,z$ 开始，逐步解释 raw $a\rightarrow g=\log\alpha$、$b\rightarrow\beta$、$z$ 输出门的职责分离；给出 GDN 标量 decay 与 KDA 逐通道 decay 的五步递推、统一仿射式 $S_t=A_tS_{t-1}+B_t$、$C=3$ 展开，以及 chunk 摘要 $(P,R)$ 的保序结合复合。明确纠正“chunk 状态矩阵直接相乘”和“有结合律即可乱序”两个误解。
+- **新增 [[20_gdn_kda_linear_attention_analysis]]**：从 $x_t\rightarrow q,k,v,a,b,z$ 开始，逐步解释 raw $a\rightarrow g=\log\alpha$、$b\rightarrow\beta$、$z$ 输出门的职责分离；给出 GDN 标量 decay 与 KDA 逐通道 decay 的五步递推、统一仿射式 $S_t=A_tS_{t{-}1}+B_t$、$C=3$ 展开，以及 chunk 摘要 $(P,R)$ 的保序结合复合。明确纠正“chunk 状态矩阵直接相乘”和“有结合律即可乱序”两个误解。
 - **新增 [[21_gdn_kda_kernel_implementation_analysis]]**：训练侧固定 FLA `ccb0ff944cbf`，拆解 autograd chunk forward/backward、gate+cumsum、KKT+solve-tril+W/U、状态 scan、输出和反向重算；推理侧固定 SGLang `7824903417b7`，拆解 QKVABZ 投影融合、Prefill $C=64$ chunk pipeline、Decode fused recurrent 五步、GDN packed-decode 与 speculative verify。明确 SGLang 是推理基线，不用其 forward-only 代码冒充训练反向。
-- **原始来源与联动**：新增 raw 快照 `Gated_Delta_Networks-2412.06464v3.pdf`；修正 [[12_kimi_linear_analysis]] KDA 公式中 $S_{-1}$ 的下标笔误为 $S_{t-1}$；更新 Moonshot/Kimi 与模型总索引，并为 [[22_kimi_k3_architecture_deepdive]] 补充双向入口。
+- **原始来源与联动**：新增 raw 快照 `Gated_Delta_Networks-2412.06464v3.pdf`；修正 [[12_kimi_linear_analysis]] KDA 公式中 $S_{{-}1}$ 的下标笔误为 $S_{t{-}1}$；更新 Moonshot/Kimi 与模型总索引，并为 [[22_kimi_k3_architecture_deepdive]] 补充双向入口。
 - **后续补充：TND/THD packed 输入**：[[21_gdn_kda_kernel_implementation_analysis]] 新增 §八，明确 TND/THD 的 $T=\sum_iL_i$、外层 batch=1 与 `cu_seqlens` 状态边界；逐段追踪 Megatron-LM `dev@232c478d43ce` 的 `T×1×D → per-sequence CP→HP → 1×T×N×d → boundary-aware short conv/chunk GDN → per-sequence HP→CP`，并解释为何每条 packed 序列必须独立重置 RNN 状态、chunk 不能跨 pack 边界，以及当前 batch、CP 对齐、FLA 与 inference 限制。
 - **TND 代码级追踪**：同页 §8.6 补充最小等价伪代码，并把边界隔离落实到三层实现：Megatron `_unpack_sequence` 与逐序列 CP↔HP、FLA causal-conv 的 `bos/eos + boundary_check`、GDN Triton state kernel 的 `N×head` program grid 与每序列独立 chunk-state 槽。
 
@@ -2206,8 +2220,8 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **定位**：新建理论簇 `01_theory/06_distributed_parallelism/`，**原理（principle）层、引擎无关**——只讲「为什么这么切、代价函数长什么样、为什么不选替代」，两根主线贯穿全簇：**$\alpha$-$\beta$ 通信代价模型** + **显存账本（参数/梯度/优化器态/激活）**；「源码怎么实现」一律交叉链接到 [[02_engineering/index]] 已有的源级页（`[[15_distributed_primitives/index]]`、[[megatron-lm/index]]、[[torchtitan/index]] 等），不重复。填补「理论层无分布式并行原理页」的空白。
 
 - **新增 index + 6 内容页**：
-  - [[10_collectives_analysis]] — 六大原语语义、$\alpha$-$\beta(-\gamma)$ 模型、核心恒等式 **all-reduce = reduce-scatter + all-gather**、ring 每卡搬运 $2(N{-}1)/N\cdot M$ 的带宽最优性、ring vs tree、all-to-all/p2p 代价（全簇「代价词汇表」）。
-  - [[11_data_parallel_analysis]] — DP：复制模型/切数据、all-reduce 梯度的等价性、通信 $\propto\Psi$ 与 batch/卡数无关、$16\Psi$ 显存账本（引出 ZeRO）、分桶重叠 + 梯度累积。
+  - [[10_collectives_analysis]] — 六大原语语义、$\alpha$-$\beta(-\gamma)$ 模型、核心恒等式 **all-reduce = reduce-scatter + all-gather**、ring 每卡搬运 $\frac{2(N{-}1)}{N}M$ 的带宽最优性、ring vs tree、all-to-all/p2p 代价（全簇「代价词汇表」）。
+  - [[11_data_parallel_analysis]] — DP：复制模型/切数据、all-reduce 梯度的等价性、通信 $\propto\Psi$ 与 batch/卡数无关、$\Psi\times16$ 显存账本（引出 ZeRO）、分桶重叠 + 梯度累积。
   - [[12_zero_fsdp_analysis]] — ZeRO 1/2/3 逐级切优化器态/梯度/参数、通信 vs DP 增量（1/2 免费、3 多 ~50% AG）、ZeRO-3 = FSDP 的 unshard→compute→reshard。
   - [[13_tensor_sequence_parallel_analysis]] — TP（Megatron 列切→行切 + f/g 共轭算子、每层 4 次 all-reduce、只敢机内）、SP（拆 all-reduce 为 RS+AG，零额外通信换激活显存）、CP（ring-attention 交换 KV 攻长序列）。
   - [[14_expert_parallel_analysis]] — EP：路由 + 两次 all-to-all（分发/回收）、负载不均与容量因子、分层 a2a。

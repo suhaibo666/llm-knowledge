@@ -81,6 +81,8 @@ teacher_log_probs / multimodal_train_inputs / source_names
 
 实现和条件字段见 [`rollout.py:749-866`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L749-L866)。未提供 loss mask 时默认为所有 response token 可训练；`remove_sample` 会把整条 response mask 清零，但样本仍保留在 batch 中，以维持 schedule 形状。[`rollout.py:783-797`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L783-L797)
 
+这里的必选数据是 tokens、length、reward、mask 和 identity；behavior/蒸馏字段是按功能启用的条件 ABI。默认 SGLang 生成会填 rollout logprob；top-p nucleus ids/offsets、MoE routed experts、teacher logprob 和 multimodal tensors 则分别依赖采样重放、routing replay、OPD 和多模态配置，不能把它们算进所有任务的固定通信量。
+
 ### 5.1 为什么要在这里算 `rollout_mask_sums`
 
 对逻辑 rollout $g$，训练目标使用完整 denominator：
@@ -97,9 +99,43 @@ $$
 - 开启 rollout routing replay 时 routed expert shape 在 conversion 前验证。[`rollout.py:848-852`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L848-L852)
 - TIS/OPD/teacher 等只有 source sample 提供相应字段才进入训练侧；自定义 rollout 不能假设默认 converter 会凭空重建它们。
 
+### 5.3 logprob 与 routed experts 的真实 shape
+
+`rollout_log_probs` 与 response token 一一对应：单条 sample 是 `[R_i]` 个 float，而不是 `[S_i, V]` 的全词表分布。`append_response_tokens` 要求 trainable tokens 与 logprob 等长，最终又校验 logprob length 等于 response length。[`types.py:253-302`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L253-L302) [`types.py:418-425`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L418-L425)
+
+`rollout_routed_experts` 才可能是更重的 metadata：语义 shape 约为 response-token × MoE-layer × top-k，只有 SGLang 请求 `return_routed_experts` 且 Sample 实际返回该字段时才运输。[`sglang_rollout.py:175-183`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L175-L183) [`rollout.py:848-852`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L848-L852)
+
 ## 6. train_data → per-DP Box → micro-batch
 
-DP split 先用 total sequence lengths 和 rollout ids 建 schedule，再为每 rank 拷贝 partition 内的 per-sample fields；step-global fields（如 full raw reward/total lengths）只存一份。最终 `torch.Tensor` 字段用 Ray object store 或 NIXL transport 包成 `Box`。[`rollout.py:871-938`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L871-L938)
+DP split 先用 total sequence lengths 和 rollout ids 建 schedule，再为每 rank 拷贝 partition 内的 per-sample fields。`raw_reward` 和 `total_lengths` 是例外：它们为日志/pass@k 和 train-side split 保留完整 step 列表，因此会复制到每个 per-DP `rollout_data`，不是只存一个全局对象。[`rollout.py:871-930`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L871-L930)
+
+### 6.1 物理传输路径：默认不是 NCCL/HBM 直传
+
+```text
+SGLang /generate HTTP response
+  → RolloutManager 中的 Python Sample / CPU data
+  → 按 DP rank 分区
+  → tokens/masks/logprobs/top-p/routing 等转 CPU contiguous tensor
+  → Ray object store（默认）或 Ray NIXL tensor transport
+  → Megatron actor 在 CPU 取回
+  → actor 显式 .to(cuda)，再按 CP 切 logprob
+```
+
+源码为不同字段固定 CPU dtype：token ids 是 int64，loss mask 是 int32，rollout/teacher logprob 是 float32，top-p ids/offsets 是 int32，routed experts 保留原 dtype；多模态 ndarray/tensor 也先变成 CPU contiguous tensor。[`rollout.py:41-104`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L41-L104) 参数说明同样明确“大字段先在 CPU tensorize”，默认 transport 是 object store，NIXL 是可选的 Ray tensor transport。[`arguments.py:558-566`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L558-L566)
+
+所以这条数据通道与权重同步的 NCCL broadcast 是两回事。固定基线下，即使用 NIXL，源对象仍先被整理为 CPU tensors；训练 actor 的注释和实现也明确“Fetch data through ray on CPU”，之后才 non-blocking 搬到当前 CUDA device。[`actor.py:245-299`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L245-L299)
+
+### 6.2 通信量为什么通常没有想象中那么大
+
+设第 $i$ 条 sample 的总 token 数为 $L_i$、response token 数为 $R_i$。忽略小标量、Ray metadata、对齐和对象开销，tokens + mask + 可选 selected-token rollout logprob 的基础量级约为：
+
+$$
+B_{\mathrm{base}}
+\approx
+\sum_i\left(8L_i+4R_i+4R_i\mathbb{1}_{\mathrm{logprob}}\right)\ \mathrm{bytes}.
+$$
+
+关键是最后一项只有每个已选 token 一个 float32，不含词表维 $V$。真正可能放大通信量的是条件字段：top-p replay 保存每个 token 的 ragged nucleus ids；routing replay 约按 $R_i\times N_{\mathrm{MoE\ layer}}\times k$ 增长；多模态像素/特征和 teacher logprob 也会增加 payload。应按实际开启功能从 profiler/Ray object store 统计，而不是用 `[B,S,V]` 估算。
 
 训练 actor 解包自己 DP rank 的 partition，并按 CP 切 response-side logprobs；随后 `DataIterator` 只按 schedule index 取当前 micro-batch 需要的 fields。[`actor.py:245-299`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L245-L299) [`data.py:201-245`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/data.py#L201-L245)
 

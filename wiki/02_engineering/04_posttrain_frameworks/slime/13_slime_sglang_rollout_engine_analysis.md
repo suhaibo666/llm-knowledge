@@ -46,9 +46,23 @@ $$
 
 这条路径故意保存 behavior logprob，而不是只保存 response：PPO/TIS/mismatch/top-p replay 都需要知道实际采样分布。
 
+### 3.1 为什么 rollout logprob 不是 `[B,S,V]`
+
+SGLang HTTP meta 的 `output_token_logprobs` 逐 token 返回 `(selected_logprob, selected_token_id, ...)`；slime 只抽取每个已生成 token 的 id 和对应标量 logprob，再 append 到 Sample。[`sglang_rollout.py:202-219`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L202-L219) 因而单条持久化 shape 是 `[response_length]`，batch 是 ragged 的 `list[Tensor[R_i]]`，没有词表维 $V$。
+
+例如 $B=512$、每条 response 为 $4096$ token 时，float32 selected-token logprob 约为 $512\times4096\times4=8\ \mathrm{MiB}$；若错误地按 $V=150000$ 的全量 float32 logits 保存，则约为 $1.26\ \mathrm{TB}$。后者既不经 HTTP 返回，也不进入 Sample。PPO/GRPO 的 ratio 只需要已执行 action 的 $\log\pi(a_t\mid s_t)$，不需要保存所有未选 token 的概率。
+
+训练时为了求当前 policy logprob，Megatron 确实会短暂 materialize 当前 micro-batch 的 vocab-parallel logits，但它是 TP-sharded、可按 token chunk 计算并最终约化为 `[T]` selected-token logprob；详见 [[14_slime_megatron_training_analysis]]。
+
 ## 4. Group、reward 与 custom generation
 
 `generate_and_rm` 在 semaphore 内选择 per-sample `generate_function_path` 或全局 custom generate；生成后执行 sample hooks，再根据 `group_rm` 决定 per-sample RM 还是等组齐后 batched/group RM。[`sglang_rollout.py:225-289`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L225-L289)
+
+这里的“rollout 返回 reward”是 **Slime rollout 子系统的最终 Sample 带 reward**，不是 SGLang `/generate` 自己做了奖励推理。默认路径先生成，再执行 hooks；只有 Sample 的 reward 仍为空时才调用 `async_rm`，custom generate 因而可以预先填 reward。[`sglang_rollout.py:244-289`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L244-L289)
+
+RM 来源可以是远程 reward service、自定义函数，或 math/DAPO/DeepScaler/F1/GPQA/IFBench 等内置 rule/verifier；`group_rm` 则把整组交给 batched RM。[`rm_hub/__init__.py:34-109`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/rm_hub/__init__.py#L34-L109) `Sample.reward` 允许 scalar 或 dict，`reward_key` 从 dict 选择进入训练的标量。[`types.py:118-128`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L118-L128) [`types.py:246-247`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L246-L247)
+
+格式奖、正确性/verifier 奖、工具调用奖等**不会被核心框架自动发现并求和**。需要在 custom/remote/group RM 内明确组合成 scalar，或返回 dict 后用 `reward_key` 选主目标，再按需用 custom reward postprocess 改写。官方示例中 Search-R1 把格式、检索和答案正确性合成一个分数，ReTool 则先调用数学 verifier，再按工具调用次数修正其中的 `score`。[`qa_em_format.py:156-208`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/search-r1/qa_em_format.py#L156-L208) [`generate_with_retool.py:407-432`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/retool/generate_with_retool.py#L407-L432)
 
 组函数给每个 sample 分配 session id，确定性推理时给组内第 i 个样本固定 seed；custom generate 可返回一个 Sample 或 `list[Sample]`，所以同一 group 可以变成 agent fanout 的嵌套 shape。[`sglang_rollout.py:297-336`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L297-L336)
 
