@@ -1,0 +1,584 @@
+Source: https://qwen.ai/blog?id=qwen3.8
+Published: 2026-08-03
+Captured: 2026-08-13
+
+QWEN STUDIODISCORD
+
+今天，我们正式发布了 Qwen 3.8-Max，这是目前 Qwen 家族中最强大的模型。这也标志着 Qwen-Max 级别的模型将首次开源权重——权重将于下周开源，敬请期待。
+
+Qwen 3.8-Max 基于 Qwen 3.5 的架构基础构建，参数规模扩展至 2.4 万亿，在编程、办公、科研以及长周期任务等方面实现了全面提升。它不仅能应对更具挑战性的问题，还能更可靠地端到端完成复杂任务，输出值得信赖的成果。
+
+Qwen3.8-Max — 现已上线 千问AI平台：
+总参数量 2.4T（激活参数 95B），开源权重将于下周发布
+在编码、办公、科研及长程任务上全面升级
+端到端可靠交付复杂任务
+可通过 API 在 千问AI平台 直接调用。
+编程能力
+
+对顶尖模型来说，如今的编程早已不只是"应要求写个函数"，而是从一个空文件夹出发、独立地把一个跨越数天的真实项目做到交付。我们用三个这样的挑战测试了 Qwen3.8-Max——其中每一个成果都必须靠它亲自写代码、跑代码得到，全程没有任何人工帮助。贯穿这三个案例的一条主线是：Qwen3.8-Max 并非机械地执行既定方案，而是通过反馈闭环不断自我进化——构建能自我升级的 harness、在一次次实验中打磨科研方法、在一次次提交中登上竞赛榜。
+
+十天级自动编程：构建自进化 Harness
+
+本案例中，Qwen3.8-Max 被要求从零创建 oh-my-cli 项目，并在十天级长程自动编程中构建一套自进化 harness。它将用户反馈、先进社区实践与模型自测结果统一纳入工程循环，使需求能够被规范化为 issue、由 agent 自动领取并执行，并在代码、测试、预览和日志反馈中持续迭代；项目完整 trace 均公开保存在 GitHub 仓库 qwen-code-dev-bot/oh-my-cli。
+
+自动编程 harness 构建中的关键实现细节：
+
+Loop Engineering Setup：任务状态、派发与恢复。 Qwen3.8-Max 将 issue 状态机、任务派发器、监控器和 watchdog 组合为统一执行循环：新需求进入 GitHub Issue 后，agent 根据状态机自动领取任务并进入 ready → leased → active；实现完成后触发端到端测试与 CI 检查，通过后合并 PR。
+Self-testing：产品自测试与维护。 提交更新后模型触发 Build、Unit Test、E2E 与 Desktop Lifecycle 验证；异常状态自动回退 issue / PR 修复并重新验证。
+Multi-source Evolution：多源需求驱动产物升级。转化社区经验、用户/开发者反馈，持续演进出 /goal、/resume、Dynamic Workflow、Session Replay、Desktop 等 Harness 能力。
+
+截至 2026 年 7 月 30 日，完全由 AI 自主运行约 16 天后，仓库累计留下 265 次 commits、127 个 PR 和 151 个 issues，展现出持续演进的自动编程能力。
+
+视频 1. 在十天级长程自动编程中，Qwen3.8-Max 自主构建自进化 harness，持续完成社区需求收集、issue 派发、代码生成、验证与自我修复。
+
+复现一篇论文，然后超越它
+
+我们把一篇最新的研究论文交给模型——《Unified Data Selection for LLM Reasoning》——要求它：用代码复现论文实验，然后想办法做得更好。 这篇论文要解决 AI 训练中一个非常实际的问题：当数据量远超训练预算时，到底该留下哪些样本？ 论文给出的答案是：选择那些充满"艰难抉择点“的样本——也就是一段解题过程中，模型真正拿不准该往哪走的时刻。
+
+复现论文的难点在于：Qwen3.8-Max 手里除了这篇论文和一批 GPU，别无他物——没有任何起始代码，也没有现成的流水线。数据处理脚本、训练代码、评测程序，全都得由它自己从零设计、从零编写，而这正是连熟练工程师都要花上好几天的活。
+
+Qwen3.8-Max 完全独立地连续工作了约五天（约 125 小时不间断），写下约 7,600 行代码、执行超过 1,100 步操作、跑了 33 轮 GPU 训练。它先用约 37 小时从零搭起论文里的整套训练与评测流水线，完整复现了论文的六项主要结论——反复在自己挑选的数据上微调 Qwen3-8B 模型，并在高难数学基准上验证效果（例如，复现论文的数据选择方法在 AIME24 上比随机挑选高出 +7.7%）。
+
+随后模型更进一步，把"复现"变成了"自我进化”。在接下来的约 88 小时里，它跑起了一个自我进化的科研循环——提出假设 → 写代码 → 上 GPU 跑 → 分析 → 再试——横跨四轮探索，自己提出并测试了 18 种改进想法。每一轮的实验结果都反哺下一轮的假设，通过分析每个方案的问题，它最终进化出一个超越论文原方法的新做法，在竞赛级数学基准 AIME24 上再提升 2.7 分。
+
+Expand
+改进搜索是如何一步步展开的——4 轮探索，18 种想法
+24 小时内击败数百支人类队伍
+
+接着，我们让 Qwen3.8-Max 参加了一场真实的线上比赛——WWW2025 多模态对话意图识别挑战赛，它托管在阿里云天池平台上，有 526 支人类队伍同场竞争。任务是：读懂电商客服对话——既有文字、也有截图——准确判断顾客到底想要什么。
+
+在完全独立、且只有 24 小时时限的条件下，Qwen3.8-Max 先读懂比赛规则，再用代码搭起一整套方案。文本方面，它微调并集成了多个中文语言模型——BERT、MacBERT、RoBERTa；商品截图方面，它微调了视觉语言模型 Qwen2.5-VL-7B，并用 Chinese-CLIP 模型为主模型拿不准的图片兜底。随后它把这些模型融合成一个加权投票系统，通过交叉验证来校准每个模型投票的权重，并加入额外的图像投票器来打破平票。在 45 次提交中——每一次提交的反馈都指引着下一轮的微调与重新配比——它的准确率从 0.60 稳步爬升到最终的 0.853，击败 458 支人类队伍（全场的 87%）。
+
+Expand
+
+这三个案例共同说明了 Qwen3.8-Max 的独特之处：面对艰难而开放的目标，它能连续专注数天，提出自己的想法，并把它们变成可用的成果——全程无需人工介入。
+
+办公助手
+
+在编程之外，真实工作——那些琐碎、多步骤、重度依赖工具、填满几乎每个职业日常的任务——是前沿模型创造经济价值的另一主赛道。让 Qwen3.8-Max 在这类工作流中真正胜任且足够稳定，是我们的核心使命。
+
+扩展真实世界的强化学习系统。 通过联合扩展强化学习的环境数量与训练算力，我们在主流 harness（QwenWork / Claude Code / Codex / OpenClaw / Hermes）上观察到模型通用工作的能力持续提升。为了做到这一点，需要解决三个相互耦合的挑战：
+
+持续扩展真实环境，并在这些独立维度上解耦合：任务（Task）（单任务 → 多任务 → 跨天任务）、工作空间（Workspace）（多文件 → 层级目录 → 复杂异构目录）、Harness（不同的类别、版本、技能）。这使得环境数能够以组合方式自然增长，而非依赖逐一定制化集成。
+
+构建一个统一的奖励系统，将真实任务中异构的验证方式内化其中。该系统涵盖基于执行的校验、对文本及渲染后的视觉输出的 rubric 评估、以及 agentic 检查。我们将多种形式与模态统一在一个奖励系统内，为所有环境提供了一致而可靠的奖励信号，消除维护任务专用的 verifier 所固有的不一致性。
+
+构建一个在线数据均衡器，对每个 batch 进行重构，使其在任务、难度、工作区与 harness 上的分布高度均衡，降低 batch 间梯度方差，从而支撑强化学习的训练算力稳定、持续地扩展。
+
+以上三者为强化学习训练提供了广度、可靠奖励、稳定性，将“环境 × 算力”的联合扩展，转化为真实世界工作能力可观的提升。
+
+图 1. 随着 RL 训练持续 scale up，Qwen3.8-Max 在数十个 in-house / public 工作基准上取得稳步、一致的性能提升。
+
+图 2. Qwen3.8-Max 在 QwenWork、Claude Code、Codex、OpenClaw、Hermes 等众多 harness 上取得相当的性能表现。
+
+在数百种高价值职业上检验工作能力的广度
+
+前沿模型的经济价值正向更广泛的职业场景延伸。为了检验 Qwen3.8-Max 在真实工作流中交付生产级成果的能力，我们选取了数百种高经济价值职业的高频工作场景进行测试。以下是几个代表性案例：
+
+企业合规律师 —— 面对数百份文档的语料，Qwen3.8-Max 单次通读即标出 1,284 条相关条款，全部审阅在一小时内完成。同等规模的文档审查通常需要法务助理团队协作执行约一周。
+UI/UX 设计师 —— Qwen3.8-Max 为数字银行 App NOVA 生成了包含8 个页面的高保真、可交互原型。统一的设计系统一次成型，全程未经人工返修。作为参照，同类原型在常规设计流程中需经历 3–5 轮修改方可定稿。
+餐饮品牌主理人 —— 基于上百份食材供应资料，Qwen3.8-Max 一次性产出26 道菜的完整菜单。每道菜标注平均热量与食材来源，并且将食材成本率控制在 33.8%。这类菜单开发在传统流程中需要主厨与运营团队数周反复试菜、核算与调整。
+结构工程师 —— Qwen3.8-Max 仅凭一份图纸，在浏览器中还原出 30 层写字楼的抗震结构模型，周期、基底剪力、层间位移角均支持悬停实时查看。传统流程需要工程师在专业建模软件中手工搭建，通常耗时一周以上。
+康复理疗师 —— Qwen3.8-Max 将一张 2D 纸质评估单转化为可自由选择角度、可逐层浮现解剖示意图的 3D 交互演示，使患者得以直观理解损伤位置与康复路径。这类可视化材料以往需要外包给医学动画团队，制作周期 2–4 周、成本数千乃至数万元。
+体育数据分析师 —— Qwen3.8-Max 将每名球员约 8,400 个攻防回合解析为可直接使用的球员战术画像与教练报告，耗时仅数十分钟。传统分析团队则需手工完成战术切片、成因归纳与报告撰写，通常耗时数个工作日。
+
+视频 1. 在上百个高价值职业的真实工作流中，Qwen3.8-Max 协助人类显著提效——展现其工作能力的广度。
+
+一次对话，交付可盈利的端到端量化策略
+
+Qwen3.8-Max 依托其强大的动态工作流（Dynamic Workflows）构建能力，能够以编程方式驱动任务规划，精准编排大规模子智能体系统，从而把一次对话变成端到端、自动化的量化研发闭环。
+
+深度 — 端到端的 ETF 轮动策略研发。 Qwen3.8-Max 仅从一句简短的任务描述出发，便自主规划出复杂的动态工作，并持续工作数小时，交付出完整的 ETF 轮动策略：它自主搭建数据系统、构建基础因子、编排多轮贪心迭代，持续动态分析回测结果并调整方向。其全程依据证据行事，而非固定脚本：
+
+当观察到设计期指标单调上升而验证期掉头下降的过拟合信号时，自动触发剪枝、逐轮删除冗余因子。
+当发现多个路径收敛到同一组核心信号时，它增加多种子并集验证以消除路径依赖。
+当判断三模型集成在小截面下不如固定方向合成稳健时，它自主切换到更适合的策略框架。
+
+广度 — 大规模并行因子挖掘。 因子研究的搜索空间庞大且传统流程以串行为主。Qwen3.8-Max 将这一过程并行化：仅从覆盖动量、价值、质量、投资、低风险与情绪六类经典因子的六条简短描述出发，把每一类因子拆解为 50 个不同研究方向，并调度 约330 个子智能体，完成约 6,000 次回测，并在运行过程中持续自适应地调整工作流。最终入选因子的超额夏普比率介于 0.64 与 1.48 之间，对应日频 Rank IC 均为正、介于 0.010 与 0.014 之间。
+
+从单链路的连贯研发，到庞大假设空间的并行探索，Qwen3.8-Max 通过动态工作流把编排逻辑固化为可复现的程序，将原本需要研究员数周乃至数月串行推进的量化研究，压缩为一次对话内可规模化交付的自动化闭环，展现了模型在长时程自主工作（long-horizon autonomous work）上的广阔潜力。
+
+视频 2. Qwen3.8-Max 有望将量化研究员的专业能力带给每一个人——展现其工作能力的深度。
+
+长程任务
+
+Qwen3.8-Max 在面对极其复杂的长周期、多约束任务时，展现出超越以往的系统级自主规划与全栈闭环自适应学习能力。无论是在高精密、强物理约束的数字芯片设计，还是在高度动态、博弈激烈的商业模拟运营中，模型均能通过“执行-反馈-迭代”的自适应闭环，在数千轮的超长程交互中实现算法与策略的深度重构。
+
+自主演进芯片设计，全栈反馈优化性能
+
+Qwen3.8-Max 独立完成了芯片设计中的逻辑重构、多约束优化和后端布局全链路执行。目标设计为一个集成了模幂与模乘运算的 GCD / RSA 密码硬件加速器。该设计基于 GCD 数据通路与控制路径构建，属于典型的高度紧凑且逻辑密集的数字电路模块。模型需在保证 cocotb 随机验证下 4/6/8/16-bit 位宽配置均达到逐位精确（bit-exact）的前提下，最小化 Yosys 综合后的网表门数（Cell Count），以缓解前端硬件设计中经典的面积与正确性 trade-off。其中，面积评估以 16-bit（WIDTH = 16）位宽综合结果为准。
+
+Qwen3.8-Max 在一个集成了仿真（Iverilog）、综合（Yosys）和物理设计（OpenROAD）工具链的沙箱环境中自主执行该设计优化任务。其初始输入极简，仅包含任务描述、无内部逻辑的 RTL 抽象接口骨架以及评估脚本（用于功能验证与面积综合）。在无参考设计、无人类干预的条件下，Qwen3.8-Max 独立完成了算法架构设计、RTL 代码编写以及后续的多轮迭代优化。
+
+在单次不间断的自主运行中，Qwen3.8-Max 历经约 500 轮交互与 71 次评估，跨越 13 个关键里程碑，实现了对设计的端到端深度重构。模型自主执行了 RTL 代码编辑、仿真调试、面积综合、冗余逻辑定位以及数据通路的反复重构，完成了从修复仿真错误、保障功能正确到算法级重写的设计演进。其首个跑通的可行性设计规模为 8,298 门，随后自主优化至 678 门，在所有参评模型中表现最优 。即使在数百轮交互后，Qwen3.8-Max 仍能发起重大的结构性演进，而未在早期局部收益中陷入瓶颈。
+
+优化轨迹上的关键设计里程碑：（在演进记录中，在各节点悬停可查看电路拓扑及对应的代码变更细节）
+
+算法级重写：除法器优化为迭代移位减法（8,298 → 2,010 门，第 22 轮交互） 这是幅度最大的单步优化。Qwen3.8-Max 用更高效的迭代移位减法（Shift-Subtract）架构替换了 modular_multiplier 模块中昂贵的 16 位硬件取模除法器，单步削减了 6,288 门，贡献了整个优化过程 80% 以上的缩减量。
+冗余消除与位宽精简（2,010 → 1,304 门，第 35-48 轮交互） 模型识别出调用端的先验条件，安全地移除了整个 REDUCE 阶段，将两个独立的溢出削减模块合并为单个共享单元，将输出路径优化为组合逻辑，并收窄了内部寄存器 k_ff 的位宽。
+寄存器与控制状态机剪枝（1,304 → 907 门，第 60-113 轮交互） 移除了冗余的 base 与 mod 寄存器及 k_nz 触发器，引入了偶数提前退出机制，将比较器重构为减法器的最高有效位（MSB），并将 GCD 模块中原有的“先比后减”逻辑融合为单个可复用的减法器。
+模块融合与逻辑复用（907 → 765 门，第 170-252 轮交互） 打破模块物理边界，将模乘器直接内联（Inline）至模幂控制状态机（FSM）中，合并三个子模块并全局共享同一组减法器，消除了跨模块的冗余接口与重复逻辑。
+门级精细化打磨（765 → 678 门，第 443-500 轮交互） 通过共享 NOR 门树、绝对值与减法拆分（Abs-sub Splitting）以及字节至比特的选择逻辑，压榨出最后的局部面积冗余。
+
+为验证前端优化在真实物理实现中的可行性，Qwen3.8-Max 将 RTL 设计送入标准的布局布线流程中，基于 OpenROAD（Nangate45 工艺库）生成真实的芯片物理版图。在芯片物理布局呈现中，其标准单元铺设在裸片（Die）物理平面上，金属布线层逐层叠在其上（每层一种颜色，由竖直的过孔连通）。初始版设计与最终版设计在相同物理比例下差异显著：初始版本芯片面积为 106×106 µm²，总布线长度为 33,369 µm，且时序严重违例（Slack 为 -4.46 ns）；最终版本芯片面积收缩至 46×46 µm²，布线长度锐减至 4,187 µm，且成功实现 500 MHz 频率下的时序闭合（Slack 达 +0.66 ns），芯片面积整体缩减达 81%。这表明前端架构级别的深度演进，可无缝且高效地转化为具备更小面积、更高速度和高可布线性的实体芯片成品。
+
+Expand
+
+本案例全面展示了 Qwen3.8-Max 作为自主硬件智能体基础模型在长程、多约束任务中的两项核心能力：
+
+长程连贯优化：模型能够在长达数百轮的复杂交互中保持高度连贯的系统性策略，深入执行算法级的数据通路重构，而非仅停留在浅层的语法微调或局部重构。
+闭环反馈驱动自适应学习：在无任何参考实现作为先验的情况下，模型完全依赖“编辑-仿真-综合-版图”的反馈闭环推进优化。每一代设计均强制通过严格的 cocotb 功能验证，并由 OpenROAD 布局布线流程最终闭环验证，确保了设计的物理可行性。
+长程经营，持续学习
+
+E-Commerce Bench 是一个 365天长周期电商经营模拟基准，旨在评估大语言模型在持续运营场景下的商业决策能力。该基准基于淘宝天猫真实脱敏交易数据构建，深度还原了包含 12 种店铺类型、60 个商品类目、近 600 家供应商及 7,000 种商品的复杂生态。模型将手握 ¥100,000 启动资金以同时运营多家网店，并在全年经营中面临季节性需求波动、突发环境事件和高仿真电商结算系统带来的现金流压力。模型必须自主进行选品、供应链议价、库存管理、动态定价及退货处理等全链路决策，并以年末实现总现金最大化为最终目标。这同时也考验模型能否在全年经营中合理配置资金，进行扩张性投资，并在周期末尾将库存等资产及时变现，避免因资产滞留而导致的最终收益折损。
+
+在议价谈判中，基准引入了由博弈论内核驱动的供应商矩阵，每个供应商具备独立的性格特质与让步策略，要求模型通过多轮自然语言交互进行议价。Qwen3.8-Max 在议价中展现了持续学习能力：它不仅能对同一供应商的同款商品进行深度试探，实现采购价的逐轮压低与利润的稳步攀升，使代表议价效率的雷达图面积随时间持续增大；更能将这种博弈经验有效泛化到类似商品，而其他模型的议价效率在中期普遍陷入瓶颈。
+
+此外，模型还需应对暗流涌动的复杂市场环境。基准在近 600 家供应商矩阵中，隐蔽地植入了 152 家欺诈型商家，涵盖“会费陷阱”、“低价诱导”、“货不对板”等经典欺诈模式，全面考验模型的风控能力。同时，全年大促活动的爆单压力与台风、断料等随机供应链危机交织，极限考验着模型的备货节奏与危机管理能力。在此背景下，Qwen3.8-Max 展现出了卓越的前瞻性规划能力，在经营最初期便投入最多资金布局，使其后续资产增长曲线趋势更快；并在年终大促期间实现超越 10 万元的净利润，是第二名 GLM 5.2 的近 2.4 倍。
+
+Qwen3.8-Max 最终以高达 ¥416,252（4.16×回报）的总现金胜出，超过第二名 GLM 5.2 达 38%，相较上一代旗舰模型 Qwen3.7-Max 提升 152%。这一结果表明，Qwen3.8-Max 不仅具备长程连贯决策优势，也拥有从交易反馈中自适应学习的能力，在超过 2,000 轮交互中持续迭代进化，而非死守早期习得的固定策略。
+
+多模态智能体
+
+从它所看见的一切，到它所完成的一切，Qwen3.8-Max 展示的不只是“看懂图片、文档和视频”的能力，而是一套贯穿任务全流程的视觉生产力。
+
+面对超过 200 页的财报和复杂 PDF，它可以跨页面理解文字、图表和版面结构，从大量信息中提炼关键结论，生成结构化报告与可交付的网页；面对超过 100 小时的长视频，它不仅能够定位具体片段、回答细节问题，还可以将人物、事件、时间和场景组织成视频 Graph 记忆，在长时间跨度中持续建立关联，梳理事件演进、人物关系与关键节点。无论是数百页文档、完整剧集，还是百小时直播，原本难以被一次性消化的信息，都能够被转化为可检索、可追溯、可交互的知识结构。
+
+在理解之外，Qwen3.8-Max 还能进一步完成真实的视觉生产任务：把生活素材剪辑成 Vlog，把一道题转化为沉浸式教学动画，把一张界面截图还原为完整前端项目，把户型图构建成 Blender 3D 装修效果，并从需求出发开发可交互的游戏和应用。
+
+更重要的是，视觉能力并不只出现在任务的输入端。模型在执行过程中会持续观察自己的中间产物，检查页面布局、物体方向、空间关系、动画效果和交互结果；一旦发现电视放反、界面错位、视觉效果不符合预期等问题，就能够定位偏差、重新规划并自主修正。
+
+这意味着，视觉不再只是 Agent 用来“理解输入”的一种模态，而是贯穿规划、执行、验证和迭代的原生反馈回路。模型一边生成，一边观察；一边行动，一边审查；通过不断地“看结果、找问题、再优化”，将任务从能够完成推进到真正做好。Qwen3.8-Max 正在让多模态 Agent 从“看懂世界”，走向“基于视觉在世界中持续行动和创造”。
+
+在数字世界里，要独立地把一个复杂任务真正做完，往往需要同时做两件事：用代码实现底层逻辑，并亲手操作界面来推进任务、观察结果。这种 Hybrid Agent 能力——即 编程（Coding）与 GUI 操作 的结合——让两条路径彼此互补：编程高效且大规模地完成繁重工作，GUI 操作则触达人类所能看见、所能操作的一切，更关键的是把真实运行系统中的实际反馈带回来——将上一节的视觉反馈回路从“检查自己的产物”延伸到在真实、运行中的应用上验证。
+
+为衡量这一能力，我们构建了 RecreationBench——一个长程的“应用复刻”基准，覆盖桌面（Ubuntu、macOS、Windows）、移动端（Android）与 Web 五大平台。模型只能将一个真实运行的应用当作黑盒来观察——没有源代码、也无法联网——完全依靠交互与反馈去理解它，进而从零复刻出整个应用。在此设定下，Qwen3.8-Max 已经展现出前沿水准的 Hybrid Agent 能力，通过“迭代编程—交互反馈”的反复循环，一步步逼近原始应用。
+
+为了让这套能力更容易接入现有的 Agent 系统，我们也推出了 Qwen-MM-Plugins。它是一个面向多模态 Agent 的 Harness 扩展库，为不同的 Agent 框架提供图像与视频处理、多模态记忆、动态分辨率、视觉工具调用，以及视频剪辑、Blender、CAD 等专业任务支持，让现有 Agent Harness 都能更自然地升级为多模态原生系统。
+
+用户反馈
+
+对 Qwen3.8-Max 最真实的判断，来自真正拿它做事的人。无论是头部智能体应用平台、领先的开源算法团队，还是来自法律、金融、制造等领域的专业公司，新兴创业团队、个人开发者与学术科研者，都在把复杂、关键、长链路的任务持续交给它。
+
+企业用户用它搭建和驱动大规模智能体系统，白领工作者把图片、手稿、视频等繁杂材料一次性交给它处理，开发者直接让它承担高强度工程任务，科研团队则用它跑通“文献—数据—仿真”的完整研究闭环。同一个模型，在不同领域、不同工作流中被反复用到“离不开”，最终得到一致的结论：Qwen3.8-Max 既能稳定承接长链路的自主任务，也能一次生成可直接交付的高质量结果。
+
+完整性能结果
+	Opus4.8	Fable5	GPT5.6 Sol (max)	Qwen3.7-Max	Qwen3.8-Max
+Coding Agent
+Terminal Bench 2.1	84.6	84.6	88.8	74.5	86.6
+SWE-bench Pro	69.2	80.0	64.6	60.6	67.7
+DeepSWE 1.1	59.0	70.0	73.0	21.6	56.6
+NL2Repo-Bench	69.4	--	--	47.2	55.9
+FrontierSWE	70.0	88.8	--	40.7	73.5
+MLS-Bench-Lite	42.8	49.9	46.2	31.7	41.0
+PaperBench	80.3	88.8	90.5	64.8	93.0
+AndroidBench	69.8	84.5	74.0	56.5	75.1
+QwenSWEBench	84.0	86.3	73.5	63.4	80.7
+QwenQoderBench	62.7	63.1	53.8	36.8	58.4
+QwenReactBench	1694	1770	1564	1538	1724
+QwenSVGBench	1648	1690	1758	1499	1713
+General Agent
+CoWorkBench	72.3	75.9	71.5	64.6	74.8
+WorkSpaceBench	66.8	68.7	65.6	61.4	67.7
+JobBench	48.4	57.4	45.4	31.3	53.4
+SkillsBench	65.1	70.9	73.5	61.2	70.2
+Agents' Last Exam (Pass / Score)	27.0 / 45.1	-- / --	30.6 / 53.6	11.8 / 31.1	27.0 / 52.4
+Automation-Bench (Pass@1)	27.2	29.1	29.7	14.2	27.3
+Toolathlon Verified (Pass@1)	76.2	77.9	74.9	49.7	72.5
+WideSearch	72.9	81.2	--	75.2	81.9
+HLE w/ tools	57.9	64.5	58.0	53.5	56.2
+General Capabilities
+GPQA Diamond	92.0	92.6	94.1	92.4	92.6
+HLE	45.7	53.3	47.2	41.4	43.6
+IFBench	62.2	63.5	72.7	79.1	82.8
+$OneMillion-Bench (expert score)	41.8	55.9	53.8	44.4	52.5
+HealthBench	52.4	--	55.3	54.5	60.2
+PLawBench	69.6	70.2	72.3	58.9	73.2
+PRBench-Legal	52.7	57.6	57.6	48.5	57.6
+PRBench-Finance	51.9	55.8	55.5	46.8	58.3
+MRCR v2 256K (8-needle)	83.2	--	93.8	86.7	92.9
+LongBench v2	69.1	--	67.1	65.3	66.3
+
+1. Fable5 的结果可能包含回退机制。
+2. Terminal Bench 2.1：使用 Claude Code（avg@10）评估，超时时间 5 小时，max_tokens=131,072。对于其他所有模型，我们报告各评测框架中已发布的最佳分数：Claude Opus 4.8 和 Claude Fable 5 使用 Artificial Analysis 的 Terminus 2（https://artificialanalysis.ai/evaluations/terminalbench-v2-1）；GPT-5.6 Sol 使用 Codex（https://openai.com/index/previewing-gpt-5-6-sol/）。
+3. SWE-bench Pro：使用 Claude Code 评测框架评估，temp=1.0，top_p=0.95，上下文窗口 256K。已修正存在问题的任务，并在修正后的基准上重新评估所有基线模型。
+4. DeepSWE 1.1：使用 Claude Code 和 mini-SWE-agent 评测框架评估，temp=1.0，top_p=0.95，上下文窗口 256K。我们报告两个框架中的最高分；值得注意的是，Qwen3.8-Max 在 Claude Code 上表现最佳。
+5. NL2Repo-Bench：使用 Claude Code 评测框架评估。为防止奖励黑客攻击，我们禁用了试图访问特定仓库的 Bash 命令，如 pip download、pip install 和 git clone。
+6. FrontierSWE：使用 Claude Code 评测框架评估。其他所有可用的 MEAN@5 结果均取自 FrontierSWE 官方排行榜（https://www.frontierswe.com），数据截至 2026 年 8 月 3 日。优势分数使用官方评估脚本从原始分数重新计算。"--" 表示截至该日期尚无官方 MEAN@5 结果。
+7. MLS-Bench-Lite：使用 Claude Code 评估，超时时间 5 小时，max_tokens=131,072。其他模型分数均取自官方排行榜。
+8. PaperBench：在 BasicAgent 设置下以 Code-Dev 模式评估，由 Claude Opus 4.6 评判，取 3 次运行的平均值（每次运行最长 12 小时）。
+9. AndroidBench：在 95 个任务的公开子集上评估，报告 avg@3 分数。
+10. QwenSWEBench：内部编码基准，用于评估模型的软件工程能力。使用 Claude Code 评测框架评估。报告 avg@3，超时时间 8 小时，max_tokens=32,768，temperature=1.0，上下文窗口 256K。
+11. QwenQoderBench：内部编码基准，用于评估 Qoder 上的用户体验。使用 Claude Code 评测框架评估。报告 avg@5，超时时间 6 小时，max_tokens=32,768，temperature=1.0，上下文窗口 256K。
+12. QwenReactBench：内部 React 项目构建基准，使用 Claude Code 作为评测框架，双语（英文/中文），7 个类别；自动渲染 + 多模态评判；BT/Elo 评分。
+13. QwenSVGBench：内部 SVG 代码生成基准；双语（英文/中文），自动渲染 + 多模态评判；BT/Elo 评分。
+14. CoWorkBench：内部协作基准，用于评估跨计算机科学、金融、法律、医疗及其他生产力领域的长周期任务。
+15. SkillsBench：在公开的 SkillsBench v1.1 基准上评估，涵盖 87 个任务，报告每个任务三次运行的平均分数。Opus 4.8 和 Fable 5 在 Claude Code 上评估；GPT-5.6 Sol 在 Codex 上评估；Qwen 系列在 OpenCode 上评估。所有结果均来自我们自己的测试。
+16. Automation-Bench：在 600 个任务的公开子集上评估。
+17. WideSearch：外部模型使用 Claude Code 评测框架，我们的模型使用 Qwen-Agent 评测框架，报告四次运行的平均 item-F1。
+18. $OneMillion-Bench：使用 gemini-3.1-pro-preview 评估。
+19. PLawBench：使用 gemini-3.1-pro-preview 评估。
+20. 空白单元格（--）：分数尚不可用或不适用。
+
+	Opus4.8	Fable5	Gemini3.1-Pro	GPT5.6-Sol	Qwen3.7-Plus	Qwen3.8-Max
+Multimodal Reasoning
+MMMU-Pro	75.6	81.2	80.5	83.0	79.0	82.3
+MathVision	87.1 / 97.1	92.7 / 98.6	87.4 / 95.7	90.8 / 97.8	90.3 / --	95.2 / 97.7
+BabyVision	28.4 / 81.2	42.5 / 90.5	55.9 / 68.3	65.5 / 88.9	64.7 / 70.4	82.0 / 91.3
+HLE-VL (w/ Tools)	--	--	43.9	51.2	25.6	52.2
+ZeroBench (Pass@5)	17.0 / 34.0	20.0 / 46.0	17.0 / 23.0	22.0 / 35.0	19.0 / 19.0	24.0 / 49.0
+ZeroBench-Sub	31.1	37.1	36.5	46.7	41.0	48.5
+LogicVista	76.7	85.7	82.6	89.7	84.3	91.9
+HiPhO	69.3	78.6	85.4	86.8	84.1	90.0
+PhyX	54.2	71.7	79.4	79.1	80.0	83.5
+SLAKE	75.9	86.6	82.9	85.1	83.2	90.8
+MedXpertQA-MM	71.7	80.0	80.7	81.5	71.0	80.4
+PMC-VQA	59.2	63.2	62.5	62.3	63.4	66.2
+Visual Agent & Coding
+OSWorld-Verified	83.4	85.0	76.2	83.2	73.3	86.1
+OSWorld 2.0	20.6 / 54.8	-- / 66.1	7.8 / 30.6	-- / 62.6	2.8 / 21.5	19.4 / 46.7
+ScreenSpot Pro	82.3	87.3	68.1	81.3	79.0	84.5
+WebArena-Verified	67.9	71.3	64.3	69.7	55.3	66.8
+AndroidWorld	75.0	88.8	70.7	77.6	81.0	85.3
+MobileWorld	67.5	85.5	58.1	76.9	51.2	77.8
+ClawEval-MM	73.3 / 73.8	81.2 / 77.5	50.5 / 55.2	81.2 / 78.9	57.4 / 60.1	77.2 / 74.8
+Vision2Web	62.4	70.5	--	62.1	42.1	69.0
+QwenBlenderBench	62.4	69.5	23.0	68.6	41.5	69.9
+Parametric CAD Bench	85.1	87.5	73.5	86.2	73.8	91.5
+RecreationBench	48.0	56.1	16.2	47.6	30.2	51.7
+PresentBench	80.9	79.8	55.4	82.9	65.7	79.6
+Document & Office Intelligence
+CharXiv (RQ)	78.5 / 89.9	87.9 / 93.5	84.4 / 89.9	85.1 / 89.1	85.8 / 85.9	88.4 / 93.5
+OmniDocBench 1.5	86.5	89.5	90.0	86.7	91.4	92.1
+OCR-Bench-V2 (EN/ZH)	53.9 / 55.3	65.3 / 58.1	64.6 / 58.2	69.0 / 57.3	70.7 / 67.1	74.2 / 68.3
+CC-OCR-Bench-V2	60.3	72.4	68.9	68.0	72.7	79.6
+MTVQA-Test	48.1	41.6	54.3	52.7	51.2	56.6
+MADQA	86.8	86.0	81.1	87.8	87.1	91.8
+QwenVisualOffice	34.5	32.4	39.6	29.5	32.4	44.6
+Real-World & Spatial Understanding
+RealWorldQA	76.6	85.9	83.5	83.7	86.9	88.0
+ERQA	57.2	70.0	68.0	70.0	69.8	77.8
+LingoQA	73.8	77.4	66.8	72.6	83.4	84.8
+SURDS	62.2	79.4	64.0	63.0	77.2	77.8
+Visual Perception & Grounding
+SimpleVQA	67.3	73.4	73.1	66.6	70.3	75.0
+WorldVQA	33.9	53.5	54.0	45.1	43.9	53.2
+MMStar	76.7	80.5	84.0	82.5	83.2	85.9
+PerceptionBench	47.2	57.2	56.2	59.7	51.1	63.5
+CountQA	41.3	63.1	72.8	68.6	77.0	82.4
+RefAdv-S	61.7	68.6	71.9	69.2	73.0	80.2
+Dense200	20.8	31.1	69.7	55.3	60.7	87.0
+COCO	50.7	56.4	72.4	61.2	74.2	78.7
+VisFactor	30.1	54.5	39.8	62.8	42.8	60.8
+VLMsAreBiased	43.8	61.2	74.1	59.8	36.6	88.3
+Video Intelligence & Agents
+VideoMME (w/ Sub.)	85.4	--	86.7	89.5	88.0	90.4
+VideoMME v2 (w/ Sub.)	49.0	52.2	66.9	71.1	59.7	68.3
+VideoMMMU	75.3	81.2	85.3	85.0	85.4	88.7
+MMVU	67.4	72.0	77.9	81.2	76.6	82.4
+MLVU (M-Avg)	53.4	--	84.7	87.6	87.4	90.8
+TVBench	61.5	--	73.0	83.2	78.2	81.9
+LVBench	67.3	--	75.1	78.8	76.2	81.8
+LVBench (w/ Mem.)	84.3	90.1	--	84.2	74.5	85.6
+EgoLife (w/ Mem.)	78.3	82.3	--	70.8	68.8	80.3
+VideoDR (w/ Search)	65.6	77.1	--	71.3	41.0	73.2
+
+1. MathVision、BabyVision、CharXiv (RQ) 和 ZeroBench：分数以"无 CI / 有 CI"格式报告。MathVision 和 CharXiv (RQ) 中少量错误的标准答案标注已根据人工验证进行修正。
+2. MathVision：我们的模型使用固定提示词评估，例如"请逐步推理，并将最终答案放在 \boxed{} 中"。对于其他模型，我们报告使用和不使用 \boxed{} 格式要求两次运行中的较高分数。
+3. MMMU-Pro：Gemini3.1-Pro 和 GPT5.6-Sol 的结果取自官方模型报告或系统卡片。其他所有模型均为内部评估。
+4. ClawEval-MM：分数以"Pass@3 / 平均分"格式报告。Pass@3 衡量三次试验中至少通过一次的任务百分比，平均分为三次试验的平均分数。
+5. Vision2Web：分数为前端、网页和网站类别的平均值，使用 Claude Code 评测框架，以 gpt-5.4-2026-03-05 作为评判模型。
+6. HLE-VL (w/ Tools)：分数在使用工具的情况下评估，包括代码解释器（CI）和搜索。Gemini3.1-Pro 和 GPT5.6-Sol 的工具版本分数通过其官方原生工具调用 API 端到端测量。
+7. OSWorld 2.0：分数以"二元 / 部分"格式报告。二元分数为获得完整任务奖励的任务百分比，部分分数汇总所有任务中获得的部分奖励。
+8. ScreenSpot Pro：Opus4.8 和 Fable5 的分数取自官方系统卡片。Fable5 的结果指对应的 Mythos Preview 分数。其他所有模型均为内部评估。
+9. WebArena-Verified：分数使用 OSWorld 框架内的官方 WebArena 评分器报告。
+10. RecreationBench：内部长周期应用重现基准，用于评估跨五个平台（Ubuntu、macOS、Windows、Android 和 Web）的混合智能体能力。
+11. PerceptionBench：对比模型的分数取自该基准的官方发布报告，我们的模型为内部评估。
+12. VideoMME (w/ Sub.) 和 VideoMME v2 (w/ Sub.)：分数在启用字幕的情况下评估。
+13. QwenBlenderBench 和 QwenVisualOffice：均为内部基准。
+14. LVBench 和 EgoLife (w/ Mem.)：分数使用基于 Qwen-MM-Plugins 构建的记忆系统评估，支持细粒度、长周期视频记忆。
+15. VideoDR (w/ Search)：分数在使用搜索工具的情况下评估。
+16. 空白单元格（--）：分数尚不可用或不适用。
+
+开始使用 Qwen3.8
+
+Qwen3.8-Max 现已通过 千问AI平台 提供服务。您可以将其与主流智能体框架和编程助手无缝集成。模型权重也将于下周在 Hugging Face 和 ModelScope 开源，敬请期待。
+
+API 使用方式
+
+Qwen3.8-Max 正式支持 reasoning_effort，可用于调节推理深度、控制成本：
+
+xhigh（默认）：适用于需要深入分析的复杂任务
+medium：在准确性与速度之间取得平衡
+low：优化速度与成本的高效推理
+
+此外，preserve_thinking 对所有场景默认开启，以获得最佳的开箱即用体验。
+
+千问AI平台
+
+千问AI平台支持行业标准协议，包括兼容 OpenAI 规范的聊天补全（chat completions）和响应（responses）API，以及兼容 Anthropic 的 API 接口。
+
+python
+"""
+
+Environment variables:
+
+  DASHSCOPE_API_KEY: Your API Key from https://platform.qianwenai.com/home
+
+  DASHSCOPE_BASE_URL: (optional) Base URL for compatible-mode API.
+
+    - Beijing: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+    - Singapore: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+
+    - US (Virginia): https://dashscope-us.aliyuncs.com/compatible-mode/v1
+
+"""
+from openai import OpenAI
+import os
+
+
+api_key = os.environ.get("DASHSCOPE_API_KEY")
+if not api_key:
+    raise ValueError(
+        "DASHSCOPE_API_KEY is required. "
+        "Set it via: export DASHSCOPE_API_KEY='your-api-key'"
+    )
+
+
+client = OpenAI(
+    api_key=api_key,
+    base_url=os.environ.get(
+        "DASHSCOPE_BASE_URL",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    ),
+)
+
+
+messages = [{"role": "user", "content": "用 Python 写一个合并两个有序链表的函数。"}]
+
+
+completion = client.chat.completions.create(
+    model="qwen3.8-max",
+    messages=messages,
+    extra_body={
+        "enable_thinking": True,
+        # "preserve_thinking": True,
+    },
+    reasoning_effort="xhigh",  # supported levels are xhigh, medium, and low
+    stream=True,
+)
+
+
+reasoning_content = ""
+answer_content = ""
+is_answering = False
+print("\n" + "=" * 20 + "Reasoning" + "=" * 20 + "\n")
+
+
+for chunk in completion:
+    if not chunk.choices:
+        print("\nUsage:")
+        print(chunk.usage)
+        continue
+
+
+    delta = chunk.choices[0].delta
+
+
+    if hasattr(delta, "reasoning_content") and delta.reasoning_content is not None:
+        if not is_answering:
+            print(delta.reasoning_content, end="", flush=True)
+        reasoning_content += delta.reasoning_content
+
+
+    if hasattr(delta, "content") and delta.content:
+        if not is_answering:
+            print("\n" + "=" * 20 + "Answer" + "=" * 20 + "\n")
+            is_answering = True
+        print(delta.content, end="", flush=True)
+        answer_content += delta.content
+
+更多信息请访问 API 文档。
+
+代码及智能体
+
+Qwen3.8-Max 可以无缝集成到主流智能体框架和编程助手中：
+
+Claude Code
+
+Qwen API 支持 Anthropic API 协议，可直接与 Claude Code 配合使用：
+
+bash
+npm install -g @anthropic-ai/claude-code
+
+
+
+export ANTHROPIC_MODEL="qwen3.8-max"
+export ANTHROPIC_SMALL_FAST_MODEL="qwen3.8-max"
+export ANTHROPIC_BASE_URL=https://dashscope.aliyuncs.com/apps/anthropic
+
+export ANTHROPIC_AUTH_TOKEN=<your_api_key>
+
+
+
+claude
+
+Codex
+
+Qwen API 支持 OpenAI Responses 协议，可与 Codex 配合使用：
+
+在 ~/.codex/model-catalog.local.json 中
+
+json
+{
+  "models": [
+    {
+      "slug": "qwen3.8-max",
+      "display_name": "qwen3.8-max",
+      "description": "Model Studio: Qwen3.8-Max",
+      "default_reasoning_level": "xhigh",
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Greater reasoning depth for complex problems"
+        },
+        {
+          "effort": "xhigh",
+          "description": "Extra high reasoning depth for complex problems"
+        }
+      ],
+      "context_window": 1000000,
+      "effective_context_window_percent": 95,
+      "supports_parallel_tool_calls": true,
+      "supports_image_detail_original": true,
+      "input_modalities": ["text", "image"],
+      "shell_type": "default",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 1,
+      "base_instructions": "",
+      "support_verbosity": false,
+      "supports_reasoning_summaries": false,
+      "experimental_supported_tools": [],
+      "truncation_policy": {
+        "mode": "bytes",
+        "limit": 10000
+      }
+    }
+  ]
+}
+
+在 ~/.codex/config.toml 中
+
+toml
+model_catalog_json = "~/.codex/model-catalog.local.json"
+
+
+model_provider = "ModelStudio"
+model = "qwen3.8-max"
+
+
+[model_providers.ModelStudio]
+name = "Model Studio"
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+env_key = "OPENAI_API_KEY"
+wire_api = "responses"
+bash
+npm install -g @openai/codex
+
+
+
+export OPENAI_API_KEY=<your_api_key>
+
+
+
+codex
+
+Qoder CLI
+
+Qoder 与 Qwen 协同演进，专注于智能体编程：
+
+bash
+curl -fsSL https://qoder.com/install | bash
+
+
+
+qoder
+
+Qwen Code
+
+Qwen Code 针对 Qwen 系列进行了深度优化：
+
+bash
+npm install -g @qwen-code/qwen-code@latest
+
+
+
+qwen
+
+OpenClaw
+
+通过 千问AI平台 连接 OpenClaw：
+
+bash
+curl -fsSL https://molt.bot/install.sh | bash
+
+
+
+export DASHSCOPE_API_KEY=<your_api_key>
+
+
+
+openclaw dashboard
+
+
+编辑 ~/.openclaw/openclaw.json 进行配置：
+
+json
+{
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "bailian": {
+        "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "apiKey": "DASHSCOPE_API_KEY",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "qwen3.8-max",
+            "name": "qwen3.8-max",
+            "reasoning": true,
+            "input": ["text", "image"],
+            "contextWindow": 1000000,
+            "maxTokens": 65536
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "bailian/qwen3.8-max"
+      }
+    }
+  }
+}
+总结
+
+Qwen3.8-Max 是我们迄今最强大的模型，也是首个 Max 规模的开源权重模型。参数规模扩展至 2.4 万亿，它在编程、真实办公、长程任务与多模态智能体等方面实现全面提升——能够以极少的人工介入将复杂、开放的目标端到端完成，交付值得信赖的成果。模型权重将于下周开源，敬请期待。我们欢迎社区反馈，期待看到大家的创造。
+
+引用
+bibtex
+@misc{qwen38,
+    title = {Qwen3.8-Max: A New Bar for Coding and Cowork},
+    url = {https://qwen.ai/blog?id=qwen3.8},
+    author = {{Qwen Team}},
+    month = {August},
+    year = {2026}
+}

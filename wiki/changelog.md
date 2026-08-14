@@ -77,6 +77,40 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-13：Qwen3.8-Max 发布材料摄入 —— 首个开放 Max 级权重的结构、真实工作 RL 与边界审计
+
+**Type**: Source Ingestion + Model Analysis + Index Integration
+
+### 一、来源基线
+
+- 新增官方博客正文快照 `raw/01_theory/01_models/alibaba_qwen/Qwen3_8_Max_blog_2026-08-03.txt`（发布 2026-08-03，抓取 2026-08-13，584 行，含 4 行来源元数据）。
+- 新增固定 Hugging Face revision `Qwen/Qwen3.8-2.4T-A95B@207bd685` 的模型卡与许可证快照。结构硬数值同时逐字段核对同 revision `config.json`。
+- 官方模型卡没有链接独立 arXiv/PDF 技术报告，而是把发布博客作为 citation；本次因此明确按“产品/系统发布报告”摄入，不补造论文级训练细节。
+
+### 二、新增权威页与家族入口
+
+- **新增 [[10_qwen3_8_analysis]]**：以“Qwen3.5 架构放大 + 面向长程交付的真实工作 RL”为主线，覆盖 2.4T/95B、92 层 `23 × 3:1` Gated DeltaNet/Attention、512 选 10 + 1 shared MoE、原生 262K/可扩 1.01M、MTP，以及 Task / Workspace / Harness 组合环境、统一 reward、在线 batch 均衡三件套。
+- **新增 [[01_theory/01_models/alibaba_qwen/index|Qwen 技术路线总览]]**，并接入模型总索引、wiki 总索引与快速导航；模型域递归页数 57→59，Qwen 子域 2 页。
+- 在 [[24_agentic_rl_algorithm_analysis]] 增加 Qwen3.8 工业配方反链，使报告没有展开的 trajectory / credit / harness contract 能回到算法域阅读。
+
+### 三、三条必须保留的审计边界
+
+1. **Max endpoint ≠ 开放 checkpoint**：开放的 `Qwen3.8-2.4T-A95B` 是 text-only、强制 thinking、原生 262K；视觉输入、non-thinking、默认 1M 与官方内置工具属于托管 `Qwen3.8-Max`。官方 benchmark 表也报告 Max endpoint，没有另列开放 checkpoint。
+2. **厂商长程案例 ≠ 基础模型隔离消融**：16 天自主开发、125 小时论文复现/改进、天池 45 次提交与 500 轮 RTL 优化都作为“模型 + harness + tools + verifier + budget”的系统证据记录，未写成单一权重的因果结论。
+3. **开放权重 ≠ Apache 2.0**：模型卡元数据为 `license: other`；自定义许可证对超大商业产品的模型名展示，以及高收入 MaaS / AI Work Assistant 业务的另行许可设有条件。
+
+### 四、仍未披露
+
+预训练 token/数据、优化器、训练硬件与精度、3:1 注意力和 512/10 MoE 消融、RL 算法/超参、reward 权重、online balancer 实现与方差数字均未公开；正文以知识缺口表保留，不用推测填补。
+
+### 五、校验
+
+- `python tools/check_links.py --strict`：pages=381，broken=0，ambiguous=0，bare_index=0，orphans=0。
+- `pytest -q`：77 passed。
+- 新增 2 个 Mermaid 块按仓库定界符清单逐块静态复核，issues=0；`git diff --check`=0。
+
+---
+
 ## 2026-08-11（二）：修复三条「会误导读者」的结构性问题，并更正上一轮审计自身的过度结论
 
 **Type**: Correction（三条均出自 2026-08-10 的两域审计第一层。本次核对 verl 官方文档后，发现**审计自身的一条结论说过头了**，一并更正。）

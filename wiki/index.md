@@ -16,10 +16,11 @@
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| 模型 | [[01_theory/01_models/index]] | 57 | 活跃 |
+| 模型 | [[01_theory/01_models/index]] | 59 | 活跃 |
 | └─ DeepSeek | [[01_theory/01_models/deepseek/index]] | 21 | 活跃 |
 | └─ Kimi | [[01_theory/01_models/moonshot_kimi/index]] | 14 | 活跃 |
 | └─ GLM | [[01_theory/01_models/zhipu_glm/index]] | 10 | 活跃 |
+| └─ Qwen | [[01_theory/01_models/alibaba_qwen/index]] | 2 | 活跃 |
 | └─ LongCat (美团) | [[01_theory/01_models/meituan_longcat/index]] | 3 | 活跃 |
 | 预训练 | [[01_theory/02_pretraining/index]] | 7 | 活跃 |
 | SFT & 低参微调 | [[01_theory/03_sft/index]] | 1 | 待建设 |
@@ -78,6 +79,7 @@
 | 低精度训练 | [[13_low_precision_training_analysis]], [[14_transformer_engine_analysis]], [[24_deepseek_v4_fp4_qat_analysis]] |
 | 对齐/RLHF | [[10_instructgpt_rlhf_analysis]], [[12_dpo_analysis]], [[20_grpo_analysis]], [[11_ppo_analysis]] |
 | DeepSeek 模型 | [[13_deepseek_v4_analysis]], [[12_deepseek_v3_analysis]], [[14_deepseek_r1_analysis]] |
+| Qwen 模型 | [[01_theory/01_models/alibaba_qwen/index]], [[10_qwen3_8_analysis]] |
 | LongCat (美团) | [[meituan_longcat/index]], [[longcat_flash_analysis]], [[longcat_2_analysis]] |
 | Megatron 分布式 | [[17_megatron_parallelism_orchestration_analysis]], [[20_megatron_comm_overlap_analysis]] |
 | MoE | [[14_megatron_ep_analysis]], [[20_deepseek_moe_analysis]] |

@@ -196,4 +196,5 @@ K3 展示了更完整的恢复目标：暂停 rollout 时既要保存模型侧 K
 - [[25_on_policy_off_policy_staleness_analysis|D04 On-policy、Off-policy 与 Staleness]]
 - [[01_posttraining_infra_mechanism_analysis|D05 后训练 Infra 核心机制]]
 - [[24_kimi_k3_posttraining_case_study_analysis|D12 Kimi K3 后训练案例]]
+- [[10_qwen3_8_analysis|Qwen3.8 真实工作 RL]] — Task / Workspace / Harness 组合环境、统一奖励系统与在线 batch 均衡的工业配方
 - [[02_engineering/04_posttrain_frameworks/11_rl_sandbox_design_analysis|既有 RL Sandbox 设计]]

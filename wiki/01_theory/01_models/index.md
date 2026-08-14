@@ -1,7 +1,7 @@
 # 模型架构与模型家族 — 目录索引
 
 > 覆盖 Transformer 架构、缩放定律、模型技术报告
-> 最后更新: 2026-07-17
+> 最后更新: 2026-08-13
 
 ---
 
@@ -55,6 +55,13 @@
 | [[zhipu_glm/index]] | GLM 技术路线总览 |
 | [[01_glm_5_analysis]] | GLM-5 744B/40B MoE, Muon Split, DSA |
 | [[10_glm_5v_turbo_analysis]] | GLM-5V-Turbo, CogViT, MMTP, 多模态 Agent |
+
+### Qwen / 阿里巴巴
+
+| 页面 | 核心主题 |
+|------|---------|
+| [[01_theory/01_models/alibaba_qwen/index|Qwen 技术路线总览]] | Qwen 家族报告分析与开放权重审计入口 |
+| [[10_qwen3_8_analysis]] | Qwen3.8 2.4T/95B，3:1 Gated DeltaNet/Attention，512 选 10+1 MoE，真实工作 RL，Max endpoint 与开放 checkpoint 边界 |
 
 ### Hunyuan / 腾讯混元
 
