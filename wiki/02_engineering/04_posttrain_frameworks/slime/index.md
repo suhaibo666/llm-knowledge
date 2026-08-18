@@ -60,7 +60,7 @@ README 自己把系统压缩成 training、rollout 和 data buffer 三模块；�
 
 ## 3. 全量页面与推荐顺序
 
-文件名前缀沿用 `verl/` 的知识域约定：段 0 是总览与上手；段 1 按真实数据流拆实现；段 3 是跨平面优化与稳定性。
+文件名前缀沿用全库知识域约定：段 0 是总览与上手；段 1 按真实数据流拆实现；段 2 是能力扩展与衍生实现；段 3 是跨平面优化与稳定性。
 
 | 段 | 页面 | 解决的问题 |
 |---|---|---|
@@ -76,11 +76,11 @@ README 自己把系统压缩成 training、rollout 和 data buffer 三模块；�
 | 1 | [[02_engineering/04_posttrain_frameworks/slime/17_slime_train_inference_consistency_analysis]] | weight/data/distribution/kernel 四层训推一致性 |
 | 1 | [[02_engineering/04_posttrain_frameworks/slime/18_slime_fault_tolerance_observability_analysis]] | engine recovery、debug replay、trace/profiling、CI 分层 |
 | 1 | [[02_engineering/04_posttrain_frameworks/slime/19_slime_rollout_backend_extension_analysis]] | rollout 数据面扩展、external SGLang、完整 backend 替换边界 |
-| 1 | [[02_engineering/04_posttrain_frameworks/slime/20_slime_on_policy_distillation_analysis]] | 两类 teacher、token logprob 契约、reverse-KL advantage 注入 |
-| 1 | [[02_engineering/04_posttrain_frameworks/slime/21_slime_speculative_decoding_mtp_analysis]] | EAGLE/draft、在线 MTP 训练、同步与接受率闭环 |
-| 1 | [[02_engineering/04_posttrain_frameworks/slime/22_slime_low_precision_training_rollout_analysis]] | BF16/FP8/INT4、KV cache 与量化权重提交 |
-| 1 | [[02_engineering/04_posttrain_frameworks/slime/23_slime_model_architecture_extension_analysis]] | custom provider、ModuleSpec/HF wrapper、双向权重映射 |
-| 1 | [[02_engineering/04_posttrain_frameworks/slime/24_slime_agent_workflow_examples_analysis]] | adapter、trajectory、tool/sandbox、fan-out 与 coding agent |
+| 2 | [[02_engineering/04_posttrain_frameworks/slime/20_slime_on_policy_distillation_analysis]] | 两类 teacher、token logprob 契约、reverse-KL advantage 注入 |
+| 2 | [[02_engineering/04_posttrain_frameworks/slime/21_slime_speculative_decoding_mtp_analysis]] | EAGLE/draft、在线 MTP 训练、同步与接受率闭环 |
+| 2 | [[02_engineering/04_posttrain_frameworks/slime/22_slime_low_precision_training_rollout_analysis]] | BF16/FP8/INT4、KV cache 与量化权重提交 |
+| 2 | [[02_engineering/04_posttrain_frameworks/slime/23_slime_model_architecture_extension_analysis]] | custom provider、ModuleSpec/HF wrapper、双向权重映射 |
+| 2 | [[02_engineering/04_posttrain_frameworks/slime/24_slime_agent_workflow_examples_analysis]] | adapter、trajectory、tool/sandbox、fan-out 与 coding agent |
 | 2 | [[02_engineering/04_posttrain_frameworks/slime/25_vime_vllm_backend_support_analysis]] | vime 如何保留 slime 上层、替换为 vLLM/vllm-router，以及逐能力支持度与缺口 |
 | 3 | [[02_engineering/04_posttrain_frameworks/slime/30_slime_rollout_optimization_analysis]] | productive throughput、容量/关键路径账本与负收益反例 |
 | 3 | [[02_engineering/04_posttrain_frameworks/slime/31_slime_posttraining_stability_analysis]] | 数据、策略版本、估计量/数值、基础设施四控制环与判别实验 |

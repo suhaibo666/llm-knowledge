@@ -17,7 +17,7 @@ All source ingestions and significant wiki updates are logged here.
 - 深化训练正确性与状态边界：把 rollout-aware reducer、DP×CP whitening、训推 topology 转换、四种权重 transport 统一到 estimator measure 与版本化提交模型；严格区分 version、consistency、commit、recovery 和 replay，明确 engine 局部恢复不等于 DataSource/trainer/外部副作用的全局事务恢复。
 - 深化能力扩展：将 external SGLang、custom generate、整轮 rollout、新 backend 分成不同扩展层；把 OPD、在线 MTP、低精度、新模型和 agent workflow 分别还原为 role/version、precision axes、双向语义映射与 execution→training projection 问题。vime 页使用独立 `vllm-project/vime@8144096e` 基线，明确它是 fork 级 vLLM 替换而非 upstream slime 内置 backend，并记录默认 top-p replay adapter 未闭合、external-engine 文档 `delta + NCCL` 与 runtime `delta + disk` 限制冲突等源码事实。
 - 将 [[02_engineering/04_posttrain_frameworks/slime/30_slime_rollout_optimization_analysis|Rollout 优化]] 改写为 productive throughput 与闭环关键路径账本，覆盖 service/admission、filter/oversampling、tail/drain、trainer wait、data conversion、offload/publish 和 overlap 的适用条件及负收益反例；将 [[02_engineering/04_posttrain_frameworks/slime/31_slime_posttraining_stability_analysis|稳定性]] 改写为数据/奖励、策略版本、估计量/数值、基础设施四个控制环的判别式诊断，说明 clip、filter、restart 何时只是在压低症状。
-- 证据与质量门禁：21 个 Markdown 页共核验 1,250 个 fixed-commit 定位符、195 个唯一源码文件，覆盖 `THUDM/slime@681b3adc`、SGLang `0b3bb0cb` / `d6ef6888` 与 `vllm-project/vime@8144096e`，路径和行号越界均为 0；全目录严格公式检查 0 error / 0 warning；全库链接检查 pages=402 且 broken/ambiguous/bare_index/orphans 均为 0；checker 测试 22 passed；所有改动通过 `git diff --check`，新增/改写 Mermaid 均按仓库规范人工复核。
+- 证据与质量门禁：21 个 Markdown 页共核验 1,251 个 fixed-commit 定位符、195 个唯一源码文件，覆盖 `THUDM/slime@681b3adc`、SGLang `0b3bb0cb` / `d6ef6888` 与 `vllm-project/vime@8144096e`，路径和行号越界均为 0；全目录严格公式检查 0 error / 0 warning；全库链接检查 pages=402 且 broken/ambiguous/bare_index/orphans 均为 0；checker 测试 22 passed；所有改动通过 `git diff --check`，新增/改写 Mermaid 均按仓库规范人工复核。
 
 ---
 
