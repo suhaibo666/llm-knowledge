@@ -8,6 +8,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-18：vLLM 主分支架构重验与当前推理技术栈总览
+
+**Type**: Source Revalidation + Architecture Deep Dive + Knowledge Map Refresh
+
+- 固定并核验 `vllm-project/vllm@f4b161d7fca438bfe29509984759be1943a5aa88`（`v0.27.2rc0-189-gf4b161d7fc`），新增 [[02_engineering/03_infer_frameworks/01_llm_inference_technology_stack_analysis|大模型推理技术栈全景]]：按模型制品、协议输入、连续调度、分页 KV、执行/并行、图编译、kernel/通信、KV 数据平面和运维分层，并用官方资料定位 Transformers、vLLM、SGLang、TensorRT-LLM、llama.cpp 与已进入维护模式的 TGI。
+- 重写 [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM 引擎架构与请求生命周期]]：区分离线 `SyncMPClient` / 可选 `InprocClient` 与在线 `AsyncMPClient`，追踪 EngineCore 普通 step、batch queue、统一 token scheduler、KV block 所有权、Executor/Worker 与 Model Runner V1/V2 选择逻辑，修正“永远双进程”“离线必定同进程”和“V2 全量替换”等过度简化。
+- 重写 [[02_engineering/03_infer_frameworks/vllm/01_vllm_feature_optimizations_guide|vLLM 快速使用与优化指南]]：补 Linux 与多硬件插件安装路径、offline/online 最小示例、chat template 与 generation config 陷阱、`-O0` 到 `-O3`、`balanced/interactivity/throughput`、prefix/chunked/async 默认行为，以及按 TTFT、TPOT、吞吐和显存分类的调优与 benchmark 流程。
+- 更新 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] 与 [[02_engineering/03_infer_frameworks/index|推理框架目录索引]]，显式标注当前入口页和 `485bbe1c6` 专题页的混合源码基线，避免把旧行号和默认值冒充当前主分支事实。
+- 校验：4 篇入口/架构文档中的 77 个固定 `path:line` 定位均存在且未越界；全库链接检查 pages=402，broken/ambiguous/bare_index/orphans 均为 0；本次 6 个 Markdown 严格公式检查为 0 error / 0 warning；知识库测试 91 passed；本次文件范围 `git diff --check` 无空白错误。
+
+---
+
 ## 2026-08-14：补齐 slime rollout batch、数据通道、logprob 与 delta 同步问答
 
 **Type**: Source-level FAQ Enrichment + Mechanism Clarification

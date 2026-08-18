@@ -1,128 +1,137 @@
-# vLLM 推理引擎 — 知识地图
+# vLLM 推理引擎 —— 知识地图
 
-> **代码基准**:vLLM `main` @ `485bbe1c6`(2026-06-21)· **V1 引擎**(V0 独立引擎已移除)
-> **最后更新**:2026-07-31(kb-reorg P7 Task 7:目录内分段编号——段 0(01)特性全景导航;段 1(10-14)支柱一「调度」三篇 + 支柱二「模型库」两篇,构成系统脊梁;段 2(20-25)支柱三「特性优化」除全景导航外的六篇深挖)
-> 一套 12 篇 vLLM V1 推理引擎源码级分析,按用户视角的 **调度 → 模型库 → 特性优化** 三支柱组织,每篇以 **Overview → Quick Start → Deep Dive** 三个维度由浅入深展开。所有非平凡论断均带 `file.py:line` 出处(基准 `485bbe1c6`)。范式对标训练框架 [[torchtitan/index]] / [[megatron-lm/index]]:从"系统怎么搭、机制怎么实现、性能怎么压"逐层拆解。
-
----
-
-## 设计哲学:四个正交的吞吐支点
-
-vLLM 不是"一个快 kernel",而是**四件正交武器叠加**。一句话纲领:
-
-> **把「调度 / 输出处理」与「模型执行」拆成两个进程(ZMQ 相连),中间是一个永不停歇的忙循环;显存用 OS 式分页管理 KV;批次在 token 粒度连续重组;前向计算用算子融合 + 分段 CUDA Graph 录制下发。**
-
-| 支点 | 解决的瓶颈 | 核心机制 | 主页 |
-|------|-----------|---------|------|
-| **解耦双进程 + 忙循环** | Python GIL 下 CPU 开销阻塞 GPU | EngineCore 子进程跑 `schedule→execute→sample→update`,前后端 ZMQ + IO 线程重叠 | [[10_vllm_engine_architecture_analysis]] |
-| **连续批处理** | 静态批处理的尾部气泡 | token 级动态组 batch,prefill/decode 混批,分块预填充 | [[11_vllm_scheduler_analysis]] |
-| **分页 KV(PagedAttention)** | KV cache 显存碎片 | OS 式分页块 + BlockPool + 前缀缓存复用 | [[12_vllm_kv_cache_management_analysis]] |
-| **算子融合 + 分段 CUDA Graph** | decode 阶段 CPU 下发瓶颈、小算子开销 | CustomOp 多实现 + torch.compile 融合 Pass + 注意力切出、其余录图 replay | [[24_vllm_fused_ops_and_kernels_analysis]] · [[25_vllm_ir_and_fusion_passes_analysis]] · [[23_vllm_compilation_cudagraph_analysis]] |
-
-这四点贯穿全部 12 篇:调度支柱讲前两点的"机制",模型库支柱讲第三点的"计算侧",特性优化支柱把第四点与投机/量化/并行/融合一起展开。
+> **当前架构基准**：vLLM `main@f4b161d7fca438bfe29509984759be1943a5aa88`（2026-08-18，`v0.27.2rc0-189-gf4b161d7fc`）
+> **覆盖范围**：12 篇源码分析 + 本索引；架构和使用入口已更新到当前基准，其他专题保留各页顶部声明的固定基线。
+> **一句话定位**：vLLM 是把请求连续调度、分页 KV、模型并行执行、图编译/专用 kernel 和 OpenAI-compatible serving 组合起来的通用推理引擎，不只是 PagedAttention 实现。
 
 ---
 
-## 三支柱与文档系列(12 篇)
+## 一、先看全局结论
 
-### 支柱一 · 调度(Scheduling)—— 请求怎么进、怎么排、怎么落地(段 1)
+vLLM 当前设计可以概括为五个相互咬合的支点：
 
-| 页面 | 维度重心 | 核心机制 |
-|------|---------|---------|
-| [[10_vllm_engine_architecture_analysis]] | **脊梁篇** | 双进程流水线、`EngineCore.step()`(`core.py:479`)四段忙循环、ZMQ IPC、Executor→Worker→ModelRunner 扇出、请求端到端生命周期 |
-| [[11_vllm_scheduler_analysis]] | 调度算法 | 连续批处理(token 级)、`schedule()`(`scheduler.py:388`)先 running 后 waiting、token 预算"追赶"模型、分块预填充、抢占/重算、优先级、**prefill/decode 统一 vs PD 分离**(§3.12) |
-| [[12_vllm_kv_cache_management_analysis]] | 显存内存侧 | 分页块、`BlockPool` 引用计数与 LRU 驱逐、`allocate_slots`(`kv_cache_manager.py:244`)、块哈希前缀缓存、混合 KV(full/SWA/mamba)、显存 profiling 定块数 |
-
-### 支柱二 · 模型库(Model Library)—— 模型怎么定义、加载、算注意力(段 1)
-
-| 页面 | 维度重心 | 核心机制 |
-|------|---------|---------|
-| [[13_vllm_model_library_analysis]] | 主页 | 模型定义约定(`*ForCausalLM`)、懒注册表(`registry.py`)、权重惰性流式加载与 `packed_modules_mapping` 合并、TP 感知层库(Column/Row/QKV)、如何新增模型 |
-| [[14_vllm_attention_backends_analysis]] | 注意力深挖 | `Attention` 层"写 KV + 调后端"两步走(`layers/attention/attention.py:192`)、`AttentionMetadata` 桥、PagedAttention 间接寻址、统一变长注意力、FA/FlashInfer/Triton/MLA 后端 |
-
-### 支柱三 · 特性优化(Feature Optimization)—— 把吞吐再压一截(段 0 导航 + 段 2 深挖)
-
-| 页面 | 维度重心 | 核心机制 |
-|------|---------|---------|
-| [[01_vllm_feature_optimizations_guide]] | **全景导航(段 0)** | 特性总表(问题→flag→代码→深挖页)+ 按瓶颈选优化;深挖无独立页的特性:结构化输出、LoRA、分离式 KV 连接器、KV 卸载 |
-| [[20_vllm_speculative_decoding_analysis]] | 投机解码(段 2) | draft+verify、提议器家族(n-gram/EAGLE/Medusa/MTP/draft model)、拒绝采样无偏性、与调度的 lookahead/回退配合 |
-| [[21_vllm_quantization_analysis]] | 量化(段 2) | `QuantizationConfig`+`QuantizeMethodBase` 插件框架、FP8/AWQ/GPTQ/compressed-tensors/FP4、加载期 Marlin repack、KV cache 量化 |
-| [[22_vllm_distributed_inference_analysis]] | 分布式(段 2) | 5 维 rank 张量切 TP/PP/EP/DP、`GroupCoordinator` 通信门面、PP `batch_queue` 虚拟流水线、MoE 的 DP-attention+EP+EPLB |
-| [[23_vllm_compilation_cudagraph_analysis]] | 编译&图捕获(段 2) | `@support_torch_compile`→`VllmBackend`(Inductor)、**分段 CUDA Graph**(注意力切出)、`cudagraph_mode` 五态、运行时按形状 dispatch replay |
-| [[24_vllm_fused_ops_and_kernels_analysis]] | 算子融合(段 2) | **CustomOp** 多实现派发(native/cuda/triton + 开关)、**torch.compile 融合 Pass**(RMS+quant / SiluMul+quant / AllReduce+RMSNorm / attention+quant)、**fused_moe** grouped GEMM 与 Triton autotune config |
-| [[25_vllm_ir_and_fusion_passes_analysis]] | 图改写机制(深挖伴篇,段 2) | **vllm_ir IR 层**(torch.library 自建命名空间 / CompositeExplicitAutograd 不分解 / 为何不挂 aten)、`PostGradPassManager` Pass 流水线、挂进 Inductor `post_grad_custom_post_pass` 生效、**RMSNorm+quant 融合全程走查**(模型代码→eager 双 kernel→融合 kernel) |
-
----
-
-## 架构全景图:一条请求穿过三支柱
+1. **前端与 EngineCore 解耦**：tokenization、HTTP、detokenization 与后端 token step 分开；在线走异步多进程，离线当前也默认同步多进程，但可切 in-process。
+2. **token 粒度连续调度**：Scheduler 每一步重新决定每个请求计算多少 token，prefill/decode 共享统一预算，chunked prefill 是预算截断的自然结果。
+3. **paged KV 所有权系统**：BlockPool 统一拥有物理块，KVCacheManager 完成 prefix hit、slot 分配、引用计数、驱逐与多 KV group 协调。
+4. **Executor → Worker → Model Runner**：EngineCore 只发统一 `SchedulerOutput`，具体 TP/PP/DP/EP、设备通信、runner 与 kernel 由执行层派发。
+5. **CPU/GPU 与控制/数据重叠**：batch queue、Model Runner V2、IO threads、compile/fusion/CUDA Graph 一起削减逐 token CPU 和 launch 开销。
 
 ```mermaid
 flowchart TB
-  user(["用户 / OpenAI HTTP"])
-  subgraph FE["前端进程"]
-    api["LLM / AsyncLLM .generate"]
-    tok["tokenize → EngineCoreRequest"]
-    detok["detokenize → RequestOutput"]
-  end
-  subgraph BE["EngineCore 子进程 · 忙循环 core.py:479"]
-    sched["① 调度 Scheduler.schedule()<br/>连续批处理 + 分块预填充 + 抢占<br/>[[11_vllm_scheduler_analysis]]"]
-    kv["KV 块分配 allocate_slots<br/>分页 + 前缀缓存<br/>[[12_vllm_kv_cache_management_analysis]]"]
-    exec["② 执行 Executor.execute_model"]
-    samp["③ 采样 + ④ 回收输出"]
-  end
-  subgraph WK["Worker(每 TP/PP/EP/DP rank)"]
-    runner["GPUModelRunner:组装输入张量 + AttentionMetadata"]
-    model["model.forward<br/>层库(TP) [[13_vllm_model_library_analysis]]<br/>注意力后端 [[14_vllm_attention_backends_analysis]]"]
-    feats["特性:投机草稿 / 量化 GEMM / 融合算子 / 分段 CUDA Graph replay<br/>[[01_vllm_feature_optimizations_guide]]"]
-  end
-  user --> api --> tok -->|ZMQ| sched
-  sched --> kv --> exec -->|collective_rpc 广播| runner --> model --> feats
-  feats --> samp -->|ZMQ| detok --> user
-  sched -.-> exec
+  U["用户请求"] --> FE["LLM 或 API Server"]
+  FE --> C["EngineCoreClient"]
+  C --> EC["EngineCore"]
+  EC --> S["Scheduler"]
+  S --> KV["KVCacheManager 与 BlockPool"]
+  S --> EX["Executor"]
+  EX --> W["GPU Workers"]
+  W --> MR["Model Runner V1 或 V2"]
+  MR --> AT["Model Attention Quantization Kernels"]
+  AT --> OUT["OutputProcessor"]
+  OUT --> U
+  KVC["KVConnector"] -.-> KV
+  CG["Compile Fusion CUDA Graph"] -.-> MR
 ```
 
-调度(蓝色 ①)决定"这一步算谁、算多少 token";模型库(WK 内 model)决定"怎么把这些 token 算成 logits";特性优化(feats)在每个环节榨吞吐。三支柱在忙循环里每步咬合一次。
+## 二、在线、离线与多 GPU 拓扑
 
----
+| 场景 | EngineCore client | 典型进程关系 | 证据入口 |
+|---|---|---|---|
+| 离线 `LLM` | 默认 `SyncMPClient` | 前端 + EngineCore；单设备 worker 可折叠在 EngineCore | `vllm/v1/engine/llm_engine.py:161-186`、`vllm/envs.py:1391-1394` |
+| 离线显式关 MP | `InprocClient` | 前端直接持有 EngineCore，无 busy-loop IPC | `vllm/v1/engine/core_client.py:78-112,306-322` |
+| 在线 `vllm serve` | `AsyncMPClient` | API server + 每 DP rank 一个 EngineCore + 分布式 worker | `vllm/v1/engine/async_llm.py:72-156` |
+| 在线 DP | DP async client | API servers、DP EngineCores、可选 coordinator、workers | `vllm/v1/engine/core_client.py:114-139` |
 
-## 关键设计速览
+官方在线逻辑进程公式是 $A+\mathrm{DP}+N$，$\mathrm{DP}>1$ 时再加 coordinator，其中 $N=\mathrm{DP}\times\mathrm{PP}\times\mathrm{TP}$；`docs/design/arch_overview.md:117-139`。但单卡 `UniProcExecutor` 会把 worker 实现在 EngineCore 进程内，所以实际 OS 进程数还要结合 executor backend。
 
-**连续批处理 vs 静态批处理**(详见 [[11_vllm_scheduler_analysis]]):V1 把 prefill 与 decode 统一成"让 `num_computed_tokens` 追赶 `num_tokens_with_spec`"的单一过程,每步产出 `{req_id: num_tokens}` 字典——分块预填充只是 `num_new_tokens = min(剩余 prompt, token 预算)` 的自然结果,无独立代码路径。单实例混批 vs 集群级 PD 分离的对照见 [[11_vllm_scheduler_analysis]] §3.12。
+## 三、页面导航
 
-**分页 KV 的三层所有权**(详见 [[12_vllm_kv_cache_management_analysis]]):`BlockPool` 是物理块唯一所有者(手写双向链表 O(1) 摘除)→ 前缀缓存靠"块内容+父块哈希"链做命中复用,`ref_cnt` 是共享安全的唯一闸门 → `allocate_slots` 是调度器唯一分配入口,需求超供给即返回 `None` 让该请求本步不调度。
+### 3.1 当前入口与架构
 
-**算子融合的三件事**(详见 [[24_vllm_fused_ops_and_kernels_analysis]] / 机制深挖 [[25_vllm_ir_and_fusion_passes_analysis]]):`CustomOp`/`vllm_ir` 给一个算子稳定的可匹配节点(`CompositeExplicitAutograd` 不分解)→ `PostGradPassManager` 把一组 pattern-match 融合 pass 挂进 Inductor `post_grad_custom_post_pass`,把相邻 op 塌成单个手写融合 kernel → `fused_moe` 用 grouped GEMM 避免逐专家小 GEMM,块大小由 autotune config 决定。
+| 页面 | 回答的问题 | 基准 |
+|---|---|---|
+| [[02_engineering/03_infer_frameworks/01_llm_inference_technology_stack_analysis|大模型推理技术栈全景]] | 推理栈有哪些层，vLLM/SGLang/TensorRT-LLM/llama.cpp 如何选 | 2026-08-18 生态快照 |
+| [[02_engineering/03_infer_frameworks/vllm/01_vllm_feature_optimizations_guide|vLLM 快速使用与优化指南]] | 怎样安装、起服务、理解默认优化并按 TTFT/TPOT/吞吐/显存调优 | `f4b161d7fc` |
+| [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM 引擎架构与请求生命周期]] | 离线/在线如何汇入 EngineCore，一步怎样走到 Worker/Runner | `f4b161d7fc` |
 
-**分段 CUDA Graph 的招牌取舍**(详见 [[23_vllm_compilation_cudagraph_analysis]]):注意力因变长 + 动态 `block_table` + 每步重建 metadata 无法录入静态图,故按 `splitting_ops` 切出走 varlen kernel,其余静态算子录入 CUDA Graph;默认 `FULL_AND_PIECEWISE` 让均匀 decode 批走全图、prefill/mixed 走分段。
+### 3.2 调度与内存
 
-**四维并行的统一编码**(详见 [[22_vllm_distributed_inference_analysis]]):一个 5 维 rank 张量 `[ExternalDP,DP,PP,PCP,TP]` 经 transpose+reshape 一次切出 TP/PP/DP/EP 各组,全部收敛到 `GroupCoordinator`;MoE 走 "DP-attention + EP(=DP×TP)" 形态,各 DP rank 靠 dummy-batch 严格 lockstep。
+| 页面 | 核心机制 | 页面固定基准 |
+|---|---|---|
+| [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler 源码分析]] | continuous batching、统一 token budget、chunked prefill、preemption | `485bbe1c6` |
+| [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] | BlockPool、Paged KV、prefix cache、hybrid KV | `485bbe1c6` |
 
----
+### 3.3 模型与注意力
 
-## 阅读路径建议(按 Overview → Quick Start → Deep Dive)
+| 页面 | 核心机制 | 页面固定基准 |
+|---|---|---|
+| [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型库]] | 模型注册、层库、权重加载、TP-aware modules | `485bbe1c6` |
+| [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM 注意力后端]] | Attention 层、metadata、PagedAttention、FA/FlashInfer/Triton/MLA | `485bbe1c6` |
 
-- **想先建立全局观**:[[10_vllm_engine_architecture_analysis]] 的 §一 Overview → 各页 §一,横向扫一遍三支柱的"定位"。
-- **想动手起服务**:各页 §二 Quick Start 的 flag 速查,先看 [[01_vllm_feature_optimizations_guide]] §二的"推荐起步配置"。
-- **想读懂源码**:从脊梁篇 [[10_vllm_engine_architecture_analysis]] §三 的 `EngineCore.step()`(`core.py:479`)入,再按忙循环每段跳到 [[11_vllm_scheduler_analysis]] / [[12_vllm_kv_cache_management_analysis]] / [[14_vllm_attention_backends_analysis]] 的 §三 Deep Dive。
-- **想读懂"为什么快"**:[[24_vllm_fused_ops_and_kernels_analysis]] + [[25_vllm_ir_and_fusion_passes_analysis]] + [[23_vllm_compilation_cudagraph_analysis]] 一起看(算子怎么拼大、图怎么改写、下发怎么录图)。
+### 3.4 高级优化与分布式
 
----
+| 页面 | 核心机制 | 页面固定基准 |
+|---|---|---|
+| [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] | draft/verify、n-gram、EAGLE、Medusa、MTP | `485bbe1c6` |
+| [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|vLLM 量化]] | FP8、AWQ、GPTQ、compressed tensors、KV quant | `485bbe1c6` |
+| [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] | TP/PP/DP/EP、GroupCoordinator、MoE lockstep | `485bbe1c6` |
+| [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] | `VLLM_COMPILE`、Inductor、piecewise/full graph | `485bbe1c6` |
+| [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与内核]] | CustomOp、Triton、fused MoE、融合 pass | `485bbe1c6` |
+| [[02_engineering/03_infer_frameworks/vllm/25_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]] | `vllm_ir`、post-grad pass、pattern matching | `485bbe1c6` |
 
-## Cross-Domain Links
+> [!warning] 混合基线的阅读方式
+> 当前入口页与架构页已重验到 `f4b161d7fc`。其余专题仍固定在 `485bbe1c6`，机制脉络仍有价值，但类名、默认值、选择条件和行号不能直接当作 2026-08-18 主分支事实。使用具体 flag 或排查当前代码时，优先以本索引、快速指南和目标版本源码为准。
 
-- [[31_megatron_inference_engine_analysis]] —— Megatron-LM **内置**推理引擎(连续批处理 / 块级 paged KV / 分块预填充)对照:训练框架自带推理 vs 专用推理引擎
-- [[mooncake_analysis]] —— Mooncake 分离式推理(P/D 分离、中心化 KV Cache),与 vLLM 的 KV 连接器 / 分离式 prefill 互为实现与架构对照
-- [[12_megatron_tp_analysis]] · [[14_megatron_ep_analysis]] · [[13_megatron_cp_analysis]] —— 训练侧 TP/EP/CP 源码级分析,与 [[22_vllm_distributed_inference_analysis]] 的推理侧并行对照
-- [[21_megatron_fusion_operators_analysis]] · [[23_torchtitan_compute_memory_optimizations_analysis]] —— 训练侧融合算子目录,与 [[24_vllm_fused_ops_and_kernels_analysis]] / [[25_vllm_ir_and_fusion_passes_analysis]] 的推理侧融合对照
-- [[10_pytorch_cuda_graphs_complete_guide]] · [[02_compile_stack/04_inductor/index]] · [[02_compile_stack/01_dynamo/index]] —— [[23_vllm_compilation_cudagraph_analysis]] / [[25_vllm_ir_and_fusion_passes_analysis]] 依赖的底层编译/图捕获/Pattern-Match 栈
-- [[12_deepseek_v3_analysis]] —— MLA / MTP 模型侧原理,被 [[14_vllm_attention_backends_analysis]](MLA 后端)与 [[20_vllm_speculative_decoding_analysis]](MTP)实现
-- [[13_low_precision_training_analysis]] · [[14_transformer_engine_analysis]] · [[24_deepseek_v4_fp4_qat_analysis]] —— FP8/FP4 低精度原理,对照 [[21_vllm_quantization_analysis]] 的推理量化
-- [[01_gpu_kernel_guide]] —— FlashAttention / Tensor Core / Triton kernel 链路,支撑 [[14_vllm_attention_backends_analysis]] 与 [[24_vllm_fused_ops_and_kernels_analysis]]
-- [[pin_memory_and_memory_semantics_analysis]] —— KV Cache 内存语义(本库已含 vLLM KV 段),关联 [[12_vllm_kv_cache_management_analysis]]
+## 四、最快跑通
+
+```bash
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+uv pip install vllm --torch-backend=auto
+vllm serve Qwen/Qwen2.5-1.5B-Instruct
+```
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"Qwen/Qwen2.5-1.5B-Instruct","messages":[{"role":"user","content":"你好"}]}'
+```
+
+离线入口：
+
+```python
+from vllm import LLM, SamplingParams
+
+llm = LLM(model="Qwen/Qwen2.5-1.5B-Instruct")
+outputs = llm.chat(
+    [[{"role": "user", "content": "解释 PagedAttention"}]],
+    SamplingParams(max_tokens=128),
+)
+print(outputs[0].outputs[0].text)
+```
+
+完整注意事项见 [[02_engineering/03_infer_frameworks/vllm/01_vllm_feature_optimizations_guide|vLLM 快速使用与优化指南]]，尤其是 chat template、`generation_config.json`、optimization level 与 benchmark 复现。
+
+## 五、按目标阅读
+
+- **先理解架构**：从 [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|引擎架构]] 的 `EngineCore.step` 开始，再进入 Scheduler 和 KV。
+- **先部署服务**：读 [[02_engineering/03_infer_frameworks/vllm/01_vllm_feature_optimizations_guide|快速使用与优化指南]]，用默认 `-O2 + balanced` 建基线。
+- **解决 TTFT**：读 Scheduler、KV cache 和 [[02_engineering/03_infer_frameworks/mooncake_analysis|Mooncake 分离式推理]]。
+- **解决 TPOT**：读 speculative decoding、attention backend、compilation/CUDA Graph 和 fused kernels。
+- **解决容量**：读 quantization、KV cache、distributed inference 与 KV connector。
+- **理解新执行路径**：架构页的 Model Runner V2 章节说明为什么 V2 不是所有模型统一启用。
+
+## 六、当前版本最容易误判的四件事
+
+1. **不是所有离线调用都 in-process**：当前环境变量默认开启 V1 multiprocessing。
+2. **不是所有 GPU worker 都必然是额外 OS 进程**：单设备 `UniProcExecutor` 会折叠执行对象。
+3. **Model Runner V2 不是全覆盖**：选择还受模型架构、Triton 和功能兼容性限制。
+4. **“默认开启”不等于“必然命中或受益”**：prefix cache、chunked prefill、async scheduling 都有工作负载或兼容性边界。
 
 ## Related Pages
 
-- 调度:[[10_vllm_engine_architecture_analysis]] · [[11_vllm_scheduler_analysis]] · [[12_vllm_kv_cache_management_analysis]]
-- 模型库:[[13_vllm_model_library_analysis]] · [[14_vllm_attention_backends_analysis]]
-- 特性优化:[[01_vllm_feature_optimizations_guide]] · [[20_vllm_speculative_decoding_analysis]] · [[21_vllm_quantization_analysis]] · [[22_vllm_distributed_inference_analysis]] · [[23_vllm_compilation_cudagraph_analysis]] · [[24_vllm_fused_ops_and_kernels_analysis]] · [[25_vllm_ir_and_fusion_passes_analysis]]
-- [[../index]] —— 推理框架目录索引 · [[mooncake_analysis]] —— 姊妹页(分离式服务)
+- [[02_engineering/03_infer_frameworks/index|推理框架目录索引]]
+- [[02_engineering/03_infer_frameworks/01_llm_inference_technology_stack_analysis|大模型推理技术栈全景]]
+- [[02_engineering/03_infer_frameworks/sglang/index|SGLang 推理框架]]
+- [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理专题]]
+- [[02_engineering/03_infer_frameworks/mooncake_analysis|Mooncake 分离式推理]]
