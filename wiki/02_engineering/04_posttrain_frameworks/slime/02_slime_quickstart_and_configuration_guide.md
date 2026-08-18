@@ -1,125 +1,218 @@
-# slime 快速上手与配置实现指南
+# slime 快速上手与配置指南——把 CLI 当作系统装配协议
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
-> **核验日期**：2026-08-14 · **系列**：[[slime/index]]
-> **结论先行**：slime 的“配置文件”不是单一 YAML，而是四层叠加：Megatron 原生 CLI 是公共基线，slime CLI 加 RL/资源语义，`--sglang-*` 由当前 SGLang 版本独立解析，两个可选 YAML 分别覆盖 SGLang 部署拓扑和 actor/critic 角色差异。理解这四层，才不会把 GPU placement、模型并行和 serving topology 混成一组参数。
+> **核验日期**：2026-08-18 · **类型**：Quickstart / Configuration Guide
+> **结论先行**：slime 的参数不是一张“选项表”，而是一份跨 Ray、Megatron 与 SGLang 的系统装配协议。参数首先被三个解析域合并成一个 namespace，再被归一化为资源、模型、batch 与生命周期合同；但角色 YAML、SGLang 拓扑和真实 Ray 容量要到对象创建时才完全展开，所以 CLI 能被解析不等于拓扑可放置、角色可初始化或生命周期可执行。
 
-## 1. 最小启动链
+本页保留一条最短可运行路径，但重点是教你按合同组装配置：先证明模型身份、容量账本、并行拓扑、batch 守恒和生命周期彼此一致，再调单个 engine 的性能参数。
 
-官方建议使用预装 Megatron/SGLang 及临时 patch 的 Docker 镜像；Megatron 路径通常还要先把 HF 权重转换成 `torch_dist` checkpoint。[`quick_start.md:5-48`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/get_started/quick_start.md#L5-L48) [`quick_start.md:67-105`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/get_started/quick_start.md#L67-L105)
+## 1. 最短可运行路径：先复用官方 recipe
 
-```text
-HF model/config/tokenizer
-  ├─ hf-checkpoint ──────────────> SGLang 初始化 + tokenizer/config
-  └─ convert_hf_to_torch_dist ──> ref-load / load ──> Megatron actor
+### 1.1 前置条件
 
-python train.py ...        # 同步闭环
-python train_async.py ...  # 一拍异步、训推分离
+官方 quickstart 建议使用项目镜像，因为其中包含 Megatron、SGLang 依赖与项目临时 patch；示例容器要求暴露全部 GPU、使用 host IPC，并配置较大的共享内存。[`docs/zh/get_started/quick_start.md:5-48`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/get_started/quick_start.md#L5-L48)
+
+Megatron 路径同时需要两种模型制品：HF 目录提供 tokenizer、`config.json`，并作为 SGLang 默认 model path；`torch_dist` checkpoint 则供 Megatron actor/reference 加载。官方流程先 source 对应的模型参数脚本，再运行 `convert_hf_to_torch_dist.py`。[`slime/backends/megatron_utils/arguments.py:173-180`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/arguments.py#L173-L180) [`slime/backends/sglang_utils/sglang_config.py:68-77`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_config.py#L68-L77) [`docs/zh/get_started/quick_start.md:67-105`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/get_started/quick_start.md#L67-L105) [`docs/zh/get_started/quick_start.md:134-148`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/get_started/quick_start.md#L134-L148)
+
+```bash
+# 容器内，下载模型和数据后
+cd /root/slime
+source scripts/models/glm4-9B.sh
+PYTHONPATH=/root/Megatron-LM python tools/convert_hf_to_torch_dist.py \
+  "${MODEL_ARGS[@]}" \
+  --hf-checkpoint /root/GLM-Z1-9B-0414 \
+  --save /root/GLM-Z1-9B-0414_torch_dist
+
+# 修改 scripts/run-glm4-9B.sh 中的 model、checkpoint、train/eval data 路径
+bash scripts/run-glm4-9B.sh
 ```
 
-`train.py` 和 `train_async.py` 的 `__main__` 都只做 `parse_args()` 后进入主循环；所有运行模式都在同一参数对象上闭合。[`train.py:97-99`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L97-L99) [`train_async.py:79-81`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L79-L81)
+这条 recipe 的可运行假设不是隐藏的：脚本 source 40-layer GLM 模型参数，配置 `actor=4 GPU`、`rollout=4 GPU`，再通过 Ray job 调用 `train.py`；单轮 `32` 个 prompt、每 prompt `8` 个 response，与 `global_batch_size=256` 对齐。[`scripts/models/glm4-9B.sh:1-23`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/scripts/models/glm4-9B.sh#L1-L23) [`scripts/run-glm4-9B.sh:29-54`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/scripts/run-glm4-9B.sh#L29-L54) [`scripts/run-glm4-9B.sh:122-150`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/scripts/run-glm4-9B.sh#L122-L150)
 
-## 2. 四层配置怎样合并
+> [!warning] 不要在共享开发机上盲跑示例脚本
+> `run-glm4-9B.sh` 开头会强制停止 SGLang、Ray 和 Python 进程；先复制脚本并删除不属于你的清理命令。[`scripts/run-glm4-9B.sh:1-13`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/scripts/run-glm4-9B.sh#L1-L13)
+
+### 1.2 第一次启动只改六组值
+
+| 合同 | 第一次只确认什么 | 官方 recipe 的实例 |
+|---|---|---|
+| 模型身份 | `MODEL_ARGS` 与 HF `config.json` 是否同一架构 | `scripts/models/glm4-9B.sh` |
+| 制品路径 | `hf_checkpoint`、`ref_load`、`load`、`save` | HF 目录 + `torch_dist` 目录 |
+| 数据语义 | prompt path、input/label key、chat template、reward | DAPO math JSONL + `deepscaler` |
+| 资源容量 | actor 卡数、rollout 卡数、是否 colocate | `4 + 4`，分离部署 |
+| 并行拓扑 | Megatron TP/PP/CP/EP 与 SGLang 每 engine 卡数 | train TP=2、CP=2；serve 每 engine=2 |
+| batch 守恒 | prompt 数、每 prompt 样本数、global batch | `32 × 8 = 256` |
+
+这些组在官方脚本中分别存在，而不是一个“大配置块”；这正是排错时应保留的边界。[`scripts/run-glm4-9B.sh:26-120`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/scripts/run-glm4-9B.sh#L26-L120)
+
+## 2. 解析不是终点：配置会经历两阶段装配
 
 ```mermaid
 flowchart TB
-    P0["预解析<br/>train-backend/debug flags"] --> P1["SGLang 独立 parse_known_args<br/>收集 --sglang-*"]
-    P0 --> P2["Megatron parser<br/>+ slime extra args"]
-    P1 --> M["merge Namespace"]
-    P2 --> M
-    M --> V["slime validate → Megatron validate → SGLang validate"]
-    V --> Y1["可选 SGLang YAML<br/>部署拓扑/组覆盖"]
-    V --> Y2["可选 Megatron YAML<br/>actor/critic 覆盖"]
+    CLI["一条 CLI"] --> PRE["预解析运行模式"]
+    PRE --> SGL["SGLang 独立解析"]
+    PRE --> MEG["Megatron 解析并注入 slime 参数"]
+    SGL --> NS["合并为单一 namespace"]
+    MEG --> NS
+    NS --> SV["slime 归一化与合同校验"]
+    SV --> MV["Megatron 原生校验"]
+    MV --> GV["SGLang 原生校验"]
+    GV --> RAY["创建 Ray placement group"]
+    RAY --> YAML["展开角色与 serving YAML"]
+    YAML --> OBJ["创建训练角色与推理 engines"]
 ```
 
-解析器先预读 backend/debug flags；需要 serving 时再让 SGLang 独立解析，之后由 Megatron parser 加载全部 Megatron 参数和 slime extra args，合并两个 namespace，最后依次做 slime、Megatron、SGLang 校验。[`arguments.py:1584-1643`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1584-L1643)
+### 2.1 第一阶段：把三个命名空间合并
 
-| 层 | 典型参数 | 控制什么 |
+`parse_args()` 先预读 `train_backend` 和三个 debug/replay 开关，由此决定是否跳过 SGLang；随后 SGLang 用独立 parser 的 `parse_known_args()` 收集 serving 参数，Megatron 再以 slime 的 extra-args provider 解析其原生参数和 slime 参数，最后把三个 namespace 合并。[`slime/utils/arguments.py:1584-1634`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1584-L1634)
+
+合并后依次调用 slime、Megatron、SGLang 校验；Megatron 的 HF 配置一致性检查甚至发生在 namespace 合并完成之前，而原生 Megatron `validate_args` 在 slime 归一化之后执行。[`slime/utils/arguments.py:1635-1643`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1635-L1643) [`slime/backends/megatron_utils/arguments.py:187-202`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/arguments.py#L187-L202)
+
+> **设计分析**：这是“先归一化、后让各引擎守住自己的不变量”，不是 slime 重新实现两套原生 validator。收益是 native 能力不必等待 slime 复制；代价是错误会分散在不同阶段。
+
+### 2.2 第二阶段：对象创建时才知道最终拓扑
+
+`train.py` 在解析完成后依次创建 placement group、rollout manager、actor/critic；SGLang YAML 在 rollout server 创建时才读取，Megatron role YAML 在 actor/critic 创建前才应用。[`train.py:9-27`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L9-L27) [`slime/ray/rollout.py:1146-1164`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1146-L1164) [`slime/ray/placement_group.py:163-208`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L163-L208)
+
+因此，完整配置不是 `argparse.Namespace` 本身，而是：
+
+```text
+公共 CLI
+  + slime 派生默认值
+  + Megatron actor 或 critic role override
+  + SGLang model 或 server-group override
+  + Ray 集群当下可提供的物理资源
+```
+
+## 3. 按合同分组，而不是按前缀分组
+
+| 合同 | 必须同时回答的问题 | 主要证据位置 |
 |---|---|---|
-| Megatron CLI | `tensor/pipeline/context/expert-model-parallel-size`、optimizer、checkpoint | 训练模型与并行执行 |
-| slime CLI | actor/rollout GPU、batch 关系、algorithm、hook、weight sync | RL loop 与跨引擎控制 |
-| SGLang CLI | `--sglang-*` | 当前安装版 SGLang 的 server args |
-| YAML | `--sglang-config`、`--megatron-config-path` | 复杂 serving topology；actor/critic 差异 |
+| 模型身份合同 | HF config、Megatron 结构参数、tokenizer 与 checkpoint 是否描述同一个模型？ | HF 字段逐项与 Megatron 参数比对，不一致集中报错。[`slime/backends/megatron_utils/arguments.py:93-144`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/arguments.py#L93-L144) |
+| Ray 容量合同 | 物理上要申请多少 GPU，actor 与 rollout 是并集还是重叠？ | placement 账本由 actor 卡数、rollout 卡数、debug/external/colocate 模式共同决定。[`slime/ray/placement_group.py:100-137`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L100-L137) |
+| Megatron 拓扑合同 | 已分给 trainer 的 GPU 如何切 TP/PP/CP/EP，模型字段是否匹配？ | parser 先把 `world_size` 设为 actor 总卡数，再调用 Megatron 原生 validator。[`slime/backends/megatron_utils/arguments.py:187-202`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/arguments.py#L187-L202) |
+| SGLang 拓扑合同 | rollout GPU 如何分 engine、PP/TP、model 和 server group？ | PP 必须整除每 engine 卡数；有效 TP 由二者派生。[`slime/backends/sglang_utils/arguments.py:144-170`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L144-L170) |
+| 数据与 batch 合同 | 一轮 rollout 产出多少逻辑样本，支撑多少 optimizer step？ | CLI 将 rollout batch 定义为 prompt 数，global batch 定义为 sample 数。[`slime/utils/arguments.py:689-717`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L689-L717) |
+| 生命周期合同 | 同卡是否时分复用，是否 external、async、release-train 或 replay？ | 这些模式会改变是否启动 engine、是否 offload、采用何种权重 transport。[`slime/utils/arguments.py:1889-1958`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1889-L1958) |
 
-### 2.1 资源参数不等于并行参数
+前缀只能告诉你参数来自谁，合同才能告诉你它必须和谁一起成立。例如 `rollout_num_gpus_per_engine` 是 slime/Ray 侧参数，却同时决定 SGLang 的默认 TP；`colocate` 是资源开关，却会强制改变 offload 生命周期。[`slime/utils/arguments.py:44-99`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L44-L99)
 
-`actor_num_nodes × actor_num_gpus_per_node` 决定训练资源，`rollout_num_gpus` 决定 serving 资源，`rollout_num_gpus_per_engine` 决定单 engine 占卡数；`colocate` 才把两个集合压到同一 placement group。[`arguments.py:38-99`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L38-L99) TP/PP/CP/EP 则由 Megatron 参数决定“拿到的训练 GPU 内部怎样切模型”。
+## 4. 四组最容易装错的耦合关系
 
-### 2.2 SGLang YAML 只管部署拓扑
+### 4.1 资源容量不等于模型并行
 
-`--sglang-config` 可定义多个模型、每模型独立 router、异构 server groups、prefill/decode/placeholder 和 per-group overrides；只有 `update_weights: true` 的模型接收训练权重。[`sglang-config.md:17-40`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/sglang-config.md#L17-L40) 运行时还校验 YAML 总 GPU 数必须等于 `rollout_num_gpus`。[`rollout.py:1274-1298`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1274-L1298)
-
-### 2.3 Megatron YAML 只做角色覆盖
-
-actor/critic 都先 deepcopy 公共 args，再应用相应 role 的 overrides；资源字段被忽略，critic 还会强制关闭 KL/OPD/custom advantage 等 actor-only 行为。[`arguments.py:1646-1678`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1646-L1678) 每个 role 最多一个条目，缺失 role 继承公共参数。[`arguments.py:1681-1721`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1681-L1721)
-
-## 3. 一轮数据量的守恒式
-
-默认 on-policy recipe 的核心约束是：
+令 actor 总卡数为
 
 $$
-B_{\mathrm{rollout}}\times n_{\mathrm{sample/prompt}}
-=B_{\mathrm{global}}\times N_{\mathrm{step/rollout}}.
+A=N_{\mathrm{actor}}G_{\mathrm{actor}},
 $$
 
-左边是一次 rollout 产出的 response 数，右边是这一批数据支撑的 optimizer steps 消耗量。官方 quickstart 明确区分 optimizer update 和 training→inference weight sync，两者不是同一个“更新”。[`quick_start.md:151-172`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/get_started/quick_start.md#L151-L172)
+rollout 总卡数为 $R$。本地分离部署申请 $A+R$ 个 Ray bundles；colocate 申请 $\max(A,R)$，并让 rollout 从相同 bundle 起点取卡。[`slime/ray/placement_group.py:100-128`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L100-L128)
 
-对于 compact/agent fanout，这个表面 sample 数不再等于逻辑 rollout 数，因此真正的 step 划分按 `rollout_id`，而不是按扁平 sample 个数；细节见 [[12_slime_sample_datasource_analysis]] 与 [[15_slime_loss_parallelism_analysis]]。
+- `rollout_num_gpus` 的 parser 默认值是 `None`；只有 colocate 且未显式设置时，slime 才把它派生为 $A$。[`slime/utils/arguments.py:44-53`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L44-L53) [`slime/utils/arguments.py:1931-1946`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1931-L1946)
+- `--rollout-num-gpus 0` 不是“自动选择”，而是只保留 router、不启动本地 engine；代码为它生成空 server group 配置。[`slime/ray/rollout.py:1274-1298`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1274-L1298)
+- colocate 默认把 train 与 rollout offload 都打开；`release_train` 则关闭 train offload、保留 rollout offload。[`slime/utils/arguments.py:1929-1951`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1929-L1951)
+- `train_async.py` 直到进入 `train()` 才断言禁止 colocate，因此这组 CLI 可以完成解析与前置校验，随后才失败。[`train_async.py:9-20`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L9-L20)
 
-## 4. 从运行目标反推参数组
+> **设计分析**：非 colocate 路径应把 `rollout_num_gpus` 当作必填，尽管 argparse 没标 `required=True`。否则 placement 账本最终会计算 `A + None`；这是“语法接受、装配失败”的最小例子。
 
-### 4.1 GRPO/GSPO/CISPO，无 critic
+若 Ray 集群实际 GPU 不足，placement group 的等待是无界的，但每 30 秒记录 registered/available GPU 数；“一直卡住”可能是容量合同未满足，不一定是代码死锁。[`slime/ray/placement_group.py:42-67`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L42-L67)
 
-- `advantage_estimator` 选择算法；
-- `n_samples_per_prompt > 1` 提供 group baseline；
-- reward normalization 默认在 rollout manager 做；
-- actor 单独负责 ref logprob（KL 非零时）、advantage 和 policy loss。
+### 4.2 HF、Megatron checkpoint 与默认值必须同源
 
-### 4.2 PPO，有 critic
+Megatron parser 会从 `hf_checkpoint` 读取 `AutoConfig`，逐项检查 hidden size、层数、head、FFN、embedding tie、norm 与 RoPE 等字段；同时把 trainer `world_size` 固定为 actor 总卡数。[`slime/backends/megatron_utils/arguments.py:93-144`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/arguments.py#L93-L144) [`slime/backends/megatron_utils/arguments.py:187-202`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/arguments.py#L187-L202)
 
-- `--use-critic` 创建第二个 `RayTrainGroup`；
-- critic 先前向 values、算 returns 并更新 value model，再把 CPU values 传给 actor；
-- actor/critic 当前共享 train placement group，角色 YAML 适合覆盖 lr/checkpoint，而不适合拆不同并行拓扑。[`placement_group.py:186-224`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L186-L224) [`megatron-config.md:111-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/megatron-config.md#L111-L118)
+slime 还会把未指定的 tokenizer 回退到 `hf_checkpoint`，默认启用 distributed optimizer，并在未给 `seq_length` 时填 `4096`。[`slime/backends/megatron_utils/arguments.py:147-180`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/arguments.py#L147-L180) 如果 `load` 不是可恢复的 Megatron checkpoint，slime 会进入 finetune 路径、禁用 optimizer/RNG 恢复，并在不能直接加载 HF 时回退到 `ref_load`。[`slime/utils/arguments.py:1812-1833`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1812-L1833)
 
-### 4.3 训推一体与训推分离
+> **设计分析**：`hf_checkpoint` 不是“仅 tokenizer 路径”；它是训推两侧共享的模型身份锚点。只替换 HF 目录、却沿用旧 `MODEL_ARGS` 或旧 `torch_dist`，会把一个逻辑模型拆成三份不一致的描述。
 
-| 模式 | 入口 | 关键设置 | 生命周期 |
-|---|---|---|---|
-| 分离同步 | `train.py` | 默认不 colocate | rollout 后可 offload serving；训练后更新权重 |
-| 一体同步 | `train.py` | `--colocate`，隐含 offload | 同卡时分复用，走 tensor/IPC updater |
-| 分离一拍异步 | `train_async.py` | 明确禁止 colocate | generate(N+1) 与 train(N) overlap |
-| rollout-only | 任一入口 | `--debug-rollout-only` | 不初始化 Megatron |
-| train-only replay | 任一入口 | `--load-debug-rollout-data` | 不初始化 SGLang，固定训练输入 |
+### 4.3 batch 参数表达产出—消耗守恒
 
-`train_async.py` 入口直接断言不支持 colocation，因为训练与 rollout 要在时间上并发，不能同时占同一批 GPU。[`train_async.py:9-16`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L9-L16)
+普通非 fanout rollout 的目标关系是
 
-## 5. 扩展入口速查
+$$
+B_{\mathrm{rollout}}n_{\mathrm{sample/prompt}}
+=B_{\mathrm{global}}N_{\mathrm{step/rollout}}.
+$$
 
-| 需求 | 参数/接口 | 最小契约 |
+项目 quickstart 明确区分 optimizer step 与 train-to-inference weight sync，并给出上述产出—消耗关系。[`docs/zh/get_started/quick_start.md:151-172`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/get_started/quick_start.md#L151-L172) 实现中只要设置 `num_steps_per_rollout`，就用整数除法派生 `global_batch_size`，若用户同时给了 global batch 则要求两者相等。[`slime/utils/arguments.py:1963-1971`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1963-L1971)
+
+算法也会改装配：默认 `advantage_estimator=grpo`，选择 `ppo` 才派生 `use_critic=True`，critic 卡数强制继承 actor；当每 prompt 只有一个 sample 时，GRPO 标准差归一化被自动关闭。[`slime/utils/arguments.py:941-955`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L941-L955) [`slime/utils/arguments.py:1901-1904`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1901-L1904) [`slime/utils/arguments.py:1973-1975`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1973-L1975)
+
+动态 micro-batch 不是独立布尔开关：开启后必须提供 `max_tokens_per_gpu`，而 CP 下其语义接近 response length 除以 CP size。[`slime/utils/arguments.py:747-765`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L747-L765) [`slime/utils/arguments.py:1862-1869`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1862-L1869)
+
+### 4.4 生命周期开关必须形成可执行组合
+
+`load_debug_rollout_data` 在预解析阶段就会让 SGLang parser 被跳过，并在归一化时强制 `debug_train_only=True`；`debug_rollout_only` 与 `debug_train_only` 互斥。[`slime/utils/arguments.py:1604-1613`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1604-L1613) [`slime/utils/arguments.py:1889-1927`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1889-L1927)
+
+权重同步也有组合合同：disk transport 需要共享目录；release-train 只支持 Megatron、不能带 critic 或 old actor，且要求 save、full mode 与 disk transport；delta mode 只支持 disk、禁止 colocate，并要求 rollout host 的本地 checkpoint 目录。[`slime/utils/arguments.py:2032-2067`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L2032-L2067)
+
+## 5. 两种 YAML 是“有边界的晚绑定”，不是另一套总配置
+
+### 5.1 Megatron role YAML：只覆盖角色差异
+
+`--megatron-config-path` 对公共 args 做 deepcopy，再应用 actor/critic overrides；`num_nodes` 与 `num_gpus_per_node` 被忽略，未知 key 只告警后仍写入，critic 还会强制关闭 actor-only 的 KL、OPD 和 custom advantage 行为。[`slime/utils/arguments.py:1646-1678`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1646-L1678)
+
+每个 role 最多一个条目，缺失 role 继承公共 args；但这些 override 是在 placement group 建好、全局 Megatron 校验结束后才应用。[`slime/utils/arguments.py:1681-1721`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1681-L1721) [`slime/ray/placement_group.py:120-137`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L120-L137) [`slime/ray/placement_group.py:163-208`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L163-L208)
+
+官方文档因此要求 actor/critic 保持相同 Megatron 并行拓扑，并警告不同拓扑可能在初始化或训练时失败；推荐 YAML 只放 lr、load/save 与 optimizer/scheduler 差异。[`docs/zh/advanced/megatron-config.md:111-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/megatron-config.md#L111-L118)
+
+> **设计分析**：role YAML 的正确心智模型是“角色参数补丁”，不是“第二个 Megatron launcher”。把 TP/PP/CP/EP 放进去，可能绕过公共阶段已经完成的拓扑校验。
+
+### 5.2 SGLang YAML：只展开 serving 拓扑
+
+SGLang YAML 允许多个 model，每个 model 有自己的 server groups；组内 `num_gpus_per_engine` 和 `model_path` 按 group → model → CLI 回退，`update_weights` 默认按有效 model path 是否等于 `hf_checkpoint` 推断。[`slime/backends/sglang_utils/sglang_config.py:44-112`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_config.py#L44-L112)
+
+YAML 顶层结构、worker type 和正 GPU 数在加载时检查；所有 model/group 的 GPU 总数必须等于 `rollout_num_gpus`，但这条总量校验直到 rollout manager 创建 server 时才发生。[`slime/backends/sglang_utils/sglang_config.py:115-180`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_config.py#L115-L180) [`slime/ray/rollout.py:1274-1282`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1274-L1282)
+
+server group 真正映射到 reordered GPU ids 时还有一次边界检查，错误消息会报告 offset、engine size、engine 数与可用 slots。[`slime/ray/rollout.py:200-217`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L200-L217) [`slime/ray/rollout_validation.py:1-32`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout_validation.py#L1-L32)
+
+> **设计分析**：SGLang YAML 描述“rollout GPU 内部如何长成服务”，Ray CLI 描述“先向集群拿多少卡”。两者必须对账，不能相互替代。
+
+### 5.3 `custom_config_path`：留给插件私有参数
+
+`custom_config_path` 的 help 将其定义为 custom function arguments；实现却会在 slime 校验函数靠后位置把 YAML 的任意 key 写回 args，已有 key 也允许覆盖。[`slime/utils/arguments.py:1570-1576`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1570-L1576) [`slime/utils/arguments.py:2005-2011`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L2005-L2011)
+
+> **设计分析**：应只在这里放插件私有 key。若用它覆盖前面已经通过 slime 校验的核心字段，同一次 `slime_validate_args` 不会从头重跑；后续虽还有 native validators，也不能补回所有 slime 组合检查。
+
+## 6. 为什么仍然保留一个扁平 namespace
+
+SGLang adapter 直接调用当前安装版本的 `ServerArgs.add_cli_args`，自动给未被 slime 接管的 flag 和 dest 添加 `sglang_` 前缀；模型路径、TP、端口、分布式地址等由 slime 负责装配的字段则被显式排除。[`slime/backends/sglang_utils/arguments.py:38-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L38-L118) Megatron 侧同样使用原生 parser，并通过 extra-args provider 注入 slime 参数，而不是复制一份 Megatron schema。[`slime/backends/megatron_utils/arguments.py:187-202`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/arguments.py#L187-L202)
+
+> **设计分析**：一个扁平 namespace 是有意的能力保真选择。若 slime 建立统一的“最低公分母”配置对象，新 SGLang kernel/cache 开关和 Megatron optimizer/parallel flag 都要等框架逐项追赶；现在则可原样前向 native option，同时在同一个 args 上表达跨引擎耦合。代价是命名空间变宽、版本差异进入 CLI，而且两个主 parser 都允许未知参数继续通过，因此 typo 未必在 parse-time 被拒绝。[`slime/utils/arguments.py:1609-1624`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1609-L1624) [`slime/backends/sglang_utils/arguments.py:189-212`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L189-L212)
+
+因此新增 native 调优项时，优先使用原生 flag：Megatron flag 直接写，SGLang ServerArgs flag 加 `--sglang-` 前缀。只有资源归属、跨引擎生命周期或角色差异才应进入 slime CLI/YAML。
+
+## 7. 失败发生在哪一层
+
+| 现象 | 最可能的合同断裂 | 检查顺序 |
 |---|---|---|
-| 替换整个 rollout | `rollout_function_path` | `(args, rollout_id, data_source, evaluation) -> RolloutFn*Output` |
-| 只替换单 sample 生成 | `custom_generate_function_path` | async generate，返回 `Sample` 或 fanout samples |
-| 自定义 prompt/buffer | `data_source_path` / `buffer_filter_path` | `get_samples/add_samples/save/load/__len__` |
-| 自定义 reward | `custom_rm_path` / `custom_reward_post_process_path` | per-sample RM 或整批 reward 统计 |
-| 生成后 hook | `rollout_sample_hook_path` | sync/async，`Sample -> Sample|None` |
-| 自定义 advantage/loss/TIS | 对应 `custom_*_function_path` | 写回约定字段或返回 scalar/metrics |
-| 自定义 train-data 转换 | `custom_convert_samples_to_train_data_path` | 保留训练侧所需 tokens/mask/ids/metadata |
+| CLI 运行后仍像使用默认值 | flag 拼错但被 `parse_known_args` / `ignore_unknown_args` 放过 | 对照启动日志中的最终 args，再查参数属于 Megatron、slime 还是 `--sglang-*` |
+| `hf_validate_args failed` | HF config 与 `MODEL_ARGS` 不是同一模型 | 比对 layer/head/FFN/RoPE/embedding tie |
+| Ray 一直等 placement group | $A+R$ 或 $\max(A,R)$ 超过已注册/可用 GPU | 看每 30 秒的 registered 与 available 数 |
+| PP/TP divisibility assert | 每 engine 卡数不能被 SGLang PP 整除 | 先定 PP，再令 effective TP 等于每 engine 卡数除以 PP |
+| `sglang_config total GPUs` assert | YAML group 总数与 `rollout_num_gpus` 不一致 | 先算 YAML 总量，再对 CLI |
+| engine 创建时报 GPU placement | group offset、engine size 和可用 rollout slots 不一致 | 按错误消息逐项核对 group 展开结果 |
+| async 一启动就 assert | `train_async.py` 与 colocate 生命周期冲突 | 改成资源分离，或回到同步 `train.py` |
+| actor/critic 初始化或训练失败 | role YAML 改了公共并行拓扑 | 把 TP/PP/CP/EP 移回 CLI，只保留角色差异 |
 
-默认 rollout 的最小 sample 字段是 tokens、response_length、reward、status。[`arguments.py:328-340`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L328-L340) 但开启 top-p replay、TIS、routing replay 或 compact fanout 后，实际契约更严格，不能只满足这四项；见 [[12_slime_sample_datasource_analysis]]。
+前六类失败分别对应本页已核验的 parser、HF validator、Ray wait、SGLang validator、YAML total check 和 placement check；最后两类由 async 入口断言与官方 role-config 限制直接给出。[`slime/backends/megatron_utils/arguments.py:93-144`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/arguments.py#L93-L144) [`slime/ray/placement_group.py:42-67`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L42-L67) [`slime/backends/sglang_utils/arguments.py:159-170`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L159-L170) [`slime/ray/rollout.py:1274-1282`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1274-L1282) [`train_async.py:9-20`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L9-L20) [`docs/zh/advanced/megatron-config.md:111-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/megatron-config.md#L111-L118)
 
-## 6. 建议的源码阅读顺序
+## 8. 提交作业前的装配检查
 
-1. `train.py`：看每轮阶段和 offload/weight update 位置。
-2. `ray/placement_group.py`：看资源集合与 actor/critic/rollout 创建。
-3. `ray/rollout.py::RolloutManager`：看生成结果如何转成每 DP rank 的 Box。
-4. `rollout/sglang_rollout.py` + `utils/types.py::Sample`：看生成语义和 metadata ABI。
-5. `backends/megatron_utils/actor.py`：看 ref/teacher/actor/critic 的实际前后向。
-6. `loss.py`、`cp_utils.py`、`dp_schedule.py`：看算法和并行不变量。
-7. `update_weight/*`：看权重更新不是普通 RPC，而是提交协议。
+1. 固定 HF model、Megatron `torch_dist`、MODEL_ARGS 三者的同源版本。
+2. 写出 $A$ 与 $R$；分离模式确认集群至少有 $A+R$ 张可用卡，colocate 确认至少有 $\max(A,R)$ 张。
+3. 用 actor 总卡数验证 Megatron TP/PP/CP/EP；独立用每 engine 卡数验证 SGLang PP/TP。
+4. 验证普通 rollout 的 batch 守恒；fanout/agent 轨迹改按逻辑 rollout id 检查，细节交给 [[12_slime_sample_datasource_analysis]]。
+5. 只选一种 serving 生命周期：内部默认、SGLang YAML、external engines；`sglang_config`、external 和 legacy prefill 配置有互斥断言。[`slime/backends/sglang_utils/arguments.py:175-186`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L175-L186)
+6. role YAML 只放角色差异；custom config 只放插件私有 key。
+7. 首次运行先缩短 `num_rollout`、response length 与数据规模，但不要改变 topology 和 lifecycle 合同；这样 smoke test 覆盖的仍是最终系统形态。
 
 ## Related Pages
 
-- [[slime/index]] — 知识地图
-- [[10_slime_end_to_end_iteration_analysis]] — 一轮训练的实际时序
-- [[11_slime_ray_control_plane_analysis]] — 参数如何落到 GPU placement 和 actor 生命周期
-- [[18_slime_fault_tolerance_observability_analysis]] — rollout-only / train-only replay 的工程用法
+- [[01_slime_architecture_overview_analysis]] — 解释为何 slime 保留 Megatron 与 SGLang 的原生能力，而只做薄编排。
+- [[10_slime_end_to_end_iteration_analysis]] — 配置装配完成后，同步与异步 iteration 如何移动权重版本边界。
+- [[11_slime_ray_control_plane_analysis]] — 深入 placement group、actor group、rollout manager 与 engine 的资源所有权。
+- [[12_slime_sample_datasource_analysis]] — batch 合同遇到 partial rollout、fanout 与工具 token 后如何保持身份和训练语义。
+- [[16_slime_weight_sync_analysis]] — colocate、NCCL、disk、delta 与 release-train 为什么构成一组生命周期合同。
+- [[02_engineering/04_posttrain_frameworks/slime/index|slime 系列索引]] — 返回整个后训练框架分析系列的阅读地图。

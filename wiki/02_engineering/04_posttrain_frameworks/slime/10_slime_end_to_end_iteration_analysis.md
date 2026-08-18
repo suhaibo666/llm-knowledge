@@ -1,208 +1,209 @@
-# slime 一轮 RL 迭代端到端实现分析
+# slime 端到端迭代：带版本边界的四阶段事务
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
-> **核验日期**：2026-08-18 · **系列**：[[slime/index]]
-> **结论先行**：slime 一轮迭代的真正事务边界不是 optimizer step，而是“采到一个自洽的 policy snapshot → 用它形成完整训练统计 → 更新 Megatron → 把新权重原子提交给 SGLang”。同步和一拍异步只改变阶段重叠，不改变这个提交边界。
+> **项目文档基线**：同一提交下 `examples/fully_async/README.md`
+> **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
+> **结论先行**：slime 的一轮 iteration 不是“调用一次 optimizer”这么窄，而是一个带版本边界的阶段事务：**用已发布的 serving 权重采样 → 在完整 rollout 视图上冻结训练数据 → 更新训练权重 → 原子发布下一 serving 版本**。同步、一拍异步和 fully-async 改变的是阶段重叠位置与允许的 policy age；它们没有取消数据闭合点和权重提交点。代价是 barrier、等待、缓存清理与数据排队，但这些成本守住了三件更贵的事：不让请求看到半套权重、不让训练统计在切分后失真、不让同一份数据在异步队列里丢失或被重复消费。
 
-## 1. 初始化：先 serving，再根据它完成训练侧装配
+本文只解释 iteration 的因果主线。Ray 对象职责、Sample 字段、SGLang 请求状态、Megatron 内核、loss 归一化、权重 transport 和训推一致性的字段级细节分别由 `11`–`17` 页负责；本页只在跨阶段边界处概括并链接。
 
-同步与异步入口都按同一顺序初始化：创建 placement group → 创建 `RolloutManager` 和 SGLang engines → 创建 actor/critic groups → 首次把 actor 权重推给 rollout。[`train.py:13-30`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L13-L30) RolloutManager 必须先初始化，因为它拥有 DataSource，`num_epoch` 模式下需要先由 dataset 长度计算每 epoch 的 rollout 数。[`placement_group.py:227-248`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L227-L248)
+## 1. 为什么 iteration 必须是“事务”，而不是自由运行的循环
 
-训练 actor 初始化后把真实 DP/CP/VPP 配置写成 `train_parallel_config`；这份运行时拓扑随后交给 RolloutManager，后者才能构造正确的 DP schedule。[`actor.py:95-113`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L95-L113) [`actor_group.py:188-208`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L188-L208)
+在线 RL 同时维护两份会变化的状态：训练侧参数与 serving 侧已发布版本。设 rollout $i$ 观察到的 serving 版本为 $v(i)$，其原始轨迹为 $R_i^{v(i)}$，处理后冻结的训练 batch 为 $B_i^{v(i)}$，则一轮的逻辑关系是：
 
-## 2. 同步主链：九个阶段
+$$
+R_i^{v(i)}
+\xrightarrow{\mathrm{process}}
+B_i^{v(i)}
+\xrightarrow{\mathrm{train}}
+\theta_{k+1}
+\xrightarrow{\mathrm{publish}}
+S_{k+1}.
+$$
+
+这里故意没有写 $v(i)=k$：同步模式通常让二者紧邻，一拍异步会让 rollout 提前一拍，`update_weights_interval > 1` 还会让多个 rollout 共用较旧的 serving 版本。源码把更新间隔默认设为 1，但允许显式增大；异步 driver 只在间隔命中时发布。[`slime/utils/arguments.py:537-545`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L537-L545) [`train_async.py:66-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L66-L70)
+
+因此 slime 守的不是“任何配置下都绝对零 off-policy”，而是下列分层不变量。下表是后文 fixed-commit 调用链的**设计抽象**，不是项目文档的原话：
+
+| 不变量 | 必须成立的边界 | 允许的放宽 |
+|---|---|---|
+| **发布原子性** | serving 对外只能是完整旧版本或完整新版本 | 可以降低发布频率，不能暴露分 bucket 更新中的半版本 |
+| **batch 闭合性** | reward、mask、rollout identity 与分母在训练前冻结 | 可以让 batch 较旧，不能训练到一半再改变其语义 |
+| **版本可追踪性** | 生成侧 metadata 能记录实际观察到的权重版本 | partial/async 可以跨版本，但必须选择保留、mask 或校正旧 token |
+| **资源排他性** | colocate 时 rollout KV/weights 与训练状态按阶段占用显存 | 资源分离时可以重叠，colocate 不能假装有两份 GPU 容量 |
+| **数据所有权** | 每个 prompt group 处于 DataSource、in-flight、completed queue 或 train batch 的一个受控位置 | 可以乱序完成，不能过量 drain 后丢弃已消费数据 |
+
+`Sample` 会把 SGLang 返回的 `weight_version` 追加到 `weight_versions`，而不是只保留最后一个版本；partial continuation 因而能够暴露跨版本轨迹。[`slime/utils/types.py:397-416`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L397-L416) `mask_offpolicy_in_partial_rollout` 默认关闭，开启后才会在续生成前把旧 response mask 清零。[`slime/utils/arguments.py:456-474`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L456-L474) [`slime/rollout/sglang_rollout.py:224-248`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L224-L248)
+
+> **设计分析**：这说明“on-policy 边界”在 slime 中应理解为**可审计的策略版本边界**，不是一句笼统的“rollout 永远来自当前 actor”。同步调度尽量缩短策略年龄；async、partial 和较大的更新间隔则有意拿 freshness 换吞吐，但仍需要发布原子性与 token 版本语义。具体校正条件见 [[17_slime_train_inference_consistency_analysis]]。
+
+## 2. 四阶段事务分别保护什么
 
 ```mermaid
-sequenceDiagram
-    participant Driver as train.py
-    participant RM as RolloutManager
-    participant DS as DataSource
-    participant SG as SGLang/router
-    participant MG as Megatron actor/critic
-
-    Driver->>RM: generate(rollout_id)
-    RM->>DS: get_samples()
-    RM->>SG: async generate + reward/filter
-    SG-->>RM: nested Sample groups
-    RM->>RM: flatten/validate → reward normalize → train dict
-    RM->>RM: DP schedule → Box per DP rank
-    RM-->>Driver: rollout_data_ref[]
-    Driver->>MG: critic.train? → actor.train
-    MG->>MG: ref/teacher/old logprob → advantage → loss → optimizer
-    Driver->>MG: save/offload as configured
-    MG->>SG: pause → flush → transfer(v+1) → resume
-    Driver->>RM: periodic eval/save
+flowchart LR
+    SV["Serving 快照 v"] --> RO["Rollout<br/>生成与 reward"]
+    RO --> PR["Processing<br/>验证并冻结完整 step"]
+    PR --> TR["Training<br/>更新 Megatron 参数"]
+    TR --> PB["Weight publish<br/>暂停 清缓存 传输 恢复"]
+    PB --> NV["Serving 快照 v 加一"]
+    NV --> RO
 ```
 
-### 阶段 1：取得 prompt groups
+### 2.1 Rollout：先固定行为数据，再允许 actor 改变
 
-无 oversampling 时，`--over-sampling-batch-size` 默认等于 `--rollout-batch-size`；运行时真正传给 DataSource 的取数粒度是 `args.over_sampling_batch_size`。每个取出的 prompt 都会 deepcopy 成 `n_samples_per_prompt` 个 sample，并分配稳定的 group/sample index；buffer 版本会优先消费上轮回收的 partial groups。[`arguments.py:428-453`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L428-L453) [`arguments.py:1977-1983`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1977-L1983) [`data_source.py:90-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L90-L118) [`data_source.py:168-211`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L168-L211)
+同步 driver 在每个 `rollout_id` 上先阻塞取得 `RolloutManager.generate` 的结果，之后才发起 critic/actor training；训练结束后才发布权重。[`train.py:48-85`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L48-L85) 默认 rollout 函数会持续补充 prompt groups，直到取得目标数量的有效 group；凑齐后 abort 剩余请求、等待 pending tasks 收束，并在 partial 模式下把未完成 groups 交回 DataSource。[`slime/rollout/sglang_rollout.py:400-470`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L400-L470)
 
-### 阶段 2：并发生成、reward 与动态 admission
+这个阶段边界保护两件事：进入本轮训练的数据已经有确定的 token、reward、mask 与 behavior metadata；未被选中的 in-flight 数据也有明确去向。生成并发、动态过滤和 partial 回收属于 [[13_slime_sglang_rollout_engine_analysis]] 与 [[12_slime_sample_datasource_analysis]]，iteration 只依赖它们最终交付一个**闭合的逻辑 batch**。
 
-`GenerateState` 的 semaphore 容量是 per-server concurrency × engine 数；每个 prompt group 是一个外层 task，组内 samples 再并发生成，随后按 per-sample 或 group RM 打分。[`sglang_rollout.py:83-149`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L83-L149) [`sglang_rollout.py:225-336`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L225-L336)
+### 2.2 Processing：为什么必须在 DP 切分之前看见完整 step
 
-外层 rollout loop 维持目标 accepted group 数；filter 丢弃一组时会继续补采，凑齐后 abort 剩余 in-flight 请求，partial 模式才把已有输出回收到 buffer。[`sglang_rollout.py:374-470`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L374-L470)
+`RolloutManager.generate` 不直接返回 SGLang 的 HTTP 结果。它先执行 rollout 函数，验证/flatten 嵌套 Sample，再转成训练 dict，最后按训练侧并行配置切给各 DP rank。[`slime/ray/rollout.py:590-604`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L590-L604) converter 在完整 Sample 列表上计算 reward 处理、补齐 identity/mask，并为同一 `rollout_id` 的所有 fragments 预计算同一个 `rollout_mask_sums`；注释明确说明，一旦 fragments 被 first-fit 分到不同 micro-batches，局部 batch 已无法重建完整分母。[`slime/ray/rollout.py:749-814`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L749-L814)
 
-这里三个参数分属不同层次，不能都理解成“训练 batch”：
+随后 scheduler 先按 `rollout_id` 组成固定 global-batch-size 的 train steps，再 pack micro-batches 和分配 DP partition；尾部不足一个完整 step 的 logical rollouts 会被丢弃。[`slime/utils/dp_schedule.py:82-150`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L82-L150) 字段 ABI 与 loss reducer 的细节分别见 [[12_slime_sample_datasource_analysis]] 和 [[15_slime_loss_parallelism_analysis]]。
 
-| 参数 | 单位 | 决定什么 |
-|---|---|---|
-| `--rollout-batch-size B` | prompt group | 最终必须留下多少组有效数据进入训练 |
-| `--n-samples-per-prompt K` | response/group | 每个 prompt 生成多少条 completion，供组内比较或筛选 |
-| `--over-sampling-batch-size M` | prompt group/补采波次 | 每次向 DataSource 多取多少组并提交生成；默认 $M=B$，且必须 $M\ge B$ |
+> **设计分析**：processing 不是“序列化开销”，而是事务的 prepare 阶段。它把可变、嵌套、可能乱序完成的 rollout 对象，冻结成 trainer 可重复消费的 step 视图。如果先把 Sample 发散到 DP ranks 再算 group 统计，通信可以更早开始，但每个 rank 都只看见局部 fragments，reward 归一化和 rollout-level 分母会随 partition 改变。
 
-例如 $B=32$、$K=8$、$M=64$：一次补采会提交 64 个 prompt groups，最多对应 512 条 response tasks；若动态过滤通过率约 50%，期望保留 32 组、即 256 条 response 进入训练。这样设计是为了用一轮较大的并发池覆盖“全对/全错组被丢弃、长尾请求尚未完成”等损耗，避免每丢几组就重新启动一次小补采并等待新的尾延迟。代价是 $M$ 过大时会生成更多最终不用的数据，凑齐 $B$ 组后仍在飞的请求会被 abort。[`sglang_rollout.py:400-454`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L400-L454)
+### 2.3 Training：一个 rollout cycle 可以包含多个 optimizer steps
 
-`--dynamic-sampling-filter-path` 也不是“生成前判断哪些 prompt 值得做”。它在一整个 group 已完成生成并拿到 reward 后才运行，输入是同一 prompt 的 $K$ 条 samples；内置示例检查组内 reward 标准差是否非零，全对或全错的组没有 GRPO 相对优势信号，因而可被丢弃。filter 返回 `keep/reason/keep_when_insufficient`；fallback 版本在候选已经不足以凑齐 $B$ 组时保留原本应丢的组，以少量数据质量换取不再启动一轮采样。[`dynamic_sampling_filters.py:9-23`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/filter_hub/dynamic_sampling_filters.py#L9-L23) [`base_types.py:5-37`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/filter_hub/base_types.py#L5-L37)
+控制面通过 `RayTrainGroup.async_train` 向所有 actor workers 广播同一 `rollout_id` 和各 rank 的 data ref。[`slime/ray/actor_group.py:131-149`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L131-L149) actor 会先完成所需的 ref/teacher/current-policy forward 与 rollout-global advantage，再进入 policy train；训练结束后备份最新 actor 权重。[`slime/backends/megatron_utils/actor.py:424-564`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L424-L564)
 
-### 阶段 3：从嵌套生成输出转成完整 step 视图
+每个 train step 对其所有 micro-batches 做 forward/backward，梯度有效时调用一次 `optimizer.step()` 并推进 scheduler。[`slime/backends/megatron_utils/model.py:509-524`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L509-L524) [`slime/backends/megatron_utils/model.py:643-683`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L643-L683) 因而一个外层 rollout cycle 可以通过 `num_steps_per_rollout` 产生多次参数更新，但 serving 仍在 actor 完成本轮训练后只接收一次 publish。Megatron 内部的数据搬运、并行执行和模型角色切换由 [[14_slime_megatron_training_analysis]] 展开。
 
-RolloutManager 先校验 compact fanout 的 sibling 是否共享 `rollout_id`，再逐层 flatten；这一步必须发生在 reward/reducer 之前，否则一条 agent rollout fanout N 个训练片段会被计数 N 次。[`rollout.py:671-701`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L671-L701) [`rollout.py:941-970`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L941-L970)
+### 2.4 Weight publish：transport 前后必须有提交协议
 
-### 阶段 4：reward 统计与 train-data ABI
+默认分布式 updater 的顺序是：版本号加一，rank 0 暂停所有 rollout engines 并 flush cache，所有训练 ranks barrier，按 non-expert/expert chunks 发送全部权重，必要时做量化后处理，然后恢复 generation，再做一次 barrier。[`slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py:102-146`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L102-L146) 每个 chunk 的 metadata 携带相同 `weight_version`，tensor 广播完成后才返回 refs。[`slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py:326-355`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L326-L355)
 
-默认 GRPO/GSPO/CISPO/reinforce++ baseline 先按 group 做 reward mean/std normalization；随后把 Sample 转成 tokens、response lengths、rewards、loss masks、rollout ids、logprobs/top-p/routing/teacher metadata。[`rollout.py:722-747`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L722-L747) [`rollout.py:749-866`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L749-L866)
+`pause/flush/version` 是提交协议，NCCL、CUDA IPC 或 disk 只是数据面。disk reload 路径同样在 reload 前 pause/flush，并在 CI 中读取各 engine version 检查是否全部等于目标版本，最后才继续生成。[`slime/ray/actor_group.py:227-269`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L227-L269) 四种 transport 的拓扑映射与异常路径归 [[16_slime_weight_sync_analysis]]。
 
-这里还在完整 step 上预计算每个 `rollout_id` 的 `rollout_mask_sums`。这是一个关键架构决定：只有此时能看见同一 rollout 的所有 fanout fragments；进入 micro-batch 后已无法局部恢复分母。[`rollout.py:799-814`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L799-L814)
+> **设计分析**：pause 防止新请求进入提交窗口，flush 防止新权重复用旧权重产生的 KV/prefix cache，version 把“传输结束”升级成“所有 engine 已提交同一逻辑版本”。只优化传输带宽而绕过这三步，会把性能问题变成静默正确性问题。
 
-### 阶段 5：DP/mbs 调度与数据运输
+## 3. 真实调用链与状态转换
 
-RolloutManager 调用 `build_dp_schedule`，按逻辑 rollout 划 step，再结合序列长度、dynamic batch、VPP group 约束得到每个 DP rank 的 partition/micro-batch indices；每 rank 只拿自己的字段子集，包装进 Ray `Box`，transport 可选 object store 或 NIXL。[`rollout.py:871-938`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L871-L938)
-
-### 阶段 6：训练侧取数与设备/CP 变换
-
-每个 Megatron actor 用自己的 DP rank 解包数据，提前把 tokens、loss masks、rollout denominators 搬到 GPU；rollout/teacher logprob 按 CP layout 切片。[`actor.py:245-299`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L245-L299) `DataIterator` 按预计算 micro-batch indices 取字段，VPP 每个 stage 使用独立 iterator cursor。[`data.py:201-245`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/data.py#L201-L245)
-
-### 阶段 7：critic 与 actor 的内部顺序
-
-PPO critic 先 forward values，算 advantages/returns，再执行 value-loss train，并只由 PP last stage 返回 CPU values。[`actor.py:396-422`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L396-L422)
-
-actor 的顺序是 ref/teacher logprob → old actor/current actor logprob（可按严格条件复用 loss forward）→ 接收 critic values → 恢复 actor → 全 rollout advantage → policy train → 备份新 actor/ref。[`actor.py:424-503`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L424-L503) [`actor.py:514-564`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L514-L564)
-
-### 阶段 8：checkpoint 与内存生命周期
-
-主循环按 `save_interval`、epoch 边界和最终 step 决定保存；`release_train` 会强制同步保存后杀掉训练 actors，下轮再从 checkpoint 重建；普通 offload 则保留 actor，只暂停 GPU 内存并销毁/重建 process groups。[`train.py:71-88`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L71-L88) [`actor_group.py:151-186`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L151-L186) [`actor.py:205-243`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L205-L243)
-
-### 阶段 9：权重提交
-
-actor updater 先恢复/重连必要 process groups，发现 engine crash 时先恢复 serving actor，然后执行 updater；默认 NCCL path 的事务序列是 pause generation → flush cache → 分 bucket 传完所有权重 → quant postprocess → continue generation。[`actor.py:592-653`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L592-L653) [`update_weight_from_distributed.py:102-146`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L102-L146)
-
-## 3. 六个常见疑问：batch、变长、GRPO、权重、payload 与 rollout id
-
-### 3.1 `rollout_batch_size`、global batch 和 micro-batch 分别是什么
-
-先把三个单位拆开。设每轮取 $R$ 个 prompt，每个 prompt 生成 $G$ 条 completion：
-
-| 参数/概念 | 单位 | 在一轮 rollout 中的含义 |
-|---|---|---|
-| `rollout_batch_size` | prompt | $R$；DataSource 一次取多少个题目 |
-| `n_samples_per_prompt` | completion/prompt | $G$；每题采几条 |
-| rollout 产出 | completion | 默认路径为 $RG$ 条逻辑 rollout |
-| `global_batch_size` | logical rollout | 一个 optimizer step 在全部 DP ranks 上消费多少条逻辑 rollout；默认一 completion 对应一 logical rollout |
-| `micro_batch_size` | sample/DP rank/forward-backward | 静态 packing 时单个 micro-batch 装几条；dynamic batch 开启后该值被忽略，改由 token budget 决定 |
-
-参数帮助文本明确把 rollout batch 定义成 prompt 数、把训练 global batch 定义成 sample 数；若希望一轮 rollout 只做一次 optimizer step，应设置 `global_batch_size = rollout_batch_size * n_samples_per_prompt`。[`arguments.py:689-717`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L689-L717) 若配置 `num_steps_per_rollout=K`，slime 反推：
-
-$$
-B_{\mathrm{global}}=\frac{RG}{K}.
-$$
-
-源码使用整数除法并校验显式 global batch 是否相等。[`arguments.py:1963-1971`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1963-L1971) 实际配置应保证 $RG$ 能整除 $B_{\mathrm{global}}$；scheduler 只形成完整 steps，不能组成一个 global batch 的尾部 logical rollouts 会被丢弃。对 compact/subagent fanout，step 边界按 `rollout_id` 而非物理 fragment 数计算；一个 logical rollout 可含多条训练 sample。[`dp_schedule.py:82-110`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L82-L110)
-
-**参数更新发生在每个 optimizer step，不是等整个 dataset 过完一轮。** `train_one_step` 先对该 step 的所有 micro-batches 执行 forward/backward，随后只调用一次 `optimizer.step()`；一个外层 rollout 若切成 $K$ 个 train steps，actor 参数就连续更新 $K$ 次。[`model.py:509-524`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L509-L524) [`model.py:643-683`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L643-L683) 但 serving 侧 SGLang 不会在这 $K$ 次中途逐次换权重：同步主循环等 actor 完成整轮 train 后才调用一次 `update_weights()`。[`train.py:48-85`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L48-L85) `num_epoch` 只是按 dataset 长度换算外层 rollout 次数，不是“每个 epoch 末才更新 actor”。[`arguments.py:615-623`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L615-L623)
-
-### 3.2 轨迹长短不一，训练为什么仍能组成 batch
-
-slime 没有把每条轨迹 padding 到同一个固定 $S$。它分两层处理变长：
-
-1. **step 内先按长度装箱。** 静态模式按 sample 数切 micro-batch；dynamic 模式用 first-fit，使每个 bin 的 token 总数不超过 `max_tokens_per_gpu * cp_size`，再把 micro-batch 数对齐到 DP/VPP 约束。[`dp_schedule.py:55-79`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L55-L79) [`dp_schedule.py:117-125`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L117-L125)
-2. **micro-batch 内做 packed sequence。** 多条变长 tokens 拼成一个 THD stream，`PackedSeqParams.cu_seqlens` 保存各序列边界，最终 tensor 是 `[1, T_padded]`；只在拼接尾部做 TP/CP 对齐 padding，而不是按 batch 内最长序列做矩形 padding。[`data.py:28-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/data.py#L28-L118)
-
-next-token shift、response loss mask 和 CP slice 与 tokens 同步变换，因此 prompt tokens 与尾部对齐 padding 都不会误计入 policy loss。[`data.py:120-148`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/data.py#L120-L148) `balance_by_flops` 是另一条按估算 FLOPs 均衡的路径，源码明确提示它可能突破 token cap；显存紧张时不能把该选项当成硬 OOM 保护。[`arguments.py:730-743`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L730-L743)
-
-### 3.3 GRPO 每题采多份后，batch 语义是否变化
-
-不变化的是单位，变化的是数量。DataSource 对每个 prompt deepcopy $G$ 份：组内共享 `group_index`，每条 completion 有独立 `index`。[`data_source.py:107-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L107-L118) 因而：
-
-$$
-N_{\mathrm{completion}}=R\times G.
-$$
-
-`rollout_batch_size` 仍是 $R$ 个 prompt，`global_batch_size` 仍按 logical rollout/completion 计，不会改成 prompt-group 数。GRPO 的 group mean/std 在完整 $R\times G$ 视图上先算完，再进入 step split；即使同一题的 siblings 后续落到不同 micro-batch，归一化 reward 已经固定。[`rollout.py:722-745`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L722-L745)
-
-若想“一轮 rollout 恰好一次更新”，仍取 $B_{\mathrm{global}}=RG$；若想一轮 $K$ 次更新，则取 $B_{\mathrm{global}}=RG/K$。把 $B_{\mathrm{global}}$ 设成 $G$ 的倍数，可让默认顺序下的 step 更自然地覆盖完整 prompt groups，但这是**配置建议，不是当前 scheduler 的强不变量**：源码甚至提示 workload balance 可能把同一 prompt 的不同 responses 分到不同 train steps。[`arguments.py:719-727`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L719-L727)
-
-### 3.4 权重更新有哪几条路径，耗时能否被掩盖
-
-固定基线有四条 actor→rollout 路径：训推分离的 NCCL full、colocate tensor/CUDA IPC、full disk，以及 delta disk。选择条件、暂停/清 cache/版本提交协议和 delta 的字节级实现见 [[16_slime_weight_sync_analysis]]。
-
-源码没有一个可跨模型和硬件复用的“同步占比”。actor 的 `update_weights` 有独立 timer，最终记录为 `perf/update_weights_time`；应在目标集群测量，而不是预填固定百分比。[`actor.py:591-653`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L591-L653) [`train_metric_utils.py:13-50`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/train_metric_utils.py#L13-L50) full-disk 是例外：actor timer 只覆盖 checkpoint publish，RayTrainGroup 随后的 host pull/reload 在 timer 外，所以端到端占比必须另看外层 wall-clock。[`actor_group.py:162-173`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L162-L173) 同步主链可用：
-
-$$
-\rho_{\mathrm{sync}}=
-\frac{T_{\mathrm{update}}}
-{T_{\mathrm{rollout}}+T_{\mathrm{train}}+T_{\mathrm{update}}}
-$$
-
-作为未重叠 wall-clock 的初始口径。默认 online commit 的 pause→flush→transfer/reload→resume 是 serving barrier，不能被 generation 掩盖；full-disk 的 host-local checkpoint pull 可在 pause 前与 generation overlap。[`actor_group.py:227-269`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L227-L269) 一拍异步能重叠 rollout N+1 与 train N，但到权重提交前仍等待 generation future；`update_weights_interval > 1` 只是摊薄同步频率，同时增加 policy staleness。[`train_async.py:31-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L31-L70)
-
-### 3.5 rollout 到底交给 train engine 什么
-
-要区分“**SGLang `/generate` 的返回**”和“**Slime rollout 子系统的最终输出**”：SGLang 返回生成 token、每个已选 token 的 logprob 及可选 top-p/routed-expert/version metadata；Slime 随后执行 hooks 和 RM，把 reward、mask、identity 等组装为 train data。[`sglang_rollout.py:175-219`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L175-L219) [`sglang_rollout.py:224-289`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L224-L289)
-
-| 类别 | 字段 | 是否总有 |
-|---|---|---|
-| 训练主体 | tokens、response length、reward/raw reward、loss mask、sample/rollout id | 是 |
-| behavior policy | rollout logprob | 默认 SGLang 生成有；custom rollout 必须自行维护 |
-| 精确采样重放 | top-p token ids/offsets | 仅 `rollout_top_p != 1` |
-| MoE 路由重放 | routed experts | 仅请求并开启 routing replay |
-| 蒸馏/多模态 | teacher logprob、multimodal train inputs | 对应功能开启时 |
-
-这里持久化的 rollout logprob **不是** `[B, S, V]`，而是每个 response token 的已选 action 标量，单条 shape 为 `[R_i]`；完整词表 logits 只在 SGLang 内部生成以及 Megatron 当前 micro-batch 重算时短暂存在。字段长度约束见 [`types.py:253-302`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L253-L302) 和 [`types.py:418-425`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L418-L425)。routed experts 也不是默认字段，只有 Sample 提供时才进入 train data。[`rollout.py:828-852`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L828-L852)
-
-数据物理路径默认是 RolloutManager 先转成 **CPU contiguous tensors**，再经 Ray object store；可选 Ray NIXL tensor transport。训练 actor 通过 Ray 在 CPU 取回后再 `.to(cuda)`，不是 NCCL 的 HBM→HBM rollout-data 通道。[`rollout.py:41-104`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L41-L104) [`actor.py:245-299`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L245-L299) 字段级大小和 reward/logprob 的细节分别见 [[12_slime_sample_datasource_analysis]] 与 [[13_slime_sglang_rollout_engine_analysis]]。
-
-### 3.6 `--start-rollout-id` 是哪一种“轮次”
-
-它是外层 **rollout/train/weight-commit cycle 的编号**。同步入口直接执行 `range(start_rollout_id, num_rollout)`；编号为 $n$ 的 cycle 会生成 rollout $n$、用这批数据训练，然后把完成训练的 actor 权重提交给 SGLang。[`train.py:48-85`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L48-L85) 因而它不是下面三种计数：
-
-| 不是 | 原因 |
-|---|---|
-| dataset epoch | 一个 epoch 可含多个 rollout cycles；epoch 只是周期保存/评估的附加边界 |
-| optimizer update 次数 | 一个 cycle 可由 `num_steps_per_rollout` 切成多个 train steps，每个 step 各执行一次 `optimizer.step()` |
-| checkpoint 次数 | checkpoint 只在 `save_interval`、epoch 边界、最终 cycle 或 release 模式触发，不保证每个 rollout 都保存 |
-
-自动续训时，Megatron checkpoint 返回最后已经保存完成的 `loaded_rollout_id`，actor 初始化把下一轮设为 `loaded_rollout_id + 1`；未显式传参时，控制面采用这个值。若启用 global dataset，还会加载 `start_rollout_id - 1` 对应的 cursor 状态，使模型状态与 prompt 游标落在同一事务边界。[`actor.py:95-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L95-L118) [`placement_group.py:210-222`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L210-L222) [`data_source.py:123-160`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L123-L160)
-
-例如 checkpoint 记录 `rollout_id=17`，恢复后通常从 18 开始；若 `num_rollout=100`，实际执行 18 到 99。`num_rollout` 是 `range` 的排他上界，不是“从 18 再跑 100 轮”。手工覆盖 `start_rollout_id` 只改变外层编号起点，不会自动证明 actor、critic checkpoint 和 DataSource cursor 与该编号一致；错配会造成数据重复/跳过或模型状态错位。保存本身仍由周期判定函数决定。[`arguments.py:679-686`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L679-L686) [`misc.py:107-128`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/misc.py#L107-L128) [`actor.py:567-580`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L567-L580)
-
-## 4. 一拍异步究竟重叠了什么
+固定基线的同步调用链可以压缩成：
 
 ```text
-time ─────────────────────────────────────────────>
-rollout:  [ gen 0 ][      gen 1      ][ gen 2 ]
-train:             [train 0][train 1]
-commit:                     |v1|      |v2|
-                            ↑ wait gen future before commit
+train.py::train
+  → RolloutManager.generate.remote
+    → call_rollout_fn
+      → generate_rollout
+        → generate_rollout_async
+          → DataSource.get_samples
+          → generate_and_rm_group
+          → filter / abort / partial requeue
+    → validate and flatten Samples
+    → convert Samples to train dict
+    → split train data by DP
+  → RayTrainGroup.async_train
+    → MegatronRayActor.train_actor
+      → ref or teacher or actor forward
+      → advantage and returns
+      → train_one_step one or more times
+  → RayTrainGroup.update_weights
+    → actor weight updater
+      → pause → flush → transfer → continue
 ```
 
-异步入口先发起 rollout 0；取得结果后立刻发 rollout 1，再训练 0。它没有让 trainer 消费无限滞后的 replay buffer，也没有允许权重在请求中途切换；到 `update_weights_interval` 边界会先 `ray.get` 当前 generation future，再提交新权重。[`train_async.py:31-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L31-L70)
+入口在初始化时先创建 rollout manager，再创建训练模型，并在任何 rollout 前强制做一次 actor→serving 权重推送。[`train.py:13-27`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L13-L27) 这意味着 cycle 0 也不是从 SGLang 启动时碰巧加载的权重开始，而是从训练侧明确发布过的 snapshot 开始。
 
-因此其语义是 **bounded one-stage pipeline**：吞吐收益来自 phase overlap，代价是 rollout N+1 通常仍由旧于 train N 完成后的 policy 生成。`update_weights_interval > 1` 会进一步增大 policy age，需要 [[17_slime_train_inference_consistency_analysis]] 中的 mismatch/TIS/OPSM 诊断。
+用状态机表达，一轮成功事务是：
 
-## 5. 三个关键不变量
+| 状态 | 所有者 | 可见状态 | 允许的下一跳 |
+|---|---|---|---|
+| `SERVING_v` | rollout engines | 完整版本 $v$ 可接收请求 | 生成 `RAW_i`，或进入 publish pause |
+| `RAW_i` | RolloutManager/DataSource | Sample 仍有嵌套关系、状态和自由 metadata | 验证并冻结为 `BATCH_i` |
+| `BATCH_i` | RolloutManager/Ray object store | train dict 与 DP schedule 固定 | actor/critic 消费 |
+| `TRAINED_k+1` | Megatron actors | optimizer 已完成本轮一个或多个 steps | checkpoint/offload，再 publish |
+| `PUBLISHING_k+1` | updater + engines | generation 暂停，cache 清空，权重分块传输 | 全部成功后进入新 `SERVING` |
 
-1. **单条生成权重快照不变**：权重提交前等待所有 generation future，updater 内再 pause/flush。
-2. **逻辑 rollout 统计单位不变**：fanout、DP partition、micro-batch packing 之后仍按 `rollout_id` 和完整 denominator 聚合。
-3. **训练步与 serving version 单调前进**：initial push 后，每个成功提交产生下一 version；disk/delta path 还把 version 写入目录/index，SGLang meta 回传给 Sample。
+`rollout_id` 是外层 cycle 编号，不是 optimizer-step id，也不是必然等于 weight version。同步循环直接执行 `range(start_rollout_id, num_rollout)`；每个 cycle 可能有多个 train steps，而 updater 维护自己的递增版本计数。[`train.py:48-85`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L48-L85) [`slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py:23-47`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L23-L47)
 
-只满足 optimizer 正常 step 不足以说明这一轮正确；这三个不变量分别由控制面、数据/loss 面、权重面共同保证。
+## 4. Sync、async 与 fully-async：边界移动到哪里
+
+### 4.1 同步：最清楚的四阶段串行事务
+
+同步 driver 的顺序就是 rollout 完成 → 训练完成 → 可选保存 → 内存切换 → publish → 可选 eval。[`train.py:53-91`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L53-L91) 当 rollout 与 train colocate 时，参数归一化默认同时启用 train/rollout offload；同步主循环也会在 rollout 后 offload serving、训练后重新 onload serving weights/KV。[`slime/utils/arguments.py:1929-1951`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1929-L1951) [`train.py:53-88`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L53-L88)
+
+> **设计分析**：同步不是单纯“实现简单”。它还是显存时分复用协议：同一批 GPU 只有在 rollout 边界闭合后，才安全地把资源交给 Megatron；训练结束后再反向交回 serving。这个资源不变量解释了为什么 async driver 直接禁止 colocation。
+
+### 4.2 一拍异步：把 rollout 边界提前一拍
+
+`train_async.py` 先提交 rollout 0；拿到 batch 0 后立即提交 rollout 1，再用 batch 0 训练。到发布间隔时，它先 `ray.get` 当前 generation future，把 future 置空，再调用 `update_weights()`；源码注释明确说这是为了防止生成中途更新权重。[`train_async.py:31-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L31-L70)
+
+```text
+阶段 0    生成 batch 0
+阶段 1    训练 batch 0  ||  生成 batch 1
+提交点    等待 batch 1 future  →  publish
+阶段 2    训练 batch 1  ||  生成 batch 2
+```
+
+边界没有消失，而是从“train 前等待本轮 rollout”移动为“publish 前 rendezvous 当前 rollout future”。代价是 batch 1 可能仍由训练 batch 0 之前的 serving snapshot 生成；若增大 `update_weights_interval`，这个 policy age 会继续上升。异步 driver 还显式断言 `not args.colocate`，说明其 overlap 假设建立在 rollout 与 train 使用分离资源之上。[`train_async.py:9-15`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L9-L15)
+
+### 4.3 Fully-async：把 batch 边界从请求集合移到 completed queue
+
+固定基线的默认 `rollout_function_path` 仍是同步收束式的 `sglang_rollout.generate_rollout`；fully-async 是显式替换 rollout 函数的 example path，不是默认语义。[`slime/utils/arguments.py:328-334`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L328-L334) [`examples/fully_async/README.md:42-50`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/fully_async/README.md#L42-L50)
+
+它创建一个跨多次 rollout 调用共享的后台 thread + asyncio worker，持续从 DataSource 取 group，并把并发维持在 `sglang_server_concurrency × engine 数`。[`slime/rollout/fully_async_rollout.py:48-62`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/fully_async_rollout.py#L48-L62) worker 用 active-task 数和 completed-queue 大小做回压；任务完成后，ABORTED group 回到 DataSource，其余 group 进入 output queue。[`slime/rollout/fully_async_rollout.py:131-206`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/fully_async_rollout.py#L131-L206) 每次 rollout 调用只 drain 到 `rollout_batch_size`，多余完成组留给下一轮，并按 sample index 排序后返回。[`slime/rollout/fully_async_rollout.py:211-266`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/fully_async_rollout.py#L211-L266)
+
+因此 fully-async 移动了两个边界：
+
+1. **rollout 边界**不再等于“这一轮启动的请求全部收束”，而是“completed queue 中已有足够多的 group 可以冻结成 batch”；
+2. **未完成数据的所有权**从当前 rollout 调用移到长期 worker；publish 窗口中暴露为 ABORTED 的 group 不能进入训练，必须回到 DataSource。模块注释明确说 worker 不拥有 pause/update signaling，只负责把这些 ABORTED groups 重定向回 buffer。[`slime/rollout/fully_async_rollout.py:1-23`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/fully_async_rollout.py#L1-L23)
+
+它仍没有删除 processing 与 publish 边界：返回的 group 依旧由 RolloutManager 统一 converter/scheduler；权重更新仍走 pause/flush/version 协议。项目文档同时列出三个限制：不支持 eval、跨 rollout 只保证 best-effort ordering、ABORTED trajectory 尚未接上 partial continuation 而是重新排队从头开始。[`examples/fully_async/README.md:63-83`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/fully_async/README.md#L63-L83)
+
+> **设计分析**：这个实现是“持续生成 + 离散 batch commit”，不是无界 replay service。completed queue 的回压、固定 drain 数和 ABORTED requeue 都是在重新建立被持续 worker 弱化的事务边界。
+
+## 5. 为什么 fully fused free-running loop 不是默认
+
+直观替代方案是让 rollout、reward、训练和权重传输全部各自自由运行：哪个 sample 完成就立刻送 trainer，哪个 optimizer step 完成就立刻推一部分权重。它看似能消除所有空泡，但会同时破坏四个约束。
+
+### 5.1 全局统计在单 sample 到达时尚未闭合
+
+GRPO 类 reward 处理需要同组视图，compact fanout 的 loss denominator 需要同一 logical rollout 的全部 fragments，DP scheduler 还要按 global batch 划 step。这些值都在 converter/scheduler 中于切分前计算。[`slime/ray/rollout.py:749-814`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L749-L814) [`slime/utils/dp_schedule.py:127-150`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L127-L150)
+
+### 5.2 权重不能在 serving 请求中途自由变动
+
+异步 driver 在 publish 前显式等待 generation future，updater 又执行 pause/flush/barrier；两层同步分别控制“当前 batch future 是否闭合”与“engine 是否处于可提交状态”。[`train_async.py:66-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L66-L70) [`slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py:102-134`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L102-L134) 对默认 rollout，future 闭合还伴随 pending 收束；对 fully-async，它只说明目标 completed groups 已到齐，后台 worker 仍可能有 in-flight tasks，所以后者还依赖 pause 后的 ABORTED requeue 所有权协议。[`slime/rollout/sglang_rollout.py:450-470`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L450-L470) [`slime/rollout/fully_async_rollout.py:17-23`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/fully_async_rollout.py#L17-L23)
+
+### 5.3 Colocation 的显存没有并发余量
+
+同步模式通过 offload/onload 把 GPU 生命周期切成 rollout phase 与 train phase；async driver 禁止 colocate。[`train.py:53-88`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L53-L88) [`train_async.py:9-15`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L9-L15) 自由运行只有在资源真正分离、或另有更复杂的抢占/显存管理协议时才成立。
+
+### 5.4 恢复必须把模型进度与数据游标对齐
+
+周期保存时，同一个条件控制 actor/critic checkpoint 与 global DataSource state；恢复时训练模型返回统一的 start id，RolloutManager 再加载 `start_rollout_id - 1` 的数据状态。[`train.py:71-80`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L71-L80) [`slime/ray/placement_group.py:210-222`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L210-L222) 一个没有 cycle commit id 的自由流需要另行解决 exactly-once、checkpoint cut 与队列快照；当前默认路径选择更小、更清楚的恢复边界。
+
+## 6. 边界写错时会怎样
+
+| 错误 | 直接后果 | 源码中的防线 |
+|---|---|---|
+| generation future 未收束就 publish | 请求可能跨越更新窗口，行为策略来源不再明确 | async driver 在 publish 前 `ray.get` 当前 future [`train_async.py:66-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L66-L70) |
+| 只传输权重，不 pause/flush | 新请求可能看见半版本；旧 KV/prefix cache 可能被新参数继续复用 | updater 强制 pause → flush → transfer → continue [`slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py:102-134`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L102-L134) |
+| 某个 engine 未提交目标 version | 集群同时服务多个模型版本，policy metadata 与实际路由不一致 | disk CI path 逐 engine 比对版本并报错 [`slime/ray/actor_group.py:255-266`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L255-L266) |
+| 在 DP split 后才算 rollout denominator | fanout fragments 落到不同 micro-batches 时，各 rank 用局部分母，目标函数随 packing 改变 | converter 在完整 step 预计算并复制 denominator [`slime/ray/rollout.py:799-814`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L799-L814) |
+| fully-async 一次 drain 超过本轮所需 | prompt 已从 DataSource 消费，额外完成组若被调用方丢弃就永久丢数据 | `get_completed_groups(limit=...)` 明确只弹所需数量 [`slime/rollout/fully_async_rollout.py:107-121`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/fully_async_rollout.py#L107-L121) |
+| ABORTED group 直接交 trainer | response/reward 可能不完整，且 prompt 所有权从队列消失 | worker 检测任一 ABORTED sample 后整组 requeue [`slime/rollout/fully_async_rollout.py:186-206`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/fully_async_rollout.py#L186-L206) |
+| 模型 checkpoint 与 DataSource cursor 不同批提交 | 恢复后会用新模型重复旧 prompt，或用旧模型跳过尚未训练的数据 | 保存和恢复都以 rollout id 对齐 [`train.py:71-80`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L71-L80) [`slime/ray/placement_group.py:216-222`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L216-L222) |
+| 连续 rollout 与 colocated training 同时占 GPU | serving KV/weights 与训练参数、梯度竞争同一显存，破坏阶段式资源账本 | async driver 直接拒绝 colocation [`train_async.py:9-15`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L9-L15) |
+
+表中“旧 cache 会污染新版本”“cursor 错配导致重复/跳过”等后果是根据状态所有权推导的**设计分析**；源码事实是对应的 flush、统一 save/load 与断言确实存在。
+
+## 7. 选择执行模式时真正要决定什么
+
+| 模式 | 主要收益 | 明确代价 | 不能放宽的边界 |
+|---|---|---|---|
+| sync | 最短 policy age；支持 colocate 时分复用；恢复 cut 清楚 | rollout、train、publish 串行，空泡最大 | 完整 batch、资源交接、原子 publish |
+| one-stage async | rollout $i+1$ 与 train $i$ 重叠 | 需要分离资源；batch 至少有一拍陈旧；publish 仍需等待 future | future rendezvous、processing、原子 publish |
+| fully-async example | 长期并发池减少 rollout 边界的长尾等待 | queue 与重排语义更复杂；无 eval；ABORTED 暂不能续生成 | completed-batch closure、requeue ownership、原子 publish |
+
+> **设计分析**：选择模式时不应只问“能重叠多少秒”，而应同时给出三个预算：GPU 是否真正分离、可接受的最大 policy age、故障后愿意重做多少在途数据。slime 的默认值偏向可解释事务；更激进的 overlap 通过 async driver 与 custom rollout function 显式启用，而不是悄悄改变默认闭环语义。
 
 ## Related Pages
 
-- [[11_slime_ray_control_plane_analysis]] — 本页 RPC 背后的资源和 actor owner
-- [[12_slime_sample_datasource_analysis]] — Sample 到 Box 的字段级转换
-- [[14_slime_megatron_training_analysis]] — 阶段 6–8 深潜
-- [[16_slime_weight_sync_analysis]] — 阶段 9 的四种实现
-- [[30_slime_rollout_optimization_analysis]] — 同步、partial、fully async 的吞吐权衡
+- [[11_slime_ray_control_plane_analysis]] — 解释本页各 phase 的 Ray owner、placement group 与批量 RPC 为什么分层。
+- [[12_slime_sample_datasource_analysis]] — 展开 Sample、DataSource、partial 回收和 train dict 的数据所有权契约。
+- [[13_slime_sglang_rollout_engine_analysis]] — 展开 generation、reward、abort 与请求级状态机。
+- [[14_slime_megatron_training_analysis]] — 展开冻结 batch 进入 Megatron 后的 actor/critic 执行顺序。
+- [[16_slime_weight_sync_analysis]] — 展开 publish 阶段的 NCCL、CUDA IPC、full disk 与 delta disk 数据面。
+- [[17_slime_train_inference_consistency_analysis]] — 解释版本相同仍可能失配，以及 async/partial 的 policy-age 校正。
+- [[30_slime_rollout_optimization_analysis]] — 从容量账本与关键路径比较 sync、overlap、partial 和 fully-async 的吞吐收益。
