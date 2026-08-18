@@ -4,12 +4,14 @@
 > **源码基线**：`vllm-project/vime@8144096e3f4fb0fb670c37b8f2d84015f7e92320`
 > **上游对照基线**：`THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
 > **基线提交时间**：2026-08-03T16:52:35+08:00
-> **核验日期**：2026-08-14
+> **核验日期**：2026-08-18
 > **系列入口**：[[02_engineering/04_posttrain_frameworks/slime/index|slime RL 后训练框架]]
 
 ## 1. 中心结论
 
-vime 不是给 slime 动态安装的一个 vLLM 插件，而是由 slime 派生、把默认 rollout 栈系统性改写为 **vLLM + vllm-router** 的独立框架。它保留了 Megatron 训练、DataSource/Data Buffer、`Sample`、算法/loss、custom generation 和 agent workflow 等大部分上层契约，同时重写了 rollout 参数、server/router 生命周期、请求协议、权重更新与 vLLM 专属运维路径。官方 README 对自身的定义也是“保留 slime 训练栈与数据生成设计，默认采用 vLLM + router”。[`README_zh.md:8-17`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/README_zh.md#L8-L17) [`README_zh.md:42-50`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/README_zh.md#L42-L50)
+vime 不是给 slime 动态安装的一个 vLLM 插件，而是由 slime 派生、把默认 rollout 栈系统性改写为 **vLLM + vllm-router** 的独立框架。它保留了 Megatron 训练、DataSource/Data Buffer、`Sample`、算法/loss、custom generation 和 agent workflow 等大部分上层契约，同时重写了 rollout 参数、server/router 生命周期、请求协议、权重更新与 vLLM 专属运维路径。官方 README 对自身的定义也是“保留 slime 训练栈与数据生成设计，默认采用 vLLM + router”；上游 slime README 同样把它称为由 vLLM 项目维护的派生框架，而不是主仓库内置 backend。[`README_zh.md:8-17`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/README_zh.md#L8-L17) [`README_zh.md:42-50`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/README_zh.md#L42-L50) [`README_zh.md:126-128`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L126-L128)
+
+本文把证据分为三层：带 fixed-commit 定位符的是**源码事实**；明确写“官方文档”的是同一提交中的项目说明；写“由此可推断”“设计上可以理解为”的段落是根据约束、失败路径和测试覆盖作出的**分析判断**，不代表作者原话。
 
 因此，最准确的关系是：
 
@@ -21,10 +23,27 @@ vime 对“slime + vLLM”需求的总体支持度可概括为：
 |---|---|---|
 | P1 接口 | **强** | vLLM 原生 CLI、router CLI、YAML topology、external engines、custom rollout 都有正式入口 |
 | P2 功能闭环 | **强** | generate、reward、train、四类 weight sync、offload、PD、多模型、spec/MTP 能形成端到端路径 |
-| P3 正确性闭环 | **中强但有缺口** | token/logprob、多模态占位、top-p/routing replay、版本号与更新屏障较完整；逐 tensor 权重等价检查仍缺失 |
+| P3 正确性闭环 | **中等且有缺口** | token/logprob、多模态占位、MoE routing replay 与更新屏障较完整；缺 logprob 会补 0，默认 top-p replay adapter 未闭合，逐 tensor 权重等价检查也缺失 |
 | P4 性能/生产证据 | **条件性强** | H100/H200 有完整 CI，官方镜像钉住依赖并带补丁；B 系列无完整 CI，A 系列不维护，GPU suite 不是全部默认常开 |
 
 这意味着：已有 slime 工作流若主要依赖 Megatron、DataSource、custom rollout 与通用 RL loss，迁移到 vime 的成本通常可控；若依赖 SGLang 专属 API、kernel、一致性工具或尚未在 vLLM 中实现的 serving 特性，就不是“改几个参数”而是功能重建。
+
+### 1.1 为什么只替换 `generate()` 不够
+
+上游 slime 确实会动态加载整轮 rollout 函数；sample 级 `--custom-generate-function-path` 的参数说明也明确把它定位成替换示例 rollout 内部的 `generate(args, sample, sampling_params)`，服务于多轮或 function calling。[`rollout.py:465-495`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L465-L495) [`arguments.py:477-483`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L477-L483)
+
+但同一控制面把 engine actor 固定为 `SGLangEngine`，默认请求固定走 SGLang `/generate` 并把完整 SGLang `meta_info` 交给 `Sample`；这些都不属于 custom generate hook 的所有权。[`rollout.py:188-220`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L188-L220) [`sglang_rollout.py:152-219`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L152-L219)
+
+因此换 backend 至少要同时闭合四条契约：
+
+| 契约 | 必须回答的问题 | 只换 `generate()` 的后果 |
+|---|---|---|
+| 部署与所有权 | 谁分配 GPU、启动 server/router、表达 regular/PD/EPD/多模型拓扑 | 有请求客户端，却没有受控的可用 engine |
+| 请求与轨迹 | token、logprob、多模态 placeholder、abort、routing metadata 如何进入 `Sample` | 文本能返回，训练行为数据却可能错位或缺失 |
+| 权重提交 | Megatron shard 如何变成 serving shard，更新中怎样避免半版本 | rollout 继续使用旧权重，或请求跨过半提交状态 |
+| 故障与恢复 | 谁探活、杀 actor、重建通信组、恢复到哪个版本 | engine 重启后仍不具备当前 actor 权重 |
+
+> **分析判断**：直观替代是先定义一个 SGLang/vLLM 共用的最低公分母 `InferenceEngine`。但 PD/EPD、router 注册、sleep tag、abort、weight-transfer session 和 response metadata 都是 engine-native 能力；过早统一只会把差异变成大量 capability branch。vime 选择 fork 级替换，获得较完整的 vLLM 能力，代价是重复维护控制面接缝以及跟随两个上游演进。
 
 ## 2. 软件架构：复用上半部，替换生成与提交边界
 
@@ -54,7 +73,12 @@ README 把架构拆为 Megatron training、vLLM + router rollout 和 Data Buffer
 
 `RolloutManager` 仍动态加载 DataSource、整轮 rollout、评估、reward post-process 与 train-data conversion hook，说明 slime 的上层扩展契约确实被保留下来；但 server 启动固定调用 `start_rollout_servers`，`ServerGroup` 固定创建 `VLLMEngine`，没有 `backend=...` 分派器。[`rollout.py:410-443`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/ray/rollout.py#L410-L443) [`rollout.py:143-242`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/ray/rollout.py#L143-L242)
 
+这种关系在 driver 中也很直接：upstream 注释是“rollout manager with sglang engines”，vime 对应位置改为“with vLLM engines”，而 generate → train → update 的阶段顺序基本不变。[`train.py:13-30`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L13-L30) [`train.py:13-30`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/train.py#L13-L30)
+
 所以 vime 证明的是 **通过派生替换 backend 可行**，不是 slime/vime 已经共同拥有一个可热插拔的多后端抽象。
+
+> [!warning] 归因边界
+> “slime 的数据/训练契约可被 vime 复用”不等于“slime 主仓库提供 vLLM backend”。本页的 `VLLMEngine`、vllm-router、vLLM 请求、NCCL transfer engine 与本地 patch 均只归因于固定基线的 **vime**。
 
 ## 3. vLLM 参数与拓扑支持
 
@@ -99,11 +123,13 @@ PD 使用 vLLM `NixlConnector`，prefill 是 KV producer，decode 是 KV consume
 
 多模态路径先请求 `/v1/chat/completions/render` 得到 vLLM 的 feature payload，再把 feature placeholder 重新对齐到 vime 训练侧的 canonical prompt tokens，最后仍调用 token-based generate。若 placeholder 长度、offset 或 token 子序列无法对齐会直接报错，而不是静默使用两个 tokenizer 视图。[`vllm_rollout.py:237-268`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/rollout/vllm_rollout.py#L237-L268) [`vllm_rollout.py:281-324`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/rollout/vllm_rollout.py#L281-L324) [`vllm_rollout.py:350-383`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/rollout/vllm_rollout.py#L350-L383)
 
-### 4.3 router 亲和、top-p 与 MoE replay
+### 4.3 router 亲和与 behavior metadata 的闭环程度不同
 
 每个 sample group 自动分配 session id；使用 consistent-hash policy 时，请求通过 `x-session-id` 固定到同一 worker，从而让多轮 agent 更可能命中已有 prefix cache。[`vllm_rollout.py:355-359`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/rollout/vllm_rollout.py#L355-L359) [`vllm_rollout.py:523-553`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/rollout/vllm_rollout.py#L523-L553)
 
-当 rollout top-p 不为 1 时，vime 请求 vLLM 返回每个 token 的 retained top-p token set；MoE routing replay 则让 vLLM 返回 base64 编码的 routed experts，进入 `Sample.meta_info` 后由 Megatron forward/backward replay。它们对应的不是一般“采样参数一致”，而是缩小 sampling support 与 MoE route 两类训推分布差异。[`vllm_rollout.py:155-172`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/rollout/vllm_rollout.py#L155-L172) [`vllm_rollout.py:433-445`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/rollout/vllm_rollout.py#L433-L445) [`actor.py:297-361`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/backends/megatron_utils/actor.py#L297-L361)
+MoE routing replay 已形成源码闭环：vime 解码 vLLM 返回的 base64 routed-expert array，`Sample` 校验 token × layer × top-k 元素数，Megatron actor 再按 layer 注入 replay state。[`vllm_rollout.py:433-445`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/rollout/vllm_rollout.py#L433-L445) [`types.py:352-395`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/utils/types.py#L352-L395) [`actor.py:297-341`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/backends/megatron_utils/actor.py#L297-L341)
+
+top-p replay 则只完成了两端、没有闭合中间 adapter：`GenerateState` 在 top-p 不为 1 时设置 `custom_params.return_top_p_token_ids`，但 `_build_inference_sampling_params` 没有把 `custom_params` 写进请求，response parser 也没有把 top-p 字段放进传给 `Sample` 的 `meta`；`Sample` 虽已有 ids/offsets 解码与长度校验，默认 vLLM 路径在该基线仍不能称为端到端支持。[`vllm_rollout.py:155-168`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/rollout/vllm_rollout.py#L155-L168) [`vllm_rollout.py:213-234`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/rollout/vllm_rollout.py#L213-L234) [`vllm_rollout.py:397-447`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/rollout/vllm_rollout.py#L397-L447) [`types.py:13-36`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/utils/types.py#L13-L36)
 
 ### 4.4 custom generation 与整轮 rollout 保持可插拔
 
@@ -205,7 +231,7 @@ vLLM patch 至少补了 abort in-flight requests 与 draft weight update；前�
 | 平台 | 官方状态 | 本页判断 |
 |---|---|---|
 | H100/H200 | 完整 CI，官方推荐生产 | **最强支持基线** |
-| GB/B200/B300 | 基本功能稳定，但暂无完整 CI | **可用，需业务回归** |
+| GB/B200/B300 | 文档称“完全支持”，同页又注明 B 卡暂无 CI 保护 | **功能声明强，但证据弱于 H 系列，需业务回归** |
 | A100/A800 | 可运行但暂不维护 | **机会性兼容** |
 | AMD | 独立 ROCm Docker/tutorial | **独立平台路径，不能继承 NVIDIA 结论** |
 | Ascend | 单独 `ascend` 分支与教程 | **非当前 main 同基线支持** |
@@ -223,6 +249,9 @@ vLLM patch 至少补了 abort in-flight requests 与 draft weight update；前�
 > [!contradiction]
 > 文档写“只有 `update_weights: true` 的模型接收更新”容易被理解为支持任意多个在线更新模型；源码只选择第一个 updatable server。当前可靠模式是一套在线 actor 加若干冻结模型，不是 multi-actor joint training。[`vllm-config.md:17-22`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/docs/zh/advanced/vllm-config.md#L17-L22) [`rollout.py:522-550`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/ray/rollout.py#L522-L550)
 
+> [!contradiction]
+> external-engine 导航文档把 `delta + NCCL` 列为可用的验证路径，但固定基线的 actor 初始化对 delta 同时断言 transport 必须为 disk，并禁止 colocate。因此本页以实际 dispatch 为准：当前支持的是 `delta + disk`，文档中的 `delta + NCCL` 不能作为可运行能力承诺。[`external-rollout-engines.md:9-18`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/docs/zh/advanced/external-rollout-engines.md#L9-L18) [`actor.py:150-173`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/vime/backends/megatron_utils/actor.py#L150-L173)
+
 这些差异说明 vime 仍处于快速演进阶段。评估新特性时应按“docs 导航 → 参数 → runtime owner → tests/CI → 当前限制”逐层核验，不能只看 README feature list。
 
 ## 10. 支持矩阵与选型结论
@@ -238,7 +267,8 @@ vLLM patch 至少补了 abort in-flight requests 与 draft weight update；前�
 | Encoder-Prefill disaggregation | **新功能，条件支持** | 代码与单元测试已存在，文档覆盖滞后；应单独跑 VLM E2E |
 | token/logprob 契约 | **中强** | token-in/token-out；缺 logprob 时补 0 是风险点 |
 | multimodal rollout | **中强** | render + canonical placeholder 对齐；模型/processor/EPD 组合仍需 E2E |
-| top-p / MoE routing replay | **中强** | 已进入 Sample 与 Megatron loss/forward；依赖 vLLM 返回扩展元数据 |
+| top-p replay | **默认路径未闭合** | 有 request state 和 `Sample` 解码结构，但 request/response adapter 未传递对应字段 |
+| MoE routing replay | **中强** | response 解码、`Sample` 形状校验与 Megatron replay 已闭合；依赖 vLLM 扩展元数据 |
 | NCCL full weight sync | **强** | vLLM native transfer engine；pause/flush/version session 完整 |
 | colocate IPC sync | **强但仅同步 driver** | `train_async.py` 明确禁止 colocate |
 | full disk sync | **强但带 I/O 成本** | 适合 external/异构集群；需共享文件系统一致性设计 |
@@ -246,7 +276,7 @@ vLLM patch 至少补了 abort in-flight requests 与 draft weight update；前�
 | tensor weight equality check | **缺失** | `check_weights` 明确 unsupported；version check 不能替代内容校验 |
 | deterministic inference | **条件支持** | per-group seed + `VLLM_BATCH_INVARIANT`；仍需 Megatron/kernel/env 全链确定性 |
 | 一拍 async | **强** | generation/train overlap；weight commit 前 drain future |
-| fully async rollout | **Beta 风格** | 有 CI example；不支持 eval，中断后整条重跑 |
+| fully async rollout | **条件支持** | 有独立实现与 example；不支持 eval，中断后整条重跑 |
 | rollout fault tolerance | **中强** | managed engine 可 kill/recover/reconnect；trainer/cluster/external 不在覆盖内 |
 | speculative + online MTP | **中强** | vLLM config + draft update patch；外部 draft training WIP |
 | BF16 train + FP8 rollout | **Stable 推荐** | quantization config 与热更新 mapping 必须匹配 |
