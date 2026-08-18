@@ -6,24 +6,57 @@
 
 ## 1. 控制对象层级
 
+这些名称并不处于同一抽象层：`PlacementGroup` 是 Ray 的**资源对象**，`RayTrainGroup` 是 driver 中的**训练角色 wrapper**，`RolloutManager` 是不占 GPU 的**生成控制 Ray actor**，`RolloutServer` 与 `ServerGroup` 是 Manager 内部的**普通 Python 聚合对象**，只有最下层 `SGLangEngine` 才被动态包装成 Ray actor 并负责拉起原生 SGLang 服务进程。因而这里的 `group` 不是一种统一组件，只表示“按某种边界聚合若干同类对象”。[`actor_group.py:13-55`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L13-L55) [`rollout.py:144-165`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L144-L165) [`rollout.py:188-297`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L188-L297) [`rollout.py:320-338`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L320-L338) [`rollout.py:464-515`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L464-L515) [`sglang_engine.py:48-81`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L48-L81)
+
 ```mermaid
 flowchart TB
-    D["driver: train.py / train_async.py"]
-    PG["one Ray placement group<br/>GPU bundle ordering"]
-    AT["RayTrainGroup(actor)<br/>N Megatron Ray actors"]
-    CT["RayTrainGroup(critic, optional)<br/>N Megatron Ray actors"]
-    RM["RolloutManager<br/>DataSource + rollout function + lock"]
-    RS["RolloutServer per model<br/>one router"]
-    SG["ServerGroup(s)<br/>regular/prefill/decode/encoder/placeholder"]
-    EN["SGLangEngine Ray actor(s)<br/>spawn HTTP server process"]
+    D["driver<br/>train.py 与 train_async.py"]
+    PG["PlacementGroup<br/>Ray GPU 资源座位表"]
+    TG["RayTrainGroup<br/>actor 或 critic 训练角色"]
+    TA["Megatron Ray actors<br/>每个 rank 一个进程"]
+    RM["RolloutManager<br/>零 GPU Ray actor"]
+    RS["RolloutServer<br/>每个模型一个聚合对象"]
+    RT["Router<br/>每个模型一个请求入口"]
+    SG["ServerGroup<br/>同构 engine 组"]
+    EN["SGLangEngine<br/>Ray 控制 actor"]
+    SP["SGLang HTTP server<br/>实际推理进程"]
     D --> PG
-    PG --> AT
-    PG --> CT
-    PG --> RM
-    RM --> RS --> SG --> EN
+    D --> TG --> TA
+    D --> RM --> RS
+    RS --> RT
+    RS --> SG --> EN --> SP
+    PG -.->|提供有序 GPU bundle| TA
+    PG -.->|提供有序 GPU bundle| EN
 ```
 
-driver 直接持有 `RayTrainGroup` 的 Python wrapper 和 `RolloutManager` Ray handle；训练 group 的每个 rank 是独立 Ray actor，RolloutManager 自身不占 GPU，内部持有 SGLang engine handles。[`placement_group.py:140-183`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L140-L183) [`placement_group.py:227-237`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L227-L237)
+图中的实线表示控制对象的创建或聚合关系，虚线表示 placement group 只提供资源位置，并不拥有或调用计算对象。driver 直接持有 `RayTrainGroup` wrapper 和 `RolloutManager` Ray handle；Manager 再持有按模型组织的 servers、groups 与 engine handles。[`placement_group.py:140-183`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L140-L183) [`placement_group.py:227-237`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L227-L237)
+
+### 1.1 对象身份、所有状态与职责边界
+
+| 对象 | 实际身份与所有位置 | 主要管理内容 | 不负责什么 |
+|---|---|---|---|
+| `PlacementGroup` | Ray 原生资源对象；`pgs` 为 actor、critic、rollout 保存其不同资源视图 | GPU bundles、稳定的 bundle/physical GPU 顺序、训练与 rollout 的资源区间 | 不加载模型，不发起训练或生成 |
+| `RayTrainGroup` | driver 内普通 Python wrapper；一个 actor 或 critic 角色各有一个 | 全部 Megatron rank actor handles、角色参数、训练/保存/权重更新/offload/release 的 fan-out | 不实现 TP/PP/CP/EP collective；这些由 rank 进程内的 Megatron 完成 |
+| `RolloutManager` | 单个零 GPU Ray actor | `DataSource`、train/eval rollout 函数、数据转换 hooks、全部模型服务、engine update lock、health monitors | 不执行 token decoding，也不是通用 workflow engine |
+| `RolloutServer` | Manager 内普通 dataclass；每个 `ModelConfig` 对应一个 | 一个模型的 router 地址、一个或多个 `ServerGroup`、该模型是否接收训练权重 | 本身不是监听 HTTP 的 SGLang 进程 |
+| `ServerGroup` | `RolloutServer` 内普通 dataclass | 同构 engines 的 handles、worker type、GPU/engine offsets、并行参数覆盖、是否需要 offload | 不混装不同模型；同一模型的异构 prefill/decode 等拓扑拆成多个 group |
+| `SGLangEngine` | 被 `ray.remote` 动态包装的控制 actor | physical GPU 起点、端口、SGLang server 参数、服务进程启动与注册、权重和显存生命周期 | 主要是进程控制壳；实际 forward、KV cache 和 token decoding 在其拉起的 SGLang 进程树中执行 |
+
+三种容易混淆的 `group` 因而分别回答三个问题：Placement group 回答“**进程放在哪些 GPU 上**”，`RayTrainGroup` 回答“**哪些 ranks 合起来构成一个训练角色**”，`ServerGroup` 回答“**哪些同配置 engines 合起来构成一个 serving 拓扑分区**”。`ServerGroup` 支持 `regular`、`prefill`、`decode`、`encoder` 和 `placeholder`；后者只占据逻辑 GPU offset，不创建 engine。[`sglang_config.py:11-40`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_config.py#L11-L40)
+
+一个 `RolloutServer` 严格对应一个模型部署和一个 router，但可包含多种 `ServerGroup`，例如 prefill 使用 TP=2、decode 使用 TP=4；多模型配置则创建多个 `RolloutServer`。每个 group 的 `all_engines` 保存所有节点级 Ray actor，`engines` 在多节点 engine 中只暴露 node-0 handles，供上层控制与权重更新使用。[`rollout.py:167-186`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L167-L186) [`rollout.py:1132-1171`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1132-L1171) [`rollout.py:1260-1271`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1260-L1271)
+
+### 1.2 一轮任务中何时参与
+
+| 阶段 | 主要调用链 | 各对象此时的职责 |
+|---|---|---|
+| 启动与放置 | `create_placement_groups` → `create_rollout_manager` → `create_training_models` | Placement group 先固定资源；Manager 创建每模型 router/server/groups；groups 创建 engines 并等待服务健康；`RayTrainGroup` 最后创建全部 Megatron ranks |
+| Rollout / eval | driver → `RolloutManager.generate/eval` → rollout function → router → engines | Manager 取数并编排生成、日志与数据转换；router 分发请求；SGLang 进程执行实际推理；同步主循环中训练 group 尚不计算，异步模式则可并发 |
+| 训练 | driver → `RayTrainGroup.async_train` → 全部 rank `train` | `RayTrainGroup` 扇出 RPC，Megatron ranks 执行训练；启用 `offload_rollout` 且 GPU 与训练重叠时，Manager 经 server/group/engine 链提前释放 rollout 显存 |
+| 权重提交 | `RayTrainGroup.update_weights` → train actor → Manager 获取 updatable engines 与 lock → engines | 训练侧发起提交；Manager 只选择首个 `update_weights=True` 模型并提供 handles/lock；engine 接收并装载新权重 |
+| 恢复与显存切换 | Manager → `RolloutServer` → `ServerGroup` → `SGLangEngine` | server 聚合跨 group 操作；只有 `needs_offload=True` 的 group 释放/恢复显存；故障恢复只重建缺失 engine |
+
+同步主循环的实际顺序是：先生成 rollout data，必要时 offload rollout，再训练 actor/critic，然后更新 SGLang 权重并恢复 KV cache；异步主循环则允许下一轮生成与当前轮训练重叠，但明确禁止 colocate。[`train.py:13-33`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L13-L33) [`train.py:48-91`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L48-L91) [`train_async.py:9-40`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L9-L40)
 
 ## 2. Placement group：先冻结资源，再建立逻辑顺序
 
