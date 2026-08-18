@@ -1,178 +1,235 @@
-# slime 容错、可观测性与测试体系分析
+# slime 容错、可观测性与测试体系分析：用局部恢复切开跨运行时故障
 
-> **定位**：slime 段 1 实现机制 · Fault Tolerance / Observability / Testing
-> **源码基线**：`THUDM/slime@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
-> **系列入口**：[[slime/index]]
+> **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
+> **文档与测试基线**：同一提交下 `docs/zh/{advanced/observability,developer_guide/{debug,ci}}.md`、`tests/` 与 `.github/workflows/pr-test.yml`
+> **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
+> **结论先行**：slime 没有试图把 Ray 控制面、SGLang 进程、在途 Sample、Megatron optimizer 和外部 telemetry 包进一个全局事务；它选择让每个状态的所有者在自己的故障域内恢复，再把共同恢复点收缩到“已落盘训练 checkpoint + 同 rollout id 的 DataSource cursor”。代价是局部恢复只在明确边界上成立：engine 重建必须在下一次权重更新中重新接入并覆盖权重；HTTP retry 没有 exactly-once 保证；partial buffer、在途请求、RolloutManager/训练 actor 的进程内状态和未持久化指标都不会被透明恢复。
 
-## 1. 中心结论
+本文只讨论故障域、恢复切点、诊断证据和测试覆盖。单次 rollout 请求的状态协议归 [[13_slime_sglang_rollout_engine_analysis]]，训推偏差的分类与定位归 [[17_slime_train_inference_consistency_analysis]]。
 
-slime 没有把“容错”做成一个能够透明回滚整轮训练的全局事务，而是把故障域拆成四层：HTTP 请求重试、SGLang engine 健康检查与重建、权重恢复、以及 rollout / train input 的离线留档与重放。这个边界很重要：它能修复局部 serving 故障并保住已提交的数据，但不能保证失败中的生成请求自动、无差别地续跑，也不能仅凭 debug replay 消除 serving 侧非确定性。
+## 1. 设计问题：为什么一个全局事务不现实
 
-可观测性同样沿真实执行对象展开：`Sample` 携带样本与分组身份，trace carrier 传播 attempt / parent span，profiler 分别挂到 rollout 和 actor，train dump 则记录最终进入训练的 DP/CP 分片。由此形成的是“定位哪一个样本、哪一次尝试、哪一个 engine、哪一份训练输入出错”的证据链，而不是只有任务级日志。
+一次训练迭代至少跨过四个独立状态所有者：Ray driver/actor 持有编排与对象引用，SGLang 子进程持有请求队列、KV cache 和 serving 权重，`Sample`/`DataSource` 持有轨迹与数据游标，Megatron 持有参数、optimizer、scheduler 和训练进度。主循环也按 `generate → train → save → update_weights` 顺序跨这些边界，而不是在一个共享事务管理器中提交。[`train.py:9-27`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L9-L27) [`train.py:48-91`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L48-L91)
 
-## 2. 四层故障域
+```mermaid
+flowchart TB
+    CP["Ray 控制面<br/>driver manager actor handles"] -->|编排| EN["SGLang engine group<br/>进程 队列 KV 权重"]
+    CP -->|持有| DS["Sample 与 DataSource<br/>轨迹 cursor partial buffer"]
+    CP -->|调度| TR["Megatron trainer<br/>参数 optimizer scheduler"]
+    EN -->|rollout 样本| DS
+    DS -->|训练 batch| TR
+    TR -->|版本提交| EN
+    EN -.->|高频指标| PM["外部 Prometheus TSDB"]
+    DS -.->|trace 与 dump| DB["调试证据文件"]
+    TR -.->|checkpoint 与 profiler| DB
+```
 
-| 层级 | 机制 | 能解决什么 | 明确不能保证什么 |
+### 1.1 状态、所有者与恢复边界
+
+| 故障域 | 活状态的所有者 | 固定基线可持久化什么 | 可证明的恢复切点 | 没有被透明恢复的状态 |
+|---|---|---|---|---|
+| Ray 控制面 | driver、`RolloutManager`、训练 actor | 本层没有统一控制面快照 | 整个作业重启后从下方 checkpoint 重建 | manager 内的 handles、lock、monitor thread、当前 Ray refs |
+| SGLang engine | `RolloutServer` / `ServerGroup` 与 engine actors | engine 自身不写训练 checkpoint | dead group 重建后，在下一次 trainer 权重更新中重新连接并覆盖当前权重 | in-flight generation、请求队列、KV cache、CUDA graph 状态 |
+| Sample / DataSource | `RolloutManager` 进程 | debug rollout；global dataset 的 cursor、epoch、identity counters、metadata | 与 trainer checkpoint 同 id 的 DataSource 文件 | 默认 buffer 中待续生成的 partial groups |
+| trainer | Megatron actor ranks | 参数、optimizer、scheduler 与 checkpoint iteration；是否保存 optimizer 受参数控制 | 完整 Megatron checkpoint 的 iteration | 未提交 step、未完成 async save、其他 actor 的进程内临时量 |
+| telemetry | Sample、logger、profiler、外部 Prometheus | debug dump、tracking 后端、profile 文件、外部 TSDB | 各后端最后一次成功写入 | 未 scrape 的 engine 指标和未 flush 的进程内日志 |
+
+这里的“没有透明恢复”是固定实现边界，不是说上层不能重做。`RolloutManager` 是单个 `@ray.remote` actor，源码只为 SGLang engine 创建 `RolloutHealthMonitor`；训练 actor 与 manager 没有同类的局部重建调用链。[`rollout.py:464-515`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L464-L515) 训练组的显式 `release()` 甚至以 `no_restart=True` 杀掉 actor，随后由上层按需重新 `create()`，说明 actor 生命周期与 engine health recovery 是两套机制。[`actor_group.py:151-203`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L151-L203)
+
+> **设计分析**：全局 rollback 的难点不只是实现成本。四个所有者的可回滚粒度不同，Prometheus 还是旁路外部系统；如果 agent/tool 环境已有外部副作用，回滚模型参数也撤销不了那次调用。因而 slime 的合理目标是找到“每个域最小可重建状态 + 一个跨域共同 checkpoint”，而不是假装所有动作都能原子撤销。
+
+## 2. 三种策略：全局回滚、盲重试与故障域局部恢复
+
+| 策略 | 表面吸引力 | 必须满足的条件 | 在 slime 固定基线中的结论 |
 |---|---|---|---|
-| 请求层 | HTTP retry | 短暂连接失败、超时等瞬态错误 | 非幂等请求的 exactly-once 语义 |
-| Engine 层 | health monitor + kill/recover | 发现失活的逻辑 engine 并重建其 ranks | 自动续接正在失败的 in-flight generation |
-| 模型层 | recover 后恢复权重 | 让新 engine 回到可参与 rollout 的模型版本 | 回滚已经发生的 optimizer update |
-| 数据层 | rollout/debug/train dump | 固定或重放训练输入、复现数据路径 | 复刻 serving 内核调度和采样随机性的全部细节 |
+| 全局回滚 | 失败后所有组件回到同一时刻 | 所有参与者都有同粒度快照，外部副作用可撤销，提交记录原子化 | 未实现；trainer checkpoint 与 DataSource cursor 是顺序写入的两个文件系统动作 |
+| 盲重试 | 改动小，瞬态网络错误可快速吸收 | 操作幂等，或请求带可持久去重键，并能判断前一次是否已提交 | HTTP helper 会重试 POST，但默认 generation payload 没有提交日志或 idempotency key，不能推出 exactly-once |
+| 故障域局部恢复 | 只替换坏 engine，保留 trainer 已提交状态 | 明确状态所有者；重建后重新建立拓扑与模型版本；丢失的在途工作允许重做 | 这是 engine 路径的实际选择，但恢复被绑定到下一次权重更新边界 |
 
-这个拆分与 slime 的架构一致：Ray 控制面负责编排 actor 和 engine 生命周期，SGLang/Megatron 仍各自拥有执行状态，因此全局“透明恢复”需要跨两个 runtime 协调，当前实现没有宣称这类事务语义。
+统一 HTTP helper 对请求异常和 HTTP error 最多尝试 60 次，每次间隔一秒，耗尽后抛出最后一次异常；它没有按 endpoint 区分只读操作与可能已被服务端接受的 POST。[`http_utils.py:165-198`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/http_utils.py#L165-L198) 默认 `/generate` payload 携带 input、sampling params 与可选 consistent-hashing routing header，但没有去重 token；response 成功返回后才把新 token append 到 `Sample`。[`sglang_rollout.py:175-219`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L175-L219)
 
-## 3. Engine 健康检查不是常驻无条件探测
+> **设计分析：幂等性不是“设置同一个 seed”**。seed 至多帮助重现采样；它不能证明第一次 POST 未执行，也不能撤销工具环境副作用。要把 retry 提升为 exactly-once，至少需要稳定 operation id、服务端持久提交记录、重复请求返回同一结果，以及这个记录与 Sample 状态的原子关联。固定基线没有这套协议，所以本文只把 HTTP retry 称为瞬态可用性机制。
 
-### 3.1 生命周期与暂停语义
+## 3. Engine 局部恢复：检测、清理、重建、重新入版
 
-`HealthMonitor` 启动一个 daemon thread，但初始为 paused；每次 resume 后先等待一个 grace period，再逐个检查 engine。它还显式说明：engine 被 offload 时不能进行健康检查，因此 release/offload 阶段必须暂停 monitor（[`health_monitor.py:10-21`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/health_monitor.py#L10-L21)、[`health_monitor.py:35-59`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/health_monitor.py#L35-L59)）。
+### 3.1 monitor 的状态机为何必须感知 offload
 
-`stop()`、`pause()`、`resume()` 都通过 event 和锁管理状态，避免监控线程与 engine 生命周期切换互相踩踏（[`health_monitor.py:61-103`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/health_monitor.py#L61-L103)）。监控循环在每次恢复后先等待，再周期执行健康生成；这比一恢复就探测更适合刚完成 reload 的 engine（[`health_monitor.py:105-143`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/health_monitor.py#L105-L143)）。
+`RolloutHealthMonitor` 创建 daemon thread 后初始处于 paused；`resume()` 会要求下一轮先等待 grace period，`offload()` 则在释放 engine 内存前暂停检查。原因由源码直接写明：offloaded engine 无法接受 health check。[`health_monitor.py:10-20`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/health_monitor.py#L10-L20) [`health_monitor.py:35-59`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/health_monitor.py#L35-L59) [`rollout.py:590-625`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L590-L625)
 
-### 3.2 失败单元是“逻辑 engine”，不是单个 Ray actor
+监控循环在每次 resume 后先等待，再按 interval 逐个调用 `/health_generate`；pause 可中断 first wait，避免 onload 尚未完成就被误杀。[`health_monitor.py:84-143`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/health_monitor.py#L84-L143) health endpoint 是带 timeout 的 GET，非 node-0 rank 直接返回成功。[`sglang_engine.py:240-260`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L240-L260)
 
-健康生成失败后，monitor 会杀掉该逻辑 engine 的全部 actor ranks，并把对应 handles 置空；也就是说，多节点 engine 的恢复边界是整个 engine group，而不是只替换一个 rank（[`health_monitor.py:145-177`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/health_monitor.py#L145-L177)）。
+```mermaid
+stateDiagram-v2
+    [*] --> Paused
+    Paused --> GraceWait: resume
+    GraceWait --> Checking: wait 完成
+    GraceWait --> Paused: pause
+    Checking --> Checking: health 通过
+    Checking --> DeadMarked: timeout 或 error
+    DeadMarked --> Recreated: 下一次权重更新前 recover
+    Recreated --> VersionReady: reconnect 与 update weights
+    VersionReady --> GraceWait: resume
+    Checking --> Paused: offload
+```
 
-这个选择牺牲了细粒度恢复，却避免一个 collective/rank group 中混入旧进程和新进程。对于张量并行或多节点 serving，后者通常比多重建几个进程更危险。
+### 3.2 故障单元为什么是整个逻辑 engine
 
-## 4. 恢复事务：重建进程之后还要恢复模型状态
+health failure 会 shutdown 并 kill 对应逻辑 engine 的全部 node ranks，然后把 `all_engines` 中这些 handles 设为 `None`；不是只替换报错的一个 rank。[`health_monitor.py:145-177`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/health_monitor.py#L145-L177)
 
-### 4.1 RolloutManager 的职责
+> **设计分析**：TP 或多节点 engine 内的 ranks 共享 collective 与进程组成员关系。只保留一部分旧 rank 会引入“进程仍活着但 collective membership 已过期”的半恢复状态；整组替换放大了重建成本，却让恢复边界与逻辑 engine 一致。
 
-`RolloutManager` 为 rollout server 创建健康监控器，并在停止时回收这些 monitor；因此 engine 健康状态属于 rollout 控制面，而不是训练 worker（[`rollout.py:465-515`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L465-L515)）。
+### 3.3 为什么恢复绑在权重更新，而不是 monitor 当场完成
 
-恢复路径会并发找出已失活的 server group、重新创建 engine，并根据当前 colocated/offload 状态重新执行权重恢复；“进程活了”与“模型可生成”在这里被当成两个不同条件（[`rollout.py:384-425`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L384-L425)）。
+真实调用链是：
 
-### 4.2 权重更新之前的恢复屏障
+1. monitor 只负责发现失败、杀进程、把 handles 置空，并不直接重建。[`health_monitor.py:145-177`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/health_monitor.py#L145-L177)
+2. trainer 的 `update_weights()` 在 fault tolerance 开启时，由 rank 0 请求 `recover_updatable_engines()`，再让所有训练 ranks 经过 barrier。[`actor.py:592-608`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L592-L608)
+3. manager 暂停 monitor，只选择第一个 `update_weights=True` 的 server，调用 `RolloutServer.recover()`。[`rollout.py:555-584`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L555-L584) [`rollout.py:641-652`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L641-L652)
+4. `recover()` 并发重建所有 dead ranks；SGLang 启动路径会等 `/health_generate` 成功才返回。[`rollout.py:384-425`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L384-L425) [`sglang_engine.py:75-102`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L75-L102)
+5. 新 engine 数大于零时，weight updater 重新建立连接；随后所有 engines 接收当前 trainer 权重。[`actor.py:622-636`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L622-L636)
 
-在取得可更新的 rollout server handles 前，manager 会暂停健康监控并恢复目标 server；训练 actor 的 rank 0 也会在发起权重更新前调用这条恢复路径（[`rollout.py:641-652`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L641-L652)、[`actor.py:592-608`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L592-L608)）。
+这条链说明“进程可访问”和“模型属于当前版本”是两个提交条件。新 SGLang 进程可能从 HF 初始化权重启动；只有重新接入当前权重更新，它才重新成为 rollout 集合中的有效参与者。完整的权重 pause/flush/version 协议归 [[16_slime_weight_sync_analysis]]。
 
-这道屏障保护的是权重同步事务：如果更新目标中含有死 engine，distributed collective 或 IPC update 可能整体卡住；先恢复目标集合，才能让 [[16_slime_weight_sync_analysis]] 中的同步协议拥有稳定参与者。
+> [!warning] 恢复不是任意时刻都能推进
+> 主循环在 `generate` 和 `train` 之后才调用 `update_weights`。[`train.py:48-85`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L48-L85) **由此可推断**：若剩余 engines/router 能让当前 rollout 完成，坏 engine 会在本轮训练后的更新边界恢复；若唯一 engine 的失败让 `generate` 永远无法返回，当前调用链没有一个旁路 recovery RPC 把执行推进到更新阶段。CI 用例杀的是四个 actor-serving engines 中的一个，因此证明的是“降容后继续并在后续更新恢复”，不是“任意单 engine 卡死都可自愈”。[`test_sglang_config_mixed_offload_ft.py:22-36`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_sglang_config_mixed_offload_ft.py#L22-L36) [`test_sglang_config_mixed_offload_ft.py:56-69`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_sglang_config_mixed_offload_ft.py#L56-L69)
 
-### 4.3 不应过度解读的恢复保证
+另一个边界是多模型：manager 的 `_get_updatable_server()` 明确只返回第一个可更新 server，并注明尚不支持 multi-model weight update。[`rollout.py:555-563`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L555-L563) 因此不能从“所有 server groups 都有 monitor”推导出“所有冻结/辅助 server 都会沿同一路径自动重建”。
 
-当前代码能证明的是：失活 engine 可被检测、清理、重建，并在后续权重同步前恢复到可更新状态。它没有实现一个持久化的请求日志来透明续接所有失败中的 generation。因此，若故障发生在一次 rollout 中途，调用方仍需依靠 rollout 调度、重试或整批重放处理该请求；不能把 engine recover 等同于端到端 exactly-once。
+## 4. Checkpoint 恢复：共同切点是 rollout id，不是全局原子提交
 
-## 5. HTTP retry 的边界
+### 4.1 trainer checkpoint 决定下一轮 id
 
-统一 HTTP helper 会捕获请求异常、等待后重试，默认最大尝试次数为 60，并在耗尽后抛出最后一个异常（[`http_utils.py:165-198`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/http_utils.py#L165-L198)）。
+Megatron 初始化返回载入的 checkpoint iteration，actor 将 `start_rollout_id` 设为该值加一。[`model.py:974-1013`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L974-L1013) [`actor.py:95-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L95-L118) 多个 actor ranks 必须报告相同 start id；若用户未覆盖，控制面采用该值，并让 global DataSource 加载 `start_rollout_id - 1` 的 cursor。[`placement_group.py:210-223`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L210-L223)
 
-这适合 GET/health 等幂等操作，也能吸收 engine 启动窗口中的短暂不可达。但对于可能已经被服务端接收的生成请求，客户端没有提交日志或幂等 key 时，retry 只能保证“再次尝试”，不能保证服务端只执行一次。工程上应把它理解为可用性措施，而不是数据一致性协议。
+trainer 保存时直接把 `rollout_id` 作为 Megatron checkpoint iteration；`--no-save-optim` 明确会让该 checkpoint 不能用于续训。[`actor.py:567-586`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L567-L586) [`model.py:943-969`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L943-L969) [`arguments.py:853-865`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L853-L865)
 
-## 6. 两种重放：固定 rollout 结果与固定训练输入
+### 4.2 DataSource checkpoint 保存 cursor，但默认不保存 partial buffer
 
-### 6.1 RolloutManager 的 debug 数据
+global DataSource 文件记录 `sample_offset`、`epoch_id`、group/sample counters 与 metadata；load 后按 epoch 重新 shuffle，以恢复“下一条 prompt 与 identity 从哪里开始”。[`data_source.py:123-160`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L123-L160)
 
-manager 可以把 rollout 返回的样本保存到 debug 文件，也可以在之后直接加载这些样本，从而绕开在线生成并复现 reward、advantage 和训练数据构造路径（[`rollout.py:671-720`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L671-L720)）。当配置 `load_debug_rollout_data` 时，参数后处理会跳过与 SGLang rollout 相关的部分校验/解析，这表明该模式的设计目标就是隔离 serving 侧（[`arguments.py:1584-1643`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1584-L1643)）。
+`RolloutDataSourceWithBuffer` 只新增内存 `buffer`、先取 buffer 再取 dataset 的逻辑和 group-level `add_samples()`，没有覆盖 `save/load`；因此继承的 checkpoint payload 不含 buffer。[`data_source.py:168-222`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L168-L222)
 
-它适合回答：“相同 rollout 样本为什么在 reward/advantage/loss 处数值异常？”它不适合回答：“相同 prompt 为什么在线生成了不同 token？”后者仍包含 SGLang 调度、随机数和采样参数等变量。
+> [!note] 恢复语义的准确说法
+> checkpoint 可重建静态 dataset 的消费顺序与 identity counters；它**不会**恢复默认 partial buffer 中尚待续生成的 Sample groups。自定义在线 DataSource 若需要 stronger recovery，必须自行在 `save/load` 中持久化队列、外部 offset 和去重状态；抽象接口确实把这四个动作留作替换点。[`data_source.py:17-46`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L17-L46)
 
-### 6.2 Train dump 固定真正消费的数据
+### 4.3 共同恢复切点如何判定
 
-train dump 会逐字段收集 context-parallel 分片，并只在最终写入者上转 CPU，避免所有 rank 同时保留一份完整样本（[`train_dump_utils.py:11-94`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/train_dump_utils.py#L11-L94)）。写出的 payload 同时包含 samples 与 DP shard 元数据，并按 rollout position / sample index 恢复可解释顺序（[`train_dump_utils.py:112-188`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/train_dump_utils.py#L112-L188)）。
+保存路径先等待 actor/critic `save_model`，然后才保存 global DataSource；两者没有共同 manifest 或两阶段提交。[`train.py:71-80`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L71-L80) async save 模式会在下一次 save 前 finalize 前一个异步写，只有 force-sync 时才在当前调用末尾强制完成。[`actor.py:567-583`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L567-L583)
 
-在 PP/TP/CP 拓扑中，只有指定 rank 执行最终落盘，但所有 CP ranks 都必须进入 gather；随后由 CP0 汇总各 DP shard（[`train_dump_utils.py:191-242`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/train_dump_utils.py#L191-L242)）。这份 dump 比 rollout 原始样本更接近“训练 kernel 实际看见的输入”，特别适合诊断 packing、mask、CP 切分和 reducer 分母问题。
+> **设计分析**：可安全宣称的共同恢复切点，是某个 rollout id 上 trainer 所需 checkpoint 文件与同 id DataSource state 都完整存在；不能只看 `latest_checkpointed_iteration.txt`。若 trainer 文件存在而 DataSource 文件缺失，默认 `load()` 只记录“不存在”并从初始 cursor 继续，不会拒绝启动。[`data_source.py:138-157`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L138-L157) 运维上应退回最近一个人工核验完整的共同 id，而不是把“最新 trainer checkpoint”自动视为全系统提交点。
 
-开发文档也把 load/dump debug rollout 作为缩短复现链路的标准手段，并给出从在线 rollout 切换到离线数据的配置方式（[`debug.md:26-55`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/developer_guide/debug.md#L26-L55)）。
+## 5. Debug dump 与 replay：固定不同边界，而不是替代 checkpoint
 
-## 7. Trace：从样本身份到一次重试尝试
+### 5.1 rollout dump 固定语义输入
 
-### 7.1 Carrier 传播的不是只有 trace id
+在线路径会把 flatten 后的 `Sample.to_dict()` 与 `rollout_id` 写入 `.pt`；replay 则读取这些 Sample，绕开自定义/在线 rollout function，再继续 reward 后处理和 train-data conversion。[`rollout.py:671-720`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L671-L720) 设置 `--load-debug-rollout-data` 时，参数解析跳过 SGLang 参数流程并强制 `debug_train_only=True`，所以它有意隔离 serving 变量。[`arguments.py:1584-1643`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1584-L1643) [`arguments.py:1885-1894`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1885-L1894)
 
-trace carrier 包含 trace id、sample id、group id、attempt 和 parent context，并支持在进程/服务边界导入导出（[`trace_utils.py:244-329`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/trace_utils.py#L244-L329)）。这与 [[12_slime_sample_datasource_analysis]] 的 `Sample` 身份模型对齐，使 group-level reward、单样本 generation 和重试尝试能被串到同一条因果链上。
+它能回答“固定 Sample 后 reward、advantage、converter 或 trainer 是否仍出错”，不能回答“为什么在线 SGLang 生成了不同 token”。官方 debug 文档也把该模式定义为固定训练输入、去除 rollout 随机性。[`debug.md:26-55`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/developer_guide/debug.md#L26-L55)
 
-span/event helper 统一创建区间和离散事件；attempt helper 会递增尝试编号，装饰器同时支持同步与异步函数（[`trace_utils.py:332-380`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/trace_utils.py#L332-L380)、[`trace_utils.py:434-502`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/trace_utils.py#L434-L502)）。
+### 5.2 train dump 固定 trainer 真正消费的布局
 
-### 7.2 Serving 元数据进入同一条观测链
+train dump 在最后一个 PP stage、TP rank 0 上执行，但所有选中 CP ranks 必须参与 response-field gather；CP0 随后按 DP 收集到单 writer。[`train_dump_utils.py:191-242`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/train_dump_utils.py#L191-L242) payload 将 per-sample fields 与 DP/micro-batch layout 分开，并优先按 rollout position、其次按 sample index 恢复全局顺序。[`train_dump_utils.py:112-188`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/train_dump_utils.py#L112-L188)
 
-trace 工具还能把 SGLang 和 prefill/decode 分离路径的元数据规范化进 span，因而一次慢请求可以继续下钻到 serving 调度，而不止停在 Ray actor 调用（[`trace_utils.py:146-216`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/trace_utils.py#L146-L216)）。
+因此两份 dump 的恢复切面不同：
 
-## 8. Profiling：训练阶段、算子时间与显存事件分层
-
-actor profiler 提供 overall、train step、logprob 等阶段钩子；PyTorch profiler 可配置 schedule，并输出 TensorBoard trace、shape、stack、memory 和 FLOPs 信息（[`profile_utils.py:13-78`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/profile_utils.py#L13-L78)）。
-
-内存诊断则包含 PyTorch memory history/OOM snapshot，以及可选的 memray 路径（[`profile_utils.py:103-147`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/profile_utils.py#L103-L147)）。两类工具回答不同问题：
-
-- trace 回答“请求和样本卡在哪一段”；
-- profiler 回答“该段内部哪些算子/阶段耗时或占显存”；
-- train dump 回答“造成问题的输入究竟是什么”。
-
-三者组合才形成从症状到执行再到数据的闭环。
-
-## 9. 三条指标通道：step aggregate、request trace 与 serving time series
-
-官方 observability 文档描述的不是一套统一存储，而是三条采样频率和保留位置不同的通道：
-
-| 通道 | 数据粒度 | 去向 | 适合回答 |
+| 证据 | 固定在哪一层 | 最适合排除什么 | 不能证明什么 |
 |---|---|---|---|
-| W&B / TensorBoard | 每个 rollout/train step 的聚合值 | 实验 tracking | reward/loss/KL/吞吐趋势 |
-| Sample trace / debug rollout | 每个 sample、每次 `sglang_generate` span | sample payload / debug 文件 | 某个请求为什么慢、PD 卡在哪一段 |
-| Prometheus | router/engine 高频时间序列 | 外部 Prometheus TSDB | queue buildup、KV transfer、实时 serving 饱和度 |
+| rollout dump | `Sample` 语义层 | serving 以后的 reward、conversion、training 数据问题 | 在线调度、采样内核、请求重复是否相同 |
+| train dump | DP/CP/PP 还原后的 trainer 输入层 | packing、mask、分片还原、sample 顺序、loss 输入 | optimizer/checkpoint 已提交；serving 生成原因 |
+| checkpoint | trainer 持久状态层 | 参数、optimizer、scheduler 和 iteration 的进程重启恢复 | in-flight Sample、DataSource buffer、外部指标 |
 
-### 9.1 W&B/TensorBoard 只接收低频聚合
+测试也把两种证据分开验证：rollout-then-train E2E 先生成 dump，再完全跳过 SGLang 训练；train-dump E2E 则在 TP、PP、CP 都开启时 join 两份 dump 并比较重组后的 rollout logprob。[`test_qwen2.5_0.5B_debug_rollout_then_train.py:1-8`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_qwen2.5_0.5B_debug_rollout_then_train.py#L1-L8) [`test_qwen2.5_0.5B_debug_train_dump_e2e.py:1-15`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_qwen2.5_0.5B_debug_train_dump_e2e.py#L1-L15)
 
-rollout 结束后，manager 合并 sample 统计、吞吐统计和 request timing，统一加 `rollout/`、`perf/` 前缀，再交给 tracking logger；logger 根据开关写 W&B 或 TensorBoard。[`rollout.py:1334-1349`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1334-L1349) [`logging_utils.py:27-51`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/logging_utils.py#L27-L51)
+## 6. 可观测性：同一故障需要五种尺度的证据
 
-request timing 不是每次 HTTP 完成就写 W&B。聚合器遍历 sample trace 中名为 `sglang_generate` 的结束 span，抽取 e2e latency、queue time、decode throughput 和可选 PD prefill/decode 字段，过滤非数值与非有限值，再计算 mean/median/min/max。[`rollout.py:50-72`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L50-L72) [`rollout.py:1401-1450`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1401-L1450) 这样避免高频 request metrics 把实验 tracking 变成 serving TSDB。
+| 层次 | 主要载体 | 回答的问题 | 保留边界 |
+|---|---|---|---|
+| 样本因果链 | Sample trace carrier、span、attempt | 哪个 sample/group 的哪次尝试卡在哪一段 | 随 Sample/debug dump 保存 |
+| step 聚合 | W&B / TensorBoard | reward、loss、KL、吞吐趋势何时异常 | 由 tracking 后端持久化 |
+| serving 高频状态 | SGLang/router Prometheus endpoint | queue、running requests、KV transfer 是否饱和 | 必须由外部 Prometheus 及时 scrape |
+| 算子与内存 | PyTorch profiler、memory snapshot、memray | 慢段内部的算子、stack、显存峰值在哪里 | 写 profile/snapshot 文件 |
+| 数据实物 | rollout dump、train dump、checkpoint | 当时究竟消费了什么，哪个状态已提交 | 各自独立文件，无统一 manifest |
 
-### 9.2 固定提交下的文档/源码差异
+trace carrier 绑定 `trace_id`、sample/group identity、attempt 与 parent span，并可跨边界 import/export；`trace_next_attempt()` 递增 attempt 并写事件。[`trace_utils.py:244-329`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/trace_utils.py#L244-L329) [`trace_utils.py:434-502`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/trace_utils.py#L434-L502) SGLang `meta_info` 还能被展开为 request 与 PD prefill/decode 子 span。[`trace_utils.py:146-216`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/trace_utils.py#L146-L216)
 
-官方页面示例列出 `perf/request/count` 与 `perf/request/profiled_count`。[`observability.md:5-29`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/observability.md#L5-L29) 但在本系列固定的 `681b3adc` 源码中，`profiled_request_count` 虽被累加却没有写入返回字典，通用 `compute_statistics` 也只返回 mean/median/max/min；因此这两个 count key 在默认路径下不会实际发出。[`rollout.py:1406-1437`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1406-L1437) [`metric_utils.py:59-66`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/metric_utils.py#L59-L66)
+rollout 结束后，manager 从 `sglang_generate` trace 中抽取 e2e、queue、decode throughput 与可选 PD timing，过滤非有限值后只输出 mean/median/min/max 的低频聚合。[`rollout.py:1401-1450`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1401-L1450) profiler 则提供训练阶段 hooks、PyTorch schedule、shape/stack/memory/FLOPs，以及 memory history/OOM snapshot 与 memray 路径。[`profile_utils.py:13-78`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/profile_utils.py#L13-L78) [`profile_utils.py:103-147`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/profile_utils.py#L103-L147)
 
-这类差异正是源码级阅读的价值：部署告警或 dashboard 不应只照抄文档 key，应先从实际 run 验证当前 commit 的指标集合。
+Prometheus 数据不由 slime 落盘；官方文档明确要求外部进程 scrape `/metrics` 或 `/engine_metrics` 并把 TSDB 放到持久路径，否则训练结束后无法补回历史。[`observability.md:31-59`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/observability.md#L31-L59) [`observability.md:61-87`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/observability.md#L61-L87)
 
-### 9.3 Prometheus 数据不由 slime 持久化
+> [!contradiction] 文档指标名与固定提交源码不一致
+> 官方 observability 页面列出 `perf/request/count` 与 `perf/request/profiled_count`。[`observability.md:5-29`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/observability.md#L5-L29) 但固定提交里 `profiled_request_count` 只被累加，没有写入返回 dict；`compute_statistics` 也只返回 mean/median/max/min，所以默认路径不会发出这两个 count keys。[`rollout.py:1406-1437`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1406-L1437) [`metric_utils.py:59-66`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/metric_utils.py#L59-L66) Dashboard 与告警必须以实际 run 的 key 集合为准。
 
-slime 启动 router 时分配 Prometheus port，启动 SGLang engine 时固定开启 metrics，使 `/metrics` / `/engine_metrics` 可供外部 scrape。[`rollout.py:1063-1112`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1063-L1112) [`sglang_engine.py:564-570`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L564-L570) slime 自己不保存这些每秒时间序列；没有外部 Prometheus，就没有可在训练结束后回看的 TSDB 历史。官方页面给出的 scrape 与持久化目录同样是旁路 Prometheus 的配置，而不是 slime 内置数据库。[`observability.md:31-59`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/observability.md#L31-L59) [`observability.md:61-87`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/observability.md#L61-L87)
+## 7. 什么才算“恢复成功”：证据必须与声明同尺度
 
-### 9.4 观测选择原则
+| 要宣称的结果 | 最低证据 | 固定基线已有 | 仍缺的证据 |
+|---|---|---|---|
+| engine 重新可服务 | 新进程启动且 `/health_generate` 成功 | start path 会等待 health 成功 | engine generation id 与持久事件 |
+| engine 回到当前模型版本 | 重连后完成同一次权重更新，并有版本/权重核验 | update path 会重连并更新；可选 startup `check_weights` | fault recovery 后默认没有逐次 weight equality assertion |
+| 请求未重复提交 | 稳定 operation id + 服务端去重记录 | trace 有 attempt；SGLang response 可带 request id | POST payload 的幂等键与持久 commit record |
+| 数据从一致位置继续 | trainer 与 DataSource 同 id 文件都完整 | iteration 驱动 cursor 文件名 | 原子 manifest、buffer snapshot、缺文件时 fail-closed |
+| 训练输入可复现 | rollout dump 与 train dump 可按 identity join | 两类 dump 与 E2E 对齐测试 | serving 调度和外部工具副作用的全量 replay |
 
-- 查训练是否收敛：W&B/TensorBoard step aggregate；
-- 查一个 sample 的多轮请求/PD 时间线：trace viewer 或 debug rollout；
-- 查全局 queue、KV transfer 与 engine 饱和：Prometheus/Grafana；
-- 查算子和显存：PyTorch profiler/memory snapshot；
-- 查真正进 trainer 的 mask/packing：train dump。
+`--check-weight-update-equal` 的固定调用链是在启动时先 snapshot/reset，初次把 actor 权重推给 rollout 后 compare，并非每次 fault recovery 后都做比较。[`placement_group.py:246-248`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L246-L248) [`train.py:26-30`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L26-L30) 因而“训练继续跑”是可用性证据，不自动等于“所有恢复后权重逐 tensor 相等”或“没有请求重复”。
 
-把所有问题都交给 W&B 会丢请求细节；把所有请求都上传 W&B 又会产生高基数和 tracking 开销。当前三层设计的重点正是让采样频率与问题尺度匹配。
+## 8. 测试与 CI：契约、拓扑、故障注入分层证明
 
-## 10. 测试体系：CPU 守契约，GPU 守集成
+官方 CI 明确分为默认 CPU correctness tests 和 label 触发的 GPU E2E：前者覆盖无需集群的 invariant，后者运行真实 Megatron + SGLang 路径。[`ci.md:1-32`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/developer_guide/ci.md#L1-L32) workflow 的 `cpu-unittest` 在 GitHub-hosted runner 上自动运行，而 SGLang config GPU matrix 包含 mixed-offload fault-tolerance 用例。[`pr-test.yml:33-60`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/.github/workflows/pr-test.yml#L33-L60) [`pr-test.yml:560-598`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/.github/workflows/pr-test.yml#L560-L598)
 
-slime 的 CI 把默认 CPU 测试与需要标签触发的 GPU end-to-end 测试分开，并将单元测试、代码质量和镜像/环境相关任务拆成不同 job（[`ci.md:1-32`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/developer_guide/ci.md#L1-L32)、[`ci.md:46-92`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/developer_guide/ci.md#L46-L92)）。GPU job 再按模型/训练场景覆盖完整链路，其触发与检查规则在 CI 文档中单独列出（[`ci.md:96-168`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/developer_guide/ci.md#L96-L168)）。
+| 层级 | 代表证据 | 能证明 | 不能单独证明 |
+|---|---|---|---|
+| CPU unit/contract | Sample round-trip、train dump、schedule、plugin contracts | 序列化、shape、排序、接口不变量 | Ray placement、collective、真实 engine 生命周期 |
+| GPU component E2E | SGLang config、parallel precision、checkpoint matrix | 特定拓扑和参数组合可协同运行 | 未列入 matrix 的故障交错 |
+| fault injection E2E | 单个 actor engine crash 后训练继续 | monitor 检测、整组标死、降容 rollout、后续重建与更新的组合路径 | manager/trainer crash、唯一 engine 阻塞、请求 exactly-once |
+| replay E2E | rollout-only → train-only；rollout/train dump join | 两个隔离边界可复现且 sample 对齐 | 在线 serving 随机性本身可重放 |
+| checkpoint E2E | optimizer CPU/GPU 与 async save/load 组合 | trainer checkpoint 组合可加载 | trainer + global DataSource 的联合原子恢复 |
 
-这种分层对应两类风险：
+checkpoint E2E 明确分别跑 save 与 `--ckpt-step 1` load，但该用例没有开启 `--rollout-global-dataset`，所以不能拿它证明 DataSource cursor 与 trainer checkpoint 的共同提交。[`test_qwen3_4B_ckpt.py:54-80`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_qwen3_4B_ckpt.py#L54-L80) [`test_qwen3_4B_ckpt.py:142-154`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_qwen3_4B_ckpt.py#L142-L154)
 
-1. **契约风险**：`Sample`、data source、参数解析、插件接口和纯函数 reducer 是否保持兼容，可由 CPU 测试快速守住；
-2. **拓扑风险**：Ray placement、Megatron collective、SGLang engine、权重同步和 GPU kernel 是否协同，只能由真实 GPU 集成测试证明。
+> **设计分析**：测试层级应与恢复声明一一对应。单元测试适合守住可重放状态的 schema；GPU E2E 证明具体拓扑能走通；故障注入必须再覆盖“失败发生在哪个阶段、剩余容量是多少、哪个状态已经提交”。否则一个绿色 E2E 很容易被过度解读成全局 fault tolerance。
 
-因此，本地 CPU 测试通过不能替代 Ray/GPU 端到端证据；反过来，只跑大型 E2E 也很难精确定位接口级回归。
-
-## 11. 一条可操作的故障定位路径
+## 9. 一条可操作的恢复与取证路径
 
 ```mermaid
 flowchart TD
-    A["rollout 或训练异常"] --> B{"请求失败还是数值异常?"}
-    B -->|请求失败| C["查看 trace attempt 与 engine health"]
-    C --> D{"engine 已失活?"}
-    D -->|是| E["重建 engine 并恢复权重"]
-    D -->|否| F["检查 HTTP/调度/采样错误"]
-    B -->|数值异常| G["保存或加载 debug rollout"]
-    G --> H["检查 reward / advantage / mask"]
-    H --> I["train dump 固定 DP/CP 实际输入"]
-    I --> J["用 profiler 定位算子、显存或通信瓶颈"]
+    A["发现异常"] --> B{"控制面仍可调用吗"}
+    B -->|否| C["停止作业并核验共同 checkpoint id"]
+    C --> D["从完整 trainer checkpoint 与 DataSource cursor 重启"]
+    B -->|是| E{"engine health 失败吗"}
+    E -->|是| F["确认剩余容量能否完成当前 rollout"]
+    F -->|能| G["让本轮到达权重更新恢复边界"]
+    F -->|不能| C
+    G --> H["核验重建 health 重连与权重更新证据"]
+    E -->|否| I{"请求错误还是数值错误"}
+    I -->|请求错误| J["按 trace attempt 与 Prometheus 定位"]
+    I -->|数值错误| K["先 replay rollout dump"]
+    K --> L["再对照 train dump 与 checkpoint"]
 ```
 
-这条路径刻意先区分“执行可用性”和“统计正确性”。[[31_slime_posttraining_stability_analysis]] 讨论的稳定性主要属于后者；engine recovery 不能修复错误的分母、mask 或 stale ratio，数值修正也不能让死掉的 serving rank 自动回来。
+操作上有三条纪律：
 
-## 12. 设计评价
+1. **先定故障域，再选恢复动作**：engine dead 不等于 trainer state 损坏；数值异常也不应靠重启 engine 掩盖。
+2. **先定提交证据，再决定 retry**：不知道前一次是否提交时，不把 POST 重试叫作 exactly-once；有外部副作用的 custom workflow 更应由业务层提供 operation id。
+3. **恢复后验证新边界**：至少核对 health、engine 重连、权重更新完成、Sample/rollout identity、共同 checkpoint id；性能问题再分别下钻 trace、Prometheus 与 profiler。
 
-slime 当前方案的优势是边界清楚：health monitor 不假装是训练 checkpoint，HTTP retry 不假装是 exactly-once，debug replay 不假装能复现所有 serving 随机性。代价是调用者仍需理解请求、engine、模型版本和训练数据四个状态层，复杂故障不能靠一个“自动恢复”开关解决。
+## 10. 设计评价与明确缺口
 
-若继续增强，最有价值的方向不是增加无限重试，而是把以下身份写入统一的持久化事件：`sample_id/group_id`、generation attempt、engine generation、actor step、weight version、rollout model version。这样才能把 [[17_slime_train_inference_consistency_analysis]] 的版本一致性检查和本页的故障恢复真正接起来。
+slime 的优点不是“什么都能自动恢复”，而是恢复范围与状态所有权大体一致：health monitor 管 engine process liveness，weight updater 管重新入版，DataSource 管 cursor，Megatron 管训练持久状态，dump/trace 管事后证据。相比全局 rollback，它保留了已提交训练状态并缩小 blast radius；相比 blind retry，它至少让 engine replacement 与模型版本更新在同一边界汇合。
 
-## 13. 相关页面
+固定基线仍有四个明确缺口：
 
-- [[11_slime_ray_control_plane_analysis]]
-- [[13_slime_sglang_rollout_engine_analysis]]
-- [[16_slime_weight_sync_analysis]]
-- [[17_slime_train_inference_consistency_analysis]]
-- [[31_slime_posttraining_stability_analysis]]
+- 没有 trainer + DataSource 的原子 manifest，缺 cursor 文件时也不是 fail-closed；
+- 默认 partial buffer 不进 checkpoint，在途 generation 没有持久 request ledger；
+- recovery 入口位于权重更新之前，不能保证唯一 engine 阻塞时自行推进；
+- fault-tolerance E2E 证明特定多-engine 降容路径，但没有覆盖 manager/trainer crash、联合 checkpoint 撕裂和请求去重。
+
+这些不是 [[17_slime_train_inference_consistency_analysis]] 所说的数值一致性问题，也不是 [[13_slime_sglang_rollout_engine_analysis]] 的请求调度细节；它们是“故障后哪些状态仍有权威所有者、从哪里重新开始、用什么证据证明”的恢复协议问题。
+
+## Related Pages
+
+- [[11_slime_ray_control_plane_analysis]] — Ray group、manager、server 与 engine 的所有权边界决定了故障域如何切分。
+- [[12_slime_sample_datasource_analysis]] — Sample identity、partial buffer 与 DataSource cursor 是数据恢复语义的基础。
+- [[13_slime_sglang_rollout_engine_analysis]] — 单次请求、动态采样与 partial continuation 的正常路径在此展开。
+- [[16_slime_weight_sync_analysis]] — engine 重建后为何必须重新进入 pause/flush/version 权重提交协议。
+- [[17_slime_train_inference_consistency_analysis]] — 区分进程恢复成功与权重、输入、kernel、sampling 的数值一致性。
+- [[30_slime_rollout_optimization_analysis]] — Prometheus queue 与 trace timing 如何用于区分容量不足和调度空洞。
+- [[31_slime_posttraining_stability_analysis]] — 系统故障、数据错误与数值不稳定如何形成不同控制回路。
