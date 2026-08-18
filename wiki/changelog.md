@@ -8,6 +8,30 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-18：重构 slime 全目录源码分析——从功能罗列到设计因果与诊断
+
+**Type**: Series-wide Source-faithful Rewrite + Design Rationale Audit
+
+- 重构 [[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析系列]] 的 20 篇内容页与总索引：统一采用“问题背景 → 约束/不变量 → 设计选择 → 调用链 → 替代方案与代价 → 失败边界 → 证据”的因果主线；总索引新增“系统问题 → owner 页面 → 核心设计 → 主要边界”地图和按架构、数据/梯度、服务/提交、扩展、性能/故障五条阅读路线。
+- 深化数据与控制面：解释 `Sample` 为什么是跨 DataSource、rollout、RM、trainer 的语义载体，明确 partial 默认会训练新旧 model token、mask 开关才只训练新 span，tool/environment token 的 logprob `0` 是不可训练占位；说明 nested compact fanout 如何用共享 `rollout_id` 在 flatten 后保留一次逻辑 execution 的统计身份，并厘清 placement group、actor group、RolloutManager、server、server group、engine 与 updater 的管理对象和参与时机。
+- 深化训练正确性与状态边界：把 rollout-aware reducer、DP×CP whitening、训推 topology 转换、四种权重 transport 统一到 estimator measure 与版本化提交模型；严格区分 version、consistency、commit、recovery 和 replay，明确 engine 局部恢复不等于 DataSource/trainer/外部副作用的全局事务恢复。
+- 深化能力扩展：将 external SGLang、custom generate、整轮 rollout、新 backend 分成不同扩展层；把 OPD、在线 MTP、低精度、新模型和 agent workflow 分别还原为 role/version、precision axes、双向语义映射与 execution→training projection 问题。vime 页使用独立 `vllm-project/vime@8144096e` 基线，明确它是 fork 级 vLLM 替换而非 upstream slime 内置 backend，并记录默认 top-p replay adapter 未闭合、external-engine 文档 `delta + NCCL` 与 runtime `delta + disk` 限制冲突等源码事实。
+- 将 [[02_engineering/04_posttrain_frameworks/slime/30_slime_rollout_optimization_analysis|Rollout 优化]] 改写为 productive throughput 与闭环关键路径账本，覆盖 service/admission、filter/oversampling、tail/drain、trainer wait、data conversion、offload/publish 和 overlap 的适用条件及负收益反例；将 [[02_engineering/04_posttrain_frameworks/slime/31_slime_posttraining_stability_analysis|稳定性]] 改写为数据/奖励、策略版本、估计量/数值、基础设施四个控制环的判别式诊断，说明 clip、filter、restart 何时只是在压低症状。
+- 证据与质量门禁：21 个 Markdown 页共核验 1,250 个 fixed-commit 定位符、195 个唯一源码文件，覆盖 `THUDM/slime@681b3adc`、SGLang `0b3bb0cb` / `d6ef6888` 与 `vllm-project/vime@8144096e`，路径和行号越界均为 0；全目录严格公式检查 0 error / 0 warning；全库链接检查 pages=402 且 broken/ambiguous/bare_index/orphans 均为 0；checker 测试 22 passed；所有改动通过 `git diff --check`，新增/改写 Mermaid 均按仓库规范人工复核。
+
+---
+
+## 2026-08-18：深化 slime 权重同步——共卡 CUDA IPC、拓扑转换与 MoE 定向路由
+
+**Type**: Source-level Mechanism Clarification + Topology Constraint Audit
+
+- 深化 [[16_slime_weight_sync_analysis]]：纠正“每个参数只在一个 train rank 聚合”和“每个 infer rank 最终常驻完整 HF 参数”两种过度简化，区分 Megatron collective 重组、NCCL transport source 与 SGLang TP-aware local shard loader，并列出 train/infer TP、PP、EP topology 转换的能力边界。
+- 拆解 colocate 完整生命周期：说明 actor/rollout 是同一物理 GPU 上的不同进程与分时驻留，训练新值先落 pinned CPU snapshot、更新时按桶回到 train GPU；CUDA IPC 只传 GPU allocation handle 与 tensor metadata，SGLang 映射 source storage 后再 GPU→GPU copy 进自己的 parameter shard，Gloo/Ray 不搬运权重 payload。
+- 补充 MoE 例外路径：在两侧 expert TP 为 1、infer PP=1、EP 静态且所有 engines 共卡等条件下，从 expert owner 通过 NCCL P2P 定向发送到目标 train rank，再经同卡 IPC 装入 SGLang EP worker；不满足条件自动回退通用完整 HF bucket。
+- 更新 [[slime/index]] 的核验日期和权重同步入口摘要；源码证据固定到 slime `681b3adc` 与其 stable SGLang `0b3bb0cb` 基线。校验：目标页 53 个 fixed-commit 源码链接、23 个唯一文件均存在且行号无越界；全库链接检查 pages=402 且 broken/ambiguous/bare_index/orphans 均为 0；3 个 changed Markdown 严格公式检查为 0 error / 0 warning；公式与链接测试 19 passed；`git diff --check` 无空白错误。
+
+---
+
 ## 2026-08-18：slime rollout 参数、GPU 复用与 PPO Actor/Critic 机制深化
 
 **Type**: Source-level Mechanism Clarification + Beginner-oriented PPO Walkthrough
