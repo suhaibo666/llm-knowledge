@@ -217,7 +217,7 @@ rollout dump 用 `Sample.to_dict()` 保存语义记录；train dump 把 response
 
 ## 11. 边界与设计评价
 
-slime 已提供形成诊断闭环所需的大部分“钩子”：语义化 Sample、behavior metadata、版本字段、rollout/train dump、rollout-aware reducer、mismatch/clip 指标、版本化权重提交和 engine 局部恢复。它的核心选择是让每个 owner 暴露自己的证据，而不是用一个总的 `stable=true` 掩盖跨系统差异。
+slime 已提供形成诊断闭环所需的大部分“钩子”：语义化 Sample、behavior metadata、版本字段、rollout/train dump、rollout-aware reducer、mismatch/clip 指标、版本化权重提交和 engine 局部恢复。**分析判断**：由固定基线可以把这一设计理解为让每个 owner 暴露自己的证据，而不是用一个总的 `stable=true` 掩盖跨系统差异。
 
 固定基线仍有三个需要部署方补齐的稳定性治理层：
 

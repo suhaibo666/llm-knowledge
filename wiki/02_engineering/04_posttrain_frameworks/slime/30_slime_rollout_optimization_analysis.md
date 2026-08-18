@@ -104,14 +104,16 @@ $$
 $$
 T_{\mathrm{cycle}}^{\mathrm{overlap}}
 \gtrsim
-\max\left(T_{\mathrm{rollout}},T_{\mathrm{train}}\right)
+\max\left(T_{\mathrm{rollout}}+T_{\mathrm{data}},T_{\mathrm{train}}\right)
 +T_{\mathrm{fence}}
 +T_{\mathrm{publish}}.
 $$
 
-式中的 $T_{\mathrm{fence}}$ 不能假设为零：`train_async.py` 在发布新权重前仍等待下一轮 generation 完成，避免生成中途换权重；该入口也直接禁止 colocate。[`train_async.py:31-53`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L31-L53) [`train_async.py:66-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L66-L70) [`train_async.py:9-12`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L9-L12)
+这是**分析下界**而非源码计时公式。producer arm 必须包含 $T_{\mathrm{data}}$：`RolloutManager.generate()` 在取得 rollout data 后，还会完成 Sample → train dict 转换和 DP split 才返回 future；`train_async.py` 又在开始当前轮训练前等待该 future。[`rollout.py:590-604`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L590-L604) [`train_async.py:31-53`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L31-L53)
 
-> **设计分析**：overlap 消掉的是“两阶段串行空洞”，不是两个阶段本身的工作量。若 rollout 比 training 慢很多，trainer 仍等待；若 training 更慢，warm queue 只会积累更老的样本。若两边争用网络、CPU、存储或功耗预算，重叠甚至可能让 $\max(T_{\mathrm{rollout}},T_{\mathrm{train}})$ 变大。
+式中的 $T_{\mathrm{fence}}$ 也不能假设为零：`train_async.py` 在发布新权重前仍等待下一轮 generation future 完成，避免生成中途换权重；该入口还直接禁止 colocate。[`train_async.py:66-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L66-L70) [`train_async.py:9-12`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L9-L12)
+
+> **设计分析**：overlap 消掉的是“两阶段串行空洞”，不是两个阶段本身的工作量。若 rollout 与转换之和比 training 慢很多，trainer 仍等待；若 training 更慢，warm queue 只会积累更老的样本。若两边争用网络、CPU、存储或功耗预算，重叠甚至可能让 $\max(T_{\mathrm{rollout}}+T_{\mathrm{data}},T_{\mathrm{train}})$ 变大。
 
 ## 3. 服务侧旋钮：只在生成服务真是瓶颈时使用
 
