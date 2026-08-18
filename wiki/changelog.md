@@ -8,6 +8,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-18：slime rollout 参数、GPU 复用与 PPO Actor/Critic 机制深化
+
+**Type**: Source-level Mechanism Clarification + Beginner-oriented PPO Walkthrough
+
+- 扩写 [[10_slime_end_to_end_iteration_analysis]]：把 post-training 外层事务边界与 optimizer step、dataset epoch、checkpoint cadence 分开，明确 `--start-rollout-id` 是 rollout/train/weight-commit cycle 的编号，自动恢复取已保存 id 的下一轮，`num_rollout` 是排他上界；checkpoint 并非每轮必存，但新权重每轮训练后都会提交给 rollout engine。
+- 扩写 [[13_slime_sglang_rollout_engine_analysis]]：逐项解释 `--rollout-batch-size`、`--n-samples-per-prompt`、`--over-sampling-batch-size` 的 group/response/补采波次单位，以 32×8、oversample 64 的例子说明 attempted→accepted；明确 dynamic filter 在整组生成和 reward 之后运行，记录 zero-std filter 与 `keep_when_insufficient` fallback 的数据质量—延迟权衡。
+- 扩写 [[11_slime_ray_control_plane_analysis]] 与 [[14_slime_megatron_training_analysis]]：说明 `_get_placement_group_layout` 同时定义 placement-group bundle 总量和 rollout slice offset、真正 rank/engine 绑定由下游完成；区分 Actor/Critic 共享训练卡与 train/rollout colocate 两条复用轴，并解释 PPO 强制 `offload_train` 是同卡显存驻留交接，不是角色控制流开关。
+- 深化 [[15_slime_loss_parallelism_analysis]]：从 prefix state/response token 解释 GAE 中的 t 与 t+1，区分单步 TD residual 与完整 GAE，推导 return target 为什么是 advantage 加 frozen old value；补 Actor/Critic clipped loss 的业务依据、一条三 token 轨迹的逐项数值计算，以及 sample reward→token GAE/loss→logical-rollout reducer→Megatron scalar 的粒度链。
+- 校验：5 篇目标 Markdown 严格公式检查为 0 error / 0 warning；5 页共 205 个固定 commit `path:line` 引用，文件与行号范围 issues=0；全库链接检查 pages=402，broken/ambiguous/bare_index/orphans 均为 0；公式/链接相关测试 22 passed；目标文件 `git diff --check` 无空白错误。
+
+---
+
 ## 2026-08-18：vLLM 主分支架构重验与当前推理技术栈总览
 
 **Type**: Source Revalidation + Architecture Deep Dive + Knowledge Map Refresh

@@ -1,7 +1,7 @@
 # slime Ray 控制面与资源生命周期实现分析
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
-> **核验日期**：2026-08-14 · **系列**：[[slime/index]]
+> **核验日期**：2026-08-18 · **系列**：[[slime/index]]
 > **结论先行**：slime 的 Ray 层不是通用 workflow engine，而是一层很薄但责任明确的控制面：placement group 固定物理 GPU 顺序，`RayTrainGroup` 把 Megatron SPMD ranks 包成一个逻辑 actor/critic，`RolloutServer/ServerGroup` 把 SGLang 拓扑包成可恢复服务，`RolloutManager` 则拥有 DataSource、生成函数、train-data conversion 和 engine lock。计算仍在 Megatron/SGLang 内部完成。
 
 ## 1. 控制对象层级
@@ -41,7 +41,30 @@ Ray 的 bundle index 不保证等于 node/GPU 拓扑顺序。slime 临时启动 
 | disaggregate | actor + rollout GPUs | actor GPUs | 两个连续区间，可并行运行 |
 | external rollout | actor GPUs（普通训练） | actor GPUs | serving 不由当前任务占本地 GPU |
 
-对应分支由 `_get_placement_group_layout` 明确定义。[`placement_group.py:100-117`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L100-L117) critic 当前复用 actor placement group，而不是独占资源池。[`placement_group.py:120-137`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L120-L137)
+对应分支由 `_get_placement_group_layout` 明确定义。[`placement_group.py:100-117`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L100-L117)
+
+这个函数返回的二元组不是“只定义了分组数量”，也不是“已经完成了全部 GPU 分配”，而是两者之间的一份 **布局描述**：
+
+1. `num_gpus` 决定同一个 Ray placement group 创建多少个 `{GPU:1, CPU:1}` bundles，因此已经决定本任务向 Ray 预留的 GPU 总量；
+2. `rollout_offset` 决定 rollout 可见的有序 bundle/GPU 列表从哪里开始切片：offset 为 0 表示从 actor 同一逻辑区间开始，offset 为 actor GPU 数表示从训练区间之后开始；
+3. 它不决定每个 Megatron rank 或每个 SGLang engine 最终绑定哪个具体 bundle。真正的物理放置发生在 `_create_placement_group`、`RayTrainGroup` 和 rollout engine 创建阶段。
+
+`create_placement_groups` 先据此创建 bundles、探测并重排 physical GPU，再让 actor 使用完整有序表的前若干项，让 rollout 使用从 `rollout_offset` 开始的切片。[`placement_group.py:42-97`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L42-L97) [`placement_group.py:120-137`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L120-L137) 所以 layout 同时定义 **资源池总大小 + rollout 逻辑起点**；下游才把逻辑索引落实为具体进程的 GPU 绑定。
+
+### 2.2 两条 GPU 复用轴必须分开看
+
+slime 有两种彼此独立的“共享 GPU”：
+
+| 共享关系 | 由什么触发 | 是否依赖 `colocate` |
+|---|---|---|
+| Actor ↔ Critic | `advantage_estimator=ppo` 创建 critic，并令 `pgs["critic"] = pgs["actor"]` | 否；PPO 即使训推分离也共享训练卡 |
+| Train ↔ SGLang rollout | `colocate=True` 令 rollout offset 为 0 | 是；非 colocate 时 rollout 从 actor 区间之后开始 |
+
+PPO 参数后处理先把 `use_critic` 设为 true，并强制 critic 与 actor 使用相同 GPU 数；placement 层再把两者指向同一个 actor placement group。[`arguments.py:1901-1904`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1901-L1904) [`placement_group.py:123-135`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L123-L135) 但 Actor/Critic 仍是两组独立 Ray processes，各自有模型参数、optimizer 和 checkpoint；“复用”只表示它们绑定同一批 physical GPU slots，不表示二者是同一个模型。
+
+每个训练 Ray actor 以 0.4 的 fractional GPU resource 放入一个含 1 GPU 的 bundle，使 Actor 和 Critic processes 能同时被 Ray 调度到同一卡；这个 0.4 只是 Ray admission/scheduling 数值，**不是 40% 显存上限，也不会自动隔离显存**。[`placement_group.py:140-160`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L140-L160) [`actor_group.py:107-126`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L107-L126)
+
+因此 PPO 还会强制 `offload_train=True`。真正的角色切换由 driver 时序控制：Critic 先 wake → 预测旧 values → 算 GAE/returns → 训练 → sleep；Actor 等 values 返回后再 wake → policy train → sleep。`offload_train` 不是决定“现在轮到谁”的调度器，而是这条顺序得以在同一 GPU 上执行的 **显存驻留机制**：每个 role 的 `train()` 前 resume，完成后 pause 并销毁 process groups，进程本身仍存在。[`arguments.py:1948-1958`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1948-L1958) [`train.py:61-69`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L61-L69) [`actor.py:374-422`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L374-L422)
 
 ## 3. RayTrainGroup：把 N 个 SPMD rank 封成一个逻辑角色
 

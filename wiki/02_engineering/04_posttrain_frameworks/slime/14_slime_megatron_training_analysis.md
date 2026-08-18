@@ -1,7 +1,7 @@
 # slime Megatron 训练后端实现分析
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
-> **核验日期**：2026-08-14 · **系列**：[[slime/index]]
+> **核验日期**：2026-08-18 · **系列**：[[slime/index]]
 > **结论先行**：slime 没有包装掉 Megatron 的模型/并行/optimizer，而是把一份 rollout step 翻译成 Megatron pipeline 能消费的 packed micro-batches。单个 actor process 通过 CPU weight backups 在 actor/ref/teacher/old_actor 间切换；critic 则是同一 Megatron model provider 换成 scalar value head 的独立训练 group。训练主链的难点不在 `optimizer.step()`，而在 forward-only logprob、全 rollout advantage、packed CP data 与 policy loss 必须按同一 token/rollout 口径衔接。
 
 ## 1. 初始化：原生 Megatron model + slime role
@@ -71,6 +71,10 @@ vocab-parallel logprob kernel 对每行执行 TP all-reduce max/sum，只 all-re
 
 critic 采用独立 `RayTrainGroup`，但 model provider 只把 LM head 换成输出 1 的 value head。[`model_provider.py:96-114`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model_provider.py#L96-L114)
 
+Critic 不是 reward model。reward model/verifier 在 completion 完成后回答“这条答案最终得多少分”；Critic 则对每个生成位置的 prefix 状态 $s_t$ 预测“从这里继续按当前策略生成，未来累计 shaped reward 的期望是多少”。Actor 的 LM head 输出词表分布并选择 token，Critic 的 scalar head 输出一个 value；二者结构可共享 GPT 骨架，但参数、optimizer 与训练目标独立。
+
+源码对 response token 做 causal shift：第 $t$ 个 response token $a_t$ 与它前一个位置的 hidden/output 对齐。因此 `values[t]` 对应的是生成 $a_t$ **之前**的状态 $s_t$；`values[t+1]` 对应已经生成 $a_t$、准备生成下一 token 的状态 $s_{t+1}$。最后一个 token 后没有可 bootstrap 的下一状态，GAE 把 terminal next value 设为 0。[`loss.py:97-167`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L97-L167) [`ppo_utils.py:586-607`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/ppo_utils.py#L586-L607)
+
 每轮 critic：
 
 1. forward current values；
@@ -79,6 +83,10 @@ critic 采用独立 `RayTrainGroup`，但 model provider 只把 LM head 换成�
 4. 仅 PP last stage 把旧 values 搬 CPU 返回 actor。
 
 实现见 [`actor.py:396-422`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L396-L422)。actor/critic 并行配置当前必须一致，否则同一 rollout_data schedule 和 value 回传无法安全拼接。
+
+这里回传给 Actor 的是 Critic **训练前 forward 得到的 old values**。这些 values 一方面参与构造 Critic 本轮的 fixed returns target，另一方面作为 Actor 计算 advantage 的 baseline；若改成 Critic 更新后的当前值，target 与 baseline 会在同一批数据上边训练边移动，Actor/Critic 也不再共享同一份行为时刻统计。[`actor.py:396-421`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L396-L421)
+
+PPO 下 Actor 与 Critic 是两个独立 Ray groups，却复用同一批 placement-group GPU slots。driver 的调用顺序决定先 Critic 后 Actor；强制开启的 `offload_train` 则负责让非活动模型释放 GPU state。换言之，**driver 顺序是控制流开关，offload 是显存交接手段**，不是靠 `offload_train` 自己判断当前该训练哪个角色。[`arguments.py:1901-1904`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1901-L1904) [`arguments.py:1953-1958`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1953-L1958) [`actor.py:374-394`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L374-L394)
 
 ## 6. Actor 路径：为什么顺序不能交换
 
@@ -117,7 +125,7 @@ MoE routing replay 不是单一开关。actor 可先把 SGLang 返回的每 toke
 
 save 时若 distributed optimizer overlap param gather，会临时关闭 forward pre-hook，checkpoint 后恢复；actor wrapper还支持 async save、HF export。[`model.py:943-971`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L943-L971) [`actor.py:567-589`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L567-L589)
 
-`offload_train` 通过 TMS pause/resume 保留 actor 对象但释放内存，wake 时重建 process groups；`release_train` 则由 driver 保存后 kill actors、下轮重新 init。[`actor.py:205-243`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L205-L243) [`actor_group.py:151-208`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L151-L208)
+`offload_train` 通过 TMS pause/resume 保留 actor/critic Ray 对象但释放 GPU state，wake 时重建 process groups；它不同于 actor process 内通过 `_switch_model` 在 actor/ref/teacher 权重 tags 间 restore，也不同于 `release_train` 的保存后 kill actors、下轮重新 init。[`actor.py:205-243`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L205-L243) [`actor_group.py:151-208`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L151-L208)
 
 ## Related Pages
 

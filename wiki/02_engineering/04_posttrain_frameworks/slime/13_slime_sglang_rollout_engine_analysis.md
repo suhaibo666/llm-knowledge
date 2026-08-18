@@ -1,7 +1,7 @@
 # slime SGLang Rollout Engine 与生成管线实现分析
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
-> **核验日期**：2026-08-14 · **系列**：[[slime/index]]
+> **核验日期**：2026-08-18 · **系列**：[[slime/index]]
 > **结论先行**：slime 的 rollout 不是一个 `model.generate()` 调用，而是三层并发：SGLang server/router 在引擎内批处理，请求层用全局 semaphore 限流，rollout 层按 first-completed 补采并执行 reward/admission。partial、streaming 和 fully-async 都复用同一 `Sample`/RM 契约，但分别改变“中途状态何时落盘”和“producer 是否跨轮存活”。
 
 ## 1. Serving 拓扑：router 与 engine group
@@ -70,7 +70,33 @@ RM 来源可以是远程 reward service、自定义函数，或 math/DAPO/DeepSc
 
 外层 `generate_rollout_async` 并不是一次性 `gather` 全部请求：它持续让 `remaining_batch_size` 至少覆盖目标 accepted groups，等待 `FIRST_COMPLETED`，每完成一组就执行 dynamic filter，丢弃则继续补采，保留则计入 data。[`sglang_rollout.py:374-444`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L374-L444)
 
-这同时实现两个目标：
+### 5.1 三个数量分别数什么
+
+设 `--rollout-batch-size B`、`--n-samples-per-prompt K`、`--over-sampling-batch-size M`：
+
+- $B$ 是最终 accepted prompt groups 数，决定本轮必须留下多少题；
+- $K$ 是每组 response 数，决定每题有多少条候选轨迹；
+- $M$ 是每次 DataSource 取 prompt groups 并提交生成的补采粒度，不是最终训练 batch，也不是 response 数。
+
+参数后处理令 $M$ 默认等于 $B$，并强制 $M\ge B$。[`arguments.py:1977-1983`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1977-L1983) 每次调用 `data_source(M)` 后，DataSource 才把每个 prompt 扩成 $K$ 个 samples，因此一波提交的是 $M$ 组、最多 $M\times K$ 条 response tasks。[`data_source.py:90-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L90-L118) [`sglang_rollout.py:400-414`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L400-L414)
+
+例如 $B=32$、$K=8$、$M=64$，一波最多提交 512 条 response；若 group filter 通过率约 50%，期望从 64 组中留下 32 组，即 256 条 response 进入训练。$M>B$ 的价值是提前准备“会被 filter 丢弃或尚未完成”的候选容量，减少再次取 prompt、重新发请求和等待新一轮尾延迟；代价是通过率高时会多做生成/RM，凑齐 $B$ 后未完成请求还会被 abort。
+
+### 5.2 filter 判断的是生成后的 group，不是生成前的 prompt
+
+`--dynamic-sampling-filter-path` 在 group 的 $K$ 条 response 全部生成并完成 reward 后才被调用。内置 `check_reward_nonzero_std` 读取组内 rewards，只保留标准差大于 `1e-6` 的组：全对或全错时，组内相对 reward 全相同，GRPO 的相对优势没有区分度；保留这类组通常只消耗训练算力。[`sglang_rollout.py:413-436`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L413-L436) [`dynamic_sampling_filters.py:9-15`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/filter_hub/dynamic_sampling_filters.py#L9-L15)
+
+filter 的标准返回值包含：
+
+| 字段 | 语义 |
+|---|---|
+| `keep` | 是否接受整组进入最终 $B$ 组训练数据 |
+| `reason` | 丢弃原因；进入 `rollout/dynamic_filter/drop_*` 指标 |
+| `keep_when_insufficient` | 原本拒绝，但若剩余候选已不足以凑齐 $B$，则兜底保留 |
+
+fallback 版本把最后一项设为 true。严格 filter 优先保证数据有学习信号，却可能反复补采；fallback 优先避免再起一波采样，却会让少量零方差组进入训练。这是明确的“数据质量—rollout 延迟/成本”交换，而不是两个等价实现。[`base_types.py:5-37`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/filter_hub/base_types.py#L5-L37) [`dynamic_sampling_filters.py:18-23`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/filter_hub/dynamic_sampling_filters.py#L18-L23)
+
+这套设计同时实现两个目标：
 
 - 不让最慢 group 阻塞已完成 group 的 admission；
 - DAPO 类 filter 丢弃 all-correct/all-wrong group 后仍能凑齐固定训练 batch。
