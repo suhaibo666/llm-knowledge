@@ -3,7 +3,7 @@
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
 > **文档与测试基线**：同一提交下 `docs/zh/advanced/reproducibility.md`、`docs/zh/developer_guide/{debug,ci}.md` 与 `tests/`
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
-> **结论先行**：训推一致性不是“权重同步成功”这个布尔条件，而是一条逐层收紧的证据链。即使训练端与 rollout 端参数逐元素相等，二者仍可能使用不同输入 token、不同采样支持集、不同 MoE 专家与顺序、不同 kernel/精度，以及不同 batch/并行规约路径。slime 因而同时提供 behavior metadata、输入重放、routing replay、对齐 hook、layerwise dump 和分级 CI；代价是更多元数据、额外前向与落盘、受限的 kernel/拓扑，以及只在特定 GLM-5 栈上成立的严格门禁。
+> **结论先行**：训推一致性不是“权重同步成功”这一个布尔条件，而是一条逐层收紧的证据链。即使训练侧与 rollout 侧的参数逐元素相等，二者仍可能使用不同的输入 token、采样候选集、MoE 专家及其顺序、kernel/精度，以及不同的批次和并行规约路径。slime 因而同时提供行为策略元数据、输入回放、路由重放、对齐钩子、逐层数据导出和分级 CI；代价是更多元数据、额外前向计算与磁盘写入、受限的 kernel/拓扑，以及只在特定 GLM-5 软件栈上成立的严格门禁。
 
 本文把三类结论分开：**源码事实**和**项目文档事实**都带 fixed-commit 定位符；标为“分析判断”的内容是根据实现约束和失败路径作出的推断，不代表项目作者原话。
 
@@ -36,8 +36,8 @@ flowchart TB
 
 | 层 | 要守住的不变量 | 主要比较或重放钩子 | 常见症状 | 为什么上一层通过仍不够 |
 |---|---|---|---|---|
-| L0 权重快照 | 一次比较使用同一完整参数版本 | weight compare、engine version、`weight_versions` | 乱码、突变、整段大偏差 | 相同参数仍可吃到不同 token |
-| L1 输入轨迹 | prompt/response token、位置和 mask 一一对应 | rollout/train dump 按 sample join | 首个错位点后全段偏差 | 同 token 不代表同采样归一化域 |
+| L0 权重快照 | 一次比较使用同一完整参数版本 | 权重比较、引擎版本、`weight_versions` | 乱码、突变、整段大偏差 | 相同参数仍可能使用不同 token |
+| L1 输入轨迹 | prompt/response token、位置和 mask 一一对应 | 按 Sample 对齐 rollout/训练数据导出结果 | 首个错位点后全段偏差 | token 相同不代表采样候选集相同 |
 | L2 采样分布 | temperature 与 token 支持集一致 | selected-token logprob、top-p ids/offsets | 偏差随截断或温度系统漂移 | 同支持集仍可能选不同专家 |
 | L3 MoE 路由 | 每 token、每层的 expert id 与 top-k 顺序一致 | routed-expert metadata、R3、ordered-top-k capture | 只在 MoE 层起跳或稀疏爆点 | 同专家不代表 expert 内数值路径相同 |
 | L4 数值路径 | attention/GEMM/norm/KV/量化路径语义一致 | alignment hooks、layer/module dump | 小误差逐层放大 | 同算子族仍会被 batch/分片改变规约树 |
@@ -63,11 +63,11 @@ flowchart TB
 
 **为什么 L0 通过仍不够。** 同一权重对不同 token 序列给出不同 logits 是正常行为；因此 weight compare 不能替代输入 dump 对账。
 
-### 3.1 debug replay 固定的是训练输入，不是生成随机过程
+### 3.1 调试回放固定的是训练输入，不是生成时的随机过程
 
 `--load-debug-rollout-data` 直接反序列化已保存 Sample，并跳过新的 rollout；可选 subsample 也只是从 dump 取首尾子集。[`rollout.py:671-684`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L671-L684) 官方 debug 文档把它的用途明确写成“固定训练部分输入，去除 rollout 随机性”，并区分 rollout-only 与 train-only。[`debug.md:26-49`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/developer_guide/debug.md#L26-L49)
 
-> **分析判断**：这类 replay 适合回答“同一批 Sample 换并行度或 kernel 后是否仍得到同一训练行为”，但不能回答“重新发起采样能否产生同一 response”；后者还需要确定性采样 seed 与推理 kernel。
+> **分析判断**：这类回放适合回答“同一批 Sample 更换并行度或 kernel 后是否仍得到相同训练行为”，但不能回答“重新采样能否产生同一 response”；后者还需要固定采样随机种子，并使用确定性的推理 kernel。
 
 ## 4. L2 采样分布：相同 token 也可能来自不同支持集
 
@@ -84,7 +84,7 @@ $$
 
 训练侧即使对同一已采样 token 重算 full-softmax，也没有在重建这个 $q_t$。SGLang 请求传入 temperature/top-p/top-k 并要求返回 selected-token logprob；top-p 非 1 时还请求每 token 的 nucleus ids。[`sglang_rollout.py:94-107`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L94-L107) [`sglang_rollout.py:175-182`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L175-L182)
 
-**源码事实：behavior metadata 是最小重放载荷。** `Sample` 保存 selected-token `rollout_log_probs`、ragged top-p ids/offsets 和 routed experts，而不是保存每步完整词表 logits。[`types.py:114-128`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L114-L128) converter 只有在字段存在或功能开启时才把这些条件字段送进 trainer；top-p 开启却缺 payload 会在转换或 loss 入口失败，不会静默退回 full softmax。[`rollout.py:828-852`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L828-L852) [`loss.py:83-94`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L83-L94)
+**源码事实：行为策略元数据是完成重放所需的最小数据。** `Sample` 保存选中 token 的 `rollout_log_probs`、不等长的 top-p ids/offsets 和路由专家，而不是保存每一步的完整词表 logits。[`types.py:114-128`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L114-L128) 转换器只在字段存在或功能已开启时，才把这些条件字段送入训练器；启用 top-p 却缺少相应数据时，会在转换或 loss 入口报错，不会静默退回完整 softmax。[`rollout.py:828-852`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L828-L852) [`loss.py:83-94`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L83-L94)
 
 训练重算先按 rollout temperature 缩放 logits，再依据 ragged nucleus 为 response row 建 keep mask；该 mask 覆盖 CP 本地、CP all-gather 与 TP vocab shard 情形。[`loss.py:349-429`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L349-L429) [`loss.py:513-589`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L513-L589)
 
@@ -109,7 +109,7 @@ $$
 
 > **分析判断**：R3 是强诊断/校正手段，不是“原生训推路由相等”的证据。它能把离散 expert id 固定下来，却也会掩盖 router 本身为何分叉；因此应同时保留“自然路由 gate”和“强制 replay 定界”两种测试。
 
-## 6. L4 kernel 与精度：相同路由后仍可能逐层漂移
+## 6. L4 kernel 与精度：路由相同后，数值仍可能逐层偏离
 
 **问题背景与不变量。** dense/MoE GEMM、attention、RMSNorm、LM head、KV cache 和量化链都可能改变舍入与规约顺序。官方文档把严格 train/rollout logprob alignment 限定为 **GLM-5 结构**，要求 deterministic SGLang、batch-invariant DeepGEMM/DeepEP 和专用 Megatron patch；支持范围包括 DSA、block-FP8 forward、BF16 backward、FP32 router、匹配精度的 BF16 LM head 和 BF16/FP8 KV cache。[`reproducibility.md:53-69`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/reproducibility.md#L53-L69)
 
@@ -121,7 +121,7 @@ DeepGEMM 对齐 forward 还复制 SGLang 的 block-FP8 量化路径；Blackwell 
 
 **为什么 L3 通过仍不够。** route ids 只决定调用哪些 experts，不决定 expert GEMM 的量化、输入 dtype、累加次序或 combine 精度；相同专家仍可产生不同 hidden states。
 
-## 7. L5 batch 与并行执行：同 kernel 名称也可能走不同规约树
+## 7. L5 批次与并行执行：同名 kernel 也可能采用不同的规约顺序
 
 **问题背景与不变量。** rollout 的 continuous batching、SGLang TP/DP/EP 与训练的 dynamic micro-batch、TP/PP/CP/EP 会改变 shape、分片和 collective 顺序。strict alignment 的 global batch-invariant hook 之所以不仅设置 DeepGEMM，是因为 Megatron 与 SGLang 分属不同进程，RMS reduction、BMM、FP32 matmul 和 log-softmax 仍可能走普通 batch-shaped kernel。[`deepgemm_forward.py:690-711`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/alignment/deepgemm_forward.py#L690-L711)
 
@@ -131,7 +131,7 @@ pipeline 也不是透明维度：每个 PP stage 的首个本地 layer 没有本
 
 **为什么 L4 通过仍不够。** “两侧都调用某种 GEMM/attention”没有固定输入分块和 reduction tree。除非算子本身满足 batch invariance，或端到端测试覆盖目标拓扑，否则局部 kernel 对齐不能推出完整并行执行对齐。
 
-## 8. deterministic inference 的准确范围
+## 8. 确定性推理能保证到什么范围
 
 **项目文档事实。** reproducibility 文档把 SGLang deterministic inference 与 Megatron deterministic mode 组合成 bitwise experiment reproduction recipe，要求使用 FlashInfer、卸载 FlashAttention 3，并设置 NCCL、Transformer Engine 与 CUBLAS 环境变量。[`reproducibility.md:3-26`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/reproducibility.md#L3-L26)
 
@@ -150,7 +150,7 @@ pipeline 也不是透明维度：每个 PP stage 的首个本地 layer 没有本
 
 | 门禁 | 固定了什么 | 断言 | 能证明什么 | 不能证明什么 |
 |---|---|---|---|---|
-| CPU contract tests | Sample/top-p/routing shape 与比较工具 | 异常 payload 失败、比较逻辑正确 | 元数据契约与诊断工具不静默失真 | 真实 GPU kernel 一致 |
+| CPU 接口测试 | Sample/top-p/routing 数据形状与比较工具 | 异常输入会失败、比较逻辑正确 | 元数据约定与诊断工具不会静默失真 | 真实 GPU kernel 一致 |
 | parallel check | 同一 rollout dump，不同 DP/TP/PP/CP | grad norm 近似相等 | 目标 Qwen 配置下并行训练结果不过度漂移 | 逐 token、逐位训推对齐 |
 | GLM-5 e2e | 真实 weight update、DSA、FP8 DeepGEMM、DeepEP EP8 | mean train/rollout logprob abs diff 小于 `1e-6` | 该固定 recipe 的最终 behavior gate | 其他模型、拓扑、backend |
 | GLM-5 layerwise | 同一短序列，decoder layer 0–5 | 所有匹配 hidden element 最大误差为 0 | 首六层边界 bitwise 对齐 | 长生成最终分布与训练更新 |
@@ -167,10 +167,10 @@ GLM-5 e2e 的 fixture 是单机 EP8、3 dense + 3 MoE layer，配置明确开启
 | 强化手段 | 得到的诊断能力 | 代价或限制 |
 |---|---|---|
 | 保存 rollout/train dump | 固定输入并逐 sample 对账 | CPU/磁盘 I/O、存储与敏感数据治理成本 |
-| behavior metadata | 重建 selected-token 概率、top-p 支持集与路由 | 每 token 元数据传输；top-p/routing payload 随序列、层数和 top-k 增长 |
+| 行为策略元数据 | 重建选中 token 的概率、top-p 候选集与路由 | 每个 token 都要传输元数据；top-p/routing 数据量随序列长度、层数和 top-k 增长 |
 | mismatch 重算 | 直接观测 train/rollout logprob 差 | 某些配置需额外训练侧 forward；实现会明确记录这一点 [`arguments.py:1849-1860`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1849-L1860) |
 | R3 routing replay | 隔离 MoE 离散路由差异 | 保存/搬运 per-token、per-layer expert ids，并不能证明自然 router 对齐 |
-| deterministic algorithms | run-to-run 稳定与失败即暴露 | 禁止无确定性实现的算子，限制可选 kernel；当前 recipe 还要求 FlashInfer/移除 FA3 |
+| 确定性算法 | 多次运行结果稳定，无法确定执行时立即暴露错误 | 禁止没有确定性实现的算子，限制可选 kernel；当前示例还要求使用 FlashInfer/移除 FA3 |
 | GLM-5 alignment stack | layerwise zero 与低于 `1e-6` 的 e2e gate | 模型结构、patch、DeepGEMM/DeepEP、KV dtype 和部分拓扑受限；dense probe 起步为 TP1 |
 
 > **分析判断**：确定性越强，吞吐优化器可自由选择的算法、batch shape 与通信路径越少；但固定基线没有给出一项可泛化到所有模型的统一性能税，因此不应在这里编造百分比。工程上更稳妥的是分级启用：日常记录轻量 behavior 指标，异常时先 replay 固定输入，再在可复现的小模型/短序列上打开 layerwise 与严格 kernel stack。
@@ -195,7 +195,7 @@ slime 可以用 rollout logprob 作为 behavior old policy，或重算 train old
 
 ## Related Pages
 
-- [[12_slime_sample_datasource_analysis]] — behavior metadata、token mask、partial append 与 debug dump 所依赖的 Sample 语义边界。
+- [[12_slime_sample_datasource_analysis]] — 行为策略元数据、token mask、中断续写与调试数据导出所依赖的 Sample 语义边界。
 - [[15_slime_loss_parallelism_analysis]] — logprob mismatch、TIS 与 reducer 的统计口径和目标函数语义。
 - [[16_slime_weight_sync_analysis]] — L0 权重快照背后的 pause/flush、拓扑转换与提交协议。
 - [[31_slime_posttraining_stability_analysis]] — 训推 mismatch 如何与版本陈旧、数值异常和训练失稳共同进入稳定性诊断。

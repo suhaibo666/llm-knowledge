@@ -1,4 +1,4 @@
-# slime 在线投机解码与 MTP 分析：draft 必须随 actor 一起版本化
+# slime 在线投机解码与 MTP：草稿模型必须与 actor 保持同一版本
 
 > **slime 源码基线**：`THUDM/slime main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`（2026-08-12）
 > **SGLang 核验基线**：`sgl-project/sglang v0.5.15.post1@0b3bb0cbe31873994c9f989fddfe2f87ca839fdd`；这是 slime 同一提交声明的当前 stable 组合。[`docker/README.md:3-8`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docker/README.md#L3-L8)
@@ -18,7 +18,7 @@
 
 第二点不等于声称任意 speculative 配置都严格保持某个抽象 target 分布。锁定的 SGLang EAGLE 路径确实先执行 target verify，再用 target logits 采样/验收，并从被接受位置的 target logits 计算返回 logprob；但它同时暴露 target-only acceptance threshold 与可选 rejection sampling，不同参数走不同 kernel。[`eagle_worker_v2.py:1543-1611`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/speculative/eagle_worker_v2.py#L1543-L1611) [`eagle_utils.py:620-715`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/speculative/eagle_utils.py#L620-L715) 因而本页只作源码能支持的窄结论：**训练消费的是 target verify 后的 token，并可消费从 target logits 计算的 accepted-token logprob**；不把它推广成所有算法、阈值和采样设置下的通用分布等价定理。[`logprob.py:295-333`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/layers/utils/logprob.py#L295-L333)
 
-### 1.1 为什么“常驻一个静态 draft 服务”不够
+### 1.1 为什么“常驻一个静态草稿模型服务”不够
 
 静态独立 draft checkpoint 只在进程启动时给 SGLang 一份候选模型；slime 文档允许用 `--sglang-speculative-draft-model-path` 配置它，却同时把“外部 draft model 的训练”标为 WIP。[`docs/en/advanced/speculative-decoding.md:16-22`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/advanced/speculative-decoding.md#L16-L22) [`docs/en/advanced/speculative-decoding.md:36-38`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/advanced/speculative-decoding.md#L36-L38)
 
@@ -40,7 +40,7 @@ flowchart LR
 
 这条环路有三个平面：
 
-| 平面 | 状态所有者 | 本页关心的不变量 |
+| 层面 | 状态责任主体 | 本页关心的不变量 |
 |---|---|---|
 | 训练 | Megatron actor 中的主干与 MTP block | MTP 有 checkpoint 权重、收到辅助训练信号并参加 optimizer step |
 | 发布 | slime 的 Megatron→HF 转换与 weight updater | 主干和 MTP 都被枚举、转换并送入同一版本窗口 |
@@ -94,7 +94,7 @@ model provider 在 `mtp_num_layers` 非空时调用 Megatron 的 `get_gpt_mtp_bl
 
 这个所有权从 checkpoint 开始：官方文档要求 HF→torch-dist 转换时也带 `--mtp-num-layers 1`，否则在线任务没有可加载的 MTP 权重。[`docs/en/advanced/speculative-decoding.md:30-36`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/advanced/speculative-decoding.md#L30-L36) E2E 测试同样先用该参数转换 MiMo checkpoint，再在训练命令中同时启用 EAGLE 和 MTP training。[`tests/test_mimo_7B_mtp_only_grad.py:21-34`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_mimo_7B_mtp_only_grad.py#L21-L34) [`tests/test_mimo_7B_mtp_only_grad.py:90-109`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_mimo_7B_mtp_only_grad.py#L90-L109)
 
-### 4.2 MTP 是辅助目标，不替换 policy evidence
+### 4.2 MTP 是辅助训练目标，不替代策略训练所需的数据
 
 普通训练 forward 仍以 `batch["tokens"]` 驱动 actor；打开 MTP training 时，slime 额外把同一 tokens 作为 `mtp_labels` 传给 GPTModel。optimizer 随后对这一模型执行 step。[`model.py:576-641`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L576-L641) [`model.py:656-680`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L656-L680)
 
@@ -108,7 +108,7 @@ CI 在全截断场景检查：非 MTP 参数的非零梯度数必须为 0，同�
 
 测试没有证明任意权重 transport 都会同时更新 SGLang draft，也没有证明更低 MTP loss 必然带来端到端吞吐提升；这两点需要分别审计同步路径和 wall-clock 指标。
 
-## 5. 权重同步：MTP 名称进入发布不等于所有 transport 都更新 draft
+## 5. 权重同步：MTP 参数进入发布列表，不代表所有传输方式都会更新草稿模型
 
 ### 5.1 先把训练参数翻译成 rollout 能加载的名字
 
@@ -124,7 +124,7 @@ actor 按 transport 选择 updater：disk 使用 disk updater，colocate 使用 
 
 锁定的 SGLang tensor 入口会把同一批 named tensors 先交给 draft runner，再交给 target runner；disk 和 IPC 入口也先更新 target、再显式更新 draft worker。[`eagle_worker_v2.py:1752-1785`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/speculative/eagle_worker_v2.py#L1752-L1785) [`weight_updater.py:108-178`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/scheduler_components/weight_updater.py#L108-L178) 这为 colocate tensor/disk 路径提供了“同批 payload 覆盖两侧”的源码证据。
 
-### 5.3 一个必须暴露的 transport 缺口
+### 5.3 一个必须明确说明的传输能力缺口
 
 锁定的 SGLang distributed 更新入口只调用 `tp_worker.update_weights_from_distributed`，没有调用 `draft_worker`；同一文件的 tensor 入口才会在 draft worker 与 target worker之间选择/转发。[`weight_updater.py:136-164`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/scheduler_components/weight_updater.py#L136-L164) 与之对应，slime 非 colocate full+NCCL 正是调用 `/update_weights_from_distributed`。[`update_weight_from_distributed.py:326-355`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L326-L355)
 
@@ -137,7 +137,7 @@ slime 的 `post_process_weights` endpoint 用于 compressed-tensors 的 restore-
 
 所以 MTP 新鲜度来自“枚举→架构转换→实际更新 draft runner”的完整链，不来自笼统的 postprocess 调用。slime 还固定打开 `enable_draft_weights_cpu_backup`；该标志解决的是 memory-saver release/resume 时保存 draft 权重，不替代每轮在线发布。[`sglang_engine.py:544-570`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L544-L570) [`server_args.py:2587-2592`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/server_args.py#L2587-L2592)
 
-## 6. 请求证据与接受率：最终 token 链可靠，指标 ABI 却已漂移
+## 6. 请求记录与接受率：最终 token 链可靠，但指标接口已经变化
 
 ### 6.1 target verify 后的证据如何回到训练
 
@@ -195,7 +195,7 @@ combined 1F1B 的 forward path 对 `enable_mtp_training` 有显式断言，因�
 4. **证据**：核对 response token/logprob 来自 verify 后路径，并确认 Sample 中版本与 token span 对齐。
 5. **观测**：先修 metadata ABI，再比较 acceptance、accept length 与端到端 wall time；仅在同请求分布和同采样参数下做 A/B。
 
-## 8. 为什么“把 MTP 当推理 flag”会失败
+## 8. 为什么只把 MTP 当成推理开关会失败
 
 把 MTP 当成 `--sglang-speculative-algorithm EAGLE` 的同义词，会漏掉四个在线系统事实：
 
@@ -204,7 +204,7 @@ combined 1F1B 的 forward path 对 `enable_mtp_training` 有显式断言，因�
 3. weight commit 必须同时到达 SGLang target 与 draft，而不是只更新 target version；
 4. rollout 仍要把 target verify 后的 token/logprob作为训练证据，并用可靠的接受指标判断 draft 是否值得运行。
 
-> **设计分析**：静态推理优化问的是“这个 draft 在当前 target 上快不快”；在线后训练问的是“每次 actor 更新后，谁训练 draft、谁发布它、谁证明 target/draft 同版本、谁证明训练证据仍来自 target verify”。slime 已经实现了模型内 MTP 的大部分闭环，但锁定基线仍暴露 distributed draft 更新与 metric ABI 两个需要部署者主动验证的接缝。忽略这些接缝，系统不会立即报出一个统一错误；更常见的是静默的接受率退化、错误的零指标，或 target 已更新而 draft 仍陈旧。
+> **设计分析**：静态推理优化问的是“这个草稿模型在当前目标模型上快不快”；在线后训练还要回答“每次 actor 更新后，谁训练草稿模型、谁发布它、谁证明目标/草稿模型版本一致、谁证明训练记录仍来自目标模型验证”。slime 已经实现了模型内 MTP 的大部分闭环，但固定基线仍有两个需要部署者主动验证的边界：分布式草稿模型更新和指标接口。忽略这些边界时，系统通常不会立即报出统一错误，更常见的是接受率悄悄下降、指标错误地变成零，或目标模型已经更新而草稿模型仍然陈旧。
 
 ## Related Pages
 

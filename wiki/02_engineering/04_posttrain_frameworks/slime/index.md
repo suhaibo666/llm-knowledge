@@ -5,9 +5,12 @@
 > **核验日期**：2026-08-18
 > **系列范围**：21 篇源码级分析，覆盖入口配置、Ray 控制面、Sample/DataSource 数据面、SGLang rollout、Megatron 训练、loss/并行、权重同步、训推一致性、容错观测、rollout backend 扩展、vime/vLLM 衍生实现、OPD、在线 MTP、低精度、新架构、Agent 工作流、吞吐优化与稳定性。
 
-slime 是一套 **SGLang-native、Megatron-native 的 RL post-training 编排框架**。它没有在两套引擎之上再造一个最低公分母 engine abstraction，而是让原生参数和特性继续透传，把自身复杂度集中在 RL loop、数据契约、调度、权重提交和正确性检查上。[`README_zh.md:9-24`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L9-L24) [`README_zh.md:36-50`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L36-L50)
+slime 是一套直接使用 SGLang 和 Megatron 原生能力的 RL 后训练编排框架。它没有在两套引擎之上再设计一个只保留公共能力的统一引擎抽象层，而是让原生参数和特性继续透传，把自身复杂度集中在 RL 训练闭环、数据约定、调度、权重提交和正确性检查上。[`README_zh.md:9-24`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L9-L24) [`README_zh.md:36-50`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L36-L50)
 
-## 1. 中央命题：一条显式闭环，五个彼此独立的平面
+> [!note] 中文术语约定
+> 类名、参数名和协议字段（如 `RolloutManager`、`rollout_id`、`top_p`）保留源码写法；`rollout`、actor/critic、checkpoint、logprob 等已广泛使用的术语按需保留英文。普通叙述优先使用中文工程用语：owner 写作“责任主体/状态归属”，admission 写作“准入控制”，freshness 写作“策略时效性/样本陈旧度”，measure 写作“统计口径”，productive throughput 写作“有效训练吞吐”。
+
+## 1. 核心结构：一条显式闭环，五类相对独立的职责
 
 ```mermaid
 flowchart LR
@@ -21,34 +24,34 @@ flowchart LR
 
 README 自己把系统压缩成 training、rollout 和 data buffer 三模块；源码进一步揭示两个不能忽略的横切面：Ray 负责资源与 actor 生命周期，weight updater 负责训练状态到服务状态的版本化提交。[`README_zh.md:85-93`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L85-L93) [`placement_group.py:120-137`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L120-L137) [`actor.py:151-182`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L151-L182)
 
-| 平面 | 主要 owner | 对外契约 | 本系列页面 |
+| 职责层面 | 主要责任代码 | 对外提供什么 | 本系列页面 |
 |---|---|---|---|
 | 入口/配置 | `train.py`、`train_async.py`、`utils/arguments.py` | CLI、SGLang 参数透传、角色 YAML | [[02_engineering/04_posttrain_frameworks/slime/02_slime_quickstart_and_configuration_guide]] |
 | 控制 | `ray/placement_group.py`、`ray/actor_group.py`、`ray/rollout.py` | Ray actor、placement group、生命周期 RPC | [[02_engineering/04_posttrain_frameworks/slime/11_slime_ray_control_plane_analysis]] |
-| 数据 | `utils/types.py`、`rollout/data_source.py` | `Sample`、group、buffer、train-data dict | [[02_engineering/04_posttrain_frameworks/slime/12_slime_sample_datasource_analysis]] |
-| 生成 | `rollout/sglang_rollout.py`、SGLang engine/router | async generate、RM、filter、partial、custom hook | [[02_engineering/04_posttrain_frameworks/slime/13_slime_sglang_rollout_engine_analysis]] |
+| 数据 | `utils/types.py`、`rollout/data_source.py` | `Sample`、分组、缓冲区、训练输入字典 | [[02_engineering/04_posttrain_frameworks/slime/12_slime_sample_datasource_analysis]] |
+| 生成 | `rollout/sglang_rollout.py`、SGLang 引擎/路由器 | 异步生成、RM、过滤、部分结果、自定义钩子 | [[02_engineering/04_posttrain_frameworks/slime/13_slime_sglang_rollout_engine_analysis]] |
 | 训练 | `backends/megatron_utils/actor.py`、`data.py` | actor/ref/teacher/critic 切换、packed micro-batch | [[02_engineering/04_posttrain_frameworks/slime/14_slime_megatron_training_analysis]] |
-| 算法/loss | `loss.py`、`cp_utils.py`、`dp_schedule.py` | advantage、policy/value/SFT loss、全局 reducer | [[02_engineering/04_posttrain_frameworks/slime/15_slime_loss_parallelism_analysis]] |
+| 算法/loss | `loss.py`、`cp_utils.py`、`dp_schedule.py` | advantage、policy/value/SFT loss、全局归约器 | [[02_engineering/04_posttrain_frameworks/slime/15_slime_loss_parallelism_analysis]] |
 | 权重 | `update_weight/*`、`SGLangEngine` | pause/flush/transfer/version/resume | [[02_engineering/04_posttrain_frameworks/slime/16_slime_weight_sync_analysis]] |
 | 运维 | health monitor、debug dump、trace、profiler、CI | recovery、replay、trace carrier、正确性门禁 | [[02_engineering/04_posttrain_frameworks/slime/18_slime_fault_tolerance_observability_analysis]] |
 
-## 2. 从系统问题出发：先找 owner，再看机制
+## 2. 从系统问题出发：先找责任主体，再看机制
 
-同一个现象可能跨越多个平面。定位时先找到**拥有该不变量的模块**，再进入机制页；否则很容易用性能开关掩盖数据错误，或用进程恢复替代状态恢复。
+同一个现象可能跨越多个职责层面。定位时先找到**负责保证该不变量的模块**，再进入机制页；否则很容易用性能开关掩盖数据错误，或用进程恢复替代状态恢复。
 
-| 你要回答的问题 | 首要 owner / 页面 | 核心设计选择 | 主要代价或边界 |
+| 你要回答的问题 | 责任主体 / 页面 | 核心设计选择 | 主要代价或边界 |
 |---|---|---|---|
 | 系统为什么这样拆，单轮何时完成 | [[02_engineering/04_posttrain_frameworks/slime/01_slime_architecture_overview_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/10_slime_end_to_end_iteration_analysis]] | 薄编排层直连 Megatron/SGLang；一轮按 generate → train → publish 显式推进 | 原生能力暴露充分，但跨引擎耦合不会被统一接口隐藏 |
 | CLI/YAML 如何变成运行时对象 | [[02_engineering/04_posttrain_frameworks/slime/02_slime_quickstart_and_configuration_guide]] | 配置不是参数清单，而是对象图和不变量的装配协议 | 原生参数升级会改变组合 ABI，必须随固定依赖重验 |
-| GPU、actor、server、engine 分别归谁管理 | [[02_engineering/04_posttrain_frameworks/slime/11_slime_ray_control_plane_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/13_slime_sglang_rollout_engine_analysis]] | Ray 管资源与 actor 生命周期，RolloutManager 管逻辑生成，engine/server 管服务状态 | “对象活着”不等于请求、权重或逻辑 rollout 状态完整 |
-| partial、tool token、fanout fragments 应怎样训练 | [[02_engineering/04_posttrain_frameworks/slime/12_slime_sample_datasource_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/24_slime_agent_workflow_examples_analysis]] | `Sample` 保存 token provenance；flatten 后用 `rollout_id` 保留逻辑 execution 身份 | 可变轨迹和 hook 很灵活，但 mask、metadata、group identity 必须显式守约 |
-| 并行或 fanout 后，loss 是否还是同一目标 | [[02_engineering/04_posttrain_frameworks/slime/14_slime_megatron_training_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/15_slime_loss_parallelism_analysis]] | trainer 消费 packed dict；reducer 把物理切分重新锚定到 token/step/rollout measure | 分母或统计单位错位通常不会报错，只会静默改变优化目标 |
-| 推理副本何时算完成一次新权重提交 | [[02_engineering/04_posttrain_frameworks/slime/16_slime_weight_sync_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/17_slime_train_inference_consistency_analysis]] | 先做 topology-neutral 逻辑转换，再以 pause/flush/version/transport/resume 提交 | 提交屏障有吞吐成本；同 version 也不能推出 token/logprob/kernel 一致 |
+| GPU 资源、训练 actor、服务实例和推理引擎分别由谁管理 | [[02_engineering/04_posttrain_frameworks/slime/11_slime_ray_control_plane_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/13_slime_sglang_rollout_engine_analysis]] | Ray 管资源与 actor 生命周期，RolloutManager 管逻辑生成，推理引擎/服务进程管理服务状态 | “对象活着”不等于请求、权重或逻辑 rollout 状态完整 |
+| partial、工具 token、扇出片段应怎样训练 | [[02_engineering/04_posttrain_frameworks/slime/12_slime_sample_datasource_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/24_slime_agent_workflow_examples_analysis]] | `Sample` 保存 token 来源与生成记录；展平后用 `rollout_id` 保留逻辑执行标识 | 可变轨迹和钩子很灵活，但 mask、元数据和分组标识必须显式守约 |
+| 并行或扇出后，loss 是否还是同一目标 | [[02_engineering/04_posttrain_frameworks/slime/14_slime_megatron_training_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/15_slime_loss_parallelism_analysis]] | 训练器读取打包后的输入字典；归约器把设备切分重新还原到 token/训练步/rollout 统计口径 | 分母或统计单位错位通常不会报错，只会悄悄改变优化目标 |
+| 推理副本何时算完成一次新权重提交 | [[02_engineering/04_posttrain_frameworks/slime/16_slime_weight_sync_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/17_slime_train_inference_consistency_analysis]] | 先转换为拓扑无关的逻辑权重，再以 pause/flush/version/transport/resume 提交 | 提交屏障有吞吐成本；同一版本也不能推出 token、logprob 和 kernel 一致 |
 | engine 失败、训练漂移或重启后怎样取证 | [[02_engineering/04_posttrain_frameworks/slime/18_slime_fault_tolerance_observability_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/31_slime_posttraining_stability_analysis]] | 局部 engine recovery 与固定 Sample replay 分开；按四个控制环做判别实验 | 没有跨 DataSource、trainer、engine 的全局 exactly-once 事务 |
-| 新 RM、agent、模型或 rollout backend 应接在哪一层 | [[02_engineering/04_posttrain_frameworks/slime/19_slime_rollout_backend_extension_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/23_slime_model_architecture_extension_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/24_slime_agent_workflow_examples_analysis]] | 选择能表达需求的最窄扩展边界；真正新 backend 必须实现生命周期与权重契约 | 扩展点越靠下能力越完整，维护的 native invariants 也越多 |
+| 新 RM、agent、模型或 rollout 后端应接在哪一层 | [[02_engineering/04_posttrain_frameworks/slime/19_slime_rollout_backend_extension_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/23_slime_model_architecture_extension_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/24_slime_agent_workflow_examples_analysis]] | 选择能表达需求的最窄扩展边界；真正的新后端必须实现生命周期与权重契约 | 扩展点越靠下能力越完整，需要维护的原生约束也越多 |
 | OPD、在线 MTP、低精度改变了哪些耦合 | [[02_engineering/04_posttrain_frameworks/slime/20_slime_on_policy_distillation_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/21_slime_speculative_decoding_mtp_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/22_slime_low_precision_training_rollout_analysis]] | teacher/draft 复用现有 Sample/train ABI；target/draft 与各精度轴分别管理 | 新角色增加 placement/version 耦合；“一个 dtype”不能概括全链精度 |
-| 想使用 vLLM，是否只需替换 `generate()` | [[02_engineering/04_posttrain_frameworks/slime/25_vime_vllm_backend_support_analysis]] | vime 以独立 fork 替换 rollout、router、请求和权重提交接缝 | 这是另一条源码/镜像基线，不是 upstream slime 内置 backend |
-| tok/s 上升为何训练仍不快或更不稳 | [[02_engineering/04_posttrain_frameworks/slime/30_slime_rollout_optimization_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/31_slime_posttraining_stability_analysis]] | 用 productive throughput 与闭环关键路径定位瓶颈，再检查数据/版本/数值/基础设施控制环 | 并发、PD、filter、overlap、clip 或 restart 都可能只移动瓶颈或压低症状 |
+| 想使用 vLLM，是否只需替换 `generate()` | [[02_engineering/04_posttrain_frameworks/slime/25_vime_vllm_backend_support_analysis]] | vime 通过独立派生仓库替换 rollout、路由器、请求协议和权重提交边界 | 这是另一条源码/镜像基线，不是上游 slime 的内置后端 |
+| tok/s 上升为何训练仍不快或更不稳 | [[02_engineering/04_posttrain_frameworks/slime/30_slime_rollout_optimization_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/31_slime_posttraining_stability_analysis]] | 用有效训练吞吐与闭环关键路径定位瓶颈，再检查数据、版本、数值和基础设施控制环 | 并发、PD、过滤、阶段重叠、截断或重启都可能只移动瓶颈或压低症状 |
 
 推荐按目的阅读：
 
@@ -56,7 +59,7 @@ README 自己把系统压缩成 training、rollout 和 data buffer 三模块；�
 - **理解数据与梯度**：[[02_engineering/04_posttrain_frameworks/slime/12_slime_sample_datasource_analysis]] → [[02_engineering/04_posttrain_frameworks/slime/14_slime_megatron_training_analysis]] → [[02_engineering/04_posttrain_frameworks/slime/15_slime_loss_parallelism_analysis]] → [[02_engineering/04_posttrain_frameworks/slime/17_slime_train_inference_consistency_analysis]]。
 - **理解服务与提交**：[[02_engineering/04_posttrain_frameworks/slime/13_slime_sglang_rollout_engine_analysis]] → [[02_engineering/04_posttrain_frameworks/slime/16_slime_weight_sync_analysis]] → [[02_engineering/04_posttrain_frameworks/slime/18_slime_fault_tolerance_observability_analysis]]。
 - **做扩展与选型**：先读 [[02_engineering/04_posttrain_frameworks/slime/19_slime_rollout_backend_extension_analysis]]，再按需求进入 [[02_engineering/04_posttrain_frameworks/slime/20_slime_on_policy_distillation_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/21_slime_speculative_decoding_mtp_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/22_slime_low_precision_training_rollout_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/23_slime_model_architecture_extension_analysis]]、[[02_engineering/04_posttrain_frameworks/slime/24_slime_agent_workflow_examples_analysis]] 或 [[02_engineering/04_posttrain_frameworks/slime/25_vime_vllm_backend_support_analysis]]。
-- **做性能与故障诊断**：[[02_engineering/04_posttrain_frameworks/slime/30_slime_rollout_optimization_analysis]] → [[02_engineering/04_posttrain_frameworks/slime/31_slime_posttraining_stability_analysis]]，再回到表中对应的机制 owner。
+- **做性能与故障诊断**：[[02_engineering/04_posttrain_frameworks/slime/30_slime_rollout_optimization_analysis]] → [[02_engineering/04_posttrain_frameworks/slime/31_slime_posttraining_stability_analysis]]，再回到表中对应的机制详解页。
 
 ## 3. 全量页面与推荐顺序
 
@@ -82,7 +85,7 @@ README 自己把系统压缩成 training、rollout 和 data buffer 三模块；�
 | 2 | [[02_engineering/04_posttrain_frameworks/slime/23_slime_model_architecture_extension_analysis]] | custom provider、ModuleSpec/HF wrapper、双向权重映射 |
 | 2 | [[02_engineering/04_posttrain_frameworks/slime/24_slime_agent_workflow_examples_analysis]] | adapter、trajectory、tool/sandbox、fan-out 与 coding agent |
 | 2 | [[02_engineering/04_posttrain_frameworks/slime/25_vime_vllm_backend_support_analysis]] | vime 如何保留 slime 上层、替换为 vLLM/vllm-router，以及逐能力支持度与缺口 |
-| 3 | [[02_engineering/04_posttrain_frameworks/slime/30_slime_rollout_optimization_analysis]] | productive throughput、容量/关键路径账本与负收益反例 |
+| 3 | [[02_engineering/04_posttrain_frameworks/slime/30_slime_rollout_optimization_analysis]] | 有效训练吞吐、容量/关键路径账本与负收益反例 |
 | 3 | [[02_engineering/04_posttrain_frameworks/slime/31_slime_posttraining_stability_analysis]] | 数据、策略版本、估计量/数值、基础设施四控制环与判别实验 |
 
 ## 4. 官方支持特性与源码解读覆盖矩阵

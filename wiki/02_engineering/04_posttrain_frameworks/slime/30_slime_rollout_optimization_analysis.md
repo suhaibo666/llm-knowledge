@@ -6,17 +6,17 @@
 > **核验日期**：2026-08-18
 > **系列入口**：[[02_engineering/04_posttrain_frameworks/slime/index|slime]]
 > **证据边界**：机制结论来自上述 slime 固定提交；PD、投机解码与低精度的适用描述来自同提交项目文档。SGLang 内部 scheduler/kernel 不在本页源码基线内，因此不推断其具体算法。
-> **结论先行**：Rollout 优化不是寻找一个“最快开关”，而是先找出训练闭环的瓶颈服务与更新关键路径，再只优化该项。SGLang decode tok/s 只是局部服务率；过滤/abort 的无效工作、队列与长尾、trainer 消费速度、offload 和权重发布、策略新鲜度都可能让局部加速无法转化为单位 wall time 的有效梯度。
+> **结论先行**：Rollout 优化不是寻找一个“最快开关”，而是先找出训练闭环中的瓶颈和权重更新关键路径，再只优化真正限制整体速度的部分。SGLang decode tok/s 只是局部服务速率；过滤或中止造成的无效工作、队列与长尾、训练器消费速度、显存卸载和权重发布、策略时效性，都可能让局部加速无法转化为单位时间内更多的有效梯度。
 
 ---
 
-## 1. 问题背景：为什么 aggregate tok/s 会把优化方向带偏
+## 1. 问题背景：为什么汇总 tok/s 容易把优化方向带偏
 
 slime 的一条训练数据不是“生成完 token 就结束”：请求还可能经过工具或 reward/verifier，按 group 被动态过滤，转换和调度后才被 trainer 消费；训练结束又要释放/恢复显存并发布新权重。同步入口把 generate、rollout offload、train、train offload、weight update 和 KV onload 串成明确的阶段序列。[`train.py:48-88`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L48-L88)
 
 ```mermaid
 flowchart LR
-    A["prompt 与 partial buffer"] --> B["admission 与排队"]
+    A["prompt 与部分结果缓冲区"] --> B["准入控制与排队"]
     B --> C["SGLang prefill decode"]
     C --> D["tool reward verifier"]
     D --> E{"是否接收"}
@@ -37,9 +37,9 @@ flowchart LR
 
 因此至少同时观察 accepted groups/s、进入 loss 的 token/s、attempted/accepted 比、生成与 reward 延迟分位数、queue age、trainer wait、权重版本年龄和端到端 step time。动态 filter 已按 reason 计数 drop；SGLang metadata trace 还保留 queue time、端到端 latency、decode throughput 以及 PD 子阶段时长，可作为诊断入口。[`filter_hub/base_types.py:40-52`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/filter_hub/base_types.py#L40-L52) [`trace_utils.py:16-44`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/trace_utils.py#L16-L44)
 
-## 2. 容量账本：先判定“谁供不上”
+## 2. 容量估算：先判断哪个环节供给不足
 
-### 2.1 请求服务率与 admission
+### 2.1 请求处理速率与准入控制
 
 把 group 作为调度单位。对 group $j$：
 
@@ -48,7 +48,7 @@ flowchart LR
 - $S_{\mathrm{post},j}$：离开生成临界区后的 hook、reward/verifier 主动服务时间；tool 若在 custom generate 内执行，则计入 $S_{\mathrm{gen},j}$；
 - $a_j\in\{0,1\}$：该 group 最终是否被接收。
 
-若 admission 速率为 $\lambda_{\mathrm{in}}$，各服务的可持续 group 处理率为 $\mu_{\mathrm{gen}}$、$\mu_{\mathrm{post}}$，稳定运行首先要求：
+若准入速率为 $\lambda_{\mathrm{in}}$，各服务可持续处理分组的速率为 $\mu_{\mathrm{gen}}$、$\mu_{\mathrm{post}}$，要稳定运行首先要求：
 
 $$
 \lambda_{\mathrm{in}}
@@ -58,9 +58,9 @@ $$
 
 这不是源码中的 scheduler 公式，而是**容量分析模型**。它提醒我们：提高生成并发只会提高 $\lambda_{\mathrm{in}}$ 或尝试填满 $\mu_{\mathrm{gen}}$；若 reward/tool 已经更慢，结果只会把等待从 SGLang 前移到下游。
 
-固定实现正好体现了这条边界：semaphore 只包住 generate/custom-generate 段，sample hook 与 reward 位于 semaphore 之外。[`sglang_rollout.py:224-287`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L224-L287) 因而 `sglang_server_concurrency` 是生成侧 admission cap，不是整个 rollout pipeline 的端到端并发上限；自定义 tool loop 是否占用该 semaphore，取决于它是否在 custom generate 内部完成。
+固定实现正好体现了这条边界：信号量只包住默认/自定义生成阶段，样本钩子与 reward 计算位于信号量之外。[`sglang_rollout.py:224-287`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L224-L287) 因而 `sglang_server_concurrency` 是生成侧的准入并发上限，不是整个 rollout 流程的端到端并发上限；自定义工具循环是否占用这个信号量，取决于它是否在自定义生成函数内部完成。
 
-### 2.2 accepted batch 的准备时间与长尾税
+### 2.2 有效训练批次的准备时间与长尾代价
 
 设目标 batch 需要 $B$ 个 accepted groups，$t_B$ 是第 $B$ 个有效 group 完成筛选的时刻，$T_{\mathrm{drain}}$ 是随后 abort、等待 pending task 收敛和回收 partial 的时间，则：
 
@@ -123,14 +123,14 @@ $$
 
 反例不是假设：项目 Qwen3 示例明确警告，单 server 并发超过默认 CUDA graph 并发 160 会影响推理速度，并建议限制 `sglang_server_concurrency` 或扩充 graph batch size。[`docs/zh/examples/qwen3-4B.md:281-290`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/examples/qwen3-4B.md#L281-L290)
 
-### 3.2 本地 DP 计数不等于生效的 router load balance
+### 3.2 本地 DP 计数不等于路由器实际采用的负载均衡
 
 源码里的 `dp_rank_context()` 会选择当前计数最小的 rank 并维护 in-flight count。[`sglang_rollout.py:113-129`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L113-L129) 但在固定基线的默认路径中，yield 出来的 rank 被写成 `as _`，HTTP payload 仍只发到 router `/generate`，没有携带该 rank；唯一显式的 worker-affinity 信息是 consistent-hashing 时的 session header。[`sglang_rollout.py:245-262`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L245-L262) [`sglang_rollout.py:152-203`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L152-L203)
 
 > [!warning] 源码事实与常见表述的边界
-> 不能据此把“最少在途 rank”写成默认请求的实际负载均衡算法。slime 在这里负责 admission 与可选 session affinity；router 如何在 worker 间选择请求属于 SGLang/Model Gateway 的实现边界，需另钉 SGLang 基线后分析。
+> 不能据此把“在途请求最少的 rank”写成默认请求实际采用的负载均衡算法。slime 在这里负责准入控制与可选的会话亲和；路由器如何在 worker 之间选择请求属于 SGLang/Model Gateway 的实现边界，需要另外固定 SGLang 版本后分析。
 
-这也给出调参顺序：先看各 worker 的 queue/KV/latency 是否失衡；若是 session affinity 导致热点，调整 router policy 或 key；若所有 worker 同时欠载，再增加 slime admission。
+这也给出了调参顺序：先看各 worker 的队列、KV 占用和延迟是否失衡；若是会话亲和导致热点，调整路由策略或 key；若所有 worker 都利用不足，再提高 slime 的准入并发数。
 
 ### 3.3 PD、投机/MTP 与低精度分别消除不同资源瓶颈
 
@@ -143,13 +143,13 @@ $$
 
 项目文档把 PD 的目标定位在 long-context、multi-turn、decode long tail 及异构 prefill/decode 配置，并明确短单轮任务用 regular layout 更简单。[`docs/zh/advanced/pd-disaggregation.md:3-15`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/pd-disaggregation.md#L3-L15) 它还把 prefill/decode transfer 与 queue 暴露成独立 trace 段，因而应先用这些阶段指标证明 PD 值得启用，而不是凭 workload 名称猜测。[`trace_utils.py:26-44`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/trace_utils.py#L26-L44)
 
-投机解码的项目文档明确指出：RL 使 draft/target 分布逐渐漂移时，通过验证的 draft token 减少，spec 甚至可能负收益；在线训练 MTP 是为缓解这个问题，外部 draft model 训练在该基线仍是 WIP。[`docs/zh/advanced/speculative-decoding.md:24-38`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/speculative-decoding.md#L24-L38) 其同步接缝与基线缺口由 [[21_slime_speculative_decoding_mtp_analysis|Speculative/MTP 专题]]负责。
+投机解码的项目文档明确指出：RL 使草稿模型与目标模型的分布逐渐漂移时，通过验证的草稿 token 会减少，投机解码甚至可能带来负收益；在线训练 MTP 正是为了缓解这个问题，而外部草稿模型训练在该基线中仍未完成。[`docs/zh/advanced/speculative-decoding.md:24-38`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/speculative-decoding.md#L24-L38) 同步边界与基线缺口见 [[21_slime_speculative_decoding_mtp_analysis|投机解码/MTP 专题]]。
 
 低精度文档把 BF16 training + FP8 rollout 列为推荐路径，并说明 FP8 KV cache 只改变 rollout 侧容量，实际精度/性能依赖 SGLang 版本和 GPU stack。[`docs/zh/advanced/low-precision.md:3-16`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/low-precision.md#L3-L16) [`docs/zh/advanced/low-precision.md:44-52`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/low-precision.md#L44-L52) 训练、rollout、KV 和通信精度不能合并成一个开关，详见 [[22_slime_low_precision_training_rollout_analysis|低精度专题]]。
 
-## 4. 调度侧旋钮：目标是降低 underfill 和长尾浪费
+## 4. 调度侧参数：目标是减少资源利用不足和长尾浪费
 
-### 4.1 first-completed、oversampling 与 dynamic filter
+### 4.1 优先取已完成样本、超额采样与动态过滤
 
 默认循环按 `FIRST_COMPLETED` 消费 group；若过滤后 remaining candidates 少于目标，就一次补 `over_sampling_batch_size` 个 group。[`sglang_rollout.py:400-436`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L400-L436) 这一组合解决的是“有效 batch 被 filter 打空”和“等待整批最慢任务”，不是减少单个 group 的服务时间。
 
@@ -177,7 +177,7 @@ partial 在 batch 已满后回收 unfinished group，下轮只生成剩余 token
 
 它适合 response 很长、abort 已生成前缀成本高的场景。反例是短 response 或权重频繁发布：abort/序列化/恢复开销可能大于省下的 decode；开启 mask 后旧 token 仍占 context/KV 却不贡献梯度，不开启则要接受跨版本 behavior。token、metadata 与 buffer 的完整语义由 [[12_slime_sample_datasource_analysis|Sample/DataSource 专题]]说明。
 
-### 4.3 fully async：消除 rollout batch boundary，不等于 train/generate overlap
+### 4.3 完全异步：消除 rollout 批次边界，不等于训练与生成一定重叠
 
 `fully_async_rollout.py` 用跨调用存活的后台 worker 保持固定 in-flight pool；完成 queue 达到一个 concurrency pool 时停止补新任务，每次 trainer 只取当前 batch 所需数量，surplus 留给下一轮。[`fully_async_rollout.py:48-90`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/fully_async_rollout.py#L48-L90) [`fully_async_rollout.py:131-171`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/fully_async_rollout.py#L131-L171) [`fully_async_rollout.py:211-266`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/fully_async_rollout.py#L211-L266)
 
@@ -187,7 +187,7 @@ partial 在 batch 已满后回收 unfinished group，下轮只生成剩余 token
 
 ## 5. 消费与提交侧：rollout 快了以后，瓶颈会移到哪里
 
-### 5.1 trainer schedule 与数据 transport
+### 5.1 训练器调度与数据传输
 
 rollout batch 还要被 packing、对齐并分给 DP ranks。固定 scheduler 先按 static/dynamic 规则 pack，再把 micro-batch 数对齐到 `dp_size × VPP group`，最后按估计 workload 或 round-robin 分 rank。[`dp_schedule.py:156-207`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L156-L207)
 
@@ -197,7 +197,7 @@ rollout batch 还要被 packing、对齐并分给 DP ranks。固定 scheduler �
 
 因此 producer 增发 token 前，应先确认 trainer 能否按相同 wall time 消费它们；否则只会把队列、CPU 内存和版本年龄推高。loss 的统计单位与并行不变量归 [[15_slime_loss_parallelism_analysis|loss/并行专题]]所有。
 
-### 5.2 offload 与权重发布
+### 5.2 显存卸载与权重发布
 
 同步入口在 generate 后 offload rollout、训练后 offload/clear trainer、再 update weights 并恢复 rollout KV，说明 colocate 本质是显存的时分复用，不是 generation/training 并行。[`train.py:53-88`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L53-L88) 若 $T_{\mathrm{offload}}+T_{\mathrm{publish}}$ 已占主导，继续优化 decode 不会显著降低 $T_{\mathrm{step}}$。
 
@@ -209,22 +209,22 @@ rollout batch 还要被 packing、对齐并分给 DP ranks。固定 scheduler �
 
 | 观测症状 | 首先证明的瓶颈 | 候选动作 | 前提与反例 |
 |---|---|---|---|
-| SGLang GPU 欠载且 queue 很短 | admission 不足 | 增大请求并发 | RM/tool 有余量；过高并发可越过 graph/KV 舒适区而降速 |
-| worker queue/KV 极不均 | router policy 或 session 热点 | 调整路由/affinity，再看 admission | slime 本地 `dp_counts` 不是默认 worker 选择证据 |
+| SGLang GPU 利用不足且队列很短 | 准入并发不足 | 增大请求并发 | RM/工具调用仍有余量；过高并发可能超过 CUDA graph/KV 的高效区间而降速 |
+| worker 的队列/KV 占用极不均衡 | 路由策略或会话热点 | 调整路由/亲和策略，再检查准入并发 | slime 本地 `dp_counts` 不能证明默认 worker 如何选择 |
 | prefill 与 decode 一边饱和一边空 | 阶段资源比例错误 | PD/异构 server group | 短任务或 KV transfer 主导时 regular 更快 |
 | target decode 调用主导 | 单 token target 成本 | spec + 可同步的 MTP/draft | acceptance 低时 draft/verify 变成纯开销 |
 | KV OOM 或并发受容量限制 | KV/权重显存 | FP8 KV、rollout 量化、offload | 必须做质量与一致性门禁；compute-bound 时未必提速 |
 | 有效 batch 常被 filter 打空 | acceptance 率低 | 调 oversampling 粒度或 fallback | 会增加废弃成本或改变筛选准则 |
-| batch 满后仍有大量长任务 | tail/abort 浪费 | partial 或 fully async | partial 有跨版本代价；warm queue 可能增加 freshness age |
+| 批次已满后仍有大量长任务 | 长尾任务与中止造成浪费 | 中断续生成或完全异步 | 中断续生成有跨版本代价；预热队列可能增加样本陈旧度 |
 | trainer 经常等 rollout | 跨阶段串行空洞 | disaggregate + `train_async.py` | colocate 不支持；共享基础设施争用可能抵消 overlap |
 | rollout queue 越积越深 | trainer/transport 才是瓶颈 | dynamic packing、DP balance、NIXL | FLOPs packing 可能 OOM；继续加生成并发只会增龄 |
-| 每轮 publish/offload 占比高 | 提交/显存切换 | 优化 transport/buffer，谨慎增 interval | interval 用 freshness 换时间，不能只验吞吐 |
+| 每轮权重发布/显存卸载占比高 | 权重提交或显存切换 | 优化传输方式和分桶，谨慎增大更新间隔 | 增大间隔会牺牲策略时效性，不能只验证吞吐 |
 
 [[25_vime_vllm_backend_support_analysis|vime/vLLM 衍生实现]]改写了 rollout engine、请求和同步契约；同名优化旋钮不能直接沿用本页的 upstream slime 假设，应先做 backend contract 对照。
 
 ## 7. 最小可归因实验
 
-### 7.1 先建 baseline
+### 7.1 先建立性能基线
 
 固定 checkpoint、prompt 集、sampling 参数、reward/tool 服务版本和训练 batch 语义，记录：
 
@@ -239,12 +239,12 @@ trace、健康检查和 debug replay 的具体能力与空白由 [[18_slime_faul
 
 ### 7.2 每次只改变一个容量假设
 
-1. **并发扫描**：逐级增加 admission，直到 productive throughput 不再上升或 p99/KV/RM 饱和；
+1. **并发扫描**：逐级提高准入并发数，直到有效训练吞吐不再上升，或 p99/KV/RM 已经饱和；
 2. **long-tail 消融**：分别比较同步、partial、fully async，报告废弃 token、queue age 与版本分布；
 3. **服务优化消融**：PD、spec/MTP、低精度分别单独开关，不能一次全开后只报总 tok/s；
 4. **consumer 消融**：固定 rollout data，比较 packing、DP balance 和 transport；
 5. **overlap 消融**：比较串行和 `train_async.py`，同时检查阶段是否因资源争用各自变慢；
-6. **发布消融**：拆分 offload、convert、transfer、load、resume；改变 interval 时同步报告 freshness 和质量。
+6. **发布消融**：分别测量显存卸载、格式转换、传输、加载和恢复服务；改变更新间隔时同步报告策略时效性和质量。
 
 ### 7.3 通过标准
 
@@ -264,11 +264,11 @@ $$
 
 | 误读 | 固定基线下的实际边界 |
 |---|---|
-| SGLang tok/s 上升就等于训练更快 | 还要经过 filter、trainer、offload 与 publish；应看 productive throughput 和 step time |
+| SGLang tok/s 上升就等于训练更快 | 数据还要经过过滤、训练器、显存卸载与权重发布；应看有效训练吞吐和每步耗时 |
 | `sglang_server_concurrency` 是全 pipeline 并发 | semaphore 只覆盖 generation，reward/tool 可能成为下游瓶颈 |
 | `dp_rank_context` 已实现默认 worker 负载均衡 | rank 在默认 HTTP 路径未进入 payload；实际 worker 选择交给 router |
 | oversampling 只是补齐 batch，没有统计代价 | 它增加 attempted work，且完成速度与 filter 共同决定被接收分布 |
-| partial 会无损消除长尾 | 它在旧 token 梯度、context 开销与 policy freshness 之间取舍 |
+| 中断续生成会无损消除长尾 | 它需要在旧 token 是否参与梯度、上下文开销和策略时效性之间取舍 |
 | fully async 等于 generation/training overlap | 前者保持跨 batch 的 rollout queue；后者由独立入口并行两个阶段 |
 | PD、spec、FP8 都是通用加速 | 三者分别针对阶段失衡、target decode、显存/带宽；前提不成立会负收益 |
 | 增大发布间隔只是降低通信 | 它也增加 behavior policy age，必须与质量和一致性一起验收 |
@@ -278,7 +278,7 @@ $$
 - [[13_slime_sglang_rollout_engine_analysis]] — 请求状态、router/server 分层、partial 与 streaming 的机制权威页。
 - [[12_slime_sample_datasource_analysis]] — accepted sample、buffer 回收、partial token 与训练 dict 的语义边界。
 - [[16_slime_weight_sync_analysis]] — 把 pause、flush、版本和 transport 解释为权重提交协议。
-- [[21_slime_speculative_decoding_mtp_analysis]] — 在线 MTP 为何必须跟随 actor 版本，以及固定基线的同步接缝。
+- [[21_slime_speculative_decoding_mtp_analysis]] — 在线 MTP 为何必须跟随 actor 版本，以及固定基线中的同步边界。
 - [[22_slime_low_precision_training_rollout_analysis]] — 训练、权重、通信、rollout 与 KV 精度轴的独立风险。
 - [[25_vime_vllm_backend_support_analysis]] — 更换 vLLM backend 后，容量与关键路径假设如何变化。
 - [[31_slime_posttraining_stability_analysis]] — 性能优化改变数据分布、策略新鲜度或数值语义时如何定位。

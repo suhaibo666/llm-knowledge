@@ -2,34 +2,34 @@
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`；其 stable 环境固定 SGLang `v0.5.15.post1@0b3bb0cbe31873994c9f989fddfe2f87ca839fdd`。[`build_conda.sh:25-33`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/build_conda.sh#L25-L33)
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
-> **结论先行**：slime 要同时解决三个不能由一次 parameter broadcast 解决的冲突：训练与推理的 shard topology/owner 不同，并发 serving 不能观察到半个新版本或沿用旧权重生成的 KV，colocate 又强迫两个独立进程分时交接 HBM。它因而把同步实现成一个带版本的服务提交协议：选定快照 → 还原 topology-neutral HF 参数 → pause/flush → 完整传输 → 量化后处理与版本确认 → resume。NCCL、tensor/CUDA IPC、full disk 与 delta disk 只是这个事务的不同数据面；MoE rank-local expert routing 则是严格准入下的重组优化，不是另一套一致性协议。
+> **结论先行**：slime 要同时解决三个不能靠一次参数广播处理的问题：训练侧与推理侧的分片拓扑和状态归属不同；并发推理不能看到只更新了一部分的新模型，也不能让新权重继续使用旧权重生成的 KV cache；共置模式还要求两个独立进程分时交接 HBM。slime 因而把同步实现成带版本的服务提交协议：选定快照 → 还原与具体拓扑无关的 HF 参数 → 暂停请求并清理缓存 → 完整传输 → 量化后处理与版本确认 → 恢复服务。NCCL、张量/CUDA IPC、全量磁盘与增量磁盘只是不同的传输路径；MoE 的 rank 内专家定向路由则是满足严格条件时采用的重组优化，不是另一套一致性协议。
 
 fixed-commit 定位符表示源码事实；下文用“设计分析”标出的动机、因果与取舍是依据状态转移和失败路径的推断，不代表作者原话。
 
-## 1. 问题背景：同一组逻辑权重，两套所有权与一条在线边界
+## 1. 问题背景：同一组逻辑权重，在训推两侧有不同的状态归属
 
-### 1.1 topology 错配使“直接复制 shard”没有统一语义
+### 1.1 拓扑不同，使“直接复制分片”没有统一含义
 
-Megatron 中参数可按 TP 维度、PP 层段与 EP expert 集合分散在不同 owner；默认 direct iterator 实际执行 PP/EP broadcast 和 TP all-gather，说明训练 local shard 不是可直接装入任意推理 rank 的稳定 ABI。[`hf_weight_iterator_direct.py:62-123`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/hf_weight_iterator_direct.py#L62-L123) SGLang 则在 layer loader 中根据自己的 `tp_rank` 从逻辑完整权重切出本地 shard。[SGLang `linear.py:384-427`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/layers/linear.py#L384-L427)
+Megatron 中的参数可按 TP 维度、PP 层段与 EP 专家集合分散到不同 rank；默认直接迭代器实际执行 PP/EP 广播和 TP all-gather，说明训练侧的本地分片不是一种能直接装入任意推理 rank 的稳定接口。[`hf_weight_iterator_direct.py:62-123`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/hf_weight_iterator_direct.py#L62-L123) SGLang 则在各层的加载器中根据自己的 `tp_rank`，从逻辑完整权重切出本地分片。[SGLang `linear.py:384-427`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/layers/linear.py#L384-L427)
 
-> **设计分析**：两边分片数、分片维度、layer/expert owner 和参数名都可不同。因此同步的第一个本质不是“选什么网络库”，而是在两套 topology 之间建立不依赖物理 owner 的逻辑参数语义。
+> **设计分析**：两边的分片数、分片维度、层/专家归属和参数名都可能不同。因此，权重同步首先要做的不是“选择哪种网络库”，而是在两套拓扑之间建立不依赖物理分片位置的逻辑参数表示。
 
-### 1.2 并发 serving 不能观察“正在提交”的模型
+### 1.2 并发推理不能看到“正在提交”的模型
 
 权重以 bucket 为单位逐步加载，SGLang 自身也在失败分支明确警告 model runner 可已被“partially updated”，应丢弃整套权重。[`update_weight_from_distributed.py:136-146`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L136-L146) [SGLang `model_runner.py:2100-2125`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/model_executor/model_runner.py#L2100-L2125) SGLang 的 pause 协议还明确区分：`in_place` 会在 resume 后继续使用旧 KV，`retract` 则允许 flush 并在 resume 后重算；slime 不传 mode，因而使用 SGLang 的默认 `abort`。[SGLang `io_struct.py:1464-1483`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/io_struct.py#L1464-L1483) [`sglang_engine.py:440-451`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L440-L451)
 
 > **设计分析**：若不先停止新生成，一个 forward 可能跨过多个已更新/未更新 layer；若只换权重而不清 KV，后续 decode 将把旧参数计算的 cache 与新参数混用。因此“每个 bucket RPC 成功”不等于“服务已提交”，只有 pause 窗口内全部完成并 flush 后的 resume 才是对外 commit point。
 
-### 1.3 colocate 把通信问题变成显存所有权交接
+### 1.3 共置模式把通信问题变成显存归属的交接
 
-colocate 让 actor 与 rollout 从 GPU offset 0 复用同一批 placement-group slots，但它们仍是不同进程、不同 parameter storage；默认配置同时打开 train/rollout offload。[`placement_group.py:100-117`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L100-L117) [`arguments.py:1929-1944`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1929-L1944) 因此 CPU snapshot、训练进程的临时 GPU bucket、CUDA IPC handle 与 SGLang 持久参数各自有不同的 owner/lifetime，不能简化成“同卡零拷贝共享参数”。[`actor.py:617-653`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L617-L653) [`update_weight_from_tensor.py:299-320`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_tensor.py#L299-L320)
+共置模式让 actor 与 rollout 从 GPU offset 0 开始复用同一批 placement-group 资源槽位，但它们仍属于不同进程，各自拥有独立的参数存储；默认配置还会同时启用训练侧和 rollout 侧的显存卸载。[`placement_group.py:100-117`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L100-L117) [`arguments.py:1929-1944`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1929-L1944) 因此，CPU 快照、训练进程的临时 GPU 分桶、CUDA IPC 句柄与 SGLang 常驻参数各有不同的责任主体和生命周期，不能简化成“同卡零拷贝共享参数”。[`actor.py:617-653`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L617-L653) [`update_weight_from_tensor.py:299-320`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_tensor.py#L299-L320)
 
 ## 2. 提交事务的六个不变量
 
 | 不变量 | 源码落点 | 破坏后的后果 |
 |---|---|---|
 | 1. **快照选择** | actor 在一轮 train 完成后先把最新 local actor weights 备份到 CPU，driver 再调用 update。[`actor.py:545-564`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L545-L564) [`train.py:69-85`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L69-L85) | 不同 rank 若选到不同 step 的 local shard，即使传输无误也会组成不存在的混合模型。【设计分析】 |
-| 2. **topology-neutral 转换** | PP/EP/TP collective 还原逻辑参数，Megatron→HF converter 处理名称/融合布局，SGLang loader 再按 infer topology 切片。[`hf_weight_iterator_direct.py:62-123`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/hf_weight_iterator_direct.py#L62-L123) [SGLang `linear.py:384-427`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/layers/linear.py#L384-L427) | 直接把 train shard 写给 infer shard 会导致 shape、offset、layer/expert owner 或融合顺序错位。【设计分析】 |
+| 2. **转换为拓扑无关表示** | PP/EP/TP 集合通信还原逻辑参数，Megatron→HF 转换器处理名称和融合布局，SGLang 加载器再按推理拓扑切片。[`hf_weight_iterator_direct.py:62-123`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/hf_weight_iterator_direct.py#L62-L123) [SGLang `linear.py:384-427`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/layers/linear.py#L384-L427) | 直接把训练分片写给推理分片，会导致形状、偏移、层/专家归属或融合顺序错位。【设计分析】 |
 | 3. **pause + flush** | 在线 updater 先 pause 所有 engine、flush cache，然后才进入权重加载。[`update_weight_from_distributed.py:103-123`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L103-L123) SGLang flush 会 reset radix/KV pools，且非 idle 时拒绝成功。[SGLang `scheduler.py:3740-3765`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/scheduler.py#L3740-L3765) | 服务可向请求暴露半版本，或让新权重消费旧 KV。【设计分析】 |
 | 4. **完整传输** | NCCL 在 non-expert/expert pass 后各 barrier；IPC 每 bucket 等所有 consumer RPC 返回才释放 backing storage；full disk 写完和 publish hook 后均 barrier。[`update_weight_from_distributed.py:136-146`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L136-L146) [`update_weight_from_tensor.py:299-320`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_tensor.py#L299-L320) [`update_weight_from_disk.py:65-95`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_disk.py#L65-L95) | 少一个 bucket、提前释放 IPC storage 或读到未 publish 完的文件，都会留下部分更新模型。 |
 | 5. **后处理 + 版本确认** | compressed-tensors 路径在 load 前 restore、load 后 requantize；SGLang 只在所有 worker update 成功后更新 `weight_version`。[`update_weight_from_distributed.py:109-132`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L109-L132) [SGLang `tokenizer_control_mixin.py:395-484`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/managers/tokenizer_control_mixin.py#L395-L484) | RPC 成功但格式未完成的权重不可 serving；无版本标记则 rollout 与故障恢复无法证明当前模型身份。【设计分析】 |
@@ -59,11 +59,11 @@ actor 每次提交前可先恢复 crash 的 updatable engines，必要时重连 
 
 RolloutManager 只把第一个 `update_weights=True` model 暴露给 updater，冻结 ref/reward models 自动排除；当前多 updatable model 尚不支持。[`rollout.py:555-584`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L555-L584)
 
-## 3. Transport 选择：数据面不同，事务语义相同
+## 3. 传输方式选择：数据路径不同，提交语义相同
 
 actor 初始化按 `update_weight_mode × transport × colocate` 选择实现：[`actor.py:151-182`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L151-L182)
 
-| mode | transport/topology | updater | 主要载体 |
+| 更新模式 | 传输方式/拓扑 | 更新器 | 主要载体 |
 |---|---|---|---|
 | full | NCCL、训推分离 | `UpdateWeightFromDistributed` | Megatron rank→SGLang engine NCCL group |
 | full | colocate | `UpdateWeightFromTensor` | GPU bucket→CUDA IPC handle/metadata→Gloo/Ray 控制面→SGLang GPU copy；可混合远端 NCCL |
@@ -83,11 +83,11 @@ delta 被显式限制为 disk 且不支持 colocate；其他未知组合立即 a
 
 > **设计分析**：这四种反例说明“传得到”只解决 data movement，不解决 snapshot identity、布局语义、serving isolation 和 commit visibility。所以下文 NCCL/IPC/disk 应读作同一事务的 transport 实现，而不是四套彼此无关的同步算法。
 
-## 4. Megatron shard → HF/SGLang tensor
+## 4. Megatron 分片如何转换为 HF/SGLang 张量
 
-### 4.1 不是“每个参数只在一个 train rank 聚合”
+### 4.1 不是“每个参数只在一个训练 rank 上聚合”
 
-默认 direct iterator 的真实过程是：参数物理 owner 先从最新 CPU backup 把自己的 Megatron local shard 搬到 GPU；PP group 把所属层广播到需要参与转换的 ranks，普通 expert path 还按 EP group 广播；最后相关 TP group 批量异步 all-gather，并沿 `partition_dim` 拼成 Megatron 语义上的完整参数。[`hf_weight_iterator_direct.py:62-123`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/hf_weight_iterator_direct.py#L62-L123) [`common.py:60-127`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/common.py#L60-L127)
+默认直接迭代器的实际过程是：持有参数的 rank 先从最新 CPU 备份把自己的 Megatron 本地分片搬到 GPU；PP 组把所属层广播给需要参与转换的 rank，普通专家路径还会按 EP 组广播；最后相关 TP 组批量异步执行 all-gather，并沿 `partition_dim` 拼成 Megatron 语义上的完整参数。[`hf_weight_iterator_direct.py:62-123`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/hf_weight_iterator_direct.py#L62-L123) [`common.py:60-127`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/common.py#L60-L127)
 
 因此应区分两件事：
 
@@ -96,17 +96,17 @@ delta 被显式限制为 disk 且不支持 colocate；其他未知组合立即 a
 
 转换器随后把 Megatron 参数名、融合布局和 shape 变成 SGLang 模型 loader 能理解的 HF named tensors；迭代器按 `update_weight_buffer_size` 以**完整参数重组后的大小**分桶，所以峰值是 bucket 级而非整模型级。[`hf_weight_iterator_direct.py:24-59`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/hf_weight_iterator_direct.py#L24-L59) [`hf_weight_iterator_direct.py:126-160`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/hf_weight_iterator_direct.py#L126-L160)
 
-### 4.2 “完整 HF 参数”只是 topology-neutral 中间表示
+### 4.2 “完整 HF 参数”只是与具体拓扑无关的中间表示
 
 “先汇聚为完整 HF 参数”描述的是传给 loader 的**逻辑 tensor shape**，并不表示每个 SGLang rank 的持久模型都复制一份全参数。以 column-parallel linear 为例，SGLang 收到完整 `loaded_weight` 后，用自己的 `tp_rank` 计算 `start_idx`，在并行维上 `narrow` 出本 rank shard，再写入本地 parameter storage；只有 replicated 参数才在多个 ranks 上相同。[SGLang `linear.py:384-437`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/layers/linear.py#L384-L437)
 
 这层 HF 中间表示把“训练如何切”与“推理如何切”解耦：train TP=8 可以对接 infer TP=4，反之亦然，前提不是两个 TP 相等，而是完整 tensor 的目标并行维能被 infer topology 合法切分，模型 conversion 与 SGLang loader 对名称、融合布局、dtype/量化格式有共同理解。SGLang 也有 `use_presharded_weights` 分支，说明“推理引擎只能加载完整 HF 参数”并非普遍原理。[SGLang `linear.py:402-427`](https://github.com/sgl-project/sglang/blob/0b3bb0cbe31873994c9f989fddfe2f87ca839fdd/python/sglang/srt/layers/linear.py#L402-L427) **设计分析**：slime 默认通用在线路径选择完整逻辑 tensor，是为了避免为每一对 train/infer topology 编写专用重分片协议。
 
-| topology 轴 | 通用路径怎样消除差异 | 仍然存在的约束 |
+| 拓扑维度 | 通用路径怎样消除差异 | 仍然存在的约束 |
 |---|---|---|
 | train DP/CP | 权重在这些维度通常复制，不决定 HF 参数 shape | 只选一份语义一致的最新 actor snapshot |
 | train TP → infer TP | train TP all-gather 成完整逻辑 tensor，SGLang loader 再按 infer TP 切片 | 目标维度可整除或 loader 明确支持 padding/特殊布局 |
-| train PP → infer PP | train PP stage 各负责自己层，转换后按 HF layer name 交给目标 loader | layer ownership、名称映射和 engine rank ordering 必须一致 |
+| 训练 PP → 推理 PP | 各训练 PP 阶段负责自己的层，转换后按 HF 层名交给目标加载器 | 层归属、名称映射和推理引擎 rank 顺序必须一致 |
 | train EP → infer EP | 通用路径可先恢复逐 expert tensor再加载；满足条件时走 rank-local expert routing | expert 数量/布局、EP rank 映射与 EPLB 等动态布局功能受限 |
 | 量化/融合格式 | conversion 生成 loader 认识的名称与 tensor | 不是任意 dtype、任意 quant schema 都可互转 |
 
@@ -126,7 +126,7 @@ rank 0 pause/flush 后，所有 trainer ranks 过 Gloo barrier；再依次发送
 
 每 bucket 先获取 Ray engine lock，metadata 走 Ray RPC，tensor data 由 NCCL async broadcast，等待 engine RPC 完成后才清 bucket、释放 lock。锁的目的明确是防并发 broadcast deadlock。[`update_weight_from_distributed.py:240-265`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L240-L265) [`update_weight_from_distributed.py:326-355`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L326-L355)
 
-## 6. Colocated tensor/IPC 路径
+## 6. 共置模式下的张量/IPC 路径
 
 ### 6.1 “共卡”是同一物理 GPU 上的分时驻留
 
@@ -175,21 +175,21 @@ sequenceDiagram
 
 提交循环必须 `ray.get` 等所有 SGLang consumers 返回后，才删除 long-lived tensors 并执行 `ipc_collect/empty_cache`；最后 barrier 后再清一次。这个 lifetime barrier 是正确性条件，不只是显存优化。[`update_weight_from_tensor.py:276-331`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_tensor.py#L276-L331)
 
-### 6.3 Rank-local expert update：MoE 为什么是例外
+### 6.3 rank 内专家更新：MoE 为什么是例外
 
 当所有 engines 都 colocated 且 Megatron/SGLang MoE topology 满足条件时，expert routing planner 把专家直接发送到目标 SGLang ranks，dense params 继续常规 buckets；存在 distributed engines、异构/不合格 topology 时自动禁用。[`expert_routing.py:295-380`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/expert_routing.py#L295-L380)
 
-关键原因是 EP 与 TP 切分的语义不同：TP 切的是**一个 tensor 的维度**，通常必须先重组该 tensor；EP 切的是**expert 集合**。当 train expert-TP=1 且 infer MoE-TP=1 时，一个 expert 的 `linear_fc1/linear_fc2` tensor 在其 Megatron owner 上已经完整，不必让所有 ranks 先拥有全部 experts。planner 通过 `all_gather_object` 找到每个 expert parameter 的物理 owner，根据 `expert_id // experts_per_ep_rank` 算目标 infer EP shard，并为每个 source→targets bundle 生成受 `update_weight_buffer_size` 限制的 P2P batch。[`expert_routing.py:164-218`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/expert_routing.py#L164-L218) [`expert_routing.py:221-287`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/expert_routing.py#L221-L287)
+关键原因是 EP 与 TP 的切分语义不同：TP 切分的是**单个张量的维度**，通常必须先重组该张量；EP 切分的是**专家集合**。当训练侧 expert-TP=1 且推理侧 MoE-TP=1 时，一个专家的 `linear_fc1/linear_fc2` 张量在负责该专家的 Megatron rank 上已经完整，不必让所有 rank 先拥有全部专家。规划器通过 `all_gather_object` 找到每个专家参数所在的 rank，根据 `expert_id // experts_per_ep_rank` 计算目标推理 EP 分片，并为每个源端到目标端的资源组生成受 `update_weight_buffer_size` 限制的 P2P 批次。[`expert_routing.py:164-218`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/expert_routing.py#L164-L218) [`expert_routing.py:221-287`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/expert_routing.py#L221-L287)
 
 数据面由 source rank 从 CPU snapshot 把该 expert tensor 搬进 staging buffer，通过 NCCL batched `isend/irecv` 只发到目标 train ranks；目标 rank 本地转 HF，然后沿上面的同卡 CUDA IPC 交给对应 SGLang EP worker。[`update_weight_from_tensor.py:193-274`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_tensor.py#L193-L274)
 
-例如 8 个 experts，train EP=4、infer EP=2：每个 train EP owner 各持 2 个完整 experts；infer EP rank 0 需要 experts 0–3，rank 1 需要 experts 4–7。slime 可把四个 owners 的 expert tensors 定向送到两个目标 ranks，而不先在每个 rank 汇聚 8 个 experts。这既支持 EP 数量变化，也可把同一 EP shard 复制到多个 engine 或 MoE-DP replica targets。[`expert_routing.py:140-161`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/expert_routing.py#L140-L161)
+例如共有 8 个专家，训练 EP=4、推理 EP=2：每个训练 EP rank 各持有 2 个完整专家；推理 EP rank 0 需要专家 0–3，rank 1 需要专家 4–7。slime 可以把四个源 rank 的专家张量定向发送给两个目标 rank，而不必先在每个 rank 上汇聚全部 8 个专家。这既支持 EP 数量变化，也可以把同一 EP 分片复制到多个推理引擎或 MoE-DP 副本。[`expert_routing.py:140-161`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/expert_routing.py#L140-L161)
 
 优化的限制是源码契约的一部分：infer PP 必须为 1、infer EP>1、两侧 expert TP/MoE-TP 都为 1；禁用 EPLB、redundant experts、非 trivial expert placement 和 elastic expert backup；expert 数必须整除 infer EP，metadata 必须覆盖每层每个 expert 的 FC1/FC2；所有 engines 必须 colocated，且 GPU offsets/order 可解释为 `MoE-DP × EP`。任何一项不满足就回退通用完整 HF bucket 路径，而不是冒险套用错误映射。[`expert_routing.py:110-137`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/expert_routing.py#L110-L137) [`expert_routing.py:164-194`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/expert_routing.py#L164-L194)
 
 这条例外只优化正则识别的 routed expert FC1/FC2；dense attention、router/gate、shared experts 或其他未匹配参数仍走通用重组。[`expert_routing.py:19-35`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/expert_routing.py#L19-L35) **设计分析**：它减少的是“无谓地让每个 rank materialize 全部 experts”，不是取消 HF naming/conversion，也不是让 SGLang 永久引用训练进程的 expert storage。
 
-## 7. Full disk 路径
+## 7. 全量磁盘路径
 
 每次 version++ 后写 `weight_vNNNNNN` 完整 HF checkpoint：rank 0 清旧目录，所有 writing ranks各自 mkdir/write，Gloo barrier 后运行可选 post-write hook，再 barrier。hook 用于对象存储型 shared filesystem 的显式 publish/read-after-write。[`update_weight_from_disk.py:17-95`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_disk.py#L17-L95)
 
@@ -197,15 +197,15 @@ sequenceDiagram
 
 **设计分析**：full disk 的优点是跨环境/异构 GPU、external serving 友好，且 `release_train` 后仍有完整提交物；代价是写放大和 shared filesystem latency。
 
-## 8. Delta disk 路径
+## 8. 增量磁盘路径
 
-### 8.1 baseline 如何建立
+### 8.1 如何建立基线版本
 
 第一次调用只捕获 baseline，不发布；baseline优先来自 SGLang host materialize 的 HF checkpoint，以保证 snapshot 与 engine base 一致，缺失 tensor才回退到当前 gathered weights。[`update_weight_from_disk_delta.py:82-125`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_disk_delta.py#L82-L125)
 
 这里有两个同步发生的“base”：trainer 持有上一版本的 CPU byte snapshot；每个 SGLang host 的 local checkpoint 也 materialize version 0。后续 version $v$ 只能基于 $v-1$ 生成和应用，所以它不是任意两个 checkpoint 之间的 stateless diff。[`update_weight_from_disk_delta.py:82-125`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_disk_delta.py#L82-L125) [`update_weight_from_disk_delta.py:157-167`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_disk_delta.py#L157-L167)
 
-### 8.2 delta 权重 diff 到底怎样生成
+### 8.2 如何生成增量权重差分
 
 trainer 仍先把 Megatron TP/EP shards gather/convert 成逐 tensor HF 视图，再把新 tensor contiguous 后按 `uint8` 展平。对旧 snapshot $w^{(8)}(v-1)$ 与新权重 $w^{(8)}(v)$，支持两种编码：
 
@@ -232,7 +232,7 @@ GPU→CPU copy 使用 pinned buffer pool，并与 CPU thread-pool 的 diff/zstd 
 
 `xor` 必须对正确 base 恰好应用一次；`overwrite` 则是幂等编码。[`disk_delta.py:21-25`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/disk_delta.py#L21-L25) engine apply 还会拒绝 out-of-order `base_version` 并校验逐 tensor checksum。[`sglang-pull_weights.patch:426-545`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docker/patch/latest/sglang-pull_weights.patch#L426-L545) **设计分析**：base/version/checksum/host lock 是 delta 正确性的必要部分，不能把它理解为普通增量 checkpoint。
 
-## 9. 同步时长、关键路径与 overlap
+## 9. 同步时长、关键路径与阶段重叠
 
 没有一个脱离模型大小、TP/EP、网络、shared FS 和量化方式的固定同步占比。`actor.update_weights` 被 timer 包裹，日志键为 `perf/update_weights_time`；delta 还额外上报 `perf/update_weights_density` 与 `perf/update_weights_wire_bytes`。[`actor.py:591-653`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L591-L653) [`train_metric_utils.py:13-50`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/train_metric_utils.py#L13-L50) 但 full-disk path 的 actor RPC 只负责 publish，RayTrainGroup 在 RPC 返回后另做 host pull/reload；这部分不在该 timer 内，必须用 driver/outer-iteration wall-clock 补测。[`actor_group.py:162-173`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L162-L173)
 
@@ -248,7 +248,7 @@ $$
 
 若启用一拍异步，则分母应改成实测 outer-iteration wall time，不能再把 rollout 与 train 简单相加。另一个日志细节是：actor 在本轮 train 末尾 flush perf metrics，而 driver 随后才调用 weight update，因此刚产生的 actor-side `update_weights_time` 通常在下一次 actor perf flush 才出现。[`actor.py:514-564`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L514-L564) [`train.py:53-85`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L53-L85)
 
-| 阶段 | 能否 overlap | 固定基线的边界 |
+| 阶段 | 能否与其他阶段重叠 | 固定基线的边界 |
 |---|---|---|
 | rollout N+1 与 train N | 可以 | `train_async.py` 先发下一轮 generate，再训练当前轮；更新前显式等 generation 完成。[`train_async.py:31-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L31-L70) |
 | full/delta disk 的 host pull/apply | 部分可以 | full path 在 pause 前预拉到 local checkpoint；delta 也先 pull/apply 再 pause/reload。[`actor_group.py:236-245`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L236-L245) [`update_weight_from_disk_delta.py:170-189`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_disk_delta.py#L170-L189) |
@@ -279,7 +279,7 @@ compressed-tensors INT4/FP4 在加载前先 restore original weights、加载后
 ## Related Pages
 
 - [[10_slime_end_to_end_iteration_analysis]] — 权重提交在一轮事务中的位置
-- [[11_slime_ray_control_plane_analysis]] — engine handles/lock/topology 的 owner
+- [[11_slime_ray_control_plane_analysis]] — 推理引擎句柄、锁和拓扑分别由哪个对象负责。
 - [[19_slime_rollout_backend_extension_analysis]] — 新 backend 必须重建的权重提交契约
 - [[22_slime_low_precision_training_rollout_analysis]] — FP8/INT4 的量化提交阶段
 - [[17_slime_train_inference_consistency_analysis]] — version、pause/flush 和量化一致性

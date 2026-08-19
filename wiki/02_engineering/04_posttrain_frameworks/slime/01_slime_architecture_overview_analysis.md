@@ -1,4 +1,4 @@
-# slime 架构总览：用薄编排闭合两套不兼容的原生系统
+# slime 架构总览：用轻量编排连接训练与推理系统
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
 > **文档基线**：同一提交下 `README_zh.md`、`docs/zh/advanced/{sglang-config,external-rollout-engines}.md`
@@ -7,13 +7,13 @@
 
 本文把事实与分析判断分开：带 fixed-commit 定位符的是源码或项目文档事实；使用“设计分析”“由此可推断”的段落是根据实现形态和失败路径作出的解释，不代表作者原话。
 
-## 1. 问题不是“缺一个 RL Engine”，而是两套成熟系统无法共享同一种语义
+## 1. 问题不是“缺一个 RL 引擎”，而是两套成熟系统采用了不同的运行方式
 
 项目把目标能力概括为“高性能训练”和“灵活的数据生成”，并要求 Megatron training、SGLang rollout、reward/verifier、environment 与 Data Buffer 形成同一条闭环，而不是彼此割裂的服务。[`README_zh.md:9-16`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L9-L16)
 
 这两项能力不能简单合并成一个同构 worker。下表的两列原生语义来自实现，最后一列“桥”是由这些差异推导出的设计分析：
 
-| 冲突轴 | Megatron 原生语义 | SGLang 原生语义 | RL 闭环必须补上的桥 |
+| 差异点 | Megatron 的处理方式 | SGLang 的处理方式 | slime 必须补齐的连接 |
 |---|---|---|---|
 | 生命周期 | 每个 distributed rank 是一个 Ray actor；rank group 初始化模型、优化器和并行组，可训练、保存、sleep/wake 或整组释放重建。[`actor_group.py:57-129`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L57-L129) [`actor.py:57-111`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L57-L111) [`actor_group.py:175-208`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L175-L208) | Ray actor 内再启动 SGLang HTTP server 进程，等待健康检查并注册 router；运行中还要管理 cache、请求暂停和显存释放。[`sglang_engine.py:48-81`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L48-L81) [`sglang_engine.py:189-204`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L189-L204) | Ray driver 决定阶段顺序、资源共置与释放；weight updater 决定何时暂停生成、提交新版本再恢复。 |
 | 数据 | trainer 需要按 DP rank 和 micro-batch 切分的 token、mask、reward 与条件 behavior tensors。[`rollout.py:871-930`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L871-L930) | rollout 需要保留 prompt、响应、状态、session、logprob、top-p、routing 和 weight version 等请求语义。[`types.py:93-149`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L93-L149) | `Sample` 先保存完整生成语义，RolloutManager 再在完整 step 视野下压成 train dict。 |
@@ -23,7 +23,7 @@
 
 ## 2. 约束如何逼出“薄编排、深后端”
 
-### 2.1 上游能力必须保持可达
+### 2.1 接入 slime 后仍要能直接使用底层能力
 
 slime 的参数入口不是先定义一份自有 schema 再翻译到两个后端。它先用 SGLang `ServerArgs.add_cli_args` 动态注册并加 `--sglang-` 前缀，再让 SGLang 与 Megatron 各自 `parse_known_args`，最后把两个 namespace 合并并分别调用验证器。[`sglang_utils/arguments.py:38-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L38-L118) [`arguments.py:1600-1643`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1600-L1643)
 
@@ -35,19 +35,19 @@ slime 的参数入口不是先定义一份自有 schema 再翻译到两个后端
 
 另一方面，转换器在还能看到完整 rollout step 时补齐 `rollout_id`、验证 mask，并预计算 rollout-level denominator，之后才按 DP rank 分包。[`rollout.py:749-814`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L749-L814) 具体的数据身份、partial 和 fanout 契约由 [[12_slime_sample_datasource_analysis]] 负责；本页只强调其架构意义：**自由发生在 rollout 侧，确定性压缩发生在 trainer 边界。**
 
-### 2.3 权重更新必须是版本提交，而非裸 tensor copy
+### 2.3 权重更新必须按版本提交，不能只是直接复制张量
 
 默认 distributed updater 在每次更新时先让所有 rollout engines `pause_generation` 并 `flush_cache`，再发送参数，最后才 `continue_generation`；非 expert 参数走 TP gather，expert 参数还要经过 EP gather，二者都转换成 HF 命名/布局后分桶发送。[`update_weight_from_distributed.py:102-146`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L102-L146) [`update_weight_from_distributed.py:153-181`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L153-L181)
 
 > **设计分析**：这段顺序揭示了桥接层的真正职责。transport 只回答“字节怎样过去”；pause、cache drain、layout conversion、version 与 resume 才回答“推理服务何时可以把新参数视为一个完整 snapshot”。因此权重面无法被约化成通用 `set_weights(tensors)`。
 
-### 2.4 资源布局必须允许后端生命周期不同步
+### 2.4 资源布局必须允许训练与推理错峰运行
 
 同一个 placement group 可以表达 train-only、external rollout、colocate 与 train/rollout 分离：colocate 取两边 GPU 数的最大值，分离部署则相加。[`placement_group.py:100-137`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L100-L137) 共置时 SGLang group 只有与 Megatron GPU 重叠才执行 offload/onload；分离时不需要释放 serving 显存。[`rollout.py:299-317`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L299-L317)
 
 > **设计分析**：资源复用不是统一 worker 内部的一个布尔开关，而是 Ray placement、训练 actor 生命周期和 serving memory lifecycle 的组合约束。
 
-## 3. 核心设计赌注：只统一闭环，不统一 engine
+## 3. 核心设计取舍：只统一训练闭环，不强求统一引擎
 
 项目明确表示选择单一 SGLang rollout backend 是有意取舍：多 backend 公共层容易收缩到共同能力子集，从而遮住各 backend 最强的 serving、routing、caching、disaggregation 与 weight-sync 行为。[`README_zh.md:48-50`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L48-L50)
 
@@ -60,7 +60,7 @@ slime 的参数入口不是先定义一份自有 schema 再翻译到两个后端
 | 资源协议 | Ray actor、placement group、colocate/disaggregate/external | 两套后端内部进程、并行组、cache 与 allocator |
 | 版本协议 | 何时暂停、flush、转换、传输、提交与恢复 | 训练 shard 的物理布局；serving engine 的加载实现 |
 
-### 3.1 为什么不做统一 engine abstraction
+### 3.1 为什么不设计统一的引擎抽象层
 
 > **设计分析**：以下是由源码边界推导出的替代方案比较，不是项目作者逐项写下的决策记录。
 
@@ -74,7 +74,7 @@ slime 的参数入口不是先定义一份自有 schema 再翻译到两个后端
 
 因此，slime 的赌注不是“抽象越少越好”，而是**只抽象跨边界不变量**。原生引擎内部保持深，桥接协议保持显式；这用较窄的后端矩阵换取更短的能力落地路径。
 
-## 4. 所有权边界：谁控制状态，谁只传消息
+## 4. 状态归属与职责边界：谁控制状态，谁只传消息
 
 > **设计分析**：下图和表把调用点归纳成所有权边界；它们是对源码的架构解释，不是项目提供的正式接口分层。
 
@@ -92,7 +92,7 @@ flowchart LR
     WU --> SG
 ```
 
-| Owner | 拥有的状态/决定 | 刻意不拥有 |
+| 责任主体 | 负责的状态与决策 | 明确不负责什么 |
 |---|---|---|
 | driver `train.py` / `train_async.py` | placement 创建、角色装配、rollout/train/update/eval 的阶段顺序 | 请求级生成状态、模型前反向细节 [`train.py:13-30`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L13-L30) [`train.py:48-91`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L48-L91) |
 | Ray control objects | GPU bundle、训练 rank actor、rollout server group、manager 与 future | RL loss 数学、SGLang 内部 scheduler [`placement_group.py:120-137`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L120-L137) [`actor_group.py:115-149`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L115-L149) |
@@ -105,13 +105,13 @@ README 把 data buffer 画成 training 与 rollout 的桥；固定源码中它�
 
 ## 5. 端到端闭环如何落地
 
-### 5.1 装配：先确定资源与 serving，再初始化训练 ranks
+### 5.1 启动：先分配资源并启动推理服务，再初始化训练 rank
 
 同步入口先创建 placement groups，再创建包含 SGLang engines 的 RolloutManager，随后创建 actor/critic ranks，并在正式 rollout 前推送一次 actor 权重。[`train.py:13-30`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L13-L30) RolloutManager 初始化时启动或连接 servers、构造 DataSource、动态加载 rollout/eval/reward/converter 函数，并等待 engine init handles 完成。[`rollout.py:468-505`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L468-L505)
 
 这里先起 rollout manager 不是装饰性顺序：driver 可能需要用 DataSource 长度计算 `num_rollout`，训练 actors 也要拿到 manager handle 以建立权重更新连接。[`placement_group.py:227-253`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L227-L253) [`actor_group.py:188-215`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L188-L215)
 
-### 5.2 生成与压缩：请求世界在 trainer 边界结束
+### 5.2 生成与压缩：请求侧数据在进入训练器前收敛为固定格式
 
 `RolloutManager.generate` 取得 rollout 数据、保存 debug trace、记录指标，然后调用 converter 并按 DP 分包；debug-rollout-only 则在转换前停住。[`rollout.py:590-604`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L590-L604) 分包结果默认进入 Ray object store，可选 NIXL tensor transport；训练 rank 取回 CPU 数据后再显式搬到当前 CUDA device。[`rollout.py:895-938`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L895-L938) [`actor.py:245-299`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L245-L299)
 
@@ -127,7 +127,7 @@ actor rank 把 rollout dict 变成 Megatron data iterator，按需计算 ref/tea
 
 > **设计分析**：所以 iteration 是带 snapshot 边界的阶段事务；async 改变 barrier 的位置和重叠范围，没有删除版本提交协议。把 `async_train` 或预启动 future 解读为“任意 staleness 的 fully async optimizer”会夸大当前入口的语义。
 
-## 6. 这个选择付出的成本：原生能力也会原生泄漏
+## 6. 这个选择的代价：底层系统细节会进入上层
 
 ### 6.1 参数透传不是零适配
 
@@ -135,7 +135,7 @@ SGLang 参数注册器仍要跳过 model path、TP、端口、node rank、memory
 
 > **设计分析**：薄层减少了重复 schema，却把上游 CLI 变更直接变成集成面风险。这里的“native”应理解为能力可达，不应理解为完全没有 glue code。
 
-### 6.2 backend 语义进入了控制面
+### 6.2 后端细节进入了控制面
 
 `ServerGroup.start_engines` 直接创建 `SGLangEngine`，后者直接调用 SGLang `launch_server`、health endpoint、router 注册和 weight/cache HTTP endpoints。[`rollout.py:188-267`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L188-L267) [`sglang_engine.py:287-355`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L287-L355)
 
@@ -145,7 +145,7 @@ SGLang 参数注册器仍要跳过 model path、TP、端口、node rank、memory
 
 数据桥默认经历 Python `Sample`、CPU tensorize、Ray object store、trainer 取回再上 GPU；源码注释也明确把 CPU fetch 标为潜在性能瓶颈。[`rollout.py:930-938`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L930-L938) [`actor.py:245-258`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L245-L258) 权重桥则承担 TP/EP gather、HF layout conversion、分桶 broadcast 和 serving barrier。[`update_weight_from_distributed.py:153-181`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L153-L181) **由此可推断**，模型越大、训练与 serving 拓扑差异越大，这里的时间与临时内存成本越值得单独测量。
 
-### 6.4 显式阶段让正确性可读，也制造 bubble
+### 6.4 显式划分阶段便于保证正确性，也会造成空转
 
 pause/flush/update/resume 阻止请求跨过半套参数；同步循环的 generate/train 串行 barrier 和异步循环的 commit 前等待，则会形成阶段等待。[`update_weight_from_distributed.py:102-134`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L102-L134) [`train_async.py:66-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L66-L70)
 

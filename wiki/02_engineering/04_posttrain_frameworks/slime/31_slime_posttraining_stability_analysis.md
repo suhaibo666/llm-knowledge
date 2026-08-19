@@ -3,7 +3,7 @@
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
 > **文档基线**：同一提交下 `docs/zh/{advanced/fault-tolerance,developer_guide/debug}.md` 与 `examples/fully_async/README.md`
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
-> **结论先行**：后训练“稳定性”不是一个 optimizer 参数，而是四个带不同延迟的闭环同时成立：数据/奖励环决定学什么，策略版本环决定样本由谁产生，估计量/数值环决定这些样本如何变成梯度，基础设施环决定状态能否持续推进。KL、clip fraction、reward、grad norm 或重启次数都只是某个闭环的观测量；先用固定样本 replay 和版本/身份证据把故障域切开，再调 clipping、过滤或重启，才不会把症状压平后继续训练错误目标。
+> **结论先行**：后训练“稳定性”不是由某一个优化器参数决定的，而是四个具有不同反馈延迟的闭环必须同时正常工作：数据/奖励环决定学什么，策略版本环决定样本由哪个版本产生，估计量/数值环决定这些样本如何变成梯度，基础设施环决定状态能否持续推进。KL、clip fraction、reward、grad norm 或重启次数都只是某个闭环的观测指标；应先通过固定样本回放和版本/标识信息划分故障范围，再调整 clipping、过滤或重启策略，避免只是压低症状，却继续训练错误目标。
 
 本文是**诊断综合页**，不重复机制页的实现细节：Sample 与 DataSource 归 [[12_slime_sample_datasource_analysis]]，loss 统计归 [[15_slime_loss_parallelism_analysis]]，权重提交归 [[16_slime_weight_sync_analysis]]，训推一致性归 [[17_slime_train_inference_consistency_analysis]]，恢复与取证归 [[18_slime_fault_tolerance_observability_analysis]]，精度轴归 [[22_slime_low_precision_training_rollout_analysis]]，agent fanout 归 [[24_slime_agent_workflow_examples_analysis]]。下文带 fixed-commit 定位符的是源码、测试或项目文档事实；标为“分析判断”的因果、阈值选择和处置优先级不是作者原话。
 
@@ -23,12 +23,12 @@ flowchart LR
     E --> I
 ```
 
-| 控制环 | 要稳定的量 | 主要时延 | slime 中可直接调的执行器 | 最容易误用的“修复” |
+| 控制环 | 要稳定的内容 | 主要反馈延迟 | slime 中可直接调整的机制 | 最容易误用的“修复” |
 |---|---|---|---|---|
 | 数据/奖励 | prompt 来源、动作/观察边界、reward 尺度、入选分布 | 生成与 verifier 后才见结果 | DataSource、RM、dynamic/sample filter、`loss_mask` | 过滤所有难样本，让 reward 曲线看起来更好 |
-| 版本/新鲜度 | behavior policy 身份、样本年龄、采样支持集 | rollout、训练、权重提交之间至少一拍 | 更新频率、pause/flush、partial mask、behavior correction | 直接压 ratio，把混版本或错 logprob 当成普通 off-policy |
-| 估计量/数值 | group baseline、advantage、reducer measure、有限梯度 | 一个 train step 到若干更新后显现 | estimator、KL、clip、reducer、precision 配置 | 只降学习率或加 clipping，忽略分母/拓扑已改变 |
-| 基础设施 | queue 推进、engine liveness、提交/恢复切点 | heartbeat、长尾和 checkpoint 周期 | concurrency、timeout、局部 recovery、checkpoint/replay | 反复重启，恰好改变随机样本后误判为已修复 |
+| 版本/时效性 | 行为策略标识、样本年龄、采样候选集 | rollout、训练、权重提交之间至少相隔一拍 | 更新频率、pause/flush、partial mask、行为策略校正 | 直接截断概率比，把混版本或错误 logprob 当成普通离策略偏差 |
+| 估计量/数值 | 分组基线、advantage、归约统计口径、梯度有限性 | 一个训练步到若干次更新后显现 | 估计量、KL、clip、归约器和精度配置 | 只降学习率或增加 clipping，忽略分母或拓扑已经改变 |
+| 基础设施 | 队列推进、推理引擎活性、提交/恢复点 | 心跳、长尾和 checkpoint 周期 | 并发数、超时、局部恢复、checkpoint/回放 | 反复重启，恰好改变随机样本后误判为已修复 |
 
 > **分析判断**：四环必须按“身份与版本 → 目标函数 → 数值 → 性能/存活”逐层证伪。越靠后的补丁越容易掩盖靠前的契约错误：gradient clipping 能限制错误梯度的幅值，却不能把错误 token 变成正确动作；engine restart 能恢复进程，却不能证明恢复后的权重或 DataSource cursor 正确。
 
@@ -44,17 +44,17 @@ flowchart LR
 
 另有两个名字相似但统计含义不同的 id：主循环的 `rollout_id` 是 round/checkpoint 进度；`Sample.rollout_id` 是一次逻辑 execution 的训练归一化身份。后者在 compact fanout 中由 siblings 共享，不能拿 round id 代替。[`train.py:49-80`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L49-L80) [`types.py:93-106`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L93-L106) [`rollout.py:799-814`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L799-L814)
 
-## 3. 首屏诊断：先做能区分原因的实验
+## 3. 初步诊断：先做能够区分原因的实验
 
 下表中的“首个动作”是**分析判断**，目的是最大化信息增益，不是统一阈值处方。阈值必须由模型、reward 尺度、更新幅度与已知健康 run 校准。
 
 | 症状 | 先看什么 | 最可能破坏的不变量 | 判别实验 | 首个干预 | 为什么常见动作可能是假修复 |
 |---|---|---|---|---|---|
 | train reward 升、eval/人工质量降 | source/reward category、重复率、截断率、长度分布 | verifier 与真实目标一致；入选数据仍覆盖原分布 | 按来源和错误类别重算 reward，人工审计高分/低分尾部 | 修 verifier、source 配额或模板边界 | 过滤低分只会让观测分布更“漂亮” |
-| zero-std group 或 dynamic-filter drop 激增 | `rollout/zero_std/*`、drop reason、有效 batch 的来源构成 | prompt group 正确；过滤后分布与容量仍可接受 | 保存过滤前/后样本，固定同一组离线重算 RM | 修分组/RM；必要时设置来源级 admission | 加大 oversampling 能填满 batch，却会放大选择偏差和系统负载 |
+| 零方差分组或动态过滤丢弃量激增 | `rollout/zero_std/*`、丢弃原因、有效批次的来源构成 | prompt 分组正确；过滤后分布与容量仍可接受 | 保存过滤前后样本，固定同一组离线重算 RM | 修正分组/RM；必要时按数据来源设置准入规则 | 增加超额采样能填满批次，却会放大选择偏差和系统负载 |
 | KL 或 train/rollout logprob 差突增 | engine version、Sample 版本列表、temperature/top-p、路由、逐 token 首个分叉 | behavior metadata 与生成版本可归因；两侧概率定义相同 | 先核权重，再用同一 dump 重算；按层级关闭 top-p/routing/量化做二分 | 修提交/metadata/一致性；确认语义正确后才做 TIS | ratio clip 会把契约错误压成小梯度，无法恢复正确概率 |
 | `pg_clipfrac`、TIS/OPSM rejection 高 | advantage 符号/尺度、policy age、mismatch 分位数、有效 mask 数 | clip 的输入确是合法但偏离的 behavior samples | 固定 batch，分别使用 rollout old-logprob 与 train-old-logprob 计算 | 缩短陈旧度或修 estimator；再调 clip | 提高拒绝率会降低有效 batch，可能把故障样本从指标分母中隐藏 |
-| loss 有限但 grad norm 跳变，或出现 NaN/Inf | reward/advantage 分位数、mask 分母、grad norm、loss scale、dtype 轴 | 统计 measure 不随 DP/CP/mbs 改变；数值有限 | 同一 checkpoint + dump 改一个变量：reducer、拓扑或 precision | 修分母/overflow 源，必要时临时回到高精度 | 降 LR/clip grad 只限制后果，错误 reducer 每步仍优化错误目标 |
+| loss 有限但 grad norm 跳变，或出现 NaN/Inf | reward/advantage 分位数、mask 分母、grad norm、loss scale、精度配置 | 统计口径不随 DP/CP/mbs 改变；数值保持有限 | 使用同一 checkpoint 和数据导出结果，每次只改变归约器、拓扑或精度之一 | 修正分母或溢出来源，必要时临时回到高精度 | 降低学习率或裁剪梯度只能限制后果，错误归约器每步仍在优化错误目标 |
 | 同一 dump 在 CP/DP/packing 改变后结果漂移 | rollout ids、mask sums、step GBS、loss/grad diff | topology 只改变执行位置，不改变估计量 | fresh restore 后对同一 dump 做 topology A/B | 修 converter/reducer/collective | “固定一个拓扑上线”绕过了 portability，未解释目标为何改变 |
 | rollout 卡住、engine 被反复 kill | health timeout、request queue/e2e、最长样本、restart log | liveness failure 与容量慢请求能区分；恢复后重新入版 | 降低流量看 health 是否恢复；离线 replay trainer | 先处理容量/超时或 engine 故障域 | 放宽 timeout 会隐藏真死锁；缩短 timeout 又会把高负载误杀成故障 |
 | 重启后短暂恢复，随后再次漂移 | 共同 checkpoint id、DataSource cursor、首批版本、相同 dump | 恢复切点完整；随机输入没有替代根因 | 从同一完整 checkpoint 和同一 dump 重跑两次 | 修恢复切点或原始异常 | 重启改变 queue、seed、batch composition，相关不等于修复 |
@@ -63,7 +63,7 @@ slime 默认已经记录 response length、zero-std group、repetition、truncat
 
 ## 4. 数据与奖励环：先问“被训练的动作究竟是什么”
 
-### 4.1 不变量是 provenance，不只是 reward 数值
+### 4.1 不变量是 token 与奖励的来源关系，不只是 reward 数值
 
 `Sample` 同时保存 prompt/token、reward、`loss_mask`、selected-token rollout logprob、weight versions、状态与自由 metadata；模型 token 必须带等长 logprob，工具/环境 token 不得带调用方 logprob并被追加为 mask 0。[`types.py:107-149`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L107-L149) [`types.py:253-302`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L253-L302) append 后还会验证 response、mask、logprob 和 top-p offsets 等长。[`types.py:418-443`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L418-L443)
 
@@ -86,19 +86,19 @@ slime 默认已经记录 response length、zero-std group、repetition、truncat
 
 agent 场景尤其不能用“最终答案有 reward”替代动作边界审计：树状执行如何压成 fragments、哪些工具 token mask 为 0，应回到 [[24_slime_agent_workflow_examples_analysis]] 与 [[12_slime_sample_datasource_analysis]] 核验。
 
-## 5. 策略版本与新鲜度环：区分“旧”与“错”
+## 5. 策略版本与时效性环：区分“样本较旧”与“数据有错”
 
 ### 5.1 异步移动版本边界，但没有消灭它
 
 `train_async.py` 会提前启动下一轮 generation，与当前训练重叠；到 `update_weights_interval` 边界时，它先等待在途 generation，再执行权重更新，源码注释明确是为了避免生成中途更新。[`train_async.py:25-40`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L25-L40) [`train_async.py:66-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L66-L70) fully-async worker 则跨 rollout calls 保持 background queue；它用完成队列做背压，把 ABORTED group 重新放回 DataSource，而不交给训练。[`fully_async_rollout.py:76-90`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/fully_async_rollout.py#L76-L90) [`fully_async_rollout.py:140-206`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/fully_async_rollout.py#L140-L206)
 
-**分析判断**：`update_weights_interval > 1`、提前生成和 warm queue 都可能让“生成时 actor”落后于“训练时 actor”，这是有意用 freshness 换 overlap；但训练前必须仍能回答每个有效 token 的 behavior 概率来自哪里。合法陈旧样本可以校正，身份不明或概率定义错误的样本不可以。
+**分析判断**：`update_weights_interval > 1`、提前生成和预热队列都可能让“生成时 actor”落后于“训练时 actor”，这是有意用样本时效性换取阶段重叠；但训练前仍必须能够回答每个有效 token 的行为概率来自哪里。来源明确的陈旧样本可以校正，来源不明或概率定义错误的样本不可以。
 
 ### 5.2 版本列表是审计线索，不是完整 token-version map
 
-`Sample.weight_versions` 是一个追加列表，但固定 converter 传入 trainer 的默认字段包括 ids、mask、rollout logprob、top-p/routing 等，不包括 `weight_versions`。[`types.py:397-416`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L397-L416) [`rollout.py:749-852`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L749-L852) 因而默认版本历史主要留在 Sample/debug dump；若要在 trainer 中按年龄 admission 或按 token 版本加权，需要扩展 converter/metadata，而不是假设现有 loss 已自动使用该列表。
+`Sample.weight_versions` 是一个追加列表，但固定转换器传给训练器的默认字段包括 ids、mask、rollout logprob、top-p/routing 等，不包括 `weight_versions`。[`types.py:397-416`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/types.py#L397-L416) [`rollout.py:749-852`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L749-L852) 因而默认版本历史主要留在 Sample 和调试数据导出中；若要在训练器内按样本年龄做准入控制，或按 token 版本加权，需要扩展转换器和元数据，而不能假设现有 loss 已经自动使用该列表。
 
-partial continuation 还可能跨版本：默认保留旧 span 的 mask，开启 `--mask-offpolicy-in-partial-rollout` 才把旧 response mask 清零、只训练新 span。[`sglang_rollout.py:224-240`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L224-L240) `weight_versions` 能提示“出现过多个版本”，但没有保存每个版本对应的精确 token offset。**分析判断**：若业务需要逐 span freshness policy，应显式记录版本边界；仅凭版本列表不能安全重建 token-version map。
+中断后的续生成还可能跨越权重版本：默认会保留旧 token 区间的 mask；只有开启 `--mask-offpolicy-in-partial-rollout`，才会把旧 response mask 清零，只训练新区间。[`sglang_rollout.py:224-240`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L224-L240) `weight_versions` 能提示“出现过多个版本”，但没有保存各版本对应的精确 token 偏移。**分析判断**：若业务需要按 token 区间执行样本时效策略，应显式记录版本边界；仅凭版本列表无法安全重建 token 到版本的映射。
 
 ### 5.3 同版本不等于一致，mismatch 也不等于陈旧
 
@@ -111,16 +111,16 @@ partial continuation 还可能跨版本：默认保留旧 span 的 mask，开启
 
 这也是为什么“减小 PPO clip”不是版本修复：它限制 current/old ratio 的目标贡献，却不证明 `old_log_probs` 真的是产生该 token 的分布。
 
-## 6. 估计量与数值环：稳定的是 measure，不只是幅值
+## 6. 估计量与数值环：要稳定的是统计口径，不只是数值幅度
 
-### 6.1 reducer 错误会静默改写目标
+### 6.1 归约器错误会在不报错的情况下改写目标函数
 
 固定 converter 在仍能看到完整 step 时，按 `rollout_id` 累加所有 sibling 的 loss mask totals，再把 whole-rollout denominator 复制给每个 fragment；这使 fragments 被拆到不同 DP ranks/micro-batches 后仍合成一次逻辑 rollout mean。[`rollout.py:799-814`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L799-L814) advantage whitening 又在 DP-with-CP group 上聚合 masked statistics，空 response 的 CP rank 也必须参加 collective。[`loss.py:818-878`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L818-L878)
 
 因此要区分两类异常：
 
-- **scale instability**：目标 measure 正确，但 reward/advantage/ratio 尾部过大；clip、normalization、LR 可能是合理执行器。
-- **measure corruption**：group、mask、rollout denominator 或 DP/CP reducer 错；任何幅值控制都不能恢复原目标。
+- **数值尺度不稳定**：统计口径正确，但 reward、advantage 或概率比的尾部过大；clip、归一化和学习率调整可能有效。
+- **统计口径被破坏**：分组、mask、rollout 分母或 DP/CP 归约器有误；任何幅值限制都无法恢复原目标。
 
 判别方法是固定 checkpoint 与 dump，只改变 packing、mbs、DP/CP；同一统计目标的 loss/grad 应在既定数值容差内不变。完整 reducer 推导与测试归 [[15_slime_loss_parallelism_analysis]]。
 
@@ -183,7 +183,7 @@ health monitor 对 `/health_generate` 失败的处理是 kill 整个逻辑 engin
 
 > **分析判断**：如果没有第 1–4 步，clipping/filtering/restart 的“有效”通常只表示异常不再出现在当前聚合曲线上。它没有证明原始 invariant 恢复，也没有证明下一批数据不会再次触发。
 
-## 10. 最小 replay 与验收配方
+## 10. 最小回放与验收方案
 
 目标不是追求所有 GPU bitwise 相等，而是用最小矩阵回答“异常从哪一层开始”。
 
@@ -202,11 +202,11 @@ rollout dump 用 `Sample.to_dict()` 保存语义记录；train dump 把 response
 | A replay-repeat | checkpoint、dump、配置、topology | 重启同一训练 run | sample join、loss、grad 在声明容差内重复 | trainer nondeterminism 或未固定状态 |
 | B topology | 同一 fresh checkpoint 与 dump | DP/CP/mbs/packing | 逻辑 rollout loss/grad 在声明容差内不变 | converter、reducer、collective |
 | C precision | 同一 fresh checkpoint、dump、topology | 一条 precision 轴 | 全部 finite；偏差在预算内且首处分叉可解释 | scale、量化、kernel |
-| D online-vs-replay | 同一初始 checkpoint 与目标 batch | 在线生成 vs 固定 Sample | provenance/version 可解释；mismatch 不越健康基线 | data、freshness、sampling 或 serving |
+| D 在线生成与回放对比 | 同一初始 checkpoint 与目标批次 | 在线生成 vs 固定 Sample | 数据来源和版本可解释；偏差不超过健康基线 | 数据、策略时效性、采样或推理服务 |
 
 每次必须从**相同 fresh checkpoint**恢复；否则前一 run 的 optimizer update 会污染下一组比较。容差来自模型/拓扑的健康基线，不能把别的模型 CI 阈值直接移植为通用标准。
 
-### 10.3 上线前最小 acceptance gate
+### 10.3 上线前的最小验收门槛
 
 - 数据：抽样验证动作/观察 mask、group 与 rollout identity；source/filter 后分布没有未解释漂移。
 - 版本：所有 engine 完成同一提交；跨版本 partial 有明确 mask 策略；版本历史可审计。
@@ -217,11 +217,11 @@ rollout dump 用 `Sample.to_dict()` 保存语义记录；train dump 把 response
 
 ## 11. 边界与设计评价
 
-slime 已提供形成诊断闭环所需的大部分“钩子”：语义化 Sample、behavior metadata、版本字段、rollout/train dump、rollout-aware reducer、mismatch/clip 指标、版本化权重提交和 engine 局部恢复。**分析判断**：由固定基线可以把这一设计理解为让每个 owner 暴露自己的证据，而不是用一个总的 `stable=true` 掩盖跨系统差异。
+slime 已提供形成诊断闭环所需的大部分钩子：语义化 Sample、行为策略元数据、版本字段、rollout/训练数据导出、按 rollout 归约、偏差/截断指标、版本化权重提交和推理引擎局部恢复。**分析判断**：根据固定基线，可以把这一设计理解为让每个责任主体提供自己掌握的证据，而不是用一个总的 `stable=true` 掩盖跨系统差异。
 
 固定基线仍有三个需要部署方补齐的稳定性治理层：
 
-1. `weight_versions` 默认不进入 train dict，也不是 token-offset map；精细 freshness admission 需要扩展 metadata/converter。
+1. `weight_versions` 默认不进入训练输入字典，也不是 token 到版本偏移的映射；若要进行精细的样本时效性准入，需要扩展元数据和转换器。
 2. dynamic/sample filter 会改变入选分布，但默认返回值与 rollout dump 只覆盖入选 Samples；严格审计所有被拒候选需要自定义 hook 或日志。[`sglang_rollout.py:393-465`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L393-L465) [`rollout.py:703-720`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L703-L720)
 3. trainer checkpoint 与 DataSource state 是顺序保存的两项动作；buffer 子类继承的 state payload 不包含内存 partial buffer。[`train.py:71-80`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L71-L80) [`data_source.py:123-160`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L123-L160) [`data_source.py:168-222`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L168-L222) **分析判断**：固定基线未提供把它们与 engine/request ledger 一起提交的全局原子 manifest，恢复成功必须按状态所有者分别举证。
 
@@ -230,7 +230,7 @@ slime 已提供形成诊断闭环所需的大部分“钩子”：语义化 Samp
 ## Related Pages
 
 - [[12_slime_sample_datasource_analysis]] — token provenance、partial、fanout identity 与 replay 所依赖的数据契约。
-- [[15_slime_loss_parallelism_analysis]] — estimator、reducer measure 与 DP/CP/topology invariance 的权威机制页。
+- [[15_slime_loss_parallelism_analysis]] — 估计量、归约统计口径以及 DP/CP/拓扑不变性的机制详解。
 - [[16_slime_weight_sync_analysis]] — version、pause/flush、transport 与 serving commit 的完整协议。
 - [[17_slime_train_inference_consistency_analysis]] — 从权重到输入、采样、路由、kernel 的 mismatch 分层定位。
 - [[18_slime_fault_tolerance_observability_analysis]] — engine recovery、共同 checkpoint、trace 与 dump 的恢复边界。

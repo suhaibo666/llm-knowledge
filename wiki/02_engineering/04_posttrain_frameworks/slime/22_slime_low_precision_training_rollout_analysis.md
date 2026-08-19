@@ -11,7 +11,7 @@
 
 项目文档把 BF16 training + FP8 rollout、FP8 KV cache、INT4 rollout/QAT、FP8 training 分别列出成熟度，并把第一种作为当前生产推荐、后两类分别标为 Beta 与 Experimental。这张表本身已经说明它们不是同一个开关的四个名字。[`docs/zh/advanced/low-precision.md:3-16`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/low-precision.md#L3-L16)
 
-| 精度轴 | 谁拥有 | 它决定什么 | 主要误差或兼容预算 |
+| 精度环节 | 责任组件 | 它决定什么 | 主要误差或兼容性代价 |
 |---|---|---|---|
 | 训练计算 | Megatron + TransformerEngine | forward/backward 的 Linear、GroupLinear GEMM 是否进入 FP8 recipe | 算子舍入、scale 更新、kernel/硬件支持；embedding 与 LM head 不随之自动变成 FP8。[`low-precision.md:82-89`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/low-precision.md#L82-L89) |
 | 训练参数与 master/optimizer 状态 | Megatron optimizer + TransformerEngine | 参数是否以 BF16 常驻、是否启用 FP8 param gather、主权重与 moments 如何放置 | 更新可恢复性和 optimizer 兼容；`fp8_param_gather` 需要 TE 的 `fp8_model_init`，且项目文档明确其与常用 CPU Adam offload 路径冲突。[`model_provider.py:183-198`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model_provider.py#L183-L198) [`low-precision.md:89-93`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/low-precision.md#L89-L93) |
@@ -21,7 +21,7 @@
 | KV cache | SGLang ServerArgs | attention 历史状态以何种 dtype 常驻 | cache 容量、attention 数值与 SGLang/GPU stack 支持；它不改变 Megatron 训练精度。[`low-precision.md:44-52`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/low-precision.md#L44-L52) |
 | 量化后处理 | SGLang loader hook，由 slime 编排调用 | compressed-tensors 更新前恢复可加载状态、更新后重新建立运行时量化表示 | engine 内部状态必须与 loader schema 匹配；该步骤只对 compressed-tensors 分支触发。[`update_weight_from_distributed.py:102-134`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L102-L134) |
 
-> **设计分析**：这七项是不同的“所有权轴”，不表示七项可以任意笛卡尔积组合。例如 FP8 rollout 的 payload schema 受 HF checkpoint 约束，`fp8_param_gather` 又受 optimizer 实现约束。拆轴的意义是先找对负责人和失败域，再判断一个具体组合是否被当前依赖栈实现。
+> **设计分析**：这七个精度环节分别由不同组件负责，并不表示它们可以任意组合。例如 FP8 rollout 的数据格式受 HF checkpoint 约束，`fp8_param_gather` 又受优化器实现约束。分开讨论的意义是先找对责任组件和故障范围，再判断某个具体组合是否已被当前依赖栈实现。
 
 ```mermaid
 flowchart LR
@@ -62,9 +62,9 @@ INT4 更不是一个 `torch.int4` tensor：在线 converter 生成 `weight_packe
 
 > **设计分析**：因此兼容性的最小单位不是“FP8”或“INT4”这个标签，而是完整的 `{参数名, shape, dtype, scale 布局, ignore 集, 后处理}` schema。只比较 bit width 会漏掉最常见的 loader 失败。
 
-## 3. 配置如何流到各自 owner
+## 3. 配置如何传到各自负责的组件
 
-### 3.1 两个 parser 先独立解析，再合并 namespace
+### 3.1 两个参数解析器先各自解析，再合并到同一命名空间
 
 slime 先用独立 parser 解析 SGLang 参数，再让 Megatron parser 忽略未知的 `--sglang-*` 参数，最后把两个 namespace 合并并分别校验。[`arguments.py:1600-1643`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1600-L1643) SGLang 的原生 `ServerArgs` 会被包装成 `--sglang-` 前缀，字段名也变成 `sglang_*`，避免与训练参数同名碰撞。[`sglang_utils/arguments.py:38-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L38-L118)
 
@@ -78,9 +78,9 @@ FP8 转换工具把 `activation_scheme=dynamic`、`fmt=e4m3`、`quant_method=fp8
 
 > **设计分析**：HF checkpoint 在这里不只是冷启动权重，它还是 rollout loader 与在线同步之间的格式清单。启动 checkpoint 和在线更新若使用不同量化 schema，即使二者都叫“FP8”，也不构成同一运行时契约。
 
-### 3.3 三种 recipe 实际打开的是不同轴
+### 3.3 三种官方示例实际启用的是不同精度环节
 
-| recipe | 训练计算/存储 | 梯度与规约 | rollout 权重 | KV cache | 后处理 |
+| 官方示例 | 训练计算/存储 | 梯度与规约 | rollout 权重 | KV cache | 后处理 |
 |---|---|---|---|---|---|
 | BF16 train + FP8 rollout | 训练保持 BF16/torch_dist | 可独立选择 FP32 规约 | HF config 驱动在线 FP8 conversion | 独立可选 | FP8 processor 直接产出 weight + scale |
 | FP8 train + FP8 rollout | TE FP8 GEMM；param gather 可选，未开时参数仍 BF16 | 仍可保留 FP32 规约 | 训练权重先回到 BF16 表示，再按 rollout schema 量化 | 独立可选 | 与 rollout checkpoint 的 FP8 schema一致 |
@@ -159,7 +159,7 @@ $$
 
 ## 7. 失败模式：组合合法不等于实现兼容
 
-| 失败模式 | 机制 | 该看哪一轴 |
+| 失败模式 | 形成原因 | 应检查哪个精度环节 |
 |---|---|---|
 | HF config 声称一种量化法，在线 updater 却不支持 | processor 对未知 `quant_method` 直接透传 BF16；“config 可读”不等于“在线更新已实现”。[`processors/__init__.py:6-22`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/megatron_to_hf/processors/__init__.py#L6-L22) | rollout schema + transport |
 | 把“FP8 rollout”理解成全模型 FP8 | FP8 processor 只量化匹配的层，其他参数原样返回。[`quantizer_fp8.py:31-91`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/megatron_to_hf/processors/quantizer_fp8.py#L31-L91) | rollout 常驻权重 |
@@ -169,13 +169,13 @@ $$
 | 把 FP8 KV 当成 weight quantization | 它经 `--sglang-` ServerArgs 进入 engine，只改变 rollout cache 路径，且依赖 SGLang/GPU stack。[`low-precision.md:44-52`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/low-precision.md#L44-L52) | KV cache |
 | compressed-tensors 更新后漏做 postprocess | updater 只在该 quant method 下调用 restore 与 quantization postprocess；漏掉会让 engine 停留在不完整的运行时表示。[`update_weight_from_distributed.py:102-134`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L102-L134) | 后处理 |
 
-## 8. 验证策略：按轴建 gate，而不是只看一次 loss
+## 8. 验证策略：按精度环节设置门禁，而不是只看一次 loss
 
 1. **静态配置 gate**：记录训练 checkpoint、HF checkpoint、`quant_method`、block/group size、scale format、ignore rules、FP8 recipe、param gather、gradient reduction 和 KV dtype。HF converter 会把这些量化字段写入 `config.json`，actor 又从该 config 构造 updater，因此配置审计应以落盘后的 config 为准。[`convert_hf_to_fp8.py:185-240`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tools/convert_hf_to_fp8.py#L185-L240) [`actor.py:175-181`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L175-L181)
 2. **转换器 gate**：对零块、极值、非整 block/group shape、ignore regex、量化/非量化混合字段分别做单测；当前仓库已有 zero-block NaN 与 roundtrip gate，但这不等价于覆盖全部 schema。[`test_block_fp8_zero_block.py:38-75`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_block_fp8_zero_block.py#L38-L75)
 3. **payload ABI gate**：逐层核对输出参数名、dtype、shape，以及 FP8 scale 或 INT4 packed/scale/shape 是否成组出现；engine API本身就是按 names/dtypes/shapes 接收更新。[`sglang_engine.py:414-438`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L414-L438)
 4. **训练状态 gate**：分别验证训练 checkpoint reload、optimizer state reload、FP8 param gather 依赖与 gradient dtype；不要用 rollout 成功替代训练可恢复性。`--no-save-optim` 的帮助文本明确说明省略 optimizer state 会禁用训练恢复。[`arguments.py:857-865`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L857-L865)
-5. **运行时容量 gate**：分别记录训练峰值、同步转换峰值、rollout weight 常驻、KV cache 占用和 postprocess 时延；只有这样才能判断某个低精度轴是否击中了真实瓶颈。源码按转换后 tensor 的实际字节数分 bucket，说明同步成本不能从训练参数 dtype 直接推出。[`update_weight_from_distributed.py:167-175`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L167-L175)
+5. **运行时容量门槛**：分别记录训练峰值、同步转换峰值、rollout 权重常驻量、KV cache 占用和后处理时延；只有这样才能判断某个低精度环节是否真正缓解了瓶颈。源码按转换后张量的实际字节数分桶，说明同步成本不能由训练参数 dtype 直接推出。[`update_weight_from_distributed.py:167-175`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/update_weight_from_distributed.py#L167-L175)
 6. **行为 gate**：在配置、版本和样本固定后，再比较量化与非量化 rollout 的行为；本页不规定 KL/logprob 阈值，因为阈值必须按模型、kernel 和 recipe 标定。分层定位方法见 [[17_slime_train_inference_consistency_analysis]]。
 
 ## Related Pages

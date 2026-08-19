@@ -1,13 +1,13 @@
-# slime Megatron 训练后端：把 RL 样本接入原生并行执行，而不重写 trainer
+# slime Megatron 训练后端：让 RL 样本进入原生并行训练流程
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
 > **文档/测试基线**：同一提交下 `docs/en/{advanced,get_started}` 与 `tests/utils`
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
-> **结论先行**：rollout 交付的是带身份、mask、可选行为策略字段且长度不齐的 RL Sample 语义，Megatron 消费的却是已排定 DP/VPP micro-batch、可做 CP packing、并能进入 pipeline forward/backward 与 optimizer step 的执行协议。slime 的核心选择不是另写一个“通用 RL trainer”，而是在 Megatron 外围放一层 actor adapter：它在进入训练内核前完成语义压缩、调度和角色切换，进入内核后继续使用 Megatron 原生 model、DDP、pipeline schedule、optimizer 与 scheduler。代价是 adapter 必须显式守住全局 rollout 统计、拓扑一致性和 CPU/GPU 生命周期，而且与特定 Megatron 能力及补丁仍有版本耦合。
+> **结论先行**：rollout 交付的是长度不一、带样本标识、mask 和可选行为策略字段的 RL Sample；Megatron 需要的却是已经排好 DP/VPP micro-batch、可进行 CP 打包，并能进入流水线前向/反向传播和优化器步骤的数据。slime 没有另写一个“通用 RL 训练器”，而是在 Megatron 外围增加一层 actor 适配：进入训练内核前完成数据压缩、调度和角色切换，进入内核后继续使用 Megatron 原生模型、DDP、流水线调度、优化器和学习率调度器。代价是适配层必须显式保证全局 rollout 统计、拓扑一致性和 CPU/GPU 生命周期正确，而且仍会与特定 Megatron 能力及补丁产生版本耦合。
 
-本文只讨论这道适配边界和训练执行所有权。Sample/DataSource 的语义来源见 [[12_slime_sample_datasource_analysis]]，loss 公式与并行归一化归 [[15_slime_loss_parallelism_analysis]]，训练权重如何提交给推理侧归 [[16_slime_weight_sync_analysis]]。带 fixed-commit 定位符的是源码、官方文档或测试事实；“设计分析”明确表示由实现形态推导的判断。
+本文只讨论这道适配边界和训练执行职责。Sample/DataSource 的数据语义见 [[12_slime_sample_datasource_analysis]]，loss 公式与并行归一化见 [[15_slime_loss_parallelism_analysis]]，训练权重如何提交给推理侧见 [[16_slime_weight_sync_analysis]]。带固定提交定位符的是源码、官方文档或测试事实；“设计分析”明确表示由实现形态推导的判断。
 
-## 1. 根本矛盾：RL step 不是 Megatron micro-batch
+## 1. 根本矛盾：一轮 RL 更新不等同于一个 Megatron micro-batch
 
 RolloutManager 的默认转换器从 `Sample` 提取 token、response length、reward、sample/rollout identity 与 mask，并按功能条件附加 rollout logprob、top-p、routing 或 teacher logprob；它产出的是一个完整 rollout step 的语义字典，还不是模型 forward 的 batch。[`slime/ray/rollout.py:749-866`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L749-L866)
 
@@ -33,7 +33,7 @@ flowchart LR
     FB --> OP["Megatron optimizer<br/>每训练 step 更新一次"]
 ```
 
-### 1.1 为什么是 wrapper，而不是重写训练内核
+### 1.1 为什么增加封装层，而不是重写训练内核
 
 初始化并没有复制 Megatron 的模型和优化器实现：slime 调用 Megatron `get_model` 构建 model chunks，把同名参数装进 `OptimizerConfig`，再调用 `get_megatron_optimizer` 和 Megatron scheduler。[`slime/backends/megatron_utils/model.py:270-318`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L270-L318) 执行阶段也直接取 `get_forward_backward_func()`，只提供 data closure 与 loss callback；PP/VPP schedule、梯度通信和 DDP hook 仍由 Megatron 控制。[`slime/backends/megatron_utils/model.py:643-654`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L643-L654) [`slime/backends/megatron_utils/model.py:745-769`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L745-L769)
 
@@ -41,11 +41,11 @@ flowchart LR
 
 “wrapper”也不等于“兼容任意原版 Megatron”。官方 quick start 明确提醒镜像可能包含临时 SGLang/Megatron patches，因此固定提交下的适配层仍依赖配套环境。[`docs/en/get_started/quick_start.md:1-9`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/get_started/quick_start.md#L1-L9)
 
-## 2. 角色所有权：哪些复用进程，哪些保留独立 optimizer
+## 2. 角色状态归属：哪些角色复用进程，哪些保留独立优化器
 
 actor worker 初始化一套 Megatron model、optimizer 与 scheduler；非 critic worker 随后创建 `TensorBackuper`，先保存 `actor`，再按配置把 ref、Megatron teacher 和 old actor checkpoint 依次加载到同一 model 并保存为 tag。[`slime/backends/megatron_utils/actor.py:95-140`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L95-L140) 普通 backuper 为每个 tag 分配 pinned CPU tensor，backup/restore 都是同名参数的 CPU↔当前 model copy；恢复不存在的 tag 会先被 actor 拒绝。[`slime/utils/tensor_backper.py:42-74`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/tensor_backper.py#L42-L74) [`slime/backends/megatron_utils/actor.py:301-305`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L301-L305)
 
-| 角色 | 所有者与状态 | 为什么这样放 |
+| 角色 | 责任主体与所持状态 | 这样安排的原因 |
 |---|---|---|
 | actor | actor `RayTrainGroup` 内的 model + optimizer + scheduler | 唯一执行 policy backward 与参数更新的角色。[`slime/backends/megatron_utils/actor.py:514-533`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L514-L533) |
 | ref / teacher / old actor | actor worker 内同一 model 的只读 CPU tags；切换后只做 forward，再恢复 actor | 三者只需为同一 token batch 提供比较信号，不需要各自 optimizer；执行顺序见 actor 主链。[`slime/backends/megatron_utils/actor.py:433-503`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L433-L503) |
@@ -55,11 +55,11 @@ PPO 的 actor 与 critic group 复用同一个 placement-group GPU 区域；driv
 
 > **设计分析**：为 ref、teacher、old actor 各建一个常驻 trainer 会复制 process groups、模型显存和调度对象，却没有对应的 optimizer 工作；共享 model 槽位加只读 CPU tags 用传输时间换显存。critic 不能采用同样办法，因为它有独立目标和 optimizer state，所以 slime 只在这个真正需要训练所有权分离的角色上建立独立 group。
 
-### 2.1 CPU backup 与整组 offload 不是一回事
+### 2.1 CPU 参数备份与整组显存卸载不是一回事
 
 角色 backup 只保存可按 tag 恢复的参数/缓冲区；`sleep/wake_up` 则由 memory saver 暂停/恢复整个训练 GPU state，并销毁/重建 process groups，actor wake 后还会恢复 `actor` tag。[`slime/backends/megatron_utils/actor.py:204-243`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L204-L243) actor 的 `train` 只在 `offload_train` 开启时包围一次 wake→训练→sleep；没有共置或 critic 压力时默认不走这一生命周期。[`slime/backends/megatron_utils/actor.py:374-394`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L374-L394) [`slime/utils/arguments.py:1929-1958`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1929-L1958)
 
-## 3. 从 train dict 到 Megatron batch：转换与 fetch 的责任边界
+## 3. 从训练输入字典到 Megatron 批次：格式转换与取数的职责边界
 
 数据不是到 actor 才临时决定如何切。RolloutManager 在还能看到完整 step 时完成以下工作：
 
@@ -102,11 +102,11 @@ actor 的默认顺序是先构造同一 `DataIterator`，再依次做可选 ref 
 
 官方文档把当前边界说得更窄：YAML 主要服务 PPO actor/critic；资源仍由 CLI 控制，actor/critic 当前必须保持相同 Megatron parallel topology，并共享 train placement group。[`docs/en/advanced/megatron-config.md:3-22`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/advanced/megatron-config.md#L3-L22) [`docs/en/advanced/megatron-config.md:111-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/advanced/megatron-config.md#L111-L118)
 
-### 6.2 Custom loss 替换目标函数，但留在 Megatron callback 内
+### 6.2 自定义 loss 可以替换目标函数，但仍在 Megatron 回调中执行
 
 当 `loss_type=custom_loss` 时，dispatcher 动态加载 `custom_loss_function_path`，并以与内置 loss 相同的 `(args, batch, logits, sum_of_sample_mean)` 形态调用；外层仍负责 micro-batch/parallel rescale 与 Megatron 集成。[`slime/backends/megatron_utils/loss.py:1283-1325`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L1283-L1325) [`slime/backends/megatron_utils/loss.py:1327-1383`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L1327-L1383) 官方 customization 文档也把它定位为新 RL 目标、多目标或正则项的扩展点，而不是替换 trainer。[`docs/en/get_started/customization.md:254-264`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/get_started/customization.md#L254-L264)
 
-> **设计分析**：role YAML 位于“构造哪套 Megatron args”的外缝，custom loss 位于“pipeline 输出如何变成标量目标”的内缝。前者不允许偷偷改变 Ray 资源所有权，后者不允许绕过 pipeline/optimizer 边界；这两条窄缝比重写 generic trainer 更能保留 Megatron-native 能力。若扩展需要改变 Sample 字段或 reducer 统计口径，则应分别走 converter/advantage/reducer seam，而不是把额外语义藏进 model forward；具体数学约束见第 15 页。[`slime/utils/arguments.py:1379-1386`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1379-L1386) [`slime/utils/arguments.py:1085-1088`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1085-L1088)
+> **设计分析**：角色 YAML 是“构造哪套 Megatron 参数”的外层扩展点，自定义 loss 是“流水线输出如何变成标量目标”的内层扩展点。前者不能暗中改变 Ray 资源归属，后者不能绕过流水线和优化器边界；这两个窄扩展点比重写通用训练器更能保留 Megatron 原生能力。若扩展需要改变 Sample 字段或归约统计口径，则应分别使用转换器、advantage 或归约器扩展点，而不是把额外语义藏进模型前向传播；具体数学约束见第 15 页。[`slime/utils/arguments.py:1379-1386`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1379-L1386) [`slime/utils/arguments.py:1085-1088`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1085-L1088)
 
 ## 7. 边界、代价与常见误读
 

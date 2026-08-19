@@ -8,6 +8,16 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-19：统一 slime 系列中文技术用语与表格表达
+
+**Type**: Series-wide Terminology and Readability Revision
+
+- 审校 [[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析系列]] 的 20 篇内容页与总索引，在不改变源码事实、固定提交引用和公式的前提下，统一表头、章节标题和机制说明中的中文技术用语。
+- 将会妨碍理解的直译改成常用工程表达：例如“制品路径”改为“模型与检查点目录”，“owner/ownership”按语境改为“责任主体/状态归属”，“admission”改为“准入控制”，“measure”改为“统计口径”，“productive throughput”改为“有效训练吞吐”，“fanout/flatten/sibling”分别写作“扇出/展平/同组片段”。
+- 在索引中补充术语约定：类名、参数名、协议字段和行业通用缩写保留源码写法；普通说明文字优先使用能直接对应工程动作的中文，避免把 artifact、contract、identity、runtime、adapter 等英文概念逐字翻译成生硬表述。
+
+---
+
 ## 2026-08-18：重构 slime 全目录源码分析——从功能罗列到设计因果与诊断
 
 **Type**: Series-wide Source-faithful Rewrite + Design Rationale Audit

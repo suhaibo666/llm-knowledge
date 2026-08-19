@@ -1,4 +1,4 @@
-# slime On-Policy Distillation：让固定 teacher 加入同一条 on-policy 闭环
+# slime On-Policy 蒸馏：让固定 teacher 加入同一条在线策略训练闭环
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
 > **文档/示例/测试基线**：同一提交下 `docs/en/advanced/on-policy-distillation.md`、`examples/on_policy_distillation/` 与 `tests/test_qwen2.5_0.5B_opd_sglang.py`
@@ -49,11 +49,11 @@ flowchart LR
 
 这种选择也解释了为什么 slime 不传 teacher 的全词表 logits：SGLang helper 请求输入 token 的 logprob，Megatron forward 也只收集目标 token 的 response logprob；训练目标需要的是学生采样 action 的 Monte Carlo 项，而不是第二份 $T\times V$ 分布张量。[`slime/rollout/on_policy_distillation.py:8-29`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/on_policy_distillation.py#L8-L29) [`slime/backends/megatron_utils/loss.py:513-544`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L513-L544)
 
-## 3. 角色与所有权：actor 更新，ref 可刷新，teacher 只读
+## 3. 角色状态归属：actor 更新，ref 可刷新，teacher 只读
 
 固定基线创建 actor group 时，只有 `opd_type=megatron` 才把 `with_opd_teacher=True` 传给现有 actor `RayTrainGroup`；它没有额外申请 teacher placement group，也没有创建第二个 Ray train group。[`slime/ray/placement_group.py:140-183`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/placement_group.py#L140-L183) worker 初始化仍只有一套 Megatron model、optimizer 与 scheduler，ref 和 teacher checkpoint 被加载成同一 model 槽位的备份 tag。[`slime/backends/megatron_utils/actor.py:95-136`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L95-L136)
 
-| 角色 | 运行位置与状态 | 是否更新 | 是否发布到 rollout |
+| 角色 | 运行位置与所持状态 | 是否更新 | 是否发布到 rollout 侧 |
 |---|---|---|---|
 | actor | actor worker 的当前 Megatron model，拥有 optimizer | 每个有效 train step 更新 | 是，weight updater 明确读取 `actor` tag。[`slime/backends/megatron_utils/actor.py:151-182`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L151-L182) |
 | ref | actor worker 内只读参数 tag | 可由 `ref_update_interval` 周期性覆盖 | 否；只用于比较前向。[`slime/backends/megatron_utils/actor.py:550-562`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L550-L562) |
@@ -64,7 +64,7 @@ Megatron teacher 的“加载进训练”也不是多驻留一份 GPU model：`T
 
 > **设计分析**：这是一种“共享 GPU 执行槽、分离 CPU 参数所有权”的角色复用。它避免 teacher 常驻第二份训练显存，但每轮 teacher forward 前后都有 CPU↔GPU 参数切换，并为完整 teacher tag 消耗 host pinned memory。角色切换、offload 和 Megatron-native 执行的通用机制由 [[14_slime_megatron_training_analysis]] 负责。
 
-## 4. SGLang teacher：在 rollout 侧生产，再随 Sample 运输
+## 4. SGLang teacher：在 rollout 侧计算结果，再随 Sample 传给训练器
 
 学生生成结束后，标准 rollout reward hook 会对尚未有 reward 的 Sample 调用 `async_rm`；若配置 `custom_rm_path`，它动态加载 OPD `reward_func`，把返回 JSON 暂存在 `sample.reward`。[`slime/rollout/sglang_rollout.py:250-289`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L250-L289) [`slime/rollout/rm_hub/__init__.py:55-64`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/rm_hub/__init__.py#L55-L64)
 
@@ -76,7 +76,7 @@ RolloutManager 转换训练数据前调用自定义 reward postprocess。它丢�
 
 这条 placement 的收益是 teacher 可使用不同架构并独立部署，只要它能评价学生的 token ids；官方文档因此把“大模型或不同架构 teacher”列为 SGLang 模式的场景，同时明确要求 tokenizer 与 vocabulary 兼容。[`docs/en/advanced/on-policy-distillation.md:43-55`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/advanced/on-policy-distillation.md#L43-L55) **由此可推断**，每条 Sample 新增的 teacher prefill/RPC 会让 teacher queue 进入 rollout 长尾；固定 helper 每次新建 `ClientSession`、HTTP 错误直接上抛，没有复用通用 remote-RM 的共享 session 与重试逻辑。[`slime/rollout/on_policy_distillation.py:25-29`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/on_policy_distillation.py#L25-L29) [`slime/rollout/rm_hub/__init__.py:19-52`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/rm_hub/__init__.py#L19-L52)
 
-## 5. Megatron teacher：跳过 Sample transport，在同一 train batch 上补齐字段
+## 5. Megatron teacher：不经 Sample 传输，直接在同一训练批次上补齐字段
 
 Megatron 模式没有在 rollout 阶段生产 `Sample.teacher_log_probs`。actor 收到原有 train data 后构造一次 `DataIterator`，依次切到可选 ref、teacher 和 current/old actor；teacher 调用与 actor/ref 相同的 `compute_log_prob`，只是使用 `teacher_` 前缀把输出写成 `teacher_log_probs`，随后恢复 actor 再计算 advantage。[`slime/backends/megatron_utils/actor.py:424-503`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L424-L503)
 
@@ -132,7 +132,7 @@ helper 直接发送学生 token ids，并只读取 SGLang 返回条目的 logpro
 
 > **设计分析**：实验必须把 external teacher 的 checkpoint/version 当部署不变量；若热更新 server，slime 当前数据面无法证明一个 batch 内的 teacher logprob 来自同一版本。partial rollout 是否仍严格 on-policy，则继承第 12 页的 actor `weight_versions` 与 `loss_mask` 语义；OPD 本身不会按版本自动屏蔽旧 span。
 
-### 7.3 train ABI 假设 teacher 字段对整批一致存在
+### 7.3 训练输入接口假设 teacher 字段在整个批次中一致存在
 
 默认 converter 只检查 `samples[0].teacher_log_probs` 是否非空；若首条有值，就把所有 Sample 的字段整体加入 train dict。tensorize 随后会逐项转 tensor，因此混合“有 teacher/无 teacher”的 batch 不是受支持的稀疏表示。[`slime/ray/rollout.py:854-866`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L854-L866) [`slime/ray/rollout.py:75-85`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L75-L85)
 
