@@ -2,7 +2,8 @@
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
 > **文档与测试基线**：同一提交下 `docs/en/` 与 `tests/`
-> **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
+> **Ray 语义参考**：[Ray Actors](https://docs.ray.io/en/latest/ray-core/actors.html) 与 [Placement Groups](https://docs.ray.io/en/latest/ray-core/scheduling/placement-group.html)，核验于 2026-08-19
+> **核验日期**：2026-08-19 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：slime 没有把分布式后训练塞进一个“总协调器”，也没有把每个概念都实现成 Ray actor。它按资源、训练角色、模型服务、同构推理引擎组、服务进程和权重传输拆分职责：placement group 预留并排序 GPU 资源，`RayTrainGroup` 向训练 rank 广播调用，`RolloutManager` 管理生成侧控制状态，`RolloutServer`/`ServerGroup` 描述服务拓扑，`SGLangEngine` actor 管理服务进程，trainer actor 执行训练，其内部 weight updater 负责提交权重。分层增加了委托链和 RPC，但避免把不同生命周期、故障域和并行语义绑在同一个对象中。
 
 本文把带 fixed-commit 定位符的源码/官方文档事实与“设计分析”分开；后者是根据对象边界、调用方向和失败路径作出的推断，不代表项目作者原话。
@@ -67,6 +68,42 @@ flowchart TB
 这些身份由创建点而不是名称决定：`RayTrainGroup` 在循环中逐 rank 创建 `TrainRayActor`；`ServerGroup.start_engines` 才把 `SGLangEngine` 包成 Ray actor；`RolloutServer` 和 `ServerGroup` 的定义只是 dataclass。[`actor_group.py:57-129`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L57-L129) [`rollout.py:144-219`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L144-L219) [`rollout.py:320-338`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L320-L338)
 
 `SGLangEngine` 也不是 token decoding engine 本体：普通路径在 actor 内 spawn SGLang HTTP server process，等待健康后才注册到 router；external 路径只核验已存在服务参数并注册。[`sglang_engine.py:48-81`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L48-L81) [`sglang_engine.py:122-192`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L122-L192)
+
+### 2.1 一个训练角色为何对应多个 Ray actors
+
+先纠正一个容易造成后续误读的术语：SPMD 是 **single program, multiple data**，意为多个进程执行同一套程序、各自处理不同数据或模型分片；它不是“single process, multiple data”。在常见的一卡一进程训练中，一个逻辑训练任务本来就由多个 OS 进程组成，每个进程拥有一个 distributed rank。DP、TP、PP、CP、EP 决定这些 rank 如何分工，Ray 并不替 Megatron 实现这些并行算法。
+
+slime 的对象映射如下：
+
+```mermaid
+flowchart TB
+    D["主控进程中的 RayTrainGroup<br/>普通 Python 对象"]
+    A0["TrainRayActor<br/>进程 / rank 0"]
+    A1["TrainRayActor<br/>进程 / rank 1"]
+    AN["TrainRayActor<br/>进程 / rank N-1"]
+    PG["同一个 torch.distributed process group<br/>Megatron TP/PP/DP/CP/EP"]
+    D -->|"train.remote()"| A0
+    D -->|"train.remote()"| A1
+    D -->|"train.remote()"| AN
+    A0 <--> PG
+    A1 <--> PG
+    AN <--> PG
+```
+
+`RayTrainGroup` 先计算 `world_size = num_nodes × num_gpus_per_node`，随后按 rank 循环创建同样数量的 `TrainRayActor`；rank 0 提供 rendezvous 地址和端口，其余 actors 使用同一组参数加入训练 world。[`actor_group.py:57-62`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L57-L62) [`actor_group.py:113-129`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L113-L129) 每个 actor 进程设置自己的 `RANK`、`WORLD_SIZE`、`LOCAL_RANK`、`MASTER_ADDR` 和 `MASTER_PORT`，再调用 `torch.distributed.init_process_group()`；至此 Ray actor 的进程身份才变成 Megatron 可使用的 distributed rank。[`train_actor.py:28-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/train_actor.py#L28-L70)
+
+因此，这里的对应关系不是“一个训练任务 = 一个 Ray actor”，而是：
+
+| 观察粒度 | 在 slime 中是什么 | 负责什么 |
+|---|---|---|
+| 逻辑训练角色 | 一个 `RayTrainGroup`，例如 actor 或 critic | 保存全部 rank handles，统一发起一轮训练、保存或权重更新 |
+| 训练进程 | 一个 `TrainRayActor` | 承载一个 distributed rank 的长期状态，并绑定 Ray 分配的资源槽位 |
+| 分布式计算组 | 全部 trainer actors 加入的 `torch.distributed` process group | 执行 Megatron 的 collective、流水线通信和参数/梯度同步 |
+| GPU 资源布局 | placement group 的 bundles | 决定这些进程能否成组启动以及分别落到哪个资源槽位 |
+
+例如 2 个节点、每节点 4 张 GPU 时，训练 `world_size` 是 8，slime 会创建 8 个 `TrainRayActor`。假设 Megatron 配置为 TP=2、PP=2、DP=2，这 8 个 actors 仍属于同一个逻辑 actor 训练角色；Megatron 再把它们组织进不同的 TP、PP、DP process groups。这里不是“一个 Ray actor 同时处理 8 份数据”，而是“8 个 Ray actor 进程执行同一训练程序，各自以不同 rank 处理其数据或模型分片”。
+
+Ray actor 在这里是**进程容器和远程控制端点**，distributed rank 是**集合通信身份**；两者通常一一对应，但属于不同系统的概念。某个 rank 最终是 DP rank、TP rank 还是 PP rank，由 Megatron 在 process group 内建立的并行拓扑决定，不由 Ray actor 本身决定。
 
 ## 3. 启动时间线：先确定资源布局，再初始化各组件状态
 
@@ -146,6 +183,21 @@ sequenceDiagram
 
 异步入口没有删除版本边界，而是先发下一轮 `generate.remote` 使其与当前训练重叠；到更新间隔时，它先等待 pending generation 完成，再执行权重更新，且入口直接拒绝 colocate。[`train_async.py:9-11`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L9-L11) [`train_async.py:31-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L31-L70)
 
+### 4.1 Ray 管的是进程调度与 RPC 并发，不是 Megatron 的并行算法
+
+slime 中至少有四种“并发”，不能只用一个 actor 数量来理解：
+
+| 并发层次 | Ray/slime 如何实现 | 等待点与边界 |
+|---|---|---|
+| 资源成组调度 | placement group 先按每卡一个 bundle 预留整组 GPU/CPU，再把各 actor 绑定到指定 bundle | 资源组未 ready 时不创建后续训练 world；这是 gang scheduling，不是训练计算 |
+| 不同 actors 间的并行 | `RayTrainGroup.async_train()` 对每个 rank 分别调用 `train.remote()`，先收集全部 `ObjectRef` | 主控进程随后 `ray.get(refs)`，把“一轮所有 ranks 完成”设为阶段屏障 |
+| 同一个 actor 内的方法顺序 | 本页涉及的 trainer 和 Manager 都是同步 Ray actors；按 Ray 默认语义，同一 actor 的方法调用排队执行，不同 actors 的方法才可并行 | Manager 正在执行 `generate()` 时，发给同一 Manager 的后续 RPC 不能假定会并行进入其可变状态 |
+| rank 之间的计算同步 | 每个 trainer actor 进入 `train()` 后，由 Megatron/PyTorch distributed 执行 TP/PP/DP/CP/EP 通信 | collective、pipeline send/recv 和 optimizer 语义由 Megatron 保证，Ray 既不拆 batch，也不执行 all-reduce |
+
+Ray 官方语义明确区分“不同 actors 可并行”和“同一同步 actor 的方法按调用顺序串行”；placement group 则是资源的原子预留和 actor 放置约束，而不是一个执行线程池。[Ray Actors](https://docs.ray.io/en/latest/ray-core/actors.html) [Ray Placement Groups](https://docs.ray.io/en/latest/ray-core/scheduling/placement-group.html) slime 的训练扇出直接体现这一点：它先向所有 trainer actors 发出 RPC，再由调用方用 `ray.get` 等齐，因此 Ray 建立的是**跨进程并发与控制屏障**，Megatron 建立的是**进程内部进入哪组集合通信**。[`actor_group.py:131-149`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L131-L149) [`train.py:61-69`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L61-L69)
+
+异步训练的重叠也发生在**不同 actor 集合**之间：主控进程保留下一轮 `RolloutManager.generate.remote()` 的 future，同时让 trainer actors 训练当前轮；它不是让同一个 trainer actor 并发执行两轮 `train()`。[`train_async.py:31-53`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L31-L53) 同理，推理请求的 continuous batching、KV cache 调度和 token generation 并发发生在 SGLang 服务进程内部；Ray 的 `SGLangEngine` actor 主要负责放置、启动、RPC 和故障隔离，不能把 Ray actor 并发等同于推理数据面的请求并发。
+
 ## 5. 权重更新最能说明“调用发起方不等于状态责任方”
 
 权重同步的完整机制归 [[16_slime_weight_sync_analysis]]；本页只追踪控制权如何穿过对象边界：
@@ -184,9 +236,13 @@ ref、Megatron OPD teacher 与 old actor 也不是各自一组 Ray actors：它�
 
 代价是跨责任主体的操作需要显式协议：例如权重更新要经过训练组 → 训练器 → Manager → 更新器 → 推理引擎，故障恢复要经过 Manager → 服务 → 服务组 → 推理引擎。代码中的句柄、锁、偏移量和版本号正是这种解耦的必要成本，而不是可以随意删除的样板代码。
 
-### 7.2 每个“子系统”只做成一个 Ray actor
+### 7.2 把整个训练角色压进一个 Ray actor
 
-> **设计分析**：这同样失配。把整个训练角色做成一个 Ray actor 会抹掉逐 GPU rank 的 placement 与 SPMD rendezvous；源码必须逐 rank 创建 actors，并由 rank 0 提供 master address/port。[`actor_group.py:115-129`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L115-L129) 反过来，把 `RolloutServer`、每个 `ServerGroup` 也做成独立 actors，只会为普通拓扑聚合增加序列化和 RPC；真正需要进程隔离与 GPU 绑定的是每个 trainer/engine 进程，engine 还需要独立故障检测，所以只有它们和 Manager 使用 Ray actor。
+这一节比较的是 **Ray 远程进程的划分粒度**，不是“一个算法模块该有几个类”，也不是说一个训练任务只能运行一份程序。更准确的反事实方案是：actor 训练角色只创建一个 Ray actor，再让这个 actor 在内部管理全部 GPU 和 ranks。
+
+> **设计分析**：这种方案会让 Ray 只能放置和恢复那个总进程，无法分别把每个 rank 绑定到已排序的 GPU bundle；总进程还必须再自行 spawn 多个训练进程并向它们传递 rendezvous 信息，等于在 Ray 下面重新实现一层进程管理。固定基线选择逐 rank 创建 actors，由 rank 0 提供 master address/port，再由各 actor 初始化同一个 distributed world。[`actor_group.py:113-129`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L113-L129) [`train_actor.py:41-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/train_actor.py#L41-L70)
+
+反方向也不能得出“每一层对象都应该是 actor”：`RolloutServer` 和 `ServerGroup` 只是 Manager 内的模型/拓扑描述，没有独立执行循环和独立资源需求；把它们改成 actors 只会为本地聚合增加序列化与 RPC。需要远程进程身份的，是每个 trainer rank、每个可独立放置和恢复的 engine 控制进程，以及持有跨轮生成状态的 Manager。是否使用 Ray actor，取决于是否需要**独立进程、资源放置、故障边界或远程串行状态**，而不取决于它是否被称为“子系统”。
 
 这也解释了为什么 `group/manager/server/engine` 不能互换：group 聚合同类句柄，Manager 持有跨轮生成状态，server 建立模型级服务边界，engine 对应可独立放置和恢复的服务控制进程。名称相似不代表相同生命周期。
 

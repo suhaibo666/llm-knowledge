@@ -8,6 +8,16 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-19：补充 slime 中 Ray actor 与 SPMD rank 的并发关系
+
+**Type**: Source-faithful Concurrency Clarification
+
+- 扩充 [[02_engineering/04_posttrain_frameworks/slime/11_slime_ray_control_plane_analysis|slime Ray 控制面分析]]，明确 SPMD 的 single 指同一程序而非单进程，并解释一个逻辑训练角色如何由 `RayTrainGroup` 扇出为多个 trainer actors，再由各 actor 以独立 rank 加入同一个 `torch.distributed` world。
+- 增加 Ray 并发管理分层：placement group 负责成组资源预留与放置，不同 actors 之间通过异步 RPC 并行，同一同步 actor 的方法默认串行，`ray.get` 形成控制面屏障，而 Megatron/PyTorch distributed 负责 TP/PP/DP/CP/EP 的集合通信与训练同步。
+- 将含混的“每个子系统只做成一个 Ray actor”改写为准确反事实“把整个训练角色压进一个 Ray actor”，说明 slime 选择逐 rank actor 的资源、生命周期和故障隔离理由，同时解释 `RolloutServer`/`ServerGroup` 不需要成为 actor 的条件。
+
+---
+
 ## 2026-08-19：统一 slime 系列中文技术用语与表格表达
 
 **Type**: Series-wide Terminology and Readability Revision
