@@ -2,7 +2,7 @@
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
 > **文档/测试基线**：同一提交下 `docs/en/{advanced,get_started}` 与 `tests/utils`
-> **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
+> **核验日期**：2026-08-19 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：rollout 交付的是长度不一、带样本标识、mask 和可选行为策略字段的 RL Sample；Megatron 需要的却是已经排好 DP/VPP micro-batch、可进行 CP 打包，并能进入流水线前向/反向传播和优化器步骤的数据。slime 没有另写一个“通用 RL 训练器”，而是在 Megatron 外围增加一层 actor 适配：进入训练内核前完成数据压缩、调度和角色切换，进入内核后继续使用 Megatron 原生模型、DDP、流水线调度、优化器和学习率调度器。代价是适配层必须显式保证全局 rollout 统计、拓扑一致性和 CPU/GPU 生命周期正确，而且仍会与特定 Megatron 能力及补丁产生版本耦合。
 
 本文只讨论这道适配边界和训练执行职责。Sample/DataSource 的数据语义见 [[12_slime_sample_datasource_analysis]]，loss 公式与并行归一化见 [[15_slime_loss_parallelism_analysis]]，训练权重如何提交给推理侧见 [[16_slime_weight_sync_analysis]]。带固定提交定位符的是源码、官方文档或测试事实；“设计分析”明确表示由实现形态推导的判断。
@@ -71,6 +71,8 @@ actor 端只 fetch 自己的 DP ref：`process_rollout_data` 用 `dp_rank` 做 R
 
 `DataIterator` 不再解释 RL 语义，只按预计算的 `micro_batch_indices` 对请求字段取子集；VPP 有几个 stage，就创建几个拥有独立 offset 的 iterator。[`slime/backends/megatron_utils/data.py:201-245`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/data.py#L201-L245) 这条边界很重要：scheduler 决定“谁与谁同一步、同一 micro-batch”，Megatron adapter 决定“这些字段如何 pack/CP slice”，pipeline 内核只执行已确定的计划。
 
+这条在线路径不调用 Megatron 常规的 GPT Dataset/DataLoader。初始化代码虽然调用 `init_num_microbatches_calculator`，却明确注明它只用于通过 Megatron 校验；真实的 step 划分、每个 DP rank 的 partition 和 `num_microbatches` 都由 RolloutManager 的 schedule 提供。[`slime/backends/megatron_utils/initialize.py:77-86`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/initialize.py#L77-L86) 因而“复用 Megatron 训练后端”不等于“复用 Megatron 离线数据加载”：前者指 pipeline schedule、模型并行、梯度同步和 optimizer，后者已由 Sample → train dict → slime `DataIterator` 路径替代；完整的数据量与 DP rank 映射见 [[12_slime_sample_datasource_analysis#8. 数据如何进入训练器：为何默认先经过 CPU/Ray]]。
+
 > **设计分析**：默认 CPU/Ray 路径不是最低拷贝方案，但它使 rollout Python 对象、DP partition 与 Megatron GPU topology 解耦。源码自己把 CPU fetch 标为潜在性能瓶颈，故 NIXL 是传输替换点；这不改变上游 step/schedule 语义，也不应与第 16 页的权重传输协议混为一谈。[`slime/backends/megatron_utils/actor.py:245-253`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L245-L253) [`slime/utils/arguments.py:558-565`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L558-L565)
 
 ## 4. 为什么 logprob 与 advantage 位于训练边界内
@@ -113,6 +115,7 @@ actor 的默认顺序是先构造同一 `DataIterator`，再依次做可选 ref 
 | 误读或失败模式 | 固定基线的实际边界 |
 |---|---|
 | ref/teacher 是独立 GPU trainer | 它们默认是 actor model 的 CPU tags；只有 critic 拥有独立可训练 group。[`slime/backends/megatron_utils/actor.py:115-140`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L115-L140) |
+| 在线 rollout 会进入 Megatron Dataset/DataLoader | slime 在 RolloutManager 中完成 step/DP/micro-batch schedule，trainer 使用轻量 `DataIterator`；Megatron 从 forward/backward 调度开始接管执行，而不是重新读取数据集。[`slime/backends/megatron_utils/data.py:201-245`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/data.py#L201-L245) |
 | 角色切换只是改一个字符串 | `_switch_model` 会真实 restore 参数；每轮 actor 训练后又更新 CPU actor backup，因此切换有 CPU/GPU 带宽和 host memory 代价。[`slime/backends/megatron_utils/actor.py:301-305`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L301-L305) [`slime/backends/megatron_utils/actor.py:545-562`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L545-L562) |
 | dynamic batching 的 token cap 永远是硬上限 | `balance_by_flops` 分支明确不保证 `max_per_bin`，紧 cap 仍可能 OOM。[`slime/utils/dp_schedule.py:65-76`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L65-L76) |
 | actor/critic YAML 可以自由选择不同拓扑 | 官方文档明确标为当前不支持；共享 data schedule 与 placement 所有权要求它们保持相同拓扑。[`docs/en/advanced/megatron-config.md:111-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/advanced/megatron-config.md#L111-L118) |
@@ -122,7 +125,7 @@ actor 的默认顺序是先构造同一 `DataIterator`，再依次做可选 ref 
 
 ## Related Pages
 
-- [[12_slime_sample_datasource_analysis]] — 本页输入的 train dict 如何从 Sample 语义、身份和 mask 压缩而来。
+- [[12_slime_sample_datasource_analysis]] — 本页输入的 train dict 如何从 Sample 语义、身份和 mask 压缩而来，以及如何先切 optimizer step、micro-batch 与 DP partition。
 - [[15_slime_loss_parallelism_analysis]] — loss callback、advantage 与 DP/CP/PP reducer 如何保持目标函数口径。
 - [[16_slime_weight_sync_analysis]] — actor optimizer 完成后，权重如何跨训练/推理拓扑提交；本页不展开 transport。
 - [[17_slime_train_inference_consistency_analysis]] — ref/current logprob、top-p 与 routing replay 为何影响训练侧重算。

@@ -8,6 +8,16 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-19：补充 slime 在线 rollout 数据到 Megatron rank 的切分链路
+
+**Type**: Source-faithful Data Scheduling Clarification
+
+- 扩充 [[02_engineering/04_posttrain_frameworks/slime/12_slime_sample_datasource_analysis|Sample 与 DataSource 分析]]，明确 DataSource 只生产当前 rollout 的 prompt groups，RolloutManager 才按逻辑 `rollout_id` 切 optimizer steps、打包 micro-batches，并构造逐 DP-rank partitions；补充 `rollout_batch_size × n_samples_per_prompt`、`global_batch_size` 与每轮训练步数的关系及整除边界。
+- 解释全局训练 rank 与数据 partition 并非一一对应：只有 DP ranks 获得不同 Sample 集合，同一 DP 副本内的 TP/PP/CP/EP ranks 共享样本身份，CP 再在训练侧按上下文维度切 token；增加 32 prompts × 8 responses、4 steps、DP=4、micro-batch=2 的完整算例。
+- 同步修订 [[02_engineering/04_posttrain_frameworks/slime/14_slime_megatron_training_analysis|Megatron 训练后端分析]]，明确在线 rollout 不经过 Megatron 常规 Dataset/DataLoader，而由 slime `DataIterator` 消费预计算 schedule；Megatron 接管的是 pipeline forward/backward、模型并行、梯度同步和 optimizer 边界。
+
+---
+
 ## 2026-08-19：补充 slime 中 Ray actor 与 SPMD rank 的并发关系
 
 **Type**: Source-faithful Concurrency Clarification

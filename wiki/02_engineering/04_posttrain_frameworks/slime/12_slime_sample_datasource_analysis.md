@@ -2,7 +2,7 @@
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`
 > **文档基线**：同一提交下 `docs/en/get_started/{usage,quick_start,customization,agent}.md`
-> **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
+> **核验日期**：2026-08-19 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：slime 的数据层不只是“读取 prompt 再转成张量”的加载流程，而是一道跨系统的数据边界：rollout 侧会产生多轮交互、工具调用、中断续生成、动态过滤和一对多扇出，Megatron 侧则只接受可切分、可打包、统计口径稳定的训练批次。slime 因而把数据拆成三层：`Sample` 保存一次生成的完整信息，`DataSource` 管理 prompt 分组的取得、回收和恢复，RolloutManager 再把 Sample 压缩成训练输入字典。这个分层牺牲了一部分静态类型和零拷贝能力，换来的是扩展 rollout 时不必修改训练器，同时仍能保证 token mask、行为策略元数据、rollout 标识和恢复顺序正确。
 
 本文把“源码明确行为”和“设计分析”分开：带 fixed-commit 定位符的是源码或项目文档事实；使用“由此可推断”“可以理解为”的段落是根据约束与失败路径作出的分析判断，不代表作者原话。
@@ -236,6 +236,61 @@ SGLang HTTP response
 
 > **设计分析**：这不是最低拷贝路径，但它把 rollout service 的 Python/HTTP 世界与 Megatron 的 GPU/并行世界隔开，并让 DP 分区在跨 actor 传输前完成。权重同步的 NCCL/CUDA IPC 数据面不能类推到 rollout data；两者的对象大小、生命周期和目标拓扑不同。
 
+### 8.1 DataSource 产出当前 rollout 的 prompt groups，不划分训练步
+
+DataSource 的调用粒度是 prompt group：一次 `get_samples(B)` 取 $B$ 个 prompt，每个 prompt 深拷贝出 `n_samples_per_prompt` 条待生成 Sample。它只维护数据读取顺序、prompt/sample 标识和回收队列，不读取 `global_batch_size`，也不知道这些 Sample 最后会形成几个 optimizer step。[`data_source.py:50-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L50-L118)
+
+在默认“一次逻辑生成对应一条训练 Sample”的路径上，设 rollout prompt 数为 $B_{\mathrm{rollout}}$，每个 prompt 的采样数为 $n_{\mathrm{sample/prompt}}$，则一轮生成得到的逻辑执行数为：
+
+$$
+N_{\mathrm{exec}}=B_{\mathrm{rollout}}n_{\mathrm{sample/prompt}}.
+$$
+
+这些 Sample 完成生成后，`RolloutManager.generate()` 才执行展平、训练字段转换和 DP schedule 切分；因此“一次 rollout bundle 包含多个训练步”是 RolloutManager/训练调度器的结果，不是 DataSource 预先产生了多个 Megatron batches。[`rollout.py:590-604`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L590-L604) [`rollout.py:749-866`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L749-L866)
+
+设每个 optimizer step 的逻辑 rollout 数为 $B_{\mathrm{global}}$，默认路径中的训练步数是：
+
+$$
+N_{\mathrm{step}}=\left\lfloor\frac{N_{\mathrm{exec}}}{B_{\mathrm{global}}}\right\rfloor.
+$$
+
+`--num-steps-per-rollout` 只是方便配置的反向写法：slime 用 `rollout_batch_size × n_samples_per_prompt // num_steps_per_rollout` 计算 `global_batch_size`。[`arguments.py:689-717`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L689-L717) [`arguments.py:1963-1971`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L1963-L1971) 调度器同样使用整数除法；不能整除时，尾部无法组成完整 step 的逻辑 rollouts 不会进入本轮 schedule，因此配置应显式保证整除，而不能把尾部视为自动形成一个小 batch。[`dp_schedule.py:100-105`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L100-L105) [`dp_schedule.py:127-149`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L127-L149)
+
+### 8.2 切分顺序是 optimizer step → micro-batch → DP rank
+
+`build_dp_schedule()` 不是把展平后的 Sample 列表平均切成 $D$ 段，而是按以下顺序构造执行计划：
+
+1. 先按 `rollout_id` 聚合逻辑执行，再以 `global_batch_size` 个逻辑 rollouts 组成一个 optimizer step；compact 扇出的同组 fragments 因共享 `rollout_id` 而留在同一步。
+2. 在每一步内部，静态模式按 `micro_batch_size` 切块；动态模式按 token 上限 first-fit 打包，`balance_by_flops` 则改用估算 FLOPs 分组。
+3. 将 micro-batch 数对齐到 `dp_size × VPP microbatch group` 的倍数，保证每个 DP rank 在同一步执行相同数量的 micro-batches，避免 PP/VPP 通信失配。
+4. 最后才把 micro-batches 分给 DP ranks；默认使用跨 rank 轮询，`balance_data` 则按估算工作量做等数量均衡。[`dp_schedule.py:8-37`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L8-L37) [`dp_schedule.py:146-209`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L146-L209)
+
+例如 `rollout_batch_size=32`、`n_samples_per_prompt=8` 时，默认共有 256 个逻辑执行。若 `global_batch_size=64`，一轮 rollout bundle 包含 4 个 optimizer steps；再假设 DP=4、静态 `micro_batch_size=2`，则每一步有 32 个全局 micro-batches，每个 DP rank 执行 8 个 micro-batches，即处理 16 条 Sample。动态 batching 时每个 rank 的 Sample 数可能不同，但调度器仍保证同一步的 micro-batch 数相同。
+
+### 8.3 只按 DP rank 分不同样本，不是每张训练卡各取一份
+
+RolloutManager 从 trainer rank 回报的 `train_parallel_config` 中取得纯 DP 大小与 CP/VPP 信息；其中 DP 使用 `with_context_parallel=False`，因此 CP 不被误算成独立数据副本。[`actor.py:99-111`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L99-L111) `_split_train_data_by_dp()` 只创建 `dp_size` 个 Ray objects：每个对象包含该 DP rank 的 `partition`、本地逐 Sample 字段、`micro_batch_indices`，以及所有 ranks 共同使用的 `num_microbatches/global_batch_sizes`。[`rollout.py:871-938`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L871-L938)
+
+driver 会把这组 references 广播给所有 trainer actors；每个 actor 再用自己的 `mpu.get_data_parallel_rank(with_context_parallel=False)` 选择 `rollout_data_ref[dp_rank]`。因此 TP、PP、CP 或 EP ranks 只要属于同一个 DP 副本，进入训练器前看到的都是同一个 DP partition，而不是各自从 DataSource 领取新样本。[`actor_group.py:131-149`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/actor_group.py#L131-L149) [`actor.py:245-253`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L245-L253) [`data.py:305-330`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/data.py#L305-L330)
+
+| 并行 rank | 数据关系 | 后续分工 |
+|---|---|---|
+| DP | 不同 DP rank 得到互不重复的 schedule partition | 对不同 Sample 计算梯度，随后做数据并行归约 |
+| TP | 同一 DP rank 下使用相同 micro-batch 身份 | 分担同一层内的张量计算 |
+| PP/VPP | 使用同一个 step 与 micro-batch 次序 | 分担不同模型 stage，依靠一致的 micro-batch 数推进流水线 |
+| CP | 先取得相同 DP partition，再在 `get_batch()` 中按 `cp_rank` 切同一序列 | 分担上下文区间；不是从 DataSource 获取不同 Sample |
+| EP | 输入 schedule 仍由 DP rank 决定 | forward 时再按路由结果把 token 发给不同专家 rank |
+
+CP 的实际切片发生在训练侧 `get_batch()`：它读取同一 local micro-batch 后，按 `cp_size/cp_rank` 切 token，并构造 packed-sequence 参数。[`data.py:28-52`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/data.py#L28-L52) [`data.py:55-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/data.py#L55-L118)
+
+### 8.4 与 Megatron 数据加载器的关系：不走离线 Dataset，但复用训练内核
+
+在线 rollout 数据不经过 Megatron 常规的 GPT Dataset/DataLoader。slime 自己构造轻量 `DataIterator`：它只按预计算的 `micro_batch_indices` 从 DP-local `rollout_data` 取下一批字段，VPP 每个 stage 使用独立 iterator offset。[`data.py:201-245`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/data.py#L201-L245) 初始化阶段仍调用 Megatron 的 microbatch calculator，但源码明确注明这只是为了通过 Megatron 校验，实际的每步 `num_microbatches` 来自上游 DP schedule。[`initialize.py:77-86`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/initialize.py#L77-L86)
+
+边界并不是“不使用 Megatron”，而是**不使用 Megatron 的离线数据装载路径**：slime 决定在线 Sample 属于哪个 step、DP rank 和 micro-batch；Megatron 的 `forward_backward_func()` 再消费这个 iterator，执行 TP/PP/CP/EP forward/backward、梯度同步和 optimizer step。[`model.py:513-654`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L513-L654) [`model.py:712-838`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model.py#L712-L838)
+
+> **设计分析**：若直接让每个 Megatron rank 独立读取 rollout Dataset，就必须在所有 ranks 上重复解释 `rollout_id`、变长打包、compact 扇出与动态过滤，并额外证明各 PP ranks 的 micro-batch 次序完全一致。slime 选择在仍拥有全局 Sample 视图的 RolloutManager 中只计算一次 schedule，再让 ranks 按 DP 身份取数；这牺牲了部分 CPU/Ray 传输效率，却把 RL 数据语义与 Megatron 并行执行边界分开。
+
 ## 9. 三个完整例子
 
 ### 9.1 普通单轮 rollout
@@ -243,7 +298,10 @@ SGLang HTTP response
 1. DataSource 为同一 prompt 深拷贝 $n$ 条 Samples，分配同一 `group_index` 和不同 `index`。
 2. SGLang 为每条 Sample 生成 response；append 同步写 token、mask、selected-token logprob 和终止状态。
 3. RolloutManager 展平数据后，为缺失的 `rollout_id` 分配互不冲突的临时 id。
-4. converter 生成 train dict，scheduler 按逻辑 rollout 数组成训练 step。
+4. converter 生成 train dict，scheduler 按逻辑 rollout 数组成一个或多个 optimizer steps。
+5. 每一步先组 micro-batches，再把相同数量的 micro-batches 分给各 DP ranks；RolloutManager 为每个 DP rank 写一个 Ray object。
+6. 所有 trainer actors 收到同一组 references，并按自己的纯 DP rank 选择其中一份；TP/PP/CP/EP ranks 不从 DataSource 各取新样本。
+7. slime `DataIterator` 按预计算索引依次供给 micro-batches，Megatron pipeline 执行 forward/backward，并在每个 optimizer step 末更新一次参数。
 
 这里 prompt 分组是 reward 的分组单位，但默认每次逻辑生成各算一个 rollout；不能用 `group_index` 代替 `rollout_id`。
 
@@ -283,6 +341,9 @@ SGLang HTTP response
 | `rollout_id` 等于 prompt 分组 | prompt 分组使用 `group_index`；同一个 prompt 的多次采样对应不同 rollout |
 | tool token 的 0 logprob 会进入 policy loss | 等长 0 是占位，`loss_mask=0` 才是排除机制 |
 | buffer 是现成的经验回放池 | 默认只有分组先进先出和过滤，没有按时效、优先级采样或自动淘汰语义 |
+| DataSource 已经把数据切成多个 train steps | DataSource 只产出 prompt groups；optimizer step、micro-batch 与 DP schedule 都由 RolloutManager 生成 |
+| 每个训练 global rank 都得到不同样本 | 只有 DP rank 分不同 partition；同一 DP 副本内的 TP/PP/CP/EP ranks 共享样本身份，再执行各自并行分工 |
+| 在线 rollout 仍由 Megatron Dataset/DataLoader 加载 | 在线路径使用 slime `DataIterator`；Megatron 接管的是 forward/backward、并行通信和 optimizer，而不是 prompt/rollout 读取 |
 
 ### 10.3 自定义 DataSource/rollout/converter 的检查清单
 
@@ -294,6 +355,8 @@ SGLang HTTP response
 6. partial 恢复时，是接受旧 policy token 训练，还是显式 mask；是否记录了版本边界？
 7. `save/load` 是否足以重建外部数据源的顺序与回收队列？
 8. custom converter 是否仍提供 schedule、loss、日志和所启用校正机制需要的字段？
+9. `global_batch_size` 是否整除逻辑 rollout 数，且每一步能为每个 DP rank 提供至少一个可调度 Sample？
+10. 静态或动态 micro-batch 计划是否满足 DP/PP/VPP 对齐，并保持 compact 同组 fragments 位于同一 optimizer step？
 
 ## Related Pages
 
