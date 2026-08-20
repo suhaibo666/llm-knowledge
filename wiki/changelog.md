@@ -8,6 +8,17 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-20：按设计约束重构 vLLM 知识域并统一最新源码基线
+
+**Type**: Knowledge-domain Architecture Redesign + Source-level Mechanism Audit
+
+- 将 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] 重构为 18 篇内容页加总索引的完整知识域，统一固定到 `vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`（`v0.27.2rc0-304-gd66300a1ba`）；新增系统设计原则、Model Runner V2、Serving 控制面、分离式 KV Serving、可观测性/可靠性和插件扩展体系，消除旧页面混合 commit 后无法拼成同一系统的问题。
+- 系列叙事从“入口 → 调用 → 返回”的源码顺序改为“瓶颈/约束 → 状态所有权与不变量 → 设计选择 → 实现证据 → 替代方案 → 代价/失败边界”。总索引为每个设计问题指定唯一 owner 页；overview 和快速使用页只负责全局模型、跑通/测量/按症状调优，并链接到机制 owner，减少 EngineCore、continuous batching、Paged KV、compile/graph 等概念的跨页重复。
+- 深化核心实现：Scheduler 作为 token/KV admission；KV block 的 ownership/refcount/free queue/hash/eviction；模型/权重/attention backend ABI；MRV2 stable row 与 async buffer；serving 进程拓扑、abort 和 bounded shutdown；投机、量化、分布式、compile/CUDA Graph、kernel 与 IR pass 的收益条件和 fallback；remote KV 的 producer/consumer/lease；metrics/trace/engine-death；plugin group 的进程覆盖与 endpoint 安全生命周期。
+- 质量门禁：18/18 内容页包含统一 baseline、中心命题和 Related Pages；机械核验 361 个源码 `path:line` 定位符，缺失、歧义和越界均为 0；全库链接检查 pages=408 且 broken/ambiguous/bare_index/orphans 均为 0；21 个 changed Markdown 严格公式检查 0 error / 0 warning；完整测试 91 passed；`git diff --check` 无空白错误。
+
+---
+
 ## 2026-08-20：补齐 slime 系列关键流程的可视化表达
 
 **Type**: Series-wide Flow Visualization Audit

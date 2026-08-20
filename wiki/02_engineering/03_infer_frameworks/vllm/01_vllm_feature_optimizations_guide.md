@@ -1,13 +1,30 @@
-# vLLM 快速使用与优化指南 —— 从跑通到按瓶颈调优
+# vLLM 快速使用与优化指南：跑通、测量，再按瓶颈选机制
 
-> **代码基准**：vLLM `main@f4b161d7fca438bfe29509984759be1943a5aa88`（2026-08-18，`v0.27.2rc0-189-gf4b161d7fc`）
-> **使用原则**：先用默认 `-O2 + balanced` 建立正确性和性能基线，再一次只改变一组参数。任何“推荐配置”脱离模型、硬件、输入/输出长度、并发与 SLO 都没有普适性。
+> **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
+> **中心命题**：vLLM 没有脱离负载和 SLO 的“最优参数”。可靠路径是先固定模型语义与默认基线，再测 TTFT、TPOT、吞吐、容量和失败率，最后只改变能解释当前瓶颈的一层配置。
 
----
+本页负责使用、实验设计和调优决策；底层原理分别由后续机制页拥有，避免在 quickstart 中再复制一遍调用链。
 
-## 一、安装与最小可用路径
+## 一、先定义什么叫“跑通”
 
-当前官方 quickstart 的基础环境是 Linux、Python 3.10–3.13；NVIDIA 推荐用 `uv` 自动选择匹配的 PyTorch backend；`docs/getting_started/quickstart.md:8-30`。
+一次可复现实验至少固定六类变量：
+
+$$
+W=(L_{\mathrm{in}},L_{\mathrm{out}},arrival,concurrency,prefix\ reuse,SLO)
+$$
+
+- vLLM commit/镜像、PyTorch、driver、设备型号与互连拓扑；
+- 模型 revision、tokenizer/chat template、dtype、量化格式；
+- 输入/输出 token 长度分布，而不是只写“1000 个请求”；
+- arrival pattern、并发或 request rate、warm-up 和随机种子；
+- TP/PP/DP/EP、KV 容量、调度 budget 与优化级别；
+- 输出正确性、成功率、TTFT/TPOT/ITL 分位数、吞吐和显存峰值。
+
+“进程启动且 curl 返回 200”只是连通性验证。chat template、`generation_config.json` 或量化路径不同，都可能让两个服务产生不同 token；这时速度不能直接比较。
+
+## 二、安装与两条最小路径
+
+当前 quickstart 基础条件是 Linux 与 Python 3.10–3.13；NVIDIA 环境推荐让 `uv` 根据 driver 选择 PyTorch backend，见 `docs/getting_started/quickstart.md:8-30`。
 
 ```bash
 uv venv --python 3.12 --seed
@@ -15,44 +32,40 @@ source .venv/bin/activate
 uv pip install vllm --torch-backend=auto
 ```
 
-其他平台不是简单复用 CUDA wheel：
+ROCm、XPU、TPU、Ascend 和 Apple Silicon 使用不同 wheel、镜像或硬件 plugin，不应把 CUDA 安装命令当成跨平台 ABI；当前入口与限制见 `docs/getting_started/quickstart.md:47-107`。
 
-| 平台 | 官方入口 | 注意点 |
-|---|---|---|
-| AMD ROCm | vLLM ROCm wheel / Docker | quickstart 当前说明 Python 3.12、ROCm 7.0、`glibc >= 2.35`；`docs/getting_started/quickstart.md:47-66` |
-| Intel GPU | XPU backend 与官方镜像 | 版本与设备支持需查 XPU 安装页；`docs/getting_started/quickstart.md:68-75` |
-| Google TPU | `vllm-tpu` | 独立插件包；`docs/getting_started/quickstart.md:77-86` |
-| Ascend NPU | vLLM Ascend | 社区维护硬件插件，受 CANN/设备版本约束；`docs/getting_started/quickstart.md:88-95` |
-| Apple Silicon | vLLM-Metal | 基于 MLX，需 MLX 优化模型；`docs/getting_started/quickstart.md:97-107` |
-
-### 1.1 离线批推理
+### 2.1 离线批推理
 
 ```python
 from vllm import LLM, SamplingParams
 
-prompts = [
-    "用三句话解释连续批处理。",
-    "Paged KV Cache 解决了什么问题？",
+conversations = [
+    [{"role": "user", "content": "用三句话解释 continuous batching。"}],
+    [{"role": "user", "content": "Paged KV Cache 解决什么问题？"}],
 ]
-sampling = SamplingParams(temperature=0.7, top_p=0.95, max_tokens=128)
+sampling = SamplingParams(temperature=0.0, max_tokens=128)
 
-llm = LLM(model="Qwen/Qwen2.5-1.5B-Instruct")
-outputs = llm.generate(prompts, sampling)
+llm = LLM(
+    model="Qwen/Qwen2.5-1.5B-Instruct",
+    generation_config="vllm",
+)
+outputs = llm.chat(conversations, sampling)
 
 for output in outputs:
     print(output.outputs[0].text)
 ```
 
-`LLM.generate` 不会自动给普通字符串套 chat template。chat/instruct 模型应使用 `llm.chat(messages, sampling)`，或先显式调用 tokenizer 的 `apply_chat_template`；`docs/getting_started/quickstart.md:112-200`。
+`LLM.generate()` 会对一组 prompts 自动 batch；`vllm/entrypoints/llm.py:418-443`。但它不会自动给普通字符串应用 chat template；chat/instruct 模型应使用 `LLM.chat()`，其实现先把 messages 转成 prompt 再调用 generate，见 `vllm/entrypoints/llm.py:612-633`。
 
-另一个经常影响复现的默认值是 `generation_config.json`：模型仓库若提供它，vLLM 会采用模型作者推荐的采样参数。想固定为 vLLM 自身默认值，应构造 `LLM(..., generation_config="vllm")` 或服务端加 `--generation-config vllm`；`docs/getting_started/quickstart.md:125-130,217-220`。
+模型仓库的 `generation_config.json` 默认可能覆盖采样参数。为了让性能回归的生成语义稳定，上例显式使用 `generation_config="vllm"`；项目 quickstart 对这一行为的说明见 `docs/getting_started/quickstart.md:125-130`。
 
-### 1.2 在线 OpenAI-compatible 服务
+### 2.2 OpenAI-compatible 服务
 
 ```bash
 vllm serve Qwen/Qwen2.5-1.5B-Instruct \
   --host 0.0.0.0 \
-  --port 8000
+  --port 8000 \
+  --generation-config vllm
 ```
 
 ```bash
@@ -60,124 +73,136 @@ curl http://localhost:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "Qwen/Qwen2.5-1.5B-Instruct",
-    "messages": [{"role": "user", "content": "解释 vLLM 的调度器"}],
+    "messages": [{"role": "user", "content": "解释 vLLM 的调度目标"}],
+    "temperature": 0,
     "max_tokens": 128
   }'
 ```
 
-推荐入口是 `vllm serve`；直接运行 `python -m vllm.entrypoints.openai.api_server` 已被官方标记为 deprecated；`docs/design/arch_overview.md:54-79`。
+`vllm serve <model>` 是当前 CLI 入口，默认地址为 `localhost:8000`；服务端 chat template、generation config 与 API key 行为见 `docs/getting_started/quickstart.md:203-229`。生产环境还需要独立完成鉴权、TLS、限流和网络边界，OpenAI-compatible 不等于自动具备完整网关安全。
 
-## 二、默认配置已经做了什么
+## 三、先认识默认基线，不要重复堆 flag
 
-| 默认项 | 当前行为 | 源码证据 | 不应怎样理解 |
+| 默认项 | 当前基线 | 证据 | 调优含义 |
 |---|---|---|---|
-| optimization level | `-O2` | `vllm/config/vllm.py:401-405` | 不代表每个可选投机/量化特性都已开启 |
-| performance mode | `balanced` | `vllm/config/vllm.py:407-412` | 不代表适合极低延迟或最大吞吐两个极端 |
-| prefix caching | 开启 | `vllm/config/cache.py:107` | 命中率取决于块边界、请求前缀和缓存压力 |
-| chunked prefill | 开启 | `vllm/config/scheduler.py:74` | token budget 不合适时仍会伤害目标 SLO |
-| GPU memory utilization | 0.92 | `vllm/config/cache.py:80-83` | 不是越接近 1 越好，过高可能 OOM |
-| async scheduling | 兼容时自动开启 | `vllm/config/vllm.py:1125-1217` | pooling、部分 speculative、Executor 或 ROCm DBO 组合会关闭/拒绝 |
-| Model Runner V2 | 按模型与功能选择 | `vllm/config/vllm.py:614-695` | 不是全模型强制 V2 |
+| optimization level | `-O2` | `vllm/config/vllm.py:435-439` | 生产基线已经包含 compile/graph/fusion 预设 |
+| performance mode | `balanced` | `vllm/config/vllm.py:441-446` | 可对比 `interactivity` 或 `throughput`，但要重测 SLO |
+| GPU memory utilization | `0.92` | `vllm/config/cache.py:80-87` | 是单实例预算，不是“实际必须占到 92%” |
+| prefix caching | 开启 | `vllm/config/cache.py:107-108` | 开启不代表命中；收益取决于 token 前缀和 eviction |
+| chunked prefill | 开启 | `vllm/config/scheduler.py:70-80` | 长 prompt 可被切分，但 token budget 仍决定干扰程度 |
 
-`-O0` 到 `-O3` 是“启动时间换运行性能”的预设：`-O0` 关闭编译和图捕获，`-O1` 使用较快编译与 PIECEWISE graph，默认 `-O2` 增加编译区间、融合和 `FULL_AND_PIECEWISE` graph，当前 `-O3` 与 `-O2` 相同；`docs/design/optimization_levels.md:5-13,30-81`。
+优化级别表达“启动成本换稳态性能”：`-O0` 关闭 compile/CUDA Graph/fusion，`-O1` 使用较快编译与 PIECEWISE graph，默认 `-O2` 加更多编译区间、融合和 FULL_AND_PIECEWISE graph，当前 `-O3` 与 `-O2` 相同；`docs/design/optimization_levels.md:5-13,30-81`。
 
-实用选择：
+因此：
 
-- 开发、定位编译错误：先试 `-O0`，再用 `-O1` 检查 compile/graph 兼容性。
-- 生产基线：保留默认 `-O2`。
-- 不要因为名字叫 aggressive 就默认用 `-O3`；当前没有额外收益保证。
+- 开发或排查 compile/graph 问题时用 `-O0` 建立 eager 对照，再试 `-O1`；
+- 生产性能基线保留 `-O2`；
+- 不要仅因为数字更大选择 `-O3`，当前 commit 并无额外预设。
 
-## 三、主要特性及其原理
+## 四、指标决定优化方向
 
-| 特性 | 解决的瓶颈 | 原理 | 配置入口 | 深挖 |
-|---|---|---|---|---|
-| Continuous batching | 静态 batch 尾部气泡 | 每个 step 按 token budget 重组运行集合 | 默认核心机制 | [[11_vllm_scheduler_analysis]] |
-| Chunked prefill | 长 prompt 独占一步、干扰 decode | 将 prefill 截成若干 token chunk 与 decode 混批 | `--max-num-batched-tokens` 等 | [[11_vllm_scheduler_analysis]] |
-| Prefix caching | 重复 system prompt / 历史前缀反复 prefill | block hash 命中后复用 KV，refcount 保护共享块 | 默认开启 | [[12_vllm_kv_cache_management_analysis]] |
-| Paged KV | KV 连续预留和碎片 | 逻辑 token 经 block table 映射到固定物理块 | 默认核心机制 | [[12_vllm_kv_cache_management_analysis]] |
-| Speculative decoding | decode 串行依赖导致单步延迟高 | draft 一次提议多个 token，target 并行验证并接受前缀 | `--speculative-config` | [[20_vllm_speculative_decoding_analysis]] |
-| Quantization | 权重/KV 容量与带宽 | 低比特存储配合专用 GEMM/attention kernel | `--quantization`、`--kv-cache-dtype` | [[21_vllm_quantization_analysis]] |
-| Compilation / CUDA Graph | Python、kernel launch、小算子开销 | Dynamo/Inductor 融合，静态区间 capture/replay | `-O*`、`--compilation-config` | [[23_vllm_compilation_cudagraph_analysis]] |
-| Custom / fused kernels | 中间张量和内存往返 | RMS/quant/activation/all-reduce/MoE 等垂直或水平融合 | 随平台/量化/优化级别派发 | [[24_vllm_fused_ops_and_kernels_analysis]] |
-| TP/PP/DP/EP/CP | 单卡容量、请求吞吐、MoE 专家规模 | 模型、流水、请求、专家和上下文维度切分 | 并行 size 与 EP/CP flags | [[22_vllm_distributed_inference_analysis]] |
-| Structured output | JSON/regex/grammar 正确性 | 每步生成合法 token bitmask，在采样前屏蔽非法 logits | 请求级 structured outputs | 本页 §3.1 |
-| Multi-LoRA | 多租户适配器服务 | 同一基座按 token/request 映射 LoRA slot，分组低秩 GEMM | `--enable-lora` | 本页 §3.2 |
-| KV connector / offload | P/D 分离、远端缓存、GPU KV 容量 | 在调度和 block 生命周期中插入 load/save/延迟释放 | `--kv-transfer-config` | 本页 §3.3 |
+端到端时间可以先粗分为：
 
-### 3.1 结构化输出
+$$
+T_{\mathrm{e2e}}=T_{\mathrm{queue}}+T_{\mathrm{prefill}}+T_{\mathrm{decode}}+T_{\mathrm{frontend/output}}
+$$
 
-结构化输出不是生成结束后再校验 JSON。后端先把 JSON Schema、regex 或 grammar 编译为状态机，每个采样步根据当前状态生成合法 token bitmask，再对 logits 就地屏蔽。投机解码下还需要为 draft token 预留 mask、验证并在拒绝时 rollback。核心实现位于 `vllm/v1/structured_output/`，调度器入口为 `Scheduler.get_grammar_bitmask`，最终在 Model Runner 采样前应用。
+对一个输出 $N_{\mathrm{out}}>1$ 的请求：
 
-这保证格式约束，但不能保证 JSON 中的业务事实正确；schema correctness 与 semantic correctness 是两层问题。
+$$
+TPOT=\frac{T_{\mathrm{e2e}}-TTFT}{N_{\mathrm{out}}-1}
+$$
 
-### 3.2 Multi-LoRA
+`vllm bench serve` 在客户端测量 TTFT、ITL、TPOT，并说明 speculative decoding 下一个 stream output 可含多个 token，所以 ITL 与 TPOT 不一定相等；`docs/benchmarking/cli.md:114-140`。
 
-Multi-LoRA 的关键不是“动态加载一个 adapter”，而是一个 batch 内不同请求可以选择不同 adapter。worker 管理 CPU/GPU adapter cache 和 LRU slot，Model Runner 构建 token-to-LoRA mapping，Punica 风格的 grouped shrink/expand GEMM 计算低秩增量。容量规划需同时看 `max_loras`、`max_cpu_loras`、rank、目标模块和 CUDA Graph 捕获策略。
+还应使用 goodput，而不是只看总 tokens/s：
 
-最小服务启动形式：
+$$
+Goodput=\frac{\#\{request\mid success\land TTFT\le S_{\mathrm{ttft}}\land TPOT\le S_{\mathrm{tpot}}\}}{duration}
+$$
+
+吞吐提高但 P99 超过 SLO、失败率上升，不能算有效扩容。
+
+## 五、用官方 benchmark 建立 A/B 基线
+
+先启动服务，再从另一个进程运行：
 
 ```bash
-vllm serve <base-model> \
-  --enable-lora \
-  --max-loras 4 \
-  --max-lora-rank 16
+vllm bench serve \
+  --backend vllm \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --endpoint /v1/completions \
+  --dataset-name sharegpt \
+  --dataset-path <sharegpt-json> \
+  --num-prompts 1000
 ```
 
-### 3.3 KV connector、P/D 分离与卸载
+命令形状和输出字段见 `docs/benchmarking/cli.md:63-111`。不要只跑一次：至少分 warm-up、稳定窗口和重复轮次，记录成功请求数及各分位数。
 
-`--kv-transfer-config` 是连接器抽象入口，可对接 LMCache、NIXL、Mooncake 等实现；当前可选依赖见 `requirements/kv_connectors.txt:1-8`。其本质是在 Scheduler/KV block 生命周期里插入远端 load/save、传输完成判定和延迟 free。
+一个有效 A/B 实验只改变一组因果相关参数。例如比较 `-O0` 与 `-O2` 时，模型 revision、sampling、并发、输入顺序和 KV 容量应保持一致；比较量化时还要增加固定 prompts 的 token/logprob/任务质量检查。
 
-要区分三件事：
+## 六、按症状定位到配置层
 
-- **权重 CPU offload**：`--cpu-offload-gb`，让部分模型权重借助 CPU 内存扩容；`vllm/config/offload.py:16-26`。
-- **KV offload**：把 KV block 放到 CPU 或分层存储。
-- **P/D disaggregation**：prefill 实例产生 KV，decode 实例消费 KV，还需要路由、服务发现和容错。
+### 6.1 TTFT 高：先区分排队还是 prefill
 
-它们都涉及“搬数据”，但移动对象、时序和瓶颈完全不同。
+1. 拆出 queue time、tokenization 和 prefill time；
+2. 若共享 system prompt 明显，检查真实 prefix-cache query/hit，而不是只看开关；
+3. 长 prompt 阻塞 decode 时，对比 `max_num_batched_tokens`、长 prefill cap 与并发；
+4. 若 prefill/decode 资源形态长期分离，再评估 P/D disaggregation；
+5. 小并发交互负载可对比 `--performance-mode interactivity`，但同时检查吞吐。
 
-## 四、按瓶颈选择旋钮
+设计依据：[[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler token admission]]、[[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV/prefix ownership]]、[[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|分离式 KV Serving]]。
 
-### 4.1 TTFT 高
+### 6.2 TPOT/ITL 高：确认 GPU 在等什么
 
-按顺序排查：
+1. 小 batch 下检查 CPU 调度、输入准备和 kernel launch 是否形成气泡；
+2. 核对启动日志中的 runner、attention backend、graph mode、quant kernel 与 fallback；
+3. 用 profiler 区分 attention、GEMM、MoE、collective 和 sampler；
+4. draft 足够便宜且 acceptance 足够高时再试 speculative decoding；
+5. TP collective 主导时，比较更少 TP、更多 DP 的布局。
 
-1. 拆开 queue time、tokenization 和 prefill time，确认是不是引擎外问题。
-2. 共享前缀明显时检查 prefix cache hit，而不是只确认 flag 开着。
-3. 长 prompt 干扰 decode 时调 `max_num_batched_tokens`、long-prefill 策略和 admission。
-4. prefill 与 decode 资源形态差异很大时，再评估 P/D 分离。
-5. 交互流量可试 `--performance-mode interactivity`，但必须重测吞吐和 P99。
+设计依据：[[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|Model Runner V2]]、[[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|投机解码]]、[[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]]。
 
-### 4.2 TPOT 或 ITL 高
+### 6.3 吞吐低：再扩大 batch 和副本
 
-1. 确认 batch 是否太小，GPU 是否被 CPU 调度或 launch 饿住。
-2. 检查实际优化级别、CUDA Graph mode、Model Runner V1/V2 和 attention backend。
-3. 用 profiler 判断是 attention、GEMM、MoE、collective 还是 sampler，而不是盲开量化。
-4. draft 足够便宜且 acceptance 足够高时评估 speculative decoding。
-5. TP collective 成为主导时，比较更少 TP + 更多 DP 是否更好。
+`throughput` mode 只在用户未显式设置时把默认 `max_num_batched_tokens` 与 `max_num_seqs` 翻倍；`vllm/engine/arg_utils.py:2781-2806`。这提高候选 batch 上限，也可能增加 queue、KV 压力和尾延迟。
 
-### 4.3 吞吐低
+- 单副本能装下且请求足够多时，DP 通常是最直接的吞吐扩展；
+- 模型单卡装不下时再用 TP/PP 或兼容量化解决容量；
+- MoE 还要联合考虑 EP、DP attention、all-to-all backend 和负载均衡；
+- 每次增大 token/sequence budget 都要带着 TTFT/TPOT P99 约束重测。
 
-- `--performance-mode throughput` 会在用户未显式设置时放大默认 `max_num_batched_tokens` 与 `max_num_seqs`；`vllm/engine/arg_utils.py:2796-2801`。
-- 增大 token/sequence budget 可能提高 GPU 占用，也可能恶化 TTFT、显存压力和尾延迟。
-- 模型单副本能装下且请求足够多时，DP 通常是最直接的吞吐扩展；模型装不下才优先考虑 TP/PP/量化。
-- MoE 还需联合选择 EP、DP attention、all-to-all backend 和负载均衡。
+并行布局的 rank 与 collective 不变量见 [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]]。
 
-### 4.4 显存不足或 KV 容量低
+### 6.4 OOM/KV 容量不足：先给显存归因
 
-依次判断是哪类占用：权重、KV、activation/CUDA Graph、通信 buffer 还是碎片。
-
-| 问题 | 首选手段 | 代价 |
+| 占用来源 | 首选对照 | 主要代价 |
 |---|---|---|
-| 权重装不下 | 兼容量化、TP/PP、权重 offload | 数值差异、通信或 PCIe 带宽 |
-| KV 不够 | 降 `max_model_len`、KV quant、offload、降低并发 | 上下文/并发、精度或传输开销 |
-| 图捕获 OOM | 减少 capture size 或降优化级别定位 | 可能损失 decode 性能 |
-| 运行时偶发 OOM | 降 `gpu_memory_utilization`，检查非 vLLM 进程和峰值 | KV block 数减少 |
+| 权重 | 兼容量化、TP/PP、CPU offload | 数值、collective 或 PCIe 带宽 |
+| KV | 降上下文/并发、KV quant、offload | 容量、精度或传输延迟 |
+| activation/graph | `-O0` 对照、缩小 capture sizes | 失去 graph replay 性能 |
+| 通信/临时 buffer | 改并行布局、降低峰值 batch | 吞吐或更多副本成本 |
+| 运行时余量 | 降 `--gpu-memory-utilization` | 可分配 KV blocks 减少 |
 
-## 五、三套起步配置思路
+不要先把 `gpu_memory_utilization` 推到 1。它是 vLLM 实例的预算上限，无法消除其他进程、driver 或阶段峰值。
 
-这些是“对比实验入口”，不是可直接复制的生产答案。
+## 七、特性选择矩阵
 
-### 5.1 正确性 / 调试
+| 机制 | 只有出现这个信号才优先评估 | 主要代价 | 原理页 |
+|---|---|---|---|
+| prefix cache | token 前缀重复且命中率可观测 | hash/refcount/eviction 与容量竞争 | [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV Cache 管理]] |
+| speculative decoding | decode 串行主导、draft 便宜、acceptance 高 | draft/verify 成本、显存与兼容限制 | [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|投机解码]] |
+| weight/KV quantization | 权重容量或访存带宽主导 | 数值误差、格式和 kernel 支持矩阵 | [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|量化派发]] |
+| compile/CUDA Graph | CPU/launch/small-op 开销明显 | compile/capture 时间、shape/地址约束 | [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] |
+| fused/custom kernel | profiler 指向访存往返或 launch 边界 | backend/shape 约束和验证成本 | [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|融合算子与 Kernel]] |
+| TP/PP/DP/EP/CP | 单卡容量、吞吐副本或 MoE/context 规模受限 | collective、负载不均与故障域 | [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|分布式推理]] |
+| P/D 与 remote KV | prefill/decode 可独立扩展且传输可覆盖 | 路由、lease、传输和恢复复杂度 | [[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|分离式 KV Serving]] |
+
+## 八、三套起步配置
+
+以下是实验起点，不是生产处方。
+
+### 8.1 正确性与故障定位
 
 ```bash
 vllm serve <model> \
@@ -186,9 +211,9 @@ vllm serve <model> \
   --gpu-memory-utilization 0.85
 ```
 
-先排除模型仓库 sampling config、编译与 CUDA Graph，再逐项恢复。
+用于排除模型仓库 sampling config、compile 和 graph；跑通后逐层恢复。
 
-### 5.2 通用生产基线
+### 8.2 通用生产基线
 
 ```bash
 vllm serve <model> \
@@ -197,9 +222,9 @@ vllm serve <model> \
   --tensor-parallel-size <tp>
 ```
 
-prefix caching、chunked prefill 与兼容场景下的 async scheduling 已有默认行为，不必为“看起来优化很多”而重复堆 flag。
+保留默认 prefix cache 与 chunked prefill，先用目标负载得到基线。
 
-### 5.3 高并发吞吐候选
+### 8.3 高并发吞吐候选
 
 ```bash
 vllm serve <model> \
@@ -209,51 +234,27 @@ vllm serve <model> \
   --data-parallel-size <dp>
 ```
 
-然后用目标流量逐步搜索 `max_num_batched_tokens`、`max_num_seqs`、量化和并行布局；同时给 TTFT/ITL P99 设置硬约束。
+随后搜索 token/sequence budget、量化和布局，同时给 TTFT/TPOT P99 与失败率设置硬约束。
 
-## 六、建立可复现 benchmark
+## 九、快速排障闭环
 
-启动服务后，可用官方 `vllm bench serve` 测客户端观察到的 TTFT、TPOT、ITL 与吞吐；`docs/benchmarking/cli.md:70-125`：
+| 现象 | 第一对照 | 下一步证据 |
+|---|---|---|
+| 启动慢 | `-O0/-O1/-O2` | 权重加载、compile、autotune、graph capture 分段耗时 |
+| GPU 利用率锯齿 | 小/大 batch 与 CPU profile | scheduler、input prepare、IPC、tokenizer |
+| prefix cache 无收益 | 固定重复 token 前缀 | query/hit、块边界、eviction |
+| speculative 更慢 | feature off/on | draft time、acceptance、target verify、batch size |
+| TP 扩展差 | TP 与 DP 布局对照 | collective 占比、拓扑、单 rank GEMM 大小 |
+| 偶发 OOM | `-O0` 与更低显存预算 | 权重/KV/graph/通信峰值分类 |
+| flag 已开但性能没变 | 启动日志与 metrics | backend/kernel/runner/graph fallback |
 
-```bash
-vllm bench serve \
-  --backend vllm \
-  --model <model> \
-  --endpoint /v1/completions \
-  --dataset-name sharegpt \
-  --dataset-path <sharegpt-json> \
-  --num-prompts 1000
-```
-
-至少固定以下实验元数据：
-
-- vLLM commit/version、镜像、PyTorch/CUDA/driver、GPU 型号与拓扑；
-- 模型 revision、dtype、quantization、chat template 与 generation config；
-- 输入/输出长度分布、并发或 request rate、warm-up、随机种子；
-- TP/PP/DP/EP、token budget、sequence budget、KV 容量、optimization/performance mode；
-- 成功率、TTFT/TPOT/ITL P50/P95/P99、output tok/s、GPU 利用率和峰值显存。
-
-> [!warning] 先验证输出，再比较速度
-> 更换量化、attention backend、speculative method 或 kernel 后，应在固定 prompts 上比较 token、logprob/acceptance、停止条件和结构化输出。一个更快但 chat template、generation config 或数值路径不同的服务，不是有效的 apples-to-apples benchmark。
-
-## 七、快速排障地图
-
-| 现象 | 第一检查点 |
-|---|---|
-| 启动很慢 | `-O0/-O1` 对比，区分权重加载、compile、autotune 与 CUDA Graph capture |
-| GPU 利用率锯齿 | CPU profile、scheduler step、ZMQ/序列化、tokenizer、batch 是否太小 |
-| prefix cache 没收益 | 请求 token 前缀是否真正相同、块边界、hash 命中、cache eviction |
-| 投机反而更慢 | draft cost、acceptance、batch size、target verify kernel、兼容性 fallback |
-| TP 扩展差 | collective 占比、NVLink/PCIe 拓扑、GEMM 变小、是否应改 DP/EP |
-| OOM | 权重/KV/graph/通信 buffer 分类，检查 `gpu_memory_utilization` 与 capture sizes |
-| 配置已开但行为不同 | 看启动日志确认 runner、attention backend、quant kernel、async scheduling 是否 fallback |
+生产观测、engine death、NaN 和 health/watchdog 路径见 [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]]。
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]]
-- [[10_vllm_engine_architecture_analysis|vLLM 引擎架构与请求生命周期]]
-- [[11_vllm_scheduler_analysis|vLLM Scheduler 源码分析]]
-- [[12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]]
-- [[20_vllm_speculative_decoding_analysis|vLLM 投机解码]]
-- [[21_vllm_quantization_analysis|vLLM 量化]]
-- [[23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]]
+- [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] — 全部机制页及三条推荐阅读路径。
+- [[02_engineering/03_infer_frameworks/vllm/02_vllm_system_design_principles_analysis|vLLM 系统设计原则与性能模型]] — 把负载、SLO、算力与显存约束放进同一模型。
+- [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM 引擎架构]] — 请求从 frontend 到 EngineCore/worker 的状态边界。
+- [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] — token budget、continuous batching、chunked prefill 与抢占。
+- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — KV 容量、prefix hit、共享与 eviction。
+- [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 用 metrics、trace 与故障信号闭合调优因果链。
