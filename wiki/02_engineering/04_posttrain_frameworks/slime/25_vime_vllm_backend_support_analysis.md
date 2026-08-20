@@ -172,6 +172,31 @@ full disk 的 CI 路径会读取所有 engine version 并拒绝版本不一致�
 
 ## 6. 同步、异步与稳定性支持
 
+```mermaid
+flowchart TB
+    subgraph SY["同步"]
+        direction LR
+        S0["生成批次 N"] --> S1["训练批次 N"] --> S2["提交 serving 版本 v+1"]
+    end
+    subgraph OA["一拍异步"]
+        direction LR
+        A0["取得批次 N"] --> A1["训练批次 N"]
+        A0 --> A2["提前生成批次 N+1"]
+        A1 --> A3["需要更新时的提交点"]
+        A2 --> A3
+        A3 --> A4["等待 future 后提交版本 v+1"]
+    end
+    subgraph FA["完全异步"]
+        direction LR
+        F0["常驻请求池"] --> F1["完成队列"] --> F2["凑够批次 N"] --> F3["训练批次 N"]
+        F3 --> F4["权重更新触发中止"]
+        F4 --> F5["ABORTED group 回收"]
+        F5 --> F0
+    end
+```
+
+三种方式移动的是“等待哪一批 generation 完成”的边界，不是删除权重提交协议：同步完全串行；一拍异步让下一批生成与当前批训练重叠，但提交前仍等待 future；完全异步把长期请求池与单次训练批解耦，中止组必须回收而不能直接训练。
+
 ### 6.1 同步路径：样本使用哪个策略版本最清楚
 
 同步 driver 先推一次初始 actor 权重；每轮严格 generate → train/save → update weights，offload rollout 时再分 weights 与 KV/CUDA graph 两阶段 onload。这里不会让一条 rollout 请求跨越权重提交。[`train.py:17-33`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/train.py#L17-L33) [`train.py:48-91`](https://github.com/vllm-project/vime/blob/8144096e3f4fb0fb670c37b8f2d84015f7e92320/train.py#L48-L91)

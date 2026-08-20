@@ -81,26 +81,28 @@ flowchart LR
 
 固定基线的同步调用链可以压缩成：
 
-```text
-train.py::train
-  → RolloutManager.generate.remote
-    → call_rollout_fn
-      → generate_rollout
-        → generate_rollout_async
-          → DataSource.get_samples
-          → generate_and_rm_group
-          → filter / abort / partial requeue
-    → validate and flatten Samples
-    → convert Samples to train dict
-    → split train data by DP
-  → RayTrainGroup.async_train
-    → MegatronRayActor.train_actor
-      → ref or teacher or actor forward
-      → advantage and returns
-      → train_one_step one or more times
-  → RayTrainGroup.update_weights
-    → actor weight updater
-      → pause → flush → transfer → continue
+```mermaid
+sequenceDiagram
+    participant D as 主控进程
+    participant RM as RolloutManager
+    participant DS as DataSource
+    participant SG as SGLang 请求层
+    participant TG as Megatron 训练组
+    participant WU as 权重提交器
+    D->>RM: generate rollout id
+    RM->>DS: 取得 prompt groups
+    RM->>SG: 并发生成、奖励与准入
+    SG-->>RM: 完成 groups 与部分结果
+    RM->>RM: 验证、展平、转换并按 DP 切分
+    RM-->>D: 返回逐 DP rank 数据引用
+    D->>TG: async train
+    TG->>TG: ref、teacher、actor forward
+    TG->>TG: advantage、backward 与一个或多个 step
+    TG-->>D: 本轮训练完成
+    D->>TG: update weights
+    TG->>WU: 委托发布训练侧新参数
+    WU->>SG: pause、flush、transfer、continue
+    SG-->>WU: 新 serving 版本可用
 ```
 
 入口在初始化时先创建 rollout manager，再创建训练模型，并在任何 rollout 前强制做一次 actor→serving 权重推送。[`train.py:13-27`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train.py#L13-L27) 这意味着 cycle 0 也不是从 SGLang 启动时碰巧加载的权重开始，而是从训练侧明确发布过的 snapshot 开始。
@@ -129,11 +131,28 @@ train.py::train
 
 `train_async.py` 先提交 rollout 0；拿到 batch 0 后立即提交 rollout 1，再用 batch 0 训练。到发布间隔时，它先 `ray.get` 当前 generation future，把 future 置空，再调用 `update_weights()`；源码注释明确说这是为了防止生成中途更新权重。[`train_async.py:31-70`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L31-L70)
 
-```text
-阶段 0    生成 batch 0
-阶段 1    训练 batch 0  ||  生成 batch 1
-提交点    等待 batch 1 future  →  publish
-阶段 2    训练 batch 1  ||  生成 batch 2
+```mermaid
+sequenceDiagram
+    participant D as 主控进程
+    participant R as RolloutManager
+    participant T as Megatron 训练组
+    participant W as 权重提交器
+    D->>R: 提交生成 batch 0
+    R-->>D: 返回 batch 0
+    par 阶段一训练当前批次
+        D->>T: 训练 batch 0
+    and 阶段一提前生成下一批次
+        D->>R: 提交生成 batch 1
+    end
+    T-->>D: batch 0 训练完成
+    D->>R: 提交前等待当前 generation future
+    R-->>D: 返回 batch 1
+    D->>W: 发布新 serving 版本
+    par 阶段二训练当前批次
+        D->>T: 训练 batch 1
+    and 阶段二提前生成下一批次
+        D->>R: 提交生成 batch 2
+    end
 ```
 
 边界没有消失，而是从“train 前等待本轮 rollout”移动为“publish 前 rendezvous 当前 rollout future”。代价是 batch 1 可能仍由训练 batch 0 之前的 serving snapshot 生成；若增大 `update_weights_interval`，这个 policy age 会继续上升。异步 driver 还显式断言 `not args.colocate`，说明其 overlap 假设建立在 rollout 与 train 使用分离资源之上。[`train_async.py:9-15`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/train_async.py#L9-L15)

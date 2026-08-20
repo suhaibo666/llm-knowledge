@@ -78,6 +78,31 @@ external 的资源边界确实移动了：placement group 不为外部 rollout G
 
 假设目标只是验证自研服务能否产生可训练轨迹，最小且可回退的路径如下：
 
+```mermaid
+sequenceDiagram
+    participant RM as RolloutManager
+    participant DS as DataSource
+    participant RL as 默认 rollout 循环
+    participant CG as custom generate
+    participant HS as 自研 HTTP 服务
+    participant RF as hooks、RM 与 filter
+    participant CV as Sample 转训练数据
+    RM->>RM: 先装配默认 servers 与 DataSource
+    RM->>RL: 启动默认整轮 rollout 函数
+    RL->>DS: 取得 prompt groups
+    RL->>CG: 在单 Sample 叶子处动态加载并调用
+    CG->>HS: 发起自定义请求
+    HS-->>CG: 返回 token 与训练所需元数据
+    CG-->>RL: 返回 Sample 或扇出 Samples
+    RL->>RF: 复用 hooks、reward 与动态过滤
+    RF-->>RL: 返回已准入的嵌套 Samples
+    RL-->>RM: 返回整轮结果与 metrics
+    RM->>CV: 验证 rollout id、展平并转换
+    CV-->>RM: 逐 DP rank 训练数据
+```
+
+这张图刻意保留了默认 rollout 循环：custom generate 只替换单 Sample 的生成叶子，不接管 DataSource、并发收集、准入、中止、训练转换或权重更新。
+
 1. CLI 用 `--custom-generate-function-path` 指向异步函数；参数层只承诺替换单 Sample 的生成步骤。[`arguments.py:477-483`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L477-L483)
 2. `RolloutManager` 先创建默认 servers 与 DataSource，再加载默认 rollout function；custom generate 本身要到单 Sample 执行时才动态加载。[`rollout.py:474-498`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L474-L498) [`sglang_rollout.py:250-260`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L250-L260)
 3. 默认 `generate_rollout` 从 DataSource 取 group，进入现有的并发收集、动态过滤、abort 与 partial 回填逻辑。[`sglang_rollout.py:400-470`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L400-L470) [`sglang_rollout.py:627-649`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L627-L649)

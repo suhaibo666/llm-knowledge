@@ -8,6 +8,16 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-20：补齐 slime 系列关键流程的可视化表达
+
+**Type**: Series-wide Flow Visualization Audit
+
+- 全局审视 [[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析系列]] 的 20 个内容页，逐节检查真实调用链、请求时序、数据切分、扩展接入和故障排查是否只有文字描述；保留已有且足以解释相邻章节的架构图、状态机和流程图，避免机械重复。
+- 为 [[02_engineering/04_posttrain_frameworks/slime/10_slime_end_to_end_iteration_analysis|端到端迭代]]、[[02_engineering/04_posttrain_frameworks/slime/12_slime_sample_datasource_analysis|Sample 与 DataSource]]、[[02_engineering/04_posttrain_frameworks/slime/13_slime_sglang_rollout_engine_analysis|SGLang rollout]]、[[02_engineering/04_posttrain_frameworks/slime/19_slime_rollout_backend_extension_analysis|rollout 后端扩展]] 和 [[02_engineering/04_posttrain_frameworks/slime/25_vime_vllm_backend_support_analysis|vime/vLLM 支持度]] 补充源码对应的时序或流程图，显式展示并发层级、等待边界、DP 切分顺序和仍被复用的默认控制链。
+- 为 [[02_engineering/04_posttrain_frameworks/slime/17_slime_train_inference_consistency_analysis|训推一致性]] 与 [[02_engineering/04_posttrain_frameworks/slime/31_slime_posttraining_stability_analysis|训练稳定性]] 增加分层决策图，把“先验证身份与版本，再下钻数值/kernel，最后调整执行器”的排查顺序从文字清单提升为可执行路径。
+
+---
+
 ## 2026-08-19：补充 slime 在线 rollout 数据到 Megatron rank 的切分链路
 
 **Type**: Source-faithful Data Scheduling Clarification

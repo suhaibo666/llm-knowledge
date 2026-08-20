@@ -183,6 +183,24 @@ slime 可以用 rollout logprob 作为 behavior old policy，或重算 train old
 
 ## 11. 最小排查流程
 
+```mermaid
+flowchart TD
+    A["发现训推不一致"] --> W{"权重快照与版本一致吗"}
+    W -->|否| W0["停在 L0<br/>检查更新结果与 serving version"]
+    W -->|是| I{"token、response span 与 mask 一致吗"}
+    I -->|否| I0["检查 Sample 转换、join 键与 CP 切分"]
+    I -->|是| S{"采样参数与支持集一致吗"}
+    S -->|否| S0["检查 temperature、top-p、top-k 与回放元数据"]
+    S -->|是| R{"MoE expert set 与顺序一致吗"}
+    R -->|否| R0["用 R3 固定路由<br/>隔离 router 差异"]
+    R -->|是| K{"首个 layerwise 分叉在哪里"}
+    K --> K0["二分 attention、norm、GEMM、KV 与量化"]
+    K0 --> P["改变 batch、packing 与并行拓扑复验"]
+    P --> C["已确定来源与规模后<br/>再选择 TIS、rejection 或 rollout logprob"]
+```
+
+这是一条逐层排除链：上层身份或版本没有通过时，不应直接下钻 kernel，更不能先用 importance correction 掩盖输入契约错误。
+
 1. **权重**：先跑 `check_weight_update_equal`，再查 engine version 与 Sample `weight_versions`；失败就停在 L0。
 2. **输入**：保存 rollout/train dump，按 `rollout_position` 或 `sample_index` join，逐项比较 tokens、response span 和 mask。
 3. **采样**：核对 temperature、top-p/top-k；top-p 非 1 时确认 ids/offsets 完整，再看逐 token logprob 差。

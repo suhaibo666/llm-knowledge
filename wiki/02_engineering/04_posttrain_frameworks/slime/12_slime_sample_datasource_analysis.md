@@ -222,14 +222,19 @@ DP split 根据 total lengths 与 rollout ids 建 schedule，再只把 partition
 
 固定基线的数据路径是：
 
-```text
-SGLang HTTP response
-  → RolloutManager 中的 Python Sample
-  → train dict 与 DP partition
-  → CPU contiguous tensors
-  → Ray object store 或可选的 NIXL 传输路径
-  → Megatron actor 在 CPU 取回
-  → actor 显式搬到 CUDA 并按 CP 切分
+```mermaid
+flowchart TB
+    SG["SGLang 响应<br/>token 与行为证据"] --> SM["RolloutManager 中的 Sample<br/>保留完整 rollout 语义"]
+    SM --> CV["转换为 CPU 连续张量<br/>形成 train dict"]
+    CV --> ST["按 rollout id<br/>组成 optimizer steps"]
+    ST --> MB["每一步先打包<br/>micro-batches"]
+    MB --> DP["再把 micro-batches<br/>分到各 DP ranks"]
+    DP --> RO["Ray object store<br/>或 NIXL 传输"]
+    RO --> TR["trainer 按纯 DP rank<br/>取得自己的 CPU 数据"]
+    TR --> GPU["actor 预先搬到 CUDA"]
+    GPU --> DI["DataIterator<br/>重放预计算 micro-batch 顺序"]
+    DI --> GB["get_batch 读取 micro-batch<br/>并执行 CP token 切分"]
+    GB --> MG["Megatron 并行 ranks<br/>协作完成 forward、backward 与 optimizer"]
 ```
 
 转换器会把 token、mask、logprob、top-p、routing 等字段固定为相应的 CPU dtype 和连续内存布局。[`rollout.py:41-104`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L41-L104) 默认通过 Ray object store 传输，也可选用 NIXL 的 Ray 张量传输；actor 端注释明确说明先经 Ray 把数据取到 CPU，再搬到当前 CUDA 设备。[`arguments.py:558-566`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L558-L566) [`actor.py:245-299`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L245-L299)

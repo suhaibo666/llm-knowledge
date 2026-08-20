@@ -65,6 +65,46 @@ flowchart LR
 
 ## 4. 一条真实请求怎样穿过系统
 
+```mermaid
+sequenceDiagram
+    participant RM as RolloutManager
+    participant RL as rollout 协程
+    participant DS as DataSource
+    participant GT as group task
+    participant ST as sample tasks
+    participant SG as router 与 SGLang
+    participant HR as hooks 与 RM
+    participant FT as dynamic filter
+    RM->>RL: 调用可替换 rollout function
+    loop 直到接收目标数量的 groups
+        RL->>DS: 取得超额采样 prompt groups
+        RL->>GT: 为每个 group 创建异步任务
+        GT->>ST: 并发创建组内 Sample 任务
+        Note over GT,ST: 下列是一条代表性 Sample 路径
+        ST->>SG: 携带 session、token 与采样参数发请求
+        SG-->>ST: 返回最终结果或 SSE 数据块
+        ST->>ST: 追加 token、mask、logprob 与元数据
+        ST->>HR: 执行 hooks 与逐 Sample RM
+        HR-->>GT: 返回带 reward 的 Sample
+        GT->>HR: 必要时执行 group RM
+        GT-->>RL: 一个完整 group 完成
+        RL->>RL: FIRST_COMPLETED 取最先完成的 group
+        RL->>FT: 对完整 group 做准入判断
+        alt 接收
+            FT-->>RL: 保留到训练候选集
+        else 拒绝
+            FT-->>RL: 丢弃并补充候选容量
+        end
+    end
+    RL->>SG: abort 剩余请求并等待服务排空
+    SG-->>RL: 所有 workers 已空闲
+    RL->>DS: partial 模式回收中止的完整 groups
+    RL-->>RM: 返回已准入 Samples 与 metrics
+    RM->>RM: 展平、转换并按 DP rank 切分
+```
+
+图中只展开一条代表性 Sample；真实执行是“多个 group tasks 并发，每个 group 内又有多个 sample tasks 并发”。`FIRST_COMPLETED` 作用在 group 层，reward 与动态过滤完成后才决定该组是否进入训练，因此 router 的请求转发、SGLang 的 token 调度和 slime 的训练准入是三层不同决策。
+
 ### 4.1 轮次入口：先创建候选容量，再等待最先完成者
 
 `RolloutManager.generate` 设置当前 `rollout_id` 并调用可替换 rollout function；默认同步 wrapper 进入 `generate_rollout_async`，最后才把 abort 后的 partial groups 放回 DataSource。[`rollout.py:590-604`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L590-L604) [`sglang_rollout.py:627-649`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L627-L649)

@@ -173,6 +173,29 @@ health monitor 对 `/health_generate` 失败的处理是 kill 整个逻辑 engin
 
 ## 9. 从报警到根因的决策顺序
 
+```mermaid
+flowchart TD
+    A["报警触发"] --> E["封存 checkpoint、round id、版本、dump 与指标窗口"]
+    E --> R{"固定 Sample 回放仍异常吗"}
+    R -->|是| T["进入训练侧<br/>检查身份、reducer、数值与 optimizer"]
+    R -->|否| O["回到在线侧<br/>检查数据分布、版本一致性与服务容量"]
+    T --> V{"只随 topology 或精度变化吗"}
+    V -->|topology| VR["检查 converter、reducer 与 collective"]
+    V -->|精度| VP["检查 scale、量化与 kernel"]
+    V -->|都不是| VL["检查 estimator、loss 与 optimizer state"]
+    O --> C{"权重提交证据完整吗"}
+    C -->|否| CW["检查 pause、flush、transfer 与 version"]
+    C -->|是| CQ["做降载、采样与来源构成的单变量实验"]
+    VR --> F["只针对已定位根因调整执行器"]
+    VP --> F
+    VL --> F
+    CW --> F
+    CQ --> F
+    F --> Z["从同一 fresh checkpoint<br/>重新回放并验收"]
+```
+
+图中第一处分叉最关键：固定 Sample 后仍失败，问题优先落在训练输入之后；只在线出现，才优先回查数据、策略版本和基础设施。后续每条支路仍遵守一次只改变一个轴。
+
 1. **封存证据，不先重启**：记录 checkpoint/round id、engine versions、配置、rollout dump、train dump、filter reasons 与 health/queue 时间窗。
 2. **查身份与形状**：验证 tokens、response span、mask、selected-token logprob、top-p/routing payload、prompt group 与 logical rollout id。
 3. **查版本提交**：确认异常 batch 生成于哪个已提交 serving version；partial/fanout 是否跨版本或跨 execution。
