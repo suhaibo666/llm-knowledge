@@ -15,9 +15,18 @@ import {
   repairRuntime as repairPinnedRuntime,
   syncRuntimeConfig as syncPinnedRuntimeConfig,
 } from "./runtime.mjs"
+import {
+  assertPortAvailable as assertLoopbackPortAvailable,
+  installSignalForwarding as installQuartzSignalForwarding,
+  openBrowser as openSystemBrowser,
+  startQuartz as startQuartzService,
+  stopQuartz as stopQuartzService,
+  waitForHttp as waitForQuartzHttp,
+} from "./processes.mjs"
 
 const scriptFile = fileURLToPath(import.meta.url)
 const defaultRepoRoot = path.resolve(path.dirname(scriptFile), "..", "..")
+export const DOCS_STARTUP_TIMEOUT_MS = 180_000
 
 async function runCaptured(command, args, options = {}) {
   return new Promise((resolve) => {
@@ -105,6 +114,12 @@ export async function main(argv, dependencies = {}) {
     repairRuntime: repairPinnedRuntime,
     syncRuntimeConfig: syncPinnedRuntimeConfig,
     runQuartz,
+    assertPortAvailable: assertLoopbackPortAvailable,
+    startQuartz: startQuartzService,
+    waitForHttp: waitForQuartzHttp,
+    openBrowser: openSystemBrowser,
+    installSignalForwarding: installQuartzSignalForwarding,
+    stopQuartz: stopQuartzService,
     ...dependencies,
   }
 
@@ -116,10 +131,70 @@ export async function main(argv, dependencies = {}) {
 
   await operations.ensureRuntime(paths, operations)
   await operations.syncRuntimeConfig(paths, operations)
-  return operations.runQuartz({
+  const quartzOptions = {
     cwd: paths.runtimeDir,
     args: buildQuartzArgs(options.command, paths, options.port),
-  })
+  }
+
+  if (options.command === "build") {
+    return operations.runQuartz(quartzOptions)
+  }
+
+  await operations.assertPortAvailable(options.port)
+  await operations.assertPortAvailable(options.wsPort)
+  const service = operations.startQuartz(quartzOptions)
+  const removeSignalForwarding = operations.installSignalForwarding(service)
+  const controller = new AbortController()
+  const url = `http://127.0.0.1:${options.port}/`
+
+  try {
+    const readiness = Promise.resolve(
+      operations.waitForHttp(url, {
+        signal: controller.signal,
+        timeoutMs: DOCS_STARTUP_TIMEOUT_MS,
+      }),
+    ).then(
+      () => ({ kind: "ready" }),
+      (error) => ({ kind: "readiness-error", error }),
+    )
+    const earlyExit = service.exitCode.then(
+      (code) => ({ kind: "exit", code }),
+      (error) => ({ kind: "child-error", error }),
+    )
+    const outcome = await Promise.race([readiness, earlyExit])
+
+    if (outcome.kind === "exit") {
+      controller.abort()
+      if (outcome.code !== 0) return outcome.code
+      throw new Error(`Quartz exited before the documentation service became ready at ${url}`)
+    }
+    if (outcome.kind === "child-error") {
+      controller.abort()
+      throw outcome.error
+    }
+    if (outcome.kind === "readiness-error") {
+      controller.abort()
+      await operations.stopQuartz(service)
+      throw outcome.error
+    }
+
+    console.log(`[docs] Documentation is available at ${url}`)
+    if (options.openBrowser) {
+      let opened = false
+      try {
+        opened = await operations.openBrowser(url)
+      } catch (error) {
+        console.warn(`[docs] Could not open a browser: ${error.message}`)
+      }
+      if (!opened) {
+        console.warn(`[docs] Open ${url} in your browser.`)
+      }
+    }
+    return await service.exitCode
+  } finally {
+    controller.abort()
+    removeSignalForwarding()
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(scriptFile)) {

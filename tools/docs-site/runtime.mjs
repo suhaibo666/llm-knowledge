@@ -39,6 +39,11 @@ export async function applyPatchSpec(root, spec) {
     if (!replacement.before || !replacement.after || replacement.before === replacement.after) {
       throw new Error(`Invalid patch contexts for ${replacement.file}`)
     }
+    if (replacement.after.includes(replacement.before)) {
+      throw new Error(
+        `Invalid patch contexts for ${replacement.file}: after context cannot contain its complete before context`,
+      )
+    }
 
     const source = files.has(target) ? files.get(target) : await readFile(target, "utf8")
     const beforeCount = countOccurrences(source, replacement.before)

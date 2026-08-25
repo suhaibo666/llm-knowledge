@@ -270,6 +270,24 @@ test("patch context drift and duplicate context are rejected", async () => {
   await assert.rejects(applyPatchSpec(root, spec), /expected exactly one unpatched context/)
 })
 
+test("patch output cannot retain its complete unpatched context", async () => {
+  const root = await temporaryDirectory("docs-patch-")
+  await writeFile(path.join(root, "target.js"), "const oldValue = true\n")
+
+  await assert.rejects(
+    applyPatchSpec(root, {
+      replacements: [
+        {
+          file: "target.js",
+          before: "const oldValue = true",
+          after: "const oldValue = true\nconst newValue = true",
+        },
+      ],
+    }),
+    /after context cannot contain its complete before context/,
+  )
+})
+
 test("exact patching accepts an after context nested inside its before block", async () => {
   const root = await temporaryDirectory("docs-patch-")
   const target = path.join(root, "target.js")

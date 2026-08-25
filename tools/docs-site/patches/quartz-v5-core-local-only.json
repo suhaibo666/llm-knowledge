@@ -12,9 +12,44 @@
       "after": "new WebSocketServer({ port: argv.wsPort, host: \"127.0.0.1\" })"
     },
     {
+      "file": "quartz/cli/handlers.js",
+      "before": "`Started a Quartz server listening at http://localhost:${argv.port}${argv.baseDir}`",
+      "after": "`Started a Quartz server listening at http://127.0.0.1:${argv.port}${argv.baseDir}`"
+    },
+    {
+      "file": "quartz/plugins/index.ts",
+      "before": ": `ws://localhost:${ctx.argv.wsPort}`",
+      "after": ": `ws://127.0.0.1:${ctx.argv.wsPort}`"
+    },
+    {
+      "file": "quartz/cli/handlers.js",
+      "before": "console.log(`Reason: ${styleText(\"grey\", err)}`)",
+      "after": "console.log(`Reason: ${styleText(\"gray\", err)}`)"
+    },
+    {
+      "file": "quartz/cli/handlers.js",
+      "before": "console.log(statusString + styleText(\"grey\", ` ${argv.baseDir}${req.url}`))",
+      "after": "console.log(statusString + styleText(\"gray\", ` ${argv.baseDir}${req.url}`))"
+    },
+    {
+      "file": "quartz/cli/handlers.js",
+      "before": "styleText(\"grey\", ` ${argv.baseDir}${req.url} -> ${newFp}`)",
+      "after": "styleText(\"gray\", ` ${argv.baseDir}${req.url} -> ${newFp}`)"
+    },
+    {
+      "file": "quartz/cli/handlers.js",
+      "before": "console.log(styleText(\"grey\", \"hint: exit with ctrl+c\"))",
+      "after": "console.log(styleText(\"gray\", \"hint: exit with ctrl+c\"))"
+    },
+    {
       "file": "quartz/components/Head.tsx",
       "before": "        <link rel=\"preconnect\" href=\"https://cdnjs.cloudflare.com\" crossOrigin=\"anonymous\" />",
       "after": "        {/* cdnjs preconnect removed for the local-only documentation runtime */}"
+    },
+    {
+      "file": "quartz/components/Head.tsx",
+      "before": "fileData.frontmatter?.title ?? i18n(cfg.locale).propertyDefaults.title",
+      "after": "fileData.frontmatter?.title ?? cfg.pageTitle"
     },
     {
       "file": "quartz/components/Head.tsx",
