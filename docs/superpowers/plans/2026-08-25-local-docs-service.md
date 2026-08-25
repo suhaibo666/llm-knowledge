@@ -43,6 +43,8 @@
 - `tools/docs-site/runtime-manifest.json`: core/plugin/Mermaid pins and the exact expected runtime mutations.
 - `tools/docs-site/patches/quartz-v5-core-local-only.json`: exact-once replacements for HTTP, WebSocket, and `Head.tsx` preconnect behavior.
 - `tools/docs-site/patches/quartz-v5-ofm-local-mermaid.json`: exact-once replacement for the pinned OFM Mermaid import.
+- `tools/docs-site/patches/quartz-v5-crawl-links-obsidian-paths.json`: exact-once support for unique Obsidian path-suffix links and relative media paths.
+- `tools/docs-site/patches/quartz-v5-breadcrumbs-no-frontmatter.json`: exact-once breadcrumb support for pages without YAML frontmatter.
 - `README.md`: user-facing local site commands and first-run behavior.
 - `tools/README.md`: launcher ownership, cache boundary, and upgrade workflow.
 
@@ -218,7 +220,7 @@ test("a marker alone cannot make an incomplete runtime ready", async () => {
 })
 ```
 
-Add cases proving that a wrong core commit, a wrong plugin commit in the runtime lock, a missing Mermaid entry/chunk, an altered tracked input hash, and any tracked runtime diff beyond the three approved core mutations all produce `kind: "invalid"`.
+Add cases proving that a wrong core commit, a wrong plugin commit in the runtime lock, a missing Mermaid entry/chunk, an altered tracked input hash, and any tracked runtime diff beyond the approved version-scoped mutations all produce `kind: "invalid"`.
 
 - [ ] **Step 2: Run runtime tests and confirm missing exports**
 
@@ -269,7 +271,7 @@ copy tracked quartz.config.yaml and quartz.lock.json
 node quartz/bootstrap-cli.mjs plugin install
 npm install --no-save --package-lock=false mermaid@11.4.0
 copy node_modules/mermaid/dist recursively to quartz/static/vendor/mermaid
-apply core and OFM patch specifications
+apply every core and plugin patch specification listed in the runtime manifest
 validate commit, locks, patches, vendor entry/chunks, and allowed git diff
 write .llm-knowledge-docs-runtime.json with SHA-256 hashes of all tracked runtime inputs
 rename the complete stage to runtimeDir

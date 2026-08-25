@@ -59,7 +59,7 @@ VitePress 可直接复用 Node.js，文档 UI 也合适，但需要组合或实�
 2. 启动器确认本地 Quartz runtime 缓存存在且 commit 正确；首次运行时从固定 tag 初始化缓存。
 3. 启动器把仓库内受版本控制的 Quartz 配置复制到 runtime 工作目录，并对固定核心与插件 commit 应用受版本控制的 local-only 补丁。
 4. 核心补丁把 Quartz HTTP server 与热重载 WebSocket 的监听 host 从默认的所有网卡收窄为 `127.0.0.1`，并移除无条件的 cdnjs preconnect。
-5. 插件补丁把 Obsidian Flavored Markdown 插件硬编码的 Mermaid CDN 导入改为 `/static/vendor/mermaid/mermaid.esm.min.mjs`；初始化器安装并复制 Mermaid 11.4.0 的完整浏览器 dist，以保留其分块模块。
+5. 插件补丁把 Obsidian Flavored Markdown 插件硬编码的 Mermaid CDN 导入改为 `/static/vendor/mermaid/mermaid.esm.min.mjs`；初始化器安装并复制 Mermaid 11.4.0 的完整浏览器 dist，以保留其分块模块。版本限定的兼容补丁还负责 Obsidian 唯一路径后缀链接与相对媒体资源、无 frontmatter 的 breadcrumbs，以及 Quartz 5 在 Node 22+ 下的服务日志与精简布局兼容。
 6. 任一补丁上下文、插件 commit 或本地 vendor 资源不匹配时立即停止。
 7. Quartz 以 `wiki/` 为显式 content directory 构建到被忽略的输出目录。
 8. Quartz preview server 监视 `wiki/` 与站点配置的变化。
@@ -87,7 +87,7 @@ VitePress 可直接复用 Node.js，文档 UI 也合适，但需要组合或实�
 - 校验 Node、npm、Git 与 `wiki/index.md`；
 - 管理固定位置的 disposable runtime；
 - 校验 Quartz commit，避免静默使用漂移版本；
-- 幂等校验并应用 `tools/docs-site/patches/` 下固定版本的 core 与 OFM local-only 补丁；
+- 幂等校验并应用 `tools/docs-site/patches/` 下固定版本的 core、OFM 与组件兼容补丁；
 - 在首次运行时执行 clone、`npm ci` 与所需插件安装；
 - 安装 Mermaid 11.4.0 并把其 browser dist 同步到 Quartz static vendor 目录；
 - 把受控配置同步到 runtime；
@@ -134,6 +134,9 @@ runtime 位于仓库内一个被 Git 忽略的专用缓存目录，例如 `.cach
 站点对内容采取“解析时兼容、源文件零修改”原则：
 
 - 裸基名双链按 Obsidian shortest 策略解析；仓库已有 `check_links.py` 保证基名唯一。
+- `[[suffix/path]]` 在全库唯一匹配时按 Obsidian 路径后缀解析；多重匹配不猜测。
+- Markdown 中的相对图片与其他媒体路径使用相同的全库唯一后缀规则解析，不要求改写源文件。
+- 页面无 YAML frontmatter 时，浏览器标题回退为站点名，breadcrumbs 仍依据 slug/filePath 构建；正文 H1 保持原样。
 - 路径双链从 `wiki/` 根解析，别名与标题锚点保留。
 - 表格内转义别名 `[[target\|label]]` 必须正确显示。
 - `> [!note]`、`> [!warning]`、`> [!contradiction]`、`> [!deprecated]` 等 callout 由 Quartz OFM 插件渲染；未知类型使用安全的默认 callout 样式。
@@ -180,7 +183,7 @@ runtime 位于仓库内一个被 Git 忽略的专用缓存目录，例如 `.cach
 - Node/npm 版本门槛；
 - 参数与端口校验；
 - runtime commit 检查；
-- core/OFM local-only 补丁首次应用、重复应用和上下文漂移拒绝；
+- core/OFM/组件兼容补丁首次应用、重复应用和上下文漂移拒绝；
 - Mermaid vendor 版本与完整性检查；
 - 浏览器打开失败不杀死服务；
 - 子进程退出码和 Ctrl+C 转发。
