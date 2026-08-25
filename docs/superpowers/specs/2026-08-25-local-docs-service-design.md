@@ -56,10 +56,11 @@ VitePress 可直接复用 Node.js，文档 UI 也合适，但需要组合或实�
 
 1. 启动器定位仓库根目录与只读内容目录 `wiki/`。
 2. 启动器确认本地 Quartz runtime 缓存存在且 commit 正确；首次运行时从固定 tag 初始化缓存。
-3. 启动器把仓库内受版本控制的 Quartz 配置复制到 runtime 工作目录。
-4. Quartz 以 `wiki/` 为显式 content directory 构建到被忽略的输出目录。
-5. Quartz preview server 只监听 loopback 地址，并监视 `wiki/` 与站点配置的变化。
-6. 启动器在 HTTP 健康检查成功后打开默认浏览器。
+3. 启动器把仓库内受版本控制的 Quartz 配置复制到 runtime 工作目录，并对固定 commit 应用受版本控制的 loopback 补丁。
+4. 补丁只把 Quartz HTTP server 与热重载 WebSocket 的监听 host 从默认的所有网卡收窄为 `127.0.0.1`；补丁上下文不匹配时立即停止。
+5. Quartz 以 `wiki/` 为显式 content directory 构建到被忽略的输出目录。
+6. Quartz preview server 监视 `wiki/` 与站点配置的变化。
+7. 启动器在 HTTP 健康检查成功后打开默认浏览器。
 
 `wiki/` 不经过同步目录、符号链接或临时改写。这样避免 Windows symlink 权限问题，也消除了“网站副本落后于知识库”的状态分叉。
 
@@ -83,6 +84,7 @@ VitePress 可直接复用 Node.js，文档 UI 也合适，但需要组合或实�
 - 校验 Node、npm、Git 与 `wiki/index.md`；
 - 管理固定位置的 disposable runtime；
 - 校验 Quartz commit，避免静默使用漂移版本；
+- 幂等校验并应用 `tools/docs-site/patches/quartz-v5-loopback.patch`；
 - 在首次运行时执行 clone、`npm ci` 与所需插件安装；
 - 把受控配置同步到 runtime；
 - 启动 Quartz 并转发退出码与 Ctrl+C；
@@ -96,7 +98,7 @@ runtime 位于仓库内一个被 Git 忽略的专用缓存目录，例如 `.cach
 
 首次初始化采用“临时目录构建完成后原子切换”的方式，避免网络中断留下看似可用的半成品。发现 commit 不匹配时启动器停止并提示 `npm run docs:repair`，不自动递归删除未知目录。repair 在解析和验证绝对路径后只替换专用 runtime；旧 runtime 先移动到同一缓存根内的隔离目录，成功后再报告清理结果。
 
-仓库跟踪 Quartz 核心 commit、站点配置及插件锁定信息。完成首次初始化后，普通启动不得访问网络。
+仓库跟踪 Quartz 核心 commit、loopback 补丁、站点配置及插件锁定信息。runtime 的允许状态只有“固定 commit + 精确匹配的已应用补丁”；出现其他已跟踪文件差异时停止并提示 repair。完成首次初始化后，普通启动不得访问网络。
 
 ### 5.4 Quartz 配置
 
@@ -147,6 +149,7 @@ runtime 位于仓库内一个被 Git 忽略的专用缓存目录，例如 `.cach
 - 前置版本不足：在 clone 或安装前失败，并显示检测值和最低要求。
 - 首次运行无网络：保留可诊断日志，不留下已宣告可用的 runtime。
 - runtime commit 漂移：停止并提示显式 repair 操作，不悄悄升级或降级。
+- loopback 补丁不适用或 runtime 出现额外差异：停止并提示 repair，不以宽松文本替换继续运行。
 - 端口占用：非零退出并提示 `--port` 用法。
 - Quartz 构建失败：透传文件与错误，禁止以部分站点继续服务。
 - 浏览器无法自动打开：服务保持运行并打印 URL；这不是构建失败。
@@ -159,6 +162,7 @@ runtime 位于仓库内一个被 Git 忽略的专用缓存目录，例如 `.cach
 - 运行目录只允许落在经解析并校验的仓库专用缓存路径内。
 - 所有清理操作只针对该专用 runtime；删除前验证绝对路径仍位于缓存根下。
 - Quartz 与插件版本固定，不在普通启动时执行自动升级。
+- HTTP 与 WebSocket 两个监听器都经固定版本补丁显式绑定到 `127.0.0.1`；验收不能只检查日志中的 URL。
 - `wiki/` 只作为输入，启动器不以写权限需求为前提。
 
 ## 9. 测试与验收
@@ -171,6 +175,7 @@ runtime 位于仓库内一个被 Git 忽略的专用缓存目录，例如 `.cach
 - Node/npm 版本门槛；
 - 参数与端口校验；
 - runtime commit 检查；
+- loopback 补丁首次应用、重复应用和上下文漂移拒绝；
 - 浏览器打开失败不杀死服务；
 - 子进程退出码和 Ctrl+C 转发。
 
@@ -192,8 +197,9 @@ runtime 位于仓库内一个被 Git 忽略的专用缓存目录，例如 `.cach
 1. `python tools/check_links.py --strict`；
 2. Quartz 对全部 `wiki/` 内容的干净构建；
 3. 启动本地服务并运行浏览器冒烟测试；
-4. `git diff --check`；
-5. 对比 Git 状态，确认 `wiki/` 没有任何变更，runtime、输出和依赖均未被跟踪。
+4. 从系统监听表确认 HTTP 与 WebSocket 只绑定 `127.0.0.1`；
+5. `git diff --check`；
+6. 对比 Git 状态，确认 `wiki/` 没有任何变更，runtime、输出和依赖均未被跟踪。
 
 验收成功标准：用户从干净 checkout 首次执行 `npm run docs` 能完成初始化并打开首页；后续在已初始化机器上离线启动成功；现有核心 Markdown 方言在浏览器中可读、可导航、可搜索。
 
