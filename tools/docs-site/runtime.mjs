@@ -43,8 +43,10 @@ export async function applyPatchSpec(root, spec) {
     const source = files.has(target) ? files.get(target) : await readFile(target, "utf8")
     const beforeCount = countOccurrences(source, replacement.before)
     const afterCount = countOccurrences(source, replacement.after)
+    const afterIsNestedOnce =
+      replacement.before.includes(replacement.after) && afterCount === 1
 
-    if (beforeCount === 1 && afterCount === 0) {
+    if (beforeCount === 1 && (afterCount === 0 || afterIsNestedOnce)) {
       files.set(target, source.replace(replacement.before, replacement.after))
       changed = true
       continue
@@ -119,6 +121,7 @@ async function defaultRun(command, args, options = {}) {
       cwd: options.cwd,
       env: options.env,
       windowsHide: true,
+      shell: options.shell ?? false,
       stdio: ["ignore", "pipe", "pipe"],
     })
     let stdout = ""
@@ -136,6 +139,26 @@ async function defaultRun(command, args, options = {}) {
     })
     child.on("close", (code) => resolve({ code: code ?? -1, stdout, stderr }))
   })
+}
+
+export function buildNpmInvocation(
+  args,
+  environment = process.env,
+  platform = process.platform,
+  nodeExecutable = process.execPath,
+) {
+  if (environment.npm_execpath) {
+    return {
+      command: nodeExecutable,
+      args: [environment.npm_execpath, ...args],
+      shell: false,
+    }
+  }
+  return {
+    command: "npm",
+    args,
+    shell: platform === "win32",
+  }
 }
 
 async function runChecked(run, command, args, options, label) {
@@ -216,6 +239,24 @@ async function validateRuntimeContents(paths, manifest, deps) {
     throw new Error(
       `Quartz commit drift: expected ${manifest.quartz.commit}, detected ${coreCommit}`,
     )
+  }
+
+  for (const corePackage of manifest.corePackages ?? []) {
+    const packageFile = path.resolve(paths.runtimeDir, corePackage.packagePath)
+    const entryFile = path.resolve(paths.runtimeDir, corePackage.entryPath)
+    assertPathInside(paths.runtimeDir, packageFile)
+    assertPathInside(paths.runtimeDir, entryFile)
+    const packageMetadata = JSON.parse(await readFile(packageFile, "utf8"))
+    if (packageMetadata.version !== corePackage.version) {
+      throw new Error(
+        `Quartz support package ${corePackage.name} version drift: expected ${corePackage.version}, detected ${packageMetadata.version}`,
+      )
+    }
+    try {
+      await access(entryFile)
+    } catch {
+      throw new Error(`Quartz support package ${corePackage.name} entry is missing: ${entryFile}`)
+    }
   }
 
   const sourceLockText = await readFile(paths.lockSource, "utf8")
@@ -374,8 +415,6 @@ async function buildStagedRuntime(paths, deps = {}) {
       npm_config_cache: paths.npmCacheDir,
       npm_config_update_notifier: "false",
     }
-    const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm"
-
     log(`[docs] Cloning Quartz ${manifest.quartz.tag} into the repository cache...`)
     await runChecked(
       run,
@@ -406,11 +445,12 @@ async function buildStagedRuntime(paths, deps = {}) {
     }
 
     log("[docs] Installing the pinned Quartz dependency tree...")
+    const npmCi = buildNpmInvocation(["ci"], commandEnvironment)
     await runChecked(
       run,
-      npmCommand,
-      ["ci"],
-      { cwd: stage, env: commandEnvironment },
+      npmCi.command,
+      npmCi.args,
+      { cwd: stage, env: commandEnvironment, shell: npmCi.shell },
       "Quartz npm install",
     )
     await copyFile(paths.configSource, path.join(stage, "quartz.config.yaml"))
@@ -426,16 +466,31 @@ async function buildStagedRuntime(paths, deps = {}) {
     )
 
     log(`[docs] Vendoring Mermaid ${manifest.mermaid.version} for offline rendering...`)
-    await runChecked(
-      run,
-      npmCommand,
+    const mermaidInstallRoot = path.resolve(
+      stage,
+      manifest.mermaid.installRoot ?? ".llm-knowledge-docs-vendor",
+    )
+    assertPathInside(stage, mermaidInstallRoot)
+    await rm(mermaidInstallRoot, { recursive: true, force: true })
+    await mkdir(mermaidInstallRoot, { recursive: true })
+    await writeFile(
+      path.join(mermaidInstallRoot, "package.json"),
+      '{"name":"llm-knowledge-docs-vendor","private":true}\n',
+    )
+    const npmMermaid = buildNpmInvocation(
       [
         "install",
         "--no-save",
         "--package-lock=false",
         `mermaid@${manifest.mermaid.version}`,
       ],
-      { cwd: stage, env: commandEnvironment },
+      commandEnvironment,
+    )
+    await runChecked(
+      run,
+      npmMermaid.command,
+      npmMermaid.args,
+      { cwd: mermaidInstallRoot, env: commandEnvironment, shell: npmMermaid.shell },
       "Mermaid install",
     )
     const mermaidSource = path.resolve(stage, manifest.mermaid.distPath)

@@ -15,6 +15,31 @@
       "file": "quartz/components/Head.tsx",
       "before": "        <link rel=\"preconnect\" href=\"https://cdnjs.cloudflare.com\" crossOrigin=\"anonymous\" />",
       "after": "        {/* cdnjs preconnect removed for the local-only documentation runtime */}"
+    },
+    {
+      "file": "quartz/components/Head.tsx",
+      "before": "import { CustomOgImagesEmitterName } from \"../../.quartz/plugins\"",
+      "after": "// OG image plugin intentionally omitted in the local-only documentation runtime"
+    },
+    {
+      "file": "quartz/components/Head.tsx",
+      "before": "    const usesCustomOgImage = ctx.cfg.plugins.emitters.some(\n      (e) => e.name === CustomOgImagesEmitterName,\n    )\n    const ogImageDefaultPath = `https://${cfg.baseUrl}/static/og-image.png`",
+      "after": "    const usesCustomOgImage = true\n    const ogImageDefaultPath = \"\""
+    },
+    {
+      "file": "quartz/plugins/loader/config-loader.ts",
+      "before": "  let footer: QuartzComponent | undefined",
+      "after": "  const EmptyFooter: QuartzComponent = () => null\n  let footer: QuartzComponent = EmptyFooter"
+    },
+    {
+      "file": "quartz/plugins/loader/config-loader.ts",
+      "before": "  if (footer) {\n    defaultLayout.footer = footer\n  }",
+      "after": "  defaultLayout.footer = footer"
+    },
+    {
+      "file": "quartz/plugins/loader/config-loader.ts",
+      "before": "    if (footer && !pt.footer) pt.footer = footer",
+      "after": "    if (!pt.footer) pt.footer = footer"
     }
   ]
 }

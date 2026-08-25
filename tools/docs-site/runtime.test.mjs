@@ -8,6 +8,7 @@ import test from "node:test"
 import { resolveProjectPaths } from "./contracts.mjs"
 import {
   applyPatchSpec,
+  buildNpmInvocation,
   ensureRuntime,
   inspectRuntime,
   provisionRuntime,
@@ -19,6 +20,25 @@ import {
 async function temporaryDirectory(prefix) {
   return mkdtemp(path.join(tmpdir(), prefix))
 }
+
+test("npm commands use the active npm CLI instead of spawning npm.cmd", () => {
+  assert.deepEqual(
+    buildNpmInvocation(
+      ["ci"],
+      { npm_execpath: "C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js" },
+      "win32",
+      "C:\\Program Files\\nodejs\\node.exe",
+    ),
+    {
+      command: "C:\\Program Files\\nodejs\\node.exe",
+      args: [
+        "C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js",
+        "ci",
+      ],
+      shell: false,
+    },
+  )
+})
 
 function sha256(text) {
   return createHash("sha256").update(text).digest("hex")
@@ -45,10 +65,25 @@ async function createReadyRuntimeFixture() {
       tag: "v5.0.0",
       commit: coreCommit,
     },
+    corePackages: [
+      {
+        name: "@quartz-community/types",
+        version: "0.2.1",
+        packagePath: "node_modules/@quartz-community/types/package.json",
+        entryPath: "node_modules/@quartz-community/types/dist/index.js",
+      },
+      {
+        name: "@quartz-community/utils",
+        version: "0.1.0",
+        packagePath: "node_modules/@quartz-community/utils/package.json",
+        entryPath: "node_modules/@quartz-community/utils/dist/index.js",
+      },
+    ],
     mermaid: {
       version: "11.4.0",
-      packagePath: "node_modules/mermaid/package.json",
-      distPath: "node_modules/mermaid/dist",
+      installRoot: ".llm-knowledge-docs-vendor",
+      packagePath: ".llm-knowledge-docs-vendor/node_modules/mermaid/package.json",
+      distPath: ".llm-knowledge-docs-vendor/node_modules/mermaid/dist",
       vendorPath: "quartz/static/vendor/mermaid",
       entryPath: "quartz/static/vendor/mermaid/mermaid.esm.min.mjs",
     },
@@ -100,9 +135,17 @@ async function createReadyRuntimeFixture() {
 
   await mkdir(path.join(paths.runtimeDir, "quartz", "cli"), { recursive: true })
   await mkdir(path.join(paths.runtimeDir, pluginRoot, "dist"), { recursive: true })
-  await mkdir(path.join(paths.runtimeDir, "node_modules", "mermaid", "dist", "chunks"), {
-    recursive: true,
-  })
+  await mkdir(
+    path.join(
+      paths.runtimeDir,
+      ".llm-knowledge-docs-vendor",
+      "node_modules",
+      "mermaid",
+      "dist",
+      "chunks",
+    ),
+    { recursive: true },
+  )
   await mkdir(
     path.join(paths.runtimeDir, "quartz", "static", "vendor", "mermaid", "chunks"),
     { recursive: true },
@@ -117,16 +160,39 @@ async function createReadyRuntimeFixture() {
     'import("/static/vendor/mermaid/mermaid.esm.min.mjs")\n',
   )
   await writeFile(
-    path.join(paths.runtimeDir, "node_modules", "mermaid", "package.json"),
+    path.join(
+      paths.runtimeDir,
+      ".llm-knowledge-docs-vendor",
+      "node_modules",
+      "mermaid",
+      "package.json",
+    ),
     JSON.stringify({ name: "mermaid", version: "11.4.0" }),
   )
+  for (const corePackage of manifest.corePackages) {
+    const packageFile = path.join(paths.runtimeDir, ...corePackage.packagePath.split("/"))
+    const entryFile = path.join(paths.runtimeDir, ...corePackage.entryPath.split("/"))
+    await mkdir(path.dirname(entryFile), { recursive: true })
+    await writeFile(
+      packageFile,
+      JSON.stringify({ name: corePackage.name, version: corePackage.version }),
+    )
+    await writeFile(entryFile, "export {}\n")
+  }
   const mermaidFiles = new Map([
     ["mermaid.esm.min.mjs", "export default {}\n"],
     [path.join("chunks", "chunk.mjs"), "export const chunk = true\n"],
   ])
   for (const [relative, contents] of mermaidFiles) {
     await writeFile(
-      path.join(paths.runtimeDir, "node_modules", "mermaid", "dist", relative),
+      path.join(
+        paths.runtimeDir,
+        ".llm-knowledge-docs-vendor",
+        "node_modules",
+        "mermaid",
+        "dist",
+        relative,
+      ),
       contents,
     )
     await writeFile(
@@ -202,6 +268,28 @@ test("patch context drift and duplicate context are rejected", async () => {
 
   await writeFile(target, "old-value old-value")
   await assert.rejects(applyPatchSpec(root, spec), /expected exactly one unpatched context/)
+})
+
+test("exact patching accepts an after context nested inside its before block", async () => {
+  const root = await temporaryDirectory("docs-patch-")
+  const target = path.join(root, "target.js")
+  await writeFile(
+    target,
+    "  if (footer) {\n    defaultLayout.footer = footer\n  }\n",
+  )
+  const spec = {
+    replacements: [
+      {
+        file: "target.js",
+        before: "  if (footer) {\n    defaultLayout.footer = footer\n  }",
+        after: "  defaultLayout.footer = footer",
+      },
+    ],
+  }
+
+  assert.equal(await applyPatchSpec(root, spec), "applied")
+  assert.equal(await applyPatchSpec(root, spec), "already-applied")
+  assert.equal(await readFile(target, "utf8"), "  defaultLayout.footer = footer\n")
 })
 
 test("patch targets cannot escape their declared root", async () => {
@@ -299,6 +387,24 @@ test("runtime inspection rejects incomplete Mermaid vendor trees", async () => {
   assert.match(state.reason, /Mermaid.*complete|vendor/i)
 })
 
+test("runtime inspection rejects missing pinned Quartz support package builds", async () => {
+  const fixture = await createReadyRuntimeFixture()
+  await rm(
+    path.join(
+      fixture.paths.runtimeDir,
+      "node_modules",
+      "@quartz-community",
+      "utils",
+      "dist",
+      "index.js",
+    ),
+  )
+
+  const state = await inspectRuntime(fixture.paths, { run: fixture.run })
+  assert.equal(state.kind, "invalid")
+  assert.match(state.reason, /Quartz support package.*utils|utils.*entry/i)
+})
+
 test("runtime inspection rejects unexpected tracked Quartz changes", async () => {
   const fixture = await createReadyRuntimeFixture()
   const runWithExtraDiff = async (command, args, options) => {
@@ -378,6 +484,7 @@ test("provisionRuntime installs a staged runtime that passes full inspection", a
   const template = path.join(fixture.paths.repoRoot, "quartz-template")
   await rename(fixture.paths.runtimeDir, template)
 
+  let mermaidInstallDirectory
   const run = async (command, args, options = {}) => {
     if (command === "git" && args[0] === "clone") {
       await cp(template, args.at(-1), { recursive: true })
@@ -398,6 +505,12 @@ test("provisionRuntime installs a staged runtime that passes full inspection", a
       }
     }
     if (command === process.execPath || command === "npm" || command === "npm.cmd") {
+      if (args.some((argument) => argument === "mermaid@11.4.0")) {
+        mermaidInstallDirectory = options.cwd
+        await cp(path.join(template, ".llm-knowledge-docs-vendor"), options.cwd, {
+          recursive: true,
+        })
+      }
       return { code: 0, stdout: "", stderr: "" }
     }
     throw new Error(`Unexpected provision command: ${command} ${args.join(" ")}`)
@@ -414,6 +527,7 @@ test("provisionRuntime installs a staged runtime that passes full inspection", a
     await readFile(path.join(fixture.paths.runtimeDir, "quartz.config.yaml"), "utf8"),
     "configuration:\n  pageTitle: Test Wiki\n",
   )
+  assert.equal(path.basename(mermaidInstallDirectory), ".llm-knowledge-docs-vendor")
 })
 
 test("repairRuntime leaves the old runtime untouched when staging fails", async () => {

@@ -5,6 +5,20 @@
     "tag": "v5.0.0",
     "commit": "ab346fa66a895e12d63a308e70ce330ba795822a"
   },
+  "corePackages": [
+    {
+      "name": "@quartz-community/types",
+      "version": "0.2.1",
+      "packagePath": "node_modules/@quartz-community/types/package.json",
+      "entryPath": "node_modules/@quartz-community/types/dist/index.js"
+    },
+    {
+      "name": "@quartz-community/utils",
+      "version": "0.1.0",
+      "packagePath": "node_modules/@quartz-community/utils/package.json",
+      "entryPath": "node_modules/@quartz-community/utils/dist/index.js"
+    }
+  ],
   "minimumTools": {
     "node": "22.0.0",
     "npm": "10.9.2",
@@ -12,8 +26,9 @@
   },
   "mermaid": {
     "version": "11.4.0",
-    "packagePath": "node_modules/mermaid/package.json",
-    "distPath": "node_modules/mermaid/dist",
+    "installRoot": ".llm-knowledge-docs-vendor",
+    "packagePath": ".llm-knowledge-docs-vendor/node_modules/mermaid/package.json",
+    "distPath": ".llm-knowledge-docs-vendor/node_modules/mermaid/dist",
     "vendorPath": "quartz/static/vendor/mermaid",
     "entryPath": "quartz/static/vendor/mermaid/mermaid.esm.min.mjs"
   },
@@ -119,7 +134,9 @@
     "patches/quartz-v5-ofm-local-mermaid.json"
   ],
   "allowedTrackedChanges": [
+    "quartz.lock.json",
     "quartz/cli/handlers.js",
-    "quartz/components/Head.tsx"
+    "quartz/components/Head.tsx",
+    "quartz/plugins/loader/config-loader.ts"
   ]
 }
