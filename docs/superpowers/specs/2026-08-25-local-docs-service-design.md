@@ -11,6 +11,7 @@
 - 仓库：`jackyzha0/quartz`
 - 版本：`v5.0.0`
 - commit：`ab346fa66a895e12d63a308e70ce330ba795822a`
+- Mermaid 浏览器模块：`11.4.0`，首次初始化后保存在专用 runtime
 - 本机前置条件：Node.js 22 及以上、npm 10.9.2 及以上、Git
 
 ## 2. 目标与非目标
@@ -56,11 +57,13 @@ VitePress 可直接复用 Node.js，文档 UI 也合适，但需要组合或实�
 
 1. 启动器定位仓库根目录与只读内容目录 `wiki/`。
 2. 启动器确认本地 Quartz runtime 缓存存在且 commit 正确；首次运行时从固定 tag 初始化缓存。
-3. 启动器把仓库内受版本控制的 Quartz 配置复制到 runtime 工作目录，并对固定 commit 应用受版本控制的 loopback 补丁。
-4. 补丁只把 Quartz HTTP server 与热重载 WebSocket 的监听 host 从默认的所有网卡收窄为 `127.0.0.1`；补丁上下文不匹配时立即停止。
-5. Quartz 以 `wiki/` 为显式 content directory 构建到被忽略的输出目录。
-6. Quartz preview server 监视 `wiki/` 与站点配置的变化。
-7. 启动器在 HTTP 健康检查成功后打开默认浏览器。
+3. 启动器把仓库内受版本控制的 Quartz 配置复制到 runtime 工作目录，并对固定核心与插件 commit 应用受版本控制的 local-only 补丁。
+4. 核心补丁把 Quartz HTTP server 与热重载 WebSocket 的监听 host 从默认的所有网卡收窄为 `127.0.0.1`，并移除无条件的 cdnjs preconnect。
+5. 插件补丁把 Obsidian Flavored Markdown 插件硬编码的 Mermaid CDN 导入改为 `/static/vendor/mermaid/mermaid.esm.min.mjs`；初始化器安装并复制 Mermaid 11.4.0 的完整浏览器 dist，以保留其分块模块。
+6. 任一补丁上下文、插件 commit 或本地 vendor 资源不匹配时立即停止。
+7. Quartz 以 `wiki/` 为显式 content directory 构建到被忽略的输出目录。
+8. Quartz preview server 监视 `wiki/` 与站点配置的变化。
+9. 启动器在 HTTP 健康检查成功后打开默认浏览器。
 
 `wiki/` 不经过同步目录、符号链接或临时改写。这样避免 Windows symlink 权限问题，也消除了“网站副本落后于知识库”的状态分叉。
 
@@ -84,8 +87,9 @@ VitePress 可直接复用 Node.js，文档 UI 也合适，但需要组合或实�
 - 校验 Node、npm、Git 与 `wiki/index.md`；
 - 管理固定位置的 disposable runtime；
 - 校验 Quartz commit，避免静默使用漂移版本；
-- 幂等校验并应用 `tools/docs-site/patches/quartz-v5-loopback.patch`；
+- 幂等校验并应用 `tools/docs-site/patches/` 下固定版本的 core 与 OFM local-only 补丁；
 - 在首次运行时执行 clone、`npm ci` 与所需插件安装；
+- 安装 Mermaid 11.4.0 并把其 browser dist 同步到 Quartz static vendor 目录；
 - 把受控配置同步到 runtime；
 - 启动 Quartz 并转发退出码与 Ctrl+C；
 - 等待本地 HTTP 服务就绪后打开浏览器。
@@ -98,7 +102,7 @@ runtime 位于仓库内一个被 Git 忽略的专用缓存目录，例如 `.cach
 
 首次初始化采用“临时目录构建完成后原子切换”的方式，避免网络中断留下看似可用的半成品。发现 commit 不匹配时启动器停止并提示 `npm run docs:repair`，不自动递归删除未知目录。repair 在解析和验证绝对路径后只替换专用 runtime；旧 runtime 先移动到同一缓存根内的隔离目录，成功后再报告清理结果。
 
-仓库跟踪 Quartz 核心 commit、loopback 补丁、站点配置及插件锁定信息。runtime 的允许状态只有“固定 commit + 精确匹配的已应用补丁”；出现其他已跟踪文件差异时停止并提示 repair。完成首次初始化后，普通启动不得访问网络。
+仓库跟踪 Quartz 核心 commit、插件 commit、local-only 补丁、Mermaid 版本、站点配置及插件锁定信息。runtime 的允许状态只有“固定版本 + 精确匹配的已应用补丁 + 完整本地 vendor 资源”；出现其他已跟踪文件差异时停止并提示 repair。完成首次初始化后，普通启动不得访问网络。
 
 ### 5.4 Quartz 配置
 
@@ -107,7 +111,7 @@ runtime 位于仓库内一个被 Git 忽略的专用缓存目录，例如 `.cach
 - Obsidian Flavored Markdown；
 - GitHub Flavored Markdown；
 - `shortest` 双链解析；
-- Mermaid、LaTeX 和语法高亮；
+- Mermaid、MathJax SVG 公式和语法高亮；
 - content page 与 folder page；
 - Explorer、Search、Table of Contents、Breadcrumbs、Page Title、Darkmode；
 - 中文 locale 与系统中英文混排字体栈。
@@ -133,8 +137,8 @@ runtime 位于仓库内一个被 Git 忽略的专用缓存目录，例如 `.cach
 - 路径双链从 `wiki/` 根解析，别名与标题锚点保留。
 - 表格内转义别名 `[[target\|label]]` 必须正确显示。
 - `> [!note]`、`> [!warning]`、`> [!contradiction]`、`> [!deprecated]` 等 callout 由 Quartz OFM 插件渲染；未知类型使用安全的默认 callout 样式。
-- ` ```mermaid ` 围栏由 Mermaid 插件在页面内渲染。
-- `$...$` 和独占行的 `$$` 块由 KaTeX 渲染，沿用本仓库公式规范。
+- ` ```mermaid ` 围栏由 runtime 内缓存的 Mermaid 11.4.0 浏览器模块渲染，不访问 CDN。
+- `$...$` 和独占行的 `$$` 块由 MathJax 在构建期渲染成 SVG，沿用本仓库公式规范且不加载远程样式或脚本。
 - `assets/...` 相对图片及 SVG 按 Markdown 文件所在目录解析并复制。
 - 合法内联 HTML 保留；脚本型 HTML 不作为受支持内容。
 
@@ -149,7 +153,7 @@ runtime 位于仓库内一个被 Git 忽略的专用缓存目录，例如 `.cach
 - 前置版本不足：在 clone 或安装前失败，并显示检测值和最低要求。
 - 首次运行无网络：保留可诊断日志，不留下已宣告可用的 runtime。
 - runtime commit 漂移：停止并提示显式 repair 操作，不悄悄升级或降级。
-- loopback 补丁不适用或 runtime 出现额外差异：停止并提示 repair，不以宽松文本替换继续运行。
+- local-only 补丁不适用、vendor 资源缺失或 runtime 出现额外差异：停止并提示 repair，不以宽松文本替换继续运行。
 - 端口占用：非零退出并提示 `--port` 用法。
 - Quartz 构建失败：透传文件与错误，禁止以部分站点继续服务。
 - 浏览器无法自动打开：服务保持运行并打印 URL；这不是构建失败。
@@ -163,6 +167,7 @@ runtime 位于仓库内一个被 Git 忽略的专用缓存目录，例如 `.cach
 - 所有清理操作只针对该专用 runtime；删除前验证绝对路径仍位于缓存根下。
 - Quartz 与插件版本固定，不在普通启动时执行自动升级。
 - HTTP 与 WebSocket 两个监听器都经固定版本补丁显式绑定到 `127.0.0.1`；验收不能只检查日志中的 URL。
+- 页面头、公式和 Mermaid 均不得引用 CDN；首次初始化后的构建与浏览只能访问本地文件和 loopback 服务。
 - `wiki/` 只作为输入，启动器不以写权限需求为前提。
 
 ## 9. 测试与验收
@@ -175,7 +180,8 @@ runtime 位于仓库内一个被 Git 忽略的专用缓存目录，例如 `.cach
 - Node/npm 版本门槛；
 - 参数与端口校验；
 - runtime commit 检查；
-- loopback 补丁首次应用、重复应用和上下文漂移拒绝；
+- core/OFM local-only 补丁首次应用、重复应用和上下文漂移拒绝；
+- Mermaid vendor 版本与完整性检查；
 - 浏览器打开失败不杀死服务；
 - 子进程退出码和 Ctrl+C 转发。
 
@@ -185,7 +191,7 @@ runtime 位于仓库内一个被 Git 忽略的专用缓存目录，例如 `.cach
 - 一篇代表页的裸双链、路径双链和标题锚点可导航；
 - callout 生成结构化容器；
 - Mermaid 生成 SVG；
-- 行内与块级公式生成 KaTeX DOM；
+- 行内与块级公式生成 MathJax SVG DOM；
 - PNG/SVG 图片加载成功；
 - 页面没有向 loopback 地址以外发起资源请求；
 - 页面没有未捕获的浏览器错误或失败资源。
