@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "quartz": {
+    "repository": "https://github.com/jackyzha0/quartz.git",
+    "tag": "v5.0.0",
+    "commit": "ab346fa66a895e12d63a308e70ce330ba795822a"
+  },
+  "minimumTools": {
+    "node": "22.0.0",
+    "npm": "10.9.2",
+    "git": "2.0.0"
+  },
+  "mermaid": {
+    "version": "11.4.0",
+    "packagePath": "node_modules/mermaid/package.json",
+    "distPath": "node_modules/mermaid/dist",
+    "vendorPath": "quartz/static/vendor/mermaid",
+    "entryPath": "quartz/static/vendor/mermaid/mermaid.esm.min.mjs"
+  },
+  "plugins": [
+    {
+      "name": "alias-redirects",
+      "commit": "2913031a4989824754c0e550682a8d9c117ad569",
+      "runtimePath": ".quartz/plugins/alias-redirects"
+    },
+    {
+      "name": "article-title",
+      "commit": "6b57785696ab3fd187ba91b218e5fde67b8533ee",
+      "runtimePath": ".quartz/plugins/article-title"
+    },
+    {
+      "name": "breadcrumbs",
+      "commit": "5687dccb6969be381407d8b8585846fe1f8f8913",
+      "runtimePath": ".quartz/plugins/breadcrumbs"
+    },
+    {
+      "name": "content-index",
+      "commit": "2a207bb2db52c57a89b673182e9f74280dd81ee3",
+      "runtimePath": ".quartz/plugins/content-index"
+    },
+    {
+      "name": "content-page",
+      "commit": "b8a3f3bb6a126256b12f55879d144ba2ac104b73",
+      "runtimePath": ".quartz/plugins/content-page"
+    },
+    {
+      "name": "crawl-links",
+      "commit": "5ccbcb5f3ac7b1c24fbcb34aa2454df06fe7031c",
+      "runtimePath": ".quartz/plugins/crawl-links"
+    },
+    {
+      "name": "darkmode",
+      "commit": "672ad8da9899dadb5ec0e237864279541cde9d58",
+      "runtimePath": ".quartz/plugins/darkmode"
+    },
+    {
+      "name": "description",
+      "commit": "76f05fb1ddcc412660ff247bb7ed532e2730c641",
+      "runtimePath": ".quartz/plugins/description"
+    },
+    {
+      "name": "explorer",
+      "commit": "def459f31b02fdebdc22579cbeec2907829ff20f",
+      "runtimePath": ".quartz/plugins/explorer"
+    },
+    {
+      "name": "favicon",
+      "commit": "c389697fee691553920d44bab16ee06e79d2e080",
+      "runtimePath": ".quartz/plugins/favicon"
+    },
+    {
+      "name": "folder-page",
+      "commit": "0bb653d651626dece1e56fd7a08d3f2fb3a3cd8a",
+      "runtimePath": ".quartz/plugins/folder-page"
+    },
+    {
+      "name": "github-flavored-markdown",
+      "commit": "628366ec62c1122da1eaef7c988d53bdaae3d19a",
+      "runtimePath": ".quartz/plugins/github-flavored-markdown"
+    },
+    {
+      "name": "latex",
+      "commit": "2544fd13fa132493647480d8ce75f4432a6f1750",
+      "runtimePath": ".quartz/plugins/latex"
+    },
+    {
+      "name": "obsidian-flavored-markdown",
+      "commit": "eda74e79eac746445b7d6941f90133bf97483cd7",
+      "runtimePath": ".quartz/plugins/obsidian-flavored-markdown"
+    },
+    {
+      "name": "page-title",
+      "commit": "ad0e06a2fe2e2280217a445f167ee105edb8bde5",
+      "runtimePath": ".quartz/plugins/page-title"
+    },
+    {
+      "name": "remove-draft",
+      "commit": "c44b2a1314cfe8ac4d4450a566ec9a122daba5f2",
+      "runtimePath": ".quartz/plugins/remove-draft"
+    },
+    {
+      "name": "search",
+      "commit": "e9c10e521b95a14a512739b62a4159ab5afd5edf",
+      "runtimePath": ".quartz/plugins/search"
+    },
+    {
+      "name": "syntax-highlighting",
+      "commit": "4593694be62ed55486d89b36f40a027a7b48233c",
+      "runtimePath": ".quartz/plugins/syntax-highlighting"
+    },
+    {
+      "name": "table-of-contents",
+      "commit": "70b12d85cb873ce42d95111ffb4d8092644c1763",
+      "runtimePath": ".quartz/plugins/table-of-contents"
+    }
+  ],
+  "patches": [
+    "patches/quartz-v5-core-local-only.json",
+    "patches/quartz-v5-ofm-local-mermaid.json"
+  ],
+  "allowedTrackedChanges": [
+    "quartz/cli/handlers.js",
+    "quartz/components/Head.tsx"
+  ]
+}
