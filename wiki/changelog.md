@@ -17,7 +17,7 @@ All source ingestions and significant wiki updates are logged here.
 - **新增两个技能**（内容自 CLAUDE.md 原样搬迁，未改写约定）：`maintaining-llm-knowledge`（页面类型与 `NN_` 段位编号、命名、Ingest/Query/Maintenance 流程、交叉引用规则、合并优于并存）与 `writing-mermaid-diagrams`（Mermaid 定界符两档严重度与生成后校验清单）。
 - **`writing-obsidian-math` 刷新**：补上 `MATH001–005/101–105` 全部规则对照表、竖线语义选择表（`\mid` / `\lvert...\rvert` / `\lVert...\rVert` / `\,\|\,` / `\big\vert`），以及本轮清零踩到的四个**伪告警陷阱**（转义方括号不是公式、`\\[2pt]` 是行距、以数字开头的行内公式不是货币、`h_{t-1}` 是索引不是标签）与长公式改写的三条硬约束（每行补 `\\`、`\left/\right` 不能跨行、源码换行不等于换行）。
 - **只保留 Claude 与 Codex**：删除重复的 `.agents/` 与 `opencode.json`；`.claude/` 只剩本地 settings，`.codex/config.toml` 保留；`AGENTS.md` 改为工具中立的入口，指向基本法与公共技能。
-- **补充（同日）**：`.claude/skills` 与 `.codex/skills` 建为指向 `skills/` 的软链接（git 存为 symlink 对象 mode `120000`，共享同一 blob），Claude Code 因此恢复原生技能发现，Codex 走同一路径；仍然只有一份物理副本。Codex 侧真正可靠的加载路径仍是 `AGENTS.md` → `skills/`（其自身技能机制在 `~/.codex/skills/` 与 plugin marketplace，项目级技能目录未经证实）。单测相应改为守「全仓库每个技能只有一份物理副本」。`CLAUDE.md` 改为全英文。
+- **补充（同日）**：`.claude/skills` 建为指向 `skills/` 的软链接（git 存为 symlink 对象 mode `120000`），Claude Code 因此恢复原生技能发现，物理副本仍只有一份。**Codex 侧不建对称软链接**：查证 `codex` 无 `skills` 子命令、技能来自全局 `~/.codex/skills/` 与 plugin marketplace、无项目级技能发现，建了也不起作用；其加载路径就是读 `AGENTS.md` 里的技能表。单测守两条不变量：agent 侧 skills 路径必须 resolve 到 `skills/`，且每个技能只有一份物理副本。`CLAUDE.md` 改为全英文。
 - 验证：`pytest tools/` 94 passed（技能单测由「两份副本必须一致」改为「技能必须覆盖检查器全部诊断码 + 记录已知伪告警陷阱」）；`check_links --strict` pages=409 全 0；`check_math --strict` 全库通过；skills/ 与两份入口文档自身公式检查 0 error / 0 warning。
 
 ---

@@ -2,9 +2,10 @@
 
 The skill used to be duplicated under `.agents/skills/` and `.claude/skills/`, with a test
 whose only job was to keep the two byte-identical. There is now a single shared copy in
-`skills/`; `.claude/skills` and `.codex/skills` are symlinks to it. What is tested here is
-that exactly one PHYSICAL copy exists, and that the skill still states the rules the
-checker enforces.
+`skills/`, with `.claude/skills` symlinked to it for Claude Code's native discovery.
+(No `.codex/skills`: Codex has no project-level skill discovery, so it would be inert.)
+What is tested here is that exactly one PHYSICAL copy exists, and that the skill still
+states the rules the checker enforces.
 """
 
 import json

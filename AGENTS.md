@@ -14,9 +14,12 @@ content authority, the provenance policy, and the quality gates.
 | Draw or change a Mermaid diagram | [`writing-mermaid-diagrams`](skills/writing-mermaid-diagrams/SKILL.md) |
 | Turn a new source into wiki pages | [`source-faithful-analysis`](skills/source-faithful-analysis/SKILL.md) |
 
-`skills/` is the single physical copy. `.claude/skills` and `.codex/skills` are symlinks to it
-(git stores them as symlink objects sharing one blob), so Claude Code discovers the skills
-natively and Codex reaches them by the same path — with no second copy to drift.
+`skills/` is the single physical copy. `.claude/skills` is a symlink to it (git stores it as a
+symlink object), which is how Claude Code discovers the skills natively.
+
+There is no equivalent symlink for Codex, deliberately: Codex has no project-level skill
+discovery — its skills come from `~/.codex/skills/` and the plugin marketplaces (`codex plugin`).
+For Codex the load path is this file: read the table above and open the skill you need.
 
 Only Claude and Codex are supported here. The duplicated `.agents/skills/` tree and the
 `opencode.json` config were removed.

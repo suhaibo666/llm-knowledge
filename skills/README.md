@@ -26,23 +26,24 @@
 
 ## 各家 agent 怎么用
 
-本目录是**唯一的物理副本**；两家 agent 各自的入口是指向它的**软链接**，不是拷贝：
+本目录是**唯一的物理副本**。两家 agent 的接入方式不同，因为它们的机制本来就不同：
 
-```
-.claude/skills -> ../skills
-.codex/skills  -> ../skills
-```
+- **Claude Code** — `.claude/skills` 是指向本目录的**软链接**（git 存为 symlink 对象，
+  mode `120000`）。这不是文档，是**发现机制**：有它，技能的 name/description 由 harness
+  主动呈现、可按名直接调用；没有它就只能靠模型自己记得去查表。
 
-git 里它们以 symlink 对象（mode `120000`）存储，共享同一个 blob，因此不可能再出现两边漂移。
+  ```
+  .claude/skills -> ../skills
+  ```
 
-- **Claude Code** — 通过 `.claude/skills` 原生发现这些技能，可直接按名调用；`CLAUDE.md`
-  里也列了同一张表。
-- **Codex** — `AGENTS.md` 指向 `CLAUDE.md` 与本目录，按上表按需读取。`.codex/skills` 是
-  对称的便利入口；Codex 自身的技能机制在 `~/.codex/skills/` 与 plugin marketplace，**项目级
-  技能目录未经证实**，所以对 Codex 而言真正可靠的加载路径是 `AGENTS.md` → `skills/`。
+- **Codex** — **不建对称软链接**。查证过：`codex` 没有 `skills` 子命令，技能来自全局
+  `~/.codex/skills/` 与 plugin marketplace（`codex plugin`），**没有项目级技能发现**。
+  因此建一个 `.codex/skills` 只是好看，不产生任何作用。Codex 的加载路径就是读
+  `AGENTS.md` 里的表，再打开需要的那篇。
 
 只保留这两家。历史上的 `.agents/skills/`（重复副本）与 `opencode.json` 已删除。
-`tools/test_math_skill.py` 会守住"全仓库每个技能只有一份物理副本"这条不变量。
+`tools/test_math_skill.py` 会守住两条不变量：agent 侧任何 skills 路径都必须 resolve 到本目录，
+且全仓库每个技能只有一份物理 `SKILL.md`。
 
 ## 改技能时
 

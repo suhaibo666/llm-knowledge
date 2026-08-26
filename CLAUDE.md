@@ -16,9 +16,10 @@ before doing anything; open a skill only when you are about to do the thing it c
 | Draw or change a Mermaid diagram | [`writing-mermaid-diagrams`](skills/writing-mermaid-diagrams/SKILL.md) |
 | Turn a new source (paper, repo, spec, dataset) into wiki pages | [`source-faithful-analysis`](skills/source-faithful-analysis/SKILL.md) |
 
-There is exactly one copy of these skills. `.claude/skills` and `.codex/skills` are symlinks to
-`skills/`, so Claude Code discovers them natively and Codex reaches them by the same path. Never
-add a second copy under an agent directory — that duplication existed before and silently drifted.
+There is exactly one copy of these skills, in `skills/`. `.claude/skills` is a symlink to it, so
+Claude Code discovers them natively; Codex reaches them through `AGENTS.md`, which points at the
+same directory. Never add a second copy under an agent directory — that duplication existed
+before and silently drifted.
 
 ## Architecture
 
