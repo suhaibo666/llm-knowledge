@@ -8,6 +8,20 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-26：新增 vLLM 请求全链路导览页并归档其离线交互图
+
+**Type**: Source Ingestion + Cross-domain Cross-reference
+
+- 将 `vllm/deepseek_v3_inference_flow.md`（旁置 vLLM checkout 根目录的分析稿）纳入 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]]，落为 [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis|vLLM 请求全链路导览]]，占 2.1「入口与统一心智模型」段位。该页定位为**导览页**（"一条请求怎样穿过进程、队列与 GPU"），与本域其余 owner 页的「约束 → 状态所有权 → 设计选择」叙事互补。
+- 按「合并优于并存」裁掉与既有 owner 页重叠的部分：原稿第 3.2–3.6 节、第 4 节（调度/执行/Executor 论证）压缩为一节交界事实并指向 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]]、[[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV Cache 管理]]、[[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|Model Runner V2]]；第 8.1/8.2/8.4 节压缩为条件路径摘要；第 7 节并行维度表保留但归口 [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|分布式推理]]。
+- **保留的独有增量**（本域此前未覆盖）：服务启动进程树与三级就绪屏障（worker `Pipe` READY → EngineCore `HELLO/READY` → 数据面 ready）、空闲后端的逐层唤醒路径（ZMQ poll → `queue.Queue` → SHM ring + `SpinCondition`）、P0–P18 跨进程管道拓扑表、DeepSeek-V3 的 MLA/MoE 在通用调用链中的落点、按状态边界定位的排查表、源码阅读顺序与启动/请求主线函数索引。
+- **基线例外**：该页显式声明源码基线 `vllm-project/vllm@26858770`（2026-08-24），高于本域统一基线 `d66300a1`（2026-08-20）；两提交之间该页引用的架构、引擎、调度、worker 与 DeepSeek 模型文件无源码差异，已在页头与域索引同时注明。
+- 离线交互图 `deepseek_v3_inference_flow_interactive.html` 及其依赖 `.js` 归档至 `wiki/02_engineering/03_infer_frameworks/vllm/assets/`（HTML 通过 `./` 相对路径加载同目录 JS，两者需一起保留；未收原仓库的 `.test.js`）。
+- 交叉链接：新页 Related Pages 7 条；[[02_engineering/03_infer_frameworks/vllm/16_vllm_serving_control_plane_analysis|Serving 控制面]] 补 Related Pages 回链（6→7）；[[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|引擎架构]] 因 Related Pages 已达 7 条上限，改在正文「进程生命周期与故障传播」一节补内联回链。
+- 全部 8 个 mermaid 块按本库规范重写标签（管道标签去引号、`-. 文字 .->` 改 `-.->|文字|`、去 HTML 实体），链接检查 pages=409，broken/ambiguous/bare_index/orphans 均为 0。
+
+---
+
 ## 2026-08-26：`raw/` 论文 PDF 全部替换为来源链接说明页
 
 **Type**: Source-material Policy Change + Citation Correction

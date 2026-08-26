@@ -142,6 +142,8 @@ EngineCore 依赖的是“所有 rank 对同一调度承诺形成一个语义输
 
 后台 busy loop 不应无条件空转：没有请求时 input queue 可阻塞，有请求或 batch queue 时持续 step；核心循环入口见 `vllm/v1/engine/core.py:1383-1455`。Async client 另启 output socket task，并尽早启动以捕获尚未发送请求时发生的 executor failure；`vllm/v1/engine/core_client.py:978-1045`。
 
+启动侧的三级就绪屏障（worker `Pipe` READY → EngineCore `HELLO/READY` → 数据面 ready）与空闲后端的逐层唤醒路径，由 [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis|vLLM 请求全链路导览]] 按运行期时序展开，本页只讲这样切分生命周期的理由。
+
 错误边界不是完全透明的 RPC。client 必须区分坏请求、可恢复的单请求异常、Engine dead 和 worker/executor failure；在线 generate 路径在异常时关闭输出 queue，并在必要时 abort core request；`vllm/v1/engine/async_llm.py:620-663`。
 
 ## 九、直观替代方案为何不够

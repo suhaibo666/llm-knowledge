@@ -2,7 +2,8 @@
 
 > **统一源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
 > **版本标识**：`main`，`v0.27.2rc0-304-gd66300a1ba`，提交时间 2026-08-20T03:30:40-04:00
-> **覆盖范围**：18 篇内容页 + 本索引
+> **覆盖范围**：19 篇内容页 + 本索引
+> **基线例外**：[[02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis|vLLM 请求全链路导览]] 显式声明更新基线 `26858770`（2026-08-24），其余页面仍为 `d66300a1`；两提交间该页引用的文件无源码差异。
 > **阅读原则**：先理解瓶颈、状态所有权和不变量，再沿最小调用链验证实现。
 
 vLLM 不是“一个更快的 Transformer forward”。它是一套在线资源操作系统：Scheduler 按 token 分配本轮算力，KV 管理器分配长期显存，Model Runner 把动态请求变成可复用的设备输入，attention/quantization/compile/kernel 子系统协商当前 batch 能走的最快路径，serving 与分布式层再把这些对象扩展到多进程和多设备。
@@ -36,6 +37,7 @@ flowchart LR
 |---|---|---|
 | [[02_engineering/03_infer_frameworks/vllm/01_vllm_feature_optimizations_guide|vLLM 快速使用与优化指南]] | 怎样可靠跑通、测量并根据瓶颈选配置？ | CLI、OpenAI server、离线 `LLM`、benchmark 与调优开关 |
 | [[02_engineering/03_infer_frameworks/vllm/02_vllm_system_design_principles_analysis|vLLM 系统设计原则与性能模型]] | 动态请求为什么需要连续调度、分页 KV、异步执行和专用化？ | 四个系统平面及其关键接口 |
+| [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis|vLLM 请求全链路导览]] | 一条请求实际怎样穿过进程、队列与 GPU？ | 启动三级就绪屏障、空闲唤醒路径、跨进程管道拓扑、DeepSeek-V3 的 MLA/MoE 落点；含离线交互图 |
 
 ### 2.2 核心引擎
 

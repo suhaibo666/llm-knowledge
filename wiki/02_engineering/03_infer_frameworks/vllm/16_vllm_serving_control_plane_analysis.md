@@ -145,3 +145,4 @@ HTTP watchdog 每隔一段时间检查 `engine.errored && !engine.is_running`，
 - [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — TP/PP/DP 拓扑与 executor 通信。
 - [[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|vLLM 分离式 KV Serving]] — prefill/decode 角色与 KV connector 带来的跨服务生命周期。
 - [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 指标、trace、故障传播与生产验证。
+- [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis|vLLM 请求全链路导览]] —— 本页所述启动拓扑与生命周期，在该页有逐级就绪屏障和跨进程管道的运行期时序。
