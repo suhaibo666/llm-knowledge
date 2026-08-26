@@ -135,3 +135,6 @@ torch_compile_debug/
 
 # 审计流水线产物(账本 jsonl 动辄十几 MB),只留本地,不入库
 docs/audits/
+
+# Obsidian per-user UI state (which panes/files are open) — not vault config
+.obsidian/workspace.json

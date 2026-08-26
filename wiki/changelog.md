@@ -18,6 +18,7 @@ All source ingestions and significant wiki updates are logged here.
 - **`writing-obsidian-math` 刷新**：补上 `MATH001–005/101–105` 全部规则对照表、竖线语义选择表（`\mid` / `\lvert...\rvert` / `\lVert...\rVert` / `\,\|\,` / `\big\vert`），以及本轮清零踩到的四个**伪告警陷阱**（转义方括号不是公式、`\\[2pt]` 是行距、以数字开头的行内公式不是货币、`h_{t-1}` 是索引不是标签）与长公式改写的三条硬约束（每行补 `\\`、`\left/\right` 不能跨行、源码换行不等于换行）。
 - **只保留 Claude 与 Codex**：删除重复的 `.agents/` 与 `opencode.json`；`.claude/` 只剩本地 settings，`.codex/config.toml` 保留；`AGENTS.md` 改为工具中立的入口，指向基本法与公共技能。
 - **补充（同日）**：`.claude/skills` 建为指向 `skills/` 的软链接（git 存为 symlink 对象 mode `120000`），Claude Code 因此恢复原生技能发现，物理副本仍只有一份。**Codex 侧不建对称软链接**：查证 `codex` 无 `skills` 子命令、技能来自全局 `~/.codex/skills/` 与 plugin marketplace、无项目级技能发现，建了也不起作用；其加载路径就是读 `AGENTS.md` 里的技能表。单测守两条不变量：agent 侧 skills 路径必须 resolve 到 `skills/`，且每个技能只有一份物理副本。`CLAUDE.md` 改为全英文。
+- **仓库 agent 工程清理（同日）**：删除 `.codex/config.toml`——`codex doctor` 实测只加载全局 `~/.codex/config.toml`（其中已自带 `[mcp_servers.*]`），仓库这份从不被读取，且写死了本机绝对路径；`.codex/` 随之清空删除。`.mcp.json` 改用相对路径（`./wiki`、`./raw`，已实测服务器能在仓库根正常启动），qmd 由本机绝对 node 路径改为 PATH 上的 `qmd mcp`（其 `--help` 给出的官方调用形式），并去掉绝对 `cwd`；至此全部被跟踪的配置文件里不再有任何本机绝对路径。`.obsidian/workspace.json`（“哪些面板/文件被打开”这类个人 UI 状态，不是 vault 配置）取消跟踪并加入 `.gitignore`。
 - 验证：`pytest tools/` 94 passed（技能单测由「两份副本必须一致」改为「技能必须覆盖检查器全部诊断码 + 记录已知伪告警陷阱」）；`check_links --strict` pages=409 全 0；`check_math --strict` 全库通过；skills/ 与两份入口文档自身公式检查 0 error / 0 warning。
 
 ---
