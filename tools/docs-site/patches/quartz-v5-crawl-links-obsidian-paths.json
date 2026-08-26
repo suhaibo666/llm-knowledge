@@ -1,0 +1,25 @@
+{
+  "id": "quartz-v5-crawl-links-obsidian-paths",
+  "replacements": [
+    {
+      "file": ".quartz/plugins/crawl-links/dist/index.js",
+      "before": "import { simplifySlug, transformLink, stripSlashes, splitAnchor } from '@quartz-community/utils';",
+      "after": "import { simplifySlug, transformLink, stripSlashes, splitAnchor, resolveRelative, slugifyFilePath } from '@quartz-community/utils';"
+    },
+    {
+      "file": ".quartz/plugins/crawl-links/dist/index.js",
+      "before": "var isAbsoluteUrlWithOptions = isAbsoluteUrl;\nvar CrawlLinks = (userOpts) => {",
+      "after": "var isAbsoluteUrlWithOptions = isAbsoluteUrl;\nvar transformObsidianLink = (src, target, opts) => {\n  if (opts.strategy === \"shortest\" && !target.startsWith(\".\") && !target.startsWith(\"#\")) {\n    const [targetPath, targetAnchor] = splitAnchor(decodeURI(target));\n    const normalizedTarget = stripSlashes(slugifyFilePath(targetPath));\n    const suffixMatches = opts.allSlugs.filter(\n      (slug2) => slug2 === normalizedTarget || slug2.endsWith(`/${normalizedTarget}`)\n    );\n    if (suffixMatches.length === 1) {\n      return resolveRelative(src, suffixMatches[0]) + targetAnchor;\n    }\n  }\n  return transformLink(src, target, opts);\n};\nvar CrawlLinks = (userOpts) => {"
+    },
+    {
+      "file": ".quartz/plugins/crawl-links/dist/index.js",
+      "before": "                  dest = node.properties.href = transformLink(fileSlug, dest, transformOptions);",
+      "after": "                  dest = node.properties.href = transformObsidianLink(fileSlug, dest, transformOptions);"
+    },
+    {
+      "file": ".quartz/plugins/crawl-links/dist/index.js",
+      "before": "                  dest = node.properties.src = transformLink(fileSlug, dest, transformOptions);",
+      "after": "                  dest = node.properties.src = transformObsidianLink(fileSlug, dest, transformOptions);"
+    }
+  ]
+}

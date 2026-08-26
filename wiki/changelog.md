@@ -8,6 +8,20 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-26：新增 vLLM 请求全链路导览页并归档其离线交互图
+
+**Type**: Source Ingestion + Cross-domain Cross-reference
+
+- 将 `vllm/deepseek_v3_inference_flow.md`（旁置 vLLM checkout 根目录的分析稿）纳入 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]]，落为 [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis|vLLM 请求全链路导览]]，占 2.1「入口与统一心智模型」段位。该页定位为**导览页**（"一条请求怎样穿过进程、队列与 GPU"），与本域其余 owner 页的「约束 → 状态所有权 → 设计选择」叙事互补。
+- 按「合并优于并存」裁掉与既有 owner 页重叠的部分：原稿第 3.2–3.6 节、第 4 节（调度/执行/Executor 论证）压缩为一节交界事实并指向 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]]、[[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV Cache 管理]]、[[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|Model Runner V2]]；第 8.1/8.2/8.4 节压缩为条件路径摘要；第 7 节并行维度表保留但归口 [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|分布式推理]]。
+- **保留的独有增量**（本域此前未覆盖）：服务启动进程树与三级就绪屏障（worker `Pipe` READY → EngineCore `HELLO/READY` → 数据面 ready）、空闲后端的逐层唤醒路径（ZMQ poll → `queue.Queue` → SHM ring + `SpinCondition`）、P0–P18 跨进程管道拓扑表、DeepSeek-V3 的 MLA/MoE 在通用调用链中的落点、按状态边界定位的排查表、源码阅读顺序与启动/请求主线函数索引。
+- **基线例外**：该页显式声明源码基线 `vllm-project/vllm@26858770`（2026-08-24），高于本域统一基线 `d66300a1`（2026-08-20）；两提交之间该页引用的架构、引擎、调度、worker 与 DeepSeek 模型文件无源码差异，已在页头与域索引同时注明。
+- 离线交互图 `deepseek_v3_inference_flow_interactive.html` 及其依赖 `.js` 归档至 `wiki/02_engineering/03_infer_frameworks/vllm/assets/`（HTML 通过 `./` 相对路径加载同目录 JS，两者需一起保留；未收原仓库的 `.test.js`）。
+- 交叉链接：新页 Related Pages 7 条；[[02_engineering/03_infer_frameworks/vllm/16_vllm_serving_control_plane_analysis|Serving 控制面]] 补 Related Pages 回链（6→7）；[[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|引擎架构]] 因 Related Pages 已达 7 条上限，改在正文「进程生命周期与故障传播」一节补内联回链。
+- 全部 8 个 mermaid 块按本库规范重写标签（管道标签去引号、`-. 文字 .->` 改 `-.->|文字|`、去 HTML 实体），链接检查 pages=409，broken/ambiguous/bare_index/orphans 均为 0。
+
+---
+
 ## 2026-08-26：`raw/` 论文 PDF 全部替换为来源链接说明页
 
 **Type**: Source-material Policy Change + Citation Correction
@@ -17,6 +31,131 @@ All source ingestions and significant wiki updates are logged here.
 - **更正 5 处错误引用**：逐条用 arXiv API 回查文件名内嵌 ID 的真实标题，发现 5 个 ID 指向完全无关的论文——`Scaling_Laws_for_Transfer` 的 `2002.05102`（实为复数反射群数学论文）应为 `2102.01293`；`DeepSeek_VL2` 的 `2412.10322`（实为格点 QCD）应为 `2412.10302`；`CodeGeeX` 的 `2306.03078`（实为 SpQR）应为 `2303.17568`；`CogVideo` 的 `2204.14230`（实为平坦丛上同调）应为 `2205.15868`；`GPT4_Vision_System_Card` 的 `2304.10592` 实为 MiniGPT-4，该系统卡并未在 arXiv 发布。
 - 另有 4 份文件名不含 ID 者按 PDF 正文标题核定来源：`Engram_paper` = [arXiv:2601.07372](https://arxiv.org/abs/2601.07372)《Conditional Memory via Scalable Lookup》（DeepSeek-AI × 北大）、`DeepSeek_V4` = [arXiv:2606.19348](https://arxiv.org/abs/2606.19348)、`Claude_3_Model_Card`（Anthropic 官方）、`Kimi_K3_Technical_Report`（MoonshotAI/Kimi-K3 `0797decb`）、`GPT2_...`（OpenAI 官方 PDF）。
 - 同步重写 39 个 wiki/docs 页中的 77 处 `raw/*.pdf` 引用，指向新的 `.md` 说明页并顺带修正其中的历史陈旧路径（`raw/01_architecture/`、`raw/05_model_families/` 等）。链接检查 pages=408，broken/ambiguous/bare_index/orphans 均为 0。
+
+---
+
+## 2026-08-20：按设计约束重构 vLLM 知识域并统一最新源码基线
+
+**Type**: Knowledge-domain Architecture Redesign + Source-level Mechanism Audit
+
+- 将 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] 重构为 18 篇内容页加总索引的完整知识域，统一固定到 `vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`（`v0.27.2rc0-304-gd66300a1ba`）；新增系统设计原则、Model Runner V2、Serving 控制面、分离式 KV Serving、可观测性/可靠性和插件扩展体系，消除旧页面混合 commit 后无法拼成同一系统的问题。
+- 系列叙事从“入口 → 调用 → 返回”的源码顺序改为“瓶颈/约束 → 状态所有权与不变量 → 设计选择 → 实现证据 → 替代方案 → 代价/失败边界”。总索引为每个设计问题指定唯一 owner 页；overview 和快速使用页只负责全局模型、跑通/测量/按症状调优，并链接到机制 owner，减少 EngineCore、continuous batching、Paged KV、compile/graph 等概念的跨页重复。
+- 深化核心实现：Scheduler 作为 token/KV admission；KV block 的 ownership/refcount/free queue/hash/eviction；模型/权重/attention backend ABI；MRV2 stable row 与 async buffer；serving 进程拓扑、abort 和 bounded shutdown；投机、量化、分布式、compile/CUDA Graph、kernel 与 IR pass 的收益条件和 fallback；remote KV 的 producer/consumer/lease；metrics/trace/engine-death；plugin group 的进程覆盖与 endpoint 安全生命周期。
+- 质量门禁：18/18 内容页包含统一 baseline、中心命题和 Related Pages；机械核验 361 个源码 `path:line` 定位符，缺失、歧义和越界均为 0；全库链接检查 pages=408 且 broken/ambiguous/bare_index/orphans 均为 0；21 个 changed Markdown 严格公式检查 0 error / 0 warning；完整测试 91 passed；`git diff --check` 无空白错误。
+
+---
+
+## 2026-08-20：补齐 slime 系列关键流程的可视化表达
+
+**Type**: Series-wide Flow Visualization Audit
+
+- 全局审视 [[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析系列]] 的 20 个内容页，逐节检查真实调用链、请求时序、数据切分、扩展接入和故障排查是否只有文字描述；保留已有且足以解释相邻章节的架构图、状态机和流程图，避免机械重复。
+- 为 [[02_engineering/04_posttrain_frameworks/slime/10_slime_end_to_end_iteration_analysis|端到端迭代]]、[[02_engineering/04_posttrain_frameworks/slime/12_slime_sample_datasource_analysis|Sample 与 DataSource]]、[[02_engineering/04_posttrain_frameworks/slime/13_slime_sglang_rollout_engine_analysis|SGLang rollout]]、[[02_engineering/04_posttrain_frameworks/slime/19_slime_rollout_backend_extension_analysis|rollout 后端扩展]] 和 [[02_engineering/04_posttrain_frameworks/slime/25_vime_vllm_backend_support_analysis|vime/vLLM 支持度]] 补充源码对应的时序或流程图，显式展示并发层级、等待边界、DP 切分顺序和仍被复用的默认控制链。
+- 为 [[02_engineering/04_posttrain_frameworks/slime/17_slime_train_inference_consistency_analysis|训推一致性]] 与 [[02_engineering/04_posttrain_frameworks/slime/31_slime_posttraining_stability_analysis|训练稳定性]] 增加分层决策图，把“先验证身份与版本，再下钻数值/kernel，最后调整执行器”的排查顺序从文字清单提升为可执行路径。
+
+---
+
+## 2026-08-19：补充 slime 在线 rollout 数据到 Megatron rank 的切分链路
+
+**Type**: Source-faithful Data Scheduling Clarification
+
+- 扩充 [[02_engineering/04_posttrain_frameworks/slime/12_slime_sample_datasource_analysis|Sample 与 DataSource 分析]]，明确 DataSource 只生产当前 rollout 的 prompt groups，RolloutManager 才按逻辑 `rollout_id` 切 optimizer steps、打包 micro-batches，并构造逐 DP-rank partitions；补充 `rollout_batch_size × n_samples_per_prompt`、`global_batch_size` 与每轮训练步数的关系及整除边界。
+- 解释全局训练 rank 与数据 partition 并非一一对应：只有 DP ranks 获得不同 Sample 集合，同一 DP 副本内的 TP/PP/CP/EP ranks 共享样本身份，CP 再在训练侧按上下文维度切 token；增加 32 prompts × 8 responses、4 steps、DP=4、micro-batch=2 的完整算例。
+- 同步修订 [[02_engineering/04_posttrain_frameworks/slime/14_slime_megatron_training_analysis|Megatron 训练后端分析]]，明确在线 rollout 不经过 Megatron 常规 Dataset/DataLoader，而由 slime `DataIterator` 消费预计算 schedule；Megatron 接管的是 pipeline forward/backward、模型并行、梯度同步和 optimizer 边界。
+
+---
+
+## 2026-08-19：补充 slime 中 Ray actor 与 SPMD rank 的并发关系
+
+**Type**: Source-faithful Concurrency Clarification
+
+- 扩充 [[02_engineering/04_posttrain_frameworks/slime/11_slime_ray_control_plane_analysis|slime Ray 控制面分析]]，明确 SPMD 的 single 指同一程序而非单进程，并解释一个逻辑训练角色如何由 `RayTrainGroup` 扇出为多个 trainer actors，再由各 actor 以独立 rank 加入同一个 `torch.distributed` world。
+- 增加 Ray 并发管理分层：placement group 负责成组资源预留与放置，不同 actors 之间通过异步 RPC 并行，同一同步 actor 的方法默认串行，`ray.get` 形成控制面屏障，而 Megatron/PyTorch distributed 负责 TP/PP/DP/CP/EP 的集合通信与训练同步。
+- 将含混的“每个子系统只做成一个 Ray actor”改写为准确反事实“把整个训练角色压进一个 Ray actor”，说明 slime 选择逐 rank actor 的资源、生命周期和故障隔离理由，同时解释 `RolloutServer`/`ServerGroup` 不需要成为 actor 的条件。
+
+---
+
+## 2026-08-19：统一 slime 系列中文技术用语与表格表达
+
+**Type**: Series-wide Terminology and Readability Revision
+
+- 审校 [[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析系列]] 的 20 篇内容页与总索引，在不改变源码事实、固定提交引用和公式的前提下，统一表头、章节标题和机制说明中的中文技术用语。
+- 将会妨碍理解的直译改成常用工程表达：例如“制品路径”改为“模型与检查点目录”，“owner/ownership”按语境改为“责任主体/状态归属”，“admission”改为“准入控制”，“measure”改为“统计口径”，“productive throughput”改为“有效训练吞吐”，“fanout/flatten/sibling”分别写作“扇出/展平/同组片段”。
+- 在索引中补充术语约定：类名、参数名、协议字段和行业通用缩写保留源码写法；普通说明文字优先使用能直接对应工程动作的中文，避免把 artifact、contract、identity、runtime、adapter 等英文概念逐字翻译成生硬表述。
+
+---
+
+## 2026-08-18：重构 slime 全目录源码分析——从功能罗列到设计因果与诊断
+
+**Type**: Series-wide Source-faithful Rewrite + Design Rationale Audit
+
+- 重构 [[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析系列]] 的 20 篇内容页与总索引：统一采用“问题背景 → 约束/不变量 → 设计选择 → 调用链 → 替代方案与代价 → 失败边界 → 证据”的因果主线；总索引新增“系统问题 → owner 页面 → 核心设计 → 主要边界”地图和按架构、数据/梯度、服务/提交、扩展、性能/故障五条阅读路线。
+- 深化数据与控制面：解释 `Sample` 为什么是跨 DataSource、rollout、RM、trainer 的语义载体，明确 partial 默认会训练新旧 model token、mask 开关才只训练新 span，tool/environment token 的 logprob `0` 是不可训练占位；说明 nested compact fanout 如何用共享 `rollout_id` 在 flatten 后保留一次逻辑 execution 的统计身份，并厘清 placement group、actor group、RolloutManager、server、server group、engine 与 updater 的管理对象和参与时机。
+- 深化训练正确性与状态边界：把 rollout-aware reducer、DP×CP whitening、训推 topology 转换、四种权重 transport 统一到 estimator measure 与版本化提交模型；严格区分 version、consistency、commit、recovery 和 replay，明确 engine 局部恢复不等于 DataSource/trainer/外部副作用的全局事务恢复。
+- 深化能力扩展：将 external SGLang、custom generate、整轮 rollout、新 backend 分成不同扩展层；把 OPD、在线 MTP、低精度、新模型和 agent workflow 分别还原为 role/version、precision axes、双向语义映射与 execution→training projection 问题。vime 页使用独立 `vllm-project/vime@8144096e` 基线，明确它是 fork 级 vLLM 替换而非 upstream slime 内置 backend，并记录默认 top-p replay adapter 未闭合、external-engine 文档 `delta + NCCL` 与 runtime `delta + disk` 限制冲突等源码事实。
+- 将 [[02_engineering/04_posttrain_frameworks/slime/30_slime_rollout_optimization_analysis|Rollout 优化]] 改写为 productive throughput 与闭环关键路径账本，覆盖 service/admission、filter/oversampling、tail/drain、trainer wait、data conversion、offload/publish 和 overlap 的适用条件及负收益反例；将 [[02_engineering/04_posttrain_frameworks/slime/31_slime_posttraining_stability_analysis|稳定性]] 改写为数据/奖励、策略版本、估计量/数值、基础设施四个控制环的判别式诊断，说明 clip、filter、restart 何时只是在压低症状。
+- 证据与质量门禁：21 个 Markdown 页共核验 1,251 个 fixed-commit 定位符、195 个唯一源码文件，覆盖 `THUDM/slime@681b3adc`、SGLang `0b3bb0cb` / `d6ef6888` 与 `vllm-project/vime@8144096e`，路径和行号越界均为 0；全目录严格公式检查 0 error / 0 warning；全库链接检查 pages=402 且 broken/ambiguous/bare_index/orphans 均为 0；checker 测试 22 passed；所有改动通过 `git diff --check`，新增/改写 Mermaid 均按仓库规范人工复核。
+
+---
+
+## 2026-08-18：深化 slime 权重同步——共卡 CUDA IPC、拓扑转换与 MoE 定向路由
+
+**Type**: Source-level Mechanism Clarification + Topology Constraint Audit
+
+- 深化 [[16_slime_weight_sync_analysis]]：纠正“每个参数只在一个 train rank 聚合”和“每个 infer rank 最终常驻完整 HF 参数”两种过度简化，区分 Megatron collective 重组、NCCL transport source 与 SGLang TP-aware local shard loader，并列出 train/infer TP、PP、EP topology 转换的能力边界。
+- 拆解 colocate 完整生命周期：说明 actor/rollout 是同一物理 GPU 上的不同进程与分时驻留，训练新值先落 pinned CPU snapshot、更新时按桶回到 train GPU；CUDA IPC 只传 GPU allocation handle 与 tensor metadata，SGLang 映射 source storage 后再 GPU→GPU copy 进自己的 parameter shard，Gloo/Ray 不搬运权重 payload。
+- 补充 MoE 例外路径：在两侧 expert TP 为 1、infer PP=1、EP 静态且所有 engines 共卡等条件下，从 expert owner 通过 NCCL P2P 定向发送到目标 train rank，再经同卡 IPC 装入 SGLang EP worker；不满足条件自动回退通用完整 HF bucket。
+- 更新 [[slime/index]] 的核验日期和权重同步入口摘要；源码证据固定到 slime `681b3adc` 与其 stable SGLang `0b3bb0cb` 基线。校验：目标页 53 个 fixed-commit 源码链接、23 个唯一文件均存在且行号无越界；全库链接检查 pages=402 且 broken/ambiguous/bare_index/orphans 均为 0；3 个 changed Markdown 严格公式检查为 0 error / 0 warning；公式与链接测试 19 passed；`git diff --check` 无空白错误。
+
+---
+
+## 2026-08-18：slime rollout 参数、GPU 复用与 PPO Actor/Critic 机制深化
+
+**Type**: Source-level Mechanism Clarification + Beginner-oriented PPO Walkthrough
+
+- 扩写 [[10_slime_end_to_end_iteration_analysis]]：把 post-training 外层事务边界与 optimizer step、dataset epoch、checkpoint cadence 分开，明确 `--start-rollout-id` 是 rollout/train/weight-commit cycle 的编号，自动恢复取已保存 id 的下一轮，`num_rollout` 是排他上界；checkpoint 并非每轮必存，但新权重每轮训练后都会提交给 rollout engine。
+- 扩写 [[13_slime_sglang_rollout_engine_analysis]]：逐项解释 `--rollout-batch-size`、`--n-samples-per-prompt`、`--over-sampling-batch-size` 的 group/response/补采波次单位，以 32×8、oversample 64 的例子说明 attempted→accepted；明确 dynamic filter 在整组生成和 reward 之后运行，记录 zero-std filter 与 `keep_when_insufficient` fallback 的数据质量—延迟权衡。
+- 扩写 [[11_slime_ray_control_plane_analysis]] 与 [[14_slime_megatron_training_analysis]]：说明 `_get_placement_group_layout` 同时定义 placement-group bundle 总量和 rollout slice offset、真正 rank/engine 绑定由下游完成；区分 Actor/Critic 共享训练卡与 train/rollout colocate 两条复用轴，并解释 PPO 强制 `offload_train` 是同卡显存驻留交接，不是角色控制流开关。
+- 深化 [[15_slime_loss_parallelism_analysis]]：从 prefix state/response token 解释 GAE 中的 t 与 t+1，区分单步 TD residual 与完整 GAE，推导 return target 为什么是 advantage 加 frozen old value；补 Actor/Critic clipped loss 的业务依据、一条三 token 轨迹的逐项数值计算，以及 sample reward→token GAE/loss→logical-rollout reducer→Megatron scalar 的粒度链。
+- 校验：5 篇目标 Markdown 严格公式检查为 0 error / 0 warning；5 页共 205 个固定 commit `path:line` 引用，文件与行号范围 issues=0；全库链接检查 pages=402，broken/ambiguous/bare_index/orphans 均为 0；公式/链接相关测试 22 passed；目标文件 `git diff --check` 无空白错误。
+
+---
+
+## 2026-08-18：vLLM 主分支架构重验与当前推理技术栈总览
+
+**Type**: Source Revalidation + Architecture Deep Dive + Knowledge Map Refresh
+
+- 固定并核验 `vllm-project/vllm@f4b161d7fca438bfe29509984759be1943a5aa88`（`v0.27.2rc0-189-gf4b161d7fc`），新增 [[02_engineering/03_infer_frameworks/01_llm_inference_technology_stack_analysis|大模型推理技术栈全景]]：按模型制品、协议输入、连续调度、分页 KV、执行/并行、图编译、kernel/通信、KV 数据平面和运维分层，并用官方资料定位 Transformers、vLLM、SGLang、TensorRT-LLM、llama.cpp 与已进入维护模式的 TGI。
+- 重写 [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM 引擎架构与请求生命周期]]：区分离线 `SyncMPClient` / 可选 `InprocClient` 与在线 `AsyncMPClient`，追踪 EngineCore 普通 step、batch queue、统一 token scheduler、KV block 所有权、Executor/Worker 与 Model Runner V1/V2 选择逻辑，修正“永远双进程”“离线必定同进程”和“V2 全量替换”等过度简化。
+- 重写 [[02_engineering/03_infer_frameworks/vllm/01_vllm_feature_optimizations_guide|vLLM 快速使用与优化指南]]：补 Linux 与多硬件插件安装路径、offline/online 最小示例、chat template 与 generation config 陷阱、`-O0` 到 `-O3`、`balanced/interactivity/throughput`、prefix/chunked/async 默认行为，以及按 TTFT、TPOT、吞吐和显存分类的调优与 benchmark 流程。
+- 更新 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] 与 [[02_engineering/03_infer_frameworks/index|推理框架目录索引]]，显式标注当前入口页和 `485bbe1c6` 专题页的混合源码基线，避免把旧行号和默认值冒充当前主分支事实。
+- 校验：4 篇入口/架构文档中的 77 个固定 `path:line` 定位均存在且未越界；全库链接检查 pages=402，broken/ambiguous/bare_index/orphans 均为 0；本次 6 个 Markdown 严格公式检查为 0 error / 0 warning；知识库测试 91 passed；本次文件范围 `git diff --check` 无空白错误。
+
+---
+
+## 2026-08-14：补齐 slime rollout batch、数据通道、logprob 与 delta 同步问答
+
+**Type**: Source-level FAQ Enrichment + Mechanism Clarification
+
+- 扩写 [[10_slime_end_to_end_iteration_analysis]]，统一解释 `rollout_batch_size`、训练 global batch、micro-batch/梯度累计、optimizer step、外层 rollout 与 epoch 的边界；明确 actor 每个 train step 更新，而 SGLang 权重在整轮 train 后一次提交。
+- 补齐 GRPO 的 $R\times G$ 采样、group reward normalization 与 train-step split 关系，并解释变长轨迹如何经过 token-budget first-fit、DP/VPP 对齐和 THD packed sequence 进入 Megatron。
+- 扩写 [[12_slime_sample_datasource_analysis]] 与 [[13_slime_sglang_rollout_engine_analysis]]：区分 SGLang `/generate` 返回与 Slime rollout 子系统最终 Sample，说明 reward 可来自 remote/custom/group/built-in verifier，复合格式/正确性/工具奖励需要显式组合；固定基线的数据路径是 CPU tensorize → Ray object store/NIXL → trainer CPU → CUDA，而非 NCCL HBM 直传。
+- 纠正 logprob 量级误解：持久化 rollout logprob 是每个已选 response token 一个 float32，单条 shape 为 `[R_i]`，不是 `[B,S,V]`；[[14_slime_megatron_training_analysis]] 进一步说明训练侧 full-vocab logits 只在当前 micro-batch 内以 TP shard 短暂存在，并由 in-place vocab-parallel softmax、token chunk 与 dynamic token budget 控制峰值。
+- 深化 [[16_slime_weight_sync_analysis]]：逐字节说明 delta baseline、XOR/overwrite、zstd、checksum、host-local mmap apply，区分 wire/storage bytes 的节省与全量 gather/CPU snapshot/最终 HBM reload 等未节省成本；补四条权重路径的关键路径、可重叠阶段、timer 口径和同步占比下界估算。
+- 因 changelog 本次进入 changed-file 公式门禁，顺手机械修复该历史文件中既有的 4 个旧定界符错误和 5 个语义下标警告；只调整 MathJax 写法，不改变历史结论。
+- 校验：6 个 changed Markdown 严格公式检查为 0 error / 0 warning；5 篇 Slime 页面共 176 个固定 commit `path:line` 引用，文件与行号范围 issues=0；全库链接检查 pages=401，broken/ambiguous/bare_index/orphans 均为 0；公式/链接相关测试 22 passed；`git diff --check` 无空白错误。
+
+---
+
+## 2026-08-14：slime/vime 公式整改与 Obsidian 数学质量门禁
+
+**Type**: Documentation Remediation + Repository Skill + Automated Quality Gate
+
+- 审计 [[slime/index]] 下 21 篇 slime/vime 页面，定位四类主要问题：混用 `\(...\)` / `\[...\]` 与 dollar 定界符、多字母语义下标被当作斜体变量或减法、API 标识符用裸 `\_` 塞入公式，以及条件竖线/多行推导未使用语义化 MathJax 写法。
+- 整改实际命中问题的 10 篇 slime 页面：统一为 `$...$` 和起止独占行的 `$$`，用 `\mathrm` / `\text` / `\operatorname` 表达语义标签，以 `\mid`、`\lvert...\rvert` 和 `aligned` 修复条件概率、绝对值及多行公式；VIME 支持分析页经检查无需改写。
+- 新增 `tools/check_math.py`：忽略代码围栏与行内代码，区分高置信度结构错误和启发式排版警告，支持显式文件/目录及 Git 变更文件检查；`--strict` 将警告一并纳入门禁，并对货币金额等常见非公式 `$` 写法做豁免。
+- 新增 `.agents/skills/writing-obsidian-math/` 并同步 `.claude/skills/` 镜像，覆盖定界符、语义下标、API 名、表格、callout、多行对齐和强制自检流程；`CLAUDE.md` 与 `tools/README.md` 接入相同要求。
+- 校验：公式检查器与 skill 集成测试共 12 passed；两份 skill 通过 `quick_validate.py` 且内容逐字节一致；21 篇 slime/vime 页面严格公式检查为 0 error / 0 warning。
 
 ---
 
@@ -684,7 +823,7 @@ bare_index=70 为既有基线，P7 Task 8 处理范围）；`pytest tools/ -q`�
 | 页面 | 收缩(D02 对应) | 保留(论文特有/D02 未给出的公式) | 行数 |
 |---|---|---|---|
 | `grpo_analysis` | Key Innovation 段落(D02 §3.1 $\hat A_i$ 公式)、GRPO Objective 的 clip-surrogate 结构(D02 §2)、Why GRPO Works Well 动机叙述(D02 §1/§3.1)、Practical Implementation 玩具伪代码(改指 verl `core_algos.py:268/1279` 真实代码锚点) | 论文元数据、KL 低方差无偏估计量(D02 未给)、DeepSeek-R1-Zero 训练配置表/涌现行为/性能、R1 全流程、GRPO vs DPO 对比表、Impact | 165→119 |
-| `dapo_analysis` | Clip-Higher 与 Dynamic Sampling 两段动机叙述(公式与 D02 §2/§3.2 重复)、Relationship to Other Methods 表(与 D02 §4 重复) | 论文元数据、"30 分失败三症状"诊断段、Token-Level Loss 的 $J_{DAPO}$/$J_{GRPO}$ 显式求和公式(D02 无)、Overlong Reward Shaping 分段惩罚公式(D02 无)、DAPO Algorithm 伪代码、Training Configuration/Progressive Results 两张原始数字表、KL 移除动机、数据集细节、Key Insights | 187→157 |
+| `dapo_analysis` | Clip-Higher 与 Dynamic Sampling 两段动机叙述(公式与 D02 §2/§3.2 重复)、Relationship to Other Methods 表(与 D02 §4 重复) | 论文元数据、"30 分失败三症状"诊断段、Token-Level Loss 的 $J_{\mathrm{DAPO}}$/$J_{\mathrm{GRPO}}$ 显式求和公式(D02 无)、Overlong Reward Shaping 分段惩罚公式(D02 无)、DAPO Algorithm 伪代码、Training Configuration/Progressive Results 两张原始数字表、KL 移除动机、数据集细节、Key Insights | 187→157 |
 | `gspo_analysis` | Problem 段 5 点缺陷列表压缩为一段(D02 §3.4)、Sequence-Level Ratio 公式与 GSPO Objective(D02 §3.4/§2 完全一致)、Key Difference 表与 Relationship to Other Methods 表(均与 D02 §4 重复) | 论文元数据、Gradient Comparison 的 $\nabla J$ 显式梯度公式(D02 无)、GSPO-token stop-gradient 变体公式(D02 无)、Clipping Range Difference 原始超参数表(3e-4/4e-4)、Empirical Results 原始实验数据、Why GSPO Matters | 133→88 |
 
 **verl `verl_rl_algorithms_analysis.md` §3.2/§4.1/§4.2 数学部分收缩指 D02**（保留全部代码锚点、14 优势估计器/11 策略损失清单、注册表机制、config key 映射——spec 点名保护项）：GRPO 组内归一化公式（§3.2）、vanilla PPO clip 基础结构（§4.1，dual-clip 扩展因 D02 未给出而保留）、GSPO 序列比公式（§4.2，stop-grad 实现技巧因 D02 未给出而保留）分别收缩为指向 D02 §3.1/§2/§3.4 的一句话，`core_algos.py:xxx` 代码块与行号全部原样保留。§7"与 RL 文献的对应"由散文列表改写为"verl 选型→文献→D02 对应→论文页"表格（轻改，DAPO"在 verl 里不是新损失"的实现洞察保留为表内备注；表中特别标注 verl `sapo`(arXiv 2511.20347)与 D02 §3.5 的 SAO(arXiv 2607.07508)是不同算法，避免同名混淆）。389→382 行（净减 7 行：删除 3 处重复 LaTeX 展示块，新增 §7 对应表 + Related Pages 补链）。
@@ -1754,7 +1893,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **Type**: Source Ingest + Industrial Case Study + Cross-Document Correction（固定官方报告 `0797decb`，将算法、trajectory、environment、Infra 与部署精度放回同一个 `wiki/03_posttraining/` 闭环。）
 
 - **原始来源**：新增 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.md`，SHA-256 `fd6ee35c07766a5eb6104235f1b407e4329f969e3482b8c42937c7b5f2b3efe1`；来源台账补 §4.1、§4.2、§5.3 与 Appendix F 的精确定位。
-- **新增 D12 `03_posttraining/12_kimi_k3_posttraining_case_study_analysis`**（历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[24_kimi_k3_posttraining_case_study_analysis]]，按"历史不回写"惯例降级为反引号）：串起 SFT → 九个 domain/effort 专家 → MOPD，澄清 partial rollout 保留 prompt 内 \(K\) group，并分析 white-box environment、XTML preserved thinking、MXFP4/MXFP8 QAT、draft model、external KV pool 与 AgentENV。
+- **新增 D12 `03_posttraining/12_kimi_k3_posttraining_case_study_analysis`**（历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[24_kimi_k3_posttraining_case_study_analysis]]，按"历史不回写"惯例降级为反引号）：串起 SFT → 九个 domain/effort 专家 → MOPD，澄清 partial rollout 保留 prompt 内 $K$ group，并分析 white-box environment、XTML preserved thinking、MXFP4/MXFP8 QAT、draft model、external KV pool 与 AgentENV。
 - **回填统一主线**：更新 D00–D05 与 D11；把 K3 作为项目级工业案例，而不是没有训练源码证据的“第五个开源框架”；D00 与领域/全局索引扩展为 D00–D12 连续编号。
 - **修正事实边界**：量化 scheme 一致只消除该维度 TIM；K3 partial rollout 不是 fully async；Figure 8、MOPD、GRM、external KV 与 AgentENV 均保留未披露超参数、消融或运行条件。
 - **K3 旧页同步**：总览、架构、Infra 与 Moonshot 索引从“报告/权重待发布”更新为 2026-07-28 固定报告，并把后训练机制统一链接到 D12。
@@ -1939,9 +2078,9 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Deep Dive（承接用户连续追问：QKVABZ、$a/b/z$ 设计、RNN 中的 $t$、chunk size 与 $t$ 的关系、chunk 数学等价性、仿射状态是否必须保序，以及当前训练/Prefill/Decode kernel 融合。）
 
-- **新增 [[20_gdn_kda_linear_attention_analysis]]**：从 $x_t\rightarrow q,k,v,a,b,z$ 开始，逐步解释 raw $a\rightarrow g=\log\alpha$、$b\rightarrow\beta$、$z$ 输出门的职责分离；给出 GDN 标量 decay 与 KDA 逐通道 decay 的五步递推、统一仿射式 $S_t=A_tS_{t-1}+B_t$、$C=3$ 展开，以及 chunk 摘要 $(P,R)$ 的保序结合复合。明确纠正“chunk 状态矩阵直接相乘”和“有结合律即可乱序”两个误解。
+- **新增 [[20_gdn_kda_linear_attention_analysis]]**：从 $x_t\rightarrow q,k,v,a,b,z$ 开始，逐步解释 raw $a\rightarrow g=\log\alpha$、$b\rightarrow\beta$、$z$ 输出门的职责分离；给出 GDN 标量 decay 与 KDA 逐通道 decay 的五步递推、统一仿射式 $S_t=A_tS_{t{-}1}+B_t$、$C=3$ 展开，以及 chunk 摘要 $(P,R)$ 的保序结合复合。明确纠正“chunk 状态矩阵直接相乘”和“有结合律即可乱序”两个误解。
 - **新增 [[21_gdn_kda_kernel_implementation_analysis]]**：训练侧固定 FLA `ccb0ff944cbf`，拆解 autograd chunk forward/backward、gate+cumsum、KKT+solve-tril+W/U、状态 scan、输出和反向重算；推理侧固定 SGLang `7824903417b7`，拆解 QKVABZ 投影融合、Prefill $C=64$ chunk pipeline、Decode fused recurrent 五步、GDN packed-decode 与 speculative verify。明确 SGLang 是推理基线，不用其 forward-only 代码冒充训练反向。
-- **原始来源与联动**：新增 raw 快照 `Gated_Delta_Networks-2412.06464v3.pdf`；修正 [[12_kimi_linear_analysis]] KDA 公式中 $S_{-1}$ 的下标笔误为 $S_{t-1}$；更新 Moonshot/Kimi 与模型总索引，并为 [[22_kimi_k3_architecture_deepdive]] 补充双向入口。
+- **原始来源与联动**：新增 raw 快照 `Gated_Delta_Networks-2412.06464v3.pdf`；修正 [[12_kimi_linear_analysis]] KDA 公式中 $S_{{-}1}$ 的下标笔误为 $S_{t{-}1}$；更新 Moonshot/Kimi 与模型总索引，并为 [[22_kimi_k3_architecture_deepdive]] 补充双向入口。
 - **后续补充：TND/THD packed 输入**：[[21_gdn_kda_kernel_implementation_analysis]] 新增 §八，明确 TND/THD 的 $T=\sum_iL_i$、外层 batch=1 与 `cu_seqlens` 状态边界；逐段追踪 Megatron-LM `dev@232c478d43ce` 的 `T×1×D → per-sequence CP→HP → 1×T×N×d → boundary-aware short conv/chunk GDN → per-sequence HP→CP`，并解释为何每条 packed 序列必须独立重置 RNN 状态、chunk 不能跨 pack 边界，以及当前 batch、CP 对齐、FLA 与 inference 限制。
 - **TND 代码级追踪**：同页 §8.6 补充最小等价伪代码，并把边界隔离落实到三层实现：Megatron `_unpack_sequence` 与逐序列 CP↔HP、FLA causal-conv 的 `bos/eos + boundary_check`、GDN Triton state kernel 的 `N×head` program grid 与每序列独立 chunk-state 槽。
 
@@ -2206,8 +2345,8 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 **定位**：新建理论簇 `01_theory/06_distributed_parallelism/`，**原理（principle）层、引擎无关**——只讲「为什么这么切、代价函数长什么样、为什么不选替代」，两根主线贯穿全簇：**$\alpha$-$\beta$ 通信代价模型** + **显存账本（参数/梯度/优化器态/激活）**；「源码怎么实现」一律交叉链接到 [[02_engineering/index]] 已有的源级页（`[[15_distributed_primitives/index]]`、[[megatron-lm/index]]、[[torchtitan/index]] 等），不重复。填补「理论层无分布式并行原理页」的空白。
 
 - **新增 index + 6 内容页**：
-  - [[10_collectives_analysis]] — 六大原语语义、$\alpha$-$\beta(-\gamma)$ 模型、核心恒等式 **all-reduce = reduce-scatter + all-gather**、ring 每卡搬运 $2(N{-}1)/N\cdot M$ 的带宽最优性、ring vs tree、all-to-all/p2p 代价（全簇「代价词汇表」）。
-  - [[11_data_parallel_analysis]] — DP：复制模型/切数据、all-reduce 梯度的等价性、通信 $\propto\Psi$ 与 batch/卡数无关、$16\Psi$ 显存账本（引出 ZeRO）、分桶重叠 + 梯度累积。
+  - [[10_collectives_analysis]] — 六大原语语义、$\alpha$-$\beta(-\gamma)$ 模型、核心恒等式 **all-reduce = reduce-scatter + all-gather**、ring 每卡搬运 $\frac{2(N{-}1)}{N}M$ 的带宽最优性、ring vs tree、all-to-all/p2p 代价（全簇「代价词汇表」）。
+  - [[11_data_parallel_analysis]] — DP：复制模型/切数据、all-reduce 梯度的等价性、通信 $\propto\Psi$ 与 batch/卡数无关、$\Psi\times16$ 显存账本（引出 ZeRO）、分桶重叠 + 梯度累积。
   - [[12_zero_fsdp_analysis]] — ZeRO 1/2/3 逐级切优化器态/梯度/参数、通信 vs DP 增量（1/2 免费、3 多 ~50% AG）、ZeRO-3 = FSDP 的 unshard→compute→reshard。
   - [[13_tensor_sequence_parallel_analysis]] — TP（Megatron 列切→行切 + f/g 共轭算子、每层 4 次 all-reduce、只敢机内）、SP（拆 all-reduce 为 RS+AG，零额外通信换激活显存）、CP（ring-attention 交换 KV 攻长序列）。
   - [[14_expert_parallel_analysis]] — EP：路由 + 两次 all-to-all（分发/回收）、负载不均与容量因子、分层 a2a。

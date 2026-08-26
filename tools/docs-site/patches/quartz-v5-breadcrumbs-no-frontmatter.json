@@ -1,0 +1,25 @@
+{
+  "id": "quartz-v5-breadcrumbs-no-frontmatter",
+  "replacements": [
+    {
+      "file": ".quartz/plugins/breadcrumbs/dist/index.js",
+      "before": "  allFiles.forEach((file) => {\n    if (file.frontmatter) {\n      trie.add({\n        slug: file.slug,\n        title: file.frontmatter.title ?? \"\",\n        filePath: file.filePath\n      });\n    }\n  });",
+      "after": "  allFiles.forEach((file) => {\n    if (file.slug && file.filePath) {\n      trie.add({\n        slug: file.slug,\n        title: file.frontmatter?.title ?? file.filePath.split(\"/\").at(-1)?.replaceAll(\".md\", \"\") ?? \"\",\n        filePath: file.filePath\n      });\n    }\n  });"
+    },
+    {
+      "file": ".quartz/plugins/breadcrumbs/dist/components/index.js",
+      "before": "  allFiles.forEach((file) => {\n    if (file.frontmatter) {\n      trie.add({\n        slug: file.slug,\n        title: file.frontmatter.title ?? \"\",\n        filePath: file.filePath\n      });\n    }\n  });",
+      "after": "  allFiles.forEach((file) => {\n    if (file.slug && file.filePath) {\n      trie.add({\n        slug: file.slug,\n        title: file.frontmatter?.title ?? file.filePath.split(\"/\").at(-1)?.replaceAll(\".md\", \"\") ?? \"\",\n        filePath: file.filePath\n      });\n    }\n  });"
+    },
+    {
+      "file": ".quartz/plugins/breadcrumbs/dist/index.js",
+      "before": "    const typedCtx = ctx ?? {};\n    typedCtx.trie ??= trieFromAllFiles(\n      allFiles\n    );\n    const trie = typedCtx.trie;",
+      "after": "    const typedCtx = ctx ?? {};\n    typedCtx.breadcrumbTrie ??= trieFromAllFiles(\n      allFiles\n    );\n    const trie = typedCtx.breadcrumbTrie;"
+    },
+    {
+      "file": ".quartz/plugins/breadcrumbs/dist/components/index.js",
+      "before": "    const typedCtx = ctx ?? {};\n    typedCtx.trie ??= trieFromAllFiles(\n      allFiles\n    );\n    const trie = typedCtx.trie;",
+      "after": "    const typedCtx = ctx ?? {};\n    typedCtx.breadcrumbTrie ??= trieFromAllFiles(\n      allFiles\n    );\n    const trie = typedCtx.breadcrumbTrie;"
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+{
+  "id": "quartz-v5-core-local-only",
+  "replacements": [
+    {
+      "file": "quartz/cli/handlers.js",
+      "before": "server.listen(argv.port)",
+      "after": "server.listen(argv.port, \"127.0.0.1\")"
+    },
+    {
+      "file": "quartz/cli/handlers.js",
+      "before": "new WebSocketServer({ port: argv.wsPort })",
+      "after": "new WebSocketServer({ port: argv.wsPort, host: \"127.0.0.1\" })"
+    },
+    {
+      "file": "quartz/cli/handlers.js",
+      "before": "`Started a Quartz server listening at http://localhost:${argv.port}${argv.baseDir}`",
+      "after": "`Started a Quartz server listening at http://127.0.0.1:${argv.port}${argv.baseDir}`"
+    },
+    {
+      "file": "quartz/plugins/index.ts",
+      "before": ": `ws://localhost:${ctx.argv.wsPort}`",
+      "after": ": `ws://127.0.0.1:${ctx.argv.wsPort}`"
+    },
+    {
+      "file": "quartz/cli/handlers.js",
+      "before": "console.log(`Reason: ${styleText(\"grey\", err)}`)",
+      "after": "console.log(`Reason: ${styleText(\"gray\", err)}`)"
+    },
+    {
+      "file": "quartz/cli/handlers.js",
+      "before": "console.log(statusString + styleText(\"grey\", ` ${argv.baseDir}${req.url}`))",
+      "after": "console.log(statusString + styleText(\"gray\", ` ${argv.baseDir}${req.url}`))"
+    },
+    {
+      "file": "quartz/cli/handlers.js",
+      "before": "styleText(\"grey\", ` ${argv.baseDir}${req.url} -> ${newFp}`)",
+      "after": "styleText(\"gray\", ` ${argv.baseDir}${req.url} -> ${newFp}`)"
+    },
+    {
+      "file": "quartz/cli/handlers.js",
+      "before": "console.log(styleText(\"grey\", \"hint: exit with ctrl+c\"))",
+      "after": "console.log(styleText(\"gray\", \"hint: exit with ctrl+c\"))"
+    },
+    {
+      "file": "quartz/components/Head.tsx",
+      "before": "        <link rel=\"preconnect\" href=\"https://cdnjs.cloudflare.com\" crossOrigin=\"anonymous\" />",
+      "after": "        {/* cdnjs preconnect removed for the local-only documentation runtime */}"
+    },
+    {
+      "file": "quartz/components/Head.tsx",
+      "before": "fileData.frontmatter?.title ?? i18n(cfg.locale).propertyDefaults.title",
+      "after": "fileData.frontmatter?.title ?? cfg.pageTitle"
+    },
+    {
+      "file": "quartz/components/Head.tsx",
+      "before": "import { CustomOgImagesEmitterName } from \"../../.quartz/plugins\"",
+      "after": "// OG image plugin intentionally omitted in the local-only documentation runtime"
+    },
+    {
+      "file": "quartz/components/Head.tsx",
+      "before": "    const usesCustomOgImage = ctx.cfg.plugins.emitters.some(\n      (e) => e.name === CustomOgImagesEmitterName,\n    )\n    const ogImageDefaultPath = `https://${cfg.baseUrl}/static/og-image.png`",
+      "after": "    const usesCustomOgImage = true\n    const ogImageDefaultPath = \"\""
+    },
+    {
+      "file": "quartz/plugins/loader/config-loader.ts",
+      "before": "  let footer: QuartzComponent | undefined",
+      "after": "  const EmptyFooter: QuartzComponent = () => null\n  let footer: QuartzComponent = EmptyFooter"
+    },
+    {
+      "file": "quartz/plugins/loader/config-loader.ts",
+      "before": "  if (footer) {\n    defaultLayout.footer = footer\n  }",
+      "after": "  defaultLayout.footer = footer"
+    },
+    {
+      "file": "quartz/plugins/loader/config-loader.ts",
+      "before": "    if (footer && !pt.footer) pt.footer = footer",
+      "after": "    if (!pt.footer) pt.footer = footer"
+    }
+  ]
+}

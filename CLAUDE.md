@@ -107,8 +107,27 @@ When a new source is added to `raw/`, follow this sequence:
 
 - Write in the same language as the source material (Chinese for Chinese sources, English for English sources)
 - Use Mermaid diagrams for architecture, data flow, and sequence visualizations（务必遵守下方「Mermaid 规范与生成后校验」）
-- Use LaTeX for mathematical formulas
+- Use LaTeX for mathematical formulas（必须遵守下方「Obsidian 公式规范与生成后校验」，并读取 `.claude/skills/writing-obsidian-math/SKILL.md`）
 - Include code references with file paths and line numbers when analyzing source code（配合上方 Provenance Policy 的仓库 + commit 基线）
+
+## Obsidian 公式规范与生成后校验
+
+本库以 Obsidian 为主要阅读端，公式统一使用其文档化的 dollar 定界符：行内公式写成 `$...$`，块级公式的起止 `$$` 必须各自独占一行。新增或修改的 Markdown **禁止**使用 `\(...\)`、`\[...\]`，也禁止把块级公式写成 `$$x+y$$`。
+
+公式除了“能渲染”，还必须表达正确的数学语义：
+
+- 多字母语义下标用 `\mathrm{...}` 或 `\text{...}`，例如 `$C_{\mathrm{low}}$`；不要把 `low` 写成三个相乘的斜体变量。
+- 条件概率用 `\mid`，绝对值用 `\lvert...\rvert`；Markdown 表格中的裸 `|` 会先被解释为分栏符。
+- 不把 API 标识符直接写成 `accept\_rate` 这类数学变量；优先定义 `$r_{\mathrm{accept}}$`，必须展示字面 API 名时使用 `\texttt{accept\_rate}`。
+- 多行推导使用 `\begin{aligned}...\end{aligned}`、`&` 对齐点和显式 `\\` 换行；源码换行本身不会让公式换行。
+- 表格单元格只放短行内公式，块级公式移到表格外。
+
+**生成后校验（必做，不可跳）：**
+
+1. 每次新增、改写或审查含公式的 Markdown，必须应用 `writing-obsidian-math` skill，并逐式检查定界符、花括号、`\left`/`\right`、语义下标、竖线含义和多行对齐。
+2. 编辑完成后对目标文件或目录运行 `python tools/check_math.py --strict <path>`，错误和警告都必须处理。
+3. 提交前运行 `python tools/check_math.py --changed --strict`；不能为了消除启发式警告而改变数学含义或把正文藏进行内代码。
+4. 自动检查不能证明代数正确或忠实于论文/源代码，仍需人工确认符号定义、分子分母、条件分布和等价变形没有被排版整改改变。
 
 ## Mermaid 规范与生成后校验
 
@@ -161,7 +180,8 @@ When the user asks a question:
 Periodically (or when the user requests):
 
 1. **Consistency check**: Run `python tools/check_links.py --strict`（broken/ambiguous/裸 index 必须为 0）
-2. **Orphan check**: `check_links.py` 的 orphans 项已覆盖"无入链且未被任何 index.md 提及"的孤儿页；发现即整合入相应 index
-3. **Contradiction review**: Scan for `> [!contradiction]` callouts and propose resolutions
-4. **Staleness review**: Flag pages that haven't been updated in >30 days for review
-5. **Duplication review**: 发现同一主题在多个页面复述（而不是自然的"实现差异"）时，适用 Update Principles 的 Merge over coexist
+2. **Math check**: Run `python tools/check_math.py --changed --strict`（本次变更中的公式错误和警告必须为 0）
+3. **Orphan check**: `check_links.py` 的 orphans 项已覆盖"无入链且未被任何 index.md 提及"的孤儿页；发现即整合入相应 index
+4. **Contradiction review**: Scan for `> [!contradiction]` callouts and propose resolutions
+5. **Staleness review**: Flag pages that haven't been updated in >30 days for review
+6. **Duplication review**: 发现同一主题在多个页面复述（而不是自然的"实现差异"）时，适用 Update Principles 的 Merge over coexist

@@ -1,0 +1,12 @@
+{
+  "name": "llm-knowledge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "docs": "node tools/docs-site/cli.mjs serve",
+    "docs:build": "node tools/docs-site/cli.mjs build",
+    "docs:test:unit": "node --test tools/docs-site/*.test.mjs",
+    "docs:test": "npm run docs:test:unit && node tools/docs-site/smoke.mjs",
+    "docs:repair": "node tools/docs-site/cli.mjs repair"
+  }
+}

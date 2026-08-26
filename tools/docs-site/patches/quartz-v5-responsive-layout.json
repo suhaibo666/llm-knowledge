@@ -1,0 +1,10 @@
+{
+  "id": "quartz-v5-responsive-layout",
+  "replacements": [
+    {
+      "file": "quartz/styles/custom.scss",
+      "before": "@use \"./base.scss\";\n\n// put your custom CSS here!",
+      "after": "@use \"./base.scss\";\n\n@media all and (min-width: 1200px) {\n  .page {\n    width: 96vw;\n    max-width: 2800px;\n  }\n\n  .page > #quartz-body {\n    grid-template-columns:\n      clamp(16rem, 19vw, 24rem)\n      minmax(0, 1fr)\n      clamp(14rem, 17vw, 20rem);\n  }\n\n  .page > #quartz-body > .center {\n    min-width: 0;\n  }\n}"
+    }
+  ]
+}

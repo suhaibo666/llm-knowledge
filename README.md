@@ -18,9 +18,29 @@ tools/          # 维护工具：check_links.py（链接健康检查）、figs/ 
 
 各域页面清单见 [wiki/index.md](wiki/index.md)。
 
-## 使用
+## 本地文档站点
 
-页面间用 `[[wiki link]]` 交叉引用，Obsidian 打开 `wiki/` 浏览；或 `cd llm-knowledge && claude` 直接提问。
+需要 Node.js ≥ 22、npm ≥ 10.9.2 和 Git ≥ 2。在仓库根目录运行：
+
+```bash
+npm run docs
+```
+
+命令会在浏览器打开 `http://127.0.0.1:8080`，并监听 Markdown 变化。首次运行需要联网下载已锁定版本的 Quartz、社区插件和 Mermaid；成功安装后，日常启动与构建均复用 `.cache/llm-knowledge-docs/` 下的仓库私有运行时，不再访问包仓库或 CDN。
+
+常用命令：
+
+```bash
+npm run docs -- --port 8088  # HTTP 使用 8088，热更新 WebSocket 使用 8089
+npm run docs -- --no-open    # 启动但不自动打开浏览器
+npm run docs:build           # 仅生成静态站点
+npm run docs:test            # 单元测试 + 本地浏览器端到端验收
+npm run docs:repair          # 显式重建损坏或版本漂移的私有运行时
+```
+
+HTTP 和热更新端口都只绑定 `127.0.0.1`，不向局域网暴露。站点直接读取且只展示 `wiki/`；它不会复制、格式化或改写任何 Markdown，Obsidian wikilink、callout、Mermaid 与公式兼容均由站点层处理。
+
+也可以继续用 Obsidian 打开 `wiki/` 浏览，或 `cd llm-knowledge && claude` 直接提问。
 
 ## 维护
 
