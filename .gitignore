@@ -103,8 +103,9 @@ venv.bak/
 # mypy
 .mypy_cache/
 
-# Claude Code — local settings only; shared skills live in skills/ (tracked)
+# Claude Code — ignore local settings; .claude/skills is a symlink to the shared skills/
 .claude/*
+!.claude/skills
 
 # Superpowers framework session working files (brainstorm drafts, review tmp, logs)
 .superpowers/

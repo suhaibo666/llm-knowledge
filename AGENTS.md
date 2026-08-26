@@ -14,5 +14,9 @@ content authority, the provenance policy, and the quality gates.
 | Draw or change a Mermaid diagram | [`writing-mermaid-diagrams`](skills/writing-mermaid-diagrams/SKILL.md) |
 | Turn a new source into wiki pages | [`source-faithful-analysis`](skills/source-faithful-analysis/SKILL.md) |
 
+`skills/` is the single physical copy. `.claude/skills` and `.codex/skills` are symlinks to it
+(git stores them as symlink objects sharing one blob), so Claude Code discovers the skills
+natively and Codex reaches them by the same path — with no second copy to drift.
+
 Only Claude and Codex are supported here. The duplicated `.agents/skills/` tree and the
-`opencode.json` config were removed; `skills/` is now the single source of truth.
+`opencode.json` config were removed.

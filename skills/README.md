@@ -26,12 +26,23 @@
 
 ## 各家 agent 怎么用
 
-- **Claude Code** — `CLAUDE.md` 在会话开始时加载，其中列出本目录；需要时用 Read 打开对应
-  `SKILL.md`。技能不再放在 `.claude/skills/`，因此不会被当作内置技能自动发现，这是刻意的：
-  基本法之外的内容一律按需读取。
-- **Codex** — `AGENTS.md` 指向 `CLAUDE.md`，同样按上表按需读取本目录。
+本目录是**唯一的物理副本**；两家 agent 各自的入口是指向它的**软链接**，不是拷贝：
+
+```
+.claude/skills -> ../skills
+.codex/skills  -> ../skills
+```
+
+git 里它们以 symlink 对象（mode `120000`）存储，共享同一个 blob，因此不可能再出现两边漂移。
+
+- **Claude Code** — 通过 `.claude/skills` 原生发现这些技能，可直接按名调用；`CLAUDE.md`
+  里也列了同一张表。
+- **Codex** — `AGENTS.md` 指向 `CLAUDE.md` 与本目录，按上表按需读取。`.codex/skills` 是
+  对称的便利入口；Codex 自身的技能机制在 `~/.codex/skills/` 与 plugin marketplace，**项目级
+  技能目录未经证实**，所以对 Codex 而言真正可靠的加载路径是 `AGENTS.md` → `skills/`。
 
 只保留这两家。历史上的 `.agents/skills/`（重复副本）与 `opencode.json` 已删除。
+`tools/test_math_skill.py` 会守住"全仓库每个技能只有一份物理副本"这条不变量。
 
 ## 改技能时
 

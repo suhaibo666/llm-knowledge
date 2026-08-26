@@ -2,11 +2,13 @@
 
 The skill used to be duplicated under `.agents/skills/` and `.claude/skills/`, with a test
 whose only job was to keep the two byte-identical. There is now a single shared copy in
-`skills/`, so that sync test is gone; what remains is a check that the skill still states
-the rules the checker enforces.
+`skills/`; `.claude/skills` and `.codex/skills` are symlinks to it. What is tested here is
+that exactly one PHYSICAL copy exists, and that the skill still states the rules the
+checker enforces.
 """
 
 import json
+import os
 from pathlib import Path
 
 
@@ -16,10 +18,27 @@ MATH_SKILL = SKILLS_ROOT / "writing-obsidian-math"
 
 
 def test_skills_live_in_exactly_one_shared_place():
+    """Agent directories may point at skills/, but must never hold a second copy."""
+
     assert MATH_SKILL.is_dir()
-    # the per-agent duplicates must not come back
-    assert not (REPO_ROOT / ".agents/skills").exists()
-    assert not (REPO_ROOT / ".claude/skills").exists()
+    assert not (REPO_ROOT / ".agents/skills").exists(), "the .agents duplicate came back"
+
+    # every agent-visible path must resolve to the one shared tree
+    for agent_path in (REPO_ROOT / ".claude/skills", REPO_ROOT / ".codex/skills"):
+        if not agent_path.exists():
+            continue
+        assert agent_path.resolve() == SKILLS_ROOT.resolve(), (
+            "%s is a real directory, not a pointer to skills/" % agent_path
+        )
+
+    # and there is exactly one physical SKILL.md per skill in the whole repo
+    seen = {}
+    for path in REPO_ROOT.rglob("SKILL.md"):
+        if ".cache" in path.parts or ".git" in path.parts:
+            continue
+        seen.setdefault(os.path.realpath(path), []).append(path)
+    names = [p.parent.name for real, ps in seen.items() for p in ps[:1]]
+    assert len(names) == len(set(names)), "a skill has more than one physical copy: %s" % names
 
 
 def test_skill_contains_canonical_syntax_and_mandatory_check():
