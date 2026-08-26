@@ -461,13 +461,17 @@ async function buildStagedRuntime(paths, deps = {}) {
     await copyFile(paths.configSource, path.join(stage, "quartz.config.yaml"))
     await copyFile(paths.lockSource, path.join(stage, "quartz.lock.json"))
 
-    log("[docs] Installing the pinned Quartz community plugins...")
+    log("[docs] Restoring the pinned Quartz community plugins...")
+    // `plugin install` resolves each plugin to the tip of its branch, so a single
+    // upstream push made provisioning fail the manifest's commit check. `plugin
+    // restore` checks out the exact commits recorded in quartz.lock.json, which is
+    // what pinning is supposed to mean.
     await runChecked(
       run,
       process.execPath,
-      ["quartz/bootstrap-cli.mjs", "plugin", "install"],
+      ["quartz/bootstrap-cli.mjs", "plugin", "restore"],
       { cwd: stage, env: commandEnvironment },
-      "Quartz plugin install",
+      "Quartz plugin restore",
     )
 
     log(`[docs] Vendoring Mermaid ${manifest.mermaid.version} for offline rendering...`)

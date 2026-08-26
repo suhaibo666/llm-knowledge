@@ -243,6 +243,10 @@ export function assertListenerRecords(ports, records, options = {}) {
   const allowedPids = options.allowedPids
     ? new Set(options.allowedPids.map(Number))
     : undefined
+  // Binding 0.0.0.0 means "every interface"; the OS may report the wildcard
+  // itself or a concrete address, so accept both.
+  const expectedHost = options.expectedHost ?? "127.0.0.1"
+  const wildcard = expectedHost === "0.0.0.0" || expectedHost === "::"
 
   for (const port of ports) {
     const matches = records.filter((record) => record.port === port)
@@ -251,14 +255,14 @@ export function assertListenerRecords(ports, records, options = {}) {
     }
 
     for (const record of matches) {
-      if (record.address !== "127.0.0.1") {
+      if (!wildcard && record.address !== expectedHost) {
         throw new Error(
-          `Port ${port} is listening on ${record.address}; expected only 127.0.0.1`,
+          `Port ${port} is listening on ${record.address}; expected only ${expectedHost}`,
         )
       }
       if (allowedPids && record.pid !== undefined && !allowedPids.has(Number(record.pid))) {
         throw new Error(
-          `Loopback port ${port} belongs to process ${record.pid}, not the docs service`,
+          `Port ${port} belongs to process ${record.pid}, not the docs service`,
         )
       }
     }
@@ -273,6 +277,9 @@ export async function assertLoopbackListeners(ports, dependencies = {}) {
     const getDescendantPids = dependencies.getDescendantPids ?? findDescendantPids
     allowedPids = await getDescendantPids(dependencies.expectedPid, dependencies)
   }
-  assertListenerRecords(ports, records, { allowedPids })
+  assertListenerRecords(ports, records, {
+    allowedPids,
+    expectedHost: dependencies.expectedHost,
+  })
   return records
 }

@@ -195,7 +195,7 @@ test("the core patch uses Node's supported gray style name in serve logs", async
   }
 })
 
-test("the core patch uses exact IPv4 loopback for listeners and browser endpoints", async () => {
+test("the core patch binds a configurable host and resolves the WS host in the browser", async () => {
   const patch = JSON.parse(
     await readFile(
       path.join(toolDir, "patches", "quartz-v5-core-local-only.json"),
@@ -204,10 +204,18 @@ test("the core patch uses exact IPv4 loopback for listeners and browser endpoint
   )
   const combined = patch.replacements.map(({ after }) => after).join("\n")
 
-  assert.match(combined, /server\.listen\(argv\.port, "127\.0\.0\.1"\)/)
-  assert.match(combined, /new WebSocketServer\(\{ port: argv\.wsPort, host: "127\.0\.0\.1" \}\)/)
-  assert.match(combined, /`ws:\/\/127\.0\.0\.1:\$\{ctx\.argv\.wsPort\}`/)
-  assert.match(combined, /http:\/\/127\.0\.0\.1:\$\{argv\.port\}/)
+  // Both sockets honour DOCS_BIND_HOST and fall back to every interface.
+  assert.match(combined, /server\.listen\(argv\.port, process\.env\.DOCS_BIND_HOST \|\| "0\.0\.0\.0"\)/)
+  assert.match(
+    combined,
+    /new WebSocketServer\(\{ port: argv\.wsPort, host: process\.env\.DOCS_BIND_HOST \|\| "0\.0\.0\.0" \}\)/,
+  )
+  // The client must dial the host it loaded the page from, otherwise a browser
+  // on another machine would reconnect to its OWN loopback and hot reload dies.
+  assert.match(combined, /`ws:\/\/__DOCS_WS_HOST__:\$\{ctx\.argv\.wsPort\}`/)
+  assert.match(combined, /replace\('__DOCS_WS_HOST__', location\.hostname\)/)
+  // and no hardcoded loopback survives in the emitted endpoints
+  assert.ok(!/ws:\/\/127\.0\.0\.1/.test(combined))
 })
 
 test("the crawl-links patch resolves unique Obsidian path suffixes", async () => {
@@ -268,4 +276,17 @@ test("the breadcrumbs patch includes Markdown files without frontmatter", async 
     /typedCtx\.trie \?\?=/,
   )
   assert.doesNotMatch(combined, /if \(file\.frontmatter\)/)
+})
+
+test("serve defaults to every interface and still accepts an explicit host", async () => {
+  const { parseCliArgs, DEFAULT_HOST } = await import("./contracts.mjs")
+
+  assert.equal(DEFAULT_HOST, "0.0.0.0")
+  assert.equal(parseCliArgs(["serve"]).host, "0.0.0.0")
+  assert.equal(parseCliArgs(["serve", "--host", "127.0.0.1"]).host, "127.0.0.1")
+  assert.throws(() => parseCliArgs(["serve", "--host"]), /requires an address/)
+  assert.throws(
+    () => parseCliArgs(["serve", "--host", "a", "--host", "b"]),
+    /only once/,
+  )
 })

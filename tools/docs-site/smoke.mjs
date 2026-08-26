@@ -371,7 +371,9 @@ export async function runSmoke() {
   const failedResponses = []
 
   const servePromise = docsMain(
-    ["serve", "--port", String(port), "--no-open"],
+    // Pin the smoke run to loopback: the default is 0.0.0.0, and an
+    // end-to-end test should not publish a port on the local network.
+    ["serve", "--port", String(port), "--host", "127.0.0.1", "--no-open"],
     {
       repoRoot,
       startQuartz(options) {
@@ -398,7 +400,10 @@ export async function runSmoke() {
       throw new Error(`Documentation service exited early with status ${earlyOutcome.value.code}`)
     }
 
-    await assertLoopbackListeners([port, port + 1], { expectedPid: quartzService.pid })
+    await assertLoopbackListeners([port, port + 1], {
+      expectedPid: quartzService.pid,
+      expectedHost: "127.0.0.1",
+    })
 
     browser = await puppeteer.launch({
       executablePath: browserExecutable,

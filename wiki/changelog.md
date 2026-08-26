@@ -8,6 +8,21 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-26：修好本地文档站的 provisioning 阻塞，并默认对局域网提供服务
+
+**Type**: Docs-site Tooling Fix + Network Default Change
+
+- **根因：全新环境装不起来。** `docs:repair` 稳定复现 `Plugin commit drift for explorer: expected def459f…, detected 06ea3d8…`。链条是：`quartz.lock.json` 确实钉死了各插件 commit，但 provisioning 调的是 `quartz plugin install`——**它解析到各插件分支的最新提交**，不是锁文件里的那个；装完与 manifest 校验不符，整个 provisioning 失败。也就是说**上游任何一个社区插件推一次新提交，全新环境就再也装不起来**；已有 runtime 因为校验通过被直接复用，所以老环境看不出问题。
+- **修法**：改用 Quartz 自带的 `quartz plugin restore`（其帮助明确写 “Restore plugins from lockfile (exact versions)”）。修完 `docs:repair` 退出码 0，explorer 回到钉死的 `def459f…`。补了回归单测断言用的是 `restore` 而非 `install`。
+- **监听地址默认改为 `0.0.0.0`**（原先补丁把 Quartz 从“全网卡”改成只绑 `127.0.0.1`）。新增 `--host` 参数可退回回环；端口预检按所选 host；就绪探测仍走 `127.0.0.1`（`0.0.0.0` 只表示“所有接口”，不是可连接目标）；启动日志列出本机各网卡地址。
+- **同时修掉一个只改绑定会踩的坑**：注入页面的热更新脚本原先把地址写死成 `ws://127.0.0.1:8081`，远程浏览器会去连“它自己”的 8081，热更新必然失效。改为由浏览器按当前页面 hostname 推导（`location.hostname`），远程访问热更新同样有效。
+- listener 审计从硬编码 `127.0.0.1` 改为按配置 host 校验（通配绑定接受 `0.0.0.0` 或具体网卡地址）；smoke 显式钉在 `--host 127.0.0.1`，端到端测试不在局域网上开端口。
+- **安全影响**：站点默认对同网段可见。不可信网络里用 `npm run docs -- --host 127.0.0.1`，README 已写明。
+- 实测：两个端口均 `0.0.0.0` LISTENING；从 `192.168.205.175:8080` 取页返回 HTTP 200；页面内 WS 片段为 `new WebSocket('ws://__DOCS_WS_HOST__:8081'.replace(…, location.hostname))`，已无硬编码回环。
+- **未覆盖项（本机环境限制）**：`npm run docs:test` 里的浏览器端到端一段跑不起来——`puppeteer-core` 无法拉起 Edge（本机没装 Chrome），最小复现里不涉及任何 docs-site 代码也同样失败，属于环境能力问题而非本次改动引入。单测（63）与上面的手工端到端验证均通过。
+
+---
+
 ## 2026-08-26：CLAUDE.md 收回基本法，文档操作规则下沉到公共 skills
 
 **Type**: Repository Governance Restructure

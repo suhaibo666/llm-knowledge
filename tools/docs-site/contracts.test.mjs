@@ -14,6 +14,7 @@ test("serve defaults to the paired documentation ports", () => {
   assert.deepEqual(parseCliArgs(["serve"]), {
     command: "serve",
     port: 8080,
+    host: "0.0.0.0",
     wsPort: 8081,
     openBrowser: true,
   })
@@ -23,6 +24,7 @@ test("serve accepts a port and disables browser opening", () => {
   assert.deepEqual(parseCliArgs(["serve", "--port", "9090", "--no-open"]), {
     command: "serve",
     port: 9090,
+    host: "0.0.0.0",
     wsPort: 9091,
     openBrowser: false,
   })
@@ -32,12 +34,14 @@ test("build and repair never open a browser", () => {
   assert.deepEqual(parseCliArgs(["build"]), {
     command: "build",
     port: 8080,
+    host: "0.0.0.0",
     wsPort: 8081,
     openBrowser: false,
   })
   assert.deepEqual(parseCliArgs(["repair"]), {
     command: "repair",
     port: 8080,
+    host: "0.0.0.0",
     wsPort: 8081,
     openBrowser: false,
   })

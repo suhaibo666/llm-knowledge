@@ -2,6 +2,9 @@ import path from "node:path"
 
 const COMMANDS = new Set(["serve", "build", "repair"])
 const DEFAULT_PORT = 8080
+// Bind every interface by default so the site is reachable from other machines.
+// Pass --host 127.0.0.1 to keep it on loopback only.
+export const DEFAULT_HOST = "0.0.0.0"
 
 export function parseCliArgs(argv) {
   const [command, ...rest] = argv
@@ -10,7 +13,9 @@ export function parseCliArgs(argv) {
   }
 
   let port = DEFAULT_PORT
+  let host = DEFAULT_HOST
   let sawPort = false
+  let sawHost = false
   let sawNoOpen = false
 
   for (let index = 0; index < rest.length; index += 1) {
@@ -29,6 +34,20 @@ export function parseCliArgs(argv) {
       continue
     }
 
+    if (argument === "--host") {
+      if (sawHost) {
+        throw new Error("--host may be provided only once")
+      }
+      sawHost = true
+      const rawHost = rest[index + 1]
+      index += 1
+      if (typeof rawHost !== "string" || rawHost.trim() === "" || rawHost.startsWith("--")) {
+        throw new Error("--host requires an address, for example 0.0.0.0 or 127.0.0.1")
+      }
+      host = rawHost.trim()
+      continue
+    }
+
     if (argument === "--no-open") {
       if (sawNoOpen) {
         throw new Error("--no-open may be provided only once")
@@ -43,6 +62,7 @@ export function parseCliArgs(argv) {
   return {
     command,
     port,
+    host,
     wsPort: port + 1,
     openBrowser: command === "serve" && !sawNoOpen,
   }

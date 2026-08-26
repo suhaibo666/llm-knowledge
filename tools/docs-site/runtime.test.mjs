@@ -503,7 +503,11 @@ test("provisionRuntime installs a staged runtime that passes full inspection", a
   await rename(fixture.paths.runtimeDir, template)
 
   let mermaidInstallDirectory
+  let pluginSubcommand
   const run = async (command, args, options = {}) => {
+    if (args[0] === "quartz/bootstrap-cli.mjs" && args[1] === "plugin") {
+      pluginSubcommand = args[2]
+    }
     if (command === "git" && args[0] === "clone") {
       await cp(template, args.at(-1), { recursive: true })
       return { code: 0, stdout: "", stderr: "" }
@@ -546,6 +550,9 @@ test("provisionRuntime installs a staged runtime that passes full inspection", a
     "configuration:\n  pageTitle: Test Wiki\n",
   )
   assert.equal(path.basename(mermaidInstallDirectory), ".llm-knowledge-docs-vendor")
+  // `plugin install` follows each plugin's branch tip, so one upstream push breaks
+  // provisioning against the pinned commits. Only `restore` honours the lockfile.
+  assert.equal(pluginSubcommand, "restore")
 })
 
 test("repairRuntime leaves the old runtime untouched when staging fails", async () => {

@@ -19,7 +19,8 @@ function buildDependencies(repoRoot, calls, exitCode = 0) {
     syncRuntimeConfig: async () => calls.push("syncRuntimeConfig"),
     repairRuntime: async () => calls.push("repairRuntime"),
     runQuartz: async (options) => {
-      calls.push({ runQuartz: options })
+      const { cwd, args, env } = options
+      calls.push({ runQuartz: { cwd, args, bindHost: env?.DOCS_BIND_HOST } })
       return exitCode
     },
   }
@@ -43,6 +44,7 @@ test("build validates, prepares, and invokes Quartz against wiki", async () => {
       "--output",
       path.join(repoRoot, ".cache", "llm-knowledge-docs", "output"),
     ],
+    bindHost: "0.0.0.0",
   })
 })
 
@@ -71,9 +73,11 @@ test("serve checks paired ports, waits for health, then opens the browser", asyn
   })
   const dependencies = {
     ...buildDependencies(repoRoot, calls),
-    assertPortAvailable: async (port) => calls.push(`port:${port}`),
+    assertPortAvailable: async (port, opts) =>
+      calls.push(`port:${port}@${opts?.host ?? "unset"}`),
     startQuartz: (options) => {
-      calls.push({ startQuartz: options })
+      const { cwd, args, env } = options
+      calls.push({ startQuartz: { cwd, args, bindHost: env?.DOCS_BIND_HOST } })
       return { pid: 44, exitCode, terminate: () => undefined }
     },
     waitForHttp: async (url, options) => calls.push({
@@ -96,8 +100,8 @@ test("serve checks paired ports, waits for health, then opens the browser", asyn
   assert.equal(code, 0)
   assert.deepEqual(calls.slice(0, 3), ["preflight", "ensureRuntime", "syncRuntimeConfig"])
   assert.deepEqual(calls.slice(3), [
-    "port:8090",
-    "port:8091",
+    "port:8090@0.0.0.0",
+    "port:8091@0.0.0.0",
     {
       startQuartz: {
         cwd: path.join(repoRoot, ".cache", "llm-knowledge-docs", "quartz"),
@@ -114,6 +118,7 @@ test("serve checks paired ports, waits for health, then opens the browser", asyn
           "--ws-port",
           "8091",
         ],
+        bindHost: "0.0.0.0",
       },
     },
     "signals:on",

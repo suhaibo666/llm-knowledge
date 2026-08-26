@@ -160,3 +160,25 @@ test("listener ownership accepts the service process and recursive children only
     [10, 11, 12, 13],
   )
 })
+
+test("listener verification accepts the wildcard bind when it is the configured host", () => {
+  assert.doesNotThrow(() =>
+    assertListenerRecords(
+      [8080, 8081],
+      [
+        { port: 8080, address: "0.0.0.0" },
+        { port: 8081, address: "0.0.0.0" },
+      ],
+      { expectedHost: "0.0.0.0" },
+    ),
+  )
+
+  // a concrete interface address is also fine under a wildcard bind
+  assert.doesNotThrow(() =>
+    assertListenerRecords(
+      [8080],
+      [{ port: 8080, address: "192.168.1.20" }],
+      { expectedHost: "0.0.0.0" },
+    ),
+  )
+})

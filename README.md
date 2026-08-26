@@ -100,19 +100,24 @@ tools/          # 维护工具：check_links.py（链接健康）、check_math.p
 npm run docs
 ```
 
-命令会在浏览器打开 `http://127.0.0.1:8080`，并监听 Markdown 变化。首次运行需要联网下载已锁定版本的 Quartz、社区插件和 Mermaid；成功安装后，日常启动与构建均复用 `.cache/llm-knowledge-docs/` 下的仓库私有运行时，不再访问包仓库或 CDN。
+命令会在浏览器打开 `http://127.0.0.1:8080`，并监听 Markdown 变化（改完存盘，页面自动刷新）。首次运行需要联网下载已锁定版本的 Quartz、社区插件和 Mermaid，这一步耗时较久（几分钟级），**属于正常现象**；成功安装后，日常启动与构建均复用 `.cache/llm-knowledge-docs/` 下的仓库私有运行时，不再访问包仓库或 CDN。运行时损坏或版本漂移时用 `npm run docs:repair` 原子重建（先装到 staging，校验通过才替换，失败则保留旧运行时）。全量 409 页首次构建约 30 秒。
 
 常用命令：
 
 ```bash
-npm run docs -- --port 8088  # HTTP 使用 8088，热更新 WebSocket 使用 8089
-npm run docs -- --no-open    # 启动但不自动打开浏览器
-npm run docs:build           # 仅生成静态站点
-npm run docs:test            # 单元测试 + 本地浏览器端到端验收
-npm run docs:repair          # 显式重建损坏或版本漂移的私有运行时
+npm run docs -- --port 8088       # HTTP 使用 8088，热更新 WebSocket 使用 8089
+npm run docs -- --host 127.0.0.1  # 只绑回环，不对外暴露
+npm run docs -- --no-open         # 启动但不自动打开浏览器
+npm run docs:build                # 仅生成静态站点
+npm run docs:test                 # 单元测试 + 本地浏览器端到端验收
+npm run docs:repair               # 显式重建损坏或版本漂移的私有运行时
 ```
 
-HTTP 和热更新端口都只绑定 `127.0.0.1`，不向局域网暴露。站点直接读取且只展示 `wiki/`；它不会复制、格式化或改写任何 Markdown，Obsidian wikilink、callout、Mermaid 与公式兼容均由站点层处理。
+**监听地址**：默认绑定 `0.0.0.0`，即本机所有网卡——同一局域网内的其他机器可以直接用 `http://<本机 IP>:8080/` 访问，启动日志会把可用地址列出来。热更新的 WebSocket 地址由浏览器按当前页面的 hostname 推导，因此远程访问时热更新同样有效。
+
+> 这意味着**站点对局域网可见**。在不可信网络里请用 `npm run docs -- --host 127.0.0.1` 退回只绑回环。
+
+站点直接读取且只展示 `wiki/`；它不会复制、格式化或改写任何 Markdown，Obsidian wikilink、callout、Mermaid 与公式兼容均由站点层处理。
 
 也可以继续用 Obsidian 打开 `wiki/` 浏览，或 `cd llm-knowledge && claude` 直接提问。
 

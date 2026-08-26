@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process"
 import { access, readFile } from "node:fs/promises"
+import { networkInterfaces } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -23,6 +24,16 @@ import {
   stopQuartz as stopQuartzService,
   waitForHttp as waitForQuartzHttp,
 } from "./processes.mjs"
+
+function localAddresses() {
+  const found = []
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (entry.family === "IPv4" && !entry.internal) found.push(entry.address)
+    }
+  }
+  return found
+}
 
 const scriptFile = fileURLToPath(import.meta.url)
 const defaultRepoRoot = path.resolve(path.dirname(scriptFile), "..", "..")
@@ -134,17 +145,21 @@ export async function main(argv, dependencies = {}) {
   const quartzOptions = {
     cwd: paths.runtimeDir,
     args: buildQuartzArgs(options.command, paths, options.port),
+    // The patched Quartz reads this for both the HTTP and hot-reload sockets.
+    env: { ...process.env, DOCS_BIND_HOST: options.host },
   }
 
   if (options.command === "build") {
     return operations.runQuartz(quartzOptions)
   }
 
-  await operations.assertPortAvailable(options.port)
-  await operations.assertPortAvailable(options.wsPort)
+  await operations.assertPortAvailable(options.port, { host: options.host })
+  await operations.assertPortAvailable(options.wsPort, { host: options.host })
   const service = operations.startQuartz(quartzOptions)
   const removeSignalForwarding = operations.installSignalForwarding(service)
   const controller = new AbortController()
+  // Probe over loopback even when bound to 0.0.0.0: 0.0.0.0 is not a
+  // connectable destination, it only means "every interface".
   const url = `http://127.0.0.1:${options.port}/`
 
   try {
@@ -179,6 +194,13 @@ export async function main(argv, dependencies = {}) {
     }
 
     console.log(`[docs] Documentation is available at ${url}`)
+    if (options.host === "0.0.0.0" || options.host === "::") {
+      for (const address of localAddresses()) {
+        console.log(`[docs] Reachable from this network at http://${address}:${options.port}/`)
+      }
+    } else if (options.host !== "127.0.0.1" && options.host !== "localhost") {
+      console.log(`[docs] Bound to ${options.host}:${options.port}`)
+    }
     if (options.openBrowser) {
       let opened = false
       try {

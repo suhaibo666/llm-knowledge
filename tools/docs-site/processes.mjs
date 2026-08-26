@@ -13,7 +13,7 @@ export async function assertPortAvailable(port, dependencies = {}) {
     const onError = (error) => {
       server.removeListener("listening", onListening)
       if (error.code === "EADDRINUSE" || error.code === "EACCES") {
-        reject(new Error(`Loopback port ${port} is already in use or unavailable`))
+        reject(new Error(`Port ${port} on ${host} is already in use or unavailable`))
         return
       }
       reject(error)
