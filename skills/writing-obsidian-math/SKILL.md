@@ -119,3 +119,93 @@ The checker validates high-confidence Markdown/MathJax structure and selected no
 - A table gains extra columns: find raw `|` inside math and replace it with `\mid`, or move the formula outside the table.
 - A long derivation appears on one line: add `aligned`, `&`, and explicit `\\` row endings.
 - A checker warning appears inside a literal code/API name: put the literal name in `\texttt{...}` and define a separate mathematical symbol if the equation uses it repeatedly.
+
+## Checker rules, and what each one actually wants
+
+`tools/check_math.py` emits stable codes. Errors block; warnings block under `--strict`.
+The corpus was taken to **0 errors and 0 warnings** on 2026-08-26, so any new finding is
+something you just introduced.
+
+| Code | Severity | Means | Fix |
+|---|---|---|---|
+| `MATH001` | error | legacy `\(` `\)` `\[` `\]` delimiter | use `$...$` / `$$` on their own lines |
+| `MATH002` | error | display `$$` opened but never closed | close the block |
+| `MATH003` | error | inline `$` not paired on the line | pair it, or escape a literal `\$` |
+| `MATH004` | error | unbalanced braces inside math | balance `{}` |
+| `MATH005` | error | raw `\|` inside table math, or display math in a table | `\mid`, or move the block out of the table |
+| `MATH101` | warning | a `$$` shares its line with content | each `$$` gets its own line |
+| `MATH102` | warning | `\_` outside a text-like command | `\texttt{...}` / `\mathrm{...}`, or define a symbol |
+| `MATH103` | warning | word-like subscript left italic | `\mathrm{...}`, or `\text{...}` when it contains spaces |
+| `MATH104` | warning | raw `\|` inside math | see the bar table below |
+| `MATH105` | warning | display line >120 chars without `aligned` | restructure into `aligned` rows |
+
+### Choosing the right vertical bar
+
+The checker accepts any `|` preceded by a backslash, so all four of these pass — pick by meaning,
+not by what silences the warning.
+
+| Meaning | Write | Not |
+|---|---|---|
+| conditioning | `p(y \mid x)` | `p(y|x)` |
+| absolute value / cardinality | `\lvert y_i \rvert` | `|y_i|` |
+| norm | `\lVert x \rVert_2` | `||x||` |
+| KL divergence | `\mathrm{KL}(p \,\|\, q)` | `\mathrm{KL}(p || q)` |
+| sized delimiter, set-builder | `\big\vert`, `\Big\vert` | `\big|`, `\Big|` |
+
+## Things that look like math problems but are not
+
+Four traps cost real time during the 2026-08-26 cleanup. Recognise them before "fixing" anything.
+
+1. **Escaped square brackets in prose are not display math.** `List\[str\]`, `A\[t\]`,
+   `\[B,H,N,N\]`, and step labels like `\[B\]` are Markdown escapes for a literal `[`.
+   Converting them to `$$` corrupts the page. Put them in inline code instead —
+   `` `List[str]` `` — which is also what they mean. Do **not** simply unescape them:
+   `[C][D]` is Markdown reference-link syntax.
+2. **`\\[2pt]` is LaTeX row spacing, not a `\[` delimiter.** It appears inside `aligned`
+   and `cases`. Leave it alone; the checker skips escaped backslashes.
+3. **Inline math may legitimately start with a digit.** `$4.2 \times 10^{-4}$` is a formula,
+   while `$5.576M` in a cost table is money. The checker distinguishes them by looking for a
+   closing `$` and for mathematical content in between.
+4. **`h_{t-1}` is an index, not a label.** Subscripts made of indices and operators stay
+   italic. `\mathrm{}` is for words, roles, phases and configuration labels
+   (`old`, `low`, `teacher`, `GRPO`) — three or more consecutive letters.
+
+## Restructuring a long equation
+
+`MATH105` wants real structure, not a token `aligned` wrapper. Break at a **top-level**
+relation — one that is not nested inside `{}`, `\left...\right`, or another
+`\begin{...}...\end{...}`:
+
+```markdown
+$$
+\begin{aligned}
+V_{\text{total}}
+&\approx \underbrace{c \cdot n_{kv} \cdot d_h \cdot B}_{\text{Stage 1}} \\
+&\quad + \underbrace{\frac{(P-1) \cdot S \cdot n_{kv} \cdot d_h \cdot B}{P^2 \cdot c}}_{\text{Stage 2}}
+\end{aligned}
+$$
+```
+
+Three constraints that are easy to get wrong:
+
+- **Every row but the last needs `\\`.** Two `&` without a `\\` between them put two alignment
+  points on one row, which is a LaTeX error.
+- **`\left` and `\right` cannot cross a row break.** If a bracket must span rows, switch to a
+  fixed size: `\Big( ... \Big)`.
+- **A source line break is not a row break.** `LHS` on one line and `&= RHS` on the next is a
+  single aligned row — which is exactly what you want for a two-part equation.
+
+For an expression with no relation to align on (a bare objective such as
+`\min_\theta \mathbb{E}[...]`), keep it as one row and soft-wrap it at top-level spaces; no `&`
+or `\\` is needed. If the whole equation lives inside `\boxed{}`, move the `aligned` *inside*
+the box.
+
+## Callout blocks
+
+Quote the whole display block consistently — never just one delimiter:
+
+```markdown
+> $$
+> M_{\text{HBM}}^{\text{target}} = \text{device\_max} - \text{reduction\_memory}
+> $$
+```

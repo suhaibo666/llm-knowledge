@@ -103,9 +103,8 @@ venv.bak/
 # mypy
 .mypy_cache/
 
-# Claude Code — ignore local settings, but SHIP the repo-bundled skills
+# Claude Code — local settings only; shared skills live in skills/ (tracked)
 .claude/*
-!.claude/skills/
 
 # Superpowers framework session working files (brainstorm drafts, review tmp, logs)
 .superpowers/

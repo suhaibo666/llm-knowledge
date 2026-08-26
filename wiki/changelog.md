@@ -8,6 +8,19 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-26：CLAUDE.md 收回基本法，文档操作规则下沉到公共 skills
+
+**Type**: Repository Governance Restructure
+
+- **技能去重**：此前 `.claude/skills/` 与 `.agents/skills/` 各存一份副本，且已经漂移（`source-faithful-analysis` 里宿主说明一处写 `CLAUDE.md`、一处写 `AGENTS.md`），还要靠一条单测强行比对来维持同步。现在合并为唯一的公共目录 [`skills/`](../skills/README.md)，那条同步单测随之删除。
+- **CLAUDE.md 瘦身 187 → 约 60 行**：只保留基本法——三层结构、功能树的唯一权威地位、Courses 导读层约束、溯源政策、质量门禁，外加技能索引。**具体怎么写文档不再默认加载**。
+- **新增两个技能**（内容自 CLAUDE.md 原样搬迁，未改写约定）：`maintaining-llm-knowledge`（页面类型与 `NN_` 段位编号、命名、Ingest/Query/Maintenance 流程、交叉引用规则、合并优于并存）与 `writing-mermaid-diagrams`（Mermaid 定界符两档严重度与生成后校验清单）。
+- **`writing-obsidian-math` 刷新**：补上 `MATH001–005/101–105` 全部规则对照表、竖线语义选择表（`\mid` / `\lvert...\rvert` / `\lVert...\rVert` / `\,\|\,` / `\big\vert`），以及本轮清零踩到的四个**伪告警陷阱**（转义方括号不是公式、`\\[2pt]` 是行距、以数字开头的行内公式不是货币、`h_{t-1}` 是索引不是标签）与长公式改写的三条硬约束（每行补 `\\`、`\left/\right` 不能跨行、源码换行不等于换行）。
+- **只保留 Claude 与 Codex**：删除重复的 `.agents/` 与 `opencode.json`；`.claude/` 只剩本地 settings，`.codex/config.toml` 保留；`AGENTS.md` 改为工具中立的入口，指向基本法与公共技能。
+- 验证：`pytest tools/` 94 passed（技能单测由「两份副本必须一致」改为「技能必须覆盖检查器全部诊断码 + 记录已知伪告警陷阱」）；`check_links --strict` pages=409 全 0；`check_math --strict` 全库通过；skills/ 与两份入口文档自身公式检查 0 error / 0 warning。
+
+---
+
 ## 2026-08-26：全库公式 warning 清零（464 → 0）+ 修正 MATH103 规则
 
 **Type**: Corpus-wide Math Normalization (warnings) + Checker Rule Fix

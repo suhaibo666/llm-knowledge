@@ -170,8 +170,8 @@ A pile of pages isn't a knowledge base. Tie it together:
 - **Write the overview/map:** the thesis/design philosophy, a contribution/results/concepts table, a
   diagram spanning the pieces, and the cross-link web.
 - **Update the host system's spine** — the parent index / TOC / changelog — matching the conventions
-  already in use (e.g. a wiki's `CLAUDE.md`: add the page to the domain `index.md`, append a
-  changelog entry, add `[[wiki links]]` both ways).
+  already in use (e.g. this wiki's constitution plus its maintenance skill: add the page to the
+  domain `index.md`, append a changelog entry, add `[[wiki links]]` both ways).
 - **Reconcile with content already on the page.** If you're ingesting into an existing overview that
   carried pre-publication estimates or stale numbers, replace them with the real values and annotate
   the change (`> [!contradiction]`, "superseded by Table 7") — don't silently leave both.
