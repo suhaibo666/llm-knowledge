@@ -96,11 +96,11 @@ version capacity 以 `(max_staleness + current_version + 1) * consumer_batch_siz
 
 AReaL 官方文档 `docs/en/best_practices/algo_perf.md:54-81` 明确区分：
 
-\[
+$$
 w_{\text{behave}}=\pi_{\text{proximal}}/\pi_{\text{behave}},
 \qquad
 r_{\text{ppo}}=\pi_\theta/\pi_{\text{proximal}}.
-\]
+$$
 
 这使诊断可以分开：
 

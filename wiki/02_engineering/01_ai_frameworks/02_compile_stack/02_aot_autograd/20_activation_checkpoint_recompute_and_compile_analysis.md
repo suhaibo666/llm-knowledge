@@ -187,12 +187,12 @@ capture。
 
 ## 11. 成本模型
 
-设保存activation总字节 \(M_s\)，重算FLOPs \(F_r\)，额外kernel/通信成本 \(T_r\)：
+设保存activation总字节 $M_s$，重算FLOPs $F_r$，额外kernel/通信成本 $T_r$：
 
-\[
+$$
 M_{\text{peak}} \downarrow \quad\text{以}\quad
 T_{\text{step}} \uparrow \approx T_r
-\]
+$$
 
 但峰值还取决于liveness、allocator、saved tensor释放时点与CUDAGraph pool。重算同一subgraph
 也可能被fusion，使额外运行成本并非原forward片段的简单倍数。

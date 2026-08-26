@@ -106,8 +106,8 @@ CP（Context Parallel）用于长序列切分 attention，EP 是专家并行，�
 
 | TP 切分类型 | 每卡持有 | 直接做 N-S | 正确做法 |
 | --- | --- | --- | --- |
-| Column-parallel（W_q/k/v） | W\[:, i·h : (i+1)·h\] | 若 TP 粒度 = head 边界，可按 head 各自 N-S，无需跨 TP 通信 |
-| Row-parallel（W_o） | W\[i·d : (i+1)·d, :\] | 需在 TP group 内 all-gather 还原完整矩阵后做 N-S，社区暂无公开实现 |
+| Column-parallel（W_q/k/v） | `W[:, i·h : (i+1)·h]` | 若 TP 粒度 = head 边界，可按 head 各自 N-S，无需跨 TP 通信 |
+| Row-parallel（W_o） | `W[i·d : (i+1)·d, :]` | 需在 TP group 内 all-gather 还原完整矩阵后做 N-S，社区暂无公开实现 |
 
 Kimi K2 采用 EP + FSDP/HSDP 为主的并行策略，不依赖 TP，原因在于： MoE 模型专家权重占总参数绝大多数，EP 天然契合"按专家粒度正交化"的 Muon 需求； 引入 TP 会在 attention 层增加额外 all-reduce，进一步加重本已受带宽约束的通信压力。 因此在当前架构前提下，此 Muon 实现的覆盖范围是完备的。
 

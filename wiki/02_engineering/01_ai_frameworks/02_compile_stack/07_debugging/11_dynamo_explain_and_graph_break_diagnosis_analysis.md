@@ -153,15 +153,15 @@ flowchart LR
 
 ## 8. 复杂度
 
-设一次路径产生 \(G\) 个region，总node为 \(V\)：
+设一次路径产生 $G$ 个region，总node为 $V$：
 
-- `explain`收集图和遍历`call_function` node约 \(O(V)\)；
-- 图数量和break数量的展示为 \(O(G)\)；
+- `explain`收集图和遍历`call_function` node约 $O(V)$；
+- 图数量和break数量的展示为 $O(G)$；
 - 真实捕获成本还包含每个frame的符号执行、guard构建和Python续执行；
 - 多路径覆盖需要对每类输入分别执行，成本不能由一次`explain`推断。
 
 切图的稳态成本近似是每个region的guard与callable调用，再加region间Python执行；它不是
-单纯的 \(G\) 倍kernel成本。
+单纯的 $G$ 倍kernel成本。
 
 ## 9. 不变量与验收
 

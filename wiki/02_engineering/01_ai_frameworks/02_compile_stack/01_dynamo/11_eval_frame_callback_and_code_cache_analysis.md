@@ -178,15 +178,15 @@ transformed code可能增加临时 locals，原 frame的 `localsplus`布局不�
 
 ## 11. 复杂度
 
-设 bucket有 \(C\) 个 entries，第 \(i\) 个 entry guard成本为 \(Q_i\)：
+设 bucket有 $C$ 个 entries，第 $i$ 个 entry guard成本为 $Q_i$：
 
-- no-entry fast miss：近似 \(O(1)\)；
-- 第一个无 guard entry命中：近似 \(O(1)\)；
-- 正常命中第 \(k\) 项：\(O(\sum_{i=1}^{k} Q_i)\)；
-- 全 miss：\(O(\sum_{i=1}^{C} Q_i)\)；
-- 新 entry插入：list层面 \(O(1)\)；
-- LRU hit移动：已有 iterator下 \(O(1)\)；
-- cache空间：\(O(C)\)，每项另持 guard tree和 transformed code。
+- no-entry fast miss：近似 $O(1)$；
+- 第一个无 guard entry命中：近似 $O(1)$；
+- 正常命中第 $k$ 项：$O(\sum_{i=1}^{k} Q_i)$；
+- 全 miss：$O(\sum_{i=1}^{C} Q_i)$；
+- 新 entry插入：list层面 $O(1)$；
+- LRU hit移动：已有 iterator下 $O(1)$；
+- cache空间：$O(C)$，每项另持 guard tree和 transformed code。
 
 guard内部不是单一常数检查；Tensor metadata、Python对象、字典和全局状态会形成不同访问树。
 

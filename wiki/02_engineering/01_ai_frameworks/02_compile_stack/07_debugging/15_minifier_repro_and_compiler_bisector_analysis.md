@@ -10,7 +10,7 @@
 
 - **Repro**：把失败状态序列化成可独立运行的程序；
 - **Minifier**：在保持失败predicate为真的前提下缩小FX图和输入；
-- **Compiler bisector**：保持程序不变，逐层切换backend/subsystem或二分某子系统的第 \(k\) 次
+- **Compiler bisector**：保持程序不变，逐层切换backend/subsystem或二分某子系统的第 $k$ 次
   应用。
 
 它们对应三个正交轴：
@@ -83,9 +83,9 @@ imports（`torch/_dynamo/repro/after_aot.py:528-557` 与
 
 最重要的不变量是：
 
-\[
+$$
 \operatorname{predicate}(G_i, I_i)=\text{True}
-\]
+$$
 
 图更小但失败类型改变，不是有效最小化。
 
@@ -171,16 +171,16 @@ bisector先在backend阶梯（如eager、aot_eager、inductor）定位首个失�
 - 浮点误差刚好跨容差；
 - 缩图后换成另一个更早异常。
 
-可采用重复 \(r\) 次、要求至少 \(k\) 次失败的统计predicate，但查询成本近似乘以 \(r\)。
+可采用重复 $r$ 次、要求至少 $k$ 次失败的统计predicate，但查询成本近似乘以 $r$。
 对hang需要外部timeout与进程隔离，不能让minifier本身永久阻塞。
 
 ## 10. 复杂度
 
-设图node数为 \(V\)，单次predicate成本为 \(T_p\)：
+设图node数为 $V$，单次predicate成本为 $T_p$：
 
-- 理想二分式缩减查询数接近 \(O(\log V)\)，但策略回退和依赖约束可显著增加；
-- 每次要复制、lint、DCE并运行图，总成本约 \(Q(T_p+O(V))\)；
-- bisector对可排序的 \(M\) 次应用，二分部分约 \(O(\log M)\) 次程序运行；
+- 理想二分式缩减查询数接近 $O(\log V)$，但策略回退和依赖约束可显著增加；
+- 每次要复制、lint、DCE并运行图，总成本约 $Q(T_p+O(V))$；
+- bisector对可排序的 $M$ 次应用，二分部分约 $O(\log M)$ 次程序运行；
 - 跨多个backend/subsystem还要加线性探测成本。
 
 最大成本通常来自编译/运行predicate，而不是图数据结构操作。

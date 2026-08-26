@@ -161,21 +161,21 @@ rank、dtype或某个shape关系不同，仍可能需要新specialization。
 
 ## 9. 复杂度
 
-若一个code object有 \(S\) 个entry，朴素地对entry逐个guard检查，miss诊断至少与访问的
-entry数和guard工作量相关。记entry \(i\) 的检查成本为 \(g_i\)：
+若一个code object有 $S$ 个entry，朴素地对entry逐个guard检查，miss诊断至少与访问的
+entry数和guard工作量相关。记entry $i$ 的检查成本为 $g_i$：
 
-\[
+$$
 T_{\text{lookup-miss}} = O\left(\sum_{i=1}^{S} g_i\right)
 \ T_{\text{capture+compile}}
-\]
+$$
 
 verbose诊断会重新获取失败细节，成本高于正常first-failure路径。若输入状态形成笛卡尔积：
 
-\[
+$$
 S \lesssim
 |\text{shape classes}|\cdot|\text{dtype/device}|
 \cdot|\text{Python states}|\cdot|\text{dispatch states}|
-\]
+$$
 
 真正目标是缩小有效specialization空间，而不是只优化一次guard执行。
 

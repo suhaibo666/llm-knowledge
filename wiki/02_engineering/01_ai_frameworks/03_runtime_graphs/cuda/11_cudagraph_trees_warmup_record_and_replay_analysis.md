@@ -280,9 +280,9 @@ liveness状态。
 
 ## 14. 复杂度
 
-设函数有 \(R\) 个recording paths，当前parent下 \(C_f\) 个children：
+设函数有 $R$ 个recording paths，当前parent下 $C_f$ 个children：
 
-- child匹配要检查候选invariants，worst case \(O(C_f \cdot Q)\)；
+- child匹配要检查候选invariants，worst case $O(C_f \cdot Q)$；
 - record成本约为一次compiled execution加capture开销；
 - replay launch overhead近似常数，但kernel本身成本不变；
 - memory随shared pool high-water mark、live path outputs和recordings增长；

@@ -255,12 +255,12 @@ hard-error 配置；实现的 skip 记录会累加 counter，并可按配置抛�
 
 ## 15. 性能与内存模型
 
-设 compiled kernel 数为 \(K\)，调用次数为 \(R\)，distinct shape/path 数为 \(H\)，输入复制
-字节数为 \(B\)：
+设 compiled kernel 数为 $K$，调用次数为 $R$，distinct shape/path 数为 $H$，输入复制
+字节数为 $B$：
 
-- 不使用 CUDA Graph 的 launch 管理成本近似随 \(R \times K\) 增长；
-- capture 成本和 graph metadata/pool 占用至少随 \(H\) 增长；
-- 非 static 输入每次 replay 前复制成本近似 \(O(B)\)；
+- 不使用 CUDA Graph 的 launch 管理成本近似随 $R \times K$ 增长；
+- capture 成本和 graph metadata/pool 占用至少随 $H$ 增长；
+- 非 static 输入每次 replay 前复制成本近似 $O(B)$；
 - freezing 的常量折叠可减少节点/kernel，但会增加常量 artifact 和常驻内存；
 - 保留 eager owner、frozen artifact 与多个 CUDA Graph pool 会同时占用内存。
 

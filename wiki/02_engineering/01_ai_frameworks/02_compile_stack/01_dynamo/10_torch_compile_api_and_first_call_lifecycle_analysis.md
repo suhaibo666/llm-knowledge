@@ -179,20 +179,20 @@ stateDiagram-v2
 
 令：
 
-- \(B\)：原函数字节码指令数；
-- \(G\)：捕获出的 FX node数；
-- \(C\)：该 cache bucket中的 entries数；
-- \(Q_i\)：第 \(i\) 个 entry guard树的检查成本；
-- \(K(G)\)：backend编译成本。
+- $B$：原函数字节码指令数；
+- $G$：捕获出的 FX node数；
+- $C$：该 cache bucket中的 entries数；
+- $Q_i$：第 $i$ 个 entry guard树的检查成本；
+- $K(G)$：backend编译成本。
 
 则：
 
-- wrapper creation通常为 \(O(1)\)，不计配置字典复制；
-- lookup worst case为 \(O(\sum_{i=1}^{C} Q_i)\)；
-- Dynamo符号执行约为 \(O(B)\)，但 restart、内联和数据结构操作会放大常数；
-- FX/bytecode emission约为 \(O(G+B_{\text{emitted}})\)；
-- 首次 miss总成本由 \(K(G)\)主导时远大于 lookup；
-- hit路径不再支付 \(O(B)+K(G)\)，但仍支付 guard与 runtime wrapper成本。
+- wrapper creation通常为 $O(1)$，不计配置字典复制；
+- lookup worst case为 $O(\sum_{i=1}^{C} Q_i)$；
+- Dynamo符号执行约为 $O(B)$，但 restart、内联和数据结构操作会放大常数；
+- FX/bytecode emission约为 $O(G+B_{\text{emitted}})$；
+- 首次 miss总成本由 $K(G)$主导时远大于 lookup；
+- hit路径不再支付 $O(B)+K(G)$，但仍支付 guard与 runtime wrapper成本。
 
 ## 10. 常见误解
 

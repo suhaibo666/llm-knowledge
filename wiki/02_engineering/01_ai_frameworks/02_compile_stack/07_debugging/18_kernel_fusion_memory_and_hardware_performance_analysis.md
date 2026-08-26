@@ -132,15 +132,15 @@ Scheduler可以在随机生成输入上benchmark fused nodes，并把时间计�
 
 算术强度：
 
-\[
+$$
 I=\frac{\text{FLOPs}}{\text{bytes transferred}}
-\]
+$$
 
 理论上限：
 
-\[
+$$
 P \le \min(P_{\text{peak}}, I\cdot BW_{\text{peak}})
-\]
+$$
 
 - memory-bound：优先减少物化、改访问、fusion；
 - compute-bound：优先kernel实现、tensor core、vectorization；
@@ -187,15 +187,15 @@ flowchart TD
 
 ## 10. 复杂度
 
-候选pair若不受限制，最坏可接近 \(O(V^2)\)；源码通过buffer grouping和
+候选pair若不受限制，最坏可接近 $O(V^2)$；源码通过buffer grouping和
 `max_fusion_buffer_group_pairwise_attempts`限制局部pair搜索。多轮fusion再乘常数轮数。
 
-benchmark \(B\) 个候选、每个重复 \(R\) 次，额外编译/测量成本近似：
+benchmark $B$ 个候选、每个重复 $R$ 次，额外编译/测量成本近似：
 
-\[
+$$
 T_{\text{autotune}}=O\left(\sum_{b=1}^{B}
 (T_{\text{codegen},b}+R\cdot T_{\text{run},b})\right)
-\]
+$$
 
 性能搜索空间与冷启动预算必须共同设计。
 

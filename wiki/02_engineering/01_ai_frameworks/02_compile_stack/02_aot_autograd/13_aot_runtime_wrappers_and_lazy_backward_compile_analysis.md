@@ -274,14 +274,14 @@ double backward另有专门的 `CompiledFunctionBackward`用于保持图连接�
 
 ## 13. 复杂度
 
-设saved tensors数量 \(S_t\)、saved symbols \(S_s\)、bw graph规模 \(B\)：
+设saved tensors数量 $S_t$、saved symbols $S_s$、bw graph规模 $B$：
 
-- forward runtime保存/拆装至少为 \(O(S_t+S_s)\)；
-- first backward lazy compile额外支付 \(K(B)\)；
+- forward runtime保存/拆装至少为 $O(S_t+S_s)$；
+- first backward lazy compile额外支付 $K(B)$；
 - warm backward支付参数组装、boxed wrapper与kernel执行；
 - retain_graph会延长saved storage生命周期；
 - donation可降低内存但增加适用条件；
-- deepcopy bw graph近似 \(O(B)\)，通常小于native compile但不是零。
+- deepcopy bw graph近似 $O(B)$，通常小于native compile但不是零。
 
 ## 14. 常见误解
 

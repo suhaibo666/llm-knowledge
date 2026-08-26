@@ -33,13 +33,13 @@ flowchart LR
     K --> U
 ```
 
-\[
+$$
 r_{\text{ppo}}=\frac{\pi_\theta}{\pi_{\text{old}}},
 \qquad
 w_{\text{beh}}=\frac{\pi_{\text{old}}}{\mu},
 \qquad
 \frac{\pi_\theta}{\mu}=r_{\text{ppo}}w_{\text{beh}}.
-\]
+$$
 
 把分母写成 `old_log_prob` 并不能证明它来自 behavior。必须知道它是 rollout 保存、trainer 重算，还是某个历史 checkpoint 前向得到。
 
@@ -47,28 +47,28 @@ w_{\text{beh}}=\frac{\pi_{\text{old}}}{\mu},
 
 建议同时记录：
 
-\[
+$$
 \Delta_v=v_{\text{train}}-v_{\text{sample}},
 \quad
 \Delta_u=\text{optimizer updates since sampling},
 \quad
 \Delta_t=t_{\text{consume}}-t_{\text{generate}}.
-\]
+$$
 
 - version distance 适合控制 policy lag；
 - update count 能识别一个 version 内多次 minibatch update；
 - wall-clock age 能暴露慢 environment/verifier，但不等价于参数变化。
 
-Agentic partial rollout 还需 `version_per_call`，因为一条 trajectory 内可能有多个 \(\mu_k\)。
+Agentic partial rollout 还需 `version_per_call`，因为一条 trajectory 内可能有多个 $\mu_k$。
 
-K3 把这个情况落成了明确时序：达到 \(\lambda NK\) 完成量后暂停未完成轨迹，下一 iteration 优先恢复；报告同时承认单条 trajectory 会跨 iteration 并进入 extreme off-policy regime（Kimi K3 Technical Report §4.1.2，p.13）。因此 `sample version` 不能只取 trajectory 开始或结束时的单值。
+K3 把这个情况落成了明确时序：达到 $\lambda NK$ 完成量后暂停未完成轨迹，下一 iteration 优先恢复；报告同时承认单条 trajectory 会跨 iteration 并进入 extreme off-policy regime（Kimi K3 Technical Report §4.1.2，p.13）。因此 `sample version` 不能只取 trajectory 开始或结束时的单值。
 
 ## 4. Freshness 的系统设计点
 
 | 方案 | barrier | 允许旧样本 | 优点 | 主要代价 |
 |---|---|---:|---|---|
 | 严格同步 batch | 全 batch | 0 step | 语义最清楚 | 长尾 bubble |
-| phase-partial synchronous | \(\lambda NK\) phase gate；prompt 内保留 \(K\)-response completion/dispatch boundary | 跨 iteration continuation | 消除全局 rollout 尾部，不必等待所有 prompt 完成 | per-call version、KV/sandbox 恢复、极旧片段 |
+| phase-partial synchronous | $\lambda NK$ phase gate；prompt 内保留 $K$-response completion/dispatch boundary | 跨 iteration continuation | 消除全局 rollout 尾部，不必等待所有 prompt 完成 | per-call version、KV/sandbox 恢复、极旧片段 |
 | tail packing | 重排尾部 | 0 step | 保 freshness，削减 straggler | packing 与公平性 |
 | streamed bounded | watermark/窗口 | 小于阈值 | overlap 高 | buffer 与回压复杂 |
 | fully async | 无全局 phase barrier | 配置上限 | 利用率高，适合 agent | correction、版本和恢复更难 |
@@ -94,11 +94,11 @@ available = min of both capacities
 
 AReaL 文档还显式区分：
 
-\[
+$$
 \frac{\pi_{\text{proximal}}}{\pi_{\text{behave}}}
 \quad\text{和}\quad
 \frac{\pi_\theta}{\pi_{\text{proximal}}},
-\]
+$$
 
 见 `docs/en/best_practices/algo_perf.md:54-81`。这比只打印一个 `importance_ratio` 更易诊断。
 
@@ -106,7 +106,7 @@ AReaL 文档还显式区分：
 
 | 方法 | 作用位置 | 能处理 | 不能保证 |
 |---|---|---|---|
-| token IS | 每 token 乘 \(\pi_{\text{old}}/\mu\) | behavior lag/TIM 的局部偏差 | 长序列方差可控 |
+| token IS | 每 token 乘 $\pi_{\text{old}}/\mu$ | behavior lag/TIM 的局部偏差 | 长序列方差可控 |
 | truncated IS | 对 correction weight 截断 | 限制极端梯度 | 无偏 |
 | token rejection | mask 高 mismatch token | 局部异常 | 保留完整学习信号 |
 | sequence rejection | 丢整条高 mismatch response | 累积偏差 | 不浪费昂贵 trajectory |
@@ -136,7 +136,7 @@ K3 从另一方向缩小一条 TIM 来源：从 SFT 到 RL 都做 MXFP4 expert-w
 
 ## 8. inference policy 才是部署对象
 
-[MIPI/MIPU v1](https://arxiv.org/abs/2606.29526v1) §4.1 把同参数下的 trainer policy \(\pi\) 与 inference policy \(\mu\) 分开，并提出两步：
+[MIPI/MIPU v1](https://arxiv.org/abs/2606.29526v1) §4.1 把同参数下的 trainer policy $\pi$ 与 inference policy $\mu$ 分开，并提出两步：
 
 1. 以 sampler-referenced correction 构造 candidate train policy；
 2. 同步到 inference engine 后，用 inference-side proxy 决定接受或回滚。
@@ -160,7 +160,7 @@ weight publish commits atomically before new-version rollout
 
 至少监控：
 
-- \(\Delta_v,\Delta_u,\Delta_t\) 分布；
+- $\Delta_v,\Delta_u,\Delta_t$ 分布；
 - token/sequence ratio 的均值、分位数与 clip/reject fraction；
 - rollout-vs-train log-prob 差；
 - response length、entropy、gradient norm 的联动；

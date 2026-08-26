@@ -96,7 +96,7 @@ self.iep_group = get_iep_group_name(self.rank_id, self.iep)          # 机内组
 | E | AlltoAllV | 机内 | x(token) | exsl/exrl 变长 | 是 |
 | F | AlltoAllV | 机内 | expert_id 随行 | exsl/exrl 变长 | 是 |
 
-要分清两件事。**(1) 去冗余**:`x` / `expert_id` / `router_coeff` 三者在 §04 被**同一个 idx 一起过滤**——AllGather \[C\]\[D\] 只是先把全部 token 取来,随即在 `get_exdispatch_idx` 里一并收窄,`router_coeff` 同样不保留 node-B 的 token。**(2) 机内 AlltoAllV**:只有 `x` 和 `expert_id` 会一路送到专家卡(E/F),`router_coeff` 没有这一步——因为加权放在 **combine** 里做(见 §06),它只需停在"机内 gathered 帧"里和 `exdispatch_idx` 对齐,等 x 经 AlltoAllV-back 回到同一帧再相乘即可。
+要分清两件事。**(1) 去冗余**:`x` / `expert_id` / `router_coeff` 三者在 §04 被**同一个 idx 一起过滤**——AllGather `[C][D]` 只是先把全部 token 取来,随即在 `get_exdispatch_idx` 里一并收窄,`router_coeff` 同样不保留 node-B 的 token。**(2) 机内 AlltoAllV**:只有 `x` 和 `expert_id` 会一路送到专家卡(E/F),`router_coeff` 没有这一步——因为加权放在 **combine** 里做(见 §06),它只需停在"机内 gathered 帧"里和 `exdispatch_idx` 对齐,等 x 经 AlltoAllV-back 回到同一帧再相乘即可。
 
 § 04
 
@@ -128,9 +128,9 @@ sorted_router_coeff = IndexSelect()(sorted_router_coeff,     0, idx)
 
 § 05
 
-## 计数转置 \[B\] 与那唯一的 D2H
+## 计数转置 `[B]` 与那唯一的 D2H
 
-机内 payload AlltoAllV \[E\] 是变长的——必须先知道"机内每对卡收发几条"(`exsl/exrl`)。但每张卡本地只有"**按专家**"的直方图;要变成"**按目标卡**"的计数,得做一次按专家归属的**转置**,这就是 \[B\]。
+机内 payload AlltoAllV `[E]` 是变长的——必须先知道"机内每对卡收发几条"(`exsl/exrl`)。但每张卡本地只有"**按专家**"的直方图;要变成"**按目标卡**"的计数,得做一次按专家归属的**转置**,这就是 `[B]`。
 
 ![图 5 [B] 把"按专家"的直方图转置成"按目标卡"的计数。负载不均藏在数值里,计数的个数(形状)恒定——这就是 [B] 免 D2H、其产物却需 D2H 的根。](assets/mindformers_moe_token_dispatcher_analysis_fig5.png)
 
@@ -151,13 +151,13 @@ router_coeff = ops.Depend()(router_coeff, (exsl, exrl))  # 控制边:D2H 先发�
 router_coeff = ops.AllGather(group=self.oep_group)(router_coeff)  # [C] 大通信,D2H 在其阴影完成
 ```
 
--   **为什么要交换计数**：这是“**先交换计数，再交换数据**”两阶段流程中的第一阶段，只是被限制在机内完成。只有把按专家统计的直方图转换为按目标卡统计的计数，才能得到 \[E\] 所需的 split。
--   **为什么 \[B\] 无需 D2H**：\[B\] 交换的是**直方图**（每个专家对应一个计数），bin 数量等于专家数，属于配置常量。因此 split `iepones` 是编译期常量，原本就在 host 上。
+-   **为什么要交换计数**：这是“**先交换计数，再交换数据**”两阶段流程中的第一阶段，只是被限制在机内完成。只有把按专家统计的直方图转换为按目标卡统计的计数，才能得到 `[E]` 所需的 split。
+-   **为什么 `[B]` 无需 D2H**：`[B]` 交换的是**直方图**（每个专家对应一个计数），bin 数量等于专家数，属于配置常量。因此 split `iepones` 是编译期常量，原本就在 host 上。
 -   **Depend 如何隐藏 D2H**：静态图执行器可按依赖 DAG 自由重排。`Depend(a,b)` 插入一条控制边，强制 D2H **先发起**，并让消费结果的 AlltoAllV **排在 AllGather 之后**。两者之间隔着耗时较长的跨机通信，少量 D2H 可以在这段**执行窗口**内完成，不阻塞主执行流。
 
 > 一句话戳破
 > 
-> 负载不均(token 多少)藏在计数的**数值**里(\[3,1,2,4\] 会变);但**计数的个数**(4 个专家 → split=\[2,2\])永远不变。所以交换计数这一步形状恒定 → 免 D2H;它算出的 token 条数是变的 → 下一步搬 token 时才需要 D2H。
+> 负载不均(token 多少)藏在计数的**数值**里(`[3,1,2,4]` 会变);但**计数的个数**(4 个专家 → `split=[2,2]`)永远不变。所以交换计数这一步形状恒定 → 免 D2H;它算出的 token 条数是变的 → 下一步搬 token 时才需要 D2H。
 
 § 06
 

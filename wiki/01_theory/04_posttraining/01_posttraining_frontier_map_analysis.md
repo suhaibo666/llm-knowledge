@@ -82,7 +82,7 @@ LLM 生成动作天然以 token 展开，但 reasoning 和 agent task 的成败�
 - [StreamRL（arXiv:2504.15930v1）](https://arxiv.org/abs/2504.15930v1)研究 generation 与 training 的流式解耦；
 - [AsyncFlow（arXiv:2507.01663v1）](https://arxiv.org/abs/2507.01663v1)通过 producer–consumer 流水与 staleness threshold 组织异步执行；
 - [RollPacker（arXiv:2509.21009v1）](https://arxiv.org/abs/2509.21009v1)则保留同步 policy freshness，用 tail batching、弹性 rollout 和资源调度消除同步系统中的长尾 bubble。
-- Kimi K3 则保留同步 phase 和 prompt 内 \(K\) 样本组，在完成量达到 \(\lambda NK\) 后暂停全局长尾、跨 iteration 恢复，并显式承认 trajectory 会进入 extreme off-policy（Kimi K3 Technical Report §4.1.2，p.13）。
+- Kimi K3 则保留同步 phase 和 prompt 内 $K$ 样本组，在完成量达到 $\lambda NK$ 后暂停全局长尾、跨 iteration 恢复，并显式承认 trajectory 会进入 extreme off-policy（Kimi K3 Technical Report §4.1.2，p.13）。
 
 因此 D04 已沿四个维度分析，而不是只比较“同步/异步”两个标签：
 
@@ -178,7 +178,7 @@ K3 不加入这张“工业源码样本”表。其官方仓库 `0797decb` 提�
 | Agent trajectory credit | [RAGEN，arXiv:2504.20073v2](https://arxiv.org/abs/2504.20073v2)、[Agent Lightning，arXiv:2508.03680v1](https://arxiv.org/abs/2508.03680v1) | 从最终任务回报扩展到状态、转移和多轮 credit | 环境事件、reward provenance 与可重放 trajectory 进入训练 schema | D03、D05 |
 | Single-rollout Agentic RL | [SAO，arXiv:2607.07508v1](https://arxiv.org/abs/2607.07508v1) | 让优化单位适应异步返回的单条 trajectory | 降低 group barrier，但需重新审视估计方差、clip 与 credit | D03、D04 |
 | Expert RL → on-policy consolidation | [Kimi K3 Technical Report](https://github.com/MoonshotAI/Kimi-K3/blob/0797decb18ab079de86f991b87a64b81ec15a3c2/k3_tech_report.pdf) §4.1 | 3 领域 × 3 effort 专家经 MOPD 合并为统一 policy | student on-policy token、teacher routing 与 dense reward 进入同一 RL infra | D02、D12 |
-| Phase-partial long-horizon rollout | Kimi K3 Technical Report §4.1.2、§5.3 | 达到 \(\lambda NK\) 后暂停全局长尾，但保留 prompt 内 \(K\) group | per-call version、KV continuation、sandbox resume 和 stale-data regularization 成为联合状态 | D03–D05、D12 |
+| Phase-partial long-horizon rollout | Kimi K3 Technical Report §4.1.2、§5.3 | 达到 $\lambda NK$ 后暂停全局长尾，但保留 prompt 内 $K$ group | per-call version、KV continuation、sandbox resume 和 stale-data regularization 成为联合状态 | D03–D05、D12 |
 | Train–inference consistency | [Diagnosing TIM，arXiv:2605.14220v1](https://arxiv.org/abs/2605.14220v1)、[Beyond Precision，arXiv:2602.01826v1](https://arxiv.org/abs/2602.01826v1)、[MIPI/MIPU，arXiv:2606.29526v1](https://arxiv.org/abs/2606.29526v1) | 从隔离数值差异扩展到动态检测、监控和校正 | kernel、precision、log-prob、policy version 与 ratio telemetry 进入 RL 正确性边界 | D04、D05、D07 |
 
 ### 4.1 暂不做出的三个结论

@@ -41,11 +41,11 @@
 
 考虑一个简单的线性层（无偏置以便推导）：
 $$
-y = W x,\quad W_{ij}\sim\mathcal{N}$0,\sigma_w^2$
+y = W x,\quad W_{ij}\sim\mathcal{N}(0,\sigma_w^2)
 $$
 假设输入 $x$ 的元素独立同分布，均值 0，方差 $\operatorname{Var}(x)=\sigma_x^2$。则输出单元的方差：
 $$
-\operatorname{Var}$y_i$ = \sum_{j=1}^{n_\text{in}} \operatorname{Var}$W_{ij}x_j$ = n_\text{in},\sigma_w^2,\sigma_x^2
+\operatorname{Var}(y_i) = \sum_{j=1}^{n_\text{in}} \operatorname{Var}(W_{ij}x_j) = n_\text{in}\,\sigma_w^2\,\sigma_x^2
 $$
 为使 $\operatorname{Var}(y)\approx\operatorname{Var}(x)$，需要
 $$
@@ -66,11 +66,11 @@ $$
 
 Transformer block（简化）：
 $$
-\text{out} = x + \mathcal{F}$x$
+\text{out} = x + \mathcal{F}(x)
 $$
 若 $\operatorname{Var}(x)=\sigma_x^2$ 且 $\operatorname{Var}(\mathcal{F}(x))=\sigma_f^2$，且近似独立（粗略假设），则
 $$
-\operatorname{Var}$x+\mathcal{F}(x)$ = \sigma_x^2 + \sigma_f^2
+\operatorname{Var}(x+\mathcal{F}(x)) = \sigma_x^2 + \sigma_f^2
 $$
 在深层网络中，若每层 $\sigma_f^2$ 大致恒定，随着层数 $L$ 方差会**线性增长**，即约为 $\sigma_x^2 + L\cdot \sigma_f^2$——这导致深度越大越不稳定。解决办法（工程上常见的）：
 
@@ -252,7 +252,7 @@ class SimpleGate(nn.Module):
   $$
 * 假设权重独立同分布（i.i.d.）且均值零：
   $$
-  W_{ij}\overset{\text{i.i.d.}}{\sim}\mathcal{D}*W,\quad \mathbb{E}[W*{ij}]=0,\ \operatorname{Var}$W_{ij}$=\sigma_w^2.
+  W_{ij}\overset{\text{i.i.d.}}{\sim}\mathcal{D}_W,\quad \mathbb{E}[W_{ij}]=0,\ \operatorname{Var}(W_{ij})=\sigma_w^2.
   $$
 * 输入向量分量 $x_j$ 假设独立同分布，$\mathbb{E}[x_j]=0,\ \operatorname{Var}(x_j)=\sigma_x^2$。
 * 梯度符号：若损失为 $ \mathcal{L}$，前向为 $y=W x$，则反向有
@@ -272,12 +272,12 @@ class SimpleGate(nn.Module):
 
 $$
 \begin{aligned}
-\operatorname{Var}$y_i$
-&= \operatorname{Var}!\Big$\sum_{j=1}^{n_\text{in}} W_{ij} x_j\Big$
-|= \sum_{j=1}^{n_\text{in}} \operatorname{Var}!\big$W_{ij} x_j\big$ \
-&= \sum_{j=1}^{n_\text{in}} \mathbb{E}\big[W_{ij}^2\big], \mathbb{E}\big[x_j^2\big]
-;$\text{因独立且均值 0}$\
-&= n_\text{in},\sigma_w^2,\sigma_x^2.
+\operatorname{Var}(y_i)
+&= \operatorname{Var}\!\Big(\sum_{j=1}^{n_\text{in}} W_{ij} x_j\Big)
+&= \sum_{j=1}^{n_\text{in}} \operatorname{Var}\!\big(W_{ij} x_j\big) \\
+&= \sum_{j=1}^{n_\text{in}} \mathbb{E}\big[W_{ij}^2\big]\,\mathbb{E}\big[x_j^2\big]
+\;(\text{因独立且均值 0})\\
+&= n_\text{in}\,\sigma_w^2\,\sigma_x^2.
 \end{aligned}
 $$
 
@@ -300,14 +300,14 @@ $$
 若有激活 $z=\phi(y)$，则在零均值假设下，近似可用一阶线性化或利用 $\phi$ 关于输入分布的二阶统计量。若 $y$ 近似为均值为 0、方差 $\sigma_y^2$ 的高斯分布，则
 
 $$
-\sigma_z^2 = \operatorname{Var}$\phi(y)$ \approx \int \phi$t$^2 p_{y}$t$,dt - \Big$\int \phi(t) p_y(t),dt\Big$^2,
+\sigma_z^2 = \operatorname{Var}(\phi(y)) \approx \int \phi(t)^2 p_{y}(t)\,dt - \Big(\int \phi(t) p_y(t)\,dt\Big)^2,
 $$
 
 对 ReLU（$\phi(t)=\max(0,t)$）且 $y\sim\mathcal{N}(0,\sigma_y^2)$，有
 
 $$
-\mathbb{E}[\phi$y$^2] = \frac{\sigma_y^2}{2},\qquad
-\mathbb{E}[\phi$y$] = \sigma_y\frac{1}{\sqrt{2\pi}}.
+\mathbb{E}[\phi(y)^2] = \frac{\sigma_y^2}{2},\qquad
+\mathbb{E}[\phi(y)] = \sigma_y\frac{1}{\sqrt{2\pi}}.
 $$
 
 因此近似有 $\sigma_z^2 \approx \frac{1}{2}\sigma_y^2$（常见近似，忽略均值项的平方）。对 GELU 等更平滑非线性，可用数值或泰勒近似计算其增益因子 $g_\phi$ 使得 $\sigma_z^2 \approx g_\phi \sigma_y^2$。
@@ -320,11 +320,11 @@ $$
 
 * 对于线性层 $y = W x$，反向传播有 $\delta_x = W^\top \delta_y$，因此：
   $$
-  \operatorname{Var}$\delta_{x_j}$ = n_\text{out},\sigma_w^2,\operatorname{Var}$\delta_{y}$.
+  \operatorname{Var}(\delta_{x_j}) = n_\text{out}\,\sigma_w^2\,\operatorname{Var}(\delta_{y}).
   $$
 * 对权重梯度 $\nabla_{W_{ij}} = \delta_{y_i}, x_j$，其方差为：
   $$
-  \operatorname{Var}$\nabla_{W_{ij}}$ = \operatorname{Var}$\delta_{y_i}$,\operatorname{Var}$x_j$.
+  \operatorname{Var}(\nabla_{W_{ij}}) = \operatorname{Var}(\delta_{y_i})\,\operatorname{Var}(x_j).
   $$
   （在独立性与零均值假设下）
 
@@ -335,17 +335,17 @@ $$
 由 $\delta_x = W^\top \delta_y$，第 $j$ 分量为
 
 $$
-\delta_{x_j} = \sum_{i=1}^{n_\text{out}} W_{ij}, \delta_{y_i}.
+\delta_{x_j} = \sum_{i=1}^{n_\text{out}} W_{ij}\,\delta_{y_i}.
 $$
 
 假设 $W_{ij}$ 与 $\delta_{y_i}$ 近似独立（一种常用近似，训练早期通常近似成立），并且 $\mathbb{E}[\delta_{y_i}]=0$，且 $\operatorname{Var}(\delta_{y_i})=\sigma_{\delta_y}^2$，则
 
 $$
 \begin{aligned}
-\operatorname{Var}$\delta_{x_j}$
-&= \sum_{i=1}^{n_\text{out}} \operatorname{Var}$W_{ij},\delta_{y_i}$ \
-&= \sum_{i=1}^{n_\text{out}} \mathbb{E}[W_{ij}^2],\mathbb{E}[\delta_{y_i}^2] \
-&= n_\text{out},\sigma_w^2,\sigma_{\delta_y}^2.
+\operatorname{Var}(\delta_{x_j})
+&= \sum_{i=1}^{n_\text{out}} \operatorname{Var}(W_{ij}\,\delta_{y_i}) \\
+&= \sum_{i=1}^{n_\text{out}} \mathbb{E}[W_{ij}^2]\,\mathbb{E}[\delta_{y_i}^2] \\
+&= n_\text{out}\,\sigma_w^2\,\sigma_{\delta_y}^2.
 \end{aligned}
 $$
 
@@ -356,9 +356,9 @@ $$
 单个分量梯度为 $\nabla_{W_{ij}} = \delta_{y_i} x_j$。在独立性假设下：
 
 $$
-\operatorname{Var}$\nabla_{W_{ij}}$
-= \operatorname{Var}$\delta_{y_i}$,\operatorname{Var}$x_j$
-= \sigma_{\delta_y}^2,\sigma_x^2.
+\operatorname{Var}(\nabla_{W_{ij}})
+= \operatorname{Var}(\delta_{y_i})\,\operatorname{Var}(x_j)
+= \sigma_{\delta_y}^2\,\sigma_x^2.
 $$
 
 因此权重更新的噪声强度与**前向激活方差**和**反向误差信号方差**的乘积成正比。这直接说明了为什么前向的方差尺度会影响权重更新（梯度的尺度）：如果激活非常小（$\sigma_x^2$ 很小），那么即便 $\sigma_{\delta_y}^2$ 正常，梯度也会非常小（更新缓慢，类似“梯度消失”）；反之激活太大会使梯度方差变大，导致步长不稳或梯度爆炸。
@@ -370,7 +370,7 @@ $$
 考虑一个残差块（简化）：
 
 $$
-x^{$\ell+1$} = x^{$\ell$} + \mathcal{F}\big$x^{(\ell)}\big$,
+x^{(\ell+1)} = x^{(\ell)} + \mathcal{F}\big(x^{(\ell)}\big),
 $$
 
 记 $\operatorname{Var}(x^{(\ell)})=\sigma_\ell^2$，并假设 $\mathcal{F}$ 的输出与 $x^{(\ell)}$ 近似独立且 $\operatorname{Var}(\mathcal{F})=\tau^2$（每层近似恒定）。则
@@ -402,14 +402,14 @@ $$
 有
 
 $$
-\operatorname{Var}$q^\top k$ = \sum_{t=1}^{d_k} \operatorname{Var}$q_t k_t$
-= d_k, \mathbb{E}[q_t^2],\mathbb{E}[k_t^2] = d_k,\sigma_q^2,\sigma_k^2.
+\operatorname{Var}(q^\top k) = \sum_{t=1}^{d_k} \operatorname{Var}(q_t k_t)
+= d_k\,\mathbb{E}[q_t^2]\,\mathbb{E}[k_t^2] = d_k\,\sigma_q^2\,\sigma_k^2.
 $$
 
 因此未经缩放，点积的方差与 $d_k$ 成正比，随着 head_dim 增大 softmax 会变得越来越尖锐或不稳定。乘以 $1/\sqrt{d_k}$ 后，
 
 $$
-\operatorname{Var}!\Big$\frac{q^\top k}{\sqrt{d_k}}\Big$= \sigma_q^2\sigma_k^2,
+\operatorname{Var}\!\Big(\frac{q^\top k}{\sqrt{d_k}}\Big)= \sigma_q^2\sigma_k^2,
 $$
 
 与 $d_k$ 无关，保证了不同 head_dim 下 logits 的尺度可比，从而稳定 softmax 的梯度行为。
@@ -427,13 +427,13 @@ $$
 若 $e_\alpha$ 相互独立且均值 0，则
 
 $$
-\operatorname{Var}$o$ = \sum_{\alpha\in\mathcal{S}} w_\alpha^2,\operatorname{Var}$e_\alpha$
+\operatorname{Var}(o) = \sum_{\alpha\in\mathcal{S}} w_\alpha^2\,\operatorname{Var}(e_\alpha)
 = \sigma_e^2 \sum_{\alpha\in\mathcal{S}} w_\alpha^2.
 $$
 
 常见情形：
 
-* 如果 $w_\alpha$ 都为 $1$（简单求和），则 $\operatorname{Var}(o) = k,\sigma_e^2$（方差随 $k$ 增大）。
+* 如果 $w_\alpha$ 都为 $1$（简单求和），则 $\operatorname{Var}(o) = k\,\sigma_e^2$（方差随 $k$ 增大）。
 * 若对 $k$ 个专家取算术平均（每个权重为 $1/k$），则 $\operatorname{Var}(o) = \sigma_e^2/k$（方差缩小）。
 * 若对权重做归一化（比如 softmax），则 $\sum w_\alpha^2$ 在不同情形下差异较大（当权重集中时，$\sum w_\alpha^2$ 接近 1，当权重均匀时约为 $1/k$）。
 
@@ -469,33 +469,33 @@ y = W x,\quad W\in\mathbb{R}^{n_\text{out}\times n_\text{in}},
 \]
 并作如下常用近似假设：
 \begin{itemize}
-  \item 权重元素独立同分布： \(W_{ij}\overset{\text{i.i.d.}}{\sim}\mathcal{D}_W\)，\(\mathbb{E}[W_{ij}]=0\)，\(\operatorname{Var}(W_{ij})=\sigma_w^2\)。
-  \item 输入分量独立同分布：\(x_j\overset{\text{i.i.d.}}{\sim}\mathcal{D}_x\)，\(\mathbb{E}[x_j]=0\)，\(\operatorname{Var}(x_j)=\sigma_x^2\)。
-  \item 在涉及乘积的统计量时，我们近似假设相关项相互独立（例如 \(W_{ij}\) 与 \(x_j\) 独立，\(W_{ij}\) 与 \(\delta_{y_i}\) 近似独立）。
+  \item 权重元素独立同分布： $W_{ij}\overset{\text{i.i.d.}}{\sim}\mathcal{D}_W$，$\mathbb{E}[W_{ij}]=0$，$\operatorname{Var}(W_{ij})=\sigma_w^2$。
+  \item 输入分量独立同分布：$x_j\overset{\text{i.i.d.}}{\sim}\mathcal{D}_x$，$\mathbb{E}[x_j]=0$，$\operatorname{Var}(x_j)=\sigma_x^2$。
+  \item 在涉及乘积的统计量时，我们近似假设相关项相互独立（例如 $W_{ij}$ 与 $x_j$ 独立，$W_{ij}$ 与 $\delta_{y_i}$ 近似独立）。
 \end{itemize}
 
 \subsection*{前向方差}
-对单个输出分量 \(y_i=\sum_{j=1}^{n_\text{in}} W_{ij}x_j\)，由独立性：
+对单个输出分量 $y_i=\sum_{j=1}^{n_\text{in}} W_{ij}x_j$，由独立性：
 \[
 \operatorname{Var}(y_i)
 = \sum_{j=1}^{n_\text{in}} \operatorname{Var}(W_{ij}x_j)
 = \sum_{j=1}^{n_\text{in}} \mathbb{E}[W_{ij}^2]\,\mathbb{E}[x_j^2]
 = n_\text{in}\,\sigma_w^2\,\sigma_x^2.
 \]
-若欲 \(\operatorname{Var}(y_i)\approx \sigma_x^2\)，则必要条件近似为
+若欲 $\operatorname{Var}(y_i)\approx \sigma_x^2$，则必要条件近似为
 \[
 \sigma_w^2 \approx \frac{1}{n_\text{in}}.
 \]
 
 \subsection*{含激活函数的情况}
-若在此后接非线性激活 \(z=\phi(y)\)，当 \(y\) 近似为均值 0 的高斯变量，激活后的方差可写为
+若在此后接非线性激活 $z=\phi(y)$，当 $y$ 近似为均值 0 的高斯变量，激活后的方差可写为
 \[
 \sigma_z^2 \approx \mathbb{E}[\phi(y)^2] - (\mathbb{E}[\phi(y)])^2.
 \]
-例如 ReLU 下，常用近似 \(\sigma_z^2 \approx \tfrac12\sigma_y^2\)。
+例如 ReLU 下，常用近似 $\sigma_z^2 \approx \tfrac12\sigma_y^2$。
 
 \subsection*{反向方差}
-记损失为 \(\mathcal{L}\)，反向误差信号为 \(\delta_y=\partial\mathcal{L}/\partial y\)，则
+记损失为 $\mathcal{L}$，反向误差信号为 $\delta_y=\partial\mathcal{L}/\partial y$，则
 \[
 \delta_x = W^\top \delta_y,\qquad
 \delta_{x_j} = \sum_{i=1}^{n_\text{out}} W_{ij}\,\delta_{y_i}.
@@ -509,7 +509,7 @@ y = W x,\quad W\in\mathbb{R}^{n_\text{out}\times n_\text{in}},
 因此反向方差由 fan\_out 决定，前向方差由 fan\_in 决定。
 
 \subsection*{权重梯度的方差}
-梯度元素 \(\nabla_{W_{ij}}=\delta_{y_i} x_j\)，若 \(\delta_{y_i}\) 与 \(x_j\) 近似独立且均值 0，则
+梯度元素 $\nabla_{W_{ij}}=\delta_{y_i} x_j$，若 $\delta_{y_i}$ 与 $x_j$ 近似独立且均值 0，则
 \[
 \operatorname{Var}(\nabla_{W_{ij}})
 = \operatorname{Var}(\delta_{y_i})\,\operatorname{Var}(x_j)
@@ -518,25 +518,25 @@ y = W x,\quad W\in\mathbb{R}^{n_\text{out}\times n_\text{in}},
 这表明权重更新的尺度与前向激活与反向誤差信号的方差乘积成正比。
 
 \subsection*{残差与 LayerNorm 的影响}
-若每层为残差结构 \(x^{(\ell+1)}=x^{(\ell)}+\mathcal{F}(x^{(\ell)})\)，并假设 \(\operatorname{Var}(\mathcal{F})=\tau^2\) 恒定，则
+若每层为残差结构 $x^{(\ell+1)}=x^{(\ell)}+\mathcal{F}(x^{(\ell)})$，并假设 $\operatorname{Var}(\mathcal{F})=\tau^2$ 恒定，则
 \[
 \operatorname{Var}(x^{(\ell+1)})=\operatorname{Var}(x^{(\ell)})+\tau^2,
 \]
-递推得到 \(\operatorname{Var}(x^{(L)})\approx \operatorname{Var}(x^{(0)})+L\tau^2\)，会随深度线性增长。LayerNorm 在子层输入处将向量标准化（使局部方差固定），从而抑制这种增长。另一种对策是对 \(\mathcal{F}\) 乘以缩放因子 \(s\)（如 \(s=1/\sqrt{L}\)），使得累积量级受控。
+递推得到 $\operatorname{Var}(x^{(L)})\approx \operatorname{Var}(x^{(0)})+L\tau^2$，会随深度线性增长。LayerNorm 在子层输入处将向量标准化（使局部方差固定），从而抑制这种增长。另一种对策是对 $\mathcal{F}$ 乘以缩放因子 $s$（如 $s=1/\sqrt{L}$），使得累积量级受控。
 
 \subsection*{自注意力的缩放因子}
-若向量 \(q,k\) 的分量方差分别为 \(\sigma_q^2,\sigma_k^2\)，则点积 \(q^\top k\) 的方差为
+若向量 $q,k$ 的分量方差分别为 $\sigma_q^2,\sigma_k^2$，则点积 $q^\top k$ 的方差为
 \[
 \operatorname{Var}(q^\top k) = d_k\,\sigma_q^2\,\sigma_k^2.
 \]
-除以 \(\sqrt{d_k}\) 后，方差归一化为 \(\sigma_q^2\sigma_k^2\)，从而保证不同 head\_dim 下 logits 的尺度一致。
+除以 $\sqrt{d_k}$ 后，方差归一化为 $\sigma_q^2\sigma_k^2$，从而保证不同 head\_dim 下 logits 的尺度一致。
 
 \subsection*{MoE 合并的方差}
-若合并 \(k\) 个独立专家输出 \(e_\alpha\)（每个方差 \(\sigma_e^2\)）并用权重 \(w_\alpha\) 加权求和，则输出方差为
+若合并 $k$ 个独立专家输出 $e_\alpha$（每个方差 $\sigma_e^2$）并用权重 $w_\alpha$ 加权求和，则输出方差为
 \[
 \operatorname{Var}\Big(\sum_{\alpha=1}^k w_\alpha e_\alpha\Big) = \sigma_e^2\sum_{\alpha=1}^k w_\alpha^2.
 \]
-特殊情形下（均匀平均 \(w_\alpha=\tfrac{1}{k}\)）方差为 \(\tfrac{1}{k}\sigma_e^2\)；若直接求和则为 \(k\sigma_e^2\)。为匹配 dense 层尺度需要在合并后对输出做合适缩放。
+特殊情形下（均匀平均 $w_\alpha=\tfrac{1}{k}$）方差为 $\tfrac{1}{k}\sigma_e^2$；若直接求和则为 $k\sigma_e^2$。为匹配 dense 层尺度需要在合并后对输出做合适缩放。
 
 \qed
 ```

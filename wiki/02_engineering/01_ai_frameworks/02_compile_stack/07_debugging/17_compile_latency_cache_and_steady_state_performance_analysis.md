@@ -49,7 +49,7 @@ guards命中、所有lazy工作完成、无意外recompile。按稳定窗口报�
 
 ## 3. 时间分解
 
-\[
+$$
 T_{\text{cold}} =
 T_{\text{wrapper}}
 +T_{\text{Dynamo}}
@@ -58,24 +58,24 @@ T_{\text{wrapper}}
 +T_{\text{native}}
 +T_{\text{load}}
 +T_{\text{first-runtime}}
-\]
+$$
 
-\[
+$$
 T_{\text{steady}} =
 T_{\text{guard}}
 +T_{\text{wrapper-runtime}}
 +T_{\text{kernel/replay}}
 +T_{\text{sync-visible}}
-\]
+$$
 
 训练还需：
 
-\[
+$$
 T_{\text{first-step}} =
 T_{\text{fw-compile/run}}
 +T_{\text{lazy-bw-compile/run}}
 +T_{\text{optimizer}}
-\]
+$$
 
 若只计forward，会把lazy backward compile移到“第二阶段”，形成错误的冷启动结论。
 
@@ -211,19 +211,19 @@ replay分开。
 
 ## 7. Break-even 分析
 
-设eager每次成本 \(E\)，compiled稳态成本 \(C\)，一次性冷启动成本 \(K\)，要求 \(E>C\)：
+设eager每次成本 $E$，compiled稳态成本 $C$，一次性冷启动成本 $K$，要求 $E>C$：
 
-\[
+$$
 N_{\text{break-even}} =
 \left\lceil\frac{K}{E-C}\right\rceil
-\]
+$$
 
-若有多个specialization \(s\)：
+若有多个specialization $s$：
 
-\[
+$$
 K_{\text{total}}=\sum_s K_s,\qquad
 N_s \text{ 必须足以摊销 }K_s
-\]
+$$
 
 生产价值应按真实shape频率加权。一个只出现一次的长尾shape即使稳态很快，也可能永远无法
 摊销编译成本。
@@ -252,22 +252,22 @@ N_s \text{ 必须足以摊销 }K_s
 
 ## 10. 成本模型
 
-对 \(N\) 次调用、\(S\) 个specialization：
+对 $N$ 次调用、$S$ 个specialization：
 
-\[
+$$
 T_{\text{compiled,total}}
 =\sum_{s=1}^{S}K_s+\sum_{i=1}^{N}C_i
-\]
+$$
 
 空间成本：
 
-\[
+$$
 M_{\text{total}}
 =M_{\text{code cache}}
 +M_{\text{runtime modules}}
 +M_{\text{allocator}}
 +M_{\text{CUDAGraph pools}}
-\]
+$$
 
 速度收益不能脱离cache容量、编译CPU、disk IO和device reserved memory评估。
 
@@ -283,45 +283,45 @@ M_{\text{total}}
 
 ## 12. 跨调用摊销：参数化多次调用成本模型
 
-> 本节至 §15 内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a05_eager_capture_compile_and_replay_cost_model_analysis.md`)。它给出的是本页§7-§10 break-even分析的**更细粒度前身**——把"一次性成本"进一步拆成 wrapper/capture/optimization/native-compile/warmup 五个子项，并显式给出 `dynamic`/`mode` 参数如何在这套分解里两头影响成本；本页此前的模型（§3、§10）在跨调用层面只用 \(K_s\)/\(C_i\) 两项概括，未展开到这个粒度，故逐字迁入作为补充视角，不替换已有模型。
+> 本节至 §15 内容原属 P4 知识库整改被删除的 A 卷回顾页(`19_torch_compile_end_to_end/a05_eager_capture_compile_and_replay_cost_model_analysis.md`)。它给出的是本页§7-§10 break-even分析的**更细粒度前身**——把"一次性成本"进一步拆成 wrapper/capture/optimization/native-compile/warmup 五个子项，并显式给出 `dynamic`/`mode` 参数如何在这套分解里两头影响成本；本页此前的模型（§3、§10）在跨调用层面只用 $K_s$/$C_i$ 两项概括，未展开到这个粒度，故逐字迁入作为补充视角，不替换已有模型。
 
-对一种输入分布和调用总数 \(N\)，设：
+对一种输入分布和调用总数 $N$，设：
 
-- \(T_w\)：wrapper creation；
-- \(T_{g,i}\)：第 \(i\) 次调用的 guard/cache lookup；
-- \(T_{c,j}\)：第 \(j\) 个新 specialization 的 capture；
-- \(T_{o,j}\)：该 specialization 的 graph optimization/AOT/Inductor；
-- \(T_{n,j}\)：native compile/load；
-- \(T_{u,j}\)：warmup/record；
-- \(T_{r,i}\)：steady runtime wrapper + kernel；
-- \(S\)：实际生成的 specializations 数。
+- $T_w$：wrapper creation；
+- $T_{g,i}$：第 $i$ 次调用的 guard/cache lookup；
+- $T_{c,j}$：第 $j$ 个新 specialization 的 capture；
+- $T_{o,j}$：该 specialization 的 graph optimization/AOT/Inductor；
+- $T_{n,j}$：native compile/load；
+- $T_{u,j}$：warmup/record；
+- $T_{r,i}$：steady runtime wrapper + kernel；
+- $S$：实际生成的 specializations 数。
 
 总时间可写为：
 
-\[
+$$
 T_{\text{compiled}}
 =T_w
 +\sum_{i=1}^{N}(T_{g,i}+T_{r,i})
 +\sum_{j=1}^{S}(T_{c,j}+T_{o,j}+T_{n,j}+T_{u,j})
-\]
+$$
 
 eager 总时间为：
 
-\[
+$$
 T_{\text{eager}}=\sum_{i=1}^{N}T_{e,i}
-\]
+$$
 
 只有：
 
-\[
+$$
 \sum(T_{e,i}-T_{g,i}-T_{r,i})
 >
 T_w+\sum(T_c+T_o+T_n+T_u)
-\]
+$$
 
 才在该调用分布和测量窗口内获得净收益。
 
-这是机制推论 `[I]`，不是固定硬件的性能测量。它与本页 §7/§10 的 break-even 模型描述同一件事，区别只是把一次性成本 \(K\) 进一步拆到 wrapper/capture/optimize/native-compile/warmup 五个可分别归因的子项。
+这是机制推论 `[I]`，不是固定硬件的性能测量。它与本页 §7/§10 的 break-even 模型描述同一件事，区别只是把一次性成本 $K$ 进一步拆到 wrapper/capture/optimize/native-compile/warmup 五个可分别归因的子项。
 
 ## 13. `dynamic` 为什么影响两端成本
 
@@ -335,7 +335,7 @@ T_w+\sum(T_c+T_o+T_n+T_u)
 
 动态 graph可能：
 
-- 减少 \(S\) 和重复 compile；
+- 减少 $S$ 和重复 compile；
 - 增加 guards/symbolic expressions；
 - 限制 specialization-based optimization；
 - 使 kernel处理更一般的 shape。
@@ -380,9 +380,9 @@ T_w+\sum(T_c+T_o+T_n+T_u)
 - codegen/native compile：与 kernels、source size、toolchain相关；
 - autotune：与 candidates × repetitions × measurement cost相关；
 - replay：与 guards、wrapper operations、kernel/extern workload相关；
-- dynamic workload：还要乘实际 specializations \(S\)。
+- dynamic workload：还要乘实际 specializations $S$。
 
-“模型有 \(N\) 个 FX nodes，所以 compile是 \(O(N)\)”不足以描述整条路径。
+“模型有 $N$ 个 FX nodes，所以 compile是 $O(N)$”不足以描述整条路径。
 
 ## 配套 Demo
 

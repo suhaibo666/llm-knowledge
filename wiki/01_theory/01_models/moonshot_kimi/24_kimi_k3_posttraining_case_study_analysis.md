@@ -62,22 +62,22 @@ K3 把任务先归入三个覆盖面较宽的领域，而不是为每个 benchma
 
 ### 2.2 Reasoning Effort RL 是相对预算约束
 
-对问题 \(x\)，cold-start policy 先给出基线预算 \(b_0(x)\)。若轨迹 \(y\) 的实际预算超过 \(\tau b_0(x)\)，任务 reward 被直接覆盖为 \(-1\)：
+对问题 $x$，cold-start policy 先给出基线预算 $b_0(x)$。若轨迹 $y$ 的实际预算超过 $\tau b_0(x)$，任务 reward 被直接覆盖为 $-1$：
 
-\[
+$$
 \widetilde R(x,y)=
 \begin{cases}
 R(x,y), & T(y)\le \tau b_0(x),\\
 -1, & T(y)>\tau b_0(x).
 \end{cases}
-\]
+$$
 
-这里的 \(T(y)\) 随任务类型变化：
+这里的 $T(y)$ 随任务类型变化：
 
 - general task 统计 thinking tokens；
 - agentic task 统计累计输出，包括 reasoning traces 和 tool-call arguments。
 
-训练先使用较大的 \(\tau\) 得到 max expert，同时仍设置绝对上限抑制过度思考；随后按领域在 HITL 指导下逐步减小 \(\tau\)，得到 high 和 low experts。各档专家轨迹随后共同进入 SFT 数据收集和 MOPD（报告 §4.1.2 “Reasoning Effort RL”，p.13）。
+训练先使用较大的 $\tau$ 得到 max expert，同时仍设置绝对上限抑制过度思考；随后按领域在 HITL 指导下逐步减小 $\tau$，得到 high 和 low experts。各档专家轨迹随后共同进入 SFT 数据收集和 MOPD（报告 §4.1.2 “Reasoning Effort RL”，p.13）。
 
 这个设计没有向用户暴露固定 token budget，而是训练一个由 effort 条件控制的 policy。Appendix F 进一步说明，部署接口把 effort 写成位于输入历史之前的自然语言全局 option；XTML schema 预留 `low/medium/high/max`，K3 实际支持其中 `low/high/max` 三档（报告 Appendix F “Reasoning effort and options”，p.47）。
 
@@ -90,7 +90,7 @@ R(x,y), & T(y)\le \tau b_0(x),\\
 3. 按 rubric 逐候选评分；
 4. 把 rubric 分数写入 scorepad。
 
-为防止模型通过堆砌篇幅赢得 judge，系统从 cold-start 模型估计基线长度 \(\ell_0\)，超过 \(\sigma\ell_0\) 的候选自动输掉二元比较。报告没有公开 GRM 架构、训练数据、校准误差或 judge 一致性，因此这里能确认的是 reward protocol，而不是 reward model 的可复现实现（报告 §4.1.2 “Agentic Generative Reward Model”，p.13）。
+为防止模型通过堆砌篇幅赢得 judge，系统从 cold-start 模型估计基线长度 $\ell_0$，超过 $\sigma\ell_0$ 的候选自动输掉二元比较。报告没有公开 GRM 架构、训练数据、校准误差或 judge 一致性，因此这里能确认的是 reward protocol，而不是 reward model 的可复现实现（报告 §4.1.2 “Agentic Generative Reward Model”，p.13）。
 
 ---
 
@@ -98,7 +98,7 @@ R(x,y), & T(y)\le \tau b_0(x),\\
 
 ### 3.1 报告给出的状态变化
 
-每个 iteration 从 \(N\) 个 prompt 各采 \(K\) 个 completion，维护 \(N\times K\) 条活跃 trajectory。当完成比例达到 \(\lambda\) 时，generation phase 不再等待所有长尾；未完成轨迹被暂停并进入优先队列，在下一 iteration 开始时优先恢复。一个 prompt 的 \(K\) 条 response 全部完成后，该 group 才立即送入 policy optimization（报告 §4.1.2 “Algorithm”，p.13）。
+每个 iteration 从 $N$ 个 prompt 各采 $K$ 个 completion，维护 $N\times K$ 条活跃 trajectory。当完成比例达到 $\lambda$ 时，generation phase 不再等待所有长尾；未完成轨迹被暂停并进入优先队列，在下一 iteration 开始时优先恢复。一个 prompt 的 $K$ 条 response 全部完成后，该 group 才立即送入 policy optimization（报告 §4.1.2 “Algorithm”，p.13）。
 
 ```mermaid
 flowchart TB
@@ -117,10 +117,10 @@ flowchart TB
 
 | Barrier | K3 是否打破 | 原因 |
 |---|---|---|
-| 全局 \(N\times K\) 全部结束后才能切换 phase | 是 | 达到 \(\lambda NK\) 即暂停长尾并推进 |
-| 同一个 prompt 的 \(K\) 条样本组完整性 | 否 | 报告明确等待该 prompt 的全部 \(K\) 条完成后送优化 |
+| 全局 $N\times K$ 全部结束后才能切换 phase | 是 | 达到 $\lambda NK$ 即暂停长尾并推进 |
+| 同一个 prompt 的 $K$ 条样本组完整性 | 否 | 报告明确等待该 prompt 的全部 $K$ 条完成后送优化 |
 
-这回答了“group rollout 是否过时”的问题：**K3 仍保留按 prompt 采 \(K\) 条 response 并在组完成后 dispatch 的边界；partial rollout 取消的是全局整批等待。** 对非可验证通用任务，报告还明确保留 tournament-style group reward；但它没有重述所有任务的 advantage estimator，不能据此声称 \(K\) group 是全链路通用统计单位。K3 是同步 RL framework 上的 partial-rollout 扩展，不应被标成无 phase barrier 的 fully async RL（报告 §4.1.2，p.13）。
+这回答了“group rollout 是否过时”的问题：**K3 仍保留按 prompt 采 $K$ 条 response 并在组完成后 dispatch 的边界；partial rollout 取消的是全局整批等待。** 对非可验证通用任务，报告还明确保留 tournament-style group reward；但它没有重述所有任务的 advantage estimator，不能据此声称 $K$ group 是全链路通用统计单位。K3 是同步 RL framework 上的 partial-rollout 扩展，不应被标成无 phase barrier 的 fully async RL（报告 §4.1.2，p.13）。
 
 ### 3.2 跨 iteration 轨迹怎样变成 off-policy
 
@@ -144,9 +144,9 @@ group_complete and dispatch_iteration
 
 ## 4. MOPD：student 自己采样，teacher 提供逐 Token 奖励
 
-对领域 \(d\) 和采样到的 effort \(e\)，从九个专家中选出对应 teacher \(\pi_{\text{teacher}}^{(d,e)}\)。student \(\pi_\theta\) 生成自己的 response；teacher 不生成替代轨迹，而是在 student 实际访问的 prefix 上评价其已采样 token。报告定义：
+对领域 $d$ 和采样到的 effort $e$，从九个专家中选出对应 teacher $\pi_{\text{teacher}}^{(d,e)}$。student $\pi_\theta$ 生成自己的 response；teacher 不生成替代轨迹，而是在 student 实际访问的 prefix 上评价其已采样 token。报告定义：
 
-\[
+$$
 r_{\mathrm{opd}}^d
 (y_t\mid e,x,y_{<t})
 =
@@ -164,9 +164,9 @@ r_{\mathrm{opd}}^d
 -R_{\max},
 R_{\max}
 \right).
-\]
+$$
 
-其中 `sg` 表示 stop-gradient，\(R_{\max}>0\) 限制极端 advantage。这个 dense reward 可直接进入现有 RL reward 流，因此也能复用 partial rollout。项目还试过更细粒度的 top-k distillation objective，但在其设置下没有观察到明确的收敛速度或最终性能优势；报告没有给出对应数值表格（报告 §4.1.3、Eq. 15，pp.13–14）。
+其中 `sg` 表示 stop-gradient，$R_{\max}>0$ 限制极端 advantage。这个 dense reward 可直接进入现有 RL reward 流，因此也能复用 partial rollout。项目还试过更细粒度的 top-k distillation objective，但在其设置下没有观察到明确的收敛速度或最终性能优势；报告没有给出对应数值表格（报告 §4.1.3、Eq. 15，pp.13–14）。
 
 ### 4.1 为什么不是普通离线 KD
 
@@ -190,13 +190,13 @@ GRPO、GSPO 或 K2.5-style policy optimization 回答“如何用 reward 更新 
 
 这里真正变化的是环境分布：
 
-\[
+$$
 \text{task distribution}
 \times
 \text{harness configuration}
 \times
 \text{tool and verifier version}.
-\]
+$$
 
 因此 trajectory 不能只记录 `env_name`，还应记录 harness config hash、tool schemas、context policy 和 verifier version。这个 schema 是由报告的动态组合机制推导出的工程要求。
 
@@ -254,15 +254,15 @@ K3 把预训练 MTP layer 改造成单层 EAGLE-3-style draft，冻结 target，
 
 因为 KL surrogate 不保证最大化 lossless speculative sampling 的接受率，K3 直接最小化：
 
-\[
+$$
 \mathcal L_{\mathrm{LK}}
 =
 -\log
 \sum_{x\in\mathcal V}
 \min\left(p(x),q(x)\right),
-\]
+$$
 
-其中 target distribution \(p\) 和 draft distribution \(q\) 均使用 temperature 1，不加 ground-truth cross-entropy；draft fine-tuning 沿用同一 QAT 配置（报告 §4.1.4、Eq. 16，p.14）。
+其中 target distribution $p$ 和 draft distribution $q$ 均使用 temperature 1，不加 ground-truth cross-entropy；draft fine-tuning 沿用同一 QAT 配置（报告 §4.1.4、Eq. 16，p.14）。
 
 报告没有提供该 draft recipe 的接受长度、吞吐或相对 KL/CE baseline 数值，因此可以记录优化目标与实现结构，不能写成已量化证明的端到端收益。
 
@@ -335,7 +335,7 @@ AgentENV 用 dirty-page incremental checkpoint；报告给出的最低 checkpoin
 
 ### 10.1 改变的判断
 
-1. **按 prompt 的 \(K\)-response 采样与完成边界没有被淘汰。** K3 保持 group 完整后再 dispatch；partial rollout 消除的是全局 \(N\times K\) 长尾。报告只在 Agentic GRM 处明确 group reward，不能外推为所有任务共享同一 advantage estimator。
+1. **按 prompt 的 $K$-response 采样与完成边界没有被淘汰。** K3 保持 group 完整后再 dispatch；partial rollout 消除的是全局 $N\times K$ 长尾。报告只在 Agentic GRM 处明确 group reward，不能外推为所有任务共享同一 advantage estimator。
 2. **专家 RL 后还需要显式能力合并。** K3 用 MOPD 把领域和 effort 专家统一为一个部署 policy，而不是把九个专家直接作为产品矩阵。
 3. **Agentic RL 的 state 不只在 GPU。** 未完成 trajectory 同时依赖 KV/KDA state、sandbox state、history protocol 和 policy version。
 4. **部署约束已进入 loss 和训练精度。** QAT 覆盖 SFT 与 RL，RL rollout/train 使用同一量化方案；draft model 直接优化 speculative acceptance objective。
@@ -347,7 +347,7 @@ AgentENV 用 dirty-page incremental checkpoint；报告给出的最低 checkpoin
 
 | 未披露项 | 为什么重要 |
 |---|---|
-| \(N,K,\lambda,\tau,\sigma,R_{\max}\) 与各领域 mixture | 无法复现 rollout、budget 和 MOPD 强度 |
+| $N,K,\lambda,\tau,\sigma,R_{\max}$ 与各领域 mixture | 无法复现 rollout、budget 和 MOPD 强度 |
 | K2.5-style optimizer 与逐 token regularizer 的完整公式和实现 | 无法独立判断 extreme off-policy 的偏差和稳定区间 |
 | policy version schema、staleness 分布与 correction telemetry | 无法确认跨 iteration trajectory 的真实 freshness |
 | MOPD 对单 teacher、离线 KD、参数合并的数值消融 | 无法隔离“九专家矩阵”与“蒸馏方法”各自收益 |

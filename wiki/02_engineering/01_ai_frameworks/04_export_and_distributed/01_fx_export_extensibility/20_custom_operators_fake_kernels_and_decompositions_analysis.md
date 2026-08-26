@@ -215,14 +215,14 @@ Python call
 
 ## 12. 复杂度与性能
 
-opaque custom op把内部 \(V\) 个算子压成一个FX node，降低capture/pass图规模，但编译器失去
-跨边界优化信息。decomposition展开为 \(V\) 个node，增加编译成本，却可能通过fusion减少
+opaque custom op把内部 $V$ 个算子压成一个FX node，降低capture/pass图规模，但编译器失去
+跨边界优化信息。decomposition展开为 $V$ 个node，增加编译成本，却可能通过fusion减少
 runtime物化。选择应比较：
 
-\[
+$$
 T_{\text{total}}
 =T_{\text{compile}}+N\cdot T_{\text{runtime}}
-\]
+$$
 
 而不是只按FX node数决定。
 

@@ -201,14 +201,14 @@ Source是访问路径；对象 identity是另一个维度。
 
 ## 12. 复杂度
 
-设嵌套 Python结构包含 \(V\) 个 tracker，Source链平均深度 \(D\)：
+设嵌套 Python结构包含 $V$ 个 tracker，Source链平均深度 $D$：
 
-- VariableBuilder按 source cache命中通常接近 \(O(1)\)；
+- VariableBuilder按 source cache命中通常接近 $O(1)$；
 - 首次分类取决于对象类型和容器大小；
-- tracker结构遍历为 \(O(V)\)；
-- Source取值/guard访问通常为 \(O(D)\)；
+- tracker结构遍历为 $O(V)$；
+- Source取值/guard访问通常为 $O(D)$；
 - 深层 container/source tree会增加 guard构建和运行成本；
-- alias/side-effect表使用 identity映射，期望查询 \(O(1)\)，但回放与剪枝随记录规模增长。
+- alias/side-effect表使用 identity映射，期望查询 $O(1)$，但回放与剪枝随记录规模增长。
 
 ## 13. 常见误解
 

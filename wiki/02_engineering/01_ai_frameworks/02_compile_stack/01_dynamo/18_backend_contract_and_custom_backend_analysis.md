@@ -194,12 +194,12 @@ GraphNode或FX edge。
 
 最小registry lookup：
 
-- 已解析callable：近似 \(O(1)\)；
+- 已解析callable：近似 $O(1)$；
 - string首次lazy import：取决于entry point/module加载；
-- backend wrapper配置处理：\(O(P)\)，\(P\)为options数量。
+- backend wrapper配置处理：$O(P)$，$P$为options数量。
 
-backend本身复杂度记为 \(K(G, S, H)\)，受graph规模 \(G\)、shape约束 \(S\)和硬件/候选
-\(H\)影响。对自定义backend不能用Dynamo的线性capture复杂度替代 \(K\)。
+backend本身复杂度记为 $K(G, S, H)$，受graph规模 $G$、shape约束 $S$和硬件/候选
+$H$影响。对自定义backend不能用Dynamo的线性capture复杂度替代 $K$。
 
 ## 13. 正确性清单
 

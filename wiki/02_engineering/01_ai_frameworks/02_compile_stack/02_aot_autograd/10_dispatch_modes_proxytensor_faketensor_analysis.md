@@ -307,13 +307,13 @@ output binding"哪一步，而不是笼统归因于 `__torch_dispatch__`。
 
 ## 10. 复杂度
 
-设一次 operator 的 pytree 输出有 \(m\) 个 leaves：
+设一次 operator 的 pytree 输出有 $m$ 个 leaves：
 
 - mode stack dispatch 深度与激活 modes/subclasses 数相关；
 - fake/meta kernel 成本通常远低于真实 Tensor data kernel，但仍取决于 operator metadata
   算法，不保证常数；
-- `track_tensor_tree`遍历输出结构为 \(O(m)\)；
-- decomposition展开为 \(d\) 个 operator 时，trace/node/meta 成本按 \(d\) 增长；
+- `track_tensor_tree`遍历输出结构为 $O(m)$；
+- decomposition展开为 $d$ 个 operator 时，trace/node/meta 成本按 $d$ 增长；
 - dispatch cache 可以跳过重复 fake dispatch构造，但 key 生成与 cache bypass 仍有成本。
 
 不能从"没有真实数据"推断 trace 免费；复杂 shape algebra、decomposition 和 Python

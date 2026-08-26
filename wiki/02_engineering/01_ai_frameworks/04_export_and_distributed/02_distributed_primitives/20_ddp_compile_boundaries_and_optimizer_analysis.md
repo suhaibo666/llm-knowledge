@@ -183,22 +183,22 @@ DDPOptimizer通过 **forward graph split** 间接让AOT backward分段，恢复a
 
 ## 11. 复杂度
 
-DDPOptimizer逆序扫描graph和参数，主体近似 \(O(V+P)\)。FX split与编译成本取决于
-bucket数 \(B\)：
+DDPOptimizer逆序扫描graph和参数，主体近似 $O(V+P)$。FX split与编译成本取决于
+bucket数 $B$：
 
-\[
+$$
 T_{\text{compile}} \approx
 \sum_{b=1}^{B}T_{\text{backend}}(G_b)+T_{\text{outer}}
-\]
+$$
 
 通信近似：
 
-\[
+$$
 T_{\text{comm}} \approx
 \sum_b(\alpha+\beta\cdot \text{bytes}_b)
-\]
+$$
 
-其中 \(\alpha\) 是collective启动成本，\(\beta\)是带宽项；有效step时间还取决于它与backward
+其中 $\alpha$ 是collective启动成本，$\beta$是带宽项；有效step时间还取决于它与backward
 critical path的重叠。
 
 ## 12. 常见误解

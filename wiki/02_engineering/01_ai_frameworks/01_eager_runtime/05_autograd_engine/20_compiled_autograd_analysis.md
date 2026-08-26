@@ -276,9 +276,9 @@ capture。这里的disable是runtime重入保护，不会关闭已经生成的In
 
 ## 12. 复杂度与成本
 
-若runtime autograd图有 \(V_b\) 个node、\(E_b\) 条依赖：
+若runtime autograd图有 $V_b$ 个node、$E_b$ 条依赖：
 
-- capture与FX建立至少 \(O(V_b+E_b)\)；
+- capture与FX建立至少 $O(V_b+E_b)$；
 - 专用重排/DCE通常线性或与users遍历相关；
 - 后续Dynamo/AOT/Inductor编译成本随图规模增长；
 - cache lookup依赖CA cache entries与specialization；

@@ -188,12 +188,12 @@ Inductor load/recompile。反之，AOT miss 产生相同的 post-grad graph 时�
 
 ## 13. 复杂度
 
-设 key 序列化对象大小为 \(H\)，同一 key 下的候选 entries 数为 \(C\)，artifact 大小为 \(A\)：
+设 key 序列化对象大小为 $H$，同一 key 下的候选 entries 数为 $C$，artifact 大小为 $A$：
 
-- key 构造/hash 约为 \(O(H)\)；
-- guarded lookup 的 worst case 为 \(O(C \cdot Q)\)，其中 \(Q\) 是 guard 表达式的计算成本；
+- key 构造/hash 约为 $O(H)$；
+- guarded lookup 的 worst case 为 $O(C \cdot Q)$，其中 $Q$ 是 guard 表达式的计算成本；
 - local deserialize/load 的成本约与 entry/source/artifact 大小相关；
-- remote lookup 还会增加网络延迟和 \(O(A)\) 的传输成本；
+- remote lookup 还会增加网络延迟和 $O(A)$ 的传输成本；
 - hit 后仍需承担 module import、constant attach 和 post-compile 的成本；
 - cache 空间随 graph 版本、guard 版本及 toolchain/config 组合增长。
 

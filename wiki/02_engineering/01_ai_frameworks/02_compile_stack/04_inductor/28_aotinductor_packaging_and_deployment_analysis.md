@@ -245,12 +245,12 @@ AOT 并不取消 shape 约束。部署前要区分：
 
 ## 14. 复杂度与容量
 
-设 FX/IR 节点数为 \(N\)，生成 kernel 数为 \(K\)，生成源码总大小为 \(S\)，权重大小为
-\(W\)，package 内模型数为 \(M\)：
+设 FX/IR 节点数为 $N$，生成 kernel 数为 $K$，生成源码总大小为 $S$，权重大小为
+$W$，package 内模型数为 $M$：
 
-- 图 lowering 通常至少 \(O(N)\)，具体优化可能高于线性；
-- native compile 主要随 \(K\)、\(S\) 与编译器优化增长；
-- package 写入/读取至少 \(O(S+W)\)；
+- 图 lowering 通常至少 $O(N)$，具体优化可能高于线性；
+- native compile 主要随 $K$、$S$ 与编译器优化增长；
+- package 写入/读取至少 $O(S+W)$；
 - model-name lookup 取决于 archive 索引，不能掩盖解压、动态装载和权重映射成本；
 - 常量热更新至少与被更新字节数线性相关；
 - 同时保留多个 runner/constant buffer 会近似放大相应内存。

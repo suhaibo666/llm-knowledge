@@ -278,25 +278,25 @@ manager失效、cache长度不增长却仍反复编译的情况。
 
 ## 13. 复杂度
 
-设 \(C\) 个entries，第 \(i\) 个entry的guard tree实际访问 \(Q_i\) 个检查节点：
+设 $C$ 个entries，第 $i$ 个entry的guard tree实际访问 $Q_i$ 个检查节点：
 
-\[
+$$
 T_{\text{lookup-hit-k}} = O\left(\sum_{i=1}^{k} Q_i\right)
-\]
+$$
 
-\[
+$$
 T_{\text{miss}} = O\left(\sum_{i=1}^{C} Q_i\right)
 + T_{\text{capture}}
 + T_{\text{backend}}
-\]
+$$
 
 空间为：
 
-\[
+$$
 O\left(\sum_{i=1}^{C}
 (\lvert guards_i\rvert+\lvert code_i\rvert+\lvert artifacts_i\rvert)
 \lvert frame\_state\rvert\right)
-\]
+$$
 
 backend artifact可能由更深cache共享，不能简单按Dynamo entries相乘。
 

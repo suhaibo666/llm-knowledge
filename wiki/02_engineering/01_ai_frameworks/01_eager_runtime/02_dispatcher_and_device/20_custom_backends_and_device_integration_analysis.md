@@ -202,10 +202,10 @@ CPU-only或codegen-only测试不能声称目标accelerator runtime已验证。
 
 接入成本大致是：
 
-\[
+$$
 O(|\text{ops}|+|\text{IR features}|+|\text{runtime features}|
 +|\text{artifact ABIs}|)
-\]
+$$
 
 decomposition可降低直接lowering数量，但会增加图规模；fallback提高覆盖面但损失fusion；
 自定义scheduler提高性能但扩大正确性与维护面。应先建立可用的最小纵向链，再按profiling扩展。

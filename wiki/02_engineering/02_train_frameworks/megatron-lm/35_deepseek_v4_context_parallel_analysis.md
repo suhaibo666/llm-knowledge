@@ -94,7 +94,7 @@ cp_comm_type of each layer can be "p2p" or "all_gather" or "a2a" or "a2a+p2p".
 
 ### 2.2 通信类型的配置与校验
 
-`cp_comm_type` 支持按层配置（List\[str\]）或全局配置（str）。当使用 `fallback_to_eager_attn` 或 `transformer_impl="local"` 时，只允许 `all_gather`：
+`cp_comm_type` 支持按层配置（`List[str]`）或全局配置（str）。当使用 `fallback_to_eager_attn` 或 `transformer_impl="local"` 时，只允许 `all_gather`：
 
 ```
 if self.fallback_to_eager_attn or self.transformer_impl == "local":

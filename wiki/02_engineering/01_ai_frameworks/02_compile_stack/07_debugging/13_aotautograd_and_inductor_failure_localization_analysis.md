@@ -271,11 +271,11 @@ flowchart TD
 ## 9. 复杂度与调查成本
 
 backend阶梯最多增加常数个完整执行，但每层可能触发独立capture/compile。若一次测试成本为
-\(T_j\)，总定位成本为：
+$T_j$，总定位成本为：
 
-\[
+$$
 T_{\text{ladder}}=\sum_j T_j
-\]
+$$
 
 通过固定seed、输入和cache状态可以降低噪声。不要在同一进程依次运行后直接比较冷启动，
 因为前层可能改变cache、allocator、device context和autotune状态。

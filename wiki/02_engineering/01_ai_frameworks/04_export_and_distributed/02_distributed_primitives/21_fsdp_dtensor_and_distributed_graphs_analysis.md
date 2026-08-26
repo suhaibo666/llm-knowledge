@@ -184,9 +184,9 @@ forward/backward collective dtype
 
 以all-gather/reduce-scatter为例，通信成本粗略为延迟项加带宽项：
 
-\[
+$$
 T_{\text{collective}}\approx \alpha\cdot f(P)+\beta\cdot \text{bytes}\cdot g(P)
-\]
+$$
 
 FSDP的峰值还包含相邻unsharded parameter、prefetch和activation。图编译可减少local compute
 与launch overhead，但不能消除必要通信量；真正目标是减少隐式reshard、优化bucket并与

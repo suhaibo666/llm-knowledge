@@ -511,14 +511,14 @@ liveness 与别名。
 
 ### 13.6 复杂度与成本
 
-设 Tensor rank 为 \(r\),关联 alias/view 数为 \(a\):
+设 Tensor rank 为 $r$,关联 alias/view 数为 $a$:
 
 - 读取 dtype/device/storage identity 通常为常数级字段访问;
-- 读取或比较完整 sizes/strides 为 \(O(r)\);
-- 计算连续性、可重排 layout 等一般至少扫描 rank,常为 \(O(r)\);
-- 单次 version bump 为 \(O(1)\);
+- 读取或比较完整 sizes/strides 为 $O(r)$;
+- 计算连续性、可重排 layout 等一般至少扫描 rank,常为 $O(r)$;
+- 单次 version bump 为 $O(1)$;
 - 编译器建立完整 alias closure 的成本取决于 alias graph,而不是 TensorImpl 字段访问,
-  可写为 \(O(V_a+E_a)\)。
+  可写为 $O(V_a+E_a)$。
 
 不要把"version bump 是常数"外推成"mutation 合法性检查也是常数";后者还包含 view、
 effect、graph users 和 runtime ABI。

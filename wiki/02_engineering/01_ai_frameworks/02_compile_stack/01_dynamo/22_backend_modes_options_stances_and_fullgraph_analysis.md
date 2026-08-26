@@ -166,7 +166,7 @@ flowchart TD
 
 ## 11. 复杂度与性能影响
 
-- backend/mode/options在 wrapper构造时的配置处理大体随 options数量 \(O(P)\)；
+- backend/mode/options在 wrapper构造时的配置处理大体随 options数量 $O(P)$；
 - stance判断是每次调用的常数级分支，但 `fail_on_recompile` miss时会收集 guard失败原因；
 - fullgraph本身不降低 capture复杂度；它只改变失败路径；
 - max-autotune可能把 backend编译成本从一次 codegen放大为多个候选的编译和测量；

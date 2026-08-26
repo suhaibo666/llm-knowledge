@@ -39,7 +39,7 @@ GPU · NPU · Kernel Engineering
 
 一个 warp 内 32 个线程的访存请求若地址连续且对齐（128 bytes），可合并为一次内存事务；否则触发多次独立事务，带宽利用率急剧下降。
 
-Good：线程 t 访问 A\[t\]，连续对齐
+Good：线程 t 访问 `A[t]`，连续对齐
 
 ```
 int val = A[threadIdx.x];  // warp 内 32 个 thread 访问连续地址 → 1 次事务
@@ -239,13 +239,13 @@ FlashAttention 中各层概念的完整映射：
 | 层级 | FlashAttention 中的含义 | 关键数值（典型配置） |
 | --- | --- | --- |
 | **Grid（2D）** | `gridDim.x = ⌈N/BM⌉`（Q 序列分片）× `gridDim.y = B×H`（batch × head） | N=4096, BM=64, B=2, H=32 → grid=(64, 64) |
-| **Block** | 负责一个 Q tile \[BM×d\]，遍历全部 K/V；驻留同一 SM | 128 threads（4 warps），BM=64 或 128 |
+| **Block** | 负责一个 Q tile `[BM×d]`，遍历全部 K/V；驻留同一 SM | 128 threads（4 warps），BM=64 或 128 |
 | **Shared Memory** | Q tile 全程驻留；K_j、V_j 每轮换入换出 | (64+64)×128×2 = 32 KB（double buffer = 64 KB） |
 | **Warp（×4）** | 协作执行 `wmma::mma_sync`（Tensor Core 要求 warp-level 同步） | 4 warps = 128 threads |
 | **Register** | O 累加器 fragment、l（归一化分母）、m（running max） | online softmax 的全部状态，从不溢出到 HBM |
 | **Tile** | BM×BN 注意力分块；BM×d Q/O tile；BN×d K/V tile | BM=BN=64，d=128（标准 head dim） |
 
-> **FlashAttention IO 复杂度降低的本质：**朴素 attention 需将 \[B,H,N,N\] 的 S 矩阵写回 HBM 再做 softmax，HBM 流量 O(N²)。FA 利用 online softmax 将 S 的整个生命周期锁在寄存器中，HBM 流量降为 O(N·d)，匹配 Q/K/V/O 本身的大小。IO 复杂度从 O(N²) 降至 O(N²·d / M)，其中 M 为 SRAM 大小。
+> **FlashAttention IO 复杂度降低的本质：**朴素 attention 需将 `[B,H,N,N]` 的 S 矩阵写回 HBM 再做 softmax，HBM 流量 O(N²)。FA 利用 online softmax 将 S 的整个生命周期锁在寄存器中，HBM 流量降为 O(N·d)，匹配 Q/K/V/O 本身的大小。IO 复杂度从 O(N²) 降至 O(N²·d / M)，其中 M 为 SRAM 大小。
 
 ## 09 NPU 架构差异
 

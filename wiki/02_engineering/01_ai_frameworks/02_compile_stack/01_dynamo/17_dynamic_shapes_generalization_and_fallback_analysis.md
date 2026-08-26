@@ -149,7 +149,7 @@ branch，可能生成另一个specialization或直接break/fallback。
 
 ## 10. 为什么动态可能更慢
 
-动态shape可减少specialization数量 \(S\)，但会增加：
+动态shape可减少specialization数量 $S$，但会增加：
 
 - symbol和constraint创建；
 - shape guards与runtime expressions；
@@ -159,12 +159,12 @@ branch，可能生成另一个specialization或直接break/fallback。
 
 因此总成本近似：
 
-\[
+$$
 T =
 \sum_{j=1}^{S} T_{\text{compile},j}
 \sum_{i=1}^{N}
 (T_{\text{guard},i}+T_{\text{shape-expr},i}+T_{\text{kernel},i})
-\]
+$$
 
 动态策略优化的是整个输入分布下的总成本，不是单个kernel的理论最短路径。
 
@@ -183,13 +183,13 @@ T =
 
 ## 12. 复杂度
 
-令 \(D\) 为symbolic dimensions数、\(E\)为symbolic expression/constraint数：
+令 $D$ 为symbolic dimensions数、$E$为symbolic expression/constraint数：
 
 - frame-state比较约随输入Tensor维度线性增长；
-- guard生成与shape expression规模至少为 \(O(D+E)\)；
+- guard生成与shape expression规模至少为 $O(D+E)$；
 - constraint simplification实际成本取决于表达式结构，不能保证简单线性；
-- 静态策略空间可能随输入形态产生 \(S\) 个compiled entries；
-- 动态策略把一部分 \(S\) 转换为更大的单graph/guard/kernel成本。
+- 静态策略空间可能随输入形态产生 $S$ 个compiled entries；
+- 动态策略把一部分 $S$ 转换为更大的单graph/guard/kernel成本。
 
 评估时应同时记录compiled graph数、guard failure原因、symbol数量和稳态kernel性能。
 

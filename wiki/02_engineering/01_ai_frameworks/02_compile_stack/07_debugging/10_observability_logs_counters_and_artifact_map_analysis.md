@@ -161,9 +161,9 @@ flowchart TD
 
 ## 9. 可观测性的成本与扰动
 
-若图有 \(V\) 个node、生成代码长度为 \(K\)、调用次数为 \(N\)：
+若图有 $V$ 个node、生成代码长度为 $K$、调用次数为 $N$：
 
-- graph/code artifact序列化通常至少 \(O(V+K)\)；
+- graph/code artifact序列化通常至少 $O(V+K)$；
 - verbose guard失败重放可能对多个cache entry逐一检查；
 - profiler、同步计时可能改变异步设备执行；
 - kernel源码、输入meta和stack会显著增大日志；

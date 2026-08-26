@@ -235,7 +235,7 @@ asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"
              : "=r"(r0), "=r"(r1), "=r"(r2), "=r"(r3) : "r"(addr));
 ```
 
-> 操作数形状与第 4 章 fragment 表逐位对上:A 4 个 .b32 = 8 fp16;B 2 个 .b32 = 4 fp16;C/D 4 个 .f32。每轮 K16 的寄存器账:4 次 ldmatrix.x4 → a\[4\]\[4\] = 16 个;4 次 → b\[8\]\[2\] = 16 个。`"+f"` 读改写约束让 accumulator 从头到尾待在原寄存器里——这就是"常驻"在指令层的实现。生产 kernel 最烧脑的部分在 ldmatrix 的*地址计算*:swizzle 布局下每个 lane 的行地址要做 XOR 变换,教学版用 padding 绕开了它。
+> 操作数形状与第 4 章 fragment 表逐位对上:A 4 个 .b32 = 8 fp16;B 2 个 .b32 = 4 fp16;C/D 4 个 .f32。每轮 K16 的寄存器账:4 次 ldmatrix.x4 → `a[4][4]` = 16 个;4 次 → `b[8][2]` = 16 个。`"+f"` 读改写约束让 accumulator 从头到尾待在原寄存器里——这就是"常驻"在指令层的实现。生产 kernel 最烧脑的部分在 ldmatrix 的*地址计算*:swizzle 布局下每个 lane 的行地址要做 XOR 变换,教学版用 padding 绕开了它。
 
 ### 6.6 Epilogue：重排与写回
 

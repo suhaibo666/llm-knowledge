@@ -70,11 +70,11 @@ flowchart LR
 
 ### 3.2 Credit 的粒度
 
-把 episode return \(R\) 广播到所有 policy token 是最简单 baseline：
+把 episode return $R$ 广播到所有 policy token 是最简单 baseline：
 
-\[
+$$
 A_{k,t}=R-b(x)
-\]
+$$
 
 但它会把早期探索、错误工具调用、纠错 turn 和最终答案视为同等因果贡献。
 
@@ -84,7 +84,7 @@ A_{k,t}=R-b(x)
 
 ## 4. Group barrier 与 single-rollout
 
-Agentic workload 的完成时间重尾：一个 trajectory 可能 30 秒结束，另一个需要十几分钟和多个 sandbox。若 advantage 依赖同 prompt 的 \(G\) 个样本，最快的 \(G-1\) 个也必须等最后一个。
+Agentic workload 的完成时间重尾：一个 trajectory 可能 30 秒结束，另一个需要十几分钟和多个 sandbox。若 advantage 依赖同 prompt 的 $G$ 个样本，最快的 $G-1$ 个也必须等最后一个。
 
 有三种不同解法：
 
@@ -96,7 +96,7 @@ Agentic workload 的完成时间重尾：一个 trajectory 可能 30 秒结束�
 
 [SAO v1](https://arxiv.org/abs/2607.07508v1) §3 选择第三条：单 rollout、value model、双侧 token mask。它说明 Agentic RL 会反向改变 optimizer，但不意味着所有 agent 任务都应放弃 group comparison。
 
-K3 选择第二条的一个具体版本：\(N\times K\) 活跃轨迹完成到 \(\lambda NK\) 后暂停其余长尾，下轮优先恢复；但同一 prompt 的 \(K\) 条 response 仍需全部完成后才送优化。因此 partial rollout 解决全局 phase 的 straggler，不取消 \(K\)-response completion/dispatch boundary，也不等同 fully async；报告没有据此公开所有任务的 advantage estimator（Kimi K3 Technical Report §4.1.2，p.13）。
+K3 选择第二条的一个具体版本：$N\times K$ 活跃轨迹完成到 $\lambda NK$ 后暂停其余长尾，下轮优先恢复；但同一 prompt 的 $K$ 条 response 仍需全部完成后才送优化。因此 partial rollout 解决全局 phase 的 straggler，不取消 $K$-response completion/dispatch boundary，也不等同 fully async；报告没有据此公开所有任务的 advantage estimator（Kimi K3 Technical Report §4.1.2，p.13）。
 
 ## 5. Coding RL 的额外状态
 

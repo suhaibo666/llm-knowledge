@@ -59,9 +59,9 @@ Tensor值。
 
 对浮点Tensor通常使用：
 
-\[
+$$
 |x-y| \le \text{atol} + \text{rtol}\cdot |y|
-\]
+$$
 
 但容差应按dtype、算子数值性质和业务误差预算定义：
 
@@ -269,12 +269,12 @@ numeric check helper设置torch/Python/NumPy seed，并请求deterministic algor
 
 ## 11. 复杂度与预算
 
-若有 \(M\) 个输入类、\(S\) 个状态组合、重复 \(R\) 次，每次含forward/backward/optimizer
-成本 \(T\)：
+若有 $M$ 个输入类、$S$ 个状态组合、重复 $R$ 次，每次含forward/backward/optimizer
+成本 $T$：
 
-\[
+$$
 T_{\text{validation}}=O(MSRT)
-\]
+$$
 
 完整笛卡尔积通常不可行，应基于风险做pairwise/边界覆盖，并为alias、mutation、distributed
 等高风险机制保留专门用例。CI保留短而稳定的契约集，离线回归运行更广矩阵。

@@ -182,7 +182,7 @@ K3 没有把 partial rollout 换成一套完全异步算法：它仍按迭代和
 | RL 主线 | 在线镜像下降变体 | 九专家 RL → MOPD | GRPO | 未公开 |
 | 最大上下文 | 128K | 1M | 128K | 未公开 |
 | 多模态 | ✅ | ✅ | ❌ | ❌ |
-| Partial Rollout | ✅ | ✅，跨迭代续跑但保留 \(K\)-response completion/dispatch boundary | ❌ | 未公开 |
+| Partial Rollout | ✅ | ✅，跨迭代续跑但保留 $K$-response completion/dispatch boundary | ❌ | 未公开 |
 | 推理预算档 | 未统一为产品档 | low / high / max | 未公开 | 未公开 |
 
 ---

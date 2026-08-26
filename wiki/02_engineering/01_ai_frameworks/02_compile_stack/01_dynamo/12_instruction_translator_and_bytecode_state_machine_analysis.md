@@ -211,11 +211,11 @@ Source，却不是 Tensor 算子。
 `ReturnValueOp`/`YieldValueOp`结束循环，观察到的 Python 异常进入符号异常处理
 （`torch/_dynamo/symbolic_convert.py:1717-1728`）。所以这里的“状态机”不是比喻：
 
-\[
+$$
 (\mathrm{IP},\ stack,\ locals,\ blocks,\ exceptions,\ output)
 \xrightarrow{\mathrm{opcode}}
 (\mathrm{IP}',\ stack',\ locals',\ blocks',\ exceptions',\ output')
-\]
+$$
 
 ### 10.3 以 `CALL`为例看栈协议怎样落到图
 
@@ -265,19 +265,19 @@ frame级状态。
 
 令：
 
-- \(B\)：被处理字节码数，包括内联 body；
-- \(R\)：restart次数；
-- \(V\)：跟踪值/容器结构规模；
-- \(G\)：生成 FX nodes。
+- $B$：被处理字节码数，包括内联 body；
+- $R$：restart次数；
+- $V$：跟踪值/容器结构规模；
+- $G$：生成 FX nodes。
 
-理想单次符号执行约为 \(O(B+V+G)\)。有 speculation restart时上界近似：
+理想单次符号执行约为 $O(B+V+G)$。有 speculation restart时上界近似：
 
-\[
+$$
 O\left(\sum_{r=1}^{R+1}(B_r+V_r+G_r)\right)
 \text{backend compile}
 \text{guard build}
 \text{bytecode transform}
-\]
+$$
 
 若同一长前缀多次重跑，捕获成本会高于线性单遍。VariableTracker缓存、source去重和
 speculation log用于降低重复工作与保证决策一致。

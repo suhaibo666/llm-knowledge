@@ -8,6 +8,19 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-26：全库公式规范清零 + 修复 check_math 两处误报 + README 索引重写
+
+**Type**: Corpus-wide Math Normalization + Checker Bug Fix + Entry-point Rewrite
+
+- 全库 409 页 `check_math` 错误从 **910 → 0**（warning 仍有 464 条，本轮不在范围内）。
+- **744 处真实违规**按 `.claude/skills/writing-obsidian-math/SKILL.md` 的唯一约定改写：646 处行内 `\(...\)` → `$...$`，98 处独占整行的 `\[` / `\]` → `$$`。转换只作用于 checker 实际检查的区域（跳过围栏代码块与行内代码），`ig(`、`\left(` 等命令不受影响。
+- **17 处并非数学**：`List\[str\]`、`A\[t\]`、`\[B,H,N,N\]`、`a\[4\]\[4\]`、`W\[:, i·h\]` 以及 mindformers 的步骤标号 `\[B\]/\[C\]/\[D\]/\[E\]` 都是 Markdown 转义的**字面方括号**，改为行内代码而非公式（直接去转义会让 `[C][D]` 变成 Markdown 引用式链接）。
+- **修复 `tools/check_math.py` 两处误报**（内容本身正确，是检查器判错）：① `LEGACY_DELIMITER_RE` 把 `aligned`/`cases` 里合法的行距 `\[2pt]` 当成 `\[` 定界符——改为跳过成对转义反斜杠的扫描器；② 货币启发式把 `$4.2 	imes 10^{-4}$` 当作金额，导致所有"以数字开头的行内公式"被报为 `$` 未配对——改为只在其后没有构成公式的闭合 `$`（或下一个 `$` 同样是金额）时才判为货币。两处均保持既有 11 条单测通过。
+- **修复 `10_llm_initiliaze_analysis.md` 的历史性破坏**：该页 23 行显示公式此前被某次 Markdown 化处理吃掉了控制字符（`\(`→`$`、`\!`→`!`、`\,`→`,`、`\;`→`;`、`&`→`|`、`\\`→`\`、`_`→`*`），大部分 checker 看不出来但渲染是错的；已逐块还原，`\mathcal{N}(0,\sigma^2)` 这类真列表逗号保持不变。
+- README 重写为可用入口：新增 **wiki 二级目录概览**（13 个二级目录 + 篇数 + 一句话职责 + 各域 index 链接）与 **核心文章索引**（按库内入链次数客观挑选 22 篇，GitHub 上可直接点进原始文档），并补上质量门禁命令清单。55 条链接全部校验可达。
+
+---
+
 ## 2026-08-26：新增 vLLM 请求全链路导览页并归档其离线交互图
 
 **Type**: Source Ingestion + Cross-domain Cross-reference

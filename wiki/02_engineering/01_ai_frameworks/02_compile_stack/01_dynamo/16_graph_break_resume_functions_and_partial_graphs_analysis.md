@@ -186,10 +186,10 @@ fullgraph/one_graph模式下，unsupported不能转成partial graph；原原因�
 
 ## 12. 复杂度
 
-设有 \(P\) 个compiled regions，break \(P-1\) 次，第 \(j\) 个break的live state为 \(L_j\)：
+设有 $P$ 个compiled regions，break $P-1$ 次，第 $j$ 个break的live state为 $L_j$：
 
-- graph compile成本为 \(\sum_j K(G_j)\)；
-- resume codegen/参数传递约为 \(\sum_j O(L_j)\)；
+- graph compile成本为 $\sum_j K(G_j)$；
+- resume codegen/参数传递约为 $\sum_j O(L_j)$；
 - runtime多出region call、Python transition和guard开销；
 - resume cache可复用相同恢复形态，miss时才生成；
 - 频繁break可能降低图融合范围并显著增加launch/wrapper overhead。

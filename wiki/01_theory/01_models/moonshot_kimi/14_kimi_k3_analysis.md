@@ -89,7 +89,7 @@ K3 的所有结果都使用 `reasoning effort=max`、`temperature=1.0`、`top-p=
 
 后训练则明确为 SFT → 三领域 × 三 effort 的九个 RL experts → MOPD，并公开 partial rollout、reasoning budget、Agentic GRM、white-box environments、MXFP4/MXFP8 QAT、draft model 和 1M Agentic RL Infra（报告 §4.1–4.2，pp.12–16；§5.3，pp.21–22；Appendix F，pp.46–47）。完整机制统一放在 [[24_kimi_k3_posttraining_case_study_analysis|D12]]，避免在模型目录再形成一套割裂的 RL 资料。
 
-仍未披露的关键项包括：RL 的 \(N,K,\lambda,\tau,\sigma,R_{\max}\)、总 RL FLOPs、逐 token stale-data regularizer 的完整公式、GRM 训练细节、MOPD 隔离消融、训练/rollout/weight-sync 源码，以及若干 Infra 指标的硬件和分位数条件。现有 `[推断]` 必须逐项对照正式报告；报告仍未给出的内容不能自动升级为事实。
+仍未披露的关键项包括：RL 的 $N,K,\lambda,\tau,\sigma,R_{\max}$、总 RL FLOPs、逐 token stale-data regularizer 的完整公式、GRM 训练细节、MOPD 隔离消融、训练/rollout/weight-sync 源码，以及若干 Infra 指标的硬件和分位数条件。现有 `[推断]` 必须逐项对照正式报告；报告仍未给出的内容不能自动升级为事实。
 
 ## Related Pages
 

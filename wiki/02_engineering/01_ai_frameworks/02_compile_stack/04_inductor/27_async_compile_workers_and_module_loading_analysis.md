@@ -170,10 +170,10 @@ sequenceDiagram
 
 ## 12. 复杂度
 
-若有 \(K\) 个independent kernels，单核编译时间 \(t_i\)，\(P\) workers：
+若有 $K$ 个independent kernels，单核编译时间 $t_i$，$P$ workers：
 
-- 串行约为 \(\sum_i t_i\)；
-- 理想并行下界接近 \(\max(\max_i t_i,\sum_i t_i/P)\)；
+- 串行约为 $\sum_i t_i$；
+- 理想并行下界接近 $\max(\max_i t_i,\sum_i t_i/P)$；
 - 实际还加进程startup、serialization、I/O、load和等待；
 - 相同source future hit可近似省去新编译；
 - module load至少与source/import工作相关；

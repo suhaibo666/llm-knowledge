@@ -318,19 +318,19 @@ fresh-cache、debug context，才调用 `_compile_fx_inner`
 
 ## 13. 复杂度
 
-设Dynamo region有 \(G\) 个nodes，joint图 \(J\)，partition后 \(F,B\)，backend各阶段成本
-为 \(K(F),K(B)\)：
+设Dynamo region有 $G$ 个nodes，joint图 $J$，partition后 $F,B$，backend各阶段成本
+为 $K(F),K(B)$：
 
-\[
+$$
 T_{\text{compile}}
 =T_{\text{wrap}}
 +T_{\text{AOT}}(G,J)
 +T_{\text{partition}}(J)
 +K(F)
 +\mathbf{1}_{\text{bw compiled now}}K(B)
-\]
+$$
 
-lazy backward把 \(K(B)\)从first forward调用移动到first backward调用，不消灭它。若cache
+lazy backward把 $K(B)$从first forward调用移动到first backward调用，不消灭它。若cache
 命中，公式中对应部分变为key构造、lookup、deserialize/load和post-compile成本。
 
 ## 14. 常见误解
@@ -356,7 +356,7 @@ lazy backward把 \(K(B)\)从first forward调用移动到first backward调用，�
 2. **函数化→优化→inplace化**:AOTAutograd先把inplace操作函数化,所有FX Passes和Scheduler
    假设函数式IR以简化分析,Post-grad最后的`reinplace`pass才恢复安全的inplace——顺序不可
    颠倒,因为函数式假设一旦被提前打破,后续优化就要重新处理别名。
-3. **延迟决策**:能延迟的优化决策会被推到最合适的阶段——lazy backward把\(K(B)\)从
+3. **延迟决策**:能延迟的优化决策会被推到最合适的阶段——lazy backward把$K(B)$从
    first-forward调用推迟到first-backward调用(本页§4);算子后端选择延迟到CodeGen阶段
    autotuning;kernel tiling延迟到CodeGen阶段依据硬件特性决定。延迟不是偷懒,而是让决策
    在信息最充分时做出。

@@ -23,27 +23,27 @@
 
 SAO 的 single-rollout 是另一组偏差—方差—调度折衷，并没有证明 group rollout 普遍无效。它用 value model 和更严格的 token mask 补回单样本高方差；因此“一个样本”不是免费升级。
 
-Kimi K3 又给出一个工业反例：它仍为每个 prompt 采 \(K\) 条 completion，并在同题 \(K\) 条全部完成后才送优化；partial rollout 打破的是全局 \(N\times K\) 的长尾等待，而不是 \(K\)-response completion/dispatch boundary。报告没有重述所有任务的 advantage estimator，不能把这条调度边界扩大为通用统计公式（Kimi K3 Technical Report §4.1.2，p.13；详见 [[24_kimi_k3_posttraining_case_study_analysis|D12]]）。
+Kimi K3 又给出一个工业反例：它仍为每个 prompt 采 $K$ 条 completion，并在同题 $K$ 条全部完成后才送优化；partial rollout 打破的是全局 $N\times K$ 的长尾等待，而不是 $K$-response completion/dispatch boundary。报告没有重述所有任务的 advantage estimator，不能把这条调度边界扩大为通用统计公式（Kimi K3 Technical Report §4.1.2，p.13；详见 [[24_kimi_k3_posttraining_case_study_analysis|D12]]）。
 
 ## 2. 统一符号
 
-对 prompt \(x\)，采样 response \(y_i=(y_{i,1},\ldots,y_{i,T_i})\)：
+对 prompt $x$，采样 response $y_i=(y_{i,1},\ldots,y_{i,T_i})$：
 
-- \(\mu\)：真正生成 token 的 inference/behavior policy；
-- \(\pi_{\text{old}}\)：近端更新锚点；
-- \(\pi_\theta\)：当前训练 policy；
-- \(\pi_{\text{ref}}\)：KL 参考 policy；
-- \(A_i\) 或 \(A_{i,t}\)：sequence 或 token credit；
-- \(r_{i,t}=\pi_\theta(y_{i,t}\mid s_{i,t})/\pi_{\text{old}}(y_{i,t}\mid s_{i,t})\)。
+- $\mu$：真正生成 token 的 inference/behavior policy；
+- $\pi_{\text{old}}$：近端更新锚点；
+- $\pi_\theta$：当前训练 policy；
+- $\pi_{\text{ref}}$：KL 参考 policy；
+- $A_i$ 或 $A_{i,t}$：sequence 或 token credit；
+- $r_{i,t}=\pi_\theta(y_{i,t}\mid s_{i,t})/\pi_{\text{old}}(y_{i,t}\mid s_{i,t})$。
 
 基础 clipped surrogate 为：
 
-\[
+$$
 L=\mathbb E_{i,t}\left[
 \min\left(r_{i,t}A_{i,t},
 \operatorname{clip}(r_{i,t},1-\epsilon_l,1+\epsilon_h)A_{i,t}\right)
 \right].
-\]
+$$
 
 公式看起来相近，实际语义由“谁生成样本、ratio 分母是谁、在哪个维度归一化和聚合”决定。
 
@@ -61,12 +61,12 @@ flowchart LR
 
 ### 3.1 GRPO：critic-free 不等于 assumption-free
 
-[DeepSeekMath v3](https://arxiv.org/abs/2402.03300v3) §4.1.1、Eq. 21 与 Algorithm 1 给出的核心是：对同一问题采样 \(G\) 个输出，以组内 reward 的均值和标准差估计 advantage，并取消单独 value model。
+[DeepSeekMath v3](https://arxiv.org/abs/2402.03300v3) §4.1.1、Eq. 21 与 Algorithm 1 给出的核心是：对同一问题采样 $G$ 个输出，以组内 reward 的均值和标准差估计 advantage，并取消单独 value model。
 
-\[
+$$
 \hat A_i=\frac{R_i-\operatorname{mean}(R_1,\ldots,R_G)}
 {\operatorname{std}(R_1,\ldots,R_G)+\delta}.
-\]
+$$
 
 它带来两个系统约束：
 
@@ -81,7 +81,7 @@ flowchart LR
 
 | 机制 | 真正改变 | Infra 要求 | 风险 |
 |---|---|---|---|
-| Clip-Higher | \(\epsilon_l\) 与 \(\epsilon_h\) 解耦 | 记录正负 advantage 与 clip fraction | 增大上界并非总能防 entropy collapse |
+| Clip-Higher | $\epsilon_l$ 与 $\epsilon_h$ 解耦 | 记录正负 advantage 与 clip fraction | 增大上界并非总能防 entropy collapse |
 | Dynamic Sampling | 丢弃全同 reward group 并补采 | buffer、补采预算、group 完整性 | 训练分布已被可学习性过滤 |
 | Token-Level Loss | 由 sample mean 改为有效 token 全局聚合 | 精确 response mask 与 token count | 长 response 权重上升 |
 | Overlong Shaping | 在硬截断前增加平滑惩罚 | 保存 finish reason 与真实长度 | 可能奖励“短而未完成” |
@@ -102,14 +102,14 @@ flowchart LR
 
 [GSPO v2](https://arxiv.org/abs/2507.18071v2) §4.1 定义长度归一化的 sequence ratio：
 
-\[
+$$
 s_i(\theta)=
 \exp\left[
 \frac{1}{T_i}\sum_t
 \log\frac{\pi_\theta(y_{i,t}\mid s_{i,t})}
 {\pi_{\text{old}}(y_{i,t}\mid s_{i,t})}
 \right].
-\]
+$$
 
 随后整条 response 共同接受或拒绝 clipping。其主张不是“token 不重要”，而是 sequence reward、sequence importance weight 与 sequence clipping 应保持同一统计语义。§4.3 的 GSPO-token 说明，在给同一 response 的 token 相同 advantage 和 clip mask 时，可保留 token 计算接口。
 
@@ -134,7 +134,7 @@ K3 把“优化一个 policy”和“合并多个 specialist”拆成两个问�
 
 | 方法 | 优化单位 | advantage | ratio/clip | 采样结构 | 关键系统不变量 |
 |---|---|---|---|---|---|
-| GRPO | token loss，group baseline | group-relative sequence reward | token ratio | 每 prompt \(G\) 条 | group 不可破坏 |
+| GRPO | token loss，group baseline | group-relative sequence reward | token ratio | 每 prompt $G$ 条 | group 不可破坏 |
 | DAPO | 全局有效 token | group-relative | 非对称 token clip | 动态补齐有效 group | 过滤后 batch 仍满足目标规模 |
 | Dr. GRPO | token sum 配固定 divisor | 去 std 或无偏 baseline | PPO 类 | group | reducer 不引入长度权重 |
 | GSPO | sequence；可 token 化实现 | group-relative sequence reward | sequence ratio/clip | group | 整条 response 同一 clip 决策 |

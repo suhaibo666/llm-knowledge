@@ -208,26 +208,26 @@ content-addressed write需要atomic rename/锁；reader遇到不完整或丢失a
 
 总冷启动：
 
-\[
+$$
 T_{\text{cold}}
 =T_{\text{capture}}+T_{\text{AOT}}+T_{\text{lower/codegen}}
 +T_{\text{native}}+T_{\text{load}}+T_{\text{first-runtime}}
-\]
+$$
 
 磁盘hit：
 
-\[
+$$
 T_{\text{disk-hit}}
 =T_{\text{key/guard}}+T_{\text{deserialize}}+T_{\text{module-load}}
 +T_{\text{post-compile}}+T_{\text{first-runtime}}
-\]
+$$
 
 稳态：
 
-\[
+$$
 T_{\text{steady}}
 =T_{\text{Dynamo-guards}}+T_{\text{wrapper}}+T_{\text{kernels/replay}}
-\]
+$$
 
 容量至少包括metadata、source、binary、autotune记录和runtime pools；disk bytes与device
 reserved memory必须分开统计。

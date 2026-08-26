@@ -96,6 +96,67 @@ def _looks_like_table_row(line: str) -> bool:
     return stripped.startswith("|") and stripped.count("|") >= 2
 
 
+CURRENCY_TAIL_RE = re.compile(r"[\s|,.;:)\]，。、；：）]*\Z")
+
+
+def _next_single_dollar(text: str, start: int) -> int:
+    """Offset of the next unescaped single ``$`` at or after ``start``, else -1."""
+
+    index = start
+    while index < len(text):
+        if text[index] != "$" or (index > 0 and text[index - 1] == "\\"):
+            index += 1
+            continue
+        if index + 1 < len(text) and text[index + 1] == "$":
+            index += 2
+            continue
+        return index
+    return -1
+
+
+def _is_currency_amount(text: str, start: int, end: int) -> bool:
+    """Decide whether ``text[start:end]`` is money rather than inline math.
+
+    ``$5.576M`` in a cost table is currency.  ``$4.2 \times 10^{-4}$`` is inline
+    math that merely begins with a number: it is closed by a later ``$`` and the
+    text in between carries mathematical content, not just separators.
+    """
+
+    if end < len(text) and text[end] == "$":
+        return False
+    closer = _next_single_dollar(text, end)
+    if closer < 0:
+        return True
+    if CURRENCY_RE.match(text, closer):
+        # a second amount on the same row (e.g. a cost table): both are money
+        return True
+    return CURRENCY_TAIL_RE.match(text, end, closer) is not None
+
+
+def _legacy_delimiter_matches(text: str) -> list[tuple[int, str]]:
+    r"""Return (offset, token) for real legacy delimiters.
+
+    A backslash that is itself escaped (``\\``) does not start a delimiter, so
+    LaTeX row spacing such as ``\\[2pt]`` inside ``aligned``/``cases`` is not a
+    legacy ``\[`` display opener.
+    """
+
+    found: list[tuple[int, str]] = []
+    index = 0
+    while index < len(text):
+        if text[index] != "\\":
+            index += 1
+            continue
+        nxt = text[index + 1] if index + 1 < len(text) else ""
+        if nxt == "\\":
+            index += 2
+            continue
+        if nxt in "()[]":
+            found.append((index, "\\" + nxt))
+        index += 2
+    return found
+
+
 def _single_dollar_positions(text: str) -> list[int]:
     positions: list[int] = []
     index = 0
@@ -108,9 +169,7 @@ def _single_dollar_positions(text: str) -> list[int]:
             continue
 
         currency = CURRENCY_RE.match(text, index)
-        if currency and (
-            currency.end() >= len(text) or text[currency.end()] != "$"
-        ):
+        if currency and _is_currency_amount(text, index, currency.end()):
             index = currency.end()
             continue
 
@@ -297,14 +356,14 @@ def check_text(text: str, path: str = "<memory>") -> list[Diagnostic]:
             continue
 
         line = _mask_inline_code(raw_line)
-        for match in LEGACY_DELIMITER_RE.finditer(line):
+        for _offset, token in _legacy_delimiter_matches(line):
             diagnostics.append(
                 Diagnostic(
                     "error",
                     "MATH001",
                     path,
                     line_number,
-                    f"use Obsidian dollar delimiters instead of '{match.group(0)}'",
+                    f"use Obsidian dollar delimiters instead of '{token}'",
                 )
             )
 

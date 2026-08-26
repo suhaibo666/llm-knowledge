@@ -206,12 +206,12 @@ Dynamo不靠一次全局topological sort恢复Python语义。主要依赖：
 
 设：
 
-- \(G\)：FX nodes；
-- \(S\)：记录的side effects；
-- \(L\)：live stack/locals规模；
-- \(I\)：生成bytecode数。
+- $G$：FX nodes；
+- $S$：记录的side effects；
+- $L$：live stack/locals规模；
+- $I$：生成bytecode数。
 
-典型 frontend emission为 \(O(G+S+L+I)\)。FX lint/cleanup通常至少线性扫描图；
+典型 frontend emission为 $O(G+S+L+I)$。FX lint/cleanup通常至少线性扫描图；
 side-effect pruning随tracked object/effect图增长；stack/locals codegen在graph break多且
 live state大时会显著膨胀。backend编译成本另计，通常高于这部分。
 

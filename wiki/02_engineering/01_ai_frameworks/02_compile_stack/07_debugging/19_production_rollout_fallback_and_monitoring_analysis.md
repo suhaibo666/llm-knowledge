@@ -204,13 +204,13 @@ entries，但累计上限仍是全局安全cap
 
 ## 11. 容量与复杂度
 
-设模型版本 \(M\)、设备类 \(D\)、specialization \(S\)、部署副本 \(R\)：
+设模型版本 $M$、设备类 $D$、specialization $S$、部署副本 $R$：
 
-\[
+$$
 |\text{artifact states}|=O(MDS)
-\]
+$$
 
-若每副本独立持有runtime module/CUDAGraph pool，运行时内存近似再乘 \(R\)；remote cache可减少
+若每副本独立持有runtime module/CUDAGraph pool，运行时内存近似再乘 $R$；remote cache可减少
 重复编译与disk内容，但不能共享进程内live handles。
 
 监控label也要控制基数；不要直接把完整guard字符串、shape或stack作为无限基数label，应作为

@@ -114,7 +114,7 @@ continuous batching 优化 inference engine 的 token 调度；dynamic sampling 
 - sequence 完成后才能确定 finish reason、reward 和有效 token；
 - partial rollout 若提前消费，必须定义 credit 与版本边界。
 
-K3 把两层完成条件明确分开：整个活跃工作集达到 \(\lambda NK\) 后即可暂停全局长尾并切换 phase；但某个 prompt 的 \(K\) 条 response 全部完成后，该 group 才送 policy optimization。因此 continuous batching 可以拆散执行顺序，partial rollout 可以跨 iteration，`prompt_id/group_id` 的 completion/dispatch identity 仍不能丢；报告没有据此重述所有任务的 advantage estimator（Kimi K3 Technical Report §4.1.2，p.13）。
+K3 把两层完成条件明确分开：整个活跃工作集达到 $\lambda NK$ 后即可暂停全局长尾并切换 phase；但某个 prompt 的 $K$ 条 response 全部完成后，该 group 才送 policy optimization。因此 continuous batching 可以拆散执行顺序，partial rollout 可以跨 iteration，`prompt_id/group_id` 的 completion/dispatch identity 仍不能丢；报告没有据此重述所有任务的 advantage estimator（Kimi K3 Technical Report §4.1.2，p.13）。
 
 优化长尾的顺序应是：
 
