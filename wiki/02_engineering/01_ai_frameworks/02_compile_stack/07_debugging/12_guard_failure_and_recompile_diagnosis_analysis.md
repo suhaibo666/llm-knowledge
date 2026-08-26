@@ -173,8 +173,8 @@ verbose诊断会重新获取失败细节，成本高于正常first-failure路径
 
 $$
 S \lesssim
-|\text{shape classes}|\cdot|\text{dtype/device}|
-\cdot|\text{Python states}|\cdot|\text{dispatch states}|
+\lvert \text{shape classes}\rvert\cdot\lvert \text{dtype/device}\rvert
+\cdot\lvert \text{Python states}\rvert\cdot\lvert \text{dispatch states}\rvert
 $$
 
 真正目标是缩小有效specialization空间，而不是只优化一次guard执行。

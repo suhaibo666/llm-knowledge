@@ -421,7 +421,7 @@ $$
 设有 $E$ 个专家，每个专家返回向量 $e_\alpha$（方差 $\sigma_e^2$），若路由器对某 token 选择 top-$k$ 专家并按权重 $w_\alpha$ 合并，输出为
 
 $$
-o = \sum_{\alpha\in\mathcal{S}} w_\alpha e_\alpha,\qquad \mathcal{S}\ \text{为被选专家集合},\ |\mathcal{S}|=k.
+o = \sum_{\alpha\in\mathcal{S}} w_\alpha e_\alpha,\qquad \mathcal{S}\ \text{为被选专家集合},\ \lvert \mathcal{S}\rvert=k.
 $$
 
 若 $e_\alpha$ 相互独立且均值 0，则

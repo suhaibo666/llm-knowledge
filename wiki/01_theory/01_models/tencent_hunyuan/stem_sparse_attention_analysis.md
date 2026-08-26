@@ -25,11 +25,16 @@
 
 **机制(Eq. 3)**: 每个 query 位置 i 的 top-k 预算线性插值衰减
 
-$$k(i)=\Big\lceil k_{start}-\frac{k_{start}(1-\mu)}{N}\cdot i\Big\rceil,\quad k_{end}=\mu\cdot k_{start},\ \mu\in(0,1]$$
+$$
+\begin{aligned}
+k(i)
+&=\Big\lceil k_{\mathrm{start}}-\frac{k_{\mathrm{start}}(1-\mu)}{N}\cdot i\Big\rceil,\quad k_{\mathrm{end}}=\mu\cdot k_{\mathrm{start}},\ \mu\in(0,1]
+\end{aligned}
+$$
 
 即**靠前的 query 行近乎稠密计算**(保住早期输出 → 下一层早期 Value 的保真度),越靠后剪得越狠。相对均匀 top-k 的算力节省有闭式(Eq. 4)。经验取 **μ=0.7**:消融(Fig. 5 左)显示 μ=0.7 与均匀预算(μ=1.0)精度几乎相同(31.64 vs 31.67, Qwen3)但算力显著更省;μ<0.6 开始伤尾部局部上下文。
 
-**为什么不是均匀 top-k(所有现有方法的默认)**: 等预算对照消融(Table 5,uniform 取 $k_{uni}=0.85k_{start}$ 保证总算力相同)——Qwen3-8B 上 uniform 29.41 → +TPD **31.43**(+2.02),Llama-3.1-8B 上 37.48 → **40.85**(+3.37)。同样的钱,花在头部就是更值。
+**为什么不是均匀 top-k(所有现有方法的默认)**: 等预算对照消融(Table 5,uniform 取 $k_{\mathrm{uni}}=0.85k_{\mathrm{start}}$ 保证总算力相同)——Qwen3-8B 上 uniform 29.41 → +TPD **31.43**(+2.02),Llama-3.1-8B 上 37.48 → **40.85**(+3.37)。同样的钱,花在头部就是更值。
 
 ## 三、机制二: OAM(Output-Aware Metric)—— 选块不只看分数,还看 Value 模长
 
@@ -37,7 +42,12 @@ $$k(i)=\Big\lceil k_{start}-\frac{k_{start}(1-\mu)}{N}\cdot i\Big\rceil,\quad k_
 
 **推导(Eq. 5-6)**: 最小化稀疏-稠密输出重构误差 $\min_S\|\sum_{j\notin S}P_{i,j}V_j\|$ → 保留 $\exp(Q_iK_j^T/\sqrt d)\cdot\|V_j\|_2$ 最大的 token → 取对数保序化,得
 
-$$M_{i,j}=\underbrace{Q_iK_j^T}_{\text{路由相关性}}+\ \beta\cdot\underbrace{\max(0,\log\|V_j\|_2)}_{\text{信号模长}}\qquad(\text{Eq. 7},\ \beta=0.2)$$
+$$
+\begin{aligned}
+M_{i,j}
+&=\underbrace{Q_iK_j^T}_{\text{路由相关性}}+\ \beta\cdot\underbrace{\max(0,\log\|V_j\|_2)}_{\text{信号模长}}\qquad(\text{Eq. 7},\ \beta=0.2)
+\end{aligned}
+$$
 
 max(0,·) 截断防止小模长项反噬路由语义;β 消融(Fig. 5 右)单峰,峰值 0.2,>0.3 后模长噪声开始压过语义。等预算下 OAM 相对 SAM 的逐层重构误差与 head-logits 损失均更低(Table 1: head logits 0.3126 vs 0.3368)。
 

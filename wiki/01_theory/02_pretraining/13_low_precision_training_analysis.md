@@ -62,11 +62,18 @@ graph TD
 
 传统混合精度的显存占用：
 
-$$M_{\text{traditional}} = \underbrace{4N}_{\text{FP32 master}} + \underbrace{2N}_{\text{BF16 copy}} = 6N \text{ bytes}$$
+$$
+M_{\text{traditional}} = \underbrace{4N}_{\text{FP32 master}} + \underbrace{2N}_{\text{BF16 copy}} = 6N \text{ bytes}
+$$
 
 FP8 Primary Weights 直接将主权重以 FP8 格式保存：
 
-$$M_{\text{fp8\_primary}} = \underbrace{4N}_{\text{FP32 optimizer states}} + \underbrace{N}_{\text{FP8 weight}} = 5N \text{ bytes}$$
+$$
+\begin{aligned}
+M_{\text{fp8\_primary}}
+&= \underbrace{4N}_{\text{FP32 optimizer states}} + \underbrace{N}_{\text{FP8 weight}} = 5N \text{ bytes}
+\end{aligned}
+$$
 
 **节省约 17% 的模型参数显存**。前向时直接使用 FP8 weight（或配合更高精度 buffer），省去 BF16 副本。
 

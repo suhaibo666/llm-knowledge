@@ -29,13 +29,17 @@ MLP 是 $Y = \text{GeLU}(XA)\,B$。Megatron 的切法（[Megatron-LM, 1909.08053
 
 **第一层 $A$ 按列切** $A=[A_1, A_2]$：
 
-$$XA = X[A_1, A_2] = [XA_1,\; XA_2]$$
+$$
+XA = X[A_1, A_2] = [XA_1,\; XA_2]
+$$
 
 每卡拿一个 $A_i$，独立算出 $XA_i$（输出的一部分列）。因为 **GeLU 是逐元素的**，$\text{GeLU}([XA_1,XA_2]) = [\text{GeLU}(XA_1), \text{GeLU}(XA_2)]$——**列切让非线性天然无需通信**，这是选「先列切」的全部理由。
 
 **第二层 $B$ 按行切** $B=[B_1; B_2]$：
 
-$$Y = \text{GeLU}(XA)B = \text{GeLU}(XA_1)B_1 + \text{GeLU}(XA_2)B_2$$
+$$
+Y = \text{GeLU}(XA)B = \text{GeLU}(XA_1)B_1 + \text{GeLU}(XA_2)B_2
+$$
 
 每卡算一个部分积 $\text{GeLU}(XA_i)B_i$，二者**相加**才是最终 $Y$ → 这里需要一次 **all-reduce**。整个 MLP 块：**前向 1 次 all-reduce，中间零通信**。
 
@@ -85,7 +89,13 @@ Megatron 把通信抽象成两个共轭算子，插在 TP 区的入口和出口�
 
 **精妙之处在边界衔接**：TP 区需要**完整**激活（矩阵乘要看到整条序列的 hidden），SP 区只需**分片**激活。于是在两区边界，原本 TP 的一次 all-reduce 被**拆开**：
 
-$$\underbrace{\text{all-reduce}}_{\text{纯 TP}} \;=\; \underbrace{\text{reduce-scatter}}_{\text{TP}\to\text{SP 边界}} \;+\; \underbrace{\text{all-gather}}_{\text{SP}\to\text{TP 边界}}$$
+$$
+\begin{aligned}
+\underbrace{\text{all-reduce}}_{\text{纯 TP}} \;
+&=\; \underbrace{\text{reduce-scatter}}_{\text{TP}\to\text{SP 边界}} \; \\
+&\quad +\; \underbrace{\text{all-gather}}_{\text{SP}\to\text{TP 边界}}
+\end{aligned}
+$$
 
 这正是 [[10_collectives_analysis|分布式原语与通信代价模型]] 的核心恒等式在起作用。**总通信量与纯 TP 完全相同**（一次 all-reduce 的字节 = 一次 RS + 一次 AG），但换来了：**SP 区激活显存从 $B\cdot S\cdot d$ 降到 $B\cdot S\cdot d/N$**。所以 SP 是「**零额外通信换激活显存**」的白捡优化——因此实践中 **TP 几乎总是和 SP 一起开**。
 

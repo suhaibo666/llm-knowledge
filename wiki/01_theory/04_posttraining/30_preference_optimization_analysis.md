@@ -153,13 +153,25 @@ Based on **prospect theory** (Kahneman & Tversky, 1992): humans perceive gains a
 
 论文原式（arXiv:2402.01306 §4 Eq. 8，`raw/01_theory/04_posttraining/KTO_Kahneman_Tversky_Optimization-2402.01306.md`）：
 
-$$L_{\text{KTO}}(\pi_\theta,\pi_{\text{ref}})=\mathbb{E}_{x,y\sim D}\big[\lambda_y-v(x,y)\big]$$
+$$
+L_{\text{KTO}}(\pi_\theta,\pi_{\text{ref}})=\mathbb{E}_{x,y\sim D}\big[\lambda_y-v(x,y)\big]
+$$
 
 其中
 
-$$r_\theta(x,y)=\log\frac{\pi_\theta(y\mid x)}{\pi_{\text{ref}}(y\mid x)},\qquad z_0=\mathrm{KL}\big(\pi_\theta(y'\mid x)\,\|\,\pi_{\text{ref}}(y'\mid x)\big)$$
+$$
+\begin{aligned}
+r_\theta(x,y)
+&=\log\frac{\pi_\theta(y\mid x)}{\pi_{\text{ref}}(y\mid x)},\qquad z_0=\mathrm{KL}\big(\pi_\theta(y'\mid x)\,\|\,\pi_{\text{ref}}(y'\mid x)\big)
+\end{aligned}
+$$
 
-$$v(x,y)=\begin{cases}\lambda_D\,\sigma\big(\beta\,(r_\theta(x,y)-z_0)\big) & y\sim y_{\text{desirable}}\mid x\\[4pt]\lambda_U\,\sigma\big(\beta\,(z_0-r_\theta(x,y))\big) & y\sim y_{\text{undesirable}}\mid x\end{cases}$$
+$$
+\begin{aligned}
+v(x,y)
+&=\begin{cases}\lambda_D\,\sigma\big(\beta\,(r_\theta(x,y)-z_0)\big) & y\sim y_{\text{desirable}}\mid x\\[4pt]\lambda_U\,\sigma\big(\beta\,(z_0-r_\theta(x,y))\big) & y\sim y_{\text{undesirable}}\mid x\end{cases}
+\end{aligned}
+$$
 
 要点：
 - `r_θ` 是隐式 reward（策略与参考策略的 log 比），`z_0` 是同 prompt 下的 KL 参考项，起 baseline 作用

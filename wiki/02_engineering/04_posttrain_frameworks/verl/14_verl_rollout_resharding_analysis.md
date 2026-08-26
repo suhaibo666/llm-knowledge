@@ -313,7 +313,9 @@ sequenceDiagram
 - **disaggregated**(两套卡):训练卡峰值 $\frac{P+O+G}{N}$,生成卡另算 $P+\text{KV}$,模型权重被存了**两份**。
 - **hybrid colocated**(本文):同一卡上,生成期把训练态 offload 到 CPU(`engine_workers.py:740`),训练期把生成权重 sleep level 2 释放(`vllm_async_server.py:974`),峰值近似
 
-$$\text{Peak} \approx \max\!\left(\frac{P+O+G}{N}\ ,\ P_{\text{bf16}}+\text{KV}\right)$$
+$$
+\text{Peak} \approx \max\!\left(\frac{P+O+G}{N}\ ,\ P_{\text{bf16}}+\text{KV}\right)
+$$
 
 而非两者相加。代价是每步一次 $P_{\text{bf16}}$ 量级的 IPC 搬运($14\text{GB}$,bf16 已减半),同卡近零带宽。
 

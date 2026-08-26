@@ -492,7 +492,7 @@
 
 **新增([[14_megatron_ep_analysis]] §③.3 下 4 个子小节)**:
 - **③.3.1 两级 dispatch 机制(源码)**:`get_dispatch_layout` 的双计数 `num_tokens_per_rdma_rank`(每 node→`inter_dispatch`/RDMA)+ `num_tokens_per_rank`(每 GPU→`intra_dispatch`/NVLink);双 buffer `num_rdma_bytes`/`num_nvl_bytes`(`fused_a2a.py:62/135/168`);asymmetric-domain forwarding 规则(跨 node 只发一次,落地 NVLink fan-out)。
-- **③.3.2 通信量公式**:逐 token 两级分解 $\text{RDMA}=|R(t)|M$、$\text{NVLink}=[\sum(g_n-1)+g_s]M$;聚合式 + IB 加速比 $\frac{k/P}{1-(1-1/P)^k}$;与 §2.4.1 标准 A2A `4·S·B·H·K·(E−1)/E²` 对齐。
+- **③.3.2 通信量公式**:逐 token 两级分解 $\text{RDMA}=\lvert R(t)\rvertM$、$\text{NVLink}=[\sum(g_n-1)+g_s]M$;聚合式 + IB 加速比 $\frac{k/P}{1-(1-1/P)^k}$;与 §2.4.1 标准 A2A `4·S·B·H·K·(E−1)/E²` 对齐。
 - **③.3.3 数值走查**:2 node×2 GPU、8 专家、EP=4、topk=4 逐字节例子(token X→{E1,E3,E5,E6}),标准 2M vs DeepEP 1M 跨节点对照,代入加速比 2.13×(topk8→4×)。
 - **③.3.4 all2allv 澄清**:标准 `MoEAlltoAllTokenDispatcher` 用 NCCL all2allv(`token_dispatcher.py:703`);DeepEP/HybridEP **非 collective**,是 `buffer.dispatch()`(`fused_a2a.py:160`)的 NVSHMEM 单边 RDMA(IBRC/IBGDA)+ permute 融合 + 两级 —— 语义是变长 A2A,实现非 all2allv,故能 node 级去冗余。
 

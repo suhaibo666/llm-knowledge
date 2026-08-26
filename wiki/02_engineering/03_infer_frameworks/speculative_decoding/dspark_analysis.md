@@ -54,7 +54,9 @@ flowchart LR
 
 论文把每生成 token 的平均延迟写成（p3, Eq.1）：
 
-$$L=\frac{T_{\text{draft}}+T_{\text{verify}}}{\tau}$$
+$$
+L=\frac{T_{\text{draft}}+T_{\text{verify}}}{\tau}
+$$
 
 其中 $\tau$＝每轮被接受 token 数（含 bonus），$T_{\text{draft}}/T_{\text{verify}}$＝草稿/验证一次前向的墙钟时间。于是**提速只有三个杆**（p3）：① 降 $T_{\text{draft}}$（画得快）；② 升 $\tau$（画得准，平均接受长度大）；③ 降**有效** $T_{\text{verify}}$（验得聪明，别在必拒 token 上浪费目标算力）。后文每个贡献都对应某个杆。
 
@@ -78,7 +80,9 @@ DSpark 的并行骨干**直接实例化为 DFlash**（p5, §3.1；DFlash = Chen 
 
 1. **目标上下文 KV 注入**：prefill 时取目标若干层 $\{l_1,\dots,l_m\}$ 隐状态，拼接投影成上下文特征（Eq.2）
 
-$$H_{\text{ctx}}=\mathrm{RMSNorm}\!\big(W_c[H^{(l_1)};\dots;H^{(l_m)}]\big),\qquad W_c\in\mathbb R^{d\times md}$$
+$$
+H_{\text{ctx}}=\mathrm{RMSNorm}\!\big(W_c[H^{(l_1)};\dots;H^{(l_m)}]\big),\qquad W_c\in\mathbb R^{d\times md}
+$$
 
    再沿序列维拼进**每个**草稿层的 K/V（Eq.3）：$K_i=[W_i^K H_{\text{ctx}};\,W_i^K H_d]$，$V_i=[W_i^V H_{\text{ctx}};\,W_i^V H_d]$。块内所有位置**双向**互注意 + 注意注入的目标上下文。代码对应 `common.py:52 extract_context_feature`（拼接）+ `modeling.py:241 self.fc`（即 $W_c$）+ `modeling.py:104-113`（K/V 拼接，`is_causal=False`），核对见 [[deepspec_codebase_analysis]] §3.2。
 2. **anchor + mask 输入**：草稿模型共享并**冻结**目标的 embedding 与 LM head，输入＝一个 anchor token 的嵌入 + $\gamma$ 个 mask token 嵌入，一次前向产出所有 mask 位的 logits。
@@ -100,13 +104,20 @@ $$H_{\text{ctx}}=\mathrm{RMSNorm}\!\big(W_c[H^{(l_1)};\dots;H^{(l_m)}]\big),\qqu
 
 **串行段（DSpark 的新增）**：给 base logits 补一个**前缀相关的转移偏置** $B_k(x_0,x_{<k},x_k)$。不做全局归一化能量模型，而是用自回归因式分解诱导一个**因果块分布**（p6, Eq.4）：
 
-$$P(X\mid x_0)=\prod_{k=1}^{\gamma}p_k(x_k\mid x_0,x_{<k}),\quad p_k(v\mid x_0,x_{<k})=\frac{\exp\!\big(U_k(v)+B_k(x_0,x_{<k},v)\big)}{\sum_{u\in\mathcal V}\exp\!\big(U_k(u)+B_k(x_0,x_{<k},u)\big)}$$
+$$
+\begin{aligned}
+P(X\mid x_0)
+&=\prod_{k=1}^{\gamma}p_k(x_k\mid x_0,x_{<k}),\quad p_k(v\mid x_0,x_{<k})=\frac{\exp\!\big(U_k(v)+B_k(x_0,x_{<k},v)\big)}{\sum_{u\in\mathcal V}\exp\!\big(U_k(u)+B_k(x_0,x_{<k},u)\big)}
+\end{aligned}
+$$
 
 推理时串行块按 $p_k(\cdot\mid x_0,x_{<k})$ 从左到右采样。因为这一步天然串行，模块**必须极轻**（$T_{\text{sequential}}\ll T_{\text{parallel}}$），整体草稿延迟仍由并行段主导。两种串行头：
 
 - **Markov head（默认）**：把 $B_k$ 限制为**只依赖前一个 token** 的一阶转移 $B(x_{k-1},x_k)$。原则上是 $V{\times}V$ 矩阵，用**低秩分解** $B=W_1W_2$（$W_1\in\mathbb R^{V\times r}$ 当查表、$W_2\in\mathbb R^{r\times V}$ 当投影）近似（p6, Eq.5）：
 
-$$B(x_{k-1},\cdot)=W_1[x_{k-1}]\,W_2\in\mathbb R^{V}$$
+$$
+B(x_{k-1},\cdot)=W_1[x_{k-1}]\,W_2\in\mathbb R^{V}
+$$
 
   默认 $r{=}256$，存储与每步算力都小。回到前例：位置 1 采了 "of"，Markov head 在位置 2 提升 "course"、压低 "problem"，化解跨模态碰撞。代码对应 `markov_head.py:8 VanillaMarkov`（`markov_w1`=Embedding，`markov_w2`=Linear），交叉核对见 [[deepspec_codebase_analysis]] §3.3。
 - **RNN head**：Markov 头只记一步；RNN 头维护贯穿整块的循环状态 $s_k$，把 $[s_{k-1};W_1[x_{k-1}];h_k]$ 经一次门控更新（p6, Eq.6），可看全前缀历史。代码 `markov_head.py:125 RNNHead`。
@@ -150,11 +161,15 @@ Table 1（p11，接受长度 $\tau$/轮，含 bonus token，越大越好；离�
 
 **置信度头（§3.2.1, p7, Eq.7）**：对每个草稿位 $k$ 输出标量 $c_k\in(0,1)$，建模「**在前缀全部被接受的条件下**，位置 $k$ 的草稿能通过目标验证」的**条件**概率：
 
-$$c_k=\sigma\!\big(w^\top[h_k;\,W_1[x_{k-1}]]\big)$$
+$$
+c_k=\sigma\!\big(w^\top[h_k;\,W_1[x_{k-1}]]\big)
+$$
 
 输入是骨干隐状态 $h_k$ 拼上 Markov 嵌入 $W_1[x_{k-1}]$（代码 `modeling.py:293 predict_confidence_step` 正是这个 concat；头本体 `common.py:43 AcceptRatePredictor`）。监督信号用**解析接受率**（p7, Eq.8）：
 
-$$c^*_k=1-\tfrac12\,\lVert p^d_k-p^t_k\rVert_1$$
+$$
+c^*_k=1-\tfrac12\,\lVert p^d_k-p^t_k\rVert_1
+$$
 
 即草稿/目标分布的总变差距离（TV）——这正是该位置的逐步接受概率（Leviathan et al. 2023）。代码 `loss.py:69 accept_rate_3d = 1 - 0.5*(draft_probs-target_probs).abs().sum(-1)` 逐字对应。
 
@@ -162,7 +177,9 @@ $$c^*_k=1-\tfrac12\,\lVert p^d_k-p^t_k\rVert_1$$
 
 **硬件感知前缀调度器（§3.2.2, Algorithm 1, p8）**：把「验多长」化为**全局吞吐最大化**。一批 $R$ 个请求，位置 $j$ 的存活概率是累积积 $a_{r,j}=\prod_{i\le j}c_{r,i}$；一步验证总 batch（token 计）$B=\sum_r(1+\ell_r)$，期望接受 $\tau=\sum_r(1+\sum_{j\le\ell_r}a_{r,j})$；设 `SPS(B)` 为引擎在 batch $B$ 下的步/秒吞吐曲线（**引擎初始化时离线 profile 一次**存成轻量代价表）。目标：
 
-$$\max_{\{\ell_r\}}\ \Theta=\tau\cdot\mathrm{SPS}(B)$$
+$$
+\max_{\{\ell_r\}}\ \Theta=\tau\cdot\mathrm{SPS}(B)
+$$
 
 关键洞察：$a_{r,j}$ 关于 $j$ **单调非增**，把请求 $r$ 验证长度从 $j{-}1$ 扩到 $j$ 的边际接受增益恰为 $a_{r,j}$。因此只需**在全局范围内按 $a_{r,j}$ 降序贪心执行 admit**，并用 $O(1)$ 查 `SPS` 表增量更新 $\Theta$（p8-9）。
 
@@ -189,9 +206,14 @@ $$\max_{\{\ell_r\}}\ \Theta=\tau\cdot\mathrm{SPS}(B)$$
 |---|---|---|---|
 | $\mathcal L_{ce}$ | $-\sum_k w_k\log p^d_k(x^*_k)$ | 让草稿预测正确 next token | Eq.9 / `loss.py:112` |
 | $\mathcal L_{tv}$ | $\sum_k w_k\lVert p^d_k-p^t_k\rVert_1$ | 拉近草稿/目标分布（TV 是接受率的直接代理） | Eq.10 / `loss.py:84`（代码名 `l1_loss`） |
-| $\mathcal L_{conf}$ | $-\sum_k w_k[c^*_k\log c_k+(1{-}c^*_k)\log(1{-}c_k)]$ | BCE 训练置信度头逼近软接受标签 $c^*_k$ | Eq.11 / `loss.py:157` |
+| $\mathcal L_{\mathrm{conf}}$ | $-\sum_k w_k[c^*_k\log c_k+(1{-}c^*_k)\log(1{-}c_k)]$ | BCE 训练置信度头逼近软接受标签 $c^*_k$ | Eq.11 / `loss.py:157` |
 
-$$\mathcal L=\alpha_{ce}\mathcal L_{ce}+\alpha_{tv}\mathcal L_{tv}+\alpha_{conf}\mathcal L_{conf}\quad(\alpha_{ce}{=}0.1,\ \alpha_{tv}{=}0.9,\ \alpha_{conf}{=}1.0)$$
+$$
+\begin{aligned}
+\mathcal L
+&=\alpha_{ce}\mathcal L_{ce}+\alpha_{tv}\mathcal L_{tv}+\alpha_{\mathrm{conf}}\mathcal L_{\mathrm{conf}}\quad(\alpha_{ce}{=}0.1,\ \alpha_{tv}{=}0.9,\ \alpha_{\mathrm{conf}}{=}1.0)
+\end{aligned}
+$$
 
 默认权重逐字对应 `config/dspark/dspark_qwen3_4b.py:22-28`（`ce_loss_alpha=0.1, l1_loss_alpha=0.9, confidence_head_alpha=1.0`）。训练数据从每条目标序列**随机采多个 anchor 位**组成 $\gamma$-token 块（p9；代码 `common.py:123 sample_anchor_positions`）。
 

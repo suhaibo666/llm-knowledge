@@ -140,7 +140,7 @@ flowchart TD
 - **接受率软标签**（Eq.8）：`accept_rate_3d = 1.0 - 0.5*(draft_probs - target_probs).abs().sum(-1)`（`:60-70`），即 $1-\tfrac12\lVert p^d-p^t\rVert_1$，clamp 到 `[0,1]`。这是置信头的监督目标，也是 TV 损失的核心量。
 - **$\mathcal L_{ce}$**（Eq.9）：`F.cross_entropy(flat_logits, flat_targets)` 乘位置权重（`:112-114`）。
 - **$\mathcal L_{tv}$**（Eq.10，代码叫 `l1_loss`）：`(draft_probs - target_probs).abs().sum(-1)` 乘权重（`:84-86`）。
-- **$\mathcal L_{conf}$**（Eq.11）：`F.binary_cross_entropy_with_logits(confidence_pred, accept_rate_3d.detach())`（`:157`）—— 注意 target 是 `detach` 的软标签。
+- **$\mathcal L_{\mathrm{conf}}$**（Eq.11）：`F.binary_cross_entropy_with_logits(confidence_pred, accept_rate_3d.detach())`（`:157`）—— 注意 target 是 `detach` 的软标签。
 - **位置权重**（$w_k=\exp(-(k-1)/\gamma)$）：`_build_loss_weight_mask`（`:25-37`）`exp(-positions/loss_decay_gamma)`，`loss_decay_gamma=4.0`（config:26）。
 - **合成**（Eq.12）：`_build_loss`（`:227`）`ce_alpha*ce + l1_alpha*tv + conf_alpha*conf`，默认 `0.1/0.9/1.0`。分布式下分母先 all-reduce 再相除（`:11-22`，保证跨 worker 加权一致）。
 

@@ -53,19 +53,39 @@ GLM-5 的稳定性工程不是单点补丁，而是按「失稳从哪里来」�
 
 **原理**：Reasoning RL 的骨干是 **GRPO + IcePop**（§3.2, p11）。论文显式区分采样用的**推理策略** $\pi^{\text{infer}}$ 与梯度更新用的**训练策略** $\pi^{\text{train}}$，并定义二者的**失配比**：
 
-$$\rho_{i,t}=\frac{\pi^{\text{train}}_{\theta_{\text{old}}}(y_{i,t}\mid x,y_{i,<t})}{\pi^{\text{infer}}_{\theta_{\text{old}}}(y_{i,t}\mid x,y_{i,<t})}$$
+$$
+\begin{aligned}
+\rho_{i,t}
+&=\frac{\pi^{\text{train}}_{\theta_{\text{old}}}(y_{i,t}\mid x,y_{i,<t})}{\pi^{\text{infer}}_{\theta_{\text{old}}}(y_{i,t}\mid x,y_{i,<t})}
+\end{aligned}
+$$
 
 `pop` 算子把失配比偏离 $[1/\beta,\beta]$ 的 token **整条置零**（即从损失中剔除）：
 
-$$\text{pop}(\rho_{i,t},1/\beta,\beta)=\begin{cases}\rho_{i,t}, & 1/\beta\le\rho_{i,t}\le\beta\\[2pt] 0, & \text{otherwise}\end{cases}$$
+$$
+\begin{aligned}
+\text{pop}(\rho_{i,t},1/\beta,\beta)
+&=\begin{cases}\rho_{i,t}, & 1/\beta\le\rho_{i,t}\le\beta\\[2pt] 0, & \text{otherwise}\end{cases}
+\end{aligned}
+$$
 
 最终损失在标准 GRPO 的 PPO-clip 之上再乘一层 `pop` 门，并**移除原 IcePop 的 KL 正则项**以加速 RL（§3.2, p11）：
 
-$$\mathcal{L}(\theta)=-\mathbb{E}_{x\sim\mathcal{D},\,\{y_i\}_{i=1}^{G}\sim\pi^{\text{infer}}_{\theta_{\text{old}}}}\!\left[\frac{1}{G}\sum_{i=1}^{G}\frac{1}{|y_i|}\sum_{t=1}^{|y_i|}\text{pop}(\rho_{i,t},1/\beta,\beta)\cdot\min\!\big(r_{i,t}\hat{A}_{i,t},\,\text{clip}(r_{i,t},1-\epsilon_{\text{low}},1+\epsilon_{\text{high}})\hat{A}_{i,t}\big)\right]$$
+$$
+\begin{aligned}
+\mathcal{L}(\theta)
+&=-\mathbb{E}_{x\sim\mathcal{D},\,\{y_i\}_{i=1}^{G}\sim\pi^{\text{infer}}_{\theta_{\text{old}}}}\!\left[\frac{1}{G}\sum_{i=1}^{G}\frac{1}{\lvert y_i\rvert}\sum_{t=1}^{\lvert y_i\rvert}\text{pop}(\rho_{i,t},1/\beta,\beta)\cdot\min\!\big(r_{i,t}\hat{A}_{i,t},\,\text{clip}(r_{i,t},1-\epsilon_{\text{low}},1+\epsilon_{\text{high}})\hat{A}_{i,t}\big)\right]
+\end{aligned}
+$$
 
 其中重要性比与组归一化优势沿用原 GRPO 定义（§3.2, p12）：
 
-$$r_{i,t}=\frac{\pi^{\text{train}}_{\theta}(y_{i,t}\mid x,y_{i,<t})}{\pi^{\text{train}}_{\theta_{\text{old}}}(y_{i,t}\mid x,y_{i,<t})},\qquad \hat{A}_{i,t}=\frac{R_i-\text{mean}(R_1,\dots,R_G)}{\text{std}(R_1,\dots,R_G)}$$
+$$
+\begin{aligned}
+r_{i,t}
+&=\frac{\pi^{\text{train}}_{\theta}(y_{i,t}\mid x,y_{i,<t})}{\pi^{\text{train}}_{\theta_{\text{old}}}(y_{i,t}\mid x,y_{i,<t})},\qquad \hat{A}_{i,t}=\frac{R_i-\text{mean}(R_1,\dots,R_G)}{\text{std}(R_1,\dots,R_G)}
+\end{aligned}
+$$
 
 超参 $\beta=2,\ \epsilon_{\text{low}}=0.2,\ \epsilon_{\text{high}}=0.28$，**完全 on-policy**，group size 与 batch size 均为 32（§3.2, p12）。
 
@@ -112,11 +132,23 @@ Agentic RL 走的是**全异步、解耦**框架：推理引擎持续产轨迹�
 
 形式化目标（§4.1.2, p17, Eq.3–5）：
 
-$$\mathcal{L}(\theta)=\mathbb{E}_t\!\left[f\big(r_t(\theta),\epsilon_\ell,\epsilon_h\big)\,\hat{A}_t\,\log\pi_\theta(a_t\mid s_t)\right]\tag{3}$$
+$$
+\begin{aligned}
+\mathcal{L}(\theta)
+&=\mathbb{E}_t\!\left[f\big(r_t(\theta),\epsilon_\ell,\epsilon_h\big)\,\hat{A}_t\,\log\pi_\theta(a_t\mid s_t)\right]\tag{3}
+\end{aligned}
+$$
 
-$$r_t(\theta)=\exp\!\big(\log\pi_\theta(a_t\mid s_t)-\log\pi_{\text{rollout}}(a_t\mid s_t)\big)\tag{4}$$
+$$
+r_t(\theta)=\exp\!\big(\log\pi_\theta(a_t\mid s_t)-\log\pi_{\text{rollout}}(a_t\mid s_t)\big)\tag{4}
+$$
 
-$$f(x;\epsilon_\ell,\epsilon_h)=\begin{cases}x, & 1-\epsilon_\ell<x<1+\epsilon_h\\[2pt] 0, & \text{otherwise}\end{cases}\tag{5}$$
+$$
+\begin{aligned}
+f(x;\epsilon_\ell,\epsilon_h)
+&=\begin{cases}x, & 1-\epsilon_\ell<x<1+\epsilon_h\\[2pt] 0, & \text{otherwise}\end{cases}\tag{5}
+\end{aligned}
+$$
 
 **为什么更稳**：论文称该策略**与 IcePop 相似，但更简单——进一步移除了 $\pi_{\theta_{\text{old}}}$，训练更稳定**（§4.1.2, p17）。代价是「接受了一个可控的 off-policy 偏差，以换取无需追踪历史策略」——一次明确的「**偏差换稳定**」权衡。对照同步 IcePop（§3.1）：IcePop 仍保留 $\pi_{\theta_{\text{old}}}$ 与 PPO-clip，异步版把它也丢掉，只留 rollout log-prob 作锚。
 

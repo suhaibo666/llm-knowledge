@@ -17,7 +17,12 @@
 
 回顾 [[11_data_parallel_analysis]] 的账本：混合精度 Adam 下，每卡都独立存着模型状态（$\Psi$ = 参数量）：
 
-$$\underbrace{2\Psi}_{\text{fp16 参数}} + \underbrace{2\Psi}_{\text{fp16 梯度}} + \underbrace{12\Psi}_{\text{fp32 优化器态: 参数副本+m+v}} = 16\Psi$$
+$$
+\begin{aligned}
+\underbrace{2\Psi}_{\text{fp16 参数}} + \underbrace{2\Psi}_{\text{fp16 梯度}} + \underbrace{12\Psi}_{\text{fp32 优化器态: 参数副本+m+v}}
+&= 16\Psi
+\end{aligned}
+$$
 
 关键观察：**这 $16\Psi$ 在 $N$ 张卡上是逐位相同的冗余副本。** DP 需要各卡参数一致，但它并不需要各卡**同时**持有完整副本——优化器更新时，每张卡完全可以只负责更新参数的一个分片。既然如此，为什么不把这 $16\Psi$ 切成 $N$ 份、每卡只存 $16\Psi/N$？这就是 ZeRO 的全部动机。
 

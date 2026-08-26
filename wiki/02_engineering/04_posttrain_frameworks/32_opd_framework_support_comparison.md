@@ -142,7 +142,7 @@
 | **DeepSeek-V4** | 全词表 OPD 的教师调度（教师数量"实际无上界"、万亿参数权重 offload、中心化缓冲只存最后层 hidden states + 训练时经 prediction head 即时重建 logits、minibatch 内按教师身份排序样本）；可抢占容错的 rollout 服务**同时服务 RL 与 OPD**；FP4（MXFP4）QAT 下的师生数值一致性 | arXiv:2606.19348 §5.1.2 / §5.2.1–5.2.3（调度实现细节部分经 Labonne 二手分析与 arXiv:2604.00626 §8.3 转述交叉印证 ⚠️；TileLang 精确 KL 内核为**单一二手来源** ⚠️） |
 | **Kimi K3** | partial rollout 跨迭代续跑（"an individual long-horizon trajectory naturally spans multiple iterations"）+ per-token 正则消化陈旧性；外置 KV-cache 保留；可续跑 microVM 沙箱；MXFP4/MXFP8 QAT 贯穿后训练 | arXiv:2607.24653 §4.1.1–4.1.4 |
 | **Nemotron 3 Ultra** | MOPD $=$ **Multi-teacher** On-Policy Distillation（摘要逐字）；十余个领域专家教师、两轮师生共进化（RLVR 后的学生反过来当下一轮教师，Fig. 10）；rollout / teacher-scoring / learner 三类 worker 的异步流水线 | arXiv:2606.15007 §3.3–3.3.2。⚠️ 其中"异步 behavior/proximal 策略解耦"本轮**未能独立核实**（arXiv HTML 与 ar5iv 均在 §3.3.1 之后截断），标**待核** |
-| **Nemotron-Cascade 2** | MOPD $=$ **Multi-domain** On-Policy Distillation（§4.4 节标题逐字，见 §10 更正 2）；教师取自内部 Cascade RL 各阶段的最强 checkpoint，"without introducing external models"；路线 B（"computed only on the student-sampled token rather than over the full vocabulary"）；train–inference 失配用**截断重要性加权** $\varepsilon_{low}=0.5$、$\varepsilon_{high}=2.0$（已核实为真） | arXiv:2603.19220 §4.4 |
+| **Nemotron-Cascade 2** | MOPD $=$ **Multi-domain** On-Policy Distillation（§4.4 节标题逐字，见 §10 更正 2）；教师取自内部 Cascade RL 各阶段的最强 checkpoint，"without introducing external models"；路线 B（"computed only on the student-sampled token rather than over the full vocabulary"）；train–inference 失配用**截断重要性加权** $\varepsilon_{\mathrm{low}}=0.5$、$\varepsilon_{\mathrm{high}}=2.0$（已核实为真） | arXiv:2603.19220 §4.4 |
 | **GLM-5** | slime 统一栈内做 OPD；教师 logits 经推理引擎获取；group size 降为 1 直接省 rollout 采样量 | arXiv:2602.15763 §3.5 / §3.6.1 |
 
 **一条容易踩的术语坑**：**MOPD 这个缩写在 NVIDIA 两份报告里指两件不同的事**——Nemotron 3 Ultra 是 multi-**teacher**，Nemotron-Cascade 2 是 multi-**domain**。引用"NVIDIA 用 MOPD"时必须指明是哪一份报告、哪一节，否则会把"多个教师模型"和"多个领域的信号"混为一谈（详见 §10 更正 2）。
@@ -197,7 +197,7 @@
 | # | 上游稿表述 | 本轮核验结论 | 本页处理 |
 |---|---|---|---|
 | 1 | 把 MiMo 的截断（"IcePop 式"）与 K3 的师生 log-ratio clip、Nemotron 的截断 IS 并列为同一类"off-policyness 修正" | MiMo 正文**未出现 "IcePop"**（该词仅见于参考文献标题），原文为 "Following Zhao et al. (2025)"；且 **Eq. 8 的截断作用于训推比 $\pi_\theta/\mu_\theta$**（训练策略 vs 采样策略），属**训推不一致（TIM）修正**，与 OPD 的师生 KL 是两件不同的事 | 本页不复述该并列；两类截断的完整辨析见 [[13_opd_infra_mechanism_analysis]] W3-a / W3-b 与 [[26_tim_causal_chain_analysis]] |
-| 2 | Nemotron-Cascade 2 的 MOPD 被当作"多教师 OPD"引用 | §4.4 节标题与摘要均为 "**Multi-domain** On-Policy Distillation"——是**多领域**，不是多教师；其截断 IS 区间 $\varepsilon_{low}=0.5$、$\varepsilon_{high}=2.0$ **已核实为真**（arXiv:2603.19220 §4.4）。同一缩写在 Nemotron 3 Ultra 摘要中则确为 "Multi-**teacher** On-Policy Distillation"（arXiv:2606.15007） | §6 表格按各自报告的原义分别标注，并单列术语坑提示 |
+| 2 | Nemotron-Cascade 2 的 MOPD 被当作"多教师 OPD"引用 | §4.4 节标题与摘要均为 "**Multi-domain** On-Policy Distillation"——是**多领域**，不是多教师；其截断 IS 区间 $\varepsilon_{\mathrm{low}}=0.5$、$\varepsilon_{\mathrm{high}}=2.0$ **已核实为真**（arXiv:2603.19220 §4.4）。同一缩写在 Nemotron 3 Ultra 摘要中则确为 "Multi-**teacher** On-Policy Distillation"（arXiv:2606.15007） | §6 表格按各自报告的原义分别标注，并单列术语坑提示 |
 | 3 | Nemotron 3 Ultra 的"异步 behavior/proximal 策略解耦"作为一手事实列入自研层 | **本轮未能独立核实**——arXiv HTML 与 ar5iv 均在 §3.3.1 之后截断 | §6 表格中标 ⚠️ **待核** |
 
 另有两条一手引文本轮已从 PDF 原文复核，可放心作一手引用：

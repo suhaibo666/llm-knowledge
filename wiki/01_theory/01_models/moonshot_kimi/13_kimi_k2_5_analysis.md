@@ -128,10 +128,14 @@
 - **冻结子智能体 (Frozen Sub-agents)**：从固定中间策略实例化
 
 **PARL 奖励函数**：
-$$r_{\text{PARL}}(x,y) = \lambda_1 \cdot r_{\text{parallel}} + \lambda_2 \cdot r_{\text{finish}} + r_{\text{perf}}(x,y)$$
+$$
+r_{\text{PARL}}(x,y) = \lambda_1 \cdot r_{\text{parallel}} + \lambda_2 \cdot r_{\text{finish}} + r_{\text{perf}}(x,y)
+$$
 
 **关键步骤定义**：
-$$\text{CriticalSteps} = \sum_{t=1}^{T} (S_{\text{main}}^{(t)} + \max_i S_{\text{sub},i}^{(t)})$$
+$$
+\text{CriticalSteps} = \sum_{t=1}^{T} (S_{\text{main}}^{(t)} + \max_i S_{\text{sub},i}^{(t)})
+$$
 
 **性能提升**：
 
@@ -191,7 +195,12 @@ $$\text{CriticalSteps} = \sum_{t=1}^{T} (S_{\text{main}}^{(t)} + \max_i S_{\text
 
 在推理时扩展和预算约束优化之间交替：
 
-$$\tilde{r}(x,y) = \begin{cases} r(x,y) \cdot I\{ \frac{1}{K}\sum_i r(x,y_i) < \lambda \text{ 或 } |y_i| \leq \text{budget}(x) \} & \text{Phase 0} \\ r(x,y) & \text{Phase 1} \end{cases}$$
+$$
+\begin{aligned}
+\tilde{r}(x,y)
+&= \begin{cases} r(x,y) \cdot I\{ \frac{1}{K}\sum_i r(x,y_i) < \lambda \text{ 或 } \lvert y_i\rvert \leq \text{budget}(x) \} & \text{Phase 0} \\ r(x,y) & \text{Phase 1} \end{cases}
+\end{aligned}
+$$
 
 **效果**：输出 token 减少 **25-30%**，性能影响可忽略。
 

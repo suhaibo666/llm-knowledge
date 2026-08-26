@@ -143,14 +143,20 @@ graph LR
 ```
 
 1.  **门控加权 (Gating)**：
-    $$V_{weighted} = \text{Gate} \cdot \text{Proj}_{value}(E_{lookup})$$
-    其中 $E_{lookup}$ 是查到的原始 Embedding。
+    $$
+    V_{\mathrm{weighted}} = \text{Gate} \cdot \text{Proj}_{\mathrm{value}}(E_{\mathrm{lookup}})
+    $$
+    其中 $E_{\mathrm{lookup}}$ 是查到的原始 Embedding。
 2.  **局部混合 (Local Mixing)**：
     使用 `ShortConv` (mHC) 对加权后的值进行卷积处理，引入局部时序信息：
-    $$V_{mixed} = V_{weighted} + \text{ShortConv}(V_{weighted})$$
+    $$
+    V_{\mathrm{mixed}} = V_{\mathrm{weighted}} + \text{ShortConv}(V_{\mathrm{weighted}})
+    $$
 3.  **残差连接 (Residual Add)**：
     最终结果被加回到主干网络流中：
-    $$H_{output} = H_{input} + V_{mixed}$$
+    $$
+    H_{\mathrm{output}} = H_{\mathrm{input}} + V_{\mathrm{mixed}}
+    $$
 
 ### 4.2 训练机制 (Training Strategy)
 Engram 的训练是**端到端 (End-to-End)** 的，不需要分阶段训练。

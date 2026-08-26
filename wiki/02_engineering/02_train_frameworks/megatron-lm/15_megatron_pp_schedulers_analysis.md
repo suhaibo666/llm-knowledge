@@ -324,22 +324,37 @@ Dev3  ··  ··  ··  F0  B0  F1  B1  F2  B2  F3  B3  F4  B4  F5  B5  F6  B6  
 ### ②.4 开销分析
 
 **峰值激活显存**:rank `r` 上 FIFO 队列峰值长度 `= warmup + 1 = pp - r`。
-$$M_{\text{act}}^{\text{1F1B}}(r) = (pp-r)\cdot A \le pp\cdot A \quad(\text{rank 0 最坏,且与 }m\text{ 无关})$$
+$$
+M_{\text{act}}^{\text{1F1B}}(r) = (pp-r)\cdot A \le pp\cdot A \quad(\text{rank 0 最坏,且与 }m\text{ 无关})
+$$
 
 **模型态显存/卡**:PP 把模型按层切 `pp` 段,每卡只持有 `1/pp`:
-$$M_{\text{model}}^{\text{per-device}} = \frac{16\cdot N_{\text{params}}}{pp}\ \text{bytes} \quad(\textbf{PP 的根本收益})$$
+$$
+M_{\text{model}}^{\text{per-device}} = \frac{16\cdot N_{\text{params}}}{pp}\ \text{bytes} \quad(\textbf{PP 的根本收益})
+$$
 
 **气泡推导**(从末端设备空闲入手):
 - 第 1 个 microbatch 前向需先穿过前 `pp-1` 个 stage 才到末端 → 开头空闲 `(pp-1)t_f`。
 - 末端做完最后一个反向后,梯度还要回穿 `pp-1` 个 stage → 结尾空闲 `(pp-1)t_b`。
 - 故每设备气泡 `t_bubble = (pp-1)(t_f+t_b)`,有效计算 `t_id = m(t_f+t_b)`。
 
-$$\boxed{\text{Bubble}_{\text{1F1B}} = \frac{t_{\text{bubble}}}{t_{\text{id}}} = \frac{(pp-1)(t_f+t_b)}{m(t_f+t_b)} = \frac{pp-1}{m}}$$
+$$
+\boxed{
+\begin{aligned}
+\text{Bubble}_{\text{1F1B}}
+&= \frac{t_{\text{bubble}}}{t_{\text{id}}}
+= \frac{(pp-1)(t_f+t_b)}{m(t_f+t_b)}
+= \frac{pp-1}{m}
+\end{aligned}
+}
+$$
 
 **示例**:`pp=4, m=8` → Bubble `= 3/8 = 37.5%`;`pp=4, m=32` → Bubble `= 3/32 = 9.4%` —— 印证"`m` 越大气泡越小"。
 
 **通信量**:每个 microbatch 前向穿 `pp-1` 个边界、反向穿 `pp-1` 个边界,每次传一个 `[s/(cp·tp), b, h]` 张量:
-$$\text{P2P 传输次数} = 2m(pp-1),\quad \text{单次量} = \frac{s\cdot b\cdot h}{cp\cdot tp}\ \text{元素}$$
+$$
+\text{P2P 传输次数} = 2m(pp-1),\quad \text{单次量} = \frac{s\cdot b\cdot h}{cp\cdot tp}\ \text{元素}
+$$
 
 | 维度 | 1F1B |
 |------|------|
@@ -462,17 +477,28 @@ Dev3  .. .. .. f0 f1 f2 f3 F0 B0 F1 B1 F2 B2 F3 B3 f4 b0 f5 b1 f6 b2 f7 b3 F4 B4
 ### ③.4 开销分析
 
 **气泡推导**:一个 microbatch 在单个"设备-块"上前向只需 `t_f/vp`。重复 1F1B 的推导,填充/排空时间整体除以 `vp`:
-$$t_{\text{bubble}}^{\text{VPP}} = \frac{(pp-1)(t_f+t_b)}{vp}$$
-$$\boxed{\text{Bubble}_{\text{VPP}} = \frac{1}{vp}\cdot\frac{pp-1}{m} = \frac{pp-1}{m\cdot vp}}$$
+$$
+t_{\text{bubble}}^{\text{VPP}} = \frac{(pp-1)(t_f+t_b)}{vp}
+$$
+$$
+\boxed{\text{Bubble}_{\text{VPP}} = \frac{1}{vp}\cdot\frac{pp-1}{m} = \frac{pp-1}{m\cdot vp}}
+$$
 
 **示例**:`pp=4, vp=2, m=8` → Bubble `= 3/(8×2) = 18.75%`(同 `pp,m` 下比标准 1F1B 的 `37.5%` 减半)。
 
 **峰值激活显存**:rank 0 热身数 `warmup = 2(pp-1)+(vp-1)N`(取 `N=pp`),每个囤积单元是一个 chunk(`A/vp`):
-$$M_{\text{act}}^{\text{VPP}} \approx \big[2(pp-1)+(vp-1)pp+1\big]\cdot\frac{A}{vp} \approx \Big(1+\frac{1}{vp}\Big)\,pp\,A$$
+$$
+\begin{aligned}
+M_{\text{act}}^{\text{VPP}}
+&\approx \big[2(pp-1)+(vp-1)pp+1\big]\cdot\frac{A}{vp} \approx \Big(1+\frac{1}{vp}\Big)\,pp\,A
+\end{aligned}
+$$
 即约为标准 1F1B 的 `(vp+1)/vp` 倍(`vp=2` → 1.5×),**略高于** 1F1B。
 
 **通信量**:每个 microbatch 在设备间往返 `vp` 趟:
-$$\text{P2P 传输次数} \approx 2m\cdot vp\cdot(pp-1) = vp\times\text{标准 1F1B}$$
+$$
+\text{P2P 传输次数} \approx 2m\cdot vp\cdot(pp-1) = vp\times\text{标准 1F1B}
+$$
 
 | 维度 | 标准 1F1B | VPP(vp 块) |
 |------|-----------|-------------|

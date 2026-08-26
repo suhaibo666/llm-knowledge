@@ -494,7 +494,7 @@ buffer 也分两块:`num_rdma_bytes`(跨节点)+ `num_nvl_bytes`(节点内,`get_
 记 token `t` 的 payload $M = H \times \text{bytes/elt}$(bf16 即 $2H$);$R(t)$ = 命中的**远端 node 集**(≠ 源 node),$g_n(t)$ = `t` 在 node $n$ 上的目标 GPU 数,$g_s(t)$ = 源 node 内目标 GPU 数(不含源卡)。逐 token:
 
 $$
-\text{RDMA(跨节点)}(t) = |R(t)|\cdot M
+\text{RDMA(跨节点)}(t) = \lvert R(t)\rvert\cdot M
 \qquad
 \text{NVLink(节点内)}(t) = \Big[\sum_{n\in R(t)}\big(g_n(t)-1\big) + g_s(t)\Big]\cdot M
 $$
@@ -608,11 +608,15 @@ PP 的低效来自流水线气泡;EP 没有流水线,但有两个等效的低效
 
 路由由数据决定,**不保证均匀**。设专家 `i` 收到 `T_i` 个 token,均衡时每专家 `T̄ = s·k·(并行域)/E`。定义不均衡因子:
 
-$$f = \frac{\max_i T_i}{\bar T} \ge 1$$
+$$
+f = \frac{\max_i T_i}{\bar T} \ge 1
+$$
 
 每步的专家计算耗时由**最慢的那个 EP rank** 决定(它的本地专家收到的 token 最多)。于是有效计算时间被放大约 `f` 倍:
 
-$$T_{\text{expert-compute}} \approx f \cdot T_{\text{balanced}}$$
+$$
+T_{\text{expert-compute}} \approx f \cdot T_{\text{balanced}}
+$$
 
 `f − 1` 就是 EP 的"负载气泡率"。极端情况所有热 token 涌向一个专家,`f` 可达数倍。三种缓解手段:
 

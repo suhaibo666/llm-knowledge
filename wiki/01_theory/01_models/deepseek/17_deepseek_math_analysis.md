@@ -113,7 +113,10 @@ GRPO is introduced as a **memory-efficient alternative to PPO** that eliminates 
 PPO requires four models: policy, old policy, value model, and reference model. GRPO removes the **value model** entirely:
 
 $$
-J_{GRPO}(\theta) = \mathbb{E}\left[ \frac{1}{G} \sum_{i=1}^{G} \min\left( \frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)} A_i, \text{clip}\left(\frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)}, 1-\varepsilon, 1+\varepsilon\right) A_i \right) - \beta D_{KL}(\pi_\theta \| \pi_{ref}) \right]
+\begin{aligned}
+J_{\mathrm{GRPO}}(\theta)
+&= \mathbb{E}\left[ \frac{1}{G} \sum_{i=1}^{G} \min\left( \frac{\pi_\theta(o_i\mid q)}{\pi_{\theta_{\mathrm{old}}}(o_i\mid q)} A_i, \text{clip}\left(\frac{\pi_\theta(o_i\mid q)}{\pi_{\theta_{\mathrm{old}}}(o_i\mid q)}, 1-\varepsilon, 1+\varepsilon\right) A_i \right) - \beta D_{KL}(\pi_\theta \| \pi_{\mathrm{ref}}) \right]
+\end{aligned}
 $$
 
 Advantage is computed from **group rewards** (no value model):

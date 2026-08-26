@@ -36,9 +36,17 @@ Layer 8:  [MLA]
 
 ### 2.1 KDA 核心公式
 
-$$\mathbf{S}_t = \left(\mathbf{I}-\beta_t\bm{k}_{t}\bm{k}_{t}^{\top}\right)\operatorname{Diag}\left(\bm{\alpha}_t \right)\mathbf{S}_{t-1} + \beta_t\bm{k}_{t}\bm{v}_{t}^{\top}$$
+$$
+\begin{aligned}
+\mathbf{S}_t
+&= \left(\mathbf{I}-\beta_t\bm{k}_{t}\bm{k}_{t}^{\top}\right)\operatorname{Diag}\left(\bm{\alpha}_t \right)\mathbf{S}_{t-1} \\
+&\quad + \beta_t\bm{k}_{t}\bm{v}_{t}^{\top}
+\end{aligned}
+$$
 
-$$\bm{o}_t = \mathbf{S}_t^\top \bm{q}_t$$
+$$
+\bm{o}_t = \mathbf{S}_t^\top \bm{q}_t
+$$
 
 | 符号 | 含义 |
 |------|------|
@@ -80,7 +88,13 @@ KDA:  α_t (向量) → 每个通道独立遗忘率
 ### 3.2 Delta Rule + DPLR 优化
 
 KDA 的约束 DPLR 变体：
-$$\mathbf{S}_t = \left(\operatorname{Diag}(\bm{\alpha}_t) - \beta_t \bm{k}_t \bm{k}_t^{\top} \operatorname{Diag}(\bm{\alpha}_t)\right)\mathbf{S}_{t-1} + \beta_t \bm{k}_t \bm{v}_t^{\top}$$
+$$
+\begin{aligned}
+\mathbf{S}_t
+&= \left(\operatorname{Diag}(\bm{\alpha}_t) - \beta_t \bm{k}_t \bm{k}_t^{\top} \operatorname{Diag}(\bm{\alpha}_t)\right)\mathbf{S}_{t-1} \\
+&\quad + \beta_t \bm{k}_t \bm{v}_t^{\top}
+\end{aligned}
+$$
 
 | 操作 | 通用 DPLR | KDA | 改进 |
 |------|-----------|-----|------|

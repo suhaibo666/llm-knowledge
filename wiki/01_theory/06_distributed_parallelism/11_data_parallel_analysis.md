@@ -17,11 +17,18 @@
 
 一个 mini-batch 的梯度，是**样本梯度的平均**：
 
-$$g = \frac{1}{B}\sum_{i=1}^{B} \nabla_\theta \ell(x_i;\theta)$$
+$$
+g = \frac{1}{B}\sum_{i=1}^{B} \nabla_\theta \ell(x_i;\theta)
+$$
 
 求和对样本是**线性可分**的——把 $B$ 个样本拆成 $N$ 组，每组 $B/N$ 个，各卡算自己的**部分和**，再把 $N$ 个部分和加起来除以 $B$，结果与单卡一次算 $B$ 个样本**逐位等价**。这就是 DP 的全部数学：
 
-$$g = \frac{1}{N}\sum_{r=0}^{N-1} \underbrace{\Big(\frac{N}{B}\sum_{i\in \text{shard}_r}\nabla_\theta \ell\Big)}_{\text{rank } r \text{ 的本地梯度 } g_r}$$
+$$
+\begin{aligned}
+g
+&= \frac{1}{N}\sum_{r=0}^{N-1} \underbrace{\Big(\frac{N}{B}\sum_{i\in \text{shard}_r}\nabla_\theta \ell\Big)}_{\text{rank } r \text{ 的本地梯度 } g_r}
+\end{aligned}
+$$
 
 **关键不变量**：只要（1）各卡**初始参数一致**（训练开始 broadcast 一次），（2）每步**梯度一致**（all-reduce 求平均），那么各卡**每一步之后参数都保持一致**——无需同步参数本身，只同步梯度即可。这是 DP 简单的根源：**通信只发生在反向的梯度上**。
 
@@ -44,7 +51,9 @@ $$g = \frac{1}{N}\sum_{r=0}^{N-1} \underbrace{\Big(\frac{N}{B}\sum_{i\in \text{s
 
 **通信量**：一次 all-reduce 规约的是整份梯度，大小 $\propto \Psi$（参数量）。用 [[10_collectives_analysis|集合通信代价模型]] 的 ring 结论，每卡每步搬运：
 
-$$V_{\text{DP}} \approx 2\cdot\frac{N-1}{N}\cdot \Psi \cdot b \;\xrightarrow{N\text{ 大}}\; 2\Psi b \quad(b=\text{每参数字节})$$
+$$
+V_{\text{DP}} \approx 2\cdot\frac{N-1}{N}\cdot \Psi \cdot b \;\xrightarrow{N\text{ 大}}\; 2\Psi b \quad(b=\text{每参数字节})
+$$
 
 两个要命的观察：
 

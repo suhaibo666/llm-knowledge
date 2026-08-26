@@ -28,7 +28,9 @@
 ## 三、线性层定维: 让 GEMM 站进 compute-bound 区
 
 **Roofline 记账**("Role of arithmetic intensity" 节): GEMM $C_{M\times N}=A_{M\times K}B_{K\times N}$,
-$$\text{FLOPs}=2MNK,\quad \text{Read}=MK\,b_A+NK\,b_B,\quad \text{Write}=MN\,b_C$$
+$$
+\text{FLOPs}=2MNK,\quad \text{Read}=MK\,b_A+NK\,b_B,\quad \text{Write}=MN\,b_C
+$$
 transformer 各线性层的映射(Table 1): M = Tokens(并发×序列长),QKV 投影 N=3H/K=H,输出投影 N=K=H,FFN-1 N=H'/K=H,FFN-2 N=H/K=H'。
 
 - **方阵论证**: 当 Tokens=H'=H 时,单 GEMM 做 $2H^3$ FLOPs、只动约 $3H^2$ 个元素,算术强度随 H 增长——**任一维过小,token 维再大也救不回来**。
@@ -47,7 +49,12 @@ transformer 各线性层的映射(Table 1): M = Tokens(并发×序列长),QKV �
 
 ("Large expert parallelism boosts throughput" 节)标准配方 = **attention 走 DP + 专家跨卡 EP**。为什么 attention 不用 TP: TP 合并部分结果的 AllReduce 开销随并发增长,吞吐场景是毒药;DP 加卡直接抬全局并发。均匀路由假设下:
 
-$$\text{GEMM-}M=\frac{\text{全局并发}\times\text{top-}k}{\#\text{experts}}\qquad(\text{DeepSeek-R1: top-}k=8,\ 256\ \text{experts})$$
+$$
+\begin{aligned}
+\text{GEMM-}M
+&=\frac{\text{全局并发}\times\text{top-}k}{\#\text{experts}}\qquad(\text{DeepSeek-R1: top-}k=8,\ 256\ \text{experts})
+\end{aligned}
+$$
 
 **GEMM-M 随并发涨、随稀疏度缩**——稀疏 MoE 的 per-expert 有效 batch 被除以 32(=256/8),而单卡并发又被 KV cache 显存卡死,所以**拉宽 EP 是抬 GEMM 利用率的主杠杆**。即使 per-expert batch 仍小,宽 EP 还有两笔白赚: ① 聚合内存带宽变大,读专家权重更快;② 每卡只存部分专家,腾出的显存反哺并发。代价 = all-to-all 通信 + 专家负载不均,原文把解托付给 TensorRT-LLM 的 Wide-EP(高性能 all-to-all kernel + 实时自适应负载均衡器)。
 

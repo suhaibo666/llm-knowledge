@@ -185,7 +185,10 @@ During training, tokens with the lowest affinity scores on each device are dropp
 DeepSeek-V2 adopts GRPO (from DeepSeekMath) which **eliminates the critic model**:
 
 $$
-J_{GRPO}(\theta) = \mathbb{E}\left[ \frac{1}{G} \sum_{i=1}^{G} \min\left( \frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)} A_i, \text{clip}\left(\frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)}, 1-\varepsilon, 1+\varepsilon\right) A_i \right) - \beta D_{KL}(\pi_\theta \| \pi_{ref}) \right]
+\begin{aligned}
+J_{\mathrm{GRPO}}(\theta)
+&= \mathbb{E}\left[ \frac{1}{G} \sum_{i=1}^{G} \min\left( \frac{\pi_\theta(o_i\mid q)}{\pi_{\theta_{\mathrm{old}}}(o_i\mid q)} A_i, \text{clip}\left(\frac{\pi_\theta(o_i\mid q)}{\pi_{\theta_{\mathrm{old}}}(o_i\mid q)}, 1-\varepsilon, 1+\varepsilon\right) A_i \right) - \beta D_{KL}(\pi_\theta \| \pi_{\mathrm{ref}}) \right]
+\end{aligned}
 $$
 
 Advantage is computed from group rewards:
@@ -196,7 +199,7 @@ $$
 
 ### Two-Stage RL Strategy
 
-1. **Reasoning Alignment**: Train reward model $RM_{reasoning}$ on code/math, optimize policy with reasoning feedback
+1. **Reasoning Alignment**: Train reward model $RM_{\mathrm{reasoning}}$ on code/math, optimize policy with reasoning feedback
 2. **Human Preference Alignment**: Multi-reward framework combining helpfulness, safety, and rule-based rewards
 
 ### Engineering Optimizations for RL

@@ -19,9 +19,9 @@
 ### 1.2 计算步骤详细拆解
 
 #### **步骤 1: 构建 Old Policy LogProbs (Reference)**
-代码直接使用 vLLM 在生成阶段输出的 logprobs 作为 $\pi_{old}$。
+代码直接使用 vLLM 在生成阶段输出的 logprobs 作为 $\pi_{\mathrm{old}}$。
 *   **操作**: 对 `vllm_token_log_probs` 求和。
-*   **数学含义**: $\log \pi_{old}(Response|Prompt) = \sum \log P_{vllm}(token_i | context)$。
+*   **数学含义**: $\log \pi_{\mathrm{old}}(Response\mid Prompt) = \sum \log P_{\mathrm{vllm}}(token_i \mid  context)$。
 *   **目的**: 获得采样时的序列总概率，作为 PPO 比率的分母。
 
 #### **步骤 2: 计算 New Policy LogProbs (Forward Pass)**
@@ -32,19 +32,27 @@
 4.  **Gather (收集)**:
     *   只关注 **Response** 部分的 Token。
     *   使用 `torch.gather` 提取模型对实际生成 Token 的预测概率。
-5.  **求和**: 获得当前模型下的序列总概率 $\log \pi_{new}(Response|Prompt)$。
+5.  **求和**: 获得当前模型下的序列总概率 $\log \pi_{\mathrm{new}}(Response\mid Prompt)$。
 
 #### **步骤 3: PPO 核心计算 (Importance Sampling)**
 1.  **计算概率比率 (Ratio)**:
-    $$r_t(\theta) = \frac{\pi_{new}(a|s)}{\pi_{old}(a|s)} = \exp(\log \pi_{new} - \log \pi_{old})$$
+    $$
+\begin{aligned}
+r_t(\theta)
+&= \frac{\pi_{\mathrm{new}}(a\mid s)}{\pi_{\mathrm{old}}(a\mid s)} = \exp(\log \pi_{\mathrm{new}} \\
+&\quad - \log \pi_{\mathrm{old}})
+\end{aligned}
+    $$
 2.  **计算 Clipping Loss**:
-    $$L^{CLIP} = \min(r_t(\theta) A_t, \text{clip}(r_t(\theta), 1-\epsilon, 1+\epsilon) A_t)$$
+    $$
+    L^{CLIP} = \min(r_t(\theta) A_t, \text{clip}(r_t(\theta), 1-\epsilon, 1+\epsilon) A_t)
+    $$
     *   如果不进行截断，更新步长可能过大，导致策略崩溃。
 3.  **计算平均 Loss**: 取负号（为了梯度下降）并求平均。
 
 #### **步骤 4: 附加 Loss 项**
 1.  **Entropy Bonus (熵奖励)**: $-H(\pi) = \text{mean}(\log \pi)$。鼓励探索，防止过早收敛。
-2.  **KL Penalty (KL 惩罚)**: 计算 $\pi_{new}$ 和 $\pi_{old}$ 之间的 KL 散度，作为额外的正则项添加到 Loss 中。
+2.  **KL Penalty (KL 惩罚)**: 计算 $\pi_{\mathrm{new}}$ 和 $\pi_{\mathrm{old}}$ 之间的 KL 散度，作为额外的正则项添加到 Loss 中。
 
 ---
 
@@ -193,43 +201,61 @@ A:
 
 1. 原始目标：最大化期望回报
 我们的目标是找到一个策略参数 $\theta$，使得在该策略下获得的期望回报 $J(\theta)$ 最大化：
-$$J(\theta) = \mathbb{E}{\tau \sim \pi\theta} [R(\tau)]$$
+$$
+J(\theta) = \mathbb{E}{\tau \sim \pi\theta} [R(\tau)]
+$$
 其中 $\tau$ 是轨迹，$R(\tau)$ 是回报。
 
 2. 策略梯度定理 (Policy Gradient Theorem)
 直接优化 $J(\theta)$ 很困难，我们通常使用梯度上升。策略梯度定理告诉我们，梯度的形式是：
-$$\nabla_\theta J(\theta) = \mathbb{E}{t} [\nabla\theta \log \pi_\theta(a_t|s_t) \cdot A_t]$$
+$$
+\nabla_\theta J(\theta) = \mathbb{E}{t} [\nabla\theta \log \pi_\theta(a_t\mid s_t) \cdot A_t]
+$$
 其中 $A_t$ 是优势函数（动作 $a_t$ 比平均水平好多少）。
 
 3. 从梯度到目标函数 (Surrogate Objective)
 如果我们想把这个梯度反推回一个“目标函数” $L(\theta)$，使得对该函数求导能得到上面的梯度，那么最直观的形式是：
-$$L_{PG}(\theta) = \mathbb{E}{t} [\log \pi\theta(a_t|s_t) \cdot A_t]$$
-但在实际训练中，我们通常使用重要性采样 (Importance Sampling) 来利用旧策略 $\pi_{old}$ 产生的数据更新新策略 $\pi_\theta$。这引入了概率比率：
-$$L_{IS}(\theta) = \mathbb{E}{t} \left[ \frac{\pi\theta(a_t|s_t)}{\pi_{old}(a_t|s_t)} \cdot A_t \right] = \mathbb{E}{t} [r_t(\theta) \cdot A_t]$$
+$$
+L_{PG}(\theta) = \mathbb{E}{t} [\log \pi\theta(a_t\mid s_t) \cdot A_t]
+$$
+但在实际训练中，我们通常使用重要性采样 (Importance Sampling) 来利用旧策略 $\pi_{\mathrm{old}}$ 产生的数据更新新策略 $\pi_\theta$。这引入了概率比率：
+$$
+\begin{aligned}
+L_{IS}(\theta)
+&= \mathbb{E}{t} \left[ \frac{\pi\theta(a_t\mid s_t)}{\pi_{\mathrm{old}}(a_t\mid s_t)} \cdot A_t \right] = \mathbb{E}{t} [r_t(\theta) \cdot A_t]
+\end{aligned}
+$$
 为什么要乘比率？
 这本质上是数学上的 Change of Measure (测度变换)。
-我们用 $\pi_{old}$ 采样的数据去估算 $\pi_\theta$ 的期望。因为数据出现的概率是按 $\pi_{old}$ 分布的，为了纠正偏差，必须乘上权重 $\frac{\pi_\theta}{\pi_{old}}$。
+我们用 $\pi_{\mathrm{old}}$ 采样的数据去估算 $\pi_\theta$ 的期望。因为数据出现的概率是按 $\pi_{\mathrm{old}}$ 分布的，为了纠正偏差，必须乘上权重 $\frac{\pi_\theta}{\pi_{\mathrm{old}}}$。
 
 4. 直观理解
-$$Loss \propto - \frac{\pi_{new}}{\pi_{old}} \cdot A$$
+$$
+Loss \propto - \frac{\pi_{\mathrm{new}}}{\pi_{\mathrm{old}}} \cdot A
+$$
 如果 $A > 0$ (动作是好的)：
-为了最小化 Loss，我们需要 增大 $\frac{\pi_{new}}{\pi_{old}}$。
-这意味着 $\pi_{new}$ 应该比 $\pi_{old}$ 更大概率去选择这个动作。
+为了最小化 Loss，我们需要 增大 $\frac{\pi_{\mathrm{new}}}{\pi_{\mathrm{old}}}$。
+这意味着 $\pi_{\mathrm{new}}$ 应该比 $\pi_{\mathrm{old}}$ 更大概率去选择这个动作。
 直白点说：这步走得好，下次多走几步！
 如果 $A < 0$ (动作是坏的)：
-为了最小化 Loss，我们需要 减小 $\frac{\pi_{new}}{\pi_{old}}$（因为 A 是负数，整体变成最大化比率，或者说 $Loss = \text{Ratio} \times (-|A|)$，要让 Loss 变小，Ratio 必须变小）。
-这意味着 $\pi_{new}$ 应该比 $\pi_{old}$ 更小概率去选择这个动作。
+为了最小化 Loss，我们需要 减小 $\frac{\pi_{\mathrm{new}}}{\pi_{\mathrm{old}}}$（因为 A 是负数，整体变成最大化比率，或者说 $Loss = \text{Ratio} \times (-\lvert A\rvert)$，要让 Loss 变小，Ratio 必须变小）。
+这意味着 $\pi_{\mathrm{new}}$ 应该比 $\pi_{\mathrm{old}}$ 更小概率去选择这个动作。
 直白点说：这步走得臭，下次少走点！
 
 5. PPO 的改进 (Clipping)
-直接优化 $L_{IS}$ 可能会导致 $\pi_{new}$ 更新过猛，偏离 $\pi_{old}$ 太远，导致策略崩溃。PPO 引入了 Clipping (截断)：
-$$L^{CLIP}(\theta) = \mathbb{E}t \left[ \min(r_t(\theta) A_t, \text{clip}(r_t(\theta), 1-\epsilon, 1+\epsilon) A_t) \right]$$
+直接优化 $L_{IS}$ 可能会导致 $\pi_{\mathrm{new}}$ 更新过猛，偏离 $\pi_{\mathrm{old}}$ 太远，导致策略崩溃。PPO 引入了 Clipping (截断)：
+$$
+\begin{aligned}
+L^{CLIP}(\theta)
+&= \mathbb{E}t \left[ \min(r_t(\theta) A_t, \text{clip}(r_t(\theta), 1-\epsilon, 1+\epsilon) A_t) \right]
+\end{aligned}
+$$
 这确保了比率 $r_t(\theta)$ 不会偏离 1 太多（即新策略不应与旧策略差异过大），保证了训练的稳定性（Trust Region）。
 
 总结
 “优势函数 $\times$ 比率” 的推导逻辑链是：
 策略梯度定理：告诉我们梯度方向是 $\nabla \log \pi \cdot A$。
-重要性采样：为了能用旧数据更新新模型，引入了比率 $\frac{\pi_{new}}{\pi_{old}}$ 来修正概率分布的偏差。
+重要性采样：为了能用旧数据更新新模型，引入了比率 $\frac{\pi_{\mathrm{new}}}{\pi_{\mathrm{old}}}$ 来修正概率分布的偏差。
 直观意义：根据动作的好坏 ($A$)，成比例地放大或缩小该动作在新策略中的出现概率 ($\text{Ratio}$)。
 
 ---

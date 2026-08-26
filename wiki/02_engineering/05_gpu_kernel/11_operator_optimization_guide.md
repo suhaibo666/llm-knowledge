@@ -211,13 +211,17 @@ torch_npu.npu.profiler.stop()
 **逐项读懂（这就是 AI 的分子分母）**：
 
 1. **向量加法 `z = x + y`**：每个元素读 `x`、读 `y`、写 `z` = 3 次访存（公式里的 `3`），却只做 1 次加法。
-   $$\text{AI} = \frac{N \text{ FLOP}}{3N \times 4 \text{ Byte}} = \frac{1}{12} \approx 0.083 \ \text{FLOP/Byte} \ll 156$$
+   $$
+   \text{AI} = \frac{N \text{ FLOP}}{3N \times 4 \text{ Byte}} = \frac{1}{12} \approx 0.083 \ \text{FLOP/Byte} \ll 156
+   $$
    → **极度 memory-bound**。所以官方用 GB/s（不是 TFLOPS）衡量它，优化目标是「打满带宽」。
 
 2. **融合 softmax**：朴素实现读写 `8MN+4M`（源 `02-fused-softmax.py:48-68` 逐行标注了每步读写量），融合后理论上只需 `2MN`，所以官方公式分子是 `2`，预期 ~4× 加速（源 `:68`）。这是 **fusion 省带宽**的量化证据 → 仍 memory-bound。
 
 3. **矩阵乘 (M·N·K)**：算 `2MNK` 次浮点，访存只 `O(MN+NK+MK)`。
-   $$\text{AI} = \frac{2MNK}{(MN+NK+MK)\times 2\text{ Byte}} \xrightarrow{M,N,K \text{ 大}} \text{很高} \gg 156$$
+   $$
+   \text{AI} = \frac{2MNK}{(MN+NK+MK)\times 2\text{ Byte}} \xrightarrow{M,N,K \text{ 大}} \text{很高} \gg 156
+   $$
    → **compute-bound**。所以官方用 TFLOPS 衡量，优化目标是「逼近 Tensor Core 峰值」（cuBLAS/`tl.dot`）。
 
 > 一眼判别法：**官方拿什么单位 benchmark，就告诉了你它在 roofline 哪一侧。** GB/s=memory-bound，TFLOPS=compute-bound。Triton 完整学习路线见 [[triton_01_gpu_essentials_guide]]（本节的姊妹起点页）。

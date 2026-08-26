@@ -114,7 +114,12 @@ MoE 有独有的不稳定源 —— 路由:
 
 > [!update] 2026-06-16 · dev@232c478d4 — aux_loss / z_loss 在 TP>1 下的梯度缩放修正(#5047)
 > `--calculate-per-token-loss` 模式下,`finalize_model_grads` 会把每个参数梯度统一除以 `total_global_tokens`(全局非 padding token 数)。但 router 权重标了 `sequence_parallel=True`,各 TP rank 只在自己的**序列分片**上算偏梯度、再由 `_allreduce_non_tensor_model_parallel_grads` 在 TP 组内**求和**。把 `total_global_tokens` 按 router 的本地 token 数展开:
-> $$\text{total\_global\_tokens} = \text{num\_micro\_batches}\times \text{dp\_size}\times\big(\text{num\_local\_tokens}\times\lvert\text{tp\_cp}\rvert\big)$$
+> $$
+> \begin{aligned}
+> \text{total\_global\_tokens}
+> &= \text{num\_micro\_batches}\times \text{dp\_size}\times\big(\text{num\_local\_tokens}\times\lvert\text{tp\_cp}\rvert\big)
+> \end{aligned}
+> $$
 > 旧代码只乘 `num_local_tokens`,在 `tp_cp_group.size()>1` 时 aux/z-loss 梯度被额外缩小了 `|tp_cp|` 倍 —— TP/CP 越大,负载均衡损失越被稀释。
 > 修正:`aux_loss` 与 `z_loss` 预乘改为 `num_local_tokens * self.tp_cp_group.size()`(`transformer/moe/router.py:546`、`:587`),恰好抵消上式中的 `|tp_cp|`,使有效缩放回到目标 `1/(num_micro_batches·dp_size)`,与 `!calculate_per_token_loss` 路径一致、且对 TP/CP 配置不变。(z_loss 系数另有 `/tp_cp_group.size()` 是独立的**前向**修正:z_loss 在每个 TP+CP rank 的本地 logits 上独立计算,需按 TP+CP 求平均而非求和。)回归测试见 `tests/.../test_aux_loss.py::TestPerTokenAuxLoss`。
 

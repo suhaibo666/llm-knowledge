@@ -452,9 +452,9 @@ class Router(nn.Module):
 | $B$ | batch size (per DP rank) | varies |
 | $H$ | hidden size | 7168 |
 | $T$ | TP size | 1 (DSv4 Attn 强制) |
-| $T_{shared}$ | Shared Expert TP size | 通常为 1 或 4 |
+| $T_{\mathrm{shared}}$ | Shared Expert TP size | 通常为 1 或 4 |
 | $E$ | expert intermediate dim | 3072 |
-| $N_{exp}$ | 路由专家总数 | 384 |
+| $N_{\mathrm{exp}}$ | 路由专家总数 | 384 |
 | $K$ | 每 token 激活专家数 | 6 |
 | $m$ | CSA 压缩率 | 4 |
 | $m'$ | HCA 压缩率 | 128 |

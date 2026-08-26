@@ -279,7 +279,7 @@ def _check_segment(
         if re.search(r"\\(?:text|texttt|mathrm|operatorname)\s*\{", subscript):
             continue
         without_commands = re.sub(r"\\[A-Za-z]+", "", subscript)
-        if re.search(r"[A-Za-z]{3,}|[-/]", without_commands):
+        if re.search(r"[A-Za-z]{3,}", without_commands):
             diagnostics.append(
                 Diagnostic(
                     "warning",

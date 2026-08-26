@@ -68,7 +68,12 @@ flowchart TB
 
 上游 GPU 路线用 `tl.program_id(0/1/2)` 把多维 grid 交给硬件调度器、kernel 内无循环（见 [[23_inductor_gpu_kernel_dispatch_model]]）；昇腾是固定 40 个 vector core 的单维 dispatch（`bin[40,1,1]`）。Linearize 不做「哪根轴当 split/tiling」的逐算子启发式，而依赖一个**与算子无关**的恒等式：
 
-$$\text{任意多维迭代空间} \equiv [0, \text{numel}),\qquad \text{coord}_k = \left\lfloor \frac{\text{flat}}{\text{divisor}_k}\right\rfloor \bmod \text{length}_k$$
+$$
+\begin{aligned}
+\text{任意多维迭代空间}
+&\equiv [0, \text{numel}),\qquad \text{coord}_k = \left\lfloor \frac{\text{flat}}{\text{divisor}_k}\right\rfloor \bmod \text{length}_k
+\end{aligned}
+$$
 
 于是「适配 NPU」归约为：为每个 range-tree 选一组**基础轴**承载扁平空间，其余节点表达成基础轴的除/模派生。`_apply_linearize`（`triton.py:3372`）即此——它不关心算子是 matmul/softmax/layernorm，只做纯代数的轴归并。主干极短：
 

@@ -43,7 +43,9 @@ batch3 = [C, X, A]  →  A 的输出 = O_A  (bitwise 相同)
 
 浮点加法的非结合性是所有批次不变性问题的数学根源：
 
-$$(a + b) + c \neq a + (b + c)$$
+$$
+(a + b) + c \neq a + (b + c)
+$$
 
 在 FP32 下：
 
@@ -139,10 +141,14 @@ SM-1: [序列 1, 全部 token] → output_1  (累加路径: j=0→1→2→...→
 **关键设计**：Kernel 2 的输出必须与 Kernel 1 **bitwise 相同**。
 
 Kernel 1 的有效累加路径：
-$$O = (\dots((v_0 w_0 + v_1 w_1) + v_2 w_2) + \dots + v_N w_N)$$
+$$
+O = (\dots((v_0 w_0 + v_1 w_1) + v_2 w_2) + \dots + v_N w_N)
+$$
 
 Kernel 2 必须保证等效路径：
-$$O = (\dots((\text{partial}_0 + \text{partial}_1) + \text{partial}_2) + \dots + \text{partial}_K)$$
+$$
+O = (\dots((\text{partial}_0 + \text{partial}_1) + \text{partial}_2) + \dots + \text{partial}_K)
+$$
 
 **实现手段**：
 

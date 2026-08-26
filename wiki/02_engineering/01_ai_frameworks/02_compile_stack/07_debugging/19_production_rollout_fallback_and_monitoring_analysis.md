@@ -207,7 +207,7 @@ entries，但累计上限仍是全局安全cap
 设模型版本 $M$、设备类 $D$、specialization $S$、部署副本 $R$：
 
 $$
-|\text{artifact states}|=O(MDS)
+\lvert \text{artifact states}\rvert=O(MDS)
 $$
 
 若每副本独立持有runtime module/CUDAGraph pool，运行时内存近似再乘 $R$；remote cache可减少

@@ -38,11 +38,22 @@ RL 扩展:        模型通过奖励信号自主探索 → 生成训练数据 �
 
 ### 3.1 优化目标
 
-$$\max_\theta \mathbb{E}_{(x,y^*) \sim \mathcal{D}} \left[ \mathbb{E}_{(y,z) \sim \pi_\theta} [r(x, y, y^*)] - \tau \mathrm{KL}(\pi_\theta(x) || \pi_{\theta_i}(x)) \right]$$
+$$
+\begin{aligned}
+\max_\theta \mathbb{E}_{(x,y^*) \sim \mathcal{D}}
+\left[ \mathbb{E}_{(y,z) \sim \pi_\theta} [r(x, y, y^*)] - \tau \mathrm{KL}(\pi_\theta(x) \,\|\, \pi_{\theta_i}(x)) \right]
+\end{aligned}
+$$
 
 ### 3.2 梯度更新
 
-$$\frac{1}{k} \sum_{j=1}^k \left( \nabla_\theta \log \pi_\theta(y_j, z_j|x) (r(x, y_j, y^*) - \bar{r}) - \frac{\tau}{2} \nabla_\theta \left( \log \frac{\pi_\theta(y_j, z_j|x)}{\pi_{\theta_i}(y_j, z_j|x)} \right)^2 \right)$$
+$$
+\begin{aligned}
+\frac{1}{k} \sum_{j=1}^k \Big(
+&\nabla_\theta \log \pi_\theta(y_j, z_j\mid x)\,(r(x, y_j, y^*) - \bar{r}) \\
+&- \frac{\tau}{2} \nabla_\theta \Big( \log \frac{\pi_\theta(y_j, z_j\mid x)}{\pi_{\theta_i}(y_j, z_j\mid x)} \Big)^2 \Big)
+\end{aligned}
+$$
 
 ### 3.3 与 GRPO 对比
 
@@ -59,7 +70,9 @@ $$\frac{1}{k} \sum_{j=1}^k \left( \nabla_\theta \log \pi_\theta(y_j, z_j|x) (r(x
 
 ### 3.5 长度惩罚
 
-$$\lambda = 0.5 - \frac{\mathrm{len}(i) - \mathrm{min\_len}}{\mathrm{max\_len} - \mathrm{min\_len}}$$
+$$
+\lambda = 0.5 - \frac{\mathrm{len}(i) - \mathrm{min\_len}}{\mathrm{max\_len} - \mathrm{min\_len}}
+$$
 
 - 正确答案中：奖励较短回答，惩罚较长回答
 - 错误答案中：明确惩罚长回答

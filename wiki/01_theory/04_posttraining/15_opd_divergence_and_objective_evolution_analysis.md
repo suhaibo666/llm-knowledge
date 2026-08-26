@@ -28,7 +28,9 @@
 
 经典 KD 最小化前向 KL：
 
-$$\mathcal D_{\mathrm{KL}}(p_T\,\|\,q_\theta)=\mathbb E_{y\sim p_T}\Big[\log\frac{p_T(y)}{q_\theta(y)}\Big]$$
+$$
+\mathcal D_{\mathrm{KL}}(p_T\,\|\,q_\theta)=\mathbb E_{y\sim p_T}\Big[\log\frac{p_T(y)}{q_\theta(y)}\Big]
+$$
 
 期望在**教师**分布下取，故训练数据可直接来自教师输出或固定语料，优化退化为加权交叉熵——工程上最便宜，这是它统治 2015–2022 的原因。
 
@@ -52,7 +54,9 @@ $$\mathcal D_{\mathrm{KL}}(p_T\,\|\,q_\theta)=\mathbb E_{y\sim p_T}\Big[\log\fra
 
 反向 KL：
 
-$$\mathcal D_{\mathrm{KL}}(q_\theta\,\|\,p_T)=\mathbb E_{y\sim q_\theta}\Big[\log\frac{q_\theta(y)}{p_T(y)}\Big]$$
+$$
+\mathcal D_{\mathrm{KL}}(q_\theta\,\|\,p_T)=\mathbb E_{y\sim q_\theta}\Big[\log\frac{q_\theta(y)}{p_T(y)}\Big]
+$$
 
 ### 2.1 一石二鸟
 
@@ -67,7 +71,12 @@ $$\mathcal D_{\mathrm{KL}}(q_\theta\,\|\,p_T)=\mathbb E_{y\sim q_\theta}\Big[\lo
 
 **期望的采样分布依赖被优化的 $\theta$ 本身**，不能像 FKL 那样直接反传，必须用策略梯度。完整推导见 [[14_on_policy_distillation_analysis]] §3.1，结论是
 
-$$\nabla_\theta L=-\,\mathbb E_{y\sim q_\theta}\Big[\sum_{t}\big(R_t-1\big)\,\nabla_\theta\log q_\theta(y_t\mid y_{<t},x)\Big],\qquad R_t=\sum_{t'\ge t}\log\frac{p_T(y_{t'}\mid\cdot)}{q_\theta(y_{t'}\mid\cdot)}$$
+$$
+\begin{aligned}
+\nabla_\theta L
+&=-\,\mathbb E_{y\sim q_\theta}\Big[\sum_{t}\big(R_t-1\big)\,\nabla_\theta\log q_\theta(y_t\mid y_{<t},x)\Big],\qquad R_t=\sum_{t'\ge t}\log\frac{p_T(y_{t'}\mid\cdot)}{q_\theta(y_{t'}\mid\cdot)}
+\end{aligned}
+$$
 
 即"教师似然比充当稠密奖励"。**蒸馏在这一步形式上变成了 RL**，也就继承了 RL 的全部病。MiniLLM 因此需要三个稳定化技巧（均已独立核实）：
 
@@ -88,7 +97,13 @@ GKD（arXiv:2306.13649v3，已独立核实）把两个正交的设计轴显式�
 - **数据分布用 $\lambda$ 调**：$\lambda$ 比例的轨迹来自学生自采样——治病灶二。
 - **散度方向用 $\beta$ 调**：广义 JSD(β) 插值——把病灶一变成可调参数而非固定选择。
 
-$$\mathcal D_{\mathrm{JSD}(\beta)}(P\|Q)=\beta\,\mathcal D_{\mathrm{KL}}\big(P\,\|\,\beta P+(1-\beta)Q\big)+(1-\beta)\,\mathcal D_{\mathrm{KL}}\big(Q\,\|\,\beta P+(1-\beta)Q\big)$$
+$$
+\begin{aligned}
+\mathcal D_{\mathrm{JSD}(\beta)}(P\|Q)
+&=\beta\,\mathcal D_{\mathrm{KL}}\big(P\,\|\,\beta P+(1-\beta)Q\big) \\
+&\quad +(1-\beta)\,\mathcal D_{\mathrm{KL}}\big(Q\,\|\,\beta P+(1-\beta)Q\big)
+\end{aligned}
+$$
 
 论文给出 $\lim_{\beta\to 0}\mathcal D_{\mathrm{JSD}(\beta)}(P\|Q)/\beta=\mathcal D_{\mathrm{KL}}(P\|Q)$，并称 $\beta$ 接近 0 / 1 时梯度分别类似 FKL / RKL。**注意这是极限/梯度意义上的退化，不是端点处的恒等式**——这是核验时发现源稿未加限定的一处。
 
@@ -96,7 +111,9 @@ $$\mathcal D_{\mathrm{JSD}(\beta)}(P\|Q)=\beta\,\mathcal D_{\mathrm{KL}}\big(P\,
 
 **本页推导。** GKD 的优化方式常被忽略但极关键：轨迹一旦采出即**视为常量**（不对采样分布求梯度），此时逐 token 散度 $\mathcal D(p_T\|p_S^\theta)$ 在每个前缀位置就是一个普通的可微函数，可以**监督式直接反传**：
 
-$$\nabla_\theta\, \mathcal D\big(p_T(\cdot\mid y_{<t},x)\,\|\,p_S^\theta(\cdot\mid y_{<t},x)\big)$$
+$$
+\nabla_\theta\, \mathcal D\big(p_T(\cdot\mid y_{<t},x)\,\|\,p_S^\theta(\cdot\mid y_{<t},x)\big)
+$$
 
 对照 §2.2 的完整梯度：GKD 丢掉的正是 [[14_on_policy_distillation_analysis]] §3.1 推导里的 **(I) 项**（采样分布移动带来的那一项），只保留 (II) 项。**这是一个有意的偏差换方差**——用"对采样分布的梯度不予修正"这个偏差，换掉 MiniLLM 的 REINFORCE 高方差。
 
@@ -114,7 +131,9 @@ $$\nabla_\theta\, \mathcal D\big(p_T(\cdot\mid y_{<t},x)\,\|\,p_S^\theta(\cdot\m
 
 任意凸生成元 $f$（$f(1)=0$）生成 f-散度族：
 
-$$D_f(P\|Q)=\mathbb E_{y\sim Q}\Big[f\Big(\frac{P(y)}{Q(y)}\Big)\Big]$$
+$$
+D_f(P\|Q)=\mathbb E_{y\sim Q}\Big[f\Big(\frac{P(y)}{Q(y)}\Big)\Big]
+$$
 
 FKL / RKL / JS / TVD 皆为特例：
 
@@ -147,21 +166,38 @@ f-DISTILL 的核心贡献是**可计算性**（已独立核实原文表述）：
 
 ## 5. 第 4 步：DistiLLM 的工程化收口——skew KL
 
-$$D_{\mathrm{SKL}}^{(\alpha)}(p\,\|\,q_\theta)=D_{\mathrm{KL}}\big(p\,\|\,\alpha p+(1-\alpha)q_\theta\big),\qquad \alpha=0.1$$
+$$
+\begin{aligned}
+D_{\mathrm{SKL}}^{(\alpha)}(p\,\|\,q_\theta)
+&=D_{\mathrm{KL}}\big(p\,\|\,\alpha p+(1-\alpha)q_\theta\big),\qquad \alpha=0.1
+\end{aligned}
+$$
 
 ### 5.1 为什么梯度有界（本页推导）
 
 这是 skew KL 的全部要点，源稿只说"分母被混合分布兜底、不再趋零"，推导如下：
 
-$$D_{\mathrm{SKL}}^{(\alpha)}=\sum_y p(y)\,\log\frac{p(y)}{\alpha p(y)+(1-\alpha)q_\theta(y)}$$
+$$
+D_{\mathrm{SKL}}^{(\alpha)}=\sum_y p(y)\,\log\frac{p(y)}{\alpha p(y)+(1-\alpha)q_\theta(y)}
+$$
 
 对 $q_\theta(y)$ 求偏导：
 
-$$\frac{\partial D_{\mathrm{SKL}}^{(\alpha)}}{\partial q_\theta(y)}=-\,\frac{(1-\alpha)\,p(y)}{\alpha p(y)+(1-\alpha)q_\theta(y)}$$
+$$
+\begin{aligned}
+\frac{\partial D_{\mathrm{SKL}}^{(\alpha)}}{\partial q_\theta(y)}
+&=-\,\frac{(1-\alpha)\,p(y)}{\alpha p(y)+(1-\alpha)q_\theta(y)}
+\end{aligned}
+$$
 
 分母被 $\alpha p(y)$ 从下方兜住，故
 
-$$\Big|\frac{\partial D_{\mathrm{SKL}}^{(\alpha)}}{\partial q_\theta(y)}\Big|\;\le\;\frac{(1-\alpha)p(y)}{\alpha\,p(y)}\;=\;\frac{1-\alpha}{\alpha}$$
+$$
+\begin{aligned}
+\Big\vert\frac{\partial D_{\mathrm{SKL}}^{(\alpha)}}{\partial q_\theta(y)}\Big\vert\;
+&\le\;\frac{(1-\alpha)p(y)}{\alpha\,p(y)}\;=\;\frac{1-\alpha}{\alpha}
+\end{aligned}
+$$
 
 **梯度被一个与 $q_\theta$ 无关的常数界住**（$\alpha=0.1$ 时界为 9）。对照普通 FKL：$\partial D_{\mathrm{KL}}/\partial q_\theta(y)=-p(y)/q_\theta(y)$，当 $q_\theta(y)\to 0$ 时**无界**——这正是 FKL 训练在学生对某 token 概率极低时梯度爆炸的机制。DistiLLM 由此获得收敛速率保证（其 Theorem 1）。
 
@@ -191,7 +227,13 @@ AKL（arXiv:2404.02657v4, COLING 2025，已独立核实）给出了这条链上�
 
 真正的差别只在**早期拟合次序**：**FKL 先拟合分布头部、RKL 先拟合尾部**。于是散度选择从"渐近拟合行为"问题变成"优化路径"问题，答案自然是自适应组合：
 
-$$\mathrm{AKL}(p,q_\theta)=\frac{g_{\mathrm{head}}}{g_{\mathrm{head}}+g_{\mathrm{tail}}}\,\mathrm{FKL}+\frac{g_{\mathrm{tail}}}{g_{\mathrm{head}}+g_{\mathrm{tail}}}\,\mathrm{RKL}$$
+$$
+\begin{aligned}
+\mathrm{AKL}(p,q_\theta)
+&=\frac{g_{\mathrm{head}}}{g_{\mathrm{head}}+g_{\mathrm{tail}}}\,\mathrm{FKL} \\
+&\quad +\frac{g_{\mathrm{tail}}}{g_{\mathrm{head}}+g_{\mathrm{tail}}}\,\mathrm{RKL}
+\end{aligned}
+$$
 
 其中 $g_{\mathrm{head}}/g_{\mathrm{tail}}$ 为头/尾区域的分布差距，头部由累积概率阈值 $\mu$（默认 0.5）划定。
 

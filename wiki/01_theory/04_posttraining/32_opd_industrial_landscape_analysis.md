@@ -186,7 +186,9 @@ DeepSeek 是观察范式迁移的最佳单一样本，四代报告构成一条�
 
 目标函数（Eq. 29），reverse KL、按教师加权求和：
 
-$$L_{OPD}(\theta)=\sum_i w_i\, D_{KL}\big(\pi_\theta \,\big\|\, \pi_{E_i}\big)$$
+$$
+L_{\mathrm{OPD}}(\theta)=\sum_i w_i\, D_{KL}\big(\pi_\theta \,\big\|\, \pi_{E_i}\big)
+$$
 
 原文强调 "requires sampling training trajectories from the student $\pi_\theta$ to maintain on-policy learning"，且 **"more than ten teacher models covering various domains are employed to distill a single student model"**。
 
@@ -206,7 +208,12 @@ GLM-4.5（arXiv:2508.06471v1 §3）还是 off-policy：Stage 1 训三域专家�
 
 GLM-5（arXiv:2602.15763v2 §3.5）转向 OPD，损失实现是把 GRPO（Eq. 1）的 advantage 替换为 token 级 KL 估计（Eq. 2）：
 
-$$\hat{A}_{i,t}=\mathrm{sg}\!\left[\log \frac{\pi_{\text{teacher}}^{\text{infer}}(y_t\mid \cdot)}{\pi_\theta^{\text{train}}(y_t\mid \cdot)}\right]$$
+$$
+\begin{aligned}
+\hat{A}_{i,t}
+&=\mathrm{sg}\!\left[\log \frac{\pi_{\text{teacher}}^{\text{infer}}(y_t\mid \cdot)}{\pi_\theta^{\text{train}}(y_t\mid \cdot)}\right]
+\end{aligned}
+$$
 
 一个常被忽略的工程含义：既然 advantage 不再需要组内比较来估计，**GRPO 的 group size 可以降到 1**（batch = 1024）。原文："it is no longer necessary to maintain a large group of samples per prompt to estimate advantages; the advantage is computed directly from the gap with the teacher models instead."——这是路线 B 的一项隐性红利：**省掉了 GRPO 每 prompt 多次采样的 rollout 开销**。教师 logits 目前经推理引擎获取。
 
@@ -224,7 +231,12 @@ MiMo-V2-Flash（arXiv:2601.02780v2，309B-A15B）的三阶段：SFT → 各域�
 
 **独特贡献（Eq. 9）**——唯一公开把 OPD 信号与结果奖励显式**相加**的工业报告：
 
-$$\hat{A}_{\mathrm{MOPD}}=\mathrm{sg}\!\left[\log\frac{\pi_{\text{domain}}}{\pi_\theta}\right]+\alpha\cdot\hat{A}_{\mathrm{ORM}}$$
+$$
+\begin{aligned}
+\hat{A}_{\mathrm{MOPD}}
+&=\mathrm{sg}\!\left[\log\frac{\pi_{\text{domain}}}{\pi_\theta}\right]+\alpha\cdot\hat{A}_{\mathrm{ORM}}
+\end{aligned}
+$$
 
 教师可以是 RL 模型、SFT 模型、甚至学生自身（Table 7 中标注 **Self**）。
 
@@ -254,7 +266,12 @@ $$\hat{A}_{\mathrm{MOPD}}=\mathrm{sg}\!\left[\log\frac{\pi_{\text{domain}}}{\pi_
 1. **正文未出现 "IcePop" 一词**——该词仅见于参考文献标题。原文的表述是 **"Following Zhao et al. (2025)"**。
 2. **截断作用于训推比 $\pi_\theta/\mu_\theta$，不是师生比**。即训练策略 $\pi_\theta$ 与采样（推理引擎）策略 $\mu_\theta$ 之比
 
-   $$w_t=\frac{\pi_\theta(y_t\mid x, y_{<t})}{\mu_\theta(y_t\mid x, y_{<t})},\qquad w_t \leftarrow 0 \ \text{ if } w_t\notin[\varepsilon_{low},\varepsilon_{high}]$$
+   $$
+\begin{aligned}
+w_t
+&=\frac{\pi_\theta(y_t\mid x, y_{<t})}{\mu_\theta(y_t\mid x, y_{<t})},\qquad w_t \leftarrow 0 \ \text{ if } w_t\notin[\varepsilon_{\mathrm{low}},\varepsilon_{\mathrm{high}}]
+\end{aligned}
+   $$
 
    落在区间外即置零。这是**训推不一致（train–inference mismatch）修正**，源于训练框架与推理引擎的数值/实现差异，**与 OPD 的师生 KL 是完全不同的两件事**。
 
@@ -281,7 +298,12 @@ $$\hat{A}_{\mathrm{MOPD}}=\mathrm{sg}\!\left[\log\frac{\pi_{\text{domain}}}{\pi_
 
 **逐 token OPD 奖励（Eq. 15，已逐字复核）**：
 
-$$r^{d}_{\mathrm{opd}}(y_t \mid e,x,y_{<t})=\mathrm{clip}\!\left(\mathrm{sg}\!\left[\log\frac{\pi^{(d,e)}_{\mathrm{teacher}}(y_t \mid x,y_{<t})}{\pi_\theta(y_t \mid e,x,y_{<t})}\right],\,-R_{\max},\,R_{\max}\right)$$
+$$
+\begin{aligned}
+r^{d}_{\mathrm{opd}}(y_t \mid e,x,y_{<t})
+&=\mathrm{clip}\!\left(\mathrm{sg}\!\left[\log\frac{\pi^{(d,e)}_{\mathrm{teacher}}(y_t \mid x,y_{<t})}{\pi_\theta(y_t \mid e,x,y_{<t})}\right],\,-R_{\max},\,R_{\max}\right)
+\end{aligned}
+$$
 
 即路线 B + clip 截断。选择路线 B 的理由是**基建复用**：报告强调这一稠密奖励 "seamlessly integrates into our RL framework, naturally enabling infrastructure-level optimizations such as **partial rollout training for long-horizon tasks**"。
 
@@ -305,7 +327,12 @@ $$r^{d}_{\mathrm{opd}}(y_t \mid e,x,y_{<t})=\mathrm{clip}\!\left(\mathrm{sg}\!\l
 
 **算法（§3.3.1, Eq. 1–2）**——完全 on-policy 情形即最大化负 reverse-KL 目标：
 
-$$J_{\mathrm{MOPD}}(\theta)=\sum_i \lambda_i\, \mathbb{E}_{q\sim D_i,\; y\sim\pi_\theta}\left[\sum_t \log \pi_{T_i}(y_t\mid s_t)-\log \pi_\theta(y_t\mid s_t)\right]$$
+$$
+\begin{aligned}
+J_{\mathrm{MOPD}}(\theta)
+&=\sum_i \lambda_i\, \mathbb{E}_{q\sim D_i,\; y\sim\pi_\theta}\left[\sum_t \log \pi_{T_i}(y_t\mid s_t)-\log \pi_\theta(y_t\mid s_t)\right]
+\end{aligned}
+$$
 
 原文："Equivalently, at each prefix $s_t$, the student minimizes $D_{KL}(\pi_\theta(\cdot\mid s_t)\|\pi_{T_i}(\cdot\mid s_t))$ … MOPD provides a **dense token-level learning signal** from the relevant teacher distribution."异步稳定化采用**行为策略与 proximal 策略解耦**，蒸馏优势为 $\hat{A}_t=\mathrm{sg}[\ell^{T_i}_t-\ell^{\mathrm{prox}}_t]$；全程三类 worker（rollout / teacher-scoring / learner）异步流水线。
 
@@ -363,7 +390,7 @@ $$J_{\mathrm{MOPD}}(\theta)=\sum_i \lambda_i\, \mathbb{E}_{q\sim D_i,\; y\sim\pi
 
 其余一手内容（未受更正影响）：
 
-- **算法（p.13, Eq. 2–4）**：token 级 reverse-KL 优势 $a^{\mathrm{MOPD}}_t=\log \pi_{\text{domain}_i}(y_t\mid s_t)-\log \pi_{\text{train}}(y_t\mid s_t)$，并明确 **"The log-probability difference is computed only on the student-sampled token rather than over the full vocabulary."**——这是**路线 B 的最强工业背书**；train–inference 失配用截断重要性加权 $\varepsilon_{low}=0.5,\ \varepsilon_{high}=2.0$。
+- **算法（p.13, Eq. 2–4）**：token 级 reverse-KL 优势 $a^{\mathrm{MOPD}}_t=\log \pi_{\text{domain}_i}(y_t\mid s_t)-\log \pi_{\text{train}}(y_t\mid s_t)$，并明确 **"The log-probability difference is computed only on the student-sampled token rather than over the full vocabulary."**——这是**路线 B 的最强工业背书**；train–inference 失配用截断重要性加权 $\varepsilon_{\mathrm{low}}=0.5,\ \varepsilon_{\mathrm{high}}=2.0$。
 - **教师三枚**：math = 初始 SFT ckpt、RLHF ckpt、multi-domain ckpt，全部来自 Cascade RL 流程内部，"without introducing external models"；学习率 2e-6，40–50 步收敛。
 - **效率主张原文**："MOPD provides a dense token-level distillation advantage, whereas GRPO relies on a sparse sequence-level outcome reward that is shared across all generated tokens. This makes MOPD **substantially more sample- and step-efficient** in practice."
 - **另一组数据（Fig. 3(c)）**：AIME25 上 GRPO 25 步 89.9→91.0，MOPD 30 步内达 92.0，"recovers teacher-level performance"。
@@ -495,7 +522,9 @@ OPD 文献大多把教师当作给定输入，很少正面回答"教师本身如
 - **类②的专家训练是当前旗舰后训练算力的主要去向**：DeepSeek-V3.2 原文 "Each specialist is trained with **large-scale Reinforcement Learning (RL) computing**"（arXiv:2512.02556v1 §3）。贵的是用 RL 造专家，便宜的是用 OPD 整合（Nemotron-Cascade 2：MOPD 52 步 vs RLHF 100 步的对比，见 §4.6.2 更正后口径）。这给"RL 创造能力、OPD 搬运能力"补上成本刻度：**创造仍然贵，搬运变得便宜**。
 - **算力模型**（arXiv:2604.00626 §7.4）——off-policy 与 on-policy 的成本差：
 
-  $$C_{off}\approx N\,(F_{T}+F_{S}+B_{S}),\qquad C_{on}\approx N\,(G_{S}+\rho F_{T}+F_{S}+B_{S})$$
+  $$
+  C_{\mathrm{off}}\approx N\,(F_{T}+F_{S}+B_{S}),\qquad C_{on}\approx N\,(G_{S}+\rho F_{T}+F_{S}+B_{S})
+  $$
 
   其中 $F/B$ 为前向/反向 FLOPs，$G_S$ 为学生自回归生成成本（$G_S\gg F_S$，这是 on-policy 溢价的主体），$\rho\in(0,1]$ 为教师监督刷新率。**注意这个公式里没有教师的训练成本**——它只算蒸馏阶段，这正是"1/10 GPU 时"类数字的隐含边界。
 - **判据层面**，Distillation Scaling Laws（arXiv:2502.08606，ICML'25，⚠️ Apple 归属为通行说法）的结论可直接翻译为教师来源决策：**教师已存在（类①③④）或一位教师蒸多个学生（类②的复用）时蒸馏才划算；为单个学生现训教师通常不如直接训学生**。这解释了为什么类②在 2026 年成为主流——旗舰厂商的专家教师**天然被复用**（一批专家蒸一个通才，且往往跨多个尺寸的学生复用）。
@@ -605,7 +634,7 @@ MOPD 方法论文（arXiv:2606.30406，小米 LLM-Core / PKU / HKU / RUC，已�
 
 **同时确认为准确、可放心作一手结论引用的**（本次已回一手原文逐字核对）：
 
-- **DeepSeek-V4 §5.1.2 全部内容**：`the mixed Reinforcement Learning (RL) stage was entirely replaced by On-Policy Distillation (OPD)`；Eq. 29 为 $L_{OPD}(\theta)=\sum_i w_i D_{KL}(\pi_\theta\|\pi_{E_i})$；`more than ten teacher models covering various domains`；对路线 B 的批评逐字为 `it leads to high variance in gradient estimation and often causes training instability. Therefore, we adopt full-vocabulary logit distillation in our OPD.`
+- **DeepSeek-V4 §5.1.2 全部内容**：`the mixed Reinforcement Learning (RL) stage was entirely replaced by On-Policy Distillation (OPD)`；Eq. 29 为 $L_{\mathrm{OPD}}(\theta)=\sum_i w_i D_{KL}(\pi_\theta\|\pi_{E_i})$；`more than ten teacher models covering various domains`；对路线 B 的批评逐字为 `it leads to high variance in gradient estimation and often causes training instability. Therefore, we adopt full-vocabulary logit distillation in our OPD.`
 - **Kimi K3 §4.1.3**：Eq. 15 的 clip 形式；`we also experimented with more fine-grained top-k distillation objectives, we observed no clear advantage in either convergence speed or final performance in our setting`；九专家 = 三域 × 三档 reasoning effort $e\in\{\text{low},\text{high},\text{max}\}$。
 - **Qwen3**：Table 21 主稿转录的 12 格数字全部准确；`aligning its logits with those of a teacher model (Qwen3-32B or Qwen3-235B-A22B) to minimize the KL divergence` 逐字无误；pass@64 只在蒸馏下提升有明确原文支撑。**但须补两条限定**（见 §4.1）：off-policy 起点行的 GPU 时是 "–"（未报告），故 1,800 vs 17,920 只是两个增量阶段之比；报告全文未说明这两个数字是否计入教师推理成本。
 

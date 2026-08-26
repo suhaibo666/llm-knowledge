@@ -55,7 +55,9 @@ flowchart TB
 
 容量 `CAP` 就是 `S×K`。定义
 
-$$\mathrm{balance}[h] = \mathrm{group\_tokens}[h] - \mathrm{CAP}.$$
+$$
+\mathrm{balance}[h] = \mathrm{group\_tokens}[h] - \mathrm{CAP}.
+$$
 
 因为每个 source rank 恰好产生 `S×K` 个路由条目，全局条目数 `= R·S·K = R·CAP`，所以 **`sum(balance) = 0` 恒成立**（`planning_reference.py:68-72`）。正数是超载的 home group，负数是有空位的 rank。这条守恒是整个算法可行性的基础。
 
@@ -170,7 +172,9 @@ dst[i] = dest * NvS + base_off + seg_pos
 
 README 给出两组 H20、EP=8 的曲线，横轴是路由不均衡度
 
-$$\mathrm{maxvio} = \max_e\left(\frac{T_e}{\bar T}\right) - 1 .$$
+$$
+\mathrm{maxvio} = \max_e\left(\frac{T_e}{\bar T}\right) - 1 .
+$$
 
 **基准设置**（`benchmarks/bench_vs_deepep.py:344-361`、`604-605`）：`S = 8192`/rank、`E = 384`、`H = 7168`、`K = 8`、`num_sms = 32`、maxvio 扫描 `{0.2, 1, 10, 20}`；路由用 lognormal 采样并以对数二分求解目标 maxvio 的 σ（`bench_vs_deepep.py:84-116`），种子固定 1234；三个库共用同一套 CUDA event 计时（warmup 20、iters 50、跨 rank 取均值，`bench_vs_deepep.py:59-77`），且共用同一路由矩阵与同一输入张量（`bench_vs_deepep.py:11-13`）。
 

@@ -43,7 +43,13 @@
 
 **通信结构**：墙钟约为
 
-$$T_{\text{MoE}} \approx \underbrace{T_{a2a}^{\text{dispatch}}}_{\text{送 token 去}} + \underbrace{T_{\text{expert}}}_{\text{本地 FFN}} + \underbrace{T_{a2a}^{\text{combine}}}_{\text{送结果回}}$$
+$$
+\begin{aligned}
+T_{\text{MoE}}
+&\approx \underbrace{T_{a2a}^{\text{dispatch}}}_{\text{送 token 去}} \\
+&\quad + \underbrace{T_{\text{expert}}}_{\text{本地 FFN}} + \underbrace{T_{a2a}^{\text{combine}}}_{\text{送结果回}}
+\end{aligned}
+$$
 
 两次 all-to-all 常是瓶颈。通信量 $\propto$（路由到**组外**的 token 数）$\times d$。由 [[10_collectives_analysis|分布式原语与通信代价模型]]，all-to-all 是**全连接通信**（每对 rank 都有流量），这带来两个尖锐问题：
 

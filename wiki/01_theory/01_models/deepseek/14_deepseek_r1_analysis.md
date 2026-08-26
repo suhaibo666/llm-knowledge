@@ -24,7 +24,10 @@ Bypass supervised fine-tuning (SFT) entirely. The hypothesis: human-defined reas
 GRPO eliminates the critic model (required by PPO), estimating the baseline from group scores instead:
 
 $$
-J_{GRPO}(\theta) = \mathbb{E}\left[ \frac{1}{G} \sum_{i=1}^{G} \left( \min\left( \frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)} A_i, \text{clip}\left(\frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)}, 1-\varepsilon, 1+\varepsilon\right) A_i \right) - \beta D_{KL}(\pi_\theta \| \pi_{ref}) \right) \right]
+\begin{aligned}
+J_{\mathrm{GRPO}}(\theta)
+&= \mathbb{E}\left[ \frac{1}{G} \sum_{i=1}^{G} \left( \min\left( \frac{\pi_\theta(o_i\mid q)}{\pi_{\theta_{\mathrm{old}}}(o_i\mid q)} A_i, \text{clip}\left(\frac{\pi_\theta(o_i\mid q)}{\pi_{\theta_{\mathrm{old}}}(o_i\mid q)}, 1-\varepsilon, 1+\varepsilon\right) A_i \right) - \beta D_{KL}(\pi_\theta \| \pi_{\mathrm{ref}}) \right) \right]
+\end{aligned}
 $$
 
 Advantage from group rewards (no value model):
@@ -43,7 +46,7 @@ $$
 No neural reward models to avoid reward hacking:
 
 $$
-R_{total} = R_{accuracy} + R_{format}
+R_{\mathrm{total}} = R_{\mathrm{accuracy}} + R_{\mathrm{format}}
 $$
 
 - **Accuracy reward**: Deterministic verification (math answer matching, code test cases)
@@ -139,12 +142,12 @@ Created by:
 Mixed reward signals over 1,700 steps:
 
 $$
-R_{total} = R_{reasoning} + R_{general} + R_{language}
+R_{\mathrm{total}} = R_{\mathrm{reasoning}} + R_{\mathrm{general}} + R_{\mathrm{language}}
 $$
 
-- $R_{reasoning} = R_{rule}$ (math correctness, code compilation)
-- $R_{general} = R_{reward\_model} + R_{format}$ (helpfulness + harmlessness)
-- $R_{language}$ = language consistency
+- $R_{\mathrm{reasoning}} = R_{\mathrm{rule}}$ (math correctness, code compilation)
+- $R_{\mathrm{general}} = R_{\mathrm{reward\_model}} + R_{\mathrm{format}}$ (helpfulness + harmlessness)
+- $R_{\mathrm{language}}$ = language consistency
 
 Temperature reduced to 0.7. General preference data added only in final 400 steps to avoid reward hacking.
 

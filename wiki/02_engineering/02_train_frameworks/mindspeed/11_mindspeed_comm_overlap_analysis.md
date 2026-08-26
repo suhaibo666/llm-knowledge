@@ -178,7 +178,9 @@ sequenceDiagram
 
 > [!tip] 优化点(CoC)
 > **纯软件 chunk 流水**:$p$ 块,每块计算 $T_c/p$、通信 $T_m/p$,流水稳态每步 $\max(T_c/p,T_m/p)$,加一次填充得
-> $$T_{\text{CoC}}\approx\max(T_c,T_m)\Big(1+\tfrac1p\Big)$$
+> $$
+> T_{\text{CoC}}\approx\max(T_c,T_m)\Big(1+\tfrac1p\Big)
+> $$
 > $p{=}8$ 时上界 $\approx\tfrac98\max(T_c,T_m)$——即**较小那侧(通信或计算)被掩盖约 $7/8\!\approx\!87.5\%$**,$p$ 越大越逼近下界 $\max(T_c,T_m)$,但每块子 GEMM 越小、越易跌出昇腾 cube 高效区(故 `parallel_num` 限 `{1,2,4,8}`)。**对比 MC2**:同是通算重叠,MC2=单融合大算子(粒度不可调、必须 SP),CoC=软件流水(粒度可调、SP/非 SP 皆可)或 lcal 融合核;二者互斥。
 
 ### 3.3 源码解读:退化与对齐

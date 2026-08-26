@@ -472,7 +472,7 @@ if self.compressor is not None and self.compress_ratio > 1:
 | $C$ | CP size | 4 or 8 (typical) |
 | $h$ | num attention heads | 128 |
 | $d$ | head dim (v_head_dim) | 64 or 128 |
-| $S_{local}$ | 每 CP rank 的序列长度 = S/C | 250K (S=1M, C=4) |
+| $S_{\mathrm{local}}$ | 每 CP rank 的序列长度 = S/C | 250K (S=1M, C=4) |
 
 ### 6.2 Standard Attention 的 CP 通信量
 

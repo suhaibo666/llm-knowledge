@@ -68,22 +68,25 @@ GLM-5 的后训练目标是把 base model 变成"会推理、会写代码、会�
 
 **原理**：RL 算法以 **GRPO** 为骨干，并引入 **IcePop** 技术来缓解 **training-inference mismatch**——即 RL 优化时**推理分布与训练分布**之间的差异（§3.2, p11）。GLM-5 **显式区分**两个策略（§3.2, p11）：
 
-- $\pi_{train}$：用于**梯度更新**的训练策略；
-- $\pi_{infer}$：用于**采样轨迹**的推理策略。
+- $\pi_{\mathrm{train}}$：用于**梯度更新**的训练策略；
+- $\pi_{\mathrm{infer}}$：用于**采样轨迹**的推理策略。
 
 相比原始 IcePop，GLM-5 **移除了 KL 正则项以加速 RL 提升**（§3.2, p11）。最终优化损失（Eq.1）为：
 
 $$
-\mathcal{L}(\theta) = -\,\mathbb{E}_{x\sim D,\,\{y_i\}_{i=1}^{G}\sim \pi^{infer}_{\theta_{old}}(\cdot\mid x)}
-\left[\frac{1}{G}\sum_{i=1}^{G}\frac{1}{|y_i|}\sum_{t=1}^{|y_i|}
-\mathrm{pop}(\rho_{i,t},\,1/\beta,\,\beta)\cdot
-\min\!\big(r_{i,t}\hat{A}_{i,t},\ \mathrm{clip}(r_{i,t},1-\epsilon_{low},1+\epsilon_{high})\hat{A}_{i,t}\big)\right]
+\begin{aligned}
+\mathcal{L}(\theta)
+&= -\,\mathbb{E}_{x\sim D,\,\{y_i\}_{i=1}^{G}\sim \pi^{infer}_{\theta_{\mathrm{old}}}(\cdot\mid x)} \left[\frac{1}{G}\sum_{i=1}^{G}\frac{1}{\lvert y_i\rvert}\sum_{t=1}^{\lvert y_i\rvert} \mathrm{pop}(\rho_{i,t},\,1/\beta,\,\beta)\cdot \min\!\big(r_{i,t}\hat{A}_{i,t},\ \mathrm{clip}(r_{i,t},1-\epsilon_{\mathrm{low}},1+\epsilon_{\mathrm{high}})\hat{A}_{i,t}\big)\right]
+\end{aligned}
 $$
 
 其中**训练-推理失配比**定义为训练策略与推理策略在同一 token 上的概率之比：
 
 $$
-\rho_{i,t}=\frac{\pi^{train}_{\theta_{old}}(y_{i,t}\mid x,y_{i,<t})}{\pi^{infer}_{\theta_{old}}(y_{i,t}\mid x,y_{i,<t})}
+\begin{aligned}
+\rho_{i,t}
+&=\frac{\pi^{train}_{\theta_{\mathrm{old}}}(y_{i,t}\mid x,y_{i,<t})}{\pi^{infer}_{\theta_{\mathrm{old}}}(y_{i,t}\mid x,y_{i,<t})}
+\end{aligned}
 $$
 
 ### 3.2 pop 算子：把"训推偏差过大"的 token 直接清零
@@ -101,14 +104,15 @@ $$
 PPO 风格的重要性比与群组归一化优势沿用原始 GRPO 定义（§3.2, p12）：
 
 $$
-r_{i,t}=\frac{\pi^{train}_{\theta}(y_{i,t}\mid x,y_{i,<t})}{\pi^{train}_{\theta_{old}}(y_{i,t}\mid x,y_{i,<t})},
-\qquad
-\hat{A}_{i,t}=\frac{R_i-\mathrm{mean}(R_1,\dots,R_G)}{\mathrm{std}(R_1,\dots,R_G)}
+\begin{aligned}
+r_{i,t}
+&=\frac{\pi^{train}_{\theta}(y_{i,t}\mid x,y_{i,<t})}{\pi^{train}_{\theta_{\mathrm{old}}}(y_{i,t}\mid x,y_{i,<t})}, \qquad \hat{A}_{i,t}=\frac{R_i-\mathrm{mean}(R_1,\dots,R_G)}{\mathrm{std}(R_1,\dots,R_G)}
+\end{aligned}
 $$
 
 **为什么**：当某 token 上 $\rho_{i,t}$ 落在 $[1/\beta,\beta]$ 之外，说明该 token 在推理引擎与训练引擎下的概率差得太多（典型由实现差异/量化/算子不一致引起），此时其梯度不可信；pop 把该 token 的贡献**直接清零**，只在"训推一致"的 token 上回传梯度——这是在不引入 KL 软约束的前提下，用**硬门控**稳住 off-distribution 偏差。
 
-**超参数**：$\beta=2$，$\epsilon_{low}=0.2$，$\epsilon_{high}=0.28$；训练**完全 on-policy**，**group size = 32**，**batch size = 32**（§3.2, p12）。注意 $\epsilon_{high}>\epsilon_{low}$ 的非对称裁剪鼓励上探。GRPO 本身的原理见 [[20_grpo_analysis]] 与 [[10_rl_ppo_loss_and_grpo_analysis]]。
+**超参数**：$\beta=2$，$\epsilon_{\mathrm{low}}=0.2$，$\epsilon_{\mathrm{high}}=0.28$；训练**完全 on-policy**，**group size = 32**，**batch size = 32**（§3.2, p12）。注意 $\epsilon_{\mathrm{high}}>\epsilon_{\mathrm{low}}$ 的非对称裁剪鼓励上探。GRPO 本身的原理见 [[20_grpo_analysis]] 与 [[10_rl_ppo_loss_and_grpo_analysis]]。
 
 ### 3.3 混域 Reasoning RL：四域均衡 + 难度过滤
 
@@ -175,12 +179,15 @@ GLM-5 为 coding 与 search agent 任务构建了一套**全异步、解耦**的
 **原理**：蒸馏损失通过**把 Eq.1 的优势项替换为下式**得到（'sg' 为 stop-gradient，即 `.detach()`）（§3.5, p14）：
 
 $$
-\hat{A}_{i,t}=\mathrm{sg}\!\left[\log\frac{\pi^{infer}_{\theta_{teacher}}(y_{i,t}\mid x,y_{i,<t})}{\pi^{train}_{\theta}(y_{i,t}\mid x,y_{i,<t})}\right]
+\begin{aligned}
+\hat{A}_{i,t}
+&=\mathrm{sg}\!\left[\log\frac{\pi^{infer}_{\theta_{\mathrm{teacher}}}(y_{i,t}\mid x,y_{i,<t})}{\pi^{train}_{\theta}(y_{i,t}\mid x,y_{i,<t})}\right]
+\end{aligned}
 $$
 
 即优势 = 教师与学生在该 token 上的**对数概率比**（教师更自信即正优势，反之负），并对教师项 stop-gradient（教师不更新）。其余损失结构（pop 门控、PPO 裁剪）沿用 Eq.1——所以蒸馏本质是 **GRPO 框架的一个变体**：唯独把"群组归一化优势"换成"对教师的差距"。
 
-**实现现状与未来**：当前用**推理引擎**取教师 logits；未来计划把**推理后端迁移到训练引擎**，并统一采用 **MLA 的 MQA 模式**做推理（$\pi^{infer}_{\theta_{teacher}}\!\to\!\pi^{train}_{\theta_{teacher}}$）（§3.5, p14）。MLA/MQA 机制见 [[20_glm5_architecture_deepdive]]。
+**实现现状与未来**：当前用**推理引擎**取教师 logits；未来计划把**推理后端迁移到训练引擎**，并统一采用 **MLA 的 MQA 模式**做推理（$\pi^{infer}_{\theta_{\mathrm{teacher}}}\!\to\!\pi^{train}_{\theta_{\mathrm{teacher}}}$）（§3.5, p14）。MLA/MQA 机制见 [[20_glm5_architecture_deepdive]]。
 
 ### 6.3 超参：group size 降到 1
 

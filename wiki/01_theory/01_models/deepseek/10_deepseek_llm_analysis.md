@@ -27,13 +27,13 @@ DeepSeek LLM is the first open-source large language model from DeepSeek-AI, rel
 The micro-design follows LLaMA:
 
 - **Pre-Norm** with RMSNorm
-- **SwiGLU** activation (FFN intermediate = $\frac{8}{3} d_{model}$)
+- **SwiGLU** activation (FFN intermediate = $\frac{8}{3} d_{\mathrm{model}}$)
 - **RoPE** (Rotary Positional Embedding)
 - **Grouped-Query Attention (GQA)** on 67B model (8 KV heads) to reduce inference cost
 
 The macro-design differs in depth scaling:
 
-| Model | Layers | $d_{model}$ | Heads | KV Heads | Context | Batch Size | LR | Tokens |
+| Model | Layers | $d_{\mathrm{model}}$ | Heads | KV Heads | Context | Batch Size | LR | Tokens |
 |-------|--------|-------------|-------|----------|---------|------------|-----|--------|
 | 7B  | 30 | 4096 | 32 | 32 | 4096 | 2304 | $4.2 \times 10^{-4}$ | 2.0T |
 | 67B | 95 | 8192 | 64 | 8  | 4096 | 4608 | $3.2 \times 10^{-4}$ | 2.0T |
@@ -84,11 +84,11 @@ This scheduler matches cosine final performance while allowing **seamless contin
 Through IsoFLOP profiling on compute budgets from $10^{17}$ to $2 \times 10^{19}$ FLOPs:
 
 $$
-\eta_{opt} = 0.3118 \cdot C^{-0.1250}
+\eta_{\mathrm{opt}} = 0.3118 \cdot C^{-0.1250}
 $$
 
 $$
-B_{opt} = 0.2920 \cdot C^{0.3271}
+B_{\mathrm{opt}} = 0.2920 \cdot C^{0.3271}
 $$
 
 ### Model/Data Allocation
@@ -96,14 +96,14 @@ $$
 Using $M$ (non-embedding FLOPs/token) as model scale:
 
 $$
-M_{opt} = 0.1715 \cdot C^{0.5243}
+M_{\mathrm{opt}} = 0.1715 \cdot C^{0.5243}
 $$
 
 $$
-D_{opt} = 5.8316 \cdot C^{0.4757}
+D_{\mathrm{opt}} = 5.8316 \cdot C^{0.4757}
 $$
 
-Where $M = 72 \cdot n_{layer} \cdot d_{model}^2 + 12 \cdot n_{layer} \cdot d_{model} \cdot l_{seq}$
+Where $M = 72 \cdot n_{\mathrm{layer}} \cdot d_{\mathrm{model}}^2 + 12 \cdot n_{\mathrm{layer}} \cdot d_{\mathrm{model}} \cdot l_{\mathrm{seq}}$
 
 ### Key Finding: Data Quality Impact
 

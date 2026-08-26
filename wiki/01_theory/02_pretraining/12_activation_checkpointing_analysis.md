@@ -464,19 +464,25 @@ Input (hidden_states) [b, s, h]
 
 单层 Decoder 的激活值（不含参数和优化器状态）：
 
-$$M_{act} \approx b \times s \times h \times L \times k$$
+$$
+M_{\mathrm{act}} \approx b \times s \times h \times L \times k
+$$
 
 其中 $k$ 是每层激活值与 hidden size 的比例系数，Decoder 层典型值为 $k \approx 8\text{-}12$（attention 3× + FFN 8× + norms 1-2× ≈ 12-14，考虑 FlashAttention 中某些不显式保存，实际约 8-12）。
 
 **以 7B 模型为例**（$b=4, s=4096, h=4096, L=32, k=10$）：
 
-$$M_{act} \approx 4 \times 4096 \times 4096 \times 32 \times 10 \times 2\text{ bytes (bf16)} \approx 43\text{ GB}$$
+$$
+M_{\mathrm{act}} \approx 4 \times 4096 \times 4096 \times 32 \times 10 \times 2\text{ bytes (bf16)} \approx 43\text{ GB}
+$$
 
 ### 7.2 Full Checkpointing 后
 
 只保留每层输入（$k \approx 1$）：
 
-$$M_{act} \approx 4 \times 4096 \times 4096 \times 32 \times 1 \times 2\text{ bytes} \approx 4.3\text{ GB}$$
+$$
+M_{\mathrm{act}} \approx 4 \times 4096 \times 4096 \times 32 \times 1 \times 2\text{ bytes} \approx 4.3\text{ GB}
+$$
 
 约 **10× 降低**。
 
@@ -484,7 +490,9 @@ $$M_{act} \approx 4 \times 4096 \times 4096 \times 32 \times 1 \times 2\text{ by
 
 $k \approx 6\text{-}7$（保留了 FFN 激活）：
 
-$$M_{act} \approx \text{约 } 20\text{-}28\text{ GB}$$
+$$
+M_{\mathrm{act}} \approx \text{约 } 20\text{-}28\text{ GB}
+$$
 
 ---
 

@@ -232,8 +232,11 @@ log_seq_importance_ratio = log_prob - log_prob.detach() + negative_approx_kl_seq
 `compute_policy_loss_geo_mean`(`core_algos.py:1921`,arXiv 2507.20673)。对 token 比值取**几何平均**(对数域求均值再 exp),并对 $\text{sgn}(A)\cdot\Delta\log p$ 做裁剪:
 
 $$
-r^{\text{geo}}_i=\exp\!\Big(\tfrac{1}{|y_i|}\sum_t \text{clip}_{\text{sgn}}(\log\pi_\theta-\log\pi_{\text{old}})\Big),\quad
-L_i=-\bar A_i\, r^{\text{geo}}_i
+\begin{aligned}
+r^{\text{geo}}_i
+&=\exp\!\Big(\tfrac{1}{\lvert y_i\rvert}\sum_t \text{clip}_{\text{sgn}}(\log\pi_\theta \\
+&\quad -\log\pi_{\text{old}})\Big),\quad L_i=-\bar A_i\, r^{\text{geo}}_i
+\end{aligned}
 $$
 
 > [!note] 不走 `agg_loss`
@@ -244,7 +247,10 @@ $$
 `compute_policy_loss_cispo`(`core_algos.py:2007`,arXiv 2506.13585)。把裁剪后的比值 **detach 成常数权重**,梯度只走 $\log\pi_\theta$(REINFORCE 风格),从而"裁剪幅度但不裁剪梯度方向":
 
 $$
-L_t = -\,\text{sg}\big[\text{clip}(r_t,1-\epsilon_{\text{low}},1+\epsilon_{\text{high}})\big]\cdot A_t\cdot \log\pi_\theta
+\begin{aligned}
+L_t
+&= -\,\text{sg}\big[\text{clip}(r_t,1-\epsilon_{\text{low}},1+\epsilon_{\text{high}})\big]\cdot A_t\cdot \log\pi_\theta
+\end{aligned}
 $$
 
 ```python

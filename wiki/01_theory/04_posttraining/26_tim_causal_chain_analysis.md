@@ -54,7 +54,12 @@ flowchart TB
 
 Qwen 团队的 *Stabilizing Reinforcement Learning with LLMs: Formulation and Practices*（arXiv 2512.01374）§2.4 给出了本页采用的归因框架。token 级代理目标之所以是序列级真实目标的一阶近似，条件是下式两个因子都接近 1：
 
-$$\frac{\pi_\theta(y_t\mid x,y_{<t})}{\mu_{\theta_{\text{old}}}(y_t\mid x,y_{<t})}=\underbrace{\frac{\pi_{\theta_{\text{old}}}(y_t\mid x,y_{<t})}{\mu_{\theta_{\text{old}}}(y_t\mid x,y_{<t})}}_{\text{训推数值分歧}}\times\underbrace{\frac{\pi_\theta(y_t\mid x,y_{<t})}{\pi_{\theta_{\text{old}}}(y_t\mid x,y_{<t})}}_{\text{策略陈旧度}}$$
+$$
+\begin{aligned}
+\frac{\pi_\theta(y_t\mid x,y_{<t})}{\mu_{\theta_{\text{old}}}(y_t\mid x,y_{<t})}
+&=\underbrace{\frac{\pi_{\theta_{\text{old}}}(y_t\mid x,y_{<t})}{\mu_{\theta_{\text{old}}}(y_t\mid x,y_{<t})}}_{\text{训推数值分歧}}\times\underbrace{\frac{\pi_\theta(y_t\mid x,y_{<t})}{\pi_{\theta_{\text{old}}}(y_t\mid x,y_{<t})}}_{\text{策略陈旧度}}
+\end{aligned}
+$$
 
 其中 $\mu$ 是推理引擎实现的策略，$\pi$ 是训练引擎实现的策略。原文对两者成因的表述分别是：训推分歧来自 "training and inference engines typically employ different computational kernels for peak performance, which would yield inconsistent outputs given the same model input"；陈旧度来自大 batch 被切成 mini-batch 做多次梯度更新。
 
@@ -130,7 +135,7 @@ MoE 引入了一类**结构性**的、不属于纯舍入也不属于纯优化的
 
 **GSPO（arXiv 2507.18071，已在 raw/）§5.3** 给出了漂移幅度——48 层 Qwen3-30B-A3B-Base 上：
 
-> "after each RL gradient update and for the same rollout sample, there are roughly **10% of the experts activated under the new policy $\pi_\theta$ that are different from those under the old policy $\pi_{\theta_{old}}$**. This phenomenon, which becomes more prominent in deeper MoE models, makes the token-level importance ratios ... fluctuate drastically and further invalidates them."
+> "after each RL gradient update and for the same rollout sample, there are roughly **10% of the experts activated under the new policy $\pi_\theta$ that are different from those under the old policy $\pi_{\theta_{\mathrm{old}}}$**. This phenomenon, which becomes more prominent in deeper MoE models, makes the token-level importance ratios ... fluctuate drastically and further invalidates them."
 
 **R3（arXiv 2510.11370，北大 + 小米）** 给出训推侧的量化对照：
 
@@ -169,7 +174,9 @@ MoE 引入了一类**结构性**的、不属于纯舍入也不属于纯优化的
 
 2605.14220 §2 Eq.1：
 
-$$\delta_t=\log\pi^{\text{train}}_{\text{old}}(a_t\mid s_t)-\log\pi^{\text{rollout}}_{\text{old}}(a_t\mid s_t)$$
+$$
+\delta_t=\log\pi^{\text{train}}_{\text{old}}(a_t\mid s_t)-\log\pi^{\text{rollout}}_{\text{old}}(a_t\mid s_t)
+$$
 
 其中 $\pi^{\text{train}}_{\text{old}}$ 是算法需要 old-policy 概率时 trainer 侧给出的参考分布，$\pi^{\text{rollout}}_{\text{old}}$ 是 rollout 引擎采样该 token 时**实际实现**的行为分布。原文对 TIM 的操作性定义：
 
@@ -206,13 +213,23 @@ Table 1 的 argmax flip 脚注给出了这类极端 token 的实际后果：在�
 
 *VCPO*（arXiv 2602.17616，MIT + NVIDIA）§2.2 把这一环讲得最清楚。序列级重要性权重（Eq.2）：
 
-$$w(x,y)\triangleq\frac{\pi_\theta(y\mid x)}{\mu(y\mid x)}=\prod_{t=1}^{T}\frac{\pi_\theta(y_t\mid y_{<t},x)}{\mu(y_t\mid y_{<t},x)}$$
+$$
+\begin{aligned}
+w(x,y)
+&\triangleq\frac{\pi_\theta(y\mid x)}{\mu(y\mid x)}=\prod_{t=1}^{T}\frac{\pi_\theta(y_t\mid y_{<t},x)}{\mu(y_t\mid y_{<t},x)}
+\end{aligned}
+$$
 
 > "the **product structure** in (2) makes $w(x,y)$ **highly sensitive to small per-token probability shifts**, so the resulting weights can become **heavy-tailed** and a few samples may dominate each update."
 
 论文称之为 **"Curse of the Horizon"**。有效样本量的定义与方差关系：
 
-$$\mathrm{ESS}\triangleq\frac{\left(\sum_{i=1}^{B}w_i\right)^2}{\sum_{i=1}^{B}w_i^2}=\frac{1}{\sum_i\tilde w_i^2}\in[1,B],\qquad \mathrm{Var}(\hat g)\approx\frac{1}{\mathrm{ESS}}\mathrm{Var}(g)$$
+$$
+\begin{aligned}
+\mathrm{ESS}
+&\triangleq\frac{\left(\sum_{i=1}^{B}w_i\right)^2}{\sum_{i=1}^{B}w_i^2}=\frac{1}{\sum_i\tilde w_i^2}\in[1,B],\qquad \mathrm{Var}(\hat g)\approx\frac{1}{\mathrm{ESS}}\mathrm{Var}(g)
+\end{aligned}
+$$
 
 即 off-policy 梯度估计的方差收敛率中，**批大小 $B$ 被 ESS 取代**。
 
@@ -264,7 +281,12 @@ M2PO 对 batch 级 KL 的批评是选择 $M_2$ 的理由：KL 的逐 token 估�
 
 TIM 的处理方式有两种工程惯例，二者的崩溃形态**完全不同**。2605.14220 §4.1 Eq.4：
 
-$$\mathcal L_{\text{recomp}}=\mathcal L_{\text{ppo}}(r^{\text{train}}_{\text{ppo}},A),\qquad \mathcal L_{\text{bypass}}=\mathcal L_{\text{ppo}}(r^{\text{rollout}}_{\text{ppo}},A)$$
+$$
+\begin{aligned}
+\mathcal L_{\text{recomp}}
+&=\mathcal L_{\text{ppo}}(r^{\text{train}}_{\text{ppo}},A),\qquad \mathcal L_{\text{bypass}}=\mathcal L_{\text{ppo}}(r^{\text{rollout}}_{\text{ppo}},A)
+\end{aligned}
+$$
 
 即 recomputation 用 trainer 重算 old logprob，bypass 直接用 rollout 返回的 logprob。
 
@@ -297,7 +319,9 @@ flowchart LR
 
 这一主张是**经验性的，不是形式化推导**——论文没有给出「TIM ⇒ 目标变成 X」的定理。它的论证方式是引入一个可测量的中间量（Eq.5）：
 
-$$C(r_{\text{ppo}})=-(r_{\text{ppo}}-1)A_t$$
+$$
+C(r_{\text{ppo}})=-(r_{\text{ppo}}-1)A_t
+$$
 
 动机原句：> "The optimizer does not directly consume probability discrepancies; it consumes **advantage-weighted surrogate-loss contributions**."
 

@@ -13,7 +13,12 @@
 
 自回归解码的瓶颈是**串行**：生成 N 个 token 要 N 次目标前向。投机解码用便宜草稿器一次提 $\gamma$ 个 token、目标模型一次前向并行验证、拒绝采样接受最长合法前缀（数学无偏，原理见 [[20_vllm_speculative_decoding_analysis]]）。每 token 平均延迟（DSpark 论文 Eq.1）：
 
-$$L=\frac{T_{\text{draft}}+T_{\text{verify}}}{\tau}\quad\Rightarrow\quad\text{提速三杆：① 降 } T_{\text{draft}}\text{（画得快）② 升 } \tau\text{（画得准）③ 降有效 } T_{\text{verify}}\text{（验得聪明）}$$
+$$
+\begin{aligned}
+L
+&=\frac{T_{\text{draft}}+T_{\text{verify}}}{\tau}\quad\Rightarrow\quad\text{提速三杆：① 降 } T_{\text{draft}}\text{（画得快）② 升 } \tau\text{（画得准）③ 降有效 } T_{\text{verify}}\text{（验得聪明）}
+\end{aligned}
+$$
 
 **演进就是依次把这三个杆拨到位**，且每一代都在解决上一代暴露的瓶颈：
 

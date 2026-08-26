@@ -109,7 +109,7 @@ torchtitan/PyTorch 侧,这一步由 `distribute_tensor(buffer, mesh, [Shard(seq_
 
 > 骨架取自 `13_torchtitan_cp_analysis.md` §3.1(最完整的量化算例)。
 
-因果掩码下 $\text{mask}[i,j]=1 \iff q\_idx \ge kv\_idx$,计算量正比于矩阵里 1 的个数。以 `seq_len=8, cp=2` 朴素均分为例:
+因果掩码下 $\text{mask}[i,j]=1 \iff \texttt{q\_idx} \ge \texttt{kv\_idx}$,计算量正比于矩阵里 1 的个数。以 `seq_len=8, cp=2` 朴素均分为例:
 
 ```
             KV_index
@@ -196,7 +196,7 @@ RoPE 位置编码必须按**和 token 完全相同**的方式切到 CP rank,否�
 
 2·cp 配对切分(§3.3)让每个 KV 块相对当前 Q 块**要么全可见、要么全不可见、要么只半可见**,据此三分支裁剪:
 
-- **对角块**($q\_block\_id == kv\_block\_id$):带因果掩码全算。
+- **对角块**($\texttt{q\_block\_id} = \texttt{kv\_block\_id}$):带因果掩码全算。
 - **KV 在 Q 之前**:全可见,只取本地 KV **前半**、无需掩码。
 - **KV 在 Q 之后**:只有 Q **后半**能 attend 该 KV 块。
 
@@ -271,12 +271,15 @@ Megatron/DeepSeek-V4 侧的等价图示(`13_megatron_cp_analysis.md` 调度器�
 
 > 骨架取自 `20_mindspeed_context_parallel_analysis.md` §4.5(公式最严格,显式给出数值稳定的合并式);torchtitan 的 Python 实现是同一公式的等价代码形态,并列给出。
 
-每步产出局部 $(\text{out}_{cur}, m_{cur}, \ell_{cur})$($m$=running max,$\ell$=log-sum-exp 的和项),按下式无误差并入累积量:
+每步产出局部 $(\text{out}_{\mathrm{cur}}, m_{\mathrm{cur}}, \ell_{\mathrm{cur}})$($m$=running max,$\ell$=log-sum-exp 的和项),按下式无误差并入累积量:
 
 $$
-m \leftarrow \max(m_{prev},m_{cur}),\quad
-\ell \leftarrow e^{m_{prev}-m}\ell_{prev}+e^{m_{cur}-m}\ell_{cur},\quad
-\text{out} \leftarrow \frac{e^{m_{prev}-m}\ell_{prev}}{\ell}\text{out}_{prev}+\frac{e^{m_{cur}-m}\ell_{cur}}{\ell}\text{out}_{cur}
+\begin{aligned}
+m
+&\leftarrow \max(m_{\mathrm{prev}},m_{\mathrm{cur}}),\quad \ell \leftarrow e^{m_{\mathrm{prev}}-m}\ell_{\mathrm{prev}} \\
+&\quad +e^{m_{\mathrm{cur}}-m}\ell_{\mathrm{cur}},\quad \text{out} \leftarrow \frac{e^{m_{\mathrm{prev}}-m}\ell_{\mathrm{prev}}}{\ell}\text{out}_{\mathrm{prev}} \\
+&\quad +\frac{e^{m_{\mathrm{cur}}-m}\ell_{\mathrm{cur}}}{\ell}\text{out}_{\mathrm{cur}}
+\end{aligned}
 $$
 
 torchtitan 侧(`_SDPAMerger.step`)是这一数学式的等价 PyTorch 实现,用 `sigmoid`/`logsigmoid` 改写同一组增量合并公式,并强制 `convert_to_f32=True` 全程 fp32 累加避免误差:
@@ -347,7 +350,7 @@ dkv_rotater = _create_rotater(group, 2, method=ALL_TO_ALL)     # K/V 梯度轮�
 
 每步做两件事:
 
-1. **K/V 本身环形轮转**(同 forward):重演 forward 时那对 $(Q_{local}, KV_{from\ rank\ (r-i)})$ 才能算梯度。
+1. **K/V 本身环形轮转**(同 forward):重演 forward 时那对 $(Q_{\mathrm{local}}, KV_{\text{from rank }(r-i)})$ 才能算梯度。
 2. **K/V 梯度的环形规约**:某段 K/V 在 forward 里被**每个** rank 的 Q attend 过,其梯度是所有 rank 局部贡献之和——一个 `Partial` 规约。ring backward 把 dK/dV 跟着 K/V 一起绕环,每经过一个 rank 就把该 rank 的局部贡献累加进去,绕满 $size$ 步后得到完整的 `grad_key/grad_value`。
 
 `grad_query` 不需要环规约——Q 是每个 rank 独占的分片,直接累加即可。
@@ -407,11 +410,18 @@ CP 下的 attention mask 同样需要 §3.3 的 zigzag 重排(`to_zz_mask_attn_b
 **通信量(每 head stride)**:
 
 $$
-\text{Forward} = 2\times b\times S\times h_{k\_stride}\times d\times \frac{cp-1}{cp} \quad(\text{AllGather}(K)+\text{AllGather}(V))
+\begin{aligned}
+\text{Forward}
+&= 2\times b\times S\times h_{\mathrm{k\_stride}}\times d\times \frac{cp-1}{cp} \quad(\text{AllGather}(K) \\
+&\quad +\text{AllGather}(V))
+\end{aligned}
 $$
 
 $$
-\text{Total} \approx 4\times \frac{n_{heads\_k}}{head\_stride}\times b\times S\times h_{k\_stride}\times d\times \frac{cp-1}{cp}
+\begin{aligned}
+\text{Total}
+&\approx 4\times \frac{n_{\mathrm{heads\_k}}}{\mathrm{head\_stride}}\times b\times S\times h_{\mathrm{k\_stride}}\times d\times \frac{cp-1}{cp}
+\end{aligned}
 $$
 
 (这里的 $S$ 是每个 CP rank 持有的序列长度;总量随 head 数线性增长,效率低于 §5/§7/§8 的方案。)
@@ -606,10 +616,10 @@ for m in range(ulysses_degree):                 # ring 子组:跨步 stride=u(�
 | Ulysses(a2a) | $8\times\dfrac{C-1}{C}\times B\times S\times h\times d$ |
 | All-gather(Native) | $4\times\dfrac{C-1}{C}\times B\times S\times h_{kv}\times d$ |
 
-**与 §5.2/§7.2 的差异说明(如实并列,不合并)**:上表来自 `35_deepseek_v4_context_parallel_analysis.md`,**未显式扣除 TP 分头因子**(隐含 $TP=1$ 或已在 $h/h_{kv}$ 里折算);§5.2/§7.2 引用的 MindSpeed 公式显式带 $/TP$(因为 MindSpeed 的 CP 运行在 TP 先切过的 $a/TP$ 头上)。此外上表的 Ring 公式是"forward+backward 合计双向流量"口径,而 MindSpeed 的 $V_{ring}=2\cdot\frac{cp-1}{cp}\cdot\frac{bSh_{kv}}{TP}$ 是**单向前向逻辑数据量**口径——两者相差的因子对应"是否计入收发两个方向的总线流量"这一统计口径选择,不是矛盾,读者按各自场景选用对应口径。**这条"×2(fwd+bwd)"的解释对 Ring 行是自洽的**:令 $TP=1$ 代入两式相除,$\dfrac{4(C-1)/C}{2(cp-1)/cp}=2$,不多不少,fwd+bwd 这一个因子就说清了全部差距。
+**与 §5.2/§7.2 的差异说明(如实并列,不合并)**:上表来自 `35_deepseek_v4_context_parallel_analysis.md`,**未显式扣除 TP 分头因子**(隐含 $TP=1$ 或已在 $h/h_{kv}$ 里折算);§5.2/§7.2 引用的 MindSpeed 公式显式带 $/TP$(因为 MindSpeed 的 CP 运行在 TP 先切过的 $a/TP$ 头上)。此外上表的 Ring 公式是"forward+backward 合计双向流量"口径,而 MindSpeed 的 $V_{\mathrm{ring}}=2\cdot\frac{cp-1}{cp}\cdot\frac{bSh_{kv}}{TP}$ 是**单向前向逻辑数据量**口径——两者相差的因子对应"是否计入收发两个方向的总线流量"这一统计口径选择,不是矛盾,读者按各自场景选用对应口径。**这条"×2(fwd+bwd)"的解释对 Ring 行是自洽的**:令 $TP=1$ 代入两式相除,$\dfrac{4(C-1)/C}{2(cp-1)/cp}=2$,不多不少,fwd+bwd 这一个因子就说清了全部差距。
 
 > [!contradiction] Ulysses/a2a 行未能同样自洽解释,如实披露
-> 对 Ulysses(a2a)行做同样的比值检验:令 $TP=1$、$C=cp$ 代入本表 $8\cdot\frac{C-1}{C}BSh$(此处 $h$=头数,即隐藏维度 $/d$;严格代入隐藏维度记法后与 §7.2 的 $V_{ulysses}=4\cdot\frac{cp-1}{cp}\cdot\frac{bSh_{hidden}}{cp}$ 比较)与 §7.2 公式相除,**结果是 $2cp$,不是 $2$**——比 Ring 行多出一个 $cp$ 因子。即便再套用"fwd+bwd 减半"把 DSv4 值折成前向口径($\div 2$)去匹配 MindSpeed 显式标注的"前向"口径,残差仍是 **$cp$ 倍**,且 DSv4 §6.2 对 a2a 行的原始逐项列式(`QKV A2A` 3 项 + `Output A2A` 1 项,共 4 次 a2a)本身看起来就是纯前向操作,与其所在 §6.2 段落标题"forward+backward"的字面并不一致——这处 $cp$ 倍差既不能用已知的 TP 因子解释,也不能用已知的 fwd/bwd 口径解释,两页现有文字不足以确证其来源(可能是某一页的换算笔误,也可能是未写明的额外假设)。**如实标注为未归因的差异,不在本页强行弥合**:读者需要该行数值时,请分别按 `35_deepseek_v4_context_parallel_analysis.md` §6.2 或 `20_mindspeed_context_parallel_analysis.md` §3.3 各自的原始公式独立核算,不要跨页换算/混用系数。
+> 对 Ulysses(a2a)行做同样的比值检验:令 $TP=1$、$C=cp$ 代入本表 $8\cdot\frac{C-1}{C}BSh$(此处 $h$=头数,即隐藏维度 $/d$;严格代入隐藏维度记法后与 §7.2 的 $V_{\mathrm{ulysses}}=4\cdot\frac{cp-1}{cp}\cdot\frac{bSh_{\mathrm{hidden}}}{cp}$ 比较)与 §7.2 公式相除,**结果是 $2cp$,不是 $2$**——比 Ring 行多出一个 $cp$ 因子。即便再套用"fwd+bwd 减半"把 DSv4 值折成前向口径($\div 2$)去匹配 MindSpeed 显式标注的"前向"口径,残差仍是 **$cp$ 倍**,且 DSv4 §6.2 对 a2a 行的原始逐项列式(`QKV A2A` 3 项 + `Output A2A` 1 项,共 4 次 a2a)本身看起来就是纯前向操作,与其所在 §6.2 段落标题"forward+backward"的字面并不一致——这处 $cp$ 倍差既不能用已知的 TP 因子解释,也不能用已知的 fwd/bwd 口径解释,两页现有文字不足以确证其来源(可能是某一页的换算笔误,也可能是未写明的额外假设)。**如实标注为未归因的差异,不在本页强行弥合**:读者需要该行数值时,请分别按 `35_deepseek_v4_context_parallel_analysis.md` §6.2 或 `20_mindspeed_context_parallel_analysis.md` §3.3 各自的原始公式独立核算,不要跨页换算/混用系数。
 
 **MLA 的特殊效应(DeepSeek-V4 专属,不外推为通用机制)**:MLA 的 KV 压缩(等效 $h_{kv}=1$)使 CP 通信量相比标准 MHA 降低约 128 倍(V4:$h_{kv}=128, d=64, d_v=64$)——这是 MLA 架构本身的性质,不是 CP 调度机制的性质,留在 `35_deepseek_v4_context_parallel_analysis.md` §6.3。
 
@@ -645,7 +655,7 @@ self.pg_collection.cp = _orig_cp_group   # 恢复原始 CP 组
 
 ### 10.3 与本页其它机制的关系
 
-Dynamic CP 是"要不要切、切多少度"这一决策层的机制,与 §3-§9 描述的"切开之后怎么通信"是两个不同层次的问题——一旦某 microbatch 决定用 $local\_cp\_size$,后续走的仍然是 §5-§8 的某一种通信调度。
+Dynamic CP 是"要不要切、切多少度"这一决策层的机制,与 §3-§9 描述的"切开之后怎么通信"是两个不同层次的问题——一旦某 microbatch 决定用 $\texttt{local\_cp\_size}$,后续走的仍然是 §5-§8 的某一种通信调度。
 
 ---
 

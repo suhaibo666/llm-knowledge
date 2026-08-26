@@ -203,8 +203,8 @@ CPU-only或codegen-only测试不能声称目标accelerator runtime已验证。
 接入成本大致是：
 
 $$
-O(|\text{ops}|+|\text{IR features}|+|\text{runtime features}|
-+|\text{artifact ABIs}|)
+O(\lvert \text{ops}\rvert+\lvert \text{IR features}\rvert+\lvert \text{runtime features}\rvert
++\lvert \text{artifact ABIs}\rvert)
 $$
 
 decomposition可降低直接lowering数量，但会增加图规模；fallback提高覆盖面但损失fusion；

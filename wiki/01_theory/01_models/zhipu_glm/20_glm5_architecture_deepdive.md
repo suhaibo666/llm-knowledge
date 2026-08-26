@@ -70,7 +70,9 @@ MLA（Multi-latent Attention）用压缩的 latent KV 向量换显存与长序�
 
 **原理**：GLM-4.5 的 Muon recipe 对多头的上投影矩阵 $W^{UQ}, W^{UK}, W^{UV}$ 做**整体**矩阵正交化。Muon Split 改为把它们**按注意力头拆成小矩阵、各自独立正交化**（§2.1, p5）：
 
-$$W^{UQ},W^{UK},W^{UV} \;\longrightarrow\; \{W_h\}_{h=1}^{H}\;\text{（每头一块）}\;\xrightarrow{\text{逐块正交化}}\;\text{各头以不同尺度更新}$$
+$$
+W^{UQ},W^{UK},W^{UV} \;\longrightarrow\; \{W_h\}_{h=1}^{H}\;\text{（每头一块）}\;\xrightarrow{\text{逐块正交化}}\;\text{各头以不同尺度更新}
+$$
 
 **为什么有效**：整体正交化会把所有头绑定到同一更新尺度，而不同头其实需要不同的有效学习率；按头独立正交化解开了这个耦合，让每个头的投影权重以**适合自己的尺度**更新——这恰好补上了 MLA 相对 GQA 的劣势。
 

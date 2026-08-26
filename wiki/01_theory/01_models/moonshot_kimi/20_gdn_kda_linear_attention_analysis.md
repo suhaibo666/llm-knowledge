@@ -131,23 +131,33 @@ $z_t$ 只控制当前层输出是否露出，不修改 $S_t$。这与 $a_t$ 的�
 
 1. **遗忘旧状态**
 
-   $$S_t^-=D_tS_{t-1}$$
+   $$
+   S_t^-=D_tS_{t-1}
+   $$
 
 2. **在当前 key 地址预测**
 
-   $$\hat v_t=(S_t^-)^{\top}k_t$$
+   $$
+   \hat v_t=(S_t^-)^{\top}k_t
+   $$
 
 3. **求预测误差**
 
-   $$e_t=v_t-\hat v_t$$
+   $$
+   e_t=v_t-\hat v_t
+   $$
 
 4. **按学习率做 rank-1 修正**
 
-   $$S_t=S_t^-+\beta_tk_te_t^{\top}$$
+   $$
+   S_t=S_t^-+\beta_tk_te_t^{\top}
+   $$
 
 5. **用 query 读取更新后的状态**
 
-   $$o_t=S_t^{\top}q_t$$
+   $$
+   o_t=S_t^{\top}q_t
+   $$
 
 其中：
 
@@ -212,7 +222,9 @@ $C$ 不是 context window、batch size 或状态重置周期。chunk 末状态�
 
 从仿射递推
 
-$$S_t=A_tS_{t-1}+B_t$$
+$$
+S_t=A_tS_{t-1}+B_t
+$$
 
 出发。若一个 chunk 从状态 $S_s$ 开始，则 chunk 内第 $r$ 步：
 

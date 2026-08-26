@@ -77,16 +77,16 @@ GDN 的 wrapper 结构相同，见 `fla/ops/gated_delta_rule/chunk.py:253-390`�
 GDN backward 的主链在 `fla/ops/gated_delta_rule/chunk.py:126-250`：
 
 1. 从 forward 保存的三角量重算 $W,U$；
-2. 重算 chunk 状态 $h$ 与修正后的 $v_{new}$；
+2. 重算 chunk 状态 $h$ 与修正后的 $v_{\mathrm{new}}$；
 3. 计算输出局部梯度；
 4. 反向扫描状态梯度；
 5. 融合计算 $dq,dk,dw,dg$；
 6. 反传 WY 表示得到额外 $dk,dv,d\beta,dg$；
-7. 对 $g$ 做 reverse chunk-local cumsum，再反传 gate activation 得到 $da,dA_{\log},d(dt\_bias)$。
+7. 对 $g$ 做 reverse chunk-local cumsum，再反传 gate activation 得到 $da,dA_{\log},d(\texttt{dt\_bias})$。
 
 KDA backward 在 `fla/ops/kda/chunk_bwd.py:419-590`：默认 `disable_recompute=False` 时重算 gate 前缀、$W,U,q_g,k_g$ 与 chunk 状态；随后把 $dA_{qk}$/$dv$、反向状态 scan、WY+$dq/dk/dg/d\beta$ 融合和 KDA intra 反向拆成大粒度 kernel。`disable_recompute=True` 可保留更多 forward 中间量，换取更少计算但更多显存。
 
-重算的原因不是数学必须，而是工程权衡：长序列下保存每个 chunk 的全部 $W,U,h,v_{new}$ 会增加激活显存；这些量可由 $q,k,v,g,\beta$ 和少量三角量重建，通常值得用额外 FLOPs 换 HBM 容量与带宽。
+重算的原因不是数学必须，而是工程权衡：长序列下保存每个 chunk 的全部 $W,U,h,v_{\mathrm{new}}$ 会增加激活显存；这些量可由 $q,k,v,g,\beta$ 和少量三角量重建，通常值得用额外 FLOPs 换 HBM 容量与带宽。
 
 ### 2.5 当前训练 chunk size
 
@@ -146,7 +146,7 @@ SGLang 的 `fused_sigmoid_gating_delta_rule_update` 以 `is_kda` 模板常量复
 | kernel 行 | 实现 | 数学 |
 |---|---|---|
 | 146–150 | load Q/K/V/$b$ | 当前 token 输入 |
-| 152–174 | $g=-e^{A_{\log}}\operatorname{softplus}(a+dt_{bias})$，$\beta=\sigma(b)$ | 生成 $\alpha=e^g$ 与写步长 |
+| 152–174 | $g=-e^{A_{\log}}\operatorname{softplus}(a+dt_{\mathrm{bias}})$，$\beta=\sigma(b)$ | 生成 $\alpha=e^g$ 与写步长 |
 | 176–181 | Q/K L2Norm，Q 乘 scale | 稳定寻址与读出尺度 |
 | 183–187 | GDN 标量或 KDA 逐行 $S\leftarrow e^gS$ | 遗忘旧状态 |
 | 189–193 | $v\leftarrow\beta(v-S^\top k)$ | 预测误差乘写门 |
@@ -256,7 +256,7 @@ SGLang 的回归测试把 token-by-token `fused_recurrent_gated_delta_rule` 当�
 一些接口写 `TND`，Transformer Engine、Megatron 与 FLA 代码多写 `THD`：$T$ 是一个 pack 内所有序列的 token 总数，$N/H$ 是 head 数，$D$ 是 head dim。Megatron 层入口仍保持三维 hidden layout：
 
 $$
-X_{packed}\in\mathbb{R}^{T\times 1\times d_{model}},
+X_{\mathrm{packed}}\in\mathbb{R}^{T\times 1\times d_{\mathrm{model}}},
 $$
 
 即把原来的 batch 轴压成 1，把多个变长序列首尾拼在 token 轴。`PackedSeqParams` 用 `qkv_format='thd'` 和 `cu_seqlens` 保存边界（`megatron/core/packed_seq_params.py:9-25`）；Megatron 单测也明确从 SBHD 构造 `[sequence_length * batch_size, 1, hidden_size]` 的 THD 输入（`tests/unit_tests/ssm/test_gated_delta_net.py:269-304`）。
@@ -264,7 +264,7 @@ $$
 例如三条长度为 3、2、4 的序列：
 
 $$
-X_{packed}=[A_0,A_1,A_2,B_0,B_1,C_0,C_1,C_2,C_3],
+X_{\mathrm{packed}}=[A_0,A_1,A_2,B_0,B_1,C_0,C_1,C_2,C_3],
 \qquad cu=[0,3,5,9].
 $$
 
@@ -368,9 +368,9 @@ return out_proj(y)
 
 实现上的关键不是 `view`，而是以下三层边界保护：
 
-1. **Megatron Python 层先保护通信边界。** `_unpack_sequence` 根据累积长度逐段 slice（`:768-777`）。Packed+CP 前向使用 `cu_seqlens // cp_size` 拆当前 rank 的局部段，再逐序列调用 CP→HP（`:413-432`）。底层 all-to-all 将每段从 $L_i/CP\times1\times H_{local}$ 变成 $L_i\times1\times H_{local}/CP$（`megatron/core/ssm/mamba_context_parallel.py:313-337`）。`split_sections` 让 Q、K、V、Z、B、A 六段各自切 hidden 维后通信，避免把不同宽度的投影段当成一块平均切分（GDN `:422-429,931-950`）。
+1. **Megatron Python 层先保护通信边界。** `_unpack_sequence` 根据累积长度逐段 slice（`:768-777`）。Packed+CP 前向使用 `cu_seqlens // cp_size` 拆当前 rank 的局部段，再逐序列调用 CP→HP（`:413-432`）。底层 all-to-all 将每段从 $L_i/CP\times1\times H_{\mathrm{local}}$ 变成 $L_i\times1\times H_{\mathrm{local}}/CP$（`megatron/core/ssm/mamba_context_parallel.py:313-337`）。`split_sections` 让 Q、K、V、Z、B、A 六段各自切 hidden 维后通信，避免把不同宽度的投影段当成一块平均切分（GDN `:422-429,931-950`）。
 2. **因果卷积 kernel 用 segment-relative 地址。** FLA 先由 `cu_seqlens` 生成 `(sequence_id, chunk_id)`，grid 的时间维等于所有序列的 chunk 总数（`fla/modules/conv/triton/ops.py:58-67`）。Triton program 读取该序列的 `bos/eos`，设置 $T_i=eos-bos$ 和 `p_x=x+bos`；后续 block pointer 的 `boundary_check` 只允许访问 $[0,T_i)$（`fla/modules/conv/triton/kernels.py:64-90`）。所以序列开头窗口越界时读零或独立 initial state，而不会退到前一个 packed 序列。
-3. **GDN 状态 kernel 按序列启动 program。** `prepare_chunk_indices` 先计算每条序列的 $\lceil L_i/C\rceil$，生成 `(segment_id, intra_chunk_id)`；`prepare_chunk_offsets` 给每条序列分配连续的 chunk-state 槽（`fla/ops/utils/index.py:156-172`）。状态 wrapper 设置 $N=len(cu)-1$、$NT=len(chunk\_indices)$，并分配 `h` 的全 pack chunk 槽和可选的每序列 final state（`fla/ops/common/chunk_delta_h.py:623-643`）。kernel grid 的第二维是 $N\times H_V$；每个 program 先由 `i_n` 读取自己的 `bos/eos`，寄存器状态默认清零，然后只在该序列的 $NT_i$ 个 chunk 上顺序循环（`:77-117,145-170`）。这就是代码中真正的“序列开始时重置 $S$”。
+3. **GDN 状态 kernel 按序列启动 program。** `prepare_chunk_indices` 先计算每条序列的 $\lceil L_i/C\rceil$，生成 `(segment_id, intra_chunk_id)`；`prepare_chunk_offsets` 给每条序列分配连续的 chunk-state 槽（`fla/ops/utils/index.py:156-172`）。状态 wrapper 设置 $N=len(cu)-1$、$NT=\operatorname{len}(\texttt{chunk\_indices})$，并分配 `h` 的全 pack chunk 槽和可选的每序列 final state（`fla/ops/common/chunk_delta_h.py:623-643`）。kernel grid 的第二维是 $N\times H_V$；每个 program 先由 `i_n` 读取自己的 `bos/eos`，寄存器状态默认清零，然后只在该序列的 $NT_i$ 个 chunk 上顺序循环（`:77-117,145-170`）。这就是代码中真正的“序列开始时重置 $S$”。
 
 以 `cu=[0,3,5]`、$C=4$ 为例，FLA 生成：
 

@@ -35,7 +35,9 @@ Short and long responses have very different value distributions. A single value
 **Solution（§4.2，原文机制）**：
 - **Length-Adaptive GAE** —— 令 λ 随输出长度 `l` 自适应：
 
-  $$\lambda_{\text{policy}} = 1 - \frac{1}{\alpha l},\qquad \alpha = 0.05$$
+  $$
+  \lambda_{\text{policy}} = 1 - \frac{1}{\alpha l},\qquad \alpha = 0.05
+  $$
 
   动机（原文）：VC-PPO 固定 `λ_policy = 0.95`，当 `l > 100` 时 reward 对应 TD-error 的系数 `0.95^100 ≈ 0.006`，实际为零，GAE 被可能有偏的 bootstrapping TD-error 主导。自适应 λ 使 TD-error 在长短序列上分布更均匀。
 - **Token-level policy gradient loss**（承自 DAPO）—— 用 token 级取代 sample 级聚合，避免长序列在梯度中被稀释。

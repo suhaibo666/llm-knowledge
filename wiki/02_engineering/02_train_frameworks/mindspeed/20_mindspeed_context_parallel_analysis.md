@@ -123,7 +123,7 @@ Ulysses 因为 attention 时已聚成全序列,用顺序 `chunk` 即可(`_get_ba
 
 ## 3. Ulysses —— MindSpeed 的实现细节
 
-> 头维 all-to-all 换轴的机制、形状流转、通信量代数($V_{ulysses}$ 及其与 $V_{ring}$ 的比值)均已归一到理论页 §7(本页正是该节骨架来源)。本节只保留理论页未展开的两处 MindSpeed 特有源码分支。
+> 头维 all-to-all 换轴的机制、形状流转、通信量代数($V_{\mathrm{ulysses}}$ 及其与 $V_{\mathrm{ring}}$ 的比值)均已归一到理论页 §7(本页正是该节骨架来源)。本节只保留理论页未展开的两处 MindSpeed 特有源码分支。
 
 ### 3.1 `single_all_to_all` 的二分支实现
 
@@ -174,7 +174,7 @@ $$
 V_{\text{ring}} \;\approx\; 2\cdot\frac{cp-1}{cp}\cdot\frac{b\,S\,h_{kv}}{TP}
 $$
 
-与 Ulysses 的比值 $V_{ulysses}/V_{ring}=\frac{2}{cp}\cdot\frac{a}{a_{kv}}$ 见理论页 §7.2(该式即以此处推导为骨架)。
+与 Ulysses 的比值 $V_{\mathrm{ulysses}}/V_{\mathrm{ring}}=\frac{2}{cp}\cdot\frac{a}{a_{kv}}$ 见理论页 §7.2(该式即以此处推导为骨架)。
 
 ### 4.4 源码解读:双环反向(MindSpeed 独有)
 
@@ -318,7 +318,7 @@ full:        缓存 K+V ─┘      反向 0 轮 KV 通信(全命中缓存)  →
 | Adaptive | 调度驱动 batch-P2P | 随调度方案,可搬 Q 也可搬 KV | 掩码稀疏度 | ⚠️ 部分 | 视调度 |
 | KV-cache 叠加 | 省掉**反向**一轮 KV 通信 | 反向 $\div$ 约 2(full) | — | — | 用显存换 |
 
-$V_{ulysses}/V_{ring}=\frac{2}{cp}\cdot\frac{a}{a_{kv}}$:MHA 大 $cp$ 选 Ulysses 省通信,GQA(KV 头少)选 Ring(推导见理论页 §7.2)。
+$V_{\mathrm{ulysses}}/V_{\mathrm{ring}}=\frac{2}{cp}\cdot\frac{a}{a_{kv}}$:MHA 大 $cp$ 选 Ulysses 省通信,GQA(KV 头少)选 Ring(推导见理论页 §7.2)。
 
 ### 8.3 一句话总结
 

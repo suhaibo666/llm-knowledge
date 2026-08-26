@@ -118,17 +118,23 @@ flowchart LR
 
 **② 通信时间**：集合通信量 × **拓扑感知带宽**（节点内 NVLink vs 节点间 IB/以太网常差一个量级），用 **α-β 模型**：
 
-$$T_{\text{comm}} = \alpha + \frac{m}{\beta}$$
+$$
+T_{\text{comm}} = \alpha + \frac{m}{\beta}
+$$
 
 其中 $\alpha$ 为延迟、$\beta$ 为带宽、$m$ 为消息量。以 Ring All-Reduce 为例（$p$ 卡、张量 $m$ 字节）：
 
-$$T_{\text{allreduce}} = 2(p-1)\,\alpha + \frac{2(p-1)}{p}\cdot\frac{m}{\beta}$$
+$$
+T_{\text{allreduce}} = 2(p-1)\,\alpha + \frac{2(p-1)}{p}\cdot\frac{m}{\beta}
+$$
 
 不同并行策略对应不同集合原语（all-gather / reduce-scatter / all-to-all），通信量随切分方式变化。
 
 **③ 显存占用**（作为**硬约束**）：
 
-$$M_{\text{param}} + M_{\text{grad}} + M_{\text{opt}} + M_{\text{act}} + M_{\text{buf}} \le M_{\text{device}}$$
+$$
+M_{\text{param}} + M_{\text{grad}} + M_{\text{opt}} + M_{\text{act}} + M_{\text{buf}} \le M_{\text{device}}
+$$
 
 激活显存 $M_{\text{act}}$ 受重计算/offload 影响，常是搜索中最敏感的一项。
 

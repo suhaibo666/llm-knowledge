@@ -119,7 +119,9 @@ num_programs = NUM_SM * occupancy                          # :169
 
 前向把每个 query 块（`BLOCK_M` 行）交给一个 program，沿 key/value 维分块迭代（`_attn_fwd_inner`，`:47-110`）。初始化（`:216-218`）：
 
-$$m_i = -\infty,\qquad \ell_i = 1,\qquad acc = \mathbf{0}\in\mathbb{R}^{\text{BLOCK\_M}\times d}$$
+$$
+m_i = -\infty,\qquad \ell_i = 1,\qquad acc = \mathbf{0}\in\mathbb{R}^{\text{BLOCK\_M}\times d}
+$$
 
 内层循环 `for start_n in tl.range(lo, hi, BLOCK_N, ...)`（`:69`）对第 $j$ 个 K/V 块做 6 步——这正是 online softmax 的精髓：
 
@@ -134,7 +136,9 @@ $$m_i = -\infty,\qquad \ell_i = 1,\qquad acc = \mathbf{0}\in\mathbb{R}^{\text{BL
 
 收尾（epilogue，`:243-244`）做唯一一次归一化：
 
-$$O_i = \frac{acc}{\ell_i},\qquad \text{并存 logsumexp } m_i \mathrel{+}= \log_2 \ell_i\ \text{供反向用}$$
+$$
+O_i = \frac{acc}{\ell_i},\qquad \text{并存 logsumexp } m_i \mathrel{+}= \log_2 \ell_i\ \text{供反向用}
+$$
 
 **关键 why——为什么要 `alpha` 重标定**：softmax 必须减去整行最大值才数值稳定，但流式计算时「整行最大值」要到看完最后一块才知道。第 $j$ 块发现了更大的 max 时，之前所有块都是按**旧的、偏小的** $m_i$ 归一化的，已偏大。乘 $\alpha=\exp(m_i^{\text{old}}-m_i^{\text{new}})\le 1$ 把历史的 `acc` 和 `l_i` **同步降权到新基准**，等价于「假装一开始就用新 max 算」。于是无需回看任何已丢弃的块，就得到与一次性 softmax 数值等价的结果。源把 `m_i/l_i` 的更新刻意放在循环末尾「以降低寄存器压力」（`:104-105` 注释）。
 

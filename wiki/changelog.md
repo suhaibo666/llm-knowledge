@@ -8,12 +8,26 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-26：全库公式 warning 清零（464 → 0）+ 修正 MATH103 规则
+
+**Type**: Corpus-wide Math Normalization (warnings) + Checker Rule Fix
+
+- 承接同日 error 清零，本轮把 464 条 warning 也清到 **0**；`check_math --strict`（warning 也算失败）现已通过。
+- **MATH101（181）**：168 处单行 `$$...$$` 与 13 处 callout 内的 `> $$...$$` 拆成「定界符各占一行」，callout 保持整块 `>` 引用。
+- **MATH102（10）**：转义下划线移入文本类命令——程序标识符用 `\texttt{...}`（`q\_idx`、`local\_cp\_size`、`dt\_bias` 等），角色标签用 `\mathrm{...}`。
+- **MATH103（148 → 0）**：先修规则再改内容。原规则把任何含 `-`/`/` 的下标都判为语义下标，导致 `h_{t-1}`、`m_{m'i:m'(i+1)-1}`、`x_{s+r-1}` 等**索引表达式**被误报（约 34 处）；按 skill 的本意改为只匹配「3 个以上连续字母」的词语标签，并补了对应单测。随后把 183 处真正的词语下标（`old`/`new`/`low`/`high`/`teacher`/`GRPO` 等 56 个）包进 `\mathrm{...}`。
+- **MATH104（37）**：按语义区分竖线——条件概率用 `\mid`，绝对值/基数用 `\lvert...\rvert`，KL 用 `\,\|\,`，集合构造与大号定界符用 `\big\vert`。改写只在数学区域内进行（复用 checker 自己的 fence / 行内代码 / 货币判定），因此 Markdown 表格里的 `|` 与成本表 `| **$4,432** | - | ~$5,000 |` 均未被触碰。
+- **MATH105（88 → 0）**：长公式改为显式 `\begin{aligned}` 结构，在**顶层**关系符（`=`/`\approx`/`\longrightarrow` 等，按花括号、`\left`/`\right`、`\begin`/`\end` 深度判定）处断行；多行时补 `\\` 行分隔符。三处需人工判断的单独处理：无关系符的目标函数按顶层空格软换行；跨行的 `\left(...\right)` 改成定尺寸 `\Big(...\Big)`（`\left`/`\right` 不能跨 aligned 行）；整体位于 `\boxed{}` 内的公式把 aligned 移到框内。
+- 验证：`check_math --strict` 通过；`check_links` pages=409，broken/ambiguous/bare_index/orphans 均为 0；`pytest tools/` 92 passed；`npm docs:test` 61 passed。
+
+---
+
 ## 2026-08-26：全库公式规范清零 + 修复 check_math 两处误报 + README 索引重写
 
 **Type**: Corpus-wide Math Normalization + Checker Bug Fix + Entry-point Rewrite
 
 - 全库 409 页 `check_math` 错误从 **910 → 0**（warning 仍有 464 条，本轮不在范围内）。
-- **744 处真实违规**按 `.claude/skills/writing-obsidian-math/SKILL.md` 的唯一约定改写：646 处行内 `\(...\)` → `$...$`，98 处独占整行的 `\[` / `\]` → `$$`。转换只作用于 checker 实际检查的区域（跳过围栏代码块与行内代码），`ig(`、`\left(` 等命令不受影响。
+- **744 处真实违规**按 `.claude/skills/writing-obsidian-math/SKILL.md` 的唯一约定改写：646 处行内 `\(...\)` → `$...$`，98 处独占整行的 `\[` / `\]` → `$$`。转换只作用于 checker 实际检查的区域（跳过围栏代码块与行内代码），`ig(`、`\left(` 等命令不受影响。
 - **17 处并非数学**：`List\[str\]`、`A\[t\]`、`\[B,H,N,N\]`、`a\[4\]\[4\]`、`W\[:, i·h\]` 以及 mindformers 的步骤标号 `\[B\]/\[C\]/\[D\]/\[E\]` 都是 Markdown 转义的**字面方括号**，改为行内代码而非公式（直接去转义会让 `[C][D]` 变成 Markdown 引用式链接）。
 - **修复 `tools/check_math.py` 两处误报**（内容本身正确，是检查器判错）：① `LEGACY_DELIMITER_RE` 把 `aligned`/`cases` 里合法的行距 `\[2pt]` 当成 `\[` 定界符——改为跳过成对转义反斜杠的扫描器；② 货币启发式把 `$4.2 	imes 10^{-4}$` 当作金额，导致所有"以数字开头的行内公式"被报为 `$` 未配对——改为只在其后没有构成公式的闭合 `$`（或下一个 `$` 同样是金额）时才判为货币。两处均保持既有 11 条单测通过。
 - **修复 `10_llm_initiliaze_analysis.md` 的历史性破坏**：该页 23 行显示公式此前被某次 Markdown 化处理吃掉了控制字符（`\(`→`$`、`\!`→`!`、`\,`→`,`、`\;`→`;`、`&`→`|`、`\\`→`\`、`_`→`*`），大部分 checker 看不出来但渲染是错的；已逐块还原，`\mathcal{N}(0,\sigma^2)` 这类真列表逗号保持不变。

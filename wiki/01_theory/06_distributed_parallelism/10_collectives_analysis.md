@@ -37,7 +37,9 @@
 
 一次点对点传输 $n$ 字节的墙钟时间，经典建模为线性两项：
 
-$$T(n) = \alpha + \frac{n}{B_w}$$
+$$
+T(n) = \alpha + \frac{n}{B_w}
+$$
 
 - $\alpha$：**延迟**（latency），一次通信的固定启动开销，与消息大小无关（链路 RTT、内核启动、握手）。小消息被它主导。
 - $B_w$：**带宽**（bandwidth），单位时间能搬的字节数。大消息被 $n/B_w$ 主导。有的文献把 $1/B_w$ 记作 $\beta$，于是 $T = \alpha + \beta n$，这也是「$\alpha$-$\beta$ 模型」得名的由来。
@@ -71,7 +73,9 @@ $$T(n) = \alpha + \frac{n}{B_w}$$
 | **P2P（send/recv）** | src 的 $x$ → dst 的 $x$（指定两方） | **PP 相邻 stage 传激活/梯度** |
 
 > **核心恒等式（记住这一个，后面全通）**：
-> $$\textbf{All-Reduce} = \textbf{Reduce-Scatter} + \textbf{All-Gather}$$
+> $$
+> \textbf{All-Reduce} = \textbf{Reduce-Scatter} + \textbf{All-Gather}
+> $$
 > 先 reduce-scatter 让每卡拿到「求和结果的一片」，再 all-gather 把所有片拼回全量。这不只是数学等式——它是 ring all-reduce 的**实际实现方式**，也是 ZeRO 能把 DP 的 all-reduce「拆开省显存」的根本原因（见 [[12_zero_fsdp_analysis]]）。
 
 ---
@@ -87,11 +91,19 @@ $$T(n) = \alpha + \frac{n}{B_w}$$
 
 每卡在整个 all-reduce 中**发送**的总字节：
 
-$$V_{\text{send}} = \underbrace{(N-1)\cdot\frac{M}{N}}_{\text{reduce-scatter}} + \underbrace{(N-1)\cdot\frac{M}{N}}_{\text{all-gather}} = 2\cdot\frac{N-1}{N}\cdot M$$
+$$
+\begin{aligned}
+V_{\text{send}}
+&= \underbrace{(N-1)\cdot\frac{M}{N}}_{\text{reduce-scatter}} \\
+&\quad + \underbrace{(N-1)\cdot\frac{M}{N}}_{\text{all-gather}} = 2\cdot\frac{N-1}{N}\cdot M
+\end{aligned}
+$$
 
 于是带宽受限下的时间：
 
-$$T_{\text{ring-allreduce}} \approx 2\cdot\frac{N-1}{N}\cdot\frac{M}{B_w} \xrightarrow{N \text{ 大}} \frac{2M}{B_w}$$
+$$
+T_{\text{ring-allreduce}} \approx 2\cdot\frac{N-1}{N}\cdot\frac{M}{B_w} \xrightarrow{N \text{ 大}} \frac{2M}{B_w}
+$$
 
 **这就是关键结论：ring all-reduce 每卡搬运的字节量趋于常数 $2M$，几乎不随 $N$ 增长。** 加 100 张卡和加 1000 张卡，单次 all-reduce 的带宽开销几乎一样——这正是数据并行能扩到上千卡的通信基础。代价藏在 $\alpha$ 项：ring 有 $2(N-1)$ 步，延迟随 $N$ 线性增长，所以**卡极多、消息又小时，ring 的延迟会吃不消**，转而用 tree/分层算法。
 

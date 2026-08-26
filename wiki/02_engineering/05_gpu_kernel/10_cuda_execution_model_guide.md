@@ -69,7 +69,9 @@ CUDA 给每个线程四个内置变量（源：§Thread Hierarchy）：
 
 **全局唯一 ID 公式**（1D）：`int id = blockIdx.x * blockDim.x + threadIdx.x;`
 源给出 2D/3D Block 内的 Thread ID 换算（§Thread Hierarchy 原文）：
-$$\text{2D}(D_x,D_y):\ \text{tid}=x+y\,D_x \qquad \text{3D}(D_x,D_y,D_z):\ \text{tid}=x+y\,D_x+z\,D_x D_y$$
+$$
+\text{2D}(D_x,D_y):\ \text{tid}=x+y\,D_x \qquad \text{3D}(D_x,D_y,D_z):\ \text{tid}=x+y\,D_x+z\,D_x D_y
+$$
 
 ### Demo 1：打印每个线程的身份（可运行，最直观）
 

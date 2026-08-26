@@ -130,7 +130,9 @@ Algorithm: KVCache-centric Scheduling
 ```
 
 **前缀链式哈希**：
-$$\text{Hash}(block_i) = \text{Hash}(block_i \parallel \text{Hash}(block_{i-1}))$$
+$$
+\text{Hash}(block_i) = \text{Hash}(block_i \parallel \text{Hash}(block_{i-1}))
+$$
 
 ### 3.4 面向过载的调度
 
@@ -200,15 +202,21 @@ Mooncake 是 Kimi 系列的**推理服务基础设施**，可与后续模型能�
 
 ### 调度决策
 
-$$\text{TTFT} = T_{queue} + T_{prefill} + T_{transfer}$$
+$$
+\text{TTFT} = T_{\mathrm{queue}} + T_{\mathrm{prefill}} + T_{\mathrm{transfer}}
+$$
 
 ### 负载均衡阈值
 
-$$\frac{\text{best\_prefix\_len}}{\text{prefix\_len}} < \text{kvcache\_balancing\_threshold}$$
+$$
+\frac{\text{best\_prefix\_len}}{\text{prefix\_len}} < \text{kvcache\_balancing\_threshold}
+$$
 
 ### KV Cache 占用成本
 
-$$\text{Occupation Cost} = S \times T$$
+$$
+\text{Occupation Cost} = S \times T
+$$
 
 ---
 

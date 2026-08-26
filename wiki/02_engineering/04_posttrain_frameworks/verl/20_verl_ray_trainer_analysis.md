@@ -193,7 +193,12 @@ batch = compute_advantage(batch, adv_estimator=..., gamma=..., lam=..., config=.
 
 **KL penalty**(`apply_kl_penalty`,`:78`):逐 token 把参考散度从奖励里扣掉,
 
-$$ r^{\text{token}}_t = s^{\text{token}}_t \;-\; \beta \cdot \mathrm{KL}\!\left(\pi_{\theta_{\text{old}}}(\cdot|s_t)\,\Vert\,\pi_{\text{ref}}(\cdot|s_t)\right) $$
+$$
+\begin{aligned}
+r^{\text{token}}_t
+&= s^{\text{token}}_t \;-\; \beta \cdot \mathrm{KL}\!\left(\pi_{\theta_{\text{old}}}(\cdot\mid s_t)\,\Vert\,\pi_{\text{ref}}(\cdot\mid s_t)\right)
+\end{aligned}
+$$
 
 其中 KL 由 `core_algos.kl_penalty(old_log_probs, ref_log_prob, kl_penalty)`(`core_algos.py:2126`)逐 token 算并乘 `response_mask`,`β` 来自自适应控制器 `AdaptiveKLController`(`core_algos.py:153`,`get_kl_controller` `:193`),并按本步 batch 大小 `kl_ctrl.update`(`:112`)。结果写入 `token_level_rewards`(`:113`)。
 
@@ -201,13 +206,24 @@ $$ r^{\text{token}}_t = s^{\text{token}}_t \;-\; \beta \cdot \mathrm{KL}\!\left(
 
 - **GAE**(`:218`)→ `core_algos.compute_gae_advantage_return`(`core_algos.py:216`),需要 `values`。逐 token 反向递推:
 
-$$ \delta_t = r_t + \gamma V(s_{t+1}) - V(s_t), \qquad \hat A_t = \delta_t + \gamma\lambda\,\hat A_{t+1}, \qquad R_t = \hat A_t + V(s_t) $$
+$$
+\begin{aligned}
+\delta_t
+&= r_t + \gamma V(s_{t+1}) - V(s_t), \qquad \hat A_t = \delta_t \\
+&\quad + \gamma\lambda\,\hat A_{t+1}, \qquad R_t = \hat A_t + V(s_t)
+\end{aligned}
+$$
 
 advantage 末了再做 `masked_whiten` 标准化(`core_algos.py:262`)。
 
 - **GRPO**(`:235`)→ `compute_grpo_outcome_advantage`(`core_algos.py:268`),**无 critic**,用同 `uid` 组内的结果奖励做基线:
 
-$$ \hat A_i = \frac{R_i - \operatorname{mean}_{g(i)}(R)}{\operatorname{std}_{g(i)}(R) + \varepsilon} \quad(\text{广播到该回复全部 token});\quad R = \hat A $$
+$$
+\begin{aligned}
+\hat A_i
+&= \frac{R_i - \operatorname{mean}_{g(i)}(R)}{\operatorname{std}_{g(i)}(R) + \varepsilon} \quad(\text{广播到该回复全部 token});\quad R = \hat A
+\end{aligned}
+$$
 
 (`norm_adv_by_std_in_grpo=False` 时只减均值不除标准差。)
 

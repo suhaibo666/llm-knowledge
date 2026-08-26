@@ -29,7 +29,10 @@ $$
 将 HC 递归展开到多层后：
 
 $$
-x_L = \left( \prod_{i=1}^{L-l} H^{res}_{L-i} \right) x_l + \sum_{i=l}^{L-1} \left( \prod_{j=1}^{L-1-i} H^{res}_{L-j} \right) H^{post\top}_i \mathcal{F}(H^{pre}_i x_i, W_i)
+\begin{aligned}
+x_L
+&= \left( \prod_{i=1}^{L-l} H^{res}_{L-i} \right) x_l + \sum_{i=l}^{L-1} \left( \prod_{j=1}^{L-1-i} H^{res}_{L-j} \right) H^{post\top}_i \mathcal{F}(H^{pre}_i x_i, W_i)
+\end{aligned}
 $$
 
 由于 $H^{res}_l$ **无约束**，复合映射 $\prod H^{res}$ 会严重偏离单位矩阵。实验显示在 27B 模型中，该复合映射的前向/后向增益峰值可达 **~3000**，导致：
@@ -50,10 +53,13 @@ HC 将残差流宽度扩展 $n$ 倍后引入了显著的**内存墙**问题：
 
 ### 核心思想：双随机约束
 
-mHC 将 $H^{res}_l$ 投影到**双随机矩阵流形** $\mathcal{M}_{res}$（即 Birkhoff 多面体）上：
+mHC 将 $H^{res}_l$ 投影到**双随机矩阵流形** $\mathcal{M}_{\mathrm{res}}$（即 Birkhoff 多面体）上：
 
 $$
-\mathcal{P}_{\mathcal{M}_{res}}(H^{res}_l) \triangleq \left\{ H^{res}_l \in \mathbb{R}^{n \times n} \mid H^{res}_l \mathbf{1}_n = \mathbf{1}_n, \; \mathbf{1}_n^\top H^{res}_l = \mathbf{1}_n^\top, \; H^{res}_l \geq 0 \right\}
+\begin{aligned}
+\mathcal{P}_{\mathcal{M}_{\mathrm{res}}}(H^{res}_l)
+&\triangleq \left\{ H^{res}_l \in \mathbb{R}^{n \times n} \mid H^{res}_l \mathbf{1}_n = \mathbf{1}_n, \; \mathbf{1}_n^\top H^{res}_l = \mathbf{1}_n^\top, \; H^{res}_l \geq 0 \right\}
+\end{aligned}
 $$
 
 这一约束带来三个关键理论性质：
@@ -73,7 +79,7 @@ $$
    $$
    M^{(t)} = \mathcal{T}_r\left( \mathcal{T}_c(M^{(t-1)}) \right)
    $$
-3. 迭代 $t_{max}=20$ 次后收敛到近似双随机矩阵
+3. 迭代 $t_{\mathrm{max}}=20$ 次后收敛到近似双随机矩阵
 
 反向传播时，通过自定义 backward kernel 在片上重计算 Sinkhorn-Knopp 的中间结果，避免存储大量激活。
 
@@ -142,7 +148,7 @@ B_l = \text{Sinkhorn-Knopp}(\tilde{B}_l) \tag{8}
 $$
 
 - 先取指数保证正性：$M^{(0)} = \exp(\tilde{B}_l)$
-- 迭代行/列归一化 $t_{max}=20$ 次收敛到双随机矩阵
+- 迭代行/列归一化 $t_{\mathrm{max}}=20$ 次收敛到双随机矩阵
 
 #### 对比传统方法
 
@@ -180,7 +186,7 @@ mHC 的激活内存开销较大，因此采用块级重计算策略：
 ### 3. DualPipe 通信-计算重叠
 
 mHC 的 $n$ 流设计增加了流水线 stage 间的通信量。为此：
-- FFN 的 $F_{post,res}$ kernel 在**高优先级计算流**上执行，避免阻塞通信流
+- FFN 的 $F_{\mathrm{post,res}}$ kernel 在**高优先级计算流**上执行，避免阻塞通信流
 - Attention 层不使用持久化 kernel，允许被抢占以实现更灵活的重叠调度
 - stage 首层的输入 $x_{l_0}$ 已本地缓存，重计算与流水线通信解耦
 
@@ -233,7 +239,7 @@ mHC 在绝大多数任务上均优于 Baseline 和 HC，尤其在推理类任务
 | Active Experts | 6 | 6 | 6 |
 | Attention | MLA | MLA | MLA |
 | mHC Expansion Rate $n$ | 4 | 4 | 4 |
-| Sinkhorn-Knopp $t_{max}$ | 20 | 20 | 20 |
+| Sinkhorn-Knopp $t_{\mathrm{max}}$ | 20 | 20 | 20 |
 | 序列长度 | 4096 | 4096 | 4096 |
 | 优化器 | AdamW | AdamW | AdamW |
 

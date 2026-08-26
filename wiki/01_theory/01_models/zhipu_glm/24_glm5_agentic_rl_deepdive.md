@@ -93,7 +93,12 @@ slime 的 robustness 杠杆是**心跳驱动容错**：rollout 服务器周期�
 
 **目标函数（group-wise 策略优化）**：对每个问题 $x$，从旧策略 $\pi_{\text{old}}$ 采 $K$ 条 agent 轨迹 $\{y_1,\dots,y_K\}$，优化（§4.1, p15）：
 
-$$\mathcal{L}(\theta)=\mathbb{E}_{x\sim D}\!\left[\frac{1}{K}\sum_{i=1}^{K}\big(r(x,y_i)-\bar r(x)\big)\right],\qquad \bar r(x)=\frac{1}{K}\sum_{i=1}^{K} r(x,y_i)$$
+$$
+\begin{aligned}
+\mathcal{L}(\theta)
+&=\mathbb{E}_{x\sim D}\!\left[\frac{1}{K}\sum_{i=1}^{K}\big(r(x,y_i)-\bar r(x)\big)\right],\qquad \bar r(x)=\frac{1}{K}\sum_{i=1}^{K} r(x,y_i)
+\end{aligned}
+$$
 
 优势 = 奖励减去 group 均值 $\bar r(x)$；**只有模型生成的 token 计入优化，环境反馈在 loss 中被忽略**（§4.1, p15）。
 

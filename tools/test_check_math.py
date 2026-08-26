@@ -117,3 +117,16 @@ def test_delta_reports_new_issue_and_deleted_display_closer():
             closed_display, unclosed_display, "note.md"
         )
     }
+
+
+def test_index_arithmetic_subscripts_stay_italic():
+    """索引下标保持斜体：MATH103 只针对词语/角色/配置标签。
+
+    `h_{t-1}` 是索引表达式，不是语义标签；把它强制改成直立体是错的。
+    """
+
+    index_only = r'行内 $h_{t-1} = W x_{k-1} + b_{s+r-1}$。' + chr(10)
+    assert "MATH103" not in codes(index_only)
+
+    semantic = r'行内 $C_{low} + p_{train-old}$。' + chr(10)
+    assert "MATH103" in codes(semantic)

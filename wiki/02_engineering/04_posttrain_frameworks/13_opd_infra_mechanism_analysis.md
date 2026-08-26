@@ -55,7 +55,7 @@ Song & Zheng 综述（arXiv:2604.00626v4, §8.3）把 OPD 相对纯 SFT/RL 管�
 
 ### 3.1 数据流的四个阶段
 
-与 GRPO 回路的**唯一拓扑差异**是：Reward Model / verifier 被教师打分服务替换——或者叠加（MiMo 的 $\hat{A}_{\mathrm{MOPD}}=\mathrm{sg}[\log(\pi_{domain}/\pi_\theta)]+\alpha\hat{A}_{ORM}$，arXiv:2601.02780 §4.4 Eq. 9；veRL 的 `use_task_rewards` 支持 KL 与任务奖励并存，https://verl.readthedocs.io/en/latest/algo/opd.html ）。
+与 GRPO 回路的**唯一拓扑差异**是：Reward Model / verifier 被教师打分服务替换——或者叠加（MiMo 的 $\hat{A}_{\mathrm{MOPD}}=\mathrm{sg}[\log(\pi_{\mathrm{domain}}/\pi_\theta)]+\alpha\hat{A}_{\mathrm{ORM}}$，arXiv:2601.02780 §4.4 Eq. 9；veRL 的 `use_task_rewards` 支持 KL 与任务奖励并存，https://verl.readthedocs.io/en/latest/algo/opd.html ）。
 
 | 阶段 | 引擎 | 负载性质 | 产出 | 下游消费者 |
 |---|---|---|---|---|
@@ -98,9 +98,14 @@ Song & Zheng 综述（arXiv:2604.00626v4, §8.3）把 OPD 相对纯 SFT/RL 管�
 
 ### 4.1 四档格式的量级
 
-设词表 $|V|\approx 128\mathrm{K}$、序列长 $L=16\mathrm{K}$ token、教师隐藏维 $d\approx 7\mathrm{K}$、bf16 存储（logprob 按 fp32 计），**单条轨迹、单教师**：
+设词表 $\lvert V\rvert\approx 128\mathrm{K}$、序列长 $L=16\mathrm{K}$ token、教师隐藏维 $d\approx 7\mathrm{K}$、bf16 存储（logprob 按 fp32 计），**单条轨迹、单教师**：
 
-$$S_{\text{full}}=|V|\cdot L\cdot 2\mathrm{B},\quad S_{\text{top-}k}=k\cdot L\cdot 8\mathrm{B},\quad S_{\text{hidden}}=d\cdot L\cdot 2\mathrm{B},\quad S_{\text{token}}=L\cdot 4\mathrm{B}$$
+$$
+\begin{aligned}
+S_{\text{full}}
+&=\lvert V\rvert\cdot L\cdot 2\mathrm{B},\quad S_{\text{top-}k}=k\cdot L\cdot 8\mathrm{B},\quad S_{\text{hidden}}=d\cdot L\cdot 2\mathrm{B},\quad S_{\text{token}}=L\cdot 4\mathrm{B}
+\end{aligned}
+$$
 
 | 信号格式 | 体积 / 轨迹 | 相对量级 | 采用者 |
 |---|---|---|---|
@@ -117,7 +122,7 @@ batch 1024 条轨迹的全词表信号约 $4\ \mathrm{TB}/\text{步}$【本文�
 
 ### 4.3 独立算例交叉验证与"单机可行 / 跨节点不可行"分界
 
-Song & Zheng（arXiv:2604.00626, §8.3）给出一个独立算例：70B 教师 / 7B 学生、$8\times$H100、$B=16$、$T=4096$、$|V|=128\mathrm{K}$、BF16 $\rightarrow$ 约 $16\ \mathrm{GB}/\text{batch}$；结论是**单节点 NVLink（900 GB/s）内可行，跨节点则必须 top-k 稀疏化或精细张量切分**。
+Song & Zheng（arXiv:2604.00626, §8.3）给出一个独立算例：70B 教师 / 7B 学生、$8\times$H100、$B=16$、$T=4096$、$\lvert V\rvert=128\mathrm{K}$、BF16 $\rightarrow$ 约 $16\ \mathrm{GB}/\text{batch}$；结论是**单节点 NVLink（900 GB/s）内可行，跨节点则必须 top-k 稀疏化或精细张量切分**。
 
 【本文推算】按 §4.1 的公式复算该配置：$16\times 4096\times 131072\times 2\ \mathrm{B}\approx 17.2\ \mathrm{GB}$——与其报告的 $\sim16\ \mathrm{GB}$ 同数量级且量纲自洽，说明两组数字互为旁证。**其真正价值是给出了一条实用分界线**：全词表 OPD 的可行域边界基本落在"教师打分是否与训练同节点"这件事上。跨节点即意味着必须降档（top-k / 隐藏状态 / 采样 token），或者付出 DeepSeek-V4 级别的自研代价。
 
@@ -127,7 +132,9 @@ Song & Zheng（arXiv:2604.00626, §8.3）给出一个独立算例：70B 教师 /
 
 ### 5.1 公式
 
-$$C_{off}\approx N\,(F_{T}+F_{S}+B_{S}),\qquad C_{on}\approx N\,(G_{S}+\rho F_{T}+F_{S}+B_{S})$$
+$$
+C_{\mathrm{off}}\approx N\,(F_{T}+F_{S}+B_{S}),\qquad C_{on}\approx N\,(G_{S}+\rho F_{T}+F_{S}+B_{S})
+$$
 
 其中 $F/B$ 为前向/反向 FLOPs（下标 $T$/$S$ 为教师/学生），$G_S$ 为学生自回归生成成本，$\rho\in(0,1]$ 为**教师监督刷新率**（arXiv:2604.00626, §7.4/§8.3）。
 
@@ -165,7 +172,7 @@ $$C_{off}\approx N\,(F_{T}+F_{S}+B_{S}),\qquad C_{on}\approx N\,(G_{S}+\rho F_{T
 
 - **问题**：2026 年的主流用法是多教师（主稿 P4）——DeepSeek-V4 "more than ten teacher models"（arXiv:2606.19348 §5.1.1/§5.2.2）、Kimi K3 九教师（3 域 $\times$ 3 effort，arXiv:2607.24653 §4.1.2）、MiMo/Nemotron 十余专家（arXiv:2601.02780 §4.1；arXiv:2606.15007 §3.3）。**教师总参数量可以远超集群显存**。教师本身如何生产出来（五类来源与成本结构）见主稿 §5.12。
 - **生产做法**：DeepSeek-V4 §5.2.2 标题即 "Efficient Teacher Scheduling for Full-Vocabulary OPD"，支持 "effectively unbounded number of teachers, each potentially comprising trillions of parameters" 的教师权重 offload 调度。实现细节由两个独立来源交叉印证（Labonne 二手分析 ⚠️；arXiv:2604.00626 §8.3 的展开转述）：
-  - **不物化任何教师的全量 $|V|>100\mathrm{K}$ logit 张量**——中心化缓冲只缓存最后一层 hidden states，训练时经对应 prediction head 即时重建 logits（重算成本可忽略）；
+  - **不物化任何教师的全量 $\lvert V\rvert>100\mathrm{K}$ logit 张量**——中心化缓冲只缓存最后一层 hidden states，训练时经对应 prediction head 即时重建 logits（重算成本可忽略）；
   - **minibatch 内按教师身份排序样本**，使任意时刻至多一个教师的 prediction head 驻留显存；
   - 全部权重加载/卸载异步进行、不阻塞关键路径；
   - FP4 QAT 直接集成在 OPD 阶段内（蒸馏出的模型原生适配部署精度）；
@@ -187,8 +194,8 @@ $$C_{off}\approx N\,(F_{T}+F_{S}+B_{S}),\qquad C_{on}\approx N\,(G_{S}+\rho F_{T
 
 | 类别 | 作用对象（被截断的比值） | 要治的问题 | 一手实例 |
 |---|---|---|---|
-| **类型 I：训推不一致（TIM）修正** | $w_t=\dfrac{\pi_\theta(y_t)}{\mu_\theta(y_t)}$ —— **训练策略 vs 采样策略**（同一个模型在训练引擎与推理引擎下的两套 logprob，或跨迭代的策略版本差） | rollout 引擎与训练引擎数值口径不同 + 异步带来的版本陈旧 | MiMo-V2-Flash（arXiv:2601.02780 §4.4 Eq. 7-8：$w_t$ 落在 $[\varepsilon_{low},\varepsilon_{high}]$ 区间外**置零**）；Nemotron-Cascade 2（arXiv:2603.19220 §4.4：截断 IS 权重，$\varepsilon_{low}=0.5$、$\varepsilon_{high}=2.0$，报告明确其用途是修 train–inference 失配） |
-| **类型 II：师生 advantage 截断** | $\log\dfrac{\pi_{teacher}(y_t)}{\pi_\theta(y_t)}$ —— **教师 vs 学生**，即 OPD 的 advantage 本身 | 极端 advantage 导致的梯度尖峰与不稳定 | Kimi K3（arXiv:2607.24653 §4.1.3 Eq. 15：$\mathrm{clip}(\cdot,-R_{\max},R_{\max})$） |
+| **类型 I：训推不一致（TIM）修正** | $w_t=\dfrac{\pi_\theta(y_t)}{\mu_\theta(y_t)}$ —— **训练策略 vs 采样策略**（同一个模型在训练引擎与推理引擎下的两套 logprob，或跨迭代的策略版本差） | rollout 引擎与训练引擎数值口径不同 + 异步带来的版本陈旧 | MiMo-V2-Flash（arXiv:2601.02780 §4.4 Eq. 7-8：$w_t$ 落在 $[\varepsilon_{\mathrm{low}},\varepsilon_{\mathrm{high}}]$ 区间外**置零**）；Nemotron-Cascade 2（arXiv:2603.19220 §4.4：截断 IS 权重，$\varepsilon_{\mathrm{low}}=0.5$、$\varepsilon_{\mathrm{high}}=2.0$，报告明确其用途是修 train–inference 失配） |
+| **类型 II：师生 advantage 截断** | $\log\dfrac{\pi_{\mathrm{teacher}}(y_t)}{\pi_\theta(y_t)}$ —— **教师 vs 学生**，即 OPD 的 advantage 本身 | 极端 advantage 导致的梯度尖峰与不稳定 | Kimi K3（arXiv:2607.24653 §4.1.3 Eq. 15：$\mathrm{clip}(\cdot,-R_{\max},R_{\max})$） |
 
 **为什么必须分清**：类型 I 与 OPD 无关——任何异步 RL 都要做，它属于 [[26_tim_causal_chain_analysis]] 的问题域；类型 II 才是 OPD 特有的。二者作用在损失的不同因子上，可以（且通常应该）**同时存在**，把其中一个当成另一个的替代品会导致"以为已经治了陈旧性、其实只截了 advantage"这类静默错误【推断】。infra 侧的直接含义是：**两条截断需要两组不同的输入数据**——类型 I 需要 rollout 时的 $\mu_\theta$ 落盘，类型 II 只需要教师 logprob。
 
@@ -284,7 +291,7 @@ $$C_{off}\approx N\,(F_{T}+F_{S}+B_{S}),\qquad C_{on}\approx N\,(G_{S}+\rho F_{T
 | # | 上游稿表述 | 本轮核验结论 | 本页处理 |
 |---|---|---|---|
 | 1 | "MiMo 参照 **IcePop** 截断（arXiv:2601.02780 Eq. 7-8）"，并与 K3 的师生 log-ratio clip、Nemotron 的截断 IS 并列 | (a) MiMo **正文未出现 "IcePop"**，该词仅见于参考文献标题，正文原话为 "Following Zhao et al. (2025)"；(b) **Eq. 8 的截断作用于训推比 $\pi_\theta/\mu_\theta$**（训练策略 vs 采样策略），属**训推不一致（TIM）修正**，与 OPD 的师生 KL 是两件不同的事 | 见 W3-a（两类截断的作用对象对照表）与 W3-b（表述还原）；相关机制链接 [[26_tim_causal_chain_analysis]] |
-| 2 | Nemotron-Cascade 2 的 MOPD 与 Nemotron 3 Ultra 的 MOPD 被当作同一个东西引用 | Nemotron-Cascade 2 §4.4 节标题为 "**Multi-domain** On-Policy Distillation"，是**多领域**而非多教师；其截断 IS 区间 $\varepsilon_{low}=0.5$、$\varepsilon_{high}=2.0$ **已核实为真**（arXiv:2603.19220 §4.4）。同一缩写 MOPD 在 NVIDIA 两份报告中含义不同（Nemotron 3 Ultra 摘要为 "Multi-teacher On-Policy Distillation"，arXiv:2606.15007） | W3-a 表格中按"多领域"正确标注；详细辨析见 [[32_opd_framework_support_comparison]] §6 |
+| 2 | Nemotron-Cascade 2 的 MOPD 与 Nemotron 3 Ultra 的 MOPD 被当作同一个东西引用 | Nemotron-Cascade 2 §4.4 节标题为 "**Multi-domain** On-Policy Distillation"，是**多领域**而非多教师；其截断 IS 区间 $\varepsilon_{\mathrm{low}}=0.5$、$\varepsilon_{\mathrm{high}}=2.0$ **已核实为真**（arXiv:2603.19220 §4.4）。同一缩写 MOPD 在 NVIDIA 两份报告中含义不同（Nemotron 3 Ultra 摘要为 "Multi-teacher On-Policy Distillation"，arXiv:2606.15007） | W3-a 表格中按"多领域"正确标注；详细辨析见 [[32_opd_framework_support_comparison]] §6 |
 | 3 | Nemotron 3 Ultra 的"异步 behavior/proximal 策略解耦"作为一手事实引用 | **本轮未能独立核实**——arXiv HTML 与 ar5iv 均在 §3.3.1 之后截断 | W3 中标 ⚠️ **待核**，并注明其现有依据来自上游 research-notes 对官方 PDF §3.3.1（p.21）的读取 |
 
 ---

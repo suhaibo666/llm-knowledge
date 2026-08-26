@@ -170,7 +170,11 @@ $$
 **总通信量公式**：
 
 $$
-V_{\text{total}} \approx \underbrace{c \cdot n_{kv} \cdot d_h \cdot B}_{\text{Stage 1 (常数)}} + \underbrace{\frac{(P-1) \cdot S \cdot n_{kv} \cdot d_h \cdot B}{P^2 \cdot c}}_{\text{Stage 2 (主导项)}}
+\begin{aligned}
+V_{\text{total}}
+&\approx \underbrace{c \cdot n_{kv} \cdot d_h \cdot B}_{\text{Stage 1 (常数)}} \\
+&\quad + \underbrace{\frac{(P-1) \cdot S \cdot n_{kv} \cdot d_h \cdot B}{P^2 \cdot c}}_{\text{Stage 2 (主导项)}}
+\end{aligned}
 $$
 
 当 $S \gg P \cdot c^2$ 时，Stage 2 主导总通信量，压缩率 $c$ 以线性因子直接缩减。

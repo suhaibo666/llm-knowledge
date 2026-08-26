@@ -35,7 +35,9 @@ Transformer 是 $L$ 层顺序堆叠，$\text{layer}_{i+1}$ 的输入是 $\text{l
 
 即便 microbatching，流水线**启动**（填满 $P$ 个 stage 需要 $P-1$ 步）和**收尾**（排空需要 $P-1$ 步）时仍有空闲。这段固定损耗就是气泡：
 
-$$\text{bubble ratio} = \frac{P-1}{m + P - 1}$$
+$$
+\text{bubble ratio} = \frac{P-1}{m + P - 1}
+$$
 
 **要点：气泡只由 $P$ 和 $m$ 决定** ——micro-batch 数 $m$ 越大，气泡越小（$m\to\infty$ 时趋于 0）。所以 PP 总想把 $m$ 开大；但 $m$ 大又会推高激活显存（见下），这正是各种调度要平衡的矛盾。
 

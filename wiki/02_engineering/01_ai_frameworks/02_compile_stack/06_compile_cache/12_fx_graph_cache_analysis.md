@@ -67,7 +67,9 @@ pickler = FxGraphCachePickler(gm, has_user_defined_triton_kernels)            # 
 key = pickler.get_key(details)                                               # bytes → hash
 ```
 
-$$\text{key} = \text{prefix} \,\|\, H\big(\text{pickle}_{\text{stable}}(\text{FxGraphHashDetails})\big)$$
+$$
+\text{key} = \text{prefix} \,\|\, H\big(\text{pickle}_{\text{stable}}(\text{FxGraphHashDetails})\big)
+$$
 
 key 带一个前缀字符区分缓存类别（`codecache.py:1698` 注释），落盘时用 `key[1:3]` 作分片子目录（`codecache.py:1957`）。
 

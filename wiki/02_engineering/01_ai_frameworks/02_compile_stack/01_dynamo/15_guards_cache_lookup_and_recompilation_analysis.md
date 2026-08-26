@@ -294,8 +294,8 @@ $$
 
 $$
 O\left(\sum_{i=1}^{C}
-(\lvert guards_i\rvert+\lvert code_i\rvert+\lvert artifacts_i\rvert)
-\lvert frame\_state\rvert\right)
+(\lvert \mathrm{guards}_i\rvert+\lvert \mathrm{code}_i\rvert+\lvert \mathrm{artifacts}_i\rvert)
+\lvert \texttt{frame\_state}\rvert\right)
 $$
 
 backend artifact可能由更深cache共享，不能简单按Dynamo entries相乘。

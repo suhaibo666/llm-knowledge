@@ -11,7 +11,10 @@ Profiler（如 NVIDIA Nsight Compute）通过硬件计数器测量实际执行�
 吞吐量的计算公式如下：
 
 $$
-\text{Throughput (TFLOPS)} = \frac{\text{Forward FLOPs per Batch} \times 3}{\text{Elapsed Time (s)} \times \text{World Size} \times 10^{12}}
+\begin{aligned}
+\text{Throughput (TFLOPS)}
+&= \frac{\text{Forward FLOPs per Batch} \times 3}{\text{Elapsed Time (s)} \times \text{World Size} \times 10^{12}}
+\end{aligned}
 $$
 
 *   **Forward FLOPs per Batch（每个 Batch 的前向理论 FLOPs）**：根据隐藏层维度、层数、序列长度、词表大小等模型超参数，静态估算单次前向传播的计算量。
@@ -105,7 +108,9 @@ routed_flops = (4 * batch_size * seq_len * hidden_size *
     1.  **分子 (FLOPs)**：代码**依然按照所有 Token 都被处理**来计算 FLOPs (`Batch * Seq_Len * TopK`)。它没有减去被丢弃 Token原本应该产生的计算量。
     2.  **分母 (Time)**：实际的硬件执行时间**变短了**，因为实际执行的矩阵乘法次数减少了。
     3.  **结果**：
-        $$ \text{TFLOPS} = \frac{\text{不变的（高）FLOPs}}{\text{减小的 Time}} \rightarrow \text{虚高的数值} $$
+        $$
+        \text{TFLOPS} = \frac{\text{不变的（高）FLOPs}}{\text{减小的 Time}} \rightarrow \text{虚高的数值}
+        $$
 *   **结论**：在高丢弃率场景下，报告的 TFLOPS 会显著高于真实值。此时它表示一种“等效吞吐量”，即假设未丢弃的 Token 也能按当前速度处理所得到的折算值，而不再代表真实的硬件算力利用率。
 
 ## 5. 总结

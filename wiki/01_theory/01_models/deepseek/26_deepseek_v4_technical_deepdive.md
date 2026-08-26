@@ -100,10 +100,16 @@ $$
 每 `m` 个 entry 压成 1 个，softmax 跨 **2m** 个元素归一（两路各 `m` 个），并加可学习位置偏置 $B_a,B_b\in\mathbb{R}^{m\times c}$：
 
 $$
-[\,S^a_{mi:m(i+1)-1};\,S^b_{m(i-1):mi-1}\,]=\mathrm{Softmax_{row}}\big([\,Z^a_{mi:m(i+1)-1}+B_a;\,Z^b_{m(i-1):mi-1}+B_b\,]\big)\tag{Eq 11}
+\begin{aligned}
+[\,S^a_{mi:m(i+1)-1};\,S^b_{m(i-1):mi-1}\,]
+&=\mathrm{Softmax_{\mathrm{row}}}\big([\,Z^a_{mi:m(i+1)-1}+B_a;\,Z^b_{m(i-1):mi-1}+B_b\,]\big)\tag{Eq 11}
+\end{aligned}
 $$
 $$
-C^{Comp}_i=\sum_{j=mi}^{m(i+1)-1} S^a_j\odot C^a_j \;+\; \sum_{j=m(i-1)}^{mi-1} S^b_j\odot C^b_j,\qquad C^{Comp}\in\mathbb{R}^{\frac{n}{m}\times c}\tag{Eq 12}
+\begin{aligned}
+C^{Comp}_i
+&=\sum_{j=mi}^{m(i+1)-1} S^a_j\odot C^a_j \;+\; \sum_{j=m(i-1)}^{mi-1} S^b_j\odot C^b_j,\qquad C^{Comp}\in\mathbb{R}^{\frac{n}{m}\times c}\tag{Eq 12}
+\end{aligned}
 $$
 
 **论文给出（p10）**：$\odot$ 是 Hadamard 积；$i=0$ 时 $Z^b_{m(i-1):mi-1}$ 用 $-\infty$ 填充、$C^b$ 用 0 填充。每个 $C^{Comp}_i$ 看似来自 **2m** 个原始 entry，但 $C^{Comp}_i$ 用到的 $C^b$ 索引区间与 $C^{Comp}_{i-1}$ 用到的 $C^a$ 索引区间**重叠**——所以净压缩率**恰好是 `1/m`**，而非 `1/2m`（p10 末句明示）。
@@ -127,7 +133,10 @@ $$
 c^Q_t = h_t W^{DQ}\tag{Eq 13}
 $$
 $$
-[\,q^I_{t,1};\dots;q^I_{t,n^I_h}\,]=q^I_t = c^Q_t W^{IUQ},\qquad W^{DQ}\in\mathbb{R}^{d\times d_c},\ W^{IUQ}\in\mathbb{R}^{d_c\times c_I n^I_h}\tag{Eq 14}
+\begin{aligned}
+[\,q^I_{t,1};\dots;q^I_{t,n^I_h}\,]
+&=q^I_t = c^Q_t W^{IUQ},\qquad W^{DQ}\in\mathbb{R}^{d\times d_c},\ W^{IUQ}\in\mathbb{R}^{d_c\times c_I n^I_h}\tag{Eq 14}
+\end{aligned}
 $$
 
 index score（因果约束 $s<\lfloor t/m\rfloor$，即只看前序压缩块）：
@@ -142,7 +151,7 @@ $$
 top-k 选出参与 core attention 的压缩块子集：
 
 $$
-C^{SprsComp}_t=\big\{\,C^{Comp}_s \;\big|\; I_{t,s}\in\mathrm{Top\text{-}k}(I_{t,:})\,\big\}\tag{Eq 17}
+C^{SprsComp}_t=\big\{\,C^{Comp}_s \;\big\vert\; I_{t,s}\in\mathrm{Top\text{-}k}(I_{t,:})\,\big\}\tag{Eq 17}
 $$
 
 **配置（§4.2.1, p24–25）**：$n^I_h=64$、$c_I=128$（Flash/Pro 相同）；top-k 取 **512（Flash）/ 1024（Pro）** 个压缩 entry。
@@ -157,7 +166,10 @@ $$
 [\,q_{t,1};\dots;q_{t,n_h}\,]=q_t = c^Q_t W^{UQ},\qquad W^{UQ}\in\mathbb{R}^{d_c\times c\,n_h}\tag{Eq 18}
 $$
 $$
-o_{t,i}=\mathrm{CoreAttn}\big(\text{query}=q_{t,i},\ \text{key}=C^{SprsComp}_t,\ \text{value}=C^{SprsComp}_t\big)\tag{Eq 19}
+\begin{aligned}
+o_{t,i}
+&=\mathrm{CoreAttn}\big(\text{query}=q_{t,i},\ \text{key}=C^{SprsComp}_t,\ \text{value}=C^{SprsComp}_t\big)\tag{Eq 19}
+\end{aligned}
 $$
 
 > [!note] 这里的低秩潜在 $c^Q_t$ 只压缩 **query**，且被 indexer 与主注意力两处复用——和 MLA 压缩 **KV** 是两回事。V4 把"低秩"用在 query 上，"序列压缩"用在 KV 上。
@@ -194,7 +206,10 @@ $$
 C = H W^{KV},\qquad Z = H W^{Z},\qquad W^{KV},W^{Z}\in\mathbb{R}^{d\times c}\tag{Eq 20–21}
 $$
 $$
-S_{m'i:m'(i+1)-1}=\mathrm{Softmax_{row}}\big(Z_{m'i:m'(i+1)-1}+B\big),\qquad B\in\mathbb{R}^{m'\times c}\tag{Eq 22}
+\begin{aligned}
+S_{m'i:m'(i+1)-1}
+&=\mathrm{Softmax_{\mathrm{row}}}\big(Z_{m'i:m'(i+1)-1}+B\big),\qquad B\in\mathbb{R}^{m'\times c}\tag{Eq 22}
+\end{aligned}
 $$
 $$
 C^{Comp}_i=\sum_{j=m'i}^{m'(i+1)-1} S_j\odot C_j,\qquad C^{Comp}\in\mathbb{R}^{\frac{n}{m'}\times c}\tag{Eq 23}
@@ -223,7 +238,7 @@ $$
 
 **(b) 部分 RoPE（Partial RoPE，p13）**：对 query / KV entry 各自的**最后 64 维**施加 RoPE。由于压缩 KV 同时充当 key 与 value，naive 输出 $\{o_{t,i}\}$ 会携带**绝对**位置；作为对策，对每个 $o_{t,i}$ 的最后 64 维再施加**位置 $-i$** 的 RoPE，使输出携带**相对**位置——每个 KV entry 对输出的贡献与"query 到该 entry 的距离"挂钩。
 
-**(c) 滑窗注意力分支（SWA，p13）**：因严格因果性，query 看不到**自己所在压缩块内**的 token，而近邻 token 往往最相关。于是每个 query 额外产生 $n_{win}$ 个**未压缩**的近邻 KV entry，与压缩 KV 一起进 core attention。**$n_{win}=128$**（§4.2.1，Flash/Pro 相同）。
+**(c) 滑窗注意力分支（SWA，p13）**：因严格因果性，query 看不到**自己所在压缩块内**的 token，而近邻 token 往往最相关。于是每个 query 额外产生 $n_{\mathrm{win}}$ 个**未压缩**的近邻 KV entry，与压缩 KV 一起进 core attention。**$n_{\mathrm{win}}=128$**（§4.2.1，Flash/Pro 相同）。
 
 **(d) Attention sink（Eq 27, p13）**：每头设可学习 sink logit $z'_h$，把 $\mathrm{Exp}(z'_h)$ 加到注意力分母：
 

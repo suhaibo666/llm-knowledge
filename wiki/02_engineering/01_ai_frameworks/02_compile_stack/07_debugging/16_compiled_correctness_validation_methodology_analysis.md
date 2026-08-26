@@ -60,7 +60,7 @@ Tensor值。
 对浮点Tensor通常使用：
 
 $$
-|x-y| \le \text{atol} + \text{rtol}\cdot |y|
+\lvert x-y\rvert \le \text{atol} + \text{rtol}\cdot \lvert y\rvert
 $$
 
 但容差应按dtype、算子数值性质和业务误差预算定义：

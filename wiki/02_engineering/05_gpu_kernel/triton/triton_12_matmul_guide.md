@@ -184,14 +184,22 @@ else:
 
 行主序张量 `X` 的元素地址公式（源注释 `:61-62`）：
 
-$$\&X[i,j] = X_{\text{base}} + i \cdot \texttt{stride\_xi} + j \cdot \texttt{stride\_xj}$$
+$$
+\&X[i,j] = X_{\text{base}} + i \cdot \texttt{stride\_xi} + j \cdot \texttt{stride\_xj}
+$$
 
 要一次性得到整个 `[BM,BK]` 块的**所有指针**，把行下标向量与列下标向量做**广播外积**：
 
 - `offs_am`：长度 `BM` 的行下标向量（`:286`）；`offs_k`：长度 `BK` 的列下标向量（`:288`）。
 - `offs_am[:, None]` 形状 `[BM,1]`，`offs_k[None, :]` 形状 `[1,BK]`；二者相加按 NumPy 广播规则得到 `[BM,BK]`：
 
-$$\texttt{a\_ptrs}[i,j] = \texttt{a\_ptr} + \underbrace{\texttt{offs\_am}[i]}_{\text{行}}\cdot\texttt{stride\_am} + \underbrace{\texttt{offs\_k}[j]}_{\text{列}}\cdot\texttt{stride\_ak}$$
+$$
+\begin{aligned}
+\texttt{a\_ptrs}[i,j]
+&= \texttt{a\_ptr} + \underbrace{\texttt{offs\_am}[i]}_{\text{行}}\cdot\texttt{stride\_am} \\
+&\quad + \underbrace{\texttt{offs\_k}[j]}_{\text{列}}\cdot\texttt{stride\_ak}
+\end{aligned}
+$$
 
 这正是 `:289`。源把这个广播写法和上面的地址公式在注释 `:63-69` 里逐一对应过。一句话：**`[:,None]` 把向量竖起来当行索引，`[None,:]` 把向量躺平当列索引，相加就枚举了块里每个元素的地址**。B 同理（`:290`），只是 K 在行、N 在列。
 

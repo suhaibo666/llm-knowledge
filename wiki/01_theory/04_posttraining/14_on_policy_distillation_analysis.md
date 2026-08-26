@@ -57,7 +57,9 @@ OPD 的位置由两个正交轴确定——**训练数据由谁采样**，与**�
 - 若训练与部署同分布，$T$ 步的期望总代价为 $\sum_{t=1}^{T}\epsilon = O(\epsilon T)$。
 - 若训练分布是专家的、部署分布是自己的：在第 $t$ 步首次犯错的概率约为 $\epsilon$，一旦犯错就进入训练中**从未见过**的状态，此后策略行为无保证，最坏情况下剩余 $T-t$ 步全错。求和：
 
-$$\sum_{t=1}^{T}\epsilon\,(T-t)\;=\;\epsilon\,\frac{T(T-1)}{2}\;=\;O(\epsilon T^{2})$$
+$$
+\sum_{t=1}^{T}\epsilon\,(T-t)\;=\;\epsilon\,\frac{T(T-1)}{2}\;=\;O(\epsilon T^{2})
+$$
 
 多出来的那个 $T$ 因子，就是"没在自己的分布上训练"的代价。
 
@@ -71,11 +73,22 @@ $$\sum_{t=1}^{T}\epsilon\,(T-t)\;=\;\epsilon\,\frac{T(T-1)}{2}\;=\;O(\epsilon T^
 
 设教师 $\pi_T$、学生 $\pi_\theta$、提示分布 $x\sim\mathcal X$。一般形式是在某个数据分布 $\rho$ 上最小化某个散度 $\mathcal D$：
 
-$$\min_\theta\;\mathbb E_{x\sim\mathcal X}\;\mathbb E_{y\sim\rho(\cdot\mid x)}\big[\mathcal D(\pi_T\,\|\,\pi_\theta)(y\mid x)\big]$$
+$$
+\begin{aligned}
+\min_\theta\;\mathbb E_{x\sim\mathcal X}\;\mathbb E_{y\sim\rho(\cdot\mid x)}
+\big[\mathcal D(\pi_T\,\|\,\pi_\theta)(y\mid x)\big]
+\end{aligned}
+$$
 
 两个设计轴由此展开：$\rho$ **是谁**（off-policy：固定数据集或教师分布；on-policy：学生分布 $\pi_\theta$）与 $\mathcal D$ **是什么**（FKL / RKL / JSD / f-散度族）。GKD 用混合系数 $\lambda$ 把 $\rho$ 轴的两端连成谱系（arXiv:2306.13649v3 §3.1，已独立核实）：
 
-$$L_{\mathrm{GKD}}(\theta)=(1-\lambda)\,\mathbb E_{(x,y)\sim D}\big[\mathcal D(p_T\|p_S^\theta)\big]+\lambda\,\mathbb E_{x}\,\mathbb E_{y\sim p_S(\cdot\mid x)}\big[\mathcal D(p_T\|p_S^\theta)\big]$$
+$$
+\begin{aligned}
+L_{\mathrm{GKD}}(\theta)
+&=(1-\lambda)\,\mathbb E_{(x,y)\sim D}\big[\mathcal D(p_T\|p_S^\theta)\big] \\
+&\quad +\lambda\,\mathbb E_{x}\,\mathbb E_{y\sim p_S(\cdot\mid x)}\big[\mathcal D(p_T\|p_S^\theta)\big]
+\end{aligned}
+$$
 
 $\lambda=0$ 退化为监督式 KD，$\lambda=1$ 即纯 on-policy。**注意 $\rho$ 轴与 $\mathcal D$ 轴正交**——这是 GKD 最重要的概念贡献，详见 [[15_opd_divergence_and_objective_evolution_analysis]] §3。
 
@@ -89,25 +102,48 @@ $\lambda=0$ 退化为监督式 KD，$\lambda=1$ 即纯 on-policy。**注意 $\rh
 
 反向 KL 目标：
 
-$$L(\theta)=\mathrm{KL}(\pi_\theta\,\|\,\pi_T)=\mathbb E_{y\sim\pi_\theta}\Big[\log\frac{\pi_\theta(y\mid x)}{\pi_T(y\mid x)}\Big]$$
+$$
+\begin{aligned}
+L(\theta)
+&=\mathrm{KL}(\pi_\theta\,\|\,\pi_T)=\mathbb E_{y\sim\pi_\theta}\Big[\log\frac{\pi_\theta(y\mid x)}{\pi_T(y\mid x)}\Big]
+\end{aligned}
+$$
 
 与前向 KL 的结构差别是决定性的：**期望的采样分布 $\pi_\theta$ 就是被优化的对象**，因此不能像 FKL 那样把它当作固定数据分布直接反传。
 
 **本页推导。** 记 $u_\theta(y)=\log\frac{\pi_\theta(y)}{\pi_T(y)}$，则
 
-$$\nabla_\theta L=\nabla_\theta\sum_y \pi_\theta(y)\,u_\theta(y)=\underbrace{\sum_y \big[\nabla_\theta\pi_\theta(y)\big]u_\theta(y)}_{\text{(I) 采样分布的移动}}+\underbrace{\sum_y \pi_\theta(y)\,\nabla_\theta u_\theta(y)}_{\text{(II) 被积函数的移动}}$$
+$$
+\begin{aligned}
+\nabla_\theta L
+&=\nabla_\theta\sum_y \pi_\theta(y)\,u_\theta(y)=\underbrace{\sum_y \big[\nabla_\theta\pi_\theta(y)\big]u_\theta(y)}_{\text{(I) 采样分布的移动}} \\
+&\quad +\underbrace{\sum_y \pi_\theta(y)\,\nabla_\theta u_\theta(y)}_{\text{(II) 被积函数的移动}}
+\end{aligned}
+$$
 
 对 (I) 用对数导数恒等式 $\nabla_\theta\pi_\theta=\pi_\theta\nabla_\theta\log\pi_\theta$：
 
-$$\text{(I)}=\mathbb E_{y\sim\pi_\theta}\big[\nabla_\theta\log\pi_\theta(y)\cdot u_\theta(y)\big]$$
+$$
+\text{(I)}=\mathbb E_{y\sim\pi_\theta}\big[\nabla_\theta\log\pi_\theta(y)\cdot u_\theta(y)\big]
+$$
 
 对 (II)，因为 $\pi_T$ 与 $\theta$ 无关，$\nabla_\theta u_\theta=\nabla_\theta\log\pi_\theta$，故
 
-$$\text{(II)}=\mathbb E_{y\sim\pi_\theta}\big[\nabla_\theta\log\pi_\theta(y)\big]=\sum_y\nabla_\theta\pi_\theta(y)=\nabla_\theta\!\sum_y\pi_\theta(y)=\nabla_\theta 1=0$$
+$$
+\begin{aligned}
+\text{(II)}
+&=\mathbb E_{y\sim\pi_\theta}\big[\nabla_\theta\log\pi_\theta(y)\big]=\sum_y\nabla_\theta\pi_\theta(y)=\nabla_\theta\!\sum_y\pi_\theta(y)=\nabla_\theta 1=0
+\end{aligned}
+$$
 
 ——但**只在对整条序列的完整期望下才为零**。合并并令**逐 token 奖励**为教师-学生对数似然比 $r_t=\log\frac{\pi_T(y_t\mid\cdot)}{\pi_\theta(y_t\mid\cdot)}$、其 reward-to-go 为 $R_t=\sum_{t'\ge t}r_{t'}$，就得到 REINFORCE 形式：
 
-$$\nabla_\theta L=-\,\mathbb E_{y\sim\pi_\theta}\Big[\sum_{t}\big(R_t-1\big)\,\nabla_\theta\log\pi_\theta(y_t\mid y_{<t},x)\Big]$$
+$$
+\begin{aligned}
+\nabla_\theta L
+&=-\,\mathbb E_{y\sim\pi_\theta}\Big[\sum_{t}\big(R_t-1\big)\,\nabla_\theta\log\pi_\theta(y_t\mid y_{<t},x)\Big]
+\end{aligned}
+$$
 
 这正是 MiniLLM 的 Eq. 2（arXiv:2306.08543，已独立核实梯度形式与 $R_t$ 定义）。
 
@@ -119,13 +155,20 @@ $$\nabla_\theta L=-\,\mathbb E_{y\sim\pi_\theta}\Big[\sum_{t}\big(R_t-1\big)\,\n
 
 标准的 KL 约束 RL 目标（RLHF 的通用形式）：
 
-$$\max_\theta\;\mathbb E_{y\sim\pi_\theta}\big[r(y)\big]-\beta\,\mathrm{KL}(\pi_\theta\,\|\,\pi_{\mathrm{ref}})$$
+$$
+\max_\theta\;\mathbb E_{y\sim\pi_\theta}\big[r(y)\big]-\beta\,\mathrm{KL}(\pi_\theta\,\|\,\pi_{\mathrm{ref}})
+$$
 
 **取 $r\equiv 0$、$\pi_{\mathrm{ref}}=\pi_T$、$\beta=1$，目标就退化为 $-\mathrm{KL}(\pi_\theta\|\pi_T)$，即纯 OPD。** 换句话说：**OPD 是 KL 约束 RL 把"奖励项清零、只留正则项、并把正则锚点从初始策略换成教师"的极限。** 这解释了 GKD §3.2（Eq. 5）为什么能自然地把蒸馏项与 RLHF 奖励并入同一目标——两者本来就住在同一个式子里（该式已独立核实；论文自称是首个同时做蒸馏与 RL 微调，属**作者自述**优先权而非第三方认定）。
 
 反过来看更有用：把 §3.1 的逐 token 奖励 $r_t=\log\frac{\pi_T}{\pi_\theta}$ 当作 **advantage** 塞进任何策略梯度框架，得到的梯度与 RKL 的梯度**在期望意义上只差一个常数基线**。这就是 TML "一行改动"的数学依据——其伪代码（已独立核实存在）本质是：
 
-$$\hat A_t \;=\; -\,\mathrm{sg}\Big[\log\frac{\pi_\theta(y_t\mid\cdot)}{\pi_T(y_t\mid\cdot)}\Big]\;=\;\mathrm{sg}\Big[\log\frac{\pi_T(y_t\mid\cdot)}{\pi_\theta(y_t\mid\cdot)}\Big]$$
+$$
+\begin{aligned}
+\hat A_t \;
+&=\; -\,\mathrm{sg}\Big[\log\frac{\pi_\theta(y_t\mid\cdot)}{\pi_T(y_t\mid\cdot)}\Big]\;=\;\mathrm{sg}\Big[\log\frac{\pi_T(y_t\mid\cdot)}{\pi_\theta(y_t\mid\cdot)}\Big]
+\end{aligned}
+$$
 
 然后调用现成的 importance-sampling 损失。**近零基建改动**——这是 OPD 能在一年内被所有主流 RL 框架内建的根本原因（见 [[32_opd_framework_support_comparison]]）。
 
@@ -133,19 +176,29 @@ $$\hat A_t \;=\; -\,\mathrm{sg}\Big[\log\frac{\pi_\theta(y_t\mid\cdot)}{\pi_T(y_
 
 KL 约束 RL 有闭式最优解。对 $\max_\pi \mathbb E_{y\sim\pi}[r(y)]-\beta\mathrm{KL}(\pi\|\pi_{\mathrm{ref}})$ 做变分，在归一化约束下可得
 
-$$\pi^\*(y)\;\propto\;\pi_{\mathrm{ref}}(y)\,\exp\!\big(r(y)/\beta\big)$$
+$$
+\pi^\*(y)\;\propto\;\pi_{\mathrm{ref}}(y)\,\exp\!\big(r(y)/\beta\big)
+$$
 
 **本页推导的两个推论：**
 
 **(a) OPD 的不动点就是教师。** 取 $\beta=1$、$r(y)=\log\frac{\pi_T(y)}{\pi_{\mathrm{ref}}(y)}$，代入得
 
-$$\pi^\*\;\propto\;\pi_{\mathrm{ref}}\cdot\frac{\pi_T}{\pi_{\mathrm{ref}}}\;=\;\pi_T$$
+$$
+\pi^\*\;\propto\;\pi_{\mathrm{ref}}\cdot\frac{\pi_T}{\pi_{\mathrm{ref}}}\;=\;\pi_T
+$$
 
 即最优解**恰好**是教师分布，不多不少。这正是 G-OPD（arXiv:2602.12125v2）所说的"OPD 是奖励与 KL **恒等权**的 KL 约束 RL"——奖励项与正则项的权重严格相消。**这也是 OPD"是能力放大器而非创造器"的数学表述**：目标函数的最优解不含任何超越教师的成分。
 
 **(b) 引入奖励缩放 $\lambda$ 就打开了外推。** 取 $r_\lambda(y)=\lambda\log\frac{\pi_T(y)}{\pi_{\mathrm{ref}}(y)}$，同样代入：
 
-$$\log\pi^\*_\lambda=\log\pi_{\mathrm{ref}}+\lambda\big(\log\pi_T-\log\pi_{\mathrm{ref}}\big)-\log Z=\lambda\log\pi_T+(1-\lambda)\log\pi_{\mathrm{ref}}-\log Z$$
+$$
+\begin{aligned}
+\log\pi^\*_\lambda
+&=\log\pi_{\mathrm{ref}}+\lambda\big(\log\pi_T-\log\pi_{\mathrm{ref}}\big) \\
+&\quad -\log Z=\lambda\log\pi_T+(1-\lambda)\log\pi_{\mathrm{ref}}-\log Z
+\end{aligned}
+$$
 
 这正是源稿引用的 G-OPD 结论式。**推导让它的几何含义变得显然**：最优解是教师与参考策略在**对数空间的线性插值**；$\lambda=1$ 落在教师这个端点上，$\lambda>1$ 则是沿"参考策略→教师"这条方向**外推到教师之外**。源稿称 $\lambda=1.25$ 时在多教师设定下可同时超越两个领域教师（⚠️ 未独立核实该实验数字）。
 
@@ -194,7 +247,7 @@ flowchart TB
 > [!contradiction] 全词表 vs 采样 token：DeepSeek-V4 与 Kimi K3 的一手经验直接对立
 >
 > **DeepSeek-V4 站 A 并点名批评 B**（arXiv:2606.19348v1 §5.1.2，本页已从 PDF 原文逐字核对）：
-> > "prior works usually simplify the full-vocabulary KL loss into a token-level KL estimate at each token position, and reuse RL framework by replacing $\mathrm{sg}\log\frac{\pi_{E_i}(y_t|x,y_{<t})}{\pi_\theta(y_t|x,y_{<t})}$ as the per-token advantage estimate in the policy loss calculation. Although this approach is resource-efficient, **it leads to high variance in gradient estimation and often causes training instability**. Therefore, we adopt full-vocabulary logit distillation in our OPD."
+> > "prior works usually simplify the full-vocabulary KL loss into a token-level KL estimate at each token position, and reuse RL framework by replacing $\mathrm{sg}\log\frac{\pi_{E_i}(y_t\mid x,y_{<t})}{\pi_\theta(y_t\mid x,y_{<t})}$ as the per-token advantage estimate in the policy loss calculation. Although this approach is resource-efficient, **it leads to high variance in gradient estimation and often causes training instability**. Therefore, we adopt full-vocabulary logit distillation in our OPD."
 >
 > **Kimi K3 站 B 并给出反证**（arXiv:2607.24653v2 §4.1.3，本页已从 PDF 原文逐字核对）：
 > > "This dense reward signal seamlessly integrates into our RL framework, naturally enabling infrastructure-level optimizations such as partial rollout training for long-horizon tasks. **While we also experimented with more fine-grained top-k distillation objectives, we observed no clear advantage in either convergence speed or final performance in our setting.**"

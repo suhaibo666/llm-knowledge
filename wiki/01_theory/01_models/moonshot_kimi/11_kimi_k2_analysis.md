@@ -72,12 +72,20 @@
 
 解决 Muon 训练中的注意力 logits 爆炸问题：
 
-$$S_{\max}^{h} = \frac{1}{\sqrt{d}} \max_{\mathbf{X} \in B} \max_{i,j} \mathbf{Q}_{i}^{h} \mathbf{K}_{j}^{h\top}$$
+$$
+S_{\max}^{h} = \frac{1}{\sqrt{d}} \max_{\mathbf{X} \in B} \max_{i,j} \mathbf{Q}_{i}^{h} \mathbf{K}_{j}^{h\top}
+$$
 
 当 $S_{\max}^{h} > \tau$ 时：
-$$\mathbf{W}_{qc}^{h} \leftarrow \mathbf{W}_{qc}^{h} \cdot \sqrt{\gamma}, \quad \gamma = \min(1, \tau/S_{\max}^{h})$$
-$$\mathbf{W}_{kc}^{h} \leftarrow \mathbf{W}_{kc}^{h} \cdot \sqrt{\gamma}$$
-$$\mathbf{W}_{qr}^{h} \leftarrow \mathbf{W}_{qr}^{h} \cdot \gamma$$
+$$
+\mathbf{W}_{qc}^{h} \leftarrow \mathbf{W}_{qc}^{h} \cdot \sqrt{\gamma}, \quad \gamma = \min(1, \tau/S_{\max}^{h})
+$$
+$$
+\mathbf{W}_{kc}^{h} \leftarrow \mathbf{W}_{kc}^{h} \cdot \sqrt{\gamma}
+$$
+$$
+\mathbf{W}_{qr}^{h} \leftarrow \mathbf{W}_{qr}^{h} \cdot \gamma
+$$
 
 **效果**：$\tau=100$，**15.5T token 训练零 loss spike**
 
@@ -151,7 +159,12 @@ Stage 3: 多轮轨迹生成
 ```
 
 **RL 算法**（基于 k1.5 在线镜像下降）：
-$$L_{\mathrm{RL}}(\theta) = \mathbb{E}_{x \sim \mathcal{D}}\left[\frac{1}{K}\sum_{i=1}^{K}\left(r(x, y_i) - \bar{r}(x) - \tau \log \frac{\pi_\theta(y_i|x)}{\pi_{\mathrm{old}}(y_i|x)}\right)^2\right]$$
+$$
+\begin{aligned}
+L_{\mathrm{RL}}(\theta)
+&= \mathbb{E}_{x \sim \mathcal{D}}\left[\frac{1}{K}\sum_{i=1}^{K}\left(r(x, y_i) - \bar{r}(x) - \tau \log \frac{\pi_\theta(y_i\mid x)}{\pi_{\mathrm{old}}(y_i\mid x)}\right)^2\right]
+\end{aligned}
+$$
 
 **关键技巧**：预算控制 + PTX Loss + 温度衰减
 

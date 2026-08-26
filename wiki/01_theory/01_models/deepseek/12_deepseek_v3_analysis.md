@@ -74,7 +74,7 @@ $$
 **Training Objective**:
 
 $$
-\mathcal{L}_{MTP} = \lambda \cdot \frac{1}{D} \sum_{k=1}^{D} \mathcal{L}^k_{MTP}
+\mathcal{L}_{\mathrm{MTP}} = \lambda \cdot \frac{1}{D} \sum_{k=1}^{D} \mathcal{L}^k_{\mathrm{MTP}}
 $$
 
 For DeepSeek-V3, $\lambda = 0.3$ for first 10T tokens, then $0.1$ for remaining 4.8T.

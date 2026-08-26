@@ -650,7 +650,7 @@ DeepEP/HybridEP 之所以能"加速通信"，核心是把单级的 GPU↔GPU A2A
 buffer 也分两块：`num_rdma_bytes` + `num_nvl_bytes`（`get_buffer:62`）。**核心规则**：一个 token 不论在目标 node 上命中几个专家/几张卡，**跨 node 只发一次**（RDMA），落地后由该 node 内 NVLink 复制给目标卡。于是**跨节点流量 ∝ token 的"目标节点数" `|R(t)|`（≤ k），而非"目标专家数 k"**：
 
 $$
-\text{RDMA(跨节点)}(t)=|R(t)|\cdot M,\qquad
+\text{RDMA(跨节点)}(t)=\lvert R(t)\rvert\cdot M,\qquad
 \boxed{\ \text{IB 加速比}=\dfrac{k/P}{\,1-(1-1/P)^k\,}\ }\quad(P=\text{node 数},\ M=H\times\text{bytes/elt})
 $$
 

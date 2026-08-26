@@ -63,7 +63,9 @@
 
 **方案**：将 up-projection 矩阵按头拆分，独立正交化：
 
-$$W^{UQ}, W^{UK}, W^{UV} \rightarrow \text{per-head matrices} \rightarrow \text{independent orthogonalization}$$
+$$
+W^{UQ}, W^{UK}, W^{UV} \rightarrow \text{per-head matrices} \rightarrow \text{independent orthogonalization}
+$$
 
 **效果**：不同注意力头的投影权重以不同尺度更新，MLA 性能匹配 GQA-8，且训练过程**无需 logits clipping**。
 
@@ -158,12 +160,22 @@ $$W^{UQ}, W^{UK}, W^{UV} \rightarrow \text{per-head matrices} \rightarrow \text{
 
 **算法**：GRPO + IcePop（训练-推理不匹配缓解）
 
-$$\mathcal{L}(\theta) = -\mathbb{E}_{x,\{y_i\}}\left[\frac{1}{G}\sum_{i=1}^{G}\frac{1}{|y_i|}\sum_{t=1}^{|y_i|}\operatorname{pop}(\rho_{i,t},1/\beta,\beta) \cdot \min(r_{i,t}\hat{A}_{i,t},\operatorname{clip}(r_{i,t},1-\epsilon_{low},1+\epsilon_{high})\hat{A}_{i,t})\right]$$
+$$
+\begin{aligned}
+\mathcal{L}(\theta)
+&= -\mathbb{E}_{x,\{y_i\}}\left[\frac{1}{G}\sum_{i=1}^{G}\frac{1}{\lvert y_i\rvert}\sum_{t=1}^{\lvert y_i\rvert}\operatorname{pop}(\rho_{i,t},1/\beta,\beta) \cdot \min(r_{i,t}\hat{A}_{i,t},\operatorname{clip}(r_{i,t},1-\epsilon_{\mathrm{low}},1+\epsilon_{\mathrm{high}})\hat{A}_{i,t})\right]
+\end{aligned}
+$$
 
 **训练-推理不匹配比率**：
-$$\rho_{i,t} = \frac{\pi_{\theta_{old}}^{\text{train}}(y_{i,t}|x,y_{i,<t})}{\pi_{\theta_{old}}^{\text{infer}}(y_{i,t}|x,y_{i,<t})}$$
+$$
+\begin{aligned}
+\rho_{i,t}
+&= \frac{\pi_{\theta_{\mathrm{old}}}^{\text{train}}(y_{i,t}\mid x,y_{i,<t})}{\pi_{\theta_{\mathrm{old}}}^{\text{infer}}(y_{i,t}\mid x,y_{i,<t})}
+\end{aligned}
+$$
 
-**超参数**：$\beta=2, \epsilon_{low}=0.2, \epsilon_{high}=0.28$，group size=32，batch size=32
+**超参数**：$\beta=2, \epsilon_{\mathrm{low}}=0.2, \epsilon_{\mathrm{high}}=0.28$，group size=32，batch size=32
 
 **DSA RL 关键发现**：
 - 使用 **torch.topk**（确定性）而非 CUDA non-deterministic topk

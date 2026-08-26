@@ -190,11 +190,13 @@ def quantize_weight(weight, quantizer, workspace_cache, skip_update=False):
 
 来自 `quantization.py: _default_sf_compute`:
 
-$$sf = \frac{fp8\_max}{amax \cdot 2^{margin}}$$
+$$
+sf = \frac{\texttt{fp8\_max}}{\mathrm{amax} \cdot 2^{\mathrm{margin}}}
+$$
 
 其中：
 - `fp8_max` = 448 (E4M3) 或 57344 (E5M2) 或 240 (HYBRID fwd)
-- `amax` = $max(|tensor|)$（延迟 scaling 使用历史最大值）
+- `amax` = $max(\lvert tensor\rvert)$（延迟 scaling 使用历史最大值）
 - `margin` = 安全边际，防止溢出
 
 **边界情况处理：**

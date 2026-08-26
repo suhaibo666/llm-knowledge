@@ -56,7 +56,9 @@
 
 理论根仍是 DAgger（Ross et al., arXiv:1011.0686v3）：序列决策中后续观测依赖此前的预测动作，破坏 i.i.d. 假设。量化形式（2604.00626, §2.2, p.5）为——若策略在训练分布下每步误差为 $\epsilon$，则在学习者**自身**状态访问分布下轨迹总偏差为
 
-$$O(\epsilon T^2)\quad\text{（对比独立误差假设下的 }O(\epsilon T)\text{）}$$
+$$
+O(\epsilon T^2)\quad\text{（对比独立误差假设下的 }O(\epsilon T)\text{）}
+$$
 
 综述给的直观算例：10 步推理、每步 95% 正确率，独立假设下轨迹级正确率已只剩 $0.95^{10}\approx 60\%$；而 off-policy 训练因从不让学生见到自己的错误状态，每个错误还会把模型推进"下一步更容易错"的区域（自增强漂移），实际更差。on-policy 训练的价值即在训练期暴露自身错误状态、学会恢复策略，把 $O(\epsilon T^2)$ 压回 $O(\epsilon T)$。
 
@@ -209,7 +211,9 @@ Song & Zheng 给出的四项诊断（2604.00626, §7.1, p.52）值得**直接作
 这一条值得完整展开成因果链，因为它是**唯一一条已被完整刻画为多级自增强回路**的失败模式：
 
 1. **起点（目标的隐式偏好）**：学生引导的数据收集与蒸馏目标相互作用，隐式偏好"**长且重复**"的输出。机理（2604.00626, §7.3, p.56）：在长重复轨迹上，**教师的 logprob 增长快于学生的 logprob**，于是逐 token advantage
-   $$\hat A_t=\mathrm{sg}\big[\log\pi_T(y_t\mid\cdot)-\log\pi_\theta(y_t\mid\cdot)\big]>0$$
+   $$
+   \hat A_t=\mathrm{sg}\big[\log\pi_T(y_t\mid\cdot)-\log\pi_\theta(y_t\mid\cdot)\big]>0
+   $$
    即"继续重复"这个动作被**正向**奖励。
 2. **放大**：正 advantage 进一步鼓励重复 → 输出更长。
 3. **相变（截断主导）**：轨迹长度触顶被截断，**截断样本开始主导训练数据**。
@@ -220,7 +224,13 @@ Song & Zheng 给出的四项诊断（2604.00626, §7.1, p.52）值得**直接作
 - **修复**：**StableOPD = 参考散度约束 + 混合蒸馏**，平均 **+7.2%**。
 - **代价/限制**：(a) 参考散度约束是一个"不许离参考模型太远"的锚，它会**同时压制有益的行为改变**——尤其在 OPD 被用作能力合并（学生本就该大幅改变行为）时，锚的强度与整合效果直接冲突；(b) 混合蒸馏引入 off-policy 成分，重新带回暴露偏差；(c) 单纯加长度惩罚是更简单的替代，但那是在**症状层**处理，回路的 1–2 级仍在运转。
 - **工业侧的对应做法**：Kimi K3（arXiv:2607.24653v2, §4.1.3, Eq. 15）对逐 token OPD 奖励做 clip 截断
-  $$r^{d}_{\mathrm{opd}}(y_t\mid e,x,y_{<t})=\mathrm{clip}\Big(\mathrm{sg}\Big[\log\tfrac{\pi^{(d,e)}_{\mathrm{teacher}}(y_t\mid x,y_{<t})}{\pi_\theta(y_t\mid e,x,y_{<t})}\Big],\,-R_{\max},\,R_{\max}\Big)$$
+  $$
+\begin{aligned}
+r^{d}_{\mathrm{opd}}(y_t\mid e,x,y_{<t})
+&=\mathrm{clip}\Big(\mathrm{sg}\Big[\log\tfrac{\pi^{(d,e)}_{\mathrm{teacher}}(y_t\mid x,y_{<t})}{\pi_\theta(y_t\mid e,x,y_{<t})}\Big],\, \\
+&\quad -R_{\max},\,R_{\max}\Big)
+\end{aligned}
+  $$
   clip 直接压住第 2 级的放大系数。这是工业实现对该失败模式的**事实上的**（未必自觉的）防御。
 
 #### B2. 多样性坍缩（arXiv:2603.07079v3 / Entropy-Aware OPD）
@@ -277,7 +287,9 @@ Song & Zheng 给出的四项诊断（2604.00626, §7.1, p.52）值得**直接作
 
 - **症状**：把奖励外推系数 $\lambda$ 调大以求"超越教师"，在某个点之前一切正常（甚至更好），越过该点后**输出格式整体崩坏**。
 - **机理**：G-OPD/ExOPD（arXiv:2602.12125v2）证明 OPD 是**奖励项与 KL 正则恒等权（$\lambda=1$）**的稠密 KL 约束 RL 特例，引入奖励缩放 $\lambda$ 后最优解满足
-  $$\log\pi_\theta=\lambda\log\pi^*+(1-\lambda)\log\pi_{\mathrm{ref}}$$
+  $$
+  \log\pi_\theta=\lambda\log\pi^*+(1-\lambda)\log\pi_{\mathrm{ref}}
+  $$
   $\lambda>1$ 时学生的对数概率越过"匹配教师"去拟合额外位移项，产生外推（论文主张 $\lambda=1.25$ 时在多教师设定下是唯一能在全部基准上同时超越两个领域教师的统一学生，数学+代码约 +2%）。ListOPD 的贡献是指出这个外推**存在一个闭式阈值 $\lambda^*$**：$\lambda<\lambda^*$ 时外推**保格式**，$\lambda>\lambda^*$ 时**毁格式**——阈值依赖教师模态概率、warm-start 质量、clip 强度。
 - **触发条件**：任何试图用 $\lambda$ 外推突破教师天花板的设置。
 - **修复**：**在 $\lambda^*$ 下方运行**。
@@ -396,7 +408,9 @@ on-policy 侧的可预测性刚出现雏形：**A Predictive Law for On-Policy S
 
 综述给出的缺失形式为（2604.00626, §2.4）：
 
-$$\text{Quality}\propto N_T^{\alpha}\,N_S^{\beta}\,D^{\gamma}\,R^{\delta}$$
+$$
+\text{Quality}\propto N_T^{\alpha}\,N_S^{\beta}\,D^{\gamma}\,R^{\delta}
+$$
 
 其中 $N_T,N_S$ 为师生规模、$D$ 为数据量、$R$ 为 **rollout 预算**。
 
@@ -447,13 +461,20 @@ R1→小模型的**纯 off-policy SFT** 是 off-policy 的显著成功案例：R
 
 **RL 增强目标**（2604.00626, §4.3 的一整个分支，20+ 篇：KDRL/RLKD/AlignDistil/G-OPD 等）正是这三因素的合成解：教师 logits 当稠密降方差基线 + 稀疏结果奖励驱动超越教师。该分支的共识结论是"**组合普遍优于单用**"。工业侧的直接对应是 MiMo-V2-Flash 的 Eq. 9：
 
-$$\hat A_{\mathrm{MOPD}}=\mathrm{sg}\Big[\log\tfrac{\pi_{\mathrm{domain}}}{\pi_\theta}\Big]+\alpha\cdot\hat A_{\mathrm{ORM}}$$
+$$
+\begin{aligned}
+\hat A_{\mathrm{MOPD}}
+&=\mathrm{sg}\Big[\log\tfrac{\pi_{\mathrm{domain}}}{\pi_\theta}\Big]+\alpha\cdot\hat A_{\mathrm{ORM}}
+\end{aligned}
+$$
 
 ——**唯一公开把 OPD 信号与结果奖励（GRPO advantage）显式相加的技术报告**（arXiv:2601.02780, §4.4）。
 
 ### 5.3 算力模型
 
-$$C_{\mathrm{off}}\approx N\,(F_{T}+F_{S}+B_{S}),\qquad C_{\mathrm{on}}\approx N\,(G_{S}+\rho F_{T}+F_{S}+B_{S})$$
+$$
+C_{\mathrm{off}}\approx N\,(F_{T}+F_{S}+B_{S}),\qquad C_{\mathrm{on}}\approx N\,(G_{S}+\rho F_{T}+F_{S}+B_{S})
+$$
 
 其中 $F/B$ 为前向/反向 FLOPs，$G_S$ 为学生自回归生成成本，$\rho\in(0,1]$ 为教师监督刷新率。
 
