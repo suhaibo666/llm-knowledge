@@ -135,6 +135,87 @@ async function assertImage(page, selector, label) {
   assert.ok(state.width > 0 && state.height > 0, `${label} has zero dimensions: ${state.src}`)
 }
 
+async function readLayoutMetrics(page) {
+  return page.evaluate(() => {
+    const shell = document.querySelector(".page")
+    const body = document.querySelector(".page > #quartz-body")
+    if (!(shell instanceof HTMLElement) || !(body instanceof HTMLElement)) {
+      throw new Error("Documentation layout shell is missing")
+    }
+
+    const shellRect = shell.getBoundingClientRect()
+    const gridColumns = getComputedStyle(body).gridTemplateColumns
+      .split(/\s+/)
+      .map((value) => Number.parseFloat(value))
+
+    return {
+      viewportWidth: window.innerWidth,
+      shellLeft: shellRect.left,
+      shellRight: window.innerWidth - shellRect.right,
+      shellWidth: shellRect.width,
+      gridColumns,
+      scrollWidth: document.documentElement.scrollWidth,
+    }
+  })
+}
+
+async function assertResponsiveLayout(page, baseUrl) {
+  const desktopCases = [
+    { viewportWidth: 1280, columns: [256, 738.8, 224] },
+    { viewportWidth: 1920, columns: [364.8, 1148.4, 320] },
+    { viewportWidth: 2560, columns: [384, 1743.6, 320] },
+  ]
+
+  for (const expected of desktopCases) {
+    await page.setViewport({ width: expected.viewportWidth, height: 1000, deviceScaleFactor: 1 })
+    await goto(page, baseUrl)
+    const actual = await readLayoutMetrics(page)
+
+    assert.ok(
+      Math.abs(actual.shellWidth - expected.viewportWidth * 0.96) <= 1,
+      `${expected.viewportWidth}px viewport should use a 96vw page shell; got ${actual.shellWidth}px`,
+    )
+    assert.ok(
+      Math.abs(actual.shellLeft - actual.shellRight) <= 1,
+      `${expected.viewportWidth}px viewport has asymmetric outer gutters`,
+    )
+    assert.equal(actual.gridColumns.length, 3, "Desktop layout should have three columns")
+    for (let index = 0; index < expected.columns.length; index += 1) {
+      assert.ok(
+        Math.abs(actual.gridColumns[index] - expected.columns[index]) <= 1,
+        `${expected.viewportWidth}px viewport column ${index + 1} should be ${expected.columns[index]}px; got ${actual.gridColumns[index]}px`,
+      )
+    }
+    assert.ok(
+      actual.scrollWidth <= actual.viewportWidth,
+      `${expected.viewportWidth}px viewport overflows horizontally to ${actual.scrollWidth}px`,
+    )
+  }
+
+  for (const expected of [
+    { viewportWidth: 1024, columnCount: 2 },
+    { viewportWidth: 768, columnCount: 1 },
+  ]) {
+    await page.setViewport({ width: expected.viewportWidth, height: 1000, deviceScaleFactor: 1 })
+    await goto(page, baseUrl)
+    const actual = await readLayoutMetrics(page)
+
+    assert.ok(
+      actual.shellWidth >= expected.viewportWidth - 1,
+      `${expected.viewportWidth}px viewport should retain the existing full-width shell`,
+    )
+    assert.equal(
+      actual.gridColumns.length,
+      expected.columnCount,
+      `${expected.viewportWidth}px viewport should retain its existing grid mode`,
+    )
+    assert.ok(
+      actual.scrollWidth <= actual.viewportWidth,
+      `${expected.viewportWidth}px viewport overflows horizontally to ${actual.scrollWidth}px`,
+    )
+  }
+}
+
 export function localNetworkViolations(requestUrls) {
   return requestUrls.filter((rawUrl) => {
     const parsed = new URL(rawUrl)
@@ -341,6 +422,8 @@ export async function runSmoke() {
     await cdp.send("Network.enable")
     cdp.on("Network.webSocketCreated", ({ url }) => requestUrls.push(url))
 
+    await assertResponsiveLayout(page, baseUrl)
+    await page.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 })
     await runBrowserAssertions(page, baseUrl)
     assertLocalNetwork(requestUrls)
     assert.deepEqual(failedRequests, [], `Failed browser requests:\n${failedRequests.join("\n")}`)

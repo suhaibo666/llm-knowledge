@@ -133,13 +133,15 @@
     "patches/quartz-v5-core-local-only.json",
     "patches/quartz-v5-ofm-local-mermaid.json",
     "patches/quartz-v5-crawl-links-obsidian-paths.json",
-    "patches/quartz-v5-breadcrumbs-no-frontmatter.json"
+    "patches/quartz-v5-breadcrumbs-no-frontmatter.json",
+    "patches/quartz-v5-responsive-layout.json"
   ],
   "allowedTrackedChanges": [
     "quartz.lock.json",
     "quartz/cli/handlers.js",
     "quartz/components/Head.tsx",
     "quartz/plugins/loader/config-loader.ts",
-    "quartz/plugins/index.ts"
+    "quartz/plugins/index.ts",
+    "quartz/styles/custom.scss"
   ]
 }

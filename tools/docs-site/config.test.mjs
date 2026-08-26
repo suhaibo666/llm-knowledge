@@ -104,6 +104,7 @@ test("runtime manifest and lock agree on every enabled plugin commit", async () 
     "patches/quartz-v5-ofm-local-mermaid.json",
     "patches/quartz-v5-crawl-links-obsidian-paths.json",
     "patches/quartz-v5-breadcrumbs-no-frontmatter.json",
+    "patches/quartz-v5-responsive-layout.json",
   ])
   assert.deepEqual([...manifest.allowedTrackedChanges].sort(), [
     "quartz.lock.json",
@@ -111,6 +112,7 @@ test("runtime manifest and lock agree on every enabled plugin commit", async () 
     "quartz/components/Head.tsx",
     "quartz/plugins/index.ts",
     "quartz/plugins/loader/config-loader.ts",
+    "quartz/styles/custom.scss",
   ])
 })
 
