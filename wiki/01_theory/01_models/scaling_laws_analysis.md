@@ -1,6 +1,6 @@
 # Scaling Laws for Neural Language Models — Analysis
 
-**Source**: `raw/01_architecture/Scaling_Laws_for_Neural_Language_Models-2001.08361.pdf`
+**Source**: `raw/01_theory/01_models/Scaling_Laws_for_Neural_Language_Models-2001.08361.md`
 **Authors**: Kaplan, McCandlish, Henighan, Brown, Chess, Child, Gray, Radford, Wu, Amodei (OpenAI / Johns Hopkins)
 **Published**: arXiv:2001.08361 | Jan 2020
 

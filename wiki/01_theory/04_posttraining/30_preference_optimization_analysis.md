@@ -151,7 +151,7 @@ Based on **prospect theory** (Kahneman & Tversky, 1992): humans perceive gains a
 
 ### Loss Function
 
-论文原式（arXiv:2402.01306 §4 Eq. 8，`raw/01_theory/04_posttraining/KTO_Kahneman_Tversky_Optimization-2402.01306.pdf`）：
+论文原式（arXiv:2402.01306 §4 Eq. 8，`raw/01_theory/04_posttraining/KTO_Kahneman_Tversky_Optimization-2402.01306.md`）：
 
 $$L_{\text{KTO}}(\pi_\theta,\pi_{\text{ref}})=\mathbb{E}_{x,y\sim D}\big[\lambda_y-v(x,y)\big]$$
 

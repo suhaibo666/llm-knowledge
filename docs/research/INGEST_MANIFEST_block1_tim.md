@@ -57,7 +57,7 @@ vllm/ 13 篇
 | 18 | `RSPO_Router_Shift_MoE_RL-2510.23027.pdf` | 2510.23027 | Towards Stable and Effective RL for MoE — MSR + 北大 | ★ 「router shift → 重要性比剧烈波动 → 突发 clipping」，该模式**稳定地先于崩溃出现** |
 | 19 | `CompassMax_Router_Replay_100B_MoE-2512.07710.pdf` | 2512.07710 | Each Prompt Matters — Shopee LLM Team | 工业验证：训推 log-prob 差异**在 router 层之后显著放大**，10⁻³ → 10⁻⁴ |
 
-> 已在库，无需下载：`raw/01_theory/04_posttraining/GSPO_Group_Sequence_Policy_Optimization-2507.18071.pdf`
+> 已在库，无需下载：`raw/01_theory/04_posttraining/GSPO_Group_Sequence_Policy_Optimization-2507.18071.md`
 > —— 其 **§5.3** 是本主题的关键对立面（已核实原文：「~10% 专家在更新后不同」「GSPO eliminates the dependency on Routing Replay」）
 
 ### C. `raw/01_theory/04_posttraining/collapse_diagnosis/` —— 崩溃诊断指标（同时服务第 4 块）
@@ -75,7 +75,7 @@ vllm/ 13 篇
 | 23 | `LLM42_Determinism_Verified_Speculation-2601.17768.pdf` | 2601.17768 | LLM-42 — Microsoft Research + UW，2026-01-25 | 「固定 tiling 代价」的量化来源：batch-invariant Triton GEMM 194 vs cuBLAS 527 TFLOPS（**降速 63%**）；改用 decode-verify-rollback 选择性保证 |
 | 24 | `BitExact_Inference_Verification-2606.00279.pdf` | 2606.00279 | Bit-Exact AI Inference Verification Without Performance Tradeoffs — Naci Cankaya，2026-06-05 | **反方立场**：区分「真非确定性」与「非不变性」，主张消除 atomics 后全速即可 bitwise 复现。⚠️ 页面未列机构 |
 
-> 已在库，无需下载：`raw/01_theory/01_models/deepseek/DeepSeek_V4.pdf`（= arXiv 2606.19348）
+> 已在库，无需下载：`raw/01_theory/01_models/deepseek/DeepSeek_V4.md`（= arXiv 2606.19348）
 > —— 关键章节 **§3.3 High-Performance Batch-Invariant and Deterministic Kernel Libraries**（§3.3.1 Batch Invariance / §3.3.2 Determinism）
 > —— ⚠️ **重要语义修正**：dual-kernel strategy 原文是 "dual-kernel strategy for **batch-invariant decoding**"，抵消的是**放弃 split-KV 后 decoding attention 的性能损失**，**不是**「固定 tiling 的 matmul 损失」。matmul 侧另有做法：split-k 必须用时「output each split part separately and perform a deterministic reduction in a subsequent kernel」。落库前请按 PDF 原文再核一次 §3.3
 

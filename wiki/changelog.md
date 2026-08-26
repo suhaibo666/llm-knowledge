@@ -8,6 +8,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-26：`raw/` 论文 PDF 全部替换为来源链接说明页
+
+**Type**: Source-material Policy Change + Citation Correction
+
+- 本库迁移至 GitHub 公开仓库 [`suhaibo666/llm-knowledge`](https://github.com/suhaibo666/llm-knowledge) 后，为避免公开转载第三方论文原文，删除 `raw/` 下全部 **102 份 PDF**（约 448 MB），每份替换为同名 `.md` 说明页，内容为 arXiv/官方链接、规范标题、提交与更新日期、主分类、作者与摘要；元数据统一取自 arXiv API 而非文件名推断。`.eddx`/`.html`/`.txt` 等自制或非论文源材料保持不变。
+- 新增 [`raw/README.md`](../raw/README.md) 作为策略说明与 102 条索引表。
+- **更正 5 处错误引用**：逐条用 arXiv API 回查文件名内嵌 ID 的真实标题，发现 5 个 ID 指向完全无关的论文——`Scaling_Laws_for_Transfer` 的 `2002.05102`（实为复数反射群数学论文）应为 `2102.01293`；`DeepSeek_VL2` 的 `2412.10322`（实为格点 QCD）应为 `2412.10302`；`CodeGeeX` 的 `2306.03078`（实为 SpQR）应为 `2303.17568`；`CogVideo` 的 `2204.14230`（实为平坦丛上同调）应为 `2205.15868`；`GPT4_Vision_System_Card` 的 `2304.10592` 实为 MiniGPT-4，该系统卡并未在 arXiv 发布。
+- 另有 4 份文件名不含 ID 者按 PDF 正文标题核定来源：`Engram_paper` = [arXiv:2601.07372](https://arxiv.org/abs/2601.07372)《Conditional Memory via Scalable Lookup》（DeepSeek-AI × 北大）、`DeepSeek_V4` = [arXiv:2606.19348](https://arxiv.org/abs/2606.19348)、`Claude_3_Model_Card`（Anthropic 官方）、`Kimi_K3_Technical_Report`（MoonshotAI/Kimi-K3 `0797decb`）、`GPT2_...`（OpenAI 官方 PDF）。
+- 同步重写 39 个 wiki/docs 页中的 77 处 `raw/*.pdf` 引用，指向新的 `.md` 说明页并顺带修正其中的历史陈旧路径（`raw/01_architecture/`、`raw/05_model_families/` 等）。链接检查 pages=408，broken/ambiguous/bare_index/orphans 均为 0。
+
+---
+
 ## 2026-08-14：vime vLLM 衍生架构与支持度源码审计
 
 **Type**: Derivative Architecture Analysis + Support Maturity Audit
@@ -1741,7 +1753,7 @@ Related Pages 一行）同样改指该索引，注明 AOT 分图见 `02_aot_auto
 
 **Type**: Source Ingest + Industrial Case Study + Cross-Document Correction（固定官方报告 `0797decb`，将算法、trajectory、environment、Infra 与部署精度放回同一个 `wiki/03_posttraining/` 闭环。）
 
-- **原始来源**：新增 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`，SHA-256 `fd6ee35c07766a5eb6104235f1b407e4329f969e3482b8c42937c7b5f2b3efe1`；来源台账补 §4.1、§4.2、§5.3 与 Appendix F 的精确定位。
+- **原始来源**：新增 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.md`，SHA-256 `fd6ee35c07766a5eb6104235f1b407e4329f969e3482b8c42937c7b5f2b3efe1`；来源台账补 §4.1、§4.2、§5.3 与 Appendix F 的精确定位。
 - **新增 D12 `03_posttraining/12_kimi_k3_posttraining_case_study_analysis`**（历史活链接，已于 2026-07-31 因 kb-reorg P5 迁移为 [[24_kimi_k3_posttraining_case_study_analysis]]，按"历史不回写"惯例降级为反引号）：串起 SFT → 九个 domain/effort 专家 → MOPD，澄清 partial rollout 保留 prompt 内 \(K\) group，并分析 white-box environment、XTML preserved thinking、MXFP4/MXFP8 QAT、draft model、external KV pool 与 AgentENV。
 - **回填统一主线**：更新 D00–D05 与 D11；把 K3 作为项目级工业案例，而不是没有训练源码证据的“第五个开源框架”；D00 与领域/全局索引扩展为 D00–D12 连续编号。
 - **修正事实边界**：量化 scheme 一致只消除该维度 TIM；K3 partial rollout 不是 fully async；Figure 8、MOPD、GRM、external KV 与 AgentENV 均保留未披露超参数、消融或运行条件。

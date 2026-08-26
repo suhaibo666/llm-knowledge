@@ -1,6 +1,6 @@
 # PPO: Proximal Policy Optimization — Analysis
 
-**Source**: `raw/03_alignment/PPO_Proximal_Policy_Optimization-1707.06347.pdf`
+**Source**: `raw/01_theory/04_posttraining/PPO_Proximal_Policy_Optimization-1707.06347.md`
 **Authors**: Schulman, Wolski, Dhariwal, Radford, Klimov (OpenAI)
 **Published**: arXiv:1707.06347 | Jul 2017
 

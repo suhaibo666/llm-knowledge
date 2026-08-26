@@ -1,6 +1,6 @@
 # DeepSeek-V4 注意力深潜：CSA vs HCA vs DSA vs MLA
 
-> **核对基线**: arXiv:**2606.19348v1**「DeepSeek-V4: Towards Highly Efficient Million-Token Context Intelligence」, DeepSeek-AI, 提交 **2026-04-26**　＝ `raw/01_theory/01_models/deepseek/DeepSeek_V4.pdf`
+> **核对基线**: arXiv:**2606.19348v1**「DeepSeek-V4: Towards Highly Efficient Million-Token Context Intelligence」, DeepSeek-AI, 提交 **2026-04-26**　＝ `raw/01_theory/01_models/deepseek/DeepSeek_V4.md`
 > **维度**: Deep Dive（注意力机制纵向对比）　**对正式版核对 / 整页重写**: 2026-06-25
 >
 > 本页是 [[13_deepseek_v4_analysis|V4 总体架构]] 注意力章节的**专题深潜**：把 V4 的两条注意力分支 **CSA**（压缩 + 稀疏）与 **HCA**（重度压缩、不稀疏）逐方程拆开，并与 **DSA（V3.2 起源的稀疏选择）**、**MLA（V2 起源的低秩潜在 KV）** 做"动机→机制→证据→为何不选替代"的横向对比。核心论点：**V4 的范式从 MLA 的"压缩每 token 的 KV 通道维"转向"在序列维合并 token"（CSA `1/m` / HCA `1/m′`），CSA 再在已压缩的块上套 DSA top-k**；正是这一序列维压缩让百万 token 上下文在工程上可行（§2.3, p9）。

@@ -1,6 +1,6 @@
 # DeepSeekMoE Analysis
 
-**Source:** `raw/05_model_families/deepseek/DeepSeek_MoE-2401.06066.pdf`  
+**Source:** `raw/01_theory/01_models/deepseek/DeepSeek_MoE-2401.06066.md`  
 **Date Ingested:** 2026-04-21  
 **Authors:** DeepSeek-AI, Peking University, Tsinghua University, Nanjing University  
 **Published:** January 2024

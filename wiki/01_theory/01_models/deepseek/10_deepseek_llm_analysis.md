@@ -1,6 +1,6 @@
 # DeepSeek LLM Analysis
 
-**Source:** `raw/05_model_families/deepseek/DeepSeek_LLM-2401.02954.pdf`  
+**Source:** `raw/01_theory/01_models/deepseek/DeepSeek_LLM-2401.02954.md`  
 **Date Ingested:** 2026-04-20  
 **Authors:** DeepSeek-AI  
 **Published:** January 2024

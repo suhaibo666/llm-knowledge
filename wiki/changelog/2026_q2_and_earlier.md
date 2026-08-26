@@ -157,7 +157,7 @@
 
 **Type**: Reconciliation（应用户"分析 deepseek v4 输出一份报告，文章地址 arxiv 2606.19348"，并选定「审计 + 核对 + 订正」。既有 ~7 篇 V4 页面是论文正式上 arXiv 前 2 天(2026-04-24)基于无编号预发布 PDF / AI 合成笔记写成，故以正式版逐项复核）
 
-**方法**：下载正式版 PDF → 与本地预发布 `raw/.../DeepSeek_V4.pdf` 双双抽成页码标记文本 → diff + 逐项核对超参/基准/章节/机制；4 个并行只读审计 agent 锚定 `GROUND_TRUTH` 事实表逐页查证，关键臆造断言由协调者亲自 grep 正式版复核（`DualPath`=0、`Highly Compressed`=0 vs `Heavily`=7、`task_classifier`=0、`n log n`=0、`INT8`=0 vs `MXFP4`=1、`ablation`=0）。
+**方法**：下载正式版 PDF → 与本地预发布 `raw/01_theory/01_models/deepseek/DeepSeek_V4.md` 双双抽成页码标记文本 → diff + 逐项核对超参/基准/章节/机制；4 个并行只读审计 agent 锚定 `GROUND_TRUTH` 事实表逐页查证，关键臆造断言由协调者亲自 grep 正式版复核（`DualPath`=0、`Highly Compressed`=0 vs `Heavily`=7、`task_classifier`=0、`n log n`=0、`INT8`=0 vs `MXFP4`=1、`ablation`=0）。
 
 - **新增** [[30_deepseek_v4_audit_analysis]]：审计报告（核对基线 arXiv:2606.19348v1, 2026-04-26）——逐页裁决表 + 核对通过事实(超参/效率/基准全一致) + 章节号位移映射 + 论文中**不存在**的臆造清单(按出处反证)。
 - **核对通过(数字全对)**：超参表(层/维/专家/压缩率)、头条效率(Pro 27%/10%、Flash 10%/7%)、Table 1 基座(MMLU-Pro 65.5/68.3/73.5)、Table 6 后训练(LiveCodeBench 93.5、MRCR 83.5)。
@@ -1173,7 +1173,7 @@
 **修正文件**:
 
 - `wiki/01_theory/01_models/deepseek/23_deepseek_v4_cp_analysis.md`
-  - **修正 1**：源文件路径错误 — `raw/05_model_families/deepseek/DeepSeek_V4.pdf` → `raw/01_theory/01_models/deepseek/DeepSeek_V4.pdf`
+  - **修正 1**：源文件路径错误 — `raw/01_theory/01_models/deepseek/DeepSeek_V4.md` → `raw/01_theory/01_models/deepseek/DeepSeek_V4.md`
   - **修正 2**：Stage 1 Step 3 压缩输出数量错误 — `(c+1) 个 compressed entries` → `1（CSA 重叠窗口）或 2（HCA 无重叠）个 boundary compressed entries`（原公式与 2c tokens / ratio c 的数学不一致）
   - **修正 3**：Stage 2 All-Gather 输出长度公式错误 — `总长度 = P × c`（与 S 无关的常数，量级完全错误）→ `总长度 ≈ S/c，即 P × S/(P·c)`
 
@@ -1597,7 +1597,7 @@ raw/ & wiki/ 镜像
 
 ### 下载的新 Raw 文件
 
-- `raw/05_model_families/zhipu_glm/GLM-5_Vibe_Coding_to_Agentic_Engineering-2602.15763.pdf`
+- `raw/01_theory/01_models/zhipu_glm/GLM-5_Vibe_Coding_to_Agentic_Engineering-2602.15763.md`
 
 ### 创建的 Wiki 页面
 
@@ -1667,10 +1667,10 @@ raw/ & wiki/ 镜像
 
 ### 下载的新 Raw 文件
 
-- `raw/05_model_families/moonshot_kimi/Kimi_k1.5_Scaling_RL-2501.12599.pdf`
-- `raw/05_model_families/moonshot_kimi/Mooncake_KVCache_Disaggregated-2407.00079.pdf`
-- `raw/05_model_families/moonshot_kimi/MoBA_Mixture_of_Block_Attention-2502.13189.pdf`
-- `raw/05_model_families/moonshot_kimi/Kimi_Linear_Attention-2510.26692.pdf`
+- `raw/01_theory/01_models/moonshot_kimi/Kimi_k1.5_Scaling_RL-2501.12599.md`
+- `raw/01_theory/01_models/moonshot_kimi/Mooncake_KVCache_Disaggregated-2407.00079.md`
+- `raw/01_theory/01_models/moonshot_kimi/MoBA_Mixture_of_Block_Attention-2502.13189.md`
+- `raw/01_theory/01_models/moonshot_kimi/Kimi_Linear_Attention-2510.26692.md`
 
 ### 创建的 Wiki 页面
 
@@ -1857,7 +1857,7 @@ raw/ & wiki/ 镜像
 
 **Type**: Source Ingestion (扩展已有 V4 分析)
 
-- **Source**: `raw/05_model_families/deepseek/DeepSeek_V4.pdf` §3.5.3, §3.6, §4.1
+- **Source**: `raw/01_theory/01_models/deepseek/DeepSeek_V4.md` §3.5.3, §3.6, §4.1
 - **Created**: `wiki/llm/05_model_families/deepseek/23_deepseek_v4_cp_analysis.md` — DeepSeek-V4 Context Parallelism 深度分析（中文）
 - **Updated**: `wiki/llm/05_model_families/deepseek/13_deepseek_v4_analysis.md` — CP 节扩展并添加指向新页面链接
 - **Key topics**:
@@ -1923,7 +1923,7 @@ The following pages were created before the changelog was established. Dates are
 
 ### ~2026-01: DeepSeek & Memory Architectures
 
-- Created `wiki/llm/29_engram_analysis.md` — Source: `raw/Engram_paper.pdf`
+- Created `wiki/llm/29_engram_analysis.md` — Source: `raw/01_theory/01_models/Engram_paper.md`
 - Created `wiki/llm/18_deepseek_math_v2_analysis.md` — Self-verifiable math reasoning
 
 ### ~2025-12: Weight Initialization & KIMI
@@ -1936,7 +1936,7 @@ The following pages were created before the changelog was established. Dates are
 
 **Type**: Source Ingestion
 
-- **Source**: `raw/mHC-2512.24880v2.pdf` (DeepSeek-AI, arXiv:2512.24880v2)
+- **Source**: `raw/01_theory/02_pretraining/mHC-2512.24880v2.md` (DeepSeek-AI, arXiv:2512.24880v2)
 - **Created**: `wiki/llm/mHC.md` — Manifold-Constrained Hyper-Connections analysis (in Chinese)
 - **Updated**: `wiki/llm/index.md` — Added mHC entry and cross-domain links
 - **Cross-referenced**: Added backlinks to `11_muon_analysis.md`, `10_llm_initiliaze_analysis.md`, `Megatron-LM_MoE_Zero_Redundancy_Analysis.md`
@@ -1955,20 +1955,20 @@ The following pages were created before the changelog was established. Dates are
 
 **Type**: Source Ingestion
 
-- **Source**: `raw/05_model_families/deepseek/DeepSeek_LLM-2401.02954.pdf` (DeepSeek-AI, arXiv:2401.02954)
+- **Source**: `raw/01_theory/01_models/deepseek/DeepSeek_LLM-2401.02954.md` (DeepSeek-AI, arXiv:2401.02954)
 - **Created**: `wiki/llm/10_deepseek_llm_analysis.md` — DeepSeek LLM analysis
 - **Updated**: `wiki/llm/index.md` — Added DeepSeek model family section
 - **Key topics**: scaling laws with non-embedding FLOPs/token representation, data quality impact on model/data allocation, multi-step LR scheduler, GQA, bilingual pre-training, SFT+DPO alignment
 
-- **Source**: `raw/05_model_families/deepseek/DeepSeek_V2-2405.04434.pdf` (DeepSeek-AI, arXiv:2405.04434)
+- **Source**: `raw/01_theory/01_models/deepseek/DeepSeek_V2-2405.04434.md` (DeepSeek-AI, arXiv:2405.04434)
 - **Created**: `wiki/llm/11_deepseek_v2_analysis.md` — DeepSeek-V2 analysis
 - **Key topics**: MLA (Multi-head Latent Attention), low-rank KV joint compression, decoupled RoPE, DeepSeekMoE, device-limited routing, three-level auxiliary losses, token dropping, GRPO, two-stage RL
 
-- **Source**: `raw/05_model_families/deepseek/DeepSeek_V3-2412.19437.pdf` (DeepSeek-AI, arXiv:2412.19437)
+- **Source**: `raw/01_theory/01_models/deepseek/DeepSeek_V3-2412.19437.md` (DeepSeek-AI, arXiv:2412.19437)
 - **Created**: `wiki/llm/12_deepseek_v3_analysis.md` — DeepSeek-V3 analysis
 - **Key topics**: FP8 mixed precision training, fine-grained quantization (tile/block-wise), DualPipe pipeline parallelism, auxiliary-loss-free load balancing, Multi-Token Prediction (MTP), cross-node all-to-all communication kernels, inference deployment with redundant experts, R1 distillation
 
-- **Source**: `raw/05_model_families/deepseek/DeepSeek_R1-2501.12948.pdf` (DeepSeek-AI, arXiv:2501.12948)
+- **Source**: `raw/01_theory/01_models/deepseek/DeepSeek_R1-2501.12948.md` (DeepSeek-AI, arXiv:2501.12948)
 - **Created**: `wiki/llm/14_deepseek_r1_analysis.md` — DeepSeek-R1 analysis
 - **Key topics**: pure RL reasoning without SFT, GRPO, emergent self-verification/reflection, "aha moment", multi-stage pipeline (cold start → RL → SFT → RL), distillation to Qwen/Llama, rule-based rewards, language consistency reward
 
@@ -1980,7 +1980,7 @@ The following pages were created before the changelog was established. Dates are
 
 **Type**: Source Ingestion
 
-- **Source**: `raw/05_model_families/deepseek/DeepSeek_V4.pdf` (DeepSeek-AI, 2025)
+- **Source**: `raw/01_theory/01_models/deepseek/DeepSeek_V4.md` (DeepSeek-AI, 2025)
 - **Created**: `wiki/llm/13_deepseek_v4_analysis.md` — DeepSeek-V4 analysis (in Chinese)
 - **Updated**: `wiki/llm/index.md` — Added V4 to DeepSeek model family section
 - **Updated**: `wiki/llm/12_deepseek_v3_analysis.md` — Added backlink to V4
@@ -1994,31 +1994,31 @@ The following pages were created before the changelog was established. Dates are
 
 **Type**: Source Ingestion
 
-- **Source**: `raw/05_model_families/deepseek/DeepSeek_Coder-2401.14196.pdf` (DeepSeek-AI, arXiv:2401.14196)
+- **Source**: `raw/01_theory/01_models/deepseek/DeepSeek_Coder-2401.14196.md` (DeepSeek-AI, arXiv:2401.14196)
 - **Created**: `wiki/llm/15_deepseek_coder_analysis.md` — DeepSeek-Coder analysis
 - **Key topics**: repository-level code corpus, dependency parsing, topological sort, Fill-in-the-Middle (FIM), 87 programming languages, 16K context, GQA
 
-- **Source**: `raw/05_model_families/deepseek/DeepSeek_Coder_V2-2406.11931.pdf` (DeepSeek-AI, arXiv:2406.11931)
+- **Source**: `raw/01_theory/01_models/deepseek/DeepSeek_Coder_V2-2406.11931.md` (DeepSeek-AI, arXiv:2406.11931)
 - **Created**: `wiki/llm/16_deepseek_coder_v2_analysis.md` — DeepSeek-Coder-V2 analysis
 - **Key topics**: MoE code model, 338 languages, 128K context, 6T additional tokens, YaRN extension, GRPO with reward model, SWE-bench >10%
 
-- **Source**: `raw/05_model_families/deepseek/DeepSeek_Math-2402.03300.pdf` (DeepSeek-AI, arXiv:2402.03300)
+- **Source**: `raw/01_theory/01_models/deepseek/DeepSeek_Math-2402.03300.md` (DeepSeek-AI, arXiv:2402.03300)
 - **Created**: `wiki/llm/17_deepseek_math_analysis.md` — DeepSeekMath analysis
 - **Key topics**: 120B math tokens from Common Crawl, iterative fastText pipeline, GRPO origin, unified RL paradigm, MATH 51.7%
 
-- **Source**: `raw/05_model_families/deepseek/DeepSeek_MoE-2401.06066.pdf` (DeepSeek-AI, arXiv:2401.06066)
+- **Source**: `raw/01_theory/01_models/deepseek/DeepSeek_MoE-2401.06066.md` (DeepSeek-AI, arXiv:2401.06066)
 - **Created**: `wiki/llm/20_deepseek_moe_analysis.md` — DeepSeekMoE architecture analysis
 - **Key topics**: fine-grained expert segmentation, shared expert isolation, expert-level/device-level balance loss, 2B/16B/145B scales
 
-- **Source**: `raw/05_model_families/deepseek/DeepSeek_Prover-2408.08152.pdf` (DeepSeek-AI, arXiv:2408.08152)
+- **Source**: `raw/01_theory/01_models/deepseek/DeepSeek_Prover-2408.08152.md` (DeepSeek-AI, arXiv:2408.08152)
 - **Created**: `wiki/llm/22_deepseek_prover_analysis.md` — DeepSeek-Prover-V1.5 analysis
 - **Key topics**: Lean 4 theorem proving, truncate-and-resume mechanism, RMaxTS Monte-Carlo tree search, thought-augmented proofs, RLPAF
 
-- **Source**: `raw/05_model_families/deepseek/DeepSeek_VL-2403.05525.pdf` (DeepSeek-AI, arXiv:2403.05525)
+- **Source**: `raw/01_theory/01_models/deepseek/DeepSeek_VL-2403.05525.md` (DeepSeek-AI, arXiv:2403.05525)
 - **Created**: `wiki/llm/21_deepseek_vl_analysis.md` — DeepSeek-VL analysis
 - **Key topics**: hybrid vision encoder (SigLIP + SAM), 576 visual tokens, modality warm-up, 70% text preservation, real-world VL taxonomy
 
-- **Note**: `raw/05_model_families/deepseek/DeepSeek_VL2-2412.10322.pdf` was identified as an unrelated physics paper (arXiv:2412.10322v1, hep-lat). No genuine DeepSeek-VL2 source was found.
+- **Note**: `raw/01_theory/01_models/deepseek/DeepSeek_VL2-2412.10322.md` was identified as an unrelated physics paper (arXiv:2412.10322v1, hep-lat). No genuine DeepSeek-VL2 source was found.
 
 **Remaining**: None (DeepSeek model family complete)
 
@@ -2030,38 +2030,38 @@ The following pages were created before the changelog was established. Dates are
 
 ### Architecture Foundations (01_architecture/)
 
-- **Source**: `raw/01_architecture/Attention_Is_All_You_Need-1706.03762.pdf` (Vaswani et al., Google, NIPS 2017)
+- **Source**: `raw/01_theory/01_models/Attention_Is_All_You_Need-1706.03762.md` (Vaswani et al., Google, NIPS 2017)
 - **Created**: `wiki/llm/attention_is_all_you_need_analysis.md` — Transformer architecture analysis
 - **Key topics**: scaled dot-product attention, multi-head attention, positional encoding, encoder-decoder structure, self-attention vs RNN/CNN complexity, O(1) path length
 
-- **Source**: `raw/01_architecture/Scaling_Laws_for_Neural_Language_Models-2001.08361.pdf` (Kaplan et al., OpenAI, 2020)
+- **Source**: `raw/01_theory/01_models/Scaling_Laws_for_Neural_Language_Models-2001.08361.md` (Kaplan et al., OpenAI, 2020)
 - **Created**: `wiki/llm/scaling_laws_analysis.md` — Neural scaling laws analysis
 - **Key topics**: power-law scaling (L ~ N^-0.076, D^-0.095, C^-0.050), compute-optimal training (N~C^0.73), sub-linear data scaling (D~N^0.74), early stopping, critical batch size, architecture independence
 
-- **Source**: `raw/01_architecture/Long_Context_Scaling_Law-2503.04725.pdf` (Chen et al., MIT, NeurIPS 2025)
+- **Source**: `raw/01_theory/01_models/Long_Context_Scaling_Law-2503.04725.md` (Chen et al., MIT, NeurIPS 2025)
 - **Created**: `wiki/llm/long_context_scaling_law_analysis.md` — Long-context mutual information scaling
 - **Key topics**: bipartite mutual information (I_BP ~ L^beta), L2M condition, history state requirements, Transformer vs SSM long-context capability
 
-- **Skipped**: `raw/01_architecture/Scaling_Laws_for_Transfer-2002.05102.pdf` — PDF contains unrelated mathematics paper (Hurwitz actions on reflection groups)
+- **Skipped**: `raw/01_theory/01_models/Scaling_Laws_for_Transfer-2002.05102.md` — PDF contains unrelated mathematics paper (Hurwitz actions on reflection groups)
 
 ### Alignment & Preference Optimization (03_alignment/)
 
-- **Source**: `raw/03_alignment/PPO_Proximal_Policy_Optimization-1707.06347.pdf` (Schulman et al., OpenAI, 2017)
+- **Source**: `raw/01_theory/04_posttraining/PPO_Proximal_Policy_Optimization-1707.06347.md` (Schulman et al., OpenAI, 2017)
 - **Created**: `wiki/llm/ppo_analysis.md` — PPO algorithm analysis
 - **Key topics**: PPO-Clip objective, surrogate loss, multiple epochs on same data, GAE advantage estimation, KL constraint
 
-- **Source**: `raw/03_alignment/InstructGPT_RLHF-2203.02155.pdf` (Ouyang et al., OpenAI, 2022)
+- **Source**: `raw/01_theory/04_posttraining/InstructGPT_RLHF-2203.02155.md` (Ouyang et al., OpenAI, 2022)
 - **Created**: `wiki/llm/instructgpt_rlhf_analysis.md` — RLHF pipeline analysis
 - **Key topics**: three-step RLHF (SFT→RM→PPO), KL penalty against SFT, 1.3B > 175B GPT-3, helpful/honest/harmless criteria
 
-- **Source**: `raw/03_alignment/DPO_Direct_Preference_Optimization-2305.18290.pdf` (Rafailov et al., Stanford, 2023)
+- **Source**: `raw/01_theory/04_posttraining/DPO_Direct_Preference_Optimization-2305.18290.md` (Rafailov et al., Stanford, 2023)
 - **Created**: `wiki/llm/dpo_analysis.md` — DPO algorithm analysis
 - **Key topics**: closed-form policy-reward relationship, binary cross-entropy replaces RLHF, no sampling during training
 
 - **Created**: `wiki/llm/preference_optimization_analysis.md` — DPO family comparison
 - **Covers**: IPO (squared loss), SimPO (no ref model, length-normalized), ORPO (monolithic), KTO (binary labels, prospect theory), MODPO (multi-objective)
 
-- **Source**: `raw/03_alignment/DeepSeek_R1_Reasoning_via_RL-2501.12948.pdf` (DeepSeek-AI, 2025)
+- **Source**: `raw/01_theory/04_posttraining/DeepSeek_R1_Reasoning_via_RL-2501.12948.md` (DeepSeek-AI, 2025)
 - **Created**: `wiki/llm/grpo_analysis.md` — GRPO algorithm analysis
 - **Key topics**: group-relative advantages, no value function, pure RL for reasoning, DeepSeek-R1-Zero emergent behaviors
 
@@ -2075,19 +2075,19 @@ The following pages were created before the changelog was established. Dates are
 
 ### Advanced RL Algorithms
 
-- **Source**: `raw/03_alignment/DAPO_Decoupled_Clip_Dynamic_Sampling-2503.14476.pdf` (ByteDance Seed, Tsinghua AIR, 2025)
+- **Source**: `raw/01_theory/04_posttraining/DAPO_Decoupled_Clip_Dynamic_Sampling-2503.14476.md` (ByteDance Seed, Tsinghua AIR, 2025)
 - **Created**: `wiki/llm/dapo_analysis.md` — DAPO algorithm analysis
 - **Key topics**: decoupled clipping (eps_low=0.2, eps_high=0.28), dynamic sampling (filter accuracy 0/1), token-level policy gradient loss, soft overlong punishment, AIME 50 with Qwen2.5-32B, open-source RL system
 
-- **Source**: `raw/03_alignment/GSPO_Group_Sequence_Policy_Optimization-2507.18071.pdf` (Qwen Team, Alibaba, 2025)
+- **Source**: `raw/01_theory/04_posttraining/GSPO_Group_Sequence_Policy_Optimization-2507.18071.md` (Qwen Team, Alibaba, 2025)
 - **Created**: `wiki/llm/gspo_analysis.md` — GSPO algorithm analysis
 - **Key topics**: sequence-level importance ratio, fixes GRPO's token-level instability, length-normalized sequence likelihood, stabilizes MoE RL training, Qwen3 improvements
 
-- **Source**: `raw/03_alignment/RLOO_REINFORCE_Leave_One_Out-2402.14740.pdf` (Cohere For AI, 2024)
+- **Source**: `raw/01_theory/04_posttraining/RLOO_REINFORCE_Leave_One_Out-2402.14740.md` (Cohere For AI, 2024)
 - **Created**: `wiki/llm/rloo_analysis.md` — RLOO algorithm analysis
 - **Key topics**: REINFORCE with leave-one-out baseline, no value function needed, theoretical foundation for GRPO, 2.5x faster than PPO
 
-- **Source**: `raw/03_alignment/VAPO_Value_Augmented_Proximal_Policy_Optimization-2504.05118.pdf` (ByteDance Seed, 2025)
+- **Source**: `raw/01_theory/04_posttraining/VAPO_Value_Augmented_Proximal_Policy_Optimization-2504.05118.md` (ByteDance Seed, 2025)
 - **Created**: `wiki/llm/vapo_analysis.md` — VAPO framework analysis
 - **Key topics**: value-model-based RL, AIME 60.4 (SOTA), addresses value bias/length heterogeneity/reward sparsity, 5000 steps to SOTA, zero crashes
 

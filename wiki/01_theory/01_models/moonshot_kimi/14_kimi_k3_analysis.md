@@ -1,7 +1,7 @@
 # Kimi K3：以约 2.5× 的整体扩展效率迈向 3T 级开放模型
 
 > **来源基线**：官方 Kimi K3 Tech Blog（2026-07-16）与 [Kimi K3 Technical Report `0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2)（2026-07-28）；模型权重固定到 [Hugging Face `9f62e4e9`](https://huggingface.co/moonshotai/Kimi-K3/tree/9f62e4e9fffbd0a83ddd60e1c209d828994b3569)。
-> - 一手来源：[kimi.com/blog/kimi-k3](https://www.kimi.com/blog/kimi-k3)，本地博客快照为 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.txt`；报告本地快照为 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`；官方内嵌架构图原件为 `assets/kimi_k3_official_arch.svg`。
+> - 一手来源：[kimi.com/blog/kimi-k3](https://www.kimi.com/blog/kimi-k3)，本地博客快照为 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.txt`；报告本地快照为 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.md`；官方内嵌架构图原件为 `assets/kimi_k3_official_arch.svg`。
 > - 结构组件的论文与源码证据：见 [[22_kimi_k3_architecture_deepdive]]。
 > - 训练与推理基础设施：见 [[23_kimi_k3_infra_deepdive]]。
 > **维度**：模型发布总览。本页回答“K3 是什么、表现如何、官方如何定位”；机制层面的“为什么”由两篇 deep dive 展开。

@@ -1,8 +1,8 @@
 # Kimi K3 结构变化深析：同时优化序列轴与深度轴的信息流
 
 > **来源基线**（所有 `file:line` 与论文页码均已打开核对）：
-> - K3 官方 Tech Blog 快照 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.txt`（下称“博客”）；[Kimi K3 Technical Report `0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2) 与本地 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`；官方内嵌架构图原件 `assets/kimi_k3_official_arch.svg`。
-> - KDA：arXiv **2510.26692v2**（本库 `raw/.../Kimi_Linear_Attention-2510.26692.pdf`）；`MoonshotAI/Kimi-Linear@8c1d85e`；kernel 来自 `fla-org/flash-linear-attention@b328e7c` 的 `fla/ops/kda/*`；发布模型为 `moonshotai/Kimi-Linear-48B-A3B-Instruct@e1df551a`（`modeling_kimi.py`、`config.json`）。
+> - K3 官方 Tech Blog 快照 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_blog_2026-07-16.txt`（下称“博客”）；[Kimi K3 Technical Report `0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2) 与本地 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.md`；官方内嵌架构图原件 `assets/kimi_k3_official_arch.svg`。
+> - KDA：arXiv **2510.26692v2**（本库 `raw/01_theory/01_models/moonshot_kimi/Kimi_Linear_Attention-2510.26692.md`）；`MoonshotAI/Kimi-Linear@8c1d85e`；kernel 来自 `fla-org/flash-linear-attention@b328e7c` 的 `fla/ops/kda/*`；发布模型为 `moonshotai/Kimi-Linear-48B-A3B-Instruct@e1df551a`（`modeling_kimi.py`、`config.json`）。
 > - AttnRes：arXiv **2603.15031v1**（2026-03-16）；`MoonshotAI/Attention-Residuals@85e2231`。仓库只有 README 和论文 PDF，**没有 `.py` 实现**；`README.md:52-91` 的伪代码对应论文 Fig. 2。
 > - FlashKDA：`MoonshotAI/FlashKDA@d2ff19a`；LatentMoE：NVIDIA arXiv **2601.18089v1**。
 > **事实边界**：K3 技术报告与权重均已发布，但官方仓库仍未公开 K3 backbone、训练器或 RL 源码。结构事实以报告和权重配置为准；独立组件实现只证明其对应机制，不等于 K3 本体调用链。

@@ -1,6 +1,6 @@
 # DeepSeekMath Analysis
 
-**Source:** `raw/05_model_families/deepseek/DeepSeek_Math-2402.03300.pdf`  
+**Source:** `raw/01_theory/01_models/deepseek/DeepSeek_Math-2402.03300.md`  
 **Date Ingested:** 2026-04-21  
 **Authors:** DeepSeek-AI, Tsinghua University, Peking University  
 **Published:** February 2024

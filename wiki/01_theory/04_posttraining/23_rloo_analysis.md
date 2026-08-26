@@ -1,6 +1,6 @@
 # RLOO: REINFORCE Leave-One-Out — Analysis
 
-**Source**: `raw/03_alignment/RLOO_REINFORCE_Leave_One_Out-2402.14740.pdf`
+**Source**: `raw/01_theory/04_posttraining/RLOO_REINFORCE_Leave_One_Out-2402.14740.md`
 **Authors**: Ahmadian, Cremer, Gallé, Fadaee, Kreutzer, Pietquin, Üstün, Hooker (Cohere For AI)
 **Published**: arXiv:2402.14740 | Feb 2024
 

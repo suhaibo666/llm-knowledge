@@ -1,6 +1,6 @@
 # VAPO: Value Augmented Proximal Policy Optimization — Analysis
 
-**Source**: `raw/03_alignment/VAPO_Value_Augmented_Proximal_Policy_Optimization-2504.05118.pdf`
+**Source**: `raw/01_theory/04_posttraining/VAPO_Value_Augmented_Proximal_Policy_Optimization-2504.05118.md`
 **Authors**: ByteDance Seed
 **Published**: arXiv:2504.05118 | Apr 2025
 

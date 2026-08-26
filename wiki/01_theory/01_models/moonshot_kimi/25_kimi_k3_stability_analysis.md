@@ -1,6 +1,6 @@
 # Kimi K3 稳定性栈：从 K2 的一个事后补丁，到每条失稳轴各有一个内建机制
 
-> **来源基线**（每条断言均已在报告原文定位并逐句核对，未从他页转引）：[Kimi K3 Technical Report `0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2)（2026-07-28，47 页），本地快照 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`；K2 基线为 arXiv 2507.20534。
+> **来源基线**（每条断言均已在报告原文定位并逐句核对，未从他页转引）：[Kimi K3 Technical Report `0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2)（2026-07-28，47 页），本地快照 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.md`；K2 基线为 arXiv 2507.20534。
 > **维度**：Deep Dive（专题横切）。K3 的稳定性机制在报告里分散于 §2.2、§2.3、§2.4、§2.5、§3.2、§3.3、§3.4、§4.1.2、§4.1.4 与 Appendix C，本页把它们按"哪条轴会失稳"重新组织，回答"K3 到底做了哪些稳定性研究、各自解决什么失效模式、拒绝了什么替代方案"。
 > **与其它页的分工**：结构机制本身见 [[22_kimi_k3_architecture_deepdive]]，系统实现见 [[23_kimi_k3_infra_deepdive]]，后训练闭环见 [[24_kimi_k3_posttraining_case_study_analysis|D12]]。本页不重复机制推导，只做稳定性视角的横切与证据边界。
 > **更新**：2026-07-28 建页。

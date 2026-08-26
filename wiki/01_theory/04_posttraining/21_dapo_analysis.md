@@ -1,6 +1,6 @@
 # DAPO: Decoupled Clip and Dynamic Sampling Policy Optimization — Analysis
 
-**Source**: `raw/03_alignment/DAPO_Decoupled_Clip_Dynamic_Sampling-2503.14476.pdf`
+**Source**: `raw/01_theory/04_posttraining/DAPO_Decoupled_Clip_Dynamic_Sampling-2503.14476.md`
 **Authors**: ByteDance Seed, Tsinghua AIR, HKU, SIA-Lab
 **Published**: arXiv:2503.14476 | Mar 2025
 

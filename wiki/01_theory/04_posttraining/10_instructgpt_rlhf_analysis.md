@@ -1,6 +1,6 @@
 # InstructGPT: Training Language Models to Follow Instructions with Human Feedback — Analysis
 
-**Source**: `raw/03_alignment/InstructGPT_RLHF-2203.02155.pdf`
+**Source**: `raw/01_theory/04_posttraining/InstructGPT_RLHF-2203.02155.md`
 **Authors**: Ouyang, Wu, Jiang, Almeida, Wainwright, Mishkin, Zhang, Agarwal, Slama, Ray, Schulman, Hilton, Kelton, Miller, Simens, Askell, Welinder, Christiano, Leike, Lowe (OpenAI)
 **Published**: arXiv:2203.02155 | Mar 2022
 

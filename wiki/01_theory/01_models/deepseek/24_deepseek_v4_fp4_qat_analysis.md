@@ -1,6 +1,6 @@
 # DeepSeek-V4 FP4 量化感知训练（QAT）
 
-> **核对基线**: arXiv:**2606.19348v1** (DeepSeek-AI, **2026-04-26**) **§5.2.1**「FP4 Quantization-Aware Training」（§5.2 Post-Training Infrastructures）＝ `raw/01_theory/01_models/deepseek/DeepSeek_V4.pdf`  
+> **核对基线**: arXiv:**2606.19348v1** (DeepSeek-AI, **2026-04-26**) **§5.2.1**「FP4 Quantization-Aware Training」（§5.2 Post-Training Infrastructures）＝ `raw/01_theory/01_models/deepseek/DeepSeek_V4.md`  
 > **创建**: 2026-04-29（预发布稿）　**对正式版核对/订正**: 2026-06-25
 >
 > [!note] **出处订正**：原稿标注「§3.7」有误（预发布稿中 FP4 为 §3.4，正式版**移入后训练 §5.2.1**；§3.7 两版皆无）。

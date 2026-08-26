@@ -1,6 +1,6 @@
 # Stem 稀疏注意力 — 把预算花在因果信息流的"主干"上的免训练 Prefill 加速
 
-> **来源基线**: arXiv **2603.06274v1**(2026-03-06 提交,PDF 页眉 "Preprint. March 9, 2026"),Lin Niu*, Xin Luo* 等,腾讯 + 中科大。原文 PDF: `raw/01_theory/01_models/tencent_hunyuan/Stem_Sparse_Attention-2603.06274.pdf`
+> **来源基线**: arXiv **2603.06274v1**(2026-03-06 提交,PDF 页眉 "Preprint. March 9, 2026"),Lin Niu*, Xin Luo* 等,腾讯 + 中科大。原文 PDF: `raw/01_theory/01_models/tencent_hunyuan/Stem_Sparse_Attention-2603.06274.md`
 > **工程落地来源**(二手,官方公众号转载): 腾讯技术工程《混元 AI Infra 优化 Hy3 Preview》(2026-06-26,经 53AI/搜狐转载核对);"ICML-26 接收"为新闻报道口径(富途 2026-07),PDF 本体仍标 Preprint,两说并存。
 > **维度**: Entity 深析(机制级)。定位: **推理服务栈里的免训练插件,不在 Hy3 开源权重内**——`modeling_hy_v3.py` 是纯稠密 GQA,README 部署配方也不含 Stem;它在腾讯内部作为 vLLM 框架内的 prefill 优化服务 Hy3 preview(W8A8-FP8)。
 

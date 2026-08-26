@@ -341,7 +341,7 @@ Kimi Linear 在合成 stack/recall 任务中报告 KDA 的逐通道 decay 优于
 | [Gated Delta Networks](https://arxiv.org/abs/2412.06464v3) | 2412.06464v3，2025-03-06 | §3.1 p4 Eq. 10；§3.2 p5；§3.3–3.4 p6；Fig. 1 p7；Table S.1 p22 |
 | [Kimi Linear](https://arxiv.org/abs/2510.26692v2) | 2510.26692v2，2025-11-01 | §2.1 p3；§2.2 p3–5 Eq. 1–8；§2.3 p6 Eq. 10；§5.2 p8 Table 1 |
 | [FLA reference recurrence](https://github.com/fla-org/flash-linear-attention/tree/ccb0ff944cbff035fa59ac47a4cc8fd2e079bb17/fla/ops) | `ccb0ff944cbf`，核验于 2026-07-17 | `gated_delta_rule/naive.py:13-64`；`kda/naive.py:12-66` |
-| 本库原始论文 | 本地快照 | `raw/01_theory/01_models/moonshot_kimi/Gated_Delta_Networks-2412.06464v3.pdf`；`Kimi_Linear_Attention-2510.26692.pdf` |
+| 本库原始论文 | 本地快照 | `raw/01_theory/01_models/moonshot_kimi/Gated_Delta_Networks-2412.06464v3.md`；`Kimi_Linear_Attention-2510.26692.pdf` |
 
 ## Related Pages
 
