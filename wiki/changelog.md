@@ -8,6 +8,20 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-26：新增上游雷达，每周追踪仓库演进 / 模型发布 / 前沿论文
+
+**Type**: Tooling + Scheduled Maintenance
+
+- 新增 `tools/radar.py` 与 [`docs/radar/watchlist.yaml`](../docs/radar/watchlist.yaml)：每周扫 12 个仓库、7 家模型厂商（HuggingFace）、5 个 arXiv 论文主题，产出 `docs/radar/<日期>.md`。已注册为每周一的本机定时任务 `llm-knowledge-upstream-radar`。
+- **报告第一节就是“哪些 KB 基线已过期”**——首次运行实测：torchtitan 落后 308 个提交、Megatron-LM 276、verl 266、vLLM 229、slime 23，并附上游最近提交标题，直接指向对应域的 `index.md`。
+- **刻意的边界：只报告事实，不写 `wiki/` 分析页。** 本库价值在于每条断言都有可核验定位符，无人值守产出的机制级结论没人复核会污染这个前提。要落成分析页仍走 `source-faithful-analysis`；相应地，Ingest Workflow 增加第 7 步：合并新分析后必须同步更新 watchlist 里的 `kb_baseline`，否则雷达会每周重复报同一批陈旧漂移。
+- 清单显式维护而非从页头自动推导，原因写在文件头：页头基线格式不统一（代码基准 / 代码基线 / 源码基线，`verl main @ 8a694930` 与 `vllm-project/vllm@d66300a1…` 并存），且 Megatron-LM / torchtitan / MindSpeed 在库里是旁置 checkout 引用，页面里根本不出现 github URL，靠 URL 反推必然漏。
+- 三处经实测调整：① arXiv 查询改用 `ti:` 标题匹配 + LLM 约束 + 类别约束，此前 `abs:` 把外科识别、无线边缘、加密货币预测都捞了进来；② 每主题上限 8 条并如实标注截断多少，避免静默截断被读成“本期就这些”；③ tag 只跟踪发布形态并限量 80——pytorch 有 6617 个 tag，其中 2751 个 `viable/strict`、1000+ 个 `ciflow`，全存会让 `state.json` 到 286KB 且每周提交，过滤后 20KB。
+- 采集失败如实列出（不会被伪装成“本期无变化”），单源失败不影响整轮。首次运行 12 仓 0 失败。
+- 验证：`pytest tools/test_radar.py` 13 passed（全离线，不打网络）。
+
+---
+
 ## 2026-08-26：修好本地文档站的 provisioning 阻塞，并默认对局域网提供服务
 
 **Type**: Docs-site Tooling Fix + Network Default Change

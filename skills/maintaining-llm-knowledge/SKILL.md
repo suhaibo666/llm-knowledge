@@ -51,7 +51,8 @@ When a new source is added to `raw/`, follow this sequence:
 4. **Update** the domain `index.md` to include the new page（条目表 + 段位，不画深层树）
 5. **Cross-reference**: Add `[[wiki links]]` to and from all related existing pages（遵守下方 Cross-Reference Rules）
 6. **Append** an entry to `wiki/changelog.md` documenting what was added/updated（示例性质的 `[[...]]` 用反引号转义，见 Cross-Reference Rules）
-7. **Flag contradictions**: If new information contradicts existing wiki content, preserve both claims and add a `> [!contradiction]` callout
+7. **Update the radar baseline**: 如果这次分析把某个代码仓库的基线推进了，同步改 `docs/radar/watchlist.yaml` 里对应条目的 `kb_baseline`。漏了这一步，`tools/radar.py` 会每周继续报同一批已经处理过的陈旧漂移，很快就没人看这份周报了。
+8. **Flag contradictions**: If new information contradicts existing wiki content, preserve both claims and add a `> [!contradiction]` callout
 
 ### Cross-Reference Rules
 

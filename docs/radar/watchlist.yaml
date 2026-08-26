@@ -1,0 +1,150 @@
+# 上游追踪清单 —— tools/radar.py 的唯一输入
+#
+# 为什么要显式维护，而不是从 wiki 页头自动推导：
+#   1. 页头基线是写给人看的，格式不统一（代码基准 / 代码基线 / 源码基线，
+#      `verl main @ 8a694930` / `vllm-project/vllm@d66300a1…`，还有一页钉两个仓的）；
+#   2. Megatron-LM、torchtitan、MindSpeed 在库里是「旁置 checkout + path:line」引用，
+#      页面里根本不出现 github URL，靠 URL 反推必然漏掉。
+#
+# kb_baseline 是「KB 当前分析所依据的那个 commit」。radar 用它判断
+# 「上游已经跑到哪、我们的页面落后多少」。合并新分析后请同步更新这里。
+# 填 null 表示暂不做落后判定，只报告新活动。
+
+repos:
+  # ---- 推理 / 后训练框架 ----
+  - name: vLLM
+    repo: vllm-project/vllm
+    branch: main
+    kb_baseline: d66300a1baa7779c68c7dfa4e51eee2502b48017
+    kb_entry: wiki/02_engineering/03_infer_frameworks/vllm/index.md
+    category: 推理框架
+
+  - name: SGLang
+    repo: sgl-project/sglang
+    branch: main
+    kb_baseline: null
+    kb_entry: wiki/02_engineering/03_infer_frameworks/index.md
+    category: 推理框架
+
+  - name: Mooncake
+    repo: kvcache-ai/Mooncake
+    branch: main
+    kb_baseline: null
+    kb_entry: wiki/02_engineering/03_infer_frameworks/mooncake_analysis.md
+    category: 推理框架
+
+  - name: slime
+    repo: THUDM/slime
+    branch: main
+    kb_baseline: 681b3adca54105d5ecd3fb822fa0dc58a427e0f9
+    kb_entry: wiki/02_engineering/04_posttrain_frameworks/slime/index.md
+    category: 后训练框架
+
+  - name: verl
+    repo: volcengine/verl
+    branch: main
+    kb_baseline: 8a694930
+    kb_entry: wiki/02_engineering/04_posttrain_frameworks/verl/index.md
+    category: 后训练框架
+
+  - name: AReaL
+    repo: inclusionAI/AReaL
+    branch: main
+    kb_baseline: null
+    kb_entry: wiki/02_engineering/04_posttrain_frameworks/21_areal_async_architecture_analysis.md
+    category: 后训练框架
+
+  # ---- 训练框架与 PyTorch 本体 ----
+  - name: PyTorch
+    repo: pytorch/pytorch
+    branch: main
+    kb_baseline: null
+    kb_entry: wiki/02_engineering/01_ai_frameworks/index.md
+    category: 训练框架
+
+  - name: Megatron-LM
+    repo: NVIDIA/Megatron-LM
+    branch: dev
+    kb_baseline: 232c478d4
+    kb_entry: wiki/02_engineering/02_train_frameworks/megatron-lm/index.md
+    category: 训练框架
+
+  - name: torchtitan
+    repo: pytorch/torchtitan
+    branch: main
+    kb_baseline: 61c010fcb
+    kb_entry: wiki/02_engineering/02_train_frameworks/torchtitan/index.md
+    category: 训练框架
+
+  # ---- NPU / 昇腾 ----
+  - name: torch_npu
+    repo: Ascend/pytorch
+    branch: master
+    kb_baseline: null
+    kb_entry: wiki/02_engineering/01_ai_frameworks/index.md
+    category: NPU
+    host: gitee            # 不在 GitHub 上
+
+  - name: MindSpeed
+    repo: Ascend/MindSpeed
+    branch: master
+    kb_baseline: 1432cb09
+    kb_entry: wiki/02_engineering/02_train_frameworks/mindspeed/index.md
+    category: NPU
+    host: gitee
+
+  - name: MindSpeed-LLM
+    repo: Ascend/MindSpeed-LLM
+    branch: master
+    kb_baseline: null
+    kb_entry: wiki/02_engineering/02_train_frameworks/mindspeed/index.md
+    category: NPU
+    host: gitee
+
+# 模型厂商发布：用 HuggingFace 的 createdAt 判新，比盯博客稳定
+vendors:
+  - name: DeepSeek
+    org: deepseek-ai
+    kb_entry: wiki/01_theory/01_models/deepseek/index.md
+  - name: Moonshot / Kimi
+    org: moonshotai
+    kb_entry: wiki/01_theory/01_models/moonshot_kimi/index.md
+  - name: 智谱 GLM
+    org: zai-org
+    kb_entry: wiki/01_theory/01_models/zhipu_glm/index.md
+  - name: 阿里 Qwen
+    org: Qwen
+    kb_entry: wiki/01_theory/01_models/alibaba_qwen/index.md
+  - name: 美团 LongCat
+    org: meituan-longcat
+    kb_entry: wiki/01_theory/01_models/meituan_longcat/index.md
+  - name: 腾讯混元
+    org: tencent
+    kb_entry: wiki/01_theory/01_models/tencent_hunyuan/index.md
+  - name: Thinking Machines
+    org: thinkingmachines
+    kb_entry: wiki/01_theory/01_models/thinking_machines/index.md
+
+# 前沿论文调研。三条实测结论固化在这里：
+#   1. 用 ti:（标题匹配）而不是 abs:，abs 会捞进只是顺带提了 LLM 的论文；
+#   2. 必须带 LLM 约束，否则 MoE / attention 这类词会把视频理解、外科识别、
+#      加密货币预测全捞进来；
+#   3. 加 cat: 类别约束进一步收敛。
+# 即便如此仍会有残留噪声（"Mixture of Experts" 跨领域太通用），所以每主题
+# 只列 8 条供扫读，不合适就在这里调 query——这是给人调的旋钮，不是自动的。
+arxiv:
+  - name: MoE 与稀疏化
+    query: 'ti:"mixture of experts" AND (abs:"large language model" OR abs:"LLM") AND (cat:cs.LG OR cat:cs.CL OR cat:cs.DC)'
+    category: 前沿论文
+  - name: 注意力与长上下文
+    query: '(ti:"KV cache" OR ti:"long context" OR ti:"attention") AND (abs:"large language model" OR abs:"LLM") AND (cat:cs.CL OR cat:cs.LG)'
+    category: 前沿论文
+  - name: RL 后训练与对齐
+    query: '(ti:"reinforcement learning" OR ti:"post-training" OR ti:"RLHF") AND (abs:"large language model" OR abs:"LLM") AND cat:cs.CL'
+    category: 前沿论文
+  - name: 推理服务与系统
+    query: 'ti:"LLM inference" OR ti:"LLM serving" OR ti:"inference engine" OR ti:"speculative decoding"'
+    category: 前沿论文
+  - name: 并行与训练系统
+    query: '(ti:"distributed training" OR ti:"parallelism" OR ti:"pipeline parallel") AND (abs:"large language model" OR abs:"LLM")'
+    category: 前沿论文

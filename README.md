@@ -130,6 +130,24 @@ python -m pytest tools/         # 维护工具自身的单元测试
 npm run docs:test               # 本地站点单元测试 + 端到端验收
 ```
 
+## 上游雷达
+
+`tools/radar.py` 每周扫一遍上游，产出 `docs/radar/<日期>.md`：
+
+```bash
+python tools/radar.py              # 最近 7 天，写报告并更新 state
+python tools/radar.py --since 14   # 改时间窗
+python tools/radar.py --dry-run    # 只打印，不落盘
+```
+
+报告分五节，**第一节最重要**：哪些仓库的 KB 基线已经落后上游多少个提交（首次运行实测：torchtitan 落后 308、Megatron-LM 276、verl 266、vLLM 229、slime 23）。其余四节是仓库活动、模型厂商新发布（HuggingFace）、前沿论文（arXiv 五个主题）、以及**本次采集失败项**——失败会如实列出，不会被伪装成「本期无变化」。
+
+追踪清单在 [`docs/radar/watchlist.yaml`](docs/radar/watchlist.yaml)，显式维护（12 仓 + 7 家厂商 + 5 个论文主题）。为什么不从页头基线自动推导、arXiv 查询为什么必须带 LLM 约束，文件头的注释里写了原因。
+
+> **边界**：雷达**只报告事实，不写 `wiki/` 分析页**。本库的价值在于每条断言都有可核验定位符；无人值守产出的机制级结论没人复核，会污染这个前提。要把某个变化落成分析页，走 [`source-faithful-analysis`](skills/source-faithful-analysis/SKILL.md)，**并在合并后同步更新 watchlist 里的 `kb_baseline`**，否则雷达会一直报同一批陈旧漂移。
+
+已注册为每周一的本机定时任务（`llm-knowledge-upstream-radar`），只在 Claude 应用开着时触发，关着则下次启动补跑。
+
 ## 维护
 
 按 [CLAUDE.md](CLAUDE.md) 定义的 Workflow 由 Agent 维护。当前结构整改：
