@@ -1,6 +1,6 @@
 # DeepSeek-Coder Analysis
 
-**Source:** `raw/05_model_families/deepseek/DeepSeek_Coder-2401.14196.pdf`  
+**Source:** `raw/01_theory/01_models/deepseek/DeepSeek_Coder-2401.14196.md`  
 **Date Ingested:** 2026-04-21  
 **Authors:** DeepSeek-AI, Peking University  
 **Published:** January 2024

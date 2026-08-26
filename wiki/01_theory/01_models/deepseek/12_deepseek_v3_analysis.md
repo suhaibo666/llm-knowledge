@@ -1,6 +1,6 @@
 # DeepSeek-V3 Analysis
 
-**Source:** `raw/05_model_families/deepseek/DeepSeek_V3-2412.19437.pdf`  
+**Source:** `raw/01_theory/01_models/deepseek/DeepSeek_V3-2412.19437.md`  
 **Date Ingested:** 2026-04-20  
 **Authors:** DeepSeek-AI  
 **Published:** December 2024

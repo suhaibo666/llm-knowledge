@@ -1,6 +1,6 @@
 # DeepSeek-R1 Analysis
 
-**Source:** `raw/05_model_families/deepseek/DeepSeek_R1-2501.12948.pdf`  
+**Source:** `raw/01_theory/01_models/deepseek/DeepSeek_R1-2501.12948.md`  
 **Date Ingested:** 2026-04-21  
 **Authors:** DeepSeek-AI  
 **Published:** January 2025

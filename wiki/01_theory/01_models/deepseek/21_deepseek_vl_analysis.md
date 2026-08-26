@@ -1,6 +1,6 @@
 # DeepSeek-VL Analysis
 
-**Source:** `raw/05_model_families/deepseek/DeepSeek_VL-2403.05525.pdf`  
+**Source:** `raw/01_theory/01_models/deepseek/DeepSeek_VL-2403.05525.md`  
 **Date Ingested:** 2026-04-21  
 **Authors:** DeepSeek-AI  
 **Published:** March 2024
@@ -148,5 +148,5 @@ DeepSeek-VL achieves state-of-the-art or competitive performance across vision-l
 - [[15_deepseek_coder_analysis]] — Code model sharing training infrastructure
 
 > [!note]
-> The file `raw/05_model_families/deepseek/DeepSeek_VL2-2412.10322.pdf` does not contain DeepSeek-VL2 content. It is an unrelated physics paper (arXiv:2412.10322v1, hep-lat) about SU(3) lattice gauge theory. A genuine DeepSeek-VL2 source was not found in the raw directory.
+> The file `raw/01_theory/01_models/deepseek/DeepSeek_VL2-2412.10322.md` does not contain DeepSeek-VL2 content. It is an unrelated physics paper (arXiv:2412.10322v1, hep-lat) about SU(3) lattice gauge theory. A genuine DeepSeek-VL2 source was not found in the raw directory.
 

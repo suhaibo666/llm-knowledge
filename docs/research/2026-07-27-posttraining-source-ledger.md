@@ -66,7 +66,7 @@
 
 | 来源 | 固定版本与承重定位 | 支持的结论 | 证据 |
 |---|---|---|---|
-| Kimi K3 Technical Report | [MoonshotAI/Kimi-K3 `0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2)，47 页；PDF SHA-256 `fd6ee35c07766a5eb6104235f1b407e4329f969e3482b8c42937c7b5f2b3efe1`；本地 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf` | 固定 2026-07-28 官方报告正文；仓库未含核心 RL 训练实现 | A/C |
+| Kimi K3 Technical Report | [MoonshotAI/Kimi-K3 `0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2)，47 页；PDF SHA-256 `fd6ee35c07766a5eb6104235f1b407e4329f969e3482b8c42937c7b5f2b3efe1`；本地 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.md` | 固定 2026-07-28 官方报告正文；仓库未含核心 RL 训练实现 | A/C |
 | 三阶段后训练 | §4.1、pp.12–14；Eq. 15–16 | SFT → 3 领域 × 3 effort 专家 RL → MOPD；reasoning budget、GRM、deployment-aware QAT 与 draft fine-tuning | A |
 | Partial rollout | §4.1.2，p.13 | \(\lambda NK\) phase gate、prompt 内 \(K\) group、跨 iteration resume 与 extreme off-policy 声明 | A/C |
 | White-box environments | §4.2.1–4.2.7、pp.14–16；Fig. 9–10 | 动态 harness、任务合成、kernel/personal-assistant/AET/web-dev verifier 设计 | A |

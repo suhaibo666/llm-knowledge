@@ -1,6 +1,6 @@
 # GSPO: Group Sequence Policy Optimization — Analysis
 
-**Source**: `raw/03_alignment/GSPO_Group_Sequence_Policy_Optimization-2507.18071.pdf`
+**Source**: `raw/01_theory/04_posttraining/GSPO_Group_Sequence_Policy_Optimization-2507.18071.md`
 **Authors**: Qwen Team, Alibaba Inc.
 **Published**: arXiv:2507.18071 | Jul 2025
 

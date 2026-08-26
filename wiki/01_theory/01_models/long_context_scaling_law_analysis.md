@@ -1,6 +1,6 @@
 # L2M: Mutual Information Scaling Law for Long-Context Language Modeling — Analysis
 
-**Source**: `raw/01_architecture/Long_Context_Scaling_Law-2503.04725.pdf`
+**Source**: `raw/01_theory/01_models/Long_Context_Scaling_Law-2503.04725.md`
 **Authors**: Chen, Mayne i Comas, Jin, Luo, Soljacic (MIT, Harvard, UCLA, Polytechnic University of Catalonia)
 **Published**: NeurIPS 2025 | arXiv:2503.04725
 

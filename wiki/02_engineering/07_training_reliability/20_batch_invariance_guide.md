@@ -1,6 +1,6 @@
 # 批次不变性与确定性算子开发指南
 
-> **来源**: `raw/01_theory/01_models/deepseek/DeepSeek_V4.pdf` §3.3 + DeepGEMM 源码分析
+> **来源**: `raw/01_theory/01_models/deepseek/DeepSeek_V4.md` §3.3 + DeepGEMM 源码分析
 > **创建日期**: 2026-05-14
 > **说明**: 本文系统梳理 DeepSeek V4 技术报告中批次不变性（Batch Invariance）与确定性（Determinism）算子的设计动机、实现原理与代码示例。面向算子开发者与训练框架维护者。
 

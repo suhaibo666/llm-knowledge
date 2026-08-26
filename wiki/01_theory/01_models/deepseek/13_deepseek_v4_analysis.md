@@ -1,6 +1,6 @@
 # DeepSeek-V4 深度解析
 
-> **核对基线**: arXiv:**2606.19348v1** (DeepSeek-AI, **2026-04-26**) ＝ `raw/01_theory/01_models/deepseek/DeepSeek_V4.pdf`  
+> **核对基线**: arXiv:**2606.19348v1** (DeepSeek-AI, **2026-04-26**) ＝ `raw/01_theory/01_models/deepseek/DeepSeek_V4.md`  
 > **作者**: DeepSeek-AI　**初稿摄入**: 2026-04-24（基于预发布 PDF）　**对正式版复核/订正**: 2026-06-25  
 >
 > [!note] 本页超参表与基准数字已逐项对正式发表版核对（[[30_deepseek_v4_audit_analysis|V4 审计报告]]），结论：**数字全部一致**；

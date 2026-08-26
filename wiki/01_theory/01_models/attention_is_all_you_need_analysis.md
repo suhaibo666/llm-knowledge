@@ -1,6 +1,6 @@
 # Attention Is All You Need — Analysis
 
-**Source**: `raw/01_architecture/Attention_Is_All_You_Need-1706.03762.pdf`
+**Source**: `raw/01_theory/01_models/Attention_Is_All_You_Need-1706.03762.md`
 **Authors**: Vaswani, Shazeer, Parmar, Uszkoreit, Jones, Gomez, Kaiser, Polosukhin (Google Brain / Google Research)
 **Published**: NIPS 2017 | arXiv:1706.03762
 

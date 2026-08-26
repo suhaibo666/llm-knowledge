@@ -1,6 +1,6 @@
 # DeepSeek-Prover-V1.5 Analysis
 
-**Source:** `raw/05_model_families/deepseek/DeepSeek_Prover-2408.08152.pdf`  
+**Source:** `raw/01_theory/01_models/deepseek/DeepSeek_Prover-2408.08152.md`  
 **Date Ingested:** 2026-04-21  
 **Authors:** DeepSeek-AI  
 **Published:** August 2024

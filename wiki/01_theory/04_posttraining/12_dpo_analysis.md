@@ -1,6 +1,6 @@
 # DPO: Direct Preference Optimization — Analysis
 
-**Source**: `raw/03_alignment/DPO_Direct_Preference_Optimization-2305.18290.pdf`
+**Source**: `raw/01_theory/04_posttraining/DPO_Direct_Preference_Optimization-2305.18290.md`
 **Authors**: Rafailov, Sharma, Mitchell, Ermon, Manning, Finn (Stanford, CZ Biohub)
 **Published**: arXiv:2305.18290 | May 2023
 

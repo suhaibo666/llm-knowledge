@@ -4,7 +4,7 @@
 > **文档编号**：D12
 > **快照日期**：2026-07-28
 > **来源基线**：MoonshotAI/Kimi-K3 [`0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2)，官方报告 47 页，PDF SHA-256 `fd6ee35c07766a5eb6104235f1b407e4329f969e3482b8c42937c7b5f2b3efe1`
-> **本地原文**：`raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.pdf`
+> **本地原文**：`raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.md`
 > **证据边界**：本文分析官方技术报告中的项目级设计与项目方自报数据；K3 仓库未公开 RL trainer、rollout 或 MOPD 训练源码，不能据此赋予 P1–P4 源码实现等级。
 > **结论先行**：K3 的主要增量不是又发明一个 GRPO 变体，而是把“能力分化、在线合并、长轨迹状态管理和部署精度”放进同一条后训练闭环。
 > **阅读导航**：[[31_cuda_ascend_posttraining_stack_comparison|上一篇 D11]] · [[courses/posttraining_frontier|回到课程导读]]

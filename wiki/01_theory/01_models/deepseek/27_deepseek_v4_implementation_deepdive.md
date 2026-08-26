@@ -1,6 +1,6 @@
 # DeepSeek-V4 实现要点：核心组件伪代码 + 数据流
 
-> **核对基线**: arXiv:**2606.19348v1**「DeepSeek-V4: Towards Highly Efficient Million-Token Context Intelligence」（DeepSeek-AI, **2026-04-26**）＝ `raw/01_theory/01_models/deepseek/DeepSeek_V4.pdf`
+> **核对基线**: arXiv:**2606.19348v1**「DeepSeek-V4: Towards Highly Efficient Million-Token Context Intelligence」（DeepSeek-AI, **2026-04-26**）＝ `raw/01_theory/01_models/deepseek/DeepSeek_V4.md`
 > **维度**: 实现级 Deep Dive —— V4 五大核心组件的**源忠实伪代码 + 数据流**，每段代码逐步标注其实现的论文 §/Eq/page。
 > **整页重写**: 2026-06-25。旧版为预发布期 AI 臆造的通用伪代码（路由专家写成 128、HCA 写成 `compression_ratio=0.1`、Sinkhorn `max_iter=100`、"Muon" 实为 Adam、量化写成 INT8、臆造 DualPath/PCA-KV/task_classifier 动态-k），已整页废弃；审计见 [[30_deepseek_v4_audit_analysis]]。
 >
