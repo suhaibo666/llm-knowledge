@@ -121,6 +121,26 @@ test("GitHub Pages deployment publishes the Quartz output at the project URL", a
   assert.match(workflow, /uses: actions\/deploy-pages@v4/)
 })
 
+test("vendored Mermaid resolves within the deployed site path", async () => {
+  const patch = JSON.parse(
+    await readFile(
+      path.join(toolDir, "patches", "quartz-v5-ofm-local-mermaid.json"),
+      "utf8",
+    ),
+  )
+  const [replacement] = patch.replacements
+
+  assert.equal(
+    replacement.before,
+    'L||(L=await import("https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.4.0/mermaid.esm.min.mjs"));',
+  )
+  assert.equal(
+    replacement.after,
+    'L||(L=await import(new URL("vendor/mermaid/mermaid.esm.min.mjs",document.querySelector("link[rel=icon]").href).href));',
+  )
+  assert.doesNotMatch(replacement.after, /import\("\//)
+})
+
 test("runtime manifest and lock agree on every enabled plugin commit", async () => {
   const manifest = JSON.parse(await readFile(path.join(toolDir, "runtime-manifest.json"), "utf8"))
   const lock = JSON.parse(await readFile(path.join(toolDir, "quartz.lock.json"), "utf8"))
