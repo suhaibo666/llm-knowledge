@@ -1,0 +1,144 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css"></head><body>
+
+<!-- ============ FIG 1: GLM-5.3-Flash 整机结构 ============ -->
+<div class="diagram" data-name="glm53_flash_architecture_fig1">
+  <div class="dg-title">GLM-5.3-Flash 整机结构</div>
+  <div class="dg-sub">45 层 = 11 × (3 KDA + 1 DSA) + 末尾 1 层 KDA；每个子层的残差合并都由 mHC 承担。全部数值取自 <code>config.json@3f1971b7</code></div>
+
+  <div class="chip">① 输入 · 原生多模态</div>
+  <div class="row">
+    <div class="node slate" style="width:150px"><div class="t">Image</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node green" style="width:250px"><div class="t">ViT</div>
+      <div class="d">depth 24 · hidden 1024<br>patch 14 · image 448 · merge 2</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue center" style="width:190px"><div class="t">残差流</div>
+      <div class="d">hidden 4096</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18" style="transform:scaleX(-1)"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node green" style="width:230px"><div class="t">Embedding</div>
+      <div class="d">vocab 154,880</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18" style="transform:scaleX(-1)"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node slate" style="width:130px"><div class="t">Text</div></div>
+  </div>
+
+  <div class="downwrap"><svg width="20" height="40" viewBox="0 0 20 40"><line x1="10" y1="0" x2="10" y2="32" stroke="currentColor" stroke-width="2"/><path d="M5 30 L10 38 L15 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="chip">② 主干一个 stage（重复 11 次）· <code>layer_types</code> 中 DSA 落在层号 ≡ 3 (mod 4)</div>
+  <div class="row">
+    <div class="node blue" style="width:255px"><div class="t">KDA 层 × 3</div>
+      <div class="d">Linear Attention（Kimi Delta Attention）<br>64 头 × 128 · short conv 4<br>gate lower bound −5.0</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node purple" style="width:275px"><div class="t">DSA 层 × 1</div>
+      <div class="d">Sparse Attention（DeepSeek 稀疏注意力）<br>MLA q_lora 1536 / kv_lora 512<br>qk 256 全 nope · <b>无 RoPE</b> · index_topk 2048</div></div>
+    <div class="arrow lbl"><span class="al">每层各接一个 MoE 子层</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:250px"><div class="t">MoE</div>
+      <div class="d">288 routed + 1 shared · top-8<br>expert dim 2048<br>前 3 层为 dense FFN（12288）</div></div>
+  </div>
+
+  <div class="downwrap"><svg width="20" height="40" viewBox="0 0 20 40"><line x1="10" y1="0" x2="10" y2="32" stroke="currentColor" stroke-width="2"/><path d="M5 30 L10 38 L15 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="chip">③ 单层内部：mHC 取代朴素残差加，<b>注意力子层与 MoE 子层各一处</b></div>
+  <div class="row">
+    <div class="node slate" style="width:170px"><div class="t">input_layernorm</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue" style="width:150px"><div class="t">self_attn</div>
+      <div class="d">KDA 或 DSA</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node rose" style="width:215px"><div class="t">mHC · hc_attn</div>
+      <div class="d">base + fn + scale</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node slate" style="width:215px"><div class="t">post_attention<br>_layernorm</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:130px"><div class="t">mlp</div>
+      <div class="d">MoE / dense</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node rose" style="width:200px"><div class="t">mHC · hc_ffn</div>
+      <div class="d">base + fn + scale</div></div>
+  </div>
+
+  <div class="downwrap"><svg width="20" height="40" viewBox="0 0 20 40"><line x1="10" y1="0" x2="10" y2="32" stroke="currentColor" stroke-width="2"/><path d="M5 30 L10 38 L15 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="chip">④ 输出</div>
+  <div class="row">
+    <div class="node purple" style="width:290px"><div class="t">MTP Layer</div>
+      <div class="d">num_nextn_predict_layers = 1<br><b>该层没有 hc_* 模块</b>——mHC 只作用于 45 层主干</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node slate" style="width:220px"><div class="t">LM Head</div>
+      <div class="d">vocab 154,880</div></div>
+  </div>
+
+  <div class="note">
+    <b>怎么核实的</b>：层类型与超参来自 <code>config.json</code> 的 <code>layer_types</code> / <code>linear_attn_config</code> / <code>vision_config</code>；
+    单层内部的模块序列与 mHC 的<b>逐子层</b>放置，来自 FP8 量化豁免清单 <code>quantization_config.modules_to_not_convert</code>——
+    它逐层列出了 <code>hc_attn_base/fn/scale</code> 与 <code>hc_ffn_base/fn/scale</code>，
+    <b>45 层主干层层齐全，第 45 号（MTP）层一个都没有</b>。
+    <code>base / fn / scale</code> 三件套对应超连接公式的「静态项 + 数据相关项 + 缩放」。
+  </div>
+  <div class="legend">
+    <span><i class="dot" style="background:#E9F2FC;border-color:#6296D4"></i>线性注意力 / 残差流</span>
+    <span><i class="dot" style="background:#EEEAF8;border-color:#8E7DCB"></i>稀疏注意力 / MTP</span>
+    <span><i class="dot" style="background:#FBF0E1;border-color:#DBA059"></i>FFN / MoE</span>
+    <span><i class="dot" style="background:#FBE9EC;border-color:#D98A9B"></i>mHC 超连接</span>
+    <span><i class="dot" style="background:#E6F4EC;border-color:#5BAE80"></i>嵌入 / 视觉塔</span>
+  </div>
+</div>
+
+
+<!-- ============ FIG 2: DSA 索引器数据通路 ============ -->
+<div class="diagram" data-name="glm53_flash_architecture_fig2">
+  <div class="dg-title">DSA 层的索引器数据通路：4× 键池化把打分成本再压一档</div>
+  <div class="dg-sub">GLM-5.1/5.2 的 IndexShare 省的是「多少层建索引」，5.3-Flash 的 <code>index_kpool</code> 省的是「每次建索引要看多少个键」——两条正交的降本路径</div>
+
+  <div class="chip">上下文侧</div>
+  <div class="row">
+    <div class="node green" style="width:230px"><div class="t">Context Hidden States</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="col" style="gap:12px">
+      <div class="node blue" style="width:300px"><div class="t">KV Cache</div>
+        <div class="d">MLA 潜在 KV · kv_lora 512<br>供最终稀疏注意力取用</div></div>
+      <div class="node purple" style="width:300px"><div class="t">Indexer Keys</div>
+        <div class="d">indexer.wk · k_norm(+bias)</div></div>
+    </div>
+    <div class="arrow lbl"><span class="al">仅索引键路径</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node rose" style="width:305px"><div class="t">4× 门控池化</div>
+      <div class="d"><code>index_kpool = 4</code> · <code>index_kpool_compress = true</code><br>
+        模块：<code>index_kpool_compress_ape</code><br>+ <code>index_kpool_compress_gate</code><br>
+        <b>不是朴素 AvgPool</b>：带位置嵌入的可学门控压缩</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node rose" style="width:210px"><div class="t">Indexer Cache</div>
+      <div class="d">键数降到 1/4</div></div>
+  </div>
+
+  <div class="downwrap"><svg width="20" height="40" viewBox="0 0 20 40"><line x1="10" y1="0" x2="10" y2="32" stroke="currentColor" stroke-width="2"/><path d="M5 30 L10 38 L15 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="chip">查询侧 → 打分 → 选块 → 稀疏注意力</div>
+  <div class="row">
+    <div class="node green" style="width:210px"><div class="t">Query Hidden State</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node purple" style="width:215px"><div class="t">Indexer Query</div>
+      <div class="d">indexer.wq_b<br>32 头 × 128</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node rose" style="width:200px"><div class="t">Indexer</div>
+      <div class="d">对压缩后的键打分<br>indexer.weights_proj</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:190px"><div class="t">TopK</div>
+      <div class="d">index_topk = 2048</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:215px"><div class="t">KV Block Selection</div>
+      <div class="d">always_select_tail = true<br>末尾块恒选中</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue" style="width:190px"><div class="t">Sparse Attention</div>
+      <div class="d">对选中 KV 计算</div></div>
+  </div>
+
+  <div class="note">
+    <b>与 Qwen QSA 的差别值得留意</b>：两者都在「打分前先压缩键」，但 QSA 用的是<b>非重叠块 + 平均池化</b>（技术报告 §2.1.2 Eq. 13），
+    GLM 这里的模块名是 <code>index_kpool_compress_ape</code> 与 <code>index_kpool_compress_gate</code>，
+    即<b>带位置嵌入的可学门控压缩</b>。两家压缩比同为 4，实现方式不同。<br>
+    <b>边界</b>：模块名与超参可从 <code>config.json</code> 确证，但<b>压缩算子的具体形式、以及是否像 QSA 那样需要两阶段续训</b>，
+    GLM 侧没有任何公开材料，本图不作推测。
+  </div>
+</div>
+
+</body></html>

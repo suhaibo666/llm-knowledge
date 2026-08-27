@@ -8,6 +8,27 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-27（三）：为 GLM-5.3-Flash 与 Qwen3.8-Flash-Next 补结构图，并证伪一处流传的参数口径
+
+**Type**: Figures + Source Verification（4 张 HTML→PNG 结构图 + 2 处配置级核实）
+
+- 按库内既有的 `tools/figs/*.html` → `render_figs.mjs` → `assets/*.png` 流水线新增 4 张图：`glm53_flash_architecture_fig1/fig2`（整机结构 / DSA 索引器数据通路）与 `qwen38_flash_next_architecture_fig1/fig2`（整机结构 / QSA 数据通路 + 两阶段 CPT）。Qwen 两张复刻自技术报告 Figure 1 与 Figure 3；GLM 两张依据 `config.json` 与 FP8 豁免清单重画。
+
+**两处配置级核实**：
+
+- **mHC 的逐子层放置得到确证。** 此前只知道 `mhc: true`；这次从 `quantization_config.modules_to_not_convert` 逐层读出 `hc_attn_base/fn/scale` 与 `hc_ffn_base/fn/scale` 六项，**45 层主干层层齐全、第 45 号（MTP）层一项都没有**——即注意力子层与 MoE 子层各有一处 mHC，且 MTP 层不参与。`base / fn / scale` 三件套恰好对应超连接公式的「静态项 + 数据相关项 + 缩放」。
+- **`index_kpool` 的实现形态被暴露。** DSA 层独有模块含 `indexer.index_kpool_compress_ape` 与 `indexer.index_kpool_compress_gate`，说明 GLM 的 4× 键池化是**带位置嵌入的可学门控压缩**，而非 [[20_qwen3_8_flash_next_architecture_deepdive|Qwen QSA]] 那样的非重叠块 AvgPool。**两家压缩比同为 4，实现路线不同。** 另新增 §2.4 指出 `index_kpool` 与 [[11_glm_5_1_5_2_analysis|5.2 的 IndexShare]] 是两条正交降本路径，且 5.3-Flash 的 `indexer_types` 全为 `full`——**没有沿用 IndexShare**。
+
+**证伪一处流传口径**：
+
+- 流传的第三方架构图把 GLM-5.3-Flash 标注为「320B total **13B** active」，与模型卡的 **18B** 冲突。按 `config.json` 逐模块估算得 **17.30B**（MoE 9.97 + KDA 4.58 + DSA 1.48 + 头 0.63 + 嵌入 0.63），**距 18B 仅 0.70B**（未计入的 mHC 开销正落在这个量级），**距 13B 差 4.30B**——即便剔除嵌入与输出头也仍有 16.03B，没有任何合理口径能填平。**模型卡的 18B 站得住，13B 站不住。**
+- 同一张图的两条效率曲线（1M 处 KV-cache 4.44×、attention compute 3.01×）**未采纳**：计算方法未公开；且其中作为对照的 "GLM-5.3"（区别于 GLM-5.3-Flash）**在公开渠道不存在**（HF 上 `zai-org/GLM-5.3` 返回 401，仅 Flash 版公开）。页面用一张三态表把「已核实 / 已证伪 / 无法复核」逐项标了出来。
+
+- 方法上值得记一笔：**第三方图不是拿来照抄的，是拿来逐条对配置验的**——结构部分全对上了（因此采纳并重画），参数口径当场证伪，效率曲线无从复核。三种处置方式写进同一页，读者才知道哪部分能引用。
+- 验证：`check_links --strict` 417 页 0 破损/0 歧义/0 孤儿；`check_math --changed --strict` 0 错 0 警；4 张图的引用路径逐一存在性检查通过。
+
+---
+
 ## 2026-08-27（二）：摄入 Qwen3.8-Flash-Next 技术报告，回写三处已被推翻/确认的推断
 
 **Type**: Source Ingestion（28 页 PDF 技术报告 → 2 篇深挖页 + 3 处既有页回写）

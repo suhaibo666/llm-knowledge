@@ -4,6 +4,7 @@
 > - 模型卡快照 `raw/01_theory/01_models/zhipu_glm/GLM_5_3_Flash_model_card_3f1971b7.md`，对应 [zai-org/GLM-5.3-Flash `3f1971b7`](https://huggingface.co/zai-org/GLM-5.3-Flash/tree/3f1971b7)（HF 仓库创建于 2026-08-25）。
 > - 结构数值一律取自同 revision 的 `config.json` 快照 `GLM_5_3_Flash_config_3f1971b7.json`（同目录）。
 > - 参数量取自 HuggingFace safetensors 索引（2026-08-27 读取）。
+> - 结构图与索引器数据通路参考了一份**第三方架构图**（署名 `0x Alpha`）。**该图不是官方材料**，本页只采纳其中能被 `config.json` 独立验证的部分；不能验证的（含其效率对比曲线与「13B 激活」的口径）按第三方估算处理，见 §2.4、§2.5。
 >
 > **维度**：开放权重发布分析（模型卡 + 权重配置交叉核对）。
 > **更新**：2026-08-27。
@@ -53,15 +54,12 @@ flowchart TB
 
 DSA 精确落在每 4 层的第 4 层上（层号 ≡ 3 mod 4），其余全部是 KDA——即 `3 × KDA → 1 × DSA` 重复 11 次，尾部补 1 层 KDA。`linear_attn_config` 里的 `kda_layers` 与 `full_attn_layers` 两个数组与上述划分完全一致，互为交叉验证。
 
-```mermaid
-flowchart LR
-    subgraph S["一个 stage · 重复 11 次"]
-        A["KDA"] --> B["KDA"] --> C["KDA"] --> D["DSA"]
-    end
-    E["Embedding · vocab 154880 · hidden 4096"] --> A
-    D --> F["... 末层补 1 层 KDA · 共 45 层"]
-    F --> G["Final norm 与 LM head"]
-```
+![图 1：GLM-5.3-Flash 整机结构——ViT+Embedding 双通路输入，45 层 = 11 × (3 KDA + 1 DSA) + 末尾 1 层 KDA，每层的注意力子层与 MoE 子层各由一处 mHC 承担残差合并，末端 MTP Layer + LM Head](assets/glm53_flash_architecture_fig1.png)
+
+两点要读准：
+
+1. **`mHC` 出现在每个子层之后，而不是每层一次**——注意力子层与 MoE 子层各接一个。这不是从架构图上"看"出来的，而是从 FP8 量化豁免清单 `quantization_config.modules_to_not_convert` 里**逐层核实**的：每层都同时列有 `hc_attn_base / hc_attn_fn / hc_attn_scale` 与 `hc_ffn_base / hc_ffn_fn / hc_ffn_scale` 六项，**45 层主干层层齐全，而第 45 号（MTP）层一项都没有**。`base / fn / scale` 三件套恰好对应超连接公式的「静态项 + 数据相关项 + 缩放」（对照 [[25_mhc_analysis]]）。
+2. 上图的「3 + 1」是**一个 stage**；45 层 = 11 个完整 stage（44 层）+ 末尾补 1 层 KDA，与 §2 开头 `layer_types` 的统计一致。
 
 ### 2.1 精确超参（全部来自 `config.json`）
 
@@ -109,9 +107,50 @@ flowchart LR
 | 磁盘占用 | 305.8 GiB | 同上 |
 | 卡片声称激活参数 | 18B | `模型卡 :25` |
 
-总参数吻合。**激活参数 18B 无法从配置独立复核**——mHC 的超连接开销、视觉塔是否计入、MTP 层是否计入均未说明，本页不做反推。
+总参数吻合。权重以 FP8 发布（`quantization_config.fmt = "e4m3"`，动态激活量化），且 `modules_to_not_convert` 明确把 `hyper_connection`、`attn_mha`、`attn_mqa`、`lm_head`、`model.embed_tokens` 排除在量化之外——**mHC 的超连接矩阵保持高精度**，与 [[25_mhc_analysis]] 中双随机矩阵投影对数值敏感的分析一致。
 
-权重以 FP8 发布（`quantization_config.fmt = "e4m3"`，动态激活量化），且 `modules_to_not_convert` 明确把 `hyper_connection`、`attn_mha`、`attn_mqa`、`lm_head`、`model.embed_tokens` 排除在量化之外——**mHC 的超连接矩阵保持高精度**，与 [[25_mhc_analysis]] 中双随机矩阵投影对数值敏感的分析一致。
+**激活参数：18B 还是 13B？** 流传的第三方架构图把 GLM-5.3-Flash 标注为「320B total **13B** active」，与模型卡的 **18B** 冲突。本页按配置逐模块估了一遍：
+
+| 模块 | 每 token 激活参数 |
+|---|---:|
+| MoE（8 routed + 1 shared）+ 前 3 层 dense FFN | 9.97 B |
+| DSA 注意力 × 11 层（MLA + indexer） | 1.48 B |
+| KDA 注意力 × 34 层 | 4.58 B |
+| `lm_head` | 0.63 B |
+| `embed_tokens` | 0.63 B |
+| **合计** | **17.30 B** |
+
+> [!contradiction]
+> **模型卡的 18B 站得住，第三方图的 13B 站不住。** 上表 17.30B 距 18B 只差 0.70B，而尚未计入的 **mHC 超连接开销**（`hc_mult=4`，每层两处，矩阵形状未在 config 中给出）正好落在这个量级；距 13B 则差 4.30B，没有任何合理口径能填平——即便把嵌入与输出头全部剔除，也仍有 16.03B。
+>
+> **边界**：本表是依据 `config.json` 维度的**估算**，不是厂商口径；未计入 mHC 与视觉塔（`vision_config` 独立计）。它足以**否证 13B**，但不足以精确复现 18B——18B 的确切构成仍以模型卡为准。
+
+---
+
+### 2.4 索引器数据通路：`index_kpool` 把打分成本再压一档
+
+`config.json` 里 `index_kpool: 4`、`index_kpool_compress: true`、`index_kpool_always_select_tail: true` 这三个字段，是 GLM-5.3-Flash 相对 [[11_glm_5_1_5_2_analysis|5.1/5.2]] 在稀疏注意力上的新增部分。FP8 豁免清单进一步暴露了它的实现模块：
+
+![图 2：DSA 层的索引器数据通路——上下文侧的 indexer keys 经 4× 门控池化压成 indexer cache，查询侧的 indexer query 对压缩后的键打分，TopK 选块后交由稀疏注意力对选中 KV 计算](assets/glm53_flash_architecture_fig2.png)
+
+> [!note]
+> **GLM 的 4× 键池化不是朴素平均池化。** DSA 层独有的模块里有 `self_attn.indexer.index_kpool_compress_ape` 与 `self_attn.indexer.index_kpool_compress_gate`——`ape` 指向位置嵌入、`gate` 指向门控，即这是一个**带位置嵌入的可学门控压缩**。
+>
+> 作为对照，[[20_qwen3_8_flash_next_architecture_deepdive|Qwen QSA]] 的键压缩是**非重叠块 + AvgPool**（技术报告 §2.1.2 Eq. 13），且刻意把压缩放在位置编码**之前**以避免平均不同旋转相位。**两家压缩比同为 4，实现路线不同**；GLM 这条因为带了自己的位置嵌入，理论上不受"块内相位不一致"的约束，但**没有任何公开材料说明其算子形式或代价**。
+
+这条与 [[11_glm_5_1_5_2_analysis|5.2 的 IndexShare]] 是**两条正交的降本路径**：IndexShare 省的是「78 层里有多少层要建索引」，`index_kpool` 省的是「每次建索引要看多少个键」。GLM-5.3-Flash 的 `indexer_types` 全为 `full`（45 层每层都自建索引），**没有沿用 IndexShare**——在 3:1 混合架构里稀疏层本就只有 11 个且被 KDA 层隔开，跨层共享的前提（层间相似度）大概率不成立，这与 Qwen 在 Fig. 5(a) 的实测结论方向一致。**此为本页推断，GLM 未作说明。**
+
+### 2.5 第三方架构图中无法核实的部分
+
+摄入的第三方图（署名 `0x Alpha`）除结构外还带两张效率曲线，本页**不采纳其数值**，理由如下：
+
+| 图中内容 | 状态 |
+|---|---|
+| 结构（层类型、mHC 位置、索引器通路） | ✅ **已逐项对 `config.json` 与模块清单核实**，本页采纳 |
+| 「13B active」 | ❌ **已证伪**，见 §2.3 反驳栏 |
+| Per-Layer KV-Cache Size：1M 处 **4.44×** | ⚠️ 计算方法未公开，无法复核 |
+| Per-Layer Attention Compute：1M 处 **3.01×** | ⚠️ 同上 |
+| 曲线中的 **「GLM-5.3」**（区别于 GLM-5.3-Flash） | ⚠️ **该模型不存在于公开渠道**（HF 上 `zai-org/GLM-5.3` 返回 401，仅 `GLM-5.3-Flash` 公开）；推测是作者自设的"未做 Flash 优化"基线，但无从确认 |
 
 ---
 

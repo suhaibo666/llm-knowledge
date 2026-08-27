@@ -29,6 +29,12 @@
 
 ---
 
+先给整机结构，后面各节都是对图中某一块的展开（复刻报告 Figure 1，p2；数值与 `config.json@f5d08274` 交叉核对）：
+
+![图 1：Qwen3.8-Flash-Next 整机结构——词表嵌入 + 仅挂在第 2 层的 n-gram 嵌入层，48 层 = 12 × (3 GDN + 1 QSA)，每个子层都经 GR Read/Write 读写 4 分支加宽残差流，末端 MTP Modules + Prediction Head](assets/qwen38_flash_next_architecture_fig1.png)
+
+---
+
 ## 2. GDN 混合：三层线性 + 一层全局，并且**保留** RoPE
 
 ### 2.1 动机
@@ -114,18 +120,7 @@ GDN kernel 用 **FlashQLA**（基于 TileLang 的融合线性注意力 kernel �
 
 ### 3.2 机制：先压缩、再打分
 
-```mermaid
-flowchart TB
-    X["隐状态 x_i"] --> Q["Query 投影 · MQA 4 头<br/>RMSNorm → Partial RoPE(64/128)"]
-    X --> K["Key 投影 · 1 个共享头"]
-    K --> AP["按 r=4 非重叠分块<br/>AvgPool 平均池化"]
-    AP --> PR["再加 Partial RoPE<br/>块位置 = 块起始位置 p_b"]
-    Q --> SC["块因果打分<br/>对各头 ReLU(q·k) 求和"]
-    PR --> SC
-    SC --> TK["Top-K_B 选块<br/>K_B = 2048 / 4 = 512"]
-    TK --> EX["展开为 token 索引<br/>+ 末尾不完整块必选"]
-    EX --> CA["稀疏 core attention"]
-```
+![图 2：QSA 数据通路（复刻报告 Figure 3）——压缩式轻量索引器先用 AvgPool 把键按 r=4 非重叠压块、再加 Partial RoPE 并做块因果打分，Top-k 选出 512 块后展开为微块稀疏掩码交给 sparse core attention；下方是 QSA 在 CPT 阶段两步换上的过程](assets/qwen38_flash_next_architecture_fig2.png)
 
 索引器采用 **MQA**：$H$ 个 query 头 + **1 个共享 key 头**（§2.1.2 Eq. 12, p6）。key 按 $r$ 个 token 的**非重叠块**用平均池化压缩（Eq. 13）：
 

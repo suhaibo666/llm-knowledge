@@ -1,0 +1,153 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="figstyle.css"></head><body>
+
+<!-- ============ FIG 1: Qwen3.8-Flash-Next 整机结构（复刻技术报告 Figure 1）============ -->
+<div class="diagram" data-name="qwen38_flash_next_architecture_fig1">
+  <div class="dg-title">Qwen3.8-Flash-Next 整机结构</div>
+  <div class="dg-sub">复刻技术报告 Figure 1（p2）：48 层 = 12 × (3 GDN + 1 QSA)；<b>每个子层都经 GR 读写加宽残差流</b>；n-gram 嵌入层挂在第 2 层。数值与 <code>config.json@f5d08274</code> 交叉核对</div>
+
+  <div class="chip">① 输入 · 两条嵌入通路</div>
+  <div class="row">
+    <div class="node green" style="width:255px"><div class="t">Vocabulary Embedding</div>
+      <div class="d">vocab 248,320 · hidden 2560</div></div>
+    <div class="arrow lbl"><span class="al">相加</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node rose" style="width:335px"><div class="t">N-gram Embedding Layer · 仅第 2 层</div>
+      <div class="d">2,000 万条 bigram/trigram（<code>ngram_size 3</code>）<br>
+        <code>heads_per_ngram 8</code> 多头哈希 · 51B 参数<br>
+        <b>常驻 host 内存，异步预取</b>——放第 2 层是为了与第 1 层计算重叠</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue center" style="width:230px"><div class="t">加宽残差流</div>
+      <div class="d"><code>hc_count = 4</code> 条分支</div></div>
+  </div>
+
+  <div class="downwrap"><svg width="20" height="40" viewBox="0 0 20 40"><line x1="10" y1="0" x2="10" y2="32" stroke="currentColor" stroke-width="2"/><path d="M5 30 L10 38 L15 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="chip">② 一个 block（重复 12 次）· 每个子层 = GR Read → 算子 → GR Write</div>
+  <div class="row">
+    <div class="node blue" style="width:270px"><div class="t">GDN 层 × 3</div>
+      <div class="d">Gated DeltaNet 线性注意力<br>V 头 48 / QK 头 16 · head dim 128<br>short conv 4</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node purple" style="width:290px"><div class="t">QSA 层 × 1</div>
+      <div class="d">Qwen Sparse Attention<br>Q 头 24 / KV 头 2 · head dim 256<br>partial RoPE 64/256 · <b>保留 RoPE</b></div></div>
+    <div class="arrow lbl"><span class="al">每个 token 混合子层后各接一个</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:250px"><div class="t">MoE</div>
+      <div class="d">512 专家 · top-10 + 1 shared<br>expert dim 640（极细粒度）</div></div>
+  </div>
+
+  <div class="downwrap"><svg width="20" height="40" viewBox="0 0 20 40"><line x1="10" y1="0" x2="10" y2="32" stroke="currentColor" stroke-width="2"/><path d="M5 30 L10 38 L15 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="chip">③ Gated Residual（GR）· 消融结论：表达力全押在「读」上</div>
+  <div class="row">
+    <div class="node blue" style="width:215px"><div class="t">加宽残差 · 4 分支</div>
+      <div class="d">逐分支 RMSNorm<br>各带独立增益</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node rose" style="width:300px"><div class="t">GR Read</div>
+      <div class="d"><b>逐元素、数据相关的门</b>（sigmoid）<br>
+        从<b>全部</b> 4 条分支预测门控分数<br>
+        低秩瓶颈 <code>hc_lowrank = 320 = d/8</code></div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node slate" style="width:185px"><div class="t">子层</div>
+      <div class="d">GDN / QSA / MoE</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node rose" style="width:275px"><div class="t">GR Write</div>
+      <div class="d"><b>每分支一个标量</b>（数据相关）<br>
+        细化写的粒度「几乎无收益」，故不做<br>
+        <code>H_res</code> 分支间混合算子<b>整个丢弃</b></div></div>
+  </div>
+
+  <div class="downwrap"><svg width="20" height="40" viewBox="0 0 20 40"><line x1="10" y1="0" x2="10" y2="32" stroke="currentColor" stroke-width="2"/><path d="M5 30 L10 38 L15 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="chip">④ 输出</div>
+  <div class="row">
+    <div class="node purple" style="width:305px"><div class="t">MTP Modules</div>
+      <div class="d"><code>mtp_num_hidden_layers = 1</code><br>其注意力层同样换成 QSA<br><b>投机解码各步之间复用 top-k 索引</b></div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node rose" style="width:150px"><div class="t">GR Read</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node slate" style="width:215px"><div class="t">Prediction Head</div>
+      <div class="d">vocab 248,320</div></div>
+  </div>
+
+  <div class="note">
+    <b>参数账要分三项读</b>：125B 主干（每 token 激活 6B）+ 51B n-gram 嵌入 + 4B MTP = <b>180B</b>，与 safetensors 索引实测一致。
+    只读模型卡表头的「125B」会低估落盘体积 44%。<br>
+    <b>残差状态存 FP8</b>：GR、gated attention 与 GDN 的门都界定了写入流的量级，残差值停在窄区间，故可用 FP8 存分支，
+    相对 BF16 把访存字节减半而质量几乎无损（§2.2, p14）。
+  </div>
+  <div class="legend">
+    <span><i class="dot" style="background:#E9F2FC;border-color:#6296D4"></i>线性注意力 / 残差流</span>
+    <span><i class="dot" style="background:#EEEAF8;border-color:#8E7DCB"></i>稀疏注意力 / MTP</span>
+    <span><i class="dot" style="background:#FBF0E1;border-color:#DBA059"></i>MoE</span>
+    <span><i class="dot" style="background:#FBE9EC;border-color:#D98A9B"></i>GR / n-gram 嵌入</span>
+    <span><i class="dot" style="background:#E6F4EC;border-color:#5BAE80"></i>词表嵌入</span>
+  </div>
+</div>
+
+
+<!-- ============ FIG 2: QSA 索引器数据通路（复刻 Figure 3）============ -->
+<div class="diagram" data-name="qwen38_flash_next_architecture_fig2">
+  <div class="dg-title">QSA：把稀疏的粒度从 token 挪到微块</div>
+  <div class="dg-sub">复刻技术报告 Figure 3（p5）。动机：DSA 的 token 级 indexer 是 O(n²)，序列一长，<b>打分本身就成了瓶颈</b>；QSA 先把键压成微块再打分，复杂度降到 O(n²/r)</div>
+
+  <div class="chip">① 压缩式轻量索引器（MQA：4 个 query 头 + 1 个共享 key 头）</div>
+  <div class="row">
+    <div class="node green" style="width:195px"><div class="t">Key 投影</div>
+      <div class="d">1 个共享 key 头</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node rose" style="width:270px"><div class="t">AvgPool · r = 4</div>
+      <div class="d"><b>非重叠</b>块内平均池化<br>序列长度降到 n/4</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node rose" style="width:300px"><div class="t">Partial RoPE · 64/128 维</div>
+      <div class="d"><b>压缩在位置编码之前</b>：先汇总成内容表示，<br>再整块赋予块起始位置 p<sub>b</sub><br>
+        —— 避免对不同旋转相位的 token 做平均</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:265px"><div class="t">块因果打分</div>
+      <div class="d">各头 ReLU(q·k) 求和<br>只给<b>已完整观测</b>的块打分</div></div>
+  </div>
+
+  <div class="downwrap"><svg width="20" height="40" viewBox="0 0 20 40"><line x1="10" y1="0" x2="10" y2="32" stroke="currentColor" stroke-width="2"/><path d="M5 30 L10 38 L15 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="chip">② 选块 → 展开 → 稀疏 core attention</div>
+  <div class="row">
+    <div class="node amber" style="width:255px"><div class="t">Top-k 选择器</div>
+      <div class="d">token 预算 K = 2048<br>块预算 K<sub>B</sub> = 2048 / 4 = <b>512</b></div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node purple" style="width:290px"><div class="t">展开为微块稀疏掩码</div>
+      <div class="d">块索引 → 原始 token 索引<br>并上末尾不完整块（<b>恒包含</b>）</div></div>
+    <div class="arrow"><svg width="30" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue" style="width:255px"><div class="t">Sparse Core Attention</div>
+      <div class="d">Q 24 头 / KV 2 头 · dim 256<br>末端 sigmoid 输出门</div></div>
+  </div>
+
+  <div class="downwrap"><svg width="20" height="40" viewBox="0 0 20 40"><line x1="10" y1="0" x2="10" y2="32" stroke="currentColor" stroke-width="2"/><path d="M5 30 L10 38 L15 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+
+  <div class="chip">③ QSA 是在<b>继续预训练阶段</b>才换上的，不是从零训练</div>
+  <div class="row">
+    <div class="node slate" style="width:230px"><div class="t">全注意力 backbone</div>
+      <div class="d">CPT 之前</div></div>
+    <div class="arrow lbl"><span class="al">warm-up</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node blue" style="width:325px"><div class="t">① 稠密蒸馏</div>
+      <div class="d"><b>只训 indexer</b>，backbone 冻结<br>
+        1,000 步 · lr 1e-3 · 8 × 256K ≈ <b>2B token</b><br>
+        教师分布用 <b>MaxPool</b> 对齐到块级（保尖峰）</div></div>
+    <div class="arrow lbl"><span class="al">joint</span><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node green" style="width:325px"><div class="t">② 稀疏训练</div>
+      <div class="d">backbone + indexer 联合训练<br>
+        8,000 步 · lr 2.5e-5 · 96 × 256K ≈ <b>200B token</b><br>
+        KL 只在 top-K<sub>B</sub> 选中块上算</div></div>
+    <div class="arrow"><svg width="34" height="18" viewBox="0 0 34 18"><line x1="0" y1="9" x2="26" y2="9" stroke="currentColor" stroke-width="2"/><path d="M24 4 L32 9 L24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div class="node amber" style="width:230px"><div class="t">QSA 模型</div>
+      <div class="d">与全注意力的 loss 差<br>在 <b>1e-4</b> 量级</div></div>
+  </div>
+
+  <div class="note">
+    <b>两处池化刻意不同</b>：键压缩用 <b>AvgPool</b>（键是稠密内容，取均值才是合理汇总）；
+    蒸馏时把教师注意力分布对齐到块级却用 <b>MaxPool</b>——教师分布稀疏且尖峰，一个块里往往只有一两个 token 真正重要，
+    取均值会把这个信号摊平。<br>
+    <b>实测收益（Figure 6，1M 上下文）</b>：indexer 本身 prefill 3.8× / decode 4.4×；
+    含 indexer 与稀疏 core attention 在内的<b>整个注意力模块</b>相对稠密 GQA 为 <b>prefill 7.6× / decode 4.9×</b>。
+    质量上 QSA 不但没掉，长上下文反而更好（RULER 512K–1M：90.08 → 93.00）。
+  </div>
+</div>
+
+</body></html>
