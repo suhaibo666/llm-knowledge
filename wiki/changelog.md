@@ -12,6 +12,42 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-27（十三）：把（十）（十一）报告出来但没修的缺陷全部修掉
+
+**Type**: 缺陷修复（megatron 18 页 + slime 19 页；三个并行 agent + 协调者收尾）
+
+上两轮各自留下了一批"已定位、已报告、但按当轮授权范围没动"的缺陷。本轮全部清掉。
+
+**① 剩余 117 处非仓库相对 locator**（P1 42 + P2 31 + P3 26 + 协调者 13）。含两类：半路径（`transformer/moe/token_dispatcher.py`、`optimizer/__init__.py:761`、`fsdp/src/megatron_fsdp/megatron_fsdp.py:105`）与裸文件名（`csa.py:297`、`nccl_allocator.py`、`emerging_optimizers.py`）。复扫后剩 15 处全是正则误报（`torch.cuda.empty_cache()`、`te.pytorch.ops.Sequential` 这种符号名里含 `.cu`/`.h`），非缺陷。跨仓库的两处按各自仓库补全：DeepEP 的 `csrc/kernels/legacy/internode.cu`（`af9a040`）在 [[14_megatron_ep_analysis]] 与本域 index 均已补全。
+
+**② 12 处写在 `###` 标题里的文件名**（上一轮明确禁止改标题，本轮授权）。三个 agent 改前都做了全库锚点检查——grep `[[页面#锚点]]`、grep 页内 `](#…)`、grep 标题文本引用，**三种口径均零命中**，改后 `check_links --strict` broken=0。
+
+**③ 行号错误——其中一条要更正上一轮的结论**
+
+上一轮怀疑 `param_and_grad_buffer.py` 的 **NVFP4 / MXFP8 两个标签被互换**。两个 agent 各自独立核实后，**该假说不成立**：标签语义一直是对的，真因是**跨基线行号串页**——B 基线的行号被贴进了 A 基线的页面。
+
+| 页 | 页头基线 | 原行号 | 实际 | 处理 |
+|---|---|---|---|---|
+| [[01_megatron_moe_training_optimization_analysis]] | B | NVFP4 `:946` | B 下是 class docstring | 改 `:1020-1045`（`# NVFP4 uses a dual-buffer layout…` → `_compute_nvfp4_packed_layout`） |
+| 同上 | B | MXFP8 `:1097` | **B 下正确** | 未改 |
+| [[16_megatron_distributed_optimizer_analysis]] | A | NVFP4 `:946-963` / MXFP8 `:1097-1113` | 后者正是 **B** 的 MXFP8 区间 | 改 A 的真实区间 `:964-989` / `:1036-1055` |
+
+其余已修：[[22_megatron_memory_optimization_analysis]] 三处（`paged_stash.py:587`→`:632`+`:1125-1128`、`param_and_grad_buffer.py:1097-1113`→`:1036-1055`、`fp8_utils.py:594`→`:513-529`，后者 `:594` 实为 `return fp8_recipe`），并顺带修了同节另外三处（`:946-963`→`:964-989`、`:357`→`:393-401`、`training.py:~2855`→`:2775-2781`）；[[16_megatron_distributed_optimizer_analysis]] 的 fsdp `:1404`→`:1407`、`optimizer/__init__.py:776`→`:777-780`；[[20_megatron_comm_overlap_analysis]] 的 `fused_a2a.py:135`→`:92-97`（判定该段描述 A 的形态，依据是紧邻代码块自标 `:69-138` 与 A 吻合）；[[01_megatron_moe_training_optimization_analysis]] 的 `:418`→`:352`（`start_param_sync` 才是入口）、`:357`→`:413-420`；[[10_megatron_model_structure_analysis]] 的 `training.py:576`→`:516-529`；两页的 `megatron_fsdp.py:105`→`:106`（105 是空行）。
+
+**④ 一处消歧成功**：[[23_megatron_precision_cudagraph_fusion_analysis]] 的 `quantization/utils.py` 上一轮因"两个候选都不含 fp4"而无法判定。本轮改搜页面真正的承重符号 `get_quant_config_or_none`，在两个基线下都唯一解析到 `megatron/core/quantization/utils.py:9`，另一候选是 MXFP8 GEMM 派发、与本页无关。
+
+**⑤ 一处描述与源码不符**：[[13_megatron_cp_analysis]] 原写 `_broadcast_cu_seqlens` "直接短路返回 `None`"。实读 `megatron/core/utils.py:2061-2067`：它是在 `cu_seqlens` 为 `None` 时广播计数 `n=0`、不再广播张量本体。同句里 `full_iteration` 互斥那半句原本**没有 locator**，已补 `megatron/training/arguments.py:1329-1332`、`:2050`。另 [[20_megatron_comm_overlap_analysis]] 的「（line 1113）／（line 964）」这种非 locator 写法改成真 locator，且两个数字在本页基线下都是错的（实为 `token_dispatcher.py:1161` / `:990`）。
+
+**⑥ slime 三处尾巴**：[[15_slime_loss_parallelism_analysis]] 的操作清单原本夹在第 4 拍与第 5 拍之间、打断五拍，移到趋势之后；[[12_slime_sample_datasource_analysis]] 误读表里与第 2 拍重复的一行改为回指；19 页统一写清「核验日期」与「最近更新」的分工——本次未重新核验既有引用，故核验日期不动。
+
+**⑦ 索引更新**：本域 index 里的「已知偏差」条目描述的状态已不存在（34/35 页头已改钉 A、行号已复核），改写为「已修正的偏差」。
+
+**校验**：`check_links --strict` 426 页 broken/ambiguous/bare_index=0；`check_math --changed --strict` 0 错 0 警。所有新行号在改完后重新 `git show` 打开确认内容确实是页面所述之物。
+
+**仍未做（不是缺陷，是另一个项目）**：推进基线。megatron 多数页停在 `ee3f1ff`（落后检出 HEAD 298 个提交）、vLLM 停在 `d66300a1`（落后 142 个）。宪法要求的是钉死某个 commit、不是钉最新；推进意味着把两域约 1000 条引用在数百个提交之后重新逐条核验。
+
+---
+
 ## 2026-08-27（十二）：TorchTitan 按新版源码分析机制重做——23 页从“功能罗列”刷新为端到端状态与协议审计
 
 **Type**: 机制级重审（16 篇既有 TorchTitan 页重写/扩写 + 7 篇新增页 + 域索引；另同步刷新 1 篇 TitanRL 训练循环页）

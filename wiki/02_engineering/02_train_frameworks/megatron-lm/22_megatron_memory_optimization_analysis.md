@@ -26,7 +26,7 @@ Megatron-LM 提供了覆盖所有五类的完整优化工具箱。
 
 ## 2. 各显存优化技术详解
 
-### 2.1 NCCL Memory Pool (`nccl_allocator.py`)
+### 2.1 NCCL Memory Pool (`megatron/core/nccl_allocator.py`)
 
 **解决什么问题**：通信 buffer 的显存碎片化和 NCCL 对称内存注册开销。
 
@@ -49,7 +49,7 @@ nccl_mem = torch.cuda.MemPool(ncclMemAlloc, ncclMemFree)
 
 **适用条件**：多机训练（NCCL 通信密集）、FSDP/EP 混合使用
 
-### 2.2 MoE Paged Stash (`moe/paged_stash.py`)
+### 2.2 MoE Paged Stash (`megatron/core/transformer/moe/paged_stash.py`)
 
 **解决什么问题**：MoE 专家层的激活值显存（每个 expert 需要独立存储激活用于 backward）。
 
@@ -70,7 +70,7 @@ nccl_mem = torch.cuda.MemPool(ncclMemAlloc, ncclMemFree)
                          └─────────────────┘
 ```
 
-**生命周期**（`:587`）：
+**生命周期**（`:632`/`:1125-1128`）：
 1. **begin**：第 1 次迭代，idle 观察
 2. **capture**：第 2 次迭代，记录 max tokens per (dtype, hidden_size)，建立 page schedule
 3. **captured**：使用 CUDA Graph 加速 stash/reload
@@ -112,7 +112,7 @@ moe_paged_stash_buffer_size_factor_cpu: float = 0.0    # CPU buffer 比例
 >
 > **(5) 配置项当前行号**（`megatron/core/transformer/transformer_config.py`）：`moe_expert_rank_capacity_factor:903`、`moe_paged_stash:1312`、`moe_paged_stash_page_size:1315`、`moe_paged_stash_buffer_size_factor_cuda:1318`、`moe_paged_stash_buffer_size_factor_cpu:1324`。
 
-### 2.3 Fine-Grained Activation Offloading (`fine_grained_activation_offload.py`)
+### 2.3 Fine-Grained Activation Offloading (`megatron/core/pipeline_parallel/fine_grained_activation_offload.py`)
 
 **解决什么问题**：一般 Transformer 层的激活值显存（非 MoE 特定）。
 
@@ -203,7 +203,7 @@ def post_warmup_callback(self):
 
 **适用条件**：大模型（≥70B）、长序列、PP 并行。不能与 `cpu_offloading` 组合。
 
-### 2.4 Optimizer State Offloading (`optimizer_state_offloader.py`)
+### 2.4 Optimizer State Offloading (`megatron/core/optimizer/cpu_offloading/optimizer_state_offloader.py`)
 
 **解决什么问题**：优化器状态（exp_avg, exp_avg_sq）和 FP32 主权重的 GPU 显存。
 
@@ -226,7 +226,7 @@ GPU: optimizer.step()
 
 `megatron/core/distributed/param_and_grad_buffer.py` 中的多重复用：
 
-**MXFP8 共享 Buffer**（`:1097-1113`）：
+**MXFP8 共享 Buffer**（`:1036-1055`）：
 ```
 param all-gather ─────┐
                       ├── shared_buffer（同一物理显存）
@@ -234,12 +234,12 @@ grad reduce-scatter ──┘
 ```
 节省一份完整的 buffer（1x param size）。
 
-**NVFP4 双 Buffer 布局**（`:946-963`）：
+**NVFP4 双 Buffer 布局**（`:964-989`）：
 - 参数 Buffer: N/2 bytes（每字节 2 个 FP4 值）
 - 梯度 Buffer: N×2 bytes（BF16 全精度）
 - 比全精度方案节省 75% 参数 buffer
 
-**Grad Buffer 复用为 Param All-Gather Buffer**（`:357`）：
+**Grad Buffer 复用为 Param All-Gather Buffer**（`:393-401`）：
 ```python
 reuse_buf = bucket.grad_data.view(param_dtype)  # recycle
 ```
@@ -254,16 +254,16 @@ reuse_buf = bucket.grad_data.view(param_dtype)  # recycle
 | MXFP8 | 50% + block scaling | GH200, Blackwell |
 | NVFP4 | 75%（2 bytes → 0.5 byte） | Blackwell |
 
-**首尾层保护**（`megatron/core/fp8_utils.py:594`）：`first_last_layers_bf16` 保持首尾 N 层为 BF16，防止精度损失在输入/输出端被放大。
+**首尾层保护**（`megatron/core/fp8_utils.py:513-529`）：`first_last_layers_bf16` 保持首尾 N 层为 BF16，防止精度损失在输入/输出端被放大。
 
-### 2.7 CUDA Graph Buffer 复用 (`cuda_graphs.py`)
+### 2.7 CUDA Graph Buffer 复用 (`megatron/core/transformer/cuda_graphs.py`)
 
 `TensorReusePool`（`:161`）复用 CUDA Graph 的输入/输出 buffer：
 - 按 (shape, dtype, device) 匹配复用
 - 跨 pipeline stage 共享（后续 stage 的输入 = 前序 stage 的输出）
 - TE weak references（`:384-392`）允许更激进的 buffer 回收
 
-### 2.8 Rerun State Machine (`rerun_state_machine.py`)
+### 2.8 Rerun State Machine (`megatron/core/rerun_state_machine.py`)
 
 间接显存优化：允许使用更快但可能不稳定的计算路径（如特殊数值模式）。检测到结果异常（NaN, spiky loss）时，通过重运行恢复。
 
@@ -282,7 +282,7 @@ reuse_buf = bucket.grad_data.view(param_dtype)  # recycle
 >
 > **(a) 提前 `del` 输出张量（#4742，f1b5516b2）**：`forward_backward_no_pipelining` 在每个 microbatch `backward_step` 后立即 `del output_tensor`（`megatron/core/pipeline_parallel/schedules.py:751,774`）。不删的话上一个 microbatch 的 `output_tensor` 会一直活到下次迭代重新绑定变量，把 autograd 节点的析构推迟到下一次 forward 的 dispatch 路径上，触发 PyTorch "AccumulateGrad node's stream does not match" 警告（issue #4124）；提前删让 autograd 计算图头部及时释放。
 >
-> **(b) 删除 checkpoint 期的 GPU cache 回收 workaround（#5170，3a183e235）**：`save_checkpoint_and_time` 里原先为给异步 checkpoint worker 腾 D2H 显存而做的 `free_overlap_buffers()` + `torch.cuda.empty_cache()`（`training/training.py:~2855` 附近）已被**移除**（7 行）。该 workaround 不再需要。
+> **(b) 删除 checkpoint 期的 GPU cache 回收 workaround（#5170，3a183e235）**：`save_checkpoint_and_time` 里原先为给异步 checkpoint worker 腾 D2H 显存而做的 `free_overlap_buffers()` + `torch.cuda.empty_cache()`（`megatron/training/training.py:2775-2781` 附近）已被**移除**（7 行）。该 workaround 不再需要。
 >
 > **(c) 权重/优化器显存估算正确计入 EP（#4687，a7c9e8c44）**：`megatron/training/theoretical_memory_usage.py` 重写 `compute_weight_and_optimizer_memory`，把 **routed expert 参数**单独按 `expert_tensor_parallel_size × expert_model_parallel_size` 分片、按 `expert_data_parallel_size = world_size /(etp×ep×pp)` 计 optimizer 字节，并区分 shared_expert / router / shared_expert_gate / active vs total 专家参数。修复了此前 MoE+EP 下理论显存被高/低估的问题（纯估算工具，不改运行时显存）。
 >

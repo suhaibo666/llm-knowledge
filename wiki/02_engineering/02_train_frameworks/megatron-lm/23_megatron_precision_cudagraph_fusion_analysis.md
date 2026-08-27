@@ -31,7 +31,7 @@ bf16 已是主流,但 Hopper/Blackwell 的 Tensor Core 对 **FP8** 还能再快�
 
 注意:**实际的 FP8 GEMM 内核在 TransformerEngine 里**,Megatron 侧 `megatron/core/fp8_utils.py` 负责**选 recipe、建量化上下文、管 FP8 张量**。
 
-### 1.2 四种 FP8 recipe(`enums.py:12` `Fp8Recipe`)
+### 1.2 四种 FP8 recipe(`megatron/core/enums.py:12` `Fp8Recipe`)
 
 ```python
 class Fp8Recipe(str, Enum):
@@ -187,7 +187,7 @@ num_microbatches = global_batch_size / (micro_batch_size · data_parallel_size)
 > §1.3/§1.4 提到的 `--fp8-param-gather`(参数 all-gather 走 FP8)在 mxfp8/nvfp4 下有多处数值与流程修复：
 > - **`reuse_grad_buf_for_mxfp8_param_ag`**(`megatron/core/optimizer/optimizer_config.py:179`，#4994/#4800)：复用 grad buffer 做 mxfp8 参数 all-gather。新增 `MegatronOptimizer.prepare_model_params_for_param_sync()`(`megatron/core/optimizer/optimizer.py`)，`ChainedOptimizer` 重写它，在显式 DDP param-sync 前每个 model chunk **只 stage 一次**(`zero_grad_buffer` + `_copy_main_params_to_param_buffer`)；并禁止与 `overlap_param_gather_with_optimizer_step` 同用。修了 "DP overlap 关闭时 mxfp8 param gather 数值错误"。
 > - **eval 期强制 param-AG 后的后处理**(#4562)：把 quantize/transpose 等 `post_all_gather_processing` 从 DDP 内联挪到 `megatron/core/distributed/param_and_grad_buffer.py`，确保 eval 里强制全量 all-gather 后参数的 FP8/FP4 量化态正确(`megatron/core/distributed/param_and_grad_buffer.py`、`megatron/training/training.py`)。
-> - **FP4 param gather 适配 NVFP4 混精**(#4358，`megatron/core/extensions/transformer_engine.py`、`quantization/utils.py`)：让 `--fp4-param-gather` 在 NVFP4 recipe 的**混合精度**(部分层 fp4、部分 fp8/bf16)下工作；`get_quant_config_or_none` 容忍 `module_path=None`。覆盖 attention/MLP/MoE/MLA/MTP/SSM 多处 quant 配置接线。
+> - **FP4 param gather 适配 NVFP4 混精**(#4358，`megatron/core/extensions/transformer_engine.py`、`megatron/core/quantization/utils.py`)：让 `--fp4-param-gather` 在 NVFP4 recipe 的**混合精度**(部分层 fp4、部分 fp8/bf16)下工作；`get_quant_config_or_none` 容忍 `module_path=None`。覆盖 attention/MLP/MoE/MLA/MTP/SSM 多处 quant 配置接线。
 > - **Megatron-FSDP MXFP8 转置权重缓冲**(#4852，`megatron/core/distributed/fsdp/src/megatron_fsdp/param_and_grad_buffer.py`)：持久化转置权重 buffer 的**非对称单元(asymmetrical units)**，修 FSDP 下 mxfp8 转置权重的分片/持久化。
 
 ### 6.3 推理 CUDA Graph 覆盖：max_requests → max_tokens

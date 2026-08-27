@@ -214,7 +214,7 @@ decode step 是"逐 token、kernel 小而多",CPU 启动开销占比极高 —�
 | `megatron/core/inference/unified_memory.py` | KV cache 用统一内存,引擎 `suspend`/`resume` 时把 KV 换出(RL 里训练相不需要推理引擎时腾显存) |
 | `megatron/core/inference/async_stream.py` / `megatron/core/inference/engines/async_zmq_communicator.py` | 异步、流式、ZMQ 通信 |
 
-`suspend`/`resume`(`dynamic_engine.py:719/768`)对 **RL collocated 部署**很关键:训练相和推理相在同一批卡上轮流跑,推理引擎 suspend 时删 CUDA Graph、把 KV cache 换出统一内存,让出显存给训练;resume 时再恢复(见 `30_megatron_rl_posttraining_consistency_analysis.md` §7)。
+`suspend`/`resume`(`megatron/core/inference/engines/dynamic_engine.py:719/768`)对 **RL collocated 部署**很关键:训练相和推理相在同一批卡上轮流跑,推理引擎 suspend 时删 CUDA Graph、把 KV cache 换出统一内存,让出显存给训练;resume 时再恢复(见 `30_megatron_rl_posttraining_consistency_analysis.md` §7)。
 
 > [!update] 2026-06-16 · dev@232c478d4:**「是否在推理」统一为一个进程级全局开关 `InferenceMode`**(#4617,`megatron/core/inference/utils.py:20`)。引擎进入推理时 `InferenceMode.set_active()`(`megatron/core/inference/engines/dynamic_engine.py:292`/`:838`、`megatron/core/inference/engines/static_engine.py:133`)、退出时 `unset_active()`(`megatron/core/inference/engines/dynamic_engine.py:787`),并提供 `with InferenceMode.active():` 上下文管理器。**为什么**:模型各模块此前靠 `self.training` / `torch.is_grad_enabled()` / `inference_context is not None` 来猜"现在是不是推理",这三者都不可靠(尤其 RL 训练相用 `eval()`+`no_grad` 重算 logprob 时会被误判)。改为单一标志后,`gpt_model`、`attention`、`moe_layer`/`router`/`experts`、`mamba_*`、`transformer_layer`(`inference_fuse_tp_communication`)等全部改读 `InferenceMode.is_active()` 决定走推理 kernel/dispatcher 还是训练路径。**对本文与 RL 页的影响**:`30_megatron_rl_posttraining_consistency_analysis.md` §4 所述 MoE 推理 dispatcher 的切换**不再**由 `MoELayer.train()` 重写驱动(该重写已删),而由 `MoELayer.forward` 入口的 `InferenceMode.is_active()` 决定——详见该页 §4 的 `[!deprecated]` 批注。
 

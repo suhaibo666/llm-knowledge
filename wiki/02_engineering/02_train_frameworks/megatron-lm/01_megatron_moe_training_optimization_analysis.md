@@ -19,19 +19,19 @@ title: "MoE 训练优化技术全景报告 — 基于 Megatron-LM 源码分析"
 
 ### 通信 / EP 维度 — Token Dispatcher 后端扩张
 
-`moe_flex_dispatcher_backend` 由原来的 `{deepep, hybridep}` 扩为 **`{deepep, deepepv2, hybridep}`** 三选一（`megatron/core/transformer/transformer_config.py:881`，#4793）。新增的 `deepepv2` 后端走 DeepEP v2 的 **ElasticBuffer** API（`_DeepepV2Manager` 见 `megatron/core/transformer/moe/token_dispatcher.py:1470`，`get_elastic_buffer` 见 `megatron/core/transformer/moe/fused_a2a.py:90`），与 v1 的 `Buffer` 完全隔离，仅支持 `float32` probs（须配 `--moe-router-dtype=fp32`）。配套地 `moe_deepep_num_sms` 默认值从固定 `20` 改为 `None`（`megatron/core/transformer/transformer_config.py:942`）——v1 回退到 20，v2 使用其理论默认。此外 deepep/hybridep 现已支持 **thd（sequence-packing / varlen）格式训练**（#4816），以及 **high-priority A2A stream**（`high_priority_a2a_comm_stream`，`megatron/core/transformer/transformer_config.py:686`；`set_streams(high_priority=…)` 见 `pipeline_parallel/utils.py`）与 **HybridEP 预处理 SM 数**可调（`moe_hybridep_num_sms_preprocessing=108`，`megatron/core/transformer/transformer_config.py:959`，#4694）；dispatcher 内 `all_to_all` 新增 `use_nccl_stream` 形参（shared-experts 场景置 True）。详见 [[14_megatron_ep_analysis]]。
+`moe_flex_dispatcher_backend` 由原来的 `{deepep, hybridep}` 扩为 **`{deepep, deepepv2, hybridep}`** 三选一（`megatron/core/transformer/transformer_config.py:881`，#4793）。新增的 `deepepv2` 后端走 DeepEP v2 的 **ElasticBuffer** API（`_DeepepV2Manager` 见 `megatron/core/transformer/moe/token_dispatcher.py:1470`，`get_elastic_buffer` 见 `megatron/core/transformer/moe/fused_a2a.py:90`），与 v1 的 `Buffer` 完全隔离，仅支持 `float32` probs（须配 `--moe-router-dtype=fp32`）。配套地 `moe_deepep_num_sms` 默认值从固定 `20` 改为 `None`（`megatron/core/transformer/transformer_config.py:942`）——v1 回退到 20，v2 使用其理论默认。此外 deepep/hybridep 现已支持 **thd（sequence-packing / varlen）格式训练**（#4816），以及 **high-priority A2A stream**（`high_priority_a2a_comm_stream`，`megatron/core/transformer/transformer_config.py:686`；`set_streams(high_priority=…)` 见 `megatron/core/pipeline_parallel/utils.py`）与 **HybridEP 预处理 SM 数**可调（`moe_hybridep_num_sms_preprocessing=108`，`megatron/core/transformer/transformer_config.py:959`，#4694）；dispatcher 内 `all_to_all` 新增 `use_nccl_stream` 形参（shared-experts 场景置 True）。详见 [[14_megatron_ep_analysis]]。
 
 ### 显存维度 — Paged Stash 落地 + EP 显存估算修正
 
-第 7.2 节预告的 **Paged Stash** 已作为完整特性落地（新模块 `moe/paged_stash.py`，~1486 行，#4247）：开关 `moe_paged_stash`（`megatron/core/transformer/transformer_config.py:1312`），`moe_paged_stash_page_size=64`、`*_buffer_size_factor_cuda=1.10`、`*_cpu=0.0`，并**要求同时设置 `moe_expert_rank_capacity_factor`**；与 `cpu_offloading` 互斥，且 `offload_modules` 不得再包含 `expert_fc1`/`moe_act`（已由 paged stash 接管）。理论显存估算 `megatron/training/theoretical_memory_usage.py` 现**正确区分 EP-sharded 路由专家参数与复制参数**，按 `ETP×EP` 切分路由专家（#4687）；Megatron-FSDP 的 grouped expert 权重 padding 也被收紧（#5013）。详见 [[22_megatron_memory_optimization_analysis]]。
+第 7.2 节预告的 **Paged Stash** 已作为完整特性落地（新模块 `megatron/core/transformer/moe/paged_stash.py`，~1486 行，#4247）：开关 `moe_paged_stash`（`megatron/core/transformer/transformer_config.py:1312`），`moe_paged_stash_page_size=64`、`*_buffer_size_factor_cuda=1.10`、`*_cpu=0.0`，并**要求同时设置 `moe_expert_rank_capacity_factor`**；与 `cpu_offloading` 互斥，且 `offload_modules` 不得再包含 `expert_fc1`/`moe_act`（已由 paged stash 接管）。理论显存估算 `megatron/training/theoretical_memory_usage.py` 现**正确区分 EP-sharded 路由专家参数与复制参数**，按 `ETP×EP` 切分路由专家（#4687）；Megatron-FSDP 的 grouped expert 权重 padding 也被收紧（#5013）。详见 [[22_megatron_memory_optimization_analysis]]。
 
 ### 精度 / 融合维度 — ClampedSwiGLU 与 Dense+Grouped GEMM 融合
 
-DeepSeek-V4 的 **ClampedSwiGLU** 接入 MoE mlp_op_fuser：当 `activation_func_clamp_value` 非空时，SwiGLU 走 TE 的 `ScaledClampedQGeGLU(alpha=1.0, limit=clamp)`（cuDNN geglu kernel 是 swiglu 的超集，`moe/experts.py:422`，需 TE≥2.17.0.dev0，#5130）。新增 **TEFusedDenseMLP**：`use_grouped_gemm_for_dense_mlp`（`megatron/core/transformer/transformer_config.py:830`）令 dense MLP 走 `GroupedLinear(num_groups=1)`，在 SM100+ / MXFP8 下触发 `ForwardGroupedMLP_CuTeGEMMSwiGLU_MXFP8` 融合（须 `use_te_op_fuser=True`，#4318）。详见 [[23_megatron_precision_cudagraph_fusion_analysis]] 与 [[21_megatron_fusion_operators_analysis]]。
+DeepSeek-V4 的 **ClampedSwiGLU** 接入 MoE mlp_op_fuser：当 `activation_func_clamp_value` 非空时，SwiGLU 走 TE 的 `ScaledClampedQGeGLU(alpha=1.0, limit=clamp)`（cuDNN geglu kernel 是 swiglu 的超集，`megatron/core/transformer/moe/experts.py:422`，需 TE≥2.17.0.dev0，#5130）。新增 **TEFusedDenseMLP**：`use_grouped_gemm_for_dense_mlp`（`megatron/core/transformer/transformer_config.py:830`）令 dense MLP 走 `GroupedLinear(num_groups=1)`，在 SM100+ / MXFP8 下触发 `ForwardGroupedMLP_CuTeGEMMSwiGLU_MXFP8` 融合（须 `use_te_op_fuser=True`，#4318）。详见 [[23_megatron_precision_cudagraph_fusion_analysis]] 与 [[21_megatron_fusion_operators_analysis]]。
 
 ### 训练稳定性 / 可观测性维度 — 梯度缩放修正 + 日志重构
 
-修复 **TP>1 时 MoE aux_loss / z_loss 梯度缩放错误**（`moe/router.py:479-555`，#5047）：在 `calculate_per_token_loss` 路径下，aux/z loss 现按 `num_local_tokens × tp_cp_group.size()` 预乘，抵消 `finalize_model_grads` 中 `total_global_tokens` 除子里隐含的 `tp_cp` 因子，使有效缩放回到目标的 `1/(num_micro_batches × dp_size)`。MoE 日志被抽出为独立模块 **`moe/moe_logging.py`**（`MoEMetricsTracker`，逐层 metric 采集 + 跨 rank 规约 + TensorBoard/W&B，#3431），`megatron/core/transformer/moe/moe_utils.py` 相应瘦身。此外 hash routing 新增 **force-balance / force-biased**（`moe_router_force_load_balancing` / `moe_router_force_biased`，用随机 topk 覆盖路由，`moe/router.py:641`，#5130）。详见 [[28_megatron_training_stability_observability_analysis]]。
+修复 **TP>1 时 MoE aux_loss / z_loss 梯度缩放错误**（`megatron/core/transformer/moe/router.py:479-555`，#5047）：在 `calculate_per_token_loss` 路径下，aux/z loss 现按 `num_local_tokens × tp_cp_group.size()` 预乘，抵消 `finalize_model_grads` 中 `total_global_tokens` 除子里隐含的 `tp_cp` 因子，使有效缩放回到目标的 `1/(num_micro_batches × dp_size)`。MoE 日志被抽出为独立模块 **`megatron/core/transformer/moe/moe_logging.py`**（`MoEMetricsTracker`，逐层 metric 采集 + 跨 rank 规约 + TensorBoard/W&B，#3431），`megatron/core/transformer/moe/moe_utils.py` 相应瘦身。此外 hash routing 新增 **force-balance / force-biased**（`moe_router_force_load_balancing` / `moe_router_force_biased`，用随机 topk 覆盖路由，`megatron/core/transformer/moe/router.py:641`，#5130）。详见 [[28_megatron_training_stability_observability_analysis]]。
 
 ### 模型结构 / 配方维度 — MoE Recipes 与性能基线
 
@@ -169,12 +169,12 @@ get_expert_data_parallel_group()           # → ep_dp_group
 **优化点**：将大矩阵乘法按列/行切分到多个 GPU，减少单卡显存和计算量。
 
 **通信组**：`get_tensor_model_parallel_group()` — 同一 PP stage 内的 `tp_size` 个 GPU。
-**通信原语**（`tensor_parallel/mappings.py:22-195`）：
+**通信原语**（`megatron/core/tensor_parallel/mappings.py:22-195`）：
 - `_reduce`（`:22`）：等价于 `all_reduce(input, group=tp_group)`
 - `_gather_along_first_dim`（`:114`）：等价于 `all_gather_into_tensor(output, input, group=tp_group)`
 - `_reduce_scatter_along_first_dim`（`:155`）：等价于 `reduce_scatter_tensor(output, input, group=tp_group)`
 
-**Megatron 实现**（`tensor_parallel/layers.py`）：
+**Megatron 实现**（`megatron/core/tensor_parallel/layers.py`）：
 - `ColumnParallelLinear`：权重 `[H, H/tp]` 按列切分（输入全量，输出部分和）
 - `RowParallelLinear`：权重 `[H/tp, H]` 按行切分（输入部分，输出全量）
 
@@ -279,9 +279,9 @@ class G(torch.autograd.Function):
 
 **通信组**：`get_pipeline_model_parallel_group()` — 同一 TP rank 跨 PP stage 的 `pp_size` 个 GPU。
 **通信原语**：`torch.distributed.send` / `torch.distributed.recv`（P2P 点对点）。
-**通信实现**（`pipeline_parallel/p2p_communication.py`）：支持 blocking / non-blocking send/recv，future tensor 模式用于 overlap。
+**通信实现**（`megatron/core/pipeline_parallel/p2p_communication.py`）：支持 blocking / non-blocking send/recv，future tensor 模式用于 overlap。
 
-**Megatron 实现**（`pipeline_parallel/schedules.py`）：
+**Megatron 实现**（`megatron/core/pipeline_parallel/schedules.py`）：
 - **1F1B**（one-forward-one-backward）：标准流水线调度，warm-up forward → steady 1F1B → cool-down backward
 - **Interleaved 1F1B**：每个 rank 有多个 virtual stage，进一步减少 bubble 时间
 
@@ -313,12 +313,12 @@ Interleaved bubble ≈ (pp_size - 1) × t_fwd / (num_microbatches × vpp)
 **通信组**：`get_expert_model_parallel_group()` — 所有 expert 分布到的 `ep_size` 个 GPU。
 **通信组辅助**：`get_expert_tensor_parallel_group()`（ETP Group），`get_expert_data_parallel_group()`（EP DP Group）。
 
-**通信原语**（`transformer/moe/token_dispatcher.py`）：
+**通信原语**（`megatron/core/transformer/moe/token_dispatcher.py`）：
 - `all_to_all`（`:15`）：基于 NCCL 的 All-to-All 集群通信
 - `gather_from_sequence_parallel_region`（`:16`）：AllGather（TP 维度）
 - `reduce_scatter_to_sequence_parallel_region`（`:17`）：ReduceScatter（TP 维度）
 
-**Megatron 实现**（`transformer/moe/token_dispatcher.py`）：
+**Megatron 实现**（`megatron/core/transformer/moe/token_dispatcher.py`）：
 - **AlltoAll Dispatcher**：最常用的实现，token 通过 All-to-All 发送到目标 expert
 - **AllGather Dispatcher**：用于 TP/EP 混合场景
 - **Flex Dispatcher**：使用 DeepEP/HybridEP 融合通信
@@ -411,10 +411,10 @@ MoE:       ETP=1, EP=32, EDP=1  → EP 可远大于 attention DP
 
 **通信组**：`get_context_parallel_group()` — DP 组内切分序列维度的 `cp_size` 个 GPU。
 **通信原语**：`all_gather_into_tensor` — 异步 AllGather KV cache。
-**通信实现**（`transformer/dot_product_attention_context_parallel.py:108-132`）：
+**通信实现**（`megatron/core/transformer/dot_product_attention_context_parallel.py:108-132`）：
 - `AllGatherComm`（`:108`）：封装 async AllGather + wait 的双缓冲调度器
 
-**Megatron 实现**（`transformer/dot_product_attention_context_parallel.py:150`）：
+**Megatron 实现**（`megatron/core/transformer/dot_product_attention_context_parallel.py:150`）：
 - **Ring Attention** 变体：通过 AllGather 流水线轮转 KV cache
 - **双缓冲**：KV buffer 在 `kv_buffer` 和 `kv_buffer_copy` 间交替，AllGather 与计算重叠
 - **Zigzag Mask**（`:135-147`）：将 attention mask 按 zigzag 模式重排
@@ -567,7 +567,7 @@ Megatron-LM 实际有 **三套** 并行分片方案，`DistributedOptimizer` 只
 |------|---------|----------|---------|
 | **DistributedOptimizer** | 参数级（连续 Buffer 切分） | ZeRO-1/2 | `megatron/core/optimizer/distrib_optimizer.py:98` |
 | **TorchFullyShardedDataParallel** | Module 级（FSDP Unit） | ZeRO-3 | `megatron/core/distributed/torch_fully_sharded_data_parallel.py:28` |
-| **MegatronFSDP** | Module 级（FSDP Unit） | ZeRO-1/2/3 可配置 | `fsdp/src/megatron_fsdp/megatron_fsdp.py:105` |
+| **MegatronFSDP** | Module 级（FSDP Unit） | ZeRO-1/2/3 可配置 | `megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:106` |
 
 #### 3.5.1 MegatronFSDP — 自研 FSDP 实现
 
@@ -696,10 +696,10 @@ Megatron-LM 在所有并行维度实现了通信-计算的流水线化重叠：
 | 维度 | 重叠方式 | 关键文件 |
 |------|---------|---------|
 | **DP Grad** | Backward 部分层时启动 bucket 的 ReduceScatter | `megatron/core/distributed/distributed_data_parallel.py:526` |
-| **DP Param** | Forward 部分层时异步 AllGather 下一层参数 | `megatron/core/distributed/param_and_grad_buffer.py:418` |
-| **TP** | Attention/FFN 内部 TP 通信与下一操作重叠 | `tensor_parallel/layers.py` |
-| **PP** | P2P send/recv 与 1F1B 计算交错 | `pipeline_parallel/schedules.py` |
-| **EP** | All-to-All dispatch/combine 与 expert compute 在不同 CUDA stream | `moe/fused_a2a.py` |
+| **DP Param** | Forward 部分层时异步 AllGather 下一层参数 | `megatron/core/distributed/param_and_grad_buffer.py:352` |
+| **TP** | Attention/FFN 内部 TP 通信与下一操作重叠 | `megatron/core/tensor_parallel/layers.py` |
+| **PP** | P2P send/recv 与 1F1B 计算交错 | `megatron/core/pipeline_parallel/schedules.py` |
+| **EP** | All-to-All dispatch/combine 与 expert compute 在不同 CUDA stream | `megatron/core/transformer/moe/fused_a2a.py` |
 | **CP** | KV AllGather（双缓冲）与 attention 计算交错 | `megatron/core/transformer/dot_product_attention_context_parallel.py:198` |
 
 ### 6.2 DP 维度：Grad Reduce 与 Param Gather 的 Overlap
@@ -723,7 +723,7 @@ Forward Layer 2: wait for bucket 2 → trigger bucket 3 AllGather (async)
 
 ### 6.3 EP 维度：DeepEP/HybridEP
 
-`moe/fused_a2a.py` 提供两种后端：
+`megatron/core/transformer/moe/fused_a2a.py` 提供两种后端：
 
 **DeepEP**（`:71-266`）：
 - `FusedDispatch`：Layout 计算 + Permute + All-to-All + Unpermute 融合
@@ -753,7 +753,7 @@ MoE 的显存问题比稠密模型严重得多：
 
 ### 7.2 Paged Stash — MoE 激活的虚拟内存
 
-`moe/paged_stash.py` 是 Megatron-LM 针对 MoE 最独特的显存优化：
+`megatron/core/transformer/moe/paged_stash.py` 是 Megatron-LM 针对 MoE 最独特的显存优化：
 
 ```
 激活值管理 = 操作系统虚拟内存的 GPU 实现
@@ -780,7 +780,7 @@ moe_paged_stash_buffer_size_factor_cpu = 0.0    # 可选 CPU buffer
 
 ### 7.3 Fine-Grained Activation Offloading
 
-`pipeline_parallel/fine_grained_activation_offload.py` 提供 sub-layer 粒度的激活卸载：
+`megatron/core/pipeline_parallel/fine_grained_activation_offload.py` 提供 sub-layer 粒度的激活卸载：
 
 - 支持卸载模块（`:1141`）：`attn_norm`, `qkv_linear`, `core_attn`, `attn_proj`, `mlp_norm`, `expert_fc1`, `moe_act`
 - 选择性卸载：跳过大 tensor（`min_offloaded_tensor_size`）、跳过后几层（`offload_margin`）
@@ -791,8 +791,8 @@ moe_paged_stash_buffer_size_factor_cpu = 0.0    # 可选 CPU buffer
 | 复用模式 | 文件 | 节省 |
 |---------|------|------|
 | MXFP8 共享 Buffer | `megatron/core/distributed/param_and_grad_buffer.py:1097` | 参数 all-gather 和梯度 reduce-scatter 共享存储 → 1x 参数量节省 |
-| Grad→Param 回收 | `megatron/core/distributed/param_and_grad_buffer.py:357` | 梯度 reduce-scatter 后 buffer 清零重用于参数 all-gather |
-| NVFP4 打包布局 | `megatron/core/distributed/param_and_grad_buffer.py:946` | 参数 buffer 为 N/2 bytes，梯度 buffer 为 N×2 bytes |
+| Grad→Param 回收 | `megatron/core/distributed/param_and_grad_buffer.py:413-420` | 梯度 reduce-scatter 后 buffer 清零重用于参数 all-gather |
+| NVFP4 打包布局 | `megatron/core/distributed/param_and_grad_buffer.py:1020-1045` | 参数 buffer 为 N/2 bytes，梯度 buffer 为 N×2 bytes |
 | NCCL Memory Pool | `megatron/core/nccl_allocator.py:51` | `ncclMemAlloc` 避免 PyTorch allocator 碎片化 |
 
 ### 7.5 显存优化组合策略
@@ -858,7 +858,7 @@ GPU 计算分为两类：
 | Pad Routing Map（`megatron/core/fusions/fused_pad_routing_map.py`） | 将 routing map padding 到 GEMM 对齐的倍数 | MoE 每层都需要，涉及整个 routing map 的扫描 |
 | Indices Converter（`megatron/core/fusions/fused_indices_converter.py`） | `[N, K]` sparse ↔ `[N, E]` multi-hot 双向转换 | Dispatch 前需要 multihot，Combine 后需要 indices |
 | Weighted Squared ReLU（`megatron/core/fusions/fused_weighted_squared_relu.py`） | ReLU² × routing weights | MoE routing probability 直接融入 activation |
-| Fused A2A（`moe/fused_a2a.py`） | Permute + All-to-All + Unpermute 合并 | 消除通信前的排列开销 |
+| Fused A2A（`megatron/core/transformer/moe/fused_a2a.py`） | Permute + All-to-All + Unpermute 合并 | 消除通信前的排列开销 |
 
 ### 8.5 FP8 Input Store
 

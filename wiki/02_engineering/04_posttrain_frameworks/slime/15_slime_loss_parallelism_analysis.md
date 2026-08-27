@@ -9,7 +9,7 @@ title: "slime Loss 与并行归一化：让估计量不随物理切分改写"
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：slime 的关键设计不是多实现几种 RL loss，而是把“估计什么”与“在哪块 GPU 上计算”拆开：prompt 分组决定 reward 的相对基线，token 级目标函数产生逐 token 项，逻辑 rollout 决定默认 loss 权重，DP/CP/PP/VPP 只决定这些项如何分布到不同设备。代价是系统必须在切分前保存完整分母，并在 Megatron 的 micro-batch、集合通信与梯度缩放规则中精确抵消每个重复因子；否则程序可能照常运行，实际优化的却已是另一个目标函数。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改。
+> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改——既有引用**未**重新核验，故上方**核验日期**不变；本次新增的引用均已在该基线下逐条打开核对。
 
 本文只讨论估计量与归约器的统计语义。`Sample`、prompt 分组和 `rollout_id` 的标识来源见 [[12_slime_sample_datasource_analysis]]；Megatron actor、DataIterator、前向/反向传播与优化器生命周期见 [[14_slime_megatron_training_analysis]]。下文带固定提交定位符的是源码、官方文档或测试事实；“设计分析”表示根据实现和失败路径作出的推断。
 
@@ -232,7 +232,16 @@ TIS/custom rejection 可以返回 modified response masks。源码为 pg loss �
 
 还有两个容易误判为 normalization bug 的执行边界：dynamic `balance_by_flops` 不保证 `max_tokens_per_gpu * cp_size` 的 token cap，tight-memory 配置可能 OOM；单个超长 sample 也允许独占一个超 cap micro-batch。[`slime/utils/dp_schedule.py:65-79`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/dp_schedule.py#L65-L79) 官方 quick start同样说明超长 sample 不会截断而是独立成 batch。[`docs/en/get_started/quick_start.md:228-233`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/get_started/quick_start.md#L228-L233)
 
-## 10. 修改目标函数或归一化方式前的检查清单
+## 10. 发展趋势
+
+本节离开“固定基线是什么”，因此只写有源码注释可锚定的在途改动，整节标为推断。
+
+> [!note] 推断：锚点是源码注释原文，方向判断是本页的重建
+> **一、advantage 归一化该不该是默认口径，源码自己没有结论。** `normalize_advantages` 分支正上方挂着 `# TODO: OpenRLHF always does advantages normalization but veRL doesn't seem to do it.`。[`loss.py:818`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L818) 这是一条被显式记录下来、在同类框架之间尚未收敛的统计口径分歧，而不是一个已经论证过的默认值。**由此可推断**，第 3.2 节那条“若开启 advantage 归一化”的分支，其默认值或归一化域仍可能变动；跨框架对比实验应把这一项当作必须显式记录的配置，不能假定两边默认一致。（它与 REINFORCE++ 系列强制要求归一化并不冲突：后者是参数校验的硬约束，前者是默认值之争。）
+>
+> **二、CP 的 logits/token 偏移抽象被标为待重写。** 既非 `cp_size == 1`、也非 `allgather_cp` 的那条 zigzag CP 分支，在调用 `get_logits_and_tokens_offset_with_cp` 之前挂着 `# TODO: this is super ugly... do better abstraction.`。[`loss.py:169`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L169) **由此可推断**，第 6 节依赖的那条数学契约（CP 分子可加、分母来自完整 response mask）不会因重构而改变，但实现这条契约的偏移计算代码是明确的重构候选；一旦落地，本页第 6、9 节引用的 `loss.py`/`cp_utils.py` 行号会失效，届时应重新核对源码，而不是照搬本页的定位符。
+
+## 11. 修改目标函数或归一化方式前的检查清单
 
 1. 统计单位究竟是 token、physical sample、prompt group 还是 logical rollout？
 2. numerator 使用 original mask、rejection mask，还是两者乘积？denominator 应跟哪一个？
@@ -241,15 +250,6 @@ TIS/custom rejection 可以返回 modified response masks。源码为 pg loss �
 5. `step_global_batch_size` 是否仍表示该 optimizer step 的 logical rollout 数，并同时驱动 loss、metrics 与 LR scheduler？
 6. custom loss 是否使用框架提供的 reducer；custom pg reducer 是否有意改变主 loss 与其他 metrics 的相对口径？
 7. DP/CP 组合、mbs packing、compact fanout 数改变时，固定数据的 loss、report 与 grad norm是否保持预期不变？
-
-## 11. 发展趋势
-
-本节离开“固定基线是什么”，因此只写有源码注释可锚定的在途改动，整节标为推断。
-
-> [!note] 推断：锚点是源码注释原文，方向判断是本页的重建
-> **一、advantage 归一化该不该是默认口径，源码自己没有结论。** `normalize_advantages` 分支正上方挂着 `# TODO: OpenRLHF always does advantages normalization but veRL doesn't seem to do it.`。[`loss.py:818`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L818) 这是一条被显式记录下来、在同类框架之间尚未收敛的统计口径分歧，而不是一个已经论证过的默认值。**由此可推断**，第 3.2 节那条“若开启 advantage 归一化”的分支，其默认值或归一化域仍可能变动；跨框架对比实验应把这一项当作必须显式记录的配置，不能假定两边默认一致。（它与 REINFORCE++ 系列强制要求归一化并不冲突：后者是参数校验的硬约束，前者是默认值之争。）
->
-> **二、CP 的 logits/token 偏移抽象被标为待重写。** 既非 `cp_size == 1`、也非 `allgather_cp` 的那条 zigzag CP 分支，在调用 `get_logits_and_tokens_offset_with_cp` 之前挂着 `# TODO: this is super ugly... do better abstraction.`。[`loss.py:169`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L169) **由此可推断**，第 6 节依赖的那条数学契约（CP 分子可加、分母来自完整 response mask）不会因重构而改变，但实现这条契约的偏移计算代码是明确的重构候选；一旦落地，本页第 6、9 节引用的 `loss.py`/`cp_utils.py` 行号会失效，届时应重新核对源码，而不是照搬本页的定位符。
 
 ## Related Pages
 

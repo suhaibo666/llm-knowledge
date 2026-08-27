@@ -5,7 +5,7 @@ title: "Megatron-LM 数据并行、分布式优化器与优化器内部机制 �
 # Megatron-LM 数据并行、分布式优化器与优化器内部机制 深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）；2026-06-16 增量对照 `NVIDIA/Megatron-LM@232c478d43ce2f8b4c8db3507d3623fa82f55823`（`dev`，2026-06-16）刷新
-> 核心文件:`megatron/core/distributed/distributed_data_parallel.py`、`megatron/core/distributed/param_and_grad_buffer.py`、`megatron/core/distributed/distributed_data_parallel_config.py`、`megatron/core/optimizer/distrib_optimizer.py`、`megatron/core/optimizer/optimizer.py`、`megatron/core/optimizer/grad_scaler.py`、`megatron/core/optimizer/clip_grads.py`、`megatron/core/optimizer_param_scheduler.py`、`cpu_offloading/`
+> 核心文件:`megatron/core/distributed/distributed_data_parallel.py`、`megatron/core/distributed/param_and_grad_buffer.py`、`megatron/core/distributed/distributed_data_parallel_config.py`、`megatron/core/optimizer/distrib_optimizer.py`、`megatron/core/optimizer/optimizer.py`、`megatron/core/optimizer/grad_scaler.py`、`megatron/core/optimizer/clip_grads.py`、`megatron/core/optimizer_param_scheduler.py`、`megatron/core/optimizer/cpu_offloading/`
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`、`13_megatron_cp_analysis.md`
 >
 > **2026-07-31 合并说明**:本页由原三篇高度交叠的独立页合并而成——`megatron_ddp_optimizer_analysis.md`(DP/DDP/ZeRO 分片"怎么切")、`megatron_optimizer_internals_analysis.md`(单个优化器实例内部"算什么")、以及本页原有的 `16_megatron_distributed_optimizer_analysis.md`(通信组/FP8-FP4/CPU offload/三种 FSDP 实现对比/Layer-Wise+Muon 集成)。三页原本已通过大量"配套阅读"互相指路,现按逐节台账去重合并为一页,保留篇幅更全面者(原 `megatron_ddp_optimizer_analysis.md` 的 ZeRO 阶梯框架)为骨架,其余两页独有段落逐字并入(见各节"补充"标注),文件名保留最通用的 `16_megatron_distributed_optimizer_analysis`。原两篇已删除,全库入链已改写指向本页。
@@ -263,8 +263,8 @@ Intra-Instance / Inter-Instance 两组是 §3 HSDP 的通信基础;EP DP Group �
 **实现细节**(`megatron/core/optimizer/distrib_optimizer.py`/`megatron/core/distributed/param_and_grad_buffer.py`):
 
 - **FP8 参数 All-Gather**(`megatron/core/optimizer/distrib_optimizer.py:2609-2632`):参数在 FP8 格式下做 All-Gather,传输量减半;FP32 主权重通过 `quantize_param_shard()` 量化回 FP8。
-- **NVFP4 双 Buffer 布局**(`megatron/core/distributed/param_and_grad_buffer.py:946-963`):参数 Buffer 每字节 2 个 FP4 值(numel/2);梯度 Buffer 全精度 BF16(numel);需要两套索引映射。
-- **MXFP8 共享 Buffer**(`megatron/core/distributed/param_and_grad_buffer.py:1097-1113`):参数 All-Gather 和梯度 Reduce-Scatter 共享同一块显存,通过 `reuse_grad_buf_for_mxfp8_param_ag` 控制。
+- **NVFP4 双 Buffer 布局**(`megatron/core/distributed/param_and_grad_buffer.py:964-989`):参数 Buffer 每字节 2 个 FP4 值(numel/2);梯度 Buffer 全精度 BF16(numel);需要两套索引映射。
+- **MXFP8 共享 Buffer**(`megatron/core/distributed/param_and_grad_buffer.py:1036-1055`):参数 All-Gather 和梯度 Reduce-Scatter 共享同一块显存,通过 `reuse_grad_buf_for_mxfp8_param_ag` 控制。
 
 > [!update] 2026-06-16 · dev@232c478d4 — 精度/MXFP8 相关行号与门控
 > - **行号漂移**:解耦梯度赋值 `shard_main_param.decoupled_grad = shard_model_grad`(见 §7.3)现在 `megatron/core/optimizer/distrib_optimizer.py:2728`(原 `:2568`);`shard_main_param.grad = shard_model_grad.float()` 现 `:2730`(原 `:2570`)。语义未变。
@@ -314,7 +314,7 @@ shard_main_param.decoupled_grad = shard_model_grad
 - 小模型、调试。
 - 一旦显存吃紧 → 上 ZeRO-1。
 
-> [!update] 2026-06-16 · dev@232c478d4 — Megatron-FSDP `no_shard` 收敛性修复(#3835/#3754,`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:1234`、`optimizer/__init__.py:1060`)
+> [!update] 2026-06-16 · dev@232c478d4 — Megatron-FSDP `no_shard` 收敛性修复(#3835/#3754,`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:1234`、`megatron/core/optimizer/__init__.py:1060`)
 > `no_shard`(ZeRO-0)下,梯度经 all-reduce 后在各 DP rank 上是**复制**的。原实现仍把梯度统计/范数在 dist-opt(DP)组上规约一遍 → grad norm **虚高**、梯度裁剪过度 → **不收敛**。修复:`no_shard` 时把 grad-stats 规约组从 DP 组改为只用 `model_parallel_group`(TP/PP)(`effective_intra_dist_opt_group = mp_group if no_shard else intra_dist_opt_group`);同时 `start_param_sync` 对 `no_shard` 直接 return(参数已复制,无需 all-gather),并禁止 `no_shard` 配 meta-device 初始化。此修复仅针对 Megatron-FSDP 的 `no_shard` 路径;与本页 §10 梯度范数"需跨 TP×PP all-reduce"的论述一致 —— 关键是 **DP 维度此时不能再 reduce**。
 
 ---
@@ -575,7 +575,7 @@ MegatronOptimizer (ABC, :100)              抽象基类:clip_grad_norm / get_los
 > - `MixedPrecisionOptimizer.step()` `:621 → :745`;`prepare_grads`/`step_with_ready_grads` `:676`/`:712`。
 > 类层次与五步流程本身**未变**,仅行号漂移。
 
-`get_megatron_optimizer`(`optimizer/__init__.py`)是工厂:按配置(`bf16`/`fp16`/`fp32`、是否分布式、是否 MoE)挑类、切 param group、装配。
+`get_megatron_optimizer`(`megatron/core/optimizer/__init__.py`)是工厂:按配置(`bf16`/`fp16`/`fp32`、是否分布式、是否 MoE)挑类、切 param group、装配。
 
 ### 6.1 `ChainedOptimizer` 为什么需要
 
@@ -740,7 +740,7 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 
 ### 12.1 HybridDeviceOptimizer
 
-`cpu_offloading/hybrid_optimizer.py:14` — 将参数按比例拆分到 GPU 和 CPU:
+`megatron/core/optimizer/cpu_offloading/hybrid_optimizer.py:14` — 将参数按比例拆分到 GPU 和 CPU:
 
 - `offload_fraction`(默认 0.5):控制多少参数放在 CPU
 - 双流 Overlap:`_d2h_stream` 传梯度到 CPU,`_h2d_stream` 传参数回 GPU
@@ -751,7 +751,7 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 
 ### 12.2 OptimizerStateOffloader
 
-`cpu_offloading/optimizer_state_offloader.py` — 在 optimizer.step() 完成后将状态暂存 CPU:
+`megatron/core/optimizer/cpu_offloading/optimizer_state_offloader.py` — 在 optimizer.step() 完成后将状态暂存 CPU:
 - offload:D2H 异步拷贝 exp_avg, exp_avg_sq, master weights
 - release:GPU 显存 resize_(0) 释放
 - reload:两阶段——先分配 GPU 显存,再 H2D 异步拷回
@@ -767,7 +767,7 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 
 | 维度 | DistributedOptimizer | TorchFullyShardedDataParallel | MegatronFSDP |
 |------|---------------------|------------------------------|-------------|
-| **文件** | `megatron/core/optimizer/distrib_optimizer.py:98` | `megatron/core/distributed/torch_fully_sharded_data_parallel.py:28` | `fsdp/src/megatron_fsdp/megatron_fsdp.py:105` |
+| **文件** | `megatron/core/optimizer/distrib_optimizer.py:98` | `megatron/core/distributed/torch_fully_sharded_data_parallel.py:28` | `megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:106` |
 | **分片粒度** | 参数级别(连续 buffer 切分) | Module 级别(FSDP Unit) | Module 级别(FSDP Unit) |
 | **分片策略** | ZeRO-1/2(状态+梯度分片) | PyTorch FSDP2(参数+梯度+状态) | ZeRO-1/2/3 可配置 |
 | **依赖** | 无外部依赖 | PyTorch >= 2.4, DTensor | 自研(不依赖 PyTorch FSDP) |
@@ -778,7 +778,7 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 
 `data_parallel_sharding_strategy = 'optim_grads'`(§阶段③,ZeRO-2)与 `'optim_grads_params'`(§阶段④,ZeRO-3)均由 Megatron-FSDP 实现;DistributedOptimizer(§阶段②)是 ZeRO-1 的原生实现。
 
-### 13.2 MegatronFSDP 详细分析 (`fsdp/src/megatron_fsdp/megatron_fsdp.py`)
+### 13.2 MegatronFSDP 详细分析 (`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py`)
 
 MegatronFSDP 是 NVIDIA 自研的 FSDP 实现,提供从 ZeRO-1 到 ZeRO-3 的完整分片谱系:
 
@@ -824,8 +824,8 @@ outer_dp_sharding_strategy="no_shard"                 # 组间无分片(复制)
 组内做 ZeRO-3 全分片,组间做 AllReduce 去重——与 §3 的 HSDP 是同一思想在 ZeRO-3 场景下的具体配置。
 
 > [!update] 2026-06-16 · dev@232c478d4 — Megatron-FSDP 内部一组修复(FSDP-internal)
-> **① `no_shard`(ZeRO-0)收敛性修复**(#3835/#3754,`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:1234`、`optimizer/__init__.py:1060`):`no_shard` 下参数本就在各 DP rank 复制,故 ① `start_param_sync` 对 `no_shard` 直接 return(无需 all-gather);② 梯度统计/范数只能在 **TP/PP(model_parallel_group)** 上规约,**不能**再在 DP 维度规约(梯度已是 all-reduce 后的复制值,再 reduce 会**虚高 grad norm 致不收敛**)—— 通过 `effective_intra_dist_opt_group = mp_group if no_shard else intra_dist_opt_group` 实现。另禁止 `no_shard` 配 meta-device 初始化。详见「阶段①」小节的 2026-06-16 更新。
-> **② grouped expert 权重减少 padding**(#5013,`megatron/core/distributed/fsdp/src/megatron_fsdp/param_and_grad_buffer.py:1404`):当 ≥3D 的 grouped-expert 张量与异构 chunk-size-factor 混在同一 bucket 时,LCM 对齐会**放大 padding**;修复把这类 grouped-expert 张量拆到独立 bucket,避免 LCM 膨胀。利好大规模 MoE(见 §13.5)。
+> **① `no_shard`(ZeRO-0)收敛性修复**(#3835/#3754,`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:1234`、`megatron/core/optimizer/__init__.py:1060`):`no_shard` 下参数本就在各 DP rank 复制,故 ① `start_param_sync` 对 `no_shard` 直接 return(无需 all-gather);② 梯度统计/范数只能在 **TP/PP(model_parallel_group)** 上规约,**不能**再在 DP 维度规约(梯度已是 all-reduce 后的复制值,再 reduce 会**虚高 grad norm 致不收敛**)—— 通过 `effective_intra_dist_opt_group = mp_group if no_shard else intra_dist_opt_group` 实现。另禁止 `no_shard` 配 meta-device 初始化。详见「阶段①」小节的 2026-06-16 更新。
+> **② grouped expert 权重减少 padding**(#5013,`megatron/core/distributed/fsdp/src/megatron_fsdp/param_and_grad_buffer.py:1407`):当 ≥3D 的 grouped-expert 张量与异构 chunk-size-factor 混在同一 bucket 时,LCM 对齐会**放大 padding**;修复把这类 grouped-expert 张量拆到独立 bucket,避免 LCM 膨胀。利好大规模 MoE(见 §13.5)。
 > **③ 跨 AllGatherPipeline reset 保留非-FSDP-unit bucket**(#4717,`megatron/core/distributed/fsdp/src/megatron_fsdp/param_and_grad_buffer.py`):pipeline reset 时不再误清非 FSDP-unit 的 bucket。
 > **④ A2A Overlap**(#3797):把 MoE 的 All-to-All dispatch/combine 与 FSDP 的参数 all-gather / 梯度 reduce-scatter 重叠,详见「阶段④」小节与 [[20_megatron_comm_overlap_analysis]]。
 
@@ -921,7 +921,7 @@ FSDP 的 shard 在 **DP 维度**上执行(即 `world_size / (TP × CP × PP × E
 
 > [!deprecated] 2026-06-16:**触发方式更正**。不存在 `--layer-wise-distributed-optimizer` 这个 flag。Layer-wise 分布式优化器通过 **`--optimizer muon`(或其它 emerging 优化器)+ `--use-distributed-optimizer`** 触发:`megatron/training/arguments.py:1811-1823` 在 optimizer 非 `sgd`/`adam` 且开了 distributed optimizer 时,把 `use_layer_wise_distributed_optimizer` 置 True、并关掉普通 `use_distributed_optimizer`。`--optimizer dist_muon` 是旧写法,已弃用。
 
-> [!update] 2026-06-16 · dev@232c478d4 — LayerWise 与 DDP buffer 基建整合 + 非-Muon 参数改走真正的 DistributedOptimizer(#4509 / #4771,`megatron/core/optimizer/layer_wise_optimizer.py`、`optimizer/__init__.py:796-960`、`megatron/core/optimizer/distrib_optimizer.py:3041`)
+> [!update] 2026-06-16 · dev@232c478d4 — LayerWise 与 DDP buffer 基建整合 + 非-Muon 参数改走真正的 DistributedOptimizer(#4509 / #4771,`megatron/core/optimizer/layer_wise_optimizer.py`、`megatron/core/optimizer/__init__.py:796-960`、`megatron/core/optimizer/distrib_optimizer.py:3041`)
 >
 > 这组 PR 实质性改写了 layer-wise 的实现,并**修正了上文"普通 distributed optimizer 难以优雅支持 per-parameter optimizer 切换"的暗示** —— 现在两者是**链式协作**,而非二选一:
 >
@@ -931,7 +931,7 @@ FSDP 的 shard 在 **DP 维度**上执行(即 `world_size / (TP × CP × PP × E
 >
 > **结论(对上文 Muon/ZeRO 框架的修正)**:Muon 现在**可以与 ZeRO 分片共存**。Muon 管的矩阵权重经 LayerWise 走 shard-aligned 的 reduce-scatter/all-gather(等效 ZeRO-1/2 沿 DP 分片优化器状态与梯度),非-Muon 参数走标准 `DistributedOptimizer`。早期"Muon 对 ZeRO 切分的根本性挑战"指的是 Newton-Schulz 正交化需要**整块矩阵**、无法像 Adam 那样按字节随意切;LayerWise 的解法正是 **shard-aligned bucket + 按层/按整参数分配**,让每个矩阵整体落在某个 shard 内,从而既正交化又分片(跨框架的 Muon/ZeRO 张力综述见 [[32_distributed_optimizer_deepdive]] §六)。
 >
-> **限制**:此 split 路径要求 `use_layer_wise_param_layout=True`(默认开;`--no-use-layer-wise-param-layout` 回退到 legacy ping-pong)、`num_distributed_optimizer_instances == 1`、且不支持 expert-parallel 的非-Muon 参数组与 `overlap_param_gather_with_optimizer_step`(`optimizer/__init__.py:761` 断言)。
+> **限制**:此 split 路径要求 `use_layer_wise_param_layout=True`(默认开;`--no-use-layer-wise-param-layout` 回退到 legacy ping-pong)、`num_distributed_optimizer_instances == 1`、且不支持 expert-parallel 的非-Muon 参数组与 `overlap_param_gather_with_optimizer_step`(`megatron/core/optimizer/__init__.py:761` 断言)。
 
 > [!update] 2026-06-16 · dev@232c478d4 — MTP-stage word_embeddings 必须打 `is_embedding_or_output_parameter` 标签(#5034,`megatron/core/models/common/language_module/language_module.py:205-213`)
 > `is_embedding_or_output_parameter` 标签决定参数被 Muon/LayerWise 接管还是路由给 Adam/DistOpt(见上)。MTP(Multi-Token Prediction)阶段的 `word_embeddings.weight` 是 pre_process embedding 的**副本**(靠跨 stage all-reduce 同步),原来漏打此标签 → 被 LayerWise 当作 2D 矩阵接管、且因 `shared_embedding=True` 在 `_emit_bucket` 里把整个 `(vocab × hidden)` 张量**复制到全部 `dp_size` 个 shard**,使该 chunk 的 buffer 膨胀约 8×。修复:`pre_process` 或 `mtp_process` 任一为真就打标签,让 MTP embedding 正确归 Adam/DistOpt 管理。
@@ -940,19 +940,19 @@ FSDP 的 shard 在 **DP 维度**上执行(即 `world_size / (TP × CP × PP × E
 
 | 优化器 | 文件 | 一句话 |
 |--------|------|--------|
-| **Muon** | `optimizer/muon.py` | 新型优化器,对矩阵参数用 Newton-Schulz 正交化更新方向;v0.16 引入,配 layer-wise 分布式优化器(§14.1) |
-| **layer-wise 分布式优化器** | `optimizer/layer_wise_optimizer.py` | 按层组织优化器状态/通信,降低峰值显存(§14.1) |
-| **CPU offload** | `optimizer/cpu_offloading/`(`HybridDeviceOptimizer`) | 把优化器状态与 step 计算放 CPU,`--optimizer-cpu-offload`,GPU 显存极紧时用,详见 §12 |
-| emerging optimizers | `optimizer/emerging_optimizers.py` | 其他较新优化器 |
+| **Muon** | `megatron/core/optimizer/muon.py` | 新型优化器,对矩阵参数用 Newton-Schulz 正交化更新方向;v0.16 引入,配 layer-wise 分布式优化器(§14.1) |
+| **layer-wise 分布式优化器** | `megatron/core/optimizer/layer_wise_optimizer.py` | 按层组织优化器状态/通信,降低峰值显存(§14.1) |
+| **CPU offload** | `megatron/core/optimizer/cpu_offloading/`(`HybridDeviceOptimizer`) | 把优化器状态与 step 计算放 CPU,`--optimizer-cpu-offload`,GPU 显存极紧时用,详见 §12 |
+| emerging optimizers | `megatron/core/optimizer/emerging_optimizers.py` | 其他较新优化器 |
 
-> [!deprecated] 2026-06-16:**Muon 的真正实现不在 `optimizer/muon.py`**。`megatron/core/optimizer/muon.py` 已是一个 28 行的 *backward-compatible shim*(`get_megatron_muon_optimizer` 仅转调 `get_megatron_optimizer`,且 `dist_muon` 已弃用)。Muon / AdaptiveMuon 的实际实现是 `megatron/core/optimizer/emerging_optimizers.py` 里的 `TensorParallelMuon` / `TensorParallelAdaptiveMuon`,经 `_EMERGING_OPTIMIZERS` 注册表(`megatron/core/optimizer/emerging_optimizers.py:429`)接入,并依赖外部包 `emerging-optimizers`。注:此 shim 在 `ee3f1ff` 已存在,原表项的文件归属一直是错的。
+> [!deprecated] 2026-06-16:**Muon 的真正实现不在 `megatron/core/optimizer/muon.py`**。`megatron/core/optimizer/muon.py` 已是一个 28 行的 *backward-compatible shim*(`get_megatron_muon_optimizer` 仅转调 `get_megatron_optimizer`,且 `dist_muon` 已弃用)。Muon / AdaptiveMuon 的实际实现是 `megatron/core/optimizer/emerging_optimizers.py` 里的 `TensorParallelMuon` / `TensorParallelAdaptiveMuon`,经 `_EMERGING_OPTIMIZERS` 注册表(`megatron/core/optimizer/emerging_optimizers.py:429`)接入,并依赖外部包 `emerging-optimizers`。注:此 shim 在 `ee3f1ff` 已存在,原表项的文件归属一直是错的。
 
 > [!update] 2026-06-16 · dev@232c478d4 — emerging optimizers / Muon 一组更新
 > **① 升级到 v0.3.0**(#5320,`pyproject.toml`、`megatron/core/optimizer/emerging_optimizers.py`):外部 `emerging-optimizers` 包由 v0.2.0 → **v0.3.0**;`TensorParallelAdaptiveMuon` 新增暴露 `scale_mode` / `extra_scale_factor`;`OptimizerConfig` 删除 `soap_precondition_frequency` 字段。注册表当前内建 `muon`、`adaptive_muon`(本地 TP 版),并自动收编上游包注册的其它优化器(如 SOAP)。
 > **② 触发方式**:emerging 优化器通过 `--optimizer muon`(或 `adaptive_muon`/`soap` 等,即非 `sgd`/`adam`)选择;若同时 `--use-distributed-optimizer`,会自动转成 **layer-wise distributed optimizer**(`megatron/training/arguments.py:1811-1823`,`use_layer_wise_distributed_optimizer=True`)。`--optimizer dist_muon` 已弃用。emerging 优化器目前**不支持** Torch-FSDP2 / Megatron-FSDP(`megatron/training/arguments.py:1825-1828` 断言)。
 > **③ Muon 参数路由(关键)**:默认 override 规则把 **非线性/embedding/output 参数路由给 Adam**(`_is_nonlinear_or_embedding`,`megatron/core/optimizer/emerging_optimizers.py:435-441`),Muon 只接管 2D 矩阵权重。配合 #4509/#4771,Muon 矩阵权重走 `LayerWiseDistributedOptimizer`、其余 Adam 参数走独立 `DistributedOptimizer`,二者由 `ChainedOptimizer` 串起(详见 §14.1 的 2026-06-16 更新)。
-> **④ Muon QKV split 支持 gated attention**(#4728,`megatron/core/optimizer/emerging_optimizers.py:133` `_get_qkv_split_shapes`、`optimizer/__init__.py:776`):Muon 对 fused `linear_qkv.weight` 需按 Q/K/V 分块各自做 Newton-Schulz 正交化。当 `attention_output_gate=True`(门控注意力)时,QKV 切分形状由 3 段变为 **4 段** `[q, q_gate, k, v]`;并改为**逐参数**携带 `param.qkv_split_shapes`,且对 `shape[0] % sum(splits) != 0` 的参数跳过 QKV 标记(避免误切)。
-> **⑤ QK-Clip**:`optimizer/qk_clip.py`(`clip_qk`)对注意力 QK logits 做裁剪以稳住数值,是 Muon 训练注意力稳定性的配套件(该文件在 `ee3f1ff` 已存在,此前表中漏列)。
+> **④ Muon QKV split 支持 gated attention**(#4728,`megatron/core/optimizer/emerging_optimizers.py:133` `_get_qkv_split_shapes`、`megatron/core/optimizer/__init__.py:777-780`):Muon 对 fused `linear_qkv.weight` 需按 Q/K/V 分块各自做 Newton-Schulz 正交化。当 `attention_output_gate=True`(门控注意力)时,QKV 切分形状由 3 段变为 **4 段** `[q, q_gate, k, v]`;并改为**逐参数**携带 `param.qkv_split_shapes`,且对 `shape[0] % sum(splits) != 0` 的参数跳过 QKV 标记(避免误切)。
+> **⑤ QK-Clip**:`megatron/core/optimizer/qk_clip.py`(`clip_qk`)对注意力 QK logits 做裁剪以稳住数值,是 Muon 训练注意力稳定性的配套件(该文件在 `ee3f1ff` 已存在,此前表中漏列)。
 
 ---
 

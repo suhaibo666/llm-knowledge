@@ -9,7 +9,7 @@ title: "slime Agent 工作流分析：把树状执行压成线性训练片段"
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：Agent rollout 的自然形态是带工具、副作用、subagent 分支和上下文压缩的**执行树**，Megatron 训练器需要的却是带 token、mask、reward 和行为策略元数据的**线性片段批次**。slime 没有让训练器理解消息协议或沙箱，而是把 agent 运行时留在自定义 rollout 的数据路径中：适配层捕获推理服务实际采样的 token，`TrajectoryManager` 暂存每个会话的消息树，执行结束时才线性化为共享 `rollout_id` 的 `list[Sample]`。代价是轨迹状态归属、reward 分配、取消操作与外部副作用恢复都必须在 rollout 侧明确处理；训练器只保证片段统计不会把一次逻辑执行重复计数，并不会替 agent 运行时修复语义错误。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改。
+> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改——既有引用**未**重新核验，故上方**核验日期**不变；本次新增的引用均已在该基线下逐条打开核对。
 > **第 5 拍说明**：在固定基线的 `slime/agent/`、`examples/coding_agent_rl/` 与 `examples/multi_agent/` 中检索 `TODO|FIXME|deprecat|will be removed|NOTE.*should` 无命中，本页无可锚定的在途改动，第 5 拍略。
 
 本文把带 fixed-commit 定位符的内容视为源码或官方文档事实；“**设计分析**”与“**由此可推断**”是依据实现边界作出的判断，不代表项目作者原话。

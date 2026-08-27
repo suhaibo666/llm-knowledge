@@ -9,7 +9,7 @@ title: "slime SGLang Rollout Engine：用推理服务执行解码，在请求层
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：rollout 的核心矛盾不是“怎样调用一次 `generate`”，而是怎样让大量请求交给高吞吐推理引擎并发执行，同时仍在 slime 一侧保留 Sample 标识、行为策略元数据、中断前缀、取消结果和恢复边界。slime 选择把 SGLang 作为独立 HTTP 服务运行：路由器与原生服务进程负责请求分发和 token 解码，`RolloutManager` 与请求协程负责 rollout 语义和准入控制。代价是多了一层 HTTP、进程生命周期和跨层状态协议，但不必把逐 token 调度、KV 状态和 SGLang 原生能力重新实现到一个中央 Python 调度器中。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改。
+> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改——既有引用**未**重新核验，故上方**核验日期**不变；本次新增的引用均已在该基线下逐条打开核对。
 
 本文只分析 rollout 请求状态和推理请求数据路径。`Sample` 字段、DataSource 回收语义见 [[12_slime_sample_datasource_analysis]]；Ray 资源放置，以及 `RolloutServer`、`ServerGroup`、推理引擎分别负责什么，见 [[11_slime_ray_control_plane_analysis]]。下文用固定提交定位符标注源码事实，并把动机与替代方案明确标为“设计分析”。
 

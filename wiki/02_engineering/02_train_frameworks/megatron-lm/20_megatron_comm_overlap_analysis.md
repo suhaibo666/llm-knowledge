@@ -640,11 +640,11 @@ class FusedDispatch(torch.autograd.Function):
 ```
 
 - **文件**：[`megatron/core/transformer/moe/token_dispatcher.py`](Megatron-LM/megatron/core/transformer/moe/token_dispatcher.py)
-- **类**：`_DeepepManager`（line 1113）、`_HybridEPManager`（line 964）
+- **类**：`megatron/core/transformer/moe/token_dispatcher.py:1161` 的 `_DeepepManager`、同文件 `:990` 的 `_HybridEPManager`
 
 #### 5.6.1 两级通信：为什么能降 A2A 绝对耗时
 
-DeepEP/HybridEP 之所以能"加速通信"，核心是把单级的 GPU↔GPU A2A 拆成**两级**，并在节点间做**去冗余**——把流量从稀缺的 IB 转到富裕的 NVLink。`fused_dispatch` 的 `get_dispatch_layout` 给出**两套**变长计数，对应两级（`megatron/core/transformer/moe/fused_a2a.py:135`）：
+DeepEP/HybridEP 之所以能"加速通信"，核心是把单级的 GPU↔GPU A2A 拆成**两级**，并在节点间做**去冗余**——把流量从稀缺的 IB 转到富裕的 NVLink。`fused_dispatch` 的 `get_dispatch_layout` 给出**两套**变长计数，对应两级（`megatron/core/transformer/moe/fused_a2a.py:92-97`）：
 
 | 计数 | 粒度 | 阶段 | 链路 |
 |------|------|------|------|
@@ -796,7 +796,7 @@ args.context_parallel_size = 2       # CP > 1 时自动启用 attention overlap
 
 > **文档说明**：所有代码片段与文件路径均来自 Megatron-LM `dev` 分支的实际源码，基线以页头声明的 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19）为准；§3.1 末、§5.7 的增量更新段落基准仍为 `dev@232c478d4`。
 > 
-> 本行原文写作「commit `3beeaa65b` 附近」——「附近」不是可核验的基线，且与页头冲突。2026-08-27 复核：`model_parallel_config.py:196`、`distributed/param_and_grad_buffer.py:709`、`tensor_parallel/layers.py:520`、`moe/fused_a2a.py:139` 等处在 `ee3f1ffa2acd18131ab67cabab4cec45283512ab` 命中而在 `3beeaa65b` 不命中，故以前者为准；个别引用（如 `pipeline_parallel/combined_1f1b.py` 的函数定义行）在 `3beeaa65b` 下更贴合，说明本页历史上经历过局部刷新，少数行号可能仍停留在更早的形态。
+> 本行原文写作「commit `3beeaa65b` 附近」——「附近」不是可核验的基线，且与页头冲突。2026-08-27 复核：`megatron/core/model_parallel_config.py:196`、`megatron/core/distributed/param_and_grad_buffer.py:709`、`megatron/core/tensor_parallel/layers.py:520`、`megatron/core/transformer/moe/fused_a2a.py:139` 等处在 `ee3f1ffa2acd18131ab67cabab4cec45283512ab` 命中而在 `3beeaa65b` 不命中，故以前者为准；个别引用（如 `megatron/core/pipeline_parallel/combined_1f1b.py` 的函数定义行）在 `3beeaa65b` 下更贴合，说明本页历史上经历过局部刷新，少数行号可能仍停留在更早的形态。
 
 ## Related Pages
 

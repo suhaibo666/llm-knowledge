@@ -90,7 +90,7 @@ class ShardedTensor(ShardedBase):
 
 ## 5. `save` / `load` 流程
 
-### 5.1 `save`(`serialization.py:300`)
+### 5.1 `save`(`megatron/core/dist_checkpointing/serialization.py:300`)
 
 ```
 save(sharded_state_dict, checkpoint_dir, ...):
@@ -106,7 +106,7 @@ save(sharded_state_dict, checkpoint_dir, ...):
 - 步骤⑥可**异步**(`async_sharded_save=True`)—— 返回一个 `AsyncRequest`,真正写盘在后台跑,训练继续;此时⑦作为完成回调,**整档写完才落 metadata.json**(保证 checkpoint 原子性)。
 - `validate_access_integrity` 触发 §7 的校验。
 
-### 5.2 `load`(`serialization.py:54`)
+### 5.2 `load`(`megatron/core/dist_checkpointing/serialization.py:54`)
 
 逆过程:每张卡用**当前(可能是新的)并行布局**生成自己的 `sharded_state_dict`(只填 metadata、`data=None`),`load` 据此从 checkpoint 里读出对应的全局张量切片,填回 `data`。**这一步就是"换并行布局加载"发生的地方** —— 新布局的 `global_offset`/`local_shape` 决定读哪一段。
 
@@ -131,7 +131,7 @@ save(sharded_state_dict, checkpoint_dir, ...):
 
 ---
 
-## 7. 校验(`validation.py`)
+## 7. 校验(`megatron/core/dist_checkpointing/validation.py`)
 
 `validate_access_integrity` 检查 `sharded_state_dict` 的**完整性与一致性**:把所有 rank 的 `ShardedTensor` 元数据汇总,验证每个全局张量 ——
 - **无缺口**:全局张量的每个元素都被某个非副本片覆盖。

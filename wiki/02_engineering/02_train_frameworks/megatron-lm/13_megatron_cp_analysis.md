@@ -116,15 +116,15 @@ Megatron 把序列切分(通用机制,见理论页 §3)与因果掩码处理(理
 
 - **`PackedSeqParams` 新增两字段**(`megatron/core/packed_seq_params.py:23-24`):`local_cp_size`(本 microbatch 实际 CP 度)与 `cp_group`(对应的 CP 进程子组),由调度器 `DefaultDynamicCPScheduler` 按样本长度算出。
 - **`resolve_cp_group(static_cp_group, packed_seq_params)`**(`megatron/core/packed_seq_params.py:69`,#4226):统一"**优先用 `packed_seq_params.cp_group`,否则回退建图期静态 CP 组**"的解析逻辑,供 `GPTModel`、`GatedDeltaNet`、MTP 层共用(此前各处分散硬编码 `self.pg_collection.cp`)。
-- **TE attention 接入**(`extensions/transformer_engine.py:1798`):`TEDotProductAttention.forward` 按 `packed_seq_params.local_cp_size` **切换 TE 内部的 CP 组** —— `local_cp_size==1` → `set_context_parallel_group(None,...)`(该样本关 CP);否则换成 `packed_seq_params.cp_group`。
+- **TE attention 接入**(`megatron/core/extensions/transformer_engine.py:1798`):`TEDotProductAttention.forward` 按 `packed_seq_params.local_cp_size` **切换 TE 内部的 CP 组** —— `local_cp_size==1` → `set_context_parallel_group(None,...)`(该样本关 CP);否则换成 `packed_seq_params.cp_group`。
   - **#5215 修复**(`megatron/core/extensions/transformer_engine.py:1886`):forward **开头先保存原始 CP 组**(`_te_orig_cp_group`),**结尾再恢复**。否则被换掉的动态 CP 组会**泄漏**到后续不带 dynamic CP 的 microbatch,导致 attention 用错组、结果错误。
 - **dispatcher 兼容**:sequence packing(THD)原仅支持 `alltoall` dispatcher,现已放宽到 `flex`(#4816,见 [[14_megatron_ep_analysis]] §③ 增量更新);THD 下 HybridEP 会把各 rank 不齐的 token 数补齐到组内最大值。
-- **CUDA Graph 守卫**(#4226,`training/utils.py`):`cuda_graph_impl=full_iteration` 与 `cu_seqlens`(THD 变长)互斥,`_broadcast_cu_seqlens` 直接短路返回 `None`。
+- **CUDA Graph 守卫**(#4226):`cuda_graph_impl=full_iteration` 与 `cu_seqlens`(THD 变长)互斥,守卫在 `megatron/training/arguments.py:1329-1332`、`:2050`;`_broadcast_cu_seqlens` 在 `cu_seqlens` 为 `None` 时只广播计数 `n=0`、不再广播张量本体(`megatron/core/utils.py:2061-2067`)。
 
 ### 3.2 入口与示例
 
 - 开关:`--dynamic-context-parallel --sequence-packing-scheduler default_dynamic_cp --max-seqlen-per-dp-cp-rank N`。
-- 基准示例(#5123):`examples/dynamic_context_parallel/`(`benchmark_dcp.sh`),对比 `dp_balanced` 定长 packed 与 DCP 两条 run,复用 `pretrain_gpt.py` + `MockVarlenDataset`,不引入新模型/数据集类。
+- 基准示例(#5123):`examples/dynamic_context_parallel/benchmark_dcp.sh`,对比 `dp_balanced` 定长 packed 与 DCP 两条 run,复用 `pretrain_gpt.py` + `MockVarlenDataset`,不引入新模型/数据集类。
 - **数据集/调度器侧的完整机制**(packing、`max-seqlen-per-dp-cp-rank` 分配)见 [[29_megatron_packed_dataset_dynamic_cp_analysis]];本节只覆盖 CP/attention 侧的接入。
 
 ---

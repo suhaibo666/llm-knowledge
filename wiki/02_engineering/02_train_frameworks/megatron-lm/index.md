@@ -12,7 +12,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 > - **曾经的第三基线**:[[20_megatron_comm_overlap_analysis]] 文末原写「commit `3beeaa65b` 附近」(2026-04-08)。2026-08-27 复核 11 处引用后改钉 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`(与本域多数页一致),增量段落仍对照 `232c478d4`;少数行号可能仍停留在更早形态,见该页文末说明。
 > - **未确定**:[[22_megatron_memory_optimization_analysis]]、[[25_megatron_nonuniform_tp_analysis]] 只列 `Source:` 文件、无 commit 级基线;[[33_megatron_vllm_weight_sync_analysis]] 分析的是 `volcengine/verl` 而非 Megatron-LM,原文未声明 commit 且 locator 无行号,已核对后仍无法反推。
 > - **本机检出 HEAD**:`232c478d43ce2f8b4c8db3507d3623fa82f55823`(`dev`,2026-06-16);与 `ee3f1ffa…` 相距 **298 个提交**。
-> - **已知偏差**:[[34_deepseek_v4_tensor_parallel_analysis]]、[[35_deepseek_v4_context_parallel_analysis]] 页头声明 `232c478d4`,但正文多数 `path:line` 实际命中 `ee3f1ff`(如 `deepseek_v4_hybrid_attention.py:87-88`、`csa.py:297,309,460,473`、`hyper_connection.py:150`、`attention.py:1080-1084` 在 `232c478d4` 分别位于 `:92-93`、`:313,325,476,489`、`:193`、他处)。本轮只补全 commit 位数、未改行号,行号复核待后续。
+> - **已修正的偏差**:[[34_deepseek_v4_tensor_parallel_analysis]]、[[35_deepseek_v4_context_parallel_analysis]] 原页头声明 `232c478d4`,但正文多数 `path:line` 实际命中 `ee3f1ff`(如 `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:87-88`、`megatron/core/transformer/experimental_attention_variant/csa.py:297,309,460,473`、`megatron/core/transformer/hyper_connection.py:150`、`megatron/core/transformer/attention.py:1080-1084` 在 `232c478d4` 分别位于 `:92-93`、`:313,325,476,489`、`:193`、他处)。2026-08-27 已把两页页头改钉 `ee3f1ffa…`,并把原有那条 2026-06-25 的审计注标明是在 `232c478d4` 上做的;两页正文行号已随本轮复核。
 
 > 最后更新:2026-07-31(kb-reorg P7 Task 7:目录内分段编号,27 篇按 spec §5 段位约定统一加两位前缀;下方各小节的既有分组不变,仅补充下表作段位速查)
 
@@ -70,10 +70,10 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 > - 索引已收敛:并行轴/重计算/RL/模型结构等逐维深挖见下文系列;上方「Core Topics」仅列系列外的全景报告与专题深版。
 
 > [!update] 2026-06-23 · DDP/分布式优化器 bucketing 与 overlap 机制深挖
-> [[16_megatron_distributed_optimizer_analysis|分布式优化器]] §2.7「bucketing 算法与 overlap 调度」(原属已并入的 `megatron_ddp_optimizer_analysis.md`):逆序贪心分桶(`param_and_grad_buffer.py:891-939`)、bucket_size 默认 `max(40M,1M·dp)` 与 ring 报文 `bucket_size/dp` 调参(`distributed_data_parallel_config.py:49-61`)、反向 `register_grad_ready`(就绪**计数器**,非填数据;填数据是 `main_grad.add_` 原地累加,main_grad 为 buffer 视图)集齐 golden-count 才触发 RS(`:802`)、前向 forward-pre-hook → `finish_param_sync` wait + 预取下一桶(`:496/:531`、DDP`:413`)。基线 dev@232c478d4。
+> [[16_megatron_distributed_optimizer_analysis|分布式优化器]] §2.7「bucketing 算法与 overlap 调度」(原属已并入的 `megatron_ddp_optimizer_analysis.md`):逆序贪心分桶(`megatron/core/distributed/param_and_grad_buffer.py:891-939`)、bucket_size 默认 `max(40M,1M·dp)` 与 ring 报文 `bucket_size/dp` 调参(`megatron/core/distributed/distributed_data_parallel_config.py:49-61`)、反向 `register_grad_ready`(就绪**计数器**,非填数据;填数据是 `main_grad.add_` 原地累加,main_grad 为 buffer 视图)集齐 golden-count 才触发 RS(`:802`)、前向 forward-pre-hook → `finish_param_sync` wait + 预取下一桶(`:496/:531`、DDP`:413`)。基线 dev@232c478d4。
 
 > [!update] 2026-06-23 · DeepEP 通信量图解(配 DeepEP 源码核实)
-> [[14_megatron_ep_analysis|专家并行(EP)]] 新增 §③.3.5「通信量图解」三图(SVG→PNG):①按专家 vs 按节点发、②两级通信量分解 + 逐 token 公式、③2node×2GPU 数值走查 + IB 加速比。配图源码基线 **DeepEP @ `af9a040`**(legacy v1 `Buffer` 内核),并据 `internode.cu`(`notify_dispatch` :314/:313、`SourceMeta` :22、`kRDMAAndNVLForwarder` :971、:826 落地卡同号)对 §③.3.2 的「−1 免费落地卡」做了上界纠正。
+> [[14_megatron_ep_analysis|专家并行(EP)]] 新增 §③.3.5「通信量图解」三图(SVG→PNG):①按专家 vs 按节点发、②两级通信量分解 + 逐 token 公式、③2node×2GPU 数值走查 + IB 加速比。配图源码基线 **DeepEP @ `af9a040`**(legacy v1 `Buffer` 内核),并据 `csrc/kernels/legacy/internode.cu`(`notify_dispatch` :314/:313、`SourceMeta` :22、`kRDMAAndNVLForwarder` :971、:826 落地卡同号)对 §③.3.2 的「−1 免费落地卡」做了上界纠正。
 
 > [!update] 2026-06-16 · ee3f1ff→232c478d4 增量刷新(298 commits,7 维 + 模型结构)
 >
@@ -89,7 +89,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 > - **模型结构(最大新增)**:**DeepSeek-V4 hybrid**(DSA 学习索引器 top-k 稀疏 + CSA/HCA 压缩注意力,#5042;TP=1、暂无推理路径)、GDN 序列打包(#2645)、mHC 支持 HybridModel(#4949)、Step-3.5-Flash 逐头注意力门控(#4841)。见 [[10_megatron_model_structure_analysis]]
 >
 > **本次纠正的知识库错误(4 处实质性)**:
-> 1. **Muon/ZeRO 框架**:既有"普通 distributed optimizer 难以优雅支持 per-parameter 优化器切换"已过时 —— Muon 现经 `LayerWiseDistributedOptimizer` + 独立 `DistributedOptimizer` 经 `ChainedOptimizer` 串联,**与 ZeRO 切分共存**(#4509/#4771);且 `--layer-wise-distributed-optimizer` 这一 flag **不存在**(由 `--optimizer muon --use-distributed-optimizer` 触发)。`muon.py` 是 28 行兼容 shim,真实现在 `emerging_optimizers.py`。
+> 1. **Muon/ZeRO 框架**:既有"普通 distributed optimizer 难以优雅支持 per-parameter 优化器切换"已过时 —— Muon 现经 `LayerWiseDistributedOptimizer` + 独立 `DistributedOptimizer` 经 `ChainedOptimizer` 串联,**与 ZeRO 切分共存**(#4509/#4771);且 `--layer-wise-distributed-optimizer` 这一 flag **不存在**(由 `--optimizer muon --use-distributed-optimizer` 触发)。`megatron/core/optimizer/muon.py` 是 28 行兼容 shim,真实现在 `megatron/core/optimizer/emerging_optimizers.py`。
 > 2. **`mtp_isolated_loss` 已移除**:#5080 引入后被 #5223 合并进 `mtp_detach_heads` 并删除,HEAD 上不存在该配置。
 > 3. **moe_layer `train()` 重写已删除**:dispatcher 不再按 train/eval 模式切换,改由 `InferenceMode.is_active()` 在 `MoELayer.forward` 判定(#4617)。
 > 4. **GDN 统一 A2A(#4913)未在当前源码**:被后续 dev↔main 合并回退,GDN 前向仍用 per-section A2A 循环(已标 `[!contradiction]`)。

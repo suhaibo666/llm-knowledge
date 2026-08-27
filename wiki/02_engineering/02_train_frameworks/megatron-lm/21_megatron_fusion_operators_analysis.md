@@ -137,7 +137,7 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 
 | 层次 | 代表性融合 | 文件 |
 |------|-----------|------|
-| `@jit_fuser` (TorchScript/compile) | GEGLU, SwiGLU, GELU | `fused_bias_*.py` |
+| `@jit_fuser` (TorchScript/compile) | GEGLU, SwiGLU, GELU | `megatron/core/fusions/fused_bias_*.py` |
 | Apex CUDA | LayerNorm | `megatron/core/fusions/fused_layer_norm.py:30` |
 | Custom CUDA | Softmax (Scaled + Masked) | `megatron/core/fusions/fused_softmax.py:11-152` |
 | Triton | Pad Routing Map, Indices Converter, MLA RoPE | `megatron/core/fusions/fused_pad_routing_map.py`, `megatron/core/fusions/fused_mla_yarn_rope_apply.py` |
@@ -145,13 +145,13 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 
 ## 4. 详细融合算子清单
 
-### 4.1 Bias + Dropout + Residual (`fused_bias_dropout.py`)
+### 4.1 Bias + Dropout + Residual (`megatron/core/fusions/fused_bias_dropout.py`)
 
 **融合**: `x + bias → dropout → + residual`
 **场景**: 每个 Transformer Block 的残差连接（pre-norm 或 post-norm）
 **优化**: 训练和推理分开的融合路径，推理使用 in-place 操作彻底消除分配
 
-### 4.2 Bias + GEGLU/SwiGLU (`fused_bias_geglu.py`, `fused_bias_swiglu.py`)
+### 4.2 Bias + GEGLU/SwiGLU (`megatron/core/fusions/fused_bias_geglu.py`, `megatron/core/fusions/fused_bias_swiglu.py`)
 
 **融合**: `chunk(y, 2) → activation(y1) → *y2 [+ bias] [+ weighting]`
 **场景**: FFN 的门控激活（SwiGLU = LLaMA/Mistral/Qwen 默认，GEGLU = PaLM）
@@ -160,20 +160,20 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 - MoE 加权变体：将 routing probability 直接融入激活计算
 - `cpu_offload_input`: 将 backward 需要的 input 暂存 CPU（`megatron/core/fusions/fused_bias_swiglu.py:165`）
 
-### 4.3 Bias + GELU (`fused_bias_gelu.py`)
+### 4.3 Bias + GELU (`megatron/core/fusions/fused_bias_gelu.py`)
 
 **融合**: `x + bias → GELU(x)`
 **场景**: 传统 Transformer（GPT-2, BERT）
 **优化**: tanh 近似替代精确 erf
 
-### 4.4 Fused LayerNorm (`fused_layer_norm.py`)
+### 4.4 Fused LayerNorm (`megatron/core/fusions/fused_layer_norm.py`)
 
 **融合**: `mean/variance → normalize → affine(gamma, beta)`
 **场景**: 每个 Transformer Block 的归一化层
 **实现**: Apex CUDA kernel（persistent kernel），支持 zero-centered gamma
 **限制**: 只支持特定的 hidden size（`megatron/core/fusions/fused_layer_norm.py:73-98`：1024, 1536, 2048, ..., 65536）
 
-### 4.5 Fused Softmax (`fused_softmax.py`)
+### 4.5 Fused Softmax (`megatron/core/fusions/fused_softmax.py`)
 
 **融合**: `scale → +mask → softmax`（三种变体：causal mask / arbitrary mask / no mask）
 **场景**: 所有 Attention 的 softmax 计算
@@ -232,7 +232,7 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 ### 7.3 TEFusedDenseMLP：Dense MLP 也走 Grouped GEMM 以触发 SM100 融合
 
 > [!update] 2026-06-16 · dev@232c478d4
-> 新增 `TEFusedMLPWithGroupedLinear`（别名 `TEFusedDenseMLP`，`megatron/core/extensions/transformer_engine.py:2852`，#4318）与开关 `use_grouped_gemm_for_dense_mlp`（`megatron/core/transformer/transformer_config.py:830`）。**把稠密 MLP 也用 `GroupedLinear(num_groups=1)` 实现**，目的是在 **SM100+（Blackwell）+ MXFP8 recipe** 下触发 TE 的 `ForwardGroupedMLP_CuTeGEMMSwiGLU_MXFP8` 融合 kernel（FC1 GEMM + SwiGLU + 量化一体）。要求 `use_te_op_fuser=True` 且 SwiGLU 激活；spec 选择见 `gpt_layer_specs.py:get_mlp_module_spec_for_backend`。
+> 新增 `TEFusedMLPWithGroupedLinear`（别名 `TEFusedDenseMLP`，`megatron/core/extensions/transformer_engine.py:2852`，#4318）与开关 `use_grouped_gemm_for_dense_mlp`（`megatron/core/transformer/transformer_config.py:830`）。**把稠密 MLP 也用 `GroupedLinear(num_groups=1)` 实现**，目的是在 **SM100+（Blackwell）+ MXFP8 recipe** 下触发 TE 的 `ForwardGroupedMLP_CuTeGEMMSwiGLU_MXFP8` 融合 kernel（FC1 GEMM + SwiGLU + 量化一体）。要求 `use_te_op_fuser=True` 且 SwiGLU 激活；spec 选择见 `megatron/core/models/gpt/gpt_layer_specs.py:get_mlp_module_spec_for_backend`。
 
 ### 7.4 Frozen Linear dgrad 折叠
 

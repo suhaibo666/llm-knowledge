@@ -9,7 +9,7 @@ title: "slime 后训练稳定性：把“发散”拆成四个可判别控制环
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：后训练“稳定性”不是由某一个优化器参数决定的，而是四个具有不同反馈延迟的闭环必须同时正常工作：数据/奖励环决定学什么，策略版本环决定样本由哪个版本产生，估计量/数值环决定这些样本如何变成梯度，基础设施环决定状态能否持续推进。KL、clip fraction、reward、grad norm 或重启次数都只是某个闭环的观测指标；应先通过固定样本回放和版本/标识信息划分故障范围，再调整 clipping、过滤或重启策略，避免只是压低症状，却继续训练错误目标。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-27。按五拍重排章节顺序，把原“边界与设计评价”拆成第 2 拍（设计评价）与第 12 节（约束），并补写第 5 拍；机制正文与既有引用未改。
+> **最近更新**：2026-08-27。按五拍重排章节顺序，把原“边界与设计评价”拆成第 2 拍（设计评价）与第 12 节（约束），并补写第 5 拍；机制正文与既有引用未改——既有引用**未**重新核验，故上方**核验日期**不变；本次新增的引用均已在该基线下逐条打开核对。
 
 本文是**诊断综合页**，不重复机制页的实现细节：Sample 与 DataSource 归 [[12_slime_sample_datasource_analysis]]，loss 统计归 [[15_slime_loss_parallelism_analysis]]，权重提交归 [[16_slime_weight_sync_analysis]]，训推一致性归 [[17_slime_train_inference_consistency_analysis]]，恢复与取证归 [[18_slime_fault_tolerance_observability_analysis]]，精度轴归 [[22_slime_low_precision_training_rollout_analysis]]，agent fanout 归 [[24_slime_agent_workflow_examples_analysis]]。下文带 fixed-commit 定位符的是源码、测试或项目文档事实；标为“分析判断”的因果、阈值选择和处置优先级不是作者原话。
 

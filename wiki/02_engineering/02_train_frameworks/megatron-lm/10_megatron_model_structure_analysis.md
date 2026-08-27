@@ -5,7 +5,7 @@ title: "Megatron-LM 模型结构深度解析(Model Structure)"
 # Megatron-LM 模型结构深度解析(Model Structure)
 
 > **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）
-> 核心文件:`transformer/spec_utils.py`、`megatron/core/transformer/transformer_layer.py`、`megatron/core/transformer/transformer_block.py`、`megatron/core/transformer/attention.py`、`megatron/core/transformer/multi_latent_attention.py`、`megatron/core/transformer/mlp.py`、`moe/router.py`、`megatron/core/transformer/multi_token_prediction.py`、`ssm/`、`models/`
+> 核心文件:`megatron/core/transformer/spec_utils.py`、`megatron/core/transformer/transformer_layer.py`、`megatron/core/transformer/transformer_block.py`、`megatron/core/transformer/attention.py`、`megatron/core/transformer/multi_latent_attention.py`、`megatron/core/transformer/mlp.py`、`megatron/core/transformer/moe/router.py`、`megatron/core/transformer/multi_token_prediction.py`、`ssm/`、`models/`
 > 配套阅读:`14_megatron_ep_analysis.md`(MoE dispatcher)、`13_megatron_cp_analysis.md`、`12_megatron_tp_analysis.md`、`18_megatron_recompute_analysis.md`
 > 定位:之前 17 份文档都讲"**怎么把模型大规模训起来/服务起来**"(并行、显存、稳定性、推理、数据);本文讲"**模型本身长什么样**" —— 一个 transformer 模型由什么构成。
 
@@ -175,7 +175,7 @@ DeepSeek 稀疏注意力由 `config.experimental_attention_variant` 选档,有�
 | `dsa` | `MLASelfAttention` | `DSAttention`(`megatron/core/transformer/experimental_attention_variant/dsa.py:1153`) | `DSAIndexer`(`megatron/core/transformer/experimental_attention_variant/dsa.py:840`) | 无(对未压缩 KV 选 top-k) | DeepSeek-V3.2-Exp |
 | `dsv4_hybrid` | `DSv4HybridSelfAttention`(`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:408`,父类 `DSv4HybridAttention:60`) | `CompressedSparseAttention`(`megatron/core/transformer/experimental_attention_variant/csa.py:567`) | `CSAIndexer`(`megatron/core/transformer/experimental_attention_variant/csa.py:429`) | `Compressor`(`megatron/core/transformer/experimental_attention_variant/csa.py:267`)4× / 128× | DeepSeek-V4 |
 
-两条都建在 MLA(§3.2)上 —— Q/KV 仍走低秩压缩投影,稀疏化加在 **core attention** 这一层。spec 工厂在 `models/gpt/experimental_attention_variant_module_specs.py`(`get_dsa_module_spec_for_backend:93`、`get_dsv4_hybrid_module_spec_for_backend:145`)。
+两条都建在 MLA(§3.2)上 —— Q/KV 仍走低秩压缩投影,稀疏化加在 **core attention** 这一层。spec 工厂在 `megatron/core/models/gpt/experimental_attention_variant_module_specs.py`(`get_dsa_module_spec_for_backend:93`、`get_dsv4_hybrid_module_spec_for_backend:145`)。
 
 **(1) DSA = DeepSeek Sparse Attention —— 学出来的 top-k 检索**
 
@@ -208,13 +208,13 @@ HybridModel 的层 pattern 字符串(见 §7)新增四个 MLA 系注意力符号
 - RoPE:压缩层(ratio>1)用 **YaRN**(base `csa_compress_rotary_base`=40000);window-only 层(ratio==0)用**标准 RoPE**(#5018 修正了 window 层错用 YaRN 的 bug,并修了 `csa_dense_mode` 下的 dense loss)。
 - 约束:DSv4 Hybrid **只支持 TP=1**,不支持 checkpoint core attention / offload qkv linear,**不支持推理**(`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:90-110`)。
 
-> [!update] 2026-06-16 · dev@232c478d4:DSv4-Flash 的 **Q-up FLOPs 统计修正** —— 用 `args.v_head_dim` 替代 `args.num_attention_heads * (qk_head_dim + qk_pos_emb_head_dim)`(#5142,`training/training.py:576`)。另 #3026 修了 `dsa` 路径的 rope 与 spec 多个 bug。完整可跑配置见 DeepSeek-V4-Flash recipe(#5266,`examples/moe_recipes/gb200/`):`num_layers=43, hidden=4096, heads=64, num_experts=256, moe_topk=6, mtp_num_layers=1`。
+> [!update] 2026-06-16 · dev@232c478d4:DSv4-Flash 的 **Q-up FLOPs 统计修正** —— 用 `args.v_head_dim` 替代 `args.num_attention_heads * (qk_head_dim + qk_pos_emb_head_dim)`(#5142,`megatron/training/training.py:516-529`)。另 #3026 修了 `dsa` 路径的 rope 与 spec 多个 bug。完整可跑配置见 DeepSeek-V4-Flash recipe(#5266,`examples/moe_recipes/gb200/`):`num_layers=43, hidden=4096, heads=64, num_experts=256, moe_topk=6, mtp_num_layers=1`。
 
 ---
 
 ## 4. MoE Router 算法(补 `14_megatron_ep_analysis.md` 的空白)
 
-`14_megatron_ep_analysis.md` 讲了 token 怎么**分发**(dispatcher),但没讲 token 怎么**被路由**。补在这里。`moe/router.py`:`Router`(ABC)→ `TopKRouter`(`:138`)。
+`14_megatron_ep_analysis.md` 讲了 token 怎么**分发**(dispatcher),但没讲 token 怎么**被路由**。补在这里。`megatron/core/transformer/moe/router.py`:`Router`(ABC)→ `TopKRouter`(`:138`)。
 
 `TopKRouter.forward` 产出 `(probs, routing_map)`:
 
@@ -258,17 +258,17 @@ HybridModel 的层 pattern 字符串(见 §7)新增四个 MLA 系注意力符号
 
 注意力是 `O(s²)`。**状态空间模型(SSM)/ Mamba** 用一个**固定大小的循环状态**线性处理序列(`O(s)`),长序列友好。
 
-- **`MambaMixer`**(`ssm/mamba_mixer.py`):Mamba 的核心 —— 选择性扫描(selective scan),输入依赖的状态转移。`MambaMixerSubmodules`。
-- **`MambaLayer`**(`ssm/mamba_layer.py`):一个 Mamba 层(`MambaLayerSubmodules`)。
-- **`GatedDeltaNet`**(`ssm/gated_delta_net.py`):门控 delta net,另一种线性注意力 / SSM 变体(Qwen3-Next)。
+- **`MambaMixer`**(`megatron/core/ssm/mamba_mixer.py`):Mamba 的核心 —— 选择性扫描(selective scan),输入依赖的状态转移。`MambaMixerSubmodules`。
+- **`MambaLayer`**(`megatron/core/ssm/mamba_layer.py`):一个 Mamba 层(`MambaLayerSubmodules`)。
+- **`GatedDeltaNet`**(`megatron/core/ssm/gated_delta_net.py`):门控 delta net,另一种线性注意力 / SSM 变体(Qwen3-Next)。
 - **`MambaContextParallel`**:Mamba 的 CP 支持。
-- **混合模型**:把 **Mamba 层 + attention 层 + MLP 层**按某种 pattern 交错(`models/hybrid/`、`hybrid_layer_allocation`)—— 兼顾 SSM 的长序列效率与 attention 的精确检索能力。`ssm/mlp_layer.py` 的 `MLPLayer` 就是 `TransformerLayer` 的纯 MLP 子类,供混合模型排布。
+- **混合模型**:把 **Mamba 层 + attention 层 + MLP 层**按某种 pattern 交错(`models/hybrid/`、`hybrid_layer_allocation`)—— 兼顾 SSM 的长序列效率与 attention 的精确检索能力。`megatron/core/ssm/mlp_layer.py` 的 `MLPLayer` 就是 `TransformerLayer` 的纯 MLP 子类,供混合模型排布。
 
 Mamba 的"KV"是固定大小循环状态,推理时由 `MambaSlotAllocator` 分配(见 `31_megatron_inference_engine_analysis.md` §5.2);打包用 `PackedSeqParams.seq_idx`(见 `11_megatron_dataset_analysis.md` §3.2)。
 
 > [!update] 2026-06-16 · dev@232c478d4:Mamba / GDN 增量
-> - **GDN 支持序列打包(THD)**(#2645,`ssm/gated_delta_net.py:340+`):`packed_seq_params.qkv_format=='thd'` 时按 `cu_seqlens` 把打包 buffer 拆成各条子序列、**逐条**做 CP↔HP 的 all-to-all 再 chunk 扫描(要求 `batch==1`、非 deterministic 模式;后续 #4913 把逐序列 all-to-all 融成统一一次)。MTP 路径也透传 `packed_seq_params`。GDN 另有"整模块 `gdn` 选择性重计算"(#5296)与 `norm_out` 选择性重计算(#4715)。
-> - **Mamba conv 参数直挂 mixer**(#4899,`ssm/mamba_mixer.py:297`):原 `self.conv1d`(`nn.Conv1d`)拆成直接的 `conv1d_weight` / `conv1d_bias` 两个 `nn.Parameter`(保留原 TP `partition_dim` / `partition_sizes` 元数据与初始化序列),便于 FSDP / 弹性(flextron)切分。
+> - **GDN 支持序列打包(THD)**(#2645,`megatron/core/ssm/gated_delta_net.py:340+`):`packed_seq_params.qkv_format=='thd'` 时按 `cu_seqlens` 把打包 buffer 拆成各条子序列、**逐条**做 CP↔HP 的 all-to-all 再 chunk 扫描(要求 `batch==1`、非 deterministic 模式;后续 #4913 把逐序列 all-to-all 融成统一一次)。MTP 路径也透传 `packed_seq_params`。GDN 另有"整模块 `gdn` 选择性重计算"(#5296)与 `norm_out` 选择性重计算(#4715)。
+> - **Mamba conv 参数直挂 mixer**(#4899,`megatron/core/ssm/mamba_mixer.py:297`):原 `self.conv1d`(`nn.Conv1d`)拆成直接的 `conv1d_weight` / `conv1d_bias` 两个 `nn.Parameter`(保留原 TP `partition_dim` / `partition_sizes` 元数据与初始化序列),便于 FSDP / 弹性(flextron)切分。
 > - **混合层符号扩展**:`Symbols` 在 `M`(Mamba)/`G`(GDN)/`*`(attention)/`D`(DSA)/`-`(MLP)/`E`(MoE)之外新增 DeepSeek-V4 的 `C`/`H`/`W`(见 §3.4);`MLA_ATTENTION={D,C,H,W}` 与标准 `*` 互斥。
 
 ---

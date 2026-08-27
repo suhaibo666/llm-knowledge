@@ -9,7 +9,7 @@ title: "slime Sample、DataSource 与训练数据契约分析"
 > **核验日期**：2026-08-19 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：slime 的数据层不只是“读取 prompt 再转成张量”的加载流程，而是一道跨系统的数据边界：rollout 侧会产生多轮交互、工具调用、中断续生成、动态过滤和一对多扇出，Megatron 侧则只接受可切分、可打包、统计口径稳定的训练批次。slime 因而把数据拆成三层：`Sample` 保存一次生成的完整信息，`DataSource` 管理 prompt 分组的取得、回收和恢复，RolloutManager 再把 Sample 压缩成训练输入字典。这个分层牺牲了一部分静态类型和零拷贝能力，换来的是扩展 rollout 时不必修改训练器，同时仍能保证 token mask、行为策略元数据、rollout 标识和恢复顺序正确。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改。
+> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改——既有引用**未**重新核验，故上方**核验日期**不变；本次新增的引用均已在该基线下逐条打开核对。
 
 本文把“源码明确行为”和“设计分析”分开：带 fixed-commit 定位符的是源码或项目文档事实；使用“由此可推断”“可以理解为”的段落是根据约束与失败路径作出的分析判断，不代表作者原话。
 
@@ -368,7 +368,7 @@ CP 的实际切片发生在训练侧 `get_batch()`：它读取同一 local micro
 | 扇出的第三层只是返回格式 | 它在展平前表达片段的从属关系，之后由共享 `rollout_id` 保持统计语义 |
 | `rollout_id` 等于 prompt 分组 | prompt 分组使用 `group_index`；同一个 prompt 的多次采样对应不同 rollout |
 | tool token 的 0 logprob 会进入 policy loss | 等长 0 是占位，`loss_mask=0` 才是排除机制 |
-| buffer 是现成的经验回放池 | 默认只有分组先进先出和过滤，没有按时效、优先级采样或自动淘汰语义 |
+| buffer 是现成的经验回放池 | 同一判断在第 2 拍的被否方案表与 §5.2 已有完整依据，此处不重复——见第 2 节该行与 §5.2 |
 | DataSource 已经把数据切成多个 train steps | DataSource 只产出 prompt groups；optimizer step、micro-batch 与 DP schedule 都由 RolloutManager 生成 |
 | 每个训练 global rank 都得到不同样本 | 只有 DP rank 分不同 partition；同一 DP 副本内的 TP/PP/CP/EP ranks 共享样本身份，再执行各自并行分工 |
 | 在线 rollout 仍由 Megatron Dataset/DataLoader 加载 | 在线路径使用 slime `DataIterator`；Megatron 接管的是 forward/backward、并行通信和 optimizer，而不是 prompt/rollout 读取 |

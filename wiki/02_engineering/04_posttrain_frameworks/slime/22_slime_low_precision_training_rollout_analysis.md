@@ -9,7 +9,7 @@ title: "slime 低精度训推分析：精度不是一个开关"
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：slime 没有把“低精度”收敛成一个全局 dtype，而是让训练计算、训练参数与 optimizer 主状态、梯度/规约、同步 payload、rollout 常驻权重、KV cache、engine 量化后处理分别由 Megatron、TransformerEngine、slime 转换层和 SGLang 拥有。这样做不是配置冗余：七个阶段受不同的数值误差、显存目标、checkpoint 可恢复性和 loader ABI 约束。代价是组合空间变大，必须按轴验证；收益是可以保留高精度优化状态，同时只压缩 rollout 或 KV 的容量瓶颈。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改。
+> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改——既有引用**未**重新核验，故上方**核验日期**不变；本次新增的引用均已在该基线下逐条打开核对。
 
 本文把源码事实与设计分析分开：带 fixed-commit 定位符的是该基线的实现、测试或项目文档；“由此可推断”“设计上可以理解为”表示根据实现边界作出的分析判断，不代表项目作者原话。权重同步的 pause/flush/version 协议由 [[16_slime_weight_sync_analysis]] 负责，训推 logprob 的分层归因与阈值由 [[17_slime_train_inference_consistency_analysis]] 负责；本页只解释量化表示如何进入这两条链路。
 
