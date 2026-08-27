@@ -30,7 +30,7 @@ flowchart LR
   Clean --> Codegen["Inductor codegen or custom kernels"]
 ```
 
-## 二、为什么这么设计：替代方案与验证
+## 二、为什么这么设计：为什么不是这几个更简单的方案
 
 | 方案 | 优点 | 局限 |
 |---|---|---|
