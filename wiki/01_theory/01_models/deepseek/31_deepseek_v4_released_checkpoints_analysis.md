@@ -1,3 +1,7 @@
+---
+title: "DeepSeek-V4 正式版 checkpoint 对账：论文超参逐字段坐实，唯一结构增量是 DSpark"
+---
+
 # DeepSeek-V4 正式版 checkpoint 对账：论文超参逐字段坐实，唯一结构增量是 DSpark
 
 > **核对基线（双侧）**：

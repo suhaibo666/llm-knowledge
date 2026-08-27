@@ -1,3 +1,7 @@
+---
+title: "DeepSeek-V4 FP4 量化感知训练（QAT）"
+---
+
 # DeepSeek-V4 FP4 量化感知训练（QAT）
 
 > **核对基线**: arXiv:**2606.19348v1** (DeepSeek-AI, **2026-04-26**) **§5.2.1**「FP4 Quantization-Aware Training」（§5.2 Post-Training Infrastructures）＝ `raw/01_theory/01_models/deepseek/DeepSeek_V4.md`  

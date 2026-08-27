@@ -1,3 +1,7 @@
+---
+title: "GLM/智谱 AI 技术路线总览"
+---
+
 # GLM/智谱 AI 技术路线总览
 
 > GLM (General Language Model) 是智谱 AI (Zhipu AI) 与清华大学 KEG 实验室开发的大语言模型系列。

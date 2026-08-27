@@ -99,6 +99,11 @@
       "runtimePath": ".quartz/plugins/latex"
     },
     {
+      "name": "note-properties",
+      "commit": "e68145b9f11b31d3168ed2755bd74f36a67dbed7",
+      "runtimePath": ".quartz/plugins/note-properties"
+    },
+    {
       "name": "obsidian-flavored-markdown",
       "commit": "eda74e79eac746445b7d6941f90133bf97483cd7",
       "runtimePath": ".quartz/plugins/obsidian-flavored-markdown"

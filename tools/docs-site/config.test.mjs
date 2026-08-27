@@ -24,6 +24,7 @@ test("Quartz configuration enables the local docs rendering contract", async () 
   }
 
   for (const plugin of [
+    "note-properties",
     "syntax-highlighting",
     "obsidian-flavored-markdown",
     "github-flavored-markdown",
@@ -39,13 +40,43 @@ test("Quartz configuration enables the local docs rendering contract", async () 
     "folder-page",
     "explorer",
     "search",
-    "article-title",
     "page-title",
     "darkmode",
     "breadcrumbs",
   ]) {
     assert.match(config, new RegExp(`source: github:quartz-community/${plugin}\\s+enabled: true`))
   }
+})
+
+test("frontmatter transformer runs first, or every folder index renders blank", async () => {
+  const config = await readFile(path.join(toolDir, "quartz.config.yaml"), "utf8")
+
+  // note-properties 写入 fileData.frontmatter。缺了它，quartz/util/ctx.ts 的
+  // trieFromAllFiles 会跳过所有文件，folder-page 的 FolderContent 在 trie.findNode
+  // 处 return null，于是每个子目录的 index.md 都渲染成空壳页。
+  const notePropertiesBlock = config.match(
+    /source: github:quartz-community\/note-properties[\s\S]*?order: (\d+)/,
+  )
+  assert.ok(notePropertiesBlock, "note-properties must be configured with an explicit order")
+  const notePropertiesOrder = Number(notePropertiesBlock[1])
+
+  for (const [, plugin, order] of config.matchAll(
+    /source: github:quartz-community\/([\w-]+)[\s\S]*?order: (\d+)/g,
+  )) {
+    if (plugin === "note-properties") continue
+    assert.ok(
+      notePropertiesOrder < Number(order),
+      `note-properties (order ${notePropertiesOrder}) must run before ${plugin} (order ${order})`,
+    )
+  }
+})
+
+test("article-title stays disabled because every page carries its own H1", async () => {
+  const config = await readFile(path.join(toolDir, "quartz.config.yaml"), "utf8")
+
+  // 本库每页正文首行就是 `# 标题`；再让 article-title 渲染一个 h1 会重复。
+  // 标题经 frontmatter 供给 <title>/explorer/search/folder-listing。
+  assert.match(config, /source: github:quartz-community\/article-title\s+enabled: false/)
 })
 
 test("Quartz configuration excludes remote and non-goal features", async () => {
@@ -72,6 +103,22 @@ test("Quartz configuration excludes remote and non-goal features", async () => {
   assert.match(config, /enableYouTubeEmbed: false/)
   assert.match(config, /enableTweetEmbed: false/)
   assert.match(config, /enableVideoEmbed: false/)
+})
+
+test("GitHub Pages deployment publishes the Quartz output at the project URL", async () => {
+  const config = await readFile(path.join(toolDir, "quartz.config.yaml"), "utf8")
+  const workflow = await readFile(
+    path.join(toolDir, "..", "..", ".github", "workflows", "pages.yml"),
+    "utf8",
+  )
+
+  assert.match(config, /^\s{2}baseUrl: suhaibo666\.github\.io\/llm-knowledge$/m)
+  assert.match(workflow, /^\s{6}pages: write$/m)
+  assert.match(workflow, /^\s{6}id-token: write$/m)
+  assert.match(workflow, /^\s{8}run: npm run docs:build$/m)
+  assert.match(workflow, /uses: actions\/upload-pages-artifact@v4/)
+  assert.match(workflow, /^\s{10}path: \.cache\/llm-knowledge-docs\/output$/m)
+  assert.match(workflow, /uses: actions\/deploy-pages@v4/)
 })
 
 test("runtime manifest and lock agree on every enabled plugin commit", async () => {

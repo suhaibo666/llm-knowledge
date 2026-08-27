@@ -1,3 +1,7 @@
+---
+title: "vLLM Scheduler：每一步重新做 token admission"
+---
+
 # vLLM Scheduler：每一步重新做 token admission
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`

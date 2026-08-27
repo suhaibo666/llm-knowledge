@@ -35,7 +35,9 @@ def test_skills_live_in_exactly_one_shared_place():
     # and there is exactly one physical SKILL.md per skill in the whole repo
     seen = {}
     for path in REPO_ROOT.rglob("SKILL.md"):
-        if ".cache" in path.parts or ".git" in path.parts:
+        # .worktrees/ 下是 git worktree —— 同一仓库的另一份合法检出，
+        # 不是"技能被复制了一份"。排除它，否则任何人开个 worktree 都会让本用例变红。
+        if {".cache", ".git", ".worktrees"} & set(path.parts):
             continue
         seen.setdefault(os.path.realpath(path), []).append(path)
     names = [p.parent.name for real, ps in seen.items() for p in ps[:1]]

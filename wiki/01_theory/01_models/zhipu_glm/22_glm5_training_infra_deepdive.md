@@ -1,3 +1,7 @@
+---
+title: "GLM-5 训练基础设施深挖 — interleaved PP 上的「显存五件套 + 并行效率」"
+---
+
 # GLM-5 训练基础设施深挖 — interleaved PP 上的「显存五件套 + 并行效率」
 
 > **来源基线**: arXiv 2602.15763v2《GLM-5: from Vibe Coding to Agentic Engineering》(GLM-5 Team, Zhipu AI & 清华, 2026-02-24)

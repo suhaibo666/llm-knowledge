@@ -1,3 +1,7 @@
+---
+title: "RLHF Foundations & Advanced Methods — Analysis"
+---
+
 # RLHF Foundations & Advanced Methods — Analysis
 
 **Covers**: ReMax, Weak-to-Strong, Scaling Laws for Reward Model Overoptimization, Learning to Summarize, Fine-Tuning from Human Preferences, RigorLLM

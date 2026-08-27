@@ -1,3 +1,7 @@
+---
+title: "Triton 全能专家知识地图 — 会写·会调·会优化·会debug 的完整知识点清单"
+---
+
 # Triton 全能专家知识地图 — 会写·会调·会优化·会debug 的完整知识点清单
 
 > **源基线**: `triton main @ 70e0929`，v3.8.0 ｜ 锚定 `python/tutorials/01..11-*.py` + `python/triton/{language,runtime}/`

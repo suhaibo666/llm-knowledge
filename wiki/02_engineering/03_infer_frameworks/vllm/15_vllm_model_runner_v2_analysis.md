@@ -1,3 +1,7 @@
+---
+title: "vLLM Model Runner V2：以稳定状态与异步执行重建 GPU 热路径"
+---
+
 # vLLM Model Runner V2：以稳定状态与异步执行重建 GPU 热路径
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`

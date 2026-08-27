@@ -1,3 +1,7 @@
+---
+title: "DeepSeek-V3 Analysis"
+---
+
 # DeepSeek-V3 Analysis
 
 **Source:** `raw/01_theory/01_models/deepseek/DeepSeek_V3-2412.19437.md`  

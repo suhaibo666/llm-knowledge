@@ -1,3 +1,7 @@
+---
+title: "L2 · 会调① — Triton Autotune：别手猜 launch 配置"
+---
+
 # L2 · 会调① — Triton Autotune：别手猜 launch 配置
 
 > **源基线**: `triton main @ 70e0929`（2026-06-25），v3.8.0 ｜ 锚定 `python/tutorials/03-matrix-multiplication.py` 的 autotune 段 + `python/triton/runtime/autotuner.py`（逐行可核验）

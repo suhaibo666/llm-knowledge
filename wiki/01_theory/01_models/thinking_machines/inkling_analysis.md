@@ -1,3 +1,7 @@
+---
+title: "Inkling (Thinking Machines) — 不抄 DeepSeek 作业的多模态开源 MoE,赌\"可定制底座\"而非榜首"
+---
+
 # Inkling (Thinking Machines) — 不抄 DeepSeek 作业的多模态开源 MoE,赌"可定制底座"而非榜首
 
 > **来源基线**(2026-07-15 发布,**无正式技术报告/论文**,"technical report" 实体 = 官方公告 + HF 模型卡 + 开源工件):

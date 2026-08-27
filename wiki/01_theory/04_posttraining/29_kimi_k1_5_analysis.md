@@ -1,3 +1,7 @@
+---
+title: "Kimi k1.5: RL 缩放定律与推理能力"
+---
+
 # Kimi k1.5: RL 缩放定律与推理能力
 
 > **论文信息**: Kimi k1.5: Scaling Reinforcement Learning with LLMs

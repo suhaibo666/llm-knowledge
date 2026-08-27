@@ -1,12 +1,16 @@
+---
+title: "工程实现 — 知识地图"
+---
+
 # 工程实现 — 知识地图
 
-覆盖大语言模型的工程基础设施：AI框架、训练框架、推理框架、后训练框架。
+覆盖大语言模型的工程基础设施：PyTorch 本体、训练框架、推理框架、后训练框架。
 
 ## 子领域
 
 | 目录 | 核心主题 |
 |------|---------|
-| [[01_ai_frameworks/index]] | PyTorch 编译栈：Dynamo、Inductor、CUDA/NPU Graphs |
+| [[01_pytorch/index]] | PyTorch 本体：eager 运行时地基、torch.compile 编译栈、运行时图捕获、export 与分布式原语 |
 | [[02_train_frameworks/index]] | 训练框架：TorchTitan、Megatron-LM、MindFormers、MindSpeed 的分布式训练与通信优化 |
 | [[03_infer_frameworks/index]] | 推理框架：vLLM、TRT-LLM、Mooncake 分离式服务 |
 | [[04_posttrain_frameworks/index]] | 后训练框架：RLHF 基础设施、对齐工具链（预留） |

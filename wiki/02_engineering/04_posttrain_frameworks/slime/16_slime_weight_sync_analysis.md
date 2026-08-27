@@ -1,3 +1,7 @@
+---
+title: "slime Megatron→SGLang 权重同步：用服务提交协议跨越异构分片"
+---
+
 # slime Megatron→SGLang 权重同步：用服务提交协议跨越异构分片
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`；其 stable 环境固定 SGLang `v0.5.15.post1@0b3bb0cbe31873994c9f989fddfe2f87ca839fdd`。[`build_conda.sh:25-33`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/build_conda.sh#L25-L33)

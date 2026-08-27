@@ -1,3 +1,7 @@
+---
+title: "MoonEP 源码级分析：用\"动态冗余专家\"把 MoE 负载均衡从软约束变成硬保证"
+---
+
 # MoonEP 源码级分析：用"动态冗余专家"把 MoE 负载均衡从软约束变成硬保证
 
 > **来源基线**（所有 `file:line` 均已打开核对）：`MoonshotAI/MoonEP@0f385f038fc33bec22e3bcf5a07a8a22693e754c`（2026-07-28 09:37 +0800，"Add AcclEP into Acknowledgments"），MIT License。仓库共 12,723 行，本地审计快照为 clone 后的工作副本。

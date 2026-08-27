@@ -1,3 +1,7 @@
+---
+title: "OPD 工业实践全景：厂商谱系、四类用途、教师经济学与两条实现路线之争"
+---
+
 # OPD 工业实践全景：厂商谱系、四类用途、教师经济学与两条实现路线之争
 
 > **本页覆盖**：在线策略蒸馏（On-Policy Distillation, OPD）在 2024–2026 年工业界的落地全景——哪些厂商在用、用来做什么、教师从哪里来、教师值多少钱、两条互不相容的实现路线各有什么一手证据、以及哪些厂商没在用或不肯说。本页是《大语言模型在线策略蒸馏综述》（`OPD-Survey-2026-08.md`）§5 全章（§5.1 总览表至 §5.12 教师来源）的展开分析页，并吸收其调研底稿 `research-notes/opd_research_cn_industry.md`、`opd_research_west_industry.md`、`addendum_cn_reverify.md`、`addendum_west_reverify.md` 中正文省略的逐字引文与复核记录。方法论、散度演进、失败模式等不在本页范围，见 Related Pages。

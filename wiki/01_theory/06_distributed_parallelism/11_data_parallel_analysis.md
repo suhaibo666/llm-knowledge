@@ -1,8 +1,12 @@
+---
+title: "数据并行 DP — 原理解读"
+---
+
 # 数据并行 DP — 原理解读
 
 > 层次：原理（principle）· 引擎无关
 > 前置：[[10_collectives_analysis]]（all-reduce 的代价模型）
-> 实现见 [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]]（`DistributedDataParallel` 源码级机制）
+> 实现见 [[../../02_engineering/01_pytorch/04_export_and_distributed/02_distributed_primitives/index]]（`DistributedDataParallel` 源码级机制）
 > 最后更新：2026-07-01
 
 ---
@@ -83,7 +87,7 @@ DP 复制的是**整个模型状态**。以混合精度 Adam 训练、参数量 
 
 ## 工程上让 DP 更快的两招（原理层）
 
-**① 梯度分桶 + 反向重叠**：反向是**从最后一层往前**逐层产生梯度的。与其等整份梯度都算完再 all-reduce（通信暴露在关键路径），不如把参数分成若干**桶（bucket）**，某个桶的梯度一凑齐就**立即异步 all-reduce**，同时反向继续往前算——通信藏进了后续层的反向计算里。这就是 DDP 的 `Reducer` 做的事（实现见 [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]]）。
+**① 梯度分桶 + 反向重叠**：反向是**从最后一层往前**逐层产生梯度的。与其等整份梯度都算完再 all-reduce（通信暴露在关键路径），不如把参数分成若干**桶（bucket）**，某个桶的梯度一凑齐就**立即异步 all-reduce**，同时反向继续往前算——通信藏进了后续层的反向计算里。这就是 DDP 的 `Reducer` 做的事（实现见 [[../../02_engineering/01_pytorch/04_export_and_distributed/02_distributed_primitives/index]]）。
 
 **② 梯度累积（gradient accumulation）**：想要更大的 global batch 又受显存限制时，可以连续跑 $k$ 个 micro-batch、把梯度**本地累加**，只在第 $k$ 个之后才 all-reduce 一次。等价于 batch 放大 $k$ 倍，而**通信频次降为 $1/k$**——直接改善计算通信比。代价是这 $k$ 步内不能更新参数。
 
@@ -102,4 +106,4 @@ DP 复制的是**整个模型状态**。以混合精度 Adam 训练、参数量 
 - [[13_tensor_sequence_parallel_analysis]] — TP：当单份模型都放不下时，切模型本身
 - [[15_pipeline_parallel_analysis]] — PP：另一条「切模型」的路
 - [[01_theory/06_distributed_parallelism/index|分布式并行原理]] — N 维并行里 DP 通常是最外层维度
-- [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：`DistributedDataParallel` 的 `Reducer` 分桶与反向 all-reduce 重叠
+- [[../../02_engineering/01_pytorch/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：`DistributedDataParallel` 的 `Reducer` 分桶与反向 all-reduce 重叠

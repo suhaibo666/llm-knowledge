@@ -79,6 +79,12 @@
       "commit": "2544fd13fa132493647480d8ce75f4432a6f1750",
       "installedAt": "2026-03-11T18:22:33.24Z"
     },
+    "note-properties": {
+      "source": "github:quartz-community/note-properties",
+      "resolved": "https://github.com/quartz-community/note-properties.git",
+      "commit": "e68145b9f11b31d3168ed2755bd74f36a67dbed7",
+      "installedAt": "2026-08-27T08:30:00.000Z"
+    },
     "obsidian-flavored-markdown": {
       "source": "github:quartz-community/obsidian-flavored-markdown",
       "resolved": "https://github.com/quartz-community/obsidian-flavored-markdown.git",

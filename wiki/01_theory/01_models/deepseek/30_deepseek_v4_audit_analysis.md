@@ -1,3 +1,7 @@
+---
+title: "DeepSeek-V4 Wiki 审计报告 — 以正式发表版核对既有 V4 页面"
+---
+
 # DeepSeek-V4 Wiki 审计报告 — 以正式发表版核对既有 V4 页面
 
 > **核对基线（Source baseline）**: arXiv:**2606.19348v1** 「DeepSeek-V4: Towards Highly Efficient

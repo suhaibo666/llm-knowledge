@@ -1,3 +1,7 @@
+---
+title: "D11 CUDA–Ascend 后训练栈对照"
+---
+
 # D11 CUDA–Ascend 后训练栈对照
 
 > **阶段**：S04

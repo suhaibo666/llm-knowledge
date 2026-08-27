@@ -1,3 +1,7 @@
+---
+title: "L4 · 会优化 — Profiling 驱动的 Kernel 优化：从 roofline 到 FlashAttention"
+---
+
 # L4 · 会优化 — Profiling 驱动的 Kernel 优化：从 roofline 到 FlashAttention
 
 > **源基线**: `triton main @ 70e0929`，v3.8.0 ｜ 锚定 `python/tutorials/06-fused-attention.py`（FlashAttention v2）、`05-layer-norm.py`（反向）、`09/10` 的 proton profiler

@@ -1,3 +1,7 @@
+---
+title: "训练快恢与「重新建链」对比 — Megatron / MindSpeed / MindFormers"
+---
+
 # 训练快恢与「重新建链」对比 — Megatron / MindSpeed / MindFormers
 
 > **代码基线**:Megatron-LM `dev` @ `232c478d4` · MindSpeed `master` @ `1432cb09` · MindSpeed-LLM `master` @ `0c16322d` · MindFormers `master` @ `01e71622` · torch_npu(本机 checkout)。

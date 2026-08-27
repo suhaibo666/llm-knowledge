@@ -1,3 +1,7 @@
+---
+title: "vLLM 编译与 CUDA Graph：分别优化算子图与 launch 图"
+---
+
 # vLLM 编译与 CUDA Graph：分别优化算子图与 launch 图
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`

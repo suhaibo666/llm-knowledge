@@ -1,3 +1,7 @@
+---
+title: "训推不一致（TIM）：从 kernel 非确定性到训练崩溃的完整因果链"
+---
+
 # 训推不一致（TIM）：从 kernel 非确定性到训练崩溃的完整因果链
 
 > 本页打通一条在本库中**上下游都已有页、中间是断的**链路：kernel 非确定性 → logprob 偏差 → 重要性比方差放大 → 训练崩溃。上游（浮点非确定性、batch 不变性、推理引擎实现）见 [[10_determinism_and_numerical_reliability_analysis]] 与 [[vllm/index]]；下游（loss spike / 发散的治理）见 [[12_training_dynamics_stability_analysis]]。本页补的是中间两环，以及把四环串起来的归因框架。

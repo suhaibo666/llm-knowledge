@@ -1,3 +1,7 @@
+---
+title: "GLM-5 数据深挖 — 预训练「质量门」筛语料 × 中训练「分段扩窗」喂长程"
+---
+
 # GLM-5 数据深挖 — 预训练「质量门」筛语料 × 中训练「分段扩窗」喂长程
 
 > **来源基线**: arXiv 2602.15763v2《GLM-5: from Vibe Coding to Agentic Engineering》(GLM-5 Team, Zhipu AI & 清华, 2026-02-24)

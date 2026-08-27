@@ -1,3 +1,7 @@
+---
+title: "AsyncCollectiveTensor 机制深度解析"
+---
+
 # AsyncCollectiveTensor 机制深度解析
 
 *源码追踪 · CUDA Stream 级执行过程 · 能做什么/不能做什么*

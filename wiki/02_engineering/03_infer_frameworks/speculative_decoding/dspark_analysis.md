@@ -1,3 +1,7 @@
+---
+title: "DSpark —— 半自回归生成 + 置信度调度验证：把「画大草稿块」真正变成生产加速"
+---
+
 # DSpark —— 半自回归生成 + 置信度调度验证：把「画大草稿块」真正变成生产加速
 
 > **核对基线（Source baseline）**：`DSpark_paper.pdf`（标题 *DSpark: Confidence-Scheduled Speculative Decoding with Semi-Autoregressive Generation*，Cheng et al.，北京大学 + DeepSeek-AI）＝ `github.com/deepseek-ai/DeepSpec` @ `dd854392`（main, 2026-06-28）仓库根目录的论文 PDF。代码交叉核对见 [[deepspec_codebase_analysis]]。

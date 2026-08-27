@@ -1,3 +1,7 @@
+---
+title: "PPO: Proximal Policy Optimization — Analysis"
+---
+
 # PPO: Proximal Policy Optimization — Analysis
 
 **Source**: `raw/01_theory/04_posttraining/PPO_Proximal_Policy_Optimization-1707.06347.md`

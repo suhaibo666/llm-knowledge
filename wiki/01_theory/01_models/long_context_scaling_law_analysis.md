@@ -1,3 +1,7 @@
+---
+title: "L2M: Mutual Information Scaling Law for Long-Context Language Modeling — Analysis"
+---
+
 # L2M: Mutual Information Scaling Law for Long-Context Language Modeling — Analysis
 
 **Source**: `raw/01_theory/01_models/Long_Context_Scaling_Law-2503.04725.md`

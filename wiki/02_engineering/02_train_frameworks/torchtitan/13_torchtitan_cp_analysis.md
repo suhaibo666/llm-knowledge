@@ -1,3 +1,7 @@
+---
+title: "上下文并行 CP：从 forward wrapper 到 SPMD 布局边界"
+---
+
 # 上下文并行 CP：从 forward wrapper 到 SPMD 布局边界
 
 > **代码基准**：pytorch/torchtitan `main` @ `a3168782c9a3a2e40afbd0de114818b96e2bda6e`（2026-08-27）

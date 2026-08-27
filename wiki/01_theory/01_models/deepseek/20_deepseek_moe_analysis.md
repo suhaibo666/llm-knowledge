@@ -1,3 +1,7 @@
+---
+title: "DeepSeekMoE Analysis"
+---
+
 # DeepSeekMoE Analysis
 
 **Source:** `raw/01_theory/01_models/deepseek/DeepSeek_MoE-2401.06066.md`  

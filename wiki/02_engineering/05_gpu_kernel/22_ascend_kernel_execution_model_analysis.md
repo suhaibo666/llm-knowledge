@@ -1,3 +1,7 @@
+---
+title: "生产级 Ascend 算子完整解读：达芬奇执行模型 · 片上缓冲 · 流水"
+---
+
 # 生产级 Ascend 算子完整解读：达芬奇执行模型 · 片上缓冲 · 流水
 
 > **Source baseline**: `raw/02_engineering/05_gpu_kernel/ascend_kernels.html`，本地快照 2026-07-22，SHA-256 `1a6b9c36c7bea192be773cbd5687700233818cfbb440a2945d5dda02a380f7f0`

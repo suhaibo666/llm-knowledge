@@ -1,3 +1,7 @@
+---
+title: "vLLM Serving 控制面：把协议、路由与生命周期隔离在推理内核之外"
+---
+
 # vLLM Serving 控制面：把协议、路由与生命周期隔离在推理内核之外
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`

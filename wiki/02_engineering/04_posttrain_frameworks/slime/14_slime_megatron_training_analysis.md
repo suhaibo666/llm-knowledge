@@ -1,3 +1,7 @@
+---
+title: "slime Megatron 训练后端：让 RL 样本进入原生并行训练流程"
+---
+
 # slime Megatron 训练后端：让 RL 样本进入原生并行训练流程
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`

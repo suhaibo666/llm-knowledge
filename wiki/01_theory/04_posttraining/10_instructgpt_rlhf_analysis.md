@@ -1,3 +1,7 @@
+---
+title: "InstructGPT: Training Language Models to Follow Instructions with Human Feedback — Analysis"
+---
+
 # InstructGPT: Training Language Models to Follow Instructions with Human Feedback — Analysis
 
 **Source**: `raw/01_theory/04_posttraining/InstructGPT_RLHF-2203.02155.md`

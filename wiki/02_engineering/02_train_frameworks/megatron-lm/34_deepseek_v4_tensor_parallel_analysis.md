@@ -1,3 +1,7 @@
+---
+title: "DeepSeek-V4 Tensor Parallel 切分方案深度解析"
+---
+
 # DeepSeek-V4 Tensor Parallel 切分方案深度解析
 
 *基于 Megatron-LM dev 分支源码的实证分析 · CSA/HCA · MoE · mHC · 通信量与 Overlap*

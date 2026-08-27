@@ -1,3 +1,7 @@
+---
+title: "SPMD Types：把并行布局从运行时容器变成可检查的模块契约"
+---
+
 # SPMD Types：把并行布局从运行时容器变成可检查的模块契约
 
 > **代码基准**：pytorch/torchtitan `main` @ `a3168782c9a3a2e40afbd0de114818b96e2bda6e`（2026-08-27）

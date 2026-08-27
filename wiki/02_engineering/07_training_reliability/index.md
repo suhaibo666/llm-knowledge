@@ -1,7 +1,63 @@
+---
+title: "万卡级训练：确定性与可靠性问题域 — 目录索引"
+---
+
 # 万卡级训练：确定性与可靠性问题域 — 目录索引
 
 > 覆盖「万卡级 LLM 训练」中**确定性 / 数值可靠性 / 故障容错 / 训练动力学稳定性**四大问题域，以**问题为纲**（背景→影响→如何发现→解决方案→代码实现）逐个讲透机理。
 > 最后更新: 2026-07-31(kb-reorg P7 Task 7:目录内分段编号——段 1(10-12)=下方「三张内容页」,按问题 1-4→5-8→9 顺序;段 2(20)=第四篇 batch 不变性算子实现,是问题 2 的算子级细化专题)
+
+---
+
+## 模块定位：做什么 · 提供什么能力 · 边界在哪
+
+**一句话**：本域研究的是**万卡规模下"训练能不能跑完、跑出来的数字能不能信"**——它不是性能问题，是**可用性与正确性**问题。
+
+**为什么必须独立成一层**：这些问题在单卡和百卡上要么不存在、要么可以忽略；到万卡规模全部变成一等工程问题：
+
+- 硬件 MTBF 摊到万卡后掉到**小时级**，"跑完一次训练"本身成了需要设计的能力；
+- 浮点加法不满足结合律 + 并行归约顺序不固定 ⇒ **重跑一遍对不上**成为常态，于是无法用"重放比对"区分随机噪声与坏硬件；
+- 低精度（FP8/FP4）把长链累加的误差裕量压薄，同时也压薄了 **SDC 单比特翻转**的检测窗口；
+- loss spike / NaN 在万亿 token 规模下几乎必然出现，回滚一次的成本以天计。
+
+关键在于：**这些问题不属于任何一个框架**——Megatron、torchtitan、MindSpeed 都会遇到，而解法往往落在框架之外（硬件 RAS、网络工程、运维体系）。所以本域按**问题**组织，不按框架组织。
+
+### 本域的来源构成与证据分级
+
+按问题组织的代价是：单页里常常并列多家的做法，而它们的证据强度差别很大。如实标注：
+
+| 来源类别 | 具体是谁 | 证据强度 | 在本域中承担什么 |
+|---|---|---|---|
+| **本地可核验源码** | `NVIDIA/Megatron-LM@232c478d4`（`--deterministic-mode`、`dist_checkpointing/`）、`torch_npu` | **可按 `file:line` 核验** | 确定性开关与 checkpoint 体系的具体落点 |
+| **厂商技术报告 / 论文** | Gemini、Llama 3、MegaScale(NSDI'24)、ByteRobust(SOSP'25)、Aegis(NSDI'25)、C4(HPCA'25)、DeepSeek-V3(ISCA'25) | 一手，但**只披露作者选择披露的部分** | 故障统计、goodput/ETTR 口径、恢复链路的工业实证 |
+| **工程博客 / 公开分析** | Thinking Machines「Defeating Nondeterminism」、LongCat-2.0 博客、华为 CloudMatrix、Anthropic 事故 postmortem | 一手但非同行评议 | batch 不变性、确定性算子、链路切流、真实事故复盘 |
+| **二手综述稿** | `docs/research/wanka_determinism_reliability_deep_analysis.md`（用户提供，2026-07 摄入） | **二手**——本簇三篇内容页的骨架来自它 | 把上述来源编织成 9 个问题域的坐标系 |
+| **本库一手页交叉** | [[longcat_2_analysis]]、[[13_low_precision_training_analysis]]、[[20_batch_invariance_guide]] 等 | 见各页 | 与本域结论互为印证或补充细节 |
+
+> 两点必须说清：① **本簇三篇主内容页是对一份二手综述的结构化摄入**，机制/数字/命令忠实于原文，但不等于逐条读过原始论文；② **公开信息本身有样本偏差**——Google/Meta/字节/阿里/华为/美团有成体系披露，OpenAI 与 Anthropic 训练侧基本不发表，所以 spike/NaN 治理的前沿实证几乎全部来自中国实验室的开源报告 + Google 的间接披露。下结论时不要把"公开得多"读成"做得好"。
+
+### 本域提供的能力
+
+
+| 能力 | 具体提供什么 | 锚点 | 详见 |
+|---|---|---|---|
+| **问题坐标系** | 9 个问题域 × 三条主线（确定性 / 容错 / 训练动力学）的归类，及它们之间的依赖关系 | — | 下方「问题地图」 |
+| **判据与度量** | goodput / ETTR 的定义与五级恢复坐标系（Job/Pod/Node/进程/Step）；"确定性税"的量级（5%–35%，取决于层次） | — | [[11_fault_tolerance_and_recovery_analysis]] |
+| **确定性的获取手段** | 确定性算子、二叉树/pairwise 分段累加、固定顺序归约、框架级开关 | `NVIDIA/Megatron-LM@232c478d4`：`megatron/training/arguments.py:1786`（`--deterministic-mode`） | [[10_determinism_and_numerical_reliability_analysis]] |
+| **batch 不变性的算子级实现** | 双内核 attention（单 SM 一序列 vs 多 SM 协作+固定顺序归约）、DeepGEMM 1D1D 布局替代 cuBLAS split-k、MoE 反向 per-SM 独立缓冲 | DeepSeek V4 报告 §3.3 + DeepGEMM 源码 | [[20_batch_invariance_guide]] |
+| **故障的发现与定界** | NCCL Flight Recorder、栈聚类识别 hang、straggler 打分、SDC 的四层检测（含"重放不复现 ⇒ 坏硬件"这条定界法） | — | [[11_fault_tolerance_and_recovery_analysis]] |
+| **恢复链路** | 异步分布式 checkpoint、本地 ckpt、临终保存、进程内重启、弹性缩容 | `Megatron-LM@232c478d4`：`megatron/core/dist_checkpointing/` | 同上 |
+| **网络侧的可靠性** | PFC 风暴、ECMP hash 冲突、链路级快恢与无感切流、流量工程 | — | 同上 |
+| **训练动力学的稳定化** | loss spike/NaN 的四类根因、前兆指标与排查决策树、四层防线（架构 QK-Norm/z-loss、优化器 MuonClip/自适应 clip、数据、运维） | — | [[12_training_dynamics_stability_analysis]] |
+
+### 不属于本模块的
+
+- 怎么把训练**跑得更快**（并行策略、通信掩盖、算子融合）→ [[02_engineering/02_train_frameworks/index|训练框架]] 与 [[02_engineering/05_gpu_kernel/index|GPU Kernel]]；本域只在"快"与"可信/可恢复"冲突时给出取舍依据；
+- 具体框架的容错**实现走查**（Megatron NVRx / MindSpeed MindIO ARF / MindFormers 委托 MindSpore）→ [[02_engineering/02_train_frameworks/33_fault_recovery_relink_comparison|跨框架快恢对比]]；本域讲问题与判据，那页讲某三家怎么接线；
+- 训推一致性在 **RL 训练中的算法后果**（importance ratio 失真如何影响梯度）→ [[01_theory/04_posttraining/index|后训练理论]] 与 [[02_engineering/04_posttrain_frameworks/index|后训练框架]]；本域只负责"两侧必须逐位对齐"这个数值前提。
+
+### 与兄弟域的关系
+本域是横切层——它对 `01_pytorch`（归约顺序、低精度累加）、`02_train_frameworks`（checkpoint 与恢复）、`04_posttrain_frameworks`（训推一致）、`05_gpu_kernel`（确定性算子的代价）**同时提出约束**，但不拥有其中任何一处实现。读本域是为了知道"该向那些域要什么保证"。
 
 ---
 

@@ -1,3 +1,7 @@
+---
+title: "Kimi K3：以约 2.5× 的整体扩展效率迈向 3T 级开放模型"
+---
+
 # Kimi K3：以约 2.5× 的整体扩展效率迈向 3T 级开放模型
 
 > **来源基线**：官方 Kimi K3 Tech Blog（2026-07-16）与 [Kimi K3 Technical Report `0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2)（2026-07-28）；模型权重固定到 [Hugging Face `9f62e4e9`](https://huggingface.co/moonshotai/Kimi-K3/tree/9f62e4e9fffbd0a83ddd60e1c209d828994b3569)。

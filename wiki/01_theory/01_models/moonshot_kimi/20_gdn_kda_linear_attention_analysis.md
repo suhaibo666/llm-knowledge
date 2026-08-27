@@ -1,3 +1,7 @@
+---
+title: "GDN 与 KDA 线性注意力：从 QKVABZ、循环状态到 Chunkwise 等价性"
+---
+
 # GDN 与 KDA 线性注意力：从 QKVABZ、循环状态到 Chunkwise 等价性
 
 > **核心来源**：Gated Delta Networks，arXiv 2412.06464v3；Kimi Linear，arXiv 2510.26692v2

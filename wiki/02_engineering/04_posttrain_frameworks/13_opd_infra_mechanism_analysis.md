@@ -1,3 +1,7 @@
+---
+title: "OPD 基础设施机制分析：训练回路、信号带宽账与八项工程工作"
+---
+
 # OPD 基础设施机制分析：训练回路、信号带宽账与八项工程工作
 
 > **定位**：本页回答"如果要在自建集群上跑 on-policy distillation（OPD），基础设施要多建什么、多花什么、卡在哪里"。算法层的散度之争与目标函数演化见 [[15_opd_divergence_and_objective_evolution_analysis]]，厂商格局见 [[32_opd_industrial_landscape_analysis]]，框架逐项对照与选型见 [[32_opd_framework_support_comparison]]。

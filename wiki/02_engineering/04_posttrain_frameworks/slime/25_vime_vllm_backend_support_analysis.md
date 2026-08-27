@@ -1,3 +1,7 @@
+---
+title: "vime 对 slime 的 vLLM 后端替换与支持度分析"
+---
+
 # vime 对 slime 的 vLLM 后端替换与支持度分析
 
 > **定位**：slime 段 2 深潜 · vLLM Backend Derivative / Support Audit

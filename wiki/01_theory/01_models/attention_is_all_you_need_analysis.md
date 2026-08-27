@@ -1,3 +1,7 @@
+---
+title: "Attention Is All You Need — Analysis"
+---
+
 # Attention Is All You Need — Analysis
 
 **Source**: `raw/01_theory/01_models/Attention_Is_All_You_Need-1706.03762.md`
@@ -150,4 +154,4 @@ This paper is the foundation of all modern LLMs. Every subsequent model (GPT, BE
 - [[01_theory/index]]
 - [[11_deepseek_v2_analysis]] — MLA (Multi-head Latent Attention) is a direct descendant
 - [[29_engram_analysis]] — extends attention with memory mechanisms
-- [[02_engineering/01_ai_frameworks/index]] — attention kernel optimization via torch.compile
+- [[02_engineering/01_pytorch/index]] — attention kernel optimization via torch.compile

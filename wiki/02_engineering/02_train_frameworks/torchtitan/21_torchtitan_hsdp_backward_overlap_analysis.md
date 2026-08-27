@@ -1,3 +1,7 @@
+---
+title: "HSDP 反向梯度通信掩盖 —— reduce-scatter 与 all-reduce 双流掩盖(源码级)"
+---
+
 # HSDP 反向梯度通信掩盖 —— reduce-scatter 与 all-reduce 双流掩盖(源码级)
 
 > **代码基准**:torchtitan `main` @ `a3168782c9a3a2e40afbd0de114818b96e2bda6e`（接线）· PyTorch `2.9.1`（FSDP2 内核 `torch/distributed/fsdp/_fully_shard/`）

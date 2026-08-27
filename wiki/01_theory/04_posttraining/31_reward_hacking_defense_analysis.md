@@ -1,3 +1,7 @@
+---
+title: "Reward Hacking 防御体系 — 分析"
+---
+
 # Reward Hacking 防御体系 — 分析
 
 **领域**: 后训练对齐

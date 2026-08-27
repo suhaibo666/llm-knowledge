@@ -1,3 +1,7 @@
+---
+title: "vLLM 模型库：模型结构、权重格式与并行执行之间的 ABI"
+---
+
 # vLLM 模型库：模型结构、权重格式与并行执行之间的 ABI
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`

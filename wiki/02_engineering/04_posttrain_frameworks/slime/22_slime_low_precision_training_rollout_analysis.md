@@ -1,3 +1,7 @@
+---
+title: "slime 低精度训推分析：精度不是一个开关"
+---
+
 # slime 低精度训推分析：精度不是一个开关
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`

@@ -1,3 +1,7 @@
+---
+title: "Kimi K2.5: 视觉 Agent 智能"
+---
+
 # Kimi K2.5: 视觉 Agent 智能
 
 > **论文**: Kimi K2.5: Visual Agentic Intelligence

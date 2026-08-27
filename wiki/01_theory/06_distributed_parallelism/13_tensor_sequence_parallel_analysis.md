@@ -1,8 +1,12 @@
+---
+title: "张量并行 TP / 序列并行 SP / 上下文并行 CP — 原理解读"
+---
+
 # 张量并行 TP / 序列并行 SP / 上下文并行 CP — 原理解读
 
 > 层次：原理（principle）· 引擎无关
 > 前置：[[10_collectives_analysis]]（all-reduce / all-gather / reduce-scatter 代价）
-> 实现见 [[../../02_engineering/02_train_frameworks/megatron-lm/index]]（Megatron 手工 TP/SP）与 [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]]（DTensor/TP）
+> 实现见 [[../../02_engineering/02_train_frameworks/megatron-lm/index]]（Megatron 手工 TP/SP）与 [[../../02_engineering/01_pytorch/04_export_and_distributed/02_distributed_primitives/index]]（DTensor/TP）
 > 最后更新：2026-07-01
 
 ---
@@ -138,4 +142,4 @@ CP 与 TP **正交**（一个切序列、一个切隐藏维），可组合成 `C
 - [[01_theory/06_distributed_parallelism/index|分布式并行原理]] — TP/SP/CP 共同占据 N 维布局的「机内维」
 - [[../01_models/deepseek/23_deepseek_v4_cp_analysis]] — CP 在长上下文模型中的实践
 - [[../../02_engineering/02_train_frameworks/megatron-lm/index]] — **实现层**：Megatron 手工 TP/SP 的 ColumnParallel/RowParallel
-- [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：DTensor/TP 的 `parallelize_module`、ColwiseParallel/RowwiseParallel
+- [[../../02_engineering/01_pytorch/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：DTensor/TP 的 `parallelize_module`、ColwiseParallel/RowwiseParallel

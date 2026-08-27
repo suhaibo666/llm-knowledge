@@ -1,3 +1,7 @@
+---
+title: "计算通信掩盖机制跨框架对比矩阵"
+---
+
 # 计算通信掩盖机制跨框架对比矩阵
 
 *Megatron-LM combined_1f1b · torchtitan ZBV/DualPipe · MindSpeed fb-overlap/DualPipeV · TP/DP/PP/EP 掩盖维度全览*

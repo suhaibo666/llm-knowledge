@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM TFLOPS 计算实现分析：原理与 MoE 场景准确性探讨"
+---
+
 # Megatron-LM TFLOPS 计算实现分析：原理与 MoE 场景准确性探讨
 
 在大规模模型训练中，**TFLOPS（每秒万亿次浮点运算）**是衡量硬件利用率和训练效率的关键指标。本文分析 Megatron-LM 计算 TFLOPS 的方法，通过流程图展示计算逻辑，并重点讨论混合专家模型（MoE）在无丢弃（Dropless）和有丢弃（Dropout）模式下的估算准确性。

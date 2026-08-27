@@ -1,3 +1,7 @@
+---
+title: "MindSpeed 昇腾亲和特性与融合算子 — 源码级分析"
+---
+
 # MindSpeed 昇腾亲和特性与融合算子 — 源码级分析
 
 > **代码基线**:MindSpeed core `master` @ `1432cb09`(patch Megatron `core_r0.17.0`)· MindSpeed-LLM `master` @ `0c16322d` · 阅读日期 2026-06-23

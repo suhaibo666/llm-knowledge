@@ -1,3 +1,7 @@
+---
+title: "Activation Checkpointing（重计算）完整分析"
+---
+
 # Activation Checkpointing（重计算）完整分析
 
 > [!note] 页面角色与审计状态

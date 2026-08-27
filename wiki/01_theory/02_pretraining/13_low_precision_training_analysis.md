@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM 低精度训练：从 BF16 到 FP4 的完整技术栈"
+---
+
 # Megatron-LM 低精度训练：从 BF16 到 FP4 的完整技术栈
 
 > 基于 Megatron-LM dev 分支、Transformer Engine、DeepSeek-V3/V4 实践的综合分析

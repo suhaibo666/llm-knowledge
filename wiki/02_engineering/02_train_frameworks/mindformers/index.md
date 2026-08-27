@@ -1,3 +1,7 @@
+---
+title: "MindFormers MoE 专家并行 — 知识地图"
+---
+
 # MindFormers MoE 专家并行 — 知识地图
 
 > **代码基线**:MindFormers `master` @ `01e71622`(2026-06-18)

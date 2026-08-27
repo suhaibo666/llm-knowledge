@@ -1,3 +1,7 @@
+---
+title: "L3 · 会 debug — Triton 调试：CPU 解释器 + 打印/断言四件套"
+---
+
 # L3 · 会 debug — Triton 调试：CPU 解释器 + 打印/断言四件套
 
 > **源基线**: `triton-lang/triton` `main @ 70e0929`（2026-06-25），v3.8.0 ｜ 本地源根 `E:/97-codes/torch_parallel/triton`

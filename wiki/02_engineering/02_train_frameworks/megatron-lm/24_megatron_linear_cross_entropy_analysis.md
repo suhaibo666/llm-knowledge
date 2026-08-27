@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM 融合线性交叉熵(Fused Linear Cross-Entropy / \"chunk loss\")源码级分析"
+---
+
 # Megatron-LM 融合线性交叉熵(Fused Linear Cross-Entropy / "chunk loss")源码级分析
 
 > **代码基线**: Megatron-LM `dev` @ `232c478d4`(2026-06-16)

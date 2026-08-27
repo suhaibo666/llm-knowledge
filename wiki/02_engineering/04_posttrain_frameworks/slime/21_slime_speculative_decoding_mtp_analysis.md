@@ -1,3 +1,7 @@
+---
+title: "slime 在线投机解码与 MTP：草稿模型必须与 actor 保持同一版本"
+---
+
 # slime 在线投机解码与 MTP：草稿模型必须与 actor 保持同一版本
 
 > **slime 源码基线**：`THUDM/slime main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`（2026-08-12）

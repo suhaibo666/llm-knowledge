@@ -1,3 +1,7 @@
+---
+title: "slime Agent 工作流分析：把树状执行压成线性训练片段"
+---
+
 # slime Agent 工作流分析：把树状执行压成线性训练片段
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`

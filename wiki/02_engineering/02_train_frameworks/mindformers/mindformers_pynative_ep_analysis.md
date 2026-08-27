@@ -1,3 +1,7 @@
+---
+title: "MindFormers PyNative 专家并行(EP)实现与通信量分析"
+---
+
 # MindFormers PyNative 专家并行(EP)实现与通信量分析
 
 > **源码基线**: MindFormers @ `01e71622` (`master`, 2026-06-18)

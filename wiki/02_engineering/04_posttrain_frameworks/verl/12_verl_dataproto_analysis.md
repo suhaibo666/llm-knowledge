@@ -1,3 +1,7 @@
+---
+title: "verl 数据面 —— DataProto:控制器与 worker 之间的数据契约"
+---
+
 # verl 数据面 —— DataProto:控制器与 worker 之间的数据契约
 
 > **代码基准**:verl `main` @ `8a694930`

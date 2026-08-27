@@ -1,3 +1,7 @@
+---
+title: "TorchTitan — 训练运行时、多维并行与编译器实验知识地图"
+---
+
 # TorchTitan — 训练运行时、多维并行与编译器实验知识地图
 
 > **代码基准**：pytorch/torchtitan `main` @ `a3168782c9a3a2e40afbd0de114818b96e2bda6e`（2026-08-27）

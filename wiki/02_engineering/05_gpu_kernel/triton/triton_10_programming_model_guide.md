@@ -1,3 +1,7 @@
+---
+title: "L1 · 会写① — Triton 编程模型与你的第一个 kernel（向量加法）"
+---
+
 # L1 · 会写① — Triton 编程模型与你的第一个 kernel（向量加法）
 
 > **源基线**: `triton main @ 70e0929`，v3.8.0 ｜ 锚定 `python/tutorials/01-vector-add.py`（逐行可核验）

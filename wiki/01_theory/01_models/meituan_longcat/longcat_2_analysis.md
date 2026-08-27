@@ -1,3 +1,7 @@
+---
+title: "LongCat-2.0：在国产 AI ASIC 上把 1.6T MoE 推到近前沿 Agentic Coding"
+---
+
 # LongCat-2.0：在国产 AI ASIC 上把 1.6T MoE 推到近前沿 Agentic Coding
 
 > **来源**: 官方 Tech Blog + **已开源的推理代码 / 权重**（2026-07 陆续放出）

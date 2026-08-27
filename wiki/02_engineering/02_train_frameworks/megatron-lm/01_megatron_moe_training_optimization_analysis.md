@@ -1,3 +1,7 @@
+---
+title: "MoE 训练优化技术全景报告 — 基于 Megatron-LM 源码分析"
+---
+
 # MoE 训练优化技术全景报告 — 基于 Megatron-LM 源码分析
 
 **Date**: 2026-05-12

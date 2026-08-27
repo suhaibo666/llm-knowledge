@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM 激活重计算(Activation Recomputation / Checkpointing)深度解析"
+---
+
 # Megatron-LM 激活重计算(Activation Recomputation / Checkpointing)深度解析
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`

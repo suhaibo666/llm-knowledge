@@ -1,3 +1,7 @@
+---
+title: "L0 · GPU 编程要素 — 在写第一行 Triton 前必须建立的三个直觉"
+---
+
 # L0 · GPU 编程要素 — 在写第一行 Triton 前必须建立的三个直觉
 
 > **源基线**: `triton main @ 70e0929`，v3.8.0 ｜ 锚定 `python/tutorials/01..03-*.py` 的官方 benchmark 公式

@@ -1,3 +1,7 @@
+---
+title: "verl 架构总览 —— HybridFlow 混合控制器 RLHF 框架"
+---
+
 # verl 架构总览 —— HybridFlow 混合控制器 RLHF 框架
 
 > **代码基准**:verl `main` @ `8a694930`

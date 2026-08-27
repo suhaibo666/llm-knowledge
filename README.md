@@ -39,7 +39,7 @@ tools/          # 维护工具：check_links.py（链接健康）、check_math.p
 
 | 二级目录 | 篇数 | 讲什么 |
 |---|---:|---|
-| [01_ai_frameworks](wiki/02_engineering/01_ai_frameworks/index.md) | 150 | PyTorch 本体：[eager 运行时](wiki/02_engineering/01_ai_frameworks/01_eager_runtime/index.md)、[编译栈](wiki/02_engineering/01_ai_frameworks/02_compile_stack/index.md)（Dynamo/AOTAutograd/Inductor/MLIR）、[运行时图](wiki/02_engineering/01_ai_frameworks/03_runtime_graphs/index.md)、export 与分布式原语 |
+| [01_pytorch](wiki/02_engineering/01_pytorch/index.md) | 148 | PyTorch 本体：[eager 运行时](wiki/02_engineering/01_pytorch/01_eager_runtime/index.md)、[编译栈](wiki/02_engineering/01_pytorch/02_compile_stack/index.md)（Dynamo/AOTAutograd/Inductor/MLIR）、[运行时图](wiki/02_engineering/01_pytorch/03_runtime_graphs/index.md)、export 与分布式原语 |
 | [02_train_frameworks](wiki/02_engineering/02_train_frameworks/index.md) | 56 | 训练框架源码级机制：[Megatron-LM](wiki/02_engineering/02_train_frameworks/megatron-lm/index.md)、[torchtitan](wiki/02_engineering/02_train_frameworks/torchtitan/index.md)、[MindSpeed](wiki/02_engineering/02_train_frameworks/mindspeed/index.md)、[MindFormers](wiki/02_engineering/02_train_frameworks/mindformers/index.md) |
 | [03_infer_frameworks](wiki/02_engineering/03_infer_frameworks/index.md) | 28 | 推理引擎：[vLLM 知识域](wiki/02_engineering/03_infer_frameworks/vllm/index.md)（调度、分页 KV、投机解码、CUDA Graph）与 Mooncake 分离式架构 |
 | [04_posttrain_frameworks](wiki/02_engineering/04_posttrain_frameworks/index.md) | 44 | RL 后训练框架：[verl](wiki/02_engineering/04_posttrain_frameworks/verl/index.md)、[slime](wiki/02_engineering/04_posttrain_frameworks/slime/index.md)，含权重同步、rollout 重分片、控制面 |
@@ -80,9 +80,9 @@ tools/          # 维护工具：check_links.py（链接健康）、check_math.p
 | [Megatron-LM 专家并行深度解析](wiki/02_engineering/02_train_frameworks/megatron-lm/14_megatron_ep_analysis.md) | 全库被引最多的工程页（65 次入链） |
 | [Megatron-Core 通信掩盖](wiki/02_engineering/02_train_frameworks/megatron-lm/20_megatron_comm_overlap_analysis.md) | 通算重叠的实现与生效条件 |
 | [FSDP2 机制级分析](wiki/02_engineering/02_train_frameworks/torchtitan/11_torchtitan_fsdp_analysis.md) | torchtitan 视角的数据并行 |
-| [AOTAutograd 的 Joint/Forward/Backward Graph](wiki/02_engineering/01_ai_frameworks/02_compile_stack/02_aot_autograd/11_aotautograd_joint_forward_backward_graphs_analysis.md) | 编译栈里正反向图怎么被切出来 |
-| [Inductor Scheduler 依赖图与 Fusion](wiki/02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/13_scheduler_dependency_graph_fusion_and_ordering_analysis.md) | 融合决策与执行顺序 |
-| [符号形状、Guards 与图复用](wiki/02_engineering/01_ai_frameworks/02_compile_stack/01_dynamo/20_symbolic_shapes_guards_and_graph_reuse_analysis.md) | 动态 shape 为什么能复用图 |
+| [AOTAutograd 的 Joint/Forward/Backward Graph](wiki/02_engineering/01_pytorch/02_compile_stack/02_aot_autograd/11_aotautograd_joint_forward_backward_graphs_analysis.md) | 编译栈里正反向图怎么被切出来 |
+| [Inductor Scheduler 依赖图与 Fusion](wiki/02_engineering/01_pytorch/02_compile_stack/04_inductor/13_scheduler_dependency_graph_fusion_and_ordering_analysis.md) | 融合决策与执行顺序 |
+| [符号形状、Guards 与图复用](wiki/02_engineering/01_pytorch/02_compile_stack/01_dynamo/20_symbolic_shapes_guards_and_graph_reuse_analysis.md) | 动态 shape 为什么能复用图 |
 | [vLLM KV Cache 管理](wiki/02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis.md) | 分页不是索引技巧，而是物理块所有权协议 |
 | [vLLM 请求全链路导览](wiki/02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis.md) | 一条请求怎样穿过进程、队列与 GPU（含离线交互图） |
 | [verl 端到端训练迭代](wiki/02_engineering/04_posttrain_frameworks/verl/10_verl_end_to_end_iteration_analysis.md) | RL 后训练框架的主循环 |

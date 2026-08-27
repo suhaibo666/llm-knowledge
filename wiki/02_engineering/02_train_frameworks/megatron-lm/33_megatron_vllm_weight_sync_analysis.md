@@ -1,3 +1,7 @@
+---
+title: "verl 中 Megatron + vLLM 权重同步分析"
+---
+
 # verl 中 Megatron + vLLM 权重同步分析
 
 本文档分析了 `verl` 框架中训练模型（Megatron-LM）与推理模型（vLLM）之间的权重同步过程，特别关注 **共集群（Colocation）** 场景（即 Actor 和 Rollout 共享同一组 GPU）。
@@ -184,4 +188,4 @@ async def update_weights(self, weights: Generator, ...):
 - [[30_megatron_rl_posttraining_consistency_analysis]] — Megatron 训练侧的 refit / 训推一致性通用机制(本文的上游基础)
 - [[01_posttraining_infra_mechanism_analysis]] — 第 6 节「Weight publish 协议」,三平面机制视角(框架无关)
 - [[14_verl_rollout_resharding_analysis]] — verl 自身的 resharding / 3D-HybridEngine 实现
-- [[02_engineering/01_ai_frameworks/index]]
+- [[02_engineering/01_pytorch/index]]

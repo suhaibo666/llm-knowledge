@@ -1,3 +1,7 @@
+---
+title: "vLLM Attention Backend：用能力合同连接动态调度与专用 Kernel"
+---
+
 # vLLM Attention Backend：用能力合同连接动态调度与专用 Kernel
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`

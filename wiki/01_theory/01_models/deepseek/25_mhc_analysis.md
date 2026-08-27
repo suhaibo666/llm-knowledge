@@ -1,3 +1,7 @@
+---
+title: "mHC: 流形约束超连接 (Manifold-Constrained Hyper-Connections)"
+---
+
 # mHC: 流形约束超连接 (Manifold-Constrained Hyper-Connections)
 
 > **来源**: `raw/01_theory/02_pretraining/mHC-2512.24880v2.md` (DeepSeek-AI, arXiv:2512.24880v2, 2026-01-05)  

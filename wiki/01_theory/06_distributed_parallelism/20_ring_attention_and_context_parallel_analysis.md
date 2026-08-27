@@ -1,3 +1,7 @@
+---
+title: "Ring Attention 与上下文并行(Context Parallelism)—— 通用机制"
+---
+
 # Ring Attention 与上下文并行(Context Parallelism)—— 通用机制
 
 > 层次:原理(principle)· 引擎无关

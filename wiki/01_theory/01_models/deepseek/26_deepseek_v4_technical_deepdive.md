@@ -1,3 +1,7 @@
+---
+title: "DeepSeek-V4 注意力深潜：CSA vs HCA vs DSA vs MLA"
+---
+
 # DeepSeek-V4 注意力深潜：CSA vs HCA vs DSA vs MLA
 
 > **核对基线**: arXiv:**2606.19348v1**「DeepSeek-V4: Towards Highly Efficient Million-Token Context Intelligence」, DeepSeek-AI, 提交 **2026-04-26**　＝ `raw/01_theory/01_models/deepseek/DeepSeek_V4.md`

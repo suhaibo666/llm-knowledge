@@ -1,3 +1,7 @@
+---
+title: "Kimi Linear: 高效线性注意力架构"
+---
+
 # Kimi Linear: 高效线性注意力架构
 
 > **论文信息**: Kimi Linear: An Expressive, Efficient Attention Architecture

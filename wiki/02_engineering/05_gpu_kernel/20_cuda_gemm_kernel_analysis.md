@@ -1,3 +1,7 @@
+---
+title: "生产级 CUDA GEMM 完整解读：执行模型 · 寄存器 · 代码"
+---
+
 # 生产级 CUDA GEMM 完整解读：执行模型 · 寄存器 · 代码
 
 > **Source baseline**: `raw/02_engineering/05_gpu_kernel/cuda_gemm_final.html`，本地快照 2026-07-22，SHA-256 `56f589a025ebf39622fdd224a6a49ef1e234466b51d5f4af10b64368ac2f85b0`

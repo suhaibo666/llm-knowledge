@@ -1,3 +1,7 @@
+---
+title: "美团 LongCat 技术路线总览"
+---
+
 # 美团 LongCat 技术路线总览
 
 > LongCat 是美团（Meituan）开发的大语言模型系列，主打**大规模 MoE + 稀疏注意力 + 国产 AI ASIC 全栈自研**，2026 年在 Agentic Coding 方向做到近前沿。

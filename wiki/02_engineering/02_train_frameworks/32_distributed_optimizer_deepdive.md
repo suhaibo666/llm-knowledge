@@ -1,3 +1,7 @@
+---
+title: "分布式优化器深度解析"
+---
+
 # 分布式优化器深度解析
 
 *FSDP2 · ZeRO · Megatron/MindSpeed 实现原理 · Adam/Muon 对比*

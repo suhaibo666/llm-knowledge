@@ -1,3 +1,7 @@
+---
+title: "OPD 框架支持逐项对照与选型：veRL / slime / TRL / NeMo-RL / Tinker / KDFlow"
+---
+
 # OPD 框架支持逐项对照与选型：veRL / slime / TRL / NeMo-RL / Tinker / KDFlow
 
 > **定位**：本页是"选哪个框架做 on-policy distillation（OPD）"的对照表与决策依据。系统机制（训练回路、带宽账、八项 Infra 工作 W1–W8）见 [[13_opd_infra_mechanism_analysis]]；通用 RL 框架横评见 [[30_rl_framework_comparison]]；算法总览见 [[14_on_policy_distillation_analysis]]。

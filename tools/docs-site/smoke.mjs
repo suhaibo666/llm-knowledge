@@ -235,12 +235,33 @@ function assertLocalNetwork(requestUrls) {
 
 async function runBrowserAssertions(page, baseUrl) {
   await goto(page, baseUrl)
-  assert.equal(await page.title(), "LLM Knowledge Wiki")
+  // frontmatter 的 title 现在决定 <title>；站点名仍由 .page-title 侧栏承载
+  assert.equal(await page.title(), "LLM Knowledge Wiki — 知识库总索引")
   const siteTitle = await page.$eval(".page-title", (element) => element.textContent.trim())
   assert.match(siteTitle, /LLM Knowledge Wiki/)
   for (const selector of [".explorer", ".search-button", ".darkmode", "article"]) {
     assert.ok(await page.$(selector), `Homepage is missing ${selector}`)
   }
+
+  // ---- 回归：子目录 index.md 必须渲染正文（曾因缺 note-properties 而全站空白）----
+  const folderIndex = `${baseUrl}02_engineering/03_infer_frameworks/`
+  await goto(page, folderIndex)
+  assert.equal(
+    await page.title(),
+    "推理框架 —— 目录索引",
+    "Folder index page must take its title from frontmatter, not the file stem",
+  )
+  const folderBody = await page.$eval("article", (el) => el.textContent.trim())
+  assert.ok(
+    folderBody.length > 500,
+    `Folder index page rendered an empty body (${folderBody.length} chars) - the frontmatter transformer is probably missing`,
+  )
+  assert.ok(
+    await page.$(".page-listing"),
+    "Folder index page is missing the auto-generated page listing",
+  )
+  const folderHeadings = await page.$$eval("article h1", (nodes) => nodes.length)
+  assert.equal(folderHeadings, 1, "Folder index page must render exactly one h1")
 
   const quickstart =
     `${baseUrl}02_engineering/04_posttrain_frameworks/verl/02_verl_quickstart_guide`

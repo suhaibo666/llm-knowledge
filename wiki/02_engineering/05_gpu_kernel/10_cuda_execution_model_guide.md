@@ -1,3 +1,7 @@
+---
+title: "CUDA 执行模型 — Grid·Block·Warp·Thread·SM 从概念到深入"
+---
+
 # CUDA 执行模型 — Grid·Block·Warp·Thread·SM 从概念到深入
 
 > **源基线（权威）**: NVIDIA **CUDA C++ Programming Guide v12.9.1**（archive），§*Thread Hierarchy*（Programming Model）+ §*Hardware Implementation / SIMT Architecture*。Triton 对照锚定 `triton main @ 70e0929`。

@@ -1,3 +1,7 @@
+---
+title: "L1 · 会写② — Fused Softmax：一行进 SRAM，片上算完只写一次"
+---
+
 # L1 · 会写② — Fused Softmax：一行进 SRAM，片上算完只写一次
 
 > **源基线**: `triton-lang/triton main @ 70e0929`（2026-06-25），v3.8.0 ｜ 锚定 `python/tutorials/02-fused-softmax.py`（逐行可核验）

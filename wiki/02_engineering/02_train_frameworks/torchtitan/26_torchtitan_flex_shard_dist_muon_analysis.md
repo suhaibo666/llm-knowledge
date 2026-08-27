@@ -1,3 +1,7 @@
+---
+title: "FlexShard 与 DistMuon：把参数存储布局和优化器计算布局解耦"
+---
+
 # FlexShard 与 DistMuon：把参数存储布局和优化器计算布局解耦
 
 > **代码基准**：torchtitan `main` @ `a3168782c9a3a2e40afbd0de114818b96e2bda6e`

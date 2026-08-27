@@ -1,3 +1,7 @@
+---
+title: "Mooncake：以 KV Cache 为中心的分离式 LLM 服务架构"
+---
+
 # Mooncake：以 KV Cache 为中心的分离式 LLM 服务架构
 
 > **论文信息**：Mooncake: A KVCache-centric Disaggregated Architecture for LLM Serving
@@ -224,4 +228,4 @@ $$
 
 - [[01_theory/index]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index]]
-- [[02_engineering/01_ai_frameworks/index]]
+- [[02_engineering/01_pytorch/index]]

@@ -1,8 +1,12 @@
+---
+title: "分布式原语与通信代价模型 — 原理解读"
+---
+
 # 分布式原语与通信代价模型 — 原理解读
 
 > 层次：原理（principle）· 引擎无关
 > 定位：这是本簇的**代价词汇表**——先把「一次通信要花多少钱」讲清楚，后面 DP / TP / EP / PP / ZeRO 各页都直接引用这里定义的 $\alpha$-$\beta$ 模型与六大原语。
-> 实现细节（PyTorch 里这些原语怎么下发）见 [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]]，本页不重复源码。
+> 实现细节（PyTorch 里这些原语怎么下发）见 [[../../02_engineering/01_pytorch/04_export_and_distributed/02_distributed_primitives/index]]，本页不重复源码。
 > 最后更新：2026-07-01
 
 ---
@@ -150,7 +154,7 @@ NCCL/HCCL 等库会按消息大小、拓扑**自动选算法**——这是「实
 
 ## 与编译栈的衔接（一句话）
 
-上面讲的都是「就地」的传统集合 API。PyTorch 另有一套 **functional collectives**：不原地改写、返回新张量，从而让通信对 `torch.compile` 的图捕获**可见**，可被编译器做通信代数优化与计算-通信重叠调度。这是 DTensor/TP 能与编译协同的关键，属实现层，细节见 [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] 与 [[../../02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/index]]。
+上面讲的都是「就地」的传统集合 API。PyTorch 另有一套 **functional collectives**：不原地改写、返回新张量，从而让通信对 `torch.compile` 的图捕获**可见**，可被编译器做通信代数优化与计算-通信重叠调度。这是 DTensor/TP 能与编译协同的关键，属实现层，细节见 [[../../02_engineering/01_pytorch/04_export_and_distributed/02_distributed_primitives/index]] 与 [[../../02_engineering/01_pytorch/02_compile_stack/04_inductor/index]]。
 
 ---
 
@@ -162,4 +166,4 @@ NCCL/HCCL 等库会按消息大小、拓扑**自动选算法**——这是「实
 - [[14_expert_parallel_analysis]] — EP：all-to-all 的专家路由
 - [[15_pipeline_parallel_analysis]] — PP：p2p 的 stage 间传递
 - [[12_zero_fsdp_analysis]] — ZeRO：把 all-reduce 拆成 reduce-scatter + all-gather 省显存
-- [[../../02_engineering/01_ai_frameworks/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：这些原语在 c10d/PyTorch 里怎么下发（ProcessGroup / Work / functional collectives）
+- [[../../02_engineering/01_pytorch/04_export_and_distributed/02_distributed_primitives/index]] — **实现层**：这些原语在 c10d/PyTorch 里怎么下发（ProcessGroup / Work / functional collectives）

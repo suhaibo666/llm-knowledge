@@ -1,3 +1,7 @@
+---
+title: "DeepSeek-Prover-V1.5 Analysis"
+---
+
 # DeepSeek-Prover-V1.5 Analysis
 
 **Source:** `raw/01_theory/01_models/deepseek/DeepSeek_Prover-2408.08152.md`  

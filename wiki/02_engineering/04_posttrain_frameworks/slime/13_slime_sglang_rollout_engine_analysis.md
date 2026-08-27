@@ -1,3 +1,7 @@
+---
+title: "slime SGLang Rollout Engine：用推理服务执行解码，在请求层保存轨迹状态"
+---
+
 # slime SGLang Rollout Engine：用推理服务执行解码，在请求层保存轨迹状态
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`

@@ -1,3 +1,7 @@
+---
+title: "verl(HybridFlow)RLHF 框架 — 知识地图"
+---
+
 # verl(HybridFlow)RLHF 框架 — 知识地图
 
 > **代码基准**:verl `main` @ `8a694930`(9 篇实现深潜的基线)+ `983cb0f`(端到端迭代主链,见 [[10_verl_end_to_end_iteration_analysis]]) · 配套 Ray / vLLM / SGLang / FSDP2 / Megatron-LM 后端

@@ -1,3 +1,7 @@
+---
+title: "vLLM 可观测性与可靠性：从请求 SLO 追溯到资源承诺与故障域"
+---
+
 # vLLM 可观测性与可靠性：从请求 SLO 追溯到资源承诺与故障域
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`

@@ -1,3 +1,7 @@
+---
+title: "非 GEMM 类算子：统一的执行模型，不同的优化逻辑"
+---
+
 # 非 GEMM 类算子：统一的执行模型，不同的优化逻辑
 
 > **Source baseline**: `raw/02_engineering/05_gpu_kernel/cuda_nonmatmul_kernels_final.html`，本地快照 2026-07-22，SHA-256 `ba1ce1f99adf1d9921da29e73485ecc1239238fe133b27fb05e84d883f7bdb02`

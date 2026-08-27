@@ -1,3 +1,7 @@
+---
+title: "算子调优体系指南"
+---
+
 # 算子调优体系指南
 
 > **文档说明**：本文档系统整理 GPU（NVIDIA）与昇腾 NPU 两个平台的算子开发与性能优化方法，所有核心结论均注明参考来源。适用对象：深度学习框架算子开发工程师、模型推理/训练优化工程师。
@@ -759,6 +763,6 @@ Step 6  回归 Profile
 - [[11_torch_compile_npugraphs_deepdive]] — NPU Graphs + torch.compile 深度分析
 - [[10_aclgraph_deep_analysis]] — ACLGraph 图捕获与 Super Kernel
 - [[22_ascend_kernel_execution_model_analysis]] — DaVinci AI Core、L1/L0/UB 缓冲链、TQue 与 FixPipe 的执行模型深挖
-- [[01_ai_frameworks/index]] — AI 框架领域索引
+- [[01_pytorch/index]] — AI 框架领域索引
 - [[02_engineering/index]] — 工程实现领域索引
 - [[changelog]] — 变更日志

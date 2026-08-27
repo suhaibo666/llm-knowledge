@@ -1,3 +1,7 @@
+---
+title: "verl 控制面 —— single_controller:单控制器驱动多控制器 SPMD"
+---
+
 # verl 控制面 —— single_controller:单控制器驱动多控制器 SPMD
 
 > **代码基准**:verl `main` @ `8a694930`

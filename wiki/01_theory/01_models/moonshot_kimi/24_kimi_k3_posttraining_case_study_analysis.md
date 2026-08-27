@@ -1,3 +1,7 @@
+---
+title: "D12 Kimi K3 后训练案例：九专家分化、在线蒸馏与百万 Token Agentic RL"
+---
+
 # D12 Kimi K3 后训练案例：九专家分化、在线蒸馏与百万 Token Agentic RL
 
 > **阶段**：S05 前沿案例复核

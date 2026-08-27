@@ -1,3 +1,7 @@
+---
+title: "DeepSeek Engram 技术原理与实现细节分析 (v3 - 融合计算与训练机制)"
+---
+
 # DeepSeek Engram 技术原理与实现细节分析 (v3 - 融合计算与训练机制)
 
 ## 1. 核心定位：稀疏性的新维度 (A New Axis of Sparsity)

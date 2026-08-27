@@ -1,3 +1,7 @@
+---
+title: "Qwen3.8-Flash-Next 优化深挖：稳定性不是安全边际，是可以换成学习率的资源"
+---
+
 # Qwen3.8-Flash-Next 优化深挖：稳定性不是安全边际，是可以换成学习率的资源
 
 > **来源基线**：Qwen Team《On the Design of Qwen3.8-Next Architecture: Evaluation, Efficiency, and Training Stability》，**2026-08-26**，随 [github.com/QwenLM/Qwen3.8-Flash-Next](https://github.com/QwenLM/Qwen3.8-Flash-Next/blob/main/tech_report.pdf) 发布的 28 页 PDF（**无 arXiv 编号**）。来源元数据见 `raw/01_theory/01_models/alibaba_qwen/Qwen3_8_Flash_Next_tech_report.md`。

@@ -1,3 +1,7 @@
+---
+title: "自动并行(Auto-Parallelism)业界研究综述"
+---
+
 # 自动并行(Auto-Parallelism)业界研究综述
 
 > 面向分布式大模型训练的并行策略自动搜索综述：搜索空间、代价模型与搜索算法
@@ -97,7 +101,7 @@ flowchart LR
 | **PyTorch DTensor + AutoParallel** | SPMD device mesh + Shard/Replicate/Partial 切分 + **sharding 传播**；与 FSDP2 / SimpleFSDP / torchtitan 集成，PyTorch 原生 auto-parallel 正在成型 |
 | **veScale**（字节） | Eager 模式 SPMD，面向 PyTorch 原生自动并行 |
 | **OneFlow / SBP** | 用 **SBP**(Split/Broadcast/Partial) 签名做一致性自动并行传播 |
-| **MindSpore 自动并行** | sharding 传播 + 双递归/SAPP 策略搜索（见 [[10_mindspore_compiler_analysis]]）|
+| **MindSpore 自动并行** | sharding 传播 + 双递归/SAPP 策略搜索 |
 | **ColossalAI** | 内置 Alpa 式 ILP 的 auto-parallel 模块 |
 
 ---
@@ -188,7 +192,6 @@ $$
 
 - [[megatron-lm/index]] — **手工** 5D 并行的工业标杆，是自动并行的"对照组"与执行后端。
 - [[torchtitan/index]] — DTensor/FSDP2 的 PyTorch 原生实现，是框架原生 auto-parallel 的载体。
-- [[10_mindspore_compiler_analysis]] — sharding 传播式半自动并行的代表。
 - [[31_comm_compute_fusion_guide]] — 通信/计算 overlap，是代价模型 B 维度的实测依据。
 - [[32_distributed_optimizer_deepdive]] — ZeRO/FSDP 分片，是 intra-op 搜索空间的一部分。
 
@@ -216,7 +219,6 @@ $$
 - [[02_engineering/06_auto_parallel/index|自动并行]] — 自动并行域索引（罗盘入口）
 - [[megatron-lm/index]] — Megatron-LM 手工 5D 并行（对照组 / 执行后端）
 - [[torchtitan/index]] — torchtitan DTensor/FSDP2 原生并行
-- [[10_mindspore_compiler_analysis]] — MindSpore 自动并行（传播范式）
 - [[31_comm_compute_fusion_guide]] — 通信/计算融合与 overlap
 - [[32_distributed_optimizer_deepdive]] — ZeRO/FSDP 分片
 - [[../index]] — 工程实现知识地图

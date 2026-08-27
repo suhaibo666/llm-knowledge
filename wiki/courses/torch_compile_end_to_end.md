@@ -1,7 +1,11 @@
+---
+title: "torch.compile 端到端阅读课程"
+---
+
 # `torch.compile` 端到端阅读课程
 
 > **本页角色**:纯导读页,不承载正文——只给阅读顺序、链接与每篇一句话导读。全部技术内容
-> 已归属 `01_ai_frameworks` 五层功能树对应模块;本页过时只改链接/顺序,不要在此加正文。
+> 已归属 `01_pytorch` 四层功能树对应模块;本页过时只改链接/顺序,不要在此加正文。
 > 固定源码基线:PyTorch `e8f97c1a6ef8cbcdd0a946606bc1e924e4f07e52`;Lab 环境:PyTorch `2.9.1+cpu`。
 > 最后更新:2026-07-30(kb-reorg P4 Task 10:课程页化,原 19 号目录两个 00 索引 + C01 动机页
 > + `02_torch_compile_architecture` overview 页并入本页后四页删除,19 号目录整体解散)
@@ -12,7 +16,7 @@
 
 `torch.compile` 不是"把 Module 立刻转成一个 kernel"的单步骤 API。一次调用要经过捕获、
 分解、编译、缓存、运行、失效重编译等多个阶段,每阶段有自己的数据结构和状态机。这条
-阅读路线把知识库里分散在 [[01_ai_frameworks/index|01_ai_frameworks 五层架构]]
+阅读路线把知识库里分散在 [[01_pytorch/index|01_pytorch 四层架构]]
 各模块的相关页面,串成一条从 eager 地基到生产部署的顺序索引。
 
 **前置**:能日常使用 `Tensor`/`nn.Module`/`Optimizer`/`.backward()` 的 PyTorch eager 基础。
@@ -269,7 +273,7 @@ python -B tools\labs_torch_compile\demo_b_dynamo_capture.py `
 
 ## 与功能树的关系
 
-`01_ai_frameworks` 五层功能树([[01_ai_frameworks/index]])是唯一的内容权威;本页(以及
+`01_pytorch` 四层功能树([[01_pytorch/index]])是唯一的内容权威;本页(以及
 `wiki/courses/` 下未来的其它课程页)只是这棵树之上的一条阅读顺序索引,不持有正文,也不会
 成为第二份真相来源。发现内容缺失、过时或与功能树矛盾:去对应模块的 index.md 或深潜页修改,
 再回到本页只更新链接、顺序或一句话导读。
@@ -288,7 +292,7 @@ NPU 后端(Ascend 适配,非 upstream)不在本课程覆盖范围,见
 
 ## Related Pages
 
-- [[01_ai_frameworks/index]] — 功能树总索引(唯一权威)
+- [[01_pytorch/index]] — 功能树总索引(唯一权威)
 - [[02_compile_stack/index]] — torch.compile 编译栈领域索引
 - [[02_compile_stack/01_dynamo/index]] — Dynamo 领域索引
 - [[02_compile_stack/02_aot_autograd/index]] — AOTAutograd 领域索引

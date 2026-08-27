@@ -1,3 +1,7 @@
+---
+title: "GLM-5 Agentic RL 基础设施深挖 — slime · 全异步解耦 · 环境扩展的「长尾延迟 × 任务异构」工程"
+---
+
 # GLM-5 Agentic RL 基础设施深挖 — slime · 全异步解耦 · 环境扩展的「长尾延迟 × 任务异构」工程
 
 > **来源基线**: arXiv 2602.15763v2《GLM-5: from Vibe Coding to Agentic Engineering》(GLM-5 Team, Zhipu AI & 清华, 2026-02-24)

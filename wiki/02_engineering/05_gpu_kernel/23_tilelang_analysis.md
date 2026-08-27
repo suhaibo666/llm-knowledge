@@ -1,3 +1,7 @@
+---
+title: "TileLang：Tile-Level IR 与新一代 Kernel 编程范式"
+---
+
 # TileLang：Tile-Level IR 与新一代 Kernel 编程范式
 
 > 填补图 Pass（层次过高）与 Kernel 代码（层次过低）之间的空白

@@ -1,3 +1,7 @@
+---
+title: "SGLang 编译 Pass 与 torch.compile 适配 — 从 vLLM 搬来 piecewise 编译管线，却几乎没搬 fusion pass"
+---
+
 # SGLang 编译 Pass 与 torch.compile 适配 — 从 vLLM 搬来 piecewise 编译管线，却几乎没搬 fusion pass
 
 > **Source baseline**: sglang @ `d6ef68881e`（main，拉取 2026-07-20）

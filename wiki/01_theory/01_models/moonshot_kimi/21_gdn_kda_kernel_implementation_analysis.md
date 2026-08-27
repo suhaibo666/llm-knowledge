@@ -1,3 +1,7 @@
+---
+title: "GDN/KDA 融合 Kernel：训练、Prefill 与 Decode 的实现拆解"
+---
+
 # GDN/KDA 融合 Kernel：训练、Prefill 与 Decode 的实现拆解
 
 > **更新日期**：2026-07-17

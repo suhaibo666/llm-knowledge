@@ -1,3 +1,7 @@
+---
+title: "DeepSeek-V4 Context Parallelism (CP) 深度分析"
+---
+
 # DeepSeek-V4 Context Parallelism (CP) 深度分析
 
 > **核对基线**: arXiv:**2606.19348v1** (DeepSeek-AI, **2026-04-26**) **§3.4.3**「Contextual Parallelism」  

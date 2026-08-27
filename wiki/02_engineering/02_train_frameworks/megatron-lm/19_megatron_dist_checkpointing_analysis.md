@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM 分布式 Checkpoint 深度解析(Distributed Checkpointing)"
+---
+
 # Megatron-LM 分布式 Checkpoint 深度解析(Distributed Checkpointing)
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`

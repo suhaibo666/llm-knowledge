@@ -1,3 +1,7 @@
+---
+title: "Muon 优化器：原理解读与 Megatron-LM 实现分析"
+---
+
 # Muon 优化器：原理解读与 Megatron-LM 实现分析
 
 本文档基于 Muon 优化器论文及 NVIDIA Megatron-LM 的最新代码实现（Merge Request 4106），对 Muon 优化器的核心原理、分布式挑战及其在 Megatron 中的具体工程落地进行深度解析。

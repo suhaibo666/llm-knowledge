@@ -1,3 +1,7 @@
+---
+title: "TitanRL 异步 RL：版本窗口、rollout 流水与 GRPO/DAPO"
+---
+
 # TitanRL 异步 RL：版本窗口、rollout 流水与 GRPO/DAPO
 
 > **源码基线**：TorchTitan `main@a3168782c9a3a2e40afbd0de114818b96e2bda6e`

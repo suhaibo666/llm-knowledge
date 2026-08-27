@@ -1,3 +1,7 @@
+---
+title: "verl Rollout 与 3D-HybridEngine —— 训练↔生成的权重重分片"
+---
+
 # verl Rollout 与 3D-HybridEngine —— 训练↔生成的权重重分片
 
 > **代码基准**:verl `main` @ `8a694930`

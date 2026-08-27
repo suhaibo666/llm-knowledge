@@ -1,3 +1,7 @@
+---
+title: "Scaling Laws for Neural Language Models — Analysis"
+---
+
 # Scaling Laws for Neural Language Models — Analysis
 
 **Source**: `raw/01_theory/01_models/Scaling_Laws_for_Neural_Language_Models-2001.08361.md`

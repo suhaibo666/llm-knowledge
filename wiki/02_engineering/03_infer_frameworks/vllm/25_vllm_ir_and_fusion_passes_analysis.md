@@ -1,3 +1,7 @@
+---
+title: "vLLM IR 与融合 Pass：延迟实现选择，先保留可优化语义"
+---
+
 # vLLM IR 与融合 Pass：延迟实现选择，先保留可优化语义
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`

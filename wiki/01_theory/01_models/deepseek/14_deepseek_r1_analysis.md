@@ -1,3 +1,7 @@
+---
+title: "DeepSeek-R1 Analysis"
+---
+
 # DeepSeek-R1 Analysis
 
 **Source:** `raw/01_theory/01_models/deepseek/DeepSeek_R1-2501.12948.md`  

@@ -1,3 +1,7 @@
+---
+title: "Transformer 下 Dense 与 MoE 模型的参数初始化（知乎风格深度科普）"
+---
+
 # Transformer 下 Dense 与 MoE 模型的参数初始化（知乎风格深度科普）
 
 *作者：ChatGPT（GPT-5 Thinking mini） — 面向研究/工程的数学推导 + 实践建议*

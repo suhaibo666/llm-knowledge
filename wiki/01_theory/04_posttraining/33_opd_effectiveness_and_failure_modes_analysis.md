@@ -1,3 +1,7 @@
+---
+title: "OPD 有效性条件与失败模式分析：什么时候有效，什么时候失败"
+---
+
 # OPD 有效性条件与失败模式分析：什么时候有效，什么时候失败
 
 > **定位**：本页是 OPD（On-Policy Distillation，在线策略蒸馏）专题的"边界卷"。它不讲 OPD 怎么做（见 [[14_on_policy_distillation_analysis]]）、不讲散度怎么演化（见 [[15_opd_divergence_and_objective_evolution_analysis]]）、不讲谁在用（见 [[32_opd_industrial_landscape_analysis]]）、不讲怎么搭（见 [[13_opd_infra_mechanism_analysis]]）。本页只回答一个问题：**在什么条件下 OPD 会给出它承诺的收益，在什么条件下它会静默地失败、甚至倒退**。主源为 `OPD-Survey-2026-08.md` §7–§9 与 Song & Zheng OPD 综述（arXiv:2604.00626v4，89 页）全文深读摘录。

@@ -1,3 +1,7 @@
+---
+title: "vLLM 融合算子与 Kernel：在稳定语义下选择设备实现"
+---
+
 # vLLM 融合算子与 Kernel：在稳定语义下选择设备实现
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`

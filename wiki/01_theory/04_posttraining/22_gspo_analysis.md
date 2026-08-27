@@ -1,3 +1,7 @@
+---
+title: "GSPO: Group Sequence Policy Optimization — Analysis"
+---
+
 # GSPO: Group Sequence Policy Optimization — Analysis
 
 **Source**: `raw/01_theory/04_posttraining/GSPO_Group_Sequence_Policy_Optimization-2507.18071.md`

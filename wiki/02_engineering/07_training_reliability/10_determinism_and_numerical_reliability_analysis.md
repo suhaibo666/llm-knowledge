@@ -1,3 +1,7 @@
+---
+title: "确定性与数值可靠性：浮点非确定性 · batch 不变性 · 低精度累加 · SDC"
+---
+
 # 确定性与数值可靠性：浮点非确定性 · batch 不变性 · 低精度累加 · SDC
 
 > **来源**：`docs/research/wanka_determinism_reliability_deep_analysis.md`（《万卡级 LLM 训练：确定性与可靠性问题域深度分析》）第一部分（问题 1–4）

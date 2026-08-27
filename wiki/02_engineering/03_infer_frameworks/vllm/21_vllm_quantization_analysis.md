@@ -1,3 +1,7 @@
+---
+title: "vLLM 量化设计：把 checkpoint 格式、层级语义与设备 Kernel 对齐"
+---
+
 # vLLM 量化设计：把 checkpoint 格式、层级语义与设备 Kernel 对齐
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`

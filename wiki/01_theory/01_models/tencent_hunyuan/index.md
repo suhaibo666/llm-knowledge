@@ -1,3 +1,7 @@
+---
+title: "腾讯混元 (Tencent Hunyuan / Hy) — 目录索引"
+---
+
 # 腾讯混元 (Tencent Hunyuan / Hy) — 目录索引
 
 > 腾讯混元大模型家族的技术分析页。当前覆盖 2026-07 正式开源的 Hy3。

@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM FP8 精度 · CUDA Graph · 算子融合 深度解析"
+---
+
 # Megatron-LM FP8 精度 · CUDA Graph · 算子融合 深度解析
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`

@@ -1,3 +1,7 @@
+---
+title: "Kimi K3 稳定性栈：从 K2 的一个事后补丁，到每条失稳轴各有一个内建机制"
+---
+
 # Kimi K3 稳定性栈：从 K2 的一个事后补丁，到每条失稳轴各有一个内建机制
 
 > **来源基线**（每条断言均已在报告原文定位并逐句核对，未从他页转引）：[Kimi K3 Technical Report `0797decb`](https://github.com/MoonshotAI/Kimi-K3/commit/0797decb18ab079de86f991b87a64b81ec15a3c2)（2026-07-28，47 页），本地快照 `raw/01_theory/01_models/moonshot_kimi/Kimi_K3_Technical_Report_2026-07-28.md`；K2 基线为 arXiv 2507.20534。

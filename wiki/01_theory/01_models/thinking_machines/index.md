@@ -1,3 +1,7 @@
+---
+title: "Thinking Machines Lab — 目录索引"
+---
+
 # Thinking Machines Lab — 目录索引
 
 > Mira Murati(前 OpenAI CTO)创立的 Thinking Machines Lab 的模型技术分析页。当前覆盖 2026-07-15 首发的开源模型 Inkling。

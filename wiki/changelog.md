@@ -1,3 +1,7 @@
+---
+title: "Knowledge Base Changelog"
+---
+
 # Knowledge Base Changelog
 
 All source ingestions and significant wiki updates are logged here.
@@ -5,6 +9,66 @@ All source ingestions and significant wiki updates are logged here.
 > 本文件为只追加的历史日志：各条目按**写入当时**的状态记载，其中的文件路径、行数等均以当时为准，**不随后续目录迁移回写**。查当前路径请以各域 index 为准。
 
 > 本文件只保留 **2026-07 起**（知识库结构整改期）的条目；2026-Q2（2026-04~06）及更早的历史条目已归档至 [[changelog/2026_q2_and_earlier|2026-Q2 及更早变更日志归档]]。
+
+---
+
+## 2026-08-27（七）：修好「子目录 index.md 在网页上是空白页」，并给全库 419 页补 frontmatter 标题
+
+**Type**: Docs-site Fix（1 个插件 + 419 页 frontmatter + 3 处测试补强）
+
+**根因**（逐行读 Quartz v5 源码定位，不是猜的）：
+
+1. `folder-page` 的 `match` 是 `slug.endsWith("/index")`、priority 10；`content-page` 的 `match` 对 `*/index` **显式返回 false**。所以每个子目录 `index.md` 的正文渲染权**完全交给** `FolderContent`。根 `wiki/index.md` 的 slug 是 `index`（不以 `/index` 结尾），走 `content-page`——这解释了"只有子目录 index 打不开"。
+2. `FolderContent` 里 `const trie = ctx?.trie; if (trie) { if (!trie.findNode(...)) return null }`——`pagesFromAllFiles` 那条好用的 fallback **只在 trie 不存在时**才走，而 `dispatcher.ts` 用 `ctx.trie ??= trieFromAllFiles(allFiles)` 保证了 trie 一定存在。于是命中"trie 存在但查不到"的死角。
+3. **真正的根因**：`quartz/util/ctx.ts` 的 `trieFromAllFiles` 只收 `file.frontmatter` 为真的条目，而 `fileData.frontmatter` 由 `github:quartz-community/note-properties` 填充——**我们的 `quartz.config.yaml` 从来没启用过它**（只启用 19 个插件，Quartz 官方默认配置是 42 个，`note-properties` 在其第 212 行）。全库无 frontmatter ⇒ trie 零节点 ⇒ `findNode` 返回 undefined ⇒ 空白页。
+
+同一根因还解释了另外两个一直存在的现象：所有页面的 `<title>` 都是站点名（`Head.tsx` 用 `fileData.frontmatter?.title ?? cfg.pageTitle`）；`article-title` 全站不输出 `h1`。
+
+**修复**：
+
+- 启用 `note-properties`（pin `e68145b9`，`order: 5` 最先跑，`hidePropertiesView: true`），同步写入 `quartz.lock.json` 与 `runtime-manifest.json`，`npm run docs:repair` 重建运行时。
+- 只启用插件会让标题回退到**文件名 stem**（tab 显示 `index`、每页多一个 `<h1>index</h1>`、自动目录清单列出 `01_llm_inference_technology_stack_analysis` 这种原始文件名），所以配套做两件事：
+  - **给全库 419 页补 frontmatter `title:`**，取值为各页正文首行 `# 标题`（去掉 `**`/反引号），YAML 双引号转义，**逐文件保持原有 CRLF/LF 行尾**（273 CRLF + 146 LF）不动，避免整库换行 diff；页面正文一行未改。
+  - **关闭 `article-title`**——本库每页正文首行就是 `# 标题`，再渲染一个 h1 会重复。标题改由 frontmatter 供给 `<title>` / explorer / search / folder-listing。
+- 效果（构建产物实测）：`02_engineering/index.html` 21,982 → 30,532 字节；`03_infer_frameworks/index.html` 41,128 字节；三处抽查均为 `<title>` = 真实标题、正文 `<h1>` 恰好 1 个、自动目录清单显示真实标题而非文件名。
+
+**测试补强**（这个 bug 之前**没有任何测试覆盖**，所以先补测试）：
+
+- `config.test.mjs` 新增两条用例：① `note-properties` 必须存在且 `order` 小于所有其他 transformer——否则整站子目录 index 变空白；② `article-title` 必须保持 `enabled: false`。
+- `smoke.mjs` 新增子目录 index 的端到端回归断言：`<title>` 来自 frontmatter、`article` 正文长度 > 500 字符、存在 `.page-listing`、`article h1` 恰好 1 个。首页 `<title>` 断言同步改为真实标题。
+
+**顺带修的两处测试**：
+
+- `tools/labs_torch_compile/test_volume_demo_contract.py` 有 4 处硬编码 `"01_ai_frameworks"` 作为**真实 wiki 页面路径根**（不是 artifacts 里的历史字符串），被本日（四）的改名打破，同步改为 `"01_pytorch"`，变量 `ai_frameworks_root` → `pytorch_domain_root`。
+- `tools/test_math_skill.py::test_skills_live_in_exactly_one_shared_place` 的 `rglob` 排除表漏了 `.worktrees/`——一个 git worktree 是同仓库的另一份合法检出，不是"技能被复制"。补上排除项，否则任何人开 worktree 都会让本用例变红。
+
+- 验证（四道门禁全绿）：`check_links --strict` 419 页 **0/0/0/0**；`check_math --changed --strict` 420 文件 **0 错 0 警**；`pytest tools/` **107 passed**；`npm run docs:test` **PASS**（含新增的空白页回归断言与 141 次全 loopback 请求检查）。
+
+---
+
+## 2026-08-27（六）：给 `02_engineering` 七个一级域补模块总览，并按产品分级
+
+**Type**: Restructure（7 个域 `index.md` 各加一节「模块定位」，不新增内容页）
+
+**动因**：七个域的 `index.md` 此前都是**链接表**——标题写着「目录索引」，内容是"有哪些页面"，但不回答"这个模块在整个栈里解决什么问题、提供什么能力、边界在哪"。从宏观进入知识库时没有入口。
+
+**统一结构**（每个域一节，插在链接表之前）：一句话定位 → 为什么必须独立成一层 → **本域覆盖的系统/技术栈与各自定位** → 本域提供的能力（能力 / 具体提供什么 / 样本与源码锚点 / 详见）→ 不属于本模块的 → 与兄弟域的关系。
+
+**分级是这次的重点**：初稿把 `03_infer_frameworks` 整节写成了 vLLM 的介绍，SGLang / Mooncake / 投机推理都没有位置——这是把"覆盖最多的产品"当成了"整个域"。返工后每个多产品域都先给一张**系统定位表**，并如实标注覆盖不均衡：
+
+- `03_infer_frameworks`：vLLM 19 篇（系统性）· SGLang 1 篇（单点切入）· Mooncake 1 篇（论文）· 投机推理 2 篇（技术专题，非产品）· TensorRT-LLM/llama.cpp/TGI **0 篇，仅在对照表出现**。
+- `02_train_frameworks`：Megatron-LM 26 篇 + TorchTitan 15 篇（两条系统性主线）· MindSpeed 5 篇（**机制级深挖，非特性全量走查**）· MindFormers 2 篇（**仅 MoE EP 一个切面**）· 跨框架专题 6 篇。
+- `04_posttrain_frameworks`：slime 20 篇 + verl 11 篇（系统性）· AReaL / ROLL 各 1 篇（架构专题）· TRL/NeMo-RL/Tinker/KDFlow **0 篇，仅在 OPD 对照表出现**。
+- `05_gpu_kernel`：按**来源性质**分级——只有 Triton 8 篇是源码级可核验（`@70e0929`）；CUDA GEMM/非 GEMM 与 Ascend 三篇来自本地 HTML 快照，TileLang 一篇是概念分析（**本地无实现源码**）。
+- `06_auto_parallel`：Alpa/nnScaler/Galvatron/GSPMD/DTensor/MindSpore 六个系统**全部无专页**，只在综述页内各占一节——本域目前提供判断力而非细节。
+- `07_training_reliability`：按**证据强度**分五档（本地可核验源码 / 厂商报告 / 工程博客 / **二手综述稿** / 本库一手页交叉），并写明本簇三篇主内容页是对一份二手综述的结构化摄入，以及"公开得多 ≠ 做得好"的样本偏差。
+- `01_pytorch`：单框架，但按**代码库**分级——上游 `pytorch/pytorch` ~116 篇 vs `torch_npu` 28 篇（`b3c8a815b`）vs CUDA 特定 4 篇，并重申"硬件无关放本层、硬件特定下沉 `npu/`/`cuda/`"的读法。
+
+**源码锚点的核对方式**：能力表里每条锚点都在侧车 checkout 里核对过**路径存在**（`pytorch@ea5655fc`、`vllm@26858770`、`Megatron-LM@232c478d4`、`torchtitan@a3168782c`、`verl@8a694930`、`slime@681b3adc`、`triton@70e0929`、`torch_npu@b3c8a815b`）。锚点粒度是**模块路径级**，不是 `file:line`——页面正文里的行号级定位仍以各页自己的基线为准，两者在节首都做了区分标注。
+
+**顺带修**：`06_auto_parallel/index.md` 的 5 处 `../` 相对上跳链接改为 wiki 根路径（违反跨引用规则），并修掉因 MindSpore 页删除而失效的一行描述。
+
+- 验证：`check_links --strict` 419 页 **0 破损 / 0 歧义 / 0 裸 index / 0 孤儿**；`check_math --changed --strict` 193 文件 **0 错 0 警**。
 
 ---
 
@@ -20,6 +84,24 @@ All source ingestions and significant wiki updates are logged here.
 - **主动记录证据冲突**：GraphTrainer README 把 CP 标为可用，但当前构造路径强制 `partial_dtensor`，相应 tests 也禁用 CP，因此页面按源码与测试把它记为“当前未启用”；GraphTrainer tracer 虽能捕获 optimizer，生产 `GraphTrainer` 的 step graph 当前仍不包含 optimizer。PP 的 zero-bubble/custom CSV 配方存在，但相关核心测试因 FlexAttention metadata 问题禁用，也没有升级成“已验证可用”。
 - **导航与监控**：重建 [[02_engineering/02_train_frameworks/torchtitan/index|TorchTitan 知识地图]]，同步训练框架索引、工程索引和全库首页；`docs/radar/watchlist.yaml` 的 TorchTitan 知识基线更新到 `a3168782c`。
 - **验证**：`check_links --strict` 覆盖 419 页，0 破损/0 歧义/0 裸 index/0 孤儿；`check_math --changed --strict` 覆盖 193 个变更页，0 错 0 警；`npm run docs:test` 为 63/63 单测与 133 请求浏览器 smoke 全通过；`pytest tools/` 为 **103 passed / 4 failed**，4 个失败均来自同期 `01_ai_frameworks` → `01_pytorch` 目录改名后 `tools/labs_torch_compile/test_volume_demo_contract.py` 仍引用旧路径，与本次 TorchTitan 页面无关。
+
+---
+
+## 2026-08-27（四）：`01_ai_frameworks` → `01_pytorch`，并删除其它框架对照子域
+
+**Type**: Restructure（域目录改名 148 页 + 删除 2 页 + 全库链接回写）
+
+**改名理由**：该域 150 篇里有 148 篇是 PyTorch，页面自身的标题早已是「PyTorch 编译与运行时架构」，`ai_frameworks` 这个名字既没说清是 PyTorch，也没说清它是 `02_train_frameworks`/`03_infer_frameworks`/`04_posttrain_frameworks` 共同的底座——命名轴和内容对不上。
+
+- **目录**：`wiki/02_engineering/01_ai_frameworks/` → `wiki/02_engineering/01_pytorch/`（148 个 `.md` 经 `git mv` 逐文件迁移；顶层目录整体 `rename` 在 Windows 上被并发进程占用而失败，改为逐文件迁移，git 全部识别为 rename）。
+- **删除**：原 ⑤ 层 `05_other_frameworks/`（`index.md` + `10_mindspore_compiler_analysis.md`，347 行 MindSpore 编译器概念分析）整体删除，本域收敛为纯 PyTorch 四层。
+- **链接回写**：80 个页面内的 `01_ai_frameworks` 全量替换；`wiki/changelog.md` 与 `changelog/2026_q2_and_earlier.md` **只改活链接、保留反引号里的历史路径**（本文件只追加、不回写历史的约定）。
+- **指向已删页的入链**：`auto_parallel_survey_analysis` 3 处、`mlir/10_mlir_core_concepts` 1 处直接删除条目；`changelog/2026_q2_and_earlier` 1 处按约定转为反引号示例并注明删除日期。
+- **域外路径**：`README.md`（域表 + 3 条推荐入口，页数 150→148）、`docs/radar/watchlist.yaml` 两处 `kb_entry` 同步改名。`raw/02_engineering/01_ai_frameworks/` **不改**——`raw/` 与 `wiki/` 是独立树、且 `raw/` 只读，`wiki/index.md` 里指向它的那一行保持原路径。
+- **层数口径**：`01_pytorch/index.md`「五层架构导航」→「四层」，`courses/torch_compile_end_to_end` 同步。
+- 验证：`check_links --strict` 419 页 **0 破损 / 0 歧义 / 0 裸 index / 0 孤儿**；`check_math --changed --strict` 182 文件 **0 错 0 警**。
+
+> 遗留（本次未处理，属既有债务）：`tools/labs_torch_compile/README.md` 等处仍写着 `wiki/02_engineering/01_ai_frameworks/19_torch_compile_end_to_end/labs/...`——该路径在 kb-reorg P4 解散 `19_` 课程目录时就已失效，与本次改名无关。
 
 ---
 

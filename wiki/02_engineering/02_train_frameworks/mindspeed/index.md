@@ -1,3 +1,7 @@
+---
+title: "MindSpeed × MindSpeed-LLM 训练优化特性 — 知识地图"
+---
+
 # MindSpeed × MindSpeed-LLM 训练优化特性 — 知识地图
 
 > **代码基线**:MindSpeed `master` @ `1432cb09`(基于 Megatron `core_r0.17.0`,2026-06-22) · MindSpeed-LLM `master` @ `0c16322d`(2026-06-22)

@@ -1,3 +1,7 @@
+---
+title: "Qwen3.8：用混合稀疏骨干承载长程交付，把扩展轴从参数量推进到“环境 × 算力”"
+---
+
 # Qwen3.8：用混合稀疏骨干承载长程交付，把扩展轴从参数量推进到“环境 × 算力”
 
 > **来源基线**：Qwen Team 官方发布博客 *Qwen3.8-Max: A New Bar for Coding and Cowork*（2026-08-03）与开放权重 [Qwen/Qwen3.8-2.4T-A95B `207bd685`](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B/tree/207bd685a7e3696cfaff12ded7c6a7ea0f88c996)（2026-08-12）。

@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=./quartz/plugins/quartz-plugins.schema.json
 configuration:
   pageTitle: LLM Knowledge Wiki
+  baseUrl: suhaibo666.github.io/llm-knowledge
   pageTitleSuffix: ""
   enableSPA: true
   enablePopovers: false
@@ -37,6 +38,21 @@ configuration:
         highlight: "rgba(138, 180, 248, 0.14)"
         textHighlight: "#665c1e"
 plugins:
+  # 必须最先运行：它负责解析 frontmatter 并写入 fileData.frontmatter。
+  # 缺了它，quartz/util/ctx.ts 的 trieFromAllFiles 会跳过所有文件（它只收 file.frontmatter
+  # 为真的条目），导致 folder-page 的 FolderContent 在 trie.findNode 处 return null，
+  # 于是每个子目录的 index.md 都渲染成空白页。本库页面不写 YAML frontmatter，
+  # 因此 hidePropertiesView=true，避免每页顶部多出一个空属性面板。
+  - source: github:quartz-community/note-properties
+    enabled: true
+    options:
+      hidePropertiesView: true
+      includeAll: false
+      includedProperties: []
+      excludedProperties: []
+      delimiters: ---
+      language: yaml
+    order: 5
   - source: github:quartz-community/syntax-highlighting
     enabled: true
     options:
@@ -117,8 +133,10 @@ plugins:
       group: toolbar
       groupOptions:
         grow: true
+  # 关闭：本库每页正文首行就是 `# 标题`，再让 article-title 渲染一个 h1 会重复。
+  # 标题改由 frontmatter 的 title 提供给 <title>/explorer/search/folder-listing 使用。
   - source: github:quartz-community/article-title
-    enabled: true
+    enabled: false
     layout:
       position: beforeBody
       priority: 10

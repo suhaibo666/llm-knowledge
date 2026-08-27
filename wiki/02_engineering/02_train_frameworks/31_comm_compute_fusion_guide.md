@@ -1,3 +1,7 @@
+---
+title: "通算融合（Compute-Communication Co-Fusion）完全指南"
+---
+
 # 通算融合（Compute-Communication Co-Fusion）完全指南
 
 > 从手动调优到编译器自动化：WaveEP、DeepEP 与通算自动编译的演进路线

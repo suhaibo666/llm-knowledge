@@ -1,3 +1,7 @@
+---
+title: "slime RL 后训练框架 — 知识地图"
+---
+
 # slime RL 后训练框架 — 知识地图
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`

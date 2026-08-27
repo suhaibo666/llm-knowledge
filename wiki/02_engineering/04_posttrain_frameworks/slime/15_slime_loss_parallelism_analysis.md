@@ -1,3 +1,7 @@
+---
+title: "slime Loss 与并行归一化：让估计量不随物理切分改写"
+---
+
 # slime Loss 与并行归一化：让估计量不随物理切分改写
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`

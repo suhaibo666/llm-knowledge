@@ -1,3 +1,7 @@
+---
+title: "DeepSeekMath-V2 深度解析：自验证 (Self-Verifiable) 数学推理的范式之跃 🧮"
+---
+
 好的 — 以下是 **完整版本** 的 “知乎风格 / 技术深度解析” 博客，详细解读 DeepSeekMath‑V2 的 method（方法论）、训练机制、优势与限制，并把前文各节整合进去。
 
 ---

@@ -59,7 +59,7 @@ repos:
     repo: pytorch/pytorch
     branch: main
     kb_baseline: null
-    kb_entry: wiki/02_engineering/01_ai_frameworks/index.md
+    kb_entry: wiki/02_engineering/01_pytorch/index.md
     category: 训练框架
 
   - name: Megatron-LM
@@ -81,7 +81,7 @@ repos:
     repo: Ascend/pytorch
     branch: master
     kb_baseline: null
-    kb_entry: wiki/02_engineering/01_ai_frameworks/index.md
+    kb_entry: wiki/02_engineering/01_pytorch/index.md
     category: NPU
     host: gitee            # 不在 GitHub 上
 

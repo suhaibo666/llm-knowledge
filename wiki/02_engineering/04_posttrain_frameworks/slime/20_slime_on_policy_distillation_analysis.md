@@ -1,3 +1,7 @@
+---
+title: "slime On-Policy 蒸馏：让固定 teacher 加入同一条在线策略训练闭环"
+---
+
 # slime On-Policy 蒸馏：让固定 teacher 加入同一条在线策略训练闭环
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`

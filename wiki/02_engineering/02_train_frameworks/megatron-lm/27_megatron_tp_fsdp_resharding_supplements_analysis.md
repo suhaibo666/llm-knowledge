@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM TP·FSDP·Resharding 补遗"
+---
+
 # Megatron-LM TP·FSDP·Resharding 补遗
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`

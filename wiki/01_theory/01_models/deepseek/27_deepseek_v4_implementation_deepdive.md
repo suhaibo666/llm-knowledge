@@ -1,3 +1,7 @@
+---
+title: "DeepSeek-V4 实现要点：核心组件伪代码 + 数据流"
+---
+
 # DeepSeek-V4 实现要点：核心组件伪代码 + 数据流
 
 > **核对基线**: arXiv:**2606.19348v1**「DeepSeek-V4: Towards Highly Efficient Million-Token Context Intelligence」（DeepSeek-AI, **2026-04-26**）＝ `raw/01_theory/01_models/deepseek/DeepSeek_V4.md`

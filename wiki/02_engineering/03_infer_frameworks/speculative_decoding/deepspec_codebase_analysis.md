@@ -1,3 +1,7 @@
+---
+title: "DeepSpec 源码级分析 —— 一套训练框架同时产 Eagle3 / DFlash / DSpark 三种草稿模型"
+---
+
 # DeepSpec 源码级分析 —— 一套训练框架同时产 Eagle3 / DFlash / DSpark 三种草稿模型
 
 > **代码基准（Source baseline）**：`github.com/deepseek-ai/DeepSpec` @ `dd854392`（main, 2026-06-28，提交信息 "minor"）· MIT License · 本地 checkout `E:\97-codes\torch_parallel\DeepSpec`

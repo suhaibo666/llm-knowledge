@@ -1,3 +1,7 @@
+---
+title: "verl 训练编排 —— RayPPOTrainer.fit() 的 RL 数据流主循环"
+---
+
 # verl 训练编排 —— RayPPOTrainer.fit() 的 RL 数据流主循环
 
 > **代码基准**:verl `main` @ `8a694930`

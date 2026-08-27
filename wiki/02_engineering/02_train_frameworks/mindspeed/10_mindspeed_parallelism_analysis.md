@@ -1,3 +1,7 @@
+---
+title: "MindSpeed 并行特性 — 划分结构源码级分析"
+---
+
 # MindSpeed 并行特性 — 划分结构源码级分析
 
 > **代码基线**:MindSpeed core `master` @ `1432cb09`(猴补丁 Megatron `core_r0.17.0`)· MindSpeed-LLM `master` @ `0c16322d` · 阅读日期 2026-06-23

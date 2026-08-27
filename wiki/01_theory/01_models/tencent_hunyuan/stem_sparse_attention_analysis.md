@@ -1,3 +1,7 @@
+---
+title: "Stem 稀疏注意力 — 把预算花在因果信息流的\"主干\"上的免训练 Prefill 加速"
+---
+
 # Stem 稀疏注意力 — 把预算花在因果信息流的"主干"上的免训练 Prefill 加速
 
 > **来源基线**: arXiv **2603.06274v1**(2026-03-06 提交,PDF 页眉 "Preprint. March 9, 2026"),Lin Niu*, Xin Luo* 等,腾讯 + 中科大。原文 PDF: `raw/01_theory/01_models/tencent_hunyuan/Stem_Sparse_Attention-2603.06274.md`

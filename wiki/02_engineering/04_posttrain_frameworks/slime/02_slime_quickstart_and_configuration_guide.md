@@ -1,3 +1,7 @@
+---
+title: "slime 快速上手与配置指南——把 CLI 看作跨组件配置入口"
+---
+
 # slime 快速上手与配置指南——把 CLI 看作跨组件配置入口
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`

@@ -1,3 +1,7 @@
+---
+title: "vLLM 请求全链路导览：以 DeepSeek-V3 推理为例"
+---
+
 # vLLM 请求全链路导览：以 DeepSeek-V3 推理为例
 
 > **源码基线**：`vllm-project/vllm@26858770eccf9592073b502a57f4662aac358001`（`main`，提交时间 2026-08-24T06:54:41Z）

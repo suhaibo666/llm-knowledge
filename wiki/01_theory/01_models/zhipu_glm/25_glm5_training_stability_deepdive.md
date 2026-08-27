@@ -1,3 +1,7 @@
+---
+title: "GLM-5 训练稳定性深挖 — 从架构 logits 到异步 RL 的「失配 × 噪声 × 故障」三线防御"
+---
+
 # GLM-5 训练稳定性深挖 — 从架构 logits 到异步 RL 的「失配 × 噪声 × 故障」三线防御
 
 > **来源基线**: arXiv 2602.15763v2《GLM-5: from Vibe Coding to Agentic Engineering》(GLM-5 Team, Zhipu AI & 清华, 2026-02-24)

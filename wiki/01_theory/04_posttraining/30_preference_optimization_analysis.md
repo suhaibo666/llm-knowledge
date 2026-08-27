@@ -1,3 +1,7 @@
+---
+title: "Preference Optimization Methods — DPO Family Analysis"
+---
+
 # Preference Optimization Methods — DPO Family Analysis
 
 **Covers**: DPO, IPO, SimPO, ORPO, KTO, MODPO

@@ -1,3 +1,7 @@
+---
+title: "在线策略蒸馏（OPD）：形式化、与 RL 的统一视角、两条实现路线"
+---
+
 # 在线策略蒸馏（OPD）：形式化、与 RL 的统一视角、两条实现路线
 
 > 本页是 OPD 的**主线权威页**：给出定义与坐标系、把"OPD 是 KL 约束 RL 的稠密奖励特例"这一论点**从头推导**出来（而非仅引用结论）、并解释 2026 年工业界两条实现路线为何是同一个偏差-方差权衡的两端。散度选择的演进见 [[15_opd_divergence_and_objective_evolution_analysis]]；工业谱系见 [[32_opd_industrial_landscape_analysis]]；有效性与失败模式见 [[33_opd_effectiveness_and_failure_modes_analysis]]；系统与基建见 [[13_opd_infra_mechanism_analysis]]。

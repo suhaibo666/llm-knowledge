@@ -1,3 +1,7 @@
+---
+title: "DeepSeek-V4 深度解析"
+---
+
 # DeepSeek-V4 深度解析
 
 > **核对基线**: arXiv:**2606.19348v1** (DeepSeek-AI, **2026-04-26**) ＝ `raw/01_theory/01_models/deepseek/DeepSeek_V4.md`  

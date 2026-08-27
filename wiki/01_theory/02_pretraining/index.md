@@ -1,3 +1,7 @@
+---
+title: "LLM 训练技术 — 目录索引"
+---
+
 # LLM 训练技术 — 目录索引
 
 > 覆盖优化器、权重初始化、低精度训练、激活重计算、数值精度一致性
@@ -25,4 +29,4 @@
 - [[01_theory/01_models/index|模型家族]] — 基础架构（Transformer, 缩放定律）
 - [[01_theory/04_posttraining/index|对齐/后训练]] — 对齐方法（RLHF, DPO, GRPO）
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM]] — Megatron-LM 训练基础设施
-- [[02_engineering/01_ai_frameworks/index|AI 框架]] — PyTorch 编译栈
+- [[02_engineering/01_pytorch/index|AI 框架]] — PyTorch 编译栈

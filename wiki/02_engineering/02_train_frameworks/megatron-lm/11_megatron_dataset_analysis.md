@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM 数据集深度解析:原始 GPT 数据集与序列打包"
+---
+
 # Megatron-LM 数据集深度解析:原始 GPT 数据集与序列打包
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`

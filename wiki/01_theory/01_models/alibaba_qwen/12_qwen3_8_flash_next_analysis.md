@@ -1,3 +1,7 @@
+---
+title: "Qwen3.8-Flash-Next：Qwen4 架构预览，把\"参数扩展\"从 MoE 挪到嵌入表"
+---
+
 # Qwen3.8-Flash-Next：Qwen4 架构预览，把"参数扩展"从 MoE 挪到嵌入表
 
 > **来源基线**：

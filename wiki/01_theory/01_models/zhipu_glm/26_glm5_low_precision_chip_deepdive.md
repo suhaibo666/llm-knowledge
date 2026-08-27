@@ -1,3 +1,7 @@
+---
+title: "GLM-5 低精度链与国产芯片适配 — INT4 QAT → FP8 Rollout → W4A8 部署"
+---
+
 # GLM-5 低精度链与国产芯片适配 — INT4 QAT → FP8 Rollout → W4A8 部署
 
 > **来源基线**: arXiv 2602.15763v2《GLM-5: from Vibe Coding to Agentic Engineering》(GLM-5 Team, Zhipu AI & 清华, 2026-02-24)

@@ -1,3 +1,7 @@
+---
+title: "GLM-5V-Turbo: 原生多模态 Agent 基础模型"
+---
+
 # GLM-5V-Turbo: 原生多模态 Agent 基础模型
 
 > **论文**: GLM-5V-Turbo: Toward a Native Foundation Model for Multimodal Agents

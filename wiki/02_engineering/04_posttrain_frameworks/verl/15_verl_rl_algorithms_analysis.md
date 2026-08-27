@@ -1,3 +1,7 @@
+---
+title: "verl RL 算法 —— 优势估计与策略损失全家桶(core_algos)"
+---
+
 # verl RL 算法 —— 优势估计与策略损失全家桶(core_algos)
 
 > **代码基准**:verl `main` @ `8a694930`

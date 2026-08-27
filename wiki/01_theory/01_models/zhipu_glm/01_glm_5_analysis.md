@@ -1,3 +1,7 @@
+---
+title: "GLM-5: Vibe Coding 到 Agentic Engineering"
+---
+
 # GLM-5: Vibe Coding 到 Agentic Engineering
 
 > **论文**: GLM-5: from Vibe Coding to Agentic Engineering

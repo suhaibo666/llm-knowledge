@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM 并行编排与进程组构造深度解析(Capstone)"
+---
+
 # Megatron-LM 并行编排与进程组构造深度解析(Capstone)
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`

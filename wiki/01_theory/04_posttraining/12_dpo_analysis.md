@@ -1,3 +1,7 @@
+---
+title: "DPO: Direct Preference Optimization — Analysis"
+---
+
 # DPO: Direct Preference Optimization — Analysis
 
 **Source**: `raw/01_theory/04_posttraining/DPO_Direct_Preference_Optimization-2305.18290.md`

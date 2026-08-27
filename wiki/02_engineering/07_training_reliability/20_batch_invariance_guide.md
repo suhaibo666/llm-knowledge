@@ -1,3 +1,7 @@
+---
+title: "批次不变性与确定性算子开发指南"
+---
+
 # 批次不变性与确定性算子开发指南
 
 > **来源**: `raw/01_theory/01_models/deepseek/DeepSeek_V4.md` §3.3 + DeepGEMM 源码分析
@@ -432,4 +436,4 @@ flowchart LR
 - [[31_comm_compute_fusion_guide]] — 通算融合（WaveEP 等，同属基础设施优化）
 - [[11_rl_sandbox_design_analysis]] — Coding RL Sandbox 设计（同属后训练框架）
 - [[12_rl_infra_efficiency_analysis]] — Coding RL Infra 效率优化（异步训练对 batch invariance 的要求）
-- [[02_engineering/01_ai_frameworks/index]] — AI 框架目录索引
+- [[02_engineering/01_pytorch/index]] — AI 框架目录索引

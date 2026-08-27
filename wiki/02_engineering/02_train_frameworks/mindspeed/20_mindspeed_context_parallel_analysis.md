@@ -1,3 +1,7 @@
+---
+title: "MindSpeed 上下文并行(Context Parallel)深度解析"
+---
+
 # MindSpeed 上下文并行(Context Parallel)深度解析
 
 > **代码基线**:MindSpeed core `master` @ `1432cb09`(猴补丁 Megatron `core_r0.17.0`)· 2026-06-23

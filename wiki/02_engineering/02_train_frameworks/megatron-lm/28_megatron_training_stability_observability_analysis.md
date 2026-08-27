@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM 训练稳定性与可观测性深度解析"
+---
+
 # Megatron-LM 训练稳定性与可观测性深度解析
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`

@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM 专家并行(Expert Parallelism / MoE)深度解析"
+---
+
 # Megatron-LM 专家并行(Expert Parallelism / MoE)深度解析
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`

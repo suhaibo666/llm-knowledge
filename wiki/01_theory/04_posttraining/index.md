@@ -1,3 +1,7 @@
+---
+title: "LLM 后训练算法理论 — 目录索引"
+---
+
 # LLM 后训练算法理论 — 目录索引
 
 > 覆盖 RLHF、DPO、GRPO/PPO 家族、Reasoning RL 算法演进、Agentic RL、on/off-policy 与 staleness、
@@ -148,6 +152,6 @@
 - [[04_posttrain_frameworks/index]] — 后训练框架与 RL Infra（verl / sandbox / 效率）
 - [[02_pretraining/index]] — 预训练技术（优化器、低精度训练；[[13_low_precision_training_analysis]] 与 [[20_rl_training_inference_precision_analysis]] 现居此处）
 - [[02_train_frameworks/megatron-lm/index]] — 分布式训练基础设施
-- [[01_ai_frameworks/index]] — torch.compile 与图编译优化
+- [[01_pytorch/index]] — torch.compile 与图编译优化
 
 > [!deprecated] 以下三条为旧目录结构下的链接，当前已无对应页面，保留以备追溯，请使用上方新链接：`[[02_training/index]]`、`[[06_infra/megatron-lm/index]]`、`[[torch_compile/index]]`

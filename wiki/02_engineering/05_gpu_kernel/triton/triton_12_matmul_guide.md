@@ -1,3 +1,7 @@
+---
+title: "L1 · 会写③ + 会优化 — 分块矩阵乘与 L2 cache 重排（matmul）"
+---
+
 # L1 · 会写③ + 会优化 — 分块矩阵乘与 L2 cache 重排（matmul）
 
 > **源基线**: `triton main @ 70e0929`，v3.8.0 ｜ 锚定 `python/tutorials/03-matrix-multiplication.py`（逐行可核验）

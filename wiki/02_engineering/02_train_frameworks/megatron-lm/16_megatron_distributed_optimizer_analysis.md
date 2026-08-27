@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM 数据并行、分布式优化器与优化器内部机制 深度解析"
+---
+
 # Megatron-LM 数据并行、分布式优化器与优化器内部机制 深度解析
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`(2026-06-16 增量对照 `dev@232c478d4` 刷新)

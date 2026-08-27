@@ -1,3 +1,7 @@
+---
+title: "DeepSeek-VL Analysis"
+---
+
 # DeepSeek-VL Analysis
 
 **Source:** `raw/01_theory/01_models/deepseek/DeepSeek_VL-2403.05525.md`  

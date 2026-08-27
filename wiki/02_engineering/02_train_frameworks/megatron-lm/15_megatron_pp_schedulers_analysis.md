@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM 流水线并行(Pipeline Parallelism)调度器深度解析"
+---
+
 # Megatron-LM 流水线并行(Pipeline Parallelism)调度器深度解析
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`

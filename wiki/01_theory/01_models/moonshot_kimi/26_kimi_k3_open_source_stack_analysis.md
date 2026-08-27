@@ -1,3 +1,7 @@
+---
+title: "Kimi K3 开源栈全景：哪些是生产组件、哪些是模型自己的作品、哪些根本不是新开的"
+---
+
 # Kimi K3 开源栈全景：哪些是生产组件、哪些是模型自己的作品、哪些根本不是新开的
 
 > **来源基线**：GitHub REST API 于 2026-07-28 取数（`api.github.com/orgs/MoonshotAI/repos`，逐仓核对 `created_at` / `pushed_at` / `license`）；各仓 README 为其默认分支当日快照。逐仓固定 commit 见下表。

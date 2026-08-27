@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM — Knowledge Map"
+---
+
 # Megatron-LM — Knowledge Map
 
 This domain covers NVIDIA Megatron-LM distributed training framework, including parallelism strategies, MoE implementation, performance measurement, and integration with inference engines.
@@ -159,4 +163,4 @@ These topics are referenced but lack dedicated wiki pages:
 
 - [[15_megatron_pp_schedulers_analysis]] · [[14_megatron_ep_analysis]] · [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[16_megatron_distributed_optimizer_analysis]]
 - [[17_megatron_parallelism_orchestration_analysis]] · [[10_megatron_model_structure_analysis]] · [[25_megatron_nonuniform_tp_analysis]]
-- [[02_engineering/01_ai_frameworks/index]]
+- [[02_engineering/01_pytorch/index]]

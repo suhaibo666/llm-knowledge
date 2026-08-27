@@ -1,3 +1,7 @@
+---
+title: "专家并行 EP：统一 dispatcher、稀疏网格与四条通信路径"
+---
+
 # 专家并行 EP：统一 dispatcher、稀疏网格与四条通信路径
 
 > **代码基准**：pytorch/torchtitan `main` @ `a3168782c9a3a2e40afbd0de114818b96e2bda6e`（2026-08-27）

@@ -1,3 +1,7 @@
+---
+title: "D09 AReaL Fully Async 与 Agentic 架构"
+---
+
 # D09 AReaL Fully Async 与 Agentic 架构
 
 > **阶段**：S03

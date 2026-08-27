@@ -1,3 +1,7 @@
+---
+title: "Megatron-Core 通信掩盖（Communication Overlap）技术详解"
+---
+
 # Megatron-Core 通信掩盖（Communication Overlap）技术详解
 
 > 基于 Megatron-LM `dev` 分支代码分析，所有引用均来自实际代码路径与行号。

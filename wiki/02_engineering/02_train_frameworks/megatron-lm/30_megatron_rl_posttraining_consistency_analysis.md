@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM RL 后训练适配与训推一致性深度解析"
+---
+
 # Megatron-LM RL 后训练适配与训推一致性深度解析
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`

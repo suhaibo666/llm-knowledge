@@ -1,3 +1,7 @@
+---
+title: "GRPO: Group Relative Policy Optimization — Analysis"
+---
+
 # GRPO: Group Relative Policy Optimization — Analysis
 
 **Source**: DeepSeek R1 paper (arXiv:2501.12948) + DeepSeekMath paper (arXiv:2402.03300)

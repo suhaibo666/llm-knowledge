@@ -1,3 +1,7 @@
+---
+title: "Transformer Engine 技术分析：架构、精度体系与 Megatron 集成"
+---
+
 # Transformer Engine 技术分析：架构、精度体系与 Megatron 集成
 
 > 基于 NVIDIA TransformerEngine GitHub 仓库 (dev/main, 2026) 源码分析

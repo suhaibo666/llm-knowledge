@@ -495,7 +495,7 @@ _F_PAGE_ROOTS = {
 
 def _page_root(labs_root: Path, volume: str, page_id: str | None = None) -> Path:
     wiki_root = labs_root.parent.parent / "wiki"
-    ai_frameworks_root = wiki_root / "02_engineering" / "01_ai_frameworks"
+    pytorch_domain_root = wiki_root / "02_engineering" / "01_pytorch"
     if volume == "C" and page_id == "c01":
         # c01's page (01_graph_ir_motivation_and_taxonomy.md) had no
         # functional-tree home of its own and was deleted by kb-reorg P4
@@ -503,15 +503,15 @@ def _page_root(labs_root: Path, volume: str, page_id: str | None = None) -> Path
         # into the courses readthrough page instead.
         return wiki_root / "courses"
     if volume == "E":
-        return ai_frameworks_root / "02_compile_stack" / "07_debugging"
+        return pytorch_domain_root / "02_compile_stack" / "07_debugging"
     if volume == "B":
-        return ai_frameworks_root / "02_compile_stack" / "01_dynamo"
+        return pytorch_domain_root / "02_compile_stack" / "01_dynamo"
     if volume == "D" and page_id in _D_PAGE_ROOTS:
-        return ai_frameworks_root.joinpath(*_D_PAGE_ROOTS[page_id])
+        return pytorch_domain_root.joinpath(*_D_PAGE_ROOTS[page_id])
     if volume == "C" and page_id in _C_PAGE_ROOTS:
-        return ai_frameworks_root.joinpath(*_C_PAGE_ROOTS[page_id])
+        return pytorch_domain_root.joinpath(*_C_PAGE_ROOTS[page_id])
     if volume == "F" and page_id in _F_PAGE_ROOTS:
-        return ai_frameworks_root.joinpath(*_F_PAGE_ROOTS[page_id])
+        return pytorch_domain_root.joinpath(*_F_PAGE_ROOTS[page_id])
     # 19_torch_compile_end_to_end was deleted by kb-reorg P4 Task 10
     # (2026-07-30); every volume/page_id combination in the current
     # manifest is now explicitly mapped above, so this should be
@@ -630,23 +630,23 @@ class CourseMarkdownContractTest(unittest.TestCase):
     @staticmethod
     def _course_pages() -> list[Path]:
         wiki_root = Path(__file__).resolve().parent.parent.parent / "wiki"
-        ai_frameworks_root = wiki_root / "02_engineering" / "01_ai_frameworks"
+        pytorch_domain_root = wiki_root / "02_engineering" / "01_pytorch"
         # 19_torch_compile_end_to_end was deleted by kb-reorg P4 Task 10
         # (2026-07-30); the courses readthrough page that replaced its
         # navigational role lives here instead.
         courses_root = wiki_root / "courses"
         # Volume E physically moved to 07_debugging (kb-reorg P4 Task 4); its
         # markdown quality gates below still apply, just from the new home.
-        debugging_root = ai_frameworks_root / "02_compile_stack" / "07_debugging"
+        debugging_root = pytorch_domain_root / "02_compile_stack" / "07_debugging"
         # Volume B physically moved to 01_dynamo (kb-reorg P4 Task 5); same.
-        dynamo_root = ai_frameworks_root / "02_compile_stack" / "01_dynamo"
+        dynamo_root = pytorch_domain_root / "02_compile_stack" / "01_dynamo"
         # All of volume C's 21 pages physically moved out of the legacy
         # course directory (kb-reorg P4 Task 7-8): 12 into the new
         # 03_graph_ir_and_passes directory, the remaining 9 scattered across
         # 01_dynamo/02_aot_autograd/04_inductor; c01 was deleted (folded
         # into courses_root above). Same gates apply from the new home.
         graph_ir_root = (
-            ai_frameworks_root / "02_compile_stack" / "03_graph_ir_and_passes"
+            pytorch_domain_root / "02_compile_stack" / "03_graph_ir_and_passes"
         )
         return (
             sorted(courses_root.glob("*.md"))
@@ -721,25 +721,25 @@ class CourseMarkdownContractTest(unittest.TestCase):
         self.assertEqual(invalid, [])
 
     def test_call_chain_pages_have_source_walkthroughs(self) -> None:
-        ai_frameworks_root = (
+        pytorch_domain_root = (
             Path(__file__).resolve().parent.parent.parent
             / "wiki"
             / "02_engineering"
-            / "01_ai_frameworks"
+            / "01_pytorch"
         )
         # Volume B physically moved to 01_dynamo (kb-reorg P4 Task 5); the two
         # b04/b07 call-chain pages below now live there.
-        dynamo_root = ai_frameworks_root / "02_compile_stack" / "01_dynamo"
+        dynamo_root = pytorch_domain_root / "02_compile_stack" / "01_dynamo"
         # Volume D physically moved out of 19_torch_compile_end_to_end one page
         # at a time (kb-reorg P4 Task 6), scattering across four directories
         # (unlike B/E which each moved wholesale into one directory).
-        inductor_root = ai_frameworks_root / "02_compile_stack" / "04_inductor"
-        aot_autograd_root = ai_frameworks_root / "02_compile_stack" / "02_aot_autograd"
-        cuda_root = ai_frameworks_root / "03_runtime_graphs" / "cuda"
+        inductor_root = pytorch_domain_root / "02_compile_stack" / "04_inductor"
+        aot_autograd_root = pytorch_domain_root / "02_compile_stack" / "02_aot_autograd"
+        cuda_root = pytorch_domain_root / "03_runtime_graphs" / "cuda"
         # Volume F physically scatters out of 19_torch_compile_end_to_end
         # (kb-reorg P4 Task 9); f01's call-chain page now lives here.
         autograd_engine_root = (
-            ai_frameworks_root / "01_eager_runtime" / "05_autograd_engine"
+            pytorch_domain_root / "01_eager_runtime" / "05_autograd_engine"
         )
         target_pages = [
             (dynamo_root, "12_instruction_translator_and_bytecode_state_machine_analysis.md"),
@@ -789,7 +789,7 @@ class CourseMarkdownContractTest(unittest.TestCase):
             Path(__file__).resolve().parent.parent.parent
             / "wiki"
             / "02_engineering"
-            / "01_ai_frameworks"
+            / "01_pytorch"
             / "02_compile_stack"
             / "01_dynamo"
         )

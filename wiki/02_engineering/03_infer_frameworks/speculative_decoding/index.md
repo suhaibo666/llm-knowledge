@@ -1,3 +1,7 @@
+---
+title: "投机推理（Speculative Decoding）演进 —— 目录索引 + MTP → Eagle3 → DFlash → DSpark 总览"
+---
+
 # 投机推理（Speculative Decoding）演进 —— 目录索引 + MTP → Eagle3 → DFlash → DSpark 总览
 
 > 覆盖：投机解码草稿器（drafter）架构与验证调度的演进主线；以 DeepSeek 的 **MTP / DFlash / DSpark** 为骨架，旁及 Eagle3。

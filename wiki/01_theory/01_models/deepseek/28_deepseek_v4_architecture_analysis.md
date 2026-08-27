@@ -1,3 +1,7 @@
+---
+title: "DeepSeek-V4 模型结构图（源忠实重画）"
+---
+
 # DeepSeek-V4 模型结构图（源忠实重画）
 
 > **基线**：arXiv:2606.19348v1 "DeepSeek-V4: Towards Highly Efficient Million-Token Context Intelligence"，DeepSeek-AI，2026-04-26。

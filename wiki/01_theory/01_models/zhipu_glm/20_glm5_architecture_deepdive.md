@@ -1,3 +1,7 @@
+---
+title: "GLM-5 架构深挖 — MLA·Muon Split·MTP·DSA 的\"规模 × 长上下文成本\"权衡"
+---
+
 # GLM-5 架构深挖 — MLA·Muon Split·MTP·DSA 的"规模 × 长上下文成本"权衡
 
 > **来源基线**: arXiv 2602.15763v2《GLM-5: from Vibe Coding to Agentic Engineering》(GLM-5 Team, Zhipu AI & 清华, 2026-02-24)

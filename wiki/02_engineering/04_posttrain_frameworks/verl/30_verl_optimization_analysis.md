@@ -1,3 +1,7 @@
+---
+title: "verl 性能与显存优化 —— 重分片·序列打包·offload·placement·异步 RL"
+---
+
 # verl 性能与显存优化 —— 重分片·序列打包·offload·placement·异步 RL
 
 > **代码基准**:verl `main` @ `8a694930`

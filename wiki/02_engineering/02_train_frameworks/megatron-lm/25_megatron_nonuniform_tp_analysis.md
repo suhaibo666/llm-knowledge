@@ -1,3 +1,7 @@
+---
+title: "Megatron Nonuniform Tensor Parallelism (NTP) 深度分析"
+---
+
 # Megatron Nonuniform Tensor Parallelism (NTP) 深度分析
 
 **Date**: 2026-05-20

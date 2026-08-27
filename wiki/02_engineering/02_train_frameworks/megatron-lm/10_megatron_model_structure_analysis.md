@@ -1,3 +1,7 @@
+---
+title: "Megatron-LM 模型结构深度解析(Model Structure)"
+---
+
 # Megatron-LM 模型结构深度解析(Model Structure)
 
 > 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`

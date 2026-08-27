@@ -1,3 +1,7 @@
+---
+title: "DAPO: Decoupled Clip and Dynamic Sampling Policy Optimization — Analysis"
+---
+
 # DAPO: Decoupled Clip and Dynamic Sampling Policy Optimization — Analysis
 
 **Source**: `raw/01_theory/04_posttraining/DAPO_Decoupled_Clip_Dynamic_Sampling-2503.14476.md`

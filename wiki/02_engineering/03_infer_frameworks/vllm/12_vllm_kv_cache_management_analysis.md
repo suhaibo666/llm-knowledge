@@ -1,3 +1,7 @@
+---
+title: "vLLM KV Cache 管理：分页不是索引技巧，而是物理块所有权协议"
+---
+
 # vLLM KV Cache 管理：分页不是索引技巧，而是物理块所有权协议
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`

@@ -1,3 +1,7 @@
+---
+title: "DeepSeekMath Analysis"
+---
+
 # DeepSeekMath Analysis
 
 **Source:** `raw/01_theory/01_models/deepseek/DeepSeek_Math-2402.03300.md`  

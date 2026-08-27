@@ -1,3 +1,7 @@
+---
+title: "VAPO: Value Augmented Proximal Policy Optimization — Analysis"
+---
+
 # VAPO: Value Augmented Proximal Policy Optimization — Analysis
 
 **Source**: `raw/01_theory/04_posttraining/VAPO_Value_Augmented_Proximal_Policy_Optimization-2504.05118.md`

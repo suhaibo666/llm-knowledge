@@ -1,3 +1,7 @@
+---
+title: "slime Ray 控制面分析：按职责边界编排训练与推理"
+---
+
 # slime Ray 控制面分析：按职责边界编排训练与推理
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`

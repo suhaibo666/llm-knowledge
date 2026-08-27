@@ -1,3 +1,7 @@
+---
+title: "Qwen3.8-Flash-Next 架构深挖：每一处扩展，都先算清它在 prefill 和 decode 上要付多少"
+---
+
 # Qwen3.8-Flash-Next 架构深挖：每一处扩展，都先算清它在 prefill 和 decode 上要付多少
 
 > **来源基线**：Qwen Team《On the Design of Qwen3.8-Next Architecture: Evaluation, Efficiency, and Training Stability》，**2026-08-26**，随 [github.com/QwenLM/Qwen3.8-Flash-Next](https://github.com/QwenLM/Qwen3.8-Flash-Next/blob/main/tech_report.pdf) 发布的 28 页 PDF（**无 arXiv 编号**）。来源元数据见 `raw/01_theory/01_models/alibaba_qwen/Qwen3_8_Flash_Next_tech_report.md`。

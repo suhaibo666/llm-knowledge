@@ -1,3 +1,7 @@
+---
+title: "DeepSeek-Coder-V2 Analysis"
+---
+
 # DeepSeek-Coder-V2 Analysis
 
 **Source:** `raw/01_theory/01_models/deepseek/DeepSeek_Coder_V2-2406.11931.md`  

@@ -1,3 +1,7 @@
+---
+title: "LLM Knowledge Wiki — 知识库总索引"
+---
+
 # LLM Knowledge Wiki — 知识库总索引
 
 > 最后更新: 2026-08-27
@@ -34,10 +38,10 @@
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| AI框架 | [[02_engineering/01_ai_frameworks/index]] | 150 | 活跃 |
-| └─ TorchInductor | [[02_engineering/01_ai_frameworks/02_compile_stack/04_inductor/index]] | 36 | 活跃 |
-| └─ 运行时图(CUDA/NPU) | [[02_engineering/01_ai_frameworks/03_runtime_graphs/index]] | 12 | 活跃 |
-| └─ Codegen 后端(MLIR) | [[02_engineering/01_ai_frameworks/02_compile_stack/05_codegen_backends/mlir/index]] | 8 | 活跃 |
+| PyTorch | [[02_engineering/01_pytorch/index]] | 148 | 活跃 |
+| └─ TorchInductor | [[02_engineering/01_pytorch/02_compile_stack/04_inductor/index]] | 36 | 活跃 |
+| └─ 运行时图(CUDA/NPU) | [[02_engineering/01_pytorch/03_runtime_graphs/index]] | 12 | 活跃 |
+| └─ Codegen 后端(MLIR) | [[02_engineering/01_pytorch/02_compile_stack/05_codegen_backends/mlir/index]] | 8 | 活跃 |
 | 训练框架 | [[02_engineering/02_train_frameworks/index]] | 60 | 活跃 |
 | └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 27 | 活跃 |
 | └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 17 | 活跃 |
@@ -62,7 +66,7 @@
 
 | 课程 | 入口 | 覆盖范围 |
 |------|------|---------|
-| torch.compile 端到端 | [[courses/torch_compile_end_to_end]] | `01_ai_frameworks` 五层功能树(eager 地基→Dynamo→AOTAutograd→Graph IR/Passes→Inductor→缓存→调试→运行时图→导出/分布式) |
+| torch.compile 端到端 | [[courses/torch_compile_end_to_end]] | `01_pytorch` 四层功能树(eager 地基→Dynamo→AOTAutograd→Graph IR/Passes→Inductor→缓存→调试→运行时图→导出/分布式) |
 | LLM 后训练前沿 | [[courses/posttraining_frontier]] | `01_theory/04_posttraining`(算法)+ `02_engineering/04_posttrain_frameworks`(框架源码,含 `verl/`、`slime/`)+ `moonshot_kimi`(K3 工业案例)三处功能树(D01→D12:全景地图→算法演进→Agentic→staleness→Infra→框架对比→verl 主链→slime→AReaL→ROLL→CUDA–Ascend→K3 综合案例) |
 
 ---

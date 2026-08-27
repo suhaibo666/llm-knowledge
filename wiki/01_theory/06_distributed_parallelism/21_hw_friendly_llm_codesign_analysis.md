@@ -1,3 +1,7 @@
+---
+title: "硬件友好的 LLM 模型设计(NVIDIA 软硬协同指南)— 模型超参就是部署性能参数"
+---
+
 # 硬件友好的 LLM 模型设计(NVIDIA 软硬协同指南)— 模型超参就是部署性能参数
 
 > **来源基线**: NVIDIA Developer Blog《AI Model Co-Design: Hardware-Friendly LLM Design》,2026-07-10,作者 Ritika Borkar / Nidhi Bhatia / Bhargava Gopireddy / Nick Comly / Brian Pharris / Julien Demouth / Bita Darvish Rouhani。原文快照: `raw/01_theory/06_distributed_parallelism/NVIDIA_HW_Friendly_LLM_CoDesign_2026-07-10.html`(2026-07-15 存档)。文中自述为**系列第一篇**("Each subsequent chapter of the series…")。

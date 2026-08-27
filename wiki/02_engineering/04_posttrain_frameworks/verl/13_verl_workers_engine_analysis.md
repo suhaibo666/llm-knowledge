@@ -1,3 +1,7 @@
+---
+title: "verl 计算面 —— 统一 Worker 与 Engine 后端抽象(FSDP/Megatron/...)"
+---
+
 # verl 计算面 —— 统一 Worker 与 Engine 后端抽象(FSDP/Megatron/...)
 
 > **代码基准**:verl `main` @ `8a694930`

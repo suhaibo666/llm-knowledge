@@ -1,3 +1,7 @@
+---
+title: "slime Rollout 后端扩展：先选对扩展边界，再决定是否替换引擎"
+---
+
 # slime Rollout 后端扩展：先选对扩展边界，再决定是否替换引擎
 
 > **源码基线**：slime `main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`

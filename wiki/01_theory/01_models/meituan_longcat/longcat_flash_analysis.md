@@ -1,3 +1,7 @@
+---
+title: "LongCat-Flash：用「零计算专家 + ScMoE 短路」把 560B MoE 的激活压到 ~27B"
+---
+
 # LongCat-Flash：用「零计算专家 + ScMoE 短路」把 560B MoE 的激活压到 ~27B
 
 > **来源**: LongCat-Flash Technical Report（美团 LongCat 团队）
