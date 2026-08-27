@@ -1,308 +1,206 @@
-# 流水线并行 PP —— 机制级深度分析
+# Pipeline Parallel：stage 适配层、微批次协议与组合边界
 
-> **代码基准**:torchtitan `main` @ `cf3c4312` · PyTorch `2.9.1`(`torch/distributed/pipelining/` 内核)
-> **最后更新**:2026-05-22 · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
+> **代码基准**：pytorch/torchtitan `main` @ `a3168782c9a3a2e40afbd0de114818b96e2bda6e`（2026-08-27）
+> **最后更新**：2026-08-27 · **系列**：[[02_engineering/02_train_frameworks/torchtitan/index|TorchTitan 知识地图]]
 >
-> 本文按统一结构回答:**模型怎么切成 stage?stage 间怎么通信?气泡怎么消?异步怎么实现?** 重点是各调度的气泡结构与 Zero Bubble。
+> **主线**：TorchTitan 的 PP 核心不是另一套流水调度器，而是一层 **stage 适配协议**：它把完整模型复制并裁成 rank-local chunks，在每个 chunk 上继续施加 FSDP/TP/CP/compile，再把模型预处理后的微批次和 SPMD 上下文交给上游 `torch.distributed.pipelining` schedule。理解当前实现的关键因此不是背 GPipe/1F1B 的气泡公式，而是分清三种所有权：TorchTitan 拥有 stage 物化、rank 映射、输入预处理与组合策略；PyTorch 拥有 action/P2P 调度；模型自己必须容忍被裁剪后的 forward。
 >
-> 行号约定:torchtitan 以 `torchtitan/` 为根;PyTorch 2.9.1 以 `[pt]` 前缀,根目录 `torch/distributed/pipelining/`。
+> 主要源文件：`torchtitan/distributed/pipeline_parallel.py`、`torchtitan/trainer.py`、`torchtitan/config/configs.py`、`torchtitan/distributed/fsdp.py`。
 
 ---
 
-## 1. 功能范围与定位
+## 1. 先纠正旧版知识
 
-**PP（流水线并行）**沿模型的**层（深度）维度**切分出多个 stage，每个 stage 由一组卡承载，microbatch 再像流水线一样依次经过各个 stage。它适合“模型层数很多、训练跨越大量节点”的场景：PP 在 stage 边界**只传输激活和梯度**（P2P，数据量较小），跨节点带宽需求较低，因此适合映射到速度最慢的网络层级。
+旧页基于 TorchTitan `cf3c4312` 与 PyTorch 2.9.1，把篇幅主要放在 PyTorch schedule 的 action 表、P2P batching、`AsyncCollectiveTensor` wait、zero-bubble 拆分 backward 与 DualPipeV 时序上。那些内容属于**独立的上游 PyTorch 基线**，不是当前 TorchTitan 源码的行号空间；本次审计没有用当前 TorchTitan 行号替换旧 PyTorch 行号。
 
-torchtitan 侧只做**模型切分 + schedule 工厂**(`torchtitan/distributed/pipeline_parallel.py`,入口 `pipeline_llm`),真正的调度执行机制全在 PyTorch `pipelining` 包。
+当前配置注释把 schedule 名字空间明确链接到 PyTorch commit `de4c2a3b4e89d96334dc678d1c3f2ae51a6630a0`，而 TorchTitan 运行时只通过 `get_schedule_class()` 解析名字（`torchtitan/config/configs.py:218-224`、`torchtitan/distributed/pipeline_parallel.py:292-300`）。因此本页保留的上游结论只有边界：**schedule 决定 action/P2P 时序；TorchTitan 负责给它 stages 与预切好的 microbatches**。旧页的气泡公式、延迟 wait 和 DualPipeV 局部 GEMM 时序不再当作当前页的 source-faithful 机制断言。
 
-> **版本提示**:torchtitan 给 `PipelineStage` 传了 `get_mesh=` 关键字参数(`pipeline_parallel.py:586`),但本机 PyTorch 2.9.1 的 `PipelineStage.__init__` 不接受该参数——torchtitan 主线针对更新的 PyTorch。DTensor 跨 stage 重组的机制结论不受影响。
+> [!deprecated] 旧 `split_points` / shape-inference 调用链已失效
+> 当前 `ParallelismConfig` 的真实切分入口是 `module_fqns_per_model_part` 或 `pipeline_parallel_layers_per_stage`，没有 `split_points` 字段（`torchtitan/config/configs.py:189-215`）。配置注释 `:222-224` 仍出现 `split_points`，但当前核心实现没有消费它；这是文档残留，不应据此配置。当前 `PipelineStage` 构造也不再传旧页所写的示例输入做 shape inference，而是传 `model_chunk/stage_idx/num_stages/device/group/get_mesh`（`torchtitan/distributed/pipeline_parallel.py:619-632`）。
 
----
-
-## 2. 模型切分:从整模型到 PipelineStage
-
-### 2.1 三步切分(torchtitan 侧)
-
-`pipeline_llm`(`pipeline_parallel.py:68`):
-
-**① 算 virtual stage 数** —— `_get_pipeline_metadata`(`pipeline_parallel.py:147`)。用 `get_schedule_class` 判断 schedule 是单段(`PipelineScheduleSingle` 子类)还是多段(`PipelineScheduleMulti`)。virtual stage 数由 `pipeline_parallel_layers_per_stage` 推出,强制 `num_virtual_stages % pp_degree == 0`。单段调度要求每 rank 1 个 stage,多段要求 ≥2 个。
-
-**② 生成每 stage 的模块 FQN 列表** —— `_generate_llm_fqn_per_model_part`(`pipeline_parallel.py:313`)。把 `tok_embeddings`/`norm`/`lm_head` 按"等效层数"参与均分:`num_effective_layers = num_layers + input_weight + output_weight`(`input_weight`/`output_weight` 让首/末 stage 少分几层真实 transformer 层,补偿 embedding/输出投影的计算量)。产物形如:
-
-```
-[["tok_embeddings","layers.0"], ["layers.1","layers.2"], ["norm","lm_head"]]
-```
-
-**③ 物理切模型** —— `_split_module`(`pipeline_parallel.py:426`):
-
-```python
-model = copy.deepcopy(whole_model)
-# 对 ModuleList/ModuleDict 删掉不属于本 stage 的层;对普通子模块不保留则 setattr(model, name, None)
-```
-
-> 这要求模型 `forward()` 必须**容忍被删层**(`None` 子模块)——是 torchtitan 模型代码的硬约束。
-
-### 2.2 PP rank → stage 索引映射
-
-`_get_pp_rank_to_stage_indices_mapping`(`pipeline_parallel.py:488`)两种风格:
-
-- **`loop`**(普通 looped/interleaved):rank `r` 持有 stage `r, r+pp, r+2pp, …`。例 pp=2、4 stage → rank0={0,2}、rank1={1,3}。
-- **`v`**(`ScheduleZBVZeroBubble`/`ScheduleDualPipeV`):每 rank 恰好 2 个 stage,配对 `zip(range(pp), range(num_stages-1, pp-1, -1))`。例 pp=4、8 stage → rank0={0,7}、rank1={1,6}、rank2={2,5}、rank3={3,4},形成 **V 形折叠**。
-
-### 2.3 PipelineStage 与跨 stage 的形状推断
-
-`PipelineStage`(`[pt] stage.py`)假设线性切分、无 skip-connection。它不需要用户给输入输出形状——`_shape_inference` 在初始化时**沿 stage 链顺序传播**:stage 0 用真实 meta 输入跑一遍,把输出 meta 用 `dist.send_object_list` 给 stage 1,以此类推(只传 meta tensor,不传数据,更快且避免在 src rank 意外激活 CUDA context)。
-
-非首 stage 为每个 microbatch chunk 预分配接收 buffer `args_recv_info`,且 buffer 设 `requires_grad_(True)`——**收来的激活成为本 stage 新 autograd 图的叶子**。
-
-> **DTensor 跨 stage 问题**:DTensor 不能跨 PP stage 序列化(ProcessGroup 不可序列化)。`_build_get_mesh_callback`(`pipeline_parallel.py:44`)让每个 stage 收到普通 tensor 后用本地 mesh 重新 wrap 成 DTensor。
-
-### 2.4 microbatch 切分
-
-调度的 `step()` 把整批输入用 `split_args_kwargs_into_chunks`(`[pt] microbatch.py:245`)沿 batch 维(`DEFAULT_CHUNK_DIM=0`)`tensor_split` 成 `n_microbatches` 份。torchtitan 侧 `n_microbatches = local_batch_size // pipeline_parallel_microbatch_size`,强制整除;`n_microbatches < num_total_stages` 时告警提示气泡(`pipeline_parallel.py:267`)。
-
-### 2.5 切分后:每个 stage 各自再走一遍 SPMD 并行
-
-`pipeline_llm` 切完 stage 后,**每个 model chunk 各自再走一遍完整 `parallelize_fn`**(`pipeline_parallel.py:114`)——所以每个 stage 内部仍可叠加 TP/CP/EP/FSDP。这就是 PP 与其他维度组合的方式:PP 在最外层切,每个 stage 是一个独立的 SPMD 单元。
+> [!deprecated] microbatch 不再由 schedule 从大 batch 内部切
+> Trainer 的 dataloader 每次已经产出一个 PP microbatch；训练步先连续取 `num_pp_microbatches` 个 batch，再组成一个 schedule 调用（`torchtitan/trainer.py:785-820`）。旧页“schedule 用 split spec 切 input/label”的调用链不适用于当前 Trainer。
 
 ---
 
-## 3. 通信原语:P2P send/recv
+## 2. TorchTitan 与 PyTorch 的责任边界
 
-PP **不用 collective**,全部用 **P2P**。
+当前 eager PP 的真实构建链是：
 
-### 3.1 底层原语
+```text
+Trainer(meta device 上 build 完整模型)
+  -> 检查 ModelSpec.pipelining_fn
+  -> model-specific pipelining_fn（通常是 pipeline_llm / pipeline_vlm）
+  -> 计算 virtual stage 数与每 stage 的 FQN
+  -> deepcopy + prune，物化本 rank 的 model chunks
+  -> 每个 chunk 调 model-specific parallelize_fn
+  -> 用 chunks 构造 PyTorch PipelineStage 与 schedule
+  -> Trainer 为 chunks 建 optimizer/checkpoint，并执行 schedule.step
+```
 
-核心是 `dist.P2POp` + `dist.batch_isend_irecv`(`[pt] distributed_c10d.py`):`P2POp` 封装 `(op, tensor, peer)`,`op` 是 `dist.isend`/`dist.irecv`(异步)。`batch_isend_irecv` 把一批 P2POp 一次发出,对 NCCL 用 `_coalescing_manager` 把多个 P2P 融成一次内核启动,返回 `Work` 句柄需 `wait()`。
+模型先在 meta device 上完整构造并校验 module protocol（`torchtitan/trainer.py:350-365`）。只有 `ModelSpec.pipelining_fn` 非空的模型才能启用 PP；否则 Trainer 立即报错（`torchtitan/trainer.py:426-453`）。PP 函数返回 `schedule/model_parts/has_first_stage/has_last_stage` 后，完整 `model` 被删除，此后初始化、优化器与 checkpoint 都只持有本 rank 的 `model_parts`（`torchtitan/trainer.py:454-464`、`:533-577`）。
 
-`schedules.py` 三个封装:`_batch_p2p`(薄包)、`_sorted_batch_p2p`(按 peer 分组分别发,避免死锁)、`_wait_batch_p2p`(逐个 `wait`)。
+这条边界解释了为什么 TorchTitan 可以跟随上游新增 schedule：核心不硬编码一张 schedule 枚举表，而是解析上游 class；但 stage 如何切、chunk 上先施加哪些 SPMD 并行、输入怎样变成 schedule 参数，仍是 TorchTitan 的责任（`torchtitan/distributed/pipeline_parallel.py:65-141`）。
 
-### 3.2 激活与梯度的 send/recv
-
-stage 提供四个 ops 生成函数(只**构造** P2POp,不执行):
-
-| 函数 | 作用 |
-|------|------|
-| `get_fwd_recv_ops` | 收来自 stage-1 的激活 |
-| `get_fwd_send_ops` | 把本 stage 输出激活发给 stage+1 |
-| `get_bwd_recv_ops` | 收来自 stage+1 的"对本 stage 输出的梯度" |
-| `get_bwd_send_ops` | 把本 stage 对其输入的梯度发给 stage-1 |
-
-激活在 `forward_one_chunk` 算完后存进 `fwd_cache[chunk_id]`,`get_fwd_send_ops` 读它发送、`backward_one_chunk` 读它反传。通信不在 stage 内部触发,而是由 **schedule 的 `_step_microbatches`** 编排。
+Graph PP 是另一条实验性执行路径；它复用部分 stage/schedule helper，但显式导出 forward/backward graph，不属于本页 eager Trainer 机制。见 [[27_torchtitan_graph_trainer_compiler_runtime_analysis]]。
 
 ---
 
-## 4. 调度与气泡:五种 schedule 对比
+## 3. stage 如何从完整模型物化出来
 
-记号:`p` = PP 度数,`m` = microbatch 数,`v` = 每 rank 的 virtual stage 数。`F`=forward,`B`=full backward,`I`=backward-input(对输入求梯),`W`=backward-weight(对权重求梯),空格=气泡。
+### 3.1 virtual stage 数先由 schedule 类别约束
 
-### 4.1 GPipe(fill-drain)
+`_get_pipeline_metadata()` 先把 schedule 分成 `PipelineScheduleSingle` 与 multi-stage 两类。若显式给 `pipeline_parallel_layers_per_stage`，virtual stage 数按模型层数加首尾权重后向上取整，且必须能被 PP rank 数整除；single-stage schedule 要求每 rank 恰好一个 stage，multi-stage schedule 至少每 rank 两个 stage（`torchtitan/distributed/pipeline_parallel.py:194-257`）。若未显式给定，默认就是 single 每 rank 1 个、multi 每 rank 2 个（`:258-264`）。
 
-`_step_microbatches` 两个完全分开的循环:先把所有 `m` 个 microbatch 全部 forward,再全部 backward。
+`pipeline_parallel_degree` 因而始终表示**物理 rank 数**，不是 stage 数；looped schedule 的 stage 数由每 rank 的 virtual chunks 继续放大（`torchtitan/config/configs.py:182-186`）。
 
-```
-GPipe, p=4, m=4
-rank0: F0 F1 F2 F3 . . . . . . B0 B1 B2 B3
-rank1: . F0 F1 F2 F3 . . . . B0 B1 B2 B3 .
-rank2: . . F0 F1 F2 F3 . . B0 B1 B2 B3 . .
-rank3: . . . F0 F1 F2 F3 B0 B1 B2 B3 . . .
-       └warmup┘          └─ 全 F 完才开始全 B ─┘
-```
+### 3.2 FQN 列表是当前切分契约
 
-气泡占比 ≈ `(p-1)/(m+p-1)`。**峰值显存最差**:第一个 backward 前,所有 `m` 个 microbatch 的激活同时驻留。
+用户可用 `module_fqns_per_model_part` 精确列出每个 chunk 保留的模块（`torchtitan/config/configs.py:189-197`）。未指定时，LLM helper 自动在 `tok_embeddings`、`layers.N`、`norm`、`lm_head` 之间分配；首尾权重把 embedding 与 norm/head 当成额外层成本，且会拒绝空 stage 或权重大于最小 stage 容量的配置（`torchtitan/distributed/pipeline_parallel.py:357-419`）。实际分配让首 stage 拿 embedding、末 stage 拿 norm/head，中间只拿 decoder layers（`:421-467`）。
 
-### 4.2 1F1B(`Schedule1F1B`)
+VLM 不是把 vision encoder 单独建成一条流水。`pipeline_vlm()` 把 `vision_encoder` 插入第一 stage 的 FQN 列表，再委托 `pipeline_llm()`；源码同时提醒这一额外负载没有进入自动权重模型，重型 encoder 需要用 first-stage-less-layers 参数重新平衡（`torchtitan/distributed/pipeline_parallel.py:144-185`）。
 
-三段:warmup(只 forward,rank `r` 跑 `min(m, num_stages-r)` 个)→ **1B1F 稳定态**(先 1 个 B 再 1 个 F)→ cooldown(剩余 B)。
+### 3.3 物化方式是 deepcopy 后裁剪，而非原模型原地分段
 
-```
-1F1B, p=4, m=8  (B 占 2 时隙)
-rank0: F0 F1 F2 F3 F4 B0 F5 B1 F6 B2 F7 B3 B4 B5 B6 B7
-rank3: ...... F0 B0 F1 B1 F2 B2 F3 B3 F4 B4 F5 B5 F6 B6 F7 B7
-       └warmup┘└──── steady 1F1B ────┘└─ cooldown ─┘
-```
+每个本地 stage 都从完整模型 `deepcopy` 一份，再删除未选中的 `ModuleDict/ModuleList` 项，或把不需要的普通子模块设为 `None`（`torchtitan/distributed/pipeline_parallel.py:470-529`）。所以模型 forward 必须把缺失模块当恒等传递；公共 Decoder 正是以“无 embedding 就直接接收上一 stage tensor、无 norm/head 就直接返回 hidden state”的方式实现（`torchtitan/models/common/decoder.py:284-308`）。
 
-**1F1B 如何稳定峰值显存**:warmup 阶段 rank `r` 只缓存 `num_stages-r` 份激活(首 stage 最多 `p` 份,而非 GPipe 的 `m` 份)。进稳定态后每做 1 个 F 就立刻做 1 个 B 释放一份激活,**in-flight 激活数恒定 ≈ `num_stages-stage_index`,与 m 无关**。这就是 1F1B 把峰值显存从 `O(m)` 压到 `O(p)` 的本质——"一前一后"让激活的产生与消费速率匹配。气泡占比与 GPipe 同阶,但显存大幅下降。
-
-### 4.3 Interleaved 1F1B(`ScheduleInterleaved1F1B`)
-
-多段调度,每 rank `v≥2` 个 stage(`loop` 风格分布)。每 rank 在自己的 `v` 个 stage 间交错跑。
-
-气泡占比 ≈ `(p-1)/(v·m+p-1)` ≈ **1F1B 的 1/v**。关键收益:warmup/cooldown 绝对长度仍 `~p-1`,但稳定态被拉长 `v` 倍(每 rank 有 `v·m` 个 forward),气泡相对占比降为 1/v。代价:每个 microbatch 的 stage 间 hop 从 `p-1` 变成 `v·p-1`,P2P 通信量增加 `v` 倍。
-
-### 4.4 Zero Bubble V(`ScheduleZBVZeroBubble`)
-
-多段调度，**强制每个 rank 恰好包含 2 个 stage**，并采用 `v` 形映射。它直接生成包含 `I`（BACKWARD_INPUT）和 `W`（BACKWARD_WEIGHT）的动作流，即**把 backward 拆成 I 和 W 两步**；`W` 可以延后执行，用于填补气泡（原理见 §7）。
-
-气泡占比:理论上当 `T_F ≈ T_I ≈ T_W` 时**接近 0**。真实模型三者不等,所以只是"接近"。V 形 + 早做 I 还让激活更早释放,显存优于 1F1B。
-
-### 4.5 DualPipeV(`ScheduleDualPipeV`)
-
-唯一直接继承 `_PipelineScheduleRuntime` 的内置 schedule(源自 DeepSeek DualPipe)。同样每 rank 2 stage、`v` 映射。两个特色:
-
-- **`OVERLAP_F_B` 动作**:把"一个 stage 的 forward"和"另一个 stage 的 backward"打包成一个动作,让 forward 计算与 backward 计算**在同一时隙重叠执行**(两个 GEMM 同时占 SM)。
-- **双向流水**:microbatch 分两半,一半从 stage 0 正向喂、另一半从 stage N-1 反向喂,V 形折叠后两个方向的流水在每个 rank 上同时存在。
-
-气泡接近 0,计算单元利用率最高。代价:同时维护两条流水,激活显存近似翻倍。
-
-### 4.6 气泡占比对照表
-
-| Schedule | 类基 | stage/rank | 气泡占比 | 峰值激活显存 | backward 拆分 |
-|---|---|---|---|---|---|
-| GPipe | `PipelineScheduleSingle` | 1 | `(p-1)/(m+p-1)` | `O(m)` 最差 | 否 |
-| 1F1B | `PipelineScheduleSingle` | 1 | `(p-1)/(m+p-1)` | `O(p)` | 否 |
-| Interleaved1F1B | `PipelineScheduleMulti` | v≥2 | ≈ 1F1B 的 1/v | `O(v·p)` | 否 |
-| ZBVZeroBubble | `PipelineScheduleMulti` | =2 | ≈0(T_F=T_I=T_W 时) | 优于 1F1B | 是(I+W) |
-| DualPipeV | `_PipelineScheduleRuntime` | =2 | ≈0 | ≈2× | 是(I+W)+OVERLAP_F_B |
+这也形成明确限制：裁剪 helper 不支持嵌套的 ModuleDict/ModuleList，模型的 forward 与初始化必须容忍被删除的层（`torchtitan/distributed/pipeline_parallel.py:580-589`）。自定义模型仅仅提供 FQN 列表还不够，必须满足这套 stage-safe 协议。
 
 ---
 
-## 5. 通信掩盖:action-based runtime
+## 4. rank 到 stage 的映射与 schedule 构造
 
-### 5.1 单段 schedule 的掩盖手法(以 1F1B 为例)
+### 4.1 两种 rank 映射
 
-`Schedule1F1B._step_microbatches` 三处技巧:
-1. **发送不立即 wait**:warmup 里 `_batch_p2p(fwd_sends)` 后不马上 wait,先跑下一个 chunk 的 forward,下一轮开头才 wait——isend 与下一个 forward 计算重叠。
-2. **双向 P2P 融合**:稳定态把"发激活"和"收梯度"融进同一个 `_batch_p2p`,一次 NCCL coalesced 调用同时承载上下行流量。
-3. **recv 紧贴计算**:计算前才 wait 对应的 recv,让 irecv 在前一步计算期间已在后台传输。
+TorchTitan 只对 `ZBVZeroBubble` 和 `DualPipeV` 使用 V-shaped 映射；其余 schedule 使用 loop 映射（`torchtitan/distributed/pipeline_parallel.py:532-553`）。
 
-### 5.2 `_PipelineScheduleRuntime` 的 action-based 编排
-
-这是通信掩盖最彻底的实现。核心思想:**把 SEND_F / RECV_F / SEND_B / RECV_B 提升为与 FORWARD / BACKWARD 平级的一等动作**,由 runtime 按动作流顺序执行,从而把"发起通信"和"等待通信"在时间上拉开,中间塞计算。
-
-**调度降级(lowering)**:`_prepare_schedule_with_comms` 把 compute-only 的 `pipeline_order` 转成含 SEND/RECV 的 `pipeline_order_with_comms`。`_add_send_recv` 给每个 compute 动作配上通信动作:`F → (SEND_F@stage, RECV_F@stage+1)`,`I/B → (SEND_B@stage, RECV_B@stage-1)`。
-
-**runtime 执行**:逐 `time_step` 遍历动作流:
-- `SEND_F`/`SEND_B`:立即发起 P2P,`Work` 攒进 `send_ops` 列表,**不 wait**。
-- `RECV_F`/`RECV_B`:立即发起 irecv,`Work` 存进字典,**不 wait**。
-- `FORWARD`/`BACKWARD`:**计算前**才 wait 对应的 recv——此时 irecv 早已在前面若干 time_step 发起,数据大概率已到。
-- `BACKWARD_WEIGHT`:纯计算无通信依赖——正是 zero-bubble 把 `W` 拿来填气泡的落点。
-- 所有 `send_ops` 在 `_step_microbatches` 末尾统一 `wait`。
-
-**掩盖如何发生**:lowering 把 `RECV_F` 排在需要它的 `FORWARD` 之前好几个 time_step。runtime 执行到 `RECV_F` 时只是发起 irecv 立刻返回,接下来若干 time_step 跑别的计算,等真正轮到那个 `FORWARD` 时 `wait` 几乎瞬间返回。**通信被计算"夹住"了。**
-
-**V-schedule 特例**:相邻 stage 在同一 rank(V 折点)时,完全跳过 send/recv,直接传 tensor 引用——零拷贝、零通信。
-
----
-
-## 6. 异步实现:isend/irecv 与 wait 时机
-
-### 6.1 异步链条
-
-1. `get_*_ops` 只**构造** `P2POp(dist.isend/irecv, ...)`,这俩 API 本身非阻塞。
-2. `_batch_p2p` → `batch_isend_irecv`,NCCL 路径用 `_coalescing_manager` 把整批 P2P 合成一次 coalesced 内核启动,返回一组 `Work`。
-3. `Work.wait()` 阻塞当前流直到该通信完成。
-
-### 6.2 wait 的调用时机
-
-核心模式:**recv 早发起、用前才 wait;send 发起后不等、攒到最后或下一轮才 wait**。中间窗口全部被计算填满。
-
-| 场景 | recv wait 时机 | send wait 时机 |
+| 映射 | 本 rank 获得的 stage | 当前约束 |
 |---|---|---|
-| GPipe | 计算前立即 wait | warmup 的 fwd send 攒到 backward 前才 wait |
-| 1F1B | 计算前 wait,与反向 recv 融合 | 延迟一轮,下一个 chunk 计算前才清 |
-| `_PipelineScheduleRuntime` | RECV 发起后存字典,FORWARD/BACKWARD 计算前才 pop+wait | SEND 攒进 `send_ops`,`step` 末尾统一 wait |
+| loop | `pp_rank + s * pp_degree` | stage 总数必须整除 PP degree |
+| V | rank `r` 拿前半部 `r` 与后半部镜像 stage | 每 rank 必须恰好 2 个 stage |
 
-action-based runtime 把依赖**显式编码进动作流顺序**:`_ready_to_schedule` 保证 `FORWARD@stage` 一定排在对应 `RECV_F@stage` 之后。runtime 顺序执行 + "用前 wait" 两条规则一起,既保证正确性(数据到了才算)又实现掩盖。
+断言与具体映射在 `torchtitan/distributed/pipeline_parallel.py:554-567`。因此 ZBV/DualPipeV 不只是“换 action 表”：它们还改变末 stage 落在哪个物理 rank。
 
-`_initialize_stage` 里用 dummy tensor 与前后邻居 isend/irecv 提前建好 NCCL P2P 通信器,避免首次真实通信的握手开销混入关键路径。
+### 4.2 stage 先切，再在每个 chunk 上施加 SPMD 并行
 
----
+`_pipeline_module_split()` 先为本 rank 建 `PipelineStage` 和 chunks；随后 `pipeline_llm()` 对每个 chunk 调模型自己的 `parallelize_fn`，因此 FSDP/TP/CP/AC/compile 都只看见本地 stage。若 parallelize 或 compile 返回替换后的 module，还必须回写 `stage.submod`，否则 schedule 会执行旧 chunk（`torchtitan/distributed/pipeline_parallel.py:96-124`）。
 
-## 7. Zero Bubble 原理:把 backward 拆成 I 和 W
+PP 传输的是普通 tensor，DTensor 自身不能连同 ProcessGroup 跨 stage 序列化。为让接收端重建本地布局，TorchTitan 给 `PipelineStage` 注入 `get_mesh` 回调；回调按维度名取当前 rank 的 mesh，并校验 mesh layout（`torchtitan/distributed/pipeline_parallel.py:41-62`、`:625-632`）。这是当前 PP 与 TP/CP/SPMD 组合的关键边界。
 
-### 7.1 为什么拆
+### 4.3 schedule 控制面
 
-一次标准 backward 同时算两类梯度:
+| 配置 | 当前含义 |
+|---|---|
+| `pipeline_parallel_schedule` | 交给上游 `get_schedule_class()` 解析；TorchTitan 不维护完整名字枚举 |
+| `pipeline_parallel_schedule_csv` | 非空时改用 `_PipelineScheduleRuntime`，校验文件存在后加载 CSV |
+| `num_pp_microbatches` | 每个数据并行 rank、每次梯度累积迭代交给 schedule 的 microbatch 数 |
 
-- **dInput(I)** —— 对本 stage 输入的梯度。必须立刻算出并发给上一个 stage,**在流水线关键路径上**,上游等着它。
-- **dWeight(W)** —— 对本 stage 权重的梯度。只需在 optimizer step 前 ready,**不在关键路径上**,谁也不等它。
+CSV/普通 schedule 的选择与加载在 `torchtitan/distributed/pipeline_parallel.py:290-300,342-352`，字段契约在 `torchtitan/config/configs.py:218-238`。若 microbatch 数小于全局 stage 数，当前实现只发 bubble warning，不拒绝运行（`torchtitan/distributed/pipeline_parallel.py:302-309`）。
 
-标准 `B` 把两者绑死,意味着 `W` 的计算时间也卡在关键路径里,产生气泡。Zero Bubble 的洞见:**把 `W` 解耦出来,推迟到流水线本来空闲(气泡)的时隙去算**。关键路径上只剩 `F` 和 `I`。当 `T_F ≈ T_I ≈ T_W` 时,推迟的 `W` 恰好填满所有气泡 → 接近零气泡。
-
-```
-标准 1F1B:        F F F F B B B B          B 含 I+W,W 卡在关键路径 → 有气泡
-                  ────────────────►
-Zero Bubble:      F F F F I I I I          I 在关键路径
-                          W W W W          W 被推迟填进原本的气泡时隙
-```
-
-### 7.2 `_backward.py` 的两步实现
-
-**`stage_backward_input`** —— 算 dInput:`torch.autograd.grad(stage_outputs, inputs=input_values, grad_outputs=output_grads, retain_graph=True)`。注意 `inputs=` 只指定 stage 输入、**不碰权重**;`retain_graph=True` 因为 `W` 还要用图。同时在中间节点上注册 hook 把流经的梯度缓存进 `param_groups["grads"]`——这是 `W` 步骤的输入。`dinputs` 立刻通过 `get_bwd_send_ops` 发给上游。
-
-**`stage_backward_weight`** —— 算 dWeight:从 `param_groups["grads"]`(I 步骤里 hook 缓存的中间梯度)出发,用 `GradientEdge` 作为 autograd 端点,只算到权重,把 dW 累加进 `weight.grad`。
-
-runtime 侧:`BACKWARD_INPUT` 动作调 `backward_one_chunk(full_backward=False)`,`BACKWARD_WEIGHT` 动作调 `backward_weight_one_chunk`。schedule 生成器负责把 `I` 排在关键路径、把 `W` 排进气泡时隙。
-
-> [!note] 补充(2026-07-31 · 由 [[30_comm_compute_overlap_analysis]] 收缩合并)**I/W 拆分的本质**:不是按模型结构(attn vs mlp vs moe_dispatch)拆分,而是按 **autograd 的计算目标**(dInput vs dWeight)拆分。一个 stage 可能包含多层 Transformer,但 I 统一是所有层的 dInput,W 统一是所有层的 dWeight。这也是 Zero Bubble 调度能做到"通用于任意模型结构"的原因——它不需要知道 attention/MLP/MoE dispatch 的内部边界,只依赖 autograd 图本身能否分离 dInput 与 dWeight 的计算(与 Megatron combined_1f1b 需要硬编码模型内部结构形成对照,见 [[30_comm_compute_overlap_analysis]] §六)。
-
-### 7.3 DualPipeV 的进一步压榨
-
-DualPipeV 在 ZBV(每 rank 2 stage + V 折叠 + I/W 拆分)基础上再加 **`OVERLAP_F_B`**:把一个 stage 的 forward 和另一个 stage 的 backward 打包,**计算本身重叠发起**——一个 forward 的 GEMM 和一个 backward 的 GEMM 同时占用 SM,把"forward 在算时 backward 单元闲着"的浪费也消除。配合双向流水,DualPipeV 的气泡占比是所有内置 schedule 里最低的。
-
-> [!note] 补充(2026-07-31 · 由 [[30_comm_compute_overlap_analysis]] 收缩合并) DualPipeV 调度分 8 个阶段(`schedules.py:3387-3545`),核心即 Step 4 的 `OVERLAP_F_B`:
->
-> ```python
-> # Step 4 (稳态): F0B1 - F1B0
-> for i in range(num_chunks - num_ranks * 2 + rank + 1):
->     add_overlap_f_b(F(stage0), B(stage1))   # chunk0 forward + chunk1 backward
->     add_overlap_f_b(F(stage1), B(stage0))   # chunk1 forward + chunk0 backward
->
-> # OVERLAP_F_B 的内部构造：
-> def add_overlap_f_b(actions, forward_stage, backward_stage):
->     sub_actions = (
->         _Action(forward_stage,  FORWARD,        f_mb),
->         _Action(backward_stage, FULL_BACKWARD,   b_mb),
->     )
->     actions.append(_Action(-1, OVERLAP_F_B, None, sub_actions))
-> ```
->
-> **OVERLAP_F_B 不是真正的并发**：执行时两个子 action **串行**执行（先 F 后 B），并非不同 CUDA stream 上的并发。"overlap" 来源于不同 rank 之间的 P2P 异步通信——当 rank 0 在做 B(stage1) 时，rank 1 正在做 F(stage0)，两者的通信可以重叠。
+TorchTitan 给上游 schedule 的 loss wrapper 只返回标量 loss，并设置 `scale_grads=False`；全局有效 token 归一化由自身 loss 路径负责，不让 schedule 再按 microbatch 数缩放梯度（`torchtitan/distributed/pipeline_parallel.py:317-336`）。
 
 ---
 
-## 8. 完整流程图
+## 5. Trainer 的当前 microbatch / preprocess / SPMD 协议
 
-```
-═══ 建模期 ═══
-pipeline_llm()                                  pipeline_parallel.py:68
-  ├─ _get_pipeline_metadata()        决定 virtual stage 数
-  ├─ _generate_llm_fqn_per_model_part()  每 stage 的模块名
-  ├─ _pipeline_module_split()
-  │    ├─ _get_pp_rank_to_stage_indices_mapping()  loop / v 映射
-  │    ├─ _split_module()  deepcopy + 删除非本 stage 的层
-  │    └─ PipelineStage(...)  形状沿 stage 链推断
-  ├─ 每个 model chunk 各自走一遍 parallelize_fn(叠加 TP/CP/EP/FSDP)
-  └─ _build_pipeline_schedule()      schedule 工厂
+### 5.1 一个 dataloader batch 就是一个 PP microbatch
 
-═══ 训练期 ═══
-pp_schedule.step(inputs, target)
-  ├─ split_args_kwargs_into_chunks()  切 microbatch
-  └─ _step_microbatches()
-       GPipe   : 全 F → 全 B,峰值显存 O(m)
-       1F1B    : warmup → 1B1F 稳定态 → cooldown,峰值显存 O(p)
-       Runtime : 动作流 SEND_F/RECV_F/SEND_B/RECV_B/F/B/I/W
-                 ├─ RECV 早发起,FORWARD/BACKWARD 计算前才 wait  ┐ 通信掩盖
-                 ├─ SEND 发起不等,step 末尾统一 wait            ┘
-                 └─ W(BACKWARD_WEIGHT)填进气泡时隙              ← Zero Bubble
-            通信原语:get_*_send/recv_ops → batch_isend_irecv(P2P)
+`training.num_tokens_per_microbatch_per_dp_rank` 定义一次模型 forward 的 token slots；一个梯度累积迭代处理它乘 `num_pp_microbatches` 的 token 数（`torchtitan/config/configs.py:36-48`、`torchtitan/trainer.py:406-425`）。Trainer 为每个梯度累积组先取满 `num_pp_microbatches` 个 dataloader batch，统计全局有效 token，再逐组发起一次 forward/backward（`torchtitan/trainer.py:785-834`）。
+
+所以 `num_pp_microbatches` 与 `gradient_accumulation_steps` 是两层不同循环：前者在一次 schedule 内填流水，后者让多个完整 schedule 调用共享一次 optimizer step（`torchtitan/trainer.py:785-850`）。
+
+### 5.2 每个 rank 都 preprocess，每个 microbatch 都 preprocess
+
+PP 分支逐个 microbatch 调本 rank `model_parts[0].preprocess_inputs()`。只有持有 first stage 的 rank把 `inputs` 放入 `arg_mbs`，只有持有 last stage 的 rank收集 `target_mbs`；`extra_kwargs` 则每个 rank都传给 schedule（`torchtitan/trainer.py:730-766`）。这允许 stage-local forward 获得 positions/masks 等非首 stage 元数据，而不是假定所有信息都随 hidden state 自动传播。
+
+公共 Decoder 的预处理顺序是：构建 attention mask、按 CP 规则切输入、在 `spmd_types` 后端标注输入布局，最后拆出 `input/labels/extra_kwargs`（`torchtitan/models/common/decoder.py:351-386`）。Trainer 再在 `train_context()` 内调用 schedule；使用 `spmd_types` 时，该 context 注册 dense/sparse SPMD meshes 并把当前 mesh 设为 dense mesh，若显式打开 typecheck 才额外进入 typechecking context（`torchtitan/trainer.py:579-585`、`torchtitan/distributed/utils.py:397-425`）。
+
+### 5.3 loss 只在拥有末 stage 的 rank有意义
+
+schedule 收集每个 microbatch 的 loss；拥有末 stage 的 rank求和并搬回当前 device，其余 rank返回占位 `-1`（`torchtitan/trainer.py:756-772`）。验证路径复用同一批 stage flags 与 preprocess 协议，只把 `step()` 换为 `eval()`（`torchtitan/components/validate.py:203-244`）。
+
+> [!warning] DualPipeV 的 loss 可见 rank 仍需补验证
+> stage 映射把 DualPipeV 与 ZBV 都视为 V shape（`torchtitan/distributed/pipeline_parallel.py:550-567`），但 metrics helper 只对 `ZBVZeroBubble` 特判 rank 0，其他名字仍按最后物理 PP rank记录（`torchtitan/components/metrics.py:232-257`）。核心 integration tests 也没有 eager DualPipeV 用例。当前证据不足以把旧页“DualPipeV 指标自然可见”继续写成已验证结论。
+
+---
+
+## 6. PP + FSDP：默认不 reshard 是跨 microbatch 的通信策略
+
+`fsdp_reshard_after_forward` 支持 `default/always/never`（`torchtitan/config/configs.py:147-159`）。真正的 PP smart default 是：PP 关闭时 `default -> True`，PP 开启时 `default -> False`，因为每个 microbatch forward 后立刻 reshard 会在 backward 前引入昂贵且难重叠的重复 all-gather（`torchtitan/distributed/fsdp.py:112-136`）。
+
+该布尔值实际传给 embedding 与每个 transformer block 的 `fully_shard()`；末尾 norm+lm_head 默认本来也保持不 reshard，只有 `always` 强制开启（`torchtitan/distributed/fsdp.py:238-265`、`:267-368`）。因此：
+
+- `default`：PP stage 的参数跨 forward/backward 窗口保持 materialized，省每 microbatch all-gather，代价是更高峰值显存。
+- `always`：更积极释放参数显存，但为每个流水 microbatch 付额外通信。
+- `never`：显式选择常驻；语义与 PP 下的 default 相同，但不随 PP 开关改变。
+
+这不是 schedule 自己的优化，而是 model chunk 在进入 schedule 前已经获得的 FSDP policy；`parallelize_fn` 接收完整 `ParallelismConfig` 与 `parallel_dims.pp_enabled`（`torchtitan/distributed/pipeline_parallel.py:106-123`、`torchtitan/distributed/fsdp.py:168-235`）。
+
+---
+
+## 7. 当前组合边界与测试矩阵
+
+### 7.1 代码级门禁
+
+- `num_pp_microbatches` 必须大于 0（`torchtitan/trainer.py:121-125`）。
+- 每个 PP microbatch 的 token 数必须能被启用 SP 时的 TP 度数与 CP 的 `2 * cp` 因子整除（`torchtitan/trainer.py:292-305`）。
+- 当前 CUDA graphs 明确拒绝 PP（`torchtitan/trainer.py:165-173`）。
+- `spmd_types` 后端可与 PP 运行，但 **SPMD typechecking** 暂不支持 PP；配置会在初始化阶段拒绝该组合（`torchtitan/trainer.py:129-139`）。
+- 公共 Decoder 的 weight tying 与 PP 组合直接抛 `NotImplementedError`（`torchtitan/models/common/decoder.py:163-176`）。
+- zero-bubble / 拆分 backward 类 schedule 当前会把转发的 FlexAttention `BlockMask` 当 tensor 访问 `requires_grad`；因此核心 CI 中 InterleavedZeroBubble、ZBV 与 custom CSV 用例被禁用，1F1B/GPipe/Interleaved1F1B 不受该问题影响（`tests/integration_tests/features.py:138-176`）。
+- PP+FSDP loss 暂时会意外回到 CPU，Trainer 与 Validator 都保留了搬回 device 的 workaround/TODO（`torchtitan/trainer.py:768-772`、`torchtitan/components/validate.py:237-244`）。
+
+### 7.2 已提交测试能证明什么
+
+| 维度 | 当前仓库中的证据 | 结论边界 |
+|---|---|---|
+| eager 基础 schedule | 2-rank 1F1B、FSDP+PP 1F1B、TP+PP GPipe、4-rank Interleaved1F1B 被注册为 real-PG tests（`tests/integration_tests/features.py:89-136`） | 覆盖 full-backward schedule 与 looped stage mapping |
+| 3D 工程组合 | FSDP+TP+PP checkpoint save/load 与 compile 均有 8-GPU real-PG test（`tests/integration_tests/features.py:111-127`） | 证明这些具体 debugmodel recipe 接线，不等价于任意模型/形状都支持 |
+| MoE 多维组合 | DeepSeek V3 有 FSDP+CP+PP+EP golden numerics；Qwen3.5 有 FSDP+TP+PP+EP real-PG（`tests/integration_tests/models.py:57-66,117-124`） | PP 可与 CP/TP/EP 分别组合，但覆盖的是具体 topology |
+| attention / optimizer 变体 | GPT-OSS 有 PP+FSDP+CP+EP+SAC 与 PP+FSDP+EP+Varlen，Kimi K2.7 有 DistMuon+PP+FSDP+EP（`tests/integration_tests/models.py:157-179`） | 说明模型专用 parallelize/pipeline contract 正在被组合测试 |
+| 拆分 backward schedules | InterleavedZeroBubble、ZBV、custom CSV 配方存在，但核心 integration cases 当前 `disabled=True`（`tests/integration_tests/features.py:138-176`） | 不能把“配置可构造”升级成“当前默认 attention 下已回归通过” |
+| eager DualPipeV | 核心 PP 只含 V-shaped rank 映射分支，没有对应 eager recipe/test（`torchtitan/distributed/pipeline_parallel.py:550-567`） | live 接线存在，验证覆盖缺口仍在 |
+
+测试矩阵的正确读法是“存在一组受保护的组合点”，不是“六维并行任意笛卡尔积均受支持”。尤其 typechecking、CUDA graphs、attention metadata 与模型是否实现 `pipelining_fn` 都会在更早阶段缩小可用空间。
+
+---
+
+## 8. 一次训练步的最短心智模型
+
+```text
+构建期：完整 meta model
+  -> 按 FQN deepcopy/prune 成本 rank chunks
+  -> chunk 内施加 TP/CP/FSDP/AC/compile
+  -> 建 PipelineStage(get_mesh=...) 与 upstream schedule
+
+每个 optimizer step：
+  -> 取 gradient_accumulation_steps 组数据
+  -> 每组含 num_pp_microbatches 个独立 dataloader batch
+  -> 每 microbatch 调 model.preprocess_inputs
+  -> first stage 提供 arg_mbs，last stage 提供 target_mbs
+  -> 在 dense SpmdContext 中 schedule.step
+  -> last-stage rank 汇总 loss；所有 stage 的梯度一起进入 optimizer
 ```
+
+这条链同时解释三个常见误区：PP microbatch 不是 Trainer 外部大 batch 的二次切片；SPMD parallelism 不是在跨 stage 传输后才补做；schedule 名字改变 action 时序，但不会替模型解决 stage-safe forward、FQN 切分或 FSDP reshard 策略。
 
 ---
 
 ## 9. 小结
 
-- **模型切分**:torchtitan `_split_module` 用 `copy.deepcopy` + 删除非本 stage 的层(模型 forward 须容忍 `None` 子模块);`PipelineStage` 沿 stage 链顺序推断形状。每个 stage 切完各自再走一遍 `parallelize_fn`,所以 PP 可与 TP/CP/EP/FSDP 组合。
-- **通信原语**:PP 全用 **P2P**(`isend`/`irecv` + `batch_isend_irecv`),stage 间只传激活(forward)和梯度(backward),不用 collective。
-- **调度与气泡**:GPipe(气泡大、显存 `O(m)`)→ 1F1B("一前一后"把显存压到 `O(p)`)→ Interleaved1F1B(气泡降 `1/v`)→ ZBV / DualPipeV(气泡接近 0)。
-- **通信掩盖**:`_PipelineScheduleRuntime` 的 action-based 编排把 SEND/RECV 提升为一等动作,**recv 早发起、用前才 wait,send 发起不等**,中间塞计算。
-- **异步实现**:`isend`/`irecv` 非阻塞返回 `Work`;NCCL 下 `batch_isend_irecv` 用 coalescing 合并;"用前 wait"模式实现通信/计算重叠。
-- **Zero Bubble**:把 backward 拆成 `I`(对输入的梯度,在关键路径)和 `W`(对权重的梯度,不在关键路径),把 `W` 推迟填进气泡时隙;`T_F≈T_I≈T_W` 时气泡趋近 0。DualPipeV 再加 `OVERLAP_F_B` 让 F/B 计算重叠 + 双向流水。
+- 当前 TorchTitan PP 是 stage/build/data adapter，上游 PyTorch pipelining 才是 action 与 P2P schedule 所有者。
+- stage 由 FQN 列表驱动，以 deepcopy+prune 物化；single/multi schedule 决定每 rank 的默认 virtual stage 数，ZBV/DualPipeV 还切换为 V-shaped rank 映射。
+- 每个 chunk 在进入 schedule 前已完成模型专用的 TP/CP/FSDP/compile；`get_mesh` 回调负责跨 PP tensor 边界后恢复布局解释。
+- Trainer 自己收集独立 microbatches，并逐个执行 `preprocess_inputs`；只有 first/last stage 分别提供 model args/targets，但 stage-local kwargs 与 SPMD context 贯穿所有 rank。
+- PP 下 FSDP default 不 reshard，以显存换掉逐 microbatch、难重叠的 all-gather；这是当前最重要的 PP+FSDP 策略差异。
+- 1F1B/GPipe/Interleaved1F1B 及若干多维组合有 real-PG/golden 测试；zero-bubble/custom CSV 受 FlexAttention 非 tensor metadata 阻塞，eager DualPipeV 仍缺核心回归。
 
 ## Related Pages
 
-- [[torchtitan/index]] · [[10_torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
-- [[13_torchtitan_cp_analysis]] · [[15_torchtitan_ep_analysis]] —— 相邻并行维度
-- [[15_megatron_pp_schedulers_analysis]] —— Megatron-LM 流水线 5 调度器、气泡公式推导、流水线模拟图、PP 进程组拓扑与 P2P 通信内部
-- [[30_comm_compute_overlap_analysis]] —— combined_1f1b vs ZBV/DualPipe、sub-layer 级调度
+- [[02_engineering/02_train_frameworks/torchtitan/index|TorchTitan 知识地图]] —— 系列入口、基线与功能树。
+- [[10_torchtitan_parallel_dims_analysis]] —— PP rank 轴如何进入 dense/sparse mesh 与 loss mesh。
+- [[11_torchtitan_fsdp_analysis]] —— `reshard_after_forward`、FSDP unit 与参数存储窗口。
+- [[12_torchtitan_tp_analysis]] —— stage-local TP/SP 与跨 stage DTensor 布局边界。
+- [[13_torchtitan_cp_analysis]] —— `preprocess_inputs` 中的 CP 切分、mask 与 token 整除约束。
+- [[15_torchtitan_ep_analysis]] —— 已测试 MoE 多维组合中的 EP/EDP/dispatcher 路径。
+- [[27_torchtitan_graph_trainer_compiler_runtime_analysis]] —— Graph PP 的显式 forward/backward graph、额外门禁与 runtime。

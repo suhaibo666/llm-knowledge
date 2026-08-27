@@ -1,12 +1,12 @@
 # HSDP 反向梯度通信掩盖 —— reduce-scatter 与 all-reduce 双流掩盖(源码级)
 
-> **代码基准**:torchtitan `main` @ `61c010fcb` · PyTorch `2.9.1`(FSDP2 内核 `torch/distributed/fsdp/_fully_shard/`)
-> **最后更新**:2026-06-16 · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
+> **代码基准**:torchtitan `main` @ `a3168782c9a3a2e40afbd0de114818b96e2bda6e`（接线）· PyTorch `2.9.1`（FSDP2 内核 `torch/distributed/fsdp/_fully_shard/`）
+> **最后更新**:2026-08-27（复核当前 storage mesh 接线；PyTorch 双流机制与图固定于 2.9.1） · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
 >
 > 本文是 [[11_torchtitan_fsdp_analysis|FSDP2 机制深度分析]] §4.4/§6.2 的展开篇,把 HSDP 反向 reduce-scatter→all-reduce 的跨流编排逐行讲清。配套预取/显存专题见 [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]]。
 >
 > **四页分工**(2026-07-31 补):本页专注 **HSDP**(dp_replicate × fsdp 双轴)反向双流掩盖这一个切面;单轴 FSDP 的标杆机制见 [[11_torchtitan_fsdp_analysis]],其预取/显存深挖见 [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]];编译器友好的 DTensor-collective 替代方案见 [[25_torchtitan_simple_fsdp_analysis]]。
-> 行号约定:torchtitan 以 `torchtitan/torchtitan/` 为根;PyTorch FSDP2(2.9.1)以 `[pt]` 前缀,根目录 `torch/distributed/fsdp/_fully_shard/`。所有结论基于本机源码逐条复核(见复核表)。
+> 行号约定:torchtitan 以仓库根为基准写完整 `torchtitan/...`;PyTorch FSDP2(2.9.1)以 `[pt]` 前缀,根目录 `torch/distributed/fsdp/_fully_shard/`。所有结论基于本机源码逐条复核(见复核表)。
 
 ---
 
@@ -16,7 +16,7 @@
 HSDP 反向每层做两次集合通信:
   reduce-scatter(组内 fsdp 轴,典型走节点内 NVLink) → all-reduce(组间 dp_replicate 轴,典型走跨节点网络)
 
-torchtitan 只搭一个 2D mesh [dp_replicate, fsdp],掩盖逻辑 100% 在 FSDP2:
+torchtitan 声明 replicate/shard 轴，FSDP2 抽取逻辑 HSDP mesh；掩盖逻辑 100% 在 FSDP2:
   两条独立通信流(reduce_scatter_stream / all_reduce_stream)+ 逐层反向流水
   → RS(N) 被 compute(N-1) 掩盖;AR(N) 进一步被 compute(N-1)/(N-2) 与 RS(N-1) 掩盖
   代价:仅最后一组(embedding)的 RS+AR 尾部因无后续计算而暴露,收尾回调显式等待
@@ -24,32 +24,28 @@ torchtitan 只搭一个 2D mesh [dp_replicate, fsdp],掩盖逻辑 100% 在 FSDP2
 
 ---
 
-## 1. 触发链:torchtitan 的 2D mesh → FSDP2 的两个进程组
+## 1. 触发链：torchtitan 的多维 storage mesh → FSDP2 的逻辑 HSDP 两组
 
-### 1.1 torchtitan 侧只做一件事:构造 2D mesh
+### 1.1 torchtitan 侧：用 storage mesh + `DataParallelMeshDims` 声明 HSDP
 
-`parallelize_llama`(`torchtitan/models/llama3/parallelize.py:81-84`)按是否开 `dp_replicate` 选 mesh 轴名:
+默认 `spmd_types` 下，`parallelize_llama` 先调用 `resolve_fsdp_mesh()`，再把 `dp_mesh` 与 `dp_mesh_dims` 交给共享 `apply_fsdp_to_decoder`（`torchtitan/models/llama3/parallelize.py:57-77`）。resolver 保留 `[dp_replicate,dp_shard,cp,tp]` dense storage mesh，并声明 `shard=(dp_shard,cp)`、`replicate=dp_replicate`（只包含实际启用的轴；`torchtitan/distributed/fsdp.py:28-62`）。
 
-```python
-names = ["dp_replicate", "fsdp"] if parallel_dims.dp_replicate_enabled else ["fsdp"]
-dp_mesh = parallel_dims.get_mesh(names)   # HSDP 时是 2D [dp_replicate, fsdp]
-```
+- shard 轴 = `dp_shard`，启用 CP 时再把 `cp` flatten 进 FSDP shard group。
+- replicate 轴 = `dp_replicate`。
+- TP 留在 storage mesh 中供参数的既有 TP placement 使用，不属于 HSDP 规约轴。
 
-- `fsdp` 轴 = `dp_shard * cp`(`parallel_dims.py:273`)——组内分片轴。
-- `dp_replicate` 轴——组间复制轴。
-
-该 2D mesh 传入 `apply_fsdp_to_decoder`,对每个 TransformerBlock 调 `fully_shard(block, mesh=dp_mesh, ...)`(`torchtitan/distributed/fsdp.py:274-278`)。torchtitan 对 HSDP 的"感知"仅止于一行日志(`fsdp.py:289`):
+共享入口对每个 TransformerBlock 调 `fully_shard(...,mesh=dp_mesh,dp_mesh_dims=...)`，最后再包根模块（`torchtitan/distributed/fsdp.py:223-232,267-368`）。torchtitan 对 HSDP 的运行时判断仍只用于日志：
 
 ```python
 if "dp_replicate" in (dp_mesh.mesh_dim_names or ()):
     logger.info("Applied HSDP to the model")
 ```
 
-**掩盖逻辑完全在 FSDP2,torchtitan 不参与。**
+日志位置为 `torchtitan/distributed/fsdp.py:376-380`。**掩盖逻辑完全在 FSDP2,torchtitan 不参与；变化的是 HSDP 轴如何从多维 storage mesh 中显式抽取。**
 
 ### 1.2 FSDP2 侧:2D mesh → HSDPMeshInfo → 两个进程组
 
-`fully_shard` 收到 2D dp mesh 后构造 `HSDPMeshInfo`(`[pt]_fsdp_common.py:74`),它同时继承 `FSDPMeshInfo`(分片)和 `DDPMeshInfo`(复制),携带两个进程组:
+`fully_shard` 根据 torchtitan 显式传入的 DP mesh dims 抽取/flatten DP 子网格，并构造逻辑 `HSDPMeshInfo`(`[pt]_fsdp_common.py:74`)；它同时继承 `FSDPMeshInfo`(分片)和 `DDPMeshInfo`(复制),携带两个进程组:
 
 | 进程组 | 轴 | 通信 | 源码 |
 |---|---|---|---|
@@ -245,7 +241,7 @@ for g in (N, N-1, N-2, ...):              # autograd 逆序
 
 ## 7. torchtitan 特有:关闭梯度除法如何作用到 RS / AR 的 reduce op
 
-torchtitan 调 `disable_fsdp_gradient_division` → 每个 FSDP 模块 `set_gradient_divide_factor(1.0)`(`torchtitan/distributed/fsdp.py:27-41, 286`)。该 factor 一路传到 `_get_gradient_divide_factors`(`[pt]_fsdp_collectives.py:672-725`),直接决定 RS 和 AR 用什么 op:
+torchtitan 调 `disable_fsdp_gradient_division` → 每个 FSDP 模块 `set_gradient_divide_factor(1.0)`(`torchtitan/distributed/fsdp.py:85-99,368-374`)。该 factor 一路传到 `_get_gradient_divide_factors`(`[pt]_fsdp_collectives.py:672-725`),直接决定 RS 和 AR 用什么 op:
 
 ```python
 data_parallel_size = reduce_scatter_group.size()
@@ -280,7 +276,7 @@ if not overflow_risk and not force_sum:
 
 ## 9. 内存:reduce 路径的申请/释放与峰值
 
-反向 reduce 路径每个 group 在 `foreach_reduce` 里申请/释放三块缓冲(`[pt]_fsdp_collectives.py`)。**关键前提**:torchtitan 的 `mixed_precision_reduce` 被硬编码为 `float32`(`config/configs.py:66`,`Literal["float32"]`),所以 reduce 全程走 fp32——`reduce_scatter_input` / `reduce_output` 的字节是 bf16 全梯度的 **2×**。
+反向 reduce 路径每个 group 在 `foreach_reduce` 里申请/释放三块缓冲(`[pt]_fsdp_collectives.py`)。**关键前提**:torchtitan 的 `mixed_precision_reduce` 当前类型只允许 `float32`(`torchtitan/config/configs.py:104-108`),所以默认混合精度配置下 reduce 走 fp32——`reduce_scatter_input` / `reduce_output` 的字节是 bf16 全梯度的 **2×**。
 
 ![HSDP 反向 reduce 路径缓冲申请/释放与峰值](assets/hsdp-backward-memory.png)
 
@@ -321,8 +317,8 @@ if not overflow_risk and not force_sum:
 
 | 断言 | 位置 | 结果 |
 |---|---|---|
-| torchtitan 仅构造 2D mesh,掩盖交给 FSDP2 | `torchtitan/models/llama3/parallelize.py:81-84` | OK |
-| HSDP = 2D `[dp_replicate, fsdp]`,fsdp=dp_shard x cp | `parallel_dims.py:273`、`fsdp.py:289` | OK |
+| torchtitan 声明 storage mesh 与 DP 轴,掩盖交给 FSDP2 | `torchtitan/distributed/fsdp.py:28-62` | OK（当前基线） |
+| HSDP replicate=`dp_replicate`,shard=`dp_shard(+cp)` | `torchtitan/distributed/fsdp.py:54-62` | OK（当前基线） |
 | RS 走 shard 组,AR 走 replicate 组 | `[pt]_fsdp_param_group.py:751-758` | OK |
 | 第 5 条 `all_reduce_stream`(普通优先级)+ 释因注释 | `[pt]_fsdp_param_group.py:79`、:76-78 | OK |
 | post-backward = 挂前向输入的 autograd Function | `[pt]_fsdp_param_group.py:692/830-856` | OK |
@@ -332,10 +328,10 @@ if not overflow_risk and not force_sum:
 | 组内 AR 等本组 RS(`wait_stream`) | `[pt]_fsdp_collectives.py:554` | OK |
 | copy-in 在默认流,RS `wait_stream` copy-in | `[pt]_fsdp_collectives.py:514/518` | OK |
 | HSDP 除法因子 = shard x replicate,劈成 AVG/AVG | `[pt]_fsdp_collectives.py:694-695/706` | OK |
-| torchtitan factor=1.0 → RS/AR 均 SUM | `torchtitan/distributed/fsdp.py:286` + `[pt]:707-709` | OK |
+| torchtitan factor=1.0 → RS/AR 均 SUM | `torchtitan/distributed/fsdp.py:85-99,368-374` + `[pt]:707-709` | OK |
 | `AllReduceState` 保活 AR 输入到 backward 末 | `[pt]_fsdp_param_group.py:217-221/567` | OK |
 | 收尾等 RS/AR event(暴露尾部) | `[pt]_fsdp_state.py:313-317`、`_fsdp_param_group.py:588-597` | OK |
-| torchtitan reduce=fp32(硬编码) | `torchtitan/config/configs.py:66` | OK |
+| torchtitan reduce dtype 当前配置只允许 fp32 | `torchtitan/config/configs.py:104-108` | OK（当前基线） |
 | RS_input(fp32,2p)allocate / copy-in | `[pt]_fsdp_collectives.py:508/514` | OK |
 | reduce_output(fp32,2p/S)allocate | `[pt]_fsdp_collectives.py:522` | OK |
 | AR 原地复用 reduce_output(不新增缓冲) | `[pt]_fsdp_collectives.py:556/561` | OK |
@@ -361,6 +357,7 @@ if not overflow_risk and not force_sum:
 ## Related Pages
 
 - [[11_torchtitan_fsdp_analysis]] —— FSDP2 标杆篇:本文是其 HSDP 反向的展开
+- [[16_torchtitan_spmd_types_analysis]] —— 当前 storage mesh/类型 mesh 与 `DataParallelMeshDims` 接线
 - [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]] —— FSDP 预取/掩盖/显存深挖伴篇
 - [[23_torchtitan_compute_memory_optimizations_analysis]] —— 计算/显存性能手段(低精度/融合/编译)
 - [[24_torchtitan_comm_optimizations_overlap_analysis]] —— 通信优化与跨维度重叠矩阵

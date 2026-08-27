@@ -1,13 +1,13 @@
 # 数据并行 DP —— FSDP2 机制级深度分析
 
-> **代码基准**:torchtitan `main` @ `cf3c4312` · PyTorch `2.9.1`(FSDP2 内核 `torch/distributed/fsdp/_fully_shard/`)
-> **最后更新**:2026-05-22 · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
+> **代码基准**:torchtitan `main` @ `a3168782c9a3a2e40afbd0de114818b96e2bda6e` · PyTorch `2.9.1`(FSDP2 内核 `torch/distributed/fsdp/_fully_shard/`)
+> **最后更新**:2026-08-27 · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
 >
 > 本文是机制级分析的**标杆篇**。它回答四个问题:**参数怎么切?切完怎么预取回来?哪些通信能掩盖?异步通信怎么实现?**
 >
 > **四页分工**(2026-07-31 补):本页是 FSDP2(PyTorch 原生 eager 路径)的标杆机制篇,覆盖切分/预取/掩盖/异步四问的完整轮廓;预取时序、掩盖窗口与显存生命周期的源码级深挖见 [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]](深挖伴篇);HSDP 反向 reduce-scatter→all-reduce 双流掩盖的展开见 [[21_torchtitan_hsdp_backward_overlap_analysis]](本页 §4.4/§6.2 的展开篇);编译器友好、把集合通信表达进计算图的替代方案见 [[25_torchtitan_simple_fsdp_analysis]]。
 >
-> torchtitan 的 `apply_fsdp` 只是薄封装,真正的机制在 PyTorch FSDP2。本文行号约定:
+> torchtitan 当前把所有 decoder 的 FSDP 接线收敛到 `torchtitan/distributed/fsdp.py:168-424`;真正的参数生命周期与多流通信仍在 PyTorch FSDP2。本文行号约定:
 > - torchtitan:`torchtitan/...`,以 `torchtitan/` 为根。
 > - PyTorch FSDP2(2.9.1):`[pt]` 前缀,根目录 `torch/distributed/fsdp/_fully_shard/`。
 
@@ -19,21 +19,23 @@
 
 | 模式 | 触发条件 | mesh | 行为 |
 |------|---------|------|------|
-| **FSDP**(ZeRO-3) | `dp_shard>1`,`dp_replicate=1` | 1D `[fsdp]` | 参数/梯度/优化器状态全部分片 |
-| **HSDP** | `dp_replicate>1` 且 `dp_shard>1` | 2D `[dp_replicate, fsdp]` | 组内分片,组间复制 |
-| **DDP** | 仅 `dp_replicate>1` | 1D `[dp_replicate]` | 纯复制(`replicate`) |
+| **FSDP**(ZeRO-3) | `dp_shard>1`,`dp_replicate=1` | 稠密 storage mesh,`shard=dp_shard(+cp)` | 参数/梯度/优化器状态全部分片 |
+| **HSDP** | `dp_replicate>1` 且分片轴乘积 `>1` | 同上,另有 `replicate=dp_replicate` | 组内分片,组间复制 |
+| **复制/单卡退化** | 分片轴乘积为 1 | size-1 mesh 或 replicate 轴 | 仍安装 mixed-precision policy,集合通信退化为空操作 |
 
 > FSDP2 vs FSDP1:FSDP1 是 `FlatParameter`——把一组参数拍平成一个大张量再切,用户无法访问单个参数。**FSDP2 是逐参数(per-parameter)分片**:每个 `nn.Parameter` 单独切成一个 `DTensor`,语义清晰、与 TP/EP 的 DTensor 天然组合。这是 torchtitan 能做多维并行的前提。
 
-**torchtitan 入口**:`apply_fsdp`(稠密模型见 `torchtitan/models/llama3/parallelize.py:129`,MoE 模型见 `torchtitan/models/llama4/parallelize.py:143`)。核心就三件事:
+**当前 torchtitan 入口**是共享的 `apply_fsdp_to_decoder`:模型适配层先解析 storage mesh,再把统一 FSDP 配置交给共享实现(`torchtitan/models/llama3/parallelize.py:57-78`,`torchtitan/distributed/fsdp.py:168-236`)。核心仍是三件事:
 
 ```python
-# torchtitan/models/llama3/parallelize.py:212-222
+# torchtitan/distributed/fsdp.py:267-374（简化）
 for layer_id, transformer_block in model.layers.items():
     fully_shard(transformer_block, **fsdp_config, reshard_after_forward=...)  # 每个 block 一个 FSDP 单元
 fully_shard(model, **fsdp_config)                                            # 最后包根模块
 disable_fsdp_gradient_division(model)                                        # 关掉 FSDP 自带梯度除法
 ```
+
+`spmd_types` 默认后端不再把 FSDP 只交给一个预先 flatten 的 1D `fsdp` mesh。`resolve_fsdp_mesh()` 保留 `[dp_replicate,dp_shard,cp,tp]` storage mesh,再显式传 `DataParallelMeshDims(shard=(dp_shard,cp),replicate=dp_replicate)` 给 `fully_shard`;这样参数的存储 mesh 与前向/反向的类型化布局可来自同一份 SPMD 契约(`torchtitan/distributed/fsdp.py:28-62`)。这也是本页 PyTorch 机制层之上的最大接线变化,详见 [[16_torchtitan_spmd_types_analysis]]。
 
 ---
 
@@ -45,7 +47,7 @@ disable_fsdp_gradient_division(model)                                        # �
 
 > **一个 FSDPParamGroup = 一次 all-gather 集合通信 + 一次 reduce-scatter 集合通信。** 把多个张量打包进一次集合通信对通信效率至关重要(`[pt]_fully_shard.py:120-127` docstring)。
 
-因此 `fully_shard` 必须**自底向上(bottom-up)**调用:先包每个 `TransformerBlock`,最后包根 `model`。根模块的 group 只剩下 embedding/norm/lm_head 等"没被子模块认领"的参数。torchtitan 正是这样做的(`parallelize.py:195-219`):embedding 一组、`[norm, lm_head]` 一组、每个 transformer block 一组、根模块一组。
+因此 `fully_shard` 必须**自底向上(bottom-up)**调用:先包各叶子 FSDP 单元,最后包根 `model`。根模块的 group 只剩下尚未被子模块认领的参数。torchtitan 当前依次处理 embedding、`[norm,lm_head]`、各 TransformerBlock,最后处理根模块(`torchtitan/distributed/fsdp.py:238-368`)。
 
 > **为什么逐层分组而不是整模型一组?** 一个 group 的参数必须**同时驻留**在显存里(all-gather 后)。若整个模型一组,前向时要把全部参数 all-gather 回来——失去 FSDP 的意义。逐层分组 → 峰值显存只需"1 层完整参数 + 其余分片",且为通信/计算重叠创造了机会(见 §4)。
 
@@ -236,7 +238,7 @@ HSDP 下梯度先 reduce-scatter(组内,分片轴)、再 all-reduce(组间,复�
 
 ### 4.5 `reshard_after_forward` 策略
 
-`reshard_after_forward` 控制前向后要不要释放完整参数(`fsdp.py:28` `get_fsdp_reshard_after_forward_policy`):
+`reshard_after_forward` 控制前向后要不要释放完整参数(`torchtitan/distributed/fsdp.py:112-136`):
 
 | 取值 | 行为 |
 |------|------|
@@ -244,7 +246,7 @@ HSDP 下梯度先 reduce-scatter(组内,分片轴)、再 all-reduce(组间,复�
 | `False` | 前向后保留,反向直接用(省通信,费显存) |
 | `"default"` | **`not pp_enabled`** —— 不开 PP 时 reshard,开 PP 时不 reshard |
 
-为什么 PP 启用时默认不 reshard?PP 下每个 microbatch 都要前向,若每次都 reshard 就要反复 all-gather,开销大且难重叠(`fsdp.py:46-48` 注释)。torchtitan 还有个细节:最后几层(norm+head)默认不 reshard,因为 FSDP 反向会立刻预取它们(`parallelize.py:202-203`)。
+为什么 PP 启用时默认不 reshard?PP 下每个 microbatch 都要前向,若每次都 reshard 就要反复 all-gather,开销大且难重叠(`torchtitan/distributed/fsdp.py:124-132`)。torchtitan 还有个细节:最后的 `[norm,lm_head]` 默认不 reshard,因为 FSDP 反向会立刻预取它们(`torchtitan/distributed/fsdp.py:258-265`)。
 
 ---
 
@@ -358,7 +360,7 @@ reduce-scatter 的语义:**规约 + 散射合一**——N 个 rank 各有完整�
 - fp32/bf16(无溢出风险):直接用 NCCL 内置的 `ReduceOp.AVG`,**省一个独立的除法 kernel**。
 - fp16(有溢出风险):拆成预除 + 后除,各除 ~√N,避免规约中间值溢出。
 
-> **torchtitan 关掉了它**:`disable_fsdp_gradient_division`(`torchtitan/distributed/fsdp.py:11`)对所有 FSDP 模块设 `set_gradient_divide_factor(1.0)`。因为 torchtitan 自己按"全局有效 token 数"缩放梯度(见 [[torchtitan/index]] 训练循环),不让 FSDP 按 world_size 除。
+> **torchtitan 关掉了它**:`disable_fsdp_gradient_division`(`torchtitan/distributed/fsdp.py:85-99`)对所有 FSDP 模块设 `set_gradient_divide_factor(1.0)`。因为 Trainer 自己按全局有效 token 数缩放梯度(`torchtitan/trainer.py:821-839`),不让 FSDP 再按 world size 除。
 
 ### 6.4 非 dim-0 分片的处理
 
@@ -414,23 +416,27 @@ loss.backward()
 
 ### 8.1 分片粒度:每个 TransformerBlock 一个单元
 
-`apply_fsdp`(`parallelize.py:212-219`)对每个 block、embedding、`[norm,lm_head]`、根模块各调一次 `fully_shard`。粒度选择是显存与通信的权衡:太粗(整模型一组)峰值显存爆;太细(每个 Linear 一组)集合通信次数多、每次太小。**一个 TransformerBlock** 是经过验证的甜点。
+`apply_fsdp_to_decoder` 对 embedding、`[norm,lm_head]`、每个 block、根模块分别调用 `fully_shard`(`torchtitan/distributed/fsdp.py:238-267,267-368`)。粒度选择是显存与通信的权衡:太粗(整模型一组)峰值显存爆;太细(每个 Linear 一组)集合通信次数多、每次太小。**一个 TransformerBlock** 是主要计算体的折中粒度。
 
 ### 8.2 混合精度
 
-`MixedPrecisionPolicy(param_dtype, reduce_dtype)`(`parallelize.py:163`):`param_dtype` 决定 all-gather 后用于计算的参数 dtype(通常 bf16),`reduce_dtype` 决定梯度规约 dtype(可设 fp32 做高精度规约)。分片参数始终以原始 dtype(fp32)保存——优化器用它,**FSDP 不需要额外的 fp32 参数副本**(`[pt]_fsdp_api.py:22-26`)。
+`MixedPrecisionPolicy(param_dtype, reduce_dtype,cast_forward_inputs=False)` 由共享入口构造(`torchtitan/distributed/fsdp.py:223-232`):`param_dtype` 决定 all-gather 后用于计算的参数 dtype(默认 bf16),`reduce_dtype` 决定梯度规约 dtype(当前配置只允许 fp32;`torchtitan/config/configs.py:96-108`)。分片参数始终以训练 dtype 保存——优化器直接更新它,**FSDP 不需要再维护一份额外 master 参数**(`[pt]_fsdp_api.py:22-26`)。
 
 ### 8.3 权重绑定
 
-`enable_weight_tying` 时(`parallelize.py:180-193`),`tok_embeddings`/`norm`/`lm_head` 共享参数,被打包进**同一个 FSDP 单元**,避免对同一份参数重复 all-gather。
+`enable_weight_tying` 时,`tok_embeddings`/`norm`/`lm_head` 被打包进**同一个 FSDP 单元**,避免共享参数重复 all-gather(`torchtitan/distributed/fsdp.py:238-250`)。
 
 ### 8.4 MoE:`shard_placement_fn` 按参数分流
 
-MoE 模型(llama4/deepseek_v3)的 `apply_fsdp`(`llama4/parallelize.py:143`)对含专家的 block 用 `shard_placement_fn`,把**专家参数**路由到 `edp_mesh`、**非专家参数**路由到 `dp_mesh`,并按 FSDP 度数与专家数的关系选 `Shard(0)` 或 `Shard(1)`(避免 padding)。详见 [[15_torchtitan_ep_analysis]]。
+共享入口把 dense 与 MoE 统一为一条路径。MoE block 先识别 grouped-GEMM 子模块的专家参数;EP>1 时把**专家参数**路由到 sparse `edp_mesh`,非专家参数留在 dense `dp_mesh`,并依据 `efsdp×ep` 与专家数关系选择 `Shard(0)` 或 `Shard(1)`以减少 padding(`torchtitan/distributed/fsdp.py:267-360`)。`resolve_sparse_fsdp_mesh()` 则把 sparse storage mesh 的 FSDP 轴显式声明为 `efsdp`(`torchtitan/distributed/fsdp.py:65-82`)。详见 [[15_torchtitan_ep_analysis]]。
 
 ### 8.5 MoE:显式预取
 
-EP 开启时,`apply_fsdp` 末尾(`llama4/parallelize.py:319-364`)用 `set_modules_to_forward_prefetch` / `set_modules_to_backward_prefetch` 显式串联各层预取。原因:EP 的 token all-to-all 里有 **D2H 同步**,会阻塞 CPU 线程,打断 FSDP 的隐式预取(隐式预取依赖 CPU 跑在 GPU 前面,见 §3.5)。显式预取把下一层 all-gather 的发起**提前到 D2H 同步之前**。详见 [[15_torchtitan_ep_analysis]] §6。
+EP 开启时,共享入口末尾用 `set_modules_to_forward_prefetch` / `set_modules_to_backward_prefetch` 显式串联 embedding、各 block 与输出层(`torchtitan/distributed/fsdp.py:384-424`)。原因仍是 EP token dispatch 中的 D2H 同步可能阻塞 CPU 线程,打断依赖 CPU 跑在 GPU 前面的隐式预取;显式依赖把下一层 all-gather 更早发起。详见 [[15_torchtitan_ep_analysis]]。
+
+### 8.6 当前新增开关:对称内存通信
+
+`parallelism.enable_fsdp_symm_mem` 会遍历全部 `FSDPModule`,强制 sum reduction 并调用 `set_symm_mem_for_comm()`(`torchtitan/distributed/fsdp.py:102-109,368-374`)。配置层在 NVIDIA 上要求 compute capability ≥9.0(`torchtitan/config/configs.py:272-281`)。它改变的是 FSDP 集合通信实现,不改变本页描述的分片状态机与预取依赖;通信路径细节见 [[24_torchtitan_comm_optimizations_overlap_analysis]]。
 
 ---
 
@@ -467,11 +473,12 @@ optimizer.step():在分片参数(DTensor)上更新,优化器状态只占 1/N
 - **异步怎么实现**:**五条 CUDA stream**(计算 / copy-in / all-gather / reduce-scatter / all-reduce)+ `record_event` / `wait_event` / `wait_stream` 编排顺序依赖;`AllGatherState` / `ReduceScatterState` 用 event 跨流保活张量。不靠 `async_op`,靠多流。
 - **梯度规约**:`post_backward` 触发 `foreach_reduce` —— 先 reshard 再 reduce-scatter;HSDP 追加组间 all-reduce(独立流,与 RS 重叠)。torchtitan 关掉 FSDP 自带梯度除法,自己按 token 数缩放。
 - **反向钩子**:pre-backward 挂在前向输出上(unshard + 预取);post-backward 是挂在前向输入上的 autograd Function(reduce-scatter);root callback 收尾。
+- **2026-08 接线变化**:dense/MoE 共用 `apply_fsdp_to_decoder`;默认 `spmd_types` 通过 storage mesh + `DataParallelMeshDims` 显式声明 DP/CP 分片轴;新增 FSDP symmetric-memory 开关。PyTorch FSDP2 的逐参数状态机与多流机制未因此改变。
 
 ## Related Pages
 
 - [[20_torchtitan_fsdp_prefetch_overlap_memory_analysis]] —— **深挖伴篇**(配图):预取/掩盖时序、copy-in 三步与唯一跨流同步点、flat 双缓冲、完整参数 ≤2 份证明
-- [[torchtitan/index]] · [[10_torchtitan_parallel_dims_analysis]] —— 知识地图与并行基座
+- [[torchtitan/index]] · [[10_torchtitan_parallel_dims_analysis]] · [[16_torchtitan_spmd_types_analysis]] —— 知识地图、双平面 mesh 与 SPMD 类型契约
 - [[12_torchtitan_tp_analysis]] —— FSDP 与 TP 在同一参数上叠加(DTensor 嵌套、`_StridedShard`)
 - [[15_torchtitan_ep_analysis]] —— MoE 专家的 `edp_mesh` FSDP 与显式预取
 - [[16_megatron_distributed_optimizer_analysis]] —— Megatron-LM 数据并行 + 分布式优化器(ZeRO-0/1/2/3 四阶段、Reduce-Scatter + All-Gather)

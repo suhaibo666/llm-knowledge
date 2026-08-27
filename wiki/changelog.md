@@ -8,6 +8,21 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-27（五）：跟进 TorchTitan 320 个提交，重做并行主线并补齐编译运行时与 TitanRL
+
+**Type**: Source Re-audit（TorchTitan `main@a3168782c`，相对旧基线 `61c010fcb` 前进 320 commits；16 篇训练框架专题 + 1 篇后训练专题）
+
+- **基线冻结**：以 sibling checkout `pytorch/torchtitan` 的干净 `main@a3168782c9a3a2e40afbd0de114818b96e2bda6e`（2026-08-27）为唯一当前代码基线；每个非平凡机制结论重新落到该提交的 `file:line`。旧页中继续需要的 PyTorch 2.9.1 内部机制则保留为清楚标注的独立固定基线，没有用 TorchTitan 行号冒充上游实现。
+- **新增 4 篇主线页**：[[02_engineering/02_train_frameworks/torchtitan/01_torchtitan_trainer_quickstart|Trainer 入口与生命周期]]、[[02_engineering/02_train_frameworks/torchtitan/16_torchtitan_spmd_types_analysis|SPMD Types]]、[[02_engineering/02_train_frameworks/torchtitan/26_torchtitan_flex_shard_dist_muon_analysis|FlexShard / DistMuon]]、[[02_engineering/02_train_frameworks/torchtitan/27_torchtitan_graph_trainer_compiler_runtime_analysis|GraphTrainer 编译运行时]]。这四篇补上旧知识域完全没有覆盖的 Python recipe、声明式布局、storage/compute layout 分离、显式 all-to-all 双槽流水、joint FX graph、Graph PP 与 EP overlap。
+- **重做并行主线**：ParallelDims、FSDP、TP、CP、PP、EP 六页全部切到当前接口。最关键的更正是：`spmd_types` 已成为默认后端；全局 `full_dtensor` 后端与旧 CP `apply_cp_to_forward` 已删除；CP 当前通过 input sharder 与 K/V shard→replicate redistribution 表达；Async TP 已移入 compile；PP 是 stage/微批次适配层而非 action/P2P 调度器；EP 已统一为 `token_dispatcher + inner_experts`，DeepEP v2 与 MinimalAsyncEP 的组合边界也按当前测试重写。
+- **更新资源优化专题**：FSDP prefetch、HSDP overlap、activation checkpoint、计算/显存优化、通信 overlap、SimpleFSDP 六页重审当前接线。补入 NVFP4、显式 dist-GEMM、core Trainer CUDA Graph、chunked loss、对称内存、GraphTrainer memory policy，并把 activation checkpoint 与权重 checkpoint 分开；SimpleFSDP 页明确区分实验内部的局部布局选项与已经删除的全局 `parallelism.spmd_backend="full_dtensor"`。
+- **补当前 TitanRL**：[[02_engineering/04_posttrain_frameworks/10_rl_ppo_loss_and_grpo_analysis|TitanRL 异步控制器与 GRPO/DAPO]] 从旧同步 PPO/vLLM 叙述改为当前 `experiments/rl` 的 controller/policy version、windowed FIFO、rollout worker、批处理、版本化权重同步与 loss/advantage 数据流。
+- **主动记录证据冲突**：GraphTrainer README 把 CP 标为可用，但当前构造路径强制 `partial_dtensor`，相应 tests 也禁用 CP，因此页面按源码与测试把它记为“当前未启用”；GraphTrainer tracer 虽能捕获 optimizer，生产 `GraphTrainer` 的 step graph 当前仍不包含 optimizer。PP 的 zero-bubble/custom CSV 配方存在，但相关核心测试因 FlexAttention metadata 问题禁用，也没有升级成“已验证可用”。
+- **导航与监控**：重建 [[02_engineering/02_train_frameworks/torchtitan/index|TorchTitan 知识地图]]，同步训练框架索引、工程索引和全库首页；`docs/radar/watchlist.yaml` 的 TorchTitan 知识基线更新到 `a3168782c`。
+- **验证**：`check_links --strict` 覆盖 419 页，0 破损/0 歧义/0 裸 index/0 孤儿；`check_math --changed --strict` 覆盖 193 个变更页，0 错 0 警；`npm run docs:test` 为 63/63 单测与 133 请求浏览器 smoke 全通过；`pytest tools/` 为 **103 passed / 4 failed**，4 个失败均来自同期 `01_ai_frameworks` → `01_pytorch` 目录改名后 `tools/labs_torch_compile/test_volume_demo_contract.py` 仍引用旧路径，与本次 TorchTitan 页面无关。
+
+---
+
 ## 2026-08-27（三）：为 GLM-5.3-Flash 与 Qwen3.8-Flash-Next 补结构图，并证伪一处流传的参数口径
 
 **Type**: Figures + Source Verification（4 张 HTML→PNG 结构图 + 2 处配置级核实）

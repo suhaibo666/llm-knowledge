@@ -72,7 +72,7 @@ repos:
   - name: torchtitan
     repo: pytorch/torchtitan
     branch: main
-    kb_baseline: 61c010fcb
+    kb_baseline: a3168782c
     kb_entry: wiki/02_engineering/02_train_frameworks/torchtitan/index.md
     category: 训练框架
 

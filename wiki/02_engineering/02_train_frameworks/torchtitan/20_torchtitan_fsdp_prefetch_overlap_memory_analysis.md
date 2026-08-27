@@ -1,7 +1,7 @@
 # FSDP2 预取 · 计算通信掩盖 · 显存生命周期 —— 源码级专题
 
-> **代码基准**:torchtitan `main` @ `cf3c4312` · PyTorch `2.9.1`(FSDP2 内核 `torch/distributed/fsdp/_fully_shard/`)
-> **最后更新**:2026-06-12(新增 §5.5 勘误与补充:分配≠新建,两层复用与社区机制) · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
+> **代码基准**:torchtitan `main` @ `a3168782c9a3a2e40afbd0de114818b96e2bda6e`（接线）· PyTorch `2.9.1`（FSDP2 内核 `torch/distributed/fsdp/_fully_shard/`）
+> **最后更新**:2026-08-27（复核当前 TorchTitan 接线；PyTorch 机制与图仍固定于 2.9.1） · **系列**:torchtitan 多维并行源码级分析(见 [[torchtitan/index]])
 >
 > 本文是对 `fully_shard`(FSDP2)一系列追问的整理稿,**所有结论基于 PyTorch 2.9.1 源码逐条复核**。
 > 行号约定:torchtitan 以 `torchtitan/` 为根;PyTorch FSDP2 以 `[pt]` 前缀,根目录 `torch/distributed/fsdp/_fully_shard/`。
@@ -46,8 +46,9 @@ forward_hook      → _post_forward(:254) → reshard + 注册 pre-backward hook
 
 ### 1.4 torchtitan 侧(`fsdp.py`,已核)
 
-- `disable_fsdp_gradient_division`(`fsdp.py:11`):每个 `FSDPModule` 设 `set_gradient_divide_factor(1.0)`,关掉按 world_size 除,改由训练循环按全局 token 数缩放。
-- `get_fsdp_reshard_after_forward_policy`(`fsdp.py:28`):`always→True / never→False / default→ not pp_enabled`(开 PP 默认不 reshard,避免每 microbatch 反复 re-AG)。
+- `disable_fsdp_gradient_division`(`torchtitan/distributed/fsdp.py:85-99`):每个 `FSDPModule` 设 `set_gradient_divide_factor(1.0)`,关掉按 world size 除,改由 Trainer 按全局 token 数缩放。
+- `get_fsdp_reshard_after_forward_policy`(`torchtitan/distributed/fsdp.py:112-136`):`always→True / never→False / default→ not pp_enabled`(开 PP 默认不 reshard,避免每 microbatch 反复 re-AG)。
+- 默认 `spmd_types` 还会用 storage mesh + `DataParallelMeshDims` 显式声明 FSDP shard/replicate 轴；这改变 mesh 接线，不改变下文 PyTorch 2.9.1 参数状态机与预取时序（`torchtitan/distributed/fsdp.py:28-62`）。
 
 ---
 
@@ -214,7 +215,7 @@ eager 模式下 `init_unsharded_param`(`[pt]_fsdp_param.py:501-502`):`unsharded_
 | 扁平/逐参数 buffer 分配 | `[pt]_collectives.py:262`、`[pt]_param.py:445/648` | ✅ |
 | free_unsharded_param 释放 | `[pt]_fsdp_param.py:665-672` | ✅ |
 | 先 reshard 再 RS | `[pt]_fsdp_param_group.py:494-495` | ✅ |
-| 关梯度除法 / reshard 策略 | `torchtitan/distributed/fsdp.py:11/28-48` | ✅ |
+| 关梯度除法 / reshard 策略 | `torchtitan/distributed/fsdp.py:85-136` | ✅（当前基线） |
 | **逐参数 buffer 仅首迭代创建(早退守卫)** | `[pt]_fsdp_param.py:443-446` | ✅(§5.5 勘误依据) |
 | alloc/free_storage = storage `resize_` | `[pt]_fsdp_param.py:866-874` | ✅ |
 | async_op 挪默认流避免跨流碎片 | `[pt]_fully_shard.py:599-610` docstring | ✅ |
@@ -226,6 +227,7 @@ eager 模式下 `init_unsharded_param`(`[pt]_fsdp_param.py:501-502`):`unsharded_
 ## Related Pages
 
 - [[11_torchtitan_fsdp_analysis]] —— FSDP2 总览标杆篇(参数切分、钩子链、reduce-scatter、HSDP);本文为其深挖伴篇
+- [[16_torchtitan_spmd_types_analysis]] —— 当前 storage mesh 与 `DataParallelMeshDims` 接线；不改变本文固定的 PyTorch 2.9.1 内核机制
 - [[torchtitan/index]] —— torchtitan 多维并行知识地图
 - [[22_torchtitan_ac_analysis]] —— 激活重计算:与 FSDP 正交叠加,AC 省激活、FSDP 省参数/梯度/优化器
 - [[15_torchtitan_ep_analysis]] —— EP 的 token all-to-all 含 D2H 同步,正是打断隐式预取、需显式预取的实例
