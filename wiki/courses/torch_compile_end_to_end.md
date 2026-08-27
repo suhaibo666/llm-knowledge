@@ -240,7 +240,7 @@ Inductor 内部五阶段一览(原 overview 页要点,`compile_fx` 编排入口�
 ## Labs 使用说明
 
 六卷各一个统一入口,每个入口含多个可独立选择的 case;完整命令、状态语义与页面映射见
-[`tools/labs_torch_compile/README.md`](../../tools/labs_torch_compile/README.md) 与
+[`tools/labs_torch_compile/README.md`](https://github.com/suhaibo666/llm-knowledge/blob/main/tools/labs_torch_compile/README.md) 与
 `tools/labs_torch_compile/demo_manifest.json`。
 
 | 入口 | 主题 |

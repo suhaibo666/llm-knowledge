@@ -262,7 +262,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **Type**: Tooling + Scheduled Maintenance
 
-- 新增 `tools/radar.py` 与 [`docs/radar/watchlist.yaml`](../docs/radar/watchlist.yaml)：每周扫 12 个仓库、7 家模型厂商（HuggingFace）、5 个 arXiv 论文主题，产出 `docs/radar/<日期>.md`。已注册为每周一的本机定时任务 `llm-knowledge-upstream-radar`。
+- 新增 `tools/radar.py` 与 [`docs/radar/watchlist.yaml`](https://github.com/suhaibo666/llm-knowledge/blob/main/docs/radar/watchlist.yaml)：每周扫 12 个仓库、7 家模型厂商（HuggingFace）、5 个 arXiv 论文主题，产出 `docs/radar/<日期>.md`。已注册为每周一的本机定时任务 `llm-knowledge-upstream-radar`。
 - **报告第一节就是“哪些 KB 基线已过期”**——首次运行实测：torchtitan 落后 308 个提交、Megatron-LM 276、verl 266、vLLM 229、slime 23，并附上游最近提交标题，直接指向对应域的 `index.md`。
 - **刻意的边界：只报告事实，不写 `wiki/` 分析页。** 本库价值在于每条断言都有可核验定位符，无人值守产出的机制级结论没人复核会污染这个前提。要落成分析页仍走 `source-faithful-analysis`；相应地，Ingest Workflow 增加第 7 步：合并新分析后必须同步更新 watchlist 里的 `kb_baseline`，否则雷达会每周重复报同一批陈旧漂移。
 - 清单显式维护而非从页头自动推导，原因写在文件头：页头基线格式不统一（代码基准 / 代码基线 / 源码基线，`verl main @ 8a694930` 与 `vllm-project/vllm@d66300a1…` 并存），且 Megatron-LM / torchtitan / MindSpeed 在库里是旁置 checkout 引用，页面里根本不出现 github URL，靠 URL 反推必然漏。
@@ -291,7 +291,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **Type**: Repository Governance Restructure
 
-- **技能去重**：此前 `.claude/skills/` 与 `.agents/skills/` 各存一份副本，且已经漂移（`source-faithful-analysis` 里宿主说明一处写 `CLAUDE.md`、一处写 `AGENTS.md`），还要靠一条单测强行比对来维持同步。现在合并为唯一的公共目录 [`skills/`](../skills/README.md)，那条同步单测随之删除。
+- **技能去重**：此前 `.claude/skills/` 与 `.agents/skills/` 各存一份副本，且已经漂移（`source-faithful-analysis` 里宿主说明一处写 `CLAUDE.md`、一处写 `AGENTS.md`），还要靠一条单测强行比对来维持同步。现在合并为唯一的公共目录 [`skills/`](https://github.com/suhaibo666/llm-knowledge/blob/main/skills/README.md)，那条同步单测随之删除。
 - **CLAUDE.md 瘦身 187 → 约 60 行**：只保留基本法——三层结构、功能树的唯一权威地位、Courses 导读层约束、溯源政策、质量门禁，外加技能索引。**具体怎么写文档不再默认加载**。
 - **新增两个技能**（内容自 CLAUDE.md 原样搬迁，未改写约定）：`maintaining-llm-knowledge`（页面类型与 `NN_` 段位编号、命名、Ingest/Query/Maintenance 流程、交叉引用规则、合并优于并存）与 `writing-mermaid-diagrams`（Mermaid 定界符两档严重度与生成后校验清单）。
 - **`writing-obsidian-math` 刷新**：补上 `MATH001–005/101–105` 全部规则对照表、竖线语义选择表（`\mid` / `\lvert...\rvert` / `\lVert...\rVert` / `\,\|\,` / `\big\vert`），以及本轮清零踩到的四个**伪告警陷阱**（转义方括号不是公式、`\\[2pt]` 是行距、以数字开头的行内公式不是货币、`h_{t-1}` 是索引不是标签）与长公式改写的三条硬约束（每行补 `\\`、`\left/\right` 不能跨行、源码换行不等于换行）。
@@ -348,7 +348,7 @@ All source ingestions and significant wiki updates are logged here.
 **Type**: Source-material Policy Change + Citation Correction
 
 - 本库迁移至 GitHub 公开仓库 [`suhaibo666/llm-knowledge`](https://github.com/suhaibo666/llm-knowledge) 后，为避免公开转载第三方论文原文，删除 `raw/` 下全部 **102 份 PDF**（约 448 MB），每份替换为同名 `.md` 说明页，内容为 arXiv/官方链接、规范标题、提交与更新日期、主分类、作者与摘要；元数据统一取自 arXiv API 而非文件名推断。`.eddx`/`.html`/`.txt` 等自制或非论文源材料保持不变。
-- 新增 [`raw/README.md`](../raw/README.md) 作为策略说明与 102 条索引表。
+- 新增 [`raw/README.md`](https://github.com/suhaibo666/llm-knowledge/blob/main/raw/README.md) 作为策略说明与 102 条索引表。
 - **更正 5 处错误引用**：逐条用 arXiv API 回查文件名内嵌 ID 的真实标题，发现 5 个 ID 指向完全无关的论文——`Scaling_Laws_for_Transfer` 的 `2002.05102`（实为复数反射群数学论文）应为 `2102.01293`；`DeepSeek_VL2` 的 `2412.10322`（实为格点 QCD）应为 `2412.10302`；`CodeGeeX` 的 `2306.03078`（实为 SpQR）应为 `2303.17568`；`CogVideo` 的 `2204.14230`（实为平坦丛上同调）应为 `2205.15868`；`GPT4_Vision_System_Card` 的 `2304.10592` 实为 MiniGPT-4，该系统卡并未在 arXiv 发布。
 - 另有 4 份文件名不含 ID 者按 PDF 正文标题核定来源：`Engram_paper` = [arXiv:2601.07372](https://arxiv.org/abs/2601.07372)《Conditional Memory via Scalable Lookup》（DeepSeek-AI × 北大）、`DeepSeek_V4` = [arXiv:2606.19348](https://arxiv.org/abs/2606.19348)、`Claude_3_Model_Card`（Anthropic 官方）、`Kimi_K3_Technical_Report`（MoonshotAI/Kimi-K3 `0797decb`）、`GPT2_...`（OpenAI 官方 PDF）。
 - 同步重写 39 个 wiki/docs 页中的 77 处 `raw/*.pdf` 引用，指向新的 `.md` 说明页并顺带修正其中的历史陈旧路径（`raw/01_architecture/`、`raw/05_model_families/` 等）。链接检查 pages=408，broken/ambiguous/bare_index/orphans 均为 0。

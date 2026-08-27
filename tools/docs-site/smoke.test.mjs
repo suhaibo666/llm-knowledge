@@ -1,7 +1,11 @@
 import assert from "node:assert/strict"
+import { createServer, get } from "node:http"
 import test from "node:test"
+import { setTimeout as delay } from "node:timers/promises"
 
-import { headingIdFromHash, localNetworkViolations } from "./smoke.mjs"
+import * as smoke from "./smoke.mjs"
+
+const { headingIdFromHash, localNetworkViolations } = smoke
 
 test("heading fragments decode to DOM ids without becoming CSS selectors", () => {
   assert.equal(headingIdFromHash("#1-%E9%80%82%E7%94%A8%E5%9C%BA%E6%99%AF"), "1-适用场景")
@@ -24,4 +28,35 @@ test("network auditing allows inline data but requires exact loopback for HTTP a
     ]),
     ["ws://localhost:8081/", "https://example.com/font.woff2"],
   )
+})
+
+test("proxy shutdown is bounded when a response remains open", async () => {
+  assert.equal(typeof smoke.closeServer, "function")
+
+  let acceptRequest
+  const requestAccepted = new Promise((resolve) => {
+    acceptRequest = resolve
+  })
+  const server = createServer(() => acceptRequest())
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  assert.ok(address && typeof address !== "string")
+
+  const client = get(`http://127.0.0.1:${address.port}/`)
+  client.on("error", () => undefined)
+  await requestAccepted
+
+  const closePromise = smoke.closeServer(server, 25)
+  const outcome = await Promise.race([
+    closePromise.then(() => "closed"),
+    delay(500).then(() => "timed-out"),
+  ])
+  if (outcome === "timed-out") {
+    server.closeAllConnections()
+    await closePromise
+  }
+  client.destroy()
+
+  assert.equal(outcome, "closed")
+  assert.equal(server.listening, false)
 })

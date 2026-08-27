@@ -1,0 +1,65 @@
+{
+  "id": "quartz-v5-project-path-links",
+  "replacements": [
+    {
+      "file": ".quartz/plugins/search/dist/index.js",
+      "before": "new URL(\"/\"+t,window.location.origin).toString()",
+      "after": "new URL(t,new URL(\"../\",document.querySelector(\"link[rel=icon]\").href)).toString()"
+    },
+    {
+      "file": ".quartz/plugins/search/dist/index.js",
+      "before": "M.href=\"/\"+y.slug",
+      "after": "M.href=new URL(y.slug,new URL(\"../\",document.querySelector(\"link[rel=icon]\").href)).href"
+    },
+    {
+      "file": ".quartz/plugins/search/dist/index.js",
+      "before": "fetch(\"/static/contentIndex.json\")",
+      "after": "fetch(new URL(\"contentIndex.json\",document.querySelector(\"link[rel=icon]\").href))"
+    },
+    {
+      "file": ".quartz/plugins/search/dist/components/index.js",
+      "before": "new URL(\"/\"+t,window.location.origin).toString()",
+      "after": "new URL(t,new URL(\"../\",document.querySelector(\"link[rel=icon]\").href)).toString()"
+    },
+    {
+      "file": ".quartz/plugins/search/dist/components/index.js",
+      "before": "M.href=\"/\"+y.slug",
+      "after": "M.href=new URL(y.slug,new URL(\"../\",document.querySelector(\"link[rel=icon]\").href)).href"
+    },
+    {
+      "file": ".quartz/plugins/search/dist/components/index.js",
+      "before": "fetch(\"/static/contentIndex.json\")",
+      "after": "fetch(new URL(\"contentIndex.json\",document.querySelector(\"link[rel=icon]\").href))"
+    },
+    {
+      "file": ".quartz/plugins/explorer/dist/index.js",
+      "before": "fetch(\"/static/contentIndex.json\")",
+      "after": "fetch(new URL(\"contentIndex.json\",document.querySelector(\"link[rel=icon]\").href))"
+    },
+    {
+      "file": ".quartz/plugins/explorer/dist/index.js",
+      "before": "h.href=\"/\"+(g||\"\")",
+      "after": "h.href=new URL(g||\"\",new URL(\"../\",document.querySelector(\"link[rel=icon]\").href)).href"
+    },
+    {
+      "file": ".quartz/plugins/explorer/dist/index.js",
+      "before": "n.href=\"/\"+u.data.slug",
+      "after": "n.href=new URL(u.data.slug,new URL(\"../\",document.querySelector(\"link[rel=icon]\").href)).href"
+    },
+    {
+      "file": ".quartz/plugins/explorer/dist/components/index.js",
+      "before": "fetch(\"/static/contentIndex.json\")",
+      "after": "fetch(new URL(\"contentIndex.json\",document.querySelector(\"link[rel=icon]\").href))"
+    },
+    {
+      "file": ".quartz/plugins/explorer/dist/components/index.js",
+      "before": "h.href=\"/\"+(g||\"\")",
+      "after": "h.href=new URL(g||\"\",new URL(\"../\",document.querySelector(\"link[rel=icon]\").href)).href"
+    },
+    {
+      "file": ".quartz/plugins/explorer/dist/components/index.js",
+      "before": "n.href=\"/\"+u.data.slug",
+      "after": "n.href=new URL(u.data.slug,new URL(\"../\",document.querySelector(\"link[rel=icon]\").href)).href"
+    }
+  ]
+}

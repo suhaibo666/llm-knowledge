@@ -170,6 +170,7 @@ test("runtime manifest and lock agree on every enabled plugin commit", async () 
     "patches/quartz-v5-core-local-only.json",
     "patches/quartz-v5-ofm-local-mermaid.json",
     "patches/quartz-v5-crawl-links-obsidian-paths.json",
+    "patches/quartz-v5-project-path-links.json",
     "patches/quartz-v5-breadcrumbs-no-frontmatter.json",
     "patches/quartz-v5-responsive-layout.json",
   ])

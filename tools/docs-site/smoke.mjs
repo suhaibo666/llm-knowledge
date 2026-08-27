@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { access } from "node:fs/promises"
+import { createServer, request as httpRequest } from "node:http"
 import path from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
@@ -59,20 +60,86 @@ async function ensurePuppeteer() {
   return require(path.join(html2mdDir, "node_modules", "puppeteer-core"))
 }
 
-async function findPortPair() {
+async function findPortTriple() {
   const first = 18_000 + ((process.pid * 37) % 20_000)
-  for (let offset = 0; offset < 200; offset += 2) {
+  for (let offset = 0; offset < 200; offset += 3) {
     const port = first + offset
-    if (port > 65_534) break
+    if (port > 65_533) break
     try {
       await assertPortAvailable(port)
       await assertPortAvailable(port + 1)
+      await assertPortAvailable(port + 2)
       return port
     } catch {
       // Try the next deterministic pair.
     }
   }
-  throw new Error("Unable to find two free loopback ports for the documentation smoke test")
+  throw new Error("Unable to find three free loopback ports for the documentation smoke test")
+}
+
+function startProjectPathProxy(port, upstreamPort, projectPath) {
+  return new Promise((resolve, reject) => {
+    const server = createServer((incoming, outgoing) => {
+      const url = new URL(incoming.url ?? "/", `http://127.0.0.1:${port}`)
+      if (url.pathname !== projectPath && !url.pathname.startsWith(`${projectPath}/`)) {
+        outgoing.writeHead(404, { "content-type": "text/plain; charset=utf-8" })
+        outgoing.end("Not found outside the configured project path")
+        return
+      }
+
+      const upstreamPath = `${url.pathname.slice(projectPath.length) || "/"}${url.search}`
+      const upstream = httpRequest(
+        {
+          hostname: "127.0.0.1",
+          port: upstreamPort,
+          method: incoming.method,
+          path: upstreamPath,
+          headers: {
+            ...incoming.headers,
+            host: `127.0.0.1:${upstreamPort}`,
+          },
+        },
+        (response) => {
+          outgoing.writeHead(response.statusCode ?? 502, response.headers)
+          response.pipe(outgoing)
+        },
+      )
+      upstream.on("error", (error) => {
+        if (!outgoing.headersSent) outgoing.writeHead(502)
+        outgoing.end(error.message)
+      })
+      incoming.once("aborted", () => upstream.destroy())
+      outgoing.once("close", () => {
+        if (!outgoing.writableEnded) upstream.destroy()
+      })
+      upstream.once("response", (response) => {
+        response.once("error", (error) => outgoing.destroy(error))
+      })
+      incoming.pipe(upstream)
+    })
+    server.once("error", reject)
+    server.listen(port, "127.0.0.1", () => resolve(server))
+  })
+}
+
+export function closeServer(server, timeoutMs = 1_000) {
+  return new Promise((resolve) => {
+    let settled = false
+    let timer
+    const finish = () => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      resolve()
+    }
+
+    server.close(finish)
+    server.closeIdleConnections?.()
+    timer = setTimeout(() => {
+      server.closeAllConnections?.()
+      finish()
+    }, timeoutMs)
+  })
 }
 
 async function waitForValue(readValue, timeoutMs, message) {
@@ -242,6 +309,26 @@ async function runBrowserAssertions(page, baseUrl) {
   for (const selector of [".explorer", ".search-button", ".darkmode", "article"]) {
     assert.ok(await page.$(selector), `Homepage is missing ${selector}`)
   }
+  await page.waitForSelector(".explorer-content a", { timeout: 30_000 })
+  const explorerLinks = await page.$$eval(".explorer-content a", (links) =>
+    links.map((link) => link.href),
+  )
+  assert.ok(explorerLinks.length > 0, "Explorer rendered no document links")
+  const projectPath = new URL(baseUrl).pathname
+  for (const href of explorerLinks) {
+    assert.ok(
+      new URL(href).pathname.startsWith(projectPath),
+      `Explorer link escaped the configured project path: ${href}`,
+    )
+  }
+  const explorerStatus = await page.evaluate(
+    async (href) => (await fetch(href)).status,
+    explorerLinks[0],
+  )
+  assert.ok(
+    explorerStatus >= 200 && explorerStatus < 400,
+    `Explorer link ${explorerLinks[0]} returned HTTP ${explorerStatus}`,
+  )
 
   // ---- 回归：子目录 index.md 必须渲染正文（曾因缺 note-properties 而全站空白）----
   const folderIndex = `${baseUrl}02_engineering/03_infer_frameworks/`
@@ -327,7 +414,10 @@ async function runBrowserAssertions(page, baseUrl) {
   }))
   assert.ok(alias.text.length > 0, "Escaped wikilink alias has no visible label")
   const aliasResponse = await page.evaluate(async (href) => (await fetch(href)).status, alias.href)
-  assert.ok(aliasResponse >= 200 && aliasResponse < 400, `Alias link returned HTTP ${aliasResponse}`)
+  assert.ok(
+    aliasResponse >= 200 && aliasResponse < 400,
+    `Alias link ${alias.href} returned HTTP ${aliasResponse}`,
+  )
 
   await goto(page, `${baseUrl}01_theory/06_distributed_parallelism/10_collectives_analysis`)
   const mathState = await page.evaluate(() => {
@@ -381,9 +471,12 @@ async function runBrowserAssertions(page, baseUrl) {
 export async function runSmoke() {
   const puppeteer = await ensurePuppeteer()
   const browserExecutable = await findBrowserExecutable()
-  const port = await findPortPair()
-  const baseUrl = `http://127.0.0.1:${port}/`
+  const port = await findPortTriple()
+  const projectPath = "/llm-knowledge"
+  const proxyPort = port + 2
+  const baseUrl = `http://127.0.0.1:${proxyPort}${projectPath}/`
   let quartzService
+  let proxyServer
   let browser
   let intentionallyStopped = false
   const requestUrls = []
@@ -414,6 +507,7 @@ export async function runSmoke() {
       30_000,
       "The docs launcher did not start Quartz within 30 seconds",
     )
+    proxyServer = await startProjectPathProxy(proxyPort, port, projectPath)
     await waitForHttp(baseUrl, { timeoutMs: DOCS_STARTUP_TIMEOUT_MS + 15_000 })
     const earlyOutcome = await withTimeout(serveOutcome, 0)
     if (earlyOutcome.kind === "value") {
@@ -471,6 +565,9 @@ export async function runSmoke() {
     if (quartzService) {
       intentionallyStopped = true
       quartzService.terminate("SIGINT")
+    }
+    await (proxyServer ? closeServer(proxyServer) : undefined)
+    if (quartzService) {
       let stopped = await withTimeout(serveOutcome, 5_000)
       if (stopped.kind === "timeout") {
         quartzService.forceKill?.()
