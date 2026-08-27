@@ -5,7 +5,7 @@ title: "训练框架 — 目录索引"
 # 训练框架 — 目录索引
 
 > 覆盖分布式训练框架、并行策略、通信优化
-> 最后更新: 2026-08-27（TorchTitan 基线刷新至 `a3168782c`；新增 Trainer quickstart、SPMD Types、FlexShard/DistMuon、GraphTrainer 四条主线）
+> 最后更新: 2026-08-27（TorchTitan 基线刷新至 `a3168782c`；补齐 full config、Grain、checkpoint recovery、TorchFT、Transformers backend 与 Forge，并按新版源码分析机制重写主要页面）
 
 ---
 
@@ -28,7 +28,7 @@ title: "训练框架 — 目录索引"
 | 框架 | 在本域中的定位 | 本库覆盖 | 基线 |
 |---|---|---|---|
 | **Megatron-LM** | NVIDIA 出品，**手工并行的事实标准**；5D 并行、MoE、通信掩盖、分布式优化器的原始参考实现 | 26 篇 + index（**系统性源码覆盖**） | `NVIDIA/Megatron-LM@232c478d4`（`dev`，2026-06 刷新） |
-| **TorchTitan** | **PyTorch-native 路线**：不绕开框架另建一套，而是直接用 DTensor/DeviceMesh 表达并行；本库另一条系统性覆盖主线 | 16 篇 + index（**系统性源码覆盖**） | `pytorch/torchtitan@a3168782c`（`main`，2026-08-27） |
+| **TorchTitan** | **PyTorch-native 路线**：用 full configuration、DeviceMesh/SPMD Types、FSDP2 与编译器实验组合训练系统；本库另一条系统性覆盖主线 | 23 篇 + index（**系统性源码覆盖**） | `pytorch/torchtitan@a3168782c`（`main`，commit date 2026-08-26） |
 | **MindSpeed / MindSpeed-LLM** | 华为昇腾侧：**猴补丁式**加速栈，在 Megatron 之上叠 ~70 个特性；代表"在既有框架上做厂商适配"这条路 | 5 篇 + index（按并行/通信掩盖/内存/昇腾亲和四类 + CP 专题的**机制级深挖，非全量特性走查**） | MindSpeed `master@1432cb09`（基于 Megatron `core_r0.17.0`）· MindSpeed-LLM `master@0c16322d` |
 | **MindFormers** | 华为昇腾侧的另一条路：**MindSpore 生态**，与前三者不共享 PyTorch 底座 | 2 篇 + index（**单点切入**：仅 MoE 专家并行的 PyNative/Graph 两条 token dispatch 路径） | `master@01e71622`（2026-06-18） |
 | **跨框架专题** | **不属于任何单一框架**的机制与对比：异步集合张量、Muon 分片、通信计算重叠与融合、分布式优化器、快恢对比 | 6 篇 | 见各页头（多数标注多仓基线） |
@@ -70,7 +70,7 @@ title: "训练框架 — 目录索引"
 | 目录 | 核心主题 |
 |------|---------|
 | [[megatron-lm/index]] | NVIDIA Megatron-LM, 5D 并行, MoE, TFLOPS, 通信掩盖;源码级系统分析 26 篇内容页 + index(`dev` 232c478d4, 2026-06 刷新;页数 2026-08-27 按 `find` 重算,原记 18 篇已陈旧) |
-| [[torchtitan/index]] | PyTorch-native 训练框架；核心 Trainer + DP/TP/CP/EP/PP + SPMD Types + 低精度/融合/通信重叠 + FlexShard/DistMuon + GraphTrainer/GraphPP，源码级分析 16 篇内容页 + index（`main` `a3168782c`） |
+| [[torchtitan/index]] | PyTorch-native 训练框架；full config、Grain/checkpoint/multimodal contract、核心 Trainer + DP/TP/CP/EP/PP + SPMD Types + 低精度/LoRA/structured trace + FlexShard/GraphTrainer + TorchFT/HF backend/Forge，源码级分析 23 篇内容页 + index（`main` `a3168782c`） |
 | [[mindformers/index]] | 华为 MindFormers;MoE 专家并行(EP)源码级分析,PyNative 与 Graph 两条路径的 token dispatch、去冗余/零冗余/重叠与通信量(`master` 01e71622)2 篇内容页 + index |
 | [[mindspeed/index]] | 华为昇腾 MindSpeed × MindSpeed-LLM;猴补丁式 Megatron 加速栈,~70 个特性按并行/通信掩盖/内存优化/昇腾亲和四类 + CP 专题的机制级深挖(`master` 1432cb09)5 篇内容页 + index |
 
@@ -82,7 +82,7 @@ title: "训练框架 — 目录索引"
 | 页面 | 层次 | 来源 | 核心主题 |
 |------|------|------|---------|
 | [[megatron-lm/index]] | 子目录 | Megatron-LM 源码 | 分布式并行、通信优化、MoE |
-| [[torchtitan/index]] | 子目录 | torchtitan 源码 | Trainer 生命周期、双平面 mesh/SPMD 布局协议、DP/TP/CP/EP/PP、低精度与通信融合、FlexShard/DistMuon、GraphTrainer/GraphPP |
+| [[torchtitan/index]] | 子目录 | torchtitan 源码 | Trainer 生命周期与观测、双平面 mesh/SPMD 布局协议、DP/TP/CP/EP/PP、低精度/LoRA 与通信融合、FlexShard/DistMuon、GraphTrainer/GraphPP |
 | [[21_async_collective_tensor_deepdive]] | 深潜(段 2) | PyTorch 源码 (_functional_collectives.py) | ACT 源码追踪: __torch_dispatch__, wait_tensor, stream 级执行过程, 与 Megatron 手动 stream 对比 |
 | [[22_muon_sharded_hsdp_analysis]] | 深潜(段 2) | Cursor Composer 2.5 博客 | 分片 Muon + 双网格 HSDP: all-to-all N-S、EP/CP 解耦、异步流水线、非专家分工优化 |
 | [[30_comm_compute_overlap_analysis]] | 方法论(段 3) | Megatron-LM / torchtitan 源码 | 计算通信掩盖: combined_1f1b vs ZBV/DualPipe, sub-layer 级调度, DeepEP/HybridEP |

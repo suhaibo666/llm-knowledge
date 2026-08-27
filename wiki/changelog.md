@@ -12,6 +12,34 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-27（十二）：TorchTitan 按新版源码分析机制重做——23 页从“功能罗列”刷新为端到端状态与协议审计
+
+**Type**: 机制级重审（16 篇既有 TorchTitan 页重写/扩写 + 7 篇新增页 + 域索引；另同步刷新 1 篇 TitanRL 训练循环页）
+
+**冻结基线**：本机 `pytorch/torchtitan main@a3168782c9a3a2e40afbd0de114818b96e2bda6e`（commit date 2026-08-26，工作树 clean）。这次没有用“最新代码”代替基线，也没有把历史实现与当前实现混写；每个非平凡判断都回到这一提交的仓库相对 `file:line`。
+
+**为什么重做**：旧页覆盖了功能名，却经常停在“有哪些开关/collective”，没有闭合新版 `source-faithful-analysis` 要求的五拍：背景约束 → 为什么选它而不是直观替代 → 状态/调用链与不变量 → 成本和失败边界 → 仅由源码 TODO/弃用声明支撑的趋势。本轮以“状态由谁拥有、何时转移、组合在哪一层被拒绝”为主线，重写 Trainer、ParallelDims、FSDP、TP、CP、PP、EP、SPMD Types、AC、通信/内存优化、SimpleFSDP、FlexShard 与 GraphTrainer 共 16 篇既有页。
+
+**新增的 7 个概念所有者**：
+
+- [[02_torchtitan_data_pipeline_grain_analysis]]：Grain source/mix/packing/iterator graph 与 exact resume，不再把 dataloader 简化成 batch index。
+- [[03_torchtitan_checkpoint_state_recovery_analysis]]：manager/协议、storage、PP FQN、async staging、load precedence 与 HF/native/final export 的边界。
+- [[04_torchtitan_config_model_protocol_analysis]]：full Python configuration、`Configurable` owner/build、override traversal 与 `ModelSpec`/`Module` 协议。
+- [[05_torchtitan_multimodal_data_model_contract_analysis]]：resize 后 placeholder runs、document/media 保序的 packed patches、DP-local vision join 与 scatter 的端到端一致性。
+- [[28_torchtitan_torchft_fault_tolerance_analysis]]：replica-group 故障域、quorum optimizer、FSDP hook 与全局/每副本 checkpoint 双通道。
+- [[29_torchtitan_transformers_modeling_backend_analysis]]：HF config/module/sharding/state-dict 适配、native Titan MoE replacement 与兼容矩阵。
+- [[30_torchtitan_forge_engine_analysis]]：可嵌入构造 seam、下游 loop 所有权，以及 HEAD 中 `ModelSpec.loss` 消费点已经协议漂移的事实。
+
+**从遗漏审计回填进既有页的机制**：[[01_torchtitan_trainer_quickstart]] 补 structured span/scalar/instant 的双层状态、compile no-op 与 Perfetto 转换边界；[[15_torchtitan_ep_analysis]] 补 aux-loss-free expert bias/token counter 从 forward 累积到 optimizer pre-hook 规约、更新、清零的完整状态机，以及自定义模型必须接 hook 的失败边界；[[23_torchtitan_compute_memory_optimizations_analysis]] 补 LoRA 在 Config 树中继承量化 Linear owner、全树冻结、TP A/B placement 与普通 DCP 仍保存完整模型状态；[[27_torchtitan_graph_trainer_compiler_runtime_analysis]] 补 AutoParallel solver、local-tensor AOT 边界、DTensor rewrap、dense/sparse mesh 分工与两个集成定义仍禁用的成熟度证据。EP 页还补了 `torchtitan::deterministic_scatter_add` 如何暂时切换并恢复 deterministic setting，而非把局部算子确定性误写成全训练确定性。
+
+**纠正的旧心智模型**：当前默认不是 `full_dtensor`；PP 是 stage adapter 而非自有 scheduler；CP 不再走旧 forward wrapper；EP 的 shared expert 不与 routed combine 重叠；FSDP 不存在固定“5 stream”模型；HF MoE 已先换成 native Titan MoE；TorchCheckpointing hooks 不是完整恢复闭环；SimpleFSDP 的 optimizer 仍在 joint graph 外；FlexShard 只临时改变 optimizer compute ownership；LoRA 没有 adapter-only/PEFT export；structured trace 不是 GPU profiler。TitanRL 页同步纠正为 global response-token denominator，并明确 zero-valid-token 的防线主要在标准 builder/batcher，Trainer 没有第二道 guard；TorchStore 只交接运行时状态，resume 也不提供 rollout exactly-once。
+
+**仍明确保留的缺口**：P1 是 DeepSeek V3 MTP、metrics/Kineto/memory profiler、fused MLA/Helion RoPE、Kimi K2 QK clipping 与 Flux 训练纵切；P2 是 LR scheduler state contract、TitanRL recorder/metrics plumbing，以及 Qwen3.5 GDN/Kimi K3 KDA 内部。多模态页还记录了 global DP pack plan、mixed-media temporal counting 与端到端坏图/label-mask 测试缺口。这些没有用推断填成“已覆盖”。
+
+**可核验性**：23 篇 TorchTitan 内容页共扫描到 2,752 处 locator（2,144 个唯一 `file:line`/range），相对冻结源码 missing/out-of-range 均为 0；页数按磁盘重算为 TorchTitan 23 篇内容页 + index、训练框架域 67 页。最终门禁：`check_links --strict` 扫 426 页，broken/ambiguous/bare-index/orphan 均为 0；`check_math --changed --strict` 扫 29 个 Markdown，0 error/0 warning；`python -m pytest tools/` 为 107 passed；`npm run docs:test` 为 67 个单测通过，并完成 426 页 Quartz 构建与浏览器 smoke 的 loopback-only 网络审计；两张变更 Mermaid 已人工检查且在站点 smoke 中成功解析；`git diff --check` 通过。
+
+---
+
 ## 2026-08-27（十一）：megatron-lm 全域补溯源——26 页钉死 commit，774 处 locator 补成仓库相对路径
 
 **Type**: 溯源修复（26 页 + 域索引 + radar 基线；三个并行 agent 各自独占一组文件）。**本轮不动章节结构、不动论述措辞、不动行号。**

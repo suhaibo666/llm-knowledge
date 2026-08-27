@@ -1,195 +1,337 @@
 ---
-title: "激活重计算：策略对象、逐块包装与编译器内存预算"
+title: "激活重计算：策略对象、逐块缓存边界与编译器内存预算"
 ---
 
-# 激活重计算：策略对象、逐块包装与编译器内存预算
+# 激活重计算：策略对象、逐块缓存边界与编译器内存预算
 
-> **TorchTitan 源码基线**：`pytorch/torchtitan` `main` @ `a3168782c9a3a2e40afbd0de114818b96e2bda6e`（2026-08-27）
-> **PyTorch 内部机制固定基线**：`pytorch/pytorch` tag `v2.9.1`。本页用它解释 non-reentrant checkpoint 与 SAC 的底层协议；这不是对 TorchTitan 所依赖 PyTorch HEAD 的推断。
-> **范围**：训练时的 activation checkpointing（AC，亦称 activation recomputation）。权重/优化器状态的持久化 checkpoint 是另一条机制。
-
-## 0. 核心结论
-
-当前 TorchTitan 不再用一个 `apply_ac(model, ac_mode, ...)` 函数分派三种模式，而是把 AC 建模为配置可构造的策略对象：`FullAC` 和 `SelectiveAC` 在 eager 模型层边界插入 non-reentrant checkpoint wrapper，`MemoryBudgetAC` 则不包装层，只设置编译器分区器的全局 activation-memory budget。三者共享 `ActivationCheckpointing.apply()` 的模型约定或生命周期，但并不共享同一种执行机制（`torchtitan/distributed/activation_checkpoint.py:112-164,166-182,185-287,290-330`）。
-
-这一区分决定了正确的接线顺序：模型先完成 TP/SPMD parallelize，再应用 AC 策略，再 compile，最后 FSDP；PP 则先切成 stage-local model parts，再对每个 part 走同一模型并行化函数（`torchtitan/models/llama3/parallelize.py:40-78`; `torchtitan/distributed/pipeline_parallel.py:96-123`）。AC 优化的是单步前后向的激活驻留量；训练状态能否跨进程重启由独立的 `CheckpointManager` 配置和 `components/checkpointer/` 包负责（`torchtitan/trainer.py:65-107`; `torchtitan/components/checkpointer/__init__.py:7-29`）。
+> **代码基准**：pytorch/torchtitan `main` @ `a3168782c9a3a2e40afbd0de114818b96e2bda6e`（2026-08-26）
+> **最后更新**：2026-08-27 · **系列**：[[02_engineering/02_train_frameworks/torchtitan/index|TorchTitan 知识地图]]
+>
+> **本页回答**：当前 `none/full/selective/memory-budget` 四个配置分支怎样落到三类 policy object，AC 为什么安装在 Module layout 之后、compile/FSDP 之前，Selective 如何按 op、FQN 和 matmul shape 决定保存或重算，以及 RNG、MoE/EP、SPMD typechecking、GraphTrainer 的真实组合边界。
+>
+> **边界**：本页只分析一个训练 step 内的 activation 保存/重算；权重与优化器的持久化 checkpoint 不是同一机制。PyTorch checkpoint wrapper 的 holder/cache 内部实现也不冒充 TorchTitan 代码；这里只写 TorchTitan 当前传入的 policy、状态与 guard。
 
 ---
 
-## 1. 旧知识迁移：哪些已经失效
+## 1. Overview
 
-> [!deprecated] 旧版通用 `apply_ac` 入口已失效
-> 当前通用实现是 `ActivationCheckpointing`、`FullAC`、`SelectiveAC`、`MemoryBudgetAC` 类层次，并由显式 union 暴露 `selective`、`full`、`memory-budget`、`none` 四个配置分支（`torchtitan/distributed/activation_checkpoint.py:112-182,185-341`）。历史重构落在 commit `c5d93d109`；现状仍以上述当前源码为准。
+### ① 背景/问题
 
-> [!deprecated] 旧配置字段不可照搬
-> 基类现在只有 `preserve_rng_state`、`determinism_check`、`debug`；`early_stop` 不再是配置项，Full/Selective wrapper 都固定传 `early_stop=False`（`torchtitan/distributed/activation_checkpoint.py:122-140,172-181,278-287`）。Selective 的形状强制重算入口现在是 `force_recompute_mm_shapes_by_fqns`，默认匹配 `moe.router.gate`，不是旧的按 op 名称列表（`torchtitan/distributed/activation_checkpoint.py:194-207`）。
+激活重计算不是一个布尔开关。Full AC 希望只保留 block 边界并在 backward 完整重放；Selective AC 希望缓存昂贵或有副作用的 op 输出、重算其余 op；MemoryBudget AC 则让编译器分区器在整个 compiled region 上选择保存集。把三者塞进 `mode: str` 与一组共享字段，会允许大量没有语义的字段组合，也很难让模型或硬件实验替换 selective save policy。
 
-> [!deprecated] `torchtitan/components/checkpoint.py` 已不是当前权重 checkpoint 所在地
-> 组件配置遵循“配置靠近组件”的约定，当前 checkpoint owner 指向 `components/checkpointer/dcp.py`；公共导出集中在 `components/checkpointer/__init__.py`（`torchtitan/config/configs.py:7-22`; `torchtitan/components/checkpointer/__init__.py:7-29`）。历史迁移 commit 为 `6bc2108e9`。
+### ② 为什么这么设计
 
-唯一需要保留的例外是 Flux：它仍有一个**模型私有** `apply_ac()`，只要 `ac_config` 非空就对 `double_blocks`、`single_blocks` 做 full checkpoint，并固定 `preserve_rng_state=True`；它不解释 Full/Selective/MemoryBudget 的策略差异（`torchtitan/models/flux/parallelize.py:42-53,170-185`）。因此“通用旧入口已删除”不等于“当前树中完全没有名为 `apply_ac` 的函数”。
+当前选择是 `Configurable` policy hierarchy 加显式 union；明显替代方案是旧的 `apply_ac(model, mode, ...)` free function。提交 `c5d93d1098fe` 的正文明确把 AC 定位为硬件/内存预算 knob，而非模型属性：policy class 让每条策略拥有相关字段，并以继承 `SelectiveAC.get_save_ops()` 作为 typed extension point，不需要 registry 或字符串间接层。
 
----
+### ③ 实现思路与细节
 
-## 2. 两种 checkpoint 不是一件事
-
-| 机制 | 被节省/持久化的状态 | 时间尺度 | 当前配置入口 |
+| 配置分支 | 实际对象 | 当前机制 | 默认 Trainer 状态 |
 |---|---|---|---|
-| Activation checkpointing | 前向中间激活少存或不存，反向时重算 | 一个训练 step 内 | `Trainer.Config.activation_checkpoint`，默认 `SelectiveAC.Config`（`torchtitan/trainer.py:105-107`） |
-| Weight/state checkpoint | 模型、优化器、数据加载等训练状态写入持久存储，用于恢复 | 跨 step、进程或作业 | `Trainer.Config.checkpoint`，默认 `CheckpointManager.Config`（`torchtitan/trainer.py:65-104`） |
+| `none` | `None`，不是 policy class | model parallelize 函数跳过 `build().apply()` | 非默认 |
+| `full` | `FullAC.Config → FullAC` | 每个 transformer block 装 full checkpoint wrapper | 非默认 |
+| `selective` | `SelectiveAC.Config → SelectiveAC` | 每块 wrapper 内用 op policy 决定保存/重算 | **默认** |
+| `memory-budget` | `MemoryBudgetAC.Config → MemoryBudgetAC` | 写 functorch process-global memory budget，不包 block | 非默认 |
 
-名称相似不代表数据流相交：AC wrapper 改写 forward/backward 的保存与重算协议；`CheckpointManager` 是训练组件，导出 stateful、interval 和 DCP helper 等持久化能力（`torchtitan/components/checkpointer/__init__.py:7-29`）。
+union 的四个 tyro subcommand 定义在 `torchtitan/distributed/activation_checkpoint.py:333-341`；Trainer 默认构造 `SelectiveAC.Config`（`torchtitan/trainer.py:65-107`）。`None` 的实际分支由模型 parallelize 中的 `if ac_config is not None` 实现（`torchtitan/models/llama3/parallelize.py:40-55`）。
+
+可追踪调用链是：
+
+```text
+Trainer.Config.activation_checkpoint
+  -> model_spec.parallelize_fn 或 PP stage-local parallelize_fn
+  -> model.parallelize               布局与状态声明先落地
+  -> ac_config.build().apply          wrapper 或全局预算
+  -> apply_compile                    捕获 AC 后的模型
+  -> apply_fsdp_to_decoder            最后安装 FSDP
+```
+
+Llama 3 的当前顺序逐行固定在 `torchtitan/models/llama3/parallelize.py:40-78`；PP 先切 `model_parts`，再对每个 stage/chunk 调同一个 parallelize function（`torchtitan/distributed/pipeline_parallel.py:96-123`）。
+
+### ④ 约束/边界
+
+通用 `ActivationCheckpointing.apply()` 假定模型有 `layers` submodule，并只包装其直接 children；它不是递归包所有叶模块（`torchtitan/distributed/activation_checkpoint.py:146-163`）。MemoryBudget 重写 `apply()`，所以不要求 `layers`，也不安装 block wrapper（`torchtitan/distributed/activation_checkpoint.py:290-330`）。
+
+seed-checkpoint 创建路径会跳过整个 model `parallelize_fn`，因此 AC、compile、nD parallelism 和 mixed precision 都不安装（`torchtitan/trainer.py:472-490`）。“Trainer 配了 AC”不等于所有构建模式都执行了 AC。
+
+### ⑤ 发展趋势（有锚点的推断）
+
+提交 `c5d93d1098fe` 已用 policy hierarchy 替代 flat config；当前 union 与调用点继续沿用该结构（`torchtitan/distributed/activation_checkpoint.py:112-163`、`:333-341`）。**推断**：扩展方向是增加 policy subclass 或覆盖 save set，而不是恢复 mode switch；源码没有承诺新增第五种策略。
 
 ---
 
-## 3. 当前配置与真实调用链
+## 2. 安装时机：为什么是 layout → AC → compile → FSDP
 
-### 3.1 配置是可构造 union
+### ① 背景/问题
 
-`ActivationCheckpointConfig` 不是一个带 `mode` 字符串的大 dataclass，而是四路显式 subcommand union：
+AC wrapper 需要看到最终 transformer block 的 forward；compile 需要看到 checkpoint/context 边界；FSDP 又要包住完整的 block 调用和重算。若先 compile 再插 wrapper，compiled graph 看不到 AC；若 AC 早于 Module layout，重算时可能重走未安装的 TP/SPMD boundary；若 FSDP 先于所有改写，wrapper 与参数 materialization 的嵌套关系更难推理。
 
-| 选择 | 构造结果 | 关键效果 |
+### ② 为什么这么设计
+
+选择让模块布局先落地、AC 再定义重算边界、compile 捕获二者、FSDP 最外层管理参数。明显替代方案是把 AC 放在 compile 之后或 FSDP 之后。源码注释直接把 compile 时机描述为“after AC wrapping and before FSDP”（`torchtitan/models/llama3/parallelize.py:46-58`）；这是显式生命周期契约，不是知识库猜测。
+
+### ③ 实现思路与细节
+
+- `spmd_types` 或 TP 开启时先调用 `model.parallelize(parallel_dims)`，把 state/input/output contract 降成实际 forward（`torchtitan/models/llama3/parallelize.py:40-44`）。
+- AC 非空时只把 `dump_folder` 交给 `Config.build()`，随后 `apply(model)`；旧页若写成 `build(job_config, parallel_dims)` 已不符合 HEAD（`torchtitan/models/llama3/parallelize.py:46-47`）。
+- model compile 随后逐 block 应用，FSDP 最后使用 dense/sparse mesh 安装（`torchtitan/models/llama3/parallelize.py:49-78`）。
+- Qwen3.5 同样先 layout、再用同一 AC policy 分别 apply language model 与可选 vision encoder、再分别 compile，最后才进入 FSDP（`torchtitan/models/qwen3_5/parallelize.py:55-104`）。
+- PP 路径先 split，再对每个 `model_part` 执行相同局部顺序，并把改写后的 part 回填 stage（`torchtitan/distributed/pipeline_parallel.py:96-123`）。
+
+### ④ 约束/边界
+
+该顺序是默认 Trainer 的 common decoder parallelize contract，不代表所有模型/实验 trainer。GraphTrainer 的 Llama 路径忽略传入的 `ac_config`，实际顺序是 FQN annotate → TP → SimpleFSDP → compile（`torchtitan/experiments/graph_trainer/llama3/parallelize.py:28-70`）。Flux 则只把“非空配置”解释为私有 full wrapper，且在自身 layout 前应用（`torchtitan/models/flux/parallelize.py:42-58`、`:170-185`）；不能从 common decoder 顺序推断所有模型都走同一 owner。
+
+PP 只把 block 边界局部化到 stage/model chunk；没有跨 pipeline stage 的 checkpoint wrapper。**知识库推断**：这是 split-first、part-local parallelize 调用链的直接结果（`torchtitan/distributed/pipeline_parallel.py:96-123`），不是额外的跨 stage AC 算法。
+
+### ⑤ 发展趋势（有锚点的推断）
+
+提交 `c5d93d1098fe` 把 callsite 统一为 `ac_config.build(...).apply(model)`，并把 MemoryBudget 的 compile validation 移到 Trainer Config；common decoder 当前仍遵循 AC-before-compile/FSDP（`torchtitan/models/llama3/parallelize.py:40-78`）。**推断**：该顺序是公共 decoder 主线，但 Flux 的当前反例说明尚未完成全模型统一。
+
+---
+
+## 3. Full 与公共 wrapper contract：规则重放、RNG 和 determinism
+
+### ① 背景/问题
+
+最容易预测的显存换算力方案是只保存 block 边界，backward 时完整重放 block。但随机算子必须尽量复现 forward，重算输出结构也需要可选检查；否则 dropout、随机路由或数据依赖分支可能让重算图漂移。
+
+### ② 为什么这么设计
+
+FullAC 选择整块 non-reentrant wrapper，并固定 `early_stop=False`；明显替代方案是允许 wrapper 恢复完所需 tensor 后提前停止。**知识库推断**：完整重放使 block 级执行边界更规则，代价是可能多重算后半段 op。当前源码只证明 `early_stop=False` 被固定传入，不声称它一定更快（`torchtitan/distributed/activation_checkpoint.py:166-182`）。
+
+### ③ 实现思路与细节
+
+公共 Config 有三个 knobs：`preserve_rng_state=True`、`determinism_check="default"`、`debug=False`（`torchtitan/distributed/activation_checkpoint.py:120-140`）。Full 和 Selective 都把三者原样交给 PyTorch wrapper，并固定 `early_stop=False`（`torchtitan/distributed/activation_checkpoint.py:173-182`、`:278-287`）。
+
+- `preserve_rng_state` 的 TorchTitan 契约是要求 wrapper stash/restore RNG，默认开启但可能变慢（`torchtitan/distributed/activation_checkpoint.py:122-128`）。
+- `determinism_check` 与 `debug` 的具体合法值和检查协议委托给所安装的 PyTorch；TorchTitan 不在本文件内枚举或预验证它们（`torchtitan/distributed/activation_checkpoint.py:130-140`）。
+- `None` 不构建 wrapper，因此这三个字段不存在运行时作用；MemoryBudget 虽因继承在 Config 表面拥有它们，但其 `apply()` 不读取这些字段（`torchtitan/distributed/activation_checkpoint.py:290-330`）。
+
+GPU unit test 用相同 toy block 比较 No AC、Selective、FQN shape 强制重算和 Full 的 backward FLOPs：Full 的重算量最大，且各策略梯度与 reference 对齐（`tests/unit_tests/gpu/test_activation_checkpoint.py:46-96`、`:152-216`）。
+
+### ④ 约束/边界
+
+`preserve_rng_state=True` 只覆盖 wrapper 所支持的 RNG 回放，不会把非随机但 backend-nondeterministic 的 op 自动变确定。MoE `topk` 因而由 selective policy 单独 MUST_SAVE，而不是靠 RNG state（`torchtitan/distributed/activation_checkpoint.py:39-53`）。
+
+TorchTitan 当前没有在 Config 层验证任意 `determinism_check` 字符串，也没有根据 backend 自动关闭 `debug`；这些参数的最终兼容性属于所安装 PyTorch wrapper。页面不再沿用未在当前 TorchTitan baseline 冻结的外部 PyTorch 行号来宣称额外 guard。
+
+### ⑤ 发展趋势（有锚点的推断）
+
+提交 `c5d93d1098fe` 删除了 `early_stop` 用户字段并把两条 eager policy 都固定为 false；HEAD 仍保持这一行为（`torchtitan/distributed/activation_checkpoint.py:166-182`、`:278-287`）。**推断**：当前扩展面集中在 save policy 与 RNG/determinism knobs，而不是暴露 wrapper 的全部底层参数。
+
+---
+
+## 4. Selective：op 保存集、FQN→shape 与每次调用的 cache policy
+
+### ① 背景/问题
+
+Full AC 会重算 attention、GEMM 和通信，节省显存但增加昂贵工作。Selective 的目标是在同一个 block checkpoint 内保存高成本或不能安全重做的 op 输出，同时重算便宜 op。难点是同一 op 会出现多次、forward 与 recompute 的调用计数必须一致，模型配置又更容易按模块 FQN 指定例外而不是直接写底层 op 次序。
+
+### ② 为什么这么设计
+
+当前路线是集中式默认 op save set + 可覆盖 `get_save_ops()` + FQN 匹配转成 matmul RHS shape；明显替代方案是每个模型维护自己的 op list，或旧的按层频率 selective。提交 `114151ad4d3c` 明确删除 layer-frequency 与 per-model save list，把 per-op SAC 集中到公共策略；提交 `c5d93d1098fe` 又以 subclass override 取代 registry/string indirection。
+
+### ③ 实现思路与细节
+
+默认 save set 由 PyTorch `get_default_op_list().compute_intensive_ops` 加显式 compute/comm ops 组成（`torchtitan/distributed/activation_checkpoint.py:31-94`）：
+
+- SDPA variants、FlexAttention、linear、低精度缩放用 max、topk、可选 Inductor HOP 与 varlen attention；
+- reduce-scatter、AllToAll，以及环境中已注册的 DeepEP/HybridEP dispatch/combine；
+- 可选 op 通过逐段 `getattr` 解析，缺扩展时安静跳过，而不是让配置构造失败（`torchtitan/distributed/activation_checkpoint.py:72-94`）。
+
+FQN/shape 路径不是精确模块白名单：
+
+1. 默认 substring `moe.router.gate` 与每个 `layers.<id>` base FQN 拼接，遍历 block 内 `named_modules()`（`torchtitan/distributed/activation_checkpoint.py:194-230`）。
+2. 命中对象必须是 `nn.Linear`，否则报错；代码把 weight `(out,in)` 归一成 mm RHS `(in,out)`（`torchtitan/distributed/activation_checkpoint.py:231-241`）。
+3. 后续任何 RHS shape 相同的 `aten.mm` 或 `aten.linear` 都 `PREFER_RECOMPUTE`，不限于原 FQN（`torchtitan/distributed/activation_checkpoint.py:256-266`）。GPU test 验证 gate 与 wq 同为 `(512,512)` 时会一起重算（`tests/unit_tests/gpu/test_activation_checkpoint.py:218-267`）。
+
+cache policy 的 TorchTitan 状态是：`context_fn` 每次调用 `_get_custom_policy()`，新建 `{forward_mm_count, recompute_mm_count}`；两个阶段独立计数。save set 中的 op 通常 `MUST_SAVE`，但每第二个 mm/linear 改为 `PREFER_RECOMPUTE`；其他 op 默认也 `PREFER_RECOMPUTE`（`torchtitan/distributed/activation_checkpoint.py:243-287`）。实际 tensor cache 的存取顺序由 `create_selective_checkpoint_contexts()` 实现，TorchTitan 只提供 policy，不维护第二套 cache 容器。
+
+### ④ 约束/边界
+
+- FQN 匹配用 substring `any(f in fqn)`，不是 exact/glob；同 shape 碰撞是明确文档化行为（`torchtitan/distributed/activation_checkpoint.py:194-207`、`:226-237`）。
+- forward/recompute 虽分开计数，但策略仍依赖 op 调用序一致；`determinism_check` 只是传给 wrapper，不能把动态控制流自动变稳定。
+- CUDA→CPU `_to_copy` 总是 `MUST_SAVE`，避免在 recompute 重做例如 AllToAll metadata 的 D2H 同步（`torchtitan/distributed/activation_checkpoint.py:243-255`）。
+- 子类可覆盖 save set，但 Config union 默认只暴露公共 `SelectiveAC.Config`；自定义 subclass 应在 Python config 中提供自己的 Config（`torchtitan/distributed/activation_checkpoint.py:112-118`、`:209-212`）。
+
+### ⑤ 发展趋势（有锚点的推断）
+
+从 `114151ad4d3c` 的集中式 policy 到 `c5d93d1098fe` 的 subclass seam，演进已从“模型各写 op list”转向“公共默认 + typed override”。**推断**：模型特例更可能通过 override/FQN shape 进入，而不是恢复 layer-frequency 模式；HEAD 没有 layer-frequency 配置字段（`torchtitan/distributed/activation_checkpoint.py:185-212`）。
+
+---
+
+## 5. MoE 与 EP：保存路由/通信，Minimal 强制 full
+
+### ① 背景/问题
+
+MoE 重算比 dense block 更敏感：router 若在 recompute 给出不同 expert assignment，梯度会沿另一条路径；EP dispatch/combine 若被重做会再次通信；某些 dispatcher 还使用固定对称内存和有状态 ping-pong buffer，不能任意套 selective cache 假设。
+
+### ② 为什么这么设计
+
+Selective 对 standard/DeepEP/Hybrid 的路线是保存路由关键结果和昂贵通信输出；MinimalAsyncEP 则直接要求整块 full recompute。明显替代方案是让所有 dispatcher 共用同一 SAC op list。当前决定性标准是 backend 是否有能安全表达为 save-op 的调用边界，或其 buffer 生命周期是否专为完整重放设计。
+
+历史证据更直接：提交 `7074b056aa5e` 记录 topk 在部分 backend 上不确定会令 SAC 路由漂移，因此把 `aten.topk` 加入 save set；提交 `7b579addea35` 把 MinimalAsyncEP 的设计前提列为“only for full recompute”，并用双 buffer ping-pong 避免 recompute 时复制接收 buffer。
+
+### ③ 实现思路与细节
+
+- router `topk` 是 `MUST_SAVE`，使 recompute 复用 forward 的 expert assignment（`torchtitan/distributed/activation_checkpoint.py:39-53`）。
+- standard EP 的 `all_to_all_single` 和 reduce-scatter 输出进入默认 save set；AllToAll split metadata 的 CUDA→CPU copy 也在运行 policy 中强制保存（`torchtitan/distributed/activation_checkpoint.py:60-70`、`:243-255`）。
+- DeepEP/HybridEP ops 仅在对应 `torch.ops` 已注册时加入；缺可选依赖会静默跳过（`torchtitan/distributed/activation_checkpoint.py:64-94`）。这说明 policy 有组合入口，不等于任意扩展版本都已测试。
+- 当前 Qwen3 DeepEP v2 recipe 明确使用 `SelectiveAC.Config`，H100 集成项再把它组合为 FSDP4+EP4（`torchtitan/models/qwen3/config_registry.py:417-459`、`torchtitan_recipes/tests/h100.py:89-95`、`tests/integration_tests/h100.py:73-78`）。
+- Minimal 配置更新要求 EP>1，并硬性检查 eager `FullAC.Config` 或 GraphTrainer `compile.memory_policy == "full"`；否则立即报错（`torchtitan/distributed/minimal_async_ep/api.py:84-140`）。当前 H100 Minimal recipe 也显式设置 FullAC（`torchtitan_recipes/tests/h100.py:63-77`）。
+
+### ④ 约束/边界
+
+FullAC 没有 selective save context。**知识库推断**：因此 block 内 router 和 EP communication 会随完整 forward 重放；这正是 Minimal buffer 设计所接受的契约，但会增加其他 dispatcher 的重通信成本（`torchtitan/distributed/activation_checkpoint.py:166-182`、`torchtitan/distributed/minimal_async_ep/api.py:131-140`）。
+
+DeepEP Selective 的证据边界是一个当前 recipe 与 H100 集成配置，不是所有 DeepEP 拓扑的数值证明。Hybrid 当前 H100 recipe 保留 DeepSeek debug 基配置的 SelectiveAC 并启用 compile，但集成描述主要验证 FSDP+HybridEP+compile，不应扩写为专门 SAC correctness suite（`torchtitan/models/deepseek_v3/config_registry.py:55-73`、`torchtitan_recipes/tests/h100.py:80-86`、`tests/integration_tests/h100.py:49-55`）。
+
+当前 AC unit test 只用 toy linear/MoE FQN 验证 FLOPs、memory、gradients 与 shape policy，没有真实 EP collective（`tests/unit_tests/gpu/test_activation_checkpoint.py:17-96`、`:218-267`）。
+
+### ⑤ 发展趋势（有锚点的推断）
+
+`7074b056aa5e` 通过保存 topk 修复 SAC 路由漂移；`7b579addea35` 则选择让 Minimal 只支持 full recompute。**推断**：当前演进准则是按 backend 的副作用/缓冲契约选择“保存”或“整块重放”，而不是强迫所有 EP 后端共享一种 SAC 行为。
+
+---
+
+## 6. SPMD typechecking、FlexAttention、PP 与 Dynamo cache
+
+### ① 背景/问题
+
+Selective wrapper、FlexAttention HOP、SPMD checker 与 PP dynamic microbatch graph 会同时改变执行上下文。save set 中出现 FlexAttention op，并不意味着 checker 能理解所有缓存/重算边界；Dynamo 在同一 code object 上保留 static/dynamic 两张图时，还可能选择与 SAC cache 不匹配的图。
+
+### ② 为什么这么设计
+
+当前选择是对已知不安全组合早失败，并临时关闭 Dynamo LRU；明显替代方案是允许组合运行，等待晚期 assertion 或错误梯度。Trainer guard 只拒绝 `spmd_types + typechecking + SelectiveAC + FlexAttention`，不是拒绝所有 Selective+Flex（`torchtitan/trainer.py:141-154`）。
+
+### ③ 实现思路与细节
+
+- 若上述四个条件同时满足，Config 初始化要求改用 Full、None 或非 Flex attention（`torchtitan/trainer.py:141-154`）。
+- SPMD typechecking 与 PP>1 还有独立 guard，不论 AC 策略都会失败（`torchtitan/trainer.py:129-139`）。不要把它误写成 Selective 专属限制。
+- 任一 Full/Selective `apply()` 都先调用 `_disable_dynamo_lru_cache()`；MemoryBudget override 也显式调用（`torchtitan/distributed/activation_checkpoint.py:152-163`、`:319-330`）。
+- workaround 的注释记录了 SAC+PP+Flex 下第二个 microbatch 触发 dynamic recompilation，LRU 可能选中缺少已缓存 symint 的图；关闭 LRU 后按 insertion order 选图（`torchtitan/distributed/activation_checkpoint.py:97-109`）。
+
+### ④ 约束/边界
+
+关闭 Dynamo LRU 是 process-global 副作用，不绑定某个 model；同进程多 trainer/多模型会共享该变化。`None` 不调用 policy `apply()`，因此也不会触发 workaround（`torchtitan/models/llama3/parallelize.py:46-47`）。
+
+测试 helper 在启用 `spmd_types` typechecking 时直接把 AC 设为 None，因为 debug models 使用 FlexAttention，且 typechecking 另有 compile/PP 限制（`torchtitan_recipes/tests/__init__.py:20-30`）。这是测试矩阵的保守选择，不是框架声称 FullAC 也不支持。
+
+当前集成基础设施还记录 FSDP+SelectiveAC backward recompute 在 Fake PG + spmd_types 下有 shard/storage shape mismatch，并把对应 test 保留在 real PG（`tests/integration_tests/__init__.py:65-85`）。这是一条测试后端限制，不能泛化成真实 PG 不支持。
+
+### ⑤ 发展趋势（有锚点的推断）
+
+Trainer 对 Selective+Flex+typechecking 留有显式 Enable TODO，Dynamo workaround 链接上游 issue（`torchtitan/trainer.py:141-154`、`torchtitan/distributed/activation_checkpoint.py:97-109`）。**推断**：两项都是待解除的兼容层，不是长期 API 承诺；源码没有完成日期。
+
+---
+
+## 7. MemoryBudget：编译器全局预算，不是第四种 block wrapper
+
+### ① 背景/问题
+
+逐 block policy 只能在 eager checkpoint 边界内选择保存集；编译器若拥有完整 region 的 forward/backward 图，可以用成本模型在更连续的内存预算上选 partition。把两层策略叠加会让 compiler 只看到已被 wrapper 切碎的区域，并产生难解释的双重重算边界。
+
+### ② 为什么这么设计
+
+MemoryBudget 选择只设置 functorch partitioner 的 process-global budget，不遍历 `layers`、不安装 wrapper；明显替代方案是先 Selective/Full 包 block 再让 compiler 二次 partition。**知识库推断**：当前互斥机制把保存/重算决策完整交给 compiler，决定性要求是 model compiled region 必须存在（`torchtitan/distributed/activation_checkpoint.py:290-330`、`torchtitan/trainer.py:156-163`）。
+
+### ③ 实现思路与细节
+
+- `memory_budget` 默认 0.5；0 表示 full compiled-region AC 的激活内存，1 表示默认 runtime-optimized strategy 的激活内存（`torchtitan/distributed/activation_checkpoint.py:296-305`）。
+- Config `__post_init__` 要求 inclusive `[0,1]`；比较也会拒绝 NaN/±Inf。提交 `9854306021a9` 的正文解释早失败是为了防止非法值污染 process-global functorch config（`torchtitan/distributed/activation_checkpoint.py:315-317`）。
+- 可选 Pareto visualization 创建 `{dump_folder}/memory_budget_pareto` 并设置 functorch 全局 dump 选项；最后写 `activation_memory_budget`（`torchtitan/distributed/activation_checkpoint.py:319-330`）。
+- 默认 Trainer 和 Forge 都要求 `compile.enable` 且 `"model" in compile.components`，否则 Config 构造失败（`torchtitan/trainer.py:156-163`、`torchtitan/experiments/forge/engine.py:61-69`）。
+
+### ④ 约束/边界
+
+MemoryBudget Config 继承 `preserve_rng_state/determinism_check/debug`，但当前 `apply()` 不读取它们；不要把这些 eager wrapper knobs 写成 compiler budget 的有效控制面（`torchtitan/distributed/activation_checkpoint.py:120-140`、`:290-330`）。
+
+budget 与 Pareto settings 是进程级 `torch._functorch.config`，不是 model-local 状态；同进程后续 compile 会看到这些值。当前源码没有 restore-on-exit 逻辑（`torchtitan/distributed/activation_checkpoint.py:319-330`）。
+
+### ⑤ 发展趋势（有锚点的推断）
+
+提交 `9854306021a9` 刚把范围检查从延迟 compiler 失败前移到 owning Config。**推断**：演进标准是阻止非法全局状态写入，而不是在 apply 时容错或 clamp；当前不存在自动修正预算的 fallback。
+
+---
+
+## 8. GraphTrainer：同名配置字段，独立的 joint-graph memory policy
+
+### ① 背景/问题
+
+GraphTrainer 继承默认 Trainer Config，因此仍能看到 `activation_checkpoint` 字段；但它的训练图拥有 forward+loss+backward joint graph，可以直接给 FX nodes 标记保存、重算或 CPU offload。若把它描述成调用 eager `ActivationCheckpointing.apply()`，会错误理解 FSDP 时序、RNG 处理和 MinimalAsyncEP 的配置条件。
+
+### ② 为什么这么设计
+
+GraphTrainer 选择在 joint graph 上做 memory-policy pass；明显替代方案是复用 eager block wrapper。全图路线能看见 layer boundary、FSDP unshard 与 backward consumer，代价是依赖 tracing/compile graph，不能直接作为默认 Trainer eager policy 的实现细节（`torchtitan/experiments/graph_trainer/memory_policy.py:201-220`、`:344-430`）。
+
+### ③ 实现思路与细节
+
+- Llama GraphTrainer parallelize 虽接受 `ac_config`，却没有 build/apply；实际执行 FQN annotate、TP、SimpleFSDP、compile（`torchtitan/experiments/graph_trainer/llama3/parallelize.py:28-70`）。
+- `compile.memory_policy` 有 `default/full/eager/sac_and_offload`：default 保存 compute-intensive 与必要 FSDP unshard，full 标记整层重算，eager 模拟逐层交替 mm，offload 在 default SAC 后按 CPU budget 迁移保存激活（`torchtitan/experiments/graph_trainer/configs.py:97-117`、`torchtitan/experiments/graph_trainer/memory_policy.py:344-430`）。
+- `full` 支持 `FQN_PATTERN::OP` save exceptions；非法 selector 或非 full policy 携带该字段会在 trace 前报错（`torchtitan/experiments/graph_trainer/memory_policy.py:75-128`）。
+- Graph full policy把 tagged nondeterministic RNG op 设为 MUST_SAVE，因为 remat path 不回放 RNG state；其他节点默认 MUST_RECOMPUTE（`torchtitan/experiments/graph_trainer/memory_policy.py:131-166`）。
+- 非 joint `forward-loss-backward` remat 若发现 recompute region 中 RNG op，会直接报错并要求移出或使用 joint graph；多个不相交 remat region也被拒绝（`torchtitan/experiments/graph_trainer/selective_activation_remat.py:101-150`）。
+
+### ④ 约束/边界
+
+GraphTrainer 的 `memory_policy=full` 与 eager `FullAC.Config` 语义目标相似但执行机制不同：前者是 node tags/remat，后者是 block checkpoint wrapper。MinimalAsyncEP guard 有意接受两者之一（`torchtitan/distributed/minimal_async_ep/api.py:131-140`）。
+
+GraphTrainer 默认 memory policy 还根据 FSDP `reshard_after_forward` 决定是否强制保存 unshard nodes（`torchtitan/experiments/graph_trainer/memory_policy.py:344-363`）。因此不能把 eager `_get_default_save_ops()` 复制成 GraphTrainer 的完整行为；它只贡献基础 op set。
+
+### ⑤ 发展趋势（有锚点的推断）
+
+提交 `36d38d3575a4` 集成 remat AC；当前 registry 已允许新增 memory policy 而不修改 dispatcher（`torchtitan/experiments/graph_trainer/memory_policy.py:406-430`）。**推断**：GraphTrainer 的扩展面是 graph pass/registry，不是 eager policy subclass；两条路线不会因共享 save-op helper 就自动合并。
+
+---
+
+## 9. 选择准则与旧断言纠偏
+
+### ① 背景/问题
+
+只看策略名会忽略最关键的组合条件：是否 compile、是否需要全局 graph、是否有 EP stateful buffers、是否启用 SPMD checker，以及能否容忍通信重放。
+
+### ② 为什么这么设计
+
+应按“决策者是谁、边界多大、哪些副作用可重放”选择，而不是把 selective 当作总是优于 full。明显替代方案是以单一显存百分比排序；它忽略重算 FLOPs、通信、cache 驻留、compiler cost model 和进程级副作用。以下指南是基于当前 guard/call chain 的**知识库推断**。
+
+### ③ 实现思路与细节
+
+| 条件 | 当前选择 | 决定性理由 |
 |---|---|---|
-| `selective` | `SelectiveAC.Config` | wrapper + op 级保存/重算策略 |
-| `full` | `FullAC.Config` | wrapper + 块内全部激活重算 |
-| `memory-budget` | `MemoryBudgetAC.Config` | 设置编译器分区预算，不插 eager wrapper |
-| `none` | `None` | 不应用 AC |
+| 不需要 AC | `None` | 完全跳过 policy apply 与 Dynamo workaround |
+| 规则 block 重放、MinimalAsyncEP | `FullAC` | Minimal 有硬 guard；计算/通信均可能重放 |
+| 默认 eager dense、standard EP、代表 DeepEP | `SelectiveAC` | 默认 save set 保留昂贵 compute/comm，便宜 op 重算 |
+| compiled model、连续预算探索 | `MemoryBudgetAC` | compiler partitioner 决策；必须 compile model component |
+| GraphTrainer | `compile.memory_policy` | joint graph tags/remat，不走 eager policy apply |
+| Flex + spmd typechecking | Full 或 None | Selective 有明确 Trainer guard |
 
-union 定义及其 CLI 名称见 `torchtitan/distributed/activation_checkpoint.py:333-341`；Trainer 的默认值是 selective（`torchtitan/trainer.py:105-107`）。这种类型层分派让每种策略只暴露自己真正拥有的字段，而不是让无效字段组合延迟到运行时。
+旧断言应改为：
 
-### 3.2 eager 模型的顺序
+- 现行通用入口不是 `apply_ac(mode=...)`，而是三类 policy object 加 `None` union（`torchtitan/distributed/activation_checkpoint.py:112-163`、`:333-341`）。
+- `early_stop` 不再是用户字段，Full/Selective 都固定 false（`torchtitan/distributed/activation_checkpoint.py:166-182`、`:278-287`）。
+- Selective 不再有 layer-frequency mode 或每模型 op list；当前是公共 save set、subclass seam 与 FQN→shape 例外。
+- MemoryBudget 不包 block，也不消费 RNG/determinism knobs；它写 compiler 全局配置。
+- GraphTrainer memory policy 不是默认 Trainer AC 的第四个实现类。
+- DeepEP 当前有 Selective 代表组合；MinimalAsyncEP 当前必须 full，不能把所有 EP backend 写成同一 AC 兼容矩阵。
 
-Llama 3 的当前顺序是：
+### ④ 约束/边界
 
-1. 先按 TP/SPMD 配置 parallelize 模型（`torchtitan/models/llama3/parallelize.py:40-44`）。
-2. 若 AC 非空，调用 `ac_config.build(job_config, parallel_dims).apply(model)`（`torchtitan/models/llama3/parallelize.py:46-47`）。
-3. 再按 compile 配置编译 transformer blocks（`torchtitan/models/llama3/parallelize.py:49-55`）。
-4. 最后应用 FSDP/HSDP（`torchtitan/models/llama3/parallelize.py:57-78`）。
+页面没有运行 GPU/多机实验；H100 recipe 与 integration entry 只说明组合被纳入提交矩阵。性能取舍必须同时测峰值显存、step time、compile 时间、重算 FLOPs、重通信量与 cache 驻留，源码不提供跨模型统一赢家。
 
-这样 AC 看到的是已具有 TP/SPMD 语义的 block，而 compile 又能捕获 checkpoint 边界。PP 不改变该局部顺序：pipeline builder 先得到 `model_parts`，随后逐个把 `ac_config` 交给模型的 `parallelize_fn`（`torchtitan/distributed/pipeline_parallel.py:96-123`）。Qwen3.5 还把同一策略分别用于 language model 与 vision encoder，再分别 compile（`torchtitan/models/qwen3_5/parallelize.py:73-90`）。
+Flux 仍有模型私有 `apply_ac()`，其行为不等同于通用 policy hierarchy（`torchtitan/models/flux/parallelize.py:42-58`、`:170-185`）。由于本页主线是默认 Trainer/common AC，Flux 只作为“树中仍可能有同名私有入口”的边界，不把它扩展成第四条通用路径。
 
-### 3.3 基类规定模型边界
+### ⑤ 发展趋势（有锚点的推断）
 
-`ActivationCheckpointing.apply()` 先执行 Dynamo LRU workaround，再取得 `model.get_submodule("layers")`；随后只遍历 `layers.named_children()`，以 `layers.<id>` 作为 FQN 调 `_wrap_block()` 并注册回原位置（`torchtitan/distributed/activation_checkpoint.py:145-163`）。所以通用 AC 的结构契约是“模型具有 `layers` 容器，容器的直接 children 是 checkpoint block”，不是任意递归包裹所有叶子。
-
-这也是 PP 能自然复用的原因：stage-local part 只包含本 stage 的层，但仍保留模型 parallelize 函数预期的层容器；AC 的状态边界因而跟 stage-local block 对齐，而不跨 stage 保存 autograd graph（`torchtitan/distributed/pipeline_parallel.py:96-123`）。
-
----
-
-## 4. 三种策略实际上做什么
-
-### 4.1 FullAC：块是重算边界
-
-`FullAC.Config` 不增加字段；每个 block 用 PyTorch distributed checkpoint wrapper 包起来，透传 RNG、determinism 和 debug 配置，并固定 non-reentrant `early_stop=False`（`torchtitan/distributed/activation_checkpoint.py:166-182`）。这意味着反向触发该块重算时不会因“本次已恢复完所需 saved tensors”而提前停止：执行边界更规整，但可能多做后半段计算。
-
-FullAC 的价值是规则、可预测；代价是块内昂贵算子也会重算。它适合显存压力优先、或 selective 策略难以稳定描述自定义算子的场景。
-
-### 4.2 SelectiveAC：默认省下昂贵计算，但显式处理例外
-
-SelectiveAC 仍在每个 block 建立 non-reentrant checkpoint 边界，但给 wrapper 传入由 `create_selective_checkpoint_contexts(policy_fn)` 生成的 context（`torchtitan/distributed/activation_checkpoint.py:278-287`）。policy 的关键不是“列一个不重算白名单”这么简单，而是以下状态机：
-
-- forward 与 recompute 各自维护 mm/linear 次数，避免两个阶段共用计数造成漂移（`torchtitan/distributed/activation_checkpoint.py:243-267`）。
-- CUDA 到 CPU 的 `_to_copy` 必须保存，否则 recompute 会重做 offload 副作用（`torchtitan/distributed/activation_checkpoint.py:247-255`）。
-- 用户按 FQN 选择 Linear 模块，代码抽取其 `(in_features, out_features)`；随后任何匹配该矩阵形状的 `aten.mm` 或 `aten.linear` 都倾向重算。配置文档明确警告：同形状的非目标 matmul 也会被命中（`torchtitan/distributed/activation_checkpoint.py:194-207,220-241,256-263`）。
-- 默认 save-op 集合里的算子通常 `MUST_SAVE`，但 mm/linear 每第二次调用会 `PREFER_RECOMPUTE`；不在集合中的普通算子也 `PREFER_RECOMPUTE`（`torchtitan/distributed/activation_checkpoint.py:269-274`）。这个“交替 matmul”启发式保留部分昂贵 GEMM，同时继续换取显存。
-
-默认 save-op 集合覆盖 SDPA 各后端、低精度 softmax 路径的 `max`、FlexAttention、linear、可能不确定的 top-k，以及 reduce-scatter/all-to-all 通信输出；DeepEP、HybridEP、Inductor HOP 和 torch-attn varlen 算子只在运行环境可解析时加入（`torchtitan/distributed/activation_checkpoint.py:31-69`）。可选 op 解析失败会被安静跳过，而不是让通用训练因未安装扩展而失败（`torchtitan/distributed/activation_checkpoint.py:72-94`）。
-
-策略并非封死：子类可以覆盖 `get_save_ops()` 改变默认保存集合（`torchtitan/distributed/activation_checkpoint.py:209-212`）。明显替代方案是在核心文件硬编码每个模型的 op 列表；override seam 把模型/实验差异留在策略扩展点，同时保持通用 policy 的计数与副作用规则一致。
-
-### 4.3 MemoryBudgetAC：把选择交给编译器分区器
-
-MemoryBudgetAC 的 `apply()` 不遍历或包装 `layers`。它设置 `torch._functorch.config.activation_memory_budget`；预算 `0` 表示只保存编译区域输入、区域内激活全重算，`1` 表示保存运行时优化分区器选出的全部激活，默认是 `0.5`（`torchtitan/distributed/activation_checkpoint.py:290-305,319-330`）。配置在构造时强制预算落在 `[0, 1]`（`torchtitan/distributed/activation_checkpoint.py:315-317`）。
-
-可选的 `visualize_memory_budget_pareto` 会创建输出目录，并启用 functorch 的 Pareto 图 dump；这同样是进程级配置副作用，不是某个 block 的局部 wrapper（`torchtitan/distributed/activation_checkpoint.py:307-313,319-328`）。Trainer 因而要求它同时满足 `compile.enable=True` 且模型声明 compile 组件，否则初始化直接报错（`torchtitan/trainer.py:156-163`）。
-
-明显替代方案是先插 eager selective wrapper、再让编译器二次决定保存集；当前实现选择二者互斥，避免两层重算边界让分区器看不到完整 compiled region。
+当前明确的 TODO/演进锚点是 Selective+Flex+typechecking、Dynamo cache workaround、GraphTrainer registry 与 model-private Flux 例外，而不是增加统一 fallback。**推断**：在这些边界消失前，选择矩阵必须保持显式 guard 与测试证据，不能宣称四个配置分支可在所有模型/Trainer 间自由互换。
 
 ---
-
-## 5. 共享边界、约束与容易误配之处
-
-### 5.1 Dynamo 缓存 workaround 是全局副作用
-
-所有通用策略进入 `apply()` 时都会调用 `_disable_dynamo_lru_cache()`；MemoryBudgetAC 也显式调用它（`torchtitan/distributed/activation_checkpoint.py:145-152,319-321`）。原因是 SAC + PP + FlexAttention 可能在同一代码对象上交替出现 dynamic/static graph；当前 workaround 关闭 Dynamo LRU，使其用插入顺序命中缓存（`torchtitan/distributed/activation_checkpoint.py:97-109`）。这不是单模型局部状态，多个 trainer 共进程时需要把它视为全局编译行为变化。
-
-### 5.2 FlexAttention 与 `spmd_types` 的 selective 组合被拒绝
-
-Trainer 的 typechecking 明确拒绝 `SelectiveAC.Config` + FlexAttention + `spmd_types`，错误信息要求改用 full/none 或非 Flex attention（`torchtitan/trainer.py:141-154`）。因此“Selective 默认可用于所有 attention 后端”是错误断言；save-op 集合中列出 Flex op，不代表所有分布式类型路径已被支持。
-
-### 5.3 SelectiveAC 的 `debug=True` 是底层协议冲突
-
-当前 SelectiveAC 暴露基类 `debug`，又无条件给 wrapper 传自定义 `context_fn`（`torchtitan/distributed/activation_checkpoint.py:122-140,278-287`）。但固定 PyTorch 2.9.1 的 non-reentrant 实现明确拒绝 `debug=True` 与非默认 `context_fn` 同时使用（`[PyTorch 2.9.1] torch/utils/checkpoint.py:1496-1501`）。所以在这条固定基线上，该组合会失败；配置类型本身没有提前排除它。
-
-### 5.4 RNG 与确定性检查解决的是不同问题
-
-`preserve_rng_state` 控制重算是否回放 forward 的 CPU/device RNG；PyTorch 2.9.1 在进入 recompute 前恢复保存的 RNG state（`[PyTorch 2.9.1] torch/utils/checkpoint.py:1524-1555`）。`determinism_check` 则让 checkpoint frame 比较原 saved tensor 与重算 tensor 的元数据（`[PyTorch 2.9.1] torch/utils/checkpoint.py:822-916`）。前者避免 dropout 等随机路径漂移，后者发现重算结果结构不一致；二者不可互相替代。
-
----
-
-## 6. PyTorch 2.9.1 固定基线：wrapper 下面的协议
-
-本节只解释 TorchTitan wrapper 所依赖的底层形状，并明确冻结在 PyTorch `v2.9.1`。
-
-### 6.1 wrapper 保持模块与 state_dict 透明
-
-PyTorch distributed `CheckpointWrapper` 把原模块存入 `_checkpoint_wrapped_module`，通过 state-dict hooks 去掉/补回该前缀，并把属性访问转发给被包装模块（`[PyTorch 2.9.1] torch/distributed/algorithms/_checkpoint/checkpoint_wrapper.py:35-102,114-173`）。它默认选择 `CheckpointImpl.NO_REENTRANT`，forward 只是在原模块调用外包一层 `torch.utils.checkpoint.checkpoint`（`[PyTorch 2.9.1] torch/distributed/algorithms/_checkpoint/checkpoint_wrapper.py:114-173`）。
-
-因此 AC wrapper 改变执行/保存语义，但不应改变逻辑参数名。这对后续 FSDP 按 FQN 管理参数和权重 checkpoint 恢复尤其重要。
-
-### 6.2 non-reentrant checkpoint 是“前向建票据，反向按需重放”
-
-PyTorch 2.9.1 的 non-reentrant 路径先创建 generator frame，进入 forward context 执行用户函数，再完成 generator 收尾（`[PyTorch 2.9.1] torch/utils/checkpoint.py:470-508,1557-1573`）。forward 的 saved-tensor pack hook 不保存真实 tensor，而是创建 `_Holder`；第一次 unpack 时才运行 recompute，并从对应 holder 取回本次重算张量（`[PyTorch 2.9.1] torch/utils/checkpoint.py:1127-1171`）。
-
-重算 pack hook 以保存顺序对齐 holder，检测“重算保存得更多”等不一致；默认 early-stop 会在已恢复完所需张量时抛内部停止信号（`[PyTorch 2.9.1] torch/utils/checkpoint.py:1068-1114`）。TorchTitan Full/Selective 固定 `early_stop=False`，正是主动放弃这一提前退出优化，以获得完整 block 重放（`torchtitan/distributed/activation_checkpoint.py:172-181,278-287`）。
-
-### 6.3 SAC 是成对 dispatch mode，不是另一个 autograd
-
-`CheckpointPolicy` 有 MUST/PREFER × SAVE/RECOMPUTE 四个返回值；其中 MUST 语义不能被后续编译器覆盖（`[PyTorch 2.9.1] torch/utils/checkpoint.py:1247-1277`）。forward caching mode 对 SAVE op 缓存输出，recompute cached mode 按调用顺序弹出缓存；选择 RECOMPUTE 的 op 才实际再次执行（`[PyTorch 2.9.1] torch/utils/checkpoint.py:1295-1362`）。两个 mode 共享 storage，并作为 forward/recompute context 对返回（`[PyTorch 2.9.1] torch/utils/checkpoint.py:1365-1448`）。
-
-所以 TorchTitan SelectiveAC 的 policy 只是决定每个 op 走“缓存复用”还是“重新执行”；non-reentrant holder/ticket 仍负责把反向请求接回对应的重算 frame。
-
----
-
-## 7. GraphTrainer：相关但独立的 memory policy
-
-GraphTrainer 不应被描述成调用上述 eager `ActivationCheckpointing.apply()`。它的模型 parallelize 路径接受 `ac_config` 参数但实际流程是 annotate、TP、simple FSDP、compile，没有调用 `ac_config.build(...).apply(...)`（`torchtitan/experiments/graph_trainer/llama3/parallelize.py:28-70`）。其内存策略是编译 joint graph 上的标签 pass。
-
-GraphTrainer 配置暴露 `default`、`full`、`eager`、`sac_and_offload` 四个 `memory_policy`，并分别说明默认 selective、全重算、模拟 eager SAC、以及 SAC + CPU offload 的含义（`torchtitan/experiments/graph_trainer/configs.py:97-117`）。pass 给 FX joint graph 节点写 `MUST_SAVE`、`MUST_RECOMPUTE`、`MUST_CPU_OFFLOAD` 标签，并复用通用 `_get_default_save_ops()`（`torchtitan/experiments/graph_trainer/memory_policy.py:7-48`）。
-
-四个策略在 registry 中分别注册：default 还强制保存 FSDP unshard 通信，full 只保留层边界，eager 模拟交替 matmul，sac_and_offload 添加 CPU offload 选择（`torchtitan/experiments/graph_trainer/memory_policy.py:344-430`）。这条机制拥有整张 joint graph，能看见跨 eager block 的数据依赖；代价是依赖 compile 图捕获与节点标注，不是通用 eager trainer 的直接替换。
-
----
-
-## 8. 选择指南
-
-| 目标/约束 | 优先策略 | 原因与边界 |
-|---|---|---|
-| 需要最直接、规则的显存换算力 | FullAC | 每块完整重放；昂贵 op 也重算 |
-| eager trainer，希望保留部分 GEMM/attention/通信结果 | SelectiveAC | op policy 可扩展；需避开当前 FlexAttention + `spmd_types` 禁配 |
-| 已 compile，希望用连续预算探索保存/重算点 | MemoryBudgetAC | 预算交给编译器分区器；必须启用 compile |
-| 使用 GraphTrainer joint graph | GraphTrainer memory policy | 它是图标签 pass，不走 eager AC wrapper |
-| 使用 Flux 当前 parallelize | 谨慎 | 非空 AC 配置都会落到其私有 full wrapper，策略名不被区分 |
-
-设计上没有“免费显存”：FullAC 提高重算 FLOPs；SelectiveAC 保存昂贵结果却增加 activation cache；MemoryBudgetAC 把决策质量交给编译器图与成本模型；GraphTrainer 获得全图视野但要求另一条训练运行时。正确比较应同时观测峰值显存、step time、compile 时间和实际重算算子，而不是只看配置名称。
-
----
-
-## 9. 小结
-
-- 当前通用入口是策略对象 union，不是旧 `apply_ac` mode switch。
-- Full/Selective 是逐 block non-reentrant wrapper；MemoryBudget 是编译器全局预算，机制不可混写。
-- 真实顺序是 TP/SPMD → AC → compile → FSDP；PP 对每个 stage-local model part 重走该顺序。
-- Selective 的核心状态是 forward/recompute 分离计数、默认 save-op 集合、同形状强制重算与副作用 op 保护。
-- activation checkpoint 与训练状态 checkpoint 只共享“checkpoint”一词；owner、数据流和时间尺度均不同。
-- GraphTrainer 的 memory policy 是 joint graph 标签 pass，应作为相关但独立机制阅读。
 
 ## Related Pages
 
-- [[02_engineering/02_train_frameworks/torchtitan/index|TorchTitan 知识地图]] —— 系列入口与当前源码基线。
-- [[11_torchtitan_fsdp_analysis]] —— AC wrapper 之后的参数分片与通信生命周期。
-- [[12_torchtitan_tp_analysis]] —— AC 之前的 TP/SPMD 布局与边界 collective。
-- [[23_torchtitan_compute_memory_optimizations_analysis]] —— compile、fused operator 与其他计算/显存优化的组合边界。
-- [[24_torchtitan_comm_optimizations_overlap_analysis]] —— Selective save-op 集合涉及的通信与 overlap 背景。
-- [[27_torchtitan_graph_trainer_compiler_runtime_analysis]] —— GraphTrainer joint graph、编译与运行时主线。
-- [[01_theory/02_pretraining/12_activation_checkpointing_analysis|Activation Checkpointing 理论]] —— 重计算的通用成本模型与算法背景。
+- [[02_engineering/02_train_frameworks/torchtitan/11_torchtitan_fsdp_analysis|FSDP 分片与生命周期]] — AC wrapper 外层的参数 materialize、reshard 与 backward 时序。
+- [[02_engineering/02_train_frameworks/torchtitan/15_torchtitan_ep_analysis|专家并行 EP]] — standard、DeepEP、HybridEP、MinimalAsyncEP 的通信与 buffer 契约。
+- [[02_engineering/02_train_frameworks/torchtitan/16_torchtitan_spmd_types_analysis|SPMD Types]] — AC 重算期间必须保持的 current-mesh 与布局断言。
+- [[02_engineering/02_train_frameworks/torchtitan/23_torchtitan_compute_memory_optimizations_analysis|计算与显存优化]] — compile、融合 kernel 与 AC 的组合选择。
+- [[02_engineering/02_train_frameworks/torchtitan/24_torchtitan_comm_optimizations_overlap_analysis|通信优化与重叠]] — Selective 保存通信输出与 Full 重通信的成本背景。
+- [[02_engineering/02_train_frameworks/torchtitan/27_torchtitan_graph_trainer_compiler_runtime_analysis|GraphTrainer 编译器运行时]] — joint graph memory policy 与 remat pass 的完整所有者。
+- [[01_theory/02_pretraining/12_activation_checkpointing_analysis|Activation Checkpointing 理论]] — 重计算的通用时间—显存成本模型。

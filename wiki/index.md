@@ -42,9 +42,9 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | └─ TorchInductor | [[02_engineering/01_pytorch/02_compile_stack/04_inductor/index]] | 36 | 活跃 |
 | └─ 运行时图(CUDA/NPU) | [[02_engineering/01_pytorch/03_runtime_graphs/index]] | 12 | 活跃 |
 | └─ Codegen 后端(MLIR) | [[02_engineering/01_pytorch/02_compile_stack/05_codegen_backends/mlir/index]] | 8 | 活跃 |
-| 训练框架 | [[02_engineering/02_train_frameworks/index]] | 60 | 活跃 |
+| 训练框架 | [[02_engineering/02_train_frameworks/index]] | 67 | 活跃 |
 | └─ Megatron-LM | [[02_engineering/02_train_frameworks/megatron-lm/index]] | 27 | 活跃 |
-| └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 17 | 活跃 |
+| └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 24 | 活跃 |
 | └─ MindFormers | [[02_engineering/02_train_frameworks/mindformers/index]] | 3 | 活跃 |
 | └─ MindSpeed | [[02_engineering/02_train_frameworks/mindspeed/index]] | 6 | 活跃 |
 | 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 20 | 活跃 |
@@ -57,7 +57,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | 自动并行 | [[02_engineering/06_auto_parallel/index]] | 2 | 活跃 |
 | 训练可靠性 | [[02_engineering/07_training_reliability/index]] | 5 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根）；训练框架与 torchtitan 于 2026-08-27 随 TorchTitan `a3168782c` 基线审计重新统计为 60/17 页；后训练框架于 2026-08-14 随 `slime/` 官方特性源码解读与 vime/vLLM 支持度审计增至 44 页，其中 `verl/` 12 页、`slime/` 21 页；其余工程域沿用最近一次域级统计。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根）；训练框架与 torchtitan 于 2026-08-27 随 TorchTitan `a3168782c` 机制级复审重新统计为 67/24 页；后训练框架于 2026-08-14 随 `slime/` 官方特性源码解读与 vime/vLLM 支持度审计增至 44 页，其中 `verl/` 12 页、`slime/` 21 页；其余工程域沿用最近一次域级统计。
 
 ### courses 课程入口
 

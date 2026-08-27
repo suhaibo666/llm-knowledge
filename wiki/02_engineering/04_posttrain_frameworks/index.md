@@ -6,7 +6,7 @@ title: "后训练框架 — 目录索引"
 
 > 覆盖 RLHF/对齐训练基础设施、Coding RL Sandbox 与 Infra、TitanRL 异步 GRPO/DAPO 源码级实现、工业 RL 训练框架
 > (verl/slime/AReaL/ROLL)源码分析与 CUDA–Ascend 映射。
-> 最后更新: 2026-08-27（TorchTitan TitanRL `main@a3168782c`：异步 controller、版本窗口、rollout/weight-sync 与 GRPO/DAPO）
+> 最后更新: 2026-08-27（TorchTitan TitanRL `main@a3168782c`：异步 controller、版本窗口、全局 token 归一化、rollout/weight-sync 与 GRPO/DAPO）
 
 ---
 
@@ -93,7 +93,7 @@ title: "后训练框架 — 目录索引"
 | 段 | 页面 | 一句话 |
 |---|------|------|
 | 0 | [[01_posttraining_infra_mechanism_analysis]] | control/data/weight 三平面机制总览 |
-| 1 | [[10_rl_ppo_loss_and_grpo_analysis]] | TitanRL 异步 controller、版本窗口、rollout/weight-sync 与 GRPO/DAPO |
+| 1 | [[10_rl_ppo_loss_and_grpo_analysis]] | TitanRL 异步 controller、版本窗口、零有效 token 不变量、rollout/weight-sync、checkpoint 边界与 GRPO/DAPO |
 | 1 | [[11_rl_sandbox_design_analysis]] | Coding RL Sandbox 架构设计 |
 | 1 | [[12_rl_infra_efficiency_analysis]] | RL Infra 效率优化机制 |
 | 1 | [[13_opd_infra_mechanism_analysis]] | OPD 基础设施机制:带宽账与八项工程工作 W1-W8 |
@@ -112,7 +112,7 @@ title: "后训练框架 — 目录索引"
 
 | 页面 | 来源 | 核心主题 |
 |------|------|---------|
-| [[10_rl_ppo_loss_and_grpo_analysis]] | TorchTitan TitanRL `main@a3168782c` | 有界异步 controller、windowed FIFO、rollout/batching、版本化权重同步与逐 token GRPO/DAPO（与 verl 的 [[15_verl_rl_algorithms_analysis]] 同类、框架不同） |
+| [[10_rl_ppo_loss_and_grpo_analysis]] | TorchTitan TitanRL `main@a3168782c` | 有界异步 controller、windowed FIFO、全局 response-token 分母、版本化权重同步、restart 非 exactly-once 边界与逐 token GRPO/DAPO（与 verl 的 [[15_verl_rl_algorithms_analysis]] 同类、框架不同） |
 
 ### Coding RL Sandbox 与 Infra
 
