@@ -91,6 +91,13 @@ flowchart LR
 - **【推断】**：位置信息由 34 层 KDA 承担——线性注意力的短卷积（`short_conv_kernel_size=4`）与递归状态本身带有顺序性，因此混合架构里全注意力层可以完全去掉 RoPE。这是混合线性/全注意力模型里常见的取舍。
 - **边界**：模型卡对此**只字未提**，没有消融、没有长度外推曲线。1M 上下文在没有 RoPE 的情况下如何保持精度，公开材料无法回答。
 
+> [!contradiction] 另一家厂商实测后**拒绝**了这个选择
+> Qwen 在 Qwen3.8-Flash-Next 技术报告里，对同样是"线性 + 全局混合"的架构测过 NoPE，结论是（§2.1.1, p4）：**RoPE 与 NoPE 变体在预训练期几乎没有差别，但 NoPE 变体在后训练之后出现明显更高的"不停止生成（endless generation）"比例**，因而更容易无法终止。Qwen 因此**在全注意力层保留了 RoPE**。
+>
+> 这直接影响上面那条【推断】的可信度："位置信息由线性层承担、故可去掉 RoPE"**在预训练指标上成立，但可能在后训练后失效**——而失效模式恰恰是预训练 loss 看不见的。
+>
+> **这不意味着 GLM 做错了**：Qwen 测的是自己的 GDN 混合与自己的后训练配方，GLM-5.3-Flash 用的是 KDA 且未公开任何相关数据。但它把"NoPE 在混合架构里是安全的"从一个看似合理的推断，降级为**一个已被至少一家厂商实测推翻的假设**。详见 [[20_qwen3_8_flash_next_architecture_deepdive]] §2.4。
+
 ### 2.3 参数量核对
 
 | 口径 | 值 | 来源 |
@@ -166,4 +173,5 @@ flowchart LR
 - [[25_mhc_analysis]] — mHC 原理；本页给出它被第二家厂商采用的证据。
 - [[26_deepseek_v4_technical_deepdive]] — CSA/HCA/DSA/MLA 对比，理解 `deepseek_sparse_attention` 这一层类型。
 - [[31_deepseek_v4_released_checkpoints_analysis]] — mHC 超参对照的另一侧。
+- [[20_qwen3_8_flash_next_architecture_deepdive]] — 同为线性×稀疏混合架构，但**保留 RoPE**；含 NoPE 的实测反证。
 - [[01_theory/01_models/index|模型架构与模型家族总索引]]

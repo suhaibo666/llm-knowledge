@@ -8,8 +8,10 @@
 > **维度**：开放权重发布分析（模型卡 + 权重配置交叉核对）。
 > **更新**：2026-08-27。
 
-> [!warning] 存在技术报告，但**本页尚未摄入**
-> 与 Qwen3.8 其余档位不同，Flash-Next **有一份技术报告** PDF：`github.com/QwenLM/Qwen3.8-Flash-Next/blob/main/tech_report.pdf`（`模型卡 :37`），另有博客 `qwen.ai/blog?id=qwen3.8-flash-next`。**本页的基线只到模型卡 + `config.json`**，尚未读该报告。因此本页给出的是"发布了什么结构"，四项创新的**动机论证、消融与理论依据仍在那份未摄入的报告里**——这是本页最大的缺口，已登记在 §6。
+> [!note] 技术报告已摄入（2026-08-27）
+> Flash-Next 有一份 28 页技术报告《On the Design of Qwen3.8-Next Architecture: Evaluation, Efficiency, and Training Stability》（Qwen Team，2026-08-26，**无 arXiv 编号**，随 [GitHub 仓库](https://github.com/QwenLM/Qwen3.8-Flash-Next/blob/main/tech_report.pdf) 发布）。
+> **本页只讲"发布了什么"；四项创新的动机、机制与消融见两篇深挖页**：[[20_qwen3_8_flash_next_architecture_deepdive]]（§2 架构）与 [[21_qwen3_8_flash_next_optimization_deepdive]]（§3–§4 优化 / 稳定性 / 评测）。
+> 来源元数据见 `raw/01_theory/01_models/alibaba_qwen/Qwen3_8_Flash_Next_tech_report.md`。
 
 ---
 
@@ -86,7 +88,8 @@
 
 - **事实**：卡片明确说 QSA"不逐个选 token，而在微块粒度操作"（`:32`）。
 - **【推断】**：微块（4 token）介于 MoBA 的块与 DSA 的 token 之间，是在"选择精度"与"indexer 打分成本 + 访存连续性"之间取的中间点。
-- **边界**：**卡片没有给任何粒度消融**，没有说明为什么是 4 而不是 1 或 16，也没有给延迟对照数据（只说 "cuts long-context latency significantly"）。上表的横向对比是本页所作，不是任何一家厂商的表述。
+- **已由技术报告补齐**：微块大小确有消融（Fig. 5a）——RULER 分数随块增大而下降（Block 16 ≈ 80、Block 8 ≈ 82、**Block 4 ≈ 85–86**），故取 4。延迟也有实测：1M 上下文下整个注意力模块相对稠密 GQA **prefill 7.6× / decode 4.9×**。详见 [[20_qwen3_8_flash_next_architecture_deepdive]] §3.6–3.7。
+- **仍未解决**：上表跨厂商的粒度谱系对比是本页所作，不是任何一家厂商的表述。
 
 ### 3.2 Gated Residual：Hyper-Connections 的另一条分支
 
@@ -110,7 +113,8 @@
 
 - **事实**：两者都源自 Hyper-Connections 这条线（字段前缀相同、扩展率同为 4），但**解决 HC 不稳定性的手段不同**——mHC 靠把残差映射投影到双随机矩阵流形，Qwen 靠门控。
 - **【推断】**：扩展率 4 可能已成为该系列的事实默认值。
-- **边界**：卡片没有提 Hyper-Connections，也没有引用 mHC；这条谱系归属是本页依据字段命名与机制描述所作的**推断**，两家均未确认。**不要写成"Qwen 采用了 DeepSeek 的 mHC"——它没有。**
+- **已由技术报告确认**：报告原文写 **"GR belongs to the same family as HC, mHC and VWN"**（§2.2, p12），且 Tab. 5 就是拿 mHC 当基线做的消融——**本页此前的谱系推断可升级为事实**。
+- **但分歧点也随之明确**：HC / mHC 把读写都保持为每分支标量、把容量投在 $H_{\mathrm{res}}$（mHC 再把它约束为双随机矩阵）；**GR 则把表达力全押在读上（逐元素门控），并直接丢弃 $H_{\mathrm{res}}$**。所以**仍然不能写成"Qwen 采用了 DeepSeek 的 mHC"**。机制对照见 [[20_qwen3_8_flash_next_architecture_deepdive]] §4.6。
 
 ### 3.3 N-gram Embedding：与 DeepSeek Engram 高度同构
 
@@ -138,7 +142,8 @@
 | 算力 | "requires less computation" | **零 FLOPs**（纯查表） |
 
 - **事实**：两家在同一时期、各自独立地把"n-gram 查表嵌入"作为 MoE 之外的第二条参数扩展轴，且都强调**低算力**与**可 offload**这两条同样的理由；Qwen 的 `heads_per_ngram: 8` 与 Engram 的多头哈希设计对应。
-- **边界**：卡片**没有引用 Engram**，也没给 U 型 scaling law 那类"算力 vs 记忆"的配比分析（那是 Engram 论文的内容）。两者是否有承袭关系**无法判定**，本页只记录同构。
+- **已由技术报告更正**：报告 §2.3 的动机段**明确引用了** Cheng et al., 2026《Conditional memory via scalable lookup: A new axis of sparsity for large language models》（作者含 Xin Cheng、Damai Dai、Wenfeng Liang 等 DeepSeek 成员），即 [[29_engram_analysis]] 分析的那条路线；同段还引用了美团 arXiv:2601.21204。**Qwen 明确把自己放在这条已有研究线上，而非独立发明**——本页此前"无法判定承袭关系"的判断应予更正。
+- **仍未解决**：报告未与 Engram 做实现级对比，也未给 U 型配比曲线；但**给了固定预算下换专家的对照（Tab. 8）与词表缩放（Tab. 9）**，见 [[20_qwen3_8_flash_next_architecture_deepdive]] §5.3。
 
 ### 3.4 训练配方：唯一在配置里查不到的一项
 
@@ -146,7 +151,8 @@
 
 - **事实**：这是四项创新里唯一属于**训练**而非结构的一项，因此 `config.json` 里没有任何对应字段——**完全无法从权重侧核验**。
 - **价值**：其中"取消 batch-size warmup"是一条相当具体、可被他人验证的工程主张（多数大模型训练配方都保留 warmup）。
-- **边界**：没有给出哪些权重走 Muon、哪些走 AdamW，没有给 scaling law 的重拟合形式，没有 with/without warmup 的对照曲线。**这些大概率在未摄入的技术报告里。**
+- **已由技术报告补齐**：Muon / AdamW 的权重归属有完整清单（含**路由器与 GR 低秩投影走 AdamW** 及其理由），batch-size warmup 有 with/without 实测（**两个变体都更差，且多花 18.8% 优化器步数**）。详见 [[21_qwen3_8_flash_next_optimization_deepdive]] §2.2 与 §3.4。
+- **仍未解决**：**新缩放律的函数形式与拟合数据未公开**，只报告了方向（LR 与 batch size 上移）与验证结果。
 
 ---
 
@@ -205,7 +211,9 @@
 
 ## 六、未披露边界
 
-**首要缺口**：**技术报告与官方博客均未摄入**（见页首 warning）。四项创新的动机推导、消融、scaling law 重拟合形式，很可能都在其中。这应是本目录的下一个摄入目标。
+**技术报告已于 2026-08-27 摄入**（见页首 note），下列条目已相应缩减；报告本身遗留的问题登记在两篇深挖页的末节。
+
+**官方博客（`qwen.ai/blog?id=qwen3.8-flash-next`）仍未摄入**，但其内容大概率是报告的科普版，优先级低。
 
 模型卡本身没有给出的：
 
@@ -221,6 +229,8 @@
 
 ## 关联页面
 
+- [[20_qwen3_8_flash_next_architecture_deepdive]] — **技术报告 §2 深挖**：GDN 混合、QSA、Gated Residual、N-gram 嵌入的动机与消融。
+- [[21_qwen3_8_flash_next_optimization_deepdive]] — **技术报告 §3–§4 深挖**：Muon 工程、超参缩放律、稳定性压力测试、三方基座评测。
 - [[10_qwen3_8_analysis]] — Qwen3.8 旗舰档（2.4T-A95B + Max），同期同系列。
 - [[11_qwen3_8_27b_analysis]] — Qwen3.8-27B：Qwen3.5 谱系的紧凑稠密档，与本页的 Qwen4 谱系形成代际对照。
 - [[29_engram_analysis]] — DeepSeek Engram：与 N-gram Embedding 高度同构的"记忆稀疏"路线。

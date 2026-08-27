@@ -16,11 +16,11 @@
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| 模型 | [[01_theory/01_models/index]] | 65 | 活跃 |
+| 模型 | [[01_theory/01_models/index]] | 67 | 活跃 |
 | └─ DeepSeek | [[01_theory/01_models/deepseek/index]] | 22 | 活跃 |
 | └─ Kimi | [[01_theory/01_models/moonshot_kimi/index]] | 15 | 活跃 |
 | └─ GLM | [[01_theory/01_models/zhipu_glm/index]] | 12 | 活跃 |
-| └─ Qwen | [[01_theory/01_models/alibaba_qwen/index]] | 4 | 活跃 |
+| └─ Qwen | [[01_theory/01_models/alibaba_qwen/index]] | 6 | 活跃 |
 | └─ LongCat (美团) | [[01_theory/01_models/meituan_longcat/index]] | 3 | 活跃 |
 | 预训练 | [[01_theory/02_pretraining/index]] | 7 | 活跃 |
 | SFT & 低参微调 | [[01_theory/03_sft/index]] | 1 | 待建设 |

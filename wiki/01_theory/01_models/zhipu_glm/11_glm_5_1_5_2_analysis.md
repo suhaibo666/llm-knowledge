@@ -71,6 +71,9 @@ DSA（DeepSeek 稀疏注意力，GLM-5 已采用，见 [[20_glm5_architecture_de
 
 模型卡的原话是"reuses the same indexer across every four sparse attention layers, reducing per-token FLOPs by 2.9× at a 1M context length"（`GLM_5_2_model_card :35`），并挂了独立论文 [arXiv:2603.12201](https://arxiv.org/abs/2603.12201)。
 
+> [!note] 命名订正：同一篇论文有两个名字
+> arXiv:2603.12201 的**实际标题是 "IndexCache: Accelerating sparse attention via cross-layer index reuse"**（Bai et al., 2026；作者为智谱 + 清华团队）。GLM-5.2 模型卡称之为 **IndexShare**，Qwen 的技术报告引用时也用 IndexShare 这个方法名。**检索文献时两个名字都要试。**（核实自 Qwen3.8-Flash-Next 技术报告参考文献页 p24–28，见 `raw/01_theory/01_models/alibaba_qwen/Qwen3_8_Flash_Next_tech_report.md`。）
+
 配置给出了它的精确形态。对 `indexer_types` 数组做统计：
 
 | 观测量 | 值 | 来源 |
@@ -116,7 +119,18 @@ GLM-5.2 比 5.1 **少 0.6B 参数**。在骨架完全相同、上下文反而变
 - **边界**：这是**厂商自报**，且严格绑定在 1M 这个长度上。索引开销随长度线性增长而注意力被 top-k 钳住，所以上下文越短、这个倍率越低；在几万 token 的常规长度上不应期待接近 2.9×。模型卡没有给出任何长度—加速曲线、显存对比或质量损失消融。
 - **注意口径差异**：2.9× 是**整模型 per-token FLOPs**，而本页从配置算出的 26.9% 是**建索引层的比例**，两者不是同一个量，不能互相换算或互相印证。
 
-### 3.5 顺带的第二项改动：MTP
+### 3.5 一份来自竞争对手的第三方对比
+
+Qwen 在 Qwen3.8-Flash-Next 技术报告里把 **training-aware IndexShare 作为基线**，与自家的 QSA 在同一张"RULER 分数 vs indexer 相对延迟"图上比较（Fig. 5a）。结果是：**QSA 在相对 indexer 延迟 0.25 处即持平全注意力基线，而 IndexShare 在 0.5 处仍低于基线**。Qwen 给的解释是"跨层索引共享会被较低的层间相似度所限制"。
+
+> [!contradiction] 这条不利结论有三重限定，缺一不可
+> ① **这是 Qwen 在自己架构里的复现，不是智谱的官方结果。** Qwen 的架构是 **3 层 GDN 隔开 1 层注意力**，其 IndexShare 基线的 0.5 意味着"在被三层 GDN 隔开的两个注意力层之间共享索引"；而 **GLM-5.2 是 78 层全 DSA，相邻稀疏层紧挨着**。既然结论恰恰是"跨层共享吃层间相似度"，**这个对比在结构上先天不利于 IndexShare**——Qwen 也确实把结论限定在 in hybrid architectures。
+> ② **两者度量的量不同。** GLM-5.2 声称的是 1M 下 per-token FLOPs 降 2.9×（**成本**），Qwen 测的是 RULER 质量 vs indexer 延迟（**质量–成本权衡**）。两者不冲突，也不能互证。
+> ③ **智谱侧没有可比数据。** GLM-5.2 模型卡没有给 IndexShare 的质量消融（见 §3.4），因此无法判断它在 GLM 自己的全 DSA 架构下表现如何。
+
+尽管有这三重限定，这仍是目前**唯一一份对 IndexShare 的公开第三方评测**，值得记录。机制侧的详细对照见 [[20_qwen3_8_flash_next_architecture_deepdive]] §3.5。
+
+### 3.6 顺带的第二项改动：MTP
 
 模型卡同一行还写了"improve GLM-5.2's MTP layer for speculative decoding, increasing the acceptance length by up to 20%"（`:35`）。配置侧两版的 `num_nextn_predict_layers` 都是 1，看不出差异；5.2 新增的 `index_share_for_mtp_iteration=true` 表明 MTP 的多次迭代之间同样复用索引。**"最多 20%"是上界表述，没有给基线设置、草稿长度或实测接受率分布。**
 
@@ -192,4 +206,5 @@ GLM-5.1 声称的改变是在**长时程**上保持有效：能拆解复杂问�
 - [[12_glm_5_3_flash_analysis]] — GLM-5.3-Flash：**不再**沿用本页这条骨架，改为稀疏×线性混合的全新底座。
 - [[10_glm_5v_turbo_analysis]] — GLM-5V-Turbo，同期多模态支线。
 - [[13_deepseek_v4_analysis]] — DSA 的源头厂商，V4 同样把索引成本作为主要优化对象。
+- [[20_qwen3_8_flash_next_architecture_deepdive]] — QSA：同一问题（indexer 成本）的另一条解法，并含对 IndexShare 的第三方对比。
 - [[01_theory/01_models/index|模型架构与模型家族总索引]]

@@ -8,6 +8,28 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-27（二）：摄入 Qwen3.8-Flash-Next 技术报告，回写三处已被推翻/确认的推断
+
+**Type**: Source Ingestion（28 页 PDF 技术报告 → 2 篇深挖页 + 3 处既有页回写）
+
+- 摄入《On the Design of Qwen3.8-Next Architecture: Evaluation, Efficiency, and Training Stability》（Qwen Team，2026-08-26，**无 arXiv 编号**，随 GitHub 仓库发布）。按库约定**不入库 PDF 原文**，只建来源索引页 `raw/01_theory/01_models/alibaba_qwen/Qwen3_8_Flash_Next_tech_report.md`（链接 + 元数据 + 章节定位表 + 关键外部引用核实）。
+
+**新增 2 篇深挖页**：
+
+- [[20_qwen3_8_flash_next_architecture_deepdive]]（§2 架构）—— GDN 门控 delta 规则的两个门分工；**QSA 是在 CPT 阶段才替换掉全注意力层的**（Stage 1 只训 indexer 1000 步 / 2B token，Stage 2 联合训练 8000 步 / 200B token），教师分布用 **MaxPool** 而 key 压缩用 **AvgPool** 的刻意区分；**key 压缩发生在位置编码之前**以避免平均不同旋转相位；GR 的五条消融与瓶颈秩 $r=d/8=320$ 同 config 精确对上；Fig. 7 的跨层路径分析（**一条分支承载长程、另三条局部；中程路径合计 −3.21**）。
+- [[21_qwen3_8_flash_next_optimization_deepdive]]（§3–§4 优化）—— Muon 的权重归属清单（**路由器与 GR 低秩投影走 AdamW**，并给了"路由器各输出维独立、无共享线性结构可供正交化"的解释）；**Megatron 的融合 qkv/fc1 直接正交化是错的**（混合不相关子块 + 缩放因子用错形状），须按 per-head 拆分；**取消 batch-size warmup** 的完整论证（两个变体都更差，且多花 18.8% 优化器步数）；压力测试在 4× 最优 LR 下 **AdamW 尖峰 183 次/万步 vs Muon+GR 零尖峰**，并在 8× 模型规模、生产 LR 下复现。
+
+**回写既有页面（源头已给出结论，不留两套说法）**：
+
+- [[12_qwen3_8_flash_next_analysis]] —— 页首 warning 改为 note；四处"边界"按报告实际内容拆成**已补齐**与**仍未解决**。其中两条此前的判断被更正：① GR 与 HC/mHC 的谱系归属由【推断】**升级为事实**（报告原文 "GR belongs to the same family as HC, mHC and VWN"），但"Qwen 采用了 mHC"仍是错的——GR 把表达力押在读上并**丢弃 $H_{\mathrm{res}}$**；② 此前写"卡片没有引用 Engram、承袭关系无法判定"，而报告 §2.3 **明确引用了** DeepSeek 的 Cheng et al., 2026，应予更正。
+- [[11_glm_5_1_5_2_analysis]] —— 新增 §3.5：**唯一一份对 IndexShare 的公开第三方评测**（Qwen 实测 QSA 在相对 indexer 延迟 0.25 处持平全注意力，IndexShare 在 0.5 处仍低于基线），并列出**三重必需的限定**（对比在混合架构下先天不利于 IndexShare、两者度量的量不同、智谱侧无可比数据）。另做**命名订正**：arXiv:2603.12201 的实际标题是 "IndexCache" 而非 IndexShare，检索时两个名字都要试。
+- [[12_glm_5_3_flash_analysis]] —— 就其 `qk_rope_head_dim: 0` / NoPE 设计补反驳栏：**Qwen 在同类混合架构上实测 NoPE 后拒绝了它**（预训练几乎无差别，但后训练后"不停止生成"比例明显更高）。本库此前"位置信息由线性层承担故可去 RoPE"的推断，据此从"看似合理"降级为**已被至少一家厂商实测推翻的假设**。
+
+- 这三处回写都属于同一类价值：**跨页面的交叉核对把单页里看不出的问题暴露出来**。三条都不是本库写错了，而是当时的公开材料不足以判断；报告出来后必须回写，否则库里会同时存在两套说法。
+- 验证：`check_links --strict` 417 页 0 破损/0 歧义/0 孤儿；`check_math --changed --strict` 9 文件 0 错 0 警（新增内容曾引入 22 个警告：`H_{res}` 一类语义下标须 `\mathrm` 包裹，两处 display 公式过长须改 `aligned`，均已修）；`pytest tools/` 107 passed；`npm run docs:test` PASS。
+
+---
+
 ## 2026-08-27：摄入 9 个新发布模型，补齐 GLM / Qwen / Kimi / DeepSeek 的覆盖缺口
 
 **Type**: Source Ingestion（模型卡 + 权重配置，9 个 checkpoint → 6 篇分析页）
