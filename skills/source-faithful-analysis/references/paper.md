@@ -55,20 +55,27 @@ omits exact dims.
 
 ## Essence checklist (Principle 2, for papers)
 - **The thesis — the one main bet.** Lead with it.
-- **Four beats per contribution:** 动机/motivation → 机制/mechanism (LaTeX or diagram) → 证据/evidence
-  (the table/ablation, reproduced **with its baseline column**) → 为什么不是替代方案/why-not-the-obvious
-  (the alternative the paper compared and why it lost). A paper analysis without the why and the
-  rejected alternatives is a press release.
-- **Load-bearing numbers** — the ablation *deltas* and the key results table, with baseline. Pull what
-  argues; don't transcribe every cell.
-- **Tradeoffs/costs/assumptions/limits** — what the design costs, what it doesn't do, when it breaks.
+- **The five beats per contribution** — the core's mandatory order, instantiated for a paper:
+  1. **背景** — the bottleneck / failure / gap that forced this contribution. Usually in the § intro,
+     the related-work gap, or the first paragraph of the method section — cite that spot.
+  2. **为什么这么设计** — the route chosen **vs 被否掉的替代方案** the paper weighed it against, and
+     the criterion that decided it. A paper analysis without the rejected alternatives is a press
+     release. Look in the design-choice discussion and in the ablation the authors ran to justify it.
+  3. **实现思路与细节** — 机制 (LaTeX or diagram) **plus the 证据**: the table/ablation reproduced
+     **with its baseline column**. Pull the *deltas* that argue; don't transcribe every cell.
+  4. **约束** — costs, assumptions, the scale/data regime it was shown at, what it doesn't do, when it
+     breaks. Sources: the Limitations §, and the conditions buried in captions and footnotes ("only
+     with Muon", "at 128K", "on the private set").
+  5. **发展趋势** (optional) — the paper's own future-work line, or what a later version / follow-up
+     changed. Cite the anchor and mark it as inference; no anchor → omit the beat.
 
 ## Doc structure (the paper variant of the template)
-- **## 1. Overview** — thesis + a contribution/results table (component → before → after → purpose →
-  出处 §/Table) + the headline pipeline figure. For a **model paper**, also a **complete
+- **## 1. Overview** — 背景/问题 first (the bottleneck the paper opens on) → thesis + a
+  contribution/results table (component → before → after → purpose → 出处 §/Table) + the headline
+  pipeline figure. For a **model paper**, also a **complete
   model-structure figure** (layer-stack + zoomed block) + an exact-hyperparameter table from the
   released config.
-- **## 2..N** — one section per contribution, the four beats.
+- **## 2..N** — one section per contribution, **the five beats** (背景 → 为什么/替代方案 → 机制+证据 → 约束 → 趋势可选).
 - **## Related / Cross-references**.
 
 ## Type-specific red flags
@@ -76,7 +83,9 @@ omits exact dims.
 |---|---|
 | Citing a number from the abstract, a blog, or memory | Open the body to that `§/Table`, read the passage, cite *that* with its conditions. |
 | Not recording the arXiv **version** | Pin id+version+date; `v1`≠`v2`. |
-| Paraphrasing the abstract / listing contributions flatly | Mechanism + the *why* + the ablation + the rejected alternative. |
+| Paraphrasing the abstract / listing contributions flatly | Rewrite as the five beats: 背景 → 为什么（+被否掉的替代）→ 机制+消融 → 约束. |
+| No 约束 section — every number is an improvement | Mine the Limitations §, the caption conditions and the regime it was tested at; state what the design costs. |
+| A 发展趋势 paragraph spun from your priors | Anchor it to the paper's future-work line (with §), a later version's change, or a beat-4 constraint — and mark it as inference. Otherwise drop it. |
 | A results claim with no table / no baseline column | Reproduce the table with its baseline; numbers without a baseline argue nothing. |
 | Guessing architecture hyperparameters from prose | Pull them from the released `config.json`; reconcile, flag paper-vs-weights gaps. |
 | Citing a long paper from a truncated WebFetch | Download the PDF, extract a page-markered dump, cite by page. |

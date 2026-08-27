@@ -56,26 +56,42 @@ between versions. So:
 ## Principle 2 — Capture the essence (抓住重点)
 
 A wall of "this function takes X and returns Y" — or a paraphrase of the abstract — is a summary, not
-analysis. The reader wants the *mechanism* and the *why*. For each unit (subsystem / contribution /
-aspect), hunt for:
+analysis. The reader wants the *mechanism* and the *why*. Two things carry that: a **thesis** for the
+unit, and a fixed **narrative order** inside it.
 
 - **The thesis — the one main bet (一条主线).** The one or two sentences that name the core design
   idea ("a decoupled two-process pipeline with a busy loop"; "trade a cheaper attention for a bigger
   model + longer context"; "OS-style paging for the KV cache"). Lead with it; make every section
   serve it.
-- **The *why*, not just the *what*** — ideally four beats: **motivation** (the bottleneck/failure
-  that forced it) → **mechanism** (how it works, with a diagram or math) → **evidence** (the
-  code/table/ablation/measurement that justifies it) → **why-not-the-obvious** (the alternative it
-  was weighed against and why it lost).
-- **The load-bearing specifics.** The key data structures / state machines / call chains (code); the
-  ablation deltas reproduced *with their baseline column* (paper); the few rows/fields that carry the
-  argument (data). Pull what argues; don't transcribe every cell or signature.
-- **The non-obvious: tradeoffs, costs, edge cases, invariants, limits.** Why this design and not the
-  obvious one, what it *costs*, what it deliberately does *not* do, when it breaks. This is where
-  real understanding lives — and where the source is usually quietest.
+
+### The five beats — the mandatory order inside every unit
+
+**背景 → 为什么这么设计 → 实现思路与细节 → 约束 → 发展趋势（可选）.** Every unit — subsystem,
+contribution, aspect — is written in this order. It is an *order*, not just a checklist: the reader
+has to know **what problem existed** and **why this route won** before a single implementation detail
+lands, otherwise they have no basis on which to judge the detail. A section that opens with the
+mechanism has already lost that.
+
+| # | Beat | 中文 | What must be in it | Skippable? |
+|---|---|---|---|---|
+| 1 | **Background** | 背景 / 问题 | The problem this unit exists to solve: the bottleneck, failure, workload or requirement that forced it, and what the previous or naive approach did. Cite where the source states the problem. | No — if you can't name the problem, you haven't understood the design |
+| 2 | **Why this design** | 为什么这么设计 | The route chosen **and the obvious alternative it beat**, plus the criterion that decided it. The load-bearing beat — this is the 设计思想. If the source never says why, say *that* and mark your reconstruction as inference. | No |
+| 3 | **Mechanism & detail** | 实现思路与细节 | The idea first, then the details, then the **evidence** that it does what it claims (the code path, the ablation table *with its baseline*, the measurement). | No |
+| 4 | **Constraints** | 约束 / 边界 | Preconditions, invariants, what it costs, edge cases, what it deliberately does *not* do, when it breaks. The source is quietest here — dig. Never write a design up as a free win. | No |
+| 5 | **Outlook** | 发展趋势 | Where this is heading: the source's own future-work line, what a newer version changed, a deprecation in flight, or what the beat-4 constraint pressures next. | **Optional** — under the fence below |
+
+**Beat 3's load-bearing specifics differ per type:** the key data structures / state machines / call
+chains (code); the ablation deltas with their baseline column (paper); the few rows/fields that carry
+the argument (data). Pull what argues — don't transcribe every cell or signature.
+
+**The outlook beat must not launder speculation as a finding.** It is the one beat that leaves the
+source, so it is fenced: anchor it to something real (a future-work or limitation line *with its
+locator*, a newer version's change, a TODO/deprecation, or the constraint you just wrote in beat 4)
+**and** mark it explicitly as inference. No anchor → omit the beat; a unit with four beats is
+complete. An unanchored trend paragraph is exactly the folklore Principle 1 exists to kill.
 
 If you're transcribing signatures or rewording the abstract, stop — that's reference docs, not
-analysis.
+analysis. If you're deep in the mechanism and never wrote 背景 and 为什么, stop too — that's a manual.
 
 ---
 
@@ -204,15 +220,19 @@ project in Chinese). The middle section depends on the source type — see your 
 > <2–3 sentences: what this page answers; how it relates to the overview + sibling deep-dives>
 
 ## 1. Overview
-- Lead with the thesis (一条主线) in 1–2 sentences
+- 背景/问题 FIRST — 2–4 sentences: what problem this unit exists to solve, what the previous or
+  naive approach did, why it stopped working (beat 1, at page scale)
+- Then the thesis (一条主线) in 1–2 sentences — the one main bet that answers it
 - A diagram (mermaid/ASCII/SVG) + a key-concepts or contribution/results table
 - (code: + a Quick Start — minimal entry point/flags + where to start reading, with file:line)
 - (model paper: + a complete structure figure + an exact-hyperparameter table from the released config)
 
-## 2..N — the bulk (per your pack)
-- code: per subsystem/step — mechanism, data structures/state machines, the real call chain, dense locators
-- paper: per contribution — motivation → mechanism (math/diagram) → evidence (table WITH baseline) → why-not-the-obvious
-- general: per aspect — the claim, its grounding locator, the why, the tradeoff/limit
+## 2..N — the bulk: one section per unit, EACH in the five-beat order
+背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节（+证据）→ 约束/边界 → 发展趋势（可选，须锚定并标为推断）
+- code: the beats carry the data structures/state machines + the real call chain, dense locators
+- paper: the beats carry the math/diagram + the ablation table WITH its baseline
+- general: the beats carry each claim + its grounding locator
+- if the page covers a single topic, the five beats ARE its top-level sections
 
 ## Related / Cross-references
 - overview + sibling deep-dives + adjacent topics, as [[links]]
@@ -230,7 +250,10 @@ padded with signatures or abstract-paraphrase.
 |---|---|
 | Writing a claim with no verified locator, or one you didn't actually open | Stop, locate it, read it, then cite. If you can't find it, don't claim it. |
 | Citing a locator from memory or a blog | Re-derive it from the current source; the baseline may have moved. |
-| Transcribing signatures / rewording the abstract / listing contributions flatly | Replace with mechanism + the *why* + the evidence + the rejected alternative. |
+| Transcribing signatures / rewording the abstract / listing contributions flatly | Rewrite as the five beats: 背景 → 为什么（含被否掉的替代）→ 实现+证据 → 约束. |
+| Opening a section with the mechanism — "this class does X", "the method is defined as" | Restructure: 背景 first, then 为什么. If you can't state the problem it solves, you don't yet understand it — go back to the source (the commit/PR, the § intro). |
+| A unit that reads as a free win — no 约束 | Every design pays something. Hunt the guards, error branches, Limitations §, the conditions in captions; state the cost and when it breaks. |
+| A 发展趋势 paragraph spun from your priors | Anchor it (future-work line + locator / newer version / TODO / the beat-4 constraint) and mark it as inference — or delete the beat. |
 | Stating your inference as the source's finding | Mark it: "the source says X" vs "this implies Y". |
 | Reproducing folklore / the press-release framing | Open the source; if it contradicts, the source wins — flag it. |
 | Reading the whole large source "to be safe" | Map first (Phase 1), then read targeted spots per claim. |

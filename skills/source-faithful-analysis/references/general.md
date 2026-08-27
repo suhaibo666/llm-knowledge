@@ -11,6 +11,7 @@ principles for *this* source:
 1. **What's the atomic locator** that pins a single claim here? (the analogue of `file:line`)
 2. **What's the baseline/snapshot** that makes a claim time-true? (version / date / window / build)
 3. **What's the essence** worth hunting — the mechanism / the why / the decision, not the surface?
+   (Then write it in the core's five beats: 背景 → 为什么这么设计 → 实现思路与细节 → 约束 → 趋势可选.)
 
 Then run Phase 0–5 exactly as in the core: ingest into a citeable form, map the shape, locate → read
 the spot → cite, (fan out if big), integrate + verify.
@@ -27,9 +28,12 @@ the spot → cite, (fan out if big), integrate + verify.
 | **Product / competitor teardown** | screenshot + timestamp / version / build | product version + date | how it *actually behaves* (observed), the design choices & tradeoffs, the gaps | drive it / observe directly; separate **observed vs assumed**; a claim from marketing copy ≠ observed behavior. |
 
 ## Doc structure (the general variant)
-- **## 1. Overview** — the thesis + a key-concepts / claims table + a diagram of how the pieces relate.
-- **## 2..N** — one section per **aspect**: the claim → its grounding locator → the *why* → the
-  tradeoff/limit. (Mirror the paper's four beats where there's a design decision with an alternative.)
+- **## 1. Overview** — 背景/问题 first (what this artifact exists to settle, decide or measure) → the
+  thesis + a key-concepts / claims table + a diagram of how the pieces relate.
+- **## 2..N** — one section per **aspect**, in the core's **five-beat order**: 背景/问题 → 为什么是这个
+  结论或这个设计（含被否掉的替代）→ 实现/机制与细节（每条主张带 grounding locator）→ 约束/边界 →
+  发展趋势（可选，须锚定并标为推断）. For a spec or an incident, beat 2 is usually "why this rule /
+  why this failed" and beat 4 is the under-specified or unobserved part — both are where the value is.
 - **## Related / Cross-references**.
 
 ## Type-specific red flags
@@ -40,3 +44,5 @@ the spot → cite, (fan out if big), integrate + verify.
 | Quoting a report's headline number with no basis | Cite the page and the comparison/assumption behind it; flag undisclosed basis. |
 | A dataset claim with no row-count / filter | Profile it; state N and the filter. A number without its denominator argues nothing. |
 | Treating marketing copy as observed product behavior | Drive the product; cite a screenshot/version. |
+| An aspect written up with no 背景 — straight to "the spec says" | Open with the problem the clause/metric/report exists to settle; a rule with no problem behind it can't be judged. |
+| A 发展趋势 paragraph with no anchor | Anchor it to a stated roadmap / errata / newer version or to the beat-4 constraint, and mark it as inference — or omit it. |
