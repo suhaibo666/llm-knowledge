@@ -12,6 +12,23 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-27（八）：把 vLLM Scheduler 页改成五拍叙事，并标出两处被当成源码意图的推断
+
+**Type**: Skill 规则落地 + 单页重构（1 页正文；`source-faithful-analysis` 本轮新增的五拍顺序的首个样板）
+
+**背景**：`source-faithful-analysis` 本轮把分析页的叙事顺序定成强制五拍——**背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势（可选）**。拿 vLLM 这组 20 页对着 `../vllm` 检出逐条核过：溯源这层是全库范本（19 页钉 `d66300a1`、抽查 7 条 `file:line` 全部精确命中），但拍序有系统性偏差——16 篇里有 15 篇把「替代方案」表放在 §八～§十，即讲完全部机制之后。本页作为回填样板先改。
+
+**改了什么**（[[11_vllm_scheduler_analysis]]，机制正文与既有引用一行未动）：
+
+- **前移第 2 拍**：原 §八「为什么不采用几个直观方案」整表搬到 §二，并补一句判据——*任何让「已承诺的资源」与「本轮真实可执行性」脱钩的方案，都会把一次局部容量不足放大成全局抖动*。原 §二～§七顺次后移为 §三～§八。
+- **标出两处推断**（用代码验的，不是措辞问题）：① 抢占后不纳新的 `if not preempted_reqs` 守卫**没有任何解释性注释**（`scheduler.py:748` 上方只有 `# Next, schedule the WAITING requests.`），`git log -S` 追到 PR #15250 *[V1] Scheduler Refactoring [1/N]*；② 与 CPU swap 的对比在 V1 里**无源可依**——`git grep -i swap d66300a1 -- vllm/v1/core/sched/ vllm/v1/core/kv_cache_manager.py` 零命中，V1 压根没有 swap 路径，该对比是对 V0 历史方案的重建。两处均加 `> [!note] 推断`，原文照留。
+- **第 4 拍显式化**：§九 改名「约束、取舍与观测」，前置一段讲这套设计**不保证**什么（不保证公平、不保证 running 必然跑完、不负责降级）与三个成立前提。
+- **新增第 5 拍 §十 发展趋势**，三条全部锚在源码自陈的在途改动上：HMA 收敛（`scheduler.py:2696-2702` 的 `NOTE(Kuntai): We should deprecate this code path...` + `:2877` 的 `TODO (davidb)`）、connector 保活待一般化（`:2500-2508` 的 `TODO`）、`scheduler_cls` 可替换（`vllm/config/scheduler.py:117,170-190`；顺带更正一处易错点：`AsyncScheduler` 是 `Scheduler` 的子类，不是 `SchedulerInterface` 的第二个独立实现）。外推的那半句单独标了推断。
+
+**未做**：其余 18 篇 vLLM 页的同类回填；19 页停在 `d66300a1`（落后 HEAD `26858770` 共 142 个提交、4 天）的基线刷新。
+
+---
+
 ## 2026-08-27（七）：修好「子目录 index.md 在网页上是空白页」，并给全库 419 页补 frontmatter 标题
 
 **Type**: Docs-site Fix（1 个插件 + 419 页 frontmatter + 3 处测试补强）
