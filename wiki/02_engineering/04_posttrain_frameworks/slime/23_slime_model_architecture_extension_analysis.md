@@ -9,6 +9,8 @@ title: "slime 模型架构扩展分析：把“同一模型”翻译成两套引
 > **文档/示例基线**：slime 同一提交下 `docs/{zh,en}/advanced/arch-support-beyond-megatron.md`、`docs/zh/examples/qwen3-next-80B-A3B.md`
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：在 slime 中，“支持一个新架构”不是注册一个 PyTorch 类，而是建立 **HF/SGLang 语义 ↔ Megatron 语义** 的双向映射：两侧必须对模型身份、配置、层结构、参数名字与融合方式、TP/PP/EP 切分、checkpoint 以及在线更新后的可加载名称达成同一个解释。Qwen3-Next 证明局部 `ModuleSpec` 替换可以快速复用 Megatron 外层训练骨架；代价是扩展面横跨构造、权重转换和推理 loader，且黑盒模块内部不会自动获得 TP。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-27。按五拍重排章节顺序，并补写第 5 拍（发展趋势）；机制正文与既有引用未改。
 
 本文把带 fixed-commit 定位符的内容视为源码或项目文档事实；使用“由此可推断”“设计上可以理解为”的段落是分析判断，不代表项目作者原话。权重发布的 pause、flush、version 和 transport 协议归 [[16_slime_weight_sync_analysis]]；MTP draft/main 耦合归 [[21_slime_speculative_decoding_mtp_analysis]]，本页只说明架构映射必须向这些路径提供什么。
 
@@ -49,7 +51,25 @@ $$
 
 这只是必要条件；输出名称还必须被 SGLang 的目标架构 loader 接受。Qwen3-Next 的 SGLang loader 会把 checkpoint 的 Q/K/V、gate/up 和 GDN 投影名装入自己的 fused 参数，并对普通参数按名称查找。[`qwen3_next.py:1116-1133`](https://github.com/sgl-project/sglang/blob/d6ef68881e263812d4901f632786015005c4d050/python/sglang/srt/models/qwen3_next.py#L1116-L1133) [`qwen3_next.py:1189-1255`](https://github.com/sgl-project/sglang/blob/d6ef68881e263812d4901f632786015005c4d050/python/sglang/srt/models/qwen3_next.py#L1189-L1255)
 
-## 2. 扩展面：一个架构要同时接入哪些位置
+## 2. 为什么这么设计：三个直观替代方案都不够
+
+### 2.1 在中央入口堆叠一个巨型条件分支
+
+把所有架构塞进一个 switch 的优点是身份分派显式、未知模型立即失败；固定基线的 HF→Megatron registry 与 Megatron→HF family chain 已经体现了这种可审计性。[`hf_to_megatron/__init__.py:12-43`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/hf_to_megatron/__init__.py#L12-L43) [`megatron_to_hf/__init__.py:41-66`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/megatron_to_hf/__init__.py#L41-L66)
+
+> **设计分析**：若再把 provider、spec、SGLang architecture 和所有 tensor 规则集中到同一个 switch，每次加模型都要修改核心文件，局部 plugin 的价值会消失；但完全去掉显式 registry 又会失去“支持范围可枚举、未知身份 fail-fast”的收益。更合理的方向是统一 manifest/registry 的身份元数据，具体构造与转换仍由插件函数实现，而不是一个不断增长的实现 switch。
+
+### 2.2 只靠反射机制注册类或函数
+
+反射适合 provider/spec，因为调用签名足以表达“怎样构造”；当前实现甚至检查 custom provider 是否接收 `vp_stage`。[`model_provider.py:96-108`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model_provider.py#L96-L108) 但反射无法从类结构可靠推导 QKV 的 GQA 交错、GLU 一对二拆分、PP 全局 offset、EP expert offset 或参数的 partition stride；这些都是当前转换器和参数 attrs 中的显式知识。[`hf_to_megatron/qwen3_next.py:37-48`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/hf_to_megatron/qwen3_next.py#L37-L48) [`update_weight/common.py:172-232`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/common.py#L172-L232)
+
+### 2.3 把训练分片直接映射到推理分片
+
+直连可以省掉 full tensor reconstruction，但只有在训练/推理两边名称、fusion、TP/EP partition 和 rank ownership 同构时才成立。固定实现恰恰先跨 PP/EP 恢复 source、再按 regular TP 或 expert TP 收集 full param，最后才转成 HF 名称。[`hf_weight_iterator_direct.py:62-123`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/hf_weight_iterator_direct.py#L62-L123) [`update_weight/common.py:15-57`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/common.py#L15-L57)
+
+> **设计分析**：direct shard mapping 不是永远错误，而是需要一份比当前 converter 更强的“训练 shard → 推理 shard”拓扑证明。没有这份证明时，先恢复逻辑 full tensor 再交给推理 loader，虽然多一次收集/拼接，却把架构语义与 transport topology 解耦，失败也更容易定位。
+
+## 3. 扩展面：一个架构要同时接入哪些位置
 
 ```mermaid
 flowchart LR
@@ -77,15 +97,15 @@ flowchart LR
 
 配置校验不是“参数看起来差不多”即可：parser 从 HF config 对比 hidden size、attention heads、layer count、dense/MoE FFN、embedding tie、norm epsilon 与 RoPE base，不同就汇总后抛错。[`arguments.py:93-144`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/arguments.py#L93-L144) 但这张校验表不覆盖所有架构字段；例如 Qwen3-Next 的 linear/full attention 排布是在 spec 内再读取 `layer_types` 或按 interval 推导。[`qwen3_next.py:227-242`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime_plugins/models/qwen3_next.py#L227-L242)
 
-## 3. 两种模型构造接入点：替换整个 provider，或只替换局部 spec
+## 4. 两种模型构造接入点：替换整个 provider，或只替换局部 spec
 
-### 3.1 custom provider 解决“骨架不同”
+### 4.1 custom provider 解决“骨架不同”
 
 `--custom-model-provider-path` 让外部函数接管模型构造；wrapper 兼容不带 `vp_stage` 的旧 provider，并在 critic 的 post-process stage 换成 scalar output layer。[`arguments.py:226-236`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L226-L236) [`model_provider.py:92-116`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model_provider.py#L92-L116)
 
 这条路适合 embedding、decoder、输出或多模态骨架都不同的模型；代价是 provider 必须主动遵守 PP/VP 的 pre/post process 语义。源码只负责调用它，并不会从返回的 Python class 推导参数转换或推理兼容性。
 
-### 3.2 custom spec 解决“外层骨架相同、局部算子不同”
+### 4.2 custom spec 解决“外层骨架相同、局部算子不同”
 
 默认 provider 把 `--spec` 反射成函数，以 `(args, config, vp_stage)` 调用；返回 `ModuleSpec` 时仍由标准 `GPTModel` 负责 embedding、decoder 容器、pipeline stage 和输出。[`model_provider.py:131-181`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model_provider.py#L131-L181) [`model_provider.py:200-237`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model_provider.py#L200-L237)
 
@@ -94,9 +114,9 @@ flowchart LR
 > [!note] 文档表述需要按源码收窄
 > 文档说 wrapper 内部直接调用“原生 `Qwen3NextAttention`”；固定基线的 linear-attention 路径实际实例化的是项目内 `Qwen3NextGatedDeltaNet`，该实现按 HF 代码改造并加入 varlen backend，`Qwen3NextAttention` 只被导入并用来检查依赖是否存在。[`qwen3_next.py:14-25`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime_plugins/models/qwen3_next.py#L14-L25) [`qwen3_next.py:176-204`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime_plugins/models/qwen3_next.py#L176-L204)
 
-## 4. 端到端追踪：Qwen3-Next 从 HF checkpoint 到下一轮 SGLang
+## 5. 端到端追踪：Qwen3-Next 从 HF checkpoint 到下一轮 SGLang
 
-### 4.1 入口不是一个开关，而是一组绑定配置
+### 5.1 入口不是一个开关，而是一组绑定配置
 
 官方 `MODEL_ARGS` 同时声明 custom spec、attention head/group/dim、48 层、MoE 512 experts 和 Qwen 特有 gate；这说明 spec 只负责局部 wiring，Megatron config 仍须完整描述其余骨架。[`scripts/models/qwen3-next-80B-A3B.sh:16-39`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/scripts/models/qwen3-next-80B-A3B.sh#L16-L39) [`scripts/models/qwen3-next-80B-A3B.sh:41-58`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/scripts/models/qwen3-next-80B-A3B.sh#L41-L58)
 
@@ -104,13 +124,13 @@ flowchart LR
 
 运行时 checkpoint loader 也显式区分两条启动路径：有 Megatron tracker 或 `iter_*` 目录时走 distributed checkpoint，否则进入 HF loader 并调用同一个 `load_hf_weights`。[`checkpoint.py:95-131`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/checkpoint.py#L95-L131) 因而 HF 初始化与 Megatron resume 虽然使用不同存储格式，却必须构造出同一参数语义。
 
-### 4.2 spec 必须先把全局 layer type 投影到本地 PP/VP slice
+### 5.2 spec 必须先把全局 layer type 投影到本地 PP/VP slice
 
 `get_qwen3_next_spec` 先构造标准 decoder-block spec，再用 `get_num_layers_to_build` 和 `get_transformer_layer_offset` 求当前 PP/VP stage 的局部层数与全局 offset；只有 `layer_types[layer_id + offset]` 为 linear attention 的层才 deepcopy 并替换 `self_attention`。[`qwen3_next.py:207-243`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime_plugins/models/qwen3_next.py#L207-L243)
 
 这里的 seam 与不变量是：**HF 的全局第 $l$ 层，必须对应 Megatron 当前 stage 中的同一逻辑第 $l$ 层**。固定实现对 `pipeline_model_parallel_layout` 直接断言不支持，因此自定义 layout 会在构造时失败，而不是被静默误切。[`qwen3_next.py:220-225`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime_plugins/models/qwen3_next.py#L220-L225)
 
-### 4.3 wrapper 适配执行布局，但没有让内部模块 TP-shard
+### 5.3 wrapper 适配执行布局，但没有让内部模块 TP-shard
 
 Qwen3-Next GDN 明确接收 packed batch 的 `cu_seqlens`，把它传给 short convolution 与 chunk gated-delta kernel，避免不同 sequence 在状态递推中串接。[`qwen3_next.py:108-162`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime_plugins/models/qwen3_next.py#L108-L162) wrapper 在调用它之前 gather SP 与 CP sequence，之后按 CP 双端 chunk 规则切回并 scatter 到 SP。[`hf_attention.py:88-169`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime_plugins/models/hf_attention.py#L88-L169)
 
@@ -118,7 +138,7 @@ Qwen3-Next GDN 明确接收 packed batch 的 `cu_seqlens`，把它传给 short c
 
 > **设计分析**：这里复用的是 Megatron 的外层 PP、MoE 与 schedule，不是把 GDN 内部计算自动切成 TP。局部黑盒替换适合“特殊模块占比较小、先求正确可用”的扩展；特殊模块成为主耗时时，重复计算和显存会成为回归原生 Megatron 实现的信号。
 
-### 4.4 HF→Megatron：名称、fusion 与 shard 是一个连续操作
+### 5.4 HF→Megatron：名称、fusion 与 shard 是一个连续操作
 
 `qwen3_next_hf_tensor` 对 linear-attention 参数直接按对应 HF 名读取；对 full-attention 的 `linear_qkv`，它按 KV groups、query heads 与 head dim 重排 Q，再与 K/V 交错拼成 Megatron 表示；未知 layer 参数抛 `KeyError`。[`hf_to_megatron/qwen3_next.py:10-53`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/hf_to_megatron/qwen3_next.py#L10-L53) 顶层函数另处理 embedding/output/norm、decoder 与 MTP wrapper 的名字；无法识别的顶层参数同样失败。[`hf_to_megatron/qwen3_next.py:56-83`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/hf_to_megatron/qwen3_next.py#L56-L83)
 
@@ -126,7 +146,7 @@ Qwen3-Next GDN 明确接收 packed batch 的 `cu_seqlens`，把它传给 short c
 
 所以参数属性不是性能提示，而是序列化 ABI：同名 full tensor 在错误的 dim/stride 或错误的 TP group 上切分，会成为另一组数值。
 
-### 4.5 Megatron→HF：先恢复全局语义，再交给 SGLang loader
+### 5.5 Megatron→HF：先恢复全局语义，再交给 SGLang loader
 
 训练模型的本地 layer index 不能直接作为 HF layer index。公共枚举器先用 PP/VP offset 恢复 decoder 全局层号，再用 EP rank 给 expert 编号加 offset；非 expert 和 expert 最终都生成跨 ranks 一致的 global name。[`update_weight/common.py:172-232`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/common.py#L172-L232)
 
@@ -140,25 +160,7 @@ SGLang 启动时直接以 `args.hf_checkpoint` 为 `model_path`，并用它的 c
 
 在线更新如何暂停请求、刷新 cache、传输并提交 version 不在此展开；本页的边界是：架构扩展必须让该协议拿到 SGLang loader 能消费的名字与 tensor。发送接口本身只携带 names/dtypes/shapes 或 serialized named tensors，不会替架构纠正语义。[`sglang_engine.py:262-285`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L262-L285) [`sglang_engine.py:414-438`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L414-L438)
 
-## 5. 为什么三个直观替代方案都不够
-
-### 5.1 在中央入口堆叠一个巨型条件分支
-
-把所有架构塞进一个 switch 的优点是身份分派显式、未知模型立即失败；固定基线的 HF→Megatron registry 与 Megatron→HF family chain 已经体现了这种可审计性。[`hf_to_megatron/__init__.py:12-43`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/hf_to_megatron/__init__.py#L12-L43) [`megatron_to_hf/__init__.py:41-66`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/megatron_to_hf/__init__.py#L41-L66)
-
-> **设计分析**：若再把 provider、spec、SGLang architecture 和所有 tensor 规则集中到同一个 switch，每次加模型都要修改核心文件，局部 plugin 的价值会消失；但完全去掉显式 registry 又会失去“支持范围可枚举、未知身份 fail-fast”的收益。更合理的方向是统一 manifest/registry 的身份元数据，具体构造与转换仍由插件函数实现，而不是一个不断增长的实现 switch。
-
-### 5.2 只靠反射机制注册类或函数
-
-反射适合 provider/spec，因为调用签名足以表达“怎样构造”；当前实现甚至检查 custom provider 是否接收 `vp_stage`。[`model_provider.py:96-108`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/model_provider.py#L96-L108) 但反射无法从类结构可靠推导 QKV 的 GQA 交错、GLU 一对二拆分、PP 全局 offset、EP expert offset 或参数的 partition stride；这些都是当前转换器和参数 attrs 中的显式知识。[`hf_to_megatron/qwen3_next.py:37-48`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/hf_to_megatron/qwen3_next.py#L37-L48) [`update_weight/common.py:172-232`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/common.py#L172-L232)
-
-### 5.3 把训练分片直接映射到推理分片
-
-直连可以省掉 full tensor reconstruction，但只有在训练/推理两边名称、fusion、TP/EP partition 和 rank ownership 同构时才成立。固定实现恰恰先跨 PP/EP 恢复 source、再按 regular TP 或 expert TP 收集 full param，最后才转成 HF 名称。[`hf_weight_iterator_direct.py:62-123`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/hf_weight_iterator_direct.py#L62-L123) [`update_weight/common.py:15-57`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/common.py#L15-L57)
-
-> **设计分析**：direct shard mapping 不是永远错误，而是需要一份比当前 converter 更强的“训练 shard → 推理 shard”拓扑证明。没有这份证明时，先恢复逻辑 full tensor 再交给推理 loader，虽然多一次收集/拼接，却把架构语义与 transport topology 解耦，失败也更容易定位。
-
-## 6. 失败在什么时候出现：从早期显式到晚期隐蔽
+## 6. 约束与失败时点：从早期显式到晚期隐蔽
 
 | 阶段 | 已有保护 | 仍可能漏到后面的问题 |
 |---|---|---|
@@ -204,6 +206,16 @@ SGLang 启动时直接以 `args.hf_checkpoint` 为 `model_path`，并用它的 c
 8. **分层测试**：mapping 单测前移名字/shape 错误，真实 topology 与 rollout gate 捕获数值排列错误。
 
 这张清单解释了为什么“复制另一个模型的 `MODEL_ARGS`”危险：它能复制数值配置，却复制不了目标架构独有的身份、层型、参数变换与 loader 契约。只有当双向映射、分区属性和推理消费端同时闭合时，模型才真正进入 slime 的在线训练闭环。
+
+## 9. 发展趋势：导出侧仍有两处被源码自己标记的未完成项
+
+本拍只写在固定基线中能直接读到锚点的在途改动，不写没有源码依据的路线图。
+
+1. **Megatron→HF 的后处理入口尚未与主转换函数统一，也不处理量化。** `postprocess_hf_param` 只做 vocab padding 移除就返回；函数上方标着 `TODO unify w/ convert_to_hf`，函数体内另标 `TODO support quant`。[`megatron_to_hf/__init__.py:15-19`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/megatron_to_hf/__init__.py#L15-L19) 在固定基线的 `slime/` 下检索这个名字，除定义处外没有其他调用点，因此它当前是一条与 `convert_to_hf` 并行、尚未合流的导出后处理路径。
+2. **TP 收集阶段的 unfusion 规则仍硬编码 GLU 假设。** all-gather 之后的拼接对 `partition_stride` 直接断言：只允许 1，或 `linear_fc1` 上的 2；紧随其后的注释是 `TODO: check only GLU is used.`，随后无条件把 `linear_fc1` 的权重/偏置按 chunk-2 重排。[`update_weight/common.py:44-51`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/update_weight/common.py#L44-L51)
+
+> [!note] 推断
+> 上面两条待办注释与断言本身是源码事实。由它们推出的方向——导出后处理会向“单一入口且量化感知”收敛，以及 fused-FFN 布局不同于 GLU 的新架构必须先放宽 `partition_stride` 断言并推广 unfusion 规则——是本页依据当前代码结构作出的推断；源码只标记了待办，没有陈述计划、优先级或时间。
 
 ## Related Pages
 

@@ -12,6 +12,28 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-27（十）：slime 全域 19 篇按五拍重排，第 5 拍全部锚定源码自陈的在途改动
+
+**Type**: 批量重构（19 页正文；四个并行 writer agent，各自独占一组文件）
+
+**范围**：`02_engineering/04_posttrain_frameworks/slime/` 下 20 篇内容页中的 19 篇。[[02_slime_quickstart_and_configuration_guide]] 是 guide 体，按 vLLM 先例豁免。基线 `THUDM/slime main@681b3adca54105d5ecd3fb822fa0dc58a427e0f9`（2026-08-12，与本机检出 HEAD 一致）；[[25_vime_vllm_backend_support_analysis]] 的源仓库 `vllm-project/vime@8144096e` 不在本机，该页只做不需要开源码验证的部分（标题、页头、已有小节前移），未新增任何引用。
+
+**第 2 拍（为什么这么设计）**：19 篇里 **12 篇整节前移**到 §2 并改题「为什么这么设计：…」，**4 篇本来就达标**（[[01_slime_architecture_overview_analysis]]、[[13_slime_sglang_rollout_engine_analysis]]、[[18_slime_fault_tolerance_observability_analysis]]、[[20_slime_on_policy_distillation_analysis]]）只补标题，**3 篇是真缺、需要回源码补写**：
+
+- [[17_slime_train_inference_consistency_analysis]] 新写一节 5 个被否掉的方案，每行挂源码/文档原话：抬到 FP32 → `docs/en/advanced/reproducibility.md:61` 的 *matching precision, not fp32, is what aligns*；全栈 bitwise → `alignment/deepgemm_forward.py:1-8` 自称 *an opt-in numerical-alignment hook* 且只对齐 forward；目标拓扑全开 → 同文件 `:10-12` 第一版主动要求 TP=1 以排除 row-parallel 舍入这个 confounder；校正抹平 → `slime/utils/arguments.py:1849` 禁止 `use_rollout_logprobs` 与 `use_tis` 同开。L0–L5 分层是据实现形态重建，整段挂 `> [!note] 推断` 并写明「源码没有在任何一处写下这句总结」。
+- [[30_slime_rollout_optimization_analysis]] 原本第 2、4 拍都没有，补了五行「更简单的做法为何被排除」对照表 + 一整节约束（覆盖前提/代价/故意不做的事/失效条件），四个子节逐条带 locator。
+- [[12_slime_sample_datasource_analysis]] 在既有取舍段之上补写被否方案表，整表挂推断。
+
+**第 5 拍（发展趋势）**：**16 篇写了、3 篇明确不写**。写的每一条都锚在实读过的源码注释上，例如 `sglang_utils/arguments.py:8` 的 router 参数前缀 TODO、`examples/fully_async/README.md:82-83` 的 ABORTED 轨迹尚未接 partial-rollout resume、`update_weight/common.py:236` 的 `# TODO shall we handle (almost) all buffers`、`megatron_utils/arguments.py:150` 的 `# TODO: maybe change this after megatron has good fp8 support`、`loss.py:818` 与 `model.py:903` 的两条数值行为待查 TODO。不写的三篇（[[20_slime_on_policy_distillation_analysis]]、[[24_slime_agent_workflow_examples_analysis]]、[[25_vime_vllm_backend_support_analysis]]）是**扫过相关路径零命中**后按规则整拍略去，页头注明并列出扫过哪些路径。另有两处主动弃用的锚点：`slime/utils/arguments.py:607` 的 TODO 因紧邻的 `--num-epoch` 已存在而判定过时；`profile_utils.py:63` 因会把该节稀释成 TODO 清单而未采用。
+
+**修正一处我方预扫描的错判**：协调者用正则扫描时判定 [[16_slime_weight_sync_analysis]] 没有第 2 拍内容，实际它埋在原 §3.1「四个直觉方案为什么不够」，只是位置靠后；真正从零补写的只有 17 与 30。
+
+**校验**：`check_links --strict` 425 页 broken/ambiguous/bare_index/orphans 全 0；`check_math --changed --strict` 0 错 0 警。协调者对四组各抽查 4 条引用逐条 `git show` 复核，**16/16 逐字命中**。既有机制正文与既有 `file:line` 未改，[[20_slime_on_policy_distillation_analysis]] 全页仅 `2+ 0-`。
+
+**未做**：[[15_slime_loss_parallelism_analysis]] 的 §10 操作清单夹在约束与趋势之间（属内容重组，未动）；`update_weight/common.py:47-48` 与 `:114-115` 是同一对 TODO 的重复实现，只在趋势里指出，未据此改写机制正文。
+
+---
+
 ## 2026-08-27（九）：vLLM 全域 16 篇按五拍重排，并按源码自陈的在途改动补出第 5 拍
 
 **Type**: 批量重构（15 页正文 + 域索引；接续同日（八）的样板页）

@@ -8,6 +8,8 @@ title: "slime 容错、可观测性与测试体系：按故障域进行局部恢
 > **文档与测试基线**：同一提交下 `docs/zh/{advanced/observability,developer_guide/{debug,ci}}.md`、`tests/` 与 `.github/workflows/pr-test.yml`
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：slime 没有试图把 Ray 控制面、SGLang 进程、正在处理的 Sample、Megatron 优化器和外部监控系统包进一个全局事务；它让每类状态的责任主体在各自故障域内恢复，再把共同恢复点收缩到“已落盘的训练 checkpoint + 使用同一 rollout id 的 DataSource 游标”。代价是局部恢复只在明确边界上成立：推理引擎重建后，必须在下一次权重更新时重新接入并覆盖权重；HTTP 重试不能保证恰好执行一次；partial 缓冲区、在途请求、RolloutManager/训练 actor 的进程内状态和未持久化指标都不会自动恢复。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改。
 
 本文只讨论故障域、恢复切点、诊断证据和测试覆盖。单次 rollout 请求的状态协议归 [[13_slime_sglang_rollout_engine_analysis]]，训推偏差的分类与定位归 [[17_slime_train_inference_consistency_analysis]]。
 
@@ -42,7 +44,7 @@ flowchart TB
 
 > **设计分析**：全局 rollback 的难点不只是实现成本。四个所有者的可回滚粒度不同，Prometheus 还是旁路外部系统；如果 agent/tool 环境已有外部副作用，回滚模型参数也撤销不了那次调用。因而 slime 的合理目标是找到“每个域最小可重建状态 + 一个跨域共同 checkpoint”，而不是假装所有动作都能原子撤销。
 
-## 2. 三种策略：全局回滚、盲重试与故障域局部恢复
+## 2. 为什么这么设计：三种策略——全局回滚、盲重试与故障域局部恢复
 
 | 策略 | 表面吸引力 | 必须满足的条件 | 在 slime 固定基线中的结论 |
 |---|---|---|---|
@@ -215,7 +217,7 @@ flowchart TD
 2. **先定提交证据，再决定 retry**：不知道前一次是否提交时，不把 POST 重试叫作 exactly-once；有外部副作用的 custom workflow 更应由业务层提供 operation id。
 3. **恢复后验证新边界**：至少核对 health、engine 重连、权重更新完成、Sample/rollout identity、共同 checkpoint id；性能问题再分别下钻 trace、Prometheus 与 profiler。
 
-## 10. 设计评价与明确缺口
+## 10. 约束、设计评价与明确缺口
 
 slime 的优点不是“什么都能自动恢复”，而是恢复范围与状态职责大体一致：健康监控负责判断推理引擎进程是否存活，权重更新器负责让重建实例重新加载当前版本，DataSource 负责数据游标，Megatron 负责训练持久状态，数据导出与 trace 负责事后取证。相比全局回滚，它保留了已经提交的训练状态并缩小故障影响范围；相比盲目重试，它至少让推理引擎替换与模型版本更新在同一个边界汇合。
 
@@ -227,6 +229,20 @@ slime 的优点不是“什么都能自动恢复”，而是恢复范围与状�
 - fault-tolerance E2E 证明特定多-engine 降容路径，但没有覆盖 manager/trainer crash、联合 checkpoint 撕裂和请求去重。
 
 这些不是 [[17_slime_train_inference_consistency_analysis]] 所说的数值一致性问题，也不是 [[13_slime_sglang_rollout_engine_analysis]] 的请求调度细节；它们是“故障后哪些状态仍有权威所有者、从哪里重新开始、用什么证据证明”的恢复协议问题。
+
+## 11. 发展趋势
+
+> [!note] 推断
+> 本节只使用固定基线里已存在的 TODO 与能力声明作为锚点，不代表项目路线图；每条都注明出处，判断部分是本页的推断。
+
+四个锚点指向同一个方向：**恢复与取证的边界正在从“进程可用”收紧到“状态可寻址”，但收紧动作目前都还停在 TODO 上。**
+
+- **重建 engine 的副作用范围仍待收窄。** 端口分配处自己写明：重启某个 engine 时，会为该节点上从这个 rank 起的所有 engine 重设端口，注释举的例子是 8 卡机上重启 gpu 3 会连带处理 3~7。[`rollout.py:1003-1005`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1003-L1005) 这与第 3.2 节“整个逻辑 engine 才是故障单元”的边界并不一致：故障单元按逻辑 engine 划分，端口副作用却按节点后缀展开。TODO 的存在说明作者把它当作待改项，而不是刻意设计。
+- **DataSource 的可持久字段正在缩小。** `metadata` 字段本身与 `update_metadata`/`get_metadata` 两个方法都标了 `TODO remove`，而第 4.2 节所述的 checkpoint payload 恰好包含 metadata。[`data_source.py:58-59`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L58-L59) [`data_source.py:213-218`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L213-L218) 整个 `RolloutDataSource` 还挂着“may further refactor data-loading part later”。[`data_source.py:49`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/data_source.py#L49) **由此可推断**：把 metadata 当作恢复语义依赖的下游代码应视为不稳定接口。
+- **调试 dump 的文件格式未被当成稳定契约。** 保存函数带两条注释：“to be refactored (originally Buffer._set_data)”与“may improve the format”。[`rollout.py:704`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L704) [`rollout.py:710`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L710) 第 5 节把两类 dump 用作取证切面仍然成立，但不应把 `.pt` 布局当成跨版本可读的归档格式。
+- **多模型权重更新是已声明的空白。** `_get_updatable_server` 的 docstring 直接写 “multi-model weight update is not yet supported”，这正是第 3.3 节“只有第一个可更新 server 进入恢复路径”的上游原因。[`rollout.py:555-559`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L555-L559)
+
+反过来同样要说清楚：固定基线里**没有**任何注释、docstring 或官方文档提到跨 trainer/DataSource 的原子 manifest、partial buffer 持久化或请求去重台账。第 10 节列出的这三个缺口因此只能算“已知未做”，不能称为“在途工作”。
 
 ## Related Pages
 

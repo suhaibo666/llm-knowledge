@@ -8,6 +8,8 @@ title: "slime SGLang Rollout Engine：用推理服务执行解码，在请求层
 > **项目文档基线**：同一提交下 `docs/en/{blogs/introducing_slime,get_started/usage}.md`
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：rollout 的核心矛盾不是“怎样调用一次 `generate`”，而是怎样让大量请求交给高吞吐推理引擎并发执行，同时仍在 slime 一侧保留 Sample 标识、行为策略元数据、中断前缀、取消结果和恢复边界。slime 选择把 SGLang 作为独立 HTTP 服务运行：路由器与原生服务进程负责请求分发和 token 解码，`RolloutManager` 与请求协程负责 rollout 语义和准入控制。代价是多了一层 HTTP、进程生命周期和跨层状态协议，但不必把逐 token 调度、KV 状态和 SGLang 原生能力重新实现到一个中央 Python 调度器中。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改。
 
 本文只分析 rollout 请求状态和推理请求数据路径。`Sample` 字段、DataSource 回收语义见 [[12_slime_sample_datasource_analysis]]；Ray 资源放置，以及 `RolloutServer`、`ServerGroup`、推理引擎分别负责什么，见 [[11_slime_ray_control_plane_analysis]]。下文用固定提交定位符标注源码事实，并把动机与替代方案明确标为“设计分析”。
 
@@ -29,7 +31,7 @@ $$
 
 其中 $C_{\mathrm{server}}$ 是 `sglang_server_concurrency`，$N_{\mathrm{engine}}$ 由 rollout 引擎数量得到。[`sglang_rollout.py:88-105`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L88-L105) [`http_utils.py:201-210`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/http_utils.py#L201-L210) 这个信号量只是客户端的准入并发上限，不是 SGLang 内部的批次调度器，也不会按 token 长度或 KV 占用估算容量。
 
-## 2. 为什么推理引擎必须作为服务运行，而不是进程内循环
+## 2. 为什么这么设计：推理引擎必须作为服务运行，而不是进程内循环
 
 ```mermaid
 flowchart LR
@@ -171,7 +173,7 @@ slime 没有手写一份固定的 SGLang 参数子集。router 侧直接调用 `
 
 > **设计分析**：若定义一个只保留公共能力的 `InferenceEngine.generate()` 抽象，SGLang 新增的路由策略、并行参数、PD/EPD 或元数据端点都要先在 slime 抽象层重新建模。当前做法把稳定边界放在 HTTP 请求、服务生命周期和 Sample 追加操作上，原生能力尽量通过 `RouterArgs`、`ServerArgs`、配置覆盖和自定义生成函数暴露；代价是 slime 会直接依赖 SGLang 参数字段和端点兼容性。
 
-## 8. 边界、代价与常见误读
+## 8. 约束、边界、代价与常见误读
 
 | 误读或边界 | 固定基线的实际行为 |
 |---|---|
@@ -182,6 +184,15 @@ slime 没有手写一份固定的 SGLang 参数子集。router 侧直接调用 `
 | health check 失败会原地继续请求 | monitor kill engine 并留下 `None`；重建推迟到权重更新前。当前请求是否可回收取决于已保存的 partial 状态。[`health_monitor.py:145-177`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/health_monitor.py#L145-L177) [`actor.py:591-608`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/actor.py#L591-L608) |
 
 还有两个实现代价：第一，客户端 semaphore 是按请求数而非 token/KV 预算限流，异长请求仍会产生长尾；第二，stock abort 只查询 `args.sglang_router_ip/port` 指向的默认 router，而 custom multi-model rollout 可向 `args.sglang_model_routers` 中的其他 router 发请求。[`sglang_rollout.py:64-80`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L64-L80) [`sglang_rollout.py:339-349`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L339-L349) **由此可推断**，自定义多模型生成若制造额外 in-flight 请求，必须显式确认其取消协议，不能假设默认 abort 会替它排空所有模型 router。
+
+## 9. 发展趋势
+
+本节离开“固定基线是什么”，因此只写有源码注释可锚定的在途改动，整节标为推断。
+
+> [!note] 推断：锚点是源码注释原文，方向判断是本页的重建
+> **一、router 参数前缀尚未统一，第 7 节的“受控透传”边界仍在移动。** `add_sglang_router_arguments` 的函数定义上方挂着 ``# TODO: use all sglang router arguments with `--sglang-router` prefix``；而函数体只手写了 `--sglang-router-ip/port/request-timeout-secs` 三个 slime 自有参数，原生 router 参数由 `RouterArgs.add_cli_args(parser, use_router_prefix=True, exclude_host_port=True)` 注入到 `--router-*` 命名空间。[`arguments.py:8`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L8) [`arguments.py:31`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L31) 源码只声明了目标（全部收敛到 `--sglang-router` 前缀），没有给出时间点。**由此可推断**，第 7 节描述的边界会继续朝“更少手写参数、更多直接透传”移动，因此不宜把当前的 `--router-*` 拼写当作稳定 CLI 契约写进长期脚本。
+>
+> **二、超额采样的丢弃语义被源码自己标注为未完成。** 准入循环在候选已满（`len(data) < target_data_size` 不成立）时直接放弃该分组，紧邻的注释写明 `# NOTE: here we have not stored all the unused samples back to the data buffer.`。[`sglang_rollout.py:439`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L439) 也就是说，已经付出完整生成与 reward 计算成本的多余分组，既不进入本轮训练，也不回到 DataSource。**由此可推断**，这正是第 4.4 节那条取舍（用额外生成成本换固定大小训练批次）当前承压的地方：以 `NOTE` 形式留在准入路径上的缺口通常预示后续会补上回收路径，但固定基线尚未实现，任何假设“多余分组会被后续轮次复用”的容量估算目前都不成立。
 
 ## Related Pages
 

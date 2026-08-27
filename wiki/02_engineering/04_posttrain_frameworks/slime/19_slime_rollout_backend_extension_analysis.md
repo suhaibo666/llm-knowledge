@@ -8,6 +8,8 @@ title: "slime Rollout 后端扩展：先选对扩展边界，再决定是否替�
 > **文档与测试基线**：同一提交下 `README_zh.md`、`docs/zh/get_started/customization.md`、`docs/zh/advanced/external-rollout-engines.md`、`examples/fully_async/` 与 `tests/plugin_contracts/`
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：slime 的 rollout 扩展不是一个从“轻量插件”逐级升级到“重型插件”的单一路径，而是四种彼此独立的改动：外部 SGLang 只改变服务由谁部署；自定义生成函数只改变单次请求和 Sample 的生成方式；替换 rollout 函数会改变整轮数据生成流程；真正接入新后端则必须接管推理引擎生命周期、资源拓扑、路由器、权重更新和故障恢复。前两类函数钩子有文档和接口测试支撑；完整后端的启动位置没有抽象成公开 `Protocol` 或注册分发器，只存在一组目前由 SGLang 具体 actor 实现的内部约定。把四者误当成同一层插件，最常见的结果是“文本能生成”，但旧 SGLang 仍被启动，或者权重更新、样本回收、故障恢复在第一次训练迭代后失效。[`README_zh.md:22-24`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L22-L24) [`rollout.py:188-220`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L188-L220) [`rollout.py:464-498`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L464-L498)
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改。
 
 本文只判断**应在哪个边界扩展**。请求内容、中止与部分结果状态机归 [[13_slime_sglang_rollout_engine_analysis]]；Ray 对象层级归 [[11_slime_ray_control_plane_analysis]]；权重提交事务归 [[16_slime_weight_sync_analysis]]。
 
@@ -44,9 +46,31 @@ flowchart TB
 
 > **设计分析**：这四条轴不能合成一个 `backend_plugin` 开关。部署所有权、请求语义、数据编排和 serving runtime 可以独立变化；把它们捆绑会迫使“小改 agent loop”的用户同时实现健康检查和权重同步，也会让“外部部署同一种 engine”被误报成 backend 替换。
 
-## 2. 两个稳定的函数接口：稳定的是数据边界，不是推理引擎边界
+## 2. 为什么这么设计：为什么底层引擎的专有能力必然进入后端接口
 
-### 2.1 Custom generate：改请求和 Sample 行为
+SGLang 不是藏在一个纯 `generate(tokens)` 接口后面。固定基线至少有四类原生能力跨过 slime 边界：
+
+| 后端专有能力 | 进入 slime 的位置 | 对通用接口的影响 |
+|---|---|---|
+| 全量上游参数 | 包装 `ServerArgs.add_cli_args`，给 flag 和 namespace 加 `sglang_` 前缀 | 通用 schema 无法预知每次 SGLang 升级新增的开关 |
+| PD/EPD 与异构 group | config 启动 encoder、prefill、decode 或 regular groups，并把 encoder URLs 注入其他 workers | 通用 topology 若只有 replica/TP，就表达不了阶段角色和启动依赖 |
+| session 与行为 metadata | 请求可用 consistent-hashing header，并条件请求 routed experts；返回 token/logprob 写入 Sample | 通用 response 若只含 text/tokens，会丢一致性与重放所需语义 |
+| 内存与热更新控制 | engine 暴露 tagged resume、pause/continue、disk/distributed/tensor update 与 post-process | 通用 lifecycle 若只有 start/stop，无法支持 colocate 与量化热更新 |
+
+证据分别位于 SGLang 参数包装器、server-group 启动分支、默认请求路径和 engine facade。[`arguments.py:100-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L100-L118) [`rollout.py:1214-1258`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1214-L1258) [`sglang_rollout.py:175-218`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L175-L218) [`sglang_engine.py:337-470`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L337-L470)
+
+> **设计分析：只保留公共能力会带来什么问题**
+>
+> - 若通用 backend 接口只保留所有 engine 都有的 `generate/start/stop`，它会禁止或旁路 PD/EPD、session affinity、routing replay、tagged offload 和多种在线更新，因而过度限制强 backend。
+> - 若把这些能力都做成 optional method、capability flag 和 backend-specific config，抽象层仍要传播 SGLang 的 worker role、cache、quantization 与 update 语义；它形式上通用，实质上已经泄漏。
+>
+> 所以项目有意选择“上层 Sample/DataSource 接口稳定、下层推理引擎保留原生实现”，而不是遗漏了一个简单工厂。代价是替换运行时需要维护较宽的适配层或派生实现，收益是 SGLang 新能力不必先缩减为公共功能子集。[`README_zh.md:22-24`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L22-L24) [`README_zh.md:48-50`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L48-L50)
+
+本页其余章节按这条判据展开：两个稳定的函数接口见第 3 节，外部 SGLang 的部署边界见第 4 节，一条可回退的最小接入路径见第 5 节，完整后端必须补齐的内部约定见第 6 节，约束与失败门槛见第 7 节。
+
+## 3. 两个稳定的函数接口：稳定的是数据边界，不是推理引擎边界
+
+### 3.1 Custom generate：改请求和 Sample 行为
 
 公开参数把 custom generate 定义为仅替换默认 rollout 里的 `generate(args, sample, sampling_params)`，用途是 multi-turn、function calling 等特殊生成逻辑。[`arguments.py:477-483`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L477-L483) 文档给出的稳定签名是异步 callable，返回一个 `Sample` 或一次 execution 拆出的 `list[Sample]`；fanout siblings 必须共享 `rollout_id`。[`docs/zh/get_started/customization.md:71-91`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/get_started/customization.md#L71-L91)
 
@@ -56,7 +80,7 @@ flowchart TB
 
 > **设计分析**：若 custom generate 把请求发给自研服务，必须自行定义取消与超时；默认 abort 只能停止 SGLang workers，不能证明自研服务已经停止计算。若这一差异会破坏 partial、资源回收或版本边界，就已越过 custom-generate 的安全适用范围。
 
-### 2.2 Rollout function：改整轮数据编排
+### 3.2 Rollout function：改整轮数据编排
 
 `--rollout-function-path` 的公开接口参数是 `args / rollout_id / data_source / evaluation`，训练输出 Sample 至少要设置 `tokens`、`response_length`、`reward` 和 `status`。[`arguments.py:328-340`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/arguments.py#L328-L340) 返回包装器把训练和评估分别表示为 `RolloutFnTrainOutput` 与 `RolloutFnEvalOutput`，并兼容旧式裸返回值。[`base_types.py:7-25`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/base_types.py#L7-L25)
 
@@ -66,7 +90,7 @@ flowchart TB
 
 **能力边界**：rollout function 可以重排“何时取数据、何时提交、何时返回”，但 `RolloutManager.__init__` 先调用 `start_rollout_servers`，之后才加载 rollout function；server 初始化 handle 也在 Manager 完成构造前等待。[`rollout.py:464-498`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L464-L498) 因而它不是关闭或替换默认 backend 的生命周期 hook。
 
-## 3. 外部 SGLang：改变服务由谁部署，不改变通信协议
+## 4. 外部 SGLang：改变服务由谁部署，不改变通信协议
 
 external 路径会发现 `/server_info` 或 `/get_server_info`，推断 GPU 数、并行信息与 regular/prefill/decode worker 类型，并把 workers 注册到 router；它与 `--sglang-config` 互斥，因为前者由外部系统管理 engine 生命周期，后者由 slime 启动 engine。[`docs/zh/advanced/external-rollout-engines.md:20-48`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/zh/advanced/external-rollout-engines.md#L20-L48)
 
@@ -78,7 +102,7 @@ external 的资源边界确实移动了：placement group 不为外部 rollout G
 
 > **设计分析**：external 是“同一种 backend 的远程部署模式”。若把任意生成服务伪装成 external SGLang，就必须模仿 server-info、router worker、热更新、pause/flush/version 等 SGLang 语义；这已经是协议重实现，不是地址配置。
 
-## 4. 追踪一条扩展路径：自研 HTTP 服务先从 custom generate 接入
+## 5. 追踪一条扩展路径：自研 HTTP 服务先从 custom generate 接入
 
 假设目标只是验证自研服务能否产生可训练轨迹，最小且可回退的路径如下：
 
@@ -115,7 +139,7 @@ sequenceDiagram
 
 这条路径验证的是 **token/Sample/奖励/训练兼容性**，不是 backend 完成度。它有三个明确停止条件：默认 SGLang 的额外资源已不可接受；自研服务需要自己的 cancel/session/router 语义；训练权重必须热更新到自研服务。一旦命中任一条件，就应升级为 backend 适配，而不是继续在 custom generate 内堆控制面旁路。
 
-## 5. 接入全新后端需要满足的内部约定：远不止 `generate`
+## 6. 接入全新后端需要满足的内部约定：远不止 `generate`
 
 固定基线的服务启动点不是后端分发器：文件直接导入 `SGLangEngine`，`ServerGroup.start_engines` 也直接构造该具体 actor。[`rollout.py:17-19`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L17-L19) [`rollout.py:188-220`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L188-L220) 因此下表不是公开稳定 API，而是**根据调用点反推出的最小内部接口要求**：
 
@@ -137,27 +161,7 @@ sequenceDiagram
 
 > **设计分析**：新后端可以选择实现同名的引擎适配外观，也可以连同服务、更新器和监控一起替换；但只替换请求函数无法满足上述接口要求。前者改动小，却会继承为 SGLang 设计的接口；后者边界更清楚，但会形成派生实现，而不是一个配置插件。
 
-## 6. 为什么底层引擎的专有能力必然进入后端接口
-
-SGLang 不是藏在一个纯 `generate(tokens)` 接口后面。固定基线至少有四类原生能力跨过 slime 边界：
-
-| 后端专有能力 | 进入 slime 的位置 | 对通用接口的影响 |
-|---|---|---|
-| 全量上游参数 | 包装 `ServerArgs.add_cli_args`，给 flag 和 namespace 加 `sglang_` 前缀 | 通用 schema 无法预知每次 SGLang 升级新增的开关 |
-| PD/EPD 与异构 group | config 启动 encoder、prefill、decode 或 regular groups，并把 encoder URLs 注入其他 workers | 通用 topology 若只有 replica/TP，就表达不了阶段角色和启动依赖 |
-| session 与行为 metadata | 请求可用 consistent-hashing header，并条件请求 routed experts；返回 token/logprob 写入 Sample | 通用 response 若只含 text/tokens，会丢一致性与重放所需语义 |
-| 内存与热更新控制 | engine 暴露 tagged resume、pause/continue、disk/distributed/tensor update 与 post-process | 通用 lifecycle 若只有 start/stop，无法支持 colocate 与量化热更新 |
-
-证据分别位于 SGLang 参数包装器、server-group 启动分支、默认请求路径和 engine facade。[`arguments.py:100-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L100-L118) [`rollout.py:1214-1258`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L1214-L1258) [`sglang_rollout.py:175-218`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L175-L218) [`sglang_engine.py:337-470`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/sglang_engine.py#L337-L470)
-
-> **设计分析：只保留公共能力会带来什么问题**
->
-> - 若通用 backend 接口只保留所有 engine 都有的 `generate/start/stop`，它会禁止或旁路 PD/EPD、session affinity、routing replay、tagged offload 和多种在线更新，因而过度限制强 backend。
-> - 若把这些能力都做成 optional method、capability flag 和 backend-specific config，抽象层仍要传播 SGLang 的 worker role、cache、quantization 与 update 语义；它形式上通用，实质上已经泄漏。
->
-> 所以项目有意选择“上层 Sample/DataSource 接口稳定、下层推理引擎保留原生实现”，而不是遗漏了一个简单工厂。代价是替换运行时需要维护较宽的适配层或派生实现，收益是 SGLang 新能力不必先缩减为公共功能子集。[`README_zh.md:22-24`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L22-L24) [`README_zh.md:48-50`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/README_zh.md#L48-L50)
-
-## 7. 选择路径、能力边界与失败门槛
+## 7. 约束：选择路径、能力边界与失败门槛
 
 | 你真正需要的能力 | 首选路径 | 升级到下一层的信号 |
 |---|---|---|
@@ -176,6 +180,19 @@ SGLang 不是藏在一个纯 `generate(tokens)` 接口后面。固定基线至�
 6. **能力假兼容**：不支持 PD、routing replay、colocate offload、量化 post-process 或某种 transport 时，是否在配置期 fail fast，而不是运行中静默降级？SGLang 参数校验本身就在解析后执行 topology 约束与互斥检查。[`arguments.py:144-186`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L144-L186)
 
 最终判断标准不是“能否返回一段文本”，而是**改动是否停在它声称的职责边界内**。只改变数据行为，就使用稳定的函数接口；一旦负责资源、版本或故障恢复，就应明确自己正在实现新的后端。
+
+## 8. 发展趋势
+
+> [!note] 推断
+> 本节只引用固定基线里实际存在的 TODO 与能力声明，不构成项目路线图；锚点原文给出定位符，判断部分是本页推断。
+
+三个锚点都落在**扩展边界本身**上，而不是落在“会不会支持某个新引擎”上：
+
+- **router 参数面还没有统一到 `--sglang-` 前缀约定。** `add_sglang_router_arguments` 顶上写着 “TODO: use all sglang router arguments with `--sglang-router` prefix”；当前实现是三个手写 `--sglang-router-*` 参数加一次 `RouterArgs.add_cli_args(parser, use_router_prefix=True, exclude_host_port=True)`。[`sglang_utils/arguments.py:8-35`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L8-L35) 第 2 节说“全量上游参数被前缀包装后暴露”对 `ServerArgs` 成立，对 router 只是部分成立；**由此可推断**，依赖具体 router flag 名的外部部署脚本要预期这层命名还会动。
+- **多模型/多 server 的权重更新是已声明的未完成项。** `_get_updatable_server` 的 docstring 直接写 “multi-model weight update is not yet supported”，因此第 6 节表格里的“权重提交”义务目前只对单一可更新 server 成立。[`rollout.py:555-559`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L555-L559) 想在一个作业里同时在线更新两套 serving 模型的扩展，现在没有可复用的上游路径。
+- **rollout-function 层的 partial resume 仍未接通。** 官方 fully-async 示例的 Limitations 一节写明 “TODO: partial-rollout-style resume for `ABORTED` trajectories is not yet wired; for now the trajectory is re-queued and starts over”。[`examples/fully_async/README.md:77-83`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/fully_async/README.md#L77-L83) 这说明第 3.2 节所说“rollout function 可以重排何时取数据、何时提交、何时返回”的能力上限，当前止于整条轨迹重做，而不是续跑。
+
+固定基线里**没有**任何注释或文档提到要把 engine 启动点抽象成 `Protocol`、注册表或后端分发器。第 6 节所说“内部约定不是公开 API”因此是当前的稳定状态，而不是一个即将被替换的过渡形态——把它当成“等官方出插件接口”来规划，在这个基线上没有依据。
 
 ## Related Pages
 

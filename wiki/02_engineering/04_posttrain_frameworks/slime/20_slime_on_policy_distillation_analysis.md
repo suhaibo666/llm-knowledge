@@ -8,6 +8,8 @@ title: "slime On-Policy 蒸馏：让固定 teacher 加入同一条在线策略�
 > **文档/示例/测试基线**：同一提交下 `docs/en/advanced/on-policy-distillation.md`、`examples/on_policy_distillation/` 与 `tests/test_qwen2.5_0.5B_opd_sglang.py`
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：OPD 的系统难题不是“再部署一个 teacher”，而是让 teacher 对 actor 刚采出的同一 prefix、同一 action 给出逐 token 信号，同时不复制 prompt 管道、rollout 身份、DP schedule、Megatron trainer 和 optimizer 生命周期。slime 把 teacher 设计成一个只读评分角色：SGLang teacher 在 rollout 侧把 selected-token logprob 写进 `Sample`，Megatron teacher 在 actor worker 内复用同一批 train data 做额外前向；两条路径最终都只向既有训练 ABI 增加 `teacher_log_probs`，再把 sampled reverse-KL 注入基础 advantage。代价是 teacher 延迟或 CPU↔GPU 角色切换进入关键路径，而且“同 token、同 span、固定 teacher”主要靠配置和数据对齐守住，而不是一套完整的版本握手协议。
+> **叙事顺序**：本页按五拍组织——背景（第 1 节）→ 为什么这么设计（第 2 节，含被否掉的四个替代）→ 实现思路与细节（第 3–7 节）→ 约束（第 8 节）→ 发展趋势。本页无可锚定的在途改动，第 5 拍略：固定基线的 `slime/rollout/on_policy_distillation.py`、`slime/utils/tensor_backper.py`、`docs/en/advanced/on-policy-distillation.md` 与 `examples/on_policy_distillation/` 中没有任何 TODO/FIXME/deprecation 或 WIP 声明可作锚点。
+> **最近更新**：2026-08-27。本页章节顺序原已符合五拍，仅补页头叙事说明，未重排章节，机制正文与既有引用未改。
 
 本文只负责 OPD 的接入动机、teacher placement、信号流和版本边界。通用 `Sample`/converter 语义归 [[12_slime_sample_datasource_analysis]]，Megatron 角色切换与训练执行归 [[14_slime_megatron_training_analysis]]，reducer 与并行归一化归 [[15_slime_loss_parallelism_analysis]]。带 fixed-commit 定位符的是源码、官方文档、示例或测试事实；标为“设计分析”的段落是从实现与失败路径作出的推断。
 

@@ -8,6 +8,9 @@ title: "slime Agent 工作流分析：把树状执行压成线性训练片段"
 > **文档基线**：同一提交下 `docs/{zh,en}/get_started/{agent,customization}.md` 与 `examples/{coding_agent_rl,multi_agent,search-r1,retool}`
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：Agent rollout 的自然形态是带工具、副作用、subagent 分支和上下文压缩的**执行树**，Megatron 训练器需要的却是带 token、mask、reward 和行为策略元数据的**线性片段批次**。slime 没有让训练器理解消息协议或沙箱，而是把 agent 运行时留在自定义 rollout 的数据路径中：适配层捕获推理服务实际采样的 token，`TrajectoryManager` 暂存每个会话的消息树，执行结束时才线性化为共享 `rollout_id` 的 `list[Sample]`。代价是轨迹状态归属、reward 分配、取消操作与外部副作用恢复都必须在 rollout 侧明确处理；训练器只保证片段统计不会把一次逻辑执行重复计数，并不会替 agent 运行时修复语义错误。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改。
+> **第 5 拍说明**：在固定基线的 `slime/agent/`、`examples/coding_agent_rl/` 与 `examples/multi_agent/` 中检索 `TODO|FIXME|deprecat|will be removed|NOTE.*should` 无命中，本页无可锚定的在途改动，第 5 拍略。
 
 本文把带 fixed-commit 定位符的内容视为源码或官方文档事实；“**设计分析**”与“**由此可推断**”是依据实现边界作出的判断，不代表项目作者原话。
 
@@ -37,7 +40,18 @@ title: "slime Agent 工作流分析：把树状执行压成线性训练片段"
 
 > **设计分析**：这五个不变量解释了 agent runtime 为什么留在 rollout，而不是塞进 trainer。trainer 可以稳定地优化 token action，却既不应拥有 session message tree，也无法回滚已经执行的 shell 命令、检索请求或代码修改；把两者合并只会让分布式训练 ABI 同时承担协议兼容、环境生命周期和梯度计算三种变化速度完全不同的职责。
 
-## 2. 职责边界：运行时负责执行，适配层记录证据，训练器只读取训练片段
+## 2. 为什么这么设计：四个直观替代方案为什么会破坏契约
+
+| 替代方案 | 看似简单之处 | 丢失或扭曲什么 | slime 的选择 |
+|---|---|---|---|
+| 只存 final text | 一条字符串即可评分和落盘 | 中间 action、logprob、tool context、分支与 compact 前片段全部消失 | 每 turn 保存 token snapshot，结束时才 decode response sidecar |
+| 对每次 response 文本重新 tokenize | 不要求 serving 返回 token metadata | chat template、whitespace、special/tool token 会漂移，无法证明 action provenance | SGLang 返回 sampled ids/logprobs；drift span只作 context或 fork |
+| 把完整 message tree 发给 trainer | 不需要 rollout 侧 linearize | trainer 必须理解协议 node、外部 observation、tree dedup 和动态分支，batch ABI随 agent runtime 演化 | tree 由 `TrajectoryManager` 独占，边界只输出 Samples |
+| 每个 leaf 当独立 rollout | flatten 最直接 | 一个 execution 的 step 数、loss 分母和共享祖先 credit 随分支数变化 | siblings 共享 `rollout_id`，共享 response 只训练一次 |
+
+这些不是纯粹的风格偏好。源码在三个位置把选择变成门禁：adapter 从 `output_token_logprobs` 取 ids/logprobs，[`slime/agent/adapters/common.py:496-518`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/adapters/common.py#L496-L518) tree linearizer对 shared response 去重，[`slime/agent/trajectory.py:456-477`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L456-L477) nested validator拒绝缺失或不一致的 sibling rollout ids。[`slime/ray/rollout.py:941-970`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L941-L970)
+
+## 3. 职责边界：运行时负责执行，适配层记录证据，训练器只读取训练片段
 
 ```mermaid
 flowchart LR
@@ -67,15 +81,15 @@ flowchart LR
 
 > **设计分析**：适配层不是“另一个 agent 框架”，而是 agent 客户端与 rollout 服务之间的采样记录器：对外维持客户端熟悉的消息协议，对内把每次模型调用还原成训练器可以审计的 token 动作。agent 的计划、工具循环和终止条件仍由运行框架或客户端决定。
 
-## 3. 适配层：为什么不能只保存最终回答
+## 4. 适配层：为什么不能只保存最终回答
 
-### 3.1 会话亲和不是训练身份
+### 4.1 会话亲和不是训练身份
 
 `open_session` 要求一次 agent run 使用唯一 sid，并保存 sampling defaults 与 context cap；`finish_session` 先 drain in-flight 请求，再消费消息树、填充人类可读的 decoded response，第二次调用返回空；`drop_session` 则是无结果清理。[`slime/agent/adapters/common.py:208-281`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/adapters/common.py#L208-L281)
 
 每一 turn 会把相同 sid 放入 `X-SMG-Routing-Key`，请求体携带已经渲染的 `input_ids` 与 `return_logprob=True`；返回 token ids 和 logprobs直接取自 `output_token_logprobs`。[`slime/agent/adapters/common.py:442-518`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/adapters/common.py#L442-L518) 这使 consistent-hashing router 可以尽量复用多轮 prefix cache，但 sid 只解决 serving affinity；fanout 的训练统计身份仍由 `rollout_id` 解决。router、worker 与 request lifecycle 的完整机制见 [[13_slime_sglang_rollout_engine_analysis]]。
 
-### 3.2 消息协议只保证交互可对齐，token 快照才是训练依据
+### 4.2 消息协议只保证交互可对齐，token 快照才是训练依据
 
 Anthropic adapter 把 system/user/tool/assistant blocks 归一化成 chat-template messages；tool-use 的 wire id 被丢弃，参数保留为 dict，以便下一轮客户端回放时可按消息 dict 相等挂回同一树节点。[`slime/agent/adapters/anthropic.py:78-141`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/adapters/anthropic.py#L78-L141) OpenAI adapter 同样删除每轮新生成的 correlation id，并把 JSON 字符串参数归一化成 dict；否则语义相同的 echo 也会被识别成新分支。[`slime/agent/adapters/openai.py:79-163`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/adapters/openai.py#L79-L163)
 
@@ -85,15 +99,15 @@ Anthropic adapter 把 system/user/tool/assistant blocks 归一化成 chat-templa
 
 > **为什么不只存 final text**：final text 会丢掉中间 tool-call action、每 turn 的 behavior logprob、分支共享关系与 context compact 前的可训练 response。即使文本看起来相同，chat template、special token、whitespace 与 tool block 重渲染也可能改变 token ids；这时用 `decode → encode` 得到的是“相似文本的另一条 tokenization”，不是 behavior policy 实际采取的 action。该风险不是假设：trajectory builder 专门为 TITO 与 chat-template drift 实现了 realign/fork。[`slime/agent/trajectory.py:141-191`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L141-L191)
 
-### 3.3 只有客户端收到响应，才算完成一个交互轮次
+### 4.3 只有客户端收到响应，才算完成一个交互轮次
 
 adapter 先把协议响应 flush 给客户端，只有 flush 成功后才调用 `record_turn`；连接在生成后、响应前断开时不会记录一个客户端从未见过的 assistant turn。[`slime/agent/adapters/common.py:340-390`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/adapters/common.py#L340-L390) 若 SGLang 请求被 cancel、client error 或 timeout 打断，adapter 会 best-effort 调 `/abort_request` 释放对应 request id，避免孤儿 generation 一直占用 KV slot。[`slime/agent/adapters/common.py:470-511`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/adapters/common.py#L470-L511)
 
 > **设计分析**：这里的提交点不是“模型已经算出 token”，而是“agent 客户端已经观察到这次 action”。否则服务端轨迹会包含客户端历史中不存在的 turn，下一轮重放既无法挂回同一消息树，也可能训练一个从未影响环境的动作。
 
-## 4. 消息树如何扇出成多个 Sample
+## 5. 消息树如何扇出成多个 Sample
 
-### 4.1 树中有两类节点，只有生成节点可以训练
+### 5.1 树中有两类节点，只有生成节点可以训练
 
 `MessageNode` 区分 generated assistant node 与 routing-only node。前者持有 `TurnRecord`，后者包括 system/user/tool、外部回放但非本 adapter 生成的 assistant，以及被 rewrite-merge 降级的旧 assistant；后者只负责让后续请求找到路径。[`slime/agent/trajectory.py:46-82`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L46-L82)
 
@@ -108,19 +122,19 @@ adapter 先把协议响应 flush 给客户端，只有 flush 成功后才调用 
 
 `append_turn` 与 `_align_to_prompt` 实际执行这套 mask 规则。[`slime/agent/trajectory.py:193-229`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L193-L229) 分支测试进一步固定了 clean tool loop 中 tool token 为 context、两个 leaf 共享的 assistant response 只在第一个 leaf 训练一次。[`tests/test_agent/test_trajectory_manager_branching.py:402-419`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_agent/test_trajectory_manager_branching.py#L402-L419) [`tests/test_agent/test_trajectory_manager_branching.py:481-503`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_agent/test_trajectory_manager_branching.py#L481-L503)
 
-### 4.2 消息分叉与 token 分叉是两层不同判断
+### 5.2 消息分叉与 token 分叉是两层不同判断
 
 `record_turn` 先按 role 与 message dict equality 寻找挂载点，再把新 prompt suffix 和本轮 assistant leaf 接入树。[`slime/agent/trajectory.py:283-305`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L283-L305) 到 linearization 阶段，每个 root-to-leaf chain 才按 token prefix 分成 builder：无 drift 就延伸，短且只落在最近 response 的 drift 可以 realign，较早或较大分歧则开启新 builder；共享 generated node 由 `response_trained` 保证只被首个 leaf claim。[`slime/agent/trajectory.py:456-502`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L456-L502)
 
 **由此可推断**，源码并不理解“这个 fork 是 subagent”还是“这是 context compact”。它只看到消息历史分歧与 token provenance 分歧；subagent/compact 是 agent runtime 的语义标签，tree manager 提供的是通用的分支保真与线性化机制。官方文档把 divergence 对应到 subagent 与 auto-compaction，是对该机制的应用解释。[`examples/coding_agent_rl/README.md:5-15`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/examples/coding_agent_rl/README.md#L5-L15)
 
-### 4.3 从逻辑执行到 Sample：消息树只存在于 rollout 侧
+### 5.3 从逻辑执行到 Sample：消息树只存在于 rollout 侧
 
 `get_trajectory` 枚举每个 routing leaf，把 chain 转成一个或多个 Sample，然后消费整个 sid；`to_sample` 复制 base sample 的 task identity，把 `rollout_id` 设为 base rollout id 或 base sample index，并只导出首轮 prompt 之后的 response mask/logprob span。[`slime/agent/trajectory.py:234-261`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L234-L261) [`slime/agent/trajectory.py:307-344`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L307-L344)
 
 自定义生成函数返回的 `list[Sample]` 会在默认 `generate_and_rm_group` 外再包一层，形成 `prompt × rollout × 训练片段` 的嵌套输出；RolloutManager 在展平前要求深层同组片段的 `rollout_id` 全部存在且相同。[`slime/rollout/sglang_rollout.py:297-327`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/rollout/sglang_rollout.py#L297-L327) [`slime/ray/rollout.py:941-970`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L941-L970) 展平后，消息树和嵌套层级都会消失，训练器只靠 `rollout_id` 恢复“这些样本行属于同一次逻辑执行”的关系。
 
-### 4.4 Reward 如何分配，与 rollout 如何计数是两件事
+### 5.4 Reward 如何分配，与 rollout 如何计数是两件事
 
 若一次 execution 的总 reward 是 $R$，拆成 $K$ 个 fragments 时，“守恒分配”的常见写法是：
 
@@ -137,7 +151,7 @@ $$
 
 > **设计分析**：统计去重不会替你选择 credit assignment。共享 `rollout_id` 防止 $K$ 个 fragments 被当成 $K$ 次 execution；`reward / K` 还是完整 $R$ 则决定每个分支看到什么任务信号。前者是 trainer ABI，后者是 agent 算法语义。
 
-## 5. 一次 coding-agent 逻辑执行的端到端追踪
+## 6. 一次 coding-agent 逻辑执行的端到端追踪
 
 下面沿官方 `examples/coding_agent_rl` 的真实入口追踪一次训练 rollout；这是“树状执行 → 线性 Sample”的完整闭环，而不只是 adapter 局部调用。
 
@@ -155,17 +169,6 @@ $$
 
 CPU-only E2E 测试只替换 tokenizer、sandbox、SGLang 和 agent CLI 四个外部边缘，真实运行 generate orchestration、adapter HTTP、tree building、workspace/diff/eval 与 harness transport；它验证生成 Sample 的 mask/logprob 对齐以及 clean-eval reward。[`tests/test_agent/test_agent_rollout_cpu.py:1-9`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_agent/test_agent_rollout_cpu.py#L1-L9) [`tests/test_agent/test_agent_rollout_cpu.py:175-194`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_agent/test_agent_rollout_cpu.py#L175-L194)
 
-## 6. 四个直观替代方案为什么会破坏契约
-
-| 替代方案 | 看似简单之处 | 丢失或扭曲什么 | slime 的选择 |
-|---|---|---|---|
-| 只存 final text | 一条字符串即可评分和落盘 | 中间 action、logprob、tool context、分支与 compact 前片段全部消失 | 每 turn 保存 token snapshot，结束时才 decode response sidecar |
-| 对每次 response 文本重新 tokenize | 不要求 serving 返回 token metadata | chat template、whitespace、special/tool token 会漂移，无法证明 action provenance | SGLang 返回 sampled ids/logprobs；drift span只作 context或 fork |
-| 把完整 message tree 发给 trainer | 不需要 rollout 侧 linearize | trainer 必须理解协议 node、外部 observation、tree dedup 和动态分支，batch ABI随 agent runtime 演化 | tree 由 `TrajectoryManager` 独占，边界只输出 Samples |
-| 每个 leaf 当独立 rollout | flatten 最直接 | 一个 execution 的 step 数、loss 分母和共享祖先 credit 随分支数变化 | siblings 共享 `rollout_id`，共享 response 只训练一次 |
-
-这些不是纯粹的风格偏好。源码在三个位置把选择变成门禁：adapter 从 `output_token_logprobs` 取 ids/logprobs，[`slime/agent/adapters/common.py:496-518`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/adapters/common.py#L496-L518) tree linearizer对 shared response 去重，[`slime/agent/trajectory.py:456-477`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/agent/trajectory.py#L456-L477) nested validator拒绝缺失或不一致的 sibling rollout ids。[`slime/ray/rollout.py:941-970`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L941-L970)
-
 ## 7. 官方示例的边界：它们使用的不是同一种 agent 运行时
 
 | 示例 | 执行拓扑与 token 处理 | 它证明什么 | 不应外推什么 |
@@ -177,7 +180,7 @@ CPU-only E2E 测试只替换 tokenizer、sandbox、SGLang 和 agent CLI 四个�
 
 还有一个固定基线边界：list-returning custom generate 与默认 per-sample RM 路径兼容；但 fanout E2E 测试明确记录 `--group-rm` 仍假设 flat group，和 nested fanout 组合会把 `list[list[Sample]]` 传给单 Sample RM 并崩溃。[`tests/test_qwen2.5_0.5B_fanout_short.py:74-87`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_qwen2.5_0.5B_fanout_short.py#L74-L87) **由此可推断**，选择示例不能只看“是否多轮”：还要看它是单 Sample 内手写 loop、显式多 agent fanout，还是有 message-tree ownership 的外部 agent runtime。
 
-## 8. 取消、恢复与外部副作用：三类持久化语义不能混为一谈
+## 8. 约束：取消、恢复与外部副作用，三类持久化语义不能混为一谈
 
 ### 8.1 模型请求：可取消，但不承诺轨迹续跑
 

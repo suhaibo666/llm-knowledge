@@ -8,6 +8,8 @@ title: "slime 架构总览：用轻量编排连接训练与推理系统"
 > **文档基线**：同一提交下 `README_zh.md`、`docs/zh/advanced/{sglang-config,external-rollout-engines}.md`
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：Megatron 与 SGLang 的价值恰好来自不同方向：前者拥有训练 rank、并行组、优化器与 checkpoint 生命周期，后者拥有 HTTP server、router、KV cache 与 serving topology 生命周期。slime 没有把二者压进统一 engine 接口，而是保留各自原生控制面，只在 RL 必须闭合的资源、数据、训练阶段和权重版本边界上加薄编排。这样能直接使用上游能力，代价是 SGLang/Megatron 语义会泄漏进控制与同步代码，新 backend 也不是换一个 adapter 就能接入。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改。
 
 本文把事实与分析判断分开：带 fixed-commit 定位符的是源码或项目文档事实；使用“设计分析”“由此可推断”的段落是根据实现形态和失败路径作出的解释，不代表作者原话。
 
@@ -25,7 +27,7 @@ title: "slime 架构总览：用轻量编排连接训练与推理系统"
 
 > **设计分析**：这里的“不兼容”不是指两者不能协作，而是指它们没有可无损互换的生命周期、数据对象和拓扑单位。若强行规定一个 `Engine.start/generate/train/update` 公共接口，关键差异不会消失，只会变成大量 optional method、backend-specific field 和 escape hatch。
 
-## 2. 约束如何逼出“薄编排、深后端”
+## 2. 为什么这么设计：约束如何逼出“薄编排、深后端”
 
 ### 2.1 接入 slime 后仍要能直接使用底层能力
 
@@ -131,7 +133,7 @@ actor rank 把 rollout dict 变成 Megatron data iterator，按需计算 ref/tea
 
 > **设计分析**：所以 iteration 是带 snapshot 边界的阶段事务；async 改变 barrier 的位置和重叠范围，没有删除版本提交协议。把 `async_train` 或预启动 future 解读为“任意 staleness 的 fully async optimizer”会夸大当前入口的语义。
 
-## 6. 这个选择的代价：底层系统细节会进入上层
+## 6. 约束与代价：底层系统细节会进入上层
 
 ### 6.1 参数透传不是零适配
 
@@ -172,6 +174,16 @@ pause/flush/update/resume 阻止请求跨过半套参数；同步循环的 gener
 2. 它是否改变 server 生命周期、请求协议、并行拓扑或权重加载语义？若是，它已经越过薄编排层，需要一套完整 backend 适配，而不是新增一个参数或类名。
 
 这正是架构选择的边界：**slime 对 RL 闭环是框架，对 Megatron 和 SGLang 内部则是编排者；它连接两套原生系统，但不假装二者是同一种 engine。**
+
+## 8. 发展趋势：参数透传的 glue 正在向“全部前缀化”收敛
+
+第 6.1 节说明参数透传不是零适配。固定基线在这条 glue 上留了一处明确的在途标记：`add_sglang_router_arguments` 定义之上写着 ``# TODO: use all sglang router arguments with `--sglang-router` prefix``。[`sglang_utils/arguments.py:8`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L8)
+
+因此 router 参数面目前是混合的：`--sglang-router-ip`、`--sglang-router-port`、`--sglang-router-request-timeout-secs` 由 slime 逐条手写声明，其余则由 `RouterArgs.add_cli_args(parser, use_router_prefix=True, exclude_host_port=True)` 以 `--router-` 前缀批量注册。[`sglang_utils/arguments.py:13-31`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L13-L31) 而 server 侧早已走自动路径：包装 `add_argument`、统一加 `--sglang-` 前缀、按 skip 列表跳过 slime 自有字段。[`sglang_utils/arguments.py:38-118`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/sglang_utils/arguments.py#L38-L118)
+
+> [!note] 推断
+> 该 TODO 指向的方向，是把 router 参数也并入 server 参数那套自动前缀机制，让“上游加一个、这边手写一个”的 glue 收敛成“上游有什么就透传什么”。这与第 3 节的赌注一致——只抽象跨边界不变量，其余原样透传；也说明第 6.1 节那项成本是项目已识别、正在收窄的，而不是被接受为终态。**源码只写了这一行 TODO，没有陈述改法或时间**，上述解读由本页承担。
+> 至于第 7 节列出的后端矩阵边界（`--train-backend` 只有 `megatron` 一个 choice、单一 SGLang rollout backend），固定基线中没有任何对应的 TODO、废弃标记或 RFC 引用，本页不对其走向作推测。
 
 ## Related Pages
 

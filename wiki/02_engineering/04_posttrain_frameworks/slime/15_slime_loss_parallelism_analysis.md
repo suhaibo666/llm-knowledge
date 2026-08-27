@@ -8,6 +8,8 @@ title: "slime Loss 与并行归一化：让估计量不随物理切分改写"
 > **文档/测试基线**：同一提交下 `docs/en/get_started/{usage,quick_start,customization}.md` 与 `tests/{test_cp_utils,test_dp_schedule,test_loss_cp_invariance,test_metric_report}.py`
 > **核验日期**：2026-08-18 · **系列**：[[02_engineering/04_posttrain_frameworks/slime/index|slime 源码分析]]
 > **结论先行**：slime 的关键设计不是多实现几种 RL loss，而是把“估计什么”与“在哪块 GPU 上计算”拆开：prompt 分组决定 reward 的相对基线，token 级目标函数产生逐 token 项，逻辑 rollout 决定默认 loss 权重，DP/CP/PP/VPP 只决定这些项如何分布到不同设备。代价是系统必须在切分前保存完整分母，并在 Megatron 的 micro-batch、集合通信与梯度缩放规则中精确抵消每个重复因子；否则程序可能照常运行，实际优化的却已是另一个目标函数。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改。
 
 本文只讨论估计量与归约器的统计语义。`Sample`、prompt 分组和 `rollout_id` 的标识来源见 [[12_slime_sample_datasource_analysis]]；Megatron actor、DataIterator、前向/反向传播与优化器生命周期见 [[14_slime_megatron_training_analysis]]。下文带固定提交定位符的是源码、官方文档或测试事实；“设计分析”表示根据实现和失败路径作出的推断。
 
@@ -43,9 +45,19 @@ flowchart LR
 | rollout 不变量 | 一次逻辑执行无论产出几个片段都只占一份权重 | compact 扇出越多，梯度越大 |
 | 拓扑不变量 | 改变 DP/CP/mbs/PP/VPP 不应改变同一批数据的目标与梯度 | loss 随 GPU 数、数据打包或流水线配置漂移 |
 
-## 2. 四层统计口径：prompt 分组、token、Sample 与 rollout
+## 2. 为什么这么设计：必须把 loss 与归约器分开
 
-### 2.1 Prompt 分组只定义 reward 的相对基线
+目标函数回答“每个动作应产生什么梯度信号”，归约器回答“token、Sample、rollout 分别占多少权重”。若每个目标函数内部直接调用 `.mean()`，同一 PPO 公式就会因 response 长度、compact 片段数、micro-batch 打包和 CP 切片数而悄悄改变统计口径；每增加一种 loss 还要重写同一套并行归一化逻辑。
+
+固定基线的 `loss_function` 先用完整训练步的 `rollout_mask_sums` 构造归约器，再分派 policy、value、SFT 或自定义目标函数，最后统一接入 Megatron 缩放。[`slime/backends/megatron_utils/loss.py:1283-1365`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L1283-L1365) `--custom-loss-function-path` 因此是“更换目标函数、继承现有归约器”的主要扩展点；官方文档把它定位为新 RL 目标、多目标或自定义正则项。[`docs/en/get_started/customization.md:254-264`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/get_started/customization.md#L254-L264)
+
+另一个较窄的 `custom_pg_loss_reducer` 只替换 pg loss 的 reducer，clip fraction、PPO KL、entropy 等仍走默认 reducer；官方用例是 Dr.GRPO 常量分母。[`docs/en/get_started/customization.md:281-299`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/get_started/customization.md#L281-L299) 源码传给它的只有 lengths、masks 与 per-token 开关，没有 `rollout_ids` 或 `rollout_mask_sums`。[`slime/backends/megatron_utils/loss.py:1094-1105`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L1094-L1105)
+
+> **设计分析**：这个较窄的扩展点适合有意定义新的 policy-gradient 统计口径，不适合“自己重写一遍默认的 compact rollout 均值”；它看不到恢复 $D_g$ 所需的完整分组标识与分母。若只改变目标函数、仍要保持默认 rollout 统计，更稳妥的做法是让 custom loss 使用传入的归约函数。无论使用哪种扩展点，只要忽略归约器，DP/CP 代码仍可能正常运行，但框架不再能保证拓扑变化前后的结果一致。
+
+## 3. 四层统计口径：prompt 分组、token、Sample 与 rollout
+
+### 3.1 Prompt 分组只定义 reward 的相对基线
 
 对 GRPO、GSPO、CISPO 与 REINFORCE++ baseline，默认 reward postprocess 先按 `n_samples_per_prompt` reshape，再减组均值；前三者可选再除组内标准差。[`slime/ray/rollout.py:722-747`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L722-L747)
 
@@ -60,7 +72,7 @@ $$
 
 固定基线有一个重要边界：若 reward 数量不等于 `n_samples_per_prompt * rollout_batch_size`，回退逻辑会把一维 reward 重塑为一个包含全部元素的分组，而不会根据 `rollout_id` 重建 prompt 分组。[`slime/ray/rollout.py:731-745`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/ray/rollout.py#L731-L745) **设计分析**：不规则扇出若仍需要按 prompt 分组的估计量，应通过自定义 reward 后处理显式恢复分组，不能期待 loss 归约器事后修正 advantage 的基线。
 
-### 2.2 Advantage/return 把 sample reward 变成 token 信号
+### 3.2 Advantage/return 把 sample reward 变成 token 信号
 
 训练侧只在 PP last stage 计算 advantages/returns；GRPO/GSPO/CISPO 把 scalar reward 展开成与 token KL 同形状的 returns，PPO 在 token KL reward 上把终局 scalar reward加到末位置后做 GAE，REINFORCE++ 则构造 discounted returns 或 group-baseline advantages。[`slime/backends/megatron_utils/loss.py:704-807`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L704-L807) GRPO 的直接展开与 REINFORCE++ 的 full-response 重建、mask 和末有效 token 注奖分别见 [`slime/utils/ppo_utils.py:361-368`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/ppo_utils.py#L361-L368) 与 [`slime/utils/ppo_utils.py:396-443`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/utils/ppo_utils.py#L396-L443)。
 
@@ -81,7 +93,7 @@ $$
 
 若开启 advantage 归一化，源码会按 CP 的 token 归属切分完整 mask，再在 DP-with-CP 组上聚合带 mask 的统计量；即便某个 CP rank 没有 response token，也必须参加集合通信。[`slime/backends/megatron_utils/loss.py:818-878`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L818-L878) 这样既保证全局白化的统计口径，也避免部分 rank 缺席导致通信无法完成；官方分布式测试覆盖了 DP/CP 组合下的结果不变性。[`tests/test_advantage_whiten_cp.py:63-132`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/tests/test_advantage_whiten_cp.py#L63-L132)
 
-### 2.3 Token 级目标函数与归约器负责不同层次
+### 3.3 Token 级目标函数与归约器负责不同层次
 
 以 policy objective 为例，先在每个 response token 上得到概率比与 clipped surrogate：
 
@@ -110,16 +122,6 @@ $$
 | custom loss | 由扩展实现定义 | 收到已经绑定默认 mask、完整 rollout 分母与 token/rollout 模式的归约函数 | `loss_function` 外层仍做 Megatron 缩放 | 新目标可复用现有的拓扑不变性 |
 
 value loss 与 SFT 都显式接收同一个 reducer；前者约化 clipped squared error，后者约化 response NLL。[`slime/backends/megatron_utils/loss.py:1176-1230`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L1176-L1230) [`slime/backends/megatron_utils/loss.py:1233-1280`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L1233-L1280) Policy loss 对 pg loss、clip fraction、PPO KL、entropy、显式 KL 与 mismatch metrics 分别调用 reducer，而不是让 tensor `.mean()` 决定口径。[`slime/backends/megatron_utils/loss.py:1094-1173`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L1094-L1173)
-
-## 3. 为什么必须把 loss 与归约器分开
-
-目标函数回答“每个动作应产生什么梯度信号”，归约器回答“token、Sample、rollout 分别占多少权重”。若每个目标函数内部直接调用 `.mean()`，同一 PPO 公式就会因 response 长度、compact 片段数、micro-batch 打包和 CP 切片数而悄悄改变统计口径；每增加一种 loss 还要重写同一套并行归一化逻辑。
-
-固定基线的 `loss_function` 先用完整训练步的 `rollout_mask_sums` 构造归约器，再分派 policy、value、SFT 或自定义目标函数，最后统一接入 Megatron 缩放。[`slime/backends/megatron_utils/loss.py:1283-1365`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L1283-L1365) `--custom-loss-function-path` 因此是“更换目标函数、继承现有归约器”的主要扩展点；官方文档把它定位为新 RL 目标、多目标或自定义正则项。[`docs/en/get_started/customization.md:254-264`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/get_started/customization.md#L254-L264)
-
-另一个较窄的 `custom_pg_loss_reducer` 只替换 pg loss 的 reducer，clip fraction、PPO KL、entropy 等仍走默认 reducer；官方用例是 Dr.GRPO 常量分母。[`docs/en/get_started/customization.md:281-299`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/docs/en/get_started/customization.md#L281-L299) 源码传给它的只有 lengths、masks 与 per-token 开关，没有 `rollout_ids` 或 `rollout_mask_sums`。[`slime/backends/megatron_utils/loss.py:1094-1105`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L1094-L1105)
-
-> **设计分析**：这个较窄的扩展点适合有意定义新的 policy-gradient 统计口径，不适合“自己重写一遍默认的 compact rollout 均值”；它看不到恢复 $D_g$ 所需的完整分组标识与分母。若只改变目标函数、仍要保持默认 rollout 统计，更稳妥的做法是让 custom loss 使用传入的归约函数。无论使用哪种扩展点，只要忽略归约器，DP/CP 代码仍可能正常运行，但框架不再能保证拓扑变化前后的结果一致。
 
 ## 4. 三种均值不是实现细节，而是三个不同估计量
 
@@ -213,7 +215,9 @@ TIS/custom rejection 可以返回 modified response masks。源码为 pg loss �
 
 这说明 mask 有两种不同语义：原始 `loss_mask` 定义基础统计口径，rejection mask 决定校正后仍保留哪些分子项。若把两者都压成一个“当前有效 token 数”，rejection 就会同时改变样本权重。
 
-## 9. 失败签名：如何看出归一化已经变了
+## 9. 约束与失败签名：这套不变性在什么前提下成立，被破坏时怎么看出来
+
+这一拍要回答三件事：前提、代价、框架故意不做什么。**三条前提**在前面各节已分别给出：（1）完整分母必须在展平、DP 切分和 micro-batch 打包**之前**保存，切分之后仅凭本地张量无法恢复 $D_g$（第 5 节）；（2）每个 DP rank 在同一 step 内的 micro-batch 数必须相同且对齐 VPP 分组倍数，静态模式不满足时直接报错（第 6 节）；（3）`step_global_batch_size` 必须同时充当 loss 分母、metrics 分母和 LR scheduler 的步进量，只改其一就会与另一者错配（第 7 节）。**代价**是每个 sample 都要携带一份属于整个 rollout 的冗余分母，并在 Megatron 的 micro-batch 缩放、DDP 平均与 CP 重复因子中逐个抵消。**框架故意不做**的三件事是：不从物理批次反推统计分组；不向 `custom_pg_loss_reducer` 暴露 `rollout_ids` 与 `rollout_mask_sums`，因此它无法自行重建 rollout 均值（第 2 节）；不按 rejection 之后的 token 数重算基础分母（第 8 节）。下表是这些前提被破坏时的可观测签名。
 
 | 观测到的症状 | 最可能被破坏的统计口径 | 源码/测试给出的诊断锚点 |
 |---|---|---|
@@ -237,6 +241,15 @@ TIS/custom rejection 可以返回 modified response masks。源码为 pg loss �
 5. `step_global_batch_size` 是否仍表示该 optimizer step 的 logical rollout 数，并同时驱动 loss、metrics 与 LR scheduler？
 6. custom loss 是否使用框架提供的 reducer；custom pg reducer 是否有意改变主 loss 与其他 metrics 的相对口径？
 7. DP/CP 组合、mbs packing、compact fanout 数改变时，固定数据的 loss、report 与 grad norm是否保持预期不变？
+
+## 11. 发展趋势
+
+本节离开“固定基线是什么”，因此只写有源码注释可锚定的在途改动，整节标为推断。
+
+> [!note] 推断：锚点是源码注释原文，方向判断是本页的重建
+> **一、advantage 归一化该不该是默认口径，源码自己没有结论。** `normalize_advantages` 分支正上方挂着 `# TODO: OpenRLHF always does advantages normalization but veRL doesn't seem to do it.`。[`loss.py:818`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L818) 这是一条被显式记录下来、在同类框架之间尚未收敛的统计口径分歧，而不是一个已经论证过的默认值。**由此可推断**，第 3.2 节那条“若开启 advantage 归一化”的分支，其默认值或归一化域仍可能变动；跨框架对比实验应把这一项当作必须显式记录的配置，不能假定两边默认一致。（它与 REINFORCE++ 系列强制要求归一化并不冲突：后者是参数校验的硬约束，前者是默认值之争。）
+>
+> **二、CP 的 logits/token 偏移抽象被标为待重写。** 既非 `cp_size == 1`、也非 `allgather_cp` 的那条 zigzag CP 分支，在调用 `get_logits_and_tokens_offset_with_cp` 之前挂着 `# TODO: this is super ugly... do better abstraction.`。[`loss.py:169`](https://github.com/THUDM/slime/blob/681b3adca54105d5ecd3fb822fa0dc58a427e0f9/slime/backends/megatron_utils/loss.py#L169) **由此可推断**，第 6 节依赖的那条数学契约（CP 分子可加、分母来自完整 response mask）不会因重构而改变，但实现这条契约的偏移计算代码是明确的重构候选；一旦落地，本页第 6、9 节引用的 `loss.py`/`cp_utils.py` 行号会失效，届时应重新核对源码，而不是照搬本页的定位符。
 
 ## Related Pages
 
