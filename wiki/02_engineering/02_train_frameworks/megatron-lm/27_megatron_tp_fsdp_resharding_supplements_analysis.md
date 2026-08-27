@@ -4,8 +4,8 @@ title: "Megatron-LM TP·FSDP·Resharding 补遗"
 
 # Megatron-LM TP·FSDP·Resharding 补遗
 
-> 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
-> 核心文件:`megatron/core/distributed/fsdp/`(Megatron-FSDP,~9500 行)、`distributed/nonuniform_tp.py`(1463 行)、`resharding/`(~2000 行)
+> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）
+> 核心文件:`megatron/core/distributed/fsdp/`(Megatron-FSDP,~9500 行)、`megatron/core/distributed/nonuniform_tp.py`(1463 行)、`resharding/`(~2000 行)
 > 配套阅读:`12_megatron_tp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`
 > 定位:"第一层补遗"第③份。补齐 3 块前面只点了名的内容。先做一处**勘误**:tier-1 清单里把它们叫"非均匀 TP / 弹性 resharding",读源码后更准确的命名是 ——
 
@@ -22,7 +22,7 @@ title: "Megatron-LM TP·FSDP·Resharding 补遗"
 | # | 主题 | 代码 | 一句话 |
 |---|------|------|--------|
 | 1 | Megatron-FSDP 内部 | `distributed/fsdp/src/megatron_fsdp/` | ZeRO-2/3 的流水线 AG/RS、预取、临时桶分配器、DTensor 分片 |
-| 2 | Nonuniform TP(NTP) | `distributed/nonuniform_tp.py` | TP 组里留备用 rank,核心 rank 故障时重分片续训 |
+| 2 | Nonuniform TP(NTP) | `megatron/core/distributed/nonuniform_tp.py` | TP 组里留备用 rank,核心 rank 故障时重分片续训 |
 | 3 | Resharding / Refit | `resharding/` | 在两套并行布局间搬运权重(RL:训练模型→推理模型) |
 
 ---
@@ -35,7 +35,7 @@ DDP 文档把 ZeRO-2/3 讲成"梯度也切 / 参数也切,逐层 all-gather 出�
 
 ### 1.2 `MegatronFSDP` —— FSDP 包装器
 
-`megatron_fsdp.py:106`。包住模型,按 `data_parallel_sharding_strategy` 选 ZeRO 阶段(`no_shard`/`optim`/`optim_grads`/`optim_grads_params`,对应 ZeRO-0/1/2/3,见 `16_megatron_distributed_optimizer_analysis.md` §0.3)。一个 `TrainingState` 状态机(`:63`)跟踪"此刻参数/梯度处于分片还是聚合态"。
+`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:106`。包住模型,按 `data_parallel_sharding_strategy` 选 ZeRO 阶段(`no_shard`/`optim`/`optim_grads`/`optim_grads_params`,对应 ZeRO-0/1/2/3,见 `16_megatron_distributed_optimizer_analysis.md` §0.3)。一个 `TrainingState` 状态机(`:63`)跟踪"此刻参数/梯度处于分片还是聚合态"。
 
 关键默认值(`:318`):
 - `optim_grads` / `optim_grads_params` → **默认开启梯度 reduce-scatter 重叠**(切了梯度就必须重叠,否则严重掉速)。
@@ -43,7 +43,7 @@ DDP 文档把 ZeRO-2/3 讲成"梯度也切 / 参数也切,逐层 all-gather 出�
 
 ### 1.3 核心:`ParamAndGradBuffer` + 两条流水线
 
-`param_and_grad_buffer.py`(4712 行,FSDP 的心脏)。所有参数/梯度装进扁平 buffer,再分桶(`BucketingPolicy:232`、`Bucket:444`)。两条流水线把通信与计算重叠:
+`megatron/core/distributed/fsdp/src/megatron_fsdp/param_and_grad_buffer.py`(4712 行,FSDP 的心脏)。所有参数/梯度装进扁平 buffer,再分桶(`BucketingPolicy:232`、`Bucket:444`)。两条流水线把通信与计算重叠:
 
 **`AllGatherPipeline`(`:3856`)—— 参数 all-gather 流水线**
 逐桶 all-gather 出完整参数。关键是 **`PrefetchOrder`(`:3843`)**:`FORWARD_PASS_ORDER` 让它**在算第 `i` 层时,提前 all-gather 第 `i+1` 层的参数** —— 用计算掩盖参数聚合的延迟。这正是 ZeRO-3 "通信 ×1.5" 能落地不掉速的关键。
@@ -67,11 +67,11 @@ ZeRO-3 一层的前向(AllGatherPipeline):
 
 ### 1.5 其他实现要点
 
-- **DTensor 分片**:`fully_shard.py` 用 torch 的 `DeviceMesh` / `DTensor` 表达分片,`--ckpt-format fsdp_dtensor`。
-- **不整除分片**:`uneven_dtensor.py`(483 行)处理参数 numel 不能被 DP 组整除的情况。
-- **混合精度**:`mixed_precision.py` 的 `MixedPrecisionPolicy`,含 fp8 transpose cache。
+- **DTensor 分片**:`megatron/core/distributed/fsdp/src/megatron_fsdp/fully_shard.py` 用 torch 的 `DeviceMesh` / `DTensor` 表达分片,`--ckpt-format fsdp_dtensor`。
+- **不整除分片**:`megatron/core/distributed/fsdp/src/megatron_fsdp/uneven_dtensor.py`(483 行)处理参数 numel 不能被 DP 组整除的情况。
+- **混合精度**:`megatron/core/distributed/fsdp/src/megatron_fsdp/mixed_precision.py` 的 `MixedPrecisionPolicy`,含 fp8 transpose cache。
 - **HSDP**:`outer_dp_sharding_strategy`(内层节点内分片、外层跨节点复制),见 `16_megatron_distributed_optimizer_analysis.md` §3。
-- **接入**:`mcore_fsdp_adapter.py` 把 Megatron-FSDP 缝进 Megatron-LM(`--use-megatron-fsdp`)。
+- **接入**:`megatron/core/distributed/fsdp/mcore_fsdp_adapter.py` 把 Megatron-FSDP 缝进 Megatron-LM(`--use-megatron-fsdp`)。
 
 ### 1.6 与 DDP 文档的衔接
 
@@ -81,7 +81,7 @@ ZeRO-3 一层的前向(AllGatherPipeline):
 
 ## 2. Nonuniform TP(NTP)—— TP 级容错
 
-`distributed/nonuniform_tp.py`。模块 docstring 直说:"provides fault tolerance for tensor-parallel training by allowing a subset of TP ranks ('spares') to handle failures while 'core' ranks continue computation."
+`megatron/core/distributed/nonuniform_tp.py`。模块 docstring 直说:"provides fault tolerance for tensor-parallel training by allowing a subset of TP ranks ('spares') to handle failures while 'core' ranks continue computation."
 
 ### 2.1 动机与解决的问题
 
@@ -101,7 +101,7 @@ core1 挂:reshard → core1 的分片经 A2A 摊到 core0/core2(+ side_grad 存�
 
 ### 2.3 非侵入式设计
 
-NTP 全部逻辑收在 `nonuniform_tp.py` 一个文件,以 Megatron 核心类的**子类**形式实现(`NonuniformTPDistributedDataParallel` 继承 `DistributedDataParallel`),不改动主代码。用法:`initialize_model_parallel()` 之后调 `initialize_nonuniform_tp_process_groups()`,并用 NTP 变体替换 DDP。`PerBufferParamLayout` / `FullParamLayout` 描述重分片后的参数布局。
+NTP 全部逻辑收在 `megatron/core/distributed/nonuniform_tp.py` 一个文件,以 Megatron 核心类的**子类**形式实现(`NonuniformTPDistributedDataParallel` 继承 `DistributedDataParallel`),不改动主代码。用法:`initialize_model_parallel()` 之后调 `initialize_nonuniform_tp_process_groups()`,并用 NTP 变体替换 DDP。`PerBufferParamLayout` / `FullParamLayout` 描述重分片后的参数布局。
 
 ### 2.4 开销与适用场景
 
@@ -136,7 +136,7 @@ copy_services/  可插拔传输后端:
    └── nvshmem  NVSHMEM 流水线式 GPU↔GPU
 ```
 
-外加 `transforms.py` 的 `MXFP8ReshardTransform` —— 搬运途中顺带做**格式转换**(BF16 → MXFP8),给推理模型用。
+外加 `megatron/core/resharding/transforms.py` 的 `MXFP8ReshardTransform` —— 搬运途中顺带做**格式转换**(BF16 → MXFP8),给推理模型用。
 
 ### 3.3 流程
 

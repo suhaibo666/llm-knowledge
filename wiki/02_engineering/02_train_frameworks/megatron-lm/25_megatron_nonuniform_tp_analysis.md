@@ -4,9 +4,11 @@ title: "Megatron Nonuniform Tensor Parallelism (NTP) 深度分析"
 
 # Megatron Nonuniform Tensor Parallelism (NTP) 深度分析
 
+> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）；本页原仅声明分支/未声明基线，经核对 9 处引用行号在此 commit 命中后补钉（`megatron/core/distributed/nonuniform_tp.py` 在 `232c478d4` 处内容完全一致，两基线均命中，取与同批页面一致的 `ee3f1ff`）。
+
 **Date**: 2026-05-20
 **Status**: Complete
-**Source**: `megatron/core/distributed/nonuniform_tp.py`, `nonuniform_tp_transformer_engine.py`, `README_NONUNIFORM_TP.md`
+**Source**: `megatron/core/distributed/nonuniform_tp.py`, `megatron/core/extensions/nonuniform_tp_transformer_engine.py`, `megatron/core/distributed/README_NONUNIFORM_TP.md`
 
 ## 1. 是什么？
 
@@ -41,14 +43,14 @@ NTP **不是性能优化特性**，而是**容错特性**。目标不是"跑得�
 
 ## 3. 怎么做的？
 
-NTP 的实现分为三个层面，完全自包含在两个文件内（`nonuniform_tp.py` + `nonuniform_tp_transformer_engine.py`），不侵入 Megatron 主流程。
+NTP 的实现分为三个层面，完全自包含在两个文件内（`megatron/core/distributed/nonuniform_tp.py` + `megatron/core/extensions/nonuniform_tp_transformer_engine.py`），不侵入 Megatron 主流程。
 
 ### 3.1 通信组重配置（冷重启时）
 
 触发时机：**作业启动时**，在 `initialize_model_parallel(tp_size=tp_base)` 之后、模型构建之前。
 
 ```python
-# nonuniform_tp.py:450-561
+# megatron/core/distributed/nonuniform_tp.py:450-561
 initialize_nonuniform_tp_process_groups(ntp_config, exit_spares=True)
 ```
 
@@ -58,7 +60,7 @@ initialize_nonuniform_tp_process_groups(ntp_config, exit_spares=True)
 3. Spare rank 收到 `non_active_ranks_per_dp` 中标记自己 → `sys.exit(0)` 退出
 4. Healthy 副本的通信组保持不变
 
-关键配置结构 `non_active_ranks_per_dp`（`nonuniform_tp.py:349-357`）：
+关键配置结构 `non_active_ranks_per_dp`（`megatron/core/distributed/nonuniform_tp.py:349-357`）：
 ```python
 non_active_ranks_per_dp={(0, 0, 0): [2, 3]}
 # DP=0, CP=0, PP=0 的副本中，local TP rank 2、3 是 spare
@@ -68,13 +70,13 @@ non_active_ranks_per_dp={(0, 0, 0): [2, 3]}
 
 ### 3.2 参数 Split 元数据（ntp_map）
 
-在 **healthy（full TP）rank** 上，对每个 TP 切分参数计算通信映射元数据（`nonuniform_tp.py:569-667`）：
+在 **healthy（full TP）rank** 上，对每个 TP 切分参数计算通信映射元数据（`megatron/core/distributed/nonuniform_tp.py:569-667`）：
 
 ```python
 ntp_map(module, ntp_config, num_shards)  # num_shards = num_attention_heads 或 ffn_hidden_size
 ```
 
-核心算法（`nonuniform_tp.py:626-663`）：
+核心算法（`megatron/core/distributed/nonuniform_tp.py:626-663`）：
 1. 将 `num_shards` 均匀分给 `reduced_tp_size` 个 rank（`sync_partitions`）
 2. Spare rank 的 shards 被逐个从 reduced TP ranks 的尾部"借"走（`comp_2_sync` 映射）
 3. 计算 `send_splits[i][j]`（rank i → rank j 的梯度元素数）和 `recv_splits`（转置）
@@ -112,36 +114,36 @@ sequenceDiagram
     Extra->>Extra: 接收属于自己的梯度
 ```
 
-**Step 1** 在 backward hook 中触发（`nonuniform_tp.py:1386-1458`）：
+**Step 1** 在 backward hook 中触发（`megatron/core/distributed/nonuniform_tp.py:1386-1458`）：
 - Core rank：接收 spare rank 的梯度 → 写入 `side_grad`
 - Spare rank：将 `main_grad` 按 `send_splits` 发给对应 core rank
 - 使用 `_ntp_all_to_all`（封装 `dist.all_to_all`，处理非连续 tensor）
 
 **Step 2** DP 梯度同步（`NonuniformTPParamAndGradBucketGroup`）：
-- `_ntp_current_rank_should_dp_sync`（`nonuniform_tp.py:149-164`）控制谁参与 DP sync
+- `_ntp_current_rank_should_dp_sync`（`megatron/core/distributed/nonuniform_tp.py:149-164`）控制谁参与 DP sync
 - Reduced 副本：所有 active ranks 正常参与
 - Healthy 副本：只有 core ranks（`tp_rank < reduced_tp_size`）参与 DP sync；extra ranks 不参与
 - Spare rank 已经被折叠，不存在
 
-**Step 3** Post-sync reshard（`nonuniform_tp.py:694-744`）：
+**Step 3** Post-sync reshard（`megatron/core/distributed/nonuniform_tp.py:694-744`）：
 - `_ntp_start_post_sync_grad_reshard` 将 DP 同步后的 side_grad 发回 healthy extra ranks
 - 设计为与下一个 bucket 的 DP all-reduce **重叠执行**（`_record_ntp_post_sync_handles`）
 
 ### 3.4 Buffer 与 Bucket 适配
 
-`NonuniformTPParamAndGradBuffer`（`nonuniform_tp.py:891-936`）：
+`NonuniformTPParamAndGradBuffer`（`megatron/core/distributed/nonuniform_tp.py:891-936`）：
 - Core rank 额外分配 `side_grad` 空间（大小 ≈ `recv_splits` 中 spare 贡献的总和）
 - `_ntp_side_grad_index_map` 追踪 side_grad 在 buffer 中的偏移
 - 主 grad（`main_grad`）对优化器保持连续可见，side_grad 是附加的
 
-`NonuniformTPParamAndGradBucketGroup`（`nonuniform_tp.py:752-823`）：
+`NonuniformTPParamAndGradBucketGroup`（`megatron/core/distributed/nonuniform_tp.py:752-823`）：
 - `start_grad_sync`：等待 NTP reshard handle 完成后启动 DP sync
 - `finish_grad_sync`：DP sync 完成后启动 post-sync reshard
 - `register_grad_ready`：被折叠的 rank 跳过 DP 就绪登记
 
 ### 3.5 Transformer Engine 适配
 
-`nonuniform_tp_transformer_engine.py`：处理 TE userbuffer 初始化需要统一 TP domain 的问题。通过 monkey-patch `dist.new_group` 和 `dist.new_subgroups_by_enumeration`，使 TE 在 NTP 的混合 size TP domains 上正确创建 userbuffer 通信组。
+`megatron/core/extensions/nonuniform_tp_transformer_engine.py`：处理 TE userbuffer 初始化需要统一 TP domain 的问题。通过 monkey-patch `dist.new_group` 和 `dist.new_subgroups_by_enumeration`，使 TE 在 NTP 的混合 size TP domains 上正确创建 userbuffer 通信组。
 
 ## 4. 关键约束与局限
 
@@ -151,11 +153,11 @@ NTP 走的是"先改通信组，再建模型"的路径。Reduced 副本的 rank 
 
 ### 4.2 不做优化器状态转换
 
-`distrib_optimizer.py` 中完全没有 NTP 引用。分布式优化器按当前 rank 的 TP/DP group 分片状态。从 checkpoint 恢复时，如果原本是 uniform TP，转换到 non-uniform TP 需要外部工具合并 spare rank 的优化器状态。
+`megatron/core/optimizer/distrib_optimizer.py` 中完全没有 NTP 引用。分布式优化器按当前 rank 的 TP/DP group 分片状态。从 checkpoint 恢复时，如果原本是 uniform TP，转换到 non-uniform TP 需要外部工具合并 spare rank 的优化器状态。
 
 ### 4.3 不做 checkpoint 转换
 
-`checkpointing.py` 和 `tools/checkpoint/` 中均无 NTP 相关代码。这意味着：
+`megatron/training/checkpointing.py` 和 `tools/checkpoint/` 中均无 NTP 相关代码。这意味着：
 
 | 场景 | 参数加载 | 优化器状态加载 |
 |------|---------|-------------|
@@ -182,12 +184,12 @@ NTP 是**完全 opt-in、non-intrusive** 的设计：
 
 | 模块 | NTP 引用？ | 说明 |
 |------|-----------|------|
-| `nonuniform_tp.py` | ✅ | 核心实现（~1460 lines） |
-| `nonuniform_tp_transformer_engine.py` | ✅ | TE 适配（~158 lines） |
+| `megatron/core/distributed/nonuniform_tp.py` | ✅ | 核心实现（~1460 lines） |
+| `megatron/core/extensions/nonuniform_tp_transformer_engine.py` | ✅ | TE 适配（~158 lines） |
 | `pretrain_gpt.py` | ❌ | 无引用 |
-| `checkpointing.py` | ❌ | 无引用 |
-| `distrib_optimizer.py` | ❌ | 无引用 |
-| `transformer_config.py` | ❌ | 无引用 |
+| `megatron/training/checkpointing.py` | ❌ | 无引用 |
+| `megatron/core/optimizer/distrib_optimizer.py` | ❌ | 无引用 |
+| `megatron/core/transformer/transformer_config.py` | ❌ | 无引用 |
 | `tools/checkpoint/` | ❌ | 无引用 |
 
 训练脚本必须显式使用 `NonuniformTPConfig` + `NonuniformTPDistributedDataParallel` + 手动调用 `ntp_init`/`ntp_map`。NTP 不改变 Megatron 的默认训练路径。

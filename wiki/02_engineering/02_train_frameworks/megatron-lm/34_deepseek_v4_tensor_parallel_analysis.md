@@ -6,8 +6,9 @@ title: "DeepSeek-V4 Tensor Parallel 切分方案深度解析"
 
 *基于 Megatron-LM dev 分支源码的实证分析 · CSA/HCA · MoE · mHC · 通信量与 Overlap*
 
-> **源基线**: Megatron-LM `dev` @ `232c478d4`（2026-06-16）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`moe/experts.py`、`hyper_connection.py` 等。
-> **维度**: 工程实现（框架层）。**审计/移库**: 2026-06-25（自 `02_train_frameworks/` 移入 `megatron-lm/`；核查 `deepseek_v4_hybrid_attention.py:92` 仍为 `get_pg_size(tp)==1`、`:447` 仍为 `parallel_mode='duplicated'`，行号较旧稿有数行漂移）。
+> **源码基线**: `NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`megatron/core/transformer/moe/experts.py`、`megatron/core/transformer/hyper_connection.py` 等。
+> **基线更正（2026-08-27）**: 原页头声明 `232c478d43ce2f8b4c8db3507d3623fa82f55823`（2026-06-16），但逐条核对表明正文行号系统性命中 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`：`deepseek_v4_hybrid_attention.py:87-88` 在前者即 `get_pg_size(self.pg_collection.tp) == 1` 的 TP=1 断言，在后者漂移到 `:92-93`；`csa.py:297/309/460/473` → `:313/325/476/489`；`hyper_connection.py:150-151` → `:193`；`experts.py:328-329` → `:347`。故基线改钉 `ee3f1ff…`。下面这条 2026-06-25 的审计注是在 `232c478d4…` 上做的，行号口径与正文不同，保留原文并已标明。
+> **维度**: 工程实现（框架层）。**审计/移库**: 2026-06-25（自 `02_train_frameworks/` 移入 `megatron-lm/`；**在 `dev@232c478d43ce2f8b4c8db3507d3623fa82f55823` 上**核查 `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:92` 仍为 `get_pg_size(tp)==1`、`:447` 仍为 `parallel_mode='duplicated'`，行号较旧稿有数行漂移）。
 > **与模型页的分工**: 模型侧无 TP 专页；本页是 V4 在 Megatron 的 *TP 切分实现*（强制 TP=1 的架构动因），与论文级架构 [[13_deepseek_v4_analysis]] / [[26_deepseek_v4_technical_deepdive]] 互补。
 
 **目录**
@@ -25,30 +26,30 @@ title: "DeepSeek-V4 Tensor Parallel 切分方案深度解析"
 ## 一 关键发现：V4 TP 的真实面貌
 
 > **核心发现 1：DSv4 Hybrid Attention 当前只支持 TP size = 1**  
-> 源码中明确断言：`assert get_pg_size(self.pg_collection.tp) == 1, "DSv4 Hybrid Attention only supports TP size 1."`（`deepseek_v4_hybrid_attention.py:87-88`）。这意味着当前 Megatron-LM dev 分支中，V4 的 Attention 层**不执行任何 TP 切分**，所有 Attention 计算在每个 rank 上完整重复。
+> 源码中明确断言：`assert get_pg_size(self.pg_collection.tp) == 1, "DSv4 Hybrid Attention only supports TP size 1."`（`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:87-88`）。这意味着当前 Megatron-LM dev 分支中，V4 的 Attention 层**不执行任何 TP 切分**，所有 Attention 计算在每个 rank 上完整重复。
 
 > **核心发现 2：Compressor 与 Indexer 均为 Duplicated 模式**  
-> `Compressor.linear_wkv`、`Compressor.linear_wgate`、`CSAIndexer.linear_wq_b`、`CSAIndexer.linear_weights_proj` 的 `build_module` 调用均传入 `parallel_mode="duplicated"`（`csa.py:297,309,460,473`）。这四个线性层在 TP 组内全量复制，不产生 TP 通信。
+> `Compressor.linear_wkv`、`Compressor.linear_wgate`、`CSAIndexer.linear_wq_b`、`CSAIndexer.linear_weights_proj` 的 `build_module` 调用均传入 `parallel_mode="duplicated"`（`megatron/core/transformer/experimental_attention_variant/csa.py:297,309,460,473`）。这四个线性层在 TP 组内全量复制，不产生 TP 通信。
 
 > **核心发现 3：mHC 使用原生 nn.Linear，非 TP-sharded**  
-> `HyperConnectionModule.mapping_proj = nn.Linear(self.n * self.hidden_size, self.n * self.n + 2 * self.n, bias=False)`（`hyper_connection.py:150-151`）。mHC 不通过 Column/Row Parallel 切分权重，而是依赖 `sequence_parallel` 属性触发梯度 AllReduce（`hyper_connection.py:195-200`）。
+> `HyperConnectionModule.mapping_proj = nn.Linear(self.n * self.hidden_size, self.n * self.n + 2 * self.n, bias=False)`（`megatron/core/transformer/hyper_connection.py:150-151`）。mHC 不通过 Column/Row Parallel 切分权重，而是依赖 `sequence_parallel` 属性触发梯度 AllReduce（`megatron/core/transformer/hyper_connection.py:195-200`）。
 
 > **核心发现 4：Routed Expert 的 fused GroupedMLP 不支持 Expert TP > 1**  
-> `TEGroupedMLP._is_fusable()` 中明确检查：`if self.tp_group.size() > 1: return _unsupported(f"expert TP > 1 (tp_size={self.tp_group.size()})")`（`experts.py:328-329`）。当前 fused 专家计算路径下，expert 内部不做 TP 切分。
+> `TEGroupedMLP._is_fusable()` 中明确检查：`if self.tp_group.size() > 1: return _unsupported(f"expert TP > 1 (tp_size={self.tp_group.size()})")`（`megatron/core/transformer/moe/experts.py:328-329`）。当前 fused 专家计算路径下，expert 内部不做 TP 切分。
 
 | 模块 | 先前推断 | 源码实际 | 关键代码位置 |
 | --- | --- | --- | --- |
-| DSv4 Attention | Column+Row Parallel TP 切分 | **TP size 必须 = 1**，不 TP 切分 | `deepseek_v4_hybrid_attention.py:87` |
-| q_down_proj | ColumnParallel | **Duplicated** (tp_group=None) | `deepseek_v4_hybrid_attention.py:427-439` |
-| q_up_proj | ColumnParallel | ColumnParallel 接口 (gather_output=False)，但 TP=1 不生效 | `deepseek_v4_hybrid_attention.py:442-454` |
-| kv_proj | ColumnParallel | ColumnParallel 接口 (gather_output=False)，但 TP=1 不生效 | `deepseek_v4_hybrid_attention.py:456-468` |
-| output_proj | RowParallel | RowParallel 接口 (input_is_parallel=True)，但 TP=1 不生效 | `deepseek_v4_hybrid_attention.py:183-195` |
-| o_group_proj | RowParallel 或 ColumnParallel | **nn.Parameter**，不分片 | `deepseek_v4_hybrid_attention.py:172-179` |
-| Compressor | ColumnParallel | **Duplicated** (parallel_mode="duplicated") | `csa.py:288,300` |
-| CSAIndexer | ColumnParallel | **Duplicated** (parallel_mode="duplicated") | `csa.py:451,464` |
-| mHC mapping_proj | Column+Row Parallel | **nn.Linear**，SP 梯度同步 | `hyper_connection.py:150` |
-| MoE Shared Expert | 标准 TP 切分 | 标准 TP 切分 (pg_collection.tp) | `shared_experts.py:118` |
-| MoE Routed Expert (fused) | ETP 切分 | **不支持 TP > 1** | `experts.py:328-329` |
+| DSv4 Attention | Column+Row Parallel TP 切分 | **TP size 必须 = 1**，不 TP 切分 | `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:87` |
+| q_down_proj | ColumnParallel | **Duplicated** (tp_group=None) | `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:427-439` |
+| q_up_proj | ColumnParallel | ColumnParallel 接口 (gather_output=False)，但 TP=1 不生效 | `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:442-454` |
+| kv_proj | ColumnParallel | ColumnParallel 接口 (gather_output=False)，但 TP=1 不生效 | `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:456-468` |
+| output_proj | RowParallel | RowParallel 接口 (input_is_parallel=True)，但 TP=1 不生效 | `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:183-195` |
+| o_group_proj | RowParallel 或 ColumnParallel | **nn.Parameter**，不分片 | `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:172-179` |
+| Compressor | ColumnParallel | **Duplicated** (parallel_mode="duplicated") | `megatron/core/transformer/experimental_attention_variant/csa.py:288,300` |
+| CSAIndexer | ColumnParallel | **Duplicated** (parallel_mode="duplicated") | `megatron/core/transformer/experimental_attention_variant/csa.py:451,464` |
+| mHC mapping_proj | Column+Row Parallel | **nn.Linear**，SP 梯度同步 | `megatron/core/transformer/hyper_connection.py:150` |
+| MoE Shared Expert | 标准 TP 切分 | 标准 TP 切分 (pg_collection.tp) | `megatron/core/transformer/moe/shared_experts.py:118` |
+| MoE Routed Expert (fused) | ETP 切分 | **不支持 TP > 1** | `megatron/core/transformer/moe/experts.py:328-329` |
 
 ## 一.五 为什么 V4 选择 TP=1：架构与工程考量
 
@@ -58,9 +59,9 @@ TP=1 不是实现上的临时妥协，而是 V4 架构的**结构性选择**。�
 
 CSA 的 `Compressor` 和 `Indexer` 是整个 Attention 路径中最关键也最特殊的操作，它们的计算特性决定了不适合 TP 切分。
 
-**Compressor** 在序列维度执行 `softmax(score, dim=1).sum(dim=1)` 的归约（`csa.py:377`）。这个操作将 `ratio` 个 token 压缩为 1 个，涉及跨 token 的 softmax 和 weighted sum。如果按 head/output 维度 TP 切分，每个 rank 只能看到部分 score，需要额外的 AllGather 才能计算正确的 softmax 分母——这比标准 Attention 的 TP 同步更复杂。
+**Compressor** 在序列维度执行 `softmax(score, dim=1).sum(dim=1)` 的归约（`megatron/core/transformer/experimental_attention_variant/csa.py:377`）。这个操作将 `ratio` 个 token 压缩为 1 个，涉及跨 token 的 softmax 和 weighted sum。如果按 head/output 维度 TP 切分，每个 rank 只能看到部分 score，需要额外的 AllGather 才能计算正确的 softmax 分母——这比标准 Attention 的 TP 同步更复杂。
 
-**CSAIndexer** 的 Top-K 选择（`csa.py:532`）基于全局的 compressed KV 计算索引。若 KV 被 TP 切分，每个 rank 只能索引本地持有的 KV 子集，会丢失全局 Top-K 的准确性。
+**CSAIndexer** 的 Top-K 选择（`megatron/core/transformer/experimental_attention_variant/csa.py:532`）基于全局的 compressed KV 计算索引。若 KV 被 TP 切分，每个 rank 只能索引本地持有的 KV 子集，会丢失全局 Top-K 的准确性。
 
 源码直接通过 `parallel_mode="duplicated"` 规避了这个问题：
 
@@ -86,7 +87,7 @@ self.linear_q_down_proj = build_module(
 
 来源：megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:427-439
 
-`q_down_proj` 的输出维度是 `q_lora_rank`（通常远小于 hidden_size），但它的输入是完整的 `hidden_states`。更重要的是，`q_down_proj` 的输入 `hidden_states` 同时被 `kv_compressed = hidden_states` 直接复用（`deepseek_v4_hybrid_attention.py:558`），作为 KV 压缩的输入传入 `Compressor`。
+`q_down_proj` 的输出维度是 `q_lora_rank`（通常远小于 hidden_size），但它的输入是完整的 `hidden_states`。更重要的是，`q_down_proj` 的输入 `hidden_states` 同时被 `kv_compressed = hidden_states` 直接复用（`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:558`），作为 KV 压缩的输入传入 `Compressor`。
 
 如果 `q_down_proj` 做 ColumnParallel，输入 `hidden_states` 需要先 AllGather（因为 RowParallel 的下一层需要完整输入），而 KV 压缩也需要完整的 `hidden_states`——这导致输入侧需要两次全量数据准备，通信收益被抵消。`tp_group=None` 的选择说明设计者认为：**在压缩路径上保持完整输入比 TP 切分更划算**。
 
@@ -101,7 +102,7 @@ self.linear_o_group_proj = torch.nn.Parameter(_linear_o_group_proj)  # deepseek_
 
 来源：megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:172-179
 
-输出投影不是标准的线性层，而是 `o_groups` 个独立的 LoRA 投影（`einsum("...gd,grd->...gr", core_attn_out, wo_a_weight)`，`deepseek_v4_hybrid_attention.py:376`）。这个分组的 einsum 操作在 `o_groups` 维度上需要完整的注意力输出。
+输出投影不是标准的线性层，而是 `o_groups` 个独立的 LoRA 投影（`einsum("...gd,grd->...gr", core_attn_out, wo_a_weight)`，`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:376`）。这个分组的 einsum 操作在 `o_groups` 维度上需要完整的注意力输出。
 
 如果强行 TP 切分，需要在 einsum 前 AllGather 完整的 attention 输出（跨越 head 维度），然后在 einsum 后再按 hidden_size 维度重新分片——这种复杂的通信模式使得标准 Column/Row Parallel 无法直接套用。`nn.Parameter` 的手动创建绕过了 Megatron 的 TP 切分基础设施。
 
@@ -120,7 +121,7 @@ V3/V4 的每 token 激活参数量很小（V3 37B，V4 的 CSA/HCA 进一步降�
 -   **Attention 层**：由于 MLA 的 KV 共享和 CSA 的压缩，Attention 的激活占用已经很小
 -   **MoE 层**：Routed Expert 通过 EP 已经将 expert 分布到不同 GPU，TP 进一步切分 expert 的边际收益有限
 
-在 `experts.py:328-329` 中，`TEGroupedMLP` 明确拒绝 `TP > 1`：
+在 `megatron/core/transformer/moe/experts.py:328-329` 中，`TEGroupedMLP` 明确拒绝 `TP > 1`：
 
 ```
 if self.tp_group.size() > 1:
@@ -202,7 +203,7 @@ self.linear_proj = build_module(
 
 ### 2.2 ModuleSpec 中的后端映射
 
-在 `experimental_attention_variant_module_specs.py:187-194` 中，backend 对 DSv4 Attention 各子模块的映射如下：
+在 `megatron/core/models/gpt/experimental_attention_variant_module_specs.py:187-194` 中，backend 对 DSv4 Attention 各子模块的映射如下：
 
 ```
 attention = ModuleSpec(
@@ -414,7 +415,7 @@ def _is_fusable(self):
 
 ### 5.3 Expert TP 的向后兼容行为
 
-`parallel_state.py` 中 `get_expert_tensor_parallel_world_size()` 的 fallback 逻辑表明，当 expert TP group 未显式初始化时，默认复用标准的 TP group：
+`megatron/core/parallel_state.py` 中 `get_expert_tensor_parallel_world_size()` 的 fallback 逻辑表明，当 expert TP group 未显式初始化时，默认复用标准的 TP group：
 
 ```
 def get_expert_tensor_parallel_world_size():

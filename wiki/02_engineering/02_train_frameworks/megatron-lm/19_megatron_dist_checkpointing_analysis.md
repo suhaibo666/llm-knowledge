@@ -4,8 +4,8 @@ title: "Megatron-LM 分布式 Checkpoint 深度解析(Distributed Checkpointing)
 
 # Megatron-LM 分布式 Checkpoint 深度解析(Distributed Checkpointing)
 
-> 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
-> 核心文件:`megatron/core/dist_checkpointing/` 下 `mapping.py`(`ShardedTensor`)、`serialization.py`(`save`/`load`)、`strategies/`、`validation.py`
+> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）
+> 核心文件:`megatron/core/dist_checkpointing/` 下 `megatron/core/dist_checkpointing/mapping.py`(`ShardedTensor`)、`megatron/core/dist_checkpointing/serialization.py`(`save`/`load`)、`strategies/`、`megatron/core/dist_checkpointing/validation.py`
 > 配套阅读:`17_megatron_parallelism_orchestration_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §3(resharding)
 > 定位:模型/优化器状态如何**存盘与读取**。
 
@@ -38,7 +38,7 @@ title: "Megatron-LM 分布式 Checkpoint 深度解析(Distributed Checkpointing)
 
 ## 2. 核心抽象:`ShardedTensor`
 
-`mapping.py:52`。整个子系统的核心 —— 描述**本地张量(本 rank 这一片)↔ 全局张量(逻辑全量)**的映射:
+`megatron/core/dist_checkpointing/mapping.py:52`。整个子系统的核心 —— 描述**本地张量(本 rank 这一片)↔ 全局张量(逻辑全量)**的映射:
 
 ```python
 @dataclass
@@ -68,7 +68,7 @@ class ShardedTensor(ShardedBase):
 
 ## 3. 其他 sharded 类型
 
-`mapping.py` 还有三类(都继承 `ShardedBase`):
+`megatron/core/dist_checkpointing/mapping.py` 还有三类(都继承 `ShardedBase`):
 
 | 类型 | 用途 |
 |------|------|
@@ -120,10 +120,10 @@ save(sharded_state_dict, checkpoint_dir, ...):
 
 | strategy | 文件 | 作用 |
 |----------|------|------|
-| **TorchDist** | `strategies/torch.py` | 基于 PyTorch 分布式 checkpoint(DCP)格式,`--ckpt-format torch_dist`,默认 |
-| **fully-parallel** | `strategies/fully_parallel.py` | **全并行存/载**:把写盘工作**摊给所有 rank**(而非只 rank 0),每 rank 写大致等量 → checkpoint 大幅提速;天然跳过 DP 副本冗余 |
-| **async** | `strategies/filesystem_async.py`、`async_utils.py` | **异步存档**:`save` 把数据交给后台线程写盘,主训练流不阻塞 |
-| **nvrx** | `strategies/nvrx.py` | NVIDIA Resiliency 扩展集成 —— 本地/内存级 checkpoint,从瞬时故障快速重启 |
+| **TorchDist** | `megatron/core/dist_checkpointing/strategies/torch.py` | 基于 PyTorch 分布式 checkpoint(DCP)格式,`--ckpt-format torch_dist`,默认 |
+| **fully-parallel** | `megatron/core/dist_checkpointing/strategies/fully_parallel.py` | **全并行存/载**:把写盘工作**摊给所有 rank**(而非只 rank 0),每 rank 写大致等量 → checkpoint 大幅提速;天然跳过 DP 副本冗余 |
+| **async** | `megatron/core/dist_checkpointing/strategies/filesystem_async.py`、`megatron/core/dist_checkpointing/strategies/async_utils.py` | **异步存档**:`save` 把数据交给后台线程写盘,主训练流不阻塞 |
+| **nvrx** | `megatron/core/dist_checkpointing/strategies/nvrx.py` | NVIDIA Resiliency 扩展集成 —— 本地/内存级 checkpoint,从瞬时故障快速重启 |
 
 `async` 与 `fully-parallel` 是两个关键性能特性:前者把存档延迟**藏进计算**,后者把存档 I/O **摊到所有卡**。大模型 checkpoint 动辄 TB 级,这两者让"每隔 N 步存一次"不至于拖垮吞吐。
 
@@ -149,7 +149,7 @@ save(sharded_state_dict, checkpoint_dir, ...):
 - **`sharded_state_dict()`**:每个 Megatron 模块自我声明分片映射,驱动 save/load。
 - **save/load**:存成并行无关的全局张量;加载时按**当前(可不同的)布局**重新切片 —— 这就是"`TP8×PP4` 存、`TP2×PP1` 载"成立的原理。
 - **策略**:`torch_dist` 默认;`fully-parallel`(I/O 摊到所有卡)+ `async`(后台写、不阻塞训练)是两个关键提速特性;`nvrx` 做快速故障重启。
-- **校验**:`validation.py` 保证全局张量被分片无缺口、无重叠地覆盖。
+- **校验**:`megatron/core/dist_checkpointing/validation.py` 保证全局张量被分片无缺口、无重叠地覆盖。
 - 与 resharding 的区别:dist_checkpointing 是**磁盘**存档(续训),resharding 是 GPU↔GPU **实时**搬权重(RL 训推)。
 
 ---

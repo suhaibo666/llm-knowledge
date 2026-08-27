@@ -4,8 +4,8 @@ title: "Megatron-LM 专家并行(Expert Parallelism / MoE)深度解析"
 
 # Megatron-LM 专家并行(Expert Parallelism / MoE)深度解析
 
-> 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
-> 核心目录:`megatron/core/transformer/moe/`(`moe_layer.py` 855 行、`token_dispatcher.py` 1624 行、`router.py`、`experts.py`)
+> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）
+> 核心目录:`megatron/core/transformer/moe/`(`megatron/core/transformer/moe/moe_layer.py` 855 行、`megatron/core/transformer/moe/token_dispatcher.py` 1624 行、`megatron/core/transformer/moe/router.py`、`megatron/core/transformer/moe/experts.py`)
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md`(EP A2A 重叠 = 该文档的调度器⑤ combined-1F1B)
 > 适用读者:已了解 transformer 训练与 TP/DP/PP,想吃透 Megatron MoE 专家并行实现的工程师。
 
@@ -37,7 +37,7 @@ EP 不是"调度器"的集合,而是一个**并行维度**。它内部真正分�
 
 ### 0.3 MoE 层四步数据流
 
-`MoELayer.forward`(`moe_layer.py:660`)的 `custom_forward` 把一层 MoE 拆成 4 步:
+`MoELayer.forward`(`megatron/core/transformer/moe/moe_layer.py:660`)的 `custom_forward` 把一层 MoE 拆成 4 步:
 
 ```
                        hidden_states [s, b, h]
@@ -63,15 +63,15 @@ EP 不是"调度器"的集合,而是一个**并行维度**。它内部真正分�
                        output [s, b, h]
 ```
 
-源码:`route`(`moe_layer.py:445`)、`preprocess`(`460`)、`dispatch`(`512`)、`routed_experts_compute`(`584`)、`combine`(`619`)、`postprocess`(`628`)。
+源码:`route`(`megatron/core/transformer/moe/moe_layer.py:445`)、`preprocess`(`460`)、`dispatch`(`512`)、`routed_experts_compute`(`584`)、`combine`(`619`)、`postprocess`(`628`)。
 
 ### 0.4 三种 Token Dispatcher 一览
 
 | # | Dispatcher | 类 | 触发 | 核心通信 |
 |---|-----------|-----|------|---------|
-| ① | AllGather | `MoEAllGatherTokenDispatcher`(`token_dispatcher.py:229`) | `--moe-token-dispatcher-type allgather`(默认) | AllGather + ReduceScatter,跨 TP×EP 域 |
-| ② | AllToAll | `MoEAlltoAllTokenDispatcher`(`token_dispatcher.py:371`) | `--moe-token-dispatcher-type alltoall` | All-to-All,跨 EP 域(+ TP AllGather) |
-| ③ | Flex | `MoEFlexTokenDispatcher`(`token_dispatcher.py:1402`) | `--moe-token-dispatcher-type flex` | DeepEP / HybridEP 融合 dispatch 内核 |
+| ① | AllGather | `MoEAllGatherTokenDispatcher`(`megatron/core/transformer/moe/token_dispatcher.py:229`) | `--moe-token-dispatcher-type allgather`(默认) | AllGather + ReduceScatter,跨 TP×EP 域 |
+| ② | AllToAll | `MoEAlltoAllTokenDispatcher`(`megatron/core/transformer/moe/token_dispatcher.py:371`) | `--moe-token-dispatcher-type alltoall` | All-to-All,跨 EP 域(+ TP AllGather) |
+| ③ | Flex | `MoEFlexTokenDispatcher`(`megatron/core/transformer/moe/token_dispatcher.py:1402`) | `--moe-token-dispatcher-type flex` | DeepEP / HybridEP 融合 dispatch 内核 |
 
 ### 0.5 记号约定
 
@@ -122,7 +122,7 @@ README 实例:Mixtral 8×7B 上 `EP8×TP1` 优于 `EP4×TP2`。
 
 ### 2.1 进程组:EP / ETP / EDP
 
-`BaseMoELayer.__init__`(`moe_layer.py:156`)按 EP 组切分专家:
+`BaseMoELayer.__init__`(`megatron/core/transformer/moe/moe_layer.py:156`)按 EP 组切分专家:
 
 ```python
 ep_size = utils.get_pg_size(self.ep_group)
@@ -133,7 +133,7 @@ self.local_expert_indices = [local_expert_indices_offset + i             # 本�
                              for i in range(self.num_local_experts)]
 ```
 
-`parallel_state.py` 为 MoE 维护一组独立进程组:
+`megatron/core/parallel_state.py` 为 MoE 维护一组独立进程组:
 - `get_expert_model_parallel_group`(`:1870`)—— **EP** 组,专家按个数切分的维度。
 - `get_expert_tensor_parallel_group`(`:1920`)—— **ETP** 组,专家层内部的 TP。
 - `get_expert_data_parallel_group`(`:2000`)—— **EDP** 组,专家权重的数据并行副本。
@@ -143,7 +143,7 @@ self.local_expert_indices = [local_expert_indices_offset + i             # 本�
 
 ### 2.2 MoELayer.forward 四步(源码)
 
-`moe_layer.py:660` 的 `custom_forward`:
+`megatron/core/transformer/moe/moe_layer.py:660` 的 `custom_forward`:
 
 ```python
 # ① route + preprocess
@@ -160,11 +160,11 @@ output = self.combine(output)                                            # 反�
 output = self.postprocess(output, shared_expert_output)                  # 置换还原 + 加 shared expert
 ```
 
-`dispatch` / `combine`(`moe_layer.py:512` / `619`)只是薄封装,真正干活的是 `self.token_dispatcher.token_dispatch / token_combine` —— 即 §3 的三种 dispatcher。
+`dispatch` / `combine`(`megatron/core/transformer/moe/moe_layer.py:512` / `619`)只是薄封装,真正干活的是 `self.token_dispatcher.token_dispatch / token_combine` —— 即 §3 的三种 dispatcher。
 
 ### 2.3 Router:打分 → top-k → routing_map
 
-`route`(`moe_layer.py:445`)调 `self.router`。router 做:
+`route`(`megatron/core/transformer/moe/moe_layer.py:445`)调 `self.router`。router 做:
 1. 一个轻量线性层把 `hidden_states` 投影成 `[s, E]` 的 logits(建议 `--moe-router-dtype fp32`,高专家数下精度敏感)。
 2. 打分函数 `softmax` 或 `sigmoid` → 概率。
 3. 选 top-`k`(或先选 top-group 再选组内专家,group-limited routing)。
@@ -176,16 +176,16 @@ output = self.postprocess(output, shared_expert_output)                  # 置�
 
 ### 2.4 Experts:GroupedGEMM vs Sequential
 
-`dispatched_input` 到达本卡后,`routed_experts_compute`(`moe_layer.py:584`)先 `dispatch_postprocess` 把 token 按本地专家排好,再喂给 `self.experts`:
+`dispatched_input` 到达本卡后,`routed_experts_compute`(`megatron/core/transformer/moe/moe_layer.py:584`)先 `dispatch_postprocess` 把 token 按本地专家排好,再喂给 `self.experts`:
 
-- **`TEGroupedMLP`**(`experts.py:168`,`--moe-grouped-gemm`):把 `E/ep` 个专家的 GEMM **批成一次 grouped GEMM 内核**,即使各专家 token 数不同也只发一个 kernel。GPU 利用率高,是推荐路径。
-- **`SequentialMLP`**(`experts.py:1143`):逐专家循环跑普通 MLP。kernel 数 = 专家数,launch 开销大,仅作回退。
+- **`TEGroupedMLP`**(`megatron/core/transformer/moe/experts.py:168`,`--moe-grouped-gemm`):把 `E/ep` 个专家的 GEMM **批成一次 grouped GEMM 内核**,即使各专家 token 数不同也只发一个 kernel。GPU 利用率高,是推荐路径。
+- **`SequentialMLP`**(`megatron/core/transformer/moe/experts.py:1143`):逐专家循环跑普通 MLP。kernel 数 = 专家数,launch 开销大,仅作回退。
 
 ---
 
 ## 调度器① — AllGather Dispatcher
 
-`MoEAllGatherTokenDispatcher`,`token_dispatcher.py:229`。`--moe-token-dispatcher-type allgather`(**默认值**)。
+`MoEAllGatherTokenDispatcher`,`megatron/core/transformer/moe/token_dispatcher.py:229`。`--moe-token-dispatcher-type allgather`(**默认值**)。
 
 ### ①.1 动机与解决的问题
 
@@ -272,7 +272,7 @@ R3  [t12 ...   ]──┘                                       permute → Grou
 
 ## 调度器② — AllToAll Dispatcher
 
-`MoEAlltoAllTokenDispatcher`,`token_dispatcher.py:371`。`--moe-token-dispatcher-type alltoall`。
+`MoEAlltoAllTokenDispatcher`,`megatron/core/transformer/moe/token_dispatcher.py:371`。`--moe-token-dispatcher-type alltoall`。
 
 ### ②.1 动机与解决的问题
 
@@ -282,7 +282,7 @@ AllGather 的浪费在于**每个 rank 吞全量 token**,绝大多数与本地�
 
 ### ②.2 源码与流程
 
-dispatcher 自己的注释(`token_dispatcher.py:375`)给出 7 步工作流。核心三段:
+dispatcher 自己的注释(`megatron/core/transformer/moe/token_dispatcher.py:375`)给出 7 步工作流。核心三段:
 
 ```python
 def dispatch_preprocess(self, hidden_states, routing_map, probs):     # :615
@@ -399,13 +399,13 @@ T2 = prob(E0)·out0[T2] + prob(E3)·out3[T2]
 - **不推荐**:极小 EP / 大 topk(此时 AllGather 更优);超大规模跨节点细粒度 MoE(此时 Flex/DeepEP 更优,见③)。
 
 > [!update] 2026-06-16 · dev@232c478d4
-> **`tp=ep=1` 时跳过"置换2"(identity chunk sort)**(#5102,`token_dispatcher.py:496`、`755`、`801`)。AllToAll dispatcher 在 `num_local_experts>1` 时本要做"置换2"(`sort_chunks_by_idxs`,把 A2A 收来的 token 按本地专家重新分组,见 §②.2 `dispatch_postprocess`)。但当 `tp_size==1 且 ep_size==1`(没有真正的跨 rank A2A,token 本就按全局专家顺序排好)时,这次置换是**恒等操作**,只是无谓拷贝显存。新增 `_local_expert_chunk_sort_is_identity()` 判定此情形,跳过 dispatch/combine 两侧的置换2,省一次置换内核与中间缓冲。退化并行配置(单卡多专家、调试)受益。
+> **`tp=ep=1` 时跳过"置换2"(identity chunk sort)**(#5102,`megatron/core/transformer/moe/token_dispatcher.py:496`、`755`、`801`)。AllToAll dispatcher 在 `num_local_experts>1` 时本要做"置换2"(`sort_chunks_by_idxs`,把 A2A 收来的 token 按本地专家重新分组,见 §②.2 `dispatch_postprocess`)。但当 `tp_size==1 且 ep_size==1`(没有真正的跨 rank A2A,token 本就按全局专家顺序排好)时,这次置换是**恒等操作**,只是无谓拷贝显存。新增 `_local_expert_chunk_sort_is_identity()` 判定此情形,跳过 dispatch/combine 两侧的置换2,省一次置换内核与中间缓冲。退化并行配置(单卡多专家、调试)受益。
 
 ---
 
 ## 调度器③ — Flex Dispatcher(DeepEP / HybridEP)
 
-`MoEFlexTokenDispatcher`,`token_dispatcher.py:1402`。`--moe-token-dispatcher-type flex` + `--moe-flex-dispatcher-backend deepep|hybridep`。
+`MoEFlexTokenDispatcher`,`megatron/core/transformer/moe/token_dispatcher.py:1402`。`--moe-token-dispatcher-type flex` + `--moe-flex-dispatcher-backend deepep|hybridep`。
 
 ### ③.1 动机与解决的问题
 
@@ -414,7 +414,7 @@ T2 = prob(E0)·out0[T2] + prob(E3)·out3[T2]
 1. **跨节点冗余**:一个 token 的 `k` 个专家可能多个落在**同一个远程节点**。标准 A2A 仍按"专家"为粒度发送 → 同一 token 跨节点重复传 `k` 次。
 2. **置换与通信分离**:置换1、A2A、置换2 是分立的内核,反复读写显存,带宽浪费,且难重叠。
 
-**Flex Dispatcher 的动机**:① 把通信域抽象成一个**统一的 TP×EP 组**,dispatch 逻辑与具体 TP/EP 分解解耦(`_initialize_metadata`,`token_dispatcher.py:1453`,把 `routing_map` 扩展成 `[token, world_size, local_experts]`);② 调用 **DeepEP / HybridEP 的融合内核**,把"置换 + A2A"合成一个 kernel,并在跨节点通信中**去掉冗余 token**(同节点多专家只跨节点发一次,落地后节点内复制)。
+**Flex Dispatcher 的动机**:① 把通信域抽象成一个**统一的 TP×EP 组**,dispatch 逻辑与具体 TP/EP 分解解耦(`_initialize_metadata`,`megatron/core/transformer/moe/token_dispatcher.py:1453`,把 `routing_map` 扩展成 `[token, world_size, local_experts]`);② 调用 **DeepEP / HybridEP 的融合内核**,把"置换 + A2A"合成一个 kernel,并在跨节点通信中**去掉冗余 token**(同节点多专家只跨节点发一次,落地后节点内复制)。
 
 | 后端 | 特点 | 适用 |
 |------|------|------|
@@ -483,7 +483,7 @@ DeepEP fused_dispatch:
 
 #### ③.3.1 两级 dispatch 机制(源码)
 
-`fused_dispatch`(`fused_a2a.py:135`)先 `get_dispatch_layout` 拿到**两套**变长计数,对应两级通信:
+`fused_dispatch`(`megatron/core/transformer/moe/fused_a2a.py:135`)先 `get_dispatch_layout` 拿到**两套**变长计数,对应两级通信:
 
 | 计数 | 粒度 | 阶段 |
 |------|------|------|
@@ -491,7 +491,7 @@ DeepEP fused_dispatch:
 | `num_tokens_per_rank` | 每 **GPU**(EP-rank) | `intra_dispatch`(NVLink) |
 | `is_token_in_rank` | token→GPU 归属 | 节点内 fan-out |
 
-buffer 也分两块:`num_rdma_bytes`(跨节点)+ `num_nvl_bytes`(节点内,`get_buffer:62`);注释 `wait in deepep::intra/inter_dispatch`(`fused_a2a.py:168`)点明两阶段。**核心规则:一个 token 不论在目标 node 上命中几个专家/几张卡,跨 node 只发一次(RDMA),落地后由该 node 内 NVLink 复制给真正的目标卡** —— asymmetric-domain forwarding,把流量从稀缺 IB 转到富裕 NVLink。
+buffer 也分两块:`num_rdma_bytes`(跨节点)+ `num_nvl_bytes`(节点内,`get_buffer:62`);注释 `wait in deepep::intra/inter_dispatch`(`megatron/core/transformer/moe/fused_a2a.py:168`)点明两阶段。**核心规则:一个 token 不论在目标 node 上命中几个专家/几张卡,跨 node 只发一次(RDMA),落地后由该 node 内 NVLink 复制给真正的目标卡** —— asymmetric-domain forwarding,把流量从稀缺 IB 转到富裕 NVLink。
 
 #### ③.3.2 通信量公式(两级分解)
 
@@ -550,7 +550,7 @@ $R(X)=\{B\}$,$g_B(X)=2$(GPU2、GPU3),$g_s(X)=1$(GPU1)。
 
 #### ③.3.4 注意:不是 NCCL all2allv collective
 
-标准 `MoEAlltoAllTokenDispatcher` 用的是变长 all2allv(`all_to_all` + `input_splits/output_splits`,`token_dispatcher.py:703`、`:558` "in variable size",底层 `all_to_all_single`)。**DeepEP/HybridEP 不是 collective**:Flex 路径无任何 `all_to_all` 调用,而是 `buffer.dispatch()`(`fused_a2a.py:160`)—— DeepEP/HybridEP 库的**融合 CUDA 内核**,底层是 **NVSHMEM 单边 RDMA**(normal 内核走 IBRC,low-latency 走 IBGDA;HybridEP 用 IBGDA + TMA),与 permute 融合、两级(RDMA per-node + NVLink per-GPU)。语义上是"变长 all-to-all"(`num_tokens_per_rdma_rank` / `num_tokens_per_rank` 就是那个 "v"),但实现上是**单边、融合、两级**,所以才能做 node 级去冗余 —— 普通 GPU↔GPU all2allv 做不到。
+标准 `MoEAlltoAllTokenDispatcher` 用的是变长 all2allv(`all_to_all` + `input_splits/output_splits`,`megatron/core/transformer/moe/token_dispatcher.py:703`、`:558` "in variable size",底层 `all_to_all_single`)。**DeepEP/HybridEP 不是 collective**:Flex 路径无任何 `all_to_all` 调用,而是 `buffer.dispatch()`(`megatron/core/transformer/moe/fused_a2a.py:160`)—— DeepEP/HybridEP 库的**融合 CUDA 内核**,底层是 **NVSHMEM 单边 RDMA**(normal 内核走 IBRC,low-latency 走 IBGDA;HybridEP 用 IBGDA + TMA),与 permute 融合、两级(RDMA per-node + NVLink per-GPU)。语义上是"变长 all-to-all"(`num_tokens_per_rdma_rank` / `num_tokens_per_rank` 就是那个 "v"),但实现上是**单边、融合、两级**,所以才能做 node 级去冗余 —— 普通 GPU↔GPU all2allv 做不到。
 
 #### ③.3.5 通信量图解(三图速览)
 
@@ -586,19 +586,19 @@ $R(X)=\{B\}$,$g_B(X)=2$(GPU2、GPU3),$g_s(X)=1$(GPU1)。
 
 > [!update] 2026-06-16 · dev@232c478d4 — Flex / DeepEP / HybridEP 后端的多项演进
 >
-> 1. **新增 `deepepv2` 后端**(#4793,`transformer_config.py:881`、`token_dispatcher.py:1470`)。`--moe-flex-dispatcher-backend` 取值从 `{deepep, hybridep}` 扩为 `{deepep, deepepv2, hybridep}`。`deepepv2` 用 DeepEP v2 的 **ElasticBuffer** API(`get_elastic_buffer` + `deepepv2_dispatch/combine`),由新类 `_DeepepV2Manager`(继承 `_DeepepManager` 但**不调其 `__init__`**,因为 v2-only 镜像可能不带 v1 Buffer API)承载。语义与 `deepep` 一致(跨节点去冗余 fused dispatch/combine),只是底层缓冲管理换成弹性缓冲;仍要求 probs 为 fp32(`--moe-router-dtype fp32`)。
+> 1. **新增 `deepepv2` 后端**(#4793,`megatron/core/transformer/transformer_config.py:881`、`megatron/core/transformer/moe/token_dispatcher.py:1470`)。`--moe-flex-dispatcher-backend` 取值从 `{deepep, hybridep}` 扩为 `{deepep, deepepv2, hybridep}`。`deepepv2` 用 DeepEP v2 的 **ElasticBuffer** API(`get_elastic_buffer` + `deepepv2_dispatch/combine`),由新类 `_DeepepV2Manager`(继承 `_DeepepManager` 但**不调其 `__init__`**,因为 v2-only 镜像可能不带 v1 Buffer API)承载。语义与 `deepep` 一致(跨节点去冗余 fused dispatch/combine),只是底层缓冲管理换成弹性缓冲;仍要求 probs 为 fp32(`--moe-router-dtype fp32`)。
 >
-> 2. **`moe_deepep_num_sms` 默认值改为 `None`**(#4793,`transformer_config.py:942`,原固定 `20`)。`None` 时:`deepep` 走 v1 默认 20 SM;`deepepv2` 走 `num_sms=0` 交库自适应。原"DeepEP 固定占 20 SM"的隐含假设已不再硬编码。
+> 2. **`moe_deepep_num_sms` 默认值改为 `None`**(#4793,`megatron/core/transformer/transformer_config.py:942`,原固定 `20`)。`None` 时:`deepep` 走 v1 默认 20 SM;`deepepv2` 走 `num_sms=0` 交库自适应。原"DeepEP 固定占 20 SM"的隐含假设已不再硬编码。
 >
-> 3. **Flex(DeepEP/HybridEP)现支持 THD / sequence packing 训练**(#4816,`transformer_config.py:3010`)。原断言"`sequence_packing` 仅支持 `alltoall`"放宽为 `('alltoall','flex')`。HybridEP 要求各 rank 输入 token 数相等,而 THD packed 各 rank token 数不一,故 `_HybridEPManager.setup_metadata`(`token_dispatcher.py:1071`)把本地 token 数 all-reduce 取**组内最大**、按 `HYBRIDEP_TOKEN_ALIGNMENT=64`(`fused_a2a.py:503`)对齐后**补零**,combine 末尾再**裁回**原长度。
+> 3. **Flex(DeepEP/HybridEP)现支持 THD / sequence packing 训练**(#4816,`megatron/core/transformer/transformer_config.py:3010`)。原断言"`sequence_packing` 仅支持 `alltoall`"放宽为 `('alltoall','flex')`。HybridEP 要求各 rank 输入 token 数相等,而 THD packed 各 rank token 数不一,故 `_HybridEPManager.setup_metadata`(`megatron/core/transformer/moe/token_dispatcher.py:1071`)把本地 token 数 all-reduce 取**组内最大**、按 `HYBRIDEP_TOKEN_ALIGNMENT=64`(`megatron/core/transformer/moe/fused_a2a.py:503`)对齐后**补零**,combine 末尾再**裁回**原长度。
 >
-> 4. **新增 `moe_hybridep_pad_variable_tokens` 开关**(#5048,`transformer_config.py:889`)。把上条的"补齐到组内最大 token 数"从"仅当启用 `sequence_packing_scheduler`"解耦:当前端自供本地 packed THD(不走 Megatron-Core 的 sequence packing 调度器)、但各 rank token 数仍不齐时,可单独打开此开关触发同样 padding。
+> 4. **新增 `moe_hybridep_pad_variable_tokens` 开关**(#5048,`megatron/core/transformer/transformer_config.py:889`)。把上条的"补齐到组内最大 token 数"从"仅当启用 `sequence_packing_scheduler`"解耦:当前端自供本地 packed THD(不走 Megatron-Core 的 sequence packing 调度器)、但各 rank token 数仍不齐时,可单独打开此开关触发同样 padding。
 >
-> 5. **新增 `moe_hybridep_num_sms_preprocessing`(默认 108)**(#4694,`transformer_config.py:959`)。HybridEP 元数据扫描(preprocessing / metadata scan)kernel 占用的 SM 数,透传到 `init_hybrid_ep_buffer` / `hybrid_ep_dispatch`。与 `high_priority_a2a_comm_stream`(见 [[20_megatron_comm_overlap_analysis]] §5.7)配合,细调 A2A 与计算抢 SM 的平衡。
+> 5. **新增 `moe_hybridep_num_sms_preprocessing`(默认 108)**(#4694,`megatron/core/transformer/transformer_config.py:959`)。HybridEP 元数据扫描(preprocessing / metadata scan)kernel 占用的 SM 数,透传到 `init_hybrid_ep_buffer` / `hybrid_ep_dispatch`。与 `high_priority_a2a_comm_stream`(见 [[20_megatron_comm_overlap_analysis]] §5.7)配合,细调 A2A 与计算抢 SM 的平衡。
 >
-> 6. **移除 HybridEP IB 硬件上限的 Python 侧守卫**(#4846 移除;此前 #4719 添加、#4718 又 revert 过早期版本)。dev 一度在 `fused_a2a.py` 加过 `_validate_hybrid_ep_ib_tx_depth`,多节点(走 RDMA)且 per-rank token 过大时提前报"IB dispatch QP depth 超 65535 硬件上限"。**HEAD(dev@232c478d4)已彻底删除该检查**,不再有 Python 侧 IB token 上限校验(交底层库)。若多节点 HybridEP 报 QP depth 错误,需自行降 per-rank token(减 seq/micro-batch 或增 TP/CP)。
+> 6. **移除 HybridEP IB 硬件上限的 Python 侧守卫**(#4846 移除;此前 #4719 添加、#4718 又 revert 过早期版本)。dev 一度在 `megatron/core/transformer/moe/fused_a2a.py` 加过 `_validate_hybrid_ep_ib_tx_depth`,多节点(走 RDMA)且 per-rank token 过大时提前报"IB dispatch QP depth 超 65535 硬件上限"。**HEAD(dev@232c478d4)已彻底删除该检查**,不再有 Python 侧 IB token 上限校验(交底层库)。若多节点 HybridEP 报 QP depth 错误,需自行降 per-rank token(减 seq/micro-batch 或增 TP/CP)。
 >
-> 7. **DeepEP 本地 EP 组不再申请 RDMA 缓冲**(#4816,`fused_a2a.py:get_buffer`)。仅 `group.size() > torch.cuda.device_count()`(真跨节点)时才按 hint 申请 RDMA buffer;纯节点内 EP 组跳过,兼容无 internode 支持的 DeepEP 构建。
+> 7. **DeepEP 本地 EP 组不再申请 RDMA 缓冲**(#4816,`megatron/core/transformer/moe/fused_a2a.py:get_buffer`)。仅 `group.size() > torch.cuda.device_count()`(真跨节点)时才按 hint 申请 RDMA buffer;纯节点内 EP 组跳过,兼容无 internode 支持的 DeepEP 构建。
 >
 > 8. **DSv3 在 H100 上默认改用 HybridEP**(#5164/#5039)。参考配置从 `--moe-enable-deepep true` 切到 `--moe-flex-dispatcher-backend hybridep`(并设环境变量 `NUM_OF_HYBRID_EP_RANKS_PER_NVLINK_DOMAIN=8`)。即 §③.1 表中"HybridEP 适用 GB200/多节点 NVLink"的定位,现已在 H100 DSv3 这类标准 8 卡 NVLink 节点上作为默认推荐。
 
@@ -630,7 +630,7 @@ $$
 | **容量因子 + 丢弃/填充** | 每专家上限 `C·T̄`,超出的 token 丢弃,不足的填充 → 形状固定、`f` 被钳到 `C` | `--moe-expert-capacity-factor C --moe-pad-expert-input-to-capacity` |
 | **aux-loss-free** | 动态调每专家偏置项,挤掉过载专家 | `--moe-router-enable-expert-bias` |
 
-> dropless MoE(默认,无容量上限)精度好但形状动态;`drop_and_pad` 形状静态(利于 CUDA Graph)但可能丢 token。AllToAll dispatcher 的 `self.drop_and_pad` 分支(`token_dispatcher.py:442`)就是为此。
+> dropless MoE(默认,无容量上限)精度好但形状动态;`drop_and_pad` 形状静态(利于 CUDA Graph)但可能丢 token。AllToAll dispatcher 的 `self.drop_and_pad` 分支(`megatron/core/transformer/moe/token_dispatcher.py:442`)就是为此。
 
 ### 4.2 通信暴露
 
@@ -652,14 +652,14 @@ dispatch/combine 的 A2A **默认在关键路径上**:计算流必须等 token �
 
 ### 5.2 Shared Expert Overlap
 
-许多 MoE(DeepSeek、Qwen3)有一个**共享专家**(所有 token 都过),与路由专家并列。`shared_experts_compute`(`moe_layer.py:524`)默认串行算它。
+许多 MoE(DeepSeek、Qwen3)有一个**共享专家**(所有 token 都过),与路由专家并列。`shared_experts_compute`(`megatron/core/transformer/moe/moe_layer.py:524`)默认串行算它。
 
-`--moe-shared-expert-overlap` 把共享专家计算塞进 dispatch/combine 的通信缝隙:dispatcher 在 `token_dispatch` 里 token A2A 发出后,立刻 `linear_fc1_forward_and_act`(`token_dispatcher.py:707`)算共享专家 fc1;在 `token_combine` 里 A2A 后算 fc2。**共享专家计算 = 路由专家 A2A 的天然填充物**,零额外通信。
+`--moe-shared-expert-overlap` 把共享专家计算塞进 dispatch/combine 的通信缝隙:dispatcher 在 `token_dispatch` 里 token A2A 发出后,立刻 `linear_fc1_forward_and_act`(`megatron/core/transformer/moe/token_dispatcher.py:707`)算共享专家 fc1;在 `token_combine` 里 A2A 后算 fc2。**共享专家计算 = 路由专家 A2A 的天然填充物**,零额外通信。
 
 ### 5.3 delay_wgrad / overlap_dispatch_backward
 
 - `--delay-wgrad-compute`:把专家反向拆成 `dgrad`(输入梯度,在关键路径)和 `wgrad`(权重梯度,可延后),用 `wgrad` 去填 A2A 的缝(借鉴 Zero-Bubble 的 B/W 拆分,见 PP 文档 §6)。是 combined-1F1B 的必备搭档。
-- `overlap_dispatch_backward_with_experts_wgrad`(`moe_layer.py:441`、`519`):用专用 `_delayed_wgrad_stream` 把专家 wgrad 与 dispatch 的反向 A2A 重叠。与 `delay_wgrad_compute` 互斥(`transformer_config.py:2713`)。
+- `overlap_dispatch_backward_with_experts_wgrad`(`megatron/core/transformer/moe/moe_layer.py:441`、`519`):用专用 `_delayed_wgrad_stream` 把专家 wgrad 与 dispatch 的反向 A2A 重叠。与 `delay_wgrad_compute` 互斥(`megatron/core/transformer/transformer_config.py:2713`)。
 
 ---
 

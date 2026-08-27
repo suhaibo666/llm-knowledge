@@ -12,6 +12,37 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-27（十一）：megatron-lm 全域补溯源——26 页钉死 commit，774 处 locator 补成仓库相对路径
+
+**Type**: 溯源修复（26 页 + 域索引 + radar 基线；三个并行 agent 各自独占一组文件）。**本轮不动章节结构、不动论述措辞、不动行号。**
+
+**为什么先修这个而不是先排五拍**：审计发现本域的问题在比拍序更靠前的一层——7 篇没有 commit 级基线（[[20_megatron_comm_overlap_analysis]] 只写「基于 Megatron-LM `dev` 分支代码分析」，正是 `CLAUDE.md` 溯源政策点名禁止的 vague latest code），15 篇用 7 位短码，locator 普遍是裸文件名（`moe_layer.py:660`）而非仓库相对路径。在基线没钉住的前提下补写「为什么这么设计」，下一次刷新基线时无法验证。
+
+**基线：一律靠差分证据判定，没有一页是猜的**
+
+- 原写 `ee3f1ff` / `232c478d4` 的：机械扩成 40 位。
+- **无基线的 7 篇**：取 3–11 条带行号的引用，分别在 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（A，2026-05-19）与 `232c478d43ce2f8b4c8db3507d3623fa82f55823`（B，2026-06-16）下 `git show` 逐条核对——
+  - [[01_megatron_moe_training_optimization_analysis]] → **B**（5/5 只在 B 命中：`transformer_config.py:881` 的 `moe_flex_dispatcher_backend`、`token_dispatcher.py:1470` 的 `_DeepepV2Manager`、`fused_a2a.py:90` 的 `get_elastic_buffer` 等，在 A 处均为空行或无关代码）
+  - [[20_megatron_comm_overlap_analysis]] → **A**（11 处里 8 处只在 A 命中，如 `model_parallel_config.py:196` 在 A 是 `tp_comm_overlap`、在 B 是 `--te-rng-tracker`）
+  - [[21_megatron_fusion_operators_analysis]] → **A**（13 处引用在 A/B 逐字节相同、不具区分度，改用 `git diff A..B -- core/fusions/`：只有 `fused_mhc_kernels.py` 变化 964→3397 行，而本页描述的是 A 的形态）
+  - [[22_megatron_memory_optimization_analysis]] → **A**（`paged_stash.py:129` 在 A 是 Triton kernel，B 处该文件已被 #5003 迁走）
+  - [[25_megatron_nonuniform_tp_analysis]] → **A，但证据不具区分度**：9 处引用在 A 与 B 完全一致，取 A 的理由（同批一致 + frontmatter 日期）**已如实写进页头**
+  - [[32_megatron_tflops_analysis]] → **A**（`num_floating_point_operations` 在 A 是双参签名、B 已改四参；页内伪代码逐 token 形式只在 A 成立）
+  - [[33_megatron_vllm_weight_sync_analysis]] → **未确定**：它分析的是 `volcengine/verl`，locator 全是 `verl/...` 且无行号；本机 verl 检出 `8a694930` 下其中两个文件已不存在，无法反推。页头如实写「仓库=volcengine/verl、基线未确定」，**未硬钉 Megatron 基线**。
+
+**两处矛盾，由协调者复核后处理**
+
+1. [[34_deepseek_v4_tensor_parallel_analysis]] / [[35_deepseek_v4_context_parallel_analysis]] 页头声明 B，**正文行号却系统性命中 A**：`deepseek_v4_hybrid_attention.py:87-88` 在 A 正是 `get_pg_size(self.pg_collection.tp) == 1` 的 TP=1 断言，在 B 漂到 `:92-93`；`experts.py:328` 在 A 是 `expert TP > 1` 的 unsupported 分支、在 B 无关；`csa.py:297/309/460/473` → B 的 `:313/325/476/489`。改钉 A，并把页头原有那条 2026-06-25 的审计注标明**是在 B 上做的**——这也解释了它当时为何写「行号较旧稿有数行漂移」。
+2. [[20_megatron_comm_overlap_analysis]] 文末第 797 行还留着「代码片段均来自 commit `3beeaa65b` **附近**」，与新页头冲突，且「附近」本身不是可核验基线。实测：`param_and_grad_buffer.py:709`、`layers.py:520`、`fused_a2a.py:139` 在 A 命中、在 `3beeaa65b` 不命中；**但** `combined_1f1b.py` 的函数定义行在 `3beeaa65b` 下更准。故以 A 为准，并注明本页历史上经历过局部刷新、少数行号可能仍停留在更早形态——没有硬凑成单一基线。
+
+**locator**：**774 处**裸文件名补成仓库相对路径（三组分别 367 / 234 / 173）。多路径的一律先抽查该行内容再定，例如 `param_and_grad_buffer.py` 按符号计数区分 DDP 版与 FSDP 版、23 号页的 `enums.py` **按行拆分**到 `core/enums.py` 与 `core/transformer/enums.py`。判断不了的保持原样（`23:190` 的 `quantization/utils.py`，两个候选在 A/B 都不含 "fp4"）。属于 DeepEP 等外部仓库的（`internode.cu`）刻意不改。
+
+**索引与 radar**：`megatron-lm/index.md` 新增基线声明，**如实记录本域基线未统一**（多数 A、少数 B、若干未确定），不写成「全域统一基线」。`docs/radar/watchlist.yaml` 的 `kb_baseline` 从短码 `232c478d4` 改为完整的 A —— 原值让 radar 以为 KB 已在 B，会漏报近 300 个提交的漂移。
+
+**本轮明确未做（留给下一轮）**：① 行号刷新——已报告 8 处内容与行号不符的引用（如 `01`/`16` 的 `param_and_grad_buffer.py:946`/`:1097` 两个标签疑似互换、`22` 的 `fp8_utils.py:594`），一律**未擅自改**；② 55 处半路径（`moe/router.py` 这类）与 16 处写在 `###` 标题里的裸文件名——后者改动会同时触碰标题文本与潜在锚点，需单独授权；③ 五拍重排——本域 26 篇里只有 4 篇有第 2 拍内容，是三个域里最缺的，但那是重写而非搬运，必须开着源码做。
+
+---
+
 ## 2026-08-27（十）：slime 全域 19 篇按五拍重排，第 5 拍全部锚定源码自陈的在途改动
 
 **Type**: 批量重构（19 页正文；四个并行 writer agent，各自独占一组文件）

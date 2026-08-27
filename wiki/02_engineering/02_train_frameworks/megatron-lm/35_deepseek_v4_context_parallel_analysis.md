@@ -6,8 +6,9 @@ title: "DeepSeek-V4 Context Parallelism 实现深度解析"
 
 *基于 Megatron-LM dev 分支源码 · CP 进程组 · 通信类型 · TE 融合 · DSv4 适配 · 通信量分析*
 
-> **源基线**: Megatron-LM `dev` @ `232c478d4`（2026-06-16）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`parallel_state.py`、`dot_product_attention_context_parallel.py` 等。
-> **维度**: 工程实现（框架层）。**审计/移库**: 2026-06-25（自 `02_train_frameworks/` 移入 `megatron-lm/`；citation 已对照当前 HEAD 抽查，少量行号随源码漂移）。
+> **源码基线**: `NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`megatron/core/parallel_state.py`、`megatron/core/transformer/dot_product_attention_context_parallel.py` 等。
+> **基线更正（2026-08-27）**: 原页头声明 `232c478d43ce2f8b4c8db3507d3623fa82f55823`（2026-06-16），但逐条核对表明正文行号系统性命中 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`：`deepseek_v4_hybrid_attention.py:87-88` 在前者即 `get_pg_size(self.pg_collection.tp) == 1` 的 TP=1 断言，在后者漂移到 `:92-93`；`csa.py:297/309/460/473` → `:313/325/476/489`；`hyper_connection.py:150-151` → `:193`；`experts.py:328-329` → `:347`。故基线改钉 `ee3f1ff…`。下面这条 2026-06-25 的审计注是在 `232c478d4…` 上做的，行号口径与正文不同，保留原文并已标明。
+> **维度**: 工程实现（框架层）。**审计/移库**: 2026-06-25（自 `02_train_frameworks/` 移入 `megatron-lm/`；该次抽查是**在 `dev@232c478d43ce2f8b4c8db3507d3623fa82f55823` 上**做的，与正文基线口径不同，故当时记为「少量行号随源码漂移」）。
 > **与模型页的分工**: 论文级 CP *算法*（两阶段压缩感知 CP、可见性控制）见模型页 [[23_deepseek_v4_cp_analysis]]（§3.4.3）；本页讲 Megatron 的 *实现* 与 *代码↔论文 gap*（见 §五 5.5、§九 特征 5）。
 > **划界声明**: CP/Ring Attention 通用机制（p2p/all_gather/a2a/a2a+p2p 四种通信调度的算法本体、因果 zigzag 裁剪、通信量代数、分层 CP 的 N 级分组构造）已归一到 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]——本页的 Native CP 源码 walkthrough（§三）与分层分组构造代码（§1.2）正是该理论页对应章节的骨架来源。**本页只保留 DeepSeek-V4/MLA/CSA/HCA 特有内容**：MLA 对 CP 通信量降低 ~128 倍的推导、CSA/HCA 压缩注意力与 CP 交互的论文↔代码 gap 审计（本页核心贡献）、RoPE 的 CP 感知、Dynamic CP 对 MLA 的不支持、CP 与 EP 的带宽竞争、TE CP 的 cp_stream 双缓冲机制（四页中仅此一页覆盖）。
 
@@ -31,7 +32,7 @@ title: "DeepSeek-V4 Context Parallelism 实现深度解析"
 
 ### 1.1 进程组创建
 
-CP 进程组在 `parallel_state.py` 的 `initialize_model_parallel` 函数中创建，通过 `decoder_rank_generator.get_ranks('cp')` 生成 CP 组内的 rank 列表：
+CP 进程组在 `megatron/core/parallel_state.py` 的 `initialize_model_parallel` 函数中创建，通过 `decoder_rank_generator.get_ranks('cp')` 生成 CP 组内的 rank 列表：
 
 ```
 # parallel_state.py:969-980
@@ -69,7 +70,7 @@ Megatron-LM 支持 **Hierarchical Context Parallelism**，通过 `hierarchical_c
 
 ### 2.1 四种通信类型的定义
 
-Megatron-LM 在 `transformer_config.py` 中定义了四种 CP 通信类型，每种适用于不同的硬件拓扑和序列长度场景：
+Megatron-LM 在 `megatron/core/transformer/transformer_config.py` 中定义了四种 CP 通信类型，每种适用于不同的硬件拓扑和序列长度场景：
 
 ```
 cp_comm_type: Optional[Union[str, List[str]]] = None
@@ -187,7 +188,7 @@ self.self_attention = build_module(
 
 > **划界**：`AttentionFuncionWithContextParallel` 的完整 forward/backward 源码 walkthrough（head-stride 双缓冲 AllGather、ReduceScatter 梯度、通信量公式）与 zig-zag mask 机制已整体迁移收录到理论页 §6（本页正是骨架来源）。本节只保留索引式摘要，避免与理论页正文重复；DSv4 特有的下游适配见 §五。
 
-当 `transformer_impl="local"`（即不使用 TransformerEngine）时，CP 通过 `AttentionFuncionWithContextParallel`（`torch.autograd.Function`，`dot_product_attention_context_parallel.py:150-165`）实现:forward 按 head stride 迭代 AllGather KV(理论页 §6.1)，backward 用 ReduceScatter 分片 dK/dV(理论页 §6.3)，attention mask 用 zig-zag pattern 匹配 AllGather 后的 KV 顺序(理论页 §3.3)。通信量公式见理论页 §6.2 / §9。
+当 `transformer_impl="local"`（即不使用 TransformerEngine）时，CP 通过 `AttentionFuncionWithContextParallel`（`torch.autograd.Function`，`megatron/core/transformer/dot_product_attention_context_parallel.py:150-165`）实现:forward 按 head stride 迭代 AllGather KV(理论页 §6.1)，backward 用 ReduceScatter 分片 dK/dV(理论页 §6.3)，attention mask 用 zig-zag pattern 匹配 AllGather 后的 KV 顺序(理论页 §3.3)。通信量公式见理论页 §6.2 / §9。
 
 <!-- 原 3.2-3.4(AllGather 双缓冲代码、ReduceScatter 代码、zig-zag mask 代码、通信量公式)已整体并入理论页 §6，不在本页重复；索引式摘要见上。 -->
 
@@ -566,11 +567,11 @@ class AllGatherComm:
 
 ### 8.1-8.2 Dynamic CP 的通用机制(配置 + forward 期 cp_group 切换/恢复)
 
-Dynamic CP 允许在 training 过程中根据输入序列长度动态调整 CP size(`dynamic_context_parallel`/`sequence_packing_scheduler='default_dynamic_cp'` 配置校验、Attention forward 中 `packed_seq_params.cp_group` 临时替换 `pg_collection.cp` 且结束后恢复的完整代码)是 Megatron 通用机制,非 DSv4 特有,已整体归一到理论页 §10(该节正是以本页 `attention.py:1080-1084` 的 save/restore 代码为骨架之一,并与 `13_megatron_cp_analysis.md` §3 的 `PackedSeqParams`/`resolve_cp_group` 源码合并)。DSv4 对该机制的下游限制见 §8.3。
+Dynamic CP 允许在 training 过程中根据输入序列长度动态调整 CP size(`dynamic_context_parallel`/`sequence_packing_scheduler='default_dynamic_cp'` 配置校验、Attention forward 中 `packed_seq_params.cp_group` 临时替换 `pg_collection.cp` 且结束后恢复的完整代码)是 Megatron 通用机制,非 DSv4 特有,已整体归一到理论页 §10(该节正是以本页 `megatron/core/transformer/attention.py:1080-1084` 的 save/restore 代码为骨架之一,并与 `13_megatron_cp_analysis.md` §3 的 `PackedSeqParams`/`resolve_cp_group` 源码合并)。DSv4 对该机制的下游限制见 §8.3。
 
 ### 8.3 Dynamic CP 对 DSv4 的限制
 
-> **当前限制**：DSv4 Hybrid Attention 和 MLA 均不支持 Dynamic CP（`deepseek_v4_hybrid_attention.py:502-503`，`multi_latent_attention.py:667-669`）。原因是：
+> **当前限制**：DSv4 Hybrid Attention 和 MLA 均不支持 Dynamic CP（`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:502-503`，`megatron/core/transformer/multi_latent_attention.py:667-669`）。原因是：
 > 
 > -   MLA 的 KV 压缩结构使得 KV 的 shape 在 CP 重分片时需要重新计算 `cu_seqlens`
 > -   `q_down_proj` 和 `kv_proj` 的输入输出维度不匹配，动态调整 CP size 需要重新分配压缩后的 KV buffer

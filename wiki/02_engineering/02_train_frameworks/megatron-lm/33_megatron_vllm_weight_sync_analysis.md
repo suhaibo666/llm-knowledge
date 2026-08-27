@@ -4,6 +4,8 @@ title: "verl 中 Megatron + vLLM 权重同步分析"
 
 # verl 中 Megatron + vLLM 权重同步分析
 
+> **源码基线**：**未确定**。本页分析的是第三方框架 **`volcengine/verl`**（不是 Megatron-LM——Megatron-LM 与 vLLM 在此只是被 verl 同步的两端，本页未直接引用二者源码），原文未声明 commit，且全部 locator 均为 `verl/...` 路径、无行号，无法反推。已核对 3 处引用：本机 verl 检出 `volcengine/verl@8a694930275061f52ebd538c906ef8819af56dbd`（`main`，2026-06-17）中，`verl/utils/megatron_utils.py` 仍在，但 `verl/workers/megatron_workers.py` 与 `verl/workers/rollout/vllm_rollout/vllm_rollout_spmd.py` 在该 commit 全树已无同名文件，故该检出并非本页基线。**不为本页钉 Megatron-LM 基线**；引用行号级复核需先定位对应的 verl commit。
+
 本文档分析了 `verl` 框架中训练模型（Megatron-LM）与推理模型（vLLM）之间的权重同步过程，特别关注 **共集群（Colocation）** 场景（即 Actor 和 Rollout 共享同一组 GPU）。
 
 > **三方分工**：本文是 verl 在 Megatron+vLLM colocation 场景下的权重同步实现（Gather-Broadcast-Load 调用链）；Megatron 训练侧的 refit / 训推一致性通用机制见 [[30_megatron_rl_posttraining_consistency_analysis]]；三平面机制视角（weight publish 协议、跨框架不变量）见 [[01_posttraining_infra_mechanism_analysis]] 第 6 节。

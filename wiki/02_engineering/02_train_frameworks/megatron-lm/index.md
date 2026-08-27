@@ -6,6 +6,14 @@ title: "Megatron-LM — Knowledge Map"
 
 This domain covers NVIDIA Megatron-LM distributed training framework, including parallelism strategies, MoE implementation, performance measurement, and integration with inference engines.
 
+> **源码基线(本域尚未统一,如实记录)**:本域各页并非同一基线,不要按"全域统一基线"阅读。
+> - **多数页 —— `NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`(`dev`,2026-05-19)**:10–19、21、23、27–29、30–32 等。其中不少页面另带 `> [!update] 2026-06-16 · dev@232c478d4` 标注段落,**那些段落的行号以 `232c478d43ce2f8b4c8db3507d3623fa82f55823` 为准**,同一页因此存在正文/增量两套行号。
+> - **少数页 —— `NVIDIA/Megatron-LM@232c478d43ce2f8b4c8db3507d3623fa82f55823`(`dev`,2026-06-16)**:[[01_megatron_moe_training_optimization_analysis]]、[[24_megatron_linear_cross_entropy_analysis]]、[[34_deepseek_v4_tensor_parallel_analysis]]、[[35_deepseek_v4_context_parallel_analysis]]。
+> - **曾经的第三基线**:[[20_megatron_comm_overlap_analysis]] 文末原写「commit `3beeaa65b` 附近」(2026-04-08)。2026-08-27 复核 11 处引用后改钉 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`(与本域多数页一致),增量段落仍对照 `232c478d4`;少数行号可能仍停留在更早形态,见该页文末说明。
+> - **未确定**:[[22_megatron_memory_optimization_analysis]]、[[25_megatron_nonuniform_tp_analysis]] 只列 `Source:` 文件、无 commit 级基线;[[33_megatron_vllm_weight_sync_analysis]] 分析的是 `volcengine/verl` 而非 Megatron-LM,原文未声明 commit 且 locator 无行号,已核对后仍无法反推。
+> - **本机检出 HEAD**:`232c478d43ce2f8b4c8db3507d3623fa82f55823`(`dev`,2026-06-16);与 `ee3f1ffa…` 相距 **298 个提交**。
+> - **已知偏差**:[[34_deepseek_v4_tensor_parallel_analysis]]、[[35_deepseek_v4_context_parallel_analysis]] 页头声明 `232c478d4`,但正文多数 `path:line` 实际命中 `ee3f1ff`(如 `deepseek_v4_hybrid_attention.py:87-88`、`csa.py:297,309,460,473`、`hyper_connection.py:150`、`attention.py:1080-1084` 在 `232c478d4` 分别位于 `:92-93`、`:313,325,476,489`、`:193`、他处)。本轮只补全 commit 位数、未改行号,行号复核待后续。
+
 > 最后更新:2026-07-31(kb-reorg P7 Task 7:目录内分段编号,27 篇按 spec §5 段位约定统一加两位前缀;下方各小节的既有分组不变,仅补充下表作段位速查)
 
 ## 段位速查(kb-reorg P7 Task 7)

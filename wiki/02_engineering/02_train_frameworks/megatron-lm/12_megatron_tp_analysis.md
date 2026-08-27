@@ -4,8 +4,8 @@ title: "Megatron-LM 张量并行(Tensor Parallelism)深度解析"
 
 # Megatron-LM 张量并行(Tensor Parallelism)深度解析
 
-> 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
-> 核心文件:`megatron/core/tensor_parallel/layers.py`(1392 行)、`mappings.py`(617 行)
+> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）
+> 核心文件:`megatron/core/tensor_parallel/layers.py`(1392 行)、`megatron/core/tensor_parallel/mappings.py`(617 行)
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`
 > 适用读者:已了解 transformer 训练与 DP/PP,想吃透 Megatron 张量并行实现的工程师。
 
@@ -76,16 +76,16 @@ NVLink(数百 GB/s)能扛;跨机 IB(数十 GB/s)扛不住。所以工业配置�
 
 ## 2. 核心机制:共轭算子 `f` / `g`
 
-TP 的正确性建立在两个共轭的 autograd 算子上(`mappings.py`)。
+TP 的正确性建立在两个共轭的 autograd 算子上(`megatron/core/tensor_parallel/mappings.py`)。
 
-**`f` 算子 —— `_CopyToModelParallelRegion`**(`mappings.py:197`):
+**`f` 算子 —— `_CopyToModelParallelRegion`**(`megatron/core/tensor_parallel/mappings.py:197`):
 ```python
 class _CopyToModelParallelRegion(torch.autograd.Function):
     def forward(ctx, input_, group):   return input_                       # 前向:恒等
     def backward(ctx, grad_output):    return _reduce(grad_output, ...)     # 反向:all-reduce
 ```
 
-**`g` 算子 —— `_ReduceFromModelParallelRegion`**(`mappings.py:217`):
+**`g` 算子 —— `_ReduceFromModelParallelRegion`**(`megatron/core/tensor_parallel/mappings.py:217`):
 ```python
 class _ReduceFromModelParallelRegion(torch.autograd.Function):
     def forward(ctx, input_, group):   return _reduce(input_, group)       # 前向:all-reduce
@@ -94,13 +94,13 @@ class _ReduceFromModelParallelRegion(torch.autograd.Function):
 
 二者互为共轭:`f` 前向恒等、反向 all-reduce;`g` 前向 all-reduce、反向恒等。一个列并行区域用 `f` 开头、`g` 结尾,就能保证**前向和反向各恰好一次** all-reduce,且梯度数学上正确。
 
-`mappings.py` 还提供 SP 版本(§4 用):`_ScatterToSequenceParallelRegion`、`_GatherFromSequenceParallelRegion`(反向 reduce-scatter)、`_ReduceScatterToSequenceParallelRegion`。
+`megatron/core/tensor_parallel/mappings.py` 还提供 SP 版本(§4 用):`_ScatterToSequenceParallelRegion`、`_GatherFromSequenceParallelRegion`(反向 reduce-scatter)、`_ReduceScatterToSequenceParallelRegion`。
 
 ---
 
 ## 算子① — ColumnParallelLinear(列并行)
 
-`layers.py:770`。
+`megatron/core/tensor_parallel/layers.py:770`。
 
 ### ①.1 动机与切分方式
 
@@ -141,15 +141,15 @@ def forward(self, input_, ...):                                # layers.py:985
 - **输出层 embedding**(`VocabParallelEmbedding`,词表维切分)。
 
 > [!update] 2026-06-16 · dev@232c478d4
-> **非融合 vocab-parallel 交叉熵现在显式接收 TP 组**(#5128,`tensor_parallel/cross_entropy.py:213`、`language_module.py:184`)。
-> 词表并行(输出投影按词表维切到各 TP rank)后,损失计算 `vocab_parallel_cross_entropy` 要在 TP 组内做 **3 次 all-reduce**(`logits_max` 取 MAX、`predicted_logits`/`sum_exp_logits` 取 SUM)以跨分片拼出全词表 softmax 的分母。原实现把通信组写死为全局 `get_tensor_model_parallel_group()`;此 PR 给 `vocab_parallel_cross_entropy(..., tp_group=None)` 增加可选 `tp_group` 形参(`cross_entropy.py:217`),并改用 `get_pg_rank/get_pg_size(tp_group)` 取 rank/world_size(`:135-136`,替换原 `get_tensor_model_parallel_rank/world_size`)。`LanguageModule.compute_language_model_loss` 现传入 `self.tp_group`(`language_module.py:184`)。
+> **非融合 vocab-parallel 交叉熵现在显式接收 TP 组**(#5128,`tensor_parallel/cross_entropy.py:213`、`megatron/core/models/common/language_module/language_module.py:184`)。
+> 词表并行(输出投影按词表维切到各 TP rank)后,损失计算 `vocab_parallel_cross_entropy` 要在 TP 组内做 **3 次 all-reduce**(`logits_max` 取 MAX、`predicted_logits`/`sum_exp_logits` 取 SUM)以跨分片拼出全词表 softmax 的分母。原实现把通信组写死为全局 `get_tensor_model_parallel_group()`;此 PR 给 `vocab_parallel_cross_entropy(..., tp_group=None)` 增加可选 `tp_group` 形参(`megatron/core/tensor_parallel/cross_entropy.py:217`),并改用 `get_pg_rank/get_pg_size(tp_group)` 取 rank/world_size(`:135-136`,替换原 `get_tensor_model_parallel_rank/world_size`)。`LanguageModule.compute_language_model_loss` 现传入 `self.tp_group`(`megatron/core/models/common/language_module/language_module.py:184`)。
 > **意义**:与非均匀/异构 TP(每层 TP 组可不同,见 [[25_megatron_nonuniform_tp_analysis]])解耦 —— CE 的 all-reduce 不再强制走全局 TP 组,而跟随调用方实际的 TP 子组;`tp_group=None` 时回退全局组,旧行为不变。融合实现(`fused_vocab_parallel_cross_entropy`)早已通过 `self.pg_collection.tp` 传组,本 PR 把非融合路径对齐。
 
 ---
 
 ## 算子② — RowParallelLinear(行并行)
 
-`layers.py:1133`。
+`megatron/core/tensor_parallel/layers.py:1133`。
 
 ### ②.1 动机与切分方式
 
@@ -242,8 +242,8 @@ TP 把 4 个大矩阵乘的权重与中间激活切成 `1/tp`,但 transformer �
 ### 4.2 实现:把 all-reduce 换成 reduce-scatter + all-gather
 
 SP 区域(序列切分)与 TP 区域(权重切分)交界处,通信算子改变:
-- 进入 TP 列并行区:`f`(复制)→ **all-gather**(把序列维拼全)。`_GatherFromSequenceParallelRegion`(`mappings.py:296`,反向是 reduce-scatter)。
-- 离开 TP 行并行区:`g`(all-reduce)→ **reduce-scatter**(求和的同时把序列维散开)。`reduce_scatter_to_sequence_parallel_region`(RowParallel `forward` 的 `sequence_parallel` 分支,`layers.py:1342`)。
+- 进入 TP 列并行区:`f`(复制)→ **all-gather**(把序列维拼全)。`_GatherFromSequenceParallelRegion`(`megatron/core/tensor_parallel/mappings.py:296`,反向是 reduce-scatter)。
+- 离开 TP 行并行区:`g`(all-reduce)→ **reduce-scatter**(求和的同时把序列维散开)。`reduce_scatter_to_sequence_parallel_region`(RowParallel `forward` 的 `sequence_parallel` 分支,`megatron/core/tensor_parallel/layers.py:1342`)。
 
 **通信量不变**:数学上 `all-reduce = reduce-scatter + all-gather`,SP 只是把一次 all-reduce 拆成两半,分别放在区域两端。所以 **SP 省显存但不增加通信量** —— 几乎是"免费"的,生产配置默认开(`--sequence-parallel`)。
 

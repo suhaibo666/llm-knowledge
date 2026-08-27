@@ -4,8 +4,8 @@ title: "Megatron-LM 流水线并行(Pipeline Parallelism)调度器深度解析"
 
 # Megatron-LM 流水线并行(Pipeline Parallelism)调度器深度解析
 
-> 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
-> 核心文件:`megatron/core/pipeline_parallel/schedules.py`(2556 行)、`combined_1f1b.py`、`megatron/core/models/common/model_chunk_schedule_plan.py`
+> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）
+> 核心文件:`megatron/core/pipeline_parallel/schedules.py`(2556 行)、`megatron/core/pipeline_parallel/combined_1f1b.py`、`megatron/core/models/common/model_chunk_schedule_plan.py`
 > 适用读者:已了解 transformer 训练、TP/DP/PP 基本概念,想吃透 Megatron PP 调度实现的工程师。
 
 ---
@@ -14,7 +14,7 @@ title: "Megatron-LM 流水线并行(Pipeline Parallelism)调度器深度解析"
 
 ### 0.1 调度器分发逻辑
 
-所有 PP 调度的统一入口是 `get_forward_backward_func`(`schedules.py:48`):
+所有 PP 调度的统一入口是 `get_forward_backward_func`(`megatron/core/pipeline_parallel/schedules.py:48`):
 
 ```python
 if pp_size > 1:
@@ -40,11 +40,11 @@ get_forward_backward_func
 
 | # | 调度器 | 代码位置 | 触发条件 | 本质 |
 |---|--------|---------|---------|------|
-| ① | 无流水线 | `schedules.py:594` | PP=1 | 基线,无 stage 间通信 |
-| ② | 标准 1F1B | `schedules.py:2185` | PP>1, VP=None | 主力调度,峰值显存 O(pp) |
-| ③ | 交错 1F1B(VPP) | `schedules.py:1007` | PP>1, VP≠None | 气泡再除以 vp |
-| ④ | P2P-overlap 1F1B | `schedules.py:1755` 起的 `overlap_p2p_comm` 分支 | VPP + `overlap_p2p_comm` | 把 P2P 通信移出关键路径 |
-| ⑤ | combined-1F1B(MoE A2A 重叠) | `combined_1f1b.py` + `model_chunk_schedule_plan.py` | `overlap_moe_expert_parallel_comm` | 用 F/B 互相掩盖 MoE all-to-all |
+| ① | 无流水线 | `megatron/core/pipeline_parallel/schedules.py:594` | PP=1 | 基线,无 stage 间通信 |
+| ② | 标准 1F1B | `megatron/core/pipeline_parallel/schedules.py:2185` | PP>1, VP=None | 主力调度,峰值显存 O(pp) |
+| ③ | 交错 1F1B(VPP) | `megatron/core/pipeline_parallel/schedules.py:1007` | PP>1, VP≠None | 气泡再除以 vp |
+| ④ | P2P-overlap 1F1B | `megatron/core/pipeline_parallel/schedules.py:1755` 起的 `overlap_p2p_comm` 分支 | VPP + `overlap_p2p_comm` | 把 P2P 通信移出关键路径 |
+| ⑤ | combined-1F1B(MoE A2A 重叠) | `megatron/core/pipeline_parallel/combined_1f1b.py` + `megatron/core/models/common/model_chunk_schedule_plan.py` | `overlap_moe_expert_parallel_comm` | 用 F/B 互相掩盖 MoE all-to-all |
 
 ### 0.2 公共记号
 
@@ -62,24 +62,24 @@ get_forward_backward_func
 ### 0.3 公共基础设施(所有调度器共用)
 
 **两个计算原语**
-- `forward_step`(`schedules.py:327`):喂入 `input_tensor` → 产出 `output_tensor`;仅末 stage 调 `loss_func`。损失缩放见 `schedules.py:262-281`(除以 token 数、除以 `num_microbatches`,保证 loss 与切分无关)。
-- `backward_step`(`schedules.py:462`):对 `output_tensor` 反向,返回对 `input_tensor` 的梯度。
+- `forward_step`(`megatron/core/pipeline_parallel/schedules.py:327`):喂入 `input_tensor` → 产出 `output_tensor`;仅末 stage 调 `loss_func`。损失缩放见 `megatron/core/pipeline_parallel/schedules.py:262-281`(除以 token 数、除以 `num_microbatches`,保证 loss 与切分无关)。
+- `backward_step`(`megatron/core/pipeline_parallel/schedules.py:462`):对 `output_tensor` 反向,返回对 `input_tensor` 的梯度。
 
-**两个显存优化原语**(理解 PP 显存的关键,`schedules.py:157-219`)
+**两个显存优化原语**(理解 PP 显存的关键,`megatron/core/pipeline_parallel/schedules.py:157-219`)
 - `deallocate_output_tensor`:激活 `send_forward` 给下游后,其数值在本 stage 已无用,只剩 `.grad_fn` 还要参与反向。于是把 `.data` 替换成标量空张量,**立即释放真实激活显存,同时保留计算图**。
   ```python
   out.data = torch.empty((1,), device=out.device, dtype=out.dtype)
   ```
 - `custom_backward`:`torch.autograd.backward` 会校验 output 与 grad 形状一致,而 output 已被缩成标量会报错。于是直接调 C++ 引擎 `Variable._execution_engine.run_backward`(不做形状校验)。
 
-**P2P 通信原语**(`p2p_communication.py`,封装在 `P2PCommunicator`):`recv_forward` / `send_forward` / `recv_backward` / `send_backward`,以及**融合算子** `send_forward_recv_backward`、`send_backward_recv_forward`、`send_forward_recv_forward`、`send_forward_backward_recv_forward_backward`。融合算子让一个 stage **同时**收发两个方向,是 1F1B 高效流水的关键。
+**P2P 通信原语**(`megatron/core/pipeline_parallel/p2p_communication.py`,封装在 `P2PCommunicator`):`recv_forward` / `send_forward` / `recv_backward` / `send_backward`,以及**融合算子** `send_forward_recv_backward`、`send_backward_recv_forward`、`send_forward_recv_forward`、`send_forward_backward_recv_forward_backward`。融合算子让一个 stage **同时**收发两个方向,是 1F1B 高效流水的关键。
 
-**通信张量形状**(`get_tensor_shapes`,`schedules.py:2123`):
+**通信张量形状**(`get_tensor_shapes`,`megatron/core/pipeline_parallel/schedules.py:2123`):
 ```
 shape = [ seq_len / (cp_size · tp_size_if_sequence_parallel),  micro_batch_size,  hidden_size ]
 ```
 
-**P2P 通信的两种底层实现**(`p2p_communication.py`,决定调度器④能否开启):
+**P2P 通信的两种底层实现**(`megatron/core/pipeline_parallel/p2p_communication.py`,决定调度器④能否开启):
 
 | 实现 | 触发条件 | 机制 |
 |------|---------|------|
@@ -98,15 +98,15 @@ shape = [ seq_len / (cp_size · tp_size_if_sequence_parallel),  micro_batch_size
 | `send_forward_recv_forward` / `send_backward_recv_backward` | 双向 | warmup/cooldown 用 |
 | `send_forward_backward_recv_forward_backward` | 四向 | VPP overlap 优化(调度器④) |
 
-**变长序列:先换形状再换张量**:`config.variable_seq_lengths=True` 时,每个 microbatch 序列长度可能不同,`get_tensor_shapes` 无法静态算出形状。`_communicate_shapes`(`p2p_communication.py:186`)先用一轮 3 元素 int64 tensor 交换形状元数据,再按收到的形状分配 buffer 做真正的张量 P2P;固定长度时跳过这步。
+**变长序列:先换形状再换张量**:`config.variable_seq_lengths=True` 时,每个 microbatch 序列长度可能不同,`get_tensor_shapes` 无法静态算出形状。`_communicate_shapes`(`megatron/core/pipeline_parallel/p2p_communication.py:186`)先用一轮 3 元素 int64 tensor 交换形状元数据,再按收到的形状分配 buffer 做真正的张量 P2P;固定长度时跳过这步。
 
-**Hyper Connections 对通信形状的影响**:`config.enable_hyper_connections=True` 时,中间 stage 的 P2P tensor shape 从 `[S,B,H]` 扩为 `[S,B,H×num_residual_streams]`(hyper connection 模块扩展了残差流数量),但只在中间 stage 生效,首/末 stage 仍是标准 `H`(`schedules.py:2123-2182`;结构见 `10_megatron_model_structure_analysis.md` §`HyperConnectionTransformerLayer`)。
+**Hyper Connections 对通信形状的影响**:`config.enable_hyper_connections=True` 时,中间 stage 的 P2P tensor shape 从 `[S,B,H]` 扩为 `[S,B,H×num_residual_streams]`(hyper connection 模块扩展了残差流数量),但只在中间 stage 生效,首/末 stage 仍是标准 `H`(`megatron/core/pipeline_parallel/schedules.py:2123-2182`;结构见 `10_megatron_model_structure_analysis.md` §`HyperConnectionTransformerLayer`)。
 
-**与激活换出的关系**:PP/VPP 显存不够时,除了减小 `pp`/`vp`,还可以用**细粒度激活换出**(`fine_grained_activation_offload.py` 的 `PipelineOffloadManager`,D2H/H2D 异步双流,与重计算正交可叠加)把部分层的激活挪到 CPU pinned memory;`schedules.py` 每步收尾调 `off_interface.reset()`,与 PP/VPP 调度天然兼容。参数与机制见 `22_megatron_memory_optimization_analysis.md` §2.3(现行权威页;含 `saved_tensors_hooks` 挂钩、`OffloadTensorGroup` 双 event、`post_warmup_callback` 自适应调优等机制细节,及 2026-06-16 `max_inflight_offloads` 节流更新)。
+**与激活换出的关系**:PP/VPP 显存不够时,除了减小 `pp`/`vp`,还可以用**细粒度激活换出**(`megatron/core/pipeline_parallel/fine_grained_activation_offload.py` 的 `PipelineOffloadManager`,D2H/H2D 异步双流,与重计算正交可叠加)把部分层的激活挪到 CPU pinned memory;`megatron/core/pipeline_parallel/schedules.py` 每步收尾调 `off_interface.reset()`,与 PP/VPP 调度天然兼容。参数与机制见 `22_megatron_memory_optimization_analysis.md` §2.3(现行权威页;含 `saved_tensors_hooks` 挂钩、`OffloadTensorGroup` 双 event、`post_warmup_callback` 自适应调优等机制细节,及 2026-06-16 `max_inflight_offloads` 节流更新)。
 
 ### 0.4 PP 进程组与拓扑结构
 
-**进程组创建**(`parallel_state.py:1094`,`initialize_model_parallel` 内):遍历 `decoder_rank_generator.get_ranks('pp')` 生成的 rank 列表逐组 `create_group`,支持三种后端:
+**进程组创建**(`megatron/core/parallel_state.py:1094`,`initialize_model_parallel` 内):遍历 `decoder_rank_generator.get_ranks('pp')` 生成的 rank 列表逐组 `create_group`,支持三种后端:
 
 | 后端 | 触发 | 说明 |
 |------|------|------|
@@ -114,9 +114,9 @@ shape = [ seq_len / (cp_size · tp_size_if_sequence_parallel),  micro_batch_size
 | `nccl` | 显式指定 | 启用 NCCL 选项优化(`get_nccl_options("pp", ...)`) |
 | `ucc` | `pipeline_model_parallel_comm_backend="ucc"` | UCC 统一通信层,需 `CUDA_DEVICE_MAX_CONNECTIONS>1`,设置 `UCX_RNDV_THRESH=0`、`UCC_CL_BASIC_TLS=^sharp,nccl` 等 UCX/UCC 环境变量,利用 UCC 的通用通信层实现跨平台优化 |
 
-**Embedding / Position Embedding 组**(`parallel_state.py:1123`):创建 PP 组的同时,额外建 `EMBEDDING_GROUP`(`get_embedding_ranks`)和 `POSITION_EMBEDDING_GROUP`(`get_position_embedding_ranks`)两个辅助组,用于在 PP **首尾 stage**(权重共享 embedding 与末层 output 常合并成同一份参数)之间同步梯度。
+**Embedding / Position Embedding 组**(`megatron/core/parallel_state.py:1123`):创建 PP 组的同时,额外建 `EMBEDDING_GROUP`(`get_embedding_ranks`)和 `POSITION_EMBEDDING_GROUP`(`get_position_embedding_ranks`)两个辅助组,用于在 PP **首尾 stage**(权重共享 embedding 与末层 output 常合并成同一份参数)之间同步梯度。
 
-**Defer Embedding WGrad**:embedding 权重梯度是大 GEMM(`vocab_size×hidden_size`,vocab 常 128K),计算耗时但不需要立即完成。`config.defer_embedding_wgrad_compute=True` 时,`drain_embedding_wgrad_compute`(`schedules.py:772`)把这部分 GEMM 推迟到**pipeline flush 阶段**才执行 —— 利用 cooldown 的 bubble 隐藏这段计算延迟,与"用调度隐藏通信/计算"是同一套设计哲学。
+**Defer Embedding WGrad**:embedding 权重梯度是大 GEMM(`vocab_size×hidden_size`,vocab 常 128K),计算耗时但不需要立即完成。`config.defer_embedding_wgrad_compute=True` 时,`drain_embedding_wgrad_compute`(`megatron/core/pipeline_parallel/schedules.py:772`)把这部分 GEMM 推迟到**pipeline flush 阶段**才执行 —— 利用 cooldown 的 bubble 隐藏这段计算延迟,与"用调度隐藏通信/计算"是同一套设计哲学。
 
 **PP 与其他并行维度的关系**:
 
@@ -140,7 +140,7 @@ shape = [ seq_len / (cp_size · tp_size_if_sequence_parallel),  micro_batch_size
 
 ### ①.2 源码与流程
 
-`schedules.py:594`。核心是一个朴素循环 + `no_sync` 上下文:
+`megatron/core/pipeline_parallel/schedules.py:594`。核心是一个朴素循环 + `no_sync` 上下文:
 
 ```python
 with no_sync_func():                          # 前 m-1 个 microbatch:只累加梯度,不触发 DP 通信
@@ -217,9 +217,9 @@ Device 0 | F0 B0  F1 B1  F2 B2  F3 B3 |  → DP all-reduce
 
 ### ②.2 源码与流程
 
-`schedules.py:2185`。三阶段:**warmup(纯前向)→ 稳态 1F1B → cooldown(纯反向)**。
+`megatron/core/pipeline_parallel/schedules.py:2185`。三阶段:**warmup(纯前向)→ 稳态 1F1B → cooldown(纯反向)**。
 
-**① 热身数量**(`schedules.py:2320`):
+**① 热身数量**(`megatron/core/pipeline_parallel/schedules.py:2320`):
 ```python
 num_warmup_microbatches = p2p_communicator.total_stages - p2p_communicator.current_stage - 1
 num_warmup_microbatches = min(num_warmup_microbatches, num_microbatches)   # = min(pp - r - 1, m)
@@ -227,7 +227,7 @@ num_microbatches_remaining = num_microbatches - num_warmup_microbatches
 ```
 即 `warmup = pp - r - 1`:**越靠前的 stage(rank 小)热身越多**,因为它的反向梯度要等最久才能从末端回流。
 
-**② Warmup —— 只前向**(`schedules.py:2381`):
+**② Warmup —— 只前向**(`megatron/core/pipeline_parallel/schedules.py:2381`):
 ```python
 for i in range(num_warmup_microbatches):
     input_tensor = p2p_communicator.recv_forward(recv_tensor_shapes, ...)
@@ -239,7 +239,7 @@ for i in range(num_warmup_microbatches):
         deallocate_output_tensor(output_tensor, config.deallocate_pipeline_outputs)
 ```
 
-> **Partial Activation Checkpointing(仅影响 warmup 段的显存-计算权衡)**:当 `config.num_microbatches_with_partial_activation_checkpoints` 不为空时(`schedules.py:2324`),`max_outstanding_backprops = num_warmup_microbatches + 1`;`forward_step` 据此决定每个 microbatch 是否 checkpoint:
+> **Partial Activation Checkpointing(仅影响 warmup 段的显存-计算权衡)**:当 `config.num_microbatches_with_partial_activation_checkpoints` 不为空时(`megatron/core/pipeline_parallel/schedules.py:2324`),`max_outstanding_backprops = num_warmup_microbatches + 1`;`forward_step` 据此决定每个 microbatch 是否 checkpoint:
 > ```python
 > checkpoint_activations_microbatch = (
 >     i % max_outstanding_backprops >= config.num_microbatches_with_partial_activation_checkpoints
@@ -247,7 +247,7 @@ for i in range(num_warmup_microbatches):
 > ```
 > **原理**:warmup 阶段 outstanding backprop 数量逐渐增加(最多 `num_warmup_microbatches+1`),越早进入的 microbatch 在世时间越长、显存压力越大。前 `num_microbatches_with_partial_activation_checkpoints` 个 microbatch 落在 window 内不做 checkpoint(省重算开销),其余 microbatch 做 full checkpointing —— 这是"重计算 × microbatch 维度"的自适应窗口策略(配套阅读:`18_megatron_recompute_analysis.md`)。
 
-**③ 稳态 1F1B**(`schedules.py:2426`),核心是用**融合通信**把"发激活"和"收梯度"合并:
+**③ 稳态 1F1B**(`megatron/core/pipeline_parallel/schedules.py:2426`),核心是用**融合通信**把"发激活"和"收梯度"合并:
 ```python
 for i in range(num_microbatches_remaining):
     output_tensor, num_tokens = forward_step(...)                                  # 一次前向
@@ -267,11 +267,11 @@ for i in range(num_microbatches_remaining):
 ```
 > `input_tensors` / `output_tensors` 是 FIFO 队列:稳态每轮 `append` 一个、`pop(0)` 一个,**队列长度恒为 `warmup + 1`** —— 这就是 1F1B 峰值显存为 `O(pp)` 的代码证据。
 
-**④ Cooldown —— 只反向**(`schedules.py:2499`):把队列里剩下的 `warmup` 个 microbatch 清空。
+**④ Cooldown —— 只反向**(`megatron/core/pipeline_parallel/schedules.py:2499`):把队列里剩下的 `warmup` 个 microbatch 清空。
 
-最后 `finalize_model_grads_func`(`schedules.py:2540`)做 DP 梯度规约、SP 的 layernorm all-reduce、PP 首尾 stage 共享 embedding 的 all-reduce。
+最后 `finalize_model_grads_func`(`megatron/core/pipeline_parallel/schedules.py:2540`)做 DP 梯度规约、SP 的 layernorm all-reduce、PP 首尾 stage 共享 embedding 的 all-reduce。
 
-**Grad Sync 与 Bubble 的重叠**:稳态 1F1B 中,DP 梯度 AllReduce 默认通过 `no_sync_func` 禁用,直到最后一个 microbatch 的 backward 完成才由 `enable_grad_sync()`(`schedules.py:2501`)启用。关键在**非首 stage**:它们在 cooldown 阶段还有若干 backward 要做,梯度 AllReduce 被安排在这些 cooldown microbatch 的 bubble 期间**异步执行**,把 DP 通信开销藏进 idle time;首 stage 因为最早耗尽 warmup、最早进入 flush,梯度同步只能在 flush 时完成,没有 bubble 可借。
+**Grad Sync 与 Bubble 的重叠**:稳态 1F1B 中,DP 梯度 AllReduce 默认通过 `no_sync_func` 禁用,直到最后一个 microbatch 的 backward 完成才由 `enable_grad_sync()`(`megatron/core/pipeline_parallel/schedules.py:2501`)启用。关键在**非首 stage**:它们在 cooldown 阶段还有若干 backward 要做,梯度 AllReduce 被安排在这些 cooldown microbatch 的 bubble 期间**异步执行**,把 DP 通信开销藏进 idle time;首 stage 因为最早耗尽 warmup、最早进入 flush,梯度同步只能在 flush 时完成,没有 bubble 可借。
 
 **流程图**
 
@@ -389,7 +389,7 @@ $$
 
 ### ③.2 源码与流程
 
-`schedules.py:1007`。`model` 参数变成一个 module 列表(`len(model) = vp`)。VPP 把每张卡负责的连续层段拆成 `vp` 个**不连续的 model chunk**,分散在模型不同深度,而不是整段连续层。例如 `pp=4, vp=2, 16` 层:
+`megatron/core/pipeline_parallel/schedules.py:1007`。`model` 参数变成一个 module 列表(`len(model) = vp`)。VPP 把每张卡负责的连续层段拆成 `vp` 个**不连续的 model chunk**,分散在模型不同深度,而不是整段连续层。例如 `pp=4, vp=2, 16` 层:
 
 | 物理 GPU | VPP Stage 0 | VPP Stage 1 |
 |----------|-------------|-------------|
@@ -400,7 +400,7 @@ $$
 
 一般规则:GPU `r`(0-indexed)持有的 `vp` 个 chunk 里,第 `c` 个(0-indexed)覆盖层区间 `[c·pp·(L/pp/vp) + r·(L/pp/vp), c·pp·(L/pp/vp) + (r+1)·(L/pp/vp))`(`L` 为总层数,每个 chunk 厚度 `L/(pp·vp)` 层);这种交错放置让每个物理 stage 内部有多个独立的 forward/backward 流可以交替执行,从而把 pipeline bubble 打得更碎(即 §③.1 的"气泡率除以 `vp`")。
 
-**① 热身数量**(`get_pp_rank_microbatches`,`schedules.py:822`):
+**① 热身数量**(`get_pp_rank_microbatches`,`megatron/core/pipeline_parallel/schedules.py:822`):
 ```python
 num_warmup_microbatches  = (pipeline_parallel_size - pipeline_parallel_rank - 1) * 2
 num_warmup_microbatches += (num_model_chunks - 1) * microbatch_group_size_per_vp_stage
@@ -408,20 +408,20 @@ num_warmup_microbatches += (num_model_chunks - 1) * microbatch_group_size_per_vp
 total_num_microbatches = num_microbatches * num_model_chunks   # = m·vp
 ```
 
-**② 调度表(schedule table)—— VPP 的灵魂**(`get_schedule_table`,`schedules.py:847`):把"虚拟 microbatch 序号"映射到 `(microbatch_id, model_chunk_id)`。源码注释里的例子(PP2、`m=5`、`vp=2`、`N=3`):
+**② 调度表(schedule table)—— VPP 的灵魂**(`get_schedule_table`,`megatron/core/pipeline_parallel/schedules.py:847`):把"虚拟 microbatch 序号"映射到 `(microbatch_id, model_chunk_id)`。源码注释里的例子(PP2、`m=5`、`vp=2`、`N=3`):
 ```
 virtual_microbatch_id | 0 1 2 3 4 5 6 7 8 9
 microbatch_id         | 0 1 2 0 1 2 3 4 3 4
 model_chunk_id        | 0 0 0 1 1 1 0 0 1 1
 ```
-`get_model_chunk_id`(`schedules.py:1252`)在反向时把 chunk 顺序反转(`vp - id - 1`),因为反向要从深层 chunk 往浅层走。
+`get_model_chunk_id`(`megatron/core/pipeline_parallel/schedules.py:1252`)在反向时把 chunk 顺序反转(`vp - id - 1`),因为反向要从深层 chunk 往浅层走。
 
-**③ 三阶段主循环**:warmup(`schedules.py:1581`)/ 稳态 1F1B(`schedules.py:1741`)/ cooldown(`schedules.py:1979`),结构与标准 1F1B 同构,但:
-- `input_tensors` / `output_tensors` 变成**每个 chunk 一个队列的二维列表**(`schedules.py:1146`)。
-- 每步通过 `forward_step_helper` / `backward_step_helper`(`schedules.py:1393` / `1466`)按调度表跳到正确的 `model[chunk_id]` 与 `data_iterator[chunk_id]`。
-- `num_released_microbatches`(`schedules.py:1265`)处理首 rank 缓冲多个输入时的索引偏移。
+**③ 三阶段主循环**:warmup(`megatron/core/pipeline_parallel/schedules.py:1581`)/ 稳态 1F1B(`megatron/core/pipeline_parallel/schedules.py:1741`)/ cooldown(`megatron/core/pipeline_parallel/schedules.py:1979`),结构与标准 1F1B 同构,但:
+- `input_tensors` / `output_tensors` 变成**每个 chunk 一个队列的二维列表**(`megatron/core/pipeline_parallel/schedules.py:1146`)。
+- 每步通过 `forward_step_helper` / `backward_step_helper`(`megatron/core/pipeline_parallel/schedules.py:1393` / `1466`)按调度表跳到正确的 `model[chunk_id]` 与 `data_iterator[chunk_id]`。
+- `num_released_microbatches`(`megatron/core/pipeline_parallel/schedules.py:1265`)处理首 rank 缓冲多个输入时的索引偏移。
 
-**④ 约束**(`schedules.py:1160-1180`):`N ∈ [pp, m]`;`m % N` 必须为 0 或 ≥ `pp`(否则末尾 microbatch 组不满 → 额外气泡,直接 `raise`);`num_layers` 须能被 `pp·vp` 整除。
+**④ 约束**(`megatron/core/pipeline_parallel/schedules.py:1160-1180`):`N ∈ [pp, m]`;`m % N` 必须为 0 或 ≥ `pp`(否则末尾 microbatch 组不满 → 额外气泡,直接 `raise`);`num_layers` 须能被 `pp·vp` 整除。
 
 **流程图**
 
@@ -522,17 +522,17 @@ $$
 
 ## 调度器④ — P2P-overlap 1F1B(`overlap_p2p_comm` 分支)
 
-> 它不是独立函数,而是 `forward_backward_pipelining_with_interleaving` 内 `config.overlap_p2p_comm == True` 时走的另一套通信路径(`schedules.py:1755` 起)。要求 `batch_p2p_comm = False`(`transformer_config.py:321-329`)。
+> 它不是独立函数,而是 `forward_backward_pipelining_with_interleaving` 内 `config.overlap_p2p_comm == True` 时走的另一套通信路径(`megatron/core/pipeline_parallel/schedules.py:1755` 起)。要求 `batch_p2p_comm = False`(`megatron/core/transformer/transformer_config.py:321-329`)。
 
 ### ④.1 动机与解决的问题
 
-**问题**:VPP(调度器③)默认用 `send_forward_backward_recv_forward_backward` —— 这是一个**同步**融合算子(`schedules.py:1942`)。它把"算完一步 → 同步收发张量 → 再算下一步"串成串。当 `vp×` 通信量遇上跨机 IB 带宽时,这段 P2P 通信会**暴露在关键路径上**,稳态每一步都要等通信完成。
+**问题**:VPP(调度器③)默认用 `send_forward_backward_recv_forward_backward` —— 这是一个**同步**融合算子(`megatron/core/pipeline_parallel/schedules.py:1942`)。它把"算完一步 → 同步收发张量 → 再算下一步"串成串。当 `vp×` 通信量遇上跨机 IB 带宽时,这段 P2P 通信会**暴露在关键路径上**,稳态每一步都要等通信完成。
 
-**`overlap_p2p_comm` 的动机**:把 P2P 通信改成**异步 `isend`/`irecv`**,只拿到 wait handle 不立即等待;在下一次计算**之后**才 `wait()`。这样通信与计算在 GPU 上并行,P2P 延迟被计算掩盖,移出关键路径。`overlap_p2p_comm_warmup_flush`(`transformer_config.py:358`)进一步把这种重叠扩展到 warmup / cooldown 阶段。
+**`overlap_p2p_comm` 的动机**:把 P2P 通信改成**异步 `isend`/`irecv`**,只拿到 wait handle 不立即等待;在下一次计算**之后**才 `wait()`。这样通信与计算在 GPU 上并行,P2P 延迟被计算掩盖,移出关键路径。`overlap_p2p_comm_warmup_flush`(`megatron/core/transformer/transformer_config.py:358`)进一步把这种重叠扩展到 warmup / cooldown 阶段。
 
 ### ④.2 源码与流程
 
-稳态循环(`schedules.py:1755`)用 4 个回调把通信拆成"预取-计算-收尾":
+稳态循环(`megatron/core/pipeline_parallel/schedules.py:1755`)用 4 个回调把通信拆成"预取-计算-收尾":
 
 ```python
 def pp_pre_forward(...):    # 计算前:等上一轮预取的 recv 完成
@@ -556,9 +556,9 @@ output_tensor, input_tensor_grad = forward_backward_helper_wrapper(
 ```
 
 关键机制:
-- **专用收发缓冲** `fwd_recv_buffer` / `bwd_recv_buffer`(`schedules.py:1574`),首/末 rank 缓冲大小 `= N - pp + 1`,用于预取多个张量。
+- **专用收发缓冲** `fwd_recv_buffer` / `bwd_recv_buffer`(`megatron/core/pipeline_parallel/schedules.py:1574`),首/末 rank 缓冲大小 `= N - pp + 1`,用于预取多个张量。
 - **延迟等待**:`send_next_wait_handle`、`recv_prev_wait_handles` 等句柄跨迭代保存,在真正需要数据时才 `wait()`。
-- **释放安全点**(`schedules.py:1694`):`isend` 是异步拷贝,释放源缓冲前必须确认拷贝完成,否则下游收到脏数据 —— 当 `deallocate_pipeline_outputs` 为真时强制 `wait` 一次。
+- **释放安全点**(`megatron/core/pipeline_parallel/schedules.py:1694`):`isend` 是异步拷贝,释放源缓冲前必须确认拷贝完成,否则下游收到脏数据 —— 当 `deallocate_pipeline_outputs` 为真时强制 `wait` 一次。
 
 **流程图(稳态单步)**
 
@@ -615,11 +615,11 @@ comm  ···· |isend/irecv| |isend/irecv| ...    通信在后台并行,被计�
 
 ## 调度器⑤ — combined-1F1B(MoE All-to-All 重叠)`overlap_moe_expert_parallel_comm`
 
-> 代码:`combined_1f1b.py` + `model_chunk_schedule_plan.py`。通过 `overlap_moe_expert_parallel_comm = True` 开启。
+> 代码:`megatron/core/pipeline_parallel/combined_1f1b.py` + `megatron/core/models/common/model_chunk_schedule_plan.py`。通过 `overlap_moe_expert_parallel_comm = True` 开启。
 >
-> **它不是顶层独立调度,而是寄生在宿主调度内的"修饰器",且只有两种宿主形态**(`schedules.py` 源码实证):
-> - **PP=1 宿主**:`forward_backward_no_pipelining` 在 `schedules.py:662` 调 `combined_1f1b_schedule_for_no_pipelining`。
-> - **VPP 宿主**:`forward_backward_pipelining_with_interleaving` 经 `forward_backward_helper_wrapper` 在 `schedules.py:1493` 调 `combined_1f1b_schedule_for_interleaved_pipelining`。
+> **它不是顶层独立调度,而是寄生在宿主调度内的"修饰器",且只有两种宿主形态**(`megatron/core/pipeline_parallel/schedules.py` 源码实证):
+> - **PP=1 宿主**:`forward_backward_no_pipelining` 在 `megatron/core/pipeline_parallel/schedules.py:662` 调 `combined_1f1b_schedule_for_no_pipelining`。
+> - **VPP 宿主**:`forward_backward_pipelining_with_interleaving` 经 `forward_backward_helper_wrapper` 在 `megatron/core/pipeline_parallel/schedules.py:1493` 调 `combined_1f1b_schedule_for_interleaved_pipelining`。
 > - **没有"标准非交错 1F1B"宿主**:`forward_backward_pipelining_without_interleaving`(调度器②)全函数无 `overlap_moe_expert_parallel_comm` 分支。
 >
 > 因此:**combined-1F1B 有 VPP 版本,但没有非交错 1F1B 版本**。要画 4-stage 流水图,只能用它的 VPP 宿主形态(见 §⑤.3)。
@@ -631,15 +631,15 @@ comm  ···· |isend/irecv| |isend/irecv| ...    通信在后台并行,被计�
 **combined-1F1B 的动机**:在**层粒度**上,把 microbatch `i+1` 的**前向**和 microbatch `i` 的**反向**配对、共同调度。利用一个简单事实 —— **前向的 A2A 通信** 可以和 **反向的计算** 在 GPU 上并行,反之亦然。于是:
 > 前向的 dispatch/combine A2A 被反向的 attention/MLP 计算掩盖;反向的 A2A 被前向计算掩盖。
 
-它还配合 `delay_wgrad_compute`(`transformer_config.py:2702`):把反向拆成 **dgrad**(算输入梯度,在关键路径上)和 **wgrad**(算权重梯度,可延后),让 wgrad 去填 P2P 通信的缝隙 —— 这正是 "zero-bubble" 系工作的核心拆分思想(见第 7 节)。
+它还配合 `delay_wgrad_compute`(`megatron/core/transformer/transformer_config.py:2702`):把反向拆成 **dgrad**(算输入梯度,在关键路径上)和 **wgrad**(算权重梯度,可延后),让 wgrad 去填 P2P 通信的缝隙 —— 这正是 "zero-bubble" 系工作的核心拆分思想(见第 7 节)。
 
 ### ⑤.2 源码与流程
 
-**双 CUDA 流设计**:`set_streams`(`combined_1f1b.py:56`)建立 `comp_stream`(计算流)和 `comm_stream`(通信流);MoE 的 `dispatch`/`combine` 节点跑在 `comm_stream`,`attn`/`mlp` 跑在 `comp_stream`(`model_chunk_schedule_plan.py:160-167`)。
+**双 CUDA 流设计**:`set_streams`(`megatron/core/pipeline_parallel/combined_1f1b.py:56`)建立 `comp_stream`(计算流)和 `comm_stream`(通信流);MoE 的 `dispatch`/`combine` 节点跑在 `comm_stream`,`attn`/`mlp` 跑在 `comp_stream`(`megatron/core/models/common/model_chunk_schedule_plan.py:160-167`)。
 
 **三层调度结构**:
 
-**第一层 —— 顶层调度**(`combined_1f1b_schedule_for_no_pipelining`,`combined_1f1b.py:24`,以 PP=1、`m=4` 为例):
+**第一层 —— 顶层调度**(`combined_1f1b_schedule_for_no_pipelining`,`megatron/core/pipeline_parallel/combined_1f1b.py:24`,以 PP=1、`m=4` 为例):
 ```
 Phase 0: mb0 前向(单独跑,无重叠伙伴)
 Phase 1: mb0 反向 ‖ mb1 前向     ← combined_forward_backward_step
@@ -648,9 +648,9 @@ Phase 3: mb2 反向 ‖ mb3 前向
 Phase 4: mb3 反向(单独跑)
 ```
 
-**第二层 —— `combined_forward_backward_step`**(`combined_1f1b.py:270`):合并一个 F 和一个 B 的 pre/compute/post。前向不再直接产出张量,而是产出一个 **schedule plan**(`forward_step_func(..., return_schedule_plan=True)`),再交给:
+**第二层 —— `combined_forward_backward_step`**(`megatron/core/pipeline_parallel/combined_1f1b.py:270`):合并一个 F 和一个 B 的 pre/compute/post。前向不再直接产出张量,而是产出一个 **schedule plan**(`forward_step_func(..., return_schedule_plan=True)`),再交给:
 
-**第三层 —— `TransformerModelChunkSchedulePlan.run`**(`model_chunk_schedule_plan.py:456`):模型块级的 1F1B,逐层把前向 layer `i` 和反向 layer `L-1-i` 配对(反向逆序,用 `pop_layer()` FILO 取):
+**第三层 —— `TransformerModelChunkSchedulePlan.run`**(`megatron/core/models/common/model_chunk_schedule_plan.py:456`):模型块级的 1F1B,逐层把前向 layer `i` 和反向 layer `L-1-i` 配对(反向逆序,用 `pop_layer()` FILO 取):
 ```
 Phase 0: p2p 同步 → 前向 preprocess → 反向 postprocess
 Phase 1..L: 第 i 层  forward_layer[i]  ‖  backward_layer[L-1-i]
@@ -658,7 +658,7 @@ Phase L+1: send_forward_recv_backward → send_backward_recv_forward
 Phase L+2: 第一层的 attn wgrad → 前向 postprocess → 反向 preprocess
 ```
 
-**最内层 —— `TransformerLayerSchedulePlan.run`**(`model_chunk_schedule_plan.py:229`):单层内把 F/B 的子模块在两条流上交错,这是 A2A 真正被掩盖的地方:
+**最内层 —— `TransformerLayerSchedulePlan.run`**(`megatron/core/models/common/model_chunk_schedule_plan.py:229`):单层内把 F/B 的子模块在两条流上交错,这是 A2A 真正被掩盖的地方:
 ```
 comm_stream:  combine_bwd │ dispatch_fwd ─► dispatch_bwd │ combine_fwd
 comp_stream:  attn_fwd    │ mlp_bwd ─► mlp_bwd_dw ─► mlp_fwd │ attn_bwd
@@ -689,26 +689,26 @@ TransformerLayerSchedulePlan.run(f_layer, b_layer)
 
 上文讲了"分层执行"的结构,这里补"它**怎么挂进主流程**,以及**怎么保证 forward 与 backward 不混算、且配对正确**"(行号以 `dev@232c478d4` 为准)。
 
-**(0) 主流程接入 —— 一个 `if` 接管 steady 段**。两个宿主函数开头加分支即可:`forward_backward_no_pipelining` 在 `schedules.py:709`、`forward_backward_pipelining_with_interleaving` 在 `schedules.py:1551`,命中 `config.overlap_moe_expert_parallel_comm and not forward_only` 就 delegate 给 `combined_1f1b_schedule_for_{no_pipelining|interleaved_pipelining}`。warmup/steady/cooldown 仍由 Layer-2 的 `get_pp_rank_microbatches` 生成,只是该模式**多调度一个 warmup microbatch**(`schedules.py:879-883`,`num_warmup += 1`)—— 保证 steady 段里**永远有一个待反向的 microbatch** 能和当前 forward 配对。
+**(0) 主流程接入 —— 一个 `if` 接管 steady 段**。两个宿主函数开头加分支即可:`forward_backward_no_pipelining` 在 `megatron/core/pipeline_parallel/schedules.py:709`、`forward_backward_pipelining_with_interleaving` 在 `megatron/core/pipeline_parallel/schedules.py:1551`,命中 `config.overlap_moe_expert_parallel_comm and not forward_only` 就 delegate 给 `combined_1f1b_schedule_for_{no_pipelining|interleaved_pipelining}`。warmup/steady/cooldown 仍由 Layer-2 的 `get_pp_rank_microbatches` 生成,只是该模式**多调度一个 warmup microbatch**(`megatron/core/pipeline_parallel/schedules.py:879-883`,`num_warmup += 1`)—— 保证 steady 段里**永远有一个待反向的 microbatch** 能和当前 forward 配对。
 
 四重机制保证"正反向分类执行":
 
-**① plan 跟着 output tensor 走(配对的"账本",关键)**。combined 模式下模型不直接前向,而是 `forward_step_func(..., return_schedule_plan=True)` → `GPTModel.build_schedule_plan(...)`(`gpt_model.py:811`)产出 `f_schedule_plan`(`combined_1f1b.py:390`)。前向收尾把它**挂到自己的输出上**:`output_tensor.schedule_plan = f_schedule_plan`(`combined_1f1b.py:494`)。等这个 microbatch 轮到反向,从它**自己的** output tensor 取回:`b_schedule_plan = b_output_tensor[0].schedule_plan`(`combined_1f1b.py:435`)。
+**① plan 跟着 output tensor 走(配对的"账本",关键)**。combined 模式下模型不直接前向,而是 `forward_step_func(..., return_schedule_plan=True)` → `GPTModel.build_schedule_plan(...)`(`megatron/core/models/gpt/gpt_model.py:811`)产出 `f_schedule_plan`(`megatron/core/pipeline_parallel/combined_1f1b.py:390`)。前向收尾把它**挂到自己的输出上**:`output_tensor.schedule_plan = f_schedule_plan`(`megatron/core/pipeline_parallel/combined_1f1b.py:494`)。等这个 microbatch 轮到反向,从它**自己的** output tensor 取回:`b_schedule_plan = b_output_tensor[0].schedule_plan`(`megatron/core/pipeline_parallel/combined_1f1b.py:435`)。
 → f-plan 与 b-plan 来自**两个不同 microbatch、两个不同来源**,plan 随激活在流水线里传递 —— 这就是把"谁的前向、谁的反向"钉死的账本,天然不会错配。
 
-**② 全程独立实参,不合并成单一 step**。`combined_forward_backward_step`(`combined_1f1b.py:281`)里 forward 只碰 `f_model/f_schedule_plan`、backward 只碰 `b_model/b_output_tensor→b_schedule_plan`(retain_grad + loss 反向先单独做,`:441-448`),最后用**两个独立参数**进合并计算:`type(f_schedule_plan or b_schedule_plan).run(f_schedule_plan, b_schedule_plan, b_grad=b_grad, ...)`(`combined_1f1b.py:462`)。
+**② 全程独立实参,不合并成单一 step**。`combined_forward_backward_step`(`megatron/core/pipeline_parallel/combined_1f1b.py:281`)里 forward 只碰 `f_model/f_schedule_plan`、backward 只碰 `b_model/b_output_tensor→b_schedule_plan`(retain_grad + loss 反向先单独做,`:441-448`),最后用**两个独立参数**进合并计算:`type(f_schedule_plan or b_schedule_plan).run(f_schedule_plan, b_schedule_plan, b_grad=b_grad, ...)`(`megatron/core/pipeline_parallel/combined_1f1b.py:462`)。
 
-**③ 升序/降序层配对的正确性**。`TransformerModelChunkSchedulePlan.run`(`model_chunk_schedule_plan.py:465`)中:`f_layer = f_schedule_plan.get_layer(i)`(升序 0→N,`:527`)、`b_layer = b_schedule_plan.pop_layer()`(降序 N→0,FILO,`:528`)。**forward 第 i 层 配 backward 第 (N−1−i) 层**,正吻合 1F1B 中"做反向的 microbatch 领先,所以它的高层先算完"的依赖。`f_input`(前向激活)与 `b_grad`(反向梯度)是**两条独立数据流**各传各的(`:531`),绝不交叉;不配对的层再各跑 backward-only(`:543`)/ forward-only(`:554`)。
+**③ 升序/降序层配对的正确性**。`TransformerModelChunkSchedulePlan.run`(`megatron/core/models/common/model_chunk_schedule_plan.py:465`)中:`f_layer = f_schedule_plan.get_layer(i)`(升序 0→N,`:527`)、`b_layer = b_schedule_plan.pop_layer()`(降序 N→0,FILO,`:528`)。**forward 第 i 层 配 backward 第 (N−1−i) 层**,正吻合 1F1B 中"做反向的 microbatch 领先,所以它的高层先算完"的依赖。`f_input`(前向激活)与 `b_grad`(反向梯度)是**两条独立数据流**各传各的(`:531`),绝不交叉;不配对的层再各跑 backward-only(`:543`)/ forward-only(`:554`)。
 
-**④ 角色化节点 + 双流 + event 同步**(承 §⑤.2):一层拆成 `attn / moe_dispatch / mlp / moe_combine` 四个 `ScheduleNode`,A2A 节点绑 `comm_stream`、计算节点绑 `comp_stream`;跨流靠 CUDA event(`record_current_stream`/`wait_current_stream`,`model_chunk_schedule_plan.py:427-435`)保证依赖正确。于是 forward 层的 A2A 与配对 backward 层的计算在不同 stream 上真并行,而 autograd 正确性不受影响(forward 仍建图、backward 仍真反向)。
+**④ 角色化节点 + 双流 + event 同步**(承 §⑤.2):一层拆成 `attn / moe_dispatch / mlp / moe_combine` 四个 `ScheduleNode`,A2A 节点绑 `comm_stream`、计算节点绑 `comp_stream`;跨流靠 CUDA event(`record_current_stream`/`wait_current_stream`,`megatron/core/models/common/model_chunk_schedule_plan.py:427-435`)保证依赖正确。于是 forward 层的 A2A 与配对 backward 层的计算在不同 stream 上真并行,而 autograd 正确性不受影响(forward 仍建图、backward 仍真反向)。
 
-> 不变量:不支持 `checkpoint_activations_microbatch`(`combined_1f1b.py:343` assert);VPP>1 + Megatron-FSDP 显式不支持;FSDP `optim_grads_params` 下因绕过 `TransformerLayer.forward` 的 hook,要给每层显式挂 reshard 回调(`combined_1f1b.py:407-414`,见 [[16_megatron_distributed_optimizer_analysis]] / [[20_megatron_comm_overlap_analysis]] §5.7);FP8 仅 `delayed` recipe 支持 —— `use_outer_fp8_context = config.fp8 and config.fp8_recipe == Fp8Recipe.delayed` 为真时,整个 combined step 被包在外层 `get_fp8_context(config)` 里(`combined_1f1b.py:338-403, 441-442`),否则退化为 `nullcontext()`。
+> 不变量:不支持 `checkpoint_activations_microbatch`(`megatron/core/pipeline_parallel/combined_1f1b.py:343` assert);VPP>1 + Megatron-FSDP 显式不支持;FSDP `optim_grads_params` 下因绕过 `TransformerLayer.forward` 的 hook,要给每层显式挂 reshard 回调(`megatron/core/pipeline_parallel/combined_1f1b.py:407-414`,见 [[16_megatron_distributed_optimizer_analysis]] / [[20_megatron_comm_overlap_analysis]] §5.7);FP8 仅 `delayed` recipe 支持 —— `use_outer_fp8_context = config.fp8 and config.fp8_recipe == Fp8Recipe.delayed` 为真时,整个 combined step 被包在外层 `get_fp8_context(config)` 里(`megatron/core/pipeline_parallel/combined_1f1b.py:338-403, 441-442`),否则退化为 `nullcontext()`。
 
 > [!update] 2026-06-16 · dev@232c478d4 — combined-1F1B 的三处增量(MTP 排序 / 显存释放 / 死代码清理)
 >
 > 自 `ee3f1ff` 以来,combined-1F1B 路径有三处源码变化,均**不改变**上文的双流重叠骨架:
 >
-> **1. MTP `mtp_post_process` 前向后移**(#4695,`megatron/core/models/common/model_chunk_schedule_plan.py:288-290`)。`TransformerLayerSchedulePlan.run` 里,带 MTP(多 token 预测)的层原先在 `moe_combine.forward` 之后**立刻**跑 `mtp_post_process.forward`;现在把它**挪到反向 `attn.backward` 之后**。docstring 明确(`:240-241`):「mtp_post_process_fwd 在 comp_stream 上排在 combine_fwd 之后,mtp_post_process_bwd 排在 combine_bwd 之前」。目的是让 MTP 的 output_layer/loss 计算与反向 attention 更好地错峰,避免它挤占 combine A2A 的掩盖窗口。非 MTP 模型的 `mtp_post_process` 是 `NoopScheduleNode`(`model_chunk_schedule_plan.py:174`),此改动无影响。
+> **1. MTP `mtp_post_process` 前向后移**(#4695,`megatron/core/models/common/model_chunk_schedule_plan.py:288-290`)。`TransformerLayerSchedulePlan.run` 里,带 MTP(多 token 预测)的层原先在 `moe_combine.forward` 之后**立刻**跑 `mtp_post_process.forward`;现在把它**挪到反向 `attn.backward` 之后**。docstring 明确(`:240-241`):「mtp_post_process_fwd 在 comp_stream 上排在 combine_fwd 之后,mtp_post_process_bwd 排在 combine_bwd 之前」。目的是让 MTP 的 output_layer/loss 计算与反向 attention 更好地错峰,避免它挤占 combine A2A 的掩盖窗口。非 MTP 模型的 `mtp_post_process` 是 `NoopScheduleNode`(`megatron/core/models/common/model_chunk_schedule_plan.py:174`),此改动无影响。
 > （注:同段落里的 `ep_overlap_early_attn_memory_release` 配置决定 `attn.backward` 排在 dispatch 之后(早释放 attn 显存)还是 combine 之后,见 `:274-286`。)
 >
 > **2. loss 节点输入显存的及时释放**(#4908 / #4909,`megatron/core/pipeline_parallel/combined_1f1b.py:24`、`447-471`)。新增 `_release_tensor_storage`:在最后一个 stage,combined 反向跑完 loss 节点后,立刻 `loss_node._release_state()`(`:448`)并把 `loss_node.inputs` 的 CUDA 存储 `untyped_storage().resize_(0)` 抹零(先 `record_stream(current_stream)` 保证跨流安全)。这缓解了 §⑤.4 提到的「F 与 B 两个 microbatch 激活同时在世」带来的峰值,属于纯显存优化,不改语义。
@@ -721,7 +721,7 @@ combined-1F1B 是宿主调度的修饰器,**不改变 PP 级流水线的阶梯�
 
 **(a) PP 级 —— combined-1F1B 跑在 VPP 宿主上(`pp=4, vp=2, m=8, N=4`)**
 
-阶梯与 §③.3 的纯 VPP **几乎相同**,唯一结构差异是 warmup **+1**(`schedules.py:824-828`:多调度一个前向,确保每个 1F1B 步里 F 与 B 相互独立)。记号同 §③.3(`f`/`F`=前向 chunk0/1,`b`/`B`=反向 chunk0/1):
+阶梯与 §③.3 的纯 VPP **几乎相同**,唯一结构差异是 warmup **+1**(`megatron/core/pipeline_parallel/schedules.py:824-828`:多调度一个前向,确保每个 1F1B 步里 F 与 B 相互独立)。记号同 §③.3(`f`/`F`=前向 chunk0/1,`b`/`B`=反向 chunk0/1):
 
 ```
 slot  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38
@@ -738,7 +738,7 @@ Dev3  .. .. .. f0 f1 f2 f3 F0 F1 B0 F2 B1 F3 B2 f4 B3 f5 b0 f6 b1 f7 b2 F4 b3 F5
 
 **(b) PP=1 宿主 —— 无阶梯,单设备内 F/B 重叠**
 
-PP=1 无 stage 间流水(只有 1 个 stage,画不成 4-stage 图)。combined-1F1B 在单设备内把 mb `i` 的反向与 mb `i+1` 的前向配对(`combined_1f1b.py:24`,以 m=4 为例):
+PP=1 无 stage 间流水(只有 1 个 stage,画不成 4-stage 图)。combined-1F1B 在单设备内把 mb `i` 的反向与 mb `i+1` 的前向配对(`megatron/core/pipeline_parallel/combined_1f1b.py:24`,以 m=4 为例):
 
 ```
 Device 0 | [ f0 ]  [ b0 ‖ f1 ]  [ b1 ‖ f2 ]  [ b2 ‖ f3 ]  [ b3 ]
@@ -749,7 +749,7 @@ Device 0 | [ f0 ]  [ b0 ‖ f1 ]  [ b1 ‖ f2 ]  [ b2 ‖ f3 ]  [ b3 ]
 
 **(c) 单元内部 —— 层级双流重叠(combined-1F1B 的核心)**
 
-每个融合步内,`TransformerLayerSchedulePlan.run`(`model_chunk_schedule_plan.py:229`)把 F、B 的子模块在两条 CUDA 流上交错:
+每个融合步内,`TransformerLayerSchedulePlan.run`(`megatron/core/models/common/model_chunk_schedule_plan.py:229`)把 F、B 的子模块在两条 CUDA 流上交错:
 
 ```
 不开 overlap(A2A 阻塞计算):
@@ -767,13 +767,13 @@ comm |comb_b|  disp_f | disp_b | comb_f |     ← A2A 全程被对侧计算掩�
 
 | 维度 | 取值 / 影响 |
 |------|------------|
-| **PP 气泡** | **不改变**,继承宿主调度:PP=1 → 0;VPP → `(pp-1)/(m·vp)`。注意 VPP 形态下 warmup **+1**(`schedules.py:827`) |
+| **PP 气泡** | **不改变**,继承宿主调度:PP=1 → 0;VPP → `(pp-1)/(m·vp)`。注意 VPP 形态下 warmup **+1**(`megatron/core/pipeline_parallel/schedules.py:827`) |
 | **有效 `t_f` / `t_b`** | **显著下降**:MoE A2A(占层时 20%~40%)被掩盖,单步计算密度提高,等效缩短 `t_f`、`t_b` |
 | **峰值激活显存** | **升高**:F 与 B 两个 microbatch 的激活同时在世;额外持有 `schedule_plan` 对象;`delay_wgrad_compute` 需多存 wgrad 所需输入 |
-| **A2A 通信量** | 不变,只是被隐藏;`high_priority_a2a_comm_stream`(`transformer_config.py:653`)可把通信流设为 CUDA 高优先级 |
+| **A2A 通信量** | 不变,只是被隐藏;`high_priority_a2a_comm_stream`(`megatron/core/transformer/transformer_config.py:653`)可把通信流设为 CUDA 高优先级 |
 | **PP 通信量** | 与宿主调度相同 |
 
-**约束**(`transformer_config.py:2647-2730`):需 torch ≥ 2.6.0;仅支持 EP + `alltoall`/`flex` dispatcher;必须关闭 full recompute 与 moe recompute;仅 bf16/fp16;`delay_wgrad_compute` 必须与本特性同开;VPP 形态下不支持 Megatron-FSDP。
+**约束**(`megatron/core/transformer/transformer_config.py:2647-2730`):需 torch ≥ 2.6.0;仅支持 EP + `alltoall`/`flex` dispatcher;必须关闭 full recompute 与 moe recompute;仅 bf16/fp16;`delay_wgrad_compute` 必须与本特性同开;VPP 形态下不支持 Megatron-FSDP。
 
 ### ⑤.5 适用场景及原因
 
@@ -801,11 +801,11 @@ MoE 层里,PP 的 P2P(激活/梯度收发)与 EP 的 All-to-All(dispatch/combine
 
 `pipeline_parallel/` 目录里,除 5 个调度器 + P2P/进程组基础设施(§0)外,还有两块相对独立的周边机制,借调度器②的 `is_multimodule` 分支 / `backward_step_multimodule` 挂钩接入主流程。
 
-### 6.1 变长序列的混合 CP 动态调度(`hybrid_cp_schedule.py`)
+### 6.1 变长序列的混合 CP 动态调度(`megatron/core/pipeline_parallel/hybrid_cp_schedule.py`)
 
 **动机**:固定 CP 度(`13_megatron_cp_analysis.md`)假设所有样本切同一个 `cp`,但**变长序列训练**(SFT、文档级语料、多分辨率多模态)样本长度差异巨大 —— 短样本用大 CP 是浪费,长样本用小 CP 又放不下,且 attention `O(S²)` 负载在 DP×CP 组间严重不均。
 
-`BalancedCPScheduler`(`hybrid_cp_schedule.py:14`)按样本长度动态决定 CP 度,并把样本打包成各组工作量均衡的批:
+`BalancedCPScheduler`(`megatron/core/pipeline_parallel/hybrid_cp_schedule.py:14`)按样本长度动态决定 CP 度,并把样本打包成各组工作量均衡的批:
 
 ```python
 def gpus_needed(self, seq_len):              # 该样本需要几张卡做 CP
@@ -828,19 +828,19 @@ def get_total_workload(self, seq_length, cp_size):
 
 适用:变长序列训练 —— SFT、长文档预训练、多分辨率多模态。固定长度的标准预训练用不到。
 
-> **与 `29_megatron_packed_dataset_dynamic_cp_analysis.md` 的关系**:`data_schedule.py` 的 `DefaultDynamicCPScheduler`(打包调度器的 `is_dynamic_cp=True` 子类,用 `dcp_*` 函数)才是动态 CP 真正的**集成入口** —— 序列打包与动态 CP 在那里被缝进同一条 `run()` 九步流水线。本节的 `BalancedCPScheduler` 是同一套均衡逻辑的**类形态兄弟**(独立实现,算法一致),两者不是"谁包含谁",是并行存在的两套实现。完整集成流程见 29 号页;13 号页讲固定 CP 的通用机制。
+> **与 `29_megatron_packed_dataset_dynamic_cp_analysis.md` 的关系**:`megatron/core/datasets/data_schedule.py` 的 `DefaultDynamicCPScheduler`(打包调度器的 `is_dynamic_cp=True` 子类,用 `dcp_*` 函数)才是动态 CP 真正的**集成入口** —— 序列打包与动态 CP 在那里被缝进同一条 `run()` 九步流水线。本节的 `BalancedCPScheduler` 是同一套均衡逻辑的**类形态兄弟**(独立实现,算法一致),两者不是"谁包含谁",是并行存在的两套实现。完整集成流程见 29 号页;13 号页讲固定 CP 的通用机制。
 
-### 6.2 多模块/多模态流水线(`bridge_communicator.py` + `multimodule_communicator.py`)
+### 6.2 多模块/多模态流水线(`megatron/core/pipeline_parallel/bridge_communicator.py` + `megatron/core/pipeline_parallel/multimodule_communicator.py`)
 
 **动机**:标准 `P2PCommunicator`(§0.3)假设上下游 PP stage 共享同一并行网格,TP/DP/CP 一致、激活形状对得上。但**多模态模型**的视觉编码器、LLM 主干、生成头是不同子模型,各自可能用完全不同并行配置(如编码器 TP=2/PP=1,LLM TP=8/PP=4),甚至张量维数不同(视觉编码器常出 2D `[b·s,h]`,LLM 要 3D `[s,b,h]`)。
 
-`BridgeCommunicator`(`bridge_communicator.py:39`)连接一对 `HyperCommGrid`(源→目标网格,见 `17_megatron_parallelism_orchestration_analysis.md` §4):`build_comm_map` 算出源网格哪些 rank 该发给目标网格哪些 rank,fan-in/fan-out 处理两侧 batch/并行度不同(用缓存的 broadcast 进程组);`dim_mapping`/`tensor_ndim` 处理 2D/3D 差异;对外暴露与 `P2PCommunicator` 同名接口(`send_forward`/`recv_forward`/`send_forward_recv_backward`/...),上层调度无感切换。当前限制:CP 暂不支持(两侧须 CP=1)。
+`BridgeCommunicator`(`megatron/core/pipeline_parallel/bridge_communicator.py:39`)连接一对 `HyperCommGrid`(源→目标网格,见 `17_megatron_parallelism_orchestration_analysis.md` §4):`build_comm_map` 算出源网格哪些 rank 该发给目标网格哪些 rank,fan-in/fan-out 处理两侧 batch/并行度不同(用缓存的 broadcast 进程组);`dim_mapping`/`tensor_ndim` 处理 2D/3D 差异;对外暴露与 `P2PCommunicator` 同名接口(`send_forward`/`recv_forward`/`send_forward_recv_backward`/...),上层调度无感切换。当前限制:CP 暂不支持(两侧须 CP=1)。
 
-`MultiModulePipelineCommunicator`(`multimodule_communicator.py:110`)把多个子模块组织成一张 DAG(如 `image_encoder/audio_encoder → llm → generator`),为每条边建一个 `BridgeCommunicator`,张量以 `Dict[str, Tensor]` 按模块名组织传递 —— 使调度器②的非交错 1F1B 可以无感驱动一条跨异构子模型的流水线。
+`MultiModulePipelineCommunicator`(`megatron/core/pipeline_parallel/multimodule_communicator.py:110`)把多个子模块组织成一张 DAG(如 `image_encoder/audio_encoder → llm → generator`),为每条边建一个 `BridgeCommunicator`,张量以 `Dict[str, Tensor]` 按模块名组织传递 —— 使调度器②的非交错 1F1B 可以无感驱动一条跨异构子模型的流水线。
 
 > [!update] 2026-06-16 · dev@232c478d4 — 跨网格 P2P 改走专用进程组(#5234)
 >
-> `ee3f1ff` 时跨网格 `dist.send/recv`/`P2POp` 不带 `group=` 参数,隐式走全局 `WORLD` 组,与其它集合通信共用 NCCL 通信器,有串行化/标签冲突风险。#5234 为每条桥接边新建专用进程组 `bridge_pg`(`bridge_communicator.py:167-168`,取源/目标网格 TP leader 并集排序后 `dist.new_group`),类级缓存 `_bridge_pg_cache` 避免重复建组;此后所有桥接 `send_forward`/`recv_forward`/`send_backward`/`recv_backward` 及融合 `P2POp` 均显式传 `group=self.bridge_pg`(12 处站点)。意义:把跨网格 leader↔leader 的 P2P 从全局组隔离到独立通信器,避免与子网格内部 TP/PP/DP 集合通信争用 NCCL 资源。配套:`HyperCommGrid` 本身也在 #5148 获得 named views,为异构子模型提供几何基础(详见 [[17_megatron_parallelism_orchestration_analysis]] §4③)。
+> `ee3f1ff` 时跨网格 `dist.send/recv`/`P2POp` 不带 `group=` 参数,隐式走全局 `WORLD` 组,与其它集合通信共用 NCCL 通信器,有串行化/标签冲突风险。#5234 为每条桥接边新建专用进程组 `bridge_pg`(`megatron/core/pipeline_parallel/bridge_communicator.py:167-168`,取源/目标网格 TP leader 并集排序后 `dist.new_group`),类级缓存 `_bridge_pg_cache` 避免重复建组;此后所有桥接 `send_forward`/`recv_forward`/`send_backward`/`recv_backward` 及融合 `P2POp` 均显式传 `group=self.bridge_pg`(12 处站点)。意义:把跨网格 leader↔leader 的 P2P 从全局组隔离到独立通信器,避免与子网格内部 TP/PP/DP 集合通信争用 NCCL 资源。配套:`HyperCommGrid` 本身也在 #5148 获得 named views,为异构子模型提供几何基础(详见 [[17_megatron_parallelism_orchestration_analysis]] §4③)。
 
 **适用场景**:VLM、音频-语言、encoder-decoder 等多模态/异构模型;纯单模型(GPT)走标准 `P2PCommunicator`,用不到这两个类。
 

@@ -4,8 +4,8 @@ title: "Megatron-LM 训练稳定性与可观测性深度解析"
 
 # Megatron-LM 训练稳定性与可观测性深度解析
 
-> 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
-> 核心文件:`megatron/core/rerun_state_machine.py`、`fault_injector.py`、`energy_monitor.py`、`timers.py`、`optimizer/qk_clip.py`、`optimizer/grad_scaler.py`、`optimizer/clip_grads.py`、`transformer/moe/moe_logging.py`、`transformer/moe/router_replay.py`;训练循环日志在 `megatron/training/training.py`
+> **源码基线**:`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`(`dev`,2026-05-19)
+> 核心文件:`megatron/core/rerun_state_machine.py`、`megatron/core/fault_injector.py`、`megatron/core/energy_monitor.py`、`megatron/core/timers.py`、`megatron/core/optimizer/qk_clip.py`、`megatron/core/optimizer/grad_scaler.py`、`megatron/core/optimizer/clip_grads.py`、`megatron/core/transformer/moe/moe_logging.py`、`megatron/core/transformer/moe/router_replay.py`;训练循环日志在 `megatron/training/training.py`
 > 配套阅读:`16_megatron_distributed_optimizer_analysis.md`、五份并行分析、`27_megatron_tp_fsdp_resharding_supplements_analysis.md`
 > 定位:系统性专题。前面所有文档讲"怎么把模型并行训起来、训得快";本文讲**怎么让它训得稳、出问题怎么发现、看哪些指标判断健康**。
 
@@ -26,9 +26,9 @@ Megatron 对应有三套机制,本文依次拆解:
 
 | 风险 | 机制 | 代码 |
 |------|------|------|
-| 数值不稳定 | loss scaling、梯度裁剪、**梯度范数超阈跳步**(§1.2)、NaN/Inf 检查、QK-clip、**MTP 稳定性套件**(§1.8) | `grad_scaler.py`、`clip_grads.py`、`optimizer.py`、`qk_clip.py`、`multi_token_prediction.py` |
-| 硬件故障 / SDC | RerunStateMachine、fault injector、NTP 容错 | `rerun_state_machine.py`、`fault_injector.py`、`nonuniform_tp.py` |
-| 可观测性 | Timer 系统、MoE 逐层指标、能耗监控、TB/wandb 日志 | `timers.py`、`moe_logging.py`、`energy_monitor.py` |
+| 数值不稳定 | loss scaling、梯度裁剪、**梯度范数超阈跳步**(§1.2)、NaN/Inf 检查、QK-clip、**MTP 稳定性套件**(§1.8) | `megatron/core/optimizer/grad_scaler.py`、`megatron/core/optimizer/clip_grads.py`、`megatron/core/optimizer/optimizer.py`、`megatron/core/optimizer/qk_clip.py`、`megatron/core/transformer/multi_token_prediction.py` |
+| 硬件故障 / SDC | RerunStateMachine、fault injector、NTP 容错 | `megatron/core/rerun_state_machine.py`、`megatron/core/fault_injector.py`、`megatron/core/distributed/nonuniform_tp.py` |
+| 可观测性 | Timer 系统、MoE 逐层指标、能耗监控、TB/wandb 日志 | `megatron/core/timers.py`、`megatron/core/transformer/moe/moe_logging.py`、`megatron/core/energy_monitor.py` |
 
 ---
 
@@ -39,18 +39,18 @@ Megatron 对应有三套机制,本文依次拆解:
 (详见 `16_megatron_distributed_optimizer_analysis.md` §8–9,此处定位为"稳定性"视角)
 
 fp16 训练里梯度可能**下溢成 0** 或**上溢成 inf**。两道防线:
-- **Loss scaling**:loss 乘 `S`,把小梯度抬出下溢区;`DynamicGradScaler` 自适应 `S`(`grad_scaler.py:64`)。
+- **Loss scaling**:loss 乘 `S`,把小梯度抬出下溢区;`DynamicGradScaler` 自适应 `S`(`megatron/core/optimizer/grad_scaler.py:64`)。
 - **inf/nan 跳步**:`optimizer.step()` 第一步 `prepare_grads` 扫描梯度,发现非有限值 → **`found_inf_flag=True` → 整步丢弃**(参数不动),`DynamicGradScaler` 随后按 `backoff_factor` 调小 `S`。
 
 这是 fp16 训练的安全阀:偶发溢出不会污染参数,只是浪费一步。
 
 ### 1.2 梯度尖峰防护:全局梯度裁剪
 
-`clip_grads.py` / `MegatronOptimizer.clip_grad_norm`:算全局梯度范数 `‖g‖`(需跨 TP×PP all-reduce),超过 `--clip-grad`(默认 1.0)就等比缩小。挡住偶发的梯度尖峰,防止单步大跳导致发散。
+`megatron/core/optimizer/clip_grads.py` / `MegatronOptimizer.clip_grad_norm`:算全局梯度范数 `‖g‖`(需跨 TP×PP all-reduce),超过 `--clip-grad`(默认 1.0)就等比缩小。挡住偶发的梯度尖峰,防止单步大跳导致发散。
 
 > [!update] 2026-06-16 · dev@232c478d4 — 梯度范数超阈跳步(#3460)
-> 在裁剪之上新增**第二道闸**:`OptimizerConfig.grad_norm_skip_threshold`(`optimizer_config.py:376`,默认 `float('inf')` 即关闭)。
-> 在 `ChainedOptimizer.step()`(`optimizer/optimizer.py:1731`)里,算完主梯度范数 `grad_norm` 并完成裁剪后,若 `grad_norm > config.grad_norm_skip_threshold`(且存在 main 参数),则打 `INFO` 日志并置 `should_skip_update=True`,使 `update_successful = False`、**不调 `step_with_ready_grads()`** —— 整步丢弃,参数不动。
+> 在裁剪之上新增**第二道闸**:`OptimizerConfig.grad_norm_skip_threshold`(`megatron/core/optimizer/optimizer_config.py:376`,默认 `float('inf')` 即关闭)。
+> 在 `ChainedOptimizer.step()`(`megatron/core/optimizer/optimizer.py:1731`)里,算完主梯度范数 `grad_norm` 并完成裁剪后,若 `grad_norm > config.grad_norm_skip_threshold`(且存在 main 参数),则打 `INFO` 日志并置 `should_skip_update=True`,使 `update_successful = False`、**不调 `step_with_ready_grads()`** —— 整步丢弃,参数不动。
 > - 与 §1.1 inf/nan 跳步的区别:那是因**非有限值**而跳;这里是因**有限但过大**的范数而跳(裁剪还嫌不够,疑似该步本身被污染)。
 > - 与 §1.2 裁剪的区别:裁剪是把范数**缩到阈值后照常更新**;超阈跳步是**直接放弃这一步**。
 > - 判据用的是"主梯度范数"(`get_grad_norm()` 已排除 §1.8 的 `mtp` 独立范数组),且仅在 `main_params` 非空时触发。
@@ -58,11 +58,11 @@ fp16 训练里梯度可能**下溢成 0** 或**上溢成 inf**。两道防线:
 
 ### 1.3 NaN / Inf 显式检查
 
-`--check-for-nan-in-loss-and-grad`:每步显式检查 loss 与梯度是否含 NaN/Inf。`rerun_state_machine.py` 即使没调 `validate_result` 也会在这个选项下兜底检查(`:583`)。发现后可选择**报错退出**或交给 RerunStateMachine 归因(§1.4)。FSDP 侧另有 `_check_nan_in_grad`。
+`--check-for-nan-in-loss-and-grad`:每步显式检查 loss 与梯度是否含 NaN/Inf。`megatron/core/rerun_state_machine.py` 即使没调 `validate_result` 也会在这个选项下兜底检查(`:583`)。发现后可选择**报错退出**或交给 RerunStateMachine 归因(§1.4)。FSDP 侧另有 `_check_nan_in_grad`。
 
 ### 1.4 RerunStateMachine —— 静默数据损坏(SDC)归因
 
-`rerun_state_machine.py`(1425 行)。**这是 Megatron 最有特色的稳定性机制**,专治"GPU 算错了但不崩"的 SDC。
+`megatron/core/rerun_state_machine.py`(1425 行)。**这是 Megatron 最有特色的稳定性机制**,专治"GPU 算错了但不崩"的 SDC。
 
 **问题**:出现 NaN 或 loss 尖峰时,根因可能是 ——(a) 真实的数据驱动尖峰(无害);(b) 某 GPU 偶发位翻转(transient);(c) 某 GPU 硬件坏了(persistent)。光看数值分不清。
 
@@ -91,13 +91,13 @@ fp16 训练里梯度可能**下溢成 0** 或**上溢成 inf**。两道防线:
 
 > [!update] 2026-06-16 · dev@232c478d4 — 去掉 validate_result 的 stat 系统调用(#5107)
 > 上文对 RerunStateMachine 流程的描述在 `dev@232c478d4` 仍然成立(行号微移:`validate_result`→`:463`、`RerunDiagnostic`→`:59`、`RerunMode`→`:73`、`RerunState`→`:81`、`should_checkpoint_and_exit`→`:399`、check-for-nan 兜底注释→`:582`)。一处实现变化:
-> - 旧实现每次 `validate_result` 都用 `inspect.currentframe()` + `inspect.getframeinfo()` 取调用点的 `filename/lineno`,后者会触发**文件系统 stat 系统调用**;在高频校验下成为热点。现已删去 `import inspect` 与整段取帧逻辑(`rerun_state_machine.py:958`)。
+> - 旧实现每次 `validate_result` 都用 `inspect.currentframe()` + `inspect.getframeinfo()` 取调用点的 `filename/lineno`,后者会触发**文件系统 stat 系统调用**;在高频校验下成为热点。现已删去 `import inspect` 与整段取帧逻辑(`megatron/core/rerun_state_machine.py:958`)。
 > - `Caller` 具名元组(`:45`)不再含 `filename/lineno`,只保留 `(message, rank)`。确定性统计(`REPORT_DETERMINISM_STATS`)的日志改为按校验描述串定位 ——`"From validation call '<message>'"`(`:1011`/`:1019`),取代原来的 `From <file>, line <n>`。
 > - 结论:这是**纯性能/可观测性优化**,不改变 transient/persistent/correct 的三级归因语义;唯一影响是日志里用"校验描述"而非"文件:行号"来标识每个校验点(因此校验描述串应起得可读、可区分)。
 
 ### 1.5 QK-clip —— 注意力 logit 稳定
 
-`optimizer/qk_clip.py`。已知的一类训练不稳:attention 的 `Q·Kᵀ` logit 数值越训越大,softmax 进饱和区、梯度异常。`clip_qk(model)`:
+`megatron/core/optimizer/qk_clip.py`。已知的一类训练不稳:attention 的 `Q·Kᵀ` logit 数值越训越大,softmax 进饱和区、梯度异常。`clip_qk(model)`:
 - 遍历各层 `self_attention`,读 `core_attention.current_max_attn_logits`(前向时记录的本层最大 attention logit)。
 - 跨 DP(含 CP)组 `all_reduce(MAX)` 得全局最大 logit。
 - `log_max_only=False` 时调 `clip_qk()` 实际裁剪;`log_max_only=True` 则**只监控不裁剪**(把最大 logit 当指标看)。
@@ -107,14 +107,14 @@ fp16 训练里梯度可能**下溢成 0** 或**上溢成 inf**。两道防线:
 ### 1.6 容错:NTP 与故障注入
 
 - **NTP(Nonuniform TP)**:TP 组留备用 rank,核心 rank 故障时重分片续训,免整体重启 —— 详见 `27_megatron_tp_fsdp_resharding_supplements_analysis.md` §2。
-- **`fault_injector.py`**(233 行):**主动注入故障**用于测试容错路径 —— 验证 RerunStateMachine、NTP 等机制是否真能正确响应。是"测试稳定性机制本身"的工具。
+- **`megatron/core/fault_injector.py`**(233 行):**主动注入故障**用于测试容错路径 —— 验证 RerunStateMachine、NTP 等机制是否真能正确响应。是"测试稳定性机制本身"的工具。
 
 ### 1.7 MoE 稳定性
 
 MoE 有独有的不稳定源 —— 路由:
 - **router fp32**:`--moe-router-dtype fp32` —— 路由 logit 保持 fp32(README 强调:高专家数下 bf16 路由精度不足,专家输出按路由分加权累加会放大误差)。
 - **负载均衡损失**:`aux_loss` 等防止专家路由坍塌(`14_megatron_ep_analysis.md` §4)。
-- **`router_replay.py`**(207 行):记录/重放路由决策 —— 用于复现和调试路由相关的不确定性。
+- **`megatron/core/transformer/moe/router_replay.py`**(207 行):记录/重放路由决策 —— 用于复现和调试路由相关的不确定性。
 
 > [!update] 2026-06-16 · dev@232c478d4 — aux_loss / z_loss 在 TP>1 下的梯度缩放修正(#5047)
 > `--calculate-per-token-loss` 模式下,`finalize_model_grads` 会把每个参数梯度统一除以 `total_global_tokens`(全局非 padding token 数)。但 router 权重标了 `sequence_parallel=True`,各 TP rank 只在自己的**序列分片**上算偏梯度、再由 `_allreduce_non_tensor_model_parallel_grads` 在 TP 组内**求和**。把 `total_global_tokens` 按 router 的本地 token 数展开:
@@ -125,11 +125,11 @@ MoE 有独有的不稳定源 —— 路由:
 > \end{aligned}
 > $$
 > 旧代码只乘 `num_local_tokens`,在 `tp_cp_group.size()>1` 时 aux/z-loss 梯度被额外缩小了 `|tp_cp|` 倍 —— TP/CP 越大,负载均衡损失越被稀释。
-> 修正:`aux_loss` 与 `z_loss` 预乘改为 `num_local_tokens * self.tp_cp_group.size()`(`transformer/moe/router.py:546`、`:587`),恰好抵消上式中的 `|tp_cp|`,使有效缩放回到目标 `1/(num_micro_batches·dp_size)`,与 `!calculate_per_token_loss` 路径一致、且对 TP/CP 配置不变。(z_loss 系数另有 `/tp_cp_group.size()` 是独立的**前向**修正:z_loss 在每个 TP+CP rank 的本地 logits 上独立计算,需按 TP+CP 求平均而非求和。)回归测试见 `tests/.../test_aux_loss.py::TestPerTokenAuxLoss`。
+> 修正:`aux_loss` 与 `z_loss` 预乘改为 `num_local_tokens * self.tp_cp_group.size()`(`megatron/core/transformer/moe/router.py:546`、`:587`),恰好抵消上式中的 `|tp_cp|`,使有效缩放回到目标 `1/(num_micro_batches·dp_size)`,与 `!calculate_per_token_loss` 路径一致、且对 TP/CP 配置不变。(z_loss 系数另有 `/tp_cp_group.size()` 是独立的**前向**修正:z_loss 在每个 TP+CP rank 的本地 logits 上独立计算,需按 TP+CP 求平均而非求和。)回归测试见 `tests/.../test_aux_loss.py::TestPerTokenAuxLoss`。
 
 > [!update] 2026-06-16 · dev@232c478d4 — DSA indexer loss 跨 micro-batch 平均(#4070)
-> 新的实验性注意力变体 **DSA(Dynamic Sparse Attention,`experimental_attention_variant='dsa'`)** 引入一个 **indexer 辅助损失**,经 `DSAIndexerLossAutoScaler`(`transformer/experimental_attention_variant/dsa.py:754`)注入梯度。此前它**未按 micro-batch 数归一**,导致其相对主损失的尺度随梯度累积步数漂移。
-> 修正:在 `forward_step_calc_loss`(`pipeline_parallel/schedules.py:344–358`)按与 MTP loss 相同的方式设缩放 —— `calculate_per_token_loss` 时设 `loss_scale`,否则设 `loss_scale / num_microbatches`。属于"辅助损失正确归一"一类,与 §1.8 的 MTP loss 缩放同源。
+> 新的实验性注意力变体 **DSA(Dynamic Sparse Attention,`experimental_attention_variant='dsa'`)** 引入一个 **indexer 辅助损失**,经 `DSAIndexerLossAutoScaler`(`megatron/core/transformer/experimental_attention_variant/dsa.py:754`)注入梯度。此前它**未按 micro-batch 数归一**,导致其相对主损失的尺度随梯度累积步数漂移。
+> 修正:在 `forward_step_calc_loss`(`megatron/core/pipeline_parallel/schedules.py:344–358`)按与 MTP loss 相同的方式设缩放 —— `calculate_per_token_loss` 时设 `loss_scale`,否则设 `loss_scale / num_microbatches`。属于"辅助损失正确归一"一类,与 §1.8 的 MTP loss 缩放同源。
 
 ### 1.8 MTP(多 token 预测)训练稳定性套件
 
@@ -140,11 +140,11 @@ MTP(Multi-Token Prediction,详见 GPT/DeepSeek 系列)在主模型之外挂若�
 
 **(a) `mtp_detach_heads` —— 切断 MTP→主模型的梯度回流(#3456,并在 #5223 合并 #5080 的隔离能力)**
 
-`TransformerConfig.mtp_detach_heads`(`transformer/transformer_config.py:87`,默认 `False`)。开启后在三处 `detach()`,使 MTP loss **只训练 MTP head 自身**,不更新主模型:
-- `MultiTokenPredictionBlock.forward`:取出本 stage 的 `hidden_states` 后 `detach()`(`multi_token_prediction.py:2071`)。
+`TransformerConfig.mtp_detach_heads`(`megatron/core/transformer/transformer_config.py:87`,默认 `False`)。开启后在三处 `detach()`,使 MTP loss **只训练 MTP head 自身**,不更新主模型:
+- `MultiTokenPredictionBlock.forward`:取出本 stage 的 `hidden_states` 后 `detach()`(`megatron/core/transformer/multi_token_prediction.py:2071`)。
 - `MultiTokenPredictionLayer._get_embeddings`:`decoder_input = embedding(...).detach()`,切断对**共享 embedding** 的梯度(`:1290`)。注意紧接着对 `hidden_states` 做 `make_viewless_tensor` 后,若它已不 `requires_grad` 会显式 `requires_grad_(True)` —— 因为 `detach()` 后张量 `_base` 为 `None`、`make_viewless_tensor` 退化为 no-op,而激活重计算(`CheckpointFunction`)要求至少一个输入可导,这里补回以保住到 MTP 层参数的梯度通路。
 - `process_mtp_loss`:`output_weight.detach()`,切断对**共享 output projection** 的梯度(`:940`)。
-- **在线 RL 支持**(原属 #5080,现并入本开关):`process_mtp_loss` 允许 `labels=None`(RL 时主 LM head 输出 logits 供外部 RL loss 用),此时从 `input_ids` 左移一位自行派生 MTP 标签(`label[i]=input_id[i+1]`,`multi_token_prediction.py:929–938`),让 MTP 辅助损失在不触碰主模型的前提下照常训练。
+- **在线 RL 支持**(原属 #5080,现并入本开关):`process_mtp_loss` 允许 `labels=None`(RL 时主 LM head 输出 logits 供外部 RL loss 用),此时从 `input_ids` 左移一位自行派生 MTP 标签(`label[i]=input_id[i+1]`,`megatron/core/transformer/multi_token_prediction.py:929–938`),让 MTP 辅助损失在不触碰主模型的前提下照常训练。
 
 **(b) ~~`mtp_isolated_loss`~~ —— 已被 (a) 合并并移除(#5080 引入 → #5223 撤下)**
 
@@ -152,17 +152,17 @@ MTP(Multi-Token Prediction,详见 GPT/DeepSeek 系列)在主模型之外挂若�
 
 **(c) `mtp_grad_scale_func` —— MTP loss 独立的损失缩放(#3459)**
 
-`ModelParallelConfig.mtp_grad_scale_func`(`model_parallel_config.py:142`,默认 `None`)。此前 MTP loss 与主 loss 共用 `grad_scale_func`;现在可单独给 MTP loss 指定缩放函数。落地在 `schedules.py` 新增的 `_get_mtp_loss_scale(config, device)`(`:229`):
+`ModelParallelConfig.mtp_grad_scale_func`(`megatron/core/model_parallel_config.py:142`,默认 `None`)。此前 MTP loss 与主 loss 共用 `grad_scale_func`;现在可单独给 MTP loss 指定缩放函数。落地在 `megatron/core/pipeline_parallel/schedules.py` 新增的 `_get_mtp_loss_scale(config, device)`(`:229`):
 - 优先用 `mtp_grad_scale_func()`;否则回退 `grad_scale_func(torch.ones(1))`;再否则取 `1`。
-- 结果会校验必须是标量 / size-1 张量,并搬到 output 张量所在 device,经 `MTPLossAutoScaler.set_loss_scale` 注入(`schedules.py:336–341`)。
+- 结果会校验必须是标量 / size-1 张量,并搬到 output 张量所在 device,经 `MTPLossAutoScaler.set_loss_scale` 注入(`megatron/core/pipeline_parallel/schedules.py:336–341`)。
 - 意义:fp16/bf16 下 MTP 支路可用与主 loss **不同的 loss scale**,避免辅助损失把主 loss 的动态缩放带偏。
 
 **(d) `mtp` 独立梯度裁剪组(#4116)**
 
 当 `mtp_detach_heads=True` 时,MTP head 的梯度已与主干解耦,但若仍并入全局范数一起裁剪,二者尺度差异会互相污染。本 PR 在优化器侧引入**命名梯度范数组**机制:
-- 建块时给 MTP 参数打标签:`MultiTokenPredictionBlock.__init__` 中 `for param in self.parameters(): param.grad_norm_group = 'mtp'`(`multi_token_prediction.py:1934`)。
-- 优化器侧新增基础设施(`optimizer/optimizer.py`):常量 `MTP_GRAD_NORM_GROUP='mtp'`、`SEPARATE_GRAD_NORM_GROUPS`、`GRAD_NORM_GROUP_ATTR`;辅助函数 `_get_param_grad_norm_group` / `_is_separate_grad_norm_group` / `_validate_grad_norm_group`;以及 `copy_optimizer_param_metadata`(建主 fp32 副本时把 `grad_norm_group` 标签一并复制,否则副本丢标签)。
-- 范数计算分流:原 `get_main_grads_for_grad_norm` 重构为 `get_grads_for_grad_norm(grad_norm_group=None)` —— 传 `None` 取**主组**梯度(已**排除** `mtp` 组),传 `'mtp'` 只取该组。`clip_grad_norm` / `ChainedOptimizer.step` 据此把 `main_params` 与各 `grad_norm_group` 分别算范数、**各自按 `clip_grad` 独立裁剪**(`optimizer.py:1685–1735`)。
+- 建块时给 MTP 参数打标签:`MultiTokenPredictionBlock.__init__` 中 `for param in self.parameters(): param.grad_norm_group = 'mtp'`(`megatron/core/transformer/multi_token_prediction.py:1934`)。
+- 优化器侧新增基础设施(`megatron/core/optimizer/optimizer.py`):常量 `MTP_GRAD_NORM_GROUP='mtp'`、`SEPARATE_GRAD_NORM_GROUPS`、`GRAD_NORM_GROUP_ATTR`;辅助函数 `_get_param_grad_norm_group` / `_is_separate_grad_norm_group` / `_validate_grad_norm_group`;以及 `copy_optimizer_param_metadata`(建主 fp32 副本时把 `grad_norm_group` 标签一并复制,否则副本丢标签)。
+- 范数计算分流:原 `get_main_grads_for_grad_norm` 重构为 `get_grads_for_grad_norm(grad_norm_group=None)` —— 传 `None` 取**主组**梯度(已**排除** `mtp` 组),传 `'mtp'` 只取该组。`clip_grad_norm` / `ChainedOptimizer.step` 据此把 `main_params` 与各 `grad_norm_group` 分别算范数、**各自按 `clip_grad` 独立裁剪**(`megatron/core/optimizer/optimizer.py:1685–1735`)。
 - 跨 rank 一致性:`has_grad_norm_group()` 用一次全局 `all_reduce(MAX)` 判断"是否有任一 rank 持有该组参数"并缓存,保证按组归约的集合通信在各 rank 间不失配(某 rank 本地无 mtp 分片、对端有);`LayerWiseDistributedOptimizer` 重写该方法走全局 `group=None` 归约(与其 dist-opt 全局归约范式一致)。
 - 与 §1.2 跳步的衔接:超阈跳步判据用的是**主组** `grad_norm`(不含 mtp),即 MTP head 的大范数不会误触发整步丢弃。
 
@@ -172,29 +172,29 @@ MTP(Multi-Token Prediction,详见 GPT/DeepSeek 系列)在主模型之外挂若�
 
 ## 2. 监控基础设施
 
-### 2.1 Timer 系统(`timers.py`)
+### 2.1 Timer 系统(`megatron/core/timers.py`)
 
-`Timer` / `DummyTimer`(`timers.py:35`)。给训练各阶段计时:`forward-compute`、`backward-compute`、`optimizer`、`batch-generator`、`forward-backward`、`optimizer-clip-main-grad`、`optimizer-count-zeros` 等(前几份文档的 `config.timers('...')` 调用即此)。
+`Timer` / `DummyTimer`(`megatron/core/timers.py:35`)。给训练各阶段计时:`forward-compute`、`backward-compute`、`optimizer`、`batch-generator`、`forward-backward`、`optimizer-clip-main-grad`、`optimizer-count-zeros` 等(前几份文档的 `config.timers('...')` 调用即此)。
 
 要点:
 - **`log_level` 分级**:每个 timer 有 log level,低于阈值的用 `DummyTimer`(零开销空实现)—— 细粒度计时不污染生产性能。
 - **`barrier` 选项**:计时前可选 `torch.distributed.barrier()`,得到对齐的、可跨 rank 比较的耗时(用于发现 straggler);不加 barrier 则是本 rank 异步耗时。
 
-### 2.2 MoE 逐层指标(`moe_logging.py`)
+### 2.2 MoE 逐层指标(`megatron/core/transformer/moe/moe_logging.py`)
 
-`moe_logging.py`(745 行)有两个全局 tracker:
+`megatron/core/transformer/moe/moe_logging.py`(745 行)有两个全局 tracker:
 - **`MoEMetricsTracker`**:逐层收集 MoE 指标(各层 aux loss、z-loss 等),`--moe-per-layer-logging` 开启。能看出**哪一层**路由出问题,而不只是全局平均。
 - **`MoEOverloadFactorTracker`**(`:95`):跟踪**专家过载因子**(overload factor)——`max_expert_load / mean_load`,即 `14_megatron_ep_analysis.md` §4 的负载不均衡因子 `f`。`--log-moe-overload-factor` 开启;跨 `tp_ep` 与 `expt_dp` 组做 MAX 规约,反映最坏专家的过载程度。
 
 > [!update] 2026-06-16 · dev@232c478d4 — MoE logging 的 record/report 生命周期(#3431)
-> `moe_logging.py` 在 `ee3f1ff..HEAD` 间**内容无净变化**(仍 745 行),上述两个 tracker 描述在 `dev@232c478d4` 依然准确。补充其 #3431 重构后的标准用法,便于对照源码:
-> - **生命周期**:每步 `record(name, value, layer_number, num_layers, reduce_group=...)` 在 router 前向时**按层累加**到 `MetricEntry`(`moe_logging.py:435` 起的 `MoEMetricsTracker`)→ 步末一次 `report(loss_scale=1/num_microbatches, iteration, writer=..., per_layer_logging=...)` 统一**跨 rank 同步 + 聚合 + 写 TB/W&B + 清零**。全局单例经 `get_moe_metrics_tracker()` 取得。
+> `megatron/core/transformer/moe/moe_logging.py` 在 `ee3f1ff..HEAD` 间**内容无净变化**(仍 745 行),上述两个 tracker 描述在 `dev@232c478d4` 依然准确。补充其 #3431 重构后的标准用法,便于对照源码:
+> - **生命周期**:每步 `record(name, value, layer_number, num_layers, reduce_group=...)` 在 router 前向时**按层累加**到 `MetricEntry`(`megatron/core/transformer/moe/moe_logging.py:435` 起的 `MoEMetricsTracker`)→ 步末一次 `report(loss_scale=1/num_microbatches, iteration, writer=..., per_layer_logging=...)` 统一**跨 rank 同步 + 聚合 + 写 TB/W&B + 清零**。全局单例经 `get_moe_metrics_tracker()` 取得。
 > - **PP 对齐**:无 MoE 层的 PP rank 需 `force_initialize=True` 预建大小为 `num_layers(+mtp_num_layers)` 的零张量,否则跨 PP 的 `all_reduce` 会因张量尺寸不一致而挂死。
 > - **归约语义**:`MetricEntry` 带 `reduce_group`(求和,如 `tp_cp`)、`avg_group`(求平均)、`needs_dp_avg`(再跨 DP 平均)三档;以 `"loss"` 结尾的指标会并入训练循环的 `total_loss_dict` 而**不**重复打到控制台串。
 
-### 2.3 能耗监控(`energy_monitor.py`)
+### 2.3 能耗监控(`megatron/core/energy_monitor.py`)
 
-`energy_monitor.py`(95 行):采集 GPU 能耗,算每步/每 token 的能量 —— 大规模训练的成本与碳足迹指标。
+`megatron/core/energy_monitor.py`(95 行):采集 GPU 能耗,算每步/每 token 的能量 —— 大规模训练的成本与碳足迹指标。
 
 ### 2.4 日志后端:TensorBoard / wandb / one_logger
 
@@ -203,18 +203,18 @@ MTP(Multi-Token Prediction,详见 GPT/DeepSeek 系列)在主模型之外挂若�
 ### 2.5 杂项可观测性修正
 
 > [!update] 2026-06-16 · dev@232c478d4 — 保真序列长度统计(#95654c956)
-> `train_step` 返回的 `seqlen_sum_this_global_batch` / `seqlen_squared_sum_this_global_batch` 用于**变长序列感知的吞吐 / FLOP 估算**(`training.py:2666` 经 `seqlen_squared_sum_in_batch` 进入 attention FLOP 项)。旧代码在**非变长**(未走 `wrap_data_iterator`)路径下把这两个统计丢成 `_, _`,导致 FLOP/吞吐日志退化或失真。
-> 修正(`training.py:2244–2245`):非变长路径显式回填闭式值 `seq_length * global_batch_size` 与 `seq_length² * global_batch_size`,保证两条路径都给出正确的 seqlen 统计、`--log-throughput` 的 TFLOP/s 估算保真。属于纯可观测性修复,不改训练数值。
+> `train_step` 返回的 `seqlen_sum_this_global_batch` / `seqlen_squared_sum_this_global_batch` 用于**变长序列感知的吞吐 / FLOP 估算**(`megatron/training/training.py:2666` 经 `seqlen_squared_sum_in_batch` 进入 attention FLOP 项)。旧代码在**非变长**(未走 `wrap_data_iterator`)路径下把这两个统计丢成 `_, _`,导致 FLOP/吞吐日志退化或失真。
+> 修正(`megatron/training/training.py:2244–2245`):非变长路径显式回填闭式值 `seq_length * global_batch_size` 与 `seq_length² * global_batch_size`,保证两条路径都给出正确的 seqlen 统计、`--log-throughput` 的 TFLOP/s 估算保真。属于纯可观测性修复,不改训练数值。
 
 > [!update] 2026-06-16 · dev@232c478d4 — 混合模型分阶段日志改传显式进程组(#4781)
 > 混合(Hybrid,如 Mamba/attention 混排)模型在 `select_pipeline_segment` 里对每个 PP 段做布局日志。此前该日志依赖全局 `parallel_state` 取 TP / DP-CP 组,在自定义进程组拓扑下可能取错组、或在多 `ProcessGroupCollection` 场景下不一致。
-> 修正:`HybridModel` 经 `_hybrid_logging_pg_kwargs(pg_collection)`(`models/hybrid/hybrid_model.py`)抽出 `tp` / `dp_cp` 组,显式透传给 `select_pipeline_segment(..., tp_group=, dp_cp_group=)`(`models/hybrid/hybrid_layer_allocation.py:333`),并校验两者"要么都给、要么都不给"。是分阶段日志在显式进程组拓扑下的健壮性修正。
+> 修正:`HybridModel` 经 `_hybrid_logging_pg_kwargs(pg_collection)`(`megatron/core/models/hybrid/hybrid_model.py`)抽出 `tp` / `dp_cp` 组,显式透传给 `select_pipeline_segment(..., tp_group=, dp_cp_group=)`(`megatron/core/models/hybrid/hybrid_layer_allocation.py:333`),并校验两者"要么都给、要么都不给"。是分阶段日志在显式进程组拓扑下的健壮性修正。
 
 ---
 
 ## 3. 指标目录(按类别)
 
-下面是训练循环(`training.py` 的 `training_log`)实际产出、可用于分析的指标。
+下面是训练循环(`megatron/training/training.py` 的 `training_log`)实际产出、可用于分析的指标。
 
 ### 3.1 损失与收敛
 

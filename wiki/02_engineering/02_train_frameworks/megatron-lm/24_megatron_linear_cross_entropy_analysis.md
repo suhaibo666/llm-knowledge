@@ -4,7 +4,7 @@ title: "Megatron-LM 融合线性交叉熵(Fused Linear Cross-Entropy / \"chunk l
 
 # Megatron-LM 融合线性交叉熵(Fused Linear Cross-Entropy / "chunk loss")源码级分析
 
-> **代码基线**: Megatron-LM `dev` @ `232c478d4`(2026-06-16)
+> **源码基线**：`NVIDIA/Megatron-LM@232c478d43ce2f8b4c8db3507d3623fa82f55823`（`dev`，2026-06-16）
 > **维度**: 深挖(机制级 + 具体源码实现)
 > 本页回答:Megatron 里"chunk loss"(不物化全量词表 logits 的省显存损失)到底怎么实现?它对应配置 `cross_entropy_fusion_impl='linear'` 的**融合线性交叉熵**——把 LM-head 矩阵乘**融进**交叉熵核、logits 从不作为张量存在。对照另两档 `native`/`te`(仍物化 logits)与 MindSpeed 的 `chunk_loss`(见文末)。每条非平凡结论带 `file:line`,行号均经实际打开核对。
 
@@ -19,7 +19,7 @@ title: "Megatron-LM 融合线性交叉熵(Fused Linear Cross-Entropy / \"chunk l
 Megatron 用一个**总开关 + 三档实现**来融合这步(`megatron/core/model_parallel_config.py`):
 
 ```python
-# model_parallel_config.py:257,262
+# megatron/core/model_parallel_config.py:257,262
 cross_entropy_loss_fusion: bool = False                               # 总开关
 cross_entropy_fusion_impl: Literal['native', 'te', 'linear'] = 'native'
 ```
@@ -56,17 +56,17 @@ flowchart LR
 `GPTModel.__init__` 把"是否用融合线性 CE"算成一个布尔位(`megatron/core/models/gpt/gpt_model.py`):
 
 ```python
-# gpt_model.py:157-160
+# megatron/core/models/gpt/gpt_model.py:157-160
 self.fuse_linear_cross_entropy = (
     self.config.cross_entropy_loss_fusion
     and self.config.cross_entropy_fusion_impl == "linear"
 )
 ```
 
-命中时,**输出层的类被换掉**——不再是普通 `ColumnParallelLinear`,而是 `LinearCrossEntropyModule`(`gpt_model.py:263`,`from ...linear_cross_entropy import LinearCrossEntropyModule` @ `:31`)。前向算 loss 时走专门分支:
+命中时,**输出层的类被换掉**——不再是普通 `ColumnParallelLinear`,而是 `LinearCrossEntropyModule`(`megatron/core/models/gpt/gpt_model.py:263`,`from ...linear_cross_entropy import LinearCrossEntropyModule` @ `:31`)。前向算 loss 时走专门分支:
 
 ```python
-# gpt_model.py:799-805
+# megatron/core/models/gpt/gpt_model.py:799-805
 output_layer_kwargs = dict(input_=hidden_states, weight=output_weight, ...)
 if self.fuse_linear_cross_entropy:
     loss = self.output_layer(
@@ -81,14 +81,14 @@ else:
 而 `native`/`te` 两档不换输出层类——它们在 `LanguageModule.compute_language_model_loss` 里**拿到 `logits` 之后**才融合(`megatron/core/models/common/language_module/language_module.py`):
 
 ```python
-# language_module.py:157,180  —— 注意两者的入参都是 logits
+# megatron/core/models/common/language_module/language_module.py:157,180  —— 注意两者的入参都是 logits
 if self.config.cross_entropy_fusion_impl == 'te':
     loss = te_parallel_cross_entropy(logits, labels, self.pg_collection.tp, is_cg_capturable)  # :166
 elif self.config.cross_entropy_fusion_impl == 'native':
     loss = fused_vocab_parallel_cross_entropy(logits, labels, self.pg_collection.tp)            # :180
 ```
 
-> 选路里还有约束:`cross_entropy_loss_fusion + impl=='te'` 与某些配置不兼容,在 `model_parallel_config.py:488-492` 与 `arguments.py:1780` 处断言拦截。MTP 也支持 `linear`(`multi_token_prediction.py:963`)。
+> 选路里还有约束:`cross_entropy_loss_fusion + impl=='te'` 与某些配置不兼容,在 `megatron/core/model_parallel_config.py:488-492` 与 `megatron/training/arguments.py:1780` 处断言拦截。MTP 也支持 `linear`(`megatron/core/transformer/multi_token_prediction.py:963`)。
 
 ---
 
@@ -97,7 +97,7 @@ elif self.config.cross_entropy_fusion_impl == 'native':
 它是 `ColumnParallelLinear` 的子类(LM head 本身),`output_cross_entropy_loss=True` 时**不返回 logits、直接返回 loss**(`megatron/core/transformer/linear_cross_entropy.py`):
 
 ```python
-# linear_cross_entropy.py:11,28-41
+# megatron/core/transformer/linear_cross_entropy.py:11,28-41
 class LinearCrossEntropyModule(tensor_parallel.ColumnParallelLinear):
     def forward(self, input_, weight=None, ..., output_cross_entropy_loss=False, labels=None, ...):
         if output_cross_entropy_loss:
@@ -109,7 +109,7 @@ class LinearCrossEntropyModule(tensor_parallel.ColumnParallelLinear):
 ```
 
 ```python
-# linear_cross_entropy.py:52-70  —— 校验开关 + 调融合核
+# megatron/core/transformer/linear_cross_entropy.py:52-70  —— 校验开关 + 调融合核
 def _compute_linear_and_cross_entropy_loss(self, hidden, weight, labels, ...):
     assert self.config.cross_entropy_loss_fusion
     assert self.config.cross_entropy_fusion_impl == "linear"
@@ -128,7 +128,7 @@ def _compute_linear_and_cross_entropy_loss(self, hidden, weight, labels, ...):
 省显存的关键**不在前向算法,而在反向要存什么**。自定义 autograd `LinearCrossEntropy`(`megatron/core/fusions/fused_linear_cross_entropy.py:53`)前向**只保存逐 token 的 softmax 统计量,不保存 logits**:
 
 ```python
-# fused_linear_cross_entropy.py:161-181  前向
+# megatron/core/fusions/fused_linear_cross_entropy.py:161-181  前向
 with torch.cuda.nvtx.range("LinearCrossEntropy-forward"):
     (logprobs, _maximum, _acc, _num_valid_tokens,
      tp_rank, tp_world_size, global_hidden) = _get_platform().forward_func(
@@ -141,7 +141,7 @@ with torch.cuda.nvtx.range("LinearCrossEntropy-forward"):
 反向**从 hidden/weight + (max, sum-exp) 逐块重算 logits 求梯度**:
 
 ```python
-# fused_linear_cross_entropy.py:197-223  反向
+# megatron/core/fusions/fused_linear_cross_entropy.py:197-223  反向
 (global_hidden, weight, labels, _maximum, _accu, _num_valid_tokens) = ctx.saved_tensors
 d_hidden, d_weight = _get_platform().backward_func(
     dlogprobs, global_hidden, weight, labels, _maximum, _accu, _num_valid_tokens,
@@ -169,7 +169,7 @@ $$
 `forward_func`/`backward_func` 由 `Platform` 单例按 GPU 架构惰性绑定——**当前只实现了 Blackwell(算力 10.x)**:
 
 ```python
-# fused_linear_cross_entropy.py:34-40
+# megatron/core/fusions/fused_linear_cross_entropy.py:34-40
 if cc[0] == 10:
     from .linear_cross_entropy.blackwell import entry as gpu_entry
     self.forward_func = gpu_entry.forward
@@ -183,7 +183,7 @@ else:
 核内**按词表分块**(`megatron/core/fusions/linear_cross_entropy/blackwell/entry.py`):
 
 ```python
-# blackwell/entry.py:147-151  —— 把【本地】词表切成 num_splits 块
+# megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:147-151  —— 把【本地】词表切成 num_splits 块
 num_splits = (vocab_size + _vocab_per_split - 1) // _vocab_per_split      # ceil(V_local / 512)
 _max  = torch.empty((num_tokens, num_splits), device=hidden.device, dtype=torch.float32)
 _accu = torch.empty((num_tokens, num_splits), device=hidden.device, dtype=torch.float32)
@@ -191,25 +191,25 @@ maximum    = torch.empty((num_tokens,), ..., dtype=torch.float32)         # 跨�
 accumulate = torch.empty_like(maximum)                                    # 最终 sum-exp
 ```
 
-CuTe DSL 写的 GEMM 主循环(`fwd_mainloop.py`)以 `vocab_per_split=512` 为列块大小,逐块算 `hidden@Wᵀ` 的一段并做 online-softmax,产出每块的偏 `_max`/`_accu`:
+CuTe DSL 写的 GEMM 主循环(`megatron/core/fusions/linear_cross_entropy/blackwell/fwd_mainloop.py`)以 `vocab_per_split=512` 为列块大小,逐块算 `hidden@Wᵀ` 的一段并做 online-softmax,产出每块的偏 `_max`/`_accu`:
 
 ```python
-# fwd_mainloop.py:40-53
+# megatron/core/fusions/linear_cross_entropy/blackwell/fwd_mainloop.py:40-53
 mma_tiler_mn=(128, 256); vocab_per_split=512
 self.mma_tiler = (*mma_tiler_mn, 1)
 self.cta_tiler = (self.mma_tiler[0], vocab_per_split, self.mma_tiler[2])  # 列维 = vocab_per_split → 分块
 ```
 
-随后一个 Triton 归约核把 `num_splits` 个偏统计量合成逐 token 的 `maximum`/`accumulate`(`entry.py:224-238`)。**张量并行(词表切在 TP 上)** 只需两次集合通信,不需要 gather logits:
+随后一个 Triton 归约核把 `num_splits` 个偏统计量合成逐 token 的 `maximum`/`accumulate`(`megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:224-238`)。**张量并行(词表切在 TP 上)** 只需两次集合通信,不需要 gather logits:
 
 ```python
-# blackwell/entry.py:246,253  —— 词表分片跨 TP 的归约
+# megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:246,253  —— 词表分片跨 TP 的归约
 dist.all_reduce(_max,      op=dist.ReduceOp.MAX, group=tp_group)   # 跨分片取全局 max
 ...
 dist.all_reduce(_logprobs, op=dist.ReduceOp.SUM, group=tp_group)   # 跨分片求和本地 NLL 贡献
 ```
 
-反向 `bwd_partial_dlogits.py` 同样**按 vocab tile 重算偏 dlogits**(`vocab_per_split` + `cute.ceil_div(self.vocab_per_split, cta_tiler[1])`,`:77-78`),再算 `d_hidden`/`d_weight`——全程不重建完整 `logits[N,V]`。序列并行(SP)下 `hidden` 按序列维分片,前向/反向各 rank 处理本地 token 块(`fused_linear_cross_entropy.py:111-159` 的 DP/TP/SP 三态文档)。
+反向 `megatron/core/fusions/linear_cross_entropy/blackwell/bwd_partial_dlogits.py` 同样**按 vocab tile 重算偏 dlogits**(`vocab_per_split` + `cute.ceil_div(self.vocab_per_split, cta_tiler[1])`,`:77-78`),再算 `d_hidden`/`d_weight`——全程不重建完整 `logits[N,V]`。序列并行(SP)下 `hidden` 按序列维分片,前向/反向各 rank 处理本地 token 块(`megatron/core/fusions/fused_linear_cross_entropy.py:111-159` 的 DP/TP/SP 三态文档)。
 
 ---
 
@@ -222,7 +222,7 @@ dist.all_reduce(_logprobs, op=dist.ReduceOp.SUM, group=tp_group)   # 跨分片�
 | logits 显存 | `O(N·V)` | `O(N·V)` | **0** |
 | 反向存什么 | 取决于实现(通常含 logits/softmax) | TE 内部 | **只存 hidden + max + sum-exp** |
 | 硬件 | 通用 | 需 TransformerEngine | **仅 Blackwell(算力 10.x)** |
-| 源 | `language_module.py:180` | `language_module.py:157-166` | `gpt_model.py:263` + 融合核 |
+| 源 | `megatron/core/models/common/language_module/language_module.py:180` | `megatron/core/models/common/language_module/language_module.py:157-166` | `megatron/core/models/gpt/gpt_model.py:263` + 融合核 |
 
 `native`/`te` 的价值在**减少 logits 上的逐元素 kernel + 不 gather 跨 TP 的 logits**(vocab-parallel CE),但 `logits[N,V]` 这块大激活仍在;`linear` 把矩阵乘吸进核、靠 online-softmax + 重算彻底消掉它。
 

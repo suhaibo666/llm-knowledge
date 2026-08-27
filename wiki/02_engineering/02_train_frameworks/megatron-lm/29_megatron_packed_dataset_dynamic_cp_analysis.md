@@ -4,8 +4,8 @@ title: "Megatron-LM 序列打包与动态 CP 的统一流水线深度解析"
 
 # Megatron-LM 序列打包与动态 CP 的统一流水线深度解析
 
-> 代码基准:`Megatron-LM/` 子仓库 `dev` 分支,commit `ee3f1ff`
-> 核心文件:`megatron/core/datasets/data_schedule.py`(954 行)、`data_schedule_utils.py`(1020 行);`packed_seq_params.py`;`pipeline_parallel/hybrid_cp_schedule.py`
+> **源码基线**:`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`(`dev`,2026-05-19)
+> 核心文件:`megatron/core/datasets/data_schedule.py`(954 行)、`megatron/core/datasets/data_schedule_utils.py`(1020 行);`megatron/core/packed_seq_params.py`;`megatron/core/pipeline_parallel/hybrid_cp_schedule.py`
 > 配套阅读:`11_megatron_dataset_analysis.md` §3、`15_megatron_pp_schedulers_analysis.md` §6.1、`13_megatron_cp_analysis.md`
 > 定位:**勘误 + 补全**。`11_megatron_dataset_analysis.md` 把序列打包当主角、`15_megatron_pp_schedulers_analysis.md` §6.1(原 `26_megatron_pp_supplements_analysis.md` §3,2026-08-01 合并入 15_)把动态 CP 当独立特性,分两处讲。本文说清楚:**在代码里它俩是同一条流水线、同一个类继承链** —— 动态 CP 不是和打包并列协作的特性,而是打包调度器的一个子类。
 
@@ -13,7 +13,7 @@ title: "Megatron-LM 序列打包与动态 CP 的统一流水线深度解析"
 
 ## 0. 总览:一个继承链,不是两个特性
 
-`data_schedule.py` 里序列打包的类层次:
+`megatron/core/datasets/data_schedule.py` 里序列打包的类层次:
 
 ```
 BasePackingScheduler                    抽象基类:get_groups_and_subsamples() + run()
@@ -33,7 +33,7 @@ BasePackingScheduler                    抽象基类:get_groups_and_subsamples()
 
 ## 1. 统一的 `run()` 9 步流水线
 
-`DpBalancedScheduler.run()`(`data_schedule.py:164`)定义了完整流水线,`DefaultDynamicCPScheduler` **不重写它**,直接继承:
+`DpBalancedScheduler.run()`(`megatron/core/datasets/data_schedule.py:164`)定义了完整流水线,`DefaultDynamicCPScheduler` **不重写它**,直接继承:
 
 ```
 入口 wrap_data_iterator(data_schedule.py:395)
@@ -60,7 +60,7 @@ run() 九步:
 
 ### 2.1 `DpBalancedScheduler` —— 定长 CP + 贪心打包
 
-`data_schedule.py:111`。所有样本用**同一个固定 `cp_size`**,一个打包 microbatch(横跨该 DP 组的所有 CP rank)的容量是 `max_seq_len_all_ranks = max_seqlen_per_dp_cp_rank × cp_size`。
+`megatron/core/datasets/data_schedule.py:111`。所有样本用**同一个固定 `cp_size`**,一个打包 microbatch(横跨该 DP 组的所有 CP rank)的容量是 `max_seq_len_all_ranks = max_seqlen_per_dp_cp_rank × cp_size`。
 
 ```python
 for i in range(len(sample_id_seqlens)):
@@ -75,7 +75,7 @@ for i in range(len(sample_id_seqlens)):
 
 ### 2.2 `DefaultDynamicCPScheduler` —— 按长度分 CP + 工作量均衡
 
-`data_schedule.py:347`。**每个样本分到的 CP 卡数随它的长度变化**:
+`megatron/core/datasets/data_schedule.py:347`。**每个样本分到的 CP 卡数随它的长度变化**:
 
 ```python
 gpus_fn     = lambda seq_len: dcp_gpus_needed(seq_len, mslpr, min_cp)   # 该样本要几张 CP 卡
@@ -89,12 +89,12 @@ while sample_id_seqlens:
     groups.append(mb)
 ```
 
-- `dcp_gpus_needed`(`data_schedule_utils.py:971`):长样本分更多 CP 卡(向上取 2 的幂),短样本少分 —— **CP 度自适应序列长度**。
+- `dcp_gpus_needed`(`megatron/core/datasets/data_schedule_utils.py:971`):长样本分更多 CP 卡(向上取 2 的幂),短样本少分 —— **CP 度自适应序列长度**。
 - `dcp_get_total_workload`:用 `seq²/cp` 估 attention 负载(`O(S²)` 除以 CP 摊分)。
 - `next_hdp_group` + `dcp_make_buckets_equal`:把样本贪心打包成一个个 **hdp 组**(hybrid DP 组),使每个 DP×CP rank 的总工作量大致相等。
 - `align_sample_id_groups`:VPP 时对齐组数。
 
-> `hybrid_cp_schedule.py` 的 `BalancedCPScheduler`(`15_megatron_pp_schedulers_analysis.md` §6.1 分析过)是同一套均衡逻辑的**类形态兄弟**;`data_schedule.py` 的 `DefaultDynamicCPScheduler` 实际用的是 `data_schedule_utils.py` 里的**函数形态** `dcp_*` + `next_hdp_group`。二者算法一致,是并行实现。**真正把打包与动态 CP 缝在一起的集成点,是 `DefaultDynamicCPScheduler`。**
+> `megatron/core/pipeline_parallel/hybrid_cp_schedule.py` 的 `BalancedCPScheduler`(`15_megatron_pp_schedulers_analysis.md` §6.1 分析过)是同一套均衡逻辑的**类形态兄弟**;`megatron/core/datasets/data_schedule.py` 的 `DefaultDynamicCPScheduler` 实际用的是 `megatron/core/datasets/data_schedule_utils.py` 里的**函数形态** `dcp_*` + `next_hdp_group`。二者算法一致,是并行实现。**真正把打包与动态 CP 缝在一起的集成点,是 `DefaultDynamicCPScheduler`。**
 
 ### 2.3 两者对照
 
@@ -110,7 +110,7 @@ while sample_id_seqlens:
 
 ## 3. 第④步 `reroute`:把样本搬到"该算它的 rank"
 
-`reroute_samples_to_dcp_ranks`(`data_schedule_utils.py:366`)。这一步是打包/动态 CP 流水线**必须有**的:
+`reroute_samples_to_dcp_ranks`(`megatron/core/datasets/data_schedule_utils.py:366`)。这一步是打包/动态 CP 流水线**必须有**的:
 
 - 数据集 loader 是按 **DP** 把样本分给各 rank 的(谁 load 了哪条)。
 - 但第③步的调度结果是"样本 X 应该由 DCP rank `d` 计算"—— load 它的 rank 和算它的 rank **通常不是同一个**。
@@ -122,12 +122,12 @@ while sample_id_seqlens:
 
 ## 4. 第⑤步:`build_packed_microbatches` + `PackedSeqParams` + CP 切片
 
-`build_packed_microbatches`(`data_schedule_utils.py:485`)在本 rank 把分到的子样本拼成 **THD 打包 buffer**,产出 `PackedSeqParams`(`packed_seq_params.py`,见 `11_megatron_dataset_analysis.md` §3.2):`cu_seqlens` 标出每条子序列边界,`qkv_format='thd'`。
+`build_packed_microbatches`(`megatron/core/datasets/data_schedule_utils.py:485`)在本 rank 把分到的子样本拼成 **THD 打包 buffer**,产出 `PackedSeqParams`(`megatron/core/packed_seq_params.py`,见 `11_megatron_dataset_analysis.md` §3.2):`cu_seqlens` 标出每条子序列边界,`qkv_format='thd'`。
 
 动态 CP 的衔接点:
 - `PackedSeqParams` 的 **`local_cp_size` / `cp_group`** —— 每个打包 buffer **可以有自己的 CP 度**(因为不同 microbatch 的样本长度不同 → 动态 CP 给的 cp_size 不同)。
-- `get_cp_slice_for_thd`(`data_schedule_utils.py:15`):一个打包 THD buffer 若 `cp_size > 1`,要再沿序列切给 CP rank —— 且按 zigzag 均衡(因果掩码,见 `13_megatron_cp_analysis.md` §2.2)。
-- `get_batch_on_this_rank_for_sequence_packing(..., dynamic_cp=True)`(`data_schedule.py:466`)取数时读 `batch['local_cp_size']`,据此决定本 buffer 的 CP 切分。
+- `get_cp_slice_for_thd`(`megatron/core/datasets/data_schedule_utils.py:15`):一个打包 THD buffer 若 `cp_size > 1`,要再沿序列切给 CP rank —— 且按 zigzag 均衡(因果掩码,见 `13_megatron_cp_analysis.md` §2.2)。
+- `get_batch_on_this_rank_for_sequence_packing(..., dynamic_cp=True)`(`megatron/core/datasets/data_schedule.py:466`)取数时读 `batch['local_cp_size']`,据此决定本 buffer 的 CP 切分。
 
 所以:**打包决定"buffer 里装哪几条序列",动态 CP 决定"这个 buffer 用几张卡的 CP、怎么切" —— 二者在同一个 `PackedSeqParams` 对象上汇合**。
 
@@ -138,7 +138,7 @@ while sample_id_seqlens:
 > [!update] 2026-06-16 · dev@232c478d4
 > 这条统一 `run()` 流水线的**上游入口**和**下游取数**都有更新,但九步骨架与"唯一分叉=第③步"的结论不变:
 >
-> - **第①步 `_unpack_batch` 支持双输入**(`data_schedule_utils.py:48`,#4832):除了 `SFTDataset` 那种"一条样本里 `cu_seqlens` 拼了多条子序列、需切开"的**预打包**形态,新增 `VarlenDataset`(`--use-varlen-dataset`)这种"每 index 已是单条子样本、自带 `padded_seq_len`"的**已拆开**形态 —— 后者只需丢掉 collate_fn 多加的 batch 维、缺 `original_seq_len` 时从 `padded_seq_len` 补,再走同一条 ②→⑨。`VarlenDataset` 细节见 `11_megatron_dataset_analysis.md` §3.4。
+> - **第①步 `_unpack_batch` 支持双输入**(`megatron/core/datasets/data_schedule_utils.py:48`,#4832):除了 `SFTDataset` 那种"一条样本里 `cu_seqlens` 拼了多条子序列、需切开"的**预打包**形态,新增 `VarlenDataset`(`--use-varlen-dataset`)这种"每 index 已是单条子样本、自带 `padded_seq_len`"的**已拆开**形态 —— 后者只需丢掉 collate_fn 多加的 batch 维、缺 `original_seq_len` 时从 `padded_seq_len` 补,再走同一条 ②→⑨。`VarlenDataset` 细节见 `11_megatron_dataset_analysis.md` §3.4。
 > - **下游 get_batch 统一 + SFT THD 支持 PP**(#4103):`get_batch_on_this_*` 取数函数收敛进 `megatron/core/utils.py` —— `get_batch_on_this_tp_rank`(`:1992`,**长度前缀协议**广播变长的 `cu_seqlens`,并在动态 CP 下广播 `local_cp_size` / `hybrid_cp_seq_length`)、`get_thd_batch_on_this_cp_rank`(`:2439`,对应第⑤步在本 rank 的 THD 切片)。SFT 的 THD 打包现可与 PP 共用(呼应第⑦步 `broadcast_to_pp_group`)。
 > - **第⑥步 seqlen 统计修正**:`train_step` 现保留 seqlen 统计(commit 95654c956);`sequence_packing_scheduler` 非空时的 TFLOPs 计算修正(#5342)—— 对应本页第⑥步 `Σseqlen / Σseqlen²` 的吞吐统计。
 
@@ -175,7 +175,7 @@ while sample_id_seqlens:
 | 文档 | 原表述 | 修正 |
 |------|--------|------|
 | `11_megatron_dataset_analysis.md` §3.3 | "packed dataset 配 `BalancedCPScheduler`" | 不是"配",而是 `DefaultDynamicCPScheduler` **本身就是** packing 调度器的子类;动态 CP = `is_dynamic_cp=True` 档 |
-| `15_megatron_pp_schedulers_analysis.md` §6.1 | 把 `hybrid_cp_schedule.py` `BalancedCPScheduler` 当作"动态 CP"主体 | 那只是均衡逻辑的**类形态兄弟**;集成入口在 `data_schedule.py` `DefaultDynamicCPScheduler`,用 `data_schedule_utils.py` 的 `dcp_*` 函数 |
+| `15_megatron_pp_schedulers_analysis.md` §6.1 | 把 `megatron/core/pipeline_parallel/hybrid_cp_schedule.py` `BalancedCPScheduler` 当作"动态 CP"主体 | 那只是均衡逻辑的**类形态兄弟**;集成入口在 `megatron/core/datasets/data_schedule.py` `DefaultDynamicCPScheduler`,用 `megatron/core/datasets/data_schedule_utils.py` 的 `dcp_*` 函数 |
 
 建议在那两份文档对应位置各加一行指针:"打包与动态 CP 的统一流水线见 `29_megatron_packed_dataset_dynamic_cp_analysis.md`"。
 

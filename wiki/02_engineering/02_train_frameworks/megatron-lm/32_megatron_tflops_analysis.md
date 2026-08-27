@@ -4,6 +4,8 @@ title: "Megatron-LM TFLOPS 计算实现分析：原理与 MoE 场景准确性探
 
 # Megatron-LM TFLOPS 计算实现分析：原理与 MoE 场景准确性探讨
 
+> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）——原文未声明基线，经核对 3 处引用后补钉：① `num_floating_point_operations(args, batch_size)` 的双参签名（`megatron/training/training.py:299`；在 `232c478d4` 已改为四参 `:411-416`）；② 正文引用的 `routed_flops` 以 `batch_size * seq_len` 计（`megatron/training/training.py:316-326`；在 `232c478d4` 已重构为 `total_tokens`，`:458-461`）；③ `hybrid_flops` 的 `batch_size, seq_len` 形参（`megatron/training/training.py:412-414`；在 `232c478d4` 为 `total_tokens, seqlen_squared_sum`，`:535-536`）。三处均命中 `ee3f1ff`、均不命中 `232c478d4`。
+
 在大规模模型训练中，**TFLOPS（每秒万亿次浮点运算）**是衡量硬件利用率和训练效率的关键指标。本文分析 Megatron-LM 计算 TFLOPS 的方法，通过流程图展示计算逻辑，并重点讨论混合专家模型（MoE）在无丢弃（Dropless）和有丢弃（Dropout）模式下的估算准确性。
 
 ## 1. 核心原理：基于静态理论的估算
