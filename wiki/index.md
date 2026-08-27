@@ -16,11 +16,11 @@
 
 | 领域 | 入口 | 页面数 | 状态 |
 |------|------|--------|------|
-| 模型 | [[01_theory/01_models/index]] | 59 | 活跃 |
-| └─ DeepSeek | [[01_theory/01_models/deepseek/index]] | 21 | 活跃 |
-| └─ Kimi | [[01_theory/01_models/moonshot_kimi/index]] | 14 | 活跃 |
-| └─ GLM | [[01_theory/01_models/zhipu_glm/index]] | 10 | 活跃 |
-| └─ Qwen | [[01_theory/01_models/alibaba_qwen/index]] | 2 | 活跃 |
+| 模型 | [[01_theory/01_models/index]] | 65 | 活跃 |
+| └─ DeepSeek | [[01_theory/01_models/deepseek/index]] | 22 | 活跃 |
+| └─ Kimi | [[01_theory/01_models/moonshot_kimi/index]] | 15 | 活跃 |
+| └─ GLM | [[01_theory/01_models/zhipu_glm/index]] | 12 | 活跃 |
+| └─ Qwen | [[01_theory/01_models/alibaba_qwen/index]] | 4 | 活跃 |
 | └─ LongCat (美团) | [[01_theory/01_models/meituan_longcat/index]] | 3 | 活跃 |
 | 预训练 | [[01_theory/02_pretraining/index]] | 7 | 活跃 |
 | SFT & 低参微调 | [[01_theory/03_sft/index]] | 1 | 待建设 |
@@ -28,7 +28,7 @@
 | 推理技术 | [[01_theory/05_inference/index]] | 1 | 待建设 |
 | 分布式并行理论 | [[01_theory/06_distributed_parallelism/index]] | 9 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），统计于 2026-08-04（kb-reorg P7 收尾）。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根）；模型域各行于 **2026-08-27** 随 GLM/Qwen/Kimi/DeepSeek 新发布模型摄入重新统计，其余行沿用 2026-08-04（kb-reorg P7 收尾）的统计。
 
 ### 02 工程实现
 

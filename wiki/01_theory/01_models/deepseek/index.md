@@ -26,6 +26,7 @@
 ### 段 2 · 架构组件与 V4 专题深挖(20-29)
 
 > V4 专题分析基线:已全部对正式发表版 **arXiv:2606.19348v1 (2026-04-26)** 核对 —— 见 [[30_deepseek_v4_audit_analysis]]（2026-06-25）。
+> **并已进一步对发布权重核对**：`DeepSeek-V4-Pro-0813` / `DeepSeek-V4-Flash-0731` 的 `config.json` 与论文 §4.2.1 超参**十四项全中**，见 [[31_deepseek_v4_released_checkpoints_analysis]]（2026-08-27）。
 
 | 页面 | 核心主题 | 核对状态 |
 |------|---------|---------|
@@ -45,6 +46,7 @@
 | 页面 | 核心主题 | 核对状态 |
 |------|---------|---------|
 | [[30_deepseek_v4_audit_analysis]] | **审计报告**：以正式版核对全部 V4 页面，列出一致项与订正项 | ★ 入口 |
+| [[31_deepseek_v4_released_checkpoints_analysis]] | **权重对账**：以发布 checkpoint（Pro-0813 / Flash-0731）核对论文超参；新增 DSpark/FP4/参数量三项事实 | ★ 续篇 |
 
 ---
 

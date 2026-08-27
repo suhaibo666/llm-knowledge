@@ -13,6 +13,8 @@
 |------|------|---------|
 | [[01_glm_5_analysis]] | 概要总览(段 0) | GLM-5 论文概要,7 篇逐章深挖的入口 |
 | [[10_glm_5v_turbo_analysis]] | 核心机制(段 1) | GLM-5V-Turbo:原生多模态 Agent,CogViT + MMTP + 30+ 任务联合 RL |
+| [[11_glm_5_1_5_2_analysis]] | 核心机制(段 1) | GLM-5.1/5.2:骨架逐字段不变,IndexShare 换 1M 上下文 |
+| [[12_glm_5_3_flash_analysis]] | 核心机制(段 1) | GLM-5.3-Flash:换底座,KDA+DSA 混合 + mHC + 原生多模态 |
 | [[20_glm5_architecture_deepdive]] | 深潜(段 2) | §2.1 模型结构:规模/MLA·Muon Split·MLA-256·MTP·DSA·高效注意力消融 |
 | [[21_glm5_data_deepdive]] | 深潜(段 2) | §2.2–2.3 预训练/中训练/长上下文数据 |
 | [[22_glm5_training_infra_deepdive]] | 深潜(段 2) | §2.4 训练 AI Infra:显存五件套 + 并行效率 |
@@ -36,8 +38,10 @@
 | **GLM-4 Voice** | 2024.12 | - | 语音理解与生成 | 2412.02612 |
 | **GLM-TTS** | 2025.12 | - | 文本到语音合成 | 2512.14291 |
 | **GLM-5** | 2026.02 | 744B/40B | Vibe Coding → Agentic Engineering | 2602.15763 |
-| **GLM-5.1** | 2026.04 | 754B | 最新迭代 | - |
+| **GLM-5.1** | 2026.04 | 753.9B/40B | 长时程 agentic 编码 | 无独立报告 |
 | **GLM-5V-Turbo** | 2026.04 | - | 原生多模态 Agent | 2604.26752 |
+| **GLM-5.2** | 2026.06 | 753.3B/40B | IndexShare + 1M 上下文 | 无独立报告 |
+| **GLM-5.3-Flash** | 2026.08 | 321.3B/18B | 首个原生多模态、稀疏×线性混合新底座 | 无独立报告 |
 
 ---
 
@@ -83,11 +87,22 @@
     │      └── 最新迭代
     │
 2026.04  GLM-5V-Turbo
-           └── 原生多模态 Agent
-           └── CogViT 视觉编码器
-           └── MMTP 多模态多 Token 预测
-           └── 30+ 任务联合 RL
-           └── ImageMining 基准
+    │      └── 原生多模态 Agent
+    │      └── CogViT 视觉编码器
+    │      └── MMTP 多模态多 Token 预测
+    │      └── 30+ 任务联合 RL
+    │      └── ImageMining 基准
+    │
+2026.06  GLM-5.2
+    │      └── 骨架与 5.1 逐字段相同
+    │      └── IndexShare:78 层仅 21 层建全索引
+    │      └── rope_theta 1e6 → 8e6，1M 上下文
+    │
+2026.08  GLM-5.3-Flash
+           └── 全新底座（newly trained base）
+           └── 45 层 = 34 KDA + 11 DSA（3:1）
+           └── mHC（hc_mult=4 / sinkhorn=20）
+           └── 321.3B/18B，FP8，原生多模态
 ```
 
 ---
@@ -114,13 +129,23 @@ GLM-5 (744B/40B MoE)
     └── 256 专家，8 激活
     │
     ▼
-GLM-5.1 (754B)
+GLM-5.1 (753.9B)
+    │
+    ├──▶ GLM-5V-Turbo (多模态支线)
+    │      ├── CogViT (两阶段预训练)
+    │      ├── MMTP (多模态 MTP)
+    │      └── 30+ 任务联合 RL
     │
     ▼
-GLM-5V-Turbo (多模态)
-    ├── CogViT (两阶段预训练)
-    ├── MMTP (多模态 MTP)
-    └── 30+ 任务联合 RL
+GLM-5.2 (753.3B) — 骨架不变
+    └── IndexShare + 1M 上下文
+    │
+    ▼
+GLM-5.3-Flash (321.3B/18B) — 换底座
+    ├── KDA 线性注意力 × 34 层
+    ├── DSA 稀疏注意力 × 11 层
+    ├── mHC 流形约束超连接
+    └── 原生多模态 + FP8
 ```
 
 ### 3.2 训练基础设施
@@ -274,4 +299,5 @@ GLM-5 RL 框架:
 
 - [[01_theory/index]]
 - [[01_theory/01_models/moonshot_kimi/index]]
+- [[01_theory/01_models/deepseek/index|DeepSeek]] — DSA 与 mHC 的来源厂商
 - [[02_engineering/02_train_frameworks/megatron-lm/index]]

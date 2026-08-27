@@ -8,6 +8,28 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-27：摄入 9 个新发布模型，补齐 GLM / Qwen / Kimi / DeepSeek 的覆盖缺口
+
+**Type**: Source Ingestion（模型卡 + 权重配置，9 个 checkpoint → 6 篇分析页）
+
+- **缺口**：库内 GLM 停在 GLM-5（2026-02）、Qwen 只有 2.4T 旗舰档、Kimi 的 K2.6 在索引里还标着“待发布”、DeepSeek-V4 的两个**正式版 checkpoint** 零覆盖。本次一次补齐：GLM-5.1/5.2/5.3-Flash、Qwen3.8-27B/Flash-Next、Kimi-K2.6/K2.7-Code、DeepSeek-V4-Pro-0813/Flash-0731。
+- **方法**：走 `source-faithful-analysis`。每个模型同时快照**模型卡**（厂商自述）与 **`config.json`**（架构硬证据）到 `raw/01_theory/01_models/<厂商>/`，并钉住 HF revision sha；参数量取自 safetensors 索引。**卡片声称与配置可核验严格分开**，凡推断均标注 `【推断】` 与边界。
+
+**新增页面（6 篇）**：
+
+- [[11_glm_5_1_5_2_analysis]] — 全键比对证明 **5.1→5.2 骨架一个字段都没动**；变化只有上下文 202752→1048576、`rope_theta` 1e6→8e6，以及 **IndexShare**（78 层中仅 21 层建全索引 = 26.9%，`index_topk_freq=4`）。并纠正一个陷阱：`head_dim` 64→192 **不是**结构变化，两版 `qk_head_dim` 同为 256，是 transformers 5.4/5.12 填这个冗余字段的口径不同。
+- [[12_glm_5_3_flash_analysis]] — GLM 首次**换底座**：45 层 = 34 层 KDA + 11 层 DSA。最值得记的一条是**跨厂商趋同**——`mhc/hc_mult=4/hc_sinkhorn_iters=20` 与 DeepSeek-V4 **逐个相同**，层类型字面写作 `deepseek_sparse_attention`，线性层配置字段是 `kda_layers`。另标出该卡片是本批 9 份里**唯一不含任何文本基准分数**的。
+- [[11_qwen3_8_27b_analysis]] — 27.8B **稠密** VL；舍弃了 MoE 却保留 3:1 混合注意力。点破 1M 上下文是 262K 的 4× YaRN 外推（需使用方改配置），且 SWE-bench Pro 一行是阿里“修正题目后重测所有基线”的口径，与公开榜单不可直接比。
+- [[12_qwen3_8_flash_next_analysis]] — **Qwen4 架构预览**（`model_type: qwen4_exp`）。四项创新逐条对上配置：QSA 的 `indexer_budget 2048 ÷ compress_ratio 4 = 512` 微块、Gated Residual 的 `hc_count=4/hc_lowrank=320`、2000 万条 n-gram 嵌入（`ple_layer_ids=[2]`、`heads_per_ngram=8`）。参数账 **125B + 51B + 4B = 180B** 与实测精确吻合——只读“125B”会低估 44%。指出其 n-gram 嵌入与 [[29_engram_analysis]] 高度同构。
+- [[15_kimi_k2_6_k2_7_analysis]] — **K2.6 与 K2.7-Code 的 `config.json` 逐字段相同、参数量同为 1026.9B**，是同一副骨架上的两次纯后训练。K2.6 的能力提升呈清晰梯度（工具类 +16~26，知识推理近噪声）；K2.7-Code 主打思考 token −30%，但**只给编码类基准、通用能力是否退化无数据**。
+- [[31_deepseek_v4_released_checkpoints_analysis]] — 拿**发布权重**核对论文（[[30_deepseek_v4_audit_analysis]] 的续篇）：§4.2.1 超参**十四项全中**，连“Pro 前 2 层 HCA、Flash 前 2 层纯 SWA”这种不对称细节都被 `compress_ratios` 逐层坐实。三项论文之外的新事实：**DSpark 已内嵌进权重**（`dspark_markov_rank` Flash=256 正是论文默认 r）、**专家以 FP4 发布**、**Flash 实测 304.2B 比论文的 284B 多约 20B**。并指出正式版相对 Preview 的跃迁（DeepSWE 12.8→62.7）**不可能由 DSpark 解释**——投机解码不改输出分布，成因完全未披露。
+
+- **索引订正**：GLM 家族表里 `GLM-5.1 | 754B | 最新迭代 | -` 的占位符、Kimi 家族表里 `K2.6 | 1.1T | 待发布`（实为 2026-04-14 已发布、1026.9B）与 `K2.5 | 1.1T`（页内实为 1.04T）均已订正；四个厂商 index、演进时间线与架构树同步更新；`wiki/index.md` 模型域各行**重新统计**而非递增。
+- **已登记的最大缺口**：Qwen3.8-Flash-Next **有技术报告 PDF 但本次未摄入**，QSA/Gated Residual/N-gram Embedding 的动机与消融都在其中，已在页首 `> [!warning]` 与 Qwen index 标为最高优先级。
+- 验证：`check_links --strict` 415 页 0 破损/0 歧义/0 孤儿；`check_math --changed --strict` 19 文件 0 错 0 警；`pytest tools/` 107 passed。
+
+---
+
 ## 2026-08-26：新增上游雷达，每周追踪仓库演进 / 模型发布 / 前沿论文
 
 **Type**: Tooling + Scheduled Maintenance

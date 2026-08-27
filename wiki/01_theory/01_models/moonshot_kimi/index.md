@@ -16,6 +16,7 @@
 | [[12_kimi_linear_analysis]] | 核心机制(段 1) | Kimi Linear:KDA 线性注意力,3:1 KDA-MLA 混合,6x 解码加速 |
 | [[13_kimi_k2_5_analysis]] | 核心机制(段 1) | Kimi K2.5:1.1T MoE,视觉 Agent 智能融合 |
 | [[14_kimi_k3_analysis]] | 核心机制(段 1) | Kimi K3:2.78T MoE 旗舰,KDA+AttnRes+Stable LatentMoE,1M 上下文 |
+| [[15_kimi_k2_6_k2_7_analysis]] | 核心机制(段 1) | K2.6 与 K2.7-Code:同一副 1T 骨架上的两次纯后训练发布 |
 | [[20_gdn_kda_linear_attention_analysis]] | 深潜(段 2) | Gated Delta Networks + KDA 机制深挖:从 QKVABZ 到 chunkwise 仿射扫描 |
 | [[21_gdn_kda_kernel_implementation_analysis]] | 深潜(段 2) | GDN/KDA 训练与推理 Kernel 实现(FLA/SGLang) |
 | [[22_kimi_k3_architecture_deepdive]] | 深潜(段 2) | K3 架构深挖:Attention Residuals、Stable LatentMoE、KDA:Gated MLA 混合比 |
@@ -34,8 +35,9 @@
 | **Kimi Chat** | 2023.03 | - | 200K+ 上下文 | - |
 | **k1.5** | 2025.01 | - | RL 缩放、长 CoT 推理 | 2501.12599 |
 | **K2** | 2025.07 | 1T MoE | 开放 Agent 智能 | 2507.20534 |
-| **K2.5** | 2026.02 | 1.1T MoE | 视觉 Agent 智能 | 2602.02276 |
-| **K2.6** | 2026.04 | 1.1T MoE | 开源编码迭代 | 待发布 |
+| **K2.5** | 2026.02 | 1.04T/32B | 视觉 Agent 智能 | 2602.02276 |
+| **K2.6** | 2026.04 | 1026.9B/32B | Agent Swarm、长时程编码；结构同 K2.5 | 无报告（仅 Tech Blog） |
+| **K2.7-Code** | 2026.06 | 1026.9B/32B | 编码特化；思考 token −30%；config 与 K2.6 逐字段相同 | 无报告 |
 | **K3** | 2026.07 | **2.78T MoE**（104.2B 激活） | KDA+AttnRes+Stable LatentMoE；1M 上下文；原生视觉/视频 | Technical Report 2026-07-28 |
 
 ---
