@@ -6,8 +6,10 @@ title: "vLLM 编译与 CUDA Graph：分别优化算子图与 launch 图"
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
 > **中心命题**：`torch.compile` 与 CUDA Graph 解决两个不同问题：前者重写/融合算子并生成 kernel，后者记录一段已确定的 GPU launch 序列以降低 CPU dispatch。vLLM 用 compile partition、shape policy、full/piecewise graph 能力和 runtime descriptor 把二者组合，而不是把“已编译”误当成“可 replay”。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-27。按五拍重排章节顺序，并补齐发展趋势；机制正文与既有引用未改。
 
-## 一、两类开销、两套正确性条件
+## 一、背景：两类开销、两套正确性条件
 
 | 机制 | 优化对象 | 主要收益 | 核心约束 |
 |---|---|---|---|
@@ -28,7 +30,21 @@ flowchart LR
   Desc --> Eager["eager fallback"]
 ```
 
-## 二、`CompilationConfig` 是能力求交，不是级别数字
+## 二、为什么这么设计：替代方案与失败边界
+
+| 方案 | 优点 | 代价/风险 |
+|---|---|---|
+| 全 eager | 最易调试、动态性最大 | Python/launch overhead 与融合机会损失 |
+| 只用 `torch.compile` | 不受固定地址约束 | decode launch 数仍高 |
+| 只用 CUDA Graph | 启动 launch 最少 | 算子图未优化，shape/capture 数量高 |
+| 强制 full graph | 稳态最快的潜力 | 任一动态/副作用/collective 不兼容即可错误或爆炸 |
+| 为所有 shape capture | 几乎无 miss | 启动慢、graph memory 与 cache 膨胀 |
+| 静默 fallback | 服务可用 | 性能回归难以察觉，基准不可解释 |
+
+> [!note] 推断
+> 这张表是本页依据代码行为重建的设计权衡：每一行的“为什么不适用”都能落到后文引用的 `file:line` 上，但“当初权衡过、并因此否掉了它”这层意思由本页承担——源码通常只陈述最终形态，不陈述被否掉的选项。要引用其中某一行，请回到对应小节的 locator，不要引用本表。
+
+## 三、`CompilationConfig` 是能力求交，不是级别数字
 
 `CompilationMode` 区分无编译、stock compile、trace-once 和 vLLM compile；`CUDAGraphMode` 则区分 none、piecewise、full、decode/mixed 的组合；`vllm/config/compilation.py:37-103`。`CompilationConfig` 独立保存 backend、splitting ops、compile sizes、graph mode 和 capture sizes；`vllm/config/compilation.py:398-695`。
 
@@ -43,7 +59,7 @@ flowchart LR
 
 配置解析会在能力冲突时降级 full → piecewise → none，而非硬跑错误模式；`vllm/config/compilation.py:1369-1517`。
 
-## 三、为什么需要 piecewise compilation
+## 四、为什么需要 piecewise compilation
 
 完整模型图中 attention、KV update、collective 或某些 custom op 可能包含动态 metadata、副作用或尚不能被 Inductor 接管。若只允许 whole-graph，任一不兼容 op 会让整个模型退回 eager。
 
@@ -57,7 +73,7 @@ attention/KV update 是典型边界：KV 写入可能通过 cache tensor alias �
 
 `set_splitting_ops_for_v1()` 根据 attention fusion、KV update、sequence parallelism 和 graph mode调整边界；`vllm/config/compilation.py:1134-1268`。这不是配置清理，而是防止不兼容图组合。
 
-## 四、shape policy 为什么同时影响启动与稳态
+## 五、shape policy 为什么同时影响启动与稳态
 
 continuous batching 的 token 数不断变化。为每个实际 shape 编译/capture 会造成启动时间、cache 和 graph memory 爆炸；只保留一个最大 shape 又会产生大量 padding。
 
@@ -71,13 +87,13 @@ vLLM 把两类 shape 分开：
 
 shape 选择本质是空间—时间折中：更多 cases 减少 padding 和 eager miss，却增加 warmup、capture 时间和常驻 graph memory。
 
-## 五、full 与 piecewise CUDA Graph 的区别
+## 六、full 与 piecewise CUDA Graph 的区别
 
-### 5.1 Full graph
+### 6.1 Full graph
 
 full graph 记录模型 step 的完整 GPU launch 序列，CPU 只需更新固定输入 buffer 后 replay。它最大化 launch 消除，但要求所有 op、collective、metadata update 和内存地址都 capture-safe。
 
-### 5.2 Piecewise graph
+### 6.2 Piecewise graph
 
 piecewise graph 只 capture 可稳定重放的 compiled pieces，attention/动态边界仍由 eager Python 发起。它保留更多动态能力，收益较小但覆盖面更广。
 
@@ -85,7 +101,7 @@ piecewise graph 只 capture 可稳定重放的 compiled pieces，attention/动�
 
 MRV2 的 full graph 则由显式 graph manager 管理 capture descriptor 与 replay；`vllm/v1/worker/gpu/cudagraph_utils.py:303-418`。两条路径反映了同一原则：graph lifecycle 必须独立于普通 `dummy_run`。
 
-## 六、静态地址不等于静态值
+## 七、静态地址不等于静态值
 
 graph replay 可处理动态 token、position、block table 和 sampling 参数，前提是：
 
@@ -96,13 +112,13 @@ graph replay 可处理动态 token、position、block table 和 sampling 参数�
 
 MRV2 stable row、staged write 和 persistent graph tensor 正是为这组不变量服务。若每步重新 `torch.empty()` 并把新 tensor 传入，shape 相同也不能安全 replay。
 
-## 七、compile cache 必须把代码与环境纳入 key
+## 八、compile cache 必须把代码与环境纳入 key
 
 编译产物依赖模型/config、vLLM 代码、compiler 和环境。backend 将 environment、config、code 与 compiler hash 组合为 cache key；`vllm/compilation/backends.py:1006-1109`。只按模型名缓存会在 driver、torch、kernel flags 或源码变化后复用不兼容产物。
 
 cache 提升的是后续启动，不减少首次 trace/capture；而 CUDA Graph entry 通常还依赖进程内实际地址，不能简单跨进程序列化复用。
 
-## 八、与 custom op、通信和 KV 的边界
+## 九、与 custom op、通信和 KV 的边界
 
 编译器必须同时看到“可优化部分”和“不可跨越的语义”：
 
@@ -115,20 +131,11 @@ cache 提升的是后续启动，不减少首次 trace/capture；而 CUDA Graph 
 
 因此 page 25 的 IR/pass 负责“图里语义正确”，本页负责“什么图被编译/捕获、何时派发”。
 
-## 九、替代方案与失败边界
-
-| 方案 | 优点 | 代价/风险 |
-|---|---|---|
-| 全 eager | 最易调试、动态性最大 | Python/launch overhead 与融合机会损失 |
-| 只用 `torch.compile` | 不受固定地址约束 | decode launch 数仍高 |
-| 只用 CUDA Graph | 启动 launch 最少 | 算子图未优化，shape/capture 数量高 |
-| 强制 full graph | 稳态最快的潜力 | 任一动态/副作用/collective 不兼容即可错误或爆炸 |
-| 为所有 shape capture | 几乎无 miss | 启动慢、graph memory 与 cache 膨胀 |
-| 静默 fallback | 服务可用 | 性能回归难以察觉，基准不可解释 |
+## 十、约束与常见失败边界
 
 常见失败包括：recompile storm、capture OOM、输入地址变化、不同 rank graph 分支不一致、KV 写被优化掉、LoRA/spec shape 没有 case、eager fallback 比例过高。
 
-## 十、验证顺序
+## 十一、验证顺序
 
 1. 先用 eager 建立数值与功能基线；
 2. 单独启用 compile，检查 graph break、recompile count、cache key 与结果；
@@ -139,6 +146,14 @@ cache 提升的是后续启动，不减少首次 trace/capture；而 CUDA Graph 
 7. 任何仅 graph 模式出现的数值错，优先查副作用/metadata/地址，而非 kernel 精度。
 
 最小源码阅读顺序：`vllm/config/compilation.py:37-103,398-695,1134-1517` → `vllm/compilation/decorators.py:331-527` → `vllm/compilation/backends.py:690-778,1006-1228` → `vllm/compilation/cuda_graph.py:128-360` → `vllm/v1/worker/gpu/cudagraph_utils.py:109-418`。
+
+## 十二、发展趋势
+
+> [!note]
+> 本节离开“源码此刻是什么”，只收录源码自陈的在途改动；每条给出锚点，属于外推的部分单独标注。
+
+1. **编译器接缝上的 workaround 直接挂着上游 issue 号。** `# Can remove this after the following issue gets fixed: https://github.com/pytorch/pytorch/issues/176562`，见 `vllm/compilation/compiler_interface.py:348-352`。
+2. **fusion 的适用面由 kernel 能力决定，且在扩张。** RMSNorm+quant 融合目前用一个 dtype 相同性检查挡住混合精度：`# TODO: extend rmsnorm quant kernels to support mixed input/weight dtypes, and remove this check.`，见 `vllm/compilation/passes/fusion/rms_quant_fusion.py:45-46`。本页的“融合收益模型”会随这类限制解除而变化。
 
 ## Related Pages
 

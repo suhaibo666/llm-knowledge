@@ -8,6 +8,7 @@ title: "vLLM 推理引擎：从约束到实现的知识地图"
 > **版本标识**：`main`，`v0.27.2rc0-304-gd66300a1ba`，提交时间 2026-08-20T03:30:40-04:00
 > **覆盖范围**：19 篇内容页 + 本索引
 > **基线例外**：[[02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis|vLLM 请求全链路导览]] 显式声明更新基线 `26858770`（2026-08-24），其余页面仍为 `d66300a1`；两提交间该页引用的文件无源码差异。
+> **叙事顺序**：内容页统一按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势（可选，须锚定源码自陈的在途改动并标注为推断）。例外两篇：[[02_vllm_system_design_principles_analysis]] 是「问题 → 约束 → 支点」的推导体，第 2 拍本身就是它的第二、三节；[[03_vllm_request_flow_walkthrough_analysis]] 是端到端走查体，按时序而非按拍组织。
 > **阅读原则**：先理解瓶颈、状态所有权和不变量，再沿最小调用链验证实现。
 
 vLLM 不是“一个更快的 Transformer forward”。它是一套在线资源操作系统：Scheduler 按 token 分配本轮算力，KV 管理器分配长期显存，Model Runner 把动态请求变成可复用的设备输入，attention/quantization/compile/kernel 子系统协商当前 batch 能走的最快路径，serving 与分布式层再把这些对象扩展到多进程和多设备。

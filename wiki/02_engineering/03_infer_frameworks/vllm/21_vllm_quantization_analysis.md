@@ -6,8 +6,10 @@ title: "vLLM 量化设计：把 checkpoint 格式、层级语义与设备 Kernel
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
 > **中心命题**：量化不是在模型加载后统一把 tensor cast 成低精度。vLLM 把它设计成按层派发的 ABI：`QuantizationConfig` 解释 checkpoint 与平台能力，`QuantizeMethodBase` 决定参数布局、post-load 转换和 forward kernel，模型的 packed mapping 负责把外部权重命名映射到实际融合层。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-27。按五拍重排章节顺序，并补齐发展趋势；机制正文与既有引用未改。
 
-## 一、量化为什么必须进入模型构造期
+## 一、背景：量化为什么必须进入模型构造期
 
 低精度权重不仅 dtype 不同，还可能有：packed integer layout、group/channel/block scale、zero point、activation scale、额外 shape metadata、转置或 Marlin/Machete 专用重排。若先构造普通 FP16 `Parameter`、完整加载，再整体转换，会同时产生：
 
@@ -29,9 +31,24 @@ flowchart LR
   Post --> Kernel["method.apply device kernel"]
 ```
 
-## 二、两层合同：全局解释与局部执行
+## 二、为什么这么设计：替代方案与代价
 
-### 2.1 `QuantizationConfig`：解释一种格式
+| 方案 | 看似优势 | 失败原因 |
+|---|---|---|
+| 全模型加载后统一 cast | 实现最短 | 不支持 packed/group scale，峰值内存高 |
+| 模型类硬编码各量化格式 | 映射直接 | 模型数 × 格式数形成组合爆炸 |
+| 量化后端自行猜 fused 名称 | 模型代码干净 | 命名与架构特例漂移，silent misload 风险高 |
+| 一个 kernel 覆盖所有 shape | 易部署 | decode/prefill、GPU 架构和 TP shape 性能差异大 |
+| 只按位宽选方案 | 决策简单 | 忽略校准、kernel 支持、scale 粒度和真实 workload |
+
+量化换来的内存/带宽收益会被 dequant、repack、动态 activation quant 和 fallback kernel 部分抵消。必须在目标 GPU、batch、prompt/decode 比例上实测 TTFT、TPOT、吞吐和质量。
+
+> [!note] 推断
+> 这张表是本页依据代码行为重建的设计权衡：每一行的“为什么不适用”都能落到后文引用的 `file:line` 上，但“当初权衡过、并因此否掉了它”这层意思由本页承担——源码通常只陈述最终形态，不陈述被否掉的选项。要引用其中某一行，请回到对应小节的 locator，不要引用本表。
+
+## 三、两层合同：全局解释与局部执行
+
+### 3.1 `QuantizationConfig`：解释一种格式
 
 `QuantizationConfig` 是格式级合同，负责从 config 读取参数、声明支持的 activation dtype、识别应量化/跳过的 layer，并为具体 layer 返回 quant method；`vllm/model_executor/layers/quantization/base_config.py:87-167`。
 
@@ -39,7 +56,7 @@ flowchart LR
 
 这里的“不支持”应在构造阶段暴露，而不是执行到第一个 token 才从 kernel 崩溃。平台支持、checkpoint method、用户 override 和 layer type 必须共同确定最终 config。
 
-### 2.2 `QuantizeMethodBase`：定义一个 layer 如何活着
+### 3.2 `QuantizeMethodBase`：定义一个 layer 如何活着
 
 `QuantizeMethodBase` 拥有三类操作：创建参数、加载后处理、执行 apply；`vllm/model_executor/layers/quantization/base_config.py:20-80`。以 linear layer 为例：
 
@@ -49,7 +66,7 @@ flowchart LR
 
 这使 layer 的并行语义保持稳定，格式差异封装在 quant method 中。
 
-## 三、packed mapping 是量化与模型 ABI 的接缝
+## 四、packed mapping 是量化与模型 ABI 的接缝
 
 模型常把 checkpoint 的 `q_proj/k_proj/v_proj` 合成一个 QKV layer，把 `gate_proj/up_proj` 合成 gate-up layer。Llama 声明 `packed_modules_mapping`，把逻辑子模块名映射到融合模块；`vllm/model_executor/models/llama.py:458-466`。
 
@@ -62,17 +79,17 @@ flowchart LR
 
 若 quant config 自己猜模型命名，新增模型会修改所有量化后端；若模型直接硬编码 GPTQ/AWQ 细节，又会让一种格式横向污染模型库。mapping 作为窄 ABI 避免了这两种耦合。
 
-## 四、加载不是一次 copy，而是三阶段提交
+## 五、加载不是一次 copy，而是三阶段提交
 
-### 4.1 建立参数容器
+### 5.1 建立参数容器
 
 layer 构造时 method 已创建 weight、scale、zero point 或 meta-device placeholder。此时形状包含 TP partition 和 packed layout，尚不一定满足最终 kernel 排列。
 
-### 4.2 checkpoint 写入
+### 5.2 checkpoint 写入
 
 默认 loader 调用模型自己的 `load_weights()`，由模型 mapping 和参数级 weight loader 完成 fused/TP shard 写入；`vllm/model_executor/model_loader/default_loader.py:415-449`。因此“成功读取文件”不等于“量化权重已可执行”。
 
-### 4.3 post-load 转换
+### 5.3 post-load 转换
 
 统一 `process_weights_after_loading()` 遍历 module 的 quant method，在目标设备上下文中执行 repack、online quantization、scale 合并或 kernel-specific 转换；`vllm/model_executor/model_loader/utils.py:96-128`。转换若替换了 `Parameter`，还会重新协调 TP rank/status；`vllm/model_executor/model_loader/utils.py:108-118`。
 
@@ -82,7 +99,7 @@ Base loader 将 post-load 放在常规权重加载和 layerwise online quant 之
 
 CPU offload 时，post-load 临时把 module 参数移到 target device，完成转换后恢复；`vllm/model_executor/model_loader/utils.py:149-180`。这避免某些 GPU-only repack 在 CPU tensor 上失效，但会带来峰值显存，必须在容量规划中考虑。
 
-## 五、为什么同一种“位宽”仍需要多后端
+## 六、为什么同一种“位宽”仍需要多后端
 
 “W4A16”或“FP8”只描述数值表示的一部分，不决定最快 kernel。实际派发还依赖：
 
@@ -95,7 +112,7 @@ CPU offload 时，post-load 临时把 module 参数移到 target device，完成
 
 因此 vLLM 允许 config 内部再选择 Marlin、Machete、CUTLASS、FlashInfer、Triton、ROCm 等 kernel。量化名是 checkpoint/策略入口，不是唯一 kernel 名。
 
-## 六、权重、激活与 KV 量化是三个独立问题
+## 七、权重、激活与 KV 量化是三个独立问题
 
 | 对象 | 主要收益 | 额外状态 | 关键风险 |
 |---|---|---|---|
@@ -105,7 +122,7 @@ CPU offload 时，post-load 临时把 module 参数移到 target device，完成
 
 `KVCacheSpec` 和 attention backend 共同决定 KV dtype/layout；它不应由某个 linear quant method 暗中修改。将三者分开，才能在“W4A16 + FP8 KV”或“FP8 weight/activation + BF16 KV”等组合中明确验证每条合同。
 
-## 七、三个不变量
+## 八、三个不变量
 
 1. **格式不变量**：checkpoint 中每个量化 tensor 都必须唯一映射到目标参数及正确 shard/pack offset。
 2. **执行不变量**：`apply()` 读取的 weight/scale 布局必须与 post-load 输出完全一致。
@@ -113,19 +130,7 @@ CPU offload 时，post-load 临时把 module 参数移到 target device，完成
 
 这些不变量比“模型能加载”严格得多。错误 scale axis 可能不崩溃，只产生稳定但错误的 logits。
 
-## 八、替代方案与代价
-
-| 方案 | 看似优势 | 失败原因 |
-|---|---|---|
-| 全模型加载后统一 cast | 实现最短 | 不支持 packed/group scale，峰值内存高 |
-| 模型类硬编码各量化格式 | 映射直接 | 模型数 × 格式数形成组合爆炸 |
-| 量化后端自行猜 fused 名称 | 模型代码干净 | 命名与架构特例漂移，silent misload 风险高 |
-| 一个 kernel 覆盖所有 shape | 易部署 | decode/prefill、GPU 架构和 TP shape 性能差异大 |
-| 只按位宽选方案 | 决策简单 | 忽略校准、kernel 支持、scale 粒度和真实 workload |
-
-量化换来的内存/带宽收益会被 dequant、repack、动态 activation quant 和 fallback kernel 部分抵消。必须在目标 GPU、batch、prompt/decode 比例上实测 TTFT、TPOT、吞吐和质量。
-
-## 九、验证与排查
+## 九、约束、验证与排查
 
 1. 先确认 checkpoint 声明、CLI override 和最终 `QuantizationConfig` 一致；
 2. 检查平台支持与 layer-specific method，不能只看全局 quant 名；
@@ -136,6 +141,14 @@ CPU offload 时，post-load 临时把 module 参数移到 target device，完成
 7. KV quant 另行验证 attention backend、scale 与长上下文误差。
 
 最小源码阅读顺序：`vllm/model_executor/layers/quantization/base_config.py:20-167` → `vllm/model_executor/layers/quantization/__init__.py:47-181` → `vllm/model_executor/layers/linear.py:258-395` → `vllm/model_executor/model_loader/utils.py:96-180,264-281` → 目标 quant config/method。
+
+## 十、发展趋势
+
+> [!note]
+> 本节离开“源码此刻是什么”，只收录源码自陈的在途改动；每条给出锚点，属于外推的部分单独标注。
+
+1. **旧 scale 命名只在加载期存活。** `# Deprecated fused kv_scale -> attn.k_scale` 是权重名重映射表的第一条，见 `vllm/model_executor/layers/quantization/base_config.py:203-209`（加载侧同一处理在 `vllm/model_executor/model_loader/weight_utils.py:1395`）。
+2. **compressed-tensors 已经删掉稀疏支持，且是硬失败。** 检出非空 `sparse_scheme_map` 会直接抛出：`raise DeprecationWarning("Sparsity support has been removed from compressed-tensors. Please use a model without sparsity configuration.")`；见 `vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:288-295`。这类“格式先于 kernel 被裁掉”的事在量化域会反复发生——本页的格式矩阵是有保质期的。
 
 ## Related Pages
 

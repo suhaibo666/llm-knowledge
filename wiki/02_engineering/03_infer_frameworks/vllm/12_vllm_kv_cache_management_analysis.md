@@ -6,8 +6,10 @@ title: "vLLM KV Cache 管理：分页不是索引技巧，而是物理块所有�
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
 > **中心命题**：在线生成的 KV 随请求逐 token 增长，长度和生命周期都不可预测。vLLM 用一个全局 `BlockPool` 把物理显存变成带引用计数、内容哈希和淘汰顺序的块；`KVCacheManager` 再把请求级 token 进度翻译成块所有权。PagedAttention 只是设备端消费这份所有权映射的方式。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势（本页无可锚定的在途改动，第 5 拍略）。
+> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改。
 
-## 一、为什么“每请求一个连续 KV tensor”不成立
+## 一、背景：为什么“每请求一个连续 KV tensor”不成立
 
 假设请求 $r$ 最终生成 $N_r$ 个 token，标准全注意力 KV 占用近似为：
 
@@ -19,7 +21,21 @@ $$
 
 vLLM 的选择是把物理 KV 容量预先切成 block。请求不拥有一段连续 tensor，而是持有一个逻辑 block table；attention kernel 通过 table 找到物理 block。这样请求增长只追加 block id，结束只释放引用，prefix sharing 也能让多个请求引用相同物理块。
 
-## 二、三层对象各自拥有哪部分真相
+## 二、为什么这么设计：为什么不是更简单的替代方案
+
+| 替代方案 | 缺陷 | 当前设计付出的代价 |
+|---|---|---|
+| per-request 最大连续预留 | 内部碎片巨大，并发容量由最坏长度决定 | block table 间接寻址与元数据开销 |
+| 动态连续扩容 | 搬迁历史 KV，破坏地址稳定和 graph capture | 固定 block 粒度产生最多一个尾块碎片 |
+| naive LRU prefix cache | 无法统一活跃引用、淘汰和物理容量 | refcount、hash map、双向 free queue 更复杂 |
+| 每个 KV group 独立 pool | 简单隔离类型，但可能一组空闲、另一组耗尽；跨组命中难以原子提交 | shared pool 需要 coordinator 做全局规划 |
+| 命中完整 prompt 后直接采样 | cache 中没有本轮 logits | 至少重算最后 token，可能重算一整个 block |
+| 分配后再检查容量 | 失败回滚复杂，容易 double allocation/refcount 腐坏 | 预规划需要更复杂的块数计算 |
+
+> [!note] 推断
+> 这张表是本页依据代码行为重建的设计权衡：每一行的“为什么不适用”都能落到后文引用的 `file:line` 上，但“当初权衡过、并因此否掉了它”这层意思由本页承担——源码通常只陈述最终形态，不陈述被否掉的选项。要引用其中某一行，请回到对应小节的 locator，不要引用本表。
+
+## 三、三层对象各自拥有哪部分真相
 
 ```mermaid
 flowchart LR
@@ -47,7 +63,7 @@ flowchart LR
 
 这给出第一个核心不变量：**物理 block 的唯一身份由 `BlockPool.blocks[block_id]` 决定；请求、group 和 device block table 只能引用它，不能各自复制一份分配真相。**
 
-## 三、物理块状态机
+## 四、物理块状态机
 
 ```mermaid
 stateDiagram-v2
@@ -62,7 +78,7 @@ stateDiagram-v2
   FreeUncached --> InUse: allocation
 ```
 
-### 3.1 `ref_cnt` 表示活跃所有权，不表示是否有 cache hash
+### 4.1 `ref_cnt` 表示活跃所有权，不表示是否有 cache hash
 
 `get_new_blocks()` 只能从 free queue 取块，取出前断言 `ref_cnt == 0`，随后增为 1；若块仍带 prefix hash，则先驱逐旧 hash；`vllm/v1/core/block_pool.py:647-700`。prefix hit 调用 `touch()`：若命中的 block 处于 `ref_cnt == 0` 的可淘汰状态，先从 free queue 移除，再增加引用；`vllm/v1/core/block_pool.py:702-717`。
 
@@ -75,13 +91,13 @@ stateDiagram-v2
 
 测试把这套协议当作正确性而非性能细节：两个共享前缀的请求把共同 block 的 refcount 提升到 2，全部释放后块回到 free queue，并验证无 hash tail 优先、共享 hashed block 后淘汰的顺序；`tests/v1/core/test_prefix_caching.py:250-345`。
 
-### 3.2 Cache hash 是内容身份，不是所有权
+### 4.2 Cache hash 是内容身份，不是所有权
 
 只有可提交的完整内容才能进入 prefix hash index。释放 hashed block 不会立刻删除 hash；只有该物理块被重新分配时 `_maybe_evict_cached_block()` 才移除 hash 并发布删除事件。这样 prefix cache 不需要另一份显存，但 cache residency 与活跃引用成为两个正交维度。
 
 这也解释了为什么 naive `dict[hash] -> tensor` 不够：它没有统一回答容量满时淘汰哪个物理块、被多个请求使用时能否淘汰、请求结束后 tensor 是否仍可复用。vLLM 把 hash index 和 free queue 指向同一个 `KVCacheBlock` 对象，避免元数据与物理容量漂移。
 
-## 四、一次 slot 分配维护什么不变量
+## 五、一次 slot 分配维护什么不变量
 
 `KVCacheManager.allocate_slots()` 的输入同时包含本地 prefix hit、connector 外部命中、本轮新 token、speculative lookahead、encoder token、watermark 和 reserved blocks；它的 block-layout 注释把这些区间明确分开，见 `vllm/v1/core/kv_cache_manager.py:347-442`。
 
@@ -91,7 +107,7 @@ stateDiagram-v2
 2. 清理 sliding-window 等已不再需要、且不被 in-flight step 读取的块；
 3. 计算本地/外部已算 token 与新 token 所需 block，确认容量后才接纳命中块并分配新块。
 
-### 4.1 容量判断先于所有权变更
+### 5.1 容量判断先于所有权变更
 
 `full_sequence_must_fit` 会按完整请求长度估算所需块；不足直接返回 `None`，避免 chunked prefill 只看首段而过度准入。之后还要扣除 `reserved_blocks`，并为 waiting/preempted request 留出 watermark；`vllm/v1/core/kv_cache_manager.py:456-530`。
 
@@ -99,7 +115,7 @@ stateDiagram-v2
 
 因此第二个核心不变量是：**一次多 group allocation 必须先完成全局容量规划，再原子化地建立所有 group 的活跃引用；不能按 group 边查边分配。**
 
-### 4.2 只能缓存已经最终提交的 token
+### 5.2 只能缓存已经最终提交的 token
 
 投机 token 可能被拒绝，async step 的乐观进度也可能回滚。分配完成后，manager 用 `min(total_computed_tokens + num_new_tokens, request.num_tokens)` 限制可 cache 的 token，明确排除未验证 draft；`vllm/v1/core/kv_cache_manager.py:552-568`。
 
@@ -107,7 +123,7 @@ stateDiagram-v2
 
 第三个核心不变量是：**分配可以为未来 token 预留 slot，但 hash 提交与安全释放只能基于已最终确定、且不再被 in-flight 计算读取的 token。**
 
-## 五、Prefix caching 为什么必须重算最后一个 token
+## 六、Prefix caching 为什么必须重算最后一个 token
 
 prefix cache 保存的是 attention 的 K/V 状态，不是最后一步 logits。若 prompt 全部命中而本轮不执行模型，就无法产生下一 token 分布。因此 `get_computed_blocks()` 把最大命中长度限制为 `request.num_tokens - 1`；受 block 对齐约束影响，实际可能重算整个最后 block；`vllm/v1/core/kv_cache_manager.py:232-267`。
 
@@ -120,7 +136,7 @@ prefix cache 保存的是 attention 的 K/V 状态，不是最后一步 logits�
 
 当前 reset 只在除 null block 外没有活跃块时成功，否则返回 `False`；`vllm/v1/core/block_pool.py:764-798`。这比强行清 hash 更保守，因为活跃请求仍可能依赖这些 block 的内容身份。
 
-## 六、Hybrid KV：一个请求可以同时需要多种时间语义
+## 七、Hybrid KV：一个请求可以同时需要多种时间语义
 
 混合模型可能同时包含 full attention、sliding window、Mamba/SSM 或 speculative group。不同 group 的真实 block size、可复用历史和淘汰条件不同，但同一请求必须获得一个可共同执行的 token 边界。
 
@@ -134,7 +150,7 @@ prefix cache 保存的是 attention 的 K/V 状态，不是最后一步 logits�
 
 这不是为了把类型系统做复杂，而是阻止“某一 group 已经命中更多 token，但另一 group 没有对应状态”这样的伪命中。对混合模型，cache hit 是多组状态的共同可执行前缀，不是各组命中长度的简单最大值。
 
-## 七、从 Scheduler 到 attention 的最小承重链
+## 八、从 Scheduler 到 attention 的最小承重链
 
 ```mermaid
 sequenceDiagram
@@ -157,18 +173,7 @@ sequenceDiagram
 
 这里的边界是：Scheduler/KV manager 决定“哪些物理 id 属于谁”，Runner 决定“怎样高效把变化镜像到 GPU”，attention backend 决定“怎样按 layout 消费”。任一层都不应重新推导其他层的所有权。
 
-## 八、为什么不是更简单的替代方案
-
-| 替代方案 | 缺陷 | 当前设计付出的代价 |
-|---|---|---|
-| per-request 最大连续预留 | 内部碎片巨大，并发容量由最坏长度决定 | block table 间接寻址与元数据开销 |
-| 动态连续扩容 | 搬迁历史 KV，破坏地址稳定和 graph capture | 固定 block 粒度产生最多一个尾块碎片 |
-| naive LRU prefix cache | 无法统一活跃引用、淘汰和物理容量 | refcount、hash map、双向 free queue 更复杂 |
-| 每个 KV group 独立 pool | 简单隔离类型，但可能一组空闲、另一组耗尽；跨组命中难以原子提交 | shared pool 需要 coordinator 做全局规划 |
-| 命中完整 prompt 后直接采样 | cache 中没有本轮 logits | 至少重算最后 token，可能重算一整个 block |
-| 分配后再检查容量 | 失败回滚复杂，容易 double allocation/refcount 腐坏 | 预规划需要更复杂的块数计算 |
-
-## 九、失败边界与观测
+## 九、约束、失败边界与观测
 
 | 边界 | 表现 | 设计响应 |
 |---|---|---|

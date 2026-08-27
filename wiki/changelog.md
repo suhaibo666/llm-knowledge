@@ -12,6 +12,24 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-27（九）：vLLM 全域 16 篇按五拍重排，并按源码自陈的在途改动补出第 5 拍
+
+**Type**: 批量重构（15 页正文 + 域索引；接续同日（八）的样板页）
+
+**范围**：`02_engineering/03_infer_frameworks/vllm/` 下 18 篇分析页中的 16 篇（含（八）已改的 [[11_vllm_scheduler_analysis]]）。两篇按文体豁免并在索引里写明理由：[[02_vllm_system_design_principles_analysis]] 是「原始问题 → 四类资源约束 → 五个系统支点」的推导体，第 2 拍本来就是它的第二、三节，前移反而打断推导；[[03_vllm_request_flow_walkthrough_analysis]] 是端到端走查体，按时序组织。
+
+**改了什么**（机制正文与既有 `file:line` 一律未动，只动章节顺序、标题与新增段落）：
+
+- **第 2 拍前移（14 篇）**：把「替代方案 / 直观方案为何不够」整节搬到 §二，标题统一为「为什么这么设计：…」。改前 16 篇里有 15 篇把它放在 §八～§十，即讲完全部机制之后——旧四拍的形状。[[22_vllm_distributed_inference_analysis]] 本就没有独立的替代方案节，只做其余各拍。
+- **第 1 拍显式化（15 篇）**：§一 标题统一加「背景：」前缀。
+- **第 4 拍显式化（12 篇）**：把「失败边界与观测 / 验证与排查 / 实现和部署检查清单」等标题改成含「约束」的名字；[[23_vllm_compilation_cudagraph_analysis]]、[[25_vllm_ir_and_fusion_passes_analysis]]、[[26_vllm_disaggregated_kv_serving_analysis]] 三篇原本把「替代方案」和「验证/失败边界」混在一节，按拍拆开：表走第 2 拍，验证与失败边界留在第 4 拍。
+- **第 5 拍（10 篇有、5 篇无）**：新增「发展趋势」节，每条都锚在**已逐条打开读过**的源码注释上——`v1/attention/backend.py:534` 的 `Deprecated fields ... (v0.15.0)`、`model_executor/custom_op.py:183` 的 `enforce_enable ... will be removed`、`compressed_tensors.py:290` 的稀疏支持已删除并抛 `DeprecationWarning`、`parallel_state.py:370` 的等待 pytorch#165086、`compiler_interface.py:350` 的等待 pytorch#176562、`rejection_sampler.py:27` 的 chunking 是 workaround、`metrics/loggers.py:461` 的 `show_hidden_metrics`、`kv_connector/v1/base.py:606` 与 `sched/scheduler.py:2503` 的同向 TODO、`registry.py:786` 的 V0 弃用清单、`docs/design/model_runner_v2.md:3-9` 的自陈未 feature-complete。**找不到锚点的 5 篇（10 / 12 / 16 / 25 / 28）直接不写这一拍**，并在页头注明「本页无可锚定的在途改动，第 5 拍略」——技能里第 5 拍是可选且必须锚定，宁缺勿编。
+- **推断边界**：每张被前移的替代方案表下加 `> [!note] 推断`，写明「源码通常只陈述最终形态，不陈述被否掉的选项」，要引用请回到对应小节的 locator 而不是引用该表。
+
+**未做**：19 篇仍钉在 `d66300a1`（落后检出 HEAD `26858770` 共 142 个提交、4 天）的基线刷新；[[01_vllm_feature_optimizations_guide]] 是 guide 体，不适用本拍序。
+
+---
+
 ## 2026-08-27（八）：把 vLLM Scheduler 页改成五拍叙事，并标出两处被当成源码意图的推断
 
 **Type**: Skill 规则落地 + 单页重构（1 页正文；`source-faithful-analysis` 本轮新增的五拍顺序的首个样板）

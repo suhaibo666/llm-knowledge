@@ -6,8 +6,10 @@ title: "vLLM 可观测性与可靠性：从请求 SLO 追溯到资源承诺与�
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
 > **中心命题**：推理服务的“慢”不是一个指标。vLLM 在请求、Scheduler、KV/connector、spec decode、CUDA Graph 和进程故障层生成不同统计，再由 logger/Prometheus/trace 组合观测。可靠性设计则要求 engine death、数据 corruption、disconnect 和 transfer failure 都变成显式终态，不能让服务端口继续健康但请求永远挂起。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-27。按五拍重排章节顺序，并补齐发展趋势；机制正文与既有引用未改。
 
-## 一、观测模型先于指标名字
+## 一、背景：观测模型先于指标名字
 
 端到端延迟至少可分为：
 
@@ -40,7 +42,22 @@ flowchart LR
   Fault["process sentinel and output errors"] --> Health["health watchdog and client errors"]
 ```
 
-## 二、Scheduler stats 解释“系统此刻为什么堵”
+## 二、为什么这么设计：替代方案与常见陷阱
+
+| 做法 | 问题 |
+|---|---|
+| 只看平均 tokens/s | 掩盖 TTFT/TPOT 尾延迟与失败请求 |
+| Prometheus 添加 request ID/prompt | 高 cardinality、隐私与成本风险 |
+| 每 token 打 info 日志 | I/O 干扰 event loop/CPU 热路径 |
+| 只检查 HTTP 200 health | backend 可已死亡或 output handler 已停止 |
+| engine death 后继续接请求 | 无限失败/排队，根因被二次错误淹没 |
+| 只在 crash 时验证数值 | silent NaN/错误 logits 无法发现 |
+| 优化命中不埋点 | fallback 后服务仍可用但性能回归不可解释 |
+
+> [!note] 推断
+> 这张表是本页依据代码行为重建的设计权衡：每一行的“为什么不适用”都能落到后文引用的 `file:line` 上，但“当初权衡过、并因此否掉了它”这层意思由本页承担——源码通常只陈述最终形态，不陈述被否掉的选项。要引用其中某一行，请回到对应小节的 locator，不要引用本表。
+
+## 三、Scheduler stats 解释“系统此刻为什么堵”
 
 `SchedulerStats` 包含 running/waiting/skipped waiting、KV usage、local/external prefix cache、eviction、spec decode、connector、LoRA、CUDA Graph 和 perf stats；`vllm/v1/metrics/stats.py:186-214`。
 
@@ -55,7 +72,7 @@ flowchart LR
 
 这些是机制指标，不应直接替代用户 SLO。KV usage 高可能是良好利用，也可能正逼近 preemption cliff，必须结合 waiting、preemptions 与 TPOT。
 
-## 三、请求级统计必须跨 delta 保存状态
+## 四、请求级统计必须跨 delta 保存状态
 
 EngineCore 每步只返回增量输出，TTFT/queue/e2e 需要跨 step 保存 arrival、queued、scheduled、first/last token 时间。`RequestStateStats` 持有这些 timestamp 与 generation count；`vllm/v1/metrics/stats.py:218-236`。
 
@@ -65,7 +82,7 @@ EngineCore 每步只返回增量输出，TTFT/queue/e2e 需要跨 step 保存 ar
 
 请求 ID 可出现在日志和 trace 中，但不适合作为 Prometheus label：无界 cardinality 会让时序库本身成为故障源。聚合指标按 engine/model/finish reason 等有限维度，单请求诊断交给 trace/log。
 
-## 四、`StatLoggerManager` 隔离 DP 聚合细节
+## 五、`StatLoggerManager` 隔离 DP 聚合细节
 
 DP 场景中一个 `AsyncLLM` 可能对应多个 EngineCore。local logger 可按 engine 各建实例，Prometheus 更适合单 logger 加有限 `engine` label。`StatLoggerManager` 正是把这种差异隐藏在统一 record/log 接口后；`vllm/v1/metrics/loggers.py:1311-1402`。
 
@@ -77,7 +94,7 @@ DP 场景中一个 `AsyncLLM` 可能对应多个 EngineCore。local logger 可�
 - logger 决定聚合窗口、bucket 和输出后端；
 - 插件可以新增 sink，而不修改 Scheduler/runner。
 
-## 五、Metrics、Logs、Traces 各自回答不同问题
+## 六、Metrics、Logs、Traces 各自回答不同问题
 
 | 信号 | 适合 | 不适合 |
 |---|---|---|
@@ -90,7 +107,7 @@ DP 场景中一个 `AsyncLLM` 可能对应多个 EngineCore。local logger 可�
 
 request trace context 从入口 headers 传入内部 request，完成时 `OutputProcessor` 用明确 start/end timestamps 建立 `llm_request` span；`vllm/v1/engine/output_processor.py:754-808`。因此 trace 应贯穿同一 request ID/context，而不是在每个进程重新建无关 root span。
 
-## 六、可靠性首先要求故障可见
+## 七、可靠性首先要求故障可见
 
 EngineCoreProc 异常退出会向 output queue 发送 `ENGINE_CORE_DEAD` sentinel；`vllm/v1/engine/core.py:1618-1623`。core client 收到后设置共享 `engine_dead`；`vllm/v1/engine/core_client.py:426-492`。`AsyncLLM.errored` 同时检查 engine dead 与 output handler 是否存活；`vllm/v1/engine/async_llm.py:1105-1120`。
 
@@ -103,7 +120,7 @@ EngineCoreProc 异常退出会向 output queue 发送 `ENGINE_CORE_DEAD` sentine
 
 只返回 500 而保持 readiness 会让 load balancer继续送流量；只杀 HTTP server 而不传播未完成请求又会留下长时间 hang。
 
-## 七、数值 corruption 也是可靠性故障
+## 八、数值 corruption 也是可靠性故障
 
 设备/kernel/量化错误不一定 crash，NaN logits 可能继续被采样。启用相应检测时，`IterationStats` 在请求第一次出现 NaN 时标记 corrupted，并在完成时计数；`vllm/v1/metrics/stats.py:399-406,502-504`。
 
@@ -111,7 +128,7 @@ EngineCoreProc 异常退出会向 output queue 发送 `ENGINE_CORE_DEAD` sentine
 
 数值检查本身有开销，不一定适合全量常开；可在 canary、升级窗口或抽样请求中启用，并保留固定 prompts/logits 基线。
 
-## 八、生产告警应沿因果链设计
+## 九、生产告警应沿因果链设计
 
 推荐把告警分层：
 
@@ -123,19 +140,7 @@ EngineCoreProc 异常退出会向 output queue 发送 `ENGINE_CORE_DEAD` sentine
 
 告警从用户层触发，机制层用于归因。单独对“GPU 90%”报警往往没有意义；对“TPOT p99 超 SLO 且 KV usage/等待/graph miss 同步变化”才可操作。
 
-## 九、替代方案与常见陷阱
-
-| 做法 | 问题 |
-|---|---|
-| 只看平均 tokens/s | 掩盖 TTFT/TPOT 尾延迟与失败请求 |
-| Prometheus 添加 request ID/prompt | 高 cardinality、隐私与成本风险 |
-| 每 token 打 info 日志 | I/O 干扰 event loop/CPU 热路径 |
-| 只检查 HTTP 200 health | backend 可已死亡或 output handler 已停止 |
-| engine death 后继续接请求 | 无限失败/排队，根因被二次错误淹没 |
-| 只在 crash 时验证数值 | silent NaN/错误 logits 无法发现 |
-| 优化命中不埋点 | fallback 后服务仍可用但性能回归不可解释 |
-
-## 十、验证与演练
+## 十、约束、验证与演练
 
 1. 用固定负载验证 TTFT、ITL、TPOT、queue/prefill/decode 分解能闭合；
 2. 确认 DP 多 engine 指标不会重复计数或混淆 label；
@@ -146,6 +151,14 @@ EngineCoreProc 异常退出会向 output queue 发送 `ENGINE_CORE_DEAD` sentine
 7. 检查 shutdown drain/abort、指标 flush 和总 deadline。
 
 最小源码阅读顺序：`vllm/v1/metrics/stats.py:186-280,349-505` → `vllm/v1/metrics/loggers.py:74-90,443-919,1311-1402` → `vllm/tracing/__init__.py:66-145` → `vllm/v1/engine/output_processor.py:754-808` → engine dead/health/watchdog 路径。
+
+## 十一、发展趋势
+
+> [!note]
+> 本节离开“源码此刻是什么”，只收录源码自陈的在途改动；每条给出锚点，属于外推的部分单独标注。
+
+1. **指标集自带弃用通道。** `show_hidden_metrics` 开关的注释写明它的用途：`# Use this flag to hide metrics that were deprecated in a previous release and which will be removed future`，见 `vllm/v1/metrics/loggers.py:458-463`。也就是说指标名不是稳定 ABI：升级后要么按新名接，要么临时开这个开关过渡，看板需要跟着版本走。
+2. **offload 侧同一模式已在迁移中。** 旧的 `transfer_type`-label 指标被标为迁移期保留，见 `vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:134-139`。
 
 ## Related Pages
 

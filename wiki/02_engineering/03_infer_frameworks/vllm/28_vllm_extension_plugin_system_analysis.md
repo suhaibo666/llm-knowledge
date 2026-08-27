@@ -6,8 +6,10 @@ title: "vLLM 扩展与插件系统：加载阶段、进程覆盖与语义注册�
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
 > **中心命题**：vLLM 插件不是一个万能 hook，而是“Python 包发现机制 + 按职责分组的加载生命周期 + 子系统语义注册表”。正确性不只取决于插件函数写了什么，更取决于它在配置、模型构造和路由初始化之前被哪些进程加载；把这三个问题混在一起，最容易产生主进程可见、worker 不可见的静默分叉。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势（本页无可锚定的在途改动，第 5 拍略）。
+> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改。
 
-## 一、为什么不能只有一个通用插件入口
+## 一、背景：为什么不能只有一个通用插件入口
 
 扩展 vLLM 至少有五种不同的状态所有者：
 
@@ -34,7 +36,21 @@ flowchart LR
   Endpoint --> Routes["HTTP routes and app state"]
 ```
 
-## 二、发现、加载和注册是三个不同阶段
+## 二、为什么这么设计：替代方案及其代价
+
+| 方案 | 表面优势 | 失败模式 |
+|---|---|---|
+| 在 API 主进程 import 一次插件 | 实现最简单 | spawn worker/inspect 子进程看不到 registry mutation |
+| 所有插件在所有进程执行 | 生命周期统一 | HTTP/sink 依赖污染 worker，副作用和攻击面扩大 |
+| 单一万能 hook | API 少 | 无法表达 platform early-load、route late-attach 等阶段约束 |
+| 直接 monkey patch 内部类 | 可快速实验 | import order、版本升级和多进程一致性不可控 |
+| endpoint 默认加载所有已安装项 | 零配置 | 安装即暴露网络路由，信任边界失守 |
+| 静默选择多个 platform 中第一个 | 服务可能启动 | 环境探测顺序决定设备语义，结果不可复现 |
+
+> [!note] 推断
+> 这张表是本页依据代码行为重建的设计权衡：每一行的“为什么不适用”都能落到后文引用的 `file:line` 上，但“当初权衡过、并因此否掉了它”这层意思由本页承担——源码通常只陈述最终形态，不陈述被否掉的选项。要引用其中某一行，请回到对应小节的 locator，不要引用本表。
+
+## 三、发现、加载和注册是三个不同阶段
 
 标准 Python `entry_points` 只解决“已安装包声明了哪些可调用对象”。`load_plugins_by_group()` 用 group 查询 entry points，再按 `VLLM_PLUGINS` 的名称 allowlist 过滤并执行 `EntryPoint.load()`；`vllm/plugins/__init__.py:36-74`。
 
@@ -49,7 +65,7 @@ flowchart LR
 
 一个 general plugin 可以写多个 registry；一个 registry 也可由内置代码、配置 override 或 plugin 修改。plugin 是分发与加载边界，registry 才是执行语义边界。
 
-## 三、进程覆盖是正确性合同
+## 四、进程覆盖是正确性合同
 
 general group 被设计为在 process 0、EngineCore 和 worker 中加载，且单进程内用 `plugins_loaded` 防止重复执行；插件函数本身仍必须支持跨进程、多次调用，见 `vllm/plugins/__init__.py:77-90`。参数构造阶段会加载 general plugins；`vllm/engine/arg_utils.py:798-807`。worker 初始化在解析 worker class 前再次加载；`vllm/v1/worker/worker_base.py:241-257`。模型 inspect 子进程也显式加载；`vllm/model_executor/models/registry.py:1526-1533`。
 
@@ -63,7 +79,7 @@ $$
 
 这也解释了 re-entrant 要求：进程隔离使模块级 `plugins_loaded` 不能提供全局 exactly-once；插件应采用幂等注册或先检查现有项，而不应假设全系统只执行一次。项目设计文档明确要求 entry-point function 可重入；`docs/design/plugin_system.md:58-60`。
 
-## 四、五个 group 对应五种生命周期
+## 五、五个 group 对应五种生命周期
 
 | group | 加载位置 | 返回/执行合同 | 设计原因 |
 |---|---|---|---|
@@ -75,7 +91,7 @@ $$
 
 platform resolver 会同时探测内置和 OOT factories，只允许一个 OOT platform 激活；多个命中直接报错，避免设备所有权含糊，见 `vllm/platforms/__init__.py:219-253`。IO processor 先由模型配置或显式参数选名字，再从 group 中解析并实例化对应类；缺失和名称不匹配都显式失败，见 `vllm/plugins/io_processors/__init__.py:15-29,32-88`。stat logger loader 则校验插件必须是 `StatLoggerBase` 子类；`vllm/v1/metrics/loggers.py:74-88`。
 
-## 五、Endpoint plugin 为什么采用更严格的安全默认值
+## 六、Endpoint plugin 为什么采用更严格的安全默认值
 
 一般 `load_plugins_by_group()` 在未设置 `VLLM_PLUGINS` 时加载 group 内全部已安装插件；`vllm/plugins/__init__.py:52-70`。endpoint plugin 会直接新增网络路由，所以反过来要求显式 allowlist：环境变量未设置时即使发现插件也只告警、不加载；随后还按 `required_tasks` 与 server supported tasks 的交集过滤，见 `vllm/plugins/__init__.py:93-156`。
 
@@ -88,7 +104,7 @@ Endpoint 生命周期分两阶段：
 
 分阶段的原因是路由构造不应依赖尚未建立的 EngineClient，而 state 初始化需要现成 client。当前插件路由最后注册，且源码明确指出它可 shadow 同路径 core route、没有冲突强制检查；`vllm/plugins/endpoint_plugins/interface.py:63-69`。这使扩展灵活，也要求部署侧主动检查 OpenAPI/route 冲突。
 
-## 六、HTTP 扩展与 engine 扩展必须配对但不互相暗示
+## 七、HTTP 扩展与 engine 扩展必须配对但不互相暗示
 
 `EndpointPlugin` 的职责是 HTTP surface。若路由需要 worker RPC、新统计或模型行为，应另建 general plugin 安装 engine 侧能力，再由 endpoint plugin 经既有 `EngineClient` 路径调用；两者独立注册、独立加载，见 `vllm/plugins/endpoint_plugins/interface.py:3-20`。
 
@@ -99,7 +115,7 @@ Endpoint 生命周期分两阶段：
 
 render server 没有 EngineClient，但符合 `render` task 的 endpoint 仍可 attach；它的 `init_state()` 会收到 `None`，插件必须排除任务或显式降级，见 `vllm/plugins/endpoint_plugins/interface.py:22-28,72-86`。
 
-## 七、OOT 扩展为何仍有版本耦合
+## 八、OOT 扩展为何仍有版本耦合
 
 文档承诺的是已公开的注册入口可用，例如 `ModelRegistry.register_model`；具体模型、worker、attention backend 和内部模块接口仍可能随版本演进，兼容责任在插件作者，见 `docs/design/plugin_system.md:148-152`。
 
@@ -113,18 +129,7 @@ render server 没有 EngineClient，但符合 `render` task 的 endpoint 仍可 
 
 OOT custom op 还有自己的覆盖注册表。`CustomOp.register_oot()` 将替换类写入独立 `op_registry_oot`，并拒绝重复名称；`vllm/model_executor/custom_op.py:329-357`。它解决“替换哪个 layer 实现”，但仍需 general plugin 在正确进程、正确时间导入注册代码。
 
-## 八、替代方案及其代价
-
-| 方案 | 表面优势 | 失败模式 |
-|---|---|---|
-| 在 API 主进程 import 一次插件 | 实现最简单 | spawn worker/inspect 子进程看不到 registry mutation |
-| 所有插件在所有进程执行 | 生命周期统一 | HTTP/sink 依赖污染 worker，副作用和攻击面扩大 |
-| 单一万能 hook | API 少 | 无法表达 platform early-load、route late-attach 等阶段约束 |
-| 直接 monkey patch 内部类 | 可快速实验 | import order、版本升级和多进程一致性不可控 |
-| endpoint 默认加载所有已安装项 | 零配置 | 安装即暴露网络路由，信任边界失守 |
-| 静默选择多个 platform 中第一个 | 服务可能启动 | 环境探测顺序决定设备语义，结果不可复现 |
-
-## 九、实现和部署检查清单
+## 九、约束、实现与部署检查清单
 
 1. 写清扩展修改的状态所有者：frontend、core、worker、platform 还是 logger；
 2. 选择对应 group，不以“代码放在哪里方便”为标准；

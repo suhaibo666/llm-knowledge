@@ -6,8 +6,10 @@ title: "vLLM Model Runner V2：以稳定状态与异步执行重建 GPU 热路�
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
 > **中心命题**：Model Runner V2（MRV2）不是 V1 runner 的整理版，而是一次状态模型重构。它把“请求生命周期内稳定的持久状态”“每一步实际执行的 batch 视图”和“正在飞行的异步缓冲区”分开，使 CPU 能准备 step N+1、GPU 执行 step N，而不靠全 batch 重排维持正确性。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-27。按五拍重排章节顺序，并补齐发展趋势；机制正文与既有引用未改。
 
-## 一、为什么要从状态模型重做
+## 一、背景：为什么要从状态模型重做
 
 GPU 推理一步看起来只是准备输入、执行模型、采样，但在线 continuous batching 会不断插入、完成和抢占请求。若持久 tensor 同时也是模型输入，那么请求顺序一变，就必须搬动整批 tensor；异步执行后，CPU 还可能覆盖 GPU 尚未消费的行。
 
@@ -19,7 +21,22 @@ V1 的 persistent batch 正是把持久状态和当步输入耦合在一起，�
 
 第三点很关键：它没有试图让 runner 保留 scheduler 的“暂停”语义，而是用释放再建立状态，缩小跨组件一致性协议。
 
-## 二、三类状态必须分离
+## 二、为什么这么设计：替代方案为何不够好
+
+| 方案 | 看似简单之处 | 在 continuous batching 下的代价 |
+|---|---|---|
+| 每步从 Python 对象重建全部输入 | 没有持久状态协议 | CPU 开销与 batch/token 长度一起增长 |
+| 持久 tensor 直接作为当步输入 | 少一次 gather | 插入、完成和 reorder 触发大范围搬移；异步覆盖风险高 |
+| 为每个 backend 保存独立请求状态 | backend 自治 | 生命周期重复实现，切换 backend 的一致性成本高 |
+| 单个 pinned buffer 循环复用 | 内存最省 | step N+1 可覆盖 step N 正在读取的 host 数据 |
+| 所有动态逻辑留在 CPU | 易调试 | 频繁 D2H 同步，破坏 CPU/GPU overlap 与 graph replay |
+
+MRV2 选择的是“稳定持久状态 + GPU gather + 多份 in-flight buffer”。它用有限的预分配和 gather 成本换取更简单的身份不变量与真正可重叠的执行。
+
+> [!note] 推断
+> 这张表是本页依据代码行为重建的设计权衡：每一行的“为什么不适用”都能落到后文引用的 `file:line` 上，但“当初权衡过、并因此否掉了它”这层意思由本页承担——源码通常只陈述最终形态，不陈述被否掉的选项。要引用其中某一行，请回到对应小节的 locator，不要引用本表。
+
+## 三、三类状态必须分离
 
 ```mermaid
 flowchart LR
@@ -31,7 +48,7 @@ flowchart LR
   Exec --> Async["async output and next-step state"]
 ```
 
-### 2.1 请求状态：生命周期内稳定
+### 3.1 请求状态：生命周期内稳定
 
 `ReqStates` 同时维护 `req_id_to_index`、`index_to_req_id` 和空闲 row 列表，并预分配 token、length、block table、sampling 等状态；`vllm/v1/worker/gpu/states.py:20-85`。`add_request()` 从 free list 分配 row，`remove_request()` 释放同一 row；`vllm/v1/worker/gpu/states.py:91-133`。
 
@@ -41,13 +58,13 @@ flowchart LR
 
 稳定的是身份映射，不是 batch 排列。这样 backend 可以按 attention 需要排序，而不会破坏请求的长期状态。
 
-### 2.2 执行状态：每步 gather
+### 3.2 执行状态：每步 gather
 
 当步输入只是一张由 `SchedulerOutput` 和稳定 row 派生出的视图。runner 先处理完成请求和新请求，再计算当步 row 映射、更新已有请求状态，最后准备模型输入；`vllm/v1/worker/gpu/model_runner.py:934-1103`。`prepare_inputs()` 从这个 batch 描述构造 attention、position、token 和 graph 所需输入；`vllm/v1/worker/gpu/model_runner.py:1105-1335`。
 
 这使“请求存在哪里”和“这一轮按什么顺序跑”成为两个问题。相比维护一个同时承担两种含义的 tensor，gather 多了一次 GPU 数据整理，却消除了 CPU 侧的大规模 reorder 和备份状态。
 
-### 2.3 传输状态：按并发深度隔离
+### 3.3 传输状态：按并发深度隔离
 
 异步调度意味着同一种 staging buffer 可能同时服务多个未完成 step。`UvaBufferPool` 至少保留两个 buffer，并按并发深度轮转；`vllm/v1/worker/gpu/buffer_utils.py:16-77`。因此缓冲区复用的不变量是：
 
@@ -55,7 +72,7 @@ flowchart LR
 
 `StagedWriteTensor` 把 CPU source of truth、GPU/UVA 目标和待提交的稀疏写入分开；`vllm/v1/worker/gpu/buffer_utils.py:114-177`。多个 tensor 的稀疏写可由 `FusedStagedWriter` 合并提交；`vllm/v1/worker/gpu/buffer_utils.py:210-268`。其设计目的不是只减少 memcpy 次数，还在于让“写了哪些 row”显式化并保持异步安全。
 
-## 三、一次 step 的逻辑提交
+## 四、一次 step 的逻辑提交
 
 下面是理解状态提交的最小序列，不应把它误当成架构主线：
 
@@ -68,7 +85,7 @@ flowchart LR
 
 正确性来自每一步对三类状态的边界，而不是这六个函数恰好按此顺序调用。
 
-## 四、Async-first 是一组约束，不是一个线程开关
+## 五、Async-first 是一组约束，不是一个线程开关
 
 MRV2 假定模型热路径是一条没有 CPU 同步点的 CUDA stream：CPU 提交工作后即可准备下一步；`docs/design/model_runner_v2.md:43-49`。这要求：
 
@@ -80,13 +97,13 @@ MRV2 假定模型热路径是一条没有 CPU 同步点的 CUDA stream：CPU 提
 
 UVA 适合 token 列表等大而稀疏访问的数据：GPU 可直接访问 pinned host memory，避免把整个容器复制到显存；`docs/design/model_runner_v2.md:141-147`。代价是访问延迟和平台能力限制，因此它不是所有 tensor 的默认归宿。
 
-## 五、为什么采样与 metadata 也要 GPU-native
+## 六、为什么采样与 metadata 也要 GPU-native
 
 如果模型 forward 已经异步，但 CPU 必须读取 logits 或长度后再拼 metadata，流水仍会被同步点截断。MRV2 把更多输入派生和采样放入 GPU/Triton，让 GPU 已知、CPU 未必及时知道的值仍能继续推进；设计动机见 `docs/design/model_runner_v2.md:126-147`。
 
 这也解释了 stable row 的价值：GPU kernel 可以通过 row mapping gather 长期状态，而不是要求 CPU 先把所有数据重新排成连续的“当前 batch”。
 
-## 六、CUDA Graph 必须拥有显式生命周期
+## 七、CUDA Graph 必须拥有显式生命周期
 
 V1 的 `dummy_run` 同时承担 profiling、compile、warmup、空 DP forward 和 graph capture，容易让真实执行与 capture 路径分叉。MRV2 让 dummy run 复用 `execute_model()`，把 CUDA Graph capture 放到独立路径；`docs/design/model_runner_v2.md:171-192`。
 
@@ -97,7 +114,7 @@ V1 的 `dummy_run` 同时承担 profiling、compile、warmup、空 DP forward �
 
 融合 draft graph 不是无条件优化。attention builder 若缓存派生 metadata，必须声明并实现 `update_draft_decode_metadata()`，在 capture 中用 capture-safe GPU 操作原地更新；否则退回逐步重建 metadata；`docs/design/model_runner_v2.md:194-200`。这里的能力声明是正确性合同，而非性能标签。
 
-## 七、MRV2 与 Scheduler、Attention 的边界
+## 八、MRV2 与 Scheduler、Attention 的边界
 
 MRV2 不决定请求应获得多少 token，也不拥有物理 KV block：
 
@@ -108,25 +125,13 @@ MRV2 不决定请求应获得多少 token，也不拥有物理 KV block：
 
 若把 admission policy 放入 runner，就会让 GPU 状态管理反向控制全局公平性；若把 runner row 生命周期放入 backend，则不同 backend 会各自实现请求状态机。当前边界让二者通过 `SchedulerOutput` 与 metadata builder 合同连接。
 
-## 八、为什么仍保留 V1 runner
+## 九、为什么仍保留 V1 runner
 
 `GPUWorker` 根据 `vllm_config.use_v2_model_runner` 选择 V2 或 V1 实现；`vllm/v1/worker/gpu_worker.py:423-438`。这不是冗余，而是迁移边界：设计文档仍明确说明 MRV2 尚未 feature-complete，测试和部分设计决策仍在演进；`docs/design/model_runner_v2.md:3-9`。
 
 因此“使用 MRV2”不能被理解为永远更快。支持矩阵、平台、speculative 方法、attention backend 和 graph 能力不满足时，V1 或 eager fallback 仍是合法执行路径。
 
-## 九、替代方案为何不够好
-
-| 方案 | 看似简单之处 | 在 continuous batching 下的代价 |
-|---|---|---|
-| 每步从 Python 对象重建全部输入 | 没有持久状态协议 | CPU 开销与 batch/token 长度一起增长 |
-| 持久 tensor 直接作为当步输入 | 少一次 gather | 插入、完成和 reorder 触发大范围搬移；异步覆盖风险高 |
-| 为每个 backend 保存独立请求状态 | backend 自治 | 生命周期重复实现，切换 backend 的一致性成本高 |
-| 单个 pinned buffer 循环复用 | 内存最省 | step N+1 可覆盖 step N 正在读取的 host 数据 |
-| 所有动态逻辑留在 CPU | 易调试 | 频繁 D2H 同步，破坏 CPU/GPU overlap 与 graph replay |
-
-MRV2 选择的是“稳定持久状态 + GPU gather + 多份 in-flight buffer”。它用有限的预分配和 gather 成本换取更简单的身份不变量与真正可重叠的执行。
-
-## 十、代价、失败边界与排查
+## 十、约束、代价与失败边界排查
 
 这套设计的成本包括：预分配状态占用显存/host memory；row mapping、staged writer 和 graph state 增加组件数量；UVA 依赖平台且不适合高带宽连续访问；异步错误可能延迟到后续边界才暴露。
 
@@ -141,6 +146,17 @@ MRV2 选择的是“稳定持久状态 + GPU gather + 多份 in-flight buffer”
 7. 异步采样输出是否在下一步消费前完成 postprocess。
 
 最小源码阅读顺序：`docs/design/model_runner_v2.md:1-204` → `vllm/v1/worker/gpu/states.py:20-133` → `vllm/v1/worker/gpu/buffer_utils.py:16-268` → `vllm/v1/worker/gpu/model_runner.py:934-1103,1105-1335,1411-1864` → `vllm/v1/worker/gpu_worker.py:423-438`。
+
+## 十一、发展趋势
+
+> [!note]
+> 本节离开“源码此刻是什么”，只收录源码自陈的在途改动；每条给出锚点，属于外推的部分单独标注。
+
+1. **MRV2 自己声明尚未收敛。** 设计文档原话：*While MRV2 is not yet feature-complete, not rigorously tested, and still has open design decisions, we believe it is a substantial improvement over V1.*；见 `docs/design/model_runner_v2.md:3-9`。因此“开了 MRV2 就更快/更稳”不成立，V1 与 eager 回退仍是合法路径。
+2. **V1/V2 双实现是迁移期的形态。** `GPUWorker` 按 `use_v2_model_runner` 选择实现，代码里还挂着 `# HACK(woosuk): This is a temporary fix to avoid type errors.`（`vllm/v1/worker/gpu_worker.py:423-438`）。
+3. **平台专用兼容路径带退出条件。** `# TODO: Remove this FA2-only DCP compatibility path once ...`，见 `vllm/v1/worker/cp_utils.py:179`。
+   > [!note] 推断
+   > “V1 runner 最终会被移除”是本页从上述三条做的外推，源码只说了 MRV2 尚未 feature-complete，没有给过时间表或承诺。
 
 ## Related Pages
 

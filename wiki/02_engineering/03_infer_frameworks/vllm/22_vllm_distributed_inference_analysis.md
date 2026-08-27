@@ -6,8 +6,10 @@ title: "vLLM 分布式推理：按状态切分维度建立通信合同"
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
 > **中心命题**：TP、PP、DP、EP、PCP/DCP 不是几种等价的“多卡开关”，它们分别切分参数、层、请求、专家或序列上下文。vLLM 先用 rank layout 建立正交 process group，再由 layer/runner 在正确 group 上执行 collective；拓扑正确性比 executor 进程如何启动更基础。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-27。按五拍重排章节顺序，并补齐发展趋势；机制正文与既有引用未改。
 
-## 一、先问“什么状态被切分”
+## 一、背景：先问“什么状态被切分”
 
 | 维度 | 被切分/复制的对象 | 典型通信 | 主要瓶颈 |
 |---|---|---|---|
@@ -97,7 +99,7 @@ Dual Batch Overlap 把同一执行 batch 分为两个 microbatches，在一个 m
 
 把性能问题简单归因于 Ray 或 multiprocessing 容易误判：多数稳态成本来自 collective、rank placement、kernel shape 与负载不均；executor 对启动、故障域和控制面延迟影响更直接。
 
-## 十一、选择、失败边界与验证
+## 十一、约束、选择与失败边界验证
 
 | 目标 | 优先考虑 | 警惕 |
 |---|---|---|
@@ -117,6 +119,13 @@ Dual Batch Overlap 把同一执行 batch 分为两个 microbatches，在一个 m
 6. 再调整 placement、group size、microbatch 与 backend。
 
 最小源码阅读顺序：`vllm/config/parallel.py:119-342,475-559,835-966` → `vllm/distributed/parallel_state.py:380-748,1751-1963` → `vllm/model_executor/layers/linear.py:577-587,1652-1662` → 目标 PP/EP/DCP runner → executor。
+
+## 十二、发展趋势
+
+> [!note]
+> 本节离开“源码此刻是什么”，只收录源码自陈的在途改动；每条给出锚点，属于外推的部分单独标注。
+
+1. **通信算子的自定义补丁带着上游退出条件。** `patched_fused_scaled_matmul_reduce_scatter` 上方写着 `# TODO: Remove this once the pytorch fix (https://github.com/pytorch/pytorch/pull/165086) gets released, in either 2.9.1 or 2.10`，见 `vllm/distributed/parallel_state.py:368-373`。即：TP+SP 这条融合通信路径当前的形态由 PyTorch 版本决定，会随上游发布回收。
 
 ## Related Pages
 

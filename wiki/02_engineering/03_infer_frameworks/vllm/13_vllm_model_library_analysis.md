@@ -6,8 +6,10 @@ title: "vLLM 模型库：模型结构、权重格式与并行执行之间的 ABI
 
 > **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
 > **中心命题**：Hugging Face config 能说明“这是哪个模型”，却不能完整说明权重怎样按 TP/PP/EP 切分、QKV/MLP 怎样融合、量化权重何时 repack、forward 怎样接入 paged KV。vLLM 模型库的本质是一层执行 ABI：把外部 checkpoint 语义翻译成 vLLM 的并行层、attention、loader 和 runner 契约。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-27。按五拍重排章节顺序，并补齐发展趋势；机制正文与既有引用未改。
 
-## 一、为什么不能直接 `AutoModel.from_pretrained()`
+## 一、背景：为什么不能直接 `AutoModel.from_pretrained()`
 
 通用 Transformers 模型优先表达训练/研究语义：module 名称与 checkpoint 对齐，forward 接受完整 batch tensor，KV 通常由模型对象按序列管理。高吞吐 serving 需要另一组约束：
 
@@ -20,7 +22,21 @@ title: "vLLM 模型库：模型结构、权重格式与并行执行之间的 ABI
 
 直接包一层 adapter 能解决函数签名，不能解决权重 identity、并行所有权和设备 kernel ABI。
 
-## 二、四份契约共同定义一个可运行模型
+## 二、为什么这么设计：直观替代方案与代价
+
+| 替代方案 | 为什么不够 | 当前设计代价 |
+|---|---|---|
+| 直接加载完整 HF model | 每 rank 重复权重，KV/forward ABI 不匹配 | 维护大量 model implementations |
+| 通用 `state_dict` strict load | 不理解 fused parameter、TP/PP/EP shard | 每个模型需名称映射和 loader 规则 |
+| import 时检查全部模型能力 | 启动慢，可能提前初始化 CUDA/可选依赖 | lazy inspection/cache 更复杂 |
+| 只按 architecture 名称写分支 | 能力组合快速增长，out-of-tree 难扩展 | interface contract 需要持续治理 |
+| forward 内临时做权重 repack | 每步成本与 graph 不稳定 | post-load 增加启动时间和峰值内存 |
+| 每种 quantization 复制模型类 | 组合爆炸 | layer/quant method 接合点更抽象 |
+
+> [!note] 推断
+> 这张表是本页依据代码行为重建的设计权衡：每一行的“为什么不适用”都能落到后文引用的 `file:line` 上，但“当初权衡过、并因此否掉了它”这层意思由本页承担——源码通常只陈述最终形态，不陈述被否掉的选项。要引用其中某一行，请回到对应小节的 locator，不要引用本表。
+
+## 三、四份契约共同定义一个可运行模型
 
 ```mermaid
 flowchart LR
@@ -41,7 +57,7 @@ flowchart LR
 
 把“支持某模型”只理解为 registry 加一个类名，会遗漏后三份契约。
 
-## 三、Registry 为什么同时支持 inspection 与 loading
+## 四、Registry 为什么同时支持 inspection 与 loading
 
 `ModelRegistry` 的内置表保存 architecture 到 lazy module/class 的映射；实例化时全部转换成 `_LazyRegisteredModel`，避免导入所有模型；`vllm/model_executor/models/registry.py:1474-1490`。外部模型可注册类对象或 `module:class` 字符串，字符串路径明确用于避免导入时初始化 CUDA；`vllm/model_executor/models/registry.py:1085-1136`。
 
@@ -54,7 +70,7 @@ lazy inspection 甚至对源码文件计算 hash、缓存 `_ModelInfo`，cache m
 
 解析还要处理 `model_impl=auto/transformers`、dynamic module、architecture default/convert type 与 in-tree 实现回退；`vllm/model_executor/models/registry.py:1183-1329`。当前策略允许兼容的 Transformers backend，但不会假定任意 `AutoModel` 都满足 vLLM backend contract。
 
-## 四、模型类的构造 ABI
+## 五、模型类的构造 ABI
 
 新式模型类应接收 `vllm_config` 和 `prefix`。`initialize_model()` 先解析 architecture、配置 quant method，再检查构造签名；旧式分散的 `config/cache_config/quant_config/lora_config` 参数仍有兼容分支，但会发出 deprecation warning；`vllm/model_executor/model_loader/utils.py:37-93`。
 
@@ -66,9 +82,9 @@ lazy inspection 甚至对源码文件计算 hash、缓存 `_ModelInfo`，cache m
 
 模型 interface 则用结构化能力检查代替散落的 architecture 名单。Registry inspection 会提取 text-generation/pooling、multimodal、PP、inner state、attention-free、hybrid、Mamba prefix caching 等属性；`vllm/model_executor/models/registry.py:850-882`。
 
-## 五、并行层把数学分片变成参数加载规则
+## 六、并行层把数学分片变成参数加载规则
 
-### 5.1 Column parallel
+### 6.1 Column parallel
 
 对 $Y=XA$，column parallel 把输出维切成：
 
@@ -78,7 +94,7 @@ $$
 
 每个 rank 只创建 `output_size / tp_size` 的 parameter，是否 all-gather 由 layer 决定；`vllm/model_executor/layers/linear.py:407-474`。
 
-### 5.2 Row parallel
+### 6.2 Row parallel
 
 row parallel 同时切输入和权重第一维：
 
@@ -91,7 +107,7 @@ $$
 
 QKVParallelLinear、MergedColumnParallelLinear 和 fused MoE 再把多份 checkpoint tensor 映射到合并 parameter。这样 fusion 不只是 forward 优化，也改变了 checkpoint-to-runtime 的权重 ABI。
 
-## 六、权重加载是一次名称、形状与所有权转换
+## 七、权重加载是一次名称、形状与所有权转换
 
 loader 层先根据 `load_format` 选择 HF/safetensors、sharded state、tensorizer、streaming 等实现；格式注册与选择在 `vllm/model_executor/model_loader/__init__.py:50-139`。loader 提供权重 iterator，模型自己的 `load_weights()` 决定每个 checkpoint 名称装入哪个 runtime parameter。
 
@@ -107,7 +123,7 @@ Llama runtime class显式声明 `packed_modules_mapping` 并实现自己的 `loa
 
 核心不变量是：**checkpoint 中的一个逻辑权重必须恰好覆盖它负责的 runtime shard；跳过必须由 PP/tied/optional 规则解释，重复写入必须由 packed mapping 的 shard id 区分。**
 
-## 七、为什么有 post-load 阶段
+## 八、为什么有 post-load 阶段
 
 量化 checkpoint 的存储格式不一定是 kernel 最终需要的 layout。`process_weights_after_loading()` 遍历 quant method，在目标设备上执行 repack/quantize，并重新协调新 parameter 的 TP 状态；之后再处理 deferred attention、HPC 和 model-level hook；`vllm/model_executor/model_loader/utils.py:96-146`。
 
@@ -115,7 +131,7 @@ Llama runtime class显式声明 `packed_modules_mapping` 并实现自己的 `loa
 
 具体 quant method 选择与 fallback 由 [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|vLLM 量化派发设计]] 负责，本页只拥有模型与权重的接合契约。
 
-## 八、模型与 attention/runner 的边界
+## 九、模型与 attention/runner 的边界
 
 模型 forward 应表达层级计算，但不自行管理请求队列或物理 KV block。`Attention` layer 在构造时选择 backend、生成 KV spec，并在 forward context 中取得 metadata、KV tensor 与 slot mapping；`vllm/model_executor/layers/attention/attention.py:218-350,640-698`。
 
@@ -123,18 +139,7 @@ Runner 负责把 `SchedulerOutput` 变成 input ids、positions、block tables �
 
 反过来，模型若包含 inner state、hybrid attention、multimodal encoder 或自定义 sampler，就必须通过 interface/ModelState 明确声明，而不是让 runner 按 architecture 名称猜测。
 
-## 九、直观替代方案与代价
-
-| 替代方案 | 为什么不够 | 当前设计代价 |
-|---|---|---|
-| 直接加载完整 HF model | 每 rank 重复权重，KV/forward ABI 不匹配 | 维护大量 model implementations |
-| 通用 `state_dict` strict load | 不理解 fused parameter、TP/PP/EP shard | 每个模型需名称映射和 loader 规则 |
-| import 时检查全部模型能力 | 启动慢，可能提前初始化 CUDA/可选依赖 | lazy inspection/cache 更复杂 |
-| 只按 architecture 名称写分支 | 能力组合快速增长，out-of-tree 难扩展 | interface contract 需要持续治理 |
-| forward 内临时做权重 repack | 每步成本与 graph 不稳定 | post-load 增加启动时间和峰值内存 |
-| 每种 quantization 复制模型类 | 组合爆炸 | layer/quant method 接合点更抽象 |
-
-## 十、失败边界与贡献检查清单
+## 十、约束、失败边界与贡献检查清单
 
 新增/更新模型至少要核验：
 
@@ -147,6 +152,14 @@ Runner 负责把 `SchedulerOutput` 变成 input ids、positions、block tables �
 7. dummy/profile、sleep/wake、LoRA、compile 和 reload 是否保持同一权重 ABI。
 
 最小源码阅读顺序：`vllm/model_executor/models/registry.py:850-1040,1085-1383` → `vllm/model_executor/model_loader/__init__.py:50-139` → `vllm/model_executor/model_loader/utils.py:37-146` → 一个目标模型的 `packed_modules_mapping/load_weights` → 对应 TP-aware layers。
+
+## 十一、发展趋势
+
+> [!note]
+> 本节离开“源码此刻是什么”，只收录源码自陈的在途改动；每条给出锚点，属于外推的部分单独标注。
+
+1. **V0 遗留架构在按版本清退。** `registry.py` 维护一张“模型 → 最后支持版本”的 `_PREVIOUSLY_SUPPORTED_MODELS`，其中明写 `# encoder-decoder models except whisper have been removed for V0 deprecation.`；见 `vllm/model_executor/models/registry.py:783-790`。加载一个已移除的架构会得到带版本号的明确报错，而不是一路失败到权重加载。
+2. **旧权重命名靠加载期 remap 兜底，不进入模型 ABI。** `# NOTE: we remap the deprecated kv_scale to k_scale`，见 `vllm/model_executor/model_loader/weight_utils.py:1395`；量化侧有同一张重映射表（`vllm/model_executor/layers/quantization/base_config.py:203-209`）。方向是“新命名唯一，旧命名只活在加载期”——新增模型不应再依赖旧名。
 
 ## Related Pages
 
