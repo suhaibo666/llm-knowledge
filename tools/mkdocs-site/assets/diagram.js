@@ -57,7 +57,12 @@
       const id = "kb-mermaid-" + (++diagramSequence);
       try {
         const result = await window.mermaid.render(id, item.source);
-        item.node.innerHTML = result.svg;
+        const replacement = item.node.cloneNode(false);
+        replacement.innerHTML = result.svg;
+        item.node.replaceWith(replacement);
+        item.node = replacement;
+        renderedBlocks.add(replacement);
+        diagramSources.set(replacement, item.source);
         if (result.bindFunctions) result.bindFunctions(item.node);
       } catch (error) {
         removeRenderArtifact(id);

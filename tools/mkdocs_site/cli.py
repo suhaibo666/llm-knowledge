@@ -58,7 +58,7 @@ class _ServeState:
 @dataclass(frozen=True)
 class _WorkingBackup:
     root: Path
-    moved: tuple[tuple[Path, Path], ...]
+    copies: tuple[tuple[Path, Path], ...]
 
 
 def _run_mkdocs(command: list[str], cwd: Path) -> int:
@@ -170,22 +170,21 @@ def _working_outputs(paths: BuildPaths) -> tuple[Path, ...]:
 def _stash_working_outputs(paths: BuildPaths) -> _WorkingBackup:
     paths.cache.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix=".serve-backup-", dir=paths.cache))
-    moved: list[tuple[Path, Path]] = []
+    copies: list[tuple[Path, Path]] = []
     try:
         for index, source in enumerate(_working_outputs(paths)):
             if not source.exists():
                 continue
             destination = root / f"{index}-{source.name}"
-            source.replace(destination)
-            moved.append((source, destination))
+            if source.is_dir():
+                shutil.copytree(source, destination)
+            else:
+                shutil.copy2(source, destination)
+            copies.append((source, destination))
     except BaseException:
-        for source, destination in reversed(moved):
-            if destination.exists():
-                source.parent.mkdir(parents=True, exist_ok=True)
-                destination.replace(source)
         shutil.rmtree(root, ignore_errors=True)
         raise
-    return _WorkingBackup(root, tuple(moved))
+    return _WorkingBackup(root, tuple(copies))
 
 
 def _discard_working_outputs(paths: BuildPaths) -> None:
@@ -198,10 +197,32 @@ def _discard_working_outputs(paths: BuildPaths) -> None:
 
 def _restore_working_outputs(paths: BuildPaths, backup: _WorkingBackup) -> None:
     _discard_working_outputs(paths)
-    for source, destination in backup.moved:
+    for source, copy in backup.copies:
         source.parent.mkdir(parents=True, exist_ok=True)
-        destination.replace(source)
-    shutil.rmtree(backup.root, ignore_errors=True)
+        if copy.is_dir():
+            shutil.copytree(copy, source)
+        else:
+            shutil.copy2(copy, source)
+
+
+def _restart_previous_preview(
+    paths: BuildPaths,
+    runtime: ServeRuntime,
+    state: _ServeState,
+    port: int,
+) -> None:
+    url = f"http://127.0.0.1:{port}/"
+    recovery = None
+    try:
+        recovery = runtime.start(
+            _serve_command(paths.generated_config, port), paths.repo
+        )
+        runtime.wait_ready(url, recovery)
+    except BaseException:
+        if recovery is not None:
+            runtime.stop(recovery)
+        raise
+    state.child = recovery
 
 
 def _refresh_preview(
@@ -214,7 +235,17 @@ def _refresh_preview(
     """Replace the served snapshot, restoring it if any refresh step fails."""
     url = f"http://127.0.0.1:{port}/"
     runtime.stop(state.child)
-    backup = _stash_working_outputs(paths)
+    try:
+        backup = _stash_working_outputs(paths)
+    except BaseException as stash_error:
+        try:
+            _restart_previous_preview(paths, runtime, state, port)
+        except BaseException as recovery_error:
+            raise RuntimeError(
+                f"preview backup failed and the previous server could not restart: "
+                f"{recovery_error}"
+            ) from stash_error
+        raise
     candidate = None
     try:
         inventory = operations.inventory(paths.wiki)
@@ -225,18 +256,15 @@ def _refresh_preview(
     except BaseException as refresh_error:
         if candidate is not None:
             runtime.stop(candidate)
-        _restore_working_outputs(paths, backup)
         try:
-            recovery = runtime.start(
-                _serve_command(paths.generated_config, port), paths.repo
-            )
-            runtime.wait_ready(url, recovery)
-            state.child = recovery
+            _restore_working_outputs(paths, backup)
+            _restart_previous_preview(paths, runtime, state, port)
         except BaseException as recovery_error:
             raise RuntimeError(
                 f"preview refresh failed and the previous server could not restart: "
                 f"{recovery_error}"
             ) from refresh_error
+        shutil.rmtree(backup.root, ignore_errors=True)
         raise
     else:
         shutil.rmtree(backup.root, ignore_errors=True)

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
-import { access } from "node:fs/promises"
+import { access, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import net from "node:net"
+import { tmpdir } from "node:os"
 import path from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
@@ -26,6 +27,26 @@ export function rootMermaidSvgs(block) {
     }
     return parent === block
   })
+}
+
+export function searchResultMatches(result, query, targetSuffix) {
+  const url = new URL(result.href)
+  return url.pathname.endsWith(targetSuffix)
+    && (url.searchParams.get("h") === query || result.text.includes(query))
+}
+
+export function mermaidRootContract(diagram) {
+  return !diagram.error
+    && diagram.roots === 1
+    && diagram.role.includes("graphics-document")
+    && Boolean(diagram.description)
+    && Boolean(diagram.viewBox)
+    && diagram.children > 0
+    && diagram.rootWidth > 0
+    && diagram.rootHeight > 0
+    && Boolean(diagram.display)
+    && diagram.display !== "none"
+    && diagram.visibility === "visible"
 }
 
 async function loadPuppeteer() {
@@ -72,6 +93,25 @@ async function freeLoopbackPort() {
   return port
 }
 
+async function hideBuiltSite() {
+  const site = path.join(repoRoot, "site")
+  const cache = path.join(repoRoot, ".mkdocs-cache")
+  await mkdir(cache, { recursive: true })
+  const backup = path.join(cache, `.smoke-site-${process.pid}-${Date.now()}`)
+  try {
+    await rename(site, backup)
+    return { site, backup }
+  } catch (error) {
+    if (error.code === "ENOENT") return { site, backup: null }
+    throw error
+  }
+}
+
+async function restoreBuiltSite(saved) {
+  await rm(saved.site, { recursive: true, force: true })
+  if (saved.backup) await rename(saved.backup, saved.site)
+}
+
 async function assertPortReleased(port) {
   const server = net.createServer()
   await new Promise((resolve, reject) => {
@@ -91,26 +131,15 @@ function boundedOutcome(promise, timeoutMs) {
   ])
 }
 
-function startPreview(port) {
+function startPythonService(args) {
   const output = []
   const python = process.env.PYTHON?.trim() || "python"
-  const child = spawn(
-    python,
-    [
-      "-m",
-      "tools.mkdocs_site.cli",
-      "serve",
-      "--port",
-      String(port),
-      "--no-open",
-    ],
-    {
-      cwd: repoRoot,
-      detached: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-    },
-  )
+  const child = spawn(python, args, {
+    cwd: repoRoot,
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  })
   for (const stream of [child.stdout, child.stderr]) {
     stream.setEncoding("utf8")
     stream.on("data", (chunk) => {
@@ -123,6 +152,28 @@ function startPreview(port) {
     child.once("close", (code, signal) => resolve({ code, signal }))
   })
   return { child, exit, output }
+}
+
+function startPreview(port) {
+  return startPythonService([
+    "-m",
+    "tools.mkdocs_site.cli",
+    "serve",
+    "--port",
+    String(port),
+    "--no-open",
+  ])
+}
+
+function startSearchFixture(repo, port) {
+  return startPythonService([
+    "-m",
+    "tools.mkdocs_site.tests.serve_search_fixture",
+    "--repo",
+    repo,
+    "--port",
+    String(port),
+  ])
 }
 
 async function runTaskkill(pid) {
@@ -187,6 +238,26 @@ async function waitForHttp(url, service, timeoutMs = 120_000) {
   throw new Error(`timed out waiting for ${url} (${lastFailure})`)
 }
 
+async function waitForBody(url, expected, service, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (service.child.exitCode !== null || service.child.signalCode !== null) {
+      throw new Error(`preview exited while waiting for refreshed body: ${url}`)
+    }
+    try {
+      const response = await fetch(url, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(2_000),
+      })
+      if (response.ok && (await response.text()).includes(expected)) return
+    } catch {
+      // A controlled restart briefly closes the listener; keep polling.
+    }
+    await delay(100)
+  }
+  throw new Error(`timed out waiting for ${expected} at ${url}`)
+}
+
 async function goto(page, url) {
   const response = await page.goto(url, {
     waitUntil: "domcontentloaded",
@@ -214,25 +285,150 @@ async function assertNoOverflow(page, width, label) {
   )
 }
 
-async function searchFor(page, query, targetSuffix) {
+async function openFreshSearch(page, origin, targetSuffix) {
+  await goto(page, `${origin}/`)
+  await page.$eval('label[for="__search"]', (label) => label.click())
+  await page.waitForSelector("[data-md-component='search-query']", { visible: true })
+  const initialMeta = await page.$eval(
+    ".md-search-result__meta",
+    (element) => element.textContent.trim(),
+  )
+  if (initialMeta === "正在初始化搜索引擎") {
+    await page.waitForFunction(
+      (before) => document.querySelector(".md-search-result__meta")
+        ?.textContent.trim() !== before,
+      { timeout: 60_000 },
+      initialMeta,
+    )
+  }
+  const staleTarget = await page.evaluate((suffix) =>
+    [...document.querySelectorAll("a.md-search-result__link")]
+      .some((link) => new URL(link.href).pathname.endsWith(suffix)), targetSuffix)
+  assert.equal(staleTarget, false, "fresh search page retained a previous target")
+}
+
+async function searchFor(page, origin, query, targetSuffix) {
+  await openFreshSearch(page, origin, targetSuffix)
   const input = await page.$("[data-md-component='search-query']")
   assert.ok(input, "search input is missing")
   await input.evaluate((element, value) => {
     element.value = value
-    element.dispatchEvent(new Event("input", { bubbles: true }))
+    element.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true }))
+  }, query)
+  try {
+    await page.waitForFunction(
+      (value, suffix) => [...document.querySelectorAll("a.md-search-result__link")]
+        .some((link) => {
+          const url = new URL(link.href)
+          return url.pathname.endsWith(suffix)
+            && (url.searchParams.get("h") === value || link.textContent.includes(value))
+        }),
+      { timeout: 60_000 },
+      query,
+      targetSuffix,
+    )
+  } catch (error) {
+    const state = await page.evaluate(async () => {
+      const index = await fetch("/search/search_index.json").then((response) => response.json())
+      return {
+        query: document.querySelector("[data-md-component='search-query']")?.value,
+        meta: document.querySelector(".md-search-result__meta")?.textContent.trim(),
+        results: [...document.querySelectorAll("a.md-search-result__link")]
+          .map((link) => ({ href: link.href, text: link.textContent.trim() })),
+        target: index.docs.find((document) =>
+          document.location.includes("13_megatron_cp_analysis")),
+        config: index.config,
+      }
+    })
+    error.message += `\nsearch state: ${JSON.stringify(state)}`
+    throw error
+  }
+  const candidates = await page.evaluate(() =>
+    [...document.querySelectorAll("a.md-search-result__link")]
+      .map((link) => ({ href: link.href, text: link.textContent.trim() })))
+  const match = candidates.find((result) =>
+    searchResultMatches(result, query, targetSuffix))
+  assert.ok(match?.text, `search for ${query} returned no visible matching result`)
+}
+
+async function assertSearchMiss(page, origin, query, targetSuffix) {
+  await openFreshSearch(page, origin, targetSuffix)
+  const initialMeta = await page.$eval(
+    ".md-search-result__meta",
+    (element) => element.textContent.trim(),
+  )
+  await page.$eval("[data-md-component='search-query']", (element, value) => {
+    element.value = value
+    element.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true }))
   }, query)
   await page.waitForFunction(
-    (suffix) => [...document.querySelectorAll("a.md-search-result__link")]
-      .some((link) => new URL(link.href).pathname.endsWith(suffix)),
+    (value, before) => {
+      const input = document.querySelector("[data-md-component='search-query']")
+      const meta = document.querySelector(".md-search-result__meta")
+      return input?.value === value && meta?.textContent.trim() !== before
+    },
     { timeout: 60_000 },
-    targetSuffix,
+    query,
+    initialMeta,
   )
-  const match = await page.evaluate((suffix) => {
-    const link = [...document.querySelectorAll("a.md-search-result__link")]
-      .find((candidate) => new URL(candidate.href).pathname.endsWith(suffix))
-    return link ? { href: link.href, text: link.textContent.trim() } : null
-  }, targetSuffix)
-  assert.ok(match?.text, `search for ${query} returned no visible matching result`)
+  const targetVisible = await page.evaluate((suffix) =>
+    [...document.querySelectorAll("a.md-search-result__link")]
+      .some((link) => new URL(link.href).pathname.endsWith(suffix)), targetSuffix)
+  assert.equal(targetVisible, false, `impossible search ${query} retained the target`)
+}
+
+export async function assertSearchSurvivesRefresh(puppeteer, executablePath) {
+  const fixture = await mkdtemp(path.join(tmpdir(), "mkdocs-search-refresh-"))
+  const wiki = path.join(fixture, "wiki")
+  const domain = path.join(wiki, "domain")
+  const target = path.join(domain, "13_megatron_cp_analysis.md")
+  const targetSuffix = "/domain/13_megatron_cp_analysis.html"
+  const query = "13_megatron_cp_analysis"
+  const port = await freeLoopbackPort()
+  const origin = `http://127.0.0.1:${port}`
+  let browser
+  let service
+  try {
+    await mkdir(domain, { recursive: true })
+    await writeFile(path.join(wiki, "index.md"), "# Fixture Home\n")
+    await writeFile(path.join(domain, "index.md"), "# Fixture Domain\n")
+    await writeFile(
+      target,
+      "---\ntitle: 上下文并行测试\n---\n# 上下文并行测试\ninitial body\n",
+    )
+    await assert.rejects(
+      access(path.join(fixture, "site")),
+      (error) => error.code === "ENOENT",
+      "fixture site must be absent before cli serve",
+    )
+    service = startSearchFixture(fixture, port)
+    await waitForHttp(`${origin}/`, service)
+    browser = await puppeteer.launch({ executablePath, headless: true })
+    const page = await browser.newPage()
+    await searchFor(page, origin, query, targetSuffix)
+
+    await writeFile(
+      target,
+      "---\ntitle: 上下文并行测试\n---\n# 上下文并行测试\nrefresh marker round two\n",
+    )
+    await waitForBody(
+      `${origin}${targetSuffix}`,
+      "refresh marker round two",
+      service,
+    )
+    await searchFor(page, origin, query, targetSuffix)
+  } catch (error) {
+    error.message += `\n${service?.output.join("").slice(-20_000) ?? ""}`
+    throw error
+  } finally {
+    await closeBrowser(browser).catch(() => undefined)
+    try {
+      if (service) await stopPreview(service)
+      await assertPortReleased(port)
+    } finally {
+      await rm(fixture, { recursive: true, force: true })
+    }
+  }
 }
 
 async function assertHead(url, label) {
@@ -323,11 +519,9 @@ async function assertArticleContracts(page, origin) {
 }
 
 async function assertSearch(page, origin) {
-  await goto(page, `${origin}/`)
-  await page.$eval('label[for="__search"]', (label) => label.click())
-  await page.waitForSelector("[data-md-component='search-query']", { visible: true })
-  await searchFor(page, "上下文并行", articlePath)
-  await searchFor(page, "13_megatron_cp_analysis", articlePath)
+  await searchFor(page, origin, "跨多节点超长序列", articlePath)
+  await assertSearchMiss(page, origin, "__kb_no_matching_document_7f9c__", articlePath)
+  await searchFor(page, origin, "13_megatron_cp_analysis", articlePath)
 }
 
 async function assertRenderers(page, origin) {
@@ -368,6 +562,7 @@ async function assertRenderers(page, origin) {
       const svg = roots[0]
       const blockBox = block.getBoundingClientRect()
       const rootBox = svg?.getBoundingClientRect()
+      const style = svg ? getComputedStyle(svg) : null
       return {
         error: block.dataset.kbMermaidError ?? null,
         roots: roots.length,
@@ -375,22 +570,18 @@ async function assertRenderers(page, origin) {
         description: svg?.getAttribute("aria-roledescription") ?? "",
         viewBox: svg?.getAttribute("viewBox") ?? "",
         children: svg?.childElementCount ?? 0,
-        visible:
-          ((rootBox?.width ?? 0) > 0 && (rootBox?.height ?? 0) > 0)
-          || (blockBox.width > 0 && blockBox.height > 0),
+        rootWidth: rootBox?.width ?? 0,
+        rootHeight: rootBox?.height ?? 0,
+        display: style?.display ?? "",
+        visibility: style?.visibility ?? "",
+        blockWidth: blockBox.width,
+        blockHeight: blockBox.height,
       }
     })
   })
   assert.ok(mermaid.length >= 2, "expected two representative Mermaid blocks")
   assert.ok(
-    mermaid.every((diagram) =>
-      !diagram.error
-      && diagram.roots === 1
-      && diagram.role.includes("graphics-document")
-      && Boolean(diagram.description)
-      && Boolean(diagram.viewBox)
-      && diagram.children > 0
-      && diagram.visible),
+    mermaid.every(mermaidRootContract),
     `Mermaid root contract failed: ${JSON.stringify(mermaid)}`,
   )
 }
@@ -450,9 +641,11 @@ async function closeBrowser(browser) {
 export async function runSmoke() {
   const puppeteer = await loadPuppeteer()
   const executablePath = await findBrowserExecutable()
+  await assertSearchSurvivesRefresh(puppeteer, executablePath)
   const port = await freeLoopbackPort()
   const origin = `http://127.0.0.1:${port}`
   const baseUrl = `${origin}/llm-knowledge`
+  const savedSite = await hideBuiltSite()
   const service = startPreview(port)
   let browser
   const consoleMessages = []
@@ -541,7 +734,7 @@ export async function runSmoke() {
     })
     assert.ok(localRendererRequests.length > 0, "no local MathJax/Mermaid runtime was requested")
     console.log(
-      `[docs:mkdocs:test] PASS: 390/768/1280/1600, search, links, renderers, themes, drawer (${requestUrls.length} requests)`,
+      `[docs:mkdocs:test] PASS: refresh, 390/768/1280/1600, search, links, renderers, themes, drawer (${requestUrls.length} requests)`,
     )
   } catch (error) {
     error.message += `\n${JSON.stringify({
@@ -555,8 +748,12 @@ export async function runSmoke() {
     throw error
   } finally {
     await closeBrowser(browser).catch(() => undefined)
-    await stopPreview(service)
-    await assertPortReleased(port)
+    try {
+      await stopPreview(service)
+      await assertPortReleased(port)
+    } finally {
+      await restoreBuiltSite(savedSite)
+    }
   }
 }
 

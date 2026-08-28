@@ -59,6 +59,14 @@ def _render_page(markdown: str, page: PageRecord, inventory: Inventory) -> str:
         raise ValueError(
             f"{page.relative.as_posix()}: frontmatter key mkdocs_preview is reserved"
         )
+    if not page.is_index:
+        existing_tags = frontmatter.get("tags")
+        tags = list(existing_tags) if isinstance(existing_tags, list) else []
+        if existing_tags is not None and not isinstance(existing_tags, list):
+            tags.append(existing_tags)
+        if page.relative.stem not in tags:
+            tags.append(page.relative.stem)
+        frontmatter["tags"] = tags
     frontmatter["mkdocs_preview"] = {
         "source_path": page.relative.as_posix(),
         "nav_title": page.nav_title,

@@ -1,14 +1,19 @@
 import sys
+import socket
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from tools.mkdocs_site import cli as cli_module
 from tools.mkdocs_site.cli import (
     Operations,
     ServeRuntime,
     _ServeState,
     _refresh_preview,
+    _start_mkdocs,
+    _stop_mkdocs,
+    _wait_for_http,
     main,
 )
 from tools.mkdocs_site.models import BuildPaths
@@ -282,6 +287,76 @@ def test_serve_opens_browser_only_for_initial_readiness(
     assert [event[0] for event in events].count("ready") == 2
 
 
+@pytest.mark.parametrize("failure_position", [1, 2, 3])
+def test_refresh_stash_copy_failure_keeps_all_outputs_and_restarts_previous_server(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_position: int,
+) -> None:
+    paths = BuildPaths.from_repo(tmp_path / "repo")
+    paths.wiki.mkdir(parents=True)
+    paths.staging.mkdir(parents=True)
+    (paths.staging / "old.md").write_text("old stage", encoding="utf-8")
+    routes = paths.cache / "routes.json"
+    routes.write_text("old routes", encoding="utf-8")
+    paths.generated_config.write_text("old config", encoding="utf-8")
+    old_child = SimpleNamespace(pid=1, returncode=None)
+    old_child.poll = lambda: old_child.returncode
+    recovery = SimpleNamespace(pid=2, returncode=None)
+    recovery.poll = lambda: recovery.returncode
+    state = _ServeState(old_child)
+    events: list[tuple[object, ...]] = []
+    copy_calls = 0
+    real_copytree = cli_module.shutil.copytree
+    real_copy2 = cli_module.shutil.copy2
+
+    def fail_at_position(copy_function):
+        def wrapped(source, destination, *args, **kwargs):
+            nonlocal copy_calls
+            copy_calls += 1
+            if copy_calls == failure_position:
+                raise OSError(f"backup copy {failure_position} failed")
+            return copy_function(source, destination, *args, **kwargs)
+
+        return wrapped
+
+    monkeypatch.setattr(
+        cli_module.shutil, "copytree", fail_at_position(real_copytree)
+    )
+    monkeypatch.setattr(cli_module.shutil, "copy2", fail_at_position(real_copy2))
+    operations = Operations(
+        lambda _wiki: (_ for _ in ()).throw(
+            AssertionError("inventory must not run after backup failure")
+        ),
+        lambda _paths, _inventory: (_ for _ in ()).throw(AssertionError()),
+        lambda _paths, _inventory, _stage: (_ for _ in ()).throw(AssertionError()),
+        lambda _command, _cwd: 0,
+        lambda _site, _inventory: None,
+        lambda _site, _manifest: ValidationReport(0, (), (), (), (), ()),
+    )
+    runtime = ServeRuntime(
+        lambda _port: None,
+        lambda command, _cwd: events.append(("start", command)) or recovery,
+        lambda url, child: events.append(("ready", url, child.pid)),
+        lambda _url: None,
+        lambda _wiki, _callback, _stop: None,
+        lambda child: events.append(("stop", child.pid)),
+    )
+
+    with pytest.raises(
+        OSError, match=f"backup copy {failure_position} failed"
+    ):
+        _refresh_preview(paths, operations, runtime, state, 8123)
+
+    assert copy_calls == failure_position
+    assert state.child is recovery
+    assert (paths.staging / "old.md").read_text(encoding="utf-8") == "old stage"
+    assert routes.read_text(encoding="utf-8") == "old routes"
+    assert paths.generated_config.read_text(encoding="utf-8") == "old config"
+    assert [event[0] for event in events] == ["stop", "start", "ready"]
+    assert not list(paths.cache.glob(".serve-backup-*"))
+
+
 def test_refresh_config_failure_restores_working_outputs_and_restarts(
     tmp_path: Path,
 ) -> None:
@@ -300,6 +375,7 @@ def test_refresh_config_failure_restores_working_outputs_and_restarts(
     events: list[tuple[object, ...]] = []
 
     def stage(_paths: BuildPaths, _inventory: object) -> StageResult:
+        cli_module.shutil.rmtree(paths.staging)
         paths.staging.mkdir(parents=True)
         (paths.staging / "new.md").write_text("new stage", encoding="utf-8")
         routes.write_text("new routes", encoding="utf-8")
@@ -338,6 +414,90 @@ def test_refresh_config_failure_restores_working_outputs_and_restarts(
     assert not list(paths.cache.glob(".serve-backup-*"))
 
 
+def test_refresh_stops_unready_recovery_and_keeps_backup_for_diagnostics(
+    tmp_path: Path,
+) -> None:
+    paths = BuildPaths.from_repo(tmp_path / "repo")
+    paths.wiki.mkdir(parents=True)
+    paths.staging.mkdir(parents=True)
+    (paths.staging / "old.md").write_text("old stage", encoding="utf-8")
+    routes = paths.cache / "routes.json"
+    routes.write_text("old routes", encoding="utf-8")
+    paths.generated_config.write_text("old config", encoding="utf-8")
+    old_child = SimpleNamespace(pid=1, returncode=None)
+    old_child.poll = lambda: old_child.returncode
+    state = _ServeState(old_child)
+    recovery_children = []
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = int(listener.getsockname()[1])
+
+    def start_recovery(_command: list[str], cwd: Path):
+        child = _start_mkdocs(
+            [
+                sys.executable,
+                "-m",
+                "http.server",
+                str(port),
+                "--bind",
+                "127.0.0.1",
+            ],
+            cwd,
+        )
+        recovery_children.append(child)
+        return child
+
+    def fail_readiness(url: str, child) -> None:
+        _wait_for_http(url, child, timeout=10.0)
+        raise TimeoutError("recovery readiness failed")
+
+    operations = Operations(
+        lambda _wiki: (_ for _ in ()).throw(RuntimeError("conversion failed")),
+        lambda _paths, _inventory: (_ for _ in ()).throw(AssertionError()),
+        lambda _paths, _inventory, _stage: (_ for _ in ()).throw(AssertionError()),
+        lambda _command, _cwd: 0,
+        lambda _site, _inventory: None,
+        lambda _site, _manifest: ValidationReport(0, (), (), (), (), ()),
+    )
+
+    def stop(child) -> None:
+        if child is not old_child:
+            _stop_mkdocs(child)
+
+    runtime = ServeRuntime(
+        lambda _port: None,
+        start_recovery,
+        fail_readiness,
+        lambda _url: None,
+        lambda _wiki, _callback, _stop: None,
+        stop,
+    )
+
+    try:
+        with pytest.raises(
+            RuntimeError, match="previous server could not restart"
+        ):
+            _refresh_preview(paths, operations, runtime, state, port)
+
+        recovery = recovery_children[0]
+        stopped = recovery.poll() is not None
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+                listener.bind(("127.0.0.1", port))
+            port_rebound = True
+        except OSError:
+            port_rebound = False
+        assert (stopped, port_rebound) == (True, True)
+        assert state.child is old_child
+        assert (paths.staging / "old.md").read_text(encoding="utf-8") == "old stage"
+        assert routes.read_text(encoding="utf-8") == "old routes"
+        assert paths.generated_config.read_text(encoding="utf-8") == "old config"
+        assert len(list(paths.cache.glob(".serve-backup-*"))) == 1
+    finally:
+        for child in recovery_children:
+            _stop_mkdocs(child)
+
+
 def test_refresh_success_activates_new_outputs_before_readiness(tmp_path: Path) -> None:
     paths = BuildPaths.from_repo(tmp_path / "repo")
     paths.wiki.mkdir(parents=True)
@@ -355,6 +515,7 @@ def test_refresh_success_activates_new_outputs_before_readiness(tmp_path: Path) 
 
     def stage(_paths: BuildPaths, _inventory: object) -> StageResult:
         events.append("stage")
+        cli_module.shutil.rmtree(paths.staging)
         paths.staging.mkdir(parents=True)
         (paths.staging / "new.md").write_text("new", encoding="utf-8")
         routes.write_text("new", encoding="utf-8")

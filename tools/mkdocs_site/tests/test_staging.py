@@ -55,6 +55,7 @@ def test_stage_wiki_preserves_frontmatter_and_writes_routes(
     frontmatter = yaml.safe_load(staged.split("---", 2)[1])
     assert frontmatter == {
         "title": "上下文并行",
+        "tags": ["10_article"],
         "mkdocs_preview": {
             "source_path": "domain/10_article.md",
             "nav_title": "10_article",
@@ -67,6 +68,52 @@ def test_stage_wiki_preserves_frontmatter_and_writes_routes(
     assert result.asset_count == 1
     assert result.route_manifest == paths.cache / "routes.json"
     assert len(json.loads(result.route_manifest.read_text(encoding="utf-8"))) == 3
+
+
+def test_stage_wiki_preserves_existing_tags_and_appends_filename_stem(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    repo = tmp_path / "repo"
+    shutil.copytree(fixture_wiki, repo / "wiki")
+    article = repo / "wiki/domain/10_article.md"
+    article.write_text(
+        article.read_text(encoding="utf-8").replace(
+            "title: 上下文并行\n",
+            "title: 上下文并行\ntags:\n  - distributed\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    paths = BuildPaths.from_repo(repo)
+
+    stage_wiki(paths, scan_inventory(paths.wiki))
+
+    staged = (paths.staging / "domain/10_article.md").read_text(encoding="utf-8")
+    frontmatter = yaml.safe_load(staged.split("---", 2)[1])
+    assert frontmatter["tags"] == ["distributed", "10_article"]
+
+
+def test_stage_wiki_does_not_duplicate_existing_filename_tag(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    repo = tmp_path / "repo"
+    shutil.copytree(fixture_wiki, repo / "wiki")
+    article = repo / "wiki/domain/10_article.md"
+    article.write_text(
+        article.read_text(encoding="utf-8").replace(
+            "title: 上下文并行\n",
+            "title: 上下文并行\ntags:\n  - 10_article\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    paths = BuildPaths.from_repo(repo)
+
+    stage_wiki(paths, scan_inventory(paths.wiki))
+
+    staged = (paths.staging / "domain/10_article.md").read_text(encoding="utf-8")
+    frontmatter = yaml.safe_load(staged.split("---", 2)[1])
+    assert frontmatter["tags"] == ["10_article"]
 
 
 def test_stage_wiki_copies_complete_local_renderer_runtime(

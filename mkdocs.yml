@@ -39,6 +39,7 @@ plugins:
       lang:
         - zh
         - en
+      pipeline: []
 markdown_extensions:
   - admonition
   - attr_list

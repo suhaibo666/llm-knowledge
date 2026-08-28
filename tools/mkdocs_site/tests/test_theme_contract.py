@@ -149,6 +149,24 @@ def test_search_ui_keeps_ctrl_k_hint_without_unsafe_share_href(
     assert not home.select("[href^='javascript:']")
 
 
+def test_native_search_index_keeps_chinese_title_and_filename_tag(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    site, _ = build_fixture_site(tmp_path, fixture_wiki)
+    payload = json.loads(
+        (site / "search/search_index.json").read_text(encoding="utf-8")
+    )
+    article = next(
+        document
+        for document in payload["docs"]
+        if document["location"] == "domain/10_article.html"
+    )
+
+    assert payload["config"]["pipeline"] == []
+    assert article["title"] == "上下文并行"
+    assert article["tags"] == ["10_article"]
+
+
 def test_search_rewrite_keeps_chinese_title_and_indexes_filename_once(
     tmp_path: Path, fixture_wiki: Path
 ) -> None:
