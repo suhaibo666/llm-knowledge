@@ -39,6 +39,31 @@ export function diagnosticSearchIndexUrl(origin) {
   return `${origin.replace(/\/$/, "")}/search/search_index.json`
 }
 
+function errorChain(error) {
+  const details = []
+  let current = error
+  for (let depth = 0; current && depth < 4; depth += 1) {
+    details.push(Object.fromEntries(
+      ["name", "message", "code", "errno", "syscall", "address", "port"]
+        .flatMap((key) => current[key] === undefined ? [] : [[key, current[key]]]),
+    ))
+    current = current.cause
+  }
+  return details
+}
+
+export async function fetchWithContext(url, options = {}, implementation = fetch) {
+  try {
+    return await implementation(url, options)
+  } catch (error) {
+    const method = options.method || "GET"
+    throw new Error(
+      `fetch ${method} ${url} failed: ${JSON.stringify(errorChain(error))}`,
+      { cause: error },
+    )
+  }
+}
+
 export function mermaidRootContract(diagram) {
   return !diagram.error
     && diagram.roots === 1
@@ -141,6 +166,11 @@ function startPythonService(args) {
   const child = spawn(python, args, {
     cwd: repoRoot,
     detached: true,
+    env: {
+      ...process.env,
+      PYTHONIOENCODING: "utf-8",
+      PYTHONUNBUFFERED: "1",
+    },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   })
@@ -227,7 +257,7 @@ async function waitForHttp(url, service, timeoutMs = 120_000) {
       throw new Error(`preview exited before readiness: ${JSON.stringify(outcome)}`)
     }
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithContext(url, {
         cache: "no-store",
         redirect: "manual",
         signal: AbortSignal.timeout(2_000),
@@ -436,7 +466,8 @@ export async function assertSearchSurvivesRefresh(puppeteer, executablePath) {
 }
 
 async function assertHead(url, label) {
-  const response = await fetch(url.split("#", 1)[0], {
+  const target = url.split("#", 1)[0]
+  const response = await fetchWithContext(target, {
     method: "HEAD",
     redirect: "manual",
     signal: AbortSignal.timeout(5_000),
@@ -741,14 +772,20 @@ export async function runSmoke() {
       `[docs:mkdocs:test] PASS: refresh, 390/768/1280/1600, search, links, renderers, themes, drawer (${requestUrls.length} requests)`,
     )
   } catch (error) {
-    error.message += `\n${JSON.stringify({
+    error.smokeDiagnostics = JSON.stringify({
       consoleMessages,
       pageErrors,
       failedRequests,
       failedResponses,
       externalRequests,
+      previewProcess: {
+        pid: service.child.pid,
+        exitCode: service.child.exitCode,
+        signalCode: service.child.signalCode,
+        killed: service.child.killed,
+      },
       previewOutput: service.output.join("").slice(-20_000),
-    }, null, 2)}`
+    }, null, 2)
     throw error
   } finally {
     await closeBrowser(browser).catch(() => undefined)
@@ -763,7 +800,10 @@ export async function runSmoke() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(scriptFile)) {
   runSmoke().catch((error) => {
-    console.error(`[docs:mkdocs:test] ${error.stack ?? error.message}`)
+    console.error(
+      `[docs:mkdocs:test] ${error.stack ?? error.message}`
+      + (error.smokeDiagnostics ? `\nsmoke diagnostics:\n${error.smokeDiagnostics}` : ""),
+    )
     process.exitCode = 1
   })
 }

@@ -20,10 +20,11 @@ from tools.mkdocs_site.staging import stage_wiki
 REPO = Path(__file__).resolve().parents[3]
 RENDERER_CONTRACT_BODY = r"""
 
-$$
-\boldsymbol{\theta} \in \mathbb{R}^{d \times k}, \qquad
-\mathcal{L}(\boldsymbol{\theta}) = \sum_{i=1}^{n} \left\lVert x_i - \boldsymbol{\theta} \right\rVert_2^2
-$$
+> [!note] Blockquoted display math must stay in the corpus gate
+> $$
+> \boldsymbol{\theta} \in \mathbb{R}^{d \times k}, \qquad
+> \mathcal{L}(\boldsymbol{\theta}) = \sum_{i=1}^{n} \left\lVert x_i - \boldsymbol{\theta} \right\rVert_2^2
+> $$
 
 ```mermaid
 flowchart LR
@@ -247,6 +248,24 @@ def _run_renderer_contract(
     )
 
 
+def _run_mathjax_corpus(repo: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            "node",
+            str(REPO / "tools/mkdocs-site/mathjax-corpus.mjs"),
+            "--repo-root",
+            str(repo),
+        ],
+        cwd=REPO,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+
+
 def test_renderer_contract_fails_fast_without_owned_puppeteer(tmp_path: Path) -> None:
     isolated_repo = tmp_path / "isolated-repo"
     isolated_tests = isolated_repo / "tools/mkdocs_site/tests"
@@ -319,7 +338,26 @@ def test_renderer_runtime_in_browser_at_root_and_project_subpath(
         "/",
         "/llm-knowledge/",
     ]
-    assert all(case["math"] > 0 for case in result["cases"])
+    assert [case["math"] for case in result["cases"]] == [1, 1]
+
+
+def test_mathjax_corpus_discovers_and_renders_blockquoted_display_math(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    site, _ = build_fixture_site(
+        tmp_path, fixture_wiki, renderer_contract=True
+    )
+    article = BeautifulSoup(
+        (site / "domain/10_article.html").read_text(encoding="utf-8"),
+        "html.parser",
+    )
+    assert not article.select(".arithmatex")
+    assert "$$" in article.get_text()
+
+    completed = _run_mathjax_corpus(site.parent)
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "PASS: 1 formulas across 1 pages" in completed.stdout
 
 
 def test_mkdocs_aggregate_runs_mathjax_corpus_gate() -> None:

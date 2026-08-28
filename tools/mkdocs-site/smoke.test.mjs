@@ -3,6 +3,7 @@ import test from "node:test"
 
 import {
   diagnosticSearchIndexUrl,
+  fetchWithContext,
   mermaidRootContract,
   rootMermaidSvgs,
   searchResultMatches,
@@ -76,5 +77,31 @@ test("search diagnostics preserve root and project base paths", () => {
   assert.equal(
     diagnosticSearchIndexUrl("http://127.0.0.1:8000/llm-knowledge"),
     "http://127.0.0.1:8000/llm-knowledge/search/search_index.json",
+  )
+})
+
+
+test("direct fetch failures report method, URL, and nested socket cause", async () => {
+  const cause = Object.assign(new Error("socket reset by peer"), {
+    code: "ECONNRESET",
+    syscall: "read",
+    address: "127.0.0.1",
+    port: 8123,
+  })
+  const failure = new TypeError("fetch failed", { cause })
+
+  await assert.rejects(
+    fetchWithContext(
+      "http://127.0.0.1:8123/article.html",
+      { method: "HEAD" },
+      async () => { throw failure },
+    ),
+    (error) => {
+      assert.match(error.stack, /fetchWithContext/)
+      assert.match(error.message, /fetch HEAD http:\/\/127\.0\.0\.1:8123\/article\.html failed/)
+      assert.match(error.message, /ECONNRESET/)
+      assert.match(error.message, /socket reset by peer/)
+      return true
+    },
   )
 })
