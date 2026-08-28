@@ -4,7 +4,9 @@ title: "Megatron Nonuniform Tensor Parallelism (NTP) 深度分析"
 
 # Megatron Nonuniform Tensor Parallelism (NTP) 深度分析
 
-> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）；本页原仅声明分支/未声明基线，经核对 9 处引用行号在此 commit 命中后补钉（`megatron/core/distributed/nonuniform_tp.py` 在 `232c478d4` 处内容完全一致，两基线均命中，取与同批页面一致的 `ee3f1ff`）。
+> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。NTP 是本轮最稳定的一页——`megatron/core/distributed/nonuniform_tp.py` 在这 578 个提交里几乎未动：`git diff ee3f1ffa..71092579` 只有一处 3 删 1 增（`:946-952`，`get_data_and_context_parallel_group(with_context_parallel=True)` 收敛为 `get_data_parallel_group(with_context_parallel=True)`），文件长度 1463 → 1461 行。因此 `:946` 之前的引用行号**全部原样命中**，只有其后的反向 hook 整体上移 2 行。
+> **基线沿革**：本页原仅声明分支/未声明基线；2026-08-27 经核对 9 处引用行号在 `ee3f1ffa…` 命中后补钉（该文件在 `232c478d4` 处内容亦完全一致，两基线均命中）；2026-08-28 统一推进到 `71092579`。
 
 **Date**: 2026-05-20
 **Status**: Complete
@@ -83,8 +85,8 @@ ntp_map(module, ntp_config, num_shards)  # num_shards = num_attention_heads 或 
 
 `ntp_map` **只设置元数据，不动参数数据**：
 ```python
-param.send_splits = send_splits   # line 662
-param.recv_splits = recv_splits   # line 663
+param.send_splits = send_splits   # megatron/core/distributed/nonuniform_tp.py:662
+param.recv_splits = recv_splits   # megatron/core/distributed/nonuniform_tp.py:663
 ```
 
 Reduced（unhealthy）rank 跳过 ntp_map——它们直接按新的 reduced TP size 同步，不需要 resharding。
@@ -114,7 +116,7 @@ sequenceDiagram
     Extra->>Extra: 接收属于自己的梯度
 ```
 
-**Step 1** 在 backward hook 中触发（`megatron/core/distributed/nonuniform_tp.py:1386-1458`）：
+**Step 1** 在 backward hook 中触发（`megatron/core/distributed/nonuniform_tp.py:1384-1459`，即 `def ntp_hook` 整体；较旧基线上移 2 行）：
 - Core rank：接收 spare rank 的梯度 → 写入 `side_grad`
 - Spare rank：将 `main_grad` 按 `send_splits` 发给对应 core rank
 - 使用 `_ntp_all_to_all`（封装 `dist.all_to_all`，处理非连续 tensor）
@@ -184,8 +186,8 @@ NTP 是**完全 opt-in、non-intrusive** 的设计：
 
 | 模块 | NTP 引用？ | 说明 |
 |------|-----------|------|
-| `megatron/core/distributed/nonuniform_tp.py` | ✅ | 核心实现（~1460 lines） |
-| `megatron/core/extensions/nonuniform_tp_transformer_engine.py` | ✅ | TE 适配（~158 lines） |
+| `megatron/core/distributed/nonuniform_tp.py` | ✅ | 核心实现（1461 lines） |
+| `megatron/core/extensions/nonuniform_tp_transformer_engine.py` | ✅ | TE 适配（157 lines） |
 | `pretrain_gpt.py` | ❌ | 无引用 |
 | `megatron/training/checkpointing.py` | ❌ | 无引用 |
 | `megatron/core/optimizer/distrib_optimizer.py` | ❌ | 无引用 |

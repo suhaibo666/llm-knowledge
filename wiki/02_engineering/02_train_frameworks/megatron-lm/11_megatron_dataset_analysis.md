@@ -4,8 +4,9 @@ title: "Megatron-LM 数据集深度解析:原始 GPT 数据集与序列打包"
 
 # Megatron-LM 数据集深度解析:原始 GPT 数据集与序列打包
 
-> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）
-> 核心文件:`megatron/core/datasets/` 下 `megatron/core/datasets/gpt_dataset.py`(907 行)、`megatron/core/datasets/indexed_dataset.py`、`megatron/core/datasets/blended_dataset.py`、`megatron/core/datasets/blended_megatron_dataset_builder.py`、`megatron/core/datasets/data_schedule.py`(954 行);`megatron/core/packed_seq_params.py`
+> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
+> 核心文件:`megatron/core/datasets/` 下 `megatron/core/datasets/gpt_dataset.py`(984 行)、`megatron/core/datasets/indexed_dataset.py`、`megatron/core/datasets/blended_dataset.py`、`megatron/core/datasets/blended_megatron_dataset_builder.py`、`megatron/core/datasets/data_schedule.py`(1166 行);`megatron/core/packed_seq_params.py`
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md` §6.1(混合 CP 动态调度)、`13_megatron_cp_analysis.md`
 > 范围:**只讲 LLM(GPT)路径**。`megatron/core/datasets/bert_dataset.py` / `megatron/core/datasets/t5_dataset.py` / `megatron/core/datasets/masked_dataset.py` / `megatron/core/datasets/multimodal_dataset.py` 不展开。
 
@@ -41,9 +42,9 @@ xxx.idx   元数据:每条 sequence 的元素数、字节偏移指针;
 
 ## 2. 原始 GPT 数据集(`GPTDataset`)
 
-`megatron/core/datasets/gpt_dataset.py:104`。经典 LLM 预训练数据集。
+`megatron/core/datasets/gpt_dataset.py:127`。经典 LLM 预训练数据集。
 
-### 2.1 三个索引(`_build_document_sample_shuffle_indices`,`:384`)
+### 2.1 三个索引(`_build_document_sample_shuffle_indices`,`:461`)
 
 `GPTDataset` 的核心是预先构建三层索引,把"定长样本 → 原始 doc 里的 token"映射建好:
 
@@ -58,9 +59,9 @@ xxx.idx   元数据:每条 sequence 的元素数、字节偏移指针;
 ③ shuffle index    1-D。sample index 下标的随机排列(打乱样本喂入顺序)。
 ```
 
-三个索引算一次后存盘成 `.npy`(`path_to_cache`),后续 **mmap 懒加载**(`:312`),重启训练不重算。`unique_description_hash` 作 key —— 配置变了缓存自动失效。
+三个索引算一次后存盘成 `.npy`(`path_to_cache`),后续 **mmap 懒加载**(`:386`),重启训练不重算。`unique_description_hash` 作 key —— 配置变了缓存自动失效。
 
-### 2.2 `__getitem__` 取样(`:228`)
+### 2.2 `__getitem__` 取样(`:251`)
 
 ```
 idx ──shuffle index──► 打乱后的样本号
@@ -85,7 +86,7 @@ _get_ltor_masks_and_position_ids() ──► 因果 mask、loss_mask、position_
 
 开了 reset,一个定长样本里的多个 doc 在数值上等价于独立序列 —— 这其实已经是"打包"的雏形,只是 doc 仍可能被切断。
 
-> `_get_ltor_masks_and_position_ids`(`:709`):`create_attention_mask` 为 False 时**不显式建 `[s,s]` mask**(交给 FlashAttention 等内核隐式处理因果性),省一大块激活。
+> `_get_ltor_masks_and_position_ids`(`:786`):`create_attention_mask` 为 False 时**不显式建 `[s,s]` mask**(交给 FlashAttention 等内核隐式处理因果性),省一大块激活。
 
 ### 2.4 Blending —— 多源混合(`BlendedDataset`)
 
@@ -119,9 +120,9 @@ PackedSeqParams:
   qkv_format   = 'thd'              T(总token)·H(头)·D(头维),无独立 batch 维
 ```
 
-`seq_idx` 由 `__post_init__` 从 `cu_seqlens` 自动算出(`megatron/core/packed_seq_params.py:28`,用 `repeat_interleave`),供 Mamba mixer 和 CUDA Graph 用。attention 内核(TE)凭 `cu_seqlens` 让**每条子序列只 attend 自己** —— 等价于 N 条独立序列,但只跑一个 kernel、零 padding 浪费(除尾部)。
+`seq_idx` 由 `__post_init__` 从 `cu_seqlens` 自动算出(`megatron/core/packed_seq_params.py:41`,用 `repeat_interleave`),供 Mamba mixer 和 CUDA Graph 用。attention 内核(TE)凭 `cu_seqlens` 让**每条子序列只 attend 自己** —— 等价于 N 条独立序列,但只跑一个 kernel、零 padding 浪费(除尾部)。
 
-> [!update] 2026-06-16 · dev@232c478d4:**GDN 现也支持序列打包(THD)**(#2645,`megatron/core/ssm/gated_delta_net.py:340+`)。此前 GDN 遇到 `packed_seq_params` 直接 `NotImplementedError`;现在 `qkv_format=='thd'` 时按 `cu_seqlens` 把打包 buffer 拆成各子序列、**逐条**做 CP↔HP all-to-all 再 chunk 扫描(要求 `batch==1`、非 deterministic)。即:`cu_seqlens` 这套打包元数据不止给 attention/Mamba,GDN 线性注意力也消费它(详见 `10_megatron_model_structure_analysis.md` §7)。
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。**GDN 现也支持序列打包(THD)**(#2645，现在 `megatron/core/ssm/gated_delta_net/gdn.py:189+`；原单文件 `megatron/core/ssm/gated_delta_net.py` 已被 #6088（cherry-pick #5843）拆成 `megatron/core/ssm/gated_delta_net/` 包，THD 分支现落在 `megatron/core/ssm/gated_delta_net/gdn.py`）。此前 GDN 遇到 `packed_seq_params` 直接 `NotImplementedError`;现在 `qkv_format=='thd'` 时按 `cu_seqlens` 把打包 buffer 拆成各子序列、**逐条**做 CP↔HP all-to-all 再 chunk 扫描(要求 `batch==1`、非 deterministic)。即:`cu_seqlens` 这套打包元数据不止给 attention/Mamba,GDN 线性注意力也消费它(详见 `10_megatron_model_structure_analysis.md` §7)。
 
 与 §2.3 GPTDataset 的对比:GPTDataset **切断 doc**、靠 EOD + `reset_attention_mask` 隔离;packed dataset **不切断**、靠 `cu_seqlens` + THD 格式隔离。后者保住了样本完整性。
 
@@ -133,18 +134,20 @@ PackedSeqParams:
 - `PackedSeqParams` 里的 `cp_group` / `local_cp_size` —— 打包**与 CP 协同**:一条打包子序列还能再被 CP 切到多卡(`get_cp_slice_for_thd`)。
 - 产出对齐到 PP 组的数据迭代器(`broadcast_to_pp_group`、`create_data_iterator`)。
 
+> [!deprecated] 上面最后一条里的 `broadcast_to_pp_group` 在基线 `71092579` 下已不存在（全仓库符号零命中；由 #4226 “Minor improvements for Dynamic-cp” 从 `megatron/core/datasets/data_schedule_utils.py` 删除）。新基线改成**不再做 PP 组广播**：打包模式下 `is_dataset_built_on_rank` 对每个 PP stage 的 TP-0 rank 都返回 True，各 stage 自行取数，只在 TP 组内广播（`megatron/core/datasets/data_schedule.py:245-246` 的源码注释、`:382` 的 `broadcast_scalars`、`:808-816` 的 `broadcast_tensor`）。该描述对应旧基线 `ee3f1ffa…`；同句里的 `create_data_iterator` 仍存在。
+
 所以，packed dataset 不只是“打包数据”，而是一套由**打包、变长 CP 负载均衡和 microbatch 调度**组成的完整方案，用于支撑 SFT、长文档、RL 等变长场景。
 
 > **打包与动态 CP 的统一流水线**(`DefaultDynamicCPScheduler` 如何作为打包调度器的子类把二者缝在一起)见专文 `29_megatron_packed_dataset_dynamic_cp_analysis.md`。
 
 ### 3.4 NEW:`VarlenDataset` 独立入口 + get_batch 统一
 
-> [!update] 2026-06-16 · dev@232c478d4
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
 > ee3f1ff 之后,显式打包(SFT/变长)多了一条**独立数据集入口**,并统一了下游取数路径:
 >
 > - **`VarlenDataset`**(`--use-varlen-dataset`,`megatron/training/datasets/varlen_dataset.py`,#4832):面向 SFT 风格**变长指令数据**的 THD 打包数据集,继承 `SFTDataset` 家族但与 `--sft` 标志**解耦**(不再隐式耦合)。支持多源加载(HuggingFace Hub repo / 本地 `.parquet` / `.jsonl`),并按列名**自动识别四种 schema**:`openai-messages`(`messages`)、`sharegpt`(`conversations`)、`alpaca/dolly`(`instruction|prompt...`+`output|response...`)、`pretrain-text`(`text`,返回裸串无角色掩码);配套 `MockVarlenDataset`(`varlen_mock_dataset_config_json`,与 SFT mock 同 schema 但独立)。`varlen_sbhd_validation` 提供一个 SBHD 参考路径,跳过打包、用于 THD 数值正确性校验。
-> - **每 index 直接吐一条子样本**:不同于 `SFTDataset`(一条样本里 `cu_seqlens` 拼了多条子序列),`VarlenDataset` 每个样本已是单条、自带 `padded_seq_len`。于是打包流水线第④步前的 `_unpack_batch`(`megatron/core/datasets/data_schedule_utils.py:48`)现支持**两种输入**:预打包(切开 `cu_seqlens`)与已拆开(只归一 batch 维、缺 `original_seq_len` 时从 `padded_seq_len` 补)。
-> - **get_batch 统一 + SFT THD 支持 PP**(#4103):原先散落 `megatron/training/utils.py` 的取数逻辑收敛进 `megatron/core/utils.py`,按场景拆成 `get_batch_on_this_tp_rank`(`:1992`,长度前缀协议广播 `cu_seqlens`、动态 CP 的 `local_cp_size`)、`get_sft_batch_on_this_cp_rank`(`:2269`)、`get_pretrain_batch_on_this_cp_rank`(`:2321`)、`get_thd_batch_on_this_cp_rank`(`:2439`)。**关键能力:SFT 的 THD 打包现可与 PP 共用**(PP 中间 stage 经 broadcast 拿到打包元数据)。
+> - **每 index 直接吐一条子样本**:不同于 `SFTDataset`(一条样本里 `cu_seqlens` 拼了多条子序列),`VarlenDataset` 每个样本已是单条、自带 `padded_seq_len`。于是打包流水线第④步前的 `_unpack_batch`(`megatron/core/datasets/data_schedule_utils.py:105`)现支持**两种输入**:预打包(切开 `cu_seqlens`)与已拆开(只归一 batch 维、缺 `original_seq_len` 时从 `padded_seq_len` 补)。
+> - **get_batch 统一 + SFT THD 支持 PP**(#4103):原先散落 `megatron/training/utils.py` 的取数逻辑收敛进 `megatron/core/utils.py`,按场景拆成 `get_batch_on_this_tp_rank`(`:2052`,长度前缀协议广播 `cu_seqlens`、动态 CP 的 `local_cp_size`)、`get_sft_batch_on_this_cp_rank`（#5403 后更名为 `_get_batch_on_this_cp_rank_per_document_balancing`，`:2339`）、`get_pretrain_batch_on_this_cp_rank`（#5403 后更名为 `_get_batch_on_this_cp_rank_per_sequence_balancing`，`:2389`；两者现由新增的分发器 `get_batch_on_this_cp_rank`（`:2545`）统一调用）、`get_thd_batch_on_this_cp_rank`(`:2608`)。**关键能力:SFT 的 THD 打包现可与 PP 共用**(PP 中间 stage 经 broadcast 拿到打包元数据)。
 
 ---
 
@@ -173,7 +176,7 @@ PackedSeqParams:
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。本文只覆盖 GPT/LLM 路径;BERT/T5/多模态数据集见 `megatron/core/datasets/bert_dataset.py` / `megatron/core/datasets/t5_dataset.py` / `megatron/core/datasets/multimodal_dataset.py`。配套文档:`15_megatron_pp_schedulers_analysis.md` §6.1、`13_megatron_cp_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `71092579`（2026-08-27）。源码行号以该 commit 为准；2026-08-28 由 `ee3f1ff` 重定基线。本文只覆盖 GPT/LLM 路径;BERT/T5/多模态数据集见 `megatron/core/datasets/bert_dataset.py` / `megatron/core/datasets/t5_dataset.py` / `megatron/core/datasets/multimodal_dataset.py`。配套文档:`15_megatron_pp_schedulers_analysis.md` §6.1、`13_megatron_cp_analysis.md`。*
 
 ## Related Pages
 

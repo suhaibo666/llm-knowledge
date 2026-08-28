@@ -4,8 +4,9 @@ title: "Megatron-LM 分布式 Checkpoint 深度解析(Distributed Checkpointing)
 
 # Megatron-LM 分布式 Checkpoint 深度解析(Distributed Checkpointing)
 
-> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）
-> 核心文件:`megatron/core/dist_checkpointing/` 下 `megatron/core/dist_checkpointing/mapping.py`(`ShardedTensor`)、`megatron/core/dist_checkpointing/serialization.py`(`save`/`load`)、`strategies/`、`megatron/core/dist_checkpointing/validation.py`
+> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
+> 核心文件:`megatron/core/dist_checkpointing/` 下 `megatron/core/dist_checkpointing/mapping.py`(`ShardedTensor`)、`megatron/core/dist_checkpointing/serialization.py`(`save`/`load`)、`megatron/core/dist_checkpointing/strategies/`、`megatron/core/dist_checkpointing/validation.py`
 > 配套阅读:`17_megatron_parallelism_orchestration_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §3(resharding)
 > 定位:模型/优化器状态如何**存盘与读取**。
 
@@ -90,7 +91,7 @@ class ShardedTensor(ShardedBase):
 
 ## 5. `save` / `load` 流程
 
-### 5.1 `save`(`megatron/core/dist_checkpointing/serialization.py:300`)
+### 5.1 `save`(`megatron/core/dist_checkpointing/serialization.py:332`)
 
 ```
 save(sharded_state_dict, checkpoint_dir, ...):
@@ -104,9 +105,9 @@ save(sharded_state_dict, checkpoint_dir, ...):
 ```
 
 - 步骤⑥可**异步**(`async_sharded_save=True`)—— 返回一个 `AsyncRequest`,真正写盘在后台跑,训练继续;此时⑦作为完成回调,**整档写完才落 metadata.json**(保证 checkpoint 原子性)。
-- `validate_access_integrity` 触发 §7 的校验。
+- `validate_access_integrity`（`megatron/core/dist_checkpointing/serialization.py:336` 的开关参数）触发 §7 的校验；真正执行校验的是 `validate_sharding_integrity`（`megatron/core/dist_checkpointing/validation.py:369`）。
 
-### 5.2 `load`(`megatron/core/dist_checkpointing/serialization.py:54`)
+### 5.2 `load`(`megatron/core/dist_checkpointing/serialization.py:62`)
 
 逆过程:每张卡用**当前(可能是新的)并行布局**生成自己的 `sharded_state_dict`(只填 metadata、`data=None`),`load` 据此从 checkpoint 里读出对应的全局张量切片,填回 `data`。**这一步就是"换并行布局加载"发生的地方** —— 新布局的 `global_offset`/`local_shape` 决定读哪一段。
 
@@ -133,7 +134,7 @@ save(sharded_state_dict, checkpoint_dir, ...):
 
 ## 7. 校验(`megatron/core/dist_checkpointing/validation.py`)
 
-`validate_access_integrity` 检查 `sharded_state_dict` 的**完整性与一致性**:把所有 rank 的 `ShardedTensor` 元数据汇总,验证每个全局张量 ——
+`validate_access_integrity` 开关（实际执行者是 `validate_sharding_integrity`，`megatron/core/dist_checkpointing/validation.py:369`；每个 key 的具体校验在 `:412` 的 `_validate_sharding_for_key` 与 `:454` 的 `_compute_shards_access`）检查 `sharded_state_dict` 的**完整性与一致性**:把所有 rank 的 `ShardedTensor` 元数据汇总,验证每个全局张量 ——
 - **无缺口**:全局张量的每个元素都被某个非副本片覆盖。
 - **无重叠**:不同 rank 的非副本片不重叠。
 - 形状、`replica_id` 自洽(`allow_shape_mismatch` 的张量放宽)。
@@ -154,7 +155,7 @@ save(sharded_state_dict, checkpoint_dir, ...):
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`17_megatron_parallelism_orchestration_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `71092579`（2026-08-27）。源码行号以该 commit 为准；2026-08-28 由 `ee3f1ff` 重定基线。配套文档:`17_megatron_parallelism_orchestration_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md`。*
 
 ## Related Pages
 

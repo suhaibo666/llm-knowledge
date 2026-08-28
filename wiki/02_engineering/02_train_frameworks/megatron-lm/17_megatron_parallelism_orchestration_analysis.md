@@ -4,8 +4,9 @@ title: "Megatron-LM 并行编排与进程组构造深度解析(Capstone)"
 
 # Megatron-LM 并行编排与进程组构造深度解析(Capstone)
 
-> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）
-> 核心文件:`megatron/core/parallel_state.py`(2255 行)、`megatron/core/process_groups_config.py`(718 行)、`megatron/core/hyper_comm_grid.py`(273 行)
+> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
+> 核心文件:`megatron/core/parallel_state.py`(2266 行)、`megatron/core/process_groups_config.py`(718 行)、`megatron/core/hyper_comm_grid.py`(443 行)
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`、`13_megatron_cp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`
 > 定位:**这是收口文档**。前五份各讲一个并行轴,都默认了"每张 GPU 同时属于 TP/PP/CP/EP/DP 的某个组"。本文讲清楚这套**几何**是怎么从 `world_size` 个裸 GPU 构造出来的。
 
@@ -230,26 +231,28 @@ class ProcessGroupCollection:
     tp / pp / mp / cp / dp / dp_cp / ep / expt_tp / tp_ep / embd / pos_embd / ...
 ```
 
-它就是前五份文档里到处出现的 `pg_collection=` 参数。代码不再调全局 getter,而是接收一个 `pg_collection` 对象 —— 即依赖注入。`use_mpu_process_groups()`(`:169`)能从全局 `parallel_state` 抽出一个 `ProcessGroupCollection`(向后兼容);`setup_process_groups_for_ddp`(`:454`)/ `setup_process_groups_for_optimizer`(`:263`)按 DDP / 优化器的需要裁出子集。
+它就是前五份文档里到处出现的 `pg_collection=` 参数。代码不再调全局 getter,而是接收一个 `pg_collection` 对象 —— 即依赖注入。`use_mpu_process_groups()`(`megatron/core/process_groups_config.py:169`)能从全局 `parallel_state` 抽出一个 `ProcessGroupCollection`(向后兼容);`setup_process_groups_for_ddp`(`megatron/core/process_groups_config.py:454`)/ `setup_process_groups_for_optimizer`(`megatron/core/process_groups_config.py:263`)按 DDP / 优化器的需要裁出子集。
 
-`MultiModuleProcessGroupCollection`(`:585`)是它的多模块版本:多模态模型(视觉编码器 + 语言模型)每个子模块一套 `ProcessGroupCollection`,用 `language_model_module_name` 标出主干 —— 这是 PP 文档提到的"多模块 PP"的进程组基础(详见后续 PP 补遗文档)。
+`MultiModuleProcessGroupCollection`(`megatron/core/process_groups_config.py:585`)是它的多模块版本:多模态模型(视觉编码器 + 语言模型)每个子模块一套 `ProcessGroupCollection`,用 `language_model_module_name` 标出主干 —— 这是 PP 文档提到的"多模块 PP"的进程组基础(详见后续 PP 补遗文档)。
 
 - **优点**:无全局状态;一个进程可并存多套配置;可测试。
 - **缺点**:要层层传 `pg_collection`(故大量函数签名里都有这个可选参数)。
 
-> [!update] 2026-06-16 · dev@232c478d4 — 训练循环向 `pg_collection` 迁移(#5259 / #5250 / #5251 / #5111)
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。 — 训练循环向 `pg_collection` 迁移(#5259 / #5250 / #5251 / #5111)
 >
 > `ee3f1ff` 之后有一批 PR 持续把训练侧对全局 `parallel_state.get_*_group()` 的隐式依赖,改成显式接收 `ProcessGroupCollection` / `group=` —— 即把上文的「依赖注入」从 `megatron/core` 推进到 `megatron/training`:
-> - **`train_step` 新增 `pg_collection` 形参**(#5259,`megatron/training/training.py:2162`)。step 末尾三处规约不再硬编码全局组:`logical_and_across_model_parallel_group` / `reduce_max_stat_across_model_parallel_group` 改用 `pg_collection.mp`,loss 平均 all-reduce 改用 `pg_collection.dp_cp`,末 stage 判定改用 `is_pp_last_stage(pg_collection.pp)`;`pg_collection=None` 时回退 `ProcessGroupCollection.use_mpu_process_groups()`,并断言含 `mp/pp/dp_cp`(`:2331-2339`)。
-> - **`get_model` 的 DDP 桶大小改用注入组**(#5250,`megatron/training/training.py:1774`、`:1783`):`bucket_size` 默认值用 `get_pg_size(pg_collection.dp_cp)`、PP rank 用 `get_pg_rank(pg_collection.pp)`,替换原 `mpu.get_data_parallel_world_size(...)` / `mpu.get_pipeline_model_parallel_rank()`。
-> - **`common_utils` 规约 helper 新增可选 `group=`**(#5251,`megatron/training/utils/common_utils.py:235`/`251`/`276`):`average_losses_across_data_parallel_group` / `reduce_max_stat_across_model_parallel_group` / `logical_and_across_model_parallel_group` 都接受显式 `group`,缺省才回退 mpu 全局组 —— 为上面两个 PR 的注入提供下游支持。
-> - **why(规范背书)**:#5111 在 `AGENTS.md` 写入「Megatron Core Process Groups」指引(advisory,非 CI 卡口):`megatron/core` 生产代码**禁止新增**对 `parallel_state.get_*_group()` 的直接读取,应改为接收 `ProcessGroupCollection` 或显式 `ProcessGroup` 并向下透传;仅 `megatron/core/parallel_state.py` / `megatron/core/process_groups_config.py` / 初始化引导 / 测试 / 带注释的迁移回退是豁免点。这条规范正是 §0.2 表中「① 全局单例 → ② 显式注入 → ③ HyperCommGrid」演进的官方背书,也解释了为何越来越多函数签名带 `pg_collection=` / `group=`。
+> - **`train_step` 新增 `pg_collection` 形参**(#5259,新基线 `megatron/training/training.py:2844`、形参在 `:2853`)。step 末尾三处规约不再硬编码全局组:`logical_and_across_model_parallel_group` / `reduce_max_stat_across_model_parallel_group` 改用 `pg_collection.mp`(`megatron/training/training.py:3141`、`:3146`、`:3149-3153`),loss 平均 all-reduce 改用 `pg_collection.dp_cp`(`:3142`、`:3182`),末 stage 判定改用 `is_pp_last_stage(pg_collection.pp)`(`:3143`);解析不到时回退 `ProcessGroupCollection.use_mpu_process_groups()`,并断言含 `mp/pp/dp_cp`(`:3135-3140`)。
+> - **`get_model` 的 DDP 桶大小改用注入组**(#5250,新基线 `megatron/training/training.py:2215`,形参 `pg_collection=None` 在 `:2220`、回退在 `:2225-2226`):`bucket_size` 由 `pg_collection.dp_cp` 推出、PP rank 用 `get_pg_rank(pg_collection.pp)`(`megatron/training/training.py:2383`),替换原 `mpu.get_data_parallel_world_size(...)` / `mpu.get_pipeline_model_parallel_rank()`。新基线上桶大小的算式已抽成独立 helper `resolve_ddp_bucket_size(ddp_config, dp_cp_group, overlap_grad_reduce, num_parameters)`(`megatron/training/training.py:2072`),`get_model` 只是把 `pg_collection.dp_cp` 传进去(`:2376-2378`);注入的组仍是 `dp_cp`,机制不变。
+> - **`common_utils` 规约 helper 新增可选 `group=`**(#5251,新基线 `megatron/training/utils/common_utils.py:236`/`252`/`277`):`average_losses_across_data_parallel_group` / `reduce_max_stat_across_model_parallel_group` / `logical_and_across_model_parallel_group` 都接受显式 `group`,缺省才回退 mpu 全局组 —— 为上面两个 PR 的注入提供下游支持。
+> - **why(规范背书)**:#5111 在 `AGENTS.md` 写入「Megatron Core Process Groups」指引(`AGENTS.md:34`;advisory,非 CI 卡口):`megatron/core` 生产代码**禁止新增**对 `parallel_state.get_*_group()` 的直接读取,应改为接收 `ProcessGroupCollection` 或显式 `ProcessGroup` 并向下透传;仅 `megatron/core/parallel_state.py` / `megatron/core/process_groups_config.py` / 初始化引导 / 测试 / 带注释的迁移回退是豁免点。这条规范正是 §0.2 表中「① 全局单例 → ② 显式注入 → ③ HyperCommGrid」演进的官方背书,也解释了为何越来越多函数签名带 `pg_collection=` / `group=`。
+
+> [!contradiction] `pg_collection` 的**来源**在新基线 `71092579` 下已变:上文说的「`pg_collection=None` 时回退 `use_mpu_process_groups()`」不再是从形参取值。新基线的 `train_step` 先从模型上取——`pg_collection = get_attr_wrapped_model(model[0], "pg_collection")`(`megatron/training/training.py:3134`),只有它为 `None` 才回退 `ProcessGroupCollection.use_mpu_process_groups()`(`:3135-3136`);源码注释写明理由是「Reductions source per-rank groups from the model (encoder rank -> encoder groups)」(`:3133`)。同名的 `pg_collection` 形参仍在(`:2853`),但语义已改成「转发给 schedule 的 cross-grid 载体」,docstring 明说 `None` 时保持默认行为(`:2858-2859`),**不再**参与这三处规约的组选择。也就是说依赖注入的方向从「调用方传入」变成了「从模型自带的进程组读取」,注入点下沉一层。
 
 ### ③ `HyperCommGrid` —— N 维网格(最新)
 
-`megatron/core/hyper_comm_grid.py:33`。把"5 维超长方体"这个概念**直接对象化**:
+`class HyperCommGrid`,`megatron/core/hyper_comm_grid.py:46`。把"5 维超长方体"这个概念**直接对象化**:
 
-> [!deprecated] 2026-06-16:`class HyperCommGrid` 现位于 `megatron/core/hyper_comm_grid.py:46`(`ee3f1ff` 时为 `:33`);文件已从 273 行增至 443 行,主因是 #5148 新增 named views(见本节末更新)。
+> [!note] 位置沿革:`class HyperCommGrid` 在旧基线 `ee3f1ffa…` 为 `megatron/core/hyper_comm_grid.py:33`,自 `dev@232c478d4` 起移至 `:46`,新基线 `71092579` 仍为 `:46`(已 `git show` 确认);文件由 273 行增至 443 行,主因是 #5148 新增 named views(见本节末更新)。
 
 ```python
 grid = HyperCommGrid([2, 3, 4, 5], ["tp", "cp", "pp", "dp"])   # shape + 维名
@@ -262,12 +265,12 @@ dp_cp_group = grid.create_pg(["cp", "dp"], pg_options=..., group_desc="...")
 - **优点**:任意 N 维、任意维组合;无全局状态;API 最清晰。
 - **定位**:Megatron 进程组管理的演进方向。
 
-> [!update] 2026-06-16 · dev@232c478d4 — HyperCommGrid 新增 named views(异构并行)(#5148)
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。 — HyperCommGrid 新增 named views(异构并行)(#5148)
 >
 > `HyperCommGrid` 现支持在**同一段 rank 跨度**上注册多个并存的「命名因子分解(rank view)」,服务异构并行(不同子模型用不同并行度)。核心新增(`megatron/core/hyper_comm_grid.py`):
-> - **`register_view(name, shape, dim_names, shared_dims=None)`**(`:143`):为同一组 rank 登记另一套 `shape × dim_names` 分解。约束:`prod(shape)` 必须等于网格 size;`shared_dims` 列出的轴必须在 base view 与新 view 里**枚举出完全相同的 rank 组**(逐组校验,不等则 `raise`)—— 这保证共享轴(典型如 PP)在两套分解下成员一致,与 §3「两个 RankGenerator 的 PP 组必须逐一相等」是同一约束思想的对象化版本。
-> - **`create_pg` / `get_pg` / `get_rank_enum` 新增 `view="..."` 关键字参数**(`:206`、`:287`、`:313`,默认 `base` view)。base view 的组仍按「短横线拼接的维名」做键;view 私有组用 `(view_name, dims)` 元组做键;若某组只涉及 `shared_dims`,会**复用 base view 的同一进程组**(单键存储,`destroy` 时只销毁一次,`_canonical_pg_key_and_enum_view` `:418`)。
-> - **底层去掉 einops 依赖**:`_gen_rank_enum` 重构为 `_gen_rank_enum_for(shape, dim_names, dims)`(`:356`),用 `numpy.arange + reshape + moveaxis` 直接生成 rank 枚举,不再 `einops.rearrange`。语义与原 MCore 约定(`dim_names` 逆序)一致,行为不变。
+> - **`register_view(name, shape, dim_names, shared_dims=None)`**(`megatron/core/hyper_comm_grid.py:143`):为同一组 rank 登记另一套 `shape × dim_names` 分解。约束:`prod(shape)` 必须等于网格 size;`shared_dims` 列出的轴必须在 base view 与新 view 里**枚举出完全相同的 rank 组**(逐组校验,不等则 `raise`)—— 这保证共享轴(典型如 PP)在两套分解下成员一致,与 §3「两个 RankGenerator 的 PP 组必须逐一相等」是同一约束思想的对象化版本。
+> - **`create_pg` / `get_pg` / `get_rank_enum` 新增 `view="..."` 关键字参数**(`megatron/core/hyper_comm_grid.py:206`、`:287`、`:313`,默认 `base` view)。base view 的组仍按「短横线拼接的维名」做键;view 私有组用 `(view_name, dims)` 元组做键;若某组只涉及 `shared_dims`,会**复用 base view 的同一进程组**(单键存储,`destroy` 时只销毁一次,`_canonical_pg_key_and_enum_view` `megatron/core/hyper_comm_grid.py:418`)。
+> - **底层去掉 einops 依赖**:`_gen_rank_enum` 重构为 `_gen_rank_enum_for(shape, dim_names, dims)`(`megatron/core/hyper_comm_grid.py:356`),用 `numpy.arange + reshape + moveaxis` 直接生成 rank 枚举,不再 `einops.rearrange`。语义与原 MCore 约定(`dim_names` 逆序)一致,行为不变。
 >
 > 这是上文「演进方向」的落地一步:`HyperCommGrid` 从「单一 N 维网格」升级为「一段 rank 上挂多套命名分解」,正是多模态/异构子模型(见 [[15_megatron_pp_schedulers_analysis]] §6.2 BridgeCommunicator)所需的几何基础。
 
@@ -329,7 +332,7 @@ MoE 侧:
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。本文是"第一层补遗"3 份文档之①(并行编排 capstone),后续:② PP 补遗、③ TP·FSDP·resharding 补遗。*
+*生成依据:`Megatron-LM` `dev` 分支 `71092579`(2026-08-28 由 `ee3f1ff` 重定基线)。源码行号以该 commit 为准。本文是"第一层补遗"3 份文档之①(并行编排 capstone),后续:② PP 补遗、③ TP·FSDP·resharding 补遗。*
 
 ## Related Pages
 

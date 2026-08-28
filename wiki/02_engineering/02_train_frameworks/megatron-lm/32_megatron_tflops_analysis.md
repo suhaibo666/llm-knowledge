@@ -4,7 +4,8 @@ title: "Megatron-LM TFLOPS 计算实现分析：原理与 MoE 场景准确性探
 
 # Megatron-LM TFLOPS 计算实现分析：原理与 MoE 场景准确性探讨
 
-> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）——原文未声明基线，经核对 3 处引用后补钉：① `num_floating_point_operations(args, batch_size)` 的双参签名（`megatron/training/training.py:299`；在 `232c478d4` 已改为四参 `:411-416`）；② 正文引用的 `routed_flops` 以 `batch_size * seq_len` 计（`megatron/training/training.py:316-326`；在 `232c478d4` 已重构为 `total_tokens`，`:458-461`）；③ `hybrid_flops` 的 `batch_size, seq_len` 形参（`megatron/training/training.py:412-414`；在 `232c478d4` 为 `total_tokens, seqlen_squared_sum`，`:535-536`）。三处均命中 `ee3f1ff`、均不命中 `232c478d4`。
+> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。原文钉的 3 处引用在新基线下均已移位、且函数签名同时改变：① `num_floating_point_operations` 由双参 `(args, batch_size)`（旧 `megatron/training/training.py:299`）改为四参 `(args, batch_size, seqlen_squared_sum_in_batch=None, total_real_tokens_in_batch=None)`（新 `megatron/training/training.py:498-500`）；② `routed_flops` 的 token 因子由 `batch_size * seq_len`（旧 `megatron/training/training.py:316-326`）改为单一 `total_tokens`（新 `megatron/training/training.py:550-557`）；③ `hybrid_flops` 形参由 `batch_size, seq_len`（旧 `megatron/training/training.py:412-414`）改为 `total_tokens, seqlen_squared_sum`（新 `megatron/training/training.py:747-749`）。
 
 在大规模模型训练中，**TFLOPS（每秒万亿次浮点运算）**是衡量硬件利用率和训练效率的关键指标。本文分析 Megatron-LM 计算 TFLOPS 的方法，通过流程图展示计算逻辑，并重点讨论混合专家模型（MoE）在无丢弃（Dropless）和有丢弃（Dropout）模式下的估算准确性。
 
@@ -27,7 +28,7 @@ $$
 *   **Multiplier (倍率 3)**：公式中的 **3** 代表包含反向传播的计算量（1倍前向传播 + 1倍权重梯度计算 + 1倍输入梯度计算）。
 
 ### 核心代码位置
-核心逻辑位于 `megatron/training/training.py` 文件中，具体在 `num_floating_point_operations` 函数内。
+核心逻辑位于 `megatron/training/training.py` 文件中，具体在 `num_floating_point_operations` 函数内（`megatron/training/training.py:498`）；函数体内按模型形态分派到 `transformer_flops()`（`megatron/training/training.py:910`）或 `hybrid_flops(...)`（`megatron/training/training.py:747`），分派判定为 `if is_hybrid_model(args):`（`megatron/training/training.py:1281`）。
 
 ---
 
@@ -95,12 +96,20 @@ graph TD
 
 答案取决于是否发生了 Token 丢弃（Token Dropping）。
 
-Megatron-LM 中 MoE 路由专家的 FLOPs 计算代码大致如下：
+Megatron-LM 中 MoE 路由专家的 FLOPs 计算代码大致如下（`moe_layer_flops` 内，`megatron/training/training.py:550-557`）：
 ```python
-routed_flops = (4 * batch_size * seq_len * hidden_size *
-                moe_ffn_hidden_size * num_experts_routed_to * scale_factor)
+routed_flops = (
+    4
+    * total_tokens
+    * hidden_size
+    * moe_ffn_hidden_size
+    * num_experts_routed_to
+    * scale_factor
+)
 ```
 *注意：这里的 `num_experts_routed_to` 直接取自静态配置的 Top-K 参数，且假设所有 Token 都参与了计算。*
+
+> [!contradiction] 相对旧基线 `ee3f1ffa…`：该式的 token 因子由 `batch_size * seq_len`（旧 `megatron/training/training.py:318-321`）改为单一的 `total_tokens`（新 `megatron/training/training.py:550-557`）。BSHD 布局下二者等价——`total_real_tokens_in_batch` 缺省即取 `batch_size * args.seq_length`（`megatron/training/training.py:530-531`），故下文的估算分析不受影响；但 THD（packed sequence）布局下调用方会显式传入真实 token 数，函数 docstring 明写 padding token 不出现在上报的 FLOPs 里（`megatron/training/training.py:516-523`）。也就是说「padding 造成的高估」这一路已在新基线下被修掉，本节讨论的高估仅剩 MoE 容量丢弃这一个来源。
 
 ### 场景 A：MoE Dropless (无 Token 丢弃)
 *   **状态**：✅ **准确**

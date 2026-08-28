@@ -4,8 +4,9 @@ title: "Megatron-LM TP·FSDP·Resharding 补遗"
 
 # Megatron-LM TP·FSDP·Resharding 补遗
 
-> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）
-> 核心文件:`megatron/core/distributed/fsdp/`(Megatron-FSDP,~9500 行)、`megatron/core/distributed/nonuniform_tp.py`(1463 行)、`resharding/`(~2000 行)
+> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
+> 核心文件:`megatron/core/distributed/fsdp/`(Megatron-FSDP，~12000 行)、`megatron/core/distributed/nonuniform_tp.py`(1461 行)、`megatron/core/resharding/`（~5000 行；旧基线页面记为 ~2000 行，实测即已是 ~5000 行，已更正）
 > 配套阅读:`12_megatron_tp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`
 > 定位:"第一层补遗"第③份。补齐 3 块前面只点了名的内容。先做一处**勘误**:tier-1 清单里把它们叫"非均匀 TP / 弹性 resharding",读源码后更准确的命名是 ——
 
@@ -21,9 +22,9 @@ title: "Megatron-LM TP·FSDP·Resharding 补遗"
 
 | # | 主题 | 代码 | 一句话 |
 |---|------|------|--------|
-| 1 | Megatron-FSDP 内部 | `distributed/fsdp/src/megatron_fsdp/` | ZeRO-2/3 的流水线 AG/RS、预取、临时桶分配器、DTensor 分片 |
+| 1 | Megatron-FSDP 内部 | `megatron/core/distributed/fsdp/src/megatron_fsdp/` | ZeRO-2/3 的流水线 AG/RS、预取、临时桶分配器、DTensor 分片 |
 | 2 | Nonuniform TP(NTP) | `megatron/core/distributed/nonuniform_tp.py` | TP 组里留备用 rank,核心 rank 故障时重分片续训 |
-| 3 | Resharding / Refit | `resharding/` | 在两套并行布局间搬运权重(RL:训练模型→推理模型) |
+| 3 | Resharding / Refit | `megatron/core/resharding/` | 在两套并行布局间搬运权重(RL:训练模型→推理模型) |
 
 ---
 
@@ -35,20 +36,20 @@ DDP 文档把 ZeRO-2/3 讲成"梯度也切 / 参数也切,逐层 all-gather 出�
 
 ### 1.2 `MegatronFSDP` —— FSDP 包装器
 
-`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:106`。包住模型,按 `data_parallel_sharding_strategy` 选 ZeRO 阶段(`no_shard`/`optim`/`optim_grads`/`optim_grads_params`,对应 ZeRO-0/1/2/3,见 `16_megatron_distributed_optimizer_analysis.md` §0.3)。一个 `TrainingState` 状态机(`:63`)跟踪"此刻参数/梯度处于分片还是聚合态"。
+`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:94`。包住模型,按 `data_parallel_sharding_strategy` 选 ZeRO 阶段(`no_shard`/`optim`/`optim_grads`/`optim_grads_params`,对应 ZeRO-0/1/2/3,见 `16_megatron_distributed_optimizer_analysis.md` §0.3)。一个 `TrainingState` 状态机(`:51`)跟踪"此刻参数/梯度处于分片还是聚合态"。
 
-关键默认值(`:318`):
+关键默认值(`:323`):
 - `optim_grads` / `optim_grads_params` → **默认开启梯度 reduce-scatter 重叠**(切了梯度就必须重叠,否则严重掉速)。
 - `optim_grads_params` → **默认开启参数 all-gather 重叠**。
 
 ### 1.3 核心:`ParamAndGradBuffer` + 两条流水线
 
-`megatron/core/distributed/fsdp/src/megatron_fsdp/param_and_grad_buffer.py`(4712 行,FSDP 的心脏)。所有参数/梯度装进扁平 buffer,再分桶(`BucketingPolicy:232`、`Bucket:444`)。两条流水线把通信与计算重叠:
+`megatron/core/distributed/fsdp/src/megatron_fsdp/param_and_grad_buffer.py`(5332 行,FSDP 的心脏)。所有参数/梯度装进扁平 buffer,再分桶(`BucketingPolicy:233`、`Bucket:445`)。两条流水线把通信与计算重叠:
 
-**`AllGatherPipeline`(`:3856`)—— 参数 all-gather 流水线**
-逐桶 all-gather 出完整参数。关键是 **`PrefetchOrder`(`:3843`)**:`FORWARD_PASS_ORDER` 让它**在算第 `i` 层时,提前 all-gather 第 `i+1` 层的参数** —— 用计算掩盖参数聚合的延迟。这正是 ZeRO-3 "通信 ×1.5" 能落地不掉速的关键。
+**`AllGatherPipeline`(`:4417`)—— 参数 all-gather 流水线**
+逐桶 all-gather 出完整参数。关键是 **`PrefetchOrder`(`:4404`)**:`FORWARD_PASS_ORDER` 让它**在算第 `i` 层时,提前 all-gather 第 `i+1` 层的参数** —— 用计算掩盖参数聚合的延迟。这正是 ZeRO-3 "通信 ×1.5" 能落地不掉速的关键。
 
-**`GradReducePipeline`(`:3398`)—— 梯度 reduce-scatter 流水线**
+**`GradReducePipeline`(`:3957`)—— 梯度 reduce-scatter 流水线**
 逐桶把梯度 reduce-scatter 成分片,与反向计算重叠(类比 DDP 的 `overlap_grad_reduce`,但这里 RS 后只留 `1/N` 分片)。
 
 ```
@@ -60,10 +61,10 @@ ZeRO-3 一层的前向(AllGatherPipeline):
 
 ### 1.4 临时桶分配器:聚合出来的参数放哪
 
-参数 all-gather 出来需要一块**临时**完整缓冲(用完就释放)。反复 `malloc/free` 很慢,于是有一组 `TemporaryBucketAllocator`(`:461`)策略:
-- `StorageResizeBasedBucketAllocator`(`:524`):靠 `storage().resize_()` 伸缩。
-- `RotaryBucketAllocator`(`:558`):轮转复用几块缓冲。
-- `FixedPoolAllocator`(`:642`):固定的**双缓冲**池(`fsdp_double_buffer`)—— 多占显存,但能注册 NCCL user buffer(`nccl_ub`),拿到 SM 高效的 NCCL 算法。
+参数 all-gather 出来需要一块**临时**完整缓冲(用完就释放)。反复 `malloc/free` 很慢,于是有一组 `TemporaryBucketAllocator`(`:462`)策略:
+- `StorageResizeBasedBucketAllocator`(`:532`):靠 `storage().resize_()` 伸缩。
+- `RotaryBucketAllocator`(`:567`):轮转复用几块缓冲。
+- `FixedPoolAllocator`(`:652`):固定的**双缓冲**池(`fsdp_double_buffer`)—— 多占显存,但能注册 NCCL user buffer(`nccl_ub`),拿到 SM 高效的 NCCL 算法。
 
 ### 1.5 其他实现要点
 
@@ -115,13 +116,15 @@ NTP 全部逻辑收在 `megatron/core/distributed/nonuniform_tp.py` 一个文件
 
 ## 3. Resharding / Refit —— 跨并行配置的权重搬运
 
-`resharding/`。README 首句:"Transfer model weights between different parallelism configurations (TP, PP, EP, DP) ... Used primarily in RL loops to move weights from a training model to an inference model that may use a different parallelism layout."
+`megatron/core/resharding/`。`megatron/core/resharding/README.md` 首句:"Transfer model weights between different parallelism configurations (TP, PP, EP, DP) ... Used primarily in RL loops to move weights from a training model to an inference model that may use a different parallelism layout."
 
 ### 3.1 动机与解决的问题
 
 **RLHF / RL 训练**里有两个模型实例:**训练模型**(为训练吞吐选一套并行布局,如 TP8×PP4)和**推理模型**(为生成延迟选另一套,如 TP2×PP1,可能还是 MXFP8)。每个 RL 迭代:训练模型更新权重 → 必须把新权重**搬进**推理模型,而两者并行布局不同 —— 参数的切分方式完全不一样。Resharding 解决的就是"**把权重从布局 A 搬到布局 B**"。
 
 ### 3.2 架构(四层)
+
+以下四个文件 / 目录均在 `megatron/core/resharding/` 下（仓库根相对路径）：
 
 ```
 refit.py        高层 API:swap_model_weights / prepare_swap_model_weights;计划缓存;MXFP8 自动识别
@@ -176,7 +179,7 @@ swap_model_weights(src_model, target_model, refit_method="nccl")
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `ee3f1ff`。源码行号以该 commit 为准。配套文档:`12_megatron_tp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`、`15_megatron_pp_schedulers_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `71092579`（2026-08-27）。源码行号以该 commit 为准；2026-08-28 由 `ee3f1ff` 重定基线。配套文档:`12_megatron_tp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`、`15_megatron_pp_schedulers_analysis.md`。*
 
 ## Related Pages
 

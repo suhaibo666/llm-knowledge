@@ -4,7 +4,8 @@ title: "Megatron-LM 融合线性交叉熵(Fused Linear Cross-Entropy / \"chunk l
 
 # Megatron-LM 融合线性交叉熵(Fused Linear Cross-Entropy / "chunk loss")源码级分析
 
-> **源码基线**：`NVIDIA/Megatron-LM@232c478d43ce2f8b4c8db3507d3623fa82f55823`（`dev`，2026-06-16）
+> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
+> **重定基线**：2026-08-28 由 `232c478d43ce2f8b4c8db3507d3623fa82f55823`（2026-06-16）推进，跨 280 个提交；本页全部 `path:line` 已在新基线下逐条重核。
 > **维度**: 深挖(机制级 + 具体源码实现)
 > 本页回答:Megatron 里"chunk loss"(不物化全量词表 logits 的省显存损失)到底怎么实现?它对应配置 `cross_entropy_fusion_impl='linear'` 的**融合线性交叉熵**——把 LM-head 矩阵乘**融进**交叉熵核、logits 从不作为张量存在。对照另两档 `native`/`te`(仍物化 logits)与 MindSpeed 的 `chunk_loss`(见文末)。每条非平凡结论带 `file:line`,行号均经实际打开核对。
 
@@ -19,7 +20,7 @@ title: "Megatron-LM 融合线性交叉熵(Fused Linear Cross-Entropy / \"chunk l
 Megatron 用一个**总开关 + 三档实现**来融合这步(`megatron/core/model_parallel_config.py`):
 
 ```python
-# megatron/core/model_parallel_config.py:257,262
+# megatron/core/model_parallel_config.py:310,315
 cross_entropy_loss_fusion: bool = False                               # 总开关
 cross_entropy_fusion_impl: Literal['native', 'te', 'linear'] = 'native'
 ```
@@ -56,17 +57,17 @@ flowchart LR
 `GPTModel.__init__` 把"是否用融合线性 CE"算成一个布尔位(`megatron/core/models/gpt/gpt_model.py`):
 
 ```python
-# megatron/core/models/gpt/gpt_model.py:157-160
+# megatron/core/models/gpt/gpt_model.py:159-162
 self.fuse_linear_cross_entropy = (
     self.config.cross_entropy_loss_fusion
     and self.config.cross_entropy_fusion_impl == "linear"
 )
 ```
 
-命中时,**输出层的类被换掉**——不再是普通 `ColumnParallelLinear`,而是 `LinearCrossEntropyModule`(`megatron/core/models/gpt/gpt_model.py:263`,`from ...linear_cross_entropy import LinearCrossEntropyModule` @ `:31`)。前向算 loss 时走专门分支:
+命中时,**输出层的类被换掉**——不再是普通 `ColumnParallelLinear`,而是 `LinearCrossEntropyModule`(`megatron/core/models/gpt/gpt_model.py:272`,`from ...linear_cross_entropy import LinearCrossEntropyModule` @ `:31`)。前向算 loss 时走专门分支:
 
 ```python
-# megatron/core/models/gpt/gpt_model.py:799-805
+# megatron/core/models/gpt/gpt_model.py:864-872
 output_layer_kwargs = dict(input_=hidden_states, weight=output_weight, ...)
 if self.fuse_linear_cross_entropy:
     loss = self.output_layer(
@@ -81,14 +82,14 @@ else:
 而 `native`/`te` 两档不换输出层类——它们在 `LanguageModule.compute_language_model_loss` 里**拿到 `logits` 之后**才融合(`megatron/core/models/common/language_module/language_module.py`):
 
 ```python
-# megatron/core/models/common/language_module/language_module.py:157,180  —— 注意两者的入参都是 logits
+# megatron/core/models/common/language_module/language_module.py:157,180  —— 注意两者的入参都是 logits（总开关判定在 `:156`）
 if self.config.cross_entropy_fusion_impl == 'te':
-    loss = te_parallel_cross_entropy(logits, labels, self.pg_collection.tp, is_cg_capturable)  # :166
+    loss = te_parallel_cross_entropy(logits, labels, self.pg_collection.tp, is_cg_capturable)  # :175-177
 elif self.config.cross_entropy_fusion_impl == 'native':
-    loss = fused_vocab_parallel_cross_entropy(logits, labels, self.pg_collection.tp)            # :180
+    loss = fused_vocab_parallel_cross_entropy(logits, labels, self.pg_collection.tp)            # :181
 ```
 
-> 选路里还有约束:`cross_entropy_loss_fusion + impl=='te'` 与某些配置不兼容,在 `megatron/core/model_parallel_config.py:488-492` 与 `megatron/training/arguments.py:1780` 处断言拦截。MTP 也支持 `linear`(`megatron/core/transformer/multi_token_prediction.py:963`)。
+> 选路里还有约束:`cross_entropy_loss_fusion + impl=='te'` 与某些配置不兼容,在 `megatron/core/model_parallel_config.py:569-573` 与 `megatron/training/arguments.py:1828` 处断言拦截。MTP 也支持 `linear`(`megatron/core/transformer/multi_token_prediction.py:1784`)。
 
 ---
 
@@ -109,7 +110,7 @@ class LinearCrossEntropyModule(tensor_parallel.ColumnParallelLinear):
 ```
 
 ```python
-# megatron/core/transformer/linear_cross_entropy.py:52-70  —— 校验开关 + 调融合核
+# megatron/core/transformer/linear_cross_entropy.py:43-70  —— 校验开关 + 调融合核
 def _compute_linear_and_cross_entropy_loss(self, hidden, weight, labels, ...):
     assert self.config.cross_entropy_loss_fusion
     assert self.config.cross_entropy_fusion_impl == "linear"
@@ -183,7 +184,7 @@ else:
 核内**按词表分块**(`megatron/core/fusions/linear_cross_entropy/blackwell/entry.py`):
 
 ```python
-# megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:147-151  —— 把【本地】词表切成 num_splits 块
+# megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:147-151  —— 把【本地】词表切成 num_splits 块（`maximum`/`accumulate` 的分配在同文件 `:137-138`；`_vocab_per_split` 现经 `_get_fwd_config()` 取，见 `:35`/`:46`）
 num_splits = (vocab_size + _vocab_per_split - 1) // _vocab_per_split      # ceil(V_local / 512)
 _max  = torch.empty((num_tokens, num_splits), device=hidden.device, dtype=torch.float32)
 _accu = torch.empty((num_tokens, num_splits), device=hidden.device, dtype=torch.float32)
@@ -200,7 +201,7 @@ self.mma_tiler = (*mma_tiler_mn, 1)
 self.cta_tiler = (self.mma_tiler[0], vocab_per_split, self.mma_tiler[2])  # 列维 = vocab_per_split → 分块
 ```
 
-随后一个 Triton 归约核把 `num_splits` 个偏统计量合成逐 token 的 `maximum`/`accumulate`(`megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:224-238`)。**张量并行(词表切在 TP 上)** 只需两次集合通信,不需要 gather logits:
+随后一个 Triton 归约核把 `num_splits` 个偏统计量合成逐 token 的 `maximum`/`accumulate`(`megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:222-243` 的 `triton_kernels.forward_dp_epilogue`；TP 分片路径另有 `:263-279`)。**张量并行(词表切在 TP 上)** 只需两次集合通信,不需要 gather logits:
 
 ```python
 # megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:246,253  —— 词表分片跨 TP 的归约
@@ -222,7 +223,7 @@ dist.all_reduce(_logprobs, op=dist.ReduceOp.SUM, group=tp_group)   # 跨分片�
 | logits 显存 | `O(N·V)` | `O(N·V)` | **0** |
 | 反向存什么 | 取决于实现(通常含 logits/softmax) | TE 内部 | **只存 hidden + max + sum-exp** |
 | 硬件 | 通用 | 需 TransformerEngine | **仅 Blackwell(算力 10.x)** |
-| 源 | `megatron/core/models/common/language_module/language_module.py:180` | `megatron/core/models/common/language_module/language_module.py:157-166` | `megatron/core/models/gpt/gpt_model.py:263` + 融合核 |
+| 源 | `megatron/core/models/common/language_module/language_module.py:181` | `megatron/core/models/common/language_module/language_module.py:157-177` | `megatron/core/models/gpt/gpt_model.py:272` + 融合核 |
 
 `native`/`te` 的价值在**减少 logits 上的逐元素 kernel + 不 gather 跨 TP 的 logits**(vocab-parallel CE),但 `logits[N,V]` 这块大激活仍在;`linear` 把矩阵乘吸进核、靠 online-softmax + 重算彻底消掉它。
 

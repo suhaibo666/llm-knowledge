@@ -4,7 +4,8 @@ title: "Megatron-Core 通信掩盖（Communication Overlap）技术详解"
 
 # Megatron-Core 通信掩盖（Communication Overlap）技术详解
 
-> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）；本页原仅声明分支/未声明基线，经核对 11 处引用行号在此 commit 命中后补钉。
+> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）。
+> **重定基线**：2026-08-28 由 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
 
 ---
 
@@ -32,10 +33,10 @@ Megatron-Core 在训练大规模模型时，通信（AllGather/ReduceScatter/All
 TP 通信掩盖仅在与 Sequence Parallel 结合时生效。配置定义在：
 
 - **文件**：[`megatron/core/model_parallel_config.py`](Megatron-LM/megatron/core/model_parallel_config.py)
-- **行号**：`196~276`
+- **行号**：`255~279`
 
 ```python
-# megatron/core/model_parallel_config.py:196-225
+# megatron/core/model_parallel_config.py:255-279
 tp_comm_overlap: bool = False
 """If true, allows overlapping of Linear layer execution with tensor parallel communication"""
 
@@ -59,10 +60,10 @@ tp_comm_overlap_rs: bool = True
 TP 掩盖依赖 Transformer Engine (TE) 预分配的静态 user buffer，在训练初始化时注册：
 
 - **文件**：[`megatron/training/initialize.py`](Megatron-LM/megatron/training/initialize.py)
-- **行号**：`206~276`
+- **行号**：`188~263`（函数体三分支；下方片段是 TE 1.9 分支 `:243-249`，TE 新版分支改用 `quantization_modes=`，见 `:234-240`）
 
 ```python
-# megatron/training/initialize.py:206-276
+# megatron/training/initialize.py:243-249
 def _initialize_tp_communicators():
     """initializing the communicators with user buffers for high-performance
     tensor-model-parallel communication overlap"""
@@ -80,10 +81,10 @@ def _initialize_tp_communicators():
 Megatron-Core 通过 `TELinear` 将上述配置传递给 TE：
 
 - **文件**：[`megatron/core/extensions/transformer_engine.py`](Megatron-LM/megatron/core/extensions/transformer_engine.py)
-- **行号**：`740~775`
+- **行号**：`815~848`（`TELinear.__init__`，类定义 `:737`）；`ub_bulk_wgrad` / `ub_bulk_dgrad` 实际由 `TELayerNormColumnParallelLinear` 设置（`:1072-1073`，类定义 `:992`）
 
 ```python
-# megatron/core/extensions/transformer_engine.py:740-775
+# megatron/core/extensions/transformer_engine.py:815-848 + :1072-1073
 if self.config.tp_comm_overlap and parallel_mode != "duplicated":
     if is_te_min_version("1.5.0"):
         extra_kwargs["ub_overlap_ag"] = self.config.tp_comm_overlap_ag
@@ -135,10 +136,10 @@ RowParallelLinear 反向:
 **代码验证**：Legacy 层实现（`async_op=True` 的 AG 与 dgrad 并行）
 
 - **文件**：[`megatron/core/tensor_parallel/layers.py`](Megatron-LM/megatron/core/tensor_parallel/layers.py)
-- **行号**：`520~529`
+- **行号**：`549~562`
 
 ```python
-# megatron/core/tensor_parallel/layers.py:520-529
+# megatron/core/tensor_parallel/layers.py:549-562
 handle = dist_all_gather_func(
     all_gather_buffer, input, group=tp_group, async_op=True
 )
@@ -183,10 +184,10 @@ ColumnParallelLinear 反向:
 **代码验证**：
 
 - **文件**：[`megatron/core/tensor_parallel/layers.py`](Megatron-LM/megatron/core/tensor_parallel/layers.py)
-- **行号**：`552~558`
+- **行号**：`581~587`
 
 ```python
-# megatron/core/tensor_parallel/layers.py:552-558
+# megatron/core/tensor_parallel/layers.py:581-587
 # dgrad GEMM 完成后,异步启动 ReduceScatter(dX)
 handle = dist_reduce_scatter_func(
     sub_grad_input, grad_input, group=tp_group, async_op=True
@@ -233,10 +234,10 @@ handle = dist_reduce_scatter_func(
 **实现**：DDP 包装器将梯度存储在连续 buffer 中，按反向传播顺序切分为 bucket。每个参数的 backward hook 调用 `register_grad_ready()`，当**一个 bucket 内所有梯度就绪**，立即在该 bucket 上启动**异步**通信。
 
 - **文件**：[`megatron/core/distributed/param_and_grad_buffer.py`](Megatron-LM/megatron/core/distributed/param_and_grad_buffer.py)
-- **行号**：`709~731`
+- **行号**：`913~935`
 
 ```python
-# megatron/core/distributed/param_and_grad_buffer.py:709-731
+# megatron/core/distributed/param_and_grad_buffer.py:913-935
 def register_grad_ready(self, param, force_all_reduce=False):
     """Registers grads for the passed-in param to be 'ready' for grad sync."""
     if self.is_last_microbatch:
@@ -252,10 +253,10 @@ def register_grad_ready(self, param, force_all_reduce=False):
 异步通信启动：
 
 - **文件**：[`megatron/core/distributed/param_and_grad_buffer.py`](Megatron-LM/megatron/core/distributed/param_and_grad_buffer.py)
-- **行号**：`587~604`
+- **行号**：`759~775`
 
 ```python
-# megatron/core/distributed/param_and_grad_buffer.py:587-604
+# megatron/core/distributed/param_and_grad_buffer.py:759-775
 with _coalescing_manager(communication_group, async_ops=async_op) as cm:
     for idx, bucket in enumerate(self.buckets):
         if self.ddp_config.use_distributed_optimizer and not force_all_reduce:
@@ -282,9 +283,9 @@ with _coalescing_manager(communication_group, async_ops=async_op) as cm:
 
 **关键收益**：通信被隐藏在所有后续层的反向计算时间内，总时间 ≈ `sum(backward) + last_RS_tail`。
 
-> [!update] 2026-06-16 · dev@232c478d4
-> **dispatch 时顺手 drain 前驱 bucket 的 reduce-scatter**（#4940，`megatron/core/distributed/distributed_data_parallel.py:323`、`megatron/core/distributed/param_and_grad_buffer.py:206/567/749`）。仅在 `reduce_scatter_with_fp32_accumulation`（fp32 累加的梯度 RS）且单优化器实例时启用。该路径下，RS 的中间 all-to-all 输出张量会被 **pin 住直到 `.wait()`**；若不主动 drain，所有 bucket 的这些中间张量会一直存活到 step 末，显存峰值偏高。
-> **机制**：`DistributedDataParallel.__init__` 把每个 bucket group 的 `previous_grad_reduce_bucket_group` 指向"反向中比它早一步 dispatch 的前驱"（反向按输出→输入顺序，故 `bucket_groups[i]` 的前驱是 `[i-1]`）。`start_grad_sync` 在为自己分配新 RS 缓冲**之前**，先 `finish_grad_sync()` 把前驱的 RS 等掉、释放其中间 buffer。新增 per-iteration 幂等标志 `grad_reduce_finished`（`megatron/core/distributed/param_and_grad_buffer.py:256`）：`finish_grad_sync` 第二次调用变 no-op，使"后继提前 drain 前驱"与"step 末 finalize 循环逐 bucket 收尾"不会重复 wait。**只省显存、不改通信量/重叠结构**；专家并行的 `expert_parallel_bucket_groups` 同样链接。
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
+> **dispatch 时顺手 drain 前驱 bucket 的 reduce-scatter**（#4940，`megatron/core/distributed/distributed_data_parallel.py:350-365`、`megatron/core/distributed/param_and_grad_buffer.py:269`／`:651`（`start_grad_sync`，drain 逻辑 `:665-680`）／`:833`（`finish_grad_sync`））。仅在 `reduce_scatter_with_fp32_accumulation`（fp32 累加的梯度 RS）且单优化器实例时启用。该路径下，RS 的中间 all-to-all 输出张量会被 **pin 住直到 `.wait()`**；若不主动 drain，所有 bucket 的这些中间张量会一直存活到 step 末，显存峰值偏高。
+> **机制**：`DistributedDataParallel.__init__` 把每个 bucket group 的 `previous_grad_reduce_bucket_group` 指向"反向中比它早一步 dispatch 的前驱"（反向按输出→输入顺序，故 `bucket_groups[i]` 的前驱是 `[i-1]`）。`start_grad_sync` 在为自己分配新 RS 缓冲**之前**，先 `finish_grad_sync()` 把前驱的 RS 等掉、释放其中间 buffer。新增 per-iteration 幂等标志 `grad_reduce_finished`（`megatron/core/distributed/param_and_grad_buffer.py:319`，每轮复位 `:343`，判定 `:856`）：`finish_grad_sync` 第二次调用变 no-op，使"后继提前 drain 前驱"与"step 末 finalize 循环逐 bucket 收尾"不会重复 wait。**只省显存、不改通信量/重叠结构**；专家并行的 `expert_parallel_bucket_groups` 同样链接。
 
 ### 3.2 参数掩盖（`--overlap-param-gather`）
 
@@ -295,15 +296,15 @@ with _coalescing_manager(communication_group, async_ops=async_op) as cm:
 2. 立即派发**下一个 bucket** 的异步 `start_param_sync()`
 
 - **文件**：[`megatron/core/distributed/distributed_data_parallel.py`](Megatron-LM/megatron/core/distributed/distributed_data_parallel.py)
-- **行号**：`353~357`, `388~422`
+- **行号**：`430~433`, `468~491`
 
 ```python
-# megatron/core/distributed/distributed_data_parallel.py:353-357
+# megatron/core/distributed/distributed_data_parallel.py:430-433
 self.use_forward_hook = self.ddp_config.overlap_param_gather
 if self.use_forward_hook:
     self.enable_forward_pre_hook()
 
-# megatron/core/distributed/distributed_data_parallel.py:388-422
+# megatron/core/distributed/distributed_data_parallel.py:468-491
 def _make_forward_pre_hook(self):
     def hook(module, *unused):
         for param in module.parameters(recurse=False):
@@ -318,10 +319,10 @@ def _make_forward_pre_hook(self):
 异步参数同步启动：
 
 - **文件**：[`megatron/core/distributed/param_and_grad_buffer.py`](Megatron-LM/megatron/core/distributed/param_and_grad_buffer.py)
-- **行号**：`295~429`
+- **行号**：`448~610`
 
 ```python
-# megatron/core/distributed/param_and_grad_buffer.py:295-429
+# megatron/core/distributed/param_and_grad_buffer.py:448-610
 def start_param_sync(self, force_sync=False):
     async_op = self.ddp_config.overlap_param_gather and not force_sync
     with _coalescing_manager(..., async_ops=async_op) as cm:
@@ -347,10 +348,10 @@ def start_param_sync(self, force_sync=False):
 配置定义在：
 
 - **文件**：[`megatron/core/model_parallel_config.py`](Megatron-LM/megatron/core/model_parallel_config.py)
-- **行号**：`321~328`
+- **行号**：`380~388`
 
 ```python
-# megatron/core/model_parallel_config.py:321-328
+# megatron/core/model_parallel_config.py:380-388
 overlap_p2p_comm: bool = False
 """When True some of the peer to peer communication for pipeline parallelism
    will overlap with computation. Must be False if batch_p2p_comm is true."""
@@ -415,10 +416,10 @@ else:
 参数定义：
 
 - **文件**：[`megatron/core/model_parallel_config.py`](Megatron-LM/megatron/core/model_parallel_config.py)
-- **行号**：`279~284`
+- **行号**：`338~344`
 
 ```python
-# megatron/core/model_parallel_config.py:279-284
+# megatron/core/model_parallel_config.py:338-344
 overlap_moe_expert_parallel_comm: bool = False
 delay_wgrad_compute: bool = False
 """Delay the weight gradient computation to improve batch-level communication overlapping"""
@@ -427,10 +428,10 @@ delay_wgrad_compute: bool = False
 ### 5.2 无 PP 时的 1F1B 调度
 
 - **文件**：[`megatron/core/pipeline_parallel/combined_1f1b.py`](Megatron-LM/megatron/core/pipeline_parallel/combined_1f1b.py)
-- **行号**：`23~113`
+- **行号**：`35~135`（交错式 PP 版本在 `:138`）
 
 ```python
-# megatron/core/pipeline_parallel/combined_1f1b.py:23-113
+# megatron/core/pipeline_parallel/combined_1f1b.py:35-135
 def combined_1f1b_schedule_for_no_pipelining(...):
     # Phase 0: 1st microbatch forward (alone)
     # Phase 1~N-1: backward(N) + forward(N+1) overlapped
@@ -446,10 +447,10 @@ def combined_1f1b_schedule_for_no_pipelining(...):
 核心的双 Stream 调度定义在：
 
 - **文件**：[`megatron/core/models/common/model_chunk_schedule_plan.py`](Megatron-LM/megatron/core/models/common/model_chunk_schedule_plan.py)
-- **行号**：`195~259`
+- **行号**：`505~604`（`TransformerLayerSchedulePlan.run`，类定义 `:165`）
 
 ```python
-# megatron/core/models/common/model_chunk_schedule_plan.py:195-259 (注释精确描述了重叠模式)
+# megatron/core/models/common/model_chunk_schedule_plan.py:513-514 (注释精确描述了重叠模式)
 # comm_stream: combine_bwd | dispatch_fwd -> dispatch_bwd | combine_fwd
 # comp_stream: attn_fwd    | mlp_bwd -> mlp_bwd_dw -> mlp_fwd | attn_bwd
 ```
@@ -478,7 +479,7 @@ def combined_1f1b_schedule_for_no_pipelining(...):
 
 #### 模型层改造：Layer → 5 子节点
 
-`megatron/core/models/gpt/fine_grained_callables.py:466-707` 的 `build_transformer_layer_callables()` 将每个 TransformerLayer 手工拆解为 5 个可调度子节点(attn_fwd/mlp_fwd/mlp_bwd/mlp_bwd_dw/attn_bwd,对应 §5.3 时间线里的计算任务),使 §5.3 的双 Stream 交错得以在**子层粒度**发生,而非整层原子调度：
+`megatron/core/models/gpt/fine_grained_callables.py:562-1094` 的 `build_transformer_layer_callables()` 将每个 TransformerLayer 手工拆解为 5 个可调度子节点(attn_fwd/mlp_fwd/mlp_bwd/mlp_bwd_dw/attn_bwd,对应 §5.3 时间线里的计算任务),使 §5.3 的双 Stream 交错得以在**子层粒度**发生,而非整层原子调度：
 
 ![Layer 的 5 子节点拆解](assets/megatron_comm_overlap_layer_5node_split.png)
 
@@ -486,7 +487,7 @@ def combined_1f1b_schedule_for_no_pipelining(...):
 
 #### 调度算子：`stream_acquire_context()`
 
-§5.3 的 `TransformerLayerSchedulePlan.run()`(`megatron/core/models/common/model_chunk_schedule_plan.py:229-297`)把一个 f_layer(forward)和一个 b_layer(backward)在两个 stream 上交错，每个节点的 stream 上下文通过如下上下文管理器切换：
+§5.3 的 `TransformerLayerSchedulePlan.run()`(`megatron/core/models/common/model_chunk_schedule_plan.py:505-604`)把一个 f_layer(forward)和一个 b_layer(backward)在两个 stream 上交错，每个节点的 stream 上下文通过如下上下文管理器切换：
 
 ```python
 def stream_acquire_context(self, name):
@@ -517,10 +518,10 @@ def stream_acquire_context(self, name):
 `TransformerLayerNode` 的 `backward_impl` 与 `backward_dw` 分离：
 
 - **文件**：[`megatron/core/models/gpt/fine_grained_callables.py`](Megatron-LM/megatron/core/models/gpt/fine_grained_callables.py)
-- **行号**：`314~348`
+- **行号**：`415~449`（`backward_impl` `:415-422`，`backward_dw` `:438-449`，类定义 `:319`）
 
 ```python
-# megatron/core/models/gpt/fine_grained_callables.py:314-348
+# megatron/core/models/gpt/fine_grained_callables.py:415-449（示意，非逐字，见下方 [!contradiction]）
 class TransformerLayerNode(ScheduleNode):
     def backward_impl(self, outputs, output_grad):
         # 标准 backward：dX 和 dW 同时算完
@@ -538,6 +539,8 @@ class TransformerLayerNode(ScheduleNode):
             for tensor in self.output_grads:
                 tensor.untyped_storage().resize_(0)
 ```
+
+> [!contradiction] 2026-08-28（基线 `71092579`）：上面这段代码是**示意而非源码逐字**，其中 `self.output_grads = grads`、`self.delay_grads_release = True`、`self.manual_release_grads`、`tensor.untyped_storage().resize_(0)` 四处在源码里**并不存在**——`git grep 'manual_release_grads\|delay_grads_release' 71092579 -- megatron/` 零命中，回溯到旧基线 `ee3f1ff` 同样零命中，说明它们从更早的形态残留下来、跨两次基线都没被核过。实际源码：`backward_impl`（`megatron/core/models/gpt/fine_grained_callables.py:415-422`）只做 `self.default_backward_func(outputs + self.before_detached, grads)` 并 `return grads`（注释写明 "return grads for record stream"），**没有**保存/延迟释放梯度的分支；`backward_dw`（`:438-449`）在 `not self.delay_wgrad_compute` 时直接 return，否则切到 `self.stream` 上包一层 nvtx 再逐个 `module.backward_dw()`，**没有** `resize_(0)`。"dX 与 dW 分离、dW 延后执行"这一论断本身成立（由 `delay_wgrad_compute` 分流 `backward` 与 `backward_dw` 两条路径实现，见 `:431-436` 与 `:438-449`），但"手工保存 grads 再手工释放显存"这层描述在当前源码下不成立。
 
 #### 5.4.2 三层对比图
 
@@ -598,10 +601,10 @@ Forward dispatch 已经把 token 路由到专家 rank 并缓存在本地。Backw
 代码验证：
 
 - **文件**：[`megatron/core/transformer/moe/fused_a2a.py`](Megatron-LM/megatron/core/transformer/moe/fused_a2a.py)
-- **行号**：`139~160`, `191~200`
+- **行号**：`187~207`, `238~254`
 
 ```python
-# megatron/core/transformer/moe/fused_a2a.py:139-160
+# megatron/core/transformer/moe/fused_a2a.py:187-207
 # FusedDispatch.backward = combine：把专家梯度送回原始位置
 class FusedDispatch(torch.autograd.Function):
     @staticmethod
@@ -610,7 +613,7 @@ class FusedDispatch(torch.autograd.Function):
             grad_output.contiguous(), handle, ...
         )
 
-# megatron/core/transformer/moe/fused_a2a.py:191-200
+# megatron/core/transformer/moe/fused_a2a.py:238-254
 # FusedCombine.backward = dispatch：把上游梯度送到专家
 class FusedCombine(torch.autograd.Function):
     @staticmethod
@@ -627,7 +630,7 @@ class FusedCombine(torch.autograd.Function):
 - **文件**：[`megatron/core/transformer/moe/fused_a2a.py`](Megatron-LM/megatron/core/transformer/moe/fused_a2a.py)
 
 ```python
-# megatron/core/transformer/moe/fused_a2a.py:69-138
+# megatron/core/transformer/moe/fused_a2a.py:116-185
 class FusedDispatch(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, token_indices, token_probs, num_experts, group,
@@ -640,11 +643,11 @@ class FusedDispatch(torch.autograd.Function):
 ```
 
 - **文件**：[`megatron/core/transformer/moe/token_dispatcher.py`](Megatron-LM/megatron/core/transformer/moe/token_dispatcher.py)
-- **类**：`megatron/core/transformer/moe/token_dispatcher.py:1161` 的 `_DeepepManager`、同文件 `:990` 的 `_HybridEPManager`
+- **类**：`megatron/core/transformer/moe/token_dispatcher.py:1283` 的 `_DeepepManager`、同文件 `:1060` 的 `_HybridEPManager`（新增 `:1529` 的 `_DeepepV2Manager`）
 
 #### 5.6.1 两级通信：为什么能降 A2A 绝对耗时
 
-DeepEP/HybridEP 之所以能"加速通信"，核心是把单级的 GPU↔GPU A2A 拆成**两级**，并在节点间做**去冗余**——把流量从稀缺的 IB 转到富裕的 NVLink。`fused_dispatch` 的 `get_dispatch_layout` 给出**两套**变长计数，对应两级（`megatron/core/transformer/moe/fused_a2a.py:92-97`）：
+DeepEP/HybridEP 之所以能"加速通信"，核心是把单级的 GPU↔GPU A2A 拆成**两级**，并在节点间做**去冗余**——把流量从稀缺的 IB 转到富裕的 NVLink。`fused_dispatch` 的 `get_dispatch_layout` 给出**两套**变长计数，对应两级（`megatron/core/transformer/moe/fused_a2a.py:136-142`）：
 
 | 计数 | 粒度 | 阶段 | 链路 |
 |------|------|------|------|
@@ -671,16 +674,16 @@ $$
 
 ### 5.7 增量更新（ee3f1ff → dev@232c478d4）
 
-> [!update] 2026-06-16 · dev@232c478d4 — 高优先级 A2A 通信流
-> 新增 `high_priority_a2a_comm_stream`（默认 `False`，`megatron/core/transformer/transformer_config.py:686`，#4694）。combined-1F1B 的 `set_streams` 现接受 `high_priority` 形参（`megatron/core/pipeline_parallel/utils.py:336`）：打开后，§5.3 那条专跑 dispatch/combine A2A 的 `comm_stream` 以 **CUDA 高优先级**创建（`torch.cuda.Stream.priority_range()` 的 high 端）。目的：让 A2A 通信 kernel 优先抢 SM，减少被同设备的计算 kernel 卡住的尾延迟。`megatron/core/pipeline_parallel/combined_1f1b.py` 的两个 schedule（no-pipelining / interleaved）都按 `config.high_priority_a2a_comm_stream` 透传。配套地，HybridEP 还新增 `moe_hybridep_num_sms_preprocessing`（默认 108，metadata scan kernel 的 SM 数，见 [[14_megatron_ep_analysis]] §③ 增量更新）。
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。—— 高优先级 A2A 通信流
+> 新增 `high_priority_a2a_comm_stream`（默认 `False`，`megatron/core/transformer/transformer_config.py:764`，#4694）。combined-1F1B 的 `set_streams` 现接受 `high_priority` 形参（`megatron/core/pipeline_parallel/utils.py:350`，判定 `:357`；两个 schedule 的透传点在 `megatron/core/pipeline_parallel/combined_1f1b.py:67` 与 `:203`）：打开后，§5.3 那条专跑 dispatch/combine A2A 的 `comm_stream` 以 **CUDA 高优先级**创建（`torch.cuda.Stream.priority_range()` 的 high 端）。目的：让 A2A 通信 kernel 优先抢 SM，减少被同设备的计算 kernel 卡住的尾延迟。`megatron/core/pipeline_parallel/combined_1f1b.py` 的两个 schedule（no-pipelining / interleaved）都按 `config.high_priority_a2a_comm_stream` 透传。配套地，HybridEP 还新增 `moe_hybridep_num_sms_preprocessing`（默认 108，metadata scan kernel 的 SM 数，见 [[14_megatron_ep_analysis]] §③ 增量更新）。
 
-> [!update] 2026-06-16 · dev@232c478d4 — A2A Overlap 支持 Megatron-FSDP
-> EP A2A 重叠（combined-1F1B）现可与 **Megatron-FSDP** 共用（#3797，`megatron/core/pipeline_parallel/combined_1f1b.py`、`megatron/core/models/common/model_chunk_schedule_plan.py:176`）。难点：细粒度 overlap schedule **绕过** `TransformerLayer.forward`（直接调子模块），从而绕过 FSDP 注册在 unit module 上的 forward/backward hook —— all-gather 出来的分片参数不会被正常释放。解法：`TransformerLayerSchedulePlan.set_fsdp_reshard_hooks` 给单个 schedule node 显式挂"释放参数"回调（最后一个前向 node 后 `post_forward_release_module`，最后一个反向 node（attn）后 `post_backward_release_module`）；`combined_forward_backward_step` 在反向前后调 `fsdp_wrapper.pre/post_backward()`，并在调度前 `_replace_param_with_raw_if_needed()`。仅 `optim_grads_params`（参数分片）策略需逐层 reshard hook。**限制**：交错式 PP（VPP>1）+ FSDP 暂不支持（显式 assert）。FSDP 内部分片/reshard 细节见 [[16_megatron_distributed_optimizer_analysis]]。
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。—— A2A Overlap 支持 Megatron-FSDP
+> EP A2A 重叠（combined-1F1B）现可与 **Megatron-FSDP** 共用（#3797，`megatron/core/pipeline_parallel/combined_1f1b.py`、`megatron/core/models/common/model_chunk_schedule_plan.py:377` 的 `set_fsdp_reshard_hooks`）。难点：细粒度 overlap schedule **绕过** `TransformerLayer.forward`（直接调子模块），从而绕过 FSDP 注册在 unit module 上的 forward/backward hook —— all-gather 出来的分片参数不会被正常释放。解法：`TransformerLayerSchedulePlan.set_fsdp_reshard_hooks` 给单个 schedule node 显式挂"释放参数"回调（最后一个前向 node 后 `post_forward_release_module`，最后一个反向 node（attn）后 `post_backward_release_module`）；`combined_forward_backward_step` 在反向前后调 `fsdp_wrapper.pre/post_backward()`，并在调度前 `_replace_param_with_raw_if_needed()`。仅 `optim_grads_params`（参数分片）策略需逐层 reshard hook。**限制**：交错式 PP（VPP>1）+ FSDP 暂不支持（显式 assert）。FSDP 内部分片/reshard 细节见 [[16_megatron_distributed_optimizer_analysis]]。
 
-> [!update] 2026-06-16 · dev@232c478d4 — FSDP 双缓冲 wgrad 竞态修复
-> 修复 FSDP 双缓冲（`fsdp_double_buffer`）下的 wgrad 竞态（#5222，`megatron/core/distributed/fsdp/src/megatron_fsdp/param_and_grad_buffer.py:2727`）。原先在反向 hook 里**预先**调 `_enforce_double_buffer_limit` 腾 bucket；改为把该调用下沉进懒加载的 `main_grad_getter` —— 即**真正 fetch 到 incoming bucket 的那一刻**才腾退旧 bucket，使双缓冲 reduce-scatter 流水线的 bucket 生命周期与梯度写入精确对齐，消除"buffer 还在被 wgrad 写就被双缓冲分配器回收"的竞态。属 FSDP 内部正确性修复，与本页"通信重叠不改数值"前提一致；FSDP 缓冲机制详见 [[16_megatron_distributed_optimizer_analysis]]。
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。—— FSDP 双缓冲 wgrad 竞态修复
+> 修复 FSDP 双缓冲（`fsdp_double_buffer`）下的 wgrad 竞态（#5222，`megatron/core/distributed/fsdp/src/megatron_fsdp/param_and_grad_buffer.py:3232-3237`，`_enforce_double_buffer_limit` 定义在同文件 `:4093`）。原先在反向 hook 里**预先**调 `_enforce_double_buffer_limit` 腾 bucket；改为把该调用下沉进懒加载的 `main_grad_getter` —— 即**真正 fetch 到 incoming bucket 的那一刻**才腾退旧 bucket，使双缓冲 reduce-scatter 流水线的 bucket 生命周期与梯度写入精确对齐，消除"buffer 还在被 wgrad 写就被双缓冲分配器回收"的竞态。属 FSDP 内部正确性修复，与本页"通信重叠不改数值"前提一致；FSDP 缓冲机制详见 [[16_megatron_distributed_optimizer_analysis]]。
 
-> [!update] 2026-06-16 · dev@232c478d4 — flex 后端配置补充
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。—— flex 后端配置补充
 > §八配置速查表的 `moe_flex_dispatcher_backend` 现多一个取值 `"deepepv2"`（DeepEP v2 ElasticBuffer 后端，#4793）；`moe_deepep_num_sms` 默认从 `20` 改为 `None`（自适应）。详见 [[14_megatron_ep_analysis]] §③ 增量更新。
 
 ### 5.8 Shared Expert：独立 Stream 状态机重叠（`moe_shared_expert_overlap`，补充,2026-07-31 · 由 [[30_comm_compute_overlap_analysis]] 收缩合并）
@@ -697,7 +700,7 @@ Shared Expert MLP 在独立 CUDA stream 上运行，通过状态机与 token dis
 
 Shared Expert 使用**状态机**管理调用顺序：`IDLE → PRE_FORWARD_COMM_DONE → FC1_FORWARD_DONE → FC2_FORWARD_DONE → POST_FORWARD_COMM_DONE → IDLE`，确保在不同 dispatcher 类型下正确同步。
 
-> 相关：deepseek_v4 场景下 Shared Expert 启用 TP（`T_shared>1`）时该开关会额外关闭 TP 的 AG/RS、改走手动调度，见 [[34_deepseek_v4_tensor_parallel_analysis]] §7.2（`megatron/core/transformer/moe/shared_experts.py:147-159`）——两处描述的是同一 `moe_shared_expert_overlap` 机制在不同场景下的效果。
+> 相关：deepseek_v4 场景下 Shared Expert 启用 TP（`T_shared>1`）时该开关会额外关闭 TP 的 AG/RS、改走手动调度，见 [[34_deepseek_v4_tensor_parallel_analysis]] §7.2（`megatron/core/transformer/moe/shared_experts.py:158-170`）——两处描述的是同一 `moe_shared_expert_overlap` 机制在不同场景下的效果。
 
 ---
 
@@ -710,7 +713,7 @@ CP 将序列切分到多 rank，Self-Attention 需要获取完整 KV。Megatron-
 ### 6.2 代码实现
 
 - **文件**：[`megatron/core/transformer/dot_product_attention_context_parallel.py`](Megatron-LM/megatron/core/transformer/dot_product_attention_context_parallel.py)
-- **行号**：`108~133`, `181~227`
+- **行号**：`108~133`, `181~224`
 
 ```python
 # megatron/core/transformer/dot_product_attention_context_parallel.py:108-133
@@ -725,7 +728,7 @@ class AllGatherComm:
         for handle in self.handles:
             handle.wait()
 
-# megatron/core/transformer/dot_product_attention_context_parallel.py:181-227 (Forward)
+# megatron/core/transformer/dot_product_attention_context_parallel.py:181-224 (Forward)
 comm.all_gather(kv_buffer_copy[0], k_0)  # 异步启动第一轮 AG
 for i in range(0, nheads_k, heads_k_stride):
     comm.wait()                           # 等上一轮 AG 完成
@@ -794,9 +797,9 @@ args.context_parallel_size = 2       # CP > 1 时自动启用 attention overlap
 
 ---
 
-> **文档说明**：所有代码片段与文件路径均来自 Megatron-LM `dev` 分支的实际源码，基线以页头声明的 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19）为准；§3.1 末、§5.7 的增量更新段落基准仍为 `dev@232c478d4`。
+> **文档说明**：所有代码片段与文件路径均来自 Megatron-LM `dev` 分支的实际源码，基线以页头声明的 `71092579522a12522d9f323ae180c9825d01928a`（2026-08-27）为准；§3.1 末、§5.7 的增量更新段落记录的是 `dev@232c478d4`（2026-06-16）引入的特性，其行号同样已重核至新基线。
 > 
-> 本行原文写作「commit `3beeaa65b` 附近」——「附近」不是可核验的基线，且与页头冲突。2026-08-27 复核：`megatron/core/model_parallel_config.py:196`、`megatron/core/distributed/param_and_grad_buffer.py:709`、`megatron/core/tensor_parallel/layers.py:520`、`megatron/core/transformer/moe/fused_a2a.py:139` 等处在 `ee3f1ffa2acd18131ab67cabab4cec45283512ab` 命中而在 `3beeaa65b` 不命中，故以前者为准；个别引用（如 `megatron/core/pipeline_parallel/combined_1f1b.py` 的函数定义行）在 `3beeaa65b` 下更贴合，说明本页历史上经历过局部刷新，少数行号可能仍停留在更早的形态。
+> **基线沿革（历史注记）**：本页基线曾写作「commit `3beeaa65b` 附近」——「附近」不可核验；2026-08-27 逐条比对后改钉 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19），2026-08-28 再推进到 `71092579`（跨 578 个提交）并重核全部 `path:line`。当时留下的"少数行号可能仍停留在更早形态"的疑虑，在本轮已被证实至少一处（§5.4.1 的代码片段，见该处 [!contradiction]）。
 
 ## Related Pages
 

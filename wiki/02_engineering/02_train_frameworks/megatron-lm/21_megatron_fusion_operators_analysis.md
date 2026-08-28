@@ -4,7 +4,8 @@ title: "Megatron-LM 融合算子优化 深度分析"
 
 # Megatron-LM 融合算子优化 深度分析
 
-> **源码基线**：`NVIDIA/Megatron-LM@ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`dev`，2026-05-19）；本页原仅声明分支/未声明基线，经核对 14 处引用行号在此 commit 命中后补钉。
+> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）。
+> **重定基线**：2026-08-28 由 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
 
 **Date**: 2026-05-12
 **Status**: Complete
@@ -95,8 +96,8 @@ y * torch.sigmoid(1.702 * y)
 | WeightedQuickGeGLU | `megatron/core/fusions/fused_bias_geglu.py:326` |
 | WeightedBiasQuickGeGLU | `megatron/core/fusions/fused_bias_geglu.py:376` |
 | BiasSwiGLU | `megatron/core/fusions/fused_bias_swiglu.py:164` |
-| SwiGLU | `megatron/core/fusions/fused_bias_swiglu.py:210` |
-| WeightedSwiGLU | `megatron/core/fusions/fused_bias_swiglu.py:241` |
+| SwiGLU | `megatron/core/fusions/fused_bias_swiglu.py:223` |
+| WeightedSwiGLU | `megatron/core/fusions/fused_bias_swiglu.py:276` |
 
 ```python
 # Forward 中将 input 转为 FP8 保存 (1 byte vs 2 bytes for BF16)
@@ -141,7 +142,7 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 | Apex CUDA | LayerNorm | `megatron/core/fusions/fused_layer_norm.py:30` |
 | Custom CUDA | Softmax (Scaled + Masked) | `megatron/core/fusions/fused_softmax.py:11-152` |
 | Triton | Pad Routing Map, Indices Converter, MLA RoPE | `megatron/core/fusions/fused_pad_routing_map.py`, `megatron/core/fusions/fused_mla_yarn_rope_apply.py` |
-| CUTLASS/cuTile | Linear + Cross-Entropy, MHC | `linear_cross_entropy/blackwell/`, `megatron/core/fusions/fused_mhc_kernels.py` |
+| CUTLASS/cuTile | Linear + Cross-Entropy, MHC（mHC 实为多后端，见 §7.5） | `megatron/core/fusions/linear_cross_entropy/blackwell/`, `megatron/core/fusions/fused_mhc_kernels.py` |
 
 ## 4. 详细融合算子清单
 
@@ -211,56 +212,64 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 
 ## 7. 增量更新（ee3f1ff → dev@232c478d4）
 
-> 以下为 wiki 基线 commit `ee3f1ff`（2026-05-19）之后、当前 `dev@232c478d4`（2026-06-16）的新增/变更融合机制。原文（§1–§6）的论断经核对仍然成立，下方为补充与勘误。
+> 以下为 wiki 基线 commit `ee3f1ff`（2026-05-19）之后、当前 `dev@232c478d4`（2026-06-16）的新增/变更融合机制。原文（§1–§6）的论断经核对仍然成立，下方为补充与勘误。本节所有 `path:line` 已于 2026-08-28 重核至基线 `71092579`。
 
 ### 7.1 TE Op-Fuser：把 grouped MLP 的两次 GEMM + 激活融成一条算子链
 
-> [!update] 2026-06-16 · dev@232c478d4
-> 新增 `use_transformer_engine_op_fuser`（`megatron/core/transformer/transformer_config.py:516`，#4636）。这是一条全新的 MoE grouped MLP 融合**实现路径**：不再用 `@jit_fuser` 包激活，而是借 **Transformer Engine 的 op-fuser API**（`te.pytorch.ops.Sequential`）把 `FC1 GroupedLinear → 激活 → FC2 GroupedLinear` 整条链交给 TE 一并融合（含跨 GEMM 的 epilogue 融合）。
-> - 入口：`TEGroupedMLP._is_fused_impl_supported`（`megatron/core/transformer/moe/experts.py:315`）做能力探测，`_make_fused_ops`（`megatron/core/transformer/moe/experts.py:408`）构造融合算子链；`_with_fused_impl`（`:273`）为开关。
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
+> 新增 `use_transformer_engine_op_fuser`（`megatron/core/transformer/transformer_config.py:591`，#4636）。这是一条全新的 MoE grouped MLP 融合**实现路径**：不再用 `@jit_fuser` 包激活，而是借 **Transformer Engine 的 op-fuser API**（`te.pytorch.ops.Sequential`）把 `FC1 GroupedLinear → 激活 → FC2 GroupedLinear` 整条链交给 TE 一并融合（含跨 GEMM 的 epilogue 融合）。
+> - 入口：`TEGroupedMLP._is_fused_impl_supported`（`megatron/core/transformer/moe/experts.py:323`）做能力探测，`_make_fused_ops`（`megatron/core/transformer/moe/experts.py:410`）构造融合算子链；`_with_fused_impl`（`:281`）为开关。
 > - 支持条件（任一不满足回退非融合路径）：TE ≥ 2.14.0、`tp_group.size()==1`(不支持 TP)、非 fine-grained activation offloading、非 `moe_apply_probs_on_input`、FC1/FC2 均为 `te.pytorch.GroupedLinear`。
 > - 激活映射：SwiGLU → `ScaledSwiGLU`；quick-GEGLU → `ScaledClampedQGeGLU`（需 TE ≥ 2.15）。
-> - 配套新配置：`moe_single_grouped_weight` / `moe_single_grouped_bias`（`megatron/core/transformer/transformer_config.py`，把每个 expert 的权重/bias 存为 TE `GroupedTensor` 单参数，要求 `moe_grouped_gemm=True` + TE ≥ 2.14.0；`single_grouped_weight` 目前仅在 fp8+mxfp8 下验证过数值正确）；`moe_mlp_glu_interleave_size`（`megatron/core/transformer/transformer_config.py:962`，GLU 输入改为 gate/linear **交错块**布局，专为高级融合 kernel 设计）。
+> - 配套新配置：`moe_single_grouped_weight` / `moe_single_grouped_bias`（`megatron/core/transformer/transformer_config.py`，把每个 expert 的权重/bias 存为 TE `GroupedTensor` 单参数，要求 `moe_grouped_gemm=True` + TE ≥ 2.14.0；`single_grouped_weight` 目前仅在 fp8+mxfp8 下验证过数值正确）；`moe_mlp_glu_interleave_size`（`megatron/core/transformer/transformer_config.py:1079`，GLU 输入改为 gate/linear **交错块**布局，专为高级融合 kernel 设计）。
 
 ### 7.2 Op-Fuser 激活扩展：ScaledSReLU 与 Clamped-SwiGLU
 
-> [!update] 2026-06-16 · dev@232c478d4
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
 > 在 §7.1 的 op-fuser 链上新增两种激活：
-> - **ScaledSReLU（加权 squared-ReLU）**（#4859，`megatron/core/transformer/moe/experts.py:389/527`）：当 `activation_func==squared_relu` 且 `use_fused_weighted_squared_relu=True` 且非 GLU 时，用 `te.pytorch.ops.ScaledSReLU` 融合。这把 §4.6 的 `fused_weighted_squared_relu`（jit_fuser 版）进一步纳入了 TE op-fuser 路径。同时引入 `activation_recompute_in_mlp` 透传（按 TE 签名探测）。
-> - **Clamped-SwiGLU（DSv4）**（#5130，`megatron/core/transformer/moe/experts.py:360`）：带 `activation_func_clamp_value` 的 SwiGLU 复用 `ScaledClampedQGeGLU(alpha=1.0, limit=clamp, glu_linear_offset=0.0)`——因为 cuDNN 的 geglu kernel 是 swiglu 的超集（`sigmoid(alpha·x)·x`，`alpha=1.0` 即 SiLU，`alpha=1.702` 即 quick-gelu）。需 **TE ≥ 2.17.0.dev0**。这与 §4.2 提到的 "Clamped variant 防 FP8 溢出" 一脉相承，但实现从手写 clamp 改为融合 kernel 的 runtime 参数。
+> - **ScaledSReLU（加权 squared-ReLU）**（#4859，能力探测 `megatron/core/transformer/moe/experts.py:396-398`，构造 `:554-562`）：当 `activation_func==squared_relu` 且 `use_fused_weighted_squared_relu=True` 且非 GLU 时，用 `te.pytorch.ops.ScaledSReLU` 融合。这把 §4.6 的 `fused_weighted_squared_relu`（jit_fuser 版）进一步纳入了 TE op-fuser 路径。同时引入 `activation_recompute_in_mlp` 透传（按 TE 签名探测）。
+> - **Clamped-SwiGLU（DSv4）**（#5130，注释 `megatron/core/transformer/moe/experts.py:368-369`，门槛判定 `:387-392`，构造 `:526-536`）：带 `activation_func_clamp_value` 的 SwiGLU 复用 `ScaledClampedQGeGLU(alpha=1.0, limit=clamp, glu_linear_offset=0.0)`——因为 cuDNN 的 geglu kernel 是 swiglu 的超集（`sigmoid(alpha·x)·x`，`alpha=1.0` 即 SiLU，`alpha=1.702` 即 quick-gelu）。需 **TE ≥ 2.17.0.dev0**。这与 §4.2 提到的 "Clamped variant 防 FP8 溢出" 一脉相承，但实现从手写 clamp 改为融合 kernel 的 runtime 参数。
 
 ### 7.3 TEFusedDenseMLP：Dense MLP 也走 Grouped GEMM 以触发 SM100 融合
 
-> [!update] 2026-06-16 · dev@232c478d4
-> 新增 `TEFusedMLPWithGroupedLinear`（别名 `TEFusedDenseMLP`，`megatron/core/extensions/transformer_engine.py:2852`，#4318）与开关 `use_grouped_gemm_for_dense_mlp`（`megatron/core/transformer/transformer_config.py:830`）。**把稠密 MLP 也用 `GroupedLinear(num_groups=1)` 实现**，目的是在 **SM100+（Blackwell）+ MXFP8 recipe** 下触发 TE 的 `ForwardGroupedMLP_CuTeGEMMSwiGLU_MXFP8` 融合 kernel（FC1 GEMM + SwiGLU + 量化一体）。要求 `use_te_op_fuser=True` 且 SwiGLU 激活；spec 选择见 `megatron/core/models/gpt/gpt_layer_specs.py:get_mlp_module_spec_for_backend`。
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
+> 新增 `TEFusedMLPWithGroupedLinear`（类定义 `megatron/core/extensions/transformer_engine.py:2892`，别名 `TEFusedDenseMLP` 在 `:3073` 赋值，#4318）与开关 `use_grouped_gemm_for_dense_mlp`（`megatron/core/transformer/transformer_config.py:920`）。**把稠密 MLP 也用 `GroupedLinear(num_groups=1)` 实现**，目的是在 **SM100+（Blackwell）+ MXFP8 recipe** 下触发 TE 的 `ForwardGroupedMLP_CuTeGEMMSwiGLU_MXFP8` 融合 kernel（FC1 GEMM + SwiGLU + 量化一体）。要求 `use_te_op_fuser=True` 且 SwiGLU 激活；spec 选择见 `megatron/core/models/gpt/gpt_layer_specs.py:554` 的 `get_mlp_module_spec_for_backend`（分支 `:573`）。
 
 ### 7.4 Frozen Linear dgrad 折叠
 
-> [!update] 2026-06-16 · dev@232c478d4
-> `LinearWithFrozenWeight.backward`（`megatron/core/tensor_parallel/layers.py:375`，#5092）：当 `grad_output.dim()>2` 时先 `reshape(-1, k)` 折成 2D 再 `matmul`，绕过 PyTorch matmul 对 size-1 前导维不折叠为 `mm` 的问题（pytorch#186148）。对冻结（如 LoRA base、frozen embedding）线性层的反向 dgrad 是一次纯吞吐优化，不改数值。
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
+> `LinearWithFrozenWeight.backward`（`megatron/core/tensor_parallel/layers.py:380-390`，类定义 `:357`，#5092）：当 `grad_output.dim()>2` 时先 `reshape(-1, k)` 折成 2D 再 `matmul`，绕过 PyTorch matmul 对 size-1 前导维不折叠为 `mm` 的问题（pytorch#186148）。对冻结（如 LoRA base、frozen embedding）线性层的反向 dgrad 是一次纯吞吐优化，不改数值。
 
 ### 7.5 mHC 融合 kernel 重写：多后端自动选择
 
-> [!deprecated] 2026-06-16：§3.6 与 §4.6 提到的 `fused_mhc_kernels` 原描述为"cuTile/cuTile fused kernels"。#4624（`megatron/core/fusions/fused_mhc_kernels.py`，`megatron/core/transformer/transformer_config.py:1103`）已重写为**多后端自动选择**：Sinkhorn 与 H_post_bda 反向优先 Triton，其余 fused kernel 用 cuTile，否则回退原生 torch。`use_fused_mhc` 不再因 cuTile 缺失而**静默重置为 False**（旧逻辑已删除），全 native 回退时保持开启并只发一条 rank-0 warning。hyper-connection 模块（SinkhornKnopp / H_aggregate / H_post_bda / ProjRms）相应改写。
+> [!deprecated] 2026-06-16：§3.6 与 §4.6 提到的 `fused_mhc_kernels` 原描述为"cuTile/cuTile fused kernels"。#4624（`9d46c924d`，`megatron/core/fusions/fused_mhc_kernels.py`，`megatron/core/transformer/transformer_config.py:1255`）已重写为**多后端自动选择**：Sinkhorn 与 H_post_bda 反向优先 Triton，其余 fused kernel 用 cuTile，否则回退原生 torch。`use_fused_mhc` 不再因 cuTile 缺失而**静默重置为 False**（旧逻辑已删除），全 native 回退时保持开启并只发一条 rank-0 warning。hyper-connection 模块（SinkhornKnopp / H_aggregate / H_post_bda / ProjRms）相应改写。
+>
+> **2026-08-28 重核（基线 `71092579`）：多后端结论仍然成立，§3.6 表格把 mHC 归为「CUTLASS/cuTile」单后端的写法已不准确。**证据：`megatron/core/fusions/fused_mhc_kernels.py:5`（模块 docstring 自陈 "Uses Triton and cuda.tile (cuTile) kernels when available, with PyTorch" 回退）；`:38-58` 的 `MHC_FORCE_BACKEND=auto|native|triton|cutile` 强制选择；`:66-97` 的 `_CUTILE_AVAILABLE` / `_TRITON_AVAILABLE` 双探测；`:134-147` 的 `MHC_DISABLE_TRITON` / `MHC_DISABLE_CUTILE` 关断。`use_fused_mhc` 的 docstring（`megatron/core/transformer/transformer_config.py:1255-1268`）逐字写明 "Triton for Sinkhorn and H_post_bda backward when available, cuTile for the remaining fused kernels when available, then native torch fallback"，且全 native 回退时 `use_fused_mhc` 保持开启、只发一条 rank-0 warning。该文件在旧基线之后又有两次改动：#6172（`d8b71082e`，cuTile 路径的 mHC mapping 计算保持 fp32）与 #5841（`2f2f8ebae`，EP a2a overlap 下的 mHC selective recompute + CUDA graph）。
 
 ### 7.6 Fused MLA：补齐 delayed weight-grad 钩子
 
-> [!update] 2026-06-16 · dev@232c478d4
-> `FusedMLASelfAttention` 新增 `backward_dw()` 与 `set_for_recompute_input_layernorm()`（`megatron/core/transformer/multi_latent_attention.py:1352`，#5273）。修复融合 MLA 在 `delay_wgrad_compute`（延迟权重梯度，与 dispatch/通信 overlap 配合）下缺失 wgrad 钩子导致权重梯度不被触发的 bug；逐个对 `linear_kv_up_proj / linear_qkv_down_proj / linear_q_up_proj / output_proj` 调 `backward_dw()`。
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
+> `FusedMLASelfAttention`（`megatron/core/transformer/multi_latent_attention.py:1359`）新增 `backward_dw()`（`:1503`）与 `set_for_recompute_input_layernorm()`（`:1510`），#5273。修复融合 MLA 在 `delay_wgrad_compute`（延迟权重梯度，与 dispatch/通信 overlap 配合）下缺失 wgrad 钩子导致权重梯度不被触发的 bug；逐个对 `linear_kv_up_proj / linear_qkv_down_proj / linear_q_up_proj` 调 `backward_dw()`（`:1505-1507`），输出投影走 `self._backward_output_proj()`（`:1508`）。
 
 ### 7.7 DSv4 Hybrid Attention 融合 kernel
 
-> [!update] 2026-06-16 · dev@232c478d4
-> 新增 `apply_dsa_kernel_fusion`（`megatron/core/transformer/transformer_config.py:346`，#4894）与 `megatron/core/transformer/experimental_attention_variant/dsa_kernels.py`（DeepSeek Sparse Attention 融合 kernel 封装）。基于 **FlashMLA 稀疏前向**（`flash_mla_sparse_fwd`）+ **cuDNN-Frontend DSA**（CuTe-DSL 反向 + indexer 评分 + TRT-LLM radix top-K），覆盖三条集成路径：可微稀疏注意力 `dsa_sparse_attn`、推理 indexer 评分+top-K `indexer_topk`、训练融合 indexer-loss+稀疏注意力共享反向 `fused_indexer_sparse_attn`。**仅 SM100+（Blackwell）**；缺包时报错或可 `--no-dsa-kernel-fusion` 回退非融合 PyTorch 实现。
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
+> 新增 `apply_dsa_kernel_fusion`（`megatron/core/transformer/transformer_config.py:408`，#4894）与 `megatron/core/transformer/experimental_attention_variant/dsa_kernels.py`（DeepSeek Sparse Attention 融合 kernel 封装）。基于 **FlashMLA 稀疏前向**（`flash_mla_sparse_fwd`）+ **cuDNN-Frontend DSA**（CuTe-DSL 反向 + indexer 评分 + TRT-LLM radix top-K），覆盖三条集成路径：可微稀疏注意力 `dsa_sparse_attn`、推理 indexer 评分+top-K `indexer_topk`、训练融合 indexer-loss+稀疏注意力共享反向 `fused_indexer_sparse_attn`。**仅 SM100+（Blackwell）**；缺包时报错或可 `--no-dsa-kernel-fusion` 回退非融合 PyTorch 实现。
+>
+> [!contradiction] 2026-08-28（基线 `71092579`）：`apply_dsa_kernel_fusion` 这个开关本身**已被标记废弃**，语义从"布尔总开关"退化为"旧名映射"。现在的主开关是 `dsa_kernel_backend: Literal["none", "tilelang", "cudnn"] = "none"`（`megatron/core/transformer/transformer_config.py:361`）；`apply_dsa_kernel_fusion` 的类型也从 `bool` 改成 `Optional[bool] = None`（`:408`，docstring `:409-410` 自陈 "Deprecated DSv4 fused-kernel switch. Use ``dsa_kernel_backend`` instead."）。归一化逻辑在 `:1697-1723`：非 `dsv4_hybrid` 时只发 warning 并忽略；`dsv4_hybrid` 时 `True→"cudnn"`、`False→"none"`，与显式 `dsa_kernel_backend` 冲突则报错，并警告该字段未来会被删除。后端实现也已按 backend 拆成 `megatron/core/transformer/experimental_attention_variant/dsa_cudnn_kernels.py` 与 `dsa_tilelang_kernels.py`（`dsa_kernels.py` 仍在）。
 
 ### 7.8 勘误：GDN 统一 A2A 已被回退
 
-> [!contradiction] 2026-06-16：#4913（48032d7b3）曾把 GDN forward 里 CP→HP 的**逐序列 All-to-All 循环**合并为**单次统一 A2A**（引入 `_build_head_perm_for_split_sections` / `_build_thd_cp_a2a_perm` 把分段与负载均衡置换折进一次 A2A）。但**当前 `dev@232c478d4` 源码中该优化已不存在**——`megatron/core/ssm/gated_delta_net.py:413-447` 仍是按 `split_sections` 的逐序列/分段 A2A 循环（`_build_thd_cp_a2a_perm` 在 HEAD 已不可见，被后续 dev↔main 合并回退/取代）。因此 §3.5 关于 MoE A2A 融合的论述对 GDN **不适用**当前代码；记录此 PR 仅为追溯历史。
+> [!contradiction] 2026-06-16 原记（**已被 2026-08-28 重核推翻**，保留以追溯）：#4913（48032d7b3）曾把 GDN forward 里 CP→HP 的**逐序列 All-to-All 循环**合并为**单次统一 A2A**（引入 `_build_head_perm_for_split_sections` / `_build_thd_cp_a2a_perm` 把分段与负载均衡置换折进一次 A2A）。当时判定为"`dev@232c478d4` 源码中该优化已不存在，`megatron/core/ssm/gated_delta_net.py:413-447` 仍是按 `split_sections` 的逐序列/分段 A2A 循环"。
+>
+> **2026-08-28 重核（基线 `71092579`）：该统一 A2A 已经回来，而且是默认路径。**首先原 locator 已彻底失效——`megatron/core/ssm/gated_delta_net.py` 这个**文件不再存在**，被拆成包 `megatron/core/ssm/gated_delta_net/`（`common.py` / `gdn.py` / `kda.py`，见 #6088 `3549dc62a`「extract and split common logic between GDN & GDN2」）。新实现：`a2a_cp_to_hp`（`megatron/core/ssm/gated_delta_net/common.py:838`）在 `cp_size>1` 时先用 `_build_head_perm_for_split_sections`（`:640`）对 head 维预置换，thd 路径再用 `_build_thd_cp_a2a_perm`（`:599`）对序列维预置换、并**把 `_undo_attention_load_balancing` 折进同一次置换**；源码注释原话是 "Pre-permute head dim so a single unsectioned a2a is equivalent to per-section a2a"（`:864-865`）——即用**一次不分段的 A2A** 取代逐段循环，返回的逆置换交给 `a2a_hp_to_cp`（`:888`）在回程还原。调用点：`gdn.py:308` / `:451`、`kda.py:380` / `:389` / `:515`。逐段循环只作为 `tensor_a2a_cp2hp` / `tensor_a2a_hp2cp` 的 `split_sections` 分支保留（`common.py:750-764` / `:819-833`），而 `a2a_cp_to_hp` 调它们时传的正是不分段形式。**结论反转：§3.5 关于 A2A 融合的论述现在对 GDN 同样适用。**
 
 ### 7.9 TE 版本依赖（影响融合可用性）
 
-> [!update] 2026-06-16 · dev@232c478d4
-> TE 依赖经 #4682（2.15.0）、#4992（2.16.0）多次 bump（`pyproject.toml`）。对融合的实际影响：op-fuser 路径需 **TE ≥ 2.14.0**；`ScaledClampedQGeGLU`（quick-GEGLU 融合）需 **TE ≥ 2.15**；Clamped-SwiGLU 走 `ScaledClampedQGeGLU` 需 **TE ≥ 2.17.0.dev0**（见 §7.2）。
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
+> TE 依赖经 #4682（2.15.0，`815c83d9b`）、#4992（2.16.0，`6e091e1b6`）多次 bump。对融合的实际影响：op-fuser 路径需 **TE ≥ 2.14.0**（`megatron/core/transformer/moe/experts.py:350`）；`ScaledClampedQGeGLU`（quick-GEGLU 融合）需 **TE ≥ 2.15**（`:393-395`，以 `hasattr(te_ops, "ScaledClampedQGeGLU")` 探测，报错文案写的就是 "quick_gelu needs TE >= 2.15"）；Clamped-SwiGLU 走 `ScaledClampedQGeGLU` 需 **TE ≥ 2.17.0.dev0**（`:389-390` 的 `is_te_min_version("2.17.0.dev0")`，见 §7.2）。
+>
+> [!contradiction] 2026-08-28："bump 写在 `pyproject.toml`" 这半句在基线 `71092579` 下**核不上**——`pyproject.toml:87` 仍是 `"transformer-engine[pytorch,core_cu13]>=2.9.0a0,<2.12.0"`，与 `ee3f1ff`、`232c478d4` **逐字相同**；`[tool.uv.sources]` 的 TE git rev（`pyproject.toml:227`）在三处基线也都是 `f031cf87bd054c7558b887df7bed93975456667f`。#4682/#4992 确实是 `71092579` 的祖先、当时改的也确实是 `pyproject.toml`，但其效果已被后续 dev↔main 合并覆盖回去。因此**当前基线下可核验的 TE 版本门槛只有代码里的 `is_te_min_version` / `hasattr` 探测**（上一段的 `experts.py` 三处），不是 `pyproject.toml` 的 pin。
 
 ## Related Pages
 

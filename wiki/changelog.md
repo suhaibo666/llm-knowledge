@@ -12,6 +12,43 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-28：megatron-lm 基线推进 578 个提交，456 条引用逐条重核——推翻 6 条结论、揪出 4 处原始撰写错误
+
+**Type**: 基线重定 + 全域引用重核（26 页 + 域索引 + radar；六个并行 agent）
+
+**基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）。由 `ee3f1ffa…`（2026-05-19）推进 **578 个提交**，部分页由 `232c478d4…`（2026-06-16）推进 280 个。每页页头加一行 `> **重定基线**`；原先"正文按 ee3f1ff、`[!update]` 块按 232c478d4"的双行号口径就此作废，全部统一。
+
+**方法**：不是把行号按偏移量平移，而是逐条读"这处引用声称的是什么"（哪个类/函数/断言/注释），在新基线下 `git grep` 找到它的真实位置，改完再 `git show` 打开确认内容对得上。找不到的一律判定性质，**不许硬凑**：移动改名 → 更新并注明 PR；机制被删 → 保留原文加 `> [!deprecated]`；行为变了 → `> [!contradiction]`。本轮共新增 25 条 `[!contradiction]`、15 条 `[!deprecated]`。
+
+**被推翻的结论（本轮最有价值的产出）**
+
+1. **[[35_deepseek_v4_context_parallel_analysis]] 自称的"核心贡献"整体反转。** 该页的卖点是「CSA/HCA 两阶段 CP 在代码里尚未实现，审计未发现 isend/irecv/all_gather」。新基线下 `experimental_attention_variant/` 从 10 个文件涨到 **45 个**，多出 `csa_utils/` 子包；两阶段 CP 由 **#5087** 实现：`_LeftBoundaryExchange`（`csa_utils/cp_utils.py:124`）用 `dist.batch_isend_irecv` 做前反向边界交换（`:156`/`:184`），入口 `exchange_cp_boundary_hidden`（`:201`）。§5.5 四条 gap、§8.3、§九 特征 4 随之作废。
+2. **[[18_megatron_recompute_analysis]] 的「历史更正」自己过期了，且会误导配置。** 该页曾正确指出 `gdn_norm_out` 全仓已不存在（`ee3f1ff` 下确为 0 命中）；**#6088 把它加了回来**（新基线 8 处命中），现在 `gdn` 与 `gdn_norm_out` 并存且互斥，照旧说法配置会失败。
+3. **MoE aux/z-loss 的 `× tp_cp_group.size()` 预乘被上游判定为不正确并改掉**（#5542/#4359）。源码注释原话：THD padding 或动态 CP 下各 rank 有效 token 数不同，`local_num_tokens * group_size is not generally correct`。现改为沿 `aux_loss_scale_reduce_groups` 逐组 all_reduce 后再乘（`router.py:598-624`）。影响 [[01_megatron_moe_training_optimization_analysis]] 与 [[28_megatron_training_stability_observability_analysis]]。
+4. **flex dispatcher 多了第四个后端 `ncclep`**（`transformer_config.py:972`、`_NCCLEPManager` @ `token_dispatcher.py:1637`），带 `moe_ncclep_static_shape`（固定接收缓冲、无 D2H 同步）使 MoE 的 all-to-all **可被 CUDA Graph 捕获**。[[14_megatron_ep_analysis]] 的「三种 dispatcher」对比表与选型树枚举过时。
+5. **两处上游自己回退/复活**：#5170 移除的 checkpoint 期显存回收 workaround 被 **#5366 整体 revert**，代码原样活着（影响 [[22_megatron_memory_optimization_analysis]]）；GDN 的「单次统一 A2A」被回退的结论也反转了，它现在是默认路径（影响 [[21_megatron_fusion_operators_analysis]]）。
+6. **HybridEP 的 THD 自动补齐被 #5668 取消**，现在只认显式开关 `moe_hybridep_pad_variable_tokens`。
+
+**机制被删除**：`broadcast_to_pp_group`（#4226，`ee3f1ff` 下 3 处命中 → 新基线 0；[[29_megatron_packed_dataset_dynamic_cp_analysis]] 的九步流水线第⑦步与 [[11_megatron_dataset_analysis]] §3.3 受影响，**且这次删除发生在 `232c478d4` 之前，上一轮重定基线时就该抓到、漏了**）、`TensorReusePool`（#5451，改引用计数）、`"dynamic_context_parallel is not supported with MLA yet"` 断言（#4226）、`optimizer_state_offloader.py`（#6244，改名 `chunked_optimizer_state_offload.py`）、`ssm/gated_delta_net.py`（#6088，拆成包）。
+
+**揪出的原始撰写错误（不是漂移，是从来就错）**
+
+- **[[20_megatron_comm_overlap_analysis]] §5.4.1 的代码片段是编造的**：`self.output_grads`、`delay_grads_release`、`manual_release_grads`、`untyped_storage().resize_(0)` 四处在 `71092579`／`232c478d4`／`ee3f1ff` **三个基线下全域零命中**。真实的 `backward_impl` 只做 `default_backward_func(...)` 后 `return grads`，`backward_dw` 只切流加 nvtx。"dX/dW 分离、dW 延后"这半句成立，"手工保存梯度再手工释放显存"那半句不成立。
+- **[[16_megatron_distributed_optimizer_analysis]] §13.1** 把 `_check_module_parameter_types` 算作 `TorchFullyShardedDataParallel` 的 EP 处理手段——该符号在那个文件里**新旧基线都不存在**，它是 `MegatronFSDP` 的方法；新基线下该文件 `expert|Expert` 整体零命中，FSDP2 路径根本没有 EP 专门处理。
+- **`paged_stash.py:1247-1267` 从来越界**：该文件在 `232c478d4` 与新基线下都只有 1240 行。
+- **[[13_megatron_cp_analysis]] 的「`full_iteration` 与 `cu_seqlens` 互斥」两层都不成立**：被引的两处守卫分别是关于 `--no-check-for-nan-in-loss-and-grad` 与 `--cuda-graph-modules`，整段里 `cu_seqlens` 出现 0 次——这是 2026-08-27（十三）那一轮补 locator 时引错的，当时只核了"行存在"没核"它证明什么"；而且 #4359 已给 THD 变长训练加上 CUDA Graph 支持，该论断本身也过期了。
+- 另有若干旧基线下就指错文件的（`batch_p2p_comm` 一直写成 `transformer_config.py`、实为 `model_parallel_config.py`；`drain_embedding_wgrad_compute` 指的是调用点非定义处；`validate_access_integrity` 是开关参数不是函数）。
+
+**[[33_megatron_vllm_weight_sync_analysis]] 定出了基线**：它分析的是 `volcengine/verl`，不适用 Megatron 基线。沿本机 verl 检出历史回溯，钉为 `volcengine/verl@ab0705220a95952219111409d8f971872002c193`（`main`，2025-12-04）——这是**本页每一处引用都仍能解析的最新 commit**，紧随其后的 `fd893c78` 就删掉了 `vllm_rollout_spmd.py`。全页约 25 条引用据此补齐行号，并标注该调用链在 verl 当前 HEAD 已不存在。
+
+**索引与 radar**：域索引改写为"全域统一基线 `71092579`"，并说明被推翻的结论是就地标注而非删除。`docs/radar/watchlist.yaml` 的 `kb_baseline` 同步推进。
+
+**校验**：`check_links --strict` 426 页 0/0/0/0；`check_math --changed --strict` 0 错 0 警；`pytest tools/` 107 passed。26 页共 456 条带行号引用全部重核，每个新行号改完重新 `git show` 确认。
+
+**未做**：五拍重排（第二波）。本域 26 篇里只有 4 篇有第 2 拍，是三个域里最缺的。
+
+---
+
 ## 2026-08-27（十三）：把（十）（十一）报告出来但没修的缺陷全部修掉
 
 **Type**: 缺陷修复（megatron 18 页 + slime 19 页；三个并行 agent + 协调者收尾）
