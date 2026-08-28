@@ -10,6 +10,7 @@ from .models import Inventory, PageRecord
 
 
 _FENCE_START = re.compile(r"^\s*(`{3,}|~{3,})")
+_ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+|$)")
 _WIKILINK = re.compile(r"!?\[\[([^\[\]\n]+?)\]\]")
 
 
@@ -203,6 +204,16 @@ def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> 
     visible_lines: list[str] = []
     visible_start_line = 1
     fence: str | None = None
+
+    def flush_visible() -> None:
+        if visible_lines:
+            output.append(
+                _rewrite_inline_code_aware(
+                    "".join(visible_lines), page, inventory, visible_start_line
+                )
+            )
+            visible_lines.clear()
+
     for line_number, line in enumerate(markdown.splitlines(keepends=True), start=1):
         fence_match = _FENCE_START.match(line)
         if fence is not None:
@@ -212,23 +223,22 @@ def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> 
                 visible_start_line = line_number + 1
             continue
         if fence_match is not None:
-            if visible_lines:
-                output.append(
-                    _rewrite_inline_code_aware(
-                        "".join(visible_lines), page, inventory, visible_start_line
-                    )
-                )
-                visible_lines.clear()
+            flush_visible()
             fence = fence_match.group(1)
             output.append(line)
+            continue
+        if not line.strip():
+            flush_visible()
+            output.append(line)
+            visible_start_line = line_number + 1
+            continue
+        if _ATX_HEADING.match(line):
+            flush_visible()
+            output.append(_rewrite_inline_code_aware(line, page, inventory, line_number))
+            visible_start_line = line_number + 1
             continue
         if not visible_lines:
             visible_start_line = line_number
         visible_lines.append(line)
-    if visible_lines:
-        output.append(
-            _rewrite_inline_code_aware(
-                "".join(visible_lines), page, inventory, visible_start_line
-            )
-        )
+    flush_visible()
     return "".join(output)

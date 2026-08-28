@@ -131,6 +131,28 @@ def test_multiline_inline_code_span_preserves_contained_wikilink(
     assert rewritten.endswith("[target](../target.md)")
 
 
+def test_blank_line_prevents_inline_code_pairing_across_paragraphs(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = "`start\n\n[[target]]\nend`"
+
+    assert rewrite_wikilinks(markdown, page, inventory) == (
+        "`start\n\n[target](../target.md)\nend`"
+    )
+
+
+def test_atx_heading_prevents_inline_code_pairing_across_blocks(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = "`start\n## Heading\n[[target]]\nend`"
+
+    assert rewrite_wikilinks(markdown, page, inventory) == (
+        "`start\n## Heading\n[target](../target.md)\nend`"
+    )
+
+
 @pytest.mark.parametrize(
     ("delimiter", "unequal_run"),
     [("``", "```"), ("```", "``")],
