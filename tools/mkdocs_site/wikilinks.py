@@ -6,6 +6,7 @@ import re
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
 
+from markdown.extensions.attr_list import AttrListTreeprocessor, get_attrs_and_remainder
 from markdown.extensions.toc import slugify, slugify_unicode, unique
 
 from .models import Inventory, PageRecord
@@ -390,21 +391,39 @@ def _without_section_number(heading: str) -> str:
     return _SECTION_NUMBER_PREFIX.sub("", heading, count=1)
 
 
+def _heading_text_and_id(heading: str) -> tuple[str, str | None]:
+    match = AttrListTreeprocessor.HEADER_RE.search(heading)
+    if match is None:
+        return heading, None
+    attributes, remainder = get_attrs_and_remainder(match.group(1))
+    if remainder:
+        return heading, None
+    explicit_id = next(
+        (value for key, value in reversed(attributes) if key == "id"), None
+    )
+    return heading[: match.start()].rstrip(), explicit_id
+
+
 def _heading_aliases(
     markdown: str, existing_anchors: set[str]
 ) -> dict[int, tuple[str, ...]]:
     visible = _visible_markdown(markdown)
     all_headings = tuple(
-        (len(match.group("marks")), match.group("text").strip())
+        (
+            len(match.group("marks")),
+            *_heading_text_and_id(match.group("text").strip()),
+        )
         for line in _visible_heading_lines(markdown)
         if (match := _ATX_HEADING_TEXT.match(line)) is not None
     )
-    used_ascii: set[str] = set()
+    used_ascii = {
+        explicit_id for _, _, explicit_id in all_headings if explicit_id is not None
+    }
     used_unicode: set[str] = set()
     canonical_owners: dict[str, set[tuple[str, int]]] = {}
     headings: list[tuple[str, str, str, int]] = []
-    for sequence, (level, heading) in enumerate(all_headings):
-        ascii_anchor = unique(slugify(heading, "-"), used_ascii)
+    for sequence, (level, heading, explicit_id) in enumerate(all_headings):
+        ascii_anchor = explicit_id or unique(slugify(heading, "-"), used_ascii)
         unicode_anchor = unique(slugify_unicode(heading, "-"), used_unicode)
         canonical_owners.setdefault(ascii_anchor, set()).add(("canonical", sequence))
         if level in {2, 3}:

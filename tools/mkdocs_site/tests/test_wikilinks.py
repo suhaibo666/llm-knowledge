@@ -203,6 +203,39 @@ def test_rewriter_drops_manual_alias_claimed_by_two_headings(
     assert 'name="shared"' not in rewritten
 
 
+def test_rewriter_strips_heading_attr_list_without_id_for_exact_label_match(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = (
+        '[Alpha](#legacy)\n\n## Alpha {.feature key="value"}\n'
+    )
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert '<a name="legacy"></a>' in rewritten
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        "`{#custom}`",
+        "{#custom} ordinary text",
+    ],
+)
+def test_rewriter_does_not_treat_inline_or_nonterminal_text_as_heading_attr_list(
+    literal: str,
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = f"[Beta](#custom)\n\n## Alpha {literal}\n\n## Beta\n"
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert rewritten.count('name="custom"') == 1
+    assert rewritten.index('name="custom"') < rewritten.index("## Beta")
+
+
 def test_rewriter_neutralizes_backtick_wrapped_local_code_locator(
     resolver_fixture: tuple[PageRecord, Inventory],
 ) -> None:

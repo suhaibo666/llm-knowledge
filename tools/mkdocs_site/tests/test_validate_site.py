@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 from markdown import markdown as render_markdown
+from bs4 import BeautifulSoup
 
 from tools.mkdocs_site.inventory import scan_inventory
 from tools.mkdocs_site.wikilinks import rewrite_wikilinks
@@ -253,6 +256,57 @@ def test_rendered_suffix_guess_remains_a_missing_anchor(tmp_path: Path) -> None:
     report = validate_site(site, route_manifest=write_routes(tmp_path))
 
     assert report.missing_anchors == ("index.html -> index.html#invented",)
+
+
+def test_rewrite_mkdocs_render_and_validator_keep_explicit_heading_id_unique(
+    tmp_path: Path,
+) -> None:
+    wiki = tmp_path / "wiki"
+    wiki.mkdir()
+    source = wiki / "index.md"
+    source.write_text(
+        '# Test page\n\n[Beta](#custom)\n\n'
+        '## Alpha {#custom .feature key="value"}\n\n## Beta\n',
+        encoding="utf-8",
+    )
+    inventory = scan_inventory(wiki)
+    page = inventory.by_relative[next(iter(inventory.by_relative))]
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "index.md").write_text(
+        rewrite_wikilinks(source.read_text(encoding="utf-8"), page, inventory),
+        encoding="utf-8",
+    )
+    site = tmp_path / "site"
+    config = tmp_path / "mkdocs.yml"
+    config.write_text(
+        "site_name: attr-list regression\n"
+        f"docs_dir: {docs.as_posix()}\n"
+        f"site_dir: {site.as_posix()}\n"
+        "use_directory_urls: false\n"
+        "markdown_extensions:\n"
+        "  - toc\n"
+        "  - attr_list\n",
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-m", "mkdocs", "build", "--strict", "-f", str(config)],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    soup = BeautifulSoup((site / "index.html").read_text(encoding="utf-8"), "html.parser")
+    custom = soup.select('[id="custom"], [name="custom"]')
+    report = validate_site(site, route_manifest=write_routes(tmp_path))
+
+    assert len(custom) == 1
+    assert custom[0].name == "h2"
+    assert custom[0].get_text(" ", strip=True) == "Alpha"
+    assert report.missing_anchors == ()
 
 
 def test_validator_requires_exact_case_for_pages_and_assets(tmp_path: Path) -> None:
