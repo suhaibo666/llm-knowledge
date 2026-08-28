@@ -170,6 +170,7 @@ test("runtime manifest and lock agree on every enabled plugin commit", async () 
     "patches/quartz-v5-core-local-only.json",
     "patches/quartz-v5-ofm-local-mermaid.json",
     "patches/quartz-v5-crawl-links-obsidian-paths.json",
+    "patches/quartz-v5-explorer-filenames.json",
     "patches/quartz-v5-project-path-links.json",
     "patches/quartz-v5-breadcrumbs-no-frontmatter.json",
     "patches/quartz-v5-responsive-layout.json",
@@ -314,6 +315,26 @@ test("the crawl-links patch resolves unique Obsidian path suffixes", async () =>
       `patched output must not retain its full before context: ${replacement.file}`,
     )
   }
+})
+
+test("the Explorer patch labels ordinary Markdown nodes with their filename", async () => {
+  const patch = JSON.parse(
+    await readFile(
+      path.join(toolDir, "patches", "quartz-v5-explorer-filenames.json"),
+      "utf8",
+    ),
+  )
+  const files = patch.replacements.map(({ file }) => file).sort()
+  const combined = patch.replacements.map(({ after }) => after).join("\n")
+
+  assert.equal(patch.id, "quartz-v5-explorer-filenames")
+  assert.deepEqual(files, [
+    ".quartz/plugins/explorer/dist/components/index.js",
+    ".quartz/plugins/explorer/dist/index.js",
+  ])
+  assert.match(combined, /data\?\.filePath\?\.split\(\"\/\"\)\.pop\(\)/)
+  assert.match(combined, /if\(!this\.isFolder&&e&&e!==\"index\"\)return e/)
+  assert.match(combined, /this\.data\?\.title/)
 })
 
 test("the breadcrumbs patch includes Markdown files without frontmatter", async () => {

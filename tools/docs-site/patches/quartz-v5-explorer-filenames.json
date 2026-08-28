@@ -1,0 +1,15 @@
+{
+  "id": "quartz-v5-explorer-filenames",
+  "replacements": [
+    {
+      "file": ".quartz/plugins/explorer/dist/index.js",
+      "before": "get displayName(){return(this.data?.title===\"index\"?void 0:this.data?.title)||this.fileSegmentHint||this.slugSegment||\"\"}",
+      "after": "get displayName(){let e=this.data?.filePath?.split(\"/\").pop()?.replace(/\\.md$/i,\"\");if(!this.isFolder&&e&&e!==\"index\")return e;return(this.data?.title===\"index\"?void 0:this.data?.title)||this.fileSegmentHint||this.slugSegment||\"\"}"
+    },
+    {
+      "file": ".quartz/plugins/explorer/dist/components/index.js",
+      "before": "get displayName(){return(this.data?.title===\"index\"?void 0:this.data?.title)||this.fileSegmentHint||this.slugSegment||\"\"}",
+      "after": "get displayName(){let e=this.data?.filePath?.split(\"/\").pop()?.replace(/\\.md$/i,\"\");if(!this.isFolder&&e&&e!==\"index\")return e;return(this.data?.title===\"index\"?void 0:this.data?.title)||this.fileSegmentHint||this.slugSegment||\"\"}"
+    }
+  ]
+}

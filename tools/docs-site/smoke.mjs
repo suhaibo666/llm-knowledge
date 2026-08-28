@@ -329,6 +329,28 @@ async function runBrowserAssertions(page, baseUrl) {
     explorerStatus >= 200 && explorerStatus < 400,
     `Explorer link ${explorerLinks[0]} returned HTTP ${explorerStatus}`,
   )
+  const explorerLabels = await page.evaluate(() => {
+    const links = [...document.querySelectorAll(".explorer-content a[href]")]
+    const labelFor = (pathSuffix) =>
+      links.find((link) => new URL(link.href).pathname.endsWith(pathSuffix))?.textContent.trim()
+
+    return {
+      article: labelFor(
+        "/02_engineering/02_train_frameworks/megatron-lm/13_megatron_cp_analysis",
+      ),
+      folder: labelFor("/02_engineering/"),
+    }
+  })
+  assert.equal(
+    explorerLabels.article,
+    "13_megatron_cp_analysis",
+    "Explorer must label ordinary Markdown articles with their filename",
+  )
+  assert.equal(
+    explorerLabels.folder,
+    "工程实现 — 知识地图",
+    "Explorer must preserve the frontmatter title for folder index nodes",
+  )
 
   // ---- 回归：子目录 index.md 必须渲染正文（曾因缺 note-properties 而全站空白）----
   const folderIndex = `${baseUrl}02_engineering/03_infer_frameworks/`
