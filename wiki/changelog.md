@@ -12,6 +12,29 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-28（三）：修 torchtitan 章节引用，并翻掉跨框架对比表里一条已被上游推翻的结论
+
+**Type**: 交叉引用修复（1 页 7 处 §）+ 一条主结论更正
+
+**起因**：torchtitan 域被另一会话重构（`4b789b5`）后章节结构大改，别处的 `§N` 引用失效。实测范围比先前粗估的「约 23 处」小得多——**全库目录外指向 torchtitan 页的带 `§` 引用只有 8 条**，7 条集中在 [[30_comm_compute_overlap_analysis]] 的跨框架对比表，另 1 条是误报（dispatcher 页那个 `§11` 指的是它自己的 §11）。torchtitan 目录内部页面之间的 `]] §` 引用为 **0**，重构时已一并清掉。
+
+**改号之外，查出 5 处是「归属错」而不只是编号错**：
+
+- **PP 的 action runtime 不是 torchtitan 实现的**。原表把「`RECV` 早发起、用前才 wait」记在 torchtitan 名下并指向越界的 §8。该页 §1 表格逐字写着「schedule class | PyTorch pipelining | 决定 action/P2P 时序；TorchTitan 只选类、填 stages/microbatches」，§3 又说「让上游拥有 action engine」。已改指 §1/§3 并注明归属。
+- **ZBV/DualPipeV 同理**：整页 grep 不到 `OVERLAP_F_B` 或 `stage_backward_input/weight` 的机制描述；该页只承载 V 型 rank 映射表，且自陈「zero-bubble 与 custom CSV 的 core integration case 当前 disabled」。
+- **HSDP「反向另开 all-reduce stream」说反了**。21 页论点原话：「TorchTitan 并没有实现一套自己的 reduce-scatter / all-reduce 双流调度器…属上游 FSDP2」，而原指的 §5 标题本身就是「…**不是** AR/RS 双流开关」。已改指 §4 并把说法改成「属上游 PyTorch FSDP2；TorchTitan 只声明轴与缩放所有权」。
+- Async-TP 那格的两处细节：`symm_mem.fused_*` 实属 dist-GEMM 而非 Async-TP；「Hopper 对称内存」门槛挂在 `enable_fsdp_symm_mem` 上，`_maybe_enable_async_tp` 里**没有任何 capability 检查**。
+
+**一条主结论被翻面**：对比表原记「torchtitan 用 `AsyncCollectiveTensor` 实现同一 microbatch 内的 EP 掩盖」。回 `torchtitan@a3168782c9` 核对 `MoE.forward`：`out_TD = self.routed_experts(...)` 在 `torchtitan/models/common/moe.py:440`、`shared_out_TD` 在 `:447` —— **shared experts 严格排在 routed path 完成之后，没有可供掩盖的窗口**；#3386 `963c20cba`（2026-05-20）正是把 shared experts 移出 dispatcher 的那次重构。权威页 [[15_torchtitan_ep_analysis]] §5 已标明旧述不符合 HEAD。
+
+代理只改了它被授权的那一格，同页另有四处仍在主张相反的事实（三分类举例、可达性矩阵、§4.3 结论、Related Pages 描述）——**只改一处会让同一页自相矛盾**，故由协调者一并改掉：矩阵该格 ✓→✗ 并补一条带 locator 的修正注；结论从「两个独立层次」改为「只剩 stage 级跨 mb 一个层次，且由上游 pipelining 提供」。`Stream 管理` 一行保留——那是泛指异步集合通信的载体，不是被推翻的那条断言。
+
+**方法论**：`§N` 是纯文本、不是 wikilink，`check_links --strict` 检查不到，这类失效长期是盲区。建议给 `tools/check_links.py` 加一条低成本规则——wikilink 后紧跟 `§N` 时去目标页 `grep '^## '` 校验该顶层节存在；本轮 8 条里有 3 条纯靠「越界」就能自动抓出来。
+
+**校验**：`check_links --strict` 430 页 broken/ambiguous/bare_index/orphans 全 0；`check_math --changed --strict` 0 错 0 警。
+
+---
+
 ## 2026-08-28（二）：Megatron-FSDP 提为独立页（36 号），并按 Merge over coexist 去重
 
 **Type**: 新增 1 页 + 合并去重 2 页 + 域索引
