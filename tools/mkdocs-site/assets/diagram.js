@@ -26,6 +26,11 @@
     return document.body.dataset.mdColorScheme === "slate" ? "dark" : "default";
   }
 
+  function removeRenderArtifact(id) {
+    const artifact = document.getElementById("d" + id);
+    if (artifact) artifact.remove();
+  }
+
   async function renderDiagrams(root) {
     if (!window.mermaid) return;
     captureSources(root);
@@ -45,12 +50,14 @@
     });
 
     for (const item of work) {
+      const id = "kb-mermaid-" + (++diagramSequence);
       try {
-        const id = "kb-mermaid-" + (++diagramSequence);
         const result = await window.mermaid.render(id, item.source);
         item.node.innerHTML = result.svg;
         if (result.bindFunctions) result.bindFunctions(item.node);
       } catch (error) {
+        removeRenderArtifact(id);
+        item.node.textContent = item.source;
         item.node.dataset.kbMermaidError = "true";
         console.error(
           "Mermaid render failed: " + (error && (error.str || error.message) || String(error))

@@ -69,6 +69,41 @@ def test_stage_wiki_preserves_frontmatter_and_writes_routes(
     assert len(json.loads(result.route_manifest.read_text(encoding="utf-8"))) == 3
 
 
+def test_stage_wiki_copies_complete_local_renderer_runtime(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    repo = tmp_path / "repo"
+    shutil.copytree(fixture_wiki, repo / "wiki")
+    tooling = repo / "tools/mkdocs-site"
+    renderer_files = {
+        "assets/extra.js": "theme",
+        "node_modules/mathjax/tex-chtml.js": "mathjax",
+        "node_modules/mathjax/input/tex/extensions/boldsymbol.js": "extension",
+        "node_modules/mathjax/sre/speech-worker.js": "worker",
+        "node_modules/mathjax/sre/mathmaps/en.json": "{}",
+        "node_modules/@mathjax/mathjax-newcm-font/chtml/dynamic/double-struck.js": "font",
+        "node_modules/@mathjax/mathjax-newcm-font/chtml/woff2/mjx-ncm-ab.woff2": "font",
+        "node_modules/mermaid/dist/mermaid.min.js": "mermaid",
+    }
+    for relative, content in renderer_files.items():
+        destination = tooling / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content, encoding="utf-8")
+
+    paths = BuildPaths.from_repo(repo)
+    stage_wiki(paths, scan_inventory(paths.wiki))
+
+    expected = (
+        "assets/vendor/mathjax/input/tex/extensions/boldsymbol.js",
+        "assets/vendor/mathjax/sre/speech-worker.js",
+        "assets/vendor/mathjax/sre/mathmaps/en.json",
+        "assets/vendor/mathjax-newcm/chtml/dynamic/double-struck.js",
+        "assets/vendor/mathjax-newcm/chtml/woff2/mjx-ncm-ab.woff2",
+    )
+    for relative in expected:
+        assert (paths.staging / relative).is_file(), relative
+
+
 def test_failed_conversion_keeps_last_good_stage_and_reports_source_line(
     tmp_path: Path, fixture_wiki: Path
 ) -> None:

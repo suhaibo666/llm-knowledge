@@ -110,6 +110,29 @@ def _copy_theme_assets(paths: BuildPaths, staging: Path) -> int:
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
         copied += 1
+    vendor_trees = (
+        (
+            tooling / "node_modules/mathjax/input/tex/extensions",
+            target_assets / "vendor/mathjax/input/tex/extensions",
+        ),
+        (
+            tooling / "node_modules/mathjax/sre",
+            target_assets / "vendor/mathjax/sre",
+        ),
+        (
+            tooling / "node_modules/@mathjax/mathjax-newcm-font/chtml/dynamic",
+            target_assets / "vendor/mathjax-newcm/chtml/dynamic",
+        ),
+        (
+            tooling / "node_modules/@mathjax/mathjax-newcm-font/chtml/woff2",
+            target_assets / "vendor/mathjax-newcm/chtml/woff2",
+        ),
+    )
+    for source, destination in vendor_trees:
+        if not source.is_dir():
+            raise FileNotFoundError(f"missing pinned renderer asset tree: {source}")
+        shutil.copytree(source, destination, dirs_exist_ok=True)
+        copied += sum(1 for path in source.rglob("*") if path.is_file())
     return copied
 
 

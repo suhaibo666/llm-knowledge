@@ -34,6 +34,15 @@ def _copy_theme_inputs(repo: Path) -> None:
             target = target_root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
+    for relative in (
+        Path("node_modules/mathjax/input/tex/extensions"),
+        Path("node_modules/mathjax/sre"),
+        Path("node_modules/@mathjax/mathjax-newcm-font/chtml/dynamic"),
+        Path("node_modules/@mathjax/mathjax-newcm-font/chtml/woff2"),
+    ):
+        source = source_root / relative
+        if source.is_dir():
+            shutil.copytree(source, target_root / relative)
 
 
 def build_fixture_site(tmp_path: Path, fixture_wiki: Path) -> tuple[Path, object]:
@@ -130,3 +139,38 @@ def test_search_rewrite_rejects_locations_outside_the_route_manifest(
 
     with pytest.raises(SearchIndexError, match=r"unknown search location: missing\.html"):
         rewrite_search_index(site, scan_inventory(fixture_wiki))
+
+
+def test_local_renderer_runtime_is_closed_and_subpath_safe(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    site, _ = build_fixture_site(tmp_path, fixture_wiki)
+
+    required_runtime_files = (
+        "assets/vendor/mathjax/input/tex/extensions/boldsymbol.js",
+        "assets/vendor/mathjax/sre/speech-worker.js",
+        "assets/vendor/mathjax/sre/mathmaps/en.json",
+        "assets/vendor/mathjax-newcm/chtml/dynamic/double-struck.js",
+        "assets/vendor/mathjax-newcm/chtml/woff2/mjx-ncm-ab.woff2",
+    )
+    for relative in required_runtime_files:
+        assert (site / relative).is_file(), relative
+
+    config = (REPO / "tools/mkdocs-site/assets/mathjax.js").read_text(
+        encoding="utf-8"
+    )
+    assert "document.currentScript.src" in config
+    assert '"mathjax-newcm"' in config
+    assert 'new URL("vendor/mathjax-newcm", assetRoot)' in config
+    assert 'new URL("vendor/mathjax-newcm/chtml", assetRoot)' not in config
+
+
+def test_mermaid_failure_cleanup_preserves_source_and_removes_render_artifact() -> None:
+    script = (REPO / "tools/mkdocs-site/assets/diagram.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'document.getElementById("d" + id)' in script
+    assert "artifact.remove()" in script
+    assert "item.node.textContent = item.source" in script
+    assert script.index('const id = "kb-mermaid-"') < script.index("try {")
