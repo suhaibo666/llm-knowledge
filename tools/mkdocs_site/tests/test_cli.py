@@ -4,7 +4,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from tools.mkdocs_site.cli import Operations, main
+from tools.mkdocs_site.cli import (
+    Operations,
+    ServeRuntime,
+    _ServeState,
+    _refresh_preview,
+    main,
+)
+from tools.mkdocs_site.models import BuildPaths
+from tools.mkdocs_site.staging import StageResult
 from tools.mkdocs_site.validate_site import ValidationReport
 
 
@@ -52,6 +60,39 @@ def recording_operations(
     return Operations(scan, stage, config, run, rewrite, validate)
 
 
+def recording_serve_runtime(
+    events: list[tuple[object, ...]],
+    *,
+    child_exit: int | None = None,
+) -> ServeRuntime:
+    child = SimpleNamespace(pid=1234, returncode=child_exit)
+    child.poll = lambda: child.returncode
+
+    def check_port(port: int) -> None:
+        events.append(("port", port))
+
+    def start(command: list[str], cwd: Path) -> object:
+        events.append(("start", command, cwd))
+        return child
+
+    def ready(url: str, received_child: object) -> None:
+        assert received_child is child
+        events.append(("ready", url))
+
+    def open_browser(url: str) -> None:
+        events.append(("open", url))
+
+    def watch(wiki: Path, callback, stop_requested) -> None:
+        del callback, stop_requested
+        events.append(("watch", wiki))
+
+    def stop(received_child: object) -> None:
+        assert received_child is child
+        events.append(("stop", child.pid))
+
+    return ServeRuntime(check_port, start, ready, open_browser, watch, stop)
+
+
 def test_build_stages_writes_config_then_runs_strict_mkdocs(tmp_path: Path) -> None:
     events: list[tuple[object, ...]] = []
     generated_config = tmp_path / "mkdocs.generated.yml"
@@ -84,25 +125,272 @@ def test_serve_stages_writes_config_then_binds_mkdocs_to_loopback(
     events: list[tuple[object, ...]] = []
     generated_config = tmp_path / "mkdocs.generated.yml"
 
-    result = main(["serve"], recording_operations(events, generated_config))
+    result = main(
+        ["serve"],
+        recording_operations(events, generated_config),
+        recording_serve_runtime(events),
+    )
 
     assert result == 0
     assert [event[0] for event in events] == [
+        "port",
         "inventory",
         "stage",
         "config",
-        "mkdocs",
+        "start",
+        "ready",
+        "open",
+        "watch",
+        "stop",
     ]
-    assert events[-1][1] == [
+    assert events[0] == ("port", 8000)
+    assert events[4][1] == [
         sys.executable,
         "-m",
         "mkdocs",
         "serve",
+        "--dirtyreload",
         "--dev-addr",
         "127.0.0.1:8000",
         "-f",
         str(generated_config),
     ]
+    assert events[5] == ("ready", "http://127.0.0.1:8000/")
+    assert events[6] == ("open", "http://127.0.0.1:8000/")
+
+
+def test_serve_accepts_port_and_no_open(tmp_path: Path) -> None:
+    events: list[tuple[object, ...]] = []
+    generated_config = tmp_path / "mkdocs.generated.yml"
+
+    result = main(
+        ["serve", "--port", "8123", "--no-open"],
+        recording_operations(events, generated_config),
+        recording_serve_runtime(events),
+    )
+
+    assert result == 0
+    assert events[0] == ("port", 8123)
+    assert not any(event[0] == "open" for event in events)
+    assert "127.0.0.1:8123" in events[4][1]
+
+
+def test_serve_returns_an_unexpected_child_exit_code(tmp_path: Path) -> None:
+    events: list[tuple[object, ...]] = []
+
+    result = main(
+        ["serve", "--no-open"],
+        recording_operations(events, tmp_path / "generated.yml"),
+        recording_serve_runtime(events, child_exit=19),
+    )
+
+    assert result == 19
+    assert events[-1] == ("stop", 1234)
+
+
+def test_serve_ctrl_c_returns_130_and_stops_child(tmp_path: Path) -> None:
+    events: list[tuple[object, ...]] = []
+    runtime = recording_serve_runtime(events)
+
+    def interrupt(_wiki: Path, _callback, _stop_requested) -> None:
+        raise KeyboardInterrupt
+
+    runtime = ServeRuntime(
+        runtime.check_port,
+        runtime.start,
+        runtime.wait_ready,
+        runtime.open_browser,
+        interrupt,
+        runtime.stop,
+    )
+
+    result = main(
+        ["serve", "--no-open"],
+        recording_operations(events, tmp_path / "generated.yml"),
+        runtime,
+    )
+
+    assert result == 130
+    assert events[-1] == ("stop", 1234)
+
+
+def test_serve_checks_port_before_scanning_or_staging(tmp_path: Path) -> None:
+    events: list[tuple[object, ...]] = []
+    runtime = recording_serve_runtime(events)
+
+    def unavailable(port: int) -> None:
+        events.append(("port", port))
+        raise OSError("port occupied")
+
+    runtime = ServeRuntime(
+        unavailable,
+        runtime.start,
+        runtime.wait_ready,
+        runtime.open_browser,
+        runtime.watch,
+        runtime.stop,
+    )
+
+    with pytest.raises(OSError, match="port occupied"):
+        main(
+            ["serve", "--port", "8123"],
+            recording_operations(events, tmp_path / "generated.yml"),
+            runtime,
+        )
+
+    assert events == [("port", 8123)]
+
+
+def test_serve_opens_browser_only_for_initial_readiness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tools.mkdocs_site import cli
+
+    fake_cli = tmp_path / "repo/tools/mkdocs_site/cli.py"
+    fake_cli.parent.mkdir(parents=True)
+    (tmp_path / "repo/wiki").mkdir()
+    monkeypatch.setattr(cli, "__file__", str(fake_cli))
+    events: list[tuple[object, ...]] = []
+    children = [
+        SimpleNamespace(pid=1, returncode=None),
+        SimpleNamespace(pid=2, returncode=None),
+    ]
+    for child in children:
+        child.poll = lambda child=child: child.returncode
+
+    def watch(_wiki: Path, callback, _stop_requested) -> None:
+        callback()
+
+    runtime = ServeRuntime(
+        lambda port: events.append(("port", port)),
+        lambda command, _cwd: events.append(("start", command)) or children.pop(0),
+        lambda url, _child: events.append(("ready", url)),
+        lambda url: events.append(("open", url)),
+        watch,
+        lambda child: events.append(("stop", child.pid)),
+    )
+
+    result = main(
+        ["serve"],
+        recording_operations(events, tmp_path / "generated.yml"),
+        runtime,
+    )
+
+    assert result == 0
+    assert [event[0] for event in events].count("open") == 1
+    assert [event[0] for event in events].count("start") == 2
+    assert [event[0] for event in events].count("ready") == 2
+
+
+def test_refresh_config_failure_restores_working_outputs_and_restarts(
+    tmp_path: Path,
+) -> None:
+    paths = BuildPaths.from_repo(tmp_path / "repo")
+    paths.wiki.mkdir(parents=True)
+    paths.staging.mkdir(parents=True)
+    (paths.staging / "old.md").write_text("old stage", encoding="utf-8")
+    routes = paths.cache / "routes.json"
+    routes.write_text("old routes", encoding="utf-8")
+    paths.generated_config.write_text("old config", encoding="utf-8")
+    old_child = SimpleNamespace(pid=1, returncode=None)
+    old_child.poll = lambda: old_child.returncode
+    recovery = SimpleNamespace(pid=2, returncode=None)
+    recovery.poll = lambda: recovery.returncode
+    state = _ServeState(old_child)
+    events: list[tuple[object, ...]] = []
+
+    def stage(_paths: BuildPaths, _inventory: object) -> StageResult:
+        paths.staging.mkdir(parents=True)
+        (paths.staging / "new.md").write_text("new stage", encoding="utf-8")
+        routes.write_text("new routes", encoding="utf-8")
+        return StageResult(1, 0, routes)
+
+    def config(*_args: object) -> Path:
+        paths.generated_config.write_text("partial config", encoding="utf-8")
+        raise RuntimeError("invalid generated config")
+
+    operations = Operations(
+        lambda _wiki: object(),
+        stage,
+        config,
+        lambda _command, _cwd: 0,
+        lambda _site, _inventory: None,
+        lambda _site, _manifest: ValidationReport(0, (), (), (), (), ()),
+    )
+    runtime = ServeRuntime(
+        lambda _port: None,
+        lambda command, _cwd: events.append(("start", command)) or recovery,
+        lambda url, child: events.append(("ready", url, child.pid)),
+        lambda _url: None,
+        lambda _wiki, _callback, _stop: None,
+        lambda child: events.append(("stop", child.pid)),
+    )
+
+    with pytest.raises(RuntimeError, match="invalid generated config"):
+        _refresh_preview(paths, operations, runtime, state, 8123)
+
+    assert state.child is recovery
+    assert (paths.staging / "old.md").read_text(encoding="utf-8") == "old stage"
+    assert not (paths.staging / "new.md").exists()
+    assert routes.read_text(encoding="utf-8") == "old routes"
+    assert paths.generated_config.read_text(encoding="utf-8") == "old config"
+    assert [event[0] for event in events] == ["stop", "start", "ready"]
+    assert not list(paths.cache.glob(".serve-backup-*"))
+
+
+def test_refresh_success_activates_new_outputs_before_readiness(tmp_path: Path) -> None:
+    paths = BuildPaths.from_repo(tmp_path / "repo")
+    paths.wiki.mkdir(parents=True)
+    paths.staging.mkdir(parents=True)
+    (paths.staging / "old.md").write_text("old", encoding="utf-8")
+    routes = paths.cache / "routes.json"
+    routes.write_text("old", encoding="utf-8")
+    paths.generated_config.write_text("old", encoding="utf-8")
+    old_child = SimpleNamespace(pid=1, returncode=None)
+    new_child = SimpleNamespace(pid=2, returncode=None)
+    old_child.poll = lambda: old_child.returncode
+    new_child.poll = lambda: new_child.returncode
+    state = _ServeState(old_child)
+    events: list[str] = []
+
+    def stage(_paths: BuildPaths, _inventory: object) -> StageResult:
+        events.append("stage")
+        paths.staging.mkdir(parents=True)
+        (paths.staging / "new.md").write_text("new", encoding="utf-8")
+        routes.write_text("new", encoding="utf-8")
+        return StageResult(1, 0, routes)
+
+    def config(*_args: object) -> Path:
+        events.append("config")
+        paths.generated_config.write_text("new", encoding="utf-8")
+        return paths.generated_config
+
+    operations = Operations(
+        lambda _wiki: events.append("inventory") or object(),
+        stage,
+        config,
+        lambda _command, _cwd: 0,
+        lambda _site, _inventory: None,
+        lambda _site, _manifest: ValidationReport(0, (), (), (), (), ()),
+    )
+    runtime = ServeRuntime(
+        lambda _port: None,
+        lambda _command, _cwd: events.append("start") or new_child,
+        lambda _url, _child: events.append("ready"),
+        lambda _url: None,
+        lambda _wiki, _callback, _stop: None,
+        lambda _child: events.append("stop"),
+    )
+
+    _refresh_preview(paths, operations, runtime, state, 8123)
+
+    assert state.child is new_child
+    assert (paths.staging / "new.md").read_text(encoding="utf-8") == "new"
+    assert not (paths.staging / "old.md").exists()
+    assert routes.read_text(encoding="utf-8") == "new"
+    assert paths.generated_config.read_text(encoding="utf-8") == "new"
+    assert events == ["stop", "inventory", "stage", "config", "start", "ready"]
+    assert not list(paths.cache.glob(".serve-backup-*"))
 
 
 def test_stage_stops_after_inventory_and_staging() -> None:

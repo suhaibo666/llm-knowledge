@@ -25,7 +25,9 @@ theme:
     - navigation.tabs
     - navigation.sections
     - navigation.indexes
+    - navigation.path
     - navigation.prune
+    - navigation.footer
     - navigation.top
     - toc.follow
     - search.suggest

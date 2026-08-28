@@ -1,0 +1,568 @@
+import assert from "node:assert/strict"
+import { spawn } from "node:child_process"
+import { access } from "node:fs/promises"
+import { createRequire } from "node:module"
+import net from "node:net"
+import path from "node:path"
+import { setTimeout as delay } from "node:timers/promises"
+import { fileURLToPath } from "node:url"
+
+import { findBrowserExecutable } from "../docs-site/listeners.mjs"
+
+const scriptFile = fileURLToPath(import.meta.url)
+const toolDir = path.dirname(scriptFile)
+const repoRoot = path.resolve(toolDir, "..", "..")
+const nodeModules = path.join(toolDir, "node_modules")
+const puppeteerPackage = path.join(nodeModules, "puppeteer-core", "package.json")
+const articlePath = "/02_engineering/02_train_frameworks/megatron-lm/13_megatron_cp_analysis.html"
+const articleTitle = "Megatron-LM 上下文并行(Context Parallelism)深度解析"
+
+export function rootMermaidSvgs(block) {
+  return [...block.querySelectorAll("svg")].filter((svg) => {
+    let parent = svg.parentElement
+    while (parent && parent !== block) {
+      if (String(parent.tagName).toLowerCase() === "svg") return false
+      parent = parent.parentElement
+    }
+    return parent === block
+  })
+}
+
+async function loadPuppeteer() {
+  try {
+    await access(puppeteerPackage)
+  } catch {
+    throw new Error(
+      `puppeteer-core is not installed at ${puppeteerPackage}. `
+      + "Run npm ci --prefix tools/mkdocs-site before browser smoke tests.",
+    )
+  }
+  return createRequire(import.meta.url)(path.join(nodeModules, "puppeteer-core"))
+}
+
+function closeServer(server, timeoutMs = 1_000) {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(() => {
+      server.closeAllConnections?.()
+      finish()
+    }, timeoutMs)
+    timer.unref?.()
+    server.close(finish)
+    server.closeIdleConnections?.()
+  })
+}
+
+async function freeLoopbackPort() {
+  const server = net.createServer()
+  await new Promise((resolve, reject) => {
+    server.once("error", reject)
+    server.listen(0, "127.0.0.1", resolve)
+  })
+  const address = server.address()
+  assert.ok(address && typeof address !== "string", "free-port listener has no TCP address")
+  const port = address.port
+  await closeServer(server)
+  return port
+}
+
+async function assertPortReleased(port) {
+  const server = net.createServer()
+  await new Promise((resolve, reject) => {
+    server.once("error", reject)
+    server.listen({ port, host: "127.0.0.1", exclusive: true }, resolve)
+  })
+  await closeServer(server)
+}
+
+function boundedOutcome(promise, timeoutMs) {
+  return Promise.race([
+    promise.then(
+      (value) => ({ kind: "value", value }),
+      (error) => ({ kind: "error", error }),
+    ),
+    delay(timeoutMs).then(() => ({ kind: "timeout" })),
+  ])
+}
+
+function startPreview(port) {
+  const output = []
+  const python = process.env.PYTHON?.trim() || "python"
+  const child = spawn(
+    python,
+    [
+      "-m",
+      "tools.mkdocs_site.cli",
+      "serve",
+      "--port",
+      String(port),
+      "--no-open",
+    ],
+    {
+      cwd: repoRoot,
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    },
+  )
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.setEncoding("utf8")
+    stream.on("data", (chunk) => {
+      output.push(chunk)
+      while (output.join("").length > 100_000) output.shift()
+    })
+  }
+  const exit = new Promise((resolve, reject) => {
+    child.once("error", reject)
+    child.once("close", (code, signal) => resolve({ code, signal }))
+  })
+  return { child, exit, output }
+}
+
+async function runTaskkill(pid) {
+  const killer = spawn("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+    stdio: "ignore",
+    windowsHide: true,
+  })
+  const closed = new Promise((resolve) => killer.once("close", resolve))
+  const result = await boundedOutcome(closed, 5_000)
+  if (result.kind === "timeout") killer.kill()
+}
+
+async function stopPreview(service) {
+  if (service.child.exitCode !== null || service.child.signalCode !== null) return
+  if (process.platform === "win32") {
+    await runTaskkill(service.child.pid)
+  } else {
+    try {
+      process.kill(-service.child.pid, "SIGINT")
+    } catch {
+      service.child.kill("SIGINT")
+    }
+  }
+  let stopped = await boundedOutcome(service.exit, 5_000)
+  if (stopped.kind !== "timeout") return
+  if (process.platform === "win32") {
+    await runTaskkill(service.child.pid)
+  } else {
+    try {
+      process.kill(-service.child.pid, "SIGKILL")
+    } catch {
+      service.child.kill("SIGKILL")
+    }
+  }
+  stopped = await boundedOutcome(service.exit, 1_000)
+  if (stopped.kind === "timeout") {
+    throw new Error(`preview process ${service.child.pid} did not exit after forced cleanup`)
+  }
+}
+
+async function waitForHttp(url, service, timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs
+  let lastFailure = "no response"
+  while (Date.now() < deadline) {
+    if (service.child.exitCode !== null || service.child.signalCode !== null) {
+      const outcome = await boundedOutcome(service.exit, 0)
+      throw new Error(`preview exited before readiness: ${JSON.stringify(outcome)}`)
+    }
+    try {
+      const response = await fetch(url, {
+        cache: "no-store",
+        redirect: "manual",
+        signal: AbortSignal.timeout(2_000),
+      })
+      if (response.status >= 200 && response.status < 400) return
+      lastFailure = `HTTP ${response.status}`
+    } catch (error) {
+      lastFailure = error.message
+    }
+    await delay(100)
+  }
+  throw new Error(`timed out waiting for ${url} (${lastFailure})`)
+}
+
+async function goto(page, url) {
+  const response = await page.goto(url, {
+    waitUntil: "domcontentloaded",
+    timeout: 60_000,
+  })
+  assert.ok(response, `navigation returned no response for ${url}`)
+  assert.ok(
+    response.status() >= 200 && response.status() < 400,
+    `${url} returned HTTP ${response.status()}`,
+  )
+  await page.evaluate(async () => {
+    await document.fonts?.ready
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  })
+}
+
+async function assertNoOverflow(page, width, label) {
+  const metrics = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    innerWidth: window.innerWidth,
+  }))
+  assert.ok(
+    metrics.scrollWidth <= metrics.innerWidth,
+    `${label} overflows at ${width}px (${metrics.scrollWidth} > ${metrics.innerWidth})`,
+  )
+}
+
+async function searchFor(page, query, targetSuffix) {
+  const input = await page.$("[data-md-component='search-query']")
+  assert.ok(input, "search input is missing")
+  await input.evaluate((element, value) => {
+    element.value = value
+    element.dispatchEvent(new Event("input", { bubbles: true }))
+  }, query)
+  await page.waitForFunction(
+    (suffix) => [...document.querySelectorAll("a.md-search-result__link")]
+      .some((link) => new URL(link.href).pathname.endsWith(suffix)),
+    { timeout: 60_000 },
+    targetSuffix,
+  )
+  const match = await page.evaluate((suffix) => {
+    const link = [...document.querySelectorAll("a.md-search-result__link")]
+      .find((candidate) => new URL(candidate.href).pathname.endsWith(suffix))
+    return link ? { href: link.href, text: link.textContent.trim() } : null
+  }, targetSuffix)
+  assert.ok(match?.text, `search for ${query} returned no visible matching result`)
+}
+
+async function assertHead(url, label) {
+  const response = await fetch(url.split("#", 1)[0], {
+    method: "HEAD",
+    redirect: "manual",
+    signal: AbortSignal.timeout(5_000),
+  })
+  assert.ok(
+    response.status >= 200 && response.status < 400,
+    `${label} target ${url} returned HTTP ${response.status}`,
+  )
+}
+
+async function assertArticleContracts(page, origin) {
+  await goto(page, `${origin}${articlePath}`)
+  const state = await page.evaluate(() => {
+    const active = document.querySelector(
+      'a[data-nav-title="13_megatron_cp_analysis"]',
+    )
+    const siblingTitles = ["12_megatron_tp_analysis", "14_megatron_ep_analysis"]
+    const siblings = siblingTitles.map((title) => {
+      const link = document.querySelector(`a[data-nav-title="${title}"]`)
+      return link ? { title, href: link.href } : null
+    })
+    const theory = document.querySelector(
+      'a[data-nav-title="理论研究 — 知识地图"]',
+    )
+    const pathLabels = [...document.querySelectorAll(".md-nav__item.kb-active-path")]
+      .map((item) => item.textContent.trim())
+    return {
+      h1: document.querySelector("article h1")?.textContent.trim(),
+      activeText: active?.textContent.trim(),
+      activePruned: active?.closest(".md-nav__item")?.classList.contains("md-nav__item--pruned"),
+      siblings,
+      theoryPruned: theory?.closest(".md-nav__item")?.classList.contains("md-nav__item--pruned"),
+      pathLabels,
+    }
+  })
+  assert.equal(state.h1, articleTitle, "article H1 lost its Chinese title")
+  assert.equal(state.activeText, "13_megatron_cp_analysis", "Megatron CP nav label drifted")
+  assert.equal(state.activePruned, false, "current Megatron branch is pruned")
+  assert.ok(state.siblings.every(Boolean), "representative Megatron siblings are missing")
+  assert.equal(state.theoryPruned, true, "unrelated theory branch is not pruned")
+  assert.ok(
+    state.pathLabels.some((label) => label.includes("Megatron-LM")),
+    "current navigation path did not render",
+  )
+
+  const links = await page.evaluate(() => {
+    const currentOrigin = location.origin
+    const internal = (selector) => [...document.querySelectorAll(selector)]
+      .filter((link) => link instanceof HTMLAnchorElement && link.href)
+      .map((link) => link.href)
+      .filter((href) => new URL(href).origin === currentOrigin)
+    const body = internal("article a[href]").filter((href) => new URL(href).pathname !== location.pathname)
+    const breadcrumbs = internal(".md-path a[href]")
+    const previous = internal("a.md-footer__link--prev")
+    const next = internal("a.md-footer__link--next")
+    const source = document.querySelector(
+      'a.md-content__button[title="查看本页的源代码"]',
+    )
+    return {
+      body: [...new Set(body)].slice(0, 12),
+      breadcrumbs: [...new Set(breadcrumbs)],
+      previous,
+      next,
+      source: source?.href,
+    }
+  })
+  assert.ok(links.body.length > 0, "article exposes no representative internal links")
+  assert.ok(links.breadcrumbs.length >= 3, "article breadcrumbs are missing")
+  assert.equal(links.previous.length, 1, "article previous-page link is missing")
+  assert.equal(links.next.length, 1, "article next-page link is missing")
+  assert.equal(
+    links.source,
+    "https://github.com/suhaibo666/llm-knowledge/raw/main/wiki/"
+      + "02_engineering/02_train_frameworks/megatron-lm/13_megatron_cp_analysis.md",
+    "GitHub source target drifted",
+  )
+  const representatives = [...new Set([
+    ...links.body,
+    ...links.breadcrumbs,
+    ...links.previous,
+    ...links.next,
+  ])]
+  await Promise.all(representatives.map((url) => assertHead(url, "internal article link")))
+}
+
+async function assertSearch(page, origin) {
+  await goto(page, `${origin}/`)
+  await page.$eval('label[for="__search"]', (label) => label.click())
+  await page.waitForSelector("[data-md-component='search-query']", { visible: true })
+  await searchFor(page, "上下文并行", articlePath)
+  await searchFor(page, "13_megatron_cp_analysis", articlePath)
+}
+
+async function assertRenderers(page, origin) {
+  await goto(
+    page,
+    `${origin}/01_theory/06_distributed_parallelism/10_collectives_analysis.html`,
+  )
+  await page.waitForSelector("mjx-container", { timeout: 30_000 })
+  const math = await page.evaluate(() => ({
+    count: document.querySelectorAll("mjx-container").length,
+    errors: document.querySelectorAll("mjx-merror").length,
+  }))
+  assert.ok(math.count > 0, "MathJax produced no containers")
+  assert.equal(math.errors, 0, "MathJax produced an error node")
+
+  await goto(
+    page,
+    `${origin}/02_engineering/04_posttrain_frameworks/verl/02_verl_quickstart_guide.html`,
+  )
+  await page.waitForFunction(
+    () => [...document.querySelectorAll(".mermaid")]
+      .filter((block) => block.querySelector("svg")).length >= 2,
+    { timeout: 30_000 },
+  )
+  const mermaid = await page.evaluate(() => {
+    // Keep this browser-side traversal aligned with rootMermaidSvgs(): nested
+    // SVG symbols/labels are not independent diagrams and can have zero boxes.
+    const rootsFor = (block) => [...block.querySelectorAll("svg")].filter((svg) => {
+      let parent = svg.parentElement
+      while (parent && parent !== block) {
+        if (parent.tagName.toLowerCase() === "svg") return false
+        parent = parent.parentElement
+      }
+      return parent === block
+    })
+    return [...document.querySelectorAll(".mermaid")].map((block) => {
+      const roots = rootsFor(block)
+      const svg = roots[0]
+      const blockBox = block.getBoundingClientRect()
+      const rootBox = svg?.getBoundingClientRect()
+      return {
+        error: block.dataset.kbMermaidError ?? null,
+        roots: roots.length,
+        role: svg?.getAttribute("role") ?? "",
+        description: svg?.getAttribute("aria-roledescription") ?? "",
+        viewBox: svg?.getAttribute("viewBox") ?? "",
+        children: svg?.childElementCount ?? 0,
+        visible:
+          ((rootBox?.width ?? 0) > 0 && (rootBox?.height ?? 0) > 0)
+          || (blockBox.width > 0 && blockBox.height > 0),
+      }
+    })
+  })
+  assert.ok(mermaid.length >= 2, "expected two representative Mermaid blocks")
+  assert.ok(
+    mermaid.every((diagram) =>
+      !diagram.error
+      && diagram.roots === 1
+      && diagram.role.includes("graphics-document")
+      && Boolean(diagram.description)
+      && Boolean(diagram.viewBox)
+      && diagram.children > 0
+      && diagram.visible),
+    `Mermaid root contract failed: ${JSON.stringify(mermaid)}`,
+  )
+}
+
+async function assertPaletteAndDrawer(page, origin) {
+  await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 })
+  await goto(page, `${origin}/`)
+  await page.$eval('label[for="__palette_1"]', (label) => label.click())
+  await page.waitForFunction(() => document.body.dataset.mdColorScheme === "slate")
+  await page.$eval('label[for="__palette_0"]', (label) => label.click())
+  await page.waitForFunction(() => document.body.dataset.mdColorScheme === "default")
+
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 })
+  await goto(page, `${origin}/`)
+  const initial = await page.$eval("#__drawer", (input) => input.checked)
+  assert.equal(initial, false, "mobile navigation drawer begins open")
+  await page.$eval('label.md-header__button[for="__drawer"]', (label) => label.click())
+  await page.waitForFunction(() => document.querySelector("#__drawer")?.checked === true)
+  const drawer = await page.evaluate(() => {
+    const sidebar = document.querySelector(".md-sidebar--primary")
+    return {
+      checked: document.querySelector("#__drawer")?.checked,
+      width: sidebar?.getBoundingClientRect().width ?? 0,
+    }
+  })
+  assert.equal(drawer.checked, true, "mobile navigation drawer did not open")
+  assert.ok(drawer.width > 0, "mobile navigation drawer has no rendered width")
+}
+
+async function assertResponsivePages(page, origin) {
+  for (const width of [390, 768, 1280, 1600]) {
+    await page.setViewport({ width, height: 900, deviceScaleFactor: 1 })
+    await goto(page, `${origin}/`)
+    assert.ok(await page.$(".kb-source-atlas"), "homepage is missing Source Atlas")
+    assert.equal(
+      await page.$(".md-sidebar--secondary"),
+      null,
+      "homepage rendered a secondary table of contents",
+    )
+    await assertNoOverflow(page, width, "homepage")
+
+    await goto(page, `${origin}${articlePath}`)
+    await assertNoOverflow(page, width, "Megatron article")
+  }
+}
+
+async function closeBrowser(browser) {
+  if (!browser) return
+  const outcome = await boundedOutcome(browser.close(), 5_000)
+  if (outcome.kind === "timeout") {
+    browser.process()?.kill("SIGKILL")
+  } else if (outcome.kind === "error") {
+    throw outcome.error
+  }
+}
+
+export async function runSmoke() {
+  const puppeteer = await loadPuppeteer()
+  const executablePath = await findBrowserExecutable()
+  const port = await freeLoopbackPort()
+  const origin = `http://127.0.0.1:${port}`
+  const baseUrl = `${origin}/llm-knowledge`
+  const service = startPreview(port)
+  let browser
+  const consoleMessages = []
+  const pageErrors = []
+  const failedRequests = []
+  const failedResponses = []
+  const externalRequests = []
+  const requestUrls = []
+  try {
+    await waitForHttp(`${baseUrl}/`, service)
+    browser = await puppeteer.launch({
+      executablePath,
+      headless: true,
+      args: [
+        "--disable-background-networking",
+        "--disable-component-update",
+        "--disable-default-apps",
+        "--disable-sync",
+        "--no-first-run",
+      ],
+    })
+    const page = await browser.newPage()
+    await page.setCacheEnabled(false)
+    await page.setRequestInterception(true)
+    page.on("request", (request) => {
+      const rawUrl = request.url()
+      requestUrls.push(rawUrl)
+      const url = new URL(rawUrl)
+      if (
+        ["http:", "https:", "ws:", "wss:"].includes(url.protocol)
+        && url.hostname !== "127.0.0.1"
+      ) {
+        externalRequests.push(rawUrl)
+        request.abort("blockedbyclient").catch(() => undefined)
+      } else {
+        request.continue().catch(() => undefined)
+      }
+    })
+    page.on("requestfailed", (request) => {
+      const url = new URL(request.url())
+      const errorText = request.failure()?.errorText ?? "unknown failure"
+      if (
+        url.hostname === "127.0.0.1"
+        && url.pathname.startsWith("/livereload/")
+        && errorText === "net::ERR_ABORTED"
+      ) return
+      failedRequests.push(
+        `${request.url()}: ${errorText}`,
+      )
+    })
+    page.on("response", (response) => {
+      if (response.status() >= 400 && new URL(response.url()).hostname === "127.0.0.1") {
+        failedResponses.push(`${response.status()} ${response.url()}`)
+      }
+    })
+    page.on("console", (message) => {
+      if (["error", "warn", "warning"].includes(message.type())) {
+        consoleMessages.push(`${message.type()}: ${message.text()}`)
+      }
+    })
+    page.on("pageerror", (error) => pageErrors.push(error.message))
+
+    await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 })
+    await goto(page, `${baseUrl}/02_engineering/index.html`)
+    assert.equal(
+      await page.$eval("article h1", (heading) => heading.textContent.trim()),
+      "工程实现 — 知识地图",
+      "/02_engineering/ did not preserve its Chinese index title",
+    )
+    await assertArticleContracts(page, baseUrl)
+    await assertSearch(page, baseUrl)
+    await assertRenderers(page, baseUrl)
+    await assertPaletteAndDrawer(page, baseUrl)
+    await assertResponsivePages(page, baseUrl)
+
+    assert.deepEqual(externalRequests, [], "browser attempted external runtime requests")
+    assert.deepEqual(failedRequests, [], "browser emitted failed requests")
+    assert.deepEqual(failedResponses, [], "browser received internal HTTP errors")
+    assert.deepEqual(consoleMessages, [], "browser emitted console errors or warnings")
+    assert.deepEqual(pageErrors, [], "browser emitted page errors")
+    const localRendererRequests = requestUrls.filter((rawUrl) => {
+      const url = new URL(rawUrl)
+      return url.hostname === "127.0.0.1"
+        && (url.pathname.includes("/assets/vendor/mathjax/")
+          || url.pathname.includes("/assets/vendor/mermaid/"))
+    })
+    assert.ok(localRendererRequests.length > 0, "no local MathJax/Mermaid runtime was requested")
+    console.log(
+      `[docs:mkdocs:test] PASS: 390/768/1280/1600, search, links, renderers, themes, drawer (${requestUrls.length} requests)`,
+    )
+  } catch (error) {
+    error.message += `\n${JSON.stringify({
+      consoleMessages,
+      pageErrors,
+      failedRequests,
+      failedResponses,
+      externalRequests,
+      previewOutput: service.output.join("").slice(-20_000),
+    }, null, 2)}`
+    throw error
+  } finally {
+    await closeBrowser(browser).catch(() => undefined)
+    await stopPreview(service)
+    await assertPortReleased(port)
+  }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(scriptFile)) {
+  runSmoke().catch((error) => {
+    console.error(`[docs:mkdocs:test] ${error.stack ?? error.message}`)
+    process.exitCode = 1
+  })
+}
