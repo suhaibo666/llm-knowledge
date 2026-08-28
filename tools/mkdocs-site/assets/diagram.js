@@ -41,7 +41,11 @@
     window.mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",
-      theme: currentScheme()
+      theme: currentScheme(),
+      htmlLabels: false,
+      flowchart: {
+        htmlLabels: false
+      }
     });
     const work = nodes.map(function (node) {
       renderedBlocks.add(node);

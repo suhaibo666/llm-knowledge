@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 from bs4 import BeautifulSoup
 
 from tools.mkdocs_site.config import write_generated_config
@@ -16,6 +17,24 @@ from tools.mkdocs_site.staging import stage_wiki
 
 
 REPO = Path(__file__).resolve().parents[3]
+RENDERER_CONTRACT_BODY = r"""
+
+$$
+\boldsymbol{\theta} \in \mathbb{R}^{d \times k}, \qquad
+\mathcal{L}(\boldsymbol{\theta}) = \sum_{i=1}^{n} \left\lVert x_i - \boldsymbol{\theta} \right\rVert_2^2
+$$
+
+```mermaid
+flowchart LR
+  A["<img src=x onerror=window.__kbSecurityProbe=true>"] --> B[安全]
+  click A "javascript:window.__kbSecurityProbe=true"
+```
+
+```mermaid
+flowchart TD
+  A -->
+```
+"""
 
 
 def _copy_theme_inputs(repo: Path) -> None:
@@ -45,10 +64,28 @@ def _copy_theme_inputs(repo: Path) -> None:
             shutil.copytree(source, target_root / relative)
 
 
-def build_fixture_site(tmp_path: Path, fixture_wiki: Path) -> tuple[Path, object]:
+def build_fixture_site(
+    tmp_path: Path,
+    fixture_wiki: Path,
+    *,
+    renderer_contract: bool = False,
+) -> tuple[Path, object]:
     repo = tmp_path / "repo"
     shutil.copytree(fixture_wiki, repo / "wiki")
     shutil.copy2(REPO / "mkdocs.yml", repo / "mkdocs.yml")
+    if renderer_contract:
+        article = repo / "wiki/domain/10_article.md"
+        article.write_text(
+            article.read_text(encoding="utf-8") + RENDERER_CONTRACT_BODY,
+            encoding="utf-8",
+        )
+        base_config = yaml.safe_load((repo / "mkdocs.yml").read_text(encoding="utf-8"))
+        base_config.pop("repo_url", None)
+        base_config.pop("edit_uri", None)
+        (repo / "mkdocs.yml").write_text(
+            yaml.safe_dump(base_config, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
     _copy_theme_inputs(repo)
     paths = BuildPaths.from_repo(repo)
     inventory = scan_inventory(paths.wiki)
@@ -141,7 +178,7 @@ def test_search_rewrite_rejects_locations_outside_the_route_manifest(
         rewrite_search_index(site, scan_inventory(fixture_wiki))
 
 
-def test_local_renderer_runtime_is_closed_and_subpath_safe(
+def test_local_renderer_runtime_assets_are_staged(
     tmp_path: Path, fixture_wiki: Path
 ) -> None:
     site, _ = build_fixture_site(tmp_path, fixture_wiki)
@@ -156,21 +193,30 @@ def test_local_renderer_runtime_is_closed_and_subpath_safe(
     for relative in required_runtime_files:
         assert (site / relative).is_file(), relative
 
-    config = (REPO / "tools/mkdocs-site/assets/mathjax.js").read_text(
-        encoding="utf-8"
+def test_renderer_runtime_in_browser_at_root_and_project_subpath(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    site, _ = build_fixture_site(
+        tmp_path, fixture_wiki, renderer_contract=True
     )
-    assert "document.currentScript.src" in config
-    assert '"mathjax-newcm"' in config
-    assert 'new URL("vendor/mathjax-newcm", assetRoot)' in config
-    assert 'new URL("vendor/mathjax-newcm/chtml", assetRoot)' not in config
-
-
-def test_mermaid_failure_cleanup_preserves_source_and_removes_render_artifact() -> None:
-    script = (REPO / "tools/mkdocs-site/assets/diagram.js").read_text(
-        encoding="utf-8"
+    completed = subprocess.run(
+        [
+            "node",
+            str(REPO / "tools/mkdocs_site/tests/renderer_contract.mjs"),
+            str(site),
+        ],
+        cwd=REPO,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
     )
-
-    assert 'document.getElementById("d" + id)' in script
-    assert "artifact.remove()" in script
-    assert "item.node.textContent = item.source" in script
-    assert script.index('const id = "kb-mermaid-"') < script.index("try {")
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    result = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert [case["basePath"] for case in result["cases"]] == [
+        "/",
+        "/llm-knowledge/",
+    ]
+    assert all(case["math"] > 0 for case in result["cases"])
