@@ -7,6 +7,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
 
 from bs4 import BeautifulSoup, Comment
+from bs4.element import NavigableString, Tag
 from markdown import markdown as render_markdown
 from markdown.extensions.attr_list import AttrListTreeprocessor, get_attrs_and_remainder
 from markdown.extensions.toc import slugify, slugify_unicode, unique
@@ -304,17 +305,49 @@ def _escaped_wikilink(markdown: str, start: int) -> bool:
     return slashes % 2 == 1
 
 
-def _standalone_annotation_label(classification: str) -> str:
-    """Return the parser's anchor label for one isolated Wikilink annotation."""
+def _dom_node_signature(node: object) -> tuple[object, ...]:
+    if isinstance(node, Comment):
+        return ("comment", str(node))
+    if isinstance(node, NavigableString):
+        return ("text", str(node))
+    if isinstance(node, Tag):
+        attributes = tuple(
+            sorted(
+                (
+                    str(name),
+                    tuple(str(item) for item in value)
+                    if isinstance(value, list)
+                    else str(value),
+                )
+                for name, value in node.attrs.items()
+            )
+        )
+        return (
+            "tag",
+            node.name,
+            attributes,
+            tuple(_dom_node_signature(child) for child in node.children),
+        )
+    return ("node", str(node))
+
+
+def _anchor_label_signature(anchor: Tag) -> tuple[tuple[object, ...], ...]:
+    return tuple(_dom_node_signature(child) for child in anchor.children)
+
+
+def _standalone_annotation_signature(
+    classification: str,
+) -> tuple[tuple[object, ...], ...]:
+    """Return the parser's full anchor-label tree for one annotation unit."""
     rendered = render_markdown(
         f"{classification}(annotation)",
         extensions=list(_MARKDOWN_EXTENSIONS),
         extension_configs=_MARKDOWN_EXTENSION_CONFIGS,
     )
     anchor = BeautifulSoup(rendered, "html.parser").find("a")
-    if anchor is None:
+    if not isinstance(anchor, Tag):
         raise ValueError("Wikilink annotation classifier did not produce an anchor")
-    return anchor.get_text()
+    return _anchor_label_signature(anchor)
 
 
 def _active_wikilink_indexes(
@@ -354,13 +387,20 @@ def _active_wikilink_indexes(
                 active.add(index)
                 anchor = parent if parent.name == "a" else parent.find_parent("a")
                 if anchor is not None:
+                    while True:
+                        outer_anchor = anchor.find_parent("a")
+                        if outer_anchor is None:
+                            break
+                        anchor = outer_anchor
                     nested.add(index)
                     if markdown.startswith("(", matches[index].end()):
                         classification = _classification_wikilink(
                             matches[index], _wikilink_sentinel(prefix, index)
                         )
-                        expected_label = _standalone_annotation_label(classification)
-                        if anchor.get_text() == expected_label:
+                        expected_signature = _standalone_annotation_signature(
+                            classification
+                        )
+                        if _anchor_label_signature(anchor) == expected_signature:
                             annotation_units.add(index)
     return (
         frozenset(active),

@@ -141,6 +141,12 @@ def test_rewriter_disambiguates_table_alias_annotation_without_source_change(
         "[see [[target|别名]](x) post](https://example.com)",
         "[see [[target#二、机制]](x) post](https://example.com)",
         "| [see [[target]](x) post](https://example.com) |",
+        "[**[[target]](x)**](https://example.com)",
+        "[*[[target]](x)*](https://example.com)",
+        "[`pre` [[target]](x)](https://example.com)",
+        "[![alt](img.png)[[target]](x)](https://example.com)",
+        "[![](img.png)[[target]](x)](https://example.com)",
+        "[<span class=\"label\">[[target]](x)</span>](https://example.com)",
     ],
 )
 def test_rewriter_rejects_immediate_annotation_inside_outer_link_label(
@@ -168,6 +174,21 @@ def test_rewriter_allows_complete_annotation_units_between_prose(
     ) == (
         "prefix [target](../target.md) (x) suffix and "
         "[target](../target.md)（说明）"
+    )
+
+
+def test_annotation_classification_remains_collision_free_and_escape_safe(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    collision = "LLMKNOWLEDGEWIKILINKSENTINEL00000000END"
+
+    assert rewrite_wikilinks(
+        f"{collision} [[target]](x) and \\[[target]](x)",
+        page,
+        inventory,
+    ) == (
+        f"{collision} [target](../target.md) (x) and \\[[target]](x)"
     )
 
 
