@@ -1,0 +1,168 @@
+from __future__ import annotations
+
+import os
+import shutil
+import tempfile
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+
+import yaml
+
+from .models import BuildPaths, Inventory, PageRecord
+from .routes import build_route_manifest, write_route_manifest
+from .wikilinks import rewrite_wikilinks
+
+
+@dataclass(frozen=True)
+class StageResult:
+    page_count: int
+    asset_count: int
+    route_manifest: Path
+
+
+def _is_strict_descendant(candidate: Path, root: Path) -> bool:
+    if candidate == root:
+        return False
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _frontmatter_and_body(
+    markdown: str, source: Path
+) -> tuple[dict[str, object], str, int]:
+    lines = markdown.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\r\n") != "---":
+        return {}, markdown, 0
+    for index in range(1, len(lines)):
+        if lines[index].rstrip("\r\n") in {"---", "..."}:
+            try:
+                loaded = yaml.safe_load("".join(lines[1:index]))
+            except yaml.YAMLError as error:
+                raise ValueError(f"{source.as_posix()}: invalid frontmatter") from error
+            if loaded is None:
+                return {}, "".join(lines[index + 1 :]), index + 1
+            if not isinstance(loaded, Mapping):
+                raise ValueError(f"{source.as_posix()}: frontmatter must be a mapping")
+            return dict(loaded), "".join(lines[index + 1 :]), index + 1
+    return {}, markdown, 0
+
+
+def _render_page(markdown: str, page: PageRecord, inventory: Inventory) -> str:
+    frontmatter, body, body_line_offset = _frontmatter_and_body(
+        markdown, Path(page.relative.as_posix())
+    )
+    frontmatter["mkdocs_preview"] = {
+        "source_path": page.relative.as_posix(),
+        "nav_title": page.nav_title,
+        "is_index": page.is_index,
+    }
+    rendered_frontmatter = yaml.safe_dump(
+        frontmatter, allow_unicode=True, sort_keys=False
+    )
+    line_prefix = "\n" * body_line_offset
+    rewritten = rewrite_wikilinks(line_prefix + body, page, inventory)[
+        len(line_prefix) :
+    ]
+    return (
+        f"---\n{rendered_frontmatter}---\n"
+        f"{rewritten}"
+    )
+
+
+def _remove_tree(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path)
+
+
+def _commit_stage(
+    temporary_stage: Path,
+    staging: Path,
+    temporary_manifest: Path,
+    route_manifest: Path,
+) -> None:
+    backup_stage = temporary_stage.with_name(f"{temporary_stage.name}-old-stage")
+    backup_manifest = temporary_manifest.with_name(
+        f"{temporary_manifest.name}-old-manifest"
+    )
+    moved_stage = False
+    moved_manifest = False
+    try:
+        if staging.exists():
+            staging.replace(backup_stage)
+            moved_stage = True
+        if route_manifest.exists():
+            route_manifest.replace(backup_manifest)
+            moved_manifest = True
+        temporary_stage.replace(staging)
+        temporary_manifest.replace(route_manifest)
+    except BaseException:
+        _remove_tree(staging)
+        if route_manifest.exists():
+            route_manifest.unlink()
+        if moved_stage and backup_stage.exists():
+            backup_stage.replace(staging)
+        if moved_manifest and backup_manifest.exists():
+            backup_manifest.replace(route_manifest)
+        raise
+    else:
+        _remove_tree(backup_stage)
+        if backup_manifest.exists():
+            backup_manifest.unlink()
+
+
+def stage_wiki(paths: BuildPaths, inventory: Inventory) -> StageResult:
+    """Build and atomically replace a disposable Markdown staging tree."""
+    resolved_cache = paths.cache.resolve()
+    resolved_staging = paths.staging.resolve()
+    if not _is_strict_descendant(resolved_staging, resolved_cache):
+        raise ValueError(f"staging path escapes cache: {resolved_staging}")
+
+    paths.cache.mkdir(parents=True, exist_ok=True)
+    temporary_stage = Path(tempfile.mkdtemp(prefix=".docs-", dir=paths.cache))
+    route_manifest = paths.generated_config.with_name("routes.json")
+    file_descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".routes-", suffix=".json", dir=paths.cache
+    )
+    os.close(file_descriptor)
+    temporary_manifest = Path(temporary_name)
+    asset_count = 0
+    try:
+        for page in inventory.pages:
+            markdown = page.source.read_text(encoding="utf-8")
+            destination = temporary_stage / Path(page.relative.as_posix())
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(
+                _render_page(markdown, page, inventory), encoding="utf-8"
+            )
+
+        for source in sorted(
+            (
+                source
+                for source in paths.wiki.rglob("*")
+                if source.is_file() and source.suffix.lower() != ".md"
+            ),
+            key=lambda source: source.relative_to(paths.wiki).as_posix().casefold(),
+        ):
+            relative = source.relative_to(paths.wiki)
+            destination = temporary_stage / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+            asset_count += 1
+
+        write_route_manifest(build_route_manifest(inventory), temporary_manifest)
+        _commit_stage(
+            temporary_stage,
+            paths.staging,
+            temporary_manifest,
+            route_manifest,
+        )
+    finally:
+        _remove_tree(temporary_stage)
+        if temporary_manifest.exists():
+            temporary_manifest.unlink()
+
+    return StageResult(len(inventory.pages), asset_count, route_manifest)
