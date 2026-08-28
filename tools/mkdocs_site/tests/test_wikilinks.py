@@ -145,7 +145,9 @@ def test_rewriter_uses_only_explicit_header_source_baseline(
     assert f"https://github.com/NVIDIA/Megatron-LM/blob/{historical}/" not in rewritten
 
 
+@pytest.mark.parametrize("fence_indent", ["", " ", "  ", "   "])
 def test_rewriter_ignores_fenced_header_source_baseline_declarations(
+    fence_indent: str,
     resolver_fixture: tuple[PageRecord, Inventory],
 ) -> None:
     page, inventory = resolver_fixture
@@ -153,10 +155,10 @@ def test_rewriter_ignores_fenced_header_source_baseline_declarations(
     declared = "2222222222222222222222222222222222222222"
     markdown = (
         "# Page\n\n"
-        "````text\n"
+        f"{fence_indent}````text\n"
         f"> **源码基线**：`NVIDIA/Megatron-LM@{fake}`\n"
-        "```\n"
-        "````\n"
+        f"{fence_indent}```\n"
+        f"{fence_indent}````\n"
         f"> **源码基线**：`NVIDIA/Megatron-LM@{declared}`\n\n"
         "## Body\n\n"
         "[source](Megatron-LM/megatron/core/model_parallel_config.py)"
@@ -166,6 +168,26 @@ def test_rewriter_ignores_fenced_header_source_baseline_declarations(
 
     assert f"https://github.com/NVIDIA/Megatron-LM/blob/{declared}/" in rewritten
     assert f"https://github.com/NVIDIA/Megatron-LM/blob/{fake}/" not in rewritten
+
+
+@pytest.mark.parametrize("code_indent", ["    ", "\t", " \t", "  \t", "   \t"])
+def test_indented_backtick_run_does_not_hide_visible_header_source_baseline(
+    code_indent: str,
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    declared = "2222222222222222222222222222222222222222"
+    markdown = (
+        "# Page\n\n"
+        f"{code_indent}````text\n"
+        f"> **源码基线**：`NVIDIA/Megatron-LM@{declared}`\n\n"
+        "## Body\n\n"
+        "[source](Megatron-LM/megatron/core/model_parallel_config.py)"
+    )
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert f"https://github.com/NVIDIA/Megatron-LM/blob/{declared}/" in rewritten
 
 
 def test_rewriter_rejects_fenced_only_header_source_baseline(

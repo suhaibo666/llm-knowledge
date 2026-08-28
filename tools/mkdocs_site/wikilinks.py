@@ -81,8 +81,10 @@ def _megatron_header_baselines(markdown: str) -> tuple[str, ...]:
             continue
         fence_match = _FENCE_START.match(line)
         if fence_match is not None:
-            fence = fence_match.group(1)
-            continue
+            prefix = line[: fence_match.start(1)]
+            if _indentation_columns(prefix) <= 3 and prefix == " " * len(prefix):
+                fence = fence_match.group(1)
+                continue
         if _SECOND_LEVEL_HEADING.match(line):
             break
         declaration = _MEGATRON_BASELINE_DECLARATION.match(line)
