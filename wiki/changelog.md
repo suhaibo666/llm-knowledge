@@ -12,6 +12,28 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-28：verl 推进 273 个提交并重建默认 V1 知识域——TransferQueue、两套 async 与 delta 权重发布补齐
+
+**Type**: 源码基线推进 + 全域概念重构（14 篇内容页 + 域/父/全局索引 + radar）
+
+**基线与工作区**：先把旁置源码工作区 `E:/97-codes/torch_parallel/verl` 从 `8a694930275061f52ebd538c906ef8819af56dbd` fast-forward 到恢复网络后的最终 `origin/main` `254a23edc62f25ebfae626e3932ae285d6f86009`（2026-08-28 10:08 +08），跨度 273 commits、623 files、+62,155/-12,195。源码工作区原有未跟踪 `GRPO_Analysis.md` 在两次 fast-forward 前后 SHA-256 均为 `ABD72593BCE2228C034DAE5433B446DB76A863CEF97FF8F73E0E89FB8F5E4529`，未被修改。最终提交新增 vLLM prefix-cache hit 到 TokenOutput，并在 partial-resume 中保留首次 prefill 的命中数。
+
+**默认主线纠正**：[[01_verl_architecture_overview_analysis]]、[[02_verl_quickstart_guide]]、[[10_verl_end_to_end_iteration_analysis]] 全部从旧 `RayPPOTrainer/DataProto/full CUDA IPC` 叙事改成当前 `TaskRunnerV1 → PPOTrainerSync → TransferQueue → KVBatchMeta/tqbridge → Worker/Engine → CheckpointEngine`。`trainer.use_v1=true` 与 `trainer_mode=sync` 是当前默认；[[20_verl_ray_trainer_analysis]]、[[11_verl_single_controller_analysis]]、[[12_verl_dataproto_analysis]] 保留为完整 commit `8a694930...` 的冻结 V0 机制档案，不再机械 repin 或声称代表默认路径。
+
+**新增三个机制 owner**：
+
+- [[17_verl_v1_async_trainer_analysis]]：稳定 V1 的 sync/colocate async/separate async、ReplayBuffer `drop/wait`、DAPO/failure refill、streaming fetch、TQ checkpoint recovery、同一 PPO cycle 的稳定旧策略与 GPU lending；
+- [[21_verl_delta_weight_sync_deepdive]]：Engine/CheckpointEngine/rollout loader 三段 ownership，dense seed → host snapshot prime → sparse steady state，ShardSpec、真实训练/rollout支持矩阵、checksum/periodic verify 与非事务失败窗口；
+- [[22_verl_fully_async_dynamic_schedule_deepdive]]：独立 experimental TaskRunner 的 Rollouter/Trainer/MessageQueue completion-order、staleness admission、partial rollout、动态 Hybrid GPU、rebalance、恢复/确定性/测试缺口；明确它不是稳定 V1 第四种 mode。
+
+**重构与最新遗漏**：[[16_verl_v1_transfer_queue_analysis]] 从“官方文档级、源码待核实”升级为固定提交源码页，闭合 `use_v1`/TQ 真实开关时序、prompt/trajectory 双层 key、延迟物化与当前仓内 SimpleStorage/MooncakeStore 配置范围；[[13_verl_workers_engine_analysis]] 补齐 FSDP Turbo、TorchTitan、Megatron/VeOmni、MindSpeed 精确删除范围和 `grad_offload` 配置变化；[[14_verl_rollout_resharding_analysis]] 拆开 colocated naive、disaggregated full、`delta_sharded` 与 PD/KV；[[15_verl_rl_algorithms_analysis]] 从 14 estimator × 11 loss 更新为 14 × 12，新增 DRO、`token-sum`、多轮 REINFORCE++ observation-span 修复与 critic global-batch 归一化；[[30_verl_optimization_analysis]] 改为吞吐、显存、新鲜度、权重发布与恢复性的联合预算，避免复制各深潜页。
+
+**导航与追踪**：[[verl/index]] 重建为 14 篇内容页的概念 ownership/三条阅读路线；后训练框架域从 44→47 页，verl 子域从 12→15 页（均含 index）；README、父索引、全局索引同步。`docs/radar/watchlist.yaml` 的 verl `kb_baseline` 更新为完整 `254a23ed...`。
+
+**证据与门禁**：当前基线 11 篇实现页共抽取 460 个仓库相对 `file:line`/range locator，路径缺失与行号越界均为 0；三个 V0 档案继续以各自冻结提交解释原行号。`python -m pytest tools/` 为 114 passed；`npm run docs:test` 的 68 项运行时单测、429 页 Quartz 构建与浏览器 smoke 全部通过（139 个请求，覆盖 Mermaid、链接、静态资源与 loopback-only 网络）。最终链接、公式与格式门禁在写入本条后再次执行。
+
+---
+
 ## 2026-08-28：megatron-lm 基线推进 578 个提交，456 条引用逐条重核——推翻 6 条结论、揪出 4 处原始撰写错误
 
 **Type**: 基线重定 + 全域引用重核（26 页 + 域索引 + radar；六个并行 agent）

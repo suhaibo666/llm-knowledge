@@ -1,132 +1,195 @@
 ---
-title: "verl 的 v1 执行路径与 TransferQueue 数据系统（文档级）"
+title: "verl V1 TransferQueue：元数据控制与延迟物化数据面"
 ---
 
-# verl 的 v1 执行路径与 TransferQueue 数据系统（文档级）
+# verl V1 TransferQueue：元数据控制与延迟物化数据面
 
-> **本页的证据层级与本簇其余各页不同，务必先读这一段。** 本簇 9 篇深潜页是**源码级**分析（固定 commit + `file:line` 定位符 + 代码摘录）。本页**不是**——它基于 verl **官方文档与 release notes** 撰写，用来堵住本簇此前公开承认的覆盖缺口（见 [[verl/index]] 的架构演进提示）。本页**没有**源码定位符，也**没有**在固定 checkout 上验证过任何行号；正文凡涉及实现细节处均标注证据来源。**源码级走查仍是待建项**（§6）。
->
-> 建立本页的直接原因：本簇多处提示「v1/TransferQueue 路径尚无专页覆盖」，而 [[10_verl_end_to_end_iteration_analysis]] 又记录了 `trainer.use_v1` 默认值在两个基线间反转。读者据此容易得出「本簇 9 篇全部失效」的过度结论——**这个结论不成立**，理由见 §5。
->
-> 调研基线: 2026-08-11（verl 官方文档 latest + v0.8.0 release notes）
-> 最后更新: 2026-08-11
+> **源码基线**：verl `main` @ `254a23edc62f25ebfae626e3932ae285d6f86009`（2026-08-28）
+> **最后更新**：2026-08-28 · **证据层级**：固定 checkout 的源码级分析
+> **核心结论**：当前 V1 runner 必定启用 TransferQueue。controller 不再搬运完整 batch，而是用 prompt key、trajectory key 与 `KVBatchMeta` 编排；worker 到执行边界才按需取 TensorDict，并把新增字段写回。TQ 解耦的是控制流与数据流，不是取消 TensorDict/DataProto，也不自动保证异步 freshness 或 checkpoint 一致性。
 
 ---
 
-## 1. 先厘清三个被混为一谈的概念
+## 1. 先纠正三个旧结论
 
-本簇此前把 `use_v1`、`TaskRunnerV1`、TransferQueue 当作同一件事的三个名字，这是不准确的。核对官方文档后，三者关系如下：
+旧页基于 2026-08-11 的官方文档，曾把以下问题列为待核实。当前源码给出了明确答案：
 
-| 概念 | 是什么 | 出现在哪 |
+| 旧问题 | 当前源码结论 | locator |
 |---|---|---|
-| **verl-core / verl-trainer 两层架构** | v0.7 起的架构重构：core 提供四个组件（model engine、rollout engine、checkpoint engine、**transfer queue**），trainer 在其上搭各种 RL 流水线 | 官方 v0.7 release blog |
-| **TransferQueue** | 一个**数据系统**（异步流式数据管理），是 verl-core 的四个组件之一；**可选启用** | 官方专页 + v0.7 blog |
-| **`trainer.use_v1` / `TaskRunnerV1`** | **源码树里的配置项与类名**，指向新的执行路径 | **官方文档中查无此名**；本簇由源码观察记录 |
+| `use_v1` 是否等价于启用 TQ | 进入 V1 后必定强制启用；反向不成立 | `verl/trainer/main_ppo.py:137-155,183-192` |
+| TQ 是否仍是可选非默认路径 | YAML 自身默认 false，但标准入口默认 V1，V1 内部强制 true | `verl/trainer/config/ppo_trainer.yaml:227-237`；`verl/trainer/config/transfer_queue/transfer_queue.yaml:1-2` |
+| fully async 是否仍是下一版本计划 | 稳定 V1 已有 `colocate_async` 与 `separate_async` | `verl/trainer/ppo/v1/trainer_colocate_async.py:25-59`；`verl/trainer/ppo/v1/trainer_separate_async.py:43-398` |
 
-> [!warning] 一处必须如实记录的证据落差
-> **`use_v1`、`TaskRunnerV1`、`trainer/ppo/v1/*` 这三个名字在 verl 官方文档（latest）与 v0.7/v0.8 release notes 中均未出现。** 本簇对它们的记述来自对固定 commit 的源码观察（[[10_verl_end_to_end_iteration_analysis]] 与 [[20_verl_ray_trainer_analysis]] 各以 `ppo_trainer.yaml` 的行号双向记录了默认值反转）。两者不矛盾——源码里的内部命名本就不必进用户文档——但意味着：**凡涉及 `use_v1` 的表述，其唯一依据是本簇的源码观察，不能引官方文档背书。**
->
-> 官方文档侧可查证的对应事实是入口脚本的更名：v0.8.0 release notes 原文 —— "`main_ppo.py` is deprecated with a warning in favor of `main_ppo_sync.py`"。
+因此，release note 中的历史状态不能继续代表当前 `main`。本页只描述最终基线源码；三种 V1 trainer 的状态机见 [[17_verl_v1_async_trainer_analysis]]。
 
 ---
 
-## 2. TransferQueue 解决什么问题
+## 2. 为什么要把数据移出 controller
 
-官方专页给出的动机直指本簇 [[11_verl_single_controller_analysis]] 分析过的单控制器结构：
+V0 的 single-controller 路径让 driver 负责 DataProto 的 dispatch/collect。这样便于建立严格顺序，却让大 TensorDict 的传递、收集与拼接经过中心控制器。V1 保留 controller 对“做什么、处理哪些样本”的决定，把“样本字段放在哪里、何时取回”交给 TransferQueue。
 
-> "all `DataProto` objects must be routed through `RayPPOTrainer`, resulting in a **single-point bottleneck** for the entire post-training system."
+```mermaid
+flowchart LR
+    A["controller instruction"] --> B["KVBatchMeta keys and fields"]
+    B --> C["worker tqbridge"]
+    D["TransferQueue storage"] --> C
+    C --> E["TensorDict compute"]
+    E --> F["new fields"]
+    F --> D
+    C --> G["updated KVBatchMeta"]
+    G --> A
+```
 
-TransferQueue 的定位是 "an **asynchronous streaming data management system** for efficient post-training"，充当 "a data gateway that **decouples explicit data dependencies across computational tasks**"。v0.7 blog 的表述更直接：
+这个结构有三个 ownership：
 
-> "In v0.7, we experimentally introduced **TransferQueue** to decouple control flow from data flow. The RLTrainer now only dispatch **instructions and metadata**, while TransferQueue handles data transmission via **reference passing**."
+- controller 拥有 key 选择、分组、排序和执行元信息；
+- TransferQueue 拥有 key 对应字段与 tag 的存储/检索；
+- worker 拥有函数执行期间的实际 TensorDict 与输出字段。
 
-**对照本簇既有分析**：[[11_verl_single_controller_analysis]] 详细拆过 `@register` + Dispatch/Collect 那套机制——driver 把 `DataProto` 切分下发、执行后回收合并。TransferQueue 要取消的正是这个「数据必须流经 driver」的约束：driver 只发指令与元数据，数据在计算节点间按引用传递。
+`KVBatchMeta` 和 `BatchMeta` 的互转在 `verl/utils/transferqueue_utils.py:302-344`；同步与异步 worker 的桥接逻辑在 `verl/utils/transferqueue_utils.py:347-477`。
 
 ---
 
-## 3. 架构：三层结构
+## 3. 开关时序：为什么 YAML 的 false 与 V1 必用不矛盾
 
-官方专页给出三层：
+TransferQueue 配置文件仍以 `enable: False` 开头（`verl/trainer/config/transfer_queue/transfer_queue.yaml:1-2`）。但 V1 runner 选择 trainer 后立即执行：
 
-**控制面**。`TransferQueueController` 把每条训练样本的**生产状态与消费状态作为元数据**跟踪；某样本所需字段全部就绪后，即可被下游任务消费。这与 [[01_posttraining_infra_mechanism_analysis]] 的 control/data plane 分离模型是同一思路。
+```text
+config.transfer_queue.enable = True
+tq.init(config.transfer_queue)
+trainer.fit(...)
+tq.close()
+```
 
-**数据面**。可插拔设计，核心 API 是 `StorageManager` 抽象上的 `put_data` / `get_data` / `clear_data`。已支持的存储后端：
+完整生命周期在 `verl/trainer/main_ppo.py:137-163`。所以用户不需要另开 TQ 才能运行 V1；`trainer.use_v1` 才是实际的 V0/V1 路由开关（`verl/trainer/main_ppo.py:183-192`）。
 
-| 后端 | 特点 |
+仍有一个源码明确但影响未完全证明的时序差：Ray 初始化前，只有原始 `transfer_queue.enable=true` 才会把 `TRANSFER_QUEUE_ENABLE=1` 加到 runtime env；V1 runner 的强制赋值发生在远端 TaskRunner 中（`verl/trainer/main_ppo.py:56-74,141-149`）。外部 TQ package 如何消费这个环境变量超出本仓代码，不能仅凭该时序断言跨进程故障。
+
+---
+
+## 4. 两层 key schema：prompt 状态与 trajectory 数据
+
+### 4.1 prompt key 是 group 控制记录
+
+AgentLoop 接到 batch 后不会等待全部生成，而是为每个样本创建 background task（`verl/trainer/ppo/v1/agent_loop_tq.py:59-105`）。prompt 的 `uid` 作为 group key：启动时写 `status=running`，所有 rollout session settle 后才写 `finished` 或 `failure`（`verl/trainer/ppo/v1/agent_loop_tq.py:107-148`）。
+
+这个“先等 sibling settle，再发布 terminal 状态”的顺序避免 ReplayBuffer 清理 failure group 后，迟到 sibling 又向同 group 写入轨迹（`verl/trainer/ppo/v1/agent_loop_tq.py:131-143`）。prompt key 因而是控制记录，不是训练张量本身。
+
+### 4.2 trajectory key 是可独立消费的数据记录
+
+每次 agent loop 输出使用：
+
+```text
+{uid}_{session_id}_{index}
+```
+
+源码在 `verl/trainer/ppo/v1/agent_loop_tq.py:177-193`。每个 trajectory field 包含 prompts、responses、mask、position、log-prob/extra fields 等；tag 单独记录 prompt/response/sequence 长度、dataloader global step，以及生成开始/结束所见的权重版本（`verl/trainer/ppo/v1/agent_loop_tq.py:194-225`）。
+
+| tag | 用途 |
 |---|---|
-| SimpleStorage | 默认，基于 CPU 内存 |
-| Yuanrong | 昇腾原生，HBM/DRAM/SSD 分层 |
-| MooncakeStore | 高性能 KV，走 RDMA |
-| RayRDT | Ray 的直接对象传输 |
+| `status` | trajectory 写入是否成功 |
+| `seq_len` | DP workload balance 与 padding |
+| `global_steps` | prompt 来自哪个 trainer step |
+| `min_global_steps` | trajectory 开始生成时的 policy version |
+| `max_global_steps` | trajectory 完成时的 policy version |
 
-> **对异构生态的意义**：Yuanrong 是四个后端里唯一的昇腾原生项，且是**分层存储**（HBM/DRAM/SSD）。[[31_cuda_ascend_posttraining_stack_comparison]] 关心的移植面上，数据系统这一层已有官方对接点，不必从零做。
-
-**用户接口**。三档抽象：Key-Value API（Redis 风格高层接口）、`StreamingDataLoader`（PyTorch `DataLoader` 的 drop-in 替换）、以及低层的 `TransferQueueClient` 原生 API。
-
-**与 `DataProto` 的关系**：官方专页提到 ROLL 集成时引入了 `RemoteBatch` 抽象，"enabling seamless compatibility with existing `DataProto` design"——即 TransferQueue **补充**而非取代 `DataProto`（后者的完整分析见 [[12_verl_dataproto_analysis]]）。
+prompt key 管 group 生命周期，trajectory key 管可训练输出；把两者混为一个“sample key”会漏掉多 session、多轮输出与失败清理的原子性。
 
 ---
 
-## 4. 现状与性能
+## 5. `KVBatchMeta`：引用不是数据
 
-### 4.1 版本状态（这是引用时最容易过期的一段）
+V1 trainer 的 `step()` 返回和传递的是 `KVBatchMeta`（`verl/trainer/ppo/v1/trainer_base.py:511-590`）。它携带 keys、partition、tags 和 extra info；tags 可在 controller 上做长度平衡、staleness 判断和 padding 标记，而无需先拉取所有 token 张量。
 
-| 版本 | 状态 | 依据（逐字） |
-|---|---|---|
-| v0.7 | **实验性引入** | "In v0.7, we **experimentally** introduced TransferQueue" |
-| v0.7 blog 的计划 | 计划 v0.8 转正 | "We plan to make this the **default transmission method in v0.8**." |
-| **v0.8.0 实际** | **仍未成为默认** | release notes：新增 "New **sync trainer with TransferQueue** to decouple control flow and data flow in the single controller"；并注明 "**TBD**: Fully async trainer with TransferQueue will be in **next release**" |
+`KVBatchMeta → BatchMeta` 的流程是：
 
-> **本页判断**：v0.7 blog 的「v0.8 转正」是**计划**，v0.8.0 的实际交付是「新增一个带 TransferQueue 的 sync trainer」，且 fully-async 版本被推到下一个 release。因此截至本页基线，**TransferQueue 是可选路径而非默认传输方式**。任何"verl 已默认走 TransferQueue"的说法，在 v0.8.0 上无官方依据。
+1. 确保本进程 TQ client 初始化。
+2. 用 keys 与 partition 检索 storage metadata。
+3. 若 meta 指定 fields，只选择这些字段。
+4. 保留 controller 附加的 `extra_info`。
 
-### 4.2 性能数字（官方口径，非本库实测）
+实现位于 `verl/utils/transferqueue_utils.py:302-316`。反向转换从 storage 的 global indexes 找回 keys，并复制 field names/extra info（`verl/utils/transferqueue_utils.py:323-340`）。
 
-- 官方集成在 **128 × H100** 集群上做多模态后训练，取得**端到端 49.1%** 的性能提升
-- 测试中扩展到 **64 节点 / 1024 卡**
-
-⚠️ 这两个数字来自官方专页，本库未复现；也未说明基线配置与对照口径。[[32_opd_framework_support_comparison]] 与 [[30_rl_framework_comparison]] 的通例是不收录脱离条件的性能数字，此处收录仅因它是该系统唯一的公开量化，引用时须连同"官方自述、条件未详"一并注明。
+因此，meta RPC 成功只证明引用可解析，不等价于所有下游字段已经就绪。字段完整性仍由生产者状态、worker 调用顺序和 ReplayBuffer 选择共同保证。
 
 ---
 
-## 5. 对本簇 9 篇深潜页的影响：范围界定
+## 6. `tqbridge`：在 worker 边界延迟取数与回写
 
-这是本页最重要的一节。此前的表述容易让读者得出「本簇全部失效」的结论，**该结论过度**。逐层分辨：
+`tqbridge` 同时支持普通函数和 coroutine（`verl/utils/transferqueue_utils.py:347-354`）。两条路径的共同状态机是：
 
-| 本簇内容 | 是否受 v1/TransferQueue 影响 |
+1. 从 args/kwargs 找到 `BatchMeta` 或 `KVBatchMeta`。
+2. 若是 KV meta，先检索 storage meta。
+3. 在函数执行前物化为 TensorDict。
+4. 调原函数。
+5. 若输出是具有 batch size 的 TensorDict，检查输出 batch size 与输入 meta size 相等。
+6. 根据 dispatch mode 判断是否 collect；需要时把输出字段写回 storage。
+7. 若输入是 KV meta，再转回 KV meta 并保留 tags。
+
+同步实现位于 `verl/utils/transferqueue_utils.py:374-419`，异步实现位于 `:421-471`。当没有 meta 参数时，wrapper 直接调用原函数；这使同一 worker 方法仍能接受普通 TensorDict 调用（`:375-379,422-426`）。
+
+该桥接层保留 V0 worker 的“拿 TensorDict 计算”接口，同时改变数据到达 worker 的方式。它并未让 DataProto/TensorDict 消失，而是把 materialization 推迟到执行点。
+
+---
+
+## 7. trainer 如何选择性读写字段
+
+V1 基类不是每一步都拉取全量 trajectory：
+
+| 阶段 | 读取 | 写回 | locator |
+|---|---|---|---|
+| colocated reward | prompts、responses、raw prompt | `rm_scores` 等 | `verl/trainer/ppo/v1/trainer_base.py:1436-1513` |
+| old log-prob | rollout/log-prob、mask | old log-prob、entropy | `verl/trainer/ppo/v1/trainer_base.py:1541-1600` |
+| reference | log-prob、mask | ref log-prob | `verl/trainer/ppo/v1/trainer_base.py:1602-1626` |
+| critic infer | values、mask | response-aligned values | `verl/trainer/ppo/v1/trainer_base.py:1628-1648` |
+| advantage | uid、reward、policy state、value | advantage、return、可选 IS | `verl/trainer/ppo/v1/trainer_base.py:1650-1707` |
+
+这种字段级访问减少了 controller 搬运与无关数据 materialization，但也要求新增算法显式声明它需要的 TQ fields。少读字段会在计算时缺键，多写字段会扩大存储和传输成本。
+
+---
+
+## 8. 当前仓内可配置后端，而不是产品能力全集
+
+最终基线的 verl 配置只直接暴露两个 storage backend（`verl/trainer/config/transfer_queue/transfer_queue.yaml:14-60`）：
+
+| backend | 仓内配置语义 |
 |---|---|
-| `DataProto` 的字段语义、`chunk`/`concat`/`union`/`padding`（[[12_verl_dataproto_analysis]]） | **基本不受影响**——官方称 TransferQueue 与 `DataProto` 经 `RemoteBatch` 兼容共存 |
-| Worker / Engine 两层抽象、FSDP/Megatron 后端、offload 开关（[[13_verl_workers_engine_analysis]]） | **不受影响**——属计算面，与数据传输路径正交 |
-| 权重重分片、sleep/wake、CUDA IPC 传权重（[[14_verl_rollout_resharding_analysis]]） | **不受影响**——属权重面 |
-| 优势估计与损失函数的数学与实现（[[15_verl_rl_algorithms_analysis]]） | **不受影响**——`core_algos.py` 是算法面 |
-| 显存/吞吐手段、Ulysses、异步 recipe（[[30_verl_optimization_analysis]]） | **基本不受影响** |
-| `@register` + Dispatch/Collect 的**数据流经 driver** 这一前提（[[11_verl_single_controller_analysis]]） | **受影响**——TransferQueue 的目的正是解除这个约束；机制描述仍然正确（它描述的是 legacy 路径），但**不再是唯一路径** |
-| 「一个 PPO step 的编排主链」（[[20_verl_ray_trainer_analysis]]、[[01_verl_architecture_overview_analysis]]） | **受影响**——`RayPPOTrainer.fit` 已被标 `@deprecated`，入口脚本亦已更名 |
+| `SimpleStorage` | ZMQ 内存存储；配置容量与分布式 storage unit 数 |
+| `MooncakeStore` | experimental；可用 TCP/RDMA，配置 metadata/master、segment 与 buffer |
 
-**结论**：受影响的是**编排层与数据搬运层**，不是计算面、权重面、算法面。本簇 9 篇里真正需要以 v1 视角重写的是编排主链那两三篇，其余仍然可用——**但每篇都应标明它描述的是 legacy 路径**。
+外部 TransferQueue 产品或历史文档可能列出 Yuanrong、RayRDT 等更多实现，但它们不在当前 verl 内置 YAML 的 stable-path 选择面。不能把外部产品全景直接写成“当前 verl 配置支持矩阵”。
+
+metrics 可选择 logger-only 或暴露 Prometheus `/metrics` endpoint，并允许端口自动分配（`verl/trainer/config/transfer_queue/transfer_queue.yaml:4-12`）。这提供可观测入口，不等价于数据 durable 或操作原子性保证。
 
 ---
 
-## 6. 本页明确的知识缺口
+## 9. checkpoint 与一致性边界
 
-按 CLAUDE.md 的规矩，以下均为**未做**，不用推测填补：
+稳定 V1 async 会额外保存 TQ snapshot，但只有外部 package 版本至少 `0.1.9` 且同时提供 save/load API 时才启用（`verl/trainer/ppo/v1/trainer_base.py:106-116,942-950`）。恢复时：
 
-1. **源码级走查未做**：`trainer/ppo/v1/*`、`TaskRunnerV1`、`tqbridge`（[[11_verl_single_controller_analysis]] 记录其位于 `decorator.py:424`，但未展开）均无 `file:line` 级分析。做这件事需要在固定 commit 上 checkout verl 源码——**本次会话所处环境无法访问 GitHub**，故未做。
-2. **`use_v1` 的完整语义未核实**：它是否等价于"启用 TransferQueue"，还是仅切换 trainer 实现而 TransferQueue 另有开关，本页无法从官方文档判定。**本页倾向后者**（因为官方称 TransferQueue 在 v0.8 仍非默认，而本簇观察到 `use_v1` 在 `983cb0f` 已默认为真）——但这是【推断】，需源码确认。
-3. **配置键未收录**：官方专页明说 "provides no explicit configuration keys or flags"，集成通过实例化模式完成；本簇也未从源码侧补齐。
-4. **四种存储后端的选型依据未展开**：无性能对照、无适用场景说明。
-5. **v0.8.0 的确切发布日期未取到**（页面仅显示相对时间"2 months ago"）。
+- finished trajectory 留在 TQ 等待消费；
+- pending/running prompt 的旧局部 trajectory 被删除，prompt 以新 step 重新派发（`verl/trainer/ppo/v1/trainer_base.py:843-887`）。
+
+这不是对 in-flight trajectory 做连续恢复。能力检查不满足时源码会跳过 TQ snapshot，因此 dataloader 已前进、但未形成 finished group 的 prompt 没有本仓内的恢复保证。完整恢复状态机见 [[17_verl_v1_async_trainer_analysis]]。
+
+---
+
+## 10. 失败边界
+
+- V1 文件直接 import `transfer_queue`；缺失依赖会在入口或模块加载阶段失败（`verl/trainer/main_ppo.py:137`；`verl/trainer/ppo/v1/agent_loop_tq.py:25`）。
+- `tqbridge` 只验证返回 TensorDict 的 batch size 与 meta size，不证明每个 key 的语义字段正确（`verl/utils/transferqueue_utils.py:401-418,453-470`）。
+- prompt 的 terminal 状态依赖所有 session settle；永久挂起的 session 会让 group 一直处于 in-flight。
+- tag 中的 min/max policy version 是 freshness 证据，但“是否丢弃或等待”属于 ReplayBuffer policy，不属于 TQ storage 本身。
+- MooncakeStore 标为 experimental；本页没有多节点 RDMA、故障恢复或 snapshot 原子性的 E2E 证据。
+- 当前源码中 TQ metadata 与 worker 输出写回跨多个调用，不应假设整个 PPO step 是单事务。
 
 ---
 
 ## Related Pages
 
-- [[verl/index]] — verl 源码级分析系列索引（本页是该系列公开承认的覆盖缺口的第一次填补）
-- [[10_verl_end_to_end_iteration_analysis]] — 当前基线 `983cb0f` 的端到端主链，记录了 `use_v1` 默认值反转的 `[!contradiction]`
-- [[11_verl_single_controller_analysis]] — 单控制器与 Dispatch/Collect：TransferQueue 要解除的正是这里的「数据流经 driver」约束
-- [[12_verl_dataproto_analysis]] — `DataProto` 数据契约（TransferQueue 与其经 `RemoteBatch` 兼容共存）
-- [[20_verl_ray_trainer_analysis]] — `RayPPOTrainer.fit` 逐行追踪（legacy 路径，已被标 `@deprecated`）
-- [[30_verl_optimization_analysis]] — 异步 RL 三条路线（含 v1 路径的 8 行源码级片段，目前全簇对 v1 最深的一处）
-- [[30_rl_framework_comparison]] — 四框架统一机制矩阵（其 verl 列的基线与本簇不一致，见该页警示）
-- [[01_posttraining_infra_mechanism_analysis]] — control/data/weight 三平面模型（TransferQueue 是 data plane 与 control plane 分离的一个具体实现）
-- [[31_cuda_ascend_posttraining_stack_comparison]] — 异构移植（TransferQueue 的 Yuanrong 后端是昇腾原生对接点）
-- [[13_opd_infra_mechanism_analysis]] — OPD 的系统要求（教师打分服务与 TransferQueue 的数据面职责相邻）
+- [[10_verl_end_to_end_iteration_analysis]] —— 当前默认 V1 sync 如何消费 TQ 数据面
+- [[17_verl_v1_async_trainer_analysis]] —— ReplayBuffer、staleness、refill 与 TQ checkpoint
+- [[12_verl_dataproto_analysis]] —— 执行点仍会物化的 TensorDict/DataProto 结构
+- [[11_verl_single_controller_analysis]] —— V0 dispatch/collect 与 driver 数据路径
+- [[15_verl_rl_algorithms_analysis]] —— TQ fields 最终承载的 advantage/loss 状态
+- [[verl/index]] —— verl 系列导航

@@ -6,7 +6,7 @@ title: "后训练框架 — 目录索引"
 
 > 覆盖 RLHF/对齐训练基础设施、Coding RL Sandbox 与 Infra、TitanRL 异步 GRPO/DAPO 源码级实现、工业 RL 训练框架
 > (verl/slime/AReaL/ROLL)源码分析与 CUDA–Ascend 映射。
-> 最后更新: 2026-08-27（TorchTitan TitanRL `main@a3168782c`：异步 controller、版本窗口、全局 token 归一化、rollout/weight-sync 与 GRPO/DAPO）
+> 最后更新: 2026-08-28（verl `main@254a23ed`：默认 V1、TransferQueue、stable/experimental async、CheckpointEngine delta 与当前 Engine 矩阵）
 
 ---
 
@@ -29,7 +29,7 @@ title: "后训练框架 — 目录索引"
 | 系统 | 在本域中的定位 | 本库覆盖 | 基线 |
 |---|---|---|---|
 | **slime** | THUDM，SGLang-native + Megatron-native；本域**覆盖最全**的框架，从配置、端到端主链到容错、低精度、Agent workflow 逐项展开 | 20 篇 + index（**系统性源码覆盖**） | `THUDM/slime@681b3adc` |
-| **verl** | 字节 **HybridFlow** 开源版；**单控制器编排 + 多控制器 SPMD 执行**这一范式的代表，3D-HybridEngine 重分片的原始实现 | 11 篇 + index（**系统性源码覆盖**） | `volcengine/verl@8a694930`（端到端主链页 `983cb0f`） |
+| **verl** | 字节 **HybridFlow** 开源版；当前默认 V1 以 TransferQueue 解耦控制/数据，Worker/Engine 与 CheckpointEngine 分别承担计算和权重发布 | 14 篇 + index（**系统性源码覆盖**） | `volcengine/verl@254a23ed`；3 篇 V0 档案冻结于 `8a694930` |
 | **AReaL** | Fully Async 与 Agentic 架构的代表：微服务化、Hermes、policy lag 的显式管理 | 1 篇（**架构专题，非全景**） | 见页头 |
 | **ROLL** | 多后端 Strategy 抽象 + AutoDeviceMapping；异构与 **Ascend** 侧的代表 | 1 篇（**架构专题，非全景**） | 见页头 |
 | **vime** | vLLM backend 的衍生实现；用于审计 slime 的 rollout backend 扩展点 | 1 篇（在 `slime/` 下） | `vllm-project/vime@8144096e` |
@@ -40,16 +40,16 @@ title: "后训练框架 — 目录索引"
 
 ### 本域提供的能力
 
-下表按**三平面**组织；"样本与锚点"列说明本库是拿谁的实现讲的。源码锚点按侧车 checkout `verl@8a694930`、`slime@681b3adc` 核对路径存在：
+下表按**三平面**组织；"样本与锚点"列说明本库是拿谁的实现讲的。源码锚点按侧车 checkout `verl@254a23ed`、`slime@681b3adc` 核对路径存在：
 
 | 平面 | 能力 | 具体提供什么 | 样本与源码锚点 | 详见 |
 |---|---|---|---|---|
 | control | **单控制器编排 + 多控制器执行** | 一个 driver 下命令、各 rank SPMD 执行，避免把编排逻辑写进每个 worker | verl `verl/single_controller/` | [[verl/index\|verl]] |
-| control | **训练主循环** | 一轮迭代的完整拍子：生成 → 打分 → 优势 → 更新 → 发布权重 | verl `verl/trainer/ppo/ray_trainer.py` · slime `slime/ray/` | [[01_posttraining_infra_mechanism_analysis]] |
-| control | **异步控制器** | policy version、windowed FIFO、rollout worker 与训练解耦 | AReaL（架构专题） | [[21_areal_async_architecture_analysis]] |
-| data | **统一数据协议** | 在 driver 与 worker 之间传递变长轨迹批的容器与切分语义 | verl `verl/protocol.py` | [[verl/index\|verl]] |
+| control | **训练主循环** | 一轮迭代的完整拍子：生成 → 打分 → 优势 → 更新 → 发布权重 | verl `verl/trainer/ppo/v1/` · slime `slime/ray/` | [[10_verl_end_to_end_iteration_analysis]] · [[01_posttraining_infra_mechanism_analysis]] |
+| control | **异步控制器** | policy version、completion queue、staleness 与 rollout/train 解耦 | verl stable V1 + experimental · AReaL（架构专题） | [[17_verl_v1_async_trainer_analysis]] · [[22_verl_fully_async_dynamic_schedule_deepdive]] · [[21_areal_async_architecture_analysis]] |
+| data | **统一数据协议** | controller 传引用、worker 延迟物化变长轨迹；V0 保留 DataProto 档案 | verl TransferQueue/`KVBatchMeta`/`tqbridge` | [[16_verl_v1_transfer_queue_analysis]] |
 | data | **rollout 后端抽象** | 把 vLLM/SGLang 包成可被训练循环驱动的生成服务，而不是各写一份胶水 | verl `verl/workers/rollout/` · slime `slime/backends/sglang_utils/` | [[13_slime_sglang_rollout_engine_analysis]] · [[19_slime_rollout_backend_extension_analysis]] |
-| weight | **训推权重重分片与发布** | 训练态分片 → 推理态分片的转换与原地更新，避免落盘往返 | verl 3D-HybridEngine · slime `slime/backends/megatron_utils/` | [[14_verl_rollout_resharding_analysis]] · [[16_slime_weight_sync_analysis]] |
+| weight | **训推权重重分片与发布** | 训练态分片 → 推理态 full/delta payload 的转换与原地更新，避免落盘往返 | verl CheckpointEngine/`delta_sharded` · slime `slime/backends/megatron_utils/` | [[14_verl_rollout_resharding_analysis]] · [[21_verl_delta_weight_sync_deepdive]] · [[16_slime_weight_sync_analysis]] |
 | 算法 | **RL 目标函数实现** | PPO/GRPO/DAPO 等的 loss、优势估计、clip 与 KL 项 | verl `verl/trainer/ppo/core_algos.py` | [[15_verl_rl_algorithms_analysis]] |
 | 一致性 | **训推数值一致** | 两侧 log-prob 对齐的工程手段与验收 | slime 专页 | [[17_slime_train_inference_consistency_analysis]] |
 | 环境 | **Sandbox 与 Agent 执行环境** | 十万级并发的代码/工具执行环境，Fork/Pause/Snapshot 与 harness 版本化 | 公开资料（**非本地源码**） | [[11_rl_sandbox_design_analysis]] |
@@ -78,7 +78,7 @@ title: "后训练框架 — 目录索引"
 
 | 目录 | 核心主题 |
 |------|---------|
-| [[verl/index]] | 字节 **HybridFlow** 开源版 RL 后训练(RLHF)编排框架;单控制器编排 + 多控制器 SPMD 执行、DataProto、`RayPPOTrainer.fit` 数据流、统一 Worker+Engine 抽象、vLLM/SGLang rollout + 3D-HybridEngine 重分片、PPO/GRPO/GSPO 等算法;源码级分析 10 篇(9 篇 `main` 8a694930 深潜 + 端到端主链页基线 983cb0f)+ **文档级 1 篇**(v1/TransferQueue 路径,2026-08-11 补) |
+| [[verl/index]] | 字节 **HybridFlow** 开源版 RL 后训练编排框架；14 篇内容页统一覆盖默认 V1 sync、TransferQueue、stable V1 async、experimental fully async、Worker/Engine、rollout/PD、CheckpointEngine full/`delta_sharded`、算法与优化；当前基线 `main@254a23ed`，另保留 3 篇 `8a694930` V0 机制档案 |
 | [[slime/index]] | THUDM **slime** 独立源码知识域；SGLang-native + Megatron-native，覆盖配置、端到端迭代、Ray/数据/rollout/训练/loss/权重、训推一致性、容错观测、backend 扩展、vime/vLLM 衍生实现、OPD、在线 MTP、FP8/INT4、新架构、Agent、优化与稳定性，共 21 篇 |
 
 ---

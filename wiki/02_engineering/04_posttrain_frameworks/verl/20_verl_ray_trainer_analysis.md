@@ -1,17 +1,18 @@
 ---
-title: "verl 训练编排 —— RayPPOTrainer.fit() 的 RL 数据流主循环"
+title: "verl V0 legacy：RayPPOTrainer.fit 的 RL 数据流"
 ---
 
-# verl 训练编排 —— RayPPOTrainer.fit() 的 RL 数据流主循环
+# verl V0 legacy：RayPPOTrainer.fit 的 RL 数据流
 
-> **代码基准**:verl `main` @ `8a694930`
-> **最后更新**:2026-06-22 · **系列**:verl RLHF 框架源码级分析(见 [[verl/index]])
+> **历史代码基准**：verl `main` @ `8a694930275061f52ebd538c906ef8819af56dbd`
+> **范围复核**：2026-08-28 · **系列**：verl RLHF 框架源码级分析（见 [[verl/index]]）
 >
 > 本文回答一个问题:**一条 prompt 从采样到把梯度回写进 actor,中间经过哪些角色、按什么顺序、每一步往 batch 里塞了什么字段?** 主角是单一驱动进程 `RayPPOTrainer`(`trainer/ppo/ray_trainer.py`),它通过 RPC 把重活派给各 worker group,自己只在 driver 上做"轻量"的 advantage / KL 计算。
 >
 > 行号约定:所有 `path.py:line` 均相对 verl **内层包根** `verl/`(即 `trainer/ppo/ray_trainer.py` 实际位于 `verl/verl/trainer/ppo/ray_trainer.py`)。
 
-> [!note] 本页基线 verl `8a694930`;端到端迭代以 [[10_verl_end_to_end_iteration_analysis]](基线 `983cb0f`)为准,两基线间机制差异以新基线页为先。
+> [!warning] 本页是冻结的 V0 legacy 实现档案
+> 本文所有逐行定位都属于上述历史提交。当前 `main` @ `254a23edc62f25ebfae626e3932ae285d6f86009` 默认 `trainer.use_v1=true`、`trainer_mode=sync`，入口只有在显式 `trainer.use_v1=false` 时才选择 V0（`verl/trainer/config/ppo_trainer.yaml:227-237`；`verl/trainer/main_ppo.py:183-192`）。当前端到端、TQ 数据面和 V1 async 分别见 [[10_verl_end_to_end_iteration_analysis]]、[[16_verl_v1_transfer_queue_analysis]]、[[17_verl_v1_async_trainer_analysis]]。
 
 ---
 
@@ -37,11 +38,8 @@ def fit(self):
 - **分发机制**:worker group 的 `spawn` / dispatch / colocate 由 single-controller 提供,见 [[11_verl_single_controller_analysis]]。
 - **算法内核**:advantage / KL / loss 的具体数学在 `core_algos.py`,本页只记入口,细节见 [[15_verl_rl_algorithms_analysis]]。
 
-> [!note] 版本定位:这是默认路径,但被标记为待废弃(基线 `8a694930` 下)
-> `RayPPOTrainer` 类带 `@deprecated` 装饰(`trainer/ppo/ray_trainer.py:285`),提示 "Legacy trainer ... 将在 v0.9.0 移除,请用 `trainer.use_v1=True`"。但配置默认 `trainer.use_v1: false`(`trainer/config/ppo_trainer.yaml:201`),`main_ppo.py:161` 的分支据此走向 `main_ppo_v0.py`,后者在 `trainer/main_ppo_v0.py:217` 实例化本类。也就是说:**本类目前仍是默认跑的 PPO 编排器**,V1(`TaskRunnerV1`)是并行存在的新实现。本页文档化的是 main @ `8a694930` 下这份事实主循环。
->
-> [!contradiction] 到 `983cb0f`,默认值已反转
-> [[10_verl_end_to_end_iteration_analysis|verl 端到端训练迭代]] 的基线 `983cb0f` 上,`trainer.use_v1` 默认值已从 `false` 反转为 `true`(`trainer/config/ppo_trainer.yaml:219`),`main_ppo.py:184-193` 因此**默认改道 `TaskRunnerV1`**(`verl/trainer/ppo/v1/*`,TransferQueue 驱动)。本页记录的 `RayPPOTrainer.fit` 降级为需要显式 `trainer.use_v1=false` 才会执行的 legacy 路径——这是版本演进而非本页描述有误;`@deprecated` 装饰器本身未变。本页与整套 9 篇深潜文档仍以此 legacy 路径为教学主线,`TaskRunnerV1`/TransferQueue 路径本系列尚无专页覆盖。
+> [!note] 历史与当前状态
+> 在本页冻结的 `8a694930...` 上，V0 当时仍是默认，虽然 `RayPPOTrainer` 已带 deprecated 标记。当前提交中类仍位于 `verl/trainer/ppo/ray_trainer.py:285-286`，但默认路由已经稳定转向 V1；历史主循环的算法函数仍被 V1 部分复用，例如 V1 非 GRPO advantage 继续调用 `compute_advantage`（`verl/trainer/ppo/v1/utils.py:148-176`）。
 
 ---
 
@@ -369,12 +367,9 @@ sequenceDiagram
 ## Related Pages
 
 - [[verl/index]] —— verl 系列总入口
-- [[10_verl_end_to_end_iteration_analysis]] —— 当前基线(`983cb0f`)的端到端主链、`use_v1` 默认反转记录,本页 legacy 深潜的对照页
-- [[01_verl_architecture_overview_analysis]] —— HybridFlow / single-controller 架构总览,本页是其"主循环"具体化
-- [[11_verl_single_controller_analysis]] —— worker group、`spawn`、colocate、dispatch(`make_nd_compute_dataproto_dispatch_fn`)机制
-- [[12_verl_dataproto_analysis]] —— `DataProto` / `TensorDict` 数据载体,本页所有 `union/repeat/pop` 的语义
-- [[13_verl_workers_engine_analysis]] —— `compute_log_prob` / `update_actor` / `infer_batch` / `train_mini_batch` 在 worker 侧的执行
-- [[14_verl_rollout_resharding_analysis]] —— `generate_sequences` 与 `update_weights` 背后的采样/权重 resharding
-- [[15_verl_rl_algorithms_analysis]] —— GAE / GRPO / REINFORCE++ 等 advantage 与 KL 的数学细节(`core_algos.py`)
-- [[30_verl_optimization_analysis]] —— batch balancing、dynamic batch、micro-batch 等吞吐优化
-- [[02_verl_quickstart_guide]] —— 跑起来一个 PPO/GRPO 任务的最短路径
+- [[10_verl_end_to_end_iteration_analysis]] —— 当前默认 V1 sync 主链
+- [[17_verl_v1_async_trainer_analysis]] —— 当前 V1 三种模式与 ReplayBuffer
+- [[11_verl_single_controller_analysis]] —— V0 dispatch/collect 机制
+- [[12_verl_dataproto_analysis]] —— 本页使用的历史 DataProto 主契约
+- [[15_verl_rl_algorithms_analysis]] —— 当前 advantage/loss 注册表
+- [[01_verl_architecture_overview_analysis]] —— 当前四平面架构
