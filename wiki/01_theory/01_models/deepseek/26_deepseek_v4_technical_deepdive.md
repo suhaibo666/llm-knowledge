@@ -97,6 +97,7 @@ flowchart LR
 $$
 C_a = H W_a^{KV},\quad C_b = H W_b^{KV}\tag{Eq 9}
 $$
+
 $$
 Z_a = H W_a^{Z},\quad Z_b = H W_b^{Z},\qquad W_a^{KV},W_b^{KV},W_a^{Z},W_b^{Z}\in\mathbb{R}^{d\times c}\tag{Eq 10}
 $$
@@ -106,14 +107,17 @@ $$
 $$
 \begin{aligned}
 [\,S^a_{mi:m(i+1)-1};\,S^b_{m(i-1):mi-1}\,]
-&=\mathrm{Softmax_{\mathrm{row}}}\big([\,Z^a_{mi:m(i+1)-1}+B_a;\,Z^b_{m(i-1):mi-1}+B_b\,]\big)\tag{Eq 11}
+&=\mathrm{Softmax_{\mathrm{row}}}\big([\,Z^a_{mi:m(i+1)-1}+B_a;\,Z^b_{m(i-1):mi-1}+B_b\,]\big)
 \end{aligned}
+\tag{Eq 11}
 $$
+
 $$
 \begin{aligned}
 C^{Comp}_i
-&=\sum_{j=mi}^{m(i+1)-1} S^a_j\odot C^a_j \;+\; \sum_{j=m(i-1)}^{mi-1} S^b_j\odot C^b_j,\qquad C^{Comp}\in\mathbb{R}^{\frac{n}{m}\times c}\tag{Eq 12}
+&=\sum_{j=mi}^{m(i+1)-1} S^a_j\odot C^a_j \;+\; \sum_{j=m(i-1)}^{mi-1} S^b_j\odot C^b_j,\qquad C^{Comp}\in\mathbb{R}^{\frac{n}{m}\times c}
 \end{aligned}
+\tag{Eq 12}
 $$
 
 **论文给出（p10）**：$\odot$ 是 Hadamard 积；$i=0$ 时 $Z^b_{m(i-1):mi-1}$ 用 $-\infty$ 填充、$C^b$ 用 0 填充。每个 $C^{Comp}_i$ 看似来自 **2m** 个原始 entry，但 $C^{Comp}_i$ 用到的 $C^b$ 索引区间与 $C^{Comp}_{i-1}$ 用到的 $C^a$ 索引区间**重叠**——所以净压缩率**恰好是 `1/m`**，而非 `1/2m`（p10 末句明示）。
@@ -136,11 +140,13 @@ C^Comp[3] ◄── C_a:12..15 + C_b:8..11
 $$
 c^Q_t = h_t W^{DQ}\tag{Eq 13}
 $$
+
 $$
 \begin{aligned}
 [\,q^I_{t,1};\dots;q^I_{t,n^I_h}\,]
-&=q^I_t = c^Q_t W^{IUQ},\qquad W^{DQ}\in\mathbb{R}^{d\times d_c},\ W^{IUQ}\in\mathbb{R}^{d_c\times c_I n^I_h}\tag{Eq 14}
+&=q^I_t = c^Q_t W^{IUQ},\qquad W^{DQ}\in\mathbb{R}^{d\times d_c},\ W^{IUQ}\in\mathbb{R}^{d_c\times c_I n^I_h}
 \end{aligned}
+\tag{Eq 14}
 $$
 
 index score（因果约束 $s<\lfloor t/m\rfloor$，即只看前序压缩块）：
@@ -148,6 +154,7 @@ index score（因果约束 $s<\lfloor t/m\rfloor$，即只看前序压缩块）�
 $$
 [\,w^I_{t,1};\dots;w^I_{t,n^I_h}\,]=w^I_t = h_t W^{w},\qquad W^{w}\in\mathbb{R}^{d\times n^I_h}\tag{Eq 15}
 $$
+
 $$
 I_{t,s}=\sum_{h=1}^{n^I_h} w^I_{t,h}\cdot \mathrm{ReLU}\!\big(q^I_{t,h}\cdot K^{IComp}_s\big)\tag{Eq 16}
 $$
@@ -169,11 +176,13 @@ $$
 $$
 [\,q_{t,1};\dots;q_{t,n_h}\,]=q_t = c^Q_t W^{UQ},\qquad W^{UQ}\in\mathbb{R}^{d_c\times c\,n_h}\tag{Eq 18}
 $$
+
 $$
 \begin{aligned}
 o_{t,i}
-&=\mathrm{CoreAttn}\big(\text{query}=q_{t,i},\ \text{key}=C^{SprsComp}_t,\ \text{value}=C^{SprsComp}_t\big)\tag{Eq 19}
+&=\mathrm{CoreAttn}\big(\text{query}=q_{t,i},\ \text{key}=C^{SprsComp}_t,\ \text{value}=C^{SprsComp}_t\big)
 \end{aligned}
+\tag{Eq 19}
 $$
 
 > [!note] 这里的低秩潜在 $c^Q_t$ 只压缩 **query**，且被 indexer 与主注意力两处复用——和 MLA 压缩 **KV** 是两回事。V4 把"低秩"用在 query 上，"序列压缩"用在 KV 上。
@@ -209,12 +218,15 @@ $$
 $$
 C = H W^{KV},\qquad Z = H W^{Z},\qquad W^{KV},W^{Z}\in\mathbb{R}^{d\times c}\tag{Eq 20–21}
 $$
+
 $$
 \begin{aligned}
 S_{m'i:m'(i+1)-1}
-&=\mathrm{Softmax_{\mathrm{row}}}\big(Z_{m'i:m'(i+1)-1}+B\big),\qquad B\in\mathbb{R}^{m'\times c}\tag{Eq 22}
+&=\mathrm{Softmax_{\mathrm{row}}}\big(Z_{m'i:m'(i+1)-1}+B\big),\qquad B\in\mathbb{R}^{m'\times c}
 \end{aligned}
+\tag{Eq 22}
 $$
+
 $$
 C^{Comp}_i=\sum_{j=m'i}^{m'(i+1)-1} S_j\odot C_j,\qquad C^{Comp}\in\mathbb{R}^{\frac{n}{m'}\times c}\tag{Eq 23}
 $$
@@ -224,6 +236,7 @@ $$
 $$
 c^Q_t = h_t W^{DQ},\qquad q_t = c^Q_t W^{UQ}\tag{Eq 24–25}
 $$
+
 $$
 o_{t,i}=\mathrm{CoreAttn}\big(\text{query}=q_{t,i},\ \text{key}=C^{Comp},\ \text{value}=C^{Comp}\big)\tag{Eq 26}
 $$

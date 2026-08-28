@@ -35,6 +35,10 @@ export function searchResultMatches(result, query, targetSuffix) {
     && (url.searchParams.get("h") === query || result.text.includes(query))
 }
 
+export function diagnosticSearchIndexUrl(origin) {
+  return `${origin.replace(/\/$/, "")}/search/search_index.json`
+}
+
 export function mermaidRootContract(diagram) {
   return !diagram.error
     && diagram.roots === 1
@@ -328,8 +332,8 @@ async function searchFor(page, origin, query, targetSuffix) {
       targetSuffix,
     )
   } catch (error) {
-    const state = await page.evaluate(async () => {
-      const index = await fetch("/search/search_index.json").then((response) => response.json())
+    const state = await page.evaluate(async (searchIndexUrl) => {
+      const index = await fetch(searchIndexUrl).then((response) => response.json())
       return {
         query: document.querySelector("[data-md-component='search-query']")?.value,
         meta: document.querySelector(".md-search-result__meta")?.textContent.trim(),
@@ -339,7 +343,7 @@ async function searchFor(page, origin, query, targetSuffix) {
           document.location.includes("13_megatron_cp_analysis")),
         config: index.config,
       }
-    })
+    }, diagnosticSearchIndexUrl(origin))
     error.message += `\nsearch state: ${JSON.stringify(state)}`
     throw error
   }

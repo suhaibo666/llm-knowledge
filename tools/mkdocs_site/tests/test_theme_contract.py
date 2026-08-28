@@ -320,3 +320,9 @@ def test_renderer_runtime_in_browser_at_root_and_project_subpath(
         "/llm-knowledge/",
     ]
     assert all(case["math"] > 0 for case in result["cases"])
+
+
+def test_mkdocs_aggregate_runs_mathjax_corpus_gate() -> None:
+    package = json.loads((REPO / "package.json").read_text(encoding="utf-8"))
+
+    assert "tools/mkdocs-site/mathjax-corpus.mjs" in package["scripts"]["docs:mkdocs:test"]

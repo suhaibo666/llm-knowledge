@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
+  diagnosticSearchIndexUrl,
   mermaidRootContract,
   rootMermaidSvgs,
   searchResultMatches,
@@ -64,4 +65,16 @@ test("mermaidRootContract rejects a zero-size root inside a positive block", () 
     blockWidth: 752,
     blockHeight: 941,
   }), false)
+})
+
+
+test("search diagnostics preserve root and project base paths", () => {
+  assert.equal(
+    diagnosticSearchIndexUrl("http://127.0.0.1:8000"),
+    "http://127.0.0.1:8000/search/search_index.json",
+  )
+  assert.equal(
+    diagnosticSearchIndexUrl("http://127.0.0.1:8000/llm-knowledge"),
+    "http://127.0.0.1:8000/llm-knowledge/search/search_index.json",
+  )
 })

@@ -74,7 +74,7 @@ Router: s_i = ⟨q, mean_pool(K[I_i])⟩ → top-k selection
 
 亲和度分数：
 $$
-s_i = \langle q, \text{mean\_pool}(K[I_i]) \rangle
+s_i = \left\langle q, \operatorname{mean\text{-}pool}(K[I_i]) \right\rangle
 $$
 
 Top-K 选择：

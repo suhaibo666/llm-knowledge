@@ -31,6 +31,25 @@ def _is_strict_descendant(candidate: Path, root: Path) -> bool:
     return True
 
 
+def _contained_source(wiki: Path, source: Path, relative: Path) -> Path:
+    root = wiki.resolve()
+    try:
+        resolved = source.resolve(strict=True)
+    except OSError as error:
+        raise ValueError(
+            f"{relative.as_posix()}: cannot resolve source inside wiki root"
+        ) from error
+    try:
+        resolved.relative_to(root)
+    except ValueError as error:
+        raise ValueError(
+            f"{relative.as_posix()}: resolves outside wiki root: {resolved}"
+        ) from error
+    if not resolved.is_file():
+        raise ValueError(f"{relative.as_posix()}: source is not a regular file")
+    return resolved
+
+
 def _frontmatter_and_body(
     markdown: str, source: Path
 ) -> tuple[dict[str, object], str, int]:
@@ -203,7 +222,12 @@ def stage_wiki(paths: BuildPaths, inventory: Inventory) -> StageResult:
     asset_count = 0
     try:
         for page in inventory.pages:
-            markdown = page.source.read_text(encoding="utf-8")
+            safe_source = _contained_source(
+                paths.wiki,
+                page.source,
+                Path(page.relative.as_posix()),
+            )
+            markdown = safe_source.read_text(encoding="utf-8")
             destination = temporary_stage / Path(page.relative.as_posix())
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(
@@ -214,14 +238,15 @@ def stage_wiki(paths: BuildPaths, inventory: Inventory) -> StageResult:
             (
                 source
                 for source in paths.wiki.rglob("*")
-                if source.is_file() and source.suffix.lower() != ".md"
+                if not source.is_dir() and source.suffix.lower() != ".md"
             ),
             key=lambda source: source.relative_to(paths.wiki).as_posix().casefold(),
         ):
             relative = source.relative_to(paths.wiki)
+            safe_source = _contained_source(paths.wiki, source, relative)
             destination = temporary_stage / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
+            shutil.copy2(safe_source, destination)
             asset_count += 1
 
         asset_count += _copy_theme_assets(paths, temporary_stage)

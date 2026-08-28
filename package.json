@@ -11,6 +11,6 @@
     "docs:mkdocs": "python -m tools.mkdocs_site.cli serve",
     "docs:mkdocs:build": "python -m tools.mkdocs_site.cli build",
     "docs:mkdocs:test:unit": "python -m pytest tools/mkdocs_site/tests -q && node --test tools/mkdocs-site/*.test.mjs",
-    "docs:mkdocs:test": "npm run docs:mkdocs:test:unit && npm run docs:mkdocs:build && node tools/mkdocs-site/smoke.mjs"
+    "docs:mkdocs:test": "npm run docs:mkdocs:test:unit && npm run docs:mkdocs:build && node tools/mkdocs-site/mathjax-corpus.mjs && node tools/mkdocs-site/smoke.mjs"
   }
 }

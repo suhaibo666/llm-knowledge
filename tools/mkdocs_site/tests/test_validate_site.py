@@ -218,6 +218,94 @@ def test_validator_ignores_only_declared_external_reference_kinds(
     assert report.missing_assets == ()
 
 
+def test_validator_rejects_root_absolute_reference_outside_project_prefix(
+    tmp_path: Path,
+) -> None:
+    site = make_site(
+        tmp_path,
+        index_body=(
+            '<a href="/page.html">escaped project base</a>'
+            '<a href="/llm-knowledge/page.html">project path</a>'
+        ),
+        pages={"page.html": "page"},
+    )
+
+    report = validate_site(site, route_manifest=write_routes(tmp_path, "page.html"))
+
+    assert report.broken_links == ("index.html -> /page.html",)
+
+
+def test_validator_accepts_root_absolute_reference_for_root_deployment(
+    tmp_path: Path,
+) -> None:
+    site = make_site(
+        tmp_path,
+        index_body='<a href="/page.html">root deployment</a>',
+        pages={"page.html": "page"},
+    )
+
+    report = validate_site(
+        site,
+        route_manifest=write_routes(tmp_path, "page.html"),
+        project_prefix="/",
+    )
+
+    assert report.broken_links == ()
+
+
+def test_validator_rejects_external_runtime_assets_but_allows_citations(
+    tmp_path: Path,
+) -> None:
+    site = make_site(
+        tmp_path,
+        index_body="""
+        <a href="https://example.com/paper">citation</a>
+        <script src="https://cdn.example.com/runtime.js"></script>
+        <link rel="stylesheet" href="//cdn.example.com/theme.css">
+        <img src="https://images.example.com/figure.png">
+        """,
+    )
+
+    report = validate_site(site, route_manifest=write_routes(tmp_path))
+
+    assert report.broken_links == ()
+    assert report.missing_assets == (
+        "index.html -> //cdn.example.com/theme.css",
+        "index.html -> https://cdn.example.com/runtime.js",
+        "index.html -> https://images.example.com/figure.png",
+    )
+
+
+def test_validator_recursively_checks_css_imports_urls_and_remote_assets(
+    tmp_path: Path,
+) -> None:
+    site = make_site(
+        tmp_path,
+        index_body='<link rel="stylesheet" href="assets/site.css">',
+        pages={
+            "assets/site.css": """
+                @import url("nested/theme.css");
+                @font-face { src: url("fonts/missing.woff2") format("woff2"); }
+                .remote { background: url(https://cdn.example.com/pixel.png); }
+                .inline { background: url(data:image/svg+xml;base64,AAAA); }
+            """,
+            "assets/nested/theme.css": """
+                @import "https://cdn.example.com/runtime.css";
+                .present { background: url("../images/present.png"); }
+            """,
+            "assets/images/present.png": "png",
+        },
+    )
+
+    report = validate_site(site, route_manifest=write_routes(tmp_path))
+
+    assert report.missing_assets == (
+        "assets/nested/theme.css -> https://cdn.example.com/runtime.css",
+        "assets/site.css -> assets/fonts/missing.woff2",
+        "assets/site.css -> https://cdn.example.com/pixel.png",
+    )
+
+
 @pytest.mark.parametrize(
     ("body", "category", "target"),
     [

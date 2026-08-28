@@ -11,7 +11,7 @@ class InventoryError(ValueError):
     """Raised when a Markdown source page cannot be inventoried."""
 
 
-_FENCE_START = re.compile(r"^\s*(`{3,}|~{3,})")
+_FENCE_START = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 _HEADING = re.compile(r"^(#{1,3})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$")
 _ROOT_NAV_TITLE = "LLM Knowledge Wiki"
 
@@ -45,6 +45,7 @@ def _headings(lines: list[str]) -> tuple[str | None, tuple[str, ...]]:
                 fence_match is not None
                 and fence_match.group(1)[0] == fence[0]
                 and len(fence_match.group(1)) >= len(fence)
+                and not line[fence_match.end() :].strip()
             ):
                 fence = None
             continue
@@ -74,14 +75,28 @@ def scan_inventory(wiki: Path) -> Inventory:
     """Return a deterministic, read-only inventory of Markdown pages in *wiki*."""
     root = wiki.resolve()
     sources = sorted(
-        (path for path in root.rglob("*.md") if path.is_file()),
+        root.rglob("*.md"),
         key=lambda path: path.relative_to(root).as_posix().casefold(),
     )
     pages: list[PageRecord] = []
     for source in sources:
         relative = PurePosixPath(source.relative_to(root).as_posix())
         try:
-            text = source.read_text(encoding="utf-8")
+            resolved_source = source.resolve(strict=True)
+        except OSError as error:
+            raise InventoryError(
+                f"{relative.as_posix()}: cannot resolve source inside wiki root"
+            ) from error
+        try:
+            resolved_source.relative_to(root)
+        except ValueError as error:
+            raise InventoryError(
+                f"{relative.as_posix()}: resolves outside wiki root: {resolved_source}"
+            ) from error
+        if not resolved_source.is_file():
+            continue
+        try:
+            text = resolved_source.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as error:
             raise InventoryError(f"{relative.as_posix()}: cannot read UTF-8") from error
         frontmatter, body = _frontmatter_and_lines(text, relative)

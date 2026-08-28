@@ -451,8 +451,8 @@ $$
 
 ## 7. 总结数学结论（便于直接用于初始化设计）
 
-1. **前向方差受 fan-in 支配**：线性层初始化方差应与 $1/\text{fan_in}$ 同阶，如 Xavier/He。
-2. **反向方差受 fan-out 支配**：反向传播中 $\operatorname{Var}(\delta_x)\approx \text{fan_out}\cdot\sigma_w^2\cdot\operatorname{Var}(\delta_y)$。因此初始化也需考虑 fan-out（Xavier 用了 fan_in 和 fan_out 的平均以折中）。
+1. **前向方差受 fan-in 支配**：线性层初始化方差应与 $1/\mathrm{fan\text{-}in}$ 同阶，如 Xavier/He。
+2. **反向方差受 fan-out 支配**：反向传播中 $\operatorname{Var}(\delta_x)\approx \mathrm{fan\text{-}out}\cdot\sigma_w^2\cdot\operatorname{Var}(\delta_y)$。因此初始化也需考虑 fan-out（Xavier 用了 fan_in 和 fan_out 的平均以折中）。
 3. **权重梯度的方差依赖于前向激活与反向误差信号的乘积**：$\operatorname{Var}(\nabla_W) \propto \operatorname{Var}(x)\cdot\operatorname{Var}(\delta_y)$。这解释了为何前向尺度直接影响学习速率与稳定性。
 4. **残差累积会导致前向方差随层数线性增长**：需要 pre-LN 或残差缩放 $s$（如 $s=1/\sqrt{L}$）以稳定尺度。
 5. **注意力的 $1/\sqrt{d_k}$ 缩放**：使 logits 的方差与 $d_k$ 无关，保证 softmax 的稳定性。

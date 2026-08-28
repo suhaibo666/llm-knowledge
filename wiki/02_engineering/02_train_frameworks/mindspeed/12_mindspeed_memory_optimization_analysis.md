@@ -191,7 +191,7 @@ HBM: 激活在 fwd→bwd 间隙 = 0                       带宽: 每张激活�
 > [!tip] 优化点(swap-attention)
 > 把 attention 段激活在前向算完后**整段移出 HBM**,fwd→bwd 间隙内这些激活的 HBM 占用为 0;省下的显存 = 被换出层激活总量
 > $$
-> \Delta M_A \;\approx\; \sum_{\ell\in\text{swap\_modules}} b\cdot s\cdot h_\ell \cdot \text{sizeof}
+> \Delta M_A \;\approx\; \sum_{\ell\in\mathcal{S}_{\mathrm{swap}}} b\cdot s\cdot h_\ell \cdot \operatorname{sizeof}
 > $$
 > 代价是把这块字节走一趟 D2H + 一趟 H2D。与重计算的取舍:**重算用算力换、swap 用 PCIe/HCCS 带宽换**;只搬 ≥1 MiB 且整存储的张量(`no_swap_tensor` 阈值,`prefetch.py:123-136`),小张量留 HBM 避免搬运得不偿失。预取靠 `layer_id+interval` 提前一层发起,让 H2D 被上一层反向计算掩盖,带宽延迟不上关键路径。
 
@@ -217,7 +217,7 @@ OOM 时: target_memory 每步 -adjust_memory 自动收紧;< tensor_size_filter(2
 > $$
 > \begin{aligned}
 > M_{\text{HBM}}^{\text{target}} \;
-> &=\; \text{device\_max} - \text{reduction\_memory}\quad\text{或}\quad \text{target\_memory}
+> &=\; M_{\mathrm{device,max}} - M_{\mathrm{reduction}}\quad\text{或}\quad M_{\mathrm{target}}
 > \end{aligned}
 > $$
 > OOM 触发时每步再 `-adjust_memory`(默认 300 MiB)自动收紧(`swap_policy_config.py:47-59`)。代价是 WARMUP/SEARCHING 的画像步开销,以及 `BETTER_MEMORY_SAVING` 下连优化器都换带来的 event 等待掉速——故它与 swap-attention / 自适应选择性重计算**互斥**(`smart_swap.py:19-23`),三者都要接管激活生命周期。
@@ -242,7 +242,7 @@ HBM 瞬时: 只驻留 1/swap_times 的优化器态
 > [!tip] 优化点(swap-optimizer)
 > 优化器态在 HBM 的**瞬时**占用被压到约 `1/swap_optimizer_times`:
 > $$
-> M_O^{\text{peak}} \;\approx\; \frac{M_O^{\text{full}}}{\texttt{swap\_optimizer\_times}} \quad(\text{默认 }16)
+> M_O^{\mathrm{peak}} \;\approx\; \frac{M_O^{\mathrm{full}}}{n_{\mathrm{swap}}} \quad(n_{\mathrm{swap}}=16\text{，默认值})
 > $$
 > 对 7B+ 模型 AdamW 态(master+m+v ≈ 12 B/参数,即 `swap_num·12` 字节,见 `:50`),常驻 HBM 从数十 GB 降到 ~1/16。代价是每步把整套态过一遍 PCIe/HCCS:`swap_optimizer_times` 越大越省显存、但流水块越小、带宽利用率越低,是一个显存↔吞吐旋钮。与 `reuse_fp32_param` 互斥(`swap_optimizer_feature.py:21`):两者都重排 master/态的存储布局。
 
@@ -345,7 +345,7 @@ HBM: |act|                                  HBM: ~compress_ratio·|act|(默认 0
 > [!tip] 优化点(compress-dense)
 > 无损压缩把每块激活的 HBM 占用按压缩率缩小:
 > $$
-> M_A^{\text{compressed}} \;\approx\; \texttt{compress\_ratio}\cdot M_A \quad(\text{默认 }0.5,\ \text{即省一半})
+> M_A^{\mathrm{compressed}} \;\approx\; r_{\mathrm{compress}}\cdot M_A \quad(r_{\mathrm{compress}}=0.5\text{，默认值，即省一半})
 > $$
 > `level1` 再把尾数 `mantissa` 换出到 `empty_with_swapped_memory` 虚拟内存(`:266`),HBM 进一步下探。与重算/swap 的区别:**无损、不重算、不搬全量**——只搬压缩后的字节,且编解码在副流 `hans_stream` 上与 `linear_fc1/fc2` 重叠(`mlp_forward.py:18-51`),算力代价被计算掩盖。代价是编解码算力 + 与"激活函数重算"互斥(二者都改 `MLP.forward`,`compress_dense.py:17-23`)。
 
@@ -384,7 +384,7 @@ HBM: 2×|P|×4B                              HBM: max(0, 2|P|×4B − 本 rank �
 > $$
 > \begin{aligned}
 > M_O^{\text{HBM}} \;
-> &\approx\; \max\!\big(0,\ 2\lvert P\rvert\cdot 4 - \text{swap\_budget}_{\text{pp\_rank}}\big)\ \text{字节}
+> &\approx\; \max\big(0,\ 2\lvert P\rvert\cdot 4 - B_{\mathrm{swap},r_{\mathrm{PP}}}\big)\ \text{字节}
 > \end{aligned}
 > $$
 > `--virtual-optimizer all` 取每 rank 上限 65 GB(`virtual_optimizer.py:18-20`)。相比 swap-optimizer 更轻量——**不写显式 D2H/H2D 流水**,换页交给 PTA/驱动,粒度由硬件缺页决定。代价:缺页换页带宽不可控(无法像 swap-optimizer 那样按块重叠)、依赖新版 PTA、与 fused_ema_adamw 互斥(`virtual_optimizer.py:35-39`)。

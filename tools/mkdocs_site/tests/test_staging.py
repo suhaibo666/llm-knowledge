@@ -24,6 +24,13 @@ def tree_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
+def make_symlink(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target)
+    except OSError as error:
+        pytest.skip(f"symlinks are unavailable on this platform: {error}")
+
+
 def test_stage_wiki_is_clean_reproducible_and_source_read_only(
     tmp_path: Path, fixture_wiki: Path
 ) -> None:
@@ -255,5 +262,46 @@ def test_stage_rejects_user_frontmatter_reserved_key(
         ValueError, match=r"domain/10_article\.md.*mkdocs_preview.*reserved"
     ):
         stage_wiki(paths, scan_inventory(paths.wiki))
+
+    assert not paths.staging.exists()
+
+
+def test_stage_rejects_asset_symlink_outside_wiki(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    repo = tmp_path / "repo"
+    shutil.copytree(fixture_wiki, repo / "wiki")
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"SECRET=leaked")
+    make_symlink(repo / "wiki/domain/leak.bin", outside)
+    paths = BuildPaths.from_repo(repo)
+
+    with pytest.raises(
+        ValueError,
+        match=r"domain/leak\.bin.*resolves outside wiki root.*outside\.bin",
+    ):
+        stage_wiki(paths, scan_inventory(paths.wiki))
+
+    assert not (paths.staging / "domain/leak.bin").exists()
+
+
+def test_stage_rechecks_markdown_containment_after_inventory(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    repo = tmp_path / "repo"
+    shutil.copytree(fixture_wiki, repo / "wiki")
+    paths = BuildPaths.from_repo(repo)
+    inventory = scan_inventory(paths.wiki)
+    article = paths.wiki / "domain/10_article.md"
+    article.unlink()
+    outside = tmp_path / "outside.md"
+    outside.write_text("# External\n\nSECRET=leaked\n", encoding="utf-8")
+    make_symlink(article, outside)
+
+    with pytest.raises(
+        ValueError,
+        match=r"domain/10_article\.md.*resolves outside wiki root.*outside\.md",
+    ):
+        stage_wiki(paths, inventory)
 
     assert not paths.staging.exists()

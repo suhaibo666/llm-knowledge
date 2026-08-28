@@ -42,8 +42,18 @@ class _Target:
     ignored: bool = False
 
 
-_IGNORED_SCHEMES = frozenset({"data", "http", "https", "mailto", "tel"})
+_IGNORED_SCHEMES = frozenset({"data", "mailto", "tel"})
+_EXTERNAL_SCHEMES = frozenset({"http", "https"})
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9a-fA-F]{2})")
+_CSS_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+_CSS_URL = re.compile(
+    r"url\(\s*(?:(?P<quote>['\"])(?P<quoted>.*?)(?P=quote)|(?P<bare>[^)'\"\s][^)]*?))\s*\)",
+    re.IGNORECASE | re.DOTALL,
+)
+_CSS_IMPORT_STRING = re.compile(
+    r"@import\s+(?!url\s*\()(?P<quote>['\"])(?P<url>.*?)(?P=quote)",
+    re.IGNORECASE | re.DOTALL,
+)
 _ASSET_LINK_RELS = frozenset(
     {
         "apple-touch-icon",
@@ -106,17 +116,25 @@ def _load_routes(route_manifest: Path) -> tuple[_Route, ...]:
     return tuple(sorted(routes, key=lambda route: route.source.as_posix()))
 
 
-def _project_path(path: str, project_prefix: str) -> tuple[str, bool]:
+def _project_path(
+    path: str,
+    project_prefix: str,
+    enforce_project_prefix: bool,
+) -> tuple[str, bool, bool]:
     absolute = path.startswith("/")
     if not absolute:
-        return path, False
+        return path, False, True
     normalized_prefix = "/" + project_prefix.strip("/")
+    if normalized_prefix == "/":
+        return path.lstrip("/"), True, True
     if path == normalized_prefix:
-        return "", True
+        return "", True, True
     prefix = normalized_prefix + "/"
     if path.startswith(prefix):
-        return path[len(prefix) :], True
-    return path.lstrip("/"), True
+        return path[len(prefix) :], True, True
+    if not enforce_project_prefix:
+        return path.lstrip("/"), True, True
+    return path, True, False
 
 
 def _normalized_path(
@@ -149,10 +167,20 @@ def _target_for(
     raw: str,
     source: PurePosixPath,
     project_prefix: str,
+    *,
+    asset_context: bool = False,
+    enforce_project_prefix: bool = True,
 ) -> _Target:
     value = html.unescape(raw.strip())
     if value.startswith("//"):
-        return _Target(value, (), None, PurePosixPath("."), ignored=True)
+        return _Target(
+            value,
+            (),
+            None,
+            PurePosixPath("."),
+            unsafe=asset_context,
+            ignored=not asset_context,
+        )
     try:
         parsed = urlsplit(value)
     except ValueError:
@@ -160,6 +188,15 @@ def _target_for(
     scheme = parsed.scheme.casefold()
     if scheme in _IGNORED_SCHEMES:
         return _Target(value, (), None, PurePosixPath("."), ignored=True)
+    if scheme in _EXTERNAL_SCHEMES:
+        return _Target(
+            value,
+            (),
+            None,
+            PurePosixPath("."),
+            unsafe=asset_context,
+            ignored=not asset_context,
+        )
     if scheme or parsed.netloc:
         return _Target(value, (), None, PurePosixPath("."), unsafe=True)
     if _INVALID_PERCENT_ESCAPE.search(parsed.path):
@@ -169,7 +206,21 @@ def _target_for(
     decoded_fragment = unquote(html.unescape(parsed.fragment)) if parsed.fragment else None
     if "\\" in decoded_path or any(ord(character) < 32 for character in decoded_path):
         return _Target(value, (), decoded_fragment, PurePosixPath("."), unsafe=True)
-    local_path, absolute = _project_path(decoded_path, project_prefix)
+    local_path, absolute, project_safe = _project_path(
+        decoded_path,
+        project_prefix,
+        enforce_project_prefix,
+    )
+    if not project_safe:
+        query = f"?{parsed.query}" if parsed.query else ""
+        fragment = f"#{decoded_fragment}" if decoded_fragment is not None else ""
+        return _Target(
+            f"{unquote(parsed.path)}{query}{fragment}",
+            (),
+            decoded_fragment,
+            PurePosixPath("."),
+            unsafe=True,
+        )
     if not decoded_path:
         normalized, safe = source, True
     else:
@@ -247,6 +298,20 @@ def _srcset_urls(value: str) -> tuple[str, ...]:
     return tuple(urls)
 
 
+def _css_references(source: str) -> tuple[tuple[str, bool], ...]:
+    css = _CSS_COMMENT.sub("", source)
+    references: list[tuple[str, bool]] = []
+    for match in _CSS_URL.finditer(css):
+        value = match.group("quoted") if match.group("quote") else match.group("bare")
+        if value is not None and value.strip():
+            references.append((value.strip(), True))
+    for match in _CSS_IMPORT_STRING.finditer(css):
+        value = match.group("url").strip()
+        if value:
+            references.append((value, True))
+    return tuple(references)
+
+
 def _references(soup: BeautifulSoup) -> tuple[tuple[str, bool], ...]:
     references: list[tuple[str, bool]] = []
     for tag in soup.find_all(True):
@@ -268,6 +333,11 @@ def _references(soup: BeautifulSoup) -> tuple[tuple[str, bool], ...]:
         srcset = tag.get("srcset")
         if isinstance(srcset, str):
             references.extend((url, True) for url in _srcset_urls(srcset))
+        style = tag.get("style")
+        if isinstance(style, str):
+            references.extend(_css_references(style))
+        if tag.name == "style" and tag.string:
+            references.extend(_css_references(str(tag.string)))
     return tuple(references)
 
 
@@ -325,7 +395,12 @@ def validate_site(
                 f"{route.source.as_posix()} -> {route.output.as_posix()}"
             )
         for public_url in route.public_urls:
-            target = _target_for(public_url, route.output, project_prefix)
+            target = _target_for(
+                public_url,
+                route.output,
+                project_prefix,
+                enforce_project_prefix=False,
+            )
             maps_to_output = not target.unsafe and route.output in target.candidates
             if not maps_to_output:
                 missing_legacy_routes.add(
@@ -354,18 +429,27 @@ def validate_site(
         source_path, source_safe = _inside_site(site, source)
         if source not in site_files or not source_safe or not source_path.is_file():
             continue
-        soup = BeautifulSoup(source_path.read_text(encoding="utf-8"), "html.parser")
-        page_anchors: set[str] = set()
-        for tag in soup.find_all(True):
-            identifier = tag.get("id")
-            legacy_name = tag.get("name")
-            if isinstance(identifier, str):
-                page_anchors.add(html.unescape(identifier))
-            if isinstance(legacy_name, str):
-                page_anchors.add(html.unescape(legacy_name))
-        anchor_cache[source] = page_anchors
-        for raw_reference, asset_context in _references(soup):
-            target = _target_for(raw_reference, source, project_prefix)
+        if source.suffix.casefold() == ".css":
+            references = _css_references(source_path.read_text(encoding="utf-8"))
+        else:
+            soup = BeautifulSoup(source_path.read_text(encoding="utf-8"), "html.parser")
+            page_anchors: set[str] = set()
+            for tag in soup.find_all(True):
+                identifier = tag.get("id")
+                legacy_name = tag.get("name")
+                if isinstance(identifier, str):
+                    page_anchors.add(html.unescape(identifier))
+                if isinstance(legacy_name, str):
+                    page_anchors.add(html.unescape(legacy_name))
+            anchor_cache[source] = page_anchors
+            references = _references(soup)
+        for raw_reference, asset_context in references:
+            target = _target_for(
+                raw_reference,
+                source,
+                project_prefix,
+                asset_context=asset_context,
+            )
             item = f"{source.as_posix()} -> {target.display}"
             if target.ignored:
                 continue
@@ -394,7 +478,7 @@ def validate_site(
                     continue
                 concrete = existing
                 referenced_assets.add(existing)
-                if existing.suffix.casefold() in {".htm", ".html"}:
+                if existing.suffix.casefold() in {".css", ".htm", ".html"}:
                     queued.append(existing)
             else:
                 broken_links.add(item)

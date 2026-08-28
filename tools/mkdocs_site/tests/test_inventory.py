@@ -5,6 +5,13 @@ import pytest
 from tools.mkdocs_site.inventory import InventoryError, scan_inventory
 
 
+def make_symlink(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target)
+    except OSError as error:
+        pytest.skip(f"symlinks are unavailable on this platform: {error}")
+
+
 def test_scan_inventory_uses_filename_only_for_leaf_navigation(
     fixture_wiki: Path,
 ) -> None:
@@ -57,3 +64,43 @@ def test_scan_inventory_fails_when_a_page_has_no_title(tmp_path: Path) -> None:
     (tmp_path / "untitled.md").write_text("plain text", encoding="utf-8")
     with pytest.raises(InventoryError, match="untitled.md.*title"):
         scan_inventory(tmp_path)
+
+
+def test_scan_inventory_rejects_markdown_symlink_outside_wiki(tmp_path: Path) -> None:
+    wiki = tmp_path / "wiki"
+    wiki.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text("# External\n\nSECRET=leaked\n", encoding="utf-8")
+    make_symlink(wiki / "leak.md", outside)
+
+    with pytest.raises(
+        InventoryError,
+        match=r"leak\.md.*resolves outside wiki root.*outside\.md",
+    ):
+        scan_inventory(wiki)
+
+
+def test_scan_inventory_treats_four_space_backticks_as_literal_text(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "literal.md").write_text(
+        "    ```\n# Valid title\n```\n",
+        encoding="utf-8",
+    )
+
+    page = scan_inventory(tmp_path).by_relative[PurePosixPath("literal")]
+
+    assert page.title == "Valid title"
+
+
+def test_scan_inventory_requires_whitespace_after_fence_closer(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "closer.md").write_text(
+        "```text\n# hidden\n```not-a-close\n# still hidden\n```\n# Valid title\n",
+        encoding="utf-8",
+    )
+
+    page = scan_inventory(tmp_path).by_relative[PurePosixPath("closer")]
+
+    assert page.title == "Valid title"
