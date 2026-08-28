@@ -9,13 +9,17 @@ title: "Megatron-LM 训练稳定性与可观测性深度解析"
 > 核心文件:`megatron/core/rerun_state_machine.py`、`megatron/core/fault_injector.py`、`megatron/core/energy_monitor.py`、`megatron/core/timers.py`、`megatron/core/optimizer/qk_clip.py`、`megatron/core/optimizer/grad_scaler.py`、`megatron/core/optimizer/clip_grads.py`、`megatron/core/transformer/moe/moe_logging.py`、`megatron/core/transformer/moe/router_replay.py`;训练循环日志在 `megatron/training/training.py`
 > 配套阅读:`16_megatron_distributed_optimizer_analysis.md`、五份并行分析、`27_megatron_tp_fsdp_resharding_supplements_analysis.md`
 > 定位:系统性专题。前面所有文档讲"怎么把模型并行训起来、训得快";本文讲**怎么让它训得稳、出问题怎么发现、看哪些指标判断健康**。
+> **叙事顺序**:本页按五拍组织——背景 → 为什么这么设计(含被否掉的替代)→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**:2026-08-28。按五拍重排章节顺序;机制正文与既有引用未改。
 
 > [!update] 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。
 > 本页已对齐 `ee3f1ff..HEAD` 的稳定性/可观测性增量。新增机制:**梯度范数超阈跳步**(§1.2)、**MTP 训练稳定性套件**(detach / 隔离 / 独立缩放 / 独立裁剪,新增 §1.8)、**MoE aux/z-loss 在 TP>1 下的梯度缩放修正**与 **DSA indexer loss 跨 micro-batch 平均**(§1.7)。可观测性侧补充 RerunStateMachine 去 stat 系统调用(§1.4)、MoE logging 的 `record/report` 生命周期(§2.2)、seqlen 统计保真与混合模型显式进程组(§2.5)。各处以特性引入日期 `[!update]` 标注;2026-08-28 重定基线后,全页行号(含这些小节)统一以 `71092579` 为准。重核发现一处结论已不成立,以 `[!contradiction]` 标在 §1.7(aux/z-loss 的 TP 缩放修正被 #5542 改写)。
 
 ---
 
-## 0. 总览
+## 0. 背景与设计取舍
+
+### 0.1 背景:大规模长时训练的三类系统性风险
 
 大规模训练(几千卡、数月)面对三类系统性风险:
 
@@ -30,6 +34,31 @@ Megatron 对应有三套机制,本文依次拆解:
 | 数值不稳定 | loss scaling、梯度裁剪、**梯度范数超阈跳步**(§1.2)、NaN/Inf 检查、QK-clip、**MTP 稳定性套件**(§1.8) | `megatron/core/optimizer/grad_scaler.py`、`megatron/core/optimizer/clip_grads.py`、`megatron/core/optimizer/optimizer.py`、`megatron/core/optimizer/qk_clip.py`、`megatron/core/transformer/multi_token_prediction.py` |
 | 硬件故障 / SDC | RerunStateMachine、fault injector、NTP 容错 | `megatron/core/rerun_state_machine.py`、`megatron/core/fault_injector.py`、`megatron/core/distributed/nonuniform_tp.py` |
 | 可观测性 | Timer 系统、MoE 逐层指标、能耗监控、TB/wandb 日志 | `megatron/core/timers.py`、`megatron/core/transformer/moe/moe_logging.py`、`megatron/core/energy_monitor.py` |
+
+
+### 0.2 为什么这么设计:三条路各自否掉了什么
+
+上表三套机制都不是唯一解。下面逐条给出源码陈述的理由与**被否掉的替代**;源码沉默处整段标为推断。
+
+**① SDC 归因用"重跑 + 带容差比对",而不是"重算一遍比位"。**
+`validate_result` 的 docstring 把整个判据写死成三条重跑比对:「an **irreproducible** result is detected by rerunning the iteration **locally (same GPU)** and verifying the result is different;a **mismatching** result is detected by rerunning the iteration on a **different GPU** …;an **expected** result is detected by rerunning … and verifying the result is the **same**」(`megatron/core/rerun_state_machine.py:508-515`)。关键在于它**不要求逐位相同**:`tolerance` 参数的说明是「tolerance used in combination with `comparison_func` to determine reproducibility of results. Default is no tolerance (deterministic calculations)」(`:483-484`),而 docstring 里的示例直接给 `tolerance=0.001`,注释即「max 0.1% difference in results due to non-determinism」(`:503`)。类级 Caveats 更把这条抬成前提:「computations are **NOT** required to be deterministic, i.e. results may vary slightly across re-runs of the iteration」——真正被要求确定的只有**控制流**(`:169-177`)。
+
+**② 第一级判据由调用方给函数,而不是引擎内置阈值;而且 `DISABLED` 模式复用同一入口。**
+`validate_result(result, rejection_func, message, comparison_func=None, tolerance=0.0, fatal=True)`(`megatron/core/rerun_state_machine.py:464-471`):判"这个结果算不算异常"的 `rejection_func`(例:`torch.isnan`)、描述串(例:`"spiky loss"`)、比对函数与容差,全部由调用点提供。而在默认的 `RerunMode.DISABLED` 下,这条路径**仍然执行** `rejection_func`,并在 `fatal=True` 时抛 `RuntimeError`——注释写明动机:「This is a **backward-compatible behavior for infs and NaNs**」(`:517-537`)。这正是 §1.3 的 `--check-for-nan-in-loss-and-grad` 与 §1.4 的多级归因共用同一入口的原因:关掉归因不等于关掉检查。
+
+**③ MoE aux/z-loss 的跨 rank 缩放:闭式因子 `×|tp_cp|` 被"实测有效 token 数"取代。**
+这是本页范围内最清楚的一次"替代被否":
+- **旧法**(#5047,`9ef8a2a42`,2026-06-02,commit message 即 "Fix MoE aux_loss / z_loss gradient scaling with TP > 1"):`calculate_per_token_loss` 下把 aux/z-loss 预乘 `num_local_tokens * self.tp_cp_group.size()`,用一个**闭式常数**抵消 `finalize_model_grads` 里的全局除法(推导见 §1.7 的 `[!update]`)。
+- **新法**(`7f9175207`,#4359,2026-06-17):把本域的有效 token 数装进张量,沿 `aux_loss_scale_reduce_groups` **逐组 `all_reduce` 求和**后直接相乘(`megatron/core/transformer/moe/router.py:605-622`)。
+- **源码自陈的理由就写在注释里**:「Use the reduced count directly: with **THD padding or dynamic CP**, valid token counts can differ by rank/group, so `local_num_tokens * group_size` is **not generally correct**」(`megatron/core/transformer/moe/router.py:599-604`)。
+- → 判据是**前提失效**而不是精度不够:闭式因子只在"同组各 rank 有效 token 数相等"时成立,THD packing 与 dynamic CP 直接打破了这个前提,于是宁可每个 aux-loss 域每步多付一次 `all_reduce`(`:620-621`),也不留一个在新特性下**静默**算错的常数。
+
+**④ MTP 的解耦是三层可叠加开关,而"把 output layer 整体 functional 化隔离"这条路试过并被撤下。**
+#5080(`d23ca853f`)曾新增独立开关 `mtp_isolated_loss`,用 `torch.func.functional_call` 配 `{name: param.detach()}` 把 output layer 的**全部参数/buffer** 隔离;#5223(`7eedac586`,2026-06-11,"[Dev] Cherry-pick MTP detach heads")把它整体删除,只保留"`detach()` 共享的 `output_weight` 张量"这一最小手术,并把能力并进 `mtp_detach_heads`。细节与行号见 §1.8 (b) 的 `[!deprecated]`。
+
+> [!note] 推断
+> 源码陈述的是**事实**:重跑三段式流程与 `tolerance` 的存在、`DISABLED` 下仍跑 `rejection_func` 的向后兼容注释、闭式因子在 THD/dynamic-CP 下"not generally correct"、`mtp_isolated_loss` 被删除。**把这些读成"逐位比对因此不可行"、"宁可多付一次 all_reduce 也不要静默错误"、"最小手术优于全隔离"这三层取舍判据,是本页的重建**,源码从未这样自陈。要引用这几条判断,请回到 `megatron/core/rerun_state_machine.py:169-175`、`:483-484`、`:503`、`:508-515`、`:517-537`、`megatron/core/transformer/moe/router.py:599-604`、`:605-622` 这几个 locator,不要引用本段推断。
+> 另有一处**归属存疑**,不改既有 callout、仅在此标出:§1.7 的 `[!contradiction]` 把 aux-loss 缩放的改写记在 #5542(`d1384c2d9`)名下;按 `git log -S "so local_num_tokens * group_size is not generally correct" -- megatron/core/transformer/moe/router.py`,引入该注释与 `all_reduce` 路径的实际是 `7f9175207`(#4359,2026-06-17),`d1384c2d9`(#5542,2026-07-14)只在其上加了 14 行的 padding 排除(`valid_token_count`)。结论(闭式因子已被推翻)不变,变的是归属的 PR。
 
 ---
 
@@ -303,7 +332,64 @@ MoE 健康?     overload factor 接近 1;若远大于 1 → 调大 aux_loss 系�
 
 ---
 
-## 5. 小结
+## 5. 约束:这些机制的前提、代价与失效条件
+
+前四节几乎只谈"能发现什么"。这一节把前提、代价与失效条件集中列出,每条带 locator。
+
+**① RerunStateMachine 是 alpha 级实验特性,且默认关闭。**
+文件顶部的 DISCLAIMER 原话:「alpha-level code … has **not been tested at scale** so should not be assumed to be accurate. Nodes flagged by this code as potentially faulty should be subjected to **standard diagnostic test suites** for a definitive diagnosis. Also note that experimental features **may break existing APIs**」(`megatron/core/rerun_state_machine.py:21-30`)。默认模式是 `RerunMode.DISABLED`(§1.4)。
+
+**② 它对训练循环有一条硬假设:控制流必须可复现。**
+Caveats(1):重跑要求「execution (flow control) of the iteration is **deterministic** w.r.t. the state captured by the rerun state」,更具体是「a re-run of the iteration yields the **same calls to `validate_result()`** as in the initial run」;计算本身则不要求确定(`megatron/core/rerun_state_machine.py:169-175`)。这意味着任何"按运行期条件跳过/追加校验点"的写法都会破坏归因。自定义状态还需自行提供 `state_save_func` / `state_restore_func`(`:135-141`,示例见 `:143-164`)。
+
+**③ 它只能重跑当前这一步。**
+Caveats(2)明写:「The re-run logic is **currently only able to re-run the current step**. It may be that an unexpected result (e.g. spiky loss) is the result of a calculation that happened at a **previous** iteration. The current implementation **will not catch such issues**」(`megatron/core/rerun_state_machine.py:177-180`)。即"上一步埋的雷、这一步炸"这类问题,本机制查不出。
+
+**④ 归因不是在线修复,而是"存档 + 特定退出码 + 由调度器重启"。**
+`EXIT_CODE_RESUME_TO_DISAMBIGUATE = 16`(需重启以消歧)、`EXIT_CODE_FAILED_ON_RESULT_VALIDATION = 17`(校验失败)(`megatron/core/rerun_state_machine.py:36-40`)。要用起来,外层作业管理器必须认识这两个退出码——这是一条**框架之外**的前提。
+
+**⑤ QK-clip 的代价按"层数 × 每步"计。**
+`clip_qk` 对每个 attention 模块各做一次 `all_reduce(MAX)`(DP+CP 组)并各做一次 `.item()`(设备→主机同步)(`megatron/core/optimizer/qk_clip.py:50-57`)。另有两条静默边界:前向没记录 `current_max_attn_logits` 的层被 `continue` **直接跳过**(`:47-49`);`log_max_only=True` 时必须手工把它置 `None`,否则日志值会是陈旧值——注释即「When qk-clip is disabled, `clip_qk()` is not called and would otherwise **never reset** `current_max_attn_logits`」(`:58-65`)。
+
+**⑥ 带 barrier 的 Timer 是一把双刃剑。**
+`Timer` 类注释:「If this flag is passed, then all the caller processes will wait till all reach the timing routine. **It is up to the user to make sure all the ranks in `barrier_group` call it otherwise, it will result in a hang**」;且 `barrier_group` 默认 `None`,在 torch 分布式里等于**全局通信域**(`megatron/core/timers.py:113-118`、`:132`)。§2.1 说的"对齐后可跨 rank 比较"要按这个语义理解:它引入真实同步点,既改变被测对象,又有挂死风险。
+
+**⑦ 能耗监控依赖 NVML,缺库时静默降级;且要求全 rank 参与。**
+`pynvml` 导入失败时只是把 `has_nvml` 置 `False`,不报错(`megatron/core/energy_monitor.py:8-19`);类文档要求「**All ranks** in the process group are expected to call functions `lap()` and `get_total()`. Energy is monitored across all ranks and aggregated with an **all-reduce**」(`:22-27`)——漏调即失配。
+
+**⑧ MoE 逐层日志要求全 PP rank 参与集合通信。**
+无 MoE 层的 PP rank 必须 `force_initialize=True` 预建等长零张量,否则跨 PP 的 `all_reduce` 会因张量尺寸不一致而**挂死**(§2.2 的 `[!update]`)。
+
+**⑨ aux-loss 缩放要求 `reduce_group` 存在,并按域付 all_reduce。**
+`assert reduce_group is not None, "reduce_group is required for aux-loss scaling"`(`megatron/core/transformer/moe/router.py:618`);随后对 `aux_loss_scale_reduce_groups` 里**每个组**各做一次 `all_reduce`(`:620-621`)。这是 §0.2 ③ 那次改写付出的固定成本。
+
+**⑩ 梯度范数超阈跳步只有配置项、且只在一条路径生效。**
+`OptimizerConfig.grad_norm_skip_threshold` 默认 `float('inf')` 即关闭,docstring 只说「Skip gradient update if the gradient norm exceeds this threshold. Disabled by default.」(`megatron/core/optimizer/optimizer_config.py:394-397`);基线下 `megatron/training/` 里 `git grep grad_norm_skip_threshold` **零命中**——确实没有 CLI 开关,必须经 `OptimizerConfig` 注入(与 §1.2 `[!update]` 一致)。
+
+**⑪ 指标口径存在版本断点,不可跨版本直接对比曲线。** aux/z-loss 的缩放在 `232c478d4` 前后、以及 `232c478d4` 与 `71092579` 之间各有一次口径变化(§1.7 的 `[!contradiction]`、§3.4 的 `[!update]`);启用 `mtp` 独立裁剪组后主 `grad norm` 不再涵盖 MTP head(§3.2 的 `[!update]`)。
+
+---
+
+## 6. 发展趋势
+
+每条都锚在基线源码能读到的 DISCLAIMER / Caveats / 提交历史上;**方向解读是本页的推断,不是作者自陈**。
+
+**① 重跑归因将从"单步"扩到"多步"——这是源码自己写的 future work。**
+Caveats(2)的结尾原话:「**We're planning to add the capability to re-run multiple steps in a future implementation.**」(`megatron/core/rerun_state_machine.py:177-180`)。它正对着 §5 ③ 那条约束:当前查不出"上一步埋雷"。
+
+**② RerunStateMachine 仍在 alpha,API 可能破坏性变更。** DISCLAIMER 明说「experimental features may break existing APIs」(`megatron/core/rerun_state_machine.py:29`),并要求把它的结论交给标准诊断套件复核(`:25-27`)。→ 本页 §1.4 的流程描述应按"会变"来读。
+
+**③ 辅助损失的跨 rank 归一正在从"闭式因子"整体转向"实测计数"。**
+同一段代码三个月内被改了三轮:#5047(`9ef8a2a42`,2026-06-02)引入闭式 `×|tp_cp|` → #4359(`7f9175207`,2026-06-17)换成沿 `aux_loss_scale_reduce_groups` 逐组 `all_reduce` 实测 → #5542(`d1384c2d9`,2026-07-14)再补 `valid_token_count` 把 padding token 排除在外。驱动力写在注释里:THD packing 与 dynamic CP 让"各 rank token 数相等"这个隐含前提不再成立(`megatron/core/transformer/moe/router.py:599-604`)。→ 推断:只要变长/打包/动态 CP 继续铺开,其余仍依赖闭式并行因子的归一化(z-loss 的 `!calculate_per_token_loss` 分支仍保留 `moe_z_loss_coeff / tp_cp_group.size()`,§1.7)迟早会走同一条路。
+
+**④ MTP 相关开关正在收敛而不是扩张。** #5080 的 `mtp_isolated_loss` 被 #5223 删除并并入 `mtp_detach_heads`(§0.2 ④、§1.8 (b));基线下全仓 `git grep mtp_isolated_loss` 仍为 0 命中。→ 推断:MTP 的稳定性控制面倾向"一个主开关 + 自动派生行为",而非继续增加正交开关。
+
+**⑤ 稳定性/可观测性代码里几乎没有 TODO,信息只能从提交历史读。**
+对 `megatron/core/rerun_state_machine.py`、`fault_injector.py`、`energy_monitor.py`、`timers.py`、`optimizer/qk_clip.py`、`transformer/moe/moe_logging.py`、`transformer/moe/router_replay.py` 七个文件做 `git grep -n -E "TODO|FIXME|deprecat|WIP"`,基线下**只命中 `rerun_state_machine.py:21` 与 `:29` 两条 DISCLAIMER**。因此本节没有"某某待办"型趋势可写——这本身是个结论:这批模块的演进线索只存在于 PR 历史里。
+
+---
+
+## 7. 小结
 
 - **数值稳定三道防线**:loss scaling(抬出下溢区)+ inf/nan 跳步(丢弃坏步)+ 全局梯度裁剪(削尖峰);MoE 另加 router fp32;attention 另加 QK-clip。
 - **硬件 / SDC 防线**:`RerunStateMachine` 用**多级重跑归因**区分 transient(偶发位翻转)/ persistent(故障 GPU)/ correct(真实尖峰)—— 专治"算错但不报错"的静默数据损坏;NTP 提供 TP 容错;`fault_injector` 测试这些机制本身。

@@ -6,6 +6,8 @@ title: "verl 中 Megatron + vLLM 权重同步分析"
 
 > **源码基线**：`volcengine/verl@ab0705220a95952219111409d8f971872002c193`（`main`，2025-12-04）。本页分析的是第三方框架 **`volcengine/verl`**（不是 Megatron-LM——Megatron-LM 与 vLLM 在此只是被 verl 同步的两端，本页未直接引用二者源码），因此**不为本页钉 Megatron-LM 基线**。
 > **基线定法（2026-08-28 补钉）**：原文未声明 commit，本轮用本机 verl 检出（HEAD `8a694930`，`main`，2026-06-17）沿历史回溯定出。`ab070522` 是**本页每一处引用都仍能解析的最新 commit**——紧随其后的 `fd893c78`（#4411，*retires vllm spmd mode in the codebase*，2025-12-04）即删除了 `verl/workers/rollout/vllm_rollout/vllm_rollout_spmd.py`。该 commit 下三个文件、以及正文描述的 `rollout_mode` / `per_tensor_generator` / `update_weights` / `default_tp_concat_fn` / `broadcast_from_megatron_pp` / `base_sync_done` 全部逐条核到函数与行号（已补进 §3、§4）。
+> **叙事顺序**：本页**不按五拍组织**。它是**某历史版本的实现记录**——所分析的 `volcengine/verl` 调用链在当前 verl 已被整体删除（见下方 `[!deprecated]`），把它重排成「背景 → 为什么这么设计 → 实现 → 约束 → 发展趋势」会让一份考古记录看起来像仍然有效的当前分析。正文因此保持原有的调用栈叙述顺序。
+> **最近更新**：2026-08-28。仅补入本条叙事说明；章节顺序、机制正文与既有引用一字未改。
 
 > [!deprecated] 本页描述的调用链在当前 verl（HEAD `8a694930`，2026-06-17）已不存在。`verl/workers/rollout/vllm_rollout/vllm_rollout_spmd.py` 被 `fd893c78`（#4411，2025-12-04）删除；`verl/workers/megatron_workers.py` 被 `044bbba2`（#6067，*[BREAKING] refactor: deprecate workers, migrate to engines*，2026-04-20）删除，`rollout_mode` 在 HEAD 全树已无定义。仅 `verl/utils/megatron_utils.py` 存活，其中 `broadcast_from_megatron_pp`（`:1069`）、`default_tp_concat_fn`（`:1132`）、`per_tensor_generator`（`:1214`）三个函数仍在。以下描述对应基线 `ab070522`；要对当前 verl 重写本页，需改跟 engine 层的新 worker 抽象。
 
