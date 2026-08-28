@@ -97,3 +97,74 @@ def test_rewriter_rejects_trailing_backslash_like_source_checker(
     page, inventory = resolver_fixture
     with pytest.raises(LinkResolutionError, match="broken target"):
         rewrite_wikilinks("[[target\\]]", page, inventory)
+
+
+@pytest.mark.parametrize("fence", ["```", "~~~"])
+def test_fence_run_with_trailing_text_does_not_close_block(
+    fence: str, resolver_fixture: tuple[PageRecord, Inventory]
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = (
+        f"{fence}text\n"
+        "[[target]]\n"
+        f"{fence}not-a-close\n"
+        "[[target]]\n"
+        f"{fence}   \n"
+        "[[target]]"
+    )
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert rewritten.count("[[target]]") == 2
+    assert rewritten.endswith("[target](../target.md)")
+
+
+def test_multiline_inline_code_span_preserves_contained_wikilink(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = "`code starts\n[[target]]\ncode ends`\n[[target]]"
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert rewritten.count("[[target]]") == 1
+    assert rewritten.endswith("[target](../target.md)")
+
+
+@pytest.mark.parametrize(
+    ("delimiter", "unequal_run"),
+    [("``", "```"), ("```", "``")],
+)
+def test_inline_code_closes_only_on_equal_backtick_run(
+    delimiter: str,
+    unequal_run: str,
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = (
+        f"prefix {delimiter}code {unequal_run} still code [[target]]\n"
+        f"code ends{delimiter}\n"
+        "[[target]]"
+    )
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert rewritten.count("[[target]]") == 1
+    assert rewritten.endswith("[target](../target.md)")
+
+
+@pytest.mark.parametrize("suffix", ["_1", "_2"])
+def test_duplicate_heading_anchor_uses_python_markdown_unique_suffix(
+    suffix: str, tmp_path: Path
+) -> None:
+    (tmp_path / "section").mkdir()
+    (tmp_path / "section/current.md").write_text("# Current\n", encoding="utf-8")
+    (tmp_path / "target.md").write_text(
+        "# Target\n\n## 重复\n\n## 重复\n\n## 重复\n", encoding="utf-8"
+    )
+    inventory = scan_inventory(tmp_path)
+    page = inventory.by_relative[PurePosixPath("section/current")]
+
+    assert rewrite_wikilinks(
+        f"[[target#重复{suffix}]]", page, inventory
+    ) == f"[target](../target.md#重复{suffix})"

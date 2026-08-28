@@ -4,7 +4,7 @@ import posixpath
 import re
 from pathlib import PurePosixPath
 
-from markdown.extensions.toc import slugify_unicode
+from markdown.extensions.toc import slugify_unicode, unique
 
 from .models import Inventory, PageRecord
 
@@ -44,6 +44,17 @@ def _normalized_target(raw: str) -> tuple[str, str | None, str | None]:
     if target.lower().endswith(".md"):
         target = target[:-3]
     return target, anchor.strip() if anchor_separator else None, alias if separator else None
+
+
+def _closes_fence(line: str, fence: str) -> bool:
+    candidate = line.rstrip("\r\n")
+    match = _FENCE_START.match(candidate)
+    return (
+        match is not None
+        and match.group(1)[0] == fence[0]
+        and len(match.group(1)) >= len(fence)
+        and not candidate[match.end() :].strip()
+    )
 
 
 def _normalize_relative(value: str) -> PurePosixPath:
@@ -91,6 +102,13 @@ def _relative_markdown_path(source: PageRecord, target: PageRecord) -> str:
     )
 
 
+def _heading_anchors(page: PageRecord) -> tuple[str, ...]:
+    used: set[str] = set()
+    return tuple(
+        unique(slugify_unicode(heading, "-"), used) for heading in page.headings
+    )
+
+
 def _rewrite_token(
     match: re.Match[str], page: PageRecord, inventory: Inventory, line: int
 ) -> str:
@@ -104,14 +122,14 @@ def _rewrite_token(
     destination = _relative_markdown_path(page, target)
     if anchor is not None:
         anchor_slug = slugify_unicode(anchor, "-")
-        heading_slugs = tuple(slugify_unicode(heading, "-") for heading in target.headings)
-        if anchor_slug not in heading_slugs:
+        heading_anchors = _heading_anchors(target)
+        if anchor_slug not in heading_anchors:
             raise LinkResolutionError(
                 page,
                 line,
                 raw_link,
                 "missing target anchor",
-                target.headings,
+                heading_anchors,
             )
         destination = f"{destination}#{anchor_slug}"
     label = alias if alias is not None else target_text
@@ -127,58 +145,90 @@ def _rewrite_text_segment(
         if match.start() > 0 and text[match.start() - 1] == "\\":
             continue
         output.append(text[cursor : match.start()])
-        output.append(_rewrite_token(match, page, inventory, line))
+        match_line = line + text.count("\n", 0, match.start())
+        output.append(_rewrite_token(match, page, inventory, match_line))
         cursor = match.end()
     output.append(text[cursor:])
     return "".join(output)
 
 
+def _backtick_run_end(text: str, start: int) -> int:
+    end = start
+    while end < len(text) and text[end] == "`":
+        end += 1
+    return end
+
+
+def _matching_backtick_run(text: str, start: int, length: int) -> int | None:
+    cursor = start
+    while True:
+        candidate = text.find("`", cursor)
+        if candidate < 0:
+            return None
+        end = _backtick_run_end(text, candidate)
+        if end - candidate == length:
+            return candidate
+        cursor = end
+
+
 def _rewrite_inline_code_aware(
-    line_text: str, page: PageRecord, inventory: Inventory, line: int
+    text: str, page: PageRecord, inventory: Inventory, line: int
 ) -> str:
     output: list[str] = []
     cursor = 0
-    while cursor < len(line_text):
-        tick_start = line_text.find("`", cursor)
+    while cursor < len(text):
+        tick_start = text.find("`", cursor)
+        segment_line = line + text.count("\n", 0, cursor)
         if tick_start < 0:
-            output.append(_rewrite_text_segment(line_text[cursor:], page, inventory, line))
+            output.append(_rewrite_text_segment(text[cursor:], page, inventory, segment_line))
             break
         output.append(
-            _rewrite_text_segment(line_text[cursor:tick_start], page, inventory, line)
+            _rewrite_text_segment(text[cursor:tick_start], page, inventory, segment_line)
         )
-        tick_end = tick_start
-        while tick_end < len(line_text) and line_text[tick_end] == "`":
-            tick_end += 1
-        delimiter = line_text[tick_start:tick_end]
-        closing = line_text.find(delimiter, tick_end)
-        if closing < 0:
-            output.append(_rewrite_text_segment(delimiter, page, inventory, line))
+        tick_end = _backtick_run_end(text, tick_start)
+        closing = _matching_backtick_run(text, tick_end, tick_end - tick_start)
+        if closing is None:
+            output.append(text[tick_start:tick_end])
             cursor = tick_end
             continue
-        closing += len(delimiter)
-        output.append(line_text[tick_start:closing])
-        cursor = closing
+        closing_end = closing + (tick_end - tick_start)
+        output.append(text[tick_start:closing_end])
+        cursor = closing_end
     return "".join(output)
 
 
 def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> str:
     """Convert supported Obsidian Wikilinks while preserving literal code."""
     output: list[str] = []
+    visible_lines: list[str] = []
+    visible_start_line = 1
     fence: str | None = None
     for line_number, line in enumerate(markdown.splitlines(keepends=True), start=1):
         fence_match = _FENCE_START.match(line)
         if fence is not None:
             output.append(line)
-            if (
-                fence_match is not None
-                and fence_match.group(1)[0] == fence[0]
-                and len(fence_match.group(1)) >= len(fence)
-            ):
+            if _closes_fence(line, fence):
                 fence = None
+                visible_start_line = line_number + 1
             continue
         if fence_match is not None:
+            if visible_lines:
+                output.append(
+                    _rewrite_inline_code_aware(
+                        "".join(visible_lines), page, inventory, visible_start_line
+                    )
+                )
+                visible_lines.clear()
             fence = fence_match.group(1)
             output.append(line)
             continue
-        output.append(_rewrite_inline_code_aware(line, page, inventory, line_number))
+        if not visible_lines:
+            visible_start_line = line_number
+        visible_lines.append(line)
+    if visible_lines:
+        output.append(
+            _rewrite_inline_code_aware(
+                "".join(visible_lines), page, inventory, visible_start_line
+            )
+        )
     return "".join(output)

@@ -2,6 +2,7 @@ import hashlib
 import json
 import shutil
 from pathlib import Path
+from typing import Callable
 
 import pytest
 import yaml
@@ -87,3 +88,87 @@ def test_failed_conversion_keeps_last_good_stage_and_reports_source_line(
 
     assert tree_digest(paths.staging) == before_stage
     assert (paths.cache / "routes.json").read_bytes() == before_routes
+
+
+@pytest.mark.parametrize(
+    "failed_operation",
+    [
+        "backup_stage",
+        "backup_manifest",
+        "activate_stage",
+        "activate_manifest",
+    ],
+)
+def test_replace_failure_preserves_last_good_outputs_and_cleans_transaction(
+    failed_operation: str,
+    tmp_path: Path,
+    fixture_wiki: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    shutil.copytree(fixture_wiki, repo / "wiki")
+    paths = BuildPaths.from_repo(repo)
+    inventory = scan_inventory(paths.wiki)
+    stage_wiki(paths, inventory)
+    route_manifest = paths.cache / "routes.json"
+    before_stage = tree_digest(paths.staging)
+    before_routes = route_manifest.read_bytes()
+    real_replace = Path.replace
+    failed = False
+
+    def is_selected(source: Path, destination: Path) -> bool:
+        checks: dict[str, Callable[[], bool]] = {
+            "backup_stage": lambda: source == paths.staging
+            and destination.name.endswith("-old-stage"),
+            "backup_manifest": lambda: source == route_manifest
+            and destination.name.endswith("-old-manifest"),
+            "activate_stage": lambda: source.name.startswith(".docs-")
+            and not source.name.endswith("-old-stage")
+            and destination == paths.staging,
+            "activate_manifest": lambda: source.name.startswith(".routes-")
+            and not source.name.endswith("-old-manifest")
+            and destination == route_manifest,
+        }
+        return checks[failed_operation]()
+
+    def fail_selected_replace(source: Path, destination: Path) -> Path:
+        nonlocal failed
+        destination = Path(destination)
+        if not failed and is_selected(source, destination):
+            failed = True
+            raise OSError(f"injected {failed_operation} failure")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(Path, "replace", fail_selected_replace)
+
+    with pytest.raises(OSError, match=failed_operation):
+        stage_wiki(paths, inventory)
+
+    assert failed
+    assert tree_digest(paths.staging) == before_stage
+    assert route_manifest.read_bytes() == before_routes
+    assert {path.name for path in paths.cache.iterdir()} == {"docs", "routes.json"}
+
+
+def test_stage_rejects_user_frontmatter_reserved_key(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    repo = tmp_path / "repo"
+    shutil.copytree(fixture_wiki, repo / "wiki")
+    paths = BuildPaths.from_repo(repo)
+    article = paths.wiki / "domain/10_article.md"
+    article.write_text(
+        article.read_text(encoding="utf-8").replace(
+            "title: 上下文并行\n",
+            "title: 上下文并行\nmkdocs_preview:\n  owner: user\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError, match=r"domain/10_article\.md.*mkdocs_preview.*reserved"
+    ):
+        stage_wiki(paths, scan_inventory(paths.wiki))
+
+    assert not paths.staging.exists()

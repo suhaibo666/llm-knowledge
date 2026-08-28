@@ -55,6 +55,10 @@ def _render_page(markdown: str, page: PageRecord, inventory: Inventory) -> str:
     frontmatter, body, body_line_offset = _frontmatter_and_body(
         markdown, Path(page.relative.as_posix())
     )
+    if "mkdocs_preview" in frontmatter:
+        raise ValueError(
+            f"{page.relative.as_posix()}: frontmatter key mkdocs_preview is reserved"
+        )
     frontmatter["mkdocs_preview"] = {
         "source_path": page.relative.as_posix(),
         "nav_title": page.nav_title,
@@ -90,6 +94,8 @@ def _commit_stage(
     )
     moved_stage = False
     moved_manifest = False
+    activated_stage = False
+    activated_manifest = False
     try:
         if staging.exists():
             staging.replace(backup_stage)
@@ -98,10 +104,13 @@ def _commit_stage(
             route_manifest.replace(backup_manifest)
             moved_manifest = True
         temporary_stage.replace(staging)
+        activated_stage = True
         temporary_manifest.replace(route_manifest)
+        activated_manifest = True
     except BaseException:
-        _remove_tree(staging)
-        if route_manifest.exists():
+        if activated_stage:
+            _remove_tree(staging)
+        if activated_manifest:
             route_manifest.unlink()
         if moved_stage and backup_stage.exists():
             backup_stage.replace(staging)
