@@ -71,7 +71,7 @@ if (not config.triton.use_block_ptr and isinstance(arg, SizeArg) and arg.name.st
     return "tl.int64"        # 动态 size 实参升 i64，防 ks0*ks1 溢出
 ```
 
-> **对照 NPU（尖锐）**：上游对动态 `ks*` 实参**特意升 `tl.int64`** 防乘积溢出；而 NPU 后端因昇腾不支持 i64 计算,签名层把 `*i64→*i32`、`_triton_type_mapping["tl.int64"]="tl.int32"`、launcher 再 downcast——**上游用 i64 规避的问题,NPU 用 i32 重新引入了**（大张量索引溢出风险,见 [[23_npu_inductor_linearize_backend_analysis]] §七、[[24_inductor_codegen_dynamic_shape_analysis]]）。
+> **对照 NPU（尖锐）**：上游对动态 `ks*` 实参**特意升 `tl.int64`** 防乘积溢出；而 NPU 后端因昇腾不支持 i64 计算,签名层把 `*i64→*i32`、`_triton_type_mapping["tl.int64"]="tl.int32"`、launcher 再 downcast——**上游用 i64 规避的问题,NPU 用 i32 重新引入了**（大张量索引溢出风险,见 [[23_npu_inductor_linearize_backend_analysis]] §五、[[24_inductor_codegen_dynamic_shape_analysis]]）。
 
 ---
 

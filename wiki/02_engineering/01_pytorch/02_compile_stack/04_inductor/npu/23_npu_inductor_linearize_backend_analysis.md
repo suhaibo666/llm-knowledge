@@ -228,7 +228,7 @@ can_fuse_horizontal = can_fuse
 
 ## 六、可优化点
 
-- **reduction / 归一化反向是实测短板**（[[31_npu_inductor_linearize_vs_builtin_comparison]] §0.6：`bn_backward_reduce` 0.28×、`bn_backward_reduction` 0.30×、`clip_ln_bw_sum_transpose` 0.41×、`sum_reduce0_1d` 0.47×、`softmax_dyn` 0.57×、`bart_ln_bw_dual_sum_512` 0.56×）——rsplit 触发窄（仅单个非 welford OUTER）,可扩展到 **welford/多输出/INNER** reduction（直击短板，已有 partial+combine 骨架）。
+- **reduction / 归一化反向是实测短板**（[[31_npu_inductor_linearize_vs_builtin_comparison]] §二：`bn_backward_reduce` 0.28×、`bn_backward_reduction` 0.30×、`clip_ln_bw_sum_transpose` 0.41×、`sum_reduce0_1d` 0.47×、`softmax_dyn` 0.57×、`bart_ln_bw_dual_sum_512` 0.56×）——rsplit 触发窄（仅单个非 welford OUTER）,可扩展到 **welford/多输出/INNER** reduction（直击短板，已有 partial+combine 骨架）。
 - **已实现但默认关闭的优化**（验证后可放开）：**per-node BLOCK autotune**（`npu_per_node_block` 代码内强制 False，`triton.py:1591/3385`；基础设施 axis_hints/per-node config builder/header 分支全就绪,多轴/转置 kernel 最受益）、`NPU_SUBTILE`、`NPU_STATIC_SPLIT_BLOCK`（曾整体负优化故回退）、`NPU_MASK_CMP_FP32`（>2²⁴ 索引精度风险）、care_padding 注入（`NPU_INJECT_CARE_PADDING=0`——设计文档称已注入,实际默认关,故该优化**目前未生效**）。
 - **无 GEMM/epilogue 融合**（最大能力缺口,mm 全走 CANN,对比内置 CATLASS）——短期可做 `mm + 逐点 epilogue` 融合省一次 HBM 往返。
 - **persistent reduction 一律关闭**（`should_use_persistent_reduction` 恒 False,`triton.py:441`）——小 rnumel 也走 looped,可对小 INNER reduction 选择性放开（需确认 Triton-Ascend 支持度）。
@@ -236,7 +236,7 @@ can_fuse_horizontal = can_fuse
 - **UB 估算偏粗**：`_estimate_pointwise_tile_bytes` 固定 `4B/elem × 2.0 overhead`，fp16/混算/scratch 估不准,可按 dtype 细化提升 autotune 命中率。
 - **文本级正则改写脆弱**（care_padding / int1 cast / rsplit body / 地址子串替换）依赖上游生成文本形态,升级易静默失配；建议上移到 IR/结构化层。
 - **monkey-patch 随上游版本漂移**（各文件头部 2.3.1→2.7.1→2.9.0 迁移注记即证据）——建议为关键 patch 点加版本探测 fail-fast；白名单外算子静默 fallback,建议对 fallback 占比高的图给 debug 提示。
-- **4 个模型精度未过**（`hf_Bart`、两个 `hf_T5`、`soft_actor_critic`，[[31_npu_inductor_linearize_vs_builtin_comparison]] §0.1）需逐 case 修（T5 系与 position-bias backward 巨型融合/dual-decomp 相关）。
+- **4 个模型精度未过**（`hf_Bart`、两个 `hf_T5`、`soft_actor_critic`，[[31_npu_inductor_linearize_vs_builtin_comparison]] §二）需逐 case 修（T5 系与 position-bias backward 巨型融合/dual-decomp 相关）。
 
 ---
 
