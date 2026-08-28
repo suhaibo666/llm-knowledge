@@ -72,14 +72,35 @@ def _normalize_relative(value: str) -> PurePosixPath:
 
 
 def _megatron_header_baselines(markdown: str) -> tuple[str, ...]:
-    first_section = _SECOND_LEVEL_HEADING.search(markdown)
-    header = markdown[: first_section.start()] if first_section is not None else markdown
-    return tuple(
-        dict.fromkeys(
-            match.group(1).lower()
-            for match in _MEGATRON_BASELINE_DECLARATION.finditer(header)
-        )
-    )
+    baselines: dict[str, None] = {}
+    fence: str | None = None
+    for line in markdown.splitlines(keepends=True):
+        if fence is not None:
+            if _closes_fence(line, fence):
+                fence = None
+            continue
+        fence_match = _FENCE_START.match(line)
+        if fence_match is not None:
+            fence = fence_match.group(1)
+            continue
+        if _SECOND_LEVEL_HEADING.match(line):
+            break
+        declaration = _MEGATRON_BASELINE_DECLARATION.match(line)
+        if declaration is not None:
+            baselines.setdefault(declaration.group(1).lower(), None)
+    return tuple(baselines)
+
+
+def _indentation_columns(line: str) -> int:
+    columns = 0
+    for character in line:
+        if character == " ":
+            columns += 1
+        elif character == "\t":
+            columns += 4 - (columns % 4)
+        else:
+            break
+    return columns
 
 
 def _wiki_root(page: PageRecord) -> Path:
@@ -327,7 +348,7 @@ def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> 
                 fence = None
                 visible_start_line = line_number + 1
             continue
-        if line.startswith(("    ", "\t")):
+        if _indentation_columns(line) >= 4:
             flush_visible()
             output.append(line)
             visible_start_line = line_number + 1
