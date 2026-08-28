@@ -572,6 +572,76 @@ def test_multiline_inline_code_span_preserves_contained_wikilink(
     assert rewritten.endswith("[target](../target.md)")
 
 
+def test_list_indented_visible_wikilink_is_rewritten_by_rendered_classification(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = "1. item\n\n    [[target]]"
+
+    assert rewrite_wikilinks(markdown, page, inventory) == (
+        "1. item\n\n    [target](../target.md)"
+    )
+
+
+def test_blockquoted_fenced_wikilink_remains_literal(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = "> ```markdown\n> [[target]]\n> ```\n\n[[target]]"
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert rewritten.count("[[target]]") == 1
+    assert rewritten.endswith("[target](../target.md)")
+
+
+def test_mixed_tab_space_code_wikilink_remains_literal(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = "  \t[[target]]\n\n[[target]]"
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert rewritten.count("[[target]]") == 1
+    assert rewritten.endswith("[target](../target.md)")
+
+
+def test_html_comment_wikilink_remains_literal(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = "<!--\n[[target]]\n-->\n\n[[target]]"
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert rewritten.count("[[target]]") == 1
+    assert rewritten.endswith("[target](../target.md)")
+
+
+def test_same_line_active_and_code_wikilinks_are_classified_independently(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = "[[target]] and `[[target]]`"
+
+    assert rewrite_wikilinks(markdown, page, inventory) == (
+        "[target](../target.md) and `[[target]]`"
+    )
+
+
+def test_historical_changelog_callout_example_remains_literal() -> None:
+    repo = Path(__file__).resolve().parents[3]
+    wiki = repo / "wiki"
+    inventory = scan_inventory(wiki)
+    page = inventory.by_relative[PurePosixPath("changelog")]
+    markdown = page.source.read_text(encoding="utf-8")
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert "[[verl_end_to_end_iteration_analysis]]" in rewritten
+
+
 def test_blank_line_prevents_inline_code_pairing_across_paragraphs(
     resolver_fixture: tuple[PageRecord, Inventory],
 ) -> None:

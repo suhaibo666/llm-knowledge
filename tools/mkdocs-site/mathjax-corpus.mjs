@@ -75,252 +75,147 @@ async function closeServer(server) {
   })
 }
 
-function maskInlineCode(line) {
-  const chars = [...line]
-  let index = 0
-  while (index < line.length) {
-    if (line[index] !== "`" || (index > 0 && line[index - 1] === "\\")) {
-      index += 1
-      continue
+/* This function is serialized into Chromium by Puppeteer; keep it self-contained. */
+function browserMathOrigins(html = null) {
+  const root = html === null
+    ? document
+    : new DOMParser().parseFromString(html, "text/html")
+  const markerUnits = [...root.querySelectorAll(".arithmatex")]
+    .filter((node) => !node.parentElement?.closest(".arithmatex")).length
+  const currencyPattern = /^\$(?:\d[\d,]*(?:\.\d+)?)(?:\s?(?:USD|CNY|RMB|[KMBT]))?\b/i
+  const ignoredSelector = [
+    "code",
+    "pre",
+    "script",
+    "noscript",
+    "style",
+    "textarea",
+    "annotation",
+    "annotation-xml",
+    ".arithmatex",
+    "mjx-container",
+    ".no-mathjax",
+    ".no-math",
+  ].join(", ")
+
+  function escaped(text, index) {
+    let slashes = 0
+    for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor -= 1) {
+      slashes += 1
     }
-    let runEnd = index
-    while (runEnd < line.length && line[runEnd] === "`") runEnd += 1
-    const marker = line.slice(index, runEnd)
-    const closing = line.indexOf(marker, runEnd)
-    if (closing < 0) {
-      index = runEnd
-      continue
-    }
-    chars.fill(" ", index, closing + marker.length)
-    index = closing + marker.length
-  }
-  return chars.join("")
-}
-
-function maskHtmlComments(line, state) {
-  const chars = [...line]
-  let index = 0
-  while (index < line.length) {
-    if (state.inComment) {
-      const close = line.indexOf("-->", index)
-      if (close < 0) {
-        chars.fill(" ", index)
-        return chars.join("")
-      }
-      chars.fill(" ", index, close + 3)
-      state.inComment = false
-      index = close + 3
-      continue
-    }
-    const open = line.indexOf("<!--", index)
-    if (open < 0) break
-    const close = line.indexOf("-->", open + 4)
-    if (close < 0) {
-      chars.fill(" ", open)
-      state.inComment = true
-      break
-    }
-    chars.fill(" ", open, close + 3)
-    index = close + 3
-  }
-  return chars.join("")
-}
-
-function stripBlockquotePrefix(line) {
-  return line.replace(/^ {0,3}(?:>\s?)+/, "")
-}
-
-function openingFence(line) {
-  const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/)
-  if (!match || (match[1][0] === "`" && match[2].includes("`"))) return null
-  return { character: match[1][0], length: match[1].length }
-}
-
-function closesFence(line, fence) {
-  const match = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/)
-  return Boolean(
-    match
-    && match[1][0] === fence.character
-    && match[1].length >= fence.length,
-  )
-}
-
-function isIndentedCode(line) {
-  return /^(?: {4}|\t)/.test(line)
-}
-
-function unescapedDoubleDollars(line) {
-  const positions = []
-  let index = 0
-  while (index < line.length - 1) {
-    if (line.slice(index, index + 2) === "$$" && (index === 0 || line[index - 1] !== "\\")) {
-      positions.push(index)
-      index += 2
-    } else {
-      index += 1
-    }
-  }
-  return positions
-}
-
-function nextSingleDollar(text, start) {
-  let index = start
-  while (index < text.length) {
-    if (text[index] !== "$" || (index > 0 && text[index - 1] === "\\")) {
-      index += 1
-      continue
-    }
-    if (text[index + 1] === "$") {
-      index += 2
-      continue
-    }
-    return index
-  }
-  return -1
-}
-
-const currencyPattern = /^\$(?:\d[\d,]*(?:\.\d+)?)(?:\s?(?:USD|CNY|RMB|[KMBT]))?\b/i
-const currencyTailPattern = /^[\s|,.;:)\]，。、；：）]*$/
-
-function isCurrencyAmount(text, start, end) {
-  if (text[end] === "$") return false
-  const closer = nextSingleDollar(text, end)
-  if (closer < 0) return true
-  if (currencyPattern.test(text.slice(closer))) return true
-  return currencyTailPattern.test(text.slice(end, closer))
-}
-
-function singleDollarPositions(text) {
-  const positions = []
-  let index = 0
-  while (index < text.length) {
-    if (text[index] !== "$" || (index > 0 && text[index - 1] === "\\")) {
-      index += 1
-      continue
-    }
-    if (text[index + 1] === "$") {
-      index += 2
-      continue
-    }
-    const currency = text.slice(index).match(currencyPattern)
-    if (currency && isCurrencyAmount(text, index, index + currency[0].length)) {
-      index += currency[0].length
-      continue
-    }
-    positions.push(index)
-    index += 1
-  }
-  return positions
-}
-
-function inlineMathInputs(text, sourcePath, line) {
-  const positions = singleDollarPositions(text)
-  assert.equal(
-    positions.length % 2,
-    0,
-    `${sourcePath}:${line} has an unpaired inline '$' delimiter`,
-  )
-  return positions.flatMap((start, index) => (
-    index % 2 === 0
-      ? [{
-          sourcePath,
-          line,
-          kind: "inline",
-          latex: text.slice(start + 1, positions[index + 1]),
-        }]
-      : []
-  ))
-}
-
-export function markdownMathInputs(markdown, sourcePath = "<memory>") {
-  const inputs = []
-  const lines = markdown.split(/\r?\n/)
-  let frontmatterEnd = -1
-  if (lines[0] === "---") {
-    frontmatterEnd = lines.findIndex((line, index) => (
-      index > 0 && ["---", "..."].includes(line)
-    ))
+    return slashes % 2 === 1
   }
 
-  let fence = null
-  let inDisplay = false
-  let displayLine = 0
-  let displayParts = []
-  const htmlCommentState = { inComment: false }
-  for (let index = 0; index < lines.length; index += 1) {
-    const lineNumber = index + 1
-    if (frontmatterEnd >= 0 && index <= frontmatterEnd) continue
-    const rawLine = lines[index]
-    if (fence) {
-      if (closesFence(stripBlockquotePrefix(rawLine), fence)) fence = null
-      continue
+  function nextSingleDollar(text, start) {
+    for (let index = start; index < text.length; index += 1) {
+      if (text[index] !== "$" || escaped(text, index)) continue
+      if (text[index + 1] === "$" || text[index - 1] === "$") continue
+      return index
     }
+    return -1
+  }
 
-    const withoutInlineCode = maskInlineCode(rawLine)
-    const withoutComments = maskHtmlComments(withoutInlineCode, htmlCommentState)
-    const line = stripBlockquotePrefix(withoutComments)
-    if (!inDisplay) {
-      const openedFence = openingFence(line)
-      if (openedFence) {
-        fence = openedFence
+  function currencyEnd(text, index) {
+    const match = text.slice(index).match(currencyPattern)
+    if (!match) return -1
+    const end = index + match[0].length
+    const closer = nextSingleDollar(text, end)
+    if (closer < 0) return end
+    if (currencyPattern.test(text.slice(closer))) return end
+    const between = text.slice(end, closer)
+    return /[\\{}_^=+*/<>]/.test(between) ? -1 : end
+  }
+
+  let rawDollarDelimiters = 0
+  let rawDollarUnits = 0
+  let rawTexUnits = 0
+
+  function texDelimiterUnits(text, open, close) {
+    let units = 0
+    let cursor = 0
+    while (cursor < text.length) {
+      const start = text.indexOf(open, cursor)
+      if (start < 0) break
+      if (escaped(text, start)) {
+        cursor = start + open.length
         continue
       }
-      if (isIndentedCode(line)) continue
+      const end = text.indexOf(close, start + open.length)
+      if (end < 0) break
+      units += 1
+      cursor = end + close.length
     }
-
-    const doublePositions = unescapedDoubleDollars(line)
-    let cursor = 0
-    for (const position of doublePositions) {
-      const fragment = line.slice(cursor, position)
-      if (inDisplay) {
-        displayParts.push(fragment)
-        inputs.push({
-          sourcePath,
-          line: displayLine,
-          kind: "display",
-          latex: displayParts.join("\n"),
-        })
-        displayParts = []
-        inDisplay = false
-      } else {
-        inputs.push(...inlineMathInputs(fragment, sourcePath, lineNumber))
-        inDisplay = true
-        displayLine = lineNumber
-      }
-      cursor = position + 2
-    }
-    const tail = line.slice(cursor)
-    if (inDisplay) displayParts.push(tail)
-    else inputs.push(...inlineMathInputs(tail, sourcePath, lineNumber))
+    return units
   }
-  assert.equal(inDisplay, false, `${sourcePath}:${displayLine} has an unclosed '$$' delimiter`)
-  return inputs
+
+  const walker = root.createTreeWalker(root.body || root, NodeFilter.SHOW_TEXT)
+  while (walker.nextNode()) {
+    const node = walker.currentNode
+    if (node.parentElement?.closest(ignoredSelector)) continue
+    const text = node.nodeValue || ""
+    let singleDelimiters = 0
+    let displayDelimiters = 0
+    for (let index = 0; index < text.length;) {
+      if (text[index] !== "$" || escaped(text, index)) {
+        index += 1
+        continue
+      }
+      if (text[index + 1] === "$") {
+        rawDollarDelimiters += 1
+        displayDelimiters += 1
+        index += 2
+        continue
+      }
+      const moneyEnd = currencyEnd(text, index)
+      if (moneyEnd >= 0) {
+        index = moneyEnd
+        continue
+      }
+      rawDollarDelimiters += 1
+      singleDelimiters += 1
+      index += 1
+    }
+    rawDollarUnits += Math.floor(singleDelimiters / 2)
+      + Math.floor(displayDelimiters / 2)
+    rawTexUnits += texDelimiterUnits(text, "\\(", "\\)")
+      + texDelimiterUnits(text, "\\[", "\\]")
+  }
+  return {
+    markerUnits,
+    rawDollarDelimiters,
+    rawDollarUnits,
+    rawTexUnits,
+    units: markerUnits + rawDollarUnits + rawTexUnits,
+  }
+}
+
+export async function htmlMathOrigins(page, html, sourcePath = "<memory>") {
+  try {
+    return await page.evaluate(browserMathOrigins, html)
+  } catch (error) {
+    throw new Error(`${sourcePath}: cannot inspect generated HTML`, { cause: error })
+  }
 }
 
 export async function corpusPages({
+  analyzer,
   repoRoot = defaultRepoRoot,
   siteRoot = path.join(repoRoot, "site"),
-  wikiRoot = path.join(repoRoot, "wiki"),
   manifest = path.join(repoRoot, ".mkdocs-cache", "routes.json"),
 } = {}) {
+  assert.ok(analyzer, "corpusPages requires an inert browser DOM analyzer")
   const routes = JSON.parse(await readFile(manifest, "utf8"))
   const pages = []
   for (const route of routes) {
     const output = path.join(siteRoot, ...route.output.split("/"))
     const html = await readFile(output, "utf8")
     const sourcePath = `wiki/${route.source}`
-    const markdown = await readFile(path.join(wikiRoot, ...route.source.split("/")), "utf8")
-    const inputs = markdownMathInputs(markdown, sourcePath)
-    if (inputs.length) {
-      pages.push({
-        sourcePath,
-        output: route.output,
-        sourceInputs: inputs.length,
-        generatedMarkers: html.match(/\bclass="arithmatex"/g)?.length || 0,
-      })
+    const origins = await htmlMathOrigins(analyzer, html, sourcePath)
+    if (origins.units) {
+      pages.push({ sourcePath, output: route.output, ...origins })
     }
   }
-  return pages
+  return { inspectedPages: routes.length, pages }
 }
 
 async function renderPages(browser, origin, items, externalRequests, failedRequests) {
@@ -361,7 +256,8 @@ async function renderPages(browser, origin, items, externalRequests, failedReque
           })),
         }
       })
-      results.push({ ...item, ...rendered })
+      const remaining = await page.evaluate(browserMathOrigins, null)
+      results.push({ ...item, ...rendered, remaining })
     }
     return results
   } finally {
@@ -371,7 +267,6 @@ async function renderPages(browser, origin, items, externalRequests, failedReque
 
 export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
   const siteRoot = path.join(repoRoot, "site")
-  const wikiRoot = path.join(repoRoot, "wiki")
   const routeManifest = path.join(repoRoot, ".mkdocs-cache", "routes.json")
   await Promise.all([
     access(path.join(siteRoot, "index.html")),
@@ -380,23 +275,33 @@ export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
     access(path.join(siteRoot, "assets", "vendor", "mathjax", "tex-chtml.js")),
     access(puppeteerPackage),
   ])
-  const pages = await corpusPages({ repoRoot, siteRoot, wikiRoot, manifest: routeManifest })
-  assert.ok(pages.length > 0, "generated site contains no MathJax-bearing pages")
 
   const puppeteer = createRequire(import.meta.url)(
     path.join(nodeModules, "puppeteer-core"),
   )
-  const { server, origin } = await startStaticSite(siteRoot, projectBase)
   let browser
+  let server
   try {
     browser = await puppeteer.launch({
       executablePath: await findBrowserExecutable(),
       headless: true,
       args: ["--disable-background-networking", "--no-sandbox"],
     })
+    const analyzer = await browser.newPage()
+    const { inspectedPages, pages } = await corpusPages({
+      analyzer,
+      repoRoot,
+      siteRoot,
+      manifest: routeManifest,
+    })
+    await analyzer.close()
+    assert.ok(pages.length > 0, "generated site contains no MathJax-bearing pages")
+
+    const started = await startStaticSite(siteRoot, projectBase)
+    server = started.server
+    const { origin } = started
     const externalRequests = []
     const failedRequests = []
-
     const workerCount = Math.min(4, pages.length)
     const assignments = Array.from({ length: workerCount }, () => [])
     pages.forEach((item, index) => assignments[index % workerCount].push(item))
@@ -408,7 +313,7 @@ export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
       failedRequests,
     )))).flat()
     const formulas = results.reduce((total, result) => total + result.containers, 0)
-    const skipped = results.filter((result) => result.containers === 0)
+    const mismatches = results.filter((result) => result.containers !== result.units)
     const failures = results.flatMap((result) => result.failures.map((failure) => ({
       sourcePath: result.sourcePath,
       ...failure,
@@ -417,14 +322,20 @@ export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
       sourcePath: result.sourcePath,
       source,
     })))
+    const rawRemainders = results.filter((result) => (
+      result.remaining.rawDollarDelimiters > 0
+      || result.remaining.rawDollarUnits > 0
+      || result.remaining.rawTexUnits > 0
+    ))
 
     assert.ok(formulas > 0, "generated corpus contains no formulas")
     assert.deepEqual(
-      skipped,
+      mismatches,
       [],
-      skipped.map((item) => (
-        `${item.sourcePath}: no MathJax containers for ${item.sourceInputs} source inputs `
-        + `(${item.generatedMarkers} generated arithmatex markers)`
+      mismatches.map((item) => (
+        `${item.sourcePath}: expected ${item.units} HTML math units `
+        + `(${item.markerUnits} arithmatex + ${item.rawDollarUnits} raw dollar), `
+        + `rendered ${item.containers} MathJax containers`
       )).join("\n"),
     )
     assert.deepEqual(externalRequests, [], "MathJax corpus requested external runtime assets")
@@ -435,6 +346,14 @@ export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
       unprocessed.map((item) => `${item.sourcePath}: ${item.source}`).join("\n"),
     )
     assert.deepEqual(
+      rawRemainders,
+      [],
+      rawRemainders.map((item) => (
+        `${item.sourcePath}: ${item.remaining.rawDollarDelimiters} raw dollar delimiters `
+        + `and ${item.remaining.rawTexUnits} raw TeX units remain after MathJax`
+      )).join("\n"),
+    )
+    assert.deepEqual(
       failures,
       [],
       failures.map((failure) => (
@@ -442,11 +361,12 @@ export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
       )).join("\n\n"),
     )
     console.log(
-      `[docs:mkdocs:math] PASS: ${formulas} formulas across ${pages.length} pages`,
+      `[docs:mkdocs:math] PASS: ${formulas} formulas across ${pages.length} pages `
+      + `(${inspectedPages} manifest pages inspected)`,
     )
   } finally {
     await browser?.close().catch(() => undefined)
-    await closeServer(server)
+    if (server) await closeServer(server)
   }
 }
 

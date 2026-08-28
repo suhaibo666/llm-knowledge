@@ -147,9 +147,11 @@ graph LR
 ```
 
 1.  **门控加权 (Gating)**：
+
     $$
     V_{\mathrm{weighted}} = \text{Gate} \cdot \text{Proj}_{\mathrm{value}}(E_{\mathrm{lookup}})
     $$
+
     其中 $E_{\mathrm{lookup}}$ 是查到的原始 Embedding。
 2.  **局部混合 (Local Mixing)**：
     使用 `ShortConv` (mHC) 对加权后的值进行卷积处理，引入局部时序信息：

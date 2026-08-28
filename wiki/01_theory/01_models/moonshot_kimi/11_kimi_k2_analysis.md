@@ -81,6 +81,7 @@ S_{\max}^{h} = \frac{1}{\sqrt{d}} \max_{\mathbf{X} \in B} \max_{i,j} \mathbf{Q}_
 $$
 
 当 $S_{\max}^{h} > \tau$ 时：
+
 $$
 \mathbf{W}_{qc}^{h} \leftarrow \mathbf{W}_{qc}^{h} \cdot \sqrt{\gamma}, \quad \gamma = \min(1, \tau/S_{\max}^{h})
 $$
@@ -163,6 +164,7 @@ Stage 3: 多轮轨迹生成
 ```
 
 **RL 算法**（基于 k1.5 在线镜像下降）：
+
 $$
 \begin{aligned}
 L_{\mathrm{RL}}(\theta)

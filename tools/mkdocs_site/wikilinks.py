@@ -6,6 +6,8 @@ import re
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
 
+from bs4 import BeautifulSoup, Comment
+from markdown import markdown as render_markdown
 from markdown.extensions.attr_list import AttrListTreeprocessor, get_attrs_and_remainder
 from markdown.extensions.toc import slugify, slugify_unicode, unique
 
@@ -49,6 +51,23 @@ _SECTION_NUMBER_PREFIX = re.compile(
     r"^\s*(?:\d+(?:\.\d+)*|[一二三四五六七八九十百]+)"
     r"(?:\s*[、.．:：]\s*|\s+)"
 )
+_WIKILINK_SENTINEL_PREFIX = "LLMKNOWLEDGEWIKILINKSENTINEL"
+_MARKDOWN_EXTENSIONS = (
+    "admonition",
+    "attr_list",
+    "md_in_html",
+    "pymdownx.details",
+    "pymdownx.superfences",
+    "pymdownx.arithmatex",
+    "toc",
+)
+_MARKDOWN_EXTENSION_CONFIGS: dict[str, dict[str, object]] = {
+    "pymdownx.superfences": {
+        "custom_fences": [{"name": "mermaid", "class": "mermaid"}]
+    },
+    "pymdownx.arithmatex": {"generic": True},
+    "toc": {"permalink": False, "toc_depth": 3},
+}
 
 
 class LinkResolutionError(ValueError):
@@ -244,6 +263,72 @@ def _rewrite_token(
         destination = f"{destination}#{anchor_slug}"
     label = alias if alias is not None else target_text
     return f"[{label}]({destination})"
+
+
+def _wikilink_sentinel(index: int) -> str:
+    return f"{_WIKILINK_SENTINEL_PREFIX}{index:08d}END"
+
+
+def _active_wikilink_indexes(
+    markdown: str, matches: tuple[re.Match[str], ...]
+) -> frozenset[int]:
+    """Classify source Wikilinks using the same rendered Markdown structure."""
+    if _WIKILINK_SENTINEL_PREFIX in markdown:
+        raise ValueError("Markdown contains the reserved Wikilink sentinel prefix")
+    pieces: list[str] = []
+    cursor = 0
+    for index, match in enumerate(matches):
+        pieces.append(markdown[cursor : match.start()])
+        pieces.append(_wikilink_sentinel(index))
+        cursor = match.end()
+    pieces.append(markdown[cursor:])
+    rendered = render_markdown(
+        "".join(pieces),
+        extensions=list(_MARKDOWN_EXTENSIONS),
+        extension_configs=_MARKDOWN_EXTENSION_CONFIGS,
+    )
+    soup = BeautifulSoup(rendered, "html.parser")
+    active: set[int] = set()
+    for node in soup.find_all(string=lambda value: _WIKILINK_SENTINEL_PREFIX in value):
+        if isinstance(node, Comment):
+            continue
+        parent = node.parent
+        if parent is None or parent.name in {"code", "pre", "script", "style"}:
+            continue
+        if parent.find_parent({"code", "pre", "script", "style"}) is not None:
+            continue
+        value = str(node)
+        for index in range(len(matches)):
+            if _wikilink_sentinel(index) in value:
+                active.add(index)
+    return frozenset(active)
+
+
+def _classify_and_rewrite_wikilinks(
+    markdown: str,
+    page: PageRecord,
+    inventory: Inventory,
+) -> tuple[str, dict[str, str]]:
+    matches = tuple(_WIKILINK.finditer(markdown))
+    if not matches:
+        return markdown, {}
+    active = _active_wikilink_indexes(markdown, matches)
+    protected: dict[str, str] = {}
+    output: list[str] = []
+    cursor = 0
+    for index, match in enumerate(matches):
+        output.append(markdown[cursor : match.start()])
+        escaped = match.start() > 0 and markdown[match.start() - 1] == "\\"
+        if index in active and not escaped:
+            line = 1 + markdown.count("\n", 0, match.start())
+            output.append(_rewrite_token(match, page, inventory, line))
+        else:
+            sentinel = _wikilink_sentinel(index)
+            protected[sentinel] = match.group(0)
+            output.append(sentinel)
+        cursor = match.end()
+    output.append(markdown[cursor:])
+    return "".join(output), protected
 
 
 def _rewrite_text_segment(
@@ -563,6 +648,9 @@ def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> 
         for match in _EXISTING_HTML_ANCHOR.finditer(visible_markdown)
     }
     heading_aliases = _heading_aliases(markdown, existing_anchors)
+    classified_markdown, protected_wikilinks = _classify_and_rewrite_wikilinks(
+        markdown, page, inventory
+    )
     heading_index = 0
     output: list[str] = []
     visible_lines: list[str] = []
@@ -582,7 +670,9 @@ def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> 
             )
             visible_lines.clear()
 
-    for line_number, line in enumerate(markdown.splitlines(keepends=True), start=1):
+    for line_number, line in enumerate(
+        classified_markdown.splitlines(keepends=True), start=1
+    ):
         fence_match = _FENCE_START.match(line)
         if fence is not None:
             output.append(line)
@@ -626,4 +716,7 @@ def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> 
             visible_start_line = line_number
         visible_lines.append(line)
     flush_visible()
-    return "".join(output)
+    rewritten = "".join(output)
+    for sentinel, raw_link in protected_wikilinks.items():
+        rewritten = rewritten.replace(sentinel, raw_link)
+    return rewritten

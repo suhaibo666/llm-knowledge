@@ -190,9 +190,11 @@ HBM: 激活在 fwd→bwd 间隙 = 0                       带宽: 每张激活�
 
 > [!tip] 优化点(swap-attention)
 > 把 attention 段激活在前向算完后**整段移出 HBM**,fwd→bwd 间隙内这些激活的 HBM 占用为 0;省下的显存 = 被换出层激活总量
+>
 > $$
 > \Delta M_A \;\approx\; \sum_{\ell\in\mathcal{S}_{\mathrm{swap}}} b\cdot s\cdot h_\ell \cdot \operatorname{sizeof}
 > $$
+>
 > 代价是把这块字节走一趟 D2H + 一趟 H2D。与重计算的取舍:**重算用算力换、swap 用 PCIe/HCCS 带宽换**;只搬 ≥1 MiB 且整存储的张量(`no_swap_tensor` 阈值,`prefetch.py:123-136`),小张量留 HBM 避免搬运得不偿失。预取靠 `layer_id+interval` 提前一层发起,让 H2D 被上一层反向计算掩盖,带宽延迟不上关键路径。
 
 ### 3.2 smart-swap:自定义分配器 + 运行时画像
@@ -270,6 +272,7 @@ fp32(0p0p0p0p) = bf16(pppp) ⊕ res(0000)  reuse_data_ptr 让三视图共享同�
 
 > [!tip] 优化点(reuse-fp32-param)
 > 利用"bf16 = fp32 截断高 16 位"的**位等价**,把 master(4B) 与 working(2B) 的 6 B/elem 折叠成共享的 4 B/elem:
+>
 > $$
 > \begin{aligned}
 > \underbrace{4}_{\text{fp32 master}}+\underbrace{2}_{\text{bf16 working}}
@@ -277,6 +280,7 @@ fp32(0p0p0p0p) = bf16(pppp) ⊕ res(0000)  reuse_data_ptr 让三视图共享同�
 > &\quad +\underbrace{2}_{\text{bf16}}=4\ \text{B/elem}\quad(\text{省}\ \tfrac13)
 > \end{aligned}
 > $$
+>
 > 这是**无损**的(step 时重排回完整 fp32,精度与普通混合精度一致),代价仅一次 `view/transpose` 位重排。硬约束:依赖 bf16 高半=working 的位等价,故 **需 `--bf16`**、与 zero3 / fused_ema_adamw 互斥(`reuse_fp32_param.py:17-24`)。
 
 ---

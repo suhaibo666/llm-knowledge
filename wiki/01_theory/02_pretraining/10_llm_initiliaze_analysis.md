@@ -255,9 +255,11 @@ class SimpleGate(nn.Module):
   y = W x,\qquad W\in\mathbb{R}^{n_\text{out}\times n_\text{in}}
   $$
 * 假设权重独立同分布（i.i.d.）且均值零：
-  $$
-  W_{ij}\overset{\text{i.i.d.}}{\sim}\mathcal{D}_W,\quad \mathbb{E}[W_{ij}]=0,\ \operatorname{Var}(W_{ij})=\sigma_w^2.
-  $$
+
+    $$
+    W_{ij}\overset{\text{i.i.d.}}{\sim}\mathcal{D}_W,\quad \mathbb{E}[W_{ij}]=0,\ \operatorname{Var}(W_{ij})=\sigma_w^2.
+    $$
+
 * 输入向量分量 $x_j$ 假设独立同分布，$\mathbb{E}[x_j]=0,\ \operatorname{Var}(x_j)=\sigma_x^2$。
 * 梯度符号：若损失为 $ \mathcal{L}$，前向为 $y=W x$，则反向有
   $$

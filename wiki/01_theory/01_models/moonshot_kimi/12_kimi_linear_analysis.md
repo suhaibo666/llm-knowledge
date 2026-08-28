@@ -92,6 +92,7 @@ KDA:  α_t (向量) → 每个通道独立遗忘率
 ### 3.2 Delta Rule + DPLR 优化
 
 KDA 的约束 DPLR 变体：
+
 $$
 \begin{aligned}
 \mathbf{S}_t
