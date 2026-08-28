@@ -4,6 +4,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -193,13 +194,13 @@ def test_local_renderer_runtime_assets_are_staged(
     for relative in required_runtime_files:
         assert (site / relative).is_file(), relative
 
-def test_renderer_runtime_in_browser_at_root_and_project_subpath(
-    tmp_path: Path, fixture_wiki: Path
-) -> None:
-    site, _ = build_fixture_site(
-        tmp_path, fixture_wiki, renderer_contract=True
-    )
-    completed = subprocess.run(
+
+def _run_renderer_contract(
+    site: Path,
+    *,
+    timeout: int = 120,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
         [
             "node",
             str(REPO / "tools/mkdocs_site/tests/renderer_contract.mjs"),
@@ -211,8 +212,76 @@ def test_renderer_runtime_in_browser_at_root_and_project_subpath(
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=120,
+        timeout=timeout,
     )
+
+
+def test_renderer_contract_fails_fast_without_owned_puppeteer(tmp_path: Path) -> None:
+    isolated_repo = tmp_path / "isolated-repo"
+    isolated_tests = isolated_repo / "tools/mkdocs_site/tests"
+    isolated_docs_site = isolated_repo / "tools/docs-site"
+    isolated_tests.mkdir(parents=True)
+    isolated_docs_site.mkdir(parents=True)
+    isolated_script = isolated_tests / "renderer_contract.mjs"
+    shutil.copy2(
+        REPO / "tools/mkdocs_site/tests/renderer_contract.mjs",
+        isolated_script,
+    )
+    shutil.copy2(
+        REPO / "tools/docs-site/listeners.mjs",
+        isolated_docs_site / "listeners.mjs",
+    )
+    site = tmp_path / "site"
+    site.mkdir()
+    before = tuple(isolated_repo.rglob("*"))
+
+    started = time.monotonic()
+    completed = subprocess.run(
+        ["node", str(isolated_script), str(site)],
+        cwd=isolated_repo,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=10,
+    )
+    elapsed = time.monotonic() - started
+
+    assert completed.returncode != 0
+    assert elapsed < 5
+    assert "puppeteer-core is not installed" in completed.stderr
+    assert "npm ci --prefix tools/mkdocs-site" in completed.stderr
+    assert tuple(isolated_repo.rglob("*")) == before
+
+
+def test_renderer_contract_rejects_internal_http_error(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    site, _ = build_fixture_site(tmp_path, fixture_wiki, renderer_contract=True)
+    article = site / "domain/10_article.html"
+    article.write_text(
+        article.read_text(encoding="utf-8").replace(
+            "</body>",
+            '<script>fetch("contract-missing.json")</script></body>',
+        ),
+        encoding="utf-8",
+    )
+
+    completed = _run_renderer_contract(site)
+
+    assert completed.returncode != 0
+    assert "HTTP error responses" in completed.stderr
+    assert "404" in completed.stderr
+
+
+def test_renderer_runtime_in_browser_at_root_and_project_subpath(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    site, _ = build_fixture_site(
+        tmp_path, fixture_wiki, renderer_contract=True
+    )
+    completed = _run_renderer_contract(site)
     assert completed.returncode == 0, completed.stdout + completed.stderr
     result = json.loads(completed.stdout.strip().splitlines()[-1])
     assert [case["basePath"] for case in result["cases"]] == [

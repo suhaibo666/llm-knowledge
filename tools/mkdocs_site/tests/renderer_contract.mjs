@@ -1,5 +1,4 @@
 import assert from "node:assert/strict"
-import { spawn } from "node:child_process"
 import { access, readFile, stat } from "node:fs/promises"
 import { createServer } from "node:http"
 import { createRequire } from "node:module"
@@ -8,57 +7,29 @@ import { setTimeout as delay } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 
 import { findBrowserExecutable } from "../../docs-site/listeners.mjs"
-import { buildNpmInvocation } from "../../docs-site/runtime.mjs"
 
 const scriptFile = fileURLToPath(import.meta.url)
 const repoRoot = path.resolve(path.dirname(scriptFile), "..", "..", "..")
-const html2mdDir = path.join(repoRoot, "tools", "html2md")
+const mkdocsSiteDir = path.join(repoRoot, "tools", "mkdocs-site")
+const rendererNodeModules = path.join(mkdocsSiteDir, "node_modules")
 const puppeteerPackage = path.join(
-  html2mdDir,
-  "node_modules",
+  rendererNodeModules,
   "puppeteer-core",
   "package.json",
 )
 
-function runInherited(command, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      env: options.env ?? process.env,
-      shell: options.shell ?? false,
-      stdio: "inherit",
-      windowsHide: true,
-    })
-    child.once("error", reject)
-    child.once("close", (code) => {
-      if (code === 0) resolve()
-      else reject(new Error(`${command} exited with status ${code ?? "unknown"}`))
-    })
-  })
-}
-
-async function ensurePuppeteer() {
+async function loadPuppeteer() {
   try {
     await access(puppeteerPackage)
   } catch {
-    const npm = buildNpmInvocation(["ci", "--prefix", html2mdDir])
-    await runInherited(npm.command, npm.args, {
-      cwd: repoRoot,
-      shell: npm.shell,
-      env: {
-        ...process.env,
-        npm_config_cache: path.join(
-          repoRoot,
-          ".cache",
-          "llm-knowledge-docs",
-          "npm-cache",
-        ),
-      },
-    })
+    throw new Error(
+      `puppeteer-core is not installed at ${puppeteerPackage}. `
+      + "Run npm ci --prefix tools/mkdocs-site before renderer contract tests.",
+    )
   }
 
   const require = createRequire(import.meta.url)
-  return require(path.join(html2mdDir, "node_modules", "puppeteer-core"))
+  return require(path.join(rendererNodeModules, "puppeteer-core"))
 }
 
 const contentTypes = new Map([
@@ -348,7 +319,18 @@ async function runCase(browser, origin, basePath, servedResponses) {
     )
 
     assert.deepEqual(blockedExternal, [], `${basePath} attempted external requests`)
+    const securityProbeRequests = requests.filter((rawUrl) => {
+      const requested = new URL(rawUrl)
+      return requested.protocol === "javascript:"
+        || requested.pathname.endsWith("/domain/x")
+    })
+    assert.deepEqual(
+      securityProbeRequests,
+      [],
+      `${basePath} made security probe requests`,
+    )
     assert.deepEqual(failedRequests, [], `${basePath} had failed requests`)
+    assert.deepEqual(failedResponses, [], `${basePath} had HTTP error responses`)
     assert.equal(
       pageErrors.filter(isExpectedMermaidPageError).length,
       1,
@@ -456,7 +438,7 @@ async function main() {
   assert.ok(process.argv[2], "Usage: node renderer_contract.mjs <fixture-site>")
   assert.ok((await stat(siteRoot)).isDirectory(), `${siteRoot} is not a directory`)
 
-  const puppeteer = await ensurePuppeteer()
+  const puppeteer = await loadPuppeteer()
   const executablePath = await findBrowserExecutable()
   const servedResponses = new Map()
   const server = await startFixtureServer(siteRoot, servedResponses)
