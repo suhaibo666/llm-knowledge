@@ -136,6 +136,19 @@ def test_rendered_theme_separates_navigation_document_and_index_titles(
     assert not home.select_one("body.kb-page-index .md-sidebar--secondary")
 
 
+def test_search_ui_keeps_ctrl_k_hint_without_unsafe_share_href(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    site, _ = build_fixture_site(tmp_path, fixture_wiki)
+    home = BeautifulSoup(
+        (site / "index.html").read_text(encoding="utf-8"), "html.parser"
+    )
+
+    assert home.select_one("input[data-md-component='search-query']")
+    assert home.select_one("[data-kb-search-trigger] kbd").get_text(" ", strip=True) == "Ctrl K"
+    assert not home.select("[href^='javascript:']")
+
+
 def test_search_rewrite_keeps_chinese_title_and_indexes_filename_once(
     tmp_path: Path, fixture_wiki: Path
 ) -> None:

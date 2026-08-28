@@ -30,7 +30,6 @@ theme:
     - toc.follow
     - search.suggest
     - search.highlight
-    - search.share
     - content.code.copy
     - content.action.view
 plugins:

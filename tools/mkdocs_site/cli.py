@@ -12,6 +12,12 @@ from .inventory import scan_inventory
 from .models import BuildPaths, Inventory
 from .search_index import rewrite_search_index
 from .staging import StageResult, stage_wiki
+from .validate_site import (
+    SiteValidationError,
+    ValidationReport,
+    raise_for_errors,
+    validate_site,
+)
 
 
 @dataclass(frozen=True)
@@ -21,6 +27,7 @@ class Operations:
     config: Callable[[BuildPaths, Inventory, StageResult], Path]
     mkdocs: Callable[[list[str], Path], int]
     rewrite_search: Callable[[Path, Inventory], None]
+    validate: Callable[[Path, Path], ValidationReport]
 
 
 def _run_mkdocs(command: list[str], cwd: Path) -> int:
@@ -34,13 +41,22 @@ def _default_operations() -> Operations:
         write_generated_config,
         _run_mkdocs,
         rewrite_search_index,
+        lambda site, manifest: validate_site(site, route_manifest=manifest),
     )
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build the local MkDocs preview")
-    parser.add_argument("command", choices=("stage", "build", "serve"))
+    parser.add_argument("command", choices=("stage", "build", "serve", "validate"))
     return parser
+
+
+def _validation_result(report: ValidationReport) -> int:
+    try:
+        raise_for_errors(report)
+    except SiteValidationError:
+        return 1
+    return 0
 
 
 def main(
@@ -50,6 +66,10 @@ def main(
     active = operations or _default_operations()
     repo = Path(__file__).resolve().parents[2]
     paths = BuildPaths.from_repo(repo)
+    if args.command == "validate":
+        report = active.validate(paths.site, paths.cache / "routes.json")
+        return _validation_result(report)
+
     inventory = active.inventory(paths.wiki)
     stage_result = active.stage(paths, inventory)
     if args.command == "stage":
@@ -71,6 +91,9 @@ def main(
     result = active.mkdocs(command, paths.repo)
     if args.command == "build" and result == 0:
         active.rewrite_search(paths.site, inventory)
+        return _validation_result(
+            active.validate(paths.site, stage_result.route_manifest)
+        )
     return result
 
 

@@ -1,19 +1,38 @@
 from __future__ import annotations
 
+import html
 import posixpath
 import re
 from pathlib import Path, PurePosixPath
+from urllib.parse import unquote
 
-from markdown.extensions.toc import slugify_unicode, unique
+from markdown.extensions.toc import slugify, slugify_unicode, unique
 
 from .models import Inventory, PageRecord
 
 
 _FENCE_START = re.compile(r"^\s*(`{3,}|~{3,})")
 _ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+|$)")
+_ATX_HEADING_TEXT = re.compile(
+    r"^ {0,3}(?P<marks>#{1,6})[ \t]+(?P<text>.*?)(?:[ \t]+#+)?[ \t]*(?:\r?\n)?$"
+)
 _WIKILINK = re.compile(r"!?\[\[([^\[\]\n]+?)\]\]")
 _REPOSITORY_LINK = re.compile(
     r"(?P<open>\]\()(?P<target>(?:tools/|Megatron-LM/)[^)\s]+)(?P<close>\))"
+)
+_LOCAL_FILE_LINK = re.compile(
+    r"(?<!\\)!?\[(?P<label>[^\]\n]+)\]\(\s*file:[^)\n]*\)",
+    re.IGNORECASE,
+)
+_LOCAL_CODE_LOCATOR_LINK = re.compile(
+    r"(?<!\\)!?\[(?P<label>[^\]\n]+)\]\(\s*`[^`\n]*\.[A-Za-z0-9_]+:\d+(?:-\d+)?`\s*\)"
+)
+_EXISTING_HTML_ANCHOR = re.compile(
+    r"\b(?:id|name)\s*=\s*['\"](?P<anchor>[^'\"]+)['\"]",
+    re.IGNORECASE,
+)
+_SAME_PAGE_FRAGMENT_LINK = re.compile(
+    r"(?<!\\)!?\[(?P<label>[^\]\n]+)\]\(\s*#(?P<fragment>[^)\s]+)\s*\)"
 )
 _MEGATRON_BASELINE_DECLARATION = re.compile(
     r"^>\s+\*\*源码基线\*\*.*?NVIDIA/Megatron-LM@"
@@ -103,6 +122,14 @@ def _indentation_columns(line: str) -> int:
         else:
             break
     return columns
+
+
+def _loose_anchor_key(value: str) -> str:
+    return "".join(
+        character.casefold()
+        for character in html.unescape(value)
+        if character.isalnum()
+    )
 
 
 def _wiki_root(page: PageRecord) -> Path:
@@ -217,6 +244,9 @@ def _rewrite_text_segment(
     line: int,
     megatron_baselines: tuple[str, ...],
 ) -> str:
+    def replace_local_file_link(match: re.Match[str]) -> str:
+        return f"{match.group('label')} *(local source)*"
+
     def replace_repository_link(match: re.Match[str]) -> str:
         target = match.group("target")
         if _is_wiki_local_standard_target(target, page, inventory):
@@ -248,6 +278,8 @@ def _rewrite_text_segment(
             )
         return f"{match.group('open')}{destination}{match.group('close')}"
 
+    text = _LOCAL_FILE_LINK.sub(replace_local_file_link, text)
+    text = _LOCAL_CODE_LOCATOR_LINK.sub(replace_local_file_link, text)
     text = _REPOSITORY_LINK.sub(replace_repository_link, text)
     output: list[str] = []
     cursor = 0
@@ -281,6 +313,74 @@ def _matching_backtick_run(text: str, start: int, length: int) -> int | None:
         cursor = end
 
 
+def _without_inline_code(text: str) -> str:
+    output: list[str] = []
+    cursor = 0
+    while cursor < len(text):
+        start = text.find("`", cursor)
+        if start < 0:
+            output.append(text[cursor:])
+            break
+        output.append(text[cursor:start])
+        end = _backtick_run_end(text, start)
+        closing = _matching_backtick_run(text, end, end - start)
+        if closing is None:
+            output.append(text[start:end])
+            cursor = end
+            continue
+        closing_end = closing + (end - start)
+        output.append(" " * (closing_end - start))
+        cursor = closing_end
+    return "".join(output)
+
+
+def _visible_markdown(markdown: str) -> str:
+    output: list[str] = []
+    fence: str | None = None
+    for line in markdown.splitlines(keepends=True):
+        fence_match = _FENCE_START.match(line)
+        if fence is not None:
+            if _closes_fence(line, fence):
+                fence = None
+            continue
+        if _indentation_columns(line) >= 4:
+            continue
+        if fence_match is not None:
+            fence = fence_match.group(1)
+            continue
+        output.append(_without_inline_code(line))
+    return "".join(output)
+
+
+def _manual_heading_aliases(markdown: str) -> dict[int, tuple[str, ...]]:
+    visible = _visible_markdown(markdown)
+    heading_texts = tuple(
+        match.group("text").strip()
+        for line in visible.splitlines(keepends=True)
+        if (match := _ATX_HEADING_TEXT.match(line)) is not None
+        and len(match.group("marks")) in {2, 3}
+    )
+    heading_keys = tuple(_loose_anchor_key(heading) for heading in heading_texts)
+    aliases: dict[int, list[str]] = {}
+    for match in _SAME_PAGE_FRAGMENT_LINK.finditer(visible):
+        label_key = _loose_anchor_key(match.group("label"))
+        fragment = unquote(html.unescape(match.group("fragment")))
+        fragment_key = _loose_anchor_key(fragment)
+        candidates = {
+            index
+            for index, heading_key in enumerate(heading_keys)
+            if fragment_key == heading_key
+            or label_key == heading_key
+            or (len(label_key) >= 4 and heading_key.endswith(label_key))
+        }
+        if len(candidates) == 1:
+            index = candidates.pop()
+            aliases.setdefault(index, []).append(fragment)
+    return {
+        index: tuple(dict.fromkeys(values)) for index, values in aliases.items()
+    }
+
+
 def _rewrite_inline_code_aware(
     text: str,
     page: PageRecord,
@@ -292,7 +392,21 @@ def _rewrite_inline_code_aware(
     cursor = 0
     while cursor < len(text):
         tick_start = text.find("`", cursor)
+        locator = _LOCAL_CODE_LOCATOR_LINK.search(text, cursor)
         segment_line = line + text.count("\n", 0, cursor)
+        if locator is not None and (tick_start < 0 or locator.start() < tick_start):
+            output.append(
+                _rewrite_text_segment(
+                    text[cursor : locator.start()],
+                    page,
+                    inventory,
+                    segment_line,
+                    megatron_baselines,
+                )
+            )
+            output.append(f"{locator.group('label')} *(local source)*")
+            cursor = locator.end()
+            continue
         if tick_start < 0:
             output.append(
                 _rewrite_text_segment(
@@ -324,6 +438,15 @@ def _rewrite_inline_code_aware(
 def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> str:
     """Convert supported wiki and repository links while preserving literal code."""
     megatron_baselines = _megatron_header_baselines(markdown)
+    visible_markdown = _visible_markdown(markdown)
+    existing_anchors = {
+        html.unescape(match.group("anchor"))
+        for match in _EXISTING_HTML_ANCHOR.finditer(visible_markdown)
+    }
+    manual_heading_aliases = _manual_heading_aliases(markdown)
+    used_ascii_anchors: set[str] = set()
+    used_unicode_anchors: set[str] = set()
+    heading_index = 0
     output: list[str] = []
     visible_lines: list[str] = []
     visible_start_line = 1
@@ -367,6 +490,23 @@ def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> 
             continue
         if _ATX_HEADING.match(line):
             flush_visible()
+            heading_match = _ATX_HEADING_TEXT.match(line)
+            if heading_match is not None and len(heading_match.group("marks")) in {2, 3}:
+                heading = heading_match.group("text").strip()
+                ascii_anchor = unique(slugify(heading, "-"), used_ascii_anchors)
+                unicode_anchor = unique(
+                    slugify_unicode(heading, "-"), used_unicode_anchors
+                )
+                aliases: list[str] = []
+                if unicode_anchor != ascii_anchor:
+                    aliases.append(unicode_anchor)
+                aliases.extend(manual_heading_aliases.get(heading_index, ()))
+                heading_index += 1
+                for alias in dict.fromkeys(aliases):
+                    if alias not in existing_anchors:
+                        output.append(
+                            f'<a name="{html.escape(alias, quote=True)}"></a>\n'
+                        )
             output.append(
                 _rewrite_inline_code_aware(
                     line, page, inventory, line_number, megatron_baselines

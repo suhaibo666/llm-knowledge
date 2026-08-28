@@ -1,14 +1,22 @@
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from tools.mkdocs_site.cli import Operations, main
+from tools.mkdocs_site.validate_site import ValidationReport
 
 
 def recording_operations(
-    events: list[tuple[object, ...]], generated_config: Path, exit_code: int = 0
+    events: list[tuple[object, ...]],
+    generated_config: Path,
+    exit_code: int = 0,
+    report: ValidationReport | None = None,
+    rewrite_error: Exception | None = None,
 ) -> Operations:
     inventory = object()
-    stage_result = object()
+    stage_result = SimpleNamespace(route_manifest=generated_config.with_name("routes.json"))
 
     def scan(wiki: Path) -> object:
         events.append(("inventory", wiki))
@@ -34,8 +42,14 @@ def recording_operations(
     def rewrite(site: Path, received_inventory: object) -> None:
         assert received_inventory is inventory
         events.append(("rewrite", site))
+        if rewrite_error is not None:
+            raise rewrite_error
 
-    return Operations(scan, stage, config, run, rewrite)
+    def validate(site: Path, route_manifest: Path) -> ValidationReport:
+        events.append(("validate", site, route_manifest))
+        return report or ValidationReport(3, (), (), (), (), ())
+
+    return Operations(scan, stage, config, run, rewrite, validate)
 
 
 def test_build_stages_writes_config_then_runs_strict_mkdocs(tmp_path: Path) -> None:
@@ -112,5 +126,75 @@ def test_successful_build_rewrites_search_after_mkdocs() -> None:
         "config",
         "mkdocs",
         "rewrite",
+        "validate",
     ]
-    assert events[-1][1] == events[1][1].site
+    assert events[-2][1] == events[1][1].site
+    assert events[-1][1:] == (
+        events[1][1].site,
+        Path("generated.yml").with_name("routes.json"),
+    )
+
+
+def test_rewrite_failure_prevents_validation() -> None:
+    events: list[tuple[object, ...]] = []
+
+    with pytest.raises(RuntimeError, match="rewrite failed"):
+        main(
+            ["build"],
+            recording_operations(
+                events,
+                Path("generated.yml"),
+                rewrite_error=RuntimeError("rewrite failed"),
+            ),
+        )
+
+    assert [event[0] for event in events] == [
+        "inventory",
+        "stage",
+        "config",
+        "mkdocs",
+        "rewrite",
+    ]
+
+
+def test_validate_checks_existing_output_without_staging() -> None:
+    events: list[tuple[object, ...]] = []
+
+    result = main(["validate"], recording_operations(events, Path("unused.yml")))
+
+    assert result == 0
+    assert [event[0] for event in events] == ["validate"]
+    assert events[0][2].name == "routes.json"
+
+
+def test_failed_build_validation_returns_nonzero_and_preserves_site(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tools.mkdocs_site import cli
+
+    fake_cli = tmp_path / "repo/tools/mkdocs_site/cli.py"
+    fake_cli.parent.mkdir(parents=True)
+    monkeypatch.setattr(cli, "__file__", str(fake_cli))
+    site = tmp_path / "repo/site"
+    site.mkdir()
+    marker = site / "keep.html"
+    marker.write_text("inspect me", encoding="utf-8")
+    events: list[tuple[object, ...]] = []
+    report = ValidationReport(
+        3,
+        ("index.html -> missing.html",),
+        (),
+        (),
+        (),
+        (),
+    )
+
+    result = main(
+        ["build"],
+        recording_operations(events, tmp_path / "generated.yml", report=report),
+    )
+
+    assert result == 1
+    assert marker.read_text(encoding="utf-8") == "inspect me"
+    assert [event[0] for event in events][-1] == "validate"

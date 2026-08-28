@@ -47,6 +47,126 @@ def test_rewriter_skips_fenced_and_inline_code(
     assert rewrite_wikilinks(markdown, page, inventory).count("[[target]]") == 2
 
 
+def test_rewriter_neutralizes_visible_local_file_links_but_preserves_code(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    local_link = "[source.py:17](file:///E:\\private\\source.py#L17)"
+    markdown = (
+        f"{local_link}\n"
+        f"`{local_link}`\n"
+        "```markdown\n"
+        f"{local_link}\n"
+        "```\n"
+        f"    {local_link}\n"
+    )
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert rewritten.startswith("source.py:17 *(local source)*\n")
+    assert rewritten.count("file:///") == 3
+
+
+def test_real_npu_page_has_no_publishable_local_file_links() -> None:
+    repo = Path(__file__).resolve().parents[3]
+    wiki = repo / "wiki"
+    relative = PurePosixPath(
+        "02_engineering/01_pytorch/02_compile_stack/04_inductor/npu/"
+        "10_npu_inductor_backend_analysis.md"
+    )
+    inventory = scan_inventory(wiki)
+    page = inventory.by_relative[relative.with_suffix("")]
+    markdown = page.source.read_text(encoding="utf-8")
+    local_link_count = markdown.casefold().count("](file:")
+    assert local_link_count > 0
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert "](file:" not in rewritten.casefold()
+    assert rewritten.count("*(local source)*") == local_link_count
+    assert "codegen/npu_combined_scheduling.py:17 *(local source)*" in rewritten
+
+
+def test_rewriter_adds_legacy_unicode_heading_aliases_for_local_and_cross_page_links(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    current = "[same](#二机制)\n\n## 二、机制\n\n## 二、机制"
+
+    rewritten_current = rewrite_wikilinks(current, page, inventory)
+    rewritten_target = rewrite_wikilinks(
+        page.source.parents[1].joinpath("target.md").read_text(encoding="utf-8"),
+        inventory.by_relative[PurePosixPath("target")],
+        inventory,
+    )
+    rewritten_cross_page = rewrite_wikilinks("[[target#二、机制]]", page, inventory)
+
+    assert '<a name="二机制"></a>\n' in rewritten_current
+    assert '<a name="二机制_1"></a>\n' in rewritten_current
+    assert '<a name="二机制"></a>\n' in rewritten_target
+    assert rewritten_cross_page == "[target](../target.md#二机制)"
+    assert "## 二、机制" in rewritten_current
+
+
+def test_rewriter_does_not_duplicate_an_existing_legacy_heading_alias(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = '<a name="二机制"></a>\n\n## 二、机制'
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert rewritten.count('name="二机制"') == 1
+
+
+def test_rewriter_places_declared_manual_fragment_alias_at_matching_heading(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    persistent = "四ub-便笺--无跨核协作--塞满-ub只做-persistent-规约"
+    historical_typo = "41-vllmdisaggregated-prefilldecodle"
+    markdown = (
+        f"[四](#{persistent})\n"
+        f"[vLLM：Disaggregated Prefill/Decode](#{historical_typo})\n\n"
+        "## 四、UB 便笺 + 无跨核协作 ⇒ 塞满 UB，只做 persistent 规约\n\n"
+        "### 4.1 vLLM：Disaggregated Prefill/Decode\n"
+    )
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert f'<a name="{persistent}"></a>\n## 四、' in rewritten
+    assert f'<a name="{historical_typo}"></a>\n### 4.1' in rewritten
+
+
+def test_rewriter_does_not_guess_ambiguous_manual_fragment_alias(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = (
+        "[mechanism](#historical-typo)\n\n"
+        "## One mechanism\n\n"
+        "## Two mechanism\n"
+    )
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert 'name="historical-typo"' not in rewritten
+
+
+def test_rewriter_neutralizes_backtick_wrapped_local_code_locator(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+
+    rewritten = rewrite_wikilinks(
+        "[DispatchTable computation](`OperatorEntry.cpp:353-385`)",
+        page,
+        inventory,
+    )
+
+    assert rewritten == "DispatchTable computation *(local source)*"
+
+
 def test_rewriter_rejects_embed_and_block_reference(
     resolver_fixture: tuple[PageRecord, Inventory],
 ) -> None:
