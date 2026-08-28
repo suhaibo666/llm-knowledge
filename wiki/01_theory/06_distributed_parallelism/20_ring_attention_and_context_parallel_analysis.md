@@ -29,7 +29,7 @@ title: "Ring Attention 与上下文并行(Context Parallelism)—— 通用机�
 | $TP$ | 张量并行度(若头先被 TP 切,CP 在 $a/TP$ 头上再操作) |
 | $u$ / $r$ | 分层混合下 Ulysses 子度 / Ring 子度($cp=u\cdot r$) |
 
-*(合并自 `13_megatron_cp_analysis.md` §0.3 与 `20_mindspeed_context_parallel_analysis.md` §0.2;`u`/`r` 取自 MindSpeed,因分层混合一节要用)*
+*(合并自 `13_megatron_cp_analysis.md` §1.4 与 `20_mindspeed_context_parallel_analysis.md` §0.2;`u`/`r` 取自 MindSpeed,因分层混合一节要用)*
 
 ---
 
@@ -65,7 +65,7 @@ self-attention 的注意力分数矩阵是 $[S,S]$,激活显存与计算量都�
 
 ## 2. CP 与其它并行维度的组合关系
 
-> 骨架取自 `13_megatron_cp_analysis.md` §0.2 + §1.4 + §6.2 组合部分;`35_deepseek_v4_context_parallel_analysis.md` §1.3 的另一视角(通信组/物理链路)并列对照。
+> 骨架取自 `13_megatron_cp_analysis.md` §1.3 + §1.4 + §6.2 组合部分;`35_deepseek_v4_context_parallel_analysis.md` §1.3 的另一视角(通信组/物理链路)并列对照。
 
 ### 2.1 CP 在并行体系中的位置
 
@@ -83,7 +83,7 @@ self-attention 的注意力分数矩阵是 $[S,S]$,激活显存与计算量都�
 
 ### 2.2 与 MoE 的组合:CP 折叠进 EP
 
-对 MoE 模型,CP 对**专家层无意义**(token 独立处理,无需跨序列)。Megatron 的 MoE Parallel Folding 正是利用这一点:attention 用 $TP\times CP\times DP$,MoE 把 $CP$ **折叠进 $EP$**($ETP\times EP\times EDP$)。详见 [[../../02_engineering/02_train_frameworks/megatron-lm/14_megatron_ep_analysis|14_megatron_ep_analysis]] §6(框架实现细节,本页不展开)。
+对 MoE 模型,CP 对**专家层无意义**(token 独立处理,无需跨序列)。Megatron 的 MoE Parallel Folding 正是利用这一点:attention 用 $TP\times CP\times DP$,MoE 把 $CP$ **折叠进 $EP$**($ETP\times EP\times EDP$)。详见 [[../../02_engineering/02_train_frameworks/megatron-lm/14_megatron_ep_analysis|14_megatron_ep_analysis]] §9(框架实现细节,本页不展开)。
 
 ### 2.3 正交叠加原则
 
@@ -97,7 +97,7 @@ self-attention 的注意力分数矩阵是 $[S,S]$,激活显存与计算量都�
 
 ### 3.1 朴素连续切分
 
-> 骨架取自 `13_megatron_cp_analysis.md` §2.1(切分图示)+ `13_torchtitan_cp_analysis.md` §2.2(DTensor 级实现)。
+> 骨架取自 `13_megatron_cp_analysis.md`(切分图示)+ `13_torchtitan_cp_analysis.md` §2.2(DTensor 级实现)。
 
 ```
 全局序列 S = [tok 0 … tok S-1]   按 CP 切成 cp 段:
@@ -184,7 +184,7 @@ PTRR 返回逐样本的索引(每个样本的 `BlockMask` 不同,重排逐样本
 
 ### 3.5 位置编码切分的正确性不变量
 
-> 唯一来源 `20_mindspeed_context_parallel_analysis.md` §2.3——四页中仅此一页显式指出这条隐形不变量,作为横切正确性约束补充。
+> 唯一来源 `20_mindspeed_context_parallel_analysis.md` §2——四页中仅此一页显式指出这条隐形不变量,作为横切正确性约束补充。
 
 RoPE 位置编码必须按**和 token 完全相同**的方式切到 CP rank,否则每卡拿到的 token 和它的旋转相位对不上、注意力全错。这是 CP 家族里最容易被忽略、却必须与 §3.3 切分严格对齐的一环——不论用 zigzag/头尾哪种代码实现,位置编码的切分逻辑都必须镜像 token 切分逻辑(逐算法各自实现,见 MindSpeed 页 `get_pos_emb_on_this_cp_rank`)。
 
@@ -196,7 +196,7 @@ RoPE 位置编码必须按**和 token 完全相同**的方式切到 CP rank,否�
 
 ### 4.1 三分支裁剪算法
 
-> 唯一深入来源 `20_mindspeed_context_parallel_analysis.md` §4.3/§4.4——四页中量化最完整、且给出显式三分支代码逻辑的版本;三分支裁剪机制本体在 §4.3,但"从朴素 $cp\cdot$(全块)降到约一半"这句精确量化陈述的原始措辞出自 §4.4 通信量代数节的 `[!tip]` 优化点 callout(该 callout 的③即引用§4.3 三分支),下方沿用其原话。
+> 唯一深入来源 `20_mindspeed_context_parallel_analysis.md` §4.2/§4.3——四页中量化最完整、且给出显式三分支代码逻辑的版本;三分支裁剪机制本体在 §4.2,但"从朴素 $cp\cdot$(全块)降到约一半"这句精确量化陈述的原始措辞出自 §4.3 通信量代数节的 `[!tip]` 优化点 callout(该 callout 的③即引用§4.2 三分支),下方沿用其原话。
 
 2·cp 配对切分(§3.3)让每个 KV 块相对当前 Q 块**要么全可见、要么全不可见、要么只半可见**,据此三分支裁剪:
 
@@ -214,7 +214,7 @@ RoPE 位置编码必须按**和 token 完全相同**的方式切到 CP rank,否�
 
 ### 4.3 变长/EoD 打包下的裁剪
 
-> 唯一来源 `20_mindspeed_context_parallel_analysis.md` §4.3 后半——四页中仅此一页覆盖变长打包场景下的裁剪逻辑。
+> 唯一来源 `20_mindspeed_context_parallel_analysis.md` §4.2 后半——四页中仅此一页覆盖变长打包场景下的裁剪逻辑。
 
 多条样本拼成一条 packed 序列(THD)训练时,2·cp 配对需要**逐子序列**做,而非对整条 packed 序列做一次。做法:对每段 `[prev_eod, eod]` 取中点 `mid`,把前半划给 KV、后半划给 Q;前向据此预生成 `q_index/kv_index/softmax_indices` 供反向复用。数据侧 packing 与动态 CP 的完整机制见 [[../../02_engineering/02_train_frameworks/megatron-lm/29_megatron_packed_dataset_dynamic_cp_analysis|29_megatron_packed_dataset_dynamic_cp_analysis]](框架实现细节,本页不展开)。
 
@@ -269,11 +269,11 @@ step 3:rank0: Q0×KV1  rank1: Q1×KV2  rank2: Q2×KV3  rank3: Q3×KV0
 N=4 步后每个 Q_r 都与 KV0..KV3 全部相乘过。
 ```
 
-Megatron/DeepSeek-V4 侧的等价图示(`13_megatron_cp_analysis.md` 调度器①、`35_deepseek_v4_context_parallel_analysis.md` §2.4.1)描述的是同一个环——KV 沿 `rank0→rank1→rank2→rank3→回 rank0` 传递、Q 固定不动,仅表述粒度更粗(不展开逐步演算),故本节以 torchtitan 版本为骨架。
+Megatron/DeepSeek-V4 侧的等价图示(`13_megatron_cp_analysis.md` §3.2、`35_deepseek_v4_context_parallel_analysis.md` §2.4.1)描述的是同一个环——KV 沿 `rank0→rank1→rank2→rank3→回 rank0` 传递、Q 固定不动,仅表述粒度更粗(不展开逐步演算),故本节以 torchtitan 版本为骨架。
 
 ### 5.2 在线 softmax 合并
 
-> 骨架取自 `20_mindspeed_context_parallel_analysis.md` §4.5(公式最严格,显式给出数值稳定的合并式);torchtitan 的 Python 实现是同一公式的等价代码形态,并列给出。
+> 骨架取自 `20_mindspeed_context_parallel_analysis.md` §4.4(公式最严格,显式给出数值稳定的合并式);torchtitan 的 Python 实现是同一公式的等价代码形态,并列给出。
 
 每步产出局部 $(\text{out}_{\mathrm{cur}}, m_{\mathrm{cur}}, \ell_{\mathrm{cur}})$($m$=running max,$\ell$=log-sum-exp 的和项),按下式无误差并入累积量:
 
@@ -323,7 +323,7 @@ for i in range(size):
 **四份实现页在"用什么原语发起这次异步传输"上各不相同**,这是框架实现差异,不属于通用机制:
 - torchtitan/PyTorch:靠 `torch.distributed._functional_collectives` 返回的 `AsyncCollectiveTensor` 延迟 wait,不手写 CUDA stream(见 `13_torchtitan_cp_analysis.md` §7)。
 - Megatron/DeepSeek-V4(TE 路径):独立 `cp_stream` + `cudaEventRecord/cudaStreamWaitEvent` 做 stream 间同步(见 `35_deepseek_v4_context_parallel_analysis.md` §4.3)。
-- MindSpeed:`RingP2P.async_send_recv` 用 `isend`/`irecv` 按 `ring_rank % 2` 决定收发顺序避免死锁,`use_cp_send_recv_overlap` 时收发各走独立组(见 `20_mindspeed_context_parallel_analysis.md` §4.5)。
+- MindSpeed:`RingP2P.async_send_recv` 用 `isend`/`irecv` 按 `ring_rank % 2` 决定收发顺序避免死锁,`use_cp_send_recv_overlap` 时收发各走独立组(见 `20_mindspeed_context_parallel_analysis.md` §4.4)。
 
 三种实现遵循的是同一条通用原则(异步发起下一步传输、wait 延迟到真正需要时),只是各自选的异步原语不同。
 
@@ -361,7 +361,7 @@ dkv_rotater = _create_rotater(group, 2, method=ALL_TO_ALL)     # K/V 梯度轮�
 
 > **为什么 `dkv_rotater` 强制 all-to-all 而不能用 all-gather**:梯度必须**逐 rank 顺序累加**(每步 = 上一 rank 的部分和 + 本 rank 贡献),all-gather 一次性收齐就没法做这个增量累加。
 
-**与 TE(Megatron/DeepSeek-V4)口径的对照**:`35_deepseek_v4_context_parallel_analysis.md` §2.4.1 用更高层的等价描述——p2p 模式下"dQ 需要等价 AllGather(通过反向 P2P 累积),dK/dV 需要 ReduceScatter(通过反向 P2P 分发)"。这是同一机制的两种描述粒度:torchtitan 给出的是"两个环增量累加"的实现级机制,DeepSeek-V4 给出的是"等效于哪个集合通信原语"的结果级概括,二者不矛盾。MindSpeed 在此基础上还实现了双环(outer/inner window)的反向 dKV 环,属其自身的分层扩展,留在 MindSpeed 页(§4.5)。
+**与 TE(Megatron/DeepSeek-V4)口径的对照**:`35_deepseek_v4_context_parallel_analysis.md` §2.4.1 用更高层的等价描述——p2p 模式下"dQ 需要等价 AllGather(通过反向 P2P 累积),dK/dV 需要 ReduceScatter(通过反向 P2P 分发)"。这是同一机制的两种描述粒度:torchtitan 给出的是"两个环增量累加"的实现级机制,DeepSeek-V4 给出的是"等效于哪个集合通信原语"的结果级概括,二者不矛盾。MindSpeed 在此基础上还实现了双环(outer/inner window)的反向 dKV 环,属其自身的分层扩展,留在 MindSpeed 页(§4.4)。
 
 ---
 
@@ -371,7 +371,7 @@ dkv_rotater = _create_rotater(group, 2, method=ALL_TO_ALL)     # K/V 梯度轮�
 
 ### 6.1 机制:head-stride 双缓冲 All-gather
 
-> 骨架取自 `35_deepseek_v4_context_parallel_analysis.md` §3.1-3.3——四页中对 Megatron 原生(非 TE)all-gather 实现给出最完整的代码级 walkthrough,含 forward/backward 全流程与显式通信量公式;`13_megatron_cp_analysis.md` 调度器②给出的是同一份源码的精简版本,内容一致,合并为同一骨架。
+> 骨架取自 `35_deepseek_v4_context_parallel_analysis.md` §三——四页中对 Megatron 原生(非 TE)all-gather 实现给出最完整的代码级 walkthrough,含 forward/backward 全流程与显式通信量公式;`13_megatron_cp_analysis.md` §3.3 给出的是同一份源码的精简版本,内容一致,合并为同一骨架。
 
 不依赖 TransformerEngine 时,CP 通过 `AttentionFuncionWithContextParallel`(`torch.autograd.Function`)实现:forward 中 all-gather KV,backward 中 reduce-scatter 梯度。
 
@@ -409,7 +409,7 @@ CP 下的 attention mask 同样需要 §3.3 的 zigzag 重排(`to_zz_mask_attn_b
 
 ### 6.2 通信量与不可重叠性
 
-> 骨架取自 `35_deepseek_v4_context_parallel_analysis.md` §3.2 注记(显式公式)+ §2.4.2"关键缺陷"(KV buffer 显存代价);`13_megatron_cp_analysis.md` 调度器②.3-②.4 补充定性开销表与适用场景判断。
+> 骨架取自 `35_deepseek_v4_context_parallel_analysis.md` §三 注记(显式公式)+ §2.4.2"关键缺陷"(KV buffer 显存代价);`13_megatron_cp_analysis.md` §3.3 补充定性开销表与适用场景判断。
 
 **通信量(每 head stride)**:
 
@@ -444,7 +444,7 @@ $$
 
 ### 6.3 反向:ReduceScatter
 
-> 骨架取自 `35_deepseek_v4_context_parallel_analysis.md` §3.3。
+> 骨架取自 `35_deepseek_v4_context_parallel_analysis.md` §三。
 
 Backward 与 forward 结构对称,额外引入 **ReduceScatter** 对 dK/dV 梯度分片:
 
@@ -535,7 +535,7 @@ Ulysses(A2A)适合高带宽域内,Ring(P2P)适合跨节点异步重叠。大规�
 
 ### 8.1 动机
 
-> 骨架取自 `13_megatron_cp_analysis.md` 调度器④.1(概念/拓扑动机)+ `20_mindspeed_context_parallel_analysis.md` §5.2(为什么比纯任一种好的量化论证)。
+> 骨架取自 `13_megatron_cp_analysis.md` §3.5(概念/拓扑动机)+ `20_mindspeed_context_parallel_analysis.md` §5.2(为什么比纯任一种好的量化论证)。
 
 ```
 CP 组 = 低层(节点内)× 高层(节点间)
@@ -631,7 +631,7 @@ for m in range(ulysses_degree):                 # ring 子组:跨步 stride=u(�
 
 ## 10. 动态上下文并行(Dynamic CP)—— 通用机制部分
 
-> 骨架取自 `13_megatron_cp_analysis.md` §7(细节最完整,含新增字段、解析函数、CUDA Graph 守卫等源码级要点);`35_deepseek_v4_context_parallel_analysis.md` §8.1-8.2 给出的是同一 Megatron 机制的简化复述 + 一段更直接的 forward 保存/恢复代码,作为补充并入。DSv4 对 Dynamic CP 的**不支持限制**是模型特有内容,不在此列,留在 DeepSeek-V4 页 §8.3。
+> 骨架取自 `13_megatron_cp_analysis.md` §4(细节最完整,含新增字段、解析函数、CUDA Graph 守卫等源码级要点);`35_deepseek_v4_context_parallel_analysis.md` §8.1-8.2 给出的是同一 Megatron 机制的简化复述 + 一段更直接的 forward 保存/恢复代码,作为补充并入。DSv4 对 Dynamic CP 的**不支持限制**是模型特有内容,不在此列,留在 DeepSeek-V4 页 §8.3。
 
 ### 10.1 动机
 

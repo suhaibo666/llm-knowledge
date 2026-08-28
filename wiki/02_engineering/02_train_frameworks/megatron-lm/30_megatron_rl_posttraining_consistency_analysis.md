@@ -7,7 +7,7 @@ title: "Megatron-LM RL 后训练适配与训推一致性深度解析"
 > **源码基线**:`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`(`dev`,2026-08-27)
 > **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 已在新基线下逐条重核。
 > 核心:`megatron/core/resharding/`(refit)、`inference/`(推理引擎)、`inference/quantization/`(MXFP8)、`post_training/modelopt/`、`megatron/core/transformer/transformer_config.py`(`transformer_impl='inference_optimized'`)
-> 配套阅读:`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §3(refit 基础)、`17_megatron_parallelism_orchestration_analysis.md`、`14_megatron_ep_analysis.md`
+> 配套阅读:`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §5(refit 基础)、`17_megatron_parallelism_orchestration_analysis.md`、`14_megatron_ep_analysis.md`
 > 定位:系统性专题。前面文档讲预训练;本文讲 **RL 后训练**(RLHF / GRPO / PPO)对 Megatron 提出的特殊需求,以及核心难题 **训推一致性(train-inference consistency)**。
 > **三方分工**:本文是 Megatron 训练侧的 refit / 训推一致性实现(逐项收敛 gap);三平面机制视角(weight publish 协议、跨框架不变量)见 [[01_posttraining_infra_mechanism_analysis]] 第 6 节;verl 在 Megatron+vLLM 场景下的具体同步调用链见 [[33_megatron_vllm_weight_sync_analysis]]。
 > **叙事顺序**:本页按五拍组织——背景 → 为什么这么设计(含被否掉的替代)→ 实现思路与细节 → 约束 → 发展趋势。
@@ -102,7 +102,7 @@ README 把流程写成五步:各 rank 抽元数据 → `dist.gather_object()` �
 
 ## 2. 解法①:Refit 消除"权重陈旧"
 
-`resharding/`(详见 `27_megatron_tp_fsdp_resharding_supplements_analysis.md` §3)。每个 RL 迭代结束,`swap_model_weights(train_model, infer_model)` 把训练模型的**最新权重**搬进推理模型。
+`resharding/`(详见 `27_megatron_tp_fsdp_resharding_supplements_analysis.md` §5)。每个 RL 迭代结束,`swap_model_weights(train_model, infer_model)` 把训练模型的**最新权重**搬进推理模型。
 
 ```python
 from megatron.core.resharding import prepare_swap_model_weights, swap_model_weights

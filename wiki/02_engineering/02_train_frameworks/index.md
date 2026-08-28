@@ -77,7 +77,7 @@ title: "训练框架 — 目录索引"
 ## 页面列表
 
 > **段位**(kb-reorg P7 Task 7,2026-07-31):子目录索引不编号;段 2(20-29)特定框架/组件的机制深挖;段 3(30-39)跨框架对比矩阵与方法论指南。
-> **20 号编号空出**(2026-08-01,spec §3.4 补执行):`20_megatron_pp_parallelism_analysis.md` 已并入 `megatron-lm/15_megatron_pp_schedulers_analysis.md`(§0.4/§6/其余增量)并删除,`megatron-lm/26_megatron_pp_supplements_analysis.md` 同批一并删除;`20` 号不重新分配,详见 `wiki/changelog.md`。
+> **20 号编号空出**(2026-08-01,spec §3.4 补执行):`20_megatron_pp_parallelism_analysis.md` 已并入 `megatron-lm/15_megatron_pp_schedulers_analysis.md`(§1.5/§8/其余增量)并删除,`megatron-lm/26_megatron_pp_supplements_analysis.md` 同批一并删除;`20` 号不重新分配,详见 `wiki/changelog.md`。
 
 | 页面 | 层次 | 来源 | 核心主题 |
 |------|------|------|---------|

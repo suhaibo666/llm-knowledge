@@ -711,7 +711,7 @@ Shared Expert MLP 在独立 CUDA stream 上运行，通过状态机与 token dis
 
 Shared Expert 使用**状态机**管理调用顺序：`IDLE → PRE_FORWARD_COMM_DONE → FC1_FORWARD_DONE → FC2_FORWARD_DONE → POST_FORWARD_COMM_DONE → IDLE`，确保在不同 dispatcher 类型下正确同步。
 
-> 相关：deepseek_v4 场景下 Shared Expert 启用 TP（`T_shared>1`）时该开关会额外关闭 TP 的 AG/RS、改走手动调度，见 [[34_deepseek_v4_tensor_parallel_analysis]] §7.2（`megatron/core/transformer/moe/shared_experts.py:158-170`）——两处描述的是同一 `moe_shared_expert_overlap` 机制在不同场景下的效果。
+> 相关：deepseek_v4 场景下 Shared Expert 启用 TP（`T_shared>1`）时该开关会额外关闭 TP 的 AG/RS、改走手动调度，见 [[34_deepseek_v4_tensor_parallel_analysis]] §8.2（`megatron/core/transformer/moe/shared_experts.py:158-170`）——两处描述的是同一 `moe_shared_expert_overlap` 机制在不同场景下的效果。
 
 ---
 
@@ -899,6 +899,6 @@ class TransformerLayerNode(ScheduleNode):
 
 - [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[14_megatron_ep_analysis]] · [[15_megatron_pp_schedulers_analysis]]
 - [[16_megatron_distributed_optimizer_analysis]] · [[17_megatron_parallelism_orchestration_analysis]]
-- [[34_deepseek_v4_tensor_parallel_analysis]] —— Shared Expert Overlap 在 TP>1 场景下的效果（§7.2）
+- [[34_deepseek_v4_tensor_parallel_analysis]] —— Shared Expert Overlap 在 TP>1 场景下的效果（§8.2）
 - [[30_comm_compute_overlap_analysis]] —— 跨框架（Megatron/torchtitan/MindSpeed）通算掩盖对比矩阵，本页是其 Megatron 权威机制页
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

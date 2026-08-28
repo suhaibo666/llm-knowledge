@@ -532,7 +532,7 @@ class AllGatherComm:
 
 ### 8.1-8.2 Dynamic CP 的通用机制(配置 + forward 期 cp_group 切换/恢复)
 
-Dynamic CP 允许在 training 过程中根据输入序列长度动态调整 CP size(`dynamic_context_parallel`/`sequence_packing_scheduler='default_dynamic_cp'` 配置校验、Attention forward 中 `packed_seq_params.cp_group` 临时替换 `pg_collection.cp` 且结束后恢复的完整代码)是 Megatron 通用机制,非 DSv4 特有,已整体归一到理论页 §10(该节正是以本页 `megatron/core/transformer/attention.py:1363-1366` 的 save/restore 代码为骨架之一,并与 `13_megatron_cp_analysis.md` §3 的 `PackedSeqParams`/`resolve_cp_group` 源码合并)。DSv4 对该机制的下游限制见 §8.3。
+Dynamic CP 允许在 training 过程中根据输入序列长度动态调整 CP size(`dynamic_context_parallel`/`sequence_packing_scheduler='default_dynamic_cp'` 配置校验、Attention forward 中 `packed_seq_params.cp_group` 临时替换 `pg_collection.cp` 且结束后恢复的完整代码)是 Megatron 通用机制,非 DSv4 特有,已整体归一到理论页 §10(该节正是以本页 `megatron/core/transformer/attention.py:1363-1366` 的 save/restore 代码为骨架之一,并与 `13_megatron_cp_analysis.md` §4 的 `PackedSeqParams`/`resolve_cp_group` 源码合并)。DSv4 对该机制的下游限制见 §8.3。
 
 ### 8.3 Dynamic CP 对 DSv4 的限制
 

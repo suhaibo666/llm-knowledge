@@ -99,7 +99,7 @@ FP8 不是孤立特性,它**贯穿前面所有文档**:
 - **TP**:`ColumnParallel`/`RowParallel` 的 GEMM 走 FP8;`megatron/core/fp8_utils.py` 有 `is_column_parallel_linear`/`is_row_parallel_linear` 判定。
 - **EP**:dispatch 的 A2A 用 FP8,通信量砍半(`14_megatron_ep_analysis.md`);`combined_1f1b` 的 fp8 上下文(`15_megatron_pp_schedulers_analysis.md` 调度器⑤)。
 - **DP/ZeRO**:`--fp8-param-gather` 让参数 all-gather 走 FP8(`quantize_param_shard`、`post_all_gather_processing`,`megatron/core/fp8_utils.py:659/674`)。
-- **重计算**:fp8 下用 `te_checkpoint`(`18_megatron_recompute_analysis.md` §3.4);delayed scaling 与某些 selective 重计算互斥。
+- **重计算**:fp8 下用 `te_checkpoint`(`18_megatron_recompute_analysis.md` §4.4);delayed scaling 与某些 selective 重计算互斥。
 - **首尾层**:`is_first_last_bf16_layer`(`:698`)—— 首尾层常保留 bf16(对精度最敏感)。
 
 FP4(`megatron/core/fp4_utils.py`、`Fp4Recipe`)同理,更激进,Blackwell 专属。
@@ -176,7 +176,7 @@ CUDA Graph 要求**每次重放的张量形状、地址固定**。问题:
 ### 5.3 MoE 专用融合(README)
 
 MoE 是"小算子最多"的地方,有三个关键融合开关:
-- `--moe-grouped-gemm`:把 `E/e` 个专家的 GEMM 批成**一次 grouped GEMM**(`14_megatron_ep_analysis.md` §2.4)。
+- `--moe-grouped-gemm`:把 `E/e` 个专家的 GEMM 批成**一次 grouped GEMM**(`14_megatron_ep_analysis.md` §3.4)。
 - `--moe-router-fusion`:路由投影 + top-k + softmax + aux loss 融成少数 kernel。
 - `--moe-permute-fusion`:token 置换/反置换融合。
 
@@ -235,7 +235,7 @@ num_microbatches = global_batch_size / (micro_batch_size · data_parallel_size)
 ### 8.4 与融合页的交叉补充
 
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
-> §5 算子融合的增量(TE op-fuser 把 grouped MLP 的 GEMM+激活+GEMM 整链融合、ScaledSReLU/Clamped-SwiGLU、`TEFusedDenseMLP` 在 SM100+/MXFP8 触发 CuTe GEMM-SwiGLU 融合、mHC 多后端重写、DSv4 稀疏注意力融合 kernel、TE 版本依赖)详见 [[21_megatron_fusion_operators_analysis]] §7。这些融合与本页 FP8/MXFP8 精度强相关(多数融合 kernel 的收益正建立在 MXFP8 量化 epilogue 上)。
+> §5 算子融合的增量(TE op-fuser 把 grouped MLP 的 GEMM+激活+GEMM 整链融合、ScaledSReLU/Clamped-SwiGLU、`TEFusedDenseMLP` 在 SM100+/MXFP8 触发 CuTe GEMM-SwiGLU 融合、mHC 多后端重写、DSv4 稀疏注意力融合 kernel、TE 版本依赖)详见 [[21_megatron_fusion_operators_analysis]] §8。这些融合与本页 FP8/MXFP8 精度强相关(多数融合 kernel 的收益正建立在 MXFP8 量化 epilogue 上)。
 
 ---
 

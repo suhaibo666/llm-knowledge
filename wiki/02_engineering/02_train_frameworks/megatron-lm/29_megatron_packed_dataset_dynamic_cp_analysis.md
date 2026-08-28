@@ -7,10 +7,10 @@ title: "Megatron-LM 序列打包与动态 CP 的统一流水线深度解析"
 > **源码基线**:`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`(`dev`,2026-08-27)
 > **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 已在新基线下逐条重核。
 > 核心文件:`megatron/core/datasets/data_schedule.py`(1166 行)、`megatron/core/datasets/data_schedule_utils.py`(936 行);`megatron/core/packed_seq_params.py`;`megatron/core/pipeline_parallel/hybrid_cp_schedule.py`
-> 配套阅读:`11_megatron_dataset_analysis.md` §5、`15_megatron_pp_schedulers_analysis.md` §6.1、`13_megatron_cp_analysis.md`
+> 配套阅读:`11_megatron_dataset_analysis.md` §5、`15_megatron_pp_schedulers_analysis.md` §8.1、`13_megatron_cp_analysis.md`
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
 > **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
-> 定位:**勘误 + 补全**。`11_megatron_dataset_analysis.md` 把序列打包当主角、`15_megatron_pp_schedulers_analysis.md` §6.1(原 `26_megatron_pp_supplements_analysis.md` §3,2026-08-01 合并入 15_)把动态 CP 当独立特性,分两处讲。本文说清楚:**在代码里它俩是同一条流水线、同一个类继承链** —— 动态 CP 不是和打包并列协作的特性,而是打包调度器的一个子类。
+> 定位:**勘误 + 补全**。`11_megatron_dataset_analysis.md` 把序列打包当主角、`15_megatron_pp_schedulers_analysis.md` §8.1(原 `26_megatron_pp_supplements_analysis.md` §3,2026-08-01 合并入 15_)把动态 CP 当独立特性,分两处讲。本文说清楚:**在代码里它俩是同一条流水线、同一个类继承链** —— 动态 CP 不是和打包并列协作的特性,而是打包调度器的一个子类。
 
 ---
 
@@ -156,7 +156,7 @@ while sample_id_seqlens:
 - `next_hdp_group` + `dcp_make_buckets_equal`:把样本贪心打包成一个个 **hdp 组**(hybrid DP 组),使每个 DP×CP rank 的总工作量大致相等。
 - `align_sample_id_groups`:VPP 时对齐组数。
 
-> `megatron/core/pipeline_parallel/hybrid_cp_schedule.py` 的 `BalancedCPScheduler`(`15_megatron_pp_schedulers_analysis.md` §6.1 分析过)是同一套均衡逻辑的**类形态兄弟**;`megatron/core/datasets/data_schedule.py` 的 `DefaultDynamicCPScheduler` 实际用的是 `megatron/core/datasets/data_schedule_utils.py` 里的**函数形态** `dcp_*` + `next_hdp_group`。二者算法一致,是并行实现。**真正把打包与动态 CP 缝在一起的集成点,是 `DefaultDynamicCPScheduler`。**
+> `megatron/core/pipeline_parallel/hybrid_cp_schedule.py` 的 `BalancedCPScheduler`(`15_megatron_pp_schedulers_analysis.md` §8.1 分析过)是同一套均衡逻辑的**类形态兄弟**;`megatron/core/datasets/data_schedule.py` 的 `DefaultDynamicCPScheduler` 实际用的是 `megatron/core/datasets/data_schedule_utils.py` 里的**函数形态** `dcp_*` + `next_hdp_group`。二者算法一致,是并行实现。**真正把打包与动态 CP 缝在一起的集成点,是 `DefaultDynamicCPScheduler`。**
 
 ### 4.3 两者对照
 
@@ -192,7 +192,7 @@ while sample_id_seqlens:
 
 动态 CP 的衔接点:
 - `PackedSeqParams` 的 **`local_cp_size` / `cp_group`** —— 每个打包 buffer **可以有自己的 CP 度**(因为不同 microbatch 的样本长度不同 → 动态 CP 给的 cp_size 不同)。
-- `get_cp_slice_for_thd`(`megatron/core/datasets/data_schedule_utils.py:26`):一个打包 THD buffer 若 `cp_size > 1`,要再沿序列切给 CP rank —— 且按 zigzag 均衡(因果掩码,见 `13_megatron_cp_analysis.md` §2.2)。
+- `get_cp_slice_for_thd`(`megatron/core/datasets/data_schedule_utils.py:26`):一个打包 THD buffer 若 `cp_size > 1`,要再沿序列切给 CP rank —— 且按 zigzag 均衡(因果掩码,见 `13_megatron_cp_analysis.md`)。
 - `get_batch_on_this_rank_for_sequence_packing(..., dynamic_cp=True)`(`megatron/core/datasets/data_schedule.py:564`)取数时读 `batch['local_cp_size']`,据此决定本 buffer 的 CP 切分。
 
 所以:**打包决定"buffer 里装哪几条序列",动态 CP 决定"这个 buffer 用几张卡的 CP、怎么切" —— 二者在同一个 `PackedSeqParams` 对象上汇合**。
@@ -241,7 +241,7 @@ while sample_id_seqlens:
 | 文档 | 原表述 | 修正 |
 |------|--------|------|
 | `11_megatron_dataset_analysis.md` §5.3 | "packed dataset 配 `BalancedCPScheduler`" | 不是"配",而是 `DefaultDynamicCPScheduler` **本身就是** packing 调度器的子类;动态 CP = `is_dynamic_cp=True` 档 |
-| `15_megatron_pp_schedulers_analysis.md` §6.1 | 把 `megatron/core/pipeline_parallel/hybrid_cp_schedule.py` `BalancedCPScheduler` 当作"动态 CP"主体 | 那只是均衡逻辑的**类形态兄弟**;集成入口在 `megatron/core/datasets/data_schedule.py` `DefaultDynamicCPScheduler`,用 `megatron/core/datasets/data_schedule_utils.py` 的 `dcp_*` 函数 |
+| `15_megatron_pp_schedulers_analysis.md` §8.1 | 把 `megatron/core/pipeline_parallel/hybrid_cp_schedule.py` `BalancedCPScheduler` 当作"动态 CP"主体 | 那只是均衡逻辑的**类形态兄弟**;集成入口在 `megatron/core/datasets/data_schedule.py` `DefaultDynamicCPScheduler`,用 `megatron/core/datasets/data_schedule_utils.py` 的 `dcp_*` 函数 |
 
 建议在那两份文档对应位置各加一行指针:"打包与动态 CP 的统一流水线见 `29_megatron_packed_dataset_dynamic_cp_analysis.md`"。
 
@@ -306,7 +306,7 @@ CP 切片前,被切的每个张量必须是 1-D 且与 `padding_mask` 等长(`me
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`(2026-08-27;由 `ee3f1ff` 重定基线而来)。源码行号以该 commit 为准。配套文档:`11_megatron_dataset_analysis.md`、`15_megatron_pp_schedulers_analysis.md` §6.1、`13_megatron_cp_analysis.md`、`packed_seq_params` 见 `11_megatron_dataset_analysis.md` §5.2。*
+*生成依据:`Megatron-LM` `dev` 分支 `71092579`(2026-08-27;由 `ee3f1ff` 重定基线而来)。源码行号以该 commit 为准。配套文档:`11_megatron_dataset_analysis.md`、`15_megatron_pp_schedulers_analysis.md` §8.1、`13_megatron_cp_analysis.md`、`packed_seq_params` 见 `11_megatron_dataset_analysis.md` §5.2。*
 
 ## Related Pages
 

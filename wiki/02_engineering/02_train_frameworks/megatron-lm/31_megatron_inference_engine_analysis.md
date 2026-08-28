@@ -195,7 +195,7 @@ seq B 的 KV  →  block table = [blk1, blk2]
 
 ## 7. CUDA Graph 在推理里
 
-decode step 是"逐 token、kernel 小而多",CPU 启动开销占比极高 —— 正是 CUDA Graph 的主场(见 `23_megatron_precision_cudagraph_fusion_analysis.md` §2)。
+decode step 是"逐 token、kernel 小而多",CPU 启动开销占比极高 —— 正是 CUDA Graph 的主场(见 `23_megatron_precision_cudagraph_fusion_analysis.md` §4)。
 
 但 CUDA Graph 要求形状固定,而连续批处理的"当前 batch 里有几个请求"是变化的。`DynamicInferenceEngine` 的解法(`create_cuda_graphs`,`megatron/core/inference/engines/dynamic_engine.py:367`):
 - 预先枚举一组**典型的 batch 维度**(`cuda_graph_batch_dimensions_list`,不同 request count)。

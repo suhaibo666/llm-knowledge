@@ -281,7 +281,7 @@ NTP 的前提、代价与失效条件已在 [[25_megatron_nonuniform_tp_analysis
 | **Nonuniform TP** | 千卡级长训练要扛 TP 组单点故障 | `12_megatron_tp_analysis.md` 的容错扩展;非侵入式子类 |
 | **Resharding / Refit** | RL 训练,训练模型↔推理模型布局不同 | 独立工具,跨 `17_megatron_parallelism_orchestration_analysis.md` 描述的两套布局搬权重 |
 
-至此"第一层补遗"3 份文档全部完成:① 并行编排 capstone、② PP 补遗(2026-08-01 起并入 `15_megatron_pp_schedulers_analysis.md` §0.4/§6,原页已删除)、③ TP·FSDP·resharding 补遗(本页)。
+至此"第一层补遗"3 份文档全部完成:① 并行编排 capstone、② PP 补遗(2026-08-01 起并入 `15_megatron_pp_schedulers_analysis.md` §1.5/§8,原页已删除)、③ TP·FSDP·resharding 补遗(本页)。
 
 ---
 
