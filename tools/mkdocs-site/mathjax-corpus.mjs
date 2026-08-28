@@ -126,6 +126,29 @@ function maskHtmlComments(line, state) {
   return chars.join("")
 }
 
+function stripBlockquotePrefix(line) {
+  return line.replace(/^ {0,3}(?:>\s?)+/, "")
+}
+
+function openingFence(line) {
+  const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/)
+  if (!match || (match[1][0] === "`" && match[2].includes("`"))) return null
+  return { character: match[1][0], length: match[1].length }
+}
+
+function closesFence(line, fence) {
+  const match = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/)
+  return Boolean(
+    match
+    && match[1][0] === fence.character
+    && match[1].length >= fence.length,
+  )
+}
+
+function isIndentedCode(line) {
+  return /^(?: {4}|\t)/.test(line)
+}
+
 function unescapedDoubleDollars(line) {
   const positions = []
   let index = 0
@@ -228,20 +251,23 @@ export function markdownMathInputs(markdown, sourcePath = "<memory>") {
     const lineNumber = index + 1
     if (frontmatterEnd >= 0 && index <= frontmatterEnd) continue
     const rawLine = lines[index]
-    const fenceMarker = rawLine.match(/^ {0,3}(?:>\s*)?(`{3,}|~{3,})/)
-    if (fenceMarker) {
-      const marker = fenceMarker[1]
-      if (!fence) {
-        fence = { character: marker[0], length: marker.length }
-        continue
-      }
-      if (marker[0] === fence.character && marker.length >= fence.length) fence = null
+    if (fence) {
+      if (closesFence(stripBlockquotePrefix(rawLine), fence)) fence = null
       continue
     }
-    if (fence) continue
 
-    const withoutComments = maskHtmlComments(rawLine, htmlCommentState)
-    const line = maskInlineCode(withoutComments).replace(/^ {0,3}(?:>\s?)+/, "")
+    const withoutInlineCode = maskInlineCode(rawLine)
+    const withoutComments = maskHtmlComments(withoutInlineCode, htmlCommentState)
+    const line = stripBlockquotePrefix(withoutComments)
+    if (!inDisplay) {
+      const openedFence = openingFence(line)
+      if (openedFence) {
+        fence = openedFence
+        continue
+      }
+      if (isIndentedCode(line)) continue
+    }
+
     const doublePositions = unescapedDoubleDollars(line)
     let cursor = 0
     for (const position of doublePositions) {
@@ -301,8 +327,13 @@ async function renderPages(browser, origin, items, externalRequests, failedReque
   const page = await browser.newPage()
   page.on("request", (request) => {
     const url = new URL(request.url())
-    if (["http:", "https:"].includes(url.protocol) && url.hostname !== "127.0.0.1") {
+    if (["http:", "https:"].includes(url.protocol) && url.origin !== origin) {
       externalRequests.push(request.url())
+    }
+  })
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      failedRequests.push(`${response.status()} ${response.url()}`)
     }
   })
   page.on("requestfailed", (request) => {

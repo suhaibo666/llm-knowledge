@@ -4,7 +4,10 @@ import json
 import shutil
 import subprocess
 import sys
+import threading
 import time
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -266,6 +269,31 @@ def _run_mathjax_corpus(repo: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+class _QuietHttpHandler(SimpleHTTPRequestHandler):
+    def log_message(self, _format: str, *args: object) -> None:
+        pass
+
+
+def _serve_directory(directory: Path) -> tuple[ThreadingHTTPServer, threading.Thread]:
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        partial(_QuietHttpHandler, directory=str(directory)),
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread
+
+
+def _inject_article_script(site: Path, source: str) -> None:
+    article = site / "domain/10_article.html"
+    html = article.read_text(encoding="utf-8")
+    assert "</body>" in html
+    article.write_text(
+        html.replace("</body>", f'<script src="{source}"></script></body>', 1),
+        encoding="utf-8",
+    )
+
+
 def test_renderer_contract_fails_fast_without_owned_puppeteer(tmp_path: Path) -> None:
     isolated_repo = tmp_path / "isolated-repo"
     isolated_tests = isolated_repo / "tools/mkdocs_site/tests"
@@ -358,6 +386,70 @@ def test_mathjax_corpus_discovers_and_renders_blockquoted_display_math(
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "PASS: 1 formulas across 1 pages" in completed.stdout
+
+
+def test_mathjax_corpus_rejects_runtime_from_alternate_loopback_origin(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    site, _ = build_fixture_site(
+        tmp_path, fixture_wiki, renderer_contract=True
+    )
+    runtime = site / "assets/alternate-runtime.js"
+    runtime.write_text("window.__alternateRuntimeLoaded = true;\n", encoding="utf-8")
+    server, thread = _serve_directory(site)
+    try:
+        port = server.server_address[1]
+        _inject_article_script(
+            site,
+            f"http://127.0.0.1:{port}/assets/alternate-runtime.js",
+        )
+        completed = _run_mathjax_corpus(site.parent)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert completed.returncode != 0
+    assert "requested external runtime assets" in completed.stderr
+
+
+def test_mathjax_corpus_rejects_missing_runtime_asset(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    site, _ = build_fixture_site(
+        tmp_path, fixture_wiki, renderer_contract=True
+    )
+    _inject_article_script(site, "/llm-knowledge/assets/missing-runtime.js")
+
+    completed = _run_mathjax_corpus(site.parent)
+
+    assert completed.returncode != 0
+    assert "failed asset requests" in completed.stderr
+    assert "404" in completed.stderr
+
+
+def test_mathjax_corpus_rejects_visible_mjx_merror(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    site, _ = build_fixture_site(
+        tmp_path, fixture_wiki, renderer_contract=True
+    )
+    article = site / "domain/10_article.html"
+    html = article.read_text(encoding="utf-8")
+    assert r"\boldsymbol{\theta}" in html
+    article.write_text(
+        html.replace(
+            r"\boldsymbol{\theta}",
+            r"\begin{aligned}\tag{bad}x&=y\end{aligned}",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    completed = _run_mathjax_corpus(site.parent)
+
+    assert completed.returncode != 0
+    assert "tag" in completed.stderr.lower()
 
 
 def test_mkdocs_aggregate_runs_mathjax_corpus_gate() -> None:
