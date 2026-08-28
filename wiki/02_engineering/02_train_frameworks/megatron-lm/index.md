@@ -15,7 +15,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 
 ## 段位速查(kb-reorg P7 Task 7)
 
-> 段 0(01)导览/capstone;段 1(10-19)16 篇源码级系统分析系列中最贴近核心流水线的 10 篇——模型结构→数据→TP/CP/EP/PP 四并行轴→分布式优化器→编排→重计算→存档;段 2(20-29)系列剩余的深挖/补遗/系统专题共 9 篇,以及 Core Topics 的专题深挖(除 audit 外);段 3(30-35)RL/推理集成、度量方法论与两篇 DeepSeek-V4 案例研究。与下文按主题分组的表格是同一组页面的两种视图。
+> 段 0(01)导览/capstone;段 1(10-19)16 篇源码级系统分析系列中最贴近核心流水线的 10 篇——模型结构→数据→TP/CP/EP/PP 四并行轴→分布式优化器→编排→重计算→存档;段 2(20-29)系列剩余的深挖/补遗/系统专题共 9 篇,以及 Core Topics 的专题深挖(除 audit 外);段 3(30-36)RL/推理集成、度量方法论与两篇 DeepSeek-V4 案例研究,另含 **36 Megatron-FSDP 专页**——它按主题本属段 2,但段 1(10-19)与段 2(20-29)均已排满(26 号是 2026-08-01 PP 三页合并空出的号、明确不重新分配),按 `CLAUDE.md`「某段超出容量时占用相邻空段并在段位表注明」取段 3 首个空号。与下文按主题分组的表格是同一组页面的两种视图。
 > **26 号编号空出**(2026-08-01,spec §3.4 补执行):`26_megatron_pp_supplements_analysis.md` 已并入 [[15_megatron_pp_schedulers_analysis]](§1.5 进程组拓扑、§8 混合 CP 动态调度/多模块流水线、§1.4/⑤.6/②.2 等增量)并删除;父目录 `20_megatron_pp_parallelism_analysis.md` 同批一并删除。`26` 号不重新分配,详见 `wiki/changelog.md`。
 
 | 段 | 编号 | 页面 |
@@ -23,7 +23,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 | 0 | 01 | [[01_megatron_moe_training_optimization_analysis]] |
 | 1 | 10-19 | [[10_megatron_model_structure_analysis]] · [[11_megatron_dataset_analysis]] · [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[14_megatron_ep_analysis]] · [[15_megatron_pp_schedulers_analysis]] · [[16_megatron_distributed_optimizer_analysis]] · [[17_megatron_parallelism_orchestration_analysis]] · [[18_megatron_recompute_analysis]] · [[19_megatron_dist_checkpointing_analysis]] |
 | 2 | 20-25,27-29(26 空出) | [[20_megatron_comm_overlap_analysis]] · [[21_megatron_fusion_operators_analysis]] · [[22_megatron_memory_optimization_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]] · [[24_megatron_linear_cross_entropy_analysis]] · [[25_megatron_nonuniform_tp_analysis]] · [[27_megatron_tp_fsdp_resharding_supplements_analysis]] · [[28_megatron_training_stability_observability_analysis]] · [[29_megatron_packed_dataset_dynamic_cp_analysis]] |
-| 3 | 30-35 | [[30_megatron_rl_posttraining_consistency_analysis]] · [[31_megatron_inference_engine_analysis]] · [[32_megatron_tflops_analysis]] · [[33_megatron_vllm_weight_sync_analysis]] · [[34_deepseek_v4_tensor_parallel_analysis]] · [[35_deepseek_v4_context_parallel_analysis]] |
+| 3 | 30-36 | [[30_megatron_rl_posttraining_consistency_analysis]] · [[31_megatron_inference_engine_analysis]] · [[32_megatron_tflops_analysis]] · [[33_megatron_vllm_weight_sync_analysis]] · [[34_deepseek_v4_tensor_parallel_analysis]] · [[35_deepseek_v4_context_parallel_analysis]] · [[36_megatron_fsdp_analysis]] |
 
 ## Core Topics（系列外的全景报告与专题深挖）
 
@@ -53,6 +53,7 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 | [[mooncake_analysis]] | (跨域,推理框架目录)Mooncake KVCache 中心化分离式服务架构 |
 | [[34_deepseek_v4_tensor_parallel_analysis]] | **DeepSeek-V4 TP 切分实现**:DSv4 Hybrid Attention 强制 `tp==1` 的架构动因、Compressor/Indexer duplicated、mHC 非 TP-aware 梯度同步、MoE Shared/Routed expert TP 约束、通信量修正(2026-06-25 自父目录移入)。模型侧架构见 [[../../../01_theory/01_models/deepseek/13_deepseek_v4_analysis\|13_deepseek_v4_analysis]] |
 | [[35_deepseek_v4_context_parallel_analysis]] | **DeepSeek-V4 CP 实现**:MLA 对 CP 通信量降低 ~128 倍、CSA/HCA 压缩注意力与 CP 的论文↔代码 gap 审计、RoPE 的 CP 感知、TE CP 的 cp_stream 双缓冲、Dynamic CP 对 MLA 的不支持(2026-06-25 自父目录移入)。CP 通用机制见 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis\|20_ring_attention_and_context_parallel_analysis]];论文级 CP 算法见 [[../../../01_theory/01_models/deepseek/23_deepseek_v4_cp_analysis\|23_deepseek_v4_cp_analysis]] |
+| [[36_megatron_fsdp_analysis]] | **Megatron-FSDP(ZeRO-2/3)子系统**:为什么把分片切在 FSDP unit 的扁平桶上而不是切参数(零 `COPY`)、DP-LCM 网格与四步分组、四类 buffer 与 ZeRO 阶梯、hook 状态机与双流水线、与 EP/TP/HSDP 的叠加、接入层 `mcore_fsdp_adapter`。它是一个可 `pip install` 的独立分发包(#3443 解耦),三方对比(DistributedOptimizer / TorchFSDP2 / MegatronFSDP)见 [[16_megatron_distributed_optimizer_analysis]] |
 
 ## 源码级系统分析系列(Megatron-LM `dev` @ `232c478d4`, 2026-06 刷新)
 
