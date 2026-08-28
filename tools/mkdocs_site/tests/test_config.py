@@ -18,6 +18,7 @@ site_dir: site
 use_directory_urls: false
 theme:
   name: material
+  custom_dir: tools/mkdocs-site/overrides
 plugins:
   - search
 """
@@ -44,7 +45,10 @@ def test_generated_config_inherits_base_and_targets_absolute_build_paths(
     assert generated["site_name"] == "Test Knowledge Wiki"
     assert generated["site_url"] == "https://suhaibo666.github.io/llm-knowledge/"
     assert generated["use_directory_urls"] is False
-    assert generated["theme"] == {"name": "material"}
+    assert generated["theme"] == {
+        "name": "material",
+        "custom_dir": str((paths.repo / "tools/mkdocs-site/overrides").resolve()),
+    }
     assert generated["plugins"] == ["search"]
     assert generated["docs_dir"] == str(paths.staging.resolve())
     assert generated["site_dir"] == str(paths.site.resolve())
@@ -57,6 +61,11 @@ def test_generated_config_inherits_base_and_targets_absolute_build_paths(
             ]
         },
     ]
+    assert generated["extra"]["source_atlas"] == {
+        "theory": [],
+        "engineering": [],
+        "courses": [],
+    }
 
 
 def test_generated_config_rejects_changed_base_path_contract(
@@ -74,3 +83,21 @@ def test_generated_config_rejects_changed_base_path_contract(
         write_generated_config(paths, inventory, stage_result)
 
     assert not paths.generated_config.exists()
+
+
+def test_generated_config_rejects_changed_theme_override_contract(
+    tmp_path: Path, fixture_wiki: Path
+) -> None:
+    paths = make_repo(tmp_path, fixture_wiki)
+    (paths.repo / "mkdocs.yml").write_text(
+        BASE_CONFIG.replace(
+            "custom_dir: tools/mkdocs-site/overrides",
+            "custom_dir: overrides",
+        ),
+        encoding="utf-8",
+    )
+    inventory = scan_inventory(paths.wiki)
+    stage_result = stage_wiki(paths, inventory)
+
+    with pytest.raises(ConfigError, match=r"theme\.custom_dir.*tools/mkdocs-site/overrides"):
+        write_generated_config(paths, inventory, stage_result)

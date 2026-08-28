@@ -61,6 +61,9 @@ def test_stage_wiki_preserves_frontmatter_and_writes_routes(
             "is_index": False,
         },
     }
+    root = (paths.staging / "index.md").read_text(encoding="utf-8")
+    root_frontmatter = yaml.safe_load(root.split("---", 2)[1])
+    assert root_frontmatter["template"] == "home.html"
     assert result.asset_count == 1
     assert result.route_manifest == paths.cache / "routes.json"
     assert len(json.loads(result.route_manifest.read_text(encoding="utf-8"))) == 3

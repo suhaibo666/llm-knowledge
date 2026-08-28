@@ -1,0 +1,9 @@
+{
+  "name": "llm-knowledge-mkdocs-assets",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "mathjax": "4.1.3",
+    "mermaid": "11.17.2"
+  }
+}

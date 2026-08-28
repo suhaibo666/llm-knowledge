@@ -31,7 +31,11 @@ def recording_operations(
         events.append(("mkdocs", command, cwd))
         return exit_code
 
-    return Operations(scan, stage, config, run)
+    def rewrite(site: Path, received_inventory: object) -> None:
+        assert received_inventory is inventory
+        events.append(("rewrite", site))
+
+    return Operations(scan, stage, config, run, rewrite)
 
 
 def test_build_stages_writes_config_then_runs_strict_mkdocs(tmp_path: Path) -> None:
@@ -94,3 +98,19 @@ def test_stage_stops_after_inventory_and_staging() -> None:
 
     assert result == 0
     assert [event[0] for event in events] == ["inventory", "stage"]
+
+
+def test_successful_build_rewrites_search_after_mkdocs() -> None:
+    events: list[tuple[object, ...]] = []
+
+    result = main(["build"], recording_operations(events, Path("generated.yml")))
+
+    assert result == 0
+    assert [event[0] for event in events] == [
+        "inventory",
+        "stage",
+        "config",
+        "mkdocs",
+        "rewrite",
+    ]
+    assert events[-1][1] == events[1][1].site

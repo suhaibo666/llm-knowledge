@@ -64,6 +64,8 @@ def _render_page(markdown: str, page: PageRecord, inventory: Inventory) -> str:
         "nav_title": page.nav_title,
         "is_index": page.is_index,
     }
+    if page.relative.as_posix() == "index.md":
+        frontmatter["template"] = "home.html"
     rendered_frontmatter = yaml.safe_dump(
         frontmatter, allow_unicode=True, sort_keys=False
     )
@@ -80,6 +82,35 @@ def _render_page(markdown: str, page: PageRecord, inventory: Inventory) -> str:
 def _remove_tree(path: Path) -> None:
     if path.exists():
         shutil.rmtree(path)
+
+
+def _copy_theme_assets(paths: BuildPaths, staging: Path) -> int:
+    tooling = paths.repo / "tools/mkdocs-site"
+    if not tooling.exists():
+        return 0
+    source_assets = tooling / "assets"
+    if not source_assets.is_dir():
+        raise FileNotFoundError(f"missing MkDocs theme assets: {source_assets}")
+    target_assets = staging / "assets"
+    shutil.copytree(source_assets, target_assets, dirs_exist_ok=True)
+    copied = sum(1 for path in source_assets.rglob("*") if path.is_file())
+    vendor_files = (
+        (
+            tooling / "node_modules/mathjax/tex-chtml.js",
+            target_assets / "vendor/mathjax/tex-chtml.js",
+        ),
+        (
+            tooling / "node_modules/mermaid/dist/mermaid.min.js",
+            target_assets / "vendor/mermaid/mermaid.min.js",
+        ),
+    )
+    for source, destination in vendor_files:
+        if not source.is_file():
+            raise FileNotFoundError(f"missing pinned renderer asset: {source}")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        copied += 1
+    return copied
 
 
 def _commit_stage(
@@ -161,6 +192,8 @@ def stage_wiki(paths: BuildPaths, inventory: Inventory) -> StageResult:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
             asset_count += 1
+
+        asset_count += _copy_theme_assets(paths, temporary_stage)
 
         write_route_manifest(build_route_manifest(inventory), temporary_manifest)
         _commit_stage(

@@ -10,6 +10,7 @@ from pathlib import Path
 from .config import write_generated_config
 from .inventory import scan_inventory
 from .models import BuildPaths, Inventory
+from .search_index import rewrite_search_index
 from .staging import StageResult, stage_wiki
 
 
@@ -19,6 +20,7 @@ class Operations:
     stage: Callable[[BuildPaths, Inventory], StageResult]
     config: Callable[[BuildPaths, Inventory, StageResult], Path]
     mkdocs: Callable[[list[str], Path], int]
+    rewrite_search: Callable[[Path, Inventory], None]
 
 
 def _run_mkdocs(command: list[str], cwd: Path) -> int:
@@ -26,7 +28,13 @@ def _run_mkdocs(command: list[str], cwd: Path) -> int:
 
 
 def _default_operations() -> Operations:
-    return Operations(scan_inventory, stage_wiki, write_generated_config, _run_mkdocs)
+    return Operations(
+        scan_inventory,
+        stage_wiki,
+        write_generated_config,
+        _run_mkdocs,
+        rewrite_search_index,
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -60,7 +68,10 @@ def main(
         "-f",
         str(generated_config),
     ]
-    return active.mkdocs(command, paths.repo)
+    result = active.mkdocs(command, paths.repo)
+    if args.command == "build" and result == 0:
+        active.rewrite_search(paths.site, inventory)
+    return result
 
 
 if __name__ == "__main__":
