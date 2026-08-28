@@ -161,7 +161,6 @@ def _serve_command(generated_config: Path, port: int) -> list[str]:
         "-m",
         "mkdocs",
         "serve",
-        "--dirtyreload",
         "--dev-addr",
         f"127.0.0.1:{port}",
         "-f",

@@ -158,7 +158,6 @@ def test_serve_stages_writes_config_then_binds_mkdocs_to_loopback(
         "-m",
         "mkdocs",
         "serve",
-        "--dirtyreload",
         "--dev-addr",
         "127.0.0.1:8000",
         "-f",

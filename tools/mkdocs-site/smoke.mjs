@@ -418,6 +418,10 @@ export async function assertSearchSurvivesRefresh(puppeteer, executablePath) {
   const target = path.join(domain, "13_megatron_cp_analysis.md")
   const targetSuffix = "/domain/13_megatron_cp_analysis.html"
   const query = "13_megatron_cp_analysis"
+  const auxiliaries = Array.from(
+    { length: 12 },
+    (_, index) => path.join(domain, `20_auxiliary_${String(index).padStart(2, "0")}.md`),
+  )
   const port = await freeLoopbackPort()
   const origin = `http://127.0.0.1:${port}`
   let browser
@@ -430,6 +434,10 @@ export async function assertSearchSurvivesRefresh(puppeteer, executablePath) {
       target,
       "---\ntitle: 上下文并行测试\n---\n# 上下文并行测试\ninitial body\n",
     )
+    await Promise.all(auxiliaries.map((file, index) => writeFile(
+      file,
+      `# Auxiliary ${index}\ninitial auxiliary body ${index}\n`,
+    )))
     await assert.rejects(
       access(path.join(fixture, "site")),
       (error) => error.code === "ENOENT",
@@ -440,17 +448,30 @@ export async function assertSearchSurvivesRefresh(puppeteer, executablePath) {
     browser = await puppeteer.launch({ executablePath, headless: true })
     const page = await browser.newPage()
     await searchFor(page, origin, query, targetSuffix)
+    const baselineIndex = await searchIndexStats(origin, targetSuffix)
 
-    await writeFile(
-      target,
-      "---\ntitle: 上下文并行测试\n---\n# 上下文并行测试\nrefresh marker round two\n",
-    )
+    await Promise.all([
+      writeFile(
+        target,
+        "---\ntitle: 上下文并行测试\n---\n# 上下文并行测试\nrefresh marker round two\n",
+      ),
+      ...auxiliaries.map((file, index) => writeFile(
+        file,
+        `# Auxiliary ${index}\nrefreshed auxiliary body ${index}\n`,
+      )),
+    ])
     await waitForBody(
       `${origin}${targetSuffix}`,
       "refresh marker round two",
       service,
     )
     await searchFor(page, origin, query, targetSuffix)
+    const refreshedIndex = await searchIndexStats(origin, targetSuffix)
+    assert.deepEqual(
+      refreshedIndex,
+      baselineIndex,
+      "whole-tree multi-page restage changed search-index cardinality",
+    )
   } catch (error) {
     error.message += `\n${service?.output.join("").slice(-20_000) ?? ""}`
     throw error
@@ -462,6 +483,30 @@ export async function assertSearchSurvivesRefresh(puppeteer, executablePath) {
     } finally {
       await rm(fixture, { recursive: true, force: true })
     }
+  }
+}
+
+async function searchIndexStats(origin, targetSuffix) {
+  const response = await fetchWithContext(diagnosticSearchIndexUrl(origin), {
+    cache: "no-store",
+    signal: AbortSignal.timeout(5_000),
+  })
+  assert.ok(response.ok, `search index returned HTTP ${response.status}`)
+  const payload = await response.json()
+  const docs = payload.docs ?? []
+  const locations = docs.map((doc) => doc.location)
+  const uniqueLocations = new Set(locations).size
+  assert.equal(
+    docs.length,
+    uniqueLocations,
+    `search index contains ${docs.length - uniqueLocations} duplicate locations`,
+  )
+  return {
+    total: docs.length,
+    uniqueLocations,
+    targetCount: locations.filter((location) => (
+      new URL(location, origin).pathname.endsWith(targetSuffix)
+    )).length,
   }
 }
 
