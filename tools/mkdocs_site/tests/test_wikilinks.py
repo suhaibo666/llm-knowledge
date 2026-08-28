@@ -124,17 +124,93 @@ def test_rewriter_externalizes_repository_root_and_pinned_source_links(
     assert "`[literal](tools/labs_torch_compile/README.md)`" in rewritten
 
 
-def test_rewriter_rejects_unpinned_megatron_source_links(
+def test_rewriter_uses_only_explicit_header_source_baseline(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    historical = "1111111111111111111111111111111111111111"
+    declared = "2222222222222222222222222222222222222222"
+    markdown = (
+        "# Page\n\n"
+        f"> Historical pin: `NVIDIA/Megatron-LM@{historical}`.\n"
+        f"> **源码基线**：`NVIDIA/Megatron-LM@{declared}`\n\n"
+        "## Body\n\n"
+        "[source](Megatron-LM/megatron/core/model_parallel_config.py)\n"
+        f"Previous baseline: `NVIDIA/Megatron-LM@{historical}`."
+    )
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert f"https://github.com/NVIDIA/Megatron-LM/blob/{declared}/" in rewritten
+    assert f"https://github.com/NVIDIA/Megatron-LM/blob/{historical}/" not in rewritten
+
+
+@pytest.mark.parametrize(
+    ("header", "reason"),
+    [
+        (
+            "# Page\n\n## History\n\n"
+            "NVIDIA/Megatron-LM@1111111111111111111111111111111111111111\n",
+            "source baseline",
+        ),
+        (
+            "# Page\n\n"
+            "> **源码基线**：`NVIDIA/Megatron-LM@"
+            "1111111111111111111111111111111111111111`\n"
+            "> **源码基线**：`NVIDIA/Megatron-LM@"
+            "2222222222222222222222222222222222222222`\n\n"
+            "## Body\n",
+            "conflicting",
+        ),
+    ],
+)
+def test_rewriter_rejects_missing_or_conflicting_header_source_baseline(
+    header: str,
+    reason: str,
     resolver_fixture: tuple[PageRecord, Inventory],
 ) -> None:
     page, inventory = resolver_fixture
 
-    with pytest.raises(LinkResolutionError, match="Megatron-LM.*baseline"):
+    with pytest.raises(LinkResolutionError, match=reason):
         rewrite_wikilinks(
-            "[source](Megatron-LM/megatron/core/model_parallel_config.py)",
+            header + "[source](Megatron-LM/megatron/core/model_parallel_config.py)",
             page,
             inventory,
         )
+
+
+@pytest.mark.parametrize(
+    ("target", "content"),
+    [
+        ("tools/local.md", "# Local page\n"),
+        ("Megatron-LM/diagram.svg", "<svg/>"),
+    ],
+)
+def test_rewriter_preserves_wiki_local_repository_like_targets(
+    target: str, content: str, tmp_path: Path
+) -> None:
+    (tmp_path / "section").mkdir()
+    (tmp_path / "section/current.md").write_text("# Current\n", encoding="utf-8")
+    local = tmp_path / Path(target)
+    local.parent.mkdir(parents=True, exist_ok=True)
+    local.write_text(content, encoding="utf-8")
+    inventory = scan_inventory(tmp_path)
+    page = inventory.by_relative[PurePosixPath("section/current")]
+    markdown = f"[local]({target})"
+
+    assert rewrite_wikilinks(markdown, page, inventory) == markdown
+
+
+def test_rewriter_skips_repository_like_links_in_indented_code(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = (
+        "    [lab](tools/labs_torch_compile/README.md)\n"
+        "\t[source](Megatron-LM/megatron/core/model_parallel_config.py)\n"
+    )
+
+    assert rewrite_wikilinks(markdown, page, inventory) == markdown
 
 
 @pytest.mark.parametrize("fence", ["```", "~~~"])

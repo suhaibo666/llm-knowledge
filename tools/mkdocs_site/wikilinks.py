@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import posixpath
 import re
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from markdown.extensions.toc import slugify_unicode, unique
 
@@ -15,7 +15,12 @@ _WIKILINK = re.compile(r"!?\[\[([^\[\]\n]+?)\]\]")
 _REPOSITORY_LINK = re.compile(
     r"(?P<open>\]\()(?P<target>(?:tools/|Megatron-LM/)[^)\s]+)(?P<close>\))"
 )
-_MEGATRON_BASELINE = re.compile(r"NVIDIA/Megatron-LM@([0-9a-f]{7,40})")
+_MEGATRON_BASELINE_DECLARATION = re.compile(
+    r"^>\s+\*\*源码基线\*\*.*?NVIDIA/Megatron-LM@"
+    r"([0-9a-fA-F]{40})(?![0-9a-fA-F])",
+    re.MULTILINE,
+)
+_SECOND_LEVEL_HEADING = re.compile(r"^ {0,3}##(?:[ \t]+|$)", re.MULTILINE)
 
 
 class LinkResolutionError(ValueError):
@@ -64,6 +69,47 @@ def _closes_fence(line: str, fence: str) -> bool:
 
 def _normalize_relative(value: str) -> PurePosixPath:
     return PurePosixPath(posixpath.normpath(value))
+
+
+def _megatron_header_baselines(markdown: str) -> tuple[str, ...]:
+    first_section = _SECOND_LEVEL_HEADING.search(markdown)
+    header = markdown[: first_section.start()] if first_section is not None else markdown
+    return tuple(
+        dict.fromkeys(
+            match.group(1).lower()
+            for match in _MEGATRON_BASELINE_DECLARATION.finditer(header)
+        )
+    )
+
+
+def _wiki_root(page: PageRecord) -> Path:
+    root = page.source.resolve()
+    for _ in page.relative.parts:
+        root = root.parent
+    return root
+
+
+def _is_wiki_local_standard_target(
+    target: str, page: PageRecord, inventory: Inventory
+) -> bool:
+    path_text = target.split("#", 1)[0].split("?", 1)[0].replace("\\", "/")
+    root_relative = _normalize_relative(path_text)
+    source_relative = _normalize_relative(
+        (page.relative.parent / path_text).as_posix()
+    )
+    for candidate in (root_relative, source_relative):
+        inventory_key = (
+            candidate.with_suffix("") if candidate.suffix == ".md" else candidate
+        )
+        if inventory_key in inventory.by_relative:
+            return True
+
+    wiki_root = _wiki_root(page)
+    for candidate in (wiki_root / path_text, page.source.parent / path_text):
+        resolved = candidate.resolve()
+        if resolved.is_relative_to(wiki_root) and resolved.is_file():
+            return True
+    return False
 
 
 def _resolve_target(
@@ -146,26 +192,36 @@ def _rewrite_text_segment(
     page: PageRecord,
     inventory: Inventory,
     line: int,
-    megatron_baseline: str | None,
+    megatron_baselines: tuple[str, ...],
 ) -> str:
     def replace_repository_link(match: re.Match[str]) -> str:
         target = match.group("target")
+        if _is_wiki_local_standard_target(target, page, inventory):
+            return match.group(0)
         if target.startswith("tools/"):
             destination = (
                 "https://github.com/suhaibo666/llm-knowledge/blob/main/" + target
             )
         else:
             match_line = line + text.count("\n", 0, match.start())
-            if megatron_baseline is None:
+            if not megatron_baselines:
                 raise LinkResolutionError(
                     page,
                     match_line,
                     match.group(0),
                     "Megatron-LM link requires a page source baseline",
                 )
+            if len(megatron_baselines) > 1:
+                raise LinkResolutionError(
+                    page,
+                    match_line,
+                    match.group(0),
+                    "conflicting Megatron-LM source baseline declarations",
+                    megatron_baselines,
+                )
             destination = (
                 "https://github.com/NVIDIA/Megatron-LM/blob/"
-                f"{megatron_baseline}/{target.removeprefix('Megatron-LM/')}"
+                f"{megatron_baselines[0]}/{target.removeprefix('Megatron-LM/')}"
             )
         return f"{match.group('open')}{destination}{match.group('close')}"
 
@@ -207,7 +263,7 @@ def _rewrite_inline_code_aware(
     page: PageRecord,
     inventory: Inventory,
     line: int,
-    megatron_baseline: str | None,
+    megatron_baselines: tuple[str, ...],
 ) -> str:
     output: list[str] = []
     cursor = 0
@@ -217,7 +273,7 @@ def _rewrite_inline_code_aware(
         if tick_start < 0:
             output.append(
                 _rewrite_text_segment(
-                    text[cursor:], page, inventory, segment_line, megatron_baseline
+                    text[cursor:], page, inventory, segment_line, megatron_baselines
                 )
             )
             break
@@ -227,7 +283,7 @@ def _rewrite_inline_code_aware(
                 page,
                 inventory,
                 segment_line,
-                megatron_baseline,
+                megatron_baselines,
             )
         )
         tick_end = _backtick_run_end(text, tick_start)
@@ -244,8 +300,7 @@ def _rewrite_inline_code_aware(
 
 def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> str:
     """Convert supported wiki and repository links while preserving literal code."""
-    baseline_match = _MEGATRON_BASELINE.search(markdown)
-    megatron_baseline = baseline_match.group(1) if baseline_match is not None else None
+    megatron_baselines = _megatron_header_baselines(markdown)
     output: list[str] = []
     visible_lines: list[str] = []
     visible_start_line = 1
@@ -259,7 +314,7 @@ def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> 
                     page,
                     inventory,
                     visible_start_line,
-                    megatron_baseline,
+                    megatron_baselines,
                 )
             )
             visible_lines.clear()
@@ -271,6 +326,11 @@ def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> 
             if _closes_fence(line, fence):
                 fence = None
                 visible_start_line = line_number + 1
+            continue
+        if line.startswith(("    ", "\t")):
+            flush_visible()
+            output.append(line)
+            visible_start_line = line_number + 1
             continue
         if fence_match is not None:
             flush_visible()
@@ -286,7 +346,7 @@ def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> 
             flush_visible()
             output.append(
                 _rewrite_inline_code_aware(
-                    line, page, inventory, line_number, megatron_baseline
+                    line, page, inventory, line_number, megatron_baselines
                 )
             )
             visible_start_line = line_number + 1
