@@ -4,7 +4,7 @@ import html
 import posixpath
 import re
 from pathlib import Path, PurePosixPath
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 from markdown.extensions.toc import slugify, slugify_unicode, unique
 
@@ -25,7 +25,11 @@ _LOCAL_FILE_LINK = re.compile(
     re.IGNORECASE,
 )
 _LOCAL_CODE_LOCATOR_LINK = re.compile(
-    r"(?<!\\)!?\[(?P<label>[^\]\n]+)\]\(\s*`[^`\n]*\.[A-Za-z0-9_]+:\d+(?:-\d+)?`\s*\)"
+    r"(?<!\\)!?\[(?P<label>[^\]\n]+)\]\(\s*`(?P<target>[^`\n]+)`\s*\)"
+)
+_LOCAL_CODE_LOCATOR_TARGET = re.compile(
+    r"(?:\.{1,2}[\\/])?(?:[^:/\\?#\n`]+[\\/])*"
+    r"[^:/\\?#\n`]+\.[A-Za-z0-9_]+:\d+(?:-\d+)?"
 )
 _EXISTING_HTML_ANCHOR = re.compile(
     r"\b(?:id|name)\s*=\s*['\"](?P<anchor>[^'\"]+)['\"]",
@@ -40,6 +44,10 @@ _MEGATRON_BASELINE_DECLARATION = re.compile(
     re.MULTILINE,
 )
 _SECOND_LEVEL_HEADING = re.compile(r"^ {0,3}##(?:[ \t]+|$)", re.MULTILINE)
+_SECTION_NUMBER_PREFIX = re.compile(
+    r"^\s*(?:\d+(?:\.\d+)*|[一二三四五六七八九十百]+)"
+    r"(?:\s*[、.．:：]\s*|\s+)"
+)
 
 
 class LinkResolutionError(ValueError):
@@ -279,7 +287,14 @@ def _rewrite_text_segment(
         return f"{match.group('open')}{destination}{match.group('close')}"
 
     text = _LOCAL_FILE_LINK.sub(replace_local_file_link, text)
-    text = _LOCAL_CODE_LOCATOR_LINK.sub(replace_local_file_link, text)
+    text = _LOCAL_CODE_LOCATOR_LINK.sub(
+        lambda match: (
+            replace_local_file_link(match)
+            if _is_local_code_locator(match.group("target"))
+            else match.group(0)
+        ),
+        text,
+    )
     text = _REPOSITORY_LINK.sub(replace_repository_link, text)
     output: list[str] = []
     cursor = 0
@@ -352,33 +367,118 @@ def _visible_markdown(markdown: str) -> str:
     return "".join(output)
 
 
-def _manual_heading_aliases(markdown: str) -> dict[int, tuple[str, ...]]:
+def _visible_heading_lines(markdown: str) -> tuple[str, ...]:
+    headings: list[str] = []
+    fence: str | None = None
+    for line in markdown.splitlines(keepends=True):
+        fence_match = _FENCE_START.match(line)
+        if fence is not None:
+            if _closes_fence(line, fence):
+                fence = None
+            continue
+        if _indentation_columns(line) >= 4:
+            continue
+        if fence_match is not None:
+            fence = fence_match.group(1)
+            continue
+        if _ATX_HEADING_TEXT.match(line) is not None:
+            headings.append(line)
+    return tuple(headings)
+
+
+def _without_section_number(heading: str) -> str:
+    return _SECTION_NUMBER_PREFIX.sub("", heading, count=1)
+
+
+def _heading_aliases(
+    markdown: str, existing_anchors: set[str]
+) -> dict[int, tuple[str, ...]]:
     visible = _visible_markdown(markdown)
-    heading_texts = tuple(
-        match.group("text").strip()
-        for line in visible.splitlines(keepends=True)
+    all_headings = tuple(
+        (len(match.group("marks")), match.group("text").strip())
+        for line in _visible_heading_lines(markdown)
         if (match := _ATX_HEADING_TEXT.match(line)) is not None
-        and len(match.group("marks")) in {2, 3}
     )
+    used_ascii: set[str] = set()
+    used_unicode: set[str] = set()
+    canonical_owners: dict[str, set[tuple[str, int]]] = {}
+    headings: list[tuple[str, str, str, int]] = []
+    for sequence, (level, heading) in enumerate(all_headings):
+        ascii_anchor = unique(slugify(heading, "-"), used_ascii)
+        unicode_anchor = unique(slugify_unicode(heading, "-"), used_unicode)
+        canonical_owners.setdefault(ascii_anchor, set()).add(("canonical", sequence))
+        if level in {2, 3}:
+            headings.append((heading, ascii_anchor, unicode_anchor, sequence))
+
+    heading_texts = tuple(heading for heading, _, _, _ in headings)
     heading_keys = tuple(_loose_anchor_key(heading) for heading in heading_texts)
-    aliases: dict[int, list[str]] = {}
+    unnumbered_keys = tuple(
+        _loose_anchor_key(_without_section_number(heading)) for heading in heading_texts
+    )
+    manual_owners: dict[str, set[int]] = {}
     for match in _SAME_PAGE_FRAGMENT_LINK.finditer(visible):
         label_key = _loose_anchor_key(match.group("label"))
         fragment = unquote(html.unescape(match.group("fragment")))
         fragment_key = _loose_anchor_key(fragment)
         candidates = {
             index
-            for index, heading_key in enumerate(heading_keys)
+            for index, (heading_key, unnumbered_key) in enumerate(
+                zip(heading_keys, unnumbered_keys, strict=True)
+            )
             if fragment_key == heading_key
             or label_key == heading_key
-            or (len(label_key) >= 4 and heading_key.endswith(label_key))
+            or (label_key and label_key == unnumbered_key)
         }
         if len(candidates) == 1:
-            index = candidates.pop()
-            aliases.setdefault(index, []).append(fragment)
+            manual_owners.setdefault(fragment, set()).update(candidates)
+
+    owners = {alias: set(values) for alias, values in canonical_owners.items()}
+    for alias in existing_anchors:
+        owners.setdefault(alias, set()).add(("existing", -1))
+    proposed: dict[int, set[str]] = {index: set() for index in range(len(headings))}
+    for index, (_, ascii_anchor, unicode_anchor, _) in enumerate(headings):
+        if unicode_anchor != ascii_anchor:
+            proposed[index].add(unicode_anchor)
+            owners.setdefault(unicode_anchor, set()).add(("alias", index))
+    for alias, indexes in manual_owners.items():
+        for index in indexes:
+            proposed[index].add(alias)
+            owners.setdefault(alias, set()).add(("alias", index))
+
     return {
-        index: tuple(dict.fromkeys(values)) for index, values in aliases.items()
+        index: tuple(
+            sorted(
+                alias
+                for alias in aliases
+                if alias not in existing_anchors
+                and owners.get(alias) == {("alias", index)}
+            )
+        )
+        for index, aliases in proposed.items()
     }
+
+
+def _is_local_code_locator(target: str) -> bool:
+    if target.startswith("//"):
+        return False
+    if _LOCAL_CODE_LOCATOR_TARGET.fullmatch(target) is not None:
+        return True
+    try:
+        parsed = urlsplit(target)
+    except ValueError:
+        return False
+    if parsed.scheme.casefold() == "file":
+        return True
+    if parsed.scheme or parsed.netloc:
+        return False
+    return False
+
+
+def _next_local_code_locator(text: str, start: int) -> re.Match[str] | None:
+    for match in _LOCAL_CODE_LOCATOR_LINK.finditer(text, start):
+        if _is_local_code_locator(match.group("target")):
+            return match
+    return None
 
 
 def _rewrite_inline_code_aware(
@@ -392,7 +492,7 @@ def _rewrite_inline_code_aware(
     cursor = 0
     while cursor < len(text):
         tick_start = text.find("`", cursor)
-        locator = _LOCAL_CODE_LOCATOR_LINK.search(text, cursor)
+        locator = _next_local_code_locator(text, cursor)
         segment_line = line + text.count("\n", 0, cursor)
         if locator is not None and (tick_start < 0 or locator.start() < tick_start):
             output.append(
@@ -443,9 +543,7 @@ def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> 
         html.unescape(match.group("anchor"))
         for match in _EXISTING_HTML_ANCHOR.finditer(visible_markdown)
     }
-    manual_heading_aliases = _manual_heading_aliases(markdown)
-    used_ascii_anchors: set[str] = set()
-    used_unicode_anchors: set[str] = set()
+    heading_aliases = _heading_aliases(markdown, existing_anchors)
     heading_index = 0
     output: list[str] = []
     visible_lines: list[str] = []
@@ -492,21 +590,12 @@ def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> 
             flush_visible()
             heading_match = _ATX_HEADING_TEXT.match(line)
             if heading_match is not None and len(heading_match.group("marks")) in {2, 3}:
-                heading = heading_match.group("text").strip()
-                ascii_anchor = unique(slugify(heading, "-"), used_ascii_anchors)
-                unicode_anchor = unique(
-                    slugify_unicode(heading, "-"), used_unicode_anchors
-                )
-                aliases: list[str] = []
-                if unicode_anchor != ascii_anchor:
-                    aliases.append(unicode_anchor)
-                aliases.extend(manual_heading_aliases.get(heading_index, ()))
+                aliases = heading_aliases.get(heading_index, ())
                 heading_index += 1
-                for alias in dict.fromkeys(aliases):
-                    if alias not in existing_anchors:
-                        output.append(
-                            f'<a name="{html.escape(alias, quote=True)}"></a>\n'
-                        )
+                for alias in aliases:
+                    output.append(
+                        f'<a name="{html.escape(alias, quote=True)}"></a>\n'
+                    )
             output.append(
                 _rewrite_inline_code_aware(
                     line, page, inventory, line_number, megatron_baselines

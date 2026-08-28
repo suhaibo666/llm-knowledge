@@ -91,7 +91,7 @@ def _load_routes(route_manifest: Path) -> tuple[_Route, ...]:
         source = _manifest_path(item.get("source"), "source")
         output = _manifest_path(item.get("output"), "output")
         raw_urls = item.get("public_urls")
-        if not isinstance(raw_urls, list) or not all(
+        if not isinstance(raw_urls, list) or not raw_urls or not all(
             isinstance(url, str) and url for url in raw_urls
         ):
             raise ValueError(f"route public_urls must be non-empty strings: {source}")
@@ -206,8 +206,12 @@ def _inside_site(site: Path, candidate: PurePosixPath) -> tuple[Path, bool]:
     return resolved, True
 
 
-def _existing_candidate(site: Path, target: _Target) -> PurePosixPath | None:
+def _existing_candidate(
+    site: Path, site_files: frozenset[PurePosixPath], target: _Target
+) -> PurePosixPath | None:
     for candidate in target.candidates:
+        if candidate not in site_files:
+            continue
         resolved, safe = _inside_site(site, candidate)
         if safe and resolved.is_file():
             return candidate
@@ -299,10 +303,13 @@ def validate_site(
     missing_assets: set[str] = set()
     missing_legacy_routes: set[str] = set()
     referenced_assets: set[PurePosixPath] = set()
-    generated_html = {
+    site_files = frozenset(
         PurePosixPath(path.relative_to(site).as_posix())
-        for path in site.rglob("*.html")
+        for path in site.rglob("*")
         if path.is_file()
+    )
+    generated_html = {
+        path for path in site_files if path.suffix.casefold() in {".htm", ".html"}
     }
     source_asset_html = {
         path for path in generated_html if "assets" in path.parts
@@ -310,11 +317,17 @@ def validate_site(
 
     for route in routes:
         output_path, output_safe = _inside_site(site, route.output)
-        output_exists = output_safe and output_path.is_file()
+        output_exists = (
+            route.output in site_files and output_safe and output_path.is_file()
+        )
+        if not output_exists:
+            missing_legacy_routes.add(
+                f"{route.source.as_posix()} -> {route.output.as_posix()}"
+            )
         for public_url in route.public_urls:
             target = _target_for(public_url, route.output, project_prefix)
             maps_to_output = not target.unsafe and route.output in target.candidates
-            if not output_exists or not maps_to_output:
+            if not maps_to_output:
                 missing_legacy_routes.add(
                     f"{route.source.as_posix()} -> {target.display}"
                 )
@@ -324,7 +337,9 @@ def validate_site(
             (
                 output
                 for output in (*route_outputs, *_AUXILIARY_HTML, *source_asset_html)
-                if _inside_site(site, output)[0].is_file()
+                if output in site_files
+                and _inside_site(site, output)[1]
+                and _inside_site(site, output)[0].is_file()
             ),
             key=lambda path: path.as_posix(),
         )
@@ -337,7 +352,7 @@ def validate_site(
             continue
         scanned.add(source)
         source_path, source_safe = _inside_site(site, source)
-        if not source_safe or not source_path.is_file():
+        if source not in site_files or not source_safe or not source_path.is_file():
             continue
         soup = BeautifulSoup(source_path.read_text(encoding="utf-8"), "html.parser")
         page_anchors: set[str] = set()
@@ -362,10 +377,14 @@ def validate_site(
                 (candidate for candidate in target.candidates if candidate in route_outputs),
                 None,
             )
-            existing = _existing_candidate(site, target)
+            existing = _existing_candidate(site, site_files, target)
             if route_target is not None:
                 resolved, safe = _inside_site(site, route_target)
-                if not safe or not resolved.is_file():
+                if (
+                    route_target not in site_files
+                    or not safe
+                    or not resolved.is_file()
+                ):
                     broken_links.add(item)
                     continue
                 concrete = route_target

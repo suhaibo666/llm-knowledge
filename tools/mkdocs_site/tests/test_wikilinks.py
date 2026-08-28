@@ -67,6 +67,18 @@ def test_rewriter_neutralizes_visible_local_file_links_but_preserves_code(
     assert rewritten.count("file:///") == 3
 
 
+def test_rewriter_neutralizes_backtick_wrapped_file_url(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+
+    rewritten = rewrite_wikilinks(
+        "[source](`file:///E:/private/source.py:17`)", page, inventory
+    )
+
+    assert rewritten == "source *(local source)*"
+
+
 def test_real_npu_page_has_no_publishable_local_file_links() -> None:
     repo = Path(__file__).resolve().parents[3]
     wiki = repo / "wiki"
@@ -134,8 +146,24 @@ def test_rewriter_places_declared_manual_fragment_alias_at_matching_heading(
 
     rewritten = rewrite_wikilinks(markdown, page, inventory)
 
-    assert f'<a name="{persistent}"></a>\n## 四、' in rewritten
+    assert f'<a name="{persistent}"></a>' in rewritten
+    assert rewritten.index(f'<a name="{persistent}"></a>') < rewritten.index("## 四、")
     assert f'<a name="{historical_typo}"></a>\n### 4.1' in rewritten
+
+
+def test_rewriter_matches_exact_fragment_to_heading_with_inline_code(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    fragment = "10-2025-2026-进展从-guard_size_oblivious"
+    markdown = (
+        f"[section](#{fragment})\n\n"
+        "## 10. 2025-2026 进展从 `guard_size_oblivious`\n"
+    )
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert f'<a name="{fragment}"></a>' in rewritten
 
 
 def test_rewriter_does_not_guess_ambiguous_manual_fragment_alias(
@@ -153,6 +181,28 @@ def test_rewriter_does_not_guess_ambiguous_manual_fragment_alias(
     assert 'name="historical-typo"' not in rewritten
 
 
+def test_rewriter_does_not_guess_manual_alias_from_heading_suffix(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = "[Design](#invented)\n\n## Architecture Design\n"
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert 'name="invented"' not in rewritten
+
+
+def test_rewriter_drops_manual_alias_claimed_by_two_headings(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = "[Alpha](#shared)\n[Beta](#shared)\n\n## Alpha\n\n## Beta\n"
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert 'name="shared"' not in rewritten
+
+
 def test_rewriter_neutralizes_backtick_wrapped_local_code_locator(
     resolver_fixture: tuple[PageRecord, Inventory],
 ) -> None:
@@ -165,6 +215,44 @@ def test_rewriter_neutralizes_backtick_wrapped_local_code_locator(
     )
 
     assert rewritten == "DispatchTable computation *(local source)*"
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://example.com/source.py:12",
+        "mailto:owner@example.com:12",
+        "//cdn.example.com/source.py:12",
+    ],
+)
+def test_rewriter_preserves_backtick_wrapped_nonlocal_urls(
+    target: str,
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = f"[source](`{target}`)"
+
+    assert rewrite_wikilinks(markdown, page, inventory) == markdown
+
+
+def test_rewriter_neutralizes_only_visible_local_code_locators(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    locator = "[source](`src/runtime.py:12-14`)"
+    markdown = (
+        f"{locator}\n"
+        f"``{locator}``\n"
+        "```markdown\n"
+        f"{locator}\n"
+        "```\n"
+        f"    {locator}\n"
+    )
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert rewritten.startswith("source *(local source)*\n")
+    assert rewritten.count(locator) == 3
 
 
 def test_rewriter_rejects_embed_and_block_reference(

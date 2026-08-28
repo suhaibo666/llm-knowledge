@@ -4,7 +4,10 @@ import json
 from pathlib import Path
 
 import pytest
+from markdown import markdown as render_markdown
 
+from tools.mkdocs_site.inventory import scan_inventory
+from tools.mkdocs_site.wikilinks import rewrite_wikilinks
 from tools.mkdocs_site.validate_site import (
     SiteValidationError,
     ValidationReport,
@@ -231,6 +234,58 @@ def test_validator_reports_unsafe_schemes_and_encoded_traversal(
     assert getattr(report, category) == (f"index.html -> {target}",)
 
 
+def test_rendered_suffix_guess_remains_a_missing_anchor(tmp_path: Path) -> None:
+    wiki = tmp_path / "wiki"
+    wiki.mkdir()
+    source = wiki / "index.md"
+    source.write_text(
+        "# Test page\n\n[Design](#invented)\n\n## Architecture Design\n",
+        encoding="utf-8",
+    )
+    inventory = scan_inventory(wiki)
+    page = inventory.by_relative[next(iter(inventory.by_relative))]
+    rendered = render_markdown(
+        rewrite_wikilinks(source.read_text(encoding="utf-8"), page, inventory),
+        extensions=["toc"],
+    )
+    site = make_site(tmp_path, index_body=rendered)
+
+    report = validate_site(site, route_manifest=write_routes(tmp_path))
+
+    assert report.missing_anchors == ("index.html -> index.html#invented",)
+
+
+def test_validator_requires_exact_case_for_pages_and_assets(tmp_path: Path) -> None:
+    site = make_site(
+        tmp_path,
+        index_links=["Guide.html"],
+        index_body='<img src="assets/logo.png">',
+        pages={
+            "guide.html": "guide",
+            "assets/Logo.png": "logo",
+        },
+    )
+    manifest = write_routes(tmp_path, "guide.html")
+
+    report = validate_site(site, route_manifest=manifest)
+
+    assert report.broken_links == ("index.html -> Guide.html",)
+    assert report.missing_assets == ("index.html -> assets/logo.png",)
+
+
+def test_validator_requires_exact_case_for_manifest_output(tmp_path: Path) -> None:
+    site = make_site(tmp_path, pages={"guide.html": "guide"})
+    manifest = write_routes(
+        tmp_path,
+        "Guide.html",
+        public_urls={"Guide.html": ["/Guide.html"]},
+    )
+
+    report = validate_site(site, route_manifest=manifest)
+
+    assert report.missing_legacy_routes == ("Guide.md -> Guide.html",)
+
+
 def test_validator_checks_every_declared_public_url_maps_to_its_output(
     tmp_path: Path,
 ) -> None:
@@ -249,19 +304,34 @@ def test_validator_checks_every_declared_public_url_maps_to_its_output(
     assert report.missing_legacy_routes == ("guide.md -> wrong",)
 
 
-def test_validator_reports_all_public_urls_when_route_output_is_missing(
+def test_validator_reports_missing_route_output_independently_of_public_urls(
     tmp_path: Path,
 ) -> None:
     site = make_site(tmp_path)
-    manifest = write_routes(tmp_path, "missing.html")
+    manifest = write_routes(
+        tmp_path,
+        "nested/missing.html",
+        public_urls={"nested/missing.html": ["/nested/missing"]},
+    )
 
     report = validate_site(site, route_manifest=manifest)
 
     assert report.pages == 2
     assert report.missing_legacy_routes == (
-        "missing.md -> missing",
-        "missing.md -> missing.html",
+        "nested/missing.md -> nested/missing.html",
     )
+
+
+def test_validator_rejects_route_without_public_urls(tmp_path: Path) -> None:
+    site = make_site(tmp_path)
+    manifest = write_routes(
+        tmp_path,
+        "missing.html",
+        public_urls={"missing.html": []},
+    )
+
+    with pytest.raises(ValueError, match="public_urls"):
+        validate_site(site, route_manifest=manifest)
 
 
 def test_report_output_is_grouped_sorted_and_fails_only_for_errors(
