@@ -25,8 +25,8 @@ flowchart TD
     end
     subgraph 反向执行["反向(Engine 执行)"]
       R["GraphRoot<br/>(loss.grad_fn)"] --> M["MulBackward0"]
-      M -->|next_edges[0]| AX["AccumulateGrad(x)"]
-      M -->|next_edges[1]| AY["AccumulateGrad(y)"]
+      M -->|next_edges index 0| AX["AccumulateGrad(x)"]
+      M -->|next_edges index 1| AY["AccumulateGrad(y)"]
       AX --> GX["x.grad"]
       AY --> GY["y.grad"]
     end

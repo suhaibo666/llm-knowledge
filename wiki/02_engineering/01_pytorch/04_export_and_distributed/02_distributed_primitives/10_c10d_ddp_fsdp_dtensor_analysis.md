@@ -95,7 +95,7 @@ sequenceDiagram
   participant PG as ProcessGroup(C++)
   participant NET as NCCL/Gloo
   U->>PY: all_reduce(t, async_op=True)
-  PY->>PG: opts.asyncOp=True; group.allreduce([t],opts)
+  PY->>PG: opts.asyncOp=True，group.allreduce([t],opts)
   PG->>NET: enqueue collective
   PG-->>PY: Work 句柄
   PY-->>U: 返回 Work(不阻塞)

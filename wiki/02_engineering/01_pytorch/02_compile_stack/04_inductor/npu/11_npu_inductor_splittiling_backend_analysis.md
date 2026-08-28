@@ -55,7 +55,7 @@ ACLNN / CATLASS Kernel / NPU Triton Kernel → CANN Runtime → NPU 执行
 
 ```mermaid
 flowchart TD
-    A[用户调用 torch.compile(model)] --> B[Dynamo<br/>torch._dynamo.optimize]
+    A["用户调用 torch.compile<br/>model 参数"] --> B[Dynamo<br/>torch._dynamo.optimize]
     B --> C{后端选择}
     C -->|default| D[AOTAutograd<br/>torch._functorch.aot_autograd]
     D --> E[Decomposition<br/>torch._inductor.decomposition]

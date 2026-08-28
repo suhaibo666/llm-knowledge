@@ -243,7 +243,7 @@ sequenceDiagram
 
     Y->>G: from_yaml 解析 → NativeFunction
     G->>G: 分组 NativeFunctionsGroup + __post_init__ 不变式
-    G->>G: structured.py 生成 meta/impl 签名;dispatcher.py 生成 unboxed 约定
+    G->>G: structured.py 生成 meta/impl 签名，dispatcher.py 生成 unboxed 约定
     G->>E: emit m.def(schema) + m.impl(key, kernel)
     E->>D: registerDef / registerImpl(持锁刷新分发表)
     R->>D: at::add(...) 经 DispatchKeySet 取最高优先键

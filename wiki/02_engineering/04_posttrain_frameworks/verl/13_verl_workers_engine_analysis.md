@@ -302,7 +302,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    DRV["Driver / RayPPOTrainer<br/>(see verl_ray_trainer_analysis)"] -->|@register dispatch| WG["RayWorkerGroup<br/>(single_controller)"]
+    DRV["Driver / RayPPOTrainer<br/>(see verl_ray_trainer_analysis)"] -->|register decorator dispatch| WG["RayWorkerGroup<br/>(single_controller)"]
     WG --> HYB["ActorRolloutRefWorker(role=actor_rollout_ref)<br/>engine_workers.py:434"]
 
     subgraph HYB_INNER["混合 worker 内部组合"]

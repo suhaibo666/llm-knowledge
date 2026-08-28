@@ -376,8 +376,8 @@ graph TD
     end
 
     subgraph "Transformer Engine"
-        TE_L ["te.Linear"]
-        TE_LN ["te.LayerNormLinear"]
+        TE_L["te.Linear"]
+        TE_LN["te.LayerNormLinear"]
         TE_Norm["te.LayerNorm/RMSNorm"]
     end
 
