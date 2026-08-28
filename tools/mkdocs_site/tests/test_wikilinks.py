@@ -99,6 +99,44 @@ def test_rewriter_rejects_trailing_backslash_like_source_checker(
         rewrite_wikilinks("[[target\\]]", page, inventory)
 
 
+def test_rewriter_externalizes_repository_root_and_pinned_source_links(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    baseline = "71092579522a12522d9f323ae180c9825d01928a"
+    markdown = (
+        f"> **源码基线**：`NVIDIA/Megatron-LM@{baseline}`\n\n"
+        "[lab](tools/labs_torch_compile/README.md)\n"
+        "[source](Megatron-LM/megatron/core/model_parallel_config.py)\n"
+        "`[literal](tools/labs_torch_compile/README.md)`"
+    )
+
+    rewritten = rewrite_wikilinks(markdown, page, inventory)
+
+    assert (
+        "[lab](https://github.com/suhaibo666/llm-knowledge/blob/main/"
+        "tools/labs_torch_compile/README.md)"
+    ) in rewritten
+    assert (
+        f"[source](https://github.com/NVIDIA/Megatron-LM/blob/{baseline}/"
+        "megatron/core/model_parallel_config.py)"
+    ) in rewritten
+    assert "`[literal](tools/labs_torch_compile/README.md)`" in rewritten
+
+
+def test_rewriter_rejects_unpinned_megatron_source_links(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+
+    with pytest.raises(LinkResolutionError, match="Megatron-LM.*baseline"):
+        rewrite_wikilinks(
+            "[source](Megatron-LM/megatron/core/model_parallel_config.py)",
+            page,
+            inventory,
+        )
+
+
 @pytest.mark.parametrize("fence", ["```", "~~~"])
 def test_fence_run_with_trailing_text_does_not_close_block(
     fence: str, resolver_fixture: tuple[PageRecord, Inventory]

@@ -7,6 +7,10 @@
     "docs:build": "node tools/docs-site/cli.mjs build",
     "docs:test:unit": "node --test tools/docs-site/*.test.mjs",
     "docs:test": "npm run docs:test:unit && node tools/docs-site/smoke.mjs",
-    "docs:repair": "node tools/docs-site/cli.mjs repair"
+    "docs:repair": "node tools/docs-site/cli.mjs repair",
+    "docs:mkdocs": "python -m tools.mkdocs_site.cli serve",
+    "docs:mkdocs:build": "python -m tools.mkdocs_site.cli build",
+    "docs:mkdocs:test:unit": "python -m pytest tools/mkdocs_site/tests -q",
+    "docs:mkdocs:test": "npm run docs:mkdocs:test:unit && npm run docs:mkdocs:build && node tools/mkdocs-site/smoke.mjs"
   }
 }

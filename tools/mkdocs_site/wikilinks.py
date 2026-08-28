@@ -12,6 +12,10 @@ from .models import Inventory, PageRecord
 _FENCE_START = re.compile(r"^\s*(`{3,}|~{3,})")
 _ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+|$)")
 _WIKILINK = re.compile(r"!?\[\[([^\[\]\n]+?)\]\]")
+_REPOSITORY_LINK = re.compile(
+    r"(?P<open>\]\()(?P<target>(?:tools/|Megatron-LM/)[^)\s]+)(?P<close>\))"
+)
+_MEGATRON_BASELINE = re.compile(r"NVIDIA/Megatron-LM@([0-9a-f]{7,40})")
 
 
 class LinkResolutionError(ValueError):
@@ -138,8 +142,34 @@ def _rewrite_token(
 
 
 def _rewrite_text_segment(
-    text: str, page: PageRecord, inventory: Inventory, line: int
+    text: str,
+    page: PageRecord,
+    inventory: Inventory,
+    line: int,
+    megatron_baseline: str | None,
 ) -> str:
+    def replace_repository_link(match: re.Match[str]) -> str:
+        target = match.group("target")
+        if target.startswith("tools/"):
+            destination = (
+                "https://github.com/suhaibo666/llm-knowledge/blob/main/" + target
+            )
+        else:
+            match_line = line + text.count("\n", 0, match.start())
+            if megatron_baseline is None:
+                raise LinkResolutionError(
+                    page,
+                    match_line,
+                    match.group(0),
+                    "Megatron-LM link requires a page source baseline",
+                )
+            destination = (
+                "https://github.com/NVIDIA/Megatron-LM/blob/"
+                f"{megatron_baseline}/{target.removeprefix('Megatron-LM/')}"
+            )
+        return f"{match.group('open')}{destination}{match.group('close')}"
+
+    text = _REPOSITORY_LINK.sub(replace_repository_link, text)
     output: list[str] = []
     cursor = 0
     for match in _WIKILINK.finditer(text):
@@ -173,7 +203,11 @@ def _matching_backtick_run(text: str, start: int, length: int) -> int | None:
 
 
 def _rewrite_inline_code_aware(
-    text: str, page: PageRecord, inventory: Inventory, line: int
+    text: str,
+    page: PageRecord,
+    inventory: Inventory,
+    line: int,
+    megatron_baseline: str | None,
 ) -> str:
     output: list[str] = []
     cursor = 0
@@ -181,10 +215,20 @@ def _rewrite_inline_code_aware(
         tick_start = text.find("`", cursor)
         segment_line = line + text.count("\n", 0, cursor)
         if tick_start < 0:
-            output.append(_rewrite_text_segment(text[cursor:], page, inventory, segment_line))
+            output.append(
+                _rewrite_text_segment(
+                    text[cursor:], page, inventory, segment_line, megatron_baseline
+                )
+            )
             break
         output.append(
-            _rewrite_text_segment(text[cursor:tick_start], page, inventory, segment_line)
+            _rewrite_text_segment(
+                text[cursor:tick_start],
+                page,
+                inventory,
+                segment_line,
+                megatron_baseline,
+            )
         )
         tick_end = _backtick_run_end(text, tick_start)
         closing = _matching_backtick_run(text, tick_end, tick_end - tick_start)
@@ -199,7 +243,9 @@ def _rewrite_inline_code_aware(
 
 
 def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> str:
-    """Convert supported Obsidian Wikilinks while preserving literal code."""
+    """Convert supported wiki and repository links while preserving literal code."""
+    baseline_match = _MEGATRON_BASELINE.search(markdown)
+    megatron_baseline = baseline_match.group(1) if baseline_match is not None else None
     output: list[str] = []
     visible_lines: list[str] = []
     visible_start_line = 1
@@ -209,7 +255,11 @@ def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> 
         if visible_lines:
             output.append(
                 _rewrite_inline_code_aware(
-                    "".join(visible_lines), page, inventory, visible_start_line
+                    "".join(visible_lines),
+                    page,
+                    inventory,
+                    visible_start_line,
+                    megatron_baseline,
                 )
             )
             visible_lines.clear()
@@ -234,7 +284,11 @@ def rewrite_wikilinks(markdown: str, page: PageRecord, inventory: Inventory) -> 
             continue
         if _ATX_HEADING.match(line):
             flush_visible()
-            output.append(_rewrite_inline_code_aware(line, page, inventory, line_number))
+            output.append(
+                _rewrite_inline_code_aware(
+                    line, page, inventory, line_number, megatron_baseline
+                )
+            )
             visible_start_line = line_number + 1
             continue
         if not visible_lines:
