@@ -13,6 +13,7 @@ class InventoryError(ValueError):
 
 _FENCE_START = re.compile(r"^\s*(`{3,}|~{3,})")
 _HEADING = re.compile(r"^(#{1,3})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$")
+_ROOT_NAV_TITLE = "LLM Knowledge Wiki"
 
 
 def _frontmatter_and_lines(text: str, source: PurePosixPath) -> tuple[Mapping[str, object], list[str]]:
@@ -34,14 +35,21 @@ def _frontmatter_and_lines(text: str, source: PurePosixPath) -> tuple[Mapping[st
 
 
 def _headings(lines: list[str]) -> tuple[str | None, tuple[str, ...]]:
-    in_fence = False
+    fence: str | None = None
     first_h1: str | None = None
     headings: list[str] = []
     for line in lines:
-        if _FENCE_START.match(line):
-            in_fence = not in_fence
+        fence_match = _FENCE_START.match(line)
+        if fence is not None:
+            if (
+                fence_match is not None
+                and fence_match.group(1)[0] == fence[0]
+                and len(fence_match.group(1)) >= len(fence)
+            ):
+                fence = None
             continue
-        if in_fence:
+        if fence_match is not None:
+            fence = fence_match.group(1)
             continue
         match = _HEADING.match(line)
         if match is None:
@@ -86,7 +94,11 @@ def scan_inventory(wiki: Path) -> Inventory:
                 source=source,
                 relative=relative,
                 title=title,
-                nav_title=title if source.name == "index.md" else source.stem,
+                nav_title=(
+                    _ROOT_NAV_TITLE
+                    if relative == PurePosixPath("index.md")
+                    else title if source.name == "index.md" else source.stem
+                ),
                 is_index=source.name == "index.md",
                 headings=headings,
             )
