@@ -9,6 +9,10 @@ theme:
   language: zh
   font: false
   palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: 切换至浅色模式
     - media: "(prefers-color-scheme: light)"
       scheme: default
       toggle:
@@ -17,8 +21,8 @@ theme:
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       toggle:
-        icon: material/weather-sunny
-        name: 切换至浅色模式
+        icon: material/brightness-auto
+        name: 跟随系统主题
   features:
     - navigation.instant
     - navigation.tracking

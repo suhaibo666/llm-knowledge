@@ -46,7 +46,7 @@ class ServeRuntime:
     start: Callable[[list[str], Path], Any]
     wait_ready: Callable[[str, Any], None]
     open_browser: Callable[[str], object]
-    watch: Callable[[Path, Callable[[], None], Callable[[], bool]], None]
+    watch: Callable[[tuple[Path, ...], Callable[[], None], Callable[[], bool]], None]
     stop: Callable[[Any], None]
 
 
@@ -139,10 +139,19 @@ def _default_serve_runtime() -> ServeRuntime:
         _start_mkdocs,
         _wait_for_http,
         webbrowser.open,
-        lambda wiki, callback, stop: watch_changes(
-            wiki, callback, stop_requested=stop
+        lambda inputs, callback, stop: watch_changes(
+            inputs, callback, stop_requested=stop
         ),
         _stop_mkdocs,
+    )
+
+
+def _preview_watch_inputs(paths: BuildPaths) -> tuple[Path, ...]:
+    return (
+        paths.wiki,
+        paths.repo / "mkdocs.yml",
+        paths.repo / "tools/mkdocs-site/overrides",
+        paths.repo / "tools/mkdocs-site/assets",
     )
 
 
@@ -350,7 +359,7 @@ def main(
                     _refresh_preview(paths, active, runtime, state, args.port)
 
                 runtime.watch(
-                    paths.wiki,
+                    _preview_watch_inputs(paths),
                     refresh,
                     lambda: state.child is not None
                     and state.child.poll() is not None,

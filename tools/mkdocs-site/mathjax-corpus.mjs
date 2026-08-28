@@ -106,46 +106,37 @@ function browserMathOrigins(html = null) {
     return slashes % 2 === 1
   }
 
-  function nextSingleDollar(text, start) {
-    for (let index = start; index < text.length; index += 1) {
-      if (text[index] !== "$" || escaped(text, index)) continue
-      if (text[index + 1] === "$" || text[index - 1] === "$") continue
-      return index
-    }
-    return -1
-  }
-
-  function currencyEnd(text, index) {
-    const match = text.slice(index).match(currencyPattern)
-    if (!match) return -1
-    const end = index + match[0].length
-    const closer = nextSingleDollar(text, end)
-    if (closer < 0) return end
-    if (currencyPattern.test(text.slice(closer))) return end
-    const between = text.slice(end, closer)
-    return /[\\{}_^=+*/<>]/.test(between) ? -1 : end
-  }
-
   let rawDollarDelimiters = 0
   let rawDollarUnits = 0
+  let rawTexDelimiters = 0
   let rawTexUnits = 0
 
-  function texDelimiterUnits(text, open, close) {
+  function texDelimiters(text, open, close) {
     let units = 0
+    let delimiters = 0
+    let pendingOpen = false
     let cursor = 0
     while (cursor < text.length) {
-      const start = text.indexOf(open, cursor)
-      if (start < 0) break
+      const openAt = text.indexOf(open, cursor)
+      const closeAt = text.indexOf(close, cursor)
+      const candidates = [openAt, closeAt].filter((index) => index >= 0)
+      if (!candidates.length) break
+      const start = Math.min(...candidates)
+      const token = start === openAt ? open : close
       if (escaped(text, start)) {
-        cursor = start + open.length
+        cursor = start + token.length
         continue
       }
-      const end = text.indexOf(close, start + open.length)
-      if (end < 0) break
-      units += 1
-      cursor = end + close.length
+      delimiters += 1
+      if (token === open) {
+        pendingOpen = true
+      } else if (pendingOpen) {
+        units += 1
+        pendingOpen = false
+      }
+      cursor = start + token.length
     }
-    return units
+    return { delimiters, units }
   }
 
   const walker = root.createTreeWalker(root.body || root, NodeFilter.SHOW_TEXT)
@@ -153,37 +144,42 @@ function browserMathOrigins(html = null) {
     const node = walker.currentNode
     if (node.parentElement?.closest(ignoredSelector)) continue
     const text = node.nodeValue || ""
-    let singleDelimiters = 0
-    let displayDelimiters = 0
+    const singleDollars = []
+    const displayDollars = []
     for (let index = 0; index < text.length;) {
       if (text[index] !== "$" || escaped(text, index)) {
         index += 1
         continue
       }
       if (text[index + 1] === "$") {
-        rawDollarDelimiters += 1
-        displayDelimiters += 1
+        displayDollars.push(index)
         index += 2
         continue
       }
-      const moneyEnd = currencyEnd(text, index)
-      if (moneyEnd >= 0) {
-        index = moneyEnd
-        continue
-      }
-      rawDollarDelimiters += 1
-      singleDelimiters += 1
+      singleDollars.push(index)
       index += 1
     }
-    rawDollarUnits += Math.floor(singleDelimiters / 2)
-      + Math.floor(displayDelimiters / 2)
-    rawTexUnits += texDelimiterUnits(text, "\\(", "\\)")
-      + texDelimiterUnits(text, "\\[", "\\]")
+    const singlePairs = Math.floor(singleDollars.length / 2)
+    const displayPairs = Math.floor(displayDollars.length / 2)
+    rawDollarUnits += singlePairs + displayPairs
+    rawDollarDelimiters += (singlePairs + displayPairs) * 2
+    if (singleDollars.length % 2 === 1) {
+      const unmatched = singleDollars.at(-1)
+      if (!currencyPattern.test(text.slice(unmatched))) rawDollarDelimiters += 1
+    }
+    if (displayDollars.length % 2 === 1) rawDollarDelimiters += 1
+
+    for (const [open, close] of [["\\(", "\\)"], ["\\[", "\\]"]]) {
+      const tex = texDelimiters(text, open, close)
+      rawTexDelimiters += tex.delimiters
+      rawTexUnits += tex.units
+    }
   }
   return {
     markerUnits,
     rawDollarDelimiters,
     rawDollarUnits,
+    rawTexDelimiters,
     rawTexUnits,
     units: markerUnits + rawDollarUnits + rawTexUnits,
   }
@@ -211,7 +207,7 @@ export async function corpusPages({
     const html = await readFile(output, "utf8")
     const sourcePath = `wiki/${route.source}`
     const origins = await htmlMathOrigins(analyzer, html, sourcePath)
-    if (origins.units) {
+    if (origins.units || origins.rawDollarDelimiters || origins.rawTexDelimiters) {
       pages.push({ sourcePath, output: route.output, ...origins })
     }
   }
@@ -325,6 +321,7 @@ export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
     const rawRemainders = results.filter((result) => (
       result.remaining.rawDollarDelimiters > 0
       || result.remaining.rawDollarUnits > 0
+      || result.remaining.rawTexDelimiters > 0
       || result.remaining.rawTexUnits > 0
     ))
 
@@ -350,7 +347,7 @@ export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
       [],
       rawRemainders.map((item) => (
         `${item.sourcePath}: ${item.remaining.rawDollarDelimiters} raw dollar delimiters `
-        + `and ${item.remaining.rawTexUnits} raw TeX units remain after MathJax`
+        + `and ${item.remaining.rawTexDelimiters} raw TeX delimiters remain after MathJax`
       )).join("\n"),
     )
     assert.deepEqual(

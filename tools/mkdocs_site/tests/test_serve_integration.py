@@ -116,8 +116,13 @@ def test_serve_refreshes_create_rename_delete_and_navigation(
     origin = f"http://127.0.0.1:{port}"
     evidence: list[str] = []
 
-    def drive_refreshes(root: Path, callback, _stop_requested) -> None:
-        assert root == wiki
+    def drive_refreshes(inputs: tuple[Path, ...], callback, _stop_requested) -> None:
+        assert inputs == (
+            wiki,
+            repo / "mkdocs.yml",
+            repo / "tools/mkdocs-site/overrides",
+            repo / "tools/mkdocs-site/assets",
+        )
         created = domain / "20_created.md"
         created.write_text("# Created Page\n", encoding="utf-8")
         callback()

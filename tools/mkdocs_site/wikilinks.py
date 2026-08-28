@@ -265,21 +265,57 @@ def _rewrite_token(
     return f"[{label}]({destination})"
 
 
-def _wikilink_sentinel(index: int) -> str:
-    return f"{_WIKILINK_SENTINEL_PREFIX}{index:08d}END"
+def _collision_free_wikilink_prefix(markdown: str) -> str:
+    prefix = _WIKILINK_SENTINEL_PREFIX
+    while prefix in markdown:
+        prefix += "X"
+    return prefix
+
+
+def _wikilink_sentinel(prefix: str, index: int) -> str:
+    return f"{prefix}{index:08d}END"
+
+
+def _classification_wikilink(match: re.Match[str], sentinel: str) -> str:
+    """Mask payload text while preserving the Markdown syntax around it."""
+    masked: list[str] = []
+    inserted = False
+    for character in match.group(1):
+        if character in {"\\", "#", "|"} or character.isspace():
+            masked.append(character)
+            continue
+        if not inserted:
+            masked.append(sentinel)
+            inserted = True
+        else:
+            masked.append("x")
+    if not inserted:
+        masked.insert(0, sentinel)
+    embed = "!" if match.group(0).startswith("!") else ""
+    return f"{embed}[[{''.join(masked)}]]"
+
+
+def _escaped_wikilink(markdown: str, start: int) -> bool:
+    slashes = 0
+    cursor = start - 1
+    while cursor >= 0 and markdown[cursor] == "\\":
+        slashes += 1
+        cursor -= 1
+    return slashes % 2 == 1
 
 
 def _active_wikilink_indexes(
     markdown: str, matches: tuple[re.Match[str], ...]
-) -> frozenset[int]:
+) -> tuple[frozenset[int], frozenset[int], str]:
     """Classify source Wikilinks using the same rendered Markdown structure."""
-    if _WIKILINK_SENTINEL_PREFIX in markdown:
-        raise ValueError("Markdown contains the reserved Wikilink sentinel prefix")
+    prefix = _collision_free_wikilink_prefix(markdown)
     pieces: list[str] = []
     cursor = 0
     for index, match in enumerate(matches):
         pieces.append(markdown[cursor : match.start()])
-        pieces.append(_wikilink_sentinel(index))
+        pieces.append(
+            _classification_wikilink(match, _wikilink_sentinel(prefix, index))
+        )
         cursor = match.end()
     pieces.append(markdown[cursor:])
     rendered = render_markdown(
@@ -289,7 +325,8 @@ def _active_wikilink_indexes(
     )
     soup = BeautifulSoup(rendered, "html.parser")
     active: set[int] = set()
-    for node in soup.find_all(string=lambda value: _WIKILINK_SENTINEL_PREFIX in value):
+    nested: set[int] = set()
+    for node in soup.find_all(string=lambda value: prefix in value):
         if isinstance(node, Comment):
             continue
         parent = node.parent
@@ -299,9 +336,11 @@ def _active_wikilink_indexes(
             continue
         value = str(node)
         for index in range(len(matches)):
-            if _wikilink_sentinel(index) in value:
+            if _wikilink_sentinel(prefix, index) in value:
                 active.add(index)
-    return frozenset(active)
+                if parent.name == "a" or parent.find_parent("a") is not None:
+                    nested.add(index)
+    return frozenset(active), frozenset(nested), prefix
 
 
 def _classify_and_rewrite_wikilinks(
@@ -312,18 +351,29 @@ def _classify_and_rewrite_wikilinks(
     matches = tuple(_WIKILINK.finditer(markdown))
     if not matches:
         return markdown, {}
-    active = _active_wikilink_indexes(markdown, matches)
+    active, nested, prefix = _active_wikilink_indexes(markdown, matches)
     protected: dict[str, str] = {}
     output: list[str] = []
     cursor = 0
     for index, match in enumerate(matches):
         output.append(markdown[cursor : match.start()])
-        escaped = match.start() > 0 and markdown[match.start() - 1] == "\\"
+        escaped = _escaped_wikilink(markdown, match.start())
+        immediate_annotation = markdown.startswith("(", match.end())
+        if index in nested and not escaped and not immediate_annotation:
+            line = 1 + markdown.count("\n", 0, match.start())
+            raise LinkResolutionError(
+                page,
+                line,
+                match.group(0),
+                "unsupported nested Markdown link label",
+            )
         if index in active and not escaped:
             line = 1 + markdown.count("\n", 0, match.start())
             output.append(_rewrite_token(match, page, inventory, line))
+            if immediate_annotation:
+                output.append(" ")
         else:
-            sentinel = _wikilink_sentinel(index)
+            sentinel = _wikilink_sentinel(prefix, index)
             protected[sentinel] = match.group(0)
             output.append(sentinel)
         cursor = match.end()

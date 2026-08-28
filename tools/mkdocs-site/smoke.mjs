@@ -623,11 +623,51 @@ async function assertRenderers(page, origin) {
 
 async function assertPaletteAndDrawer(page, origin) {
   await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 })
+  await page.emulateMediaFeatures([
+    { name: "prefers-color-scheme", value: "dark" },
+  ])
   await goto(page, `${origin}/`)
+  await page.evaluate(() => localStorage.clear())
+  await page.reload({ waitUntil: "domcontentloaded" })
+  await page.waitForFunction(() => (
+    document.body.dataset.mdColorScheme === "slate"
+      && !document.querySelector('label[for="__palette_1"]')?.hidden
+  ))
+  await page.emulateMediaFeatures([
+    { name: "prefers-color-scheme", value: "light" },
+  ])
+  await page.reload({ waitUntil: "domcontentloaded" })
+  await page.waitForFunction(() => (
+    document.body.dataset.mdColorScheme === "default"
+      && !document.querySelector('label[for="__palette_1"]')?.hidden
+  ))
+  const labels = await page.$$eval("label[for^='__palette_']", (items) => (
+    Object.fromEntries(items.map((item) => [item.htmlFor, item.title]))
+  ))
+  assert.deepEqual(labels, {
+    __palette_0: "跟随系统主题",
+    __palette_1: "切换至浅色模式",
+    __palette_2: "切换至深色模式",
+  })
+
   await page.$eval('label[for="__palette_1"]', (label) => label.click())
-  await page.waitForFunction(() => document.body.dataset.mdColorScheme === "slate")
+  await page.waitForFunction(() => (
+    document.querySelector("#__palette_1")?.checked
+      && document.body.dataset.mdColorScheme === "default"
+      && !document.querySelector('label[for="__palette_2"]')?.hidden
+  ))
+  await page.$eval('label[for="__palette_2"]', (label) => label.click())
+  await page.waitForFunction(() => (
+    document.querySelector("#__palette_2")?.checked
+      && document.body.dataset.mdColorScheme === "slate"
+      && !document.querySelector('label[for="__palette_0"]')?.hidden
+  ))
   await page.$eval('label[for="__palette_0"]', (label) => label.click())
-  await page.waitForFunction(() => document.body.dataset.mdColorScheme === "default")
+  await page.waitForFunction(() => (
+    document.querySelector("#__palette_0")?.checked
+      && document.body.dataset.mdColorScheme === "default"
+      && !document.querySelector('label[for="__palette_1"]')?.hidden
+  ))
 
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 })
   await goto(page, `${origin}/`)

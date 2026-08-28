@@ -42,6 +42,36 @@ flowchart TD
 """
 
 
+def test_material_palette_cycles_system_light_dark_with_chinese_labels() -> None:
+    config = yaml.safe_load((REPO / "mkdocs.yml").read_text(encoding="utf-8"))
+
+    assert config["theme"]["palette"] == [
+        {
+            "media": "(prefers-color-scheme)",
+            "toggle": {
+                "icon": "material/brightness-auto",
+                "name": "切换至浅色模式",
+            },
+        },
+        {
+            "media": "(prefers-color-scheme: light)",
+            "scheme": "default",
+            "toggle": {
+                "icon": "material/weather-night",
+                "name": "切换至深色模式",
+            },
+        },
+        {
+            "media": "(prefers-color-scheme: dark)",
+            "scheme": "slate",
+            "toggle": {
+                "icon": "material/brightness-auto",
+                "name": "跟随系统主题",
+            },
+        },
+    ]
+
+
 def _copy_theme_inputs(repo: Path) -> None:
     source_root = REPO / "tools/mkdocs-site"
     target_root = repo / "tools/mkdocs-site"

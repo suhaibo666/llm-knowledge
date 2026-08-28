@@ -40,7 +40,7 @@
 
 ### 2.2 非目标
 
-- 不批量修改 `wiki/**/*.md` 的正文或链接语法。
+- 不为迁移批量改写 `wiki/**/*.md` 的正文或链接语法；只允许在用户确认“兼容的话可以修改”“全部按照推荐方案”后，对严格渲染门禁已经复现的锚点、Mermaid、MathJax 或代码示例边界缺陷做独立、可审计的最小修复。
 - 不改变功能树、课程层、索引维护规则或知识内容归属。
 - 不在预览阶段替换当前 GitHub Pages。
 - 不在迁移提交中删除 Quartz；Quartz 至少保留到 MkDocs 线上稳定验收之后。
@@ -161,9 +161,16 @@ Python 包使用下划线目录 `tools/mkdocs_site/`；模板和静态资源使�
 
 ## 5. Obsidian 兼容层
 
-### 5.1 源文件不变
+### 5.1 构建器不回写源文件
 
 Obsidian 始终打开 `wiki/`，不会看到 `.mkdocs-cache/`。构建器不向 `wiki/` 写入 frontmatter、不把 Wikilink永久改成 Markdown 链接，也不回写格式化结果。Obsidian 图谱、别名显示和仓库维护工具继续基于原文件工作。
+
+本约束针对自动迁移与 staging 行为，不禁止经用户授权、由同一严格门禁验证的源文档兼容修复。本次并行预览只发生了以下四组独立提交；它们不移动页面、不改变功能树或知识归属，也不把 Obsidian 语法批量转换成 MkDocs 语法：
+
+- `7d56e8d`：修复一个失效章节锚点，文件为 `wiki/02_engineering/04_posttrain_frameworks/slime/14_slime_megatron_training_analysis.md`。
+- `a6e78c7`：修复 8 个 Mermaid 图的解析边界，文件为 `wiki/01_theory/02_pretraining/14_transformer_engine_analysis.md`、`wiki/02_engineering/01_pytorch/01_eager_runtime/04_aten_op_execution/10_aten_codegen_and_structured_kernels_analysis.md`、`wiki/02_engineering/01_pytorch/01_eager_runtime/05_autograd_engine/10_autograd_engine_analysis.md`、`wiki/02_engineering/01_pytorch/01_eager_runtime/06_nn_module_system/index.md`、`wiki/02_engineering/01_pytorch/02_compile_stack/04_inductor/npu/11_npu_inductor_splittiling_backend_analysis.md`、`wiki/02_engineering/01_pytorch/04_export_and_distributed/02_distributed_primitives/10_c10d_ddp_fsdp_dtensor_analysis.md`、`wiki/02_engineering/02_train_frameworks/mindspeed/11_mindspeed_comm_overlap_analysis.md`、`wiki/02_engineering/04_posttrain_frameworks/verl/13_verl_workers_engine_analysis.md`。
+- `6af0e63`：修复 6 个 MathJax 公式，文件为 `wiki/01_theory/01_models/deepseek/26_deepseek_v4_technical_deepdive.md`、`wiki/01_theory/01_models/moonshot_kimi/10_moba_analysis.md`、`wiki/01_theory/01_models/zhipu_glm/25_glm5_training_stability_deepdive.md`、`wiki/01_theory/02_pretraining/10_llm_initiliaze_analysis.md`、`wiki/02_engineering/02_train_frameworks/megatron-lm/28_megatron_training_stability_observability_analysis.md`、`wiki/02_engineering/02_train_frameworks/mindspeed/12_mindspeed_memory_optimization_analysis.md`。
+- `04742f9`：修复 6 个 Markdown/MathJax 块边界和 1 个 changelog 代码示例边界，文件为 `wiki/01_theory/01_models/deepseek/29_engram_analysis.md`、`wiki/01_theory/01_models/moonshot_kimi/11_kimi_k2_analysis.md`、`wiki/01_theory/01_models/moonshot_kimi/12_kimi_linear_analysis.md`、`wiki/01_theory/02_pretraining/10_llm_initiliaze_analysis.md`、`wiki/01_theory/04_posttraining/33_opd_effectiveness_and_failure_modes_analysis.md`、`wiki/02_engineering/02_train_frameworks/mindspeed/12_mindspeed_memory_optimization_analysis.md`、`wiki/changelog.md`。
 
 ### 5.2 当前语法基线
 
@@ -305,7 +312,7 @@ Quartz 的 `npm run docs:test` 在并行预览期间继续执行，保证迁移�
 
 迁移预览只有同时满足以下条件才算完成：
 
-1. `wiki/` 没有因迁移产生批量内容修改。
+1. `wiki/` 没有因迁移产生结构性或批量内容修改；仅保留 §5.1 列出的、用户授权且经严格门禁验证的兼容修复。
 2. 所有可发布 Markdown 都生成页面，数量与 inventory 一致。
 3. 6,000 余个现有 Wikilink 按原有语义解析，内部链接、锚点和资源错误均为零。
 4. 普通页面导航显示英文文件名，目录显示中文索引标题，正文标题仍为中文。

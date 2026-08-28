@@ -37,6 +37,66 @@ def test_snapshot_changes_for_create_modify_move_and_delete(tmp_path: Path) -> N
     assert len({item.digest for item in (first, second, third, fourth, fifth)}) == 5
 
 
+def test_composite_snapshot_tracks_config_theme_and_assets_but_not_outputs(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    wiki = repo / "wiki"
+    overrides = repo / "tools/mkdocs-site/overrides"
+    assets = repo / "tools/mkdocs-site/assets"
+    cache = repo / ".mkdocs-cache"
+    site = repo / "site"
+    for directory in (wiki, overrides, assets, cache, site):
+        directory.mkdir(parents=True)
+    config = repo / "mkdocs.yml"
+    config.write_text("site_name: Test\n", encoding="utf-8")
+    inputs = (wiki, config, overrides, assets)
+
+    snapshots = [snapshot_tree(inputs)]
+    theme = overrides / "main.html"
+    theme.write_text("one", encoding="utf-8")
+    snapshots.append(snapshot_tree(inputs))
+    theme.write_text("two longer", encoding="utf-8")
+    snapshots.append(snapshot_tree(inputs))
+    moved_theme = overrides / "base.html"
+    theme.rename(moved_theme)
+    snapshots.append(snapshot_tree(inputs))
+    moved_theme.unlink()
+    snapshots.append(snapshot_tree(inputs))
+
+    javascript = assets / "extra.js"
+    javascript.write_text("one", encoding="utf-8")
+    snapshots.append(snapshot_tree(inputs))
+    javascript.write_text("two longer", encoding="utf-8")
+    snapshots.append(snapshot_tree(inputs))
+    moved_javascript = assets / "theme.js"
+    javascript.rename(moved_javascript)
+    snapshots.append(snapshot_tree(inputs))
+    moved_javascript.unlink()
+    snapshots.append(snapshot_tree(inputs))
+
+    config.write_text("site_name: Changed\n", encoding="utf-8")
+    snapshots.append(snapshot_tree(inputs))
+    moved_config = repo / "mkdocs.moved.yml"
+    config.rename(moved_config)
+    snapshots.append(snapshot_tree(inputs))
+    moved_config.rename(config)
+    snapshots.append(snapshot_tree(inputs))
+    config.unlink()
+    snapshots.append(snapshot_tree(inputs))
+    config.write_text("site_name: Restored\n", encoding="utf-8")
+    snapshots.append(snapshot_tree(inputs))
+
+    assert all(
+        before.digest != after.digest
+        for before, after in zip(snapshots, snapshots[1:])
+    )
+    before_outputs = snapshot_tree(inputs)
+    (cache / "routes.json").write_text("generated", encoding="utf-8")
+    (site / "index.html").write_text("generated", encoding="utf-8")
+    assert snapshot_tree(inputs) == before_outputs
+
+
 def test_watch_debounces_a_stable_change_once() -> None:
     snapshots = iter(
         [

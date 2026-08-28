@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a fully validated local MkDocs Material preview from `wiki/` without modifying the Obsidian sources or the current GitHub Pages deployment.
+**Goal:** Build a fully validated local MkDocs Material preview from `wiki/` without migration-driven source rewrites or changes to the current GitHub Pages deployment; separately reviewed renderer/anchor/code-boundary repairs remain allowed under the design's narrow exception.
 
 **Architecture:** A Python staging tool inventories `wiki/`, resolves Obsidian Wikilinks with the repository's existing semantics, and writes a disposable `.mkdocs-cache/docs/` tree plus generated MkDocs configuration. MkDocs Material renders that tree; a static-site crawler and Puppeteer smoke suite prove routes, anchors, assets, navigation, search, and responsive layout before the preview is opened.
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Work only in `.worktrees/mkdocs-preview` on branch `codex/mkdocs-preview`; do not touch the dirty primary worktree.
-- `wiki/` is the only authoritative content tree. No task may write into `wiki/`.
+- `wiki/` is the only authoritative content tree. Staging/build tasks never write into it. The only source edits permitted in this migration are the user-authorized, gate-reproduced compatibility repairs audited in the design §5.1 (`7d56e8d`, `a6e78c7`, `6af0e63`, `04742f9`); they may not introduce structural content churn.
 - `.mkdocs-cache/` and `site/` are disposable, ignored outputs; clean builds recreate them from scratch.
 - Ordinary Markdown navigation labels are file stems; `index.md` navigation labels are their Chinese titles.
 - The source page title remains the Chinese frontmatter/H1 title even when the navigation label is an English filename.
@@ -922,7 +922,7 @@ git commit -m "test(mkdocs): verify live preview and responsive docs UI"
 
 **Files:**
 - Modify only files already introduced by this plan when a regression test proves a correction is required.
-- Do not modify: `wiki/**`, `.github/workflows/pages.yml`, or current Quartz deployment configuration.
+- Do not modify: `.github/workflows/pages.yml` or current Quartz deployment configuration. Do not modify `wiki/**` except for the narrow, separately committed compatibility repairs authorized and enumerated in design §5.1.
 
 **Interfaces:**
 - Consumes: all previous tasks.
@@ -972,7 +972,7 @@ git status --short
 git diff origin/main -- wiki .github/workflows/pages.yml
 ```
 
-Expected: no migration changes under `wiki/` or the Pages workflow. Only the design, plan, MkDocs toolchain, theme, tests, ignore entries and parallel scripts differ.
+Expected: no Pages workflow changes and no structural or bulk migration rewrite under `wiki/`. The only Wiki diffs are the four separately committed, file-enumerated compatibility repair groups in design §5.1; all remaining branch changes are design/plan, MkDocs toolchain, theme, tests, ignore entries, and parallel scripts.
 
 - [ ] **Step 6: Commit any final regression-only corrections**
 

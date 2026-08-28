@@ -36,6 +36,102 @@ def test_rewrite_supported_wikilinks(
     assert rewrite_wikilinks(source, page, inventory) == expected
 
 
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (r"\[[target]]", r"\[[target]]"),
+        (r"\\[[target]]", r"\\[target](../target.md)"),
+        (r"\\\[[target]]", r"\\\[[target]]"),
+        (r"\\\\[[target]]", r"\\\\[target](../target.md)"),
+    ],
+)
+def test_rewriter_uses_consecutive_backslash_parity_for_escapes(
+    source: str,
+    expected: str,
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+
+    assert rewrite_wikilinks(source, page, inventory) == expected
+
+
+def test_rewriter_preserves_angle_context_while_classifying_wikilink(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+
+    assert rewrite_wikilinks("<[[target]]>", page, inventory) == (
+        "<[target](../target.md)>"
+    )
+
+
+def test_rewriter_preserves_table_alias_shape_during_classification(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = "| Link |\n|---|\n| [[target\\|表格标签]] |"
+
+    assert rewrite_wikilinks(markdown, page, inventory).endswith(
+        "| [表格标签](../target.md) |"
+    )
+
+
+def test_rewriter_generates_collision_free_classification_tokens(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    collision = "LLMKNOWLEDGEWIKILINKSENTINEL00000000END"
+
+    rewritten = rewrite_wikilinks(f"{collision} [[target]]", page, inventory)
+
+    assert rewritten == f"{collision} [target](../target.md)"
+
+
+def test_rewriter_rejects_wikilink_nested_in_markdown_link_label(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+
+    with pytest.raises(
+        LinkResolutionError,
+        match="unsupported nested Markdown link label",
+    ):
+        rewrite_wikilinks("[see [[target]]](https://example.com)", page, inventory)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("[[target]](说明)", "[target](../target.md) (说明)"),
+        ("[[target]]（说明）", "[target](../target.md)（说明）"),
+        (
+            "[[target#二、机制]](章节)",
+            "[target](../target.md#二机制) (章节)",
+        ),
+        ("[[target|别名]](说明)", "[别名](../target.md) (说明)"),
+    ],
+)
+def test_rewriter_disambiguates_immediate_wikilink_annotations_in_stage(
+    source: str,
+    expected: str,
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+
+    assert rewrite_wikilinks(source, page, inventory) == expected
+
+
+def test_rewriter_disambiguates_table_alias_annotation_without_source_change(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+    markdown = "| Link |\n|---|\n| [[target\\|表格标签]](说明) |"
+
+    assert rewrite_wikilinks(markdown, page, inventory).endswith(
+        "| [表格标签](../target.md) (说明) |"
+    )
+
+
 def test_rewriter_skips_fenced_and_inline_code(
     resolver_fixture: tuple[PageRecord, Inventory],
 ) -> None:

@@ -166,6 +166,16 @@ def test_serve_stages_writes_config_then_binds_mkdocs_to_loopback(
     ]
     assert events[5] == ("ready", "http://127.0.0.1:8000/")
     assert events[6] == ("open", "http://127.0.0.1:8000/")
+    repo = Path(cli_module.__file__).resolve().parents[2]
+    assert events[7] == (
+        "watch",
+        (
+            repo / "wiki",
+            repo / "mkdocs.yml",
+            repo / "tools/mkdocs-site/overrides",
+            repo / "tools/mkdocs-site/assets",
+        ),
+    )
 
 
 def test_serve_accepts_port_and_no_open(tmp_path: Path) -> None:
