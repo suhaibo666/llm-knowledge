@@ -5,6 +5,16 @@ from types import MappingProxyType
 from typing import Mapping
 
 
+def _is_strict_descendant(candidate: Path, root: Path) -> bool:
+    if candidate == root:
+        return False
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class PageRecord:
     source: Path
@@ -59,6 +69,16 @@ class BuildPaths:
         staging = cache / "docs"
         generated = cache / "mkdocs.generated.yml"
         site = resolved / "site"
-        staging.resolve().relative_to(cache.resolve())
-        site.resolve().relative_to(resolved)
+        resolved_cache = cache.resolve()
+        resolved_staging = staging.resolve()
+        resolved_generated = generated.resolve()
+        resolved_site = site.resolve()
+        if not _is_strict_descendant(resolved_cache, resolved):
+            raise ValueError(f"cache path escapes repository: {resolved_cache}")
+        if not _is_strict_descendant(resolved_staging, resolved_cache):
+            raise ValueError(f"staging path escapes cache: {resolved_staging}")
+        if not _is_strict_descendant(resolved_generated, resolved_cache):
+            raise ValueError(f"generated config escapes cache: {resolved_generated}")
+        if not _is_strict_descendant(resolved_site, resolved):
+            raise ValueError(f"site path escapes repository: {resolved_site}")
         return cls(resolved, resolved / "wiki", cache, staging, generated, site)
