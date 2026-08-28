@@ -31,7 +31,7 @@ title: "Megatron-LM 上下文并行(Context Parallelism)深度解析"
 
 ### 1.3 CP 在并行体系中的位置
 
-与 TP/PP/DP/EP 的组合关系(显存账本对照表)见理论页 §2.1;CP 折叠进 EP(MoE Parallel Folding)见理论页 §2.2 + [[14_megatron_ep_analysis]] §6。
+与 TP/PP/DP/EP 的组合关系(显存账本对照表)见理论页 §2.1;CP 折叠进 EP(MoE Parallel Folding)见理论页 §2.2 + [[14_megatron_ep_analysis]] §9。
 
 ### 1.4 记号约定
 
@@ -175,7 +175,7 @@ CP 在 Megatron 侧不是"设一个 `--context-parallel-size` 就成立"的自�
 
 并行组合(README Guideline 5):
   - CP 与 TP/PP/DP/EP 正交,可任意叠加
-  - MoE:attention 用 TP×CP×DP,CP 折叠进 EP(MoE Parallel Folding,见 14_megatron_ep_analysis.md §6)
+  - MoE:attention 用 TP×CP×DP,CP 折叠进 EP(MoE Parallel Folding,见 14_megatron_ep_analysis.md §9)
   - CP 与 TP 同属高带宽通信,优先压在 NVLink 域内
 ```
 

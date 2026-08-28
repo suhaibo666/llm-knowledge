@@ -7,7 +7,7 @@ title: "Megatron-LM 分布式 Checkpoint 深度解析(Distributed Checkpointing)
 > **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
 > **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
 > 核心文件:`megatron/core/dist_checkpointing/` 下 `megatron/core/dist_checkpointing/mapping.py`(`ShardedTensor`)、`megatron/core/dist_checkpointing/serialization.py`(`save`/`load`)、`megatron/core/dist_checkpointing/strategies/`、`megatron/core/dist_checkpointing/validation.py`
-> 配套阅读:`17_megatron_parallelism_orchestration_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §3(resharding)
+> 配套阅读:`17_megatron_parallelism_orchestration_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §5(resharding)
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
 > **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
 > 定位:模型/优化器状态如何**存盘与读取**。
@@ -20,7 +20,7 @@ title: "Megatron-LM 分布式 Checkpoint 深度解析(Distributed Checkpointing)
 
 两者都处理"并行布局不同",但:
 
-| | **dist_checkpointing**(本文) | **resharding / refit**(`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §3) |
+| | **dist_checkpointing**(本文) | **resharding / refit**(`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §5) |
 |--|------------------------------|--------------------------------|
 | 干什么 | 模型/优化器状态**存盘 / 从盘读取** | 两个**运行中**的模型之间**实时**搬权重 |
 | 介质 | 磁盘 | GPU↔GPU(NCCL/NVSHMEM/Gloo) |
@@ -161,7 +161,7 @@ save(sharded_state_dict, checkpoint_dir, ...):
 
 `async` 与 `fully-parallel` 是两个关键性能特性:前者把存档延迟**藏进计算**,后者把存档 I/O **摊到所有卡**。大模型 checkpoint 动辄 TB 级,这两者让"每隔 N 步存一次"不至于拖垮吞吐。
 
-> Megatron-FSDP 另用 `fsdp_dtensor` 格式(基于 DTensor,见 `27_megatron_tp_fsdp_resharding_supplements_analysis.md` §1.5)。
+> Megatron-FSDP 另用 `fsdp_dtensor` 格式(基于 DTensor,见 `27_megatron_tp_fsdp_resharding_supplements_analysis.md` §3.5)。
 
 ---
 

@@ -135,7 +135,7 @@ def forward(self, *args, **kwargs):
        output
 ```
 
-`bda` = **bias-dropout-add**,融合算子(见 `23_megatron_precision_cudagraph_fusion_analysis.md` §3 `fused_bias_dropout`)。
+`bda` = **bias-dropout-add**,融合算子(见 `23_megatron_precision_cudagraph_fusion_analysis.md` §5 `fused_bias_dropout`)。
 
 ### 4.2 子类
 
@@ -162,10 +162,10 @@ def forward(self, *args, **kwargs):
 
 按 **`num_query_groups`** 区分三档:
 - **MHA**:`num_query_groups = num_attention_heads` —— 每个 Q 头有自己的 K/V 头。
-- **GQA(分组查询注意力)**:`num_query_groups < num_attention_heads` —— 多个 Q 头**共享**一组 K/V 头。KV 头变少 → **KV cache 变小、推理 decode 带宽压力降**(`31_megatron_inference_engine_analysis.md` §2 的瓶颈)。
+- **GQA(分组查询注意力)**:`num_query_groups < num_attention_heads` —— 多个 Q 头**共享**一组 K/V 头。KV 头变少 → **KV cache 变小、推理 decode 带宽压力降**(`31_megatron_inference_engine_analysis.md` §1.2 的瓶颈)。
 - **MQA**:`num_query_groups = 1` —— 所有 Q 头共享 1 组 K/V,GQA 的极端。
 
-TP 下 QKV 投影是 ColumnParallel(按头切)、输出投影 RowParallel(见 `12_megatron_tp_analysis.md` §3.2)。
+TP 下 QKV 投影是 ColumnParallel(按头切)、输出投影 RowParallel(见 `12_megatron_tp_analysis.md` §6.2)。
 
 > [!update] 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。注意力输出门控。`attention_output_gate`(整 `head_dim` 门)与新增的 **`head_wise_attn_gate`**(每头一个标量 sigmoid 门,Step-3.5-Flash,#4841,`megatron/core/transformer/attention.py:1448`)二选一、不可同开。门权重并入 `linear_qkv` 一并产出,对 `core_attn_out` **逐头乘 `sigmoid(gate)`**;head-wise 门仅自注意力(`attention_type != "cross"`),且要求 `num_attention_heads` / `num_query_groups` 满足整除约束(`megatron/core/transformer/transformer_config.py:1583`,具体两条整除断言在 `:1592`/`:1600`)。
 
@@ -245,12 +245,12 @@ HybridModel 的层 pattern 字符串(见 §9)新增四个 MLA 系注意力符号
 
 `TopKRouter.forward` 产出 `(probs, routing_map)`:
 
-1. **打分**:轻量线性层把 hidden 投成 `[s, E]` logits(建议 fp32,见 `14_megatron_ep_analysis.md` §2.3)。
+1. **打分**:轻量线性层把 hidden 投成 `[s, E]` logits(建议 fp32,见 `14_megatron_ep_analysis.md` §3.3)。
 2. **score function**:`softmax` 或 `sigmoid` 把 logits 变概率。
 3. **选 top-k**,可叠加:
    - **group-limited routing**(`moe_router_num_groups` / `group_topk`):先选 top-k 个**专家组**,再在组内选专家 —— 限制一个 token 跨越的节点数(DeepSeek-V3,利于 EP 跨节点通信)。
    - **`topk_routing_with_score_function`** —— 统一的 topk + score 实现。
-4. **负载均衡**(决定路由怎么"被纠偏",对应 `14_megatron_ep_analysis.md` §4):
+4. **负载均衡**(决定路由怎么"被纠偏",对应 `14_megatron_ep_analysis.md` §7):
    - **`aux_loss`** —— 辅助损失惩罚不均衡(微批 / 序列 / 全局级)。
    - **`sinkhorn`** —— 最优传输式均衡(与 aux_loss 互斥)。
    - **aux-loss-free**(`moe_router_enable_expert_bias`)—— 给每个专家一个**动态偏置** `expert_bias`(`_maintain_float32_expert_bias` 保持 fp32),过载专家偏置降、冷门专家偏置升,**不引入辅助损失**(DeepSeek-V3 用法)。
@@ -277,7 +277,7 @@ HybridModel 的层 pattern 字符串(见 §9)新增四个 MLA 系注意力符号
 
 标准 LM 每步只预测**下一个** token。**MTP**(DeepSeek-V3)让模型额外预测**再后面若干个** token —— 增加训练信号密度、并为推理的投机解码铺路。
 
-实现:在主干之后接 `mtp_num_layers` 个 MTP 模块,每个预测一个更远的 token。`MTPLossAutoScaler` 给 MTP loss 缩放(`15_megatron_pp_schedulers_analysis.md` §0.3 见过)。MTP 与 PP 配合时可单独占 VPP stage(`mtp_standalone`)。
+实现:在主干之后接 `mtp_num_layers` 个 MTP 模块,每个预测一个更远的 token。`MTPLossAutoScaler` 给 MTP loss 缩放(`15_megatron_pp_schedulers_analysis.md` §1.4 见过)。MTP 与 PP 配合时可单独占 VPP stage(`mtp_standalone`)。
 
 ---
 

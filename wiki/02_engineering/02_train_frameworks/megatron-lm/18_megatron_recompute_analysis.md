@@ -222,7 +222,7 @@ selective 下有**两种**底层机制(README MoE §Fine-grained Recomputation �
           ├─ 还差一点 ──► full + block,只重算装不下的那几层
           │
           └─ 还不够 ──► full + uniform(全层重算,+33%);
-                        或叠加激活 offload(pp_supplements §2)
+                        或叠加激活 offload(22_megatron_memory_optimization_analysis §3.3)
 ```
 
 ### 6.3 一句话总结

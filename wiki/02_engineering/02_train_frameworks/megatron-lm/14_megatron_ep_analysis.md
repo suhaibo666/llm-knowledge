@@ -399,7 +399,7 @@ T2 = prob(E0)·out0[T2] + prob(E3)·out3[T2]
 …（每 token 由其 topk 个专家的输出加权求和）
 ```
 
-> 一句话:**token 按专家归属"精确投递",参数零复制、激活零广播**——通信量 `∝ topk`、显存 `÷ EP`,与 AllGather 的"收全量"形成对比(§②.4 / [[01_megatron_moe_training_optimization_analysis]] §2.4.1 给出精确公式 `2·S·B·H·K·(E-1)/E²`)。
+> 一句话:**token 按专家归属"精确投递",参数零复制、激活零广播**——通信量 `∝ topk`、显存 `÷ EP`,与 AllGather 的"收全量"形成对比(§②.4 / [[01_megatron_moe_training_optimization_analysis]] §3.4.1 给出精确公式 `2·S·B·H·K·(E-1)/E²`)。
 
 ### ②.4 开销分析
 
@@ -537,7 +537,7 @@ $$
 \boxed{\ \text{IB 加速比}=\dfrac{k/P}{\,1-(1-1/P)^k\,}\ }
 $$
 
-dispatch 与 combine 对称(`fused_combine` 凭 `handle` 反向),前向 ×2、含反向 ×2 → 总系数 4,与 §②.4 / [[01_megatron_moe_training_optimization_analysis]] §2.4.1 标准 A2A 的 `4·S·B·H·K·(E−1)/E²` 同构,差别在把"按专家"换成"按远端 node"。
+dispatch 与 combine 对称(`fused_combine` 凭 `handle` 反向),前向 ×2、含反向 ×2 → 总系数 4,与 §②.4 / [[01_megatron_moe_training_optimization_analysis]] §3.4.1 标准 A2A 的 `4·S·B·H·K·(E−1)/E²` 同构,差别在把"按专家"换成"按远端 node"。
 
 #### ③.3.3 数值走查(2 node × 2 GPU,8 专家,EP=4,topk=4)
 
@@ -615,7 +615,7 @@ $R(X)=\{B\}$,$g_B(X)=2$(GPU2、GPU3),$g_s(X)=1$(GPU1)。
 >
 > 4. **新增 `moe_hybridep_pad_variable_tokens` 开关**(#5048,`megatron/core/transformer/transformer_config.py:981`)。把上条的"补齐到组内最大 token 数"从"仅当启用 `sequence_packing_scheduler`"解耦:当前端自供本地 packed THD(不走 Megatron-Core 的 sequence packing 调度器)、但各 rank token 数仍不齐时,可单独打开此开关触发同样 padding。
 >
-> 5. **新增 `moe_hybridep_num_sms_preprocessing`(默认 108)**(#4694,`megatron/core/transformer/transformer_config.py:1059`)。HybridEP 元数据扫描(preprocessing / metadata scan)kernel 占用的 SM 数,透传到 `init_hybrid_ep_buffer` / `hybrid_ep_dispatch`。与 `high_priority_a2a_comm_stream`(见 [[20_megatron_comm_overlap_analysis]] §5.7)配合,细调 A2A 与计算抢 SM 的平衡。
+> 5. **新增 `moe_hybridep_num_sms_preprocessing`(默认 108)**(#4694,`megatron/core/transformer/transformer_config.py:1059`)。HybridEP 元数据扫描(preprocessing / metadata scan)kernel 占用的 SM 数,透传到 `init_hybrid_ep_buffer` / `hybrid_ep_dispatch`。与 `high_priority_a2a_comm_stream`(见 [[20_megatron_comm_overlap_analysis]] §6.7)配合,细调 A2A 与计算抢 SM 的平衡。
 >
 > 6. **移除 HybridEP IB 硬件上限的 Python 侧守卫**(#4846 移除;此前 #4719 添加、#4718 又 revert 过早期版本)。dev 一度在 `megatron/core/transformer/moe/fused_a2a.py` 加过 `_validate_hybrid_ep_ib_tx_depth`,多节点(走 RDMA)且 per-rank token 过大时提前报"IB dispatch QP depth 超 65535 硬件上限"。**HEAD(dev@232c478d4)已彻底删除该检查**,不再有 Python 侧 IB token 上限校验(交底层库)。若多节点 HybridEP 报 QP depth 错误,需自行降 per-rank token(减 seq/micro-batch 或增 TP/CP)。
 >

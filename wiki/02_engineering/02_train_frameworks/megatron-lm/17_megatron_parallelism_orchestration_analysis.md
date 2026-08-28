@@ -194,7 +194,7 @@ rank 布局(order=tp-dp-pp):
 
 ## 4. MoE Parallel Folding 的编排实现:两个 RankGenerator
 
-`RankGenerator.__init__` 第一行断言 `ep == 1 or cp == 1` —— **EP 和 CP 不能在同一个 RankGenerator 里同时 > 1**。原因:attention 层用 CP、MoE 层用 EP,二者是**同一组 GPU 的两套不同分解**(即 `14_megatron_ep_analysis.md` §6 的 MoE Parallel Folding)。
+`RankGenerator.__init__` 第一行断言 `ep == 1 or cp == 1` —— **EP 和 CP 不能在同一个 RankGenerator 里同时 > 1**。原因:attention 层用 CP、MoE 层用 EP,二者是**同一组 GPU 的两套不同分解**(即 `14_megatron_ep_analysis.md` §9 的 MoE Parallel Folding)。
 
 `initialize_model_parallel`(`megatron/core/parallel_state.py:545`)因此构造**两个** RankGenerator:
 
@@ -224,7 +224,7 @@ expert_decoder_rank_generator = RankGenerator(
        == expert_decoder_rank_generator.get_ranks("pp")
 ```
 
-PP 是两套分解唯一共享的轴(模型按层切,attention 层和 MoE 层在同一条流水线上)。这就是编排层如何实现"attention 和 MoE 用不同并行度"的 —— `14_megatron_ep_analysis.md` §6 描述的能力,落地点就在这两个 RankGenerator。
+PP 是两套分解唯一共享的轴(模型按层切,attention 层和 MoE 层在同一条流水线上)。这就是编排层如何实现"attention 和 MoE 用不同并行度"的 —— `14_megatron_ep_analysis.md` §9 描述的能力,落地点就在这两个 RankGenerator。
 
 ---
 
@@ -297,7 +297,7 @@ dp_cp_group = grid.create_pg(["cp", "dp"], pg_options=..., group_desc="...")
 > - **`create_pg` / `get_pg` / `get_rank_enum` 新增 `view="..."` 关键字参数**(`megatron/core/hyper_comm_grid.py:206`、`:287`、`:313`,默认 `base` view)。base view 的组仍按「短横线拼接的维名」做键;view 私有组用 `(view_name, dims)` 元组做键;若某组只涉及 `shared_dims`,会**复用 base view 的同一进程组**(单键存储,`destroy` 时只销毁一次,`_canonical_pg_key_and_enum_view` `megatron/core/hyper_comm_grid.py:418`)。
 > - **底层去掉 einops 依赖**:`_gen_rank_enum` 重构为 `_gen_rank_enum_for(shape, dim_names, dims)`(`megatron/core/hyper_comm_grid.py:356`),用 `numpy.arange + reshape + moveaxis` 直接生成 rank 枚举,不再 `einops.rearrange`。语义与原 MCore 约定(`dim_names` 逆序)一致,行为不变。
 >
-> 这是上文「演进方向」的落地一步:`HyperCommGrid` 从「单一 N 维网格」升级为「一段 rank 上挂多套命名分解」,正是多模态/异构子模型(见 [[15_megatron_pp_schedulers_analysis]] §6.2 BridgeCommunicator)所需的几何基础。
+> 这是上文「演进方向」的落地一步:`HyperCommGrid` 从「单一 N 维网格」升级为「一段 rank 上挂多套命名分解」,正是多模态/异构子模型(见 [[15_megatron_pp_schedulers_analysis]] §8.2 BridgeCommunicator)所需的几何基础。
 
 ---
 

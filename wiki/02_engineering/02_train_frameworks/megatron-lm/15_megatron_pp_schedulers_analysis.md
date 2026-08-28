@@ -113,7 +113,7 @@ shape = [ seq_len / (cp_size · tp_size_if_sequence_parallel),  micro_batch_size
 
 **Hyper Connections 对通信形状的影响**:`config.enable_hyper_connections=True` 时,中间 stage 的 P2P tensor shape 从 `[S,B,H]` 扩为 `[S,B,H×num_residual_streams]`(hyper connection 模块扩展了残差流数量),但只在中间 stage 生效,首/末 stage 仍是标准 `H`(`megatron/core/pipeline_parallel/schedules.py:2217-2276`;结构见 `10_megatron_model_structure_analysis.md` §`HyperConnectionTransformerLayer`)。
 
-**与激活换出的关系**:PP/VPP 显存不够时,除了减小 `pp`/`vp`,还可以用**细粒度激活换出**(`megatron/core/pipeline_parallel/fine_grained_activation_offload.py` 的 `PipelineOffloadManager`,D2H/H2D 异步双流,与重计算正交可叠加)把部分层的激活挪到 CPU pinned memory;`megatron/core/pipeline_parallel/schedules.py` 每步收尾调 `off_interface.reset()`,与 PP/VPP 调度天然兼容。参数与机制见 `22_megatron_memory_optimization_analysis.md` §2.3(现行权威页;含 `saved_tensors_hooks` 挂钩、`OffloadTensorGroup` 双 event、`post_warmup_callback` 自适应调优等机制细节,及 2026-06-16 `max_inflight_offloads` 节流更新)。
+**与激活换出的关系**:PP/VPP 显存不够时,除了减小 `pp`/`vp`,还可以用**细粒度激活换出**(`megatron/core/pipeline_parallel/fine_grained_activation_offload.py` 的 `PipelineOffloadManager`,D2H/H2D 异步双流,与重计算正交可叠加)把部分层的激活挪到 CPU pinned memory;`megatron/core/pipeline_parallel/schedules.py` 每步收尾调 `off_interface.reset()`,与 PP/VPP 调度天然兼容。参数与机制见 `22_megatron_memory_optimization_analysis.md` §3.3(现行权威页;含 `saved_tensors_hooks` 挂钩、`OffloadTensorGroup` 双 event、`post_warmup_callback` 自适应调优等机制细节,及 2026-06-16 `max_inflight_offloads` 节流更新)。
 
 ### 1.5 PP 进程组与拓扑结构
 
@@ -737,7 +737,7 @@ TransformerLayerSchedulePlan.run(f_layer, b_layer)
 
 **④ 角色化节点 + 双流 + event 同步**(承 §⑤.2):一层拆成 `attn / moe_dispatch / mlp / moe_combine` 四个 `ScheduleNode`,A2A 节点绑 `comm_stream`、计算节点绑 `comp_stream`;跨流靠 CUDA event(`record_current_stream`/`wait_current_stream`,`megatron/core/models/common/model_chunk_schedule_plan.py:827-835`)保证依赖正确。于是 forward 层的 A2A 与配对 backward 层的计算在不同 stream 上真并行,而 autograd 正确性不受影响(forward 仍建图、backward 仍真反向)。
 
-> 不变量:不支持 `checkpoint_activations_microbatch`(`megatron/core/pipeline_parallel/combined_1f1b.py:343` assert);VPP>1 + Megatron-FSDP 显式不支持;FSDP `optim_grads_params` 下因绕过 `TransformerLayer.forward` 的 hook,要给每层显式挂 reshard 回调(`megatron/core/pipeline_parallel/combined_1f1b.py:416-423`,见 [[16_megatron_distributed_optimizer_analysis]] / [[20_megatron_comm_overlap_analysis]] §5.7);FP8 仅 `delayed` recipe 支持 —— `use_outer_fp8_context = config.fp8 and config.fp8_recipe == Fp8Recipe.delayed` 为真时,整个 combined step 被包在外层 `get_fp8_context(config)` 里(`megatron/core/pipeline_parallel/combined_1f1b.py:465-469`),否则退化为 `nullcontext()`。
+> 不变量:不支持 `checkpoint_activations_microbatch`(`megatron/core/pipeline_parallel/combined_1f1b.py:343` assert);VPP>1 + Megatron-FSDP 显式不支持;FSDP `optim_grads_params` 下因绕过 `TransformerLayer.forward` 的 hook,要给每层显式挂 reshard 回调(`megatron/core/pipeline_parallel/combined_1f1b.py:416-423`,见 [[16_megatron_distributed_optimizer_analysis]] / [[20_megatron_comm_overlap_analysis]] §6.7);FP8 仅 `delayed` recipe 支持 —— `use_outer_fp8_context = config.fp8 and config.fp8_recipe == Fp8Recipe.delayed` 为真时,整个 combined step 被包在外层 `get_fp8_context(config)` 里(`megatron/core/pipeline_parallel/combined_1f1b.py:465-469`),否则退化为 `nullcontext()`。
 
 > [!update] combined-1F1B 的三处增量(MTP 排序 / 显存释放 / 死代码清理)——该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
 >
@@ -869,13 +869,13 @@ def get_total_workload(self, seq_length, cp_size):
 
 **动机**:标准 `P2PCommunicator`(§1.4)假设上下游 PP stage 共享同一并行网格,TP/DP/CP 一致、激活形状对得上。但**多模态模型**的视觉编码器、LLM 主干、生成头是不同子模型,各自可能用完全不同并行配置(如编码器 TP=2/PP=1,LLM TP=8/PP=4),甚至张量维数不同(视觉编码器常出 2D `[b·s,h]`,LLM 要 3D `[s,b,h]`)。
 
-`BridgeCommunicator`(`megatron/core/pipeline_parallel/bridge_communicator.py:39`)连接一对 `HyperCommGrid`(源→目标网格,见 `17_megatron_parallelism_orchestration_analysis.md` §4):`build_comm_map` 算出源网格哪些 rank 该发给目标网格哪些 rank,fan-in/fan-out 处理两侧 batch/并行度不同(用缓存的 broadcast 进程组);`dim_mapping`/`tensor_ndim` 处理 2D/3D 差异;对外暴露与 `P2PCommunicator` 同名接口(`send_forward`/`recv_forward`/`send_forward_recv_backward`/...),上层调度无感切换。当前限制:CP 暂不支持(两侧须 CP=1)。
+`BridgeCommunicator`(`megatron/core/pipeline_parallel/bridge_communicator.py:39`)连接一对 `HyperCommGrid`(源→目标网格,见 `17_megatron_parallelism_orchestration_analysis.md` §5):`build_comm_map` 算出源网格哪些 rank 该发给目标网格哪些 rank,fan-in/fan-out 处理两侧 batch/并行度不同(用缓存的 broadcast 进程组);`dim_mapping`/`tensor_ndim` 处理 2D/3D 差异;对外暴露与 `P2PCommunicator` 同名接口(`send_forward`/`recv_forward`/`send_forward_recv_backward`/...),上层调度无感切换。当前限制:CP 暂不支持(两侧须 CP=1)。
 
 `MultiModulePipelineCommunicator`(`megatron/core/pipeline_parallel/multimodule_communicator.py:110`)把多个子模块组织成一张 DAG(如 `image_encoder/audio_encoder → llm → generator`),为每条边建一个 `BridgeCommunicator`,张量以 `Dict[str, Tensor]` 按模块名组织传递 —— 使调度器②的非交错 1F1B 可以无感驱动一条跨异构子模型的流水线。
 
 > [!update] 跨网格 P2P 改走专用进程组(#5234)——该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
 >
-> `ee3f1ff` 时跨网格 `dist.send/recv`/`P2POp` 不带 `group=` 参数,隐式走全局 `WORLD` 组,与其它集合通信共用 NCCL 通信器,有串行化/标签冲突风险。#5234 为每条桥接边新建专用进程组 `bridge_pg`(`megatron/core/pipeline_parallel/bridge_communicator.py:167-168`,取源/目标网格 TP leader 并集排序后 `dist.new_group`),类级缓存 `_bridge_pg_cache` 避免重复建组;此后所有桥接 `send_forward`/`recv_forward`/`send_backward`/`recv_backward` 及融合 `P2POp` 均显式传 `group=self.bridge_pg`(12 处站点)。意义:把跨网格 leader↔leader 的 P2P 从全局组隔离到独立通信器,避免与子网格内部 TP/PP/DP 集合通信争用 NCCL 资源。配套:`HyperCommGrid` 本身也在 #5148 获得 named views,为异构子模型提供几何基础(详见 [[17_megatron_parallelism_orchestration_analysis]] §4③)。
+> `ee3f1ff` 时跨网格 `dist.send/recv`/`P2POp` 不带 `group=` 参数,隐式走全局 `WORLD` 组,与其它集合通信共用 NCCL 通信器,有串行化/标签冲突风险。#5234 为每条桥接边新建专用进程组 `bridge_pg`(`megatron/core/pipeline_parallel/bridge_communicator.py:167-168`,取源/目标网格 TP leader 并集排序后 `dist.new_group`),类级缓存 `_bridge_pg_cache` 避免重复建组;此后所有桥接 `send_forward`/`recv_forward`/`send_backward`/`recv_backward` 及融合 `P2POp` 均显式传 `group=self.bridge_pg`(12 处站点)。意义:把跨网格 leader↔leader 的 P2P 从全局组隔离到独立通信器,避免与子网格内部 TP/PP/DP 集合通信争用 NCCL 资源。配套:`HyperCommGrid` 本身也在 #5148 获得 named views,为异构子模型提供几何基础(详见 [[17_megatron_parallelism_orchestration_analysis]] §5③)。
 
 **适用场景**:VLM、音频-语言、encoder-decoder 等多模态/异构模型;纯单模型(GPT)走标准 `P2PCommunicator`,用不到这两个类。
 
@@ -998,7 +998,7 @@ def get_total_workload(self, seq_length, cp_size):
 | `defer_embedding_wgrad_compute` | 大 vocab 时 `True` | §1.5 |
 | `overlap_moe_expert_parallel_comm` | `True`(MoE 模型) | 调度器⑤ combined-1F1B |
 | `num_microbatches_with_partial_activation_checkpoints` | 按显存压力设窗口 | §②.2 Partial Checkpointing |
-| `--offload-modules` / fine-grained offloading | 显存墙严重时开 | 见 §1.4 与 `22_megatron_memory_optimization_analysis.md` §2.3 |
+| `--offload-modules` / fine-grained offloading | 显存墙严重时开 | 见 §1.4 与 `22_megatron_memory_optimization_analysis.md` §3.3 |
 
 ---
 
@@ -1020,5 +1020,5 @@ def get_total_workload(self, seq_length, cp_size):
 
 - [[14_megatron_ep_analysis]] · [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[16_megatron_distributed_optimizer_analysis]]
 - [[17_megatron_parallelism_orchestration_analysis]] · [[29_megatron_packed_dataset_dynamic_cp_analysis]](混合 CP 动态调度的集成入口)
-- [[20_megatron_comm_overlap_analysis]] · [[22_megatron_memory_optimization_analysis]](细粒度激活换出权威页,§2.3)
+- [[20_megatron_comm_overlap_analysis]] · [[22_megatron_memory_optimization_analysis]](细粒度激活换出权威页,§3.3)
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]

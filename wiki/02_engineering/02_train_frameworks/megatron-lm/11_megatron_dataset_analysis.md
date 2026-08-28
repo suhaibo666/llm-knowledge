@@ -7,7 +7,7 @@ title: "Megatron-LM 数据集深度解析:原始 GPT 数据集与序列打包"
 > **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
 > **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
 > 核心文件:`megatron/core/datasets/` 下 `megatron/core/datasets/gpt_dataset.py`(984 行)、`megatron/core/datasets/indexed_dataset.py`、`megatron/core/datasets/blended_dataset.py`、`megatron/core/datasets/blended_megatron_dataset_builder.py`、`megatron/core/datasets/data_schedule.py`(1166 行);`megatron/core/packed_seq_params.py`
-> 配套阅读:`15_megatron_pp_schedulers_analysis.md` §6.1(混合 CP 动态调度)、`13_megatron_cp_analysis.md`
+> 配套阅读:`15_megatron_pp_schedulers_analysis.md` §8.1(混合 CP 动态调度)、`13_megatron_cp_analysis.md`
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
 > **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
 > 范围:**只讲 LLM(GPT)路径**。`megatron/core/datasets/bert_dataset.py` / `megatron/core/datasets/t5_dataset.py` / `megatron/core/datasets/masked_dataset.py` / `megatron/core/datasets/multimodal_dataset.py` 不展开。
@@ -153,7 +153,7 @@ PackedSeqParams:
 
 `seq_idx` 由 `__post_init__` 从 `cu_seqlens` 自动算出(`megatron/core/packed_seq_params.py:41`,用 `repeat_interleave`),供 Mamba mixer 和 CUDA Graph 用。attention 内核(TE)凭 `cu_seqlens` 让**每条子序列只 attend 自己** —— 等价于 N 条独立序列,但只跑一个 kernel、零 padding 浪费(除尾部)。
 
-> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。**GDN 现也支持序列打包(THD)**(#2645，现在 `megatron/core/ssm/gated_delta_net/gdn.py:189+`；原单文件 `megatron/core/ssm/gated_delta_net.py` 已被 #6088（cherry-pick #5843）拆成 `megatron/core/ssm/gated_delta_net/` 包，THD 分支现落在 `megatron/core/ssm/gated_delta_net/gdn.py`）。此前 GDN 遇到 `packed_seq_params` 直接 `NotImplementedError`;现在 `qkv_format=='thd'` 时按 `cu_seqlens` 把打包 buffer 拆成各子序列、**逐条**做 CP↔HP all-to-all 再 chunk 扫描(要求 `batch==1`、非 deterministic)。即:`cu_seqlens` 这套打包元数据不止给 attention/Mamba,GDN 线性注意力也消费它(详见 `10_megatron_model_structure_analysis.md` §7)。
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。**GDN 现也支持序列打包(THD)**(#2645，现在 `megatron/core/ssm/gated_delta_net/gdn.py:189+`；原单文件 `megatron/core/ssm/gated_delta_net.py` 已被 #6088（cherry-pick #5843）拆成 `megatron/core/ssm/gated_delta_net/` 包，THD 分支现落在 `megatron/core/ssm/gated_delta_net/gdn.py`）。此前 GDN 遇到 `packed_seq_params` 直接 `NotImplementedError`;现在 `qkv_format=='thd'` 时按 `cu_seqlens` 把打包 buffer 拆成各子序列、**逐条**做 CP↔HP all-to-all 再 chunk 扫描(要求 `batch==1`、非 deterministic)。即:`cu_seqlens` 这套打包元数据不止给 attention/Mamba,GDN 线性注意力也消费它(详见 `10_megatron_model_structure_analysis.md` §9)。
 
 与 §4.3 GPTDataset 的对比:GPTDataset **切断 doc**、靠 EOD + `reset_attention_mask` 隔离;packed dataset **不切断**、靠 `cu_seqlens` + THD 格式隔离。后者保住了样本完整性。
 
@@ -163,7 +163,7 @@ PackedSeqParams:
 
 `megatron/core/datasets/data_schedule.py` 的 `BasePackingScheduler` / `build_packed_microbatches`:
 - 把一批变长样本**贪心 bin-pack** 成定长 microbatch(尽量塞满,减少 padding)。
-- 配 `BalancedCPScheduler`(`15_megatron_pp_schedulers_analysis.md` §6.1 的混合 CP 动态调度):变长数据下,长序列分更多 CP 卡,并让各 DP×CP 组的 `seq²/cp` 工作量均衡。
+- 配 `BalancedCPScheduler`(`15_megatron_pp_schedulers_analysis.md` §8.1 的混合 CP 动态调度):变长数据下,长序列分更多 CP 卡,并让各 DP×CP 组的 `seq²/cp` 工作量均衡。
 - `PackedSeqParams` 里的 `cp_group` / `local_cp_size` —— 打包**与 CP 协同**:一条打包子序列还能再被 CP 切到多卡(`get_cp_slice_for_thd`)。
 - 产出对齐到 PP 组的数据迭代器(`broadcast_to_pp_group`、`create_data_iterator`)。
 
@@ -259,7 +259,7 @@ PackedSeqParams:
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`（2026-08-27）。源码行号以该 commit 为准；2026-08-28 由 `ee3f1ff` 重定基线。本文只覆盖 GPT/LLM 路径;BERT/T5/多模态数据集见 `megatron/core/datasets/bert_dataset.py` / `megatron/core/datasets/t5_dataset.py` / `megatron/core/datasets/multimodal_dataset.py`。配套文档:`15_megatron_pp_schedulers_analysis.md` §6.1、`13_megatron_cp_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `71092579`（2026-08-27）。源码行号以该 commit 为准；2026-08-28 由 `ee3f1ff` 重定基线。本文只覆盖 GPT/LLM 路径;BERT/T5/多模态数据集见 `megatron/core/datasets/bert_dataset.py` / `megatron/core/datasets/t5_dataset.py` / `megatron/core/datasets/multimodal_dataset.py`。配套文档:`15_megatron_pp_schedulers_analysis.md` §8.1、`13_megatron_cp_analysis.md`。*
 
 ## Related Pages
 
