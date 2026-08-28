@@ -172,7 +172,7 @@ Llama 当前按这个顺序调用 `model.parallelize → AC → compile → FSDP
 ## Cross-Domain Links
 
 - [[../megatron-lm/index|Megatron-LM 知识地图]] —— CUDA/Megatron 专用并行栈的对照系
-- [[../21_async_collective_tensor_deepdive|AsyncCollectiveTensor 深潜]] —— 旧/通用异步 collective 语义；不可再直接当作当前 CP wrapper 证据
+- [[../21_async_collective_tensor_deepdive|AsyncCollectiveTensor 深潜]] —— ACT 机制本体（已于 2026-08-28 重定基线并逐条重核）；注意它当初是为「集合通信可被 dynamo/FX 追踪」而引入，掩盖是副产品
 - [[../30_comm_compute_overlap_analysis|跨框架通算重叠]] —— PP/TP/EP/FSDP 的横向比较
 - [[../31_comm_compute_fusion_guide|通算融合指南]] —— 从独立 collective 到 fused/distributed GEMM 的方法论
 - [[../32_distributed_optimizer_deepdive|分布式优化器对比]] —— FSDP2、ZeRO 与其他实现

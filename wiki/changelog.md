@@ -12,6 +12,40 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-28（四）：给 check_links 加 stale_section 规则；重做 ACT 深潜页——立论被上游改写
+
+**Type**: 门禁新规则（1 检查项 + 7 单测 + 3 处存量）+ 1 页重写
+
+### 一、`stale_section`：把长期盲区纳入门禁
+
+`§N` 是纯文本、不是 wikilink，`check_links` 此前完全不检查。本轮 megatron 26 页重排暴露出 **102 处**失效的章节交叉引用，全程门禁绿灯——这是个长期盲区。
+
+规则：`[[页面]]` 后**紧跟** `§N` 时，去目标页解析顶层节号（`## N.` 与 `## 一、` 两种风格都认，中文序号转整数），不存在即报 `stale_section`，计入 `--strict`。三条取舍：只认紧邻形态（隔着一句话的 `§N` 往往指引用页自己）；窗口止于行尾（`visible_text` 把全篇拼成一个串，不截断会跨行误判）；目标页无编号小节时不评判。
+
+上线即抓到 **3 处谁都不知道的存量**，都在与本轮无关的 inductor/npu 域，其中一处我先前手工 grep 漏了——因为文件里写的是中文数字 `§七`。补 7 个单测；`tools/` 全套 121 passed。
+
+### 二、[[21_async_collective_tensor_deepdive]]：立论被改写，不只是行号过期
+
+原页用 torchtitan `AllToAllTokenDispatcher.combine()` 论证「ACT 能在同一 forward 内掩盖通信」，且**全页没有任何基线声明**。重做后：
+
+**① ACT 的出身改写了整页立论。** `e22d791287`（2023-02-16，#93990）标题即 *"[PTD] Introduce tracing friendly collectives"* —— **ACT 与 functional collectives 同一提交引入，是「让集合通信可被 dynamo/FX 追踪」的副产品，不是为掩盖设计的**。模块 docstring 亦自陈 eager 走 subclass、编译交给编译器、"In the future, these paths may be unified"。
+
+**② 机制本身成立，例子不成立。** 三层机制（wrapper subclass → `__torch_dispatch__` view/非-view 分流 → `wait_tensor` 经 `WorkRegistry` 反查 Work 并 `ncclEndEvent_->block(currentStream)`）逐行重核通过；wait 是 stream 级 block 而非 CPU block。被推翻的是 **shared experts 那个例子**：`963c20cba`(#3386) 把 shared experts 从 `combine()` 移到 `MoE.forward()`，当前 `moe.py:440`(routed) 与 `:447`(shared) 的顺序使窗口不存在。
+
+**③ 更根本的一条：默认配置下 torchtitan 的 MoE 可能根本不产生 ACT。** dispatcher 三处收发一律 `if (is_compiling or non_strict_tracing) or get_spmd_backend() != "spmd_types": funcol… else spmd.all_to_all`；而默认 `_spmd_backend = "spmd_types"`（`distributed/utils.py:36`）。该后端是 out-of-tree pip 包（`spmd_types==0.2.5`），不在检出内，**本页如实写「无法核实」而非猜测**。唯一被主动选用 ACT 的是 TP redistribute 的四处显式 `async_op=True`。
+
+**④ 源码内部不一致**：`token_dispatcher.py:589-590` 那条 ACT 注释由 `09ea7d8e73`(#2842) 留下，写于 shared experts 尚在 combine 内、`spmd_types` 分支尚未加入之前，今天既不描述默认分支也不对应任何窗口——已标 contradiction（值得给上游提 issue，本轮未做）。
+
+**基线**：本页跨三个仓库，各自钉死——torchtitan `a3168782c9`、PyTorch `ea5655fceb`、Megatron-LM `71092579…`（§4.6 对照现已带真实 locator，原本零 locator）。旧页 7 条数字 locator 全部作废，但查明它们在 `963c20cba^`（`83e490429cc5`）下逐条属实，这一事实写进附录。新页 151 处引用逐条 `git show` 打开确认。
+
+**旧论证保留**：`## 附录 A` 完整保留旧形态代码与两张旧图，代码块行号一律带 `@ 83e490429cc5` 后缀标明所属基线，开头 `[!contradiction]` 说明推翻依据。四张图一张未删，失效处只在图注下加更正行。
+
+**已知未尽**：fig1/fig2/fig3 各有一格描述已推翻的形态，只加注未重绘（需重跑绘图工具链）；`spmd_types` 包若装上，§4.3 表格首行可以定论。
+
+**校验**：`check_links --strict` 430 页六项全 0；`check_math --changed --strict` 0 错 0 警；`pytest tools/` 121 passed。
+
+---
+
 ## 2026-08-28（三）：修 torchtitan 章节引用，并翻掉跨框架对比表里一条已被上游推翻的结论
 
 **Type**: 交叉引用修复（1 页 7 处 §）+ 一条主结论更正
