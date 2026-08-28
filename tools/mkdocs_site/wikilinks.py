@@ -304,9 +304,22 @@ def _escaped_wikilink(markdown: str, start: int) -> bool:
     return slashes % 2 == 1
 
 
+def _standalone_annotation_label(classification: str) -> str:
+    """Return the parser's anchor label for one isolated Wikilink annotation."""
+    rendered = render_markdown(
+        f"{classification}(annotation)",
+        extensions=list(_MARKDOWN_EXTENSIONS),
+        extension_configs=_MARKDOWN_EXTENSION_CONFIGS,
+    )
+    anchor = BeautifulSoup(rendered, "html.parser").find("a")
+    if anchor is None:
+        raise ValueError("Wikilink annotation classifier did not produce an anchor")
+    return anchor.get_text()
+
+
 def _active_wikilink_indexes(
     markdown: str, matches: tuple[re.Match[str], ...]
-) -> tuple[frozenset[int], frozenset[int], str]:
+) -> tuple[frozenset[int], frozenset[int], frozenset[int], str]:
     """Classify source Wikilinks using the same rendered Markdown structure."""
     prefix = _collision_free_wikilink_prefix(markdown)
     pieces: list[str] = []
@@ -326,6 +339,7 @@ def _active_wikilink_indexes(
     soup = BeautifulSoup(rendered, "html.parser")
     active: set[int] = set()
     nested: set[int] = set()
+    annotation_units: set[int] = set()
     for node in soup.find_all(string=lambda value: prefix in value):
         if isinstance(node, Comment):
             continue
@@ -338,9 +352,22 @@ def _active_wikilink_indexes(
         for index in range(len(matches)):
             if _wikilink_sentinel(prefix, index) in value:
                 active.add(index)
-                if parent.name == "a" or parent.find_parent("a") is not None:
+                anchor = parent if parent.name == "a" else parent.find_parent("a")
+                if anchor is not None:
                     nested.add(index)
-    return frozenset(active), frozenset(nested), prefix
+                    if markdown.startswith("(", matches[index].end()):
+                        classification = _classification_wikilink(
+                            matches[index], _wikilink_sentinel(prefix, index)
+                        )
+                        expected_label = _standalone_annotation_label(classification)
+                        if anchor.get_text() == expected_label:
+                            annotation_units.add(index)
+    return (
+        frozenset(active),
+        frozenset(nested),
+        frozenset(annotation_units),
+        prefix,
+    )
 
 
 def _classify_and_rewrite_wikilinks(
@@ -351,7 +378,9 @@ def _classify_and_rewrite_wikilinks(
     matches = tuple(_WIKILINK.finditer(markdown))
     if not matches:
         return markdown, {}
-    active, nested, prefix = _active_wikilink_indexes(markdown, matches)
+    active, nested, annotation_units, prefix = _active_wikilink_indexes(
+        markdown, matches
+    )
     protected: dict[str, str] = {}
     output: list[str] = []
     cursor = 0
@@ -359,7 +388,7 @@ def _classify_and_rewrite_wikilinks(
         output.append(markdown[cursor : match.start()])
         escaped = _escaped_wikilink(markdown, match.start())
         immediate_annotation = markdown.startswith("(", match.end())
-        if index in nested and not escaped and not immediate_annotation:
+        if index in nested and not escaped and index not in annotation_units:
             line = 1 + markdown.count("\n", 0, match.start())
             raise LinkResolutionError(
                 page,

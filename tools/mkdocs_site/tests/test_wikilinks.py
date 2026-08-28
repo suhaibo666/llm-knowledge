@@ -132,6 +132,45 @@ def test_rewriter_disambiguates_table_alias_annotation_without_source_change(
     )
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "[see [[target]](x) post](https://example.com)",
+        "[prefix [[target]](x)](https://example.com)",
+        "[ [[target]](x) suffix](https://example.com)",
+        "[see [[target|别名]](x) post](https://example.com)",
+        "[see [[target#二、机制]](x) post](https://example.com)",
+        "| [see [[target]](x) post](https://example.com) |",
+    ],
+)
+def test_rewriter_rejects_immediate_annotation_inside_outer_link_label(
+    source: str,
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+
+    with pytest.raises(
+        LinkResolutionError,
+        match="unsupported nested Markdown link label",
+    ):
+        rewrite_wikilinks(source, page, inventory)
+
+
+def test_rewriter_allows_complete_annotation_units_between_prose(
+    resolver_fixture: tuple[PageRecord, Inventory],
+) -> None:
+    page, inventory = resolver_fixture
+
+    assert rewrite_wikilinks(
+        "prefix [[target]](x) suffix and [[target]]（说明）",
+        page,
+        inventory,
+    ) == (
+        "prefix [target](../target.md) (x) suffix and "
+        "[target](../target.md)（说明）"
+    )
+
+
 def test_rewriter_skips_fenced_and_inline_code(
     resolver_fixture: tuple[PageRecord, Inventory],
 ) -> None:
