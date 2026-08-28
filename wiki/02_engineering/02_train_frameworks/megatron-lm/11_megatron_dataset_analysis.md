@@ -5,7 +5,7 @@ title: "Megatron-LM 数据集深度解析:原始 GPT 数据集与序列打包"
 # Megatron-LM 数据集深度解析:原始 GPT 数据集与序列打包
 
 > **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/datasets/` 下 `megatron/core/datasets/gpt_dataset.py`(984 行)、`megatron/core/datasets/indexed_dataset.py`、`megatron/core/datasets/blended_dataset.py`、`megatron/core/datasets/blended_megatron_dataset_builder.py`、`megatron/core/datasets/data_schedule.py`(1166 行);`megatron/core/packed_seq_params.py`
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md` §8.1(混合 CP 动态调度)、`13_megatron_cp_analysis.md`
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。

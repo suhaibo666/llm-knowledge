@@ -5,7 +5,7 @@ title: "Megatron-LM 分布式 Checkpoint 深度解析(Distributed Checkpointing)
 # Megatron-LM 分布式 Checkpoint 深度解析(Distributed Checkpointing)
 
 > **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/dist_checkpointing/` 下 `megatron/core/dist_checkpointing/mapping.py`(`ShardedTensor`)、`megatron/core/dist_checkpointing/serialization.py`(`save`/`load`)、`megatron/core/dist_checkpointing/strategies/`、`megatron/core/dist_checkpointing/validation.py`
 > 配套阅读:`17_megatron_parallelism_orchestration_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §5(resharding)
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
@@ -92,7 +92,7 @@ class ShardedTensor(ShardedBase):
 读法:`(global_shape, global_offset, local_shape)` 三者一起,精确说明"本 rank 的 `data` 是全局张量 `key` 的哪一块"。关键字段:
 - **`replica_id`**:DP 副本持有**完全相同**的数据。存档时只让 `replica_id` 为某个值的副本真正写盘,其余跳过 —— **避免 DP 冗余写**。
 - **`prepend_axis_num`**:MoE 专家权重等,局部张量是单个专家、全局多了一个"专家"轴 —— 用前置轴表达。
-- **`flattened_range`**:DDP 的扁平梯度 buffer、分布式优化器的扁平状态(见 `16_megatron_distributed_optimizer_analysis.md`)—— 局部片是大扁平 buffer 的一段,用这个字段定位。
+- **`flattened_range`**:DDP 的扁平梯度 buffer、分布式优化器的扁平状态(见 `16_megatron_distributed_optimizer_analysis.md`)—— 局部片是大扁平 buffer 的一段,用这个字段定位。**注意**:基线 `71092579` 下裸 `ShardedTensor` 已**不再接受**该参数(直接 `raise CheckpointingException`,#2126 `5ab481cb4` 整体删除该路径),它现在只在 `ShardedTensorFactory` 上有效——详见约束节。
 - `from_rank_offsets`(`:190`):便捷构造器,从"本 rank 在各并行轴的 rank 号"直接算出 offset。
 - `narrow`(`:262`):把一个 ShardedTensor 再切窄(load 时按需取子片)。
 

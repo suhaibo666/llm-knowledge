@@ -5,7 +5,7 @@ title: "Megatron-LM 推理引擎深度解析(Inference Engine)"
 # Megatron-LM 推理引擎深度解析(Inference Engine)
 
 > **源码基线**:`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`(`dev`,2026-08-27)
-> **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/inference/` 下 `engines/`(`megatron/core/inference/engines/dynamic_engine.py` 2614 行、`megatron/core/inference/engines/static_engine.py`)、`megatron/core/inference/contexts/dynamic_context.py`(4021 行)、`megatron/core/inference/contexts/kv_block_allocator.py`、`megatron/core/inference/scheduler.py`
 > 配套阅读:`30_megatron_rl_posttraining_consistency_analysis.md`(RL rollout 用的就是本引擎)、`23_megatron_precision_cudagraph_fusion_analysis.md`、`14_megatron_ep_analysis.md`
 > 定位:系统性专题。`30_megatron_rl_posttraining_consistency_analysis.md` 把推理引擎当作 RL rollout 的积木一笔带过,本文拆开它内部。

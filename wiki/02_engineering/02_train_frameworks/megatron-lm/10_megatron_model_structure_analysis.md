@@ -5,7 +5,7 @@ title: "Megatron-LM 模型结构深度解析(Model Structure)"
 # Megatron-LM 模型结构深度解析(Model Structure)
 
 > **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。原「正文以 `ee3f1ff` 为准、`[!update]` 段以 `232c478d4` 为准」的两套行号口径就此合一——全页只剩 `71092579` 一套。
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。原「正文以 `ee3f1ff` 为准、`[!update]` 段以 `232c478d4` 为准」的两套行号口径就此合一——全页只剩 `71092579` 一套。
 > 核心文件:`megatron/core/transformer/spec_utils.py`、`megatron/core/transformer/transformer_layer.py`、`megatron/core/transformer/transformer_block.py`、`megatron/core/transformer/attention.py`、`megatron/core/transformer/multi_latent_attention.py`、`megatron/core/transformer/mlp.py`、`megatron/core/transformer/moe/router.py`、`megatron/core/transformer/multi_token_prediction.py`、`ssm/`、`models/`
 > 配套阅读:`14_megatron_ep_analysis.md`(MoE dispatcher)、`13_megatron_cp_analysis.md`、`12_megatron_tp_analysis.md`、`18_megatron_recompute_analysis.md`
 > 定位:之前 17 份文档都讲"**怎么把模型大规模训起来/服务起来**"(并行、显存、稳定性、推理、数据);本文讲"**模型本身长什么样**" —— 一个 transformer 模型由什么构成。

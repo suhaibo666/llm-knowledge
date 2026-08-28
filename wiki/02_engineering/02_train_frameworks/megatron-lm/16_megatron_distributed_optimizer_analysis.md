@@ -5,7 +5,7 @@ title: "Megatron-LM 数据并行、分布式优化器与优化器内部机制 �
 # Megatron-LM 数据并行、分布式优化器与优化器内部机制 深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。原先并存的两套基线（`ee3f1ffa…` 正文 + `232c478d4` 增量块）已统一到 `71092579`
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。原先并存的两套基线（`ee3f1ffa…` 正文 + `232c478d4` 增量块）已统一到 `71092579`
 > 核心文件:`megatron/core/distributed/distributed_data_parallel.py`、`megatron/core/distributed/param_and_grad_buffer.py`、`megatron/core/distributed/distributed_data_parallel_config.py`、`megatron/core/optimizer/distrib_optimizer.py`、`megatron/core/optimizer/optimizer.py`、`megatron/core/optimizer/grad_scaler.py`、`megatron/core/optimizer/clip_grads.py`、`megatron/core/optimizer_param_scheduler.py`、`megatron/core/optimizer/cpu_offloading/`
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`、`13_megatron_cp_analysis.md`
 >
@@ -781,7 +781,7 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 
 ### 17.2 OptimizerStateOffloader
 
-`megatron/core/optimizer/cpu_offloading/optimizer_state_offloader.py` — 在 optimizer.step() 完成后将状态暂存 CPU:
+`megatron/core/optimizer/cpu_offloading/chunked_optimizer_state_offload.py` — 在 optimizer.step() 完成后将状态暂存 CPU(原 `optimizer_state_offloader.py`,由 #6244 `9050d4c5f` 改名并重写为分块版,`ChunkedOptimizerStateOffloader` 在 `:57`):
 - offload:D2H 异步拷贝 exp_avg, exp_avg_sq, master weights
 - release:GPU 显存 resize_(0) 释放
 - reload:两阶段——先分配 GPU 显存,再 H2D 异步拷回

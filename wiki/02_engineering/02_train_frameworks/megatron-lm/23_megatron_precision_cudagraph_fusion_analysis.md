@@ -5,7 +5,7 @@ title: "Megatron-LM FP8 精度 · CUDA Graph · 算子融合 深度解析"
 # Megatron-LM FP8 精度 · CUDA Graph · 算子融合 深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
-> **重定基线**：2026-08-28 由 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**：2026-08-28 由 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/fp8_utils.py`、`megatron/core/fp4_utils.py`、`megatron/core/enums.py`、`megatron/core/transformer/cuda_graphs.py`、`megatron/core/full_cuda_graph.py`、`fusions/`、`megatron/core/num_microbatches_calculator.py`
 > 配套阅读:五份并行文档 + `18_megatron_recompute_analysis.md` + `16_megatron_distributed_optimizer_analysis.md`
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。

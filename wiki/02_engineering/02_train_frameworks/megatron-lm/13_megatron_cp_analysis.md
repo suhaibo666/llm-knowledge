@@ -5,7 +5,7 @@ title: "Megatron-LM 上下文并行(Context Parallelism)深度解析"
 # Megatron-LM 上下文并行(Context Parallelism)深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心:`megatron/core/transformer/dot_product_attention_context_parallel.py`(原生 all-gather 实现)、
 > `megatron/core/transformer/transformer_config.py:1090`(`cp_comm_type`)、`megatron/core/transformer/attention.py`(CP 接入点)
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`

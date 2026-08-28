@@ -5,7 +5,7 @@ title: "Megatron-LM 并行编排与进程组构造深度解析(Capstone)"
 # Megatron-LM 并行编排与进程组构造深度解析(Capstone)
 
 > **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/parallel_state.py`(2266 行)、`megatron/core/process_groups_config.py`(718 行)、`megatron/core/hyper_comm_grid.py`(443 行)
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`、`13_megatron_cp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`
 > 定位:**这是收口文档**。前五份各讲一个并行轴,都默认了"每张 GPU 同时属于 TP/PP/CP/EP/DP 的某个组"。本文讲清楚这套**几何**是怎么从 `world_size` 个裸 GPU 构造出来的。

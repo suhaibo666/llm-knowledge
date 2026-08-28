@@ -7,7 +7,7 @@ title: "DeepSeek-V4 Context Parallelism 实现深度解析"
 *基于 Megatron-LM dev 分支源码 · CP 进程组 · 通信类型 · TE 融合 · DSv4 适配 · 通信量分析*
 
 > **源码基线**: `NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`megatron/core/parallel_state.py`、`megatron/core/transformer/dot_product_attention_context_parallel.py` 等。
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > **⚠ 本轮重核推翻了本页两条核心结论**：附录 A 判定「CSA/HCA 的两阶段 CP 尚未实现」与 §5.3/§8.3 判定「Dynamic CP 不支持 MLA/DSv4」，在基线 `71092579` 下**均已不成立**——前者由 PR #5087 实现、后者由 PR #4226 解除。相关段落保留原文并加 `[!contradiction]` 标注，见 §5.2、§5.3、附录 A、§6.4、§8.3、§十一。
 > **基线沿革**：本页曾声明 `232c478d4`、实际正文命中 `ee3f1ffa…`，2026-08-27 改钉后者；2026-08-28 统一推进到 `71092579`。2026-06-25 的移库抽查是在 `232c478d4` 上做的，那套行号已被本轮重核取代，仅作历史留存。
 > **维度**: 工程实现（框架层）。**审计/移库**: 2026-06-25（自 `02_train_frameworks/` 移入 `megatron-lm/`）。

@@ -5,7 +5,7 @@ title: "Megatron-LM 激活重计算(Activation Recomputation / Checkpointing)深
 # Megatron-LM 激活重计算(Activation Recomputation / Checkpointing)深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/transformer/transformer_block.py`(`_checkpointed_forward`)、`megatron/core/recompute.py`(`checkpointed_forward`,整层重计算的共享实现)、`megatron/core/tensor_parallel/random.py`(`checkpoint`)、`megatron/core/transformer/transformer_config.py`(`recompute_*` 配置)
 > 配套阅读:`22_megatron_memory_optimization_analysis.md` §3.3(激活换出 offloading)、五份并行文档
 > 定位:"第二层补遗"第①份。激活重计算是与并行轴正交的**省显存**手段。

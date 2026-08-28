@@ -5,7 +5,7 @@ title: "Megatron-LM 专家并行(Expert Parallelism / MoE)深度解析"
 # Megatron-LM 专家并行(Expert Parallelism / MoE)深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
-> **重定基线**：2026-08-28 由 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**：2026-08-28 由 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心目录:`megatron/core/transformer/moe/`(`megatron/core/transformer/moe/moe_layer.py` 901 行、`megatron/core/transformer/moe/token_dispatcher.py` 2105 行、`megatron/core/transformer/moe/router.py`、`megatron/core/transformer/moe/experts.py`)
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md`(EP A2A 重叠 = 该文档的调度器⑤ combined-1F1B)
 > 适用读者:已了解 transformer 训练与 TP/DP/PP,想吃透 Megatron MoE 专家并行实现的工程师。

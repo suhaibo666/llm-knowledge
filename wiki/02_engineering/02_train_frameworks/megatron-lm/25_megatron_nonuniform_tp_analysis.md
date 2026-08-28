@@ -5,7 +5,7 @@ title: "Megatron Nonuniform Tensor Parallelism (NTP) 深度分析"
 # Megatron Nonuniform Tensor Parallelism (NTP) 深度分析
 
 > **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。NTP 是本轮最稳定的一页——`megatron/core/distributed/nonuniform_tp.py` 在这 578 个提交里几乎未动：`git diff ee3f1ffa..71092579` 只有一处 3 删 1 增（`:946-952`，`get_data_and_context_parallel_group(with_context_parallel=True)` 收敛为 `get_data_parallel_group(with_context_parallel=True)`），文件长度 1463 → 1461 行。因此 `:946` 之前的引用行号**全部原样命中**，只有其后的反向 hook 整体上移 2 行。
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。NTP 是本轮最稳定的一页——`megatron/core/distributed/nonuniform_tp.py` 在这 578 个提交里几乎未动：`git diff ee3f1ffa..71092579` 只有一处 3 删 1 增（`:946-952`，`get_data_and_context_parallel_group(with_context_parallel=True)` 收敛为 `get_data_parallel_group(with_context_parallel=True)`），文件长度 1463 → 1461 行。因此 `:946` 之前的引用行号**全部原样命中**，只有其后的反向 hook 整体上移 2 行。
 > **基线沿革**：本页原仅声明分支/未声明基线；2026-08-27 经核对 9 处引用行号在 `ee3f1ffa…` 命中后补钉（该文件在 `232c478d4` 处内容亦完全一致，两基线均命中）；2026-08-28 统一推进到 `71092579`。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
 > **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。

@@ -5,7 +5,7 @@ title: "Megatron-LM 序列打包与动态 CP 的统一流水线深度解析"
 # Megatron-LM 序列打包与动态 CP 的统一流水线深度解析
 
 > **源码基线**:`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`(`dev`,2026-08-27)
-> **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/datasets/data_schedule.py`(1166 行)、`megatron/core/datasets/data_schedule_utils.py`(936 行);`megatron/core/packed_seq_params.py`;`megatron/core/pipeline_parallel/hybrid_cp_schedule.py`
 > 配套阅读:`11_megatron_dataset_analysis.md` §5、`15_megatron_pp_schedulers_analysis.md` §8.1、`13_megatron_cp_analysis.md`
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
@@ -141,8 +141,8 @@ for i in range(len(sample_id_seqlens)):
 
 ```python
 gpus_fn     = lambda seq_len: dcp_gpus_needed(seq_len, mslpr, min_cp)   # 该样本要几张 CP 卡
-workload_fn = lambda seq_len, cp=None: dcp_get_total_workload(...)      # 工作量 ≈ seq²/cp
-buckets_fn  = dcp_make_buckets_equal(...)                              # 均衡分桶
+workload_fn = lambda seq_len, cp=None: ...                             # 工作量 ≈ seq²/cp
+buckets_fn  = next_hdp_group_packing_aware(...)                        # 打包感知的均衡分桶
 
 sample_id_seqlens = sorted(..., key=seqlen, reverse=True)              # 长样本优先
 while sample_id_seqlens:
@@ -152,8 +152,9 @@ while sample_id_seqlens:
 ```
 
 - `dcp_gpus_needed`(`megatron/core/datasets/data_schedule_utils.py:933`):长样本分更多 CP 卡(向上取 2 的幂),短样本少分 —— **CP 度自适应序列长度**。
-- `dcp_get_total_workload`:用 `seq²/cp` 估 attention 负载(`O(S²)` 除以 CP 摊分)。
-- `next_hdp_group` + `dcp_make_buckets_equal`:把样本贪心打包成一个个 **hdp 组**(hybrid DP 组),使每个 DP×CP rank 的总工作量大致相等。
+- 工作量估计:用 `seq²/cp` 估 attention 负载(`O(S²)` 除以 CP 摊分)。
+- `next_hdp_group_packing_aware`(`megatron/core/datasets/data_schedule_utils.py:592`,调用点 `data_schedule.py:431`):把样本贪心打包成一个个 **hdp 组**(hybrid DP 组),使每个 DP×CP rank 的总工作量大致相等。
+  > [!note] 上面这段伪代码里的 `dcp_get_total_workload` / `dcp_make_buckets_equal` / 裸 `next_hdp_group` 在基线 `71092579` 下**全域零命中**(2026-08-28 核),已按真实符号更正;它们属于更早版本的形态。
 - `align_sample_id_groups`:VPP 时对齐组数。
 
 > `megatron/core/pipeline_parallel/hybrid_cp_schedule.py` 的 `BalancedCPScheduler`(`15_megatron_pp_schedulers_analysis.md` §8.1 分析过)是同一套均衡逻辑的**类形态兄弟**;`megatron/core/datasets/data_schedule.py` 的 `DefaultDynamicCPScheduler` 实际用的是 `megatron/core/datasets/data_schedule_utils.py` 里的**函数形态** `dcp_*` + `next_hdp_group`。二者算法一致,是并行实现。**真正把打包与动态 CP 缝在一起的集成点,是 `DefaultDynamicCPScheduler`。**
@@ -176,11 +177,11 @@ while sample_id_seqlens:
 
 - 数据集 loader 是按 **DP** 把样本分给各 rank 的(谁 load 了哪条)。
 - 但第③步的调度结果是"样本 X 应该由 DCP rank `d` 计算"—— load 它的 rank 和算它的 rank **通常不是同一个**。
-- 于是对 batch 里每个 key 做 **all-to-all**,把每个子样本的数据从"load 它的 rank"搬到"算它的 rank"。
+- 于是对 batch 里每个 key 做 **DP 组内的 all-gather**,再只保留分给本 DP×CP rank 的那些样本,从而把每个子样本的数据从"load 它的 rank"搬到"算它的 rank"(`megatron/core/datasets/data_schedule_utils.py:364-367`)。
 
 `is_dynamic_cp` 在这里也透传 —— 动态 CP 下一个样本可能要发给多个 CP rank。
 
-> [!contradiction] 上面"对 batch 里每个 key 做 **all-to-all**"对应旧基线 `ee3f1ffa…`;在基线 `71092579` 下 **reroute 已不再用 all-to-all**。
+> [!contradiction] 上面这一行**此前写作**"对 batch 里每个 key 做 all-to-all",对应旧基线 `ee3f1ffa…`;在基线 `71092579` 下 **reroute 已不再用 all-to-all**,正文已按新实现更正(2026-08-28)。
 > 提交 `d48bd6be0`(2026-08-21,commit message 即「[dev] Replace DP balance all-to-all rerouting with all-gather (#6378)」)把它换成 **DP 组内的 all-gather**:`d48bd6be0^` 的 docstring 还写着「For each key in the batch dict, we perform an all-to-all communication to transfer the data to the correct ranks.」(`d48bd6be0^:megatron/core/datasets/data_schedule_utils.py:361-362`,`torch.distributed.all_to_all_single` 在 `:453`);新基线改成「Each CP lane gathers the samples from its DP group, then keeps only the samples assigned to its DPxCP rank.」(`megatron/core/datasets/data_schedule_utils.py:364-365`)。
 > **"把样本搬到该算它的 rank"这个语义没变**,变的是用哪种集合通信实现;换路的理由见 §2 ②。本页 §11 小结里"用 all-to-all"的同一说法,同样按此更正。
 
@@ -300,7 +301,7 @@ CP 切片前,被切的每个张量必须是 1-D 且与 `padding_mask` 等长(`me
 - **统一的 `run()` 九步流水线**两种调度器共享八步;**唯一分叉是第③步 `get_groups_and_subsamples`**:
   - `DpBalancedScheduler` —— 固定 CP 度 + 贪心 first-fit 打包。
   - `DefaultDynamicCPScheduler` —— 每样本按长度自适应 CP 度(`dcp_gpus_needed`)+ `next_hdp_group` 工作量(`seq²/cp`)均衡分桶。
-- **`reroute`(④)** 用 all-to-all 把样本从"load 它的 rank"搬到"算它的 rank" —— 打包/动态 CP 必备。
+- **`reroute`(④)** 用 **DP 组 all-gather**(#6378 之前是 all-to-all)把样本从"load 它的 rank"搬到"算它的 rank" —— 打包/动态 CP 必备。
 - **`PackedSeqParams` 是汇合点**:打包给出 `cu_seqlens`,动态 CP 给出 `local_cp_size`/`cp_group`;`get_cp_slice_for_thd` 把打包 buffer 再按 CP zigzag 切片。
 - 一句话:**序列打包是框架,动态 CP 是它的 CP 感知档** —— 之前两份文档把这条统一流水线拆成了两半,本文合回。
 

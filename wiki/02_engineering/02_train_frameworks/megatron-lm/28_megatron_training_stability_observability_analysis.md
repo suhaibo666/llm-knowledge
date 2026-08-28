@@ -5,7 +5,7 @@ title: "Megatron-LM 训练稳定性与可观测性深度解析"
 # Megatron-LM 训练稳定性与可观测性深度解析
 
 > **源码基线**:`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`(`dev`,2026-08-27)
-> **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/rerun_state_machine.py`、`megatron/core/fault_injector.py`、`megatron/core/energy_monitor.py`、`megatron/core/timers.py`、`megatron/core/optimizer/qk_clip.py`、`megatron/core/optimizer/grad_scaler.py`、`megatron/core/optimizer/clip_grads.py`、`megatron/core/transformer/moe/moe_logging.py`、`megatron/core/transformer/moe/router_replay.py`;训练循环日志在 `megatron/training/training.py`
 > 配套阅读:`16_megatron_distributed_optimizer_analysis.md`、五份并行分析、`27_megatron_tp_fsdp_resharding_supplements_analysis.md`
 > 定位:系统性专题。前面所有文档讲"怎么把模型并行训起来、训得快";本文讲**怎么让它训得稳、出问题怎么发现、看哪些指标判断健康**。
@@ -157,7 +157,7 @@ MoE 有独有的不稳定源 —— 路由:
 > 旧代码只乘 `num_local_tokens`,在 `tp_cp_group.size()>1` 时 aux/z-loss 梯度被额外缩小了 `|tp_cp|` 倍 —— TP/CP 越大,负载均衡损失越被稀释。
 > 修正:`aux_loss` 与 `z_loss` 预乘改为 `num_local_tokens * self.tp_cp_group.size()`(`megatron/core/transformer/moe/router.py:546`、`:587`,行号对应旧基线 `232c478d4`),恰好抵消上式中的 `|tp_cp|`,使有效缩放回到目标 `1/(num_micro_batches·dp_size)`,与 `!calculate_per_token_loss` 路径一致、且对 TP/CP 配置不变。(z_loss 系数另有 `/tp_cp_group.size()` 是独立的**前向**修正:z_loss 在每个 TP+CP rank 的本地 logits 上独立计算,需按 TP+CP 求平均而非求和。)回归测试见 `tests/.../test_aux_loss.py::TestPerTokenAuxLoss`。
 
-> [!contradiction] 上一条的**修正手法**在基线 `71092579` 下已被推翻(#5542 `d1384c2d9`,[codex] Exclude padding tokens from MoE routing)。
+> [!contradiction] 上一条的**修正手法**在基线 `71092579` 下已被推翻。引入 `all_reduce` 路径与那条注释的是 **#4359 `7f9175207`**(2026-06-17);#5542 `d1384c2d9`(2026-07-14,[codex] Exclude padding tokens from MoE routing)只是在其上补了 padding 排除。(归属经 `git log -S "so local_num_tokens * group_size is not generally correct"` 核定,2026-08-28 更正。)
 > `aux_loss` 的预乘不再是 `num_local_tokens * tp_cp_group.size()`,而是把本域的**有效 token 数**放进一个张量、沿 `aux_loss_scale_reduce_groups` 逐组 `all_reduce` 求和后直接相乘(`megatron/core/transformer/moe/router.py:598-624`)。
 > 源码给出的理由就写在注释里:*with THD padding or dynamic CP, valid token counts can differ by rank/group, so local_num_tokens * group_size is not generally correct*(`:602-604`)—— 即 THD padding / 动态 CP 下各 rank 的有效 token 数**不再相等**,`×|tp_cp|` 这个闭式因子本身就不成立。
 > `z_loss` 侧同样改写:`calculate_per_token_loss` 分支现直接挂 `z_loss_sum`(不再乘 `num_local_tokens × |tp_cp|`,`:666-671`);只有 `!calculate_per_token_loss` 分支保留了 `moe_z_loss_coeff / tp_cp_group.size()` 这一**前向**修正(`:673`)。

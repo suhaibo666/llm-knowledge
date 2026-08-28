@@ -5,7 +5,7 @@ title: "Megatron-LM RL 后训练适配与训推一致性深度解析"
 # Megatron-LM RL 后训练适配与训推一致性深度解析
 
 > **源码基线**:`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`(`dev`,2026-08-27)
-> **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心:`megatron/core/resharding/`(refit)、`inference/`(推理引擎)、`inference/quantization/`(MXFP8)、`post_training/modelopt/`、`megatron/core/transformer/transformer_config.py`(`transformer_impl='inference_optimized'`)
 > 配套阅读:`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §5(refit 基础)、`17_megatron_parallelism_orchestration_analysis.md`、`14_megatron_ep_analysis.md`
 > 定位:系统性专题。前面文档讲预训练;本文讲 **RL 后训练**(RLHF / GRPO / PPO)对 Megatron 提出的特殊需求,以及核心难题 **训推一致性(train-inference consistency)**。
@@ -149,7 +149,7 @@ swap_model_weights(train_model, infer_model, refit_method="nccl")
 - `use_inference_optimized_layers`:推理优化的线性层(`megatron/core/tensor_parallel/inference_layers.py`,如推理专用的 all-gather)。
 - `inference_grouped_gemm_backend`:MoE 推理的 grouped GEMM 后端(`flashinfer` / `torch` / `vllm`)。
 - `inference_moe_token_dispatcher_type`:推理专用 MoE dispatcher(`nccl` / `nvls`)—— `megatron/core/transformer/moe/moe_layer.py` 的 `train()` 重写(`:421`)在 eval 模式自动切到推理 dispatcher、train 模式切回(见 `14_megatron_ep_analysis.md`)。
-- 强制 `--moe-router-dtype=fp32`(`:2030`)—— 与训练侧推荐一致,**路由精度对齐**。
+- 强制 `--moe-router-dtype=fp32`(`:2030`)—— 源码给的理由是 **decode 期的 dtype 转换开销**(报错原文 "to avoid costly dtype conversions during decode");训推两侧 router dtype 因此一致是**副作用**,不是动机。
 
 > [!deprecated] `megatron/core/transformer/moe/moe_layer.py` 的 `train()` 重写自 `dev@232c478d4`(2026-06-16)起已被**移除**(#4617);基线 `71092579` 下 `git grep "def train("` 在该文件仍为 0 命中,本条依然成立。上一段正文中的 `:421` 是**旧基线 `ee3f1ff`** 的行号,新基线已无对应代码。推理 / 训练 dispatcher 的切换**不再依赖 `eval()`/`train()` 模式**,改由一个**进程级全局开关** `InferenceMode`(`megatron/core/inference/utils.py:20`)决定:`MoELayer.forward` 在入口处读 `InferenceMode.is_active()`,active → 推理 dispatcher、否则 → 训练 dispatcher(`megatron/core/transformer/moe/moe_layer.py:612`,另见 `:703`)。引擎进入推理时调用 `InferenceMode.set_active()`(`megatron/core/inference/engines/dynamic_engine.py:296`、`:857`、`megatron/core/inference/engines/static_engine.py:133`),退出时 `unset_active()`(`megatron/core/inference/engines/dynamic_engine.py:806`)。**根本原因**:`self.training` / `torch.is_grad_enabled()` / `inference_context is not None` 都无法可靠区分"引擎正在用模型做 rollout"与"训练相正在用同一模型重算 RL logprob"(二者都可能处于 `eval()`+`no_grad`)。改用单一进程级标志后,全代码库(attention、router、experts、mamba、`gpt_model` 等,见 `grep InferenceMode.is_active`)统一据此分流——这条**正是本节"显式、独立、受控的推理路径"取向的延续**:把"是否走推理路径"收敛成一个可审计的全局真值,而非散落各处的隐式 `self.training` 判断。
 
