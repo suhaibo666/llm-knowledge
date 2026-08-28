@@ -72,55 +72,8 @@ NTP 的四条设计取舍(为什么做成子类、为什么只动梯度不动参
 
 ## 3. Megatron-FSDP 内部实现(ZeRO-2/3 的机器)
 
-### 3.1 动机:`16_megatron_distributed_optimizer_analysis.md` 只讲了概念
-
-DDP 文档把 ZeRO-2/3 讲成"梯度也切 / 参数也切,逐层 all-gather 出参数、用完释放"。但**怎么切、怎么 gather、怎么不让通信拖慢**,实现细节全在 `megatron/core/distributed/fsdp/`。本节补齐这台"机器"。
-
-### 3.2 `MegatronFSDP` —— FSDP 包装器
-
-`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:94`。包住模型,按 `data_parallel_sharding_strategy` 选 ZeRO 阶段(`no_shard`/`optim`/`optim_grads`/`optim_grads_params`,对应 ZeRO-0/1/2/3,见 `16_megatron_distributed_optimizer_analysis.md` §1.3)。一个 `TrainingState` 状态机(`:51`)跟踪"此刻参数/梯度处于分片还是聚合态"。
-
-关键默认值(`:323`):
-- `optim_grads` / `optim_grads_params` → **默认开启梯度 reduce-scatter 重叠**(切了梯度就必须重叠,否则严重掉速)。
-- `optim_grads_params` → **默认开启参数 all-gather 重叠**。
-
-### 3.3 核心:`ParamAndGradBuffer` + 两条流水线
-
-`megatron/core/distributed/fsdp/src/megatron_fsdp/param_and_grad_buffer.py`(5332 行,FSDP 的心脏)。所有参数/梯度装进扁平 buffer,再分桶(`BucketingPolicy:233`、`Bucket:445`)。两条流水线把通信与计算重叠:
-
-**`AllGatherPipeline`(`:4417`)—— 参数 all-gather 流水线**
-逐桶 all-gather 出完整参数。关键是 **`PrefetchOrder`(`:4404`)**:`FORWARD_PASS_ORDER` 让它**在算第 `i` 层时,提前 all-gather 第 `i+1` 层的参数** —— 用计算掩盖参数聚合的延迟。这正是 ZeRO-3 "通信 ×1.5" 能落地不掉速的关键。
-
-**`GradReducePipeline`(`:3957`)—— 梯度 reduce-scatter 流水线**
-逐桶把梯度 reduce-scatter 成分片,与反向计算重叠(类比 DDP 的 `overlap_grad_reduce`,但这里 RS 后只留 `1/N` 分片)。
-
-```
-ZeRO-3 一层的前向(AllGatherPipeline):
-  计算第 i 层 ───────────────►
-  通信流: all-gather 第 i+1 层参数(预取)────►  ← 用第 i 层计算掩盖
-  第 i 层算完即释放其完整参数(只留 1/N 分片)
-```
-
-### 3.4 临时桶分配器:聚合出来的参数放哪
-
-参数 all-gather 出来需要一块**临时**完整缓冲(用完就释放)。反复 `malloc/free` 很慢,于是有一组 `TemporaryBucketAllocator`(`:462`)策略:
-- `StorageResizeBasedBucketAllocator`(`:532`):靠 `storage().resize_()` 伸缩。
-- `RotaryBucketAllocator`(`:567`):轮转复用几块缓冲。
-- `FixedPoolAllocator`(`:652`):固定的**双缓冲**池(`fsdp_double_buffer`)—— 多占显存,但能注册 NCCL user buffer(`nccl_ub`),拿到 SM 高效的 NCCL 算法。
-
-### 3.5 其他实现要点
-
-- **DTensor 分片**:`megatron/core/distributed/fsdp/src/megatron_fsdp/fully_shard.py` 用 torch 的 `DeviceMesh` / `DTensor` 表达分片,`--ckpt-format fsdp_dtensor`。
-- **不整除分片**:`megatron/core/distributed/fsdp/src/megatron_fsdp/uneven_dtensor.py`(483 行)处理参数 numel 不能被 DP 组整除的情况。
-- **混合精度**:`megatron/core/distributed/fsdp/src/megatron_fsdp/mixed_precision.py` 的 `MixedPrecisionPolicy`,含 fp8 transpose cache。
-- **HSDP**:`outer_dp_sharding_strategy`(内层节点内分片、外层跨节点复制),见 `16_megatron_distributed_optimizer_analysis.md` §8。
-- **接入**:`megatron/core/distributed/fsdp/mcore_fsdp_adapter.py` 把 Megatron-FSDP 缝进 Megatron-LM(`--use-megatron-fsdp`)。
-
-### 3.6 与 DDP 文档的衔接
-
-`16_megatron_distributed_optimizer_analysis.md` 的阶段③④(`optim_grads`/`optim_grads_params`)说"由 Megatron-FSDP 实现" —— 实现就是本节:`ParamAndGradBuffer` + `AllGatherPipeline`(预取重叠)+ `GradReducePipeline` + 临时桶分配器。ZeRO-3 通信 1.5× 不掉速,全靠这套预取流水线。
-
----
+> 本节已整体归一到 [[36_megatron_fsdp_analysis]]——那里按五拍完整覆盖了 FSDP unit 分组、四类 buffer 与 ZeRO 阶梯、hook 状态机与两条流水线、四档桶分配器、与 EP/TP/HSDP 的叠加,以及接入层 `mcore_fsdp_adapter`。
+> 本页保留另外两条支线:**NTP**(§4)与 **Resharding / Refit**(§5)。
 
 ## 4. Nonuniform TP(NTP)—— TP 级容错
 

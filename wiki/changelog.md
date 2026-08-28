@@ -12,6 +12,36 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-28（二）：Megatron-FSDP 提为独立页（36 号），并按 Merge over coexist 去重
+
+**Type**: 新增 1 页 + 合并去重 2 页 + 域索引
+
+**为什么要提**：`megatron/core/distributed/fsdp/src/megatron_fsdp/` 在源码里是个 **11321 行、16 个文件的独立子系统**，wiki 里却只是「[[16_megatron_distributed_optimizer_analysis]] 的一节」加「[[27_megatron_tp_fsdp_resharding_supplements_analysis]] 的一节」。按「一个概念一页、宁拆勿合」提为独立权威页 [[36_megatron_fsdp_analysis]]，基线 `NVIDIA/Megatron-LM@71092579…`（`dev`，2026-08-27）。
+
+**页号 36 的由来**：段 1（10–19）与段 2（20–29）已排满——26 号是 2026-08-01 PP 三页合并空出的号、域索引明写「不重新分配」，复用会让旧引用产生歧义。按 `CLAUDE.md`「某段超出容量时占用相邻空段，并在该目录 index.md 的段位表里注明」取段 3 首个空号，理由已写进索引段位说明。
+
+**第 2 拍挖到四条被否掉的替代**，前三条有源码/文档原话：
+
+1. **逐参数分片（FSDP2 的做法）** —— 判据是「进出通信缓冲区的那次 `COPY`」。文档把两者代价并排写明：FSDP2 需要 COPY 才能减少 NCCL 调用次数，Megatron-FSDP 则把连续缓冲区的切片视图直接赋给参数。代价是同一 `DTensor` 参数**在不同 rank 上形状可以完全不同**，因此需要一整个 `uneven_dtensor` 库。
+2. **按 DP 度直接均分字节** —— 判据是 kernel 的 **locality**：块量化的 scaling factor 计算会被 FSDP 从中间劈开。替代方案是算 FSDP unit 内所有参数 `p.shape[1:]` 的最小公倍数、把缓冲区 pad 到 `DP × LCM`，保证 `dim=0` 任何一行都不被劈开。
+3. **直接写进 `megatron/core/distributed/`** —— 判据是「能不能被别的框架装走」。提交 `af28b5a55`（2025-08-21）标题即 *Decouple Custom FSDP to make it independently installable*，四份独立证据坐实：`src/` 自带 `pyproject.toml`（`name = "megatron-fsdp"`）、两个入口的双源导入注释「Megatron-LM is not installed, use Megatron-FSDP as a standalone module」、`TODO(@cspades): Copied from megatron.core.utils to avoid depending on MCore`、以及文档的 "Bring Your Own Parallelism" 定位。**代价是 MCore 专属知识（哪个参数是列并行/行并行）只能由接入层按模块类名重新推断一遍。**
+4. **每次 unshard 现分配临时缓冲** —— 四档分配器的 docstring 各自写死理由（碎片、分配开销、跨 unit 复用）。但「四档构成一条由松到紧的取舍阶梯、默认档选 `_resize_` 是因为多数模型不开 `nccl_ub`」这层判断**源码没有表态**，整段挂 `> [!note] 推断` 并写明该引哪几个 locator。
+
+**Merge over coexist 的执行**（严格按规程顺序，先吸收、再改入链、最后才替换）：
+
+- **吸收的独有增量**：`no_shard`（ZeRO-0）的收敛性陷阱（梯度统计只能在 `model_parallel_group` 上规约，否则 grad norm 虚高）、HSDP 缺省组合（不传 `ddp_config` 即 `optim_grads_params` 内层 + `no_shard` 外层）、grouped-expert 分桶的 #5013 归属、以及与激活重计算的协同（整层重算时参数只 all-gather 一次、重算与反向共用，`megatron_fsdp.py:116-119`）。吸收时发现新页的 locator **比原页更准**（用 `:250-264`／`:1068-1075` 而非原来的 `:250-255`／`:1071`），按新页为准。
+- **入链**：全库扫描确认除新页页头外**没有任何外部引用**指向被并的三处小节，无需改指。
+- **替换**：[[16_megatron_distributed_optimizer_analysis]] §18.2、§18.6 与 [[27_megatron_tp_fsdp_resharding_supplements_analysis]] §3 的正文换成指向新页的一行指引（标题保留作占位，避免同页后续编号连锁变动）。16 号页 −68 行、27 号页 −49 行。
+- **对比分析按约定全部保留**：§18 三方对比框架、§18.1 概览表、§18.3 TorchFSDP2 详析、§18.4 选型矩阵、§18.5「为什么 FSDP2 在 MoE 训练中重要」一律留在 16 号页原地。
+
+**顺带确认的一条事实**：`TorchFullyShardedDataParallel`（FSDP2 路径）在新基线下 `expert|Expert` **整体零命中**，没有任何 EP 专门处理；MegatronFSDP 侧的对应实现在 `megatron_fsdp.py:296`/`:351`。
+
+**未覆盖**：`experimental/` 子包（1487 行，六个文件，三处 docstring 自称 "Experimental / Minimal"）只在第 5 拍作为在途方向提及，未展开成小节。
+
+**校验**：`check_links --strict` 430 页 broken/ambiguous/bare_index/orphans 全 0；`check_math --changed --strict` 0 错 0 警。
+
+---
+
 ## 2026-08-28：verl 推进 273 个提交并重建默认 V1 知识域——TransferQueue、两套 async 与 delta 权重发布补齐
 
 **Type**: 源码基线推进 + 全域概念重构（14 篇内容页 + 域/父/全局索引 + radar）

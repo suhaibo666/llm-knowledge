@@ -10,7 +10,7 @@ title: "Megatron-FSDP 深度解析"
 > 适用读者:已了解 ZeRO 分级与 Megatron DDP,要读懂、调参或移植 Megatron-FSDP 这台机器的工程师。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
 > **合并来源**：2026-08-28 新建,吸收并取代 [[16_megatron_distributed_optimizer_analysis]] §18.2「MegatronFSDP 详细分析」与 §18.6「FSDP 与并行拓扑的关系」、[[27_megatron_tp_fsdp_resharding_supplements_analysis]] §3「Megatron-FSDP 内部实现」;三套分片方案的**横向对比**(DistributedOptimizer / TorchFullyShardedDataParallel / MegatronFSDP)仍是 16 号页 §18 的职责,本页不重复。
-> **最近更新**：2026-08-28。新建页。
+> **最近更新**：2026-08-28。新建页,并按 Merge over coexist 完成合并——16 号页 §18.2/§18.6 与 27 号页 §3 的独有增量已吸收进本页(§2 ④、§3、§4.3、§5.1、§7.1、§9),两页对应小节改为指向本页的指引;**三方对比(DistributedOptimizer / TorchFSDP2 / MegatronFSDP)按约定留在 [[16_megatron_distributed_optimizer_analysis]]**。
 
 ---
 
@@ -87,8 +87,8 @@ title: "Megatron-FSDP 深度解析"
 → 这条路要付的价钱见 §8 与 §9:MCore 专属的知识(哪个参数是列并行/行并行)只能由接入层**按模块类名重新推断**一遍。
 
 **④ 被否掉的替代:每次 unshard 现分配一块临时缓冲 —— 判据是分配器抖动与 NCCL 注册。**
-默认路径靠 `Tensor._typed_storage()._resize_(bytes)` 直接伸缩存储,文档解释了为什么绕开 caching allocator:「Cache fragmentation and garbage collection can procrastinate large quantities of `cudaMalloc` and `cudaFree` operations that can block programs and spike memory」(`docs/user-guide/features/megatron_fsdp.md:401`)。但同一句紧接着给出这条路的死穴:「modifying the underlying storage of a buffer is not compatible with NCCL symmetric registration or CUDA graphability, which require a persistent state during runtime」。于是又有三档持久池,docstring 各自写死理由 —— `RotaryBucketAllocator`「implements a circular buffer recycling strategy **to minimize memory fragmentation**」(`param_and_grad_buffer.py:567-574`)、`FixedPoolAllocator`「maintains a fixed pool of pre-allocated buffers, reusing them to **reduce the overhead and fragmentation caused by frequent allocation and deallocation**」(`:652-661`,池大小默认 2、注释注明是双缓冲 `:672`)、`MaxPoolAllocator`「For every parameter group / bucket, the maximum storage required across all FSDP units is pre-computed to recycle buffers across different FSDP units」(`:916-929`)。
-→ 判据是**拿显存换分配器确定性与 NCCL 能力**:`nccl_ub` 会强制打开持久池(`distributed_data_parallel_config.py:224-226`),换来的是零 `COPY`、对称 kernel 与 SHARP 卸载(`docs/user-guide/features/megatron_fsdp.md:610`、`:614-617`)。
+默认路径是 `StorageResizeBasedBucketAllocator`(`param_and_grad_buffer.py:532`;不开 `fsdp_double_buffer` 时走的就是这一支,`:2710-2711`),靠 `_alloc_storage`/`_free_storage` 内的 `Tensor._typed_storage()._resize_()`(`:119`)直接伸缩存储,文档解释了为什么绕开 caching allocator:「Cache fragmentation and garbage collection can procrastinate large quantities of `cudaMalloc` and `cudaFree` operations that can block programs and spike memory」(`docs/user-guide/features/megatron_fsdp.md:401`)。但同一句紧接着给出这条路的死穴:「modifying the underlying storage of a buffer is not compatible with NCCL symmetric registration or CUDA graphability, which require a persistent state during runtime」。于是又有三档持久池,docstring 各自写死理由 —— `RotaryBucketAllocator`「implements a circular buffer recycling strategy **to minimize memory fragmentation**」(`param_and_grad_buffer.py:567-574`)、`FixedPoolAllocator`「maintains a fixed pool of pre-allocated buffers, reusing them to **reduce the overhead and fragmentation caused by frequent allocation and deallocation**」(`:652-661`,池大小默认 2、注释注明是双缓冲 `:672`)、`MaxPoolAllocator`「For every parameter group / bucket, the maximum storage required across all FSDP units is pre-computed to recycle buffers across different FSDP units」(`:916-929`)。
+→ 判据是**拿显存换分配器确定性与 NCCL 能力**:`nccl_ub` 会强制打开持久池(`distributed_data_parallel_config.py:224-226`),换来的是零 `COPY`、对称 kernel 与 SHARP 卸载(`docs/user-guide/features/megatron_fsdp.md:610`、`:614-617`),以及**更少的 SM 占用** —— 主模块 docstring 的原话是「uses less number of SMs, resulting better overlapped computation performance」(`megatron_fsdp.py:153-155`),即通信本身少抢计算资源,重叠才真正兑现。
 
 > [!note] 推断
 > 源码与文档陈述的是**事实**:四档分配器各自的 docstring 理由、`FixedPoolAllocator` 要求"深度方向模型对称"而 `MaxPoolAllocator` 取各 unit 的最大值(`docs/user-guide/features/megatron_fsdp.md:412-414`)。**"四档构成一条由松到紧的取舍阶梯、默认档位选 `_resize_` 是因为绝大多数模型不开 `nccl_ub`"这层判断由本页承担 —— 源码没有这样表态**,也没有任何地方比较过四档的显存开销。要引用这条判断,请回到 `param_and_grad_buffer.py:462-470`、`:567-574`、`:652-661`、`:916-929` 与 `docs/user-guide/features/megatron_fsdp.md:401-414` 这几个 locator,不要引用本段推断。
@@ -107,7 +107,7 @@ title: "Megatron-FSDP 深度解析"
 ```
 走 `megatron/core/distributed/fsdp/mcore_fsdp_adapter.py:74` 的 `FullyShardedDataParallel`,它在 `:222` 内部再构造 `MegatronFSDP`。
 
-**从哪开始读源码**:
+**从哪开始读源码**(主类 `MegatronFSDP(torch.nn.Module)` 定义在 `megatron_fsdp.py:94`):
 
 ```
 fully_shard_model                       fully_shard.py:63     # 参数校验 + 建 DeviceMesh
@@ -147,12 +147,12 @@ fully_shard_model                       fully_shard.py:63     # 参数校验 + �
 
 两条会**额外切桶**的特例:
 - **共享 embedding**:`_does_param_require_new_bucket`(`:1874-1885`)在非 `no_shard` 下把 `shared_embedding` 参数单独成桶,docstring 说明理由是让首尾 PP stage 对该参数的优化器状态切法一致,「allowing the DP reduce-scatter to be before the embedding all-reduce」。
-- **grouped expert 张量**:`_should_split_from_grouped_expert_bucket`(`:1889-1899`,调用点 `:2012`)把 ≥3D、且 `chunk_size_factor` 与桶不一致的 expert 张量拆出去,docstring 写明是「to avoid LCM-inflated bucket alignment padding」。
+- **grouped expert 张量**(由 #5013 引入):`_should_split_from_grouped_expert_bucket`(`:1889-1899`,调用点 `:2012`)把 ≥3D、且 `chunk_size_factor` 与桶不一致的 expert 张量拆出去,docstring 写明是「to avoid LCM-inflated bucket alignment padding」。
 - expert 参数的判定极其朴素:`is_expert_parameter = lambda n, p: ".experts." in n`(`:1887`),即**按参数全名里有没有 `.experts.`**。
 
 ### 4.3 桶内的索引:三层坐标
 
-`build_data_parallel_buffer_index`(`:257`)不真正分配显存,只算索引:每个参数在全局扁平 buffer 里的 `TensorItemIndex`、桶的 `BucketIndex`、本 rank 分片的 `ShardBucketIndex`(docstring `:266-282` 明说「the global bucket buffer is only temporarily allocated, but is abstractly tracked via indices」)。`no_shard` 下不做 pad,其余策略一律 pad 到 `dp_world_size × chunk_size_factor`(`:284-287`)。
+承载这套概念的两个 dataclass 薄得出奇:`BucketingPolicy`(`:233`)只有 `suggested_bucket_size` / `fsdp_unit_modules` / `data_parallel_sharding_strategy` 三个字段(`:248-250`),`Bucket`(`:445`)干脆只有 `data: torch.Tensor` 一个字段(`:459`)。**桶不是一张对象图,而是「一段扁平张量 + 一组索引」**——索引才是重头:`build_data_parallel_buffer_index`(`:257`)不真正分配显存,只算索引:每个参数在全局扁平 buffer 里的 `TensorItemIndex`、桶的 `BucketIndex`、本 rank 分片的 `ShardBucketIndex`(docstring `:266-282` 明说「the global bucket buffer is only temporarily allocated, but is abstractly tracked via indices」)。`no_shard` 下不做 pad,其余策略一律 pad 到 `dp_world_size × chunk_size_factor`(`:284-287`)。
 
 ---
 
@@ -170,6 +170,8 @@ fully_shard_model                       fully_shard.py:63     # 参数校验 + �
 | `optim_grads_params` | ✓ | ✓ | ✓ | ZeRO-3 |
 
 非法取值直接 `ValueError`(`:2477-2480`)。
+
+主类 docstring 用另一种口径写同一张表(`megatron_fsdp.py:101-109`),并补上一处容易漏掉的细节:**`optim` 这一档除优化器状态外也切混合精度的 main weight**,`optim_grads` / `optim_grads_params` 同样切,docstring 用一句「omitted without detailed notation」带过 —— 也就是说上表 `main weight` 一列在三档里都是 ✓ 并不是笔误。
 
 >  [!warning] `no_shard` 档有一条独立的正确性陷阱
 > `no_shard` 下参数本就在各 DP rank 复制,梯度经 all-reduce 后也是复制值。因此 ① `start_param_sync` 对 `no_shard` **直接 return**、不做 all-gather(`megatron_fsdp.py:1289-1290`);② 梯度统计与范数只能在 **TP/PP(`model_parallel_group`)** 上规约,**不能**再在 DP 维度规约,否则 grad norm 虚高致不收敛 —— 实现是 `effective_intra_dist_opt_group = mp_group if data_parallel_sharding_strategy == 'no_shard' else intra_dist_opt_group`(`megatron/core/optimizer/__init__.py:1068-1075`,注释自陈:「gradients are replicated across DP ranks after all-reduce, so grad stats should only be reduced over TP/PP (model_parallel_group) to avoid inflating the norm」)。
@@ -265,6 +267,10 @@ TP=4、EP=8、PP=P、world=256 时:
   EP group   = 8 ranks   (跨 expert)
   PP group   = P ranks   (跨层)
   剩下 256 / (4 × 8 × P) = DP size ← FSDP 的 AG/RS 只在这一维内发生
+
+  不变量: FSDP group ∩ TP group = ∅
+          FSDP group ∩ EP group = ∅
+          FSDP group ∩ PP group = ∅
 ```
 
 `dp_shard_dim` 通常是 **DP 与 CP 展平后的子 mesh**(`fully_shard.py:116-119`;README `:103-104` 补充理由:反向里参数在 DP-CP 上都是复制的,所以两轴的梯度同时规约、按 DP-CP world size 归一)。
@@ -329,6 +335,8 @@ HFSDP 的收益写在 `docs/user-guide/features/megatron_fsdp.md:468-472`:优化
 | 16 | 非均匀 DTensor 上不能跑"逐参数、假设字节对称"的集合通信 | `docs/user-guide/features/megatron_fsdp.md:530` | **挂死**——等待永远不会到达的字节;必须走 `uneven_dtensor` 里的对应函数 |
 | 17 | mesh 轴序写死 | `mcore_fsdp_adapter.py:587-590` 的 TODO | 与 [[17_megatron_parallelism_orchestration_analysis]] 的 `order` 不是同一套可配置机制 |
 | 18 | `keep_fp8_transpose_cache` 在 Blackwell 上没有收益 | README `:136` | 纯亏(参数量 × 1 Byte)显存 |
+
+**与激活重计算的协同**(自 16 号页 §18.2 并入):虽然 FSDP 不接管激活,但它对重算路径做了专门优化——主模块 docstring 的能力清单里写着「Optimized activation recompute with shard-aware communication: When recomputing a whole Transformer layer, **gather parameters once for both the recomputation and backward computation**」(`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:116-119`)。即整层重算时参数只 all-gather 一次,重算与反向共用,不会因为多跑一遍前向而多付一次通信。
 
 **故意不做的事**:
 

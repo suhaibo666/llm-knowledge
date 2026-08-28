@@ -810,56 +810,10 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 
 `data_parallel_sharding_strategy = 'optim_grads'`(§6 阶段③,ZeRO-2)与 `'optim_grads_params'`(§7 阶段④,ZeRO-3)均由 Megatron-FSDP 实现;DistributedOptimizer(§5 阶段②)是 ZeRO-1 的原生实现。
 
-### 18.2 MegatronFSDP 详细分析 (`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py`)
+### 18.2 MegatronFSDP 详细分析
 
-MegatronFSDP 是 NVIDIA 自研的 FSDP 实现,提供从 ZeRO-1 到 ZeRO-3 的完整分片谱系:
-
-**分片策略**(`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:101-109`):
-```python
-# data_parallel_sharding_strategy 控制:
-'no_shard'             # 传统 DP(无分片)
-'optim'                # ZeRO-1: 仅优化器状态分片(+ FP32 主权重)
-'optim_grads'          # ZeRO-2: 梯度 + 优化器状态分片
-'optim_grads_params'   # ZeRO-3: 参数 + 梯度 + 优化器状态全分片
-```
-
-**四种训练状态**(`class TrainingState`,`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:51-63`):
-```python
-class TrainingState(Enum):
-    FORWARD = auto()       # Forward: 参数需 unshard
-    PRE_BACKWARD = auto()  # Pre-backward: 参数需 unshard
-    POST_BACKWARD = auto() # Post-backward: 梯度需 re-shard
-    IDLE = auto()          # 空闲:无 un/sharding 活动
-```
-
-**FSDP Unit 概念**(`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:130-133`):
-FSDP Unit 是最小可释放模型单元。参数按 Unit 分组——在 Forward 进入 Unit 时 AllGather 参数,离开时释放;Backward 进入时重新 AllGather。默认 Unit = `TransformerLayer`。
-
-**与 Activation Checkpointing 的协同**(`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:116-119`):
-> 重算整个 Transformer Layer 时，参数只需 Gather 一次，随后可供重算和 Backward 计算共同使用。
-
-**Delayed Wgrad Overlap**(`setup_delayed_wgrad_acc_hook`,`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:66-91`):
-当启用 `overlap_dispatch_backward_with_experts_wgrad` 时,expert 参数的梯度 reduce-scatter 延迟到 MoE dispatch backward 完成后再执行,最大化 EP 通信与 DP 梯度同步的重叠。
-
-**NCCL UserBuffer**(`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:153-160`):
-```python
-nccl_ub=True → 使用 NCCL UserBuffer 进行 FSDP 通信
-  - 减少 SM 占用(通信操作占用更少计算资源)
-  - 自动设置 fsdp_double_buffer=True(使用额外 GPU 显存换性能)
-```
-
-**HSDP 分层分片**(缺省 `ddp_config` 即此组合,`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:250-255`):
-```python
-data_parallel_sharding_strategy="optim_grads_params"  # 组内全分片
-outer_dp_sharding_strategy="no_shard"                 # 组间无分片(复制)
-```
-组内做 ZeRO-3 全分片,组间做 AllReduce 去重——与 §8 的 HSDP 是同一思想在 ZeRO-3 场景下的具体配置。
-
-> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。 — Megatron-FSDP 内部一组修复(FSDP-internal)
-> **① `no_shard`(ZeRO-0)收敛性修复**(#3835/#3754,`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:1289-1290`、`megatron/core/optimizer/__init__.py:1071`):`no_shard` 下参数本就在各 DP rank 复制,故 ① `start_param_sync` 对 `no_shard` 直接 return(无需 all-gather);② 梯度统计/范数只能在 **TP/PP(model_parallel_group)** 上规约,**不能**再在 DP 维度规约(梯度已是 all-reduce 后的复制值,再 reduce 会**虚高 grad norm 致不收敛**)—— 通过 `effective_intra_dist_opt_group = mp_group if no_shard else intra_dist_opt_group` 实现。另禁止 `no_shard` 配 meta-device 初始化。详见 §4「阶段①」小节的 2026-06-16 更新。
-> **② grouped expert 权重减少 padding**(#5013,`_should_split_from_grouped_expert_bucket`,`megatron/core/distributed/fsdp/src/megatron_fsdp/param_and_grad_buffer.py:1889-1897`,调用点 `:2012`):当 ≥3D 的 grouped-expert 张量与异构 chunk-size-factor 混在同一 bucket 时,LCM 对齐会**放大 padding**;修复把这类 grouped-expert 张量拆到独立 bucket,避免 LCM 膨胀。利好大规模 MoE(见 §18.5)。
-> **③ 跨 AllGatherPipeline reset 保留非-FSDP-unit bucket**(#4717,`megatron/core/distributed/fsdp/src/megatron_fsdp/param_and_grad_buffer.py`):pipeline reset 时不再误清非 FSDP-unit 的 bucket。
-> **④ A2A Overlap**(#3797):把 MoE 的 All-to-All dispatch/combine 与 FSDP 的参数 all-gather / 梯度 reduce-scatter 重叠,详见 §7「阶段④」小节与 [[20_megatron_comm_overlap_analysis]]。
+> MegatronFSDP 的内部实现(FSDP unit 分组、四类 buffer、hook 状态机与双流水线、桶分配器、与 EP/TP/HSDP 的叠加、接入层)已归一到 [[36_megatron_fsdp_analysis]]。
+> 本页只保留**三方对比**:概览见 §18.1,选型矩阵见 §18.4,MoE 场景定位见 §18.5。
 
 ### 18.3 TorchFullyShardedDataParallel 详细分析 (`megatron/core/distributed/torch_fully_sharded_data_parallel.py`)
 
@@ -913,25 +867,7 @@ if config.recompute_granularity is not None:
 
 ### 18.6 FSDP 与并行拓扑的关系
 
-**FSDP 的 shard 在哪个进程组维度上执行?**
-
-FSDP 的 shard 在 **DP 维度**上执行(即 `world_size / (TP × CP × PP × EP)`)。FSDP 的 shard group 不应与 TP/EP/CP/PP group 重叠,因为那些 group 已经做了参数分片或 activation 分片,FSDP 只负责 DP 维度的冗余消除。
-
-```
-在 TP=4, EP=8 配置下的 FSDP 分组:
-  总 rank = 256
-  TP group:    4 个 rank(同 PP stage, 同 EP rank)
-  EP group:    8 个 rank(跨 expert)
-  PP group:    P 个 rank(跨层)
-  剩余维度 = 256 / (4 × 8 × P) = DP size
-  FSDP shard:  在 DP group 上执行(只在此 group 内 reduce-scatter/all-gather)
-
-  关键:FSDP group ∩ TP group = ∅
-        FSDP group ∩ EP group = ∅
-        FSDP group ∩ PP group = ∅
-```
-
----
+> 已归一到 [[36_megatron_fsdp_analysis]] §7「与 EP / TP / HSDP·HFSDP 的叠加」(FSDP 切在 DP 维、与 TP/EP/PP 组不相交的不变量,以及 EP 双 mesh、HSDP/HFSDP 两档外层策略)。
 
 ## 19. Layer-Wise 分布式优化器与 Muon 集成
 
