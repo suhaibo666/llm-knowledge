@@ -1,7 +1,7 @@
 {
  "arxiv": {
   "MoE 与稀疏化": {
-   "checked": "2026-08-26T12:06:03Z",
+   "checked": "2026-08-28T01:17:44Z",
    "seen": [
     "2605.31010",
     "2606.04284",
@@ -27,11 +27,12 @@
     "2608.08910",
     "2608.11623",
     "2608.17687",
-    "2608.21693"
+    "2608.21693",
+    "2608.25276"
    ]
   },
   "RL 后训练与对齐": {
-   "checked": "2026-08-26T12:06:06Z",
+   "checked": "2026-08-28T01:20:29Z",
    "seen": [
     "2608.03068",
     "2608.03077",
@@ -57,11 +58,13 @@
     "2608.21946",
     "2608.22479",
     "2608.24350",
-    "2608.24747"
+    "2608.24747",
+    "2608.24949",
+    "2608.26596"
    ]
   },
   "并行与训练系统": {
-   "checked": "2026-08-26T12:06:10Z",
+   "checked": "2026-08-28T01:20:51Z",
    "seen": [
     "2607.10661",
     "2607.16001",
@@ -87,11 +90,16 @@
     "2608.15943",
     "2608.20743",
     "2608.23962",
-    "2608.24658"
+    "2608.24658",
+    "2608.25291",
+    "2608.25775",
+    "2608.26523",
+    "2608.26580",
+    "2608.27046"
    ]
   },
   "推理服务与系统": {
-   "checked": "2026-08-26T12:06:08Z",
+   "checked": "2026-08-28T01:20:42Z",
    "seen": [
     "2608.14333",
     "2608.14376",
@@ -117,11 +125,18 @@
     "2608.23962",
     "2608.23986",
     "2608.24004",
-    "2608.24650"
+    "2608.24650",
+    "2608.24945",
+    "2608.25053",
+    "2608.25062",
+    "2608.25431",
+    "2608.25523",
+    "2608.26004",
+    "2608.26523"
    ]
   },
   "注意力与长上下文": {
-   "checked": "2026-08-26T12:06:04Z",
+   "checked": "2026-08-28T01:19:53Z",
    "seen": [
     "2608.04405",
     "2608.04753",
@@ -147,13 +162,15 @@
     "2608.22140",
     "2608.22704",
     "2608.23338",
-    "2608.23843"
+    "2608.23843",
+    "2608.25096",
+    "2608.25655"
    ]
   }
  },
  "repos": {
   "gitee:Ascend/MindSpeed": {
-   "checked": "2026-08-26T12:05:48Z",
+   "checked": "2026-08-28T01:17:23Z",
    "head": "bb583c908bc35feddee2ac94a5704cb313471859",
    "tags": [
     "v1.0.0_core_r0.6.0",
@@ -168,7 +185,7 @@
    ]
   },
   "gitee:Ascend/MindSpeed-LLM": {
-   "checked": "2026-08-26T12:05:50Z",
+   "checked": "2026-08-28T01:17:26Z",
    "head": "7826e883ab40f06dd54f0fa2ce6508d18036843c",
    "tags": [
     "v1.0.0",
@@ -180,7 +197,7 @@
    ]
   },
   "gitee:Ascend/pytorch": {
-   "checked": "2026-08-26T12:05:46Z",
+   "checked": "2026-08-28T01:17:20Z",
    "head": "3acd2fb39433c80ac89ac7e9c3289422023eeed5",
    "tags": [
     "v6.0.rc1.alpha003-pytorch2.1.0",
@@ -266,8 +283,8 @@
    ]
   },
   "github:NVIDIA/Megatron-LM": {
-   "checked": "2026-08-26T12:05:29Z",
-   "head": "466e6830b1f12daddf7ce1c7f2ceec9eba5bd8d1",
+   "checked": "2026-08-28T01:17:07Z",
+   "head": "71092579522a12522d9f323ae180c9825d01928a",
    "tags": [
     "v0.11.0",
     "v0.11.0rc0",
@@ -289,7 +306,7 @@
    ]
   },
   "github:THUDM/slime": {
-   "checked": "2026-08-26T12:04:06Z",
+   "checked": "2026-08-28T01:16:35Z",
    "head": "a3f500977f33b82de6ac0414c0c43abfe656c3e0",
    "tags": [
     "v0.1.0",
@@ -304,8 +321,8 @@
    ]
   },
   "github:inclusionAI/AReaL": {
-   "checked": "2026-08-26T12:04:26Z",
-   "head": "94ce16558b31ebf114f1d6d469e58e3af6d7ea59",
+   "checked": "2026-08-28T01:16:47Z",
+   "head": "1488cd43fb8de1e4a9557bdce8b6a371651c99e1",
    "tags": [
     "v0.1.1",
     "v0.1.2",
@@ -337,8 +354,8 @@
    ]
   },
   "github:kvcache-ai/Mooncake": {
-   "checked": "2026-08-26T12:03:58Z",
-   "head": "89da2c3a48fca9715a832b66051bb492adf7b35a",
+   "checked": "2026-08-28T01:16:29Z",
+   "head": "6a00c3534d87b47561e78e07cdc5f3277bef25de",
    "tags": [
     "v0.2.0",
     "v0.3.0",
@@ -375,12 +392,9 @@
    ]
   },
   "github:pytorch/pytorch": {
-   "checked": "2026-08-26T12:05:20Z",
-   "head": "94da9dccdb4c70c0778deec52090f76f55494cd2",
+   "checked": "2026-08-28T01:17:01Z",
+   "head": "01d43ebff1d75014bfff1687a118014fa6a644b0",
    "tags": [
-    "v2.7.1",
-    "v2.7.1-rc1",
-    "v2.7.1-rc2",
     "v2.7.1-rc3",
     "v2.7.1-rc4",
     "v2.7.1-rc5",
@@ -457,12 +471,15 @@
     "v2.14.0-rc4",
     "v2.14.0-rc5",
     "v2.14.0-rc6",
-    "v2.14.0-rc7"
+    "v2.14.0-rc7",
+    "v2.14.0-rc8",
+    "v2.14.0-rc9",
+    "v2.14.0-rc10"
    ]
   },
   "github:pytorch/torchtitan": {
-   "checked": "2026-08-26T12:05:39Z",
-   "head": "b482babc5f1d5d718e1719a735f9a2d86d1b9aff",
+   "checked": "2026-08-28T01:17:12Z",
+   "head": "9aadc36161c4ba64666c9d98fca0c2b90afa7ec8",
    "tags": [
     "v0.1.0",
     "v0.2.0",
@@ -471,8 +488,8 @@
    ]
   },
   "github:sgl-project/sglang": {
-   "checked": "2026-08-26T12:03:54Z",
-   "head": "ae5feb4b9c83552c624171bac91d0d11e6b8c84e",
+   "checked": "2026-08-28T01:16:25Z",
+   "head": "22f37d414b18dee31e1f83f382bb94849d6da977",
    "tags": [
     "v0.4.3.post1",
     "v0.4.3.post2",
@@ -557,10 +574,9 @@
    ]
   },
   "github:vllm-project/vllm": {
-   "checked": "2026-08-26T12:03:45Z",
-   "head": "31739ceb0b9f3beb8bebc01c0700b9e516b953ef",
+   "checked": "2026-08-28T01:16:18Z",
+   "head": "6ec92bcbc8ef9af25cb4834ba3d922115792fbeb",
    "tags": [
-    "v0.13.0rc4",
     "v0.14.0",
     "v0.14.0rc0",
     "v0.14.0rc1",
@@ -639,12 +655,13 @@
     "v0.27.1",
     "v0.28.0",
     "v0.28.0rc1",
-    "v0.28.0rc2"
+    "v0.28.0rc2",
+    "v0.28.1rc0"
    ]
   },
   "github:volcengine/verl": {
-   "checked": "2026-08-26T12:04:22Z",
-   "head": "8f8b122195ecf43475679fb6ee0204ee33f387c5",
+   "checked": "2026-08-28T01:16:43Z",
+   "head": "662507f9582e16d09c12484387f27727b5d0f947",
    "tags": [
     "v0.1",
     "v0.1rc",
@@ -668,7 +685,7 @@
  },
  "vendors": {
   "Qwen": {
-   "checked": "2026-08-26T12:05:56Z",
+   "checked": "2026-08-28T01:17:31Z",
    "seen": [
     "Qwen/Qwen-AgentWorld-35B-A3B",
     "Qwen/Qwen-Image-Bench",
@@ -686,6 +703,8 @@
     "Qwen/Qwen3.8-2.4T-A95B-FP8",
     "Qwen/Qwen3.8-27B",
     "Qwen/Qwen3.8-27B-FP8",
+    "Qwen/Qwen3.8-Flash-Next",
+    "Qwen/Qwen3.8-Flash-Next-FP8",
     "Qwen/SAE-Res-Qwen3-1.7B-Base-W32K-L0_100",
     "Qwen/SAE-Res-Qwen3-1.7B-Base-W32K-L0_50",
     "Qwen/SAE-Res-Qwen3-30B-A3B-Base-W128K-L0_100",
@@ -703,7 +722,7 @@
    ]
   },
   "deepseek-ai": {
-   "checked": "2026-08-26T12:05:51Z",
+   "checked": "2026-08-28T01:17:27Z",
    "seen": [
     "deepseek-ai/DeepSeek-Math-V2",
     "deepseek-ai/DeepSeek-OCR",
@@ -738,7 +757,7 @@
    ]
   },
   "meituan-longcat": {
-   "checked": "2026-08-26T12:05:57Z",
+   "checked": "2026-08-28T01:17:32Z",
    "seen": [
     "meituan-longcat/LongCat-2.0",
     "meituan-longcat/LongCat-2.0-FP8",
@@ -772,7 +791,7 @@
    ]
   },
   "moonshotai": {
-   "checked": "2026-08-26T12:05:53Z",
+   "checked": "2026-08-28T01:17:28Z",
    "seen": [
     "moonshotai/Kimi-Audio-7B",
     "moonshotai/Kimi-Audio-7B-Instruct",
@@ -796,7 +815,7 @@
    ]
   },
   "tencent": {
-   "checked": "2026-08-26T12:05:59Z",
+   "checked": "2026-08-28T01:17:34Z",
    "seen": [
     "tencent/EVIE-Preview-4.5B",
     "tencent/Ex-Omni",
@@ -831,7 +850,7 @@
    ]
   },
   "thinkingmachines": {
-   "checked": "2026-08-26T12:06:01Z",
+   "checked": "2026-08-28T01:17:35Z",
    "seen": [
     "thinkingmachines/Inkling",
     "thinkingmachines/Inkling-NVFP4",
@@ -842,7 +861,7 @@
    ]
   },
   "zai-org": {
-   "checked": "2026-08-26T12:05:55Z",
+   "checked": "2026-08-28T01:17:30Z",
    "seen": [
     "zai-org/AutoGLM-Phone-9B",
     "zai-org/AutoGLM-Phone-9B-Multilingual",
@@ -862,6 +881,8 @@
     "zai-org/GLM-5.1-FP8",
     "zai-org/GLM-5.2",
     "zai-org/GLM-5.2-FP8",
+    "zai-org/GLM-5.3-Flash",
+    "zai-org/GLM-5.3-Flash-BF16",
     "zai-org/GLM-ASR-Nano-2512",
     "zai-org/GLM-Image",
     "zai-org/GLM-OCR",
