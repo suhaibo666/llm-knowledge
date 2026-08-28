@@ -177,6 +177,62 @@ def check_repo(entry: dict, state: dict, errors: list) -> dict | None:
 
 
 # -------------------------------------------------------------------- vendors
+# 模型卡里指向技术报告的链接。厂商的报告经常只挂 GitHub／自家站点，
+# 不上 arXiv（Qwen3.8-Flash-Next 就是如此），只查 arXiv 会整个漏掉。
+REPORT_HINT = re.compile(r"tech(?:nical)?[ _-]?report|white ?paper|\bpaper\b", re.I)
+MD_LINK = re.compile(r"\[([^\]]{0,80})\]\((https?://[^\s)]+)\)")
+MAX_REPORT_LINKS = 3
+
+
+def arxiv_month(paper_id: str) -> str:
+    """从 arXiv ID 反推年月。
+
+    模型卡挂的常是旧论文（GLM-5.3-Flash 挂的是 2026-02 那篇），只显示一个
+    裸 ID，读者会默认它是随这次发布来的新报告。
+    """
+    match = re.fullmatch(r"(\d{2})(\d{2})\.\d{4,5}", (paper_id or "").strip())
+    return "20%s-%s" % (match.group(1), match.group(2)) if match else ""
+
+
+def _dedupe(items: list) -> list:
+    seen, out = set(), []
+    for item in items:
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def extract_report_links(readme: str, tags) -> dict:
+    """从模型卡正文与 HF tag 里抽技术报告链接。
+
+    只收命中报告关键词的链接——模型卡里满是 Discord／微信／在线体验链接，
+    照单全收会把真信号淹掉。
+    """
+    ids = [t.split(":", 1)[1].strip() for t in (tags or [])
+           if isinstance(t, str) and t.startswith("arxiv:")]
+    ids += re.findall(r"arxiv\.org/abs/(\d{4}\.\d{4,5})", readme or "")
+
+    docs = []
+    for text, url in MD_LINK.findall(readme or ""):
+        if "arxiv.org" in url:
+            continue                      # 已经在 ids 里，别重复报
+        if REPORT_HINT.search(text) or REPORT_HINT.search(url):
+            docs.append(url)
+
+    return {"arxiv": _dedupe(ids)[:MAX_REPORT_LINKS],
+            "docs": _dedupe(docs)[:MAX_REPORT_LINKS]}
+
+
+def fetch_model_reports(model_id: str, tags, errors: list) -> dict:
+    try:
+        readme = fetch_text("https://huggingface.co/%s/raw/main/README.md" % model_id)
+    except Exception as exc:
+        errors.append("模型卡 %s：%s" % (model_id, exc))
+        readme = ""                       # tag 里的 arXiv 仍然可用
+    return extract_report_links(readme, tags)
+
+
 def check_vendor(entry: dict, since: datetime, state: dict, errors: list) -> dict | None:
     org = entry["org"]
     url = (
@@ -201,7 +257,9 @@ def check_vendor(entry: dict, since: datetime, state: dict, errors: list) -> dic
         if model_id in seen:
             continue
         fresh.append({"id": model_id, "created": created[:10],
-                      "downloads": model.get("downloads", 0)})
+                      "downloads": model.get("downloads", 0),
+                      "reports": fetch_model_reports(
+                          model_id, model.get("tags") or [], errors)})
 
     state["vendors"][org] = {
         "seen": sorted(seen | {m.get("id", "") for m in models if m.get("id")}),
@@ -326,6 +384,17 @@ def render(findings, vendors, papers, errors, since_days, today) -> str:
             for m in v["models"]:
                 lines.append("- `%s` — %s · [HF](https://huggingface.co/%s)"
                              % (m["created"], m["id"], m["id"]))
+                if "reports" not in m:
+                    continue
+                bits = []
+                for aid in m["reports"].get("arxiv", []):
+                    month = arxiv_month(aid)
+                    bits.append("[arXiv:%s](https://arxiv.org/abs/%s)%s"
+                                % (aid, aid, "（%s）" % month if month else ""))
+                bits += ["[%s](%s)" % (url.rsplit("/", 1)[-1] or "报告", url)
+                         for url in m["reports"].get("docs", [])]
+                lines.append("  - 技术报告：%s" % " · ".join(bits) if bits
+                             else "  - 未找到技术报告（模型卡与 HF tag 均无）")
             lines += ["", "KB 入口：[%s](../../%s)" % (Path(v["kb_entry"]).name, v["kb_entry"]), ""]
     else:
         lines += ["本期无新模型。", ""]

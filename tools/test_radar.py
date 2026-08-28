@@ -200,3 +200,89 @@ def test_release_tags_drops_ci_noise_and_sorts_naturally():
 def test_tracked_tags_are_capped():
     refs = {"refs/tags/v1.%d.0" % i: str(i) for i in range(300)}
     assert len(radar.release_tags(refs)) == radar.MAX_TRACKED_TAGS
+
+
+# ------------------------------------------------- 模型卡里的技术报告
+# 真实形态：Qwen3.8-Flash-Next 的技术报告只有 GitHub 上的 PDF，没上 arXiv；
+# GLM-5.3-Flash 反过来，只在 HF tag 里挂了一篇 2026-02 的旧论文。
+QWEN_CARD = """## Qwen3.8-Flash-Next
+
+Join our [Discord](https://discord.gg/qwen) or scan the [WeChat QR](https://qwen.ai/wechat).
+For more details, please refer to [the technical report](https://github.com/QwenLM/Qwen3.8-Flash-Next/blob/main/tech_report.pdf).
+Try it online at [chat.qwen.ai](https://chat.qwen.ai).
+
+```python
+from transformers import AutoModelForCausalLM
+```
+"""
+
+
+def test_technical_report_pdf_in_model_card_is_found():
+    """Qwen3.8-Flash-Next 的技术报告只挂 GitHub，没上 arXiv。
+
+    只查 arXiv 的话这类发布会整个漏掉——这正是加这段扫描的原因。
+    """
+    found = radar.extract_report_links(QWEN_CARD, [])
+
+    assert found["docs"] == [
+        "https://github.com/QwenLM/Qwen3.8-Flash-Next/blob/main/tech_report.pdf"]
+    assert found["arxiv"] == []
+
+
+def test_arxiv_id_is_read_from_hf_tags():
+    """HF 把关联论文放进结构化 tag，比拿正则啃 README 可靠。"""
+
+    found = radar.extract_report_links("", ["safetensors", "arxiv:2602.15763", "license:mit"])
+    assert found["arxiv"] == ["2602.15763"]
+
+
+def test_community_and_demo_links_are_not_mistaken_for_reports():
+    """模型卡里满是 Discord／微信／在线体验链接，收进来会淹掉真信号。"""
+
+    docs = " ".join(radar.extract_report_links(QWEN_CARD, [])["docs"])
+    assert "discord" not in docs
+    assert "chat.qwen.ai" not in docs
+    assert "wechat" not in docs
+
+
+def test_arxiv_month_is_surfaced_so_stale_papers_are_obvious():
+    """GLM-5.3-Flash 挂的是 2026-02 的旧论文，不是本周新报告。
+
+    只显示一个 ID 的话，读者会默认它是随这次发布来的。
+    """
+    assert radar.arxiv_month("2602.15763") == "2026-02"
+    assert radar.arxiv_month("2608.24949") == "2026-08"
+    assert radar.arxiv_month("garbage") == ""
+
+
+def _vendor(reports):
+    return {"name": "阿里 Qwen", "org": "Qwen", "kb_entry": "README.md",
+            "models": [{"id": "Qwen/Qwen3.8-Flash-Next", "created": "2026-08-24",
+                        "downloads": 0, "reports": reports}]}
+
+
+def test_report_surfaces_model_card_technical_reports():
+    text = radar.render([], [_vendor(
+        {"arxiv": ["2602.15763"], "docs": ["https://x.test/tech_report.pdf"]})],
+        [], [], 7, "2026-08-28")
+
+    assert "tech_report.pdf" in text
+    assert "2602.15763" in text
+    assert "2026-02" in text          # 年月标出来，旧论文一眼可见
+
+
+def test_model_with_no_report_says_so_rather_than_staying_silent():
+    """『查了没找到』和『压根没查』必须能区分——后者是盲区，前者是事实。"""
+
+    text = radar.render([], [_vendor({"arxiv": [], "docs": []})], [], [], 7, "2026-08-28")
+    assert "未找到技术报告" in text
+
+
+def test_bare_paper_link_is_a_report_but_wallpaper_is_not():
+    """模型卡常写成 `[paper](...)`，这类必须收；而词边界要挡住 wallpaper
+    这种子串误命中。"""
+
+    found = radar.extract_report_links(
+        "See the [paper](https://x.test/report.pdf) and the "
+        "[banner](https://x.test/wallpaper.png).", [])
+    assert found["docs"] == ["https://x.test/report.pdf"]
