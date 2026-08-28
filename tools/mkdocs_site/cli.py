@@ -52,7 +52,8 @@ class ServeRuntime:
 
 @dataclass
 class _ServeState:
-    child: Any
+    child: subprocess.Popen[bytes] | None
+    backup: _WorkingBackup | None = None
 
 
 @dataclass(frozen=True)
@@ -212,6 +213,7 @@ def _restart_previous_preview(
     port: int,
 ) -> None:
     url = f"http://127.0.0.1:{port}/"
+    state.child = None
     recovery = None
     try:
         recovery = runtime.start(
@@ -221,6 +223,7 @@ def _restart_previous_preview(
     except BaseException:
         if recovery is not None:
             runtime.stop(recovery)
+        state.child = None
         raise
     state.child = recovery
 
@@ -234,18 +237,28 @@ def _refresh_preview(
 ) -> None:
     """Replace the served snapshot, restoring it if any refresh step fails."""
     url = f"http://127.0.0.1:{port}/"
-    runtime.stop(state.child)
-    try:
-        backup = _stash_working_outputs(paths)
-    except BaseException as stash_error:
+    previous = state.child
+    if previous is not None:
+        runtime.stop(previous)
+        state.child = None
+
+    backup = state.backup
+    if backup is None:
         try:
-            _restart_previous_preview(paths, runtime, state, port)
-        except BaseException as recovery_error:
-            raise RuntimeError(
-                f"preview backup failed and the previous server could not restart: "
-                f"{recovery_error}"
-            ) from stash_error
-        raise
+            backup = _stash_working_outputs(paths)
+        except BaseException as stash_error:
+            try:
+                _restart_previous_preview(paths, runtime, state, port)
+            except BaseException as recovery_error:
+                raise RuntimeError(
+                    f"preview backup failed and the previous server could not restart: "
+                    f"{recovery_error}"
+                ) from stash_error
+            raise
+        state.backup = backup
+    else:
+        _restore_working_outputs(paths, backup)
+
     candidate = None
     try:
         inventory = operations.inventory(paths.wiki)
@@ -265,10 +278,12 @@ def _refresh_preview(
                 f"{recovery_error}"
             ) from refresh_error
         shutil.rmtree(backup.root, ignore_errors=True)
+        state.backup = None
         raise
     else:
-        shutil.rmtree(backup.root, ignore_errors=True)
         state.child = candidate
+        shutil.rmtree(backup.root, ignore_errors=True)
+        state.backup = None
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -337,14 +352,20 @@ def main(
                 runtime.watch(
                     paths.wiki,
                     refresh,
-                    lambda: state.child.poll() is not None,
+                    lambda: state.child is not None
+                    and state.child.poll() is not None,
                 )
-                return_code = state.child.poll()
+                child = state.child
+                if child is None:
+                    return 0
+                return_code = child.poll()
                 return return_code if return_code is not None else 0
             except KeyboardInterrupt:
                 return 130
         finally:
-            runtime.stop(state.child)
+            child = state.child
+            if child is not None:
+                runtime.stop(child)
 
     result = active.mkdocs(command, paths.repo)
     if args.command == "build" and result == 0:

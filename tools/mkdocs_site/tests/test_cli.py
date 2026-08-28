@@ -70,7 +70,7 @@ def recording_serve_runtime(
     *,
     child_exit: int | None = None,
 ) -> ServeRuntime:
-    child = SimpleNamespace(pid=1234, returncode=child_exit)
+    child = SimpleNamespace(pid=1234, returncode=None)
     child.poll = lambda: child.returncode
 
     def check_port(port: int) -> None:
@@ -88,8 +88,12 @@ def recording_serve_runtime(
         events.append(("open", url))
 
     def watch(wiki: Path, callback, stop_requested) -> None:
-        del callback, stop_requested
+        del callback
         events.append(("watch", wiki))
+        if child_exit is not None:
+            assert child.poll() is None
+            child.returncode = child_exit
+            assert stop_requested()
 
     def stop(received_child: object) -> None:
         assert received_child is child
@@ -488,7 +492,9 @@ def test_refresh_stops_unready_recovery_and_keeps_backup_for_diagnostics(
         except OSError:
             port_rebound = False
         assert (stopped, port_rebound) == (True, True)
-        assert state.child is old_child
+        assert state.child is None
+        assert state.backup is not None
+        assert state.backup.root.is_dir()
         assert (paths.staging / "old.md").read_text(encoding="utf-8") == "old stage"
         assert routes.read_text(encoding="utf-8") == "old routes"
         assert paths.generated_config.read_text(encoding="utf-8") == "old config"
@@ -546,6 +552,7 @@ def test_refresh_success_activates_new_outputs_before_readiness(tmp_path: Path) 
     _refresh_preview(paths, operations, runtime, state, 8123)
 
     assert state.child is new_child
+    assert state.backup is None
     assert (paths.staging / "new.md").read_text(encoding="utf-8") == "new"
     assert not (paths.staging / "old.md").exists()
     assert routes.read_text(encoding="utf-8") == "new"
