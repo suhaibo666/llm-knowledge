@@ -1,17 +1,18 @@
 ---
-title: "verl 控制面 —— single_controller:单控制器驱动多控制器 SPMD"
+title: "verl V0 控制面：single_controller 驱动 SPMD"
 ---
 
-# verl 控制面 —— single_controller:单控制器驱动多控制器 SPMD
+# verl V0 控制面：single_controller 驱动 SPMD
 
-> **代码基准**:verl `main` @ `8a694930`
-> **最后更新**:2026-06-22 · **系列**:verl RLHF 框架源码级分析(见 [[verl/index]])
+> **历史代码基准**：verl `main` @ `8a694930275061f52ebd538c906ef8819af56dbd`
+> **范围复核**：2026-08-28 · **系列**：verl RLHF 框架源码级分析（见 [[verl/index]]）
 >
 > HybridFlow 的核心主张是「**single-controller 编程、multi-controller 执行**」:RL 算法代码在一个中心化 driver 进程上线性书写(`actor_wg.update_actor(data)` 一行调用),却要在底层 fan-out 到成百上千个 SPMD worker 上并发执行,再把各 rank 的结果聚合回 driver。本文逐行追踪这套机制——driver 上一次普通的方法调用,如何被拦截、切分(dispatch)、远程派发(execute)、聚合(collect),最终返回一个完整的 `DataProto`。
 >
 > 主要源文件:`single_controller/base/worker.py`(349 行)、`single_controller/base/worker_group.py`(256 行)、`single_controller/base/decorator.py`(445 行)、`single_controller/ray/base.py`(1128 行)
 
-> [!note] 本页基线 verl `8a694930`;端到端迭代以 [[10_verl_end_to_end_iteration_analysis]](基线 `983cb0f`)为准,两基线间机制差异以新基线页为先。
+> [!warning] 本页是冻结的 V0 dispatch/collect 机制档案
+> 本文所有行号都属于上述历史提交，用于解释 `WorkerGroup`、装饰器与 `DataProtoFuture`。当前 `main` @ `254a23edc62f25ebfae626e3932ae285d6f86009` 默认进入 V1，controller 主要传 `KVBatchMeta`，worker 由 `tqbridge` 延迟取 TensorDict；当前主线见 [[10_verl_end_to_end_iteration_analysis]] 与 [[16_verl_v1_transfer_queue_analysis]]。single-controller RPC/SPMD 抽象仍被使用，但“完整数据必经 driver”不再是唯一数据路径。
 
 ---
 
@@ -426,12 +427,10 @@ sequenceDiagram
 
 ## Related Pages
 
-- [[01_verl_architecture_overview_analysis]] —— verl 总体架构与 HybridFlow 思想,本文是其控制面实现细节
-- [[20_verl_ray_trainer_analysis]] —— driver 侧 `RayPPOTrainer` 如何串起各 WorkerGroup 调用本文的派发机制
-- [[12_verl_dataproto_analysis]] —— `DataProto` / `DataProtoFuture` / `BatchData` 的 chunk/concat/padding 细节(§4.4、§6 的底座)
-- [[13_verl_workers_engine_analysis]] —— `@register` 的实际使用方:Actor/Critic/Ref worker 的方法与 dispatch 模式选择
-- [[14_verl_rollout_resharding_analysis]] —— colocate 与权重 resharding,延续 §5.5 的 fused worker
-- [[15_verl_rl_algorithms_analysis]] —— 上层 RL 算法如何在 single-controller 数据流上书写
-- [[30_verl_optimization_analysis]] —— 非阻塞流水线等性能手段
-- [[02_verl_quickstart_guide]] —— 上手路径
-- [[verl/index]] —— verl 系列总索引
+- [[20_verl_ray_trainer_analysis]] —— 使用这套 dispatch/collect 的 V0 主循环
+- [[12_verl_dataproto_analysis]] —— `DataProto` 与 `DataProtoFuture` 的历史主契约
+- [[16_verl_v1_transfer_queue_analysis]] —— V1 如何把数据搬运改为引用与延迟物化
+- [[10_verl_end_to_end_iteration_analysis]] —— 当前默认 V1 控制链
+- [[13_verl_workers_engine_analysis]] —— Worker/Engine 当前计算边界
+- [[01_verl_architecture_overview_analysis]] —— 当前四平面架构
+- [[verl/index]] —— 系列导航

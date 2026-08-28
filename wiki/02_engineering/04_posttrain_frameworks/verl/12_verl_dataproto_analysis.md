@@ -1,15 +1,16 @@
 ---
-title: "verl 数据面 —— DataProto:控制器与 worker 之间的数据契约"
+title: "verl DataProto：V0 主契约与 V1 局部计算容器"
 ---
 
-# verl 数据面 —— DataProto:控制器与 worker 之间的数据契约
+# verl DataProto：V0 主契约与 V1 局部计算容器
 
-> **代码基准**:verl `main` @ `8a694930`
-> **最后更新**:2026-06-22 · **系列**:verl RLHF 框架源码级分析(见 [[verl/index]])
+> **历史代码基准**：verl `main` @ `8a694930275061f52ebd538c906ef8819af56dbd`
+> **范围复核**：2026-08-28 · **系列**：verl RLHF 框架源码级分析（见 [[verl/index]]）
 >
 > verl 的 single-controller 模式里,driver 进程在一根 Python 主线程上"指挥"成百上千个 worker。要让"指挥"成立,driver 和 worker 之间必须有一种**自描述、可切分、可拼接、可序列化**的数据载体。这个载体就是 `DataProto`。本文逐方法剖析 `verl/protocol.py`(1346 行),它是整个数据面的单一事实来源。
 
-> [!note] 本页基线 verl `8a694930`;端到端迭代以 [[10_verl_end_to_end_iteration_analysis]](基线 `983cb0f`)为准,两基线间机制差异以新基线页为先。
+> [!warning] 行号冻结于历史提交，ownership 已变化
+> 本文的方法级分析仍用于理解 `DataProto` 本身，但当前 V1 controller-worker 主契约是 `KVBatchMeta`/TransferQueue。V1 在 reward、advantage 等局部边界仍把字段物化为 TensorDict/DataProto（`verl/trainer/ppo/v1/trainer_base.py:1436-1707`，当前基线 `254a23edc62f25ebfae626e3932ae285d6f86009`）。当前数据面见 [[16_verl_v1_transfer_queue_analysis]]；不要再把 DataProto 写成所有 V1 role 之间的唯一传输容器。
 
 ---
 
@@ -322,9 +323,9 @@ driver↔worker 走 Ray,`DataProto` 必然被 pickle。`__getstate__`/`__setstat
 
 ## Related Pages
 
-- [[verl/index]] —— verl RLHF 框架源码级分析知识地图(本系列入口)
-- [[11_verl_single_controller_analysis]] —— DP_COMPUTE_PROTO 的 dispatch/collect 装饰器、`BatchData`、`func_generator` 的 padding 裁剪与 `DataProtoFuture` 非阻塞执行,与本文互为表里
-- [[20_verl_ray_trainer_analysis]] —— PPO 主循环里 `pop`/`union`/`repeat`/`pad`/`reorder` 的实战用法
-- [[13_verl_workers_engine_analysis]] —— worker 侧如何消费切片后的 DataProto 并产出新字段
-- [[14_verl_rollout_resharding_analysis]] —— rollout 阶段长度不定 batch 的 pad/unpad 与 resharding
-- [[01_verl_architecture_overview_analysis]] —— HybridFlow single-controller 总体架构中数据面的位置
+- [[16_verl_v1_transfer_queue_analysis]] —— 当前 `KVBatchMeta` 与延迟物化数据面
+- [[11_verl_single_controller_analysis]] —— V0 dispatch/collect 与 `DataProtoFuture`
+- [[20_verl_ray_trainer_analysis]] —— V0 主循环中的 DataProto 操作
+- [[10_verl_end_to_end_iteration_analysis]] —— V1 局部物化与字段读写
+- [[13_verl_workers_engine_analysis]] —— worker 如何消费 TensorDict
+- [[verl/index]] —— 系列导航
