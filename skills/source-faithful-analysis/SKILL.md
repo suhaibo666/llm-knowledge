@@ -1,23 +1,14 @@
 ---
 name: source-faithful-analysis
 description: >-
-  Deep, source-faithful analysis of ANY artifact — a codebase, a research paper, a spec/RFC/standard,
-  a dataset, API/SDK docs, a running system or incident, a business/market report — turning it into a
-  mechanism-level technical write-up, wiki page, design doc, or knowledge-base entry where every
-  non-trivial claim is traced to its exact source locator (file:line / §·Table·Fig·Eq / clause /
-  column·row / endpoint·field / log timestamp), leads with the central thesis, and explains WHY each
-  design choice beats the obvious alternative — not just what it is. Use this whenever the goal is to
-  understand or explain something at the mechanism/why level from its ACTUAL source rather than a
-  one-line summary: "analyze X", "how does Y work internally", "write a deep dive / source-level
-  walkthrough of Z", reverse-engineering an architecture, mapping a subsystem, dissecting a paper's
-  design rationale, auditing a dataset/spec/report, comparing two implementations or approaches, or
-  ingesting any of these into a knowledge base. After you start, read the matching
-  source-type reference pack (codebase / paper / general) for the concrete locators, ingestion recipe,
-  and essence checklist. Trigger even when the user doesn't say "skill", "analysis", or
-  "documentation" — any time they want a faithful, essence-first reading of something's internals as
-  opposed to merely using it or fixing one isolated bug. Prefer this over a quick surface summary
-  whenever the user wants depth backed by exact, verifiable citations; especially apt for large or
-  unfamiliar sources and for multi-page / multi-subsystem efforts. Do not use as the first step for an unplanned whole-codebase or multi-page codebase-domain analysis; use planning-codebase-analysis first.
+  Use when producing source-grounded, mechanism-level analysis of a codebase, research paper,
+  spec/RFC, dataset, API, incident, report, or other artifact. Applies to deep dives, architecture
+  or subsystem explanations, design-rationale audits, implementation comparisons, and wiki
+  ingestion where claims need exact locators and a frozen baseline. For code, use only for one
+  focused mechanism or an approved analysis unit/page; route an unplanned whole codebase or
+  multi-page codebase domain to planning-codebase-analysis first. Non-code artifacts may be
+  analyzed at any scale. Do not use merely to operate a tool or fix an isolated bug when no
+  analysis deliverable is requested.
 ---
 
 # Source-Faithful Analysis
