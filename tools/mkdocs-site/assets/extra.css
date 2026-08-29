@@ -121,6 +121,198 @@ body {
   max-width: 100%;
 }
 
+.md-typeset .kb-mermaid-interactive {
+  position: relative;
+}
+
+.kb-mermaid-zoom-trigger {
+  position: absolute;
+  z-index: 2;
+  inset: 0.55rem 0.55rem auto auto;
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--kb-line) 78%, transparent);
+  border-radius: 0.42rem;
+  background: color-mix(in srgb, var(--kb-surface) 92%, transparent);
+  box-shadow: 0 0.35rem 1rem color-mix(in srgb, var(--kb-ink) 12%, transparent);
+  color: var(--kb-blue);
+  cursor: zoom-in;
+  font: 700 1rem/1 var(--md-code-font);
+  opacity: 0.84;
+}
+
+.kb-mermaid-zoom-trigger:hover {
+  border-color: var(--kb-blue);
+  background: var(--kb-blue-soft);
+  opacity: 1;
+}
+
+.kb-mermaid-zoom-trigger:focus-visible,
+.kb-mermaid-viewer button:focus-visible,
+.kb-mermaid-viewer__stage:focus-visible {
+  outline: 0.16rem solid var(--kb-focus);
+  outline-offset: 0.14rem;
+}
+
+body.kb-mermaid-viewer-open {
+  overflow: hidden;
+}
+
+dialog.kb-mermaid-viewer {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--kb-ink);
+}
+
+dialog.kb-mermaid-viewer::backdrop {
+  background: color-mix(in srgb, #060b14 76%, transparent);
+  backdrop-filter: blur(0.2rem);
+}
+
+.kb-mermaid-viewer__surface {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--kb-surface);
+}
+
+.kb-mermaid-viewer__toolbar {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  min-width: 0;
+  min-height: 3.35rem;
+  padding: 0.55rem clamp(0.65rem, 2vw, 1.1rem);
+  grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+  border-bottom: 1px solid var(--kb-line);
+  background: color-mix(in srgb, var(--kb-surface) 94%, transparent);
+  box-shadow: 0 0.35rem 1.3rem color-mix(in srgb, var(--kb-ink) 8%, transparent);
+}
+
+.kb-mermaid-viewer__toolbar strong {
+  color: var(--kb-ink);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.kb-mermaid-viewer__actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.kb-mermaid-viewer button {
+  min-width: 2.35rem;
+  min-height: 2.35rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--kb-line);
+  border-radius: 0.38rem;
+  background: var(--kb-surface-muted);
+  color: var(--kb-ink);
+  cursor: pointer;
+  font: 650 0.68rem/1 var(--md-text-font);
+}
+
+.kb-mermaid-viewer button:hover {
+  border-color: var(--kb-blue);
+  background: var(--kb-blue-soft);
+  color: var(--kb-blue);
+}
+
+.kb-mermaid-viewer [data-kb-mermaid-action="zoom-out"],
+.kb-mermaid-viewer [data-kb-mermaid-action="zoom-in"],
+.kb-mermaid-viewer [data-kb-mermaid-action="close"] {
+  padding: 0;
+  font: 700 1rem/1 var(--md-code-font);
+}
+
+.kb-mermaid-viewer [data-kb-mermaid-action="close"] {
+  justify-self: end;
+  border-color: transparent;
+  background: transparent;
+  font-size: 1.25rem;
+}
+
+.kb-mermaid-viewer__status {
+  min-width: 3.2rem;
+  color: var(--kb-ink-muted);
+  font: 650 0.64rem/1 var(--md-code-font);
+  text-align: center;
+}
+
+.kb-mermaid-viewer__stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--kb-line) 72%, transparent) 1px, transparent 1.2px) 0 0 / 1.1rem 1.1rem,
+    var(--kb-canvas);
+  cursor: grab;
+  touch-action: none;
+}
+
+.kb-mermaid-viewer__stage.is-dragging {
+  cursor: grabbing;
+}
+
+.kb-mermaid-viewer__canvas {
+  position: absolute;
+  inset: 0 auto auto 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.kb-mermaid-viewer__canvas > svg {
+  display: block;
+  width: 100% !important;
+  max-width: none !important;
+  height: 100% !important;
+}
+
+@media (max-width: 40rem) {
+  .kb-mermaid-viewer__toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+  }
+
+  .kb-mermaid-viewer__toolbar strong {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .kb-mermaid-viewer__actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .kb-mermaid-viewer [data-kb-mermaid-action="close"] {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
 .md-nav__link[data-nav-title] {
   position: relative;
   min-width: 0;

@@ -205,6 +205,180 @@ function isExpectedMermaidPageError(message) {
   return message.startsWith("Parse error on line") && message.includes("got 'EOF'")
 }
 
+async function assertMermaidViewerLifecycle(page) {
+  const triggerSelector = (
+    ".mermaid:not([data-kb-mermaid-error]) .kb-mermaid-zoom-trigger"
+  )
+  const triggerCount = await page.$$eval(
+    ".kb-mermaid-zoom-trigger",
+    (items) => items.length,
+  )
+  assert.equal(triggerCount, 1, "only rendered Mermaid diagrams get a zoom trigger")
+
+  const triggerLabel = await page.$eval(
+    triggerSelector,
+    (trigger) => trigger.getAttribute("aria-label"),
+  )
+  assert.equal(triggerLabel, "查看大图", "Mermaid zoom trigger has no accessible label")
+
+  await page.setViewport({ width: 390, height: 780, deviceScaleFactor: 1 })
+  await page.click(triggerSelector)
+  await page.waitForFunction(() => document.querySelector("dialog.kb-mermaid-viewer")?.open)
+  const opened = await page.evaluate(() => {
+    const viewer = document.querySelector("dialog.kb-mermaid-viewer")
+    return {
+      viewers: document.querySelectorAll("dialog.kb-mermaid-viewer").length,
+      modal: viewer?.getAttribute("aria-modal"),
+      label: viewer?.getAttribute("aria-label"),
+      svg: viewer?.querySelectorAll(".kb-mermaid-viewer__canvas > svg").length ?? 0,
+      bodyLocked: document.body.classList.contains("kb-mermaid-viewer-open"),
+    }
+  })
+  assert.deepEqual(opened, {
+    viewers: 1,
+    modal: "true",
+    label: "Mermaid 图表查看器",
+    svg: 1,
+    bodyLocked: true,
+  })
+  const layout = await page.evaluate((selector) => {
+    const viewer = document.querySelector("dialog.kb-mermaid-viewer")
+    const stage = viewer.querySelector(".kb-mermaid-viewer__stage")
+    const toolbar = viewer.querySelector(".kb-mermaid-viewer__toolbar")
+    const trigger = document.querySelector(selector)
+    const viewerBox = viewer.getBoundingClientRect()
+    const stageBox = stage.getBoundingClientRect()
+    const triggerBox = trigger.getBoundingClientRect()
+    const stageStyle = getComputedStyle(stage)
+    return {
+      viewerCoversViewport:
+        Math.abs(viewerBox.left) <= 1
+        && Math.abs(viewerBox.top) <= 1
+        && viewerBox.width >= window.innerWidth - 1
+        && viewerBox.height >= window.innerHeight - 1,
+      stageUsable: stageBox.height >= window.innerHeight * 0.55,
+      stageOverflow: stageStyle.overflow,
+      stageTouchAction: stageStyle.touchAction,
+      toolbarFits: toolbar.scrollWidth <= toolbar.clientWidth,
+      triggerUsable: triggerBox.width >= 32 && triggerBox.height >= 32,
+      bodyOverflow: getComputedStyle(document.body).overflow,
+    }
+  }, triggerSelector)
+  assert.deepEqual(layout, {
+    viewerCoversViewport: true,
+    stageUsable: true,
+    stageOverflow: "hidden",
+    stageTouchAction: "none",
+    toolbarFits: true,
+    triggerUsable: true,
+    bodyOverflow: "hidden",
+  })
+
+  const actions = await page.$$eval(
+    "[data-kb-mermaid-action]",
+    (buttons) => buttons.map((button) => button.dataset.kbMermaidAction),
+  )
+  assert.deepEqual(actions, ["zoom-out", "zoom-in", "fit", "reset", "close"])
+  const initialTransform = await page.$eval(".kb-mermaid-viewer", (viewer) => ({
+    mode: viewer.dataset.kbMode,
+    scale: Number(viewer.dataset.kbScale),
+    x: Number(viewer.dataset.kbX),
+    y: Number(viewer.dataset.kbY),
+  }))
+  assert.equal(initialTransform.mode, "fit", "viewer did not fit on open")
+  assert.ok(initialTransform.scale > 0, "viewer has no initial scale")
+
+  await page.click('[data-kb-mermaid-action="zoom-in"]')
+  await page.waitForFunction((before) => (
+    Number(document.querySelector(".kb-mermaid-viewer")?.dataset.kbScale) > before
+  ), { timeout: 5_000 }, initialTransform.scale)
+  const buttonScale = await page.$eval(
+    ".kb-mermaid-viewer",
+    (viewer) => Number(viewer.dataset.kbScale),
+  )
+
+  const stage = await page.$(".kb-mermaid-viewer__stage")
+  const stageBox = await stage.boundingBox()
+  assert.ok(stageBox && stageBox.width > 0 && stageBox.height > 0, "viewer stage is hidden")
+  await page.mouse.move(stageBox.x + stageBox.width / 2, stageBox.y + stageBox.height / 2)
+  await page.mouse.wheel({ deltaY: -180 })
+  await page.waitForFunction((before) => (
+    Number(document.querySelector(".kb-mermaid-viewer")?.dataset.kbScale) > before
+  ), { timeout: 5_000 }, buttonScale)
+
+  const beforePan = await page.$eval(".kb-mermaid-viewer", (viewer) => ({
+    x: Number(viewer.dataset.kbX),
+    y: Number(viewer.dataset.kbY),
+  }))
+  await page.mouse.down()
+  await page.mouse.move(
+    stageBox.x + stageBox.width / 2 + 48,
+    stageBox.y + stageBox.height / 2 + 32,
+    { steps: 4 },
+  )
+  await page.mouse.up()
+  await page.waitForFunction((before) => {
+    const viewer = document.querySelector(".kb-mermaid-viewer")
+    return Number(viewer?.dataset.kbX) !== before.x
+      || Number(viewer?.dataset.kbY) !== before.y
+  }, { timeout: 5_000 }, beforePan)
+
+  await page.click('[data-kb-mermaid-action="reset"]')
+  const reset = await page.$eval(".kb-mermaid-viewer", (viewer) => ({
+    mode: viewer.dataset.kbMode,
+    scale: Number(viewer.dataset.kbScale),
+  }))
+  assert.deepEqual(reset, { mode: "actual", scale: 1 })
+
+  await page.click('[data-kb-mermaid-action="fit"]')
+  await page.waitForFunction(() => (
+    document.querySelector(".kb-mermaid-viewer")?.dataset.kbMode === "fit"
+  ))
+  const beforePinch = await page.$eval(
+    ".kb-mermaid-viewer",
+    (viewer) => Number(viewer.dataset.kbScale),
+  )
+  const touch = await page.createCDPSession()
+  await touch.send("Emulation.setTouchEmulationEnabled", {
+    enabled: true,
+    maxTouchPoints: 2,
+  })
+  const centerX = stageBox.x + stageBox.width / 2
+  const centerY = stageBox.y + stageBox.height / 2
+  await touch.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [
+      { id: 1, x: centerX - 36, y: centerY, radiusX: 4, radiusY: 4, force: 1 },
+      { id: 2, x: centerX + 36, y: centerY, radiusX: 4, radiusY: 4, force: 1 },
+    ],
+  })
+  await touch.send("Input.dispatchTouchEvent", {
+    type: "touchMove",
+    touchPoints: [
+      { id: 1, x: centerX - 82, y: centerY, radiusX: 4, radiusY: 4, force: 1 },
+      { id: 2, x: centerX + 82, y: centerY, radiusX: 4, radiusY: 4, force: 1 },
+    ],
+  })
+  await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] })
+  await page.waitForFunction((before) => (
+    Number(document.querySelector(".kb-mermaid-viewer")?.dataset.kbScale) > before
+  ), { timeout: 5_000 }, beforePinch)
+  await touch.detach()
+
+  await page.keyboard.press("Escape")
+  await page.waitForFunction(() => !document.querySelector("dialog.kb-mermaid-viewer")?.open)
+  const closed = await page.evaluate((selector) => ({
+    bodyLocked: document.body.classList.contains("kb-mermaid-viewer-open"),
+    focusRestored: document.activeElement === document.querySelector(selector),
+  }), triggerSelector)
+  assert.deepEqual(closed, { bodyLocked: false, focusRestored: true })
+
+  await page.click(triggerSelector)
+  await page.waitForFunction(() => document.querySelector("dialog.kb-mermaid-viewer")?.open)
+  await page.click('[data-kb-mermaid-action="close"]')
+  await page.waitForFunction(() => !document.querySelector("dialog.kb-mermaid-viewer")?.open)
+}
+
 async function runCase(browser, origin, basePath, servedResponses) {
   const page = await browser.newPage()
   const requests = []
@@ -317,6 +491,8 @@ async function runCase(browser, origin, basePath, servedResponses) {
       false,
       `${basePath} Mermaid security probe executed`,
     )
+
+    await assertMermaidViewerLifecycle(page)
 
     assert.deepEqual(blockedExternal, [], `${basePath} attempted external requests`)
     const securityProbeRequests = requests.filter((rawUrl) => {
