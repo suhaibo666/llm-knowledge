@@ -27,3 +27,11 @@ def test_planner_has_six_routing_and_behavior_evals():
     assert payload["skill_name"] == "planning-codebase-analysis"
     assert {item["id"] for item in payload["evals"]} == {1, 2, 3, 4, 5, 6}
     assert all(item["prompt"] and item["expected_output"] for item in payload["evals"])
+
+
+def test_planner_rejects_fixed_source_code_ratio_quotas():
+    text = (PLANNER / "SKILL.md").read_text(encoding="utf-8")
+    assert (
+        "Do not use a fixed source-code or code-to-explanation ratio as a quality "
+        "or completion constraint."
+    ) in text
