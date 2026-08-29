@@ -138,7 +138,12 @@ structure are cheap and prevent rework.
 - **Decide the granularity:** a single overview, or an overview **plus** a set of deep-dive pages.
   Big sources usually want both.
 - **For an approved codebase page:** inherit granularity, title, concept ownership, exclusions, and
-  evidence entry points from the blueprint; do not reopen repository-wide page planning.
+  evidence entry points from the blueprint. Also inherit the approved repository commit, verify
+  that the checkout is at that exact commit, and keep it frozen for the page execution; do not
+  reopen repository-wide page planning. Do not fetch, pull, fast-forward, switch, checkout, reset,
+  or move the approved repository. If the commit is unavailable or must change, stop and return a
+  concrete proposed revision to `planning-codebase-analysis` for approval. Focused code analysis
+  with no approved blueprint may establish a safe baseline under the codebase pack instead.
 
 ### Phase 1 — Map before you write
 
@@ -151,10 +156,12 @@ Resist reading the source top-to-bottom into context. First build a map:
   only as scaffolding/contrast.
 - **Locate the load-bearing entry points** — where each subsystem *starts*, the contributions
   paragraph, the key tables. Grep for the orchestrator/loop/registry, not every leaf.
-- **Decompose into docs.** Organize by the source's natural seams — **subsystem** (code), **theme**
-  (paper: architecture / data / training infra / post-training / eval …), or **aspect** (general) —
-  and within each by depth. One concept per doc; prefer splitting over a sprawling page. **Fix the
-  doc names up front** so cross-references can be written before the docs exist.
+- **Decompose into docs only for non-code sources or unplanned focused analysis.** Organize by the
+  source's natural seams — subsystem, theme, or aspect — and within each by depth. One concept per
+  doc; prefer splitting over a sprawling page, and fix doc names up front for cross-references. An
+  approved codebase page may organize sections inside its assigned contract only; it must not rename,
+  split, or reassign pages locally. A required page split is material drift: stop the affected page
+  and return it to `planning-codebase-analysis` with the evidence and proposed boundary change.
 
 ### Phase 2 — Locate, read, cite (the fidelity loop)
 

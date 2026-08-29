@@ -7,14 +7,23 @@ SKILL.md core. Output can be any language and any doc system.
 
 This pack executes **one analysis unit/page or one focused mechanism**, not one source file. A mechanism may cross entry points, state owners, helpers, backends, tests, and history; follow all load-bearing files needed to explain it. If the request instead covers a new whole codebase or a multi-page domain and there is no approved blueprint, use `planning-codebase-analysis` before this pack.
 
-When an approved blueprint exists, inherit the page thesis, owned concepts, explicit exclusions, evidence entry points, and completion test. Do not redesign the repository's page tree from inside the page task.
+When an approved blueprint exists, inherit the page thesis, owned concepts, explicit exclusions,
+evidence entry points, and completion test; also inherit the approved repository commit. Do not
+redesign the repository's page tree from inside the page task.
 
 ## Locator & baseline
 - **Locator = `path/to/file.ext:NN`**, path relative to the repo root. You **open the file and
   confirm the line before you cite it** — never invent, guess, or copy a line from memory/a blog. A
   fabricated `file:line` is worse than none: it looks authoritative and is wrong.
 - **Baseline = HEAD commit + branch + date.** Code is only true *at a commit*; put it in every
-  header. If the repo lives in a sibling checkout, fast-forward it first and note the delta.
+  header.
+- **Approved codebase page:** verify that the checkout is at the inherited exact commit and keep
+  that commit frozen throughout page execution. Do not fetch, pull, fast-forward, switch, checkout,
+  reset, or move it. If the approved commit is unavailable or a baseline change is required, stop
+  and return to `planning-codebase-analysis` with the concrete revision and reason for approval.
+- **Focused code analysis with no approved blueprint:** establish and record a safe baseline. If a
+  sibling checkout is clean, on the expected branch, and updating it is in scope, fast-forward it
+  first and note the delta. Never reset or overwrite unrelated or dirty state to establish it.
 
 ## Ingest & map (Phase 0–1)
 - **Directory skeleton first** (dirs only, ~2 levels) — a recursive file dump drowns you in

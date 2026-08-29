@@ -14,8 +14,8 @@ before doing anything; open a skill only when you are about to do the thing it c
 | Add / edit / rename / merge a page in `wiki/`, maintain an `index.md` or the changelog | [`maintaining-llm-knowledge`](skills/maintaining-llm-knowledge/SKILL.md) |
 | Write or change a LaTeX formula | [`writing-obsidian-math`](skills/writing-obsidian-math/SKILL.md) |
 | Draw or change a Mermaid diagram | [`writing-mermaid-diagrams`](skills/writing-mermaid-diagrams/SKILL.md) |
-| Discover and plan a new codebase or large codebase domain, propose the document blueprint, wait for approval, then coordinate implementation | [`planning-codebase-analysis`](skills/planning-codebase-analysis/SKILL.md) |
-| Write one approved analysis unit/page, or analyze one focused mechanism from a codebase, paper, spec, dataset, or other source | [`source-faithful-analysis`](skills/source-faithful-analysis/SKILL.md) |
+| Discover and plan a new whole codebase or unplanned multi-page codebase domain, propose the document blueprint, wait for approval, then coordinate implementation | [`planning-codebase-analysis`](skills/planning-codebase-analysis/SKILL.md) |
+| Write an approved/focused codebase unit, or analyze a paper, spec, dataset, incident, report, or other non-code artifact at any scale | [`source-faithful-analysis`](skills/source-faithful-analysis/SKILL.md) |
 
 There is exactly one copy of these skills, in `skills/`. `.claude/skills` is a symlink to it, so
 Claude Code discovers them natively; Codex reaches them through `AGENTS.md`, which points at the
