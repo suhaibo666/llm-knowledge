@@ -13,6 +13,7 @@ const defaultRepoRoot = path.resolve(toolDir, "..", "..")
 const nodeModules = path.join(toolDir, "node_modules")
 const puppeteerPackage = path.join(nodeModules, "puppeteer-core", "package.json")
 const projectBase = "/llm-knowledge/"
+const searchIndexPath = `${projectBase}search/search_index.json`
 
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -214,13 +215,32 @@ export async function corpusPages({
   return { inspectedPages: routes.length, pages }
 }
 
-async function renderPages(browser, origin, items, externalRequests, failedRequests) {
+async function renderPages(
+  browser,
+  origin,
+  items,
+  externalRequests,
+  failedRequests,
+  pageErrors,
+  emptySearchIndex,
+) {
   const page = await browser.newPage()
+  let activeSourcePath = "<navigation>"
+  await page.setRequestInterception(true)
   page.on("request", (request) => {
     const url = new URL(request.url())
     if (["http:", "https:"].includes(url.protocol) && url.origin !== origin) {
       externalRequests.push(request.url())
     }
+    if (url.origin === origin && url.pathname === searchIndexPath) {
+      request.respond({
+        status: 200,
+        contentType: "application/json",
+        body: emptySearchIndex,
+      }).catch(() => undefined)
+      return
+    }
+    request.continue().catch(() => undefined)
   })
   page.on("response", (response) => {
     if (response.status() >= 400) {
@@ -230,9 +250,16 @@ async function renderPages(browser, origin, items, externalRequests, failedReque
   page.on("requestfailed", (request) => {
     failedRequests.push(`${request.url()}: ${request.failure()?.errorText || "failed"}`)
   })
+  page.on("pageerror", (error) => {
+    // Malformed Mermaid fixtures are exercised by the diagram contract. Keep
+    // this gate focused on MathJax and unrelated page/worker failures.
+    if (String(error.stack || error.message).includes("/assets/vendor/mermaid/")) return
+    pageErrors.push(`${activeSourcePath}: ${error.message}`)
+  })
   try {
     const results = []
     for (const item of items) {
+      activeSourcePath = item.sourcePath
       const response = await page.goto(
         `${origin}${projectBase}${item.output}`,
         { waitUntil: "domcontentloaded", timeout: 60_000 },
@@ -264,9 +291,11 @@ async function renderPages(browser, origin, items, externalRequests, failedReque
 export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
   const siteRoot = path.join(repoRoot, "site")
   const routeManifest = path.join(repoRoot, ".mkdocs-cache", "routes.json")
+  const searchIndex = path.join(siteRoot, "search", "search_index.json")
   await Promise.all([
     access(path.join(siteRoot, "index.html")),
     access(routeManifest),
+    access(searchIndex),
     access(path.join(siteRoot, "assets", "mathjax.js")),
     access(path.join(siteRoot, "assets", "vendor", "mathjax", "tex-chtml.js")),
     access(puppeteerPackage),
@@ -296,8 +325,14 @@ export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
     const started = await startStaticSite(siteRoot, projectBase)
     server = started.server
     const { origin } = started
+    // Search behavior is covered by smoke.mjs. Preserve the generated schema here,
+    // but omit its large document corpus so rapid formula-page traversal cannot
+    // cancel unrelated search-index requests and report false asset failures.
+    const generatedSearchIndex = JSON.parse(await readFile(searchIndex, "utf8"))
+    const emptySearchIndex = JSON.stringify({ ...generatedSearchIndex, docs: [] })
     const externalRequests = []
     const failedRequests = []
+    const pageErrors = []
     const workerCount = Math.min(4, pages.length)
     const assignments = Array.from({ length: workerCount }, () => [])
     pages.forEach((item, index) => assignments[index % workerCount].push(item))
@@ -307,6 +342,8 @@ export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
       items,
       externalRequests,
       failedRequests,
+      pageErrors,
+      emptySearchIndex,
     )))).flat()
     const formulas = results.reduce((total, result) => total + result.containers, 0)
     const mismatches = results.filter((result) => result.containers !== result.units)
@@ -337,6 +374,7 @@ export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
     )
     assert.deepEqual(externalRequests, [], "MathJax corpus requested external runtime assets")
     assert.deepEqual(failedRequests, [], "MathJax corpus emitted failed asset requests")
+    assert.deepEqual(pageErrors, [], "MathJax corpus emitted uncaught page errors")
     assert.deepEqual(
       unprocessed,
       [],
