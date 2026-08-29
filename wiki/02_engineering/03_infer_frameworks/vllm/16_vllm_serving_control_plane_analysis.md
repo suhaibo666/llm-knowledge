@@ -195,7 +195,7 @@ EngineCore 本身还区分 drain 与 abort：shutdown 输入会停止接收新�
 ## 八、发展趋势：控制面正在变得更显式，但仍不是统一编排器
 
 > [!note] 分析推断
-> “控制面协作数据正在显式化”是对多处实现的归纳，不是源码自陈的路线图：launcher handshake 传递并校验 config hash；`vllm/v1/engine/core.py:1238-1250`、`vllm/v1/engine/utils.py:1386-1405`。数据通道 ready response 传递 cache 元数据与 DP stats endpoint，Core client 再同步它们；`vllm/v1/engine/core.py:1652-1692`、`vllm/v1/engine/core_client.py:740-781`。coordinator 跨进程发布 waiting/running/KV stats；`vllm/v1/engine/coordinator.py:305-419`。fault sentinel 把 status 包装进输出，client 收到后刷新本地状态；`vllm/v1/fault_tolerance/engine_core_sentinel.py:105-118`、`vllm/v1/engine/core_client.py:1041-1071`。shutdown deadline 则由 launcher 换算成各 manager 的剩余 timeout；`vllm/entrypoints/cli/serve.py:395-410`。这些事实共同支持“跨 owner 协作信息更显式”这一分析，但不证明某条既定演进路线。
+> “控制面协作数据正在显式化”是对多处实现的归纳，不是源码自陈的路线图：launcher handshake 传递并校验 config hash；`vllm/v1/engine/core.py:1238-1250`、`vllm/v1/engine/utils.py:1386-1405`。数据通道 ready response 传递 cache 元数据与 DP stats endpoint，Core client 再同步它们；`vllm/v1/engine/core.py:1652-1692`、`vllm/v1/engine/core_client.py:740-781`。coordinator 先更新本地 waiting/running/KV counts，再把聚合 stats 发布给 frontends；`vllm/v1/engine/coordinator.py:305-419`、`vllm/v1/engine/coordinator.py:259-283`。fault sentinel 把 status 包装进输出，client 收到后刷新本地状态；`vllm/v1/fault_tolerance/engine_core_sentinel.py:105-118`、`vllm/v1/engine/core_client.py:1041-1071`。shutdown deadline 则由 launcher 换算成各 manager 的剩余 timeout；`vllm/entrypoints/cli/serve.py:395-410`。这些事实共同支持“跨 owner 协作信息更显式”这一分析，但不证明某条既定演进路线。
 
 源码仍保留两个清晰限制：DP 选择器中的 power-of-two-choices 仅是 TODO；`vllm/v1/engine/core_client.py:1478-1481`，控制面队列也没有硬 admission cap。
 
