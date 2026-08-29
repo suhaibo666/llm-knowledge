@@ -6,7 +6,7 @@ title: "vLLM Engine 架构：用三种状态所有权封装资源承诺"
 
 > **读者问题**：Client、EngineCore 与 Executor 为什么不能合成一个 `generate` 循环；请求从“前端已登记”到“资源已承诺”再到“结果已提交”，分别在哪个对象中变成有效状态？
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout；提交时间 2026-08-29T02:40:53Z）
-> **中心命题**：三者分离的关键不是多一层抽象，而是只允许一个所有者按自己的时钟修改一类状态：Client 保存前端请求与传输状态，EngineCore 用 Scheduler 封装资源事务，Executor 只把已承诺计划投射到设备拓扑。资源承诺在 `Scheduler.schedule` 分配 slots 并推进 in-flight 进度时生效；执行结果必须再经 `update_from_output` 对承诺做接受、回滚、完成与释放。
+> **中心命题**：三者分离的关键不是多一层抽象，而是只允许一个所有者按自己的时钟修改一类状态：Client 保存前端请求与传输状态，EngineCore 用 Scheduler 封装资源事务，Executor 只把已承诺计划投射到设备拓扑。资源承诺是一次复合的 schedule-time commit：KV 分配先改变 block 所有权，Scheduler 再推进与该计划匹配的 optimistic request progress 和释放 fence，完成的 `SchedulerOutput` 才是 Executor 可消费的已提交计划；执行结果随后经 `update_from_output` 归并为 core 状态。
 > **所有权边界**：本页拥有 Engine 内部 Client / EngineCore / Executor 的对象与可选进程接缝、三类 request state，以及 create → submit → core step → result commit 路径。
 > **明确排除**：全系统六层与完整在线生命周期由 [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|架构概览]] 负责；协议、render、detokenize 与用户输出语义由 [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|请求语义]] 负责；waiting/running、budget、抢占与 KV 分配算法由 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]] 负责；launcher、ready、路由与故障拓扑由 [[02_engineering/03_infer_frameworks/vllm/16_vllm_serving_control_plane_analysis|Serving 控制面]] 负责。
 > **最近更新**：2026-08-29。按 `6b110bad` 重建对象所有权与两阶段提交边界。
@@ -116,31 +116,37 @@ preprocess 并加入 Scheduler，GET 时直接驱动 core step；三份状态仍
 
 ## 4. 精确路径：create → submit → core step → result commit
 
-图 B 把“发送成功”“资源已承诺”“结果已提交”分开。前两个 commit 都在 Scheduler 内，但含义不同：
-`schedule` 提交可执行资源计划，`update_from_output` 提交执行现实。
+图 B 把“发送成功”“资源计划已提交”“执行结果已归并”分开，并把 EngineCore 与 Scheduler 拆成两个
+参与者：Scheduler 修改权威资源状态，EngineCore 则把 schedule、Executor 调用、abort 边界与
+reconciliation 串成一个不可交换的事务顺序。
 
 ```mermaid
 sequenceDiagram
     participant F as Frontend Engine
     participant C as EngineCoreClient
-    participant S as EngineCore 与 Scheduler
+    participant EC as EngineCore
+    participant S as Scheduler
     participant E as Executor 与 Workers
 
     F->>F: create frontend RequestState
     F->>C: submit EngineCoreRequest
     Note over C: transport accepted<br/>不等于资源 admission
-    C->>S: ADD request
-    S->>S: create core Request and enqueue
+    C->>EC: ADD request
+    EC->>S: add core Request
     Note over S: WAITING 已登记<br/>仍未承诺当步资源
-    S->>S: schedule and allocate slots
-    S->>S: advance computed and in-flight progress
-    Note over S: commit one<br/>资源计划成为 core 状态
-    S->>E: SchedulerOutput
-    E-->>S: runner result
-    S->>S: update from output
-    Note over S: commit two<br/>接受回滚完成释放
-    S-->>C: EngineCoreOutputs
+    EC->>S: schedule
+    S->>S: allocate block ownership
+    S->>S: advance optimistic progress and fence
+    S-->>EC: committed SchedulerOutput
+    EC->>E: execute committed plan
+    E-->>EC: runner result
+    EC->>EC: process pending aborts
+    EC->>S: update from output
+    S->>S: reconcile progress finish and release
+    S-->>EC: EngineCoreOutputs
+    EC-->>C: EngineCoreOutputs
     C-->>F: core outputs
+    F->>F: process frontend-visible output
 ```
 
 ### 4.1 Create：先建立前端接收状态
@@ -161,17 +167,22 @@ AsyncMPClient 在发送前写入 `client_index`，然后等待 socket send（`vl
 
 ### 4.3 Core step：资源承诺在 Executor 之前生效
 
-`EngineCore.step` 的不可交换顺序是：`schedule` → non-blocking `execute_model` → 等待 runner result →
-`update_from_output`（`vllm/v1/engine/core.py:597-627`）。Scheduler 在 `schedule` 中先受 token/input budget
-约束，再调用 `KVCacheManager.allocate_slots`；成功的 block 与 token delta 被写入 `SchedulerOutput`
-（`vllm/v1/core/sched/scheduler.py:501-542`；`vllm/v1/core/sched/scheduler.py:655-669`；
-`vllm/v1/core/sched/scheduler.py:1322-1371`）。
+`EngineCore.step` 的不可交换顺序是：调用 `schedule`，把返回计划交给 Executor 并等待 runner result，
+在归并结果前处理执行期间到达的 abort，最后调用 `update_from_output`
+（`vllm/v1/engine/core.py:608-624`）。
 
-真正的 **resource-commit point** 是 `schedule` 返回前的 `_update_after_schedule`：它立即增加
-`num_computed_tokens` 和 `num_in_flight_tokens`，并记录安全释放所需的 step fence；即使 GPU 尚未返回，
-下一轮 schedule 也会看到已承诺进度（`vllm/v1/core/sched/scheduler.py:1435-1455`）。并发 batch 测试明确
-断言第一批刚入 queue、尚未消费输出时 `num_computed_tokens` 已更新（
-`tests/v1/engine/test_engine_core.py:336-352`）。
+**Resource commit 不是 `_update_after_schedule` 这一行的单点事件，而是一次复合的 schedule-time
+commit。** Scheduler 为 running/new request 调用 `allocate_slots` 时，KV manager 已经为 request 分配新
+blocks；当 caching 已启用且不延迟时，它还按可提交 token 边界更新 cache block 状态（`vllm/v1/core/sched/scheduler.py:655-669`；
+`vllm/v1/core/sched/scheduler.py:1065-1079`；`vllm/v1/core/kv_cache_manager.py:541-564`）。随后，完成的
+`SchedulerOutput` 被 `_update_after_schedule` 配上相同的 optimistic progress：增加
+`num_computed_tokens`、`num_in_flight_tokens`，并在需要时记录 deferred-free fence
+（`vllm/v1/core/sched/scheduler.py:1322-1371`；`vllm/v1/core/sched/scheduler.py:1435-1455`）。至此，
+KV/block 所有权、request progress 与 executor-facing plan 才构成同一份已提交承诺。分配策略、budget
+选择和抢占算法由 page 11/12 解释，本页只保留所有权变化。
+
+并发 batch 测试明确断言第一批刚入 queue、尚未消费输出时 `num_computed_tokens` 已更新，证明提交计划
+可以先于 result reconciliation 被下一轮 schedule 看见（`tests/v1/engine/test_engine_core.py:336-352`）。
 
 因此更精确的表述是：**Scheduler 是资源状态的唯一写者，EngineCore 是资源事务的外部封装边界。**
 EngineCore 决定何时调用 schedule、把哪份 snapshot 交给 Executor、再用哪份 result 做 reconciliation；
@@ -187,14 +198,17 @@ Scheduler request map 或 admission API，所以不能私自纳入新请求或�
 
 ### 4.5 Result commit：把执行现实合并回唯一真相
 
-runner result 到达后，`update_from_output` 先减少 in-flight 数；已 abort/finished 或 drop-mode stale 的输出
-不会重新激活请求。spec token 被拒时，它回滚之前乐观推进的 computed progress；之后才更新 token、stop
-状态、finish/free，并构造 `EngineCoreOutput`（`vllm/v1/core/sched/scheduler.py:1789-1904`；
-`vllm/v1/core/sched/scheduler.py:1942-2049`；`vllm/v1/core/sched/scheduler.py:2073-2103`）。
+runner result 到达后，`update_from_output` 把当步执行事实与原 `SchedulerOutput` 重新配对：结清
+in-flight progress，忽略已失效结果，修正未兑现的 optimistic progress，提交 finish/release 状态，并构造
+`EngineCoreOutput`（`vllm/v1/core/sched/scheduler.py:1789-1904`；
+`vllm/v1/core/sched/scheduler.py:1942-2049`；`vllm/v1/core/sched/scheduler.py:2073-2103`）。具体 stop、
+speculation 与释放算法属于 page 11/12；本页只强调结果必须回到同一 Scheduler owner 才能成为 core 真相。
 
-这是第二个 commit：资源计划已经执行过，现在 Scheduler 接受实际 token、撤销未兑现部分、终结请求并
-决定何时释放。GPU forward 完成只产生事实候选；经过 Scheduler reconciliation 后，它才成为 core request
-的权威进度和可发送 `EngineCoreOutputs`。
+这次 reconciliation 产生的是 `EngineCoreOutputs`，**不是用户可见输出**。同步 `LLMEngine.step` 仍要把
+它交给 `OutputProcessor.process_outputs` 后才返回 `RequestOutput`；异步 `AsyncLLM` 也要在 output handler
+中处理 core outputs 并把结果推入 per-request queue（`vllm/v1/engine/llm_engine.py:305-337`；
+`vllm/v1/engine/async_llm.py:690-730`）。因此 core result commit 与 frontend visibility 是两个不同边界；
+后者的 detokenize、stop 与协议语义由 page 04 负责。
 
 ## 5. 约束、代价与失败边界
 
