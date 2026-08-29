@@ -47,10 +47,10 @@ flowchart LR
         R["请求 r · KV group g"] --> S["逻辑位置 i<br/>req_to_blocks 中的槽"]
     end
     subgraph Physical["BlockPool 中的唯一物理身份"]
-        B["物理块 id<br/>ref 为活跃 owner 数<br/>hash 为可选内容身份"]
+        B["一个或多个物理块对象<br/>每个 block id 唯一<br/>各自维护 ref 与可选 hash"]
     end
-    S -->|引用同一对象| B
-    H["prefix 内容索引<br/>hash 加 group"] -.->|定位| B
+    S -->|引用其中一个对象| B
+    H["prefix 内容索引<br/>hash 加 group"] -.->|定位一到多个候选| B
 
     U["空闲且无 hash<br/>ref 为零 · queue 前部"]
     A["活跃私有<br/>ref 为一 · 无 hash"]
@@ -58,11 +58,12 @@ flowchart LR
     SH["活跃共享<br/>ref 多于一 · 有 hash"]
     E["缓存可驱逐<br/>ref 为零 · queue 后部"]
 
-    B -.->|当前处于其一| A
+    B -.->|逐对象处于其一| A
     U -->|allocate| A
     A -->|提交 finalized prefix| C
     C -->|prefix touch| SH
-    SH -->|释放一个 owner| C
+    SH -->|释放后 ref 仍大于一| SH
+    SH -->|释放后只剩最后 owner| C
     C -->|释放最后 owner| E
     E -->|prefix touch| C
     E -->|复用并移除 hash| A
