@@ -58,4 +58,5 @@ Completion means every planned core capability, representative lifecycle, state 
 | “I can draft the overview while the user reviews the plan.” | Stop; drafting Wiki body content crosses the approval gate. |
 | “More pages means better coverage.” | Use the coverage matrix, not page count. |
 | “A writer found a better page split and can continue.” | Return material ownership changes to the coordinator and user. |
+| “The user said ‘continue’ or ‘don’t ask,’ so I can revise ownership myself.” | A generic continue/don’t-ask instruction does not approve a material ownership revision that has not been presented; stop and present the concrete revised page boundary plus coverage matrix for approval. |
 | “One source file should become one document.” | Define one causal analysis unit and follow it across files. |
