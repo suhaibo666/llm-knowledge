@@ -12,7 +12,7 @@ description: >-
   walkthrough of Z", reverse-engineering an architecture, mapping a subsystem, dissecting a paper's
   design rationale, auditing a dataset/spec/report, comparing two implementations or approaches, or
   ingesting any of these into a knowledge base. After you start, read the matching
-  references/<type>.md pack (codebase / paper / general) for the concrete locators, ingestion recipe,
+  source-type reference pack (codebase / paper / general) for the concrete locators, ingestion recipe,
   and essence checklist. Trigger even when the user doesn't say "skill", "analysis", or
   "documentation" — any time they want a faithful, essence-first reading of something's internals as
   opposed to merely using it or fixing one isolated bug. Prefer this over a quick surface summary
