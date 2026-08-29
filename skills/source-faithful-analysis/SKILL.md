@@ -1,14 +1,15 @@
 ---
 name: source-faithful-analysis
 description: >-
-  Use when producing source-grounded, mechanism-level analysis of a codebase, research paper,
-  spec/RFC, dataset, API, incident, report, or other artifact. Applies to deep dives, architecture
-  or subsystem explanations, design-rationale audits, implementation comparisons, and wiki
-  ingestion where claims need exact locators and a frozen baseline. For code, use only for one
-  focused mechanism or an approved analysis unit/page; route an unplanned whole codebase or
-  multi-page codebase domain to planning-codebase-analysis first. Non-code artifacts may be
-  analyzed at any scale. Do not use merely to operate a tool or fix an isolated bug when no
-  analysis deliverable is requested.
+  Use when the user wants source-grounded, mechanism-level analysis of a codebase, framework,
+  research paper, spec/RFC/standard, dataset, API/SDK, running system or incident, report, or other
+  artifact: architecture or subsystem deep dives, “how it works internally,” design-rationale
+  audits, implementation comparisons, reverse engineering, or ingestion into a wiki or knowledge
+  base. Trigger when claims need exact verifiable source locators and a frozen baseline, especially
+  for large or unfamiliar sources and multi-page knowledge domains. Prefer this over a surface
+  summary when the request asks why a design exists, how state/data/control flows, what constraints
+  it has, or how current source contradicts folklore. Do not use merely to operate a tool or fix one
+  isolated bug without an analysis deliverable. Do not use as the first step for an unplanned whole-codebase or multi-page codebase-domain analysis; use planning-codebase-analysis first.
 ---
 
 # Source-Faithful Analysis
@@ -154,6 +155,32 @@ Resist reading the source top-to-bottom into context. First build a map:
   split, or reassign pages locally. A required page split is material drift: stop the affected page
   and return it to `planning-codebase-analysis` with the evidence and proposed boundary change.
 
+### Architecture overviews — structure first, then motion
+
+When the artifact is a system, framework, or multi-stage design, an overview must answer two
+orthogonal questions:
+
+1. **Static structure:** what responsibility layers/components exist; why each exists; what
+   capability, input→output contract, state/invariants, and responsibility boundary each owns.
+2. **Dynamic lifecycle:** how one real request/job/batch/artifact crosses those layers; when state
+   becomes valid, changes owner, or becomes externally visible.
+
+Present the static view first and the dynamic view second. A call graph or lifecycle diagram alone
+shows motion, not architecture. Derive layers from stable responsibility and state ownership — not
+from the directory tree, and not from an arbitrary layer count. If one diagram cannot keep both
+views legible, use separate structure and lifecycle diagrams.
+
+The layer explanation is the extension map: when responsibility and contracts are clear, a reader
+can infer where a change belongs. Do not add a standalone "where to add features" catalogue unless
+the requested deliverable is explicitly a developer extension guide.
+
+**Source excerpts are evidence, not the narrative skeleton.** State the problem, design logic,
+mechanism, state transition/invariant, and boundary in your own words; then attach the smallest
+source excerpt or locator that proves the claim. Removing code blocks, equations, table fragments,
+or quoted clauses must still leave a coherent causal explanation of why the mechanism works. A
+fixed page length, layer count, or code-quotation ratio is not a quality target; split by concept
+ownership, thesis, and reader load.
+
 ### Phase 2 — Locate, read, cite (the fidelity loop)
 
 The core motion, repeated per claim:
@@ -195,8 +222,9 @@ and material drift to the coordinator.
 
 A pile of pages isn't a knowledge base. Tie it together:
 
-- **Write the overview/map:** the thesis/design philosophy, a contribution/results/concepts table, a
-  diagram spanning the pieces, and the cross-link web.
+- **Write the overview/map:** the thesis/design philosophy, a contribution/results/concepts table,
+  the static responsibility map plus the dynamic lifecycle (separate diagrams when needed), and the
+  cross-link web.
 - **Update the host system's spine** — the parent index / TOC / changelog — matching the conventions
   already in use (e.g. this wiki's constitution plus its maintenance skill: add the page to the
   domain `index.md`, append a changelog entry, add `[[wiki links]]` both ways).
@@ -237,7 +265,10 @@ project in Chinese). The middle section depends on the source type — see your 
 - 背景/问题 FIRST — 2–4 sentences: what problem this unit exists to solve, what the previous or
   naive approach did, why it stopped working (beat 1, at page scale)
 - Then the thesis (一条主线) in 1–2 sentences — the one main bet that answers it
-- A diagram (mermaid/ASCII/SVG) + a key-concepts or contribution/results table
+- For architectures: a static layer map + a dynamic lifecycle map, and a table of
+  `layer | capability | input→output | owned state/boundary | evidence`; merge visuals only when
+  both questions remain legible
+- Otherwise: a diagram (mermaid/ASCII/SVG) + a key-concepts or contribution/results table
 - (code: + a Quick Start — minimal entry point/flags + where to start reading, with file:line)
 - (model paper: + a complete structure figure + an exact-hyperparameter table from the released config)
 
@@ -265,6 +296,8 @@ padded with signatures or abstract-paraphrase.
 | Writing a claim with no verified locator, or one you didn't actually open | Stop, locate it, read it, then cite. If you can't find it, don't claim it. |
 | Citing a locator from memory or a blog | Re-derive it from the current source; the baseline may have moved. |
 | Transcribing signatures / rewording the abstract / listing contributions flatly | Rewrite as the five beats: 背景 → 为什么（含被否掉的替代）→ 实现+证据 → 约束. |
+| Letting copied source carry the explanation | Write the causal mechanism in prose first; keep only the excerpt that proves a specific claim. Remove the excerpt as a test — the explanation must still stand. |
+| Calling a call graph or lifecycle diagram the architecture overview | Add the static responsibility/state-ownership view first, then use the lifecycle to show how work crosses it. |
 | Opening a section with the mechanism — "this class does X", "the method is defined as" | Restructure: 背景 first, then 为什么. If you can't state the problem it solves, you don't yet understand it — go back to the source (the commit/PR, the § intro). |
 | A unit that reads as a free win — no 约束 | Every design pays something. Hunt the guards, error branches, Limitations §, the conditions in captions; state the cost and when it breaks. |
 | A 发展趋势 paragraph spun from your priors | Anchor it (future-work line + locator / newer version / TODO / the beat-4 constraint) and mark it as inference — or delete the beat. |

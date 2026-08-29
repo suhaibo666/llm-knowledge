@@ -53,6 +53,29 @@ omits exact dims.
   paper's why). *Worked example (GLM-5):* `num_hidden_layers`=78 vs paper's "80"; "576-dim latent KV"
   = `kv_lora_rank` 512 + RoPE 64; "256 experts" = top-8 of 256 + 1 shared; `index_topk`=2048.
 
+## Cross-check against the reference implementation
+`config.json` 验的是**超参**，参考实现验的是**机制**——MTP 的第二头怎么接、router 的 aux-loss 挂在
+哪一步、sparse indexer 的 top-k 到底在哪个轴上做。这些论文常常只给一段散文，只有代码能定案。所以
+一篇 method/model 论文的分析，**至少要落 2 处「论文机制 ↔ 源码」对应**，每处带 `file:line`。
+
+1. **找实现**：论文页脚或 Introduction 末尾的仓库链接 → 没有就用「标题 / 一作 + 方法名」搜 GitHub →
+   再没有就找第三方复现（**必须标明是复现，不是官方**，并说明它可能与论文有偏差）。
+2. **取代码**：本库已在父目录维护上游 checkout（Megatron-LM / vLLM / pytorch …），优先复用并记下其
+   commit；不在其中的用 `git clone --depth 1 <url>` 到临时目录，同样记下 commit。
+3. **对照**：贴代码 ≤30 行，标 `路径/文件.py:行号`，一句话说明它对应论文的哪个式子 / 哪一节。
+4. **代码状态必须在页头写明**，四种情况都不能无声跳过：
+
+   | 状态 | 页头怎么写 | 正文怎么处理 |
+   |---|---|---|
+   | ✅ 官方已发布 | `实现基线: <repo> @ <commit>` | 落 ≥2 处 机制↔`file:line` 对应 |
+   | ⏳ 官方声明将发布 | `官方实现未发布(README 声明 <日期>)` | 只据论文写，标出哪些机制待代码确认 |
+   | 🔁 仅第三方复现 | `第三方复现: <repo> @ <commit>(非官方)` | 可对照，但每处注明"复现实现，非作者代码" |
+   | ❌ 无任何实现 | `无公开实现` | 明说：机制细节只有论文口径，未经代码验证 |
+
+5. **冲突处理**：论文写的和实现不一致时——**实现是「是什么」的 ground truth，论文是「为什么」的
+   ground truth**。用 `> [!contradiction]` 标出两边口径，机制描述跟实现走，动机与取舍跟论文走。
+   （与上一节 config 的规则同源：数字跟权重，理由跟论文。）
+
 ## Essence checklist (Principle 2, for papers)
 - **The thesis — the one main bet.** Lead with it.
 - **The five beats per contribution** — the core's mandatory order, instantiated for a paper:
@@ -90,3 +113,6 @@ omits exact dims.
 | Guessing architecture hyperparameters from prose | Pull them from the released `config.json`; reconcile, flag paper-vs-weights gaps. |
 | Citing a long paper from a truncated WebFetch | Download the PDF, extract a page-markered dump, cite by page. |
 | A model-paper analysis with no complete structure figure | Draw the layer-stack + one zoomed block from the config. |
+| A mechanism claim never checked against any implementation | Find the official repo (or state "no public implementation"); land ≥2 mechanism↔`file:line` correspondences. |
+| Citing a third-party reproduction as if it were the authors' code | Label it a reproduction, pin its commit, and note where it may diverge from the paper. |
+| The page never says whether code exists | Put the code status in the header — one of the four rows above. |
