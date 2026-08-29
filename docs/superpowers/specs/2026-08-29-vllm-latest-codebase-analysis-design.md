@@ -369,7 +369,15 @@ finish with weight version → cache/runner post-commit handling → resume`。
 5. 删除代码块后仍能复述设计逻辑、因果机制、不变量和失败条件；
 6. 事实、官方设计意图和分析推断明确分开；
 7. 新图完成渲染和人工目检，旧资产无悬空引用；
-8. 严格链接、数学、工具测试、文档站测试和 `git diff --check` 通过；
-9. vLLM index、父索引、总索引计数和 changelog 与最终页面集合一致。
+8. 验证范围限于本次重构的 `wiki/02_engineering/03_infer_frameworks/vllm/`、被它直接修改的
+   父级/总索引与 changelog，以及这些文件引用的新增或改名资产：
+   - 对上述页面做定向 wikilink 解析，验证目标存在、链接无歧义、旧 `03` slug 无残留；
+   - 只在公式发生变化时，对变更文件运行路径限定的数学检查；
+   - 只对新增或修改的图运行 Mermaid/图形渲染与人工目检；
+   - 只对 vLLM 页面中的承重源码引用做基线存在性和抽样语义核验；
+   - 对本任务文件运行定向 `git diff --check`。
+9. 不运行全仓 `python -m pytest tools/`、全站 `npm run docs:test` 或与 vLLM 重构无关的
+   仓库诊断；只有定向检查暴露共享工具回归，或用户明确扩大验证范围时，才升级验证。
+10. vLLM index、父索引、总索引计数和 changelog 与最终页面集合一致。
 
 本轮不得用页面数、行数、代码块数或引用数量代替上述完成证据。
