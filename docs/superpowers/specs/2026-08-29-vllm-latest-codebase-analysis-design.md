@@ -240,7 +240,7 @@ finish with weight version → cache/runner post-commit handling → resume`。
 
 | 机制/生命周期 | 权威 owner | 其他页面只允许 | 初始状态 |
 |---|---|---|---|
-| 全系统静态分层 + 代表请求生命周期 | `03` | 一段局部定位 + 链接 | planned |
+| 全系统静态分层 + 代表请求生命周期 | `03` | 一段局部定位 + 链接 | covered (Wave 1) |
 | 性能/资源约束模型 | `02` | 当前机制的局部约束 | planned |
 | 协议、任务、render/input/output 语义 | `04` | serving/runner 的边界字段 | gap → planned |
 | Engine client/core/executor 接缝 | `10` | 直接相邻接口 | planned |

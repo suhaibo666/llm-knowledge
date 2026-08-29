@@ -235,7 +235,7 @@ git commit -m "docs(vllm): integrate architecture overview"
 - Consumes: Task 1 source locators and Task 2 live-link closure.
 - Produces: spec coverage row `全系统静态分层 + 代表请求生命周期` marked `covered (Wave 1)` only after all scoped gates pass; this is the user-review checkpoint before Wave 2.
 
-- [ ] **Step 1: Verify every architecture-page GitHub locator against the frozen baseline**
+- [ ] **Step 1: Verify every frozen-baseline inline `file:line` locator**
 
 Run this PowerShell check from the knowledge-base worktree:
 
@@ -244,26 +244,31 @@ $source = 'E:/97-codes/torch_parallel/.worktrees/vllm-6b110bad'
 $baseline = '6b110badbb22d3f66c7218b71138f13b7a6b3419'
 $page = 'wiki/02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis.md'
 $text = Get-Content -Raw -LiteralPath $page
-$pattern = "https://github\.com/vllm-project/vllm/blob/$baseline/(?<path>[^)#]+)#L(?<start>\d+)(?:-L(?<end>\d+))?"
-$errors = [System.Collections.Generic.List[string]]::new()
-foreach ($m in [regex]::Matches($text, $pattern)) {
+$matches = [regex]::Matches($text, '`(?<path>(?:vllm|docs|tests)/[^`:]+):(?<start>\d+)(?:-(?<end>\d+))?`')
+$unique = @{}
+foreach ($m in $matches) {
   $path = $m.Groups['path'].Value
   $start = [int]$m.Groups['start'].Value
   $end = if ($m.Groups['end'].Success) { [int]$m.Groups['end'].Value } else { $start }
-  $blob = git -C $source show "$baseline`:$path" 2>$null
-  if ($LASTEXITCODE -ne 0) { $errors.Add("missing path: $path"); continue }
-  $lineCount = @($blob).Count
-  if ($start -lt 1 -or $end -lt $start -or $end -gt $lineCount) {
-    $errors.Add("bad range: $path L$start-L$end of $lineCount")
+  $unique["$path`:$start-$end"] = @($path, $start, $end)
+}
+$errors = [System.Collections.Generic.List[string]]::new()
+foreach ($item in $unique.Values) {
+  $full = Join-Path $source $item[0]
+  if (-not (Test-Path -LiteralPath $full)) { $errors.Add("missing path: $($item[0])"); continue }
+  $lineCount = (Get-Content -LiteralPath $full).Count
+  if ($item[1] -lt 1 -or $item[2] -lt $item[1] -or $item[2] -gt $lineCount) {
+    $errors.Add("bad range: $($item[0]) L$($item[1])-L$($item[2]) of $lineCount")
   }
 }
-$wrongCommit = Select-String -LiteralPath $page -Pattern 'github\.com/vllm-project/vllm/blob/(?!6b110badbb22d3f66c7218b71138f13b7a6b3419)'
-if ($wrongCommit) { $errors.Add('page contains a vLLM GitHub link at another commit') }
-if ($errors.Count -gt 0) { $errors; exit 1 }
-"locator ranges verified: $([regex]::Matches($text, $pattern).Count)"
+$head = (git -C $source rev-parse HEAD).Trim()
+if ($head -ne $baseline) { $errors.Add("wrong source HEAD: $head") }
+if ($unique.Count -eq 0) { $errors.Add('no inline file:line locators found') }
+if ($errors.Count -gt 0) { $errors; "LOCATOR_BOUNDS=FAIL unique=$($unique.Count) head=$head"; exit 1 }
+"LOCATOR_BOUNDS=PASS unique=$($unique.Count) head=$head"
 ```
 
-Expected: non-zero verified locator count, zero missing paths, zero out-of-range locators, and no mixed vLLM commit.
+Expected: `LOCATOR_BOUNDS=PASS unique=64 head=6b110badbb22d3f66c7218b71138f13b7a6b3419`.
 
 - [ ] **Step 2: Manually spot-check three load-bearing claims at their opened ranges**
 
