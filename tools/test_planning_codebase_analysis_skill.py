@@ -1,4 +1,6 @@
 import json
+import re
+import subprocess
 from pathlib import Path
 
 
@@ -156,7 +158,10 @@ def test_approved_codebase_pages_inherit_and_freeze_planner_baseline():
 
 def test_approved_page_may_organize_sections_but_not_decompose_documents():
     core = SOURCE_SKILL.read_text(encoding="utf-8")
-    phase_one = _squash(core.split("### Phase 1", 1)[1].split("### Architecture overviews", 1)[0])
+    assert core.count("### Phase 1") == 1
+    after_phase_one = core.split("### Phase 1", 1)[1]
+    assert "### Phase 2" in after_phase_one
+    phase_one = _squash(after_phase_one.split("### Phase 2", 1)[0])
     assert "non-code sources or unplanned focused analysis" in phase_one
     assert "approved codebase page may organize sections" in phase_one
     assert "must not rename, split, or reassign pages locally" in phase_one
@@ -172,12 +177,29 @@ def test_replanning_is_limited_to_authoritative_boundary_or_coverage_changes():
     assert "Ordinary wording and link-only edits remain local" in replanning
 
 
-def test_planner_names_exact_downstream_skills():
+def test_planner_names_only_tracked_routed_downstream_skills():
     text = (PLANNER / "SKILL.md").read_text(encoding="utf-8")
-    for skill_name in (
+    workflow = text.split("## Workflow", 1)[1].split("## Blueprint contract", 1)[0]
+    named_skills = set(re.findall(r"`([a-z][a-z0-9-]+)`", workflow))
+    assert named_skills == {
+        "source-faithful-analysis",
         "maintaining-llm-knowledge",
         "writing-obsidian-math",
-        "drawing-wiki-figures",
         "writing-mermaid-diagrams",
-    ):
-        assert f"`{skill_name}`" in text
+    }
+
+    for skill_name in named_skills:
+        skill_path = f"skills/{skill_name}/SKILL.md"
+        assert (REPO_ROOT / skill_path).is_file(), f"missing downstream skill: {skill_path}"
+        tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", skill_path],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert tracked.returncode == 0, f"untracked downstream skill: {skill_path}"
+        for route_doc in ROUTE_DOCS:
+            assert f"`{skill_name}`" in route_doc.read_text(encoding="utf-8"), (
+                f"{skill_name} is not discoverable from {route_doc}"
+            )

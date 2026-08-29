@@ -28,8 +28,9 @@ existing-Wiki inspection is allowed before approval. Workflow persistence begins
 4. Present the blueprint and stop for explicit user approval.
 5. Persist an approved multi-page blueprint under `docs/superpowers/specs/` when it must survive multiple pages or sessions.
 6. Dispatch one approved page contract at a time to `source-faithful-analysis`; invoke
-   `maintaining-llm-knowledge`, `writing-obsidian-math`, `drawing-wiki-figures`, and
-   `writing-mermaid-diagrams` only when their concrete work appears.
+   `maintaining-llm-knowledge`, `writing-obsidian-math`, and `writing-mermaid-diagrams` only when
+   their concrete work appears. For concrete figure work, invoke an available figure skill routed
+   by the project.
 7. Update the coverage matrix after each wave and reopen approval only for material drift.
 
 ## Blueprint contract
