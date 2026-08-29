@@ -5,7 +5,7 @@ title: "vLLM 请求语义：从协议与任务到 Engine 合同与用户输出"
 # vLLM 请求语义：从协议与任务到 Engine 合同与用户输出
 
 > **读者问题**：Generate、Pooling、Render、Transcription、Realtime 以及 OpenAI、Anthropic、Cohere 等协议为何没有各带一套 Engine，它们在哪里合流、又在哪里恢复成不同的用户输出？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`main`，提交时间 2026-08-29T02:40:53Z）
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout；提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：vLLM 用一对窄合同隔离“用户在请求什么”和“Engine 怎样执行”：Renderer 与协议 adapter 把文本、消息、媒体和协议参数压成 `EngineInput + SamplingParams | PoolingParams`，`InputProcessor` 再固化为 `EngineCoreRequest`；返回侧用前端 `RequestState` 把 `EngineCoreOutput` 还原为文本、tensor、流事件和协议对象。合流不是抹平语义——生成类任务共用 sampling 合同，pooling 保留具体 task，Render 不进入 Engine，Transcription 与 Realtime 则在 Engine 两侧保留音频生命周期。
 > **所有权边界**：本页拥有任务与能力命名、协议转换、render/tokenize、`EngineInput`、`EngineCoreRequest` 的语义字段、前端输出状态、detokenize/stop、pooling tensor 与各协议响应重建。
 > **明确排除**：waiting/running、token/KV admission、优先级策略与抢占属于 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]]；logits processor、grammar mask、top-k/top-p 与 GPU token selection 属于规划中的 `17_vllm_sampling_structured_output_analysis.md`。本页只解释 sampling 参数怎样跨边界，不解释 token 怎样被选中。
@@ -30,7 +30,7 @@ title: "vLLM 请求语义：从协议与任务到 Engine 合同与用户输出"
 
 ### 2.1 请求语义转换图
 
-图中蓝色是所有 Engine 请求共享的窄腰；橙色是必须保留在前端的任务语义。灰色 EngineCore 是本页边界，内部 admission 与 GPU sampling 不展开。
+图中蓝色是前端与 Engine 之间的稳定合同和输出状态 owner；橙色是必须保留在前端的任务语义。Render 产出的 `GenerateRequest` 在 token-in 服务中分三路重建：content parts 与纯 token 路径经 Renderer，已序列化 features 路径直接构造 `EngineInput`，然后才重新合流。灰色 EngineCore 是本页边界，内部 admission 与 GPU sampling 不展开。
 
 ```mermaid
 flowchart LR
@@ -46,7 +46,11 @@ flowchart LR
     A4["audio queue<br/>StreamingInput"]
     A5["GPU-less render<br/>GenerateRequest"]
 
-    R["Renderer<br/>EngineInput"]
+    T1["content parts<br/>resolve media"]
+    T2["serialized features<br/>decode · mm_input"]
+    T3["token ids only<br/>preprocess completion"]
+    R["Renderer"]
+    E["EngineInput"]
     I["InputProcessor<br/>EngineCoreRequest"]
     C["EngineCore<br/>本页不展开"]
     O["OutputProcessor<br/>RequestState"]
@@ -66,8 +70,14 @@ flowchart LR
     A2 --> R
     A3 --> R
     A4 --> R
-    A5 -->|token-in generate| R
-    R --> I
+    A5 -->|token-in generate| T1
+    A5 -->|token-in generate| T2
+    A5 -->|token-in generate| T3
+    T1 --> R
+    T2 --> E
+    T3 --> R
+    R --> E
+    E --> I
     I --> C
     C --> O
     O --> U1
@@ -80,8 +90,8 @@ flowchart LR
     classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a,stroke-width:2px
     classDef acc2 fill:#ffedd5,stroke:#ea580c,color:#0f172a,stroke-width:2px
     classDef ghost fill:#f8fafc,stroke:#94a3b8,color:#475569,stroke-dasharray:4 3
-    class P1,P2,P3,P4,P5,U1,U2,U3,D neutral
-    class R,I,O acc1
+    class P1,P2,P3,P4,P5,T1,T2,T3,U1,U2,U3,D neutral
+    class R,E,I,O acc1
     class A1,A2,A3,A4,A5 acc2
     class C ghost
 ```
@@ -142,7 +152,7 @@ flowchart LR
 
 **为什么这样设计（分析推断）。** 直观替代是让远端 GPU 服务重新 render 原始协议对象，这会复制 tokenizer/template/tool validation，并使两端可能生成不同 token。当前 `ServingRender` 被注释为 GPU-less render server 的 authoritative implementation，直接复用 `OnlineRenderer`，然后返回 JSON 可序列化的 `GenerateRequest`（`vllm/entrypoints/scale_out/render/serving.py:72-95`；`vllm/entrypoints/scale_out/render/serving.py:144-158`）。本页据此推断，token 边界是为了让远端执行与协议语义解耦，同时保持 render 单一权威。
 
-**机制。** chat/completion render 输出 token ids、SamplingParams、可选 assistant mask、MM feature/hash/placeholder、cache salt 与 token offsets；它还拒绝 beam search、空 token ids 和非单 prompt chat（`vllm/entrypoints/scale_out/render/serving.py:86-158`）。下游 token-in `/generate` 再把纯 token、原始 content parts 或已序列化 MM features 复原成 EngineInput，随后调用同一个 `engine_client.generate`（`vllm/entrypoints/scale_out/token_in_token_out/serving.py:144-201`；`vllm/entrypoints/scale_out/token_in_token_out/serving.py:229-261`）。返回侧 Derender 用 `GenerateResponse` 加原始 request context 恢复 reasoning、tool calls、usage 与协议对象（`vllm/entrypoints/scale_out/token_in_token_out/protocol.py:272-335`；`vllm/entrypoints/scale_out/derender/serving.py:130-185`）。
+**机制。** chat/completion render 输出 token ids、SamplingParams、可选 assistant mask、MM feature/hash/placeholder、cache salt 与 token offsets；它还拒绝 beam search、空 token ids 和非单 prompt chat（`vllm/entrypoints/scale_out/render/serving.py:86-158`）。下游 token-in `/generate` 按 `if/elif/else` 分三路重建：有 content parts 时先解析媒体，再用 Renderer 生成 `EngineInput`；有已序列化 features 时解码 tensor 与 placeholder，直接调用 `mm_input` 构造 `EngineInput`，不经过 Renderer；只有 token ids 时经 `preprocess_completion` 回到 Renderer。三路随后汇合到同一个 `engine_client.generate`（`vllm/entrypoints/scale_out/token_in_token_out/serving.py:144-201`；`vllm/renderers/online_renderer.py:331-377`；`vllm/entrypoints/scale_out/token_in_token_out/serving.py:229-261`）。返回侧 Derender 用 `GenerateResponse` 加原始 request context 恢复 reasoning、tool calls、usage 与协议对象（`vllm/entrypoints/scale_out/token_in_token_out/protocol.py:272-335`；`vllm/entrypoints/scale_out/derender/serving.py:130-185`）。
 
 **约束。** Render 输出不是 `EngineCoreRequest`，不能跳过目标服务的 InputProcessor 校验。Derender 也不信任远端 payload：在 decode/parser 前限制 response/choice/token/logprob 数量，避免 CPU/内存放大（`vllm/entrypoints/scale_out/derender/serving.py:65-128`）。
 
