@@ -109,7 +109,7 @@ vLLM 把 admission 单位从“整个请求”降为“本轮计算多少 token�
 
 ### 3.3 不变量、代价与失败边界
 
-核心不变量是“可回收”不等于“无人引用”：只有 `ref_cnt` 降到零的块才能进入 free queue；无 hash 的块优先复用，有 hash 的块留在队尾形成 LRU 候选（`vllm/v1/core/block_pool.py:723-747`）。违反引用计数或在共享块上原地写入，会把另一个请求仍在读取的 KV 变成错误状态。
+核心不变量是“可回收”不等于“无人引用”：只有 `ref_cnt` 降到零的块才能进入 free queue；而块只在非 null、`ref_cnt == 1` 且没有 hash 时被判定为可写，随后的释放路径再按有无 hash 安排复用优先级（`vllm/v1/core/block_pool.py:719-747`）。**分析推断**：如果绕过这一可写性合同对共享块原地写入，可能污染其他仍持有该 block 的请求状态。
 
 分页也带来元数据与内部碎片，并不消灭容量压力。V1 的 block table 是 append-only；发现重复 prefix block 时不能把已经追加的 block ID 换掉，重复块要等请求释放后才消失（`docs/design/prefix_caching.md:194-198`）。全 prompt 命中 cache 时仍必须重算最后一个 token 取得 logits，而 block 对齐可能让这次重算扩大为整块（`vllm/v1/core/kv_cache_manager.py:251-258`）。这些代价解释了为什么高 KV 使用率与 preemption 必须一起观察，而不能把 prefix hit 当作无条件收益。
 
@@ -160,9 +160,10 @@ CUDA Graph 再把能力合同推进到**每个 runtime batch**：uniform decode 
 
 专用化还要支付启动时间和显存。默认 `FULL_AND_PIECEWISE` 通常性能最好，但占用内存最多、capture 最久；capture size 也被限制，以免紧张显存下 OOM 并控制大 graph 的启动成本（`docs/design/cuda_graphs.md:40-48`；`vllm/config/compilation.py:692-706`）。所以 capability contract 不是“自动找到最快实现”的保证，而是“在当前组合内只承诺已证明安全的实现，并让降级可解释”。
 
-## 6. 四个支点是一条闭环，不是四个独立开关
+## 6. 四个支点在运行时相互约束
 
-连续调度决定本步 token 与请求集合；分页状态决定这份计划是否有 KV 容量兑现；异步执行让多份计划可以处于 in-flight；能力合同再决定当前 batch 能进入哪条设备快路径。反方向上，KV 不足触发抢占并改变下轮调度，async 的 placeholder 约束可提交进度，backend 的拒绝或降级改变一步成本。任一支点都不能绕过其余三者独立开启。
+> [!note] 分析推断
+> 这四个支点不是必须同时启用的配置组合：async scheduling 可由配置独立启用、禁用或自动判定（`vllm/config/vllm.py:1182-1262`）。当这些机制在同一运行时参与决策时，Scheduler 的 token 计划要先取得 KV slots，失败会触发抢占并改写当步计划（`vllm/v1/core/sched/scheduler.py:655-728`）；启用 async 后，placeholder 把未返回 token 纳入进度与提交边界（`vllm/v1/core/sched/async_scheduler.py:19-69`）；CUDA Graph dispatcher 则按 runtime batch 选择模式，没有合适 graph 时允许回退到 `NONE`（`docs/design/cuda_graphs.md:50-58`）。因此更准确的结论是：机制可以分别配置或降级，但在共同的 token 进度、容量和 in-flight 状态边界上必须保持一致。
 
 | 观察到的信号 | 首先说明哪项合同受压 | 不能直接得出的结论 |
 |---|---|---|
