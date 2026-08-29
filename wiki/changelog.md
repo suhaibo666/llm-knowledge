@@ -12,6 +12,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-29：vLLM 架构概览 Wave 1——直达导航、回链与混合基线迁移
+
+**Type**：重建页迁移集成（1 页更名/重建 + 2 个回链 + 2 个索引）
+
+原 `03` 已更名并重建为 [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]]。新页先解释静态责任层与状态边界，再用一条代表性在线请求说明生命周期；代码 locator 作为机制判断的证据，而非搬运源码散文。
+
+DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互资源均已退役或归还其对应 owner 页。vLLM 索引和两个直接回链现指向架构概览；启动、进程与 serving 控制面的细节仍分别由 `10` 与 `16` 号页拥有。
+
+本次验证有意限定在 vLLM 目录、两个直接回链和受影响索引的闭合性。它只是 Wave 1：架构概览已核验至 `6b110bad`，其余页面仍保留既有基线；后续 wave 须等待用户接受这一 exemplar 后推进。
+
+---
+
 ## 2026-08-28（四）：给 check_links 加 stale_section 规则；重做 ACT 深潜页——立论被上游改写
 
 **Type**: 门禁新规则（1 检查项 + 7 单测 + 3 处存量）+ 1 页重写

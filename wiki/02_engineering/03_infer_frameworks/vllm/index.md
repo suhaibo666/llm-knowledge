@@ -4,11 +4,9 @@ title: "vLLM 推理引擎：从约束到实现的知识地图"
 
 # vLLM 推理引擎：从约束到实现的知识地图
 
-> **统一源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
-> **版本标识**：`main`，`v0.27.2rc0-304-gd66300a1ba`，提交时间 2026-08-20T03:30:40-04:00
+> **基线迁移状态**：Wave 1 中，[[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] 已按 `vllm-project/vllm@6b110bad` 核验；其余页面保留各自既有基线，待后续获批 wave 完成后再收敛。本域当前是混合基线迁移，不宣称已全域重定基线。
 > **覆盖范围**：19 篇内容页 + 本索引
-> **基线例外**：[[02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis|vLLM 请求全链路导览]] 显式声明更新基线 `26858770`（2026-08-24），其余页面仍为 `d66300a1`；两提交间该页引用的文件无源码差异。
-> **叙事顺序**：内容页统一按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势（可选，须锚定源码自陈的在途改动并标注为推断）。例外两篇：[[02_vllm_system_design_principles_analysis]] 是「问题 → 约束 → 支点」的推导体，第 2 拍本身就是它的第二、三节；[[03_vllm_request_flow_walkthrough_analysis]] 是端到端走查体，按时序而非按拍组织。
+> **叙事顺序**：内容页统一按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势（可选，须锚定源码自陈的在途改动并标注为推断）。例外一篇：[[02_vllm_system_design_principles_analysis]] 是「问题 → 约束 → 支点」的推导体，第 2 拍本身就是它的第二、三节。
 > **阅读原则**：先理解瓶颈、状态所有权和不变量，再沿最小调用链验证实现。
 
 vLLM 不是“一个更快的 Transformer forward”。它是一套在线资源操作系统：Scheduler 按 token 分配本轮算力，KV 管理器分配长期显存，Model Runner 把动态请求变成可复用的设备输入，attention/quantization/compile/kernel 子系统协商当前 batch 能走的最快路径，serving 与分布式层再把这些对象扩展到多进程和多设备。
@@ -42,7 +40,7 @@ flowchart LR
 |---|---|---|
 | [[02_engineering/03_infer_frameworks/vllm/01_vllm_feature_optimizations_guide|vLLM 快速使用与优化指南]] | 怎样可靠跑通、测量并根据瓶颈选配置？ | CLI、OpenAI server、离线 `LLM`、benchmark 与调优开关 |
 | [[02_engineering/03_infer_frameworks/vllm/02_vllm_system_design_principles_analysis|vLLM 系统设计原则与性能模型]] | 动态请求为什么需要连续调度、分页 KV、异步执行和专用化？ | 四个系统平面及其关键接口 |
-| [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis|vLLM 请求全链路导览]] | 一条请求实际怎样穿过进程、队列与 GPU？ | 启动三级就绪屏障、空闲唤醒路径、跨进程管道拓扑、DeepSeek-V3 的 MLA/MoE 落点；含离线交互图 |
+| [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] | 静态责任层、状态边界与一条代表性在线请求如何共同定义系统？ | 先建立全系统边界与层间合同，再沿一次请求生命周期验证状态移交 |
 
 ### 2.2 核心引擎
 
@@ -90,14 +88,14 @@ flowchart LR
 
 ## 五、证据口径
 
-- 所有页面固定到同一 commit；正文中的 `file:line` 均以仓库根为起点。
+- 每页固定到页头声明的 commit；正文中的 `file:line` 均以仓库根为起点。Wave 1 的架构概览为 `6b110bad`，其余页面仍保留既有基线。
 - 当前行为由源码和测试决定；同 commit 的 `docs/design/` 用于说明项目公开的设计意图。
 - 若设计文档与实现冲突，页面分别写清两者。例如 `docs/design/arch_overview.md:67-93` 给出 V1 进程概念图，但实际 worker 是否独立成进程仍由 executor backend 决定。
 - “这意味着”“可以理解为”“由此推断”表示知识库作者的机制分析，不冒充代码注释。
 
-## 六、版本边界
+## 六、版本与迁移边界
 
-本系列分析的是 2026-08-20 的主干快照，不是所有发行版的兼容手册。MRV2、endpoint plugins、NIXL/EPD、hybrid KV 和 launcher 仍在快速演进；部署具体版本时应重新核验配置默认值和支持矩阵。源码基线统一的价值，是保证 18 篇页面能够拼成同一时刻的系统，而不是承诺这些行号永久稳定。
+本域正处于 Wave 1 混合基线迁移：[[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] 固定到 2026-08-29 的 `6b110bad`，其余页面仍以页头既有基线为准。后续 wave 须在 exemplar 获用户接受后才推进其余页面；在此之前，不能把本域读成同一时刻的全域重定基线。MRV2、endpoint plugins、NIXL/EPD、hybrid KV 和 launcher 仍在快速演进；部署具体版本时应重新核验配置默认值和支持矩阵。
 
 ## Related Pages
 

@@ -25,7 +25,7 @@ title: "推理框架 —— 目录索引"
 
 | 系统 | 在本域中的定位 | 本库覆盖 | 基线 |
 |---|---|---|---|
-| **vLLM** | 通用开源推理引擎的事实标准；本域**机制细节的主要样本**，从 EngineCore/Scheduler/paged KV 到 serving、投机、量化、并行、compile 全链路 | 19 篇 + index（**系统性源码覆盖**） | `vllm-project/vllm@d66300a1`（单页例外 `26858770`） |
+| **vLLM** | 通用开源推理引擎的事实标准；本域**机制细节的主要样本**，从 EngineCore/Scheduler/paged KV 到 serving、投机、量化、并行、compile 全链路 | 19 篇 + index（**系统性源码覆盖**） | 当前为混合基线：架构概览 `vllm-project/vllm@6b110bad`；其余页面待后续获批 wave 收敛 |
 | **SGLang** | 另一条工程路线；本库目前只切入其**编译 pass 体系**，与 vLLM 的 piecewise CUDA Graph 管线做对照 | 1 篇 + index（**单点切入，非全景**） | 见页头 |
 | **Mooncake** | 以 KV Cache 为中心的**分离式服务架构**（论文级，非引擎实现）；prefill/decode 分离与跨实例 KV 传输的原始论证 | 1 篇（论文分析） | arXiv:2407.00079 |
 | **投机推理** | **技术专题而非产品**：跨引擎的 draft/verify 演进主线（MTP → Eagle3 → DFlash → DSpark） | 2 篇 + index | DeepSpec `dd854392` 等，见页头 |
