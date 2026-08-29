@@ -269,7 +269,7 @@ return spmd.all_to_all(...)                # 外部包 spmd_types
 
 ![图 3：ACT 的能力边界](assets/async_collective_tensor_deep_dive_fig3.png)
 
-*图 3：ACT 的能力边界。* **注**：图中上半区「ACT 能做的」一行里的 `shared_expert(并行)` 描述的是 `963c20cba37`（#3386）之前的形态，当前基线下该并行段已不存在（§4.2）；下半区「Megatron combined_1f1b 需要做的」与「核心差距」两段仍然成立。
+*图 3：ACT 的能力边界——三个前提、当前基线逐例核对，以及跨 micro-batch 的结构性上限。* 图按当前基线 `a3168782c9` 绘制：上段是 §4.1 的三个前提；中段把 §4.2–4.3 的四个实例逐条对照三前提，并标出 §4.3 那道决定"到底产不产生 ACT"的运行态开关；下段是本节的结论——ACT 能覆盖的最大范围就是一条调用栈。
 
 ACT 是一种**惰性同步**，不是**调度**：它能让"发起"与"等待"之间插进别的计算，但这些计算必须由**同一个 Python 调用栈按顺序写出来**。跨 micro-batch 的交错需要有人在两个 micro-batch 的半途之间来回切换，而 PyTorch pipelining 提供的最小单元不在那个粒度上：
 
@@ -379,11 +379,11 @@ out = deterministic_scatter_add(
 
 ![图 1：combine() 的双 Stream 时间线——ACT 实现的同一 mb 内掩盖](assets/async_collective_tensor_deep_dive_fig1.png)
 
-*图 1：combine() 的双 Stream 时间线——ACT 实现的同一 mb 内掩盖。* **注**：本图刻画的是 A.1 的旧形态。当前基线下 `combine()` 内不再有 `shared_experts(x)` 这一格（`torchtitan/models/common/token_dispatcher.py:556-618`），图中"掩盖效果"一栏不再成立；其余部分（launch A2A → ACT 返回 → 首个非 view op 触发 `trigger_wait` → `wait_tensor`）与当前机制一致。
+*图 1：combine() 的双 Stream 时间线——ACT 实现的同一 mb 内掩盖。* 本图刻画 A.1 的旧形态，图内已用告示条标明基线为 `83e490429cc5`，条目行号一律带 `@83e490429cc5`。当前基线下 `combine()` 内不再有 `shared_experts(x)` 这一格（`torchtitan/models/common/token_dispatcher.py:556-618`），图中"掩盖窗口"一栏不再成立；其余部分（launch A2A → ACT 返回 → 首个非 view op 触发 `trigger_wait` → `wait_tensor`）与当前机制一致。
 
 ![图 2：单个 mb 内 MoE forward 的完整双 Stream 执行过程](assets/async_collective_tensor_deep_dive_fig2.png)
 
-*图 2：单个 mb 内 MoE forward 的完整双 Stream 执行过程。* **注**：本图有两处需要更正。其一，右半部分的 `shared_experts(x) + score apply（与 A2A combine 并行）`同属 A.1 的旧形态，当前已不成立。其二，左半部分标注的「routed experts 的 GroupedGEMM 在 compute stream 上与 dispatch A2A 并行」**在旧基线下也不成立**——grouped GEMM 消费的正是 dispatch 的输出，二者有数据依赖；该处真实可掩盖的只有 `_permute` 的索引构造（当前基线对应 `torchtitan/models/common/token_dispatcher.py:509-541`，见 §3.4）。
+*图 2：单个 mb 内 MoE forward 的双 Stream 执行过程。* 本图同样刻画 A.1 的旧形态，图内已用告示条标明基线为 `83e490429cc5`。相对本页更早的那版配图，它改掉了一处依赖错误：旧版把「routed experts 的 GroupedGEMM 在 compute stream 上与 dispatch A2A 并行」画成一格，**这在旧基线下也不成立**——grouped GEMM 消费的正是 dispatch 的输出，二者有数据依赖，只能排在 `trigger_wait()` 之后（图中已改成灰色的"不可掩盖"格）；dispatch 侧真实可掩盖的只有 `_permute` 的索引构造（当前基线对应 `torchtitan/models/common/token_dispatcher.py:509-541`，见 §3.4）。图中右半的窗口 ②（`shared_experts(x)` 与 A2A combine 并行）同属旧形态，当前已不成立。
 
 ### A.3 这条旧论证今天还剩什么
 
