@@ -16,13 +16,13 @@ title: "vLLM Serving 控制面：用分阶段就绪约束服务拓扑"
 
 一个可接受请求的 vLLM 服务至少横跨五类 owner：
 
-| owner | 持有的状态 | 它不能代替谁 |
-|---|---|---|
-| launcher / process manager | 顶层模式、子进程集合、signal、全局 shutdown deadline | 不判断单请求能否分配 KV |
-| API process | 监听 socket、应用生命周期、Core client | 不拥有 Engine 内的 scheduler 状态 |
-| DP coordinator | 各 engine 的 waiting/running/KV 统计与请求到达 wave | 不接收请求，也不作最终 admission |
-| Core client | engine 地址、ready 响应、请求到 engine 的映射与本地 inflight | 不承诺目标 engine 一定有容量 |
-| EngineCore / worker | 模型、KV cache、scheduler、device execution | 不拥有 HTTP 入口和服务进程拓扑 |
+| owner | 持有的状态 | 它不能代替谁 | 证据 |
+|---|---|---|---|
+| launcher / process manager | 顶层模式、子进程集合、signal、全局 shutdown deadline | 不判断单请求能否分配 KV | `vllm/entrypoints/cli/serve.py:76-153`、`vllm/entrypoints/cli/serve.py:395-410` |
+| API process | 监听 socket、应用与 Core client 生命周期 | 不拥有 Engine 内的 scheduler 状态 | `vllm/entrypoints/launchers/api_server/entry.py:36-160`、`vllm/entrypoints/launchers/api_server/entry.py:179-201` |
+| DP coordinator | 各 engine 的 waiting/running/KV 统计与请求到达 wave | 不接收请求，也不作最终 admission | `vllm/v1/engine/coordinator.py:305-469` |
+| Core client | engine 地址与 ready 响应、请求到 engine 的映射与本地 inflight | 不承诺目标 engine 一定有容量 | `vllm/v1/engine/core_client.py:503-781`、`vllm/v1/engine/core_client.py:1435-1543` |
+| EngineCore / worker | 模型、KV cache、scheduler 与 device execution | 不拥有 HTTP 入口和服务进程拓扑 | `vllm/v1/engine/core.py:110-170`、`vllm/v1/engine/core.py:254-345`、`vllm/v1/executor/multiproc_executor.py:640-680` |
 
 CLI 先拒绝互斥的 load-balancing 组合，再按 multi-port、external LB、Rust frontend、hybrid LB 或 internal LB 推导 API server 数量；elastic expert parallel 还会把 API 数限制为一个；`vllm/entrypoints/cli/serve.py:76-142`。这不是“同一服务多开几个 worker”的小优化，而是在选择谁绑定端口、谁创建 core、谁路由和谁负责终止。
 
@@ -194,7 +194,10 @@ EngineCore 本身还区分 drain 与 abort：shutdown 输入会停止接收新�
 
 ## 八、发展趋势：控制面正在变得更显式，但仍不是统一编排器
 
-代码已经把 config hash、cache 元数据、DP stats、fault status 和 shutdown deadline 都提升为跨进程协议字段；这使拓扑错误更早暴露，也为 external LB、headless 和恢复路径提供了组合空间。与此同时，源码仍保留两个清晰限制：DP 选择器中的 power-of-two-choices 仅是 TODO；`vllm/v1/engine/core_client.py:1478-1481`，控制面队列也没有硬 admission cap。
+> [!note] 分析推断
+> “控制面协作数据正在显式化”是对多处实现的归纳，不是源码自陈的路线图：launcher handshake 传递并校验 config hash；`vllm/v1/engine/core.py:1238-1250`、`vllm/v1/engine/utils.py:1386-1405`。数据通道 ready response 传递 cache 元数据与 DP stats endpoint，Core client 再同步它们；`vllm/v1/engine/core.py:1652-1692`、`vllm/v1/engine/core_client.py:740-781`。coordinator 跨进程发布 waiting/running/KV stats；`vllm/v1/engine/coordinator.py:305-419`。fault sentinel 把 status 包装进输出，client 收到后刷新本地状态；`vllm/v1/fault_tolerance/engine_core_sentinel.py:105-118`、`vllm/v1/engine/core_client.py:1041-1071`。shutdown deadline 则由 launcher 换算成各 manager 的剩余 timeout；`vllm/entrypoints/cli/serve.py:395-410`。这些事实共同支持“跨 owner 协作信息更显式”这一分析，但不证明某条既定演进路线。
+
+源码仍保留两个清晰限制：DP 选择器中的 power-of-two-choices 仅是 TODO；`vllm/v1/engine/core_client.py:1478-1481`，控制面队列也没有硬 admission cap。
 
 因此合理的演进方向不是把 scheduler 移进 coordinator，而是让控制面反馈更及时、过载信号更可观察、入口 admission 更明确，同时保持 EngineCore 对真实 KV/token 状态的唯一所有权。这一段是基于当前边界的推断，不代表已有实现承诺。
 
