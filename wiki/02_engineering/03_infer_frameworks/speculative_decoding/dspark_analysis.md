@@ -54,7 +54,7 @@ flowchart LR
 
 ### 2.1 投机解码的延迟公式与无偏性 —— 三个可拨的杆
 
-投机解码用便宜的**草稿模型 $M_d$** 提 $\gamma$ 个候选 token，**目标模型 $M_t$** 一次前向**并行验证**全部候选，按拒绝采样接受**最长合法前缀**并追加一个 bonus token（p2-3, §2.1）。逐位置接受判据：草稿在位置 $k$ 给出 $x_k$（草稿概率 $p^d_k$、目标概率 $p^t_k$），以 $\min(1,\,p^t_k(x_k)/p^d_k(x_k))$ 接受；首个拒绝位之后全部丢弃。可证复合分布**恰为目标分布**，故投机解码**与目标逐 token 采样严格同分布（无偏）**（验收侧内核与数学详见 [[20_vllm_speculative_decoding_analysis]] §3.5）。
+投机解码用便宜的**草稿模型 $M_d$** 提 $\gamma$ 个候选 token，**目标模型 $M_t$** 一次前向**并行验证**全部候选，按拒绝采样接受**最长合法前缀**并追加一个 bonus token（p2-3, §2.1）。逐位置接受判据：草稿在位置 $k$ 给出 $x_k$（草稿概率 $p^d_k$、目标概率 $p^t_k$），以 $\min(1,\,p^t_k(x_k)/p^d_k(x_k))$ 接受；首个拒绝位之后全部丢弃。可证复合分布**恰为目标分布**，故投机解码**与目标逐 token 采样严格同分布（无偏）**（验收侧内核与数学详见 [[20_vllm_speculative_decoding_analysis]] §六）。
 
 论文把每生成 token 的平均延迟写成（p3, Eq.1）：
 
@@ -123,7 +123,7 @@ $$
 B(x_{k-1},\cdot)=W_1[x_{k-1}]\,W_2\in\mathbb R^{V}
 $$
 
-  默认 $r{=}256$，存储与每步算力都小。回到前例：位置 1 采了 "of"，Markov head 在位置 2 提升 "course"、压低 "problem"，化解跨模态碰撞。代码对应 `markov_head.py:8 VanillaMarkov`（`markov_w1`=Embedding，`markov_w2`=Linear），交叉核对见 [[deepspec_codebase_analysis]] §3.3。
+  默认 $r{=}256$，存储与每步算力都小。回到前例：位置 1 采了 "of"，Markov head 在位置 2 提升 "course"、压低 "problem"，化解跨模态碰撞。代码对应 `markov_head.py:8 VanillaMarkov`（`markov_w1`=Embedding，`markov_w2`=Linear），交叉核对见 [[deepspec_codebase_analysis]] §三。
 - **RNN head**：Markov 头只记一步；RNN 头维护贯穿整块的循环状态 $s_k$，把 $[s_{k-1};W_1[x_{k-1}];h_k]$ 经一次门控更新（p6, Eq.6），可看全前缀历史。代码 `markov_head.py:125 RNNHead`。
 
 ### 3.3 证据 —— 为什么并行/半自回归反而比全自回归接受更长
