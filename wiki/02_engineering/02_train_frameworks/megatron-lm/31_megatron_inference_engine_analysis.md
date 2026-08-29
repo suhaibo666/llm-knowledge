@@ -5,10 +5,12 @@ title: "Megatron-LM 推理引擎深度解析(Inference Engine)"
 # Megatron-LM 推理引擎深度解析(Inference Engine)
 
 > **源码基线**:`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`(`dev`,2026-08-27)
-> **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/inference/` 下 `engines/`(`megatron/core/inference/engines/dynamic_engine.py` 2614 行、`megatron/core/inference/engines/static_engine.py`)、`megatron/core/inference/contexts/dynamic_context.py`(4021 行)、`megatron/core/inference/contexts/kv_block_allocator.py`、`megatron/core/inference/scheduler.py`
 > 配套阅读:`30_megatron_rl_posttraining_consistency_analysis.md`(RL rollout 用的就是本引擎)、`23_megatron_precision_cudagraph_fusion_analysis.md`、`14_megatron_ep_analysis.md`
 > 定位:系统性专题。`30_megatron_rl_posttraining_consistency_analysis.md` 把推理引擎当作 RL rollout 的积木一笔带过,本文拆开它内部。
+> **叙事顺序**:本页按五拍组织——背景 → 为什么这么设计(含被否掉的替代)→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**:2026-08-28。按五拍重排章节顺序;机制正文与既有引用未改。
 
 ---
 
@@ -34,19 +36,19 @@ title: "Megatron-LM 推理引擎深度解析(Inference Engine)"
 
 ---
 
-## 1. 动机:自回归推理为何需要专门的引擎
+## 1. 背景:自回归推理为何需要专门的引擎
+
+### 1.1 KV cache,以及它带来的三个新问题
 
 一次生成 = 给定 prompt,逐个吐 token,每个新 token 都要 attend 到**之前所有 token**。朴素做法每步把整条序列重新前向 —— `O(S²)` 重复计算。于是有 **KV cache**:把每个 token 算过的 Key/Value 存下来,新 token 只算自己的、复用缓存。
 
 但 KV cache 带来三个新问题,正是推理引擎要解决的:
 
-1. **两相负载迥异**:处理 prompt(prefill)和逐 token 生成(decode)的计算特征完全不同(§2)。
+1. **两相负载迥异**:处理 prompt(prefill)和逐 token 生成(decode)的计算特征完全不同(§1.2)。
 2. **显存碎片**:每条序列的 KV cache 长度不同、还在增长,预分配定长连续缓冲极浪费(§5)。
 3. **批利用率低**:不同请求长度不一、来去时间不一,定长批里短请求早早算完却要空等最长的(§4)。
 
----
-
-## 2. Prefill 与 Decode:两相,两种瓶颈
+### 1.2 Prefill 与 Decode:两相,两种瓶颈
 
 ```
 请求:prompt = [t0 t1 t2 t3]  →  生成 [g0 g1 g2 ...]
@@ -65,6 +67,31 @@ title: "Megatron-LM 推理引擎深度解析(Inference Engine)"
 - **Prefill 算力密集**,一次喂很多 token,GPU 算得满。
 - **Decode 带宽密集**,每步只 1 token,GEMM 小到喂不饱 GPU,瓶颈在"把模型权重 + KV cache 从 HBM 搬进来"。**decode 是自回归推理的真正瓶颈**。
 - **batching 对 decode 至关重要**:多条序列一起 decode,模型权重只从 HBM 读一次就摊给整批 → 带宽利用率上去了。这是连续批处理(§4)的根本动因。
+
+---
+
+## 2. 为什么这么设计:自研引擎 + 一个进程级"我在推理"开关
+
+摆在面前有两条更省事的路:**①** 训练框架根本不碰生成,把权重导出去交给 TensorRT-LLM / vLLM 这类专用推理栈;**②** 就用训练那套前向,靠 `model.eval()` + `torch.no_grad()` 把它当推理跑。两条 Megatron 都没走。源码陈述了其中三条理由,第四条源码沉默,由本页重建并标为推断。
+
+**① `engines/` 里确实留过"转发给 TensorRT-LLM"的槽位,但它从未落地就被整文件删除。**
+早期 `megatron/core/inference/engines/` 是四个文件并列:`__init__.py`、`abstract_engine.py`、`mcore_engine.py`、`trt_llm_engine_wrapper.py`。`TRTLLMEngineWrapper(AbstractEngine)` 从头到尾是个桩——`generate()` 直接 `return prompts`、`is_model_trt_llm_exportable()` 恒 `return False`,两个方法都挂着 `# TODO : Will use high level apis to implement this` / `# TODO : Need to implement this`。提交 `ca9edbef9`(2024-06-07,commit message 即 "Refactor ammo")把该文件整体删除,此后 `engines/` 只剩 static / dynamic 两个**自研**引擎(§3、§4)。
+今天源码走的是另一条路——**接口对齐 vLLM、实现留在树内**:门面类提供「a vLLM-style `generate(prompts, sampling_params)` API」(`megatron/core/inference/README.md:3`);roadmap 里的 `megatron serve` CLI「mirrors `vllm serve`」(`:69`);连 HTTP 前端的 rank 放置都说要「mirroring how vLLM's `--headless` is invoked today」(`:82`)。
+
+**② "现在是不是在推理"必须是一个独立的进程级标志,`self.training` / `no_grad` / `inference_context` 三个现成信号全部被点名否掉。**
+`InferenceMode` 的 docstring 把话说死:需要区分推理与非推理(「e.g. training, RL logprobs」)路径的模块「should read `InferenceMode.is_active()` **rather than relying on** `self.training`, `torch.is_grad_enabled()`, or `inference_context is not None`」(`megatron/core/inference/utils.py:20-26`)。注意它把 **RL logprob 重算**与 training 并列为**非推理**路径——而 RL 训练相恰恰是用 `eval()` + `no_grad` 跑的,三个旧信号在那里全部指向"推理"。
+**被否掉的替代就写在历史里**:提交 `925422cd8`(2026-05-13,#4617,commit message 即 "One single flag that determines if we are in inference")之前,`MoELayer` 用 `nn.Module` 的 mode 切换来选 dispatcher——它重写了 `def train(self, mode: bool = True)`,`mode` 为真换回训练 dispatcher、为假换成推理 dispatcher,`forward` 里则判 `not self.training`。该 commit 把这段 `train()` 重写**整段删除**,改成在 `forward` 入口读 `InferenceMode.is_active()` 选 dispatcher(基线 `megatron/core/transformer/moe/moe_layer.py:703`、`:612`),同批还改了 `gpt_model`(`megatron/core/models/gpt/gpt_model.py:339`、`:421`、`:437`、`:686`)、`transformer_layer`(`megatron/core/transformer/transformer_layer.py:754`、`:970`、`:1108`、`:1748`)等 15 个文件。引擎侧对称地在进出推理时置位/清位(`megatron/core/inference/engines/dynamic_engine.py:296`、`:806`、`:857`,`megatron/core/inference/engines/static_engine.py:133`)。
+→ 决定取舍的判据是**让"模式"有唯一的真相源**:模块散着各自猜模式,只要有一个猜错就静默走错 kernel;改成单一标志后,判错会同时错在所有模块,更容易发现,也让 RL 那种"eval + no_grad 但不是推理"的第三种状态第一次可表达。
+
+**③ KV 显存是上来就吃掉的一整块,再在内部切块,而不是随用随 `torch.empty`。**
+`DynamicInferenceContext` 的 docstring 明写:块级 KV cache 的「memory buffer is allocated **up front**(size `buffer_size_gb` if `unified_memory_level == 0`, or `buffer_size_gb + paused_buffer_size_gb` if `unified_memory_level == 1`), that is divided into blocks and dynamically assigned to requests. At any given step, **any unassigned blocks equate to unused space**」(`megatron/core/inference/contexts/dynamic_context.py:229-243`)。它同时把代价说了出来:没分出去的块就是纯浪费。§5 讲的是"块怎么切",这里补的是"为什么整块预留"。
+
+**④ 异步门面宁可在 `__init__` 硬失败,也不做两套 event loop 的桥接。**
+`MegatronAsyncLLM.__init__` 上方的注释直接给出理由:direct 模式会「invoke the synchronous `engine.generate()` from inside the caller's asyncio loop, which collides with the engine's loop-bound internal state(`_cond`, `_state_events`)」,而 coordinator 模式通过 `start_listening_to_data_parallel_coordinator` 把这些原语重绑到一个守护线程的 loop 上,「and avoids the conflict」;紧接着 `if not use_coordinator: raise ValueError(...)`(`megatron/core/inference/apis/async_llm.py:42-55`)。README 补上这是**暂时**的:「Tracked for an upstream `engine.async_generate(...)`(or engine loop-rebinding)fix」(`megatron/core/inference/README.md:75`)。
+→ 判据是**把一类难查的运行期故障换成一次构造期报错**:桥接做错的表现是 `RuntimeError: This event loop is already running` 或挂死,而硬失败发生在第一行。
+
+> [!note] 推断
+> 源码陈述的是**事实**:TRT-LLM wrapper 是个桩且被删除、README 反复对标 vLLM 接口、`InferenceMode` 点名否掉三个旧信号、KV buffer 预分配、异步门面拒绝 direct。**"Megatron 因此选择了自研引擎而非外部推理栈"这层因果由本页承担**——源码从未写过一句"我们决定不用 TensorRT-LLM"。上面 ①④ 两段末尾的"判据"("唯一真相源"、"把运行期故障换成构造期报错")同样是本页的重建,不是作者自陈。要引用这几条判断,请回到 `megatron/core/inference/README.md:3`、`:69`、`:82`、`megatron/core/inference/utils.py:20-26`、`megatron/core/inference/apis/async_llm.py:42-55` 这几个 locator,不要引用本段推断。
 
 ---
 
@@ -168,7 +195,7 @@ seq B 的 KV  →  block table = [blk1, blk2]
 
 ## 7. CUDA Graph 在推理里
 
-decode step 是"逐 token、kernel 小而多",CPU 启动开销占比极高 —— 正是 CUDA Graph 的主场(见 `23_megatron_precision_cudagraph_fusion_analysis.md` §2)。
+decode step 是"逐 token、kernel 小而多",CPU 启动开销占比极高 —— 正是 CUDA Graph 的主场(见 `23_megatron_precision_cudagraph_fusion_analysis.md` §4)。
 
 但 CUDA Graph 要求形状固定,而连续批处理的"当前 batch 里有几个请求"是变化的。`DynamicInferenceEngine` 的解法(`create_cuda_graphs`,`megatron/core/inference/engines/dynamic_engine.py:367`):
 - 预先枚举一组**典型的 batch 维度**(`cuda_graph_batch_dimensions_list`,不同 request count)。
@@ -221,7 +248,59 @@ decode step 是"逐 token、kernel 小而多",CPU 启动开销占比极高 —�
 
 ---
 
-## 10. 小结
+## 10. 约束:引擎不做什么、以什么为代价
+
+前面九节几乎全是收益。这一节把代价、前提与失效条件集中列出,每条带 locator。
+
+**① 调用方责任(门面类不替你做的事)。**
+`megatron/core/inference/README.md:55-59` 列了三条硬前提:构造**之前**必须自己 `initialize_megatron(...)`(完整的 Megatron 分布式初始化);构造**之前**必须自己 `model.eval()`——「The class does not toggle model state」;`pause`/`unpause`/`suspend`/`resume` 这组生命周期方法**要求 `use_coordinator=True`**,direct 模式下抛 `RuntimeError`(实现见 `megatron/core/inference/apis/_llm_base.py:353-355` 的 `_assert_coordinator`)。coordinator 模式下 `generate(...)` 还只在 primary rank 有效,非 primary 直接 `RuntimeError`(`megatron/core/inference/apis/_llm_base.py:347-351`)。
+
+**② `MegatronAsyncLLM` 不支持 direct 模式。** 构造期 `ValueError`,原因见 §2 ④(`megatron/core/inference/apis/async_llm.py:42-55`;`serve()` 处另有一次同类校验,`:187`)。
+
+**③ coordinator 模式下 `engine.reset()` 不安全,且是两种不同的坏法。**
+README 把两条失效路径拆得很细(`megatron/core/inference/README.md:77-80`):*死锁*——`reset()` 是**重绑**而非原地修改 `_cond` / `_state_events`,已挂起在旧对象上的协程再也等不到 `notify_all()` / `set()`,下一次 `generate()` 直接挂住;*静默损坏*——`reset()` 顺手把 `self.use_coordinator` 置 `False`,失败请求处理、调度通知、`suspend()` 状态机全部悄悄改走 direct 分支,不挂死但行为错、更难查。示例脚本因此禁掉 `--inference-repeat-n > 1` 与 `--use-coordinator` 同开。direct 模式的 reset 是安全的。
+
+**④ HTTP 服务两处写死。** 前端固定在 global rank 0,`ServeConfig` 没有 per-rank 的 `role` 开关,放置只能靠 launcher 控(`megatron/core/inference/README.md:82`);响应里 `"model"` 恒为 `"EMPTY"`,既不回显也不校验请求里的 `model` 字段,也没有 `GET /v1/models`(`:84`)。
+
+**⑤ KV 池是"上来就吃掉"的定额,不是弹性的。**
+默认 `buffer_size_gb = 20`(GB,`megatron/core/inference/config.py:160`)、`block_size_tokens = 256`(`:157`)、`unified_memory_level = 0`(`:197`)。`unified_memory_level` 为 0 时 paused buffer **含在** `buffer_size_gb` 里,为 1 才额外用 CPU 内存(`:161-173`)。`max_requests` 的实际上限「primarily limited by the combination of `buffer_size_gb` and `max_sequence_length`」(`:185-188`),`max_tokens` 则「primarily limited by prefill activation memory usage」(`:191-194`)——§4/§5 的"连续批处理 + 按需分块"并不能突破这两条预算。
+
+**⑥ 块池里有一块永远不可用。** `KVBlockAllocator` 留了一个 `dummy_block_idx`,可用块数是 `total_count - 1`;`active_count = total_count - paused_count - 1` 且 `assert self.active_count >= 1`,即 `paused_count` 必须严格小于 `total_count - 1`(`megatron/core/inference/contexts/kv_block_allocator.py:45-48`)。
+
+**⑦ 投机解码(MTP)的两条硬边界。** `num_speculative_tokens` 必须非负(`megatron/core/inference/engines/dynamic_engine.py:239`),且**严格小于** `block_size_tokens`(`megatron/core/inference/contexts/dynamic_context.py:309-312`)——一次投机的 token 不能跨出一个块。
+
+**⑧ Flash MLA 把块大小钉死在 64。** 模型是 MLA 且开 `cache_mla_latents` 时,`block_size_tokens != 64` 直接 assert 失败,错误信息里直接给出要改的 CLI 开关(`megatron/core/inference/contexts/dynamic_context.py:288-291`)。这和 ⑤ 的默认值 256 冲突,MLA 模型必须显式改配置。
+
+**⑨ suspend 让出的显存是真删掉状态,不是换页。** `suspend()` 先 `InferenceMode.unset_active()`,再进 `suspend_resume_ctx` 调 `deallocate_inference_state_buffers()`(`megatron/core/inference/engines/dynamic_engine.py:799-812`);此后再去碰 context 的张量状态,得到的是 `TensorStateDeallocatedError`——它被明确归类为一种 `ContextOverflowError`,注释即「Context's tensor state is currently deallocated, such as when the engine has been suspended」(`megatron/core/inference/contexts/dynamic_context.py:165-169`)。§9 说的"让出显存给训练相"要按这个语义理解:不是暂停,是拆掉再重建。
+
+**⑩ 背压不是无限排队。** §5.3 那组 `ContextOverflowError`(`megatron/core/inference/contexts/dynamic_context.py:107`)只保证"不 OOM 崩溃",请求该失败还是失败——`ActiveRequestCountOverflowError` 就发生在 warmup 请求数超过 `max_requests` 时(`:152-162`)。
+
+---
+
+## 11. 发展趋势
+
+以下每条都锚在基线源码里能读到的 `TODO` / `DeprecationWarning` / README roadmap 上;**方向解读是本页的推断,不是作者自陈**。
+
+**① Static 引擎正在下线,而且已经被 Dynamic 引擎"借壳"。**
+§3 把 Static 与 Dynamic 当两个平行变体讲;基线源码里 `StaticInferenceEngine.__init__` 无条件发 `DeprecationWarning`,原话是「`StaticInferenceEngine` will be deprecated in a future version of Megatron-core. Please directly use `DynamicInferenceEngine` instead. **`StaticInferenceEngine` currently uses `DynamicInferenceEngine` under the hood.**」(`megatron/core/inference/engines/static_engine.py:64-69`);走 `legacy=True` 的老路径另发一条「The static engine will be deprecated and removed in the future version of megatron-core. Switch to DynamicInferenceEngine.」(`:60-62`)。→ §3 描述的**定长批语义**仍然成立,但它已经不是一条独立的实现路径了。
+
+**② 三个 step 入口会收敛回一个 `step()`。**
+`step_legacy()` 自己写了下线版本:「`step_legacy()` is deprecated and will be removed in `megatron-core` 0.16. Please use `step_modern()` going forward, **which will eventually be renamed to `step()`**」(`megatron/core/inference/engines/dynamic_engine.py:2203-2211`)。§0 的 [!update] 列出的 `step_modern` / `step_legacy` / `async_step` 三入口是过渡态。
+
+**③ README 自陈的四条 roadmap。**(`megatron/core/inference/README.md:61-71`)
+- **Dynamic streaming**:离线流式已可用 `engine.async_step()`;HTTP 流式还缺 coordinator / `InferenceClient` 协议携带**部分输出**(现在只能传最终 request record)(`:65`)。
+- **Weight update APIs**:计划把现有 resharding/refit 原语包成 `suspend_for_refit()` / `update_weights_from_collective()` / `resume_after_refit()`,给"rollout 之间换权重"的 RL 流程用(`:67`)。这条直接落在本文 §9 的 suspend/resume 与 `30_megatron_rl_posttraining_consistency_analysis.md` 的 refit 之间。
+- **`megatron serve` CLI**:单二进制启动器,复用 `MegatronAsyncLLM.serve(...)`,含单机与多机 headless 模式,「mirrors `vllm serve`」(`:69`)。
+- **Config-based model construction**:`MegatronLLM(model="...")` 式构造 + 模型 recipe/ckpt 解析,把"自己建模型"从 §10 ① 的调用方责任里拿掉(`:71`)。
+
+**④ direct 模式的异步 generate 已经有指定修法。**
+`megatron/core/inference/apis/_llm_base.py:417-418` 挂着「TODO: replace with an upstream `engine.async_generate` so direct-mode async generate doesn't block the caller's event loop.」——正对着 §10 ② 那条约束。
+
+**⑤ 采样/logprob 侧的已知缺口。** `megatron/core/inference/contexts/dynamic_context.py:3889` 的「TODO: @wdykas support top-n log probs.」;`text_generation_controller.py:1166` 与 `:2379` 两处同文的「TODO(ksanthanam): Evaluate whether it makes more sense to sample on 1 rank」——采样是否收拢到单 rank 仍未定。
+
+---
+
+## 12. 小结
 
 - **推理 ≠ 训练**:逐 token 生成、请求动态、无反向 → 专门的引擎(`inference/`)+ `inference_optimized` 实现。
 - **两相**:prefill 算力受限(整 prompt 一次前向),decode 带宽受限(逐 token,读整个 KV cache)—— decode 是真瓶颈,靠 batching 摊薄权重读取。

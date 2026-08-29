@@ -12,6 +12,115 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-28（四）：给 check_links 加 stale_section 规则；重做 ACT 深潜页——立论被上游改写
+
+**Type**: 门禁新规则（1 检查项 + 7 单测 + 3 处存量）+ 1 页重写
+
+### 一、`stale_section`：把长期盲区纳入门禁
+
+`§N` 是纯文本、不是 wikilink，`check_links` 此前完全不检查。本轮 megatron 26 页重排暴露出 **102 处**失效的章节交叉引用，全程门禁绿灯——这是个长期盲区。
+
+规则：`[[页面]]` 后**紧跟** `§N` 时，去目标页解析顶层节号（`## N.` 与 `## 一、` 两种风格都认，中文序号转整数），不存在即报 `stale_section`，计入 `--strict`。三条取舍：只认紧邻形态（隔着一句话的 `§N` 往往指引用页自己）；窗口止于行尾（`visible_text` 把全篇拼成一个串，不截断会跨行误判）；目标页无编号小节时不评判。
+
+上线即抓到 **3 处谁都不知道的存量**，都在与本轮无关的 inductor/npu 域，其中一处我先前手工 grep 漏了——因为文件里写的是中文数字 `§七`。补 7 个单测；`tools/` 全套 121 passed。
+
+### 二、[[21_async_collective_tensor_deepdive]]：立论被改写，不只是行号过期
+
+原页用 torchtitan `AllToAllTokenDispatcher.combine()` 论证「ACT 能在同一 forward 内掩盖通信」，且**全页没有任何基线声明**。重做后：
+
+**① ACT 的出身改写了整页立论。** `e22d791287`（2023-02-16，#93990）标题即 *"[PTD] Introduce tracing friendly collectives"* —— **ACT 与 functional collectives 同一提交引入，是「让集合通信可被 dynamo/FX 追踪」的副产品，不是为掩盖设计的**。模块 docstring 亦自陈 eager 走 subclass、编译交给编译器、"In the future, these paths may be unified"。
+
+**② 机制本身成立，例子不成立。** 三层机制（wrapper subclass → `__torch_dispatch__` view/非-view 分流 → `wait_tensor` 经 `WorkRegistry` 反查 Work 并 `ncclEndEvent_->block(currentStream)`）逐行重核通过；wait 是 stream 级 block 而非 CPU block。被推翻的是 **shared experts 那个例子**：`963c20cba`(#3386) 把 shared experts 从 `combine()` 移到 `MoE.forward()`，当前 `moe.py:440`(routed) 与 `:447`(shared) 的顺序使窗口不存在。
+
+**③ 更根本的一条：默认配置下 torchtitan 的 MoE 可能根本不产生 ACT。** dispatcher 三处收发一律 `if (is_compiling or non_strict_tracing) or get_spmd_backend() != "spmd_types": funcol… else spmd.all_to_all`；而默认 `_spmd_backend = "spmd_types"`（`distributed/utils.py:36`）。该后端是 out-of-tree pip 包（`spmd_types==0.2.5`），不在检出内，**本页如实写「无法核实」而非猜测**。唯一被主动选用 ACT 的是 TP redistribute 的四处显式 `async_op=True`。
+
+**④ 源码内部不一致**：`token_dispatcher.py:589-590` 那条 ACT 注释由 `09ea7d8e73`(#2842) 留下，写于 shared experts 尚在 combine 内、`spmd_types` 分支尚未加入之前，今天既不描述默认分支也不对应任何窗口——已标 contradiction（值得给上游提 issue，本轮未做）。
+
+**基线**：本页跨三个仓库，各自钉死——torchtitan `a3168782c9`、PyTorch `ea5655fceb`、Megatron-LM `71092579…`（§4.6 对照现已带真实 locator，原本零 locator）。旧页 7 条数字 locator 全部作废，但查明它们在 `963c20cba^`（`83e490429cc5`）下逐条属实，这一事实写进附录。新页 151 处引用逐条 `git show` 打开确认。
+
+**旧论证保留**：`## 附录 A` 完整保留旧形态代码与两张旧图，代码块行号一律带 `@ 83e490429cc5` 后缀标明所属基线，开头 `[!contradiction]` 说明推翻依据。四张图一张未删，失效处只在图注下加更正行。
+
+**已知未尽**：fig1/fig2/fig3 各有一格描述已推翻的形态，只加注未重绘（需重跑绘图工具链）；`spmd_types` 包若装上，§4.3 表格首行可以定论。
+
+**校验**：`check_links --strict` 430 页六项全 0；`check_math --changed --strict` 0 错 0 警；`pytest tools/` 121 passed。
+
+---
+
+## 2026-08-28（三）：修 torchtitan 章节引用，并翻掉跨框架对比表里一条已被上游推翻的结论
+
+**Type**: 交叉引用修复（1 页 7 处 §）+ 一条主结论更正
+
+**起因**：torchtitan 域被另一会话重构（`4b789b5`）后章节结构大改，别处的 `§N` 引用失效。实测范围比先前粗估的「约 23 处」小得多——**全库目录外指向 torchtitan 页的带 `§` 引用只有 8 条**，7 条集中在 [[30_comm_compute_overlap_analysis]] 的跨框架对比表，另 1 条是误报（dispatcher 页那个 `§11` 指的是它自己的 §11）。torchtitan 目录内部页面之间的 `]] §` 引用为 **0**，重构时已一并清掉。
+
+**改号之外，查出 5 处是「归属错」而不只是编号错**：
+
+- **PP 的 action runtime 不是 torchtitan 实现的**。原表把「`RECV` 早发起、用前才 wait」记在 torchtitan 名下并指向越界的 §8。该页 §1 表格逐字写着「schedule class | PyTorch pipelining | 决定 action/P2P 时序；TorchTitan 只选类、填 stages/microbatches」，§3 又说「让上游拥有 action engine」。已改指 §1/§3 并注明归属。
+- **ZBV/DualPipeV 同理**：整页 grep 不到 `OVERLAP_F_B` 或 `stage_backward_input/weight` 的机制描述；该页只承载 V 型 rank 映射表，且自陈「zero-bubble 与 custom CSV 的 core integration case 当前 disabled」。
+- **HSDP「反向另开 all-reduce stream」说反了**。21 页论点原话：「TorchTitan 并没有实现一套自己的 reduce-scatter / all-reduce 双流调度器…属上游 FSDP2」，而原指的 §5 标题本身就是「…**不是** AR/RS 双流开关」。已改指 §4 并把说法改成「属上游 PyTorch FSDP2；TorchTitan 只声明轴与缩放所有权」。
+- Async-TP 那格的两处细节：`symm_mem.fused_*` 实属 dist-GEMM 而非 Async-TP；「Hopper 对称内存」门槛挂在 `enable_fsdp_symm_mem` 上，`_maybe_enable_async_tp` 里**没有任何 capability 检查**。
+
+**一条主结论被翻面**：对比表原记「torchtitan 用 `AsyncCollectiveTensor` 实现同一 microbatch 内的 EP 掩盖」。回 `torchtitan@a3168782c9` 核对 `MoE.forward`：`out_TD = self.routed_experts(...)` 在 `torchtitan/models/common/moe.py:440`、`shared_out_TD` 在 `:447` —— **shared experts 严格排在 routed path 完成之后，没有可供掩盖的窗口**；#3386 `963c20cba`（2026-05-20）正是把 shared experts 移出 dispatcher 的那次重构。权威页 [[15_torchtitan_ep_analysis]] §5 已标明旧述不符合 HEAD。
+
+代理只改了它被授权的那一格，同页另有四处仍在主张相反的事实（三分类举例、可达性矩阵、§4.3 结论、Related Pages 描述）——**只改一处会让同一页自相矛盾**，故由协调者一并改掉：矩阵该格 ✓→✗ 并补一条带 locator 的修正注；结论从「两个独立层次」改为「只剩 stage 级跨 mb 一个层次，且由上游 pipelining 提供」。`Stream 管理` 一行保留——那是泛指异步集合通信的载体，不是被推翻的那条断言。
+
+**方法论**：`§N` 是纯文本、不是 wikilink，`check_links --strict` 检查不到，这类失效长期是盲区。建议给 `tools/check_links.py` 加一条低成本规则——wikilink 后紧跟 `§N` 时去目标页 `grep '^## '` 校验该顶层节存在；本轮 8 条里有 3 条纯靠「越界」就能自动抓出来。
+
+**校验**：`check_links --strict` 430 页 broken/ambiguous/bare_index/orphans 全 0；`check_math --changed --strict` 0 错 0 警。
+
+---
+
+## 2026-08-28（二）：Megatron-FSDP 提为独立页（36 号），并按 Merge over coexist 去重
+
+**Type**: 新增 1 页 + 合并去重 2 页 + 域索引
+
+**为什么要提**：`megatron/core/distributed/fsdp/src/megatron_fsdp/` 在源码里是个 **11321 行、16 个文件的独立子系统**，wiki 里却只是「[[16_megatron_distributed_optimizer_analysis]] 的一节」加「[[27_megatron_tp_fsdp_resharding_supplements_analysis]] 的一节」。按「一个概念一页、宁拆勿合」提为独立权威页 [[36_megatron_fsdp_analysis]]，基线 `NVIDIA/Megatron-LM@71092579…`（`dev`，2026-08-27）。
+
+**页号 36 的由来**：段 1（10–19）与段 2（20–29）已排满——26 号是 2026-08-01 PP 三页合并空出的号、域索引明写「不重新分配」，复用会让旧引用产生歧义。按 `CLAUDE.md`「某段超出容量时占用相邻空段，并在该目录 index.md 的段位表里注明」取段 3 首个空号，理由已写进索引段位说明。
+
+**第 2 拍挖到四条被否掉的替代**，前三条有源码/文档原话：
+
+1. **逐参数分片（FSDP2 的做法）** —— 判据是「进出通信缓冲区的那次 `COPY`」。文档把两者代价并排写明：FSDP2 需要 COPY 才能减少 NCCL 调用次数，Megatron-FSDP 则把连续缓冲区的切片视图直接赋给参数。代价是同一 `DTensor` 参数**在不同 rank 上形状可以完全不同**，因此需要一整个 `uneven_dtensor` 库。
+2. **按 DP 度直接均分字节** —— 判据是 kernel 的 **locality**：块量化的 scaling factor 计算会被 FSDP 从中间劈开。替代方案是算 FSDP unit 内所有参数 `p.shape[1:]` 的最小公倍数、把缓冲区 pad 到 `DP × LCM`，保证 `dim=0` 任何一行都不被劈开。
+3. **直接写进 `megatron/core/distributed/`** —— 判据是「能不能被别的框架装走」。提交 `af28b5a55`（2025-08-21）标题即 *Decouple Custom FSDP to make it independently installable*，四份独立证据坐实：`src/` 自带 `pyproject.toml`（`name = "megatron-fsdp"`）、两个入口的双源导入注释「Megatron-LM is not installed, use Megatron-FSDP as a standalone module」、`TODO(@cspades): Copied from megatron.core.utils to avoid depending on MCore`、以及文档的 "Bring Your Own Parallelism" 定位。**代价是 MCore 专属知识（哪个参数是列并行/行并行）只能由接入层按模块类名重新推断一遍。**
+4. **每次 unshard 现分配临时缓冲** —— 四档分配器的 docstring 各自写死理由（碎片、分配开销、跨 unit 复用）。但「四档构成一条由松到紧的取舍阶梯、默认档选 `_resize_` 是因为多数模型不开 `nccl_ub`」这层判断**源码没有表态**，整段挂 `> [!note] 推断` 并写明该引哪几个 locator。
+
+**Merge over coexist 的执行**（严格按规程顺序，先吸收、再改入链、最后才替换）：
+
+- **吸收的独有增量**：`no_shard`（ZeRO-0）的收敛性陷阱（梯度统计只能在 `model_parallel_group` 上规约，否则 grad norm 虚高）、HSDP 缺省组合（不传 `ddp_config` 即 `optim_grads_params` 内层 + `no_shard` 外层）、grouped-expert 分桶的 #5013 归属、以及与激活重计算的协同（整层重算时参数只 all-gather 一次、重算与反向共用，`megatron_fsdp.py:116-119`）。吸收时发现新页的 locator **比原页更准**（用 `:250-264`／`:1068-1075` 而非原来的 `:250-255`／`:1071`），按新页为准。
+- **入链**：全库扫描确认除新页页头外**没有任何外部引用**指向被并的三处小节，无需改指。
+- **替换**：[[16_megatron_distributed_optimizer_analysis]] §18.2、§18.6 与 [[27_megatron_tp_fsdp_resharding_supplements_analysis]] §3 的正文换成指向新页的一行指引（标题保留作占位，避免同页后续编号连锁变动）。16 号页 −68 行、27 号页 −49 行。
+- **对比分析按约定全部保留**：§18 三方对比框架、§18.1 概览表、§18.3 TorchFSDP2 详析、§18.4 选型矩阵、§18.5「为什么 FSDP2 在 MoE 训练中重要」一律留在 16 号页原地。
+
+**顺带确认的一条事实**：`TorchFullyShardedDataParallel`（FSDP2 路径）在新基线下 `expert|Expert` **整体零命中**，没有任何 EP 专门处理；MegatronFSDP 侧的对应实现在 `megatron_fsdp.py:296`/`:351`。
+
+**未覆盖**：`experimental/` 子包（1487 行，六个文件，三处 docstring 自称 "Experimental / Minimal"）只在第 5 拍作为在途方向提及，未展开成小节。
+
+**校验**：`check_links --strict` 430 页 broken/ambiguous/bare_index/orphans 全 0；`check_math --changed --strict` 0 错 0 警。
+
+---
+
+## 2026-08-28：verl 推进 273 个提交并重建默认 V1 知识域——TransferQueue、两套 async 与 delta 权重发布补齐
+
+**Type**: 源码基线推进 + 全域概念重构（14 篇内容页 + 域/父/全局索引 + radar）
+
+**基线与工作区**：先把旁置源码工作区 `E:/97-codes/torch_parallel/verl` 从 `8a694930275061f52ebd538c906ef8819af56dbd` fast-forward 到恢复网络后的最终 `origin/main` `254a23edc62f25ebfae626e3932ae285d6f86009`（2026-08-28 10:08 +08），跨度 273 commits、623 files、+62,155/-12,195。源码工作区原有未跟踪 `GRPO_Analysis.md` 在两次 fast-forward 前后 SHA-256 均为 `ABD72593BCE2228C034DAE5433B446DB76A863CEF97FF8F73E0E89FB8F5E4529`，未被修改。最终提交新增 vLLM prefix-cache hit 到 TokenOutput，并在 partial-resume 中保留首次 prefill 的命中数。
+
+**默认主线纠正**：[[01_verl_architecture_overview_analysis]]、[[02_verl_quickstart_guide]]、[[10_verl_end_to_end_iteration_analysis]] 全部从旧 `RayPPOTrainer/DataProto/full CUDA IPC` 叙事改成当前 `TaskRunnerV1 → PPOTrainerSync → TransferQueue → KVBatchMeta/tqbridge → Worker/Engine → CheckpointEngine`。`trainer.use_v1=true` 与 `trainer_mode=sync` 是当前默认；[[20_verl_ray_trainer_analysis]]、[[11_verl_single_controller_analysis]]、[[12_verl_dataproto_analysis]] 保留为完整 commit `8a694930...` 的冻结 V0 机制档案，不再机械 repin 或声称代表默认路径。
+
+**新增三个机制 owner**：
+
+- [[17_verl_v1_async_trainer_analysis]]：稳定 V1 的 sync/colocate async/separate async、ReplayBuffer `drop/wait`、DAPO/failure refill、streaming fetch、TQ checkpoint recovery、同一 PPO cycle 的稳定旧策略与 GPU lending；
+- [[21_verl_delta_weight_sync_deepdive]]：Engine/CheckpointEngine/rollout loader 三段 ownership，dense seed → host snapshot prime → sparse steady state，ShardSpec、真实训练/rollout支持矩阵、checksum/periodic verify 与非事务失败窗口；
+- [[22_verl_fully_async_dynamic_schedule_deepdive]]：独立 experimental TaskRunner 的 Rollouter/Trainer/MessageQueue completion-order、staleness admission、partial rollout、动态 Hybrid GPU、rebalance、恢复/确定性/测试缺口；明确它不是稳定 V1 第四种 mode。
+
+**重构与最新遗漏**：[[16_verl_v1_transfer_queue_analysis]] 从“官方文档级、源码待核实”升级为固定提交源码页，闭合 `use_v1`/TQ 真实开关时序、prompt/trajectory 双层 key、延迟物化与当前仓内 SimpleStorage/MooncakeStore 配置范围；[[13_verl_workers_engine_analysis]] 补齐 FSDP Turbo、TorchTitan、Megatron/VeOmni、MindSpeed 精确删除范围和 `grad_offload` 配置变化；[[14_verl_rollout_resharding_analysis]] 拆开 colocated naive、disaggregated full、`delta_sharded` 与 PD/KV；[[15_verl_rl_algorithms_analysis]] 从 14 estimator × 11 loss 更新为 14 × 12，新增 DRO、`token-sum`、多轮 REINFORCE++ observation-span 修复与 critic global-batch 归一化；[[30_verl_optimization_analysis]] 改为吞吐、显存、新鲜度、权重发布与恢复性的联合预算，避免复制各深潜页。
+
+**导航与追踪**：[[verl/index]] 重建为 14 篇内容页的概念 ownership/三条阅读路线；后训练框架域从 44→47 页，verl 子域从 12→15 页（均含 index）；README、父索引、全局索引同步。`docs/radar/watchlist.yaml` 的 verl `kb_baseline` 更新为完整 `254a23ed...`。
+
+**证据与门禁**：当前基线 11 篇实现页共抽取 460 个仓库相对 `file:line`/range locator，路径缺失与行号越界均为 0；三个 V0 档案继续以各自冻结提交解释原行号。`python -m pytest tools/` 为 114 passed；`npm run docs:test` 的 68 项运行时单测、429 页 Quartz 构建与浏览器 smoke 全部通过（139 个请求，覆盖 Mermaid、链接、静态资源与 loopback-only 网络）。最终链接、公式与格式门禁在写入本条后再次执行。
+
+---
+
 ## 2026-08-28：megatron-lm 基线推进 578 个提交，456 条引用逐条重核——推翻 6 条结论、揪出 4 处原始撰写错误
 
 **Type**: 基线重定 + 全域引用重核（26 页 + 域索引 + radar；六个并行 agent）

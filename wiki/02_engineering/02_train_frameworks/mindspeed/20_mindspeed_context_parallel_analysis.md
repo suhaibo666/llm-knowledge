@@ -98,7 +98,7 @@ else:
 
 > patch 侧还有个分流:`kvallgather` 与 `ulysses` 把 `TEDotProductAttention` 替成轻量 `MindSpeedTEDotProductAttention`,其余算法替成完整 `MindSpeedCPDotProductAttention`(`context_parallel_feature.py:106-111`)。
 
-> **`sparse_mode` 的就地设定**:`forward` 开头按掩码类型给 `config.sparse_mode` 赋值——causal → `2`(`dot_product_attention.py:147`),`reset_attention_mask` 的 general 掩码 → `2`,但若开了 CP 且非 ulysses 则改 `1`(`:149-153`),`no_mask` → `0`(`:180-181`)。这个码直接喂给 `npu_fusion_attention` 选 mask 形态,是 CP 内核与亲和 FA 核(见 [[13_mindspeed_ascend_affinity_analysis]] §3.5)的接口约定。
+> **`sparse_mode` 的就地设定**:`forward` 开头按掩码类型给 `config.sparse_mode` 赋值——causal → `2`(`dot_product_attention.py:147`),`reset_attention_mask` 的 general 掩码 → `2`,但若开了 CP 且非 ulysses 则改 `1`(`:149-153`),`no_mask` → `0`(`:180-181`)。这个码直接喂给 `npu_fusion_attention` 选 mask 形态,是 CP 内核与亲和 FA 核(见 [[13_mindspeed_ascend_affinity_analysis]] §4)的接口约定。
 
 > **CP × TP-2D 的合并域**:开 `tp_2d` 且 `tp_y>1` 时,CP 不再是独立通信域,而是与 TP 的 y 方向合成一个 `TensorParallelYUnionCP` 联合组——`tp_y_cp_sz = cp·tp_y`(`dot_product_attention.py:185-189`、`adaptor.py:30-33`)。此时序列切分也要按 `2·tp_y_cp_sz` 配对再 reshape 回 `[cp, s/cp]`(`get_batch_utils.py:206-241`),Ulysses 的 a2a 组取 `tp_y_cp.group`、Ring 走 `tp_y_cp.overlap_group`(`dot_product_attention.py:218-222`、`:247-248`)。这是 CP 与 TP-2D 正交叠加时唯一需要"换组"的地方,四框架中仅 MindSpeed 有这一耦合。
 

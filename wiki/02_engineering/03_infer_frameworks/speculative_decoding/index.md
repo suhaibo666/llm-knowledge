@@ -79,7 +79,7 @@ flowchart LR
 ## 四、知识缺口（Knowledge Gaps）
 
 - **DFlash 独立深挖**：本库目前从 DSpark 视角（其并行骨干）覆盖 DFlash，尚无独立的 DFlash（块扩散 / block diffusion）论文页。arXiv:2602.06036 在 `raw/` 中暂缺。
-- **Eagle3 独立深挖**：仅在对比表与 [[20_vllm_speculative_decoding_analysis]] §3.3（EAGLE 时序）中出现，无专页。
+- **Eagle3 独立深挖**：仅在对比表与 [[20_vllm_speculative_decoding_analysis]] §五（EAGLE 时序）中出现，无专页。
 - **MTP 模型侧**：原理散见 [[12_deepseek_v3_analysis]]（§Multi-Token Prediction）与 [[13_deepseek_v4_analysis]]，尚未抽成「投机解码视角的 MTP」专页。
 
 ---

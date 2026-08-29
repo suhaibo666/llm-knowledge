@@ -1,400 +1,211 @@
 ---
-title: "verl RL 算法 —— 优势估计与策略损失全家桶(core_algos)"
+title: "verl RL 算法：优势估计、策略损失与全局归一化"
 ---
 
-# verl RL 算法 —— 优势估计与策略损失全家桶(core_algos)
+# verl RL 算法：优势估计、策略损失与全局归一化
 
-> **代码基准**:verl `main` @ `8a694930`
-> **最后更新**:2026-06-22 · **系列**:verl RLHF 框架源码级分析(见 [[verl/index]])
+> **代码基准**：verl `main` @ `254a23edc62f25ebfae626e3932ae285d6f86009`（2026-08-28）
+> **最后更新**：2026-08-28 · **系列**：verl RLHF 框架源码级分析（见 [[verl/index]]）
 >
-> 本文剖析 `verl/trainer/ppo/core_algos.py` 这个"算法库"——它把 14 种优势估计器与 11 种策略损失收进两张注册表,靠 `algorithm.adv_estimator` 与 `actor.policy_loss.loss_mode` 两个字符串字段在运行时选型。重点回答:**优势怎么算?损失各家相对 vanilla PPO 改了什么?KL 在哪两处生效?**
->
-> 行号约定:除特别标注外,所有 `file:line` 均指 `verl/trainer/ppo/core_algos.py`。
+> **核心结论**：verl 没有为每种 RL 算法复制一套 trainer，而是把“如何从奖励得到优势”和“如何从优势得到策略梯度”拆成两张注册表；训练器负责准备状态，worker 负责统一聚合。这个分解让算法组合可以独立变化，但正确性取决于额外输入、mask 语义和全局 batch 归一化是否同时满足。
 
-> [!note] 本页基线 verl `8a694930`;端到端迭代以 [[10_verl_end_to_end_iteration_analysis]](基线 `983cb0f`)为准,两基线间机制差异以新基线页为先。
+除特别说明外，行号均指最终基线中的仓库相对路径。
 
 ---
 
-## 1. 功能范围与定位
+## 1. 为什么是两条轴，而不是算法分支树
 
-`core_algos.py` 是纯函数算法库,**不持有任何分布式状态**,被两条主调用链消费:
+`AdvantageEstimator` 枚举与 `ADV_ESTIMATOR_REGISTRY` 定义在 `verl/trainer/ppo/core_algos.py:88-137`；策略损失使用独立的 `POLICY_LOSS_REGISTRY` 与 `get_policy_loss_fn`（`verl/trainer/ppo/core_algos.py:50-82`）。因此 PPO、GRPO、DRO 或 GSPO 不是互斥的 trainer 类，而是两项配置的组合：
 
-- **优势估计**:trainer 侧 `compute_advantage`(`verl/trainer/ppo/ray_trainer.py:187`)在 rollout + 打分之后调用,把 `token_level_rewards` 折算为 `advantages` / `returns`,写回 `DataProto.batch`。见 [[20_verl_ray_trainer_analysis]]。
-- **策略损失**:actor 侧 `verl/workers/utils/losses.py:103` 通过 `get_policy_loss_fn(loss_mode)` 拿到损失函数,在 `update_actor` 的每个 micro-batch 上算 `pg_loss` 并反传。损失执行的引擎细节见 [[13_verl_workers_engine_analysis]]。
-
-设计哲学是**注册表 + 字符串选型**:新增算法只需写一个函数挂上装饰器,无需改 trainer/actor 任何分支。文件头 `__all__` 只导出 `register_adv_est` / `get_adv_estimator_fn` / `AdvantageEstimator`(`core_algos.py:21`),策略损失侧的注册 API 则不在 `__all__` 内,但同样对外可用。
+1. `algorithm.adv_estimator` 决定奖励、value 与分组信息如何变成 `advantages` 和 `returns`。
+2. `actor.policy_loss.loss_mode` 决定 `old_log_probs`、当前 `log_prob` 与 `advantages` 如何变成 policy loss。
+3. `actor.loss_agg_mode` 决定局部 loss matrix 如何还原为全局 batch 的标量目标。
 
 ```mermaid
 flowchart LR
-    subgraph Trainer["ray_trainer.compute_advantage"]
-        A1["algorithm.adv_estimator<br/>(str)"] --> A2["get_adv_estimator_fn"]
-        A2 --> A3["ADV_ESTIMATOR_REGISTRY"]
-        A3 --> A4["advantages, returns"]
-    end
-    subgraph Actor["losses.policy_loss"]
-        L1["actor.policy_loss.loss_mode<br/>(str)"] --> L2["get_policy_loss_fn"]
-        L2 --> L3["POLICY_LOSS_REGISTRY"]
-        L3 --> L4["pg_loss, pg_metrics"]
-    end
-    A4 -. "data.batch['advantages']" .-> L4
+    A["reward value uid"] --> B["advantage registry"]
+    C["adv_estimator"] --> B
+    B --> D["advantages and returns"]
+    D --> E["policy loss registry"]
+    F["loss_mode"] --> E
+    E --> G["loss matrix"]
+    G --> H["global aggregation"]
+    I["loss_agg_mode"] --> H
 ```
+
+V0 的 `compute_advantage` 在 `verl/trainer/ppo/ray_trainer.py:187-282` 统一分发；V1 对非 GRPO 直接复用该入口，对多轨迹 GRPO 只取每个 session 的最终输出计算后再广播（`verl/trainer/ppo/v1/utils.py:148-205`）。这说明 trainer 世代变化没有复制算法库，变化的是数据编排边界。
 
 ---
 
-## 2. 两张注册表与选型机制
+## 2. 优势估计注册表：14 个名字，一份输出契约
 
-### 2.1 优势估计注册表
+`AdvantageEstimator` 当前列出 14 个内置名字（`verl/trainer/ppo/core_algos.py:88-110`）。注册装饰器拒绝用不同函数覆盖同名项，未知名字在查表时抛错（`verl/trainer/ppo/core_algos.py:116-145`）。自定义实现可以用字符串注册，不必修改枚举。
 
-`AdvantageEstimator` 是一个 `str` 枚举(`core_algos.py:88`),列举 14 个合法名字;`ADV_ESTIMATOR_REGISTRY` 是 `name → fn` 字典(`core_algos.py:113`)。装饰器 `register_adv_est`(`core_algos.py:116`)把枚举/字符串解析为 key 后登记,**重复注册不同函数会直接报错**(`core_algos.py:127`),避免静默覆盖:
-
-```python
-# core_algos.py:125
-def decorator(fn):
-    name = name_or_enum.value if isinstance(name_or_enum, Enum) else name_or_enum
-    if name in ADV_ESTIMATOR_REGISTRY and ADV_ESTIMATOR_REGISTRY[name] != fn:
-        raise ValueError(f"Adv estimator {name} has already been registered: ...")
-    ADV_ESTIMATOR_REGISTRY[name] = fn
-    return fn
-```
-
-枚举文档明确指出:它**创建后不可变**,自定义估计器不必扩展枚举,直接用字符串名 `register_adv_est("my_est")` 即可(`core_algos.py:91`)。`get_adv_estimator_fn`(`core_algos.py:137`)做反向查表,未命中即 `ValueError`。
-
-| `adv_estimator` 取值 | 函数 | 行号 | 需要的额外输入 |
-|---|---|---|---|
-| `gae` | `compute_gae_advantage_return` | 216 | `values`(critic) |
-| `grpo` | `compute_grpo_outcome_advantage` | 268 | `index`(uid 分组) |
-| `grpo_vectorized` | `compute_grpo_vectorized_outcome_advantage` | 335 | `index` |
-| `gdpo` | `compute_gdpo_outcome_advantage` | 362 | `non_tensor_batch` 多维奖励 |
-| `grpo_passk` | `compute_grpo_passk_outcome_advantage` | 472 | `index` |
-| `reinforce_plus_plus_baseline` | `compute_reinforce_plus_plus_baseline_outcome_advantage` | 536 | `index` |
-| `rloo` | `compute_rloo_outcome_advantage` | 588 | `index` |
-| `opo` | `compute_opo_outcome_advantage` | 640 | `index` |
-| `reinforce_plus_plus` | `compute_reinforce_plus_plus_outcome_advantage` | 694 | `config.gamma` |
-| `remax` | `compute_remax_outcome_advantage` | 733 | `reward_baselines`(贪心基线) |
-| `gpg` | `compute_gpg_outcome_advantage` | 769 | `index` |
-| `rloo_vectorized` | `compute_rloo_vectorized_outcome_advantage` | 832 | `index` |
-| `optimal_token_baseline` | `compute_optimal_token_baseline_advantage` | 870 | `sum_pi_squared`、`old_log_probs` |
-| `tir_optimal_token_baseline` | `compute_multi_turn_optimal_token_baseline_advantage` | 989 | 同上(多轮 TIR) |
-
-`compute_advantage` 对 GAE / GRPO 有专门分支(`ray_trainer.py:218/235`),其余统一走 `get_adv_estimator_fn` 通用分发(`ray_trainer.py:250`),按需补 `index`(uid)、`reward_baselines`、GDPO 的多维奖励、OTB 的 `sum_pi_squared` 等 kwargs(`ray_trainer.py:256-276`)。
-
-### 2.2 策略损失注册表
-
-对称地,`POLICY_LOSS_REGISTRY`(`core_algos.py:50`)+ `register_policy_loss`(`core_algos.py:53`)+ `get_policy_loss_fn`(`core_algos.py:70`)。所有损失共享 `PolicyLossFn` 签名(`core_algos.py:37`):入参 `(old_log_prob, log_prob, advantages, response_mask, loss_agg_mode, config, rollout_is_weights)`,出参 `(pg_loss, metrics_dict)`。
-
-| `loss_mode` 取值 | 函数 | 行号 | 一句话 |
-|---|---|---|---|
-| `vanilla` | `compute_policy_loss_vanilla` | 1279 | 标准 PPO clip + dual-clip |
-| `dppo_tv` | `compute_policy_loss_dppo_tv` | 1373 | 全变差散度阈值掩码 + 截断 IS |
-| `dppo_kl` | `compute_policy_loss_dppo_kl` | 1454 | 二值 KL 阈值掩码 + 截断 IS |
-| `gspo` | `compute_policy_loss_gspo` | 1539 | 序列级重要性比 |
-| `sapo` | `compute_policy_loss_sapo` | 1615 | sigmoid 门控平滑,无 clip |
-| `gpg` | `compute_policy_loss_gpg` | 1700 | 纯 $-\log\pi\cdot A$ |
-| `clip_cov` | `compute_policy_loss_clip_cov` | 1736 | 按协方差挑 token 置零梯度 |
-| `kl_cov` | `compute_policy_loss_kl_cov` | 1841 | 按协方差挑 token 加 KL 罚 |
-| `geo_mean` | `compute_policy_loss_geo_mean` | 1921 | GMPO 几何平均序列比 |
-| `cispo` | `compute_policy_loss_cispo` | 2007 | stop-grad 裁剪 IS 权重 |
-| `bypass_mode` | `compute_policy_loss_bypass_mode` | 2352 | rollout 校正调度入口 |
-
-> [!note] `reinforce` 不在注册表里
-> `compute_policy_loss_reinforce`(`core_algos.py:2271`)**没有** `@register_policy_loss` 装饰器——它是 `bypass_mode` 内部的辅助函数,通过 `rollout_correction.loss_type="reinforce"` 间接选用(`core_algos.py:2455`),不能直接当 `loss_mode` 用。另:行 1202 的 `compute_policy_loss` 是 `@deprecated` 标注的旧版独立函数(`core_algos.py:1202`),已被 `vanilla` 取代,仅留作兼容。
-
----
-
-## 3. 优势估计器(数学 + 代码)
-
-### 3.1 GAE —— 唯一需要 critic 的估计器
-
-`compute_gae_advantage_return`(`core_algos.py:216`)。逐时间步逆序递推 TD 误差与 GAE:
-
-$$
-\delta_t = r_t + \gamma V_{t+1} - V_t,\qquad
-A_t^{\text{GAE}} = \delta_t + \gamma\lambda\, A_{t+1}^{\text{GAE}},\qquad
-R_t = A_t + V_t
-$$
-
-```python
-# core_algos.py:250
-for t in reversed(range(gen_len)):
-    delta = token_level_rewards[:, t] + gamma * nextvalues - values[:, t]
-    lastgaelam_ = delta + gamma * lam * lastgaelam
-    # 观测 token 上跳过 value 与 TD-error
-    nextvalues = values[:, t] * response_mask[:, t] + (1 - response_mask[:, t]) * nextvalues
-    lastgaelam = lastgaelam_ * response_mask[:, t] + (1 - response_mask[:, t]) * lastgaelam
-```
-
-末尾对 advantages 做 `masked_whiten`(`core_algos.py:262`)标准化。这是全家桶里**唯一**用到 critic `values` 的估计器,其余皆为 outcome-only / group-based,无需价值网络。
-
-### 3.2 GRPO —— 组内归一化
-
-`compute_grpo_outcome_advantage`(`core_algos.py:268`)。同一 prompt 采样 $G$ 条回答构成一组(按 `index`=uid 分组),整条回答的标量奖励 $r_i=\sum_t r_{i,t}$ 用组均值/标准差归一(公式与 [[13_reasoning_rl_algorithm_evolution_analysis|D02]] §3.1 的 $\hat A_i$ 一致),再广播回每个 token:
-
-```python
-# core_algos.py:324
-for i in range(bsz):
-    if norm_adv_by_std_in_grpo:
-        scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
-    else:
-        scores[i] = scores[i] - id2mean[index[i]]
-scores = scores.unsqueeze(-1) * response_mask
-```
-
-`norm_adv_by_std_in_grpo=False` 时退化为只减均值不除标准差,即 **Dr.GRPO**(`core_algos.py:296`,arXiv 2503.20783,对应 D02 §3.3 的 loss reducer 讨论)。`grpo_vectorized`(`core_algos.py:335`)是等价的张量化实现,用 `group_mean_std` 一次算完所有组,避免 Python 逐样本循环。
-
-### 3.3 GDPO —— 多维奖励解耦归一化
-
-`compute_gdpo_outcome_advantage`(`core_algos.py:362`)。GRPO 先把各奖励分量加和再归一,会让强信号淹没弱信号;GDPO 对**每个奖励维度先各自做 GRPO 归一**,再加权求和,最后整 batch `masked_whiten`:
-
-$$
-A_k = \frac{r_k-\mu_g(r_k)}{\sigma_g(r_k)+\epsilon},\quad
-A_{\text{sum}}=\sum_k w_k A_k,\quad
-A_{\text{final}}=\text{whiten}(A_{\text{sum}})
-$$
-
-奖励分量从 `algorithm.gdpo_reward_keys` 指定的 `non_tensor_batch` 字段取(`core_algos.py:413`),权重 `gdpo_reward_weights`(`core_algos.py:435`)。内部对每维复用 `compute_grpo_outcome_advantage`(`core_algos.py:452`)。
-
-### 3.4 GRPO-Pass@k —— 只奖励组内最优
-
-`compute_grpo_passk_outcome_advantage`(`core_algos.py:472`)。组内只有最优样本拿到非零优势 $r_{\max}-r_{\text{2nd}}$,其余为零(arXiv 2503.19595):
-
-$$
-A_{i^\star} = \frac{r_{\max} - r_{\text{2nd-max}}}{\sigma_g+\epsilon},\quad A_{j\ne i^\star}=0
-$$
-
-```python
-# core_algos.py:520
-topk, topk_idx = torch.topk(rewards, 2)
-r_max, r_second_max = topk[0], topk[1]
-advantage = r_max - r_second_max
-```
-
-### 3.5 RLOO / OPO —— 留一法基线
-
-`compute_rloo_outcome_advantage`(`core_algos.py:588`,arXiv 2402.14740)用留一法:对每条回答,基线是**组内其余回答**的均值,实现上等价于按 $\frac{n}{n-1}$ 缩放后减去组均值:
-
-$$
-A_i = r_i - \frac{1}{n-1}\sum_{j\ne i} r_j = \frac{n}{n-1}\big(r_i - \bar r_g\big)
-$$
-
-```python
-# core_algos.py:628
-response_num = len(id2score[index[i]])
-if response_num > 1:
-    scores[i] = scores[i] * response_num / (response_num - 1) \
-              - id2mean[index[i]] * response_num / (response_num - 1)
-```
-
-`rloo_vectorized`(`core_algos.py:832`)用 `bincount` 张量化等价实现。**OPO**(`compute_opo_outcome_advantage`,`core_algos.py:640`,arXiv 2505.23585)则把基线换成**按回答长度加权**的均值:$b_g=\frac{\sum_i \ell_i r_i}{\sum_i \ell_i}$,$A_i=r_i-b_g$(`core_algos.py:683`)。
-
-### 3.6 REINFORCE++ 系列
-
-- `compute_reinforce_plus_plus_outcome_advantage`(`core_algos.py:694`,arXiv 2501.03262):带折扣的逆序 return $G_t=r_t+\gamma G_{t+1}$,EOS 后 reset,再全 batch `masked_whiten`(`core_algos.py:716-727`)。用到 `config.gamma`。
-- `compute_reinforce_plus_plus_baseline_outcome_advantage`(`core_algos.py:536`):先减组均值,再 `masked_whiten`(`core_algos.py:581`)。
-
-### 3.7 ReMax / GPG / OTB
-
-- **ReMax**(`core_algos.py:733`,arXiv 2310.10505):reward-to-go 减去贪心解码基线 `reward_baselines`(`core_algos.py:762`),$A_t=G_t - b^{\text{greedy}}$。是少数需要额外 `reward_baselines` 输入的估计器。
-- **GPG**(`core_algos.py:769`):组内减均值后再乘一个**非零样本占比**系数 $\alpha=\text{bsz}/\#\{r\ne 0\}$ 校正(`core_algos.py:808`),$A_i=\alpha(r_i-\mu_g)/f_{\text{norm}}$。
-- **OTB / TIR-OTB**(`core_algos.py:870` / `989`):Optimal Token Baseline,逐时间步用累积路径方差 $W_t=\sum_{j\le t}\lVert s_j\rVert^2$($\lVert s_j\rVert^2=1-2\pi_j+\sum\pi^2$)做加权基线 $B_t^\star=\frac{\sum G_t W_t}{\sum W_t}$。需要 actor 提供 `sum_pi_squared`(`actor.calculate_sum_pi_squared=True`),并可用 `rollout_is_weights` 做 IS 修正(`core_algos.py:929`)。TIR 版按多轮工具调用展平后再算。
-
----
-
-## 4. 策略损失(数学 + 代码)
-
-所有损失末尾都调用 `agg_loss`(`core_algos.py:1138`)把 `(bs, resp_len)` 损失矩阵聚合成标量,支持 4 种 `loss_agg_mode`:`token-mean`、`seq-mean-token-sum`、`seq-mean-token-sum-norm`、`seq-mean-token-mean`(`core_algos.py:1168-1197`)。`agg_loss` 用 `dp_size`/`global_batch_size`/`batch_num_tokens` 做跨 DP 归一,保证损失对 FSDP/Megatron 并行度不变。
-
-### 4.1 vanilla —— 标准 PPO clip + dual-clip
-
-`compute_policy_loss_vanilla`(`core_algos.py:1279`)。记比值 $r_t=\exp(\log\pi_\theta-\log\pi_{\text{old}})$,标准 PPO 双侧裁剪取悲观上界,与 [[13_reasoning_rl_algorithm_evolution_analysis|D02]] §2 的统一 clipped surrogate 记号一致(D02 的 $\min$ 写成 loss 的 $\max$,同一优化方向)。verl 额外实现的 **dual-clip**(D02 未给出这一形式)仅在 $A_t<0$ 时再加一道下界 $-A_t\cdot c$($c=$`clip_ratio_c`>1),防止负优势 token 的比值爆炸:
-
-```python
-# core_algos.py:1340
-pg_losses2 = -advantages * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high)
-clip_pg_losses1 = torch.maximum(pg_losses1, pg_losses2)
-pg_losses3 = -advantages * clip_ratio_c
-clip_pg_losses2 = torch.min(pg_losses3, clip_pg_losses1)
-pg_losses = torch.where(advantages < 0, clip_pg_losses2, clip_pg_losses1)  # core_algos.py:1354
-```
-
-`negative_approx_kl` 先 clamp 到 $[-20,20]$ 防溢出(`core_algos.py:1331`)。clip 上下限分离(`clip_ratio_low`/`clip_ratio_high`)正是 [[13_reasoning_rl_algorithm_evolution_analysis|D02]] §3.2 **DAPO clip-higher** 技巧的载体。
-
-### 4.2 GSPO —— 序列级重要性比
-
-`compute_policy_loss_gspo`(`core_algos.py:1539`,arXiv 2507.18071)。把 token 级比值换成**长度归一的序列级比值** $s_i(\theta)$,公式与 [[13_reasoning_rl_algorithm_evolution_analysis|D02]] §3.4 一致;verl 的实现细节(D02 未给出)是以"序列比的 stop-grad × 当前 token 概率"组合,从而梯度仍流经每个 token:
-
-```python
-# core_algos.py:1576
-seq_lengths = torch.sum(response_mask, dim=-1).clamp(min=1)
-negative_approx_kl_seq = torch.sum(negative_approx_kl * response_mask, dim=-1) / seq_lengths
-log_seq_importance_ratio = log_prob - log_prob.detach() + negative_approx_kl_seq.detach().unsqueeze(-1)
-```
-
-强制 `seq-mean-token-mean` 聚合(`core_algos.py:1598`)。相对 vanilla:**把方差源从 token 级搬到序列级**,对长序列更稳。
-
-### 4.3 GMPO(geo_mean)—— 几何平均
-
-`compute_policy_loss_geo_mean`(`core_algos.py:1921`,arXiv 2507.20673)。对 token 比值取**几何平均**(对数域求均值再 exp),并对 $\text{sgn}(A)\cdot\Delta\log p$ 做裁剪:
-
-$$
-\begin{aligned}
-r^{\text{geo}}_i
-&=\exp\!\Big(\tfrac{1}{\lvert y_i\rvert}\sum_t \text{clip}_{\text{sgn}}(\log\pi_\theta \\
-&\quad -\log\pi_{\text{old}})\Big),\quad L_i=-\bar A_i\, r^{\text{geo}}_i
-\end{aligned}
-$$
-
-> [!note] 不走 `agg_loss`
-> 几何平均损失末尾直接 `pg_loss = torch.mean(pg_losses)`(`core_algos.py:1992`),是全家桶里唯一**不经过 `agg_loss`** 的损失,因此对并行度不变性的保证与其余不同。
-
-### 4.4 CISPO —— stop-grad 裁剪 IS 权重
-
-`compute_policy_loss_cispo`(`core_algos.py:2007`,arXiv 2506.13585)。把裁剪后的比值 **detach 成常数权重**,梯度只走 $\log\pi_\theta$(REINFORCE 风格),从而"裁剪幅度但不裁剪梯度方向":
-
-$$
-\begin{aligned}
-L_t
-&= -\,\text{sg}\big[\text{clip}(r_t,1-\epsilon_{\text{low}},1+\epsilon_{\text{high}})\big]\cdot A_t\cdot \log\pi_\theta
-\end{aligned}
-$$
-
-```python
-# core_algos.py:2038
-clipped_ratio = torch.clamp(ratio, 1 - clip_ratio_low, 1 + clip_ratio_high)
-clipped_ratio_sg = clipped_ratio.detach()
-pg_losses = -clipped_ratio_sg * advantages * log_prob
-```
-
-### 4.5 clip_cov / kl_cov —— 按"优势-logp 协方差"挑 token
-
-两者源自 PRIME-RL 的熵机制研究。先算每 token 协方差代理 $\text{cov}_t=(A_t-\bar A)(\log p_t-\overline{\log p})$:
-
-- **clip_cov**(`core_algos.py:1736`):在协方差落入 $[\text{lb},\text{ub}]$ 的 token 里随机挑 `clip_cov_ratio` 比例,把它们的损失**乘 0**(置零梯度),抑制高协方差 token 推高熵(`core_algos.py:1810-1824`)。
-- **kl_cov**(`core_algos.py:1841`):取协方差**最大的** `kl_cov_ratio` 比例 token,把它们的损失替换为带 KL 罚的版本 $-A_t r_t + \beta\lvert\Delta\log p_t\rvert$(`core_algos.py:1886`、`1903`)。
-
-### 4.6 DPPO(dppo_tv / dppo_kl)—— 散度阈值掩码 + 截断 IS
-
-`compute_policy_loss_dppo_tv`(`core_algos.py:1373`)/ `dppo_kl`(`core_algos.py:1454`,arXiv 2602.04879)。不做 PPO 双裁剪,而是:① 用**截断 IS** `truncated_ratio = clamp(ratio, max=c).detach()`(默认 $c=20$,`core_algos.py:1420`);② 用散度阈值生成 `valid_mask` 把越界 token 屏蔽;③ 损失 $L=-A\cdot\text{sg}[\hat r]\cdot\log\pi_\theta\cdot\text{mask}$。两者区别在散度度量:TV 用 $\lvert\pi-\pi_{\text{old}}\rvert$(`core_algos.py:1427`),KL 用二值 KL(`core_algos.py:1508`)。
-
-### 4.7 SAPO —— sigmoid 门控平滑
-
-`compute_policy_loss_sapo`(`core_algos.py:1615`,arXiv 2511.20347)。用平滑门控替代硬裁剪,正负优势用不同温度 $\tau_{\text{pos}}/\tau_{\text{neg}}$:
-
-$$
-f(r,\tau)=\sigma\big(\tau(r-1)\big)\cdot\tfrac{4}{\tau},\qquad L_t=-f(r_t,\tau_t)\,A_t
-$$
-
-```python
-# core_algos.py:1649
-def gate_function(x, tau):
-    return torch.sigmoid(tau * (x - 1.0)) * (4.0 / tau)
-taus = torch.where(advantages > 0, tau_pos, tau_neg)  # core_algos.py:1663
-pg_losses = -gate_function(ratio, taus) * advantages
-```
-
-### 4.8 gpg / reinforce —— 纯策略梯度
-
-`compute_policy_loss_gpg`(`core_algos.py:1700`):$L=-\log\pi_\theta\cdot A$,无 IS 无 clip(`core_algos.py:1723`)。`compute_policy_loss_reinforce`(`core_algos.py:2271`,未注册):同形式,但可选乘 IS 权重 $w=\pi_\theta/\pi_{\text{rollout}}$ 修正 rollout-train 失配(`core_algos.py:2327`)。
-
-### 4.9 bypass_mode —— rollout 校正调度入口
-
-`compute_policy_loss_bypass_mode`(`core_algos.py:2352`)。bypass 语义:trainer 令 `old_log_prob = rollout_log_prob`(省掉一次 old_logp 前向,3 策略变 2 策略)。它先调 `compute_rollout_correction_and_rejection_mask`(`core_algos.py:2435`)算 IS 权重与拒绝采样掩码,再按 `loss_type` 分派:`reinforce` 显式乘 IS 权重(`core_algos.py:2457`),`ppo_clip` 则复用 vanilla 且**不再乘 IS**(比值本身已含校正,避免双重计数,`core_algos.py:2471`)。
-> [!warning] 2026-08-10 核对:此处的下游指针原本悬空
-> 本节此前写「详细 IS/RS 预设见 [[14_verl_rollout_resharding_analysis]]」,但 14 号页对 `importance` / `rollout_is` / `rollout_rs` / `rejection` / `校正` / `correction` 的命中数**均为 0**——它讲的是权重重分片与 rollout 引擎生命周期,不含训推失配校正。结果是 **rollout correction 的实现走查在 verl 簇内无人承担**:`rollout_corr_helper.py` 全簇仅 1 处提及(见 [[10_verl_end_to_end_iteration_analysis]] §7 的行号区间),`compute_rollout_correction_and_rejection_mask`(`core_algos.py:2435`)从未展开,token 级与序列级拒绝采样的判据与阈值语义亦无说明。
->
-> 算法侧的完整谱系(TIS / MIS / 序列级拒绝采样 / TRM / ALP / MIPU 的机制、适用条件与代价)见 [[26_tim_causal_chain_analysis]] §6.3;**verl 的对应实现走查是已确认的缺口**,已记入待建清单。
-
----
-
-## 5. KL 惩罚、熵与价值损失
-
-### 5.1 `kl_penalty` 的五种估计 + 直通技巧
-
-`kl_penalty_forward`(`core_algos.py:2154`)实现 Schulman 的 KL 近似族:
-
-| 名字 | 公式 | 行号 |
+| `adv_estimator` | 实现入口 | 状态或约束 |
 |---|---|---|
-| `k1` / `kl` | $\log\pi-\log\pi_{\text{ref}}$ | 2166 |
-| `abs` | $\lvert\log\pi-\log\pi_{\text{ref}}\rvert$ | 2169 |
-| `k2` / `mse` | $\tfrac12(\log\pi-\log\pi_{\text{ref}})^2$ | 2172 |
-| `k3` / `low_var_kl` | $\text{clip}(e^{\Delta}-\Delta-1,\,-10,10)$ | 2177 |
-| `full` | 全词表 KL,**未实现**(NotImplementedError) | 2185 |
+| `gae` | `verl/trainer/ppo/core_algos.py:216` | 需要 critic `values` |
+| `grpo` | `verl/trainer/ppo/core_algos.py:268` | 按 `uid` 分组 |
+| `grpo_vectorized` | `verl/trainer/ppo/core_algos.py:335` | GRPO 的张量化版本 |
+| `gdpo` | `verl/trainer/ppo/core_algos.py:362` | 多维奖励键与权重 |
+| `grpo_passk` | `verl/trainer/ppo/core_algos.py:472` | 组内 top-2 奖励 |
+| `reinforce_plus_plus_baseline` | `verl/trainer/ppo/core_algos.py:536` | 组均值基线 |
+| `rloo` | `verl/trainer/ppo/core_algos.py:588` | 每组至少两个样本才有留一基线 |
+| `opo` | `verl/trainer/ppo/core_algos.py:640` | 长度加权组基线 |
+| `reinforce_plus_plus` | `verl/trainer/ppo/core_algos.py:694` | `gamma` 与时序 mask |
+| `remax` | `verl/trainer/ppo/core_algos.py:735` | 需要 greedy `reward_baselines` |
+| `gpg` | `verl/trainer/ppo/core_algos.py:771` | `uid` 分组与非零奖励校正 |
+| `rloo_vectorized` | `verl/trainer/ppo/core_algos.py:834` | RLOO 的张量化版本 |
+| `optimal_token_baseline` | `verl/trainer/ppo/core_algos.py:872` | 需要 `sum_pi_squared` 与 `old_log_probs` |
+| `tir_optimal_token_baseline` | `verl/trainer/ppo/core_algos.py:991` | 多轮 TIR 的 token baseline |
 
-外层 `kl_penalty`(`core_algos.py:2126`)额外支持 `+` 后缀(如 `k3+`):前向用 k3 的值,**反向梯度替换为 k2 的梯度**(直通 straight-through),因为 k1/k3 的期望值无偏但期望梯度有偏,k2 才给正确梯度估计(`core_algos.py:2144-2151`):
+### 2.1 GAE 与 GRPO 是两种不同的信用分配
 
-```python
-# core_algos.py:2149
-backward_score = 0.5 * (logprob - ref_logprob).square()
-return backward_score - backward_score.detach() + forward_score.detach()
-```
+GAE 使用 value 网络，把逐 token TD 残差逆序累积（`verl/trainer/ppo/core_algos.py:216-264`）：
 
-### 5.2 KL 在两处生效
+$$
+\delta_t = r_t + \gamma V_{t+1} - V_t,
+\qquad
+A_t^{\mathrm{GAE}} = \delta_t + \gamma \lambda A_{t+1}^{\mathrm{GAE}}.
+$$
 
-1. **In-reward 罚**(可选,`algorithm.use_kl_in_reward`):`apply_kl_penalty`(`ray_trainer.py:78`)把 KL 从 token 奖励中扣掉 $r'=r-\beta\cdot\text{KL}$(`ray_trainer.py:106`),系数 $\beta$ 由 KL 控制器给出。控制器有两种:`FixedKLController`(`core_algos.py:177`)恒定;`AdaptiveKLController`(`core_algos.py:153`,arXiv 1909.08593)按当前 KL 与 `target_kl` 的比例误差自适应缩放 $\beta$(`core_algos.py:164-174`)。工厂 `get_kl_controller`(`core_algos.py:193`)按 `algorithm.kl_ctrl.type` 选型;trainer 在 `ray_trainer.py:365` 建好 `kl_ctrl_in_reward`,主循环 `ray_trainer.py:1595` 调用。
-2. **In-loss 罚**(可选,`actor.use_kl_loss`):`losses.py:135` 用 `kl_penalty(..., config.kl_loss_type)` 算 KL,聚合后乘 `kl_loss_coef` 加进策略损失(`losses.py:140`)。GRPO 类算法常用此路而非 in-reward。
+GRPO 不读取 critic；它把回答总奖励按同一 `uid` 的采样组做中心化，可选再除以组标准差，然后广播到有效 response token（`verl/trainer/ppo/core_algos.py:268-332`）：
 
-> [!note] 两者互斥取舍
-> in-reward 把 KL 折进优势(影响信用分配),in-loss 把 KL 作为独立正则项。一般二选一:GRPO/DAPO 倾向 in-loss(`use_kl_loss=True`),经典 PPO 倾向 in-reward。
+$$
+A_i^{\mathrm{GRPO}}
+=
+\frac{R_i-\mu_{g(i)}}{\sigma_{g(i)}+\epsilon}.
+$$
 
-### 5.3 熵与价值损失
+关闭 `norm_adv_by_std_in_grpo` 只保留减均值，对应去除组标准差缩放；这不是一种新 loss mode，而是 advantage 侧的开关（`verl/trainer/ppo/core_algos.py:296-329`）。
 
-- **熵损失** `compute_entropy_loss`(`core_algos.py:2067`):`entropy_from_logits` 后 `agg_loss`;在 `losses.py:128` 以 `-entropy_coeff * entropy_loss` 形式鼓励探索。
-- **价值损失** `compute_value_loss`(`core_algos.py:2084`):critic 的裁剪 MSE,$L^V=\tfrac12\max\big((V-R)^2,(V^{\text{clip}}-R)^2\big)$(`core_algos.py:2117-2121`),`cliprange_value` 控制 value 更新幅度。仅 GAE/PPO 路径(有 critic)用到。
+### 2.2 通用分发也有显式的状态分支
 
----
+调用端对 GAE 与 GRPO 单独传参，其余估计器经注册表分发；GDPO 从 `non_tensor_batch` 取多维奖励，OTB 强制要求 `sum_pi_squared`，ReMax 读取 greedy baseline（`verl/trainer/ppo/ray_trainer.py:218-280`）。所以“注册表消除 trainer 分支”只适用于算法函数的选择，不能消除输入状态的差异。
 
-## 6. 算法 → 配置映射
+### 2.3 多轮 REINFORCE++ 的 mask 修复
 
-把"论文里的算法"翻译成 verl 的两个字符串字段(键名核对自 `trainer/config/algorithm.py` 与 `workers/config/actor.py`):
+当前 REINFORCE++ 在逆序计算 return 时，`response_mask=0` 的 observation 位置自身 return 为零，但 `running_return` 穿过该区间继续向前传播（`verl/trainer/ppo/core_algos.py:694-731`）：
 
-| 算法 | `algorithm.adv_estimator` | `actor.policy_loss.loss_mode` | 关键旋钮 |
-|---|---|---|---|
-| **PPO** | `gae` | `vanilla` | `gamma`/`lam`、`clip_ratio`、`clip_ratio_c`(dual-clip)、critic `cliprange_value` |
-| **GRPO** | `grpo` | `vanilla` | `norm_adv_by_std_in_grpo`(False=Dr.GRPO)、`use_kl_loss`+`kl_loss_coef` |
-| **DAPO** | `grpo` | `vanilla` | `clip_ratio_low`/`clip_ratio_high`(clip-higher)、`filter_groups.enable`、常 `use_kl_loss=False` |
-| **GSPO** | `grpo` | `gspo` | `clip_ratio_low/high`、`loss_agg_mode=seq-mean-token-mean` |
-| **RLOO** | `rloo` / `rloo_vectorized` | `vanilla` 或 `gpg` | 组内 `rollout_n>1` |
-| **REINFORCE++** | `reinforce_plus_plus` | `vanilla` | `gamma` |
-| **REINFORCE++-baseline** | `reinforce_plus_plus_baseline` | `vanilla` | uid 分组 |
-| **ReMax** | `remax` | `vanilla` | 需贪心 `reward_baselines` |
-| **GMPO** | `grpo` | `geo_mean` | `clip_ratio_low/high` |
-| **CISPO** | `grpo` | `cispo` | `clip_ratio_low/high` |
-| **SAPO** | `grpo` | `sapo` | `tau_pos`(默认 1.0)、`tau_neg`(默认 1.05) |
-| **Clip-Cov / KL-Cov** | `grpo` | `clip_cov` / `kl_cov` | `clip_cov_ratio`/`clip_cov_lb`/`clip_cov_ub` 或 `kl_cov_ratio`/`ppo_kl_coef` |
-| **GPG** | `gpg` | `gpg` | `f_norm`、`alpha`(代码内自适应) |
-| **GDPO** | `gdpo` | `vanilla` | `gdpo_reward_keys`、`gdpo_reward_weights` |
-| **Bypass/Rollout-Corr** | 任意 | `bypass_mode` | `policy_loss.rollout_correction.*`(`loss_type`、`rollout_is`、`rollout_rs`…) |
+$$
+G_t = r_t + \gamma G_{t+1},
+\qquad
+\widehat G_t = m_t G_t,
+$$
 
-`PolicyLossConfig` 默认值:`loss_mode="vanilla"`、`clip_cov_ratio=kl_cov_ratio=0.0002`、`ppo_kl_coef=0.1`(`actor.py:94-99`);`ActorConfig` 默认 `clip_ratio=0.2`、`clip_ratio_c=3.0`、`loss_agg_mode="token-mean"`(`actor.py:158-164`);`AlgoConfig` 默认 `gamma=lam=1.0`、`adv_estimator="gae"`、`kl_penalty="kl"`(`algorithm.py:651-656`)。
+其中 observation token 的 $m_t=0$ 只屏蔽当前位置，不截断后续奖励。这一边界由 CPU 测试覆盖 observation span、尾部 padding、折扣传播和 batch 维度（`tests/trainer/ppo/test_reinforce_pp_multiturn_on_cpu.py:37-139`）。旧实现若把 mask 同时用于清空 running state，会错误阻断工具观察之后的奖励。
 
 ---
 
-## 7. 与 RL 文献的对应
+## 3. 策略损失注册表：12 种梯度形状
 
-GRPO/DAPO/GSPO 的公式演进、系统约束与跨算法对照统一维护在 [[13_reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]];各自的论文元数据、原始实验数字与消融见对应论文页。verl 算法↔文献的对应表:
+actor 从 `config.policy_loss.loss_mode` 查表，给所有实现传入同一组 `old_log_prob`、`log_prob`、`advantages`、`response_mask` 与可选 rollout IS 权重（`verl/workers/utils/losses.py:85-112`）。当前注册表有 12 个公开名字：
 
-| verl 选型(`adv_estimator`+`loss_mode`) | 对应文献/概念 | D02 对应 | 论文页 |
+| `loss_mode` | 实现入口 | 相对 vanilla 的主要变化 |
+|---|---|---|
+| `vanilla` | `verl/trainer/ppo/core_algos.py:1286` | PPO clip 与 dual-clip |
+| `dppo_tv` | `verl/trainer/ppo/core_algos.py:1380` | TV 阈值 mask 与截断 IS |
+| `dppo_kl` | `verl/trainer/ppo/core_algos.py:1461` | binary-KL 阈值 mask 与截断 IS |
+| `gspo` | `verl/trainer/ppo/core_algos.py:1546` | 序列级 importance ratio |
+| `sapo` | `verl/trainer/ppo/core_algos.py:1622` | 正负优势使用不同 sigmoid gate |
+| `gpg` | `verl/trainer/ppo/core_algos.py:1707` | 直接使用 $-A\log\pi$ |
+| `clip_cov` | `verl/trainer/ppo/core_algos.py:1743` | 按 advantage-logp 协方差屏蔽 token |
+| `kl_cov` | `verl/trainer/ppo/core_algos.py:1848` | 对高协方差 token 加 KL 罚 |
+| `geo_mean` | `verl/trainer/ppo/core_algos.py:1928` | 序列比值的几何平均 |
+| `dro` | `verl/trainer/ppo/core_algos.py:2014` | log-ratio 二次正则 |
+| `cispo` | `verl/trainer/ppo/core_algos.py:2047` | stop-gradient 的裁剪 IS 权重 |
+| `bypass_mode` | `verl/trainer/ppo/core_algos.py:2413` | rollout correction 的调度入口 |
+
+这些名字由 `PolicyLossConfig.loss_mode` 接收；同一配置对象还承载 DRO 的 `dro_beta`（`verl/workers/config/actor.py:77-101`）。`reinforce` 是 `bypass_mode` 内部辅助路径，不是可直接查表的第 13 个公开 loss mode。
+
+### 3.1 vanilla 的共同坐标系
+
+令
+
+$$
+\rho_t(\theta)=\exp\!\left(\log\pi_\theta(a_t\mid s_t)-\log\pi_{\mathrm{old}}(a_t\mid s_t)\right).
+$$
+
+vanilla 对 $\rho_t$ 做上下界裁剪，并在负优势时可使用 dual-clip；实现同时统计 KL 近似与上下界 clip fraction（`verl/trainer/ppo/core_algos.py:1286-1376`）。其余 loss mode 大多改变“如何限制或重加权 $\rho_t$”，但仍消费相同 advantage 与 mask，因此可以与多种 estimator 组合。
+
+### 3.2 新增 DRO：用平滑二次罚代替硬裁剪
+
+`dro` 对 old/current log-prob 差施加二次惩罚（`verl/trainer/ppo/core_algos.py:2013-2043`）：
+
+$$
+\mathcal L_t^{\mathrm{DRO}}
+=
+-\log\pi_\theta(a_t\mid s_t)A_t
++\frac{\beta}{2}
+\left(\log\pi_\theta(a_t\mid s_t)-\log\pi_{\mathrm{old}}(a_t\mid s_t)\right)^2.
+$$
+
+这里 `policy_loss.dro_beta` 必须为正；若 rollout 提供 IS 权重，则权重乘在整个 token loss 上（`verl/trainer/ppo/core_algos.py:2027-2038`）。直接公式与非法 beta 都有 CPU 测试（`tests/trainer/ppo/test_dynamic_policy_losses_on_cpu.py:39-60`）。它比 PPO 硬 clip 更平滑，但 beta 变成必须调节的偏移惩罚强度。
+
+### 3.3 KL 与熵是注册 loss 之外的正则项
+
+actor 先计算注册表返回的 policy loss，再减去 entropy bonus，并在 `use_kl_loss=true` 时加上参考策略 KL（`verl/workers/utils/losses.py:118-142`）。因此 `loss_mode=dro` 或 `gspo` 并不自动决定是否使用 reference model；KL 是独立配置轴。`kl_penalty` 支持多种近似并由 `verl/trainer/ppo/core_algos.py:2187-2245` 实现。
+
+---
+
+## 4. 第三条轴：全局 batch 归一化
+
+算法公式只定义 token loss matrix，分布式正确性由 `agg_loss` 负责。该函数显式以 FSDP/Megatron 并行不变为目标（`verl/trainer/ppo/core_algos.py:1140-1168`），当前支持：
+
+| `loss_agg_mode` | 标量语义 | 所需全局信息 |
+|---|---|---|
+| `token-mean` | 全局有效 token 均值 | `batch_num_tokens` |
+| `token-sum` | 全局有效 token 总和 | `dp_size` 补偿 DP 平均 |
+| `seq-mean-token-sum` | 每序列 token 求和，再做全局序列均值 | `global_batch_size` |
+| `seq-mean-token-sum-norm` | 上项再除固定 scale | `global_batch_size`、`loss_scale_factor` |
+| `seq-mean-token-mean` | 每序列 token 均值，再做全局序列均值 | `global_batch_size` |
+
+关键不变量是：FSDP/DDP 会平均各 rank 梯度，所以局部贡献要乘 `dp_size`，而分母必须来自 global mini-batch，不能来自当前 micro-batch（`verl/trainer/ppo/core_algos.py:1170-1202`）。新增 `token-sum` 分支直接把 masked local sum 乘 `dp_size`；测试覆盖 mask、micro-batch 切分与不同 DP size（`tests/trainer/ppo/test_loss_aggregation_on_cpu.py:23-55`）。
+
+critic 现在沿用同一归一化参数。`value_loss` 从 TensorDict 提取 `dp_size`、`batch_num_tokens`、`global_batch_size`，并把全局归一化下的 metric 聚合从 mean 切成 sum（`verl/workers/utils/losses.py:147-201`）；`compute_value_loss` 最终调用 `agg_loss`（`verl/trainer/ppo/core_algos.py:2124-2182`）。对应测试覆盖变长序列、micro-batch、DP size、metric 与梯度不变量（`tests/trainer/ppo/test_value_loss_normalization_on_cpu.py:87-219`）。
+
+这解释了为什么仅核对 PPO/GRPO 公式不够：如果分母随 micro-batch 切法变化，同一算法和数据也会得到不同梯度。
+
+---
+
+## 5. 组合方式与失败边界
+
+| 目标 | estimator | loss mode | 必须额外核对 |
 |---|---|---|---|
-| `grpo`+`vanilla` | GRPO(DeepSeekMath) | §3.1 | [[20_grpo_analysis]] |
-| `grpo`(`norm_adv_by_std_in_grpo=False`)+`vanilla` | Dr.GRPO(arXiv 2503.20783,去 std 偏置) | §3.3 | — |
-| `grpo`+`vanilla`(clip-higher/`filter_groups`/token-level loss/overlong 旋钮组合) | DAPO(**verl 里不是新损失**,是配置组合,见 §2.1、§6) | §3.2 | [[21_dapo_analysis]] |
-| `grpo`+`gspo` | GSPO(Qwen,arXiv 2507.18071) | §3.4 | [[22_gspo_analysis]] |
-| `rloo`/`rloo_vectorized`、`reinforce_plus_plus`(_baseline) | RLOO(arXiv 2402.14740)、REINFORCE++(arXiv 2501.03262) | 未覆盖 | — |
-| `geo_mean`(GMPO)、`cispo`、`sapo`、`clip_cov`/`kl_cov`、`dppo_tv`/`dppo_kl` | 各自 arXiv(§4.3–§4.7) | 未覆盖(`sapo` 与 D02 §3.5 的 SAO 是不同算法、不同 arXiv,勿混淆) | — |
+| PPO | `gae` | `vanilla` | critic values、value clip、全局归一化 |
+| GRPO | `grpo` | `vanilla` | 每个 `uid` 的组大小与 `norm_adv_by_std_in_grpo` |
+| DAPO 风格 | `grpo` | `vanilla` | asymmetric clip、group filter、聚合方式 |
+| GSPO | `grpo` | `gspo` | 序列级聚合 |
+| REINFORCE++ | `reinforce_plus_plus` | `vanilla` 或 `gpg` | observation mask 与 `gamma` |
+| DRO | 任意兼容 estimator | `dro` | 正的 `dro_beta` 与 old log-prob |
+| OTB | `optimal_token_baseline` | 可组合 | actor 必须生成 `sum_pi_squared` |
 
-未被 D02 覆盖的算法共享同一套 PPO clip 骨架(§4),只替换 token/序列级权重函数;机制细节见各自 §4.x 小节,此处不重复。
+源码能阻止未知注册名和非法 DRO beta，但以下问题不会被注册表自动修复：
+
+- 分组 estimator 的 `uid` 组成错误，会改变 baseline 而不一定抛异常。
+- OTB 缺少 `sum_pi_squared` 会在 trainer 断言失败（`verl/trainer/ppo/ray_trainer.py:264-273`）。
+- `token-mean` 在 `dp_size>1` 时缺失全局 token 数会显式报错；sequence 模式同理要求全局 batch size（`verl/trainer/ppo/core_algos.py:1170-1202`）。
+- `bypass_mode` 同时涉及 rollout policy、old policy 与 rejection/IS 校正，不能只按普通 PPO ratio 解读；其入口在 `verl/trainer/ppo/core_algos.py:2413-2512`。
+- V1 多轨迹 GRPO 只用 session 最终输出计算组优势后广播；把 V0 的逐行语义直接套入 V1 会漏掉这个边界（`verl/trainer/ppo/v1/utils.py:158-205`）。
+
+---
+
+## 6. 阅读源码的最短路径
+
+1. 在 `verl/trainer/ppo/core_algos.py:88-145` 确认 estimator 名字和注册机制。
+2. 在 `ray_trainer.py:187-282` 确认该 estimator 需要哪些 batch 字段；V1 再看 `v1/utils.py:148-205`。
+3. 在 `verl/trainer/ppo/core_algos.py:50-82` 与 `verl/workers/utils/losses.py:85-142` 确认 loss mode、entropy 和 KL 的组合。
+4. 最后核对 `verl/trainer/ppo/core_algos.py:1140-1206` 的聚合模式；这是从单卡公式到分布式训练目标的边界。
+
+这样能把算法问题分成三个可独立审计的问题：优势是否正确、token loss 是否正确、全局梯度尺度是否正确。
 
 ---
 
 ## Related Pages
 
-- [[13_reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]] —— GRPO/DAPO/GSPO 公式演进与跨算法系统约束对照的权威页
-- [[10_rl_ppo_loss_and_grpo_analysis]] —— 同类源码级 PPO/GRPO loss 分析,框架为 TorchTitan + vLLM 而非 verl 的 core_algos 注册表
-- [[20_grpo_analysis]] · [[21_dapo_analysis]] · [[22_gspo_analysis]] —— 对应论文的元数据、原始实验数字与消融
-- [[20_verl_ray_trainer_analysis]] —— `compute_advantage` / `apply_kl_penalty` 的调用方与主训练循环
-- [[13_verl_workers_engine_analysis]] —— `policy_loss` / `value_loss` 在 actor/critic 引擎中的执行
-- [[14_verl_rollout_resharding_analysis]] —— bypass_mode 用到的 rollout 校正(IS/RS)与 rollout-train 失配
-- [[12_verl_dataproto_analysis]] —— `token_level_rewards`/`advantages`/`uid` 等张量的载体
-- [[01_verl_architecture_overview_analysis]] —— core_algos 在 HybridFlow 整体中的位置
-- [[30_verl_optimization_analysis]] —— 损失聚合 `agg_loss` 与并行度不变性
-- [[verl/index]] —— verl 系列总览
-- [[30_rl_framework_comparison]] —— D06 框架对比 §4.1 verl 段的详情来源(registry 机制)
+- [[10_verl_end_to_end_iteration_analysis]] —— 当前 V1 训练步如何准备算法输入
+- [[20_verl_ray_trainer_analysis]] —— V0 `compute_advantage` 与 legacy 主循环
+- [[13_verl_workers_engine_analysis]] —— actor/critic worker 如何执行 loss
+- [[12_verl_dataproto_analysis]] —— `advantages`、`returns`、`uid` 等字段的载体
+- [[30_verl_optimization_analysis]] —— micro-batch、并行后端与性能边界
+- [[13_reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]] —— GRPO、DAPO、GSPO 的跨实现算法脉络
+- [[verl/index]] —— verl 系列导航

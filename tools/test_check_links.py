@@ -98,3 +98,87 @@ def test_orphan_rescued_by_index(tmp_path):
     r, _ = scan(wiki)
     assert "charlie_page.md" not in r["orphans"]
     assert "alpha.md" in r["orphans"]
+
+
+# ── stale_section:[[页面]] 紧跟 §N 时校验目标页确有该顶层节 ──────────────────
+
+def test_stale_section_flags_out_of_range(tmp_path):
+    wiki = make(tmp_path, {
+        "alpha.md": "见 [[bravo]] §7 的说明",
+        "bravo.md": "## 1. 一\n## 2. 二\n",
+        "index.md": "[[alpha]] [[bravo]]",
+    })
+    r, _ = scan(wiki)
+    assert len(r["stale_section"]) == 1
+    assert "§7" in r["stale_section"][0]
+
+
+def test_stale_section_accepts_existing(tmp_path):
+    wiki = make(tmp_path, {
+        "alpha.md": "见 [[bravo]] §2 与 [[bravo]] §1.3",
+        "bravo.md": "## 1. 一\n## 2. 二\n",
+        "index.md": "[[alpha]] [[bravo]]",
+    })
+    r, _ = scan(wiki)
+    assert r["stale_section"] == []
+
+
+def test_stale_section_handles_chinese_numerals(tmp_path):
+    """本域两种编号风格并存:## 一、 与 ## 1. —— 中文序号也要能校验。"""
+    wiki = make(tmp_path, {
+        "alpha.md": "见 [[bravo]] §七",
+        "bravo.md": "## 一、甲\n## 二、乙\n",
+        "index.md": "[[alpha]] [[bravo]]",
+    })
+    r, _ = scan(wiki)
+    assert len(r["stale_section"]) == 1
+    wiki2 = make(tmp_path / "ok", {
+        "alpha.md": "见 [[bravo]] §二",
+        "bravo.md": "## 一、甲\n## 二、乙\n",
+        "index.md": "[[alpha]] [[bravo]]",
+    })
+    assert scan(wiki2)[0]["stale_section"] == []
+
+
+def test_stale_section_only_when_adjacent(tmp_path):
+    """§ 必须紧跟在链接后。隔着一句话的 §N 往往指本页自己,不该误报。"""
+    wiki = make(tmp_path, {
+        "alpha.md": "[[bravo]] —— 某机制是本页 §9 模式的工程应用",
+        "bravo.md": "## 1. 一\n",
+        "index.md": "[[alpha]] [[bravo]]",
+    })
+    r, _ = scan(wiki)
+    assert r["stale_section"] == []
+
+
+def test_stale_section_does_not_span_lines(tmp_path):
+    """窗口止于行尾:下一行的 §N 不属于上一行的链接。"""
+    wiki = make(tmp_path, {
+        "alpha.md": "见 [[bravo]]\n\n本页 §9 另有说明\n",
+        "bravo.md": "## 1. 一\n",
+        "index.md": "[[alpha]] [[bravo]]",
+    })
+    r, _ = scan(wiki)
+    assert r["stale_section"] == []
+
+
+def test_stale_section_skips_unnumbered_target(tmp_path):
+    """目标页没有编号小节时不评判,避免对 index 之类页面误报。"""
+    wiki = make(tmp_path, {
+        "alpha.md": "见 [[bravo]] §3",
+        "bravo.md": "## Overview\n## Related Pages\n",
+        "index.md": "[[alpha]] [[bravo]]",
+    })
+    r, _ = scan(wiki)
+    assert r["stale_section"] == []
+
+
+def test_stale_section_counts_toward_strict(tmp_path, monkeypatch):
+    import check_links
+    wiki = make(tmp_path, {
+        "alpha.md": "见 [[bravo]] §9",
+        "bravo.md": "## 1. 一\n",
+        "index.md": "[[alpha]] [[bravo]]",
+    })
+    monkeypatch.setattr("sys.argv", ["check_links.py", "--wiki", str(wiki), "--strict"])
+    assert check_links.main() == 1

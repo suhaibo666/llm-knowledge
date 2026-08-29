@@ -94,7 +94,7 @@ $$
 
 ### 2.4 TP 通信与 FP8 的协同
 
-来自 `20_megatron_comm_overlap_analysis.md` §2.2-2.5：
+来自 `20_megatron_comm_overlap_analysis.md` §3.2-3.5：
 
 - TE 预分配静态 **User Buffer**，在训练初始化时注册
 - `initialize_ub(use_fp8=(args.fp8 is not None))` 根据精度配置调整 buffer

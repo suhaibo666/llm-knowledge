@@ -125,7 +125,7 @@ flowchart TD
     G --> H
 ```
 
-两处 KV 注入细节（论文 Eq.3，`Qwen3DSparkAttention.forward`，`modeling.py:88`）：K/V 各自把**目标上下文**与**草稿块**沿序列维拼接——`k = cat([k_ctx, k_noise])`、`v = cat([v_ctx, v_noise])`（`:104-113`），且 `is_causal=False`（`:59`）→ 块内**双向**注意。这与 vLLM 里 EAGLE「shift-by-one + 自回归 k 步」的串行时序完全不同（对照 [[20_vllm_speculative_decoding_analysis]] §3.3）。
+两处 KV 注入细节（论文 Eq.3，`Qwen3DSparkAttention.forward`，`modeling.py:88`）：K/V 各自把**目标上下文**与**草稿块**沿序列维拼接——`k = cat([k_ctx, k_noise])`、`v = cat([v_ctx, v_noise])`（`:104-113`），且 `is_causal=False`（`:59`）→ 块内**双向**注意。这与 vLLM 里 EAGLE「shift-by-one + 自回归 k 步」的串行时序完全不同（对照 [[20_vllm_speculative_decoding_analysis]] §五）。
 
 ### 3.3 串行头：`markov_head.py` 的三个变体
 
@@ -166,7 +166,7 @@ flowchart LR
 ```
 
 - **草稿提议**`build_dspark_proposal`（`draft_ops.py:96`）：`compute_logits` 得 base logits → `sample_draft_tokens`（走 Markov 头串行采样）→ 若有置信头，`_predict_confidence_logits`（`:57`，拼 `[hidden, prev_emb]`）→ **`_confident_prefix_length`（`:82`）按静态 `confidence_threshold` 砍掉首个低于阈值之后的所有位置**。这就是开源版的「verify smarter」——一个 per-request 静态阈值，**不是** Algorithm 1 的多请求负载感知调度。
-- **验证**`verify_draft_tokens`（`base_evaluator.py:186`）：target 一次前向 $\gamma{+}1$ 个位置 → `accept_prob = clamp(p_target/p_draft, max=1)`（`:252`）→ `accept_mask.cumprod` 取最长合法前缀（`:257`）→ 若有拒绝，`sample_residual`（`:280`，残差分布重采样）；全接受则 `sample_from_probs` 出 bonus（`:285`）。即标准 speculative sampling（数学同 [[20_vllm_speculative_decoding_analysis]] §3.5），保证无偏。
+- **验证**`verify_draft_tokens`（`base_evaluator.py:186`）：target 一次前向 $\gamma{+}1$ 个位置 → `accept_prob = clamp(p_target/p_draft, max=1)`（`:252`）→ `accept_mask.cumprod` 取最长合法前缀（`:257`）→ 若有拒绝，`sample_residual`（`:280`，残差分布重采样）；全接受则 `sample_from_probs` 出 bonus（`:285`）。即标准 speculative sampling（数学同 [[20_vllm_speculative_decoding_analysis]] §六），保证无偏。
 - **指标**`build_metrics_row`（`base_evaluator.py:469`）：`acceptance_length`（含 bonus）、`verify_rate`、逐位置 `accept_rate@k`。
 
 > [!note] 为什么开源版没有调度器

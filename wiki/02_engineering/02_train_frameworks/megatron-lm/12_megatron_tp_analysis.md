@@ -5,16 +5,24 @@ title: "Megatron-LM 张量并行(Tensor Parallelism)深度解析"
 # Megatron-LM 张量并行(Tensor Parallelism)深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/tensor_parallel/layers.py`(1408 行)、`megatron/core/tensor_parallel/mappings.py`(714 行)
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`
 > 适用读者:已了解 transformer 训练与 DP/PP,想吃透 Megatron 张量并行实现的工程师。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
 
 ---
 
-## 0. 总览
+## 1. 背景：单层的四个大矩阵乘放不下,而 PP 切层、DP 切批都动不了它
 
-### 0.1 TP 是什么
+### 1.1 要解决的问题
+
+一个 transformer 层的权重主要是 4 个大矩阵:attention 的 QKV 投影、输出投影,FFN 的 fc1、fc2。一层约 `12h²` 参数;大模型 `h` 上万、层数上百 → 单层权重 + 激活就可能超单卡显存。
+
+**PP 按层切、DP 不省权重**;当**单层本身就放不下**,或想在层内并行加速时,就需要 TP —— 把单个矩阵乘切开。
+
+### 1.2 TP 是什么
 
 **张量并行(Tensor Parallelism,TP)**:把 transformer 层里**单个权重矩阵的矩阵乘**沿某个维度切开,分到 `tp` 张卡上并行算,算完用一次集合通信(all-reduce / reduce-scatter)拼回。它在**单层内部**做并行,所以与 PP(层间切分)、DP(批次切分)、EP(专家切分)正交。
 
@@ -24,7 +32,7 @@ TP 的两个基本算子是一对共轭(conjugate)的线性层:
 
 一个 transformer 层把它们成对使用:**Column → (逐元素算子)→ Row**,使中间不需要通信,只在 Row 之后做一次规约。
 
-### 0.2 TP 在并行体系中的位置
+### 1.3 TP 在并行体系中的位置
 
 | 并行轴 | 切什么 | 峰值激活 | 权重 | 优化器 | 通信特征 |
 |--------|--------|---------|------|--------|---------|
@@ -36,7 +44,13 @@ TP 的两个基本算子是一对共轭(conjugate)的线性层:
 
 TP 的通信是**每层 4 次** all-reduce、量为 `O(s·b·h)`、且卡在计算关键路径上 —— 这决定了 **TP 必须留在单机 NVLink 域内**(典型 `tp ≤ 8`),跨机做 TP 会被网络打死。
 
-### 0.3 记号约定
+### 1.4 TP 的收益
+
+- **权重显存 `÷tp`**:每卡只存权重的 `1/tp`。
+- **优化器状态 `÷tp`**:相应地 Adam 状态也 `÷tp`。
+- **激活显存 `÷tp`**(需配合 SP,见 §7)。
+- **算力聚合**:单层矩阵乘由 `tp` 卡并行,降低单层延迟。
+### 1.5 记号约定
 
 | 符号 | 含义 |
 |------|------|
@@ -44,38 +58,35 @@ TP 的通信是**每层 4 次** all-reduce、量为 `O(s·b·h)`、且卡在计�
 | `s` / `b` / `h` | 序列长度 / micro-batch / hidden size |
 | `h_ffn` | FFN 中间维(通常 `4h` 或 `8h/3`(SwiGLU)) |
 | `a` | attention 头数;`tp` 须整除 `a` |
-| `f` / `g` | 一对共轭通信算子(见 §2) |
+| `f` / `g` | 一对共轭通信算子(见 §3) |
 | SP | 序列并行(Sequence Parallelism),TP 的配套扩展 |
 
 ---
 
-## 1. TP 的目的与动机
+## 2. 为什么这么设计：把通信塞进反向的 GEMM 空档,而不是"算完再同步"
 
-### 1.1 要解决的问题
+朴素做法很直接:每个并行线性层用 `torch.nn.Linear` 算本地 GEMM,前向后挂一次 all-reduce,反向让 autograd 正常产出 dgrad/wgrad,再对 dgrad 做一次 all-reduce。Megatron 没有走这条路 —— 它给 TP 线性层写了一个专用的 `torch.autograd.Function`。源码陈述了其中三条理由;第四条源码沉默,由本页重建并标为推断。
 
-一个 transformer 层的权重主要是 4 个大矩阵:attention 的 QKV 投影、输出投影,FFN 的 fc1、fc2。一层约 `12h²` 参数;大模型 `h` 上万、层数上百 → 单层权重 + 激活就可能超单卡显存。
+**① 反向里通信必须与 wgrad 同时在跑,所以必须自己写 backward。**
+`linear_with_grad_accumulation_and_async_allreduce` 的 docstring 明写:dgrad 的 TP all-reduce「can be done asynchronously with the calculation of the weight gradients」;开 SP 时对应的 reduce-scatter「is done asynchronously with the calculation of the weight gradients」(`megatron/core/tensor_parallel/layers.py:691-697`)。要做到这点,backward 内部必须手工排成「先发起异步通信 → 再算 wgrad → 最后 `wait()`」:`LinearWithGradAccumulationAndAsyncCommunication`(`megatron/core/tensor_parallel/layers.py:470`)的反向先 `torch.distributed.all_reduce(grad_input, ..., async_op=True)`(`:571`)或 `reduce_scatter(..., async_op=True)`(`:583`),中间做 wgrad GEMM,把 `handle.wait()` 一路推到函数末尾(`:660-667`)。`nn.Linear` 的反向是一个不可拆的整体,没有这个插缝的位置。
 
-**PP 按层切、DP 不省权重**;当**单层本身就放不下**,或想在层内并行加速时,就需要 TP —— 把单个矩阵乘切开。
+**② 顺序靠什么保证:先试过插 noop 硬拖,最后改成一条环境变量约定。**
+异步通信要真和 wgrad 重叠,前提是通信 kernel **先**被下发。源码把这个前提写死成 `CUDA_DEVICE_MAX_CONNECTIONS=1`,并在三处注释标出「Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the … is scheduled before the … computation」(`megatron/core/tensor_parallel/layers.py:553`、`:572`、`:585`);docstring 进一步说明这些集合通信「should be scheduled before compute kernels to overlap the communication with the computation, which is **necessary for a speedup but not for correctness** so that ordering isn't imposed by the scheduler」(`:699-706`)。
+**被否掉的替代就写在历史里**:提交 `bdd973128`(2022-10-14,commit message 即「Remove noop used to try to force scheduling and check for environment variable instead」)之前,同样这三处写的是「Delay the start of … computation shortly (3us) to have gather scheduled first and have GPU resources allocated」,后面跟一行 `_ = torch.empty(1, device=grad_output.device) + 1` —— 用一个空 kernel 硬拖约 3 微秒去抢调度顺序。这条路被整段删除,换成「要求用户设环境变量,没设就只 `warnings.warn`」(`:761-775`)。
+→ 决定取舍的判据是**把正确性和性能解耦**:重叠失败只掉吞吐、不出错,所以宁可把 kernel 顺序托付给一个全局环境变量,也不在热路径里留运行时 hack。
 
-### 1.2 为什么 TP 不能跨机
+**③ wgrad 直接累加进已有梯度缓冲,而不是"先算完再加一次"。**
+同一段 docstring 的开头就说明:这个实现「has the option to accumulate the result of backprop calculation into an existing gradient buffer, **preventing the need to do an additional addition kernel** after the gradient calculation」(`megatron/core/tensor_parallel/layers.py:686-689`)。这解释了 `gradient_accumulation_fusion` 为什么被做成 TP 线性层的一等形参而非事后优化 —— 缺少 APEX 的 `fused_weight_gradient_mlp_cuda` 扩展时构造期直接 `RuntimeError`(`:970-979`)。
 
-TP 把一次矩阵乘拆成 `tp` 份,每份算完必须立刻通信拼回(否则下一步算不了)。这次通信:
-- **在关键路径上**:计算流必须等它,无法靠流水线隐藏(不像 PP/DP)。
-- **频率高**:每个 transformer 层 4 次(attn 2 次 + MLP 2 次)。
-- **量大**:每次 `O(s·b·h)`。
+**④ 为什么 Column→Row 成对,而不是每层 gather 回完整张量。**
+`ColumnParallelLinear` 确实提供了 `gather_output` 开关(「If true, call all-gather on output and make Y available to all GPUs, otherwise, every GPU will have its output which is Y_i = XA_i」,`megatron/core/tensor_parallel/layers.py:797-799`),但**默认 `False`**(`:841`);`RowParallelLinear` 对称地提供 `input_is_parallel`(「If true, we assume that the input is already split across the GPUs and we do not split again」,`:1161-1163`)。两个默认值合起来,就是"列并行的切片输出直接喂给行并行、中间不通信"这条路径。
 
-NVLink(数百 GB/s)能扛;跨机 IB(数十 GB/s)扛不住。所以工业配置永远是 **TP 在机内、PP 跨机**。
-
-### 1.3 TP 的收益
-
-- **权重显存 `÷tp`**:每卡只存权重的 `1/tp`。
-- **优化器状态 `÷tp`**:相应地 Adam 状态也 `÷tp`。
-- **激活显存 `÷tp`**(需配合 SP,见 §4)。
-- **算力聚合**:单层矩阵乘由 `tp` 卡并行,降低单层延迟。
+> [!note] 推断
+> 源码只陈述了这两个开关的语义与默认值,**没有**写"我们成对使用是为了省掉中间那次 all-gather"。"`gather_output=True` 是被否掉的替代"这层意思由本页承担:打开它会在每个 MLP / attention 内部多一次 `O(s·b·h)` 的 all-gather,而 TP 的通信全部压在计算关键路径上(§8.3)。要引用这条判断,请回到 `megatron/core/tensor_parallel/layers.py:797-799`、`:841`、`:1161-1163` 这三个 locator,不要引用本段推断。
 
 ---
 
-## 2. 核心机制:共轭算子 `f` / `g`
+## 3. 核心机制:共轭算子 `f` / `g`
 
 TP 的正确性建立在两个共轭的 autograd 算子上(`megatron/core/tensor_parallel/mappings.py`)。
 
@@ -95,11 +106,11 @@ class _ReduceFromModelParallelRegion(torch.autograd.Function):
 
 二者互为共轭:`f` 前向恒等、反向 all-reduce;`g` 前向 all-reduce、反向恒等。一个列并行区域用 `f` 开头、`g` 结尾,就能保证**前向和反向各恰好一次** all-reduce,且梯度数学上正确。
 
-`megatron/core/tensor_parallel/mappings.py` 还提供 SP 版本(§4 用):`_ScatterToSequenceParallelRegion`、`_GatherFromSequenceParallelRegion`(反向 reduce-scatter)、`_ReduceScatterToSequenceParallelRegion`。
+`megatron/core/tensor_parallel/mappings.py` 还提供 SP 版本(§7 用):`_ScatterToSequenceParallelRegion`、`_GatherFromSequenceParallelRegion`(反向 reduce-scatter)、`_ReduceScatterToSequenceParallelRegion`。
 
 ---
 
-## 算子① — ColumnParallelLinear(列并行)
+## 4. 算子① — ColumnParallelLinear(列并行)
 
 `megatron/core/tensor_parallel/layers.py:784`。
 
@@ -148,7 +159,7 @@ def forward(self, input_, ...):                                # megatron/core/t
 
 ---
 
-## 算子② — RowParallelLinear(行并行)
+## 5. 算子② — RowParallelLinear(行并行)
 
 `megatron/core/tensor_parallel/layers.py:1148`。
 
@@ -188,9 +199,9 @@ def forward(self, input_):                                      # megatron/core/
 
 ---
 
-## 3. 组合应用:一个 transformer 层的 TP
+## 6. 组合应用:一个 transformer 层的 TP
 
-### 3.1 MLP 的 TP(Column → 激活 → Row)
+### 6.1 MLP 的 TP(Column → 激活 → Row)
 
 ```
         X [s,b,h]  (完整副本)
@@ -216,11 +227,11 @@ def forward(self, input_):                                      # megatron/core/
 
 关键:fc1 列并行 → 激活函数在切片上逐元素算 → fc2 行并行。**整个 MLP 前向只有 1 次 all-reduce(fc2 的 `g`),反向只有 1 次(fc1 的 `f`)**。
 
-### 3.2 Attention 的 TP(按 head 切)
+### 6.2 Attention 的 TP(按 head 切)
 
 QKV 投影 = ColumnParallel,按 attention head 切 → 每卡 `a/tp` 个头;每卡独立算这 `a/tp` 个头的完整 self-attention(头之间本就独立);输出投影 = RowParallel,all-reduce 汇总。同样**前向 1 次、反向 1 次** all-reduce。
 
-### 3.3 一层的通信账
+### 6.3 一层的通信账
 
 | 部位 | 前向 all-reduce | 反向 all-reduce |
 |------|----------------|----------------|
@@ -232,15 +243,15 @@ QKV 投影 = ColumnParallel,按 attention head 切 → 每卡 `a/tp` 个头;每�
 
 ---
 
-## 4. Sequence Parallelism(SP)—— TP 的配套扩展
+## 7. Sequence Parallelism(SP)—— TP 的配套扩展
 
-### 4.1 动机:TP 没省的那块激活
+### 7.1 动机:TP 没省的那块激活
 
 TP 把 4 个大矩阵乘的权重与中间激活切成 `1/tp`,但 transformer 层里还有**不含矩阵乘的部分**:LayerNorm、Dropout、残差加。这些区域的激活在朴素 TP 下是**每卡完整副本**(因为 `f` 把输入复制到了每卡)→ 这部分激活显存没被 TP 省下。
 
 **SP 的动机**:把这些区域的激活**沿序列维 `s` 切开**,分到 `tp` 卡,每卡只存 `s/tp`。于是**整层激活都 `÷tp`**。
 
-### 4.2 实现:把 all-reduce 换成 reduce-scatter + all-gather
+### 7.2 实现:把 all-reduce 换成 reduce-scatter + all-gather
 
 SP 区域(序列切分)与 TP 区域(权重切分)交界处,通信算子改变:
 - 进入 TP 列并行区:`f`(复制)→ **all-gather**(把序列维拼全)。`_GatherFromSequenceParallelRegion`(`megatron/core/tensor_parallel/mappings.py:300`,反向是 reduce-scatter)。
@@ -254,17 +265,17 @@ SP 区域(序列切分)与 TP 区域(权重切分)交界处,通信算子改变:
 通信:              all-reduce  ──拆成──→  all-gather + reduce-scatter(总量相同)
 ```
 
-### 4.3 TP Communication Overlap
+### 7.3 TP Communication Overlap
 
 `--tp-comm-overlap`(TE 特性,需 SP):把 all-gather / reduce-scatter 与相邻 GEMM 重叠 —— 无依赖的部分**批量重叠**(bulk),有依赖的**流水重叠**(pipelined)。把 TP 通信尽量从关键路径上藏掉。要求 `tp ≥ 2` 且开 SP。
 
 ---
 
-## 5. 开销分析
+## 8. 约束与开销
 
 记单层权重 `W_layer ≈ 12h²`,激活 `A_layer ∝ s·b·h`。
 
-### 5.1 显存
+### 8.1 显存
 
 | 项 | 朴素 TP | TP + SP |
 |----|---------|---------|
@@ -275,26 +286,52 @@ SP 区域(序列切分)与 TP 区域(权重切分)交界处,通信算子改变:
 
 结论:**TP 把权重/优化器/矩阵乘激活都 `÷tp`;但只有再加 SP,才能把整层激活都 `÷tp`**。
 
-### 5.2 通信量
+### 8.2 通信量
 
 - 每层 **4 次** 集合通信(前向 2 + 反向 2),每次 `O(s·b·h)`。
 - 一次 all-reduce 的总线流量 ≈ `2(tp-1)/tp · s·b·h`。
 - SP 不改变总量(all-reduce = RS + AG)。
 - **关键:这些通信在计算关键路径上**,无法像 PP/DP 那样靠流水线隐藏(只能靠 `--tp-comm-overlap` 部分重叠)。
 
-### 5.3 "气泡" —— TP 没有流水线气泡,但有通信暴露
+### 8.3 "气泡" —— TP 没有流水线气泡,但有通信暴露
 
 TP 不像 PP 有流水线气泡。它的低效来自:**每层 4 次通信的延迟暴露在关键路径上**。设单层计算 `T_comp`、通信 `T_comm`,则一层壁钟 ≈ `T_comp + T_comm`(未重叠)。`tp` 越大,`T_comp` 越小但 `T_comm` 不降反升(`2(tp-1)/tp` 随 `tp` 升)→ **TP 的强扩展性有上限**,`tp` 过大时通信占比失控。这也是"`tp ≤ 8`、留在 NVLink 域"的量化原因。
 
-### 5.4 约束
+### 8.4 整除性约束
 
 - `tp` 必须整除 attention 头数 `a`(按 head 切)。
 - `tp` 必须整除 FFN 中间维、词表大小等。
 - SP 要求序列长度能被 `tp` 整除。
 
+### 8.5 为什么 TP 不能跨机
+
+TP 把一次矩阵乘拆成 `tp` 份,每份算完必须立刻通信拼回(否则下一步算不了)。这次通信:
+- **在关键路径上**:计算流必须等它,无法靠流水线隐藏(不像 PP/DP)。
+- **频率高**:每个 transformer 层 4 次(attn 2 次 + MLP 2 次)。
+- **量大**:每次 `O(s·b·h)`。
+
+NVLink(数百 GB/s)能扛;跨机 IB(数十 GB/s)扛不住。所以工业配置永远是 **TP 在机内、PP 跨机**。
+
+### 8.6 前提、代价与故意不做的事
+
+上面的开销表只在下列前提成立时才是这个形状。每条都能落到一个 `file:line`,越出前提就不再适用:
+
+| # | 前提 / 不变量 | 源码落点 | 破坏后的表现 |
+|---|---|---|---|
+| 1 | `CUDA_DEVICE_MAX_CONNECTIONS=1` | `megatron/core/tensor_parallel/layers.py:761-775` | 不报错,只 `warnings.warn`;通信与 wgrad 不再重叠,§8.2 那 4 次通信重新完整暴露在关键路径上 |
+| 2 | `sequence_parallel` 与 `allreduce_dgrad` 互斥 | 构造期 `RuntimeError`(`:982-985`),反向里再 `assert not ctx.allreduce_dgrad`(`:576`) | 同开直接抛错 —— SP 与朴素 TP 是二选一,不是叠加 |
+| 3 | 开 SP 时下游行并行层必须 `input_is_parallel=True` | `RuntimeError`(`:1215-1216`) | 否则 SP 建不起"切片进 / 切片出"的链路 |
+| 4 | `tp == 1` 时 SP 被静默关闭 | `:959-964`,`warnings.warn` 后置 `self.sequence_parallel = False` | 单卡跑通不等于 SP 路径被覆盖到 |
+| 5 | 切分维度必须整除 | `divide()` → `ensure_divisibility` 的 `assert`(`megatron/core/utils.py:557-566`);调用点 `megatron/core/tensor_parallel/layers.py:876`(输出维)、`:1227`(输入维) | 不整除直接 assert 失败,没有自动 padding 兜底 |
+| 6 | `gradient_accumulation_fusion` 依赖 APEX 扩展 | `RuntimeError`(`:970-979`) | 缺扩展时必须显式关掉,§2③ 那条"省一次加法 kernel"的收益随之消失 |
+
+**代价**:§2① 的重叠是拿"手工排 backward"换来的 —— TP 线性层的反向不再是 autograd 默认路径,任何改动都要同时照顾 `sequence_parallel` / `allreduce_dgrad` / `gradient_accumulation_fusion` / `wgrad_deferral_limit` 四条支路(形参清单见 `megatron/core/tensor_parallel/layers.py:672-682`)。
+
+**故意不做**:权重被冻结(`weight.requires_grad` 为假)时,`_forward_impl` 整个绕开这套机制,改走 `linear_with_frozen_weight`(`megatron/core/tensor_parallel/layers.py:994-998`)。也就是说 **TP"把通信藏进 wgrad"的红利只对可训练权重成立**;冻结主干 + 只训适配器一类的场景,反向里根本没有 wgrad 可用来掩盖 dgrad 通信。
+
 ---
 
-## 6. 适用场景及原因
+## 9. 适用场景及原因
 
 | 场景 | 是否用 TP | 原因 |
 |------|----------|------|
@@ -310,12 +347,24 @@ TP 不像 PP 有流水线气泡。它的低效来自:**每层 4 次通信的延�
 - 跨机用 PP,不要扩 TP。
 - 典型大模型配置:`TP(机内 NVLink)× PP(跨机 IB)× DP(最外层)`,MoE 再加 `EP`。
 
-### 6.1 一句话总结
+### 9.1 一句话总结
 
 - **TP 的本质**:把单层的 4 个大矩阵乘切开,用一对共轭算子 `f/g` 保证前向/反向各一次 all-reduce。
 - **Column→Row 配对**:列并行输出天然切开,正好喂行并行,中间逐元素算子无需通信。
 - **SP**:把 TP 没省到的 LN/Dropout/残差区激活也沿序列切开,把 all-reduce 拆成 RS+AG,**免费**把整层激活 `÷tp`。
 - **代价**:每层 4 次关键路径通信 → TP 只能机内 NVLink,且 `tp` 不宜过大。
+
+---
+
+## 10. 发展趋势
+
+> [!note] 推断:锚点是基线 `71092579` 下的源码事实(废弃标记、TODO、新模块),方向判断由本页承担,不是源码的自陈计划。
+
+**一、TP 通信重叠的"粒度旋钮"正在从 Megatron 侧退场。** `tp_comm_split_ag` / `tp_comm_atomic_ag` / `tp_comm_split_rs` / `tp_comm_atomic_rs` 四个字段的 docstring 第一行都是「Deprecated from TransformerEngine v1.6.0」(`megatron/core/model_parallel_config.py:287`、`:293`、`:299`、`:305`),而 `tp_comm_overlap` 本体(`:255`)与 `tp_comm_overlap_disable_qkv` / `tp_comm_overlap_disable_fc1`(`:325`、`:330`)这类"整体开关 + 逐 GEMM 关闭"的旋钮仍然在用。**由此可推断**:§7.3 里 bulk / pipelined 的粒度选择正在整体沉进 TE,Megatron 侧只保留"要不要重叠、哪几个 GEMM 不重叠"这一层;调参时不应再依赖 split/atomic 这组字段。
+
+**二、`f`/`g` 的集合通信在推理路径上正被 NVLS 单边原语替换。** 基线下新增 `megatron/core/tensor_parallel/inference_layers.py`,其中 `inference_all_gather_from_tensor_model_parallel_region`(`:498`)与 `inference_reduce_scatter_to_sequence_parallel_region`(`:533`)的 docstring 直接写明它们「Replaces `reduce_scatter_to_sequence_parallel_region` in inference paths where autograd is not needed and NVLS symmetric-memory is available」(`:536-539`),底层换成 `multimem_all_gather` / `multimem_reduce_scatter`,还有更激进的 `fused_multimem_rs_add_norm_ag`(`:15`),NCCL 只作 fallback;`InferenceRowParallelLinear`(`:351`)是它的使用方。该文件里还挂着一条未完成项:「TODO(ksanthanam): Refactor InferenceRowParallelLinear._matmul_reduce_scatter to use this function for its non-fused NVLS reduce-scatter path」(`:541`)。**由此可推断**:§3 那对共轭算子的形态在训练侧仍然成立,但"TP 的 AG/RS 就是 NCCL 集合通信"这个前提已经在推理侧被 symmetric memory 的单边 multimem 打破;训练侧是否跟进,源码没有表态。
+
+**三、TP 组正在从"全局唯一"变成"传进来的参数"。** §①.3 那条 `[!update]` 记录的 #5128 把 `vocab_parallel_cross_entropy` 的通信组从写死的 `get_tensor_model_parallel_group()` 改成可选形参(`megatron/core/tensor_parallel/cross_entropy.py:217`),并改用 `get_pg_rank/get_pg_size(tp_group)` 取 rank/world size(`:135-136`)。同一方向上,`ColumnParallelLinear` / `RowParallelLinear` 也都已接受 `tp_group` 形参并用 `get_tensor_model_parallel_group_if_none` 兜底(`megatron/core/tensor_parallel/layers.py:871-873`、`:1220-1222`)。**由此可推断**:"一个进程只属于一个 TP 组"这个隐含假设正在被逐点拆除(另见 [[25_megatron_nonuniform_tp_analysis]]),后续读到引用 TP 组的代码时,应默认它是**调用方传入**的而不是全局的。
 
 ---
 

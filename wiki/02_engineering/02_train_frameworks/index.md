@@ -77,13 +77,13 @@ title: "训练框架 — 目录索引"
 ## 页面列表
 
 > **段位**(kb-reorg P7 Task 7,2026-07-31):子目录索引不编号;段 2(20-29)特定框架/组件的机制深挖;段 3(30-39)跨框架对比矩阵与方法论指南。
-> **20 号编号空出**(2026-08-01,spec §3.4 补执行):`20_megatron_pp_parallelism_analysis.md` 已并入 `megatron-lm/15_megatron_pp_schedulers_analysis.md`(§0.4/§6/其余增量)并删除,`megatron-lm/26_megatron_pp_supplements_analysis.md` 同批一并删除;`20` 号不重新分配,详见 `wiki/changelog.md`。
+> **20 号编号空出**(2026-08-01,spec §3.4 补执行):`20_megatron_pp_parallelism_analysis.md` 已并入 `megatron-lm/15_megatron_pp_schedulers_analysis.md`(§1.5/§8/其余增量)并删除,`megatron-lm/26_megatron_pp_supplements_analysis.md` 同批一并删除;`20` 号不重新分配,详见 `wiki/changelog.md`。
 
 | 页面 | 层次 | 来源 | 核心主题 |
 |------|------|------|---------|
 | [[megatron-lm/index]] | 子目录 | Megatron-LM 源码 | 分布式并行、通信优化、MoE |
 | [[torchtitan/index]] | 子目录 | torchtitan 源码 | Trainer 生命周期与观测、双平面 mesh/SPMD 布局协议、DP/TP/CP/EP/PP、低精度/LoRA 与通信融合、FlexShard/DistMuon、GraphTrainer/GraphPP |
-| [[21_async_collective_tensor_deepdive]] | 深潜(段 2) | PyTorch 源码 (_functional_collectives.py) | ACT 源码追踪: __torch_dispatch__, wait_tensor, stream 级执行过程, 与 Megatron 手动 stream 对比 |
+| [[21_async_collective_tensor_deepdive]] | 深潜(段 2) | PyTorch 源码 (_functional_collectives.py) | ACT 三层机制（wrapper subclass / __torch_dispatch__ 分流 / wait_tensor→WorkRegistry→stream block）、掩盖成立的三个前提，以及 torchtitan 默认后端下该窗口为何已不存在 |
 | [[22_muon_sharded_hsdp_analysis]] | 深潜(段 2) | Cursor Composer 2.5 博客 | 分片 Muon + 双网格 HSDP: all-to-all N-S、EP/CP 解耦、异步流水线、非专家分工优化 |
 | [[30_comm_compute_overlap_analysis]] | 方法论(段 3) | Megatron-LM / torchtitan 源码 | 计算通信掩盖: combined_1f1b vs ZBV/DualPipe, sub-layer 级调度, DeepEP/HybridEP |
 | [[31_comm_compute_fusion_guide]] | 方法论(段 3) | 综合深度分析 | 通算融合: WaveEP、DeepEP、TP/DP/PP/CP 各维度重叠, 自动化路线图 |

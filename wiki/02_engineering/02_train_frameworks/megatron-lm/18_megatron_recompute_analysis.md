@@ -5,31 +5,33 @@ title: "Megatron-LM 激活重计算(Activation Recomputation / Checkpointing)深
 # Megatron-LM 激活重计算(Activation Recomputation / Checkpointing)深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 已在新基线下逐条重核。
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/transformer/transformer_block.py`(`_checkpointed_forward`)、`megatron/core/recompute.py`(`checkpointed_forward`,整层重计算的共享实现)、`megatron/core/tensor_parallel/random.py`(`checkpoint`)、`megatron/core/transformer/transformer_config.py`(`recompute_*` 配置)
-> 配套阅读:`22_megatron_memory_optimization_analysis.md` §2.3(激活换出 offloading)、五份并行文档
+> 配套阅读:`22_megatron_memory_optimization_analysis.md` §3.3(激活换出 offloading)、五份并行文档
 > 定位:"第二层补遗"第①份。激活重计算是与并行轴正交的**省显存**手段。
+> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
+> **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
 
 ---
 
-## 0. 总览
+## 1. 背景：激活显存墙——并行轴切不到的最后一块
 
-### 0.1 重计算是什么
+### 1.1 重计算是什么
 
 反向传播需要前向算出的**中间激活**。默认情况下,前向把所有中间激活都留在显存里等反向用 —— 这是训练显存的最大头。**激活重计算(recomputation / checkpointing)**:前向时**只保留少量"检查点"张量、丢弃其余激活**;反向需要某段激活时,**从最近的检查点重新跑一遍前向**把它算出来。
 
 **用算力换显存**:多付一遍(部分)前向计算,换回大量激活显存。
 
-### 0.2 与"激活换出"的关系
+### 1.2 与"激活换出"的关系
 
 | 手段 | 换什么 | 文档 |
 |------|--------|------|
 | **重计算 recompute** | 用**算力**换显存(反向多跑一遍前向) | 本文 |
-| **换出 offload** | 用 **PCIe 带宽**换显存(激活搬 CPU) | `22_megatron_memory_optimization_analysis.md` §2.3 |
+| **换出 offload** | 用 **PCIe 带宽**换显存(激活搬 CPU) | `22_megatron_memory_optimization_analysis.md` §3.3 |
 
 二者正交,可叠加。算力有余量、显存紧 → recompute;PCIe 有余量 → offload。
 
-### 0.3 两个维度:粒度 × 方法
+### 1.3 两个维度:粒度 × 方法
 
 ```
 recompute_granularity ─┬─ "full"      整层重计算 ──┬─ recompute_method "uniform"
@@ -37,9 +39,7 @@ recompute_granularity ─┬─ "full"      整层重计算 ──┬─ recompu
                        └─ "selective" 按子模块重计算 ── recompute_modules=[core_attn, moe_act, ...]
 ```
 
----
-
-## 1. 动机:激活显存墙
+### 1.4 激活显存墙的量级与代价
 
 一个 transformer 层前向产生大量中间激活:QKV、attention 分数矩阵 `[s,s]`、softmax 输出、FFN 中间 `[s,b,H]`……总量随**层数 `L`** 线性、随**序列 `s`** 线性(attention 分数甚至 `O(s²)`)。
 
@@ -49,11 +49,34 @@ recompute_granularity ─┬─ "full"      整层重计算 ──┬─ recompu
 
 ---
 
-## 2. 全量重计算(`recompute_granularity='full'`)
+## 2. 为什么这么设计：先挑"显存大、重算便宜"的那一段
+
+省激活显存有三条明面上的路：**并行切分**（TP/CP/PP，见五份并行文档）、**换出到 CPU**（offload，§1.2）、**丢掉再重算**（recompute）。前两条各有硬上限——并行切分受限于设备数与通信预算，offload 受限于 PCIe 带宽。重计算是唯一一条"只花本地算力"的路，因此被留作最后一道闸门。
+
+真正的设计决断不在"要不要重计算"，而在**重计算谁**。源码把判据写在了配置字段的 docstring 里，不需要推断：
+
+| 决断 | 选中的路线 | 被否掉的替代 | 源码给出的判据 |
+|---|---|---|---|
+| 重算粒度 | `selective`（按子模块） | `full`（整层） | `megatron/core/transformer/transformer_config.py:602-608`：默认目标 `core_attn` 是 "the memory intensive part of attention"，而 "These memory intensive activations are also **less compute intensive**, which makes activation checkpointing more efficient for LLMs (20B+)"，并直接引用 *Reducing Activation Recomputation in Large Transformer Models*（https://arxiv.org/abs/2205.05198） |
+| 子模块用哪种 checkpoint | 输出也丢（output-discarding） | 只丢内部激活（标准 checkpointing） | `megatron/core/tensor_parallel/random.py:985-989`：被 checkpoint 的函数其**输出会在重算时重新生成**，所以 "the output store is not technically needed"；哪些模块走哪种由 `megatron/core/transformer/transformer_config.py:649-651` 明确列出 |
+| 层维度怎么切 | `block`（只重算装不下的前 N 层） | `uniform`（全层均分重算） | `megatron/core/transformer/transformer_block.py` 的 `block` 分支注释 "fully use the device memory removing redundant re-computation"（见 §3.2）——判据是**避免多余重算**，而不是省得最多 |
+| checkpoint 由谁实现 | Megatron / TE 自带 | PyTorch 的 `torch.utils.checkpoint` | fp8/fp4 要接管量化上下文（`megatron/core/transformer/transformer_block.py:677-689`），非 fp8 要接管 TP 的 RNG tracker（`megatron/core/tensor_parallel/random.py:718`）——见 §4.4 |
+
+**判据本身是一句话**：选"显存占用 / 重算代价"比值最大的那一段。`core_attn` 的 `O(s²)` 注意力激活正好落在这个比值的顶点上——显存最大、重算只是 softmax/dropout。整层 `full` 之所以不是首选，正因为它把 GEMM 这种"显存中等、重算昂贵"的部分也一并重算了。
+
+> [!note] 推断
+> 以下三点是本页依据源码行为与提交历史重建的权衡，**源码本身并未陈述**，不要当作作者自陈的意图引用：
+> - **为什么 recompute 与 offload 并存而不是二选一**：源码只在 `megatron/core/transformer/transformer_config.py:2266-2269`（`cpu_offloading` 与 recompute 互斥）和 `:2514-2524`（整层 `moe` 重算与 MoE 内子模块 offload 互斥）里写了**互斥关系**，从未说明"算力换显存 vs 带宽换显存"这层分工。§1.2 的那张对照表是本页的归纳。
+> - **为什么 `uniform` 仍然保留**：`block` 在判据上严格更优（不做多余重算），源码没有解释为何不废弃 `uniform`。合理的重建是 `uniform` 只需一个 `recompute_num_layers` 就能覆盖任意层数、不必按 stage 调参，但这句在源码里查无出处。
+> - **为什么默认值是 `core_attn` 而不是空**：`megatron/core/transformer/transformer_config.py:2310-2311` 在 `recompute_modules is None` 时无条件填 `["core_attn"]`，但没有注释说明这是"性价比默认"还是历史兼容。注意它与 `:2369-2375` 的警告（TE fused attention 下 `core_attn` 重计算多半是白费）存在张力，见 §7。
+
+---
+
+## 3. 全量重计算(`recompute_granularity='full'`)
 
 整个 transformer 层作为重计算单元:前向只存层的**输入** `[s,b,h]`,层内所有激活全丢;反向重跑整层前向。由 `_checkpointed_forward`(`megatron/core/transformer/transformer_block.py:581`)实现,`recompute_method` 选两种切法。
 
-### 2.1 `recompute_method='uniform'`
+### 3.1 `recompute_method='uniform'`
 
 把本 PP stage 的层均匀分成若干**块**,每块 `recompute_num_layers` 层,对每块的**输入**做一个检查点:
 
@@ -67,7 +90,7 @@ while layer_idx < self.num_layers_per_pipeline_rank:
 
 特点:**所有层都重计算**,检查点数 = `层数 / recompute_num_layers`。`recompute_num_layers` 越大,检查点越少、省得越多,但反向重算的粒度越粗。极端 `recompute_num_layers = 全部层` → 整个 stage 只留一个输入检查点,省到极致。
 
-### 2.2 `recompute_method='block'`
+### 3.2 `recompute_method='block'`
 
 只对**前 `recompute_num_layers` 层**做检查点(重计算),其余层正常跑(留全部激活):
 
@@ -82,7 +105,7 @@ for layer_idx in range(num_layers_per_pipeline_rank):
 
 特点:**部分层重计算**。动机 —— 配合 1F1B,越靠前的 PP stage 在世 microbatch 越多(`15_megatron_pp_schedulers_analysis.md` §②.4),激活压力越大;`block` 让你**只把恰好装不下的那几层重计算**,其余层省下重算开销。"fully use the device memory removing redundant re-computation"(源码注释)。
 
-### 2.3 `uniform` vs `block`
+### 3.3 `uniform` vs `block`
 
 | | uniform | block |
 |--|---------|-------|
@@ -94,13 +117,13 @@ for layer_idx in range(num_layers_per_pipeline_rank):
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
 > **全量重计算逻辑抽成共享实现，并支持 HybridModel（#4496，118933a85）**
 > - 新增 `megatron/core/recompute.py`，把整层重计算的 `checkpointed_forward`（含 `custom` / `chunk_runner` / `uniform`+`block` 两种切法）抽成**可复用函数**（`megatron/core/recompute.py:21`；`custom` 在 `:54`、`chunk_runner` 在 `:116`）；Hybrid（Mamba/GDN + attention 混合）模型的 `megatron/core/models/hybrid/hybrid_block.py` 现也走同一套：`recompute_granularity == 'full' and self.training` 时调 `checkpointed_forward(...)`（`megatron/core/models/hybrid/hybrid_block.py:1009-1010`，import 在 `:28`）。此前 full 重计算只在 GPT `transformer_block` 内可用，现 HybridModel 同样支持。
-> - **GPT 路径行号已在新基线下重核**（机制仍有效）：`megatron/core/transformer/transformer_block.py` 的 `_checkpointed_forward` 在 `:581`、`checkpoint_handler` 在 `:674`、`uniform` 分支在 `:702`、`block` 分支在 `:724`（旧基线 `ee3f1ffa…` 依次为 `:464` / `:542` / `:570` / `:592`）。GPT 的 `transformer_block._checkpointed_forward` 仍保留自有实现（与 `megatron/core/recompute.py` 的共享版并存），故 §2 的描述对 GPT 依然成立。
+> - **GPT 路径行号已在新基线下重核**（机制仍有效）：`megatron/core/transformer/transformer_block.py` 的 `_checkpointed_forward` 在 `:581`、`checkpoint_handler` 在 `:674`、`uniform` 分支在 `:702`、`block` 分支在 `:724`（旧基线 `ee3f1ffa…` 依次为 `:464` / `:542` / `:570` / `:592`）。GPT 的 `transformer_block._checkpointed_forward` 仍保留自有实现（与 `megatron/core/recompute.py` 的共享版并存），故 §3 的描述对 GPT 依然成立。
 
 ---
 
-## 3. 选择性重计算(`recompute_granularity='selective'`)
+## 4. 选择性重计算(`recompute_granularity='selective'`)
 
-### 3.1 动机:不是所有激活都"值得"重计算
+### 4.1 动机:不是所有激活都"值得"重计算
 
 各类激活的"显存占用 / 重算代价"比差异巨大:
 - attention 分数矩阵 `[s,s]` —— 显存巨大(`O(s²)`),但 softmax/dropout 重算很**便宜**。
@@ -108,7 +131,7 @@ for layer_idx in range(num_layers_per_pipeline_rank):
 
 **选择性重计算**只挑"显存大、重算便宜"的子模块下手 —— 这是 Megatron 2022 论文(Korthikanti et al.)的核心洞察:**选择性重计算注意力,能省掉大部分激活显存,而计算开销仅 ~1-2%**(远低于全量重计算的 +33%)。
 
-### 3.2 `recompute_modules`
+### 4.2 `recompute_modules`
 
 `recompute_modules` 列表选要重计算的子模块(字段定义 `megatron/core/transformer/transformer_config.py:629-633`;合法取值集合 `megatron/core/transformer/transformer_config.py:2315-2326`),可选:
 
@@ -125,6 +148,8 @@ for layer_idx in range(num_layers_per_pipeline_rank):
 | `gdn` | 整个 GatedDeltaNet 模块（**新增**，见下方 [!update]） |
 | `gdn_norm_out` | GDN 输出 norm 的输出丢弃重计算 —— 在新基线下**已恢复**且与 `gdn` 互斥，见下方 [!contradiction] |
 
+> [!warning] 读序提示：下面这条 [!update] 的**最后一条「历史更正」已被推翻**——它说 `gdn_norm_out` 全仓已不存在，而在基线 `71092579` 下该模块已被 #6088 加回、与 `gdn` 并存且互斥。**先读紧随其后的 [!contradiction]**，再把这条 [!update] 当作旧基线的历史记录读。
+
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
 > **新增 `gdn`：GatedDeltaNet 整模块 selective 重计算（#5296，8dc6e6676）**
 > 新基线的合法 `recompute_modules` 集合（`megatron/core/transformer/transformer_config.py:2315-2326`）含 `"gdn"`：core_attn, moe_act, layernorm, mla_up_proj, mlp, moe, shared_experts, mhc, **gdn**, gdn_norm_out。
@@ -134,14 +159,14 @@ for layer_idx in range(num_layers_per_pipeline_rank):
 
 > [!contradiction] 上一条「`gdn_norm_out` 已不存在」在基线 `71092579` 下**不再成立**：`3549dc62a`（#6088「Refactor: extract and split common logic between GDN & GDN2」，cherry-pick #5843）把 `gdn_norm_out` **重新加了回来**。新基线上二者**并存且互斥**——合法集合同时含 `"gdn"` 与 `"gdn_norm_out"`（`megatron/core/transformer/transformer_config.py:2315-2326`），并显式禁止同时指定（`megatron/core/transformer/transformer_config.py:2364-2368`，报错文案为 “'gdn' recomputes the full GDN-family layer, including gated norm.”）；`gdn_norm_out` 的开关字段 `self.recompute_norm_out` 也回到了 `megatron/core/ssm/gated_delta_net/common.py:302-306`。同一次重构还把原来的单文件 `megatron/core/ssm/gated_delta_net.py` 拆成了包 `megatron/core/ssm/gated_delta_net/`（`common.py` / `gdn.py` / `kda.py`），故本节原先指向 `gated_delta_net.py:267-269`、`:374-387` 的两处 locator 已按新布局改写。
 
-### 3.3 标准 checkpointing vs 输出丢弃 checkpointing
+### 4.3 标准 checkpointing vs 输出丢弃 checkpointing
 
 selective 下有**两种**底层机制(README MoE §Fine-grained Recomputation 区分):
 
 - **标准 checkpointing**(`core_attn`、`mlp`、`moe`):torch 风格 —— 存子模块**输入**,丢内部激活,反向重跑子模块前向。
 - **输出丢弃 checkpointing**(`moe_act`、`layernorm`、`mla_up_proj`):更激进 —— 连子模块的**输出**也在前向丢掉,反向时重算。对这类"输出大、可由输入廉价重算"的子模块,比标准 checkpointing 省得更多。
 
-### 3.4 `te_checkpoint` vs `tensor_parallel.checkpoint`
+### 4.4 `te_checkpoint` vs `tensor_parallel.checkpoint`
 
 `checkpoint_handler`(`megatron/core/transformer/transformer_block.py:674`)按精度选实现:
 - `fp8` / `fp4` → `te_checkpoint`(TransformerEngine 的版本,正确处理 fp8 量化上下文与 RNG;分支在 `megatron/core/transformer/transformer_block.py:677-689`)。
@@ -156,28 +181,28 @@ selective 下有**两种**底层机制(README MoE §Fine-grained Recomputation �
 
 ---
 
-## 4. 与其他机制的配合
+## 5. 与其他机制的配合
 
-### 4.1 PP 的部分激活检查点
+### 5.1 PP 的部分激活检查点
 
 `num_microbatches_with_partial_activation_checkpoints`(见 `15_megatron_pp_schedulers_analysis.md` §②.2 `max_outstanding_backprops`):1F1B 里**早期 microbatch 多、激活压力大**,可只对前若干个 microbatch 做(部分)重计算,后面的不做。这是"重计算 × microbatch 维度"的精细调度。
 
-### 4.2 与并行轴的关系
+### 5.2 与并行轴的关系
 
 - 重计算与 TP/PP/CP/EP/DP **完全正交**,叠加使用。
 - selective `moe` 重计算与 MoE 的 `moe_act`/`expert_fc1`(新基线另加 `fused_group_mlp`)**换出互斥**(`megatron/core/transformer/transformer_config.py:2514-2524`:整层重算了就不能再换出层内子模块)。
 - `fp8` delayed scaling 不支持 `moe_act`/`layernorm` 重计算(`megatron/core/transformer/transformer_config.py:2386-2392`)。
 - 整层 `full` 重计算与 `cuda_graph_impl` 有约束(`megatron/core/transformer/transformer_config.py:3413-3417`,非 selective 时需 `full_iteration`)。
 
-### 4.3 与 offload 叠加
+### 5.3 与 offload 叠加
 
 重计算(换算力)+ offload(换带宽)可同时开,各管一部分激活 —— 当算力和 PCIe 都还有余量时,二者分摊省显存压力。
 
 ---
 
-## 5. 开销分析与选型
+## 6. 开销分析与选型
 
-### 5.1 开销总表
+### 6.1 开销总表
 
 | 方案 | 省激活显存 | 计算开销 | 适合 |
 |------|-----------|---------|------|
@@ -186,7 +211,7 @@ selective 下有**两种**底层机制(README MoE §Fine-grained Recomputation �
 | full `block`(部分层) | 可调 | 按重算层数,`<33%` | selective 还不够、差一点 |
 | full `uniform`(全层) | 最大 | **~+33%** | 显存极度紧张 |
 
-### 5.2 选型决策
+### 6.2 选型决策
 
 ```
 激活显存 OOM?
@@ -197,15 +222,71 @@ selective 下有**两种**底层机制(README MoE §Fine-grained Recomputation �
           ├─ 还差一点 ──► full + block,只重算装不下的那几层
           │
           └─ 还不够 ──► full + uniform(全层重算,+33%);
-                        或叠加激活 offload(pp_supplements §2)
+                        或叠加激活 offload(22_megatron_memory_optimization_analysis §3.3)
 ```
 
-### 5.3 一句话总结
+### 6.3 一句话总结
 
 - **重计算 = 用算力换激活显存**:前向丢激活,反向从检查点重跑前向补回。
 - **粒度**:`full`(整层,uniform 全算 / block 部分算)vs `selective`(按子模块)。
 - **关键洞察**:selective 重计算 `core_attn` —— 去掉 `O(s²)` 的注意力激活,开销仅 ~1-2%,是性价比最高的一档,优先开;全量 `uniform` 才到 +33%。
 - **正交性**:与所有并行轴正交;与 offload 互补(算力 vs 带宽)。
+
+---
+
+## 7. 约束
+
+重计算不是"多花一点算力"这么干净。以下每条都能落到源码的 guard 上（全部按基线 `71092579` 核对）。
+
+### 7.1 前提：每个 selective 子模块都带自己的准入条件
+
+| 子模块 | 额外前提 | locator |
+|---|---|---|
+| `moe_act` | 必须开 `moe_grouped_gemm` | `megatron/core/transformer/transformer_config.py:2333-2336` |
+| `mla_up_proj` | 必须是 `multi_latent_attention` | `megatron/core/transformer/transformer_config.py:2338-2342` |
+| `gdn_norm_out` | 必须是 hybrid 模型或 GDN 家族 attention 变体 | `megatron/core/transformer/transformer_config.py:2344-2352` |
+| `gdn` | 同上；且**不能与 `gdn_norm_out` 同时指定** | `megatron/core/transformer/transformer_config.py:2354-2362` / `:2364-2368` |
+| `mhc` | 必须 `enable_hyper_connections=True`，且**不能与 `mlp` 同用** | `megatron/core/transformer/transformer_config.py:2413-2420`（docstring `:641-643`） |
+| `shared_experts` | 与 `--moe-shared-expert-overlap` 互斥 | `megatron/core/transformer/transformer_config.py:2377-2384` |
+
+### 7.2 不变量：`full` 与 `selective` 的参数是两套，不能混填
+
+- `full` 必须同时给出 `recompute_method`（`uniform`/`block`）与 `recompute_num_layers`，否则构造期报错（`megatron/core/transformer/transformer_config.py:2278-2295`）。
+- `selective` 必须**不给** `recompute_num_layers`（`megatron/core/transformer/transformer_config.py:2296-2302`）——因为 "'selective' always uses all layers."（docstring `:609`）。**层维度的取舍只存在于 `full` 的 `block` 方法里**，selective 侧刻意不提供"只对部分层做"的旋钮。
+- `distribute_saved_activations` 与 `sequence_parallel` 互斥（`megatron/core/transformer/transformer_config.py:2304-2308`）。
+
+### 7.3 代价与失效条件
+
+- **`core_attn` 重计算可能是白花的**。`megatron/core/transformer/transformer_config.py:2369-2375` 在选了 `core_attn` 时无条件 `warnings.warn`：用 transformer_engine 实现时 core attention 很可能已是**融合版本**（激活本就不落显存），"For fused attention, you have no need to set 'core_attn' to recompute."。这是对 §6.1 那句"几乎免费、优先开"的重要限定——在 TE fused attention 下它可能既不省显存、又白付重算。
+- **输出丢弃 checkpointing 有个静默前提**：调用方必须保证被丢弃的输出**确实被后继模块直接保存用于反向**，否则丢了也省不到（`megatron/core/tensor_parallel/random.py:991-992`：“to save memory with this method, the caller should make sure that the discarded output tensors are directly saved in the following modules for backward computation”）。这一条不会报错，只会让优化失效。
+- **fp8 × selective 的两道门**：`delayed` scaling 不支持 `moe_act`/`layernorm` 重计算；即便换 recipe，这两个模块的 fp8 重计算也要求 `transformer-engine>=2.6.0dev0`（`megatron/core/transformer/transformer_config.py:2386-2398`）。
+- **与 offload 的互斥面**：`cpu_offloading` 与**任何**重计算粒度互斥（`megatron/core/transformer/transformer_config.py:2266-2269`）；整层 `moe` 重算与 `moe_act`/`expert_fc1`/`fused_group_mlp` 的细粒度 offload 互斥（`:2514-2524`，报错文案写明"整层已经包进 checkpoint，再 offload 层内激活是冗余且会出错"）。§5.3"重计算与 offload 可同时开"成立的范围，仅限**互不重叠的模块集合**。
+- **与 CUDA Graph 的门槛**：非 selective（即 `full`）重计算只在 `cuda_graph_impl == "full_iteration"` 下被允许（`megatron/core/transformer/transformer_config.py:3413-3417`）；且 CG warmup/capture 期间 `tensor_parallel.checkpoint` 会**直接跳过** checkpoint 包装（`megatron/core/tensor_parallel/random.py:728-729`，见 §4.4 的 [!update]）。
+- **MTP 是残缺支持**：`recompute_method='block'` 在 MultiTokenPredictionLayer 上**未实现** —— 只 warn 然后**整段跳过重计算**（`megatron/core/transformer/multi_token_prediction.py:2503-2507`）；`uniform` 路径则硬性要求 `recompute_num_layers == 1`（`megatron/core/transformer/multi_token_prediction.py:2498-2500`）。开了 MTP 又配 `block`，显存不会按预期下降，而且不会报错。
+
+### 7.4 故意不做的事
+
+- 不提供"selective + 只重算部分层"的组合（见 §7.2）。
+- 不为重计算提供自动选型：所有阈值（重算哪些模块、`block` 重算几层）都由用户给，源码只做合法性校验，不做代价估算。
+- `--moe-layer-recompute` 这条老旋钮不再新增能力，只做兼容转写（`megatron/core/transformer/transformer_config.py:2400-2411`，见 §8）。
+
+---
+
+## 8. 发展趋势
+
+以下每条都锚定基线 `71092579` 上实读到的 in-flight 痕迹（PR 记录、`TODO`、弃用告警）。**"方向"一栏是本页的推断，不是源码自陈的规划。**
+
+| 锚点（实读） | locator | 推断的方向 |
+|---|---|---|
+| `gdn_norm_out` 被 #6088 加回来，与整模块 `gdn` **并存且显式互斥** | `megatron/core/transformer/transformer_config.py:2315-2326` / `:2364-2368`（详见 §4.2 的 [!contradiction]） | GDN 家族的重算粒度仍在细分——先合并成整模块、又拆回"只重算 gated norm + 布局还原"，说明粒度的最优点尚未定 |
+| 整层重计算被抽成共享实现 `megatron/core/recompute.py`，HybridModel 接入，但 GPT 的 `transformer_block._checkpointed_forward` **仍保留自有副本** | `megatron/core/recompute.py:21`、`megatron/core/models/hybrid/hybrid_block.py:1009-1010`；GPT 侧 `megatron/core/transformer/transformer_block.py:581`（详见 §3.3 的 [!update]） | 两份实现并存是**未收敛**状态，收敛方向是 GPT 侧也改调共享函数 |
+| `--moe-layer-recompute` 已 deprecated，告警要求改用 `--recompute-modules moe_layer` | `megatron/core/transformer/transformer_config.py:2400-2404` | 该告警**与实现不一致**：合法模块集合里根本没有 `moe_layer`（`:2315-2326`），代码自动追加的是 `"moe"`（`:2410-2411`）。迁移文案预计要修，或补一个 `moe_layer` 别名 |
+| MTP 的 `block` 重计算未实现，`# TODO: implement block-based recompute for MTP` | `megatron/core/transformer/multi_token_prediction.py:2504` | MTP 侧的重计算会补齐到与主 block 对齐（当前只有 `uniform` 且强制 `recompute_num_layers==1`） |
+| mHC 重计算的相位划分未完成：`TODO: partition checkpoints across phases so recompute_until replays only what each barrier needs`，并要补 `BEFORE_MLP_BWD` barrier | `megatron/core/transformer/mhc_recompute.py:62-65` | 目前所有 checkpoint 都挂在 `BEFORE_COMBINE_BWD` 一个相位上，重算粒度粗于调度粒度；方向是按反向 barrier 切分重算集合 |
+| 重计算 × CUDA Graph 的已知代价：`TODO: (jiemingz) [interaction with recompute]` —— 重算会在反向里重跑前向，capture 时挂的 buffer metadata 因此丢失，导致**额外拷贝** | `megatron/core/transformer/cuda_graphs.py:1063-1068` | §7.3 那条"full 重计算只允许 full_iteration CG"的限制正是这条张力的外化；方向是让 metadata 在重算路径上存活，从而放宽组合 |
+
+> [!note] 推断
+> 上表右栏与本节的归纳均为本页依据锚点做的外推。源码只陈述了 `TODO`/告警本身，没有陈述路线图；引用时请回到左栏的 locator，不要引用右栏。
 
 ---
 
