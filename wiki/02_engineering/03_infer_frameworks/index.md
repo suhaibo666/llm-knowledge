@@ -71,7 +71,7 @@ title: "推理框架 —— 目录索引"
 
 | 子目录 | 入口 | 页数 | 核心主题 |
 |---|---|---:|---|
-| **vLLM** | [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] | 18 + index | 以设计约束、状态所有权与不变量为主线，覆盖 EngineCore、Scheduler、paged KV、模型/attention/runner、serving、投机、量化、并行、compile/kernel/IR、分离式 KV、可观测性与插件；统一基线 `d66300a1ba` |
+| **vLLM** | [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] | 19 篇 + index | 以设计约束、状态所有权与不变量为主线，覆盖 EngineCore、Scheduler、paged KV、模型/attention/runner、serving、投机、量化、并行、compile/kernel/IR、分离式 KV、可观测性与插件；当前为混合基线：Wave 1 仅 `03_vllm_architecture_overview_analysis` 已迁移至 `vllm-project/vllm@6b110bad`，其余页面沿用既有基线，等待后续获批 waves 收敛 |
 | **投机推理** | [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理专题]] | 2 + index | MTP、EAGLE3、DFlash、DSpark 的 draft/verify 机制、接受率与代价模型 |
 | **SGLang** | [[02_engineering/03_infer_frameworks/sglang/index|SGLang 推理框架]] | 1 + index | SGLang 编译 Pass 与 vLLM piecewise CUDA Graph 管线对照 |
 

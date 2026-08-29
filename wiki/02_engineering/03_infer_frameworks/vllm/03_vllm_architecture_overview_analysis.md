@@ -162,11 +162,11 @@ sequenceDiagram
 
 | 横切面 | 为什么跨层 | 分侧状态所有者 | 提交点与失败边界 |
 |---|---|---|---|
-| KV transfer / offload | Scheduler 决定逻辑 block 与请求进度，worker 才能实际 load/save device KV | scheduler-side connector 拥有 request/block metadata；worker-side connector 拥有传输与设备操作 | worker metadata 聚合回 Scheduler；request finish hook 可接管异步 block 释放。角色与协议见 `vllm/distributed/kv_transfer/kv_connector/v1/base.py:7-40`、`124-159`、`543-562` |
+| KV transfer / offload | Scheduler 决定逻辑 block 与请求进度，worker 才能实际 load/save device KV | scheduler-side connector 拥有 request/block metadata；worker-side connector 拥有传输与设备操作 | worker metadata 聚合回 Scheduler；request finish hook 可接管异步 block 释放。角色与协议见 `vllm/distributed/kv_transfer/kv_connector/v1/base.py:7-40`、`vllm/distributed/kv_transfer/kv_connector/v1/base.py:124-159`、`vllm/distributed/kv_transfer/kv_connector/v1/base.py:543-562` |
 | 在线权重更新 | 前端触发事务，executor fan-out，各 rank 修改实际权重，core 维护对外版本 | frontend orchestration、worker update session、EngineCore `_weight_version` | worker `finish_weight_update` 清理 session 后，frontend 才设置新 version；见 `vllm/v1/engine/async_llm.py:1123-1167`、`vllm/v1/worker/gpu_worker.py:1357-1427`、`vllm/v1/engine/core.py:981-986` |
-| plugins | endpoint、I/O、platform、stat logger 与 general plugin 运行在不同进程 | 每类 plugin 的目标进程各自持有初始化副作用 | 每进程只加载一次；endpoint plugin 只在前端，general plugin 可在 core/worker；见 `vllm/plugins/__init__.py:16-33`、`77-90` |
-| metrics | 资源事件在 Scheduler/worker 发生，用户级统计与导出在 frontend 聚合 | core 生成 scheduler stats；OutputProcessor 更新 request stats；frontend logger manager 导出 | core outputs 到达并经 frontend 处理后记录；见 `vllm/v1/engine/async_llm.py:117-169`、`687-743` |
-| fault tolerance | worker death、core loop failure与用户请求失败处在不同故障域 | executor monitor、EngineCore sentinel、client liveness 各有局部状态 | worker death 先关闭 executor 并回调 engine；core busy loop受 fault wrapper 保护；见 `vllm/v1/executor/multiproc_executor.py:298-324`、`vllm/v1/engine/core.py:1101-1115`、`1410-1422` |
+| plugins | endpoint、I/O、platform、stat logger 与 general plugin 运行在不同进程 | 每类 plugin 的目标进程各自持有初始化副作用 | 每进程只加载一次；endpoint plugin 只在前端，general plugin 可在 core/worker；见 `vllm/plugins/__init__.py:16-33`、`vllm/plugins/__init__.py:77-90` |
+| metrics | 资源事件在 Scheduler/worker 发生，用户级统计与导出在 frontend 聚合 | core 生成 scheduler stats；OutputProcessor 更新 request stats；frontend logger manager 导出 | core outputs 到达并经 frontend 处理后记录；见 `vllm/v1/engine/async_llm.py:117-169`、`vllm/v1/engine/async_llm.py:687-743` |
+| fault tolerance | worker death、core loop failure与用户请求失败处在不同故障域 | executor monitor、EngineCore sentinel、client liveness 各有局部状态 | worker death 先关闭 executor 并回调 engine；core busy loop受 fault wrapper 保护；见 `vllm/v1/executor/multiproc_executor.py:298-324`、`vllm/v1/engine/core.py:1101-1115`、`vllm/v1/engine/core.py:1410-1422` |
 
 ## 6. Live / legacy 与失败边界
 

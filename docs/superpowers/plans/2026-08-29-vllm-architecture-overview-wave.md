@@ -306,8 +306,16 @@ foreach ($page in $checked) {
     if (-not $target) { continue }
     if ($target -eq 'index') { $errors.Add("bare index: $($page.FullName)"); continue }
     if ($target.Contains('/')) {
-      $candidate = Join-Path $wiki ($target + '.md')
-      if (-not (Test-Path -LiteralPath $candidate)) { $errors.Add("broken: $($page.Name) -> $target") }
+      $rootCandidate = Join-Path $wiki ($target + '.md')
+      $relativeCandidate = Join-Path $page.DirectoryName ($target + '.md')
+      $suffixMatches = @($allPages | Where-Object {
+        ($_.FullName -replace '\\', '/').EndsWith("/$target.md", [System.StringComparison]::OrdinalIgnoreCase)
+      })
+      if (-not (Test-Path -LiteralPath $rootCandidate) -and
+          -not (Test-Path -LiteralPath $relativeCandidate) -and
+          $suffixMatches.Count -ne 1) {
+        $errors.Add("broken: $($page.Name) -> $target")
+      }
     } elseif (-not $byStem.ContainsKey($target)) {
       $errors.Add("broken: $($page.Name) -> $target")
     } elseif ($byStem[$target].Count -ne 1) {
