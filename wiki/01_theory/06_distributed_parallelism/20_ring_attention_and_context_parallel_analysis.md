@@ -35,6 +35,10 @@ title: "Ring Attention 与上下文并行(Context Parallelism)—— 通用机�
 
 ## 1. CP 的动机:attention 的 $O(S^2)$ 墙
 
+> [!note] 关于「骨架取自 …」这类溯源注记为什么不再带节号
+> 本页多处溯源注记只保留页名、不带节号,原因是**那些内容当年正是归一到本页的部分,源页随后把它们移出了**——归属仍然成立,但源页已无对应小节可指。
+> - `13_torchtitan_cp_analysis.md`：该页在 2026-08 的重构（`4b789b5`）里改成了「路径演进 → 配置 → 输入 → attention 边界 → FSDP mesh → 组合矩阵」七节 + 五拍子节的结构，并主动移出了 ring 机制内容——`zigzag` / `rotater` / 稀疏掩码负载均衡 / 反向第二根环 / 量化算例在该页现已**全部零命中**，它自己也在 §2 写明「不应把旧 dispatcher 中的 `AsyncCollectiveTensor` 或 Ring 时序写成当前 TorchTitan 机制」。> - `20_mindspeed_context_parallel_analysis.md`：该页做过「归一瘦身」,「代数推导」「rank 分组」「量化论证」等串现已零命中(通信量代数移到了 §4.3,已按新号重指);仍存在的 §3.1-3.2、§5.1、§7.2 保留原节号。
+
 > 骨架取自 `13_megatron_cp_analysis.md` §1(全节逐字为骨架,仅去掉 Megatron 专属的 `cp_comm_type` 提前指路)。
 
 ### 1.1 要解决的问题
@@ -97,7 +101,7 @@ self-attention 的注意力分数矩阵是 $[S,S]$,激活显存与计算量都�
 
 ### 3.1 朴素连续切分
 
-> 骨架取自 `13_megatron_cp_analysis.md`(切分图示)+ `13_torchtitan_cp_analysis.md` §2.2(DTensor 级实现)。
+> 骨架取自 `13_megatron_cp_analysis.md`(切分图示)+ `13_torchtitan_cp_analysis.md`(DTensor 级实现)。
 
 ```
 全局序列 S = [tok 0 … tok S-1]   按 CP 切成 cp 段:
@@ -111,7 +115,7 @@ torchtitan/PyTorch 侧,这一步由 `distribute_tensor(buffer, mesh, [Shard(seq_
 
 ### 3.2 因果负载不均衡问题(三角形问题)
 
-> 骨架取自 `13_torchtitan_cp_analysis.md` §3.1(最完整的量化算例)。
+> 骨架取自 `13_torchtitan_cp_analysis.md`(最完整的量化算例)。
 
 因果掩码下 $\text{mask}[i,j]=1 \iff \texttt{q\_idx} \ge \texttt{kv\_idx}$,计算量正比于矩阵里 1 的个数。以 `seq_len=8, cp=2` 朴素均分为例:
 
@@ -134,7 +138,7 @@ torchtitan/PyTorch 侧,这一步由 `distribute_tensor(buffer, mesh, [Shard(seq_
 
 ### 3.3 折叠/头尾配对负载均衡(Zigzag / Head-Tail)—— 核心机制
 
-> 骨架取自 `20_mindspeed_context_parallel_analysis.md` §2(定量证明最严格)+ `13_torchtitan_cp_analysis.md` §3.2(最完整的量化算例)。两种代码实现(Megatron 的 `to_zz_mask_attn_bias` 与 torchtitan 的 `_HeadTailLoadBalancer`)并列给出——这是**同一个算法的两种独立代码实现**,Megatron/DeepSeek-V4/MindSpeed 叫它 **Zigzag**,torchtitan/PyTorch 叫它 **Head-Tail**。
+> 骨架取自 `20_mindspeed_context_parallel_analysis.md` §2(定量证明最严格)+ `13_torchtitan_cp_analysis.md`(最完整的量化算例)。两种代码实现(Megatron 的 `to_zz_mask_attn_bias` 与 torchtitan 的 `_HeadTailLoadBalancer`)并列给出——这是**同一个算法的两种独立代码实现**,Megatron/DeepSeek-V4/MindSpeed 叫它 **Zigzag**,torchtitan/PyTorch 叫它 **Head-Tail**。
 
 **算法**:把序列切成 $2\cdot cp$ 个等长小块,给 CP rank $r$ 分配**第 $r$ 块(早/头,轻)和第 $2cp{-}1{-}r$ 块(晚/尾,重)**。于是每张卡都拿到"一个早块 + 一个晚块",计算量被拉平。
 
@@ -173,7 +177,7 @@ zz_mask = [x for p in zip(chunked[:cp_size], reversed(chunked[cp_size:])) for x 
 
 ### 3.4 任意稀疏掩码下的处理时间均衡:PTRR
 
-> 唯一来源 `13_torchtitan_cp_analysis.md` §3.3——四页中仅此一页覆盖非因果三角形的任意稀疏掩码负载均衡,作为 §3.3 zigzag/头尾算法的补充延伸,而非同一点的另一版本。
+> 唯一来源 `13_torchtitan_cp_analysis.md`——四页中仅此一页覆盖非因果三角形的任意稀疏掩码负载均衡,作为 §3.3 zigzag/头尾算法的补充延伸,而非同一点的另一版本。
 
 Head-Tail 假定掩码是标准因果三角(纯几何规则);面对**任意稀疏 `BlockMask`**(滑动窗口、文档掩码等)时无法用固定几何,必须**真去数每个 Q-block 的实际计算量**。**PTRR(Processing-Time based Round-Robin)**:
 
@@ -208,7 +212,7 @@ RoPE 位置编码必须按**和 token 完全相同**的方式切到 CP rank,否�
 
 ### 4.2 等价视角:每步选择掩码 / SKIP
 
-> 唯一来源 `13_torchtitan_cp_analysis.md` §5.5——与 §4.1 描述的是同一件事的另一种代码路径(逐步判定 vs 静态三分支),作为等价补充。
+> 唯一来源 `13_torchtitan_cp_analysis.md`——与 §4.1 描述的是同一件事的另一种代码路径(逐步判定 vs 静态三分支),作为等价补充。
 
 在 ring 主循环(§5)的每一步里,`_is_causal_behavior` 判定当前步该用什么掩码:第 0 步用标准因果(本地 Q×本地 KV);后续步若传来的 KV 全在 Q 之前 → 不掩码算满;若不开负载均衡且 KV 全在 Q 之后 → **直接 `SKIP`**(因果下全被 mask,跳过整步计算)。**开了折叠/头尾负载均衡后永远不会 SKIP**——因为每个 rank 的本地块含头+尾,任何一步都有非空计算;这正是 §4.1 三分支裁剪"没有全空步"这一性质在 ring 循环里的运行期体现。两种代码路径(MindSpeed 的静态三分支 vs torchtitan 的逐步判定)描述的是同一个因果裁剪原理。
 
@@ -226,7 +230,7 @@ RoPE 位置编码必须按**和 token 完全相同**的方式切到 CP rank,否�
 
 ### 5.1 机制与主循环
 
-> 骨架取自 `13_torchtitan_cp_analysis.md` §5.1-5.2——四页中唯一给出完整可读伪代码 + 逐步演算图的版本。
+> 骨架取自 `13_torchtitan_cp_analysis.md`——四页中唯一给出完整可读伪代码 + 逐步演算图的版本。
 
 核心循环(`_templated_ring_attention` 风格伪代码):
 
@@ -297,7 +301,7 @@ lse = lse - logsigmoid(lse - block_lse)
 
 ### 5.3 通信掩盖:下一步传输与当前步计算重叠
 
-> 骨架取自 `13_torchtitan_cp_analysis.md` §6——四页中对"为什么能重叠"给出最清晰的指令顺序说明。
+> 骨架取自 `13_torchtitan_cp_analysis.md`——四页中对"为什么能重叠"给出最清晰的指令顺序说明。
 
 这是 ring attention 性能的命门。看 §5.1 循环体的**指令顺序**:
 
@@ -321,7 +325,7 @@ for i in range(size):
 即:**第 $i$ 步发起第 $i+1$ 步要用的 K/V 传输,然后立刻算第 $i$ 步的 attention,传输与计算重叠;第 $i+1$ 步开头才收割传输结果。** 这一步计算的耗时把上一步发起的 K/V 传输延迟"藏"了进去——前提是单步计算时间 ≥ 单步传输时间(长序列、$S/cp$ 足够大时成立)。
 
 **四份实现页在"用什么原语发起这次异步传输"上各不相同**,这是框架实现差异,不属于通用机制:
-- torchtitan/PyTorch:靠 `torch.distributed._functional_collectives` 返回的 `AsyncCollectiveTensor` 延迟 wait,不手写 CUDA stream(见 `13_torchtitan_cp_analysis.md` §7)。
+- torchtitan/PyTorch:靠 `torch.distributed._functional_collectives` 返回的 `AsyncCollectiveTensor` 延迟 wait,不手写 CUDA stream(见 `13_torchtitan_cp_analysis.md`)。
 - Megatron/DeepSeek-V4(TE 路径):独立 `cp_stream` + `cudaEventRecord/cudaStreamWaitEvent` 做 stream 间同步(见 `35_deepseek_v4_context_parallel_analysis.md` §4.3)。
 - MindSpeed:`RingP2P.async_send_recv` 用 `isend`/`irecv` 按 `ring_rank % 2` 决定收发顺序避免死锁,`use_cp_send_recv_overlap` 时收发各走独立组(见 `20_mindspeed_context_parallel_analysis.md` §4.4)。
 
@@ -329,7 +333,7 @@ for i in range(size):
 
 ### 5.4 两种"收集"策略的分野:逐步 P2P vs 一次性 All-gather
 
-> 唯一来源 `13_torchtitan_cp_analysis.md` §5.4——四页中仅此一页把 ring 循环本身的"取数"策略抽象成可插拔的 rotater,值得作为通用机制单独记录(注意与 §6 独立的 All-gather CP 模式是两个不同机制,见下方辨析)。
+> 唯一来源 `13_torchtitan_cp_analysis.md`——四页中仅此一页把 ring 循环本身的"取数"策略抽象成可插拔的 rotater,值得作为通用机制单独记录(注意与 §6 独立的 All-gather CP 模式是两个不同机制,见下方辨析)。
 
 Ring 循环第 (B) 步"发起下一步要用的 K/V 传输"可以有两种底层实现(`rotate_method` 选择):
 
@@ -343,7 +347,7 @@ Ring 循环第 (B) 步"发起下一步要用的 K/V 传输"可以有两种底层
 
 ### 5.5 反向传播:为什么要多一根梯度环
 
-> 骨架取自 `13_torchtitan_cp_analysis.md` §8.1——四页中对反向"为什么需要第二根环"给出最清晰的原理说明。
+> 骨架取自 `13_torchtitan_cp_analysis.md`——四页中对反向"为什么需要第二根环"给出最清晰的原理说明。
 
 Ring backward **同时维护两个环**:
 
@@ -484,7 +488,7 @@ a2a   跨 cp 卡交换(行↔列转置)
 
 ### 7.2 通信量代数
 
-> 唯一给出显式代数推导的来源:`20_mindspeed_context_parallel_analysis.md` §3.3。deepseek_v4 页给出的是不区分 forward/backward、且未显式扣除 $/TP$ 因子的合并总量(§9 统一小节里对照说明差异来源)。
+> 唯一给出显式代数推导的来源:`20_mindspeed_context_parallel_analysis.md` §4.3(通信量代数;该页重构后此内容由原 §3.3 移至此)。deepseek_v4 页给出的是不区分 forward/backward、且未显式扣除 $/TP$ 因子的合并总量(§9 统一小节里对照说明差异来源)。
 
 a2a 的本地张量是切序列布局 $[S/cp,b,a/TP,d]$,元素数 $\dfrac{b\,S\,h}{cp\cdot TP}$;每次 all-to-all 每卡发出其中 $\dfrac{cp-1}{cp}$。四次(Q/K/V/O):
 
@@ -508,7 +512,7 @@ $$
 
 ### 7.3 GQA 头补齐与变长处理
 
-> 唯一来源 `20_mindspeed_context_parallel_analysis.md` §3.4——四页中仅此一页覆盖这两个源码级细节。
+> 唯一来源 `20_mindspeed_context_parallel_analysis.md`——四页中仅此一页覆盖这两个源码级细节。
 
 **GQA 下 KV 头不足以被 $cp$ 整除时**,先 `repeat_interleave` 把 KV 头补齐到 $a$ 头:
 
@@ -535,7 +539,7 @@ Ulysses(A2A)适合高带宽域内,Ring(P2P)适合跨节点异步重叠。大规�
 
 ### 8.1 动机
 
-> 骨架取自 `13_megatron_cp_analysis.md` §3.5(概念/拓扑动机)+ `20_mindspeed_context_parallel_analysis.md` §5.2(为什么比纯任一种好的量化论证)。
+> 骨架取自 `13_megatron_cp_analysis.md` §3.5(概念/拓扑动机)+ `20_mindspeed_context_parallel_analysis.md`(为什么比纯任一种好的量化论证)。
 
 ```
 CP 组 = 低层(节点内)× 高层(节点间)
@@ -586,7 +590,7 @@ rearranged_ranks = einops.rearrange(
 
 ### 8.3 二级具体实例:Ulysses × Ring 的 rank 布局
 
-> 唯一来源 `20_mindspeed_context_parallel_analysis.md` §5.1、§5.3——四页中仅此一页给出二级混合(内层 Ulysses、外层 Ring)的具体 rank 分组代码,作为 §8.2 通用 N 级机制在二级场景下的一个具体实例。
+> 唯一来源 `20_mindspeed_context_parallel_analysis.md` §5.1——四页中仅此一页给出二级混合(内层 Ulysses、外层 Ring)的具体 rank 分组代码,作为 §8.2 通用 N 级机制在二级场景下的一个具体实例。
 
 组构造把 CP 组分解为 $cp = u\times r$($u$=Ulysses 子度,$r$=Ring 子度),关键是 rank 的摆放("把 Ulysses ranks 放在同一节点内"):
 
@@ -623,7 +627,7 @@ for m in range(ulysses_degree):                 # ring 子组:跨步 stride=u(�
 **与 §5.2/§7.2 的差异说明(如实并列,不合并)**:上表来自 `35_deepseek_v4_context_parallel_analysis.md`,**未显式扣除 TP 分头因子**(隐含 $TP=1$ 或已在 $h/h_{kv}$ 里折算);§5.2/§7.2 引用的 MindSpeed 公式显式带 $/TP$(因为 MindSpeed 的 CP 运行在 TP 先切过的 $a/TP$ 头上)。此外上表的 Ring 公式是"forward+backward 合计双向流量"口径,而 MindSpeed 的 $V_{\mathrm{ring}}=2\cdot\frac{cp-1}{cp}\cdot\frac{bSh_{kv}}{TP}$ 是**单向前向逻辑数据量**口径——两者相差的因子对应"是否计入收发两个方向的总线流量"这一统计口径选择,不是矛盾,读者按各自场景选用对应口径。**这条"×2(fwd+bwd)"的解释对 Ring 行是自洽的**:令 $TP=1$ 代入两式相除,$\dfrac{4(C-1)/C}{2(cp-1)/cp}=2$,不多不少,fwd+bwd 这一个因子就说清了全部差距。
 
 > [!contradiction] Ulysses/a2a 行未能同样自洽解释,如实披露
-> 对 Ulysses(a2a)行做同样的比值检验:令 $TP=1$、$C=cp$ 代入本表 $8\cdot\frac{C-1}{C}BSh$(此处 $h$=头数,即隐藏维度 $/d$;严格代入隐藏维度记法后与 §7.2 的 $V_{\mathrm{ulysses}}=4\cdot\frac{cp-1}{cp}\cdot\frac{bSh_{\mathrm{hidden}}}{cp}$ 比较)与 §7.2 公式相除,**结果是 $2cp$,不是 $2$**——比 Ring 行多出一个 $cp$ 因子。即便再套用"fwd+bwd 减半"把 DSv4 值折成前向口径($\div 2$)去匹配 MindSpeed 显式标注的"前向"口径,残差仍是 **$cp$ 倍**,且 DSv4 §6.2 对 a2a 行的原始逐项列式(`QKV A2A` 3 项 + `Output A2A` 1 项,共 4 次 a2a)本身看起来就是纯前向操作,与其所在 §6.2 段落标题"forward+backward"的字面并不一致——这处 $cp$ 倍差既不能用已知的 TP 因子解释,也不能用已知的 fwd/bwd 口径解释,两页现有文字不足以确证其来源(可能是某一页的换算笔误,也可能是未写明的额外假设)。**如实标注为未归因的差异,不在本页强行弥合**:读者需要该行数值时,请分别按 `35_deepseek_v4_context_parallel_analysis.md` §6.2 或 `20_mindspeed_context_parallel_analysis.md` §3.3 各自的原始公式独立核算,不要跨页换算/混用系数。
+> 对 Ulysses(a2a)行做同样的比值检验:令 $TP=1$、$C=cp$ 代入本表 $8\cdot\frac{C-1}{C}BSh$(此处 $h$=头数,即隐藏维度 $/d$;严格代入隐藏维度记法后与 §7.2 的 $V_{\mathrm{ulysses}}=4\cdot\frac{cp-1}{cp}\cdot\frac{bSh_{\mathrm{hidden}}}{cp}$ 比较)与 §7.2 公式相除,**结果是 $2cp$,不是 $2$**——比 Ring 行多出一个 $cp$ 因子。即便再套用"fwd+bwd 减半"把 DSv4 值折成前向口径($\div 2$)去匹配 MindSpeed 显式标注的"前向"口径,残差仍是 **$cp$ 倍**,且 DSv4 §6.2 对 a2a 行的原始逐项列式(`QKV A2A` 3 项 + `Output A2A` 1 项,共 4 次 a2a)本身看起来就是纯前向操作,与其所在 §6.2 段落标题"forward+backward"的字面并不一致——这处 $cp$ 倍差既不能用已知的 TP 因子解释,也不能用已知的 fwd/bwd 口径解释,两页现有文字不足以确证其来源(可能是某一页的换算笔误,也可能是未写明的额外假设)。**如实标注为未归因的差异,不在本页强行弥合**:读者需要该行数值时,请分别按 `35_deepseek_v4_context_parallel_analysis.md` §6.2 或 `20_mindspeed_context_parallel_analysis.md` §4.3 各自的原始公式独立核算,不要跨页换算/混用系数。
 
 **MLA 的特殊效应(DeepSeek-V4 专属,不外推为通用机制)**:MLA 的 KV 压缩(等效 $h_{kv}=1$)使 CP 通信量相比标准 MHA 降低约 128 倍(V4:$h_{kv}=128, d=64, d_v=64$)——这是 MLA 架构本身的性质,不是 CP 调度机制的性质,留在 `35_deepseek_v4_context_parallel_analysis.md` §6.3。
 

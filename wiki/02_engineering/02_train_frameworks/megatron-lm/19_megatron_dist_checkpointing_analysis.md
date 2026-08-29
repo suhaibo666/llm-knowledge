@@ -161,7 +161,7 @@ save(sharded_state_dict, checkpoint_dir, ...):
 
 `async` 与 `fully-parallel` 是两个关键性能特性:前者把存档延迟**藏进计算**,后者把存档 I/O **摊到所有卡**。大模型 checkpoint 动辄 TB 级,这两者让"每隔 N 步存一次"不至于拖垮吞吐。
 
-> Megatron-FSDP 另用 `fsdp_dtensor` 格式(基于 DTensor,见 `27_megatron_tp_fsdp_resharding_supplements_analysis.md` §3.5)。
+> Megatron-FSDP 另用 `fsdp_dtensor` 格式(基于 DTensor,见 [[36_megatron_fsdp_analysis]]——原 `27_megatron_tp_fsdp_resharding_supplements_analysis.md` §3 已于 2026-08-28 归一到该页)。
 
 ---
 

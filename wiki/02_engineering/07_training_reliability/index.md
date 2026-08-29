@@ -122,7 +122,7 @@ title: "万卡级训练：确定性与可靠性问题域 — 目录索引"
 
 | 本簇问题 | 关联的一手/深挖页 |
 |---------|------------------|
-| 问题 1（确定性）· 问题 3-4 | [[longcat_2_analysis]] §6-7（确定性算子/二叉树累加/bit-flip）· [[longcat_flash_analysis]] §3.2（SDC 检测） |
+| 问题 1（确定性）· 问题 3-4 | [[longcat_2_analysis]] §6-7（确定性算子/二叉树累加/bit-flip）· [[longcat_flash_analysis]] §三（SDC 检测） |
 | 问题 2（训推一致） | [[20_rl_training_inference_precision_analysis]] · [[10_rl_ppo_loss_and_grpo_analysis]] · [[20_batch_invariance_guide]] |
 | 问题 3（低精度） | [[13_low_precision_training_analysis]] · [[12_deepseek_v3_analysis]]（FP8 两级累加/DeepGEMM） |
 | 问题 1 第 3 层（通信规约树） | [[10_collectives_analysis]]（ring/tree allreduce）· [[14_expert_parallel_analysis]]（MoE all-to-all） |
