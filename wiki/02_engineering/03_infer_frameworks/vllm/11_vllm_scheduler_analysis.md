@@ -53,7 +53,8 @@ stateDiagram-v2
     WS --> W: 新输入到达
     W --> R: 联合 admission 成功
     R --> P: KV 无法扩展
-    P --> R: 重新 lookup 与 admission
+    P --> WK: 保留 blocks 并开始 async load
+    P --> R: 同步 lookup 与 admission 成功
     R --> WS: resumable 请求等待输入
     W --> F: abort 或 error
     WG --> F: abort 或 grammar error
