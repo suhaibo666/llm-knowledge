@@ -12,7 +12,8 @@ content authority, the provenance policy, and the quality gates.
 | Add / edit / rename / merge a page in `wiki/`, maintain index and changelog | [`maintaining-llm-knowledge`](skills/maintaining-llm-knowledge/SKILL.md) |
 | Write or change a LaTeX formula | [`writing-obsidian-math`](skills/writing-obsidian-math/SKILL.md) |
 | Draw or change a Mermaid diagram | [`writing-mermaid-diagrams`](skills/writing-mermaid-diagrams/SKILL.md) |
-| Turn a new source into wiki pages | [`source-faithful-analysis`](skills/source-faithful-analysis/SKILL.md) |
+| Discover and plan a new codebase or large codebase domain, propose the document blueprint, wait for approval, then coordinate implementation | [`planning-codebase-analysis`](skills/planning-codebase-analysis/SKILL.md) |
+| Write one approved analysis unit/page, or analyze one focused mechanism from a codebase, paper, spec, dataset, or other source | [`source-faithful-analysis`](skills/source-faithful-analysis/SKILL.md) |
 
 `skills/` is the single physical copy. `.claude/skills` is a symlink to it (git stores it as a
 symlink object), which is how Claude Code discovers the skills natively.

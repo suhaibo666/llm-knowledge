@@ -3,6 +3,12 @@
 The concrete edge of source-faithful analysis when the source is **code**. Read this alongside the
 SKILL.md core. Output can be any language and any doc system.
 
+## Routing gate
+
+This pack executes **one analysis unit/page or one focused mechanism**, not one source file. A mechanism may cross entry points, state owners, helpers, backends, tests, and history; follow all load-bearing files needed to explain it. If the request instead covers a new whole codebase or a multi-page domain and there is no approved blueprint, use `planning-codebase-analysis` before this pack.
+
+When an approved blueprint exists, inherit the page thesis, owned concepts, explicit exclusions, evidence entry points, and completion test. Do not redesign the repository's page tree from inside the page task.
+
 ## Locator & baseline
 - **Locator = `path/to/file.ext:NN`**, path relative to the repo root. You **open the file and
   confirm the line before you cite it** — never invent, guess, or copy a line from memory/a blog. A
@@ -18,7 +24,7 @@ SKILL.md core. Output can be any language and any doc system.
   path is the classic stale-memory failure — *the code wins*, say so.
 - **Load-bearing entry files per subsystem** — grep for the orchestrator / main loop / registry /
   scheduler, not every leaf. Find where each subsystem *starts*.
-- **Decompose by subsystem × depth**: Overview → Quick Start → Deep Dive, one concept per doc.
+- **Map the owned unit, not the whole documentation tree.** Identify the page's entry symbols, state owners, real call path, tests, and external contracts. Return a material-drift finding to the planner if the approved ownership cannot match the source.
 
 ## Essence checklist (Principle 2, for code)
 Per subsystem, first the **thesis** — the core design idea in 1–2 sentences ("a decoupled two-process
