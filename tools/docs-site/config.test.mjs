@@ -113,8 +113,14 @@ test("GitHub Pages deployment publishes the MkDocs output at the project URL", a
 
   assert.match(workflow, /^\s{6}pages: write$/m)
   assert.match(workflow, /^\s{6}id-token: write$/m)
+  assert.match(workflow, /uses: actions\/setup-node@v6/)
+  assert.match(workflow, /^\s{10}node-version: 24$/m)
   assert.match(workflow, /uses: actions\/setup-python@v6/)
   assert.match(workflow, /^\s{10}python-version: ["']3\.13["']$/m)
+  assert.match(
+    workflow,
+    /^\s{8}run: npm ci --prefix tools\/mkdocs-site --omit=dev$/m,
+  )
   assert.match(workflow, /^\s{8}run: python -m pip install -r requirements-docs\.txt$/m)
   assert.match(workflow, /^\s{8}run: python -m tools\.mkdocs_site\.cli build$/m)
   assert.match(workflow, /uses: actions\/upload-pages-artifact@v4/)

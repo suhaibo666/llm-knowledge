@@ -21,12 +21,22 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tools/mkdocs-site/package-lock.json
+
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: requirements-docs.txt
+
+      - name: Install renderer assets
+        run: npm ci --prefix tools/mkdocs-site --omit=dev
 
       - name: Install documentation dependencies
         run: python -m pip install -r requirements-docs.txt
