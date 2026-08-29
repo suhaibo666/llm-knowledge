@@ -21,21 +21,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Python
+        uses: actions/setup-python@v6
         with:
-          node-version: 24
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-docs.txt
+
+      - name: Install documentation dependencies
+        run: python -m pip install -r requirements-docs.txt
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Build wiki
-        run: npm run docs:build
+        run: python -m tools.mkdocs_site.cli build
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: .cache/llm-knowledge-docs/output
+          path: site
 
   deploy:
     needs: build
