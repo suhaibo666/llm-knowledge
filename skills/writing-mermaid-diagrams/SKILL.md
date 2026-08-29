@@ -5,6 +5,9 @@ description: Use when adding or editing a Mermaid diagram in this wiki - which c
 
 # Writing Mermaid Diagrams
 
+> 这篇只管 **mermaid 自己的 parser 陷阱**。「这段内容该不该画图、该用 mermaid 还是渲染图」
+> 见 [`drawing-wiki-figures`](../drawing-wiki-figures/SKILL.md)——二维网格与甘特类内容不该用 mermaid。
+
 这些规则是本库实测沉淀：mermaid 渲染失败几乎全部来自「节点/连线文本里混进了 mermaid 自己的语法定界符」。新增或改写任何 mermaid 块前读一遍，写完按末尾的校验清单逐条过。
 Mermaid 渲染失败源于**节点/连线文本里混入了 mermaid 的语法定界符**(`[] () {} |` 和换行)。原理:mermaid 用 `[]`/`()`/`{}` 界定节点形状、用 `|` 界定连线标签,文本里再出现这些字符可能让解析器判断不出边界。**按严重度分两档**(本库实测沉淀):
 

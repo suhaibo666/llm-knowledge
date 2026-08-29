@@ -48,3 +48,61 @@ body{margin:0;padding:18px;background:#fff;
 /* ---- memory tiers / cache reuse ---- */
 .tier{border:1.6px solid;border-radius:10px;padding:8px 12px;font-size:12.8px}
 .tier .th{font-weight:700;font-size:13.5px}
+
+/* ============================================================
+   paper-figure layer — 论文框架图规范
+   视觉规范借鉴 zsyggg/paper-craft-skills 的 references/styles/paper-figure.md，
+   但用本库的 HTML→PNG 管线实现:文字是真文字、可 grep、可 diff、改一个数字就重渲染。
+   规范见 skills/drawing-wiki-figures/SKILL.md。
+
+   一条主线:**默认中性,强调色只标「核心贡献 / 关键路径」,不做装饰。**
+   上面那套 .blue/.purple/.green/.amber/.slate/.rose 是「按类别上色」——六色等权,
+   结果是什么都被强调、于是什么都没被强调。分类语义请交给分组框与图注,颜色留给重点。
+   ============================================================ */
+:root{--acc1:#2563EB;--acc2:#C3651F}   /* 每张图最多用这两个强调色 */
+
+/* 中性节点 —— 应当是一张图里的多数 */
+.node.neutral{background:#fff;border-color:#C7CCD3}
+.node.neutral .t{color:#2A313B}
+.node.ghost{background:#F7F6F3;border-color:#DDD9D2}   /* 背景/对照/被否掉的路径 */
+.node.ghost .t{color:#6B7280}
+
+/* 强调节点 —— 每张图只给 1-2 个对象 */
+.node.acc1{background:#EAF1FD;border-color:var(--acc1);box-shadow:0 0 0 3px #EAF1FD}
+.node.acc1 .t{color:#173F87}
+.node.acc2{background:#FCF1E6;border-color:var(--acc2)}
+.node.acc2 .t{color:#8A4A11}
+
+/* 路径分级:主路径粗且着色,辅路径细且淡 */
+.arrow.main{color:var(--acc1);font-weight:700;font-size:19px}
+.arrow.main .al{color:var(--acc1);font-weight:600}
+.arrow.aux{color:#C0C5CC;font-size:14px}
+.arrow.aux .al{color:#AEB4BC}
+
+/* 矩阵小格 —— attention 掩码、张量分片、KV cache 占用的通用图元 */
+.cells{display:grid;gap:2px;width:fit-content}
+.cell{width:16px;height:16px;border-radius:2px;background:#E7EAEE;border:1px solid #D2D7DE}
+.cell.on{background:var(--acc1);border-color:var(--acc1)}
+.cell.h1{background:#CFE0FA;border-color:#B9D2F6}   /* 热力三档,浅→深 */
+.cell.h2{background:#9CC2F3;border-color:#82B0EC}
+.cell.h3{background:#5E97E4;border-color:#4C86D6}
+.cell.x{background:repeating-linear-gradient(45deg,#ECEAE5,#ECEAE5 3px,#F7F6F3 3px,#F7F6F3 6px);
+  border-color:#E0DDD6}                              /* 未使用 / 被 mask 掉 */
+
+/* token 序列 —— 序列并行、投机解码、chunked prefill 的通用图元 */
+.seq{display:flex;gap:3px;align-items:center;flex-wrap:wrap}
+.tok{min-width:22px;height:22px;padding:0 6px;border-radius:4px;background:#F1EFE9;
+  border:1px solid #DDD9D2;font-size:11px;font-weight:600;color:#5B6470;
+  display:flex;align-items:center;justify-content:center}
+.tok.on{background:var(--acc1);border-color:var(--acc1);color:#fff}
+.tok.rej{background:#FBE9EC;border-color:#D98A9B;color:#8A2A3C;text-decoration:line-through}
+
+/* 局部放大框 —— 画面偏空时优先补这个,而不是留白 */
+.zoom{border:1.6px dashed var(--acc1);border-radius:10px;padding:10px 13px;background:#FCFDFF}
+.zoom .zh{font-size:11.5px;font-weight:700;color:var(--acc1);letter-spacing:.03em;margin-bottom:6px}
+
+/* 维度 / dtype 短签,贴在图元旁 */
+.dim{font-size:11px;color:#8A8F98;font-family:"Cascadia Mono",Consolas,"Courier New",monospace}
+
+/* 图注:像论文 figure caption,短标签,不写整句解释 */
+.cap{font-size:12px;color:#7A808A;margin-top:6px;line-height:1.5}

@@ -1,23 +1,15 @@
 ---
 name: source-faithful-analysis
 description: >-
-  Deep, source-faithful analysis of ANY artifact — a codebase, a research paper, a spec/RFC/standard,
-  a dataset, API/SDK docs, a running system or incident, a business/market report — turning it into a
-  mechanism-level technical write-up, wiki page, design doc, or knowledge-base entry where every
-  non-trivial claim is traced to its exact source locator (file:line / §·Table·Fig·Eq / clause /
-  column·row / endpoint·field / log timestamp), leads with the central thesis, and explains WHY each
-  design choice beats the obvious alternative — not just what it is. Use this whenever the goal is to
-  understand or explain something at the mechanism/why level from its ACTUAL source rather than a
-  one-line summary: "analyze X", "how does Y work internally", "write a deep dive / source-level
-  walkthrough of Z", reverse-engineering an architecture, mapping a subsystem, dissecting a paper's
-  design rationale, auditing a dataset/spec/report, comparing two implementations or approaches, or
-  ingesting any of these into a knowledge base. After you start, read the matching
-  references/<type>.md pack (codebase / paper / general) for the concrete locators, ingestion recipe,
-  and essence checklist. Trigger even when the user doesn't say "skill", "analysis", or
-  "documentation" — any time they want a faithful, essence-first reading of something's internals as
-  opposed to merely using it or fixing one isolated bug. Prefer this over a quick surface summary
-  whenever the user wants depth backed by exact, verifiable citations; especially apt for large or
-  unfamiliar sources and for multi-page / multi-subsystem efforts.
+  Use when the user wants source-grounded, mechanism-level analysis of a codebase, framework,
+  research paper, spec/RFC/standard, dataset, API/SDK, running system or incident, report, or other
+  artifact: architecture or subsystem deep dives, “how it works internally,” design-rationale
+  audits, implementation comparisons, reverse engineering, or ingestion into a wiki or knowledge
+  base. Trigger when claims need exact verifiable source locators and a frozen baseline, especially
+  for large or unfamiliar sources and multi-page knowledge domains. Prefer this over a surface
+  summary when the request asks why a design exists, how state/data/control flows, what constraints
+  it has, or how current source contradicts folklore. Do not use merely to operate a tool or fix one
+  isolated bug without an analysis deliverable. Do not use as the first step for an unplanned whole-codebase or multi-page codebase-domain analysis; use planning-codebase-analysis first.
 ---
 
 # Source-Faithful Analysis
@@ -113,6 +105,14 @@ Read both relevant packs.
 
 ---
 
+## Codebase-wide routing boundary
+
+For a new whole codebase or large codebase domain with no approved blueprint, stop and use `planning-codebase-analysis` first. Once that planner hands off one approved page/analysis-unit contract, use this skill to follow the required mechanism across as many source files as needed. Do not re-plan the directory, numbering, page ownership, or excluded concepts inside the page-writing task.
+
+This boundary is codebase-specific. Paper, spec, dataset, incident, and focused one-off analyses continue to scale through the workflow below without requiring the codebase planner.
+
+---
+
 ## The workflow
 
 Scale it to the task. A one-spot question needs Phase 2 only; turning a whole framework or a 60-page
@@ -129,6 +129,13 @@ structure are cheap and prevent rework.
   front (see the doc template) so parallel work stays consistent.
 - **Decide the granularity:** a single overview, or an overview **plus** a set of deep-dive pages.
   Big sources usually want both.
+- **For an approved codebase page:** inherit granularity, title, concept ownership, exclusions, and
+  evidence entry points from the blueprint. Also inherit the approved repository commit, verify
+  that the checkout is at that exact commit, and keep it frozen for the page execution; do not
+  reopen repository-wide page planning. Do not fetch, pull, fast-forward, switch, checkout, reset,
+  or move the approved repository. If the commit is unavailable or must change, stop and return a
+  concrete proposed revision to `planning-codebase-analysis` for approval. Focused code analysis
+  with no approved blueprint may establish a safe baseline under the codebase pack instead.
 
 ### Phase 1 — Map before you write
 
@@ -141,10 +148,38 @@ Resist reading the source top-to-bottom into context. First build a map:
   only as scaffolding/contrast.
 - **Locate the load-bearing entry points** — where each subsystem *starts*, the contributions
   paragraph, the key tables. Grep for the orchestrator/loop/registry, not every leaf.
-- **Decompose into docs.** Organize by the source's natural seams — **subsystem** (code), **theme**
-  (paper: architecture / data / training infra / post-training / eval …), or **aspect** (general) —
-  and within each by depth. One concept per doc; prefer splitting over a sprawling page. **Fix the
-  doc names up front** so cross-references can be written before the docs exist.
+- **Decompose into docs only for non-code sources or unplanned focused analysis.** Organize by the
+  source's natural seams — subsystem, theme, or aspect — and within each by depth. One concept per
+  doc; prefer splitting over a sprawling page, and fix doc names up front for cross-references. An
+  approved codebase page may organize sections inside its assigned contract only; it must not rename,
+  split, or reassign pages locally. A required page split is material drift: stop the affected page
+  and return it to `planning-codebase-analysis` with the evidence and proposed boundary change.
+
+### Architecture overviews — structure first, then motion
+
+When the artifact is a system, framework, or multi-stage design, an overview must answer two
+orthogonal questions:
+
+1. **Static structure:** what responsibility layers/components exist; why each exists; what
+   capability, input→output contract, state/invariants, and responsibility boundary each owns.
+2. **Dynamic lifecycle:** how one real request/job/batch/artifact crosses those layers; when state
+   becomes valid, changes owner, or becomes externally visible.
+
+Present the static view first and the dynamic view second. A call graph or lifecycle diagram alone
+shows motion, not architecture. Derive layers from stable responsibility and state ownership — not
+from the directory tree, and not from an arbitrary layer count. If one diagram cannot keep both
+views legible, use separate structure and lifecycle diagrams.
+
+The layer explanation is the extension map: when responsibility and contracts are clear, a reader
+can infer where a change belongs. Do not add a standalone "where to add features" catalogue unless
+the requested deliverable is explicitly a developer extension guide.
+
+**Source excerpts are evidence, not the narrative skeleton.** State the problem, design logic,
+mechanism, state transition/invariant, and boundary in your own words; then attach the smallest
+source excerpt or locator that proves the claim. Removing code blocks, equations, table fragments,
+or quoted clauses must still leave a coherent causal explanation of why the mechanism works. A
+fixed page length, layer count, or code-quotation ratio is not a quality target; split by concept
+ownership, thesis, and reader load.
 
 ### Phase 2 — Locate, read, cite (the fidelity loop)
 
@@ -177,14 +212,19 @@ if the analysis has diagrams, builds the figure toolchain and renders that page'
 right, then points every agent at it as the template. Diagrams especially earn this — costly to redo
 N times. On each finished page, spot-check 2–3 cited locators against the actual source.
 
+For codebase work, codebase-wide wave assignment and coverage reconciliation stay with
+`planning-codebase-analysis`. The page writer returns verified locators, thesis, boundary findings,
+and material drift to the coordinator.
+
 (For small scope, skip this — just do Phase 2 yourself.)
 
 ### Phase 4 — Integrate and verify
 
 A pile of pages isn't a knowledge base. Tie it together:
 
-- **Write the overview/map:** the thesis/design philosophy, a contribution/results/concepts table, a
-  diagram spanning the pieces, and the cross-link web.
+- **Write the overview/map:** the thesis/design philosophy, a contribution/results/concepts table,
+  the static responsibility map plus the dynamic lifecycle (separate diagrams when needed), and the
+  cross-link web.
 - **Update the host system's spine** — the parent index / TOC / changelog — matching the conventions
   already in use (e.g. this wiki's constitution plus its maintenance skill: add the page to the
   domain `index.md`, append a changelog entry, add `[[wiki links]]` both ways).
@@ -197,6 +237,8 @@ A pile of pages isn't a knowledge base. Tie it together:
 - **Verify zero dangling references** mechanically (grep/script): every cross-link target exists, and
   spot-check that cited locators are real. Broken links and phantom citations erode trust in the
   whole set. Forward-references to *planned* sibling pages are fine — mark them as planned.
+- **Keep codebase-wide replanning with `planning-codebase-analysis`.** The page writer returns
+  verified locators, thesis, boundary findings, and material drift to the coordinator.
 
 ### Phase 5 — Grow on demand
 
@@ -223,7 +265,10 @@ project in Chinese). The middle section depends on the source type — see your 
 - 背景/问题 FIRST — 2–4 sentences: what problem this unit exists to solve, what the previous or
   naive approach did, why it stopped working (beat 1, at page scale)
 - Then the thesis (一条主线) in 1–2 sentences — the one main bet that answers it
-- A diagram (mermaid/ASCII/SVG) + a key-concepts or contribution/results table
+- For architectures: a static layer map + a dynamic lifecycle map, and a table of
+  `layer | capability | input→output | owned state/boundary | evidence`; merge visuals only when
+  both questions remain legible
+- Otherwise: a diagram (mermaid/ASCII/SVG) + a key-concepts or contribution/results table
 - (code: + a Quick Start — minimal entry point/flags + where to start reading, with file:line)
 - (model paper: + a complete structure figure + an exact-hyperparameter table from the released config)
 
@@ -251,6 +296,8 @@ padded with signatures or abstract-paraphrase.
 | Writing a claim with no verified locator, or one you didn't actually open | Stop, locate it, read it, then cite. If you can't find it, don't claim it. |
 | Citing a locator from memory or a blog | Re-derive it from the current source; the baseline may have moved. |
 | Transcribing signatures / rewording the abstract / listing contributions flatly | Rewrite as the five beats: 背景 → 为什么（含被否掉的替代）→ 实现+证据 → 约束. |
+| Letting copied source carry the explanation | Write the causal mechanism in prose first; keep only the excerpt that proves a specific claim. Remove the excerpt as a test — the explanation must still stand. |
+| Calling a call graph or lifecycle diagram the architecture overview | Add the static responsibility/state-ownership view first, then use the lifecycle to show how work crosses it. |
 | Opening a section with the mechanism — "this class does X", "the method is defined as" | Restructure: 背景 first, then 为什么. If you can't state the problem it solves, you don't yet understand it — go back to the source (the commit/PR, the § intro). |
 | A unit that reads as a free win — no 约束 | Every design pays something. Hunt the guards, error branches, Limitations §, the conditions in captions; state the cost and when it breaks. |
 | A 发展趋势 paragraph spun from your priors | Anchor it (future-work line + locator / newer version / TODO / the beat-4 constraint) and mark it as inference — or delete the beat. |

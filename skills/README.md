@@ -17,12 +17,12 @@
 |---|---|
 | 往 `wiki/` 里新增/改写/重命名/合并页面，维护 index 与 changelog | [`maintaining-llm-knowledge`](maintaining-llm-knowledge/SKILL.md) |
 | 写或改任何 LaTeX 公式 | [`writing-obsidian-math`](writing-obsidian-math/SKILL.md) |
-| 画或改任何 Mermaid 图 | [`writing-mermaid-diagrams`](writing-mermaid-diagrams/SKILL.md) |
-| 把一份新的源（论文/代码仓库/规格/数据集）拆解成 wiki 页 | [`source-faithful-analysis`](source-faithful-analysis/SKILL.md) |
+| 给页面加图或改图——该不该画、用什么画、画成什么样 | [`drawing-wiki-figures`](drawing-wiki-figures/SKILL.md) |
+| 画或改 Mermaid 图（parser 陷阱） | [`writing-mermaid-diagrams`](writing-mermaid-diagrams/SKILL.md) |
+| 侦察一个新代码库或未规划的多页代码库子域，规划能力/架构/核心机制与文档蓝图，等待确认后编排实施 | [`planning-codebase-analysis`](planning-codebase-analysis/SKILL.md) |
+| 按已批准/聚焦代码库合同写一个分析单元/页面，或分析任意规模的论文、规范、数据集、事故、报告或其他非代码制品 | [`source-faithful-analysis`](source-faithful-analysis/SKILL.md) |
 
-一次任务通常要读不止一篇：例如"把某论文写成一篇分析页"= `source-faithful-analysis`
-（怎么拆）+ `maintaining-llm-knowledge`（放哪、怎么命名、怎么挂链接）+ 公式/图技能
-（按页面里实际出现的元素）。
+例如，“把一个新代码库整理成知识域”先读 `planning-codebase-analysis`；蓝图确认后，每篇页面再读 `source-faithful-analysis`，实际落盘时叠加 `maintaining-llm-knowledge`，公式和图按页面需要加载。任意规模的非代码制品分析，以及未规划代码库中的单个聚焦机制分析，都不经过 planner。
 
 ## 各家 agent 怎么用
 
