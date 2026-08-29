@@ -40,6 +40,7 @@ Read-only repository and existing-Wiki inspection is allowed before approval.
 - Derive content from user-visible capabilities and mechanism ownership, never directly from directories.
 - Use discovery dimensions as prompts, not a mandatory taxonomy.
 - Do not set fixed layer, page, line, code-block, or numbering quotas.
+- Do not use a fixed source-code or code-to-explanation ratio as a quality or completion constraint.
 - Fit the existing Wiki functional tree; propose a new directory only when no existing functional owner fits.
 - Number by local convention and reading dependency; do not assign `01` merely because a feature is prominent.
 - Existing related pages require a reuse/rewrite/merge decision before new pages are proposed.
