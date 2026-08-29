@@ -22,36 +22,26 @@ vLLM 同时面对离线 Python 调用、在线协议、生成与 pooling 等任�
 图 A 只表达稳定责任和合同。实线是主请求/计划/结果合同，虚线侧轨是会跨越多个责任层的数据面；它们不能因为实现文件位于某个目录，就被误判成该层独占的内部功能。
 
 ```mermaid
-flowchart LR
-    subgraph Main["责任主栈"]
-        direction TB
-        L1["接口与语义<br/>协议归一 · 前端请求状态"]
-        L2["Engine 生命周期<br/>传输关联 · 进程任务生命周期"]
-        L3["资源控制<br/>admission · token 与逻辑 KV 进度"]
-        L4["分布式执行<br/>拓扑扇出 · rank 与物理资源"]
-        L5["设备运行时<br/>稳定 buffer · active request row"]
-        L6["模型与算子<br/>模型 ABI · backend 能力"]
-
-        L1 -->|EngineCoreRequest| L2
-        L2 -->|core request| L3
-        L3 -->|SchedulerOutput| L4
-        L4 -->|rank execution| L5
-        L5 -->|tensor inputs| L6
-        L6 -->|model output| L5
-        L5 -->|runner result| L4
-        L4 -->|aggregated result| L3
-        L3 -->|EngineCoreOutputs| L2
-        L2 -->|RequestOutput| L1
-    end
-
-    subgraph Cross["横切数据面"]
-        direction TB
+flowchart TB
+    L1["接口与语义<br/>协议归一 · 前端请求状态"]
+    L2["Engine 生命周期<br/>传输关联 · 进程任务生命周期"]
+    L3["资源控制<br/>admission · token 与逻辑 KV 进度"]
+    L4["分布式执行<br/>拓扑扇出 · rank 与物理资源"]
+    L5["设备运行时<br/>稳定 buffer · active request row"]
+    L6["模型与算子<br/>模型 ABI · backend 能力"]
+    subgraph Cross["横切数据面 · 辅助侧轨"]
         X1["KV transfer"]
         X2["online weight update"]
         X3["plugins"]
         X4["metrics"]
         X5["fault tolerance"]
     end
+
+    L1 -->|↓ EngineCoreRequest · ↑ EngineCoreOutputs| L2
+    L2 -->|↓ core request · ↑ core outputs| L3
+    L3 -->|↓ SchedulerOutput · ↑ runner result| L4
+    L4 -->|↓ rank execution · ↑ aggregated result| L5
+    L5 -->|↓ tensor inputs · ↑ model output| L6
 
     X1 -.-> L3
     X1 -.-> L5
@@ -85,37 +75,37 @@ flowchart LR
 
 ### 3.1 接口与语义层：把用户语义挡在资源循环之外
 
-**背景与设计选择。** 同一个推理核心要服务不同协议、任务与媒体输入；若让 Scheduler 或 runner 直接理解 chat template、stop string 和流式协议，设备关键路径会被前端分支污染。vLLM 选择在提交 core 之前完成 render、参数校验和内部请求构造，并在 core 返回后恢复用户语义，而不是让每个执行后端复制协议逻辑。任务集合本身包含 generation、pooling 与 frontend render，说明“用户任务”并不等于单一 decode 路径（`vllm/tasks.py:7-44`）。
+**背景与设计选择（分析推断）。** 源码可直接证明两件事：任务集合包含 generation、pooling 与 frontend render；`InputProcessor` 在提交 core 前构造 `EngineCoreRequest`，`OutputProcessor` 在 core 返回后把内部输出变为 `RequestOutput`（`vllm/tasks.py:7-44`；`vllm/v1/engine/input_processor.py:281-340`；`vllm/v1/engine/output_processor.py:607-700`）。这些位置没有自陈“为何不让 Scheduler 或 runner 处理协议”的作者理由。基于上述责任边界，本页推断：把 render、stop 和流式语义留在接口层，可以避免每个执行后端复制协议分支；这是架构重建，不是源码对替代方案的原话。
 
 **实现、状态与边界。** `InputProcessor` 持有 renderer 和各类配置，阻塞的 raw-prompt 处理被包装到 renderer 线程池；`process_inputs` 校验并产出 `EngineCoreRequest`（`vllm/v1/engine/input_processor.py:38-75`；`vllm/v1/engine/input_processor.py:281-340`）。返回侧 `OutputProcessor` 持有 `request_id → RequestState`，负责 detokenize、stop check 与 `RequestOutput`；它不决定请求是否获得 token/KV 资源（`vllm/v1/engine/output_processor.py:132-197`；`vllm/v1/engine/output_processor.py:607-700`）。其不变量是：core 输出只有匹配到前端 state 才能成为用户输出；已 abort 的 request 输出会被忽略。
 
 ### 3.2 Engine 生命周期层：复用 core，而不是复刻状态机
 
-**背景与设计选择。** 同步离线、异步在线与不同进程拓扑需要不同传输和生命周期，但不应产生多套 Scheduler 语义。vLLM 以 `EngineCoreClient` 抽象 in-process、同步 MP、异步 MP 和 DP client，让差异停留在传输、任务与存活管理，而不是复制 core 状态机（`vllm/v1/engine/core_client.py:78-139`）。
+**背景与设计选择（分析推断）。** 源码可直接证明 `EngineCoreClient` 抽象覆盖 in-process、同步 MP、异步 MP 和 DP client，各实现承担不同传输与生命周期（`vllm/v1/engine/core_client.py:78-139`）。源码未在此处比较“每种前端复制一套 core 状态机”的替代方案；本页据此推断，这道边界让同步、异步和进程拓扑差异停留在 client 一侧，而复用同一套 Scheduler 语义。
 
 **实现、状态与边界。** `AsyncLLM` 组合 renderer、InputProcessor、OutputProcessor 与 async MP client；MP client 用 input/output sockets 与后台 core busy loop 交换 `EngineCoreRequest` 和 `EngineCoreOutputs`（`vllm/v1/engine/async_llm.py:135-156`；`vllm/v1/engine/core_client.py:503-514`）。该层拥有 transport、进程/任务生命周期、请求与输出通道的关联；它可以拒绝已死亡 engine 的新请求，却不拥有 token admission 或物理执行。约束是 asyncio 且不启用 multiprocessing 的组合当前显式不支持（`vllm/v1/engine/core_client.py:97-112`）。
 
 ### 3.3 资源控制层：由一个提交者协调请求、token 与逻辑 KV
 
-**背景与设计选择。** 动态 batch 中，请求长度、prefix hit、structured readiness、encoder budget 与 KV 容量同时变化。若 worker 各自决定 admission，会出现预算超卖和 block 所有权分裂。vLLM 让 Scheduler 统一形成 `SchedulerOutput`：它不区分固定的 prefill/decode 阶段，而是让 `num_computed_tokens` 追上当前应计算 token，并同时受 token、输入、encoder 与 KV 资源约束（`vllm/v1/core/sched/scheduler.py:501-542`）。
+**背景与设计选择（分析推断）。** 源码可直接证明 Scheduler 在同一轮中综合 token、输入、encoder 与 KV 约束，并让 `num_computed_tokens` 追上当前应计算 token，而不是固定区分 prefill/decode 阶段，最后形成统一的 `SchedulerOutput`（`vllm/v1/core/sched/scheduler.py:501-542`）。源码没有在该段陈述分布式 admission 的反例；本页推断：若 worker 各自承诺这些共享预算，就难以维持唯一的 token 与逻辑 block 所有者，因此统一提交者是从现有状态边界重建出的设计理由。
 
 **实现、状态与边界。** Scheduler 先计算 token 数，再调用 `KVCacheManager.allocate_slots`；分配失败时按 policy 抢占，成功后才把请求写入当步计划（`vllm/v1/core/sched/scheduler.py:655-729`）。`schedule` 后的进度是带 in-flight 语义的资源承诺；runner 返回后，`update_from_output` 才处理 stale/failed output、接受或回滚 token、finish/free，并构造 `EngineCoreOutput`（`vllm/v1/core/sched/scheduler.py:1435-1455`；`vllm/v1/core/sched/scheduler.py:1848-1904`；`vllm/v1/core/sched/scheduler.py:2031-2103`）。该层拥有 waiting/running、逻辑 block 与完成状态；GPU 地址和用户 stream 均在边界之外。
 
 ### 3.4 分布式执行层：把计划映射到拓扑，不复制 Engine 语义
 
-**背景与设计选择。** 同一个 `SchedulerOutput` 可能落到单进程、多进程、Ray 或外部 launcher，也可能跨多个并行 rank。若每种 topology 自带一套调度，会让后端选择改变请求语义。vLLM 以 `Executor` 合同选择 backend，再把同一计划 fan-out 到 worker，并聚合一个可交还 Scheduler 的 runner result（`vllm/v1/executor/abstract.py:48-93`；`vllm/v1/executor/abstract.py:219-237`）。
+**背景与设计选择（分析推断）。** 源码可直接证明 `Executor` 合同会从 uni、mp、Ray、external launcher 或自定义类中选择 backend，并把同一 `SchedulerOutput` 执行成可交还 Scheduler 的 runner result（`vllm/v1/executor/abstract.py:48-93`；`vllm/v1/executor/abstract.py:219-237`）。源码没有在这些位置自陈“为何不让每种 topology 自带调度”；本页推断：统一计划合同把拓扑变化限制在执行层，避免 backend 选择反向改变请求资源语义。
 
 **实现、状态与边界。** multiprocess executor 把计划作为 collective RPC 广播，只从输出 rank 或 aggregator 取得结果；worker monitor 在任一子进程异常退出时关闭 executor 并回调 engine（`vllm/v1/executor/multiproc_executor.py:340-364`；`vllm/v1/executor/multiproc_executor.py:298-324`）。因此该层拥有 worker/rank/group、collective 顺序、权重和物理 KV 的设备位置；全局 token 公平性仍由 Scheduler 决定，模型架构与 backend ABI 则由下层解释。
 
 ### 3.5 设备运行时层：把动态计划投影到稳定设备状态
 
-**背景与设计选择。** 如果每个 token step 都重建 Python 对象、tensor 和地址，CPU/GPU 同步与图重捕获会进入热路径。设备层选择维护 active request row、block table 和 sampler 等持久状态，再用 staged write 应用 scheduler delta，而不是为每步重建完整 batch。
+**背景与设计选择（分析推断）。** 源码可直接证明 MRV2 的 `RequestState` 预留固定数量的 request slot，并以 free index 分配 row；新增请求只 stage token/进度写入，runner 再批量应用 request、model、sampler 与 block-table 的 staged write，随后 gather 当步 batch（`vllm/v1/worker/gpu/states.py:9-39`；`vllm/v1/worker/gpu/states.py:91-124`；`vllm/v1/worker/gpu/model_runner.py:999-1055`；`vllm/v1/worker/gpu/model_runner.py:1509-1529`）。这些位置没有对“每步重建完整 batch”做作者层面的取舍说明；本页据此推断，稳定 row 加差量写入的边界是在把动态 scheduler 计划投影到可复用的设备状态，而不是声称源码明确以某项性能测量否掉了替代方案。
 
 **实现、状态与边界。** MRV2 runner 为新请求分配稳定 row，写入模型、block table、LoRA 与 sampler 状态，再集中 `apply_staged_writes`；`execute_model` 先提交 finish/free/add/update 的状态变化，然后 gather 当步 batch（`vllm/v1/worker/gpu/model_runner.py:999-1055`；`vllm/v1/worker/gpu/model_runner.py:1501-1529`）。`GPUWorker` 则包住 PP 通信和 runner 调用（`vllm/v1/worker/gpu_worker.py:1108-1189`）。此层不变量是 scheduler delta 与 device row/block 映射一致；它不拥有 admission，也不解释用户协议。
 
 ### 3.6 模型与算子层：用能力合同吸收模型和硬件组合爆炸
 
-**背景与设计选择。** 模型结构、checkpoint 格式、量化、attention layout 与硬件 kernel 的组合远多于 Engine 可以硬编码的范围。vLLM 选择用 registry、模型 ABI 和 backend capability 来解析组合，而不是在 Scheduler 中按模型名分支。
+**背景与设计选择（分析推断）。** 源码可直接证明 ModelRegistry 会归一 architecture，并在 native、Transformers 等实现间解析模型类；attention backend 则显式声明并检查 dtype、KV dtype、head size 与 block size 能力（`vllm/model_executor/models/registry.py:1248-1324`；`vllm/v1/attention/backend.py:59-133`）。源码没有在这些位置自陈“组合爆炸”或比较 Scheduler 按模型名分支的替代方案；本页推断：把模型与硬件差异收敛为 registry 和 capability 合同，可以让上层只消费可执行模型/后端，而不持有这些选择分支。
 
 **实现、状态与边界。** ModelRegistry 先归一 architecture，并在 native、Transformers 等实现之间解析可加载模型类；attention backend 则声明 dtype、KV dtype、block size 与实现/metadata builder 能力（`vllm/model_executor/models/registry.py:1248-1324`；`vllm/v1/attention/backend.py:59-130`）。这一层拥有参数/scale、模型 forward ABI、backend 能力和 kernel 选择；它只消费设备输入，不拥有请求生命周期、token fairness 或服务进程拓扑。
 
@@ -184,7 +174,7 @@ sequenceDiagram
 
 `vllm.engine.LLMEngine` 直接别名到 V1 `LLMEngine`，`AsyncLLMEngine` 直接别名到 V1 `AsyncLLM`；不要再把独立 V0 engine 当作当前并行架构。V1 `LLMEngine` 自称 legacy，是为旧式同步 `add_request/step` 兼容的 facade，不代表其背后仍有另一套 V0 core（`vllm/engine/llm_engine.py:4-7`；`vllm/engine/async_llm_engine.py:4-7`；`vllm/v1/engine/llm_engine.py:48-61`）。
 
-Engine V1 与 Model Runner V1/V2 又是不同维度。当前配置在显式环境变量未覆盖时，只有 Triton 可用且 capability check 没有不支持项才默认 MRV2，否则回退 MRV1；`GPUWorker` 按这一结果实例化不同 runner（`vllm/config/vllm.py:619-652`；`vllm/v1/worker/gpu_worker.py:455-475`）。所以“V1 engine”不能推出“必走某一代 runner”。
+Engine V1 与 Model Runner V1/V2 又是不同维度。当前配置先接受显式环境变量选择（`vllm/config/vllm.py:619-623`）；未显式覆盖时，ROCm 上命中 `ROCM_DEFAULT_MRV1_ARCHITECTURES` 的模型会独立回退 MRV1（`vllm/config/vllm.py:627-635`），随后才检查 Triton 是否可用以及 capability check 是否存在不支持项，任一失败也回退 MRV1，只有其余情况默认 MRV2（`vllm/config/vllm.py:637-652`）。`GPUWorker` 按这一结果实例化不同 runner（`vllm/v1/worker/gpu_worker.py:455-475`），所以“V1 engine”不能推出“必走某一代 runner”。
 
 ### 6.2 拓扑由 backend 决定，不是固定进程公式
 
