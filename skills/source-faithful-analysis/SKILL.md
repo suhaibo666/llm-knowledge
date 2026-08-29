@@ -17,7 +17,7 @@ description: >-
   "documentation" — any time they want a faithful, essence-first reading of something's internals as
   opposed to merely using it or fixing one isolated bug. Prefer this over a quick surface summary
   whenever the user wants depth backed by exact, verifiable citations; especially apt for large or
-  unfamiliar sources and for multi-page / multi-subsystem efforts.
+  unfamiliar sources and for multi-page / multi-subsystem efforts. Do not use as the first step for an unplanned whole-codebase or multi-page codebase-domain analysis; use planning-codebase-analysis first.
 ---
 
 # Source-Faithful Analysis
@@ -113,6 +113,14 @@ Read both relevant packs.
 
 ---
 
+## Codebase-wide routing boundary
+
+For a new whole codebase or large codebase domain with no approved blueprint, stop and use `planning-codebase-analysis` first. Once that planner hands off one approved page/analysis-unit contract, use this skill to follow the required mechanism across as many source files as needed. Do not re-plan the directory, numbering, page ownership, or excluded concepts inside the page-writing task.
+
+This boundary is codebase-specific. Paper, spec, dataset, incident, and focused one-off analyses continue to scale through the workflow below without requiring the codebase planner.
+
+---
+
 ## The workflow
 
 Scale it to the task. A one-spot question needs Phase 2 only; turning a whole framework or a 60-page
@@ -129,6 +137,8 @@ structure are cheap and prevent rework.
   front (see the doc template) so parallel work stays consistent.
 - **Decide the granularity:** a single overview, or an overview **plus** a set of deep-dive pages.
   Big sources usually want both.
+- **For an approved codebase page:** inherit granularity, title, concept ownership, exclusions, and
+  evidence entry points from the blueprint; do not reopen repository-wide page planning.
 
 ### Phase 1 — Map before you write
 
@@ -177,6 +187,10 @@ if the analysis has diagrams, builds the figure toolchain and renders that page'
 right, then points every agent at it as the template. Diagrams especially earn this — costly to redo
 N times. On each finished page, spot-check 2–3 cited locators against the actual source.
 
+For codebase work, codebase-wide wave assignment and coverage reconciliation stay with
+`planning-codebase-analysis`. The page writer returns verified locators, thesis, boundary findings,
+and material drift to the coordinator.
+
 (For small scope, skip this — just do Phase 2 yourself.)
 
 ### Phase 4 — Integrate and verify
@@ -197,6 +211,8 @@ A pile of pages isn't a knowledge base. Tie it together:
 - **Verify zero dangling references** mechanically (grep/script): every cross-link target exists, and
   spot-check that cited locators are real. Broken links and phantom citations erode trust in the
   whole set. Forward-references to *planned* sibling pages are fine — mark them as planned.
+- **Keep codebase-wide replanning with `planning-codebase-analysis`.** The page writer returns
+  verified locators, thesis, boundary findings, and material drift to the coordinator.
 
 ### Phase 5 — Grow on demand
 
