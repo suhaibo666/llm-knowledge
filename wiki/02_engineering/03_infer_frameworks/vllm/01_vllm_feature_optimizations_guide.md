@@ -98,7 +98,8 @@ vllm serve <model> --generation-config vllm
 ## 四、基准工具要回答同一个问题
 
 官方 CLI 把 `serve` 定义为在线 serving benchmark，把 `throughput` 定义为离线 inference
-throughput benchmark；`latency` 则测单个固定 batch，见 `docs/cli/README.md:125-145`。
+throughput benchmark；`latency` 则测单个固定 batch，见 `docs/cli/README.md:137-150`、
+`docs/cli/README.md:152-166` 与 `docs/cli/README.md:168-181`。
 三者不能互换：离线结果剥离了网络到达与在线排队，在线结果才承载生产 arrival/SLO
 假设。
 
