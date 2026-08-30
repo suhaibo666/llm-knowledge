@@ -108,7 +108,7 @@ sequenceDiagram
 
 本步顺序由 `sort_batch_req_ids()` 得出，随后建立 `idx_mapping_np` 并异步复制到 GPU（`vllm/v1/worker/gpu/model_runner.py:1110-1125`；`vllm/v1/worker/gpu/model_runner.py:1162-1166`）。input prep kernel 用这张 mapping 从 persistent rows 读取 prefill token、computed length、last sampled token 与 draft token，生成固定 input buffer 中的 `input_ids`、`positions`、`seq_lens` 等（`vllm/v1/worker/gpu/model_runner.py:1237-1285`）。block table 也先以 stable row 存储，再按 mapping gather 到 forward 专用 buffer（`vllm/v1/worker/gpu/block_table.py:141-168`）。
 
-这条间接寻址支付一次 gather 与固定容量预分配，换掉 V1 的 condense/swap。它也把 attention 的“本步想怎样排”限制在 batch view：attention metadata 可以消费 `idx_mapping` 和 gathered buffer，却不能夺走 request row 生命周期。
+这条间接寻址支付一次 gather 与固定容量预分配，换掉 V1 的 condense/swap。**分析推断**：它还把 attention 的“本步想怎样排”限制在 batch view；attention metadata 可以消费 `idx_mapping` 和 gathered buffer，而 request row 生命周期仍由 `RequestState`/runner 持有。`idx_mapping`/gather 代码只证明这条数据流，这个所有权边界是本页根据状态 owner 重建的结论，并非源码注释的明文合同。
 
 ## 6. Staged write 与 in-flight buffer 生命周期
 
@@ -122,7 +122,7 @@ non-blocking copy 返回时 GPU 可能仍读取 host memory；CPU 若立即覆�
 
 实现不是固定“双缓冲”。MRV2 初始化时先把默认 pool 深度设为 `vllm_config.max_concurrent_batches`，再构造任何 pooled buffer（`vllm/v1/worker/gpu/model_runner.py:211-214`）；异步调度下 MRV2 的并发 batch 上限是 `PP size + 1`，无 PP 时就是 2（`vllm/config/vllm.py:554-565`）。`UvaBufferPool` 以这个深度 round-robin，每次先把 CPU source 拷进下一份 pinned snapshot，再把其 UVA view 交给 GPU（`vllm/v1/worker/gpu/buffer_utils.py:53-88`）。
 
-**失败边界**：pool depth 必须不小于 Engine 的 in-flight batch queue；源码把这条要求写在默认值旁（`vllm/v1/worker/gpu/buffer_utils.py:16-23`）。若新增并发来源却没有同步扩大 pool，round-robin 会在旧 step 尚未结束时回卷并覆盖 snapshot；async-first 的正确性就会退化成偶发数据 race，而不是单纯性能下降。
+**失败边界**：pool depth 必须不小于 Engine 的 in-flight batch queue；源码把这条要求写在默认值旁（`vllm/v1/worker/gpu/buffer_utils.py:16-23`）。**分析推断**：若新增并发来源却没有同步扩大 pool，按 round-robin 实现会在旧 step 尚未结束时回卷并覆盖 snapshot；因此 async-first 的正确性可能退化成偶发 data race，而不只是性能下降（`vllm/v1/worker/gpu/buffer_utils.py:53-79`）。
 
 ## 7. 输出与下一步状态：两个不同的提交点
 
