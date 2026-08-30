@@ -1,9 +1,10 @@
 # vLLM 最新源码知识域分析设计
 
-> **状态**：聊天蓝图已于 2026-08-29 获用户批准；本文件等待用户做落盘后的最终复核。
+> **状态**：聊天蓝图已于 2026-08-29 获用户批准；Waves 1–6 已完成并于 2026-08-30 通过最终 scoped gate。
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`
 > **版本标识**：冻结的 detached checkout，`v0.28.1rc0-80-g6b110badbb`，提交日期 2026-08-29
 > **知识库位置**：`wiki/02_engineering/03_infer_frameworks/vllm/`
+> **最终覆盖**：23 篇内容页 + `index.md`；覆盖矩阵 22/22 项 `covered`。
 
 ## 1. 决策与适用范围
 
@@ -238,30 +239,30 @@ finish with weight version → cache/runner post-commit handling → resume`。
 在新基线下，旧页面不能因为文件存在就标为 `covered`；只有完成定位符重核、边界去重和
 页面 completion test 后才能从 `planned` 改为 `covered`。
 
-| 机制/生命周期 | 权威 owner | 其他页面只允许 | 初始状态 |
+| 机制/生命周期 | 权威 owner | 其他页面只允许 | 最终状态 |
 |---|---|---|---|
 | 全系统静态分层 + 代表请求生命周期 | `03` | 一段局部定位 + 链接 | covered (Wave 1) |
-| 性能/资源约束模型 | `02` | 当前机制的局部约束 | planned |
-| 协议、任务、render/input/output 语义 | `04` | serving/runner 的边界字段 | gap → planned |
-| Engine client/core/executor 接缝 | `10` | 直接相邻接口 | planned |
-| token admission 与 request state | `11` | `SchedulerOutput` 消费合同 | planned |
-| 单 Engine KV block/prefix/offload | `12` | attention/connector 的消费合同 | planned |
-| 模型、权重、并行层、LoRA ABI | `13` | quant/runner 的接合点 | planned |
-| attention metadata/backend contract | `14` | runner/compile 的能力协商 | planned |
-| MRV2 device state 与执行 | `15` | scheduler delta/attention metadata 接口 | planned |
-| serving 启动、路由、背压和故障域 | `16` | 协议 handler 的一跳接口 | planned |
-| sampling 与 structured constraints | `17` | spec decode 的 verify 接缝 | gap → planned |
-| multimodal preprocessing/encoder state | `18` | model/scheduler 的边界摘要 | gap → planned |
-| speculative propose/verify | `20` | sampler/KV 的一跳合同 | planned |
-| quantization | `21` | model/kernel 接合点 | planned |
-| parallel/rank/collective | `22` | engine/executor 边界 | planned |
-| compile/CUDA Graph lifecycle | `23` | runner/backend capture contract | planned |
-| fused op/kernel provider | `24` | IR/model 的调用接缝 | planned |
-| IR/pass/lowering | `25` | compile page的阶段摘要 | planned |
-| 跨 Engine KV transfer/lease | `26` | 本地 KV/serving 边界 | planned |
-| metrics/traces/fault feedback | `27` | 调优页的指标链接 | planned |
-| plugin ABI/lifecycle | `28` | 对应 subsystem 的 extension boundary | planned |
-| 在线权重更新/版本可见性 | `29` | post-training 页的 vLLM 接缝 | gap → planned |
+| 性能/资源约束模型 | `02` | 当前机制的局部约束 | covered (Wave 2) |
+| 协议、任务、render/input/output 语义 | `04` | serving/runner 的边界字段 | covered (Wave 2) |
+| Engine client/core/executor 接缝 | `10` | 直接相邻接口 | covered (Wave 2) |
+| token admission 与 request state | `11` | `SchedulerOutput` 消费合同 | covered (Wave 3) |
+| 单 Engine KV block/prefix/offload | `12` | attention/connector 的消费合同 | covered (Wave 3) |
+| 模型、权重、并行层、LoRA ABI | `13` | quant/runner 的接合点 | covered (Wave 4) |
+| attention metadata/backend contract | `14` | runner/compile 的能力协商 | covered (Wave 4) |
+| MRV2 device state 与执行 | `15` | scheduler delta/attention metadata 接口 | covered (Wave 3) |
+| serving 启动、路由、背压和故障域 | `16` | 协议 handler 的一跳接口 | covered (Wave 2) |
+| sampling 与 structured constraints | `17` | spec decode 的 verify 接缝 | covered (Wave 3) |
+| multimodal preprocessing/encoder state | `18` | model/scheduler 的边界摘要 | covered (Wave 3) |
+| speculative propose/verify | `20` | sampler/KV 的一跳合同 | covered (Wave 4) |
+| quantization | `21` | model/kernel 接合点 | covered (Wave 4) |
+| parallel/rank/collective | `22` | engine/executor 边界 | covered (Wave 5) |
+| compile/CUDA Graph lifecycle | `23` | runner/backend capture contract | covered (Wave 4) |
+| fused op/kernel provider | `24` | IR/model 的调用接缝 | covered (Wave 4) |
+| IR/pass/lowering | `25` | compile page的阶段摘要 | covered (Wave 4) |
+| 跨 Engine KV transfer/lease | `26` | 本地 KV/serving 边界 | covered (Wave 5) |
+| metrics/traces/fault feedback | `27` | 调优页的指标链接 | covered (Wave 5) |
+| plugin ABI/lifecycle | `28` | 对应 subsystem 的 extension boundary | covered (Wave 5) |
+| 在线权重更新/版本可见性 | `29` | post-training 页的 vLLM 接缝 | covered (Wave 5) |
 
 ## 11. 尚未关闭的证据问题
 
@@ -381,3 +382,7 @@ finish with weight version → cache/runner post-commit handling → resume`。
 10. vLLM index、父索引、总索引计数和 changelog 与最终页面集合一致。
 
 本轮不得用页面数、行数、代码块数或引用数量代替上述完成证据。
+
+最终 scoped gate 的结果是：23 篇内容页及 1 个域索引统一固定到上述 detached commit，
+覆盖矩阵 22/22 项已关闭；Wave 6 完成使用指南、知识地图、父级/总索引、radar、回链和
+changelog 的整合，因此不额外虚构一个机制 owner 行。
