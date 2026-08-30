@@ -47,7 +47,7 @@ title: "vLLM 编译与 CUDA Graph：把动态请求收敛为可编译、可捕�
 
 “FULL 比 PIECEWISE 更高，所以一定更好”也是错误心智模型。`FULL` 消除完整 step 的 CPU launch，却要求 attention、metadata、collective 和地址都可捕获；`PIECEWISE` 保留 eager boundary，少消除一些 launch，却能服务更动态的 batch。配置会把请求模式与 attention backend 的最小 graph capability 求交：mixed 不支持 full 时可改为 `FULL_AND_PIECEWISE` 或 `FULL_DECODE_ONLY`，连 decode full 都不支持时再退为 `PIECEWISE` 或 `NONE`；没有合法替代时直接报错（`vllm/config/compilation.py:1389-1475`）。
 
-### 3.2 图 1 规格：manager 启动建表，wrapper 运行期允许补表
+### 3.2 图 1 规格：manager 启动建表，piecewise 再按 wrapper 实现分流
 
 ```mermaid
 flowchart LR
@@ -65,12 +65,17 @@ flowchart LR
     Batch["动态 batch"] --> ManagerKey["manager key<br/>token request query LoRA"]
     ManagerKey --> ManagerHit{"manager 有兼容 case"}
     ManagerHit -->|FULL| Full["完整 graph replay"]
-    ManagerHit -->|PIECEWISE| WrapperKey["wrapper key<br/>token LoRA"]
+    ManagerHit -->|PIECEWISE| PieceImpl{"启用 breakable"}
     ManagerHit -->|NONE| None["NONE<br/>eager forward"]
+    PieceImpl -->|否| WrapperKey["wrapper key<br/>token LoRA"]
+    PieceImpl -->|是| Breakable["Breakable wrapper<br/>graph segments 与 eager breaks"]
     WrapperKey --> WrapperHit{"generic wrapper<br/>已有 entry"}
     WrapperHit -->|是| Piece["compiled piece<br/>graph replay"]
     WrapperHit -->|否| RuntimeCapture["本次调用 capture<br/>写入 wrapper cache"]
     RuntimeCapture --> FirstOutput["返回本次 capture 输出"]
+    Piece --> PieceOutput["piecewise 输出"]
+    FirstOutput --> PieceOutput
+    Breakable --> PieceOutput
   end
 
   Capture --> Batch
@@ -78,7 +83,7 @@ flowchart LR
   Resolve -.->|能力不兼容| BothNone
 ```
 
-图的上半段只描述 MRV2 manager 的启动合同：GPU worker 先补齐未被 graph capture 覆盖的 compile size / range warmup，再做 kernel warmup，最后调用 `capture_model()`；manager 对计划 descriptors 逐个 warmup / capture，并在结束后设置 captured 位（`vllm/v1/worker/gpu_worker.py:748-787`；`vllm/v1/worker/gpu/cudagraph_utils.py:313-398`）。运行期先从真实 batch 构造 descriptor 并完成 DP 同步；manager miss 返回 `NONE`。若 manager 选择 PIECEWISE，Dynamo piece 外层的 generic wrapper 还会做自己的 entry lookup：已有 key replay，缺 key 则在该调用中 capture 并缓存；manager 启动 capture 通常已为计划 descriptor 走过这条路径，但 wrapper 类本身不是只查表（`vllm/v1/worker/gpu/cudagraph_utils.py:406-434`；`vllm/compilation/backends.py:633-684`；`vllm/compilation/cuda_graph.py:233-344`）。
+图的上半段只描述 MRV2 manager 的启动合同：GPU worker 先补齐未被 graph capture 覆盖的 compile size / range warmup，再做 kernel warmup，最后调用 `capture_model()`；manager 对计划 descriptors 逐个 warmup / capture，并在结束后设置 captured 位（`vllm/v1/worker/gpu_worker.py:748-787`；`vllm/v1/worker/gpu/cudagraph_utils.py:313-398`）。运行期先从真实 batch 构造 descriptor 并完成 DP 同步；manager miss 返回 `NONE`。manager 选择 PIECEWISE 后还要按 `use_breakable_cg` 分流：默认 false 路径调用 model，才会进入 Dynamo piece 外层的 generic wrapper，其 entry hit replay、miss 在该调用中 capture 并缓存；true 路径则直接调用 capture 前已初始化的 `BreakableCUDAGraphWrapper`，由它串联 graph segments 与 eager breaks。manager 启动 capture 也沿同一个 implementation 分支执行，不能把所有 PIECEWISE 都画成 generic wrapper（`vllm/v1/worker/gpu/cudagraph_utils.py:152-157`；`vllm/v1/worker/gpu/cudagraph_utils.py:451-462`；`vllm/v1/worker/gpu/cudagraph_utils.py:500-508`；`vllm/compilation/backends.py:633-684`；`vllm/compilation/cuda_graph.py:233-344`）。
 
 ## 4. 动态 shape 怎样被压成有限状态
 
