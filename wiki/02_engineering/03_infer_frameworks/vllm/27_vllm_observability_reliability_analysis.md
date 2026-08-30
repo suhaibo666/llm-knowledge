@@ -12,7 +12,7 @@ title: "vLLM 可观测性与可靠性：把 SLO 症状闭环到资源承诺与�
 >
 > **本文排除**：API server、DP coordinator 与负载均衡的服务路由机制由 [[02_engineering/03_infer_frameworks/vllm/16_vllm_serving_control_plane_analysis|Serving 控制面]] 拥有；Scheduler admission、单 Engine KV、跨 Engine KV 与 rank/collective 的内部证明分别由 `11`、`12`、`26`、`22` 页拥有。本页只解释这些 owner 暴露的信号怎样进入反馈回路。
 >
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`origin/main`，提交日期 2026-08-29）
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`
 >
 > **最近核验**：2026-08-30
 
@@ -51,9 +51,9 @@ flowchart LR
 
 ### 3.1 Commitment → measurement：在状态所有者处打时间戳，在 frontend 算区间
 
-Scheduler 对 QUEUED、首次 SCHEDULED 和 PREEMPTED 记录 typed event：事件使用 EngineCore 进程的 monotonic timestamp，并明确禁止与其他进程的 monotonic timestamp 直接比较；`vllm/v1/engine/__init__.py:169-193`。SCHEDULED 共享本次 schedule 开始的时间戳，preemption 则在释放资源并把请求放回 waiting 时记录；`vllm/v1/core/sched/scheduler.py:539-542`、`vllm/v1/core/sched/scheduler.py:1147-1158`、`vllm/v1/core/sched/scheduler.py:1405-1432`。
+Scheduler 对 QUEUED、每次实际 SCHEDULED 和 PREEMPTED 都记录 typed event：事件使用 EngineCore 进程的 monotonic timestamp，并明确禁止与其他进程的 monotonic timestamp 直接比较；`vllm/v1/engine/__init__.py:169-193`。新请求首次调度与 PREEMPTED 请求恢复调度都会走同一个分支并 emit SCHEDULED，共享本次 schedule 开始的时间戳；preemption 则在释放资源并把请求放回 waiting 时记录；`vllm/v1/core/sched/scheduler.py:539-542`、`vllm/v1/core/sched/scheduler.py:1147-1158`、`vllm/v1/core/sched/scheduler.py:1405-1432`。
 
-Frontend 必须跨 delta 保存请求状态。`RequestStateStats` 把 frontend wall-clock arrival 与 EngineCore monotonic 的 queued/scheduled/first/last-token 时间明确分栏；`vllm/v1/metrics/stats.py:217-236`。`IterationStats` 用 wall-clock arrival 计算 frontend 观察到的 TTFT/e2e，用同一 EngineCore 时间域内的事件计算 queue、prefill、decode 与 ITL，并在完成时一次性形成 finished-request observation；`vllm/v1/metrics/stats.py:425-502`、`vllm/v1/metrics/stats.py:528-580`。
+Frontend 必须跨 delta 保存请求状态，而且它对事件流做有意聚合：每个 SCHEDULED 都会把 LoRA request state 转成 running，但只有 `scheduled_ts` 仍为零时才保存时间戳，所以恢复调度事件不会重置区间基点；`vllm/v1/metrics/stats.py:516-526`。`RequestStateStats` 把 frontend wall-clock arrival 与 EngineCore monotonic 的 queued/scheduled/first/last-token 时间明确分栏；`vllm/v1/metrics/stats.py:217-236`。`IterationStats` 用 wall-clock arrival 计算 frontend 观察到的 TTFT/e2e，用同一 EngineCore 时间域内的事件计算 queue、prefill、decode 与 ITL，并在完成时一次性形成 finished-request observation；`vllm/v1/metrics/stats.py:425-502`、`vllm/v1/metrics/stats.py:528-580`。
 
 为什么不让 frontend 根据“收到消息的时刻”倒推排队时间？它看不到请求真正进入 Scheduler 与首次获得资源的时刻，IPC 排队还会污染区间。事件把**源时间**带过进程边界，frontend 只做同域相减；这正是官方设计强调的约束；`docs/design/metrics.md:152-178`。
 
