@@ -5,7 +5,7 @@ title: "vLLM 采样与结构化输出：把请求级状态投影成当步合法�
 # vLLM 采样与结构化输出：把请求级状态投影成当步合法分布
 
 > **读者问题**：模型给出一行词表 logits 后，vLLM 怎样叠加 allowed-token、logit bias、重复/频率/存在惩罚、temperature、min-p、top-k/top-p 与 grammar 约束，既不采到非法 token，又让下一步 grammar 状态只由真正提交的 token 推进？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`main`，提交时间 2026-08-29T02:40:53Z）
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：vLLM 没有把 structured output 做成“采样后在 CPU 重试”，而是把它拆成两种性质不同的状态：Engine/Scheduler 持有每请求可变的 grammar FSM，按当前前缀生成本步 bitmask；runner 只把 bitmask 与其他 per-request sampling state 投影到 batched logits，再从约束后的支持集选 token。在所有 hard constraint 的交集仍保留至少一个有限 logit 的前提下，正确性来自“先约束、后选择、提交后才推进 FSM”的顺序；若交集为空，sampler 没有通用 guard，属于 §6 明示的失败边界。
 > **所有权边界**：本页拥有普通 token selection、logits 变换顺序、penalty/top-k/top-p/min-p、grammar 编译/bitmask/请求级 FSM 及其提交不变量；不拥有 token admission、KV 分配、detokenization、stop-string 与协议响应，也不拥有 speculative decoding 的 draft proposal、verify/accept 算法。后两类分别由 [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|请求语义]] 与 [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|投机解码]] 解释。
 > **最近更新**：2026-08-30。按 `6b110bad` 新建 token selection 与 structured constraint 权威页。

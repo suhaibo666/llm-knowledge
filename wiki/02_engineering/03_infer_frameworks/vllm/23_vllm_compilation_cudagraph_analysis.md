@@ -5,7 +5,7 @@ title: "vLLM 编译与 CUDA Graph：把动态请求收敛为可编译、可捕�
 # vLLM 编译与 CUDA Graph：把动态请求收敛为可编译、可捕获、地址稳定的执行区
 
 > **读者问题**：continuous batching 每一步的 token 数、request 数、query length、LoRA 组合都在变化，vLLM 怎样仍然提前得到有限个可编译 shape 区间和可捕获 graph case；运行时又凭什么安全地选择 full replay、piecewise execution 或 eager fallback？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`main`，提交时间 2026-08-29T02:40:53Z）
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：vLLM 不试图让“任意动态 batch”直接成为一个万能静态图，而是先用 compile range / static size 收敛动态 shape 域，再用 splitting policy 切出 capture-safe 区域，最后以地址稳定的 storage 和 descriptor 固定 launch 序列。编译 range 一律在 serving 前建立；capture 却有两种不同合同：MRV2 `CudaGraphManager` 在启动期预捕获计划 case、descriptor miss 时返回 `NONE`，通用 `CUDAGraphWrapper` 则允许匹配 mode 的新 key 在运行期创建 entry 并 capture，之后才 replay。编译产物回答“执行什么代码”，graph entry 回答“以哪些地址重放哪条 launch 序列”，不能把 manager 的只查表合同推广到所有 piecewise wrapper。
 > **所有权边界**：本页拥有 dynamic-shape 分区、compile / cache / warmup / capture / replay 生命周期、地址稳定性、capture pool、dispatch key、invalidation 与 fallback，以及 eager / compile-only / piecewise / full 的组合关系。FX/IR 中 operation、alias、functionalization 与 pass 顺序归 [[02_engineering/03_infer_frameworks/vllm/25_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]]；具体 fusion 收益、provider 与 Kernel 内部实现归 [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]]。本页只引用这些下层语义形成的 capture boundary，不在这里重讲其实现。
 > **最近更新**：2026-08-30。按 `6b110bad` 重建 shape → compile → warmup → capture → dispatch / replay 主线，并以 MRV2 live manager 取代旧 dispatcher 心智模型。

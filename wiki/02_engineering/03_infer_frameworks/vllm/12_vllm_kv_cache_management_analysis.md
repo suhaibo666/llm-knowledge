@@ -5,10 +5,10 @@ title: "vLLM KV Cache 管理：分页是单 Engine 的物理块所有权协议"
 # vLLM KV Cache 管理：分页是单 Engine 的物理块所有权协议
 
 > **读者问题**：一个请求的逻辑 token 位置怎样绑定到唯一物理 KV block；prefix 共享、hybrid layout 与本地 CPU offload 又怎样复用内容而不造成重复分配、越权写入或提前淘汰？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`main`，提交时间 2026-08-29T02:40:53Z）
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：单 Engine 内只有一份 GPU 物理容量真相：`BlockPool.blocks[block_id]`。请求的逻辑 block table、prefix hash、free queue 和 hybrid group 都只是指向这批对象的不同索引；`ref_cnt` 表示活跃所有权，hash 表示内容身份，二者正交。分配因此不是“拿到几个整数”，而是一段先回收安全旧块、再证明容量、最后建立引用并只提交 finalized 内容的所有权事务。
 > **所有权边界**：本页拥有逻辑/物理 block、GPU prefix cache、hybrid KV layout、partial-hit copy-on-write、本地 native CPU offload 及 refcount/free/evict 不变量；Scheduler 的 request/token admission、preemption policy 属于 `11`，跨 Engine connector、producer/consumer、lease 与远端传输属于 `26`。
-> **最近更新**：2026-08-30。按 `6b110bad` 重建；旧 `d66300a1` 定位符与“只支持整物理块命中”的表述不再适用。
+> **最近更新**：2026-08-30。按 `6b110bad` 重建；上一轮基线定位符与“只支持整物理块命中”的表述不再适用。
 
 ## 1. 背景：问题不是寻址，而是谁还能读、谁可以写
 

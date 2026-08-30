@@ -2,7 +2,7 @@
 
 > **状态**：聊天蓝图已于 2026-08-29 获用户批准；本文件等待用户做落盘后的最终复核。
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`
-> **版本标识**：`origin/main`，`v0.28.1rc0-80-g6b110badbb`，提交日期 2026-08-29
+> **版本标识**：冻结的 detached checkout，`v0.28.1rc0-80-g6b110badbb`，提交日期 2026-08-29
 > **知识库位置**：`wiki/02_engineering/03_infer_frameworks/vllm/`
 
 ## 1. 决策与适用范围

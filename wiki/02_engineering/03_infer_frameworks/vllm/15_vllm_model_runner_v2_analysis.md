@@ -5,7 +5,7 @@ title: "vLLM Model Runner V2：用稳定行与异步提交重建设备热路径"
 # vLLM Model Runner V2：用稳定行与异步提交重建设备热路径
 
 > **读者问题**：默认 Model Runner V2 怎样把动态的 `SchedulerOutput` 变成地址稳定、可与下一步 CPU 工作重叠的 GPU 执行；一条请求状态何时对 Python、GPU 和 Engine 输出分别可见；哪些配置仍选择或必须选择 V1 runner？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`main`，提交时间 2026-08-29T02:40:53Z）
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：MRV2 的关键不是换一组 kernel，而是把“请求生命周期内的稳定 row”“每步按执行顺序 gather 的 batch view”“尚未对设备提交的 CPU staged diff”和“正在飞行的传输/输出”拆成不同状态。这样 step N 的 GPU 工作只依赖已经排入流的快照，CPU 才能准备 step N+1，而不必把 persistent batch 本身反复压紧、重排或用全局 async barrier 保护。
 > **所有权边界**：本页拥有 runner 内的 device request row、staged-write/UVA buffer 生命周期、每步 input view、异步输出提交与 MRV2 本地 CUDA Graph capture/dispatch/replay；不拥有全局 admission、waiting/running、公平性、逻辑 KV 分配、attention backend 选择、采样分布或跨实例 KV 协议。全局 admission 的权威解释仍在 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]]。
 > **最近更新**：2026-08-30。按 `6b110bad` 重建页面，替换旧基线定位符，并核清 MRV2 默认选择与 V1 双向能力边界。

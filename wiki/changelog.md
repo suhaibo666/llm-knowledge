@@ -303,7 +303,7 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 
 **Type**: 批量重构（15 页正文 + 域索引；接续同日（八）的样板页）
 
-**范围**：`02_engineering/03_infer_frameworks/vllm/` 下 18 篇分析页中的 16 篇（含（八）已改的 [[11_vllm_scheduler_analysis]]）。两篇按文体豁免并在索引里写明理由：[[02_vllm_system_design_principles_analysis]] 是「原始问题 → 四类资源约束 → 五个系统支点」的推导体，第 2 拍本来就是它的第二、三节，前移反而打断推导；[[03_vllm_request_flow_walkthrough_analysis]] 是端到端走查体，按时序组织。
+**范围**：`02_engineering/03_infer_frameworks/vllm/` 下 18 篇分析页中的 16 篇（含（八）已改的 [[11_vllm_scheduler_analysis]]）。两篇按文体豁免并在索引里写明理由：[[02_vllm_system_design_principles_analysis]] 是「原始问题 → 四类资源约束 → 五个系统支点」的推导体，第 2 拍本来就是它的第二、三节，前移反而打断推导；`03_vllm_request_flow_walkthrough_analysis` 是端到端走查体，按时序组织。
 
 **改了什么**（机制正文与既有 `file:line` 一律未动，只动章节顺序、标题与新增段落）：
 
@@ -567,7 +567,7 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 
 **Type**: Source Ingestion + Cross-domain Cross-reference
 
-- 将 `vllm/deepseek_v3_inference_flow.md`（旁置 vLLM checkout 根目录的分析稿）纳入 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]]，落为 [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis|vLLM 请求全链路导览]]，占 2.1「入口与统一心智模型」段位。该页定位为**导览页**（"一条请求怎样穿过进程、队列与 GPU"），与本域其余 owner 页的「约束 → 状态所有权 → 设计选择」叙事互补。
+- 将 `vllm/deepseek_v3_inference_flow.md`（旁置 vLLM checkout 根目录的分析稿）纳入 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]]，落为 `03_vllm_request_flow_walkthrough_analysis`（原 vLLM 请求全链路导览），占 2.1「入口与统一心智模型」段位。该页定位为**导览页**（"一条请求怎样穿过进程、队列与 GPU"），与本域其余 owner 页的「约束 → 状态所有权 → 设计选择」叙事互补。
 - 按「合并优于并存」裁掉与既有 owner 页重叠的部分：原稿第 3.2–3.6 节、第 4 节（调度/执行/Executor 论证）压缩为一节交界事实并指向 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]]、[[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV Cache 管理]]、[[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|Model Runner V2]]；第 8.1/8.2/8.4 节压缩为条件路径摘要；第 7 节并行维度表保留但归口 [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|分布式推理]]。
 - **保留的独有增量**（本域此前未覆盖）：服务启动进程树与三级就绪屏障（worker `Pipe` READY → EngineCore `HELLO/READY` → 数据面 ready）、空闲后端的逐层唤醒路径（ZMQ poll → `queue.Queue` → SHM ring + `SpinCondition`）、P0–P18 跨进程管道拓扑表、DeepSeek-V3 的 MLA/MoE 在通用调用链中的落点、按状态边界定位的排查表、源码阅读顺序与启动/请求主线函数索引。
 - **基线例外**：该页显式声明源码基线 `vllm-project/vllm@26858770`（2026-08-24），高于本域统一基线 `d66300a1`（2026-08-20）；两提交之间该页引用的架构、引擎、调度、worker 与 DeepSeek 模型文件无源码差异，已在页头与域索引同时注明。

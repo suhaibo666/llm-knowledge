@@ -13,7 +13,7 @@ title: "vLLM 在线权重更新：受暂停保护的版本可见性协议"
 >
 > **明确排除**：trainer 的优化算法、rollout 编排和何时产生新 policy；TP/PP/DP/EP collective 的一般语义；Scheduler admission、单 Engine KV block 生命周期、speculative verify/accept 和跨 Engine KV lease 的内部机制。
 >
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`main`，提交时间 2026-08-29T02:40:53Z）。
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）。
 >
 > **最近更新**：2026-08-30。
 

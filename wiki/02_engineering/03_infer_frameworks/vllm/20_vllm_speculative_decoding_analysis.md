@@ -5,7 +5,7 @@ title: "vLLM 投机解码：让候选、验证与状态提交组成一笔事务"
 # vLLM 投机解码：让候选、验证与状态提交组成一笔事务
 
 > **读者问题**：什么时候多付一次 drafter 与多位置验证的成本，反而比目标模型逐 token 串行 decode 更便宜；vLLM 又怎样保证草稿被拒绝时，输出分布仍等于目标分布，逻辑 token 与 KV 边界也没有被未确认候选推进？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`main`，提交时间 2026-08-29T02:40:53Z）
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：投机解码不是“相信小模型”，而是把一次串行 next-token 决策改成一笔四阶段事务：proposer 只交候选，Scheduler 为 target score 预留 token/KV 位置，verifier 只接受连续前缀并在首个拒绝点补偿采样；验证结果随后跨过两个有先后关系的提交面——MRV2 先就地提交 GPU token/device progress，下一轮 proposer 立即读取它，Scheduler 再根据返回输出回退 CPU 乐观进度并提交请求/output history。速度收益来自“每轮提交 token 的期望数”超过 drafter、宽 target forward、verification 与状态维护的临界路径成本；分布与 KV 正确性则来自候选状态和这两份已提交状态从不混为一谈。
 > **所有权边界**：本页拥有 propose → target score → accept/reject → rollback/commit 合同、标准与 block verification 的分布正确性、draft/target/KV 成本模型及 break-even 条件；不拥有普通 logits processor、temperature、top-k/top-p、grammar FSM 的完整机制，也不拥有通用 KV block 生命周期。一般采样由 [[02_engineering/03_infer_frameworks/vllm/17_vllm_sampling_structured_output_analysis|vLLM 采样与结构化输出]] 解释，逻辑/物理 block 所有权由 [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] 解释。
 > **最近更新**：2026-08-30。按 `6b110bad` 重建 propose/score/verify/commit 主线，补齐分布证明、双侧 KV 回滚与经济临界点。

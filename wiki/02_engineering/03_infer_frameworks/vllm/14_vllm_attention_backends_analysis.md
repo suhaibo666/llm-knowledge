@@ -5,7 +5,7 @@ title: "vLLM Attention Backend：稳定合同先筛能力，动态 Metadata 再�
 # vLLM Attention Backend：稳定合同先筛能力，动态 Metadata 再接 Kernel
 
 > **读者问题**：模型含有不同 attention 语义、KV dtype、block size 和并行模式时，vLLM 怎样选出可用 backend、固定可共享的 KV 物理布局，再把每一步变化的请求边界翻译成该 backend 可执行的输入？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`origin/main`，`v0.28.1rc0-80-g6b110badbb`，提交时间 2026-08-29T02:40:53Z）
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，`v0.28.1rc0-80-g6b110badbb`，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：attention specialization 被拆成两种时间尺度。初始化期用 backend 能力谓词、KV spec 与全模型 layout 求交固定实现和存储 ABI；执行期由 runner 生成 backend-neutral 的 `CommonAttentionMetadata`，再由 builder 翻译为 backend metadata。Scheduler 因而只需承诺 token 与逻辑 block，kernel 只需消费已经证明自洽的形状、地址和边界。
 > **所有权边界**：本页拥有 `AttentionBackend`/builder/impl 合同、per-kind 与平台 backend 选择、KV layout 和 kernel block-size 协商、metadata 翻译、fallback/rejection 语义；全局 admission、preemption 与请求状态属于 `11`，物理 block 生命周期属于 `12`，CUDA Graph 全局派发属于 `23`，kernel/provider 内部实现与收益模型属于 `24`。
 > **最近更新**：2026-08-30。按 `6b110bad` 重建，并纠正旧页“selector 直接设置全局 KV layout”的过时描述。

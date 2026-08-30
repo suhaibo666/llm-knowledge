@@ -5,7 +5,7 @@ title: "vLLM Scheduler：多资源 admission 事务与输出提交"
 # vLLM Scheduler：多资源 admission 事务与输出提交
 
 > **读者问题**：一次 `schedule()` 怎样同时承诺 request slot、token、encoder、speculative 与逻辑 KV 资源，并在结果回来后把“计划进度”修正为真实进度？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`main`，提交时间 2026-08-29T02:40:53Z）
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：Scheduler 不是 batch 排序器，而是多资源 admission 事务的唯一提交者。它先在一个 step 内联合保留 request slot、token/input、encoder、speculative 与逻辑 KV 容量，形成可执行的 `SchedulerOutput`；再以这份 output 为事务凭据乐观推进进度，待执行结果返回后回退被拒 draft、处理 stale output，并在 preempt 或 finish 时释放所有权。
 > **所有权边界**：本页拥有 waiting/running、token/encoder/spec 预算、preemption、finish 与 output-side commit；不解释物理 runner 的 persistent row、GPU tensor/graph、KV block/hash/refcount 算法、采样分布或跨实例 KV 协议。
 > **最近更新**：2026-08-30。按 `6b110bad` 重建页面，旧基线定位符不再适用。

@@ -5,7 +5,7 @@ title: "vLLM 多模态执行：用双层缓存与位置合同把媒体变成模�
 # vLLM 多模态执行：用双层缓存与位置合同把媒体变成模型输入
 
 > **读者问题**：一张图片、一段音频或视频怎样经过加载、解析、processor cache、encoder budget/cache 和设备 runner，最终只替换它在 token 序列中对应的 embedding；每一层用什么 key、由谁持有状态，什么条件下会停在占位区间之前？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`main`，提交时间 2026-08-29T02:40:53Z）
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：vLLM 没有把“媒体”直接塞进一次 VLM forward，而是先把它冻结成一份同时携带 **processor key、encoder key 与 token 位置合同**的 `MultiModalFeatureSpec`。前端缓存消除重复预处理，Scheduler 只提交 encoder 计算与逻辑容量，首个 pipeline rank 再拥有实际 encoder tensor，并严格按占位位置把它们拼入本步 `inputs_embeds`。
 > **所有权边界**：本页拥有 media load/parse、model-specific preprocessing、processor cache、`MultiModalFeatureSpec`、encoder compute/cache budget、Scheduler 的 encoder 接缝、设备侧 encoder cache 与 feature-to-token alignment；不拥有 OpenAI/chat 协议归一化、一般 waiting/running 与公平性策略、具体 VLM tower/connector/LLM 网络结构、attention backend 或采样分布。
 > **最近更新**：2026-08-30。按 `6b110bad` 新增 owner 页。

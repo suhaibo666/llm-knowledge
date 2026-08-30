@@ -5,7 +5,7 @@ title: "vLLM 量化 ABI：格式、Scale、加载转换与 Kernel 必须联合�
 # vLLM 量化 ABI：格式、Scale、加载转换与 Kernel 必须联合决策
 
 > **读者问题**：为什么同样写着 W4A16 或 FP8 的 checkpoint，不能只按位宽选择一个 GEMM；vLLM 又怎样保证 checkpoint 的 pack/scale 语义、TP 后的局部形状、post-load 排列与最终设备 Kernel 始终是同一份合同？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`main`，提交时间 2026-08-29T02:40:53Z）
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：量化不是加载完成后的 dtype cast，而是一条逐步收紧的 ABI：configure 阶段确定 checkpoint/在线格式与全局能力边界，layer 构造阶段把格式变成 TP-local 参数与 scale 形状，post-load 阶段把加载表示提交为 Kernel 表示，runtime 只在能实现同一数值合同的 Kernel 之间派发。任一阶段若偷偷改变 pack axis、scale 粒度、zero-point、activation dtype 或分片语义，模型可能仍能运行却计算另一套数值；所以兼容谓词、转换和 fallback 必须联合决定。
 > **所有权边界**：本页拥有量化 config → per-layer method → 参数/scale ABI → post-load transform → hardware dispatch/fallback，以及 packed mapping 对量化规则的消费接缝。通用 checkpoint 枚举、名称映射和参数分片提交归 [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型与权重 ABI]]；Kernel 内部算法、tile 和 provider 编程归 [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]]；KV layout 与 attention backend 的完整协商归 `12/14`，本页只保留 scale 名称与量化能力接缝。
 > **最近更新**：2026-08-30。按 `6b110bad` 重建 configure → create/load → post-load → dispatch/fallback 主线，并补齐在线量化、TP scale 一致性和显式失败边界。

@@ -5,7 +5,7 @@ title: "vLLM 使用与优化指南：用可撤销实验寻找限制资源"
 # vLLM 使用与优化指南：用可撤销实验寻找限制资源
 
 > **读者问题**：怎样把一个模型可靠地跑起来，建立与真实负载一致的 SLO、吞吐和资源基线，再用一次只改变一个变量的实验找出限制资源，而不是不断追加看似相关的 flags？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`origin/main`，`v0.28.1rc0-80-g6b110badbb`，提交时间 2026-08-29T02:40:53Z）
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，`v0.28.1rc0-80-g6b110badbb`，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：vLLM 不存在脱离 workload envelope 的普适最优配置。可复现的调优是一条闭环：**负载假设 → 基线测量 → 限制资源诊断 → 一次只改一个变量 → 正确性与性能双重验证 → 触发条件满足即回滚**。配置只是用来证伪瓶颈假设的实验手段，不是优化成果本身。
 > **本文拥有**：离线/在线的最小使用路径、workload envelope、benchmark 选择、warmup/measurement 分离、瓶颈到配置族的决策、one-variable experiment、correctness guard、验收与回滚。
 > **明确排除**：请求、Scheduler/KV、Model Runner、采样、编译、并行、跨实例 KV 与可靠性的内部状态机；本页只说明何时去验证这些机制，并链接到各自 owner。

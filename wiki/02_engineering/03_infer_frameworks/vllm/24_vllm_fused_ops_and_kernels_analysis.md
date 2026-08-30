@@ -5,7 +5,7 @@ title: "vLLM 融合算子与 Kernel：用收益账本约束专用化与 fallback
 # vLLM 融合算子与 Kernel：用收益账本约束专用化与 fallback
 
 > **读者问题**：把几个算子写进同一个 Kernel 就一定更快吗？vLLM 怎样在 native、vLLM C、AITER、Oink、Triton、FlashInfer/CUTLASS 等实现之间选择，又在 shape、dtype、硬件或 workspace 合同不成立时安全 fallback？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`main`，提交时间 2026-08-29T02:40:53Z）
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：融合不是“Kernel 数越少越好”，而是一笔受语义合同约束的收益账：只有省掉的 launch、全局内存中间态与格式转换，大于更高寄存器/共享内存压力、workspace、shape/dtype/hardware 特化和维护成本时，专用实现才值得选择。vLLM 因而先稳定 op 语义，再把平台可用性、参数兼容性与部署能力拆成显式谓词；fallback 只能换成实现同一合同的 provider，不能顺手改变数值、布局或并行语义。
 > **所有权边界**：本页拥有融合收益模型、provider/Kernel family、能力选择、workspace 与 fallback；只选 residual+RMSNorm(+quant) 和 fused MoE 两组代表族，不做 Kernel 名录。量化 pack/scale ABI 归 [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|vLLM 量化设计]]，attention backend 合同归 [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]]，FX/IR pattern、alias/functionalization 与 pass 顺序归 [[02_engineering/03_infer_frameworks/vllm/25_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]]。
 > **最近更新**：2026-08-30。按 `6b110bad` 重建收益账、provider 选择、代表 Kernel family 与 fallback 边界。

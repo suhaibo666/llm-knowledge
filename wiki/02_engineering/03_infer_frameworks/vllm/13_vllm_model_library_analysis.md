@@ -5,7 +5,7 @@ title: "vLLM 模型库：把 checkpoint 提交为可执行并行模型的 ABI"
 # vLLM 模型库：把 checkpoint 提交为可执行并行模型的 ABI
 
 > **读者问题**：Hugging Face config 中的 architecture 和一串 checkpoint tensor，怎样经过类解析、统一构造、名称/分片映射与可选 LoRA 接合，变成每个 rank 上可执行且没有明显漏载的模型？
-> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`main`，提交时间 2026-08-29T02:40:53Z）
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：vLLM 的“模型支持”不是 registry 里的一行类名，而是一条跨层 ABI：Registry 决定类与能力，统一构造器产生带稳定前缀的 rank-local module graph，模型的 name mapper 把 checkpoint identity 翻译成 runtime parameter 与 packed shard identity，并行层自己的 `weight_loader` 才把数据提交到本 rank 的物理 slice；LoRA 随后复用同一套 module/packed-name 语义，把 adapter 接到已构造的执行图上。
 > **所有权边界**：本页拥有内建/外部模型注册与 class resolution、`VllmConfig + prefix` 构造 ABI、通用 checkpoint name mapping 与基础权重提交、TP/PP-aware parameter loading、packed parameter、基础模型上的 LoRA wrapper/adapter attachment。
 > **排除概念**：逐 step request row、buffer、graph 与 LoRA batch mapping 属于 `15`；attention metadata/backend 协商属于 `14`；量化格式、scale、post-load transform 与 kernel dispatch 属于 `21`；rank group 创建和 collective ordering 属于 `22`；插件发现与进程级初始化属于 `28`。
