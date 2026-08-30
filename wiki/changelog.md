@@ -12,6 +12,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-30：vLLM Waves 2–6 完成——23 篇统一基线与最终知识地图
+
+**Type**：全域机制优先重写 + 4 个新 owner 页 + 导航/迁移元数据集成
+
+Waves 2–6 已完成入口与控制边界、资源与设备热路径、模型与专用化、规模化与生产闭环、使用与最终导航的复审。全域不再按源码目录或函数顺序搬运，而以读者问题、设计取舍、状态所有权、提交不变量、成本和失败边界组织；跨页只保留相邻合同并链接唯一 owner。
+
+新增四个权威 owner：[[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|04 请求语义]]、[[02_engineering/03_infer_frameworks/vllm/17_vllm_sampling_structured_output_analysis|17 采样与结构化输出]]、[[02_engineering/03_infer_frameworks/vllm/18_vllm_multimodal_execution_analysis|18 多模态执行]]、[[02_engineering/03_infer_frameworks/vllm/29_vllm_weight_transfer_online_update_analysis|29 在线权重更新]]。相关回链已从退休 ownership 修正到这些页面，协议/任务、token selection、媒体 encoder state 与在线版本可见性各有且仅有一个正文 owner。
+
+最终 23 篇内容页与 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 知识地图]] 全部固定到冻结源码 `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（2026-08-29），父索引、总索引计数与 repository radar 同步为 **23 篇 + index**。本轮只对直接改动的 index/backlink/radar/changelog 做 scoped `rg`、wikilink target existence、显式路径 `git diff --check` 与人工 owner/路径/计数复核；未运行全库验证，也未回写历史 changelog 条目。
+
+---
+
 ## 2026-08-29：vLLM 架构概览 Wave 1——直达导航、回链与混合基线迁移
 
 **Type**：重建页迁移集成（1 页更名/重建 + 2 个回链 + 2 个索引）

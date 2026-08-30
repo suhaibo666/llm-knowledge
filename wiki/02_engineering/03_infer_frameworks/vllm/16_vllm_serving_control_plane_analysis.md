@@ -9,7 +9,7 @@ title: "vLLM Serving 控制面：用分阶段就绪约束服务拓扑"
 
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`
 > **中心命题**：Serving 控制面的核心不是 HTTP 路由，而是一套跨进程所有权协议：launcher 先选择拓扑并持有进程故障域，worker、EngineCore、coordinator、Core client 与 API app 再按依赖顺序逐级解锁；运行期 DP 路由只用统计反馈做软负载均衡，真正的资源准入仍在 Engine 内；退出期则由同一个 deadline 和故障信号把已分散的所有权重新收拢。
-> **所有权边界**：本页拥有启动、通信端点、ready/liveness、DP 路由反馈、服务级背压、进程故障域和 shutdown。协议请求的解析、输出渲染与取消语义见 [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_lifecycle_analysis|请求生命周期]]；Engine 内部 `add/step/output` 事务边界见 [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|Engine 架构]]。
+> **所有权边界**：本页拥有启动、通信端点、ready/liveness、DP 路由反馈、服务级背压、进程故障域和 shutdown。协议请求的解析、输出渲染与取消语义见 [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|请求语义]]；Engine 内部 `add/step/output` 事务边界见 [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|Engine 架构]]。
 > **最近更新**：2026-08-30。按 frozen source `6b110bad` 重建控制面所有权、分阶段 readiness、DP 反馈与故障边界。
 
 ## 一、背景：监听端口不等于服务已经成立
@@ -204,7 +204,7 @@ EngineCore 本身还区分 drain 与 abort：shutdown 输入会停止接收新�
 ## Related Pages
 
 - [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] — 全系统组件地图与跨页责任边界。
-- [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_lifecycle_analysis|vLLM 请求生命周期]] — API 解析、输出渲染、取消与请求级错误传播。
+- [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|vLLM 请求语义]] — API 解析、输出渲染、取消与请求级错误传播。
 - [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM Engine 架构]] — Core client 之后的 Engine 事务与状态提交边界。
 - [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] — 路由完成后的 token/KV admission owner。
 - [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — TP、PP、DP 与 executor/worker 拓扑。

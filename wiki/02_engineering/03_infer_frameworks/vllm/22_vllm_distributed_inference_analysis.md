@@ -9,7 +9,7 @@ title: "vLLM 分布式推理：从逻辑并行轴到 rank 状态与 collective �
 
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`
 > **中心命题**：并行轴是张量或请求状态的逻辑坐标，进程只是坐标的承载者，process group 才是 collective 的参与集合。vLLM 先把全局 rank reshape 为统一坐标，再为每条轴派生 group；executor 必须让相关 worker 以相同顺序进入这些 group 上的通信。DBO 只把一次执行切成两个时间 lane，不能修复错误的 group 或 collective 次序。
-> **所有权边界**：本页拥有逻辑并行轴、rank/group/process 状态、executor fan-out 与 collective 排序、DBO overlap。在线权重更新事务属于 [[02_engineering/03_infer_frameworks/vllm/29_vllm_rlhf_and_online_serving_analysis|RLHF 与在线 Serving]]，不在本页展开。
+> **所有权边界**：本页拥有逻辑并行轴、rank/group/process 状态、executor fan-out 与 collective 排序、DBO overlap。在线权重更新事务属于 [[02_engineering/03_infer_frameworks/vllm/29_vllm_weight_transfer_online_update_analysis|在线权重更新]]，不在本页展开。
 > **最近更新**：2026-08-30。
 
 ## 一、先分开三个问题：切什么、谁持有、何时执行
