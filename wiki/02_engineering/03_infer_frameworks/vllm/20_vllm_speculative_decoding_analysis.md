@@ -6,7 +6,7 @@ title: "vLLM 投机解码：让候选、验证与状态提交组成一笔事务"
 
 > **读者问题**：什么时候多付一次 drafter 与多位置验证的成本，反而比目标模型逐 token 串行 decode 更便宜；vLLM 又怎样保证草稿被拒绝时，输出分布仍等于目标分布，逻辑 token 与 KV 边界也没有被未确认候选推进？
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`main`，提交时间 2026-08-29T02:40:53Z）
-> **中心命题**：投机解码不是“相信小模型”，而是把一次串行 next-token 决策改成一笔四阶段事务：proposer 只交候选，Scheduler 为 target score 预留 token/KV 位置，verifier 只接受连续前缀并在首个拒绝点补偿采样，最后 Scheduler 与 MRV2 同步提交 accepted prefix、回退 rejected tail。速度收益来自“每轮提交 token 的期望数”超过 drafter、宽 target forward、verification 与状态维护的临界路径成本；分布与 KV 正确性则来自候选状态和已提交状态从不混为一谈。
+> **中心命题**：投机解码不是“相信小模型”，而是把一次串行 next-token 决策改成一笔四阶段事务：proposer 只交候选，Scheduler 为 target score 预留 token/KV 位置，verifier 只接受连续前缀并在首个拒绝点补偿采样；验证结果随后跨过两个有先后关系的提交面——MRV2 先就地提交 GPU token/device progress，下一轮 proposer 立即读取它，Scheduler 再根据返回输出回退 CPU 乐观进度并提交请求/output history。速度收益来自“每轮提交 token 的期望数”超过 drafter、宽 target forward、verification 与状态维护的临界路径成本；分布与 KV 正确性则来自候选状态和这两份已提交状态从不混为一谈。
 > **所有权边界**：本页拥有 propose → target score → accept/reject → rollback/commit 合同、标准与 block verification 的分布正确性、draft/target/KV 成本模型及 break-even 条件；不拥有普通 logits processor、temperature、top-k/top-p、grammar FSM 的完整机制，也不拥有通用 KV block 生命周期。一般采样由 [[02_engineering/03_infer_frameworks/vllm/17_vllm_sampling_structured_output_analysis|vLLM 采样与结构化输出]] 解释，逻辑/物理 block 所有权由 [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] 解释。
 > **最近更新**：2026-08-30。按 `6b110bad` 重建 propose/score/verify/commit 主线，补齐分布证明、双侧 KV 回滚与经济临界点。
 
@@ -28,14 +28,15 @@ $$
 
 这个式子揭示了“接受率高”仍可能不加速的原因：深位置只有在前缀全部存活时才贡献收益，而 drafter、额外 KV/metadata、$k+1$ 行 target logits 和 verifier 都先支付成本。当前 DSpark adaptive verification 正是把每个候选位置的置信度连乘成 survival probability，并从 profile 得到 drafter/verify cost curve；它最终选择使“预计提交 token 数 / 成本”最大的全 batch draft budget（`vllm/v1/worker/gpu/spec_decode/adaptive_verification.py:36-62`；`vllm/v1/worker/gpu/spec_decode/adaptive_verification.py:197-238`；`vllm/v1/worker/gpu/spec_decode/adaptive_verification.py:296-337`）。这给出了源码内的经济判据，但该自适应实现当前只允许 DSpark（`vllm/config/speculative.py:1456-1457`），不能泛化成所有 proposer 已经自动调优。
 
-## 2. 静态责任：四个 owner 共享合同，不共享事实
+## 2. 静态责任：阶段共享合同，提交阶段有两个状态 owner
 
 | 阶段 | 输入 → 输出 | 拥有的状态 | 明确不拥有 | 证据 |
 |---|---|---|---|---|
 | Propose | 已提交前缀、target hidden state、draft state → 候选序列及可选 draft logits | 可选 proposer 权重、draft KV/metadata、候选置信度 | 用户输出、target 接受结论 | `vllm/v1/worker/gpu/spec_decode/speculator.py:33-70`；`vllm/v1/worker/gpu/model_runner.py:1912-1942` |
 | Schedule / reserve | 请求逻辑长度、候选、budget → target query 与物理 slot 承诺 | `spec_token_ids`、scheduled token 数、逻辑 block allocation | 候选概率、accept/reject | `vllm/v1/request.py:181-182`；`vllm/v1/request.py:287-293`；`vllm/v1/core/sched/scheduler.py:585-603` |
 | Target score / verify | target processed logits、draft token、可选 draft logits → accepted prefix 与 correction/bonus | 当步 request/position mapping、verification RNG、残差采样 | 跨步请求生命周期 | `vllm/v1/worker/gpu/model_runner.py:1403-1433`；`vllm/v1/worker/gpu/spec_decode/rejection_sampler.py:144-181` |
-| Rollback / commit | emitted tokens、rejected count → 新逻辑前缀与 computed boundary | Scheduler CPU 请求状态、MRV2 device row 的 committed progress | proposer 内部算法 | `vllm/v1/core/sched/scheduler.py:1886-1905`；`vllm/v1/worker/gpu/input_batch.py:565-601` |
+| Device finalize | emitted tokens、rejected count → GPU-local committed prefix 与 device computed boundary | MRV2 device row | CPU 请求/output history | `vllm/v1/worker/gpu/input_batch.py:565-601`；`vllm/v1/worker/gpu/model_runner.py:1899-1938` |
+| Scheduler reconcile / output commit | worker 输出 → 回退后的 CPU computed boundary 与请求/output history | Scheduler CPU 请求状态、stop 状态 | proposer 的下一轮输入 | `vllm/v1/core/sched/scheduler.py:1886-1904`；`vllm/v1/core/sched/scheduler.py:2257-2274` |
 
 这层拆分胜过“每个 proposer 自己完成解码”的直观替代。源码没有给出正式方案对比，以下是**分析推断**：若 draft model、n-gram、suffix 或并行 drafter分别拥有 target commit，Scheduler 就无法用同一 token/KV 事务处理拒绝、抢占和 async in-flight 状态。现行 `BaseSpeculator.propose` 只返回 draft tensor，而 runner 统一保存候选并交给同一个 rejection sampler（`vllm/v1/worker/gpu/spec_decode/speculator.py:43-70`；`vllm/v1/worker/gpu/model_runner.py:1922-1950`）。
 
@@ -43,24 +44,26 @@ $$
 
 ### 3.1 图 1 规格：一轮 draft / verify 的提交边界
 
-图从已提交前缀出发。主路径表示数据成为可提交 token 的唯一通路；拒绝分支明确把 target/Scheduler 的逻辑边界退到 rejected tail 之前，而不是把已写过的物理 KV 当成有效前缀。bonus 与 correction 二选一，最后都回到同一个 committed prefix。
+图从本轮已对齐的前缀出发。主路径表示数据成为可提交 token 的唯一通路；bonus 与 correction 二选一，但两者都先进入 GPU-local finalize。这里没有一个横跨 CPU/GPU 的瞬时“唯一 commit”：MRV2 先更新 device row，下一轮 proposer 已可读取；worker 输出随后回到 Scheduler，后者再对齐 CPU computed count 并追加请求/output history。
 
 ```mermaid
-flowchart LR
-    P["已提交前缀<br/>token 与 KV 边界一致"] --> D["Propose<br/>生成候选但不对外可见"]
+flowchart TB
+    P["本轮已对齐前缀<br/>CPU 与 GPU 边界一致"] --> D["Propose<br/>生成候选但不对外可见"]
     D --> S["Reserve<br/>token budget 与 KV slots"]
     S --> T["Target score<br/>并行计算候选位置"]
     T --> V["Verify<br/>只接受连续前缀"]
     V --> Q{"全部候选接受"}
     Q -->|是| B["Bonus<br/>从目标下一位置采样"]
     Q -->|否| R["Correction<br/>从目标残差采样"]
-    R --> X["Rollback<br/>减去 rejected tail"]
-    B --> C["Commit<br/>只追加 emitted tokens"]
-    X --> C
-    C --> P
+    B --> G["GPU-local finalize<br/>写 emitted tokens<br/>回退 device 进度"]
+    R --> G
+    G --> N["Next proposal<br/>立即读取 GPU 已提交前缀"]
+    G --> O["Worker output<br/>异步拷回或直接返回"]
+    O --> C["Scheduler reconcile<br/>回退 CPU 乐观进度"]
+    C --> H["CPU output commit<br/>追加 token 并检查 stop"]
 ```
 
-图中“Reserve”不是提前认可候选。Scheduler 在 `schedule()` 中让 `num_computed_tokens` 追赶包含 draft 的 `num_tokens_with_spec`，并把每请求的 candidate 数限制在本步 token/input/model-length budget 内（`vllm/v1/core/sched/scheduler.py:501-512`；`vllm/v1/core/sched/scheduler.py:585-603`）。KV manager 随后为 `num_new_tokens` 分配位置，并额外接收 proposer 所需 lookahead（`vllm/v1/core/sched/scheduler.py:655-662`）。只有 `update_from_output()` 看见 verifier 返回的 emitted tokens 后，候选才跨过 commit 边界。
+图中“Reserve”不是提前认可候选。Scheduler 在 `schedule()` 中让 `num_computed_tokens` 追赶包含 draft 的 `num_tokens_with_spec`，并把每请求的 candidate 数限制在本步 token/input/model-length budget 内（`vllm/v1/core/sched/scheduler.py:501-512`；`vllm/v1/core/sched/scheduler.py:585-603`）。KV manager 随后为 `num_new_tokens` 分配位置，并额外接收 proposer 所需 lookahead（`vllm/v1/core/sched/scheduler.py:655-662`）。verifier 产出 emitted tokens 后，MRV2 的 `postprocess_sampled` 先跨过 GPU-local commit 边界并在下一次 `propose` 前更新 device state（`vllm/v1/worker/gpu/model_runner.py:1899-1938`；`vllm/v1/worker/gpu/input_batch.py:543-601`）；Scheduler 稍后消费 worker 输出，跨过独立的 CPU/output commit 边界（`vllm/v1/core/sched/scheduler.py:1886-1904`；`vllm/v1/core/sched/scheduler.py:2257-2274`）。
 
 ## 4. Propose：候选来源可变，候选身份不可变
 
@@ -116,19 +119,21 @@ $$
 
 `synthetic` 是明确的非标准边界：配置让它按给定的 per-position acceptance rate 接受，而不是按 $p/q$；测试只验证实际接受率接近期望 rate（`vllm/config/speculative.py:506-525`；`tests/v1/spec_decode/test_rejection_sampler_utils.py:247-297`）。由此可得（**分析推断**）：不能用 standard/block 的分布守恒结论替它背书。它适合受控模拟 acceptance economics，不应被描述为精确 target-distribution verification。
 
-## 7. Rollback / commit：KV 正确性是两份进度同时回退
+## 7. Rollback / commit：不是一个时点，而是有序的双提交
 
-### 7.1 Scheduler 侧：先乐观推进，再按拒绝数减回
+验证结束后，GPU 与 CPU 不在同一函数里原子提交。真实顺序是：MRV2 先完成 GPU-local rollback/commit，下一轮 proposer 随即消费这份状态；随后 Scheduler 才消费返回输出，对齐自己的乐观进度并提交请求/output history。两处提交共享同一组 emitted tokens 与 rejected count，但各自只拥有自己的状态面。
 
-调度完成时 Scheduler 会把 `num_scheduled_tokens` 乐观加到 `num_computed_tokens`；源码注释明确说 speculative rejection 将在 output 阶段调整（`vllm/v1/core/sched/scheduler.py:1435-1449`）。verifier 返回后，Scheduler 以“scheduled drafts − accepted drafts”得到 `num_rejected`，从 CPU-side `num_computed_tokens` 减掉 rejected tail；async path 还同步减少 output placeholders（`vllm/v1/core/sched/scheduler.py:1886-1905`）。随后只有 verifier 真正返回的 token list 才经 `append_output_token_ids` 进入请求逻辑历史并执行 stop 检查（`vllm/v1/core/sched/scheduler.py:2257-2274`）。
+### 7.1 MRV2 先提交 GPU-local 前缀
 
-这意味着 target forward 写过某个 KV 位置，不等于该位置已经提交。逻辑有效边界由回退后的 computed count 和已追加 token 共同定义。
+MRV2 在当前 GPU 流上立即把 emitted tokens 写入 `all_token_ids`，把最后一个 emitted token 设为 `last_sampled_tokens`，并用 `query_len - num_rejected` 更新 device-side computed count（`vllm/v1/worker/gpu/input_batch.py:543-601`）。runner 随后才把 `num_sampled` 与 `num_rejected` 交给下一轮 proposer（`vllm/v1/worker/gpu/model_runner.py:1899-1938`）；候选生成因此读取“本轮已验证后的 GPU-local 前缀”，无需等待 Scheduler 的 CPU/output commit。
 
-### 7.2 MRV2 侧：device row 也必须丢弃 rejected tail
+**分析推断**：rejected tail 的物理 KV 内容可以暂时留在已分配 block 内，但下一轮 attention 只看回退后的 device logical length，新的 query 会从该边界重写位置；若 device row 没有先回退，紧随其后的 proposer 及下一轮 positions、seq_lens 与 attention metadata 就会越过错误分支。
 
-MRV2 不能只等 Scheduler 下一步覆盖 CPU 数字；它在当前 GPU 流上立即把 emitted tokens 写入 `all_token_ids`，把最后一个 emitted token 设为 `last_sampled_tokens`，并用 `query_len - num_rejected` 更新 device-side computed count（`vllm/v1/worker/gpu/input_batch.py:543-601`）。**分析推断**：rejected tail 的物理 KV 内容可以暂时留在已分配 block 内，但下一轮 attention 只看回退后的逻辑长度，新的 query 会从该边界重写位置；若只回退 Scheduler、不回退 device row，下一轮 positions、seq_lens 与 attention metadata 就会继续越过错误分支。
+### 7.2 Scheduler 随后对齐 CPU 进度并提交输出历史
 
-这一不变量也解释了 proposer 调用顺序：runner 先执行 `postprocess_sampled` 完成本地 rollback/commit，再把 `num_sampled` 与 `num_rejected` 交给下一轮 proposer（`vllm/v1/worker/gpu/model_runner.py:1899-1938`）。候选生成因此读取的是“本轮已验证后的前缀”，不是 target 曾计算过的最长尾部。
+调度完成时 Scheduler 已把 `num_scheduled_tokens` 乐观加到 `num_computed_tokens`；源码注释明确说 speculative rejection 将在 output 阶段调整（`vllm/v1/core/sched/scheduler.py:1435-1449`）。收到 worker 输出后，Scheduler 以“scheduled drafts − accepted drafts”得到 `num_rejected`，从 CPU-side `num_computed_tokens` 减掉 rejected tail；async path 还同步减少 output placeholders（`vllm/v1/core/sched/scheduler.py:1886-1904`）。随后 verifier 真正返回的 token list 才经 `append_output_token_ids` 进入请求逻辑历史并执行 stop 检查（`vllm/v1/core/sched/scheduler.py:2257-2274`）。
+
+因此 target forward 写过某个 KV 位置，不等于该位置已经提交；MRV2 的 device boundary 与 Scheduler 的 CPU/request boundary 各自在自己的消费者之前完成对齐。任何一侧缺失都不正确，但 Scheduler `update_from_output` 不是候选跨越的唯一 commit 点。
 
 ### 7.3 抢占与 async in-flight 不能偷换 commit
 
