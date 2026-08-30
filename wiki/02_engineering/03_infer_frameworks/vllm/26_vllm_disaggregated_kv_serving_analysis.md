@@ -14,7 +14,9 @@ title: "vLLM 分离式 KV Serving：用跨 Engine 协议交接可计算状态"
 
 ## 1. 分离带来的新问题不是 copy，而是所有权
 
-prefill 侧优化 TTFT，decode 侧优化逐 token 延迟；官方文档也明确把两类实例独立部署视为减少相互干扰、分别调优的手段，同时指出它不自动提高吞吐，网络还会新增 KV 传输开销，见 `docs/features/disagg_prefill.md:8-16`。因此分离是否值得，取决于隔离收益能否覆盖路由、远端排队和传输：
+prefill 侧优化 TTFT，decode 侧优化逐 token 延迟；官方文档明确说分离部署允许两阶段分别调优、控制 tail ITL，并注明它不改善吞吐，见 `docs/features/disagg_prefill.md:8-16`。
+
+**分析**：从跨实例执行路径可推得，分离新增了路由、远端排队和 KV handoff；下面的延迟分解是本页用于判断隔离收益能否覆盖这些新增环节的分析模型，不是上述文档给出的实测结论：
 
 $$
 T_{\text{request}}
@@ -87,17 +89,17 @@ flowchart LR
 
   P0 --> P1 --> X0
   C0 --> X0
-  X0 -->|"命中与兼容 metadata"| C1
-  C1 -->|"目标地址或 load job"| X0
+  X0 -->|命中与兼容 metadata| C1
+  C1 -->|目标地址或 load job| X0
   X0 --> P2
   P2 --> X1 --> C2
   C2 --> X2
-  X2 -->|"全部完成"| C3
-  X2 -->|"部分或失败"| C4
-  C0 -.->|"heartbeat 续租"| P2
-  C3 -->|"完成 ACK"| P3
-  C4 -->|"取消或错误 ACK"| P3
-  P2 -->|"consumer 消失或 timeout"| P3
+  X2 -->|全部完成| C3
+  X2 -->|部分或失败| C4
+  C0 -.->|heartbeat 续租| P2
+  C3 -->|完成 ACK| P3
+  C4 -->|取消或错误 ACK| P3
+  P2 -->|consumer 消失或 timeout| P3
 ```
 
 Scheduler 正是按这个顺序编排：先问 connector 远端命中，再做本地 allocation，随后把 allocation 结果交回 connector；外部 load 完成前，请求被放进等待 remote KV 的集合而不是提前执行，见 `vllm/v1/core/sched/scheduler.py:847-866,1088-1133`。worker 输出再被 connector 归并成 finished receiving/sending 与 load errors，见 `vllm/v1/core/sched/scheduler.py:2745-2780,2805-2861`。
@@ -120,7 +122,7 @@ connector 还处理 ACK 早于本地映射到达的乱序：先停放 early ACK�
 
 ## 6. 外部 store：Mooncake 把源 block lease 改造成 save-job 引用
 
-直连模式的 key 是 producer/request/address；store 模式必须产生可复用、可查询的内容键。Mooncake 的 `BlockMeta`/key 把 model、rank、group、block hash 等编码进身份，地址又描述 chunk 与偏移；尾部查询支持寻找连续可复用前缀，见 `vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/data.py:100-344`。admin 协议将 lookup 的请求/结果与 transfer data 分开，见 `vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/protocol.py:3-30,53-81`。
+直连模式的 key 是 producer/request/address；store 模式必须产生可复用、可查询的内容键。Mooncake 用 `KeyMetadata` 编码 model、TP/PCP/DCP/PP rank、group 与可选 namespace，再由 `PoolKey` 把 chunk hash 接到稳定前缀上，见 `vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/data.py:100-165`。`ChunkedTokenDatabase` 则把 token chunk 与本地 block IDs 映射成各 KV cache tensor 的 GPU 地址和长度，见 `vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/data.py:168-241`。admin 协议将 lookup 的请求/结果与 transfer data 分开，见 `vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/protocol.py:3-30,53-81`。
 
 store 的 producer 所有权也与直连 lease 不同。scheduler 为每个 save job 分配唯一 ID，并给该 job 可能读取的每个 GPU block 增加引用；因为各 worker rank 异步 DMA，只有全部 rank 的 completion count 归零后才释放这些引用，见 `vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py:429-471,527-559`。所以 store connector 的 `request_finished()` 可以让原请求立即结束：真正持有源 block 的已经不是 request，而是 job ref，见 `vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/connector.py:216-230`。
 
@@ -141,7 +143,8 @@ NIXL scheduler 为待发送请求记录过期时间，并按 remote engine 聚�
 
 worker 接收 heartbeat 后续期，周期性发送聚合 heartbeat；lease 到期则把请求加入 `done_sending`，让 scheduler 最终释放源侧占用，见 `vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:2026-2146,2171-2190,2257-2287`。测试覆盖了等待期间持续 heartbeat、远端 request ID 映射和停止跟踪后的清理，见 `tests/v1/kv_connector/unit/test_nixl_heartbeat.py:41-70,98-164`。
 
-固定短 timeout 会误杀健康但排队的 consumer；固定长 timeout 会在 consumer crash 后长期泄漏 producer capacity。heartbeat + 有界 lease 把“正常慢”和“永久失联”分开，而成功 completion 又避免每笔传输都等 TTL。
+> [!note] 分析：为什么不能只用固定 timeout
+> 固定短 timeout 会误杀健康但排队的 consumer；固定长 timeout 会在 consumer crash 后长期占用 producer capacity。heartbeat + 有界 lease 把“正常慢”和“永久失联”分开，而成功 completion 又避免每笔传输都等 TTL。这是根据上述 heartbeat、完成与 expiry 状态重建的设计权衡，不是源码注释直接陈述的 rationale。
 
 ## 8. 失败边界：先失效，再重算；不能把部分数据伪装成命中
 
@@ -164,7 +167,8 @@ worker 接收 heartbeat 后续期，周期性发送聚合 heartbeat；lease 到�
 2. **容量在握手前后都可能阻塞。** remote hit 不保留 consumer block；测试专门覆盖 consumer 无 receive capacity 时保持 waiting、容量释放后才启动 receive，见 `tests/v1/kv_connector/unit/test_remote_prefill_lifecycle.py:396-500`。
 3. **Engine 必须为后台债务继续 step。** 基类当前用 `has_pending_push_work()` 暴露未完成 push，而注释明确计划改成更通用的 connector keep-alive hook，见 `vllm/distributed/kv_transfer/kv_connector/v1/base.py:573-583`。Mooncake store 也依赖它让 completion 有机会回到 scheduler，否则 job refs 会永久持有，见 `vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py:551-559`。
 
-最后一点是源码直接暴露的演进方向：push/store 已经证明“请求集合为空”不等于“Engine 没有协议债务”。更一般的 keep-alive/completion 驱动将来应能统一这些后台状态；但在当前基线上，它仍是 connector 专用 hook，而不是完整的通用生命周期接口。
+> [!note] 推断：更通用的 keep-alive 可能覆盖更多后台债务
+> 源码 TODO 只提出用更通用的 connector hook 取代 `has_pending_push_work()`，见 `vllm/distributed/kv_transfer/kv_connector/v1/base.py:573-583`。结合 push/store 在请求集合为空后仍需推进 completion 的现状，本页推断未来接口可能统一更多后台债务；TODO 并未承诺统一 completion 驱动。在当前基线上，它仍是 connector 专用 hook，而不是完整的通用生命周期接口。
 
 ## Related Pages
 
