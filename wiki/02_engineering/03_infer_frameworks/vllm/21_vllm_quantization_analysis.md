@@ -14,13 +14,13 @@ title: "vLLM 量化 ABI：格式、Scale、加载转换与 Kernel 必须联合�
 
 一个量化线性层至少要同时回答六个问题：权重的数值类型是什么、整数怎样 pack、scale 按 tensor/channel/group/block 哪个粒度解释、是否有 zero-point 或 activation-order metadata、TP 后本 rank 的 K/N 是多少、最终 Kernel 要读哪种排列。vLLM 把其中与实现无关的最小描述收进 `MPLinearLayerConfig`：全局/局部 weight shape、weight/activation type、group size、zero-point 与 `g_idx` 都是 Kernel 兼容谓词，而不是调优提示（`vllm/model_executor/kernels/linear/mixed_precision/MPLinearKernel.py:14-35`）。
 
-基类也直接暴露同一生命周期：`create_weights()` 建立加载目标，`process_weights_after_loading()` 完成转置、重排或量化，`apply()` 消费已经提交的表示；`apply()` 明确要求 create 已先发生（`vllm/model_executor/layers/quantization/base_config.py:20-71`）。这说明量化状态不是某个 CLI 字符串，而是跨模型构造与执行长期存活的 layer ABI。
+基类也直接暴露同一生命周期：`create_weights()` 建立加载目标，`apply()` 消费 layer 上的表示；二者是抽象方法，且 `apply()` 只明确要求 create 已先发生。`process_weights_after_loading()` 则是默认 no-op 的可选 hook，具体 method 才用它完成转置、重排或量化（`vllm/model_executor/layers/quantization/base_config.py:20-72`）。这说明量化状态不是某个 CLI 字符串，而是跨模型构造与执行长期存活的 layer ABI。
 
 | 决策点 | 输入 → 输出 | 本阶段必须固定的状态 | 不满足时的正确行为 |
 |---|---|---|---|
 | Configure | HF quant config / 在线配置 / 用户 override / 平台 → `QuantizationConfig` | 格式身份、activation dtype 范围、全局 capability、ignore 规则 | 配置不一致或平台不支持时尽早拒绝 |
 | Create / load | config + layer prefix + 全局/TP-local shape → 参数容器；checkpoint tensor → 容器 | pack axis、scale/zero shape、logical shard identity、TP ownership | 显式 unquantized layer，或构造失败；不能猜 shape |
-| Post-load | checkpoint/在线中间表示 → Kernel 表示 | 转置、repack、在线 quant、scale 合并、替换后的参数身份 | 转换完成前不可进入 profile/capture/forward |
+| Post-load | checkpoint/在线中间表示 → Kernel 表示（若 method 需要） | 转置、repack、在线 quant、scale 合并、替换后的参数身份 | 正常 loader 在返回模型前调用；绕过该顺序只会对依赖转换的 method 破坏 Kernel 合同，基类没有通用 `apply()` guard |
 | Runtime dispatch | 已提交参数 + activation → output | Kernel 必须实现完全相同的数值与布局合同 | 换下一个兼容实现；没有兼容实现则硬失败 |
 
 直观替代是“模型先按 BF16 构造并加载，再统一 cast，forward 时按位宽选 Kernel”。以下是**分析推断**：它失败的根因不是缺少某个量化方法，而是把四个提交点压成一个无类型边界——checkpoint pack 与 Kernel pack 可以不同，scale 可能跨 TP shard 求全局极值，融合 QKV 的三个逻辑矩阵也可能有独立 scale。现行接口将这些差异前移并显式化，代价是配置、层、loader seam 与 Kernel 都要维护同一 ABI。
@@ -72,9 +72,9 @@ KV scale 只在这里保留一个窄加载接缝：base config 把 checkpoint �
 
 ## 4. Post-load：把“已写入”提交为“可执行”
 
-### 4.1 全局顺序只有一个，内部转换由 method 拥有
+### 4.1 正常 loader 固定顺序，内部转换由 method 拥有
 
-`BaseModelLoader.load_model()` 的顺序是 initialize → 通用 load → 在线 layerwise finalize（若需要）→ 全模型 quant post-load → `eval()`；源码注释明确把最后两步称为把 weight 处理成 Kernel format（`vllm/model_executor/model_loader/base_loader.py:42-82`）。统一遍历对每个 `QuantizeMethodBase` 在目标设备上下文中调用 post-load；若转换替换了 Parameter，还会重新对齐 layer 的 TP rank/size（`vllm/model_executor/model_loader/utils.py:97-123`）。
+`BaseModelLoader.load_model()` 的正常顺序是 initialize → 通用 load → 在线 layerwise finalize（若需要）→ 全模型 quant post-load → `eval()`；源码注释明确把最后两步称为把 weight 处理成 Kernel format（`vllm/model_executor/model_loader/base_loader.py:42-82`）。这是 loader 在返回模型前提供的顺序，不是基类在 `apply()` 中执行的统一 guard：无需转换的 method 可以沿用默认 no-op，需要转换的 method 则依赖这条正常加载路径提交 Kernel 表示（`vllm/model_executor/layers/quantization/base_config.py:30-72`）。统一遍历对每个 `QuantizeMethodBase` 在目标设备上下文中调用 post-load；若转换替换了 Parameter，还会重新对齐 layer 的 TP rank/size（`vllm/model_executor/model_loader/utils.py:97-123`）。
 
 CPU offload 不改变这个合同：post-load 会暂时把该 module 的 CPU 参数移到 target device，转换后再恢复原设备（`vllm/model_executor/model_loader/utils.py:154-189`）。它解决 GPU-only repack 无法处理 CPU tensor 的正确性问题，却会在加载期暂时占用设备内存；offload 不能被理解成 post-load 零显存成本。
 
@@ -114,7 +114,7 @@ AWQ 展示了为什么“checkpoint 已经量化”仍需要 post-load：checkpo
 |---|---|---|---|
 | fused QKV / gate-up | constituent shards 的 quant/ignore scheme 一致 | config 必须消费模型 mapping | 部分 shard 命中直接报错（`vllm/model_executor/layers/quantization/utils/quant_utils.py:639-668`） |
 | TP scale | 需要全局统计的 scale 与未分片量化等价 | 某些 scheme 增加 MAX collective | 测试要求 FP8 值和 scale 精确相等（`tests/quantization/test_online.py:339-368`） |
-| checkpoint pack ≠ Kernel pack | post-load 后 `apply()` 只读 Kernel 表示 | 加载时 repack、padding、临时 buffer | 转换未完成不得 forward（`vllm/model_executor/layers/quantization/base_config.py:30-44`；`vllm/model_executor/layers/quantization/auto_awq.py:503-519`） |
+| checkpoint pack ≠ Kernel pack | 对需要转换的 method，正常 loader 返回前提交 Kernel 表示 | 加载时 repack、padding、临时 buffer | AWQ 明确先转标准格式再交给 Kernel；基类不提供统一 guard（`vllm/model_executor/model_loader/base_loader.py:75-82`；`vllm/model_executor/layers/quantization/auto_awq.py:503-519`；`vllm/model_executor/layers/quantization/base_config.py:30-72`） |
 | post-load 替换 Parameter | 新参数继承 layer 的 TP rank/size | 多一次 metadata reconciliation | loader 在转换后显式重写 TP state（`vllm/model_executor/layers/linear.py:291-304`；`vllm/model_executor/model_loader/utils.py:113-120`） |
 | 在线量化峰值 | 同一 layer 的原权重全部到达后再量化 | 单层 BF16+低精度短时共存、加载计算 | late bias 回归测试阻止提前提交（`tests/model_executor/model_loader/test_reload.py:718-732`） |
 | Kernel specialization | capability 与 shape 谓词全部成立 | 更多 provider、测试与 fallback 维护 | 没有兼容候选就硬失败，而不是静默换格式（`vllm/model_executor/kernels/linear/__init__.py:780-842`） |
