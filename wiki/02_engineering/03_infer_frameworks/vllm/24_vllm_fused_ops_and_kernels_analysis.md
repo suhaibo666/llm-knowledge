@@ -98,7 +98,7 @@ auto 模式依 priority 逐个检查 class，返回第一个 compatible candidat
 
 modular expert interface 要求 provider 根据 `M/N/K/topk/global/local experts/activation format` 报告两块 scratch 与最终 output shape；GEMM1 与 GEMM2 不同时存活，所以允许共享 workspace13（`vllm/model_executor/layers/fused_moe/modular_kernel.py:837-874`）。具体 allocator 按 chunked `M` 计算 scratch、按 full `M` 计算 final output，并让 GEMM1/3 与单 chunk output 共享一块较大 buffer（`vllm/model_executor/layers/fused_moe/modular_kernel.py:1120-1181`）。
 
-这能减少分配和峰值，但不是“零中间态”：workspace2 仍必须与 common workspace 同时存活，provider 还必须准确报告上界。output buffer 只有 shape、dtype、device 与 contiguous 全部相符才可 alias；源码注释记录该 alias 用来去掉下游冗余 copy，并在 ROCm AITER enable 条件下才采用（`vllm/model_executor/layers/fused_moe/modular_kernel.py:1329-1365`）。所以 workspace/alias 优化的失败边界不是性能稍差而已：低估 shape 会越界，过早复用会破坏仍在飞行的计算，错用 output alias 会改变可见结果。
+这能减少分配和峰值，但不是“零中间态”：workspace2 仍必须与 common workspace 同时存活，provider 还必须准确报告上界。output buffer 只有 shape、dtype、device 与 contiguous 全部相符才满足 `use_output_alias`；满足后，非 ROCm 直接 alias，ROCm 还必须启用 AITER fused MoE 才 alias。源码注释说明这条路径用于去掉下游冗余 copy（`vllm/model_executor/layers/fused_moe/modular_kernel.py:1329-1347`）。所以 workspace/alias 优化的失败边界不是性能稍差而已：低估 shape 会越界，过早复用会破坏仍在飞行的计算，错用 output alias 会改变可见结果。
 
 ## 5. Selection 与 fallback：从“候选”到“可证明的实现”
 
