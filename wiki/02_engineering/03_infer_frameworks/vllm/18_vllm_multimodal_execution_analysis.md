@@ -108,10 +108,12 @@ flowchart LR
 媒体来源的失败边界与模型特征语义无关：`MediaConnector` 接受 HTTP、base64 data URL 和
 显式允许根目录下的 file URL，拒绝其他 scheme；HTTP 可限制域名和最大字节数，本地路径
 必须 resolve 到允许目录的子路径（`vllm/multimodal/media/connector.py:313-364`；
-`vllm/multimodal/media/connector.py:366-407`）。把这层留在 frontend，worker 就不需要拥有
-网络权限或文件系统访问策略。下载缓存也只是 URL 字节缓存，路径 key 是 URL 的 SHA-256
-前 20 个十六进制字符加原扩展名；它不能代替 processor cache，因为它不知道模型与 processor
-kwargs（`vllm/multimodal/media/connector.py:204-225`；`vllm/multimodal/media/connector.py:308-311`）。
+`vllm/multimodal/media/connector.py:366-407`）。**分析推断**：本页据此把 frontend 的
+`MediaConnector` 边界解释为不让 worker 拥有网络下载与本地文件访问策略；上述源码直接证明的
+是 connector 执行检查和加载，并未自陈这一分层动机。下载缓存也只是 URL 字节缓存，路径 key
+是 URL 的 SHA-256 前 20 个十六进制字符加原扩展名；它不能代替 processor cache，因为它不知道
+模型与 processor kwargs（`vllm/multimodal/media/connector.py:204-225`；
+`vllm/multimodal/media/connector.py:308-311`）。
 
 解码后的对象再由 `MultiModalDataParser` 归一：当前 registry 只声明 audio、image、video 与
 vision chunk，未知 modality 立即报错；例如 image 规范化后转 RGB，video 则保留可选 metadata，
@@ -225,7 +227,10 @@ preemption victim 等仍由 Scheduler owner 页解释。实际计划通过
 
 ## 7. 设备执行：从 scheduled item 到 `inputs_embeds`
 
-下面以当前默认 MRV2 的状态拆分为主；V1 runner 仍是 capability fallback，并非已删除 legacy。
+下面以**自动选择路径满足全部前提时**使用的 MRV2 状态拆分为主：
+`VLLM_USE_V2_MODEL_RUNNER` 未显式覆盖、未命中 ROCm architecture carve-out、Triton 可用且
+没有 V2 unsupported feature 时才自动返回 V2；任一 fallback 条件命中则选择 V1
+（`vllm/config/vllm.py:620-652`）。V1 runner 因而仍是 live capability fallback，并非已删除 legacy。
 `GPUWorker` 会按 `use_v2_model_runner` 构造两个 runner 之一；V1 也消费同一份
 `scheduled_encoder_inputs`，按 `identifier` 缓存输出并按 `mm_position` gather，因此本页的 key、
 budget 与 alignment 合同跨两条 live path 成立（`vllm/v1/worker/gpu_worker.py:455-475`；
