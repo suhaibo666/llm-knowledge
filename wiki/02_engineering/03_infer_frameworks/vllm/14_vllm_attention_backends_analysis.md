@@ -72,6 +72,8 @@ selector 先由 MLA、sliding window 和 attention type 推导 `KVCacheSpecKind`
 
 ## 4. selector：auto 会降级，显式选择通常会拒绝
 
+本页的 **fallback** 只指初始化期的候选 backend 替换或显式配置拒绝；运行期因 batch/capture 条件从 full CUDA Graph 降到 piecewise/eager 属于 [[23_vllm_compilation_cudagraph_analysis|CUDA Graph 与执行模式]]，已选 attention op 内部在 provider/kernel 间降级属于 [[24_vllm_fused_ops_and_kernels_analysis|kernel/provider fallback]]。三者的发生时间、决策输入和 owner 不同，不能互相代指。
+
 ### 4.1 CUDA 的选择算法是“优先级列表 ∩ 能力集合”
 
 CUDA 先按 dense/MLA、device capability、head count、KV dtype 与 non-causal 条件生成有序候选；例如普通 attention 在 SM100 causal 路径优先 FlashInfer，其余路径优先 FlashAttention，后面才是 Triton、Flex 与 TurboQuant（`vllm/platforms/cuda.py:82-163`）。随后它懒加载每个候选并运行同一 `validate_configuration()`；`ImportError`/`OSError` 与能力不匹配都进入 rejected-reasons，auto 最终取仍有效的最高优先级候选（`vllm/platforms/cuda.py:363-401`；`vllm/platforms/cuda.py:461-502`）。
@@ -95,6 +97,9 @@ CUDA 先按 dense/MLA、device capability、head count、KV dtype 与 non-causal
 普通 layer 把 decoder full/sliding 语义转成 `FullAttentionSpec` 或 `SlidingWindowSpec`，encoder-only 则不产生 autoregressive KV spec；backend 可用 `customize_spec()` 调整 packing（`vllm/model_executor/layers/attention/attention.py:597-655`；`vllm/v1/worker/gpu/attn_utils.py:52-65`）。物理 layout 的逻辑轴固定为 `L, B, H, N, C`，枚举值只改变 stride permutation；`is_block_compact`、`is_layer_compact` 与 `is_block_outermost` 给 allocator 判断某种混合 page packing 能否表达（`vllm/v1/kv_cache_layout.py:11-28`；`vllm/v1/kv_cache_layout.py:39-58`）。
 
 每个 backend 用 `supported_kv_cache_layouts()` 返回偏好顺序，`None` 表示任意 layout。worker 对当前所有 backend 的声明取交集；相同声明保留顺序，不同声明用首选票数排序，空交集硬失败（`vllm/v1/attention/backend.py:350-354`；`vllm/v1/attention/backends/utils.py:190-225`）。这一步说明 layout 不是 selector 的单层副作用：模型可以同时含多个 backend，只有全集已知后才能找到共享物理解释。
+
+> [!contradiction] 旧文档表述与 live code 冲突
+> 旧版页面曾声称 selector 选择 backend 后会设置全局 KV layout。当前 selector 明确说明单次选择看不到其他 layer，layout 必须在所有 backend 已知后统一解析（`vllm/v1/attention/selector.py:185-186`）；live implementation 则由 EngineCore 调用 `resolve_kv_cache_layout()`，对全体 worker/backend 支持集求交并一次性提交（`vllm/v1/attention/backends/utils.py:240-308`）。本页以 live code 为准：selector 只选 backend，EngineCore 才提交全模型 layout。
 
 ### 5.2 EngineCore 是 layout 的唯一提交点
 
