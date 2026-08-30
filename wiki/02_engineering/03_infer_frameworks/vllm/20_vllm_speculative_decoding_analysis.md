@@ -44,7 +44,7 @@ $$
 
 ### 3.1 图 1 规格：一轮 draft / verify 的提交边界
 
-图从本轮已对齐的前缀出发。主路径表示数据成为可提交 token 的唯一通路；bonus 与 correction 二选一，但两者都先进入 GPU-local finalize。这里没有一个横跨 CPU/GPU 的瞬时“唯一 commit”：MRV2 先更新 device row，下一轮 proposer 已可读取；worker 输出随后回到 Scheduler，后者再对齐 CPU computed count 并追加请求/output history。
+图从本轮已对齐的前缀出发。主路径表示数据成为可提交 token 的唯一通路；bonus 与 correction 二选一，二者都先让 runner 启动 AsyncOutput/copy event，再进入 GPU-local finalize。拷贝支线不等待 MRV2 postprocess，可以与 device row 更新重叠；但下一轮 proposer 必须等待本地 finalize，而 Scheduler 要等 worker 输出可消费后才对齐 CPU computed count 并追加请求/output history。这里没有一个横跨 CPU/GPU 的瞬时“唯一 commit”，copy launch 本身也不是 commit。
 
 ```mermaid
 flowchart TB
@@ -55,15 +55,17 @@ flowchart TB
     V --> Q{"全部候选接受"}
     Q -->|是| B["Bonus<br/>从目标下一位置采样"]
     Q -->|否| R["Correction<br/>从目标残差采样"]
-    B --> G["GPU-local finalize<br/>写 emitted tokens<br/>回退 device 进度"]
-    R --> G
+    B --> E["Async output launch<br/>记录 copy event"]
+    R --> E
+    E --> G["GPU-local finalize<br/>写 emitted tokens<br/>回退 device 进度"]
+    E -.-> O["D2H copy<br/>可与 finalize 重叠"]
     G --> N["Next proposal<br/>立即读取 GPU 已提交前缀"]
-    G --> O["Worker output<br/>异步拷回或直接返回"]
-    O --> C["Scheduler reconcile<br/>回退 CPU 乐观进度"]
+    O --> W["Worker output ready<br/>等待 Scheduler 消费"]
+    W --> C["Scheduler reconcile<br/>回退 CPU 乐观进度"]
     C --> H["CPU output commit<br/>追加 token 并检查 stop"]
 ```
 
-图中“Reserve”不是提前认可候选。Scheduler 在 `schedule()` 中让 `num_computed_tokens` 追赶包含 draft 的 `num_tokens_with_spec`，并把每请求的 candidate 数限制在本步 token/input/model-length budget 内（`vllm/v1/core/sched/scheduler.py:501-512`；`vllm/v1/core/sched/scheduler.py:585-603`）。KV manager 随后为 `num_new_tokens` 分配位置，并额外接收 proposer 所需 lookahead（`vllm/v1/core/sched/scheduler.py:655-662`）。verifier 产出 emitted tokens 后，MRV2 的 `postprocess_sampled` 先跨过 GPU-local commit 边界并在下一次 `propose` 前更新 device state（`vllm/v1/worker/gpu/model_runner.py:1899-1938`；`vllm/v1/worker/gpu/input_batch.py:543-601`）；Scheduler 稍后消费 worker 输出，跨过独立的 CPU/output commit 边界（`vllm/v1/core/sched/scheduler.py:1886-1904`；`vllm/v1/core/sched/scheduler.py:2257-2274`）。
+图中“Reserve”不是提前认可候选。Scheduler 在 `schedule()` 中让 `num_computed_tokens` 追赶包含 draft 的 `num_tokens_with_spec`，并把每请求的 candidate 数限制在本步 token/input/model-length budget 内（`vllm/v1/core/sched/scheduler.py:501-512`；`vllm/v1/core/sched/scheduler.py:585-603`）。KV manager 随后为 `num_new_tokens` 分配位置，并额外接收 proposer 所需 lookahead（`vllm/v1/core/sched/scheduler.py:655-662`）。verifier 产出 emitted tokens 后，runner 先构造 `AsyncOutput` 并记录 copy event，源码明确把它放在 postprocess 前，使 D2H 不必等待本地状态更新（`vllm/v1/worker/gpu/model_runner.py:1867-1903`）。MRV2 的 `postprocess_sampled` 随后跨过 GPU-local commit 边界，并保证在下一次 `propose` 前更新 device state（`vllm/v1/worker/gpu/model_runner.py:1899-1938`；`vllm/v1/worker/gpu/input_batch.py:543-601`）；Scheduler 更晚消费 worker 输出，跨过独立的 CPU/output commit 边界（`vllm/v1/core/sched/scheduler.py:1886-1904`；`vllm/v1/core/sched/scheduler.py:2257-2274`）。
 
 ## 4. Propose：候选来源可变，候选身份不可变
 
@@ -121,7 +123,7 @@ $$
 
 ## 7. Rollback / commit：不是一个时点，而是有序的双提交
 
-验证结束后，GPU 与 CPU 不在同一函数里原子提交。真实顺序是：MRV2 先完成 GPU-local rollback/commit，下一轮 proposer 随即消费这份状态；随后 Scheduler 才消费返回输出，对齐自己的乐观进度并提交请求/output history。两处提交共享同一组 emitted tokens 与 rejected count，但各自只拥有自己的状态面。
+验证结束后，GPU 与 CPU 不在同一函数里原子提交。runner 会先启动 AsyncOutput/copy event；这只是传输启动，不是第三个状态提交面，而且 D2H 可以与随后发生的 MRV2 postprocess 重叠（`vllm/v1/worker/gpu/model_runner.py:1867-1903`）。两个状态提交面的顺序仍是：MRV2 先完成 GPU-local rollback/commit，下一轮 proposer 随即消费这份状态；Scheduler 更晚消费返回输出，对齐自己的乐观进度并提交请求/output history。两处提交共享同一组 emitted tokens 与 rejected count，但各自只拥有自己的状态面。
 
 ### 7.1 MRV2 先提交 GPU-local 前缀
 
