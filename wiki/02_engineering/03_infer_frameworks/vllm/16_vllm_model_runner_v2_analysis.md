@@ -7,12 +7,12 @@ title: "vLLM Model Runner V2：用稳定行与异步提交重建设备热路径"
 > **读者问题**：默认 Model Runner V2 怎样把动态的 `SchedulerOutput` 变成地址稳定、可与下一步 CPU 工作重叠的 GPU 执行；一条请求状态何时对 Python、GPU 和 Engine 输出分别可见；哪些配置仍选择或必须选择 V1 runner？
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：MRV2 的关键不是换一组 kernel，而是把“请求生命周期内的稳定 row”“每步按执行顺序 gather 的 batch view”“尚未对设备提交的 CPU staged diff”和“正在飞行的传输/输出”拆成不同状态。这样 step N 的 GPU 工作只依赖已经排入流的快照，CPU 才能准备 step N+1，而不必把 persistent batch 本身反复压紧、重排或用全局 async barrier 保护。
-> **所有权边界**：本页拥有 runner 内的 device request row、staged-write/UVA buffer 生命周期、每步 input view、异步输出提交与 MRV2 本地 CUDA Graph capture/dispatch/replay；不拥有全局 admission、waiting/running、公平性、逻辑 KV 分配、attention backend 选择、采样分布或跨实例 KV 协议。全局 admission 的权威解释仍在 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]]。
-> **最近更新**：2026-08-30。按 `6b110bad` 重建页面，替换旧基线定位符，并核清 MRV2 默认选择与 V1 双向能力边界。
+> **所有权边界**：本页拥有 runner 选择矩阵，以及 MRV2 内的 device request row、staged-write/UVA buffer 生命周期、每步 input view、异步输出提交与本地 CUDA Graph capture/dispatch/replay；不拥有 MRV1 的 compact persistent batch、condense/reorder、async barrier 与 dummy lifecycle，这些机制归 [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] 所有；也不拥有全局 admission、waiting/running、公平性、逻辑 KV 分配、attention backend 选择、采样分布或跨实例 KV 协议。
+> **最近更新**：2026-08-30。核清 MRV2 默认选择与双向能力边界，并在新增 MRV1 独立机制页后调整为 `15 V1 → 16 V2`。
 
 ## 1. 背景：V1 的“persistent batch”为什么仍妨碍异步
 
-逐步从 Python 对象重建 block table、温度和长度等大 tensor 很慢，所以 V1 已经采用 persistent batch，只应用相邻 step 的增量；这个优化的前提是连续 batch 高度重合（`docs/design/model_runner_v2.md:15-19`）。问题在于 V1 把 persistent tensor 直接当作模型与 sampler 输入：请求完成后必须压紧空洞，attention backend 改序时还要交换整组 per-request 状态。现行 V1 代码仍要求 `remove_request()` 后调用 `condense()`，并在压紧时移动 token 前缀、block-table row 与 sampling 状态（`vllm/v1/worker/gpu_input_batch.py:528-588`；`vllm/v1/worker/gpu_input_batch.py:706-805`）。它还保留一份 `CachedRequestState`，以及专为 async scheduling 加 speculative draft 历史的字段（`vllm/v1/worker/gpu_input_batch.py:34-65`）。
+逐步从 Python 对象重建 block table、温度和长度等大 tensor 很慢，所以 MRV1 已经采用 persistent batch，只应用相邻 step 的增量；这个优化的前提是连续 batch 高度重合（`docs/design/model_runner_v2.md:15-19`）。问题在于 MRV1 把 persistent tensor 直接当作模型与 sampler 输入：请求完成后必须压紧空洞，attention backend 改序时还要交换整组 per-request 状态。现行代码仍要求 `remove_request()` 后调用 `condense()`，并在压紧时移动 token 前缀、block-table row 与 sampling 状态（`vllm/v1/worker/gpu_input_batch.py:528-588`；`vllm/v1/worker/gpu_input_batch.py:706-805`）。它还保留一份 `CachedRequestState`，以及专为 async scheduling 加 speculative draft 历史的字段（`vllm/v1/worker/gpu_input_batch.py:34-65`）。MRV1 为什么需要这些机制、它们怎样共同维持 row 不变量，由 [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] 展开；本页只保留作为 MRV2 设计动机所需的对照。
 
 MRV2 选择的直观替代并不是“取消持久化”，而是**取消持久状态与当步排列的同一性**：固定容量的状态表只回答请求住在哪个 row；每步 view 再回答这轮按什么顺序执行。官方设计文档把永久 row、preemption 视作完成、恢复时重新加入列为这一路线的三个规则（`docs/design/model_runner_v2.md:31-39`）。
 
@@ -173,6 +173,7 @@ MRV2 能保证的是“已批准的逻辑 delta 以明确顺序成为设备状�
 ## Related Pages
 
 - [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] — 把 MRV2 放回资源控制、分布式执行与设备运行时的完整责任链。
+- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|vLLM Model Runner V1]] — 对照 compact row、condense/reorder、async barrier 与多义 dummy lifecycle，理解 MRV2 改变了哪一层状态所有权。
 - [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] — 权威解释本页只消费的 admission、preemption 与 `SchedulerOutput` 事务。
 - [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 深入本页 block-id row 背后的逻辑/物理 block、prefix 与释放所有权。
 - [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] — 解释 metadata、batch reorder 与 graph capability 合同。

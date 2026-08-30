@@ -149,7 +149,7 @@ reasoning-aware structured output 还在请求对象中保存 `reasoning_ended`�
 
 - [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|vLLM 请求语义]] —— 接管 token id 之后的 detokenization、stop string、流式可见性与协议对象恢复。
 - [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler 分析]] —— 解释 grammar readiness 所处的 waiting/running、token budget 与一次 admission 事务。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] —— 解释本页 sampling state 所依附的 stable row、staged write 与 per-step mapping。
+- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] —— 对照 sampling state 如何随 compact row 迁移，或依附 stable row、staged write 与 per-step mapping。
 - [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] —— 接管本页明确排除的 draft proposal、target verify 与 acceptance distribution。
 - [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] —— 把 sampling/grammar 放回 Engine、Scheduler 与设备运行时的全局责任图。
 - [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] —— 按能力 owner 与阅读依赖导航整个知识域。

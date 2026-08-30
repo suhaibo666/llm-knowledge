@@ -175,6 +175,6 @@ sequenceDiagram
 - [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|Engine 架构]] — EngineCore、executor 与 worker 的控制边界。
 - [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|模型库与模型 ABI]] — PP layer partition 与 TP-compatible layers。
 - [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|Attention Backend]] — PCP/DCP 所依赖的 attention 状态与 kernel。
-- [[02_engineering/03_infer_frameworks/vllm/16_vllm_serving_control_plane_analysis|Serving 控制面]] — external/internal DP 与请求路由。
+- [[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|Serving 控制面]] — external/internal DP 与请求路由。
 - [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|Compilation 与 CUDA Graph]] — distributed collective 与 graph capture 的接缝。
 - [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|融合算子与 Kernel]] — collective 与计算融合的设备实现。

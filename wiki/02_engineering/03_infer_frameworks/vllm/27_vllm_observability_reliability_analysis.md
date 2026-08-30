@@ -10,7 +10,7 @@ title: "vLLM 可观测性与可靠性：把 SLO 症状闭环到资源承诺与�
 >
 > **本文拥有**：观测/故障反馈；Scheduler 承诺如何变成 measurements；metrics、events、traces 的关联边界；EngineCore/Worker/fatal sentinels 的故障分类与可见性；cardinality、sampling、stale-signal、process-boundary 成本。
 >
-> **本文排除**：API server、DP coordinator 与负载均衡的服务路由机制由 [[02_engineering/03_infer_frameworks/vllm/16_vllm_serving_control_plane_analysis|Serving 控制面]] 拥有；Scheduler admission、单 Engine KV、跨 Engine KV 与 rank/collective 的内部证明分别由 `11`、`12`、`26`、`22` 页拥有。本页只解释这些 owner 暴露的信号怎样进入反馈回路。
+> **本文排除**：API server、DP coordinator 与负载均衡的服务路由机制由 [[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|Serving 控制面]] 拥有；Scheduler admission、单 Engine KV、跨 Engine KV 与 rank/collective 的内部证明分别由 `11`、`12`、`26`、`22` 页拥有。本页只解释这些 owner 暴露的信号怎样进入反馈回路。
 >
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`
 >
@@ -140,6 +140,6 @@ EngineCore monotonic event 只能与同一进程的 event 相减；frontend arri
 - [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM Engine 所有权]] — 解释 Client、EngineCore、Executor 的进程边界，本页只拥有跨边界信号与错误反馈。
 - [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler 事务]] — waiting、token/KV budget、preemption 的权威资源承诺，本页消费其观测结果。
 - [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 所有权]] — KV usage、eviction 与 residency 信号所代表的真实 block 状态。
-- [[02_engineering/03_infer_frameworks/vllm/16_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] — 接管 health/readiness 之后的进程生命周期与服务路由；本页不复述路由机制。
+- [[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] — 接管 health/readiness 之后的进程生命周期与服务路由；本页不复述路由机制。
 - [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 解释 rank/group/collective 故障域为何能在 survivor 与 victim 上产生不同 sentinel 状态。
 - [[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|vLLM 分离式 KV Serving]] — external KV transfer、connector failure 与 lease cleanup 的 owner，本页只解释它们怎样参与 SLO 归因。

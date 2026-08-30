@@ -181,7 +181,7 @@ CUDA Graph 再把能力合同推进到**每个 runtime batch**：uniform decode 
 - [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] —— 把本页四个设计支点映射到完整责任分层与一条在线请求生命周期。
 - [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler 分析]] —— 深入逐 step token admission、抢占与结果提交的事务细节。
 - [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 深入逻辑 block、refcount、prefix cache 与物理容量边界。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] —— 深入 persistent row、staged write 与 async-first 执行。
+- [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] —— 深入 persistent row、staged write 与 async-first 执行。
 - [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] —— 展开 attention 能力声明、选择与兼容性验证。
 - [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] —— 展开动态 batch 如何在 full、piecewise 与 eager 路径间派发。
 - [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] —— 用队列、延迟、KV 与 preemption 信号闭合设计反馈。

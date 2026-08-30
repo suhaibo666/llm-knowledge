@@ -174,7 +174,7 @@ sequenceDiagram
 
 `vllm.engine.LLMEngine` 直接别名到 V1 `LLMEngine`，`AsyncLLMEngine` 直接别名到 V1 `AsyncLLM`；不要再把独立 V0 engine 当作当前并行架构。V1 `LLMEngine` 自称 legacy，是为旧式同步 `add_request/step` 兼容的 facade，不代表其背后仍有另一套 V0 core（`vllm/engine/llm_engine.py:4-7`；`vllm/engine/async_llm_engine.py:4-7`；`vllm/v1/engine/llm_engine.py:48-61`）。
 
-Engine V1 与 Model Runner V1/V2 又是不同维度。当前配置先接受显式环境变量选择（`vllm/config/vllm.py:619-623`）；未显式覆盖时，ROCm 上命中 `ROCM_DEFAULT_MRV1_ARCHITECTURES` 的模型会独立回退 MRV1（`vllm/config/vllm.py:627-635`），随后才检查 Triton 是否可用以及 capability check 是否存在不支持项，任一失败也回退 MRV1，只有其余情况默认 MRV2（`vllm/config/vllm.py:637-652`）。`GPUWorker` 按这一结果实例化不同 runner（`vllm/v1/worker/gpu_worker.py:455-475`），所以“V1 engine”不能推出“必走某一代 runner”。
+Engine V1 与 Model Runner V1/V2 又是不同维度。当前配置先接受显式环境变量选择（`vllm/config/vllm.py:619-623`）；未显式覆盖时，ROCm 上命中 `ROCM_DEFAULT_MRV1_ARCHITECTURES` 的模型会独立回退 MRV1（`vllm/config/vllm.py:627-635`），随后才检查 Triton 是否可用以及 capability check 是否存在不支持项，任一失败也回退 MRV1，只有其余情况默认 MRV2（`vllm/config/vllm.py:637-652`）。`GPUWorker` 按这一结果实例化不同 runner（`vllm/v1/worker/gpu_worker.py:455-475`），所以“V1 engine”不能推出“必走某一代 runner”。两条设备路径分别由 [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] 与 [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] 展开。
 
 ### 6.2 拓扑由 backend 决定，不是固定进程公式
 
@@ -189,7 +189,7 @@ Engine V1 与 Model Runner V1/V2 又是不同维度。当前配置先接受显�
 - [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|Engine 内部与进程接缝]] —— 深入 Client、EngineCore、Executor 的对象/进程所有权和资源承诺提交。
 - [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler 事务]] —— 深入 token budget、waiting/running、抢占和 output 后提交。
 - [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV Cache 所有权]] —— 深入逻辑 block、物理 KV、prefix cache 与释放不变量。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|Model Runner V2]] —— 深入 persistent row、staged write 与 async-first 设备热路径。
+- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] —— 对照 compact row 与 stable row 两种设备状态布局，以及它们不同的异步提交代价。
 - [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|分布式推理]] —— 深入 rank/group、并行轴和 collective 顺序。
 - [[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|跨实例 KV]] —— 深入 connector、lease 与 producer/consumer 交接。
 - [[02_engineering/03_infer_frameworks/vllm/28_vllm_extension_plugin_system_analysis|扩展与插件]] —— 深入 discovery、进程覆盖与多阶段初始化边界。
@@ -200,6 +200,5 @@ Engine V1 与 Model Runner V1/V2 又是不同维度。当前配置先接受显�
 - [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM Engine 架构]] —— 展开本页 Engine 生命周期层与资源控制层之间的提交接缝。
 - [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler 分析]] —— 证明本页生命周期中 admission、抢占与结果提交的内部事务。
 - [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 解释逻辑 block、物理 tensor 与跨实例传输为何必须分开所有权。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] —— 细化设备运行时如何把动态计划投影到稳定 row 与 buffer。
+- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|vLLM Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] —— 对照设备运行时如何以 compact row 或 stable row 投影动态计划。
 - [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] —— 细化 executor 如何把统一计划映射为 rank 与 collective。
-- [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] —— 按问题与机制 owner 导航整个 vLLM 知识域。

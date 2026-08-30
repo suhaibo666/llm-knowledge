@@ -8,7 +8,7 @@ title: "vLLM Engine 架构：用三种状态所有权封装资源承诺"
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout；提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：三者分离的关键不是多一层抽象，而是只允许一个所有者按自己的时钟修改一类状态：Client 保存前端请求与传输状态，EngineCore 用 Scheduler 封装资源事务，Executor 只把已承诺计划投射到设备拓扑。资源承诺是一次复合的 schedule-time commit：KV 分配先改变 block 所有权，Scheduler 再推进与该计划匹配的 optimistic request progress 和释放 fence，完成的 `SchedulerOutput` 才是 Executor 可消费的已提交计划；执行结果随后经 `update_from_output` 归并为 core 状态。
 > **所有权边界**：本页拥有 Engine 内部 Client / EngineCore / Executor 的对象与可选进程接缝、三类 request state，以及 create → submit → core step → result commit 路径。
-> **明确排除**：全系统六层与完整在线生命周期由 [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|架构概览]] 负责；协议、render、detokenize 与用户输出语义由 [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|请求语义]] 负责；waiting/running、budget、抢占与 KV 分配算法由 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]] 负责；launcher、ready、路由与故障拓扑由 [[02_engineering/03_infer_frameworks/vllm/16_vllm_serving_control_plane_analysis|Serving 控制面]] 负责。
+> **明确排除**：全系统六层与完整在线生命周期由 [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|架构概览]] 负责；协议、render、detokenize 与用户输出语义由 [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|请求语义]] 负责；waiting/running、budget、抢占与 KV 分配算法由 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]] 负责；launcher、ready、路由与故障拓扑由 [[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|Serving 控制面]] 负责。
 > **最近更新**：2026-08-29。按 `6b110bad` 重建对象所有权与两阶段提交边界。
 
 ## 1. 背景：一个请求同时活在三种时间里
@@ -269,5 +269,5 @@ allocator 或 serving supervisor 时，应转到各自 owner 页，避免重新�
 - [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|vLLM 请求语义]] —— 解释前端 `RequestState` 保存哪些用户语义，以及 core output 何时变成用户可见结果。
 - [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] —— 展开本页 resource commit 内部的 budget、waiting/running、抢占与多资源 admission。
 - [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 解释 schedule 分配的逻辑 block、物理 KV 与 deferred free 不变量。
-- [[02_engineering/03_infer_frameworks/vllm/16_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] —— 展开 Client/Core 的 launcher、ready、路由、背压与进程故障拓扑。
+- [[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] —— 展开 Client/Core 的 launcher、ready、路由、背压与进程故障拓扑。
 - [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] —— 深入 Executor 后面的 rank/group、parallel axes 与 collective 顺序。

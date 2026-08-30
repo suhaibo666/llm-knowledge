@@ -12,6 +12,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-30：补齐 Model Runner V1，并将执行主线重排为 15 V1 → 16 V2
+
+**Type**：新增机制 owner 页 + 4 页连续编号调整 + 导航与交叉链接集成
+
+新增 [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|15 Model Runner V1]]，独立解释 MRV1 如何用 `CachedRequestState` 与紧凑 persistent `InputBatch` 承接动态调度：请求状态与 batch row 的双层所有权、finished/preempt/resume 的更新事务、condense/reorder 的全状态迁移、request-major 到 token-major 的输入物化、异步 token 回填与 host-buffer barrier，以及 dummy/profile/CUDA Graph 共用生命周期。页面以设计取舍、承重不变量、成本和失败边界组织，源码 locator 只承担证据角色。
+
+为让演进关系先 V1 后 V2，原 `15 Model Runner V2`、`16 Serving 控制面`、`17 采样与结构化输出`、`18 多模态执行` 依次调整为 `16`、`17`、`18`、`19`；vLLM 域内引用、父索引和总索引同步更新。该域现有 **24 篇内容页 + index**，仍统一固定到 `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`。
+
+本轮验证限定在新增/重排的 vLLM 页面、该域链接闭合性以及直接受影响的两级索引和 changelog；未运行全库门禁，也未改写历史日志中的当时编号叙述。
+
+---
+
 ## 2026-08-30：vLLM Waves 2–6 完成——23 篇统一基线与最终知识地图
 
 **Type**：全域机制优先重写 + 4 个新 owner 页 + 导航/迁移元数据集成

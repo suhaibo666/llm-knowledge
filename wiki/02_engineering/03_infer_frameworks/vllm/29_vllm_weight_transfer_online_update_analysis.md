@@ -194,7 +194,7 @@ Worker 的 update 异常会把 `_weight_update_active` 置为 false、恢复默�
 - [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM Engine 架构]] —— 解释 utility call、EngineCore 与 Executor/Worker 的进程和 failure boundary；本页只使用该接缝承载更新控制消息。
 - [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 拥有本页只审计的 block、prefix、refcount、preempt 与 reset 内部机制。
 - [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型与权重 ABI]] —— 展开 `model.load_weights`、并行参数映射与 LoRA attachment；本页拥有其在线替换事务。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] —— 解释 persistent request rows、device state 与 graph 生命周期，帮助判断 pause/reset 对 runner 镜像的影响。
+- [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] —— 解释 persistent request rows、device state 与 graph 生命周期，帮助判断 pause/reset 对 runner 镜像的影响。
 - [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] —— 拥有 draft propose/verify/accept 与 device/CPU rollback；本页只审计换权重时 draft state 是否被失效。
 - [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] —— 拥有 rank/group/collective 顺序；本页只说明 weight-update control fan-out 和 rank-local payload 边界。
 - [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] —— 承接 version label、partial-rank failure、pause latency 与 recovery 的生产观测和故障归因。

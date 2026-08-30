@@ -184,7 +184,7 @@ attachment 到这里结束：adapter tensors 已装入受 manager 拥有的 slot
 
 - [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] — 把模型/算子层放回从配置到 Engine、Executor 与设备运行时的静态责任图。
 - [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] — 接续可执行模型向 attention metadata、KV layout 与 backend capability 的运行时合同。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] — 拥有本页排除的逐 step row、buffer、graph 与 adapter mapping 生命周期。
+- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] — 对照本页排除的 compact/stable row、buffer、graph 与 adapter mapping 生命周期。
 - [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|vLLM 量化派发设计]] — 深入基础权重提交之后的 scale、post-load transform 与 kernel-format ABI。
 - [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 解释并行层所消费的 TP/PP/EP rank group 与 collective ordering。
 - [[02_engineering/03_infer_frameworks/vllm/28_vllm_extension_plugin_system_analysis|vLLM 插件与扩展边界]] — 拥有 out-of-tree model 注册之前的 plugin discovery、进程作用域与初始化生命周期。

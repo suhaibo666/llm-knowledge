@@ -169,7 +169,7 @@ batch reorder 同样由 builder 提供阈值，而 runner 对所有 group 取最
 
 - [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] —— 拥有本页刻意排除的 request/token admission、preemption 与一步资源提交事务。
 - [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 展开 backend layout/spec 最终落到的物理 block、hybrid packing 与所有权不变量。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] —— 拥有 common metadata 的设备输入生产、persistent row 与全状态 reorder。
+- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] —— 对照 backend reorder 如何触发 MRV1 全状态 swap，或在 MRV2 中只改变 per-step mapping。
 - [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|vLLM 量化派发]] —— 展开 KV dtype、scale、load transform 与量化 kernel 的联合兼容合同。
 - [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] —— 解释 runner 如何消费 backend 的最弱 capture capability 并选择执行模式。
 - [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与专用 Kernel]] —— 拥有本页排除的 kernel/provider 内部路径、fallback 与性能收益模型。

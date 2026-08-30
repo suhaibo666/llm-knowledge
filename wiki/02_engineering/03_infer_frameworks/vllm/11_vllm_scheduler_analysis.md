@@ -202,7 +202,7 @@ running 阶段为当前请求调用 `allocate_slots()`；若返回 `None`，FCFS
 | encoder 与 spec 不是独立后处理 | 它们会裁剪 token 区间、消耗 input/cache 容量，并决定本 step 能否前进 | `vllm/v1/core/sched/scheduler.py:519-531`；`vllm/v1/core/sched/scheduler.py:611-633` |
 | finish 的资源释放可能分阶段 | 生命周期已结束不代表 blocks 或 request mapping 已消失；connector 完成后才 delete，blocks 回池还必须尊重 in-flight fence | `vllm/v1/core/sched/scheduler.py:2467-2499`；`vllm/v1/core/sched/scheduler.py:2882-2909`；`vllm/v1/core/sched/scheduler.py:2509-2548` |
 
-Scheduler 能保证的是“本轮计划在它拥有的逻辑资源视角下自洽”，而不是 GPU 一定无故障、采样一定满足某个分布，或某种 KV block 算法永不碎片化。物理 runner 如何把 delta 投射到 persistent row 属于 [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]]；逻辑/物理 KV 内部正确性属于 KV owner 页；spec propose/verify 的分布正确性属于 speculative decoding owner 页。
+Scheduler 能保证的是“本轮计划在它拥有的逻辑资源视角下自洽”，而不是 GPU 一定无故障、采样一定满足某个分布，或某种 KV block 算法永不碎片化。物理 runner 如何把 delta 投射到 compact row 或 stable row，分别属于 [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] 与 [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]]；逻辑/物理 KV 内部正确性属于 KV owner 页；spec propose/verify 的分布正确性属于 speculative decoding owner 页。
 
 ## 8. 源码阅读路径
 
@@ -217,6 +217,6 @@ Scheduler 能保证的是“本轮计划在它拥有的逻辑资源视角下自�
 - [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] — 把 Scheduler 放回资源控制层与完整请求生命周期中定位。
 - [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM Engine 架构]] — 解释 EngineCore 怎样调用 Scheduler 并把计划交给 Executor。
 - [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 深入本页只当作 admission 成败合同的 block、prefix cache 与释放算法。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] — 解释 `SchedulerOutput` 怎样更新 persistent row 并进入设备执行。
+- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] — 对照 `SchedulerOutput` 怎样更新 compact row 或 stable row 并进入设备执行。
 - [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] — 深入 draft、verify、accept 如何保持采样与 KV 正确。
 - [[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|vLLM 分离式 KV Serving]] — 展开 blocked remote-KV 状态、connector 与延迟释放协议。

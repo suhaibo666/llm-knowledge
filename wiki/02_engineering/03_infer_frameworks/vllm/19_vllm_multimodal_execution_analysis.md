@@ -316,5 +316,5 @@ tensor 行区间，再在 flattened batch 的对应位置写 `is_mm_embed` mask�
 - [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|vLLM 请求语义]] — 解释 chat、render 与不同公开任务怎样产生本页接收的 prompt 和媒体对象。
 - [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] — 展开本页只覆盖 encoder 接缝的一般 admission、budget、preemption 与结果提交事务。
 - [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型库]] — 拥有具体多模态模型的注册、构造、权重 ABI 与网络结构。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] — 把 encoder state 放回 persistent row、staged write 与完整设备 step 中理解。
+- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] — 对照媒体与 encoder state 如何进入 compact batch 或 stable row，并完成设备 step。
 - [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] — 解释 drafter lookahead 为什么允许边界处暂用 token embedding，以及 target 怎样验证。

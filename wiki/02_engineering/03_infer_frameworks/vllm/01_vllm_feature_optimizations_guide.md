@@ -63,7 +63,7 @@ workload envelope 是这轮实验的合同。没有它，“更快”只代表�
 - 每轮都检查空输出、截断、NaN/Inf、错误类型与失败率；失败请求不能从吞吐分母中消失。
 
 这是实验协议，不是 vLLM 对所有模型的正确性承诺。采样与 grammar 的真实约束由
-[[02_engineering/03_infer_frameworks/vllm/17_vllm_sampling_structured_output_analysis|采样与结构化输出]]
+[[02_engineering/03_infer_frameworks/vllm/18_vllm_sampling_structured_output_analysis|采样与结构化输出]]
 拥有；量化数值合同由
 [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|量化 ABI]] 拥有。
 
@@ -198,10 +198,10 @@ collective 等待或同步边界。先提出**唯一可证伪的假设**，再�
 
 | 观测到的限制信号 | 本轮假设 | 只选一个配置族 / 一次变量 | 必须同时观察的反证 | 机制 owner |
 |---|---|---|---|---|
-| frontend CPU 饱和，GPU 间歇空闲 | render/tokenize/media 输入供给不足 | API/input-processing capacity | GPU 空闲减少但输出语义、TTFT tail 与 CPU queue 不恶化 | [[02_engineering/03_infer_frameworks/vllm/16_vllm_serving_control_plane_analysis|Serving 控制面]]、[[02_engineering/03_infer_frameworks/vllm/18_vllm_multimodal_execution_analysis|多模态执行]] |
+| frontend CPU 饱和，GPU 间歇空闲 | render/tokenize/media 输入供给不足 | API/input-processing capacity | GPU 空闲减少但输出语义、TTFT tail 与 CPU queue 不恶化 | [[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|Serving 控制面]]、[[02_engineering/03_infer_frameworks/vllm/19_vllm_multimodal_execution_analysis|多模态执行]] |
 | TTFT 随 load 上升，decode ITL 尚稳定 | admission/prefill 竞争或排队主导 | token/sequence budget 或 arrival/concurrency，一次只改其一 | queue/prefill 指标不变则假设被否证 | [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]] |
 | preemption、KV 余量低或 OOM | 权重/KV/graph/临时 buffer 之一耗尽容量 | KV/上下文/并行/量化/graph memory 中先选一个家族 | 对应占用不降，或 latency/quality 代价超过门限 | [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV Cache]]、[[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|量化 ABI]] |
-| 小 batch 下 CPU/launch gap 明显 | host launch 或动态执行开销主导 | optimization/compile/graph mode | GPU timeline gap 不收缩，或 startup/memory 代价超过预算 | [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|Model Runner V2]]、[[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] |
+| 小 batch 下 CPU/launch gap 明显 | host launch 或动态执行开销主导 | optimization/compile/graph mode | GPU timeline gap 不收缩，或 startup/memory 代价超过预算 | [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]]、[[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|编译与 CUDA Graph]] |
 | profiler 指向 attention/GEMM/MoE/格式转换 | 某 backend/kernel 对当前 shape 或 dtype 不合适 | backend/kernel/quant format 中选一个 | 实际路径仍 fallback，或 kernel 变快但 E2E 无改善 | [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|Attention Backend]]、[[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|融合 Kernel]] |
 | decode 串行时间主导 | draft 成本可能小于节省的 target steps | speculative family 的一个候选 | acceptance、draft+verify 成本与 E2E 不支持 break-even | [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|投机解码]] |
 | collective 占比高或单卡放不下 | 当前 rank layout 是限制项 | TP/PP/DP/EP/CP layout 的一次变化 | 每 rank 工作、通信时间或容量没有按假设变化 | [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|分布式推理]] |

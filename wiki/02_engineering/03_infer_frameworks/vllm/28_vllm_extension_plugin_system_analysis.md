@@ -135,7 +135,7 @@ resolver registry 对同名项采用“告警并覆盖”，不是拒绝重复�
 ## Related Pages
 
 - [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型与权重 ABI]] — 承接 OOT model 注册之后的模型解析、构造和权重提交；本页不展开内置 registry。
-- [[02_engineering/03_infer_frameworks/vllm/16_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] — 解释 API、EngineCore 与 worker 的进程拓扑，以及插件初始化必须对齐的 ready/failure 边界。
+- [[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] — 解释 API、EngineCore 与 worker 的进程拓扑，以及插件初始化必须对齐的 ready/failure 边界。
 - [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|vLLM 请求语义]] — 拥有 endpoint 与 IO plugin 所接入的协议、render、input/output 转换语义。
 - [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 给出 rank、worker 与 executor 的真实进程范围，用于审计 general plugin 的可见性。
 - [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 承接 plugin import/init 失败、进程分叉和 endpoint 暴露面的生产信号与故障归因。

@@ -8,7 +8,7 @@ title: "vLLM 请求语义：从协议与任务到 Engine 合同与用户输出"
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout；提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：vLLM 用一对窄合同隔离“用户在请求什么”和“Engine 怎样执行”：Renderer 与协议 adapter 把文本、消息、媒体和协议参数压成 `EngineInput + SamplingParams | PoolingParams`，`InputProcessor` 再固化为 `EngineCoreRequest`；返回侧用前端 `RequestState` 把 `EngineCoreOutput` 还原为文本、tensor、流事件和协议对象。合流不是抹平语义——生成类任务共用 sampling 合同，pooling 保留具体 task，Render 不进入 Engine，Transcription 与 Realtime 则在 Engine 两侧保留音频生命周期。
 > **所有权边界**：本页拥有任务与能力命名、协议转换、render/tokenize、`EngineInput`、`EngineCoreRequest` 的语义字段、前端输出状态、detokenize/stop、pooling tensor 与各协议响应重建。
-> **明确排除**：waiting/running、token/KV admission、优先级策略与抢占属于 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]]；logits processor、grammar mask、top-k/top-p 与 GPU token selection 属于 [[02_engineering/03_infer_frameworks/vllm/17_vllm_sampling_structured_output_analysis|采样与结构化输出]]。本页只解释 sampling 参数怎样跨边界，不解释 token 怎样被选中。
+> **明确排除**：waiting/running、token/KV admission、优先级策略与抢占属于 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]]；logits processor、grammar mask、top-k/top-p 与 GPU token selection 属于 [[02_engineering/03_infer_frameworks/vllm/18_vllm_sampling_structured_output_analysis|采样与结构化输出]]。本页只解释 sampling 参数怎样跨边界，不解释 token 怎样被选中。
 
 ## 1. 背景：公开语义比 Engine 合同更宽
 
@@ -208,7 +208,7 @@ flowchart LR
 - [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] —— 把本页的请求语义窄腰放回全系统六层责任与在线生命周期。
 - [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM Engine 架构]] —— 从 `EngineCoreRequest` 往下解释 client、core 与 executor 的进程和对象接缝。
 - [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler 分析]] —— 接管本页明确排除的 admission、waiting/running 与 token/KV 资源事务。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] —— 解释稳定请求合同如何继续投影为设备侧 persistent row 与 buffer。
-- [[02_engineering/03_infer_frameworks/vllm/17_vllm_sampling_structured_output_analysis|vLLM 采样与结构化输出]] —— 接管 `SamplingParams` 之后的 logits 变换、grammar 状态与 token selection。
-- [[02_engineering/03_infer_frameworks/vllm/18_vllm_multimodal_execution_analysis|vLLM 多模态执行]] —— 接管媒体完成协议/render 归一后，processor、encoder cache 与位置对齐的执行状态。
+- [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] —— 解释稳定请求合同如何继续投影为设备侧 persistent row 与 buffer。
+- [[02_engineering/03_infer_frameworks/vllm/18_vllm_sampling_structured_output_analysis|vLLM 采样与结构化输出]] —— 接管 `SamplingParams` 之后的 logits 变换、grammar 状态与 token selection。
+- [[02_engineering/03_infer_frameworks/vllm/19_vllm_multimodal_execution_analysis|vLLM 多模态执行]] —— 接管媒体完成协议/render 归一后，processor、encoder cache 与位置对齐的执行状态。
 - [[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|vLLM 跨实例 KV 服务]] —— 解释 Render/token-in 路径携带的 KV transfer metadata 如何跨 Engine 提交。

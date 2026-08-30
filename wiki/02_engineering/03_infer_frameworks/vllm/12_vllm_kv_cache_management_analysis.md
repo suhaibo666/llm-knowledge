@@ -191,7 +191,7 @@ GPU 侧仍以 `block_id` 表示当前物理槽；CPU 侧以 `OffloadKey = block_
 
 - [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] —— 展开本页刻意排除的 request/token admission、preemption 与 allocation 失败处理策略。
 - [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] —— 解释 backend 怎样消费本页已经提交的 block table 与物理 layout。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] —— 解释逻辑 block delta 怎样镜像到 persistent device row 并执行 CoW copy。
+- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] —— 对照逻辑 block delta 怎样进入 compact block-table row 或 stable device row；CoW 的物理所有权仍由本页维护。
 - [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] —— 展开 lookahead slot、draft rejection 与 finalized KV 提交边界。
 - [[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|vLLM 分离式 KV Serving]] —— 拥有跨 Engine connector、producer/consumer、lease 与远端完成协议。
 - [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] —— 解释 prefix hit、eviction、GPU/CPU usage 与 allocation failure 如何成为生产信号。
