@@ -28,7 +28,7 @@ title: "vLLM 在线权重更新：受暂停保护的版本可见性协议"
 | owner | 持有的状态 | 它能证明的完成 | 它不能证明的完成 | 证据 |
 |---|---|---|---|---|
 | `LLM` / `AsyncLLM` / trusted control route | 更新调用顺序、可选 version 参数 | 前一个公开调用返回；同步或 async facade 已收到结果 | 请求已绑定该 version、cache 一定安全 | `vllm/entrypoints/llm.py:855-907`；`vllm/v1/engine/async_llm.py:1123-1167` |
-| EngineCore / Executor | scheduler pause、worker fan-out、单个 `_weight_version` 字符串 | pause 完成时设备 idle；collective RPC 收齐 worker 回复；version 字符串已改 | workers 具有可回滚的共同快照 | `vllm/v1/engine/core.py:827-885`；`vllm/v1/executor/abstract.py:162-194`；`vllm/v1/engine/core.py:981-986` |
+| EngineCore / Executor | scheduler pause、worker fan-out、单个 `_weight_version` 字符串 | pause 完成时设备 idle；collective RPC 成功路径收齐 worker 回复、失败路径可在首个 error 早退；version 字符串已改 | workers 具有可回滚的共同快照 | `vllm/v1/engine/core.py:827-885`；`vllm/v1/executor/multiproc_executor.py:416-442`；`vllm/v1/engine/core.py:981-986` |
 | Worker | 当前 target model、`_weight_update_active`、每 rank payload 选择 | 本 worker 的 start/update/finish 顺序合法 | 其他 worker 已完成，或失败前写入已撤销 | `vllm/v1/worker/gpu_worker.py:1307-1428` |
 | WeightTransferEngine / model loader | communicator、wire metadata、layerwise 或 sparse 写入、deferred work | backend-specific finish 已完成本地 post-process | EngineCore version 已发布、KV/encoder/spec state 已失效 | `vllm/distributed/weight_transfer/base.py:331-379`；`vllm/distributed/weight_transfer/base.py:461-515` |
 
@@ -52,11 +52,11 @@ title: "vLLM 在线权重更新：受暂停保护的版本可见性协议"
 
 `sleep(level=0)` 只 pause scheduling；level 1 还 offload weights 并丢弃 KV；level 2 丢弃全部 GPU allocation。core 总是先完成 pause，才把 level 1/2 交给 executor（`vllm/v1/engine/core.py:887-923`）。worker 在 suspend 前后同步设备；level 2 还把 model 与 draft buffers 克隆到 CPU，wake 时按 `weights` tag 恢复（`vllm/v1/worker/gpu_worker.py:236-291`）。
 
-**边界**：start/update/finish API 没有自动 wake，也没有“在 sleeping allocation 上更新”的专用 guard。测试给出的深睡恢复顺序是先 wake `weights`、再 reload，最后 wake `kv_cache`（`tests/basic_correctness/test_mem.py:255-282`）。因此，sleep 可为 colocated trainer 腾显存，但它是调用方必须管理的额外 resource state；只有 executor 不再 sleeping 时，core 才恢复 scheduling（`vllm/v1/engine/core.py:925-945`）。
+**边界**：start/update/finish API 没有自动 wake，也没有“在 sleeping allocation 上更新”的专用 guard。测试给出的深睡恢复顺序是先 wake `weights`、再 reload，最后 wake `kv_cache`（`tests/basic_correctness/test_mem.py:255-282`）。因此，sleep 可为 colocated trainer 腾显存，但它是调用方必须管理的额外 resource state。通用 `resume_scheduler` 只把 pause state 设为 `UNPAUSED`，`AsyncLLM.resume_generation` 直接调用它，并不验证 allocation residency（`vllm/v1/engine/core.py:879-882`；`vllm/v1/engine/async_llm.py:836-839`）；只有经 `wake_up` 恢复 sleep 的专属路径，才在 executor 不再 sleeping 后自动 resume（`vllm/v1/engine/core.py:925-941`）。
 
 ## 4. 在线 weight-version transaction：有序 fence，不是原子提交
 
-**Figure Specification（图 1）**：图按从左到右的版本可见性画出三个状态域。控制面先冻结 admission/step，并在 `clear_cache` 分支把 running request 退回 waiting、失效 KV/MM/encoder/spec state；随后 executor 将 start/update/finish fan-out 到各 worker。worker/backend 区域区分 metadata validation、chunk 原位写入、deferred processing drain 与稳定 tensor storage；version/cache/request 区域显示 finish 后只有主模型 LoRA state 自动 reset，version 是下一条独立消息，resume 只在资源 resident 后发生。橙色失败路径明确落到“partial writes / rank split，无通用 rollback”，而不是画成成功路径的逆操作。
+**Figure Specification（图 1）**：图按从左到右的版本可见性画出三个状态域。控制面先冻结 admission/step，并在 `clear_cache` 分支把 running request 退回 waiting、失效 KV/MM/encoder/spec state；随后 executor 将 start/update/finish fan-out 到各 worker。worker/backend 区域区分 metadata validation、chunk 原位写入、deferred processing drain 与稳定 tensor storage，并把 main finish 的 LoRA reset 与 draft finish 的无 reset 分开；两条分支都可进入独立的 version 消息。version/cache/request 区域把 generic resume 的 caller-managed cache/resource precondition 与 sleep 专属 `wake_up` residency check 分开。橙色失败路径明确落到“partial writes / rank split，无通用 rollback”，而不是画成成功路径的逆操作。
 
 ```mermaid
 flowchart LR
@@ -74,15 +74,20 @@ flowchart LR
     Start --> Update["Update chunks<br/>校验 metadata 与 rank payload"]
     Update --> Write["写入稳定参数 storage<br/>或原位 sparse patch"]
     Write --> Finish["Finish<br/>drain 与 post process"]
-    Finish --> Lora["main target<br/>reset LoRA state"]
+    Finish --> Target{"更新 target"}
+    Target -->|main| Lora["reset LoRA state"]
+    Target -->|draft| DraftDone["不 reset LoRA"]
   end
 
   subgraph VIS["版本 缓存 请求可见性"]
     Lora --> Ver["独立写 version N plus 1"]
-    Ver --> Ready{"全部 allocation resident"}
-    Ready -->|是| Resume["Resume scheduling"]
+    DraftDone --> Ver
+    Ver --> Gate{"调用方确认 cache policy<br/>与运行所需资源"}
+    Gate -->|通用 resume| Resume["解除 scheduler pause<br/>无内建 residency check"]
+    Gate -->|曾 sleep| Wake["wake_up path<br/>检查 is_sleeping"]
+    Wake -->|executor 不再 sleeping| Resume
     Resume --> New["后续 step 读取新权重"]
-    Ready -->|否| Sleep["保持 paused 或 sleeping"]
+    Gate -->|尚未满足| Hold["保持 paused"]
   end
 
   Update -.-> Fail["异常<br/>session 关闭并 reset target"]
@@ -95,17 +100,17 @@ flowchart LR
   classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a,stroke-width:2px
   classDef acc2 fill:#ffedd5,stroke:#ea580c,color:#0f172a,stroke-width:2px
   classDef ghost fill:#f8fafc,stroke:#94a3b8,color:#475569,stroke-dasharray:4 3
-  class A,P,Idle,Cache,Inv,Keep,Start,Update,Write,Finish,Lora,Ready,Resume,New neutral
+  class A,P,Idle,Cache,Inv,Keep,Start,Update,Write,Finish,Target,Lora,DraftDone,Gate,Wake,Resume,New neutral
   class Idle,Finish,Ver,Resume acc1
   class Fail,Split,Partial,Stale acc2
-  class Sleep ghost
+  class Hold ghost
 ```
 
 ## 5. Staging 与 validation：隔离 metadata，不隔离第二份模型
 
 ### 5.1 init 与 start 只建立通道和 session
 
-weight-transfer engine 只有在 worker model 已加载后才创建，因为它直接持有目标 model 引用；未配置 backend 时任何 session 操作都显式失败（`vllm/v1/worker/gpu_worker.py:487-502`；`vllm/v1/worker/gpu_worker.py:1307-1326`）。`init_weight_transfer_engine` 把 dict 解析为 backend typed dataclass，再建立 NCCL process group、IPC wire params 或 RDT plan；它通常每次训练 setup 做一次，不是每个 version 的 commit（`vllm/distributed/weight_transfer/base.py:421-470`）。
+weight-transfer engine 只有在 worker model 已加载后才创建，因为它直接持有目标 model 引用；未配置 backend 时任何 session 操作都显式失败（`vllm/v1/worker/gpu_worker.py:487-502`；`vllm/v1/worker/gpu_worker.py:1307-1326`）。`init_weight_transfer_engine` 先把 dict 解析为 backend typed dataclass，再 dispatch 到 backend init（`vllm/distributed/weight_transfer/base.py:421-470`）。具体动作并不相同：dense NCCL 记录 trainer wire params 并创建 process group（`vllm/distributed/weight_transfer/nccl_engine.py:136-151`）；IPC 不做 data-plane rendezvous，只记录 `packed` wire param（`vllm/distributed/weight_transfer/ipc_engine.py:151-160`）；sharded RDT 则配置 ring、绑定 producers、dry-run bake、构建 static call plan、预注册 buffers 并启动 processing worker（`vllm/distributed/weight_transfer/sharded_rdt_engine.py:386-423`；`vllm/distributed/weight_transfer/sharded_rdt_engine.py:561-577`）。这些都是显式 init phase，不是每个 version 的 finish/commit。
 
 start 的 worker guard 拒绝 session 嵌套；成功后才设置 `_weight_update_active`。若 start 本身失败，worker 只恢复默认 target 并重新抛错（`vllm/v1/worker/gpu_worker.py:1347-1371`）。draft 更新另有 target：只有 backend 声明支持、runner 暴露实际 draft model 且 speculative config 存在时才可选；sparse NCCL 与 sharded RDT 明确不支持 draft target（`vllm/v1/worker/gpu_worker.py:941-972`；`vllm/distributed/weight_transfer/sparse_nccl_engine.py:112-125`；`vllm/distributed/weight_transfer/sharded_rdt_engine.py:286-295`）。
 
@@ -127,7 +132,7 @@ layerwise reload 也不是先构造完整新模型再交换指针。它记录原
 
 Worker 只有 active session 才允许 finish。backend finish 返回后，它恢复默认 update target、关闭 session；主模型更新还会 reset runner 的 LoRA state，draft session 则刻意不动 LoRA（`vllm/v1/worker/gpu_worker.py:1410-1428`；`tests/v1/worker/test_gpu_worker_weight_transfer.py:101-118`；`tests/v1/worker/test_gpu_worker_weight_transfer.py:161-170`）。这里的“commit”只表示该 worker 不再有本 session 的 deferred processing。
 
-多 worker facade 用 `collective_rpc` fan-out；multiprocessing executor 从每个 response queue 收结果，任一 error 就抛异常，Ray executor则对全部 worker refs 做 `ray.get`（`vllm/v1/executor/multiproc_executor.py:375-448`；`vllm/v1/executor/ray_executor.py:487-512`）。这提供 all-replies barrier，但没有 prepare vote、commit record 或补偿动作。
+多 worker facade 用 `collective_rpc` fan-out。multiprocessing executor 先把命令放入 broadcast queue；成功路径依次消费全部目标 response queues，但遇到首个 non-`SUCCESS` reply 就立即抛错，不再消费剩余 queues（`vllm/v1/executor/multiproc_executor.py:375-442`）。Ray executor 则对全部 worker refs 做 `ray.get`（`vllm/v1/executor/ray_executor.py:487-512`）。因此，只有成功返回才构成 all-replies barrier；失败时只能确认命令已 fan-out，facade 可能早退，并且两条 executor path 都没有 prepare vote、commit record 或补偿动作。
 
 ### 6.2 version 是后置标签，不是数据提交协议
 
@@ -176,13 +181,13 @@ layerwise reload 把处理后的值 copy 回原 storage，目的就是保留 ker
 
 Worker 的 update 异常会把 `_weight_update_active` 置为 false、恢复默认 target 并重新抛错；测试只断言 session 已关闭、下一次 start 可重新开始（`vllm/v1/worker/gpu_worker.py:1389-1408`；`tests/v1/worker/test_gpu_worker_weight_transfer.py:192-202`）。代码没有保存整模型旧 snapshot，也没有把先前 chunk、已经完成的 layer 或 sparse patch 写回旧值。start 失败同样只 reset target；finish 失败甚至发生在 worker 清 active flag 之前（`vllm/v1/worker/gpu_worker.py:1363-1371`；`vllm/v1/worker/gpu_worker.py:1410-1428`）。
 
-**跨 worker 失败边界（分析推断）**：collective RPC 等全部 replies，但各 worker 已各自执行原位 mutation；如果 rank A finish 成功而 rank B 抛错，facade 不会继续写 version，但 rank A 的新参数不会自动撤销。这里没有 two-phase commit。最安全的恢复不是盲目 resume，而是保持 pause，重建所有 ranks 的一致状态——例如重新推送一份完整已知版本，必要时重启 Engine——然后清理派生 cache，再由外部 coordinator 重新发布 version。源码没有提供通用 `rollback_weight_update`，所以具体恢复方案属于部署 policy，而非 vLLM 保证。
+**跨 worker 失败边界（分析推断）**：命令在等待回复前已经 fan-out；各 worker 随后各自执行原位 mutation。multiprocessing facade 可在消费到首个失败 reply 时早退，剩余 reply 未被消费不等于对应 worker 未执行；如果 rank A finish 成功而 rank B 抛错，facade 不会继续写 version，但 rank A 的新参数不会自动撤销（`vllm/v1/executor/multiproc_executor.py:416-442`）。这里没有 two-phase commit。最安全的恢复不是盲目 resume，而是保持 pause，重建所有 ranks 的一致状态——例如重新推送一份完整已知版本，必要时重启 Engine——然后清理派生 cache，再由外部 coordinator 重新发布 version。源码没有提供通用 `rollback_weight_update`，所以具体恢复方案属于部署 policy，而非 vLLM 保证。
 
 最后还有三条操作不变量：
 
 1. **先 pause idle，再改原位 storage**；否则稳定地址只防 graph 失效，不防 concurrent forward 读到混合层。
 2. **每 rank 必须走同一 session 次序和匹配 payload**；list payload 由 `DP rank × local world size + worker rank` 选择本地项（`vllm/v1/worker/gpu_worker.py:1394-1404`）。并行组与 collective 顺序的内部机制由分布式推理 owner 解释。
-3. **只有 finish、cache policy、resource residency 都成功后才发布 version 并 resume**。代码保证 facade 内 finish 先于 version；cache 与 wake 的排序仍由调用方负责。
+3. **finish 成功后才发布 version；resume 前由调用方建立 cache/resource precondition**。代码保证 facade 内 finish 先于 version，但 generic resume 不检查 residency；只有走 sleep 的 `wake_up` path 才以 `is_sleeping` guard 自动 resume，cache 与 wake 的整体排序仍由调用方负责（`vllm/v1/engine/core.py:879-882`；`vllm/v1/engine/core.py:925-941`）。
 
 ## Related Pages
 
