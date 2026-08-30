@@ -13,6 +13,8 @@ title: "vLLM 扩展与插件系统：把全局变更约束在显式生命周期�
 > **明确排除**：内置 model registry 的模型构造与权重 ABI（见 [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型与权重 ABI]]），以及 OpenAI/Pooling 等协议的字段转换与响应实现（见 [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|vLLM 请求语义]]）。
 >
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`
+>
+> **最近更新**：2026-08-30。
 
 ## 1. 背景：安装一个包，不等于扩展已经安全生效
 
