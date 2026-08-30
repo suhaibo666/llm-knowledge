@@ -27,11 +27,11 @@ title: "vLLM 分布式推理：从逻辑并行轴到 rank 状态与 collective �
 
 ## 二、一个 rank 张量派生多组通信合同
 
-模型并行初始化把 ranks reshape 为 `ExternalDP × DP × PP × PCP × TP`；源码同时警告，内部 DP group 的 ranks 必须同步调用 generate，否则 collective 可能死锁；`vllm/distributed/parallel_state.py:1817-1832`。下图以 DP=2、PP=2、PCP=1、TP=2 为例。数字是 global rank；相同八个进程被不同逻辑轴投影成不同 group。
+模型并行初始化把 ranks reshape 为 `ExternalDP × DP × PP × PCP × TP`；源码同时警告，内部 DP group 的 ranks 必须同步调用 generate，否则 collective 可能死锁；`vllm/distributed/parallel_state.py:1817-1832`。下图以 DP=2、PP=2、PCP=1、TP=2、DCP group size=2 为例。DCP size 不是 rank tensor 的新维度，而是独立配置的分组宽度：它在已有 PCP×TP ranks 上先跨 PCP、再跨 TP 切组；`vllm/distributed/parallel_state.py:1851-1867`。数字是 global rank；相同八个进程被不同逻辑轴投影成不同 group。
 
 ```mermaid
 flowchart TB
-    L[rank 张量｜DP 2 × PP 2 × PCP 1 × TP 2]
+    L[rank 张量｜DP 2 × PP 2 × PCP 1 × TP 2｜DCP size 2]
     R0[r0｜dp0 pp0 tp0]
     R1[r1｜dp0 pp0 tp1]
     R2[r2｜dp0 pp1 tp0]
@@ -48,11 +48,11 @@ flowchart TB
     DCP[DCP groups｜01 23 45 67]
     EP[EP groups｜0145 2367]
 
-    R0 -. same local coordinates except TP .-> TP
-    R0 -. same local coordinates except PP .-> PP
-    R0 -. same local coordinates except DP .-> DP
-    R0 -. PCP first then TP span .-> DCP
-    R0 -. DP PCP TP span at fixed PP .-> EP
+    R0 -.->|same local coordinates except TP| TP
+    R0 -.->|same local coordinates except PP| PP
+    R0 -.->|same local coordinates except DP| DP
+    R0 -.->|PCP first then TP span| DCP
+    R0 -.->|DP PCP TP span at fixed PP| EP
 ```
 
 这不是五套进程，而是五种 group membership。代码从同一 rank tensor 依次派生 TP、DCP、PCP、PP、DP 与 EP groups；`vllm/distributed/parallel_state.py:1834-1955`。
@@ -113,28 +113,30 @@ PP worker 在复用上一轮异步 handle 前先等待，然后从前一 stage `
 
 ## 五、DBO：在同一 ownership 上增加两条时间 lane
 
-DBO 的动机主要是隐藏 MoE dispatch/combine 或其他 collective 的等待：把 batch 切为两个 ubatches，在 ubatch A 的通信窗口推进 ubatch B 的计算。它没有创建新 rank 或 process group。`ParallelConfig` 只在开启 DBO 且 token 数超过 prefill/decode threshold 时使用两个 ubatches；`vllm/config/parallel.py:218-231,580-590`、`vllm/v1/worker/ubatch_utils.py:38-46`。
+DBO 的动机主要是隐藏 MoE dispatch/combine 或其他 collective 的等待：把 batch 切为两个 ubatches，在 ubatch A 的通信窗口推进 ubatch B 的计算。它没有创建新 rank 或 process group。`ParallelConfig` 只在开启 DBO 且 token 数超过 prefill/decode threshold 时使用两个 ubatches；`vllm/config/parallel.py:218-231,580-590`、`vllm/v1/worker/ubatch_utils.py:38-46`。下图用 DeepEP high-throughput prepare 的 generator 顺序展示关键交接；它不是“先 launch 通信再 yield”，而是先捕获本 ubatch 的 compute event，再 yield 让 peer 排入计算，恢复后才启动会阻塞 CPU 的 dispatch。
 
 ```mermaid
 sequenceDiagram
     participant E as Executor
     participant W as Worker
+    participant A as Ubatch A
+    participant B as Ubatch B
     participant C as Compute stream
     participant M as Comm stream
     E->>W: execute model batch
     W->>W: agree ubatch count across DP ranks
     W->>W: slice A and B with separate contexts
-    par lane A
-        W->>C: compute A
-        C->>M: record event then dispatch A
-        M-->>C: yield after communication is launched
-        C->>C: finalize A after dependency
-    and lane B
-        W->>C: compute B during A communication
-        C->>M: record event then dispatch B
-        M-->>C: yield after communication is launched
-        C->>C: finalize B after dependency
-    end
+    A->>C: queue compute A
+    C->>C: capture event A
+    A-->>B: yield before dispatch
+    B->>C: queue compute B
+    C->>C: capture event B
+    B-->>A: yield and resume A
+    A->>M: launch dispatch A after resume
+    M-->>C: communication A overlaps queued compute B
+    A-->>B: cooperative handoff
+    B->>M: launch dispatch B after resume
+    M-->>C: complete stream dependencies
     C->>W: ordered results A then B
     W-->>E: one logical output
 ```
@@ -145,7 +147,7 @@ sequenceDiagram
 
 ### 2. yield 是 stream 所有权交接，不是任意线程切换
 
-`UBatchContext` 只允许一个 CPU 线程拥有 context，通过 CUDA events 把 compute/communication stream 的依赖显式交接；`vllm/v1/worker/ubatching.py:20-147`。wrapper 创建两套 contexts 与 streams，用 barrier 同步线程，最后按 ubatch 顺序拼回结果；`vllm/v1/worker/gpu_ubatch_wrapper.py:113-139,305-408,441-537`。DeepEP high-throughput 路径在 capture、yield、dispatch 与 combine 间显式记录/等待事件；`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_ht.py:119-179,350-409`。
+`UBatchContext` 只允许一个 CPU 线程拥有 context，通过 CUDA events 把 compute/communication stream 的依赖显式交接；`vllm/v1/worker/ubatching.py:20-147`。wrapper 创建两套 contexts 与 streams，用 barrier 同步线程，最后按 ubatch 顺序拼回结果；`vllm/v1/worker/gpu_ubatch_wrapper.py:113-139,305-408,441-537`。DeepEP high-throughput prepare 先在 compute stream 捕获只覆盖当前 ubatch 工作的 event，然后在 dispatch 前 yield；peer 因而能先把计算排入 stream，当前 ubatch 恢复后才调用会阻塞 CPU 的 dispatch；`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_ht.py:119-179`。combine 路径也显式维持事件依赖；`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_ht.py:350-409`。
 
 ### 3. workspace 必须按 ubatch/lane 隔离
 
