@@ -6,7 +6,7 @@ title: "vLLM 采样与结构化输出：把请求级状态投影成当步合法�
 
 > **读者问题**：模型给出一行词表 logits 后，vLLM 怎样叠加 allowed-token、logit bias、重复/频率/存在惩罚、temperature、min-p、top-k/top-p 与 grammar 约束，既不采到非法 token，又让下一步 grammar 状态只由真正提交的 token 推进？
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（`main`，提交时间 2026-08-29T02:40:53Z）
-> **中心命题**：vLLM 没有把 structured output 做成“采样后在 CPU 重试”，而是把它拆成两种性质不同的状态：Engine/Scheduler 持有每请求可变的 grammar FSM，按当前前缀生成本步 bitmask；runner 只把 bitmask 与其他 per-request sampling state 投影到 batched logits，裁掉非法支持集后再一次选 token。正确性来自“先约束、后选择、提交后才推进 FSM”的顺序，而不是来自输出阶段修补。
+> **中心命题**：vLLM 没有把 structured output 做成“采样后在 CPU 重试”，而是把它拆成两种性质不同的状态：Engine/Scheduler 持有每请求可变的 grammar FSM，按当前前缀生成本步 bitmask；runner 只把 bitmask 与其他 per-request sampling state 投影到 batched logits，再从约束后的支持集选 token。在所有 hard constraint 的交集仍保留至少一个有限 logit 的前提下，正确性来自“先约束、后选择、提交后才推进 FSM”的顺序；若交集为空，sampler 没有通用 guard，属于 §6 明示的失败边界。
 > **所有权边界**：本页拥有普通 token selection、logits 变换顺序、penalty/top-k/top-p/min-p、grammar 编译/bitmask/请求级 FSM 及其提交不变量；不拥有 token admission、KV 分配、detokenization、stop-string 与协议响应，也不拥有 speculative decoding 的 draft proposal、verify/accept 算法。后两类分别由 [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|请求语义]] 与 [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|投机解码]] 解释。
 > **最近更新**：2026-08-30。按 `6b110bad` 新建 token selection 与 structured constraint 权威页。
 
@@ -14,7 +14,7 @@ title: "vLLM 采样与结构化输出：把请求级状态投影成当步合法�
 
 一次 next-token 决策不只是对 logits 做 softmax。`SamplingParams` 同时携带三类策略：改变相对分数的 temperature、logit bias 与 penalties；缩小支持集的 allowed-token、bad words、min-p、top-k/top-p；以及需要随着已生成前缀改变合法集合的 structured output（`vllm/sampling_params.py:240-265`；`vllm/sampling_params.py:336-353`）。前两类可以批量张量化，grammar 却必须记住“这个请求已经走到语法的哪个状态”。
 
-直观替代是先按普通分布采样，再在 CPU 检查 token，非法就重试。源码没有给出正式方案对比；以下是**分析推断**：这种方案会让一次 Engine step 的完成次数不确定，还可能在每次重试时跨 CPU/GPU 同步。现行实现反过来让 grammar 在采样前把非法 logits 置为负无穷，因此一次 sampler 调用只能在当前合法支持集内选择；runner 的调用顺序和 mask kernel 分别证明了这两个事实（`vllm/v1/worker/gpu/model_runner.py:1403-1423`；`vllm/v1/worker/gpu/structured_outputs.py:146-163`）。
+直观替代是先按普通分布采样，再在 CPU 检查 token，非法就重试。源码没有给出正式方案对比；以下是**分析推断**：这种方案会让一次 Engine step 的完成次数不确定，还可能在每次重试时跨 CPU/GPU 同步。现行实现反过来让 grammar 在采样前把非法 logits 置为负无穷；当 grammar 与后续 hard constraints 的交集至少保留一个有限 logit 时，一次 sampler 调用的选择被限制在这个交集内。runner 的顺序与 mask kernel 只证明“先 mask、后 sample”和“非法项写负无穷”，并不证明组合约束永不产生空支持集；空支持集见 §6 的失败边界（`vllm/v1/worker/gpu/model_runner.py:1403-1423`；`vllm/v1/worker/gpu/structured_outputs.py:146-163`）。
 
 这也解释了为什么 grammar 不能只是另一个无状态 tensor processor：其 bitmask 是**请求级 FSM 当前状态的快照**，而不是整个请求期不变的白名单。`StructuredOutputGrammar` 的合同把“不推进的 validate”“推进的 accept”“rollback”和“为当前状态填 bitmask”分成四个操作（`vllm/v1/structured_output/backend_types.py:31-80`）。
 
