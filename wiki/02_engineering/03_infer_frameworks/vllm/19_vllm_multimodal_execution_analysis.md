@@ -8,7 +8,7 @@ title: "vLLM 多模态执行：用双层缓存与位置合同把媒体变成模�
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：vLLM 没有把“媒体”直接塞进一次 VLM forward，而是先把它冻结成一份同时携带 **processor key、encoder key 与 token 位置合同**的 `MultiModalFeatureSpec`。前端缓存消除重复预处理，Scheduler 只提交 encoder 计算与逻辑容量，首个 pipeline rank 再拥有实际 encoder tensor，并严格按占位位置把它们拼入本步 `inputs_embeds`。
 > **所有权边界**：本页拥有 media load/parse、model-specific preprocessing、processor cache、`MultiModalFeatureSpec`、encoder compute/cache budget、Scheduler 的 encoder 接缝、设备侧 encoder cache 与 feature-to-token alignment；不拥有 OpenAI/chat 协议归一化、一般 waiting/running 与公平性策略、具体 VLM tower/connector/LLM 网络结构、attention backend 或采样分布。
-> **最近更新**：2026-08-30。按 `6b110bad` 新增 owner 页。
+> **最近更新**：2026-08-31。增加“三种身份、两个 key、两个提交点”的阅读主线，降低缓存与位置合同的理解负担。
 
 ## 1. 背景：媒体不是一种可以直接调度的 token
 
@@ -28,6 +28,18 @@ encoder cache 用可能含 LoRA 前缀的 `identifier`，位置合同用 `Placeh
 processor cache 避免 IPC、encoder cache 跨请求复用和占位区间调度的行为
 （`vllm/multimodal/cache.py:444-457`；`vllm/v1/core/encoder_cache_manager.py:19-47`；
 `vllm/v1/core/sched/scheduler.py:1600-1610`）。
+
+### 1.1 阅读抓手：不要把媒体、feature 和 embedding 当成同一对象
+
+后文细节很多，但主线只有三次身份变化：
+
+1. **媒体 item**回答“原始输入是什么”。它可能来自 URL、bytes 或内存对象，还没有模型相关的 tensor 语义。
+2. **processed feature**回答“在这个模型和 processor kwargs 下，媒体变成了什么，并占据 prompt 的哪些位置”。`MultiModalFeatureSpec` 将 processed `data`、modality、两个 cache key 与 `PlaceholderRange` 固化在一个跨层合同中（`vllm/multimodal/inputs.py:328-359`）。
+3. **encoder embedding**回答“当前 tower/LoRA 实际产生了什么设备 tensor”。它只有在 Scheduler 批准计算、runner 执行 encoder 后才存在，并只在 `PlaceholderRange` 指定的 query/token 位置替换文本 embedding（`vllm/v1/core/encoder_cache_manager.py:117-190`；`vllm/v1/worker/gpu/mm/encoder_runner.py:231-302`）。
+
+两个 key 则对应两种“相同”：`mm_hash` 由 model id、媒体内容和 processor kwargs 决定，用于判断 CPU preprocessing 是否等价；`identifier` 在 tower connector LoRA 会改变 encoder 输出时加入 LoRA 前缀，用于判断 GPU embedding 是否等价（`vllm/multimodal/processing/inputs.py:25-77`；`vllm/v1/engine/input_processor.py:210-220`）。所以一个 feature 可以命中 processor cache，却仍必须重新运行 encoder；这不是缓存不一致，而是两层复用语义本来就不同。
+
+最后记住两个提交点：InputProcessor 形成按位置排序的 `MultiModalFeatureSpec` 时，只提交了**逻辑位置合同**；Scheduler 分配 encoder budget/cache slot 并让 runner 写入 encoder cache 后，才提交了**可供模型消费的设备 tensor**。后文所有 cache、budget 和 alignment 机制，都是为了保证第二次提交不会把正确的媒体放到错误请求、错误 step 或错误 token 位置。
 
 ## 2. 静态责任与状态所有权
 

@@ -12,6 +12,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-31：补强 vLLM 分层架构与机制解释
+
+**Type**：结构性重写 2 页 + 定向补强 4 页 + 交叉引用修复 2 页
+
+基于本轮质量复审，重写 [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|03 架构概览]] 第三章：六层不再只是组件清单，而是逐层说明定位与能力、因果实现链、拆层理由、状态所有权、边界与代价；设备运行时同时纳入当前 Model Runner V1 与 V2，避免把实验演进线误写成唯一执行模型。[[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|22 分布式推理]] 新增“为何需要六条并行轴”的问题建模，并补足 `ParallelConfig → topology/group → executor → worker → collective` 的控制链、执行 ABI 与顺序不变量。
+
+定向补强四页：[[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|04 请求语义]] 增加一条 Chat 请求从协议入口到输出装配的完整调用链；[[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|15 Model Runner V1]] 补充 request-major 到 token-major 转换的布局冲突、共享索引不变量及 dummy/profile/warmup/capture 共缓冲的收益与技术债；[[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|16 Model Runner V2]] 解释 stable row + step gather 解锁的能力、identity/order 分离和显式 CUDA Graph 生命周期；[[02_engineering/03_infer_frameworks/vllm/19_vllm_multimodal_execution_analysis|19 多模态执行]] 用三种身份、两类键和两个提交点建立阅读坐标。[[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|10]]、[[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|20]] 与 04 的旧编号引用一并修正。
+
+本轮没有新增页面、改变概念 owner 或推进源码基线；仍固定到 `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`。验证仅覆盖上述 vLLM 页面、域内链接与本条 changelog，不运行全库门禁。
+
+---
+
 ## 2026-08-31：按共享能力与动态生命周期重构 Verl 分析域
 
 **Type**：新增 2 页 + 重写/收敛 14 页 + 重命名 2 页 + 索引与入链修复

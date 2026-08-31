@@ -10,9 +10,26 @@ title: "vLLM 分布式推理：从逻辑并行轴到 rank 状态与 collective �
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`
 > **中心命题**：并行轴是张量或请求状态的逻辑坐标，进程只是坐标的承载者，process group 才是 collective 的参与集合。vLLM 先把全局 rank reshape 为统一坐标，再为每条轴派生 group；executor 必须让相关 worker 以相同顺序进入这些 group 上的通信。DBO 只把一次执行切成两个时间 lane，不能修复错误的 group 或 collective 次序。
 > **所有权边界**：本页拥有逻辑并行轴、rank/group/process 状态、executor fan-out 与 collective 排序、DBO overlap。在线权重更新事务属于 [[02_engineering/03_infer_frameworks/vllm/29_vllm_weight_transfer_online_update_analysis|在线权重更新]]，不在本页展开。
-> **最近更新**：2026-08-30。
+> **最近更新**：2026-08-31。补齐各并行轴的定位、选型理由、通信代价，以及 executor/worker/group 的分层原因。
 
-## 一、先分开三个问题：切什么、谁持有、何时执行
+## 一、先回答为什么需要六条并行轴
+
+分布式推理不是“GPU 不够就把 world size 调大”。它面对的是四类不同约束：模型权重装不进单卡、请求吞吐不够、MoE expert 计算和负载不均、长上下文的 prefill 延迟或 decode KV 容量不足。若只保留一种切分方法，就会把一种资源问题转化成另一种通信问题。例如 TP 能减少每卡权重，却在层内频繁同步；PP 进一步分摊层，却引入 stage 串行和激活传输；DP 增加请求吞吐，但不降低单副本模型与 KV 的占用（`docs/configuration/optimization.md:34-43`；`docs/configuration/optimization.md:94-149`）。
+
+vLLM 的选择是把这些目标表示为**可组合的逻辑坐标轴**。每条轴只定义“哪种状态被切分或复制，以及哪组 rank 必须共同恢复一次完整语义”；executor backend 再决定这些 rank 由本地进程、Ray actor 还是外部 launcher 承载。这样做胜过“每种部署 backend 发明一套切分规则”，因为模型 layer 可以按 TP/PP/EP 合同构造，Engine 可以按 DP 合同路由，而承载方式仍可替换。下面先建立每条轴的能力和代价，再进入 rank/group 实现。
+
+| 轴 | 是什么：切分或复制什么 | 为什么需要它 / 何时选择 | 怎么恢复完整语义 | 主要代价与边界 |
+|---|---|---|---|---|
+| TP | 在单层内部切权重和 activation channel | 模型装不进单卡，或希望释放更多单卡显存给 KV；它是单节点大模型推理最常见的起点 | column-parallel 保留 output shard，row-parallel 汇总 partial sum | 几乎每层都有同步，TP 过大可能让通信超过节省的计算；官方优化指南明确提示同步开销（`docs/configuration/optimization.md:82-102`；`vllm/model_executor/layers/linear.py:582-600`；`vllm/model_executor/layers/linear.py:1737-1758`） |
+| PP | 按连续 Transformer layer range 切 stage | 高效 TP 已到上限、模型仍装不下，或需要跨节点继续切模型 | stage 间按顺序传 activation，末 stage 才形成 logits/output | stage 串行、bubble 和点对点传输增加延迟；当前 layer partition 在模型装载时确定（`docs/configuration/optimization.md:104-123`；`vllm/model_executor/models/utils.py:832-864`） |
+| DP | 复制 dense 模型/Engine 副本，把不同请求交给不同副本 | 单副本已经能容纳模型，需要横向增加请求吞吐或隔离 batch | dense 请求可独立完成；MoE/协调模式仍可能跨 DP rank 通信 | 复制整套 dense 权重和 KV pool，不能解决单副本容量；MoE 下又可能成为 EP group 的一部分（`docs/configuration/optimization.md:138-149`；`vllm/config/parallel.py:129-166`） |
+| EP | 只重分布 MoE experts，而非把所有 dense layer 都改成 DP/TP | 模型是 MoE，希望扩大 expert ownership 并平衡稀疏计算 | token 先按 routing dispatch 到 expert owner，再 combine 回原 token 顺序 | all-to-all、路由偏斜和 expert load imbalance；配置明确只替代 MoE layer 的 TP，并复用 `DP × PCP × TP` ranks（`docs/configuration/optimization.md:126-136`；`vllm/distributed/parallel_state.py:1923-1955`） |
+| PCP | 沿长 prefill 的 query/token 区间分工，并扩展 process world | 长 prompt 的 TTFT 受 prefill 计算量限制，需要让多卡同时处理不同 token chunk | 聚合 full/partial K/V 或用 ring-style 通信，使每个 rank 得到其 query chunk 的 attention 输出 | 需要额外 rank、padding 和跨 rank K/V 协作；它优化 prefill 计算，不等于减少 decode KV 复制（`docs/serving/context_parallel_deployment.md:3-17`；`vllm/config/parallel.py:126-128`） |
+| DCP | 沿 decode context/token 维度切 KV cache，不增加 world size | TP 已受 KV head 数限制而出现 KV 复制，希望增加可驻留 context/request | 各 rank 计算本地 KV shard 的 partial attention，再合并 LSE/output | DCP 越大，KV 复制越少但通信越多；它复用 TP/PCP ranks，并受 backend/model 能力限制（`docs/serving/context_parallel_deployment.md:19-41`；`vllm/config/parallel.py:349-376`） |
+
+这个表给出一个实际选型顺序：先判断瓶颈是**单副本容量、请求吞吐、稀疏 expert 还是长上下文**；容量问题先在高带宽域内尝试 TP，仍不够再引入 PP；吞吐问题才增加 DP；MoE expert ownership 用 EP；长上下文中，prefill TTFT 用 PCP，decode KV 复制与容量用 DCP。它不是自动调参公式，但能避免仅凭 GPU 数量猜拓扑。特别是 PCP 与 DCP 必须分开：官方设计把前者的目标写成摊薄长 prefill 计算，把后者写成减少 decode KV duplication，两者的 SLO 和通信对象不同（`docs/serving/context_parallel_deployment.md:3-29`）。
+
+## 二、再分开三个实现问题：切什么、谁持有、何时执行
 
 | 层次 | 问题 | 典型对象 | 不能混为一谈的原因 |
 |---|---|---|---|
@@ -25,7 +42,7 @@ title: "vLLM 分布式推理：从逻辑并行轴到 rank 状态与 collective �
 > [!important] 分析推论
 > executor backend 与并行轴正交但不独立：backend 不定义 tensor shard 语义，却必须创建足够的 workers、给出一致 rank，并保证所有相关 worker 都执行定义该语义的 collective。
 
-## 二、一个 rank 张量派生多组通信合同
+## 三、一个 rank 张量派生多组通信合同
 
 模型并行初始化把 ranks reshape 为 `ExternalDP × DP × PP × PCP × TP`；源码同时警告，内部 DP group 的 ranks 必须同步调用 generate，否则 collective 可能死锁；`vllm/distributed/parallel_state.py:1817-1832`。下图以 DP=2、PP=2、PCP=1、TP=2、DCP group size=2 为例。DCP size 不是 rank tensor 的新维度，而是独立配置的分组宽度：它在已有 PCP×TP ranks 上先跨 PCP、再跨 TP 切组；`vllm/distributed/parallel_state.py:1851-1867`。数字是 global rank；相同八个进程被不同逻辑轴投影成不同 group。
 
@@ -72,12 +89,16 @@ PCP 与 DCP 也不能合并成“context parallel”一个黑盒。DCP group 按
 
 ### `GroupCoordinator` 把 membership 变成进程内状态
 
+group 不能等到某个 layer 真要通信时才临时按轴计算。首先，`torch.distributed.new_group` 本身要求所有 ranks 以一致顺序创建 group；其次，forward 需要把“当前 rank 在这组里的局部身份、CPU/device communicator 和语义操作”绑定起来，不能让每个 kernel 再解释一次全局拓扑。`GroupCoordinator` 因而是逻辑轴到 rank-local 通信能力的提交点：建组成功后，上层只调用当前 TP/DP/DCP coordinator 的 `all_reduce` 等操作。
+
 每个 rank 都循环调用 `torch.distributed.new_group` 创建相同的全局 group 列表，只有成员 rank 把对应 CPU/device group 保存到本地 coordinator；`vllm/distributed/parallel_state.py:455-472`。coordinator 同时记录 global rank、local rank、`rank_in_group`，并持有 CPU group、device group 与 device communicator；`vllm/distributed/parallel_state.py:380-407,501-520`。上层 `all_reduce`、`all_gather`、`reduce_scatter` 因而调用“当前 TP/DP/DCP group 上的语义操作”，不是再次推导成员；`vllm/distributed/parallel_state.py:662-748`。
 
 > [!warning] 建组顺序不变量
 > `new_group` 是全局顺序协议。所有 ranks 必须以同样顺序创建 groups；forward 时，一个 collective 的成员还必须以同样顺序、兼容 shape 进入同一个 coordinator。任一 rank 提前返回或走入另一 group，表现通常是永久等待而非干净报错。
 
-## 三、executor 创建进程，但 worker 才拥有 rank 状态
+## 四、executor 创建进程，但 worker 才拥有 rank 状态
+
+executor 与 worker 分开，是为了把**拓扑生命周期**和**rank-local 执行状态**分开。executor 知道要创建多少进程/actor、如何 fan-out RPC、从哪个 output rank 收结果、某个 worker 死亡时怎样扩大故障；worker 才能在绑定 device 后知道自己的 global/local rank，并据此构造本地 model shard、KV cache 和 group coordinator。若 executor 直接持有每个 rank 的模型状态，Ray、multiprocessing 和 external launcher 都要复制设备初始化逻辑；若 worker 自己决定拓扑，Engine 又失去统一启动、聚合和故障传播点。
 
 `WorkerBase` 保存 `rank`、`local_rank`、`distributed_init_method`、`ParallelConfig` 与 worker role；`vllm/v1/worker/worker_base.py:50-94`。GPU worker 绑定 device 后初始化 distributed environment 和 model-parallel groups；`vllm/v1/worker/gpu_worker.py:407-425,1463-1501`。所以真实所有权链是：
 
@@ -93,7 +114,9 @@ executor 的 `execute_model` 返回顺序也不是“任一 worker 都能作最�
 
 internal DP 会把基础 rank 加上 DP-rank offset，并扩大默认 process group；`vllm/distributed/parallel_state.py:1606-1635`。MoE engine cores 需要 coordinated DP；dense 模型可重配为各自 DP=1 后独立前进；`vllm/v1/engine/core.py:1291-1336`。这解释了为什么 DP 既可表现为独立副本，也可能是同一 collective 域：判断依据不是“都叫 DP”，而是它们是否共享 model-parallel process group 以及 forward 是否含 DP/EP collective。
 
-## 四、一次执行的正确性是有向通信序列
+## 五、一次执行的正确性是有向通信序列
+
+collective 顺序不是分布式框架附带的运行细节，而是前面各并行轴恢复完整语义的方式。TP rank 各自只有 partial sum，DCP rank 各自只有局部 KV attention，EP rank 各自只处理收到的 expert token；只要一个成员跳过、提前或以不同 shape 进入某次通信，其他成员就无法把局部结果合成为完整 layer 输出。因此 executor fan-out 的不仅是“同一个 Python 方法”，还是同一条通信状态机的下一步。
 
 PP worker 在复用上一轮异步 handle 前先等待，然后从前一 stage `irecv`，执行本 stage forward，再向后一 stage `isend`；`vllm/v1/worker/gpu_worker.py:1111-1115,1153-1196`。stage 内部又可能进入 TP、DCP 或 EP collectives。因此一次 logical step 的关键顺序是：
 
@@ -111,7 +134,7 @@ PP worker 在复用上一轮异步 handle 前先等待，然后从前一 stage `
 
 内部 DP 的空闲 rank 也不能随意跳过 step。`DPEngineCore` 在本地没有可执行请求但协调域仍运行时发送 dummy batch，再以 all-reduce 汇总全组是否还有未完成请求，从而维持 collective lockstep；`vllm/v1/engine/core.py:2187-2236`。回归测试展示了反例：一个 DP rank 进入 barrier 而另一个进入 EP dummy all-to-all 会死锁；修复目标正是让 ranks 进入同一序列；`tests/v1/distributed/test_async_llm_dp.py:608-620,686-709`。
 
-## 五、DBO：在同一 ownership 上增加两条时间 lane
+## 六、DBO：在同一 ownership 上增加两条时间 lane
 
 DBO 的动机主要是隐藏 MoE dispatch/combine 或其他 collective 的等待：把 batch 切为两个 ubatches，在 ubatch A 的通信窗口推进 ubatch B 的计算。它没有创建新 rank 或 process group。`ParallelConfig` 只在开启 DBO 且 token 数超过 prefill/decode threshold 时使用两个 ubatches；`vllm/config/parallel.py:218-231,580-590`、`vllm/v1/worker/ubatch_utils.py:38-46`。下图用 DeepEP high-throughput prepare 的 generator 顺序展示关键交接；它不是“先 launch 通信再 yield”，而是先捕获本 ubatch 的 compute event，再 yield 让 peer 排入计算，恢复后才启动会阻塞 CPU 的 dispatch。
 
@@ -156,7 +179,7 @@ sequenceDiagram
 > [!warning] 当前兼容边界
 > 这份基线中 DBO 不受 Model Runner V2 支持，配置会回退到 V1；PCP 则不受 Model Runner V1 支持。因此 PCP 与 DBO 当前不能组成一条可运行路径；`vllm/config/vllm.py:637-652,2448-2452,2471-2477`。这不是轴代数上的冲突，而是 runner 能力矩阵的实现边界。
 
-## 六、从症状反推哪条合同破了
+## 七、从症状反推哪条合同破了
 
 | 症状 | 优先检查 | 机制解释 |
 |---|---|---|

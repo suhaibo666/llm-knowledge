@@ -9,7 +9,7 @@ title: "vLLM Model Runner V1：用紧凑持久批次承接动态计划"
 > **中心命题**：MRV1 的核心不是“每步重建 batch”，而是把相邻 step 高度重合这一事实变成一个**紧凑的 persistent batch**：长期请求语义保存在 `CachedRequestState`，当步活跃请求则占据 `InputBatch` 的连续 row；runner 只应用加入、移除、block 增量和采样参数变化，再把连续 row 直接物化为 token-major 输入。它降低了 Python 重建成本，却把请求身份、batch 顺序和整组 per-request tensor 绑定在同一个 row 上，因此 condense、全状态 reorder 与 async barrier 都成为正确性机制，而不是偶然实现细节。
 > **当前定位**：V1 Engine 与 Model Runner V1 是两个不同维度。本基线在无显式覆盖且能力检查通过时默认 MRV2；MRV1 仍是显式选择和兼容 fallback 的活跃执行路径，而不是已删除的旧 Engine。完整选择矩阵归 [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] 所有。
 > **所有权边界**：本页拥有 MRV1 的跨 step 请求镜像、紧凑 persistent batch、condense/reorder、输入物化、forward/sample 分段、异步输出与 dummy/profile/capture 生命周期；不拥有 Scheduler admission、物理 KV 分配、attention backend 内部算法、采样分布或全局编译策略。
-> **最近更新**：2026-08-30。新增 MRV1 独立机制页，并将 Model Runner 主线调整为 `15 V1 → 16 V2`。
+> **最近更新**：2026-08-31。补强 request-major 到 token-major 的边界理由，以及 dummy/profile/capture 共用真实 buffer 的设计收益与技术债。
 
 ## 1. 概览：MRV1 解决的是重复重建，不是一次 forward
 
@@ -128,13 +128,15 @@ custom logits processor 可能持有与 batch row 对齐的内部状态。仅移
 
 ## 6. 从 request-major row 到 token-major forward
 
-状态事务完成后，`_prepare_inputs()` 才把连续 request rows 展开成真实模型输入。它先提交 block table 的 H2D copy，以便与后续 CPU 索引计算重叠；随后按每请求 scheduled token 数生成重复的 request index 和累积 query 边界，再以 `num_computed_tokens + query offset` 得到 position（`vllm/v1/worker/gpu_model_runner.py:1974-1997`）。
+这一转换解决的是两种数据布局的冲突。Scheduler 和 persistent batch 必须按 request 保存不同长度的历史、block table 与 sampling state；模型和 attention kernel 则希望一次消费扁平 token 流，并用 `query_start_loc` 恢复请求边界。若按请求逐个 forward，会失去跨请求 batching；若让 Scheduler 直接生成 token-major tensor，又会把设备布局和固定 buffer 责任推回资源控制层。MRV1 因而把转换放在 runner：上游仍提交 request-major 资源计划，下游只看到已经排好的 token-major 执行输入。
+
+状态事务完成后，`_prepare_inputs()` 才执行这次投影。它先提交 block table 的 H2D copy，以便与后续 CPU 索引计算重叠；随后按每请求 scheduled token 数生成重复的 request index 和累积 query 边界，再以 `num_computed_tokens + query offset` 得到 position（`vllm/v1/worker/gpu_model_runner.py:1961-1997`）。这一步的关键不是“把二维数组 flatten”本身，而是让同一份 `req_indices` 同时约束 token、position、query boundary、seq lens 与 slot mapping，避免这些设备输入分别解释 batch 顺序。
 
 token history 在 `InputBatch` 中是 request-major 的二维 CPU tensor。runner 将 position 与 row stride 合成 flattened index，再用 `torch.index_select` 抽出本步 token-major `input_ids`；同一组 row/order 继续生成 `query_start_loc`、`seq_lens` 和 KV slot mapping（`vllm/v1/worker/gpu_model_runner.py:2009-2026`；`vllm/v1/worker/gpu_model_runner.py:2074-2081`；`vllm/v1/worker/gpu_model_runner.py:2182-2207`）。因而数据流是：
 
 `紧凑 request row → 每请求 token 数 → token-major index → 固定输入 buffer → attention metadata → forward`
 
-这条路线保留了两类复用：request-major state 跨 step 复用，固定 device buffer 地址跨 eager/graph 执行复用。它也支付两类成本：每步仍要在 CPU 计算 flattened indices；`token_ids_cpu` 预分配为 `max_num_reqs × max_model_len`，源码直接标注长上下文下可能过大（`vllm/v1/worker/gpu_input_batch.py:130-140`）。
+这条路线保留了两类复用：request-major state 跨 step 复用，固定 device buffer 地址跨 eager/graph 执行复用。它也支付两类成本：每步仍要在 CPU 计算 flattened indices；`token_ids_cpu` 预分配为 `max_num_reqs × max_model_len`，源码直接标注长上下文下可能过大（`vllm/v1/worker/gpu_input_batch.py:130-140`）。更重要的正确性边界是：`req_indices`、`query_start_loc`、positions 和 slot mapping 必须来自同一份已完成 condense/reorder 的布局；任一字段仍按旧 row 解释，都可能在 shape 正常的情况下读取另一请求的 token 或 KV。
 
 ## 7. Async scheduling：在 row 可移动的前提下修补跨 step 依赖
 
@@ -154,11 +156,11 @@ token history 在 `InputBatch` 中是 request-major 的二维 CPU tensor。runne
 
 ## 8. Dummy、profile 与 CUDA Graph：共用真实 buffer，也共用复杂度
 
-CUDA Graph replay 要求输入地址和捕获时一致，所以 MRV1 在 runner 初始化时预分配 `input_ids`、positions、query boundary、length 和 request mapping 等 persistent buffers（`vllm/v1/worker/gpu_model_runner.py:814-839`）。`_dummy_run()` 再合成不同 token/request shape，复用这些 buffer 完成内存 profile、warmup 或 graph capture；它必须同时模拟 mixed batch、uniform decode、LoRA、microbatch 和 attention metadata 条件（`vllm/v1/worker/gpu_model_runner.py:5882-5923`；`vllm/v1/worker/gpu_model_runner.py:5951-6018`）。
+这组路径首先要解决“启动阶段怎样得到与线上执行可信的一致结果”。如果 profile、backend warmup 和 CUDA Graph capture 各自构造一套简化输入，它们可能漏掉真实 batch 的 LoRA、mixed prefill/decode、microbatch 或 attention metadata，最终得到错误峰值或不可 replay 的 graph。MRV1 选择让它们复用真实 runner buffer 和大部分真实 forward path：CUDA Graph replay 要求地址与捕获时一致，runner 因而预分配 `input_ids`、positions、query boundary、length 和 request mapping 等 persistent buffers（`vllm/v1/worker/gpu_model_runner.py:814-839`）。`_dummy_run()` 再合成不同 token/request shape，在这些同地址 buffer 上完成 profile、warmup 或 capture（`vllm/v1/worker/gpu_model_runner.py:5882-5923`；`vllm/v1/worker/gpu_model_runner.py:5951-6018`）。
 
 `profile_run()` 用最大 token budget 驱动 dummy forward 和 dummy sampler，以暴露峰值内存（`vllm/v1/worker/gpu_model_runner.py:6559-6573`）。`capture_model()` 按大 shape 到小 shape 捕获，使小 graph 复用大 graph 的内存池；全部捕获后锁定 workspace，防止线上执行时再次 resize（`vllm/v1/worker/gpu_model_runner.py:6888-6906`；`vllm/v1/worker/gpu_model_runner.py:6945-6992`）。
 
-这一共用保证了 dummy 与真实执行绑定同一地址和 backend 条件，但也让一个入口同时承担 profile、warmup、capture 和空 DP forward。设计文档明确将其列为 MRV1 技术债，并指出不同路径行为漂移会产生 bug（`docs/design/model_runner_v2.md:171-190`）。本页只解释 MRV1 生命周期；graph mode、descriptor 与全局 fallback 的权威说明仍在 [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]]。
+这一共用的收益是 profile/capture 与真实执行绑定同一地址、shape 规则和 backend 条件；代价是一个入口同时扮演 profile、warmup、capture 和空 DP forward，`is_profile`、graph mode、mixed batch、LoRA 等开关组合成另一套隐式状态机。新增线上输入条件时，开发者既要更新真实 path，也要保证 dummy 能产生等价条件，否则问题可能只在 capture 或上线 shape 中出现。设计文档明确将这种多义 dummy lifecycle 列为 MRV1 技术债，并指出不同路径行为漂移会产生 bug（`docs/design/model_runner_v2.md:171-190`）。本页只解释 MRV1 生命周期；graph mode、descriptor 与全局 fallback 的权威说明仍在 [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]]。
 
 ## 9. 代价、失败边界与排查顺序
 

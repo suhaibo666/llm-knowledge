@@ -9,6 +9,7 @@ title: "vLLM 请求语义：从协议与任务到 Engine 合同与用户输出"
 > **中心命题**：vLLM 用一对窄合同隔离“用户在请求什么”和“Engine 怎样执行”：Renderer 与协议 adapter 把文本、消息、媒体和协议参数压成 `EngineInput + SamplingParams | PoolingParams`，`InputProcessor` 再固化为 `EngineCoreRequest`；返回侧用前端 `RequestState` 把 `EngineCoreOutput` 还原为文本、tensor、流事件和协议对象。合流不是抹平语义——生成类任务共用 sampling 合同，pooling 保留具体 task，Render 不进入 Engine，Transcription 与 Realtime 则在 Engine 两侧保留音频生命周期。
 > **所有权边界**：本页拥有任务与能力命名、协议转换、render/tokenize、`EngineInput`、`EngineCoreRequest` 的语义字段、前端输出状态、detokenize/stop、pooling tensor 与各协议响应重建。
 > **明确排除**：waiting/running、token/KV admission、优先级策略与抢占属于 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]]；logits processor、grammar mask、top-k/top-p 与 GPU token selection 属于 [[02_engineering/03_infer_frameworks/vllm/18_vllm_sampling_structured_output_analysis|采样与结构化输出]]。本页只解释 sampling 参数怎样跨边界，不解释 token 怎样被选中。
+> **最近更新**：2026-08-31。补充一条完整请求的双向语义收敛链，明确 Renderer、InputProcessor 与 OutputProcessor 为什么是三个不同边界。
 
 ## 1. 背景：公开语义比 Engine 合同更宽
 
@@ -98,6 +99,16 @@ flowchart LR
 
 ## 3. 共享窄腰怎样建立
 
+先沿一条 OpenAI Chat 请求看完整链路，再分别解释三个接缝。它们不是把同一件事拆成三个类：Renderer 决定**模型看见什么输入**，InputProcessor 决定**这份输入能否成为可执行 core request**，OutputProcessor 决定**内部增量何时重新具备用户语义**。
+
+1. Chat handler 先解析公开请求，调用共享 render path 得到 conversation 与一个或多个 `EngineInput`；随后把 temperature、stop、structured output、stream mode 等协议字段收敛成 `SamplingParams`（`vllm/entrypoints/openai/chat_completion/serving.py:277-332`；`vllm/entrypoints/openai/chat_completion/protocol.py:661-748`）。
+2. Renderer 负责 prompt 表达：它把 dict prompt 变成 tokenized prompt、附加 extras，再处理为带 arrival time 的 `EngineInput`。到这里，chat template 和多模态占位已经确定，但模型能力、长度与 core 参数二选一尚未完成验证（`vllm/renderers/base.py:940-1001`）。
+3. `InputProcessor` 校验 capability、路由、token/embedding 和多模态字段，补齐 generation config，最终构造 `EngineCoreRequest`。这一步把“模型可见输入”升级为“Engine 可以执行的请求”，所以不能简单并入 Renderer（`vllm/v1/engine/input_processor.py:281-340`；`vllm/v1/engine/input_processor.py:337-425`）。
+4. `AsyncLLM` 先在 OutputProcessor 登记带 detokenizer/collector 的前端 `RequestState`，再把 request 送给 EngineCore；这是输出关联的提交点，而不是输入转换的又一步（`vllm/v1/engine/async_llm.py:393-437`；`vllm/v1/engine/output_processor.py:543-568`）。
+5. core 返回 token 增量后，OutputProcessor 先匹配 state、detokenize、执行 stop-string 和 output-kind 规则，形成稳定 `RequestOutput`；Chat response builder 最后才用原请求和 parser 恢复 reasoning、tool calls、message 与协议响应（`vllm/v1/engine/output_processor.py:607-724`；`vllm/entrypoints/openai/chat_completion/serving.py:914-1006`）。
+
+这条链说明“窄腰”是双向的：向下逐步丢掉协议表达，只保留执行所需状态；向上逐步补回 detokenize、输出模式和协议对象。直接合并三个接缝看似少了对象转换，实际会把模型模板、执行校验和用户可见性绑成同一个变化面。
+
 ### 3.1 Renderer 先消化表达差异
 
 **背景。** 文本、token ids、prompt embeds、chat messages、encoder-decoder 输入与多模态内容不能由一次简单 `tokenizer.encode` 覆盖。`BaseRenderer.render_cmpl` 的真实顺序是 render prompt、tokenize、附加 extras、再 process 成 EngineInput；chat 路径还先把 messages 与 template 参数变成 conversation 与 prompt（`vllm/renderers/base.py:980-1001`；`vllm/renderers/base.py:1030-1064`）。
@@ -136,7 +147,7 @@ flowchart LR
 
 **机制。** Chat protocol 把 temperature、top-p、stop、logprobs、structured output、stream kind 等归入 SamplingParams（`vllm/entrypoints/openai/chat_completion/protocol.py:661-748`）；handler 把 EngineInput 与该参数交给 `engine_client.generate`（`vllm/entrypoints/openai/chat_completion/serving.py:348-387`）。输出回到前端后，OutputProcessor 先生成稳定 `RequestOutput`，chat response builder 再解析 reasoning/tool calls 并构造 message；Cohere 可以通过 subclass hook 换用专用 message，而不改 Engine 输出（`vllm/entrypoints/openai/chat_completion/serving.py:949-1006`）。Completion builder 则负责 echo、prompt/output logprobs、usage 与 choice 编号（`vllm/entrypoints/openai/completion/serving.py:506-607`）。
 
-**约束。** 协议兼容不是字段全支持：completion 的 streaming 与 beam search 组合被拒绝，suffix 也明确不支持（`vllm/entrypoints/openai/completion/serving.py:112-138`）。这些是 protocol/task failure，不是 GPU sampling failure；本页到 `SamplingParams` 为止，token selection 由 `17` owner 解释。
+**约束。** 协议兼容不是字段全支持：completion 的 streaming 与 beam search 组合被拒绝，suffix 也明确不支持（`vllm/entrypoints/openai/completion/serving.py:112-138`）。这些是 protocol/task failure，不是 GPU sampling failure；本页到 `SamplingParams` 为止，token selection 由 `18` owner 解释。
 
 ### 4.2 Pooling：共享 Engine request，保留 tensor 语义
 

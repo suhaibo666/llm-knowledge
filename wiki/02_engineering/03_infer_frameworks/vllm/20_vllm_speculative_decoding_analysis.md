@@ -88,9 +88,9 @@ Scheduler 把本轮使用的 draft 截断到可调度数量，写入 `scheduled_
 
 ### 5.2 target 分布的定义不能偷换
 
-本页把 $p$ 定义为**目标模型经过本请求全部普通 sampling constraints 后**的分布，而不是 raw softmax。MRV2 先对 target logits 应用 grammar bitmask，再选择普通 sampler 或 rejection sampler；投机分支把 logits 交给 `RejectionSampler`，后者调用同一个 sampler 的 `apply_sampling_params` 后才验证（`vllm/v1/worker/gpu/model_runner.py:1403-1433`；`vllm/v1/worker/gpu/spec_decode/rejection_sampler.py:144-180`）。penalty、temperature、top-k/top-p、grammar 如何定义 $p$ 属于页面 17；本页只拥有“verifier 必须消费同一个 $p$”这一跳合同。
+本页把 $p$ 定义为**目标模型经过本请求全部普通 sampling constraints 后**的分布，而不是 raw softmax。MRV2 先对 target logits 应用 grammar bitmask，再选择普通 sampler 或 rejection sampler；投机分支把 logits 交给 `RejectionSampler`，后者调用同一个 sampler 的 `apply_sampling_params` 后才验证（`vllm/v1/worker/gpu/model_runner.py:1403-1433`；`vllm/v1/worker/gpu/spec_decode/rejection_sampler.py:144-180`）。penalty、temperature、top-k/top-p、grammar 如何定义 $p$ 属于页面 18；本页只拥有“verifier 必须消费同一个 $p$”这一跳合同。
 
-若 structured output 使某个 draft 不合法，Scheduler 的 validation 不永久推进 grammar，而是截断合法前缀并用 `-1` 填满原计划长度；verifier 将 placeholder 视为必拒位置并直接从 target 采样（`vllm/v1/core/sched/scheduler.py:2331-2364`；`vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py:557-565`；`vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py:766-770`）。grammar 状态何时 preview、rollback 和永久 advance 仍由页面 17 解释。
+若 structured output 使某个 draft 不合法，Scheduler 的 validation 不永久推进 grammar，而是截断合法前缀并用 `-1` 填满原计划长度；verifier 将 placeholder 视为必拒位置并直接从 target 采样（`vllm/v1/core/sched/scheduler.py:2331-2364`；`vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py:557-565`；`vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py:766-770`）。grammar 状态何时 preview、rollback 和永久 advance 仍由页面 18 解释。
 
 ## 6. Accept / reject：为什么输出边际分布仍是目标分布
 

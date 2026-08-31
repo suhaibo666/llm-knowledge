@@ -8,7 +8,7 @@ title: "vLLM Model Runner V2：用稳定行与异步提交重建设备热路径"
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：MRV2 的关键不是换一组 kernel，而是把“请求生命周期内的稳定 row”“每步按执行顺序 gather 的 batch view”“尚未对设备提交的 CPU staged diff”和“正在飞行的传输/输出”拆成不同状态。这样 step N 的 GPU 工作只依赖已经排入流的快照，CPU 才能准备 step N+1，而不必把 persistent batch 本身反复压紧、重排或用全局 async barrier 保护。
 > **所有权边界**：本页拥有 runner 选择矩阵，以及 MRV2 内的 device request row、staged-write/UVA buffer 生命周期、每步 input view、异步输出提交与本地 CUDA Graph capture/dispatch/replay；不拥有 MRV1 的 compact persistent batch、condense/reorder、async barrier 与 dummy lifecycle，这些机制归 [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] 所有；也不拥有全局 admission、waiting/running、公平性、逻辑 KV 分配、attention backend 选择、采样分布或跨实例 KV 协议。
-> **最近更新**：2026-08-30。核清 MRV2 默认选择与双向能力边界，并在新增 MRV1 独立机制页后调整为 `15 V1 → 16 V2`。
+> **最近更新**：2026-08-31。补强 stable row/per-step gather 解耦了什么能力，以及显式 CUDA Graph 生命周期为何是正确性边界而非单纯性能开关。
 
 ## 1. 背景：V1 的“persistent batch”为什么仍妨碍异步
 
@@ -104,11 +104,13 @@ sequenceDiagram
 
 ## 5. Persistent row 与 per-step gather
 
+这一节的关键能力不是“请求有固定槽位”，而是**请求身份与本步执行顺序可以独立变化**。持久状态回答“这个 request 的 token、长度和 sampler state 在哪里”，per-step view 回答“attention backend 希望这一步按什么顺序、以什么 shape 执行”。V1 把两个问题压在同一紧凑 row 上，所以 batch order 变化必须搬动全部 row-local 状态；MRV2 接受一次 GPU gather 的成本，把排序自由限制在短生命周期 view 内。设计文档明确把 permanent row 与 gather 描述为替代 V1 tensor-wide reorder 的方案（`docs/design/model_runner_v2.md:21-39`）。
+
 `RequestState` 一次性按 `max_num_reqs` 建立双向 row 映射和 token/length/progress/draft 状态；其中可能达到数 GB 的 `all_token_ids` 选择 UVA 来节省显存，而短热状态留在 GPU 或小型 UVA-backed tensor（`vllm/v1/worker/gpu/states.py:9-67`）。`add_request()` 只填一个空闲 row，并把大字段写成 staged diff；`remove_request()` 只删除映射并把 row 归还 free list，不做全 batch condense（`vllm/v1/worker/gpu/states.py:91-132`）。
 
 本步顺序由 `sort_batch_req_ids()` 得出，随后建立 `idx_mapping_np` 并异步复制到 GPU（`vllm/v1/worker/gpu/model_runner.py:1110-1125`；`vllm/v1/worker/gpu/model_runner.py:1162-1166`）。input prep kernel 用这张 mapping 从 persistent rows 读取 prefill token、computed length、last sampled token 与 draft token，生成固定 input buffer 中的 `input_ids`、`positions`、`seq_lens` 等（`vllm/v1/worker/gpu/model_runner.py:1237-1285`）。block table 也先以 stable row 存储，再按 mapping gather 到 forward 专用 buffer（`vllm/v1/worker/gpu/block_table.py:141-168`）。
 
-这条间接寻址支付一次 gather 与固定容量预分配，换掉 V1 的 condense/swap。**分析推断**：它还把 attention 的“本步想怎样排”限制在 batch view；attention metadata 可以消费 `idx_mapping` 和 gathered buffer，而 request row 生命周期仍由 `RequestState`/runner 持有。`idx_mapping`/gather 代码只证明这条数据流，这个所有权边界是本页根据状态 owner 重建的结论，并非源码注释的明文合同。
+这条间接寻址支付一次 gather 与固定容量预分配，换掉 V1 的 condense/swap，也让 backend 排序、uniform decode 判定、PCP/DCP metadata 和 graph padding 不必改写 request 的长期身份。**分析推断**：attention 的“本步想怎样排”被限制在 batch view；attention metadata 可以消费 `idx_mapping` 和 gathered buffer，而 request row 生命周期仍由 `RequestState`/runner 持有。`idx_mapping`/gather 代码只证明这条数据流，这个所有权边界是本页根据状态 owner 重建的结论，并非源码注释的明文合同。
 
 ## 6. Staged write 与 in-flight buffer 生命周期
 
@@ -137,6 +139,8 @@ non-blocking copy 返回时 GPU 可能仍读取 host memory；CPU 若立即覆�
 
 ## 8. CUDA Graph：固定地址之上的显式生命周期
 
+CUDA Graph 在这里不是“开了就更快”的布尔优化，而是一份带 shape、地址、LoRA 数量和 attention 能力条件的**已捕获执行制品**。直接让所有 batch replay 同一张 graph 会把动态请求误装进错误 shape；继续沿用 V1 的多义 dummy path，又会让 profile、warmup、capture 和真实 request lifecycle 互相模拟。MRV2 因而把 graph 分成 resolve、capture、dispatch、replay 四个阶段：只有 descriptor 被证明兼容时才复用，否则回到 eager。这个结构用显式生命周期换取可检查的 fallback 和资源清理。
+
 CUDA Graph 需要 replay 时地址和 shape descriptor 与 capture 合同相容。MRV2 的 `InputBuffers` 在 runner 初始化时按最大 request/token 数预分配固定地址（`vllm/v1/worker/gpu/input_batch.py:17-38`）；dummy block table 也必须返回 forward 使用的同一 persistent tensor，而不是新分配对象（`vllm/v1/worker/gpu/block_table.py:170-181`）。
 
 本地 lifecycle 分四段：
@@ -149,6 +153,8 @@ CUDA Graph 需要 replay 时地址和 shape descriptor 与 capture 合同相容�
 `dummy_run` 不再拥有另一套 request lifecycle：`execute_model()` 只在非 dummy 时 add/remove/update rows，capture 则由独立 `capture_model()` 驱动（`vllm/v1/worker/gpu/model_runner.py:1500-1522`；`vllm/v1/worker/gpu/model_runner.py:887-933`）。这关闭了 V1 中 profiling、warmup、empty DP forward 与 capture 共用一个多义入口造成的语义漂移，设计意图见 `docs/design/model_runner_v2.md:171-192`。
 
 graph 不是无条件命中。descriptor 不兼容、profile step、动态 encoder input 或 graph mode 为 `NONE` 都回到 eager；FULL replay 从 eager/piecewise 切入前还必须等待 offload copy stream，避免它覆盖 static buffers（`vllm/v1/worker/gpu/cudagraph_utils.py:436-449`）。graph memory profiling 也使用 throwaway pool 并在失败时 teardown；测试把 bootstrap、sample capture、外推与清理顺序固定下来（`tests/v1/worker/test_gpu_model_runner_v2_cudagraph_profiling.py:118-200`）。更广的 compile mode 与 graph 策略归 [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]]。
+
+这里的收益是常见 descriptor 能复用已捕获 launch 序列；代价则是预捕获显存、候选组合和静态 buffer 生命周期。fallback 不是性能失败后的补丁，而是正确性合同：只要 request 数、token 数、uniform decode、LoRA 或最大 query length 与已捕获 descriptor 不兼容，dispatch 就返回 `NONE`（`vllm/v1/worker/gpu/cudagraph_utils.py:406-434`）。因此新增动态输入能力时，首先要定义它如何进入 descriptor 或如何触发 eager，而不是直接把它塞进 replay buffer。
 
 ## 9. 代价、失败边界与排查顺序
 

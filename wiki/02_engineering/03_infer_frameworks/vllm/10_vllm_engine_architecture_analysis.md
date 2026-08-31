@@ -244,7 +244,7 @@ EngineCore 构造 Executor 时可注册 failure callback；MultiprocExecutor 在
 collective RPC（`vllm/v1/engine/core.py:133-137`；`vllm/v1/executor/multiproc_executor.py:334-351`；
 `vllm/v1/executor/multiproc_executor.py:375-394`）。这能阻止失败后继续执行新计划，却不提供数据库式的
 跨 GPU rollback；资源状态恢复仍取决于 Core/Scheduler 是否取得 result、是否终止 engine。进程监督、
-ready handshake 和面向服务的恢复拓扑归 page 16，本页不把它扩写成启动 walkthrough。
+ready handshake 和面向服务的恢复拓扑归 page 17，本页不把它扩写成启动 walkthrough。
 
 ## 6. Live / legacy 校正与源码阅读边界
 
