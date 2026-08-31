@@ -10,7 +10,7 @@ title: "vLLM 分布式推理：从逻辑并行轴到 rank 状态与 collective �
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`
 > **中心命题**：并行轴是张量或请求状态的逻辑坐标，进程只是坐标的承载者，process group 才是 collective 的参与集合。vLLM 先把全局 rank reshape 为统一坐标，再为每条轴派生 group；executor 必须让相关 worker 以相同顺序进入这些 group 上的通信。DBO 只把一次执行切成两个时间 lane，不能修复错误的 group 或 collective 次序。
 > **所有权边界**：本页拥有逻辑并行轴、rank/group/process 状态、executor fan-out 与 collective 排序、DBO overlap。在线权重更新事务属于 [[02_engineering/03_infer_frameworks/vllm/29_vllm_weight_transfer_online_update_analysis|在线权重更新]]，不在本页展开。
-> **最近更新**：2026-08-31。补齐各并行轴的定位、选型理由、通信代价，以及 executor/worker/group 的分层原因。
+> **最近更新**：2026-08-31。补齐各并行轴的定位与选型理由，并新增一次 PP + TP step 从 EngineCore 到 output rank 的方法级执行链。
 
 ## 一、先回答为什么需要六条并行轴
 
@@ -125,6 +125,20 @@ PP worker 在复用上一轮异步 handle 前先等待，然后从前一 stage `
 3. stage forward 按模型层顺序进入 TP/DCP/EP collectives；
 4. 非末 PP stage 发送 intermediate tensors；末 stage 形成输出；
 5. executor 从约定 output rank 汇聚结果，所有 ranks 才能进入下一次相关通信。
+
+### 方法级主链：以 PP + TP 的一次 step 为例
+
+上面的五步如果只停留在“fan-out / collective / fan-in”，仍不足以定位卡死发生在哪一层。下面把一条真实调用链展开到方法与张量所有权：
+
+1. `EngineCore.step()` 先得到 `SchedulerOutput`，再异步调用 `model_executor.execute_model()`；future 完成后，同一份 scheduler snapshot 才交给 `Scheduler.update_from_output()` 提交（`vllm/v1/engine/core.py:597-627`）。非阻塞调用允许 EngineCore 在等待期间准备 grammar 等控制面工作，但输出不能脱离产生它的那一步独立提交。
+2. executor 合同把 `execute_model` 广播成 `collective_rpc("execute_model", ...)`；multiprocessing 实现进一步指定 `unique_reply_rank=self.output_rank`，让所有 worker 参与执行，却只有约定 rank 返回模型结果（`vllm/v1/executor/abstract.py:220-237`；`vllm/v1/executor/multiproc_executor.py:340-351`）。这把“必须参加通信”和“拥有最终输出”分成两个角色。
+3. 每个 `GPUWorker.execute_model()` 先等待上一轮 non-blocking PP send，非首 stage 再从前一 stage `irecv_tensor_dict()`，然后才把 intermediate tensors 与同一个 `SchedulerOutput` 交给 model runner（`vllm/v1/worker/gpu_worker.py:1108-1170`）。先等待旧 send 是 buffer lifetime 边界；先 receive 再 forward 是 stage 间的数据依赖。
+4. stage 内走到一个 `RowParallelLinear.forward()` 时，每个 TP rank 只对自己的 input/weight shard 做 local GEMM；若 `reduce_results` 开启，再调用 `tensor_model_parallel_all_reduce()` 把 partial sums 恢复成完整 layer 输出（`vllm/model_executor/layers/linear.py:1737-1763`）。bias 只在 rank 0 加一次，否则 all-reduce 后会被重复累计。
+5. 通用通信函数没有重新推导 membership，而是直接进入 `get_tp_group().all_reduce()`；`GroupCoordinator` 再根据 world size、custom-op 模式和 device communicator 执行对应 collective（`vllm/distributed/communication_op.py:12-14`；`vllm/distributed/parallel_state.py:662-689`）。因此 group 构造错误会在正确的 Python 调用点上造成错误成员通信，不能靠检查 layer shape 单独发现。
+6. 若同一 attention layer 还启用 DCP，局部 attention 结果不能直接当完整输出：实现先 all-gather 各 rank 的 LSE 做数值校正，再对结果 reduce-scatter；这条通信插在模型层顺序中，必须与其他 rank 同步进入（`vllm/v1/attention/ops/dcp.py:252-305`）。DCP 不是另一个 executor step，而是同一 stage forward 内的附加恢复合同。
+7. model runner 在末 PP stage 返回 `ModelRunnerOutput`；非末 stage 返回 `IntermediateTensors`，worker 用 `isend_tensor_dict()` 交给下一 stage 并返回 `None`（`vllm/v1/worker/gpu_worker.py:1177-1196`）。最终 executor 只从 `output_rank` 收结果，EngineCore 再用原 scheduler snapshot 更新请求状态。
+
+这条链解释了三类相似症状的不同根因：PP 收发不闭环通常卡在 stage 边界，TP/DCP 成员或次序不一致卡在 layer 内 collective，同步都完成但数值错误则优先检查 shard、bias 与 LSE combine 语义。把它们统称为“分布式通信问题”会丢失真正的修复位置。
 
 这里有三条硬不变量：
 

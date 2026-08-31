@@ -12,6 +12,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-31：补齐 vLLM 六个核心机制的实现调用链
+
+**Type**：定向补强 6 页
+
+对 vLLM 主要分析页执行方法级调用链复审后，补强六个仍停留在合同或阶段描述、但缺少真实执行闭环的机制页：[[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|12 KV Cache 管理]]补充 `Scheduler.schedule → KVCacheManager.allocate_slots → SchedulerOutput delta → runner device block table → slot mapping`；[[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|14 Attention Backend]]补充 metadata builder、`ForwardContext`、KV update ordering 到 `AttentionImpl.forward()`；[[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|21 量化设计]]用 AutoGPTQ Linear 串起配置识别、参数 ABI、加载、post-load 与 Kernel 执行。
+
+[[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|22 分布式推理]]补充一次 PP + TP step 从 EngineCore、executor、worker、PP 收发、TP/DCP collective 到 output rank 的有向链；[[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|24 融合算子与 Kernel]]补充 residual + RMSNorm 的双层 dispatch，以及 modular/monolithic MoE 各自的 prepare/compute/finalize 闭环；[[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|26 分离式 KV Serving]]补充 consumer load 从 scheduler-side discovery/allocation、worker I/O completion，再回到 scheduler 状态提交与失败回退的 round trip。
+
+新增段落均解释状态交付、设计原因、提交点与失败边界，不粘贴源码正文。没有新增、删除、合并或重编号页面，没有改变概念 owner，也没有推进统一源码基线；仍固定到 `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`。验证仅覆盖上述六页、vLLM 域内链接和本条 changelog。
+
+---
+
 ## 2026-08-31：补强 vLLM 分层架构与机制解释
 
 **Type**：结构性重写 2 页 + 定向补强 4 页 + 交叉引用修复 2 页

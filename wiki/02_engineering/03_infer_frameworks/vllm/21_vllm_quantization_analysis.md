@@ -8,7 +8,7 @@ title: "vLLM 量化 ABI：格式、Scale、加载转换与 Kernel 必须联合�
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：量化不是加载完成后的 dtype cast，而是一条逐步收紧的 ABI：configure 阶段确定 checkpoint/在线格式与全局能力边界，layer 构造阶段把格式变成 TP-local 参数与 scale 形状，post-load 阶段把加载表示提交为 Kernel 表示，runtime 只在能实现同一数值合同的 Kernel 之间派发。任一阶段若偷偷改变 pack axis、scale 粒度、zero-point、activation dtype 或分片语义，模型可能仍能运行却计算另一套数值；所以兼容谓词、转换和 fallback 必须联合决定。
 > **所有权边界**：本页拥有量化 config → per-layer method → 参数/scale ABI → post-load transform → hardware dispatch/fallback，以及 packed mapping 对量化规则的消费接缝。通用 checkpoint 枚举、名称映射和参数分片提交归 [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型与权重 ABI]]；Kernel 内部算法、tile 和 provider 编程归 [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]]；KV layout 与 attention backend 的完整协商归 `12/14`，本页只保留 scale 名称与量化能力接缝。
-> **最近更新**：2026-08-30。按 `6b110bad` 重建 configure → create/load → post-load → dispatch/fallback 主线，并补齐在线量化、TP scale 一致性和显式失败边界。
+> **最近更新**：2026-08-31。补充一条 AutoGPTQ Linear 从配置识别、参数 ABI、加载与 post-load，到 Kernel 执行的方法级闭环；源码基线不变。
 
 ## 1. 背景：低精度名字不是可执行格式
 
@@ -107,6 +107,19 @@ AWQ 展示了为什么“checkpoint 已经量化”仍需要 post-load：checkpo
 
 > [!note] 分析推断
 > 安全 fallback 的判据不是“结果看起来合理”，而是候选消费与当前 layer 完全相同的 pack、scale、zero-point、activation 与 TP-local shape。若 fallback 需要重新解释其中任一项，它就不是 runtime fallback，而是一条必须在 post-load 之前显式建模的新 ABI。
+
+### 5.3 一条 AutoGPTQ Linear 从配置到执行的真实调用链
+
+前面的四阶段不是概念分类，而是同一个 layer object 的生命周期。AutoGPTQ Linear 能把边界展示得最完整：
+
+1. `ModelConfig._verify_quantization()` 先从 checkpoint config 读取 `quant_method`，按有序 override 识别 AutoGPTQ，再校验用户参数、注册表与平台支持（`vllm/config/model.py:1245-1332`）。这里失败意味着格式身份尚未成立，后续不能靠某个 Kernel 猜测修复。
+2. 模型构造到某个 `LinearBase` 时，`quant_config.get_quant_method(layer, prefix)` 把全局配置解析成该 layer 的 `AutoGPTQLinearMethod`；不被量化规则覆盖的层可返回另一明确 method，但 linear 不能留下“以后再决定”的空洞状态（`vllm/model_executor/layers/linear.py:242-276`；`vllm/model_executor/layers/quantization/auto_gptq.py:240-270`）。`prefix` 之所以参与，是因为同一模型内不同 layer 可能有不同 ignore/override 结果。
+3. layer 构造立刻调用 `create_weights()`。method 先用 full/local shape、weight/activation type、group size、zero-point 与 activation-order 形成 `MPLinearLayerConfig`，再让 `choose_mp_linear_kernel()` 过滤平台、禁用项、compute capability 与 `can_implement()`；没有兼容候选就当场失败（`vllm/model_executor/layers/quantization/auto_gptq.py:326-355`；`vllm/model_executor/kernels/linear/__init__.py:780-842`）。选择必须发生在分配前，因为候选共同消费同一逻辑格式，却可能要求确定的 local shape 与 pack 合同。
+4. 同一个 `create_weights()` 再按 TP 分片语义注册 `qweight`、`g_idx`、`scales`、`qzeros`，把 pack factor、input/output dimension 和 loader 写进 Parameter，并以这些参数名实例化选定 Kernel（`vllm/model_executor/layers/quantization/auto_gptq.py:360-453`）。checkpoint 字节随后由 loader 写入这些**已经定形**的容器，而不是先加载匿名 tensor 再让 runtime 猜布局；通用 loader 的顺序是 initialize → load weights → post-load（`vllm/model_executor/model_loader/base_loader.py:42-82`）。
+5. 全部权重到达后，`process_weights_after_loading()` 遍历 module，把该 layer 交还给 quant method；AutoGPTQ 再委托已选 Kernel 做 repack/设备表示转换（`vllm/model_executor/model_loader/utils.py:97-123`；`vllm/model_executor/layers/quantization/auto_gptq.py:455-456`）。这是 checkpoint 表示变成 executable 表示的提交点，不能与 weight copy 并发穿插。
+6. 推理时 `Linear.forward()` 只处理 bias/返回约定，然后调用 `quant_method.apply()`；AutoGPTQ method 不再选择格式或 Kernel，而是直接执行 `kernel.apply_weights(layer, x, bias)`（`vllm/model_executor/layers/linear.py:392-403`；`vllm/model_executor/layers/quantization/auto_gptq.py:458-464`）。首个 token 因而只消费已经提交的 ABI，不能重新解释 pack、scale 或 TP-local shape。
+
+因此这条链只有两个合法结果：构造/post-load 阶段形成一个完整、可执行的 layer ABI，或在进入请求执行前清楚失败。把 Kernel 选择推迟到首个 token 看似灵活，实际上会让参数形状、repack 和显存峰值进入 latency 热路径，也无法保证已经写入的 checkpoint 字节适合临时选中的实现。
 
 ## 6. 正确性、性能与失败边界必须一起验收
 

@@ -8,7 +8,7 @@ title: "vLLM Attention Backend：稳定合同先筛能力，动态 Metadata 再�
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，`v0.28.1rc0-80-g6b110badbb`，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：attention specialization 被拆成两种时间尺度。初始化期用 backend 能力谓词、KV spec 与全模型 layout 求交固定实现和存储 ABI；执行期由 runner 生成 backend-neutral 的 `CommonAttentionMetadata`，再由 builder 翻译为 backend metadata。Scheduler 因而只需承诺 token 与逻辑 block，kernel 只需消费已经证明自洽的形状、地址和边界。
 > **所有权边界**：本页拥有 `AttentionBackend`/builder/impl 合同、per-kind 与平台 backend 选择、KV layout 和 kernel block-size 协商、metadata 翻译、fallback/rejection 语义；全局 admission、preemption 与请求状态属于 `11`，物理 block 生命周期属于 `12`，CUDA Graph 全局派发属于 `23`，kernel/provider 内部实现与收益模型属于 `24`。
-> **最近更新**：2026-08-30。按 `6b110bad` 重建，并纠正旧页“selector 直接设置全局 KV layout”的过时描述。
+> **最近更新**：2026-08-31。补充一次 attention 从 runner metadata 构造到 backend `AttentionImpl.forward()` 的方法级执行链；源码基线不变。
 
 ## 1. 背景：动态 batch 不能成为 kernel 的隐式输入
 
@@ -124,6 +124,19 @@ builder 的 `supports_update_block_table` 允许相同 spec/builder 在 hybrid g
 CUDA Graph 能力也不是布尔值：合同区分 mixed batch、uniform query length、纯单-token decode 与完全不支持四级（`vllm/v1/attention/backend.py:567-581`）。runner 只把所有 attention group 的最弱能力及其 backend 名称向上汇总（`vllm/v1/worker/gpu/attn_utils.py:156-180`）；如何据此选择 full、piecewise 或 eager 属于 `23`，本页只拥有这个 capability boundary。
 
 batch reorder 同样由 builder 提供阈值，而 runner 对所有 group 取最小值；后端必须能接受更小阈值，代价只是把更多 decode 当 prefill（`vllm/v1/attention/backend.py:623-653`；`vllm/v1/worker/gpu_model_runner.py:7294-7312`）。reorder 的全局 companion-state 对齐由 runner 拥有，本页只规定 metadata 不能独自改变 request ordering。
+
+### 6.3 一次 attention 调用怎样抵达 backend impl
+
+静态选择只回答“这一层由谁实现”，metadata 只回答“这一批怎样执行”；二者在 `ForwardContext` 中按 layer name 会合。以 Model Runner V2 的 eager/piecewise 路径为例，完整调用链是：
+
+1. runner 先把 `SchedulerOutput` 整理成 token-major `InputBatch`，再从稳定 request rows gather block tables、计算 slot mappings；随后 `model_state.prepare_attn()` 为当步 batch 构造 metadata（`vllm/v1/worker/gpu/model_runner.py:1570-1651`）。此时静态 backend 没变，变化的是 request boundaries、长度和物理 KV 地址。
+2. `build_attn_metadata()` 按 KV cache group 建立 `CommonAttentionMetadata`，再调用每个 `AttentionMetadataBuilder.build()`，并把结果按 layer name 写回字典（`vllm/v1/worker/gpu/attn_utils.py:247-337`）。group 级共享避免同合同的 layer 重建相同事实，layer-name 映射则防止不同 spec/backend 取错参数。
+3. runner 用 `set_forward_context()` 把 metadata 与逐层 slot mapping 绑定到**这一轮** model forward，然后才调用 eager model 或 piecewise graph（`vllm/v1/worker/gpu/model_runner.py:1719-1759`）。`ForwardContext` 明确把这两项标为 per-forward 动态状态（`vllm/forward_context.py:131-148`）；因此 layer 不需要把 batch 对象写进长期模块状态，也不会在并发/重放时反查 scheduler。
+4. 模型层调用 `Attention.forward()` 后，layer 在 custom-op 边界外完成 Q/K/V reshape 与 output allocation；若 backend 不自行更新 KV，它先发出 `unified_kv_cache_update()`，再调用 `unified_attention_with_output()`（`vllm/model_executor/layers/attention/attention.py:478-570`）。这样把 reshape 固定在统一边界，以减少非 CUDA Graph 区域的 CPU 开销，同时让“写 KV”和“读 KV 做 attention”保持可组合。
+5. 两个动作被拆开时，`kv_cache_dummy_dep` 不承载数值，却建立数据依赖，防止 `torch.compile` 把 attention 重排到 KV update 之前（`vllm/model_executor/layers/attention/attention.py:530-569`；`vllm/model_executor/layers/attention/attention.py:743-757`）。这解释了为什么不能只说“先调用两个 op”：编译后仍需保存同一因果顺序。
+6. `unified_attention_with_output()` 用 layer name 从当前 context 解析 `attn_metadata`、`Attention` 实例与该层 KV cache，最后调用初始化时由 backend class 构造好的 `self.impl.forward(...)` 并写入预分配 output（`vllm/model_executor/layers/attention/attention.py:336-422`；`vllm/model_executor/layers/attention/attention.py:759-772`）。至此静态能力合同与动态 batch snapshot 才真正合流。
+
+这条链的核心不变量是：**backend impl、KV cache view、block table/slot mapping 与 query boundaries 必须属于同一个 layer 和同一个 forward snapshot。** selector 选对但 context 过期，仍会产生跨请求错读；metadata 正确但 KV update 被重排，仍会读到旧内容。两者都不是 kernel 数值误差。
 
 ## 7. 代表性 backend：名称只是能力集合的实例
 

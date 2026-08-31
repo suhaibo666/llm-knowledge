@@ -8,7 +8,7 @@ title: "vLLM 融合算子与 Kernel：用收益账本约束专用化与 fallback
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：融合不是“Kernel 数越少越好”，而是一笔受语义合同约束的收益账：只有省掉的 launch、全局内存中间态与格式转换，大于更高寄存器/共享内存压力、workspace、shape/dtype/hardware 特化和维护成本时，专用实现才值得选择。vLLM 因而先稳定 op 语义，再把平台可用性、参数兼容性与部署能力拆成显式谓词；fallback 只能换成实现同一合同的 provider，不能顺手改变数值、布局或并行语义。
 > **所有权边界**：本页拥有融合收益模型、provider/Kernel family、能力选择、workspace 与 fallback；只选 residual+RMSNorm(+quant) 和 fused MoE 两组代表族，不做 Kernel 名录。量化 pack/scale ABI 归 [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|vLLM 量化设计]]，attention backend 合同归 [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]]，FX/IR pattern、alias/functionalization 与 pass 顺序归 [[02_engineering/03_infer_frameworks/vllm/25_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]]。
-> **最近更新**：2026-08-30。按 `6b110bad` 重建收益账、provider 选择、代表 Kernel family 与 fallback 边界。
+> **最近更新**：2026-08-31。补充 residual + RMSNorm 与 modular/monolithic MoE 两条从语义 op 到设备实现的方法级执行链；源码基线不变。
 
 ## 1. 背景：融合优化先问“消掉了什么”
 
@@ -68,7 +68,18 @@ residual add 与 RMSNorm 都逐元素读取同一 token row；若分开执行，
 
 这些 guard 展示了融合的代价：为了少一次 launch/中间态，Kernel 把 dtype、stride、shape 与 alias 写入合同。测试不是只测一个 happy path；provider 注册表按平台核对 native/vLLM C/AITER/Oink 的可用性，并要求所有设备 provider 拒绝 `variance_size` override（`tests/kernels/ir/test_layernorm.py:211-230`；`tests/kernels/ir/test_layernorm.py:321-352`）。不满足时应选择 native 或另一个 compatible provider；若调用者强行绕过 `supports_args`，就不再属于安全 fallback 路径。
 
-### 3.3 何时这类融合可能不划算
+### 3.3 一次 residual + RMSNorm 怎样落到设备 Kernel
+
+这里有两次不同的 dispatch，不能合并理解：`CustomOp` 决定 model layer 走哪个平台入口，`IrOp` 再为这一组真实实参选择 provider。以已启用 CustomOp、非 batch-invariant、带 residual 的 CUDA 调用为例：
+
+1. `CustomOp.forward()` 调用初始化时绑定的 `_forward_method`；平台 dispatch 在 CUDA 上绑定 `RMSNorm.forward_cuda()`，而该方法在普通路径继续进入 `forward_native()`（`vllm/model_executor/custom_op.py:130-136`；`vllm/model_executor/custom_op.py:174-207`；`vllm/model_executor/layers/layernorm.py:96-115`）。这里的“native”是可编译的语义入口，不等于最终一定执行 PyTorch reference。
+2. `RMSNorm.forward_native()` 看到 residual 后调用 `ir.ops.fused_add_rms_norm.maybe_inplace(x, residual, weight, eps, variance_size)`，一次返回 normalized output 与更新后的 residual（`vllm/model_executor/layers/layernorm.py:74-94`）。调用者在这里声明 alias 可接受，但还没有承诺某个 provider 一定能 inplace。
+3. `IrOpInplaceOverload._inner_call()` 把真实 dtype、shape、stride 和可选参数交给 `IrOp.dispatch()`；dispatcher 按 priority 调 `supports_args`，返回第一个兼容实现，最后没有全覆盖实现则视为内部配置错误（`vllm/ir/op.py:327-366`；`vllm/ir/op.py:500-539`）。所以 fallback 发生在 launch 前，不是设备 Kernel crash 后重跑 reference。
+4. 若命中 vLLM C provider，谓词先确认没有 `variance_size` override 且 weight dtype 兼容；ROCm 非 contiguous 还会在 provider 内转 native-copy 路径，其余支持情形才调用 `torch.ops._C.fused_add_rms_norm()` 并返回被原地更新的两个 tensor（`vllm/kernels/vllm_c.py:47-87`）。
+
+这条链之所以分两层，是因为平台/build 决定“哪些入口存在”，而每次调用的 stride、dtype 与可选参数决定“这次哪个实现合法”。把 capability 检查塞进设备 Kernel 只能更晚失败；把 provider 固定在 model layer 又会失去按实参安全 fallback 的能力。
+
+### 3.4 何时这类融合可能不划算
 
 这是依据账本作出的**分析推断**：token row 很少时，省 launch 往往更重要；tensor 很大时，省 HBM 中间态更重要；但若 native/codegen 能把周边 op 一起优化，固定 opaque provider 反而可能丢掉更大的跨 op 机会。与此相呼应，CUDA 在 Inductor 模式默认 native，而在无 codegen 时优先 vLLM C（`vllm/platforms/cuda.py:696-715`）。最终阈值必须测量：仓库 benchmark 遍历 token、hidden、dtype、residual 与 group-size 组合，并把 fused/unfused 放进同一个 timer（`benchmarks/fused_kernels/layernorm_rms_benchmarks.py:174-285`），没有源码证据支持“一条 provider priority 对所有 shape 都最优”。
 
@@ -99,6 +110,21 @@ auto 模式依 priority 逐个检查 class，返回第一个 compatible candidat
 modular expert interface 要求 provider 根据 `M/N/K/topk/global/local experts/activation format` 报告两块 scratch 与最终 output shape；GEMM1 与 GEMM2 不同时存活，所以允许共享 workspace13（`vllm/model_executor/layers/fused_moe/modular_kernel.py:837-874`）。具体 allocator 按 chunked `M` 计算 scratch、按 full `M` 计算 final output，并让 GEMM1/3 与单 chunk output 共享一块较大 buffer（`vllm/model_executor/layers/fused_moe/modular_kernel.py:1120-1181`）。
 
 这能减少分配和峰值，但不是“零中间态”：workspace2 仍必须与 common workspace 同时存活，provider 还必须准确报告上界。output buffer 只有 shape、dtype、device 与 contiguous 全部相符才满足 `use_output_alias`；满足后，非 ROCm 直接 alias，ROCm 还必须启用 AITER fused MoE 才 alias。源码注释说明这条路径用于去掉下游冗余 copy（`vllm/model_executor/layers/fused_moe/modular_kernel.py:1329-1347`）。所以 workspace/alias 优化的失败边界不是性能稍差而已：低估 shape 会越界，过早复用会破坏仍在飞行的计算，错用 output alias 会改变可见结果。
+
+### 4.4 一次 modular / monolithic MoE 调用怎样闭环
+
+`FusedMoEKernel` 不是一个直接 launch 的巨型 op，而是先在构造期固定 family，再让不同 family 使用各自完整闭环。构造函数只接受 prepare/finalize 与 experts **同时**为 modular 或同时为 monolithic；混搭立即失败（`vllm/model_executor/layers/fused_moe/modular_kernel.py:1600-1631`）。这是因为两类路径交付的中间表示不同，不能只替换中间 GEMM。
+
+modular 路径的执行链是：
+
+1. `FusedMoEKernel.apply()` 只允许 modular impl，并把 `topk_ids/topk_weights` 等交给 `FusedMoEKernelModularImpl.apply()`（`vllm/model_executor/layers/fused_moe/modular_kernel.py:1717-1744`）。
+2. `_prepare()` 调用同步 `prepare()`，或在支持时启动 `prepare_async()`、处理 receive hook/DBO yield，再取得重排或量化后的 activation、scale 与 expert-token metadata（`vllm/model_executor/layers/fused_moe/modular_kernel.py:1196-1283`）。异步不是省略 prepare，而是显式延后接收完成点以创造 overlap。
+3. `_fused_experts()` 根据实际 problem size 分配 workspace，只有 shape/dtype/device/contiguous 全匹配才允许 output alias，然后调用选定 experts provider 的 `apply()` 完成两次 expert GEMM 与 activation（`vllm/model_executor/layers/fused_moe/modular_kernel.py:1285-1367`）。
+4. `_finalize()` 再执行同步或异步 combine/reduce；async 路径可在等待期间插入 shared experts，最后必须调用 receiver 完成输出（`vllm/model_executor/layers/fused_moe/modular_kernel.py:1369-1435`）。顶层 `apply()` 严格按 `_prepare → _fused_experts → _finalize` 返回可见 tensor（`vllm/model_executor/layers/fused_moe/modular_kernel.py:1437-1530`）。
+
+monolithic 路径则由 `apply_monolithic()` 把 router logits 直接交给 monolithic impl；impl 的 `prepare()` 形成输入表示，experts `apply()` 同时消费 routing 与 weights，最后 `finalize()` 提交结果。只有 provider 显式返回 `UnfinalizedMoEOutput` 且 prepare/finalize 声明支持 deferred finalize 时，完成点才允许外移（`vllm/model_executor/layers/fused_moe/modular_kernel.py:1533-1596`；`vllm/model_executor/layers/fused_moe/modular_kernel.py:1685-1715`）。
+
+因此 modular 的可替换边界是三个显式阶段，换来 all-to-all/shared-expert overlap 与组件组合；monolithic 把 routing/expert 边界收进同一 family，换来更深融合。二者都必须完整拥有 prepare 与 finalize，不能用“中间 Kernel 跑完了”冒充 MoE layer 已完成。
 
 ## 5. Selection 与 fallback：从“候选”到“可证明的实现”
 

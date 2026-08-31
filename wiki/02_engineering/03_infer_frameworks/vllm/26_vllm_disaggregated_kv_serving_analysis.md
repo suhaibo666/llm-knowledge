@@ -8,6 +8,7 @@ title: "vLLM 分离式 KV Serving：用跨 Engine 协议交接可计算状态"
 > prefill Engine 算出的 KV 怎样被另一个 decode Engine 安全地接走？谁证明数据可读、谁保住源 block、consumer 何时可执行；而当网络、进程或某个并行 rank 失败时，系统又如何回收并回退？
 
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（2026-08-29 冻结）。
+> **最近更新**：2026-08-31。补充一次 consumer load 从 Scheduler、worker connector 再回到 Scheduler 的方法级闭环；源码基线不变。
 > **中心命题**：分离式 KV serving 传递的不是一袋匿名 tensor，而是一个带身份、布局、完成条件和生存期的**跨 Engine 可计算状态**。connector/store 必须把控制面上的“哪个 producer 的哪些 transferable groups 可用”与数据面上的“字节已写入 consumer 的哪些目标 block”闭环；lease、完成聚合和失败失效则决定源/目标状态何时可回收。
 > **本文拥有**：跨 Engine producer/consumer 身份、transferable groups、connector/store 协议、metadata/control 与 data path、readiness/completion、lease/timeout/failure cleanup/fallback。
 > **本页不拥有**：单 Engine 内 block 分配、引用计数、prefix cache 与 eviction 的一般生命周期；这些属于 [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV Cache 管理]]。本页只讨论它们在跨 Engine 交接边界上的投影。
@@ -102,7 +103,21 @@ flowchart LR
   P2 -->|consumer 消失或 timeout| P3
 ```
 
-Scheduler 正是按这个顺序编排：先问 connector 远端命中，再做本地 allocation，随后把 allocation 结果交回 connector；外部 load 完成前，请求被放进等待 remote KV 的集合而不是提前执行，见 `vllm/v1/core/sched/scheduler.py:847-866,1088-1133`。worker 输出再被 connector 归并成 finished receiving/sending 与 load errors，见 `vllm/v1/core/sched/scheduler.py:2745-2780,2805-2861`。
+Scheduler 正是按这个顺序编排：先问 connector 远端命中，再做本地 allocation，随后把 allocation 结果交回 connector；外部 load 完成前，请求被放进等待 remote KV 的集合而不是提前执行，见 `vllm/v1/core/sched/scheduler.py:847-868,1057-1122`。worker 输出再被 connector 归并成 finished receiving/sending 与 load errors，见 `vllm/v1/core/sched/scheduler.py:1789-1825,2133-2135,2882-2909`。
+
+### 4.1 一次 consumer load 怎样从 Scheduler 绕回 Scheduler
+
+四个 readiness 的关键不是先后编号，而是同一请求要跨进程完成一次 round trip。以 consumer 命中远端 KV 的普通 step 为例：
+
+1. `Scheduler.schedule()` 先查本地 prefix，再调用 scheduler-side connector 的 `get_num_new_matched_tokens(request, block_aligned_local)`；返回 `None` 表示发现尚未决议，请求被移出本轮而不是当作 miss，返回 token 数才形成 external-computed 假设（`vllm/v1/core/sched/scheduler.py:837-911`）。这样远端控制面变慢不会污染本地 cache identity。
+2. Scheduler 按 local + external computed 数调用 `KVCacheManager.allocate_slots()`，成功后再用 `connector.update_state_after_alloc()` 交付目标 block IDs；async load 会把请求置为 `WAITING_FOR_REMOTE_KVS`，本步不执行新 token（`vllm/v1/core/sched/scheduler.py:1057-1097`；`vllm/v1/core/sched/scheduler.py:1114-1122`）。远端命中不预留本地容量，所以“发现 ready”和“目标 ready”必须分开。
+3. connector metadata 随 `SchedulerOutput` 到 worker。Model Runner V2 的 `ActiveKVConnector.pre_forward()` 先绑定 metadata；同步 load 立即 `start_load_kv()`，异步 load 则把启动推到 post-forward，避免 host submission 占据当前 forward 的关键路径。若整步没有 model token，`no_forward()` 仍执行同一组 pre/post hooks，不会让传输状态机因“没有计算”而停摆（`vllm/v1/worker/gpu/kv_connector.py:47-84`；`vllm/v1/worker/gpu/kv_connector.py:110-117`；`vllm/v1/worker/gpu/model_runner.py:1565-1568`）。
+4. attention 真正进入 unified op 时，`maybe_transfer_kv_layer` wrapper 先按 layer name 调 `wait_for_layer_load()`，执行 attention 后再 `save_kv_layer()`（`vllm/model_executor/layers/attention/kv_transfer_utils.py:15-59`；`vllm/model_executor/layers/attention/attention.py:743-772`）。同步与异步只改变等待落在哪个位置，不改变“不得在完成前读目标 KV”的不变量。
+5. forward 后，`ActiveKVConnector.post_forward()` 补启动 pending async load、等待必要 save，再调用 `get_finished()` 和 `get_block_ids_with_load_errors()`，把完成集合、错误 blocks 与统计装进 `KVConnectorOutput`；正常 forward 把它附到 `ModelRunnerOutput`，0-token 路径则直接返回 connector-only output（`vllm/v1/worker/gpu/kv_connector.py:86-117`；`vllm/v1/worker/gpu/model_runner.py:1833-1837`；`vllm/v1/worker/gpu/model_runner.py:1952-1955`）。metadata 已到达与字节已完成在这里仍是两个不同事实。
+6. `Scheduler.update_from_output()` 先处理 `invalid_block_ids`，把受影响请求截回最长有效 prefix；`recompute` 策略把它们重新排队，`fail` 策略终止请求（`vllm/v1/core/sched/scheduler.py:1789-1825`；`vllm/v1/core/sched/scheduler.py:2911-3083`）。失败必须先撤销 external-computed 假设，否则下一步会把半写 block 当作历史状态。
+7. 同一次更新最后调用 `_update_from_kv_xfer_finished()`：`finished_recving` 让 waiting consumer 具备下步晋升条件，若请求已结束则释放 blocks；`finished_sending` 释放 producer 侧仍被传输持有的 blocks（`vllm/v1/core/sched/scheduler.py:2133-2135`；`vllm/v1/core/sched/scheduler.py:2846-2861`；`vllm/v1/core/sched/scheduler.py:2882-2909`）。至此发现、目标、数据与生命周期四个 readiness 才闭环。
+
+这条 round trip 说明 connector 不是 Scheduler 到 worker 的单向 copy adapter，而是跨 step 的状态机：Scheduler提交目标 ownership，worker提交 I/O 结果，Scheduler再提交请求状态与回收。少掉最后一程会造成请求永久 waiting或源 block 泄漏；跳过错误失效则会把传输失败升级为不可检测的模型数值错误。
 
 ## 5. 直连 connector：NIXL 与 MoRIIO 展示两种闭环
 

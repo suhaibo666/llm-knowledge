@@ -8,7 +8,7 @@ title: "vLLM KV Cache 管理：分页是单 Engine 的物理块所有权协议"
 > **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
 > **中心命题**：单 Engine 内只有一份 GPU 物理容量真相：`BlockPool.blocks[block_id]`。请求的逻辑 block table、prefix hash、free queue 和 hybrid group 都只是指向这批对象的不同索引；`ref_cnt` 表示活跃所有权，hash 表示内容身份，二者正交。分配因此不是“拿到几个整数”，而是一段先回收安全旧块、再证明容量、最后建立引用并只提交 finalized 内容的所有权事务。
 > **所有权边界**：本页拥有逻辑/物理 block、GPU prefix cache、hybrid KV layout、partial-hit copy-on-write、本地 native CPU offload 及 refcount/free/evict 不变量；Scheduler 的 request/token admission、preemption policy 属于 `11`，跨 Engine connector、producer/consumer、lease 与远端传输属于 `26`。
-> **最近更新**：2026-08-30。按 `6b110bad` 重建；上一轮基线定位符与“只支持整物理块命中”的表述不再适用。
+> **最近更新**：2026-08-31。补充一次分配从 Scheduler 进入设备 block table、再成为 attention metadata 的方法级执行链；源码基线不变。
 
 ## 1. 背景：问题不是寻址，而是谁还能读、谁可以写
 
@@ -112,6 +112,18 @@ coordinator 对每个 single-type manager 求本次还需多少块并求和；�
 容量通过后，多 group 路径先对**所有 group** 的 local-hit blocks 执行 `touch()`，再为还缺的 computed slots 分配对象；这个两阶段顺序防止较早 group 从 free queue 取走较晚 group 尚未 touch 的命中块（`vllm/v1/core/kv_cache_coordinator.py:222-266`）。回归测试直接断言跨 group 的所有 block id 唯一，且 request 引用的每个非 null block 都有正 refcount（`tests/v1/core/test_prefix_caching.py:3682-3748`）。外部 computed slots 的来源与跨 Engine 完成协议属于 `26`；本页只拥有它们进入本地池时不能破坏已有 owner 的不变量。
 
 随后各 manager 才扩展 `req_to_blocks`。prefix cache 的发布更晚：`num_tokens_to_cache` 被截到 `request.num_tokens`，排除可能被拒绝的 draft；多模块 speculative 路径还会额外扣除可重新 prefill 的尾部（`vllm/v1/core/kv_cache_manager.py:541-564`；`vllm/v1/core/kv_cache_coordinator.py:303-323`）。因此 slot reservation 可以领先于事实，content identity 不可以。
+
+### 4.4 一次分配怎样进入设备 block table
+
+`allocate_slots()` 返回的是 scheduler 侧的 block ownership；attention kernel 既不会读取 `Request`，也不会回头查询 allocator。中间必须有一条显式的数据交付链，把“本步新获得哪些块”转换成“本步每个 token 应写哪个 slot”。以 Model Runner V2 为例：
+
+1. `Scheduler.schedule()` 对 running request 调 `KVCacheManager.allocate_slots()`；容量不足时先走 preemption，成功后才把结果写进 `req_to_new_blocks`。waiting/new request 使用同一个 allocator，但还会带上 local/remote computed blocks、lookahead 与 admission reservation（`vllm/v1/core/sched/scheduler.py:655-725`；`vllm/v1/core/sched/scheduler.py:1057-1077`）。这一步只提交 scheduler 侧所有权，还没有修改设备表。
+2. 新请求通过 `NewRequestData.from_request()` 携带完整 block IDs；已在 runner 中有稳定 row 的请求由 `_make_cached_request_data()` 只携带本步追加的 `new_block_ids`。两类 delta 最终一起进入 `SchedulerOutput`（`vllm/v1/core/sched/scheduler.py:1238-1260`；`vllm/v1/core/sched/scheduler.py:1528-1575`；`vllm/v1/core/sched/scheduler.py:1322-1344`）。区分 full snapshot 与 append delta，是为了不在每步重传整张表，同时又能让首次/恢复请求重建完整状态。
+3. runner 收到输出后，`add_requests()` 为新请求创建稳定 request row，并以 `overwrite=True` 写入完整 block table；`update_requests()` 对已有请求用 `overwrite=False` 追加 delta（`vllm/v1/worker/gpu/model_runner.py:999-1039`；`vllm/v1/worker/gpu/model_runner.py:1057-1069`）。因此 request identity 与 batch order 可以分离，但同一 request row 的 block 序列仍是 append-only。
+4. 任何设备读取发生前，runner 先清零新块，再执行 partial-prefix copy-on-write 的块复制（`vllm/v1/worker/gpu/model_runner.py:1078-1091`）。这个顺序防止新 owner 看到旧槽残留，也保证 attention 读取的是私有化后的 tail，而不是尚未完成复制的目标。
+5. 当步 batch 确定后，`prepare_attn()` 按 `idx_mapping` 从稳定表 gather 出紧凑 block tables，并结合 `query_start_loc` 与 token positions 计算 slot mappings（`vllm/v1/worker/gpu/model_runner.py:1351-1370`）。随后 attention metadata builder 才把它们解释成 backend 参数；kernel 消费的是这个当步 snapshot，而不是 allocator 内部对象。
+
+所以真正的提交边界有两层：allocator 先证明并建立物理 owner，runner 再把 owner 映射提交为设备可读的 block table/slot mapping。若只完成前者，容量账是对的但 kernel 不知道写到哪里；若 delta、row identity 或 zero/copy 顺序出错，表现会是跨请求读旧 KV，而不是简单的“少分了一块”。
 
 ## 5. Prefix cache：整 hash 单元、partial group block 与 copy-on-write
 
