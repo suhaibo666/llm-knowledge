@@ -12,6 +12,22 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-31：按共享能力与动态生命周期重构 Verl 分析域
+
+**Type**：新增 2 页 + 重写/收敛 14 页 + 重命名 2 页 + 索引与入链修复
+
+**为什么重构**：旧结构混用了历史 V0 基线与当前 V1 主线，并把 Agent/Reward、在线权重发布、训练 checkpoint/recovery 分散写进多个生命周期页。页面各自内容大多有价值，但概念所有权不清，导致同一机制在 sync、async、V0 和优化指南中重复解释，也容易把 CheckpointEngine 的进程内发布误当成跨重启持久化。
+
+**新结构**：[[01_verl_architecture_overview_analysis]] 改为“共享能力层 + 动态生命周期层”的系统地图；[[10_verl_end_to_end_iteration_analysis]]、[[17_verl_v1_async_trainer_analysis]]、[[22_verl_fully_async_dynamic_schedule_deepdive]] 与 [[20_verl_ray_trainer_analysis]] 分别只拥有 V1 sync、stable V1 async、experimental fully async 和当前 V0 legacy 生命周期。11/12/20 从历史冻结说明更新到统一提交 `254a23ed...`，不再把仍被 V1/V0 共享的控制与数据机制称为纯历史档案。
+
+**补齐缺口**：新增 [[18_verl_agent_loop_reward_runtime_analysis]]，集中解释 AgentLoop、tool loop、trajectory 与 RewardLoop；新增 [[23_verl_training_checkpoint_recovery_analysis]]，集中比较 V0、V1 与 fully async 的模型/优化器/trainer/dataloader/TQ/MQ 恢复边界，并与在线权重发布明确分层。
+
+**重命名与去重**：`14_verl_rollout_resharding_analysis` 改为 [[14_verl_rollout_runtime_analysis]]，只拥有 request、KV、sleep、abort、PD 与 partial request；`21_verl_delta_weight_sync_deepdive` 改为 [[21_verl_weight_publication_analysis]]，成为 full/`delta_sharded` 在线发布的唯一 owner。[[30_verl_optimization_analysis]] 收敛为证据驱动的调优决策指南，[[02_verl_quickstart_guide]] 只保留首跑路径和诊断入口。
+
+**导航**：[[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]] 现含 16 篇内容页，并同步父索引、总索引和全库旧文件名入链。上游代码基线未变化，因此本轮不推进 radar baseline。
+
+---
+
 ## 2026-08-30：补齐 Model Runner V1，并将执行主线重排为 15 V1 → 16 V2
 
 **Type**：新增机制 owner 页 + 4 页连续编号调整 + 导航与交叉链接集成
@@ -30,7 +46,7 @@ All source ingestions and significant wiki updates are logged here.
 
 Waves 2–6 已完成入口与控制边界、资源与设备热路径、模型与专用化、规模化与生产闭环、使用与最终导航的复审。全域不再按源码目录或函数顺序搬运，而以读者问题、设计取舍、状态所有权、提交不变量、成本和失败边界组织；跨页只保留相邻合同并链接唯一 owner。
 
-新增四个权威 owner：[[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|04 请求语义]]、[[02_engineering/03_infer_frameworks/vllm/17_vllm_sampling_structured_output_analysis|17 采样与结构化输出]]、[[02_engineering/03_infer_frameworks/vllm/18_vllm_multimodal_execution_analysis|18 多模态执行]]、[[02_engineering/03_infer_frameworks/vllm/29_vllm_weight_transfer_online_update_analysis|29 在线权重更新]]。相关回链已从退休 ownership 修正到这些页面，协议/任务、token selection、媒体 encoder state 与在线版本可见性各有且仅有一个正文 owner。
+新增四个权威 owner：[[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|04 请求语义]]、[[02_engineering/03_infer_frameworks/vllm/18_vllm_sampling_structured_output_analysis|18 采样与结构化输出]]、[[02_engineering/03_infer_frameworks/vllm/19_vllm_multimodal_execution_analysis|19 多模态执行]]、[[02_engineering/03_infer_frameworks/vllm/29_vllm_weight_transfer_online_update_analysis|29 在线权重更新]]。相关回链已从退休 ownership 修正到这些页面，协议/任务、token selection、媒体 encoder state 与在线版本可见性各有且仅有一个正文 owner。
 
 最终 23 篇内容页与 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 知识地图]] 全部固定到冻结源码 `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（2026-08-29），父索引、总索引计数与 repository radar 同步为 **23 篇 + index**。本轮只对直接改动的 index/backlink/radar/changelog 做 scoped `rg`、wikilink target existence、显式路径 `git diff --check` 与人工 owner/路径/计数复核；未运行全库验证，也未回写历史 changelog 条目。
 
@@ -146,12 +162,12 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 **新增三个机制 owner**：
 
 - [[17_verl_v1_async_trainer_analysis]]：稳定 V1 的 sync/colocate async/separate async、ReplayBuffer `drop/wait`、DAPO/failure refill、streaming fetch、TQ checkpoint recovery、同一 PPO cycle 的稳定旧策略与 GPU lending；
-- [[21_verl_delta_weight_sync_deepdive]]：Engine/CheckpointEngine/rollout loader 三段 ownership，dense seed → host snapshot prime → sparse steady state，ShardSpec、真实训练/rollout支持矩阵、checksum/periodic verify 与非事务失败窗口；
+- [[21_verl_weight_publication_analysis]]：Engine/CheckpointEngine/rollout loader 三段 ownership，dense seed → host snapshot prime → sparse steady state，ShardSpec、真实训练/rollout支持矩阵、checksum/periodic verify 与非事务失败窗口；
 - [[22_verl_fully_async_dynamic_schedule_deepdive]]：独立 experimental TaskRunner 的 Rollouter/Trainer/MessageQueue completion-order、staleness admission、partial rollout、动态 Hybrid GPU、rebalance、恢复/确定性/测试缺口；明确它不是稳定 V1 第四种 mode。
 
-**重构与最新遗漏**：[[16_verl_v1_transfer_queue_analysis]] 从“官方文档级、源码待核实”升级为固定提交源码页，闭合 `use_v1`/TQ 真实开关时序、prompt/trajectory 双层 key、延迟物化与当前仓内 SimpleStorage/MooncakeStore 配置范围；[[13_verl_workers_engine_analysis]] 补齐 FSDP Turbo、TorchTitan、Megatron/VeOmni、MindSpeed 精确删除范围和 `grad_offload` 配置变化；[[14_verl_rollout_resharding_analysis]] 拆开 colocated naive、disaggregated full、`delta_sharded` 与 PD/KV；[[15_verl_rl_algorithms_analysis]] 从 14 estimator × 11 loss 更新为 14 × 12，新增 DRO、`token-sum`、多轮 REINFORCE++ observation-span 修复与 critic global-batch 归一化；[[30_verl_optimization_analysis]] 改为吞吐、显存、新鲜度、权重发布与恢复性的联合预算，避免复制各深潜页。
+**重构与最新遗漏**：[[16_verl_v1_transfer_queue_analysis]] 从“官方文档级、源码待核实”升级为固定提交源码页，闭合 `use_v1`/TQ 真实开关时序、prompt/trajectory 双层 key、延迟物化与当前仓内 SimpleStorage/MooncakeStore 配置范围；[[13_verl_workers_engine_analysis]] 补齐 FSDP Turbo、TorchTitan、Megatron/VeOmni、MindSpeed 精确删除范围和 `grad_offload` 配置变化；[[14_verl_rollout_runtime_analysis]] 拆开 colocated naive、disaggregated full、`delta_sharded` 与 PD/KV；[[15_verl_rl_algorithms_analysis]] 从 14 estimator × 11 loss 更新为 14 × 12，新增 DRO、`token-sum`、多轮 REINFORCE++ observation-span 修复与 critic global-batch 归一化；[[30_verl_optimization_analysis]] 改为吞吐、显存、新鲜度、权重发布与恢复性的联合预算，避免复制各深潜页。
 
-**导航与追踪**：[[verl/index]] 重建为 14 篇内容页的概念 ownership/三条阅读路线；后训练框架域从 44→47 页，verl 子域从 12→15 页（均含 index）；README、父索引、全局索引同步。`docs/radar/watchlist.yaml` 的 verl `kb_baseline` 更新为完整 `254a23ed...`。
+**导航与追踪**：[[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]] 重建为 14 篇内容页的概念 ownership/三条阅读路线；后训练框架域从 44→47 页，verl 子域从 12→15 页（均含 index）；README、父索引、全局索引同步。`docs/radar/watchlist.yaml` 的 verl `kb_baseline` 更新为完整 `254a23ed...`。
 
 **证据与门禁**：当前基线 11 篇实现页共抽取 460 个仓库相对 `file:line`/range locator，路径缺失与行号越界均为 0；三个 V0 档案继续以各自冻结提交解释原行号。`python -m pytest tools/` 为 114 passed；`npm run docs:test` 的 68 项运行时单测、429 页 Quartz 构建与浏览器 smoke 全部通过（139 个请求，覆盖 Mermaid、链接、静态资源与 loopback-only 网络）。最终链接、公式与格式门禁在写入本条后再次执行。
 
@@ -580,11 +596,11 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 **Type**: Source Ingestion + Cross-domain Cross-reference
 
 - 将 `vllm/deepseek_v3_inference_flow.md`（旁置 vLLM checkout 根目录的分析稿）纳入 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]]，落为 `03_vllm_request_flow_walkthrough_analysis`（原 vLLM 请求全链路导览），占 2.1「入口与统一心智模型」段位。该页定位为**导览页**（"一条请求怎样穿过进程、队列与 GPU"），与本域其余 owner 页的「约束 → 状态所有权 → 设计选择」叙事互补。
-- 按「合并优于并存」裁掉与既有 owner 页重叠的部分：原稿第 3.2–3.6 节、第 4 节（调度/执行/Executor 论证）压缩为一节交界事实并指向 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]]、[[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV Cache 管理]]、[[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|Model Runner V2]]；第 8.1/8.2/8.4 节压缩为条件路径摘要；第 7 节并行维度表保留但归口 [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|分布式推理]]。
+- 按「合并优于并存」裁掉与既有 owner 页重叠的部分：原稿第 3.2–3.6 节、第 4 节（调度/执行/Executor 论证）压缩为一节交界事实并指向 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]]、[[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV Cache 管理]]、[[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]]；第 8.1/8.2/8.4 节压缩为条件路径摘要；第 7 节并行维度表保留但归口 [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|分布式推理]]。
 - **保留的独有增量**（本域此前未覆盖）：服务启动进程树与三级就绪屏障（worker `Pipe` READY → EngineCore `HELLO/READY` → 数据面 ready）、空闲后端的逐层唤醒路径（ZMQ poll → `queue.Queue` → SHM ring + `SpinCondition`）、P0–P18 跨进程管道拓扑表、DeepSeek-V3 的 MLA/MoE 在通用调用链中的落点、按状态边界定位的排查表、源码阅读顺序与启动/请求主线函数索引。
 - **基线例外**：该页显式声明源码基线 `vllm-project/vllm@26858770`（2026-08-24），高于本域统一基线 `d66300a1`（2026-08-20）；两提交之间该页引用的架构、引擎、调度、worker 与 DeepSeek 模型文件无源码差异，已在页头与域索引同时注明。
 - 离线交互图 `deepseek_v3_inference_flow_interactive.html` 及其依赖 `.js` 归档至 `wiki/02_engineering/03_infer_frameworks/vllm/assets/`（HTML 通过 `./` 相对路径加载同目录 JS，两者需一起保留；未收原仓库的 `.test.js`）。
-- 交叉链接：新页 Related Pages 7 条；[[02_engineering/03_infer_frameworks/vllm/16_vllm_serving_control_plane_analysis|Serving 控制面]] 补 Related Pages 回链（6→7）；[[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|引擎架构]] 因 Related Pages 已达 7 条上限，改在正文「进程生命周期与故障传播」一节补内联回链。
+- 交叉链接：新页 Related Pages 7 条；[[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|Serving 控制面]] 补 Related Pages 回链（6→7）；[[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|引擎架构]] 因 Related Pages 已达 7 条上限，改在正文「进程生命周期与故障传播」一节补内联回链。
 - 全部 8 个 mermaid 块按本库规范重写标签（管道标签去引号、`-. 文字 .->` 改 `-.->|文字|`、去 HTML 实体），链接检查 pages=409，broken/ambiguous/bare_index/orphans 均为 0。
 
 ---
@@ -839,8 +855,8 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 - **核对官方文档后的两处关键发现**：
   1. **`use_v1`、`TaskRunnerV1`、`trainer/ppo/v1/*` 在 verl 官方文档与 v0.7/v0.8 release notes 中均查无此名**——它们是源码树内部命名。本簇对它们的记述唯一依据是自身的源码观察（`ppo_trainer.yaml` 行号双向记录），不能引官方文档背书。官方侧可查证的对应事实是入口更名："`main_ppo.py` is deprecated with a warning in favor of `main_ppo_sync.py`"（v0.8.0 release notes）。
   2. **TransferQueue 至今仍不是默认传输方式**。v0.7 blog 称"计划在 v0.8 成为默认"，但 v0.8.0 实际只交付了 "New sync trainer with TransferQueue"，并注明 "TBD: Fully async trainer with TransferQueue will be in next release"。凡"verl 已默认走 TransferQueue"的说法无官方依据。
-- **更正 2026-08-10 审计自身的结论**：该审计称「verl 簇 7 篇深潜写的是 legacy 路径，整簇有效性存疑」——**这个推论过度**。受影响的只是**编排层与数据搬运层**（`RayPPOTrainer.fit` 主链、以及"数据流经 driver"这一前提）；**计算面**（[[13_verl_workers_engine_analysis]]）、**权重面**（[[14_verl_rollout_resharding_analysis]]）、**算法面**（[[15_verl_rl_algorithms_analysis]]）、**数据契约**（[[12_verl_dataproto_analysis]]，官方称经 `RemoteBatch` 与 TransferQueue 兼容共存）均不受影响。逐条对照表见新页 §5。
-- **更新 [[verl/index]]**：重写架构演进提示，加 `[!warning]` 记录上述两处更正；把新页加入页面列表。**更新父索引** `04_posttrain_frameworks/index.md` 的 verl 篇数说明。
+- **更正 2026-08-10 审计自身的结论**：该审计称「verl 簇 7 篇深潜写的是 legacy 路径，整簇有效性存疑」——**这个推论过度**。受影响的只是**编排层与数据搬运层**（`RayPPOTrainer.fit` 主链、以及"数据流经 driver"这一前提）；**计算面**（[[13_verl_workers_engine_analysis]]）、**权重面**（[[14_verl_rollout_runtime_analysis]]）、**算法面**（[[15_verl_rl_algorithms_analysis]]）、**数据契约**（[[12_verl_dataproto_analysis]]，官方称经 `RemoteBatch` 与 TransferQueue 兼容共存）均不受影响。逐条对照表见新页 §5。
+- **更新 [[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]]**：重写架构演进提示，加 `[!warning]` 记录上述两处更正；把新页加入页面列表。**更新父索引** `04_posttrain_frameworks/index.md` 的 verl 篇数说明。
 
 ### 二、[[30_rl_framework_comparison]]：把"有效期临近"落到具体过期项
 
