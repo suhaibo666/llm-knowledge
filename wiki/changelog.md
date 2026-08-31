@@ -24,6 +24,16 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-31（二）：补齐 Verl 七篇核心页的“是什么、怎么做、为什么”
+
+**Type**：机制解释质量复审（重写 2 页核心章节 + 加强 5 页关键边界，不改变页面树）
+
+依据“模块解释必须同时回答定位/功能、因果实现链和设计理由”的标准，复审并加强 [[01_verl_architecture_overview_analysis]]、[[10_verl_end_to_end_iteration_analysis]]、[[11_verl_single_controller_analysis]]、[[12_verl_dataproto_analysis]]、[[13_verl_workers_engine_analysis]]、[[15_verl_rl_algorithms_analysis]] 与 [[18_verl_agent_loop_reward_runtime_analysis]]。架构与算法页从能力/注册表罗列改为设计家族和动态连接；其余页面补齐 Worker/WorkerGroup、DataProto 三容器、Worker/Engine、Agent/Reward 四层的职责定位、执行路径、替代方案代价及失败边界。
+
+复审同时修正 V1 `fit()` 的真实顺序：`on_step_end` 位于可选验证之前，指标/样本落盘之后才清理已消费的 TransferQueue keys；并区分 step 计算完成、checkpoint 恢复点和下一批 rollout 权重可见性三个不同完成点。全部事实仍固定到 verl `254a23ed...`，分析性设计推断显式标记为 `【分析推断】`；本轮不新增、删除、重命名或合并页面，因此索引与 ownership 树保持不变。
+
+---
+
 ## 2026-08-31：按共享能力与动态生命周期重构 Verl 分析域
 
 **Type**：新增 2 页 + 重写/收敛 14 页 + 重命名 2 页 + 索引与入链修复

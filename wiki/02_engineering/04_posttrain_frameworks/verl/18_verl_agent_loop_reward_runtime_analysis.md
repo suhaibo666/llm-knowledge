@@ -23,6 +23,10 @@ title: "verl AgentLoop 与 RewardLoop：从 prompt 到可训练 trajectory"
 | `AgentLoopManager` | Ray workers 与 prompt batch dispatch | TQ key/tag、一致性与 ReplayBuffer 策略 |
 | `RewardLoopManager/Worker` | reward worker、reward model router、score assembly | advantage、KL 与 policy loss |
 
+四层不是按类名凑出的目录，而是四种状态寿命。**AgentLoopBase 是什么**：一条 trajectory 的可替换 coroutine；它在 `run()` 内与 LLM server 和环境交互。**AgentLoopWorker 怎么做**：对 batch 中每个样本按 `agent_name` 实例化 loop、并发执行，再统一 padding、mask、reward 和 teacher 后处理。**AgentLoopManager 为什么存在**：把 Ray worker 生命周期和 batch dispatch 从 per-trajectory 状态中移走，使具体 loop 不需要知道集群拓扑。RewardLoop 再单独持有模型 router/用户函数与 CPU/RM 资源生命周期（`verl/experimental/agent_loop/agent_loop.py:207-251,419-459,537-665`；`verl/experimental/reward_loop/reward_loop.py:93-155,273-341`）。
+
+`【分析推断】` 若把这些职责都放进 LLM server，工具环境、reward 和训练字段会与 serving 的 KV/权重生命周期耦合；若全部放进 Trainer，每条轨迹的 coroutine 与外部副作用会阻塞训练控制面。当前拆分让 loop、worker 数和 reward 部署可以独立替换，代价是 trajectory 完成、TQ 持久化和训练 admission 分属不同 owner，不能用单个 coroutine 返回代表整条训练事务完成。
+
 模块 docstring 明确把 `AgentLoopManager` 定义为一种可替换的 agent-framework implementation，并列出
 Nemo-Gym、Bedrock AgentCore、SWE-agent 等可能替代者（`verl/experimental/agent_loop/agent_loop.py:14-27`）。
 V1 `TaskRunnerV1` 也允许通过 fully qualified class 替换 manager，唯一硬契约是实现
@@ -67,6 +71,8 @@ sequenceDiagram
 
 这两个入口共享 AgentLoop 语义，但等待方式不同：普通 manager 返回完整 DataProto；V1 manager 返回控制权，
 Trainer 之后由 ReplayBuffer/TQ 状态判断哪些 prompt group 已完成。
+
+两种等待方式服务于不同消费者。普通入口需要立即交付一个完整、已 postprocess 的批对象，所以 `asyncio.gather` 是返回契约的一部分；V1 需要让采样生产与训练消费解耦，worker 只启动 background task，完成状态和字段随后进入 TQ。`【分析推断】` 后者避免 controller 因最慢 trajectory 建立整批屏障，但把 backpressure、group failure 和 admission 判断转移给 TQ/ReplayBuffer；它不是“同一个函数加了 async”这么简单。
 
 ## 3. Registry 与扩展契约
 
@@ -132,6 +138,8 @@ colocated RM 返回 `None`，Trainer 必须在 rollout 结束后批量打分
 `verl/trainer/ppo/v1/trainer_base.py:329-387,540-560`）。这不是一个性能小开关：它决定 reward 是 trajectory
 coroutine 的一部分，还是训练 step 中的独立阶段。
 
+设计原因来自资源可并发性，而不是 reward 算法名字：源码只在规则/自定义函数或独立 RM pool 可与 rollout 并行时返回 reward worker handles，colocated RM 则由 Trainer 在生成后批处理（`verl/experimental/reward_loop/reward_loop.py:312-322`）。`【分析推断】` 前者缩短 reward 进入 TQ 的等待，但增加 worker/router 与请求重试状态；后者减少独立常驻资源，却在 step 内形成显式 reward barrier。把 colocated RM 也塞进 AgentLoop coroutine 会让资源切换和生成请求竞争同一设备。
+
 异步路径在 `_compute_score` 中把一条 trajectory 的一个或多个 output 组装成临时 DataProto，随机选择
 reward worker，最终只把 score 写到最后一个 output，并保存 extra info
 （`verl/experimental/agent_loop/agent_loop.py:937-999`）。TQ adapter 再把 final score 复制给同一 session 的
@@ -150,6 +158,8 @@ settle 后才把 prompt 标成 `finished` 或 `failure`，防止某个晚到 sib
 
 每个 output 使用 `{uid}_{session_id}_{index}` 作为 trajectory key，写入 token、mask、position、reward、
 extra fields，并把生成起止版本放入 tags（`verl/trainer/ppo/v1/agent_loop_tq.py:150-227`）。
+
+这个 adapter 的定位是“提交轨迹字段”，而不是重新解释 AgentLoopOutput。实现保留 worker 的 token/mask/reward 结果，只负责生成稳定 key、写 running/finished/failure 和版本 tags。`【分析推断】` 这样做让相同 AgentLoop runtime 同时服务普通 DataProto 返回与 V1 引用流；代价是应用语义和持久化状态跨两层排错，尤其要区分“loop 已返回”与“所有 sibling 已 settle 且 group 已标记 finished”。
 
 owner 边界是：
 

@@ -23,6 +23,10 @@ Engine 的接口包含 model forward、optimizer step、数据加载与权重 ex
 | Engine | module、parallel mesh、forward/backward、optimizer、checkpoint/export | FSDP、Megatron、TorchTitan、VeOmni |
 | rollout adapter | serving engine 与权重安装 | vLLM、SGLang、PD、KV lifecycle |
 
+两层对象的因果分工可以概括为：**Worker 回答“这次 RPC 以哪个训练角色、哪些字段和多大 mini-batch 执行”**，**Engine 回答“这些张量怎样穿过模型并行、反向、optimizer 与参数导出”**。实现上 Worker 在边界准备数据和 loss callable，再调用 `BaseEngine.train_batch`/`infer_batch`；BaseEngine 负责 zero-grad、forward/backward、optimizer step 以及后端特有导出（`verl/workers/engine/base.py:99-207`）。
+
+`【分析推断】` 这样拆分是为了避免 trainer role 与并行 backend 形成实现类的笛卡尔积：actor/critic/ref 的字段和 loss 会变，FSDP/Megatron/TorchTitan 的 mesh 与 checkpoint 也会变；合并后每增加一个 role 或 backend 都可能复制另一维逻辑。代价是两层之间必须维护稳定的 TensorDict/loss/export 契约，问题也可能跨 Worker 数据准备和 Engine 集体通信两个栈追踪。
+
 ```mermaid
 flowchart LR
     A["V1 trainer KVBatchMeta"] --> B["Worker RPC"]
@@ -40,6 +44,8 @@ flowchart LR
 ## 2. Engine registry 的真实选择键
 
 `EngineRegistry` 的查询不是单一 `strategy` 字符串。注册与查找同时考虑 model type、backend、device/vendor（`verl/workers/engine/base.py:351-399`）。这让同名 backend 可以对 language/value model 或 CUDA/NPU 提供不同实现，也解释了为什么“删除某套 YAML”不等于设备适配代码全部消失。
+
+选择过程本身也有顺序：先确定 `model_type` 和 `backend`，再读取探测到或由 `VERL_ENGINE_DEVICE` / `VERL_ENGINE_VENDOR` 覆盖的硬件；查找优先 `(device, vendor)`，其次 device-only，CUDA 兼容 vendor 最后可回退到 NVIDIA 注册，否则显式失败（`verl/workers/engine/base.py:398-429`）。**为什么不用一个 backend 字符串**：`【分析推断】` 同一并行策略可能同时存在 language/value 与不同设备实现，单键会发生覆盖或把硬件分支塞进同一个巨型类。多维 registry 的代价是运行环境参与解析；排错必须记录最终 device/vendor，而不能只看 YAML 中的 backend。
 
 当前常见组合：
 
@@ -121,6 +127,8 @@ failure cleanup
 ```
 
 只跑通 forward 不能证明可用于 RL trainer；actor 还需要反向、optimizer、old/ref log-prob、权重发布和 rollout lifecycle。TorchTitan 之所以是完整 Engine backend，是因为 verl 保留训练循环，但模型并行、optimizer 与 checkpoint 明确委托给 TorchTitan（`docs/workers/torchtitan_workers.rst:6-71`）。
+
+这份契约的定位不是要求所有后端内部同构，而是给 Worker 和 publication/recovery 层一个稳定边界。实现可以把 parallel layout、optimizer 或 checkpoint 委托给外部框架，但必须把 train/infer、保存恢复和 HF 坐标系下的 full/shard export 映射回来。`【分析推断】` 这样设计使 rollout loader 与 CheckpointEngine 不必理解每个训练后端的 shard 布局；否则每加入一个 backend，都要同时修改 Trainer、发布链和恢复链。成本是 backend 接入不再以“模型能 forward”为完成标准，export、sleep/resume 与异常清理也成为兼容性测试的一部分。
 
 ---
 

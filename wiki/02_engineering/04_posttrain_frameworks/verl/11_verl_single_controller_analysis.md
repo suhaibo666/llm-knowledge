@@ -34,6 +34,8 @@ CheckpointEngine worker 继承 `Worker`，manager 还会临时用 rollout handle
 V0 与 V1 的区别不是“是否使用 single-controller”，而是 controller 传什么：V0 主循环大量传递完整
 `DataProto`；V1 controller 主要传 `KVBatchMeta`，worker 在 `tqbridge` 边界才取实际 TensorDict。
 
+这里最关键的对象拆分是 `Worker` 与 `WorkerGroup`。**是什么**：前者表示一个 rank 的进程内执行环境，后者表示 controller 眼中的一组 SPMD ranks。**怎么做**：`Worker` 从环境构造 rank/mesh 元数据并实现 rank-local 方法；`WorkerGroup` 保存 handles，扫描这些方法的注册元数据，生成 dispatch/remote/collect wrapper。**为什么**：rank-local 业务代码不应同时承担 Ray 拓扑和聚合，controller 也不应直接管理每个 rank 的模型状态。`【分析推断】` 若把二者合成一个对象，每个业务方法都要重复处理“我是谁、发给谁、怎样收集”；若 controller 逐 handle 调用，则 mesh/collect 语义会散落到上层。代价是一次看似普通的方法调用背后存在动态绑定，排错必须同时检查定义端 metadata 与 group 绑定结果。
+
 ## 2. 一次 group method call 的五段路径
 
 ```mermaid
@@ -48,6 +50,8 @@ flowchart LR
 这五段分别由 `WorkerGroup._bind_worker_method`、Ray `func_generator`、decorator registry、Ray actor
 handle 和 collect function 承担（`verl/single_controller/base/worker_group.py:185-240`；
 `verl/single_controller/ray/base.py:49-68`；`verl/single_controller/base/decorator.py:334-398`）。
+
+这条路径的定位是把“一次逻辑 SPMD 调用”变成 N 个物理 RPC，而不是隐藏算法阶段。实现把切分与收集留在 wrapper，把单 rank 计算留给原始 method。`【分析推断】` 这样做使同一个 actor/ref/critic 方法可以复用 one-to-all、DP 或 mesh-aware 形状，而无需为 Ray 另写一套业务 API；相对地，wrapper 不会替 Trainer 推断跨方法依赖，也不会把 N 个 actor 的副作用合成原子事务。
 
 ### 2.1 `Worker` 只描述一个 rank
 
@@ -74,6 +78,8 @@ actor/ref/critic 的业务角色，也不实现 PPO；具体 worker class 在其
 4. 同步收集，或返回可延迟 materialize 的 future。
 
 动态绑定只提供调用形状，不保证不同业务调用之间的事务性；Trainer 仍必须显式编排先后关系。
+
+把调用形状写在 method metadata 而不是手写每个 Ray proxy，还有一个直接收益：定义业务方法时即可声明 dispatch、execute、blocking 与 collect，`WorkerGroup` 能对不同 role 统一生成入口（`verl/single_controller/base/decorator.py:398-444`）。`【分析推断】` 替代方案是为每个 worker method 维护一份 controller 代理，二者容易在参数切分或返回聚合上漂移。当前设计的成本也很明确：普通调用点看不见 RPC 形状，错误 metadata 可能直到 group 绑定或远程执行时才暴露。
 
 ## 3. `@register` 决定 RPC 形状，不决定算法
 
@@ -112,6 +118,8 @@ execute mode、blocking 和 future materialization 写到函数属性，绑定 g
 
 colocation 只表示共享 Ray actor/设备资源，不表示业务状态自动一致。不同角色仍各自持有 Engine；切换
 train/eval、sleep/wake 和更新权重都需要上层明确调用。
+
+它的设计目标是让同一 resource pool 上的多个逻辑角色复用 actor 与 placement，而不是复制一套常驻进程/设备占用；`spawn_fused` 和前缀方法保留了角色可寻址性。`【分析推断】` 若把 colocation 写成“状态共享”，上层就可能漏掉 offload、模式切换或权重发布；共享地址空间只减少资源与 actor 数量，不会自动给多个 Engine 建立一致性协议。
 
 ## 5. 同步、异步与失败边界
 

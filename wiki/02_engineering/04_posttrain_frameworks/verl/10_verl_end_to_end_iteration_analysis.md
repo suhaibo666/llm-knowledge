@@ -50,6 +50,8 @@ V1 runner 的关键顺序是：
 
 对应源码在 `verl/trainer/main_ppo.py:137-163`。`PPOTrainer.init()` 的资源初始化、rollout sleep、checkpoint/dataloader 恢复与模式钩子位于 `verl/trainer/ppo/v1/trainer_base.py:219-371`。
 
+这不是一组可以随意交换的初始化调用。**是什么**：resource pool 和 worker group 先建立训练角色，LLM server 随后取得 actor worker group，CheckpointEngine 最后同时取得训练端与 rollout 端句柄。**怎么做**：初始化按 `resource_pool_manager → worker group → LLM server → CheckpointEngine` 的依赖顺序推进；随后先让 rollout replicas 进入 sleep，再恢复 checkpoint 与 dataloader，最后由模式 hook 安装当前版本。**为什么**：后一个对象的构造参数直接引用前一个对象的句柄，恢复也必须发生在发布新请求之前。`【分析推断】` 若在 actor/rollout 两端尚未恢复到同一版本时开放生成服务，服务可能接受一个无法与训练状态对应的请求；源码通过顺序约束规避了这个窗口，但没有把它声明成通用事务协议。
+
 这里有两个不能互换的开关：`trainer.use_v1` 决定 runner 路由；`transfer_queue.enable` 在 Ray 初始化前还控制 `TRANSFER_QUEUE_ENABLE` 是否进入 runtime env（`verl/trainer/main_ppo.py:56-74`）。V1 runner 虽然后续必定把 TQ 打开，但这个赋值发生得更晚；外部 TQ package 对环境变量的完整依赖不在本页证据范围。
 
 ---
@@ -77,12 +79,14 @@ V0 的主要调用参数是 `DataProto`。V1 controller 则传 `KVBatchMeta`：�
 mode on_step_begin
   step
   optional checkpoint
-  optional validation
   mode on_step_end
+  optional validation
+  metrics and optional dump
+  clear consumed TransferQueue keys
   logging and global step advance
 ```
 
-主循环入口与 checkpoint 条件在 `verl/trainer/ppo/v1/trainer_base.py:445-510`。模式 hook 把资源切换从公共 PPO 计算中隔离：默认 sync 在 sample 完成后让 rollout sleep，在 step 末向 rollout 安装 actor 新权重（`verl/trainer/ppo/v1/trainer_sync.py:31-42`）。
+主循环入口与 checkpoint 条件在 `verl/trainer/ppo/v1/trainer_base.py:445-510`。这里有三个不同的“完成点”：`step()` 返回表示本批计算完成；checkpoint 保存的是训练恢复点；`on_step_end` 发布的是下一批生成要看到的 actor 版本。之后才做验证、指标/样本落盘和 TQ key 清理。模式 hook 把资源切换从公共 PPO 计算中隔离：默认 sync 在 sample 完成后让 rollout sleep，在 step 末向 rollout 安装 actor 新权重（`verl/trainer/ppo/v1/trainer_sync.py:31-42`）。当前源码固定为“保存后发布”，但没有证据表明这是所有模式都必须遵守的数学顺序；真正不可交换的是清理不能早于仍需读取这些 key 的指标与 dump。
 
 ---
 
@@ -98,17 +102,17 @@ mode on_step_begin
 
 源码顺序在 `verl/trainer/ppo/v1/trainer_base.py:540-590`：
 
-| 阶段 | 条件 | 输出状态 |
+| 阶段 | 是什么：消费 → 产出 | 为什么位于这里 / 不可交换边界 |
 |---|---|---|
-| ReplayBuffer sample | 必选 | 一组可训练 `KVBatchMeta` |
-| colocated reward | 没有独立 reward-loop handles | `rm_scores` |
-| balance | 必选 | 按 DP workload 重排并补齐 |
-| old log-prob | 必选 | `old_log_probs`、entropy |
-| ref log-prob | 需要 reference policy | `ref_log_prob` |
-| critic infer | 需要 critic | `values` |
-| advantage | 必选 | `advantages`、`returns` |
-| critic update | 需要 critic | critic metrics 与新参数 |
-| actor update | 过了 critic warmup | actor metrics 与新参数 |
+| ReplayBuffer sample | 从已完成轨迹中选择一组 `KVBatchMeta` | 锁定本次更新的样本集合；后续阶段都围绕这组 key 工作 |
+| colocated reward | 没有独立 reward-loop handles 时，读取响应并写入 `rm_scores` | advantage 必须消费完整 reward；独立 reward-loop 已在入队前完成时才可跳过 |
+| balance | 依据有效 token workload 重排并补齐 DP 分片 | `【分析推断】` 先固定顺序再做各模型前向，避免后续角色各自重新决定样本到 DP rank 的映射 |
+| old log-prob | 读取训练样本并写入 `old_log_probs`、entropy | PPO ratio 与 rollout correction 都需要更新前的策略概率；不能移到 actor update 之后 |
+| ref log-prob | 需要 reference policy 时写入 `ref_log_prob` | reward KL 或 actor KL loss 的基准必须在相应计算前可见 |
+| critic infer | 需要 critic 时写入 `values` | GAE 等 estimator 需要 value baseline，必须早于 advantage |
+| advantage | 汇合 reward、old/ref log-prob、values，写入 `advantages`、`returns` | 它把轨迹字段转换成两个优化器的直接训练目标，因此必须早于任一参数更新 |
+| critic update | 需要 critic 时消费 returns/values，返回指标与新参数 | 当前实现固定先更新 critic；源码没有证明在 actor/critic Engine 独立时这是普遍的数学必要条件 |
+| actor update | 过了 critic warmup 后消费 advantage 与 log-prob，返回指标与新参数 | 必须等 advantage 完成；发布新权重则要等整个更新完成 |
 
 这个顺序有三个机制约束：reward 必须先于 advantage；rollout correction 需要 rollout/old log-prob 同时可见；actor update 必须等 advantage 写回。
 
@@ -145,6 +149,8 @@ ReplayBuffer 选定完整 batch
 ```
 
 模式 hook 在 `verl/trainer/ppo/v1/trainer_sync.py:31-42`。rollout sleep/KV 的服务侧前后置条件见 [[14_verl_rollout_runtime_analysis]]；colocated naive、disaggregated full 与 `delta_sharded` 的 publication 状态机全部由 [[21_verl_weight_publication_analysis]] 承担。
+
+这道 barrier 的定位不是“某个 RPC 返回了”，而是把两个 actor 版本分开：当前 batch 的 log-prob/update 仍归属于旧版本，下一批 rollout 只能看到完整安装后的新版本。实现上先 sleep/abort 生成侧，再由 CheckpointEngine publication session 安装参数，最后恢复服务。`【分析推断】` 这样设计是为了避免 rollout 在权重分片只更新一部分时接单；代价是同步模式存在明确停顿，而任何单个 worker 的成功返回都不足以证明集群已经切到同一版本。
 
 ---
 

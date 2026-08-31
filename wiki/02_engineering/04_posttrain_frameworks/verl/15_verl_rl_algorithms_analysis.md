@@ -37,30 +37,25 @@ V0 的 `compute_advantage` 在 `verl/trainer/ppo/ray_trainer.py:187-282` 统一�
 
 ---
 
-## 2. 优势估计注册表：14 个名字，一份输出契约
+## 2. Advantage：先选择“用什么作基线”，再选择实现名字
 
-`AdvantageEstimator` 当前列出 14 个内置名字（`verl/trainer/ppo/core_algos.py:88-110`）。注册装饰器拒绝用不同函数覆盖同名项，未知名字在查表时抛错（`verl/trainer/ppo/core_algos.py:116-145`）。自定义实现可以用字符串注册，不必修改枚举。
+`AdvantageEstimator` 当前列出 14 个内置名字（`verl/trainer/ppo/core_algos.py:88-110`），但这些名字不是 14 套互不相关的算法。它们主要在回答两个问题：**奖励怎样沿 token/时间传播，以及用什么基线降低方差或改变组内相对信号**。注册装饰器只负责拒绝重名、查找函数和统一输出 `advantages/returns`（`verl/trainer/ppo/core_algos.py:116-145`）；它不会验证组大小、reward 维度、critic、greedy baseline 或 token 概率统计是否存在。
 
-| `adv_estimator` | 实现入口 | 状态或约束 |
-|---|---|---|
-| `gae` | `verl/trainer/ppo/core_algos.py:216` | 需要 critic `values` |
-| `grpo` | `verl/trainer/ppo/core_algos.py:268` | 按 `uid` 分组 |
-| `grpo_vectorized` | `verl/trainer/ppo/core_algos.py:335` | GRPO 的张量化版本 |
-| `gdpo` | `verl/trainer/ppo/core_algos.py:362` | 多维奖励键与权重 |
-| `grpo_passk` | `verl/trainer/ppo/core_algos.py:472` | 组内 top-2 奖励 |
-| `reinforce_plus_plus_baseline` | `verl/trainer/ppo/core_algos.py:536` | 组均值基线 |
-| `rloo` | `verl/trainer/ppo/core_algos.py:588` | 每组至少两个样本才有留一基线 |
-| `opo` | `verl/trainer/ppo/core_algos.py:640` | 长度加权组基线 |
-| `reinforce_plus_plus` | `verl/trainer/ppo/core_algos.py:694` | `gamma` 与时序 mask |
-| `remax` | `verl/trainer/ppo/core_algos.py:735` | 需要 greedy `reward_baselines` |
-| `gpg` | `verl/trainer/ppo/core_algos.py:771` | `uid` 分组与非零奖励校正 |
-| `rloo_vectorized` | `verl/trainer/ppo/core_algos.py:834` | RLOO 的张量化版本 |
-| `optimal_token_baseline` | `verl/trainer/ppo/core_algos.py:872` | 需要 `sum_pi_squared` 与 `old_log_probs` |
-| `tir_optimal_token_baseline` | `verl/trainer/ppo/core_algos.py:991` | 多轮 TIR 的 token baseline |
+下表的“为什么”在源码 docstring 明确说明时按其原意概括；否则标为 **【分析推断】**，表示从当前公式和前置条件重建选择判据，而不是声称作者在代码中完成了算法比较。
 
-### 2.1 GAE 与 GRPO 是两种不同的信用分配
+| 设计家族 | 是什么、解决什么问题 | 怎么做 | 为什么不直接用最接近的替代方案 | 实现与前置条件 |
+|---|---|---|---|---|
+| critic 时序基线 | 用 learned value 为每个 token 提供状态相关基线，处理跨 token 的信用分配 | GAE 逆序累计 TD residual，以 `gamma` 和 `lambda` 控制偏差—方差，再用 mask whiten | 相比同 prompt 组均值，它能利用状态和时序信息；代价是必须训练 critic，value 误差也会进入 advantage | `gae`；需要 `values`。`verl/trainer/ppo/core_algos.py:216-264` |
+| 组均值/方差基线 | 在没有 critic 时，用同一 prompt 的多条 outcome 相互比较 | GRPO 按 `uid` 求组均值，可选除组标准差，再把标量广播到有效 token；vectorized 版保持同一数学语义 | 相比直接使用绝对 reward，组中心化消除 prompt 难度的共同偏移；但它要求可靠分组，组大小为 1 时退化为无有效相对基线 | `grpo`、`grpo_vectorized`、`reinforce_plus_plus_baseline`。`verl/trainer/ppo/core_algos.py:268-358,536-584` |
+| 改造组基线 | 保留“组内比较”，但改变哪些响应构成基线、reward 维度或长度权重 | GDPO 逐 reward 维归一化后加权；Pass@k 只给 top-1 与 top-2 的差；RLOO 排除自身；OPO 用长度加权；GPG 再按非零 reward 比例缩放 | 相比统一 GRPO z-score，这些变体针对多目标被单一 reward 淹没、self-inclusion、长度偏置、精英选择或稀疏 reward；代价是更强的数据假设和更专门的超参 | `gdpo`、`grpo_passk`、`rloo`/`rloo_vectorized`、`opo`、`gpg`。`verl/trainer/ppo/core_algos.py:362-530,588-690,771-868` |
+| reward-to-go 与外部基线 | 不把整条响应压成一个 outcome advantage，而是保留从当前位置到结尾的回报 | REINFORCE++ 逆序累计 discounted return；ReMax 再减去 greedy response 的 reward baseline | 相比把一个 outcome 标量广播到所有 token，它保留时序回报；ReMax 用额外 greedy rollout 换取更直接的 prompt-specific baseline | `reinforce_plus_plus` 需要 `gamma`；`remax` 需要 `reward_baselines`。`verl/trainer/ppo/core_algos.py:694-767` |
+| token 路径方差基线 | 为同 prompt 的每个 token 位置计算不同 baseline，而不是整条 trajectory 共用一个数 | OTB 用 `old_log_probs` 与 `sum_pi_squared` 构造累计 path-variance 权重；TIR 版只在有效 response token 序列上对齐多轮轨迹 | 相比组均值，它试图让高方差路径对 baseline 贡献更符合 token 位置；代价是额外概率统计、分组循环、变长尾部处理和更高内存/计算成本 | `optimal_token_baseline`、`tir_optimal_token_baseline`。`verl/trainer/ppo/core_algos.py:872-1115` |
 
-GAE 使用 value 网络，把逐 token TD 残差逆序累积（`verl/trainer/ppo/core_algos.py:216-264`）：
+### 2.1 GAE 与 GRPO：critic 时序基线和无 critic 组基线
+
+**是什么与为什么。** GAE 适合已经承担 critic 成本、且需要逐 token 时序信用的路径；GRPO 适合同 prompt 有多条采样、希望不用 value model 做相对比较的路径。二者都输出 token-aligned advantage，但可用信息和失败方式完全不同，不能因为下游接口相同就互换。
+
+**怎么做。** GAE 使用 value 网络，把逐 token TD 残差逆序累积（`verl/trainer/ppo/core_algos.py:216-264`）：
 
 $$
 \delta_t = r_t + \gamma V_{t+1} - V_t,
@@ -76,13 +71,19 @@ A_i^{\mathrm{GRPO}}
 \frac{R_i-\mu_{g(i)}}{\sigma_{g(i)}+\epsilon}.
 $$
 
-关闭 `norm_adv_by_std_in_grpo` 只保留减均值，对应去除组标准差缩放；这不是一种新 loss mode，而是 advantage 侧的开关（`verl/trainer/ppo/core_algos.py:296-329`）。
+关闭 `norm_adv_by_std_in_grpo` 只保留减均值，对应去除组标准差缩放；这会改变组间尺度，并不是一种新 loss mode（`verl/trainer/ppo/core_algos.py:294-329`）。GRPO 的关键约束是 `uid` 必须真实表示“同一 prompt 的采样组”；错误分组仍能算出数值，却会悄悄改变 baseline。
 
-### 2.2 通用分发也有显式的状态分支
+### 2.2 组基线变体：每一种都改变了“谁和谁比较”
 
-调用端对 GAE 与 GRPO 单独传参，其余估计器经注册表分发；GDPO 从 `non_tensor_batch` 取多维奖励，OTB 强制要求 `sum_pi_squared`，ReMax 读取 greedy baseline（`verl/trainer/ppo/ray_trainer.py:218-280`）。所以“注册表消除 trainer 分支”只适用于算法函数的选择，不能消除输入状态的差异。
+- **GDPO** 先对每个 reward dimension 独立做组归一化，再按权重合并和全局 whiten，避免一个量纲或方差更大的 reward 分量淹没其它维度；它要求 `gdpo_reward_keys` 在 `non_tensor_batch` 中真实存在（`verl/trainer/ppo/core_algos.py:362-468`）。
+- **Pass@k** 只给组内最好响应非零 advantage，幅度是 top-1 与 top-2 的 reward 差。它不是一般 GRPO 的加速版，而是把学习信号集中到“最好答案相对次好答案”的间隔；每组少于两条样本会直接失败（`verl/trainer/ppo/core_algos.py:471-530`）。
+- **RLOO** 对样本 $i$ 使用其余组员的均值作 baseline，避免当前 reward 同时出现在目标和 baseline 中；单样本组没有 leave-one-out 信息，代码把其贡献压为零或不做相减（`verl/trainer/ppo/core_algos.py:587-636,833-868`）。
+- **OPO** 用 response length 加权组 baseline，因此显式改变长短回答对基线的贡献；选择它就等于接受“长度应进入基线”的假设（`verl/trainer/ppo/core_algos.py:639-690`）。
+- **GPG advantage** 仍做组中心化，但再按 batch 中非零 reward 比例缩放；它针对稀疏 reward 改变信号幅度，不能与同名的 `gpg` policy loss 混为一个开关（`verl/trainer/ppo/core_algos.py:770-830`）。
 
-### 2.3 多轮 REINFORCE++ 的 mask 修复
+这些实现说明注册表只统一函数选择，不统一统计假设。调用端仍要为 GDPO 提供多维 reward、为 ReMax 提供 greedy baseline、为 OTB 提供 `sum_pi_squared`，并为所有分组方法保证 `uid` 正确（`verl/trainer/ppo/ray_trainer.py:218-280`）。
+
+### 2.3 时序与 token baseline：mask 决定奖励能否跨 observation 传播
 
 当前 REINFORCE++ 在逆序计算 return 时，`response_mask=0` 的 observation 位置自身 return 为零，但 `running_return` 穿过该区间继续向前传播（`verl/trainer/ppo/core_algos.py:694-731`）：
 
@@ -92,32 +93,27 @@ G_t = r_t + \gamma G_{t+1},
 \widehat G_t = m_t G_t,
 $$
 
-其中 observation token 的 $m_t=0$ 只屏蔽当前位置，不截断后续奖励。这一边界由 CPU 测试覆盖 observation span、尾部 padding、折扣传播和 batch 维度（`tests/trainer/ppo/test_reinforce_pp_multiturn_on_cpu.py:37-139`）。旧实现若把 mask 同时用于清空 running state，会错误阻断工具观察之后的奖励。
+其中 observation token 的 $m_t=0$ 只屏蔽当前位置，不截断后续奖励。这一边界由 CPU 测试覆盖 observation span、尾部 padding、折扣传播和 batch 维度（`tests/trainer/ppo/test_reinforce_pp_multiturn_on_cpu.py:37-139`）。若把 mask 同时用于清空 running state，工具 observation 之后得到的终局奖励就无法传回之前的模型 token。
+
+OTB 进一步把 baseline 从 trajectory 级细化到 token 级：它用旧策略概率构造累计 path-variance proxy，再在 prompt group 内为每个位置求加权 baseline。这样能表达“同一轨迹不同位置的方差不同”，但要求 rollout/actor 额外产出 `sum_pi_squared`，并对最长轨迹超出第二长轨迹的尾部作显式处理（`verl/trainer/ppo/core_algos.py:872-987`）。TIR 版本把多轮有效 token 压到连续坐标后执行相同思想，再映射回原 mask（`verl/trainer/ppo/core_algos.py:990-1115`）。
 
 ---
 
-## 3. 策略损失注册表：12 种梯度形状
+## 3. Policy loss：选择“怎样限制一次策略移动”
 
-actor 从 `config.policy_loss.loss_mode` 查表，给所有实现传入同一组 `old_log_prob`、`log_prob`、`advantages`、`response_mask` 与可选 rollout IS 权重（`verl/workers/utils/losses.py:85-112`）。当前注册表有 12 个公开名字：
+actor 从 `config.policy_loss.loss_mode` 查表，给所有实现传入同一组 `old_log_prob`、`log_prob`、`advantages`、`response_mask` 与可选 rollout IS 权重（`verl/workers/utils/losses.py:85-112`）。统一签名只建立了坐标系；12 个公开名字真正的区别，是**在哪个粒度计算 policy ratio、用硬裁剪还是软惩罚、丢弃哪些 token，以及梯度能否穿过 correction weight**。
 
-| `loss_mode` | 实现入口 | 相对 vanilla 的主要变化 |
-|---|---|---|
-| `vanilla` | `verl/trainer/ppo/core_algos.py:1286` | PPO clip 与 dual-clip |
-| `dppo_tv` | `verl/trainer/ppo/core_algos.py:1380` | TV 阈值 mask 与截断 IS |
-| `dppo_kl` | `verl/trainer/ppo/core_algos.py:1461` | binary-KL 阈值 mask 与截断 IS |
-| `gspo` | `verl/trainer/ppo/core_algos.py:1546` | 序列级 importance ratio |
-| `sapo` | `verl/trainer/ppo/core_algos.py:1622` | 正负优势使用不同 sigmoid gate |
-| `gpg` | `verl/trainer/ppo/core_algos.py:1707` | 直接使用 $-A\log\pi$ |
-| `clip_cov` | `verl/trainer/ppo/core_algos.py:1743` | 按 advantage-logp 协方差屏蔽 token |
-| `kl_cov` | `verl/trainer/ppo/core_algos.py:1848` | 对高协方差 token 加 KL 罚 |
-| `geo_mean` | `verl/trainer/ppo/core_algos.py:1928` | 序列比值的几何平均 |
-| `dro` | `verl/trainer/ppo/core_algos.py:2014` | log-ratio 二次正则 |
-| `cispo` | `verl/trainer/ppo/core_algos.py:2047` | stop-gradient 的裁剪 IS 权重 |
-| `bypass_mode` | `verl/trainer/ppo/core_algos.py:2413` | rollout correction 的调度入口 |
+| 设计家族 | 是什么、解决什么问题 | 怎么做 | 为什么选择它而不是 vanilla | 实现与代价 |
+|---|---|---|---|---|
+| token ratio 硬约束 | 限制单 token 的 current/old policy 偏移 | `vanilla` 对 ratio clip 并可 dual-clip；`dppo_tv`/`dppo_kl` 按概率差或 binary-KL 构造 valid mask，再使用截断 IS | vanilla 直接限制 ratio；DPPO 变体在 divergence 超阈值时停止相应方向 token 的更新。后者更明确地拒绝越界样本，但会丢梯度并引入阈值偏差 | `vanilla`、`dppo_tv`、`dppo_kl`。`verl/trainer/ppo/core_algos.py:1285-1542` |
+| 序列级 policy movement | 让整条回答共享一个相对变化尺度，避免每个 token 独立比值主导长序列 | GSPO 对平均 log-ratio 指数化并固定 sequence aggregation；GMPO/`geo_mean` 对裁剪后的 log-ratio取几何平均 | **【分析推断】** 当训练语义是整条回答的 outcome advantage 时，序列 ratio 比 token ratio 更贴近决策单位；代价是必须接受特定 aggregation，且当前 `geo_mean` 只支持 sequence-level advantage | `gspo`、`geo_mean`。`verl/trainer/ppo/core_algos.py:1545-1618,1927-2010` |
+| 平滑或 stop-gradient 重加权 | 避免 PPO 的 piecewise hard clip 直接决定梯度形状 | SAPO 对正负 advantage 使用不同 sigmoid gate；DRO 对 log-ratio 加二次罚；CISPO clip ratio 后 detach，只让梯度通过 `log_prob` | 相比硬 clip，它们把“更新多少”和“梯度从哪里流”显式化；代价是新增温度或 beta，并且 correction weight 的梯度语义与 vanilla 不同 | `sapo`、`dro`、`cispo`。`verl/trainer/ppo/core_algos.py:1621-1705,2013-2104` |
+| 选择性 token 控制 | 只处理被 advantage–logp 关系识别为高风险的 token | `clip_cov` 对高协方差 token 屏蔽/裁剪，`kl_cov` 在相应位置改用 KL penalty | **【分析推断】** 相比所有 token 一刀切，目标是把限制集中到最可能主导更新的 token；代价是百分位选择依赖 batch 分布，且排序/掩码增加非平滑性 | `clip_cov`、`kl_cov`。`verl/trainer/ppo/core_algos.py:1742-1924` |
+| 直接 policy gradient 与 rollout correction | 不把所有 off-policy 语义都压进 proximal old-policy ratio | `gpg` 直接计算 $-A\log\pi$；`bypass_mode` 把 rollout log-prob 当 old，先算 IS/rejection，再分派 PPO-clip 或 REINFORCE | 适合显式处理 rollout/current mismatch；但若 PPO ratio 已承担 correction，再乘一次 IS 会 double-count，因此 bypass 必须集中管理这条语义 | `gpg`、`bypass_mode`；`reinforce` 只是后者内部辅助函数。`verl/trainer/ppo/core_algos.py:1706-1741,2332-2512` |
 
-这些名字由 `PolicyLossConfig.loss_mode` 接收；同一配置对象还承载 DRO 的 `dro_beta`（`verl/workers/config/actor.py:77-101`）。`reinforce` 是 `bypass_mode` 内部辅助路径，不是可直接查表的第 13 个公开 loss mode。
+这些名字由 `PolicyLossConfig.loss_mode` 接收；同一配置对象还承载 DRO 的 `dro_beta`（`verl/workers/config/actor.py:77-101`）。注册成功只证明函数存在，不证明 estimator、old-policy 语义、aggregation 和 correction mode 彼此兼容。
 
-### 3.1 vanilla 的共同坐标系
+### 3.1 vanilla：所有变体共享的 ratio 坐标系
 
 令
 
@@ -125,9 +121,17 @@ $$
 \rho_t(\theta)=\exp\!\left(\log\pi_\theta(a_t\mid s_t)-\log\pi_{\mathrm{old}}(a_t\mid s_t)\right).
 $$
 
-vanilla 对 $\rho_t$ 做上下界裁剪，并在负优势时可使用 dual-clip；实现同时统计 KL 近似与上下界 clip fraction（`verl/trainer/ppo/core_algos.py:1286-1376`）。其余 loss mode 大多改变“如何限制或重加权 $\rho_t$”，但仍消费相同 advantage 与 mask，因此可以与多种 estimator 组合。
+vanilla 对 $\rho_t$ 做上下界裁剪，并在负优势时可使用 dual-clip；实现同时统计 KL 近似与上下界 clip fraction（`verl/trainer/ppo/core_algos.py:1286-1376`）。它的定位是默认 proximal 基线：更新过远时取裁剪目标，而不是让 ratio 无限放大 advantage。代价是超过阈值后目标变成分段函数，clip fraction 高只能说明大量 token 触边，不能单独证明训练更安全。
 
-### 3.2 新增 DRO：用平滑二次罚代替硬裁剪
+DPPO-TV 与 DPPO-KL 并非“换一个 clip 数值”：它们先构造 divergence valid mask，再用 detach 的截断 ratio 乘 `log_prob`。TV 直接比较新旧 token 概率差，binary-KL 同时考虑事件与非事件概率；两者都建议把 IS 上限设得较大以降低截断偏差（`verl/trainer/ppo/core_algos.py:1379-1542`）。
+
+### 3.2 序列尺度与梯度路径是独立选择
+
+GSPO 把一条 response 的平均 log-ratio 转成共享 sequence ratio，并强制用 `seq-mean-token-mean` 聚合；`geo_mean` 也在序列维求几何平均，但先按 advantage 符号限制每个 token 的 log-ratio，并要求 sequence-level advantage（`verl/trainer/ppo/core_algos.py:1545-1618,1927-2010`）。因此二者不能只按名字替换 vanilla：ratio 粒度和最终分母都改变了。
+
+SAPO、DRO、CISPO 则主要改变梯度路径。SAPO 用正负 advantage 各自的温度控制 sigmoid gate；CISPO 对 clip 后 ratio 做 stop-gradient，使梯度只从最终 `log_prob` 项流过（`verl/trainer/ppo/core_algos.py:1621-1705,2046-2104`）。这类方法的关键验收不是仅看 loss 数值，而是核对 gate/weight 是否 detach、正负 advantage 是否走正确参数，以及 aggregation 是否保持全局语义。
+
+### 3.3 DRO：用平滑二次罚代替硬裁剪
 
 `dro` 对 old/current log-prob 差施加二次惩罚（`verl/trainer/ppo/core_algos.py:2013-2043`）：
 
@@ -139,9 +143,9 @@ $$
 \left(\log\pi_\theta(a_t\mid s_t)-\log\pi_{\mathrm{old}}(a_t\mid s_t)\right)^2.
 $$
 
-这里 `policy_loss.dro_beta` 必须为正；若 rollout 提供 IS 权重，则权重乘在整个 token loss 上（`verl/trainer/ppo/core_algos.py:2027-2038`）。直接公式与非法 beta 都有 CPU 测试（`tests/trainer/ppo/test_dynamic_policy_losses_on_cpu.py:39-60`）。它比 PPO 硬 clip 更平滑，但 beta 变成必须调节的偏移惩罚强度。
+这里 `policy_loss.dro_beta` 必须为正；若 rollout 提供 IS 权重，则权重乘在整个 token loss 上（`verl/trainer/ppo/core_algos.py:2027-2038`）。直接公式与非法 beta 都有 CPU 测试（`tests/trainer/ppo/test_dynamic_policy_losses_on_cpu.py:39-60`）。它比 PPO 硬 clip 更平滑，但 beta 变成必须调节的偏移惩罚强度；beta 过小接近无约束 policy gradient，过大则让“留在 old policy 附近”压过 advantage 信号，这是公式直接给出的工程取舍。
 
-### 3.3 KL 与熵是注册 loss 之外的正则项
+### 3.4 KL 与熵是注册 loss 之外的正则项
 
 actor 先计算注册表返回的 policy loss，再减去 entropy bonus，并在 `use_kl_loss=true` 时加上参考策略 KL（`verl/workers/utils/losses.py:118-142`）。因此 `loss_mode=dro` 或 `gspo` 并不自动决定是否使用 reference model；KL 是独立配置轴。`kl_penalty` 支持多种近似并由 `verl/trainer/ppo/core_algos.py:2187-2245` 实现。
 

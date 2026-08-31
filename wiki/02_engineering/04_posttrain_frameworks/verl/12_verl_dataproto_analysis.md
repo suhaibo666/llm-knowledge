@@ -18,15 +18,17 @@ title: "verl DataProto：当前共享的本地批数据契约"
 当前 `DataProto` dataclass 由 `batch`、`non_tensor_batch` 和 `meta_info` 组成
 （`verl/protocol.py:310-330`）：
 
-| 容器 | 典型类型 | 对齐规则 | 典型内容 |
-|---|---|---|---|
-| `batch` | `TensorDict` | 所有字段共享 batch size | token、mask、log-prob、reward、advantage |
-| `non_tensor_batch` | `dict[str, np.ndarray]` | 第一维与 tensor batch 对齐 | raw prompt、uid、tool schema、data source |
-| `meta_info` | `dict` | 不是逐样本维度，切分时作为调用元数据传播 | sampling params、timing、global step、validate |
+| 容器 | 是什么 / 典型类型 | 怎么保持对齐 | 为什么必须独立 | 典型内容 |
+|---|---|---|---|---|
+| `batch` | 可批量张量运算的 `TensorDict` | 所有字段共享 batch size | 让 device move、切片和拼接以同一个 batch 维工作 | token、mask、log-prob、reward、advantage |
+| `non_tensor_batch` | `dict[str, np.ndarray]` 的逐样本对象 | 第一维与 tensor batch 对齐 | raw Python/对象字段不能安全假装成同设备、同 dtype 的 tensor | raw prompt、uid、tool schema、data source |
+| `meta_info` | 一次调用共享的 `dict` | 不按样本索引，切分时作为调用元数据传播 | global config/step 若被当作样本切分，会改变其作用域 | sampling params、timing、global step、validate |
 
 `__post_init__` 不会替调用者修复全部字段；`check_consistency()` 才显式核对 TensorDict batch size、
 numpy dtype/长度等约束（`verl/protocol.py:330-376,451-476`）。因此把一个逐样本列表误放进
 `meta_info`，或者给 `non_tensor_batch` 写入不同长度数组，可能在后续索引、chunk 或 concat 才暴露。
+
+这三分法不是类型清单，而是三个不同不变量的边界。`【分析推断】` 若全部塞进 TensorDict，工具 schema、raw message 等对象会被迫服从 tensor/device 语义；若全部塞进普通 dict，每次 reorder/chunk/concat 都要靠调用者手工维持行对齐；若把调用元数据混入逐样本数组，同一个 global step 还会产生无意义的复制。DataProto 选择保留三类容器，代价是字段归属必须由调用者明确，框架无法仅凭名字判断语义。
 
 本页拥有容器语义。TransferQueue 的 key/tag/storage 见 [[16_verl_v1_transfer_queue_analysis]]；
 AgentLoop 如何生成这些字段见 [[18_verl_agent_loop_reward_runtime_analysis]]。
@@ -36,6 +38,8 @@ AgentLoop 如何生成这些字段见 [[18_verl_agent_loop_reward_runtime_analys
 `from_single_dict`/`from_dict` 按值类型把 torch tensor 与 numpy array 分流；`from_tensordict` 则保留已知
 TensorDict 结构（`verl/protocol.py:477-582`）。调用者仍要明确 `meta_info`，框架不会从字段名自动判断
 某个对象究竟是逐样本数据还是全局配置。
+
+`【分析推断】` 不按字段名猜测构成一道正确性边界：`uid`、`index`、`temperature` 之类名字本身并不能证明作用域，项目扩展也可以引入同名但不同语义的字段。显式归类牺牲了一点构造便利，换来转换、切片和合并时可检查的作用域；错误归类会 fail late，因此新增字段必须在生产者处记录其容器与对齐规则。
 
 常用转换边界：
 
@@ -91,6 +95,8 @@ padding 的语义不是“新增真实训练样本”。collect 之后必须在�
 future 还可再次 `chunk`，前提是每个 future 的 chunk 数与目标一致
 （`verl/protocol.py:1171-1226`）。因此它提供的是 latency overlap，不是事务：一部分 remote method 已修改
 状态、另一部分失败时，没有容器级 rollback。
+
+具体说，**它是什么**：跨 WorkerGroup 调用的延迟结果句柄；**怎么做**：先保存各 rank 的 Ray refs 与 collect/可选 dispatch 函数，直到 `get()` 才 `ray.get`、拼接并二次切分；**为什么**：让 driver 不必在生产者 RPC 后立即拉回完整 batch，输出还可以直接作为下一次 group 调用的输入。它没有缓存一个可回滚的业务快照，所以延迟物化减少的是 driver 等待与搬运屏障，不是 partial failure 风险。
 
 大 batch 的隐藏成本包括：
 

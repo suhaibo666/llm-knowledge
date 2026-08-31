@@ -37,51 +37,61 @@ flowchart TB
     CAP --> MODEL["Training and rollout state"]
 ```
 
-## 2. 共享能力地图
+## 2. 静态架构：九项共享能力各自解决什么问题
 
-| 能力 | 主要 owner | 核心状态或不变量 | 权威页面 |
-|---|---|---|---|
-| Ray 控制基座 | `Worker`、`WorkerGroup`、`ResourcePool` | rank、资源放置、dispatch 与 collect | [[11_verl_single_controller_analysis]] |
-| 本地批契约 | `DataProto`、`TensorDict` | batch 对齐、字段 union、repeat 与 reorder | [[12_verl_dataproto_analysis]] |
-| V1 数据面 | TransferQueue、`KVBatchMeta`、`tqbridge` | key、tag、field、延迟物化和 failure state | [[16_verl_v1_transfer_queue_analysis]] |
-| 生成与奖励编排 | `AgentLoopManager`、`AgentLoop`、`RewardLoopManager` | session、tool call、trajectory、流式奖励 | [[18_verl_agent_loop_reward_runtime_analysis]] |
-| 模型计算 | `TrainingWorker`、`BaseEngine` | forward、backward、optimizer、并行布局、export | [[13_verl_workers_engine_analysis]] |
-| rollout 服务 | LLM server、replica、request scheduler | 请求路由、KV、sleep、abort、PD | [[14_verl_rollout_runtime_analysis]] |
-| 算法 | estimator registry、policy loss registry | mask、old policy、advantage、全局归一化 | [[15_verl_rl_algorithms_analysis]] |
-| 在线权重发布 | Engine exporter、CheckpointEngine、rollout loader | full 或 delta 版本完整可见 | [[21_verl_weight_publication_analysis]] |
-| 训练恢复 | trainer、worker checkpoint、dataloader、TQ 或 MQ | 跨重启模型、优化器、步数和在途数据边界 | [[23_verl_training_checkpoint_recovery_analysis]] |
+这里的“能力”不是目录别名，而是一段稳定责任：它要说明自己为谁服务、接收和交付什么、由谁宣布状态有效，以及为什么不应并入相邻模块。源码通常能直接证明对象、调用合同和 guard；若没有作者对替代方案的原话，下表把设计理由标为 **【分析推断】**，只把它当作从当前状态所有权重建出的解释。
 
-这张表也是页面去重规则：某个机制只在其 owner 页完整解释；生命周期页只说明调用时机和模式特有的状态变化。
+| 能力 | 是什么：定位与功能 | 怎么做：输入 → 输出与状态变化 | 为什么独立存在 | 状态与边界 / 证据 |
+|---|---|---|---|---|
+| Ray 控制基座 | 把一组 SPMD rank 暴露成 controller 可调用的一个逻辑对象 | `@register` 把 dispatch、execute、blocking 写成方法元数据；`WorkerGroup` 绑定 wrapper，完成切分、并发 RPC 与 collect | **【分析推断】** 若每个 Trainer 手写 Ray fan-out，它既要懂业务顺序又要懂 DP/TP/PP rank 形状；元数据驱动的 group proxy 把拓扑差异留在 RPC 基座 | 拥有 rank、资源放置和调用形状；不拥有 PPO 顺序。`verl/single_controller/base/decorator.py:398-444`；`verl/single_controller/base/worker_group.py:185-240`；[[11_verl_single_controller_analysis]] |
+| 本地批契约 | 在一个计算边界内共同承载 tensor、逐样本 Python/numpy 数据和调用级元数据 | `DataProto` 让索引、切分、repeat、union 同时维护逐样本字段，调用级 `meta_info` 不跟随样本重排 | **【分析推断】** 全部塞进 TensorDict 会迫使工具 schema 等对象伪装成 tensor；全部塞进 Python dict 又失去 batch 对齐检查和设备迁移语义 | 拥有本地 batch identity；不决定数据存在哪里或何时跨进程。`verl/protocol.py:318-376`；[[12_verl_dataproto_analysis]] |
+| V1 数据面 | 让 controller 传“处理哪些样本”的引用，而不是搬运完整训练批 | `KVBatchMeta` 携带 key、field、tag；`tqbridge` 在 worker 入口物化 TensorDict，校验输出 batch size 后把新增字段写回 | V0 的完整 `DataProto` 汇合便于严格排序，但中心 controller 会承担大对象传输和拼接；V1 把控制流与数据流拆开，只在执行点按需取字段 | 拥有 key 对应字段和存储状态；不保证 ReplayBuffer freshness 或整步事务。`verl/utils/transferqueue_utils.py:302-477`；[[16_verl_v1_transfer_queue_analysis]] |
+| 生成与奖励编排 | 把一个 prompt 运行成含模型 token、工具 observation、mask 和 reward 的可训练 trajectory | Manager 分发 prompt，per-trajectory coroutine 驱动 LLM/tool，Worker 做 padding、mask、reward/teacher 接入，V1 adapter 再落入 TQ | **【分析推断】** 若把工具对话放进 LLM server，server 必须理解训练 schema；若放进 Trainer，长时 coroutine 与批更新屏障耦合。独立 runtime 让二者只通过 `TokenOutput`/`AgentLoopOutput` 连接 | 拥有 session、turn、tool 与 trajectory schema；不拥有 KV 路由或 advantage。`verl/experimental/agent_loop/agent_loop.py:537-698`；[[18_verl_agent_loop_reward_runtime_analysis]] |
+| 模型计算 | 把 actor、critic、ref 的粗粒度训练 RPC 落到具体分布式模型实现 | Worker 选择字段和 mini-batch，Engine 执行 forward/backward/optimizer，并按 HF 语义导出 full/shard/delta 权重 | **【分析推断】** 若 Worker 按 FSDP、Megatron、TorchTitan 分支，任何后端变化都会污染角色 RPC；Engine 合同把并行布局和模型状态留给真正 owner | Engine 拥有 module、mesh、optimizer 和 export；Worker 拥有 RPC 与 role。`verl/workers/engine_workers.py:76-163`；`verl/workers/engine/base.py:99-207`；[[13_verl_workers_engine_analysis]] |
+| rollout 服务 | 为 AgentLoop 提供可路由、可暂停、带 KV 与模型版本的生成服务 | client acquire server，backend 生成并返回 `TokenOutput`，finally release；replica/manager 处理 sleep、abort、KV 与 PD | **【分析推断】** 对话策略和服务资源的变化频率不同：AgentLoop 关心 turn/tool，server 关心请求、KV 和设备内存；合并会让任一侧变化都穿透另一侧 | 拥有 request、KV、inflight 和 model-visible version；不解释 tool/reward。`verl/workers/rollout/llm_server.py:149-289`；[[14_verl_rollout_runtime_analysis]] |
+| RL 算法 | 把 reward/value/group state 变成 advantage，再把 advantage 与 policy ratio 变成梯度目标 | estimator registry 产出 `advantages/returns`，policy-loss registry 产出 token loss matrix，`agg_loss` 还原全局标量 | 两张注册表避免为 estimator × loss × aggregation 的组合复制 Trainer；代价是每个组合的额外输入、mask 和归一化前置条件必须单独验证 | 拥有信用分配、policy movement 和全局归一化；不拥有样本调度。`verl/trainer/ppo/core_algos.py:50-145,1140-1202`；[[15_verl_rl_algorithms_analysis]] |
+| 在线权重发布 | 在 actor 更新后，让运行中的 rollout 原子地看见一个完整参数版本 | Engine 转成 HF 语义，CheckpointEngine 建会话并传输，rollout loader 写入；Manager 负责 abort、KV release、apply 和 resume | 并行布局、wire transport、推理模型写入是三种独立变化；单体同步器会被迫同时理解三侧实现。分层让知识靠近 owner，但增加跨层失败窗口 | 拥有 live actor→rollout 可见性；不提供跨重启恢复。`verl/checkpoint_engine/base.py:381-506`；[[21_verl_weight_publication_analysis]] |
+| 训练恢复 | 让重启后的模型、优化器、步数、数据游标与可恢复在途样本回到同一逻辑边界 | Trainer 组合 actor/critic、dataloader 与可选 TQ snapshot；恢复后保留 finished trajectory，重发 pending/running prompt | 模型目录只能恢复参数，不能解释“哪些 prompt 已取出但未训练”；把组合一致性单独建模，才能显式描述丢样、重算和 crash window | 拥有 durable resume contract；不负责 live rollout 安装。`verl/trainer/ppo/v1/trainer_base.py:793-950`；[[23_verl_training_checkpoint_recovery_analysis]] |
 
-## 3. 控制、数据、计算、服务与持久状态如何连接
+这张表同时是去重规则：overview 负责解释每项能力为何存在以及边界怎样连接；owner 页负责其内部状态机。生命周期页只说明调用时机和模式特有变化，不能把 owner 机制再复制一遍。
 
-### 3.1 控制只传依赖，不应吞掉所有 owner
+## 3. 动态连接：一次训练工作如何穿过这些边界
 
-V1 基类定义 sample、reward、balance、old/ref log-prob、value、advantage、critic update 和 actor update 的公共 PPO pipeline（`verl/trainer/ppo/v1/trainer_base.py:511-590`）。具体模式通过 hook 改变 sleep、abort、预生成、库存和资源出借，而不是重写算法或 Engine。
+### 3.1 Controller 选择生命周期，Ray 基座只执行调用形状
 
-V0 是例外的控制形态：driver 上汇合完整 `DataProto`，依次调用共享组件（`verl/trainer/ppo/ray_trainer.py:1405-1719`）。它仍复用当前 AgentLoop、RewardLoop、Engine 与权重发布能力，所以“V0 等于一套冻结旧组件”并不成立。
+**是什么。** Trainer 是一次 global step 的控制所有者；single-controller 只是把它对 actor、critic、ref、rollout 等角色的调用翻译成一组 rank 上的 RPC。V1 基类定义 sample、reward、balance、old/ref log-prob、value、advantage、critic update 和 actor update 的公共依赖链，具体模式只用 hook 改变生成与训练何时切换（`verl/trainer/ppo/v1/trainer_base.py:511-641`）。
 
-### 3.2 数据有两个层级
+**为什么与怎么做。** **【分析推断】** 若 RPC 基座也决定 PPO 顺序，sync、async 和 V0 会把业务状态机埋进 dispatch；若 Trainer 自己逐 rank 调 Ray，又会复制拓扑逻辑。当前边界让 Trainer 发出一个逻辑方法调用，WorkerGroup 按注册元数据切分、执行和收集，但不宣布“整步已提交”。V0 仍在 driver 汇合完整 `DataProto` 并按屏障推进，因此它改变的是控制形态，不是换掉整套共享组件（`verl/trainer/ppo/ray_trainer.py:1405-1719`）。
 
-`DataProto` 是单进程内可操作的结构化批；V1 的 TransferQueue 则保存跨阶段引用和字段状态。controller 的 `KVBatchMeta` 可以只携带 key、field 和 tag，worker 通过 bridge 在执行点取实际 TensorDict，并把输出字段写回（`verl/utils/transferqueue_utils.py:302-477`）。
+### 3.2 本地批语义与跨阶段数据面是两个层级
 
-因此 V1 没有“删除 DataProto”。reward、advantage 等局部计算仍可把 TQ 字段物化成 TensorDict 或 `DataProto`；改变的是跨角色流动不必始终由 driver 收集成一份完整大对象（`verl/trainer/ppo/v1/trainer_base.py:1436-1707`）。
+**是什么。** `DataProto` 回答“物化后的一个 batch 怎样保持样本对齐”；TransferQueue 回答“跨阶段字段放在哪里、何时物化”。二者不是新旧替代关系。
 
-### 3.3 Worker、Engine 与 rollout server 是三种不同责任
+**为什么与怎么做。** V1 controller 用 `KVBatchMeta` 选择 key、field 和 tag；worker 入口把引用解析成 TensorDict，执行 reward、log-prob、value 或 update，再把新增字段写回（`verl/utils/transferqueue_utils.py:302-477`）。这避免 driver 在每个阶段收集完整大对象，但把失败从“RPC 参数立刻缺字段”推迟到引用解析或执行点；reward、advantage 等局部函数仍可临时构造 `DataProto`（`verl/trainer/ppo/v1/trainer_base.py:1436-1707`）。
 
-Worker 是远程执行和 mini-batch 编排粒度；Engine 持有训练模型、并行布局、优化器和参数导出；rollout server 持有请求、KV cache 与服务态（`verl/workers/engine_workers.py:76-163`、`verl/workers/engine/base.py:99-207`、`verl/workers/rollout/llm_server.py:149-236`）。
+### 3.3 AgentLoop 生产 trajectory，RewardLoop 决定何时补齐 score
 
-把它们分开后，问题定位更直接：
+**是什么。** AgentLoop 负责一条 trajectory 的交互与 token schema；RewardLoop 把规则函数、reward model 或用户函数归一成 score。LLM server 只提供生成，不拥有对话和训练 mask。
 
-- RPC、rank 或资源放置错误看 WorkerGroup；
-- 梯度、并行布局、offload 或 export 错误看 Engine；
-- 请求、KV、abort、resume 或 PD 错误看 rollout runtime。
+**为什么与怎么做。** per-trajectory coroutine 可以在工具和外部 reward 等待期间让其它样本继续推进；Manager 负责批分发，Worker 负责把不等长输出变成训练容器。reward 若有独立资源，可在 coroutine 内异步完成；若与 Trainer colocate，则等 rollout 结束后批量计算，避免生成阶段争用同池设备（`verl/experimental/agent_loop/agent_loop.py:537-698,937-999`；`verl/experimental/reward_loop/reward_loop.py:273-370`）。代价是外部工具/reward 副作用不随 trajectory failure 自动回滚。
 
-### 3.4 在线发布与训练恢复必须分层
+### 3.4 Worker、Engine 与 rollout server 分别拥有 RPC、训练状态和服务状态
 
-actor 更新后，CheckpointEngine 协调暂停服务、导出、传输、rollout apply 和恢复请求，使 rollout 切到一个完整的新参数版本（`verl/checkpoint_engine/base.py:381-506`）。这是进程内的在线发布协议。
+**是什么。** Worker 是远程执行和 mini-batch 边界；Engine 持有训练模型、并行布局、优化器和参数导出；rollout server 持有请求、KV cache 与服务态（`verl/workers/engine_workers.py:76-163`；`verl/workers/engine/base.py:99-207`；`verl/workers/rollout/llm_server.py:149-289`）。
 
-训练 checkpoint 则需要保存 actor、可选 critic、优化器/调度器、trainer step、dataloader，以及 async 模式下可恢复的 TQ/MQ 状态。V0 的保存入口在 `verl/trainer/ppo/ray_trainer.py:983-1117`，V1 的恢复组合在 `verl/trainer/ppo/v1/trainer_base.py:800-950`。两者共享“checkpoint”这个词，但 durability、失败窗口和消费方完全不同。
+**为什么与怎么做。** **【分析推断】** 三者若合成一个“模型 worker”，训练 backend、RPC 拓扑和 serving backend 任一变化都会扩大到整个对象。当前路径是 `KVBatchMeta → Worker/tqbridge → TensorDict → Engine forward/backward`；生成侧则是 `AgentLoop → LLMServerClient → backend → TokenOutput`。因此 RPC/rank 错误看 WorkerGroup，梯度/offload/export 看 Engine，请求/KV/abort/PD 看 rollout runtime。
+
+### 3.5 算法是三条可组合轴，不是 Trainer 分支树
+
+**是什么。** advantage estimator 决定信用如何分配，policy loss 决定参数更新如何限制，loss aggregation 决定分布式局部贡献如何还原成同一全局目标。
+
+**为什么与怎么做。** Trainer 先使 reward、old/ref log-prob 和可选 value 可见，再调用 estimator 写回 `advantages/returns`；Worker 用统一字段查 policy loss，最后以 global token/batch 信息聚合（`verl/trainer/ppo/v1/trainer_base.py:1541-1765`；`verl/workers/utils/losses.py:85-201`）。拆成三轴避免组合类爆炸，但配置合法不等于语义兼容：uid、mask、旧策略和全局分母缺一项都可能得到错误梯度。
+
+### 3.6 在线发布与跨重启恢复有不同提交点
+
+**是什么。** actor 更新后的 publication 改变 live rollout 的可见参数；training checkpoint 则为未来进程重启建立恢复点。
+
+**为什么与怎么做。** CheckpointEngine Manager 协调暂停请求、释放 KV、导出/传输/应用权重和恢复服务，使新请求只看到完整版本（`verl/checkpoint_engine/base.py:381-506`）。训练 checkpoint 还必须组合优化器、scheduler、trainer step、dataloader，以及 async 模式可保存的 TQ/MQ 状态（`verl/trainer/ppo/v1/trainer_base.py:793-971`）。二者共享“checkpoint”词根，却不能互相证明：rollout 安装成功不代表状态 durable，磁盘目录存在也不代表服务已经切换。
 
 ## 4. 四类动态生命周期
 
