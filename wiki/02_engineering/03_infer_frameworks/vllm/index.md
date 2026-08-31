@@ -1,108 +1,99 @@
 ---
-title: "vLLM 推理引擎：从约束到实现的知识地图"
+title: "vLLM 推理引擎：按问题与依赖组织的知识地图"
 ---
 
-# vLLM 推理引擎：从约束到实现的知识地图
+# vLLM 推理引擎：按问题与依赖组织的知识地图
 
-> **统一源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
-> **版本标识**：`main`，`v0.27.2rc0-304-gd66300a1ba`，提交时间 2026-08-20T03:30:40-04:00
-> **覆盖范围**：19 篇内容页 + 本索引
-> **基线例外**：[[02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis|vLLM 请求全链路导览]] 显式声明更新基线 `26858770`（2026-08-24），其余页面仍为 `d66300a1`；两提交间该页引用的文件无源码差异。
-> **叙事顺序**：内容页统一按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势（可选，须锚定源码自陈的在途改动并标注为推断）。例外两篇：[[02_vllm_system_design_principles_analysis]] 是「问题 → 约束 → 支点」的推导体，第 2 拍本身就是它的第二、三节；[[03_vllm_request_flow_walkthrough_analysis]] 是端到端走查体，按时序而非按拍组织。
-> **阅读原则**：先理解瓶颈、状态所有权和不变量，再沿最小调用链验证实现。
+> **统一源码基线**：24 篇内容页全部按 `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）核验。
+> **覆盖范围**：24 篇内容页 + 本索引（`01`–`04`、`10`–`29`）。
+> **导航原则**：先按读者问题找到唯一机制 owner，再沿“前置 → owner → 后续”阅读；本页只维护概念边界、依赖和覆盖状态，不复述 owner 页的机制证明。
 
-vLLM 不是“一个更快的 Transformer forward”。它是一套在线资源操作系统：Scheduler 按 token 分配本轮算力，KV 管理器分配长期显存，Model Runner 把动态请求变成可复用的设备输入，attention/quantization/compile/kernel 子系统协商当前 batch 能走的最快路径，serving 与分布式层再把这些对象扩展到多进程和多设备。
+## 一、先选择入口
 
-## 一、先建立总模型
-
-```mermaid
-flowchart LR
-  Workload["请求到达与长度分布"] --> Goals["TTFT TPOT 吞吐与容量目标"]
-  Goals --> Admission["token admission"]
-  Goals --> Memory["paged KV ownership"]
-  Goals --> Execution["async model execution"]
-  Goals --> Specialize["backend compile graph kernel specialization"]
-  Admission --> Engine["EngineCore"]
-  Memory --> Engine
-  Engine --> Runner["Model Runner"]
-  Specialize --> Runner
-  Runner --> Devices["GPU NPU CPU workers"]
-  Serving["API launcher routing"] --> Engine
-  Devices --> Feedback["metrics events traces"]
-  Feedback --> Goals
-```
-
-完整约束模型见 [[02_engineering/03_infer_frameworks/vllm/02_vllm_system_design_principles_analysis|vLLM 系统设计原则与性能模型]]。如果只沿 `API → EngineCore → Scheduler → Worker` 阅读，会看到执行顺序，却看不到三个更重要的问题：谁拥有可变状态、每一步必须维护什么不变量、为什么不能采用更直接的实现。
-
-## 二、按设计问题选择页面
-
-### 2.1 入口与统一心智模型
-
-| 页面 | 先回答的问题 | 再验证的实现 |
+| 你现在要回答什么 | 从这里开始 | 接下来 |
 |---|---|---|
-| [[02_engineering/03_infer_frameworks/vllm/01_vllm_feature_optimizations_guide|vLLM 快速使用与优化指南]] | 怎样可靠跑通、测量并根据瓶颈选配置？ | CLI、OpenAI server、离线 `LLM`、benchmark 与调优开关 |
-| [[02_engineering/03_infer_frameworks/vllm/02_vllm_system_design_principles_analysis|vLLM 系统设计原则与性能模型]] | 动态请求为什么需要连续调度、分页 KV、异步执行和专用化？ | 四个系统平面及其关键接口 |
-| [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis|vLLM 请求全链路导览]] | 一条请求实际怎样穿过进程、队列与 GPU？ | 启动三级就绪屏障、空闲唤醒路径、跨进程管道拓扑、DeepSeek-V3 的 MLA/MoE 落点；含离线交互图 |
+| 先跑通、测量并按瓶颈调优 | [[02_engineering/03_infer_frameworks/vllm/01_vllm_feature_optimizations_guide|使用与优化指南]] | 按诊断信号跳到下表中的机制 owner |
+| 理解“为什么不是一次更快的 forward” | [[02_engineering/03_infer_frameworks/vllm/02_vllm_system_design_principles_analysis|系统设计原则]] | [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|架构概览]] |
+| 建立完整责任层、状态 owner 与请求生命周期 | [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|架构概览]] | `04 → 10 → 11 → 12 → 15 → 16 → 18` |
+| 查协议、任务、render 与用户输出语义 | [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|请求语义]] | 生成选择看 `18`；媒体执行看 `19` |
 
-### 2.2 核心引擎
+## 二、概念 owner 与阅读依赖
 
-| 页面 | 唯一设计命题 |
-|---|---|
-| [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM 引擎架构与请求生命周期]] | 为什么前端语义、EngineCore 控制和设备执行必须分层？ |
-| [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler 设计分析]] | token-level admission 如何统一 continuous batching、chunked prefill、decode 与抢占？ |
-| [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理设计]] | 如何把不可预测的序列增长变成可共享、可驱逐且正确的物理块所有权？ |
-| [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型与权重 ABI]] | 为什么兼容 Hugging Face 仍需要 vLLM 自己的模型、权重和并行层契约？ |
-| [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend 契约]] | 为什么 attention 必须通过 metadata/layout/capture 能力合同与调度器解耦？ |
-| [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2 设计]] | async-first runner 如何消除逐 token CPU 重建与 CPU/GPU 数据竞争？ |
-| [[02_engineering/03_infer_frameworks/vllm/16_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] | launcher、API server、AsyncLLM、DP supervisor 和 EngineCore 如何共同管理生命周期与背压？ |
+### 2.1 入口、架构与控制边界
 
-### 2.3 专项优化与生产能力
+| Owner | 读者问题 | 本页拥有 | 前置 → 后续 |
+|---|---|---|---|
+| [[02_engineering/03_infer_frameworks/vllm/01_vllm_feature_optimizations_guide|01 使用与优化]] | 怎样建立基线并用可撤销实验找限制资源？ | 使用、benchmark、诊断与验收闭环 | 无 → 由症状选择机制页 |
+| [[02_engineering/03_infer_frameworks/vllm/02_vllm_system_design_principles_analysis|02 系统设计原则]] | 动态请求为何迫使系统采用连续调度、分页状态、异步执行与能力合同？ | 全局约束与设计支点 | `01` 可选 → `03` |
+| [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|03 架构概览]] | 系统由哪些责任层组成，状态怎样跨层提交和可见？ | 静态分层、层间合同、代表请求生命周期 | `02` → `04/10/11/12/15/16/22` |
+| [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|04 请求语义]] | 不同协议与任务在哪里合流，又在哪里恢复成用户输出？ | 协议、task、render/input/output 语义 | `03` → `10/17/18/19` |
+| [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|10 Engine 所有权]] | Client、EngineCore、Executor 为何分离，资源承诺在哪里提交？ | Engine 对象/进程接缝与 request state | `03/04` → `11/17/22` |
+| [[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|17 Serving 控制面]] | 服务怎样启动、ready、路由、背压、传播故障并关闭？ | launcher/API/Core/DP 拓扑与生命周期 | `03/10` → `22/27` |
 
-| 页面 | 唯一设计命题 |
-|---|---|
-| [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] | 何时值得用 draft 额外计算换 target 串行步数？ |
-| [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|vLLM 量化派发设计]] | 量化为何是格式、加载、scale、kernel 与硬件能力的联合决策？ |
-| [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] | TP、PP、DP、EP、CP 与 DBO 如何映射到 rank 所有权和 collective 顺序？ |
-| [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] | 动态请求系统如何提取可编译、可捕获、地址稳定的执行区域？ |
-| [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与专用 Kernel]] | 何时用融合减少 launch/访存成本，何时必须回退？ |
-| [[02_engineering/03_infer_frameworks/vllm/25_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]] | 如何在 eager 与 compile 之间保留稳定算子语义并安全改写图？ |
-| [[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|vLLM 分离式 KV Serving]] | 跨实例 KV 的 producer/consumer/lease 如何把 prefill、decode 与存储解耦？ |
-| [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] | metrics、events、trace 与进程故障域如何形成运行反馈闭环？ |
-| [[02_engineering/03_infer_frameworks/vllm/28_vllm_extension_plugin_system_analysis|vLLM 插件与扩展边界]] | plugin discovery、进程覆盖与两阶段生命周期如何扩展核心而不隐式污染状态？ |
+### 2.2 请求与资源热路径
 
-## 三、按症状阅读
+| Owner | 读者问题 | 本页拥有 | 前置 → 后续 |
+|---|---|---|---|
+| [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|11 Scheduler]] | 一个 step 怎样完成多资源 admission 并在 output 后提交？ | waiting/running、token/encoder/spec budget、抢占与 finish | `10` → `12/15/16/18/19/20/26` |
+| [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|12 KV Cache]] | 单 Engine 内逻辑/物理 block、prefix、hybrid layout 与 offload 怎样保持所有权正确？ | 本地 KV 生命周期 | `11` → `14/15/16/20/26` |
+| [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|15 Model Runner V1]] | 兼容路径怎样用紧凑 persistent batch 承接动态计划？ | `CachedRequestState`、compact row、condense/reorder、dummy 与 async barrier | `11/12/14` → `16/18/19/20/23` |
+| [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|16 Model Runner V2]] | 默认路径怎样把动态计划变成稳定、可重叠的设备状态？ | stable row、staged write、per-step gather 与 device buffer/graph 生命周期 | `11/12/14/15` → `18/19/20/23` |
+| [[02_engineering/03_infer_frameworks/vllm/18_vllm_sampling_structured_output_analysis|18 采样与结构化输出]] | logits 怎样经约束与采样仍保持合法分布和 grammar 状态？ | 普通 token selection 与 structured constraint | `04/11/15/16` → `20` |
+| [[02_engineering/03_infer_frameworks/vllm/19_vllm_multimodal_execution_analysis|19 多模态执行]] | 媒体怎样经过双层缓存、encoder budget 与位置合同进入模型？ | preprocessing、feature、encoder state 与对齐 | `04/11/13/15/16` → `29` 的 cache 审计 |
 
-| 症状或目标 | 第一阅读页 | 接着验证 |
+### 2.3 模型、设备优化与专用化
+
+| Owner | 读者问题 | 本页拥有 | 前置 → 后续 |
+|---|---|---|---|
+| [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|13 模型与权重 ABI]] | checkpoint 怎样变成各 rank 可执行模型并接合 LoRA？ | registry、构造、权重映射与并行层 ABI | `03` → `14/21/22/29` |
+| [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|14 Attention Backend]] | metadata、KV layout 与能力协商怎样选择专用 attention？ | attention 合同、backend selection 与 layout | `12/13` → `15/16/21/23/24` |
+| [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|20 投机解码]] | 何时 draft/verify 值得，怎样保持分布和 KV 正确？ | propose/verify/accept/rollback 合同 | `12/15/16/18` → `23/27` |
+| [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|21 量化 ABI]] | 格式、scale、加载转换、硬件 Kernel 与 fallback 为何必须联合决策？ | quantization ABI 与 dispatch | `13/14` → `24/25` |
+| [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|23 编译与 CUDA Graph]] | 动态 shape 怎样得到可编译、可捕获、地址稳定的执行区域？ | compile/cache/capture/replay 生命周期 | `14/15/16` → `24/25` |
+| [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|24 融合算子与 Kernel]] | 何时融合/专用 Kernel 真正省成本，何时必须 fallback？ | provider、Kernel family 与收益模型 | `14/21/23/25` → 设备级性能验证 |
+| [[02_engineering/03_infer_frameworks/vllm/25_vllm_ir_and_fusion_passes_analysis|25 IR 与融合 Pass]] | IR 怎样固定语义并安全排序 functionalization、fusion 与 lowering？ | IR、alias/donation 与 pass 顺序 | `21/23` → `24` |
+
+### 2.4 规模化、扩展与生产闭环
+
+| Owner | 读者问题 | 本页拥有 | 前置 → 后续 |
+|---|---|---|---|
+| [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|22 分布式推理]] | 并行轴怎样映射到 rank/group/collective，DBO 怎样保持顺序？ | TP/PP/DP/EP/CP、executor 与 DBO | `10/13/14/17` → `23/24/26/29` |
+| [[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|26 分离式 KV Serving]] | KV 怎样跨 Engine 转移、证明完成并在失败时回收？ | connector/store、transferable group 与 lease | `11/12/17/22` → `27` |
+| [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|27 可观测性与可靠性]] | SLO 症状怎样闭环到资源承诺和进程故障域？ | metrics/events/traces/sentinel 反馈 | `11/12/17/22/26` → 生产处置与 `01` 调优闭环 |
+| [[02_engineering/03_infer_frameworks/vllm/28_vllm_extension_plugin_system_analysis|28 扩展与插件]] | 第三方扩展怎样按进程/应用生命周期生效而不污染隐式状态？ | plugin ABI、发现、选择与初始化 | `04/13/17/22` → `27` |
+| [[02_engineering/03_infer_frameworks/vllm/29_vllm_weight_transfer_online_update_analysis|29 在线权重更新]] | 权重字节、rank-local 更新、版本标签和 cache/runner 何时真正对请求可见？ | vLLM 侧 pause、transfer session、version commit 与失败边界 | `10/12/13/15/16/22` → `27` |
+
+## 三、四条推荐学习路径
+
+1. **Architecture**：`02 → 03 → 04 → 10 → 17`。先确认系统为何分层，再区分请求语义、Engine 状态与服务拓扑。
+2. **Request / resource hot path**：`04 → 10 → 11 → 12 → 15 → 16 → 18`。`15/16` 先建立两代 runner 的状态布局差异；多模态请求在 `11` 后转入 `19`，投机请求在 `18` 后转入 `20`。
+3. **Model / device optimization**：`13 → 14 → 15 → 16 → 21 → 23 → 25 → 24`。先固定模型和 backend 合同，再对照两代 runner 的设备状态，最后看低精度、编译图与 Kernel。
+4. **Production / scale**：`17 → 22 → 26 → 27 → 28 → 29`。先建立进程与 rank 故障域，再看跨实例 KV、观测、扩展和在线更新。
+
+## 四、按症状跳转
+
+| 症状或目标 | 第一 owner | 一跳后续 |
 |---|---|---|
-| TTFT 高、长 prompt 阻塞 decode | `11` Scheduler | `12` KV、`16` serving、`26` 分离式 KV |
-| TPOT 高、小 batch GPU 吃不满 | `15` MRV2 | `20` 投机、`23` graph、`24` kernel |
-| 吞吐低、CPU 成为瓶颈 | `02` 性能模型 | `10` engine、`15` MRV2、`23` compile |
-| 显存不足或容量抖动 | `12` KV | `21` 量化、`22` 并行、`26` offload |
-| 某模型/后端组合不工作 | `13` 模型 ABI | `14` attention、`21` quant、`28` plugins |
-| 多 GPU 空转或 collective hang | `22` 分布式 | `10` process ownership、`27` fault domain |
-| 线上偶发延迟或难以定位 | `27` observability | `16` serving、`11` scheduler metrics |
+| 协议行为、stop、tool/reasoning 或 pooling 输出不符预期 | `04` | token 选择看 `18`；媒体输入看 `19` |
+| TTFT 高、长 prompt 阻塞 decode | `11` | `12`、`19`、`26` |
+| TPOT 高、CPU/GPU 无法重叠 | `16` | 若配置回退 MRV1，先看 `15`；再看 `20`、`23`、`24` |
+| 显存不足、prefix 命中异常或 eviction 抖动 | `12` | `21`、`22`、`26` |
+| 模型、量化或 attention 组合不兼容 | `13` | `14`、`21`、`24` |
+| 多 GPU 空转或 collective hang | `22` | `17`、`23`、`27` |
+| 权重更新后输出、cache 或版本可见性异常 | `29` | `12`、`15/16`、`27` |
+| 线上尾延迟、错误或 hang 难以归因 | `27` | 回到对应资源/进程 owner |
 
-## 四、三条推荐阅读路径
+## 五、证据与边界口径
 
-1. **系统设计路径**：`02 → 10 → 11 → 12 → 15 → 23`。先获得资源与状态模型，再看关键路径优化。
-2. **部署调优路径**：`01 → 16 → 27`，根据观测到的瓶颈跳转 `11/12/20/21/22/23`。
-3. **源码贡献路径**：`10 →` 目标机制页 `→ 25 → 28`。先确认状态所有权，再判断改动属于核心、pass 还是 extension point。
-
-## 五、证据口径
-
-- 所有页面固定到同一 commit；正文中的 `file:line` 均以仓库根为起点。
-- 当前行为由源码和测试决定；同 commit 的 `docs/design/` 用于说明项目公开的设计意图。
-- 若设计文档与实现冲突，页面分别写清两者。例如 `docs/design/arch_overview.md:67-93` 给出 V1 进程概念图，但实际 worker 是否独立成进程仍由 executor backend 决定。
-- “这意味着”“可以理解为”“由此推断”表示知识库作者的机制分析，不冒充代码注释。
-
-## 六、版本边界
-
-本系列分析的是 2026-08-20 的主干快照，不是所有发行版的兼容手册。MRV2、endpoint plugins、NIXL/EPD、hybrid KV 和 launcher 仍在快速演进；部署具体版本时应重新核验配置默认值和支持矩阵。源码基线统一的价值，是保证 18 篇页面能够拼成同一时刻的系统，而不是承诺这些行号永久稳定。
+- 所有内容页使用同一冻结源码基线；正文中的 `file:line` 均相对 vLLM 仓库根。
+- 当前行为由该 commit 的源码和测试决定；同 commit 的 `docs/design/` 只用于说明公开设计意图。
+- 跨页只保留相邻合同和状态交接；机制、正确性证明、fallback 与失败边界只在上表指定的 owner 页维护。
+- 训练器算法、rollout 编排与 policy 产生不属于本域；`29` 只拥有 vLLM 侧在线更新与可见性协议。
 
 ## Related Pages
 
 - [[02_engineering/03_infer_frameworks/index|推理框架目录]] — vLLM 在整体推理框架技术栈中的位置。
-- [[02_engineering/03_infer_frameworks/01_llm_inference_technology_stack_analysis|大模型推理技术栈全景]] — 与 SGLang、TensorRT-LLM、llama.cpp 等方案比较。
-- [[02_engineering/03_infer_frameworks/sglang/index|SGLang 推理框架]] — 对照调度、radix cache 与编译路径。
-- [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理专题]] — 深入 draft/verify 算法族。
-- [[02_engineering/03_infer_frameworks/mooncake_analysis|Mooncake 分离式推理]] — 对照独立分布式 KV 数据平面。
+- [[02_engineering/03_infer_frameworks/01_llm_inference_technology_stack_analysis|大模型推理技术栈全景]] — 与其他推理系统比较能力边界。
+- [[02_engineering/03_infer_frameworks/sglang/index|SGLang 推理框架]] — 对照另一条调度与编译实现路线。
+- [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理专题]] — 跨引擎理解 draft/verify 算法族。
+- [[02_engineering/03_infer_frameworks/mooncake_analysis|Mooncake 分离式推理]] — 对照论文层面的 KV 数据平面设计。

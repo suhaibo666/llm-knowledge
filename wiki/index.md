@@ -4,7 +4,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 
 # LLM Knowledge Wiki — 知识库总索引
 
-> 最后更新: 2026-08-27
+> 最后更新: 2026-08-30
 
 ---
 
@@ -47,8 +47,8 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | └─ torchtitan | [[02_engineering/02_train_frameworks/torchtitan/index]] | 24 | 活跃 |
 | └─ MindFormers | [[02_engineering/02_train_frameworks/mindformers/index]] | 3 | 活跃 |
 | └─ MindSpeed | [[02_engineering/02_train_frameworks/mindspeed/index]] | 6 | 活跃 |
-| 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 20 | 活跃 |
-| └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index]] | 13 | 活跃 |
+| 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 33 | 活跃 |
+| └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index]] | 25 | 活跃 |
 | 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 47 | 活跃 |
 | └─ verl (HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index]] | 15 | 活跃 |
 | └─ slime | [[02_engineering/04_posttrain_frameworks/slime/index]] | 21 | 活跃 |
@@ -57,7 +57,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | 自动并行 | [[02_engineering/06_auto_parallel/index]] | 2 | 活跃 |
 | 训练可靠性 | [[02_engineering/07_training_reliability/index]] | 5 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根）；训练框架与 torchtitan 于 2026-08-27 随 TorchTitan `a3168782c` 机制级复审重新统计为 67/24 页；后训练框架于 2026-08-28 随 verl `254a23ed` 全域复审增至 47 页，其中 `verl/` 15 页、`slime/` 21 页；其余工程域沿用最近一次域级统计。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根）；推理框架与 vLLM 于 2026-08-30 增补 MRV1 机制页后重新统计为 33/25 页；训练框架与 torchtitan 于 2026-08-27 随 TorchTitan `a3168782c` 机制级复审重新统计为 67/24 页；后训练框架于 2026-08-28 随 verl `254a23ed` 全域复审增至 47 页，其中 `verl/` 15 页、`slime/` 21 页；其余工程域沿用最近一次域级统计。
 
 ### courses 课程入口
 

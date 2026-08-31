@@ -40,7 +40,10 @@ flowchart LR
       P2P["optimize send/recv"]:::c
     end
     DPg["async-log-allreduce"]:::d
-    classDef a fill:#e3f2fd; classDef b fill:#e8f5e9; classDef c fill:#fff3e0; classDef d fill:#fce4ec
+    classDef a fill:#e3f2fd
+    classDef b fill:#e8f5e9
+    classDef c fill:#fff3e0
+    classDef d fill:#fce4ec
 ```
 
 每个特性都是一个 `MindSpeedFeature` 子类,通过 `register_patches` 把实现猴补丁进 Megatron(契约见 [[mindspeed/index]] §1);掩盖类特性几乎都是 O2(`optimization_level=2`,如 `MC2Feature.__init__('use-ascend-mc2', 2)`,`mc2.py:11`),需 `--optimization-level 2` 放行。下面逐个深挖。

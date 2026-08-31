@@ -5,7 +5,7 @@ title: "推理框架 —— 目录索引"
 # 推理框架 —— 目录索引
 
 > 覆盖 LLM 推理技术栈、服务引擎、投机推理与分离式 KV 架构
-> **最后更新**：2026-08-27（补模块定位与能力清单）
+> **最后更新**：2026-08-30（vLLM 增补 MRV1 机制页，现为 24 篇 + index）
 
 ---
 
@@ -25,7 +25,7 @@ title: "推理框架 —— 目录索引"
 
 | 系统 | 在本域中的定位 | 本库覆盖 | 基线 |
 |---|---|---|---|
-| **vLLM** | 通用开源推理引擎的事实标准；本域**机制细节的主要样本**，从 EngineCore/Scheduler/paged KV 到 serving、投机、量化、并行、compile 全链路 | 19 篇 + index（**系统性源码覆盖**） | `vllm-project/vllm@d66300a1`（单页例外 `26858770`） |
+| **vLLM** | 通用开源推理引擎的事实标准；本域**机制细节的主要样本**，从请求语义、EngineCore/Scheduler/paged KV 到两代 Model Runner、serving、采样、多模态、投机、量化、并行、compile 与在线更新全链路 | 24 篇 + index（**系统性源码覆盖**） | `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`，24 篇已统一核验 |
 | **SGLang** | 另一条工程路线；本库目前只切入其**编译 pass 体系**，与 vLLM 的 piecewise CUDA Graph 管线做对照 | 1 篇 + index（**单点切入，非全景**） | 见页头 |
 | **Mooncake** | 以 KV Cache 为中心的**分离式服务架构**（论文级，非引擎实现）；prefill/decode 分离与跨实例 KV 传输的原始论证 | 1 篇（论文分析） | arXiv:2407.00079 |
 | **投机推理** | **技术专题而非产品**：跨引擎的 draft/verify 演进主线（MTP → Eagle3 → DFlash → DSpark） | 2 篇 + index | DeepSpec `dd854392` 等，见页头 |
@@ -35,19 +35,23 @@ title: "推理框架 —— 目录索引"
 
 ### 本域提供的能力
 
-下表按**能力**组织（推理框架都必须解决的问题），"样本"列说明本库是拿谁的实现讲的。源码锚点按侧车 checkout `vllm-project/vllm@26858770`（2026-08-24）核对路径存在：
+下表按**能力**组织（推理框架都必须解决的问题），"样本"列说明本库是拿谁的实现讲的。vLLM 源码锚点统一按冻结 checkout `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（2026-08-29）核对：
 
 | 能力 | 具体提供什么 | 样本与源码锚点 | 详见 |
 |---|---|---|---|
 | **token 级准入与调度** | 每步重新决定：哪些请求进入本轮、各跑多少 token、占用哪些 block；chunked prefill 与 decode 的混排 | vLLM `vllm/v1/core/sched/scheduler.py` | [[11_vllm_scheduler_analysis]] |
+| **请求与任务语义** | 把协议、render、generation/pooling/audio 任务压成稳定 Engine 合同，再恢复用户输出 | vLLM `vllm/renderers/`、`vllm/v1/engine/input_processor.py` | [[04_vllm_request_semantics_analysis]] |
 | **分页 KV 显存管理** | 把 KV 当虚拟内存分页管理：block 分配/回收、prefix 复用、抢占与换出 | vLLM `vllm/v1/core/kv_cache_manager.py` | [[12_vllm_kv_cache_management_analysis]] |
 | **引擎控制面** | 资源承诺的唯一提交者；隔离前端并发模型（同步/asyncio/ZMQ）与设备拓扑（uni/multiproc/Ray） | vLLM `vllm/v1/engine/core.py` | [[10_vllm_engine_architecture_analysis]] |
-| **动态形态的执行** | 把变形的 batch 整理成设备可复用的输入；in-flight batch 与异步调度重叠 CPU/GPU | vLLM `vllm/v1/worker/` | [[15_vllm_model_runner_v2_analysis]] |
+| **动态形态的执行** | 把变形的 batch 整理成设备可复用的输入；对照 MRV1 compact row 与 MRV2 stable row 两种状态布局 | vLLM `vllm/v1/worker/` | [[15_vllm_model_runner_v1_analysis]] · [[16_vllm_model_runner_v2_analysis]] |
+| **采样与结构化约束** | 把每请求 grammar 状态、logits 变换与 token selection 收敛成合法分布 | vLLM `vllm/v1/sample/`、`vllm/v1/structured_output/` | [[18_vllm_sampling_structured_output_analysis]] |
+| **多模态执行** | 让媒体 preprocessing、processor/encoder cache、budget 与 token 位置保持一致 | vLLM `vllm/multimodal/`、`vllm/v1/worker/gpu/mm/` | [[19_vllm_multimodal_execution_analysis]] |
 | **attention 后端派发** | 按 batch 形态、序列长度、量化格式在多种 attention 实现间选择 | vLLM `vllm/v1/attention/backends/` | [[14_vllm_attention_backends_analysis]] |
 | **编译与图捕获** | piecewise CUDA Graph 消除 launch 开销；编译 pass 如何与动态形态共存 | vLLM `vllm/compilation/` **与 SGLang 对照** | [[23_vllm_compilation_cudagraph_analysis]] · [[sglang/index\|SGLang]] |
 | **投机解码** | draft/verify 把 memory-bound 的 decode 换成 compute-bound，用接受率换吞吐 | vLLM `vllm/v1/spec_decode/` + **跨引擎专题** | [[20_vllm_speculative_decoding_analysis]] · [[speculative_decoding/index\|投机推理专题]] |
 | **分离式服务** | prefill/decode 拆到不同实例、KV 跨实例传输，让两段各自按自己的瓶颈扩容 | vLLM KV connector **+ Mooncake 论文侧论证** | [[26_vllm_disaggregated_kv_serving_analysis]] · [[mooncake_analysis]] |
-| **serving 控制面** | API server、launcher、DP 协调与路由；多实例的生命周期与故障传播 | vLLM `vllm/v1/engine/core_client.py` | [[16_vllm_serving_control_plane_analysis]] |
+| **serving 控制面** | API server、launcher、DP 协调与路由；多实例的生命周期与故障传播 | vLLM `vllm/v1/engine/core_client.py` | [[17_vllm_serving_control_plane_analysis]] |
+| **在线权重更新** | pause、传输 session、rank-local 更新、version 与 cache/runner 可见性 | vLLM weight-transfer、Engine utility 与 worker paths | [[29_vllm_weight_transfer_online_update_analysis]] |
 
 ### 不属于本模块的
 
@@ -71,7 +75,7 @@ title: "推理框架 —— 目录索引"
 
 | 子目录 | 入口 | 页数 | 核心主题 |
 |---|---|---:|---|
-| **vLLM** | [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] | 18 + index | 以设计约束、状态所有权与不变量为主线，覆盖 EngineCore、Scheduler、paged KV、模型/attention/runner、serving、投机、量化、并行、compile/kernel/IR、分离式 KV、可观测性与插件；统一基线 `d66300a1ba` |
+| **vLLM** | [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]] | 24 篇 + index | 以读者问题、设计约束、状态所有权与不变量为主线；24 篇统一固定到 `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`，覆盖请求语义、Engine/资源/两代 Model Runner、模型与专用化、规模化和生产闭环 |
 | **投机推理** | [[02_engineering/03_infer_frameworks/speculative_decoding/index|投机推理专题]] | 2 + index | MTP、EAGLE3、DFlash、DSpark 的 draft/verify 机制、接受率与代价模型 |
 | **SGLang** | [[02_engineering/03_infer_frameworks/sglang/index|SGLang 推理框架]] | 1 + index | SGLang 编译 Pass 与 vLLM piecewise CUDA Graph 管线对照 |
 

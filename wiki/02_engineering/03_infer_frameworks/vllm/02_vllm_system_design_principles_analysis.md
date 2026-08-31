@@ -1,176 +1,187 @@
 ---
-title: "vLLM 系统设计原则：把动态生成变成可调度资源系统"
+title: "vLLM 系统设计原则：把动态请求变成受约束的资源承诺"
 ---
 
-# vLLM 系统设计原则：把动态生成变成可调度资源系统
+# vLLM 系统设计原则：把动态请求变成受约束的资源承诺
 
-> **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
-> **中心命题**：vLLM 的主要价值不是让一次模型前向更快，而是让长度未知、到达随机、阶段不同的请求持续共享 GPU，同时控制 KV 容量、CPU 开销和分布式同步。连续调度、Paged KV、异步 runner 与编译专用化都是这个约束系统的推论。
+> **读者问题**：为什么在线请求一旦持续到达，推理引擎就不能只优化一次模型前向，而必须同时采用连续调度、分页状态、异步执行与能力合同？
+>
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
+>
+> **中心命题**：在线生成的活跃请求、当步 token 数、KV 占用和可执行快路径都在变化。vLLM 的核心设计不是把这些变化抹平，而是把它们依次变成四种显式合同：每步重做 token admission、按 block 承诺状态容量、让已提交但未返回的执行成为一等状态、只在能力校验通过时启用专用快路径。
+>
+> **所有权边界**：本页拥有动态负载的全局约束，以及四个“瓶颈 → 直观替代 → 设计支点 → 代价”因果链。
+>
+> **明确排除**：完整责任分层、进程拓扑和端到端调用链由 [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] 拥有；Scheduler、KV、Model Runner 与 CUDA Graph 的内部证明由各机制页拥有。
 
-## 一、原始问题不是矩阵乘法，而是不确定性
+## 1. 起点：系统每一步面对的都不是同一个 batch
 
-离线训练容易形成稳定大 batch；在线生成则同时具有四种动态性：请求到达时间不同、prompt/输出长度不同、prefill/decode 计算形态不同、每个 decode step 都会改变活跃集合。若仍按请求级静态 batch 执行，短请求完成后留下尾部气泡，长 prompt 会阻塞 decode，KV 又必须为未知输出长度预留空间。
+当前 Scheduler 不把请求永久归入“prefill 阶段”或“decode 阶段”。它只比较每个请求已经计算的 token 数与当前应该计算的 token 数，并在**每一个 engine step**重新分配 token；同一规则同时覆盖 chunked prefill、prefix cache 与 speculative decode（`vllm/v1/core/sched/scheduler.py:501-512`）。这说明运行时的基本事实不是“一个 batch 做完”，而是请求集合及其进度持续变化。
 
-因此推理系统优化的是一组相互牵制的目标：
+变化同时作用于三种稀缺资源：单步可执行 token 数、可驻留请求数和 KV block 数。配置分别给出 `max_num_scheduled_tokens`、`max_num_batched_tokens` 与 `max_num_seqs`；其中调度 token 上限甚至可以小于输入 batch 上限，为会在执行中追加 token 的机制留出空间（`vllm/config/scheduler.py:49-68`）。因此，吞吐并不是一个孤立目标：多接纳请求可能抬高队列时间，多发 token 可能拉长一步，多占 KV 则可能触发抢占和重算。
 
-$$
-T_{\mathrm{TTFT}}
-=T_{\mathrm{queue}}+T_{\mathrm{prepare}}+T_{\mathrm{prefill}}+T_{\mathrm{return}},
-$$
+源码把这些牵制关系做成了可观测状态，而不是只暴露 GPU 利用率：Scheduler stats 同时记录 running、waiting 与 KV 使用率；请求侧分别计算首 token 延迟、token 间延迟和 preemption（`vllm/v1/metrics/stats.py:185-204`；`vllm/v1/metrics/stats.py:469-500`；`vllm/v1/metrics/stats.py:516-526`）。也就是说，设计是否有效要由队列、进度和容量共同验证。
 
-$$
-T_{\mathrm{TPOT}}
-\approx T_{\mathrm{schedule}}+T_{\mathrm{prepare}}+T_{\mathrm{forward}}+T_{\mathrm{sample}}+T_{\mathrm{return}}.
-$$
-
-提高每步 token 数通常增加吞吐，却可能增加排队和单步时间；为长 prompt 分配更多 prefill token 会改善其 TTFT，却可能伤害正在 decode 的请求。Scheduler 因而用 `max_num_running_reqs` 和 `max_num_scheduled_tokens` 两条独立预算约束并发请求数与本步 token 数；`vllm/v1/core/sched/scheduler.py:110-116`。
-
-## 二、四类资源约束
-
-### 2.1 计算：prefill 与 decode 不是同一种负载
-
-- prefill 通常是较大的矩阵计算，容易提高算力利用率，但单请求 token 数大；
-- decode 每请求每步通常只有一个新 token，批次不足时受 launch、访存和 CPU 调度影响；
-- speculative decoding 会把“一次 target step”扩成多个候选 token，但收益取决于接受率；
-- MoE 还把计算转化为跨 rank token routing 与负载不均衡问题。
-
-vLLM 没有为 prefill 和 decode 建两套孤立 scheduler。Scheduler 的产物是每个请求本轮的 token 数，EngineCore 再把整个 `SchedulerOutput` 交给 executor；真实承重链只有 `schedule → execute_model → update_from_output` 三步，见 `vllm/v1/engine/core.py:583-613`。关键不是这三个函数的先后，而是“调度决定资源承诺，执行消费承诺，更新提交真实结果”。
-
-### 2.2 内存：权重近似固定，KV 随请求增长
-
-对标准全注意力，KV 容量可粗略写成：
-
-$$
-M_{\mathrm{KV}}
-\approx 2LNH_{\mathrm{KV}}D_{\mathrm{head}}B_{\mathrm{dtype}},
-$$
-
-其中 $L$ 是层数，$N$ 是同时驻留的 token 数。真正难点是 $N$ 由在线请求动态决定。若每个请求预留最大长度的连续 tensor，会产生内部碎片并要求昂贵搬迁；若只在需要时扩展连续 tensor，又会遇到外部碎片和地址不稳定。
-
-vLLM 把物理显存切成 block，由 `BlockPool` 统一持有；free queue 同时表示可分配块和 prefix-cache 淘汰候选，hash map 支持内容寻址，见 `vllm/v1/core/block_pool.py:143-190`。Paged KV 的本质不是一个 attention kernel 技巧，而是把“请求拥有一整段连续内存”改成“请求持有一组可引用的物理块”。
-
-### 2.3 控制：逐 token Python 工作会进入关键路径
-
-GPU forward 越快，每步固定 CPU 成本越显眼：整理活跃请求、构造 block table、复制采样参数、生成 attention metadata、处理输出，都可能让 GPU 等待。MRV2 的设计文档把旧实现的问题直接归结为 persistent state 与 step input 耦合、tensor-wide reorder 和 async bookkeeping；`docs/design/model_runner_v2.md:11-39`。
-
-因此新的方向不是“把 Python 全删掉”，而是：
-
-1. 保留每个活跃请求的持久 row；
-2. 每步只提交差分；
-3. 让 CPU 准备 step $n+1$ 时 GPU 执行 step $n$；
-4. 对大状态使用 staged writes，避免全量 H2D copy；
-5. 把 metadata 和 sampler 尽量移到 GPU。
-
-MRV2 从设计上假定执行循环没有 CPU 同步点，CPU 入口只向 CUDA stream 排队；`docs/design/model_runner_v2.md:43-55`。这也是为什么 async scheduling 不是给旧 runner 多套一层队列，而会反过来重塑状态表示。
-
-### 2.4 分布式：每个优化都必须服从 collective 顺序
-
-TP、PP、DP、EP、CP 改变的是不同维度的所有权：权重切片、layer stage、请求副本、expert、context token。局部 rank 没有请求时，某些模式仍必须执行 dummy batch，保证 collective 顺序一致。由此可见，“本 rank 无工作就直接跳过”在单卡正确，在分布式中可能导致 hang。
-
-设计上可以把分布式不变量概括为：参与同一 process group 的 rank 必须对 collective 的种类、顺序和张量契约达成一致。`Executor` 抽象只统一控制接口，不能消除 backend 的同步语义；实际 group、worker 和 DBO 机制见 [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]]。
-
-## 三、由约束推导出的五个系统支点
+下图只表达四条因果链，不表达架构层或调用顺序。浅灰节点是看似简单但不能覆盖动态负载的方案；蓝色是 vLLM 的设计支点；橙色是它为此支付的成本。
 
 ```mermaid
 flowchart TB
-  Dynamic["随机到达与未知长度"] --> Scheduler["token-level continuous scheduling"]
-  Growing["KV 动态增长与共享"] --> Paged["paged block ownership"]
-  CPU["逐步 CPU 固定成本"] --> Async["persistent async-first runner"]
-  Shapes["batch shape 持续变化"] --> Contracts["backend capability contracts"]
-  Multi["多 rank 同步与故障域"] --> Planes["control data communication planes"]
-  Scheduler --> Output["稳定 SchedulerOutput"]
-  Paged --> Output
-  Output --> Async
-  Contracts --> Async
-  Planes --> Async
+    subgraph S1["连续调度"]
+        direction LR
+        B1["瓶颈<br/>活跃集合与 token 需求每步变化"]
+        N1["直观方案<br/>请求级固定 batch"]
+        P1["设计支点<br/>逐 step token admission"]
+        C1["代价<br/>调度进入延迟关键路径"]
+        B1 --> N1 --> P1 --> C1
+    end
+    subgraph S2["分页状态"]
+        direction LR
+        B2["瓶颈<br/>KV 随请求进度增长"]
+        N2["直观方案<br/>按最大长度预留连续状态"]
+        P2["设计支点<br/>block pool 与逻辑 block table"]
+        C2["代价<br/>refcount 淘汰与重算"]
+        B2 --> N2 --> P2 --> C2
+    end
+    subgraph S3["异步执行"]
+        direction LR
+        B3["瓶颈<br/>逐步 CPU 工作造成 GPU 间隙"]
+        N3["直观方案<br/>等待结果后准备下一步"]
+        P3["设计支点<br/>提前提交与差量状态"]
+        C3["代价<br/>in-flight 真相与并发安全"]
+        B3 --> N3 --> P3 --> C3
+    end
+    subgraph S4["能力合同"]
+        direction LR
+        B4["瓶颈<br/>硬件 backend 与 batch 组合爆炸"]
+        N4["直观方案<br/>所有组合共走一条快路径"]
+        P4["设计支点<br/>显式能力校验与运行时回退"]
+        C4["代价<br/>启动内存与降级性能"]
+        B4 --> N4 --> P4 --> C4
+    end
+
+    classDef neutral fill:#ffffff,stroke:#64748b,color:#0f172a
+    classDef ghost fill:#f8fafc,stroke:#94a3b8,color:#475569,stroke-dasharray:4 3
+    classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a,stroke-width:2px
+    classDef acc2 fill:#ffedd5,stroke:#ea580c,color:#0f172a,stroke-width:2px
+    class B1,B2,B3,B4 neutral
+    class N1,N2,N3,N4 ghost
+    class P1,P2,P3,P4 acc1
+    class C1,C2,C3,C4 acc2
 ```
 
-### 3.1 Token-level continuous scheduling
+## 2. 连续调度：把 batch 席位改成每步资源承诺
 
-请求不是一次性获得整个 batch 席位，而是每个 engine step 重新竞争 token budget。这样 decode、chunked prefill、speculative token 和 encoder token 可以进入同一 admission 问题。代价是 Scheduler 每一步都处在延迟关键路径，并且要处理抢占、远端 KV、grammar 和多模态等阻塞状态。
+### 2.1 背景与被否掉的替代
 
-### 3.2 Paged KV ownership
+静态 batch 看起来最简单：凑齐一组请求，保持成员不变，直到全部完成。但当前负载模型允许请求在不同进度上共享一步；Scheduler 先推进已有 running 请求，再在剩余 token 与 request 容量内接纳 waiting 请求（`vllm/v1/core/sched/scheduler.py:550-594`；`vllm/v1/core/sched/scheduler.py:775-804`）。固定成员会让已经完成或暂时阻塞的请求继续占据机会，也无法把当步剩余预算交给新到请求。
 
-Scheduler 不直接操作 GPU 指针，只向 KV 管理器申请逻辑 slot；KV 管理器通过 coordinator 管理一个或多个 KV group，最终触碰 `BlockPool`。全量 prefix hit 仍必须重算最后一个 token 获得 logits；当前实现将最大 cache hit 限制为 `request.num_tokens - 1`，见 `vllm/v1/core/kv_cache_manager.py:232-267`。这条看似局部的规则实际连接了 cache 正确性与模型输出语义。
+> [!note] 分析推断
+> 源码没有在上述函数中直接写出“连续调度胜过静态 batch”的历史取舍。本页依据其逐步 budget、running/waiting 队列和动态接纳行为重建理由：**席位若只在请求边界回收，动态负载的空闲资源就不能在下一步立刻复用。**
 
-### 3.3 Async-first model execution
+### 2.2 设计支点与因果机制
 
-EngineCore 用 `execute_model(..., non_block=True)` 提交执行，再在需要结果时等待 future；`vllm/v1/engine/core.py:594-603`。batch queue 和 MRV2 进一步增加并发 batch，使 schedule/input preparation 与前一轮 GPU 工作重叠。代价是状态不能再隐式共享：缓冲区地址、生命周期和提交时机都必须显式建模。
+vLLM 把 admission 单位从“整个请求”降为“本轮计算多少 token”。每步开始时建立 token budget 和 input budget；每个请求获得的 token 数同时受未完成进度、长 prefill 上限、模型长度和剩余预算约束（`vllm/v1/core/sched/scheduler.py:519-535`；`vllm/v1/core/sched/scheduler.py:585-603`）。只有 KV slots 也能兑现时，这份 token 承诺才进入当步计划；否则 Scheduler 会选择 victim 抢占，归还刚承诺的 token/encoder 预算，再尝试完成可执行计划（`vllm/v1/core/sched/scheduler.py:655-728`）。
 
-### 3.4 Capability contracts and graceful fallback
+这条机制之所以能统一 prefill 与 decode，是因为 Scheduler 追踪的是“应计算进度减已计算进度”，而不是为两阶段维护两套 admission 语义。chunked prefill 只是把长请求裁到剩余预算；decode、speculative token 和 cache hit 仍进入同一 token 账本（`vllm/v1/core/sched/scheduler.py:503-512`；`vllm/config/scheduler.py:56-76`）。
 
-动态系统不能假定每个 backend 都支持所有 dtype、KV layout、mixed batch 和 CUDA Graph 模式。`AttentionBackend` 声明 dtype、KV cache dtype、block size 与 layout 接口；`vllm/v1/attention/backend.py:55-115`。metadata builder 另行声明 graph 支持、batch reorder 和原地更新能力；`vllm/v1/attention/backend.py:655-708`。
+### 2.3 不变量、代价与失败边界
 
-这比在 runner 中写大量 backend 名称判断更可靠：选择器先根据平台与配置选候选，runner/graph dispatcher 再按能力降级。官方 CUDA Graph 设计明确把 compile 与 capture 解耦，并允许根据 batch composition 在 full、piecewise 和 eager 间派发；`docs/design/cuda_graphs.md:23-36`。
+连续调度不是无限混批。每轮结束前，源码断言已发 token 不超过调度上限、两个预算都非负、running 数不超过 request 上限（`vllm/v1/core/sched/scheduler.py:1204-1210`）。配置也拒绝 `max_num_batched_tokens < max_num_seqs`；关闭 chunked prefill 时，batch token 上限若小于最大模型长度会直接导致长请求不可接纳，因此被显式拒绝（`vllm/config/scheduler.py:249-267`）。
 
-### 3.5 分层的控制面、执行面与扩展面
+它支付的成本是调度本身进入每步关键路径，并在容量不足时产生重算。抢占会释放 request blocks、把状态移回 waiting、把 `num_computed_tokens` 归零并累计 preemption；这不是免费的暂停（`vllm/v1/core/sched/scheduler.py:1392-1433`）。测试用 5 个可用 block 构造出容量耗尽场景，验证高优先级请求继续运行而低优先级请求被抢占，表明 preemption 是真实容量边界而非异常兜底（`tests/v1/core/test_scheduler.py:2915-2935`；`tests/v1/core/test_scheduler.py:2999-3009`）。
 
-当前 CLI 会根据 DP load-balancing 模式和 API server 数量选择 supervisor、headless、多 API server 或单 server 路径；`vllm/entrypoints/cli/serve.py:90-150`。API server 负责协议、render 和 streaming，EngineCore 负责调度/KV/执行承诺，Worker/Runner 负责设备数据面。
+## 3. 分页状态：把 KV 容量变成可回收、可共享的块
 
-分层不是为了追求“漂亮架构”，而是隔离三种不同节奏：HTTP 请求生命周期以毫秒到秒计，EngineCore 以 token step 计，kernel 以微秒计。把它们塞进一个 event loop 会让慢 tokenizer、客户端断连或日志写入直接干扰 GPU 关键路径；多进程隔离的代价则是 IPC、错误传播和部署复杂度。
+### 3.1 背景与被否掉的替代
 
-## 四、四个系统平面与状态所有权
+请求的 KV 状态按“已计算 token + 本步新 token + lookahead”增长，并受 `max_model_len` 截断；需要多少 slot 是每次 admission 时重新计算的量（`vllm/v1/core/kv_cache_manager.py:452-460`；`vllm/v1/core/kv_cache_manager.py:489-518`）。若每个请求在入场时就按最大长度占有一段连续状态，地址简单，却会把尚未生成的 token 也变成容量承诺；若等状态增长后再寻找更大的连续区域，又把搬移与碎片带进热路径。
 
-| 平面 | 主要 owner | 持有的状态 | 不能越过的边界 |
-|---|---|---|---|
-| Serving control plane | launcher、API server、`AsyncLLM` | HTTP/stream 生命周期、render、请求队列、路由 | 不直接决定物理 KV block 和 kernel |
-| Engine control plane | `EngineCore`、Scheduler | 请求状态、token/encoder budget、调度承诺、abort | 不持有模型权重和设备输入 tensor |
-| Memory/communication substrate | KV manager、BlockPool、connectors、process groups | block ownership、refcount、remote transfer、rank group | 不解释 API 语义和采样文本 |
-| Model execution plane | Executor、Worker、Model Runner、backend/kernel | 权重分片、persistent rows、metadata、graph、device buffers | 不自行改变请求生命周期真相 |
+> [!note] 分析推断
+> 冻结源码直接证明 vLLM 以有限 block pool、按需 slot 分配和 `max_model_len` 上限管理 KV，但没有在这些文件中复述原始 PagedAttention 论文对连续分配的论证。本段对“最大长度连续预留”的批评是从当前容量合同重建的替代方案分析，不是作者原话。
 
-`EngineCore.__init__` 的实际构造顺序也反映这种依赖：先创建 executor，profile/初始化 KV，再创建 Scheduler，并把 connector aggregator 接到 executor；`vllm/v1/engine/core.py:132-177`。这不是建议按构造函数顺序写架构文档，而是说明 Scheduler 的 admission 必须依赖已经确定的物理 KV 容量。
+### 3.2 设计支点与因果机制
 
-## 五、为什么几个直观方案不够
+分页的关键不是某个 attention kernel 名称，而是**物理块所有权可以独立变化**。`BlockPool` 在初始化时建立固定数量的 block；free queue 同时保存可分配块和 prefix-cache 淘汰候选，hash map 则把内容身份映射回块（`vllm/v1/core/block_pool.py:143-185`）。请求因此只持有当前需要的逻辑 block 集合，增长时追加，完成时归还；分配与释放都通过 KV coordinator 落到同一个 block pool（`vllm/v1/core/kv_cache_manager.py:541-574`）。
 
-| 直观方案 | 为什么看起来简单 | 为什么在在线生成中失效 | vLLM 的选择 |
-|---|---|---|---|
-| 请求级静态 batch | 一次组 batch 后顺序执行 | 长度差造成尾部气泡，无法插入新请求 | 每 step 重新做 token admission |
-| 每请求连续 KV tensor | 索引直接、kernel 简单 | 最大长度预留浪费；增长/搬迁破坏地址稳定 | block table + paged KV |
-| 每步从 Python 重建所有输入 | 状态少、容易理解 | decode step 固定成本压过小模型 forward | persistent rows + delta update |
-| 所有 batch 都走同一 graph | 路径统一 | shape、attention backend 与 mixed batch 能力不同 | capability contract + runtime dispatch |
-| 单进程处理 HTTP 到 kernel | 错误传播直接 | tokenizer、网络和输出处理阻塞 GPU loop | serving 与 EngineCore 进程隔离 |
-| 空闲 rank 跳过 step | 节省本地计算 | collective 次序不一致可造成死锁 | lockstep/dummy execution |
+分配发生在资源承诺阶段。`allocate_slots` 先计算需要的 block 数，再与 free blocks、为其他 in-flight 请求保留的 blocks 以及 admission watermark 比较；不足就返回 `None`。容量检查前允许先释放滑窗已经跳过的块，但只有检查通过后才追加 cache hit block 和新 block（`vllm/v1/core/kv_cache_manager.py:471-487`；`vllm/v1/core/kv_cache_manager.py:494-546`）。这让 Scheduler 能用同一种容量货币处理增长、prefix reuse、滑窗释放和抢占，而不需要理解 GPU 指针。
 
-## 六、优化不是免费叠加
+同一个 block 还可以承担 cache 与运行中状态两种角色。cache hit 会增加 `ref_cnt` 并把零引用块移出 free queue；分配 free block 时若它仍有 hash，就先清除 cache 身份再复用（`vllm/v1/core/block_pool.py:647-700`；`vllm/v1/core/block_pool.py:702-717`）。分页由此不仅减少预留，还把共享、淘汰和回收放进同一所有权协议。
 
-vLLM 的优化可以分为三类：减少浪费、隐藏成本、改变工作量。
+### 3.3 不变量、代价与失败边界
 
-- **减少浪费**：continuous batching、Paged KV、fusion、quantization；
-- **隐藏成本**：async scheduling、DBO、流水化 KV transfer；
-- **改变工作量**：prefix caching、speculative decoding、disaggregated prefill。
+核心不变量是“可回收”不等于“无人引用”：只有 `ref_cnt` 降到零的块才能进入 free queue；而块只在非 null、`ref_cnt == 1` 且没有 hash 时被判定为可写，随后的释放路径再按有无 hash 安排复用优先级（`vllm/v1/core/block_pool.py:719-747`）。**分析推断**：如果绕过这一可写性合同对共享块原地写入，可能污染其他仍持有该 block 的请求状态。
 
-它们可能互相冲突。更深的 async overlap 增加 in-flight state 和延迟释放需求；更激进的 CUDA Graph 增加 capture 时间和静态 buffer；更大的 token budget 提高吞吐却增加 step latency；prefix cache 增加 hash/refcount/eviction 元数据。官方 CUDA Graph 当前默认 `FULL_AND_PIECEWISE` 追求性能，但也明确说明它占用更多内存、捕获时间最长；`docs/design/cuda_graphs.md:38-50`。
+分页也带来元数据与内部碎片，并不消灭容量压力。V1 的 block table 是 append-only；发现重复 prefix block 时不能把已经追加的 block ID 换掉，重复块要等请求释放后才消失（`docs/design/prefix_caching.md:194-198`）。全 prompt 命中 cache 时仍必须重算最后一个 token 取得 logits，而 block 对齐可能让这次重算扩大为整块（`vllm/v1/core/kv_cache_manager.py:251-258`）。这些代价解释了为什么高 KV 使用率与 preemption 必须一起观察，而不能把 prefix hit 当作无条件收益。
 
-因此“开启多少优化”不是正确问题。正确问题是：当前瓶颈在哪个资源平面，优化改变了哪项成本，新增了什么不变量，何时会回退。
+## 4. 异步执行：让“已提交但未返回”成为合法状态
 
-## 七、失败边界与观测方法
+### 4.1 背景与被否掉的替代
 
-| 失效模式 | 直接信号 | 应检查的 owner |
+连续调度提高 GPU 工作密度后，每步固定 CPU 成本会更显眼。Model Runner V2 设计文档指出，block table、采样参数等输入若每步在 Python 中从头构造，会很慢；相邻 step 的 request batch 通常只发生少量加入或完成，因此全量重建浪费了这种时间局部性（`docs/design/model_runner_v2.md:13-27`）。
+
+等待 step N 完成、CPU 再准备 step N+1 的同步循环虽然状态直观，却把 CPU 准备时间直接变成 GPU 间隙。当前设计明确选择在 GPU 执行 step N 时准备下一步，并要求设备主循环没有 CPU 同步点（`docs/design/model_runner_v2.md:43-53`）。
+
+### 4.2 设计支点与因果机制
+
+异步执行首先是控制协议：EngineCore 在 batch queue 未满时提交 non-blocking execution，优先继续填队列；只有队列已满或没有可调度工作时才等待最早结果（`vllm/v1/engine/core.py:638-670`；`vllm/v1/engine/core.py:692-700`）。这把“schedule 后立即得到真实 token”改成“先得到一份 in-flight 承诺，稍后提交结果”。
+
+因此 Scheduler 也必须显式表示未返回的真相。`AsyncScheduler` 在发出 decode 后增加 output placeholders；真实 token 返回时再减少 placeholder，并且 preemption 后到达的 stale output 不允许修改已经重置的计数（`vllm/v1/core/sched/async_scheduler.py:19-49`；`vllm/v1/core/sched/async_scheduler.py:51-69`）。换句话说，异步优化不是在同步状态机外包一层 future；它改变了 token 进度、抢占和 cache commit 的时序语义。
+
+设备状态也随之从“当步输入”分离为“持久状态 + 当步投影”。MRV2 给活跃请求稳定 row，加入与完成只产生差量；对大 block table 使用 GPU base tensor、CPU staged diff、打包传输和一次 kernel 应用，避免每步全量 H2D copy（`docs/design/model_runner_v2.md:31-39`；`docs/design/model_runner_v2.md:104-130`）。
+
+### 4.3 不变量、代价与失败边界
+
+异步的首要不变量是：CPU 不能修改 GPU 仍在异步读取的 host buffer。设计文档明确展示了 pinned buffer 的并发读写 race，并把 V1 barrier 的代价归纳为易漏保护、组织僵硬和减少 overlap（`docs/design/model_runner_v2.md:51-80`）。因此稳定 row 与 staged copy 的意义首先是生命周期隔离，其次才是少一次 copy。
+
+兼容边界也更严格。显式开启 async scheduling 时，不支持的 executor、某些 speculative method 或 ROCm DeepEP high-throughput DBO 会 hard fail；保持配置为自动时，同样的组合会禁用 async，pooling 也因当前性能负收益而默认关闭（`vllm/config/vllm.py:1173-1212`；`vllm/config/vllm.py:1213-1262`）。这说明 overlap 的成本不仅是更多 in-flight 状态，还包括更窄的安全组合集合。
+
+## 5. 能力合同：让快路径证明自己适用于当前组合
+
+### 5.1 背景与被否掉的替代
+
+动态 batch 不只改变大小，还会混合 prefill/decode、KV layout、dtype、sliding window、multimodal prefix、speculative verification 和分布式能力。CUDA Graph 设计文档记录了“一刀切”路径的失败：full capture 并非所有 attention backend 都支持，有些 backend 只支持 pure decode；把 compilation 与 capture 紧耦合导致全有或全无的性能/兼容取舍（`docs/design/cuda_graphs.md:23-36`）。
+
+另一个直观方案是在 runner 中按 backend 名称和硬件写分支。它能解决眼前组合，却不能回答新 backend 是否支持 head size、KV dtype 或某个运行时语义，也无法区分“用户显式要求但非法”与“自动选择时可降级”。
+
+> [!note] 分析推断
+> “名称分支会随组合爆炸”是从当前 capability API 与候选选择器重建的设计理由；源码没有把这一替代方案写成历史决策记录。
+
+### 5.2 设计支点与因果机制
+
+vLLM 把兼容性变成 backend 可查询的事实。Attention backend 声明 dtype、KV dtype、kernel block size 等基本能力，并为 sink、sliding window、batch invariance、KV connector 等语义提供默认拒绝或显式 opt-in（`vllm/v1/attention/backend.py:59-133`；`vllm/v1/attention/backend.py:160-205`）。统一验证器把当前配置投影成一组 rejection reasons，而不是让执行走到不支持的 kernel 才失败（`vllm/v1/attention/backend.py:248-323`）。
+
+选择策略区分意图强度：用户显式指定 backend 时，任何 invalid reason 都直接报错；自动模式则枚举候选、过滤不兼容组合并选优先级最高的有效实现（`vllm/platforms/cuda.py:403-459`；`vllm/platforms/cuda.py:461-469`）。async scheduling 的“显式开启则 hard fail，未指定则自动禁用”采用同一种合同语义（`vllm/config/vllm.py:1182-1213`；`vllm/config/vllm.py:1213-1262`）。
+
+CUDA Graph 再把能力合同推进到**每个 runtime batch**：uniform decode 可以走 full graph，prefill 或 mixed batch 可以走 piecewise；没有合适 graph 时允许回到 `NONE`。同 commit 设计文档还明确规定，不兼容 backend 会把请求模式降到最接近的支持模式（`docs/design/cuda_graphs.md:38-58`）。因此“已启动”不代表所有请求共享同一快路径；快路径的适用性也是每批次资源决策的一部分。
+
+### 5.3 不变量、代价与失败边界
+
+能力合同的正确性条件是保守：未声明支持就不能假定支持。它可能牺牲峰值性能；例如用户只指定 block size 就可能排除更高优先级 backend，CUDA 平台会选择较低优先级实现并明确警告性能下降（`vllm/platforms/cuda.py:471-490`）。
+
+专用化还要支付启动时间和显存。默认 `FULL_AND_PIECEWISE` 通常性能最好，但占用内存最多、capture 最久；capture size 也被限制，以免紧张显存下 OOM 并控制大 graph 的启动成本（`docs/design/cuda_graphs.md:40-48`；`vllm/config/compilation.py:692-706`）。所以 capability contract 不是“自动找到最快实现”的保证，而是“在当前组合内只承诺已证明安全的实现，并让降级可解释”。
+
+## 6. 四个支点在运行时相互约束
+
+> [!note] 分析推断
+> 这四个支点不是必须同时启用的配置组合：async scheduling 可由配置独立启用、禁用或自动判定（`vllm/config/vllm.py:1182-1262`）。当这些机制在同一运行时参与决策时，Scheduler 的 token 计划要先取得 KV slots，失败会触发抢占并改写当步计划（`vllm/v1/core/sched/scheduler.py:655-728`）；启用 async 后，placeholder 把未返回 token 纳入进度与提交边界（`vllm/v1/core/sched/async_scheduler.py:19-69`）；CUDA Graph dispatcher 则按 runtime batch 选择模式，没有合适 graph 时允许回退到 `NONE`（`docs/design/cuda_graphs.md:50-58`）。因此更准确的结论是：机制可以分别配置或降级，但在共同的 token 进度、容量和 in-flight 状态边界上必须保持一致。
+
+| 观察到的信号 | 首先说明哪项合同受压 | 不能直接得出的结论 |
 |---|---|---|
-| TTFT 抖动 | queue time、prefill tokens/step、preemption | Scheduler、KV manager |
-| GPU 间歇空闲 | engine step gap、input preparation、IPC | EngineCore、MRV2、serving |
-| KV 容量抖动 | usage、prefix hit、eviction、preemption | BlockPool、connector |
-| graph 没命中 | graph mode fallback、batch shape、backend capability | runner、attention builder、dispatcher |
-| 多 rank hang | collective 序列、dummy batch、worker failure | process group、executor、DP core |
-| 请求不结束或输出错位 | request state、row ownership、abort/finish commit | Scheduler、runner、output processor |
+| waiting 增长、request queue time 上升 | admission 未能及时消化到达工作 | 不等于 kernel 本身变慢 |
+| KV usage 接近 1 且 preemption 增长 | 分页容量不足，已运行工作被回收重算 | 不等于 prefix cache 必须关闭 |
+| inter-token latency 上升而队列稳定 | step 执行或 CPU/GPU overlap 可能退化 | 仅凭该指标不能定位 runner 或 kernel |
+| 某请求回退 piecewise 或 eager | 当前 batch/backend capability 不满足 full graph | 不等于编译整体失效 |
 
-生产反馈闭环见 [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]]。这里的核心原则是：指标必须落到状态 owner；只看 GPU utilization 无法区分调度、数据准备、通信和 kernel 退化。
+这些信号在源码中有独立定义：KV usage 与 preemption 是资源压力，TTFT、ITL 与 WAITING queue time 是不同延迟区间（`vllm/v1/metrics/loggers.py:561-568`；`vllm/v1/metrics/loggers.py:661-668`；`vllm/v1/metrics/loggers.py:796-856`；`vllm/v1/metrics/loggers.py:922-929`）。表中的定位是诊断顺序的**分析推断**，不是单个指标对根因的充分证明。
 
-## 八、最小源码阅读顺序
-
-1. `vllm/v1/engine/core.py:104-177,583-613`：确认 EngineCore 拥有什么，以及一次资源承诺如何提交。
-2. `vllm/v1/core/sched/scheduler.py:69-180`：确认 admission budget、request maps 与 connector 边界。
-3. `vllm/v1/core/kv_cache_manager.py:118-194,347-442`：确认 slot 分配依赖的容量和 block contract。
-4. `vllm/v1/core/block_pool.py:143-190,647-743`：确认物理块、free queue 与 refcount 所有权。
-5. `docs/design/model_runner_v2.md:11-55` 与 `vllm/v1/worker/gpu/model_runner.py`：理解 async-first 如何改变状态表示。
-6. `vllm/v1/attention/backend.py:55-115,655-708`：理解 backend 不是简单函数指针，而是能力合同。
-7. `vllm/entrypoints/cli/serve.py:90-150`：最后补服务进程选择，避免从 HTTP 入口反推整个系统。
+最终原则可以压缩成一句话：**先把动态性变成可审计的资源承诺，再优化承诺的执行；任何快路径都必须同时声明容量、生命周期和兼容边界。**
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/index|vLLM 知识地图]] — 按设计问题和性能症状导航全部页面。
-- [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM 引擎架构]] — 展开四个平面的对象与进程所有权。
-- [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] — 深入 token admission、抢占和结果提交。
-- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 深入分页内存、refcount 与 prefix cache。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] — 深入 persistent rows 与异步执行。
-- [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — 深入动态形状系统的专用化与回退。
+- [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] —— 把本页四个设计支点映射到完整责任分层与一条在线请求生命周期。
+- [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler 分析]] —— 深入逐 step token admission、抢占与结果提交的事务细节。
+- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 深入逻辑 block、refcount、prefix cache 与物理容量边界。
+- [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] —— 深入 persistent row、staged write 与 async-first 执行。
+- [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] —— 展开 attention 能力声明、选择与兼容性验证。
+- [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] —— 展开动态 batch 如何在 full、piecewise 与 eager 路径间派发。
+- [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] —— 用队列、延迟、KV 与 preemption 信号闭合设计反馈。

@@ -1,161 +1,175 @@
 ---
-title: "vLLM Attention Backend：用能力合同连接动态调度与专用 Kernel"
+title: "vLLM Attention Backend：稳定合同先筛能力，动态 Metadata 再接 Kernel"
 ---
 
-# vLLM Attention Backend：用能力合同连接动态调度与专用 Kernel
+# vLLM Attention Backend：稳定合同先筛能力，动态 Metadata 再接 Kernel
 
-> **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
-> **中心命题**：attention backend 不只是 `forward()` 的不同实现。它必须同时定义 KV layout、block size、metadata、batch reorder、量化、context parallel 和 CUDA Graph 能力。vLLM 用 backend/builder 合同把 Scheduler/KV 的逻辑状态翻译成 kernel 输入，避免 runner 按后端名称硬编码路径。
-> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-27。按五拍重排章节顺序，并补齐发展趋势；机制正文与既有引用未改。
+> **读者问题**：模型含有不同 attention 语义、KV dtype、block size 和并行模式时，vLLM 怎样选出可用 backend、固定可共享的 KV 物理布局，再把每一步变化的请求边界翻译成该 backend 可执行的输入？
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，`v0.28.1rc0-80-g6b110badbb`，提交时间 2026-08-29T02:40:53Z）
+> **中心命题**：attention specialization 被拆成两种时间尺度。初始化期用 backend 能力谓词、KV spec 与全模型 layout 求交固定实现和存储 ABI；执行期由 runner 生成 backend-neutral 的 `CommonAttentionMetadata`，再由 builder 翻译为 backend metadata。Scheduler 因而只需承诺 token 与逻辑 block，kernel 只需消费已经证明自洽的形状、地址和边界。
+> **所有权边界**：本页拥有 `AttentionBackend`/builder/impl 合同、per-kind 与平台 backend 选择、KV layout 和 kernel block-size 协商、metadata 翻译、fallback/rejection 语义；全局 admission、preemption 与请求状态属于 `11`，物理 block 生命周期属于 `12`，CUDA Graph 全局派发属于 `23`，kernel/provider 内部实现与收益模型属于 `24`。
+> **最近更新**：2026-08-30。按 `6b110bad` 重建，并纠正旧页“selector 直接设置全局 KV layout”的过时描述。
 
-## 一、背景：为什么 attention 是系统接缝
+## 1. 背景：动态 batch 不能成为 kernel 的隐式输入
 
-同一模型层可能面对：
+同一个模型实例会同时遇到 decoder、encoder、cross attention，full/sliding/MLA/sparse 语义，普通或量化 KV，以及 PCP、DCP、KV connector、adaptive verification 等运行条件。vLLM 没有把这些条件压成一个 `backend_name` 开关；`AttentionSelectorConfig` 把它们保留为可验证输入，`AttentionBackend.validate_configuration()` 再逐项返回不兼容原因（`vllm/v1/attention/selector.py:21-38`；`vllm/v1/attention/backend.py:263-348`）。
 
-- prefill、单 token decode、mixed batch、speculative multi-token decode；
-- MHA、GQA、MQA、MLA、sliding window、Mamba 或 cross attention；
-- FP16/BF16/FP8 KV、不同比特和 per-head scale；
-- full/piecewise/no CUDA Graph；
-- TP、DCP、PCP；
-- FlashAttention、FlashInfer、Triton、ROCm AITER 等平台 kernel。
+这里先纠正一个常见心智模型：**Scheduler 不会逐 step 选择 FlashAttention 或 FlashInfer。** 普通 `Attention` layer 在模型初始化时调用 selector 并保存 backend class；每一步变化的是 request order、query/context length、block table 与 slot mapping，它们随后进入 metadata builder（`vllm/model_executor/layers/attention/attention.py:336-352`；`vllm/v1/worker/gpu/attn_utils.py:275-337`）。因此 backend selection 更接近模型实例 ABI，metadata 才是动态调度与专用实现之间的接缝。
 
-如果 `Attention` 只暴露一个共同 forward signature，而其他能力散落在 runner 的 `if backend == ...` 中，任何新 backend 都会横向修改 scheduler、KV、compile 和 graph 代码。vLLM 的设计是让 backend 类声明静态能力，让 metadata builder 负责动态 batch 翻译。
+**为什么不让每个 kernel 直接读取 Scheduler 状态（分析推断）。** 这种直观方案会让 kernel 依赖 request 生命周期、CPU 容器与平台外的同步规则，也无法在同一个逻辑 KV group 中安全复用 metadata。当前路线把动态事实先归一成 common metadata，再由 builder 生成专用对象；代价是初始化时必须协商更多能力，执行时也支付一次明确的 metadata 构建或更新成本。
 
-## 二、为什么这么设计：为什么不使用一个万能 backend
+## 2. 先看稳定合同，再看 backend 名单
 
-| 方案 | 失败原因 | 多 backend 合同的代价 |
-|---|---|---|
-| 一个通用 PyTorch attention | 覆盖广但 decode/paged KV/MLA 性能不足 | 维护选择矩阵与回退 |
-| 每 backend 直接读取 Scheduler | 内核与请求生命周期耦合，无法复用 | metadata 构建有固定成本 |
-| 统一一个 KV layout | 简化 manager，但浪费平台/内核特性 | layout 在实例初始化时必须协商 |
-| graph 支持用布尔值 | 无法表达 decode-only/uniform-only | 多级 capability 与 dispatcher 更复杂 |
-| backend 自行重排局部 tensor | 易实现但破坏跨状态对齐 | runner 必须提供统一 mapping/gather |
-| 所有副作用留在 Python | eager 简单，compile 后顺序不可靠 | custom op/fake impl/dummy dependency |
+### 2.1 五个合同对象分别拥有一层事实
 
-> [!note] 推断
-> 这张表是本页依据代码行为重建的设计权衡：每一行的“为什么不适用”都能落到后文引用的 `file:line` 上，但“当初权衡过、并因此否掉了它”这层意思由本页承担——源码通常只陈述最终形态，不陈述被否掉的选项。要引用其中某一行，请回到对应小节的 locator，不要引用本表。
+| 合同对象 | 输入 → 输出 | 拥有的稳定事实 | 不拥有 | 证据 |
+|---|---|---|---|---|
+| `AttentionBackend` class | 模型/平台条件 → impl、builder、能力声明 | dtype、head size、kernel block size、feature predicates、KV layout 支持集 | 当步 request 边界与 kernel 调用细节 | `vllm/v1/attention/backend.py:59-147`；`vllm/v1/attention/backend.py:165-260` |
+| `KVCacheSpec` + `KVCacheLayout` | attention 语义与 backend packing → page 语义和物理 stride order | 每层 cache 内容、block 粒度、全模型可用物理 layout | block 的 owner/refcount 与 admission | `vllm/model_executor/layers/attention/attention.py:597-655`；`vllm/v1/kv_cache_layout.py:15-58` |
+| `CommonAttentionMetadata` | 当步 batch 与逻辑 KV 映射 → backend-neutral snapshot | query/sequence 边界、request/token 数、block table、slot mapping 及可选 DCP/MM 状态 | backend wrapper、workspace 与 kernel-specific schedule | `vllm/v1/attention/backend.py:368-444` |
+| `AttentionMetadataBuilder` | common metadata + `KVCacheSpec` → backend metadata | 翻译、可选 block-table 原地更新、draft metadata 更新、reorder 与 capture 能力 | attention 数值计算 | `vllm/v1/attention/backend.py:584-732` |
+| `AttentionImpl` | Q/K/V + physical KV + backend metadata → output | backend forward ABI 以及可选融合能力 | backend 选择与全局调度策略 | `vllm/v1/attention/backend.py:869-938` |
 
-## 三、三段契约
+这组边界胜过“统一一个万能 `forward()`”的关键不是少写参数，而是**让变化的来源可判责**：模型/硬件不兼容在 selection 阶段失败，存储布局不兼容在 allocation 前失败，当步长度/顺序错误则落在 metadata snapshot，kernel 内部不再猜测上游状态。
+
+### 2.2 合同跨两个时间尺度
 
 ```mermaid
 flowchart LR
-  Logical["Scheduler and KV logical state"] --> Common["CommonAttentionMetadata"]
-  Common --> Builder["backend metadata builder"]
-  Builder --> Specific["backend specific metadata"]
-  Spec["KVCacheSpec"] --> Builder
-  Specific --> Impl["AttentionImpl forward"]
-  Cache["physical KV tensor and slot mapping"] --> Impl
-  Impl --> Kernel["platform kernel"]
+    subgraph Init["初始化期 · 固定实现与存储 ABI"]
+        C["模型语义与运行配置"] --> S["selector<br/>能力谓词过滤"]
+        S --> B["每层或每类 backend"]
+        B --> K["KV spec 与 layout 支持集"]
+        K --> R["EngineCore 求交<br/>固定单一 layout"]
+    end
+
+    subgraph Step["每一步 · 翻译动态 batch"]
+        O["调度结果与设备输入"] --> M["Common metadata"]
+        M --> MB["backend builder"]
+        MB --> BM["backend metadata"]
+        BM --> I["AttentionImpl"]
+    end
+
+    B --> MB
+    R -->|固定物理 KV 解释| I
 ```
 
-### 3.1 Backend 静态合同
+图中初始化路径只发生在模型/KV cache 建立阶段；逐 step 路径不会重新选择 backend 或 layout。`get_attn_backend()` 也明确说明单次 layer selection 看不到其他 layer，layout 必须等所有 backend 都已知后统一解析（`vllm/v1/attention/selector.py:173-191`）。
 
-`AttentionBackend` 声明支持 dtype/KV dtype、kernel block sizes、impl/builder class、KV cache shape 与 stride/layout；`vllm/v1/attention/backend.py:55-126`。它回答“这个实现原则上能消费什么存储和硬件”。
+## 3. 能力谓词：先证明可用，再谈优先级
 
-### 3.2 Common metadata
+### 3.1 原子谓词与组合谓词
 
-`CommonAttentionMetadata` 保存 query start、sequence length、request/token 数、block table、slot mapping，以及 DCP、encoder、prefill、sparse 等可选信息；`vllm/v1/attention/backend.py:456-532`。它是 runner 对动态 batch 的统一描述，不等于某个 kernel 的最终参数。
+稳定选择合同先检查 head size、activation dtype、KV dtype、block size；再检查 mm prefix、MLA/dense、sparse/dense、sink、per-head scale、compute capability、attention type、sliding window、non-causal、batch invariance、KV connector、PCP、adaptive verification 与 DCP 组合（`vllm/v1/attention/backend.py:285-334`）。某些限制无法拆成独立布尔值，例如“sink + 某 compute capability”或“特定 head size + FP8 + block size”；backend 用 `supports_combination()` 返回一条可诊断原因，而不是让 platform 重写这些交叉规则（`vllm/v1/attention/backend.py:248-260`；`vllm/v1/attention/backend.py:335-348`）。
 
-### 3.3 Metadata builder
+block size 也不是简单相等：声明为 `MultipleOf(n)` 时，framework block 只要是 kernel 粒度的整数倍就可通过；这让较大的 KV-manager block 可以在执行侧虚拟拆分（`vllm/v1/attention/backend.py:117-133`）。若一个 KV group 内出现多个 backend，runner 再求所有 backend 都支持、且能整除 manager block 的共同 kernel block size；求不到就直接报错（`vllm/v1/worker/utils.py:310-376`；`vllm/v1/worker/utils.py:442-483`）。
 
-每个 builder 把 common metadata 和 `KVCacheSpec` 转为后端专用 metadata，并声明 batch reorder、block-table 原地更新、draft metadata 更新和 graph capture 能力；`vllm/v1/attention/backend.py:672-815`。
+### 3.2 `backend_per_kind` 是每种 KV 语义的 override，不是每请求路由
 
-核心不变量是：**backend-specific metadata 必须与本轮 request ordering、block table、query/context length 和 capture mode 属于同一快照；不能复用上一轮 metadata 却只更新其中一部分。**
+selector 先由 MLA、sliding window 和 attention type 推导 `KVCacheSpecKind`，然后让 `backend_per_kind[kind]` 覆盖全局 `backend`；未配置的 kind 回落到全局 backend 或 auto（`vllm/v1/attention/selector.py:62-99`；`vllm/v1/attention/selector.py:173-186`）。配置层拒绝未知 kind，并把 backend 字符串解析为注册枚举（`vllm/config/attention.py:176-200`）。测试覆盖 full、MLA、sliding-window MLA、sliding-window 与 cross/encoder-only 的 kind 映射，也验证未知 kind 在配置阶段失败（`tests/v1/attention/test_backend_per_kind.py:14-63`）。
 
-## 四、选择器为什么输入这么多维度
+这样做允许 interleaved model 的不同 KV group 选择不同 backend，却仍保持每个 layer 在进程生命周期内稳定。逐请求切换会要求同一 layer 的 impl、builder、workspace、capture buffer 和 KV layout 同时热切换，当前合同并不提供这种事务。
 
-`get_attn_backend()` 收集 head size、dtype、KV dtype、MLA/sink/sparse/multimodal prefix、per-head scale、attention type、sliding window，以及 connector、PCP/DCP、adaptive verification 等全局条件；`vllm/v1/attention/selector.py:105-188`。
+## 4. selector：auto 会降级，显式选择通常会拒绝
 
-随后平台对象根据这些条件解析 backend class；若 backend 要求特定 KV cache layout，选择器会设置全局 layout；`vllm/v1/attention/selector.py:195-226`。这给出初始化顺序约束：
+本页的 **fallback** 只指初始化期的候选 backend 替换或显式配置拒绝；运行期因 batch/capture 条件从 full CUDA Graph 降到 piecewise/eager 属于 [[23_vllm_compilation_cudagraph_analysis|CUDA Graph 与执行模式]]，已选 attention op 内部在 provider/kernel 间降级属于 [[24_vllm_fused_ops_and_kernels_analysis|kernel/provider fallback]]。三者的发生时间、决策输入和 owner 不同，不能互相代指。
 
-1. 模型/attention 语义和平台能力决定 backend；
-2. backend 决定 KV shape/layout 与 block size 能力；
-3. KV cache profiling/allocation 才能确定物理容量；
-4. Scheduler 才能按实际容量准入。
+### 4.1 CUDA 的选择算法是“优先级列表 ∩ 能力集合”
 
-因此不能在 KV 已分配后随意热切换到需要不同 layout 的 backend。backend selection 更接近模型实例 ABI，而不是每请求策略。
+CUDA 先按 dense/MLA、device capability、head count、KV dtype 与 non-causal 条件生成有序候选；例如普通 attention 在 SM100 causal 路径优先 FlashInfer，其余路径优先 FlashAttention，后面才是 Triton、Flex 与 TurboQuant（`vllm/platforms/cuda.py:82-163`）。随后它懒加载每个候选并运行同一 `validate_configuration()`；`ImportError`/`OSError` 与能力不匹配都进入 rejected-reasons，auto 最终取仍有效的最高优先级候选（`vllm/platforms/cuda.py:363-401`；`vllm/platforms/cuda.py:461-502`）。
 
-## 五、`Attention` layer 如何接入合同
+这不是“失败后悄悄使用任意实现”，而是有边界的 fallback：
 
-模型构造 `Attention` 时提供 heads、head size、scale、KV heads、sliding window、cache/quant config 和 layer prefix。layer 解析 KV dtype、per-head scale、skip-layer 配置，再调用 selector；`vllm/model_executor/layers/attention/attention.py:218-350`。
+- **auto**：跳过不可导入或谓词失败的候选，选择剩余候选中的最高优先级；一个都没有时，错误包含完整 selector config 和逐 backend 原因（`vllm/platforms/cuda.py:435-459`）。
+- **显式 backend**：只验证用户指定项；不可导入或任一谓词失败都启动失败，不自动换另一个实现（`vllm/platforms/cuda.py:413-433`）。选择器测试也把旧的“显式 backend 失败后 fallback”场景标成 skip，并注明当前不支持这种行为（`tests/kernels/attention/test_attention_selector.py:266-283`）。
+- **用户只固定 block size**：auto 仍可换到较低优先级 backend，但若唯一排除原因是该 block size，会发出潜在性能下降警告（`vllm/platforms/cuda.py:471-490`）。
 
-它还会显式拒绝/降级不兼容组合。例如 batch-invariant 模式与特定 backend 的 prefix cache 组合会关闭 prefix caching；ALiBi sqrt、chunk lookback 等特性也要求 backend 声明支持；`vllm/model_executor/layers/attention/attention.py:353-383`。
+平台拥有选择政策，所以边界并非完全同构。ROCm 对显式不兼容通常同样 fail loud，但 TurboQuant 分层 KV dtype 是一个有注释的例外：boundary layer 继续用显式 backend，TurboQuant layer 可改走 per-layer auto；其他 dtype 不享受该 fallback（`vllm/platforms/rocm.py:627-665`）。因此“显式选择永远 fallback”与“显式选择绝不 fallback”都不是跨平台合同；跨平台稳定的是 backend 提供同一组可验证谓词，platform 决定候选和失败政策。
 
-layer 的 `get_kv_cache_spec()` 把 full/sliding 等 attention 语义转换为 KV manager 可理解的 spec；`vllm/model_executor/layers/attention/attention.py:640-655`。这条边界很关键：Scheduler 不应该识别 FlashAttention 名称，它只处理由 layer/backend 共同确定的 KV spec。
+### 4.2 直接注入 backend 是高级旁路
 
-## 六、metadata 是动态系统的“形状证明”
+`Attention(..., attn_backend=...)` 会绕过 selector，直接保存传入 class；之后仍有 ALiBi、chunk lookback、Flex block 等 layer-local guards，但不会自动重跑完整平台候选过滤（`vllm/model_executor/layers/attention/attention.py:339-384`；`vllm/model_executor/layers/attention/attention.py:386-407`）。所以（分析推断）自定义模型直接注入 backend 时，调用者必须自己保证 dtype、设备、layout 与 feature 组合满足合同；这不是 auto selector 的等价入口。
 
-静态模型参数只能说明 head 数和 dtype；每一轮还需要证明：
+## 5. KV layout：先求全集交集，再做任何物理分配
 
-- flattened query 中每个 request 的起止位置；
-- 当前 context length 与 query length；
-- 哪些 token 写入哪个 physical slot；
-- block table 的 request row 和 group；
-- batch 是否 uniform decode、mixed、prefill 或 spec decode；
-- common prefix、sliding window、DCP local length 等边界。
+### 5.1 spec 描述“存什么”，layout 描述“字节怎样排”
 
-Common metadata 同时保留部分 CPU/GPU 版本，是因为 Python 选择逻辑和 GPU kernel 需要不同访问方式；异步模式下某些 CPU length 只是 optimistic upper bound，源码明确警告不能给需要精确 decode length 的 kernel 使用；`vllm/v1/attention/backend.py:469-514`。
+普通 layer 把 decoder full/sliding 语义转成 `FullAttentionSpec` 或 `SlidingWindowSpec`，encoder-only 则不产生 autoregressive KV spec；backend 可用 `customize_spec()` 调整 packing（`vllm/model_executor/layers/attention/attention.py:597-655`；`vllm/v1/worker/gpu/attn_utils.py:52-65`）。物理 layout 的逻辑轴固定为 `L, B, H, N, C`，枚举值只改变 stride permutation；`is_block_compact`、`is_layer_compact` 与 `is_block_outermost` 给 allocator 判断某种混合 page packing 能否表达（`vllm/v1/kv_cache_layout.py:11-28`；`vllm/v1/kv_cache_layout.py:39-58`）。
 
-这意味着 backend 不能仅凭“字段存在”假设其精度；metadata 字段本身也有同步语义。
+每个 backend 用 `supported_kv_cache_layouts()` 返回偏好顺序，`None` 表示任意 layout。worker 对当前所有 backend 的声明取交集；相同声明保留顺序，不同声明用首选票数排序，空交集硬失败（`vllm/v1/attention/backend.py:350-354`；`vllm/v1/attention/backends/utils.py:190-225`）。这一步说明 layout 不是 selector 的单层副作用：模型可以同时含多个 backend，只有全集已知后才能找到共享物理解释。
 
-## 七、KV 更新与 attention forward 为什么需要显式依赖
+> [!contradiction] 旧文档表述与 live code 冲突
+> 旧版页面曾声称 selector 选择 backend 后会设置全局 KV layout。当前 selector 明确说明单次选择看不到其他 layer，layout 必须在所有 backend 已知后统一解析（`vllm/v1/attention/selector.py:185-186`）；live implementation 则由 EngineCore 调用 `resolve_kv_cache_layout()`，对全体 worker/backend 支持集求交并一次性提交（`vllm/v1/attention/backends/utils.py:240-308`）。本页以 live code 为准：selector 只选 backend，EngineCore 才提交全模型 layout。
 
-某些 backend 在 forward 内写 KV，另一些把 KV update 拆成 custom op。`unified_kv_cache_update()` 从 forward context 取得 layer、KV tensor 和 slot mapping，执行写入并返回 dummy tensor；随后 attention op 接受该 dummy dependency，确保 `torch.compile` 不会重排写入与读取；`vllm/model_executor/layers/attention/attention.py:658-758`。
+### 5.2 EngineCore 是 layout 的唯一提交点
 
-这是编译系统中的副作用建模：KV tensor 可能通过 context 间接获得，图编译器看不到普通 Python 所有权；dummy data dependency 把“先写 cache、再读 attention”变成图内可保持的顺序。
+EngineCore 收集各 worker 的候选列表并要求所有 rank 一致；混合 HNC shape 会进一步把候选收窄到 block-compact layout。显式 `VLLM_KV_CACHE_LAYOUT` 不在候选中会硬失败；connector 偏好若不兼容则只告警并回落首选候选（`vllm/v1/attention/backends/utils.py:240-304`）。解析发生在 memory profiling 前，因为 full CUDA Graph capture 可能已经需要最小 KV cache；结果随后通过 RPC 发给 worker，并复制进最终 `KVCacheConfig`（`vllm/v1/engine/core.py:285-323`）。
 
-直观地把 KV update 写成任意 Python side effect，在 eager 下可能正确，在 compile/fusion 后却可能被移除或重排。
+提交后的 layout 不允许在进程内改成另一值；worker 重复接收同值可以，冲突值会报错（`vllm/v1/attention/backends/utils.py:228-237`）。这给出一个硬不变量：**backend、layout、KV views 与 metadata 对 block table 的解释必须来自同一次初始化协商。** 已分配后热换成要求另一 layout 的 backend 不是性能降级，而是 ABI 破坏。
 
-## 八、CUDA Graph 能力不是布尔值
+## 6. Metadata：把动态调度事实变成 backend 的形状证明
 
-`AttentionCGSupport` 区分：
+### 6.1 common snapshot 为什么是 seam
 
-- `ALWAYS`：mixed prefill/decode 也支持；
-- `UNIFORM_BATCH`：只支持相同 query length，可覆盖 spec decode；
-- `UNIFORM_SINGLE_TOKEN_DECODE`：只支持纯单 token decode；
-- `NEVER`；`vllm/v1/attention/backend.py:655-669`。
+`CommonAttentionMetadata` 同时携带 request 的 query 起点、sequence length、实际 request/token 数、最大 query/context、每组 block table 和 slot mapping；DCP local lengths、positions、prefill 标记、MM document ranges 等只在相关模式出现（`vllm/v1/attention/backend.py:377-439`）。runner 为每个 KV cache group 组装这份 snapshot，再让该 group 的每个 builder 生成 backend metadata，并把同一结果挂到共享该 backend/spec 的 layer（`vllm/v1/worker/gpu/attn_utils.py:275-337`）。
 
-布尔 `supports_cudagraph` 无法表达 FlashInfer/Mamba 等“decode 可捕获、mixed 不可捕获”的现实。runner 汇总所有 attention group 的最低能力，再由 dispatcher 对当前 batch 选择 full、piecewise 或 eager。官方设计要求 compile 与 capture 尽量解耦、按 batch composition 动态派发；`docs/design/cuda_graphs.md:23-36`。
+这种 seam 的价值（分析推断）是把“调度结果的语义”与“kernel 参数的结构”分开：上游只保证 request ordering、长度、block 与 slot 同步；builder 可以据此建立 wrapper、workspace 或 capture-safe persistent buffer，而无需反查 Scheduler 对象。反过来，任何只更新 block table、却遗留上一轮 query boundaries 的复用都会把两个 batch snapshot 混在一起。
 
-代价是 backend 必须提供 capture-safe metadata buffer，地址和 shape 不能在 replay 时变化；fused draft loop 还要求 `supports_draft_decode_metadata_update`，否则回退到逐步重建。
+metadata 不是“字段存在就可信”。async speculative decode 下，`seq_lens_cpu_upper_bound` 对 decode row 可能只是假设所有 draft 被接受的乐观上界，源码明确禁止需要精确 per-row decode context 的 kernel 使用它；device `query_start_loc` 才保存 adaptive verification 决定的 per-request split（`vllm/v1/attention/backend.py:422-426`；`vllm/v1/attention/backend.py:509-524`）。CPU mirror 属性还会引入隐式 host-device 同步，注释要求迁向 device tensor（`vllm/v1/attention/backend.py:463-491`）。
 
-## 九、为何允许 batch reorder
+### 6.2 builder 暴露的是“可安全复用到什么程度”
 
-不同 kernel 对 uniform decode、short query、prefill 的最优布局不同。builder 可以声明 `reorder_batch_threshold`，把特定 query length 的请求移到 batch 前部；DCP 若不支持 varlen 会把 threshold 收紧为 1；`vllm/v1/attention/backend.py:711-741`。
+builder 的 `supports_update_block_table` 允许相同 spec/builder 在 hybrid group 间复用 metadata，只替换 block table 与 slot mapping；不声明该能力就必须完整 rebuild（`vllm/v1/attention/backend.py:592-599`；`vllm/v1/worker/gpu_model_runner.py:2493-2568`）。`supports_draft_decode_metadata_update` 则说明 fused draft loop 能否在 persistent tensor 上 capture-safe 地原地推进；Python 方法本身不会在 CUDA Graph replay 时重新运行（`vllm/v1/attention/backend.py:724-732`）。
 
-reorder 的正确性条件是所有 companion state 同步重排：input ids、positions、block table、sampling mapping、output index。只重排 attention metadata 会把请求 A 的 query 与请求 B 的 KV 组合。
+CUDA Graph 能力也不是布尔值：合同区分 mixed batch、uniform query length、纯单-token decode 与完全不支持四级（`vllm/v1/attention/backend.py:567-581`）。runner 只把所有 attention group 的最弱能力及其 backend 名称向上汇总（`vllm/v1/worker/gpu/attn_utils.py:156-180`）；如何据此选择 full、piecewise 或 eager 属于 `23`，本页只拥有这个 capability boundary。
 
-MRV2 将 persistent state row 与 per-step input order 分离，正是为了让 gather/reorder 不需要搬动持久 owner；见 [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|Model Runner V2]]。
+batch reorder 同样由 builder 提供阈值，而 runner 对所有 group 取最小值；后端必须能接受更小阈值，代价只是把更多 decode 当 prefill（`vllm/v1/attention/backend.py:623-653`；`vllm/v1/worker/gpu_model_runner.py:7294-7312`）。reorder 的全局 companion-state 对齐由 runner 拥有，本页只规定 metadata 不能独自改变 request ordering。
 
-## 十、约束、失败边界与验证顺序
+## 7. 代表性 backend：名称只是能力集合的实例
 
-出现 backend 问题时按合同逐层检查：
+合同建立后，backend 名单才有解释力：
 
-1. selector 输入是否反映真实 dtype、KV spec、parallel 和 connector 配置；
-2. backend 是否支持 head size、block size、KV dtype/layout；
-3. common metadata 的 length/order/block table 是否来自同一 batch；
-4. builder 是否正确处理 reorder、capture、draft update；
-5. KV write 与 attention read 是否有编译可见依赖；
-6. 当前 graph mode 是否超过所有 group 的最低能力；
-7. fallback 是性能降级还是配置错误。
+| 代表 backend | 它在合同上声明了什么 | 由选择器看见的边界 |
+|---|---|---|
+| FlashAttention | kernel block 是 16 的倍数或特定 FA4 page；支持 sliding、batch invariance、non-causal 与多 attention type；per-head quant scale 还取决于 FA version | head size、compute capability、sink、FP8 与 mm-prefix 组合都可能拒绝 | `vllm/v1/attention/backends/flash_attn.py:111-199`；`vllm/v1/attention/backends/flash_attn.py:202-244` |
+| FlashInfer dense | head size 集合固定；compute capability 有上下界；SM10 声明 head-major block-interior layout 偏好 | 即使 import 成功，head size、设备代际或 layout 全局交集仍可排除它 | `vllm/v1/attention/backends/flashinfer.py:500-543` |
+| FlexAttention | 额外接受 FP32、decoder 与 encoder-only、non-causal/MM prefix，但 KV layout 只能是 `LBNHC` | CUDA selector 测试中 FP32 会落到它；layout 交集仍可排除它 | `vllm/v1/attention/backends/flex_attention.py:90-134`；`tests/kernels/attention/test_attention_selector.py:233-250` |
+| FlashMLA / FlashInfer MLA | 前者固定 kernel block 64、支持 SM9/SM10；后者支持 32/64、只支持 SM10，并验证模型的 `qk_nope_head_dim` | “use MLA”只进入 MLA 候选集，最终仍由 block、设备和模型维度谓词决定 | `vllm/v1/attention/backends/mla/flashmla.py:50-97`；`vllm/v1/attention/backends/mla/flashinfer_mla.py:150-207` |
 
-最小源码阅读顺序：`vllm/v1/attention/selector.py:105-226` → `vllm/v1/attention/backend.py:55-441` → `vllm/v1/attention/backend.py:456-815` → `vllm/model_executor/layers/attention/attention.py:218-390,640-772` → 目标 backend 的 builder/impl。
+这个表刻意不比较 kernel 内部算法或声称哪个 backend 普遍最快。源码只给出平台特定优先级与某些注释化 benchmark 条件；具体 kernel 路径、provider 和收益边界由 `24` 维护。
 
-## 十一、发展趋势
+## 8. 失败边界与排查顺序
 
-> [!note]
-> 本节离开“源码此刻是什么”，只收录源码自陈的在途改动；每条给出锚点，属于外推的部分单独标注。
+| 现象 | 合同语义 | 先检查 |
+|---|---|---|
+| 显式 backend 启动失败 | 用户要求的是硬约束；CUDA 不替换不兼容实现 | error 中的逐项 invalid reason；`vllm/platforms/cuda.py:413-430` |
+| auto 换了 backend | 更高优先级候选 import 失败或谓词不满足；这是受控性能 fallback | debug reasons 与 priority；`vllm/platforms/cuda.py:363-401` |
+| auto 没有候选 | 没有实现满足完整配置，不存在正确的 silent fallback | selector config 与所有 rejected reasons；`vllm/platforms/cuda.py:442-459` |
+| KV layout 初始化失败 | 所有 backend/layout 支持集无交集，或 mixed HNC 需要 block-compact 但候选不满足 | backend layout declarations 与 spec shapes；`vllm/v1/attention/backends/utils.py:201-225`；`vllm/v1/attention/backends/utils.py:271-285` |
+| connector 想要另一 layout | connector 偏好是软约束；不兼容时保留全模型共同 layout 并告警 | `vllm/v1/attention/backends/utils.py:294-304` |
+| 特性在选定 backend 后又被关闭/拒绝 | 组合 guard 尚未全部进入通用 selector，例如 batch-invariant prefix cache 会关闭，ALiBi sqrt 与 chunk lookback 会硬拒绝 | `vllm/model_executor/layers/attention/attention.py:353-384` |
+| 同一 backend 偶发读错 request/KV | 首先怀疑 metadata snapshot 或 reorder companion state，不要先归因 kernel 数值 | query boundaries、block table、slot mapping 是否来自同一步；`vllm/v1/attention/backend.py:377-426` |
 
-1. **metadata 合同里的 CPU 镜像字段已判死刑。** `# WARNING: Deprecated fields. Will be removed in a future release (v0.15.0)` 之下是 `_seq_lens_cpu` 与 `_num_computed_tokens_cpu`，见 `vllm/v1/attention/backend.py:532-536`。这与本页“metadata 是动态系统的形状证明”一节同向：证明本身要 GPU-native，CPU 侧副本是过渡物。
-2. **平台专用回退分支都带着退出条件。** CPU backend 的 `use_sdpa_prefill` 标着 `# can be removed after deprecate sdpa`（`vllm/v1/attention/backends/cpu_attn.py:131`）；FlashAttention 的 DCP 混合 decode/prefill 分支标着 `# TODO: Remove this DCP + FA2 mixed decode/prefill workaround once FA4 supports this Qwen3.5 shape.`（`vllm/v1/attention/backends/flash_attn.py:1296-1297`）。选择矩阵会随 backend 能力补齐而变窄，不是永久形态。
+建议用下面的源码顺序定位，而不是先钻进 kernel：
+
+1. `vllm/v1/attention/backend.py:59-354`：静态能力、拒绝原因与 layout 声明；
+2. `vllm/v1/attention/selector.py:102-212`：layer 条件、per-kind override 与平台入口；
+3. 对应 `vllm/platforms/<platform>.py`：候选优先级、auto/explicit policy；
+4. `vllm/v1/attention/backends/utils.py:190-308`：全模型 layout 求交与提交；
+5. `vllm/v1/attention/backend.py:368-732`：common metadata 与 builder 复用能力；
+6. `vllm/v1/worker/gpu/attn_utils.py:77-180` 与 `vllm/v1/worker/gpu/attn_utils.py:275-337`：group、builder 和当步 metadata 的接合点；
+7. 最后才读目标 backend 的 metadata/impl；kernel 内部继续到 `24`。
+
+## 9. 演进锚点
+
+> [!note] 分析推断
+> 当前 `customize_spec()` 被源码标为临时兼容 API：现在由 layer 先建 spec、backend 再 post-hoc 调整；注释给出的目标是让 backend 直接构造并返回 spec（`vllm/v1/attention/backend.py:135-146`）。这会把 KV packing 的所有权进一步收回 backend contract，但在该提交上还不能按未来接口写文档或扩展代码。
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — backend 消费的 block ownership 与 KV spec 来源。
-- [[02_engineering/03_infer_frameworks/vllm/13_vllm_model_library_analysis|vLLM 模型与权重 ABI]] — 模型 layer 如何构造 attention 和并行参数。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] — common metadata、reorder 和 persistent row 的生产者。
-- [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] — multi-token query 和 draft metadata update。
-- [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|vLLM 量化派发设计]] — KV dtype、scale 与 attention kernel 兼容性。
-- [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] — capability 如何决定 full/piecewise/eager 派发。
-- [[02_engineering/03_infer_frameworks/vllm/25_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]] — attention custom op 如何成为图边界。
+- [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] —— 拥有本页刻意排除的 request/token admission、preemption 与一步资源提交事务。
+- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 展开 backend layout/spec 最终落到的物理 block、hybrid packing 与所有权不变量。
+- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] —— 对照 backend reorder 如何触发 MRV1 全状态 swap，或在 MRV2 中只改变 per-step mapping。
+- [[02_engineering/03_infer_frameworks/vllm/21_vllm_quantization_analysis|vLLM 量化派发]] —— 展开 KV dtype、scale、load transform 与量化 kernel 的联合兼容合同。
+- [[02_engineering/03_infer_frameworks/vllm/23_vllm_compilation_cudagraph_analysis|vLLM 编译与 CUDA Graph]] —— 解释 runner 如何消费 backend 的最弱 capture capability 并选择执行模式。
+- [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与专用 Kernel]] —— 拥有本页排除的 kernel/provider 内部路径、fallback 与性能收益模型。

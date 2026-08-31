@@ -124,8 +124,8 @@ graph TD
     L["'0': Linear<br/>_parameters={weight,bias}<br/>_buffers={}"]
     BN["'1': BatchNorm1d<br/>_parameters={weight,bias}<br/>_buffers={running_mean,<br/>running_var,num_batches_tracked}"]
 
-    Root -->|_modules['0']| L
-    Root -->|_modules['1']| BN
+    Root -->|_modules key 0| L
+    Root -->|_modules key 1| BN
 
     L --- LW["weight: Parameter<br/>requires_grad=True"]
     L --- LB["bias: Parameter"]

@@ -12,6 +12,42 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-30：补齐 Model Runner V1，并将执行主线重排为 15 V1 → 16 V2
+
+**Type**：新增机制 owner 页 + 4 页连续编号调整 + 导航与交叉链接集成
+
+新增 [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|15 Model Runner V1]]，独立解释 MRV1 如何用 `CachedRequestState` 与紧凑 persistent `InputBatch` 承接动态调度：请求状态与 batch row 的双层所有权、finished/preempt/resume 的更新事务、condense/reorder 的全状态迁移、request-major 到 token-major 的输入物化、异步 token 回填与 host-buffer barrier，以及 dummy/profile/CUDA Graph 共用生命周期。页面以设计取舍、承重不变量、成本和失败边界组织，源码 locator 只承担证据角色。
+
+为让演进关系先 V1 后 V2，原 `15 Model Runner V2`、`16 Serving 控制面`、`17 采样与结构化输出`、`18 多模态执行` 依次调整为 `16`、`17`、`18`、`19`；vLLM 域内引用、父索引和总索引同步更新。该域现有 **24 篇内容页 + index**，仍统一固定到 `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`。
+
+本轮验证限定在新增/重排的 vLLM 页面、该域链接闭合性以及直接受影响的两级索引和 changelog；未运行全库门禁，也未改写历史日志中的当时编号叙述。
+
+---
+
+## 2026-08-30：vLLM Waves 2–6 完成——23 篇统一基线与最终知识地图
+
+**Type**：全域机制优先重写 + 4 个新 owner 页 + 导航/迁移元数据集成
+
+Waves 2–6 已完成入口与控制边界、资源与设备热路径、模型与专用化、规模化与生产闭环、使用与最终导航的复审。全域不再按源码目录或函数顺序搬运，而以读者问题、设计取舍、状态所有权、提交不变量、成本和失败边界组织；跨页只保留相邻合同并链接唯一 owner。
+
+新增四个权威 owner：[[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|04 请求语义]]、[[02_engineering/03_infer_frameworks/vllm/17_vllm_sampling_structured_output_analysis|17 采样与结构化输出]]、[[02_engineering/03_infer_frameworks/vllm/18_vllm_multimodal_execution_analysis|18 多模态执行]]、[[02_engineering/03_infer_frameworks/vllm/29_vllm_weight_transfer_online_update_analysis|29 在线权重更新]]。相关回链已从退休 ownership 修正到这些页面，协议/任务、token selection、媒体 encoder state 与在线版本可见性各有且仅有一个正文 owner。
+
+最终 23 篇内容页与 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 知识地图]] 全部固定到冻结源码 `vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（2026-08-29），父索引、总索引计数与 repository radar 同步为 **23 篇 + index**。本轮只对直接改动的 index/backlink/radar/changelog 做 scoped `rg`、wikilink target existence、显式路径 `git diff --check` 与人工 owner/路径/计数复核；未运行全库验证，也未回写历史 changelog 条目。
+
+---
+
+## 2026-08-29：vLLM 架构概览 Wave 1——直达导航、回链与混合基线迁移
+
+**Type**：重建页迁移集成（1 页更名/重建 + 2 个回链 + 2 个索引）
+
+原 `03` 已更名并重建为 [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]]。新页先解释静态责任层与状态边界，再用一条代表性在线请求说明生命周期；代码 locator 作为机制判断的证据，而非搬运源码散文。
+
+DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互资源均已退役或归还其对应 owner 页。vLLM 索引和两个直接回链现指向架构概览；启动、进程与 serving 控制面的细节仍分别由 `10` 与 `16` 号页拥有。
+
+本次验证有意限定在 vLLM 目录、两个直接回链和受影响索引的闭合性。它只是 Wave 1：架构概览已核验至 `6b110bad`，其余页面仍保留既有基线；后续 wave 须等待用户接受这一 exemplar 后推进。
+
+---
+
 ## 2026-08-28（四）：给 check_links 加 stale_section 规则；重做 ACT 深潜页——立论被上游改写
 
 **Type**: 门禁新规则（1 检查项 + 7 单测 + 3 处存量）+ 1 页重写
@@ -279,7 +315,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **Type**: 批量重构（15 页正文 + 域索引；接续同日（八）的样板页）
 
-**范围**：`02_engineering/03_infer_frameworks/vllm/` 下 18 篇分析页中的 16 篇（含（八）已改的 [[11_vllm_scheduler_analysis]]）。两篇按文体豁免并在索引里写明理由：[[02_vllm_system_design_principles_analysis]] 是「原始问题 → 四类资源约束 → 五个系统支点」的推导体，第 2 拍本来就是它的第二、三节，前移反而打断推导；[[03_vllm_request_flow_walkthrough_analysis]] 是端到端走查体，按时序组织。
+**范围**：`02_engineering/03_infer_frameworks/vllm/` 下 18 篇分析页中的 16 篇（含（八）已改的 [[11_vllm_scheduler_analysis]]）。两篇按文体豁免并在索引里写明理由：[[02_vllm_system_design_principles_analysis]] 是「原始问题 → 四类资源约束 → 五个系统支点」的推导体，第 2 拍本来就是它的第二、三节，前移反而打断推导；`03_vllm_request_flow_walkthrough_analysis` 是端到端走查体，按时序组织。
 
 **改了什么**（机制正文与既有 `file:line` 一律未动，只动章节顺序、标题与新增段落）：
 
@@ -543,7 +579,7 @@ All source ingestions and significant wiki updates are logged here.
 
 **Type**: Source Ingestion + Cross-domain Cross-reference
 
-- 将 `vllm/deepseek_v3_inference_flow.md`（旁置 vLLM checkout 根目录的分析稿）纳入 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]]，落为 [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis|vLLM 请求全链路导览]]，占 2.1「入口与统一心智模型」段位。该页定位为**导览页**（"一条请求怎样穿过进程、队列与 GPU"），与本域其余 owner 页的「约束 → 状态所有权 → 设计选择」叙事互补。
+- 将 `vllm/deepseek_v3_inference_flow.md`（旁置 vLLM checkout 根目录的分析稿）纳入 [[02_engineering/03_infer_frameworks/vllm/index|vLLM 推理引擎知识地图]]，落为 `03_vllm_request_flow_walkthrough_analysis`（原 vLLM 请求全链路导览），占 2.1「入口与统一心智模型」段位。该页定位为**导览页**（"一条请求怎样穿过进程、队列与 GPU"），与本域其余 owner 页的「约束 → 状态所有权 → 设计选择」叙事互补。
 - 按「合并优于并存」裁掉与既有 owner 页重叠的部分：原稿第 3.2–3.6 节、第 4 节（调度/执行/Executor 论证）压缩为一节交界事实并指向 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]]、[[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|KV Cache 管理]]、[[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|Model Runner V2]]；第 8.1/8.2/8.4 节压缩为条件路径摘要；第 7 节并行维度表保留但归口 [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|分布式推理]]。
 - **保留的独有增量**（本域此前未覆盖）：服务启动进程树与三级就绪屏障（worker `Pipe` READY → EngineCore `HELLO/READY` → 数据面 ready）、空闲后端的逐层唤醒路径（ZMQ poll → `queue.Queue` → SHM ring + `SpinCondition`）、P0–P18 跨进程管道拓扑表、DeepSeek-V3 的 MLA/MoE 在通用调用链中的落点、按状态边界定位的排查表、源码阅读顺序与启动/请求主线函数索引。
 - **基线例外**：该页显式声明源码基线 `vllm-project/vllm@26858770`（2026-08-24），高于本域统一基线 `d66300a1`（2026-08-20）；两提交之间该页引用的架构、引擎、调度、worker 与 DeepSeek 模型文件无源码差异，已在页头与域索引同时注明。
@@ -1309,7 +1345,7 @@ bare_index=70 为既有基线，P7 Task 8 处理范围）；`pytest tools/ -q`�
 
 **D07 §3/§6 收缩（先验两专页覆盖，Task 4 同款流程）**：`verl_dataproto_analysis.md`（325 行）与 `verl_rollout_resharding_analysis.md`（347 行）均已全面覆盖 D07 §3/§6 的全部事实（前者到方法级，后者到 CUDA IPC bucket/CheckpointEngine 两条路径的机制级），未发现 D07 独有细节。§3（DataProto）57→70 行原文压缩为「容器契约表 + 四条不变量」+ `[[verl_dataproto_analysis]]` 链接；§6（权重刷新）保留原有 `983cb0f` 专属行号（`engine_workers.py:705-725,783-787`、`vllm_rollout.py:271-320,278`）改写为时序代码块，补 `[[verl_rollout_resharding_analysis]]` 链接。
 
-**verl 域其余 8 篇（`verl_architecture_overview_analysis`/`verl_quickstart_guide`/`verl_single_controller_analysis`/`verl_dataproto_analysis`/`verl_workers_engine_analysis`/`verl_rollout_resharding_analysis`/`verl_rl_algorithms_analysis`/`verl_optimization_analysis`）页头加基线横幅**：`> [!note] 本页基线 verl \`8a694930\`；端到端迭代以 [[verl_end_to_end_iteration_analysis]]（基线 \`983cb0f\`）为准，两基线间机制差异以新基线页为先。`；`verl_ray_trainer_analysis.md`（D07 对手方，保留残页）同样加此横幅，另加上述 `[!contradiction]` 版本反转记录。
+**verl 域其余 8 篇（`verl_architecture_overview_analysis`/`verl_quickstart_guide`/`verl_single_controller_analysis`/`verl_dataproto_analysis`/`verl_workers_engine_analysis`/`verl_rollout_resharding_analysis`/`verl_rl_algorithms_analysis`/`verl_optimization_analysis`）页头加基线横幅**：``> [!note] 本页基线 verl `8a694930`；端到端迭代以 [[verl_end_to_end_iteration_analysis]]（基线 `983cb0f`）为准，两基线间机制差异以新基线页为先。``；`verl_ray_trainer_analysis.md`（D07 对手方，保留残页）同样加此横幅，另加上述 `[!contradiction]` 版本反转记录。
 
 **verl/index.md 重建**：新增「端到端主链（当前基线）」表段承接 D07；「由浅入深三层」「深挖实现」「算法与优化」三表标注基线 `8a694930`；「五条平面」入口/驱动行、「经典 RL 数据流」承接句、Related Pages 均补 D07 双链接；「HEAD 架构演进提示」callout 补 `use_v1` 反转记录；页数 9→10；原对 D07 的 `[[03_posttraining/07_verl_end_to_end_iteration_analysis]]` 引用改裸基名 `[[verl_end_to_end_iteration_analysis]]`。`04_posttrain_frameworks/index.md` 子目录表 verl 行页数同步改「9 篇 8a694930 深潜 + 端到端主链页基线 983cb0f」。
 

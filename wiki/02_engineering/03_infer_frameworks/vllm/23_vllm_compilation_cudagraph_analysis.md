@@ -1,165 +1,192 @@
 ---
-title: "vLLM 编译与 CUDA Graph：分别优化算子图与 launch 图"
+title: "vLLM 编译与 CUDA Graph：把动态请求收敛为可编译、可捕获、地址稳定的执行区"
 ---
 
-# vLLM 编译与 CUDA Graph：分别优化算子图与 launch 图
+# vLLM 编译与 CUDA Graph：把动态请求收敛为可编译、可捕获、地址稳定的执行区
 
-> **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
-> **中心命题**：`torch.compile` 与 CUDA Graph 解决两个不同问题：前者重写/融合算子并生成 kernel，后者记录一段已确定的 GPU launch 序列以降低 CPU dispatch。vLLM 用 compile partition、shape policy、full/piecewise graph 能力和 runtime descriptor 把二者组合，而不是把“已编译”误当成“可 replay”。
-> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-27。按五拍重排章节顺序，并补齐发展趋势；机制正文与既有引用未改。
+> **读者问题**：continuous batching 每一步的 token 数、request 数、query length、LoRA 组合都在变化，vLLM 怎样仍然提前得到有限个可编译 shape 区间和可捕获 graph case；运行时又凭什么安全地选择 full replay、piecewise execution 或 eager fallback？
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
+> **中心命题**：vLLM 不试图让“任意动态 batch”直接成为一个万能静态图，而是先用 compile range / static size 收敛动态 shape 域，再用 splitting policy 切出 capture-safe 区域，最后以地址稳定的 storage 和 descriptor 固定 launch 序列。编译 range 一律在 serving 前建立；capture 却有两种不同合同：MRV2 `CudaGraphManager` 在启动期预捕获计划 case、descriptor miss 时返回 `NONE`，通用 `CUDAGraphWrapper` 则允许匹配 mode 的新 key 在运行期创建 entry 并 capture，之后才 replay。编译产物回答“执行什么代码”，graph entry 回答“以哪些地址重放哪条 launch 序列”，不能把 manager 的只查表合同推广到所有 piecewise wrapper。
+> **所有权边界**：本页拥有 dynamic-shape 分区、compile / cache / warmup / capture / replay 生命周期、地址稳定性、capture pool、dispatch key、invalidation 与 fallback，以及 eager / compile-only / piecewise / full 的组合关系。FX/IR 中 operation、alias、functionalization 与 pass 顺序归 [[02_engineering/03_infer_frameworks/vllm/25_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]]；具体 fusion 收益、provider 与 Kernel 内部实现归 [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]]。本页只引用这些下层语义形成的 capture boundary，不在这里重讲其实现。
+> **最近更新**：2026-08-30。按 `6b110bad` 重建 shape → compile → warmup → capture → dispatch / replay 主线，并以 MRV2 live manager 取代旧 dispatcher 心智模型。
 
-## 一、背景：两类开销、两套正确性条件
+## 1. 背景：编译图和 launch 图不是同一份承诺
 
-| 机制 | 优化对象 | 主要收益 | 核心约束 |
+`torch.compile` 优化 FX/ATen 计算图，可能生成融合或 shape-specialized 的可执行代码；CUDA Graph 记录的是已经发生过的一串设备 launch 及其内存地址。前者可以用一个 symbolic range 覆盖多个 token 数，后者只能重放与 capture descriptor 相容的具体容量；`CompilationConfig` 因此明确把 `compile_sizes` / `compile_ranges_endpoints` 与 `cudagraph_capture_sizes` 分开（`vllm/config/compilation.py:435-443`；`vllm/config/compilation.py:575-592`）。
+
+直观但错误的替代是把两者绑成一个开关：只要模型 compile 成功就 full-capture，或者让新 compile shape / 新 manager plan case 都在请求中现场建立。前一种做法会让一个不支持 capture 的 attention、collective 或动态 metadata 使整图失效；后一种会把重型编译或 manager 规划的 capture 延迟塞进在线请求。官方编译设计要求所有 compilation 在服务前完成，避免请求触发新编译造成延迟尖峰（`docs/design/torch_compile.md:18-29`）；live backend 也在返回 callable 前编译全部 range 并落盘 cache（`vllm/compilation/backends.py:1218-1228`）。这不排除局部的 generic piecewise wrapper 按新 descriptor 做运行期 graph cache-fill；那条例外只新增 capture entry，不新增 compiled range（`vllm/compilation/cuda_graph.py:149-159`；`vllm/compilation/piecewise_backend.py:358-380`）。
+
+> [!note] 分析推断
+> 源码记录了最终机制，没有列出完整备选方案。由上述约束可重建选择标准：compile 状态空间必须有限且预先建立；manager plan case 要可预热、miss 可解释，因此未命中的 batch 回到 eager。generic wrapper 的运行期 capture 是一个明确、可观测的局部 cache-fill 边界，而不是“所有 capture 都只在启动期”或“请求会触发新 compilation”。
+
+## 2. 静态责任：五个 owner 共同建立执行合同
+
+| 责任 owner | 输入 → 输出 | 拥有的状态与不变量 | 明确不拥有 | 承重证据 |
+|---|---|---|---|---|
+| `CompilationConfig` | 用户优化意图 + platform / attention 能力 → compile mode、splitting ops、shape ranges、graph mode / sizes | 模式求交、静态 shape 预算、合法组合与显式降级 | runtime tensor 地址、graph 实例 | `vllm/config/compilation.py:398-443`；`vllm/config/compilation.py:1371-1519` |
+| compile wrapper / backend | 首次 dummy inputs + traced code → range-keyed callable 与磁盘 cache | dynamic dim 标记、guard policy、op partition、每个 range 的 compiled runnable、cache key | CUDA Graph dispatch key、persistent device buffers | `vllm/compilation/wrapper.py:47-53`；`vllm/compilation/backends.py:1029-1079`；`vllm/compilation/piecewise_backend.py:137-190` |
+| generic `CUDAGraphWrapper` | matching runtime mode + descriptor + compiled piece → runtime entry capture 或 replay | descriptor-keyed local entries、capture pool、capture-time pointers；miss 时可现场填 entry | persistent input buffer、manager candidate compatibility | `vllm/compilation/cuda_graph.py:145-168`；`vllm/compilation/cuda_graph.py:233-283`；`vllm/compilation/backends.py:633-684` |
+| MRV2 `CudaGraphManager` | graph mode + capture sizes + decode / LoRA 能力 → capture descriptors、candidate table、graph pool entries | 可捕获 descriptor 集合、共享 pool、capture 完成位、FULL graph table | request admission、输入值生产 | `vllm/v1/worker/gpu/cudagraph_utils.py:110-159`；`vllm/v1/worker/gpu/cudagraph_utils.py:187-311` |
+| MRV2 runner | 当前 `SchedulerOutput` → padded descriptor + stable buffer values → FULL / PIECEWISE / NONE 执行 | 每步 descriptor、persistent input storage、dispatch / DP 一致性、replay 时序 | compile pass 语义、attention backend 内部算法 | `vllm/v1/worker/gpu/model_runner.py:1524-1563`；`vllm/v1/worker/gpu/model_runner.py:1719-1759` |
+
+这些 owner 的边界解释了为什么 cache hit 不等于 graph hit：磁盘 cache 可恢复“某段代码在某个 shape range 上怎样执行”，而 graph entry 还绑定当前进程的 storage、pool 与 capture-time metadata，只能由当前进程中的 manager 或 wrapper 建立。
+
+## 3. 模式求交：eager、compile、piecewise 与 full 是两条轴
+
+### 3.1 编译轴与 capture 轴
+
+`CompilationMode` 有 `NONE`、stock `torch.compile`、只 trace 一次并移除 guards、以及带 cache / piecewise / shape specialization 的 `VLLM_COMPILE` 四种选择（`vllm/config/compilation.py:37-50`）。`CUDAGraphMode` 则把 runtime mode 定义为 `NONE`、`PIECEWISE`、`FULL`，并用 `FULL_DECODE_ONLY` 与 `FULL_AND_PIECEWISE` 表达 decode / mixed 两条 routine 的组合（`vllm/config/compilation.py:53-97`）。
+
+| 用户看到的执行形态 | compile 轴 | CUDA Graph 轴 | 实际含义与边界 |
 |---|---|---|---|
-| `torch.compile` / Inductor | FX/ATen/custom-op 计算图 | fusion、codegen、减少中间读写 | graph trace、shape guards、副作用可见 |
-| CUDA Graph | CUDA launch 序列与内存地址 | 降低 Python/driver launch overhead | 稳定地址、固定拓扑、capture-safe 操作 |
+| eager | `NONE` | `NONE` | 原始 model forward；`enforce_eager` 会同时关闭 compile 和 CUDA Graph（`vllm/config/vllm.py:1321-1327`） |
+| compile-only | stock / trace-once / `VLLM_COMPILE` | `NONE` | 运行 compiled callable，但不记录 launch；适合隔离 compile 正确性与性能 |
+| full graph without compile | `NONE` | `FULL` 或 `FULL_DECODE_ONLY` | 只要 backend 能 capture，完整 model step 可在无 compilation 时捕获；full 与 compile 在配置上正交（`vllm/config/compilation.py:630-638`） |
+| piecewise | 通常为 `VLLM_COMPILE` | `PIECEWISE` | splitting ops 留在 graph 外，内部 compiled pieces 各自 capture；若启用 breakable CUDA Graph，则可不用 `torch.compile` 做分段 capture（`vllm/config/vllm.py:1420-1431`；`vllm/v1/worker/gpu/cudagraph_utils.py:152-157`） |
+| full + piecewise | 通常为 `VLLM_COMPILE` | `FULL_AND_PIECEWISE` | uniform decode 优先 full，prefill / mixed 走 piecewise；覆盖最多，也支付最多 capture 时间和 graph memory（`vllm/config/compilation.py:615-638`；`docs/design/cuda_graphs.md:38-50`） |
 
-decode 每步算子小且重复，launch overhead 占比高，CUDA Graph 往往重要；prefill shape 大且变化多，Inductor fusion 可能收益更大，但 full graph 的 shape/内存组合数也更昂贵。
+“FULL 比 PIECEWISE 更高，所以一定更好”也是错误心智模型。`FULL` 消除完整 step 的 CPU launch，却要求 attention、metadata、collective 和地址都可捕获；`PIECEWISE` 保留 eager boundary，少消除一些 launch，却能服务更动态的 batch。配置会把请求模式与 attention backend 的最小 graph capability 求交：mixed 不支持 full 时可改为 `FULL_AND_PIECEWISE` 或 `FULL_DECODE_ONLY`，连 decode full 都不支持时再退为 `PIECEWISE` 或 `NONE`；没有合法替代时直接报错（`vllm/config/compilation.py:1389-1475`）。
+
+### 3.2 图 1 规格：manager 启动建表，piecewise 再按 wrapper 实现分流
 
 ```mermaid
 flowchart LR
-  Forward["model forward"] --> Trace["Dynamo and FX trace"]
-  Trace --> Split["split at non-capturable or policy ops"]
-  Split --> Compile["Inductor compile subgraphs"]
-  Compile --> Runtime["runtime callable"]
-  Runtime --> Desc["batch execution descriptor"]
-  Desc --> Full["full CUDA graph"]
-  Desc --> Piece["piecewise CUDA graphs"]
-  Desc --> Eager["eager fallback"]
+  subgraph Start["启动期：编译并建立 manager 计划"]
+    Config["配置与 backend 能力"] --> EagerGate{"强制 eager"}
+    EagerGate -->|是| BothNone["compile NONE<br/>graph NONE"]
+    EagerGate -->|否| Resolve["解析 compile mode<br/>与 graph mode"]
+    Resolve --> Shape["shape range 与<br/>static size 分区"]
+    Shape --> Compile["trace 与 partition<br/>预编译全部 range"]
+    Compile --> Warm["range warmup<br/>kernel warmup"]
+    Warm --> Capture["MRV2 manager<br/>预捕获计划 descriptor"]
+  end
+
+  subgraph Run["运行期：manager 与 wrapper 分层派发"]
+    Batch["动态 batch"] --> ManagerKey["manager key<br/>token request query LoRA"]
+    ManagerKey --> ManagerHit{"manager 有兼容 case"}
+    ManagerHit -->|FULL| Full["完整 graph replay"]
+    ManagerHit -->|PIECEWISE| PieceImpl{"启用 breakable"}
+    ManagerHit -->|NONE| None["NONE<br/>eager forward"]
+    PieceImpl -->|否| WrapperKey["wrapper key<br/>token LoRA"]
+    PieceImpl -->|是| Breakable["Breakable wrapper<br/>graph segments 与 eager breaks"]
+    WrapperKey --> WrapperHit{"generic wrapper<br/>已有 entry"}
+    WrapperHit -->|是| Piece["compiled piece<br/>graph replay"]
+    WrapperHit -->|否| RuntimeCapture["本次调用 capture<br/>写入 wrapper cache"]
+    RuntimeCapture --> FirstOutput["返回本次 capture 输出"]
+    Piece --> PieceOutput["piecewise 输出"]
+    FirstOutput --> PieceOutput
+    Breakable --> PieceOutput
+  end
+
+  Capture --> Batch
+  BothNone --> Batch
+  Resolve -.->|能力不兼容| BothNone
 ```
 
-## 二、为什么这么设计：为什么不是这几个更简单的方案
+图的上半段只描述 MRV2 manager 的启动合同：GPU worker 先补齐未被 graph capture 覆盖的 compile size / range warmup，再做 kernel warmup，最后调用 `capture_model()`；manager 对计划 descriptors 逐个 warmup / capture，并在结束后设置 captured 位（`vllm/v1/worker/gpu_worker.py:748-787`；`vllm/v1/worker/gpu/cudagraph_utils.py:313-398`）。运行期先从真实 batch 构造 descriptor 并完成 DP 同步；manager miss 返回 `NONE`。manager 选择 PIECEWISE 后还要按 `use_breakable_cg` 分流：默认 false 路径调用 model，才会进入 Dynamo piece 外层的 generic wrapper，其 entry hit replay、miss 在该调用中 capture 并缓存；true 路径则直接调用 capture 前已初始化的 `BreakableCUDAGraphWrapper`，由它串联 graph segments 与 eager breaks。manager 启动 capture 也沿同一个 implementation 分支执行，不能把所有 PIECEWISE 都画成 generic wrapper（`vllm/v1/worker/gpu/cudagraph_utils.py:152-157`；`vllm/v1/worker/gpu/cudagraph_utils.py:451-462`；`vllm/v1/worker/gpu/cudagraph_utils.py:500-508`；`vllm/compilation/backends.py:633-684`；`vllm/compilation/cuda_graph.py:233-344`）。
 
-| 方案 | 优点 | 代价/风险 |
-|---|---|---|
-| 全 eager | 最易调试、动态性最大 | Python/launch overhead 与融合机会损失 |
-| 只用 `torch.compile` | 不受固定地址约束 | decode launch 数仍高 |
-| 只用 CUDA Graph | 启动 launch 最少 | 算子图未优化，shape/capture 数量高 |
-| 强制 full graph | 稳态最快的潜力 | 任一动态/副作用/collective 不兼容即可错误或爆炸 |
-| 为所有 shape capture | 几乎无 miss | 启动慢、graph memory 与 cache 膨胀 |
-| 静默 fallback | 服务可用 | 性能回归难以察觉，基准不可解释 |
+## 4. 动态 shape 怎样被压成有限状态
 
-> [!note] 推断
-> 这张表是本页依据代码行为重建的设计权衡：每一行的“为什么不适用”都能落到后文引用的 `file:line` 上，但“当初权衡过、并因此否掉了它”这层意思由本页承担——源码通常只陈述最终形态，不陈述被否掉的选项。要引用其中某一行，请回到对应小节的 locator，不要引用本表。
+### 4.1 guard policy：只 trace 一次的收益以额外证明义务为代价
 
-## 三、`CompilationConfig` 是能力求交，不是级别数字
+被 `support_torch_compile` 标注的 model 会显式标记哪些参数维度是 dynamic；`UNBACKED` 使用 `mark_unbacked`，其他策略使用 `mark_dynamic`（`vllm/compilation/decorators.py:416-482`）。除 stock compile 外，wrapper 默认丢弃 Dynamo guards，使首次调用触发一次 compilation、之后不再因 guard miss 重新 trace（`vllm/compilation/wrapper.py:47-53`；`vllm/compilation/wrapper.py:103-125`）。
 
-`CompilationMode` 区分无编译、stock compile、trace-once 和 vLLM compile；`CUDAGraphMode` 则区分 none、piecewise、full、decode/mixed 的组合；`vllm/config/compilation.py:37-103`。`CompilationConfig` 独立保存 backend、splitting ops、compile sizes、graph mode 和 capture sizes；`vllm/config/compilation.py:398-695`。
+这不是“所有 shape 自动安全”。`BACKED` 可能产生随后被忽略的 guard，`UNBACKED` 不会被 guard / 0-1 specialize，却可能遇到 data-dependent branch；`BACKED_SIZE_OBLIVIOUS` 只是折中且仍无无-guard 保证（`vllm/config/compilation.py:334-365`）。因此 `evaluate_guards` 是诊断开关：保留 shape guards，并在第二个输入导致 recompile 时失败；测试覆盖了普通分支与 0/1 specialization 的边界（`vllm/config/compilation.py:368-377`；`tests/compile/test_dynamic_shapes_compilation.py:169-259`）。
 
-最终运行模式由以下能力求交：
+### 4.2 shape 域分区：range 负责覆盖，single size 负责特化
 
-- 模型 forward 能否 trace/compile；
-- attention/backend/custom op 是否能在 graph 中安全执行；
-- batch 是 decode、prefill 还是 mixed；
-- token/request/LoRA/speculative shape 是否有对应 capture；
-- parallel/sequence/DBO 等组合是否支持；
-- 用户允许的 compile/capture budget。
+`compile_ranges_endpoints` 把 `[1, max_num_batched_tokens]` 切成若干闭区间，`compile_sizes` 再插入优先级更高的单点区间（`vllm/config/compilation.py:580-592`；`vllm/config/compilation.py:1568-1573`）。`PiecewiseBackend` 为每个区间建立 `RangeEntry`：单点用 concrete fake inputs 编译，普通 range 保留 symbolic inputs；所有 entry 都在初始化时 compile 或从 cache load（`vllm/compilation/piecewise_backend.py:137-190`；`vllm/compilation/piecewise_backend.py:245-277`）。运行时先找 exact size，再找包含它的 range，越过全部计划区间则 assert，而不是在线创建新 runnable（`vllm/compilation/piecewise_backend.py:343-380`）。
 
-配置解析会在能力冲突时降级 full → piecewise → none，而非硬跑错误模式；`vllm/config/compilation.py:1369-1517`。
+测试把这层语义固定得很具体：端点 `8, 32` 与 static size `16, 64, 128` 产生三个 dynamic ranges 加三个 single-size compilations；另一个测试证明 single size 已无 symbolic shape，而 range 仍保留 symbolic batch 维（`tests/compile/test_compile_ranges.py:69-108`；`tests/compile/test_compile_ranges.py:171-209`）。更多 static sizes 可能换来更好的 autotune，却增加首次 compile 时间和 cache 体积；它不是免费扩大覆盖面。
 
-## 四、为什么需要 piecewise compilation
+### 4.3 op 分区：只决定 capture boundary，不在本页重写 IR 语义
 
-完整模型图中 attention、KV update、collective 或某些 custom op 可能包含动态 metadata、副作用或尚不能被 Inductor 接管。若只允许 whole-graph，任一不兼容 op 会让整个模型退回 eager。
+`splitting_ops` 的职责是把 CUDA-Graph-unsafe op 留在 piece 外：默认路径在 Dynamo FX 图上 split；`use_inductor_graph_partition` 则等 passes / fusions 完成后才在 codegen 阶段按规则 partition（`vllm/config/compilation.py:517-534`）。后者让 full 与 piecewise 共用一次 compilation：piecewise wrapper 包住各安全 partition，full wrapper 位于整个 call 外并忽略内部 partition（`vllm/config/compilation.py:669-687`）。
 
-vLLM 用 `splitting_ops` 把 FX graph 切成可编译 subgraphs 和显式边界。backend 对 graph 执行 split，再为各 piece 创建 `PiecewiseBackend`；`vllm/compilation/backends.py:690-778,1179-1228`。
+这个设计胜过“任一 unsafe op 让整图 eager”，代价是 boundary 本身必须正确表达 alias 与副作用。哪些 op 必须 split、donation / functionalization 怎样维护语义属于 page 25；本页只拥有由该结果产生的 compile / capture 区域与生命周期。当前配置还会因 sequence parallelism、attention fusion、KV update 或 DeepEP 兼容性改写 splitting / graph mode，并给出 warning 或关闭 graph（`vllm/config/compilation.py:1146-1251`）。
 
-piecewise 的设计不变量是：
+## 5. Compile lifecycle：cache 是代码状态，失效由 hash 驱动
 
-> 被切出的边界 op 必须完整表达跨 piece 的数据与副作用依赖；不能因为它不返回普通 tensor，就让编译器认为前后的读写可重排。
+冷启动时，wrapper 收集 trace 涉及的源文件，backend 把 environment、完整 `VllmConfig`、traced code content 与 compiler state 分别 hash，再组合成 cache 目录；rank / DP rank 在目录内继续隔离（`vllm/compilation/backends.py:1029-1079`）。因此代码、环境、配置或 compiler 任一变化都会自然换 key，而不是在旧 artifact 上“尽量运行”。AOT 路径也把 env 与 config 放入 hash，并在加载时补验 traced source content（`vllm/compilation/caching.py:573-620`；`vllm/compilation/decorators.py:524-544`）。
 
-attention/KV update 是典型边界：KV 写入可能通过 cache tensor alias 产生副作用。如果图中没有可见依赖，Inductor 可能删除或移动写操作。因此 vLLM 的 splitting policy 与 IR functionalization/fusion 必须共同维护依赖。
+这里的 invalidation 是**选不到旧 key**，不是修改旧文件；禁用 cache 只会重新 compile，不会改变 graph correctness。compile cache 也不能替代 graph capture：前者可跨进程复用代码 artifact，后者依赖当前进程的地址与 pool，仍必须在真实运行时状态建立后 capture。
 
-`set_splitting_ops_for_v1()` 根据 attention fusion、KV update、sequence parallelism 和 graph mode调整边界；`vllm/config/compilation.py:1134-1268`。这不是配置清理，而是防止不兼容图组合。
+## 6. Capture lifecycle：地址、descriptor 与 pool 同时冻结
 
-## 五、shape policy 为什么同时影响启动与稳态
+### 6.1 地址稳定不是值静止
 
-continuous batching 的 token 数不断变化。为每个实际 shape 编译/capture 会造成启动时间、cache 和 graph memory 爆炸；只保留一个最大 shape 又会产生大量 padding。
+MRV2 在 runner 初始化时一次性分配最大容量的 `input_ids`、`positions`、`is_padding`、`query_start_loc` 与 `seq_lens`（`vllm/v1/worker/gpu/input_batch.py:17-38`）。每步不是换 tensor，而是把 prefill token、position、sampled / draft token 和 request metadata 写入这些 buffers，再向 model 传递相同 storage 的切片（`vllm/v1/worker/gpu/model_runner.py:1220-1285`；`vllm/v1/worker/gpu/model_runner.py:1307-1334`）。所以 replay 可以看到新值，同时仍使用 capture 时记录的地址。
 
-vLLM 把两类 shape 分开：
+通用 `CUDAGraphWrapper` 明确不拥有 persistent buffers；它把稳定地址责任留给 caller（`vllm/compilation/cuda_graph.py:145-168`）。capture 时 entry 记录 tensor `data_ptr`，DEBUG 模式 replay 会逐项 assert 地址未变（`vllm/compilation/cuda_graph.py:256-283`；`vllm/compilation/cuda_graph.py:346-360`）。重要边界是：production 不能把这个 debug assert 当成正确性机制；地址稳定必须由 runner 的预分配和 in-place 更新先成立。
 
-- `compile_sizes`：哪些 size/range 要专门编译；
-- `cudagraph_capture_sizes`：哪些 size 有 replay graph；
-- runtime 把实际 batch 映射到可服务它的 descriptor/capture case，超界或不兼容则 eager。
+### 6.2 descriptor 是 graph identity，不只是 batch size
 
-配置会去重、排序并解析 `compile_sizes="cudagraph_capture_sizes"`；`vllm/config/compilation.py:1110-1132`。MRV2 graph manager 还按 token count、decode query length、LoRA count 等预计算 capture descriptors；`vllm/v1/worker/gpu/cudagraph_utils.py:109-175,175-301`。
+MRV2 的 `BatchExecutionDescriptor` key 包含 runtime graph mode、token 容量、request 容量、uniform token count、最大 query length 与 active LoRA case（`vllm/v1/worker/gpu/cudagraph_utils.py:56-68`）。兼容谓词允许较大的 captured token / request 容量服务较小真实 batch，但 uniform query、query-length 上界和 LoRA case 必须满足约束（`vllm/v1/worker/gpu/cudagraph_utils.py:83-107`）。
 
-shape 选择本质是空间—时间折中：更多 cases 减少 padding 和 eager miss，却增加 warmup、capture 时间和常驻 graph memory。
+manager 在启动期把 capture sizes 与 decode / mixed mode、dynamic speculative query length、request 上限及 LoRA case 做笛卡尔组合，再预建按 token count 和 LoRA 索引的 priority candidates（`vllm/v1/worker/gpu/cudagraph_utils.py:187-308`）。这比“只按 batch size 查 graph”更贵，却避免同 token 数但不同 request topology、query width 或 LoRA 状态误命中同一 launch 图。`cudagraph_specialize_lora=True` 还明确以更多启动时间和显存换掉无 LoRA 时的额外 adapter 开销（`vllm/config/compilation.py:660-666`）。
 
-## 六、full 与 piecewise CUDA Graph 的区别
+manager key 与 wrapper key 不是同一个类型。runner 在非 FULL 路径另建 `forward_context.BatchDescriptor`，只放 padded token 数、LoRA 是否启用和 active LoRA 数；generic wrapper 用这个对象索引自己的 local entries（`vllm/forward_context.py:29-52`；`vllm/v1/worker/gpu/model_runner.py:1727-1744`；`vllm/compilation/cuda_graph.py:240-263`）。因此 manager 的 richer descriptor 负责“当前 batch 可选择哪种执行 mode”，wrapper 的 simpler descriptor 负责“这个 compiled piece 对该 padded case 是 capture 还是 replay”；两级 map 的 hit / miss 语义不能合并。
 
-### 6.1 Full graph
+### 6.3 capture pool 是共享地址域，也是生命周期边界
 
-full graph 记录模型 step 的完整 GPU launch 序列，CPU 只需更新固定输入 buffer 后 replay。它最大化 launch 消除，但要求所有 op、collective、metadata update 和内存地址都 capture-safe。
+manager 的 FULL graphs 与 piecewise wrappers 默认绑定 platform global graph pool（`vllm/v1/worker/gpu/cudagraph_utils.py:138-150`；`vllm/compilation/cuda_graph.py:197-207`）。capture 顺序固定为 PIECEWISE 后 FULL，因为 piecewise activation 更大，后 capture 的 full graph 更可能复用 pool 已分配的 buffers；每个 descriptor 先以 `NONE` 做 warmup，再用 fresh attention state capture（`vllm/v1/worker/gpu/cudagraph_utils.py:313-398`）。
 
-### 6.2 Piecewise graph
+pool 共享不是单纯省显存技巧，它把 entry 的存活、output storage 与后续 capture 绑在一起。wrapper 用 weak references 释放不需要长期强持有的 output，让 pool 可复用其内存（`vllm/compilation/cuda_graph.py:312-344`）。代价是不能随意清掉一组 graph、换 pool 后仍 replay 旧 entry；源码也明确警告未来多 stream 时全局 pool 可能不安全（`vllm/compilation/cuda_graph.py:197-200`）。
 
-piecewise graph 只 capture 可稳定重放的 compiled pieces，attention/动态边界仍由 eager Python 发起。它保留更多动态能力，收益较小但覆盖面更广。
+## 7. Runtime dispatch：manager miss 返回 NONE，wrapper miss 现场 capture
 
-`CUDAGraphWrapper` 为 runtime descriptor 建立 entry/cache，首次 capture、以后 replay，并在 replay 前校验输入地址；`vllm/compilation/cuda_graph.py:128-174,205-360`。地址校验是正确性条件：CUDA Graph 记录的是捕获时的指针，而不是“同 shape 的任意新 tensor”。
+真实 step 先计算 request 数、token 数、最大 query length、uniform token count 与 active LoRA 数，再交给 manager dispatch；profile step 或带动态 encoder input 的 encoder-decoder step 会主动设置 `need_eager`（`vllm/v1/worker/gpu/model_runner.py:1524-1563`）。manager 只有在 capture 已完成、token 数非零且 candidate key 存在时才搜索兼容 descriptor；没有命中就返回 `cg_mode=NONE`（`vllm/v1/worker/gpu/cudagraph_utils.py:406-434`）。这是 manager 的 fallback 合同，不是 generic wrapper 的 miss 合同。
 
-MRV2 的 full graph 则由显式 graph manager 管理 capture descriptor 与 replay；`vllm/v1/worker/gpu/cudagraph_utils.py:303-418`。两条路径反映了同一原则：graph lifecycle 必须独立于普通 `dummy_run`。
+三条执行路径有不同 owner：
 
-## 七、静态地址不等于静态值
+1. **FULL**：runner 已把新值写进 capture-time buffers，因此直接 replay manager 中的 graph，不再把 model inputs 作为调用参数传入（`vllm/v1/worker/gpu/model_runner.py:1719-1727`）。
+2. **PIECEWISE**：runner 建立 forward context 后调用 model；Dynamo splitting 会以 `PIECEWISE` generic wrapper 包住 compiled partitions。wrapper mode 不匹配时直接跑 runnable；mode 匹配时，entry hit replay，entry miss 则创建 key、当场 capture 并返回这次 capture 的输出，unsafe boundary 仍 eager。breakable 路径则由另一 wrapper 串联 graph segments 与 eager breaks（`vllm/compilation/backends.py:633-684`；`vllm/compilation/cuda_graph.py:233-344`；`vllm/compilation/breakable_cudagraph.py:195-215`）。
+3. **NONE**：调用 raw model forward；这既可能是全局 eager 配置，也可能只是当前 batch 的安全 fallback（`vllm/v1/worker/gpu/model_runner.py:1757-1759`）。
 
-graph replay 可处理动态 token、position、block table 和 sampling 参数，前提是：
+分布式场景还多一条不变量：DP ranks 必须对 mode 和 padded token capacity 达成一致；任一 rank 要求 `NONE` 时所有 rank 都 eager，否则 collective 与 graph launch 顺序可能分叉（`vllm/v1/worker/gpu/dp_utils.py:38-97`）。这类跨 rank 同步语义由 [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] 展开，本页只保留 dispatch 接缝。
 
-1. tensor storage 地址不变；
-2. runtime 在 replay 前把新值写入固定 buffer；
-3. shape/stride 与 capture descriptor兼容；
-4. 所有派生 metadata 要么也原地更新，要么不进入该 graph。
+## 8. Invalidation 与 fallback：不要把“还能跑”误写成“graph 仍有效”
 
-MRV2 stable row、staged write 和 persistent graph tensor 正是为这组不变量服务。若每步重新 `torch.empty()` 并把新 tensor 传入，shape 相同也不能安全 replay。
+| 触发条件 | 系统动作 | 为什么不能继续复用 | 证据 |
+|---|---|---|---|
+| env / config / traced code / compiler 变化 | compile cache 换 key并重编译 | 旧 callable 的代码与假设已不是当前基线 | `vllm/compilation/backends.py:1029-1070` |
+| attention capability 不支持请求的 full mode | 初始化时降级到 dual mode、piecewise、none，或显式报错 | capture safety 是 backend contract，不是运行时碰碰运气 | `vllm/config/compilation.py:1389-1475` |
+| manager 对当前 batch 没有兼容 descriptor | runtime 返回 `NONE` | manager 没有为该 topology / capacity / LoRA case 建立过计划 case | `vllm/v1/worker/gpu/cudagraph_utils.py:406-434` |
+| generic wrapper 收到 matching mode 的新 descriptor | 创建 entry，本次调用 capture 并缓存；后续同 key replay | wrapper 的合同是 runtime cache-fill，不继承 manager 的 miss-to-NONE 策略 | `vllm/compilation/cuda_graph.py:149-159`；`vllm/compilation/cuda_graph.py:256-344` |
+| profile 或动态 cross-attention cache 更新 | 当前 step 强制 eager / skip compiled | profile 不是 serving case；encoder output shape / cache side effect 不能偷渡进旧图 | `vllm/v1/worker/gpu/model_runner.py:1546-1563` |
+| replay 输入地址与 entry 记录不一致 | 违反 replay 前置条件；DEBUG 路径 assert，非 DEBUG 路径没有自动检测或恢复 | CUDA Graph 记录的是 pointer，不是 shape 相同的新 tensor | `vllm/compilation/cuda_graph.py:161-167`；`vllm/compilation/cuda_graph.py:346-360` |
+| memory profiling capture 完成 | 清空 wrapper entries、丢弃 profiling manager 与 throwaway pool，真实初始化后重 capture | profiling KV pointers / storages 不是 serving 地址；复用会出现 use-after-free | `vllm/v1/worker/gpu/cudagraph_utils.py:714-729`；`vllm/v1/worker/gpu/cudagraph_utils.py:737-817` |
 
-## 八、compile cache 必须把代码与环境纳入 key
+> [!note] 地址变化后的恢复是分析要求，不是现成自动路径
+> 本基线没有实现“发现 pointer 改变就自动销毁 owner、重新初始化并 capture”的 transition。源码只提供显式清空 wrapper entries 的接口，runner shutdown 也会释放 manager 与设备状态（`vllm/compilation/cuda_graph.py:172-176`；`vllm/compilation/cuda_graph.py:230-231`；`vllm/v1/worker/gpu/model_runner.py:2014-2027`）。因此若 owner 确实重分配了 replay storage，安全恢复在逻辑上必须先停止使用旧 entry，再清理 graph state、重建稳定 buffers 并重新 capture；这是由 pointer 不变量推出的恢复要求，不是源码会自动触发的行为。
 
-编译产物依赖模型/config、vLLM 代码、compiler 和环境。backend 将 environment、config、code 与 compiler hash 组合为 cache key；`vllm/compilation/backends.py:1006-1109`。只按模型名缓存会在 driver、torch、kernel flags 或源码变化后复用不兼容产物。
+最危险的“静默 fallback”不是 `NONE` 本身，而是观测时把它和计划内 eager 混在一起。排查应分别记录 resolved config、预编译 range、manager capture descriptor 集合、runtime mode hit 与 generic wrapper 的 runtime capture 计数；否则 compile cache hit 可能掩盖 manager graph 全 miss，full decode 命中也可能掩盖 mixed batch eager，piecewise 首次在线 capture 也可能被误当成稳定 replay 延迟。
 
-cache 提升的是后续启动，不减少首次 trace/capture；而 CUDA Graph entry 通常还依赖进程内实际地址，不能简单跨进程序列化复用。
+## 9. 文档冲突、失败边界与验证顺序
 
-## 九、与 custom op、通信和 KV 的边界
+> [!warning] 官方设计文档与 MRV2 live code 的边界
+> `docs/design/cuda_graphs.md` 仍以 `CudagraphDispatcher`、旧 `BatchDescriptor` 和 forward-context dispatch 为中心（`docs/design/cuda_graphs.md:64-71`；`docs/design/cuda_graphs.md:81-104`）。该描述仍能解释“full / piecewise / none 显式派发”的设计动机，但在本基线的 MRV2 主路径中，权威 owner 已是 `CudaGraphManager` 与更丰富的 `BatchExecutionDescriptor`（`vllm/v1/worker/gpu/cudagraph_utils.py:56-68`；`vllm/v1/worker/gpu/cudagraph_utils.py:110-159`）。本页按 live code 写运行时机制，不把旧类名当现行架构。
 
-编译器必须同时看到“可优化部分”和“不可跨越的语义”：
+验证不要一上来比较吞吐；应按状态建立顺序隔离问题：
 
-- custom op 用 fake implementation 提供 shape/dtype 推导；
-- mutating op 需要 functionalization 或显式 alias/schema；
-- collective 是多 rank 副作用，所有 rank 的 graph mode/shape 必须一致；
-- attention backend 声明 full/piecewise graph 能力；
-- KV update 的写后读关系必须保留；
-- speculative fused draft graph 需要 metadata update hook。
+1. `CompilationMode.NONE + CUDAGraphMode.NONE` 建立 eager 数值基线，并确认请求语义与 kernel 精度本身正确。
+2. 只开 compile，检查 dynamic guard 诊断、compile range 覆盖、首次 / 二次启动和 cache key；不把 graph 变量混进来。
+3. 查看 resolved graph mode 是否被 attention、SP、DeepEP、spec decode 或 splitting policy 改写；warning / error 是能力协商结果，不是噪声。
+4. 核对 manager capture descriptors、wrapper local entries、pool、persistent input addresses 和 warmup → capture 顺序，再分别测试 full replay、manager miss → `NONE` 与 wrapper miss → runtime capture。
+5. 覆盖边界 shape、mixed / uniform decode、LoRA case、DP rank 不均衡、profile 与动态 encoder input；先验证 dispatch key，再定位 page 25 的副作用语义或 page 24 的具体 kernel。
 
-因此 page 25 的 IR/pass 负责“图里语义正确”，本页负责“什么图被编译/捕获、何时派发”。
+本设计支付三类确定成本：更多 compile ranges / static sizes 增加编译和 cache；更多 capture descriptors / LoRA variants 增加启动时间和 graph memory；更保守的 piecewise / eager 增加 CPU launch。`max_cudagraph_capture_size` 默认会限制在 512，data-center Blackwell 为 1024，正是为了避免小 `max_num_seqs` 场景的 OOM 并约束大 graph 的启动 / 显存成本（`vllm/config/compilation.py:692-706`）。
 
-## 十、约束与常见失败边界
+## 10. 有锚点的发展方向
 
-常见失败包括：recompile storm、capture OOM、输入地址变化、不同 rank graph 分支不一致、KV 写被优化掉、LoRA/spec shape 没有 case、eager fallback 比例过高。
-
-## 十一、验证顺序
-
-1. 先用 eager 建立数值与功能基线；
-2. 单独启用 compile，检查 graph break、recompile count、cache key 与结果；
-3. 单独验证目标 graph mode 的 capture/replay 和地址稳定性；
-4. 记录每种 batch descriptor 的 full/piecewise/eager 命中率；
-5. 比较首启时间、二次 cache 启动、graph memory、TTFT/TPOT；
-6. 覆盖 prefill/decode/mixed、LoRA、speculative、TP/DP 与边界 shape；
-7. 任何仅 graph 模式出现的数值错，优先查副作用/metadata/地址，而非 kernel 精度。
-
-最小源码阅读顺序：`vllm/config/compilation.py:37-103,398-695,1134-1517` → `vllm/compilation/decorators.py:331-527` → `vllm/compilation/backends.py:690-778,1006-1228` → `vllm/compilation/cuda_graph.py:128-360` → `vllm/v1/worker/gpu/cudagraph_utils.py:109-418`。
-
-## 十二、发展趋势
-
-> [!note]
-> 本节离开“源码此刻是什么”，只收录源码自陈的在途改动；每条给出锚点，属于外推的部分单独标注。
-
-1. **编译器接缝上的 workaround 直接挂着上游 issue 号。** `# Can remove this after the following issue gets fixed: https://github.com/pytorch/pytorch/issues/176562`，见 `vllm/compilation/compiler_interface.py:348-352`。
-2. **fusion 的适用面由 kernel 能力决定，且在扩张。** RMSNorm+quant 融合目前用一个 dtype 相同性检查挡住混合精度：`# TODO: extend rmsnorm quant kernels to support mixed input/weight dtypes, and remove this check.`，见 `vllm/compilation/passes/fusion/rms_quant_fusion.py:45-46`。本页的“融合收益模型”会随这类限制解除而变化。
+> [!note] 分析推断
+> 当前代码已提供 Inductor codegen-time partition 与 breakable CUDA Graph 两条“降低 compile 和 capture 耦合”的路径：前者让 pass 看完整图后再切 capture-safe partitions，后者允许 piecewise capture 不依赖 `torch.compile`（`vllm/config/compilation.py:669-687`；`vllm/v1/worker/gpu/cudagraph_utils.py:152-157`）。这显示演进方向是让 capture boundary 更晚、更正交；但全局 graph pool 仍假设单 stream，源码把多 stream 安全性明确留作未来问题（`vllm/compilation/cuda_graph.py:197-200`）。在这些约束改变前，不应推断“full graph 将统一取代 piecewise”。
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] — full/piecewise 能力和动态 metadata 边界。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] — persistent buffer、显式 capture 与 replay 生命周期。
-- [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] — multi-step draft graph 与变长 verification shape。
-- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — collective 的 graph 语义与跨 rank 一致性。
-- [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]] — compile 最终调用或生成的设备实现。
-- [[02_engineering/03_infer_frameworks/vllm/25_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]] — FX/IR 上的副作用修复和 pattern fusion。
+- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] — 对照多义 dummy/capture 与显式 graph lifecycle；本页拥有两条 runner 之上的 compile / capture 策略。
+- [[02_engineering/03_infer_frameworks/vllm/14_vllm_attention_backends_analysis|vLLM Attention Backend]] — 定义 full / piecewise 能力求交所消费的 metadata 与 graph-support 合同。
+- [[02_engineering/03_infer_frameworks/vllm/25_vllm_ir_and_fusion_passes_analysis|vLLM IR 与融合 Pass]] — 权威解释 splitting boundary 内 alias、functionalization、donation 与 pass 顺序为何语义正确。
+- [[02_engineering/03_infer_frameworks/vllm/24_vllm_fused_ops_and_kernels_analysis|vLLM 融合算子与 Kernel]] — 解释 compiled graph 最终选择或生成的 provider / Kernel 及其 launch、访存收益。
+- [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] — 说明 dynamic draft width、verification query length 与 graph descriptor 的一跳合同。
+- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — 展开 DP / TP ranks 为何必须对 graph mode、padding 与 collective launch 顺序达成一致。

@@ -139,8 +139,9 @@ Agentic RL 走的是**全异步、解耦**框架：推理引擎持续产轨迹�
 $$
 \begin{aligned}
 \mathcal{L}(\theta)
-&=\mathbb{E}_t\!\left[f\big(r_t(\theta),\epsilon_\ell,\epsilon_h\big)\,\hat{A}_t\,\log\pi_\theta(a_t\mid s_t)\right]\tag{3}
+&=\mathbb{E}_t\!\left[f\big(r_t(\theta),\epsilon_\ell,\epsilon_h\big)\,\hat{A}_t\,\log\pi_\theta(a_t\mid s_t)\right]
 \end{aligned}
+\tag{3}
 $$
 
 $$
@@ -150,8 +151,9 @@ $$
 $$
 \begin{aligned}
 f(x;\epsilon_\ell,\epsilon_h)
-&=\begin{cases}x, & 1-\epsilon_\ell<x<1+\epsilon_h\\[2pt] 0, & \text{otherwise}\end{cases}\tag{5}
+&=\begin{cases}x, & 1-\epsilon_\ell<x<1+\epsilon_h\\[2pt] 0, & \text{otherwise}\end{cases}
 \end{aligned}
+\tag{5}
 $$
 
 **为什么更稳**：论文称该策略**与 IcePop 相似，但更简单——进一步移除了 $\pi_{\theta_{\text{old}}}$，训练更稳定**（§4.1.2, p17）。代价是「接受了一个可控的 off-policy 偏差，以换取无需追踪历史策略」——一次明确的「**偏差换稳定**」权衡。对照同步 IcePop（§3.1）：IcePop 仍保留 $\pi_{\theta_{\text{old}}}$ 与 PPO-clip，异步版把它也丢掉，只留 rollout log-prob 作锚。

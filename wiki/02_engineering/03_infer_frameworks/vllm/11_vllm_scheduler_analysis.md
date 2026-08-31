@@ -1,198 +1,222 @@
 ---
-title: "vLLM Scheduler：每一步重新做 token admission"
+title: "vLLM Scheduler：多资源 admission 事务与输出提交"
 ---
 
-# vLLM Scheduler：每一步重新做 token admission
+# vLLM Scheduler：多资源 admission 事务与输出提交
 
-> **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
-> **中心命题**：Scheduler 不是把请求排个顺序，而是在每个 engine step 内同时分配 token 计算、KV slot、encoder cache 和外部依赖。continuous batching 与 chunked prefill 都是“请求每步只获得一笔 token 预算”的结果；抢占则是已承诺资源无法继续满足时的回滚协议。
-> **叙事顺序**：本页按五拍组织——背景（一）→ 为什么这么设计（二）→ 实现思路与细节（三～八）→ 约束（九）→ 发展趋势（十）。
-> **最近更新**：2026-08-27。按五拍重排章节顺序，补齐推断标注与发展趋势；机制正文与既有引用未改。
+> **读者问题**：一次 `schedule()` 怎样同时承诺 request slot、token、encoder、speculative 与逻辑 KV 资源，并在结果回来后把“计划进度”修正为真实进度？
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout，提交时间 2026-08-29T02:40:53Z）
+> **中心命题**：Scheduler 不是 batch 排序器，而是多资源 admission 事务的唯一提交者。它先在一个 step 内联合保留 request slot、token/input、encoder、speculative 与逻辑 KV 容量，形成可执行的 `SchedulerOutput`；再以这份 output 为事务凭据乐观推进进度，待执行结果返回后回退被拒 draft、处理 stale output，并在 preempt 或 finish 时释放所有权。
+> **所有权边界**：本页拥有 waiting/running、token/encoder/spec 预算、preemption、finish 与 output-side commit；不解释物理 runner 的 persistent row、GPU tensor/graph、KV block/hash/refcount 算法、采样分布或跨实例 KV 协议。
+> **最近更新**：2026-08-30。按 `6b110bad` 重建页面，旧基线定位符不再适用。
 
-## 一、背景：为什么调度单位必须从 request 变成 token
+## 1. 背景：为什么“选几个请求”不足以描述调度
 
-请求级 scheduler 只能决定“这个请求进不进 batch”。但一个 prefill 可能需要几千 token，一个 decode 通常只需要一个 token，投机解码又可能需要多个 lookahead token。若把它们都当一个 request slot，算力和 step latency 完全不可比较。
+同一批请求的下一步工作并不同质：长 prompt 可能只执行一个 chunk，decode 通常追赶一个新 token，speculative decode 还会把 draft token 纳入验证；多模态请求则只有在 encoder 计算预算与 cache 都允许时才能越过对应输入位置。源码因此明确取消独立的“prefill phase / decoding phase”，统一把目标写成让每个请求的 `num_computed_tokens` 追上 `num_tokens_with_spec`（`vllm/v1/core/sched/scheduler.py:501-512`）。
 
-vLLM 的 `SchedulerOutput` 核心字段是 `req_id -> num_scheduled_tokens`，并保存总 token 数；`vllm/v1/core/sched/output.py:207-223`。因此一次 admission 可写为：
+**为什么不采用直观替代（分析推断）。** 更简单的做法是先按 FIFO 组成 request batch，再让 KV、encoder 或 runner 各自拒绝放不下的工作。问题是 batch 在被拒之前已经消耗了别的资源：token 预算可能已经记账，encoder cache 可能已经触碰，甚至本 step 较早选中的 victim 已写入计划。当前设计把这些决定收回 Scheduler，并要求 KV allocation 成功后才登记 scheduled work（`vllm/v1/core/sched/scheduler.py:655-728`）。
 
-$$
-\sum_{r\in\mathcal B} n_r\le B_{\mathrm{token}},
-\qquad
-\lvert\mathcal B\rvert\le B_{\mathrm{seq}},
-$$
+> [!note] 分析推断
+> 源码自陈了统一 token-progress 模型，也展示了资源保留顺序，但没有把“事务”作为正式术语。本页用事务描述它，是因为代码同时存在预留、提交、同 step 回滚和最终释放；这是对行为的机制归纳，不是作者原话。
 
-其中 $n_r$ 是本轮给请求 $r$ 的 token 数。两条预算分别来自 `max_num_scheduled_tokens` 和 `max_num_running_reqs`；`vllm/v1/core/sched/scheduler.py:110-116`。
+## 2. 先看状态与不变量，再看循环
 
-## 二、为什么这么设计：几个直观方案为什么都不成立
+### 2.1 Scheduler 拥有什么状态
 
-先把权衡摆在机制前面。下面每一行都是一个更简单、更好解释的做法，vLLM 一个都没有选，判据只有一条：**在 continuous batching 下，任何让“已承诺的资源”与“本轮真实可执行性”脱钩的方案，都会把一次局部容量不足放大成全局抖动**。
-
-| 方案 | 为什么简单 | 为什么不适用 | 当前方案代价 |
+| 状态 | 含义与 owner | 本页关心的边界 | 证据 |
 |---|---|---|---|
-| 请求级 FIFO batch | 顺序容易解释 | prefill/decode 工作量不可比，尾部气泡 | 每 step 调度有 CPU 成本 |
-| prefill/decode 两套 scheduler | 策略各自独立 | 两套资源 owner 争 KV/算力，mixed batch 困难 | 统一 token budget 调优更复杂 |
-| waiting 严格 head blocking | 公平性直观 | grammar/remote KV 未就绪会阻塞所有后续请求 | skipped queue 改变实际顺序 |
-| KV 不足就拒绝当前请求 | 无 victim 选择 | running request 可能永远不能前进 | preemption 带来重算和抖动 |
-| CPU swap KV | 避免重算 | PCIe/内存带宽和 swap 容量成为新瓶颈 | recompute 消耗重复 FLOPs |
-| 输出前不乐观更新 | 状态最简单 | 无法准备下一 in-flight batch | optimistic commit 需要回滚协议 |
+| `requests` | Scheduler 内 request id 到 `Request` 的权威映射 | 未终止请求先进入映射，最终释放后才删除 | `vllm/v1/core/sched/scheduler.py:188-210`；`vllm/v1/core/sched/scheduler.py:2376-2402`；`vllm/v1/core/sched/scheduler.py:2496-2499` |
+| `waiting` / `skipped_waiting` | 可尝试准入与因异步依赖或约束暂跳过的队列 | blocked status 不等于 finished；它仍归 Scheduler 管理 | `vllm/v1/core/sched/scheduler.py:197-214`；`vllm/v1/core/sched/scheduler.py:2213-2237` |
+| `running` | 已取得活跃 request slot 与逻辑资源所有权的请求 | `RUNNING` 不保证每 step 都得到 token；encoder 预算不足时可以本轮不调度 | `vllm/v1/core/sched/scheduler.py:198-201`；`tests/v1/core/test_scheduler.py:277-337` |
+| progress | `num_tokens_with_spec` 是已知 token 加 draft；`num_computed_tokens` 还包含未回收的乐观进度 | 两者的差是候选工作，不是最终接受量 | `vllm/v1/request.py:159-182`；`vllm/v1/request.py:287-297` |
+| step reservations | `num_scheduled_tokens`、新 block、encoder input 与 scheduled spec token 的本轮映射 | 只有可立即执行的联合保留才进入 scheduled-token output；async KV load 是持有 blocks 但不执行的例外 | `vllm/v1/core/sched/scheduler.py:514-533`；`vllm/v1/core/sched/scheduler.py:1114-1145`；`vllm/v1/core/sched/output.py:218-250` |
+| lifecycle deltas | `finished_req_ids` 与 `reset_preempted_req_ids` 通知下游清除旧镜像 | 集合在 output 中交接后换成新集合，不能原地清空 output 的引用 | `vllm/v1/core/sched/scheduler.py:203-210`；`vllm/v1/core/sched/scheduler.py:1479-1483` |
 
-表中“当前方案代价”一列对应的机制在后文展开：running-first 与 token 预算见第四节，抢占协议见第五节，skipped queue 见第六节，乐观提交与回滚见第七节。
-
-> [!note] 推断
-> 这张表是本页依据代码行为重建的设计权衡，**不是源码或设计文档里的原话**——`vllm/v1/core/sched/` 下没有与之对应的 rationale 注释。每一行的“为什么不适用”都能落到后文引用的 `file:line` 上，但“当初权衡过并否掉了它”这层意思由本页承担。其中“CPU swap KV”一行尤其需要注意，见第五节的标注。
-
-## 三、Scheduler 拥有的状态
+请求状态 enum 把三个 blocked waiting 状态、`RUNNING`、`PREEMPTED` 与终态分开；所有位于 `PREEMPTED` 之后的值都被 `is_finished()` 判为终态（`vllm/v1/request.py:364-391`）。图 1 表达的是 Scheduler 眼中的控制状态；`waiting` 与 `skipped_waiting` 是队列位置，不是额外的 `RequestStatus`，`FINISHED · held resources` 也只是资源驻留注记，不是另一个 enum 值。
 
 ```mermaid
 stateDiagram-v2
-  [*] --> WAITING
-  WAITING --> BLOCKED: grammar remote KV or stream dependency
-  BLOCKED --> WAITING: dependency becomes ready
-  WAITING --> RUNNING: admission and KV allocation succeed
-  RUNNING --> PREEMPTED: KV cannot grow
-  PREEMPTED --> RUNNING: re-admitted and recomputed
-  RUNNING --> FINISHED: EOS stop length abort or error
-  WAITING --> FINISHED: abort ignore or error
-  FINISHED --> [*]
+    [*] --> W: 新请求
+    [*] --> WG: 需要 grammar
+    state "WAITING" as W
+    state "WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR" as WG
+    state "WAITING_FOR_REMOTE_KVS" as WK
+    state "WAITING_FOR_STREAMING_REQ" as WS
+    state "RUNNING" as R
+    state "PREEMPTED" as P
+    state "FINISHED" as F
+
+    WG --> W: grammar ready
+    W --> WK: 保留 blocks 并开始 async load
+    WK --> W: 首次 admission 的 transfer ready
+    WK --> P: resume 的 transfer ready
+    WS --> W: 新输入到达
+    W --> R: 联合 admission 成功
+    R --> P: KV 无法扩展
+    P --> WK: 保留 blocks 并开始 async load
+    P --> R: 同步 lookup 与 admission 成功
+    R --> WS: resumable 请求等待输入
+    W --> F: abort 或 error
+    WG --> F: abort 或 grammar error
+    WK --> F: abort 或 transfer error
+    WS --> F: 会话结束或 abort
+    R --> F: stop length abort 或 error
+    state "FINISHED · held resources" as FH
+    F --> [*]: 无 connector 延迟时 delete<br/>KV 可再等 fence
+    F --> FH: connector 要求延迟释放
+    FH --> [*]: transfer 完成后 delete<br/>KV 可再等 fence
 ```
 
-`RequestStatus` 把 WAITING、RUNNING、PREEMPTED 与各种 FINISHED 状态放在一个有序 enum 中，`is_finished()` 用 `status > PREEMPTED` 判定终态；`vllm/v1/request.py:359-399`。Scheduler 同时持有：
+### 2.2 五条承重不变量
 
-- `requests`：request id 到对象的唯一映射；
-- `running`：已经获得活跃资源的请求列表；
-- `waiting`：按 FCFS/priority 排序的可准入队列；
-- `skipped_waiting`：grammar、remote KV、stream input 等尚未就绪的等待请求；
-- KV/encoder managers、connector 和 event publisher；`vllm/v1/core/sched/scheduler.py:69-191`。
+1. **预算守恒**：step 结束时 scheduled token 总数不得超过上限，token/input budget 不得为负，running 数不得超过 request-slot 上限；源码在构造 output 前直接断言这些条件（`vllm/v1/core/sched/scheduler.py:1204-1216`）。
+2. **先保留，后决定驻留形态**：普通同步可运行路径只有在 prefix 状态确定、KV slots 成功分配后才从队列弹出，转为 `RUNNING` 并写入 scheduled maps；allocation 返回 `None` 时会撤销 encoder manager 的临时触碰并停止继续准入。async KV load 是例外：allocation 成功后请求持有 blocks、记录预计 computed progress，却转入 `WAITING_FOR_REMOTE_KVS` 并回到 skipped queue，本 step 不进入 `running` 或 scheduled-token output（`vllm/v1/core/sched/scheduler.py:1037-1086`；`vllm/v1/core/sched/scheduler.py:1114-1171`）。
+3. **scheduled 不等于 running**：`running` 表示跨 step 的资源/生命周期归属，`num_scheduled_tokens` 才表示本 step 真正执行的子集。encoder budget 测试明确保留三个 running request，却只调度其中两个（`tests/v1/core/test_scheduler.py:326-337`）。
+4. **计划进度可以乐观，事实进度必须可回退**：`_update_after_schedule()` 先增加 computed 与 in-flight token，spec rejection 再按拒绝数回退 computed progress（`vllm/v1/core/sched/scheduler.py:1435-1455`；`vllm/v1/core/sched/scheduler.py:1886-1904`）。
+5. **结果必须与产生它的计划配对**：output 更新按传入 `SchedulerOutput.num_scheduled_tokens` 遍历，并通过 runner 返回的 `req_id_to_index` 取对应结果；已 abort/finished 的 request 不会被迟到结果重新激活（`vllm/v1/core/sched/scheduler.py:1789-1801`；`vllm/v1/core/sched/scheduler.py:1848-1884`）。
 
-核心不变量是：**一个未终止 request 只能由 Scheduler 的一个生命周期位置拥有；runner 可以保存设备镜像，但不能独立把请求改成 FINISHED。**
+## 3. 为什么是一笔多资源事务
 
-## 四、一步调度其实是一个多资源事务
+图 2 把一次 step 分成三个阶段：admission 预留、计划提交、结果对账。灰色“执行边界”只是 Scheduler 的外部合同，本页不进入 runner 内部。
 
 ```mermaid
 flowchart TB
-  Start["start with token and input budgets"] --> Running["extend running requests"]
-  Running --> Allocate["allocate KV and encoder slots"]
-  Allocate --> Enough{"resources fit"}
-  Enough -->|yes| CommitRun["record scheduled tokens"]
-  Enough -->|no| Preempt["preempt lower priority request"]
-  Preempt --> Allocate
-  CommitRun --> AnyPreempt{"any preemption"}
-  AnyPreempt -->|yes| Output["skip new admissions"]
-  AnyPreempt -->|no| Waiting["admit ready waiting requests"]
-  Waiting --> Output["build SchedulerOutput"]
+    S["建立 token input encoder 预算"] --> R["先扫描 running"]
+    R --> C["计算候选 token 与 spec 子集"]
+    C --> E["试保留 encoder 输入"]
+    E --> K["请求逻辑 KV slots"]
+    K --> Fit{"KV 容量可用"}
+    Fit -->|是| Async{"需要 async KV load"}
+    Async -->|否| A["登记本步工作并扣减预算"]
+    Async -->|是| Hold["持有 blocks 与预计 progress<br/>转入 blocked transfer"]
+    Hold --> W
+    Fit -->|否| V["选择 preemption victim"]
+    V --> Old{"victim 已在本步登记"}
+    Old -->|是| RB["撤销 victim 的 token spec encoder 预留"]
+    Old -->|否| P["释放 victim 资源<br/>状态改为 PREEMPTED"]
+    RB --> P
+    P --> Self{"victim 是当前请求"}
+    Self -->|否| K
+    Self -->|是| Fail["停止当前请求 admission"]
+    A --> H{"本轮发生 preemption"}
+    H -->|否| W["扫描 waiting 与 skipped"]
+    H -->|是| O["封装 SchedulerOutput"]
+    Fail --> O
+    W --> O
+    O --> OC["乐观增加 computed 与 in flight"]
+    OC --> X["执行边界"]
+    X --> U["用同一 SchedulerOutput 对账"]
+    U --> SR{"spec token 被拒绝"}
+    SR -->|是| RR["回退 rejected progress"]
+    SR -->|否| F{"请求结束"}
+    RR --> F
+    F -->|否| S
+    F -->|是| FE["移出队列并释放 encoder"]
+    FE --> Delay{"connector 延迟释放"}
+    Delay -->|否| FR["删除 request mapping<br/>释放或 fence KV"]
+    Delay -->|是| DH["保留 KV 与 request mapping"]
+    DH --> Done["等待 transfer 完成"]
+    Done --> FR
+
+    classDef neutral fill:#ffffff,stroke:#64748b,color:#0f172a
+    classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a,stroke-width:2px
+    classDef acc2 fill:#ffedd5,stroke:#ea580c,color:#0f172a,stroke-width:2px
+    classDef ghost fill:#f8fafc,stroke:#94a3b8,color:#475569,stroke-dasharray:4 3
+    class S,R,C,E,K,A,W,O,OC,U,RR,FE,FR neutral
+    class Fit,Async,Old,Self,H,SR,F,Delay neutral
+    class O,OC,U acc1
+    class V,RB,P,Fail,DH acc2
+    class X,Hold,Done ghost
 ```
 
-`schedule()` 在每轮创建 token budget、输出映射和 preemption 列表，然后先遍历 running；`vllm/v1/core/sched/scheduler.py:477-526`。这不是简单的 running-first 偏好，而是资源所有权的结果：running request 已持有 KV，继续 decode 通常只增加少量 slot；让它们停下来而优先接纳新长 prefill，会浪费已驻留状态并恶化 TPOT。
+### 3.1 token、input 与 speculative accounting
 
-### 4.1 `num_new_tokens` 是统一工作量
+每轮从 `max_num_scheduled_tokens` 建立 token budget，同时从 `max_num_batched_tokens` 建立 input budget；若启用 parallel drafting，每接纳一个请求还要预留 `max_num_new_slots_for_drafting`，所以 input budget 扣除的是本轮 token 加 draft slot，而不是只有 `num_new_tokens`（`vllm/v1/core/sched/scheduler.py:519-531`；`vllm/v1/core/sched/scheduler.py:721-728`）。
 
-对每个 running request，目标进度与 `num_computed_tokens` 的差得到待算 token；再受 token/input budget、long-prefill threshold、model length、connector 与 speculative lookahead 限制。结果写入 `num_scheduled_tokens`，同时扣减全局 budget；关键循环见 `vllm/v1/core/sched/scheduler.py:526-700`。
+对 running request，候选工作量是 `num_tokens_with_spec + num_output_placeholders - num_computed_tokens`，随后依次受 long-prefill threshold、全局 token/input budget、model length、Mamba boundary 与 encoder 可执行边界裁剪（`vllm/v1/core/sched/scheduler.py:550-633`）。这就是 chunked prefill、decode 和 spec validation 共用一个循环的原因：它们只是“已知进度与已计算进度的差”在不同边界下被截断。
 
-chunked prefill 因而不需要一个独立“分块执行器”：当 prompt 剩余 token 大于请求本轮 budget 时，`num_new_tokens` 被截断，这一轮只为该 chunk 分配 KV。下轮同一 request 以新的 computed progress 继续竞争预算。
+speculative token 不是一份脱离 token budget 的免费工作。Scheduler 只把当前 `spec_token_ids` 中落入已批准 token 区间的部分写进 `scheduled_spec_decode_tokens`，随后清空 request 上的旧 draft，等下一轮结果产生新 draft（`vllm/v1/core/sched/scheduler.py:731-747`）。prefill chunk 明确拒收 draft token；测试证明 80-token prompt 在 50-token budget 下第二轮只排剩余 30 个 prompt token，直到 prefill 完成后才排 `1 + 3` 个 decode/spec token（`tests/v1/core/test_scheduler.py:1582-1673`）。
 
-### 4.2 KV allocation 是 admission 的一部分
+### 3.2 encoder budget 是 token 区间的门，而不只是附加任务
 
-Scheduler 不能先把 request 加进 batch、再让 KV 层自行失败。它必须先请求 prefix hit/connector 状态，调用 `allocate_slots()`，只有拿到 blocks 才把 request 计入输出。KV manager 返回 `None` 表示容量事务失败，Scheduler 需要减小/延后请求或抢占其他 request。
+`_try_schedule_encoder_inputs()` 同时返回要计算的 encoder input、被其边界裁剪后的 `num_new_tokens`、新 encoder budget 与外部加载项；输入只有未缓存、未由远端提供且 compute/cache 容量足够时才可调度（`vllm/v1/core/sched/scheduler.py:1587-1616`）。因此 encoder budget 耗尽时，请求可以只前进到多模态占位区间之前，而不是把 decoder token 先算过去。
 
-这保证 `SchedulerOutput` 是可执行承诺：runner 不应收到一个没有完整 block mapping 的 token batch。块级不变量见 [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]]。
+这种局部裁剪也解释了为什么 `num_new_tokens == 0` 时 running 循环选择 `continue` 而不是 `break`：一个请求可能只是被 encoder、对齐或 lookahead 约束挡住，后面的请求仍可能可执行；源码明确承认这会放松严格 FCFS（`vllm/v1/core/sched/scheduler.py:635-653`）。代价是 service order 不再只由到达时间决定。
 
-## 五、抢占为什么采用 recompute
+## 4. KV allocation 失败时，preemption 怎样回滚已做决定
 
-当 running request 的 KV 无法继续增长，Scheduler 从 running 集合中选择 victim，释放其 KV，并把状态改为 PREEMPTED；`vllm/v1/core/sched/scheduler.py:1340-1370`。恢复时请求重新进入 admission，并从仍可命中的 prefix 或起点重算。
+running 阶段为当前请求调用 `allocate_slots()`；若返回 `None`，FCFS 从 running 尾部、priority policy 按最低优先级和到达时间选择 victim，并持续释放直到当前请求可分配或它自己成为最后一个 victim（`vllm/v1/core/sched/scheduler.py:655-719`）。KV block 的具体选择与回收算法属于 [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]]；本页只关心 allocation 的成功/失败合同。
 
-直观替代是把 KV swap 到 CPU，但它引入大规模双向传输、额外容量管理和恢复延迟；在线压力下 swap 可能把一次显存不足放大成 PCIe 拥塞。recompute 用重复 FLOPs 换取简单、确定的显存释放，尤其适合 decode 已计算 token 不多或 prefix cache 能保留公共前缀的情况。
+真正体现“事务”的分支发生在 victim 已于本 step 更早被选中时：Scheduler 从 scheduled-running 集合和 `num_scheduled_tokens` 删除它，归还 token/input budget，删除新 block/spec 记录，并按已排 encoder input 数恢复 encoder compute budget（`vllm/v1/core/sched/scheduler.py:675-703`）。如果没有这一步，output 会同时携带“victim 本轮执行”与“victim 已被抢占”两个互相冲突的承诺。
 
-> [!note] 推断
-> **V1 里根本不存在 swap 路径**：`git grep -i swap d66300a1 -- vllm/v1/core/sched/ vllm/v1/core/kv_cache_manager.py` 零命中。上面与 CPU swap 的对比是对 V0 历史方案的重建，源码从未陈述过这个取舍。代码能证实的只有抢占动作本身——`_preempt_request()` 释放全部 block、把 `num_computed_tokens` 归零并清空 spec token（`vllm/v1/core/sched/scheduler.py:1340-1370`），即恢复时必然重算。
+`_preempt_request()` 随后释放 request blocks 与 encoder cache，把状态改为 `PREEMPTED`，把 computed progress 归零、清空 spec token，并把请求放回 waiting 队首；若存在 in-flight output，还会把它标为 stale，以便结果回来时不会再次修改已归零的计数（`vllm/v1/core/sched/scheduler.py:1392-1433`）。这不是 CPU swap：V1 设计文档明确说 swapped preemption 与 `--swap-space` 已移除，prefix caching 加 recompute 取代了它（`docs/design/metrics.md:503-534`）。
 
-代价也明确：长请求在高压力下反复抢占会产生 starvation 和重复计算。因此当前 admission 加入 `full_sequence_must_fit`、watermark、reserve 等闸门，尽量避免“先过度准入、随后立即抢占”的抖动；具体容量检查在 `vllm/v1/core/kv_cache_manager.py:456-530`。
+一次 preemption 发生后，本轮不再准入新 waiting request，而是直接封装当前计划（`vllm/v1/core/sched/scheduler.py:774-778`）。
 
-本轮发生抢占后 Scheduler 不再纳入新的 waiting request；代码用 `if not preempted_reqs` 守住 waiting 阶段，见 `vllm/v1/core/sched/scheduler.py:749-752`。
+> [!note] 分析推断
+> 这道 guard 没有解释性注释。本页将它解释为“不要在刚通过 victim 回收容量的同一事务里再引入新 owner”，从而避免回收与新准入互相打架；这是从控制流重建的理由，不是源码自陈。
 
-> [!note] 推断
-> 这个守卫**没有任何解释性注释**——`vllm/v1/core/sched/scheduler.py:748` 上方只有一行 `# Next, schedule the WAITING requests.`；它随 V1 Scheduler 接口重构进入代码（`git log -S 'if not preempted_reqs'` → PR #15250 *[V1] Scheduler Refactoring [1/N] - Add Scheduler Interface*）。本页给出的理由——当前资源已经不足，再纳新只会让刚释放的容量被新请求夺走、加剧振荡——是据行为推断，不是源码陈述。
+## 5. waiting admission：就绪、slot 与资源必须同时满足
 
-## 六、waiting 不是一个简单 FIFO
+只有本轮未发生 preemption 且 scheduler 未暂停时，才进入 waiting admission。request-slot 计数不仅包含 `running`，还包含等待 streaming input 但仍占 runner slot 的 session；达到 `max_num_running_reqs` 就停止接纳（`vllm/v1/core/sched/scheduler.py:775-785`）。
 
-可准入顺序由 FCFS 或 priority policy 决定，但“排在前面”不等于“本轮一定执行”。waiting request 还可能等待：
+`WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR`、`WAITING_FOR_REMOTE_KVS` 与 `WAITING_FOR_STREAMING_REQ` 都驻留在 `skipped_waiting`。调度遍历时先尝试 promote；依赖仍未完成就移入本 step 的 skipped 队列并继续，因此一个 blocked request 不会把所有后续可执行请求永久挡住（`vllm/v1/core/sched/scheduler.py:787-815`；`vllm/v1/core/sched/scheduler.py:2213-2237`）。
 
-- structured-output grammar 编译；
-- remote KV load/handshake；
-- streaming input 的新 token；
-- encoder input/cache；
-- LoRA slot、KV slot 或完整序列 admission；
-- DP prefill throttle。
+对真正可准入的请求，Scheduler 先查询本地/外部已计算前缀，再计算 token 与 encoder 需求，最后一次性请求 KV slots。**普通同步可运行路径**只有在成功后才 `pop_request()`、追加到 `running`、写入 scheduled maps 并扣减预算（`vllm/v1/core/sched/scheduler.py:837-938`；`vllm/v1/core/sched/scheduler.py:1045-1077`；`vllm/v1/core/sched/scheduler.py:1147-1193`）。这条顺序保证 scheduled-token output 是可执行承诺，而不是需要下游补救的愿望清单。
 
-blocked request 被放到 `skipped_waiting`，Scheduler 在两个队列间仍按 policy 比较，避免依赖未就绪的头部请求永久阻塞后续工作；blocked status 集合与队列选择见 `vllm/v1/core/sched/scheduler.py:2143-2166`。
+**async KV held-reservation 例外**发生在同一次 KV allocation 已经成功、但 connector 要异步填充远端 KV 时。Scheduler 先把请求从当前 queue 弹出，再把状态改为 `WAITING_FOR_REMOTE_KVS`、把它放回 skipped queue、记录远端命中对应的 `num_computed_tokens` 并持有已分配 blocks；随后直接 `continue`，所以该请求既不进入 `running`，也不写 `num_scheduled_tokens` 或扣减本轮执行预算（`vllm/v1/core/sched/scheduler.py:1114-1145`）。这里的 allocation 是传输期间的容量保留，不是本 step 的执行承诺；transfer 完成后，请求才被 promote 为 `WAITING` 或 `PREEMPTED`，并重新参加 runnable admission（`vllm/v1/core/sched/scheduler.py:2803-2861`；`vllm/v1/core/sched/scheduler.py:2896-2905`）。
 
-这比“遇到第一个不能执行就 break”的队列更复杂，但解决了 head-of-line blocking。代价是公平性不再只由入队时间决定：外部 KV、grammar 和容量条件会改变实际 service order，priority workload 还可能饿死低优先级请求。
+## 6. output-side commit：计划提交不等于结果提交
 
-## 七、调度提交分成乐观阶段和真实阶段
+### 6.1 `SchedulerOutput` 是事务凭据
 
-为了让下一批 CPU 准备与当前 GPU 执行重叠，Scheduler 在 `_update_after_schedule()` 中先登记本轮 scheduled token 和 in-flight state；入口见 `vllm/v1/core/sched/scheduler.py:1383-1423`。这是一笔尚未完全兑现的承诺。
+`SchedulerOutput` 同时携带 new/cached request delta、每请求 scheduled token、scheduled spec token、encoder input、preempted id 与 finished id；这些字段让下游按 request id 应用同一份计划，而不是根据当前队列位置猜测（`vllm/v1/core/sched/output.py:218-270`）。Scheduler 在返回前构造这份对象，然后调用 `_update_after_schedule()`（`vllm/v1/core/sched/scheduler.py:1322-1371`）。
 
-模型返回后，`update_from_output()` 才处理 sampled/accepted token、connector 完成、stop/error、finished request 和延迟释放；`vllm/v1/core/sched/scheduler.py:1737-1801`。若 speculative token 被拒绝，真实 computed progress 必须按接受数回落；若请求执行期间被 abort，输出也不能重新激活它。
+这里发生第一次提交：每个请求的 `num_computed_tokens` 与 `num_in_flight_tokens` 立即加上 scheduled token。这是乐观进度，目的是允许下一次 schedule 在当前结果尚未返回时准备后续 prefill chunk；源码注释同时明确说，未来拒绝的 spec token 要在 `update_from_output()` 回调中调整（`vllm/v1/core/sched/scheduler.py:1435-1455`）。
 
-由此得到两个不变量：
+`AsyncScheduler` 还为将返回的 sampled/spec token 增加 output placeholder，并记录下一次 decode 可调度 step；真实 token 返回时才扣减 placeholder，preemption 后的 stale output 不得再次扣减已经清零的 placeholder（`vllm/v1/core/sched/async_scheduler.py:19-49`；`vllm/v1/core/sched/async_scheduler.py:51-69`）。因此乐观提交换来 CPU/GPU overlap，也把单一状态机变成多笔 in-flight 事务。
 
-1. **optimistic progress 只能用于安排 in-flight 工作，不能直接成为可缓存/可释放的最终事实；**
-2. **一次 output 必须与产生它的 `SchedulerOutput` 配对，不能按当前队列位置猜测请求映射。**
+### 6.2 结果返回后的真实对账
 
-这也是 async scheduling 最难的部分：它优化的不是一个函数耗时，而是把单阶段状态机改成多笔未完成事务。
+`update_from_output()` 首先按这份 `SchedulerOutput` 的 request 集合减少 in-flight token；若请求已 abort/finished，迟到结果直接忽略；若结果属于 preemption 前的 stale step，则遵循 deliver 或 drop 模式而不污染重置后的计数（`vllm/v1/core/sched/scheduler.py:1848-1879`）。async regression test 覆盖了“KV 压力下带 in-flight output 的 preemption”，要求 token 恰好交付一次、stale spec rejection 不破坏回滚计数且恢复后不重复采样位置（`tests/v1/core/test_async_scheduler.py:553-613`）。
 
-## 八、调度结束时怎样自证可执行
+对 speculative output，Scheduler 用“已排 draft 数减已接受 draft 数”得到 rejection 数，并从 computed progress 与 async placeholder 回退；对 encoder input，则等这一步确实执行后才检查并释放已越过的 cache 项（`vllm/v1/core/sched/scheduler.py:1886-1929`；`vllm/v1/core/sched/scheduler.py:2276-2307`）。这两条规则共同区分了“计划使用过”与“结果已成为事实”。
 
-调度输出前会计算 `total_num_scheduled_tokens` 并断言不超过最大 token budget、剩余 budget 非负；`vllm/v1/core/sched/scheduler.py:1171-1175`。一份有效输出还必须满足：
+新 token 随后逐个追加并检查 EOS、stop token、model length 与 max tokens；触发 stop 时先确定 finish reason，再释放请求，最后从 running/waiting 队列移除（`vllm/v1/core/sched/scheduler.py:1942-2049`；`vllm/v1/core/sched/scheduler.py:2105-2111`；`vllm/v1/core/sched/utils.py:94-130`）。未完成的 partial prefill 不产生用户输出，代码对此有显式断言（`vllm/v1/core/sched/scheduler.py:2031-2103`）。
 
-- running request 数不超过 sequence budget；
-- 每个 scheduled request 有一致的 KV/encoder allocation；
-- new/resumed request 携带 runner 建立 row 所需的完整状态；
-- cached/new/connector token 边界与本轮执行 token 一致；
-- 被抢占或 finished 的 request 不再以活跃 row 消费输出。
+### 6.3 finish 是生命周期释放，不是只改一个 enum
 
-`SchedulerOutput` 是控制面到设备面的 ABI，而不是日志结构。对它增加字段通常意味着 runner、PP/DP、connectors 和 async state 都需要重新审计。
+外部 abort 也走 Scheduler 的 `finish_requests()`：它先从 running/waiting/skipped 队列批量移除有效请求，再设置 finished status 并调用统一释放路径（`vllm/v1/core/sched/scheduler.py:2404-2465`）。`_free_request()` 总会通知 connector、释放 encoder cache，并登记 `finished_req_ids`；只有 connector 不要求 delay 时，它才立刻调用 `_free_blocks()` 释放 request KV 并从 `requests` 映射删除（`vllm/v1/core/sched/scheduler.py:2467-2499`）。
 
-## 九、约束、取舍与观测
+若 connector 表明 transfer 仍引用这些 blocks，**物理 KV 释放与 request mapping 删除都会延迟**：request 已是 finished、也已退出 admission 队列，但仍以终态对象留在 `requests` 中并持有 blocks。worker-side connector 报告 receive/send 完成后，`_update_from_kv_xfer_finished()` 才调用 `_free_blocks()` 完成二者（`vllm/v1/core/sched/scheduler.py:2882-2909`）。此外，即使进入 `_free_request_blocks()`，in-flight GPU 写仍可能通过 fence 延迟 blocks 回池；这是 connector 延迟之后的另一层物理安全门（`vllm/v1/core/sched/scheduler.py:2509-2548`）。
 
-先说这套设计**不保证**什么：它不保证公平（priority policy 下低优请求可以持续饿死，见第六节）；不保证一个请求一旦进入 running 就能跑完（KV 无法增长即被抢占并从头重算，见第五节）；也不负责容量不足时的降级策略——它只把“本轮可执行”做成一笔事务。它成立依赖三个前提：KV manager 的容量检查是权威且同步的（`allocate_slots()` 返回 `None` 即事务失败）；runner 可以持有设备镜像，但不能自行把请求改成 FINISHED（第三节的不变量）；每份 output 必须能配回产生它的 `SchedulerOutput`（第七、八节）。任何一条被打破，下面这张取舍表都不再成立。
+因此“finished”有三个可观察面：它立即停止竞争 admission；它通过 `finished_req_ids` 通知下游清理镜像；request mapping 要等 connector 允许后才删除，而物理 blocks 回池还可能在 mapping 删除后继续等待 in-flight fence。无 connector delay 的测试会看到 abort 后 request 立即从映射与 waiting 队列消失，output stop 后 running 只留下未完成请求（`tests/v1/core/test_scheduler.py:125-145`；`tests/v1/core/test_scheduler.py:670-717`）。
 
-| 调节项 | 直接作用 | 可能副作用 |
+## 7. 约束、代价与失败边界
+
+| 约束或代价 | 直接后果 | 证据 |
 |---|---|---|
-| 增大 token budget | 提高单步工作量和吞吐 | step latency、decode TPOT、峰值临时内存上升 |
-| 增大 max sequences | 更多 decode 并发 | CPU/metadata、KV 压力和 graph shape 增加 |
-| 减小 long prefill threshold | 降低长 prompt 对 decode 的阻塞 | TTFT 上升、prefill 分块更多 |
-| priority policy | 保护高优请求 | 低优请求 starvation |
-| full-sequence admission/watermark | 减少抢占振荡 | 容量利用更保守，waiting 增加 |
-| async scheduling | 隐藏 CPU 调度与准备 | in-flight 状态、延迟释放和兼容边界更复杂 |
+| running-first 不是严格公平承诺 | 被局部约束挡住的请求会被跳过；priority workload 也可能改变服务顺序 | `vllm/v1/core/sched/scheduler.py:635-653`；`vllm/v1/core/sched/scheduler.py:2227-2237` |
+| recompute 用重复计算换确定释放 | preempt 会把 computed progress 归零；恢复时重新做 prefix lookup 与 admission | `vllm/v1/core/sched/scheduler.py:1405-1433`；`tests/v1/core/test_scheduler.py:1109-1142` |
+| async overlap 扩大 rollback 面 | abort、preempt、spec rejection 与 stale output 都可能跨多个未完成 step | `vllm/v1/request.py:159-179`；`tests/v1/core/test_async_scheduler.py:553-613` |
+| encoder 与 spec 不是独立后处理 | 它们会裁剪 token 区间、消耗 input/cache 容量，并决定本 step 能否前进 | `vllm/v1/core/sched/scheduler.py:519-531`；`vllm/v1/core/sched/scheduler.py:611-633` |
+| finish 的资源释放可能分阶段 | 生命周期已结束不代表 blocks 或 request mapping 已消失；connector 完成后才 delete，blocks 回池还必须尊重 in-flight fence | `vllm/v1/core/sched/scheduler.py:2467-2499`；`vllm/v1/core/sched/scheduler.py:2882-2909`；`vllm/v1/core/sched/scheduler.py:2509-2548` |
 
-排障时至少同时观察 waiting/running 数、scheduled tokens、prefill/decode 构成、preemption、KV usage 与 step time。只看吞吐无法判断预算是过小，还是 KV/CPU/attention backend 在阻塞。
+Scheduler 能保证的是“本轮计划在它拥有的逻辑资源视角下自洽”，而不是 GPU 一定无故障、采样一定满足某个分布，或某种 KV block 算法永不碎片化。物理 runner 如何把 delta 投射到 compact row 或 stable row，分别属于 [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] 与 [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]]；逻辑/物理 KV 内部正确性属于 KV owner 页；spec propose/verify 的分布正确性属于 speculative decoding owner 页。
 
-## 十、发展趋势
+## 8. 源码阅读路径
 
-> [!note]
-> 本节离开“源码此刻是什么”，只收录源码自陈的在途改动；每条给出锚点，属于外推的部分单独标注。
-
-1. **Connector 路径正在向 HMA（hybrid memory allocator）收敛。** 非 `SupportsHMA` 的 connector 目前走单 KV group 的旧分支，代码里明写待废弃：`# NOTE(Kuntai): We should deprecate this code path after we enforce all connectors to support HMA.`；见 `vllm/v1/core/sched/scheduler.py:2696-2702`。同一方向上还有未覆盖处——invalid-block 处理仍标着 `# TODO (davidb): add support for hybrid memory allocator`，见 `vllm/v1/core/sched/scheduler.py:2877`。
-2. **connector 保活机制会被一般化。** 引擎是否继续运转目前额外看 `connector.has_pending_push_work()`，这是为 push-mode 写传输开的专门口子，注释自陈 `# TODO: replace with a more general mechanism for connectors to keep the scheduler alive.`；见 `vllm/v1/core/sched/scheduler.py:2500-2508`。
-3. **Scheduler 是已声明的可替换件。** `Scheduler` 继承 `SchedulerInterface(ABC)`（`vllm/v1/core/sched/scheduler.py:69`、`vllm/v1/core/sched/interface.py:38`），`scheduler_cls` 支持直接传类或 `"mod.custom_class"` 路径（`vllm/config/scheduler.py:117,170-190`）。注意 `AsyncScheduler` 是 `Scheduler` 的子类，而不是该接口的第二个独立实现（`vllm/v1/core/sched/async_scheduler.py:12`）——接口当前只有一条实现主干。
-   > [!note] 推断
-   > 引入 `SchedulerInterface` 的 PR 标题带 `[1/N]`（#15250），可以读作调度层重构仍在继续；但“第三方调度策略会成为一等扩展点”是本页的外推，源码没有做过这个承诺。
-
-## 十一、源码阅读顺序
-
-1. `vllm/v1/request.py:59-125,359-399`：请求进度和状态机；
-2. `vllm/v1/core/sched/output.py:207-290`：先确定控制面 ABI；
-3. `vllm/v1/core/sched/scheduler.py:69-191,477-752`：running-first 与预算；
-4. `vllm/v1/core/sched/scheduler.py:749-1175`：waiting admission；
-5. `vllm/v1/core/sched/scheduler.py:1340-1423,1737-2049`：抢占、乐观提交与真实结果；
-6. `tests/v1/core/test_scheduler.py`：用边界用例验证队列、remote KV、abort 和容量行为。
+1. 先读 `Request` 的 progress 字段与 `RequestStatus`：`vllm/v1/request.py:159-182`、`vllm/v1/request.py:364-391`。
+2. 再读 output ABI：`vllm/v1/core/sched/output.py:218-270`。
+3. 按 running admission、waiting admission、assert/output 的顺序读 `schedule()`：`vllm/v1/core/sched/scheduler.py:501-775`、`vllm/v1/core/sched/scheduler.py:774-1216`、`vllm/v1/core/sched/scheduler.py:1228-1371`。
+4. 最后连读 preempt、乐观推进、结果对账与 finish：`vllm/v1/core/sched/scheduler.py:1392-1483`、`vllm/v1/core/sched/scheduler.py:1789-2111`、`vllm/v1/core/sched/scheduler.py:2404-2522`。
+5. 用 encoder、spec、async preemption 三组测试检查边界：`tests/v1/core/test_scheduler.py:277-337`、`tests/v1/core/test_scheduler.py:1329-1413`、`tests/v1/core/test_async_scheduler.py:553-613`。
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/02_vllm_system_design_principles_analysis|vLLM 系统设计原则]] — token budget 与 TTFT/TPOT/吞吐的全局关系。
-- [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM 引擎架构]] — Scheduler 为何由 EngineCore 唯一持有。
-- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — admission 的物理容量事务。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] — SchedulerOutput 如何变成 persistent row 与异步输入。
-- [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] — draft token 如何改变 lookahead 与真实提交。
-- [[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|vLLM 分离式 KV Serving]] — remote KV 如何引入 blocked state 与 deferred free。
-- [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — scheduler stats 如何进入生产反馈闭环。
+- [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] — 把 Scheduler 放回资源控制层与完整请求生命周期中定位。
+- [[02_engineering/03_infer_frameworks/vllm/10_vllm_engine_architecture_analysis|vLLM Engine 架构]] — 解释 EngineCore 怎样调用 Scheduler 并把计划交给 Executor。
+- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 深入本页只当作 admission 成败合同的 block、prefix cache 与释放算法。
+- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v1_analysis|Model Runner V1]] / [[02_engineering/03_infer_frameworks/vllm/16_vllm_model_runner_v2_analysis|Model Runner V2]] — 对照 `SchedulerOutput` 怎样更新 compact row 或 stable row 并进入设备执行。
+- [[02_engineering/03_infer_frameworks/vllm/20_vllm_speculative_decoding_analysis|vLLM 投机解码]] — 深入 draft、verify、accept 如何保持采样与 KV 正确。
+- [[02_engineering/03_infer_frameworks/vllm/26_vllm_disaggregated_kv_serving_analysis|vLLM 分离式 KV Serving]] — 展开 blocked remote-KV 状态、connector 与延迟释放协议。

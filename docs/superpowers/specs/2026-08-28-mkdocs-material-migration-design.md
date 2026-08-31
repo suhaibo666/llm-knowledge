@@ -1,0 +1,328 @@
+# LLM Knowledge Wiki：MkDocs Material 并行迁移设计
+
+> 日期：2026-08-28
+>
+> 状态：设计已在对话中确认，等待书面规格复核
+>
+> 设计基线：`origin/main @ 4f0bc1a`
+>
+> 实施分支：`codex/mkdocs-preview`
+>
+> 实施工作树：`.worktrees/mkdocs-preview`
+
+## 1. 背景与决策
+
+当前 GitHub Pages 由 Quartz 5 生成。站点已经能够自动发布 400 余篇 Wiki 文档，也已解决项目子路径、Wikilink、Mermaid、响应式布局和 Explorer 文件名显示等兼容问题，但默认页面模型仍偏向数字花园：在 1280px 桌面视口中，左侧 Explorer、正文和右侧目录形成三个独立滚动区；长英文文件名在窄侧栏中反复换行；首页以统计表为主体；长篇源码分析的标题、来源基线、正文和目录争夺视觉注意力。
+
+本知识库的真实形态不是自由生长的个人笔记，而是由功能树约束的结构化技术文档：
+
+- `wiki/01_theory/` 与 `wiki/02_engineering/` 是唯一权威内容树；
+- 每级目录用 `index.md` 维护本级入口；
+- 普通文档以带编号的英文文件名表达顺序和主题；
+- `wiki/courses/` 提供跨域阅读路径；
+- 文档大量使用 Obsidian Wikilink、中文标题、源码定位、Mermaid 和 LaTeX。
+
+因此采用 **MkDocs Material 作为新的展示层**，但不把源文档改写成 MkDocs 专用格式。迁移遵循“先本地并行预览、用户验收、再替换线上”的发布策略。现有 Quartz 在预览阶段继续作为生产站点。
+
+## 2. 目标与非目标
+
+### 2.1 目标
+
+1. `wiki/` 继续作为唯一内容源，Obsidian 编辑体验和 Wikilink 语义不变。
+2. 新增、修改、移动、重命名或删除 Wiki 页面后，本地预览和线上构建都自动刷新页面与导航。
+3. 普通 `.md` 在导航中显示不带扩展名的文件名；`index.md` 显示其中文 H1。
+4. 保留中文文章标题作为页面标题和搜索结果标题，同时允许按英文文件名搜索。
+5. 所有内部页面链接、章节锚点、图片和静态资源必须可访问；任一错误阻止部署。
+6. 尽量保持现有 Quartz URL；不能原样保持的路径必须有可验证的兼容跳转。
+7. 提供适合数百篇长技术文档的桌面、平板和移动端阅读体验。
+8. 构建不依赖数据库、外部字体 CDN 或运行时后端，可直接部署到 GitHub Pages 项目子路径 `/llm-knowledge/`。
+9. 当前主工作区和正在进行的 `main` 重构任务不受迁移开发影响。
+
+### 2.2 非目标
+
+- 不为迁移批量改写 `wiki/**/*.md` 的正文或链接语法；只允许在用户确认“兼容的话可以修改”“全部按照推荐方案”后，对严格渲染门禁已经复现的锚点、Mermaid、MathJax 或代码示例边界缺陷做独立、可审计的最小修复。
+- 不改变功能树、课程层、索引维护规则或知识内容归属。
+- 不在预览阶段替换当前 GitHub Pages。
+- 不在迁移提交中删除 Quartz；Quartz 至少保留到 MkDocs 线上稳定验收之后。
+- 不把外部网站的暂时不可达作为日常部署阻断条件。
+- 不新增评论、分析埋点、登录、服务端搜索或其他动态服务。
+
+## 3. 已确认的产品行为
+
+### 3.1 导航和标题
+
+| 页面类型 | 左侧导航标签 | 页面 H1 / 浏览器标题 | 排序 |
+|---|---|---|---|
+| 普通 Markdown | 文件名 stem，例如 `13_megatron_cp_analysis` | 原始中文 H1 | 文件名字典序；编号自然决定顺序 |
+| `index.md` | 原始中文 H1 | 原始中文 H1 | 在所属分区首位 |
+| 根 `wiki/index.md` | `LLM Knowledge Wiki` | 原始知识库总索引标题 | 全站入口 |
+
+导航默认只展开当前页面所在路径，其他目录折叠。长文件名最多显示两行，溢出使用省略号，`title`/可访问名称保留完整文件名。切换页面后当前项具有清晰的背景与左侧强调线。
+
+左侧导航标签与文档标题必须分离实现，不能通过修改 Markdown H1 或统一覆盖 `page.title` 达成。构建适配层为页面保留 `title`，另生成 `nav_title`；导航主题读取 `nav_title`，正文、浏览器标题和搜索读取 `title`。
+
+### 3.2 搜索
+
+- 搜索索引覆盖中文 H1、正文和英文文件名。
+- 搜索结果主标题显示中文 H1，副信息显示文件路径或文件名。
+- 支持中文和英文查询、键盘上下选择与回车打开。
+- 顶栏展示搜索入口和 `Ctrl/Cmd + K` 提示。
+- 搜索在 GitHub Pages 项目子路径和本地预览中行为一致。
+
+英文文件名作为文章元信息显示在 H1 下方，因此既能被索引，也能帮助读者从页面回到文件系统语境；不通过隐藏关键词污染搜索摘录。
+
+### 3.3 首页
+
+首页采用“Source Atlas / 源码图谱”信息结构，而不是通用营销页：
+
+1. 顶部用一句话说明知识库覆盖论文机制与源码实现，并提供主搜索框。
+2. 中部把 `01 理论研究`、`02 工程实现` 呈现为两条主轨道，把 `courses` 作为跨域阅读路径。
+3. 域入口、页数和状态继续来自现有 `wiki/index.md` 与文件树；不新增第二份手工维护的数据文件。
+4. 当前索引中的统计表和维护说明保留，但降到首屏以下。
+
+首页转换器只对根 `wiki/index.md` 应用语义包装，不复制或重写索引内容。若索引结构不满足约定，构建明确失败并提示缺少的标题或表格，而不是输出残缺卡片。
+
+### 3.4 文章和目录页
+
+- 全站顶部栏包含站点名、搜索、GitHub 入口和主题切换。
+- 桌面端左侧为约 280–320px 的知识导航，中间正文保持约 760–840px 的舒适行宽。
+- 右侧“本页目录”只展示 H2/H3，并跟随当前阅读位置；首页和目录页不显示右栏目录。
+- 面包屑位于 H1 上方，采用完整但不喧宾夺主的层级路径。
+- 源码基线和边界声明使用统一的“来源轨道”视觉样式；行内代码降低背景对比度。
+- 文章尾部提供上一篇、下一篇、返回本级目录和“在 GitHub 查看”。
+- 1200px 以下隐藏右栏；约 900px 以下左栏改为抽屉；390px 移动端不得横向溢出。
+- UI 文案统一为中文：`知识导航`、`搜索`、`本页目录`、`上一篇`、`下一篇` 等。
+
+### 3.5 视觉系统
+
+视觉方向为克制的技术“Source Atlas”：
+
+- 浅色背景接近 `#F7F9FC`，深色背景接近 `#0D1117`；
+- 主交互色为蓝色，来源与基线信息使用青绿色；
+- 同时提供浅色、深色和跟随系统三种主题；
+- 中文正文优先系统字体栈，代码优先本地等宽字体栈；
+- 不加载 Google Fonts 或第三方字体 CDN；
+- 动效仅用于抽屉、折叠与当前目录过渡，并尊重 `prefers-reduced-motion`；
+- 键盘焦点、对比度和可访问名称必须可见、可读。
+
+## 4. 构建架构
+
+### 4.1 总体数据流
+
+构建过程是单向、可重建的：
+
+```text
+wiki/（唯一权威源）
+  -> 源文件扫描与严格链接预检
+  -> .mkdocs-cache/docs/（Git 忽略的临时镜像）
+  -> Wikilink / 元数据 / 导航适配
+  -> MkDocs Material 严格构建
+  -> site/（Git 忽略的静态站点）
+  -> HTML 全站爬取与浏览器验收
+  -> 本地预览，或用户确认后的 GitHub Pages 部署
+```
+
+`.mkdocs-cache/` 和 `site/` 都是派生产物，不进入 Git，不允许人工编辑。每次完整构建先清理并重新生成临时镜像，防止删除或重命名页面后残留旧文件。开发服务器可使用增量模式，但正式测试和 CI 必须执行干净构建。
+
+### 4.2 计划中的组件边界
+
+| 组件 | 职责 | 不负责 |
+|---|---|---|
+| source inventory | 枚举 Wiki 页面、资源、H1、frontmatter 和路由 | 不改写内容 |
+| link resolver | 按知识库现有规则解析 Wikilink、别名和锚点 | 不决定视觉标签 |
+| staging renderer | 生成标准 Markdown 临时镜像和页面元数据 | 不维护长期副本 |
+| navigation builder | 从文件树生成导航、目录标签、前后页顺序 | 不读取手写深层 `nav` |
+| route manifest | 冻结源页、输出文件、规范 URL 和旧 URL 的映射 | 不直接部署 |
+| MkDocs theme | 页面结构、样式、搜索、响应式与可访问性 | 不解释 Obsidian 语法 |
+| site validator | 爬取构建产物并验证页面、锚点、资源和子路径 | 不修复错误 |
+| deployment workflow | 在质量门禁通过后上传 Pages artifact | 不在预览阶段启用 |
+
+建议的代码位置：
+
+```text
+mkdocs.yml
+requirements-docs.txt
+tools/mkdocs_site/
+  inventory.py
+  wikilinks.py
+  staging.py
+  navigation.py
+  routes.py
+  validate_site.py
+  tests/
+tools/mkdocs-site/
+  overrides/
+  assets/
+.mkdocs-cache/       # ignored
+site/                # ignored
+```
+
+Python 包使用下划线目录 `tools/mkdocs_site/`；模板和静态资源使用展示层目录 `tools/mkdocs-site/`。Quartz 现有 `tools/docs-site/` 在预览和首轮上线期间保留。
+
+## 5. Obsidian 兼容层
+
+### 5.1 构建器不回写源文件
+
+Obsidian 始终打开 `wiki/`，不会看到 `.mkdocs-cache/`。构建器不向 `wiki/` 写入 frontmatter、不把 Wikilink永久改成 Markdown 链接，也不回写格式化结果。Obsidian 图谱、别名显示和仓库维护工具继续基于原文件工作。
+
+本约束针对自动迁移与 staging 行为，不禁止经用户授权、由同一严格门禁验证的源文档兼容修复。本次并行预览只发生了以下四组独立提交；它们不移动页面、不改变功能树或知识归属，也不把 Obsidian 语法批量转换成 MkDocs 语法：
+
+- `7d56e8d`：修复一个失效章节锚点，文件为 `wiki/02_engineering/04_posttrain_frameworks/slime/14_slime_megatron_training_analysis.md`。
+- `a6e78c7`：修复 8 个 Mermaid 图的解析边界，文件为 `wiki/01_theory/02_pretraining/14_transformer_engine_analysis.md`、`wiki/02_engineering/01_pytorch/01_eager_runtime/04_aten_op_execution/10_aten_codegen_and_structured_kernels_analysis.md`、`wiki/02_engineering/01_pytorch/01_eager_runtime/05_autograd_engine/10_autograd_engine_analysis.md`、`wiki/02_engineering/01_pytorch/01_eager_runtime/06_nn_module_system/index.md`、`wiki/02_engineering/01_pytorch/02_compile_stack/04_inductor/npu/11_npu_inductor_splittiling_backend_analysis.md`、`wiki/02_engineering/01_pytorch/04_export_and_distributed/02_distributed_primitives/10_c10d_ddp_fsdp_dtensor_analysis.md`、`wiki/02_engineering/02_train_frameworks/mindspeed/11_mindspeed_comm_overlap_analysis.md`、`wiki/02_engineering/04_posttrain_frameworks/verl/13_verl_workers_engine_analysis.md`。
+- `6af0e63`：修复 6 个文件中的 MathJax 公式，文件为 `wiki/01_theory/01_models/deepseek/26_deepseek_v4_technical_deepdive.md`、`wiki/01_theory/01_models/moonshot_kimi/10_moba_analysis.md`、`wiki/01_theory/01_models/zhipu_glm/25_glm5_training_stability_deepdive.md`、`wiki/01_theory/02_pretraining/10_llm_initiliaze_analysis.md`、`wiki/02_engineering/02_train_frameworks/megatron-lm/28_megatron_training_stability_observability_analysis.md`、`wiki/02_engineering/02_train_frameworks/mindspeed/12_mindspeed_memory_optimization_analysis.md`。
+- `04742f9`：修复 6 个 Markdown/MathJax 块边界和 1 个 changelog 代码示例边界，文件为 `wiki/01_theory/01_models/deepseek/29_engram_analysis.md`、`wiki/01_theory/01_models/moonshot_kimi/11_kimi_k2_analysis.md`、`wiki/01_theory/01_models/moonshot_kimi/12_kimi_linear_analysis.md`、`wiki/01_theory/02_pretraining/10_llm_initiliaze_analysis.md`、`wiki/01_theory/04_posttraining/33_opd_effectiveness_and_failure_modes_analysis.md`、`wiki/02_engineering/02_train_frameworks/mindspeed/12_mindspeed_memory_optimization_analysis.md`、`wiki/changelog.md`。
+
+### 5.2 当前语法基线
+
+在设计基线中，Wiki 约有 6,823 个 `[[...]]` 形式，包含约 878 个别名链接和 8 个真实章节链接；没有页面嵌入和块引用。适配器必须覆盖：
+
+- `[[page]]`
+- `[[path/page]]`
+- `[[page|label]]`
+- 表格内的 `[[page\|label]]`
+- `[[page#heading]]`
+- `[[./index|label]]`
+- 唯一短文件名匹配与路径限定匹配
+- 指向 `index.md` 的目录入口
+
+解析必须跳过 fenced code、inline code 和已转义的示例文本。不能用单个正则对全文盲替换；应在 Markdown token/受控文本区间上转换，避免 changelog 和源码示例中的字面 `[[]]` 被误判。
+
+### 5.3 失败策略
+
+- 目标不存在：构建失败并报告源文件、行号和原始链接。
+- 短名命中多个页面：构建失败并列出候选，不猜测目标。
+- 章节锚点不存在：构建失败并显示目标页及可用标题。
+- 发现 `![[embed]]` 或 `[[page^block]]`：在实现支持前明确失败，不静默降级。
+- 同一源链接被适配器与现有 `tools/check_links.py` 解析为不同目标：构建失败，视为兼容层缺陷。
+
+现有 `python tools/check_links.py --strict` 仍是源层权威门禁；MkDocs 适配器通过对照测试复用其解析语义，而不是另立一套宽松规则。
+
+## 6. URL 与资源兼容
+
+### 6.1 路由原则
+
+在实现前先从当前 Quartz 构建生成旧路由清单。MkDocs 构建为每个源页生成规范路由，并逐条对比旧清单：
+
+- 根和各级 `index.md` 保持目录 URL；
+- 普通页面优先保持当前不带 `.md`/`.html` 的公开 URL；
+- 页面移动历史已有 alias/redirect 时继续保留；
+- 若 MkDocs 默认输出形态与 Quartz 不同，通过输出布局或静态重定向适配，而不是接受静默 404；
+- GitHub Pages 项目基路径 `/llm-knowledge/` 在所有链接、搜索和资源 URL 中统一处理。
+
+正式切换前，旧路由清单中的每个 URL 都必须返回成功页面或有效重定向。不能仅检查新导航生成的 URL，因为那会遗漏旧书签。
+
+### 6.2 静态资源
+
+- `wiki/` 内相对图片与附件复制到保持相对关系的输出位置。
+- Mermaid、MathJax、主题脚本和必要字体资源本地化，不依赖构建时或浏览时的第三方 CDN。
+- 缺失图片、大小写不一致和越出允许根目录的资源引用都使构建失败。
+- 外部 HTTP(S) 链接保留原样；它们由独立的定期任务检查，日常部署只校验 URL 结构，不因源站暂时不可达失败。
+
+## 7. 自动刷新与部署
+
+### 7.1 本地开发
+
+本地入口封装为仓库脚本，负责创建临时镜像后启动 MkDocs live reload。保存 `wiki/`、主题或配置文件时，构建器重新生成受影响页面和导航；新增、移动、重命名、删除文件后也必须刷新文件清单，不能要求手工编辑 `nav`。
+
+本地预览完成后由实现任务直接打开浏览器，检查首页、目录页、代表性长文章、搜索、浅色/深色和响应式状态。预览阶段不写入线上 Pages。
+
+### 7.2 GitHub Actions
+
+切换阶段才修改现有 Pages workflow。目标流程：
+
+1. checkout 最新 `main`；
+2. 安装锁定版本的 Python/MkDocs 依赖；
+3. 运行现有知识库质量门禁；
+4. 执行干净的 MkDocs staging 与 `mkdocs build --strict`；
+5. 运行 HTML 全站爬取和浏览器 smoke tests；
+6. 只有全部成功才上传 GitHub Pages artifact；
+7. 使用 GitHub Pages 官方 deployment action 发布。
+
+workflow 监听 `wiki/**`、MkDocs 配置、主题、适配器、依赖锁和工作流自身的变化。自动导航由构建器生成，因此内容提交不需要伴随导航配置修改。
+
+## 8. 验证和质量门禁
+
+### 8.1 源层门禁
+
+继续执行仓库宪法规定的检查：
+
+```text
+python tools/check_links.py --strict
+python tools/check_math.py --changed --strict
+python -m pytest tools/
+```
+
+Quartz 的 `npm run docs:test` 在并行预览期间继续执行，保证迁移开发没有破坏当前生产站。正式切换后的清理阶段才决定其去留。
+
+### 8.2 MkDocs 单元与集成测试
+
+至少覆盖：
+
+- 每种已知 Wikilink 形式及转义、代码块跳过行为；
+- 唯一匹配、路径匹配、歧义、坏链和章节锚点；
+- 普通页面 `nav_title` 与中文 `title` 分离；
+- `index.md` 中文标签和首位排序；
+- 文件新增、删除、移动后导航无残留；
+- 根首页的数据只来自 `wiki/index.md` 与 inventory；
+- route manifest 与 Pages 项目子路径；
+- 缺失图片、脚本和样式时严格失败；
+- 同一输入的 staging 输出可重复生成。
+
+### 8.3 构建后全站检查
+
+验证器从首页开始遍历全部内部链接，并额外读取 route manifest，确保不因“页面没有入链”而漏检。验收指标：
+
+- 可发布 Markdown 页数与预期页面数一致；
+- broken page links = 0；
+- ambiguous source links = 0；
+- missing anchors = 0；
+- missing assets = 0；
+- escaped project-base links = 0；
+- legacy routes without page/redirect = 0；
+- unexpected orphan HTML pages = 0。
+
+浏览器测试覆盖 390、768、1280、1600px，至少验证首页、目录页、Megatron 长文章、深层 Wikilink、搜索、主题切换、移动导航和上一篇/下一篇。页面不得出现横向滚动，控制台不得出现错误。
+
+## 9. 实施与切换策略
+
+### 9.1 并行预览阶段
+
+- 所有开发只在 `.worktrees/mkdocs-preview` 的 `codex/mkdocs-preview` 分支进行。
+- 不修改主工作区，不吸收主工作区未提交内容。
+- MkDocs 配置、适配器、主题和测试在功能分支提交。
+- 本地站点全部通过后直接打开给用户检查。
+- 未经用户明确上线确认，不推送或合并到 `main`，不修改线上 Pages workflow。
+
+### 9.2 同步与上线阶段
+
+用户确认本地预览后：
+
+1. 获取最新 `origin/main`；
+2. 将功能分支重放或合并到最新基线，解决重构期间的结构变化；
+3. 重新生成完整 inventory、路由和导航；
+4. 重跑全部源层、构建层和浏览器门禁；
+5. 再次提供最终差异和部署变更；
+6. 得到用户明确上线授权后才替换 Pages workflow 并推送。
+
+### 9.3 回滚
+
+首轮 MkDocs 上线不删除 Quartz 配置与构建代码。若部署后发现问题，可把 Pages workflow 恢复到已知正常的 Quartz 提交并重新部署。MkDocs 稳定运行并经用户确认后，再用单独任务删除或归档 Quartz 资产；迁移提交本身不承担清理工作。
+
+## 10. 成功标准
+
+迁移预览只有同时满足以下条件才算完成：
+
+1. `wiki/` 没有因迁移产生结构性或批量内容修改；仅保留 §5.1 列出的、用户授权且经严格门禁验证的兼容修复。
+2. 所有可发布 Markdown 都生成页面，数量与 inventory 一致。
+3. 6,000 余个现有 Wikilink 按原有语义解析，内部链接、锚点和资源错误均为零。
+4. 普通页面导航显示英文文件名，目录显示中文索引标题，正文标题仍为中文。
+5. 中文标题、正文和英文文件名均可搜索。
+6. 首页、目录页、文章页和移动端符合本设计的信息结构。
+7. 现有公开 URL 全部可访问或有兼容跳转。
+8. 本地保存文档后页面和导航自动刷新。
+9. 当前 Quartz 线上站点和主工作区重构任务未被预览开发影响。
+10. 用户在本地页面验收后，才进入线上切换流程。
+
+## 11. 范围封闭检查
+
+本文没有待定功能或隐含的第二内容源。后续实施计划可以拆分为“适配与路由”“主题与搜索”“验证与本地预览”“同步与上线”四个阶段，但每个阶段都必须服从同一硬约束：`wiki/` 唯一权威、内部链接零错误、预览先于切换、用户授权先于线上变更。

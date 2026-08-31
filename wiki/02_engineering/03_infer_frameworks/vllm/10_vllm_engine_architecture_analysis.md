@@ -1,191 +1,273 @@
 ---
-title: "vLLM 引擎架构：用状态所有权隔离三种运行节奏"
+title: "vLLM Engine 架构：用三种状态所有权封装资源承诺"
 ---
 
-# vLLM 引擎架构：用状态所有权隔离三种运行节奏
+# vLLM Engine 架构：用三种状态所有权封装资源承诺
 
-> **源码基线**：`vllm-project/vllm@d66300a1baa7779c68c7dfa4e51eee2502b48017`
-> **中心命题**：vLLM 把输入/输出语义、token-step 控制和设备执行分层，不是为了抽象而抽象，而是因为 HTTP/渲染、Scheduler/KV、GPU kernel 运行在不同时间尺度并拥有不同失败模式。`EngineCore` 是资源承诺的唯一提交者，client 与 executor 分别隔离前端并发模型和设备拓扑。
-> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势（本页无可锚定的在途改动，第 5 拍略）。
-> **最近更新**：2026-08-27。按五拍重排章节顺序；机制正文与既有引用未改。
+> **读者问题**：Client、EngineCore 与 Executor 为什么不能合成一个 `generate` 循环；请求从“前端已登记”到“资源已承诺”再到“结果已提交”，分别在哪个对象中变成有效状态？
+> **源码基线**：`vllm-project/vllm@6b110badbb22d3f66c7218b71138f13b7a6b3419`（冻结的 detached checkout；提交时间 2026-08-29T02:40:53Z）
+> **中心命题**：三者分离的关键不是多一层抽象，而是只允许一个所有者按自己的时钟修改一类状态：Client 保存前端请求与传输状态，EngineCore 用 Scheduler 封装资源事务，Executor 只把已承诺计划投射到设备拓扑。资源承诺是一次复合的 schedule-time commit：KV 分配先改变 block 所有权，Scheduler 再推进与该计划匹配的 optimistic request progress 和释放 fence，完成的 `SchedulerOutput` 才是 Executor 可消费的已提交计划；执行结果随后经 `update_from_output` 归并为 core 状态。
+> **所有权边界**：本页拥有 Engine 内部 Client / EngineCore / Executor 的对象与可选进程接缝、三类 request state，以及 create → submit → core step → result commit 路径。
+> **明确排除**：全系统六层与完整在线生命周期由 [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|架构概览]] 负责；协议、render、detokenize 与用户输出语义由 [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|请求语义]] 负责；waiting/running、budget、抢占与 KV 分配算法由 [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|Scheduler]] 负责；launcher、ready、路由与故障拓扑由 [[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|Serving 控制面]] 负责。
+> **最近更新**：2026-08-29。按 `6b110bad` 重建对象所有权与两阶段提交边界。
 
-## 一、背景：为什么不能把所有逻辑写进一个 `generate()` 循环
+## 1. 背景：一个请求同时活在三种时间里
 
-一个请求至少跨越四种生命周期：
+前端首先要保证返回 token 时仍有接收者：同步 `LLMEngine` 在提交 core 前创建
+`OutputProcessor.RequestState`，异步 `AsyncLLM` 还要创建 per-request collector；两条路径都遵守
+“先登记前端状态、后发送 core request”的顺序（`vllm/v1/engine/llm_engine.py:273-280`；
+`vllm/v1/engine/async_llm.py:400-437`）。这份状态记录 prompt、detokenizer、输出队列与已发送 offset，
+但不知道请求能否获得 token/KV 资源（`vllm/v1/engine/output_processor.py:132-197`）。
 
-1. 文本、消息和多模态输入被 render/tokenize；
-2. token request 排队、调度、申请 KV；
-3. worker 执行模型、attention、采样；
-4. token 被解码、匹配 stop string 并流式返回。
+Core 内部的 `Request` 则从 `WAITING` 开始，保存 priority、token 进度和调度状态；
+`EngineCore.preprocess_add_request` 把传输用 `EngineCoreRequest` 转成这份内部对象，再由 Scheduler
+写入 waiting queue 与权威 request map（`vllm/v1/request.py:59-115`；`vllm/v1/request.py:160-184`；
+`vllm/v1/engine/core.py:988-1010`；`vllm/v1/core/sched/scheduler.py:2376-2402`）。登记成功仍不是
+资源承诺：此时没有任何当步 token 数或新 KV slots。
 
-若单个对象同时拥有这些状态，网络慢客户端、tokenizer、Python 输出处理和 GPU step 会互相阻塞；离线同步接口与在线 asyncio 又会复制两套引擎逻辑。vLLM 因而保留一个不依赖 HTTP 的 `EngineCore`，在两侧放置不同 client 和 executor。
+第三种时间属于设备工作。Executor 接收的是一个已经决定 request delta、token 数和 block 变化的
+`SchedulerOutput`，再选择 uni、multiprocess、Ray、external launcher 或自定义 backend 去执行；
+backend 选择不会给 Executor 增加 admission 权（`vllm/v1/executor/abstract.py:48-93`；
+`vllm/v1/executor/abstract.py:219-237`）。
 
-官方设计文档把 API server、每个 DP rank 的 EngineCore 和 GPU workers 区分为进程角色；`docs/design/arch_overview.md:67-93`。但“角色”不必一一对应 OS 进程：实际 executor 可以是 `uni`、multiprocessing、Ray 或 external launcher；选择逻辑在 `vllm/v1/executor/abstract.py:48-93`。
+**问题因此不是“怎样缩短调用链”，而是“谁有权让哪类状态生效”。** 本页据上述状态分布推断：若三种
+状态共用一个对象，前端并发模型、资源决策和设备拓扑会同时修改 request lifecycle；同一请求将出现
+多个可写真相来源。
 
-## 二、为什么这么设计：直观替代方案为何不够
+## 2. 为什么是 Client / EngineCore / Executor
 
-| 替代方案 | 表面优势 | 失败原因 | 当前代价 |
+| 直观替代 | 表面收益 | 当前结构避免的风险 | 付出的成本 |
 |---|---|---|---|
-| 一个 `generate()` 拥有全部状态 | 调试路径短 | 网络、tokenizer、scheduler、GPU 相互阻塞；同步/异步分叉 | 多层接口与 IPC |
-| 前端直接调用 worker | 少一层 EngineCore | 无唯一 admission/KV owner，多前端会竞争设备状态 | EngineCore 成为关键故障域 |
-| EngineCore 直接做 detokenize | stop 逻辑集中 | 引入 tokenizer/文本成本，无法隔离慢客户端 | 前后端需要 abort 协议 |
-| 每种 executor 重写 engine loop | backend 定制自由 | 调度、KV 和 finish 语义漂移 | 统一 RPC 需要能力约束 |
-| async 只加线程 | 改动小 | 共享 CPU buffer、KV 释放与乐观状态产生竞态 | 显式 in-flight 状态更复杂 |
+| 前端对象直接拥有 Scheduler 与 worker | 少一次边界跳转 | 同步、asyncio 与多前端传输会各自复制或并发修改资源状态 | Client API、序列化与可选 IPC |
+| worker 自己决定下一批请求 | 更贴近 GPU，似乎更快 | 各 rank 可能对 token budget、逻辑 KV 和完成状态作出不同承诺 | Core 成为串行资源决策点 |
+| 每种 executor backend 自带 engine loop | backend 可以自由定制 | uni、mp、Ray 的调度与 finish 语义会随拓扑漂移 | 统一 `SchedulerOutput` / runner-result 合同 |
+| 只在执行完成后更新所有进度 | 状态看似最保守 | 无法在前一批 GPU work in flight 时继续调度下一批 | 必须维护 optimistic progress、fence 与回滚 |
 
-> [!note] 推断
-> 这张表是本页依据代码行为重建的设计权衡：每一行的“为什么不适用”都能落到后文引用的 `file:line` 上，但“当初权衡过、并因此否掉了它”这层意思由本页承担——源码通常只陈述最终形态，不陈述被否掉的选项。要引用其中某一行，请回到对应小节的 locator，不要引用本表。
+> [!note] 分析推断
+> 源码明确给出当前边界和 guard，但没有一段设计文档逐项记录上表的历史取舍。表中的“避免的风险”是依据单写者状态、client 变体、executor 合同与并发 batch 行为重建的理由，不是作者原话；对应事实分别由后文 locator 支撑。
 
-## 三、对象所有权图
+`EngineCoreClient` 把两个正交变化留在 Core 外：是否跨进程，以及调用者是否使用 asyncio。
+`make_client` 为同步路径选择 `InprocClient` 或 `SyncMPClient`，async + multiprocessing 选择
+`AsyncMPClient`；async 而不跨进程当前显式 `NotImplemented`（`vllm/v1/engine/core_client.py:78-112`）。
+这意味着 Client 决定“怎样提交、怎样等待”，而不决定“提交后调度什么”。
+
+Executor 则吸收另一组变化：一个 driver worker、多个本地 worker、Ray actors 或外部 launcher。
+抽象基类把 `SchedulerOutput` 原样交给 `execute_model` collective RPC；multiprocess backend 只从指定
+output rank 或 aggregator 收集一个语义结果（`vllm/v1/executor/abstract.py:219-237`；
+`vllm/v1/executor/multiproc_executor.py:340-364`）。这使拓扑可以替换，而 Scheduler 的资源真相不随之分叉。
+
+## 3. 静态对象与可选进程边界
+
+图 A 只画本页拥有的接缝。蓝色节点是可修改权威 request/resource state 的对象；灰色 Executor
+及 worker 只执行当步计划。多进程模式跨 ZMQ，in-process 模式折叠 OS 进程，但对象责任不折叠。
 
 ```mermaid
-flowchart TB
-  subgraph Frontend["Frontend semantic plane"]
-    Renderer["Renderer and tokenizer"]
-    Input["InputProcessor"]
-    Output["OutputProcessor"]
-  end
-  subgraph Client["Engine client boundary"]
-    Inproc["InprocClient"]
-    Sync["SyncMPClient"]
-    Async["AsyncMPClient"]
-  end
-  subgraph Core["Engine control plane"]
-    EC["EngineCore"]
-    S["Scheduler"]
-    KV["KV managers"]
-  end
-  subgraph Device["Model execution plane"]
-    EX["Executor"]
-    W["Workers"]
-    MR["Model Runner"]
-  end
-  Renderer --> Input --> Client
-  Client --> EC
-  EC --> S
-  S --> KV
-  EC --> EX --> W --> MR
-  EC --> Client --> Output
+flowchart LR
+    subgraph Frontend["前端进程"]
+        FE["LLMEngine 或 AsyncLLM"]
+        FS["OutputProcessor<br/>frontend RequestState"]
+        CL["EngineCoreClient<br/>transport 与等待"]
+        FE -->|先登记| FS
+        FE -->|再提交| CL
+    end
+
+    subgraph CoreProc["EngineCore 所在进程"]
+        EC["EngineCore<br/>事务编排"]
+        SC["Scheduler<br/>core Request 与逻辑 KV"]
+        EC -->|add 与 step| SC
+        SC -->|EngineCoreOutputs| EC
+    end
+
+    subgraph Device["设备执行域"]
+        EX["Executor<br/>拓扑与 collective"]
+        WK["Workers 与 runners<br/>当步 device work"]
+        EX --> WK
+        WK --> EX
+    end
+
+    CL -->|EngineCoreRequest| EC
+    EC -->|SchedulerOutput| EX
+    EX -->|runner result| EC
+    EC -->|EngineCoreOutputs| CL
+    IP["InprocClient<br/>同进程直调"] -.-> CL
+    IP -.-> EC
+
+    classDef neutral fill:#ffffff,stroke:#64748b,color:#0f172a
+    classDef acc1 fill:#dbeafe,stroke:#2563eb,color:#0f172a,stroke-width:2px
+    classDef ghost fill:#f8fafc,stroke:#94a3b8,color:#475569,stroke-dasharray:4 3
+    class FE,CL,EX,WK neutral
+    class FS,EC,SC acc1
+    class IP ghost
 ```
 
-| Owner | 真相来源 | 生命周期 |
-|---|---|---|
-| Renderer/InputProcessor | prompt、chat template、多模态输入如何变成 `EngineCoreRequest` | 请求进入前 |
-| OutputProcessor | token 如何 detokenize、stop、组装 `RequestOutput` | 每次输出到请求结束 |
-| EngineCoreClient | in-process/ZMQ、同步/异步、DP 路由和输出队列 | engine 实例 |
-| EngineCore/Scheduler | 请求状态、token admission、KV 所有权、abort/finish | token step |
-| Executor/Worker/Runner | 权重分片、设备 buffer、forward/sample、collective | 模型实例与 device step |
+| Owner | 拥有的有效状态 | 跨边界合同 | 明确不拥有 | 证据 |
+|---|---|---|---|---|
+| `LLMEngine` / `AsyncLLM` + `OutputProcessor` | `request_id → RequestState`、collector、前端完成/abort 关联 | `EngineCoreRequest` ↓；`EngineCoreOutputs` ↑ | waiting/running、token budget、block table、worker topology | `vllm/v1/engine/llm_engine.py:91-111`；`vllm/v1/engine/async_llm.py:135-156`；`vllm/v1/engine/output_processor.py:132-197` |
+| `EngineCoreClient` | transport、同步/异步等待原语、core liveness 的本地视图 | ADD / ABORT / utility message；core outputs | admission policy、request token progress、设备执行 | `vllm/v1/engine/core_client.py:78-139`；`vllm/v1/engine/core_client.py:806-915`；`vllm/v1/engine/core_client.py:978-1156` |
+| `EngineCore` + Scheduler | core `Request`、waiting/running、logical KV、in-flight batch、完成与释放 | `SchedulerOutput` ↓；`ModelRunnerOutput` ↑ | 文本/API 语义、rank 内物理执行 | `vllm/v1/engine/core.py:133-170`；`vllm/v1/engine/core.py:206-240`；`vllm/v1/engine/core.py:597-627` |
+| Executor + workers | per-backend worker fan-out、collective 顺序、当步 device work 与 Future/result | 当步 `SchedulerOutput` → 一个聚合 runner result | 请求 admission、全局公平性、前端可见性 | `vllm/v1/executor/abstract.py:38-43`；`vllm/v1/executor/abstract.py:219-237`；`vllm/v1/executor/multiproc_executor.py:340-410` |
 
-`AsyncLLM` 的构造直接体现这条边界：renderer、input/output processor 留在前端，随后创建异步多进程 EngineCore client；`vllm/v1/engine/async_llm.py:109-156`。前端不持有 Scheduler，EngineCore 也不持有 tokenizer。
+`InprocClient` 是区分“对象边界”和“进程边界”的反例：它在当前进程构造 `EngineCore`，ADD 时直接
+preprocess 并加入 Scheduler，GET 时直接驱动 core step；三份状态仍由三组对象分别持有
+（`vllm/v1/engine/core_client.py:306-333`）。相反，MP client 用 input/output socket 传输同一合同，
+同步版本用线程和 `queue.Queue` 等待结果，异步版本用 task 和 `asyncio.Queue`（
+`vllm/v1/engine/core_client.py:503-514`；`vllm/v1/engine/core_client.py:806-880`；
+`vllm/v1/engine/core_client.py:978-1106`）。因此“Client / Core 分离”不等于“必定两个进程”。
 
-## 四、`EngineCoreClient` 为什么是架构接缝
+## 4. 精确路径：create → submit → core step → result commit
 
-`EngineCoreClient.make_client()` 根据 multiprocessing 与 asyncio 两个维度选择：
-
-- `InprocClient`：前端直接持有 `EngineCore`，调用时主动 `step_fn()`；
-- `SyncMPClient`：后台 EngineCore busy loop + ZMQ，同步离线前端；
-- `AsyncMPClient`：后台 EngineCore + asyncio output task，在线前端；
-- DP 场景再区分外部负载均衡和内部多 EngineCore 负载均衡；`vllm/v1/engine/core_client.py:78-139`。
-
-这比让 `EngineCore` 同时实现同步、asyncio 和 ZMQ 更重要：**引擎控制逻辑只表达“接收请求、推进一步、返回结果”，client 决定谁驱动 step、怎样等待、输出进哪个并发原语。**
-
-`InprocClient` 直接调用 `preprocess_add_request/add_request`，取输出时执行 step 和 post-step；`vllm/v1/engine/core_client.py:306-349`。多进程 client 则用 input/output socket 与后台 busy loop 通信；`vllm/v1/engine/core_client.py:503-565`。两条路径复用同一个 EngineCore，而不是两套推理状态机。
-
-## 五、EngineCore 是资源承诺的提交边界
-
-初始化时 EngineCore 先构造 executor，再 profile/初始化 KV cache，最后创建 Scheduler；`vllm/v1/engine/core.py:132-169`。顺序背后的约束是 Scheduler 的 admission budget 必须依赖真实设备容量，而不是静态配置猜测。
-
-普通 step 只有三段承重逻辑：
+图 B 把“发送成功”“资源计划已提交”“执行结果已归并”分开，并把 EngineCore 与 Scheduler 拆成两个
+参与者：Scheduler 修改权威资源状态，EngineCore 则把 schedule、Executor 调用、abort 边界与
+reconciliation 串成一个不可交换的事务顺序。
 
 ```mermaid
 sequenceDiagram
-  participant C as EngineCore
-  participant S as Scheduler
-  participant E as Executor
-  C->>S: schedule
-  S-->>C: SchedulerOutput resource commitment
-  C->>E: execute_model nonblocking
-  E-->>C: model output future
-  C->>S: update_from_output commit reality
-  S-->>C: request outputs and stats
+    participant F as Frontend Engine
+    participant C as EngineCoreClient
+    participant EC as EngineCore
+    participant S as Scheduler
+    participant E as Executor 与 Workers
+
+    F->>F: create frontend RequestState
+    F->>C: submit EngineCoreRequest
+    Note over C: transport accepted<br/>不等于资源 admission
+    C->>EC: ADD request
+    EC->>S: add core Request
+    Note over S: WAITING 已登记<br/>仍未承诺当步资源
+    EC->>S: schedule
+    S->>S: allocate block ownership
+    S->>S: advance optimistic progress and fence
+    S-->>EC: committed SchedulerOutput
+    EC->>E: execute committed plan
+    E-->>EC: runner result
+    EC->>EC: process pending aborts
+    EC->>S: update from output
+    S->>S: reconcile progress finish and release
+    S-->>EC: EngineCoreOutputs
+    EC-->>C: EngineCoreOutputs
+    C-->>F: core outputs
+    F->>F: process frontend-visible output
 ```
 
-源码为 `vllm/v1/engine/core.py:583-613`。其设计语义是：
+### 4.1 Create：先建立前端接收状态
 
-1. `schedule()` 决定本轮哪些请求、多少 token、哪些 block；
-2. executor 只能消费这份 `SchedulerOutput`，不能私自纳新；
-3. `update_from_output()` 根据接受/拒绝、stop、error 和 connector 结果提交真实状态。
+同步路径在 `OutputProcessor.add_request` 后才调用 `engine_core.add_request`；异步路径先创建 collector，
+再由 `_add_request` 以同样顺序登记 OutputProcessor 与发送 core（
+`vllm/v1/engine/llm_engine.py:273-295`；`vllm/v1/engine/async_llm.py:400-437`）。
+这样返回 token 必然能找到前端 `RequestState`。这一步只承诺“前端会接收结果”，不承诺 GPU 容量。
 
-Scheduler 可以在执行前乐观推进 in-flight 状态以准备下一批，但最终完成与输出仍必须回到 Scheduler 提交。否则同一请求会在 core 和 runner 各有一份生命周期真相。
+### 4.2 Submit：传输完成不等于 admission
 
-## 六、异步重叠为什么会改变 EngineCore
+`InprocClient.add_request` 直接把 wire request 转成 core `Request`；SyncMPClient 把 ADD 编码进 ZMQ，
+AsyncMPClient 在发送前写入 `client_index`，然后等待 socket send（`vllm/v1/engine/core_client.py:327-329`；
+`vllm/v1/engine/core_client.py:888-915`；`vllm/v1/engine/core_client.py:1108-1152`）。Core 最终调用
+`Scheduler.add_request`，新请求进入 waiting queue 和 request map（
+`vllm/v1/engine/core.py:452-496`；`vllm/v1/core/sched/scheduler.py:2376-2402`）。
+所以 send/add 返回只能证明请求已跨过 transport 或已登记为 `WAITING`；没有 `SchedulerOutput` 就没有当步资源承诺。
 
-单个 future 只能把“提交”和“等待”分开；若想让 step $n+1$ 的 CPU 工作与 step $n$ 的 GPU 工作重叠，还需要多个 in-flight batch。EngineCore 根据 `max_concurrent_batches` 建 batch queue，并在 queue 未满时优先继续 schedule；`vllm/v1/engine/core.py:209-237,624-695`。
+### 4.3 Core step：资源承诺在 Executor 之前生效
 
-这带来三个新不变量：
+`EngineCore.step` 的不可交换顺序是：调用 `schedule`，把返回计划交给 Executor 并等待 runner result，
+在归并结果前处理执行期间到达的 abort，最后调用 `update_from_output`
+（`vllm/v1/engine/core.py:608-624`）。
 
-- Scheduler 看到的 computed progress 可能是乐观上界；
-- KV block 不能在仍有 batch 读取/写入时立即复用；
-- Runner 的 CPU buffer 不能被下一 step 改写而让上一 step 的异步 copy 读到新值。
+**Resource commit 不是 `_update_after_schedule` 这一行的单点事件，而是一次复合的 schedule-time
+commit。** Scheduler 为 running/new request 调用 `allocate_slots` 时，KV manager 已经为 request 分配新
+blocks；当 caching 已启用且不延迟时，它还按可提交 token 边界更新 cache block 状态（`vllm/v1/core/sched/scheduler.py:655-669`；
+`vllm/v1/core/sched/scheduler.py:1065-1079`；`vllm/v1/core/kv_cache_manager.py:541-564`）。随后，完成的
+`SchedulerOutput` 被 `_update_after_schedule` 配上相同的 optimistic progress：增加
+`num_computed_tokens`、`num_in_flight_tokens`，并在需要时记录 deferred-free fence
+（`vllm/v1/core/sched/scheduler.py:1322-1371`；`vllm/v1/core/sched/scheduler.py:1435-1455`）。至此，
+KV/block 所有权、request progress 与 executor-facing plan 才构成同一份已提交承诺。分配策略、budget
+选择和抢占算法由 page 11/12 解释，本页只保留所有权变化。
 
-因此 async scheduling、deferred block free 与 MRV2 是同一个因果链，而不是三个独立开关。`VllmConfig` 会根据 executor、spec decode、structured output 等能力决定是否允许 async scheduling；`vllm/config/vllm.py:1197-1301`。
+并发 batch 测试明确断言第一批刚入 queue、尚未消费输出时 `num_computed_tokens` 已更新，证明提交计划
+可以先于 result reconciliation 被下一轮 schedule 看见（`tests/v1/engine/test_engine_core.py:336-352`）。
 
-## 七、Executor 隔离的是拓扑，不是语义
+因此更精确的表述是：**Scheduler 是资源状态的唯一写者，EngineCore 是资源事务的外部封装边界。**
+EngineCore 决定何时调用 schedule、把哪份 snapshot 交给 Executor、再用哪份 result 做 reconciliation；
+它不另存一份可竞争的 KV/token 真相。
 
-`Executor.execute_model()` 把 `SchedulerOutput` 作为一次 collective RPC 的参数，并返回首个语义输出；`vllm/v1/executor/abstract.py:211-249`。具体 backend 决定 worker 如何创建、请求如何广播、PP 哪个 rank 采样、TP/EP collective 怎样执行。
+### 4.4 Execute：Executor 消费承诺，不改写承诺
 
-统一接口不能推出统一性能：
+抽象 Executor 只把 `SchedulerOutput` 作为 `execute_model` 参数做 collective RPC 并返回一个语义结果；
+UniProc 可以直接调用 driver worker，Multiproc 则广播并从 output rank 聚合（
+`vllm/v1/executor/abstract.py:219-237`；`vllm/v1/executor/uniproc_executor.py:90-132`；
+`vllm/v1/executor/multiproc_executor.py:340-364`）。Executor 可以失败，也可以用 Future 延迟完成，但没有
+Scheduler request map 或 admission API，所以不能私自纳入新请求或释放逻辑 block。
 
-- `UniProcExecutor` 可把 worker 折叠进 EngineCore 进程，减少 IPC；
-- `MultiprocExecutor` 让每个 local rank 独立执行，增加故障域和同步；
-- Ray 负责跨节点 actor 生命周期；
-- external launcher 把进程创建权交给外部系统。
+### 4.5 Result commit：把执行现实合并回唯一真相
 
-EngineCore 依赖的是“所有 rank 对同一调度承诺形成一个语义输出”，不是“每个 worker 都是独立进程”。并行所有权与 collective 顺序见 [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]]。
+runner result 到达后，`update_from_output` 把当步执行事实与原 `SchedulerOutput` 重新配对：结清
+in-flight progress，忽略已失效结果，修正未兑现的 optimistic progress，提交 finish/release 状态，并构造
+`EngineCoreOutput`（`vllm/v1/core/sched/scheduler.py:1789-1904`；
+`vllm/v1/core/sched/scheduler.py:1942-2049`；`vllm/v1/core/sched/scheduler.py:2073-2103`）。具体 stop、
+speculation 与释放算法属于 page 11/12；本页只强调结果必须回到同一 Scheduler owner 才能成为 core 真相。
 
-## 八、输出为什么在前端再次提交
+这次 reconciliation 产生的是 `EngineCoreOutputs`，**不是用户可见输出**。同步 `LLMEngine.step` 仍要把
+它交给 `OutputProcessor.process_outputs` 后才返回 `RequestOutput`；异步 `AsyncLLM` 也要在 output handler
+中处理 core outputs 并把结果推入 per-request queue（`vllm/v1/engine/llm_engine.py:305-337`；
+`vllm/v1/engine/async_llm.py:690-730`）。因此 core result commit 与 frontend visibility 是两个不同边界；
+后者的 detokenize、stop 与协议语义由 page 04 负责。
 
-设备输出仍是 token id、logprob 和状态信号；stop string 可能跨 token 边界，只能在 detokenize 后判断。离线 `LLMEngine.step()` 先从 core 取结果，再由 OutputProcessor 处理，随后把因 stop string 完成的请求反向 abort 给 EngineCore；`vllm/v1/engine/llm_engine.py:298-334`。
+## 5. 约束、代价与失败边界
 
-在线 `AsyncLLM` 的 output handler 持续拉取结果，把大批输出分 chunk 处理以避免长时间阻塞 event loop，并把前端判定完成的请求异步 abort 回 core；`vllm/v1/engine/async_llm.py:665-745`。
+### 5.1 乐观提交必须携带原计划
 
-这里存在双阶段完成：
+并发 batch queue 可以在前一批 result 未到时继续 schedule；队列保存 Future、对应
+`SchedulerOutput` 与 execution Future，FIFO 取回后必须用同一份计划调用 `update_from_output`
+（`vllm/v1/engine/core.py:638-700`；`vllm/v1/engine/core.py:708-752`）。若只保存 Future 而丢掉计划，
+result 无法知道要冲销哪一批 in-flight token，也无法安全处理 stale output。
 
-- core 可基于 EOS、length、error 完成请求；
-- front end 可基于 stop string、client cancellation 完成请求。
+### 5.2 “请求完成”不一定意味着 block 立刻可复用
 
-两者不能合并，因为前者拥有 token-level 资源，后者拥有文本/API 语义；它们通过 abort/finish 协议收敛。
+当有仍可能写 block 的 in-flight step 时，Scheduler 用 scheduled/processed step fence 延迟归还 block；
+`update_from_output` 处理对应 step 后才 drain deferred frees（
+`vllm/v1/core/sched/scheduler.py:348-354`；`vllm/v1/core/sched/scheduler.py:1804-1808`；
+`vllm/v1/core/sched/scheduler.py:2509-2518`）。测试覆盖了“请求因 stop token 已结束，但下一批仍在飞”时
+block 保持占用，直到下一批 output 被处理才回到 pool（
+`tests/v1/core/test_deferred_block_free.py:123-145`）。具体 KV block 算法属于 page 12；本页只保留
+EngineCore transaction 为什么必须携带 fence 的边界。
 
-## 九、进程生命周期与故障传播
+### 5.3 Client 可替换不代表所有组合都支持
 
-`EngineCoreProc` 用输入/输出 queue 隔离 ZMQ IO thread 与 core loop，并把 executor failure 转换为内部请求；`vllm/v1/engine/core.py:1007-1089`。启动 handshake 注册地址与角色，DP 场景还交换配置 hash；`vllm/v1/engine/core.py:1193-1268`。
+同步路径可用 in-process 或 MP，但 asyncio without multiprocessing 明确未实现；MP 还要支付 msgpack、
+ZMQ、queue/task 与 liveness 检查成本（`vllm/v1/engine/core_client.py:97-112`；
+`vllm/v1/engine/core_client.py:503-633`）。同一 client contract 的价值是状态机复用，不是 IPC 免费。
+测试用同一 normal/abort cycle 覆盖同步 in-process 与 MP，并单独覆盖 async MP，证明可替换的是行为合同，
+不是部署形状（`tests/v1/engine/test_engine_core_client.py:637-703`；
+`tests/v1/engine/test_engine_core_client.py:728-779`）。
 
-后台 busy loop 不应无条件空转：没有请求时 input queue 可阻塞，有请求或 batch queue 时持续 step；核心循环入口见 `vllm/v1/engine/core.py:1383-1455`。Async client 另启 output socket task，并尽早启动以捕获尚未发送请求时发生的 executor failure；`vllm/v1/engine/core_client.py:978-1045`。
+### 5.4 Executor 是故障边界，不是事务回滚器
 
-启动侧的三级就绪屏障（worker `Pipe` READY → EngineCore `HELLO/READY` → 数据面 ready）与空闲后端的逐层唤醒路径，由 [[02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis|vLLM 请求全链路导览]] 按运行期时序展开，本页只讲这样切分生命周期的理由。
+EngineCore 构造 Executor 时可注册 failure callback；MultiprocExecutor 在 permanent failed state 拒绝新的
+collective RPC（`vllm/v1/engine/core.py:133-137`；`vllm/v1/executor/multiproc_executor.py:334-351`；
+`vllm/v1/executor/multiproc_executor.py:375-394`）。这能阻止失败后继续执行新计划，却不提供数据库式的
+跨 GPU rollback；资源状态恢复仍取决于 Core/Scheduler 是否取得 result、是否终止 engine。进程监督、
+ready handshake 和面向服务的恢复拓扑归 page 16，本页不把它扩写成启动 walkthrough。
 
-错误边界不是完全透明的 RPC。client 必须区分坏请求、可恢复的单请求异常、Engine dead 和 worker/executor failure；在线 generate 路径在异常时关闭输出 queue，并在必要时 abort core request；`vllm/v1/engine/async_llm.py:620-663`。
+## 6. Live / legacy 校正与源码阅读边界
 
-## 十、约束、边界与源码阅读
+官方 architecture 文档的 V1 process 章节仍适合解释多进程设计意图，但后续把 `LLMEngine` 描述成同时
+包含 input、scheduling、model execution 与 output processing，并把 `AsyncLLMEngine` 描述成
+`LLMEngine` 的 async wrapper（`docs/design/arch_overview.md:67-93`；
+`docs/design/arch_overview.md:134-169`）。当前源码并非这个类关系：公开 `LLMEngine` 与
+`AsyncLLMEngine` 分别直接别名到 V1 `LLMEngine` 和 `AsyncLLM`（`vllm/engine/llm_engine.py:4-7`；
+`vllm/engine/async_llm_engine.py:4-7`），两者各自组合 Input/OutputProcessor 与不同
+`EngineCoreClient`（`vllm/v1/engine/llm_engine.py:91-111`；`vllm/v1/engine/async_llm.py:135-156`）。
 
-- 官方进程图表达逻辑角色，不等价于所有配置的 OS 进程数。
-- `EngineCoreClient` 隔离通信方式，不保证 IPC 没有成本；多 API server 还会引入多对多 socket。
-- EngineCore 是请求资源真相，不负责集群级流量治理；服务控制面见 `16`。
-- Executor 失败可能终止整个 engine；更细粒度 fault tolerance 仍受 backend 和并行模式限制。
+> [!contradiction] Code wins at this baseline
+> 不应据官方文档旧类图把当前 AsyncLLM 写成同步 LLMEngine 外面的一层 wrapper，也不应把常见的多进程图当作固定 OS 进程公式。本文只采纳该文档的 concern-separation 意图；live 对象所有权以 alias、constructor、client 与 executor 选择代码为准。
 
-最小阅读顺序：
-
-1. `vllm/v1/engine/core.py:104-237,583-736`；
-2. `vllm/v1/engine/core_client.py:78-139,306-349,503-565`；
-3. `vllm/v1/executor/abstract.py:48-120,211-249`；
-4. `vllm/v1/engine/async_llm.py:109-170,665-745`；
-5. `vllm/v1/engine/llm_engine.py:298-334`。
+建议按状态所有权而不是文件顺序阅读源码：先看前端登记与 client 选择，再看 core step 和
+`_update_after_schedule`，最后看 executor 的窄合同与 `update_from_output`。深入 Scheduler policy、KV
+allocator 或 serving supervisor 时，应转到各自 owner 页，避免重新把整个系统压回一条调用链。
 
 ## Related Pages
 
-- [[02_engineering/03_infer_frameworks/vllm/02_vllm_system_design_principles_analysis|vLLM 系统设计原则]] — 解释为什么要分成四个系统平面。
-- [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] — EngineCore 内部资源承诺的 owner。
-- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] — 调度承诺对应的长期显存所有权。
-- [[02_engineering/03_infer_frameworks/vllm/15_vllm_model_runner_v2_analysis|vLLM Model Runner V2]] — in-flight batch 如何要求新的 runner 状态模型。
-- [[02_engineering/03_infer_frameworks/vllm/16_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] — launcher、API server 和 DP supervision 的生命周期。
-- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] — executor 后面的 rank/group 所有权。
-- [[02_engineering/03_infer_frameworks/vllm/27_vllm_observability_reliability_analysis|vLLM 可观测性与可靠性]] — 进程故障、metrics 和 trace 如何反馈到控制面。
+- [[02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis|vLLM 架构概览]] —— 把本页三方接缝放回全系统六层责任与代表请求生命周期。
+- [[02_engineering/03_infer_frameworks/vllm/04_vllm_request_semantics_analysis|vLLM 请求语义]] —— 解释前端 `RequestState` 保存哪些用户语义，以及 core output 何时变成用户可见结果。
+- [[02_engineering/03_infer_frameworks/vllm/11_vllm_scheduler_analysis|vLLM Scheduler]] —— 展开本页 resource commit 内部的 budget、waiting/running、抢占与多资源 admission。
+- [[02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis|vLLM KV Cache 管理]] —— 解释 schedule 分配的逻辑 block、物理 KV 与 deferred free 不变量。
+- [[02_engineering/03_infer_frameworks/vllm/17_vllm_serving_control_plane_analysis|vLLM Serving 控制面]] —— 展开 Client/Core 的 launcher、ready、路由、背压与进程故障拓扑。
+- [[02_engineering/03_infer_frameworks/vllm/22_vllm_distributed_inference_analysis|vLLM 分布式推理]] —— 深入 Executor 后面的 rank/group、parallel axes 与 collective 顺序。

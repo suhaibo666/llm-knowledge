@@ -1,0 +1,51 @@
+{% extends "main.html" %}
+
+{% macro atlas_group(title, coordinate, entries) %}
+  <section class="kb-atlas-group" aria-labelledby="atlas-{{ coordinate }}">
+    <header class="kb-atlas-group__header">
+      <span class="kb-atlas-group__coordinate" aria-hidden="true">{{ coordinate }}</span>
+      <h2 id="atlas-{{ coordinate }}">{{ title }}</h2>
+      <span class="kb-atlas-group__count">{{ entries | length }} 个入口</span>
+    </header>
+    <div class="kb-atlas-group__entries">
+      {% for entry in entries %}
+        <a class="kb-atlas-entry" href="{{ entry.href | url }}">
+          <span class="kb-atlas-entry__title">{{ entry.title }}</span>
+          <span class="kb-atlas-entry__meta">
+            <code>{{ entry.source_label }}</code>
+            <span>{{ entry.page_count }} 页</span>
+          </span>
+        </a>
+      {% else %}
+        <span class="kb-atlas-entry kb-atlas-entry--empty">当前索引暂无入口</span>
+      {% endfor %}
+    </div>
+  </section>
+{% endmacro %}
+
+{% block content %}
+  {% set atlas = config.extra.source_atlas %}
+  <section class="kb-source-atlas" aria-labelledby="source-atlas-title">
+    <header class="kb-atlas-hero">
+      <div class="kb-atlas-hero__route" aria-hidden="true">
+        <span>ROOT</span><span>THEORY</span><span>ENGINEERING</span><span>COURSES</span>
+      </div>
+      <p class="kb-atlas-hero__eyebrow">SOURCE ATLAS / 源码图谱</p>
+      <p class="kb-atlas-hero__title" id="source-atlas-title">从论文机制，到源码实现</p>
+      <p class="kb-atlas-hero__lede">按功能树定位知识，或直接搜索中文主题与英文文件名。</p>
+      <label class="kb-atlas-search" for="__search" tabindex="0" data-kb-search-trigger>
+        <span class="kb-atlas-search__icon md-icon" aria-hidden="true"></span>
+        <span>搜索知识库</span>
+        <kbd>Ctrl K</kbd>
+      </label>
+    </header>
+    <div class="kb-atlas-tracks">
+      {{ atlas_group("理论研究", "01", atlas.theory) }}
+      {{ atlas_group("工程实现", "02", atlas.engineering) }}
+      {{ atlas_group("跨域课程", "↗", atlas.courses) }}
+    </div>
+  </section>
+  <section class="kb-original-index" aria-label="知识库原始索引">
+    {{ super() }}
+  </section>
+{% endblock %}

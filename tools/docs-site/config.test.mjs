@@ -105,20 +105,29 @@ test("Quartz configuration excludes remote and non-goal features", async () => {
   assert.match(config, /enableVideoEmbed: false/)
 })
 
-test("GitHub Pages deployment publishes the Quartz output at the project URL", async () => {
-  const config = await readFile(path.join(toolDir, "quartz.config.yaml"), "utf8")
+test("GitHub Pages deployment publishes the MkDocs output at the project URL", async () => {
   const workflow = await readFile(
     path.join(toolDir, "..", "..", ".github", "workflows", "pages.yml"),
     "utf8",
   )
 
-  assert.match(config, /^\s{2}baseUrl: suhaibo666\.github\.io\/llm-knowledge$/m)
   assert.match(workflow, /^\s{6}pages: write$/m)
   assert.match(workflow, /^\s{6}id-token: write$/m)
-  assert.match(workflow, /^\s{8}run: npm run docs:build$/m)
+  assert.match(workflow, /uses: actions\/setup-node@v6/)
+  assert.match(workflow, /^\s{10}node-version: 24$/m)
+  assert.match(workflow, /uses: actions\/setup-python@v6/)
+  assert.match(workflow, /^\s{10}python-version: ["']3\.13["']$/m)
+  assert.match(
+    workflow,
+    /^\s{8}run: npm ci --prefix tools\/mkdocs-site --omit=dev$/m,
+  )
+  assert.match(workflow, /^\s{8}run: python -m pip install -r requirements-docs\.txt$/m)
+  assert.match(workflow, /^\s{8}run: python -m tools\.mkdocs_site\.cli build$/m)
   assert.match(workflow, /uses: actions\/upload-pages-artifact@v4/)
-  assert.match(workflow, /^\s{10}path: \.cache\/llm-knowledge-docs\/output$/m)
+  assert.match(workflow, /^\s{10}path: site$/m)
   assert.match(workflow, /uses: actions\/deploy-pages@v4/)
+  assert.doesNotMatch(workflow, /npm run docs:build/)
+  assert.doesNotMatch(workflow, /\.cache\/llm-knowledge-docs\/output/)
 })
 
 test("vendored Mermaid resolves within the deployed site path", async () => {

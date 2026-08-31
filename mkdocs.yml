@@ -1,0 +1,70 @@
+site_name: LLM Knowledge Wiki
+site_url: https://suhaibo666.github.io/llm-knowledge/
+docs_dir: .mkdocs-cache/docs
+site_dir: site
+use_directory_urls: false
+theme:
+  name: material
+  custom_dir: tools/mkdocs-site/overrides
+  language: zh
+  font: false
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: 切换至浅色模式
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: 切换至深色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-auto
+        name: 跟随系统主题
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.path
+    - navigation.prune
+    - navigation.footer
+    - navigation.top
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.view
+plugins:
+  - search:
+      lang:
+        - zh
+        - en
+      pipeline: []
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+  - pymdownx.arithmatex:
+      generic: true
+  - toc:
+      permalink: false
+      toc_depth: 3
+repo_url: https://github.com/suhaibo666/llm-knowledge
+edit_uri: blob/main/wiki/
+extra_css:
+  - assets/extra.css
+extra_javascript:
+  - assets/mathjax.js
+  - assets/vendor/mathjax/tex-chtml.js
+  - assets/diagram.js
+  - assets/vendor/mermaid/mermaid.min.js
+  - assets/extra.js

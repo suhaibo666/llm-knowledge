@@ -15,7 +15,8 @@ repos:
   - name: vLLM
     repo: vllm-project/vllm
     branch: main
-    kb_baseline: d66300a1baa7779c68c7dfa4e51eee2502b48017
+    # 2026-08-30 Waves 1–6：23 篇内容页 + index 已统一覆盖此冻结基线。
+    kb_baseline: 6b110badbb22d3f66c7218b71138f13b7a6b3419
     kb_entry: wiki/02_engineering/03_infer_frameworks/vllm/index.md
     category: 推理框架
 

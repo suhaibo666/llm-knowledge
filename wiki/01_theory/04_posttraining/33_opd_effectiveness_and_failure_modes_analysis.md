@@ -228,14 +228,16 @@ Song & Zheng 给出的四项诊断（2604.00626, §7.1, p.52）值得**直接作
 - **修复**：**StableOPD = 参考散度约束 + 混合蒸馏**，平均 **+7.2%**。
 - **代价/限制**：(a) 参考散度约束是一个"不许离参考模型太远"的锚，它会**同时压制有益的行为改变**——尤其在 OPD 被用作能力合并（学生本就该大幅改变行为）时，锚的强度与整合效果直接冲突；(b) 混合蒸馏引入 off-policy 成分，重新带回暴露偏差；(c) 单纯加长度惩罚是更简单的替代，但那是在**症状层**处理，回路的 1–2 级仍在运转。
 - **工业侧的对应做法**：Kimi K3（arXiv:2607.24653v2, §4.1.3, Eq. 15）对逐 token OPD 奖励做 clip 截断
-  $$
-\begin{aligned}
-r^{d}_{\mathrm{opd}}(y_t\mid e,x,y_{<t})
-&=\mathrm{clip}\Big(\mathrm{sg}\Big[\log\tfrac{\pi^{(d,e)}_{\mathrm{teacher}}(y_t\mid x,y_{<t})}{\pi_\theta(y_t\mid e,x,y_{<t})}\Big],\, \\
-&\quad -R_{\max},\,R_{\max}\Big)
-\end{aligned}
-  $$
-  clip 直接压住第 2 级的放大系数。这是工业实现对该失败模式的**事实上的**（未必自觉的）防御。
+
+    $$
+    \begin{aligned}
+    r^{d}_{\mathrm{opd}}(y_t\mid e,x,y_{<t})
+    &=\mathrm{clip}\Big(\mathrm{sg}\Big[\log\tfrac{\pi^{(d,e)}_{\mathrm{teacher}}(y_t\mid x,y_{<t})}{\pi_\theta(y_t\mid e,x,y_{<t})}\Big],\, \\
+    &\quad -R_{\max},\,R_{\max}\Big)
+    \end{aligned}
+    $$
+
+    clip 直接压住第 2 级的放大系数。这是工业实现对该失败模式的**事实上的**（未必自觉的）防御。
 
 #### B2. 多样性坍缩（arXiv:2603.07079v3 / Entropy-Aware OPD）
 
@@ -291,10 +293,12 @@ r^{d}_{\mathrm{opd}}(y_t\mid e,x,y_{<t})
 
 - **症状**：把奖励外推系数 $\lambda$ 调大以求"超越教师"，在某个点之前一切正常（甚至更好），越过该点后**输出格式整体崩坏**。
 - **机理**：G-OPD/ExOPD（arXiv:2602.12125v2）证明 OPD 是**奖励项与 KL 正则恒等权（$\lambda=1$）**的稠密 KL 约束 RL 特例，引入奖励缩放 $\lambda$ 后最优解满足
-  $$
-  \log\pi_\theta=\lambda\log\pi^*+(1-\lambda)\log\pi_{\mathrm{ref}}
-  $$
-  $\lambda>1$ 时学生的对数概率越过"匹配教师"去拟合额外位移项，产生外推（论文主张 $\lambda=1.25$ 时在多教师设定下是唯一能在全部基准上同时超越两个领域教师的统一学生，数学+代码约 +2%）。ListOPD 的贡献是指出这个外推**存在一个闭式阈值 $\lambda^*$**：$\lambda<\lambda^*$ 时外推**保格式**，$\lambda>\lambda^*$ 时**毁格式**——阈值依赖教师模态概率、warm-start 质量、clip 强度。
+
+    $$
+    \log\pi_\theta=\lambda\log\pi^*+(1-\lambda)\log\pi_{\mathrm{ref}}
+    $$
+
+    $\lambda>1$ 时学生的对数概率越过"匹配教师"去拟合额外位移项，产生外推（论文主张 $\lambda=1.25$ 时在多教师设定下是唯一能在全部基准上同时超越两个领域教师的统一学生，数学+代码约 +2%）。ListOPD 的贡献是指出这个外推**存在一个闭式阈值 $\lambda^*$**：$\lambda<\lambda^*$ 时外推**保格式**，$\lambda>\lambda^*$ 时**毁格式**——阈值依赖教师模态概率、warm-start 质量、clip 强度。
 - **触发条件**：任何试图用 $\lambda$ 外推突破教师天花板的设置。
 - **修复**：**在 $\lambda^*$ 下方运行**。
 - **代价/限制**：(a) 这等于给"超越教师"这条最受期待的路径划了一个**硬上界**——外推的可用幅度受制于阈值而非受制于野心；(b) $\lambda^*$ 依赖 warm-start 质量，意味着它**随训练进程漂移**，静态设定 $\lambda$ 并不安全；(c) 本条为转述（G-OPD 本体已 abs 级 + HTML 首节核实，ListOPD 未开原文）。

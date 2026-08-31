@@ -150,8 +150,8 @@ MoE 有独有的不稳定源 —— 路由:
 > `--calculate-per-token-loss` 模式下,`finalize_model_grads` 会把每个参数梯度统一除以 `total_global_tokens`(全局非 padding token 数)。但 router 权重标了 `sequence_parallel=True`,各 TP rank 只在自己的**序列分片**上算偏梯度、再由 `_allreduce_non_tensor_model_parallel_grads` 在 TP 组内**求和**。把 `total_global_tokens` 按 router 的本地 token 数展开:
 > $$
 > \begin{aligned}
-> \text{total\_global\_tokens}
-> &= \text{num\_micro\_batches}\times \text{dp\_size}\times\big(\text{num\_local\_tokens}\times\lvert\text{tp\_cp}\rvert\big)
+> T_{\mathrm{global}}
+> &= N_{\mathrm{microbatch}}\times D_{\mathrm{P}}\times\big(T_{\mathrm{local}}\times\lvert G_{\mathrm{TP,CP}}\rvert\big)
 > \end{aligned}
 > $$
 > 旧代码只乘 `num_local_tokens`,在 `tp_cp_group.size()>1` 时 aux/z-loss 梯度被额外缩小了 `|tp_cp|` 倍 —— TP/CP 越大,负载均衡损失越被稀释。
