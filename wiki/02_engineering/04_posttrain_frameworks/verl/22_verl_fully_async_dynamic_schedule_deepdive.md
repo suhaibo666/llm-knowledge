@@ -5,7 +5,8 @@ title: "verl Experimental Fully Async 深潜 —— 版本陈旧度、动态资�
 # verl Experimental Fully Async 深潜 —— 版本陈旧度、动态资源与可靠性边界
 
 > **源码基线**：`volcengine/verl` `main` @ `254a23edc62f25ebfae626e3932ae285d6f86009`
-> **核验日期**：2026-08-28
+> **核验日期**：2026-08-31
+> **定位**：experimental fully-async TaskRunner 唯一生命周期 owner
 > **范围**：`verl/experimental/fully_async_policy/`、`docs/advance/fully_async.md`、`docs/advance/dynamic_schedule.md`、`docs/advance/determinism.md`、`verl/utils/tracking.py` 及相关测试。
 >
 > **结论先行**：这里分析的是一个拥有独立入口、独立 Rollouter、独立 Trainer 和自建 MessageQueue 的 **experimental fully-async TaskRunner**，不是稳定 V1 trainer 的 `colocate_async` 或 `separate_async` mode。它以完成顺序消费和显式 policy version 换取生成与训练的持续重叠，再用 staleness admission、partial rollout 与动态 Hybrid GPU 调度控制代价；但队列并非无损、checkpoint 不保存全部在飞状态、bitwise determinism 也没有被证明。
@@ -38,11 +39,11 @@ title: "verl Experimental Fully Async 深潜 —— 版本陈旧度、动态资�
 flowchart LR
     D["数据集单样本供给"] --> P["Rollouter pending queue"]
     P --> G["并发生成任务"]
-    G -->|完成即投递| M["Ray MessageQueue"]
-    M -->|收足训练样本| T["Trainer 本地更新"]
-    T -->|达到同步周期| W["发布新参数版本"]
+    G --> M["完成后投递 Ray MessageQueue"]
+    M --> T["收足样本后 Trainer 本地更新"]
+    T --> W["达到周期后发布新参数版本"]
     W --> G
-    C["动态资源控制器"] -->|激活或停用| G
+    C["动态资源控制器决定激活或停用"] --> G
     O["RL Insight"] -.-> G
     O -.-> T
     O -.-> M
@@ -166,9 +167,9 @@ cluster utilization 是基于 Hybrid 与 Standalone GPU 秒数的加权估计，
 
 ### 6.1 Experimental checkpoint 不是队列一致性快照
 
-Trainer 以 `current_param_version` 命名 checkpoint，保存 actor、可选 critic、Rollouter dataloader state，再写 latest tracker（`verl/experimental/fully_async_policy/fully_async_trainer.py:917-978`）。但 Rollouter 自己明确警告：pending、cancel、result 和 MessageQueue 中存在在飞样本，只保存 dataloader state 会在恢复时丢样本，恢复无损语义仍是 TODO（`verl/experimental/fully_async_policy/fully_async_rollouter.py:655-660`）。
+Trainer 以 `current_param_version` 命名 checkpoint，保存 actor、可选 critic和 Rollouter dataloader state；本路径特有的边界是 pending、cancel、result 和 MessageQueue 中的在途样本不在 snapshot 内，源码明确警告恢复会丢样，完整无损恢复仍是 TODO（`verl/experimental/fully_async_policy/fully_async_trainer.py:917-978`；`verl/experimental/fully_async_policy/fully_async_rollouter.py:655-660`）。
 
-稳定 V1 async mode 在 TransferQueue 支持 checkpoint 时会额外保存 finished trajectory，并在恢复时重发 pending/running prompt（`verl/trainer/ppo/v1/trainer_base.py:942-950`）；这个能力不属于 experimental MessageQueue。V1 的 driver-side checkpoint callback 也只保证 worker RPC 已经发出，`async_save=True` 时文件可能仍在写，不能把 callback 到达等同于 durable（`verl/trainer/ppo/checkpoint_callback.py:14-27,49-55`）。
+本页只保留这个 experimental failure boundary。stable V1、V0 和本路径的保存状态矩阵、callback durability、恢复顺序与 crash window 统一由 [[23_verl_training_checkpoint_recovery_analysis]] 负责。
 
 ### 6.2 Full determinism 当前不能覆盖本页路径
 
@@ -199,8 +200,10 @@ Experimental fully async 同样以任务完成顺序入 MessageQueue，而且 dy
 
 ## Related Pages
 
-- [[10_verl_end_to_end_iteration_analysis]] —— 稳定主链与 experimental fully-async 的入口边界。
-- [[16_verl_v1_transfer_queue_analysis]] —— V1 TransferQueue 的数据系统定位及其与本页 MessageQueue 的区别。
-- [[30_verl_optimization_analysis]] —— placement、offload、动态 batch 与异步 RL 的性能横切目录。
-- [[14_verl_rollout_resharding_analysis]] —— 权重同步、rollout server 生命周期和 checkpoint engine 的底层承接页。
-- [[10_determinism_and_numerical_reliability_analysis]] —— batch invariance、确定性算子与全流程复现的可靠性背景。
+- [[10_verl_end_to_end_iteration_analysis]] —— 默认 sync 主链与 experimental fully async 的入口边界。
+- [[14_verl_rollout_runtime_analysis]] —— partial rollout、abort/resume 与服务版本跨度。
+- [[16_verl_v1_transfer_queue_analysis]] —— stable V1 TransferQueue 与本页 MessageQueue 的区别。
+- [[18_verl_agent_loop_reward_runtime_analysis]] —— fully async 调度所复用的 trajectory/reward runtime。
+- [[21_verl_weight_publication_analysis]] —— Standalone/Hybrid replicas 接收新参数的 publication 机制。
+- [[23_verl_training_checkpoint_recovery_analysis]] —— 本路径无法保存全部在途状态的跨模式对照。
+- [[10_determinism_and_numerical_reliability_analysis]] —— batch invariance 与全流程复现的可靠性背景。

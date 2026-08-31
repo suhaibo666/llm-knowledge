@@ -194,5 +194,5 @@ async def update_weights(self, weights: Generator, ...):
 - [[02_engineering/02_train_frameworks/megatron-lm/index]]
 - [[30_megatron_rl_posttraining_consistency_analysis]] — Megatron 训练侧的 refit / 训推一致性通用机制(本文的上游基础)
 - [[01_posttraining_infra_mechanism_analysis]] — 第 6 节「Weight publish 协议」,三平面机制视角(框架无关)
-- [[14_verl_rollout_resharding_analysis]] — verl 自身的 resharding / 3D-HybridEngine 实现
+- [[14_verl_rollout_runtime_analysis]] — verl 自身的 rollout request、KV 与权重刷新边界
 - [[02_engineering/01_pytorch/index]]

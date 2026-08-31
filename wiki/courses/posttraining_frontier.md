@@ -76,7 +76,7 @@ CUDA 方案迁移到 Ascend 时的判断框架,最后用一份最新工业报告
 | 顺序 | 页面 | 位置 | 一句话 |
 |---:|---|---|---|
 | D06 | [[30_rl_framework_comparison]] | `02_engineering/04_posttrain_frameworks/` | 怎样用统一术语和四级支持证据(P1 接口/P2 功能/P3 正确性/P4 性能)比较 verl、slime、AReaL、ROLL |
-| D07 | [[10_verl_end_to_end_iteration_analysis]] | `02_engineering/04_posttrain_frameworks/verl/` | 一批 prompt 怎样穿过 rollout、reward、advantage、update 与权重刷新(主基线 `983cb0f`;与 `verl_ray_trainer_analysis`〔`8a694930`〕逐节调和,详情见该页) |
+| D07 | [[10_verl_end_to_end_iteration_analysis]] | `02_engineering/04_posttrain_frameworks/verl/` | 当前默认 V1 sync 中，一批 prompt 怎样经 AgentLoop、TransferQueue、reward、advantage、update 与权重发布闭环（统一基线 `254a23ed`） |
 
 ### S03 · 高性能与 Fully Async 对照
 

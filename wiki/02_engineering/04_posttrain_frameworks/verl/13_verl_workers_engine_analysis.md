@@ -5,9 +5,9 @@ title: "verl Worker 与 Engine：RPC 粒度、模型语义与后端矩阵"
 # verl Worker 与 Engine：RPC 粒度、模型语义与后端矩阵
 
 > **代码基准**：verl `main` @ `254a23edc62f25ebfae626e3932ae285d6f86009`（2026-08-28）
-> **最后更新**：2026-08-28 · **系列**：verl RLHF 框架源码级分析（见 [[verl/index]]）
+> **最后更新**：2026-08-31 · **定位**：Worker/Engine 计算与后端语义唯一机制 owner
 >
-> **核心结论**：Worker 是 controller 可见的 RPC 和 mini-batch 边界，Engine 才拥有模型、并行布局、optimizer 与权重导出语义。当前后端选择已经是 `model_type × backend × device/vendor`，不是简单的 FSDP/Megatron 二选一；新增 backend 若不能实现 Engine 的训练与 export 契约，就不能仅靠注册一个 worker 名字完成接入。
+> **核心结论**：Worker 是 controller 可见的 RPC 和 mini-batch 边界，Engine 才拥有模型、并行布局、optimizer 与权重导出语义。当前后端选择已经是 `model_type × backend × device/vendor`，不是简单的 FSDP/Megatron 二选一；新增 backend 若不能实现 Engine 的训练、checkpoint 与 export 契约，就不能仅靠注册一个 worker 名字完成接入。本页不拥有 Ray dispatch、rollout 服务或 CheckpointEngine wire。
 
 ---
 
@@ -91,7 +91,7 @@ Engine 统一暴露 full、shard 与 delta 相关 export 能力（`verl/workers/
 2. 非 naive full：把 full tensor generator 交给 CheckpointEngine；
 3. `delta_sharded`：把整个训练 Engine 交给 CE，让后端直接提供 shard/delta 语义。
 
-分叉位于 `verl/workers/engine_workers.py:727-771`。第三条不能退化成“CE 先把模型 full-gather 再 diff”：当前 delta 把 diff 下推到训练 shard，具体所有权见 [[21_verl_delta_weight_sync_deepdive]]。
+分叉位于 `verl/workers/engine_workers.py:727-771`。第三条不能退化成“CE 先把模型 full-gather 再 diff”：当前 delta 把 diff 下推到训练 shard，具体所有权见 [[21_verl_weight_publication_analysis]]。
 
 当前 delta exporter 的源码支持边界：
 
@@ -137,10 +137,10 @@ failure cleanup
 
 ## Related Pages
 
-- [[01_verl_architecture_overview_analysis]] —— Worker/Engine 在四平面中的位置
-- [[10_verl_end_to_end_iteration_analysis]] —— trainer 如何调用 Worker
-- [[16_verl_v1_transfer_queue_analysis]] —— `KVBatchMeta` 到 TensorDict 的执行边界
-- [[15_verl_rl_algorithms_analysis]] —— actor/critic loss 与全局归一化
-- [[14_verl_rollout_resharding_analysis]] —— rollout adapter 与 full 权重安装
-- [[21_verl_delta_weight_sync_deepdive]] —— Engine export 到 CE/loader 的完整协议
-- [[verl/index]] —— 系列导航
+- [[01_verl_architecture_overview_analysis]] —— Worker/Engine 在当前状态 ownership 中的位置。
+- [[10_verl_end_to_end_iteration_analysis]] —— 默认 sync trainer 如何调用 Worker。
+- [[11_verl_single_controller_analysis]] —— Worker method 被绑定成 Ray group RPC 的控制基座。
+- [[15_verl_rl_algorithms_analysis]] —— actor/critic loss 与全局归一化语义。
+- [[16_verl_v1_transfer_queue_analysis]] —— `KVBatchMeta` 到 TensorDict 的执行边界。
+- [[21_verl_weight_publication_analysis]] —— Engine export 到 CE/loader 的完整发布协议。
+- [[23_verl_training_checkpoint_recovery_analysis]] —— Engine checkpoint 如何进入组合恢复状态。

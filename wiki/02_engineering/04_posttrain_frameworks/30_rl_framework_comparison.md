@@ -200,7 +200,7 @@ flowchart TD
 > **后续状态（2026-08-14）**：slime 本地 `origin/main@681b3adc` 已完成源码重验，本页 slime commit、TIM 与 async 语义已更新；AReaL / ROLL 仍维持 2026-07-27 快照。slime 的完整证据链见 [[slime/index]] 独立知识域。
 >
 > 另有两项已知边界,重验时一并处理:
-> 1. **verl 列的基线与本库 verl 深潜页不一致**——本页 verl 列锁 `983cb0f`,而 [[verl/index]] 下 10 篇中有 7 篇深潜页基线是 `8a694930`。跨页引用 verl 结论时须先对齐基线。
+> 1. **verl 列的基线与本库 verl 深潜页不一致**——本页 verl 列锁 `983cb0f`,而 [[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]] 已更新到另一冻结基线。跨页引用 verl 结论时须先对齐基线。
 > 2. **对比集是四框架封闭集**（verl / slime / AReaL / ROLL）。Miles、SkyRL、NeMo-RL 在全库零命中,PRIME-RL 未进入本页。矩阵不覆盖 = 未评估,不等于不存在或不重要。
 
 ## Related Pages

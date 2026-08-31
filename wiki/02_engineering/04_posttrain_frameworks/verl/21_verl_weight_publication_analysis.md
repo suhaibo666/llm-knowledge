@@ -5,8 +5,8 @@ title: "verl 权重发布深潜 —— 从 full 广播到 shard-local delta"
 # verl 权重发布深潜 —— 从 full 广播到 shard-local delta
 
 > **代码基准**：volcengine/verl `main` @ `254a23edc62f25ebfae626e3932ae285d6f86009`
-> **最后更新**：2026-08-28
-> **定位**：本页是 verl 的 **full / delta_sharded 权重发布唯一机制 owner**。训练 Engine 的常规计算边界见 [[13_verl_workers_engine_analysis]]，rollout server 与 PD 架构见 [[14_verl_rollout_resharding_analysis]]，性能选择见 [[30_verl_optimization_analysis]]；这些页面只保留入口与链接，不再复述本页状态机。
+> **最后更新**：2026-08-31
+> **定位**：本页是 verl 的 **full / delta_sharded 权重发布唯一机制 owner**。训练 Engine 的常规计算边界见 [[13_verl_workers_engine_analysis]]，rollout server 与 PD 架构见 [[14_verl_rollout_runtime_analysis]]，性能选择见 [[30_verl_optimization_analysis]]；这些页面只保留入口与链接，不再复述本页状态机。Trainer 的持久化与跨重启恢复属于 [[23_verl_training_checkpoint_recovery_analysis]]，不能因类名 `CheckpointEngine` 而并入本页。
 
 > [!important] 一条主线
 > verl 没有把“权重同步”压成一次 `broadcast`，而是拆成三个所有权边界：训练 Engine 负责把后端布局翻译成最终 HF 权重语义，CheckpointEngine 负责暂停世界并传输，rollout loader 负责把收到的 payload 写入正在服务的模型。`delta_sharded` 的核心不是压缩 full tensor，而是把 diff 下推到每个 rank 的本地 shard：第一次 dense seed 建立共同基线，之后只 gather 和广播 bit-exact 的变化位置。
@@ -198,7 +198,7 @@ backend import 失败也不是静默降级。registry 记录 optional transport 
 ## Related Pages
 
 - [[13_verl_workers_engine_analysis]] —— Worker/Engine 计算边界与各训练 backend；本页只拥有它们的权重 export 契约。
-- [[14_verl_rollout_resharding_analysis]] —— rollout server、sleep/wake、vLLM/SGLang 与 PD；权重发布状态机以本页为准。
+- [[14_verl_rollout_runtime_analysis]] —— rollout server、sleep/wake、vLLM/SGLang 与 PD；权重发布状态机以本页为准。
 - [[30_verl_optimization_analysis]] —— full 与 delta_sharded 的性能选择、offload 和异步资源利用；不重复协议细节。
 - [[10_verl_end_to_end_iteration_analysis]] —— 把一次权重发布放回 PPO/GRPO 迭代时序中观察。
 - [[20_verl_ray_trainer_analysis]] —— Ray trainer 的 worker-group 编排与训练拓扑；CheckpointEngine 是其独立的参数发布平面。

@@ -1,14 +1,14 @@
 ---
-title: "verl V1 Trainer：三种状态机上的流式 PPO"
+title: "verl V1 Stable Async：ReplayBuffer、旧策略与 GPU Lending"
 ---
 
-# verl V1 Trainer：三种状态机上的流式 PPO
+# verl V1 Stable Async：ReplayBuffer、旧策略与 GPU Lending
 
 > **源码基线**：volcengine/verl `main` @ `254a23edc62f25ebfae626e3932ae285d6f86009`
-> **分析维度**：Deep Dive · V1 trainer 编排、异步采样与恢复
-> **最后更新**：2026-08-28
+> **分析维度**：Deep Dive · stable V1 async 生命周期唯一 owner
+> **最后更新**：2026-08-31
 >
-> 本页回答：默认入口如何进入 V1；`sync`、`colocate_async`、`separate_async` 如何在生成与训练之间切换；prompt group 如何经 ReplayBuffer 被消费、淘汰和补充；异步 checkpoint 如何避免 dataloader 前进后丢 prompt；以及 separate async 如何固定旧策略并把空闲 trainer GPU 暂借给生成。TransferQueue 自身的控制面、存储后端与 API 分层见 [[16_verl_v1_transfer_queue_analysis]]，这里不重复。
+> 本页回答：`colocate_async` 与 `separate_async` 如何在生成与训练之间切换；prompt group 如何经 ReplayBuffer 被消费、淘汰和补充；separate async 如何固定旧策略并把空闲 trainer GPU 暂借给生成。默认 sync 生命周期属于 [[10_verl_end_to_end_iteration_analysis]]；TransferQueue、AgentLoop、rollout 服务、权重发布和训练恢复分别属于 16、18、14、21、23，本页只保留它们与 stable async mode 的接口。
 
 ## 1. 一条主线：数据与控制解耦，三种模式只改变资源状态机
 
@@ -41,7 +41,7 @@ flowchart LR
 `main()` 先根据 `trainer.use_v1` 选择 `TaskRunnerV1`；只有显式设为 false 才会导入 deprecated 的 V0 `TaskRunner`（`verl/trainer/main_ppo.py:183-192`）。进入 V1 后，runner 用 `get_trainer_cls(config.trainer.v1.trainer_mode)` 在 registry 中选择三个实现之一（`verl/trainer/main_ppo.py:137-152`；`verl/trainer/ppo/v1/trainer_base.py:1897-1924`）。
 
 > [!contradiction] 相对旧基线的默认主链已经反转
-> `8a694930` 上 `trainer.use_v1=false`，旧 [[20_verl_ray_trainer_analysis]] 因而把 `RayPPOTrainer.fit` 作为默认路径；当前基线默认执行本页的 V1 主链。V0 页面仍可作为 legacy 实现深潜，但不能再代表默认运行时。
+> `8a694930` 上 `trainer.use_v1=false`，早期分析因而把 `RayPPOTrainer.fit` 作为默认路径；当前基线默认执行本页的 V1 主链。[[20_verl_ray_trainer_analysis]] 已按当前提交重核 V0 legacy，但它不能代表默认运行时。
 
 ### 2.2 `use_v1` 决定路由，V1 内部必用 TransferQueue
 
@@ -91,11 +91,11 @@ Manager 把输入按 worker 数切分，RPC 只等待 worker 创建后台任务�
 
 训练开始前，colocate async 默认预先提交一个完整 warmup batch（`verl/trainer/ppo/v1/trainer_colocate_async.py:40-46`；`verl/trainer/config/ppo_trainer.yaml:239-243`）。进入某步后，基础 `prepare_step()` 又提交下一批，因此 ReplayBuffer 可以消费已完成的旧批，而生成侧继续处理积压请求。
 
-当一个训练 batch 被选中，`on_sample_end()` 先 abort 未完成请求，再 sleep 同池 replica，把 GPU 内存还给训练；step 末更新权重并恢复生成（`verl/trainer/ppo/v1/trainer_colocate_async.py:48-59`）。模式使用 `FullyAsyncLLMServerClient`（`:32-34`）：仓内文档说明 abort 前已生成的 token/log-prob 会保留，后缀经 load balancer 重试并重建 prefix KV cache，因此轨迹可能跨模型版本；这部分实现位于本页限定范围外，属于文档级而非本页已走读代码结论（`docs/advance/v1_async_trainer.md:25,51-60`）。
+当一个训练 batch 被选中，`on_sample_end()` 先 abort 未完成请求，再 sleep 同池 replica，把 GPU 内存还给训练；step 末更新权重并恢复生成（`verl/trainer/ppo/v1/trainer_colocate_async.py:48-59`）。模式使用 `FullyAsyncLLMServerClient`（`verl/trainer/ppo/v1/trainer_colocate_async.py:32-34`）：仓内文档说明 abort 前已生成的 token/log-prob 会保留，后缀经 load balancer 重试并重建 prefix KV cache，因此轨迹可能跨模型版本；这部分实现位于本页限定范围外，属于文档级而非本页已走读代码结论（`docs/advance/v1_async_trainer.md:25,51-60`）。
 
 ### 4.3 separate_async：standalone 常驻，hybrid 专注训练
 
-separate async 在基础 hybrid LLM manager 外再创建一个 standalone manager，并把 AgentLoop client 接到 standalone 一侧（`verl/trainer/ppo/v1/trainer_separate_async.py:126-148,180-188`）。hybrid replica 初始化后暂处 `ROLLOUT` 并加入同一个全局 load balancer；训练开始时根据开关和库存阈值将其收回（`:150-152,209-258`）。standalone rollout 不因 trainer 进入计算阶段而暂停，这才是该模式的持续生产者。
+separate async 在基础 hybrid LLM manager 外再创建一个 standalone manager，并把 AgentLoop client 接到 standalone 一侧（`verl/trainer/ppo/v1/trainer_separate_async.py:126-148,180-188`）。hybrid replica 初始化后暂处 `ROLLOUT` 并加入同一个全局 load balancer；训练开始时根据开关和库存阈值将其收回（`verl/trainer/ppo/v1/trainer_separate_async.py:150-152,209-258`）。standalone rollout 不因 trainer 进入计算阶段而暂停，这才是该模式的持续生产者。
 
 每个 global step 必须满足：
 
@@ -103,13 +103,13 @@ separate async 在基础 hybrid LLM manager 外再创建一个 standalone manage
 train_batch_size = parameter_sync_step × ppo_mini_batch_size
 ```
 
-构造器直接 assert 这个等式，并要求 standalone rollout 的节点/卡数为正、checkpoint engine backend 不能是 `naive`（`verl/trainer/ppo/v1/trainer_separate_async.py:50-65`）。如果启用 reward model，还必须给它独立 resource pool，因为 standalone rollout 不会停下来释放同池显存（`:66-71`）。
+构造器直接 assert 这个等式，并要求 standalone rollout 的节点/卡数为正、checkpoint engine backend 不能是 `naive`（`verl/trainer/ppo/v1/trainer_separate_async.py:50-65`）。如果启用 reward model，还必须给它独立 resource pool，因为 standalone rollout 不会停下来释放同池显存（`verl/trainer/ppo/v1/trainer_separate_async.py:66-71`）。
 
 ## 5. ReplayBufferAsync：以 prompt group 为原子保持 batch 新鲜
 
 ### 5.1 每轮 polling 都从 TQ 重建快照
 
-ReplayBuffer 不把上轮内存状态当权威。每轮先 `tq.kv_list()`，清空并重建 `pending/running/finished/failure` 集合、prompt 的生成 step，以及轨迹 tag 分区（`verl/trainer/ppo/v1/replay_buffer.py:188-222`）。选择时按 prompt `global_steps` 从旧到新排序，避免新完成样本持续饿死旧样本（`:366-375`）。
+ReplayBuffer 不把上轮内存状态当权威。每轮先 `tq.kv_list()`，清空并重建 `pending/running/finished/failure` 集合、prompt 的生成 step，以及轨迹 tag 分区（`verl/trainer/ppo/v1/replay_buffer.py:188-222`）。选择时按 prompt `global_steps` 从旧到新排序，避免新完成样本持续饿死旧样本（`verl/trainer/ppo/v1/replay_buffer.py:366-375`）。
 
 terminal group 的三种淘汰原因是：
 
@@ -117,11 +117,11 @@ terminal group 的三种淘汰原因是：
 2. DAPO 指标在组内所有轨迹上完全相同；
 3. prompt group 状态为 failure。
 
-三集合可以重叠；实现先取并集再一次性清掉 prompt key 与全部 trajectory key，因此一个 group 只产生一个 refill slot（`verl/trainer/ppo/v1/replay_buffer.py:300-364,503-522`）。验证分区直接返回空淘汰集合，不做 staleness、DAPO 或 failure refill（`:255-256,309-310,517-518`）。
+三集合可以重叠；实现先取并集再一次性清掉 prompt key 与全部 trajectory key，因此一个 group 只产生一个 refill slot（`verl/trainer/ppo/v1/replay_buffer.py:300-364,503-522`）。验证分区直接返回空淘汰集合，不做 staleness、DAPO 或 failure refill（`verl/trainer/ppo/v1/replay_buffer.py:255-256,309-310,517-518`）。
 
 ### 5.2 `drop` 与 `wait` 的边界并不对称
 
-`drop` 只淘汰已经 terminal 且 age **大于**阈值的 group（`verl/trainer/ppo/v1/replay_buffer.py:503-512`）。`wait` 不淘汰 stale terminal group；只要任一 pending/running prompt 的 age **达到**阈值，就暂不允许返回 batch，让它完成后仍可被训练（`:524-539`）。
+`drop` 只淘汰已经 terminal 且 age **大于**阈值的 group（`verl/trainer/ppo/v1/replay_buffer.py:503-512`）。`wait` 不淘汰 stale terminal group；只要任一 pending/running prompt 的 age **达到**阈值，就暂不允许返回 batch，让它完成后仍可被训练（`verl/trainer/ppo/v1/replay_buffer.py:524-539`）。
 
 这是 dropless 的代价：polling 循环没有内建超时；如果达到阈值的 in-flight 请求永久不能 terminal，训练会一直等待——这是由 `while True` 与固定 sleep 路径作出的【推断】，不是源码注释宣称的保证（`verl/trainer/ppo/v1/replay_buffer.py:547-573`）。
 
@@ -133,18 +133,11 @@ async 每淘汰 `k` 个唯一 group，就调用 `refill_fn(k)`；replacement 自
 
 sync 还有不同语义：DAPO 每淘汰 `k` 个 group 会累积 `2k` refill credit，按并发窗口逐步派发；已经有足量样本时停止新派发，等在途请求 drain 后丢掉 surplus，以保持 bufferless（`verl/trainer/ppo/v1/replay_buffer.py:423-483`）。因此“淘汰 k 就补 k”只适用于 async，不可外推到 sync DAPO。
 
-## 6. checkpoint recovery：冻结消费位置，也冻结尚未训练的数据
+## 6. checkpoint 只保留 mode-specific 边界
 
-只保存 actor/critic 与 dataloader 不足以恢复 async trainer：pending/running prompt 已经推进 dataloader cursor，却还没有进入 checkpoint 中的模型更新。V1 因而在 async 模式额外保存 TQ 状态，但要求已安装的 TransferQueue 至少为 `0.1.9` 且同时提供 `save_checkpoint/load_checkpoint`（`verl/trainer/ppo/v1/trainer_base.py:106-116,942-950`）。
+stable async 的独有风险是：pending/running prompt 已推进 dataloader cursor，却还没有进入 checkpoint 中的模型更新。因此只保存 actor/critic 与 dataloader 不足以重建本模式的样本集合。V1 在外部 TransferQueue 支持 snapshot API 时额外保存 TQ 状态（`verl/trainer/ppo/v1/trainer_base.py:106-116,942-950`）。
 
-恢复顺序是 actor → critic → dataloader → TQ；TQ 恢复发生在 AgentLoopManager 创建前，所以实际 reissue 延后到 `fit()`：先把 checkpoint step 加一，再扫描 train partition（`verl/trainer/ppo/v1/trainer_base.py:793-850,427-434`）。
-
-对不同状态采取两种策略：
-
-- finished group 与已完成轨迹原样留在 TQ，继续等待 ReplayBuffer 采样；
-- pending/running prompt 从持久化 prompt data 取回，删除同 uid 的旧局部 trajectory，重标为当前 step 的 `pending`，再调用 AgentLoop 重新生成（`verl/trainer/ppo/v1/trainer_base.py:851-887`）。
-
-所以恢复并不是续跑 checkpoint 时的 partial trajectory；in-flight 已完成的局部工作会被清掉。若 TQ 版本/API 不满足，代码会静默跳过 TQ snapshot，此时源码内没有机制找回 dataloader 已消费但尚未训练的 prompt。
+本页只拥有这个“为何 async 需要额外状态”的约束。actor/critic/dataloader/TQ 的保存顺序、finished trajectory 的复用、pending/running prompt 的重发、无 snapshot API 时的丢失边界和 crash window，统一见 [[23_verl_training_checkpoint_recovery_analysis]]。
 
 ## 7. separate async 的稳定旧策略
 
@@ -152,7 +145,7 @@ separate async 在一个 global step 内连续做多个 actor update。若每个
 
 实现把 `local_trigger_step` 作为周期内索引：第一个 mini-batch 把 `π_old` 保存到 CPU 并直接计算；后续 mini-batch 先保存当前新权重、恢复 CPU 上的 `π_old` 计算 old log-prob，再恢复新权重并清掉临时副本（`verl/trainer/ppo/v1/trainer_base.py:527-530`；`verl/trainer/ppo/v1/trainer_separate_async.py:154-178`）。
 
-当 `algorithm.rollout_correction.bypass_mode=true` 时，这套 save/restore 被跳过，沿基础实现直接使用 rollout log-prob（`verl/trainer/ppo/v1/trainer_separate_async.py:164-171`）。非 bypass 路径得到稳定参照，但成本是 CPU↔GPU 权重搬运；它依赖 `DetachActorWorker` 提供 save/restore 能力（`:96-104`）。
+当 `algorithm.rollout_correction.bypass_mode=true` 时，这套 save/restore 被跳过，沿基础实现直接使用 rollout log-prob（`verl/trainer/ppo/v1/trainer_separate_async.py:164-171`）。非 bypass 路径得到稳定参照，但成本是 CPU↔GPU 权重搬运；它依赖 `DetachActorWorker` 提供 save/restore 能力（`verl/trainer/ppo/v1/trainer_separate_async.py:96-104`）。
 
 ## 8. GPU lending：只在预计收益覆盖切换成本时出借
 
@@ -160,7 +153,7 @@ separate async 在一个 global step 内连续做多个 actor update。若每个
 
 standalone rollout 与 trainer 的固定资源比很难一直匹配样本长度分布。一个 step 结束时，如果下步 sampleable group 不足，hybrid trainer GPU 会闲等；`hybrid_rollout.enable_switch` 允许这些 GPU 在步间临时加入生成池，默认关闭（`verl/trainer/config/ppo_trainer.yaml:254-264`）。
 
-阈值由 `switch_threshold_ratio × train_batch_size` 得到，并被 clamp 在「一个 controller mini-batch」与「完整 train batch」之间，保证收回 GPU 时至少立刻有一批可训（`verl/trainer/ppo/v1/trainer_separate_async.py:261-266`）。若 hybrid 仍处 rollout mode，`prepare_step()` 会等待 sampleable 数达到该阈值，再执行收回（`:244-259`）。
+阈值由 `switch_threshold_ratio × train_batch_size` 得到，并被 clamp 在「一个 controller mini-batch」与「完整 train batch」之间，保证收回 GPU 时至少立刻有一批可训（`verl/trainer/ppo/v1/trainer_separate_async.py:261-266`）。若 hybrid 仍处 rollout mode，`prepare_step()` 会等待 sampleable 数达到该阈值，再执行收回（`verl/trainer/ppo/v1/trainer_separate_async.py:244-259`）。
 
 ### 8.2 步末决策与转移顺序
 
@@ -171,9 +164,9 @@ benefit = remaining × observed_time_per_sample × hybrid_speedup_fraction
 switch_cost = recent_to_rollout_cost + recent_to_trainer_cost
 ```
 
-只有未到最后一步、库存缺口大于零，且未知成本或 `benefit > switch_cost` 时才出借（`verl/trainer/ppo/v1/trainer_separate_async.py:290-325`）。冷启动阶段没有历史成本，因此只要有缺口就会尝试；scaling factor 目前只是 trainer GPU 与 standalone GPU 数量的静态比值，源码留有“改为更准确或动态估计”的 TODO（`:106-124`）。
+只有未到最后一步、库存缺口大于零，且未知成本或 `benefit > switch_cost` 时才出借（`verl/trainer/ppo/v1/trainer_separate_async.py:290-325`）。冷启动阶段没有历史成本，因此只要有缺口就会尝试；scaling factor 目前只是 trainer GPU 与 standalone GPU 数量的静态比值，源码留有“改为更准确或动态估计”的 TODO（`verl/trainer/ppo/v1/trainer_separate_async.py:106-124`）。
 
-出借顺序是：先把 hybrid servers 加进 global load balancer并清 sticky cache；standalone rollout 安装本 step 已提交权重；再让 hybrid checkpoint manager 安装同版本权重、resume replica，并把状态设为 `ROLLOUT`（`verl/trainer/ppo/v1/trainer_separate_async.py:339-376`）。收回顺序则是 remove servers → abort partial requests → sleep replicas → `TRAINER`（`:378-394`）。先停止新路由再 abort，避免回收过程中继续接入请求。
+出借顺序是：先把 hybrid servers 加进 global load balancer并清 sticky cache；standalone rollout 安装本 step 已提交权重；再让 hybrid checkpoint manager 安装同版本权重、resume replica，并把状态设为 `ROLLOUT`（`verl/trainer/ppo/v1/trainer_separate_async.py:339-376`）。收回顺序则是 remove servers → abort partial requests → sleep replicas → `TRAINER`（`verl/trainer/ppo/v1/trainer_separate_async.py:378-394`）。先停止新路由再 abort，避免回收过程中继续接入请求。
 
 ### 8.3 自适应与不支持组合
 
@@ -193,13 +186,14 @@ GPU lending 当前不支持 rollout PD disaggregation；custom sampler 必须实
 | separate async 使用同池 reward model | standalone 不暂停，无法靠 sleep 释放显存，构造期拒绝 | `verl/trainer/ppo/v1/trainer_separate_async.py:66-71` |
 | lending 与 PD disaggregation 同开 | 构造期拒绝 | `verl/trainer/ppo/v1/trainer_separate_async.py:77-85` |
 
-源码范围仍留下三处明确缺口：`FullyAsyncLLMServerClient` 的 partial-rollout 实现、各 checkpoint-engine backend 的传权细节、外部 TransferQueue package 的 snapshot 一致性协议均不在本页走读范围。以上相应结论只采用本页已打开代码能证明的边界；不会由 trainer 调用点反推底层实现保证。
+源码范围仍留下三处外部边界：partial-rollout 的请求/KV 实现由 [[14_verl_rollout_runtime_analysis]] 负责，CheckpointEngine backend 的传权细节由 [[21_verl_weight_publication_analysis]] 负责，外部 TransferQueue package 的 snapshot 原子性在本仓不可验证。不会由 trainer 调用点反推这些底层保证。
 
 ## Related Pages
 
-- [[10_verl_end_to_end_iteration_analysis]] —— verl 端到端迭代总览；应以本页 V1 主线替换其中旧的默认 V0 教学路径。
-- [[16_verl_v1_transfer_queue_analysis]] —— TransferQueue 的控制面、数据面、存储后端与产品演进，本页刻意不重复这些底层内容。
-- [[20_verl_ray_trainer_analysis]] —— `8a694930` 的 legacy `RayPPOTrainer.fit` 深潜，用于对照默认路径迁移。
-- [[12_verl_dataproto_analysis]] —— V0 `DataProto` 契约与当前 V1 `KVBatchMeta`/延迟物化数据面的对照。
-- [[14_verl_rollout_resharding_analysis]] —— trainer/rollout 权重同步与 sleep/wake 的底层背景。
-- [[15_verl_rl_algorithms_analysis]] —— 本页共享 PPO pipeline 所调用的 advantage、KL 与 loss 数学实现。
+- [[10_verl_end_to_end_iteration_analysis]] —— 默认 V1 sync global-step 与 stable async 的基线对照。
+- [[14_verl_rollout_runtime_analysis]] —— abort、sleep、partial rollout 与服务版本边界。
+- [[15_verl_rl_algorithms_analysis]] —— 共享 PPO pipeline 调用的 advantage、KL 与 loss。
+- [[16_verl_v1_transfer_queue_analysis]] —— ReplayBuffer 查询的 key/tag 与延迟物化数据面。
+- [[18_verl_agent_loop_reward_runtime_analysis]] —— fire-and-forget prompt group 的 trajectory/reward 生产者。
+- [[21_verl_weight_publication_analysis]] —— stable async 各 mode 在 step 边界触发的权重发布。
+- [[23_verl_training_checkpoint_recovery_analysis]] —— async 额外 TQ 状态的组合保存和恢复。

@@ -228,7 +228,7 @@ title: "OPD 框架支持逐项对照与选型：veRL / slime / TRL / NeMo-RL / T
 - [[13_opd_infra_mechanism_analysis]] —— OPD 基础设施机制与八项工作清单 W1–W8（本页的机制前置）
 - [[30_rl_framework_comparison]] —— 通用 RL 框架横评（本页只覆盖 OPD 维度）
 - [[02_engineering/04_posttrain_frameworks/index]] —— 后训练框架索引
-- [[verl/index]] —— veRL 框架索引（§3.1 的展开）
+- [[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]] —— veRL 框架索引（§3.1 的展开）
 - [[slime/index]] —— slime 软件架构与实现分析（§3.2 的展开）
 - [[14_on_policy_distillation_analysis]] —— OPD 算法总览
 - [[15_opd_divergence_and_objective_evolution_analysis]] —— 散度与目标函数演化（§1.1 路线之争的算法侧）

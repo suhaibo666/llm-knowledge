@@ -321,5 +321,5 @@ $$
 - [[12_rl_infra_efficiency_analysis]] —— RL 训练回路的效率工程（W8 与三段负载编排的同构部分）
 - [[11_rl_sandbox_design_analysis]] —— 沙箱与环境设计（W4 长程 agent 的环境侧）
 - [[01_posttraining_infra_mechanism_analysis]] —— 后训练基础设施总览（本页的上位页）
-- [[verl/index]] —— veRL 框架索引
+- [[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]] —— veRL 框架索引
 - [[slime/index]] —— slime 软件架构与实现分析

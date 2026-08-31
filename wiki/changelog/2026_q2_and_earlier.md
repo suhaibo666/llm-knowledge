@@ -230,7 +230,7 @@ title: "Knowledge Base Changelog — 2026-Q2 及更早归档"
   - [[26_glm5_low_precision_chip_deepdive]] — §2.4.3+§3.6.2+§5 INT4 QAT→FP8→W4A8 + 昇腾三支柱（2 图）
 - **流程图工具链**：新增 `.html2md/render_figs.mjs`（复用 Edge/puppeteer 2× 截图）+ `figs/figstyle.css`；图源 HTML 在 gitignored `.html2md/figs/`，14 张 PNG 落 `assets/`（house 风格:奶白卡片 + 彩色圆角节点 + 灰箭头）。
 - **整合**：父索引 [[zhipu_glm/index]] 新增「§四之补 GLM-5 论文深挖页矩阵」(7 页表) + §六 GLM-5 行改指矩阵；概要页 [[01_glm_5_analysis]] 补「逐章深挖」Related 段，并对 §五 估算基准加 `> [!contradiction]` 用 Table 7 真值订正（SWE-bench Verified 77.8 / τ²-Bench 89.7 / AA Index 50 等）。
-- **校验**：7 页 + 索引/概要的 `[[]]` 链接脚本提取，同系列 7 个 `glm5_*_deepdive` + 既有 [[11_muon_analysis]]/`grpo_analysis`（历史活链接，已于 2026-07-31 因 kb-reorg P5 Task 8 再编号为 [[20_grpo_analysis]]，按"历史不回写"惯例降级为反引号）/[[14_megatron_ep_analysis]]/[[verl/index]]/[[13_low_precision_training_analysis]] 等均存在，0 悬空；14 图 `assets/*` 引用解析正常；agentic_rl 两图 note 内误写的 `[[]]` 已改纯文本并重渲。
+- **校验**：7 页 + 索引/概要的 `[[]]` 链接脚本提取，同系列 7 个 `glm5_*_deepdive` + 既有 [[11_muon_analysis]]/`grpo_analysis`（历史活链接，已于 2026-07-31 因 kb-reorg P5 Task 8 再编号为 [[20_grpo_analysis]]，按"历史不回写"惯例降级为反引号）/[[14_megatron_ep_analysis]]/[[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]]/[[13_low_precision_training_analysis]] 等均存在，0 悬空；14 图 `assets/*` 引用解析正常；agentic_rl 两图 note 内误写的 `[[]]` 已改纯文本并重渲。
 
 ---
 
@@ -418,7 +418,7 @@ title: "Knowledge Base Changelog — 2026-Q2 及更早归档"
 - **实现五篇**:`verl_single_controller_analysis`(`@register`+8 种 Dispatch、`DP_COMPUTE_PROTO` chunk/concat、RayWorkerGroup/colocate)、`verl_dataproto_analysis`(`DataProto`/`BatchData`/`DataProtoFuture`)、`verl_ray_trainer_analysis`(`RayPPOTrainer.fit()` 逐步追踪 + 数据流时序图)、`verl_workers_engine_analysis`(`TrainingWorker`/`ActorRolloutRefWorker` + `BaseEngine` 模板方法 + FSDP/Megatron 引擎)、`verl_rollout_resharding_analysis`(vLLM/SGLang 异步 server + 3D-HybridEngine:`get_per_tensor_param`+`CheckpointEngine`+CUDA-IPC bucketed transfer)
 - **算法与优化两篇**:`verl_rl_algorithms_analysis`(`core_algos` 14 种优势估计 + 11 种 policy loss + KL k1/k2/k3,均含 LaTeX)、`verl_optimization_analysis`(placement/offload/序列打包/Ulysses SP/异步 RL 旋钮目录)
 
-> 以上 9 篇标题内的历史活链接已于 2026-07-31 因 kb-reorg P5 Task 8 施行分段编号（`verl_architecture_overview_analysis`→[[01_verl_architecture_overview_analysis]]、`verl_quickstart_guide`→[[02_verl_quickstart_guide]]、`verl_single_controller_analysis`→[[11_verl_single_controller_analysis]]、`verl_dataproto_analysis`→[[12_verl_dataproto_analysis]]、`verl_ray_trainer_analysis`→[[20_verl_ray_trainer_analysis]]、`verl_workers_engine_analysis`→[[13_verl_workers_engine_analysis]]、`verl_rollout_resharding_analysis`→[[14_verl_rollout_resharding_analysis]]、`verl_rl_algorithms_analysis`→[[15_verl_rl_algorithms_analysis]]、`verl_optimization_analysis`→[[30_verl_optimization_analysis]]；现况总览见 [[verl/index]]），按"历史不回写"惯例本条目内原 9 处链接降级为反引号。
+> 以上 9 篇标题内的历史活链接已于 2026-07-31 因 kb-reorg P5 Task 8 施行分段编号（`verl_architecture_overview_analysis`→[[01_verl_architecture_overview_analysis]]、`verl_quickstart_guide`→[[02_verl_quickstart_guide]]、`verl_single_controller_analysis`→[[11_verl_single_controller_analysis]]、`verl_dataproto_analysis`→[[12_verl_dataproto_analysis]]、`verl_ray_trainer_analysis`→[[20_verl_ray_trainer_analysis]]、`verl_workers_engine_analysis`→[[13_verl_workers_engine_analysis]]、`verl_rollout_resharding_analysis`→[[14_verl_rollout_runtime_analysis]]、`verl_rl_algorithms_analysis`→[[15_verl_rl_algorithms_analysis]]、`verl_optimization_analysis`→[[30_verl_optimization_analysis]]；现况总览见 [[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]]），按"历史不回写"惯例本条目内原 9 处链接降级为反引号。
 
 **HEAD 关键勘误(各页已标注,与多数博客的「经典 HybridFlow」描述不符)**:
 - `RayPPOTrainer` 已 `@deprecated`(`ray_trainer.py:285`)但默认 `trainer.use_v1=false` 仍走它;新路径为 `TaskRunnerV1`+TransferQueue+`AgentLoopManager`。
@@ -426,7 +426,7 @@ title: "Knowledge Base Changelog — 2026-Q2 及更早归档"
 - rollout 退役 SPMD 同步模式,改异步 server(`ServerAdapter.generate_sequences` 直接 raise),生成由 `LLMServerManager`/`AgentLoopManager` 驱动。
 - `Role` enum 实际在 `trainer/ppo/utils.py:27`(ray_trainer 仅 re-export);`compute_policy_loss`(core_algos:1203)已废弃,实际分发走 `workers/utils/losses.py` 的 `get_policy_loss_fn`。
 
-**整合**:[[verl/index]] 知识地图(五平面表/9 篇三层表/五角色表/RL 数据流图/与训练后端的 cross-domain 链接);父索引 [[02_engineering/04_posttrain_frameworks/index]] 新增 verl 子目录行、总索引 [[./index|总索引]] 更新目录树/计数/快速导航;9 篇互链 + 跨域链(→ [[11_torchtitan_fsdp_analysis]]/[[megatron-lm/index]]/[[32_distributed_optimizer_deepdive]] 等)。**校验**:9 页全部含 `## Related Pages`、均回链 [[verl/index]];所用 sibling slug 与文件名一一对应;跨域目标页均存在,0 悬空链接。
+**整合**:[[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]] 知识地图(五平面表/9 篇三层表/五角色表/RL 数据流图/与训练后端的 cross-domain 链接);父索引 [[02_engineering/04_posttrain_frameworks/index]] 新增 verl 子目录行、总索引 [[./index|总索引]] 更新目录树/计数/快速导航;9 篇互链 + 跨域链(→ [[11_torchtitan_fsdp_analysis]]/[[megatron-lm/index]]/[[32_distributed_optimizer_deepdive]] 等)。**校验**:9 页全部含 `## Related Pages`、均回链 `verl/index`;所用 sibling slug 与文件名一一对应;跨域目标页均存在,0 悬空链接。
 
 ---
 

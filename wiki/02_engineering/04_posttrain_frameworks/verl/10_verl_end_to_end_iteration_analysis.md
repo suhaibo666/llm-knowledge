@@ -6,7 +6,8 @@ title: "D07 verl V1 端到端训练迭代"
 
 > **阶段**：S02 · **文档编号**：D07
 > **源码基线**：verl `main` @ `254a23edc62f25ebfae626e3932ae285d6f86009`（2026-08-28）
-> **结论先行**：当前标准入口默认执行 `TaskRunnerV1 → PPOTrainerSync`。一次训练步不再让完整 `DataProto` 在 driver 与所有 worker 之间往返，而是让 AgentLoop 把轨迹写入 TransferQueue，controller 用 `KVBatchMeta` 选择样本，各 worker 在执行边界才物化所需字段。V0 `RayPPOTrainer` 仍可显式启用，但已经是 legacy 路径。
+> **最后更新**：2026-08-31 · **定位**：默认 V1 sync global-step 唯一生命周期 owner
+> **结论先行**：当前标准入口默认执行 `TaskRunnerV1 → PPOTrainerSync`。一次训练步不再让完整 `DataProto` 在 driver 与所有 worker 之间往返，而是让 AgentLoop 把轨迹写入 TransferQueue，controller 用 `KVBatchMeta` 选择样本，各 worker 在执行边界才物化所需字段。本文只拥有这条 sync 动态顺序；AgentLoop、TQ、算法、权重发布和恢复的内部机制分别由 18、16、15、21、23 承担。
 > **阅读导航**：[[30_rl_framework_comparison|上一篇 D06]] · [[01_slime_architecture_overview_analysis|下一篇 D08]]
 
 ---
@@ -42,8 +43,8 @@ flowchart LR
 V1 runner 的关键顺序是：
 
 1. 从 trainer registry 得到模式类，并把 `config.transfer_queue.enable` 强制改为 true。
-2. 创建 trainer，调用 `init()` 建 worker group、rollout 与 checkpoint 组件。
-3. 初始化 TransferQueue。
+2. 初始化 TransferQueue。
+3. 创建 trainer，调用 `init()` 建 worker group、rollout、publication 与训练恢复组件。
 4. 构造 AgentLoopManager，并把 trainer 的 LLM/reward handles 接入。
 5. 调用 `trainer.fit()`；退出时关闭 TransferQueue。
 
@@ -70,7 +71,7 @@ V0 的主要调用参数是 `DataProto`。V1 controller 则传 `KVBatchMeta`：�
 
 ## 4. `fit()`：外层生命周期
 
-`PPOTrainer.fit()` 先初始化日志与可选的 train-before validation；恢复时把 global step 前移，并重新派发 checkpoint 中 pending/running 的 prompt（`verl/trainer/ppo/v1/trainer_base.py:389-445`）。主循环每步依次：
+`PPOTrainer.fit()` 先初始化日志与可选的 train-before validation；若此前加载过 stable-async TQ snapshot，进入主循环前才使用已经注入的 AgentLoopManager 重发 pending/running prompt（`verl/trainer/ppo/v1/trainer_base.py:389-445`）。保存状态、加载顺序和重发语义由 [[23_verl_training_checkpoint_recovery_analysis]] 统一解释。主循环每步依次：
 
 ```text
 mode on_step_begin
@@ -89,7 +90,7 @@ mode on_step_begin
 
 ### 5.1 供给与消费
 
-公共 `prepare_step()` 从 `StatefulDataLoader` 取一个 train batch，并提交给 AgentLoop；它不等待生成完成（`verl/trainer/ppo/v1/trainer_base.py:1421-1434`）。AgentLoop 把每个 prompt 标记为 running，所有 session settle 后再写 finished 或 failure；实际轨迹按 `uid_session_id_index` 单独存储（`verl/trainer/ppo/v1/agent_loop_tq.py:59-148,177-227`）。
+公共 `prepare_step()` 从 `StatefulDataLoader` 取一个 train batch，并提交给 AgentLoop；它不等待生成完成（`verl/trainer/ppo/v1/trainer_base.py:1421-1434`）。sync 生命周期只依赖“prompt group 最终成为 finished/failure”这一边界；单轮/工具多轮、reward 接入和 trajectory fields 由 [[18_verl_agent_loop_reward_runtime_analysis]] 负责，key/tag/storage 由 [[16_verl_v1_transfer_queue_analysis]] 负责。
 
 `step()` 要求 `train_batch_size` 能被 `parameter_sync_step` 整除，并循环消费对应数量的 controller mini-batch（`verl/trainer/ppo/v1/trainer_base.py:511-538`）。默认 sync 的同步次数为 1，所以本步等待 ReplayBuffer 凑齐完整 batch；异步模式如何跨步积压和过滤由 [[17_verl_v1_async_trainer_analysis]] 单独承担。
 
@@ -117,7 +118,7 @@ mode on_step_begin
 
 ### 6.1 reward 可以在两个位置完成
 
-若 reward loop 有独立 worker handles，轨迹入队前就带 reward；否则 `_compute_reward_colocate` 从 TQ 读取 prompts/responses，重建 mask，调用 colocated reward model 后写回（`verl/trainer/ppo/v1/trainer_base.py:1436-1513`）。这使 reward 的部署位置可变，但 `_step_once()` 看到的字段契约不变。
+若 reward loop 有独立 worker handles，轨迹入队前就带 reward；否则 `_compute_reward_colocate` 从 TQ 读取 prompts/responses，调用 colocated reward model 后写回（`verl/trainer/ppo/v1/trainer_base.py:1436-1513`）。sync lifecycle 只关心 reward 必须在 advantage 前可见；规则/custom/RM 的选择与异步打分路径见 [[18_verl_agent_loop_reward_runtime_analysis]]。
 
 ### 6.2 old log-prob 有两种语义
 
@@ -143,7 +144,7 @@ ReplayBuffer 选定完整 batch
   → next step submits generation
 ```
 
-模式 hook 在 `verl/trainer/ppo/v1/trainer_sync.py:31-42`；底层存在 colocated naive、disaggregated full 与 `delta_sharded` 三种发布状态机，不能再统一描述成 CUDA IPC full-tensor 搬运。细节分别由 [[14_verl_rollout_resharding_analysis]] 与 [[21_verl_delta_weight_sync_deepdive]] 承担。
+模式 hook 在 `verl/trainer/ppo/v1/trainer_sync.py:31-42`。rollout sleep/KV 的服务侧前后置条件见 [[14_verl_rollout_runtime_analysis]]；colocated naive、disaggregated full 与 `delta_sharded` 的 publication 状态机全部由 [[21_verl_weight_publication_analysis]] 承担。
 
 ---
 
@@ -169,16 +170,16 @@ ReplayBuffer 选定完整 batch
 - DP balance 会补 padding 并重排 meta；任何新增字段都必须沿 key 同步，不得依赖 controller 的原顺序（`verl/trainer/ppo/v1/trainer_base.py:1515-1539`）。
 - sync 仍可能遇到 failed group；是否 refill 与 `gen_batch_size` 约束见 [[17_verl_v1_async_trainer_analysis]]。
 
-最小验证应覆盖：两个 prompt 的 key/field 对齐、reward/advantage mask、一次 actor update 后 rollout 的版本可见性、bypass/decoupled log-prob 差、checkpoint 后 prompt 不丢失，以及固定有效 token 下的 DP/micro-batch 梯度不变量。
+最小验证应覆盖：两个 prompt 的 key/field 对齐、reward/advantage mask、一次 actor update 后 rollout 的版本可见性、bypass/decoupled log-prob 差、固定有效 token 下的 DP/micro-batch 梯度不变量，以及按 [[23_verl_training_checkpoint_recovery_analysis]] 定义的保存后样本集合。
 
 ---
 
 ## Related Pages
 
-- [[verl/index]] —— verl 系列入口与当前基线地图
-- [[16_verl_v1_transfer_queue_analysis]] —— V1 数据面的 key、meta 与延迟物化
-- [[17_verl_v1_async_trainer_analysis]] —— colocate/separate async、ReplayBuffer 与恢复
-- [[20_verl_ray_trainer_analysis]] —— 需要 `use_v1=false` 的 V0 legacy 主循环
-- [[15_verl_rl_algorithms_analysis]] —— advantage、policy loss 与全局归一化
-- [[14_verl_rollout_resharding_analysis]] —— rollout lifecycle 与 colocated 权重刷新
-- [[21_verl_delta_weight_sync_deepdive]] —— CheckpointEngine full/delta 发布机制
+- [[01_verl_architecture_overview_analysis]] —— 当前静态 ownership 与 V1/V0/experimental 路由。
+- [[15_verl_rl_algorithms_analysis]] —— advantage、policy loss 与全局归一化。
+- [[16_verl_v1_transfer_queue_analysis]] —— V1 数据面的 key、meta 与延迟物化。
+- [[17_verl_v1_async_trainer_analysis]] —— colocate/separate async、ReplayBuffer 与资源状态机。
+- [[18_verl_agent_loop_reward_runtime_analysis]] —— prompt 到 trajectory/reward 的运行时。
+- [[21_verl_weight_publication_analysis]] —— actor 更新后使 rollout 看见新版本的 publication。
+- [[23_verl_training_checkpoint_recovery_analysis]] —— sync/async 保存、恢复与样本一致性。

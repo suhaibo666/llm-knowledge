@@ -537,7 +537,7 @@ flowchart TB
 - [[25_on_policy_off_policy_staleness_analysis]] — §7 覆盖 TIM 与 staleness/off-policy 的关系区分，是本页四环因果链的上层概念坐标
 - [[12_training_dynamics_stability_analysis]] — 第四环的下游（loss spike / NaN / 发散的四类根因与四层防线）
 - [[07_training_reliability/index]] — 万卡训练确定性与可靠性问题域（问题 2 与本页直接接壤）
-- [[verl/index]] · [[15_verl_rl_algorithms_analysis]] · [[14_verl_rollout_resharding_analysis]] — recomputation / bypass 两条路径在框架中的实现
+- [[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]] · [[15_verl_rl_algorithms_analysis]] · [[14_verl_rollout_runtime_analysis]] — recomputation / bypass 两条路径在框架中的实现
 - [[vllm/index]] — rollout 引擎侧的 kernel 与调度实现
 - [[13_deepseek_v4_analysis]] — §3.3 批不变与确定性 kernel 库的完整上下文
 - [[13_low_precision_training_analysis]] — FP16/BF16/FP8 精度路线的训练侧背景

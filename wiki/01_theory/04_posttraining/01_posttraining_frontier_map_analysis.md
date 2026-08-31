@@ -154,7 +154,7 @@ K3 不加入这张“工业源码样本”表。其官方仓库 `0797decb` 提�
 
 ### 3.2 源码活跃不等于本地资料仍然有效
 
-本知识库已有的 verl 深挖基于较早的 `8a694930`，当前 S00 baseline 已变为 `983cb0f`。因此旧文档可复用它对角色划分、HybridFlow 和部分调用链的解释，但涉及以下内容时必须重新定位源码：
+Verl 分析域已统一重核到 `254a23edc62f25ebfae626e3932ae285d6f86009`，并按共享能力与动态生命周期重新划分 owner。当前页引用 Verl 结论时应先进入 [[02_engineering/04_posttrain_frameworks/verl/index|Verl 分析域]]；上游提交继续推进后，以下高漂移内容仍必须重新定位源码：
 
 - 类名、模块目录和入口命令；
 - rollout backend 与训练 backend 的组合；
@@ -246,7 +246,7 @@ K3 不加入这张“工业源码样本”表。其官方仓库 `0797decb` 提�
 | [[01_theory/04_posttraining/22_gspo_analysis|GSPO 深度解析]] | sequence-level objective 的背景 | 论文 v2、框架实际支持状态、与异步样本的组合语义 |
 | [[02_engineering/04_posttrain_frameworks/12_rl_infra_efficiency_analysis|RL Infra 效率分析]] | 训练/rollout bubble、资源利用率的分析框架 | 性能数字、当前项目能力、同步与异步的边界 |
 | [[02_engineering/04_posttrain_frameworks/11_rl_sandbox_design_analysis|RL Sandbox 设计]] | sandbox、verifier、agent environment 的问题清单 | 安全边界、生产实现、最新 coding-agent runtime |
-| [[02_engineering/04_posttrain_frameworks/verl/index|verl 系列分析]] | HybridFlow/role 视角和历史调用链 | 从旧 baseline `8a694930` 迁移到 `983cb0f` 后的所有源码 locator |
+| [[02_engineering/04_posttrain_frameworks/verl/index|verl 系列分析]] | `254a23ed...` 下的共享能力、V1/V0 生命周期与源码 locator | 上游基线推进后的入口、TQ、Agent/Reward、Engine、rollout、权重发布与恢复变化 |
 
 迁移后的深挖页面统一放在 `wiki/03_posttraining/`，原页面作为历史背景和专题材料保留。这样既避免重复抄写，也不再让“算法”和“工程”分居两个目录。
 

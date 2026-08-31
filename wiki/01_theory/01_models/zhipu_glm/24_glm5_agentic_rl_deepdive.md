@@ -108,7 +108,7 @@ $$
 
 **off-policy 兜底（一句带过）**：异步意味着同一批轨迹可能由**不同版本模型**生成，带来严重 off-policy 问题；GLM-5 因此在每次推理引擎权重更新后**重置优化器**，并配套 TITO 网关 / 双边重要性采样 / 丢弃过期·噪声样本等机制——这些**稳定性机制本页不展开**，详见 **[[25_glm5_training_stability_deepdive]]**（§4.1.1–4.1.2, p16–17）。
 
-**为什么解耦+异步**：长尾 rollout 下「同步等齐」=「按最慢样本计费」；把推理与训练放到不同设备并让推理不停产轨迹、训练攒够就更新，就把 GPU 空转换成了持续利用。代价是 off-policy 偏差——用「周期性同步 + 优化器重置 + 重要性采样」把这层代价限制在可控范围。与 verl 等异步 RL 框架的对照见 [[verl/index]]、[[12_rl_infra_efficiency_analysis]]。
+**为什么解耦+异步**：长尾 rollout 下「同步等齐」=「按最慢样本计费」；把推理与训练放到不同设备并让推理不停产轨迹、训练攒够就更新，就把 GPU 空转换成了持续利用。代价是 off-policy 偏差——用「周期性同步 + 优化器重置 + 重要性采样」把这层代价限制在可控范围。与 verl 等异步 RL 框架的对照见 [[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]]、[[12_rl_infra_efficiency_analysis]]。
 
 ### 4.3 Multi-Task Rollout Orchestrator：把任务异构隔离在训练环之外（§4.1.1, p16）
 
@@ -213,7 +213,7 @@ GLM-5 用两条互补 pipeline 在规模上造终端 agent 环境，均产出 **
 - [[26_glm5_low_precision_chip_deepdive]] — FP8 rollout / PD 解耦低精度 / W4A8 / 国产芯片
 
 **相邻主题**：
-- [[verl/index]] — 异步 RL 框架对照
+- [[02_engineering/04_posttrain_frameworks/verl/index|verl 分析域]] — 异步 RL 框架对照
 - [[12_rl_infra_efficiency_analysis]] — RL 基础设施效率（异步/解耦/吞吐）
 - [[11_rl_sandbox_design_analysis]] — 可验证沙盒/环境设计
 - [[zhipu_glm/index]] — GLM 家族总览

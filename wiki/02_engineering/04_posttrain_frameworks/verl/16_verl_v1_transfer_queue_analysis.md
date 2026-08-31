@@ -5,8 +5,8 @@ title: "verl V1 TransferQueue：元数据控制与延迟物化数据面"
 # verl V1 TransferQueue：元数据控制与延迟物化数据面
 
 > **源码基线**：verl `main` @ `254a23edc62f25ebfae626e3932ae285d6f86009`（2026-08-28）
-> **最后更新**：2026-08-28 · **证据层级**：固定 checkout 的源码级分析
-> **核心结论**：当前 V1 runner 必定启用 TransferQueue。controller 不再搬运完整 batch，而是用 prompt key、trajectory key 与 `KVBatchMeta` 编排；worker 到执行边界才按需取 TensorDict，并把新增字段写回。TQ 解耦的是控制流与数据流，不是取消 TensorDict/DataProto，也不自动保证异步 freshness 或 checkpoint 一致性。
+> **最后更新**：2026-08-31 · **定位**：TQ key/tag/storage 与延迟物化唯一机制 owner
+> **核心结论**：当前 V1 runner 必定启用 TransferQueue。controller 不再搬运完整 batch，而是用 prompt key、trajectory key 与 `KVBatchMeta` 编排；worker 到执行边界才按需取 TensorDict，并把新增字段写回。TQ 解耦的是控制流与数据流，不是取消 TensorDict/DataProto，也不自动保证异步 freshness 或 checkpoint 一致性。AgentLoop 行为、ReplayBuffer admission 和组合恢复分别属于 18、17、23。
 
 ---
 
@@ -126,7 +126,7 @@ V1 trainer 的 `step()` 返回和传递的是 `KVBatchMeta`（`verl/trainer/ppo/
 6. 根据 dispatch mode 判断是否 collect；需要时把输出字段写回 storage。
 7. 若输入是 KV meta，再转回 KV meta 并保留 tags。
 
-同步实现位于 `verl/utils/transferqueue_utils.py:374-419`，异步实现位于 `:421-471`。当没有 meta 参数时，wrapper 直接调用原函数；这使同一 worker 方法仍能接受普通 TensorDict 调用（`:375-379,422-426`）。
+同步实现位于 `verl/utils/transferqueue_utils.py:374-419`，异步实现位于 `verl/utils/transferqueue_utils.py:421-471`。当没有 meta 参数时，wrapper 直接调用原函数；这使同一 worker 方法仍能接受普通 TensorDict 调用（`verl/utils/transferqueue_utils.py:375-379,422-426`）。
 
 该桥接层保留 V0 worker 的“拿 TensorDict 计算”接口，同时改变数据到达 worker 的方式。它并未让 DataProto/TensorDict 消失，而是把 materialization 推迟到执行点。
 
@@ -170,7 +170,7 @@ metrics 可选择 logger-only 或暴露 Prometheus `/metrics` endpoint，并允�
 - finished trajectory 留在 TQ 等待消费；
 - pending/running prompt 的旧局部 trajectory 被删除，prompt 以新 step 重新派发（`verl/trainer/ppo/v1/trainer_base.py:843-887`）。
 
-这不是对 in-flight trajectory 做连续恢复。能力检查不满足时源码会跳过 TQ snapshot，因此 dataloader 已前进、但未形成 finished group 的 prompt 没有本仓内的恢复保证。完整恢复状态机见 [[17_verl_v1_async_trainer_analysis]]。
+这不是对 in-flight trajectory 做连续恢复。能力检查不满足时源码会跳过 TQ snapshot，因此 dataloader 已前进、但未形成 finished group 的 prompt 没有本仓内的恢复保证。TQ 本页只拥有 snapshot API 表面和被保存的数据结构；Trainer 的组合保存、恢复顺序与 crash window 见 [[23_verl_training_checkpoint_recovery_analysis]]。
 
 ---
 
@@ -187,9 +187,9 @@ metrics 可选择 logger-only 或暴露 Prometheus `/metrics` endpoint，并允�
 
 ## Related Pages
 
-- [[10_verl_end_to_end_iteration_analysis]] —— 当前默认 V1 sync 如何消费 TQ 数据面
-- [[17_verl_v1_async_trainer_analysis]] —— ReplayBuffer、staleness、refill 与 TQ checkpoint
-- [[12_verl_dataproto_analysis]] —— 执行点仍会物化的 TensorDict/DataProto 结构
-- [[11_verl_single_controller_analysis]] —— V0 dispatch/collect 与 driver 数据路径
-- [[15_verl_rl_algorithms_analysis]] —— TQ fields 最终承载的 advantage/loss 状态
-- [[verl/index]] —— verl 系列导航
+- [[10_verl_end_to_end_iteration_analysis]] —— 当前默认 V1 sync 如何消费 TQ 数据面。
+- [[11_verl_single_controller_analysis]] —— V1 引用流与 V0 driver dispatch 的控制面对照。
+- [[12_verl_dataproto_analysis]] —— 执行点仍会物化的 TensorDict/DataProto 结构。
+- [[17_verl_v1_async_trainer_analysis]] —— ReplayBuffer、staleness 与 refill 如何消费 TQ 状态。
+- [[18_verl_agent_loop_reward_runtime_analysis]] —— prompt/trajectory fields 与 tag 的生产者。
+- [[23_verl_training_checkpoint_recovery_analysis]] —— TQ snapshot 如何组合进训练恢复。

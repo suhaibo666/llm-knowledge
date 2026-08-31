@@ -5,9 +5,9 @@ title: "verl RL 算法：优势估计、策略损失与全局归一化"
 # verl RL 算法：优势估计、策略损失与全局归一化
 
 > **代码基准**：verl `main` @ `254a23edc62f25ebfae626e3932ae285d6f86009`（2026-08-28）
-> **最后更新**：2026-08-28 · **系列**：verl RLHF 框架源码级分析（见 [[verl/index]]）
+> **最后更新**：2026-08-31 · **定位**：reward shaping、advantage、loss 与 mask 语义唯一机制 owner
 >
-> **核心结论**：verl 没有为每种 RL 算法复制一套 trainer，而是把“如何从奖励得到优势”和“如何从优势得到策略梯度”拆成两张注册表；训练器负责准备状态，worker 负责统一聚合。这个分解让算法组合可以独立变化，但正确性取决于额外输入、mask 语义和全局 batch 归一化是否同时满足。
+> **核心结论**：verl 没有为每种 RL 算法复制一套 trainer，而是把“如何从奖励得到优势”和“如何从优势得到策略梯度”拆成两张注册表；训练器负责准备状态，worker 负责统一聚合。这个分解让算法组合可以独立变化，但正确性取决于额外输入、mask 语义和全局 batch 归一化是否同时满足。本页不拥有 trajectory 调度、TQ 存储或 Engine 后端执行。
 
 除特别说明外，行号均指最终基线中的仓库相对路径。
 
@@ -202,10 +202,10 @@ critic 现在沿用同一归一化参数。`value_loss` 从 TensorDict 提取 `d
 
 ## Related Pages
 
-- [[10_verl_end_to_end_iteration_analysis]] —— 当前 V1 训练步如何准备算法输入
-- [[20_verl_ray_trainer_analysis]] —— V0 `compute_advantage` 与 legacy 主循环
-- [[13_verl_workers_engine_analysis]] —— actor/critic worker 如何执行 loss
-- [[12_verl_dataproto_analysis]] —— `advantages`、`returns`、`uid` 等字段的载体
-- [[30_verl_optimization_analysis]] —— micro-batch、并行后端与性能边界
-- [[13_reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]] —— GRPO、DAPO、GSPO 的跨实现算法脉络
-- [[verl/index]] —— verl 系列导航
+- [[10_verl_end_to_end_iteration_analysis]] —— 默认 V1 sync 如何准备算法输入。
+- [[12_verl_dataproto_analysis]] —— `advantages`、`returns`、`uid` 等字段的本地载体。
+- [[13_verl_workers_engine_analysis]] —— actor/critic worker 如何在后端中执行 loss。
+- [[18_verl_agent_loop_reward_runtime_analysis]] —— reward、response mask 与 tool fields 的上游来源。
+- [[20_verl_ray_trainer_analysis]] —— V0 `compute_advantage` 与 legacy 主循环。
+- [[30_verl_optimization_analysis]] —— loss 聚合与性能实验的控制变量。
+- [[13_reasoning_rl_algorithm_evolution_analysis|D02 Reasoning RL 算法演进]] —— GRPO、DAPO、GSPO 的跨实现算法脉络。

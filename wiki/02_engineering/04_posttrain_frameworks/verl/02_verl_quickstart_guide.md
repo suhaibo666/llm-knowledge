@@ -4,8 +4,9 @@ title: "verl 快速上手：从当前 V1 默认配置跑一次 GRPO"
 
 # verl 快速上手：从当前 V1 默认配置跑一次 GRPO
 
-> **代码基准**：verl `main` @ `254a23edc62f25ebfae626e3932ae285d6f86009`（2026-08-28）
-> **最后更新**：2026-08-28 · **系列**：verl RLHF 框架源码级分析（见 [[verl/index]]）
+> **代码基准**：verl `main` @ `254a23edc62f25ebfae626e3932ae285d6f86009`
+> **最后复核**：2026-08-31
+> **概念所有权**：本页唯一负责从仓内样例完成第一次可追踪的 V1 sync 运行；不重复架构与机制细节。
 >
 > **目标**：以仓内 `run_qwen3_4b_fsdp.sh` 为最小可追踪样例，理解数据、模型、actor、rollout、reference 与 trainer 六组 override 如何进入默认 V1 sync 主链。本文不替代官方安装矩阵；它给出的是固定提交上可逐行核对的运行契约。
 
@@ -79,9 +80,9 @@ bash examples/grpo_trainer/run_qwen3_4b_fsdp.sh
 
 ```mermaid
 flowchart LR
-    A["environment variables<br/>shell arrays"] --> B["Hydra overrides<br/>ppo_trainer.yaml"]
-    B --> C["main_ppo<br/>TaskRunnerV1"]
-    C --> D["PPOTrainerSync<br/>default mode"]
+    A["Environment variables and shell arrays"] --> B["Hydra overrides in ppo trainer config"]
+    B --> C["main ppo and TaskRunnerV1"]
+    C --> D["Default PPOTrainerSync"]
 ```
 
 ---
@@ -165,7 +166,7 @@ bash examples/grpo_trainer/run_qwen3_4b_fsdp.sh \
 - save/resume 同时覆盖模型、dataloader；async 模式还要核对 TQ snapshot；
 - 指标至少记录生成等待、有效 token、actor/rollout log-prob 差与 weight-sync 时间。
 
-出现问题时，按 [[10_verl_end_to_end_iteration_analysis]] 的九阶段流水线定位，而不是先盲调 batch size。
+出现问题时，先按 [[10_verl_end_to_end_iteration_analysis]] 的阶段流水线定位。Agent 或 reward 卡住看 [[18_verl_agent_loop_reward_runtime_analysis]]；重启后的状态错位看 [[23_verl_training_checkpoint_recovery_analysis]]；只有瓶颈已经定位后才进入 [[30_verl_optimization_analysis]]。
 
 ---
 
@@ -175,6 +176,6 @@ bash examples/grpo_trainer/run_qwen3_4b_fsdp.sh \
 - [[10_verl_end_to_end_iteration_analysis]] —— 默认 V1 sync 的完整调用链
 - [[16_verl_v1_transfer_queue_analysis]] —— TQ key/meta/field 数据面
 - [[17_verl_v1_async_trainer_analysis]] —— 两种稳定 async mode 的额外约束
-- [[15_verl_rl_algorithms_analysis]] —— estimator、loss mode 与 aggregation
-- [[verl/index]] —— verl 系列导航
-- [[02_engineering/04_posttrain_frameworks/index]] —— 后训练框架父目录
+- [[18_verl_agent_loop_reward_runtime_analysis]] —— 生成与奖励运行时
+- [[23_verl_training_checkpoint_recovery_analysis]] —— 保存与恢复检查
+- [[02_engineering/04_posttrain_frameworks/index|后训练框架]] —— 父目录
