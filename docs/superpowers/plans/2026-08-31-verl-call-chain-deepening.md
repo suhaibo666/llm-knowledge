@@ -43,7 +43,7 @@
 - Consumes: approved sync lifecycle ownership from the design spec.
 - Produces: the prose, call-chain block, and state-ledger format reused by Tasks 2–6.
 
-- [ ] **Step 1: Verify the four source traces**
+- [x] **Step 1: Verify the four source traces**
 
 Open and record the exact caller/callee ranges for:
 
@@ -56,7 +56,7 @@ _update_actor → train_mini_batch/train_batch → Engine optimizer → on_step_
 
 Expected: every arrow has a verified caller line and callee definition; no range is copied from the existing page without reopening it.
 
-- [ ] **Step 2: Replace stage summaries with trace sections**
+- [x] **Step 2: Replace stage summaries with trace sections**
 
 For each trace add:
 
@@ -74,11 +74,11 @@ ExactClass.method (file:line)
 
 Keep the nine-stage table only as navigation and move the causal detail into the trace ledgers.
 
-- [ ] **Step 3: Add branch and completion semantics**
+- [x] **Step 3: Add branch and completion semantics**
 
 Explicitly cover bypass vs recomputed old log-prob, independent vs colocated reward, conditional critic/ref paths, `blocking=False`/future behavior, TQ cleanup, and the difference among step return, checkpoint save, actor update, publication completion, and next-request visibility.
 
-- [ ] **Step 4: Run the page-level review**
+- [x] **Step 4: Run the page-level review**
 
 Run:
 
@@ -106,19 +106,19 @@ Expected: all trace anchors are present; links and diff checks pass.
 - Consumes: the concrete `actor_rollout_wg.compute_log_prob` boundary established in Task 1.
 - Produces: the authoritative dynamic-binding, dispatch, remote execution, collect, and future trace.
 
-- [ ] **Step 1: Trace metadata write and consumption**
+- [x] **Step 1: Trace metadata write and consumption**
 
 Verify how `@register` wraps the worker method with `tqbridge`, writes dispatch/execute/blocking metadata, and how `_bind_worker_method` consumes those attributes to call Ray `func_generator`.
 
-- [ ] **Step 2: Write one concrete group-call ledger**
+- [x] **Step 2: Write one concrete group-call ledger**
 
 Trace controller `actor_rollout_wg.compute_log_prob(batch)` through dynamic binding, DP mesh dispatch, per-handle remote calls, worker execution, and collect. State which object exists at controller, Ray boundary, worker entry, and return.
 
-- [ ] **Step 3: Write the non-blocking future trace**
+- [x] **Step 3: Write the non-blocking future trace**
 
 Follow `blocking=False` into Ray refs/`DataProtoFuture`, identify the first actual `ray.get`, and explain partial side effects and lack of rollback.
 
-- [ ] **Step 4: Verify page 11**
+- [x] **Step 4: Verify page 11**
 
 Run:
 
@@ -147,11 +147,11 @@ Expected: one actual call can be followed from controller to materialized result
 - Consumes: page 11's RPC boundary and page 10's old-log/update calls.
 - Produces: the compute owner trace and the algorithm-to-gradient trace.
 
-- [ ] **Step 1: Trace Engine registry resolution**
+- [x] **Step 1: Trace Engine registry resolution**
 
 Record the actual lookup order for `model_type`, `backend`, detected/overridden device, vendor-specific key, device-only key, CUDA/NVIDIA fallback, and failure.
 
-- [ ] **Step 2: Write page 13 infer/train/export traces**
+- [x] **Step 2: Write page 13 infer/train/export traces**
 
 Cover:
 
@@ -163,15 +163,15 @@ actor export branch → Engine full/shard/delta API → CheckpointEngine boundar
 
 Record mini-batch/epoch iteration, zero-grad/forward-backward/optimizer-step, metric aggregation, and which rank returns output.
 
-- [ ] **Step 3: Write page 15 advantage dispatch trace**
+- [x] **Step 3: Write page 15 advantage dispatch trace**
 
 Follow TQ field selection, padded DataProto construction, KL/rollout correction, V1 multi-trajectory handling, estimator registry lookup, estimator output, nested conversion, and TQ writeback.
 
-- [ ] **Step 4: Write page 15 policy-loss-to-backward trace**
+- [x] **Step 4: Write page 15 policy-loss-to-backward trace**
 
 Follow actor update into `actor_loss`, `get_policy_loss_fn`, concrete loss, entropy/reference KL, `agg_loss`, Engine backward, and optimizer step. Record tensor shape/mask transitions and global denominator inputs.
 
-- [ ] **Step 5: Verify pages 13 and 15**
+- [x] **Step 5: Verify pages 13 and 15**
 
 Run:
 
@@ -197,19 +197,19 @@ Expected: formula pages remain clean and both execution traces reach Engine/back
 - Consumes: page 11 dispatch/collect semantics.
 - Produces: the local batch identity and future materialization trace used by page 01.
 
-- [ ] **Step 1: Find one real DataProto lifecycle**
+- [x] **Step 1: Find one real DataProto lifecycle**
 
 Locate a current V0/local caller that constructs or receives a DataProto, selects/reorders/repeats or chunks it, merges worker output, and eventually consumes the result.
 
-- [ ] **Step 2: Write the three-container mutation ledger**
+- [x] **Step 2: Write the three-container mutation ledger**
 
 For construct, select/reorder, chunk, concat, and union, record how `batch`, `non_tensor_batch`, and `meta_info` change and which invariant is checked.
 
-- [ ] **Step 3: Write the Future materialization ledger**
+- [x] **Step 3: Write the Future materialization ledger**
 
 Trace Ray refs → collect function → concat → optional dispatch → materialized output, and explain why operations on the driver are restricted before `get()`.
 
-- [ ] **Step 4: Verify page 12**
+- [x] **Step 4: Verify page 12**
 
 Run:
 
@@ -235,11 +235,11 @@ Expected: the page reads as a data-state walkthrough rather than an API inventor
 - Consumes: page 10's prompt submission boundary.
 - Produces: authoritative ordinary-gather, V1 fire-and-forget, session status, postprocess, and reward traces.
 
-- [ ] **Step 1: Read the Mermaid skill before changing the sequence diagram**
+- [x] **Step 1: Read the Mermaid skill before changing the sequence diagram**
 
 Read `skills/writing-mermaid-diagrams/SKILL.md` completely and follow its parser rules.
 
-- [ ] **Step 2: Replace abstract participants/messages with real symbols**
+- [x] **Step 2: Replace abstract participants/messages with real symbols**
 
 The diagram and adjacent chain must distinguish:
 
@@ -248,15 +248,15 @@ AgentLoopManager.generate_sequences → Ray workers → asyncio.gather
 AgentLoopManagerTQ.generate_sequences → AgentLoopWorkerTQ.generate_sequences → background _run_prompt
 ```
 
-- [ ] **Step 3: Trace per-prompt and per-session state**
+- [x] **Step 3: Trace per-prompt and per-session state**
 
 Follow `running` tag, rollout.n task creation, `_run_agent_loop`, concrete single/tool loop `run`, postprocess, trajectory key writes, sibling settlement, and `finished/failure` publication.
 
-- [ ] **Step 4: Trace both reward branches**
+- [x] **Step 4: Trace both reward branches**
 
 Cover async reward handles inside the trajectory path and colocated Trainer batch reward, including final-output assignment, sibling broadcast, padding/unpadding, and extra-info writeback.
 
-- [ ] **Step 5: Verify page 18 and Mermaid syntax**
+- [x] **Step 5: Verify page 18 and Mermaid syntax**
 
 Run the Mermaid validation commands required by the project skill, then:
 
@@ -278,15 +278,15 @@ Expected: a reader can follow one prompt and all rollout.n siblings to terminal 
 - Consumes: verified traces from Tasks 1–5 and existing owner links.
 - Produces: one real top-level lifecycle without duplicating owner internals.
 
-- [ ] **Step 1: Write one actual-symbol top-level chain**
+- [x] **Step 1: Write one actual-symbol top-level chain**
 
 Trace from `TaskRunnerV1.run` through prompt generation, TQ terminal state, ReplayBuffer admission, old/ref/value/advantage/update, and CheckpointEngine publication to next-request visibility.
 
-- [ ] **Step 2: Add an owner handoff ledger**
+- [x] **Step 2: Add an owner handoff ledger**
 
 For every top-level hop state the object crossing the boundary, old owner, new owner, and completion signal. Link detailed hops to pages 10–18/21 rather than copying their internals.
 
-- [ ] **Step 3: Verify page 01**
+- [x] **Step 3: Verify page 01**
 
 Run:
 
@@ -309,11 +309,11 @@ Expected: the overview has a real lifecycle while keeping owner internals in the
 - Consumes: all seven completed pages.
 - Produces: repository-ready change set and evidence report.
 
-- [ ] **Step 1: Add the changelog entry**
+- [x] **Step 1: Add the changelog entry**
 
 Record the seven-page call-chain deepening, representative traces, unchanged page tree/baseline, and any corrected factual sequence discovered during source tracing.
 
-- [ ] **Step 2: Run semantic scope checks**
+- [x] **Step 2: Run semantic scope checks**
 
 Run a per-page trace audit and verify:
 
@@ -323,7 +323,7 @@ rg -n "调用链|输入/前态|输出/后态|执行语义|完成" wiki/02_engine
 
 On PowerShell, expand the exact seven paths rather than relying on Bash brace expansion.
 
-- [ ] **Step 3: Run full quality gates**
+- [x] **Step 3: Run full quality gates**
 
 Run:
 
@@ -337,10 +337,12 @@ git diff --check
 
 Expected: all repository gates pass. If Quartz cold-start provisioning fails again, record the exact failure and run the independent MkDocs content build; do not report the Quartz smoke gate as passed.
 
-- [ ] **Step 4: Review final scope and page sizes**
+Result (2026-08-31): strict links, changed-file math, 323 pytest cases, the 336-block Mermaid corpus, and the independent MkDocs build all passed. `npm run docs:test` passed its 69 unit cases but Quartz did not become ready within 30 seconds, so that command exited 1; the fallback MkDocs build rendered 437 pages with zero broken links, missing anchors, missing assets, missing legacy routes, or orphans.
+
+- [x] **Step 4: Review final scope and page sizes**
 
 Verify only the approved nine paths changed, each page is below 500 lines, every Related Pages list has 3–7 entries, and all new locators exist within the frozen source checkout.
 
-- [ ] **Step 5: Stop before commit/push**
+- [x] **Step 5: Stop before commit/push**
 
 Report the completed diff and verification evidence. Commit or push only after an explicit user request.

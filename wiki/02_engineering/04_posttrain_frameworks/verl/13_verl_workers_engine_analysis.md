@@ -47,6 +47,37 @@ flowchart LR
 
 选择过程本身也有顺序：先确定 `model_type` 和 `backend`，再读取探测到或由 `VERL_ENGINE_DEVICE` / `VERL_ENGINE_VENDOR` 覆盖的硬件；查找优先 `(device, vendor)`，其次 device-only，CUDA 兼容 vendor 最后可回退到 NVIDIA 注册，否则显式失败（`verl/workers/engine/base.py:398-429`）。**为什么不用一个 backend 字符串**：`【分析推断】` 同一并行策略可能同时存在 language/value 与不同设备实现，单键会发生覆盖或把硬件分支塞进同一个巨型类。多维 registry 的代价是运行环境参与解析；排错必须记录最终 device/vendor，而不能只看 YAML 中的 backend。
 
+实际构造链发生在每个训练 rank 的 `TrainingWorker.__init__` 中：
+
+```text
+ActorRolloutRefWorker.init_model
+  → TrainingWorker(TrainingWorkerConfig)
+      → initialize_global_process_group_ray
+      → resolve/auto-select engine_config
+      → EngineRegistry.new(model_type, engine_config.strategy, ...)
+          → EngineRegistry.get_engine_cls(model_type, backend)
+              → get_device_name(); get_vendor()
+              → apply VERL_ENGINE_DEVICE / VERL_ENGINE_VENDOR overrides
+              → registry[(device, vendor)] ?
+              → registry[device] ?
+              → if cuda-compatible: registry[("cuda", "nvidia")] ?
+              → else ValueError
+          → selected_engine_cls(...configs)
+      → register train mesh dp_rank/is_collect from Engine
+```
+
+`ActorRolloutRefWorker` 把 actor/ref 配置转换成 `TrainingWorkerConfig`，并为 actor 绑定 `ppo_loss` 或蒸馏 loss（`verl/workers/engine_workers.py:538-646`）；内层 worker 读取/自动选择 EngineConfig，调用 registry，并用 Engine 提供的 DP rank 与 MP-source 标志注册 dispatch/collect 信息（`verl/workers/engine_workers.py:83-149`）。注册表自身的 key 写入、查找优先级和失败信息位于 `verl/workers/engine/base.py:339-445`。
+
+| 输入/前态 | 选择动作 | 输出/后态 | 失败边界 |
+|---|---|---|---|
+| `model_type` 不在 registry | 第一层索引 | 无 | `Unknown model_type` |
+| backend 不在该 model type | 第二层索引 | 无 | `Unknown backend` |
+| 设备/厂商已探测 | 环境变量可覆盖二者 | 最终 `device/vendor` | 覆盖值错误会参与真实选择，不能靠硬件探测日志推断 |
+| 存在 vendor-specific key | 取 `(device, vendor)` | 精确 vendor Engine class | 无 |
+| 无 vendor key，但有 device key | 取 `device` | 通用设备 Engine class | 无 |
+| CUDA compatible 且有 NVIDIA fallback | 取 `("cuda", "nvidia")` | NVIDIA 注册类 | 只对 CUDA 非 NVIDIA vendor 生效 |
+| 都不命中 | 抛出带四维 key 的 `ValueError` | worker 构造失败 | group 无法形成完整 SPMD 角色 |
+
 当前常见组合：
 
 | backend/实现 | model/device 边界 | 关键约束 |
@@ -73,6 +104,54 @@ actor loss 从数据中选择 response mask、old log-prob、advantage 与可选
 
 这说明 Worker 并不拥有 advantage 算法；它只消费已写入的数据字段并调用 loss。14 个 advantage estimator 与 12 个 policy loss mode 的 ownership 在 [[15_verl_rl_algorithms_analysis]]。
 
+### 3.1 infer：从 old-log-prob RPC 到模型前向
+
+```text
+ActorRolloutRefWorker.compute_log_prob(TensorDict)
+  → self.actor.infer_batch(data)
+      → add Engine defaults; choose loss_fn only when compute_loss=True
+      → Engine.eval_mode(...)
+      → optional Engine.disable_adapter()
+      → Engine.infer_batch(data, loss_function)
+          → torch.no_grad()
+          → forward_backward_batch(..., forward_only=True)
+      → only Engine.is_mp_src_rank_with_outputs() postprocesses/copies output
+  → output.cpu() or None
+```
+
+外层 role 跳转位于 `verl/workers/engine_workers.py:699-705`；`TrainingWorker.infer_batch` 的 eval/adapter/MP-source 分支在 `verl/workers/engine_workers.py:396-440`；BaseEngine 用 `torch.no_grad` 调用后端 `forward_backward_batch`（`verl/workers/engine/base.py:134-149`）。**是什么**：它是训练模型在 eval 语义下重算 token log-prob，不是 rollout server 的 generate。**怎么做**：沿同一 actor Engine 的模型并行布局做 forward-only，并只让声明为 collect source 的 rank 返回输出。**为什么**：old/current log-prob 必须与训练模型和 loss 坐标一致；若 controller 收集每个 TP/PP rank 的重复/不完整结果，既浪费带宽也无法按 batch 正确拼接。
+
+### 3.2 train：参数在哪一层真正改变
+
+```text
+ActorRolloutRefWorker.update_actor(TensorDict)
+  → TrainingWorker.train_mini_batch
+      → make_iterator(mini_batch_size_per_gpu, epochs, seed + dp_rank)
+      → for each mini_batch:
+          → all_gather_object(global_token_num across DP)
+          → TrainingWorker.train_batch
+              → Engine.train_mode(...)
+              → Engine.train_batch(data, loss_fn)
+                  → optimizer_zero_grad()
+                  → forward_backward_batch(..., forward_only=False)
+                      → backend micro-batch forward
+                      → loss_fn(model_output, micro_batch)
+                      → loss.backward()
+                  → optimizer_step()
+              → optional lr_scheduler_step on last mini-batch
+      → MP source rank aggregates metrics; other ranks return None
+```
+
+outer worker、mini-batch/epoch 循环与 rank 输出分支分别位于 `verl/workers/engine_workers.py:707-714,241-338`；Worker 到 Engine 的 train-mode 边界在 `verl/workers/engine_workers.py:340-394`；BaseEngine 把 zero-grad、后端 forward/backward 和 optimizer step 固定成一个 train batch（`verl/workers/engine/base.py:113-132`）。以 FSDP Engine 为例，后端先 all-reduce 全局有效 token 数，再拆 micro-batch；每个 micro-batch 调 loss 后执行 backward，只有最后一个 micro-batch 打开梯度同步（`verl/workers/engine/fsdp/transformer_impl.py:700-753`）。
+
+| 层级 | 输入 | 循环/副作用 owner | 输出 |
+|---|---|---|---|
+| controller group RPC | `KVBatchMeta` | single-controller/TQ 只 dispatch 与物化 | rank-local TensorDict |
+| `train_mini_batch` | 一个 DP shard | Worker 拥有 PPO mini-batch × epoch 循环 | 多次 Engine 更新后的聚合 metrics |
+| `Engine.train_batch` | 一个 mini-batch | Engine 拥有 zero-grad、所有 micro-batch backward、一次 optimizer step | grad norm、loss/模型 metrics |
+| backend `forward_backward_batch` | micro-batch 列表 | FSDP/Megatron/TorchTitan 等拥有模型并行与梯度同步 | 后端可聚合的 micro-batch outputs |
+| MP source return | 所有 rank 已参与 collective | Worker 只在 `is_mp_src_rank_with_outputs()` 为真时构造返回 | controller 可 collect 的唯一结果副本 |
+
 ---
 
 ## 4. offload：当前不是三个独立配置开关
@@ -97,7 +176,32 @@ Engine 统一暴露 full、shard 与 delta 相关 export 能力（`verl/workers/
 2. 非 naive full：把 full tensor generator 交给 CheckpointEngine；
 3. `delta_sharded`：把整个训练 Engine 交给 CE，让后端直接提供 shard/delta 语义。
 
-分叉位于 `verl/workers/engine_workers.py:727-771`。第三条不能退化成“CE 先把模型 full-gather 再 diff”：当前 delta 把 diff 下推到训练 shard，具体所有权见 [[21_verl_weight_publication_analysis]]。
+实际出口链是：
+
+```text
+CheckpointEngineManager.update_weights
+  → actor_wg.update_weights(global_steps, mode)
+      → ActorRolloutRefWorker.update_weights
+          → effective_mode = explicit mode or configured backend
+          ├─ non-naive + delta_sharded
+          │    → checkpoint_engine.send_weights(actor.engine, global_steps)
+          ├─ non-naive + other
+          │    → actor.engine.get_per_tensor_param()
+          │    → checkpoint_engine.send_weights(full_tensor_generator, global_steps)
+          └─ naive
+               → actor.engine.get_per_tensor_param(layered_summon, base_sync_done)
+               → rollout.update_weights(generator, peft_config, global_steps)
+               → optional actor Engine offload
+               → rollout.resume(kv_cache)
+```
+
+分叉位于 `verl/workers/engine_workers.py:726-820`。full export 的通用接口返回 HF-keyed tensor generator 与可选 PEFT config；shard export 额外返回位置规格；delta API 则定义最终 HF 坐标中的稀疏变化（`verl/workers/engine/base.py:151-215`）。`delta_sharded` 把整个训练 Engine 交给 CE，是因为 diff base、shard placement 与 lockstep export 属于 Engine/CE 共同协议；它不能退化成“CE 先把模型 full-gather 再 diff”。具体 publication 状态机见 [[21_verl_weight_publication_analysis]]。
+
+| export 分支 | Engine 暴露什么 | 谁消费 | 完成含义 |
+|---|---|---|---|
+| naive | full tensor generator，可选 PEFT config | colocated rollout adapter | `rollout.update_weights` 与 KV resume 完成后本 replica 可服务 |
+| non-naive full | full tensor generator | CheckpointEngine sender | 只说明训练侧已把 full export 交给 CE；全局可见性由 manager 等双方完成 |
+| `delta_sharded` | Engine 本身及 shard/delta API | delta CheckpointEngine | CE 驱动 seed/steady snapshot 与传输；不在 worker 先 full-gather |
 
 当前 delta exporter 的源码支持边界：
 

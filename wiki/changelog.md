@@ -12,6 +12,18 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-31（三）：把 Verl 七篇核心页深化到源码调用链与状态交接
+
+**Type**：七页机制级调用链深化 + 完成/失败边界校准（不改变页面树、ownership 与源码基线）
+
+在上一轮“是什么、怎么做、为什么”复审基础上，继续加强 [[01_verl_architecture_overview_analysis]]、[[10_verl_end_to_end_iteration_analysis]]、[[11_verl_single_controller_analysis]]、[[12_verl_dataproto_analysis]]、[[13_verl_workers_engine_analysis]]、[[15_verl_rl_algorithms_analysis]] 与 [[18_verl_agent_loop_reward_runtime_analysis]]：每个承重机制现在都能沿真实源码符号逐跳跟踪 caller/callee，并记录跨边界对象、状态 owner、输入/前态、输出/后态、local/remote/async/blocking 语义与完成信号。代表性链路包括 `TaskRunnerV1.run → PPOTrainer.fit`、prompt 到 TQ terminal group、`compute_log_prob → WorkerGroup → tqbridge → Engine`、actor loss 到 backward/optimizer、以及 `CheckpointEngineManager.update_weights` 到下一请求可见性。
+
+本轮还把几处容易由表面 API 得出错误结论的执行语义写实：`AgentLoopManagerTQ.generate_sequences` 中的 `ray.get` 只等待远端 worker 创建 background `_run_prompt`，真正的训练 admission 屏障是 ReplayBuffer 观察到所有 siblings settle 后的 `finished/failure`；`blocking=False` 会先提交远端训练 RPC，再把保留的 ObjectRefs 包成 `DataProtoFuture`，当前 critic 路径随即 `.get()`，不形成实际重叠；`DataProtoFuture` 虽保留 `collect_fn` 字段，当前 `get()` 实现却按结果类型直接 concat，并未调用该字段；sync 下 actor `optimizer_step` 只更新训练 Engine，直到 `PPOTrainerSync.on_step_end` 等权重安装与 KV resume 完成，下一批 rollout 才能看见新版本。
+
+Agent/Reward 页的时序图同步替换为真实类与等待点，并通过仓库浏览器运行时实渲；普通 `AgentLoopManager` 的两层 `asyncio.gather`、V1 fire-and-forget、单轮/工具 loop、异步 reward 与 colocated reward 的 pad/chunk/gather/unpad/writeback 均已分开解释。全部事实仍固定到 verl `254a23edc62f25ebfae626e3932ae285d6f86009`；未新增、删除、重命名或合并页面，索引、概念 owner 和 radar baseline 均不变。
+
+---
+
 ## 2026-08-31：补齐 vLLM 六个核心机制的实现调用链
 
 **Type**：定向补强 6 页

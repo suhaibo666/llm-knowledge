@@ -41,6 +41,52 @@ V0 的 `compute_advantage` 在 `verl/trainer/ppo/ray_trainer.py:187-282` 统一�
 
 `AdvantageEstimator` 当前列出 14 个内置名字（`verl/trainer/ppo/core_algos.py:88-110`），但这些名字不是 14 套互不相关的算法。它们主要在回答两个问题：**奖励怎样沿 token/时间传播，以及用什么基线降低方差或改变组内相对信号**。注册装饰器只负责拒绝重名、查找函数和统一输出 `advantages/returns`（`verl/trainer/ppo/core_algos.py:116-145`）；它不会验证组大小、reward 维度、critic、greedy baseline 或 token 概率统计是否存在。
 
+### 2.1 V1 advantage 的完整数据路径
+
+算法函数不是直接消费 TQ，也不知道 trajectory key。V1 trainer 先把存储态转换为算法态，算法完成后再转回 nested 存储态：
+
+```text
+PPOTrainer._compute_advantage(KVBatchMeta)
+  → tq.kv_batch_get(uid, response_mask, rm_scores,
+                    rollout_log_probs, old_log_probs, ref_log_prob, values)
+  → nested TensorDict.to_padded_tensor()
+  → DataProto(batch=[B,L], non_tensor_batch.uid=[B])
+  → token_level_scores = rm_scores
+  ├─ use_kl_in_reward
+  │    → apply_kl_penalty → token_level_rewards
+  └─ else
+       → token_level_rewards = token_level_scores
+  → optional decoupled rollout correction
+       → rollout_is_weights / rejection mask / metrics
+  → compute_advantage_for_multi_trajectories(data, batch_keys, estimator, ...)
+      ├─ estimator != GRPO
+      │    → ray_trainer.compute_advantage
+      └─ estimator == GRPO
+           → parse {uid}_{session}_{index}
+           → select final output of each session
+           → ray_trainer.compute_advantage(final rows)
+           → broadcast final-session score to every row in that session
+      → compute_advantage dispatch
+          ├─ GAE explicit branch
+          ├─ GRPO explicit branch
+          └─ get_adv_estimator_fn(name) → registered estimator
+  → advantages / returns [B,L]
+  → response_to_nested(..., original response_mask)
+  → tq.kv_batch_put(advantages, returns, optional correction/reward fields)
+```
+
+TQ 字段选择、padded DataProto 构造、KL/correction 分支和 nested 写回位于 `verl/trainer/ppo/v1/trainer_base.py:1650-1707`。多轨迹包装层对非 GRPO 直接委托，对 GRPO 只选每个 session 的最终输出后广播（`verl/trainer/ppo/v1/utils.py:148-215`）。底层 `compute_advantage` 对 GAE/GRPO 保留显式分支，其余算法才通过 `get_adv_estimator_fn` 查 registry，并按算法补 `uid`、baseline、GDPO 多维字段或 OTB 概率统计（`verl/trainer/ppo/ray_trainer.py:187-282`；registry 在 `verl/trainer/ppo/core_algos.py:113-150`）。
+
+| Hop | 输入/前态 | 动作与 owner | 输出/后态 | 失败/等待边界 |
+|---|---|---|---|---|
+| TQ read | trajectory keys + nested fields | trainer 选择 advantage 所需字段 | 变长 TensorDict | 任一必需字段缺失时在此或后续取键失败 |
+| padded algorithm view | nested response rows | trainer 用 mask 补齐到 `[B,L]` 并把 `uid` 移到 non-tensor 区 | DataProto | padding 只能由 `response_mask` 排除，不能当真实 token |
+| reward shaping | scores、old/ref/rollout log-prob | trainer 应用 KL 与 rollout correction | `token_level_rewards`，可选 IS/rejection fields | bypass 不走 decoupled correction 分支 |
+| estimator dispatch | DataProto + estimator name | V1 wrapper 处理 session 语义；V0 helper/registry 运行公式 | padded `advantages/returns` | 未知名字、缺 critic/value/uid/OTB 字段按分支失败 |
+| TQ writeback | `[B,L]` + 原 mask | trainer 裁回每行有效 response 长度 | nested fields 绑定原 trajectory keys | 写回完成后 actor/critic 才能读取 |
+
+这里的关键设计是把“轨迹如何分组”和“优势公式”分开：V1 wrapper 拥有 session-final 选择，算法 registry 拥有 estimator 数学。`【分析推断】` 若让每个 estimator 自己解析 TQ key，它会与存储命名和多轮输出结构耦合；代价是阅读者必须沿 trainer → V1 wrapper → legacy helper/registry 三层才能找到一次完整计算。
+
 下表的“为什么”在源码 docstring 明确说明时按其原意概括；否则标为 **【分析推断】**，表示从当前公式和前置条件重建选择判据，而不是声称作者在代码中完成了算法比较。
 
 | 设计家族 | 是什么、解决什么问题 | 怎么做 | 为什么不直接用最接近的替代方案 | 实现与前置条件 |
@@ -51,7 +97,7 @@ V0 的 `compute_advantage` 在 `verl/trainer/ppo/ray_trainer.py:187-282` 统一�
 | reward-to-go 与外部基线 | 不把整条响应压成一个 outcome advantage，而是保留从当前位置到结尾的回报 | REINFORCE++ 逆序累计 discounted return；ReMax 再减去 greedy response 的 reward baseline | 相比把一个 outcome 标量广播到所有 token，它保留时序回报；ReMax 用额外 greedy rollout 换取更直接的 prompt-specific baseline | `reinforce_plus_plus` 需要 `gamma`；`remax` 需要 `reward_baselines`。`verl/trainer/ppo/core_algos.py:694-767` |
 | token 路径方差基线 | 为同 prompt 的每个 token 位置计算不同 baseline，而不是整条 trajectory 共用一个数 | OTB 用 `old_log_probs` 与 `sum_pi_squared` 构造累计 path-variance 权重；TIR 版只在有效 response token 序列上对齐多轮轨迹 | 相比组均值，它试图让高方差路径对 baseline 贡献更符合 token 位置；代价是额外概率统计、分组循环、变长尾部处理和更高内存/计算成本 | `optimal_token_baseline`、`tir_optimal_token_baseline`。`verl/trainer/ppo/core_algos.py:872-1115` |
 
-### 2.1 GAE 与 GRPO：critic 时序基线和无 critic 组基线
+### 2.2 GAE 与 GRPO：critic 时序基线和无 critic 组基线
 
 **是什么与为什么。** GAE 适合已经承担 critic 成本、且需要逐 token 时序信用的路径；GRPO 适合同 prompt 有多条采样、希望不用 value model 做相对比较的路径。二者都输出 token-aligned advantage，但可用信息和失败方式完全不同，不能因为下游接口相同就互换。
 
@@ -73,7 +119,7 @@ $$
 
 关闭 `norm_adv_by_std_in_grpo` 只保留减均值，对应去除组标准差缩放；这会改变组间尺度，并不是一种新 loss mode（`verl/trainer/ppo/core_algos.py:294-329`）。GRPO 的关键约束是 `uid` 必须真实表示“同一 prompt 的采样组”；错误分组仍能算出数值，却会悄悄改变 baseline。
 
-### 2.2 组基线变体：每一种都改变了“谁和谁比较”
+### 2.3 组基线变体：每一种都改变了“谁和谁比较”
 
 - **GDPO** 先对每个 reward dimension 独立做组归一化，再按权重合并和全局 whiten，避免一个量纲或方差更大的 reward 分量淹没其它维度；它要求 `gdpo_reward_keys` 在 `non_tensor_batch` 中真实存在（`verl/trainer/ppo/core_algos.py:362-468`）。
 - **Pass@k** 只给组内最好响应非零 advantage，幅度是 top-1 与 top-2 的 reward 差。它不是一般 GRPO 的加速版，而是把学习信号集中到“最好答案相对次好答案”的间隔；每组少于两条样本会直接失败（`verl/trainer/ppo/core_algos.py:471-530`）。
@@ -83,7 +129,7 @@ $$
 
 这些实现说明注册表只统一函数选择，不统一统计假设。调用端仍要为 GDPO 提供多维 reward、为 ReMax 提供 greedy baseline、为 OTB 提供 `sum_pi_squared`，并为所有分组方法保证 `uid` 正确（`verl/trainer/ppo/ray_trainer.py:218-280`）。
 
-### 2.3 时序与 token baseline：mask 决定奖励能否跨 observation 传播
+### 2.4 时序与 token baseline：mask 决定奖励能否跨 observation 传播
 
 当前 REINFORCE++ 在逆序计算 return 时，`response_mask=0` 的 observation 位置自身 return 为零，但 `running_return` 穿过该区间继续向前传播（`verl/trainer/ppo/core_algos.py:694-731`）：
 
@@ -103,6 +149,52 @@ OTB 进一步把 baseline 从 trajectory 级细化到 token 级：它用旧策�
 
 actor 从 `config.policy_loss.loss_mode` 查表，给所有实现传入同一组 `old_log_prob`、`log_prob`、`advantages`、`response_mask` 与可选 rollout IS 权重（`verl/workers/utils/losses.py:85-112`）。统一签名只建立了坐标系；12 个公开名字真正的区别，是**在哪个粒度计算 policy ratio、用硬裁剪还是软惩罚、丢弃哪些 token，以及梯度能否穿过 correction weight**。
 
+### 3.1 从 actor RPC 追到 `optimizer_step`
+
+`ppo_loss` 在 actor 初始化时被绑定为 `TrainingWorker.loss_fn`，不是 trainer 每步临时选择的回调（`verl/workers/engine_workers.py:590-646`）。以 FSDP backend 为例，一次 actor update 的算法—反向调用链是：
+
+```text
+PPOTrainer._update_actor
+  → ActorRolloutRefWorker.update_actor
+      → TrainingWorker.train_mini_batch
+          → for mini_batch × ppo_epochs
+              → TrainingWorker.train_batch
+                  → BaseEngine.train_batch(data, loss_fn)
+                      → optimizer_zero_grad()
+                      → FSDPEngine.forward_backward_batch
+                          → all_reduce(batch_num_tokens); set dp_size
+                          → prepare_micro_batches
+                          → for each micro_batch
+                              → FSDPEngine.forward_step
+                                  → module(**model_inputs)
+                                  → prepare_model_outputs → current log_prob/entropy
+                                  → ppo_loss(config, model_output, micro_batch)
+                                      → no_padding_2_padding(log_prob, entropy)
+                                      → select old_log_probs/advantages/response_mask
+                                      → get_policy_loss_fn(loss_mode)
+                                      → concrete policy loss
+                                          → token loss matrix
+                                          → agg_loss(...global_batch_info) → scalar pg_loss
+                                      → optional entropy agg/subtraction
+                                      → optional reference KL agg/addition
+                                      → scalar policy_loss
+                              → policy_loss.backward()
+                      → optimizer_step()
+```
+
+controller、outer worker 与 mini-batch 循环位于 `verl/trainer/ppo/v1/trainer_base.py:1734-1765` 和 `verl/workers/engine_workers.py:241-338,707-714`；Worker 把 loss callable 交给 Engine，BaseEngine 固定 zero-grad/forward-backward/step 顺序（`verl/workers/engine_workers.py:340-394`；`verl/workers/engine/base.py:113-132`）。FSDP 后端计算全局有效 token 数、拆 micro-batch、调用 `forward_step` 并 backward（`verl/workers/engine/fsdp/transformer_impl.py:700-753`）；具体 forward 在模型输出就绪后调用 `loss_function(model_output, data)`（同文件 `1512-1560`）。Megatron 走不同 schedule，但同样在 micro-batch postprocess 调 loss callable，并按 pipeline micro-batch 数缩放（`verl/workers/engine/megatron/transformer_impl.py:1416-1435`）。
+
+| 张量/状态 | 进入 loss 前 | loss 内变化 | 离开 loss / backward 后 |
+|---|---|---|---|
+| current `log_prob` | backend 可为 no-padding/nested 输出 | `no_padding_2_padding` 对齐到 `[micro_B,response_L]` | 保留 autograd，直到 scalar policy loss backward |
+| old log-prob / advantage / mask | TQ 物化并随 micro-batch 切分 | 选择必需字段，统一 padded shape；mask 转 bool | old/adv 不更新，mask 决定有效梯度位置 |
+| policy objective | 无 | registry loss 生成 token matrix，再由 `agg_loss` 变标量 | `pg_loss` 参与总 policy loss |
+| entropy / reference KL | 可选模型输出与 ref field | 分别聚合后减 entropy bonus、加 KL penalty | 与 policy objective 合成一个 scalar |
+| 全局分母 | controller 提供 `global_batch_size`；Engine 提供 `dp_size/batch_num_tokens` | 写入 `config.global_batch_info` 并传给 `agg_loss` | 保证 micro-batch/DP 切法不改变目标尺度 |
+| 参数/optimizer | 当前 actor 参数、清零后的 grads | 每个 micro-batch backward 累积梯度 | 全部 micro-batch 后 `optimizer_step` 改参数 |
+
+`ppo_loss` 的字段选择、registry 查找、entropy 与 KL 合成位于 `verl/workers/utils/losses.py:57-144`；vanilla 的 ratio/clip/token matrix 与全局聚合在 `verl/trainer/ppo/core_algos.py:1285-1376`。这条链说明算法完成点不是 `get_policy_loss_fn` 返回，也不是 loss 标量产生，而是所有 micro-batch backward 后 Engine 的 `optimizer_step` 成功；反过来，optimizer 成功仍不等于 rollout 已安装新权重，后者属于 [[21_verl_weight_publication_analysis]]。
+
 | 设计家族 | 是什么、解决什么问题 | 怎么做 | 为什么选择它而不是 vanilla | 实现与代价 |
 |---|---|---|---|---|
 | token ratio 硬约束 | 限制单 token 的 current/old policy 偏移 | `vanilla` 对 ratio clip 并可 dual-clip；`dppo_tv`/`dppo_kl` 按概率差或 binary-KL 构造 valid mask，再使用截断 IS | vanilla 直接限制 ratio；DPPO 变体在 divergence 超阈值时停止相应方向 token 的更新。后者更明确地拒绝越界样本，但会丢梯度并引入阈值偏差 | `vanilla`、`dppo_tv`、`dppo_kl`。`verl/trainer/ppo/core_algos.py:1285-1542` |
@@ -113,7 +205,7 @@ actor 从 `config.policy_loss.loss_mode` 查表，给所有实现传入同一组
 
 这些名字由 `PolicyLossConfig.loss_mode` 接收；同一配置对象还承载 DRO 的 `dro_beta`（`verl/workers/config/actor.py:77-101`）。注册成功只证明函数存在，不证明 estimator、old-policy 语义、aggregation 和 correction mode 彼此兼容。
 
-### 3.1 vanilla：所有变体共享的 ratio 坐标系
+### 3.2 vanilla：所有变体共享的 ratio 坐标系
 
 令
 
@@ -125,13 +217,13 @@ vanilla 对 $\rho_t$ 做上下界裁剪，并在负优势时可使用 dual-clip�
 
 DPPO-TV 与 DPPO-KL 并非“换一个 clip 数值”：它们先构造 divergence valid mask，再用 detach 的截断 ratio 乘 `log_prob`。TV 直接比较新旧 token 概率差，binary-KL 同时考虑事件与非事件概率；两者都建议把 IS 上限设得较大以降低截断偏差（`verl/trainer/ppo/core_algos.py:1379-1542`）。
 
-### 3.2 序列尺度与梯度路径是独立选择
+### 3.3 序列尺度与梯度路径是独立选择
 
 GSPO 把一条 response 的平均 log-ratio 转成共享 sequence ratio，并强制用 `seq-mean-token-mean` 聚合；`geo_mean` 也在序列维求几何平均，但先按 advantage 符号限制每个 token 的 log-ratio，并要求 sequence-level advantage（`verl/trainer/ppo/core_algos.py:1545-1618,1927-2010`）。因此二者不能只按名字替换 vanilla：ratio 粒度和最终分母都改变了。
 
 SAPO、DRO、CISPO 则主要改变梯度路径。SAPO 用正负 advantage 各自的温度控制 sigmoid gate；CISPO 对 clip 后 ratio 做 stop-gradient，使梯度只从最终 `log_prob` 项流过（`verl/trainer/ppo/core_algos.py:1621-1705,2046-2104`）。这类方法的关键验收不是仅看 loss 数值，而是核对 gate/weight 是否 detach、正负 advantage 是否走正确参数，以及 aggregation 是否保持全局语义。
 
-### 3.3 DRO：用平滑二次罚代替硬裁剪
+### 3.4 DRO：用平滑二次罚代替硬裁剪
 
 `dro` 对 old/current log-prob 差施加二次惩罚（`verl/trainer/ppo/core_algos.py:2013-2043`）：
 
@@ -145,7 +237,7 @@ $$
 
 这里 `policy_loss.dro_beta` 必须为正；若 rollout 提供 IS 权重，则权重乘在整个 token loss 上（`verl/trainer/ppo/core_algos.py:2027-2038`）。直接公式与非法 beta 都有 CPU 测试（`tests/trainer/ppo/test_dynamic_policy_losses_on_cpu.py:39-60`）。它比 PPO 硬 clip 更平滑，但 beta 变成必须调节的偏移惩罚强度；beta 过小接近无约束 policy gradient，过大则让“留在 old policy 附近”压过 advantage 信号，这是公式直接给出的工程取舍。
 
-### 3.4 KL 与熵是注册 loss 之外的正则项
+### 3.5 KL 与熵是注册 loss 之外的正则项
 
 actor 先计算注册表返回的 policy loss，再减去 entropy bonus，并在 `use_kl_loss=true` 时加上参考策略 KL（`verl/workers/utils/losses.py:118-142`）。因此 `loss_mode=dro` 或 `gspo` 并不自动决定是否使用 reference model；KL 是独立配置轴。`kl_penalty` 支持多种近似并由 `verl/trainer/ppo/core_algos.py:2187-2245` 实现。
 

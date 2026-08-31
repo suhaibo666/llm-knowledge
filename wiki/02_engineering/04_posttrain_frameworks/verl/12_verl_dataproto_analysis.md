@@ -71,6 +71,48 @@ numpy 字典分别通过 union helper 检查冲突（`verl/protocol.py:109-200`�
 | `repeat` | 每 prompt 多条 rollout | interleave 顺序与 group identity |
 | `union` | 添加 worker 计算结果 | 同名字段语义冲突 |
 
+### 3.1 一条当前真实生命周期：V0 driver 如何组出训练批
+
+V0 已是 legacy，但它仍是最完整、最容易观察 DataProto 变换的当前调用方。一次 batch 不只是“构造后传给 worker”，而是连续改变字段集合、行数和顺序：
+
+```text
+train_dataloader yields batch_dict
+  → DataProto.from_single_dict(batch_dict)
+  → add non_tensor_batch["uid"]                         # [B]
+  → _get_gen_batch(batch)
+      → batch.pop(non_tensor fields not owned by reward) # 同时改变原 batch
+      → generation DataProto
+  → gen_batch.repeat(rollout.n, interleave=True)          # [B] → [B*n]
+  → optional ReMax:
+      → gen_batch.slice(...); DataProto.concat(sampled, greedy)
+  → async_rollout_manager.generate_sequences
+  → combined_output.slice(sampled range)
+  → batch.repeat(rollout.n, interleave=True)              # prompt 侧对齐 [B*n]
+  → batch.union(gen_batch_output)                         # prompt + response fields
+  → _balance_batch → batch.reorder(global_idx)            # tensor/object 行同步重排
+  → union(reward?) → union(old_log_prob) → union(ref?) → union(values?)
+  → compute_advantage(batch)                              # 原对象新增 rewards/advantages/returns
+  → _update_actor(batch)
+      → batch.to_tensordict() → worker RPC
+```
+
+构造、uid 与生成批分离在 `verl/trainer/ppo/ray_trainer.py:1478-1505`，rollout 输出 slice、两侧 repeat/union 与 balance 在 `1521-1550`，reward/old/ref/value/advantage/actor 消费在 `1561-1690`；`_get_gen_batch` 使用 `pop` 改变原 batch 并构造生成视图（同文件 `572-586`）。这条链的关键身份不变量是：第一个 `repeat(interleave=True)` 产生 rollout 请求顺序，第二个同参数 repeat 让 prompt/uid 与返回响应具有同一 `[prompt0×n, prompt1×n, ...]` 行序；后续 `reorder` 必须同时移动 tensor 与 non-tensor fields。
+
+### 3.2 三容器变换账本
+
+| 操作 | `batch` | `non_tensor_batch` | `meta_info` | 返回/副作用与检查 |
+|---|---|---|---|---|
+| construct | tensor values 进入同 batch-size TensorDict | numpy/object arrays 按第一维保存 | 调用者显式传入 | 新 DataProto；`check_consistency` 可检查长度/dtype（`verl/protocol.py:330-376,477-582`） |
+| `select` | 通过 `TensorDict.select` 只保留指定 keys | 按 key 过滤，可选 deepcopy | 按 key 过滤，可选 deepcopy | 新 DataProto；它改字段集合，不改行身份（`verl/protocol.py:597-630`） |
+| `select_idxs` / `slice` | 按同一索引产生新 TensorDict 行 | 对每个 ndarray 使用同一 numpy 索引 | 原 `meta_info` 直接传播 | 新 DataProto；只索引 tensor 会破坏 uid 对齐（`verl/protocol.py:632-716`） |
+| `reorder` | `self.batch = self.batch[indices]` | 所有 ndarray 同序索引 | 不变 | **原地修改**，无返回值；调用者之后看到的是新行序（`verl/protocol.py:960-966`） |
+| `repeat` | repeat-interleave 或整批 tile | numpy 使用对应 repeat/tile | 原 `meta_info` 直接传播 | 新 DataProto，行数乘倍；interleave 决定 group identity（`verl/protocol.py:968-1010`） |
+| `chunk` | TensorDict 沿 batch dim 切 N 份 | 按 tensor chunk 边界 `array_split` | 每个 chunk 引用同一 `meta_info` | 返回 N 个 DataProto；未开启 padding 时要求整除（`verl/protocol.py:861-900`） |
+| `concat` | `torch.cat` | 每个 key `np.concatenate` | 非 metric key 必须相等，metrics 合并 | 新 DataProto；输入为空或 meta 冲突失败（`verl/protocol.py:913-958`） |
+| `union` | 合并字段；同名值必须相等 | 同样检查同名数组 | 同名值必须相等 | **原地修改左值**并返回 self；不是后写覆盖（`verl/protocol.py:778-795`） |
+
+`meta_info` 在 `select_idxs`、`slice`、`repeat` 和 `chunk` 中通常直接传播同一 dict，而不是逐样本复制。这符合调用级元数据的定位，也意味着调用者若在某个 chunk 上原地修改共享 meta，可能被其它 chunk 看见；需要隔离时应在边界显式复制，不能把“新 DataProto”自动理解为深拷贝。
+
 V1 ReplayBuffer 主要选择 `KVBatchMeta` key；真正取回字段后仍需要保持同样的样本对齐。TQ 改变的是
 数据所在位置和物化时机，不是取消 batch invariant。
 
@@ -91,12 +133,40 @@ padding 的语义不是“新增真实训练样本”。collect 之后必须在�
 （`verl/protocol.py:423-432`）。这些方法能搬运对象，但不提供训练 checkpoint 的跨状态一致性；恢复协议
 由 [[23_verl_training_checkpoint_recovery_analysis]] 负责。
 
-`DataProtoFuture` 保存一组 Ray object refs 与 collect function。`get()` 才 materialize refs 并执行 collect；
-future 还可再次 `chunk`，前提是每个 future 的 chunk 数与目标一致
-（`verl/protocol.py:1171-1226`）。因此它提供的是 latency overlap，不是事务：一部分 remote method 已修改
-状态、另一部分失败时，没有容器级 rollback。
+`DataProtoFuture` 保存一组 Ray object refs、一个 `collect_fn` 字段与可选的二次 `dispatch_fn`（`verl/protocol.py:1171-1207`）。当前 `get()` 的真实实现是先 `ray.get(self.futures)`，再按返回元素类型直接调用 `DataProto.concat` 或 `concat_tensordict`，最后才应用可选 `dispatch_fn`（`verl/protocol.py:1209-1225`）。也就是说，dataclass 保留了 `collect_fn`，但当前 `get()` 并未调用该字段；文档不能把它写成可插拔 collect 已实际执行。
 
-具体说，**它是什么**：跨 WorkerGroup 调用的延迟结果句柄；**怎么做**：先保存各 rank 的 Ray refs 与 collect/可选 dispatch 函数，直到 `get()` 才 `ray.get`、拼接并二次切分；**为什么**：让 driver 不必在生产者 RPC 后立即拉回完整 batch，输出还可以直接作为下一次 group 调用的输入。它没有缓存一个可回滚的业务快照，所以延迟物化减少的是 driver 等待与搬运屏障，不是 partial failure 风险。
+### 5.1 Ray refs 到物化批的调用链
+
+```text
+non-blocking WorkerGroup method
+  → dispatch input into per-rank shards
+  → execute_all_async → list[ray.ObjectRef]               # producer RPC 已开始
+  → collect_nd_compute keeps source-rank refs
+  → BatchData(list[ObjectRef]).concat()
+      → DataProtoFuture.concat(refs)
+      → DataProtoFuture(collect_fn=DataProto.concat, futures=refs)
+  ← future returned to caller
+  ├─ explicit consumer: future.get()
+  │    → ray.get(retained source-rank refs)
+  │    → DataProto.concat or concat_tensordict
+  │    → optional dispatch_fn(materialized batch)
+  └─ downstream registered RPC
+       → DataProtoFuture.chunk(dp_size)                    # 每个目标 rank 得到带 dispatch_fn 的 future
+       → remote @register wrapper._materialize_futures
+       → future.get() before worker function body
+```
+
+ObjectRefs 被 collect 包成 future 的入口在 `verl/single_controller/base/decorator.py:138-145,236-263` 和 `verl/protocol.py:1288-1302`；显式 `get`/二次 chunk 在 `verl/protocol.py:1171-1225`；下游 worker 的默认 `materialize_futures=True` 在函数体前调用 `.get()`（`verl/single_controller/base/decorator.py:383-395,398-442`）。
+
+| 输入/前态 | 动作与 owner | 输出/后态 | 业务含义与失败边界 |
+|---|---|---|---|
+| per-rank RPC 已提交 | RayWorkerGroup 返回 refs，collect mask 丢弃非 source rank refs | source-rank `list[ObjectRef]` | 远端可能仍在执行，参数副作用也可能已开始 |
+| refs 列表 | `BatchData.concat` 检测首元素是 ObjectRef | `DataProtoFuture` | 只包装句柄，不调用 `ray.get` |
+| future | `DataProtoFuture.get` 等 future 内保留的 source-rank refs | DataProto 或 TensorDict concat 结果 | 被等待的任一 ref 异常在此暴露；已完成 rank 不回滚 |
+| chunked future | `get` 先全量聚合，再用保存的 `dispatch_fn` 取目标 chunk | 下游 rank 需要的 batch shard | 当前实现不等于“只从 producer 拉目标 shard”，类 docstring 也把该优化列为 potential issue |
+| materialized output | 下游 `@register` wrapper 完成 future materialization | 原 worker 函数开始执行 | 这是函数体前置等待，不是整个 RL step 的 commit |
+
+**它是什么**：跨 WorkerGroup 调用的延迟结果句柄。**怎么做**：先保存各 rank Ray refs，直到显式或下游隐式 `get()` 才等待、拼接并可选二次切分。**为什么**：driver 不必在生产者 RPC 后立即拉回完整 batch，输出还能直接进入下一次 group dispatch。它没有缓存可回滚的业务快照，所以减少的是 driver 等待与搬运屏障，不是 partial failure 风险。
 
 大 batch 的隐藏成本包括：
 

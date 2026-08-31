@@ -49,11 +49,48 @@ flowchart LR
 
 这五段分别由 `WorkerGroup._bind_worker_method`、Ray `func_generator`、decorator registry、Ray actor
 handle 和 collect function 承担（`verl/single_controller/base/worker_group.py:185-240`；
-`verl/single_controller/ray/base.py:49-68`；`verl/single_controller/base/decorator.py:334-398`）。
+`verl/single_controller/ray/base.py:49-68`；`verl/single_controller/base/decorator.py:300-442`）。
 
 这条路径的定位是把“一次逻辑 SPMD 调用”变成 N 个物理 RPC，而不是隐藏算法阶段。实现把切分与收集留在 wrapper，把单 rank 计算留给原始 method。`【分析推断】` 这样做使同一个 actor/ref/critic 方法可以复用 one-to-all、DP 或 mesh-aware 形状，而无需为 Ray 另写一套业务 API；相对地，wrapper 不会替 Trainer 推断跨方法依赖，也不会把 N 个 actor 的副作用合成原子事务。
 
-### 2.1 `Worker` 只描述一个 rank
+### 2.1 先看一条真实调用：`compute_log_prob`
+
+下面这条链以 V1 controller 的 `actor_rollout_wg.compute_log_prob(batch)` 为例。调用点只拿着 `KVBatchMeta`，但远端函数签名接收的是 TensorDict；中间转换不是业务代码显式写出的，而是注册与绑定机制共同插入的：
+
+```text
+PPOTrainer._compute_old_log_prob
+  → RayWorkerGroup.compute_log_prob(KVBatchMeta)            # 动态绑定的方法
+      → dispatch_lazy_compute_data_proto("actor", ...)
+          → query actor dp_rank_mapping
+          → BatchData(KVBatchMeta).chunk(dp_size)
+              → KVBatchMeta → BatchMeta → dp shards
+          → map each DP shard to every TP/PP/CP rank in that DP replica
+      → RayWorkerGroup.execute_all("compute_log_prob", shard_per_rank)
+          → worker_handle.compute_log_prob.remote(shard)
+              → register wrapper materializes incoming future if any
+              → tqbridge: BatchMeta → TensorDict
+              → ActorRolloutRefWorker.compute_log_prob(TensorDict)
+      → ray.get(all ObjectRefs)                              # blocking=True
+      → collect_lazy_compute_data_proto("actor", ...)
+          → keep only ranks designated by collect_mask
+          → concat BatchMeta/TensorDict result
+  → updated KVBatchMeta
+```
+
+定义端从 `ActorRolloutRefWorker.compute_log_prob` 的 `@register(make_nd_compute_dataproto_dispatch_fn("actor"))` 开始（`verl/workers/engine_workers.py:699-705`）。`register` 先用 `tqbridge` 包住原函数，再把 dispatch、execute 和 blocking 写入 `MAGIC_ATTR`（`verl/single_controller/base/decorator.py:398-442`）。group 初始化时 `_bind_worker_method` 读取这些属性，解析 dispatch/collect 与 execute 方法，最后调用 Ray `func_generator` 把新方法挂到实例上（`verl/single_controller/base/worker_group.py:185-250`；`verl/single_controller/ray/base.py:770-776`）。
+
+| Hop | 输入/前态 | 动作与 owner | 输出/后态 | 执行语义 |
+|---|---|---|---|---|
+| method definition | 原始 `compute_log_prob(TensorDict)` | `register` 套 `tqbridge` 并写 metadata | 可被 group 发现的 worker method | class 定义时完成，不发 RPC |
+| group binding | worker class + `MAGIC_ATTR` | `_bind_worker_method` 解析形状并调用 `func_generator` | `RayWorkerGroup.compute_log_prob` | group 初始化时一次性绑定 |
+| dispatch | controller 的 `KVBatchMeta` | actor-mesh dispatch 查询 DP mapping，转换/切分为 `BatchMeta` shards | 与 worker 数等长的参数列表 | 本地；同一 DP shard 可映射到多个模型并行 rank |
+| execute | per-rank shard | `execute_all_async` 对每个 handle 调 `.remote()` | `list[ObjectRef]` | N 个 Ray RPC 已开始执行 |
+| worker entry | `BatchMeta` | `tqbridge` 从 TQ 取实际字段，再调用 rank-local method | TensorDict 输出或非 source rank 的 `None` | 远端；TQ get 是函数体前置条件 |
+| blocking collect | `list[ObjectRef]` | `func_generator` 先 `ray.get`，collect mask 再选 source ranks 并拼接 | 更新后的 meta/聚合结果 | controller 阻塞到全部 refs resolve |
+
+DP-mesh 切分与收集位于 `verl/single_controller/base/decorator.py:202-304`；`execute_all_async` 将等长参数列表逐项送到对应 worker handle（`verl/single_controller/ray/base.py:778-795,862-890`）；`func_generator` 的固定顺序是 dispatch → execute → 可选 `ray.get` → collect（`verl/single_controller/ray/base.py:49-67`）。`BatchData.chunk` 在 V1 路径把 `KVBatchMeta` 提前翻译成 `BatchMeta`，避免每个 rank 重复向 controller 查询 key（`verl/protocol.py:1268-1286`）。
+
+### 2.2 `Worker` 只描述一个 rank
 
 `Worker` 从环境变量读取 world size、rank、local rank、master address 和设备可见性，并保存 mesh-aware
 dispatch/collect 元数据（`verl/single_controller/base/worker.py:76-147,169-231,283-321`）。它不决定
@@ -63,7 +100,7 @@ actor/ref/critic 的业务角色，也不实现 PPO；具体 worker class 在其
 （`verl/single_controller/base/worker.py:321-344`）。这类能力仍属于 RPC 基座，不能据此推断业务方法的
 同步顺序。
 
-### 2.2 `WorkerGroup` 把 N 个 rank 伪装成一个对象
+### 2.3 `WorkerGroup` 把 N 个 rank 伪装成一个对象
 
 `ResourcePool` 只声明每节点进程数、world size 和 local-rank 分布；`ClassWithInitArgs` 延迟保存 class 与
 构造参数（`verl/single_controller/base/worker_group.py:27-101`）。`WorkerGroup` 持有实际 worker handles，
@@ -85,8 +122,8 @@ actor/ref/critic 的业务角色，也不实现 PPO；具体 worker class 在其
 
 `Dispatch` 定义 one-to-all、all-to-all、DP compute、Megatron compute 等预设；`Execute` 决定所有 rank
 或 rank zero 执行（`verl/single_controller/base/decorator.py:40-68`）。`register()` 把 dispatch mode、
-execute mode、blocking 和 future materialization 写到函数属性，绑定 group method 时再读取
-（`verl/single_controller/base/decorator.py:398-444`）。
+execute mode 与 blocking 写到函数属性，绑定 group method 时再读取；`materialize_futures` 则保留在 wrapper 闭包里，控制远端函数体执行前是否调用 `.get()`
+（`verl/single_controller/base/decorator.py:383-442`）。
 
 常见语义可以分成三类：
 
@@ -127,6 +164,38 @@ Ray group 暴露 rank-zero 与 all-worker 的 sync/async 执行入口（`verl/si
 `blocking=False` 可以把 refs 包成 `DataProtoFuture`，但 future 只是延迟 `ray.get` 与 collect，不会建立
 跨 RPC 的 commit protocol（`verl/protocol.py:1171-1226`）。
 
+### 5.1 `blocking=False` 到底把哪一步推迟了
+
+`TrainingWorker.train_mini_batch` 是一个具体的非阻塞方法：它用 actor/critic 的 train mesh dispatch，同时把 `blocking=False` 写进注册信息（`verl/workers/engine_workers.py:241-242`）。以 V1 critic 更新为例：
+
+```text
+PPOTrainer._update_critic
+  → critic_wg.train_mini_batch(KVBatchMeta)
+      → dispatch_fn(...)                                  # 已完成
+      → execute_all_async(...)
+          → worker.train_mini_batch.remote(...)            # RPC 已提交并可能正在改参数
+      → skip ray.get because blocking=False
+      → collect_fn(list[ObjectRef])
+          → BatchData.concat(ObjectRefs)
+          → DataProtoFuture(collect_fn, futures)
+  ← DataProtoFuture
+  → output.get()
+      → ray.get(futures)                                  # 第一处真正等待
+      → concat TensorDict results
+  → reduce critic metrics
+```
+
+`func_generator` 即使不阻塞也会先调用 execute；它只跳过第 55–56 行的 `ray.get`，随后 collect 把 ObjectRefs 识别为 `DataProtoFuture`（`verl/single_controller/ray/base.py:49-64`；`verl/single_controller/base/decorator.py:138-145,191-199`；`verl/protocol.py:1288-1302`）。当前 `_update_critic` 在下一行就显式 `get()`，第一处真实等待位于 `DataProtoFuture.get → ray.get(self.futures)`（`verl/trainer/ppo/v1/trainer_base.py:1711-1732`；`verl/protocol.py:1209-1225`），所以这条具体路径没有把 critic update 与后续工作重叠起来。
+
+future 也可以直接作为另一个已注册 worker method 的输入；默认 `materialize_futures=True` 会在远端函数体前调用 `_materialize_futures`（`verl/single_controller/base/decorator.py:383-395,428-437`）。这使 controller 可以不把实际 TensorDict 拉回本进程，但不改变三个事实：RPC 在 future 创建前已经提交；远端 optimizer side effect 可能已经发生；消费端第一次 `.get()`/materialize 仍会暴露上游异常。
+
+| 事件 | 已发生 | 尚未发生/不保证 |
+|---|---|---|
+| group method 返回 `DataProtoFuture` | 参数已 dispatch，所有 remote calls 已提交 | 结果已成功、collect 已完成 |
+| 某个 worker ref resolve | 该 rank 的方法已返回 | 其它 rank 成功；SPMD 结果可拼接 |
+| `DataProtoFuture.get()` 返回 | 所有 refs 已 `ray.get`，结果已按 batch 语义聚合 | 跨 RPC 原子提交或失败回滚 |
+| 下游 wrapper materialize 完成 | future 的目标 shard 已可供函数体使用 | 上游参数副作用可撤销 |
+
 需要守住四个边界：
 
 1. **dispatch 对齐**：可切输入的 batch 维必须一致，否则问题在发 RPC 前就已产生；
@@ -134,8 +203,7 @@ Ray group 暴露 rank-zero 与 all-worker 的 sync/async 执行入口（`verl/si
 3. **partial failure**：一部分 Ray actor 已执行、一部分失败时，group wrapper 没有通用 rollback；
 4. **liveness 不等于 correctness**：worker aliveness check 只能发现 actor 死亡，不能证明参数、KV 或 batch 已一致。
 
-Trainer、CheckpointEngine 和 rollout manager 必须分别定义自己的失败恢复；不能把 Ray future 已返回写成
-“整个 RL step 已提交”。
+Trainer、CheckpointEngine 和 rollout manager 必须分别定义自己的失败恢复；不能把 group method 返回 future 写成“远端已完成”，也不能把 future materialize 写成“整个 RL step 已提交”。例如训练 RPC 在多个 rank 上部分执行后失败时，single-controller 只传播异常，没有通用 optimizer rollback；是否可重试必须由训练/恢复状态机另行定义。
 
 ## 6. 当前调用定位
 

@@ -39,38 +39,90 @@ AgentLoop 只通过 `LLMServerClient` 发请求并解释结果。
 
 ```mermaid
 sequenceDiagram
-    participant T as Trainer
+    participant T as PPOTrainer
     participant M as AgentLoopManager
-    participant A as AgentLoopWorker
+    participant MTQ as AgentLoopManagerTQ
+    participant W as AgentLoopWorker
+    participant WTQ as AgentLoopWorkerTQ
     participant L as ConcreteAgentLoop
-    participant S as LLMServerClient
     participant R as RewardLoopWorker
     participant Q as TransferQueue
 
-    T->>M: submit prompt batch
-    M->>A: dispatch prompt shard
-    A->>L: instantiate by agent name
-    loop generation and tools
-        L->>S: generate tokens
-        S-->>L: TokenOutput
-        L->>L: parse tool call and observation
+    alt ordinary DataProto path
+        T->>M: generate_sequences
+        M->>M: prompts chunk
+        M->>W: generate_sequences remote
+        W->>W: create task per sample
+        W->>L: run by agent name
+        L-->>W: AgentLoopOutput
+        W->>W: asyncio gather sample tasks
+        W-->>M: postprocessed DataProto shard
+        M->>M: asyncio gather worker refs
+        M-->>T: concat DataProto
+    else V1 TransferQueue path
+        T->>MTQ: generate_sequences
+        MTQ->>WTQ: generate_sequences remote
+        WTQ->>WTQ: create background run prompt
+        WTQ-->>MTQ: background task accepted
+        MTQ-->>T: submission accepted
+        WTQ->>Q: prompt running
+        loop rollout n sessions
+            WTQ->>L: run
+            L-->>WTQ: AgentLoopOutput
+            opt asynchronous reward
+                WTQ->>R: compute_score
+                R-->>WTQ: reward result
+            end
+            WTQ->>Q: put trajectory fields
+        end
+        WTQ->>Q: prompt finished or failure
     end
-    L-->>A: AgentLoopOutput
-    A->>A: pad and build masks
-    opt reward not already present
-        A->>R: compute score
-        R-->>A: reward and extra info
-    end
-    A->>Q: put trajectory fields and tags
 ```
 
-普通 `AgentLoopWorker.generate_sequences` 从 DataProto 读取 sampling config，为每个样本创建 asyncio task，
-按 `agent_name` 从 registry 取 Hydra config 并实例化具体 loop，最后 `gather` 全部结果
-（`verl/experimental/agent_loop/agent_loop.py:537-665`）。V1 TQ adapter 改成 fire-and-forget：worker
-立即为每个 prompt 启动 background task，输出完成后再写 TQ（`verl/trainer/ppo/v1/agent_loop_tq.py:53-105`）。
+### 2.1 普通入口：两层 `gather` 后才返回 DataProto
 
-这两个入口共享 AgentLoop 语义，但等待方式不同：普通 manager 返回完整 DataProto；V1 manager 返回控制权，
-Trainer 之后由 ReplayBuffer/TQ 状态判断哪些 prompt group 已完成。
+```text
+AgentLoopManager.generate_sequences(DataProto)
+  → attach per-sample priority
+  → prompts.chunk(num_workers)
+  → asyncio.gather(worker.generate_sequences.remote(chunk) × workers)
+      → AgentLoopWorker.generate_sequences
+          → build sampling params and trajectory_info
+          → asyncio.create_task(_run_agent_loop) × samples
+          → asyncio.gather(sample tasks)
+              → _run_agent_loop
+                  → registry lookup and hydra instantiate by agent_name
+                  → await concrete AgentLoopBase.run
+                  → await _agent_loop_postprocess
+          → _postprocess(outputs) → DataProto shard
+  → DataProto.concat(worker outputs)
+  → aggregate timing → return complete DataProto
+```
+
+manager 的 chunk、worker-level gather、concat 与 timing 聚合位于 `verl/experimental/agent_loop/agent_loop.py:1199-1230`；worker 的 per-sample task、sample-level gather、registry instantiate 与 `run` 在同文件 `537-665`。因此普通入口有两道完整批屏障：每个 worker 等自己的 sample tasks，manager 再等所有 worker refs。任一未处理异常会阻止完整 DataProto 返回。
+
+### 2.2 V1 入口：`ray.get` 只确认后台任务已创建
+
+```text
+AgentLoopManagerTQ.generate_sequences(TensorDict)
+  → prompts.chunk(num_workers)
+  → ray.get(worker.generate_sequences.remote(chunk) × workers)
+      → AgentLoopWorkerTQ.generate_sequences
+          → for each prompt
+              → asyncio.create_task(_run_prompt)
+              → store task in background_tasks
+          → return None
+  ← submission accepted
+
+background _run_prompt
+  → TQ prompt tag running
+  → create_task(_run_agent_loop) × rollout.n
+  → each session runs concrete loop and TQ postprocess
+  → gather all session tasks with return_exceptions
+  → TQ prompt tag finished if no error else failure
+```
+
+manager 的 `ray.get` 位于 `verl/trainer/ppo/v1/agent_loop_tq.py:230-257`；worker 在 `59-105` 创建 background task 后就返回，真正 per-prompt/session 工作在 `107-148`。所以这处 `ray.get` 只证明 shard 已被 worker 接收且后台 task 已登记，不证明任何 trajectory 已生成。训练侧的完成屏障是 ReplayBuffer 之后观察 prompt terminal tag，而不是 manager 返回。
 
 两种等待方式服务于不同消费者。普通入口需要立即交付一个完整、已 postprocess 的批对象，所以 `asyncio.gather` 是返回契约的一部分；V1 需要让采样生产与训练消费解耦，worker 只启动 background task，完成状态和字段随后进入 TQ。`【分析推断】` 后者避免 controller 因最慢 trajectory 建立整批屏障，但把 backpressure、group failure 和 admission 判断转移给 TQ/ReplayBuffer；它不是“同一个函数加了 async”这么简单。
 
@@ -140,15 +192,57 @@ coroutine 的一部分，还是训练 step 中的独立阶段。
 
 设计原因来自资源可并发性，而不是 reward 算法名字：源码只在规则/自定义函数或独立 RM pool 可与 rollout 并行时返回 reward worker handles，colocated RM 则由 Trainer 在生成后批处理（`verl/experimental/reward_loop/reward_loop.py:312-322`）。`【分析推断】` 前者缩短 reward 进入 TQ 的等待，但增加 worker/router 与请求重试状态；后者减少独立常驻资源，却在 step 内形成显式 reward barrier。把 colocated RM 也塞进 AgentLoop coroutine 会让资源切换和生成请求竞争同一设备。
 
-异步路径在 `_compute_score` 中把一条 trajectory 的一个或多个 output 组装成临时 DataProto，随机选择
-reward worker，最终只把 score 写到最后一个 output，并保存 extra info
-（`verl/experimental/agent_loop/agent_loop.py:937-999`）。TQ adapter 再把 final score 复制给同一 session 的
-早期 outputs，保证一条多输出 agent trajectory 使用共同终局 reward
-（`verl/trainer/ppo/v1/agent_loop_tq.py:150-181`）。
+### 5.1 可并行 reward：在 trajectory coroutine 内等待
 
-批量 colocated 路径会 pad 到 reward worker 数的倍数、并发计算、unpad，再把 scalar 组装成 token-level
-`rm_scores`（`verl/experimental/reward_loop/reward_loop.py:343-370`）。这里的 padding 是执行便利，不能
-变成额外训练样本。
+```text
+AgentLoopWorkerTQ._agent_loop_postprocess(outputs)
+  → AgentLoopWorker._compute_score(outputs, kwargs)
+      → if final_output.reward_score already exists: skip
+      → pad every output prompt/response into temporary DataProto
+      → random choice one reward_loop_worker handle
+      → await RewardLoopWorker.compute_score.remote(data)
+          ├─ custom reward path → reward_manager.run_single
+          ├─ discriminative RM path → compute_score_disrm on final row
+          └─ rule path → reward_manager.run_single
+      → assign reward_score and reward_extra_info to final_output only
+  → copy final reward and extra info to earlier outputs in same session
+  → write all session outputs to TQ
+```
+
+临时 DataProto 组装、随机 worker 选择与 remote await 在 `verl/experimental/agent_loop/agent_loop.py:937-999`；RewardLoopWorker 的 custom/discriminative/rule 分支在 `verl/experimental/reward_loop/reward_loop.py:138-155`；TQ adapter 的 sibling broadcast 在 `verl/trainer/ppo/v1/agent_loop_tq.py:150-181`。**完成点**是 reward remote 返回并且带 reward 的 trajectory fields 已写 TQ；只有 score 写到 Python `final_output` 还不够。若具体 loop 已提供终局 reward，`_compute_score` 跳过外部 RewardLoop，这是一条显式短路分支。
+
+### 5.2 colocated reward：ReplayBuffer 之后的 batch barrier
+
+```text
+PPOTrainer._step_once
+  → ReplayBuffer.sample returns KVBatchMeta
+  → because reward_loop_worker_handles is None
+      → PPOTrainer._compute_reward_colocate
+          → TQ get prompts responses raw_prompt
+          → nested lengths → padded prompts/responses and attention mask
+          → temporary DataProto
+          → RewardLoopManager.compute_rm_score
+              → optional reward model wake_up
+              → pad_dataproto_to_divisor num_workers
+              → DataProto.chunk num_workers
+              → ray.get RewardLoopWorker.compute_score_batch.remote × workers
+                  → create per-sample compute_score tasks
+                  → asyncio.gather
+              → flatten and remove pad outputs
+              → assemble_rm_scores
+              → collect reward extra info
+              → optional reward model sleep
+          → padded rm_scores → response-length nested rm_scores
+          → TQ put rm_scores and extra fields
+```
+
+Trainer 选择 colocated 分支与 TQ 读/写位于 `verl/trainer/ppo/v1/trainer_base.py:540-560,1436-1488`；RewardLoopManager 的 wake、pad、chunk、Ray gather、unpad、score assembly 和 sleep 位于 `verl/experimental/reward_loop/reward_loop.py:343-376`，worker 内部再对 chunk 的每个样本并发 `compute_score`（同文件 `138-155`）。这里的 padding 只满足 worker 数整除，manager 在 assembly 前按原 batch 长度丢掉补项；Trainer 最后又按原 response length 把 padded score 裁回 nested TQ 字段，所以补样本不能进入 advantage。
+
+| reward 路径 | 输入 owner | 等待位置 | reward 首次附着位置 | 对训练可见的完成点 |
+|---|---|---|---|---|
+| loop 已给 reward | concrete AgentLoop | 无额外 reward RPC | `AgentLoopOutput.reward_score` | TQ trajectory write 完成 |
+| async handles | AgentLoop worker | `_compute_score` await 单个 RewardLoopWorker | final output，再广播到 session siblings | 所有 session 写回且 prompt terminal |
+| colocated batch | Trainer + RewardLoopManager | manager 的 `ray.get` 等所有 reward chunks | returned DataProto `rm_scores` | Trainer 将 nested scores/extra fields 写回 TQ |
 
 ## 6. V1 TQ adapter：只拥有落库适配
 
@@ -158,6 +252,43 @@ settle 后才把 prompt 标成 `finished` 或 `failure`，防止某个晚到 sib
 
 每个 output 使用 `{uid}_{session_id}_{index}` 作为 trajectory key，写入 token、mask、position、reward、
 extra fields，并把生成起止版本放入 tags（`verl/trainer/ppo/v1/agent_loop_tq.py:150-227`）。
+
+一条 prompt 到 terminal group 的真实调用链是：
+
+```text
+AgentLoopWorkerTQ._run_prompt
+  → tq.async_kv_put prompt status running
+  → create_task AgentLoopWorker._run_agent_loop × rollout.n
+      → lookup agent_name and hydra instantiate concrete loop
+      ├─ SingleTurnAgentLoop.run
+      │    → build Continuous Token prompt
+      │    → LLMServerClient.generate once
+      │    → merge assistant tokens → AgentLoopOutput
+      └─ ToolAgentLoop.run
+           → PENDING → GENERATING → PROCESSING_TOOLS
+           → repeat until TERMINATED
+           → AgentLoopOutput with turn and tool fields
+      → AgentLoopWorkerTQ._agent_loop_postprocess
+          → _compute_score
+          → _compute_teacher_logprobs
+          → broadcast final reward to earlier outputs in same session
+          → build trajectory fields and tags
+          → tq.async_kv_batch_put trajectory keys
+  → _settle_session_tasks with return_exceptions
+  → tq.async_kv_put prompt status finished or failure
+```
+
+基类 `_run_agent_loop` 完成 registry instantiate、具体 `run` 与动态 postprocess 调用（`verl/experimental/agent_loop/agent_loop.py:631-665`）。单轮 loop 的 Continuous Token、一次 server 请求与输出合并在 `verl/experimental/agent_loop/single_turn_agent_loop.py:28-107`；工具 loop 的状态机与最终输出在 `verl/experimental/agent_loop/tool_agent_loop.py:98-209`。TQ 子类 postprocess 的 score/teacher、reward 广播、key/field/tag 构造与批量写入位于 `verl/trainer/ppo/v1/agent_loop_tq.py:150-227`。
+
+| 状态对象 | 输入/前态 | owner 与动作 | 输出/后态 | 完成信号 |
+|---|---|---|---|---|
+| prompt uid tag | `pending` | `_run_prompt` 写 `running` | group 正在生成 | async TQ put 返回 |
+| session task | prompt + session id + sampling params | concrete loop 运行 LLM/tool 状态机 | 一个或多个 `AgentLoopOutput` | concrete `run` 返回仍未代表已落库 |
+| session outputs | token/mask/extra fields，可选已有 reward | TQ postprocess 打分、teacher、位置与字段转换 | `{uid}_{session}_{index}` trajectory records | `async_kv_batch_put` 返回 |
+| sibling set | N 个 session tasks | `_settle_session_tasks` 使用 `return_exceptions=True` 等全部结束 | errors 列表 | 所有 siblings 都不会再写 trajectory |
+| prompt uid tag | `running` + errors 列表 | `_run_prompt` 选择 terminal status | `finished` 或 `failure` | terminal tag 写入后 ReplayBuffer 才可 admission/evict |
+
+这里必须区分 session trajectory tag 的 `success` 与 prompt group tag 的 `finished`：前者说明某条输出已经写入，后者说明该 prompt 的所有 rollout siblings 已结束。只看到一条 `{uid}_{session}_{index}` 记录不能提前训练该 group；否则晚到 sibling 仍可能改变组样本集合。
 
 这个 adapter 的定位是“提交轨迹字段”，而不是重新解释 AgentLoopOutput。实现保留 worker 的 token/mask/reward 结果，只负责生成稳定 key、写 running/finished/failure 和版本 tags。`【分析推断】` 这样做让相同 AgentLoop runtime 同时服务普通 DataProto 返回与 V1 引用流；代价是应用语义和持久化状态跨两层排错，尤其要区分“loop 已返回”与“所有 sibling 已 settle 且 group 已标记 finished”。
 
