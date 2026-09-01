@@ -1,0 +1,506 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1170 484" width="100%" role="img"
+     aria-label="标准 1F1B 与 VPP 交错调度的同轴对照：VPP 把每格耗时降为 t_f/vp，空泡比从 3/8 降到 3/16，makespan 从 22 t_f 降到 19 t_f，代价是每个 microbatch 往返 vp 趟、P2P 次数乘以 vp">
+  <style>
+    text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+    .card{fill:#fff;stroke:#E4E7EC}
+    .ti{font-size:15px;font-weight:700;fill:#1F2430}
+    .su{font-size:11.5px;fill:#8A8F98}
+    .pt{font-size:13px;font-weight:700;fill:#2A313B}
+    .ps{font-size:11px;fill:#8A8F98}
+    .lab{font-size:11px;fill:#5B6470;text-anchor:end}
+    .cl{font-size:9.5px;font-weight:700;fill:#fff;text-anchor:middle}
+    .f0{fill:#9CC2F3}   /* 前向 chunk0：蓝族浅档 */
+    .f1{fill:#3E7BD0}   /* 前向 chunk1：蓝族深档 */
+    .b0{fill:#A5D6BC}   /* 反向 chunk0：绿族浅档 */
+    .b1{fill:#3E9970}   /* 反向 chunk1：绿族深档 */
+    .bub{fill:url(#hatch);stroke:#E0DCD2}
+    .hl{fill:none;stroke:#2563EB;stroke-width:2}
+    .hlt{font-size:10.5px;font-weight:600;fill:#173F87}
+    .rule{stroke:#C7CCD3;stroke-dasharray:3 3}
+    .tick{stroke:#9AA1AC;stroke-width:1.5}
+    .mk{font-size:10px;fill:#9AA1AC;text-anchor:middle}
+    .box-cost{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.4}
+    .txt-cost{font-size:10.5px;font-weight:600;fill:#8A4A11}
+    .box-gain{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.4}
+    .txt-gain{font-size:10.5px;font-weight:600;fill:#173F87}
+    .cap{font-size:11px;fill:#7A808A}
+    .lg{font-size:10.5px;fill:#7A808A}
+  </style>
+  <defs>
+    <pattern id="hatch" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <rect width="6" height="6" fill="#F3F1EB"/>
+      <rect width="3" height="6" fill="#E4E0D6"/>
+    </pattern>
+  </defs>
+  <rect class="card" x="0.5" y="0.5" width="1169" height="483" rx="14"/>
+  <text class="ti" x="20" y="34">交错 1F1B(VPP)：气泡率 ÷ vp，代价是 P2P ×vp</text>
+  <text class="su" x="20" y="52">pp=4, m=8, vp=2, N=4 · 上下两面板共用同一条按真实耗时刻度的时间轴（每格宽度 ∝ 该格耗时）· 斜纹 = 空泡</text>
+  <text class="su" x="20" y="68">蓝 = 前向，绿 = 反向；浅档 = chunk0，深档 = chunk1</text>
+  <text class="pt" x="20" y="80">① 标准 1F1B（调度器②）—— 每卡一段连续层</text>
+  <text class="ps" x="20" y="97">一格 = t_f（一个 microbatch 走完本 stage 整段层）</text>
+  <text class="lab" x="74" y="125">Dev0</text>
+  <rect class="f0" x="85.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="104" y="124.5">f0</text>
+  <rect class="f0" x="125.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="144" y="124.5">f1</text>
+  <rect class="f0" x="165.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="184" y="124.5">f2</text>
+  <rect class="f0" x="205.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="224" y="124.5">f3</text>
+  <rect class="bub" x="245.5" y="110" width="37" height="22" rx="3"/>
+  <rect class="bub" x="285.5" y="110" width="37" height="22" rx="3"/>
+  <rect class="bub" x="325.5" y="110" width="37" height="22" rx="3"/>
+  <rect class="b0" x="365.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="384" y="124.5">b0</text>
+  <rect class="f0" x="405.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="424" y="124.5">f4</text>
+  <rect class="b0" x="445.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="464" y="124.5">b1</text>
+  <rect class="f0" x="485.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="504" y="124.5">f5</text>
+  <rect class="b0" x="525.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="544" y="124.5">b2</text>
+  <rect class="f0" x="565.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="584" y="124.5">f6</text>
+  <rect class="b0" x="605.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="624" y="124.5">b3</text>
+  <rect class="f0" x="645.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="664" y="124.5">f7</text>
+  <rect class="b0" x="685.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="704" y="124.5">b4</text>
+  <rect class="bub" x="725.5" y="110" width="37" height="22" rx="3"/>
+  <rect class="b0" x="765.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="784" y="124.5">b5</text>
+  <rect class="bub" x="805.5" y="110" width="37" height="22" rx="3"/>
+  <rect class="b0" x="845.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="864" y="124.5">b6</text>
+  <rect class="bub" x="885.5" y="110" width="37" height="22" rx="3"/>
+  <rect class="b0" x="925.5" y="110" width="37" height="22" rx="3"/>
+  <text class="cl" x="944" y="124.5">b7</text>
+  <text class="lab" x="74" y="150">Dev1</text>
+  <rect class="bub" x="85.5" y="135" width="37" height="22" rx="3"/>
+  <rect class="f0" x="125.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="144" y="149.5">f0</text>
+  <rect class="f0" x="165.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="184" y="149.5">f1</text>
+  <rect class="f0" x="205.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="224" y="149.5">f2</text>
+  <rect class="bub" x="245.5" y="135" width="37" height="22" rx="3"/>
+  <rect class="bub" x="285.5" y="135" width="37" height="22" rx="3"/>
+  <rect class="b0" x="325.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="344" y="149.5">b0</text>
+  <rect class="f0" x="365.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="384" y="149.5">f3</text>
+  <rect class="b0" x="405.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="424" y="149.5">b1</text>
+  <rect class="f0" x="445.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="464" y="149.5">f4</text>
+  <rect class="b0" x="485.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="504" y="149.5">b2</text>
+  <rect class="f0" x="525.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="544" y="149.5">f5</text>
+  <rect class="b0" x="565.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="584" y="149.5">b3</text>
+  <rect class="f0" x="605.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="624" y="149.5">f6</text>
+  <rect class="b0" x="645.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="664" y="149.5">b4</text>
+  <rect class="f0" x="685.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="704" y="149.5">f7</text>
+  <rect class="b0" x="725.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="744" y="149.5">b5</text>
+  <rect class="bub" x="765.5" y="135" width="37" height="22" rx="3"/>
+  <rect class="b0" x="805.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="824" y="149.5">b6</text>
+  <rect class="bub" x="845.5" y="135" width="37" height="22" rx="3"/>
+  <rect class="b0" x="885.5" y="135" width="37" height="22" rx="3"/>
+  <text class="cl" x="904" y="149.5">b7</text>
+  <rect class="bub" x="925.5" y="135" width="37" height="22" rx="3"/>
+  <text class="lab" x="74" y="175">Dev2</text>
+  <rect class="bub" x="85.5" y="160" width="37" height="22" rx="3"/>
+  <rect class="bub" x="125.5" y="160" width="37" height="22" rx="3"/>
+  <rect class="f0" x="165.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="184" y="174.5">f0</text>
+  <rect class="f0" x="205.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="224" y="174.5">f1</text>
+  <rect class="bub" x="245.5" y="160" width="37" height="22" rx="3"/>
+  <rect class="b0" x="285.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="304" y="174.5">b0</text>
+  <rect class="f0" x="325.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="344" y="174.5">f2</text>
+  <rect class="b0" x="365.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="384" y="174.5">b1</text>
+  <rect class="f0" x="405.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="424" y="174.5">f3</text>
+  <rect class="b0" x="445.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="464" y="174.5">b2</text>
+  <rect class="f0" x="485.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="504" y="174.5">f4</text>
+  <rect class="b0" x="525.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="544" y="174.5">b3</text>
+  <rect class="f0" x="565.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="584" y="174.5">f5</text>
+  <rect class="b0" x="605.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="624" y="174.5">b4</text>
+  <rect class="f0" x="645.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="664" y="174.5">f6</text>
+  <rect class="b0" x="685.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="704" y="174.5">b5</text>
+  <rect class="f0" x="725.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="744" y="174.5">f7</text>
+  <rect class="b0" x="765.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="784" y="174.5">b6</text>
+  <rect class="bub" x="805.5" y="160" width="37" height="22" rx="3"/>
+  <rect class="b0" x="845.5" y="160" width="37" height="22" rx="3"/>
+  <text class="cl" x="864" y="174.5">b7</text>
+  <rect class="bub" x="885.5" y="160" width="37" height="22" rx="3"/>
+  <rect class="bub" x="925.5" y="160" width="37" height="22" rx="3"/>
+  <text class="lab" x="74" y="200">Dev3</text>
+  <rect class="bub" x="85.5" y="185" width="37" height="22" rx="3"/>
+  <rect class="bub" x="125.5" y="185" width="37" height="22" rx="3"/>
+  <rect class="bub" x="165.5" y="185" width="37" height="22" rx="3"/>
+  <rect class="f0" x="205.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="224" y="199.5">f0</text>
+  <rect class="b0" x="245.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="264" y="199.5">b0</text>
+  <rect class="f0" x="285.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="304" y="199.5">f1</text>
+  <rect class="b0" x="325.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="344" y="199.5">b1</text>
+  <rect class="f0" x="365.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="384" y="199.5">f2</text>
+  <rect class="b0" x="405.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="424" y="199.5">b2</text>
+  <rect class="f0" x="445.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="464" y="199.5">f3</text>
+  <rect class="b0" x="485.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="504" y="199.5">b3</text>
+  <rect class="f0" x="525.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="544" y="199.5">f4</text>
+  <rect class="b0" x="565.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="584" y="199.5">b4</text>
+  <rect class="f0" x="605.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="624" y="199.5">f5</text>
+  <rect class="b0" x="645.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="664" y="199.5">b5</text>
+  <rect class="f0" x="685.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="704" y="199.5">f6</text>
+  <rect class="b0" x="725.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="744" y="199.5">b6</text>
+  <rect class="f0" x="765.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="784" y="199.5">f7</text>
+  <rect class="b0" x="805.5" y="185" width="37" height="22" rx="3"/>
+  <text class="cl" x="824" y="199.5">b7</text>
+  <rect class="bub" x="845.5" y="185" width="37" height="22" rx="3"/>
+  <rect class="bub" x="885.5" y="185" width="37" height="22" rx="3"/>
+  <rect class="bub" x="925.5" y="185" width="37" height="22" rx="3"/>
+  <line class="rule" x1="84" y1="217" x2="964" y2="217"/>
+  <line class="tick" x1="964" y1="212" x2="964" y2="222"/>
+  <text class="mk" x="524" y="231">makespan = 22 t_f</text>
+  <rect class="box-cost" x="978" y="132.5" width="172" height="52" rx="8"/>
+  <text class="txt-cost" x="989" y="150.5">空泡 / 计算 = 6 / 16</text>
+  <text class="txt-cost" x="989" y="165.5">= (pp−1)/m = 3/8 = 37.5%</text>
+  <text class="pt" x="20" y="259">② 交错 1F1B / VPP（调度器③）—— 每卡 vp=2 个不连续 chunk</text>
+  <text class="ps" x="20" y="276">一格 = t_f/vp（只走 1 个 chunk）· f/b = chunk0，F/B = chunk1</text>
+  <text class="lab" x="74" y="304">Dev0</text>
+  <rect class="f0" x="85.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="94" y="303.5">f0</text>
+  <rect class="f0" x="105.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="114" y="303.5">f1</text>
+  <rect class="f0" x="125.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="134" y="303.5">f2</text>
+  <rect class="f0" x="145.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="154" y="303.5">f3</text>
+  <rect class="f1" x="165.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="174" y="303.5">F0</text>
+  <rect class="f1" x="185.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="194" y="303.5">F1</text>
+  <rect class="f1" x="205.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="214" y="303.5">F2</text>
+  <rect class="f1" x="225.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="234" y="303.5">F3</text>
+  <rect class="f0" x="245.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="254" y="303.5">f4</text>
+  <rect class="f0" x="265.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="274" y="303.5">f5</text>
+  <rect class="f0" x="285.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="294" y="303.5">f6</text>
+  <rect class="b1" x="305.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="314" y="303.5">B0</text>
+  <rect class="f0" x="325.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="334" y="303.5">f7</text>
+  <rect class="b1" x="345.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="354" y="303.5">B1</text>
+  <rect class="bub" x="365.5" y="289" width="17" height="22" rx="3"/>
+  <rect class="bub" x="385.5" y="289" width="17" height="22" rx="3"/>
+  <rect class="f1" x="405.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="414" y="303.5">F4</text>
+  <rect class="b1" x="425.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="434" y="303.5">B2</text>
+  <rect class="f1" x="445.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="454" y="303.5">F5</text>
+  <rect class="b1" x="465.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="474" y="303.5">B3</text>
+  <rect class="f1" x="485.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="494" y="303.5">F6</text>
+  <rect class="b0" x="505.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="514" y="303.5">b0</text>
+  <rect class="f1" x="525.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="534" y="303.5">F7</text>
+  <rect class="b0" x="545.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="554" y="303.5">b1</text>
+  <rect class="b0" x="565.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="574" y="303.5">b2</text>
+  <rect class="b0" x="585.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="594" y="303.5">b3</text>
+  <rect class="bub" x="605.5" y="289" width="17" height="22" rx="3"/>
+  <rect class="b1" x="625.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="634" y="303.5">B4</text>
+  <rect class="bub" x="645.5" y="289" width="17" height="22" rx="3"/>
+  <rect class="b1" x="665.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="674" y="303.5">B5</text>
+  <rect class="bub" x="685.5" y="289" width="17" height="22" rx="3"/>
+  <rect class="b1" x="705.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="714" y="303.5">B6</text>
+  <rect class="bub" x="725.5" y="289" width="17" height="22" rx="3"/>
+  <rect class="b1" x="745.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="754" y="303.5">B7</text>
+  <rect class="b0" x="765.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="774" y="303.5">b4</text>
+  <rect class="b0" x="785.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="794" y="303.5">b5</text>
+  <rect class="b0" x="805.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="814" y="303.5">b6</text>
+  <rect class="b0" x="825.5" y="289" width="17" height="22" rx="3"/>
+  <text class="cl" x="834" y="303.5">b7</text>
+  <text class="lab" x="74" y="329">Dev1</text>
+  <rect class="bub" x="85.5" y="314" width="17" height="22" rx="3"/>
+  <rect class="f0" x="105.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="114" y="328.5">f0</text>
+  <rect class="f0" x="125.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="134" y="328.5">f1</text>
+  <rect class="f0" x="145.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="154" y="328.5">f2</text>
+  <rect class="f0" x="165.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="174" y="328.5">f3</text>
+  <rect class="f1" x="185.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="194" y="328.5">F0</text>
+  <rect class="f1" x="205.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="214" y="328.5">F1</text>
+  <rect class="f1" x="225.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="234" y="328.5">F2</text>
+  <rect class="f1" x="245.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="254" y="328.5">F3</text>
+  <rect class="f0" x="265.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="274" y="328.5">f4</text>
+  <rect class="b1" x="285.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="294" y="328.5">B0</text>
+  <rect class="f0" x="305.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="314" y="328.5">f5</text>
+  <rect class="b1" x="325.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="334" y="328.5">B1</text>
+  <rect class="f0" x="345.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="354" y="328.5">f6</text>
+  <rect class="b1" x="365.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="374" y="328.5">B2</text>
+  <rect class="f0" x="385.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="394" y="328.5">f7</text>
+  <rect class="b1" x="405.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="414" y="328.5">B3</text>
+  <rect class="f1" x="425.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="434" y="328.5">F4</text>
+  <rect class="b0" x="445.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="454" y="328.5">b0</text>
+  <rect class="f1" x="465.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="474" y="328.5">F5</text>
+  <rect class="b0" x="485.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="494" y="328.5">b1</text>
+  <rect class="f1" x="505.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="514" y="328.5">F6</text>
+  <rect class="b0" x="525.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="534" y="328.5">b2</text>
+  <rect class="f1" x="545.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="554" y="328.5">F7</text>
+  <rect class="b0" x="565.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="574" y="328.5">b3</text>
+  <rect class="bub" x="585.5" y="314" width="17" height="22" rx="3"/>
+  <rect class="b1" x="605.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="614" y="328.5">B4</text>
+  <rect class="bub" x="625.5" y="314" width="17" height="22" rx="3"/>
+  <rect class="b1" x="645.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="654" y="328.5">B5</text>
+  <rect class="bub" x="665.5" y="314" width="17" height="22" rx="3"/>
+  <rect class="b1" x="685.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="694" y="328.5">B6</text>
+  <rect class="bub" x="705.5" y="314" width="17" height="22" rx="3"/>
+  <rect class="b1" x="725.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="734" y="328.5">B7</text>
+  <rect class="b0" x="745.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="754" y="328.5">b4</text>
+  <rect class="b0" x="765.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="774" y="328.5">b5</text>
+  <rect class="b0" x="785.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="794" y="328.5">b6</text>
+  <rect class="b0" x="805.5" y="314" width="17" height="22" rx="3"/>
+  <text class="cl" x="814" y="328.5">b7</text>
+  <rect class="bub" x="825.5" y="314" width="17" height="22" rx="3"/>
+  <text class="lab" x="74" y="354">Dev2</text>
+  <rect class="bub" x="85.5" y="339" width="17" height="22" rx="3"/>
+  <rect class="bub" x="105.5" y="339" width="17" height="22" rx="3"/>
+  <rect class="f0" x="125.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="134" y="353.5">f0</text>
+  <rect class="f0" x="145.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="154" y="353.5">f1</text>
+  <rect class="f0" x="165.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="174" y="353.5">f2</text>
+  <rect class="f0" x="185.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="194" y="353.5">f3</text>
+  <rect class="f1" x="205.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="214" y="353.5">F0</text>
+  <rect class="f1" x="225.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="234" y="353.5">F1</text>
+  <rect class="f1" x="245.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="254" y="353.5">F2</text>
+  <rect class="b1" x="265.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="274" y="353.5">B0</text>
+  <rect class="f1" x="285.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="294" y="353.5">F3</text>
+  <rect class="b1" x="305.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="314" y="353.5">B1</text>
+  <rect class="f0" x="325.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="334" y="353.5">f4</text>
+  <rect class="b1" x="345.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="354" y="353.5">B2</text>
+  <rect class="f0" x="365.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="374" y="353.5">f5</text>
+  <rect class="b1" x="385.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="394" y="353.5">B3</text>
+  <rect class="f0" x="405.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="414" y="353.5">f6</text>
+  <rect class="b0" x="425.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="434" y="353.5">b0</text>
+  <rect class="f0" x="445.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="454" y="353.5">f7</text>
+  <rect class="b0" x="465.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="474" y="353.5">b1</text>
+  <rect class="f1" x="485.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="494" y="353.5">F4</text>
+  <rect class="b0" x="505.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="514" y="353.5">b2</text>
+  <rect class="f1" x="525.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="534" y="353.5">F5</text>
+  <rect class="b0" x="545.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="554" y="353.5">b3</text>
+  <rect class="f1" x="565.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="574" y="353.5">F6</text>
+  <rect class="b1" x="585.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="594" y="353.5">B4</text>
+  <rect class="f1" x="605.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="614" y="353.5">F7</text>
+  <rect class="b1" x="625.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="634" y="353.5">B5</text>
+  <rect class="bub" x="645.5" y="339" width="17" height="22" rx="3"/>
+  <rect class="b1" x="665.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="674" y="353.5">B6</text>
+  <rect class="bub" x="685.5" y="339" width="17" height="22" rx="3"/>
+  <rect class="b1" x="705.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="714" y="353.5">B7</text>
+  <rect class="b0" x="725.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="734" y="353.5">b4</text>
+  <rect class="b0" x="745.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="754" y="353.5">b5</text>
+  <rect class="b0" x="765.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="774" y="353.5">b6</text>
+  <rect class="b0" x="785.5" y="339" width="17" height="22" rx="3"/>
+  <text class="cl" x="794" y="353.5">b7</text>
+  <rect class="bub" x="805.5" y="339" width="17" height="22" rx="3"/>
+  <rect class="bub" x="825.5" y="339" width="17" height="22" rx="3"/>
+  <text class="lab" x="74" y="379">Dev3</text>
+  <rect class="bub" x="85.5" y="364" width="17" height="22" rx="3"/>
+  <rect class="bub" x="105.5" y="364" width="17" height="22" rx="3"/>
+  <rect class="bub" x="125.5" y="364" width="17" height="22" rx="3"/>
+  <rect class="f0" x="145.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="154" y="378.5">f0</text>
+  <rect class="f0" x="165.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="174" y="378.5">f1</text>
+  <rect class="f0" x="185.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="194" y="378.5">f2</text>
+  <rect class="f0" x="205.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="214" y="378.5">f3</text>
+  <rect class="f1" x="225.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="234" y="378.5">F0</text>
+  <rect class="b1" x="245.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="254" y="378.5">B0</text>
+  <rect class="f1" x="265.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="274" y="378.5">F1</text>
+  <rect class="b1" x="285.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="294" y="378.5">B1</text>
+  <rect class="f1" x="305.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="314" y="378.5">F2</text>
+  <rect class="b1" x="325.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="334" y="378.5">B2</text>
+  <rect class="f1" x="345.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="354" y="378.5">F3</text>
+  <rect class="b1" x="365.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="374" y="378.5">B3</text>
+  <rect class="f0" x="385.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="394" y="378.5">f4</text>
+  <rect class="b0" x="405.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="414" y="378.5">b0</text>
+  <rect class="f0" x="425.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="434" y="378.5">f5</text>
+  <rect class="b0" x="445.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="454" y="378.5">b1</text>
+  <rect class="f0" x="465.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="474" y="378.5">f6</text>
+  <rect class="b0" x="485.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="494" y="378.5">b2</text>
+  <rect class="f0" x="505.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="514" y="378.5">f7</text>
+  <rect class="b0" x="525.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="534" y="378.5">b3</text>
+  <rect class="f1" x="545.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="554" y="378.5">F4</text>
+  <rect class="b1" x="565.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="574" y="378.5">B4</text>
+  <rect class="f1" x="585.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="594" y="378.5">F5</text>
+  <rect class="b1" x="605.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="614" y="378.5">B5</text>
+  <rect class="f1" x="625.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="634" y="378.5">F6</text>
+  <rect class="b1" x="645.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="654" y="378.5">B6</text>
+  <rect class="f1" x="665.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="674" y="378.5">F7</text>
+  <rect class="b1" x="685.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="694" y="378.5">B7</text>
+  <rect class="b0" x="705.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="714" y="378.5">b4</text>
+  <rect class="b0" x="725.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="734" y="378.5">b5</text>
+  <rect class="b0" x="745.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="754" y="378.5">b6</text>
+  <rect class="b0" x="765.5" y="364" width="17" height="22" rx="3"/>
+  <text class="cl" x="774" y="378.5">b7</text>
+  <rect class="bub" x="785.5" y="364" width="17" height="22" rx="3"/>
+  <rect class="bub" x="805.5" y="364" width="17" height="22" rx="3"/>
+  <rect class="bub" x="825.5" y="364" width="17" height="22" rx="3"/>
+  <rect class="hl" x="85.5" y="289" width="17" height="22" rx="3"/>
+  <rect class="hl" x="165.5" y="289" width="17" height="22" rx="3"/>
+  <rect class="hl" x="105.5" y="314" width="17" height="22" rx="3"/>
+  <rect class="hl" x="185.5" y="314" width="17" height="22" rx="3"/>
+  <rect class="hl" x="125.5" y="339" width="17" height="22" rx="3"/>
+  <rect class="hl" x="205.5" y="339" width="17" height="22" rx="3"/>
+  <rect class="hl" x="145.5" y="364" width="17" height="22" rx="3"/>
+  <rect class="hl" x="225.5" y="364" width="17" height="22" rx="3"/>
+  <line class="rule" x1="84" y1="396" x2="844" y2="396"/>
+  <line class="tick" x1="844" y1="391" x2="844" y2="401"/>
+  <text class="mk" x="464" y="410">makespan = 19 t_f</text>
+  <rect class="box-gain" x="978" y="311.5" width="172" height="52" rx="8"/>
+  <text class="txt-gain" x="989" y="329.5">空泡 / 计算 = 6 / 32</text>
+  <text class="txt-gain" x="989" y="344.5">= (pp−1)/(m·vp) = 3/16 = 18.75%</text>
+  <text class="cap" x="20" y="430">同一条轴上量：makespan 从 22 t_f 降到 19 t_f；空泡/计算从 6/16 = (pp−1)/m 降到 6/32 = (pp−1)/(m·vp)，正好 ÷vp。</text>
+  <text class="cap" x="20" y="446"><tspan fill="#173F87" font-weight="700">蓝框</tspan> = mb0 的前向路径：chunk0 走完 4 个 stage 后回到 Dev0 才起 chunk1 —— 一个 microbatch 往返 vp=2 趟，这正是收益的来源，也是代价的来源。</text>
+  <text class="cap" x="20" y="462">代价：P2P 次数 ×vp；峰值激活 ≈ (1+1/vp)·pp·A（略高于 1F1B）。跨机时须配 overlap_p2p_comm（调度器④）把这 vp× 通信藏起来。</text>
+</svg>

@@ -9,7 +9,7 @@ title: "Megatron-LM 流水线并行(Pipeline Parallelism)调度器深度解析"
 > 核心文件:`megatron/core/pipeline_parallel/schedules.py`(2653 行)、`megatron/core/pipeline_parallel/combined_1f1b.py`、`megatron/core/models/common/model_chunk_schedule_plan.py`
 > 适用读者:已了解 transformer 训练、TP/DP/PP 基本概念,想吃透 Megatron PP 调度实现的工程师。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
+> **最近更新**：2026-08-29。§③.3 / §④.3 各补一张渲染图（外链 SVG，由仿真脚本生成，见 `tools/figs/svg/`）；机制正文与既有引用未改。
 
 ---
 
@@ -497,7 +497,11 @@ model_chunk_id        | 0  0  0  0  1  1  1  1  0  0  0  0  1  1  1  1
 ```
 各 rank warmup `= 2(pp-r-1)+(vp-1)N`:rank0=10, rank1=8, rank2=6, rank3=4。
 
-完整空间-时间图(由模拟器逐 op 按依赖解算,槽 1–38,一格 = 一个 chunk-op,耗时 `t_chunk = t_f/vp`):
+![标准 1F1B 与 VPP 的同轴对照：两个面板共用一条按真实耗时刻度的时间轴，VPP 每格只有 t_f/vp，makespan 从 22 t_f 降到 19 t_f，空泡/计算从 (pp−1)/m=3/8 降到 (pp−1)/(m·vp)=3/16；蓝框标出 mb0 的前向要往返 vp=2 趟，这既是收益来源也是 P2P ×vp 的代价来源。](assets/megatron_pp_vpp_vs_1f1b.svg)
+
+*图 ③-1 交错 1F1B(VPP)：气泡率 ÷ vp，代价是 P2P ×vp。格子由 `tools/figs/svg/lib/megatron_pp_sim.mjs` 的离散事件仿真解算(算法照本页基线的 `megatron/core/pipeline_parallel/schedules.py`)，与下方 ASCII 表同源，故两者不可能对不上。*
+
+下表是同一份解算结果的精确文本形式(便于 grep 与逐格核对)。完整空间-时间图(槽 1–38,一格 = 一个 chunk-op,耗时 `t_chunk = t_f/vp`):
 ```
 slot  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38
 Dev0  f0 f1 f2 f3 F0 F1 F2 F3 f4 f5 f6 B0 f7 B1 .. .. F4 B2 F5 B3 F6 b0 F7 b1 b2 b3 .. B4 .. B5 .. B6 .. B7 b4 b5 b6 b7
@@ -618,15 +622,9 @@ output_tensor, input_tensor_grad = forward_backward_helper_wrapper(
 
 ### ④.3 流水线模拟图
 
-```
-不开 overlap(同步融合通信):
-comp |■■F■■|--P2P--|■■B■■|--P2P--|■■F■■|...   P2P 串在关键路径上
-                                              ↑ 每步多付一段通信延迟
+![overlap_p2p_comm 前后对照：同步融合 P2P 时计算流每步干等一段通信(橙色斜纹)，改成异步 isend/irecv + 延迟 wait 后计算流连续、P2P 被下一次计算掩盖，壁钟从 11.0 t 降到 8.0 t。](assets/megatron_pp_p2p_overlap.svg)
 
-开 overlap_p2p_comm:
-comp |■■F■■|■■B■■|■■F■■|■■B■■|...             计算连续无缝
-comm  ···· |isend/irecv| |isend/irecv| ...    通信在后台并行,被计算掩盖
-```
+*图 ④-1 `overlap_p2p_comm`：把 vp× 的 P2P 通信移出关键路径。**序列**(谁先谁后、四个回调挂在哪一步)逐条取自 `megatron/core/pipeline_parallel/schedules.py:1849` 的稳态循环，可核对；**时间比例**是作图参数 `t_f=t_b=4t`、`t_p2p=1.5t`，属于示意，本库没有该场景的实测带宽数据。省下的是**暴露的通信**，不是气泡——气泡率仍为 `(pp-1)/(m·vp)`，与 VPP 相同。*
 
 ### ④.4 开销分析
 
