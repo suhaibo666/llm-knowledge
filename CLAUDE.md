@@ -72,8 +72,7 @@ post-training frontier).
   one-line orientation from the course page. If a course page contradicts or lags the functional
   tree, fix the functional-tree page; the course page only updates links, order, and orientation.
 - The purpose of this rule is to close the recurring root cause of "a new learning domain
-  re-explains old content" (see `docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md`
-  §1).
+  re-explains old content".
 
 ## Provenance policy
 

@@ -26,7 +26,7 @@ existing-Wiki inspection is allowed before approval. Workflow persistence begins
 2. Build the discovery map from capabilities first, then static architecture, representative lifecycles, state owners, core mechanisms, extension boundaries, engineering constraints, and live/legacy status.
 3. Convert the discovery map into the blueprint contract below.
 4. Present the blueprint and stop for explicit user approval.
-5. Persist an approved multi-page blueprint under `docs/superpowers/specs/` when it must survive multiple pages or sessions.
+5. Persist an approved multi-page blueprint under the git-ignored, local-only `docs/superpowers/specs/` when it must survive multiple pages or sessions. Never force-add that directory to Git.
 6. Dispatch one approved page contract at a time to `source-faithful-analysis`; invoke
    `maintaining-llm-knowledge`, `writing-obsidian-math`, and `writing-mermaid-diagrams` only when
    their concrete work appears. For concrete figure work, invoke an available figure skill routed

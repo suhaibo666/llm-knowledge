@@ -150,5 +150,4 @@ python tools/radar.py --dry-run    # 只打印，不落盘
 
 ## 维护
 
-按 [CLAUDE.md](CLAUDE.md) 定义的 Workflow 由 Agent 维护。当前结构整改：
-`docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md`。
+按 [CLAUDE.md](CLAUDE.md) 定义的 Workflow 由 Agent 维护。

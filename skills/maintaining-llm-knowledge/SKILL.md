@@ -67,7 +67,7 @@ When a new source is added to `raw/`, follow this sequence:
 
 ### Update Principles
 
-- **Merge over coexist**（合并优于并存）：发现主题重叠时必须合并到权威页——不是"两份都保留、互相链接"。合并前先判定谁是权威版本（更全/基线更新/粒度更好），把被并页的独有增量吸收进权威页；**删除前必须先修复全部入链**指向权威页；删除后在 `wiki/changelog.md` 记录并注明并入目标。（完整判重/迁移规程见 `docs/superpowers/specs/2026-07-29-llm-knowledge-reorg-design.md` §3、§6）
+- **Merge over coexist**（合并优于并存）：发现主题重叠时必须合并到权威页——不是"两份都保留、互相链接"。合并前先判定谁是权威版本（更全/基线更新/粒度更好），把被并页的独有增量吸收进权威页；**删除前必须先修复全部入链**指向权威页；删除后在 `wiki/changelog.md` 记录并注明并入目标。
 - Mark outdated claims with `> [!deprecated] Updated by [[page_name]]`
 - Mark contradictions with `> [!contradiction] See also [[page_name]]`
 - Record the date of each significant update in the page header
