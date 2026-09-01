@@ -114,6 +114,9 @@ venv.bak/
 # Superpowers framework session working files (brainstorm drafts, review tmp, logs)
 .superpowers/
 
+# Local Superpowers planning/design artifacts; existing tracked references stay tracked
+/docs/superpowers/**/*.md
+
 # macOS
 .DS_Store
 **/.DS_Store
