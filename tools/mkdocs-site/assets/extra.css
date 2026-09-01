@@ -12,8 +12,7 @@
   --kb-cyan-soft: #ddf3f3;
   --kb-focus: #f0a11a;
   --kb-rail-width: clamp(14rem, 20vw, 16rem);
-  --kb-reading-width: 41rem;
-  --kb-article-width: clamp(var(--kb-reading-width), 68vw, 64rem);
+  --kb-article-width: clamp(41rem, 62vw, 52rem);
   --md-default-bg-color: var(--kb-canvas);
   --md-default-fg-color: var(--kb-ink);
   --md-primary-fg-color: #18365f;
@@ -74,24 +73,6 @@ body {
   padding-inline: clamp(0.8rem, 2.2vw, 1.6rem);
 }
 
-body:not(.kb-page-index) .md-content__inner > * {
-  max-width: var(--kb-reading-width);
-  margin-inline: auto;
-}
-
-body:not(.kb-page-index) .md-content__inner > :where(
-  .mermaid,
-  .md-typeset__scrollwrap,
-  table:not([class]),
-  .highlight,
-  pre,
-  figure,
-  .tabbed-set
-) {
-  width: 100%;
-  max-width: none;
-}
-
 .md-typeset {
   color: var(--kb-ink);
   font-size: 0.82rem;
@@ -132,6 +113,14 @@ body:not(.kb-page-index) .md-content__inner > :where(
   display: block;
   max-width: 100%;
   overflow-x: auto;
+}
+
+.md-typeset .md-typeset__scrollwrap {
+  margin-inline: 0;
+}
+
+.md-typeset .highlight {
+  margin-inline: 0;
 }
 
 .md-typeset img,

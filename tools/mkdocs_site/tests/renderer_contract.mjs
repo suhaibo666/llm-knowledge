@@ -205,7 +205,7 @@ function isExpectedMermaidPageError(message) {
   return message.startsWith("Parse error on line") && message.includes("got 'EOF'")
 }
 
-async function assertAdaptiveArticleLayout(page) {
+async function assertUnifiedArticleLayout(page) {
   const cases = []
   for (const width of [390, 1024, 1440, 1920]) {
     await page.setViewport({ width, height: 900, deviceScaleFactor: 1 })
@@ -237,13 +237,24 @@ async function assertAdaptiveArticleLayout(page) {
     cases.push(metrics)
   }
 
+  for (const layout of cases) {
+    for (const key of ["mermaid", "table", "code"]) {
+      assert.ok(
+        Math.abs(layout[key] - layout.prose) <= 2,
+        `${layout.viewport}px ${key} width ${layout[key]} does not align with prose ${layout.prose}`,
+      )
+    }
+  }
+
   const desktop = cases.find((item) => item.viewport === 1920)
-  assert.ok(desktop.article >= 1_180, "wide-screen article canvas did not expand")
-  assert.ok(desktop.prose <= 920, "prose exceeded the readable line width")
-  for (const key of ["mermaid", "table", "code"]) {
+  assert.ok(
+    desktop.article >= 1_040 && desktop.article <= 1_160,
+    "wide-screen article canvas is outside the balanced reading range",
+  )
+  for (const key of ["prose", "mermaid", "table", "code"]) {
     assert.ok(
-      desktop[key] >= 1_100,
-      `${key} did not use the wide article canvas`,
+      desktop[key] >= 980 && desktop[key] <= 1_100,
+      `${key} is outside the balanced content width`,
     )
   }
 }
@@ -535,7 +546,7 @@ async function runCase(browser, origin, basePath, servedResponses) {
       `${basePath} Mermaid security probe executed`,
     )
 
-    await assertAdaptiveArticleLayout(page)
+    await assertUnifiedArticleLayout(page)
     await assertMermaidViewerLifecycle(page)
 
     assert.deepEqual(blockedExternal, [], `${basePath} attempted external requests`)

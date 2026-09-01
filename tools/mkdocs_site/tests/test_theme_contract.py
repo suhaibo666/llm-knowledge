@@ -23,16 +23,16 @@ from tools.mkdocs_site.staging import stage_wiki
 REPO = Path(__file__).resolve().parents[3]
 RENDERER_CONTRACT_BODY = r"""
 
-This deliberately long prose paragraph is the readable-width layout probe. It should remain comfortable to scan while diagrams, tables, and code use the wider document canvas on large screens.
+This deliberately long prose paragraph is the unified-width layout probe. It should remain comfortable to scan and align with diagrams, tables, and code on large screens.
 
 | layout | contract |
 |---|---|
-| prose | readable |
-| technical blocks | wide |
+| prose | unified |
+| technical blocks | unified |
 
 ```python
 def adaptive_layout():
-    return "wide technical content, readable prose"
+    return "one balanced content width"
 ```
 
 > [!note] Blockquoted display math must stay in the corpus gate
