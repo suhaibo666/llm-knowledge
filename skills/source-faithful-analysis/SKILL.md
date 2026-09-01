@@ -133,6 +133,9 @@ the prose should still explain why the design exists, how it works, and what bre
   choosing the convenient version.
 - Link summaries to the authoritative owner instead of re-explaining the same mechanism.
 - Verify cross-references mechanically and spot-check cited locators against the frozen source.
+- When the unit belongs to a planned wave, an **independent reviewer (never the writer)** applies
+  `references/page-review-rubric.md` and returns a per-page verdict; a rejected page goes back to
+  Phase 2 with the failing check named. The user samples pages on top of the reviewer.
 - Run the host repository’s required quality gates.
 
 ### Phase 5 — Grow on demand
@@ -166,6 +169,8 @@ Before delivery, verify:
   applicable.
 - Architecture overviews contain both the static responsibility view and one real lifecycle.
 - Inference, conflict, legacy behavior, and unsupported cases are labelled rather than flattened.
+- The main execution trace passes a **hop-walk**: following its locators in order reaches the
+  completion boundary without any search step the page does not provide.
 - Cross-references point to concept owners and the host quality gates pass.
 
 The throughline: **if it is not supported by the spot you just read, it does not belong in the

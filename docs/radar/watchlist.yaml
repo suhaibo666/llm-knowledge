@@ -9,12 +9,17 @@
 # kb_baseline 是「KB 当前分析所依据的那个 commit」。radar 用它判断
 # 「上游已经跑到哪、我们的页面落后多少」。合并新分析后请同步更新这里。
 # 填 null 表示暂不做落后判定，只报告新活动。
+#
+# checkout 是该仓在本机的旁置检出（相对本仓根），供 tools/check_locators.py 与
+# tools/check_coverage.py 用 `git -C <checkout> show <页面钉的commit>:<path>` 做只读验证。
+# 没有本地检出的填 null（对应页面的引用会被标记为 unresolved 而跳过）。
 
 repos:
   # ---- 推理 / 后训练框架 ----
   - name: vLLM
     repo: vllm-project/vllm
     branch: main
+    checkout: ../vllm
     # 2026-08-30 Waves 1–6：23 篇内容页 + index 已统一覆盖此冻结基线。
     kb_baseline: 6b110badbb22d3f66c7218b71138f13b7a6b3419
     kb_entry: wiki/02_engineering/03_infer_frameworks/vllm/index.md
@@ -23,6 +28,7 @@ repos:
   - name: SGLang
     repo: sgl-project/sglang
     branch: main
+    checkout: ../sglang
     kb_baseline: null
     kb_entry: wiki/02_engineering/03_infer_frameworks/index.md
     category: 推理框架
@@ -30,6 +36,7 @@ repos:
   - name: Mooncake
     repo: kvcache-ai/Mooncake
     branch: main
+    checkout: null
     kb_baseline: null
     kb_entry: wiki/02_engineering/03_infer_frameworks/mooncake_analysis.md
     category: 推理框架
@@ -37,6 +44,7 @@ repos:
   - name: slime
     repo: THUDM/slime
     branch: main
+    checkout: ../slime
     kb_baseline: 681b3adca54105d5ecd3fb822fa0dc58a427e0f9
     kb_entry: wiki/02_engineering/04_posttrain_frameworks/slime/index.md
     category: 后训练框架
@@ -44,6 +52,7 @@ repos:
   - name: verl
     repo: volcengine/verl
     branch: main
+    checkout: ../verl
     kb_baseline: 254a23edc62f25ebfae626e3932ae285d6f86009
     kb_entry: wiki/02_engineering/04_posttrain_frameworks/verl/index.md
     category: 后训练框架
@@ -51,14 +60,24 @@ repos:
   - name: AReaL
     repo: inclusionAI/AReaL
     branch: main
+    checkout: null
     kb_baseline: null
     kb_entry: wiki/02_engineering/04_posttrain_frameworks/21_areal_async_architecture_analysis.md
     category: 后训练框架
+
+  - name: DeepEP
+    repo: deepseek-ai/DeepEP
+    branch: main
+    checkout: ../DeepEP
+    kb_baseline: null
+    kb_entry: wiki/02_engineering/02_train_frameworks/megatron-lm/14_megatron_ep_analysis.md
+    category: 推理框架
 
   # ---- 训练框架与 PyTorch 本体 ----
   - name: PyTorch
     repo: pytorch/pytorch
     branch: main
+    checkout: ../pytorch
     kb_baseline: null
     kb_entry: wiki/02_engineering/01_pytorch/index.md
     category: 训练框架
@@ -66,6 +85,7 @@ repos:
   - name: Megatron-LM
     repo: NVIDIA/Megatron-LM
     branch: dev
+    checkout: ../Megatron-LM
     # 2026-08-28 全域推进：26 页统一钉 71092579…（dev，2026-08-27），456 条引用逐条重核。
     # 33 号页分析的是 volcengine/verl，不适用本基线（该页自钉 verl@ab070522）。
     kb_baseline: 71092579522a12522d9f323ae180c9825d01928a
@@ -75,6 +95,7 @@ repos:
   - name: torchtitan
     repo: pytorch/torchtitan
     branch: main
+    checkout: ../torchtitan
     kb_baseline: a3168782c
     kb_entry: wiki/02_engineering/02_train_frameworks/torchtitan/index.md
     category: 训练框架
@@ -83,6 +104,7 @@ repos:
   - name: torch_npu
     repo: Ascend/pytorch
     branch: master
+    checkout: ../torch_npu
     kb_baseline: null
     kb_entry: wiki/02_engineering/01_pytorch/index.md
     category: NPU
@@ -91,6 +113,7 @@ repos:
   - name: MindSpeed
     repo: Ascend/MindSpeed
     branch: master
+    checkout: ../MindSpeed
     kb_baseline: 1432cb09
     kb_entry: wiki/02_engineering/02_train_frameworks/mindspeed/index.md
     category: NPU
@@ -99,6 +122,7 @@ repos:
   - name: MindSpeed-LLM
     repo: Ascend/MindSpeed-LLM
     branch: master
+    checkout: ../MindSpeed-LLM
     kb_baseline: null
     kb_entry: wiki/02_engineering/02_train_frameworks/mindspeed/index.md
     category: NPU

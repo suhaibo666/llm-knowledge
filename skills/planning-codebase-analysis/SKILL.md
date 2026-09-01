@@ -31,7 +31,11 @@ existing-Wiki inspection is allowed before approval. Workflow persistence begins
    `maintaining-llm-knowledge`, `writing-obsidian-math`, and `writing-mermaid-diagrams` only when
    their concrete work appears. For concrete figure work, invoke an available figure skill routed
    by the project.
-7. Update the coverage matrix after each wave and reopen approval only for material drift.
+7. Close each wave with the wave gate before marking matrix rows covered: an independent reviewer
+   (never a writer) applies `source-faithful-analysis` 的 `references/page-review-rubric.md` to
+   every page in the wave; mechanical gates pass (including `tools/check_locators.py`); the
+   enumeration-axis reconciliation is re-run. Then update the coverage matrix, and reopen approval
+   only for material drift.
 
 ## Blueprint contract
 - Record a capability map, static architecture, and representative dynamic lifecycle evidence before assigning pages.
@@ -41,6 +45,10 @@ existing-Wiki inspection is allowed before approval. Workflow persistence begins
   core mechanisms, evidence entry points, approved repository commit, dependencies, visual candidates,
   and completion test.
 - Coverage matrix: each capability/lifecycle/mechanism has one authoritative page, permitted summaries elsewhere, and planned/covered/gap state.
+- **Independent enumeration axis**: at least one mechanically enumerable surface reconciled against
+  the matrix — for frameworks, typically the user-facing config/flag surface at the approved commit
+  (`tools/check_coverage.py` + `docs/coverage/<domain>.yaml`). Every enumerated item maps to an
+  owning page or an explicit exclusion; items the discovery map missed surface here, before writing.
 - Implementation order based on conceptual dependencies, not filename order.
 
 ## Planning rules
@@ -60,7 +68,7 @@ thesis/module split; or the audience/scope/deliverable expands. Ordinary wording
 remain local.
 
 ## Completion gate
-Completion means every planned core capability, representative lifecycle, state owner, and mechanism has one authoritative page; duplicates and gaps are resolved; source and Wiki gates pass. Page count and length are not completion evidence.
+Completion means every planned core capability, representative lifecycle, state owner, and mechanism has one authoritative page; duplicates and gaps are resolved; the independent enumeration axis reconciles with zero unmapped items; source and Wiki gates pass. Page count and length are not completion evidence.
 
 ## Red flags
 | Rationalization | Required response |

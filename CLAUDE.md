@@ -99,10 +99,13 @@ Every change must pass these before it lands. Per-rule guidance lives in the mat
 ```bash
 python tools/check_links.py --strict          # wikilinks: broken/ambiguous/bare_index/orphans must be 0
 python tools/check_math.py --changed --strict # formulas in this change: 0 errors AND 0 warnings
+python tools/check_locators.py                # file:line 引用在各页冻结基线下真实：missing_file 不得高于存量基线
 python -m pytest tools/                       # the maintenance tooling's own tests
 npm run docs:test                             # local docs site: unit tests + end-to-end check
 ```
 
 Repo-wide baseline: as of 2026-08-26, `check_links` and `check_math --strict` report **0 errors
 and 0 warnings across all 409 pages**. Any new finding was introduced by the change in front of
-you — do not wave it through as pre-existing debt.
+you — do not wave it through as pre-existing debt. `check_locators` 于 2026-09-01 首跑，存量
+**errors=16（missing_file）/ warnings=560**（436 页、5036 处引用、88.6% pass）——这 16 条是待清偿
+欠账（明细见首跑报告），**新改动不得让 errors 超过 16**；清零后本段基线改为 0。

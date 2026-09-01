@@ -80,6 +80,21 @@ When a new source is added to `raw/`, follow this sequence:
 - Use LaTeX for mathematical formulas（必须遵守 [`writing-obsidian-math`](../writing-obsidian-math/SKILL.md)）
 - Include code references with file paths and line numbers when analyzing source code（配合 `CLAUDE.md` 的 Provenance Policy：仓库 + commit 基线）
 
+### Baseline Header Convention
+
+代码分析页的基线页头是 `tools/check_locators.py` 的解析输入。**新页一律用规范式**（每仓一行）：
+
+```
+> **源码基线**：`owner/repo@<完整或 ≥12 位 hex>`（`branch`，YYYY-MM-DD）
+```
+
+- 一页分析多个仓时，每个仓都写一行（或在其小节内用同格式钉出）；**引用了某仓的 `path:line`
+  就必须钉过该仓的 commit**——checker 对没钉仓的引用报 `missing_file` error。
+- 历史写法（`verl main @ 254a23ed`、`名称 vX@hex` 等）checker 宽容解析，但不再新增。
+- 该仓需在 `docs/radar/watchlist.yaml` 有条目及 `checkout:` 本地检出，否则引用只能记
+  `unresolved/unverifiable` warning 而无法验证。
+- 验收：`python tools/check_locators.py`（missing_file 必须为 0；见 CLAUDE.md 质量门禁）。
+
 ### MCP Tools
 
 Two MCP servers are configured in `.mcp.json`:

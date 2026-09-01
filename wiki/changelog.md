@@ -12,6 +12,23 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-08-29：PP 调度器页补两张渲染图，图示改由仿真脚本生成
+
+**Type**：配图（新增 2 张外链 SVG）+ 工具链（图由离散事件仿真解算）+ 技能（新增 `drawing-wiki-figures`）
+
+给 [[15_megatron_pp_schedulers_analysis]] 补两张渲染图，都是该页原本只有 ASCII 的二维网格 / 甘特型内容：
+
+- **§③.3 图 ③-1**（`assets/megatron_pp_vpp_vs_1f1b.svg`）：标准 1F1B 与 VPP 的**同轴对照**——两个面板共用一条按真实耗时刻度的时间轴，VPP 每格只占 `t_f/vp`，于是 makespan 22 t_f → 19 t_f、空泡/计算 `(pp−1)/m = 3/8` → `(pp−1)/(m·vp) = 3/16` 是**量出来的**而不是写出来的。蓝框标出 mb0 的前向要往返 `vp` 趟，同一处标注解释收益与 P2P ×vp 的代价。
+- **§④.3 图 ④-1**（`assets/megatron_pp_p2p_overlap.svg`）：`overlap_p2p_comm` 前后对照的双流甘特，替换原先两行粗糙 ASCII 示意。序列取自 `megatron/core/pipeline_parallel/schedules.py:1849` 的四个回调，可逐条核对；时间比例是显式作图参数，图上已标注为示意、非实测。
+
+**图不可能与调度对不上**：格子由新增的 `tools/figs/svg/lib/megatron_pp_sim.mjs` 解算，算法逐条照本页基线 `71092579` 的 `schedules.py`（`get_schedule_table:938`、warmup `:915-919`、反向 chunk 反转 `:1346-1351`）。配套 `megatron_pp_sim.test.mjs` 锁死它与本页 §③.3 / §⑤.3(a) 两张手工 ASCII 表逐格一致（7 例全绿），源码基线再推进时会先红。
+
+**媒介结论**（实测 docs-site/Quartz v5 得出，已写进技能 §3.5）：渲染图一律走「生成脚本 → 外部 `.svg` → 标准图片语法」。内联 `<svg>` 进 md 不可行——Quartz 的 `remark-rehype → hast-util-to-jsx-runtime` 会把 `<svg>` 立刻自闭合、把驼峰属性小写化（`patternTransform` → `patterntransform`，而 SVG 属性大小写敏感）、把自闭合标签当成嵌套；且几十 KB 一行也毁掉 Obsidian 的编辑态可读性。外链 `.svg` 则被原样拷进产物（MD5 一致）、渲染为 `<img>`，md 里只占一行。
+
+**未做**：§⑤.3(c) 的层级双流重叠没有另画——[[20_megatron_comm_overlap_analysis]] 已有 `megatron_comm_overlap_flb_stream_interleave.png` 覆盖同一主题，按 merge-over-coexist 不重复造图。
+
+---
+
 ## 2026-08-31（三）：把 Verl 七篇核心页深化到源码调用链与状态交接
 
 **Type**：七页机制级调用链深化 + 完成/失败边界校准（不改变页面树、ownership 与源码基线）
@@ -107,6 +124,19 @@ Waves 2–6 已完成入口与控制边界、资源与设备热路径、模型�
 DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互资源均已退役或归还其对应 owner 页。vLLM 索引和两个直接回链现指向架构概览；启动、进程与 serving 控制面的细节仍分别由 `10` 与 `16` 号页拥有。
 
 本次验证有意限定在 vLLM 目录、两个直接回链和受影响索引的闭合性。它只是 Wave 1：架构概览已核验至 `6b110bad`，其余页面仍保留既有基线；后续 wave 须等待用户接受这一 exemplar 后推进。
+## 2026-08-29：补齐 Megatron-LM 框架总览，并重排段 0 编号
+
+**Type**：新增 1 页 + 重命名 1 页 + 域索引与反链
+
+**为什么要补**：Megatron-LM 域已有 27 篇源码级专题，但入口页主要承担页面清单，原 `01` 又直接从 MoE 七维优化起步。读者能查到 TP/PP/EP、优化器、显存和融合等局部机制，却缺少一条从 `pretrain_gpt.py` 走到初始化、模型/数据构造、PP schedule、optimizer step 与 checkpoint 的框架主线。
+
+**新增并重写 [[01_megatron_architecture_analysis]]**：基于 `NVIDIA/Megatron-LM@71092579…`（`dev`，2026-08-27），先用“任务入口 → 训练生命周期 → 并行执行 → 模型组合 → 计算通信原语”五层静态结构回答整个系统由什么搭成，逐层说明核心能力、输入产出、责任边界和层间契约；再用状态生命周期回答它怎样运行：用户意图依次变成配置、进程组、rank-local 资源与可恢复数据进度，schedule 完成 global batch 的分布式执行，optimizer step 才提交训练状态。页面补入 typed config、ModelBuilder、ProcessGroupCollection 与 pipeline 迁入 core 的提交历史。分层编排方法参考 vLLM 官方架构概览，但所有 Megatron-LM 层次和 locator 均从固定源码基线重新核对。
+
+**编号与 MoE 内容调整**：原 `01_megatron_moe_training_optimization_analysis.md` 改为 [[02_megatron_moe_training_optimization_analysis]]。第二轮不再保留原 1091 行技术目录：删除无可靠基线的固定规模配置、“Overlap 是免费的午餐”等无约束结论，以及重复的代码/ASCII/配置清单；新页沿 `route → dispatch → expert compute → combine` 解释 token 状态转移，并用 token、专家参数、激活/优化器状态、时间窗口四种所有权连接现有专题。全库入链已改指新文件名；历史 changelog 中记录旧文件名的反引号文本保留，活动 wikilink 改到 02。
+
+**写法调整**：代码只作为结论的证据，不再作为正文骨架；折叠代码块后仍可从“状态由谁拥有、为什么按此顺序变化、替代方案输在哪里、代价和边界是什么”理解机制。文件长度不作为拆分判据，是否拆分由中心论点、概念所有权与阅读连续性决定。
+
+**索引整合**：Megatron-LM `index.md` 增加首次阅读入口，段位表改为 `01-02`，导览表同时解释通用训练状态机与 MoE 机制地图的不同职责。两页把模型、数据、PP schedule、分布式优化器、进程组、EP、显存和 checkpoint 细节交还给对应权威页，Related Pages 各保留 7 条精选链接。
 
 ---
 
@@ -231,7 +261,7 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 
 1. **[[35_deepseek_v4_context_parallel_analysis]] 自称的"核心贡献"整体反转。** 该页的卖点是「CSA/HCA 两阶段 CP 在代码里尚未实现，审计未发现 isend/irecv/all_gather」。新基线下 `experimental_attention_variant/` 从 10 个文件涨到 **45 个**，多出 `csa_utils/` 子包；两阶段 CP 由 **#5087** 实现：`_LeftBoundaryExchange`（`csa_utils/cp_utils.py:124`）用 `dist.batch_isend_irecv` 做前反向边界交换（`:156`/`:184`），入口 `exchange_cp_boundary_hidden`（`:201`）。§5.5 四条 gap、§8.3、§九 特征 4 随之作废。
 2. **[[18_megatron_recompute_analysis]] 的「历史更正」自己过期了，且会误导配置。** 该页曾正确指出 `gdn_norm_out` 全仓已不存在（`ee3f1ff` 下确为 0 命中）；**#6088 把它加了回来**（新基线 8 处命中），现在 `gdn` 与 `gdn_norm_out` 并存且互斥，照旧说法配置会失败。
-3. **MoE aux/z-loss 的 `× tp_cp_group.size()` 预乘被上游判定为不正确并改掉**（#5542/#4359）。源码注释原话：THD padding 或动态 CP 下各 rank 有效 token 数不同，`local_num_tokens * group_size is not generally correct`。现改为沿 `aux_loss_scale_reduce_groups` 逐组 all_reduce 后再乘（`router.py:598-624`）。影响 [[01_megatron_moe_training_optimization_analysis]] 与 [[28_megatron_training_stability_observability_analysis]]。
+3. **MoE aux/z-loss 的 `× tp_cp_group.size()` 预乘被上游判定为不正确并改掉**（#5542/#4359）。源码注释原话：THD padding 或动态 CP 下各 rank 有效 token 数不同，`local_num_tokens * group_size is not generally correct`。现改为沿 `aux_loss_scale_reduce_groups` 逐组 all_reduce 后再乘（`router.py:598-624`）。影响 [[02_megatron_moe_training_optimization_analysis]] 与 [[28_megatron_training_stability_observability_analysis]]。
 4. **flex dispatcher 多了第四个后端 `ncclep`**（`transformer_config.py:972`、`_NCCLEPManager` @ `token_dispatcher.py:1637`），带 `moe_ncclep_static_shape`（固定接收缓冲、无 D2H 同步）使 MoE 的 all-to-all **可被 CUDA Graph 捕获**。[[14_megatron_ep_analysis]] 的「三种 dispatcher」对比表与选型树枚举过时。
 5. **两处上游自己回退/复活**：#5170 移除的 checkpoint 期显存回收 workaround 被 **#5366 整体 revert**，代码原样活着（影响 [[22_megatron_memory_optimization_analysis]]）；GDN 的「单次统一 A2A」被回退的结论也反转了，它现在是默认路径（影响 [[21_megatron_fusion_operators_analysis]]）。
 6. **HybridEP 的 THD 自动补齐被 #5668 取消**，现在只认显式开关 `moe_hybridep_pad_variable_tokens`。
@@ -272,11 +302,11 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 
 | 页 | 页头基线 | 原行号 | 实际 | 处理 |
 |---|---|---|---|---|
-| [[01_megatron_moe_training_optimization_analysis]] | B | NVFP4 `:946` | B 下是 class docstring | 改 `:1020-1045`（`# NVFP4 uses a dual-buffer layout…` → `_compute_nvfp4_packed_layout`） |
+| [[02_megatron_moe_training_optimization_analysis]] | B | NVFP4 `:946` | B 下是 class docstring | 改 `:1020-1045`（`# NVFP4 uses a dual-buffer layout…` → `_compute_nvfp4_packed_layout`） |
 | 同上 | B | MXFP8 `:1097` | **B 下正确** | 未改 |
 | [[16_megatron_distributed_optimizer_analysis]] | A | NVFP4 `:946-963` / MXFP8 `:1097-1113` | 后者正是 **B** 的 MXFP8 区间 | 改 A 的真实区间 `:964-989` / `:1036-1055` |
 
-其余已修：[[22_megatron_memory_optimization_analysis]] 三处（`paged_stash.py:587`→`:632`+`:1125-1128`、`param_and_grad_buffer.py:1097-1113`→`:1036-1055`、`fp8_utils.py:594`→`:513-529`，后者 `:594` 实为 `return fp8_recipe`），并顺带修了同节另外三处（`:946-963`→`:964-989`、`:357`→`:393-401`、`training.py:~2855`→`:2775-2781`）；[[16_megatron_distributed_optimizer_analysis]] 的 fsdp `:1404`→`:1407`、`optimizer/__init__.py:776`→`:777-780`；[[20_megatron_comm_overlap_analysis]] 的 `fused_a2a.py:135`→`:92-97`（判定该段描述 A 的形态，依据是紧邻代码块自标 `:69-138` 与 A 吻合）；[[01_megatron_moe_training_optimization_analysis]] 的 `:418`→`:352`（`start_param_sync` 才是入口）、`:357`→`:413-420`；[[10_megatron_model_structure_analysis]] 的 `training.py:576`→`:516-529`；两页的 `megatron_fsdp.py:105`→`:106`（105 是空行）。
+其余已修：[[22_megatron_memory_optimization_analysis]] 三处（`paged_stash.py:587`→`:632`+`:1125-1128`、`param_and_grad_buffer.py:1097-1113`→`:1036-1055`、`fp8_utils.py:594`→`:513-529`，后者 `:594` 实为 `return fp8_recipe`），并顺带修了同节另外三处（`:946-963`→`:964-989`、`:357`→`:393-401`、`training.py:~2855`→`:2775-2781`）；[[16_megatron_distributed_optimizer_analysis]] 的 fsdp `:1404`→`:1407`、`optimizer/__init__.py:776`→`:777-780`；[[20_megatron_comm_overlap_analysis]] 的 `fused_a2a.py:135`→`:92-97`（判定该段描述 A 的形态，依据是紧邻代码块自标 `:69-138` 与 A 吻合）；[[02_megatron_moe_training_optimization_analysis]] 的 `:418`→`:352`（`start_param_sync` 才是入口）、`:357`→`:413-420`；[[10_megatron_model_structure_analysis]] 的 `training.py:576`→`:516-529`；两页的 `megatron_fsdp.py:105`→`:106`（105 是空行）。
 
 **④ 一处消歧成功**：[[23_megatron_precision_cudagraph_fusion_analysis]] 的 `quantization/utils.py` 上一轮因"两个候选都不含 fp4"而无法判定。本轮改搜页面真正的承重符号 `get_quant_config_or_none`，在两个基线下都唯一解析到 `megatron/core/quantization/utils.py:9`，另一候选是 MXFP8 GEMM 派发、与本页无关。
 
@@ -330,7 +360,7 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 
 - 原写 `ee3f1ff` / `232c478d4` 的：机械扩成 40 位。
 - **无基线的 7 篇**：取 3–11 条带行号的引用，分别在 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（A，2026-05-19）与 `232c478d43ce2f8b4c8db3507d3623fa82f55823`（B，2026-06-16）下 `git show` 逐条核对——
-  - [[01_megatron_moe_training_optimization_analysis]] → **B**（5/5 只在 B 命中：`transformer_config.py:881` 的 `moe_flex_dispatcher_backend`、`token_dispatcher.py:1470` 的 `_DeepepV2Manager`、`fused_a2a.py:90` 的 `get_elastic_buffer` 等，在 A 处均为空行或无关代码）
+  - [[02_megatron_moe_training_optimization_analysis]] → **B**（5/5 只在 B 命中：`transformer_config.py:881` 的 `moe_flex_dispatcher_backend`、`token_dispatcher.py:1470` 的 `_DeepepV2Manager`、`fused_a2a.py:90` 的 `get_elastic_buffer` 等，在 A 处均为空行或无关代码）
   - [[20_megatron_comm_overlap_analysis]] → **A**（11 处里 8 处只在 A 命中，如 `model_parallel_config.py:196` 在 A 是 `tp_comm_overlap`、在 B 是 `--te-rng-tracker`）
   - [[21_megatron_fusion_operators_analysis]] → **A**（13 处引用在 A/B 逐字节相同、不具区分度，改用 `git diff A..B -- core/fusions/`：只有 `fused_mhc_kernels.py` 变化 964→3397 行，而本页描述的是 A 的形态）
   - [[22_megatron_memory_optimization_analysis]] → **A**（`paged_stash.py:129` 在 A 是 Triton kernel，B 处该文件已被 #5003 迁走）
