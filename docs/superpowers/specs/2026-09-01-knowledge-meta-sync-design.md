@@ -159,7 +159,9 @@ For every `knowledge-meta:count` marker, the tool must:
 
 `--write` changes only the integer between a valid marker pair. It does not reorder rows, change
 labels, or add markers heuristically. A missing marker is a reviewable source change and must be
-added explicitly.
+added explicitly. To keep that review mandatory, a page-count table row whose numeric count cell is
+not wrapped by a marker is an `unmanaged-count` error; deleting markers or adding a new bare count
+cannot make the check silently pass.
 
 ### 6.3 README contract
 
@@ -276,8 +278,7 @@ but the standard gates still verify that the documentation edits did not disturb
    count.
 4. `--write` is idempotent and modifies no human-authored text outside marker payloads.
 5. `--check` fails on count drift, malformed markers, missing README links, and prohibited volatile
-   claims.
+   claims, and on any unmanaged numeric count row in `wiki/index.md`.
 6. The maintenance skill and constitution name the new commands.
 7. Pull-request CI runs the read-only check.
 8. The repository's link, math, Python-tool, and documentation-site gates pass.
-
