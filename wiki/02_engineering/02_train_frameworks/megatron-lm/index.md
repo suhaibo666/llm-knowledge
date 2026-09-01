@@ -4,23 +4,23 @@ title: "Megatron-LM — Knowledge Map"
 
 # Megatron-LM — Knowledge Map
 
-This domain covers NVIDIA Megatron-LM distributed training framework, including parallelism strategies, MoE implementation, performance measurement, and integration with inference engines.
+本域覆盖 NVIDIA Megatron-LM 的训练生命周期、模型组装、并行策略、MoE、性能基建与训推集成。**首次阅读请从 [[01_megatron_architecture_analysis]] 开始**：它先给出框架分层与端到端训练主链，再把问题分流到各专题页。
 
 > **源码基线(全域已统一)**:`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`(`dev`,2026-08-27)。
 > - **2026-08-28 全域推进**:本域各页由旧基线 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`(2026-05-19,跨 578 个提交)与 `232c478d43ce2f8b4c8db3507d3623fa82f55823`(2026-06-16,跨 280 个提交)统一重定到 `71092579`,逐页逐条重核 `path:line`。各页页头带 `> **重定基线**` 一行说明;原先「正文以 `ee3f1ff` 为准、`[!update]` 段以 `232c478d4` 为准」的双行号口径就此取消,同一页只剩一套行号。
 > - **不适用本基线**:[[33_megatron_vllm_weight_sync_analysis]] 分析的是 `volcengine/verl` 而非 Megatron-LM,不适用本基线。
 > - **重核推翻的结论**:凡因新基线而不再成立的论断,均在原文就地加 `[!deprecated]`/`[!contradiction]` 标注并保留旧基线原文,不做删除。例如 [[35_deepseek_v4_context_parallel_analysis]] 的两条核心判定(「CSA/HCA 两阶段 CP 尚未实现」「Dynamic CP 不支持 MLA/DSv4」)在 `71092579` 下已分别由 PR #5087、#4226 推翻。
 
-> 最后更新:2026-07-31(kb-reorg P7 Task 7:目录内分段编号,27 篇按 spec §5 段位约定统一加两位前缀;下方各小节的既有分组不变,仅补充下表作段位速查)
+> 最后更新:2026-08-29。新增并重写框架级 [[01_megatron_architecture_analysis]]，补齐“任务入口 → 生命周期 → 并行执行 → 模型组合 → 后端原语”五层结构、各层能力与层间契约；原 MoE capstone 由 01 调整为 [[02_megatron_moe_training_optimization_analysis]]，并从七类技术目录收缩为四种所有权的机制地图。段 0 形成“框架结构与训练状态机 → MoE 机制与选型边界”的阅读顺序。全域现有 28 篇内容页。
 
 ## 段位速查(kb-reorg P7 Task 7)
 
-> 段 0(01)导览/capstone;段 1(10-19)16 篇源码级系统分析系列中最贴近核心流水线的 10 篇——模型结构→数据→TP/CP/EP/PP 四并行轴→分布式优化器→编排→重计算→存档;段 2(20-29)系列剩余的深挖/补遗/系统专题共 9 篇,以及 Core Topics 的专题深挖(除 audit 外);段 3(30-36)RL/推理集成、度量方法论与两篇 DeepSeek-V4 案例研究,另含 **36 Megatron-FSDP 专页**——它按主题本属段 2,但段 1(10-19)与段 2(20-29)均已排满(26 号是 2026-08-01 PP 三页合并空出的号、明确不重新分配),按 `CLAUDE.md`「某段超出容量时占用相邻空段并在段位表注明」取段 3 首个空号。与下文按主题分组的表格是同一组页面的两种视图。
+> 段 0(01-02)负责导览/capstone：01 先建立五层结构和扩展接缝，再解释训练状态怎样逐步固化为一次参数提交；02 用 token、专家参数、激活/优化器状态和时间窗口四种所有权组织 MoE 优化；段 1(10-19)是最贴近核心流水线的 10 篇——模型结构→数据→TP/CP/EP/PP 四并行轴→分布式优化器→编排→重计算→存档；段 2(20-29)是深挖/补遗/系统专题共 9 篇；段 3(30-36)是 RL/推理集成、度量方法论与两篇 DeepSeek-V4 案例研究，另含 **36 Megatron-FSDP 专页**——它按主题本属段 2，但段 1 与段 2 均已排满，按相邻空段规则取 36。与下文按主题分组的表格是同一组页面的两种视图。
 > **26 号编号空出**(2026-08-01,spec §3.4 补执行):`26_megatron_pp_supplements_analysis.md` 已并入 [[15_megatron_pp_schedulers_analysis]](§1.5 进程组拓扑、§8 混合 CP 动态调度/多模块流水线、§1.4/⑤.6/②.2 等增量)并删除;父目录 `20_megatron_pp_parallelism_analysis.md` 同批一并删除。`26` 号不重新分配,详见 `wiki/changelog.md`。
 
 | 段 | 编号 | 页面 |
 |---|---|---|
-| 0 | 01 | [[01_megatron_moe_training_optimization_analysis]] |
+| 0 | 01-02 | [[01_megatron_architecture_analysis]] · [[02_megatron_moe_training_optimization_analysis]] |
 | 1 | 10-19 | [[10_megatron_model_structure_analysis]] · [[11_megatron_dataset_analysis]] · [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[14_megatron_ep_analysis]] · [[15_megatron_pp_schedulers_analysis]] · [[16_megatron_distributed_optimizer_analysis]] · [[17_megatron_parallelism_orchestration_analysis]] · [[18_megatron_recompute_analysis]] · [[19_megatron_dist_checkpointing_analysis]] |
 | 2 | 20-25,27-29(26 空出) | [[20_megatron_comm_overlap_analysis]] · [[21_megatron_fusion_operators_analysis]] · [[22_megatron_memory_optimization_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]] · [[24_megatron_linear_cross_entropy_analysis]] · [[25_megatron_nonuniform_tp_analysis]] · [[27_megatron_tp_fsdp_resharding_supplements_analysis]] · [[28_megatron_training_stability_observability_analysis]] · [[29_megatron_packed_dataset_dynamic_cp_analysis]] |
 | 3 | 30-36 | [[30_megatron_rl_posttraining_consistency_analysis]] · [[31_megatron_inference_engine_analysis]] · [[32_megatron_tflops_analysis]] · [[33_megatron_vllm_weight_sync_analysis]] · [[34_deepseek_v4_tensor_parallel_analysis]] · [[35_deepseek_v4_context_parallel_analysis]] · [[36_megatron_fsdp_analysis]] |
@@ -31,11 +31,12 @@ This domain covers NVIDIA Megatron-LM distributed training framework, including 
 >
 > 命名约定:本目录所有页统一为 `megatron_<topic>_analysis`(小写 snake_case,对齐 torchtitan 的 `torchtitan_<topic>_analysis` 风格)。
 
-### 全景报告
+### 导览与全景报告
 
 | Page | Key Concepts |
 |------|-------------|
-| [[01_megatron_moe_training_optimization_analysis]] | 7 维 MoE 训练优化全景(TP/PP/EP/CP、分布式优化器、重计算、低精度 FP8/FP4、通信 Overlap、显存、融合算子);跨 ~13 篇深挖的导航 capstone,覆盖 50B → 1.xT MoE 规模 |
+| [[01_megatron_architecture_analysis]] | **全域入口**：先用任务入口、生命周期、并行执行、模型组合、后端原语五层解释系统怎样搭建，逐层说明核心能力、输入产出和责任边界；再解释配置、进程组、rank-local 资源和 step 状态怎样依次固化 |
+| [[02_megatron_moe_training_optimization_analysis]] | **MoE 机制地图**：沿 `route → dispatch → local experts → combine` 追踪 token，并用 token、专家参数、激活/优化器状态、时间窗口四种所有权组织选型；不再给脱离模型与硬件基线的固定规模配方 |
 
 ### 专题深挖(系列外)
 
