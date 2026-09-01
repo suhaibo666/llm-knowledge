@@ -23,6 +23,18 @@ from tools.mkdocs_site.staging import stage_wiki
 REPO = Path(__file__).resolve().parents[3]
 RENDERER_CONTRACT_BODY = r"""
 
+This deliberately long prose paragraph is the readable-width layout probe. It should remain comfortable to scan while diagrams, tables, and code use the wider document canvas on large screens.
+
+| layout | contract |
+|---|---|
+| prose | readable |
+| technical blocks | wide |
+
+```python
+def adaptive_layout():
+    return "wide technical content, readable prose"
+```
+
 > [!note] Blockquoted display math must stay in the corpus gate
 > $$
 > \boldsymbol{\theta} \in \mathbb{R}^{d \times k}, \qquad

@@ -205,6 +205,49 @@ function isExpectedMermaidPageError(message) {
   return message.startsWith("Parse error on line") && message.includes("got 'EOF'")
 }
 
+async function assertAdaptiveArticleLayout(page) {
+  const cases = []
+  for (const width of [390, 1024, 1440, 1920]) {
+    await page.setViewport({ width, height: 900, deviceScaleFactor: 1 })
+    const metrics = await page.evaluate(() => {
+      const article = document.querySelector(".md-content__inner")
+      const prose = [...article.children].find((node) => node.tagName === "P")
+      const mermaid = article.querySelector(
+        ":scope > .mermaid:not([data-kb-mermaid-error])",
+      )
+      const table = article.querySelector(
+        ":scope > .md-typeset__scrollwrap, :scope > table:not([class])",
+      )
+      const code = article.querySelector(":scope > .highlight, :scope > pre")
+      const widthOf = (node) => node?.getBoundingClientRect().width ?? 0
+      return {
+        viewport: window.innerWidth,
+        document: document.documentElement.scrollWidth,
+        article: widthOf(article),
+        prose: widthOf(prose),
+        mermaid: widthOf(mermaid),
+        table: widthOf(table),
+        code: widthOf(code),
+      }
+    })
+    assert.ok(
+      metrics.document <= metrics.viewport + 1,
+      `${width}px layout overflows horizontally`,
+    )
+    cases.push(metrics)
+  }
+
+  const desktop = cases.find((item) => item.viewport === 1920)
+  assert.ok(desktop.article >= 1_180, "wide-screen article canvas did not expand")
+  assert.ok(desktop.prose <= 920, "prose exceeded the readable line width")
+  for (const key of ["mermaid", "table", "code"]) {
+    assert.ok(
+      desktop[key] >= 1_100,
+      `${key} did not use the wide article canvas`,
+    )
+  }
+}
+
 async function assertMermaidViewerLifecycle(page) {
   const triggerSelector = (
     ".mermaid:not([data-kb-mermaid-error]) .kb-mermaid-zoom-trigger"
@@ -492,6 +535,7 @@ async function runCase(browser, origin, basePath, servedResponses) {
       `${basePath} Mermaid security probe executed`,
     )
 
+    await assertAdaptiveArticleLayout(page)
     await assertMermaidViewerLifecycle(page)
 
     assert.deepEqual(blockedExternal, [], `${basePath} attempted external requests`)
