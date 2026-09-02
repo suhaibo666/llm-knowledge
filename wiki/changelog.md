@@ -12,6 +12,34 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-02（四）：Megatron-LM 补阅读路径与离线蒸馏页
+
+**Type**：新增 1 个 course 页 + 1 篇内容页（模块 Q）+ 索引改写
+
+前几轮把这个域的**覆盖**做扎实了（对账清零、四查复审），但漏掉了一件更基本的事：**读者拿着 34 篇页，不知道该按什么顺序读**。域索引开场只有一句"从 01 开始"，后面全是按主题排的目录——目录回答"我要查 X"，回答不了"我要学 Megatron"。而 `wiki/courses/` 下已有两个域的阅读路径，偏偏 34 篇的 Megatron 没有。
+
+**[[courses/megatron_lm|Megatron-LM 阅读路径]]**：按**理解的依赖**而非编号排 7 站，每条给"读它要先会什么、读完能回答什么"。它明确了几处编号顺序表达不出来的关系：
+
+- **[[17_megatron_parallelism_orchestration_analysis]] 建议提前读**。它在域里定位为"收口文档"、编号排在并行轴之后，但每条轴都默认"每张卡已知道自己在各维度的身份"——那正是 17 讲的。路径页建议先扫 §1-§2 建立几何直觉，轴读完再回来补完。
+- **[[02_megatron_moe_training_optimization_analysis]] 放在 [[14_megatron_ep_analysis]] 之后**。02 编号更靠前（段 0 capstone），但它是 MoE 的**选型总纲**，没有 14 的机制垫底读不出所以然。
+- **三对"同一主题的两半"**：20/43（数值稳定 vs 作业韧性）、42/30（RL 实现层 vs 算法正确性）、44 的分词半边接 11、导出半边接站 2。此前它们分散在不同段位，读者不会知道要配对读。
+
+域索引开场改为指向路径页，并说清两者分工：索引是查询用的主题目录，路径页是学习用的顺序。
+
+**[[45_megatron_logits_distillation_analysis]]（模块 Q）**：`megatron/training/distillation/` 1906 行，此前**全域零覆盖**——它是 [[40_megatron_feature_tree_analysis]] 仪表盘上唯一无页可落的模块。离线蒸馏把教师前向从"每步一次"变成"整数据集一次"，代价是三件事：
+
+- **落盘量**：完整 logits 是 `[tokens × vocab]`，不可行；只存 top-K，索引按 **17 位打包**（低 16 位 `uint16` + 第 17 位 `bool`，`utils_logits.py:233-242`），比 `int32` 省约 45%。
+- **样本流一致性**：教师与学生是两次独立进程，中间只有文件。`compute_dataset_hash`（`:187`）给"样本流身份"算哈希，docstring 明确纳入的字段"exactly those that determine the global sample stream"——**刻意不含模型结构与并行度**，否则学生换个并行度就得重跑教师。
+- **DP 升降配重映射**（`cached_logits_loss.py:139-161`）：落盘是确定的轮转顺序，升配按步长跨取、降配交错重建全局顺序。**正确性判据不是"读到了数据"而是"重建出的顺序与教师一致"**——顺序错了哈希校验也查不出来。
+
+**它长期不可见的原因本身值得记**：蒸馏的开关是 `arguments.py` 里**手写的 argparse 组**（`_add_logits_distillation_args`，`:5375`），不在被枚举的 14 个 config dataclass 内。配置面对账看不见它，文件面虽标了 🟡 却因无 flag 牵引一直没人认领——正是 40 号页那句"没有 flag 盯着的地方，正是页面容易漏的地方"的实例。
+
+**验证**：`check_links --strict` 全 0（445 页）· `check_math --changed --strict` 0/0 · `check_locators` 域内 errors 14→14、warnings 57→57 零回归，已验证引用 1470 → **1481**。
+
+**仍未做**：页面**编号**仍按历史段位，未按阅读路径重排——路径页用文字弥合了顺序，但文件名还不能自解释。是否重编号（涉及 34 个文件名 + 27 个域外文件的入链）留待决定。
+
+---
+
 ## 2026-09-02（三）：Megatron-LM 全域四查复审（26 页，8 处 REJECT 全部修复）
 
 **Type**：质量复审（4 波，独立评审者）+ 13 页定点修复

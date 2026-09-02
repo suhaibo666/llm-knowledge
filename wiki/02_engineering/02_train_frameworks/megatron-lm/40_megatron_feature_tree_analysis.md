@@ -143,7 +143,7 @@ title: "Megatron-LM 代码仓功能树与覆盖对账"
 | 🟢 已覆盖（2026-09-02） | `megatron/rl` 实现层 | 20/25 文件 | P → [[42_megatron_rl_runtime_analysis]] |
 | 🟢 已覆盖（2026-09-02） | `megatron/training/config/**` 配置容器体系 + `ArgumentGroupFactory` | 9 文件 / 2400+ 行 | O → [[41_megatron_config_surface_analysis]]（`validate_args` 的 1700 行校验网仍标为待展开） |
 | 🟢 已覆盖（2026-09-02） | 作业韧性与张量转储 | 7 文件 | N → [[43_megatron_job_resilience_analysis]] |
-| 🟢 契约已补（2026-09-02） | `megatron/training/distillation/**`（离线蒸馏 Q） | 1906 行 | 见 §5 |
+| 🟢 已覆盖（2026-09-02） | `megatron/training/distillation/**`（离线蒸馏 Q） | 1906 行 | Q → [[45_megatron_logits_distillation_analysis]] |
 | 🟢 契约已补（2026-09-02） | `megatron/training/checkpointing.py` 训练侧编排 | 2637 行 | J → [[19_megatron_dist_checkpointing_analysis]] |
 | 🟢 契约已补（2026-09-02） | `models/mimo`（13）· `models/bagel`（13）· `models/huggingface`（5）· `transformer/heterogeneous`（2） | 33 `.py` | B → [[10_megatron_model_structure_analysis]] |
 | 🟢 契约已补（2026-09-02） | `megatron/core/transformer/moe/upcycling_utils.py`（稠密→MoE 升级） | — | C → [[02_megatron_moe_training_optimization_analysis]] |
