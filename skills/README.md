@@ -21,6 +21,7 @@
 | 画或改 Mermaid 图（parser 陷阱） | [`writing-mermaid-diagrams`](writing-mermaid-diagrams/SKILL.md) |
 | 侦察一个新代码库或未规划的多页代码库子域，规划能力/架构/核心机制与文档蓝图，等待确认后编排实施 | [`planning-codebase-analysis`](planning-codebase-analysis/SKILL.md) |
 | 按已批准/聚焦代码库合同写一个分析单元/页面，或分析任意规模的论文、规范、数据集、事故、报告或其他非代码制品 | [`source-faithful-analysis`](source-faithful-analysis/SKILL.md) |
+| 把一个代码仓梳理成代码仓功能树、为每个叶子功能点写契约式规格（输入输出/处理逻辑/边界约束/支持范围），或在基线推进后对账重验 | [`feature-tree-analysis`](feature-tree-analysis/SKILL.md) |
 
 例如，“把一个新代码库整理成知识域”先读 `planning-codebase-analysis`；蓝图确认后，每篇页面再读 `source-faithful-analysis`，实际落盘时叠加 `maintaining-llm-knowledge`，公式和图按页面需要加载。任意规模的非代码制品分析，以及未规划代码库中的单个聚焦机制分析，都不经过 planner。
 

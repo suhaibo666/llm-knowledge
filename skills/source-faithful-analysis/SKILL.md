@@ -31,8 +31,10 @@ Read one source-type pack completely before acting:
 For mixed evidence, read every relevant pack. Let each source answer the question it can support:
 for example, a paper can explain rationale while released code/config proves current behavior.
 
-For a new whole codebase or unplanned multi-page codebase domain, stop and use
-`planning-codebase-analysis`. Once an approved blueprint exists, execute exactly one approved
+For an exhaustive functional inventory — a feature tree with per-function-point contract specs
+rather than mechanism analysis — use `feature-tree-analysis`; it executes this skill's Source
+fidelity rules but owns its own tree/spec workflow. For a new whole codebase or unplanned
+multi-page codebase domain, stop and use `planning-codebase-analysis`. Once an approved blueprint exists, execute exactly one approved
 analysis unit/page at a time. Inherit its thesis, concept ownership, exclusions, evidence entry
 points, completion test, and approved repository commit; do not reopen repository-wide planning.
 

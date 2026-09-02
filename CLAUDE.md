@@ -17,6 +17,7 @@ before doing anything; open a skill only when you are about to do the thing it c
 | Draw or change a Mermaid diagram (parser traps) | [`writing-mermaid-diagrams`](skills/writing-mermaid-diagrams/SKILL.md) |
 | Discover and plan a new whole codebase or unplanned multi-page codebase domain, propose the document blueprint, wait for approval, then coordinate implementation | [`planning-codebase-analysis`](skills/planning-codebase-analysis/SKILL.md) |
 | Write an approved/focused codebase unit, or analyze a paper, spec, dataset, incident, report, or other non-code artifact at any scale | [`source-faithful-analysis`](skills/source-faithful-analysis/SKILL.md) |
+| Inventory a repository as a feature tree down to leaf function points, each with a contract-style spec (I/O, processing logic, boundary constraints, supported scope); reconcile and re-verify it after baseline bumps | [`feature-tree-analysis`](skills/feature-tree-analysis/SKILL.md) |
 
 There is exactly one copy of these skills, in `skills/`. `.claude/skills` is a symlink to it, so
 Claude Code discovers them natively; Codex reaches them through `AGENTS.md`, which points at the

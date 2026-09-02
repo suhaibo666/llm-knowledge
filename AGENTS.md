@@ -15,6 +15,7 @@ content authority, the provenance policy, and the quality gates.
 | Draw or change a Mermaid diagram (parser traps) | [`writing-mermaid-diagrams`](skills/writing-mermaid-diagrams/SKILL.md) |
 | Discover and plan a new whole codebase or unplanned multi-page codebase domain, propose the document blueprint, wait for approval, then coordinate implementation | [`planning-codebase-analysis`](skills/planning-codebase-analysis/SKILL.md) |
 | Write an approved/focused codebase unit, or analyze a paper, spec, dataset, incident, report, or other non-code artifact at any scale | [`source-faithful-analysis`](skills/source-faithful-analysis/SKILL.md) |
+| Inventory a repository as a feature tree down to leaf function points, each with a contract-style spec (I/O, processing logic, boundary constraints, supported scope); reconcile and re-verify it after baseline bumps | [`feature-tree-analysis`](skills/feature-tree-analysis/SKILL.md) |
 
 `skills/` is the single physical copy. `.claude/skills` is a symlink to it (git stores it as a
 symlink object), which is how Claude Code discovers the skills natively.

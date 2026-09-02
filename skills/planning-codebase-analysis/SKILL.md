@@ -14,6 +14,7 @@ description: >-
 - Own whole-codebase reconnaissance, content selection, page ownership, user approval, and coverage.
 - Treat one page as one analysis unit, not one source file.
 - Route focused or approved units to `source-faithful-analysis`.
+- Route exhaustive feature-tree/function-point inventories (contract specs, not mechanism pages) to `feature-tree-analysis`.
 
 ## Hard gate
 **NO PERSISTED MUTATION BEFORE USER APPROVES THE BLUEPRINT.**
