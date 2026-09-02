@@ -4,7 +4,8 @@ title: "Megatron-LM FP8 精度 · CUDA Graph · 算子融合 深度解析"
 
 # Megatron-LM FP8 精度 · CUDA Graph · 算子融合 深度解析
 
-> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
+> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
 > **重定基线**：2026-08-28 由 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/fp8_utils.py`、`megatron/core/fp4_utils.py`、`megatron/core/enums.py`、`megatron/core/transformer/cuda_graphs.py`、`megatron/core/full_cuda_graph.py`、`fusions/`、`megatron/core/num_microbatches_calculator.py`
 > 配套阅读:五份并行文档 + `18_megatron_recompute_analysis.md` + `16_megatron_distributed_optimizer_analysis.md`
@@ -39,11 +40,11 @@ README(MoE)把 MoE 训练的瓶颈归为三堵墙:**显存墙、通信墙、计�
 → 判据：delayed scaling 的 scale 来自**跨 step 的 amax 历史**，是一份跨层共享的全局状态，一旦按层进出上下文，amax 规约就错。把 scale 塞进张量自身的 blockwise / mxfp8 没有这个耦合——这才是 §3.2 表里"生产首选 blockwise（Hopper）/ mxfp8（Blackwell）"的机制层理由，而不只是"粒度细所以精度好"。
 
 **③ CUDA Graph 不在模块第一次被调用时立刻录，而是先记顺序、到第一个 step 末尾统一录。**
-`_CudagraphGlobalRecord` 的类 docstring：「A global datastructure that records of the ordering of all _CudaGraphRunner's first fwd or bwd passes. 'create_cudagraphs' will use this to create cudagraphs in execution order, **which is required for cudagraphs sharing a mempool**.」（`megatron/core/transformer/cuda_graphs.py:344-347`）；模块级 `create_cudagraphs()` 的 docstring 把收益写全：「… which allows multiple cudagraphs to share a single memory pool, **minimizing cudagraph memory usage**」（`:497-506`）。
+`_CudagraphGlobalRecord` 的类 docstring：「A global datastructure that records of the ordering of all _CudaGraphRunner's first fwd or bwd passes. 'create_cudagraphs' will use this to create cudagraphs in execution order, **which is required for cudagraphs sharing a mempool**.」（`megatron/core/transformer/cuda_graphs.py:348-351`）；模块级 `create_cudagraphs()` 的 docstring 把收益写全：「… which allows multiple cudagraphs to share a single memory pool, **minimizing cudagraph memory usage**」（`:501-510`）。
 → 判据是显存，不是速度：逐个即时捕获会让每张图各占一份 mempool；按执行序统一捕获才谈得上共享一个池。代价是"第一个 step 是特殊的"，且一旦建图完成，任何 runner 再请求建图直接 assert（`:370-379`）。
 
 **④ 另一条被否掉的替代挖自历史：图间缓冲复用曾用"永不释放的池"，被引用计数取代。**
-旧基线里的 `TensorReusePool` 自陈「Also maintains strong references to all tensors created by this pool, **so that they will never be freed by the memory allocator**」（删除前的 `megatron/core/transformer/cuda_graphs.py:186-191`）。提交 `5e4fe9b3c`（2026-07-02，commit message 即「Optimize memory usage of partial CUDA graphs (#5451)」）把整个类删掉，换成挂在 buffer 元数据上的引用计数：`CudagraphBufferMetadata`（`megatron/core/transformer/cuda_graphs.py:146`）的 `cudagraph_reuse_ref_count` / `capture_reuse_count`（`:156-157`），配合模块级 `fwd_buffer_reuse_ref_count` / `bwd_buffer_reuse_ref_count`（`:341-342`）。
+旧基线里的 `TensorReusePool` 自陈「Also maintains strong references to all tensors created by this pool, **so that they will never be freed by the memory allocator**」（删除前的 `megatron/core/transformer/cuda_graphs.py:186-191`）。提交 `5e4fe9b3c`（2026-07-02，commit message 即「Optimize memory usage of partial CUDA graphs (#5451)」）把整个类删掉，换成挂在 buffer 元数据上的引用计数：`CudagraphBufferMetadata`（`megatron/core/transformer/cuda_graphs.py:150`）的 `cudagraph_reuse_ref_count` / `capture_reuse_count`（`:160-161`），配合模块级 `fwd_buffer_reuse_ref_count` / `bwd_buffer_reuse_ref_count`（`:345-346`）。
 → 判据写在标题里的一个词上：**partial**。整个模型都图化时"池永不释放"无所谓；一旦只图化 attention、MoE 仍走 eager（§4.3 的解法②），那些被钉死的强引用就纯粹白占显存。§4.2 的 `[!deprecated]` 记录的正是这次替换。
 
 **⑤ 融合是"能融就融，不能就显式失败"，门控写在构造期而非运行期。**
@@ -51,7 +52,7 @@ README(MoE)把 MoE 训练的瓶颈归为三堵墙:**显存墙、通信墙、计�
 → 判据：融合 kernel 的正确性绑在具体后端与形状上，框架不做"悄悄降级到手写实现"，而是把"不可用"变成一次显式失败。逐个融合算子自身的设计取舍见 [[21_megatron_fusion_operators_analysis]] §2。
 
 > [!note] 推断
-> 上面五处各自的理由都有源码或提交自陈；**"三块基建共享同一条原则——框架只管编排、kernel 交给 TE / Apex / PyTorch"这层归纳由本页承担**。依据是三处委托点：FP8 GEMM 在 TE（`megatron/core/fp8_utils.py:799-856` 只负责建量化上下文）、graph capture 走 `torch.cuda.graph` 与 TE 的 `make_graphed_callables`（`megatron/core/transformer/cuda_graphs.py:43-59` 的条件导入，失败即 `HAVE_TE_GRAPHS = False`）、融合 kernel 来自 Apex / TE / Triton（`megatron/core/fusions/fused_layer_norm.py:15-27` 的条件导入）。要引用这条判断，请回到这三个 locator，不要引用本段推断。
+> 上面五处各自的理由都有源码或提交自陈；**"三块基建共享同一条原则——框架只管编排、kernel 交给 TE / Apex / PyTorch"这层归纳由本页承担**。依据是三处委托点：FP8 GEMM 在 TE（`megatron/core/fp8_utils.py:799-856` 只负责建量化上下文）、graph capture 走 `torch.cuda.graph` 与 TE 的 `make_graphed_callables`（`megatron/core/transformer/cuda_graphs.py:47-63` 的条件导入，失败即 `HAVE_TE_GRAPHS = False`）、融合 kernel 来自 Apex / TE / Triton（`megatron/core/fusions/fused_layer_norm.py:15-27` 的条件导入）。要引用这条判断，请回到这三个 locator，不要引用本段推断。
 
 ---
 
@@ -122,7 +123,7 @@ GPU 执行每个 kernel 前,CPU 要先"启动"它(launch)。当模型由**大量
 | `transformer_engine` | 每层一张图 | 用 TE 的 `make_graphed_callables()` |
 | `full_iteration` | 整个前向+反向一张图 | 整步录成单图,消除最多 |
 
-> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。CUDA Graph API 已重构(#4292，与基线里的孪生 PR #4293 同内容；当前 `dev@232c478d4` 已生效)。本表的 "三种实现" 论断**在重构后依然成立**——`cuda_graph_impl` 是一个 `Literal['none','local','transformer_engine','full_iteration']`(`megatron/core/transformer/transformer_config.py:1148`)，`full_iteration` 确为一个独立的 **impl** 值(而非旧版的某个 scope)。但旧的单一旋钮 `--cuda-graph-scope` 已被**拆成三个正交字段**，需补充说明:
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。CUDA Graph API 已重构(#4292，与基线里的孪生 PR #4293 同内容；当前 `dev@232c478d4` 已生效)。本表的 "三种实现" 论断**在重构后依然成立**——`cuda_graph_impl` 是一个 `Literal['none','local','transformer_engine','full_iteration']`(`megatron/core/transformer/transformer_config.py:1159`)，`full_iteration` 确为一个独立的 **impl** 值(而非旧版的某个 scope)。但旧的单一旋钮 `--cuda-graph-scope` 已被**拆成三个正交字段**，需补充说明:
 > - **`--cuda-graph-impl`**：选实现/总粒度 —— `none`(eager) / `local` / `transformer_engine` / `full_iteration`。
 > - **`--cuda-graph-modules`**(由 `--cuda-graph-scope` 改名，`megatron/core/transformer/enums.py:CudaGraphModule`，`megatron/core/transformer/cuda_graph_config.py`)：在 `local` / `transformer_engine` 的**逐层图内部**选**捕获哪些子区域** —— `attn` / `mlp` / `moe` / `moe_router` / `moe_preprocess` / `mamba`；**留空 = 整层捕获**。`full_iteration` 下此字段**必须为空**。
 > - **`--inference-cuda-graph-scope`**(`megatron/core/transformer/enums.py:InferenceCudaGraphScope`)：推理图的归属边界 —— `none`(eager) / `layer`(TransformerLayer/MambaLayer 边界) / `block`(TransformerBlock/HybridBlock 边界)。`local` 默认 `layer`，其它 impl 默认 `none`(`ALLOWED_INFERENCE_SCOPES`)。
@@ -132,8 +133,8 @@ GPU 执行每个 kernel 前,CPU 要先"启动"它(launch)。当模型由**大量
 `megatron/core/transformer/cuda_graphs.py` 的机制:`_CudaGraphRunner` 包住一个可图化的模块;`_CudagraphGlobalRecord`(`:345`)记录所有 runner 的创建顺序;`create_cudagraphs`(`:497`)在**第一个训练步**真正录图(被 `15_megatron_pp_schedulers_analysis.md` 的 `megatron/core/pipeline_parallel/schedules.py` 在步末调用 —— 前五份文档里 `megatron/core/pipeline_parallel/schedules.py` 出现的 `create_cudagraphs()` 就是它)。`TensorReusePool`(`:161`)在图之间复用张量缓冲。
 
 > [!deprecated] 该机制在基线 `71092579` 下已不存在（`TensorReusePool` 与 `_determine_if_first_last_layer_of_this_vp_chunk` 在 `71092579` 全仓库零命中，由 #5451 *Optimize memory usage of partial CUDA graphs* 删除），以上关于 `TensorReusePool` 与 VP-chunk 判定的描述对应旧基线 `ee3f1ff`。
-> - **`TensorReusePool` 已删除**，图间缓冲复用改为**引用计数**方案：`CudagraphBufferMetadata`(`megatron/core/transformer/cuda_graphs.py:146`)的 `cudagraph_reuse_ref_count` / `capture_reuse_count`(`:156`/`:157`)配合模块级 `fwd_buffer_reuse_ref_count` / `bwd_buffer_reuse_ref_count`(`:341`/`:342`)判定某个 buffer 能否被后一张图直接写入或复用。"在图之间复用张量缓冲" 这一**意图**仍成立，但已无 Pool 这个对象。
-> - **`_determine_if_first_last_layer_of_this_vp_chunk` 已删除**，改由 `annotate_first_last_layer(layers)`(`:247`)在建块时直接给每层打 `is_first_layer` / `is_last_layer` 标记(`megatron/core/transformer/transformer_block.py:389`、`megatron/core/models/hybrid/hybrid_block.py:766`)，`_CudaGraphRunner` 从 base module 上读取(`:721`)。
+> - **`TensorReusePool` 已删除**，图间缓冲复用改为**引用计数**方案：`CudagraphBufferMetadata`(`megatron/core/transformer/cuda_graphs.py:150`)的 `cudagraph_reuse_ref_count` / `capture_reuse_count`(`:160`/`:161`)配合模块级 `fwd_buffer_reuse_ref_count` / `bwd_buffer_reuse_ref_count`(`:345`/`:346`)判定某个 buffer 能否被后一张图直接写入或复用。"在图之间复用张量缓冲" 这一**意图**仍成立，但已无 Pool 这个对象。
+> - **`_determine_if_first_last_layer_of_this_vp_chunk` 已删除**，改由 `annotate_first_last_layer(layers)`(`:247`)在建块时直接给每层打 `is_first_layer` / `is_last_layer` 标记(`megatron/core/transformer/transformer_block.py:389`、`megatron/core/models/hybrid/hybrid_block.py:878`)，`_CudaGraphRunner` 从 base module 上读取(`:832`)。
 > - 本页其余 `megatron/core/transformer/cuda_graphs.py` 符号在新基线下仍在，位置为：`_ensure_generator_state_is_cudagraph_safe`→`:269`、`_CudagraphGlobalRecord`→`:345`(其 `create_cudagraphs` classmethod 在 `:370`)、模块级 `create_cudagraphs()`→`:497`、`_CudaGraphRunner`→`:674`。
 
 ### 4.3 约束:动态形状
@@ -144,7 +145,7 @@ CUDA Graph 要求**每次重放的张量形状、地址固定**。问题:
 
 `megatron/core/transformer/cuda_graphs.py` 还要处理 RNG 状态(`_ensure_generator_state_is_cudagraph_safe`,`:269`)—— dropout 的随机数生成器在图重放下必须可控。与 VPP 配合时还要判定层属于哪个 VP chunk(`_determine_if_first_last_layer_of_this_vp_chunk`,`:249`)。
 
-> [!deprecated] 该机制在基线 `71092579` 下已不存在（`_determine_if_first_last_layer_of_this_vp_chunk` 全仓库零命中，由 #5451 删除），上句描述对应旧基线 `ee3f1ff`。新基线改为 `annotate_first_last_layer(layers)`(`megatron/core/transformer/cuda_graphs.py:247`)在建块时直接标注 `is_first_layer` / `is_last_layer`。
+> [!deprecated] 该机制在基线 `71092579` 下已不存在（`_determine_if_first_last_layer_of_this_vp_chunk` 全仓库零命中，由 #5451 删除），上句描述对应旧基线 `ee3f1ff`。新基线改为 `annotate_first_last_layer(layers)`(`megatron/core/transformer/cuda_graphs.py:251`)在建块时直接标注 `is_first_layer` / `is_last_layer`。
 
 推理另有 `--inference-cuda-graph-scope=layer|block`。
 
@@ -214,7 +215,7 @@ num_microbatches = global_batch_size / (micro_batch_size · data_parallel_size)
 ### 8.1 MXFP8 LM-head 输出投影（opt-in）
 
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
-> 新增 `fp8_output_proj`(`megatron/core/transformer/transformer_config.py:705`，#4825)：把**词表输出投影(LM head)**也放进 MXFP8 autocast 跑。原本 §3.4 提过"首尾层常保留 bf16"，本特性是其**反向 opt-in** —— 显式让最后的 output projection 走 MXFP8。
+> 新增 `fp8_output_proj`(`megatron/core/transformer/transformer_config.py:707`，#4825)：把**词表输出投影(LM head)**也放进 MXFP8 autocast 跑。原本 §3.4 提过"首尾层常保留 bf16"，本特性是其**反向 opt-in** —— 显式让最后的 output projection 走 MXFP8。
 > - 仅当 `fp8=True` 且 `fp8_recipe='mxfp8'` 时生效(否则构造期报错)。
 > - 实现：`GPTModel` 的 `output_layer` 在 `is_mxfp8_output_proj_active(config)`(`megatron/core/fp8_utils.py:717`)为真时换成 `TELMHeadColumnParallelLinear`(`megatron/core/extensions/transformer_engine.py:1350`)而非普通 `ColumnParallelLinear`(`megatron/core/models/gpt/gpt_model.py`)。
 
@@ -237,6 +238,28 @@ num_microbatches = global_batch_size / (micro_batch_size · data_parallel_size)
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
 > §5 算子融合的增量(TE op-fuser 把 grouped MLP 的 GEMM+激活+GEMM 整链融合、ScaledSReLU/Clamped-SwiGLU、`TEFusedDenseMLP` 在 SM100+/MXFP8 触发 CuTe GEMM-SwiGLU 融合、mHC 多后端重写、DSv4 稀疏注意力融合 kernel、TE 版本依赖)详见 [[21_megatron_fusion_operators_analysis]] §8。这些融合与本页 FP8/MXFP8 精度强相关(多数融合 kernel 的收益正建立在 MXFP8 量化 epilogue 上)。
 
+### 8.5 whole-MoE CUDA Graph：能力边界从 drop-and-pad 扩到 sync-free HybridEP（2026-09-01 增量）
+
+> [!update] 2026-09-01（基线 `85902ef59`，#6022 / #6583）：本节所述的"MoE 层只有 drop-and-pad 才能进图"**已不再成立**。
+
+**边界扩张写在枚举注释里**。`CudaGraphModule.moe` 的注释由旧基线的 "Captures MoE layers (drop-and-pad MoE layers only)" 改成 "Captures drop-and-pad or **sync-free HybridEP** MoE layers"（`megatron/core/transformer/enums.py:70`）。这一句是本轮 MoE × CUDA Graph 关系变化的总纲。
+
+**为什么原来只能 drop-and-pad，现在 HybridEP 也行**。CUDA Graph 要求捕获期与重放期的张量形状、地址全部静态。drop-and-pad 天然满足：每专家收到的 token 数被容量因子钉死。HybridEP 的 sync-free 路径靠另一条路达到同样效果——`moe_expert_rank_capacity_factor` 给出**逐 rank** 的容量上界，paged stash 提供固定的分页缓冲，TE op-fuser 的 GroupedTensor 路径用 padded expert segment + CUDA split metadata 表达分组 GEMM（见 [[21_megatron_fusion_operators_analysis]] §8.10）。三者合起来让"变长"在 kernel 之外被吸收，图里看到的仍是静态形状。
+
+**代价是一条很长的与条件**。新增的 `validate_moe_cuda_graph_support(config)`（`megatron/core/transformer/cuda_graph_config.py:35`）在捕获含整个 MoE 模块时断言六项同时成立（`:49-55`）：`cuda_graph_impl == "transformer_engine"`、`moe_token_dispatcher_type == "flex"`、`moe_flex_dispatcher_backend == "hybridep"`、`moe_expert_rank_capacity_factor is not None`、`moe_paged_stash`、`use_transformer_engine_op_fuser`。任一缺失即报 "moe cuda graph is only supported with drop-padding MoE or transformer_engine sync-free HybridEP with rank capacity and paged stash."。它在配置校验期（`megatron/core/transformer/transformer_config.py:3429`）与图捕获期（`megatron/core/transformer/cuda_graphs.py:2717`）各调一次。
+
+**"整个 MoE 模块"的判定**由 `is_whole_moe_cuda_graph_scope(cuda_graph_modules)`（`megatron/core/transformer/cuda_graph_config.py:25`）给出：**空的归一化 scope**（=整层捕获）或**显式含 `CudaGraphModule.moe`** 都算。空集合也算"整个 MoE"这点容易被忽略——它意味着不写 `--cuda-graph-scope` 的默认整层捕获同样要过上面六条。
+
+**失败是硬失败，没有回退**。`paged_stash.py` 新增 `_raise_if_te_whole_moe_graph_overflow(...)`，在已捕获的 TE whole-MoE 图上溢出静态 sync-free 缓冲时直接抛错，错误文案明写 "Dynamic fallback is not supported for an already captured TE whole-MoE graph."。这与本页 §9.2 "CUDA Graph 的边界"是同一性质的约束：图一旦捕获，形状假设就不能再谈判。
+
+### 8.6 hybrid MTP 的部分图捕获：跨层分组（2026-09-01 增量）
+
+> [!update] 2026-09-01（基线 `85902ef59`，#6583）
+
+hybrid 模型里 attention-only 层与随后的 partial-MoE-capture 层被允许**合并成一张图**。判定谓词 `_can_group_te_cuda_graph_with(next_layer)`（`megatron/core/models/hybrid/hybrid_block.py`）要求本层是 attention-only 且下一层 `_inner_is_partial_moe_capture()`；成组后由 `_set_te_cuda_graph_group_tail` 记住 tail，重放时 tail 通过 `_resume_partial_moe_cuda_graph(out)` 回调 `inner_layer.resume_moe_experts_after_partial_cudagraph(out)` 续算被切出图外的专家部分。`parameters()` 被一并重写以纳入 group tail，否则优化器会漏掉 tail 层的参数。
+
+**设计取舍**：部分捕获（partial capture）本来是为绕开 MoE 动态形状而把专家段留在图外；代价是每层多一次图边界。把 attention-only 的前驱并进同一张图，等于用"分组"把这些边界摊薄，而不必让专家段本身变成静态。
+
 ---
 
 ## 9. 约束
@@ -258,9 +281,9 @@ num_microbatches = global_batch_size / (micro_batch_size · data_parallel_size)
 - **推理 block 图 + fp8 只有一种组合合法**：`--transformer-impl=inference_optimized` 且 `--fp8-recipe=mxfp8`（`megatron/training/arguments.py:1339-1348`）。
 - **打开图会顺手改写别的配置**：`cuda_graph_impl != "none"` 时若未开 `te_rng_tracker` 会被强制打开并告警（`megatron/training/arguments.py:2153-2159`）；`transformer_engine` impl 下禁止 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`，除非同时设 `NCCL_GRAPH_REGISTER=0`（`:2160-2168`）。
 - **THD / 动态 CP 下必须给对齐**：未设 `--pad-packed-seq-alignment` 时直接 `raise ValueError('THD CUDA Graph requires --pad-packed-seq-alignment to be set.')`（`megatron/training/arguments.py:1606-1616`）。
-- **建图是一次性的**：`_CudagraphGlobalRecord.create_cudagraphs()` 在已建图的情况下再收到建图请求会 assert（`megatron/core/transformer/cuda_graphs.py:370-379`）——即"第一个 step 之后才第一次执行到的模块"无法被图化。
-- **与激活重计算的已知代价**：重计算会在反向里重跑前向，`record_graph_capture` 挂上的 buffer 元数据随之丢失，源码自陈「Consequently, there are extra copies between the outputs of the fwd-bwd pass and the bwd pass」（`megatron/core/transformer/cuda_graphs.py:1063-1070`）。
-- **捕获期要冻结 GC**：`FREEZE_GC` 默认开启，可由 `CUDA_GRAPH_CAPTURE_FREEZE_GC=0` 关闭，PyTorch ≥ 2.9.0a0 时自动关闭（`megatron/core/transformer/cuda_graphs.py:98-107`）。
+- **建图是一次性的**：`_CudagraphGlobalRecord.create_cudagraphs()` 在已建图的情况下再收到建图请求会 assert（`megatron/core/transformer/cuda_graphs.py:374-383`）——即"第一个 step 之后才第一次执行到的模块"无法被图化。
+- **与激活重计算的已知代价**：重计算会在反向里重跑前向，`record_graph_capture` 挂上的 buffer 元数据随之丢失，源码自陈「Consequently, there are extra copies between the outputs of the fwd-bwd pass and the bwd pass」（`megatron/core/transformer/cuda_graphs.py:1067-1074`）。
+- **捕获期要冻结 GC**：`FREEZE_GC` 默认开启，可由 `CUDA_GRAPH_CAPTURE_FREEZE_GC=0` 关闭，PyTorch ≥ 2.9.0a0 时自动关闭（`megatron/core/transformer/cuda_graphs.py:102-111`）。
 
 ### 9.3 算子融合的边界
 
@@ -270,7 +293,7 @@ num_microbatches = global_batch_size / (micro_batch_size · data_parallel_size)
 
 ### 9.4 三者之间的耦合（正交不等于互不影响）
 
-§7 小结说这三块与并行轴正交，但它们**彼此**并不正交，且耦合点都落在上面两节：CUDA Graph × dropless MoE（§4.3）、FP8 × 激活重计算（§3.4 与 `megatron/core/transformer/cuda_graphs.py:1063-1070`）、FP8 × CUDA Graph（推理 block 图只认 mxfp8，`megatron/training/arguments.py:1339-1348`）。
+§7 小结说这三块与并行轴正交，但它们**彼此**并不正交，且耦合点都落在上面两节：CUDA Graph × dropless MoE（§4.3）、FP8 × 激活重计算（§3.4 与 `megatron/core/transformer/cuda_graphs.py:1067-1074`）、FP8 × CUDA Graph（推理 block 图只认 mxfp8，`megatron/training/arguments.py:1339-1348`）。
 
 ---
 
@@ -279,10 +302,10 @@ num_microbatches = global_batch_size / (micro_batch_size · data_parallel_size)
 > [!note] 推断
 > 本节由**本页已有的 `[!update]` / `[!deprecated]` 记录**（均带 PR 号）与**当前基线里的 `TODO` 注释**共同锚定；方向判断属本页推断，不是源码自陈的路线图。
 
-- **CUDA Graph 的主战场已从"省启动开销"转向"省显存"**。#5451 刚把 `TensorReusePool` 换成引用计数（§2④、§4.2 的 `[!deprecated]`），`delete_cuda_graphs()` 里还留着 `# TODO: Optional?: Force garbage collection to clean up memory`（`megatron/core/transformer/cuda_graphs.py:533`）。→ partial graph 场景下的缓冲生命周期还在继续收紧。
-- **捕获期的 freeze-GC 是有明确退场时间的临时兜底**：`# TODO (@lmcafee): remove all freeze-GC code once most users are on PyTorch 2.9+`（`megatron/core/transformer/cuda_graphs.py:99`），代码里已按 `PkgVersion("2.9.0a0")` 自动关闭（`:104-107`）。→ 这段代码预定随 PyTorch 版本推进被整体删除。
-- **CUDA Graph × 激活重计算尚未收敛**：`# TODO: (jiemingz) [interaction with recompute]`（`megatron/core/transformer/cuda_graphs.py:1063-1070`）自陈当前只能靠额外拷贝绕过元数据丢失。→ 这是 §9.2 最后两条代价的直接来源，也是最可能被下一轮优化掉的地方。
-- **配置面正在从"一个 scope"拆成三个正交字段**（#4292，§4.2 的 `[!update]`）：旧的 `CudaGraphScope` 只为反序列化与迁移保留，迁移逻辑集中在 `megatron/core/transformer/cuda_graph_config.py:7`、`:82-103`。→ 旧旋钮预计在下一个大版本被清掉。
+- **CUDA Graph 的主战场已从"省启动开销"转向"省显存"**。#5451 刚把 `TensorReusePool` 换成引用计数（§2④、§4.2 的 `[!deprecated]`），`delete_cuda_graphs()` 里还留着 `# TODO: Optional?: Force garbage collection to clean up memory`（`megatron/core/transformer/cuda_graphs.py:537`）。→ partial graph 场景下的缓冲生命周期还在继续收紧。
+- **捕获期的 freeze-GC 是有明确退场时间的临时兜底**：`# TODO (@lmcafee): remove all freeze-GC code once most users are on PyTorch 2.9+`（`megatron/core/transformer/cuda_graphs.py:103`），代码里已按 `PkgVersion("2.9.0a0")` 自动关闭（`:108-111`）。→ 这段代码预定随 PyTorch 版本推进被整体删除。
+- **CUDA Graph × 激活重计算尚未收敛**：`# TODO: (jiemingz) [interaction with recompute]`（`megatron/core/transformer/cuda_graphs.py:1067-1074`）自陈当前只能靠额外拷贝绕过元数据丢失。→ 这是 §9.2 最后两条代价的直接来源，也是最可能被下一轮优化掉的地方。
+- **配置面正在从"一个 scope"拆成三个正交字段**（#4292，§4.2 的 `[!update]`）：旧的 `CudaGraphScope` 只为反序列化与迁移保留，迁移逻辑集中在 `megatron/core/transformer/cuda_graph_config.py:7`、`:119-140`。→ 旧旋钮预计在下一个大版本被清掉。
 - **推理图的分档单位从"请求数"改成"token 数"**（#4214，§8.3）。→ 与 §4.3"动态形状是死穴"呼应：解法不是让形状变动态，而是换一个更好分档的量。
 - **FP8 面在补 param-gather 与 LM-head 两条边**：#4825 让 LM head opt-in 走 MXFP8（§8.1），#4994/#4800/#4562/#4358/#4852 一连串修 mxfp8/nvfp4 的 param-gather（§8.2）。→ FP8 正从"GEMM 用低精度"扩张到"参数搬运也用低精度"，而这条路上的数值坑还在被逐个填。
 - **融合侧仍有一条明写的待办**：`# TODO: Add pytorch only layer norm`（`megatron/core/fusions/fused_layer_norm.py:104`）——去掉 Apex 硬依赖尚未做；`megatron/core/fusions/fused_mla_yarn_rope_apply.py:1280` 的旧名别名已被标注 deprecated。

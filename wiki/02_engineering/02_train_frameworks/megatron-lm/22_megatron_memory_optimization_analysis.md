@@ -4,7 +4,8 @@ title: "Megatron-LM 显存优化 全景分析"
 
 # Megatron-LM 显存优化 全景分析
 
-> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）。
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）。
+> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
 > **重定基线**：2026-08-28 由 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
 > **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
@@ -65,7 +66,7 @@ nccl_mem = torch.cuda.MemPool(ncclMemAlloc, ncclMemFree)
 
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
 > **NCCL UB 内存池：正确反注册 + 降显存（#4492，e35d4e50c）**
-> 1. **退出时反注册 NCCL user-buffer 池**（`megatron/training/training.py:4820-4833`）：训练满足退出条件时，先 `torch.distributed.barrier()`，再遍历每个 `DDP` 的 `buffers + expert_parallel_buffers`，对带 `nccl_mem_pool` 的 buffer 调用 `nccl_allocator.deregister_mem_pool(...)`。不这样做的话，`ProcessGroupNCCL` 析构会走 `abort()` → 对 `ncclCommWindowRegister` 注册过的 handle 调 `ncclCommDeregister`，报 `NCCL WARN Deregister: Could not find handle` 并崩溃。
+> 1. **退出时反注册 NCCL user-buffer 池**（`megatron/training/training.py:5004-5017`）：训练满足退出条件时，先 `torch.distributed.barrier()`，再遍历每个 `DDP` 的 `buffers + expert_parallel_buffers`，对带 `nccl_mem_pool` 的 buffer 调用 `nccl_allocator.deregister_mem_pool(...)`。不这样做的话，`ProcessGroupNCCL` 析构会走 `abort()` → 对 `ncclCommWindowRegister` 注册过的 handle 调 `ncclCommDeregister`，报 `NCCL WARN Deregister: Could not find handle` 并崩溃。
 > 2. **每个 buffer 记录自己的池**（`megatron/core/distributed/param_and_grad_buffer.py:1230,1257`）：`_ParamAndGradBuffer.nccl_mem_pool` 字段保存 `create_nccl_mem_pool(...)` 返回的池句柄，供上面反注册时取用。
 > 3. **torch≥2.11 放宽 `expandable_segments` 限制**（`megatron/core/distributed/distributed_data_parallel_config.py:300`）：`nccl_ub` 与 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` 互斥的断言改为 `if self.nccl_ub and not is_torch_min_version("2.11.0a0")` —— 新版 torch 上两者可共存，降低显存碎片。
 
@@ -99,12 +100,12 @@ nccl_mem = torch.cuda.MemPool(ncclMemAlloc, ncclMemFree)
 2. **capture**：第 2 次迭代，记录 max tokens per (dtype, hidden_size)，建立 page schedule
 3. **captured**：使用 CUDA Graph 加速 stash/reload
 
-**三级溢出处理**（原 Triton kernel `megatron/core/transformer/moe/paged_stash.py:129` 已迁走，现为 `megatron/core/transformer/moe/ops/paged_stash.py:13`）：
+**三级溢出处理**（原 Triton kernel `megatron/core/transformer/moe/paged_stash.py:130` 已迁走，现为 `megatron/core/transformer/moe/ops/paged_stash.py:13`）：
 - Tier 1（快速路径）：页在 CUDA stash buffer 内
 - Tier 2（CPU 溢出）：CUDA buffer 满但 pinned host buffer 可用
 - Tier 3（重运行）：都满了 → 触发 `PagedStashRunner.rerun()` 回退到无 stash 重新执行
 
-> [!deprecated] 2026-06-16：上面"三级溢出"的画法把**两个不同层级的机制**混为一谈，按 #4247 实测应拆成 **"2 级缓冲 + 1 级 runner 级重跑"**（详见下方 [!update]，源码 `megatron/core/transformer/moe/ops/paged_stash.py:13`、`megatron/core/transformer/moe/paged_stash.py:968`）。**2026-08-28 重核：`paged_stash.py` 与 `ops/paged_stash.py` 在 `232c478d4` 与 `71092579` 之间逐字节相同（`git diff` 空），本条及下方 [!update] 里这两个文件的全部行号原样成立。**具体更正：
+> [!deprecated] 2026-06-16：上面"三级溢出"的画法把**两个不同层级的机制**混为一谈，按 #4247 实测应拆成 **"2 级缓冲 + 1 级 runner 级重跑"**（详见下方 [!update]，源码 `megatron/core/transformer/moe/ops/paged_stash.py:13`、`megatron/core/transformer/moe/paged_stash.py:1190`）。**2026-08-28 重核：`paged_stash.py` 与 `ops/paged_stash.py` 在 `232c478d4` 与 `71092579` 之间逐字节相同（`git diff` 空），本条及下方 [!update] 里这两个文件的全部行号原样成立。**具体更正：
 > - **Tier 2 的"host spill"不是溢出，而是成功的回退**。Triton kernel 注释原话："`host_spill` = 1 if any successful host spill (**not set on overflow path**)"（`megatron/core/transformer/moe/ops/paged_stash.py:25`）。CUDA 页用尽时正常往 pinned host 页写，只置 `host_spill` 标志（信息性日志，提示你调大 `factor_cuda`），**不触发重跑**。
 > - **真正的 overflow = CUDA 页与 host 页都满** → kernel 置 `overflow` 标志（`megatron/core/transformer/moe/ops/paged_stash.py:98`）。这才是触发重跑的条件之一。
 > - **"重跑"不是 kernel 里的 Tier 3，而是 runner 级（`PagedStashRunner`）的整步 forward-backward 重跑**，且条件是 **stash overflow `或` HybridEP 容量 over-budget（任一 rank 命中）**，并非"都满了"。重跑会**同时**清掉 `moe_expert_rank_capacity_factor` 容量 padding **和** `moe_paged_stash`，最多重跑 1 次（共 2 次尝试）。
@@ -123,13 +124,15 @@ moe_paged_stash_buffer_size_factor_cpu: float = 0.0    # CPU buffer 比例
 >
 > 官方文档 `docs/user-guide/features/paged_stash.md` 把这个特性定义为 **"sync-free 专家执行 + paged stashing"** 两部分，比上文"只是 MoE 激活分页"更完整：
 >
-> **(1) 前置依赖（不是可选项）**：`moe_paged_stash` 要求先开 **sync-free**——`--moe-flex-dispatcher-backend hybridep` + `--use-transformer-engine-op-fuser` + `--moe-expert-rank-capacity-factor <float>`（`megatron/core/transformer/transformer_config.py:2239-2252` 校验，且后端取值已扩为 `"hybridep"` 或 `"ncclep"`）。`moe_paged_stash` 自身校验（`megatron/core/transformer/transformer_config.py:2547-2561`，冲突模块集合已扩为 `expert_fc1`/`moe_act`/`fused_group_mlp`）：必须设容量因子、不能与 `cpu_offloading` 共存、`offload_modules` 不能含 `expert_fc1`/`moe_act`。容量因子 = "相对完美均衡情况的 buffer 倍率"，留 headroom 吸收路由 skew。
+> **(1) 前置依赖（不是可选项）**：`moe_paged_stash` 要求先开 **sync-free**——`--moe-flex-dispatcher-backend hybridep` + `--use-transformer-engine-op-fuser` + `--moe-expert-rank-capacity-factor <float>`（`megatron/core/transformer/transformer_config.py:2265-2279` 校验，且后端取值已扩为 `"hybridep"` 或 `"ncclep"`）。`moe_paged_stash` 自身校验（`megatron/core/transformer/transformer_config.py:2574-2588`，冲突模块集合已扩为 `expert_fc1`/`moe_act`/`fused_group_mlp`）：必须设容量因子、不能与 `cpu_offloading` 共存、`offload_modules` 不能含 `expert_fc1`/`moe_act`。容量因子 = "相对完美均衡情况的 buffer 倍率"，留 headroom 吸收路由 skew。
 >
-> **(2) 缓冲是 2 级而非 3 级**：`PagedStashBuffer`（`megatron/core/transformer/moe/paged_stash.py:24`）维护两条 free list：`[0]=CUDA 页`、`[1]=pinned host 页`。host 页仅当 `moe_paged_stash_buffer_size_factor_cpu>0` 时分配（`num_tokens_host>0`）。pack/reload 由融合 Triton kernel `paged_stash_copy_kernel`（**已由 #5003 搬到 `megatron/core/transformer/moe/ops/paged_stash.py:13`**，原 `megatron/core/transformer/moe/paged_stash.py:129` 引用失效）一次 launch 完成，无 host 同步、CUDA-graph 安全。
+> **(2) 缓冲是 2 级而非 3 级**：`PagedStashBuffer`（`megatron/core/transformer/moe/paged_stash.py:25`）维护两条 free list：`[0]=CUDA 页`、`[1]=pinned host 页`。host 页仅当 `moe_paged_stash_buffer_size_factor_cpu>0` 时分配（`num_tokens_host>0`）。pack/reload 由融合 Triton kernel `paged_stash_copy_kernel`（**已由 #5003 搬到 `megatron/core/transformer/moe/ops/paged_stash.py:13`**，原 `megatron/core/transformer/moe/paged_stash.py:130` 引用失效）一次 launch 完成，无 host 同步、CUDA-graph 安全。
 >
-> **(3) overflow → runner 级整步重跑**：`PagedStashRunner.__call__`（`megatron/core/transformer/moe/paged_stash.py:968,1149`）包裹 `forward_backward_func`：每趟跑完用 `check_moe_overflow()`（`:1066`）把 **stash_overflow / over_budget / host_spill** 三个标志 `all_reduce(SUM)` 跨全 rank 汇总；只要 stash overflow 或 over-budget 在**任一 rank** > 0 → `prepare_for_rerun()`（`:1087`）：清容量因子（转为 dropless 动态派发，靠 CPU sync 定尺寸）、关 paged stash、`zero_grad`、重置 FullCudaGraph、释放 stash buffer，然后**重跑整步**；`num_tries < 2` 断言保证最多 2 次。host_spill>0 只打日志（建议调大 `factor_cuda`），不重跑。
+> **(3) overflow → runner 级整步重跑**：`PagedStashRunner.__call__`（`megatron/core/transformer/moe/paged_stash.py:1190,1149`）包裹 `forward_backward_func`：每趟跑完用 `check_moe_overflow()`（`:1295`）把 **stash_overflow / over_budget / host_spill** 三个标志 `all_reduce(SUM)` 跨全 rank 汇总；只要 stash overflow 或 over-budget 在**任一 rank** > 0 → `prepare_for_rerun()`（`:1357`）：清容量因子（转为 dropless 动态派发，靠 CPU sync 定尺寸）、关 paged stash、`zero_grad`、重置 FullCudaGraph、释放 stash buffer，然后**重跑整步**；`num_tries < 2` 断言保证最多 2 次。host_spill>0 只打日志（建议调大 `factor_cuda`），不重跑。
 >
-> **(4) 生命周期三态精确化**（`megatron/core/transformer/moe/paged_stash.py:906-915` 在 `paged_stash_reset` 里推进）：`begin → capture → captured`。
+> **(4) 生命周期三态精确化**（`megatron/core/transformer/moe/paged_stash.py:1162-1170` 在 `paged_stash_reset` 里推进）：`begin → capture → captured`。
+> 
+> [!update] 2026-09-01（基线 `85902ef59`）：这段不是纯行号漂移，结构被 #6022 拆开了。旧基线上「转成 `captured`」与「按 cuda/cpu 两个 factor 分配 stash buffer」写在同一个 `elif` 分支里；新基线把**状态推进**（`megatron/core/transformer/moe/paged_stash.py:1162-1165`）与**缓冲准备**（`:1167-1170` 的独立 `if status == 'captured'` 判定）分开，后者改调新增方法 `prepare_stash_buffers(config)`，两个 size factor 的读取下沉进该方法。**三态语义本身未变**，变的是「何时分配缓冲」从状态迁移的副作用变成了一个可被单独调用的步骤——这正是 TE whole-MoE CUDA graph 捕获流程所需要的。
 > - `begin`：初始态，**首次 reset 即转 `capture`**（并无完整一迭代停在 begin）；
 > - `capture`：本迭代**逐 (dtype, hidden_size) 累计 max tokens、并构建 `_pp_schedule`**（`:711-742`），此阶段**显式不使用 CUDA graph**（源码注释 `:744`，故可按实际 token 数截断保存张量）；下次 reset 时 `capture → captured` 并 `allocate_stash_buffers`；
 > - `captured`：稳态，按 `_pp_schedule` 真正 stash/reload，**与 full CUDA graph 兼容**。注意上文"captured：使用 CUDA Graph 加速 stash/reload"措辞不准——CUDA graph 不是用来"加速 stash/reload"，而是 paged stash 被设计成 CUDA-graph-safe（freelist 原地 reset、无新分配）；rerun fallback 后 buffer 会被释放，再次进入 captured 时按 capture 期 maxima 重新分配（`:916-929`）。
@@ -143,7 +146,7 @@ moe_paged_stash_buffer_size_factor_cpu: float = 0.0    # CPU buffer 比例
 **机制**（`:400`）：`PipelineOffloadManager` 在 sub-layer 粒度选择性卸载：
 
 ```
-支持的 offload 模块（`megatron/core/transformer/transformer_config.py:1453-1465`）：attn_norm, qkv_linear, core_attn, attn_proj, 
+支持的 offload 模块（`megatron/core/transformer/transformer_config.py:1464-1476`）：attn_norm, qkv_linear, core_attn, attn_proj, 
                           mlp_norm, expert_fc1, moe_act, fused_group_mlp
 ```
 
@@ -212,17 +215,17 @@ def post_warmup_callback(self):
    - Match by (shape, dtype) 复用，避免重复分配 CPU 内存
    
 2. **选择性卸载**：
-   - `min_offloaded_tensor_size`（判定 `:993`，默认值 `:691` 与 `megatron/core/transformer/transformer_config.py:1466`）：跳过小 tensor（默认 ≥1M elements）
+   - `min_offloaded_tensor_size`（判定 `:993`，默认值 `:691` 与 `megatron/core/transformer/transformer_config.py:1477`）：跳过小 tensor（默认 ≥1M elements）
    - `activation_offload_fraction`（`:693`，生效于 `:617`）：只卸载部分层
    - `offload_margin`（`:580-596`）：最后 N 层不卸载（避免 reload 阻塞 backward 计算）
 
-3. **CUDA Graph 兼容**（`:1226-1234` 的 `delay_offload` 分支 + `:1295-1298` 的 flush 入口）：支持延迟卸载（`delay_offload_until_cuda_graph`，`megatron/core/transformer/transformer_config.py:1469`）
+3. **CUDA Graph 兼容**（`:1226-1234` 的 `delay_offload` 分支 + `:1295-1298` 的 flush 入口）：支持延迟卸载（`delay_offload_until_cuda_graph`，`megatron/core/transformer/transformer_config.py:1480`）
 
 **性能开销**：D2H/H2D 异步传输（pinned memory + 独立 CUDA stream），与计算重叠
 
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
 > **勘误（2026-08-28）**："新增于 B" 的归属有误——该旋钮在**旧基线 `ee3f1ff` 下就已存在**（`megatron/core/transformer/transformer_config.py:1246`、`megatron/core/pipeline_parallel/fine_grained_activation_offload.py:668`），首次落地是 #4514（`994f5c9d6`，为 `ee3f1ff` 的祖先）；#4692（`9a7cd17fd`）是 dev 侧的**再次落地**，不是首次新增。机制描述本身不受影响。
-> **"最大在途 offload"节流旋钮**：`fine_grained_offloading_max_inflight_offloads: Optional[int]`（`megatron/core/transformer/transformer_config.py:1487`，校验 `:2534-2537`）。语义——**按 offload group 名字**分别限制"已发起 D2H、但主流尚未 `wait_event` join 的 offload 个数"（每个名字一条独立 FIFO，同一上限）。`0` = 每次 offload 后主流立即等待该名字；`1` = 该名字最多 1 个未 join 的在途；`None`（默认）= 不插入这些 join。
+> **"最大在途 offload"节流旋钮**：`fine_grained_offloading_max_inflight_offloads: Optional[int]`（`megatron/core/transformer/transformer_config.py:1498`，校验 `:2561-2564`）。语义——**按 offload group 名字**分别限制"已发起 D2H、但主流尚未 `wait_event` join 的 offload 个数"（每个名字一条独立 FIFO，同一上限）。`0` = 每次 offload 后主流立即等待该名字；`1` = 该名字最多 1 个未 join 的在途；`None`（默认）= 不插入这些 join。
 > 实现：`ChunkOffloadHandler`（`megatron/core/pipeline_parallel/fine_grained_activation_offload.py:825`）的 `__init__` 增 `max_inflight_offloads` 参数（`:867`，落到 `:892`）与 `_offload_pending_by_name`（`:894`），commit offload 时入队事件并调 `_drain_offload_pending(name)`（定义 `:1112`，调用点 `:1025-1028`）让主流等待超额的旧事件。
 > **动机**：在 **full-iteration CUDA graph** 捕获下，主流可能不会自动等 D2H 事件 → 在途 offload 无界堆积、pinned host buffer 与 D2H 队列爆显存/带宽；此旋钮给 CG 场景一个回压闸门。
 
@@ -285,7 +288,7 @@ reuse_buf = bucket.grad_data.view(param_dtype)  # recycle
 
 ### 3.7 CUDA Graph Buffer 复用 (`megatron/core/transformer/cuda_graphs.py`)
 
-> [!deprecated] 2026-08-28：`TensorReusePool` 这个类在基线 `71092579` 下**已不存在**——`git grep TensorReusePool 71092579 -- megatron/` 无任何命中；它是被 #5451（`5e4fe9b3c`，"Optimize memory usage of partial CUDA graphs"，`cuda_graphs.py` 净删 369→改写）移除的。以下"按 (shape, dtype, device) 匹配复用 + 跨 stage 共享"的池式描述对应旧基线 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`:161`）。当前实现改成**引用计数式的 buffer 复用**：`cg_buffer_metadata` 上的 `cudagraph_reuse_ref_count` / `capture_reuse_count`（`megatron/core/transformer/cuda_graphs.py:149-157`）配合全局 `fwd_buffer_reuse_ref_count` / `bwd_buffer_reuse_ref_count`（`:341-342`），在捕获期决定某个 buffer 能否被下一张图直接复用或写入（`:866-907`）。
+> [!deprecated] 2026-08-28：`TensorReusePool` 这个类在基线 `71092579` 下**已不存在**——`git grep TensorReusePool 71092579 -- megatron/` 无任何命中；它是被 #5451（`5e4fe9b3c`，"Optimize memory usage of partial CUDA graphs"，`cuda_graphs.py` 净删 369→改写）移除的。以下"按 (shape, dtype, device) 匹配复用 + 跨 stage 共享"的池式描述对应旧基线 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（`:161`）。当前实现改成**引用计数式的 buffer 复用**：`cg_buffer_metadata` 上的 `cudagraph_reuse_ref_count` / `capture_reuse_count`（`megatron/core/transformer/cuda_graphs.py:153-161`）配合全局 `fwd_buffer_reuse_ref_count` / `bwd_buffer_reuse_ref_count`（`:345-346`），在捕获期决定某个 buffer 能否被下一张图直接复用或写入（`:870-911`）。
 
 旧基线下的 `TensorReusePool`（`:161`）复用 CUDA Graph 的输入/输出 buffer：
 - 按 (shape, dtype, device) 匹配复用
@@ -311,9 +314,9 @@ reuse_buf = bucket.grad_data.view(param_dtype)  # recycle
 >
 > **(a) 提前 `del` 输出张量（#4742，f1b5516b2）**：`forward_backward_no_pipelining` 在每个 microbatch `backward_step` 后立即 `del output_tensor`（`megatron/core/pipeline_parallel/schedules.py:787,810`）。不删的话上一个 microbatch 的 `output_tensor` 会一直活到下次迭代重新绑定变量，把 autograd 节点的析构推迟到下一次 forward 的 dispatch 路径上，触发 PyTorch "AccumulateGrad node's stream does not match" 警告（issue #4124）；提前删让 autograd 计算图头部及时释放。
 >
-> **(b) 删除 checkpoint 期的 GPU cache 回收 workaround（#5170，3a183e235）**：`save_checkpoint_and_time` 里原先为给异步 checkpoint worker 腾 D2H 显存而做的 `free_overlap_buffers()` + `torch.cuda.empty_cache()`（`megatron/training/training.py:2775-2781` 附近）已被**移除**（7 行）。该 workaround 不再需要。
+> **(b) 删除 checkpoint 期的 GPU cache 回收 workaround（#5170，3a183e235）**：`save_checkpoint_and_time` 里原先为给异步 checkpoint worker 腾 D2H 显存而做的 `free_overlap_buffers()` + `torch.cuda.empty_cache()`（`megatron/training/training.py:2957-2963` 附近）已被**移除**（7 行）。该 workaround 不再需要。
 >
-> [!contradiction] 2026-08-28：(b) 在基线 `71092579` 下**已不成立——该 workaround 又被加回来了**。#5366（`be82829c3`，标题即 `Revert "Remove checkpoint-time GPU cache reclaim workaround (#5170)"`）把它整段还原：现在 `save_checkpoint_and_time`（`megatron/training/training.py:3700`）在 `timers('interval-time').stop()` 之后仍然遍历 `model` 调 `free_overlap_buffers()` 并 `torch.cuda.empty_cache()`（`:3724-3730`，注释原文 "Free overlap param-gather buffers and release cached GPU memory so that the async checkpoint worker process has enough GPU headroom for D2H tensor transfers."）。即 #5170 的"不再需要"判断被上游自己推翻了。
+> [!contradiction] 2026-08-28：(b) 在基线 `71092579` 下**已不成立——该 workaround 又被加回来了**。#5366（`be82829c3`，标题即 `Revert "Remove checkpoint-time GPU cache reclaim workaround (#5170)"`）把它整段还原：现在 `save_checkpoint_and_time`（`megatron/training/training.py:3882`）在 `timers('interval-time').stop()` 之后仍然遍历 `model` 调 `free_overlap_buffers()` 并 `torch.cuda.empty_cache()`（`:3906-3912`，注释原文 "Free overlap param-gather buffers and release cached GPU memory so that the async checkpoint worker process has enough GPU headroom for D2H tensor transfers."）。即 #5170 的"不再需要"判断被上游自己推翻了。
 >
 > **(c) 权重/优化器显存估算正确计入 EP（#4687，a7c9e8c44）**：`megatron/training/theoretical_memory_usage.py:13` 重写 `compute_weight_and_optimizer_memory`，把 **routed expert 参数**单独按 `expert_tensor_parallel_size × expert_model_parallel_size` 分片、按 `expert_data_parallel_size = world_size /(etp×ep×pp)`（`:223`，使用于 `:304`）计 optimizer 字节，并区分 shared_expert / router / shared_expert_gate / active vs total 专家参数。修复了此前 MoE+EP 下理论显存被高/低估的问题（纯估算工具，不改运行时显存）。
 >
@@ -354,17 +357,26 @@ Layer 4（显著开销，降速 10-30%）：
 
 ### 6.1 Paged Stash：前置依赖是硬的，不是可选项
 
-- 必须先具备 **sync-free** 三件套：`--moe-flex-dispatcher-backend hybridep`（或 `ncclep`）+ `--use-transformer-engine-op-fuser` + `--moe-expert-rank-capacity-factor`（`megatron/core/transformer/transformer_config.py:2239-2252`）。
-- `moe_paged_stash` 自身：必须设容量因子（`megatron/core/transformer/transformer_config.py:2549-2552`，报错文案"there is no need to use paged stashing without it"）、**不能与 `cpu_offloading` 共存**（`:2547-2548`）、`offload_modules` 不能含 `expert_fc1`/`moe_act`/`fused_group_mlp`（`:2553-2561`，理由是 paged stash 已经覆盖了这些激活）。
+- 必须先具备 **sync-free** 三件套：`--moe-flex-dispatcher-backend hybridep`（或 `ncclep`）+ `--use-transformer-engine-op-fuser` + `--moe-expert-rank-capacity-factor`（`megatron/core/transformer/transformer_config.py:2265-2279`）。
+- `moe_paged_stash` 自身：必须设容量因子（`megatron/core/transformer/transformer_config.py:2576-2579`，报错文案"there is no need to use paged stashing without it"）、**不能与 `cpu_offloading` 共存**（`:2574-2575`）、`offload_modules` 不能含 `expert_fc1`/`moe_act`/`fused_group_mlp`（`:2580-2588`，理由是 paged stash 已经覆盖了这些激活）。
 - 重跑上限是 **1 次**（共 2 次尝试，见 §3.2 的 [!update] (3)）。容量因子给小了不是"慢一点"，是**每步都多跑一遍 forward-backward**。
+
+> [!update] 2026-09-01（基线 `85902ef59`，#6022）：当 paged stash 被用来支撑 **TE whole-MoE CUDA Graph** 时，前置依赖再加一层，且**失败方式从降级变成硬报错**。
+>
+> - 判定"是否在捕获整个 MoE 模块"由 `is_whole_moe_cuda_graph_scope()` 给出（`megatron/core/transformer/cuda_graph_config.py:25`）：空 scope（默认整层捕获）或显式 `CudaGraphModule.moe` 都算。
+> - 成立时 `validate_moe_cuda_graph_support()`（`:35`）断言六项同时满足（`:49-55`），其中就包含 `moe_paged_stash`——**paged stash 由"省显存的可选项"变成 whole-MoE 图的必要条件**。
+> - `paged_stash.py` 为 TE 捕获期新增了一整套调度切换：`start_te_graph_capture` / `finish_te_graph_capture`、`_build_te_graph_capture_schedule(order)`（把 TE 的 chunk 级顺序展开成 capture-only 的分页层条目）、上下文管理器 `paged_stash_te_graph_capture(...)`、`mark_te_graph_captured(num_microbatches)`。捕获期与运行期用的是**两份不同的调度**，捕获结束后再切回全局批调度。
+> - 溢出不再回退：`_raise_if_te_whole_moe_graph_overflow(...)` 在已捕获的图上溢出静态缓冲时直接抛错（文案 "Dynamic fallback is not supported for an already captured TE whole-MoE graph."）。**本节开头"容量因子给小了只是多跑一遍 forward-backward"这条，在 whole-MoE 图打开时不成立——那时它是直接失败。**
+>
+> 机制侧详见 [[23_megatron_precision_cudagraph_fusion_analysis]] §8.5。
 
 ### 6.2 Fine-Grained Activation Offloading：模块之间有依赖，不能随便挑
 
 - 只支持 `--transformer-impl transformer_engine`（`megatron/training/arguments.py:2132-2135`）。
-- **`attn_proj` 不能单独选**：它的输入是 `core_attn` 的输出，而 `core_attn.backward()` 需要这个张量，所以必须与 `core_attn` 同选（`megatron/core/transformer/transformer_config.py:2508-2513`）。
-- `fused_group_mlp` 要求 `use_transformer_engine_op_fuser`，且**不能**与 `expert_fc1`/`moe_act` 组合——它已经整块换出了融合后的 grouped MLP（`megatron/core/transformer/transformer_config.py:2538-2546`）。
-- 数值域：`min_offloaded_tensor_size ≥ 0`、`activation_offload_fraction ∈ [0,1]`、`delta_offload_bytes_across_pp_ranks ≥ 0`、`fine_grained_offloading_max_inflight_offloads ≥ 0`（`megatron/core/transformer/transformer_config.py:2525-2537`）。
-- 与整层 `moe` 重计算互斥（`megatron/core/transformer/transformer_config.py:2514-2524`）；与 `cpu_offloading` 不能组合（见 §3.3 末）。
+- **`attn_proj` 不能单独选**：它的输入是 `core_attn` 的输出，而 `core_attn.backward()` 需要这个张量，所以必须与 `core_attn` 同选（`megatron/core/transformer/transformer_config.py:2535-2540`）。
+- `fused_group_mlp` 要求 `use_transformer_engine_op_fuser`，且**不能**与 `expert_fc1`/`moe_act` 组合——它已经整块换出了融合后的 grouped MLP（`megatron/core/transformer/transformer_config.py:2565-2573`）。
+- 数值域：`min_offloaded_tensor_size ≥ 0`、`activation_offload_fraction ∈ [0,1]`、`delta_offload_bytes_across_pp_ranks ≥ 0`、`fine_grained_offloading_max_inflight_offloads ≥ 0`（`megatron/core/transformer/transformer_config.py:2552-2564`）。
+- 与整层 `moe` 重计算互斥（`megatron/core/transformer/transformer_config.py:2541-2551`）；与 `cpu_offloading` 不能组合（见 §3.3 末）。
 
 ### 6.3 NCCL User Buffer：省 SM 的代价是常驻显存
 
@@ -383,7 +395,7 @@ Layer 4（显著开销，降速 10-30%）：
 
 ### 6.5 全局互斥面
 
-- `cpu_offloading` 与 **PP > 1** 互斥（`megatron/core/transformer/transformer_config.py:2261-2264`），与**任何**激活重计算互斥（`:2266-2269`，见 [[18_megatron_recompute_analysis]] §7.3）。
+- `cpu_offloading` 与 **PP > 1** 互斥（`megatron/core/transformer/transformer_config.py:2288-2291`），与**任何**激活重计算互斥（`:2293-2296`，见 [[18_megatron_recompute_analysis]] §7.3）。
 - §5 那张按模型规模的推荐表里，"Optimizer State Offloading + 全量 Overlap"这一格需要先过 §6.4 的 CUDA Graph 限制；表本身不含这些前置校验。
 
 ## 7. 发展趋势
@@ -392,10 +404,10 @@ Layer 4（显著开销，降速 10-30%）：
 
 | 锚点（实读） | locator | 推断的方向 |
 |---|---|---|
-| **上游自己推翻了自己**：#5170 删掉的 checkpoint 期显存回收 workaround 被 #5366（`be82829c3`，标题即 `Revert "Remove checkpoint-time GPU cache reclaim workaround (#5170)"`）整段还原 | `megatron/training/training.py:3700` / `:3724-3730`（详见 §3.11 的 [!contradiction]） | 异步 checkpoint worker 的 D2H headroom 问题**没有被真正解决**，只是把 workaround 放回去了；后续大概率还会有一次结构性修复（例如把 D2H 缓冲纳入统一的显存预算），而不是继续 `empty_cache()` |
+| **上游自己推翻了自己**：#5170 删掉的 checkpoint 期显存回收 workaround 被 #5366（`be82829c3`，标题即 `Revert "Remove checkpoint-time GPU cache reclaim workaround (#5170)"`）整段还原 | `megatron/training/training.py:3882` / `:3906-3912`（详见 §3.11 的 [!contradiction]） | 异步 checkpoint worker 的 D2H headroom 问题**没有被真正解决**，只是把 workaround 放回去了；后续大概率还会有一次结构性修复（例如把 D2H 缓冲纳入统一的显存预算），而不是继续 `empty_cache()` |
 | 优化器状态 offload 整体重写：旧 `optimizer_state_offloader.py` 删除，换成 `chunked_optimizer_state_offload.py` 的分块预取（#6244） | `megatron/core/optimizer/cpu_offloading/chunked_optimizer_state_offload.py:31`/`:57`/`:785`/`:794`/`:808`（详见 §3.4 的 [!deprecated]） | 从"整体搬运"转向"**峰值有界的分块搬运**"；这条路线的下一个约束是 §6.4 那条"CUDA graph 不兼容" |
 | 旧旋钮 `--offload-optimizer-states` 仅保留为 parser 兼容拼写，校验期发 `FutureWarning` 并改写成新模式 | `megatron/core/optimizer/cpu_offloading/README.md:98-101` | 旧接口在一个可见的弃用窗口内，迁移完成后会移除 |
-| `TensorReusePool` 被 #5451 删除，图间缓冲复用改为**引用计数** | `megatron/core/transformer/cuda_graphs.py:146`/`:156-157`/`:341-342`（详见 §3.7 的 [!deprecated]） | 从"池 + (shape,dtype,device) 匹配"转向"按图的生命周期精确判定"，方向是让部分图（partial CUDA graph）的显存开销随捕获范围线性缩小 |
+| `TensorReusePool` 被 #5451 删除，图间缓冲复用改为**引用计数** | `megatron/core/transformer/cuda_graphs.py:150`/`:160-161`/`:345-346`（详见 §3.7 的 [!deprecated]） | 从"池 + (shape,dtype,device) 匹配"转向"按图的生命周期精确判定"，方向是让部分图（partial CUDA graph）的显存开销随捕获范围线性缩小 |
 | 细粒度 offload 管理器里留着一处未验证的终止条件：`# TODO: check if this is correct` —— `ChunkOffloadHandler.finish_all_groups` 在"无待 reload、无待 offload 且 `_offloaded_group_index > 0`"时直接判定完成 | `megatron/core/pipeline_parallel/fine_grained_activation_offload.py:925-932` | 这段判定与 §3.3 的 `offload_margin` / 在途节流是同一套状态机；作者自己标注不确定，说明该状态机的收敛条件仍在打磨 |
 | `nccl_ub` 与 `expandable_segments` 的互斥被改成**版本门槛** `torch >= 2.11.0a0` | `megatron/core/distributed/distributed_data_parallel_config.py:300-304`（详见 §3.1 的 [!update] 第 3 条） | "降碎片"与"省 SM"从二选一变成可共存；随 torch 版本推进，这条 assert 最终会消失 |
 | Paged stash 把 MoE 的 dispatch 形状变成静态，官方 CUDA Graph 文档因此给出了 **MoE + full-iteration CUDA graph** 的组合配方 | `docs/user-guide/features/cuda_graph.md:170-181` | 显存优化（paged stash）与吞吐优化（整步图）在此合流：容量因子预定尺寸这一步，同时买到了"省显存"和"可图化"两个收益，见 [[23_megatron_precision_cudagraph_fusion_analysis]] §4.3 |

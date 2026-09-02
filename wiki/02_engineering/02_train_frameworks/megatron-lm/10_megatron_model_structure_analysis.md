@@ -4,7 +4,8 @@ title: "Megatron-LM 模型结构深度解析(Model Structure)"
 
 # Megatron-LM 模型结构深度解析(Model Structure)
 
-> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
+> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
 > **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。原「正文以 `ee3f1ff` 为准、`[!update]` 段以 `232c478d4` 为准」的两套行号口径就此合一——全页只剩 `71092579` 一套。
 > 核心文件:`megatron/core/transformer/spec_utils.py`、`megatron/core/transformer/transformer_layer.py`、`megatron/core/transformer/transformer_block.py`、`megatron/core/transformer/attention.py`、`megatron/core/transformer/multi_latent_attention.py`、`megatron/core/transformer/mlp.py`、`megatron/core/transformer/moe/router.py`、`megatron/core/transformer/multi_token_prediction.py`、`ssm/`、`models/`
 > 配套阅读:`14_megatron_ep_analysis.md`(MoE dispatcher)、`13_megatron_cp_analysis.md`、`12_megatron_tp_analysis.md`、`18_megatron_recompute_analysis.md`
@@ -144,7 +145,7 @@ def forward(self, *args, **kwargs):
 
 > [!update] 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。
 > - **行号漂移**(全页已统一到 `71092579`,本条仅记录漂移轨迹):`TransformerLayer` `megatron/core/transformer/transformer_layer.py` `ee3f1ff:279` → `232c478d4:313` → `71092579:314`;`forward` `:710` → `:841` → `:842`;`TransformerLayerSubmodules` `:217` → `:251` → `:252`;`HyperConnectionTransformerLayer` `:1488` → `:1715` → `:1881`;`MoETransformerLayer` `:1983` → `:2213` → `:2844`。结构未变,仅因 DSv4/mHC 等新增而下移。
-> - **mHC 现已支持 HybridModel**(#4949):`HyperConnectionHybridLayer`(`megatron/core/models/hybrid/hybrid_block.py:75`)作为**包装器**驱动被包的 `TransformerLayer`(经 `_called_from_hybrid_mhc_wrapper` 旁路直接调用其 `forward`,见 `megatron/core/models/hybrid/hybrid_block.py:372`,绕过"请用 HyperConnectionTransformerLayer"的断言),让 Mamba/GDN/attention 混合栈也能用多残差流;n-stream BDA 负责残差合并。更快的 mHC 融合 kernel 见 #4624。
+> - **mHC 现已支持 HybridModel**(#4949):`HyperConnectionHybridLayer`(`megatron/core/models/hybrid/hybrid_block.py:75`)作为**包装器**驱动被包的 `TransformerLayer`(经 `_called_from_hybrid_mhc_wrapper` 旁路直接调用其 `forward`,见 `megatron/core/models/hybrid/hybrid_block.py:470`,绕过"请用 HyperConnectionTransformerLayer"的断言),让 Mamba/GDN/attention 混合栈也能用多残差流;n-stream BDA 负责残差合并。更快的 mHC 融合 kernel 见 #4624。
 
 ### 4.3 `TransformerBlock`(`megatron/core/transformer/transformer_block.py`)
 
@@ -167,7 +168,7 @@ def forward(self, *args, **kwargs):
 
 TP 下 QKV 投影是 ColumnParallel(按头切)、输出投影 RowParallel(见 `12_megatron_tp_analysis.md` §6.2)。
 
-> [!update] 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。注意力输出门控。`attention_output_gate`(整 `head_dim` 门)与新增的 **`head_wise_attn_gate`**(每头一个标量 sigmoid 门,Step-3.5-Flash,#4841,`megatron/core/transformer/attention.py:1448`)二选一、不可同开。门权重并入 `linear_qkv` 一并产出,对 `core_attn_out` **逐头乘 `sigmoid(gate)`**;head-wise 门仅自注意力(`attention_type != "cross"`),且要求 `num_attention_heads` / `num_query_groups` 满足整除约束(`megatron/core/transformer/transformer_config.py:1583`,具体两条整除断言在 `:1592`/`:1600`)。
+> [!update] 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。注意力输出门控。`attention_output_gate`(整 `head_dim` 门)与新增的 **`head_wise_attn_gate`**(每头一个标量 sigmoid 门,Step-3.5-Flash,#4841,`megatron/core/transformer/attention.py:1448`)二选一、不可同开。门权重并入 `linear_qkv` 一并产出,对 `core_attn_out` **逐头乘 `sigmoid(gate)`**;head-wise 门仅自注意力(`attention_type != "cross"`),且要求 `num_attention_heads` / `num_query_groups` 满足整除约束(`megatron/core/transformer/transformer_config.py:1594`,具体两条整除断言在 `:1603`/`:1611`)。
 
 ### 5.2 MLA —— 多头潜在注意力(`megatron/core/transformer/multi_latent_attention.py`)
 
@@ -230,12 +231,12 @@ HybridModel 的层 pattern 字符串(见 §9)新增四个 MLA 系注意力符号
 
 **(4) DSv4 的几何与分组输出投影**
 
-- DSv4 hybrid 强制从 `v_head_dim`、`qk_pos_emb_head_dim` **派生** `qk_head_dim = kv_lora_rank = v_head_dim − qk_pos_emb_head_dim`(`megatron/core/transformer/transformer_config.py:3966`,派生赋值在 `:3976-3978`);recipe:`v_head_dim=512`、`qk_pos_emb_head_dim=64` → 派生 448。
+- DSv4 hybrid 强制从 `v_head_dim`、`qk_pos_emb_head_dim` **派生** `qk_head_dim = kv_lora_rank = v_head_dim − qk_pos_emb_head_dim`(`megatron/core/transformer/transformer_config.py:4013`,派生赋值在 `:4023-4025`);recipe:`v_head_dim=512`、`qk_pos_emb_head_dim=64` → 派生 448。
 - 输出投影是**分组低秩**:`o_groups`(默认 8)× `o_lora_rank`(默认 1024)的 `linear_o_group_proj` 再接 `linear_proj`(`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:179-202`)—— 比单一 `wo` 省参省算。
 - RoPE:压缩层(ratio>1)用 **YaRN**(base `csa_compress_rotary_base`=40000);window-only 层(ratio==0)用**标准 RoPE**(#5018 修正了 window 层错用 YaRN 的 bug,并修了 `csa_dense_mode` 下的 dense loss)。
 - 约束:DSv4 Hybrid **只支持 TP=1**,不支持 checkpoint core attention / offload qkv linear,**不支持推理**(TP=1/checkpoint/offload 三条断言在 `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:90-99`;推理断言另在 `forward` 的 `:253-254`)。
 
-> [!update] 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。DSv4-Flash 的 **Q-up FLOPs 统计修正** —— 用 `args.v_head_dim` 替代 `args.num_attention_heads * (qk_head_dim + qk_pos_emb_head_dim)`(#5142)。**locator 更正**:原写的 `megatron/training/training.py:516-529` 在 `232c478d4` 上是 GDN 层的 FLOPs 函数,并非本条;MLA 的 `q_term` 当时在 `232c478d4:657-667`。基线 `71092579` 下该式已收敛成 DSv4 专用的一行 `q_term = q_lora_rank * (hidden_size + num_attention_heads * v_head_dim + 1)`(`megatron/training/training.py:432`,`kv_term`/`o_term` 在 `:433`/`:434`)。另 #3026 修了 `dsa` 路径的 rope 与 spec 多个 bug。完整可跑配置见 DeepSeek-V4-Flash recipe(#5266,`examples/moe_recipes/deepseek_v4_flash/gb200/`——基线 `71092579` 下并无 `examples/moe_recipes/gb200/`,recipe 按模型分目录):`num_layers=43, hidden=4096, heads=64, num_experts=256, moe_topk=6, mtp_num_layers=1`。
+> [!update] 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。DSv4-Flash 的 **Q-up FLOPs 统计修正** —— 用 `args.v_head_dim` 替代 `args.num_attention_heads * (qk_head_dim + qk_pos_emb_head_dim)`(#5142)。**locator 更正**:原写的 `megatron/training/training.py:516-529` 在 `232c478d4` 上是 GDN 层的 FLOPs 函数,并非本条;MLA 的 `q_term` 当时在 `232c478d4:657-667`。基线 `71092579` 下该式已收敛成 DSv4 专用的一行 `q_term = q_lora_rank * (hidden_size + num_attention_heads * v_head_dim + 1)`(`megatron/training/training.py:543`,`kv_term`/`o_term` 在 `:544`/`:545`)。另 #3026 修了 `dsa` 路径的 rope 与 spec 多个 bug。完整可跑配置见 DeepSeek-V4-Flash recipe(#5266,`examples/moe_recipes/deepseek_v4_flash/gb200/`——基线 `71092579` 下并无 `examples/moe_recipes/gb200/`,recipe 按模型分目录):`num_layers=43, hidden=4096, heads=64, num_experts=256, moe_topk=6, mtp_num_layers=1`。
 
 ---
 
@@ -258,11 +259,15 @@ HybridModel 的层 pattern 字符串(见 §9)新增四个 MLA 系注意力符号
 产出的 `routing_map`(`[s,E]` 多热掩码)和 `probs` 就交给 `14_megatron_ep_analysis.md` 的 dispatcher。
 
 > [!update] 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。DeepSeek-V4 引入第三类"路由"——**hash routing(哈希路由)** 与**强制均衡**开关。
-> - **哈希路由**(`megatron/core/transformer/moe/router.py:723 _hash_routing`,`is_hash_layer` 在 `:202` 判定,`tid2eid` 构表在 `:214-217`,#5042):前 `moe_n_hash_layers`(recipe=3)层的 MoE **不靠打分选专家**,而是用一张预先算好的 `tid2eid` 查找表把 **token id 直接映射到专家 id**(`tid2eid = (token_id + k) % num_experts`,取 topk 个;DSv4-Pro 的推理 checkpoint 直接带训练好的表)。需要 `actual_vocab_size`。哈希路由把"哪个 token 走哪个专家"固定下来,天然均衡且可缓存,常用于浅层。
-> - **强制均衡**(调试/早期训练):`moe_router_force_load_balancing`(用 `apply_random_logits` 随机化 logits)、`moe_router_force_biased`(用 `apply_biased_logits` 施加确定性偏置)。在 hash 层这两者会**覆盖 `tid2eid` 的结果**,改用对(随机/偏置后)logits 取 top-k(`megatron/core/transformer/moe/router.py:752`,#5130)。#5130 同时把 **ClampedSwiGLU** 加进 MoE 的 `mlp_op_fuser`(融合算子角度由别处文档负责)。
-> - **aux_loss / z_loss 接受 `padding_mask`**(`megatron/core/transformer/moe/router.py:629/707/774`,Qwen3.5,#4776):打包(THD)下 padding token 不计入负载均衡与 z-loss 统计;#4776 的 follow-up 仅触及多模态 example。
+> - **哈希路由**(`megatron/core/transformer/moe/router.py:735 _hash_routing`,`is_hash_layer` 在 `:214` 判定,`tid2eid` 构表在 `:226-229`,#5042):前 `moe_n_hash_layers`(recipe=3)层的 MoE **不靠打分选专家**,而是用一张预先算好的 `tid2eid` 查找表把 **token id 直接映射到专家 id**(`tid2eid = (token_id + k) % num_experts`,取 topk 个;DSv4-Pro 的推理 checkpoint 直接带训练好的表)。需要 `actual_vocab_size`。哈希路由把"哪个 token 走哪个专家"固定下来,天然均衡且可缓存,常用于浅层。
+> - **强制均衡**(调试/早期训练):`moe_router_force_load_balancing`(用 `apply_random_logits` 随机化 logits)、`moe_router_force_biased`(用 `apply_biased_logits` 施加确定性偏置)。在 hash 层这两者会**覆盖 `tid2eid` 的结果**,改用对(随机/偏置后)logits 取 top-k(`megatron/core/transformer/moe/router.py:764`,#5130)。#5130 同时把 **ClampedSwiGLU** 加进 MoE 的 `mlp_op_fuser`(融合算子角度由别处文档负责)。
+> - **aux_loss / z_loss 接受 `padding_mask`**(`megatron/core/transformer/moe/router.py:641/707/774`,Qwen3.5,#4776):打包(THD)下 padding token 不计入负载均衡与 z-loss 统计;#4776 的 follow-up 仅触及多模态 example。
 
 ---
+
+> [!update] 2026-09-01（基线 `85902ef59`，#6704）：**哈希路由的"层阈值"现在可以由调用方显式传入。** `MoELayer.__init__` 新增 `hash_moe_layer_threshold: Optional[int]`（`megatron/core/transformer/moe/moe_layer.py:239`），仅在非 None 时才放进 `router_kwargs` 透传（`:280-281`）；`Router.__init__` / `TopKRouter.__init__` 同步新增该参数（`megatron/core/transformer/moe/router.py:55`、`:187`），缺省回落到 `config.moe_n_hash_layers`（`:73-76`，字段定义在 `megatron/core/transformer/transformer_config.py:907`）。`RouterBuilder` 协议的签名也随之扩展。
+>
+> **为什么需要这个参数**：docstring 写明了动因——"Hybrid models use this to translate a **MoE-position count**"（`megatron/core/transformer/moe/router.py:195-196`）。`moe_n_hash_layers` 数的是"前几个 **MoE 层**"，而 router 手里只有 `layer_number`，即"第几**层**"。在 dense/MoE 交替或含 Mamba 段的 hybrid 模型里这两个计数不重合，直接拿 `layer_number` 去比 `moe_n_hash_layers` 会选错层。把翻译后的阈值从外部传进来，比让 router 反过来理解整个模型的层布局要窄得多——这与 §5.4 里 hybrid 层分配的责任划分是同一取向。
 
 ## 7. MLP / 激活 / 归一化 / 位置编码
 
@@ -278,6 +283,10 @@ HybridModel 的层 pattern 字符串(见 §9)新增四个 MLA 系注意力符号
 标准 LM 每步只预测**下一个** token。**MTP**(DeepSeek-V3)让模型额外预测**再后面若干个** token —— 增加训练信号密度、并为推理的投机解码铺路。
 
 实现:在主干之后接 `mtp_num_layers` 个 MTP 模块,每个预测一个更远的 token。`MTPLossAutoScaler` 给 MTP loss 缩放(`15_megatron_pp_schedulers_analysis.md` §1.4 见过)。MTP 与 PP 配合时可单独占 VPP stage(`mtp_standalone`)。
+
+> [!update] 2026-09-01（基线 `85902ef59`，#6583）：**hybrid 模型下 MTP 的部分 CUDA Graph 捕获改为跨层分组。** attention-only 层可以与紧随其后的 partial-MoE-capture 层合并成一张图：判定谓词 `_can_group_te_cuda_graph_with(next_layer)` 要求本层 attention-only 且下一层 `_inner_is_partial_moe_capture()`；成组后 `_set_te_cuda_graph_group_tail` 记住 tail，重放时 tail 用 `_resume_partial_moe_cuda_graph(out)` 回调 `inner_layer.resume_moe_experts_after_partial_cudagraph(out)` 续算被留在图外的专家段（均在 `megatron/core/models/hybrid/hybrid_block.py`）。`parameters()` 一并重写以纳入 group tail，否则优化器会漏掉 tail 层参数。
+>
+> **动因**：部分捕获本来就是为了绕开 MoE 的动态形状——把专家段留在图外。代价是每层多一次图边界。把 attention-only 的前驱并进同一张图，是用"分组"摊薄这些边界，而不是去把专家段本身变静态。图侧全貌见 [[23_megatron_precision_cudagraph_fusion_analysis]] §8.6。
 
 ---
 
@@ -329,9 +338,9 @@ PP 下,`GPTModel` 按 PP rank 只实例化本 stage 的层(首 stage 带 embeddi
 | 前提 | spec 的 fan-out 只对两类模块成立：`TransformerBlock` 只把 `TransformerBlock` 或 `BaseTransformerLayer` 的子类 spec 展开成整栈，其余一律 `raise Exception(f"specialize for {spec.module.__name__}.")` | `megatron/core/transformer/transformer_block.py:262-276` |
 | 代价 | 动态 import 的副作用未受控：`import_module` 顶上留着 “TODO: make this importer module more robust, at least make sure there are no side effects of using this as is” | `megatron/core/transformer/spec_utils.py:47-48` |
 | 不变量 | 不填的槽不是“没有”，是 `IdentityOp` / `IdentityFuncOp`；`forward` 正是依赖这一点才不必对每个槽判空 | `megatron/core/transformer/transformer_layer.py:279-292` |
-| 故意不做 | mHC 不是可自由插拔的槽：`enable_hyper_connections=True` 时直接调 `TransformerLayer.forward()` 抛 `RuntimeError`，必须经 `HyperConnectionTransformerLayer` 或 `HyperConnectionHybridLayer` | `megatron/core/transformer/transformer_layer.py:852-859` |
-| 故意不做 | `HyperConnectionTransformerLayer` 要求 self-attention / MLP 两个 hyper-connection 槽都非 `IdentityOp`，并**明确不支持 cross-attention hyper connections**（`ValueError`） | `megatron/core/transformer/transformer_layer.py:1915-1928` |
-| 故意不做 | mHC 的 hybrid 包装路径下不支持 EP overlap，docstring 明写 “EP-overlap is not supported on this path”，并配一条断言 | `megatron/core/transformer/transformer_layer.py:1514`、`:1516-1519` |
+| 故意不做 | mHC 不是可自由插拔的槽：`enable_hyper_connections=True` 时直接调 `TransformerLayer.forward()` 抛 `RuntimeError`，必须经 `HyperConnectionTransformerLayer` 或 `HyperConnectionHybridLayer` | `megatron/core/transformer/transformer_layer.py:871-878` |
+| 故意不做 | `HyperConnectionTransformerLayer` 要求 self-attention / MLP 两个 hyper-connection 槽都非 `IdentityOp`，并**明确不支持 cross-attention hyper connections**（`ValueError`） | `megatron/core/transformer/transformer_layer.py:1944-1957` |
+| 故意不做 | mHC 的 hybrid 包装路径下不支持 EP overlap，docstring 明写 “EP-overlap is not supported on this path”，并配一条断言 | `megatron/core/transformer/transformer_layer.py:1543`、`:1545-1548` |
 | 故意不做 | 同一模型的层 pattern 里，标准 `*` 与 MLA 系 `{+,D,C,H,W}` 不允许共存 | `megatron/core/models/hybrid/hybrid_layer_allocation.py:32`、`:302-307` |
 | 失效条件 | DSv4 hybrid：TP=1、不支持 checkpoint core attention / offload qkv linear、不支持推理（详见 §5.4 的第 (4) 条） | `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:90-99`、`:253-254` |
 | 失效条件 | GDN 不支持推理：`inference_context is not None` 时先断言必须 static batching，再 `raise NotImplementedError("GDN does not support inference for now.")` | `megatron/core/ssm/gated_delta_net/gdn.py:164-171` |
@@ -348,10 +357,10 @@ PP 下,`GPTModel` 按 PP rank 只实例化本 stage 的层(首 stage 带 embeddi
 
 - **spec 的动态 import 仍是已知薄弱点**：`import_module` 自陈要更 robust、要保证“没有副作用”（`megatron/core/transformer/spec_utils.py:47-48`）。§11 的第二条代价就出在这里。
 - **spec 工厂在收敛**：`_get_mlp_module_spec` 已标为 “on a deprecation track. Please switch to `get_mlp_module_spec`”（`megatron/core/models/gpt/gpt_layer_specs.py:513-515`）；三处 `fp8` 参数也已弃用（`:226-227`、`:429-430`、`:533-534`）。§3 的“spec 工厂集中在 `gpt_layer_specs.py`”这一格局不变，但入口函数在减少。
-- **混合模型的配置口径从“比例”迁向“pattern 串”**：`hybrid_override_pattern`、`hybrid_attention_ratio`、`hybrid_mlp_ratio` 全部弃用，统一到 `hybrid_layer_pattern`（`megatron/core/models/hybrid/hybrid_model.py:154-183`）；PP>1 时不带 `|` 分段的 pattern 也已标 DEPRECATION（`megatron/core/models/hybrid/hybrid_layer_allocation.py:404-411`）。§9 的层符号表因此会越来越吃重。
+- **混合模型的配置口径从“比例”迁向“pattern 串”**：`hybrid_override_pattern`、`hybrid_attention_ratio`、`hybrid_mlp_ratio` 全部弃用，统一到 `hybrid_layer_pattern`（`megatron/core/models/hybrid/hybrid_model.py:198-227`）；PP>1 时不带 `|` 分段的 pattern 也已标 DEPRECATION（`megatron/core/models/hybrid/hybrid_layer_allocation.py:404-411`）。§9 的层符号表因此会越来越吃重。
 - **层不再假定同构**：`sharded_state_dict` 里显式设 `non_homogeneous_layers=False` 会被警告并强制改回 True（`megatron/core/transformer/transformer_block.py:1106-1110`）。这与 §5.4 的逐层 `csa_compress_ratios`、§9 的混合层符号是同一个方向。
 - **GDN 的推理路径是明写的缺口**：`# TODO: support inference` 就压在 `raise NotImplementedError` 上一行（`megatron/core/ssm/gated_delta_net/gdn.py:170-171`）—— §9 讲的 GDN 目前只是训练侧能力。
-- **MoE router 的 per-layer 日志对 MTP 仍不正确**：`TODO (zijiey): fix the per_layer_logging for MTP`，注释同时说明它“does not affect the correctness of the calculation results”（`megatron/core/transformer/moe/router.py:577-580`）。
+- **MoE router 的 per-layer 日志对 MTP 仍不正确**：`TODO (zijiey): fix the per_layer_logging for MTP`，注释同时说明它“does not affect the correctness of the calculation results”（`megatron/core/transformer/moe/router.py:589-592`）。
 
 ---
 

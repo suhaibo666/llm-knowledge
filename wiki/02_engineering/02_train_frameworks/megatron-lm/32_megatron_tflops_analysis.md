@@ -4,10 +4,11 @@ title: "Megatron-LM TFLOPS 计算实现分析：原理与 MoE 场景准确性探
 
 # Megatron-LM TFLOPS 计算实现分析：原理与 MoE 场景准确性探讨
 
-> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。原文钉的 3 处引用在新基线下均已移位、且函数签名同时改变：① `num_floating_point_operations` 由双参 `(args, batch_size)`（旧 `megatron/training/training.py:299`）改为四参 `(args, batch_size, seqlen_squared_sum_in_batch=None, total_real_tokens_in_batch=None)`（新 `megatron/training/training.py:498-500`）；② `routed_flops` 的 token 因子由 `batch_size * seq_len`（旧 `megatron/training/training.py:316-326`）改为单一 `total_tokens`（新 `megatron/training/training.py:550-557`）；③ `hybrid_flops` 形参由 `batch_size, seq_len`（旧 `megatron/training/training.py:412-414`）改为 `total_tokens, seqlen_squared_sum`（新 `megatron/training/training.py:747-749`）。
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
+> **重定基线**：2026-09-01 由 `71092579` 推进，跨 7 个提交（#6753 / #6847 / #6022 / #6704 / #6583 / #6397 / #6946）。`megatron/training/training.py` 本轮净增 184 行、且改动正落在 FLOPs 计算区，因此本页落在该文件上的引用已逐条打开新基线核对并重定行号——**全部为行号漂移，无一条断言在新基线下失效**；标注为历史基线 `ee3f1ffa` 的旧行号按原样保留。本轮的实质增量是 DSA top-k 稀疏与 indexer 成本被正式计入公式（#6753），见新增的 §3.2；§7.7、§8 同步更新。
+> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。原文钉的 3 处引用在新基线下均已移位、且函数签名同时改变（下列「现基线」行号随 2026-09-01 重定基线刷新）：① `num_floating_point_operations` 由双参 `(args, batch_size)`（旧 `megatron/training/training.py:299`）改为四参 `(args, batch_size, seqlen_squared_sum_in_batch=None, total_real_tokens_in_batch=None)`（现基线 `megatron/training/training.py:609-611`）；② `routed_flops` 的 token 因子由 `batch_size * seq_len`（旧 `megatron/training/training.py:316-326`）改为单一 `total_tokens`（现基线 `megatron/training/training.py:661-668`）；③ `hybrid_flops` 形参由 `batch_size, seq_len`（旧 `megatron/training/training.py:412-414`）改为 `total_tokens, seqlen_squared_sum`（现基线 `megatron/training/training.py:858-860`）。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
+> **最近更新**：2026-09-01。重定基线至 `85902ef59`；新增 §3.2「DSA 稀疏注意力如何进入闭式估算」。
 
 在大规模模型训练中，**TFLOPS（每秒万亿次浮点运算）**是衡量硬件利用率和训练效率的关键指标。本文分析 Megatron-LM 计算 TFLOPS 的方法，通过流程图展示计算逻辑，并重点讨论混合专家模型（MoE）在无丢弃（Dropless）和有丢弃（Dropout）模式下的估算准确性。
 
@@ -30,7 +31,7 @@ $$
 *   **Multiplier (倍率 3)**：公式中的 **3** 代表包含反向传播的计算量（1倍前向传播 + 1倍权重梯度计算 + 1倍输入梯度计算）。
 
 ### 核心代码位置
-核心逻辑位于 `megatron/training/training.py` 文件中，具体在 `num_floating_point_operations` 函数内（`megatron/training/training.py:498`）；函数体内按模型形态分派到 `transformer_flops()`（`megatron/training/training.py:910`）或 `hybrid_flops(...)`（`megatron/training/training.py:747`），分派判定为 `if is_hybrid_model(args):`（`megatron/training/training.py:1281`）。
+核心逻辑位于 `megatron/training/training.py` 文件中，具体在 `num_floating_point_operations` 函数内（`megatron/training/training.py:609`）；函数体内按模型形态分派到 `transformer_flops()`（`megatron/training/training.py:1021`）或 `hybrid_flops(...)`（`megatron/training/training.py:858`），分派判定为 `if is_hybrid_model(args):`（`megatron/training/training.py:1443`）。
 
 ---
 
@@ -42,18 +43,18 @@ $$
 
 | 使用点 | 位置 | 施加的要求 |
 |---|---|---|
-| 每个 iteration 都算一次并累加 | `megatron/training/training.py:4643-4650`（`num_floating_point_operations_in_batch` → `..._so_far` / `..._since_last_log_event`） | 不能带任何 GPU 侧开销 |
-| 日志间隔算瞬时吞吐 | `megatron/training/training.py:3510-3515`，分母是 `elapsed_time_per_iteration * 10**12 * args.world_size` | 只需要一个标量 |
-| 跨 checkpoint / 跨作业累计 | 累计值随 checkpoint 持久化（`megatron/training/checkpointing.py:794`，恢复见 `:2323`），`compute_throughputs_and_append_to_progress_log` 用它算 job 级与累计吞吐（`megatron/training/training.py:3653-3664`） | 必须**可相加**，且与当时用的是哪张卡无关 |
+| 每个 iteration 都算一次并累加 | `megatron/training/training.py:4827-4834`（`num_floating_point_operations_in_batch` → `..._so_far` / `..._since_last_log_event`） | 不能带任何 GPU 侧开销 |
+| 日志间隔算瞬时吞吐 | `megatron/training/training.py:3692-3697`，分母是 `elapsed_time_per_iteration * 10**12 * args.world_size` | 只需要一个标量 |
+| 跨 checkpoint / 跨作业累计 | 累计值随 checkpoint 持久化（`megatron/training/checkpointing.py:794`，恢复见 `:2323`），`compute_throughputs_and_append_to_progress_log` 用它算 job 级与累计吞吐（`megatron/training/training.py:3826-3846`） | 必须**可相加**，且与当时用的是哪张卡无关 |
 
 三处共同指向同一个性质：这必须是一个**纯 CPU 上的闭式算术量**——算一次几乎不花钱，且两段训练的结果可以直接相加。
 
 ### 2.2 三个倍率不是拍脑袋——源码逐条注明了来历
 
-§1 里的"倍率 3"在源码里是有出处的，三个展开因子各自带注释（`megatron/training/training.py:964-971`）：
+§1 里的"倍率 3"在源码里是有出处的，三个展开因子各自带注释（`megatron/training/training.py:1075-1082`）：
 
 ```python
-# megatron/training/training.py:964-971
+# megatron/training/training.py:1075-1082
 # - 3x: Each GEMM in the model needs to be performed 3 times (forward pass,
 #       backward wgrad [weight gradient], backward dgrad [data gradient]).
 forward_backward_expansion_factor = 3
@@ -68,26 +69,26 @@ ffn_expansion_factor = 3 if args.swiglu else 2
 
 ### 2.3 THD 改造：为什么是两个标量统计量，而不是按样本循环
 
-新基线把自注意力拆成两段，各自乘不同的 token 因子（源码注释见 `megatron/training/training.py:973-979`）：
+新基线把自注意力拆成两段，各自乘不同的 token 因子（源码注释见 `megatron/training/training.py:1084-1090`）：
 
 | 分段 | 乘的量 | 位置 |
 |---|---|---|
-| token-linear（QKV/输出投影、MLP、MoE、MTP、logits） | `total_real_tokens_in_batch` = `sum_i(L_i)` | `megatron/training/training.py:1224-1225` |
-| core-attention（`QK^T`、`softmax(QK^T)V`） | `seqlen_squared_sum_in_batch` = `sum_i(L_i^2)` | `megatron/training/training.py:1276` |
+| token-linear（QKV/输出投影、MLP、MoE、MTP、logits） | `total_real_tokens_in_batch` = `sum_i(L_i)` | `megatron/training/training.py:1386-1387` |
+| core-attention（`QK^T`、`softmax(QK^T)V`） | `seqlen_squared_sum_in_batch` = `sum_i(L_i^2)` | `megatron/training/training.py:1438` |
 
 为什么必须**同时**跟踪两个量，源码写得很直白：
 
 > `sum(L_i)` and `sum(L_i ** 2)` are mathematically independent (you cannot derive one from the other), so both must be tracked.
-> —— `megatron/training/training.py:350-351`
+> —— `megatron/training/training.py:353-354`
 
-而代价被刻意压到最低：per-micro-batch 的更新累加在同一个 device tensor 上，`consume` 时只发**一次 2 元素 `float64` all-reduce + 一次 host sync**（`megatron/training/training.py:352-357`）；BSHD 路径压根不分配这个 tensor，直接返回 `(None, None)`，注释原话是让调用方 "take its closed-form defaults **without paying for a collective**"（`:344-348`、`:364-367`），默认值回落在 `:528-531`。
+而代价被刻意压到最低：per-micro-batch 的更新累加在同一个 device tensor 上，`consume` 时只发**一次 2 元素 `float64` all-reduce + 一次 host sync**（`megatron/training/training.py:355-360`）；BSHD 路径压根不分配这个 tensor，直接返回 `(None, None)`，注释原话是让调用方 "take its closed-form defaults **without paying for a collective**"（`:346-350`、`:367-370`），默认值回落在 `:639-642`。
 
 ### 2.4 源码沉默的部分
 
 > [!note] 推断
 > 以下两条是从 §2.1–§2.3 的代码事实反推出来的，源码里**没有**任何一句话说明作者的取舍理由，不要当成作者自陈：
 > - **为什么不用 profiler 的硬件计数器。** 仓库里从未提及 Nsight/CUPTI 之类的替代方案。上表三个使用点（每步必算、只要一个标量、要能跨作业相加并写进 checkpoint）合起来使得计数器路线难以成立——这是本页的重建，不是源码的论证。
-> - **为什么不"事后按 padding 比例折算"。** 代码选择的是让调用方把真实统计量传进来（`megatron/training/training.py:4627-4648`），并在 docstring 里承诺 "neither kind of padding shows up in the reported FLOPs"（`:516-523`）。"折算"这条替代路径在仓库里找不到任何痕迹，是本页为了对照而构造的。
+> - **为什么不"事后按 padding 比例折算"。** 代码选择的是让调用方把真实统计量传进来（`megatron/training/training.py:4811-4832`），并在 docstring 里承诺 "neither kind of padding shows up in the reported FLOPs"（`:627-634`）。"折算"这条替代路径在仓库里找不到任何痕迹，是本页为了对照而构造的。
 
 ---
 
@@ -95,7 +96,7 @@ ffn_expansion_factor = 3 if args.swiglu else 2
 
 Megatron-LM 将模型分解为各个组件（Attention, MLP, MoE, Mamba）并分别累加其理论运算量。
 
-### 逻辑流程图
+### 3.1 逻辑流程图
 
 ```mermaid
 graph TD
@@ -121,6 +122,95 @@ graph TD
     O --> P["乘以 3 <br> (Forward + Backward W + Backward Input)"]
     P --> Q["返回 Total Floating Point Operations"]
 ```
+
+### 3.2 DSA 稀疏注意力如何进入闭式估算
+
+> [!update] 2026-09-01
+> 本节为本轮基线推进（`71092579` → `85902ef59`，#6753）新增。在此之前 `experimental_attention_variant="dsa"` 的模型会落进普通 MLA 分支：core attention 按稠密因果 `L^2/2` 计费，indexer 完全不计。这是一个**双向的错**——长上下文下 core attention 被高估，indexer 被漏算，而且两个偏差不同阶，不会互相抵消。
+
+DSA（DeepSeek Sparse Attention，如 GLM-5.2）的 attention 只在 indexer 选出的 top-k 个 key 上执行，但 indexer 自己要给**每个 query 对所有历史位置**打分。同一层里因此同时住着一个被 top-k 截断的近线性项和一个仍然稠密的二次项。§2.3 建立的框架只允许用 `sum_i(L_i)` 与 `sum_i(L_i^2)` 两个批级标量表达代价，DSA 的难点全部出在"如何把这两项塞进这两个标量"。
+
+新基线在 `transformer_flops()` 的注意力分派里加了一条 `elif args.experimental_attention_variant == "dsa":` 分支（`megatron/training/training.py:1316-1360`），并配了三个模块级私有函数：
+
+| 部件 | 位置 | 职责 |
+|---|---|---|
+| `_dsa_sparse_core_scale` | `megatron/training/training.py:391-420` | 稠密因果 core 系数要乘的稀疏缩放因子 |
+| `_dsa_indexer_flops` | `megatron/training/training.py:423-480` | indexer 自身的 `(token_linear, core)` 两个系数 |
+| `_num_dsa_indexer_layers` | `megatron/training/training.py:483-496` | 数出真正自己算索引、因而要付钱的层数 |
+
+**token-linear 部分原样不动。** 分支注释给出的理由是：absorption 只是把同样的 `W_UK`/`W_UV` GEMM 换了位置——逐 token 的 K/V 上投影变成 q 侧与输出侧的等价吸收，总量不变——所以 §2.3 那套 MLA token-linear 系数继续适用（`megatron/training/training.py:1317-1321`）。
+
+#### 稀疏 core：在长度加权均值处求值的一个受控近似
+
+DSA 一层 core attention 的代价不是稠密因果的 $L^2/2$ 对，而是 $\sum_i \min(i,k)$ 对（$k$ 即 `dsa_indexer_topk`）。`_dsa_sparse_core_scale` 返回的正是这两者之比。
+
+真正的难点是调用方手里**只有批级聚合量**，没有逐序列长度。函数的解法是在**长度加权均值**处求值：
+
+$$
+\bar L=\frac{\sum_i L_i^2}{\sum_i L_i},\qquad
+e=\min\bigl(k,\lfloor\bar L\rfloor\bigr),\qquad
+\text{scale}=\frac{e\left(1-\dfrac{e}{2\bar L}\right)}{\bar L/2}.
+$$
+
+分子是"每个 query 平均真正参与 attention 的 KV 条目数"，分母是稠密因果下的同一个量（约 $\bar L/2$）。源码把这个近似的边界写得很完整（`megatron/training/training.py:400-407`、`:412-416`）：
+
+- **等长批下精确。** 所有 $L_i$ 相等时 $\bar L$ 就是真实长度——这正是打包 THD 基准测试的常见情形。
+- **ragged 批下偏向长序列。** $\bar L$ 是**长度加权**均值（分子是平方和），权重自然落在支配 attention 代价的长序列上。这是刻意选的偏，不是遗漏。
+- **序列不长于 top-k 时坍缩为 `1.0`。** 此时 top-k 选中全部 key，attention 退回稠密。`dsa_indexer_topk` 未设、或统计量为 0 时同样直接短路返回 `1.0`（`:409-410`）。
+
+注释还主动标注了自己丢掉的那一项：离散精确均值的修正项应是 $e-1$ 而非 $e$，差异为 $O(1/L)$，"below the precision of this estimate"（`:414-416`）。
+
+被缩放的不是普通 MLA 的 core 系数，而是**吸收形式**的那一个：DSA 恒走 `AbsorbedMLASelfAttention`，$QK^\top$ 在压缩 KV latent 上形成、每头跨度为 `kv_lora_rank + qk_pos_emb_head_dim`，$AV$ 跨度为 `kv_lora_rank`，都不是上投影之后的 `qk_head_dim` / `v_head_dim`（`megatron/training/training.py:1340-1350`，理由注释见 `:1322-1328`）。这一点决定了"每个分支只数它自己那条路径真正执行的形态"。
+
+#### indexer：稀疏 attention 之上，一次仍然稠密的打分
+
+`_dsa_indexer_flops` 计入三条投影，加一次稠密打分：
+
+| 项 | 每层系数 | 乘的量 | 模块位置 |
+|---|---|---|---|
+| `wq_b`：挂在共享 q_lora 残差上的 Q 投影 | `q_lora_rank × n_heads × head_dim` | `sum_i(L_i)` | `megatron/core/transformer/experimental_attention_variant/dsa.py:1471-1481` |
+| `linear_wk`：key 路径 | `hidden_size × head_dim` | `sum_i(L_i)` | `megatron/core/transformer/experimental_attention_variant/dsa.py:1483-1493` |
+| `weights_proj`：逐头权重 | `hidden_size × n_heads` | `sum_i(L_i)` | `megatron/core/transformer/experimental_attention_variant/dsa.py:1512-1522` |
+| 打分（因果掩码 `/2`） | `n_heads × head_dim / 2` | `sum_i(L_i^2)` | `megatron/training/training.py:473-474` |
+
+（三条投影的系数汇总在 `megatron/training/training.py:468-472`；模块路径为 `megatron/core/transformer/experimental_attention_variant/dsa.py`。模型没有 q_lora_rank 时函数回落到 `hidden_size`，与 `DSAIndexer` 自己的 fallback 对齐，`:464-466`。）
+
+**最值得记住的一条结论：打分是 $O(L^2)$ 的，哪怕消费它的 attention 是稀疏的。** 稀疏化砍掉的是 attention，不是"选择该 attend 谁"的那次全量比较。所以长上下文下 DSA 的二次项并未消失，只是把大系数（`n_heads × (kv_lora_rank + qk_pos_emb_head_dim)` 量级）换成了小系数（`n_heads × head_dim / 2`）——量级降下来，阶数没有降。
+
+不计入的东西与本文件其余部分口径一致：indexer 的 KL loss 与 top-k 选择本身都不算，只有"模型定义性 GEMM"进入估算，辅助 loss 与排序不进（`megatron/training/training.py:432-435`）。这与 §7.1 "只数 GEMM" 是同一条原则的延伸。
+
+#### 谁付钱：跨层索引共享
+
+只有 `num_indexer_layers` 层付 indexer 的钱。开启跨层索引共享（`dsa_indexer_topk_freq`）后，中间层复用最近一次算出的 top-k，判定谓词是 `is_dsa_skip_topk_layer`：层号 1-indexed，`(max(layer_number - offset, 0) % topk_freq) != 0` 即为复用层（`megatron/core/transformer/experimental_attention_variant/dsa.py:57-67`）。`_num_dsa_indexer_layers` 就是拿同一个谓词在 `1..num_layers` 上数出计算层（`megatron/training/training.py:492-496`）——刻意复用 `megatron.core` 里那份实现，而不是在 `training.py` 里重写一遍取模逻辑。
+
+该区间覆盖 MTP 层：`DSAttention.__init__` 把 MTP 层编号为 `layer_number + config.num_layers`，恰好与调用方扩展 `num_layers` 的方式一致（注释见 `megatron/training/training.py:486-490`）。
+
+#### indexer 不吃全局 3 倍因子
+
+这是本次改动里最容易写错的一条。§2.2 的 `forward_backward_expansion_factor = 3` 是对**参与主干反向传播**的 GEMM 说的；indexer 不在其列。
+
+事实链（逐条可验）：
+
+- indexer 只由自己的 KL loss 训练。`DSAttention.forward` 在进入 indexer 前把输入 `x` 与 `qr` 双双 `detach()`，注释写明目的是 "prevent gradients of indexer from flowing back to the main model"（`megatron/core/transformer/experimental_attention_variant/dsa.py:2290-2292`）。
+- 是否启用 KL loss 由 `use_indexer_loss` 决定，它要求 `dsa_indexer_loss_coeff > 0`，而该字段默认 `None`（`megatron/core/transformer/transformer_config.py:356`；判定见 `megatron/core/transformer/experimental_attention_variant/dsa.py:2294-2298`）。
+- 整段 indexer 前向被包在 `with torch.enable_grad() if use_indexer_loss else torch.no_grad():` 里（`megatron/core/transformer/experimental_attention_variant/dsa.py:2383`）。
+
+于是 `_dsa_indexer_flops` 给出三档倍率（`megatron/training/training.py:476-480`，推导写在 docstring `:441-456`）：
+
+| 情形 | 三条投影 | 打分 GEMM |
+|---|---|---|
+| KL loss 关（默认） | 1×：只有前向 | 1× |
+| KL loss 开 | **2×** = fwd + wgrad | **3×** = fwd + dq + dk |
+
+两档不同的根源是**操作数里有几个需要梯度**：投影读的是已被 detach 的输入，autograd 直接跳过它们的 dgrad，只剩前向与权重梯度；而打分 GEMM 的两个操作数都是激活、且都要把梯度送回那些权重，三份一份都省不掉。
+
+> [!note] 推断
+> 上表把"是否训练 indexer"当成模型口径的一部分（而非 kernel 调度细节）来处理，因而写进模型 FLOPs——这一点 docstring 明确表态（`megatron/training/training.py:453-454`），不是本页推断。属于本页推断的是它的后果：**同一个模型定义，只要 `dsa_indexer_loss_coeff` 从 `None` 改成正数，上报 FLOPs 就会跳变**，因此 DSA 模型的跨作业累计（§7.6）多了一条口径必须对齐的超参。
+> 源码同时承认一个未建模的缺口：开启 `dsa_indexer_use_sparse_loss` 后打分的反向只覆盖 top-k 条目，3× 会高估；该开关默认 `False`（`megatron/core/transformer/transformer_config.py:359`，说明见 `megatron/training/training.py:454-456`）。
+
+#### 测试锚点
+
+`tests/unit_tests/test_num_floating_point_operations.py` 用一个**独立重写的** golden 计算器复算整套公式（`_dsa_golden_flops`，`:1214-1279`，docstring 明说"so that the test does not just call the same code twice"）。`TestDSA`（`:1282-1379`）覆盖 BSHD/THD 一致性、KL loss 关时 indexer 降为 1×、`freq=4 / offset=1` 下 8 层里只有 2 层付费、以及"长上下文不再按稠密 `L^2/2` 计费"这条修复本身（`test_topk_caps_long_context_growth`，把 `seq_length` 拉到 8192 后与旧的稠密 MLA 读法对拍）。`TestDSAHelperEdgeCases`（`:1384-1436`）覆盖两个 helper 的退化输入，以及下面 §7.7 那条 hybrid 路径硬拒绝。
 
 ---
 

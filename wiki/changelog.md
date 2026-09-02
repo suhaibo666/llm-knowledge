@@ -12,6 +12,36 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-01：Megatron-LM 全域基线推进至 `dev@85902ef59`
+
+**Type**：基线推进（27 页重钉 + 367 条引用重定位）+ 内容增量（8 页）+ 工具修复（`check_coverage --generate`）
+
+本地 checkout 由 `710925795` fast-forward 到 `origin/dev` 最新的 `85902ef599ea4eb06ada7567a479c524b605767a`（2026-09-01），域内 27 页统一重钉（33 号页分析 verl，不适用本基线）。
+
+**增量很窄，但不能靠"在界内"就放过。** 7 个提交只触及 20 个 `megatron/` 文件。域内 1425 条 `path:line` 里 **1058 条（74%）零风险**——所在文件未被触碰；**367 条**落在改动文件上，且因所有文件都在变长而**全部仍在界内**，`check_locators`（v1 只验存在性与界内）一条都不会报。这类"机械门禁看不见的漂移"用 difflib 逐行对齐处理：为每个改动文件建立旧行号→新行号映射，只重定位内容完全未变的行，被删改的行单独列出人工核。
+
+**两处必须靠人判断、机械重映射会做错的地方**，如实记下：
+1. **裸续引**。形如 `` `custom_forward`(`:752`) `` 承接同一行前文路径的引用，`check_locators` 与朴素正则都不覆盖。已扩展映射器按"同一行最近一个完整路径"继承，并逐条回源核对（如 `moe_layer.py:752` 确为 `custom_forward`、`:482` 为 `preprocess`）。
+2. **刻意保留的历史引用不得重映射**。多页把旧基线的行号作为漂移轨迹或勘误证据保留（如 10 号页 `ee3f1ff:279 → 232c478d4:313 → 71092579:314`、28 号页明写"行号对应旧基线 `232c478d4`"）。这些若被一并平移就会毁掉记录本身。已建排除表冻结 4 处，其中 22 号页的 `transformer_config.py:1246` 是回源反证出来的——它在 `71092579` 下是 `num_residual_streams`，与该处所述特性无关，证实它指向 `ee3f1ff`。
+
+**内容增量**（8 页，均带 `[!update] 2026-09-01`）：
+- **[[32_megatron_tflops_analysis]]**：DSA top-k 稀疏与 indexer 成本计入 FLOPs（#6753）。含稀疏 core 缩放的近似口径（在长度加权均值处求值、等长批精确、ragged 批偏向长序列）、indexer 打分为 `O(L^2)` 哪怕 attention 稀疏、跨层索引共享下只有部分层付费，以及 **indexer 不吃全局 3 倍因子**的三种情形（loss 关 1x / 投影读 detach 输入付 2x / 打分 GEMM 两个激活操作数付 3x）。
+- **[[21_megatron_fusion_operators_analysis]] §8.10**：`moe_use_grouped_tensor` 把"可被 CUDA Graph 捕获的分组 GEMM"从 TE op-fuser **解耦**（#6847）。op-fuser 仍蕴含它，但现在可单开。"device-initiated"的落点是 `_apply_packed_bias` 不回读 host 上的 token 计数——**没有 host 同步才是能进图的硬前提**。
+- **[[23_megatron_precision_cudagraph_fusion_analysis]] §8.5/§8.6**：`CudaGraphModule.moe` 的能力边界由"drop-and-pad only"扩到"drop-and-pad **或 sync-free HybridEP**"（#6022），代价是 `validate_moe_cuda_graph_support` 的**六项与条件**；已捕获的 TE whole-MoE 图**溢出即硬失败、不支持动态回退**。另记 hybrid MTP 的跨层分组捕获（#6583）。
+- **[[22_megatron_memory_optimization_analysis]]**：paged stash 由"省显存的可选项"变成 whole-MoE 图的**必要条件**；§6.1 原写"容量因子给小了只是多跑一遍 forward-backward"在图打开时**不成立**。另修正 `paged_stash_reset` 三态段——它不是纯漂移，#6022 把状态推进与缓冲准备拆成了两步。
+- **[[02_megatron_moe_training_optimization_analysis]]**：硬边界表补两行，并点出本轮的结构性变化——**时间窗口所有权开始反向约束前三种所有权**：图捕获不再是最后叠加的一层加速，而是会回头钉死 token/专家参数/激活所有权选型的决定。
+- **[[10_megatron_model_structure_analysis]]**：Hash MoE 层阈值可显式传入（#6704）——`moe_n_hash_layers` 数的是"前几个 MoE 层"而 router 只有"第几层"，hybrid 模型下两者不重合。另记 hybrid MTP 分组捕获。
+- **[[14_megatron_ep_analysis]]**：whole-MoE 图一旦打开，§11.2 的 dispatcher 选型树**只剩 flex/HybridEP 一条路**。
+- **[[18_megatron_recompute_analysis]]**：hybrid recompute 的 kwarg 收窄改用显式能力标志 `supports_hybrid_recompute_kwargs`，注释明写动因是**避免导入 `hybrid_block` 造成循环导入**。
+
+**工具修复**：`check_coverage.py` 的 `--generate` 把 `owner: null` + `candidates` 的行当成人工行永久冻结，导致候选清单停在首次生成时的快照——`tensor_model_parallel_size` 的候选里因此没有 12_tp，据此定归属会定错。改为只保留**真的做了决定**的行（设了 owner 或写了 excluded），未定夺的机器建议随页面内容刷新（先补 `test_generate_refreshes_undecided_rows` 等两个用例再改，7 项全绿）。配置面在新基线重生成：338 → **339** 字段（新增 `moe_use_grouped_tensor`），无删除。
+
+**验证**：`check_links --strict` 全 0；`check_math --changed --strict` 0 错 0 警；`check_locators` 域内 **errors 14 → 14、warnings 57 → 57 零回归**，已验证引用 pass 1356 → 1390。那 14 条 error 全部是存量欠账（legacy `megatron/arguments.py` 等已删路径、DeepEP 跨仓引用），非本轮引入。`check_coverage` C2/C3 = 0。
+
+**未做**：配置面 C1 仍有 240 条待归属（82 条多页提及待定 + 158 条全域未提及，其中 `mup_*` 4 条是全库无一字的真实盲区）；代码仓功能树（`megatron/core` 侦察已完成、`megatron/training`+`megatron/rl` 未完）尚未提交审批；26 篇旧页的四查复审波次未启动。
+
+---
+
 ## 2026-08-29：PP 调度器页补两张渲染图，图示改由仿真脚本生成
 
 **Type**：配图（新增 2 张外链 SVG）+ 工具链（图由离散事件仿真解算）+ 技能（新增 `drawing-wiki-figures`）

@@ -4,14 +4,15 @@ title: "Megatron-LM RL 后训练适配与训推一致性深度解析"
 
 # Megatron-LM RL 后训练适配与训推一致性深度解析
 
-> **源码基线**:`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`(`dev`,2026-08-27)
+> **源码基线**:`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`(`dev`,2026-09-01)
+> **重定基线**:2026-09-01 由 `71092579`(2026-08-27)推进,跨 7 个提交;本轮增量只触及 `megatron/` 下 20 个文件,其中与本页相关的只有 `megatron/core/transformer/transformer_config.py`(后移 11 行 / 17 行,分段不同)与 `megatron/core/transformer/moe/moe_layer.py`(后移 13 行),受影响的 7 处 `path:line` 引用已逐条在新基线下打开核对并改写行号。**机制正文一字未改**:`inference_optimized` 的六条 MoE 硬拒绝、`transformer_impl` 三选枚举、`InferenceMode` 分流点在新基线下**逐字一致**,仅位置平移;`megatron/core/resharding/`、`megatron/core/inference/`、`megatron/rl/` 三处本页主战场在本轮 7 个提交里**完全未被触碰**——本页 §5~§8 那几条仍写「行号已重核至基线 `71092579`」的 `[!update]` 批注,其 locator 全部落在这三处,故在 `85902ef5` 下依旧命中,未逐条改写标注。
 > **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心:`megatron/core/resharding/`(refit)、`inference/`(推理引擎)、`inference/quantization/`(MXFP8)、`post_training/modelopt/`、`megatron/core/transformer/transformer_config.py`(`transformer_impl='inference_optimized'`)
 > 配套阅读:`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §5(refit 基础)、`17_megatron_parallelism_orchestration_analysis.md`、`14_megatron_ep_analysis.md`
 > 定位:系统性专题。前面文档讲预训练;本文讲 **RL 后训练**(RLHF / GRPO / PPO)对 Megatron 提出的特殊需求,以及核心难题 **训推一致性(train-inference consistency)**。
 > **三方分工**:本文是 Megatron 训练侧的 refit / 训推一致性实现(逐项收敛 gap);三平面机制视角(weight publish 协议、跨框架不变量)见 [[01_posttraining_infra_mechanism_analysis]] 第 6 节;verl 在 Megatron+vLLM 场景下的具体同步调用链见 [[33_megatron_vllm_weight_sync_analysis]]。
 > **叙事顺序**:本页按五拍组织——背景 → 为什么这么设计(含被否掉的替代)→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**:2026-08-28。按五拍重排章节顺序;机制正文与既有引用未改。
+> **最近更新**:2026-09-01。仅按新基线重钉页头与 7 处引用行号;章节顺序与机制正文未改。
 
 ---
 
@@ -85,7 +86,7 @@ README 把流程写成五步:各 rank 抽元数据 → `dist.gather_object()` �
 → 集中式 plan + 缓存这条路本身没被推翻,被推翻的是**缓存键选窄了**:两套非 collocated 配置会静默命中同一份 plan。
 
 **③ `inference_optimized` 强制 fp32 router,源码给的理由是 decode 期的转换开销——不是精度。**
-校验的报错信息原话:「`--transformer-impl='inference_optimized'` requires `--moe-router-dtype=fp32` **to avoid costly dtype conversions during decode**」(`megatron/core/transformer/transformer_config.py:2030-2034`)。
+校验的报错信息原话:「`--transformer-impl='inference_optimized'` requires `--moe-router-dtype=fp32` **to avoid costly dtype conversions during decode**」(`megatron/core/transformer/transformer_config.py:2047-2051`)。
 → 值得留意口径:§4 正文把这条读成"与训练侧推荐一致、路由精度对齐"。那确实是它的**副作用**(训推两侧 router dtype 因此一致),但源码陈述的动机是**性能**。引用这条时请以报错信息为准。
 
 **④ "现在是不是在推理"从 `eval()`/`train()` 模式改成进程级全局标志。**
@@ -96,7 +97,7 @@ README 把流程写成五步:各 rank 抽元数据 → `dist.gather_object()` �
 → 判据(本页重建):一个"做小但不为零"的差异只有在**可观测**时才是工程上可接受的;这组指标就是 §1 那张"不一致来源"表在运行期的量表。
 
 > [!note] 推断
-> 源码陈述的是**事实**:refit 的定位与"持久 buffer 保住 CUDA Graph 指针"这条约束、集中式 plan 的五步与缓存、`_PlanCacheKey` 补 rank offset 的注释、fp32 router 的报错理由、`InferenceMode` 取代 `train()` 重写、以及 π/μ 比值指标的存在。**把它们读成"因此排除了重载推理模型"、"因此 gap 必须可观测"这两条判据,是本页的重建**,源码从未这样自陈。要引用这几条判断,请回到 `megatron/core/resharding/README.md:1-6`、`:42-46`、`:88-97`、`:115-117`、`megatron/core/resharding/refit.py:47-51`、`megatron/core/transformer/transformer_config.py:2030-2034`、`megatron/rl/rl_utils.py:452-483` 这几个 locator,不要引用本段推断。
+> 源码陈述的是**事实**:refit 的定位与"持久 buffer 保住 CUDA Graph 指针"这条约束、集中式 plan 的五步与缓存、`_PlanCacheKey` 补 rank offset 的注释、fp32 router 的报错理由、`InferenceMode` 取代 `train()` 重写、以及 π/μ 比值指标的存在。**把它们读成"因此排除了重载推理模型"、"因此 gap 必须可观测"这两条判据,是本页的重建**,源码从未这样自陈。要引用这几条判断,请回到 `megatron/core/resharding/README.md:1-6`、`:42-46`、`:88-97`、`:115-117`、`megatron/core/resharding/refit.py:47-51`、`megatron/core/transformer/transformer_config.py:2047-2051`、`megatron/rl/rl_utils.py:452-483` 这几个 locator,不要引用本段推断。
 
 ---
 
@@ -143,17 +144,17 @@ swap_model_weights(train_model, infer_model, refit_method="nccl")
 
 ## 4. 解法③:`inference_optimized` —— 显式、独立、受控的推理路径
 
-`transformer_impl` 有三选(`megatron/core/transformer/transformer_config.py:1436`):`local` / `transformer_engine` / **`inference_optimized`**。
+`transformer_impl` 有三选(`megatron/core/transformer/transformer_config.py:1447`):`local` / `transformer_engine` / **`inference_optimized`**。
 
 `inference_optimized` 是 RL rollout 用的专用路径:
 - `use_inference_optimized_layers`:推理优化的线性层(`megatron/core/tensor_parallel/inference_layers.py`,如推理专用的 all-gather)。
 - `inference_grouped_gemm_backend`:MoE 推理的 grouped GEMM 后端(`flashinfer` / `torch` / `vllm`)。
 - `inference_moe_token_dispatcher_type`:推理专用 MoE dispatcher(`nccl` / `nvls`)—— `megatron/core/transformer/moe/moe_layer.py` 的 `train()` 重写(`:421`)在 eval 模式自动切到推理 dispatcher、train 模式切回(见 `14_megatron_ep_analysis.md`)。
-- 强制 `--moe-router-dtype=fp32`(`:2030`)—— 源码给的理由是 **decode 期的 dtype 转换开销**(报错原文 "to avoid costly dtype conversions during decode");训推两侧 router dtype 因此一致是**副作用**,不是动机。
+- 强制 `--moe-router-dtype=fp32`(`:2047`)—— 源码给的理由是 **decode 期的 dtype 转换开销**(报错原文 "to avoid costly dtype conversions during decode");训推两侧 router dtype 因此一致是**副作用**,不是动机。
 
-> [!deprecated] `megatron/core/transformer/moe/moe_layer.py` 的 `train()` 重写自 `dev@232c478d4`(2026-06-16)起已被**移除**(#4617);基线 `71092579` 下 `git grep "def train("` 在该文件仍为 0 命中,本条依然成立。上一段正文中的 `:421` 是**旧基线 `ee3f1ff`** 的行号,新基线已无对应代码。推理 / 训练 dispatcher 的切换**不再依赖 `eval()`/`train()` 模式**,改由一个**进程级全局开关** `InferenceMode`(`megatron/core/inference/utils.py:20`)决定:`MoELayer.forward` 在入口处读 `InferenceMode.is_active()`,active → 推理 dispatcher、否则 → 训练 dispatcher(`megatron/core/transformer/moe/moe_layer.py:612`,另见 `:703`)。引擎进入推理时调用 `InferenceMode.set_active()`(`megatron/core/inference/engines/dynamic_engine.py:296`、`:857`、`megatron/core/inference/engines/static_engine.py:133`),退出时 `unset_active()`(`megatron/core/inference/engines/dynamic_engine.py:806`)。**根本原因**:`self.training` / `torch.is_grad_enabled()` / `inference_context is not None` 都无法可靠区分"引擎正在用模型做 rollout"与"训练相正在用同一模型重算 RL logprob"(二者都可能处于 `eval()`+`no_grad`)。改用单一进程级标志后,全代码库(attention、router、experts、mamba、`gpt_model` 等,见 `grep InferenceMode.is_active`)统一据此分流——这条**正是本节"显式、独立、受控的推理路径"取向的延续**:把"是否走推理路径"收敛成一个可审计的全局真值,而非散落各处的隐式 `self.training` 判断。
+> [!deprecated] `megatron/core/transformer/moe/moe_layer.py` 的 `train()` 重写自 `dev@232c478d4`(2026-06-16)起已被**移除**(#4617);基线 `85902ef5` 下 `git grep "def train("` 在该文件仍为 0 命中,本条依然成立。上一段正文中的 `:421` 是**旧基线 `ee3f1ff`** 的行号,新基线已无对应代码。推理 / 训练 dispatcher 的切换**不再依赖 `eval()`/`train()` 模式**,改由一个**进程级全局开关** `InferenceMode`(`megatron/core/inference/utils.py:20`)决定:`MoELayer.forward` 在入口处读 `InferenceMode.is_active()`,active → 推理 dispatcher、否则 → 训练 dispatcher(`megatron/core/transformer/moe/moe_layer.py:625`,另见 `:716`)。引擎进入推理时调用 `InferenceMode.set_active()`(`megatron/core/inference/engines/dynamic_engine.py:296`、`:857`、`megatron/core/inference/engines/static_engine.py:133`),退出时 `unset_active()`(`megatron/core/inference/engines/dynamic_engine.py:806`)。**根本原因**:`self.training` / `torch.is_grad_enabled()` / `inference_context is not None` 都无法可靠区分"引擎正在用模型做 rollout"与"训练相正在用同一模型重算 RL logprob"(二者都可能处于 `eval()`+`no_grad`)。改用单一进程级标志后,全代码库(attention、router、experts、mamba、`gpt_model` 等,见 `grep InferenceMode.is_active`)统一据此分流——这条**正是本节"显式、独立、受控的推理路径"取向的延续**:把"是否走推理路径"收敛成一个可审计的全局真值,而非散落各处的隐式 `self.training` 判断。
 
-> [!update] 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。§4 引用的行号已漂移——`transformer_impl` 三选枚举现位于 `megatron/core/transformer/transformer_config.py:1436`(`ee3f1ff` 为 `:1199`,`232c478d4` 为 `:1257`);`inference_optimized` 强制 `--moe-router-dtype=fp32` 的校验现位于 `megatron/core/transformer/transformer_config.py:2030`(`ee3f1ff` 为 `:1467`,`232c478d4` 为 `:1615`),且新增了 `inference_optimized` 对 expert-TP>1(`:2019`)、`fp8-recipe='mxfp8'` 需 `--fp8-param-gather`(`:2042`)的配套约束,`71092579` 下又多出 dropless-only(`:2023`)、不支持 GLU(`:2036`)两条。
+> [!update] 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `85902ef5`。§4 引用的行号已漂移——`transformer_impl` 三选枚举现位于 `megatron/core/transformer/transformer_config.py:1447`(`ee3f1ff` 为 `:1199`,`232c478d4` 为 `:1257`,`71092579` 为 `:1436`);`inference_optimized` 强制 `--moe-router-dtype=fp32` 的校验现位于 `megatron/core/transformer/transformer_config.py:2047`(`ee3f1ff` 为 `:1467`,`232c478d4` 为 `:1615`,`71092579` 为 `:2030`),且新增了 `inference_optimized` 对 expert-TP>1(`:2036`)、`fp8-recipe='mxfp8'` 需 `--fp8-param-gather`(`:2059`)的配套约束,`71092579` 起又多出 dropless-only(`:2040`)、不支持 GLU(`:2053`)两条。**`71092579` → `85902ef5` 这一轮该校验块逐字未改,只因文件前段插入而整体后移 17 行。**
 
 设计取向:把推理路径做成**一个显式、独立命名的实现**,而不是偷偷改训练路径。好处是 —— 训推差异**集中在这一条路径里、可被审计**,你清楚知道每个数值差异来自哪。这是"工程上把不一致变可控"的关键设计。
 
@@ -242,13 +243,13 @@ README 把时序写死:「Call `prepare_swap_model_weights` once during initiali
 **⑤ 缓存必须在销毁进程组之前显式清理。**
 「Call `clear_all_caches()` **before destroying distributed process groups** to avoid stale references. This also finalizes NVSHMEM resources.」(`megatron/core/resharding/README.md:126-127`;API 位置见 §7 的 `[!update]`)。
 
-**⑥ `inference_optimized` 的 MoE 路径有六条硬拒绝,全部是构造期 `ValueError`。**(`megatron/core/transformer/transformer_config.py:2018-2047`)
-- expert TP > 1 → 「Inference-optimized MoE layers does not support expert tensor parallelism.」(`:2019-2021`)
-- 设了 `moe_expert_capacity_factor` → 「only support **dropless** MoE」(`:2023-2024`)
-- `moe_router_padding_for_quantization` → 「do not support padded routing map for quantization.」(`:2025-2029`)
-- router dtype ≠ fp32 → 见 §1.2 ③(`:2030-2034`)
-- **`gated_linear_unit`(SwiGLU/GeGLU)→「does not yet support gated linear units」**(`:2036-2039`)——这条限制面很大,主流 MoE 模型基本都用 SwiGLU。
-- `fp8 == "mxfp8"` 但未开 `fp8_param` → 要求 `--fp8-param-gather`(`:2042-2047`)。
+**⑥ `inference_optimized` 的 MoE 路径有六条硬拒绝,全部是构造期 `ValueError`。**(`megatron/core/transformer/transformer_config.py:2035-2064`)
+- expert TP > 1 → 「Inference-optimized MoE layers does not support expert tensor parallelism.」(`:2036-2038`)
+- 设了 `moe_expert_capacity_factor` → 「only support **dropless** MoE」(`:2040-2041`)
+- `moe_router_padding_for_quantization` → 「do not support padded routing map for quantization.」(`:2042-2046`)
+- router dtype ≠ fp32 → 见 §1.2 ③(`:2047-2051`)
+- **`gated_linear_unit`(SwiGLU/GeGLU)→「does not yet support gated linear units」**(`:2053-2056`)——这条限制面很大,主流 MoE 模型基本都用 SwiGLU。
+- `fp8 == "mxfp8"` 但未开 `fp8_param` → 要求 `--fp8-param-gather`(`:2059-2064`)。
 
 **⑦ 边界的精确说法:RL 环不在 `megatron/core`,但同仓 `megatron/rl/` 里有。**
 §0 的边界声明针对的是 `megatron/core`,基线下仍然成立。需要补一句的是:同一个仓库的 `megatron/rl/` 已经带了 GRPO 侧的实现(如 `calculate_grpo_advantages`,`megatron/rl/rl_utils.py:853`),但它自陈**尚不可外部使用**:「it is **not yet usable by external users** because not all required code has been released. The available code and examples **may change** as development progresses」(`megatron/rl/README.md:4`),并且「It is **not** intended as an enterprise framework」,企业级能力仍指向 NeMo-RL(`:17`)。
@@ -266,7 +267,7 @@ README 把时序写死:「Call `prepare_swap_model_weights` once during initiali
 
 **② refit 正在往"一份权重发给多个推理池"走,但这一步在当前 `dev` 基线上不存在。**
 `ae2efd53a`(#5187,2026-06-22,"Disag MR2: **Refit into multiple destination pools** and tied-embedding + UVM fixes")给 `swap_model_weights` 加了 `num_dst_pools` / `dst_pool_index`,docstring 写明用途:「refit into `num_dst_pools` **disjoint destination pools** (e.g. **disaggregated prefill/decode instances** on separate rank windows), one collective pass per pool」,并给 `_PlanCacheKey` 加了 `pool_index` 以免 source-only rank 缓存命中后跳过集合通信而**死锁**。
-**但基线 `71092579` 下 `git grep num_dst_pools` 为 0 命中**:该提交进了 `origin/main`(合并 `c2a9a6016` 的第二父 `fc4597c0c` 侧有 3 处命中),而 2026-06-22 的 `main → main2dev` 合并把 `megatron/core/resharding/refit.py` 解成了 dev 侧(第一父 `3346fa8a2`,0 处命中)。→ 源码没有说明这是有意回退还是合并丢失;**本页只陈述"基线下不存在",不判断意图**。读 `dev` 的人不要按 #5187 的接口写代码。
+**但基线 `85902ef5` 下 `git grep num_dst_pools` 仍为 0 命中**:该提交进了 `origin/main`(合并 `c2a9a6016` 的第二父 `fc4597c0c` 侧有 3 处命中),而 2026-06-22 的 `main → main2dev` 合并把 `megatron/core/resharding/refit.py` 解成了 dev 侧(第一父 `3346fa8a2`,0 处命中)。→ 源码没有说明这是有意回退还是合并丢失;**本页只陈述"基线下不存在",不判断意图**。读 `dev` 的人不要按 #5187 的接口写代码。
 
 **③ 推理侧计划把 refit 包成一等公民 API。**
 `megatron/core/inference/README.md:67` 的 roadmap 明列「**Weight update APIs.** `suspend_for_refit()`, `update_weights_from_collective()`, `resume_after_refit()` **wrapping the existing resharding/refit primitives** for RL workflows where weights swap between rollout steps.」——即 §2 的 `swap_model_weights` 与 §7 的 suspend/resume 会被收进引擎门面(详见 [[31_megatron_inference_engine_analysis]] §11)。
@@ -291,7 +292,7 @@ README 把时序写死:「Call `prepare_swap_model_weights` once during initiali
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`(2026-08-27;由 `ee3f1ff` 重定基线而来)。源码行号以该 commit 为准。完整 RL 训练环(GRPO/PPO loss、advantage、KL)位于上层 RL 框架(如 NeMo-RL),不在 `megatron/core`。配套文档:`27_megatron_tp_fsdp_resharding_supplements_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`、`14_megatron_ep_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef5`(2026-09-01;由 `ee3f1ff` → `71092579` 逐次重定基线而来)。源码行号以该 commit 为准。完整 RL 训练环(GRPO/PPO loss、advantage、KL)位于上层 RL 框架(如 NeMo-RL),不在 `megatron/core`。配套文档:`27_megatron_tp_fsdp_resharding_supplements_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`、`14_megatron_ep_analysis.md`。*
 
 ## Related Pages
 

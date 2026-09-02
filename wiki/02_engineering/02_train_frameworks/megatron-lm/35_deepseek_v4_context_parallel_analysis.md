@@ -6,7 +6,8 @@ title: "DeepSeek-V4 Context Parallelism 实现深度解析"
 
 *基于 Megatron-LM dev 分支源码 · CP 进程组 · 通信类型 · TE 融合 · DSv4 适配 · 通信量分析*
 
-> **源码基线**: `NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`megatron/core/parallel_state.py`、`megatron/core/transformer/dot_product_attention_context_parallel.py` 等。
+> **源码基线**: `NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`megatron/core/parallel_state.py`、`megatron/core/transformer/dot_product_attention_context_parallel.py` 等。
+> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
 > **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > **⚠ 本轮重核推翻了本页两条核心结论**：附录 A 判定「CSA/HCA 的两阶段 CP 尚未实现」与 §5.3/§8.3 判定「Dynamic CP 不支持 MLA/DSv4」，在基线 `71092579` 下**均已不成立**——前者由 PR #5087 实现、后者由 PR #4226 解除。相关段落保留原文并加 `[!contradiction]` 标注，见 §5.2、§5.3、附录 A、§6.4、§8.3、§十一。
 > **基线沿革**：本页曾声明 `232c478d4`、实际正文命中 `ee3f1ffa…`，2026-08-27 改钉后者；2026-08-28 统一推进到 `71092579`。2026-06-25 的移库抽查是在 `232c478d4` 上做的，那套行号已被本轮重核取代，仅作历史留存。
@@ -151,7 +152,7 @@ cp_comm_type of each layer can be "p2p" or "all_gather" or "a2a" or "a2a+p2p".
 """
 ```
 
-来源：megatron/core/transformer/transformer_config.py:1090-1106（基线 `71092579` 下 docstring 另增两行，说明该项只管标准注意力层、线性注意力层改用 `linear_cp_mode`）
+来源：megatron/core/transformer/transformer_config.py:1101-1117（基线 `71092579` 下 docstring 另增两行，说明该项只管标准注意力层、线性注意力层改用 `linear_cp_mode`）
 
 | 通信类型 | 机制 | 可重叠性 | 适用场景 | TE 版本要求 |
 | --- | --- | --- | --- | --- |
@@ -179,7 +180,7 @@ if self.fallback_to_eager_attn or self.transformer_impl == "local":
             )
 ```
 
-来源：megatron/core/transformer/transformer_config.py:3763-3774
+来源：megatron/core/transformer/transformer_config.py:3810-3821
 
 > **关键限制**：Native CP 实现（`DotProductAttention` 的 eager 路径）只支持 `all_gather` 通信类型。若启用 `p2p`、`a2a` 或 `a2a+p2p`，必须使用 TransformerEngine 的 fused flash attention 路径（`transformer_impl="transformer_engine"`）。
 
@@ -206,7 +207,7 @@ self.self_attention = build_module(
 )
 ```
 
-来源：megatron/core/transformer/transformer_layer.py:370-392
+来源：megatron/core/transformer/transformer_layer.py:373-395
 
 > **按层配置的应用场景**：V4 的混合架构中，不同层使用不同的 attention 机制（CSA 层 vs HCA 层 vs 标准 MLA 层）。按层配置 `cp_comm_type` 允许对 CSA 层使用 `p2p`（压缩后 KV 短，P2P 数据量小），对 HCA 层使用 `a2a`（长序列，需要更大的通信带宽），实现细粒度的通信策略优化。
 
@@ -556,7 +557,7 @@ Dynamic CP 允许在 training 过程中根据输入序列长度动态调整 CP s
 
 **③ Dynamic CP 下 `cp_group` 必须显式给出。** 一旦 `packed_seq_params.local_cp_size` 非空，`packed_seq_params.cp_group` 就必须非空——`assert packed_seq_params.cp_group is not None, "cp_group must be set in dynamic-cp mode"`（`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:262`、`megatron/core/transformer/multi_latent_attention.py:380`）。切换后必须在返回前恢复原组，源码的注释即「Restored before every return」（`megatron/core/transformer/multi_latent_attention.py:375-378`）。
 
-**④ Native / eager 路径只支持 `all_gather` 一种 `cp_comm_type`。** `fallback_to_eager_attn` 或 `transformer_impl == "local"` 时，任何非 `all_gather` 的 `cp_comm_type` 直接 `raise ValueError`（`megatron/core/transformer/transformer_config.py:3763-3774`）。§二 那四种通信类型只有走 TE 才全部可用。
+**④ Native / eager 路径只支持 `all_gather` 一种 `cp_comm_type`。** `fallback_to_eager_attn` 或 `transformer_impl == "local"` 时，任何非 `all_gather` 的 `cp_comm_type` 直接 `raise ValueError`（`megatron/core/transformer/transformer_config.py:3810-3821`）。§二 那四种通信类型只有走 TE 才全部可用。
 
 **⑤ Native CP 不支持 attention dropout。** 见 §5.4（`megatron/core/transformer/dot_product_attention.py:60-65`）。
 
@@ -619,7 +620,7 @@ Dynamic CP 允许在 training 过程中根据输入序列长度动态调整 CP s
 
 ### 11.3 一句话总结
 
-> [!contradiction] 本段「当前限制」中的 **Dynamic CP 不支持 MLA/DSv4** 一条在基线 `71092579` 下已不成立（见 §5.3）；另两条（Native CP 只支持 all_gather、Native 路径 CP 下不支持 attention dropout）经重核仍然成立（`megatron/core/transformer/transformer_config.py:3763-3774`、`megatron/core/transformer/dot_product_attention.py:60-65`）。
+> [!contradiction] 本段「当前限制」中的 **Dynamic CP 不支持 MLA/DSv4** 一条在基线 `71092579` 下已不成立（见 §5.3）；另两条（Native CP 只支持 all_gather、Native 路径 CP 下不支持 attention dropout）经重核仍然成立（`megatron/core/transformer/transformer_config.py:3810-3821`、`megatron/core/transformer/dot_product_attention.py:60-65`）。
 
 > **总结**：DeepSeek-V4 的 Context Parallelism 实现充分利用了 MLA 的 KV 压缩优势（CP 通信量降低 128 倍），通过 TE 的 P2P Ring Attention 实现通信计算重叠，并支持 Hierarchical CP 匹配物理拓扑。当前限制包括：Native CP 只支持 all_gather、Dynamic CP 不支持 MLA/DSv4、CP 下不支持 attention dropout（Native 路径）。在 1M 序列长度的训练场景下，CP=8 + a2a+p2p 是推荐配置，可将 Attention 显存降低 8 倍，CP 通信开销控制在总时间的 5% 以内。
 

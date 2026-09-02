@@ -4,7 +4,8 @@ title: "Megatron-LM 推理引擎深度解析(Inference Engine)"
 
 # Megatron-LM 推理引擎深度解析(Inference Engine)
 
-> **源码基线**:`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`(`dev`,2026-08-27)
+> **源码基线**:`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`(`dev`,2026-09-01)
+> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
 > **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/inference/` 下 `engines/`(`megatron/core/inference/engines/dynamic_engine.py` 2614 行、`megatron/core/inference/engines/static_engine.py`)、`megatron/core/inference/contexts/dynamic_context.py`(4021 行)、`megatron/core/inference/contexts/kv_block_allocator.py`、`megatron/core/inference/scheduler.py`
 > 配套阅读:`30_megatron_rl_posttraining_consistency_analysis.md`(RL rollout 用的就是本引擎)、`23_megatron_precision_cudagraph_fusion_analysis.md`、`14_megatron_ep_analysis.md`
@@ -80,7 +81,7 @@ title: "Megatron-LM 推理引擎深度解析(Inference Engine)"
 
 **② "现在是不是在推理"必须是一个独立的进程级标志,`self.training` / `no_grad` / `inference_context` 三个现成信号全部被点名否掉。**
 `InferenceMode` 的 docstring 把话说死:需要区分推理与非推理(「e.g. training, RL logprobs」)路径的模块「should read `InferenceMode.is_active()` **rather than relying on** `self.training`, `torch.is_grad_enabled()`, or `inference_context is not None`」(`megatron/core/inference/utils.py:20-26`)。注意它把 **RL logprob 重算**与 training 并列为**非推理**路径——而 RL 训练相恰恰是用 `eval()` + `no_grad` 跑的,三个旧信号在那里全部指向"推理"。
-**被否掉的替代就写在历史里**:提交 `925422cd8`(2026-05-13,#4617,commit message 即 "One single flag that determines if we are in inference")之前,`MoELayer` 用 `nn.Module` 的 mode 切换来选 dispatcher——它重写了 `def train(self, mode: bool = True)`,`mode` 为真换回训练 dispatcher、为假换成推理 dispatcher,`forward` 里则判 `not self.training`。该 commit 把这段 `train()` 重写**整段删除**,改成在 `forward` 入口读 `InferenceMode.is_active()` 选 dispatcher(基线 `megatron/core/transformer/moe/moe_layer.py:703`、`:612`),同批还改了 `gpt_model`(`megatron/core/models/gpt/gpt_model.py:339`、`:421`、`:437`、`:686`)、`transformer_layer`(`megatron/core/transformer/transformer_layer.py:754`、`:970`、`:1108`、`:1748`)等 15 个文件。引擎侧对称地在进出推理时置位/清位(`megatron/core/inference/engines/dynamic_engine.py:296`、`:806`、`:857`,`megatron/core/inference/engines/static_engine.py:133`)。
+**被否掉的替代就写在历史里**:提交 `925422cd8`(2026-05-13,#4617,commit message 即 "One single flag that determines if we are in inference")之前,`MoELayer` 用 `nn.Module` 的 mode 切换来选 dispatcher——它重写了 `def train(self, mode: bool = True)`,`mode` 为真换回训练 dispatcher、为假换成推理 dispatcher,`forward` 里则判 `not self.training`。该 commit 把这段 `train()` 重写**整段删除**,改成在 `forward` 入口读 `InferenceMode.is_active()` 选 dispatcher(基线 `megatron/core/transformer/moe/moe_layer.py:716`、`:625`),同批还改了 `gpt_model`(`megatron/core/models/gpt/gpt_model.py:339`、`:421`、`:437`、`:686`)、`transformer_layer`(`megatron/core/transformer/transformer_layer.py:773`、`:999`、`:1137`、`:1777`)等 15 个文件。引擎侧对称地在进出推理时置位/清位(`megatron/core/inference/engines/dynamic_engine.py:296`、`:806`、`:857`,`megatron/core/inference/engines/static_engine.py:133`)。
 → 决定取舍的判据是**让"模式"有唯一的真相源**:模块散着各自猜模式,只要有一个猜错就静默走错 kernel;改成单一标志后,判错会同时错在所有模块,更容易发现,也让 RL 那种"eval + no_grad 但不是推理"的第三种状态第一次可表达。
 
 **③ KV 显存是上来就吃掉的一整块,再在内部切块,而不是随用随 `torch.empty`。**

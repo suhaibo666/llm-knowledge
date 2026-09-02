@@ -4,7 +4,8 @@ title: "Megatron-LM 融合线性交叉熵(Fused Linear Cross-Entropy / \"chunk l
 
 # Megatron-LM 融合线性交叉熵(Fused Linear Cross-Entropy / "chunk loss")源码级分析
 
-> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
+> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
 > **重定基线**：2026-08-28 由 `232c478d43ce2f8b4c8db3507d3623fa82f55823`（2026-06-16）推进，跨 280 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > **维度**: 深挖(机制级 + 具体源码实现)
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
@@ -303,7 +304,7 @@ dist.all_reduce(_logprobs, op=dist.ReduceOp.SUM, group=tp_group)   # 跨分片�
 - **MTP 路径**:MTP 也走 `linear`(`megatron/core/transformer/multi_token_prediction.py:1784`,§3 已注),因此上述所有约束对 MTP 同样成立。
 
 > [!note] 推断
-> **`linear` 与 MXFP8 LM-head(`fp8_output_proj`)看起来互斥,但源码没有为此加校验。**可核验的事实是:`fp8_output_proj` 激活时 `output_layer_cls` 会变成 `TELMHeadColumnParallelLinear` 而非 `LinearCrossEntropyModule`(`megatron/core/models/gpt/gpt_model.py:269-274`),而 `fp8_output_proj` 的校验只检查 fp8 与 recipe(`megatron/core/transformer/transformer_config.py:1989-1996`),没有检查 `cross_entropy_fusion_impl`。"二者同开会走到一个没有 `output_cross_entropy_loss` 形参的输出层"这层推论由本页承担,未经实际运行验证。要引用请回到上面两个 locator,不要引用本段推断。
+> **`linear` 与 MXFP8 LM-head(`fp8_output_proj`)看起来互斥,但源码没有为此加校验。**可核验的事实是:`fp8_output_proj` 激活时 `output_layer_cls` 会变成 `TELMHeadColumnParallelLinear` 而非 `LinearCrossEntropyModule`(`megatron/core/models/gpt/gpt_model.py:269-274`),而 `fp8_output_proj` 的校验只检查 fp8 与 recipe(`megatron/core/transformer/transformer_config.py:2006-2013`),没有检查 `cross_entropy_fusion_impl`。"二者同开会走到一个没有 `output_cross_entropy_loss` 形参的输出层"这层推论由本页承担,未经实际运行验证。要引用请回到上面两个 locator,不要引用本段推断。
 
 ---
 

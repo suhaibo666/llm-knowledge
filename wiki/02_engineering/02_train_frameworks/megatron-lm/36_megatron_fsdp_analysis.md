@@ -4,7 +4,8 @@ title: "Megatron-FSDP 深度解析"
 
 # Megatron-FSDP 深度解析
 
-> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
+> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；该增量只触及 20 个 `megatron/` 文件，本页 `path:line` 引用所涉源文件均不在其中，故无行号漂移，无需逐条重核。
 > 核心文件:`megatron/core/distributed/fsdp/src/megatron_fsdp/`(16 个 `.py`、11321 行;其中 `param_and_grad_buffer.py` 5332 行、`megatron_fsdp.py` 1544 行),接入层 `megatron/core/distributed/fsdp/mcore_fsdp_adapter.py`(654 行),仓内文档 `docs/user-guide/features/megatron_fsdp.md`(619 行)
 > 配套阅读:`16_megatron_distributed_optimizer_analysis.md` §18(三方对比)、`22_megatron_memory_optimization_analysis.md`、`20_megatron_comm_overlap_analysis.md`、`19_megatron_dist_checkpointing_analysis.md`
 > 适用读者:已了解 ZeRO 分级与 Megatron DDP,要读懂、调参或移植 Megatron-FSDP 这台机器的工程师。

@@ -4,7 +4,8 @@ title: "Megatron-LM 数据并行、分布式优化器与优化器内部机制 �
 
 # Megatron-LM 数据并行、分布式优化器与优化器内部机制 深度解析
 
-> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
+> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；该增量只触及 20 个 `megatron/` 文件（`training.py`、MoE `experts.py` / `paged_stash.py`、hybrid、CUDA graph 一线），本页落在这些改动文件上的 `path:line` 引用已在新基线下逐条打开重核。本页主线文件（`distributed/`、`optimizer/`）本轮零改动。
 > **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。原先并存的两套基线（`ee3f1ffa…` 正文 + `232c478d4` 增量块）已统一到 `71092579`
 > 核心文件:`megatron/core/distributed/distributed_data_parallel.py`、`megatron/core/distributed/param_and_grad_buffer.py`、`megatron/core/distributed/distributed_data_parallel_config.py`、`megatron/core/optimizer/distrib_optimizer.py`、`megatron/core/optimizer/optimizer.py`、`megatron/core/optimizer/grad_scaler.py`、`megatron/core/optimizer/clip_grads.py`、`megatron/core/optimizer_param_scheduler.py`、`megatron/core/optimizer/cpu_offloading/`
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`、`13_megatron_cp_analysis.md`
@@ -222,7 +223,7 @@ backward post-hook(`_make_backward_post_hook`,DDP`:500-529`)里其实是**两步
 1. `start_param_sync`(PGB`:448`)对一个 bucket group 发异步 all-gather:`_coalescing_manager` 合并组内各桶的 `all_gather_into_tensor`,每 rank 贡献自己的 shard(PGB`:583-599`),句柄存 `param_gather_handle`(PGB`:601`)。
 2. 每个 module 注册 **forward pre-hook**(`_make_forward_pre_hook`,DDP`:468`;挂载 `:443-446`)。module 前向前,对它用到的每个参数调其 bucket group 的 `finish_param_sync` —— 新基线上这一步经由 `_finish_param_sync_for_bucket_group`(DDP`:489` → DDP`:493-498`)转发。
 3. `finish_param_sync`(PGB`:611`):先 **wait** 本组 AG 完成(PGB`:633-635`,保证这层参数齐),再**立刻派发下一组** `next_param_gather_bucket_group.start_param_sync()`(PGB`:646`)—— 这就是预取:本 module 用刚 gather 好的参数算时,后台已在 gather 下一组。
-4. `next_param_gather_bucket_group` 链按前向序在 DDP`:337-348` 串好(注释说明按桶逆序串,因 all-gather 按桶逆序发生);链首(第一组)AG 由 PP schedule 经 `config.param_sync_func` 先发(`megatron/core/pipeline_parallel/schedules.py:1321-1322`、`:1443-1455`;该回调在 `megatron/training/training.py:4202` 绑成 `model_chunk.start_param_sync`),或被 `finish_param_sync` 懒发(PGB`:630-631`)。
+4. `next_param_gather_bucket_group` 链按前向序在 DDP`:337-348` 串好(注释说明按桶逆序串,因 all-gather 按桶逆序发生);链首(第一组)AG 由 PP schedule 经 `config.param_sync_func` 先发(`megatron/core/pipeline_parallel/schedules.py:1321-1322`、`:1443-1455`;该回调在 `megatron/training/training.py:4384` 绑成 `model_chunk.start_param_sync`),或被 `finish_param_sync` 懒发(PGB`:630-631`)。
 5. 若下一组 AG 已被提前派发 → PGB`:638-644` 警告 *"mismatch between the order of parameter registration and forward pass execution, which will hurt the communication-computation overlap performance"* —— **预取假设 module 前向序 == 参数注册序**。
 
 时间线(理想):

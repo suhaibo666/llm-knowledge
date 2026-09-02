@@ -6,7 +6,9 @@ title: "Megatron-LM — Knowledge Map"
 
 本域覆盖 NVIDIA Megatron-LM 的训练生命周期、模型组装、并行策略、MoE、性能基建与训推集成。**首次阅读请从 [[01_megatron_architecture_analysis]] 开始**：它先给出框架分层与端到端训练主链，再把问题分流到各专题页。
 
-> **源码基线(全域已统一)**:`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`(`dev`,2026-08-27)。
+> **源码基线(全域已统一)**:`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`(`dev`,2026-09-01)。
+> - **2026-09-01 全域推进**:由 `71092579`(2026-08-27)推进,跨 **7 个提交**(#6753 DSA FLOPs、#6847 GroupedTensor 解耦、#6022 Paged Stash×TE whole-MoE 图、#6704 Hash MoE 层阈值/hybrid recompute、#6583 hybrid MTP 分组捕获,另两条只动 `experimental/lite/` 与依赖钉版)。增量只触及 **20 个 `megatron/` 文件**;域内 1425 条 `path:line` 中 **367 条**落在改动文件上,按 difflib 逐行对齐重定位(含承接前文路径的裸续引 `:NNN`),其余 1058 条所在文件未被触碰、零风险。**指向历史基线(`ee3f1ff`/`232c478d4`)的引用按排除表冻结,未参与重定位**——它们是刻意保留的漂移轨迹与勘误记录。
+> - **本轮内容增量**落在 02/10/14/18/21/22/23/32 八页,均带 `[!update] 2026-09-01` 标注。
 > - **2026-08-28 全域推进**:本域各页由旧基线 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`(2026-05-19,跨 578 个提交)与 `232c478d43ce2f8b4c8db3507d3623fa82f55823`(2026-06-16,跨 280 个提交)统一重定到 `71092579`,逐页逐条重核 `path:line`。各页页头带 `> **重定基线**` 一行说明;原先「正文以 `ee3f1ff` 为准、`[!update]` 段以 `232c478d4` 为准」的双行号口径就此取消,同一页只剩一套行号。
 > - **不适用本基线**:[[33_megatron_vllm_weight_sync_analysis]] 分析的是 `volcengine/verl` 而非 Megatron-LM,不适用本基线。
 > - **重核推翻的结论**:凡因新基线而不再成立的论断,均在原文就地加 `[!deprecated]`/`[!contradiction]` 标注并保留旧基线原文,不做删除。例如 [[35_deepseek_v4_context_parallel_analysis]] 的两条核心判定(「CSA/HCA 两阶段 CP 尚未实现」「Dynamic CP 不支持 MLA/DSv4」)在 `71092579` 下已分别由 PR #5087、#4226 推翻。

@@ -1,7 +1,7 @@
 domain: megatron-lm
 wiki_dir: wiki/02_engineering/02_train_frameworks/megatron-lm
 repo: Megatron-LM
-commit: 71092579522a12522d9f323ae180c9825d01928a
+commit: 85902ef599ea4eb06ada7567a479c524b605767a
 sources:
 - file: megatron/core/model_parallel_config.py
   class: ModelParallelConfig
@@ -12,6 +12,7 @@ flags:
   from: ModelParallelConfig
   owner: null
   candidates:
+  - 12_megatron_tp_analysis
   - 14_megatron_ep_analysis
   - 17_megatron_parallelism_orchestration_analysis
   - 20_megatron_comm_overlap_analysis
@@ -44,6 +45,7 @@ flags:
   from: ModelParallelConfig
   owner: null
   candidates:
+  - 13_megatron_cp_analysis
   - 17_megatron_parallelism_orchestration_analysis
   - 20_megatron_comm_overlap_analysis
   - 35_deepseek_v4_context_parallel_analysis
@@ -61,6 +63,7 @@ flags:
   from: ModelParallelConfig
   owner: null
   candidates:
+  - 11_megatron_dataset_analysis
   - 13_megatron_cp_analysis
   - 35_deepseek_v4_context_parallel_analysis
 - name: min_dynamic_context_parallel_size
@@ -73,13 +76,15 @@ flags:
   from: ModelParallelConfig
   owner: null
   candidates:
+  - 13_megatron_cp_analysis
   - 14_megatron_ep_analysis
   - 29_megatron_packed_dataset_dynamic_cp_analysis
   - 32_megatron_tflops_analysis
   - 35_deepseek_v4_context_parallel_analysis
 - name: pad_packed_seq_alignment
   from: ModelParallelConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  auto: true
 - name: thd_tail_padding_policy
   from: ModelParallelConfig
   owner: 13_megatron_cp_analysis
@@ -88,6 +93,7 @@ flags:
   from: ModelParallelConfig
   owner: null
   candidates:
+  - 14_megatron_ep_analysis
   - 17_megatron_parallelism_orchestration_analysis
   - 22_megatron_memory_optimization_analysis
 - name: expert_tensor_parallel_size
@@ -375,6 +381,7 @@ flags:
   - 17_megatron_parallelism_orchestration_analysis
   - 28_megatron_training_stability_observability_analysis
   - 31_megatron_inference_engine_analysis
+  - 32_megatron_tflops_analysis
 - name: mtp_num_layers
   from: TransformerConfig
   owner: null
@@ -417,6 +424,7 @@ flags:
   - 10_megatron_model_structure_analysis
   - 15_megatron_pp_schedulers_analysis
   - 20_megatron_comm_overlap_analysis
+  - 21_megatron_fusion_operators_analysis
   - 22_megatron_memory_optimization_analysis
   - 32_megatron_tflops_analysis
   - 34_deepseek_v4_tensor_parallel_analysis
@@ -577,6 +585,7 @@ flags:
   - 18_megatron_recompute_analysis
   - 21_megatron_fusion_operators_analysis
   - 28_megatron_training_stability_observability_analysis
+  - 32_megatron_tflops_analysis
   - 34_deepseek_v4_tensor_parallel_analysis
   - 35_deepseek_v4_context_parallel_analysis
 - name: cp_partition_mode
@@ -594,22 +603,29 @@ flags:
   owner: null
 - name: dsa_indexer_topk
   from: TransformerConfig
-  owner: 10_megatron_model_structure_analysis
-  auto: true
+  owner: null
+  candidates:
+  - 10_megatron_model_structure_analysis
+  - 32_megatron_tflops_analysis
 - name: dsa_indexer_topk_freq
   from: TransformerConfig
-  owner: null
+  owner: 32_megatron_tflops_analysis
+  auto: true
 - name: dsa_indexer_skip_topk_offset
   from: TransformerConfig
   owner: null
 - name: dsa_indexer_loss_coeff
   from: TransformerConfig
-  owner: 10_megatron_model_structure_analysis
-  auto: true
+  owner: null
+  candidates:
+  - 10_megatron_model_structure_analysis
+  - 32_megatron_tflops_analysis
 - name: dsa_indexer_use_sparse_loss
   from: TransformerConfig
-  owner: 10_megatron_model_structure_analysis
-  auto: true
+  owner: null
+  candidates:
+  - 10_megatron_model_structure_analysis
+  - 32_megatron_tflops_analysis
 - name: dsa_kernel_backend
   from: TransformerConfig
   owner: 21_megatron_fusion_operators_analysis
@@ -777,8 +793,10 @@ flags:
   from: TransformerConfig
   owner: null
   candidates:
+  - 14_megatron_ep_analysis
   - 21_megatron_fusion_operators_analysis
   - 22_megatron_memory_optimization_analysis
+  - 23_megatron_precision_cudagraph_fusion_analysis
   - 34_deepseek_v4_tensor_parallel_analysis
 - name: fused_residual_rmsnorm
   from: TransformerConfig
@@ -891,6 +909,8 @@ flags:
   candidates:
   - 16_megatron_distributed_optimizer_analysis
   - 18_megatron_recompute_analysis
+  - 20_megatron_comm_overlap_analysis
+  - 21_megatron_fusion_operators_analysis
   - 23_megatron_precision_cudagraph_fusion_analysis
 - name: fp4_recipe
   from: TransformerConfig
@@ -919,6 +939,8 @@ flags:
   from: TransformerConfig
   owner: null
   candidates:
+  - 14_megatron_ep_analysis
+  - 18_megatron_recompute_analysis
   - 20_megatron_comm_overlap_analysis
   - 34_deepseek_v4_tensor_parallel_analysis
 - name: use_grouped_gemm_for_shared_expert
@@ -937,10 +959,12 @@ flags:
   auto: true
 - name: moe_router_load_balancing_type
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  auto: true
 - name: moe_router_topk
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  auto: true
 - name: moe_enable_routing_replay
   from: TransformerConfig
   owner: null
@@ -953,7 +977,8 @@ flags:
   auto: true
 - name: moe_router_padding_for_fp8
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  auto: true
 - name: moe_router_num_groups
   from: TransformerConfig
   owner: 10_megatron_model_structure_analysis
@@ -973,6 +998,10 @@ flags:
 - name: moe_router_dtype
   from: TransformerConfig
   owner: null
+  candidates:
+  - 14_megatron_ep_analysis
+  - 28_megatron_training_stability_observability_analysis
+  - 30_megatron_rl_posttraining_consistency_analysis
 - name: moe_router_enable_expert_bias
   from: TransformerConfig
   owner: null
@@ -1007,12 +1036,22 @@ flags:
   auto: true
 - name: log_moe_overload_factor
   from: TransformerConfig
-  owner: null
+  owner: 28_megatron_training_stability_observability_analysis
+  auto: true
 - name: moe_grouped_gemm
   from: TransformerConfig
   owner: null
   candidates:
+  - 14_megatron_ep_analysis
   - 18_megatron_recompute_analysis
+  - 21_megatron_fusion_operators_analysis
+  - 23_megatron_precision_cudagraph_fusion_analysis
+- name: moe_use_grouped_tensor
+  from: TransformerConfig
+  owner: null
+  candidates:
+  - 02_megatron_moe_training_optimization_analysis
+  - 14_megatron_ep_analysis
   - 21_megatron_fusion_operators_analysis
 - name: moe_single_grouped_weight
   from: TransformerConfig
@@ -1045,6 +1084,8 @@ flags:
   candidates:
   - 14_megatron_ep_analysis
   - 20_megatron_comm_overlap_analysis
+  - 21_megatron_fusion_operators_analysis
+  - 23_megatron_precision_cudagraph_fusion_analysis
 - name: moe_enable_deepep
   from: TransformerConfig
   owner: 14_megatron_ep_analysis
@@ -1055,6 +1096,8 @@ flags:
   candidates:
   - 14_megatron_ep_analysis
   - 20_megatron_comm_overlap_analysis
+  - 22_megatron_memory_optimization_analysis
+  - 23_megatron_precision_cudagraph_fusion_analysis
 - name: moe_permute_fusion_into_hybridep
   from: TransformerConfig
   owner: null
@@ -1066,7 +1109,8 @@ flags:
   - 14_megatron_ep_analysis
 - name: moe_per_layer_logging
   from: TransformerConfig
-  owner: null
+  owner: 28_megatron_training_stability_observability_analysis
+  auto: true
 - name: moe_expert_capacity_factor
   from: TransformerConfig
   owner: null
@@ -1080,6 +1124,7 @@ flags:
   candidates:
   - 02_megatron_moe_training_optimization_analysis
   - 22_megatron_memory_optimization_analysis
+  - 23_megatron_precision_cudagraph_fusion_analysis
 - name: moe_pad_expert_input_to_capacity
   from: TransformerConfig
   owner: null
@@ -1094,7 +1139,8 @@ flags:
   owner: null
 - name: moe_layer_recompute
   from: TransformerConfig
-  owner: null
+  owner: 18_megatron_recompute_analysis
+  auto: true
 - name: moe_permute_fusion
   from: TransformerConfig
   owner: null
@@ -1103,7 +1149,8 @@ flags:
   - 23_megatron_precision_cudagraph_fusion_analysis
 - name: moe_router_fusion
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  auto: true
 - name: moe_apply_probs_on_input
   from: TransformerConfig
   owner: null
@@ -1188,6 +1235,9 @@ flags:
 - name: cuda_graph_modules
   from: TransformerConfig
   owner: null
+  candidates:
+  - 13_megatron_cp_analysis
+  - 23_megatron_precision_cudagraph_fusion_analysis
 - name: create_attention_mask_in_dataloader
   from: TransformerConfig
   owner: 11_megatron_dataset_analysis
@@ -1200,7 +1250,8 @@ flags:
   - 31_megatron_inference_engine_analysis
 - name: cuda_graph_scope
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  auto: true
 - name: thd_max_packed_sequences
   from: TransformerConfig
   owner: null
@@ -1342,6 +1393,8 @@ flags:
   owner: null
   candidates:
   - 13_megatron_cp_analysis
+  - 22_megatron_memory_optimization_analysis
+  - 23_megatron_precision_cudagraph_fusion_analysis
   - 30_megatron_rl_posttraining_consistency_analysis
   - 31_megatron_inference_engine_analysis
   - 35_deepseek_v4_context_parallel_analysis
@@ -1360,6 +1413,7 @@ flags:
   owner: null
   candidates:
   - 02_megatron_moe_training_optimization_analysis
+  - 15_megatron_pp_schedulers_analysis
   - 22_megatron_memory_optimization_analysis
 - name: min_offloaded_tensor_size
   from: TransformerConfig
@@ -1387,6 +1441,7 @@ flags:
   candidates:
   - 02_megatron_moe_training_optimization_analysis
   - 22_megatron_memory_optimization_analysis
+  - 23_megatron_precision_cudagraph_fusion_analysis
 - name: moe_paged_stash_page_size
   from: TransformerConfig
   owner: 22_megatron_memory_optimization_analysis

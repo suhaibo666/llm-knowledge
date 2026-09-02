@@ -4,7 +4,8 @@ title: "Megatron-LM 流水线并行(Pipeline Parallelism)调度器深度解析"
 
 # Megatron-LM 流水线并行(Pipeline Parallelism)调度器深度解析
 
-> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
+> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；该增量只触及 20 个 `megatron/` 文件，未改动 `pipeline_parallel/` 下任何调度器源文件，本页落在改动文件（`transformer_config.py`）上的引用已在新基线下逐条打开重核，均为纯行号漂移。
 > **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/pipeline_parallel/schedules.py`(2653 行)、`megatron/core/pipeline_parallel/combined_1f1b.py`、`megatron/core/models/common/model_chunk_schedule_plan.py`
 > 适用读者:已了解 transformer 训练、TP/DP/PP 基本概念,想吃透 Megatron PP 调度实现的工程师。
@@ -664,7 +665,7 @@ output_tensor, input_tensor_grad = forward_backward_helper_wrapper(
 **combined-1F1B 的动机**:在**层粒度**上,把 microbatch `i+1` 的**前向**和 microbatch `i` 的**反向**配对、共同调度。利用一个简单事实 —— **前向的 A2A 通信** 可以和 **反向的计算** 在 GPU 上并行,反之亦然。于是:
 > 前向的 dispatch/combine A2A 被反向的 attention/MLP 计算掩盖;反向的 A2A 被前向计算掩盖。
 
-它还配合 `delay_wgrad_compute`(`megatron/core/transformer/transformer_config.py:3665`):把反向拆成 **dgrad**(算输入梯度,在关键路径上)和 **wgrad**(算权重梯度,可延后),让 wgrad 去填 P2P 通信的缝隙 —— 这正是 "zero-bubble" 系工作的核心拆分思想(见第 7 节)。
+它还配合 `delay_wgrad_compute`(`megatron/core/transformer/transformer_config.py:3712`):把反向拆成 **dgrad**(算输入梯度,在关键路径上)和 **wgrad**(算权重梯度,可延后),让 wgrad 去填 P2P 通信的缝隙 —— 这正是 "zero-bubble" 系工作的核心拆分思想(见第 7 节)。
 
 ### ⑤.2 源码与流程
 
@@ -803,10 +804,10 @@ comm |comb_b|  disp_f | disp_b | comb_f |     ← A2A 全程被对侧计算掩�
 | **PP 气泡** | **不改变**,继承宿主调度:PP=1 → 0;VPP → `(pp-1)/(m·vp)`。注意 VPP 形态下 warmup **+1**(`megatron/core/pipeline_parallel/schedules.py:918`) |
 | **有效 `t_f` / `t_b`** | **显著下降**:MoE A2A(占层时 20%~40%)被掩盖,单步计算密度提高,等效缩短 `t_f`、`t_b` |
 | **峰值激活显存** | **升高**:F 与 B 两个 microbatch 的激活同时在世;额外持有 `schedule_plan` 对象;`delay_wgrad_compute` 需多存 wgrad 所需输入 |
-| **A2A 通信量** | 不变,只是被隐藏;`high_priority_a2a_comm_stream`(`megatron/core/transformer/transformer_config.py:764`)可把通信流设为 CUDA 高优先级 |
+| **A2A 通信量** | 不变,只是被隐藏;`high_priority_a2a_comm_stream`(`megatron/core/transformer/transformer_config.py:766`)可把通信流设为 CUDA 高优先级 |
 | **PP 通信量** | 与宿主调度相同 |
 
-**约束**(`megatron/core/transformer/transformer_config.py:3536-3693`):需 torch ≥ 2.6.0;仅支持 EP + `alltoall`/`flex` dispatcher;必须关闭 full recompute 与 moe recompute;仅 bf16/fp16;`delay_wgrad_compute` 必须与本特性同开;VPP 形态下不支持 Megatron-FSDP。
+**约束**(`megatron/core/transformer/transformer_config.py:3583-3740`):需 torch ≥ 2.6.0;仅支持 EP + `alltoall`/`flex` dispatcher;必须关闭 full recompute 与 moe recompute;仅 bf16/fp16;`delay_wgrad_compute` 必须与本特性同开;VPP 形态下不支持 Megatron-FSDP。
 
 ### ⑤.5 适用场景及原因
 

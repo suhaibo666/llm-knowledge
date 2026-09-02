@@ -86,9 +86,11 @@ repos:
     repo: NVIDIA/Megatron-LM
     branch: dev
     checkout: ../Megatron-LM
-    # 2026-08-28 全域推进：26 页统一钉 71092579…（dev，2026-08-27），456 条引用逐条重核。
+    # 2026-09-01 全域推进：27 页统一钉 85902ef5…（dev，2026-09-01），跨 7 个提交。
+    # 增量只触及 20 个 megatron/ 文件；域内 1425 条引用中 367 条落在改动文件上，
+    # 按 difflib 逐行对齐重定位（含裸续引 :NNN），指向历史基线的引用按排除表冻结。
     # 33 号页分析的是 volcengine/verl，不适用本基线（该页自钉 verl@ab070522）。
-    kb_baseline: 71092579522a12522d9f323ae180c9825d01928a
+    kb_baseline: 85902ef599ea4eb06ada7567a479c524b605767a
     kb_entry: wiki/02_engineering/02_train_frameworks/megatron-lm/index.md
     category: 训练框架
 

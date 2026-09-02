@@ -18,7 +18,8 @@ planning-codebase-analysis 的 coverage matrix 只能覆盖「发现图里有的
 
 模式：
     --generate   从冻结 commit AST 枚举字段（git show，不动工作区），grep 域内页面自动建议
-                 owner；已有人工填写（auto 缺失或 false）的行**保留不动**，只增/删字段行。
+                 owner。**承载人工决定的行保留不动**——定了 owner（非 auto）或写了 excluded；
+                 `owner: null` + candidates 只是机器建议的快照，会随当前页面内容一并刷新。
     默认         三查：
                  C1 gap            flag 无 owner 且未 excluded          （warning；--strict 计入）
                  C2 stale_owner    人工 owner 页面并未提及该 flag        （warning）
@@ -104,6 +105,18 @@ def pages_mentioning(wiki_dir, flag):
     return hits
 
 
+def _is_human_decided(row):
+    """该行是否承载人工决定——决定了才保留，只是机器建议就该随页面内容刷新。
+
+    人工决定 = 定了 owner（且非 auto 建议）或写了 excluded 理由。
+    `owner: null` 配一串 candidates 只是「当时哪些页提到过」的快照：页面改了它就过期，
+    冻住它会让后续归属判断基于陈旧候选。
+    """
+    if row.get("excluded"):
+        return True
+    return bool(row.get("owner")) and not row.get("auto", False)
+
+
 def generate(cfg_path):
     cfg = load_yaml(cfg_path)
     checkout = find_checkout(cfg["repo"])
@@ -116,8 +129,9 @@ def generate(cfg_path):
             if name in seen:
                 continue
             seen.add(name)
-            if name in old and not old[name].get("auto", False):
-                flags.append(old[name])  # 人工行保留不动
+            prev = old.get(name)
+            if prev is not None and _is_human_decided(prev):
+                flags.append(prev)  # 人工决定保留不动
                 continue
             hits = pages_mentioning(cfg["wiki_dir"], name)
             row = {"name": name, "from": src["class"]}

@@ -6,7 +6,8 @@ title: "DeepSeek-V4 Tensor Parallel 切分方案深度解析"
 
 *基于 Megatron-LM dev 分支源码的实证分析 · CSA/HCA · MoE · mHC · 通信量与 Overlap*
 
-> **源码基线**: `NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`megatron/core/transformer/moe/experts.py`、`megatron/core/transformer/hyper_connection.py` 等。
+> **源码基线**: `NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`megatron/core/transformer/moe/experts.py`、`megatron/core/transformer/hyper_connection.py` 等。
+> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
 > **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > **基线沿革**：本页曾声明 `232c478d4`、实际正文命中 `ee3f1ffa…`，2026-08-27 改钉后者；2026-08-28 统一推进到 `71092579`。更早的 2026-06-25 移库审计是在 `232c478d4` 上做的（当时记 `deepseek_v4_hybrid_attention.py:92` 为 TP=1 断言、`:447` 为 `parallel_mode='duplicated'`），那套行号已被本轮重核取代，仅作历史留存。
 > **维度**: 工程实现（框架层）。**审计/移库**: 2026-06-25（自 `02_train_frameworks/` 移入 `megatron-lm/`）。
@@ -40,7 +41,7 @@ title: "DeepSeek-V4 Tensor Parallel 切分方案深度解析"
 > `HyperConnectionModule.mapping_proj = nn.Linear(self.n * self.hidden_size, self.n * self.n + 2 * self.n, bias=False)`（`megatron/core/transformer/hyper_connection.py:250-252`）。mHC 不通过 Column/Row Parallel 切分权重，而是依赖 `sequence_parallel` 属性触发梯度 AllReduce（`megatron/core/transformer/hyper_connection.py:314-319`）。
 
 > **核心发现 4：Routed Expert 的 fused GroupedMLP 不支持 Expert TP > 1**  
-> `TEGroupedMLP._is_fused_impl_supported()` 中明确检查：`if self.tp_group.size() > 1: return _unsupported(f"expert TP > 1 (tp_size={self.tp_group.size()})")`（`megatron/core/transformer/moe/experts.py:354-355`）。当前 fused 专家计算路径下，expert 内部不做 TP 切分。
+> `TEGroupedMLP._is_fused_impl_supported()` 中明确检查：`if self.tp_group.size() > 1: return _unsupported(f"expert TP > 1 (tp_size={self.tp_group.size()})")`（`megatron/core/transformer/moe/experts.py:403-404`）。当前 fused 专家计算路径下，expert 内部不做 TP 切分。
 
 > [!update] 方法更名（结论不变）：该方法在 `ee3f1ffa…` 下名为 `_is_fusable()`，PR #4636（`6815c0fef`，GEMM+SwiGLU fused MLP 合并）将其更名为 `_is_fused_impl_supported()`；`tp_group.size() > 1` 的拒绝分支逐字保留。
 
@@ -56,7 +57,7 @@ title: "DeepSeek-V4 Tensor Parallel 切分方案深度解析"
 | CSAIndexer | ColumnParallel | **Duplicated** (parallel_mode="duplicated") | `megatron/core/transformer/experimental_attention_variant/csa.py:1479,1496` |
 | mHC mapping_proj | Column+Row Parallel | **nn.Linear**，SP 梯度同步 | `megatron/core/transformer/hyper_connection.py:250` |
 | MoE Shared Expert | 标准 TP 切分 | 标准 TP 切分 (pg_collection.tp) | `megatron/core/transformer/moe/shared_experts.py:129` |
-| MoE Routed Expert (fused) | ETP 切分 | **不支持 TP > 1** | `megatron/core/transformer/moe/experts.py:354-355` |
+| MoE Routed Expert (fused) | ETP 切分 | **不支持 TP > 1** | `megatron/core/transformer/moe/experts.py:403-404` |
 
 ## 二 为什么这么设计：V4 为什么强制 TP=1
 
@@ -146,14 +147,14 @@ V3/V4 的每 token 激活参数量很小（V3 37B，V4 的 CSA/HCA 进一步降�
 -   **Attention 层**：由于 MLA 的 KV 共享和 CSA 的压缩，Attention 的激活占用已经很小
 -   **MoE 层**：Routed Expert 通过 EP 已经将 expert 分布到不同 GPU，TP 进一步切分 expert 的边际收益有限
 
-在 `megatron/core/transformer/moe/experts.py:354-355` 中，`TEGroupedMLP` 明确拒绝 `TP > 1`：
+在 `megatron/core/transformer/moe/experts.py:403-404` 中，`TEGroupedMLP` 明确拒绝 `TP > 1`：
 
 ```
 if self.tp_group.size() > 1:
     return _unsupported(f"expert TP > 1 (tp_size={self.tp_group.size()})")
 ```
 
-来源：megatron/core/transformer/moe/experts.py:354-355
+来源：megatron/core/transformer/moe/experts.py:403-404
 
 > **这表明 NVIDIA/Megatron-LM 团队在 fused kernel 路径上也不认为 Expert TP 是当前 priority**。
 
@@ -176,7 +177,7 @@ if self.tp_group.size() > 1:
 > **接口预留的深意**：ModuleSpec 层面保留了 Column/Row Parallel 接口（`backend.column_parallel_linear()` / `backend.row_parallel_linear()`），但 `__init__` 中加了 `assert tp == 1`——**接口为未来预留，但当前实现选择不走 TP 路径**。这是一种务实的工程策略：不阻塞未来的 TP 扩展，但也不在当前引入未经验证的复杂切分逻辑。
 
 > [!note] 推断
-> **源码陈述的是事实**：`assert get_pg_size(tp) == 1` 及其消息（`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:90-92`）、Compressor/Indexer 的 `parallel_mode="duplicated"`（`megatron/core/transformer/experimental_attention_variant/csa.py:1074`、`:1087`、`:1488`、`:1505`）、`q_down_proj` 的 `tp_group=None`（`:537`）、`o_group_proj` 是裸 `nn.Parameter`（`:179-186`）、`TEGroupedMLP` 拒绝 expert TP>1（`megatron/core/transformer/moe/experts.py:354-355`）、以及接口层保留的 `gather_output=False` / `input_is_parallel=True` / `tp_comm_buffer_name`。
+> **源码陈述的是事实**：`assert get_pg_size(tp) == 1` 及其消息（`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:90-92`）、Compressor/Indexer 的 `parallel_mode="duplicated"`（`megatron/core/transformer/experimental_attention_variant/csa.py:1074`、`:1087`、`:1488`、`:1505`）、`q_down_proj` 的 `tp_group=None`（`:537`）、`o_group_proj` 是裸 `nn.Parameter`（`:179-186`）、`TEGroupedMLP` 拒绝 expert TP>1（`megatron/core/transformer/moe/experts.py:403-404`）、以及接口层保留的 `gather_output=False` / `input_is_parallel=True` / `tp_comm_buffer_name`。
 > **§二.1–§二.5 把这些事实串成"因此 V4 选择 TP=1"的因果链，是本页的重建**：源码没有任何注释、commit message 或 issue 说明这条断言的动机。§二.5 的"设计者可能评估后认为…"、§二.2 的"设计者认为在压缩路径上保持完整输入比 TP 切分更划算"、以及 §二.4 引用的 V3 "No tensor parallelism needed" 与 V4 的关联，全部属于此类。要引用这几条判断，请回到上面列出的 locator，不要引用本节的因果叙述。
 
 ## 三 Attention 层：TP size = 1 的设计约束
@@ -438,7 +439,7 @@ def _is_fused_impl_supported(self) -> bool:
     # ...
 ```
 
-来源：megatron/core/transformer/moe/experts.py:323-355
+来源：megatron/core/transformer/moe/experts.py:372-404
 
 > **关键限制**：当 `use_transformer_engine_op_fuser=True` 启用 fused GroupedMLP 时，若 expert TP size > 1，fused kernel 会被禁用，回退到非 fused 路径。在非 fused 路径下，expert 的 TP 切分理论上可行，但当前 dev 分支的默认配置和测试路径均基于 fused kernel（性能关键）。
 
@@ -639,7 +640,7 @@ self.linear_proj = build_module(..., tp_comm_buffer_name='proj', ...)
 **⑤ 与 CP 同开时另有两条格式约束。** `cp_size > 1` 时 `qkv_format` 必须是 `'thd'`——`raise ValueError("DSv4 Hybrid with CP requires qkv_format='thd'.")`（`:268`）；且 CP 分区必须是 contiguous——`raise ValueError("DSv4 THD CP requires a contiguous CP partition.")`（`:271`）。详见姊妹页 [[35_deepseek_v4_context_parallel_analysis]]。
 
 **⑥ fused GroupedMLP 的 TP 拒绝只是一长串拒绝条件之一，而"被拒绝"的代价不止少一层融合。**
-`_is_fused_impl_supported` 的 docstring 说明了它为什么要逐条打 warning：「Logs a warning for each unsatisfied condition to aid debugging (e.g. **when CUDA graph fails because the CuTe DSL fused kernel was not activated and GroupedLinear falls back to `tolist()`**)」（`megatron/core/transformer/moe/experts.py:323-329`）。同一函数里，`tp_group.size() > 1`（`:354-355`）与"TE 未安装 / 缺 `pytorch.ops` / 缺 `GroupedLinear`·`ScaledSwiGLU` / 版本 < 2.14.0"（`:341-351`）、细粒度激活 offload（`:356-357`）、`moe_apply_probs_on_input`（`:358-359`）、`linear_fc1`·`linear_fc2` 不是 `te.pytorch.GroupedLinear`（`:362-365`）并列。→ 开 expert TP 不是"少一点 kernel 融合"，而是可能把 CUDA Graph 一起弄丢。
+`_is_fused_impl_supported` 的 docstring 说明了它为什么要逐条打 warning：「Logs a warning for each unsatisfied condition to aid debugging (e.g. **when CUDA graph fails because the CuTe DSL fused kernel was not activated and GroupedLinear falls back to `tolist()`**)」（`megatron/core/transformer/moe/experts.py:372-378`）。同一函数里，`tp_group.size() > 1`（`:403-404`）与"TE 未安装 / 缺 `pytorch.ops` / 缺 `GroupedLinear`·`ScaledSwiGLU` / 版本 < 2.14.0"（`:390-400`）、细粒度激活 offload（`:405-406`）、`moe_apply_probs_on_input`（`:407-408`）、`linear_fc1`·`linear_fc2` 不是 `te.pytorch.GroupedLinear`（`:411-414`）并列。→ 开 expert TP 不是"少一点 kernel 融合"，而是可能把 CUDA Graph 一起弄丢。
 
 **⑦ `expt_tp` 默认跟随 `tp`，在 DSv4 下是巧合式安全。** §六.3 已说明：不显式设 expert TP 时 `expt_tp == tp`；DSv4 因 ① 强制 `tp == 1`，所以 ⑥ 的 TP 拒绝分支永远不触发。→ 但这份安全依赖于 ①：一旦 TP=1 被放宽，`expt_tp` 会跟着变大并**静默**触发 fused 回退。
 
@@ -656,7 +657,7 @@ self.linear_proj = build_module(..., tp_comm_buffer_name='proj', ...)
 `_is_fusable` → `_is_fused_impl_supported` 的更名来自 `6815c0fef`（#4636，2026-05-15，commit message 即 "Combine GEMM + SwiGLU fused MLP PRs (3890, 4071, 4095, 4219, 4311, 4324) → main"）——一次把六个 GEMM+SwiGLU 融合 PR 合并进主线的动作，而 `tp_group.size() > 1` 的拒绝分支**逐字保留**（§一 的 `[!update]`）。→ 推断：投入方向是**把单 rank 的 MoE 算得更快**，而不是把 expert 切到更多 rank 上——这与 §二.4 "弱化 TP、强化 EP+DP" 的读法同向。
 
 **③ fused 路径的门槛在抬高，而且正在为 DSv4 专门开路。**
-同一函数现在要求 `is_te_min_version("2.14.0")`（`megatron/core/transformer/moe/experts.py:350-351`）并检查 `GroupedLinear` / `ScaledSwiGLU` 两个 TE op 存在（`:347-348`）；注释里明确记了 DSv4 的接法：「**Clamped SwiGLU (e.g. DSv4)** routes through `ScaledClampedQGeGLU` with alpha=1.0, since the cuDNN geglu kernel is a superset of swiglu」（`:367-371`）。→ 推断：DSv4 的 MoE 正被专门接进 fused 路径，这反过来进一步降低了给它加 expert TP 的动机（因为 ⑥ 里 expert TP 与 fused 互斥）。
+同一函数现在要求 `is_te_min_version("2.14.0")`（`megatron/core/transformer/moe/experts.py:399-400`）并检查 `GroupedLinear` / `ScaledSwiGLU` 两个 TE op 存在（`:396-397`）；注释里明确记了 DSv4 的接法：「**Clamped SwiGLU (e.g. DSv4)** routes through `ScaledClampedQGeGLU` with alpha=1.0, since the cuDNN geglu kernel is a superset of swiglu」（`:416-420`）。→ 推断：DSv4 的 MoE 正被专门接进 fused 路径，这反过来进一步降低了给它加 expert TP 的动机（因为 ⑥ 里 expert TP 与 fused 互斥）。
 
 **④ 接口预留仍在，但仅止于"预留"。** `tp_comm_buffer_name`（§八.3）、`gather_output=False`、`input_is_parallel=True` 在基线下逐条仍在（§三.1）。→ 推断：这组接口保证"将来放开 TP 时不必重写模块"，但它们本身不构成"将来会放开"的证据。
 

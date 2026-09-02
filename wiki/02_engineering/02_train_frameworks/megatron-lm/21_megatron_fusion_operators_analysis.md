@@ -4,7 +4,8 @@ title: "Megatron-LM 融合算子优化 深度分析"
 
 # Megatron-LM 融合算子优化 深度分析
 
-> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）。
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）。
+> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
 > **重定基线**：2026-08-28 由 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 
 **Date**: 2026-05-12
@@ -37,15 +38,15 @@ title: "Megatron-LM 融合算子优化 深度分析"
 → 判据：融合换来的是吞吐，赔上的是"编译后端在某个硬件 × 模型组合上可能直接挂死"。既然这种失败无法在框架里预测，就必须留一个把整层融合退回 eager 的总开关——这也是 `jit_fuser` 至今是一个**可变全局量**而不是 import 常量的原因。
 
 **③ 每个融合自带"为什么不可用"，构造期拒绝，而不是运行期悄悄降级。**
-新一批 Triton 融合把这条做到最细：`fused_mrope` 同时导出 `get_fused_mrope_unavailable_reason` / `get_fused_mrope_thd_unavailable_reason`（`megatron/core/fusions/fused_mrope.py:149`、`:176`）、`can_launch_fused_mrope` / `can_launch_fused_mrope_thd`（`:245`、`:254`）与构造期探测 `is_fused_mrope_available()`（`:851`）；`fused_pre_gated_delta_rule` 的模块 docstring 直接列出被拒绝的输入：「Unsupported cases are rejected at the Python entry point: CPU tensors, conv bias, and ``use_qk_l2norm=False``」（`megatron/core/fusions/fused_pre_gated_delta_rule.py:13-16`）。校验的完整样例是 `apply_rope_fusion`：`megatron/core/transformer/transformer_config.py:2818-2856` 依次探测 Triton mRoPE → TE ≥ 2.3 →（TE ≥ 1.4 的）`fused_apply_rotary_pos_emb`，全不可用才 `raise ValueError("apply_rope_fusion is not available. Please install TE >= 1.4 or Triton for fused mRoPE.")`。
+新一批 Triton 融合把这条做到最细：`fused_mrope` 同时导出 `get_fused_mrope_unavailable_reason` / `get_fused_mrope_thd_unavailable_reason`（`megatron/core/fusions/fused_mrope.py:149`、`:176`）、`can_launch_fused_mrope` / `can_launch_fused_mrope_thd`（`:245`、`:254`）与构造期探测 `is_fused_mrope_available()`（`:851`）；`fused_pre_gated_delta_rule` 的模块 docstring 直接列出被拒绝的输入：「Unsupported cases are rejected at the Python entry point: CPU tensors, conv bias, and ``use_qk_l2norm=False``」（`megatron/core/fusions/fused_pre_gated_delta_rule.py:13-16`）。校验的完整样例是 `apply_rope_fusion`：`megatron/core/transformer/transformer_config.py:2845-2883` 依次探测 Triton mRoPE → TE ≥ 2.3 →（TE ≥ 1.4 的）`fused_apply_rotary_pos_emb`，全不可用才 `raise ValueError("apply_rope_fusion is not available. Please install TE >= 1.4 or Triton for fused mRoPE.")`。
 → 判据：融合 kernel 的数值与布局假设很硬（§5.4 的 hidden-size 白名单是最直白的例子），运行期悄悄走偏比构造期报错贵得多。
 
 **④ 同一件事故意保留多个后端，而不是收敛到一个。**
 mHC 的融合 kernel 是三级：模块 docstring 自陈「Uses Triton and cuda.tile (cuTile) kernels when available, with PyTorch reference implementations as fallback」（`megatron/core/fusions/fused_mhc_kernels.py:3-8`），`:38-58` 提供 `MHC_FORCE_BACKEND=auto|native|triton|cutile` 强制选择，`:66-97` 是 `_CUTILE_AVAILABLE` / `_TRITON_AVAILABLE` 双探测，`:134-147` 还能单独关断某一后端（完整记录见 §8.5）。
-→ 判据：同一模块内不同 kernel 的最优后端并不一致——`use_fused_mhc` 的 docstring 逐字写明「Triton for Sinkhorn and H_post_bda backward when available, cuTile for the remaining fused kernels when available, then native torch fallback」（`megatron/core/transformer/transformer_config.py:1255-1268`）。把"选后端"推到运行期，才可能对每个 kernel 各取所长。
+→ 判据：同一模块内不同 kernel 的最优后端并不一致——`use_fused_mhc` 的 docstring 逐字写明「Triton for Sinkhorn and H_post_bda backward when available, cuTile for the remaining fused kernels when available, then native torch fallback」（`megatron/core/transformer/transformer_config.py:1266-1279`）。把"选后端"推到运行期，才可能对每个 kernel 各取所长。
 
 > [!note] 推断
-> 上面四处的理由都能落到源码注释或 commit message；**"融合层被设计成可整层替换的后端 + 构造期拒绝"这条总原则由本页归纳**，源码没有任何一处这样陈述。依据是三个可核验事实：装饰器可在运行期被换成 no-op（`megatron/core/jit.py:16-30`）、每个融合各自提供 available/unavailable 探测（`megatron/core/fusions/fused_mrope.py:149-254`、`megatron/core/fusions/fused_mhc_kernels.py:66-97`）、构造期集中校验并 `raise`（`megatron/core/transformer/transformer_config.py:2818-2856`）。要引用这条判断，请回到这三个 locator，不要引用本段推断。
+> 上面四处的理由都能落到源码注释或 commit message；**"融合层被设计成可整层替换的后端 + 构造期拒绝"这条总原则由本页归纳**，源码没有任何一处这样陈述。依据是三个可核验事实：装饰器可在运行期被换成 no-op（`megatron/core/jit.py:16-30`）、每个融合各自提供 available/unavailable 探测（`megatron/core/fusions/fused_mrope.py:149-254`、`megatron/core/fusions/fused_mhc_kernels.py:66-97`）、构造期集中校验并 `raise`（`megatron/core/transformer/transformer_config.py:2845-2883`）。要引用这条判断，请回到这三个 locator，不要引用本段推断。
 
 
 ## 3. 为什么有效？
@@ -224,8 +225,8 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 
 | 融合 | 文件 | 融合了什么 | 开关 / 门控 |
 |------|------|-----------|------------|
-| **Fused mRoPE** | `megatron/core/fusions/fused_mrope.py` | Triton 融合的多模态 RoPE：直接消费三轴 mRoPE 频率 `[3, batch, seq, rotary_dim/2]`，对 BSHD 张量就地做旋转，同时覆盖 Qwen2-VL 的 section-based 布局与 Qwen3.5-VL 的 stride-3 交错布局（模块 docstring `:3-9`）。BSHD / THD 各一个 autograd Function（`:679`、`:721`），公开入口 `fused_apply_mrope`（`:781`）与 `fused_apply_mrope_thd`（`:809`） | `apply_rope_fusion`（`megatron/core/transformer/transformer_config.py:582`）；构造期经 `is_fused_mrope_available()`（`megatron/core/fusions/fused_mrope.py:851`）探测，校验分支在 `megatron/core/transformer/transformer_config.py:2818-2856`；导入点 `megatron/core/models/common/embeddings/rope_utils.py:34-40` |
-| **Fused Pre-Gated-Delta-Rule** | `megatron/core/fusions/fused_pre_gated_delta_rule.py` | 把 GDN 的稠密 `qkvzba` 投影一次拆成 `query/key/value/gate/beta/g`：前向把 QK、V、G/Beta 保持为独立的 streamed scope，`Z` 以 `qkvzba` 的 strided view 返回而**不物化**成连续 gate 张量；反向镜像同样的 scope，depthwise conv 的梯度委托给 `causal_conv1d` 后端；packed THD 走单独的 QK/V causal-conv kernel，使稠密 BSHD kernel 里不出现 packed 元数据分支（模块 docstring `:3-17`）。autograd Function `FusedPreGatedDeltaRuleFunction`（`:2401`），公开入口 `fused_streamed_pre_gated_delta_rule`（`:2571`） | `gdn_pre_gated_delta_rule_fusion`（`megatron/core/transformer/transformer_config.py:446`）；调用点 `megatron/core/ssm/gated_delta_net/gdn.py:318-350` 与 `:575-618` |
+| **Fused mRoPE** | `megatron/core/fusions/fused_mrope.py` | Triton 融合的多模态 RoPE：直接消费三轴 mRoPE 频率 `[3, batch, seq, rotary_dim/2]`，对 BSHD 张量就地做旋转，同时覆盖 Qwen2-VL 的 section-based 布局与 Qwen3.5-VL 的 stride-3 交错布局（模块 docstring `:3-9`）。BSHD / THD 各一个 autograd Function（`:679`、`:721`），公开入口 `fused_apply_mrope`（`:781`）与 `fused_apply_mrope_thd`（`:809`） | `apply_rope_fusion`（`megatron/core/transformer/transformer_config.py:584`）；构造期经 `is_fused_mrope_available()`（`megatron/core/fusions/fused_mrope.py:851`）探测，校验分支在 `megatron/core/transformer/transformer_config.py:2845-2883`；导入点 `megatron/core/models/common/embeddings/rope_utils.py:34-40` |
+| **Fused Pre-Gated-Delta-Rule** | `megatron/core/fusions/fused_pre_gated_delta_rule.py` | 把 GDN 的稠密 `qkvzba` 投影一次拆成 `query/key/value/gate/beta/g`：前向把 QK、V、G/Beta 保持为独立的 streamed scope，`Z` 以 `qkvzba` 的 strided view 返回而**不物化**成连续 gate 张量；反向镜像同样的 scope，depthwise conv 的梯度委托给 `causal_conv1d` 后端；packed THD 走单独的 QK/V causal-conv kernel，使稠密 BSHD kernel 里不出现 packed 元数据分支（模块 docstring `:3-17`）。autograd Function `FusedPreGatedDeltaRuleFunction`（`:2401`），公开入口 `fused_streamed_pre_gated_delta_rule`（`:2571`） | `gdn_pre_gated_delta_rule_fusion`（`megatron/core/transformer/transformer_config.py:448`）；调用点 `megatron/core/ssm/gated_delta_net/gdn.py:318-350` 与 `:575-618` |
 
 > 这两个文件都是 **Triton 自研 kernel**（`fused_mrope.py:20-31` 与 `fused_pre_gated_delta_rule.py:23-24` 直接 `import triton`），因此 §4.6 那张"实现层次"表的 Triton 行应当再加上这两项。
 
@@ -256,23 +257,23 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 ### 8.1 TE Op-Fuser：把 grouped MLP 的两次 GEMM + 激活融成一条算子链
 
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
-> 新增 `use_transformer_engine_op_fuser`（`megatron/core/transformer/transformer_config.py:591`，#4636）。这是一条全新的 MoE grouped MLP 融合**实现路径**：不再用 `@jit_fuser` 包激活，而是借 **Transformer Engine 的 op-fuser API**（`te.pytorch.ops.Sequential`）把 `FC1 GroupedLinear → 激活 → FC2 GroupedLinear` 整条链交给 TE 一并融合（含跨 GEMM 的 epilogue 融合）。
-> - 入口：`TEGroupedMLP._is_fused_impl_supported`（`megatron/core/transformer/moe/experts.py:323`）做能力探测，`_make_fused_ops`（`megatron/core/transformer/moe/experts.py:410`）构造融合算子链；`_with_fused_impl`（`:281`）为开关。
+> 新增 `use_transformer_engine_op_fuser`（`megatron/core/transformer/transformer_config.py:593`，#4636）。这是一条全新的 MoE grouped MLP 融合**实现路径**：不再用 `@jit_fuser` 包激活，而是借 **Transformer Engine 的 op-fuser API**（`te.pytorch.ops.Sequential`）把 `FC1 GroupedLinear → 激活 → FC2 GroupedLinear` 整条链交给 TE 一并融合（含跨 GEMM 的 epilogue 融合）。
+> - 入口：`TEGroupedMLP._is_fused_impl_supported`（`megatron/core/transformer/moe/experts.py:372`）做能力探测，`_make_fused_ops`（`megatron/core/transformer/moe/experts.py:459`）构造融合算子链；`_with_fused_impl`（`:281`）为开关。
 > - 支持条件（任一不满足回退非融合路径）：TE ≥ 2.14.0、`tp_group.size()==1`(不支持 TP)、非 fine-grained activation offloading、非 `moe_apply_probs_on_input`、FC1/FC2 均为 `te.pytorch.GroupedLinear`。
 > - 激活映射：SwiGLU → `ScaledSwiGLU`；quick-GEGLU → `ScaledClampedQGeGLU`（需 TE ≥ 2.15）。
-> - 配套新配置：`moe_single_grouped_weight` / `moe_single_grouped_bias`（`megatron/core/transformer/transformer_config.py`，把每个 expert 的权重/bias 存为 TE `GroupedTensor` 单参数，要求 `moe_grouped_gemm=True` + TE ≥ 2.14.0；`single_grouped_weight` 目前仅在 fp8+mxfp8 下验证过数值正确）；`moe_mlp_glu_interleave_size`（`megatron/core/transformer/transformer_config.py:1079`，GLU 输入改为 gate/linear **交错块**布局，专为高级融合 kernel 设计）。
+> - 配套新配置：`moe_single_grouped_weight` / `moe_single_grouped_bias`（`megatron/core/transformer/transformer_config.py`，把每个 expert 的权重/bias 存为 TE `GroupedTensor` 单参数，要求 `moe_grouped_gemm=True` + TE ≥ 2.14.0；`single_grouped_weight` 目前仅在 fp8+mxfp8 下验证过数值正确）；`moe_mlp_glu_interleave_size`（`megatron/core/transformer/transformer_config.py:1090`，GLU 输入改为 gate/linear **交错块**布局，专为高级融合 kernel 设计）。
 
 ### 8.2 Op-Fuser 激活扩展：ScaledSReLU 与 Clamped-SwiGLU
 
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
 > 在 §8.1 的 op-fuser 链上新增两种激活：
-> - **ScaledSReLU（加权 squared-ReLU）**（#4859，能力探测 `megatron/core/transformer/moe/experts.py:396-398`，构造 `:554-562`）：当 `activation_func==squared_relu` 且 `use_fused_weighted_squared_relu=True` 且非 GLU 时，用 `te.pytorch.ops.ScaledSReLU` 融合。这把 §5.6 的 `fused_weighted_squared_relu`（jit_fuser 版）进一步纳入了 TE op-fuser 路径。同时引入 `activation_recompute_in_mlp` 透传（按 TE 签名探测）。
-> - **Clamped-SwiGLU（DSv4）**（#5130，注释 `megatron/core/transformer/moe/experts.py:368-369`，门槛判定 `:387-392`，构造 `:526-536`）：带 `activation_func_clamp_value` 的 SwiGLU 复用 `ScaledClampedQGeGLU(alpha=1.0, limit=clamp, glu_linear_offset=0.0)`——因为 cuDNN 的 geglu kernel 是 swiglu 的超集（`sigmoid(alpha·x)·x`，`alpha=1.0` 即 SiLU，`alpha=1.702` 即 quick-gelu）。需 **TE ≥ 2.17.0.dev0**。这与 §5.2 提到的 "Clamped variant 防 FP8 溢出" 一脉相承，但实现从手写 clamp 改为融合 kernel 的 runtime 参数。
+> - **ScaledSReLU（加权 squared-ReLU）**（#4859，能力探测 `megatron/core/transformer/moe/experts.py:445-447`，构造 `:603-611`）：当 `activation_func==squared_relu` 且 `use_fused_weighted_squared_relu=True` 且非 GLU 时，用 `te.pytorch.ops.ScaledSReLU` 融合。这把 §5.6 的 `fused_weighted_squared_relu`（jit_fuser 版）进一步纳入了 TE op-fuser 路径。同时引入 `activation_recompute_in_mlp` 透传（按 TE 签名探测）。
+> - **Clamped-SwiGLU（DSv4）**（#5130，注释 `megatron/core/transformer/moe/experts.py:417-418`，门槛判定 `:436-441`，构造 `:575-585`）：带 `activation_func_clamp_value` 的 SwiGLU 复用 `ScaledClampedQGeGLU(alpha=1.0, limit=clamp, glu_linear_offset=0.0)`——因为 cuDNN 的 geglu kernel 是 swiglu 的超集（`sigmoid(alpha·x)·x`，`alpha=1.0` 即 SiLU，`alpha=1.702` 即 quick-gelu）。需 **TE ≥ 2.17.0.dev0**。这与 §5.2 提到的 "Clamped variant 防 FP8 溢出" 一脉相承，但实现从手写 clamp 改为融合 kernel 的 runtime 参数。
 
 ### 8.3 TEFusedDenseMLP：Dense MLP 也走 Grouped GEMM 以触发 SM100 融合
 
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
-> 新增 `TEFusedMLPWithGroupedLinear`（类定义 `megatron/core/extensions/transformer_engine.py:2892`，别名 `TEFusedDenseMLP` 在 `:3073` 赋值，#4318）与开关 `use_grouped_gemm_for_dense_mlp`（`megatron/core/transformer/transformer_config.py:920`）。**把稠密 MLP 也用 `GroupedLinear(num_groups=1)` 实现**，目的是在 **SM100+（Blackwell）+ MXFP8 recipe** 下触发 TE 的 `ForwardGroupedMLP_CuTeGEMMSwiGLU_MXFP8` 融合 kernel（FC1 GEMM + SwiGLU + 量化一体）。要求 `use_te_op_fuser=True` 且 SwiGLU 激活；spec 选择见 `megatron/core/models/gpt/gpt_layer_specs.py:554` 的 `get_mlp_module_spec_for_backend`（分支 `:573`）。
+> 新增 `TEFusedMLPWithGroupedLinear`（类定义 `megatron/core/extensions/transformer_engine.py:2905`，别名 `TEFusedDenseMLP` 在 `:3086` 赋值，#4318）与开关 `use_grouped_gemm_for_dense_mlp`（`megatron/core/transformer/transformer_config.py:923`）。**把稠密 MLP 也用 `GroupedLinear(num_groups=1)` 实现**，目的是在 **SM100+（Blackwell）+ MXFP8 recipe** 下触发 TE 的 `ForwardGroupedMLP_CuTeGEMMSwiGLU_MXFP8` 融合 kernel（FC1 GEMM + SwiGLU + 量化一体）。要求 `use_te_op_fuser=True` 且 SwiGLU 激活；spec 选择见 `megatron/core/models/gpt/gpt_layer_specs.py:554` 的 `get_mlp_module_spec_for_backend`（分支 `:573`）。
 
 ### 8.4 Frozen Linear dgrad 折叠
 
@@ -281,9 +282,9 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 
 ### 8.5 mHC 融合 kernel 重写：多后端自动选择
 
-> [!deprecated] 2026-06-16：§4.6 与 §5.6 提到的 `fused_mhc_kernels` 原描述为"cuTile/cuTile fused kernels"。#4624（`9d46c924d`，`megatron/core/fusions/fused_mhc_kernels.py`，`megatron/core/transformer/transformer_config.py:1255`）已重写为**多后端自动选择**：Sinkhorn 与 H_post_bda 反向优先 Triton，其余 fused kernel 用 cuTile，否则回退原生 torch。`use_fused_mhc` 不再因 cuTile 缺失而**静默重置为 False**（旧逻辑已删除），全 native 回退时保持开启并只发一条 rank-0 warning。hyper-connection 模块（SinkhornKnopp / H_aggregate / H_post_bda / ProjRms）相应改写。
+> [!deprecated] 2026-06-16：§4.6 与 §5.6 提到的 `fused_mhc_kernels` 原描述为"cuTile/cuTile fused kernels"。#4624（`9d46c924d`，`megatron/core/fusions/fused_mhc_kernels.py`，`megatron/core/transformer/transformer_config.py:1266`）已重写为**多后端自动选择**：Sinkhorn 与 H_post_bda 反向优先 Triton，其余 fused kernel 用 cuTile，否则回退原生 torch。`use_fused_mhc` 不再因 cuTile 缺失而**静默重置为 False**（旧逻辑已删除），全 native 回退时保持开启并只发一条 rank-0 warning。hyper-connection 模块（SinkhornKnopp / H_aggregate / H_post_bda / ProjRms）相应改写。
 >
-> **2026-08-28 重核（基线 `71092579`）：多后端结论仍然成立，§4.6 表格把 mHC 归为「CUTLASS/cuTile」单后端的写法已不准确。**证据：`megatron/core/fusions/fused_mhc_kernels.py:5`（模块 docstring 自陈 "Uses Triton and cuda.tile (cuTile) kernels when available, with PyTorch" 回退）；`:38-58` 的 `MHC_FORCE_BACKEND=auto|native|triton|cutile` 强制选择；`:66-97` 的 `_CUTILE_AVAILABLE` / `_TRITON_AVAILABLE` 双探测；`:134-147` 的 `MHC_DISABLE_TRITON` / `MHC_DISABLE_CUTILE` 关断。`use_fused_mhc` 的 docstring（`megatron/core/transformer/transformer_config.py:1255-1268`）逐字写明 "Triton for Sinkhorn and H_post_bda backward when available, cuTile for the remaining fused kernels when available, then native torch fallback"，且全 native 回退时 `use_fused_mhc` 保持开启、只发一条 rank-0 warning。该文件在旧基线之后又有两次改动：#6172（`d8b71082e`，cuTile 路径的 mHC mapping 计算保持 fp32）与 #5841（`2f2f8ebae`，EP a2a overlap 下的 mHC selective recompute + CUDA graph）。
+> **2026-08-28 重核（基线 `71092579`）：多后端结论仍然成立，§4.6 表格把 mHC 归为「CUTLASS/cuTile」单后端的写法已不准确。**证据：`megatron/core/fusions/fused_mhc_kernels.py:5`（模块 docstring 自陈 "Uses Triton and cuda.tile (cuTile) kernels when available, with PyTorch" 回退）；`:38-58` 的 `MHC_FORCE_BACKEND=auto|native|triton|cutile` 强制选择；`:66-97` 的 `_CUTILE_AVAILABLE` / `_TRITON_AVAILABLE` 双探测；`:134-147` 的 `MHC_DISABLE_TRITON` / `MHC_DISABLE_CUTILE` 关断。`use_fused_mhc` 的 docstring（`megatron/core/transformer/transformer_config.py:1266-1279`）逐字写明 "Triton for Sinkhorn and H_post_bda backward when available, cuTile for the remaining fused kernels when available, then native torch fallback"，且全 native 回退时 `use_fused_mhc` 保持开启、只发一条 rank-0 warning。该文件在旧基线之后又有两次改动：#6172（`d8b71082e`，cuTile 路径的 mHC mapping 计算保持 fp32）与 #5841（`2f2f8ebae`，EP a2a overlap 下的 mHC selective recompute + CUDA graph）。
 
 ### 8.6 Fused MLA：补齐 delayed weight-grad 钩子
 
@@ -293,9 +294,9 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 ### 8.7 DSv4 Hybrid Attention 融合 kernel
 
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
-> 新增 `apply_dsa_kernel_fusion`（`megatron/core/transformer/transformer_config.py:408`，#4894）与 `megatron/core/transformer/experimental_attention_variant/dsa_kernels.py`（DeepSeek Sparse Attention 融合 kernel 封装）。基于 **FlashMLA 稀疏前向**（`flash_mla_sparse_fwd`）+ **cuDNN-Frontend DSA**（CuTe-DSL 反向 + indexer 评分 + TRT-LLM radix top-K），覆盖三条集成路径：可微稀疏注意力 `dsa_sparse_attn`、推理 indexer 评分+top-K `indexer_topk`、训练融合 indexer-loss+稀疏注意力共享反向 `fused_indexer_sparse_attn`。**仅 SM100+（Blackwell）**；缺包时报错或可 `--no-dsa-kernel-fusion` 回退非融合 PyTorch 实现。
+> 新增 `apply_dsa_kernel_fusion`（`megatron/core/transformer/transformer_config.py:410`，#4894）与 `megatron/core/transformer/experimental_attention_variant/dsa_kernels.py`（DeepSeek Sparse Attention 融合 kernel 封装）。基于 **FlashMLA 稀疏前向**（`flash_mla_sparse_fwd`）+ **cuDNN-Frontend DSA**（CuTe-DSL 反向 + indexer 评分 + TRT-LLM radix top-K），覆盖三条集成路径：可微稀疏注意力 `dsa_sparse_attn`、推理 indexer 评分+top-K `indexer_topk`、训练融合 indexer-loss+稀疏注意力共享反向 `fused_indexer_sparse_attn`。**仅 SM100+（Blackwell）**；缺包时报错或可 `--no-dsa-kernel-fusion` 回退非融合 PyTorch 实现。
 >
-> [!contradiction] 2026-08-28（基线 `71092579`）：`apply_dsa_kernel_fusion` 这个开关本身**已被标记废弃**，语义从"布尔总开关"退化为"旧名映射"。现在的主开关是 `dsa_kernel_backend: Literal["none", "tilelang", "cudnn"] = "none"`（`megatron/core/transformer/transformer_config.py:361`）；`apply_dsa_kernel_fusion` 的类型也从 `bool` 改成 `Optional[bool] = None`（`:408`，docstring `:409-410` 自陈 "Deprecated DSv4 fused-kernel switch. Use ``dsa_kernel_backend`` instead."）。归一化逻辑在 `:1697-1723`：非 `dsv4_hybrid` 时只发 warning 并忽略；`dsv4_hybrid` 时 `True→"cudnn"`、`False→"none"`，与显式 `dsa_kernel_backend` 冲突则报错，并警告该字段未来会被删除。后端实现也已按 backend 拆成 `megatron/core/transformer/experimental_attention_variant/dsa_cudnn_kernels.py` 与 `dsa_tilelang_kernels.py`（`dsa_kernels.py` 仍在）。
+> [!contradiction] 2026-08-28（基线 `71092579`）：`apply_dsa_kernel_fusion` 这个开关本身**已被标记废弃**，语义从"布尔总开关"退化为"旧名映射"。现在的主开关是 `dsa_kernel_backend: Literal["none", "tilelang", "cudnn"] = "none"`（`megatron/core/transformer/transformer_config.py:363`）；`apply_dsa_kernel_fusion` 的类型也从 `bool` 改成 `Optional[bool] = None`（`:410`，docstring `:411-412` 自陈 "Deprecated DSv4 fused-kernel switch. Use ``dsa_kernel_backend`` instead."）。归一化逻辑在 `:1714-1740`：非 `dsv4_hybrid` 时只发 warning 并忽略；`dsv4_hybrid` 时 `True→"cudnn"`、`False→"none"`，与显式 `dsa_kernel_backend` 冲突则报错，并警告该字段未来会被删除。后端实现也已按 backend 拆成 `megatron/core/transformer/experimental_attention_variant/dsa_cudnn_kernels.py` 与 `dsa_tilelang_kernels.py`（`dsa_kernels.py` 仍在）。
 
 ### 8.8 勘误：GDN 统一 A2A 已被回退
 
@@ -306,9 +307,25 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 ### 8.9 TE 版本依赖（影响融合可用性）
 
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
-> TE 依赖经 #4682（2.15.0，`815c83d9b`）、#4992（2.16.0，`6e091e1b6`）多次 bump。对融合的实际影响：op-fuser 路径需 **TE ≥ 2.14.0**（`megatron/core/transformer/moe/experts.py:350`）；`ScaledClampedQGeGLU`（quick-GEGLU 融合）需 **TE ≥ 2.15**（`:393-395`，以 `hasattr(te_ops, "ScaledClampedQGeGLU")` 探测，报错文案写的就是 "quick_gelu needs TE >= 2.15"）；Clamped-SwiGLU 走 `ScaledClampedQGeGLU` 需 **TE ≥ 2.17.0.dev0**（`:389-390` 的 `is_te_min_version("2.17.0.dev0")`，见 §8.2）。
+> TE 依赖经 #4682（2.15.0，`815c83d9b`）、#4992（2.16.0，`6e091e1b6`）多次 bump。对融合的实际影响：op-fuser 路径需 **TE ≥ 2.14.0**（`megatron/core/transformer/moe/experts.py:399`）；`ScaledClampedQGeGLU`（quick-GEGLU 融合）需 **TE ≥ 2.15**（`:442-444`，以 `hasattr(te_ops, "ScaledClampedQGeGLU")` 探测，报错文案写的就是 "quick_gelu needs TE >= 2.15"）；Clamped-SwiGLU 走 `ScaledClampedQGeGLU` 需 **TE ≥ 2.17.0.dev0**（`:438-439` 的 `is_te_min_version("2.17.0.dev0")`，见 §8.2）。
 >
 > [!contradiction] 2026-08-28："bump 写在 `pyproject.toml`" 这半句在基线 `71092579` 下**核不上**——`pyproject.toml:87` 仍是 `"transformer-engine[pytorch,core_cu13]>=2.9.0a0,<2.12.0"`，与 `ee3f1ff`、`232c478d4` **逐字相同**；`[tool.uv.sources]` 的 TE git rev（`pyproject.toml:227`）在三处基线也都是 `f031cf87bd054c7558b887df7bed93975456667f`。#4682/#4992 确实是 `71092579` 的祖先、当时改的也确实是 `pyproject.toml`，但其效果已被后续 dev↔main 合并覆盖回去。因此**当前基线下可核验的 TE 版本门槛只有代码里的 `is_te_min_version` / `hasattr` 探测**（上一段的 `experts.py` 三处），不是 `pyproject.toml` 的 pin。
+
+### 8.10 GroupedTensor 路径：把分组 GEMM 从 op-fuser 解耦出来（2026-09-01 增量）
+
+> [!update] 2026-09-01（基线 `85902ef59`，#6847 "Support device-initiated grouped linear without TE op fuser"）
+
+**新增一个正交开关**。`moe_use_grouped_tensor: bool = False`（`megatron/core/transformer/transformer_config.py:942`）选择 Transformer Engine 原生的 GroupedTensor 路径来做 MoE 分组 GEMM。字段 docstring 自陈了这条路径的关键性质：它用 **padded expert segment + CUDA split metadata**，"so it can be captured in CUDA graphs"（`:943-947`）。
+
+**为什么要把它从 op-fuser 里拆出来**。此前"可被图捕获的分组 GEMM"只能经由 TE op-fuser 得到——想要图捕获就必须连带接受整条 op-fuser 融合链。拆分后二者变成偏序而非等价：op-fuser 仍然**蕴含**它（`use_transformer_engine_op_fuser and moe_grouped_gemm` 会自动置 `moe_use_grouped_tensor = True`，`:1648-1649`），但现在可以单独打开 GroupedTensor 而不启用 op-fuser。这正是 whole-MoE CUDA Graph 那条与条件（见 [[23_megatron_precision_cudagraph_fusion_analysis]] §8.5）能被逐项满足的前提。
+
+**约束链**（全部在 `__post_init__`）：
+- `moe_use_grouped_tensor=True` 要求 `moe_grouped_gemm=True`，否则 `ValueError("moe_use_grouped_tensor=True requires moe_grouped_gemm=True.")`（`megatron/core/transformer/transformer_config.py:1651-1652`）；
+- `moe_single_grouped_weight` / `moe_single_grouped_bias`（把各专家权重/偏置存成单个 GroupedTensor 参数）都进一步要求它为真（`:949-958`、`:2149-2150`）。
+
+**"device-initiated"落在哪一行**。`TEGroupedMLP` 新增静态方法 `_apply_packed_bias(...)`，docstring 一句话点题："Apply a packed expert bias **without reading token counts on the host**"（`megatron/core/transformer/moe/experts.py:307`）。旧路径要把 `tokens_per_expert` 取回 host 才能切分偏置；新路径把它保持在 device 上（`:739-747` 统一转成 device 上的 `int64` 张量），于是整段没有 host 同步点——**没有 host 同步正是能进 CUDA Graph 的硬前提**，与本节其余融合"省 kernel 启动"的收益不是一回事。
+- 量化对齐也随之生效：`_use_grouped_tensor` 与 `fp8`/`fp4` 并列触发 `get_align_size_for_quantization(config)`（`:295-299`）。
+- 走 op-fuser 的 MoE 路径若未开该开关会直接抛错："The Transformer Engine operation-fuser MoE path requires moe_use_grouped_tensor=True."（`:749-752`）。
 
 ## 9. 约束
 
@@ -318,7 +335,7 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 
 - **整层融合可以被一个旋钮关掉**：`--disable-jit-fuser` 把 `jit_fuser` 换成 `noop_decorator`（`megatron/core/jit.py:27-30`，接线 `megatron/training/global_vars.py:163-164`），§4.1 描述的所有激活融合随之退回 eager。这个旋钮的存在本身来自一次真实的 Blackwell 挂死（§2②）。
 - **LayerNorm 融合有 hidden-size 白名单**：不在表内即不能用 persist kernel（`megatron/core/fusions/fused_layer_norm.py:73`、`:100-101`）；persist 与 Apex 融合都不可用时构造期 `raise ValueError('Apex must be installed to use FusedLayerNorm.')`（`:103-105`），没有纯 PyTorch 兜底。
-- **Triton fused mRoPE 只支持 split-half RoPE**：源码注释写明「Triton fused mRoPE supports split-half RoPE only. Keep rotary_interleaved configs on the TE validation path so the TE >= 2.3 check still applies.」（`megatron/core/transformer/transformer_config.py:2825-2827`）；因此 `rotary_interleaved` 配置会绕回 TE 路径并要求 TE ≥ 2.3.0（`:2836-2841`）。
+- **Triton fused mRoPE 只支持 split-half RoPE**：源码注释写明「Triton fused mRoPE supports split-half RoPE only. Keep rotary_interleaved configs on the TE validation path so the TE >= 2.3 check still applies.」（`megatron/core/transformer/transformer_config.py:2852-2854`）；因此 `rotary_interleaved` 配置会绕回 TE 路径并要求 TE ≥ 2.3.0（`:2863-2868`）。
 - **op-fuser 路径的五条前置**（TE ≥ 2.14.0、`tp_group.size()==1`、非 fine-grained offloading、非 `moe_apply_probs_on_input`、FC1/FC2 均为 `te.pytorch.GroupedLinear`）任一不满足即回退非融合路径，见 §8.1。
 - **TE 版本门槛只能从代码探测读**：`pyproject.toml` 的 pin 在当前基线下核不上，唯一可核验的是 `experts.py` 里的 `is_te_min_version` / `hasattr` 探测——见 §8.9 的 `[!contradiction]`。
 
@@ -326,8 +343,8 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 
 - **数值精度**：§4.2 的 tanh / sigmoid 近似激活是显式的精度换速度；§4.3 的 `fp8_input_store` 是显式的精度换显存。两者都改变数值，不是纯粹的等价变换。
 - **确定性**：Pre-GDR 融合是**非确定性**的。`deterministic_mode=True` 与它同开时构造期直接报错：「Pre-GDR fusion is non-deterministic, but deterministic_mode=True. Disable gdn_pre_gated_delta_rule_fusion or deterministic_mode.」（`megatron/core/ssm/gated_delta_net/gdn.py:38-43`）。
-- **覆盖面不完整**：`gdn_pre_gated_delta_rule_fusion` 尚未支持 KDA 变体，构造期 `NotImplementedError("gdn_pre_gated_delta_rule_fusion is not implemented for KDA yet.")`（`megatron/core/transformer/transformer_config.py:1938`）。
-- **与并行/布局的耦合**：Pre-GDR 融合在 chunkwise CP 下要求 `micro_batch_size == 1`（SBHD 输入）且与 `gdn_conv_pad_alignment` 互斥——后者的理由源码写明是「Padding chunk-local causal-conv inputs can change later chunk numerics.」（`megatron/core/ssm/gated_delta_net/gdn.py:318-328`；配置侧同义说明在 `megatron/core/transformer/transformer_config.py:449-452`）。
+- **覆盖面不完整**：`gdn_pre_gated_delta_rule_fusion` 尚未支持 KDA 变体，构造期 `NotImplementedError("gdn_pre_gated_delta_rule_fusion is not implemented for KDA yet.")`（`megatron/core/transformer/transformer_config.py:1955`）。
+- **与并行/布局的耦合**：Pre-GDR 融合在 chunkwise CP 下要求 `micro_batch_size == 1`（SBHD 输入）且与 `gdn_conv_pad_alignment` 互斥——后者的理由源码写明是「Padding chunk-local causal-conv inputs can change later chunk numerics.」（`megatron/core/ssm/gated_delta_net/gdn.py:318-328`；配置侧同义说明在 `megatron/core/transformer/transformer_config.py:451-454`）。
 - **入口处被硬拒绝的输入**：CPU 张量、conv bias、`use_qk_l2norm=False`（`megatron/core/fusions/fused_pre_gated_delta_rule.py:13-16`）。
 
 ### 9.3 不变量
@@ -342,7 +359,7 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 > [!note] 推断
 > 本节由**本页已有的 `[!update]` / `[!contradiction]` / `[!deprecated]` 记录**（均带 PR 号）与**当前基线里的 `TODO` / `FIXME` / `deprecated` 注释**共同锚定；方向判断属本页推断，不是源码自陈的路线图。
 
-- **单开关正在被"后端枚举"取代**。DSA 融合的主开关已从布尔 `apply_dsa_kernel_fusion` 换成 `dsa_kernel_backend: Literal["none","tilelang","cudnn"]`（`megatron/core/transformer/transformer_config.py:361`），旧字段退化为映射并自陈 deprecated（`:408-410`，归一化 `:1697-1723`，见 §8.7 的 `[!contradiction]`）；mHC 早一步走完同一条路（三级后端 + `MHC_FORCE_BACKEND`，§8.5）。→ "一个融合 = 一个 bool" 的时代在结束，后续新融合大概率一上来就是多后端枚举。
+- **单开关正在被"后端枚举"取代**。DSA 融合的主开关已从布尔 `apply_dsa_kernel_fusion` 换成 `dsa_kernel_backend: Literal["none","tilelang","cudnn"]`（`megatron/core/transformer/transformer_config.py:363`），旧字段退化为映射并自陈 deprecated（`:410-412`，归一化 `:1714-1740`，见 §8.7 的 `[!contradiction]`）；mHC 早一步走完同一条路（三级后端 + `MHC_FORCE_BACKEND`，§8.5）。→ "一个融合 = 一个 bool" 的时代在结束，后续新融合大概率一上来就是多后端枚举。
 - **Triton 正在成为自研融合的默认载体**。本轮新增的两个融合文件（§5.7）都是纯 Triton；`megatron/core/fusions/` 里 Triton 实现已覆盖 pad-routing-map、indices-converter、MLA RoPE、mRoPE、pre-GDR、mHC 的一部分。→ §4.6 表里 "Triton" 一行的份额还会继续扩大。
 - **Apex 硬依赖尚未拆除**：`# TODO: Add pytorch only layer norm`（`megatron/core/fusions/fused_layer_norm.py:104`）是这条路上唯一明写的待办。→ 在它被做掉之前，§9.1 的 LayerNorm 构造期报错就一直存在。
 - **Blackwell 融合核仍在施工**：`megatron/core/fusions/linear_cross_entropy/blackwell/` 下留着多处 `FIXME` —— `entry.py:353`（"implement different backward methods"）、`fwd_mainloop.py:168`/`:227`/`:252` 与 `bwd_partial_dlogits.py:157`/`:160`/`:219`（block swizzling 与 2-CTA 分支）。→ 这块 kernel 的调优空间尚未收敛，详见 [[24_megatron_linear_cross_entropy_analysis]]。

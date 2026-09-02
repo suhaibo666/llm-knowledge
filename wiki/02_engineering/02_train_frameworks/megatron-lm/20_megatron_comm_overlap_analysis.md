@@ -4,10 +4,11 @@ title: "Megatron-Core 通信掩盖（Communication Overlap）技术详解"
 
 # Megatron-Core 通信掩盖（Communication Overlap）技术详解
 
-> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）。
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）。
+> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本轮增量只触及 `megatron/` 下 20 个文件，本页受影响的 7 处 `path:line` 引用已逐条在新基线下打开核对并改写行号——`megatron/training/training.py` 整体后移 182 行、`megatron/core/transformer/transformer_config.py` 后移 2 行、`megatron/core/transformer/moe/token_dispatcher.py` 后移 1 行，`megatron/core/extensions/transformer_engine.py` 被引区间（`:815-848`、`:1072-1073`）**逐字未动**。**机制正文一字未改**：本轮 7 个提交（DSA FLOPs 计入、device-initiated grouped linear、Paged Stash × TE 全 MoE CUDA graph、hybrid recompute / MTP 部分图捕获）没有一条改动本页描述的通信掩盖机制；`token_dispatcher.py` 唯一的改动是 `_HybridEPManager` 把量化对齐从 `if fp8 or fp4` 改成 `if get_align_size_for_quantization(...) > 0`，属 grouped GEMM 量化口径，与 A2A 掩盖无关。
 > **重定基线**：2026-08-28 由 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
+> **最近更新**：2026-09-01。仅按新基线重钉页头与 7 处引用行号；章节顺序与机制正文未改。
 
 ---
 
@@ -41,7 +42,7 @@ Megatron-Core 在训练大规模模型时，通信（AllGather/ReduceScatter/All
 → 判据：在单连接约束下，重叠的敌人不是通信总量而是**通信 kernel 的个数与相邻性**——桶越碎、越背靠背，越挡住计算。逐参数 hook 恰好是这个反面。
 
 **③ 被否掉的替代写在历史里：「每个 PP stage 各自就绪就发 DP 通信」输给了「所有 PP stage 对齐着发」。**
-2023-09-18 的提交 `299d8a585`（commit message：「Grad_sync function helps line up grad_sync calls, preventing ranks from being slowed down by the previous pipeline stage's DP communication」）引入过一对开关 `--no-delay-grad-reduce` / `--delay-param-gather`，help 文本是「If not set, delay / synchronize grad reductions in all but first PP stage」。2024-08-23 的提交 `4e3840535` 把这一对开关**整段删除**，换成 `--no-align-grad-reduce` / `--no-align-param-gather`，并把判据直接写进新的 help：「If not set, all PP stages will launch gradient reduces simultaneously. Otherwise, each PP stage will independently launch as needed.」当前基线保留的是后者（`megatron/training/arguments.py:4205-4211`），落点是把 `start_grad_sync` / `start_param_sync` 注入调度器的 `grad_sync_func` / `param_sync_func`（`megatron/training/training.py:4197-4204`）。
+2023-09-18 的提交 `299d8a585`（commit message：「Grad_sync function helps line up grad_sync calls, preventing ranks from being slowed down by the previous pipeline stage's DP communication」）引入过一对开关 `--no-delay-grad-reduce` / `--delay-param-gather`，help 文本是「If not set, delay / synchronize grad reductions in all but first PP stage」。2024-08-23 的提交 `4e3840535` 把这一对开关**整段删除**，换成 `--no-align-grad-reduce` / `--no-align-param-gather`，并把判据直接写进新的 help：「If not set, all PP stages will launch gradient reduces simultaneously. Otherwise, each PP stage will independently launch as needed.」当前基线保留的是后者（`megatron/training/arguments.py:4205-4211`），落点是把 `start_grad_sync` / `start_param_sync` 注入调度器的 `grad_sync_func` / `param_sync_func`（`megatron/training/training.py:4379-4386`）。
 → 判据从"延迟谁"被改写成"对齐谁"：跨 stage 的**带宽争抢**比"谁都尽早发出去"更贵，所以宁可让所有 stage 在同一个调度点一起发。
 
 **④ PP 用逐个 `isend`/`irecv` 而不是 `batch_isend_irecv` —— 批量路径在实现上就不能异步。**
@@ -654,7 +655,7 @@ class FusedDispatch(torch.autograd.Function):
 ```
 
 - **文件**：[`megatron/core/transformer/moe/token_dispatcher.py`](Megatron-LM/megatron/core/transformer/moe/token_dispatcher.py)
-- **类**：`megatron/core/transformer/moe/token_dispatcher.py:1283` 的 `_DeepepManager`、同文件 `:1060` 的 `_HybridEPManager`（新增 `:1529` 的 `_DeepepV2Manager`）
+- **类**：`megatron/core/transformer/moe/token_dispatcher.py:1284` 的 `_DeepepManager`、同文件 `:1060` 的 `_HybridEPManager`（新增 `:1530` 的 `_DeepepV2Manager`）
 
 #### 6.6.1 两级通信：为什么能降 A2A 绝对耗时
 
@@ -686,7 +687,7 @@ $$
 ### 6.7 增量更新（ee3f1ff → dev@232c478d4）
 
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。—— 高优先级 A2A 通信流
-> 新增 `high_priority_a2a_comm_stream`（默认 `False`，`megatron/core/transformer/transformer_config.py:764`，#4694）。combined-1F1B 的 `set_streams` 现接受 `high_priority` 形参（`megatron/core/pipeline_parallel/utils.py:350`，判定 `:357`；两个 schedule 的透传点在 `megatron/core/pipeline_parallel/combined_1f1b.py:67` 与 `:203`）：打开后，§6.3 那条专跑 dispatch/combine A2A 的 `comm_stream` 以 **CUDA 高优先级**创建（`torch.cuda.Stream.priority_range()` 的 high 端）。目的：让 A2A 通信 kernel 优先抢 SM，减少被同设备的计算 kernel 卡住的尾延迟。`megatron/core/pipeline_parallel/combined_1f1b.py` 的两个 schedule（no-pipelining / interleaved）都按 `config.high_priority_a2a_comm_stream` 透传。配套地，HybridEP 还新增 `moe_hybridep_num_sms_preprocessing`（默认 108，metadata scan kernel 的 SM 数，见 [[14_megatron_ep_analysis]] §③ 增量更新）。
+> 新增 `high_priority_a2a_comm_stream`（默认 `False`，`megatron/core/transformer/transformer_config.py:766`，#4694）。combined-1F1B 的 `set_streams` 现接受 `high_priority` 形参（`megatron/core/pipeline_parallel/utils.py:350`，判定 `:357`；两个 schedule 的透传点在 `megatron/core/pipeline_parallel/combined_1f1b.py:67` 与 `:203`）：打开后，§6.3 那条专跑 dispatch/combine A2A 的 `comm_stream` 以 **CUDA 高优先级**创建（`torch.cuda.Stream.priority_range()` 的 high 端）。目的：让 A2A 通信 kernel 优先抢 SM，减少被同设备的计算 kernel 卡住的尾延迟。`megatron/core/pipeline_parallel/combined_1f1b.py` 的两个 schedule（no-pipelining / interleaved）都按 `config.high_priority_a2a_comm_stream` 透传。配套地，HybridEP 还新增 `moe_hybridep_num_sms_preprocessing`（默认 108，metadata scan kernel 的 SM 数，见 [[14_megatron_ep_analysis]] §③ 增量更新）。
 
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。—— A2A Overlap 支持 Megatron-FSDP
 > EP A2A 重叠（combined-1F1B）现可与 **Megatron-FSDP** 共用（#3797，`megatron/core/pipeline_parallel/combined_1f1b.py`、`megatron/core/models/common/model_chunk_schedule_plan.py:377` 的 `set_fsdp_reshard_hooks`）。难点：细粒度 overlap schedule **绕过** `TransformerLayer.forward`（直接调子模块），从而绕过 FSDP 注册在 unit module 上的 forward/backward hook —— all-gather 出来的分片参数不会被正常释放。解法：`TransformerLayerSchedulePlan.set_fsdp_reshard_hooks` 给单个 schedule node 显式挂"释放参数"回调（最后一个前向 node 后 `post_forward_release_module`，最后一个反向 node（attn）后 `post_backward_release_module`）；`combined_forward_backward_step` 在反向前后调 `fsdp_wrapper.pre/post_backward()`，并在调度前 `_replace_param_with_raw_if_needed()`。仅 `optim_grads_params`（参数分片）策略需逐层 reshard hook。**限制**：交错式 PP（VPP>1）+ FSDP 暂不支持（显式 assert）。FSDP 内部分片/reshard 细节见 [[16_megatron_distributed_optimizer_analysis]]。
@@ -833,8 +834,8 @@ args.context_parallel_size = 2       # CP > 1 时自动启用 attention overlap
 
 ### 10.3 不变量
 
-- **`overlap_grad_reduce` 接管 `no_sync`**：打开后 `config.no_sync_func` 必须为 `None`，由框架换成各 model chunk 的 `no_sync`；自定义 `no_sync_func` 被 `assert` 拒绝（`megatron/training/training.py:4189-4196`）。
-- **对齐是"注入调度钩子"而非"加锁"**：`align_grad_reduce` / `align_param_gather` 的全部作用就是把 `start_grad_sync` / `start_param_sync` 装进 `config.grad_sync_func` / `param_sync_func`，交由调度器在固定点触发（`megatron/training/training.py:4197-4204`）。关掉它并不会关掉重叠，只是让各 stage 自行择时。
+- **`overlap_grad_reduce` 接管 `no_sync`**：打开后 `config.no_sync_func` 必须为 `None`，由框架换成各 model chunk 的 `no_sync`；自定义 `no_sync_func` 被 `assert` 拒绝（`megatron/training/training.py:4371-4378`）。
+- **对齐是"注入调度钩子"而非"加锁"**：`align_grad_reduce` / `align_param_gather` 的全部作用就是把 `start_grad_sync` / `start_param_sync` 装进 `config.grad_sync_func` / `param_sync_func`，交由调度器在固定点触发（`megatron/training/training.py:4379-4386`）。关掉它并不会关掉重叠，只是让各 stage 自行择时。
 - **TP user buffer 的形状在初始化期定死**：`initialize_ub` 拿到的 `input_shape` 由 `seq_length × micro_batch_size // context_parallel_size` 与 `hidden_size` 算出（`megatron/training/initialize.py:211-220`），此后是一块静态显存。
 
 ### 10.4 故意不做的事
@@ -884,14 +885,14 @@ class TransformerLayerNode(ScheduleNode):
 > [!note] 推断
 > 本节由**本页已有的 `[!update]` 记录**（均带 PR 号）与**当前基线里的 `TODO` 注释**共同锚定，方向判断属本页推断，不是源码自陈的路线图。
 
-- **A2A 从"被掩盖"走向"被优先调度"**。§6.7 记录的 `high_priority_a2a_comm_stream`（#4694，`megatron/core/transformer/transformer_config.py:764`）把 A2A 的 `comm_stream` 提到 CUDA 高优先级，配套 HybridEP 的 `moe_hybridep_num_sms_preprocessing`；`moe_deepep_num_sms` 默认从 `20` 改成 `None`（自适应，#4793）。→ 趋势是从"把通信藏到计算后面"进一步走向"直接和计算抢 SM 并抢赢"。
+- **A2A 从"被掩盖"走向"被优先调度"**。§6.7 记录的 `high_priority_a2a_comm_stream`（#4694，`megatron/core/transformer/transformer_config.py:766`）把 A2A 的 `comm_stream` 提到 CUDA 高优先级，配套 HybridEP 的 `moe_hybridep_num_sms_preprocessing`；`moe_deepep_num_sms` 默认从 `20` 改成 `None`（自适应，#4793）。→ 趋势是从"把通信藏到计算后面"进一步走向"直接和计算抢 SM 并抢赢"。
 - **EP 重叠的显存代价正在被单独治理**。`ep_overlap_early_attn_memory_release`（`megatron/core/model_parallel_config.py:355-366`）是专为"重叠抬高峰值显存"新开的旋钮，并且它自陈会牺牲性能。→ §10.2 的这条代价已经从"文档注意事项"升级成"需要单独配置的取舍面"，后续大概率还会继续细分。
 - **重叠调度与 FSDP 的边界还在补**。§6.7 的两条记录（A2A overlap × Megatron-FSDP，#3797；`fsdp_double_buffer` 的 wgrad 竞态修复，#5222）都属于"细粒度调度绕过了框架 hook，于是要补挂显式回调"这一类问题；而 VPP>1 + FSDP 至今被 assert 挡住。→ 细粒度调度器与参数分片框架的接口尚未收敛。
 - **CP 侧的重叠还没接上 PP**。`megatron/core/pipeline_parallel/schedules.py:387-390` 与 `megatron/core/pipeline_parallel/hybrid_cp_schedule.py:190` 都明写 hybrid/dynamic CP 目前 no PP；`megatron/core/pipeline_parallel/bridge_communicator.py:105` 也挂着「CP support will be added in follow up PR」。→ CP × PP 的联合调度是这一片明确的在建工程。
 
 ---
 
-> **文档说明**：所有代码片段与文件路径均来自 Megatron-LM `dev` 分支的实际源码，基线以页头声明的 `71092579522a12522d9f323ae180c9825d01928a`（2026-08-27）为准；§4.1 末、§6.7 的增量更新段落记录的是 `dev@232c478d4`（2026-06-16）引入的特性，其行号同样已重核至新基线。
+> **文档说明**：所有代码片段与文件路径均来自 Megatron-LM `dev` 分支的实际源码，基线以页头声明的 `85902ef599ea4eb06ada7567a479c524b605767a`（2026-09-01）为准；§4.1 末、§6.7 的增量更新段落记录的是 `dev@232c478d4`（2026-06-16）引入的特性，其行号同样已重核至新基线。
 > 
 > **基线沿革（历史注记）**：本页基线曾写作「commit `3beeaa65b` 附近」——「附近」不可核验；2026-08-27 逐条比对后改钉 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19），2026-08-28 再推进到 `71092579`（跨 578 个提交）并重核全部 `path:line`。当时留下的"少数行号可能仍停留在更早形态"的疑虑，在本轮已被证实至少一处（原 §5.4.1 的代码片段，现归档于 §10.6，见该处 [!contradiction]）。
 

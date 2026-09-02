@@ -4,7 +4,8 @@ title: "Megatron-LM 训练稳定性与可观测性深度解析"
 
 # Megatron-LM 训练稳定性与可观测性深度解析
 
-> **源码基线**:`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`(`dev`,2026-08-27)
+> **源码基线**:`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`(`dev`,2026-09-01)
+> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
 > **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/rerun_state_machine.py`、`megatron/core/fault_injector.py`、`megatron/core/energy_monitor.py`、`megatron/core/timers.py`、`megatron/core/optimizer/qk_clip.py`、`megatron/core/optimizer/grad_scaler.py`、`megatron/core/optimizer/clip_grads.py`、`megatron/core/transformer/moe/moe_logging.py`、`megatron/core/transformer/moe/router_replay.py`;训练循环日志在 `megatron/training/training.py`
 > 配套阅读:`16_megatron_distributed_optimizer_analysis.md`、五份并行分析、`27_megatron_tp_fsdp_resharding_supplements_analysis.md`
@@ -49,15 +50,15 @@ Megatron 对应有三套机制,本文依次拆解:
 **③ MoE aux/z-loss 的跨 rank 缩放:闭式因子 `×|tp_cp|` 被"实测有效 token 数"取代。**
 这是本页范围内最清楚的一次"替代被否":
 - **旧法**(#5047,`9ef8a2a42`,2026-06-02,commit message 即 "Fix MoE aux_loss / z_loss gradient scaling with TP > 1"):`calculate_per_token_loss` 下把 aux/z-loss 预乘 `num_local_tokens * self.tp_cp_group.size()`,用一个**闭式常数**抵消 `finalize_model_grads` 里的全局除法(推导见 §1.7 的 `[!update]`)。
-- **新法**(`7f9175207`,#4359,2026-06-17):把本域的有效 token 数装进张量,沿 `aux_loss_scale_reduce_groups` **逐组 `all_reduce` 求和**后直接相乘(`megatron/core/transformer/moe/router.py:605-622`)。
-- **源码自陈的理由就写在注释里**:「Use the reduced count directly: with **THD padding or dynamic CP**, valid token counts can differ by rank/group, so `local_num_tokens * group_size` is **not generally correct**」(`megatron/core/transformer/moe/router.py:599-604`)。
+- **新法**(`7f9175207`,#4359,2026-06-17):把本域的有效 token 数装进张量,沿 `aux_loss_scale_reduce_groups` **逐组 `all_reduce` 求和**后直接相乘(`megatron/core/transformer/moe/router.py:617-634`)。
+- **源码自陈的理由就写在注释里**:「Use the reduced count directly: with **THD padding or dynamic CP**, valid token counts can differ by rank/group, so `local_num_tokens * group_size` is **not generally correct**」(`megatron/core/transformer/moe/router.py:611-616`)。
 - → 判据是**前提失效**而不是精度不够:闭式因子只在"同组各 rank 有效 token 数相等"时成立,THD packing 与 dynamic CP 直接打破了这个前提,于是宁可每个 aux-loss 域每步多付一次 `all_reduce`(`:620-621`),也不留一个在新特性下**静默**算错的常数。
 
 **④ MTP 的解耦是三层可叠加开关,而"把 output layer 整体 functional 化隔离"这条路试过并被撤下。**
 #5080(`d23ca853f`)曾新增独立开关 `mtp_isolated_loss`,用 `torch.func.functional_call` 配 `{name: param.detach()}` 把 output layer 的**全部参数/buffer** 隔离;#5223(`7eedac586`,2026-06-11,"[Dev] Cherry-pick MTP detach heads")把它整体删除,只保留"`detach()` 共享的 `output_weight` 张量"这一最小手术,并把能力并进 `mtp_detach_heads`。细节与行号见 §1.8 (b) 的 `[!deprecated]`。
 
 > [!note] 推断
-> 源码陈述的是**事实**:重跑三段式流程与 `tolerance` 的存在、`DISABLED` 下仍跑 `rejection_func` 的向后兼容注释、闭式因子在 THD/dynamic-CP 下"not generally correct"、`mtp_isolated_loss` 被删除。**把这些读成"逐位比对因此不可行"、"宁可多付一次 all_reduce 也不要静默错误"、"最小手术优于全隔离"这三层取舍判据,是本页的重建**,源码从未这样自陈。要引用这几条判断,请回到 `megatron/core/rerun_state_machine.py:169-175`、`:483-484`、`:503`、`:508-515`、`:517-537`、`megatron/core/transformer/moe/router.py:599-604`、`:605-622` 这几个 locator,不要引用本段推断。
+> 源码陈述的是**事实**:重跑三段式流程与 `tolerance` 的存在、`DISABLED` 下仍跑 `rejection_func` 的向后兼容注释、闭式因子在 THD/dynamic-CP 下"not generally correct"、`mtp_isolated_loss` 被删除。**把这些读成"逐位比对因此不可行"、"宁可多付一次 all_reduce 也不要静默错误"、"最小手术优于全隔离"这三层取舍判据,是本页的重建**,源码从未这样自陈。要引用这几条判断,请回到 `megatron/core/rerun_state_machine.py:169-175`、`:483-484`、`:503`、`:508-515`、`:517-537`、`megatron/core/transformer/moe/router.py:611-616`、`:617-634` 这几个 locator,不要引用本段推断。
 > 另有一处**归属存疑**,不改既有 callout、仅在此标出:§1.7 的 `[!contradiction]` 把 aux-loss 缩放的改写记在 #5542(`d1384c2d9`)名下;按 `git log -S "so local_num_tokens * group_size is not generally correct" -- megatron/core/transformer/moe/router.py`,引入该注释与 `all_reduce` 路径的实际是 `7f9175207`(#4359,2026-06-17),`d1384c2d9`(#5542,2026-07-14)只在其上加了 14 行的 padding 排除(`valid_token_count`)。结论(闭式因子已被推翻)不变,变的是归属的 PR。
 
 ---
@@ -158,7 +159,7 @@ MoE 有独有的不稳定源 —— 路由:
 > 修正:`aux_loss` 与 `z_loss` 预乘改为 `num_local_tokens * self.tp_cp_group.size()`(`megatron/core/transformer/moe/router.py:546`、`:587`,行号对应旧基线 `232c478d4`),恰好抵消上式中的 `|tp_cp|`,使有效缩放回到目标 `1/(num_micro_batches·dp_size)`,与 `!calculate_per_token_loss` 路径一致、且对 TP/CP 配置不变。(z_loss 系数另有 `/tp_cp_group.size()` 是独立的**前向**修正:z_loss 在每个 TP+CP rank 的本地 logits 上独立计算,需按 TP+CP 求平均而非求和。)回归测试见 `tests/.../test_aux_loss.py::TestPerTokenAuxLoss`。
 
 > [!contradiction] 上一条的**修正手法**在基线 `71092579` 下已被推翻。引入 `all_reduce` 路径与那条注释的是 **#4359 `7f9175207`**(2026-06-17);#5542 `d1384c2d9`(2026-07-14,[codex] Exclude padding tokens from MoE routing)只是在其上补了 padding 排除。(归属经 `git log -S "so local_num_tokens * group_size is not generally correct"` 核定,2026-08-28 更正。)
-> `aux_loss` 的预乘不再是 `num_local_tokens * tp_cp_group.size()`,而是把本域的**有效 token 数**放进一个张量、沿 `aux_loss_scale_reduce_groups` 逐组 `all_reduce` 求和后直接相乘(`megatron/core/transformer/moe/router.py:598-624`)。
+> `aux_loss` 的预乘不再是 `num_local_tokens * tp_cp_group.size()`,而是把本域的**有效 token 数**放进一个张量、沿 `aux_loss_scale_reduce_groups` 逐组 `all_reduce` 求和后直接相乘(`megatron/core/transformer/moe/router.py:610-636`)。
 > 源码给出的理由就写在注释里:*with THD padding or dynamic CP, valid token counts can differ by rank/group, so local_num_tokens * group_size is not generally correct*(`:602-604`)—— 即 THD padding / 动态 CP 下各 rank 的有效 token 数**不再相等**,`×|tp_cp|` 这个闭式因子本身就不成立。
 > `z_loss` 侧同样改写:`calculate_per_token_loss` 分支现直接挂 `z_loss_sum`(不再乘 `num_local_tokens × |tp_cp|`,`:666-671`);只有 `!calculate_per_token_loss` 分支保留了 `moe_z_loss_coeff / tp_cp_group.size()` 这一**前向**修正(`:673`)。
 > 因此上文的代数推导只对旧基线 `232c478d4` 有效;§3.4「解读 aux/z-loss 需注意 TP 缩放」的口径提示同样只适用于 `232c478d4` 到 #5542 之间的版本。
@@ -176,8 +177,8 @@ MTP(Multi-Token Prediction,详见 GPT/DeepSeek 系列)在主模型之外挂若�
 
 **(a) `mtp_detach_heads` —— 切断 MTP→主模型的梯度回流(#3456,并在 #5223 合并 #5080 的隔离能力)**
 
-`TransformerConfig.mtp_detach_heads`(`megatron/core/transformer/transformer_config.py:89`,默认 `False`)。开启后在三处 `detach()`,使 MTP loss **只训练 MTP head 自身**,不更新主模型:
-- `MultiTokenPredictionBlock.forward`:取出本 stage 的 `hidden_states` 后 `detach()`(`megatron/core/transformer/multi_token_prediction.py:2931`)。
+`TransformerConfig.mtp_detach_heads`(`megatron/core/transformer/transformer_config.py:91`,默认 `False`)。开启后在三处 `detach()`,使 MTP loss **只训练 MTP head 自身**,不更新主模型:
+- `MultiTokenPredictionBlock.forward`:取出本 stage 的 `hidden_states` 后 `detach()`(`megatron/core/transformer/multi_token_prediction.py:2948`)。
 - `MultiTokenPredictionLayer._get_embeddings`:`decoder_input = embedding(...).detach()`,切断对**共享 embedding** 的梯度(`:2137`)。注意紧接着对 `hidden_states` 做 `make_viewless_tensor` 后,若它已不 `requires_grad` 会显式 `requires_grad_(True)` —— 因为 `detach()` 后张量 `_base` 为 `None`、`make_viewless_tensor` 退化为 no-op,而激活重计算(`CheckpointFunction`)要求至少一个输入可导,这里补回以保住到 MTP 层参数的梯度通路。
 - `process_mtp_loss`:`output_weight.detach()`,切断对**共享 output projection** 的梯度(`:1772`)。
 - **在线 RL 支持**(原属 #5080,现并入本开关):`process_mtp_loss` 允许 `labels=None`(RL 时主 LM head 输出 logits 供外部 RL loss 用),此时从 `input_ids` 左移一位自行派生 MTP 标签(`label[i]=input_id[i+1]`,`megatron/core/transformer/multi_token_prediction.py:1746–1761`),让 MTP 辅助损失在不触碰主模型的前提下照常训练。
@@ -196,7 +197,7 @@ MTP(Multi-Token Prediction,详见 GPT/DeepSeek 系列)在主模型之外挂若�
 **(d) `mtp` 独立梯度裁剪组(#4116)**
 
 当 `mtp_detach_heads=True` 时,MTP head 的梯度已与主干解耦,但若仍并入全局范数一起裁剪,二者尺度差异会互相污染。本 PR 在优化器侧引入**命名梯度范数组**机制:
-- 建块时给 MTP 参数打标签:`MultiTokenPredictionBlock.__init__` 中 `for param in self.parameters(): param.grad_norm_group = 'mtp'`(`megatron/core/transformer/multi_token_prediction.py:2790`)。
+- 建块时给 MTP 参数打标签:`MultiTokenPredictionBlock.__init__` 中 `for param in self.parameters(): param.grad_norm_group = 'mtp'`(`megatron/core/transformer/multi_token_prediction.py:2806`)。
 - 优化器侧新增基础设施(`megatron/core/optimizer/optimizer.py`):常量 `MTP_GRAD_NORM_GROUP='mtp'`、`SEPARATE_GRAD_NORM_GROUPS`、`GRAD_NORM_GROUP_ATTR`;辅助函数 `_get_param_grad_norm_group` / `_is_separate_grad_norm_group` / `_validate_grad_norm_group`;以及 `copy_optimizer_param_metadata`(建主 fp32 副本时把 `grad_norm_group` 标签一并复制,否则副本丢标签)。
 - 范数计算分流:原 `get_main_grads_for_grad_norm` 重构为 `get_grads_for_grad_norm(grad_norm_group=None)` —— 传 `None` 取**主组**梯度(已**排除** `mtp` 组),传 `'mtp'` 只取该组。`clip_grad_norm` / `ChainedOptimizer.step` 据此把 `main_params` 与各 `grad_norm_group` 分别算范数、**各自按 `clip_grad` 独立裁剪**(`megatron/core/optimizer/optimizer.py:2053–2079`)。
 - 跨 rank 一致性:`has_grad_norm_group()` 用一次全局 `all_reduce(MAX)` 判断"是否有任一 rank 持有该组参数"并缓存,保证按组归约的集合通信在各 rank 间不失配(某 rank 本地无 mtp 分片、对端有);`LayerWiseDistributedOptimizer` 重写该方法走全局 `group=None` 归约(与其 dist-opt 全局归约范式一致)。
@@ -239,12 +240,12 @@ MTP(Multi-Token Prediction,详见 GPT/DeepSeek 系列)在主模型之外挂若�
 ### 2.5 杂项可观测性修正
 
 > [!update] 保真序列长度统计(#95654c956) — 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。
-> `train_step` 返回的 `seqlen_sum_this_global_batch` / `seqlen_squared_sum_this_global_batch` 用于**变长序列感知的吞吐 / FLOP 估算**(`megatron/training/training.py:3513` 经 `seqlen_squared_sum_in_batch` 进入 attention FLOP 项)。旧代码在**非变长**(未走 `wrap_data_iterator`)路径下把这两个统计丢成 `_, _`,导致 FLOP/吞吐日志退化或失真。
-> 修正(`megatron/training/training.py:3029–3030`):非变长路径显式回填闭式值 `seq_length * global_batch_size` 与 `seq_length² * global_batch_size`,保证两条路径都给出正确的 seqlen 统计、`--log-throughput` 的 TFLOP/s 估算保真。属于纯可观测性修复,不改训练数值。
+> `train_step` 返回的 `seqlen_sum_this_global_batch` / `seqlen_squared_sum_this_global_batch` 用于**变长序列感知的吞吐 / FLOP 估算**(`megatron/training/training.py:3695` 经 `seqlen_squared_sum_in_batch` 进入 attention FLOP 项)。旧代码在**非变长**(未走 `wrap_data_iterator`)路径下把这两个统计丢成 `_, _`,导致 FLOP/吞吐日志退化或失真。
+> 修正(`megatron/training/training.py:3211–3030`):非变长路径显式回填闭式值 `seq_length * global_batch_size` 与 `seq_length² * global_batch_size`,保证两条路径都给出正确的 seqlen 统计、`--log-throughput` 的 TFLOP/s 估算保真。属于纯可观测性修复,不改训练数值。
 
 > [!update] 混合模型分阶段日志改传显式进程组(#4781) — 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。
 > 混合(Hybrid,如 Mamba/attention 混排)模型在 `select_pipeline_segment` 里对每个 PP 段做布局日志。此前该日志依赖全局 `parallel_state` 取 TP / DP-CP 组,在自定义进程组拓扑下可能取错组、或在多 `ProcessGroupCollection` 场景下不一致。
-> 修正:`HybridModel` 经 `_hybrid_logging_pg_kwargs(pg_collection)`(`megatron/core/models/hybrid/hybrid_model.py:44`,调用点 `:204`)抽出 `tp` / `dp_cp` 组,显式透传给 `select_pipeline_segment(..., tp_group=, dp_cp_group=)`(`megatron/core/models/hybrid/hybrid_layer_allocation.py:342`),并校验两者"要么都给、要么都不给"。是分阶段日志在显式进程组拓扑下的健壮性修正。
+> 修正:`HybridModel` 经 `_hybrid_logging_pg_kwargs(pg_collection)`(`megatron/core/models/hybrid/hybrid_model.py:44`,调用点 `:257`)抽出 `tp` / `dp_cp` 组,显式透传给 `select_pipeline_segment(..., tp_group=, dp_cp_group=)`(`megatron/core/models/hybrid/hybrid_layer_allocation.py:342`),并校验两者"要么都给、要么都不给"。是分阶段日志在显式进程组拓扑下的健壮性修正。
 
 ---
 
@@ -361,7 +362,7 @@ Caveats(2)明写:「The re-run logic is **currently only able to re-run the curr
 无 MoE 层的 PP rank 必须 `force_initialize=True` 预建等长零张量,否则跨 PP 的 `all_reduce` 会因张量尺寸不一致而**挂死**(§2.2 的 `[!update]`)。
 
 **⑨ aux-loss 缩放要求 `reduce_group` 存在,并按域付 all_reduce。**
-`assert reduce_group is not None, "reduce_group is required for aux-loss scaling"`(`megatron/core/transformer/moe/router.py:618`);随后对 `aux_loss_scale_reduce_groups` 里**每个组**各做一次 `all_reduce`(`:620-621`)。这是 §0.2 ③ 那次改写付出的固定成本。
+`assert reduce_group is not None, "reduce_group is required for aux-loss scaling"`(`megatron/core/transformer/moe/router.py:630`);随后对 `aux_loss_scale_reduce_groups` 里**每个组**各做一次 `all_reduce`(`:632-633`)。这是 §0.2 ③ 那次改写付出的固定成本。
 
 **⑩ 梯度范数超阈跳步只有配置项、且只在一条路径生效。**
 `OptimizerConfig.grad_norm_skip_threshold` 默认 `float('inf')` 即关闭,docstring 只说「Skip gradient update if the gradient norm exceeds this threshold. Disabled by default.」(`megatron/core/optimizer/optimizer_config.py:394-397`);基线下 `megatron/training/` 里 `git grep grad_norm_skip_threshold` **零命中**——确实没有 CLI 开关,必须经 `OptimizerConfig` 注入(与 §1.2 `[!update]` 一致)。
@@ -380,7 +381,7 @@ Caveats(2)的结尾原话:「**We're planning to add the capability to re-run mu
 **② RerunStateMachine 仍在 alpha,API 可能破坏性变更。** DISCLAIMER 明说「experimental features may break existing APIs」(`megatron/core/rerun_state_machine.py:29`),并要求把它的结论交给标准诊断套件复核(`:25-27`)。→ 本页 §1.4 的流程描述应按"会变"来读。
 
 **③ 辅助损失的跨 rank 归一正在从"闭式因子"整体转向"实测计数"。**
-同一段代码三个月内被改了三轮:#5047(`9ef8a2a42`,2026-06-02)引入闭式 `×|tp_cp|` → #4359(`7f9175207`,2026-06-17)换成沿 `aux_loss_scale_reduce_groups` 逐组 `all_reduce` 实测 → #5542(`d1384c2d9`,2026-07-14)再补 `valid_token_count` 把 padding token 排除在外。驱动力写在注释里:THD packing 与 dynamic CP 让"各 rank token 数相等"这个隐含前提不再成立(`megatron/core/transformer/moe/router.py:599-604`)。→ 推断:只要变长/打包/动态 CP 继续铺开,其余仍依赖闭式并行因子的归一化(z-loss 的 `!calculate_per_token_loss` 分支仍保留 `moe_z_loss_coeff / tp_cp_group.size()`,§1.7)迟早会走同一条路。
+同一段代码三个月内被改了三轮:#5047(`9ef8a2a42`,2026-06-02)引入闭式 `×|tp_cp|` → #4359(`7f9175207`,2026-06-17)换成沿 `aux_loss_scale_reduce_groups` 逐组 `all_reduce` 实测 → #5542(`d1384c2d9`,2026-07-14)再补 `valid_token_count` 把 padding token 排除在外。驱动力写在注释里:THD packing 与 dynamic CP 让"各 rank token 数相等"这个隐含前提不再成立(`megatron/core/transformer/moe/router.py:611-616`)。→ 推断:只要变长/打包/动态 CP 继续铺开,其余仍依赖闭式并行因子的归一化(z-loss 的 `!calculate_per_token_loss` 分支仍保留 `moe_z_loss_coeff / tp_cp_group.size()`,§1.7)迟早会走同一条路。
 
 **④ MTP 相关开关正在收敛而不是扩张。** #5080 的 `mtp_isolated_loss` 被 #5223 删除并并入 `mtp_detach_heads`(§0.2 ④、§1.8 (b));基线下全仓 `git grep mtp_isolated_loss` 仍为 0 命中。→ 推断:MTP 的稳定性控制面倾向"一个主开关 + 自动派生行为",而非继续增加正交开关。
 

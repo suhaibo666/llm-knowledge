@@ -4,7 +4,8 @@ title: "Megatron-LM 并行编排与进程组构造深度解析(Capstone)"
 
 # Megatron-LM 并行编排与进程组构造深度解析(Capstone)
 
-> **源码基线**：`NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a`（`dev`，2026-08-27）
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
+> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；该增量只触及 20 个 `megatron/` 文件，未改动本页主线的 `parallel_state.py` / `process_groups_config.py` / `hyper_comm_grid.py`，本页落在改动文件（`training.py`，因 DSA FLOPs PR #6753 前插 184 行）上的引用已在新基线下逐条打开重核，均为纯行号漂移。
 > **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/parallel_state.py`(2266 行)、`megatron/core/process_groups_config.py`(718 行)、`megatron/core/hyper_comm_grid.py`(443 行)
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`、`13_megatron_cp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`
@@ -263,15 +264,15 @@ class ProcessGroupCollection:
 - **优点**:无全局状态;一个进程可并存多套配置;可测试。
 - **缺点**:要层层传 `pg_collection`(故大量函数签名里都有这个可选参数)。
 
-> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。 — 训练循环向 `pg_collection` 迁移(#5259 / #5250 / #5251 / #5111)
+> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `85902ef5`。 — 训练循环向 `pg_collection` 迁移(#5259 / #5250 / #5251 / #5111)
 >
 > `ee3f1ff` 之后有一批 PR 持续把训练侧对全局 `parallel_state.get_*_group()` 的隐式依赖,改成显式接收 `ProcessGroupCollection` / `group=` —— 即把上文的「依赖注入」从 `megatron/core` 推进到 `megatron/training`:
-> - **`train_step` 新增 `pg_collection` 形参**(#5259,新基线 `megatron/training/training.py:2844`、形参在 `:2853`)。step 末尾三处规约不再硬编码全局组:`logical_and_across_model_parallel_group` / `reduce_max_stat_across_model_parallel_group` 改用 `pg_collection.mp`(`megatron/training/training.py:3141`、`:3146`、`:3149-3153`),loss 平均 all-reduce 改用 `pg_collection.dp_cp`(`:3142`、`:3182`),末 stage 判定改用 `is_pp_last_stage(pg_collection.pp)`(`:3143`);解析不到时回退 `ProcessGroupCollection.use_mpu_process_groups()`,并断言含 `mp/pp/dp_cp`(`:3135-3140`)。
-> - **`get_model` 的 DDP 桶大小改用注入组**(#5250,新基线 `megatron/training/training.py:2215`,形参 `pg_collection=None` 在 `:2220`、回退在 `:2225-2226`):`bucket_size` 由 `pg_collection.dp_cp` 推出、PP rank 用 `get_pg_rank(pg_collection.pp)`(`megatron/training/training.py:2383`),替换原 `mpu.get_data_parallel_world_size(...)` / `mpu.get_pipeline_model_parallel_rank()`。新基线上桶大小的算式已抽成独立 helper `resolve_ddp_bucket_size(ddp_config, dp_cp_group, overlap_grad_reduce, num_parameters)`(`megatron/training/training.py:2072`),`get_model` 只是把 `pg_collection.dp_cp` 传进去(`:2376-2378`);注入的组仍是 `dp_cp`,机制不变。
+> - **`train_step` 新增 `pg_collection` 形参**(#5259,新基线 `megatron/training/training.py:3026`、形参在 `:3035`)。step 末尾三处规约不再硬编码全局组:`logical_and_across_model_parallel_group` / `reduce_max_stat_across_model_parallel_group` 改用 `pg_collection.mp`(`megatron/training/training.py:3323`、`:3328`、`:3331-3335`),loss 平均 all-reduce 改用 `pg_collection.dp_cp`(`:3324`、`:3364`),末 stage 判定改用 `is_pp_last_stage(pg_collection.pp)`(`:3325`);解析不到时回退 `ProcessGroupCollection.use_mpu_process_groups()`,并断言含 `mp/pp/dp_cp`(`:3317-3322`)。
+> - **`get_model` 的 DDP 桶大小改用注入组**(#5250,新基线 `megatron/training/training.py:2397`,形参 `pg_collection=None` 在 `:2402`、回退在 `:2407-2408`):`bucket_size` 由 `pg_collection.dp_cp` 推出、PP rank 用 `get_pg_rank(pg_collection.pp)`(`megatron/training/training.py:2565`),替换原 `mpu.get_data_parallel_world_size(...)` / `mpu.get_pipeline_model_parallel_rank()`。新基线上桶大小的算式已抽成独立 helper `resolve_ddp_bucket_size(ddp_config, dp_cp_group, overlap_grad_reduce, num_parameters)`(`megatron/training/training.py:2254`),`get_model` 只是把 `pg_collection.dp_cp` 传进去(`:2558-2560`);注入的组仍是 `dp_cp`,机制不变。
 > - **`common_utils` 规约 helper 新增可选 `group=`**(#5251,新基线 `megatron/training/utils/common_utils.py:236`/`252`/`277`):`average_losses_across_data_parallel_group` / `reduce_max_stat_across_model_parallel_group` / `logical_and_across_model_parallel_group` 都接受显式 `group`,缺省才回退 mpu 全局组 —— 为上面两个 PR 的注入提供下游支持。
 > - **why(规范背书)**:#5111 在 `AGENTS.md` 写入「Megatron Core Process Groups」指引(`AGENTS.md:34`;advisory,非 CI 卡口):`megatron/core` 生产代码**禁止新增**对 `parallel_state.get_*_group()` 的直接读取,应改为接收 `ProcessGroupCollection` 或显式 `ProcessGroup` 并向下透传;仅 `megatron/core/parallel_state.py` / `megatron/core/process_groups_config.py` / 初始化引导 / 测试 / 带注释的迁移回退是豁免点。这条规范正是 §1.2 表中「① 全局单例 → ② 显式注入 → ③ HyperCommGrid」演进的官方背书,也解释了为何越来越多函数签名带 `pg_collection=` / `group=`。
 
-> [!contradiction] `pg_collection` 的**来源**在新基线 `71092579` 下已变:上文说的「`pg_collection=None` 时回退 `use_mpu_process_groups()`」不再是从形参取值。新基线的 `train_step` 先从模型上取——`pg_collection = get_attr_wrapped_model(model[0], "pg_collection")`(`megatron/training/training.py:3134`),只有它为 `None` 才回退 `ProcessGroupCollection.use_mpu_process_groups()`(`:3135-3136`);源码注释写明理由是「Reductions source per-rank groups from the model (encoder rank -> encoder groups)」(`:3133`)。同名的 `pg_collection` 形参仍在(`:2853`),但语义已改成「转发给 schedule 的 cross-grid 载体」,docstring 明说 `None` 时保持默认行为(`:2858-2859`),**不再**参与这三处规约的组选择。也就是说依赖注入的方向从「调用方传入」变成了「从模型自带的进程组读取」,注入点下沉一层。
+> [!contradiction] `pg_collection` 的**来源**自基线 `71092579` 起已变(新基线 `85902ef5` 仍然如此):上文说的「`pg_collection=None` 时回退 `use_mpu_process_groups()`」不再是从形参取值。新基线的 `train_step` 先从模型上取——`pg_collection = get_attr_wrapped_model(model[0], "pg_collection")`(`megatron/training/training.py:3316`),只有它为 `None` 才回退 `ProcessGroupCollection.use_mpu_process_groups()`(`:3317-3318`);源码注释写明理由是「Reductions source per-rank groups from the model (encoder rank -> encoder groups)」(`:3315`)。同名的 `pg_collection` 形参仍在(`:3035`),但语义已改成「转发给 schedule 的 cross-grid 载体」,docstring 明说 `None` 时保持默认行为(`:3040-3041`),**不再**参与这三处规约的组选择。也就是说依赖注入的方向从「调用方传入」变成了「从模型自带的进程组读取」,注入点下沉一层。
 
 ### ③ `HyperCommGrid` —— N 维网格(最新)
 
