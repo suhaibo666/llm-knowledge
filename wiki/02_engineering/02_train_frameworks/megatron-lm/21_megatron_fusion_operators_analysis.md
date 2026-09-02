@@ -117,7 +117,7 @@ y * torch.sigmoid(1.702 * y)
 
 ### 4.3 FP8 Input Store — 用精度换显存
 
-三个融合算子支持 `fp8_input_store`：
+**六个**融合算子支持 `fp8_input_store`，分布在三个文件里：
 
 | 算子 | 文件:行 |
 |------|---------|
@@ -126,6 +126,14 @@ y * torch.sigmoid(1.702 * y)
 | BiasSwiGLU | `megatron/core/fusions/fused_bias_swiglu.py:164` |
 | SwiGLU | `megatron/core/fusions/fused_bias_swiglu.py:223` |
 | WeightedSwiGLU | `megatron/core/fusions/fused_bias_swiglu.py:276` |
+| WeightedSquaredReLUFunction | `megatron/core/fusions/fused_weighted_squared_relu.py:60`（参数说明见 `:72`） |
+
+> [!update] 2026-09-02 · 计数更正
+> 原写「三个融合算子」，与紧随其后的表（列头即「算子」）自相矛盾——表当时已列 5 行。
+> 复核 `git grep -l fp8_input_store -- megatron/core/fusions/` 命中**三个文件**、
+> 共 **6 个**算子类：上表原 5 行覆盖 `fused_bias_geglu` 与 `fused_bias_swiglu` 两个文件，
+> 漏了 `fused_weighted_squared_relu.py` 的 `WeightedSquaredReLUFunction`（§8.5 的 ScaledSReLU 融合就是它）。
+> 「三个」大概是按**文件数**说的，但表格按算子列——两个口径混用。现统一为算子数并补齐第六行。
 
 ```python
 # Forward 中将 input 转为 FP8 保存 (1 byte vs 2 bytes for BF16)
@@ -367,6 +375,29 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 - **GDN 侧的通信融合已经翻盘并成为默认**：§8.8 的重核结论（单次不分段 A2A 取代逐段循环，`megatron/core/ssm/gated_delta_net/common.py:838`、`:864-865`）说明"融合 A2A"在 GDN 上不再是实验路径。→ §4.5 的 Communication Fusion 一节的适用范围应视为已扩大到 GDN。
 
 
+---
+
+## 配置契约：融合开关长尾
+
+本页正文按**融合种类**组织。本节补 `# fusion` 段里此前全域零提及的开关——它们与 §5、§8 讲的融合一一对应，但此前没有一处列出它们的默认值与类型。
+
+**下表直接取自 `megatron/core/transformer/transformer_config.py` 的类体**。
+
+
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，7 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `bias_activation_fusion` | `bool` | `False` | If True, fuses bias addition and the activation function when possible. | `:567` |
+| `masked_softmax_fusion` | `bool` | `False` | If True, uses softmax fusion. | `:570` |
+| `persist_layer_norm` | `bool` | `False` | If True, uses the persistent fused layer norm kernel. This kernel only supports a fixed set of hidden sizes. | `:573` |
+| `memory_efficient_layer_norm` | `bool` | `False` | If True, and using local layers (not from TransformerEngine), tells Apex to use the memory efficient fused LayerNorm kernel. Ignored if not using LayerNorm. | `:577` |
+| `bias_dropout_fusion` | `bool` | `False` | If True, uses bias dropout fusion. | `:581` |
+| `fused_single_qkv_rope` | `bool` | `False` | If set, avoid splitting QKV before ROPE forward and avoid concatenating ROPE dgrads. | `:590` |
+| `fused_residual_rmsnorm` | `bool` | `False` | If True, fuses residual connection and RMSNorm backward pass when TE is used. | `:597` |
+
+> 该类共 266 个字段，本表收 7 项；其余 259 项已在别处归属：主要归 [[10_megatron_model_structure_analysis]] 92 项、[[14_megatron_ep_analysis]] 38 项、[[23_megatron_precision_cudagraph_fusion_analysis]] 38 项、本页他处 19 项，另散见 20 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+
 ## Related Pages
 
 - [[23_megatron_precision_cudagraph_fusion_analysis]]
@@ -374,3 +405,5 @@ Fused kernel 将 activation + gating + weighting 三步合并，对于 MoE 中�
 - [[16_megatron_distributed_optimizer_analysis]]
 - [[20_megatron_comm_overlap_analysis]]
 - [[14_megatron_ep_analysis]]
+
+

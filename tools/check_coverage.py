@@ -170,7 +170,11 @@ def check(cfg_path, strict, examples):
             else:
                 owned_pages.add(ref)
         if owner:
-            if not f.get("auto") and owner in pages and f["name"] not in _page_text(cfg["wiki_dir"], owner):
+            # 与 --generate 的 pages_mentioning 同口径：词边界 + 认 CLI 的 kebab 形式。
+            # 两处若不一致，只写 `--tensor-model-parallel-size` 的页会被误判成 stale。
+            if not f.get("auto") and owner in pages and owner not in pages_mentioning(
+                cfg["wiki_dir"], f["name"]
+            ):
                 stale.append(f"{f['name']} -> {owner}")
         elif not f.get("excluded"):
             gaps.append(f["name"] + ("（多页提及待定）" if f.get("candidates") else "（全域未提及）"))

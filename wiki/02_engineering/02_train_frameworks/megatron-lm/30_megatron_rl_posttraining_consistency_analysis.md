@@ -292,7 +292,7 @@ README 把时序写死:「Call `prepare_swap_model_weights` once during initiali
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `85902ef5`(2026-09-01;由 `ee3f1ff` → `71092579` 逐次重定基线而来)。源码行号以该 commit 为准。完整 RL 训练环(GRPO/PPO loss、advantage、KL)位于上层 RL 框架(如 NeMo-RL),不在 `megatron/core`。配套文档:`27_megatron_tp_fsdp_resharding_supplements_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`、`14_megatron_ep_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准。完整 RL 训练环(GRPO/PPO loss、advantage、KL)位于上层 RL 框架(如 NeMo-RL),不在 `megatron/core`。配套文档:`27_megatron_tp_fsdp_resharding_supplements_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`、`14_megatron_ep_analysis.md`。*
 
 ## Related Pages
 

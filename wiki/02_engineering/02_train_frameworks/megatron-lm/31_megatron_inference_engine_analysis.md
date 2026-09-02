@@ -315,9 +315,91 @@ README 把两条失效路径拆得很细(`megatron/core/inference/README.md:77-8
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`(2026-08-27;由 `ee3f1ff` 重定基线而来)。源码行号以该 commit 为准。配套文档:`30_megatron_rl_posttraining_consistency_analysis.md`、`23_megatron_precision_cudagraph_fusion_analysis.md`、`14_megatron_ep_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准。配套文档:`30_megatron_rl_posttraining_consistency_analysis.md`、`23_megatron_precision_cudagraph_fusion_analysis.md`、`14_megatron_ep_analysis.md`。*
+
+---
+
+## 配置契约：`InferenceSetupConfig`
+
+本页正文讲推理引擎的**机制**——Static/Dynamic 引擎、连续批处理、块级 KV cache、chunked prefill。本节给它的**配置面**：`InferenceSetupConfig` 是把这些机制暴露给用户的那一层，经 [[41_megatron_config_surface_analysis]] §2 的工厂自动转成 CLI。
+
+**下表直接取自 `megatron/training/config/inference_config.py` 的类体**。注意它叫 `InferenceSetupConfig` 而非 `InferenceConfig`——它管的是**起一个推理会话需要的装配参数**（引擎类型、批与序列上界、采样默认值、服务端口），不是 `megatron/core/inference` 内部那些运行期结构的配置。两者的分界正是 [[41_megatron_config_surface_analysis]] §4 说的「args → 配置对象桥接」那一层。
+
+
+### `InferenceSetupConfig`（`megatron/training/config/inference_config.py`，37 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `inference_batch_times_seqlen_threshold` | `int` | `-1` | If (batch-size * sequence-length) is smaller than this threshold then batches will not be split up for pipelining. Requires setting --pipeline-model-parallel… | `:50` |
+| `max_tokens_to_oom` | `int` | `12000` | Maximum number of tokens during inference (# in prompt + # to generate). Allows us to throw an error before OOM crashes server. | `:55` |
+| `output_bert_embeddings` | `bool` | `False` | Output Bert embeddings (via mean pooling) from model, rather than its binary head output or entire hidden batch. | `:59` |
+| `bert_embedder_type` | `Literal['megatron', 'huggingface']` | `'megatron'` | Select either Megatron or Huggingface as the Bert embedder. | `:63` |
+| `use_legacy_static_engine` | `bool` | `False` | Use legacy static engine. (Current static engine uses dynamic engine under the hood.) | `:70` |
+| `inference_max_requests` | `int` | `8` | Maximum number of requests for inference. | `:73` |
+| `inference_max_seq_length` | `int` | `2560` | Maximum sequence length expected for inference (prefill + decode). | `:76` |
+| `inference_dynamic_batching` | `bool` | `False` | Enable dynamic batching mode. | `:81` |
+| `inference_dynamic_batching_buffer_size_gb` | `float` | `40.0` | Amount of on-GPU memory allocated for the KV cache. The total amount of memory allocated for the KV cache (CPU + GPU memory) depends on the value set for the… | `:84` |
+| `inference_dynamic_batching_paused_buffer_size_gb` | `float \| None` | `None` | Amount of memory reserved for paused requests in the dynamic inference context. Active requests are paused when there are not enough active blocks available … | `:89` |
+| `inference_dynamic_batching_mamba_memory_ratio` | `float \| None` | `None` | Percentage of memory buffer to allocate for Mamba states. If not specified, allocates Mamba state tensors for each KV cache block. Only used for hybrid models. | `:94` |
+| `inference_dynamic_batching_block_size` | `int` | `256` | KV cache block size. It should be a multiple of 256. | `:98` |
+| `inference_dynamic_batching_max_requests` | `int \| None` | `None` | Override the inference context's `max_requests`. By default, `max_requests` is set to the number of blocks in the context's memory buffer. | `:101` |
+| `inference_dynamic_batching_max_tokens` | `int \| None` | `None` | Override the inference context's default `max_tokens`. | `:105` |
+| `inference_dynamic_batching_num_cuda_graphs` | `int` | `16` | Maximum number of cuda graphs to capture, where the cuda graph batch sizes range from 1 to `max_requests`. The user can also pass -1, in which case we automa… | `:108` |
+| `inference_dynamic_batching_track_paused_request_events` | `bool` | `False` | Track paused request ids by adding 'paused' events to each request's event history. This has a very minor impact on latency. | `:113` |
+| `inference_dynamic_batching_track_generated_token_events` | `bool` | `False` | Track per-token events with timestamps for each generated token. When enabled, each generated token creates a GENERATED_TOKEN event with a timestamp, useful … | `:117` |
+| `inference_dynamic_batching_unified_memory_level` | `Literal[0, 1]` | `0` | Set unified memory usage within the dynamic inference context. The levels are: 0) no unified memory, 1) allocate `memory_buffer` in unified memory. | `:121` |
+| `inference_dynamic_batching_cuda_graph_mixed_prefill_count` | `int` | `16` | Number of mixed prefill requests to capture in a cuda graph. | `:125` |
+| `inference_dynamic_batching_sampling_backend` | `Literal['torch', 'flashinfer']` | `'torch'` | Which sampling kernels to use during inference. Falls back to "torch" with a warning if "flashinfer" is requested but the package is not installed. | `:135` |
+| `inference_dynamic_batching_async_sched_mode` | `Literal['legacy', 'serial']` | `'legacy'` | Async scheduling mode for dynamic batching. "legacy" (default) preserves the existing resolve-before-prepare path. "serial" speculatively prepares and forwar… | `:139` |
+| `inference_dynamic_batching_logprobs_mode` | `Literal['raw_logprobs', 'processed_logprobs']` | `'raw_logprobs'` | How returned inference log-probs are computed engine-wide. "raw_logprobs" (default) uses the unmodified model logits; "processed_logprobs" uses temperature a… | `:144` |
+| `decode_only_cuda_graphs` | `bool` | `False` | Only use cuda graphs for decode-only steps, not prefill and mixed steps. | `:152` |
+| `inference_dynamic_batching_enable_prefix_caching` | `bool` | `False` | Enable/disable prefix caching for dynamic batching inference. When disabled, KV cache blocks cannot be shared between requests with identical prompt prefixes. | `:169` |
+| `inference_dynamic_batching_prefix_caching_eviction_policy` | `Literal['ref_zero', 'lru']` | `'ref_zero'` | Eviction policy for prefix caching blocks. "ref_zero" (default) immediately returns blocks to the free pool when ref_count hits 0. "lru" keeps blocks cached … | `:173` |
+| `inference_dynamic_batching_prefix_caching_coordinator_policy` | `Literal['longest_prefix', 'first_prefix_block', 'round_robin']` | `'first_prefix_block'` | Coordinator routing policy for prefix caching. "first_prefix_block" (default) routes based on the first block hash only. "longest_prefix" routes to the rank … | `:178` |
+| `inference_dynamic_batching_prefix_caching_routing_alpha` | `float` | `0.5` | Weight for prefix-aware routing score: score = alpha * match + (1 - alpha) * normalized_load. Higher alpha favors prefix cache hits; lower alpha favors load … | `:185` |
+| `inference_dynamic_batching_prefix_caching_mamba_gb` | `float \| None` | `None` | GPU memory budget (in GB) for the Mamba state cache used by prefix caching on hybrid models. When set, Mamba states at block boundaries are cached for reuse. | `:189` |
+| `inference_logging_step_interval` | `int` | `0` | Step interval for logging inference metrics. Default to 0 to disable inference logging. | `:195` |
+| `inference_text_gen_server_logging` | `bool` | `False` | Enable per-request logging in the inference text generation server. | `:198` |
+| `inference_wandb_logging` | `bool` | `False` | Enable inference wandb logging. | `:201` |
+| `inference_coordinator_port` | `int \| None` | `None` | This port will be used to setup the inference coordinator on node-0. | `:206` |
+| `inference_use_synchronous_zmq_collectives` | `bool` | `False` | Use synchronous ZMQ collectives for inference. Helps in reducing performance variability for MoEs. | `:209` |
+| `inference_disable_ep_consensus` | `bool` | `False` | Skip the EP-group consensus all-reduce in the inference engine control loop and step on local state only. Only safe when EP coordination is not required (e.g… | `:213` |
+| `mamba_inference_conv_states_dtype` | `Literal['bf16', 'fp16', 'fp32']` | `'bf16'` | Dtype for the Mamba inference conv states tensor. | `:221` |
+| `mamba_inference_ssm_states_dtype` | `Literal['bf16', 'fp16', 'fp32']` | `'bf16'` | Dtype for the Mamba inference SSM states tensor. | `:224` |
+| `use_flashinfer_fused_rope` | `bool` | `False` | Use flashinfer's fused rope implementation. Mirrors `--use-flashinfer-fused-rope`. | `:239` |
+
+> 该类共 44 个字段，本表收 37 项；其余 7 项已在别处归属：主要归 本页他处 4 项、[[23_megatron_precision_cudagraph_fusion_analysis]] 2 项、[[30_megatron_rl_posttraining_consistency_analysis]] 1 项（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+
+---
+
+## 配置契约：推理侧的 core 字段
+
+本页前一节给的是 `InferenceSetupConfig`（训练侧的装配参数）。本节补的是散在 `TransformerConfig` 里、但只在推理路径生效的字段——`inference_*` 一组与 `flash_decode`、`symmetric_ar_type`、`nccl_all_reduce_for_prefill`、`mlp_chunks_for_prefill`。
+
+**两组字段分属不同 config 类不是历史遗留**：`InferenceSetupConfig` 描述「起一个推理会话要什么」，而这里几项描述「模型在推理时的行为差异」，后者必须和模型配置同生命周期——它们会影响 kernel 选择与通信路径，不能在会话级别改。
+
+**下表直接取自 `megatron/core/transformer/transformer_config.py` 的类体**。
+
+
+
+
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，7 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `flash_decode` | `bool` | `False` | Use the optimized flash decoding kernel during inference. | `:1330` |
+| `inference_sampling_seed` | `int` | `42` | Random seed to use for sampling during inference. | `:1349` |
+| `symmetric_ar_type` | `Optional[Literal['two_shot', 'one_shot', 'multimem_all_reduce']]` | `None` | What type of symmetric all reduce to use. The default is None which is no use of symmetric memory. | `:1352` |
+| `nccl_all_reduce_for_prefill` | `bool` | `False` | If True, use NCCL all-reduce kernels when symmetric all-reduce is enabled. | `:1357` |
+| `inference_disable_triton_nvls_kernels` | `bool` | `False` | If true, disables the use of Triton NVLS kernels during inference. | `:1366` |
+| `inference_moe_disable_fused_quant_kernels` | `bool` | `False` | When False (default), use fused kernels that combine permute/activation with MXFP8 quantization + swizzle into a single kernel launch. Only applies when fp8_… | `:1379` |
+| `mlp_chunks_for_prefill` | `int` | `1` | The number of chunks along the sequence dimension to use for MLP computation during prefill. | `:1428` |
+
+> 该类共 266 个字段，本表收 7 项；其余 259 项已在别处归属：主要归 [[10_megatron_model_structure_analysis]] 92 项、[[14_megatron_ep_analysis]] 38 项、[[23_megatron_precision_cudagraph_fusion_analysis]] 38 项、[[21_megatron_fusion_operators_analysis]] 26 项，另散见 20 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
 
 ## Related Pages
 
 - [[30_megatron_rl_posttraining_consistency_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]] · [[14_megatron_ep_analysis]] · [[10_megatron_model_structure_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+
+

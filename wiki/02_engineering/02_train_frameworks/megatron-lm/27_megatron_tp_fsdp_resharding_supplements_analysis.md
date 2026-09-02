@@ -76,37 +76,32 @@ NTP 的四条设计取舍(为什么做成子类、为什么只动梯度不动参
 > 本节已整体归一到 [[36_megatron_fsdp_analysis]]——那里按五拍完整覆盖了 FSDP unit 分组、四类 buffer 与 ZeRO 阶梯、hook 状态机与两条流水线、四档桶分配器、与 EP/TP/HSDP 的叠加,以及接入层 `mcore_fsdp_adapter`。
 > 本页保留另外两条支线:**NTP**(§4)与 **Resharding / Refit**(§5)。
 
-## 4. Nonuniform TP(NTP)—— TP 级容错
+## 4. Nonuniform TP(NTP)—— 已归一到 25 号页
 
-`megatron/core/distributed/nonuniform_tp.py`。模块 docstring 直说:"provides fault tolerance for tensor-parallel training by allowing a subset of TP ranks ('spares') to handle failures while 'core' ranks continue computation."
+> [!update] 2026-09-02 · 本节由机制重述收缩为指针
+> 原 §4.1–§4.4 重述了 NTP 的机制，而**重述版本与源码相反**，故按 merge-over-coexist 收缩：
+> 权威页是 [[25_megatron_nonuniform_tp_analysis]]，本页只留定位与一条锚点。
+>
+> 被推翻的三条（保留记录以免同样的误解再次写入）：
+> 1. 原写「健康时 `tp_base − tp_spares` 个 core rank 干活，**spare 待命**」——
+>    源码里 spare rank 在 `initialize_nonuniform_tp_process_groups` 中直接 `sys.exit(0)`
+>    （`megatron/core/distributed/nonuniform_tp.py:556-558`，日志原文 "Rank %s is a spare rank, exiting"），
+>    **不待命**；健康副本是全部 `tp_base` 个 rank 都在算。
+> 2. 原写「故障 rank 的分片**重分片到存活 core rank**，通过 `_ntp_all_to_all`(`:100`) 做分片再分配」——
+>    `:100` 只是保留非连续输出视图的通用 all_to_all 辅助，不是分片再分配；
+>    **NTP 全程不搬参数数据**，两次 A2A 搬的是**梯度**：
+>    "NTP gathers those extra gradients onto healthy core ranks, runs the data-parallel gradient
+>    reduction on peerable ranks, then post-sync reshards **gradients** back to the extra ranks
+>    before optimizer step."（`megatron/core/distributed/README_NONUNIFORM_TP.md:205-208`）
+> 3. 原写「扛住组内 rank 故障**而不重启**」「spare rank 平时空转」——
+>    [[25_megatron_nonuniform_tp_analysis]] 把 NTP 定位为**冷重启**容错，并明写它不做在线故障检测。
 
-### 4.1 动机与解决的问题
+**一句话定位**：NTP 让一个 TP 组在**部分 rank 缺席**的情况下仍能训练——健康副本是完整 `tp_base`，
+缩减副本少若干 rank，两者的梯度靠**两次 all-to-all**（同步前 gather 多出来的梯度、同步后 reshard 回去）
+弥合，参数本身不搬。它以 Megatron 核心类的**子类**形式收在单文件
+`megatron/core/distributed/nonuniform_tp.py`（1461 行），对主干零侵入。
 
-大规模训练里单 GPU 故障是常态。TP 组是同步的 —— 组里**任一 rank 挂掉,整个 TP 组就停**,通常得整体重启。NTP 的动机:**让 TP 训练能扛住组内 rank 故障而不重启**。
-
-### 4.2 机制:core rank + spare rank
-
-一个 TP 组配置成 `tp_base` 个 rank,其中 `tp_spares` 个是**备用(spare)**:
-- 健康时:`tp_base − tp_spares` 个 **core rank** 干活,spare 待命。
-- 某 core rank 故障:它负责的 TP 分片**重分片(reshard)到存活的 core rank 上** —— 通过 `_ntp_all_to_all`(`:100`)做分片再分配;健康 core rank 用额外的 `side_grad` 存储(`_ntp_should_expand_param_grad`,`:193`)容纳多接手的那部分梯度。`recv_splits` 记录每个 rank 接收的分片切分。
-
-```
-正常:   TP 组 = [core0 core1 core2 | spare]    3 core 干活
-core1 挂:reshard → core1 的分片经 A2A 摊到 core0/core2(+ side_grad 存储)
-         训练用 reduced_tp_size = tp_base − tp_spares 继续,不重启
-```
-
-### 4.3 非侵入式设计
-
-NTP 全部逻辑收在 `megatron/core/distributed/nonuniform_tp.py` 一个文件,以 Megatron 核心类的**子类**形式实现(`NonuniformTPDistributedDataParallel` 继承 `DistributedDataParallel`),不改动主代码。用法:`initialize_model_parallel()` 之后调 `initialize_nonuniform_tp_process_groups()`,并用 NTP 变体替换 DDP。`PerBufferParamLayout` / `FullParamLayout` 描述重分片后的参数布局。
-
-### 4.4 开销与适用场景
-
-| 维度 | 说明 |
-|------|------|
-| 代价 | spare rank 平时空转(算力冗余);故障后 `reduced_tp_size` 下负载略增 + side_grad 额外显存 |
-| 收益 | TP 组扛单点故障,免整体重启 —— 大规模、长训练的可用性 |
-| 适用 | 几千卡级长周期训练;小规模训练不必要 |
+机制、取舍、容错边界与代价见 [[25_megatron_nonuniform_tp_analysis]]；本页 §2.2 已给出「只弥合梯度」这条取舍的锚点。
 
 ---
 
@@ -239,7 +234,7 @@ NTP 的前提、代价与失效条件已在 [[25_megatron_nonuniform_tp_analysis
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`（2026-08-27）。源码行号以该 commit 为准；2026-08-28 由 `ee3f1ff` 重定基线。配套文档:`12_megatron_tp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`、`15_megatron_pp_schedulers_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准；2026-08-28 由 `ee3f1ff` 重定基线。配套文档:`12_megatron_tp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`、`15_megatron_pp_schedulers_analysis.md`。*
 
 ## Related Pages
 

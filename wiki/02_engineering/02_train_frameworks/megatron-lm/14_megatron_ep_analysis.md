@@ -445,19 +445,19 @@ T2 = prob(E0)·out0[T2] + prob(E3)·out3[T2]
 
 ### ③.2 源码与流程
 
-Flex dispatcher 把活儿委托给一个 `_comm_manager`(`_DeepepManager` `:1283` 或 `_HybridEPManager` `:1060`):
+Flex dispatcher 把活儿委托给一个 `_comm_manager`(`_DeepepManager` `:1284` 或 `_HybridEPManager` `:1060`):
 
 ```python
-def dispatch_preprocess(self, hidden_states, routing_map, probs):    # :1963
+def dispatch_preprocess(self, hidden_states, routing_map, probs):    # :1964
     routing_map, probs = self._initialize_metadata(routing_map, probs)   # 扩展成 TP×EP 统一格式
     self._comm_manager.setup_metadata(routing_map, probs)
     return hidden_states, self._comm_manager.token_probs
 
-def token_dispatch(self, hidden_states, probs, ...):                 # :1989
+def token_dispatch(self, hidden_states, probs, ...):                 # :1990
     dispatched_hidden_states = self._comm_manager.dispatch(hidden_states, async_finish, ...)
     return dispatched_hidden_states, self._comm_manager.dispatched_probs
 
-# _DeepepManager.dispatch(:1364):一次 fused_dispatch 内核同时完成置换 + A2A
+# _DeepepManager.dispatch(:1365):一次 fused_dispatch 内核同时完成置换 + A2A
 def dispatch(self, hidden_states, ...):
     hidden_states, dispatched_indices, dispatched_probs, num_tokens_per_expert, handle = \
         fused_dispatch(hidden_states, self.token_indices, self.token_probs,
@@ -466,7 +466,7 @@ def dispatch(self, hidden_states, ...):
     return hidden_states
 ```
 
-`token_combine`(`:2052`)调 `fused_combine`,凭 dispatch 阶段保存的 `handle` 做对称的反向融合通信。
+`token_combine`(`:2053`)调 `fused_combine`,凭 dispatch 阶段保存的 `handle` 做对称的反向融合通信。
 
 **流程图**
 
@@ -827,10 +827,49 @@ dispatch/combine 的 A2A **默认在关键路径上**:计算流必须等 token �
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`。源码行号以该 commit 为准,后续版本可能漂移。配套文档:`15_megatron_pp_schedulers_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准,后续版本可能漂移。配套文档:`15_megatron_pp_schedulers_analysis.md`。*
+
+---
+
+## 配置契约：MoE 长尾字段
+
+本页正文覆盖了 MoE 的主干旋钮（dispatcher 类型、后端、容量因子、并行折叠）。本节补的是 `# MoE related` 段里此前**全域零提及**的长尾——它们不改变本页 §11 的选型结论，但会在具体配置时用到。
+
+**下表直接取自 `megatron/core/transformer/transformer_config.py` 的类体**。按作用分三类：**路由算法细节**（`moe_router_score_function`、`moe_router_pre_softmax`、`moe_router_group_topk`、`moe_router_topk_scaling_factor`、`moe_router_bias_update_rate` 等，机制见 [[10_megatron_model_structure_analysis]] §6）、**丢弃与容量策略**（`moe_token_dropping`、`moe_token_drop_policy`）、**后端与融合细节**（`moe_hybridep_num_blocks_*`、`moe_permute_fusion_into_hybridep`、`moe_ncclep_use_symm_mem`、`dense_grouped_gemm`）。
+
+
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，21 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `moe_shared_expert_gate` | `bool` | `False` | Enable gate for shared expert. Only effective when moe-shared-expert-intermediate-size is set. | `:785` |
+| `use_grouped_gemm_for_shared_expert` | `bool` | `False` | Use GroupedLinear(num_groups=1) for the shared expert MLP to trigger the Transformer Engine grouped SwiGLU fusion path. Only effective when moe-shared-expert… | `:795` |
+| `moe_shared_expert_glu_interleave_size` | `Optional[int]` | `None` | When set, GLU activations in the shared expert MLP will use a block interleaved format. This is only effective when use_grouped_gemm_for_shared_expert is set. | `:801` |
+| `moe_enable_routing_replay` | `bool` | `False` | If True, enable the routing replay feature for MoE layers. | `:832` |
+| `moe_router_topk_limited_devices` | `Optional[int]` | `None` | Number of EP ranks to consider for each token in group-limited routing, DEPRECATED and replaced by moe_router_num_groups and moe_router_group_topk. | `:835` |
+| `moe_router_group_topk` | `Optional[int]` | `None` | Number of selected groups for group-limited routing. | `:865` |
+| `moe_router_pre_softmax` | `bool` | `False` | Enable pre-softmax(pre-sigmoid) routing for MoE, which means softmax is before the top-k selection. By default, softmax is done after top-k. | `:868` |
+| `moe_router_topk_scaling_factor` | `Optional[float]` | `None` | Scaling factor for routing score in top-k selection, only works when moe_router_pre_softmax enabled. Defaults to None, which means no scaling. | `:873` |
+| `moe_router_score_function` | `Literal['softmax', 'sigmoid', 'sqrtsoftplus']` | `'softmax'` | Score function for MoE routing. Can be "softmax", "sigmoid" or "sqrtsoftplus". | `:877` |
+| `moe_router_bias_update_rate` | `float` | `0.001` | The expert bias is updated based on the number of assigned tokens to each expert in a global batch, where the bias is increased for the experts with less ass… | `:890` |
+| `dense_grouped_gemm` | `bool` | `False` | Use GroupedLinear(num_groups=1) for dense MLP to trigger the ForwardGroupedMLP_CuTeGEMMSwiGLU_MXFP8 fusion on SM100+ with MXFP8 recipe. Requires `use_te_op_f… | `:917` |
+| `moe_aux_loss_coeff` | `Union[float, List[float]]` | `0.0` | Scaling coefficient for the aux loss. A starting value of 1e-2 is recommended. If a list of load balancing types is provided for `moe_router_load_balancing_t… | `:960` |
+| `moe_input_jitter_eps` | `Optional[float]` | `None` | Add noise to the input tensor by applying jitter with a specified epsilon value. | `:968` |
+| `moe_token_dropping` | `bool` | `False` | This feature involves selectively dropping and padding tokens for each expert to achieve a specified capacity, similar to GShard, Switch-Transformer, and Dee… | `:971` |
+| `moe_permute_fusion_into_hybridep` | `bool` | `False` | Fuse token rearrangement ops during token dispatching for HybridEP. | `:989` |
+| `moe_pad_experts_for_cuda_graph_inference` | `bool` | `False` | moe_pad_experts_for_cuda_graph_inference (bool): If True, the router will switch to dropping and padding during decode time which does not have a D2H sync. T… | `:1018` |
+| `moe_token_drop_policy` | `Literal['probs', 'position']` | `'probs'` | The policy to drop tokens. Can be either "probs" or "position". If "probs", the tokens with the lowest probabilities will be dropped. If "position", tokens a… | `:1024` |
+| `moe_latent_size` | `Optional[int]` | `None` | Latent projection dimension for MoE. If None, MoE latent projections are not used. | `:1044` |
+| `moe_hybridep_num_blocks_permute` | `Optional[int]` | `None` | Number of CUDA thread blocks for the permute part in HybridEP. When permute_fusion_into_hybridep is True, this sets the number of SMs for the permute part (o… | `:1060` |
+| `moe_hybridep_num_blocks_unpermute` | `Optional[int]` | `None` | Number of CUDA thread blocks for the unpermute part in HybridEP. When permute_fusion_into_hybridep is True, this sets the number of SMs for the unpermute par… | `:1065` |
+| `moe_ncclep_use_symm_mem` | `bool` | `False` | For the 'ncclep' flex dispatcher: use the NCCL symmetric-memory zero-copy IO path (ep_bootstrap zero_copy + symm-mem-backed receive/combine buffers) instead … | `:1084` |
+
+> 该类共 266 个字段，本表收 21 项；其余 245 项已在别处归属：主要归 [[10_megatron_model_structure_analysis]] 92 项、[[23_megatron_precision_cudagraph_fusion_analysis]] 38 项、[[21_megatron_fusion_operators_analysis]] 26 项、本页他处 17 项，另散见 20 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
 
 ## Related Pages
 
 - [[15_megatron_pp_schedulers_analysis]] · [[10_megatron_model_structure_analysis]] · [[17_megatron_parallelism_orchestration_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]]
 - [[14_megatron_ep_analysis]] · [[02_megatron_moe_training_optimization_analysis]] · [[20_megatron_comm_overlap_analysis]] · [[13_megatron_cp_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+
+

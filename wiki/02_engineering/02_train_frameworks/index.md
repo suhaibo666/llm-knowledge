@@ -27,7 +27,7 @@ title: "训练框架 — 目录索引"
 
 | 框架 | 在本域中的定位 | 本库覆盖 | 基线 |
 |---|---|---|---|
-| **Megatron-LM** | NVIDIA 出品，**手工并行的事实标准**；5D 并行、MoE、通信掩盖、分布式优化器的原始参考实现 | 28 篇 + index（**系统性源码覆盖**） | `NVIDIA/Megatron-LM@85902ef59`（`dev`，2026-09-01） |
+| **Megatron-LM** | NVIDIA 出品，**手工并行的事实标准**；5D 并行、MoE、通信掩盖、分布式优化器的原始参考实现 | 33 篇 + index（**系统性源码覆盖 + 代码仓功能树对账**） | `NVIDIA/Megatron-LM@85902ef59`（`dev`，2026-09-01） |
 | **TorchTitan** | **PyTorch-native 路线**：用 full configuration、DeviceMesh/SPMD Types、FSDP2 与编译器实验组合训练系统；本库另一条系统性覆盖主线 | 23 篇 + index（**系统性源码覆盖**） | `pytorch/torchtitan@a3168782c`（`main`，commit date 2026-08-26） |
 | **MindSpeed / MindSpeed-LLM** | 华为昇腾侧：**猴补丁式**加速栈，在 Megatron 之上叠 ~70 个特性；代表"在既有框架上做厂商适配"这条路 | 5 篇 + index（按并行/通信掩盖/内存/昇腾亲和四类 + CP 专题的**机制级深挖，非全量特性走查**） | MindSpeed `master@1432cb09`（基于 Megatron `core_r0.17.0`）· MindSpeed-LLM `master@0c16322d` |
 | **MindFormers** | 华为昇腾侧的另一条路：**MindSpore 生态**，与前三者不共享 PyTorch 底座 | 2 篇 + index（**单点切入**：仅 MoE 专家并行的 PyNative/Graph 两条 token dispatch 路径） | `master@01e71622`（2026-06-18） |
@@ -69,7 +69,7 @@ title: "训练框架 — 目录索引"
 
 | 目录 | 核心主题 |
 |------|---------|
-| [[megatron-lm/index]] | NVIDIA Megatron-LM, 5D 并行, MoE, TFLOPS, 通信掩盖;源码级系统分析 28 篇内容页 + index(`dev` 85902ef59, 2026-09-01 全域重定基线) |
+| [[megatron-lm/index]] | NVIDIA Megatron-LM, 5D 并行, MoE, TFLOPS, 通信掩盖;源码级系统分析 + 段 4 代码仓功能树(600 个 `.py` 双向对账) 共 33 篇内容页 + index(`dev` 85902ef59, 2026-09-01 全域重定基线) |
 | [[torchtitan/index]] | PyTorch-native 训练框架；full config、Grain/checkpoint/multimodal contract、核心 Trainer + DP/TP/CP/EP/PP + SPMD Types + 低精度/LoRA/structured trace + FlexShard/GraphTrainer + TorchFT/HF backend/Forge，源码级分析 23 篇内容页 + index（`main` `a3168782c`） |
 | [[mindformers/index]] | 华为 MindFormers;MoE 专家并行(EP)源码级分析,PyNative 与 Graph 两条路径的 token dispatch、去冗余/零冗余/重叠与通信量(`master` 01e71622)2 篇内容页 + index |
 | [[mindspeed/index]] | 华为昇腾 MindSpeed × MindSpeed-LLM;猴补丁式 Megatron 加速栈,~70 个特性按并行/通信掩盖/内存优化/昇腾亲和四类 + CP 专题的机制级深挖(`master` 1432cb09)5 篇内容页 + index |

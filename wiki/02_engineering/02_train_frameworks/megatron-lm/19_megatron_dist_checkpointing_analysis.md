@@ -240,9 +240,92 @@ save(sharded_state_dict, checkpoint_dir, ...):
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`（2026-08-27）。源码行号以该 commit 为准；2026-08-28 由 `ee3f1ff` 重定基线。配套文档:`17_megatron_parallelism_orchestration_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准；2026-08-28 由 `ee3f1ff` 重定基线。配套文档:`17_megatron_parallelism_orchestration_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md`。*
+
+---
+
+## 配置契约：`CheckpointConfig`
+
+本页正文讲的是 **core 侧的存档机制**——`ShardedTensor`、并行无关格式、`fully-parallel`/`async` 策略。但用户实际操作存档的面不在 `megatron/core/dist_checkpointing`，而在 `CheckpointConfig`：它是 `megatron/training/config/` 下**最大的一个 config 类**，经 [[41_megatron_config_surface_analysis]] §2 的 `ArgumentGroupFactory` 自动转成 CLI（`megatron/training/arguments.py:3943`）。
+
+**下表的类型、默认值与说明直接取自 `CheckpointConfig` 类体**（行号为 `training_config.py` 内行号），与生成 CLI 的是同一份声明。读法：先按**存哪儿**（`save` / `load` / `pretrained_checkpoint`）、**多久存一次**（`save_interval` 与 non-persistent 那一组）、**存什么**（`no_save_optim` / `no_save_rng` 及其 load 对偶）、**怎么存**（`ckpt_format`、`async_save`、fully-parallel 一组）四类分组读，比按字母序逐条看要快得多。
+
+
+### `CheckpointConfig`（`megatron/training/config/training_config.py`，45 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `save_params_interval` | `int \| None` | `None` | Number of iterations between param.name->param.data mapping saves. | `:427` |
+| `save_wgrads_interval` | `int \| None` | `None` | Number of iterations between wgrad (main_grad) saves. | `:436` |
+| `save_retain_interval` | `int \| None` | `None` | Number of iterations between retained checkpoints (other checkpoints except the last checkpoint are automatically deleted). | `:442` |
+| `most_recent_k` | `int \| None` | `-1` | Number of latest checkpoint to be saved. | `:447` |
+| `save_optim` | `bool` | `True` | Do not save current optimizer. | `:450` |
+| `save_rng` | `bool` | `True` | Do not save current rng state. | `:453` |
+| `load_optim` | `bool` | `True` | Do not load optimizer when loading checkpoint. | `:459` |
+| `load_main_params_from_ckpt` | `bool` | `False` | Load main parameters from checkpoint. When loading a model from a checkpoint without loading the optimizer, the model parameters are updated but for fp16 opt… | `:462` |
+| `load_rng` | `bool` | `True` | Do not load rng state when loading checkpoint. | `:468` |
+| `non_persistent_save_interval` | `int \| None` | `None` | Number of iterations between non-persistent saves. | `:471` |
+| `non_persistent_ckpt_type` | `Literal['global', 'local', 'in_memory'] \| None` | `None` | Type of non-persistent model checkpoints. "global" - Saved as a standard checkpoint (e.g., on Lustre) with old checkpoints being removed. "local" - [TBD] Eac… | `:474` |
+| `non_persistent_global_ckpt_dir` | `str \| None` | `None` | Directory containing global non-persistent model checkpoints. | `:481` |
+| `non_persistent_local_ckpt_dir` | `str \| None` | `None` | Directory containing local non-persistent model checkpoints. | `:484` |
+| `non_persistent_local_ckpt_algo` | `Literal['fully_parallel', 'atomic']` | `'fully_parallel'` | Algorithm for local non-persistent checkpointing. | `:487` |
+| `finetune` | `bool` | `False` | Load model for finetuning. Do not load optimizer or rng state from checkpoint and set iteration to 0. Assumed when loading a release checkpoint. | `:490` |
+| `pretrained_checkpoint` | `str \| None` | `None` | Directory containing a pretrained model checkpoint for finetuning. | `:494` |
+| `ckpt_step` | `int \| None` | `None` | Checkpoint step to load model from. | `:497` |
+| `use_checkpoint_args` | `bool` | `False` | Override model-related command-line arguments with arguments from checkpoint | `:500` |
+| `use_mp_args_from_checkpoint_args` | `bool` | `False` | Copy model parallelism command-line arguments from checkpoint | `:503` |
+| `use_tokenizer_model_from_checkpoint_args` | `bool` | `True` | If set, do not use tokenizer model path from checkpoint | `:506` |
+| `exit_on_missing_checkpoint` | `bool` | `False` | If 'load' is set, but checkpoint is not found (e.g., path typo), then exit instead of random initialization. | `:509` |
+| `auto_detect_ckpt_format` | `bool` | `False` | Determine if the checkpoint format is in legacy or distributed format. If False, expects distributed checkpoint iff args.ckpt_format != "torch". Might slow d… | `:519` |
+| `ckpt_convert_format` | `Literal['torch', 'torch_dist'] \| None` | `None` | Checkpoint format for conversion. | `:525` |
+| `ckpt_convert_save` | `str \| None` | `None` | Save directory for converted checkpoint. | `:528` |
+| `ckpt_convert_update_legacy_dist_opt_format` | `bool` | `False` | When loading a checkpoint, update the legacy format for the distributed optimizer, which previously used a merged param/grad buffer and a different bucket ma… | `:531` |
+| `fully_parallel_save` | `bool` | `field(default=True, metadata={'argpar…` | Disable applying full save parallelization across DP for distributed checkpoints. Depending on ckpt format might decrease the number of files in the checkpoi… | `:537` |
+| `async_save` | `bool` | `False` | Apply async checkpointing save. Currently works only with `torch_dist` distributed checkpoint format. | `:550` |
+| `use_persistent_ckpt_worker` | `bool` | `False` | Use a persistent background worker for async checkpoint saves. When enabled, creates a dedicated worker thread/process for handling async saves. When disable… | `:556` |
+| `async_ckpt_cpu_priority` | `int` | `10` | CPU nice value target (0-19, higher = lower priority) for the async checkpoint writer process. If it exceeds 19, it will be set to 19. If the current nice va… | `:561` |
+| `async_ckpt_io_priority` | `Optional[int]` | `3` | I/O scheduling class (0-3, 3=idle) for the async checkpoint writer process. | `:566` |
+| `async_ckpt_use_cpu_shm` | `bool` | `False` | Copy GPU tensors to CPU shared-memory in the training process before handing off to the async checkpoint worker. Avoids CUDA IPC / NVLink fabric handles in t… | `:569` |
+| `fully_parallel_load` | `bool` | `field(default=False, metadata={'argpa…` | Apply full load parallelization across DP for distributed checkpoints. | `:575` |
+| `ckpt_fully_parallel_load_exchange_algo` | `Literal['broadcast', 'gather_rounds', 'gather_object']` | `'broadcast'` | Algorithm for fully parallel load of distributed checkpoints. "broadcast"(default): Broadcast the checkpoint from rank 0 to all other ranks. "gather_rounds":… | `:586` |
+| `ckpt_fully_parallel_save_process_group` | `Literal['dp', 'ep_dp']` | `'dp'` | Process group for fully parallel save of distributed checkpoints. "dp"(default): Data parallel process group. "ep_dp": Expert data parallel process group. | `:595` |
+| `ckpt_fully_parallel_load_process_group` | `Literal['dp', 'ep_dp']` | `'dp'` | Process group for fully parallel load of distributed checkpoints. "dp"(default): Data parallel process group. "ep_dp": Expert data parallel process group. | `:601` |
+| `ckpt_assume_constant_structure` | `bool` | `False` | Assume the checkpoint structure is constant across saves to enable optimizations. | `:607` |
+| `ckpt_load_validate_sharding_integrity` | `bool` | `True` | Whether to validate sharding access integrity when loading a distributed checkpoint. When True (default), each tensor shard is checked to be accessed exactly… | `:610` |
+| `strict_fsdp_dtensor_load` | `bool` | `True` | Whether to enforce strict loading for FSDP DTensor checkpoints. When False, allows partial loading. | `:615` |
+| `dist_ckpt_strictness` | `Literal['assume_ok_unexpected', 'log_unexpected', 'log_all', 'raise_unexpected', 'raise_all', 'return_unexpected', 'return_all', 'ignore_all']` | `'assume_ok_unexpected'` | Determine handling of key mismatch during checkpoint load. Check StrictHandling docs for flags meaning. NOTE: This flag controls only distributed checkpoint … | `:618` |
+| `dist_ckpt_save_pre_mcore_014` | `bool` | `False` | Revert checkpointing simplifications introduced in Megatron-Core v0.14. This option affects only checkpoint saving format and will be removed soon (checkpoin… | `:631` |
+| `dist_ckpt_optim_fully_reshardable` | `bool` | `False` | Make optimizer distributed checkpoint fully reshardable (TP/PP/EP/DP) as opposed to plain DP reshardability. | `:636` |
+| `distrib_optim_fully_reshardable_mem_efficient` | `bool` | `False` | During distributed optimizer checkpoint save and load tries to use as little memory as possible by using Gloo (instead of NCCL) and only one rank for saving.… | `:639` |
+| `save_tokenizer_assets` | `bool` | `True` | Save tokenizer files to checkpoint directory. When enabled, saves all tokenizer artifacts (vocab files, special tokens, tokenizer config) to make checkpoints… | `:644` |
+| `replication_jump` | `int \| None` | `None` | Specifies `J`, the spacing between ranks storing replicas of a given rank's data. Replicas for rank `n` may be on ranks `n+J`, `n+2J`, ..., or `n-J`, `n-2J`,… | `:652` |
+| `replication_factor` | `int` | `2` | Number of machines storing the replica of a given rank's data. | `:657` |
+
+> 该类共 55 个字段，本表收 45 项；其余 10 项已在别处归属：主要归 本页他处 7 项、[[43_megatron_job_resilience_analysis]] 3 项（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+
+> **与正文的接缝**：`ckpt_fully_parallel_save` / `ckpt_fully_parallel_load` 对应本页讲的 `FullyParallelSave/LoadStrategyWrapper`；`async_save` 对应异步策略与 finalize 流程；non-persistent 那一组则是本页 core 机制之外、由训练侧编排的一层（详见 [[40_megatron_feature_tree_analysis]] §4 标记的「训练侧存档编排」待补项）。
+
+---
+
+## 配置契约：异构存档补充
+
+本页前一节给了 `CheckpointConfig`。本节补 `TransformerConfig` 里一个与异构模型存档相关、此前零提及的字段。
+
+
+
+
+
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，1 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `hetereogenous_dist_checkpoint` | `bool` | `False` | Whether to use heterogenous layers in distributed checkpoint. | `:1438` |
+
+> 该类共 266 个字段，本表收 1 项；其余 265 项已在别处归属：主要归 [[10_megatron_model_structure_analysis]] 92 项、[[14_megatron_ep_analysis]] 38 项、[[23_megatron_precision_cudagraph_fusion_analysis]] 38 项、[[21_megatron_fusion_operators_analysis]] 26 项，另散见 19 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
 
 ## Related Pages
 
 - [[17_megatron_parallelism_orchestration_analysis]] · [[16_megatron_distributed_optimizer_analysis]] · [[27_megatron_tp_fsdp_resharding_supplements_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+
+

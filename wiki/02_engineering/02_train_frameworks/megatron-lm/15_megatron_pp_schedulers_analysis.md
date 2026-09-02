@@ -220,11 +220,18 @@ Device 0 | F0 B0  F1 B1  F2 B2  F3 B3 |  → DP all-reduce
 | 维度 | 取值 | 说明 |
 |------|------|------|
 | **峰值激活显存** | `1 × A`(完整模型) | F 完立刻 B,任意时刻只有 1 个 microbatch 的激活在世 |
-| **模型态显存/卡** | `16 · Ψ`(Adam 混合精度,**不分摊**) | PP=1,无层切分 |
+| **模型态显存/卡** | `18 · Ψ`(Adam 混合精度,**不分摊**) | PP=1,无层切分 |
 | **PP 通信量** | `0` | 无 stage 间通信 |
 | **PP 气泡** | `0` | 无流水线就无气泡 |
 
 模型态 18 bytes/param 拆解:bf16 权重 2 + fp32 梯度 4 + fp32 master 4 + Adam 动量 4 + Adam 方差 4(bf16 训练梯度强制 fp32 累加,详见 ddp_optimizer_analysis)。
+
+> [!update] 2026-09-02 · 系数更正
+> 本节表格与 §②.4 的公式原写 `16 · Ψ` / `16·N_params`，与紧邻的拆解算式（2+4+4+4+4 = **18**）自相矛盾，现已统一为 `18`。
+> `16` 来自 ZeRO 论文的 fp16 假设（梯度按 2 字节算）；Megatron 在 bf16 下**强制 fp32 梯度累加**，梯度是 4 字节——
+> `megatron/training/arguments.py:1331-1333` 在未显式关闭时把 `accumulate_allreduce_grads_in_fp32` 置真，
+> 并打印 "accumulate and all-reduce gradients in fp32 for bfloat16 data type."。
+> [[16_megatron_distributed_optimizer_analysis]] §12.2 早已按 18 立论（该页 2026-05-22 已更正过同一处错误），本页此前未同步。
 
 ### ①.5 适用场景及原因
 
@@ -370,7 +377,7 @@ $$
 
 **模型态显存/卡**:PP 把模型按层切 `pp` 段,每卡只持有 `1/pp`:
 $$
-M_{\text{model}}^{\text{per-device}} = \frac{16\cdot N_{\text{params}}}{pp}\ \text{bytes} \quad(\textbf{PP 的根本收益})
+M_{\text{model}}^{\text{per-device}} = \frac{18\cdot N_{\text{params}}}{pp}\ \text{bytes} \quad(\textbf{PP 的根本收益})
 $$
 
 **气泡推导**(从末端设备空闲入手):
@@ -925,7 +932,7 @@ def get_total_workload(self, seq_length, cp_size):
 | 3 | `custom_backward` 要求 output 已被缩成标量 | `assert output.numel() == 1`(`megatron/core/pipeline_parallel/schedules.py:208`) | §2① 的两个函数互为前提,不能只开一半 |
 | 4 | 反向钉在 PyTorch 私有入口上 | `Variable._execution_engine.run_backward`(`megatron/core/pipeline_parallel/schedules.py:220-228`),注释指向 `torch/csrc/autograd/python_engine.cpp`(`:219`) | 这是 §2① 那笔交易的账单:PyTorch 动这个内部 API,PP 反向就要跟着改 |
 | 5 | `overlap_p2p_comm` 与 `batch_p2p_comm` 互斥 | 配置期互相声明(`megatron/core/model_parallel_config.py:380-388`)+ 运行期 `ValueError`(`megatron/core/pipeline_parallel/schedules.py:1180-1181`) | 开 overlap 必须同时把 `batch_p2p_comm` 关掉 |
-| 6 | **非交错 1F1B 根本不支持 P2P 重叠** | `ValueError("Non-interleaved pipeline parallelism does not support overlapping p2p communication")`(`megatron/core/pipeline_parallel/schedules.py:2313-2314`) | 调度器④ 只能寄生在 VPP 上;不开 VPP 就没有这条路 |
+| 6 | **非交错 1F1B 根本不支持 P2P 重叠** | `ValueError("Non-interleaved pipeline parallelism does not support overlapping p2p communication")`(`megatron/core/pipeline_parallel/schedules.py:2313-2315`) | 调度器④ 只能寄生在 VPP 上;不开 VPP 就没有这条路 |
 | 7 | `overlap_p2p_comm_warmup_flush` 要求 `overlap_p2p_comm=True` 且 `batch_p2p_comm=False` | `megatron/core/model_parallel_config.py:603-607` | 三个 P2P 旋钮是一条链,不能各调各的 |
 | 8 | `microbatch_group_size_per_vp_stage` 须落在 `[pp, m]`,且 `m % N` 要么为 0 要么 ≥ `pp` | `ValueError`(`megatron/core/pipeline_parallel/schedules.py:1255-1262`)/ `RuntimeError`(`:1266-1274`) | 后者的理由源码原话:「it introduces dependency bubbles in the pipeline and reduces throughput」 |
 | 9 | 无流水线调度不接受模型分块,也不支持 `adjust_tensor_shapes_fn` | `assert`(`megatron/core/pipeline_parallel/schedules.py:717`、`:720-722`、`:724-726`) | PP=1 路径与 VPP 的 chunk 列表语义不通用 |
@@ -1013,7 +1020,7 @@ def get_total_workload(self, seq_length, cp_size):
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`（2026-08-27）。源码行号以该 commit 为准,后续版本可能漂移；2026-08-28 由 `ee3f1ff` 重定基线。2026-08-01 由 `20_megatron_pp_parallelism_analysis.md`(740 行)、`26_megatron_pp_supplements_analysis.md`(229 行)吸收增量后合并而成 —— spec §3.4(kb-reorg P6 阶段遗漏,P7 收尾期补执行),详见 `wiki/changelog.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准,后续版本可能漂移；2026-08-28 由 `ee3f1ff` 重定基线。2026-08-01 由 `20_megatron_pp_parallelism_analysis.md`(740 行)、`26_megatron_pp_supplements_analysis.md`(229 行)吸收增量后合并而成 —— spec §3.4(kb-reorg P6 阶段遗漏,P7 收尾期补执行),详见 `wiki/changelog.md`。*
 
 ## Related Pages
 

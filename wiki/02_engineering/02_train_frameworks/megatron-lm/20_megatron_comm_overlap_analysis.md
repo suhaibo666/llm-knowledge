@@ -42,7 +42,17 @@ Megatron-Core 在训练大规模模型时，通信（AllGather/ReduceScatter/All
 → 判据：在单连接约束下，重叠的敌人不是通信总量而是**通信 kernel 的个数与相邻性**——桶越碎、越背靠背，越挡住计算。逐参数 hook 恰好是这个反面。
 
 **③ 被否掉的替代写在历史里：「每个 PP stage 各自就绪就发 DP 通信」输给了「所有 PP stage 对齐着发」。**
-2023-09-18 的提交 `299d8a585`（commit message：「Grad_sync function helps line up grad_sync calls, preventing ranks from being slowed down by the previous pipeline stage's DP communication」）引入过一对开关 `--no-delay-grad-reduce` / `--delay-param-gather`，help 文本是「If not set, delay / synchronize grad reductions in all but first PP stage」。2024-08-23 的提交 `4e3840535` 把这一对开关**整段删除**，换成 `--no-align-grad-reduce` / `--no-align-param-gather`，并把判据直接写进新的 help：「If not set, all PP stages will launch gradient reduces simultaneously. Otherwise, each PP stage will independently launch as needed.」当前基线保留的是后者（`megatron/training/arguments.py:4205-4211`），落点是把 `start_grad_sync` / `start_param_sync` 注入调度器的 `grad_sync_func` / `param_sync_func`（`megatron/training/training.py:4379-4386`）。
+2023-09-18 的提交 `299d8a585`（commit message：「Grad_sync function helps line up grad_sync calls, preventing ranks from being slowed down by the previous pipeline stage's DP communication」）引入过一对开关 `--no-delay-grad-reduce` / `--delay-param-gather`，help 文本是「If not set, delay / synchronize grad reductions in all but first PP stage」。2024-08-23 的提交 `4e3840535` 把这一对开关**整段删除**，换成 `--no-align-grad-reduce` / `--no-align-param-gather`，并把判据直接写进新的 help：「If not set, all PP stages will launch gradient reduces simultaneously. Otherwise, each PP stage will independently launch as needed.」
+
+> [!update] 2026-09-02 · 引用归属更正
+> 原写「当前基线保留的是后者（`megatron/training/arguments.py:4205-4211`）」——**引对了句子、钉错了地方**，且"保留"这个说法只对一半：
+> - `megatron/training/arguments.py:4205-4211` 是 **`--no-align-param-gather`**，其 help 讲的是 "all PP stages will launch **param all-gathers** simultaneously"；
+> - 引文里的 "…launch **gradient reduces** simultaneously…" 在 `arguments.py` 中**零命中**，它现在是配置字段 `align_grad_reduce` 的 docstring（`megatron/training/config/common_config.py:83-86`）；
+> - 也就是说，这一对里 **`--no-align-param-gather` 仍是 CLI 开关，而 `align_grad_reduce` 已随 [[41_megatron_config_surface_analysis]] §2 的 dataclass 驱动改造迁进 `common_config.py`**，由工厂自动生成 flag，不再手写在 `arguments.py` 里。
+>
+> 机制结论（对齐比各自尽早发更优）不受影响，变的只是这两个开关各自的声明位置。
+
+落点是把 `start_grad_sync` / `start_param_sync` 注入调度器的 `grad_sync_func` / `param_sync_func`（`megatron/training/training.py:4379-4386`）。
 → 判据从"延迟谁"被改写成"对齐谁"：跨 stage 的**带宽争抢**比"谁都尽早发出去"更贵，所以宁可让所有 stage 在同一个调度点一起发。
 
 **④ PP 用逐个 `isend`/`irecv` 而不是 `batch_isend_irecv` —— 批量路径在实现上就不能异步。**
@@ -718,9 +728,43 @@ Shared Expert 使用**状态机**管理调用顺序：`IDLE → PRE_FORWARD_COMM
 
 ## 7. CP 通信掩盖（Context Parallel）
 
-### 7.1 原理
+### 7.1 原理与取舍
 
 CP 将序列切分到多 rank，Self-Attention 需要获取完整 KV。Megatron-Core 通过**异步 AllGather KV 与 Attention 计算重叠**来掩盖通信。
+
+> [!update] 2026-09-02 · 补上被否方案与判据
+> 本节此前只讲"原理 + 代码 + 时间线"，没有说明**为什么选 AllGather 而不是别的**——
+> 而 §1 的维度表自己就列了 CP 有 "Ring P2P / async AllGather" 两条路。补齐如下。
+
+**这里的选择不是二选一，而是四选一，且由用户配置决定。** `cp_comm_type` 的取值是
+`"p2p"` / `"all_gather"` / `"a2a"` / `"a2a+p2p"`，且**可以逐层不同**——
+"str: all layers share same communication type. List[str]: each layer has its separate
+communication type."（`megatron/core/transformer/transformer_config.py:1101-1105`）。
+本节讲的是 `all_gather` 这一档在 Megatron **原生实现**里怎么掩盖；另外三档走 TransformerEngine，
+选型决策树见 [[13_megatron_cp_analysis]]。
+
+**为什么原生这条路走 AllGather 而不是 Ring P2P**：
+
+| | Ring P2P（被否） | 异步 AllGather（现选） |
+|---|---|---|
+| 通信量 | 最优：每 rank 只收发相邻块，总量 $O(\text{cp})$ 步小消息 | 更高：每 rank 拿到全部 KV |
+| 与计算的耦合 | 计算必须**按环的步序**切成 cp 段，逐步等对应块到达 | 计算不必切分，一次发起、边算边等 |
+| 实现复杂度 | 需要在 attention 内部编排环形收发与部分结果的在线归约 | 一个 `all_gather_into_tensor(async_op=True)` + 一次 `wait()` |
+
+现选那条的实现就是这么薄：`_AllGatherComm`（`megatron/core/transformer/dot_product_attention_context_parallel.py:109`，
+docstring 即 "All gather communication with async operations"）只做两件事——
+`all_gather()` 发起 `torch.distributed.all_gather_into_tensor(..., async_op=True)` 并存 handle（`:115-122`），
+`wait()` 逐个 handle 等待（`:126-131`）。**掩盖窗口就是"发起"与"等待"之间那段 attention 计算**。
+
+**判据（本页重建，源码未直接陈述）**：Ring P2P 省的是带宽，代价是把**环的步序编进 attention 的计算结构**——
+每一步只能算部分 KV 的注意力，还要在线归约部分 softmax 结果。AllGather 用多占一份 KV 显存与带宽，
+换来 attention **完全不必知道 CP 的存在**：它拿到的就是完整 KV。对一个要同时支持 MHA/GQA/MLA、
+还要叠 THD 打包与动态 CP 的实现来说，这个解耦值这个价——而真需要省带宽的场景可以切到 `p2p` 档走 TE。
+要引用这条判断，请回到上述 locator 与 `cp_comm_type` 的四选一定义，不要引用本段结论。
+
+> **一个可核对的旁证**：同文件的 `to_zz_mask_attn_bias`（`:135`）按 `cp_size * 2` 切块并做
+> zigzag 重排（`:141-142`）——**这是为负载均衡做的序列重排，与通信方式正交**。
+> 也就是说 CP 的"切得均不均"和"怎么搬 KV"是两个独立决策，本节只管后者。
 
 ### 7.2 代码实现
 
@@ -896,6 +940,22 @@ class TransformerLayerNode(ScheduleNode):
 > 
 > **基线沿革（历史注记）**：本页基线曾写作「commit `3beeaa65b` 附近」——「附近」不可核验；2026-08-27 逐条比对后改钉 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19），2026-08-28 再推进到 `71092579`（跨 578 个提交）并重核全部 `path:line`。当时留下的"少数行号可能仍停留在更早形态"的疑虑，在本轮已被证实至少一处（原 §5.4.1 的代码片段，现归档于 §10.6，见该处 [!contradiction]）。
 
+---
+
+## 配置契约：TP overlap 补充字段
+
+本页正文覆盖了六维重叠的主干开关。本节补 `# Optimizations` 段里一个此前零提及的字段。
+
+
+
+### `ModelParallelConfig`（`megatron/core/model_parallel_config.py`，1 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `tp_comm_overlap_rs_dgrad` | `bool` | `False` | If true, allows Reduce-Scatter overlap with DGRAD GEMM by pipelining the GEMM and Reduce-Scatter splits. Don't care if tp_comm_overlap is False. | `:281` |
+
+> 该类共 74 个字段，本表收 1 项；其余 73 项已在别处归属：主要归 [[15_megatron_pp_schedulers_analysis]] 16 项、[[12_megatron_tp_analysis]] 10 项、本页他处 9 项、[[22_megatron_memory_optimization_analysis]] 6 项，另散见 14 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+
 ## Related Pages
 
 - [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[14_megatron_ep_analysis]] · [[15_megatron_pp_schedulers_analysis]]
@@ -903,3 +963,5 @@ class TransformerLayerNode(ScheduleNode):
 - [[34_deepseek_v4_tensor_parallel_analysis]] —— Shared Expert Overlap 在 TP>1 场景下的效果（§8.2）
 - [[30_comm_compute_overlap_analysis]] —— 跨框架（Megatron/torchtitan/MindSpeed）通算掩盖对比矩阵，本页是其 Megatron 权威机制页
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+
+

@@ -856,15 +856,36 @@ if config.recompute_granularity is not None:
 | MoE(与 EP 深度耦合) | `MegatronFSDP` | 自动检测 EP 参数 + Delayed Wgrad Overlap |
 | HSDP 分层分片 | `MegatronFSDP` | 组内 ZeRO-3 + 组间复制的分层策略 |
 
-### 18.5 为什么 FSDP2 在 MoE 训练中重要
+### 18.5 全分片(ZeRO-3)在 MoE 场景的选型判据
 
-1. **ZeRO-3 对 Expert 参数的全分片**:MoE 的 expert 数量增长(64→256+),在 EP 不能无限扩展时(通信开销),FSDP 可在 DP 维度进一步分片 expert 参数。`MegatronFSDP` 的 `optim_grads_params` 支持参数级的分片释放,对 1.xT MoE 至关重要。
+> [!update] 2026-09-02 · 本节已改写
+> 原标题为「为什么 FSDP2 在 MoE 训练中重要」，但四条里前三条讲的其实是 **MegatronFSDP** 的能力，
+> 只有第四条是 TorchFSDP2。这与本页 §18.1 的 `[!contradiction]` 与 §20.3 的结论直接冲突——
+> **FSDP2 路径没有任何 EP 相关处理**：`megatron/core/distributed/torch_fully_sharded_data_parallel.py`
+> 全文 165 行，`expert` 零命中。原写法会让读者把「与 EP 的层级协同」读成 FSDP2 的能力。
 
-2. **与 EP 的层级协同**:EP 处理跨 expert 的分布(通信模式:All-to-All),FSDP 处理跨 DP 的参数分片(通信模式:AllGather/ReduceScatter),两者正交叠加。
+**为什么 MoE 场景值得考虑全分片**：expert 数量增长（64 → 256+）后，EP 不能无限扩展——EP 度越大
+All-to-All 的跨节点通信量越重（见 [[14_megatron_ep_analysis]] §11.1）。当 EP 已经顶到通信预算上限、
+参数仍放不下时，剩下的办法是在 **DP 维度**继续切 expert 参数。这就是 ZeRO-3 档相对
+DistributedOptimizer（ZeRO-1，只切优化器状态）的价值所在：它把参数本身也切了。
 
-3. **FSDP Unit 粒度控制**:MoE 中的 Expert 可以作为独立的 FSDP Unit,在不需要时释放参数,需要的 token 到达时再 AllGather。
+**这条路由哪个实现承担，本页的三方对比给了明确答案**：
 
-4. **PyTorch FSDP2 (`fully_shard`) 的原生支持**:`TorchFullyShardedDataParallel` 让 Megatron 可以跟随 PyTorch 上游的 FSDP2 优化(如 per-param FSDP、DTensor 集成),降低维护成本。
+| | DistributedOptimizer | **MegatronFSDP** | TorchFSDP2 |
+|---|---|---|---|
+| 分片档位 | ZeRO-1 | ZeRO-2/3 | ZeRO-3 |
+| **EP 相关处理** | — | **有** | **无** |
+
+MegatronFSDP 侧的证据：`megatron/core/distributed/fsdp/mcore_fsdp_adapter.py:63` 的
+`_get_default_fsdp_unit_modules(overlap_moe_expert_parallel_comm)` 按该开关决定默认 FSDP unit 组成，
+`:122-127` 在开启 MoE EP 通信重叠时把 `TEGroupedMLP` 与 `SharedExpertMLP` 纳入 unit——
+**即"把 expert 当作独立 FSDP unit、用时 AllGather、用完释放"这件事是 MegatronFSDP 做的**，
+机制详见 [[36_megatron_fsdp_analysis]] §7。
+
+**TorchFSDP2 在这里的定位是另一回事**：它的价值不在 MoE，而在**跟随上游**——
+`TorchFullyShardedDataParallel` 让 Megatron 直接复用 PyTorch 的 `fully_shard`
+（per-param FSDP、DTensor 集成），降低自维护成本。代价就是上面那一格：**它不认识 expert**。
+所以选型判据很直接——**MoE + 需要 ZeRO-3 → MegatronFSDP；稠密模型 + 想吃上游红利 → TorchFSDP2**。
 
 ### 18.6 FSDP 与并行拓扑的关系
 
@@ -999,7 +1020,67 @@ if config.recompute_granularity is not None:
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`(2026-08-28 由 `ee3f1ff` 重定基线,途经 `dev@232c478d4` 的增量对照已一并推进)。源码行号以该 commit 为准。2026-07-31 由三篇原始页(`megatron_ddp_optimizer_analysis.md`、`megatron_optimizer_internals_analysis.md`、本页原稿)合并而成,配套文档:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`、`13_megatron_cp_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准。2026-07-31 由三篇原始页(`megatron_ddp_optimizer_analysis.md`、`megatron_optimizer_internals_analysis.md`、本页原稿)合并而成,配套文档:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`、`13_megatron_cp_analysis.md`。*
+
+---
+
+## 配置契约：`SchedulerConfig`
+
+本页 §16 讲 LR/WD 调度的**机制**（`OptimizerParamScheduler` 的 warmup、decay、param-group override 合并）。本节给它的**配置面**。
+
+`SchedulerConfig` 经 [[41_megatron_config_surface_analysis]] §2 的工厂转成 CLI（`megatron/training/arguments.py:3897`），且带一个 `exclude=["no_weight_decay_cond_type"]`——**那个字段被刻意排除在 CLI 之外**，因为它需要传一个条件函数而非标量，属于 §2.4 说的「dataclass 字段 ≠ 用户可配 flag」那类人工划线。**下表直接取自 `megatron/training/config/training_config.py` 的 `SchedulerConfig` 类体**。
+
+
+### `SchedulerConfig`（`megatron/training/config/training_config.py`，14 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `lr_wsd_decay_style` | `Literal['exponential', 'linear', 'cosine', 'minus_sqrt']` | `'exponential'` | Decay style for the annealing phase of WSD | `:173` |
+| `lr_decay_iters` | `int \| None` | `None` | number of iterations to decay learning rate over, If None defaults to train iters | `:176` |
+| `lr_decay_samples` | `int \| None` | `None` | number of samples to decay learning rate over, If None defaults to train samples | `:179` |
+| `lr_wsd_decay_iters` | `int \| None` | `None` | number of iterations for the annealing phase in the wsd schedule | `:182` |
+| `lr_wsd_decay_samples` | `int \| None` | `None` | number of samples for the annealing phase in the wsd schedule | `:185` |
+| `lr_warmup_fraction` | `float \| None` | `None` | fraction of lr-warmup-(iters/samples) to use for warmup (as a float) | `:188` |
+| `lr_warmup_iters` | `int` | `0` | number of iterations to linearly warmup learning rate over. | `:191` |
+| `lr_warmup_samples` | `int` | `0` | number of samples to linearly warmup learning rate over. | `:194` |
+| `lr_decay_steps` | `int \| None` | `field(init=False, default=None)` | number of samples to decay learning rate over. Calculated at runtime from lr_decay_iters or lr_decay_samples. | `:200` |
+| `use_checkpoint_opt_param_scheduler` | `bool` | `field(default=False, metadata={'argpa…` | Use checkpoint to set the values of the scheduler (learning rate, warmup iterations, minimum learning rate, maximum number of iterations, and decay style) fr… | `:222` |
+| `start_weight_decay` | `float \| None` | `None` | Initial weight decay coefficient for L2 regularization. | `:239` |
+| `end_weight_decay` | `float \| None` | `None` | End of run weight decay coefficient for L2 regularization. | `:242` |
+| `weight_decay_incr_style` | `Literal['constant', 'linear', 'cosine']` | `'constant'` | Weight decay increment function. | `:245` |
+| `wd_incr_steps` | `int \| None` | `field(init=False, default=None)` | Number of samples to increment weight decay over. Calculated at runtime. | `:254` |
+
+> 该类共 20 个字段，本表收 14 项；其余 6 项已在别处归属：`lr_decay_style`、`lr_warmup_init`、`lr_warmup_steps`、`override_opt_param_scheduler`、`no_weight_decay_cond_type`、`wsd_decay_steps` → 本页他处。
+
+---
+
+## 配置契约：μP（Maximal Update Parameterization）
+
+**这是本知识库此前完全没有覆盖过的一块。** `megatron/core/transformer/transformer_config.py` 有一个专门的 `# MuP (Maximal Update Parameterization)` 段，`megatron/core/optimizer/__init__.py` 有配套的 `get_mup_config_overrides`（与 `get_standard_config_overrides` 并列，由 `check_config_overrides_consistency` 校验），但本域 33 篇页面此前**无一字提及**——它是 [[40_megatron_feature_tree_analysis]] §3.2 点名的那个真实盲区。
+
+μP 之所以落在本页而非模型结构页：它改变的不是模型**结构**，而是**各参数组的学习率与初始化缩放**——作用点在 optimizer 的 param group 组织上，正是本页 §11-§16 的领域。其目标是让超参（尤其学习率）在模型宽度变化时**可迁移**：小模型上调好的 lr 直接用在大模型上。
+
+**下表直接取自类体**。`mup_base_hidden_size` / `mup_base_head_dim` 是「调参时那个小模型」的尺寸，`mup_width_mult` 由当前尺寸与基准尺寸之比推出，其余三项是各处的缩放指数与乘子。
+
+
+
+
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，7 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `use_mup` | `bool` | `False` | Enable Maximal Update Parameterization (MuP) for hyperparameter transfer across model widths. When enabled, learning rates and initialization are scaled acco… | `:499` |
+| `mup_width_mult` | `float` | `1.0` | Width multiplier for MuP scaling, computed as hidden_size / mup_base_hidden_size. This value is automatically computed in __post_init__ when use_mup is enabled. | `:506` |
+| `mup_base_hidden_size` | `Optional[int]` | `None` | Base hidden size for MuP width scaling. This is the reference width from which scaling factors are computed. Defaults to hidden_size if not specified (base m… | `:512` |
+| `mup_embedding_mult` | `float` | `1.0` | Multiplier for embedding layer output. Applied after the embedding lookup. Default: 1.0 (no scaling). | `:520` |
+| `mup_output_mult` | `float` | `1.0` | Multiplier for output logits before softmax. When MuP is enabled and this is left at 1.0, it is auto-set to 1/mup_width_mult to keep output variance stable a… | `:526` |
+| `mup_base_head_dim` | `Optional[float]` | `None` | Base head dimension for MuP attention scaling. When set, softmax_scale = sqrt(mup_base_head_dim) / (kv_channels ** mup_attn_scale_power). Set to base model's… | `:534` |
+| `mup_attn_scale_power` | `float` | `1.0` | Power for attention scaling: softmax_scale = 1 / (kv_channels ** mup_attn_scale_power). 0.5 = standard attention (1/sqrt(d_head)), 1.0 = MuP attention (1/d_h… | `:542` |
+
+> 该类共 266 个字段，本表收 7 项；其余 259 项已在别处归属：主要归 [[10_megatron_model_structure_analysis]] 92 项、[[14_megatron_ep_analysis]] 38 项、[[23_megatron_precision_cudagraph_fusion_analysis]] 38 项、[[21_megatron_fusion_operators_analysis]] 26 项，另散见 20 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+
+> [!note] 待展开
+> 本节登记了 μP 的**配置契约**，但**没有展开机制**——`get_mup_config_overrides` 具体如何改写各 param group 的 lr 与 weight decay、缩放指数的取值依据、与 `emerging_optimizers` 中 Muon 的交互，都需要单独一轮源码走查。这是本页目前最大的一处已知空白。
 
 ## Related Pages
 
@@ -1009,3 +1090,5 @@ if config.recompute_granularity is not None:
 - [[../32_distributed_optimizer_deepdive|32_distributed_optimizer_deepdive]] — FSDP2/ZeRO/MindSpeed 三方对比, 梯度累积通信量分析, Adam vs Muon
 - [[11_muon_analysis]] — Muon 优化器本身的数学原理(Newton-Schulz 正交化),与本页 §19 的分布式集成互补
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+
+

@@ -105,7 +105,7 @@ class TransformerLayerSubmodules:
 
 ### 4.1 `TransformerLayer`(`megatron/core/transformer/transformer_layer.py:314`)
 
-`forward`(`:842`)= **注意力子层 + MLP 子层**,标准 pre-norm 残差结构:
+`forward`(`:861`)= **注意力子层 + MLP 子层**,标准 pre-norm 残差结构:
 
 ```python
 def forward(self, *args, **kwargs):
@@ -140,8 +140,8 @@ def forward(self, *args, **kwargs):
 
 ### 4.2 子类
 
-- **`MoETransformerLayer`**(`:2844`):`mlp` 槽是 `MoELayer`(见 `14_megatron_ep_analysis.md`);处理 MoE 特有的 recompute、padding_mask 等。
-- **`HyperConnectionTransformerLayer`**(`:1881`):hyper connections(mHC)—— 用**多条残差流**代替单条残差,层间连接更丰富;`*_hyper_connection` 槽生效,PP 通信传 n-stream 张量(见 `15_megatron_pp_schedulers_analysis.md` 里 `enable_hyper_connections` 的形状处理)。
+- **`MoETransformerLayer`**(`:2868`):`mlp` 槽是 `MoELayer`(见 `14_megatron_ep_analysis.md`);处理 MoE 特有的 recompute、padding_mask 等。
+- **`HyperConnectionTransformerLayer`**(`:1910`):hyper connections(mHC)—— 用**多条残差流**代替单条残差,层间连接更丰富;`*_hyper_connection` 槽生效,PP 通信传 n-stream 张量(见 `15_megatron_pp_schedulers_analysis.md` 里 `enable_hyper_connections` 的形状处理)。
 
 > [!update] 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。
 > - **行号漂移**(全页已统一到 `71092579`,本条仅记录漂移轨迹):`TransformerLayer` `megatron/core/transformer/transformer_layer.py` `ee3f1ff:279` → `232c478d4:313` → `71092579:314`;`forward` `:710` → `:841` → `:842`;`TransformerLayerSubmodules` `:217` → `:251` → `:252`;`HyperConnectionTransformerLayer` `:1488` → `:1715` → `:1881`;`MoETransformerLayer` `:1983` → `:2213` → `:2844`。结构未变,仅因 DSv4/mHC 等新增而下移。
@@ -379,9 +379,110 @@ PP 下,`GPTModel` 按 PP rank 只实例化本 stage 的层(首 stage 带 embeddi
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`(2026-08-28 重定基线,自 `ee3f1ff` 推进 578 个提交)。源码行号以该 commit 为准。实验性注意力变体、各具体模型细节未逐一展开。配套文档:`14_megatron_ep_analysis.md`、`13_megatron_cp_analysis.md`、`12_megatron_tp_analysis.md`、`18_megatron_recompute_analysis.md`、`31_megatron_inference_engine_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准。实验性注意力变体、各具体模型细节未逐一展开。配套文档:`14_megatron_ep_analysis.md`、`13_megatron_cp_analysis.md`、`12_megatron_tp_analysis.md`、`18_megatron_recompute_analysis.md`、`31_megatron_inference_engine_analysis.md`。*
+
+---
+
+## 配置契约：模型结构相关字段
+
+本页正文按**结构**组织（Spec 系统、注意力家族、MoE Router、MTP、SSM）。本节给这些结构的**配置面**——`TransformerConfig` 里所有决定「模型长什么样」的字段。
+
+**下表的类型、默认值与说明直接取自 `megatron/core/transformer/transformer_config.py` 的类体**（行号为该文件内行号），与 [[41_megatron_config_surface_analysis]] §2 的 `ArgumentGroupFactory` 生成 CLI 所用的是同一份声明，因此不会与实际 flag 漂移。
+
+字段量大，按源码里的分段读最快：**注意力形状与变体**（`num_attention_heads` 家族、`window_size`、`qk_*`、`softmax_*`）、**DSA 索引器**（`dsa_indexer_*` 十项，对应 §5.4）、**linear attention / GDN**（`linear_*`、`kda_*`，对应 §9）、**Mamba**（`mamba_*`，同 §9）、**Hyper-Connection**（`mhc_*`、`num_residual_streams`）、**归一化与初始化**（`normalization`、`layernorm_*`、`init_method_std` 一组）、**MTP**（`mtp_*`）。
+
+
+### `ModelParallelConfig`（`megatron/core/model_parallel_config.py`，2 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `perform_initialization` | `bool` | `field(default=True, metadata={'argpar…` | Controls weights initialization. This option can be useful when you know you are going to load values from a checkpoint. | `:149` |
+| `use_cpu_initialization` | `bool` | `field(default=False, metadata={'argpa…` | When set to False, we initialize the weights directly on the GPU. CPU initialization is the same regardless of tensor model parallelism, but GPU initializati… | `:156` |
+
+> 该类共 74 个字段，本表收 2 项；其余 72 项已在别处归属：主要归 [[15_megatron_pp_schedulers_analysis]] 16 项、[[12_megatron_tp_analysis]] 10 项、[[20_megatron_comm_overlap_analysis]] 10 项、[[22_megatron_memory_optimization_analysis]] 6 项，另散见 14 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+
+
+
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，68 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `mtp_loss_scaling_factor` | `Optional[float]` | `0.1` | Weighting factor of Multi-Token Prediction (MTP) loss. We compute the average of the MTP losses across all depths, and multiply it the scaling factor to obta… | `:81` |
+| `mtp_use_repeated_layer` | `bool` | `False` | Use a single MTP layer repeatedly instead of multiple separate layers. | `:88` |
+| `mtp_hybrid_override_pattern` | `Optional[str]` | `None` | DEPRECATED: Use unified hybrid_layer_pattern instead. Legacy argument for loading old checkpoints. Force a specific hybrid layer pattern for MTP layers. | `:96` |
+| `num_layers_in_first_pipeline_stage` | `Optional[int]` | `None` | Number of transformer layers on first pipeline stage. None implies equal layer division across PP ranks. | `:102` |
+| `num_layers_in_last_pipeline_stage` | `Optional[int]` | `None` | Number of transformer layers on last pipeline stage. None implies equal layer division across PP ranks. | `:106` |
+| `account_for_embedding_in_pipeline_split` | `bool` | `False` | If set, the embedding layer will be treated as a standard transformer layer in the context of partition and placement for pipeline parallelism. | `:136` |
+| `account_for_loss_in_pipeline_split` | `bool` | `False` | If set, the loss layer will be treated as a standard transformer layer in the context of partition and placement for pipeline parallelism. | `:140` |
+| `attention_backend` | `AttnBackend` | `AttnBackend.auto` | Attention backend to run. By default we let transformer engine decide the best backend to run (except in the case of local). If attention backend is local we… | `:150` |
+| `softmax_scale` | `Optional[float]` | `None` | Softmax scale for attention scaling. | `:156` |
+| `softmax_type` | `Literal['vanilla', 'off-by-one', 'learnable']` | `'vanilla'` | Applies modified softmax from https://www.evanmiller.org/attention-is-off-by-one.html. Supports both TE FusedAttention and local unfused attention. Supports … | `:159` |
+| `kv_channels` | `Optional[int]` | `None` | Projection weights dimension in multi-head attention. This is set to hidden_size // num_attention_heads if not provided. | `:173` |
+| `hidden_dropout` | `float` | `0.1` | Dropout probability for transformer hidden state. | `:177` |
+| `fp32_residual_connection` | `bool` | `False` | If true, move residual connections to fp32. | `:183` |
+| `apply_residual_connection_post_layernorm` | `bool` | `False` | If True, uses the original BERT residule connection ordering. | `:187` |
+| `layernorm_epsilon` | `float` | `field(default=1e-05, metadata={'argpa…` | Epsilon value for any LayerNorm/RMSNorm operations. | `:190` |
+| `layernorm_zero_centered_gamma` | `bool` | `field(default=False, metadata={'argpa…` | If set to True, the LayerNorm is adjusted to center the gamma values around 0. This improves numerical stability. | `:195` |
+| `add_bias_linear` | `bool` | `field(default=True, metadata={'argpar…` | Include/exclude a bias term in all linear layers (QKV projections, after core attention, and two in MLP layer). | `:201` |
+| `add_qkv_bias` | `bool` | `False` | Add a bias term only for QKV projections. | `:207` |
+| `activation_func_fp8_input_store` | `bool` | `False` | Store the input of MLP activation function in FP8 for backprop to save memory. The stored input is casted back to the original precision before backprop comp… | `:216` |
+| `window_size` | `Optional[Tuple[int, int]]` | `None` | If not None, then will use sliding window attention. The size of the window is specified by the numbers inside the tuple; -1 is special value meaning "infini… | `:236` |
+| `window_attn_skip_freq` | `Optional[Union[int, List[int]]]` | `None` | Frequency of full attention layers among sliding window attention layers. Accepts either: - An integer N: Represents a (N-1):1 ratio, one full attention laye… | `:240` |
+| `normalization` | `Literal['LayerNorm', 'RMSNorm']` | `'LayerNorm'` | Which norm to use for normalization layers, valid options are `LayerNorm` and `RMSNorm`. | `:245` |
+| `qk_layernorm` | `bool` | `False` | Whether to apply `normalization` type of normalization to the query and key embeddings. | `:248` |
+| `qk_l2_norm` | `bool` | `False` | Whether to apply llama 4-style qk L2 norm. | `:251` |
+| `qk_clip_alpha` | `float` | `0.5` | The balancing alpha for qk-clip. Q = Q * (eta ** alpha) | `:257` |
+| `qk_clip_threshold` | `float` | `100` | The balancing threshold for qk-clip. eta = min(threshold / max_attention_logits, 1.0) | `:260` |
+| `gated_attention_proj_granularity` | `Literal['elementwise', 'headwise']` | `'elementwise'` | Projection granularity for `attention_output_gate`. `elementwise` projects one gate per attention output element. `headwise` projects one scalar gate per att… | `:275` |
+| `rotary_base_per_layer` | `Optional[List[float]]` | `None` | Per-layer RoPE theta values. Length must equal num_layers. When set, each SelfAttention layer creates its own RotaryEmbedding with the corresponding base; th… | `:281` |
+| `no_rope_freq` | `Optional[Union[int, List[int]]]` | `None` | Controls which layers perform Rotary Position Embedding (RoPE). Accepts either: An integer N: Creates a pattern where RoPE is skipped every N-1 layers. For e… | `:307` |
+| `experimental_attention_variant_loss_scale_func` | `Optional[Callable[[torch.Tensor], None]]` | `None` | Optional hook for experimental attention variants to receive the main loss scale. | `:334` |
+| `dsa_indexer_n_heads` | `Optional[int]` | `None` | Number of DSA indexer heads. | `:340` |
+| `dsa_indexer_head_dim` | `Optional[int]` | `None` | Dimension per DSA indexer head. | `:343` |
+| `dsa_indexer_skip_topk_offset` | `int` | `0` | Layer offset for DSA cross-layer top-k sharing. | `:353` |
+| `dsa_indexer_rope_interleaved` | `bool` | `False` | Whether DSA indexer RoPE should use MLA-style interleaving. | `:366` |
+| `dsa_indexer_rotate_activation` | `bool` | `True` | Whether DSA indexer should apply Hadamard rotation before scoring. | `:369` |
+| `dsa_indexer_scoring_relu` | `bool` | `True` | Whether DSA indexer should apply ReLU to q@k scores before weighting. | `:372` |
+| `dsa_indexer_k_norm_epsilon` | `Optional[float]` | `None` | Optional epsilon override for the DSA indexer key LayerNorm. | `:375` |
+| `dsa_indexer_k_norm_fp32` | `bool` | `False` | Whether DSA indexer key LayerNorm should run on fp32 inputs. | `:378` |
+| `dsa_indexer_weights_proj_use_quantization` | `bool` | `True` | Whether `DSAIndexer` weights projection follows the enclosing FP8/FP4 quantization context. Disable this to keep the projection parameter outside FP8/FP4; `d… | `:381` |
+| `dsa_indexer_weights_proj_output_dtype` | `Literal['bf16', 'fp32']` | `'bf16'` | Output dtype of the `DSAIndexer` weights projection. BF16 preserves the existing path. FP32 uses a true FP32-output projection and is not compatible with the… | `:387` |
+| `linear_attention_type` | `Optional[str]` | `None` | Type of linear attention to use. Deprecated. Use experimental_attention_variant instead. | `:417` |
+| `linear_attention_freq` | `Optional[Union[int, List[int]]]` | `None` | Frequency between LA (linear attention) layers and SDPA (scaled dot-product attention) layers. Accepts either: - An integer N: Represents a (N-1):N ratio, me… | `:420` |
+| `linear_conv_kernel_dim` | `Optional[int]` | `4` | Conv kernel dimension for the gated delta net. | `:427` |
+| `linear_key_head_dim` | `Optional[int]` | `128` | Query and key head dimension for the gated delta net. | `:430` |
+| `linear_value_head_dim` | `Optional[int]` | `128` | Value and gate head dimension for the gated delta net. | `:433` |
+| `linear_num_key_heads` | `Optional[int]` | `16` | Number of query and key heads for the gated delta net. | `:436` |
+| `linear_num_value_heads` | `Optional[int]` | `32` | Number of value and gate heads for the gated delta net. | `:439` |
+| `kda_safe_gate` | `bool` | `False` | Whether the KDA kernel should use bounded gate values. | `:442` |
+| `kda_lower_bound` | `Optional[float]` | `None` | Optional lower bound for KDA's bounded gate values. | `:445` |
+| `init_method_std` | `float` | `0.02` | Standard deviation of the zero mean normal for the default initialization method, not used if init_method and output_layer_init_method are provided. | `:471` |
+| `embedding_init_method` | `Optional[Callable]` | `None` | Method to initialize weights of the embedding layer. If None, will be set as described in init_method above. | `:475` |
+| `embedding_init_method_std` | `Optional[float]` | `None` | Standard deviation of the zero mean normal for the default initialization method for the embedding layer. If None, will be set to init_method_std. Setting th… | `:481` |
+| `num_residual_streams` | `int` | `4` | Number of residual streams (n in paper). | `:1257` |
+| `mhc_sinkhorn_iterations` | `int` | `20` | Number of Sinkhorn-Knopp iterations for doubly stochastic projection. | `:1260` |
+| `mhc_init_gating_factor` | `float` | `0.01` | Initial value of Gating Factor (alpha in paper). | `:1263` |
+| `mhc_recompute_layer_num` | `Optional[int]` | `None` | Number of layers in each mHC recompute group. Layers are grouped in their local transformer-block order. The last layer in each group leaves its final MLP BD… | `:1280` |
+| `mhc_recompute_attn_cuda_graph_split` | `bool` | `False` | Opt into the attention-only Transformer Engine CUDA Graph split for mHC recompute. Off by default, in which case an mHC layer captures the same range as any … | `:1296` |
+| `use_te_activation_func` | `bool` | `False` | Whether to use ffn activation functions implemented by TransformerEngine | `:1340` |
+| `mrope_section` | `Optional[List[int]]` | `None` | Multimodal rope section is for channel dimension of temporal, height and width in rope calculation. | `:1393` |
+| `mrope_interleaved` | `bool` | `False` | When True, use the interleaved T/H/W MRoPE layout (Qwen3.5-VL style) where H freqs occupy stride-3 positions {1,4,7,...} and W freqs occupy {2,5,8,...}. When… | `:1397` |
+| `mamba_state_dim` | `int` | `128` | The dimensionality of the state representation in Mamba layers. | `:1406` |
+| `mamba_head_dim` | `int` | `64` | The dimensionality of the heads in the Mamba layers. | `:1409` |
+| `mamba_num_groups` | `int` | `8` | The number of groups used in Mamba layers. | `:1412` |
+| `mamba_num_heads` | `Optional[int]` | `None` | The number of heads used in Mamba layers. If None, the number of heads will be hidden_size * expand // mamba_head_dim. | `:1415` |
+| `mamba_training_ssm_states_dtype` | `Optional[torch.dtype]` | `None` | dtype of the materialized inter-chunk SSM states in Mamba training forwards and backwards. None causes the states to follow the activation dtype. | `:1419` |
+| `use_mamba_mem_eff_path` | `bool` | `field(default=True, metadata={'argpar…` | Controls usage of the memory efficient path for Mamba layers. | `:1423` |
+| `mlp_chunks_for_training` | `int` | `1` | The number of chunks along the sequence dimension to use for MLP computation during training. | `:1431` |
+| `heterogeneous_block_specs` | `bool` | `False` | Whether to use heterogeneous block specs (nemotron-nas architecture). | `:1435` |
+
+> 该类共 266 个字段，本表收 68 项；其余 198 项已在别处归属：主要归 [[14_megatron_ep_analysis]] 38 项、[[23_megatron_precision_cudagraph_fusion_analysis]] 38 项、[[21_megatron_fusion_operators_analysis]] 26 项、本页他处 24 项，另散见 20 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+
+> **一处编号提醒**：`num_layers_in_first_pipeline_stage` / `num_layers_in_last_pipeline_stage` 与`account_for_*_in_pipeline_split` 虽在 `# model architecture` 段里，但语义属流水线切分，机制见 [[15_megatron_pp_schedulers_analysis]]；本页只登记它们的契约。
 
 ## Related Pages
 
 - [[14_megatron_ep_analysis]] · [[13_megatron_cp_analysis]] · [[12_megatron_tp_analysis]] · [[18_megatron_recompute_analysis]] · [[31_megatron_inference_engine_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+
+

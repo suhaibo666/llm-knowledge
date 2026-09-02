@@ -369,10 +369,28 @@ NVLink(数百 GB/s)能扛;跨机 IB(数十 GB/s)扛不住。所以工业配置�
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`(2026-08-27;由 `ee3f1ff` 重定基线而来)。源码行号以该 commit 为准。配套文档:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`13_megatron_cp_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准。配套文档:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`13_megatron_cp_analysis.md`。*
+
+---
+
+## 配置契约：embedding 侧的一个补充字段
+
+本节补一个此前零提及、与序列并行下 embedding 输出处理相关的字段。
+
+
+
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，1 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `clone_scatter_output_in_embedding` | `bool` | `True` | When set to True, clone the output of scatter_to_sequence_parallel_region in embedding layer to facilitate garbage collection of input. | `:1320` |
+
+> 该类共 266 个字段，本表收 1 项；其余 265 项已在别处归属：主要归 [[10_megatron_model_structure_analysis]] 92 项、[[14_megatron_ep_analysis]] 38 项、[[23_megatron_precision_cudagraph_fusion_analysis]] 38 项、[[21_megatron_fusion_operators_analysis]] 26 项，另散见 19 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
 
 ## Related Pages
 
 - [[15_megatron_pp_schedulers_analysis]] · [[14_megatron_ep_analysis]] · [[13_megatron_cp_analysis]] · [[16_megatron_distributed_optimizer_analysis]] · [[17_megatron_parallelism_orchestration_analysis]]
 - [[25_megatron_nonuniform_tp_analysis]] · [[20_megatron_comm_overlap_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+
+

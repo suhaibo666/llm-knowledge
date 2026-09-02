@@ -308,7 +308,7 @@ CP 切片前,被切的每个张量必须是 1-D 且与 `padding_mask` 等长(`me
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`(2026-08-27;由 `ee3f1ff` 重定基线而来)。源码行号以该 commit 为准。配套文档:`11_megatron_dataset_analysis.md`、`15_megatron_pp_schedulers_analysis.md` §8.1、`13_megatron_cp_analysis.md`、`packed_seq_params` 见 `11_megatron_dataset_analysis.md` §5.2。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准。配套文档:`11_megatron_dataset_analysis.md`、`15_megatron_pp_schedulers_analysis.md` §8.1、`13_megatron_cp_analysis.md`、`packed_seq_params` 见 `11_megatron_dataset_analysis.md` §5.2。*
 
 ## Related Pages
 

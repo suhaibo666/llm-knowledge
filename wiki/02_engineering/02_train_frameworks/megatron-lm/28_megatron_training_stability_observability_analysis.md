@@ -160,8 +160,8 @@ MoE 有独有的不稳定源 —— 路由:
 
 > [!contradiction] 上一条的**修正手法**在基线 `71092579` 下已被推翻。引入 `all_reduce` 路径与那条注释的是 **#4359 `7f9175207`**(2026-06-17);#5542 `d1384c2d9`(2026-07-14,[codex] Exclude padding tokens from MoE routing)只是在其上补了 padding 排除。(归属经 `git log -S "so local_num_tokens * group_size is not generally correct"` 核定,2026-08-28 更正。)
 > `aux_loss` 的预乘不再是 `num_local_tokens * tp_cp_group.size()`,而是把本域的**有效 token 数**放进一个张量、沿 `aux_loss_scale_reduce_groups` 逐组 `all_reduce` 求和后直接相乘(`megatron/core/transformer/moe/router.py:610-636`)。
-> 源码给出的理由就写在注释里:*with THD padding or dynamic CP, valid token counts can differ by rank/group, so local_num_tokens * group_size is not generally correct*(`:602-604`)—— 即 THD padding / 动态 CP 下各 rank 的有效 token 数**不再相等**,`×|tp_cp|` 这个闭式因子本身就不成立。
-> `z_loss` 侧同样改写:`calculate_per_token_loss` 分支现直接挂 `z_loss_sum`(不再乘 `num_local_tokens × |tp_cp|`,`:666-671`);只有 `!calculate_per_token_loss` 分支保留了 `moe_z_loss_coeff / tp_cp_group.size()` 这一**前向**修正(`:673`)。
+> 源码给出的理由就写在注释里:*with THD padding or dynamic CP, valid token counts can differ by rank/group, so local_num_tokens * group_size is not generally correct*(`:611-616`)—— 即 THD padding / 动态 CP 下各 rank 的有效 token 数**不再相等**,`×|tp_cp|` 这个闭式因子本身就不成立。
+> `z_loss` 侧同样改写:`calculate_per_token_loss` 分支现直接挂 `z_loss_sum`(不再乘 `num_local_tokens × |tp_cp|`,`:678-682`);只有 `!calculate_per_token_loss` 分支保留了 `moe_z_loss_coeff / tp_cp_group.size()` 这一**前向**修正(`:685`)。
 > 因此上文的代数推导只对旧基线 `232c478d4` 有效;§3.4「解读 aux/z-loss 需注意 TP 缩放」的口径提示同样只适用于 `232c478d4` 到 #5542 之间的版本。
 
 > [!update] DSA indexer loss 跨 micro-batch 平均(#4070) — 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。
@@ -241,7 +241,7 @@ MTP(Multi-Token Prediction,详见 GPT/DeepSeek 系列)在主模型之外挂若�
 
 > [!update] 保真序列长度统计(#95654c956) — 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。
 > `train_step` 返回的 `seqlen_sum_this_global_batch` / `seqlen_squared_sum_this_global_batch` 用于**变长序列感知的吞吐 / FLOP 估算**(`megatron/training/training.py:3695` 经 `seqlen_squared_sum_in_batch` 进入 attention FLOP 项)。旧代码在**非变长**(未走 `wrap_data_iterator`)路径下把这两个统计丢成 `_, _`,导致 FLOP/吞吐日志退化或失真。
-> 修正(`megatron/training/training.py:3211–3030`):非变长路径显式回填闭式值 `seq_length * global_batch_size` 与 `seq_length² * global_batch_size`,保证两条路径都给出正确的 seqlen 统计、`--log-throughput` 的 TFLOP/s 估算保真。属于纯可观测性修复,不改训练数值。
+> 修正(`megatron/training/training.py:3211-3212`):非变长路径显式回填闭式值 `seq_length * global_batch_size` 与 `seq_length² * global_batch_size`,保证两条路径都给出正确的 seqlen 统计、`--log-throughput` 的 TFLOP/s 估算保真。属于纯可观测性修复,不改训练数值。
 
 > [!update] 混合模型分阶段日志改传显式进程组(#4781) — 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。
 > 混合(Hybrid,如 Mamba/attention 混排)模型在 `select_pipeline_segment` 里对每个 PP 段做布局日志。此前该日志依赖全局 `parallel_state` 取 TP / DP-CP 组,在自定义进程组拓扑下可能取错组、或在多 `ProcessGroupCollection` 场景下不一致。
@@ -405,9 +405,138 @@ Caveats(2)的结尾原话:「**We're planning to add the capability to re-run mu
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`(2026-08-27;由 `ee3f1ff` 重定基线而来,特性增量来自 `dev@232c478d4`)。全页行号(含 `[!update]` 小节)已统一重核至 `71092579`。`RerunStateMachine` 为实验特性。训练循环日志位于 `megatron/training/training.py`(在 `megatron/core` 之外)。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。全页行号(含 `[!update]` 小节)已统一重核至 `71092579`。`RerunStateMachine` 为实验特性。训练循环日志位于 `megatron/training/training.py`(在 `megatron/core` 之外)。*
+
+---
+
+## 配置契约：可观测性的四个 config 类
+
+本页正文按**机制**组织（RerunStateMachine 怎么归因 SDC、StragglerDetector 怎么判慢卡、Timer 分几级）。本节给这些机制的**配置面**——四个 config 类，全部经 [[41_megatron_config_surface_analysis]] §2 的 `ArgumentGroupFactory` 自动转成 CLI（分别在 `megatron/training/arguments.py:3226`、`:3652`、`:3873`、`:3025`）。
+
+**下表的类型、默认值与说明直接取自各 config 类的类体**，行号为对应文件内行号。四个类的分工：`LoggerConfig` 最大，管**指标往哪儿写、写多细**（TensorBoard / wandb / one-logger 三个后端与逐类指标开关）；`ProfilingConfig` 管**性能剖析的窗口与后端**；`RerunStateMachineConfig` 与 `StragglerDetectionConfig` 分别是本页 §1、§2 两套机制的旋钮。
+
+
+### `LoggerConfig`（`megatron/training/config/training_config.py`，34 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `log_params_norm` | `bool` | `False` | If set, calculate and log parameters norm. | `:268` |
+| `log_throughput_to_tensorboard` | `bool` | `False` | Enable throughput logging to tensorboard. | `:274` |
+| `throughput_window_size` | `int` | `100` | Number of batches to use for a rolling average of throughput. | `:277` |
+| `log_progress` | `bool` | `False` | If set, log progress (in terms of number of processed tokens and number of floating-point operations) to progress.txt file in checkpoint directory. | `:280` |
+| `timing_log_level` | `Literal[0, 1, 2]` | `0` | Granularity level to measure and report timing. 0: report only iteration time and make sure timing does not introduce extra overhead. 1: report timing for op… | `:285` |
+| `timing_log_option` | `Literal['max', 'minmax', 'all']` | `'minmax'` | Options for logging timing: max: report the max timing across all ranks minmax: report min and max timings across all ranks all: report timings of all ranks. | `:294` |
+| `tensorboard_dir` | `str \| None` | `None` | Write TensorBoard logs to this directory. | `:301` |
+| `tensorboard_log_interval` | `int` | `1` | Report to tensorboard interval. | `:304` |
+| `tensorboard_queue_size` | `int` | `1000` | Size of the tensorboard queue for pending events and summaries before one of the 'add' calls forces a flush to disk. | `:307` |
+| `log_timers_to_tensorboard` | `bool` | `False` | If set, write timers to tensorboard. | `:312` |
+| `log_validation_ppl_to_tensorboard` | `bool` | `False` | If set, write validation perplexity to tensorboard. | `:318` |
+| `log_memory_to_tensorboard` | `bool` | `False` | Enable memory logging to tensorboard. | `:321` |
+| `memory_keys` | `dict[str, str] \| None` | `None` | Names of memory statistics to log from `torch.cuda.memory_stats()` | `:324` |
+| `log_memory_interval` | `int \| None` | `None` | Report memory interval. | `:327` |
+| `log_device_memory_used` | `bool` | `False` | Log device memory used (as reported by nvidia-smi). | `:330` |
+| `log_l2_norm_grad_to_tensorboard` | `bool` | `False` | Enable gradients logging to tensorboard. | `:333` |
+| `log_runtime_to_tensorboard` | `bool` | `False` | Enable runtime metrics logging to tensorboard. | `:342` |
+| `runtime_time_unit` | `str` | `'hours'` | Time unit to use for time logging. | `:345` |
+| `log_world_size_to_tensorboard` | `bool` | `False` | Enable world size logging to tensorboard. | `:357` |
+| `wandb_project` | `str \| None` | `None` | The wandb project name. Ignore wandb by default. | `:360` |
+| `wandb_exp_name` | `str \| None` | `None` | The wandb experiment name. | `:363` |
+| `wandb_save_dir` | `str \| None` | `None` | Path to save the wandb results locally. | `:366` |
+| `wandb_entity` | `str \| None` | `None` | The wandb entity name. It is useful when there are multiple sub-projects in a project. | `:369` |
+| `logging_level` | `int \| None` | `None` | Set default logging level | `:372` |
+| `filter_warnings` | `bool` | `True` | Filter out warning messages | `:375` |
+| `modules_to_filter` | `list[str] \| None` | `None` | List of modules to filter out from the logs | `:378` |
+| `set_level_for_all_loggers` | `bool` | `False` | Set the logging level for all loggers. If False, only level for NeMo loggers will be set. | `:381` |
+| `log_energy` | `bool` | `False` | If set, log energy consumption (in Joules). | `:384` |
+| `save_config_filepath` | `str \| None` | `None` | If set, save the task configuration (ConfigContainer) to this file. | `:387` |
+| `moe_routing_trace_path` | `str \| None` | `None` | Directory for MoE router decision traces (JSONL). When set, a RouterTracer is initialized at training start and hooks are registered on all TopKRouter module… | `:390` |
+| `moe_routing_trace_max_training_iters` | `int \| None` | `None` | Maximum number of training iterations to trace. Tracing stops automatically after this many calls to advance_step(). Defaults to tracing all iterations when … | `:396` |
+| `moe_routing_trace_capture_logits` | `bool` | `False` | Capture pre-topk routing logits for each router call. | `:402` |
+| `moe_routing_trace_capture_hidden_states` | `bool` | `False` | Capture input hidden-state tensors for each router call. | `:405` |
+| `moe_routing_trace_dump_weights` | `bool` | `False` | Save router weight tensors to a .pt sidecar file. | `:408` |
+
+> 该类共 40 个字段，本表收 34 项；其余 6 项已在别处归属：`log_interval` → [[32_megatron_tflops_analysis]]；`log_throughput`、`log_loss_scale_to_tensorboard`、`log_num_zeros_in_grad`、`log_max_attention_logit`、`barrier_with_L1_time` → 本页他处。
+
+
+
+### `ProfilingConfig`（`megatron/training/config/common_config.py`，12 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `use_nsys_profiler` | `bool` | `field(default=False, metadata={'argpa…` | Enable nsys profiling. When using this option, nsys options should be specified in commandline. An example nsys commandline is `nsys profile -s none -t nvtx,… | `:29` |
+| `profile_step_start` | `int` | `10` | Global step to start profiling. | `:38` |
+| `profile_step_end` | `int` | `12` | Global step to stop profiling. | `:41` |
+| `use_pytorch_profiler` | `bool` | `False` | Use the built-in pytorch profiler. Useful if you wish to view profiles in tensorboard. | `:44` |
+| `pytorch_profiler_collect_shapes` | `bool` | `False` | Collect tensor shape in pytorch profiler. | `:47` |
+| `pytorch_profiler_collect_callstack` | `bool` | `False` | Collect callstack in pytorch profiler. | `:50` |
+| `pytorch_profiler_collect_chakra` | `bool` | `False` | Collect chakra trace in pytorch profiler. | `:53` |
+| `profile_ranks` | `list[int]` | `field(default_factory=lambda: [])` | Global ranks to profile. | `:56` |
+| `record_memory_history` | `bool` | `False` | Record memory history in last rank. | `:59` |
+| `memory_snapshot_path` | `str` | `'snapshot.pickle'` | Specifies where to dump the memory history pickle. | `:62` |
+| `record_shapes` | `bool` | `False` | Record shapes of tensors in `torch.autograd.profiler.emit_nvtx` for the Nsys profiler. | `:65` |
+| `nvtx_ranges` | `bool` | `False` | Enable NVTX range annotations for profiling. When enabled, inserts NVTX markers to categorize execution in profiler output. | `:68` |
+
+### `RerunStateMachineConfig`（`megatron/training/config/resilience_config.py`，4 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `error_injection_rate` | `int` | `0` | Rate at which to inject unexpected results, e.g. 1000 means once every 1000 result validations | `:12` |
+| `error_injection_type` | `Literal['correct_result', 'transient_error', 'persistent_error']` | `'transient_error'` | Type of error to inject. | `:16` |
+| `rerun_mode` | `Literal['disabled', 'validate_results', 'report_stats']` | `'validate_results'` | Use re-run engine to validate results (default) or to emit stats on variability of computations due to non-deterministic algorithms. | `:21` |
+| `check_for_spiky_loss` | `bool` | `False` | Check for spiky loss. | `:28` |
+
+> 该类共 5 个字段，本表收 4 项；其余 1 项已在别处归属：`check_for_nan_in_loss` → （显式排除）。
+
+> **第五个字段 `check_for_nan_in_loss` 不在表内，因为它被刻意排除在 CLI 自动生成之外**：
+> `megatron/training/arguments.py:3873` 那处调用写的是
+> `ArgumentGroupFactory(RerunStateMachineConfig, exclude=["check_for_nan_in_loss"])`。
+> 它默认为真且历史上的 flag 名是 `--check-for-nan-in-loss-and-grad` 一族，与字段名推出的 `--no-check-for-nan-in-loss`
+> 对不上，故走手写 argparse 而非自动生成。这属于 [[41_megatron_config_surface_analysis]] §2.4 说的
+> 「dataclass 字段 ≠ 用户可配 flag」那类人工划线——**看 config 类推 CLI 时要留意这三处 `exclude`**。
+
+
+
+### `StragglerDetectionConfig`（`megatron/training/config/resilience_config.py`，4 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `log_straggler` | `bool` | `False` | If set, tracks and logs straggler per GPU. | `:36` |
+| `straggler_ctrlr_port` | `int` | `65535` | Port number to toggle StragglerDetector on/off at runtime | `:39` |
+| `straggler_minmax_count` | `int` | `1` | Number of ranks to report with high/low estimated throughput | `:42` |
+| `disable_straggler_on_startup` | `bool` | `False` | If set, StragglerDetector is disabled on startup. | `:45` |
+
+> **跨页接缝**：`LoggerConfig` 里指向 one-logger 的字段、以及张量转储那几个 `--save-*-interval`，其实现属**作业侧**，见 [[43_megatron_job_resilience_analysis]] §8、§9。本页拥有它们的配置契约，那页解释机制。
+
+---
+
+## 配置契约：core 侧的观测字段
+
+前一节给的是训练侧四个 config 类。本节补 `megatron/core` 侧此前零提及的观测字段。**下表直接取自各自类体**。
+
+
+
+### `ModelParallelConfig`（`megatron/core/model_parallel_config.py`，1 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `barrier_with_L1_time` | `bool` | `field(default=True, metadata={'argpar…` | Controls barrier with level 1 time measurements. It is up to the user to make sure calling barrier with their timers will not result in hangs. This can happe… | `:483` |
+
+> 该类共 74 个字段，本表收 1 项；其余 73 项已在别处归属：主要归 [[15_megatron_pp_schedulers_analysis]] 16 项、[[12_megatron_tp_analysis]] 10 项、[[20_megatron_comm_overlap_analysis]] 10 项、[[22_megatron_memory_optimization_analysis]] 6 项，另散见 14 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+
+
+
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，2 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `config_logger_dir` | `str` | `''` | When non-empty, dumps entry-point configs to config_logger_dir | `:1327` |
+| `batch_invariant_mode` | `bool` | `False` | If true, uses batch-invariant kernels that provide deterministic forward execution regardless of batch size. This ensures bitwise identical results when the … | `:1333` |
+
+> 该类共 266 个字段，本表收 2 项；其余 264 项已在别处归属：主要归 [[10_megatron_model_structure_analysis]] 92 项、[[14_megatron_ep_analysis]] 38 项、[[23_megatron_precision_cudagraph_fusion_analysis]] 38 项、[[21_megatron_fusion_operators_analysis]] 26 项，另散见 20 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
 
 ## Related Pages
 
 - [[16_megatron_distributed_optimizer_analysis]] · [[27_megatron_tp_fsdp_resharding_supplements_analysis]] · [[30_megatron_rl_posttraining_consistency_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+
+

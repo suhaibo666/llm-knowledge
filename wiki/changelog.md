@@ -12,6 +12,90 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-02（三）：Megatron-LM 全域四查复审（26 页，8 处 REJECT 全部修复）
+
+**Type**：质量复审（4 波，独立评审者）+ 13 页定点修复
+
+对本域段 0–3 的 26 篇机制页首次执行 `page-review-rubric` 的四查（beat-2 实质 / hop-walk / 删码测试 / locator 抽查），分 4 波、每波一名**独立评审者**（波 A/B/C 为独立 agent；波 D 由协调者自评，独立性局限已在报告中标注）。
+
+**结果：8 个 REJECT，全部已修**。四查中**没有一页**出现"散文离开代码即塌"或"链条断裂需自行 grep"——删码测试与 hop-walk 全域通过。失败集中在两类：
+
+**一、行号漂移（7 处，占 REJECT 的绝大多数）。** 根因高度一致：**页面被局部改写时，重定位只覆盖了被改写的小节**。
+- [[32_megatron_tflops_analysis]] §5/§7/§8 整段停在旧基线（`training.py` 本轮净增 186 行，FLOPs 区整体 +111）；
+- [[10_megatron_model_structure_analysis]] §4.1/§4.2 三处（偏移量各不相同，**不是常量偏移**）；
+- [[28_megatron_training_stability_observability_analysis]] §1.7 的 router.py 三处 + §2.5 一处**逆序区间** `3211–3030`；
+- [[23_megatron_precision_cudagraph_fusion_analysis]] `cuda_graphs.py` 一簇 −4 行，且**页内自相矛盾**（同一符号 §4.2 写 `:247`、§4.3 写 `:251`；`:345` 同时被指给 `_CudagraphGlobalRecord` 与 `fwd_buffer_reuse_ref_count`）；
+- [[22_megatron_memory_optimization_analysis]] `paged_stash.md` 因顶部新插 TE 段整体下移 26 行；
+- [[14_megatron_ep_analysis]] §6 五处 −1 行（三处藏在代码块注释里）；
+- [[15_megatron_pp_schedulers_analysis]] 一处区间少收一行。
+
+**二、实质内容错误（4 处，更要紧）：**
+- **[[15_megatron_pp_schedulers_analysis]] 的 `16 · Ψ` 与它自己的拆解算式（2+4+4+4+4 = **18**）打架。** `16` 是 ZeRO 论文的 fp16 假设；Megatron 在 bf16 下**强制 fp32 梯度累加**（`megatron/training/arguments.py:1331-1333`），梯度是 4 字节。[[16_megatron_distributed_optimizer_analysis]] §12.2 早已按 18 立论，本页未同步。
+- **[[27_megatron_tp_fsdp_resharding_supplements_analysis]] §4 的 NTP 机制模型与源码相反。** 三条实证：spare rank 在 `nonuniform_tp.py:556-558` **直接 `sys.exit(0)`** 而非"待命"；NTP **全程不搬参数**，两次 A2A 搬的是**梯度**（`README_NONUNIFORM_TP.md:205-208`）；[[25_megatron_nonuniform_tp_analysis]] 把它定位为**冷重启**容错。已按 merge-over-coexist 把 §4 收缩为定位 + 指针，并保留三条被推翻记录。
+- **[[16_megatron_distributed_optimizer_analysis]] §18.5 标题与页面自身结论冲突**：原题「为什么 FSDP2 在 MoE 训练中重要」，但四条里前三条讲的是 MegatronFSDP。复核确证 `torch_fully_sharded_data_parallel.py` 全文 165 行、`expert` **零命中**，而 `fsdp/mcore_fsdp_adapter.py:63`/`:122-127` 确有。已改题并补三方对比与真实 locator。
+- **[[21_megatron_fusion_operators_analysis]] §4.3「三个融合算子」与其下 5 行表（列头即「算子」）矛盾**：实测三个文件、**六个**算子类，表还漏了 `WeightedSquaredReLUFunction`。原文是**文件数与算子数两个口径混用**。
+
+**三、beat-2 补强（2 处）：**
+- [[20_megatron_comm_overlap_analysis]] §7 讲 CP 掩盖却从没说**为何选 AllGather 而不是 Ring P2P**（而 §1 的表自己列了两条路）。已补：`cp_comm_type` 实为**四选一且可逐层不同**；Ring P2P 省带宽但要**把环的步序编进 attention 的计算结构**，AllGather 用多一份 KV 换 attention **完全不必知道 CP 存在**——实现之薄可佐证（`_AllGatherComm` 只有发起与 wait 两件事）。判据标为本页重建。
+- [[33_megatron_vllm_weight_sync_analysis]] §5 原本只有一句"优先考虑兼容性而非性能"，正是规则点名的失败模式。已改写为「为什么走 Gather-Broadcast-Load 而不是 P2P」，判据是**拓扑耦合**（P2P 要求两侧拓扑可互推，而 verl 要接任意配置组合），并把 `TP × PP` 膨胀倍数标注为推算而非实测。
+
+**四、另修一个我自己的 bug**：配置契约脚注被插在"下一个 `###` 之前"，导致最后一个类的脚注落到下一小节甚至 `## Related Pages` 之后（4 页）。已改为**紧跟该类表格末行**，并对遗漏项过多者（如 `TransformerConfig` 266 字段）改为**归属分布摘要**而非逐一列 265 个名字。
+
+**一个值得记下的机械门禁盲区**：8 个 REJECT 里 7 个落在 `check_locators` 的盲区——它只验 `missing_file` 与 `out_of_range`，对"**文件存在、行号在界内、但指向别处**"完全免疫。我做了一个符号锚点检测原型（取引用邻近的反引号标识符，查它是否出现在冻结基线该行 ±4 行内），全域跑出 85 处疑似但**误报率约八成**（历史引用、函数体内引用、概念名都会命中），**故未固化为门禁**——一个八成误报的门禁会被训练成直接忽略，比没有更糟。更有效的替代是本轮 W1 用的做法：**基线推进时用 difflib 全页映射，而不是让写手逐节手改**——W1 中脚本处理的 15 页零漂移，出问题的全是手改页。
+
+**验证**：`check_links --strict` 全 0（443 页）· `check_math --changed --strict` 0/0 · `check_coverage` C1/C2/C3 全 0 · `check_locators` 域内 **errors 14→14、warnings 57→57 零回归**，已验证引用 1464 → **1470**。
+
+---
+
+## 2026-09-02（二）：Megatron-LM 配置面对账清零（C1 246 → 0）
+
+**Type**：15 页新增配置契约段 + 枚举面归属清零
+
+把段 4 立起来时留下的账还上了：**590 个配置字段现已全部归属或显式排除，C1 = 0、C2 = 0、C3 = 0**。
+
+**做法不是逐条写散文，而是机械生成契约表。** 每个 config 类的字段名、类型、默认值与**字段级 docstring** 由 AST 直接从类体抽取——与 [[41_megatron_config_surface_analysis]] §2 讲的 `ArgumentGroupFactory` 生成 CLI 用的是**同一份声明、同一种抽法**（含那个二宽滑动窗口配对 `AnnAssign` 与裸字符串的技巧）。因此表格不可能与实际 flag 漂移；漂移了说明源码变了，下次重生成即可。表格之外的框架性说明按页手写，交代这批字段该怎么分组读、与该页正文机制的接缝在哪。
+
+**落点按内聚性划**：
+- **训练侧**按 config 类各归一页——`CheckpointConfig`（45 项）→ [[19_megatron_dist_checkpointing_analysis]]、`InferenceSetupConfig`（37）→ [[31_megatron_inference_engine_analysis]]、`LoggerConfig`+`ProfilingConfig`+两个 resilience 类（54）→ [[28_megatron_training_stability_observability_analysis]]、`TokenizerConfig`（16）→ [[44_megatron_tokenizer_and_export_analysis]]、`TrainingConfig`+`ValidationConfig`（22）→ [[43_megatron_job_resilience_analysis]]、`DistributedInitConfig`+`RNGConfig`（18）→ [[17_megatron_parallelism_orchestration_analysis]]、`SchedulerConfig`（14）→ [[16_megatron_distributed_optimizer_analysis]]。
+- **核心侧**按**源码段**路由到对应机制页：模型结构 70 条 → [[10_megatron_model_structure_analysis]]、精度与 CUDA Graph 29 条 → [[23_megatron_precision_cudagraph_fusion_analysis]]、MoE 长尾 21 条 → [[14_megatron_ep_analysis]]，其余分散到 16/21/22/31/13/28/17/20/12/19。
+
+**那 8 条「无既有页可落」的处置**：μP 一族 7 条落到 [[16_megatron_distributed_optimizer_analysis]]——它改变的不是模型**结构**而是**各参数组的学习率与初始化缩放**，作用点在 optimizer 的 param group 组织上（`get_mup_config_overrides` 与 `get_standard_config_overrides` 并列，由 `check_config_overrides_consistency` 校验）。该页同时标了一处**已知空白**：契约已登记，但机制未展开——这是目前该页最大的一处缺口，如实标注而非假装覆盖。`heterogeneous_block_specs` 归 10。
+
+**一处值得单记的发现**：`RerunStateMachineConfig` 的 `check_for_nan_in_loss` 被**刻意排除在 CLI 自动生成之外**（`megatron/training/arguments.py:3873` 写的是 `exclude=["check_for_nan_in_loss"]`）——它默认为真，而 CLI 侧实际用的是 `--no-check-for-nan-in-loss-and-grad` 一族，与字段名推出的名字对不上，故走手写 argparse。这属于 [[41_megatron_config_surface_analysis]] §2.4 说的「dataclass 字段 ≠ 用户可配 flag」那类人工划线，已写进 28 号页。
+
+**[[40_megatron_feature_tree_analysis]] 同步更新**：§3.2 的对账表改为 589 已归属 / 1 排除 / **C1 = 0**；§4 仪表盘的五行 🔴 与全部 🟡 转绿。同时加了一条防止误读的说明——**「有页管」不等于「讲透了」**：各页内用 `[!note] 待展开` 明确标注了尚未展开的部分（`validate_args` 的校验规则网、`_RolloutPipeline` 状态机、张量转储落盘格式、分词器各 library 内部差异、μP 机制），本页只保证每块能力都有主。
+
+**验证**：`check_links --strict` 全 0（443 页）· `check_math --changed --strict` 0/0 · `check_coverage` **C1/C2/C3 全 0** · `check_locators` 域内 errors 14→14、warnings 57→57 零回归，已验证引用 1453 → **1461**。
+
+---
+
+## 2026-09-02：Megatron-LM 新增段 4「代码仓功能树」（5 篇）
+
+**Type**：新增 1 个段位 + 5 篇内容页 + 枚举轴补全 + 工具修复
+
+给 Megatron-LM 域补上一个此前没有的东西：**覆盖对账面**。段 0-3 的 28 篇机制页回答"为什么这么设计"——沿因果链把机制讲透。这种写法有个结构性盲区：**它只覆盖作者选中的那条链**，没被任何链穿过的子系统不会被任何页提到，而且**没有机械门禁会报警**（`check_locators` 只验已写下的引用，验不出没写下的）。段 4 把仓库分解成功能树、逐个源文件对账，差集不为零就说明有能力没人管。
+
+**[[40_megatron_feature_tree_analysis]]（总览与对账）**：`megatron/core` + `training` + `rl` 共 **600 个 `.py`** 切成 **17 个功能模块**，文件面 **576 进树 + 24 显式排除、差集 0**。分解**不按目录切**，五处明显偏离各有理由——最典型的是 `megatron/training` 不整体成模块：它的 `checkpointing.py`/`datasets/`/韧性观测三类文件并进 core 已有的 J/K/N，因为那是同一能力的"另一半"（core 给机制、training 给触发点），切开会逼读者跨模块拼。
+
+**枚举轴本身是不完整的——这是本轮最要紧的发现。** 回查时发现 `--tensor-model-parallel-size` **在 `arguments.py` 里根本不存在**为字面量：Megatron 已改成**从 dataclass 自动生成 argparse**（`megatron/training/argument_utils.py:49-56`，用类型标注与 docstring 自动转 CLI，`argparse_meta` 做特例覆盖，`arguments.py` 里 13 处调用）。于是 `megatron/training/config/` 下另有 **12 个 config dataclass、256 个字段**同样是用户可见配置却不在枚举面内——**旧枚举面只覆盖真实配置面的约 57%**。漏掉的 `CheckpointConfig`(55)/`InferenceSetupConfig`(44)/`LoggerConfig`(40)/`TokenizerConfig`(20) 恰与实测的 wiki 零覆盖簇重合：**没有 flag 盯着的地方，正是页面容易漏的地方**。已补入 `sources:`（枚举面 339 → **590**），训练侧尚无归属的 228 条按决策整体暂挂排除，待 41 号页落地后逐块解除。
+
+**复核推翻了侦察报告的 4 项结论**，如实记下：上一轮 core 侦察称"五块空白区"，逐条回查后发现 **Muon 有 2 页**（页16 §19 专节、27 处提及）、**FP4 有 7 页**、**NVSHMEM 5 页**、**故障注入/能耗各 1 页**——均非空白。实测确为零覆盖的是：tokenizers（33 文件）、`core/export` TRT-LLM 导出（17）、`megatron/rl` 实现层（20/25 文件）、`training/config` 配置容器体系（2400+ 行）、作业韧性与张量转储（7 文件）。另独立查到 `megatron/rl` **只覆盖了半边**——页30 讲训推一致，而 `rl/agent`(7)、`rl/server`(4，含一个 FastAPI 服务面) 零覆盖；`megatron/training` **49 个文件里 25 个零提及且成簇**（YAML 配置体系 7、观测日志 6、容错重启 5、蒸馏 3、数据采样 3）。
+
+**段 4 不做"一模块一页"**。实测显示 **150/158** 条未归属配置项能落进既有页的契约段——既有 28 页主题覆盖是全的、缺的是契约粒度，再开 17 页会大面积并行。只开总览页 + 实测零覆盖的 4 篇：
+
+- **[[41_megatron_config_surface_analysis]]** — 配置面的单一真相：`ArgumentGroupFactory` 用 **AST 滑动窗口**抽 dataclass 的字段级 docstring 当 help（那种 docstring 在运行时不可见，只能读源码）、bool 字段按默认值生成 `--no-*`/`--disable-*` 双名、`argparse_meta` 覆盖优先级；配置容器的 `_target_` 递归实例化与 `TargetAllowlist` 的 RCE 防护（默认只放行 5 个前缀）；**两条并存的 YAML 路径**语义不同（legacy `--yaml-cfg` 绕过 `validate_args`）。
+- **[[42_megatron_rl_runtime_analysis]]** — `megatron/rl` 实现层。核心是 rollout **提交/消费粒度**这个 off-policy 旋钮：`R/G/B` 三档配 `ReleaseState`，并发槽位由 `lag+1` 乘 `prompts_per_step` 再乘 `group_size` **推导而非配置**；GRPO 损失四项逐项对到源码（KL 用 $k_3$ 估计量而非直接 $d$，因为后者可正可负）；IS 权重修正的是**训练引擎与推理引擎算出的 logprob 不一致**——这在"同一批 GPU 扮演两个角色"的架构下不可避免。记下一处**真实的抽象泄漏**：RL 序列打包会按实际长度重算微批数，逼得 `training.py:4603-4612` 为它跳过"微批数只增不减"的断言。
+- **[[43_megatron_job_resilience_analysis]]** — 作业级韧性，与页28 的**数值级**稳定性互补。核心张力是"**要恢复就得先清理干净，但清理本身也可能挂住**"：清理带 10 秒超时；进程内重启前要用一次无用的 `all_reduce` **强制初始化 NCCL**，否则 `destroy_process_group` 终止不了在飞的 kernel（注释明写）。确定性模式必须在 argparse 阶段 setdefault 环境变量，因为 NCCL/cuBLAS/TE **只在首次使用时读一遍**——晚一步是**静默失效**。GPU sniff test 用**中位数与 MAD** 而非均值标准差判离群（离群点会把均值和标准差一起拉走），且阈值带下界。
+- **[[44_megatron_tokenizer_and_export_analysis]]** — 训练管线的两个端点，合计 50 文件此前一字未提，且**在配置面上不可见**——只有文件对账能暴露，这是功能树相对 config-coverage 轴的独立价值最好的例证。分词器的 `libraries × models` 两级正交分类（替代了会组合爆炸的一维展开）；导出的两条路径判据（分布式路径**不做重切分**，断言 `export_config` 必须为 None）。
+
+**工具修复**：`check_coverage.py` 的 C2 与 `--generate` 匹配口径不一致——前者用下划线裸子串、后者认 CLI 的 kebab 形式，只写 `--tensor-model-parallel-size` 的页会被误判 stale_owner。已统一为同一匹配器（先补 `test_c2_uses_same_matcher_as_generate` 再改）。另按归属规则阶梯定夺了 81 条多页提及的 flag，C2/C3 归零。
+
+**验证**：`check_links --strict` 全 0（443 页）；`check_math --changed --strict` 0 错 0 警；`check_locators` 域内 **errors 14 → 14、warnings 57 → 57 零回归**，已验证引用 1390 → 1453，**5 篇新页无任何 locator 问题**。
+
+**未做**：核心侧 158 条配置项的契约段尚未落笔（其中 μP 一族 7 条与 `heterogeneous_block_specs` 是**全库无一字**的真实盲区，无既有页可落）；训练侧 228 条待 41 号页落地后解除暂挂；26 篇旧页的四查复审波次未启动。各新页内明确标注了"待展开"处（`validate_args` 的 1700 行校验规则网、`_RolloutPipeline` 状态机细节、张量转储的落盘格式、分词器各 library 的逐条契约）。
+
+---
+
 ## 2026-09-01：Megatron-LM 全域基线推进至 `dev@85902ef59`
 
 **Type**：基线推进（27 页重钉 + 367 条引用重定位）+ 内容增量（8 页）+ 工具修复（`check_coverage --generate`）
@@ -38,7 +122,9 @@ All source ingestions and significant wiki updates are logged here.
 
 **验证**：`check_links --strict` 全 0；`check_math --changed --strict` 0 错 0 警；`check_locators` 域内 **errors 14 → 14、warnings 57 → 57 零回归**，已验证引用 pass 1356 → 1390。那 14 条 error 全部是存量欠账（legacy `megatron/arguments.py` 等已删路径、DeepEP 跨仓引用），非本轮引入。`check_coverage` C2/C3 = 0。
 
-**未做**：配置面 C1 仍有 240 条待归属（82 条多页提及待定 + 158 条全域未提及，其中 `mup_*` 4 条是全库无一字的真实盲区）；代码仓功能树（`megatron/core` 侦察已完成、`megatron/training`+`megatron/rl` 未完）尚未提交审批；26 篇旧页的四查复审波次未启动。
+**配置面归属**：按归属规则阶梯（轴原生 → 定义者压过消费者 → 编排页拥有跨轴组合 → 模型结构页拥有架构形状 → 案例页永不拥有）定夺了 81 条多页提及的 flag，**C1 由 246 降到 158，C2/C3 = 0**，339 条中 180 条已归属、1 条显式排除（`_cpu_offloading_context`，私有字段且 docstring 自陈 "do not set"）。余下 158 条全域未提及，已按源码段聚类分流（详见功能树提案的 flag 对账表）：其中 **150 条能落进既有页的契约段**，**仅 8 条没有既有页可落**——μP 一族 7 条（`use_mup` + 6 个 `mup_*` 缩放参数，**全库无一字的真实盲区**）与 `heterogeneous_block_specs`。
+
+**未做**：这 158 条的契约段尚未落笔；代码仓功能树（`megatron/core` 侦察已完成、`megatron/training`+`megatron/rl` 未完）尚未提交审批；26 篇旧页的四查复审波次未启动。
 
 ---
 

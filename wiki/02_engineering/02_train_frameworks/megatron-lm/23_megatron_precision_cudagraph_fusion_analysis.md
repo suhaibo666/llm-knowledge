@@ -41,7 +41,7 @@ README(MoE)把 MoE 训练的瓶颈归为三堵墙:**显存墙、通信墙、计�
 
 **③ CUDA Graph 不在模块第一次被调用时立刻录，而是先记顺序、到第一个 step 末尾统一录。**
 `_CudagraphGlobalRecord` 的类 docstring：「A global datastructure that records of the ordering of all _CudaGraphRunner's first fwd or bwd passes. 'create_cudagraphs' will use this to create cudagraphs in execution order, **which is required for cudagraphs sharing a mempool**.」（`megatron/core/transformer/cuda_graphs.py:348-351`）；模块级 `create_cudagraphs()` 的 docstring 把收益写全：「… which allows multiple cudagraphs to share a single memory pool, **minimizing cudagraph memory usage**」（`:501-510`）。
-→ 判据是显存，不是速度：逐个即时捕获会让每张图各占一份 mempool；按执行序统一捕获才谈得上共享一个池。代价是"第一个 step 是特殊的"，且一旦建图完成，任何 runner 再请求建图直接 assert（`:370-379`）。
+→ 判据是显存，不是速度：逐个即时捕获会让每张图各占一份 mempool；按执行序统一捕获才谈得上共享一个池。代价是"第一个 step 是特殊的"，且一旦建图完成，任何 runner 再请求建图直接 assert（`:374-383`）。
 
 **④ 另一条被否掉的替代挖自历史：图间缓冲复用曾用"永不释放的池"，被引用计数取代。**
 旧基线里的 `TensorReusePool` 自陈「Also maintains strong references to all tensors created by this pool, **so that they will never be freed by the memory allocator**」（删除前的 `megatron/core/transformer/cuda_graphs.py:186-191`）。提交 `5e4fe9b3c`（2026-07-02，commit message 即「Optimize memory usage of partial CUDA graphs (#5451)」）把整个类删掉，换成挂在 buffer 元数据上的引用计数：`CudagraphBufferMetadata`（`megatron/core/transformer/cuda_graphs.py:150`）的 `cudagraph_reuse_ref_count` / `capture_reuse_count`（`:160-161`），配合模块级 `fwd_buffer_reuse_ref_count` / `bwd_buffer_reuse_ref_count`（`:345-346`）。
@@ -130,12 +130,12 @@ GPU 执行每个 kernel 前,CPU 要先"启动"它(launch)。当模型由**大量
 > - 兼容迁移：旧值 `full_iteration` → `--cuda-graph-impl=full_iteration`；旧值 `full_iteration_inference` → `--inference-cuda-graph-scope=block`；`full` → 空 modules(整层)。`--cuda-graph-scope` 与旧 `CudaGraphScope` 枚举仅为旧 checkpoint 反序列化保留(`megatron/training/arguments.py`/`transformer_config.__post_init__` 自动迁移并告警)。
 > - 训练校验也随之改写：`--cuda-graph-impl=full_iteration` 要求 `--no-check-for-nan-in-loss-and-grad`；`--inference-cuda-graph-scope=block` + fp8 仅支持 `--transformer-impl=inference_optimized` 且 `--fp8-recipe=mxfp8`(`megatron/training/arguments.py:validate_args`)。
 
-`megatron/core/transformer/cuda_graphs.py` 的机制:`_CudaGraphRunner` 包住一个可图化的模块;`_CudagraphGlobalRecord`(`:345`)记录所有 runner 的创建顺序;`create_cudagraphs`(`:497`)在**第一个训练步**真正录图(被 `15_megatron_pp_schedulers_analysis.md` 的 `megatron/core/pipeline_parallel/schedules.py` 在步末调用 —— 前五份文档里 `megatron/core/pipeline_parallel/schedules.py` 出现的 `create_cudagraphs()` 就是它)。`TensorReusePool`(`:161`)在图之间复用张量缓冲。
+`megatron/core/transformer/cuda_graphs.py` 的机制:`_CudaGraphRunner` 包住一个可图化的模块;`_CudagraphGlobalRecord`(`:349`)记录所有 runner 的创建顺序;`create_cudagraphs`(`:501`)在**第一个训练步**真正录图(被 `15_megatron_pp_schedulers_analysis.md` 的 `megatron/core/pipeline_parallel/schedules.py` 在步末调用 —— 前五份文档里 `megatron/core/pipeline_parallel/schedules.py` 出现的 `create_cudagraphs()` 就是它)。`TensorReusePool`(`:161`)在图之间复用张量缓冲。
 
 > [!deprecated] 该机制在基线 `71092579` 下已不存在（`TensorReusePool` 与 `_determine_if_first_last_layer_of_this_vp_chunk` 在 `71092579` 全仓库零命中，由 #5451 *Optimize memory usage of partial CUDA graphs* 删除），以上关于 `TensorReusePool` 与 VP-chunk 判定的描述对应旧基线 `ee3f1ff`。
 > - **`TensorReusePool` 已删除**，图间缓冲复用改为**引用计数**方案：`CudagraphBufferMetadata`(`megatron/core/transformer/cuda_graphs.py:150`)的 `cudagraph_reuse_ref_count` / `capture_reuse_count`(`:160`/`:161`)配合模块级 `fwd_buffer_reuse_ref_count` / `bwd_buffer_reuse_ref_count`(`:345`/`:346`)判定某个 buffer 能否被后一张图直接写入或复用。"在图之间复用张量缓冲" 这一**意图**仍成立，但已无 Pool 这个对象。
-> - **`_determine_if_first_last_layer_of_this_vp_chunk` 已删除**，改由 `annotate_first_last_layer(layers)`(`:247`)在建块时直接给每层打 `is_first_layer` / `is_last_layer` 标记(`megatron/core/transformer/transformer_block.py:389`、`megatron/core/models/hybrid/hybrid_block.py:878`)，`_CudaGraphRunner` 从 base module 上读取(`:832`)。
-> - 本页其余 `megatron/core/transformer/cuda_graphs.py` 符号在新基线下仍在，位置为：`_ensure_generator_state_is_cudagraph_safe`→`:269`、`_CudagraphGlobalRecord`→`:345`(其 `create_cudagraphs` classmethod 在 `:370`)、模块级 `create_cudagraphs()`→`:497`、`_CudaGraphRunner`→`:674`。
+> - **`_determine_if_first_last_layer_of_this_vp_chunk` 已删除**，改由 `annotate_first_last_layer(layers)`(`:251`)在建块时直接给每层打 `is_first_layer` / `is_last_layer` 标记(`megatron/core/transformer/transformer_block.py:389`、`megatron/core/models/hybrid/hybrid_block.py:878`)，`_CudaGraphRunner` 从 base module 上读取(`:832`)。
+> - 本页其余 `megatron/core/transformer/cuda_graphs.py` 符号在新基线下仍在，位置为：`_ensure_generator_state_is_cudagraph_safe`→`:273`、`_CudagraphGlobalRecord`→`:349`(其 `create_cudagraphs` classmethod 在 `:374`)、模块级 `create_cudagraphs()`→`:501`、`_CudaGraphRunner`→`:678`。
 
 ### 4.3 约束:动态形状
 
@@ -312,7 +312,63 @@ hybrid 模型里 attention-only 层与随后的 partial-MoE-capture 层被允许
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`。源码行号以该 commit 为准。FP8/FP4 的 GEMM 内核位于 TransformerEngine。配套文档:五份并行分析 + `18_megatron_recompute_analysis.md` + `16_megatron_distributed_optimizer_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准。FP8/FP4 的 GEMM 内核位于 TransformerEngine。配套文档:五份并行分析 + `18_megatron_recompute_analysis.md` + `16_megatron_distributed_optimizer_analysis.md`。*
+
+---
+
+## 配置契约：精度、CUDA Graph 与量化字段
+
+本页正文讲三块基建的**机制**（FP8/FP4 四 recipe、CUDA Graph 三 impl、算子融合）。本节给它们的**配置面**。
+
+**下表直接取自 `megatron/core/transformer/transformer_config.py` 的类体**。三组读法：**FP8 一组**（`fp8_*`、`num_layers_at_start/end_in_bf16`、`tp_only_amax_red`、`use_kitchen*`）——注意 amax 相关几项决定 delayed scaling 的历史窗口，与 recipe 选择耦合；**FP4 与量化一组**（`fp4_*`、`quant_recipe`）；**CUDA Graph 一组**（`enable_cuda_graph`、`cuda_graph_*`、`external_cuda_graph`）——其中 `cuda_graph_dynamic_microbatches` 与本页 §9.2 讲的静态形状约束直接相关。
+
+
+### `ModelParallelConfig`（`megatron/core/model_parallel_config.py`，3 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `moe_grad_scale_func` | `Optional[Callable]` | `None` | If using loss scaling for MoE auxiliary losses, this function should return the scale tensor for MoE aux loss. If None, falls back to grad_scale_func. | `:190` |
+| `enable_autocast` | `bool` | `False` | If true runs the forward step function inside torch.autocast context. | `:223` |
+| `autocast_dtype` | `Optional[torch.dtype]` | `None` | dtype to pass to torch.amp.autocast when enabled. If None, is set to pipeline_dtype. | `:226` |
+
+> 该类共 74 个字段，本表收 3 项；其余 71 项已在别处归属：主要归 [[15_megatron_pp_schedulers_analysis]] 16 项、[[12_megatron_tp_analysis]] 10 项、[[20_megatron_comm_overlap_analysis]] 10 项、[[22_megatron_memory_optimization_analysis]] 6 项，另散见 14 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+
+
+
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，26 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `apply_query_key_layer_scaling` | `bool` | `False` | If true, scale Q * K^T by 1 / layer-number. This improve numeric stability when training with fp16. Also sets `attention_softmax_in_fp32` to True. | `:552` |
+| `attention_softmax_in_fp32` | `bool` | `True` | If True, run attention masking and softmax in fp32. This should be True if apply_query_key_layer_scaling is True. | `:556` |
+| `disable_bf16_reduced_precision_matmul` | `bool` | `False` | If True, sets torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction=False to prevent matmul from using reduced precision accumulation when using … | `:560` |
+| `fp8_margin` | `int` | `0` | Margin for the scaling factor computation. | `:685` |
+| `fp8_interval` | `int` | `1` | DEPRECATED from TransformerEngine v1.8.0. This flag is ignored. Controls how often the scaling factor is recomputed. | `:688` |
+| `fp8_amax_history_len` | `int` | `1` | The length of the amax history window used for scaling factor computation. | `:693` |
+| `fp8_amax_compute_algo` | `Literal['most_recent', 'max']` | `'most_recent'` | Algorithm used for choosing the `amax` value for the scaling factor computation. There are 2 predefined choices: `max` chooses the largest `amax` in the hist… | `:696` |
+| `fp8_wgrad` | `bool` | `True` | When set to False, override FP8 config options and do the wgrad computation in higher precision. | `:703` |
+| `fp8_dot_product_attention` | `bool` | `False` | When set to True, use the FP8 implementation of Dot Product Attention. | `:712` |
+| `fp8_multi_head_attention` | `bool` | `False` | When set to True, use the FP8 implementation of Multi Head Attention. | `:715` |
+| `tp_only_amax_red` | `bool` | `False` | When set to True, reduce the FP8 AMAX only in the TP or TP-CP domain | `:718` |
+| `num_layers_at_start_in_bf16` | `int` | `1` | Number of layers at the start of the model to keep in BF16 precision when first_last_layers_bf16 is True. | `:724` |
+| `num_layers_at_end_in_bf16` | `int` | `1` | Number of layers at the end of the model to keep in BF16 precision when first_last_layers_bf16 is True. | `:728` |
+| `use_kitchen` | `bool` | `False` | Use the kitchen extension for transformer quantization. | `:732` |
+| `use_kitchen_attention` | `bool` | `False` | Use the kitchen extension for attention (instead of TE's attention). | `:735` |
+| `kitchen_attention_backend` | `Literal['sdpa', 'fa']` | `'sdpa'` | Which kitchen attention backend to use when use_kitchen_attention=True. "sdpa" for KitchenDotProductAttention, "fa" for KitchenFlashAttention. | `:738` |
+| `fp4_recipe` | `Optional[Literal['nvfp4', 'custom']]` | `'nvfp4'` | If set, enables the use of FP4 precision through Transformer Engine. Currently only 'nvfp4' is supported which uses NVFP4BlockScaling recipe for Blackwell+ a… | `:751` |
+| `fp4_param` | `bool` | `field(default=False, metadata={'argpa…` | If set, keep the parameters in fp4 precision to save memory. This option must be used together with fp4 mode (i.e., TransformerConfig.fp4 is not None). Note … | `:755` |
+| `fp4_quantizer_factory` | `Optional[str]` | `None` | Python import path to a callable quantizer factory, e.g., package.module.quantizer_factory. Required when fp4_recipe is custom. | `:762` |
+| `enable_cuda_graph` | `bool` | `False` | DEPRECATED and replaced by cuda_graph_impl. When set to true, either partial CUDA graph (1/many CUDA graph per layer) or full iteration CUDA graph (1 CUDA gr… | `:1135` |
+| `cuda_graph_use_single_mempool` | `bool` | `True` | For cuda_graph_impl "full_iteration" only. When True, full-iteration graph replay (training and evaluation) and optimizer graph capture/replay share the same… | `:1141` |
+| `cuda_graph_retain_backward_graph` | `bool` | `False` | When set to true, cudagraph backward passes will be graph captured with 'retain_grad=True' This may enable cudagraphs for certain modules that are not comple… | `:1147` |
+| `cuda_graph_warmup_steps` | `int` | `3` | Number of warmup steps for CUDA graphs | `:1152` |
+| `external_cuda_graph` | `bool` | `False` | DEPRECATED and replaced by cuda_graph_impl. When set to true, TransformerLayer layers are swapped with user provided CUDA graphs. | `:1155` |
+| `cuda_graph_dynamic_microbatches` | `bool` | `False` | Allow CUDA graph replay when runtime microbatch count varies across iterations. This option is only meaningful for cuda_graph_impl=transformer_engine. For TH… | `:1245` |
+| `quant_recipe` | `Optional[RecipeConfig]` | `None` | Configuration of any per-module quantization settings to be applied to the model | `:1444` |
+
+> 该类共 266 个字段，本表收 26 项；其余 240 项已在别处归属：主要归 [[10_megatron_model_structure_analysis]] 92 项、[[14_megatron_ep_analysis]] 38 项、[[21_megatron_fusion_operators_analysis]] 26 项、本页他处 12 项，另散见 20 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+
+> **与 40 号页对账的接缝**：`transformer_impl` 等已由本页其他章节提及的字段不在表内（它们已有归属）；本表只收此前**全域零提及**的部分，这正是 [[40_megatron_feature_tree_analysis]] §3.2 要清零的那批。
 
 ## Related Pages
 
@@ -320,3 +376,5 @@ hybrid 模型里 attention-only 层与随后的 partial-MoE-capture 层被允许
 - [[21_megatron_fusion_operators_analysis]]
 - [[10_pytorch_cuda_graphs_complete_guide]] — CUDA Graph 通用机制权威页（capture/replay、地址不变式、失败与回退；本页 §4 是训练框架侧的具体应用）
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+
+

@@ -7,80 +7,79 @@ sources:
   class: ModelParallelConfig
 - file: megatron/core/transformer/transformer_config.py
   class: TransformerConfig
+- file: megatron/training/config/common_config.py
+  class: RNGConfig
+- file: megatron/training/config/common_config.py
+  class: ProfilingConfig
+- file: megatron/training/config/common_config.py
+  class: DistributedInitConfig
+- file: megatron/training/config/training_config.py
+  class: TrainingConfig
+- file: megatron/training/config/training_config.py
+  class: ValidationConfig
+- file: megatron/training/config/training_config.py
+  class: SchedulerConfig
+- file: megatron/training/config/training_config.py
+  class: LoggerConfig
+- file: megatron/training/config/training_config.py
+  class: CheckpointConfig
+- file: megatron/training/config/training_config.py
+  class: TokenizerConfig
+- file: megatron/training/config/inference_config.py
+  class: InferenceSetupConfig
+- file: megatron/training/config/resilience_config.py
+  class: RerunStateMachineConfig
+- file: megatron/training/config/resilience_config.py
+  class: StragglerDetectionConfig
 flags:
 - name: tensor_model_parallel_size
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 12_megatron_tp_analysis
-  - 14_megatron_ep_analysis
-  - 17_megatron_parallelism_orchestration_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 12_megatron_tp_analysis
+  rule: 轴原生
 - name: pipeline_model_parallel_comm_backend
   from: ModelParallelConfig
   owner: 15_megatron_pp_schedulers_analysis
   auto: true
 - name: pipeline_model_parallel_size
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 15_megatron_pp_schedulers_analysis
-  - 17_megatron_parallelism_orchestration_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 15_megatron_pp_schedulers_analysis
+  rule: 轴原生
 - name: virtual_pipeline_model_parallel_size
   from: ModelParallelConfig
   owner: 15_megatron_pp_schedulers_analysis
   auto: true
 - name: sequence_parallel
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 12_megatron_tp_analysis
-  - 18_megatron_recompute_analysis
-  - 20_megatron_comm_overlap_analysis
-  - 24_megatron_linear_cross_entropy_analysis
-  - 28_megatron_training_stability_observability_analysis
-  - 34_deepseek_v4_tensor_parallel_analysis
+  owner: 12_megatron_tp_analysis
+  rule: 轴原生:SP 属 TP 页 §7
 - name: context_parallel_size
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 13_megatron_cp_analysis
-  - 17_megatron_parallelism_orchestration_analysis
-  - 20_megatron_comm_overlap_analysis
-  - 35_deepseek_v4_context_parallel_analysis
+  owner: 13_megatron_cp_analysis
+  rule: 轴原生
 - name: hierarchical_context_parallel_sizes
   from: ModelParallelConfig
   owner: 35_deepseek_v4_context_parallel_analysis
   auto: true
 - name: max_seqlen_per_dp_cp_rank
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 13_megatron_cp_analysis
-  - 29_megatron_packed_dataset_dynamic_cp_analysis
+  owner: 29_megatron_packed_dataset_dynamic_cp_analysis
+  rule: 定义者:打包调度器的约束
 - name: dynamic_context_parallel
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 11_megatron_dataset_analysis
-  - 13_megatron_cp_analysis
-  - 35_deepseek_v4_context_parallel_analysis
+  owner: 13_megatron_cp_analysis
+  rule: 轴原生
 - name: min_dynamic_context_parallel_size
   from: ModelParallelConfig
-  owner: null
+  owner: 13_megatron_cp_analysis
+  rule: 契约段（2026-09-02）
 - name: hybrid_context_parallel
   from: ModelParallelConfig
-  owner: null
+  owner: 13_megatron_cp_analysis
+  rule: 契约段（2026-09-02）
 - name: sequence_packing_scheduler
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 13_megatron_cp_analysis
-  - 14_megatron_ep_analysis
-  - 29_megatron_packed_dataset_dynamic_cp_analysis
-  - 32_megatron_tflops_analysis
-  - 35_deepseek_v4_context_parallel_analysis
+  owner: 29_megatron_packed_dataset_dynamic_cp_analysis
+  rule: 定义者:打包调度器本体
 - name: pad_packed_seq_alignment
   from: ModelParallelConfig
   owner: 23_megatron_precision_cudagraph_fusion_analysis
@@ -91,55 +90,36 @@ flags:
   auto: true
 - name: expert_model_parallel_size
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 17_megatron_parallelism_orchestration_analysis
-  - 22_megatron_memory_optimization_analysis
+  owner: 14_megatron_ep_analysis
+  rule: 轴原生
 - name: expert_tensor_parallel_size
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 17_megatron_parallelism_orchestration_analysis
-  - 22_megatron_memory_optimization_analysis
+  owner: 14_megatron_ep_analysis
+  rule: 轴原生
 - name: perform_initialization
   from: ModelParallelConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: use_cpu_initialization
   from: ModelParallelConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: fp16
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 15_megatron_pp_schedulers_analysis
-  - 16_megatron_distributed_optimizer_analysis
-  - 28_megatron_training_stability_observability_analysis
-  - 35_deepseek_v4_context_parallel_analysis
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 混精主参数归分布式优化器
 - name: bf16
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 15_megatron_pp_schedulers_analysis
-  - 16_megatron_distributed_optimizer_analysis
-  - 20_megatron_comm_overlap_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
-  - 24_megatron_linear_cross_entropy_analysis
-  - 28_megatron_training_stability_observability_analysis
-  - 30_megatron_rl_posttraining_consistency_analysis
-  - 36_megatron_fsdp_analysis
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 混精主参数归分布式优化器
 - name: params_dtype
   from: ModelParallelConfig
   owner: 34_deepseek_v4_tensor_parallel_analysis
   auto: true
 - name: timers
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 22_megatron_memory_optimization_analysis
-  - 28_megatron_training_stability_observability_analysis
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 可观测
 - name: finalize_model_grads_func
   from: ModelParallelConfig
   owner: 15_megatron_pp_schedulers_analysis
@@ -150,56 +130,52 @@ flags:
   auto: true
 - name: moe_grad_scale_func
   from: ModelParallelConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: mtp_grad_scale_func
   from: ModelParallelConfig
   owner: 28_megatron_training_stability_observability_analysis
   auto: true
 - name: no_sync_func
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 15_megatron_pp_schedulers_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 15_megatron_pp_schedulers_analysis
+  rule: 消费者中定义调度语义者
 - name: grad_sync_func
   from: ModelParallelConfig
   owner: 20_megatron_comm_overlap_analysis
   auto: true
 - name: param_sync_func
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 16_megatron_distributed_optimizer_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 定义者:分布式优化器参数同步
 - name: deterministic_mode
   from: ModelParallelConfig
   owner: 21_megatron_fusion_operators_analysis
   auto: true
 - name: enable_autocast
   from: ModelParallelConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: autocast_dtype
   from: ModelParallelConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: num_microbatches_with_partial_activation_checkpoints
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 15_megatron_pp_schedulers_analysis
-  - 18_megatron_recompute_analysis
+  owner: 18_megatron_recompute_analysis
+  rule: 重计算
 - name: gradient_accumulation_fusion
   from: ModelParallelConfig
   owner: 12_megatron_tp_analysis
   auto: true
 - name: use_te_rng_tracker
   from: ModelParallelConfig
-  owner: null
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
 - name: tp_comm_overlap
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 12_megatron_tp_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 20_megatron_comm_overlap_analysis
+  rule: 规则6:纯重叠开关,20 独有 TP overlap 深挖
 - name: tp_comm_bulk_wgrad
   from: ModelParallelConfig
   owner: 20_megatron_comm_overlap_analysis
@@ -218,7 +194,8 @@ flags:
   auto: true
 - name: tp_comm_overlap_rs_dgrad
   from: ModelParallelConfig
-  owner: null
+  owner: 20_megatron_comm_overlap_analysis
+  rule: 契约段（2026-09-02）
 - name: tp_comm_split_ag
   from: ModelParallelConfig
   owner: 12_megatron_tp_analysis
@@ -257,31 +234,20 @@ flags:
   auto: true
 - name: overlap_moe_expert_parallel_comm
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 15_megatron_pp_schedulers_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 15_megatron_pp_schedulers_analysis
+  rule: 定义者:它选择 combined-1F1B 调度
 - name: delay_wgrad_compute
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 15_megatron_pp_schedulers_analysis
-  - 20_megatron_comm_overlap_analysis
-  - 21_megatron_fusion_operators_analysis
+  owner: 20_megatron_comm_overlap_analysis
+  rule: 规则6:纯重叠/延迟机制
 - name: overlap_dispatch_backward_with_experts_wgrad
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 36_megatron_fsdp_analysis
+  owner: 14_megatron_ep_analysis
+  rule: 轴原生:EP 专属
 - name: ep_overlap_early_attn_memory_release
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 15_megatron_pp_schedulers_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 20_megatron_comm_overlap_analysis
+  rule: 规则6:纯重叠
 - name: pipeline_dtype
   from: ModelParallelConfig
   owner: 15_megatron_pp_schedulers_analysis
@@ -292,28 +258,20 @@ flags:
   auto: true
 - name: overlap_p2p_comm
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 15_megatron_pp_schedulers_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 15_megatron_pp_schedulers_analysis
+  rule: 轴原生:PP P2P
 - name: batch_p2p_comm
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 15_megatron_pp_schedulers_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 15_megatron_pp_schedulers_analysis
+  rule: 轴原生:PP P2P
 - name: batch_p2p_sync
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 15_megatron_pp_schedulers_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 15_megatron_pp_schedulers_analysis
+  rule: 轴原生:PP P2P
 - name: use_ring_exchange_p2p
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 15_megatron_pp_schedulers_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 15_megatron_pp_schedulers_analysis
+  rule: 轴原生:PP P2P
 - name: deallocate_pipeline_outputs
   from: ModelParallelConfig
   owner: 15_megatron_pp_schedulers_analysis
@@ -328,161 +286,157 @@ flags:
   auto: true
 - name: overlap_p2p_comm_warmup_flush
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 15_megatron_pp_schedulers_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 15_megatron_pp_schedulers_analysis
+  rule: 轴原生:PP P2P
 - name: microbatch_group_size_per_vp_stage
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 15_megatron_pp_schedulers_analysis
-  - 29_megatron_packed_dataset_dynamic_cp_analysis
+  owner: 15_megatron_pp_schedulers_analysis
+  rule: 轴原生:VPP
 - name: mtp_standalone
   from: ModelParallelConfig
   owner: 10_megatron_model_structure_analysis
   auto: true
 - name: cpu_offloading
   from: ModelParallelConfig
-  owner: null
-  candidates:
-  - 02_megatron_moe_training_optimization_analysis
-  - 16_megatron_distributed_optimizer_analysis
-  - 18_megatron_recompute_analysis
-  - 22_megatron_memory_optimization_analysis
+  owner: 22_megatron_memory_optimization_analysis
+  rule: 显存
 - name: cpu_offloading_num_layers
   from: ModelParallelConfig
-  owner: null
+  owner: 22_megatron_memory_optimization_analysis
+  rule: 契约段（2026-09-02）
 - name: _cpu_offloading_context
   from: ModelParallelConfig
   owner: null
+  excluded: 私有字段（前导下划线），docstring 自陈 "For internal use only, do not set."（megatron/core/model_parallel_config.py:459-464）；它是运行期注入的
+    ContextManager，不是用户可配开关。
 - name: cpu_offloading_activations
   from: ModelParallelConfig
-  owner: null
+  owner: 22_megatron_memory_optimization_analysis
+  rule: 契约段（2026-09-02）
 - name: cpu_offloading_weights
   from: ModelParallelConfig
-  owner: null
+  owner: 22_megatron_memory_optimization_analysis
+  rule: 契约段（2026-09-02）
 - name: cpu_offloading_double_buffering
   from: ModelParallelConfig
-  owner: null
+  owner: 22_megatron_memory_optimization_analysis
+  rule: 契约段（2026-09-02）
 - name: cpu_offloading_retain_pinned_cpu_buffers
   from: ModelParallelConfig
-  owner: null
+  owner: 22_megatron_memory_optimization_analysis
+  rule: 契约段（2026-09-02）
 - name: barrier_with_L1_time
   from: ModelParallelConfig
-  owner: null
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
 - name: num_layers
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 13_megatron_cp_analysis
-  - 15_megatron_pp_schedulers_analysis
-  - 17_megatron_parallelism_orchestration_analysis
-  - 28_megatron_training_stability_observability_analysis
-  - 31_megatron_inference_engine_analysis
-  - 32_megatron_tflops_analysis
+  owner: 10_megatron_model_structure_analysis
+  rule: 模型结构
 - name: mtp_num_layers
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 28_megatron_training_stability_observability_analysis
+  owner: 10_megatron_model_structure_analysis
+  rule: 模型结构
 - name: mtp_loss_scaling_factor
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: mtp_use_repeated_layer
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: mtp_detach_heads
   from: TransformerConfig
   owner: 28_megatron_training_stability_observability_analysis
   auto: true
 - name: mtp_hybrid_override_pattern
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: num_layers_in_first_pipeline_stage
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: num_layers_in_last_pipeline_stage
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: pipeline_model_parallel_layout
   from: TransformerConfig
   owner: 31_megatron_inference_engine_analysis
   auto: true
 - name: account_for_embedding_in_pipeline_split
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: account_for_loss_in_pipeline_split
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: hidden_size
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 15_megatron_pp_schedulers_analysis
-  - 20_megatron_comm_overlap_analysis
-  - 21_megatron_fusion_operators_analysis
-  - 22_megatron_memory_optimization_analysis
-  - 32_megatron_tflops_analysis
-  - 34_deepseek_v4_tensor_parallel_analysis
+  owner: 10_megatron_model_structure_analysis
+  rule: 模型结构
 - name: num_attention_heads
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 25_megatron_nonuniform_tp_analysis
-  - 34_deepseek_v4_tensor_parallel_analysis
-  - 35_deepseek_v4_context_parallel_analysis
+  owner: 10_megatron_model_structure_analysis
+  rule: 模型结构
 - name: attention_backend
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: softmax_scale
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: softmax_type
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: num_query_groups
   from: TransformerConfig
   owner: 10_megatron_model_structure_analysis
   auto: true
 - name: ffn_hidden_size
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 25_megatron_nonuniform_tp_analysis
-  - 34_deepseek_v4_tensor_parallel_analysis
+  owner: 25_megatron_nonuniform_tp_analysis
+  rule: 候选中无 10;NTP 页拥有逐 rank ffn 切分
 - name: kv_channels
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: hidden_dropout
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: attention_dropout
   from: TransformerConfig
   owner: 35_deepseek_v4_context_parallel_analysis
   auto: true
 - name: fp32_residual_connection
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: apply_residual_connection_post_layernorm
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: layernorm_epsilon
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: layernorm_zero_centered_gamma
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: add_bias_linear
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: add_qkv_bias
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: gated_linear_unit
   from: TransformerConfig
   owner: 30_megatron_rl_posttraining_consistency_analysis
@@ -493,7 +447,8 @@ flags:
   auto: true
 - name: activation_func_fp8_input_store
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: glu_linear_offset
   from: TransformerConfig
   owner: 21_megatron_fusion_operators_analysis
@@ -504,159 +459,156 @@ flags:
   auto: true
 - name: num_moe_experts
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 02_megatron_moe_training_optimization_analysis
-  - 14_megatron_ep_analysis
+  owner: 14_megatron_ep_analysis
+  rule: 轴原生:EP 专家数
 - name: rotary_interleaved
   from: TransformerConfig
   owner: 21_megatron_fusion_operators_analysis
   auto: true
 - name: window_size
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: window_attn_skip_freq
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: normalization
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: qk_layernorm
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: qk_l2_norm
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: qk_clip
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 16_megatron_distributed_optimizer_analysis
-  - 28_megatron_training_stability_observability_analysis
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 训练稳定性
 - name: qk_clip_alpha
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: qk_clip_threshold
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: log_max_attention_logit
   from: TransformerConfig
   owner: 28_megatron_training_stability_observability_analysis
   auto: true
 - name: attention_output_gate
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 16_megatron_distributed_optimizer_analysis
+  owner: 10_megatron_model_structure_analysis
+  rule: 模型结构
 - name: gated_attention_proj_granularity
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: rotary_base_per_layer
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: head_wise_attn_gate
   from: TransformerConfig
   owner: 10_megatron_model_structure_analysis
   auto: true
 - name: test_mode
   from: TransformerConfig
-  owner: null
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
 - name: calculate_per_token_loss
   from: TransformerConfig
   owner: 28_megatron_training_stability_observability_analysis
   auto: true
 - name: multi_latent_attention
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 18_megatron_recompute_analysis
-  - 21_megatron_fusion_operators_analysis
-  - 35_deepseek_v4_context_parallel_analysis
+  owner: 10_megatron_model_structure_analysis
+  rule: 模型结构
 - name: no_rope_freq
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: experimental_attention_variant
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 18_megatron_recompute_analysis
-  - 21_megatron_fusion_operators_analysis
-  - 28_megatron_training_stability_observability_analysis
-  - 32_megatron_tflops_analysis
-  - 34_deepseek_v4_tensor_parallel_analysis
-  - 35_deepseek_v4_context_parallel_analysis
+  owner: 10_megatron_model_structure_analysis
+  rule: 模型结构
 - name: cp_partition_mode
   from: TransformerConfig
   owner: 35_deepseek_v4_context_parallel_analysis
   auto: true
 - name: experimental_attention_variant_loss_scale_func
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: dsa_indexer_n_heads
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: dsa_indexer_head_dim
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: dsa_indexer_topk
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 32_megatron_tflops_analysis
+  owner: 10_megatron_model_structure_analysis
+  rule: 模型结构:DSA 索引器
 - name: dsa_indexer_topk_freq
   from: TransformerConfig
   owner: 32_megatron_tflops_analysis
   auto: true
 - name: dsa_indexer_skip_topk_offset
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: dsa_indexer_loss_coeff
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 32_megatron_tflops_analysis
+  owner: 10_megatron_model_structure_analysis
+  rule: 模型结构:DSA 索引器
 - name: dsa_indexer_use_sparse_loss
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 32_megatron_tflops_analysis
+  owner: 10_megatron_model_structure_analysis
+  rule: 模型结构:DSA 索引器
 - name: dsa_kernel_backend
   from: TransformerConfig
   owner: 21_megatron_fusion_operators_analysis
   auto: true
 - name: dsa_indexer_rope_interleaved
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: dsa_indexer_rotate_activation
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: dsa_indexer_scoring_relu
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: dsa_indexer_k_norm_epsilon
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: dsa_indexer_k_norm_fp32
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: dsa_indexer_weights_proj_use_quantization
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: dsa_indexer_weights_proj_output_dtype
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: csa_window_size
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 35_deepseek_v4_context_parallel_analysis
+  owner: 10_megatron_model_structure_analysis
+  rule: 模型结构(35 为案例页,规则5 不拥有)
 - name: csa_compress_ratios
   from: TransformerConfig
   owner: 10_megatron_model_structure_analysis
@@ -671,37 +623,44 @@ flags:
   auto: true
 - name: apply_dsa_kernel_fusion
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 21_megatron_fusion_operators_analysis
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 融合
 - name: linear_attention_type
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: linear_attention_freq
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: linear_conv_kernel_dim
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: linear_key_head_dim
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: linear_value_head_dim
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: linear_num_key_heads
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: linear_num_value_heads
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: kda_safe_gate
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: kda_lower_bound
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: gdn_pre_gated_delta_rule_fusion
   from: TransformerConfig
   owner: 21_megatron_fusion_operators_analysis
@@ -720,93 +679,104 @@ flags:
   auto: true
 - name: init_method_std
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: embedding_init_method
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: embedding_init_method_std
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: init_model_with_meta_device
   from: TransformerConfig
   owner: 36_megatron_fsdp_analysis
   auto: true
 - name: use_mup
   from: TransformerConfig
-  owner: null
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
 - name: mup_width_mult
   from: TransformerConfig
-  owner: null
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
 - name: mup_base_hidden_size
   from: TransformerConfig
-  owner: null
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
 - name: mup_embedding_mult
   from: TransformerConfig
-  owner: null
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
 - name: mup_output_mult
   from: TransformerConfig
-  owner: null
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
 - name: mup_base_head_dim
   from: TransformerConfig
-  owner: null
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
 - name: mup_attn_scale_power
   from: TransformerConfig
-  owner: null
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
 - name: apply_query_key_layer_scaling
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: attention_softmax_in_fp32
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: disable_bf16_reduced_precision_matmul
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: bias_activation_fusion
   from: TransformerConfig
-  owner: null
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 契约段（2026-09-02）
 - name: masked_softmax_fusion
   from: TransformerConfig
-  owner: null
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 契约段（2026-09-02）
 - name: persist_layer_norm
   from: TransformerConfig
-  owner: null
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 契约段（2026-09-02）
 - name: memory_efficient_layer_norm
   from: TransformerConfig
-  owner: null
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 契约段（2026-09-02）
 - name: bias_dropout_fusion
   from: TransformerConfig
-  owner: null
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 契约段（2026-09-02）
 - name: apply_rope_fusion
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 21_megatron_fusion_operators_analysis
-  - 35_deepseek_v4_context_parallel_analysis
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 融合
 - name: use_fused_weighted_squared_relu
   from: TransformerConfig
   owner: 21_megatron_fusion_operators_analysis
   auto: true
 - name: fused_single_qkv_rope
   from: TransformerConfig
-  owner: null
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 契约段（2026-09-02）
 - name: use_transformer_engine_op_fuser
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 21_megatron_fusion_operators_analysis
-  - 22_megatron_memory_optimization_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
-  - 34_deepseek_v4_tensor_parallel_analysis
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 融合:op-fuser 本体
 - name: fused_residual_rmsnorm
   from: TransformerConfig
-  owner: null
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 契约段（2026-09-02）
 - name: recompute_granularity
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 16_megatron_distributed_optimizer_analysis
-  - 18_megatron_recompute_analysis
+  owner: 18_megatron_recompute_analysis
+  rule: 重计算
 - name: recompute_method
   from: TransformerConfig
   owner: 18_megatron_recompute_analysis
@@ -825,130 +795,120 @@ flags:
   auto: true
 - name: fp8
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 15_megatron_pp_schedulers_analysis
-  - 18_megatron_recompute_analysis
-  - 20_megatron_comm_overlap_analysis
-  - 21_megatron_fusion_operators_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
-  - 24_megatron_linear_cross_entropy_analysis
-  - 30_megatron_rl_posttraining_consistency_analysis
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 精度
 - name: fp8_recipe
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 15_megatron_pp_schedulers_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
-  - 30_megatron_rl_posttraining_consistency_analysis
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 精度
 - name: fp8_param
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 16_megatron_distributed_optimizer_analysis
-  - 30_megatron_rl_posttraining_consistency_analysis
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 候选中无 23;参数精度归分布式优化器
 - name: fp8_quantizer_factory
   from: TransformerConfig
   owner: 23_megatron_precision_cudagraph_fusion_analysis
   auto: true
 - name: fp8_margin
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: fp8_interval
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: fp8_amax_history_len
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: fp8_amax_compute_algo
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: fp8_wgrad
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: fp8_output_proj
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 23_megatron_precision_cudagraph_fusion_analysis
-  - 24_megatron_linear_cross_entropy_analysis
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 精度
 - name: fp8_dot_product_attention
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: fp8_multi_head_attention
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: tp_only_amax_red
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: first_last_layers_bf16
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 22_megatron_memory_optimization_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 精度
 - name: num_layers_at_start_in_bf16
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: num_layers_at_end_in_bf16
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: use_kitchen
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: use_kitchen_attention
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: kitchen_attention_backend
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: fp4
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 16_megatron_distributed_optimizer_analysis
-  - 18_megatron_recompute_analysis
-  - 20_megatron_comm_overlap_analysis
-  - 21_megatron_fusion_operators_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 精度
 - name: fp4_recipe
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: fp4_param
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: fp4_quantizer_factory
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: high_priority_a2a_comm_stream
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 15_megatron_pp_schedulers_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 20_megatron_comm_overlap_analysis
+  rule: 规则6:纯通信流优先级
 - name: moe_shared_expert_intermediate_size
   from: TransformerConfig
   owner: 34_deepseek_v4_tensor_parallel_analysis
   auto: true
 - name: moe_shared_expert_gate
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_shared_expert_overlap
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 18_megatron_recompute_analysis
-  - 20_megatron_comm_overlap_analysis
-  - 34_deepseek_v4_tensor_parallel_analysis
+  owner: 14_megatron_ep_analysis
+  rule: 定义者:共享专家属 EP 页
 - name: use_grouped_gemm_for_shared_expert
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_shared_expert_glu_interleave_size
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_layer_freq
   from: TransformerConfig
   owner: 10_megatron_model_structure_analysis
@@ -967,10 +927,12 @@ flags:
   auto: true
 - name: moe_enable_routing_replay
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_router_topk_limited_devices
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_router_padding_for_quantization
   from: TransformerConfig
   owner: 30_megatron_rl_posttraining_consistency_analysis
@@ -985,32 +947,32 @@ flags:
   auto: true
 - name: moe_router_group_topk
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_router_pre_softmax
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_router_topk_scaling_factor
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_router_score_function
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_router_dtype
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 28_megatron_training_stability_observability_analysis
-  - 30_megatron_rl_posttraining_consistency_analysis
+  owner: 14_megatron_ep_analysis
+  rule: 定义者:路由数值
 - name: moe_router_enable_expert_bias
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 14_megatron_ep_analysis
+  owner: 10_megatron_model_structure_analysis
+  rule: 模型结构:10 §6 拥有 Router 算法
 - name: moe_router_bias_update_rate
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_router_force_load_balancing
   from: TransformerConfig
   owner: 10_megatron_model_structure_analysis
@@ -1029,7 +991,8 @@ flags:
   auto: true
 - name: dense_grouped_gemm
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: use_grouped_gemm_for_dense_mlp
   from: TransformerConfig
   owner: 21_megatron_fusion_operators_analysis
@@ -1040,289 +1003,260 @@ flags:
   auto: true
 - name: moe_grouped_gemm
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 18_megatron_recompute_analysis
-  - 21_megatron_fusion_operators_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 融合:分组 GEMM
 - name: moe_use_grouped_tensor
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 02_megatron_moe_training_optimization_analysis
-  - 14_megatron_ep_analysis
-  - 21_megatron_fusion_operators_analysis
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 定义者:§8.10 机制页
 - name: moe_single_grouped_weight
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 21_megatron_fusion_operators_analysis
-  - 36_megatron_fsdp_analysis
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 融合:GroupedTensor 存储形态
 - name: moe_single_grouped_bias
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 21_megatron_fusion_operators_analysis
-  - 36_megatron_fsdp_analysis
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 融合:GroupedTensor 存储形态
 - name: moe_aux_loss_coeff
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_z_loss_coeff
   from: TransformerConfig
   owner: 28_megatron_training_stability_observability_analysis
   auto: true
 - name: moe_input_jitter_eps
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_token_dropping
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_token_dispatcher_type
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 20_megatron_comm_overlap_analysis
-  - 21_megatron_fusion_operators_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
+  owner: 14_megatron_ep_analysis
+  rule: 轴原生:EP 核心开关
 - name: moe_enable_deepep
   from: TransformerConfig
   owner: 14_megatron_ep_analysis
   auto: true
 - name: moe_flex_dispatcher_backend
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 20_megatron_comm_overlap_analysis
-  - 22_megatron_memory_optimization_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
+  owner: 14_megatron_ep_analysis
+  rule: 轴原生:EP 后端
 - name: moe_permute_fusion_into_hybridep
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_hybridep_pad_variable_tokens
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 02_megatron_moe_training_optimization_analysis
-  - 14_megatron_ep_analysis
+  owner: 14_megatron_ep_analysis
+  rule: 轴原生:EP 变长补齐
 - name: moe_per_layer_logging
   from: TransformerConfig
   owner: 28_megatron_training_stability_observability_analysis
   auto: true
 - name: moe_expert_capacity_factor
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
-  - 30_megatron_rl_posttraining_consistency_analysis
+  owner: 14_megatron_ep_analysis
+  rule: 轴原生:EP 容量
 - name: moe_expert_rank_capacity_factor
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 02_megatron_moe_training_optimization_analysis
-  - 22_megatron_memory_optimization_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
+  owner: 02_megatron_moe_training_optimization_analysis
+  rule: 定义者:MoE 机制地图的容量所有权
 - name: moe_pad_expert_input_to_capacity
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
+  owner: 14_megatron_ep_analysis
+  rule: 轴原生:EP 容量
 - name: moe_pad_experts_for_cuda_graph_inference
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_token_drop_policy
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_layer_recompute
   from: TransformerConfig
   owner: 18_megatron_recompute_analysis
   auto: true
 - name: moe_permute_fusion
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
+  owner: 14_megatron_ep_analysis
+  rule: 定义者:MoE 置换融合
 - name: moe_router_fusion
   from: TransformerConfig
   owner: 23_megatron_precision_cudagraph_fusion_analysis
   auto: true
 - name: moe_apply_probs_on_input
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 21_megatron_fusion_operators_analysis
-  - 34_deepseek_v4_tensor_parallel_analysis
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 融合(34 为案例页)
 - name: moe_latent_size
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_flex_dispatcher_num_sms
   from: TransformerConfig
   owner: 14_megatron_ep_analysis
   auto: true
 - name: moe_deepep_num_sms
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 14_megatron_ep_analysis
+  rule: 轴原生:EP 后端
 - name: moe_hybridep_num_sms
   from: TransformerConfig
   owner: 14_megatron_ep_analysis
   auto: true
 - name: moe_hybridep_num_blocks_permute
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_hybridep_num_blocks_unpermute
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_hybridep_num_sms_preprocessing
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 14_megatron_ep_analysis
-  - 20_megatron_comm_overlap_analysis
+  owner: 14_megatron_ep_analysis
+  rule: 轴原生:EP 后端
 - name: moe_ncclep_static_shape
   from: TransformerConfig
   owner: 14_megatron_ep_analysis
   auto: true
 - name: moe_ncclep_use_symm_mem
   from: TransformerConfig
-  owner: null
+  owner: 14_megatron_ep_analysis
+  rule: 契约段（2026-09-02）
 - name: moe_mlp_glu_interleave_size
   from: TransformerConfig
   owner: 21_megatron_fusion_operators_analysis
   auto: true
 - name: cp_comm_type
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 13_megatron_cp_analysis
-  - 35_deepseek_v4_context_parallel_analysis
+  owner: 13_megatron_cp_analysis
+  rule: 轴原生
 - name: linear_cp_mode
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 13_megatron_cp_analysis
-  - 35_deepseek_v4_context_parallel_analysis
+  owner: 13_megatron_cp_analysis
+  rule: 轴原生
 - name: enable_cuda_graph
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: cuda_graph_use_single_mempool
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: cuda_graph_retain_backward_graph
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: cuda_graph_warmup_steps
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: external_cuda_graph
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: cuda_graph_impl
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 13_megatron_cp_analysis
-  - 18_megatron_recompute_analysis
-  - 20_megatron_comm_overlap_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: CUDA Graph
 - name: cuda_graph_modules
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 13_megatron_cp_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: CUDA Graph
 - name: create_attention_mask_in_dataloader
   from: TransformerConfig
   owner: 11_megatron_dataset_analysis
   auto: true
 - name: inference_cuda_graph_scope
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 23_megatron_precision_cudagraph_fusion_analysis
-  - 31_megatron_inference_engine_analysis
+  owner: 31_megatron_inference_engine_analysis
+  rule: 推理专属
 - name: cuda_graph_scope
   from: TransformerConfig
   owner: 23_megatron_precision_cudagraph_fusion_analysis
   auto: true
 - name: thd_max_packed_sequences
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 11_megatron_dataset_analysis
-  - 13_megatron_cp_analysis
-  - 29_megatron_packed_dataset_dynamic_cp_analysis
+  owner: 29_megatron_packed_dataset_dynamic_cp_analysis
+  rule: 定义者:打包调度器
 - name: cuda_graph_dynamic_microbatches
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: enable_hyper_connections
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 10_megatron_model_structure_analysis
-  - 15_megatron_pp_schedulers_analysis
-  - 18_megatron_recompute_analysis
+  owner: 10_megatron_model_structure_analysis
+  rule: 模型结构:mHC
 - name: num_residual_streams
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 15_megatron_pp_schedulers_analysis
-  - 34_deepseek_v4_tensor_parallel_analysis
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: mhc_sinkhorn_iterations
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: mhc_init_gating_factor
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: use_fused_mhc
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 21_megatron_fusion_operators_analysis
-  - 34_deepseek_v4_tensor_parallel_analysis
+  owner: 21_megatron_fusion_operators_analysis
+  rule: 融合(34 为案例页)
 - name: mhc_recompute_layer_num
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: mhc_recompute_attn_cuda_graph_split
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: clone_scatter_output_in_embedding
   from: TransformerConfig
-  owner: null
+  owner: 12_megatron_tp_analysis
+  rule: 契约段（2026-09-02）
 - name: disable_parameter_transpose_cache
   from: TransformerConfig
-  owner: null
+  owner: 22_megatron_memory_optimization_analysis
+  rule: 契约段（2026-09-02）
 - name: config_logger_dir
   from: TransformerConfig
-  owner: null
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
 - name: flash_decode
   from: TransformerConfig
-  owner: null
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
 - name: batch_invariant_mode
   from: TransformerConfig
-  owner: null
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
 - name: use_te_activation_func
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: inference_rng_tracker
   from: TransformerConfig
-  owner: null
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
 - name: inference_sampling_seed
   from: TransformerConfig
-  owner: null
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
 - name: symmetric_ar_type
   from: TransformerConfig
-  owner: null
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
 - name: nccl_all_reduce_for_prefill
   from: TransformerConfig
-  owner: null
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
 - name: use_inference_optimized_layers
   from: TransformerConfig
   owner: 30_megatron_rl_posttraining_consistency_analysis
@@ -1333,88 +1267,92 @@ flags:
   auto: true
 - name: inference_disable_triton_nvls_kernels
   from: TransformerConfig
-  owner: null
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
 - name: inference_grouped_gemm_backend
   from: TransformerConfig
   owner: 30_megatron_rl_posttraining_consistency_analysis
   auto: true
 - name: inference_moe_disable_fused_quant_kernels
   from: TransformerConfig
-  owner: null
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
 - name: inference_moe_token_dispatcher_type
   from: TransformerConfig
   owner: 30_megatron_rl_posttraining_consistency_analysis
   auto: true
 - name: mrope_section
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: mrope_interleaved
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: is_hybrid_model
   from: TransformerConfig
   owner: 32_megatron_tflops_analysis
   auto: true
 - name: mamba_state_dim
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: mamba_head_dim
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: mamba_num_groups
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: mamba_num_heads
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: mamba_training_ssm_states_dtype
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: use_mamba_mem_eff_path
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: mlp_chunks_for_prefill
   from: TransformerConfig
-  owner: null
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
 - name: mlp_chunks_for_training
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: heterogeneous_block_specs
   from: TransformerConfig
-  owner: null
+  owner: 10_megatron_model_structure_analysis
+  rule: 契约段（2026-09-02）
 - name: hetereogenous_dist_checkpoint
   from: TransformerConfig
-  owner: null
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
 - name: quant_recipe
   from: TransformerConfig
-  owner: null
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 契约段（2026-09-02）
 - name: transformer_impl
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 13_megatron_cp_analysis
-  - 22_megatron_memory_optimization_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
-  - 30_megatron_rl_posttraining_consistency_analysis
-  - 31_megatron_inference_engine_analysis
-  - 35_deepseek_v4_context_parallel_analysis
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 后端选择,归精度/TE 页
 - name: fallback_to_eager_attn
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 13_megatron_cp_analysis
-  - 35_deepseek_v4_context_parallel_analysis
+  owner: 13_megatron_cp_analysis
+  rule: 轴原生:CP 后端回退
 - name: fine_grained_activation_offloading
   from: TransformerConfig
   owner: 22_megatron_memory_optimization_analysis
   auto: true
 - name: offload_modules
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 02_megatron_moe_training_optimization_analysis
-  - 15_megatron_pp_schedulers_analysis
-  - 22_megatron_memory_optimization_analysis
+  owner: 22_megatron_memory_optimization_analysis
+  rule: 显存
 - name: min_offloaded_tensor_size
   from: TransformerConfig
   owner: 22_megatron_memory_optimization_analysis
@@ -1437,11 +1375,8 @@ flags:
   auto: true
 - name: moe_paged_stash
   from: TransformerConfig
-  owner: null
-  candidates:
-  - 02_megatron_moe_training_optimization_analysis
-  - 22_megatron_memory_optimization_analysis
-  - 23_megatron_precision_cudagraph_fusion_analysis
+  owner: 22_megatron_memory_optimization_analysis
+  rule: 显存
 - name: moe_paged_stash_page_size
   from: TransformerConfig
   owner: 22_megatron_memory_optimization_analysis
@@ -1454,3 +1389,1007 @@ flags:
   from: TransformerConfig
   owner: 22_megatron_memory_optimization_analysis
   auto: true
+- name: seed
+  from: RNGConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: te_rng_tracker
+  from: RNGConfig
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  auto: true
+- name: data_parallel_random_init
+  from: RNGConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: use_nsys_profiler
+  from: ProfilingConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: profile_step_start
+  from: ProfilingConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: profile_step_end
+  from: ProfilingConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: use_pytorch_profiler
+  from: ProfilingConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: pytorch_profiler_collect_shapes
+  from: ProfilingConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: pytorch_profiler_collect_callstack
+  from: ProfilingConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: pytorch_profiler_collect_chakra
+  from: ProfilingConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: profile_ranks
+  from: ProfilingConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: record_memory_history
+  from: ProfilingConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: memory_snapshot_path
+  from: ProfilingConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: record_shapes
+  from: ProfilingConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: nvtx_ranges
+  from: ProfilingConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: distributed_backend
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: distributed_timeout_minutes
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: align_grad_reduce
+  from: DistributedInitConfig
+  owner: 20_megatron_comm_overlap_analysis
+  auto: true
+- name: local_rank
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  auto: true
+- name: lazy_mpu_init
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: use_megatron_fsdp
+  from: DistributedInitConfig
+  owner: 36_megatron_fsdp_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: use_torch_fsdp2
+  from: DistributedInitConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  auto: true
+- name: nccl_communicator_config_path
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: use_tp_pp_dp_mapping
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: use_gloo_process_groups
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: use_sharp
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: sharp_enabled_group
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: high_priority_stream_groups
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  auto: true
+- name: distributed_timeout_seconds_after_init
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: flight_recorder_dump_path
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: flight_recorder_trace_buffer_size
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: flight_recorder_dump_on_timeout
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: flight_recorder_include_stack_trace
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: flight_recorder_include_only_active
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: flight_recorder_extra_dump_on_exec
+  from: DistributedInitConfig
+  owner: 17_megatron_parallelism_orchestration_analysis
+  rule: 契约段（2026-09-02）
+- name: disable_jit_fuser
+  from: DistributedInitConfig
+  owner: 21_megatron_fusion_operators_analysis
+  auto: true
+- name: micro_batch_size
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: global_batch_size
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: rampup_batch_size
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: step_batch_size_schedule
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: decrease_batch_size_if_needed
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: empty_unused_memory_level
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: check_weight_hash_across_dp_replicas_interval
+  from: TrainingConfig
+  owner: 36_megatron_fsdp_analysis
+  auto: true
+- name: gpu_sniff_test_interval
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: train_sync_interval
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: train_iters
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: train_samples
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: exit_interval
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: exit_duration_in_mins
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: exit_signal_handler
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: exit_signal
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: exit_signal_handler_for_dataloader
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: exit_signal_handler_for_training
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: manual_gc
+  from: TrainingConfig
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  auto: true
+- name: manual_gc_interval
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: manual_gc_eval
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: iterations_to_skip
+  from: TrainingConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: eval_iters
+  from: ValidationConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: eval_interval
+  from: ValidationConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: start_eval_at_iter
+  from: ValidationConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: eval_global_batch_size
+  from: ValidationConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: eval_micro_batch_size
+  from: ValidationConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: skip_train
+  from: ValidationConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: full_validation
+  from: ValidationConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: multiple_validation_sets
+  from: ValidationConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: validation_set_names
+  from: ValidationConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: 契约段（2026-09-02）
+- name: lr_decay_style
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  auto: true
+- name: lr_wsd_decay_style
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
+- name: lr_decay_iters
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
+- name: lr_decay_samples
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
+- name: lr_wsd_decay_iters
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
+- name: lr_wsd_decay_samples
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
+- name: lr_warmup_fraction
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
+- name: lr_warmup_iters
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
+- name: lr_warmup_samples
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
+- name: lr_warmup_init
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  auto: true
+- name: lr_decay_steps
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
+- name: lr_warmup_steps
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  auto: true
+- name: override_opt_param_scheduler
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  auto: true
+- name: use_checkpoint_opt_param_scheduler
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
+- name: start_weight_decay
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
+- name: end_weight_decay
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
+- name: weight_decay_incr_style
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
+- name: no_weight_decay_cond_type
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: wd_incr_steps
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  rule: 契约段（2026-09-02）
+- name: wsd_decay_steps
+  from: SchedulerConfig
+  owner: 16_megatron_distributed_optimizer_analysis
+  auto: true
+- name: log_interval
+  from: LoggerConfig
+  owner: 32_megatron_tflops_analysis
+  auto: true
+- name: log_params_norm
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: log_throughput
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  auto: true
+- name: log_throughput_to_tensorboard
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: throughput_window_size
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: log_progress
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: timing_log_level
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: timing_log_option
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: tensorboard_dir
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: tensorboard_log_interval
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: tensorboard_queue_size
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: log_timers_to_tensorboard
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: log_loss_scale_to_tensorboard
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  auto: true
+- name: log_validation_ppl_to_tensorboard
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: log_memory_to_tensorboard
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: memory_keys
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: log_memory_interval
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: log_device_memory_used
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: log_l2_norm_grad_to_tensorboard
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: log_num_zeros_in_grad
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: log_runtime_to_tensorboard
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: runtime_time_unit
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: log_world_size_to_tensorboard
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: wandb_project
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: wandb_exp_name
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: wandb_save_dir
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: wandb_entity
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: logging_level
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: filter_warnings
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: modules_to_filter
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: set_level_for_all_loggers
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: log_energy
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: save_config_filepath
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: moe_routing_trace_path
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: moe_routing_trace_max_training_iters
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: moe_routing_trace_capture_logits
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: moe_routing_trace_capture_hidden_states
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: moe_routing_trace_dump_weights
+  from: LoggerConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: save
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: save_interval
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: save_params_interval
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: save_activations_interval
+  from: CheckpointConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: save_tokens_per_expert_interval
+  from: CheckpointConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: save_wgrads_interval
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: save_dgrads_interval
+  from: CheckpointConfig
+  owner: 43_megatron_job_resilience_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: save_retain_interval
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: most_recent_k
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: save_optim
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: save_rng
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: load
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: load_optim
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: load_main_params_from_ckpt
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: load_rng
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: non_persistent_save_interval
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: non_persistent_ckpt_type
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: non_persistent_global_ckpt_dir
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: non_persistent_local_ckpt_dir
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: non_persistent_local_ckpt_algo
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: finetune
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: pretrained_checkpoint
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: ckpt_step
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: use_checkpoint_args
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: use_mp_args_from_checkpoint_args
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: use_tokenizer_model_from_checkpoint_args
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: exit_on_missing_checkpoint
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: ckpt_format
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: auto_detect_ckpt_format
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: ckpt_convert_format
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: ckpt_convert_save
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: ckpt_convert_update_legacy_dist_opt_format
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: fully_parallel_save
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: async_save
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: async_strategy
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  auto: true
+- name: use_persistent_ckpt_worker
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: async_ckpt_cpu_priority
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: async_ckpt_io_priority
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: async_ckpt_use_cpu_shm
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: fully_parallel_load
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: ckpt_fully_parallel_load_exchange_algo
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: ckpt_fully_parallel_save_process_group
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: ckpt_fully_parallel_load_process_group
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: ckpt_assume_constant_structure
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: ckpt_load_validate_sharding_integrity
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: strict_fsdp_dtensor_load
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: dist_ckpt_strictness
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: dist_ckpt_save_pre_mcore_014
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: dist_ckpt_optim_fully_reshardable
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: distrib_optim_fully_reshardable_mem_efficient
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: save_tokenizer_assets
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: replication
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  auto: true
+- name: replication_jump
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: replication_factor
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  rule: 契约段（2026-09-02）
+- name: verify_integrity
+  from: CheckpointConfig
+  owner: 19_megatron_dist_checkpointing_analysis
+  auto: true
+- name: vocab_size
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: padded_vocab_size
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: pad_vocab_size
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: vocab_file
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: merge_file
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: vocab_extra_ids
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: tokenizer_type
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: tokenizer_model
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: metadata_path
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: special_tokens
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: tiktoken_pattern
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: tiktoken_num_special_tokens
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: tokenizer_sentencepiece_legacy
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: tokenizer_sentencepiece_ignore_extra_whitespaces
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: tokenizer_hf_no_use_fast
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: tokenizer_hf_no_include_special_tokens
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: trust_remote_code
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: null_tokenizer_eod_id
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: null_tokenizer_pad_id
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: 契约段（2026-09-02）
+- name: chat_template
+  from: TokenizerConfig
+  owner: 44_megatron_tokenizer_and_export_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: inference_batch_times_seqlen_threshold
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: max_tokens_to_oom
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: output_bert_embeddings
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: bert_embedder_type
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: use_legacy_static_engine
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_max_requests
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_max_seq_length
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_buffer_size_gb
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_paused_buffer_size_gb
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_mamba_memory_ratio
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_block_size
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_max_requests
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_max_tokens
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_num_cuda_graphs
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_track_paused_request_events
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_track_generated_token_events
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_unified_memory_level
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_cuda_graph_mixed_prefill_count
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_cuda_graph_sizing_distribution
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  auto: true
+- name: inference_dynamic_batching_sampling_backend
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_async_sched_mode
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_logprobs_mode
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: decode_only_cuda_graphs
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_cuda_graph_all_prefills
+  from: InferenceSetupConfig
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  auto: true
+- name: enable_chunked_prefill
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  auto: true
+- name: num_speculative_tokens
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: inference_dynamic_batching_enable_prefix_caching
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_prefix_caching_eviction_policy
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_prefix_caching_coordinator_policy
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_prefix_caching_routing_alpha
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_dynamic_batching_prefix_caching_mamba_gb
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_logging_step_interval
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_text_gen_server_logging
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_wandb_logging
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_coordinator_port
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_use_synchronous_zmq_collectives
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: inference_disable_ep_consensus
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: mamba_inference_conv_states_dtype
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: mamba_inference_ssm_states_dtype
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: return_log_probs
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: config 类契约归属页 / 机制定义者（2026-09-02）
+- name: skip_prompt_log_probs
+  from: InferenceSetupConfig
+  owner: 30_megatron_rl_posttraining_consistency_analysis
+  auto: true
+- name: use_flashinfer_fused_rope
+  from: InferenceSetupConfig
+  owner: 31_megatron_inference_engine_analysis
+  rule: 契约段（2026-09-02）
+- name: error_injection_rate
+  from: RerunStateMachineConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: error_injection_type
+  from: RerunStateMachineConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: rerun_mode
+  from: RerunStateMachineConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: check_for_nan_in_loss
+  from: RerunStateMachineConfig
+  owner: null
+  excluded: 训练侧配置面（`megatron/training/config/`），2026-09-02 随枚举轴补全一并纳入。按提案决策 ⑥ 整体暂挂：待功能树 O「训练任务编排与入口」模块的规格页落地后逐块解除排除并定归属。
+- name: check_for_spiky_loss
+  from: RerunStateMachineConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: log_straggler
+  from: StragglerDetectionConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: straggler_ctrlr_port
+  from: StragglerDetectionConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: straggler_minmax_count
+  from: StragglerDetectionConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）
+- name: disable_straggler_on_startup
+  from: StragglerDetectionConfig
+  owner: 28_megatron_training_stability_observability_analysis
+  rule: 契约段（2026-09-02）

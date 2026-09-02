@@ -201,9 +201,28 @@ CP 在 Megatron 侧不是"设一个 `--context-parallel-size` 就成立"的自�
 
 *生成依据:`Megatron-LM` `dev` 分支 `85902ef59`(2026-09-01;由 `71092579` 重定基线而来,§4 的特性增量基准仍为 `dev@232c478d4`)。源码行号以 `85902ef59` 为准。`p2p`/`a2a`/`a2a+p2p` 的实际 attention 内核位于 TransformerEngine,Megatron 透传 `cp_comm_type`;原生 `all_gather` 实现见 `megatron/core/transformer/dot_product_attention_context_parallel.py`,通用机制骨架已归一至理论页。配套文档:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`。*
 
+---
+
+## 配置契约：CP 的两个补充字段
+
+本页正文覆盖了 `cp_comm_type` 等主干开关。本节补 `# Model parallelism` 段里两个此前零提及的字段。**下表直接取自 `megatron/core/model_parallel_config.py` 的类体**。
+
+
+
+### `ModelParallelConfig`（`megatron/core/model_parallel_config.py`，2 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `min_dynamic_context_parallel_size` | `int` | `1` | Minimum CP group size for dynamic context parallel. Default 1 (no CP). The maximum is dp_size * context_parallel_size (the full DPxCP group). | `:91` |
+| `hybrid_context_parallel` | `bool` | `False` | Deprecated. Use `dynamic_context_parallel` instead. | `:95` |
+
+> 该类共 74 个字段，本表收 2 项；其余 72 项已在别处归属：主要归 [[15_megatron_pp_schedulers_analysis]] 16 项、[[12_megatron_tp_analysis]] 10 项、[[20_megatron_comm_overlap_analysis]] 10 项、[[22_megatron_memory_optimization_analysis]] 6 项，另散见 14 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+
 ## Related Pages
 
 - [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]] —— CP/Ring Attention 通用机制(序列切分、因果裁剪、四种通信调度、通信量代数、并行组合关系)
 - [[15_megatron_pp_schedulers_analysis]] · [[14_megatron_ep_analysis]] · [[12_megatron_tp_analysis]] · [[29_megatron_packed_dataset_dynamic_cp_analysis]]
 - [[35_deepseek_v4_context_parallel_analysis]] —— DeepSeek-V4 在同一套 Megatron CP 基础设施上的模型特有适配(MLA/CSA/HCA)
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+
+

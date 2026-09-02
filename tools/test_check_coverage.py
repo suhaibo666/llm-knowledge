@@ -153,3 +153,22 @@ def test_generate_refreshes_undecided_rows(tmp_path, repo, wiki, monkeypatch):
     assert "candidates" not in by["alpha_size"]
     # beta_mode 现在两页都提及 → 候选清单应刷新为两页
     assert by["beta_mode"]["candidates"] == ["10_a_analysis", "20_b_analysis"]
+
+def test_c2_uses_same_matcher_as_generate(tmp_path, wiki):
+    """C2 判定「owner 页面是否提及该 flag」必须与 --generate 的匹配器同口径。
+
+    回归用例：页面只写 CLI 的 kebab 形式（`--beta-mode`）时，pages_mentioning 认它、
+    C2 若改用下划线裸子串就会误报 stale_owner —— 两处口径不一致会把正确的人工归属
+    判成陈旧，进而诱导把 owner 改到错的页上。
+    """
+    import yaml
+    cfgp = tmp_path / "cov.yaml"
+    cfgp.write_text(yaml.safe_dump({
+        "domain": "demo", "wiki_dir": wiki, "repo": "n/a", "commit": "0" * 40,
+        "sources": [],
+        # 10_a_analysis 只写了 --beta-mode（kebab），没有 beta_mode 字面量
+        "flags": [{"name": "beta_mode", "from": "C", "owner": "10_a_analysis"}],
+    }, allow_unicode=True), encoding="utf-8")
+    assert cc.pages_mentioning(wiki, "beta_mode") == ["10_a_analysis", "20_b_analysis"]
+    rc = cc.check(cfgp, strict=True, examples=10)
+    assert rc == 0, "kebab 形式的提及不应被判成 stale_owner"

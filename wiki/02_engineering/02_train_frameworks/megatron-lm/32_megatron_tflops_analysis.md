@@ -245,7 +245,7 @@ graph TD
 
 答案取决于是否发生了 Token 丢弃（Token Dropping）。
 
-Megatron-LM 中 MoE 路由专家的 FLOPs 计算代码大致如下（`moe_layer_flops` 内，`megatron/training/training.py:550-557`）：
+Megatron-LM 中 MoE 路由专家的 FLOPs 计算代码大致如下（`moe_layer_flops` 内，`megatron/training/training.py:661-668`）：
 ```python
 routed_flops = (
     4
@@ -291,22 +291,22 @@ Megatron-LM 的 TFLOPS 报告器是一个**静态估算器**，而非动态分�
 
 ### 7.1 只数 GEMM，别的一概不数
 
-公式里出现的项**只有矩阵乘**：MLP（`megatron/training/training.py:533-536`）、MoE 路由/共享专家（`:538-571`）、attention 的投影与 core-attention（`:573` 起的 `attn_layer_flops`）、logits 与 MTP（`:1265-1270`）。LayerNorm/RMSNorm、softmax、激活函数、dropout、router 的 top-k、以及**所有集合通信**都没有对应项。
+公式里出现的项**只有矩阵乘**：MLP（`megatron/training/training.py:644-647`）、MoE 路由/共享专家（`:538-571`）、attention 的投影与 core-attention（`:573` 起的 `attn_layer_flops`）、logits 与 MTP（`:1265-1270`）。LayerNorm/RMSNorm、softmax、激活函数、dropout、router 的 top-k、以及**所有集合通信**都没有对应项。
 
 > [!note] 推断
 > 由此可知上报值系统性低于真机的实际浮点操作数；对 GEMM 主导的大模型这个缺口很小，对小 hidden size / 长序列 / 通信密集的配置会被放大。源码没有对这个缺口做任何量化说明。
 
 ### 7.2 重计算完全不进公式
 
-`forward_backward_expansion_factor = 3` 是常量（`megatron/training/training.py:964-966`），而 `num_floating_point_operations` 函数体（`:498`–`:1330`）里**没有出现过任何 `recompute` 相关的项**。开启 full activation checkpointing 后前向被整段重跑一次，真机的 GEMM 次数接近 4 份，而上报仍按 3 份计——即重计算越激进，TFLOPS 越被**低估**。这与 §5 场景 B 的高估方向相反，两者在同一份日志里会互相抵消一部分。
+`forward_backward_expansion_factor = 3` 是常量（`megatron/training/training.py:1075-1077`），而 `num_floating_point_operations` 函数体（`:498`–`:1330`）里**没有出现过任何 `recompute` 相关的项**。开启 full activation checkpointing 后前向被整段重跑一次，真机的 GEMM 次数接近 4 份，而上报仍按 3 份计——即重计算越激进，TFLOPS 越被**低估**。这与 §5 场景 B 的高估方向相反，两者在同一份日志里会互相抵消一部分。
 
 ### 7.3 分母是 `world_size`，不是"在干活的 GPU 数"
 
-`megatron/training/training.py:3515` 的除数是 `elapsed_time_per_iteration * 10**12 * args.world_size`；日志文案写作 `throughput per GPU (TFLOP/s/GPU)`（`:3538`）。PP bubble、EP 负载不均、任何空转的 rank，都被平摊进这个 per-GPU 数字里——它衡量的是**整个作业的平均**，不是某张卡的峰值。
+`megatron/training/training.py:3697` 的除数是 `elapsed_time_per_iteration * 10**12 * args.world_size`；日志文案写作 `throughput per GPU (TFLOP/s/GPU)`（`:3538`）。PP bubble、EP 负载不均、任何空转的 rank，都被平摊进这个 per-GPU 数字里——它衡量的是**整个作业的平均**，不是某张卡的峰值。
 
 ### 7.4 THD 统计量成立的三个前提
 
-- **只有 packed 路径才更新累加器。** 从未调用 `update_seqlen_stats_from_cu_seqlens` 时，`consume_seqlen_stats_in_iteration` 返回 `(None, None)`（`megatron/training/training.py:364-367`），函数回落到闭式默认 `batch_size * seq_length` / `batch_size * seq_length^2`（`:528-531`）。
+- **只有 packed 路径才更新累加器。** 从未调用 `update_seqlen_stats_from_cu_seqlens` 时，`consume_seqlen_stats_in_iteration` 返回 `(None, None)`（`megatron/training/training.py:367-370`），函数回落到闭式默认 `batch_size * seq_length` / `batch_size * seq_length^2`（`:528-531`）。
 - **依赖"`cu_seqlens` 在 TP/CP/PP 内完全复制"这个不变量。** 世界级 all-reduce 会把同一份统计量多算 `TP * CP * PP` 次，代码显式把这个因子除掉（`:359-361`、`:371-374`）。该不变量一旦被打破，FLOPs 会按比例算错，而且不会报错。
 - **有 `sequence_packing_scheduler` 时走另一条路。** 此时直接采用调度器在 CP padding 与 rerouting **之前**算好的真实长度（`:4627-4633`，两个 `assert ... is not None` 把这条路钉死）。
 
@@ -316,18 +316,18 @@ Megatron-LM 的 TFLOPS 报告器是一个**静态估算器**，而非动态分�
 
 | 高估来源 | 旧基线 | 新基线 `71092579` |
 |---|---|---|
-| THD/CP padding token 被当成真 token | 存在 | **已修掉**：token-linear 改乘 `total_real_tokens_in_batch`，docstring 承诺 "neither kind of padding shows up in the reported FLOPs"（`megatron/training/training.py:516-523`）；core-attention 改乘真实 `sum(L_i^2)`（`:1272-1276`） |
+| THD/CP padding token 被当成真 token | 存在 | **已修掉**：token-linear 改乘 `total_real_tokens_in_batch`，docstring 承诺 "neither kind of padding shows up in the reported FLOPs"（`megatron/training/training.py:627-634`）；core-attention 改乘真实 `sum(L_i^2)`（`:1272-1276`） |
 | MoE 专家容量丢弃 | 存在 | **仍然存在**：`moe_layer_flops` 的 `num_experts_routed_to` 是静态 top-k，公式里没有任何 capacity / drop 项（`:538-557`） |
 
 所以 §5 场景 B 的结论现在只对**容量丢弃**这一个来源成立。BSHD 下两条路径数值等价（`:528-531`），因此 §4/§5 针对 BSHD 的论述不受影响。
 
 ### 7.6 跨作业累计的口径必须一致
 
-`Job throughput` / `Cumulative throughput` 直接对 checkpoint 里持久化的 `num_floating_point_operations_so_far` 做差（`megatron/training/training.py:3653-3664`；写入 `megatron/training/checkpointing.py:794`，读回 `:2323`）。中途改模型超参、或换到公式口径不同的版本，两段数字会被无条件相加，且没有任何一致性校验。
+`Job throughput` / `Cumulative throughput` 直接对 checkpoint 里持久化的 `num_floating_point_operations_so_far` 做差（`megatron/training/training.py:3835-3846`；写入 `megatron/training/checkpointing.py:794`，读回 `:2323`）。中途改模型超参、或换到公式口径不同的版本，两段数字会被无条件相加，且没有任何一致性校验。
 
 ### 7.7 公式硬性拒绝的组合
 
-`dsv4_hybrid` 要求所有 attention 层都属于 Window/CSA/HCA，否则 `assert` 直接失败（`megatron/training/training.py:1310-1314`），并且不允许再有 dense + MLA 层（`:1309`）。
+`dsv4_hybrid` 要求所有 attention 层都属于 Window/CSA/HCA，否则 `assert` 直接失败（`megatron/training/training.py:1472-1476`），并且不允许再有 dense + MLA 层（`:1309`）。
 
 ---
 
@@ -336,7 +336,7 @@ Megatron-LM 的 TFLOPS 报告器是一个**静态估算器**，而非动态分�
 > [!note] 推断
 > 本节每条都锚在当前基线的一处真实代码或本页已核过的 callout 上，但"往哪走"是本页的推断，不是源码的承诺。
 
-- **从"闭式超参函数"走向"按真实 batch 统计量 + 按层型分派"。** 锚点：函数签名新增两个可选统计量（`megatron/training/training.py:498-500`）；自注意力被拆成 token-linear 与 core-attention 两段（`:973-979`）；hybrid 路径按层型逐类累加（`:1320-1330`）。本页页头「重定基线」记录的三处签名变化，正是这条线留下的三个脚印。
+- **从"闭式超参函数"走向"按真实 batch 统计量 + 按层型分派"。** 锚点：函数签名新增两个可选统计量（`megatron/training/training.py:609-611`）；自注意力被拆成 token-linear 与 core-attention 两段（`:973-979`）；hybrid 路径按层型逐类累加（`:1320-1330`）。本页页头「重定基线」记录的三处签名变化，正是这条线留下的三个脚印。
 - **两条计算路径迟早要合并。** 锚点：`transformer_flops()` 头上挂着 `# TODO(helenn/dnarayanan): Refactor this to reuse the helper methods.`（`:912`）——`hybrid_flops` 已经在复用 `mlp_layer_flops` / `moe_layer_flops` / `attn_layer_flops` 这组 helper（`:1320-1330`），而标准 Transformer 路径仍然自己把公式展开一遍。
 - **稀疏注意力已经拿到独立的 FLOPs 模型。** 锚点：`_dsv4_hybrid_self_attention_flops`（定义在 `:388`）被注释称为 "the single source of truth shared with ``hybrid_flops``"（`:996-999`），并返回 `(token_linear, core)` 两段（`:495`）。"按层型给出各自的 FLOPs 模型"这个做法正在从 MoE 扩散到注意力变体。
 - **下一个待收窄的高估来源是容量丢弃。** 锚点：§4 的 `[!contradiction]` 已确认 padding 那一路被修掉，而 `num_experts_routed_to` 仍是静态 top-k（`:550-557`）。源码里**没有**与之对应的 TODO，所以这条纯粹是由 §7.5 的约束推出的方向，不是在途工作。

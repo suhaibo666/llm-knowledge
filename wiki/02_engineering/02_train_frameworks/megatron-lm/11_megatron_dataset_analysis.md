@@ -260,7 +260,7 @@ PackedSeqParams:
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`（2026-08-27）。源码行号以该 commit 为准；2026-08-28 由 `ee3f1ff` 重定基线。本文只覆盖 GPT/LLM 路径;BERT/T5/多模态数据集见 `megatron/core/datasets/bert_dataset.py` / `megatron/core/datasets/t5_dataset.py` / `megatron/core/datasets/multimodal_dataset.py`。配套文档:`15_megatron_pp_schedulers_analysis.md` §8.1、`13_megatron_cp_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准；2026-08-28 由 `ee3f1ff` 重定基线。本文只覆盖 GPT/LLM 路径;BERT/T5/多模态数据集见 `megatron/core/datasets/bert_dataset.py` / `megatron/core/datasets/t5_dataset.py` / `megatron/core/datasets/multimodal_dataset.py`。配套文档:`15_megatron_pp_schedulers_analysis.md` §8.1、`13_megatron_cp_analysis.md`。*
 
 ## Related Pages
 

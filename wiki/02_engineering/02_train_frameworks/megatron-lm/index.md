@@ -13,11 +13,15 @@ title: "Megatron-LM — Knowledge Map"
 > - **不适用本基线**:[[33_megatron_vllm_weight_sync_analysis]] 分析的是 `volcengine/verl` 而非 Megatron-LM,不适用本基线。
 > - **重核推翻的结论**:凡因新基线而不再成立的论断,均在原文就地加 `[!deprecated]`/`[!contradiction]` 标注并保留旧基线原文,不做删除。例如 [[35_deepseek_v4_context_parallel_analysis]] 的两条核心判定(「CSA/HCA 两阶段 CP 尚未实现」「Dynamic CP 不支持 MLA/DSv4」)在 `71092579` 下已分别由 PR #5087、#4226 推翻。
 
-> 最后更新:2026-08-29。新增并重写框架级 [[01_megatron_architecture_analysis]]，补齐“任务入口 → 生命周期 → 并行执行 → 模型组合 → 后端原语”五层结构、各层能力与层间契约；原 MoE capstone 由 01 调整为 [[02_megatron_moe_training_optimization_analysis]]，并从七类技术目录收缩为四种所有权的机制地图。段 0 形成“框架结构与训练状态机 → MoE 机制与选型边界”的阅读顺序。全域现有 28 篇内容页。
+> 最后更新:2026-09-02（二）。**配置面对账清零**：590 个配置字段（14 个 config dataclass）现已全部归属或显式排除，`check_coverage` C1/C2/C3 = 0。15 页新增「配置契约」小节——表格由 AST 从各 config 类体机械抽取，与 `ArgumentGroupFactory` 生成 CLI 用的是同一份声明，不会漂移。此前无页可落的 μP 一族 7 条落入 [[16_megatron_distributed_optimizer_analysis]]（契约已登记、机制标为待展开）。
+>
+> 2026-09-02：**新增段 4「代码仓功能树」(40-44,5 篇)**：以 [[40_megatron_feature_tree_analysis]] 为覆盖对账面，把 `megatron/core`+`training`+`rl` 共 600 个 `.py` 分解成 17 个功能模块并逐条对账（文件面差集 0），再针对实测出的零覆盖区补 4 篇规格页。功能树与机制页**互链不互替**：功能树给覆盖坐标与契约，机制页给因果解释。全域现有 33 篇内容页。
+>
+> 2026-08-29：新增并重写框架级 [[01_megatron_architecture_analysis]]，补齐“任务入口 → 生命周期 → 并行执行 → 模型组合 → 后端原语”五层结构、各层能力与层间契约；原 MoE capstone 由 01 调整为 [[02_megatron_moe_training_optimization_analysis]]，并从七类技术目录收缩为四种所有权的机制地图。段 0 形成“框架结构与训练状态机 → MoE 机制与选型边界”的阅读顺序。
 
 ## 段位速查(kb-reorg P7 Task 7)
 
-> 段 0(01-02)负责导览/capstone：01 先建立五层结构和扩展接缝，再解释训练状态怎样逐步固化为一次参数提交；02 用 token、专家参数、激活/优化器状态和时间窗口四种所有权组织 MoE 优化；段 1(10-19)是最贴近核心流水线的 10 篇——模型结构→数据→TP/CP/EP/PP 四并行轴→分布式优化器→编排→重计算→存档；段 2(20-29)是深挖/补遗/系统专题共 9 篇；段 3(30-36)是 RL/推理集成、度量方法论与两篇 DeepSeek-V4 案例研究，另含 **36 Megatron-FSDP 专页**——它按主题本属段 2，但段 1 与段 2 均已排满，按相邻空段规则取 36。与下文按主题分组的表格是同一组页面的两种视图。
+> 段 0(01-02)负责导览/capstone：01 先建立五层结构和扩展接缝，再解释训练状态怎样逐步固化为一次参数提交；02 用 token、专家参数、激活/优化器状态和时间窗口四种所有权组织 MoE 优化；段 1(10-19)是最贴近核心流水线的 10 篇——模型结构→数据→TP/CP/EP/PP 四并行轴→分布式优化器→编排→重计算→存档；段 2(20-29)是深挖/补遗/系统专题共 9 篇；段 3(30-36)是 RL/推理集成、度量方法论与两篇 DeepSeek-V4 案例研究，另含 **36 Megatron-FSDP 专页**——它按主题本属段 2，但段 1 与段 2 均已排满，按相邻空段规则取 36。**段 4(40-44)是代码仓功能树**——与段 0-3 的机制视角正交：段 0-3 回答"为什么这么设计"，段 4 回答"有哪些功能、归谁管、还有哪些没人管"。与下文按主题分组的表格是同一组页面的两种视图。
 > **26 号编号空出**(2026-08-01,spec §3.4 补执行):`26_megatron_pp_supplements_analysis.md` 已并入 [[15_megatron_pp_schedulers_analysis]](§1.5 进程组拓扑、§8 混合 CP 动态调度/多模块流水线、§1.4/⑤.6/②.2 等增量)并删除;父目录 `20_megatron_pp_parallelism_analysis.md` 同批一并删除。`26` 号不重新分配,详见 `wiki/changelog.md`。
 
 | 段 | 编号 | 页面 |
@@ -26,6 +30,21 @@ title: "Megatron-LM — Knowledge Map"
 | 1 | 10-19 | [[10_megatron_model_structure_analysis]] · [[11_megatron_dataset_analysis]] · [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[14_megatron_ep_analysis]] · [[15_megatron_pp_schedulers_analysis]] · [[16_megatron_distributed_optimizer_analysis]] · [[17_megatron_parallelism_orchestration_analysis]] · [[18_megatron_recompute_analysis]] · [[19_megatron_dist_checkpointing_analysis]] |
 | 2 | 20-25,27-29(26 空出) | [[20_megatron_comm_overlap_analysis]] · [[21_megatron_fusion_operators_analysis]] · [[22_megatron_memory_optimization_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]] · [[24_megatron_linear_cross_entropy_analysis]] · [[25_megatron_nonuniform_tp_analysis]] · [[27_megatron_tp_fsdp_resharding_supplements_analysis]] · [[28_megatron_training_stability_observability_analysis]] · [[29_megatron_packed_dataset_dynamic_cp_analysis]] |
 | 3 | 30-36 | [[30_megatron_rl_posttraining_consistency_analysis]] · [[31_megatron_inference_engine_analysis]] · [[32_megatron_tflops_analysis]] · [[33_megatron_vllm_weight_sync_analysis]] · [[34_deepseek_v4_tensor_parallel_analysis]] · [[35_deepseek_v4_context_parallel_analysis]] · [[36_megatron_fsdp_analysis]] |
+| 4 | 40-44 | [[40_megatron_feature_tree_analysis]] · [[41_megatron_config_surface_analysis]] · [[42_megatron_rl_runtime_analysis]] · [[43_megatron_job_resilience_analysis]] · [[44_megatron_tokenizer_and_export_analysis]] |
+
+### 段 4：代码仓功能树（2026-09-02 新增）
+
+> 段 0-3 是**机制视角**——沿因果链解释"为什么这么设计"。这种写法有个结构性盲区：**它只覆盖作者选中的那条链**，没被任何链穿过的子系统不会被任何页提到，而且**没有机械门禁会报警**（`check_locators` 只验已写下的引用，验不出没写下的）。段 4 补的是这个盲区：把仓库分解成功能树、逐个源文件对账，差集不为零就说明有能力没人管。
+>
+> 段 4 **不做"一模块一页"**。实测显示绝大多数未归属配置项能落进既有页的契约段——既有页主题覆盖是全的，缺的是契约粒度。所以只开总览页 + 实测零覆盖的 4 篇；其余缺口以「配置契约」小节的形式补进既有页（2026-09-02 已完成，15 页新增该小节，配置面 C1 清零）。
+
+| Page | Key Concepts |
+|------|-------------|
+| [[40_megatron_feature_tree_analysis]] | **覆盖对账面**：17 个功能模块、600 个 `.py` 的双向对账（文件面差集 0）、590 字段的配置面对账、覆盖度仪表盘（哪些能力零覆盖、归哪页管）。**页数不是完成证据，差集清零才是** |
+| [[41_megatron_config_surface_analysis]] | 配置面单一真相：`ArgumentGroupFactory` 从 dataclass 生成 argparse（含 AST 抽 field docstring、bool 的 `--no-*`/`--disable-*` 双名、`argparse_meta` 覆盖）、配置容器与 `_target_` 递归实例化、`TargetAllowlist` 的 RCE 防护、两条并存 YAML 路径 |
+| [[42_megatron_rl_runtime_analysis]] | `megatron/rl` 实现层（20/25 文件此前零覆盖）：Agent 协议与 registry 白名单、rollout 提交/消费粒度流水线、GRPO 优势与损失、RL 序列打包、训推态切换、服务面 |
+| [[43_megatron_job_resilience_analysis]] | 作业级韧性（与 28 号页的**数值级**稳定性互补）：NVRx 心跳与超时自适应、进程内重启、信号优雅退出、退出策略矩阵、确定性模式、GPU sniff test、三类张量转储 |
+| [[44_megatron_tokenizer_and_export_analysis]] | 训练管线的两个端点，合计 50 文件此前零覆盖且**在配置面上不可见**：分词供给（工厂、库族、chat template 与 parser、词表 padding）与 TRT-LLM 权重导出（两条转换路径、层名映射、量化 scale 迁移） |
 
 ## Core Topics（系列外的全景报告与专题深挖）
 

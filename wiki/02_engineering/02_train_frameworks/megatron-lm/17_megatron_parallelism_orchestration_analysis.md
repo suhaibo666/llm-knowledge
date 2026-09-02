@@ -405,9 +405,84 @@ MoE 侧:
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `71092579`(2026-08-28 由 `ee3f1ff` 重定基线)。源码行号以该 commit 为准。本文是"第一层补遗"3 份文档之①(并行编排 capstone),后续:② PP 补遗、③ TP·FSDP·resharding 补遗。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准。本文是"第一层补遗"3 份文档之①(并行编排 capstone),后续:② PP 补遗、③ TP·FSDP·resharding 补遗。*
+
+---
+
+## 配置契约：`DistributedInitConfig` 与 `RNGConfig`
+
+本页正文讲进程组**怎么被构造**——RankGenerator 的正交分组数学、order 字符串、三层抽象。本节给这一层的**用户配置面**：`DistributedInitConfig` 决定 `torch.distributed` 怎么起来（后端、超时、初始化方法、NCCL 通信器配置），`RNGConfig` 决定随机性怎么按并行轴分化——后者与本页的分组直接相关：**同一 TP 组内要同种子、不同 DP 组要异种子**，否则要么权重初始化不一致、要么数据并行退化成重复计算。
+
+两个类都在 `megatron/training/config/common_config.py`，经 [[41_megatron_config_surface_analysis]] §2 的工厂自动转 CLI（`megatron/training/arguments.py:4071`、`:3882`）。**下表直接取自类体**，行号为该文件内行号。
+
+
+### `DistributedInitConfig`（`megatron/training/config/common_config.py`，15 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `distributed_backend` | `Literal['nccl', 'gloo']` | `'nccl'` | Which backend to use for distributed training. | `:77` |
+| `distributed_timeout_minutes` | `int` | `10` | Timeout minutes for torch.distributed. | `:80` |
+| `lazy_mpu_init` | `bool` | `False` | If set to True, initialize_megatron() skips DDP initialization and returns function to complete it instead. Also turns on --use-cpu-initialization flag. This… | `:91` |
+| `nccl_communicator_config_path` | `str \| None` | `None` | Path to the yaml file with NCCL communicator configurations. The number of min/max thread groups and thread group cluster size of each communicator can be co… | `:103` |
+| `use_tp_pp_dp_mapping` | `bool` | `False` | If set, distributed ranks initialize order is changed from tp-cp-ep-dp-pp to tp-cp-ep-pp-dp. | `:108` |
+| `use_gloo_process_groups` | `bool` | `field(default=True, metadata={'argpar…` | If enabled, create Gloo process groups for communications. | `:112` |
+| `use_sharp` | `bool` | `False` | Set the use of SHARP for the collective communications of data-parallel process groups. When `True`, run barrier within each data-parallel process group, whi… | `:117` |
+| `sharp_enabled_group` | `Literal['dp', 'dp_replica'] \| None` | `None` | IB SHARP can be enabled from only one communication group. By default, it is enabled from dp group if not specified and use_sharp=True. Available options: [d… | `:123` |
+| `distributed_timeout_seconds_after_init` | `int \| None` | `None` | Timeout in seconds for process groups after initialization. This timeout is applied to all process groups after initialization and the first iteration comple… | `:136` |
+| `flight_recorder_dump_path` | `str \| None` | `None` | Path for NCCL flight recorder trace dumps. Sets TORCH_FR_DUMP_TEMP_FILE and TORCH_NCCL_DEBUG_INFO_TEMP_FILE env variables before distributed init. | `:139` |
+| `flight_recorder_trace_buffer_size` | `int` | `2000` | Size of the NCCL flight recorder trace buffer (TORCH_NCCL_TRACE_BUFFER_SIZE). | `:142` |
+| `flight_recorder_dump_on_timeout` | `bool` | `True` | Dump flight recorder traces on NCCL timeout (TORCH_NCCL_DUMP_ON_TIMEOUT). | `:145` |
+| `flight_recorder_include_stack_trace` | `bool` | `False` | Include stack traces in flight recorder dumps (TORCH_INCLUDE_STACK_TRACE). | `:148` |
+| `flight_recorder_include_only_active` | `bool` | `True` | Include only active operations in flight recorder dumps (TORCH_INCLUDE_ONLY_ACTIVE). | `:151` |
+| `flight_recorder_extra_dump_on_exec` | `bool` | `True` | Enable extra flight recorder dump on execution (TORCH_NCCL_EXTRA_DUMP_ON_EXEC). | `:154` |
+
+> 该类共 21 个字段，本表收 15 项；其余 6 项已在别处归属：`align_grad_reduce` → [[20_megatron_comm_overlap_analysis]]；`local_rank`、`high_priority_stream_groups` → 本页他处；`use_megatron_fsdp` → [[36_megatron_fsdp_analysis]]；`use_torch_fsdp2` → [[16_megatron_distributed_optimizer_analysis]]；`disable_jit_fuser` → [[21_megatron_fusion_operators_analysis]]。
+
+
+
+### `RNGConfig`（`megatron/training/config/common_config.py`，3 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `seed` | `int` | `1234` | Random seed used for python, numpy, pytorch, and cuda. | `:11` |
+| `inference_rng_tracker` | `bool` | `False` | Use a random number generator configured for inference. | `:18` |
+| `data_parallel_random_init` | `bool` | `False` | Enable random initialization of params across data parallel ranks | `:21` |
+
+> 该类共 4 个字段，本表收 3 项；其余 1 项已在别处归属：`te_rng_tracker` → [[23_megatron_precision_cudagraph_fusion_analysis]]。
+
+> **接缝**：`nccl_communicator_config_path` 指向的 YAML 由本页 §正文讲的 `get_nccl_options` 消费，是「按进程组分别配 NCCL」的入口；`distributed_timeout_minutes` 则与 [[43_megatron_job_resilience_analysis]] §2.2 的自适应超时是两套独立的超时机制——前者是 torch.distributed 的建链超时，后者是 NVRx 的心跳超时。
+
+---
+
+## 配置契约：RNG tracker 补充
+
+本页前一节给了 `RNGConfig`。本节补 `TransformerConfig` 里与 RNG tracker 相关、此前零提及的字段——它与 §正文的进程组分化直接相关：tracker 的实现选择会影响各并行轴上随机状态的隔离方式。
+
+
+
+
+
+### `ModelParallelConfig`（`megatron/core/model_parallel_config.py`，1 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `use_te_rng_tracker` | `bool` | `field(default=False, metadata={'argpa…` | If true, uses RNG state tracker in TransformerEngine if exists. Required for CUDA graphs support. | `:248` |
+
+> 该类共 74 个字段，本表收 1 项；其余 73 项已在别处归属：主要归 [[15_megatron_pp_schedulers_analysis]] 16 项、[[12_megatron_tp_analysis]] 10 项、[[20_megatron_comm_overlap_analysis]] 10 项、[[22_megatron_memory_optimization_analysis]] 6 项，另散见 13 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+
+
+
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，1 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `use_te_rng_tracker` | `bool` | `False` | Whether to use the TE or MCore version of the RNG tracker. | `:1343` |
+
+> 该类共 266 个字段，本表收 1 项；其余 265 项已在别处归属：主要归 [[10_megatron_model_structure_analysis]] 92 项、[[14_megatron_ep_analysis]] 38 项、[[23_megatron_precision_cudagraph_fusion_analysis]] 38 项、[[21_megatron_fusion_operators_analysis]] 26 项，另散见 20 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
 
 ## Related Pages
 
 - [[15_megatron_pp_schedulers_analysis]] · [[14_megatron_ep_analysis]] · [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[16_megatron_distributed_optimizer_analysis]]
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+
+

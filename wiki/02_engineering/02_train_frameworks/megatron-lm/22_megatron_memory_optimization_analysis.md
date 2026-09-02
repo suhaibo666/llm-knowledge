@@ -35,7 +35,7 @@ Megatron-LM 提供了覆盖所有五类的完整优化工具箱。
 | 决断 | 选中的路线 | 被否掉的替代 | 源码/文档给出的判据 |
 |---|---|---|---|
 | 通信 buffer 从哪来 | `ncclMemAlloc` 分配并注册成 **NCCL user buffer** | PyTorch caching allocator 的普通显存 | `megatron/core/distributed/distributed_data_parallel_config.py:131-145`：`nccl_ub` 的目的写得很直白——"enables SM efficient nccl algorithm"，docstring 还附了一张 AG/RS 的 SM 占用表（NVL 4/5；NVL+IB 16/16，配 SHARP 降到 6/6；IB 1/4→1/1）。**第一判据是省 SM（把 SM 还给计算），显存收益是附带的** |
-| MoE 专家激活怎么存 | 容量因子**预定尺寸** + 分页存放 | 每步按实际 token 数动态查询/重分配 | `docs/user-guide/features/paged_stash.md:16`：sync-free 的目的是从用户给定的容量 "pre-size dispatch and fused grouped expert buffers"，从而 "avoiding a **per-step device query / realloc loop** for buffer sizing"（即消除 CPU-GPU 同步）；分页本身则是 "to avoid memory waste due to **fragmentation**"（`docs/user-guide/features/paged_stash.md:34`，配置示例里的注释原话） |
+| MoE 专家激活怎么存 | 容量因子**预定尺寸** + 分页存放 | 每步按实际 token 数动态查询/重分配 | `docs/user-guide/features/paged_stash.md:16`：sync-free 的目的是从用户给定的容量 "pre-size dispatch and fused grouped expert buffers"，从而 "avoiding a **per-step device query / realloc loop** for buffer sizing"（即消除 CPU-GPU 同步）；分页本身则是 "to avoid memory waste due to **fragmentation**"（`docs/user-guide/features/paged_stash.md:60`，配置示例里的注释原话） |
 | 容量估错了怎么办 | runner 级**整步重跑一次** | 丢 token，或按最坏 skew 常驻预留 | `docs/user-guide/features/paged_stash.md:20`：容量因子一旦设定，runner 就包住 forward-backward；overflow 或 over-budget 在**任一 rank** 命中即 "reruns once without capacity padding and without paged stashing"。判据：把**罕见**的路由尖峰用一次重跑吃掉，而不是为它长期占显存 |
 | 激活换出的粒度 | **子模块级**（`--offload-modules`） | 层级 offloading | `docs/user-guide/features/fine_grained_activation_offloading.md:14`："**Unlike layer-level offloading**, it allows precise control over which activations to offload, enabling a tradeoff between memory savings and **PCIe bandwidth overhead**"——判据是让用户能在显存与 PCIe 之间取点，而不是一刀切 |
 | 优化器状态怎么搬 | **分块**（chunk）恢复/预取 | 整体 offload → 整体 reload | `megatron/core/optimizer/cpu_offloading/README.md:17-21` 与 `:30-33`：正的 chunk size "bounds that tensor-state window"，而 `0` "**does not bound** the temporary tensor-state peak"。判据是**临时峰值有界**，不是搬得最多 |
@@ -45,7 +45,7 @@ Megatron-LM 提供了覆盖所有五类的完整优化工具箱。
 > [!note] 推断
 > 以下两点是本页依据源码结构重建的，**源码并未陈述**：
 > - **为什么不做统一的显存预算器**：这些机制的开关彼此独立、互斥关系散落在 `TransformerConfig.__post_init__` 的十几处 assert 里（见 §6），说明它们是分别演进而来的，而非从一个总设计切分下来。源码没有解释为何不收敛成统一入口。
-> - **§5 配置决策表的分档依据**：那张按模型规模推荐组合的表是本页早期的归纳，源码与官方文档都没有给出按参数量分档的建议；`docs/user-guide/features/paged_stash.md:53-59` 给的是"按实测 routing skew 分布选容量因子"这种**基于 profile 的**方法，与按规模查表不是一回事。
+> - **§5 配置决策表的分档依据**：那张按模型规模推荐组合的表是本页早期的归纳，源码与官方文档都没有给出按参数量分档的建议；`docs/user-guide/features/paged_stash.md:64-85` 给的是"按实测 routing skew 分布选容量因子"这种**基于 profile 的**方法，与按规模查表不是一回事。
 
 ## 3. 各显存优化技术详解
 
@@ -95,7 +95,7 @@ nccl_mem = torch.cuda.MemPool(ncclMemAlloc, ncclMemFree)
                          └─────────────────┘
 ```
 
-**生命周期**（状态字段 `:413`，状态机推进 `:906-909`）：
+**生命周期**（状态字段 `:416`，状态机推进 `:1162-1165`）：
 1. **begin**：第 1 次迭代，idle 观察
 2. **capture**：第 2 次迭代，记录 max tokens per (dtype, hidden_size)，建立 page schedule
 3. **captured**：使用 CUDA Graph 加速 stash/reload
@@ -415,6 +415,37 @@ Layer 4（显著开销，降速 10-30%）：
 > [!note] 推断
 > 右栏是本页依据锚点做的外推，不是上游的路线声明。引用时请回到左栏 locator。
 
+---
+
+## 配置契约：CPU offload 字段
+
+本页 §3 讲了 offload 的**机制**。本节给 `# CPU Offloading` 段的配置面。
+
+**下表直接取自 `megatron/core/model_parallel_config.py` 的类体**。注意 `_cpu_offloading_context` **不在表内**：它是前导下划线的私有字段，docstring 自陈 "For internal use only, do not set."，属运行期注入的 ContextManager 而非用户开关，已在 [[40_megatron_feature_tree_analysis]] §3.1 的排除表里单列。
+
+
+### `ModelParallelConfig`（`megatron/core/model_parallel_config.py`，5 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `cpu_offloading_num_layers` | `int` | `0` | Tells the number of transformer layers for which activations has to be offloaded. | `:456` |
+| `cpu_offloading_activations` | `bool` | `True` | If True, offloads the activations to CPU. | `:466` |
+| `cpu_offloading_weights` | `bool` | `False` | If True, offloads the weights to CPU. | `:469` |
+| `cpu_offloading_double_buffering` | `bool` | `False` | If True, enables double buffering across layers while reloading activations from CPU. | `:472` |
+| `cpu_offloading_retain_pinned_cpu_buffers` | `bool` | `False` | If True, the pinned CPU buffers are retained after offloading and reused for the next iteration. It is useful for cuda graphs capture. | `:475` |
+
+> 该类共 74 个字段，本表收 5 项；其余 69 项已在别处归属：主要归 [[15_megatron_pp_schedulers_analysis]] 16 项、[[12_megatron_tp_analysis]] 10 项、[[20_megatron_comm_overlap_analysis]] 10 项、[[13_megatron_cp_analysis]] 5 项，另散见 14 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+
+
+
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，1 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `disable_parameter_transpose_cache` | `bool` | `False` | When set to true, the parameter transposes are not cached for subsequent iterations. | `:1324` |
+
+> 该类共 266 个字段，本表收 1 项；其余 265 项已在别处归属：主要归 [[10_megatron_model_structure_analysis]] 92 项、[[14_megatron_ep_analysis]] 38 项、[[23_megatron_precision_cudagraph_fusion_analysis]] 38 项、[[21_megatron_fusion_operators_analysis]] 26 项，另散见 20 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+
 ## Related Pages
 
 - [[16_megatron_distributed_optimizer_analysis]]
@@ -424,3 +455,5 @@ Layer 4（显著开销，降速 10-30%）：
 - [[18_megatron_recompute_analysis]]
 - [[13_low_precision_training_analysis]]
 - [[17_megatron_parallelism_orchestration_analysis]]
+
+

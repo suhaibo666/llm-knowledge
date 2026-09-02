@@ -181,13 +181,29 @@ async def update_weights(self, weights: Generator, ...):
 3.  **LoRA 优化 (特例):**
     *   如果使用 LoRA 且 `base_sync_done=True`，该过程会**跳过**这个繁重的参数同步，仅传输微小的 Adapter 权重（`verl/workers/rollout/vllm_rollout/vllm_rollout_spmd.py:565-575`：`peft_config and base_sync_done` 为真时走 `TensorLoRARequest` + `add_lora`，否则才落到 `:578-585` 的 `model.load_weights`）。这是当前架构中主要的效率优化点。
 
-## 5. 总结
+## 5. 设计取舍：为什么走 Gather-Broadcast-Load 而不是 P2P
 
-当前的 Megatron + vLLM 同步实现优先考虑 **工程兼容性和正确性**，而不是原始性能。
+§3 的四步调用栈讲的是**怎么做**。这一节回答**为什么是这条路**——以及它否掉了什么。
 
-*   **优点:** 解耦了 Megatron 的并行策略（TP/PP/DP）与 vLLM 的并行策略（TP）。它们不需要匹配的拓扑结构。
-*   **缺点:** 通信开销高（Megatron 分片 -> 完整张量 -> vLLM 分片），导致全量微调时 `rollout_mode` 切换出现显著延迟。
-*   **未来改进:** 如果拓扑匹配，直接 P2P 传输或共享内存方法（避免完整张量重构）将大幅提高性能。
+**被否掉的替代是「按目标分片直接 P2P 传输」**：训练侧每张卡只把 vLLM 那张卡真正需要的分片直接发过去，不重构完整张量。它显然更省带宽——§4 算过，当前路径的膨胀倍数约为 $TP \times PP$。
+
+**判据是拓扑耦合**。P2P 要成立，发送方必须知道"我这块分片属于接收方的哪一块"，也就是**两侧并行拓扑必须可互相推导**。而 verl 的定位是把任意 Megatron 训练配置接到任意 vLLM 推理配置上：训练可能是 TP8/PP4/EP8，推理可能是 TP2——两者没有约定关系。先 gather 成完整张量、再让接收侧自己切，等于**用带宽买拓扑解耦**：中间那个完整张量是一个双方都认识的公共格式，谁都不需要理解对方的切分。
+
+于是取舍很清楚：
+
+| | 当前实现（Gather-Broadcast-Load） | 被否的 P2P |
+|---|---|---|
+| 带宽 | 膨胀 ~$TP \times PP$ | 理论最优 |
+| 拓扑约束 | **无**，两侧可任意配 | 两侧必须可互推 |
+| 适用面 | 任意训练/推理配置组合 | 仅拓扑匹配时 |
+
+**代价落在哪**：全量微调时 `rollout_mode` 切换出现显著延迟（§4 的 stop-the-world 分析）。LoRA 是例外——`base_sync_done=True` 后只传 adapter，绕开了整条重路径。
+
+> [!note] 推断
+> 上面「拓扑解耦是判据」这一条是**本页重建的解释**，verl 源码与注释没有直接陈述这个动机。
+> 可核验的事实只有两条：① §3 的调用链确实是 gather → broadcast → load（`verl/utils/megatron_utils.py:749`、`:812`、`:894`）；
+> ② 该路径不要求两侧拓扑匹配。$TP \times PP$ 的膨胀倍数同样是**按 §4 的通信模式推算**，不是实测数据，也不是源码给出的数字。
+> 要引用这条判断，请回到上述 locator 与 §4 的推导，不要引用本段结论。
 
 ## Related Pages
 
