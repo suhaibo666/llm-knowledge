@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""check_locators — 验证 wiki 页面里的 `path:line` 引用在该页冻结基线下真实存在。
+"""check_locators — 验证 wiki 页面里仍保留的旧式 `path:line` 引用。
 
-这是质量门禁的「locator 地板」：source-faithful-analysis 的 completion gate 第一条
-（每条断言的 locator 在声明基线下真实）从写作者自评变成机器验证。
+这是条件式遗留检查器，不是新代码分析页的引用生成规范。新页面默认用冻结基线加
+`path::qualified.symbol` 的稳定源码导读；只有改动范围仍含显式行号引用时才运行本工具。
 
 原理（全程只读，不 fetch、不动任何 checkout 的工作区/HEAD）：
   1. 从页面头部（前 HEADER_LINES 行）解析基线 `owner/repo@<hex>`（宽容匹配历史写法，

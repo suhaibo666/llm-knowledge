@@ -51,7 +51,7 @@ When a new source is added to `raw/`, follow this sequence:
 4. **Update** the domain `index.md` to include the new page（条目表 + 段位，不画深层树）
 5. **Cross-reference**: Add `[[wiki links]]` to and from all related existing pages（遵守下方 Cross-Reference Rules）
 6. **Append** an entry to `wiki/changelog.md` documenting what was added/updated（示例性质的 `[[...]]` 用反引号转义，见 Cross-Reference Rules）
-7. **Update the radar baseline**: 如果这次分析把某个代码仓库的基线推进了，同步改 `docs/radar/watchlist.yaml` 里对应条目的 `kb_baseline`。漏了这一步，`tools/radar.py` 会每周继续报同一批已经处理过的陈旧漂移，很快就没人看这份周报了。
+7. **Update the radar baseline**: 如果这次分析把某个代码仓库的基线推进了，同步改 `docs/radar/watchlist.yaml` 里对应条目的 `kb_baseline`。漏了这一步，`tools/radar.py` 会每周继续报同一批已经处理过的陈旧漂移，很快就没人看这份周报了。**前提**：`kb_baseline` 是仓级单字段，`radar.py` 用它判断该仓**全部**钉基线页面的漂移——只有当该仓所有钉基线的页面都已推进到同一 commit（整域波次）才改它；只推进了一个子域或一棵子域功能树时不改，基线只写在该页/该树自己的页头（与 `feature-tree-analysis` 的宿主细则一致）。
 8. **Flag contradictions**: If new information contradicts existing wiki content, preserve both claims and add a `> [!contradiction]` callout
 
 ### Cross-Reference Rules
@@ -78,22 +78,27 @@ When a new source is added to `raw/`, follow this sequence:
 - Write in the same language as the source material (Chinese for Chinese sources, English for English sources)
 - Use Mermaid diagrams for architecture, data flow, and sequence visualizations（务必遵守 [`writing-mermaid-diagrams`](../writing-mermaid-diagrams/SKILL.md)）
 - Use LaTeX for mathematical formulas（必须遵守 [`writing-obsidian-math`](../writing-obsidian-math/SKILL.md)）
-- Include code references with file paths and line numbers when analyzing source code（配合 `CLAUDE.md` 的 Provenance Policy：仓库 + commit 基线）
+- For code analysis, pin repository + commit and use a compact source-reading route of
+  repository-relative paths plus qualified symbols/config keys/test names. Line numbers are
+  optional for exact excerpts or ambiguous spots, not a per-claim default.
 
 ### Baseline Header Convention
 
-代码分析页的基线页头是 `tools/check_locators.py` 的解析输入。**新页一律用规范式**（每仓一行）：
+代码分析页必须固定实现基线；这也是旧式行号引用被 `tools/check_locators.py` 校验时的解析
+输入。**新页一律用规范式**（每仓一行）：
 
 ```
 > **源码基线**：`owner/repo@<完整或 ≥12 位 hex>`（`branch`，YYYY-MM-DD）
 ```
 
-- 一页分析多个仓时，每个仓都写一行（或在其小节内用同格式钉出）；**引用了某仓的 `path:line`
-  就必须钉过该仓的 commit**——checker 对没钉仓的引用报 `missing_file` error。
+- 一页分析多个仓时，每个仓都写一行（或在其小节内用同格式钉出）。正文默认用
+  `path::qualified.symbol` 等稳定源码锚点；若保留某仓的旧式 `path:line`，必须钉过该仓的
+  commit，否则 checker 会把它报为无法归属的引用。
 - 历史写法（`verl main @ 254a23ed`、`名称 vX@hex` 等）checker 宽容解析，但不再新增。
 - 该仓需在 `docs/radar/watchlist.yaml` 有条目及 `checkout:` 本地检出，否则引用只能记
   `unresolved/unverifiable` warning 而无法验证。
-- 验收：`python tools/check_locators.py`（missing_file 必须为 0；见 CLAUDE.md 质量门禁）。
+- 条件验收：只有当改动页仍含显式 `path:line` 时，才对受影响目录运行
+  `python tools/check_locators.py --dir <affected-domain>`。它验证遗留引用，不要求新内容生成行号。
 
 ### MCP Tools
 

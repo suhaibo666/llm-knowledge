@@ -89,8 +89,11 @@ post-training frontier).
   engineering pages are sourced from code repositories, not `raw/` documents. It counts as
   source-faithful when document-type sources are findable in `raw/` **and** code-type sources
   have their repository + commit baseline pinned in the page header.
-- The governing principle remains **source fidelity**: every claim carries a verifiable locator
-  (`file:line`, `§`/Table/Eq, a `raw/` filename), and on conflict the source wins. Method:
+- The governing principle remains **source fidelity**: every claim is grounded in evidence opened
+  at the declared baseline, and on conflict the source wins. Code pages default to stable anchors
+  (`repository-relative path + qualified symbol/config key/test name`) collected in a compact
+  source-reading route; volatile line numbers are optional, not a per-claim requirement. Document
+  sources keep their natural locators (`§`/Table/Eq, a `raw/` filename). Method:
   [`source-faithful-analysis`](skills/source-faithful-analysis/SKILL.md).
 
 ## Quality gates
@@ -100,13 +103,16 @@ Every change must pass these before it lands. Per-rule guidance lives in the mat
 ```bash
 python tools/check_links.py --strict          # wikilinks: broken/ambiguous/bare_index/orphans must be 0
 python tools/check_math.py --changed --strict # formulas in this change: 0 errors AND 0 warnings
-python tools/check_locators.py                # file:line 引用在各页冻结基线下真实：missing_file 不得高于存量基线
 python -m pytest tools/                       # the maintenance tooling's own tests
 npm run docs:test                             # local docs site: unit tests + end-to-end check
 ```
 
+`check_locators.py` is a **conditional legacy gate**, not an always-on authoring requirement. Run
+it against the affected domain when a changed page still contains explicit `path:line` citations;
+new code-analysis prose should normally use stable symbol anchors instead.
+
 Repo-wide baseline: as of 2026-08-26, `check_links` and `check_math --strict` report **0 errors
 and 0 warnings across all 409 pages**. Any new finding was introduced by the change in front of
 you — do not wave it through as pre-existing debt. `check_locators` 于 2026-09-01 首跑，存量
-**errors=16（missing_file）/ warnings=560**（436 页、5036 处引用、88.6% pass）——这 16 条是待清偿
-欠账（明细见首跑报告），**新改动不得让 errors 超过 16**；清零后本段基线改为 0。
+**errors=16（missing_file）/ warnings=560**（436 页、5036 处引用、88.6% pass）——这些只约束
+仍保留旧式 `path:line` 的变更范围；新页面不需要延续这套引用形态。

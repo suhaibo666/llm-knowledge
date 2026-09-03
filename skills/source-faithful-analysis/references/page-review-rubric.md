@@ -1,8 +1,9 @@
 # Page review rubric — independent quality review for analysis pages
 
 Four checks, each aimed at a failure mode this knowledge base has actually shipped. The rubric is
-the **substance tier** of quality control; the mechanical tier (locator validity, links, math) runs
-as `tools/` gates and is not repeated here.
+the **substance tier** of quality control; the mechanical tier (baseline/header, links, math, and
+legacy line-number locators when a changed page still contains them) runs as `tools/` gates and is
+not repeated here.
 
 ## Who runs it
 
@@ -19,9 +20,9 @@ as `tools/` gates and is not repeated here.
 | # | Check | Pass condition | Failure mode it catches |
 |---|---|---|---|
 | 1 | **Beat-2 substance** | Every major unit names a **concrete rejected alternative** and the **criterion** that decided against it. "For performance/efficiency/simplicity" with no named alternative fails. Reconstructed rationale is explicitly marked as analyst inference. | Thin pages that restate WHAT without WHY — the original "过于简单" failure |
-| 2 | **Hop-walk** | Take the page's main execution trace and follow its locators **in order** from the entry point to the stated completion/visibility boundary, opening each cited spot in the frozen checkout. The walk must need **zero search steps the page does not provide**. A gap where the reviewer must grep to find the next hop fails. | Broken or hand-waved call chains; "跟着文档读不下去" |
+| 2 | **Hop-walk** | Take the page's main execution trace and follow its named symbols plus compact source-reading route from the entry point to the stated completion/visibility boundary, opening each anchor in the frozen checkout. The page must identify every semantic hop without requiring undocumented discovery; line-number citations are not required. | Broken or hand-waved call chains; "跟着文档读不下去" |
 | 3 | **Delete-the-code test** | Mentally (or actually) drop every code block and read only the prose. The mechanism, its state model, and the design argument must still be understandable. If the narrative collapses without the excerpts, the page is transcription, not analysis. | Code-paste padding masquerading as depth |
-| 4 | **Locator spot-check** | Pick 3 cited locators the mechanical gate cannot fully validate (line-content claims, quoted conditions, numbers attributed to a spot) and open them in the frozen checkout. All 3 must say what the page claims they say. | Fabricated or drifted citations that pass existence checks |
+| 4 | **Anchor spot-check** | Pick 3 load-bearing source anchors (prefer guards, state changes, or tests; include any optional line-specific citation that supports a quote or number) and open them in the frozen checkout. All 3 must say what the page claims they say. | Fabricated, vague, or drifted evidence references |
 
 Checks 1–3 are judged per major unit/section; one failing unit fails the page for that check.
 
@@ -38,7 +39,7 @@ One row per page, appended to the wave report:
 
 - `REJECT` requires naming the failing check **and the smallest failing unit** so the writer can
   fix without re-litigating the whole page.
-- The reviewer records which 3 locators were spot-checked (so successive reviews rotate coverage).
+- The reviewer records which 3 anchors were spot-checked (so successive reviews rotate coverage).
 
 ## Boundaries
 

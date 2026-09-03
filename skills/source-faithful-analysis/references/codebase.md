@@ -11,8 +11,11 @@ When an approved blueprint exists, inherit the page thesis, owned concepts, excl
 entry points, completion test, and **inherit the approved repository commit**. Do not redesign the
 page tree from inside the page task.
 
-- **Locator:** `path/to/file.ext:NN` or a tight range, relative to the repository root. Open that
-  exact range before citing it.
+- **Default anchor:** repository-relative **path + qualified symbol**, such as
+  `src/scheduler.py::Scheduler.submit` or `tests/test_scheduler.py::test_cancel_after_submit`.
+  A bare path is only for module-level behavior; open the symbol before using it.
+- **Line numbers are optional.** Use a tight range for an exact excerpt/diff or unnamed/ambiguous
+  code, never by default for ordinary control flow, state transitions, or each claim/hop.
 - **Baseline:** commit + branch/tag + commit date. Every current-behavior page states it.
 - **Approved page:** verify the inherited checkout and keep it frozen. Do not fetch, pull,
   fast-forward, switch, checkout, reset, or move it. If the commit is unavailable or must change,
@@ -22,7 +25,7 @@ page tree from inside the page task.
   evidence collection and record the old→new commit delta. Never overwrite dirty or diverged work.
 
 Once evidence collection starts, freeze the checkout. A baseline migration requires revalidating
-the affected claims and locators; changing only the header commit is not an update.
+the affected claims and anchors; changing only the header commit is not an update.
 
 ## Map the owned mechanism
 
@@ -78,10 +81,20 @@ For every load-bearing path, record enough of this ledger that a reader can cont
 | Execution semantics | **local/remote**, **sync/async**, **blocking/non-blocking**, and the first point that actually waits or materializes data |
 | Completion | The **completion signal** for submission, acceptance, execution, publication, externally visible state, and downstream consumption—do not conflate them |
 | Failure | Guards, propagation, cancellation/settling, retry/idempotency, **partial side effects**, cleanup, and whether **rollback** exists |
-| Evidence | Verified `file:line` for each semantic hop; pure forwarding helpers may share one collapsed range |
+| Evidence | Named symbols actually opened; map unique `path::qualified.symbol` anchors to the semantic hops in one compact source-reading route |
 
 Trace only hops that change state/owner, cross an execution boundary, enforce an invariant, or define
 completion/visibility. **Collapse pure forwarding helpers**; exhaustive call graphs hide the design.
+
+### Evidence presentation
+
+Keep investigation precision separate from citation density. Open every implementation, guard,
+test, and history spot needed; scratch notes may be detailed. In the page, name participating
+symbols in prose and add one deduplicated **compact source-reading route** per mechanism: entry /
+selection → state owner → state-changing worker → completion/visibility → negative test. Add an
+anchor only for a distinct boundary or design decision; never append `file:line` to every sentence
+or ledger row. The narrative still explains objects, transitions, synchronization, completion, and
+failure; the route makes it findable without becoming a volatile line-number index.
 
 Use the completion ladder as a diagnostic, not a mandatory set of headings:
 
@@ -131,4 +144,5 @@ than silently selecting one account.
 - Data and completion semantics are deepened only where their conditional triggers apply.
 - Guards, costs, unsupported paths, fallback, partial failure, and verification evidence are not
   hidden behind a happy-path call graph.
-- Every load-bearing claim and hop has a locator verified in the frozen checkout.
+- Every load-bearing claim and hop is grounded in code actually opened in the frozen checkout; the
+  page exposes a deduplicated stable-symbol route for the load-bearing implementation and tests.

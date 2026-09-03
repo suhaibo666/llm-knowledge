@@ -9,7 +9,11 @@ CODEBASE = SKILL_ROOT / "references/codebase.md"
 PAPER = SKILL_ROOT / "references/paper.md"
 GENERAL = SKILL_ROOT / "references/general.md"
 PARALLEL = SKILL_ROOT / "references/parallel-agent-contract.md"
+PAGE_REVIEW = SKILL_ROOT / "references/page-review-rubric.md"
 EVALS = SKILL_ROOT / "evals/evals.json"
+CONSTITUTION = REPO_ROOT / "CLAUDE.md"
+FEATURE_TREE = REPO_ROOT / "skills/feature-tree-analysis/SKILL.md"
+FEATURE_TEMPLATE = REPO_ROOT / "skills/feature-tree-analysis/references/feature-point-template.md"
 
 
 def _text(path):
@@ -47,7 +51,7 @@ def test_generic_rules_have_one_owner_in_the_core():
 def test_core_preserves_the_load_bearing_source_and_reasoning_contract():
     core = _squash(_text(CORE)).lower()
     required = (
-        "verified exact locator",
+        "verified source evidence",
         "frozen baseline",
         "source fact",
         "analyst inference",
@@ -59,6 +63,35 @@ def test_core_preserves_the_load_bearing_source_and_reasoning_contract():
     )
     for phrase in required:
         assert phrase in core, f"core contract lost {phrase!r}"
+
+
+def test_code_pages_default_to_stable_symbol_anchors_not_line_number_citations():
+    core = _squash(_text(CORE)).lower()
+    codebase = _squash(_text(CODEBASE)).lower()
+    parallel = _squash(_text(PARALLEL)).lower()
+    review = _squash(_text(PAGE_REVIEW)).lower()
+
+    assert "stable code anchor" in core
+    assert "path + qualified symbol" in codebase
+    assert "line numbers are optional" in codebase
+    assert "compact source-reading route" in codebase
+    assert "every non-trivial claim is tied to a verified exact locator" not in core
+    assert "verified `file:line` for each semantic hop" not in codebase
+    assert "do not attach `file:line` to every claim or semantic hop" in parallel
+    assert "line-number citations are not required" in review
+
+
+def test_legacy_line_checker_is_conditional_and_feature_specs_use_symbol_anchors():
+    constitution = _text(CONSTITUTION)
+    always_on_gates = constitution.split("```bash", 1)[1].split("```", 1)[0]
+    feature_tree = _squash(_text(FEATURE_TREE)).lower()
+    template = _squash(_text(FEATURE_TEMPLATE)).lower()
+
+    assert "python tools/check_locators.py" not in always_on_gates
+    assert "conditional legacy gate" in constitution
+    assert "stable source anchors" in feature_tree
+    assert "path::qualified.symbol" in template
+    assert "each with a locator" not in template
 
 
 def test_codebase_pack_requires_traceable_execution_semantics():

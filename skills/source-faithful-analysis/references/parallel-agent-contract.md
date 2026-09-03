@@ -26,7 +26,8 @@ OWNED OUTPUT
 - Completion test: <what a reader must be able to explain or trace>
 
 ANALYSIS CONTRACT
-1. Open every cited spot before using it. Every non-trivial claim gets a verified exact locator.
+1. Open the supporting source before using it; ground every non-trivial claim in evidence you read.
+   For code, consolidate stable `path::qualified.symbol` anchors into a compact source-reading route; do not attach `file:line` to every claim or semantic hop.
 2. Explain the problem and constraints, why this design beat the obvious alternative, the mechanism
    and evidence, and the costs/failure boundary. Mark analyst inference and source conflicts.
 3. Organize by design question and state/model, not by source-file, API, or function order.
@@ -51,7 +52,7 @@ HOST INTEGRATION
 RETURN TO COORDINATOR
 After writing the file, return:
 1. title and 3–5 sentence thesis;
-2. 6–10 load-bearing locators you personally opened;
+2. 6–10 deduplicated load-bearing source anchors you personally opened;
 3. source conflicts, inference, unsupported paths, and material drift;
 4. suggested owner-aware cross-links;
 5. uncovered findings another page or gap should own;
@@ -62,7 +63,7 @@ After writing the file, return:
 
 - Freeze names, ownership, exclusions, and baseline before dispatch.
 - Calibrate one real page first when style or figures are expensive to redo.
-- Spot-check 2–3 returned locators and one negative/failure boundary per page.
+- Spot-check 2–3 returned anchors and one negative/failure boundary per page.
 - Reject pages that open with class/function order, flatten inference into fact, or confuse submission
   with business completion.
 - Reconcile coverage and conflicts, update the host spine, and run the host quality gates centrally.

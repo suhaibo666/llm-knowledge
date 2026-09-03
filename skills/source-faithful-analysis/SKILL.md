@@ -6,7 +6,7 @@ description: >-
   walkthroughs, design-rationale audits, comparisons, reverse engineering, and knowledge-base
   ingestion. Trigger when the answer must explain why a design exists, how state/data/control move,
   what constraints or failure boundaries apply, or when current sources may contradict folklore.
-  Every non-trivial claim is tied to a verified exact locator and frozen baseline. For a new whole
+  Every non-trivial claim is grounded in source evidence opened at a frozen baseline. For a new whole
   codebase or unplanned multi-page codebase domain, use planning-codebase-analysis first; use this
   skill for an approved page/unit or a focused mechanism.
 ---
@@ -24,7 +24,7 @@ Read one source-type pack completely before acting:
 
 | Source | Pack | Locator | Baseline |
 |---|---|---|---|
-| Code/framework/library | `references/codebase.md` | `file:line` | commit + branch/tag + date |
+| Code/framework/library | `references/codebase.md` | stable code anchor (`path + qualified symbol`); line optional | commit + branch/tag + date |
 | Research paper | `references/paper.md` | § / page / Table / Fig. / Eq. | document id + version + date |
 | Spec, dataset, API, incident, report, product, other | `references/general.md` | clause / cell / endpoint / timestamp | version / snapshot / time window |
 
@@ -40,10 +40,11 @@ points, completion test, and approved repository commit; do not reopen repositor
 
 ## Source fidelity
 
-- **Verified exact locator.** Open and read the cited spot before making the claim. Never guess a
-  locator, copy one from memory, or use a secondary summary as if it were the source.
+- **Verified source evidence.** Open and read the supporting source before making the claim. Never
+  guess an anchor, copy one from memory, or use a secondary summary as if it were the source.
+- **Stable code anchor.** For code, preserve repository-relative paths plus qualified symbols, config keys, registry/test names in a compact route; lines are optional, never a per-claim quota.
 - **Frozen baseline.** Record the exact commit/version/snapshot and keep it fixed while collecting
-  evidence. A locator without a baseline is not stable evidence.
+  evidence. An anchor without a baseline is not stable evidence.
 - **Source fact vs analyst inference.** Label what the source states or measures separately from
   what you infer. If the source is silent about rationale, say so before reconstructing it.
 - **Conflicts stay visible.** Distinguish current behavior, tested guarantees, documented intent,
@@ -113,7 +114,8 @@ Repeat per non-trivial claim:
 2. **Read** enough surrounding context to catch conditions and negative cases.
 3. **Model** the pressure, state/ownership, invariant, design choice, and consequence in your own
    words.
-4. **Cite** the verified locator and reproduce only the evidence needed to prove that model.
+4. **Anchor** at the source pack's useful granularity. Code pages consolidate stable anchors into
+   a compact source-reading route instead of repeating citations after every claim or hop.
 
 Source excerpts are evidence, not the narrative skeleton. Remove every excerpt as a mental test:
 the prose should still explain why the design exists, how it works, and what breaks.
@@ -134,7 +136,7 @@ the prose should still explain why the design exists, how it works, and what bre
 - Reconcile new evidence with existing claims; preserve explicit contradictions instead of silently
   choosing the convenient version.
 - Link summaries to the authoritative owner instead of re-explaining the same mechanism.
-- Verify cross-references mechanically and spot-check cited locators against the frozen source.
+- Verify cross-references mechanically and spot-check source anchors against the frozen source.
 - When the unit belongs to a planned wave, an **independent reviewer (never the writer)** applies
   `references/page-review-rubric.md` and returns a per-page verdict; a rejected page goes back to
   Phase 2 with the failing check named. The user samples pages on top of the reviewer.
@@ -164,15 +166,16 @@ quotes, or repeated summaries.
 
 Before delivery, verify:
 
-- Every non-trivial claim has a locator you actually opened at the declared baseline.
+- Every non-trivial claim is grounded in source evidence you actually opened at the declared
+  baseline; code pages expose the unique load-bearing anchors without citing every sentence.
 - Every owned unit answers what problem it solves, why this design won, how it works, and where it
   stops or fails.
 - State, ownership, invariants, alternatives, costs, and failure boundaries are explicit where
   applicable.
 - Architecture overviews contain both the static responsibility view and one real lifecycle.
 - Inference, conflict, legacy behavior, and unsupported cases are labelled rather than flattened.
-- The main execution trace passes a **hop-walk**: following its locators in order reaches the
-  completion boundary without any search step the page does not provide.
+- The main execution trace passes a **hop-walk**: its named symbols and compact source-reading route
+  reach the completion boundary without requiring line-number citations or undocumented discovery.
 - Cross-references point to concept owners and the host quality gates pass.
 
 The throughline: **if it is not supported by the spot you just read, it does not belong in the

@@ -34,9 +34,10 @@ existing-Wiki inspection is allowed before approval. Workflow persistence begins
    by the project.
 7. Close each wave with the wave gate before marking matrix rows covered: an independent reviewer
    (never a writer) applies `source-faithful-analysis` 的 `references/page-review-rubric.md` to
-   every page in the wave; mechanical gates pass (including `tools/check_locators.py`); the
-   enumeration-axis reconciliation is re-run. Then update the coverage matrix, and reopen approval
-   only for material drift.
+   every page in the wave; the always-on mechanical gates pass; when a changed page retains legacy
+   `path:line` citations, validate those citations with `tools/check_locators.py`; the enumeration-
+   axis reconciliation is re-run. Then update the coverage matrix, and reopen approval only for
+   material drift.
 
 ## Blueprint contract
 - Record a capability map, static architecture, and representative dynamic lifecycle evidence before assigning pages.
