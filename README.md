@@ -19,7 +19,8 @@ wiki/           # 分析页（Obsidian vault），功能分类树是唯一内容
 ├── index.md          # 总索引（域级表格）
 └── changelog.md      # 当季变更日志；历史条目按季度归档于 wiki/changelog/
 docs/           # 流程文档（specs / plans / research）
-tools/          # 维护工具：check_links.py（链接健康）、check_math.py（公式规范）、docs-site/（本地站点）
+tools/          # 维护工具：check_links/check_math/check_markdown/check_assets（四条日常门禁）、
+                # check_locators（代码引用）、mkdocs_site/（出版站点）、docs-site/（旧本地站点）
 ```
 
 ## wiki 二级目录概览
@@ -109,7 +110,7 @@ npm run docs -- --port 8088       # HTTP 使用 8088，热更新 WebSocket 使�
 npm run docs -- --host 127.0.0.1  # 只绑回环，不对外暴露
 npm run docs -- --no-open         # 启动但不自动打开浏览器
 npm run docs:build                # 仅生成静态站点
-npm run docs:test                 # 单元测试 + 本地浏览器端到端验收
+npm run docs:test                 # 旧站点的单元测试 + 端到端验收（CI 部署的是 mkdocs 那套）
 npm run docs:repair               # 显式重建损坏或版本漂移的私有运行时
 ```
 
@@ -123,12 +124,18 @@ npm run docs:repair               # 显式重建损坏或版本漂移的私有�
 
 ## 质量门禁
 
+门禁按**改动碰了什么**分层，不是每次都跑全量。日常这四条约 6 秒：
+
 ```bash
-python tools/check_links.py     # wikilink 健康：broken / ambiguous / bare_index / orphans 必须为 0
-python tools/check_math.py wiki # Obsidian 公式规范（--changed 只查改动文件，--strict 把 warning 也算失败）
-python -m pytest tools/         # 维护工具自身的单元测试
-npm run docs:test               # 本地站点单元测试 + 端到端验收
+python tools/check_links.py --strict              # wikilink：broken / ambiguous / bare_index / orphans 必须为 0
+python tools/check_math.py --changed --strict     # Obsidian 公式规范
+python tools/check_markdown.py --changed --strict # 列表标记与 mermaid 标签的渲染陷阱
+python tools/check_assets.py --changed --strict   # 图片与本地资源是否存在
 ```
+
+改了工具、渲染栈或要 push 时才跑更重的那几层（`pytest tools/`、`npm run docs:mkdocs:test`），
+构建与浏览器相关的校验支持按改动收窄（`cli build --changed`、`mathjax-corpus --pages`）。
+完整的分层表、各层成本与各检查器基线见 [CLAUDE.md](CLAUDE.md) 的「Quality gates」一节。
 
 ## 上游雷达
 
