@@ -208,16 +208,18 @@ def _page_text(wiki_dir, stem):
 
 
 def main(argv=None):
+    # 必须早于 argparse：--help 与用法错误都在 parse_args 里直接写 stdout，
+    # 而首行 docstring 含 GBK 编不出的字符（↔），重配晚一步就是 UnicodeEncodeError。
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("config", help="docs/coverage/<domain>.yaml")
     ap.add_argument("--generate", action="store_true")
     ap.add_argument("--strict", action="store_true")
     ap.add_argument("--examples", type=int, default=15)
     args = ap.parse_args(argv)
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
     if args.generate:
         generate(Path(args.config))
         return 0

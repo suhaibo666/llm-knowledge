@@ -164,7 +164,7 @@ it, which is why it belongs here. `broken_links`, `missing_anchors`, `missing_as
 | `check_math --strict` | 446 pages | **0 errors, 0 warnings** |
 | `check_markdown` | 446 pages | **0 errors**, 120 `MD003` warnings |
 | `check_assets` | 446 pages | **0 errors, 0 warnings** |
-| `check_locators` | 444 pages, 5197 citations | **errors=16, warnings=471, env=77** |
+| `check_locators` | 444 pages, 5353 citations | **errors=16, warnings=772, env=70** |
 
 Any new finding against a zero baseline was introduced by the change in front of you — do not
 wave it through as pre-existing debt.
@@ -184,7 +184,13 @@ It grades its findings three ways: `missing_file` is an error; `out_of_range`,
 `ambiguous`, `unanchored_page` and `unknown_repo` are page defects an author can fix;
 `unresolved_repo`, `commit_unavailable` and `unverifiable` are **environment gaps** — this
 machine lacks the checkout or the commit — reported separately and kept out of the exit code
-unless `--include-env`. What the split exposes is worth acting on: only **4** of the 471 warnings
-concern line numbers. The bulk is bare filenames that resolve ambiguously (250) and pages
-carrying code citations with no pinned baseline header (183) — both are provenance defects this
-constitution already requires fixing, not line-number noise.
+unless `--include-env`. `region_sized` is a promoted rule: labs_torch_compile used to apply a
+100-line span limit to four historical directories, and the span is arithmetic on the citation
+itself, so it now runs repo-wide and is judged even where the baseline repo cannot be resolved.
+
+The grades show where the debt actually sits: **306** citations pin a range wider than 100 lines,
+**245** are bare filenames that resolve ambiguously, and **183** pages cite code with no pinned
+baseline header. Only **4** name a line past the end of its file. Every one of these is a
+provenance defect this constitution already requires fixing, and for the first three the remedy
+is the same — a more specific anchor, which is what `source-faithful-analysis` now asks for by
+default.

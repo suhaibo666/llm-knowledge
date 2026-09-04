@@ -47,6 +47,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADER_LINES = 40
+# 跨 100 行以上的行号区间等于没定位。规则原先写死在 labs 的四个目录里，
+# 它对全仓一样成立，故并入这里按引用逐条判。
+REGION_LINES = 100
 
 CITE_RE = re.compile(
     r"(?<![\w/])"
@@ -205,6 +208,16 @@ def audit_page(md_path: Path, entries, gv: GitView):
         return []
 
     findings = []
+    # 先判跨度：这一步只用到引用自身的两个行号，不能被「基线仓解析不出」的早退漏掉。
+    region_flagged = set()
+    for path, lo, hi in cites:
+        if hi - lo + 1 > REGION_LINES:
+            findings.append((
+                "region_sized",
+                f"{md_path}: `{path}:{lo}-{hi}` 跨 {hi - lo + 1} 行，过宽等于没定位",
+            ))
+            region_flagged.add((path, lo, hi))
+
     usable = []
     had_unresolved = bool(unresolved_names)
     for e, commit in baselines:
@@ -228,6 +241,8 @@ def audit_page(md_path: Path, entries, gv: GitView):
         return findings
 
     for path, lo, hi in cites:
+        if (path, lo, hi) in region_flagged:
+            continue
         verdict = None
         for e, commit in usable:
             tree_paths, by_base = gv.tree(e["checkout"], commit)
@@ -269,10 +284,11 @@ def audit_page(md_path: Path, entries, gv: GitView):
 #   ENV   —— 本机没克隆、对象库里没这个 commit：作者改文档也修不掉。默认单独列出、
 #            不计入告警与退出码；要连它一起卡，加 --include-env。
 ERROR_CATS = {"missing_file"}
-WARN_CATS = {"out_of_range", "ambiguous", "unanchored_page", "unknown_repo"}
+WARN_CATS = {"out_of_range", "ambiguous", "unanchored_page", "unknown_repo", "region_sized"}
 ENV_CATS = {"unresolved_repo", "commit_unavailable", "unverifiable"}
 REPORT_ORDER = [
-    "missing_file", "out_of_range", "ambiguous", "unanchored_page", "unknown_repo",
+    "missing_file", "out_of_range", "region_sized", "ambiguous", "unanchored_page",
+    "unknown_repo",
     "unresolved_repo", "commit_unavailable", "unverifiable",
 ]
 
@@ -300,6 +316,11 @@ def pages_to_audit(scan_root, explicit=None):
 
 
 def main(argv=None):
+    # 与 check_coverage 同理：argparse 会在 parse_args 内直接写 stdout。
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--dir", default="wiki", help="扫描目录（默认 wiki）")
     ap.add_argument("--strict", action="store_true", help="警告也计入退出码")
@@ -307,10 +328,6 @@ def main(argv=None):
     ap.add_argument("--include-env", action="store_true", help="环境缺口也计入告警与退出码")
     ap.add_argument("--examples", type=int, default=12, help="每类最多打印几条明细")
     args = ap.parse_args(argv)
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
 
     entries = load_watchlist()
     gv = GitView()

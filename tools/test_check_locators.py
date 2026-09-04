@@ -216,3 +216,34 @@ def test_changelog_stays_excluded_from_explicit_lists(tmp_path):
     changelog = cl.ROOT / "wiki" / "changelog.md"
 
     assert cl.pages_to_audit(cl.ROOT, [changelog]) == []
+
+
+def test_region_sized_citation_is_reported(tmp_path, repo):
+    """跨度过大的行号区间等于没定位——原先只在 labs 的四个目录里查，现在全仓适用。"""
+    findings = _audit(
+        tmp_path, repo,
+        "> 源码基线：`org/up@COMMIT`\n\n宽到没有意义的 `pkg/core.py:1-500`。",
+    )
+
+    assert [c for c, _ in findings] == ["region_sized"]
+
+
+def test_narrow_range_is_not_region_sized(tmp_path, repo):
+    findings = _audit(
+        tmp_path, repo,
+        "> 源码基线：`org/up@COMMIT`\n\n正常区间 `pkg/core.py:1-3`。",
+    )
+
+    assert "region_sized" not in [c for c, _ in findings]
+
+
+def test_region_sized_is_judged_without_needing_the_repo(tmp_path, repo):
+    """跨度是引用自身的算术，不该因为本机解析不出基线仓就漏报。"""
+    r, _ = repo
+    entry = {"name": "up", "repo": "org/up", "checkout": r}
+    page = tmp_path / "page.md"
+    page.write_text("没有基线头，但有 `pkg/core.py:10-400`。", encoding="utf-8")
+
+    cats = [c for c, _ in cl.audit_page(page, [entry], cl.GitView())]
+
+    assert "region_sized" in cats

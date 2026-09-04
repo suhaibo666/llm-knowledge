@@ -172,3 +172,24 @@ def test_c2_uses_same_matcher_as_generate(tmp_path, wiki):
     assert cc.pages_mentioning(wiki, "beta_mode") == ["10_a_analysis", "20_b_analysis"]
     rc = cc.check(cfgp, strict=True, examples=10)
     assert rc == 0, "kebab 形式的提及不应被判成 stale_owner"
+
+
+def test_help_survives_a_legacy_codepage_console():
+    """帮助文本在 reconfigure 之前就被打印，非 GBK 字符（如 ↔）会让 --help 直接崩。"""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    env = {**os.environ, "PYTHONIOENCODING": "gbk"}
+    for checker in ("check_coverage.py", "check_locators.py"):
+        script = Path(__file__).resolve().parent / checker
+        result = subprocess.run(
+            [sys.executable, str(script), "--help"],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            env=env,
+        )
+        assert result.returncode == 0, f"{checker}: {result.stderr[-400:]}"
+        assert "UnicodeEncodeError" not in result.stderr
