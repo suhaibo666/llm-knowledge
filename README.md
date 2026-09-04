@@ -1,6 +1,6 @@
 # LLM Knowledge Base
 
-LLM 训练与推理技术知识库，由 Claude Code Agent 维护。全库共 **409 篇** Markdown 分析页，覆盖从模型结构、并行理论到框架源码级机制的完整链路。
+LLM 训练与推理技术知识库，由 Claude Code Agent 维护。全库共 **446 篇** Markdown 分析页，覆盖从模型结构、并行理论到框架源码级机制的完整链路。
 
 三种浏览方式：
 
@@ -11,14 +11,14 @@ LLM 训练与推理技术知识库，由 Claude Code Agent 维护。全库共 **
 ## 目录结构
 
 ```
-raw/            # 源材料索引（论文的 arXiv/官方链接说明页），与 wiki/ 不要求镜像对齐
+raw/            # 源材料索引（论文的 arXiv/官方链接说明页、文章与图表源），与 wiki/ 不要求镜像对齐
 wiki/           # 分析页（Obsidian vault），功能分类树是唯一内容权威
 ├── 01_theory/        # 理论：模型家族 / 预训练 / SFT / 后训练对齐 / 推理技术 / 分布式并行
-├── 02_engineering/   # 工程：AI 框架 / 训练框架 / 推理框架 / 后训练框架 / GPU Kernel / 自动并行 / 训练可靠性
-├── courses/          # 纯导读层：两条跨域学习路线，只含阅读顺序 + 链接，不承载正文
+├── 02_engineering/   # 工程：PyTorch / 训练框架 / 推理框架 / 后训练框架 / GPU Kernel / 自动并行 / 训练可靠性
+├── courses/          # 纯导读层：三条跨域学习路线，只含阅读顺序 + 链接，不承载正文
 ├── index.md          # 总索引（域级表格）
 └── changelog.md      # 当季变更日志；历史条目按季度归档于 wiki/changelog/
-docs/           # 流程文档（specs / plans / research）
+docs/           # 流程与运营文档：coverage（覆盖台账）/ radar（上游雷达报告）/ research / superpowers（specs、plans）
 tools/          # 维护工具：check_links/check_math/check_markdown/check_assets（四条日常门禁）、
                 # check_locators（代码引用）、mkdocs_site/（出版站点）、docs-site/（旧本地站点）
 ```
@@ -29,7 +29,7 @@ tools/          # 维护工具：check_links/check_math/check_markdown/check_ass
 
 | 二级目录 | 篇数 | 讲什么 |
 |---|---:|---|
-| [01_models](wiki/01_theory/01_models/index.md) | 59 | 各家前沿模型的结构与技术报告解读：[DeepSeek](wiki/01_theory/01_models/deepseek/index.md)、[Kimi](wiki/01_theory/01_models/moonshot_kimi/index.md)、[GLM](wiki/01_theory/01_models/zhipu_glm/index.md)、[Qwen](wiki/01_theory/01_models/alibaba_qwen/index.md)、[LongCat](wiki/01_theory/01_models/meituan_longcat/index.md) 等 |
+| [01_models](wiki/01_theory/01_models/index.md) | 67 | 各家前沿模型的结构与技术报告解读：[DeepSeek](wiki/01_theory/01_models/deepseek/index.md)、[Kimi](wiki/01_theory/01_models/moonshot_kimi/index.md)、[GLM](wiki/01_theory/01_models/zhipu_glm/index.md)、[Qwen](wiki/01_theory/01_models/alibaba_qwen/index.md)、[LongCat](wiki/01_theory/01_models/meituan_longcat/index.md) 等 |
 | [02_pretraining](wiki/01_theory/02_pretraining/index.md) | 7 | 预训练侧的优化器、低精度、重计算、参数初始化与训推精度一致性 |
 | [03_sft](wiki/01_theory/03_sft/index.md) | 1 | SFT 与低参微调（待建设） |
 | [04_posttraining](wiki/01_theory/04_posttraining/index.md) | 22 | 后训练对齐：PPO/GRPO/GSPO 等算法演进、on-policy 蒸馏、staleness 与训推不一致 |
@@ -41,9 +41,9 @@ tools/          # 维护工具：check_links/check_math/check_markdown/check_ass
 | 二级目录 | 篇数 | 讲什么 |
 |---|---:|---|
 | [01_pytorch](wiki/02_engineering/01_pytorch/index.md) | 148 | PyTorch 本体：[eager 运行时](wiki/02_engineering/01_pytorch/01_eager_runtime/index.md)、[编译栈](wiki/02_engineering/01_pytorch/02_compile_stack/index.md)（Dynamo/AOTAutograd/Inductor/MLIR）、[运行时图](wiki/02_engineering/01_pytorch/03_runtime_graphs/index.md)、export 与分布式原语 |
-| [02_train_frameworks](wiki/02_engineering/02_train_frameworks/index.md) | 56 | 训练框架源码级机制：[Megatron-LM](wiki/02_engineering/02_train_frameworks/megatron-lm/index.md)、[torchtitan](wiki/02_engineering/02_train_frameworks/torchtitan/index.md)、[MindSpeed](wiki/02_engineering/02_train_frameworks/mindspeed/index.md)、[MindFormers](wiki/02_engineering/02_train_frameworks/mindformers/index.md) |
-| [03_infer_frameworks](wiki/02_engineering/03_infer_frameworks/index.md) | 28 | 推理引擎：[vLLM 知识域](wiki/02_engineering/03_infer_frameworks/vllm/index.md)（调度、分页 KV、投机解码、CUDA Graph）与 Mooncake 分离式架构 |
-| [04_posttrain_frameworks](wiki/02_engineering/04_posttrain_frameworks/index.md) | 47 | RL 后训练框架：[verl](wiki/02_engineering/04_posttrain_frameworks/verl/index.md)、[slime](wiki/02_engineering/04_posttrain_frameworks/slime/index.md)，含权重同步、rollout 重分片、控制面 |
+| [02_train_frameworks](wiki/02_engineering/02_train_frameworks/index.md) | 76 | 训练框架源码级机制：[Megatron-LM](wiki/02_engineering/02_train_frameworks/megatron-lm/index.md)、[torchtitan](wiki/02_engineering/02_train_frameworks/torchtitan/index.md)、[MindSpeed](wiki/02_engineering/02_train_frameworks/mindspeed/index.md)、[MindFormers](wiki/02_engineering/02_train_frameworks/mindformers/index.md) |
+| [03_infer_frameworks](wiki/02_engineering/03_infer_frameworks/index.md) | 33 | 推理引擎：[vLLM 知识域](wiki/02_engineering/03_infer_frameworks/vllm/index.md)（调度、分页 KV、投机解码、CUDA Graph）与 Mooncake 分离式架构 |
+| [04_posttrain_frameworks](wiki/02_engineering/04_posttrain_frameworks/index.md) | 49 | RL 后训练框架：[verl](wiki/02_engineering/04_posttrain_frameworks/verl/index.md)、[slime](wiki/02_engineering/04_posttrain_frameworks/slime/index.md)，含权重同步、rollout 重分片、控制面 |
 | [05_gpu_kernel](wiki/02_engineering/05_gpu_kernel/index.md) | 17 | Kernel 开发：CUDA GEMM/FlashAttention、[Triton 学习路线](wiki/02_engineering/05_gpu_kernel/triton/index.md)、Ascend 达芬奇执行模型 |
 | [06_auto_parallel](wiki/02_engineering/06_auto_parallel/index.md) | 2 | 自动并行业界综述 |
 | [07_training_reliability](wiki/02_engineering/07_training_reliability/index.md) | 5 | 确定性与数值可靠性、批次不变性、故障容错、训练动力学稳定性 |
@@ -54,6 +54,7 @@ tools/          # 维护工具：check_links/check_math/check_markdown/check_ass
 |---|---|
 | [`torch.compile` 端到端阅读课程](wiki/courses/torch_compile_end_to_end.md) | 从 `torch.compile` 入口一路读到 Inductor codegen 的阅读顺序 |
 | [LLM 后训练前沿阅读课程](wiki/courses/posttraining_frontier.md) | 后训练算法与 Infra 的交叉阅读路线 |
+| [Megatron-LM 阅读路径](wiki/courses/megatron_lm.md) | 入门三页起步，先走 dense 主干，再按长上下文 / MoE / 性能 / 可靠性等分支分流 |
 
 ## 核心文章索引
 
@@ -78,14 +79,14 @@ tools/          # 维护工具：check_links/check_math/check_markdown/check_ass
 
 | 文章 | 一句话 |
 |---|---|
-| [Megatron-LM 专家并行深度解析](wiki/02_engineering/02_train_frameworks/megatron-lm/14_megatron_ep_analysis.md) | 全库被引最多的工程页（65 次入链） |
+| [Megatron-LM 专家并行深度解析](wiki/02_engineering/02_train_frameworks/megatron-lm/14_megatron_ep_analysis.md) | 全库被引最多的工程页（89 次入链） |
 | [Megatron-Core 通信掩盖](wiki/02_engineering/02_train_frameworks/megatron-lm/20_megatron_comm_overlap_analysis.md) | 通算重叠的实现与生效条件 |
 | [FSDP2 机制级分析](wiki/02_engineering/02_train_frameworks/torchtitan/11_torchtitan_fsdp_analysis.md) | torchtitan 视角的数据并行 |
 | [AOTAutograd 的 Joint/Forward/Backward Graph](wiki/02_engineering/01_pytorch/02_compile_stack/02_aot_autograd/11_aotautograd_joint_forward_backward_graphs_analysis.md) | 编译栈里正反向图怎么被切出来 |
 | [Inductor Scheduler 依赖图与 Fusion](wiki/02_engineering/01_pytorch/02_compile_stack/04_inductor/13_scheduler_dependency_graph_fusion_and_ordering_analysis.md) | 融合决策与执行顺序 |
 | [符号形状、Guards 与图复用](wiki/02_engineering/01_pytorch/02_compile_stack/01_dynamo/20_symbolic_shapes_guards_and_graph_reuse_analysis.md) | 动态 shape 为什么能复用图 |
 | [vLLM KV Cache 管理](wiki/02_engineering/03_infer_frameworks/vllm/12_vllm_kv_cache_management_analysis.md) | 分页不是索引技巧，而是物理块所有权协议 |
-| [vLLM 请求全链路导览](wiki/02_engineering/03_infer_frameworks/vllm/03_vllm_request_flow_walkthrough_analysis.md) | 一条请求怎样穿过进程、队列与 GPU（含离线交互图） |
+| [vLLM 架构概览](wiki/02_engineering/03_infer_frameworks/vllm/03_vllm_architecture_overview_analysis.md) | 六层责任与状态所有权，一条请求在其上的状态移交主线 |
 | [verl 端到端训练迭代](wiki/02_engineering/04_posttrain_frameworks/verl/10_verl_end_to_end_iteration_analysis.md) | RL 后训练框架的主循环 |
 | [slime 权重同步](wiki/02_engineering/04_posttrain_frameworks/slime/16_slime_weight_sync_analysis.md) | Megatron→SGLang 跨异构分片的提交协议 |
 | [GPU Kernel 开发](wiki/02_engineering/05_gpu_kernel/01_gpu_kernel_guide.md) | Kernel 域入口：访存、Tiling、FlashAttention |
@@ -101,7 +102,7 @@ tools/          # 维护工具：check_links/check_math/check_markdown/check_ass
 npm run docs
 ```
 
-命令会在浏览器打开 `http://127.0.0.1:8080`，并监听 Markdown 变化（改完存盘，页面自动刷新）。首次运行需要联网下载已锁定版本的 Quartz、社区插件和 Mermaid，这一步耗时较久（几分钟级），**属于正常现象**；成功安装后，日常启动与构建均复用 `.cache/llm-knowledge-docs/` 下的仓库私有运行时，不再访问包仓库或 CDN。运行时损坏或版本漂移时用 `npm run docs:repair` 原子重建（先装到 staging，校验通过才替换，失败则保留旧运行时）。全量 409 页首次构建约 30 秒。
+命令会在浏览器打开 `http://127.0.0.1:8080`，并监听 Markdown 变化（改完存盘，页面自动刷新）。首次运行需要联网下载已锁定版本的 Quartz、社区插件和 Mermaid，这一步耗时较久（几分钟级），**属于正常现象**；成功安装后，日常启动与构建均复用 `.cache/llm-knowledge-docs/` 下的仓库私有运行时，不再访问包仓库或 CDN。运行时损坏或版本漂移时用 `npm run docs:repair` 原子重建（先装到 staging，校验通过才替换，失败则保留旧运行时）。全量 446 页首次构建约 30 秒。
 
 常用命令：
 
@@ -147,9 +148,9 @@ python tools/radar.py --since 14   # 改时间窗
 python tools/radar.py --dry-run    # 只打印，不落盘
 ```
 
-报告分五节，**第一节最重要**：哪些仓库的 KB 基线已经落后上游多少个提交（首次运行实测：torchtitan 落后 308、Megatron-LM 276、verl 266、vLLM 229、slime 23）。其余四节是仓库活动、模型厂商新发布（HuggingFace）、前沿论文（arXiv 五个主题）、以及**本次采集失败项**——失败会如实列出，不会被伪装成「本期无变化」。
+报告分五节，**第一节最重要**：哪些仓库的 KB 基线已经落后上游多少个提交（首次运行实测：torchtitan 落后 308、Megatron-LM 276、verl 266、vLLM 236、slime 23）。其余四节是仓库活动、模型厂商新发布（HuggingFace）、前沿论文（arXiv 五个主题）、以及**本次采集失败项**——失败会如实列出，不会被伪装成「本期无变化」。
 
-追踪清单在 [`docs/radar/watchlist.yaml`](docs/radar/watchlist.yaml)，显式维护（12 仓 + 7 家厂商 + 5 个论文主题）。为什么不从页头基线自动推导、arXiv 查询为什么必须带 LLM 约束，文件头的注释里写了原因。
+追踪清单在 [`docs/radar/watchlist.yaml`](docs/radar/watchlist.yaml)，显式维护（13 仓 + 7 家厂商 + 5 个论文主题）。为什么不从页头基线自动推导、arXiv 查询为什么必须带 LLM 约束，文件头的注释里写了原因。
 
 > **边界**：雷达**只报告事实，不写 `wiki/` 分析页**。本库的价值在于每条断言都有可核验定位符；无人值守产出的机制级结论没人复核，会污染这个前提。要把某个变化落成分析页，走 [`source-faithful-analysis`](skills/source-faithful-analysis/SKILL.md)，**并在合并后同步更新 watchlist 里的 `kb_baseline`**，否则雷达会一直报同一批陈旧漂移。
 
@@ -157,4 +158,4 @@ python tools/radar.py --dry-run    # 只打印，不落盘
 
 ## 维护
 
-按 [CLAUDE.md](CLAUDE.md) 定义的 Workflow 由 Agent 维护。
+按 [CLAUDE.md](CLAUDE.md) 定义的分层结构、来源政策与质量门禁由 Agent 维护；具体写法收在 [`skills/`](skills/README.md)，按需加载。
