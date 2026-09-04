@@ -58,8 +58,10 @@ def recording_operations(
         if rewrite_error is not None:
             raise rewrite_error
 
-    def validate(site: Path, route_manifest: Path) -> ValidationReport:
-        events.append(("validate", site, route_manifest))
+    def validate(
+        site: Path, route_manifest: Path, sources: set[str] | None = None
+    ) -> ValidationReport:
+        events.append(("validate", site, route_manifest, sources))
         return report or ValidationReport(3, (), (), (), (), ())
 
     return Operations(scan, stage, config, run, rewrite, validate)
@@ -345,7 +347,7 @@ def test_refresh_stash_copy_failure_keeps_all_outputs_and_restarts_previous_serv
         lambda _paths, _inventory, _stage: (_ for _ in ()).throw(AssertionError()),
         lambda _command, _cwd: 0,
         lambda _site, _inventory: None,
-        lambda _site, _manifest: ValidationReport(0, (), (), (), (), ()),
+        lambda _site, _manifest, _sources=None: ValidationReport(0, (), (), (), (), ()),
     )
     runtime = ServeRuntime(
         lambda _port: None,
@@ -404,7 +406,7 @@ def test_refresh_config_failure_restores_working_outputs_and_restarts(
         config,
         lambda _command, _cwd: 0,
         lambda _site, _inventory: None,
-        lambda _site, _manifest: ValidationReport(0, (), (), (), (), ()),
+        lambda _site, _manifest, _sources=None: ValidationReport(0, (), (), (), (), ()),
     )
     runtime = ServeRuntime(
         lambda _port: None,
@@ -470,7 +472,7 @@ def test_refresh_stops_unready_recovery_and_keeps_backup_for_diagnostics(
         lambda _paths, _inventory, _stage: (_ for _ in ()).throw(AssertionError()),
         lambda _command, _cwd: 0,
         lambda _site, _inventory: None,
-        lambda _site, _manifest: ValidationReport(0, (), (), (), (), ()),
+        lambda _site, _manifest, _sources=None: ValidationReport(0, (), (), (), (), ()),
     )
 
     def stop(child) -> None:
@@ -547,7 +549,7 @@ def test_refresh_success_activates_new_outputs_before_readiness(tmp_path: Path) 
         config,
         lambda _command, _cwd: 0,
         lambda _site, _inventory: None,
-        lambda _site, _manifest: ValidationReport(0, (), (), (), (), ()),
+        lambda _site, _manifest, _sources=None: ValidationReport(0, (), (), (), (), ()),
     )
     runtime = ServeRuntime(
         lambda _port: None,
@@ -597,7 +599,19 @@ def test_successful_build_rewrites_search_after_mkdocs() -> None:
     assert events[-1][1:] == (
         events[1][1].site,
         Path("generated.yml").with_name("routes.json"),
+        None,
     )
+
+
+def test_changed_build_hands_validate_a_scope_instead_of_none() -> None:
+    """不带 --changed 时必须是 None（全量语义）；带上就得是集合，哪怕是空集。"""
+    events: list[tuple[object, ...]] = []
+
+    result = main(["build", "--changed"], recording_operations(events, Path("generated.yml")))
+
+    assert result == 0
+    assert events[-1][0] == "validate"
+    assert isinstance(events[-1][3], set)
 
 
 def test_rewrite_failure_prevents_validation() -> None:
@@ -663,3 +677,36 @@ def test_failed_build_validation_returns_nonzero_and_preserves_site(
     assert result == 1
     assert marker.read_text(encoding="utf-8") == "inspect me"
     assert [event[0] for event in events][-1] == "validate"
+
+
+# ---------- --changed 的作用域换算 ----------
+
+def test_scope_from_changed_converts_to_manifest_spelling(tmp_path: Path) -> None:
+    wiki = tmp_path / "wiki"
+    (wiki / "domain").mkdir(parents=True)
+    page = wiki / "domain" / "a.md"
+    page.write_text("x", encoding="utf-8")
+
+    scope = cli_module.scope_from_changed([page], wiki, {"domain/a.md", "other.md"})
+
+    assert scope == {"domain/a.md"}
+
+
+def test_scope_from_changed_drops_paths_outside_the_wiki(tmp_path: Path) -> None:
+    wiki = tmp_path / "wiki"
+    wiki.mkdir()
+    outside = tmp_path / "tools" / "notes.md"
+    outside.parent.mkdir()
+    outside.write_text("x", encoding="utf-8")
+
+    assert cli_module.scope_from_changed([outside], wiki, {"notes.md"}) == set()
+
+
+def test_scope_from_changed_drops_pages_that_own_no_route(tmp_path: Path) -> None:
+    """--changed 是推导出来的，不该因为某个 wiki 文件没有路由就整体报错。"""
+    wiki = tmp_path / "wiki"
+    wiki.mkdir()
+    unrouted = wiki / "draft.md"
+    unrouted.write_text("x", encoding="utf-8")
+
+    assert cli_module.scope_from_changed([unrouted], wiki, {"a.md"}) == set()

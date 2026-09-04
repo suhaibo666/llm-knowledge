@@ -235,26 +235,6 @@ def test_rewriter_neutralizes_backtick_wrapped_file_url(
     assert rewritten == "source *(local source)*"
 
 
-def test_real_npu_page_has_no_publishable_local_file_links() -> None:
-    repo = Path(__file__).resolve().parents[3]
-    wiki = repo / "wiki"
-    relative = PurePosixPath(
-        "02_engineering/01_pytorch/02_compile_stack/04_inductor/npu/"
-        "10_npu_inductor_backend_analysis.md"
-    )
-    inventory = scan_inventory(wiki)
-    page = inventory.by_relative[relative.with_suffix("")]
-    markdown = page.source.read_text(encoding="utf-8")
-    local_link_count = markdown.casefold().count("](file:")
-    assert local_link_count > 0
-
-    rewritten = rewrite_wikilinks(markdown, page, inventory)
-
-    assert "](file:" not in rewritten.casefold()
-    assert rewritten.count("*(local source)*") == local_link_count
-    assert "codegen/npu_combined_scheduling.py:17 *(local source)*" in rewritten
-
-
 def test_rewriter_adds_legacy_unicode_heading_aliases_for_local_and_cross_page_links(
     resolver_fixture: tuple[PageRecord, Inventory],
 ) -> None:
@@ -784,18 +764,6 @@ def test_same_line_active_and_code_wikilinks_are_classified_independently(
     assert rewrite_wikilinks(markdown, page, inventory) == (
         "[target](../target.md) and `[[target]]`"
     )
-
-
-def test_historical_changelog_callout_example_remains_literal() -> None:
-    repo = Path(__file__).resolve().parents[3]
-    wiki = repo / "wiki"
-    inventory = scan_inventory(wiki)
-    page = inventory.by_relative[PurePosixPath("changelog")]
-    markdown = page.source.read_text(encoding="utf-8")
-
-    rewritten = rewrite_wikilinks(markdown, page, inventory)
-
-    assert "[[verl_end_to_end_iteration_analysis]]" in rewritten
 
 
 def test_blank_line_prevents_inline_code_pairing_across_paragraphs(

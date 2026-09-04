@@ -41,6 +41,8 @@ import re
 import subprocess
 import sys
 from collections import Counter, defaultdict
+
+from check_math import collect_changed_markdown
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -218,7 +220,7 @@ def audit_page(md_path: Path, entries, gv: GitView):
             continue
         usable.append((e, commit))
     for name in unresolved_names:
-        findings.append(("unresolved_repo", f"{md_path}: 基线仓 `{name}` 不在 watchlist"))
+        findings.append(("unknown_repo", f"{md_path}: 基线仓 `{name}` 不在 watchlist"))
 
     if not usable:
         if not baselines and not unresolved_names:
@@ -259,14 +261,50 @@ def audit_page(md_path: Path, entries, gv: GitView):
     return findings
 
 
+# 三档分级：
+#   ERROR —— 引用的路径压根不在任何基线树里，确定性缺陷。
+#   WARN  —— 页面或配置能修的：行号超界、同名歧义、缺基线头、仓不在 watchlist。
+#            `out_of_range` 只约束仍在用 `path:line` 的存量；宪法已把行号定为可选，
+#            新页面改用稳定符号锚点后这一类会自然归零。
+#   ENV   —— 本机没克隆、对象库里没这个 commit：作者改文档也修不掉。默认单独列出、
+#            不计入告警与退出码；要连它一起卡，加 --include-env。
 ERROR_CATS = {"missing_file"}
-WARN_CATS = {"out_of_range", "ambiguous", "unanchored_page", "unresolved_repo", "commit_unavailable", "unverifiable"}
+WARN_CATS = {"out_of_range", "ambiguous", "unanchored_page", "unknown_repo"}
+ENV_CATS = {"unresolved_repo", "commit_unavailable", "unverifiable"}
+REPORT_ORDER = [
+    "missing_file", "out_of_range", "ambiguous", "unanchored_page", "unknown_repo",
+    "unresolved_repo", "commit_unavailable", "unverifiable",
+]
+
+
+def _is_changelog(rel: str) -> bool:
+    return rel == "wiki/changelog.md" or rel.startswith("wiki/changelog/")
+
+
+def pages_to_audit(scan_root, explicit=None):
+    """审计面：显式列表（--changed）优先，否则扫目录；changelog 两条路径都豁免。"""
+    if explicit is None:
+        candidates = sorted(Path(scan_root).rglob("*.md"))
+    else:
+        candidates = sorted(explicit)
+    pages = []
+    for md in candidates:
+        try:
+            rel = md.resolve().relative_to(ROOT).as_posix()
+        except ValueError:
+            rel = md.as_posix()
+        if _is_changelog(rel):
+            continue
+        pages.append(md)
+    return pages
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--dir", default="wiki", help="扫描目录（默认 wiki）")
     ap.add_argument("--strict", action="store_true", help="警告也计入退出码")
+    ap.add_argument("--changed", action="store_true", help="只审计 git 中已改动的 Markdown")
+    ap.add_argument("--include-env", action="store_true", help="环境缺口也计入告警与退出码")
     ap.add_argument("--examples", type=int, default=12, help="每类最多打印几条明细")
     args = ap.parse_args(argv)
     try:
@@ -280,10 +318,8 @@ def main(argv=None):
     details = defaultdict(list)
     pages = 0
 
-    for md in sorted((ROOT / args.dir).rglob("*.md")):
-        rel = md.relative_to(ROOT).as_posix()
-        if rel == "wiki/changelog.md" or rel.startswith("wiki/changelog/"):
-            continue
+    explicit = collect_changed_markdown(ROOT) if args.changed else None
+    for md in pages_to_audit(ROOT / args.dir, explicit):
         pages += 1
         for cat, detail in audit_page(md, entries, gv):
             counts[cat] += 1
@@ -293,7 +329,11 @@ def main(argv=None):
     print(f"pages scanned: {pages}")
     total = sum(counts.values())
     print(f"citations audited: {total}  (pass={counts['pass']})")
-    for cat in ["missing_file", "out_of_range", "ambiguous", "unverifiable", "unanchored_page", "unresolved_repo", "commit_unavailable"]:
+    env_header = False
+    for cat in REPORT_ORDER:
+        if cat in ENV_CATS and not env_header:
+            print("--- 环境缺口（本机没有该仓/该 commit，非页面缺陷）---")
+            env_header = True
         print(f"{cat}={counts[cat]}")
         for d in details[cat][: args.examples]:
             print(f"    {d}")
@@ -302,7 +342,10 @@ def main(argv=None):
 
     errors = sum(counts[c] for c in ERROR_CATS)
     warnings = sum(counts[c] for c in WARN_CATS)
-    print(f"\nerrors={errors} warnings={warnings}")
+    env = sum(counts[c] for c in ENV_CATS)
+    if args.include_env:
+        warnings += env
+    print(f"\nerrors={errors} warnings={warnings} env={env}")
     if errors or (args.strict and warnings):
         return 1
     return 0

@@ -199,11 +199,19 @@ export async function corpusPages({
   repoRoot = defaultRepoRoot,
   siteRoot = path.join(repoRoot, "site"),
   manifest = path.join(repoRoot, ".mkdocs-cache", "routes.json"),
+  sources = null,
 } = {}) {
   assert.ok(analyzer, "corpusPages requires an inert browser DOM analyzer")
   const routes = JSON.parse(await readFile(manifest, "utf8"))
+  const selected = sources ? routes.filter((route) => sources.has(route.source)) : routes
+  if (sources) {
+    // A silently empty scope would report PASS over nothing; typos must be loud.
+    const owned = new Set(routes.map((route) => route.source))
+    const unmatched = [...sources].filter((source) => !owned.has(source)).sort()
+    assert.deepEqual(unmatched, [], `requested pages own no route: ${unmatched.join(", ")}`)
+  }
   const pages = []
-  for (const route of routes) {
+  for (const route of selected) {
     const output = path.join(siteRoot, ...route.output.split("/"))
     const html = await readFile(output, "utf8")
     const sourcePath = `wiki/${route.source}`
@@ -212,7 +220,7 @@ export async function corpusPages({
       pages.push({ sourcePath, output: route.output, ...origins })
     }
   }
-  return { inspectedPages: routes.length, pages }
+  return { inspectedPages: selected.length, pages }
 }
 
 async function renderPages(
@@ -288,7 +296,7 @@ async function renderPages(
   }
 }
 
-export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
+export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot, sources = null } = {}) {
   const siteRoot = path.join(repoRoot, "site")
   const routeManifest = path.join(repoRoot, ".mkdocs-cache", "routes.json")
   const searchIndex = path.join(siteRoot, "search", "search_index.json")
@@ -318,8 +326,17 @@ export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
       repoRoot,
       siteRoot,
       manifest: routeManifest,
+      sources,
     })
     await analyzer.close()
+    if (sources && pages.length === 0) {
+      // A scoped run over formula-free pages is a pass, not an empty corpus.
+      console.log(
+        `[docs:mkdocs:math] PASS: no MathJax-bearing pages among the `
+        + `${inspectedPages} requested`,
+      )
+      return
+    }
     assert.ok(pages.length > 0, "generated site contains no MathJax-bearing pages")
 
     const started = await startStaticSite(siteRoot, projectBase)
@@ -362,7 +379,7 @@ export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
       || result.remaining.rawTexUnits > 0
     ))
 
-    assert.ok(formulas > 0, "generated corpus contains no formulas")
+    if (!sources) assert.ok(formulas > 0, "generated corpus contains no formulas")
     assert.deepEqual(
       mismatches,
       [],
@@ -397,7 +414,7 @@ export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
     )
     console.log(
       `[docs:mkdocs:math] PASS: ${formulas} formulas across ${pages.length} pages `
-      + `(${inspectedPages} manifest pages inspected)`,
+      + `(${inspectedPages} ${sources ? "requested" : "manifest"} pages inspected)`,
     )
   } finally {
     await browser?.close().catch(() => undefined)
@@ -405,16 +422,33 @@ export async function runMathJaxCorpus({ repoRoot = defaultRepoRoot } = {}) {
   }
 }
 
-function parseArguments(args) {
+/* Wiki-relative spellings vary by shell and paste source; route.source is the canon. */
+function normalizeSource(value) {
+  const normalized = value.trim().replace(/\\/g, "/").replace(/^\.\//, "")
+  return normalized.startsWith("wiki/") ? normalized.slice("wiki/".length) : normalized
+}
+
+export function parseArguments(args) {
   let repoRoot = defaultRepoRoot
+  let sources = null
   for (let index = 0; index < args.length; index += 1) {
-    if (args[index] !== "--repo-root" || !args[index + 1]) {
-      throw new Error(`unknown or incomplete argument: ${args[index]}`)
+    const flag = args[index]
+    const value = args[index + 1]
+    if (!value || (flag !== "--repo-root" && flag !== "--pages")) {
+      throw new Error(`unknown or incomplete argument: ${flag}`)
     }
-    repoRoot = path.resolve(args[index + 1])
+    if (flag === "--repo-root") {
+      repoRoot = path.resolve(value)
+    } else {
+      const requested = value.split(",").map(normalizeSource).filter(Boolean)
+      if (requested.length === 0) {
+        throw new Error("--pages requires at least one page")
+      }
+      sources = new Set([...(sources ?? []), ...requested])
+    }
     index += 1
   }
-  return { repoRoot }
+  return { repoRoot, sources }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(scriptFile)) {

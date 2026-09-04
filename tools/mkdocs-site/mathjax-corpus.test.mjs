@@ -7,7 +7,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { findBrowserExecutable } from "../docs-site/listeners.mjs"
-import { corpusPages, htmlMathOrigins } from "./mathjax-corpus.mjs"
+import { corpusPages, htmlMathOrigins, parseArguments } from "./mathjax-corpus.mjs"
 
 const toolDir = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -213,6 +213,90 @@ test("corpus includes a residual-only generated route for failure reporting", as
       rawDollarDelimiters: 1,
       units: 0,
     }])
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true })
+  }
+})
+
+test("arguments default to the whole corpus", () => {
+  const parsed = parseArguments([])
+
+  assert.equal(parsed.sources, null)
+  assert.equal(typeof parsed.repoRoot, "string")
+})
+
+test("page arguments accept comma lists, repetition, and wiki-relative spellings", () => {
+  const parsed = parseArguments([
+    "--pages",
+    "domain/alpha.md,wiki/domain/beta.md",
+    "--pages",
+    "domain\\gamma.md",
+    "--pages",
+    "./domain/delta.md",
+  ])
+
+  assert.deepEqual([...parsed.sources].sort(), [
+    "domain/alpha.md",
+    "domain/beta.md",
+    "domain/delta.md",
+    "domain/gamma.md",
+  ])
+})
+
+test("arguments reject unknown flags and missing values", () => {
+  assert.throws(() => parseArguments(["--nope", "x"]), /unknown or incomplete argument/)
+  assert.throws(() => parseArguments(["--pages"]), /unknown or incomplete argument/)
+  assert.throws(() => parseArguments(["--pages", " , "]), /--pages requires at least one page/)
+})
+
+test("corpus narrows to the requested pages", async () => {
+  const repoRoot = await mkdtemp(path.join(os.tmpdir(), "math-corpus-scope-"))
+  try {
+    const siteRoot = path.join(repoRoot, "site")
+    const cacheRoot = path.join(repoRoot, ".mkdocs-cache")
+    await mkdir(path.join(siteRoot, "domain"), { recursive: true })
+    await mkdir(cacheRoot, { recursive: true })
+    for (const name of ["alpha", "beta"]) {
+      await writeFile(
+        path.join(siteRoot, "domain", `${name}.html`),
+        `<!doctype html><html><body><p>${name} $x$</p></body></html>`,
+      )
+    }
+    await writeFile(
+      path.join(cacheRoot, "routes.json"),
+      JSON.stringify([
+        { source: "domain/alpha.md", output: "domain/alpha.html" },
+        { source: "domain/beta.md", output: "domain/beta.html" },
+      ]),
+    )
+
+    const result = await corpusPages({
+      analyzer,
+      repoRoot,
+      sources: new Set(["domain/beta.md"]),
+    })
+
+    assert.equal(result.inspectedPages, 1)
+    assert.deepEqual(result.pages.map((item) => item.sourcePath), ["wiki/domain/beta.md"])
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true })
+  }
+})
+
+test("corpus rejects requested pages that own no route", async () => {
+  const repoRoot = await mkdtemp(path.join(os.tmpdir(), "math-corpus-unmatched-"))
+  try {
+    const cacheRoot = path.join(repoRoot, ".mkdocs-cache")
+    await mkdir(cacheRoot, { recursive: true })
+    await writeFile(
+      path.join(cacheRoot, "routes.json"),
+      JSON.stringify([{ source: "domain/alpha.md", output: "domain/alpha.html" }]),
+    )
+
+    await assert.rejects(
+      corpusPages({ analyzer, repoRoot, sources: new Set(["domain/typo.md"]) }),
+      /domain\/typo\.md/,
+    )
   } finally {
     await rm(repoRoot, { recursive: true, force: true })
   }

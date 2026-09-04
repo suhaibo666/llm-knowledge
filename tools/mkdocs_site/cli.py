@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import socket
@@ -11,10 +12,13 @@ import time
 import urllib.error
 import urllib.request
 import webbrowser
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+# 变更集只有一份实现，复用 check_math 的，避免两个门禁对『什么算改动』产生分歧。
+from tools.check_math import collect_changed_markdown
 
 from .config import write_generated_config
 from .inventory import scan_inventory
@@ -37,7 +41,7 @@ class Operations:
     config: Callable[[BuildPaths, Inventory, StageResult], Path]
     mkdocs: Callable[[list[str], Path], int]
     rewrite_search: Callable[[Path, Inventory], None]
-    validate: Callable[[Path, Path], ValidationReport]
+    validate: Callable[[Path, Path, set[str] | None], ValidationReport]
 
 
 @dataclass(frozen=True)
@@ -73,7 +77,42 @@ def _default_operations() -> Operations:
         write_generated_config,
         _run_mkdocs,
         rewrite_search_index,
-        lambda site, manifest: validate_site(site, route_manifest=manifest),
+        lambda site, manifest, sources=None: validate_site(
+            site, route_manifest=manifest, sources=sources
+        ),
+    )
+
+
+def scope_from_changed(
+    changed: Iterable[Path], wiki: Path, manifest_sources: set[str]
+) -> set[str]:
+    """把 git 的绝对路径变更集换算成 route.source 的写法。
+
+    丢掉 wiki 之外的路径和不属于任何路由的页面：这个集合是推导出来的，不该因为
+    改了一个没有路由的文件就整体报错（显式指定页面时 validate_site 仍然严格）。
+    """
+    resolved_wiki = Path(wiki).resolve()
+    scope: set[str] = set()
+    for path in changed:
+        try:
+            relative = Path(path).resolve().relative_to(resolved_wiki).as_posix()
+        except ValueError:
+            continue
+        if relative in manifest_sources:
+            scope.add(relative)
+    return scope
+
+
+def _manifest_sources(manifest: Path) -> set[str]:
+    if not manifest.is_file():
+        return set()
+    routes = json.loads(manifest.read_text(encoding="utf-8"))
+    return {route["source"] for route in routes}
+
+
+def _changed_scope(paths: BuildPaths, manifest: Path) -> set[str]:
+    return scope_from_changed(
+        collect_changed_markdown(paths.repo), paths.wiki, _manifest_sources(manifest)
     )
 
 
@@ -297,6 +336,11 @@ def _refresh_preview(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build the local MkDocs preview")
     parser.add_argument("command", choices=("stage", "build", "serve", "validate"))
+    parser.add_argument(
+        "--changed",
+        action="store_true",
+        help="validate/build: 只校验 git 中改动过的页面（orphans 会被跳过）",
+    )
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--no-open", action="store_true")
     return parser
@@ -320,8 +364,9 @@ def main(
     repo = Path(__file__).resolve().parents[2]
     paths = BuildPaths.from_repo(repo)
     if args.command == "validate":
-        report = active.validate(paths.site, paths.cache / "routes.json")
-        return _validation_result(report)
+        manifest = paths.cache / "routes.json"
+        scope = _changed_scope(paths, manifest) if args.changed else None
+        return _validation_result(active.validate(paths.site, manifest, scope))
 
     if args.command == "serve":
         runtime = serve_runtime or _default_serve_runtime()
@@ -378,8 +423,13 @@ def main(
     result = active.mkdocs(command, paths.repo)
     if args.command == "build" and result == 0:
         active.rewrite_search(paths.site, inventory)
+        scope = (
+            _changed_scope(paths, stage_result.route_manifest)
+            if args.changed
+            else None
+        )
         return _validation_result(
-            active.validate(paths.site, stage_result.route_manifest)
+            active.validate(paths.site, stage_result.route_manifest, scope)
         )
     return result
 

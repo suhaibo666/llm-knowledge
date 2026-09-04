@@ -163,3 +163,56 @@ def test_unverifiable_when_page_pins_unresolvable_repo(tmp_path, repo):
     )
     cats = sorted(c for c, _ in findings)
     assert "unverifiable" in cats and "missing_file" not in cats
+
+
+# ---------- 分级：页面缺陷 vs 环境缺口 ----------
+
+def test_unknown_repo_is_a_page_defect_not_an_environment_gap(tmp_path, repo):
+    """页面钉了一个 watchlist 里没有的仓——这是页面/配置能修的，不是本机环境问题。"""
+    r, commit = repo
+    entry = {"name": "up", "repo": "org/up", "checkout": r}
+    page = tmp_path / "page.md"
+    page.write_text(
+        "> 源码基线：`NoSuchRepo@" + commit + "`\n\n引用 `pkg/core.py:1`。",
+        encoding="utf-8",
+    )
+
+    cats = [c for c, _ in cl.audit_page(page, [entry], cl.GitView())]
+
+    assert "unknown_repo" in cats
+    assert "unresolved_repo" not in cats
+
+
+def test_category_tiers_partition_every_emitted_category():
+    """三档必须互斥且穷尽，否则会有类别既不计数也不打印。"""
+    tiers = [cl.ERROR_CATS, cl.WARN_CATS, cl.ENV_CATS]
+    union = set().union(*tiers)
+
+    assert sum(len(tier) for tier in tiers) == len(union), "分档之间有重叠"
+    assert union == set(cl.REPORT_ORDER) - {"pass"}
+
+
+def test_environment_gaps_are_not_page_defects():
+    """本机没克隆、对象库里没这个 commit——作者改文档也修不掉，不该算页面告警。"""
+    assert cl.ENV_CATS == {"unresolved_repo", "commit_unavailable", "unverifiable"}
+    assert not (cl.ENV_CATS & cl.WARN_CATS)
+    assert "out_of_range" in cl.WARN_CATS
+    assert cl.ERROR_CATS == {"missing_file"}
+
+
+def test_explicit_pages_override_directory_scan(tmp_path):
+    """--changed / 显式文件列表要能把审计面收窄到给定页面。"""
+    page = tmp_path / "only.md"
+    page.write_text("# only\n", encoding="utf-8")
+    other = tmp_path / "other.md"
+    other.write_text("# other\n", encoding="utf-8")
+
+    assert cl.pages_to_audit(tmp_path, [page]) == [page]
+    assert sorted(cl.pages_to_audit(tmp_path, None)) == sorted([other, page])
+
+
+def test_changelog_stays_excluded_from_explicit_lists(tmp_path):
+    """changelog 历来豁免（正文大量引用历史行号），显式列表也不该把它拉回来。"""
+    changelog = cl.ROOT / "wiki" / "changelog.md"
+
+    assert cl.pages_to_audit(cl.ROOT, [changelog]) == []

@@ -63,7 +63,7 @@ def run(repo: Path, port: int) -> int:
         _write_fixture_config,
         lambda _command, _cwd: 0,
         lambda _site, _inventory: None,
-        lambda _site, _manifest: ValidationReport(0, (), (), (), (), ()),
+        lambda _site, _manifest, _sources=None: ValidationReport(0, (), (), (), (), ()),
     )
     return main(
         ["serve", "--port", str(port), "--no-open"],

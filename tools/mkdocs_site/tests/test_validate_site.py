@@ -73,6 +73,8 @@ def test_validation_report_owns_only_the_public_contract_fields() -> None:
         "missing_assets",
         "missing_legacy_routes",
         "orphans",
+        # 收窄运行下 orphans 算不了，调用方靠这个字段区分「跳过」与「查过为 0」。
+        "scoped",
     )
 
 
@@ -500,3 +502,81 @@ def test_report_output_is_grouped_sorted_and_fails_only_for_errors(
         ValidationReport(1, (), (), (), (), ()),
     )
     assert "orphans: 0" in capsys.readouterr().out
+
+
+# ---------- 按改动收窄 ----------
+
+def test_scoped_run_only_reports_references_from_the_requested_pages(tmp_path):
+    site = make_site(tmp_path, pages={
+        "a.html": '<a href="ghost-a.html">x</a>',
+        "b.html": '<a href="ghost-b.html">y</a>',
+    })
+    manifest = write_routes(tmp_path, "a.html", "b.html")
+
+    full = validate_site(site, route_manifest=manifest)
+    scoped = validate_site(site, route_manifest=manifest, sources={"a.md"})
+
+    assert len(full.broken_links) == 2
+    assert len(scoped.broken_links) == 1
+    assert "a.html" in scoped.broken_links[0]
+
+
+def test_scoped_run_still_resolves_links_into_unscoped_pages(tmp_path):
+    """收窄的是『从哪些页出发扫』，不是『允许链到哪些页』——后者必须保持全局。"""
+    site = make_site(tmp_path, pages={
+        "a.html": '<a href="b.html">y</a>',
+        "b.html": "ok",
+    })
+    manifest = write_routes(tmp_path, "a.html", "b.html")
+
+    scoped = validate_site(site, route_manifest=manifest, sources={"a.md"})
+
+    assert scoped.broken_links == ()
+
+
+def test_scoped_run_skips_orphans_rather_than_reporting_none(tmp_path):
+    """orphans 靠全站累积的 referenced_assets 求补集，收窄后必然假阳性——只能跳过。"""
+    site = make_site(tmp_path, pages={"a.html": "ok", "stray.html": "orphan"})
+    manifest = write_routes(tmp_path, "a.html")
+
+    full = validate_site(site, route_manifest=manifest)
+    scoped = validate_site(site, route_manifest=manifest, sources={"a.md"})
+
+    assert full.orphans == ("stray.html",)
+    assert full.scoped is False
+    assert scoped.orphans == ()
+    assert scoped.scoped is True
+
+
+def test_scoped_report_marks_orphans_skipped_instead_of_zero(capsys):
+    """打印 `orphans: 0` 会被读成『查过了没问题』——收窄时必须说明是跳过。"""
+    raise_for_errors(ValidationReport(
+        pages=1,
+        broken_links=(),
+        missing_anchors=(),
+        missing_assets=(),
+        missing_legacy_routes=(),
+        orphans=(),
+        scoped=True,
+    ))
+    out = capsys.readouterr().out
+
+    assert "orphans: skipped" in out
+    assert "orphans: 0" not in out
+
+
+def test_scoped_run_counts_only_the_requested_pages(tmp_path):
+    site = make_site(tmp_path, pages={"a.html": "ok", "b.html": "ok"})
+    manifest = write_routes(tmp_path, "a.html", "b.html")
+
+    assert validate_site(site, route_manifest=manifest).pages == 3
+    assert validate_site(site, route_manifest=manifest, sources={"a.md"}).pages == 1
+
+
+def test_scoped_run_rejects_pages_that_own_no_route(tmp_path):
+    """静默的空作用域会报 PASS 却什么都没查——拼错必须响。"""
+    site = make_site(tmp_path, pages={"a.html": "ok"})
+    manifest = write_routes(tmp_path, "a.html")
+
+    with pytest.raises(SiteValidationError, match="typo.md"):
+        validate_site(site, route_manifest=manifest, sources={"typo.md"})

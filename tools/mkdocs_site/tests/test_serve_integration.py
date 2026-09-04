@@ -96,7 +96,7 @@ def _fixture_operations() -> Operations:
         config,
         lambda _command, _cwd: 0,
         lambda _site, _inventory: None,
-        lambda _site, _manifest: ValidationReport(0, (), (), (), (), ()),
+        lambda _site, _manifest, _sources=None: ValidationReport(0, (), (), (), (), ()),
     )
 
 

@@ -19,6 +19,8 @@ class ValidationReport:
     missing_assets: tuple[str, ...]
     missing_legacy_routes: tuple[str, ...]
     orphans: tuple[str, ...]
+    # 收窄运行下 orphans 无法计算，报告必须能把「跳过」和「查过且为 0」区分开。
+    scoped: bool = False
 
 
 class SiteValidationError(RuntimeError):
@@ -359,15 +361,35 @@ def validate_site(
     *,
     route_manifest: Path,
     project_prefix: str = "/llm-knowledge/",
+    sources: set[str] | None = None,
 ) -> ValidationReport:
     """Validate the built site against every route owned by the manifest.
 
     ``pages`` counts manifest-owned documents. ``orphans`` contains only generated
     HTML that is neither a route output, the MkDocs ``404.html`` auxiliary page,
     nor an HTML asset reached from a scanned internal reference.
+
+    ``sources`` narrows the walk to the given wiki-relative Markdown paths — the
+    changed-page form. It narrows **where the walk starts**, not what may be linked
+    to: link targets still resolve against every route, so a changed page linking
+    into an untouched one stays valid. Two consequences are deliberate: ``orphans``
+    is skipped rather than reported empty (it is a whole-tree complement and would
+    report every untouched page), and only references *out of* the requested pages
+    are seen — a heading renamed here that breaks an inbound link from elsewhere is
+    caught by ``check_links``, which is cheap enough to keep running repo-wide.
     """
     routes = _load_routes(route_manifest)
     route_outputs = frozenset(route.output for route in routes)
+    if sources is None:
+        selected = routes
+    else:
+        # 静默的空作用域会打印 PASS 却什么都没查过；拼错必须响。
+        unmatched = sorted(set(sources) - {route.source.as_posix() for route in routes})
+        if unmatched:
+            raise SiteValidationError(
+                "requested pages own no route: " + ", ".join(unmatched)
+            )
+        selected = [route for route in routes if route.source.as_posix() in sources]
     broken_links: set[str] = set()
     missing_anchors: set[str] = set()
     missing_assets: set[str] = set()
@@ -385,7 +407,7 @@ def validate_site(
         path for path in generated_html if "assets" in path.parts
     }
 
-    for route in routes:
+    for route in selected:
         output_path, output_safe = _inside_site(site, route.output)
         output_exists = (
             route.output in site_files and output_safe and output_path.is_file()
@@ -407,11 +429,18 @@ def validate_site(
                     f"{route.source.as_posix()} -> {target.display}"
                 )
 
+    # 未收窄时还要把 404 和 assets 下的 HTML 一并作为起点，它们只为 orphans 与
+    # 资源可达性服务；收窄运行不算 orphans，起点就只有被改动的那些页。
+    seeds = (
+        (*route_outputs, *_AUXILIARY_HTML, *source_asset_html)
+        if sources is None
+        else tuple(route.output for route in selected)
+    )
     queued = deque(
         sorted(
             (
                 output
-                for output in (*route_outputs, *_AUXILIARY_HTML, *source_asset_html)
+                for output in seeds
                 if output in site_files
                 and _inside_site(site, output)[1]
                 and _inside_site(site, output)[0].is_file()
@@ -493,19 +522,22 @@ def validate_site(
                     missing_anchors.add(item)
 
     orphans = (
-        generated_html
+        set()
+        if sources is not None
+        else generated_html
         - route_outputs
         - _AUXILIARY_HTML
         - source_asset_html
         - referenced_assets
     )
     return ValidationReport(
-        pages=len(routes),
+        pages=len(selected),
         broken_links=tuple(sorted(broken_links)),
         missing_anchors=tuple(sorted(missing_anchors)),
         missing_assets=tuple(sorted(missing_assets)),
         missing_legacy_routes=tuple(sorted(missing_legacy_routes)),
         orphans=tuple(sorted(path.as_posix() for path in orphans)),
+        scoped=sources is not None,
     )
 
 
@@ -514,6 +546,9 @@ def raise_for_errors(report: ValidationReport) -> None:
     print(f"pages: {report.pages}")
     has_errors = False
     for field in _REPORT_FIELDS:
+        if field == "orphans" and report.scoped:
+            print("orphans: skipped (scoped run)")
+            continue
         items = tuple(sorted(getattr(report, field)))
         print(f"{field}: {len(items)}")
         for item in items:

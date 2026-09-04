@@ -98,21 +98,93 @@ post-training frontier).
 
 ## Quality gates
 
-Every change must pass these before it lands. Per-rule guidance lives in the matching skill.
+Gates are **tiered by what the change touches**. Running the whole battery for a content edit
+costs ~9 minutes and validates nothing that edit could have broken. Run the tier that matches.
+Per-rule guidance lives in the matching skill.
+
+### T0 — every change
 
 ```bash
-python tools/check_links.py --strict          # wikilinks: broken/ambiguous/bare_index/orphans must be 0
-python tools/check_math.py --changed --strict # formulas in this change: 0 errors AND 0 warnings
-python -m pytest tools/                       # the maintenance tooling's own tests
-npm run docs:test                             # local docs site: unit tests + end-to-end check
+python tools/check_links.py --strict              # wikilinks: broken/ambiguous/bare_index/orphans must be 0
+python tools/check_math.py --changed --strict     # formulas in this change: 0 errors AND 0 warnings
+python tools/check_markdown.py --changed --strict # list markers / mermaid labels that break rendering
+python tools/check_assets.py --changed --strict   # images and local resources resolve
 ```
 
-`check_locators.py` is a **conditional legacy gate**, not an always-on authoring requirement. Run
-it against the affected domain when a changed page still contains explicit `path:line` citations;
-new code-analysis prose should normally use stable symbol anchors instead.
+~6s. Content edits (`wiki/`, `docs/`, `raw/` — 78% of commits) stop here.
 
-Repo-wide baseline: as of 2026-08-26, `check_links` and `check_math --strict` report **0 errors
-and 0 warnings across all 409 pages**. Any new finding was introduced by the change in front of
-you — do not wave it through as pre-existing debt. `check_locators` 于 2026-09-01 首跑，存量
-**errors=16（missing_file）/ warnings=560**（436 页、5036 处引用、88.6% pass）——这些只约束
-仍保留旧式 `path:line` 的变更范围；新页面不需要延续这套引用形态。
+### T0 conditional — only when the change hits one of these
+
+| Change hits | Add | Cost |
+|---|---|---|
+| a page still carrying explicit `path:line` citations | `python tools/check_locators.py --changed` | ~10s |
+| `wiki/02_engineering/01_pytorch/**` or `wiki/courses/**` | `pytest tools/labs_torch_compile/test_volume_demo_contract.py -q` | 33s |
+| you need built-page proof (assets, anchors, formula rendering) | `python -m tools.mkdocs_site.cli build --changed` then `node tools/mkdocs-site/mathjax-corpus.mjs --pages <changed>` | 73s + ~5s |
+
+Both steps read the **built** `site/` and mean nothing without one. `--changed` narrows the
+validation walk to the changed routes (75s → 11s over 50 pages) and `--pages` narrows the formula
+render (118s over 162 pages → ~5s over three); the mkdocs build itself (~31s) is all-or-nothing.
+Two limits are deliberate: a scoped run **skips `orphans`** and prints it as skipped rather than
+zero, and it only sees references *out of* the changed pages — a heading renamed here that breaks
+an inbound link from elsewhere is caught by `check_links`, which is cheap enough to stay
+repo-wide. `check_math` is the syntax gate and needs no build at all.
+
+No other test under `tools/` reads the real `wiki/` tree — the rest run against `tmp_path`
+fixtures and cannot be broken by a content edit. Do not run them for one.
+
+### By touched area
+
+| Touched | Gate | Cost |
+|---|---|---|
+| `skills/` | `pytest tools/test_math_skill.py tools/test_planning_codebase_analysis_skill.py tools/test_source_faithful_analysis_skill.py tools/test_source_faithful_architecture_profile.py -q` | 19s |
+| `tools/check_*.py`, `tools/radar.py` | `pytest tools/test_check_*.py tools/test_radar.py -q` | 25s |
+| `tools/mkdocs_site/`, `tools/mkdocs-site/`, `mkdocs.yml` | `npm run docs:mkdocs:test` | 8m30s |
+| `tools/labs_torch_compile/` | `pytest tools/labs_torch_compile -q` | 145s |
+| `tools/docs-site/` | `npm run docs:test` | 60s |
+
+### Before push / merge — once, not per edit
+
+```bash
+python -m pytest tools/ -q      # ~5min, 429 tests
+npm run docs:mkdocs:test        # 8m30s — the stack CI actually deploys
+```
+
+`npm run docs:test` covers `tools/docs-site`, which `.github/workflows/pages.yml` does **not**
+deploy; it is a gate for that stack only, never a proxy for the published site. The one check
+that genuinely cannot be narrowed is **`orphans`** — the whole built tree minus everything a route
+or a scanned reference owns — so only the unscoped `python -m tools.mkdocs_site.cli build` reports
+it, which is why it belongs here. `broken_links`, `missing_anchors`, `missing_assets` and
+`missing_legacy_routes` are per-page, and `--changed` covers them at T0 cost.
+
+### Baselines (2026-09-04)
+
+| Checker | Scope | Baseline |
+|---|---|---|
+| `check_links --strict` | 446 pages | **0** broken / ambiguous / bare_index / stale_section / orphans |
+| `check_math --strict` | 446 pages | **0 errors, 0 warnings** |
+| `check_markdown` | 446 pages | **0 errors**, 120 `MD003` warnings |
+| `check_assets` | 446 pages | **0 errors, 0 warnings** |
+| `check_locators` | 444 pages, 5197 citations | **errors=16, warnings=471, env=77** |
+
+Any new finding against a zero baseline was introduced by the change in front of you — do not
+wave it through as pre-existing debt.
+
+`check_markdown`'s 120 warnings are all `MD003`, quoted mermaid pipe labels.
+[`writing-mermaid-diagrams`](skills/writing-mermaid-diagrams/SKILL.md) classifies those as
+renderer-dependent rather than broken, and says existing diagrams that render need not be
+rewritten — so write new diagrams without the quotes and leave the old ones alone.
+`--changed` reports only what this change introduced (findings are matched by rule plus
+offending line, so a legacy warning that merely shifted does not resurface); pass a path
+instead of `--changed` to see a file's full standing count.
+
+`check_locators` remains a **conditional legacy gate**, never an always-on authoring
+requirement: run it from the T0 table when a changed page still carries explicit
+`path:line` citations. New code-analysis prose uses stable symbol anchors instead.
+It grades its findings three ways: `missing_file` is an error; `out_of_range`,
+`ambiguous`, `unanchored_page` and `unknown_repo` are page defects an author can fix;
+`unresolved_repo`, `commit_unavailable` and `unverifiable` are **environment gaps** — this
+machine lacks the checkout or the commit — reported separately and kept out of the exit code
+unless `--include-env`. What the split exposes is worth acting on: only **4** of the 471 warnings
+concern line numbers. The bulk is bare filenames that resolve ambiguously (250) and pages
+carrying code citations with no pinned baseline header (183) — both are provenance defects this
+constitution already requires fixing, not line-number noise.
