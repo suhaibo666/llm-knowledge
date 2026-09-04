@@ -4,7 +4,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 
 # LLM Knowledge Wiki — 知识库总索引
 
-> 最后更新: 2026-08-30
+> 最后更新: 2026-09-04
 
 ---
 
@@ -28,11 +28,11 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | └─ LongCat (美团) | [[01_theory/01_models/meituan_longcat/index]] | 3 | 活跃 |
 | 预训练 | [[01_theory/02_pretraining/index]] | 7 | 活跃 |
 | SFT & 低参微调 | [[01_theory/03_sft/index]] | 1 | 待建设 |
-| 后训练对齐 | [[01_theory/04_posttraining/index]] | 18 | 活跃 |
+| 后训练对齐 | [[01_theory/04_posttraining/index]] | 22 | 活跃 |
 | 推理技术 | [[01_theory/05_inference/index]] | 1 | 待建设 |
 | 分布式并行理论 | [[01_theory/06_distributed_parallelism/index]] | 9 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根）；模型域各行于 **2026-08-27** 随 GLM/Qwen/Kimi/DeepSeek 新发布模型摄入重新统计，其余行沿用 2026-08-04（kb-reorg P7 收尾）的统计。
+> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根），**2026-09-04 全表机械复算**（`rglob('*.md')`）。这里是全库页面数的唯一真相：README 只描述目录职责，不再并行维护一份篇数。
 
 ### 02 工程实现
 
@@ -49,15 +49,15 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | └─ MindSpeed | [[02_engineering/02_train_frameworks/mindspeed/index]] | 6 | 活跃 |
 | 推理框架 | [[02_engineering/03_infer_frameworks/index]] | 33 | 活跃 |
 | └─ vLLM | [[02_engineering/03_infer_frameworks/vllm/index]] | 25 | 活跃 |
-| 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 47 | 活跃 |
-| └─ verl (HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index]] | 15 | 活跃 |
+| 后训练框架 | [[02_engineering/04_posttrain_frameworks/index]] | 49 | 活跃 |
+| └─ verl (HybridFlow) | [[02_engineering/04_posttrain_frameworks/verl/index]] | 17 | 活跃 |
 | └─ slime | [[02_engineering/04_posttrain_frameworks/slime/index]] | 21 | 活跃 |
 | GPU Kernel | [[02_engineering/05_gpu_kernel/index]] | 17 | 活跃 |
 | └─ Triton 学习路线 | [[02_engineering/05_gpu_kernel/triton/index]] | 9 | 活跃 |
 | 自动并行 | [[02_engineering/06_auto_parallel/index]] | 2 | 活跃 |
 | 训练可靠性 | [[02_engineering/07_training_reliability/index]] | 5 | 活跃 |
 
-> 页面数为递归统计（含各级 index，不含 SUPERSEDED 存根）；训练框架于 2026-09-03 机械复算为 76 页，其中 Megatron-LM 为 35 篇内容页 + index（36 页）；推理框架与 vLLM 于 2026-08-30 统计为 33/25 页；TorchTitan 为 24 页；后训练框架于 2026-08-28 统计为 47 页，其中 `verl/` 15 页、`slime/` 21 页；其余工程域沿用最近一次域级统计。
+> 同上，**2026-09-04 全表机械复算**。Megatron-LM 的 36 页为 35 篇内容页 + index；本次复算相对上一版修正了三处漂移：后训练对齐 18→22、后训练框架 47→49、`verl/` 15→17。
 
 ### courses 课程入口
 
@@ -67,6 +67,7 @@ title: "LLM Knowledge Wiki — 知识库总索引"
 | 课程 | 入口 | 覆盖范围 |
 |------|------|---------|
 | torch.compile 端到端 | [[courses/torch_compile_end_to_end]] | `01_pytorch` 四层功能树(eager 地基→Dynamo→AOTAutograd→Graph IR/Passes→Inductor→缓存→调试→运行时图→导出/分布式) |
+| Megatron-LM 阅读路径 | [[courses/megatron_lm]] | `02_engineering/02_train_frameworks/megatron-lm` 全域 35 篇内容页(入门 01–03→核心训练 10–19→优化与可靠性 20–29→Runtime/集成/案例 30–39→参考 40–41) |
 | LLM 后训练前沿 | [[courses/posttraining_frontier]] | `01_theory/04_posttraining`(算法)+ `02_engineering/04_posttrain_frameworks`(框架源码,含 `verl/`、`slime/`)+ `moonshot_kimi`(K3 工业案例)三处功能树(D01→D12:全景地图→算法演进→Agentic→staleness→Infra→框架对比→verl 主链→slime→AReaL→ROLL→CUDA–Ascend→K3 综合案例) |
 
 ---

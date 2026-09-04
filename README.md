@@ -27,26 +27,26 @@ tools/          # 维护工具：check_links/check_math/check_markdown/check_ass
 
 ### 01 理论
 
-| 二级目录 | 篇数 | 讲什么 |
-|---|---:|---|
-| [01_models](wiki/01_theory/01_models/index.md) | 67 | 各家前沿模型的结构与技术报告解读：[DeepSeek](wiki/01_theory/01_models/deepseek/index.md)、[Kimi](wiki/01_theory/01_models/moonshot_kimi/index.md)、[GLM](wiki/01_theory/01_models/zhipu_glm/index.md)、[Qwen](wiki/01_theory/01_models/alibaba_qwen/index.md)、[LongCat](wiki/01_theory/01_models/meituan_longcat/index.md) 等 |
-| [02_pretraining](wiki/01_theory/02_pretraining/index.md) | 7 | 预训练侧的优化器、低精度、重计算、参数初始化与训推精度一致性 |
-| [03_sft](wiki/01_theory/03_sft/index.md) | 1 | SFT 与低参微调（待建设） |
-| [04_posttraining](wiki/01_theory/04_posttraining/index.md) | 22 | 后训练对齐：PPO/GRPO/GSPO 等算法演进、on-policy 蒸馏、staleness 与训推不一致 |
-| [05_inference](wiki/01_theory/05_inference/index.md) | 1 | 推理技术（待建设） |
-| [06_distributed_parallelism](wiki/01_theory/06_distributed_parallelism/index.md) | 9 | 并行理论本身：集合通信代价模型、DP/TP/SP/CP/PP/EP、ZeRO、Ring Attention |
+| 二级目录 | 讲什么 |
+|---|---|
+| [01_models](wiki/01_theory/01_models/index.md) | 各家前沿模型的结构与技术报告解读：[DeepSeek](wiki/01_theory/01_models/deepseek/index.md)、[Kimi](wiki/01_theory/01_models/moonshot_kimi/index.md)、[GLM](wiki/01_theory/01_models/zhipu_glm/index.md)、[Qwen](wiki/01_theory/01_models/alibaba_qwen/index.md)、[LongCat](wiki/01_theory/01_models/meituan_longcat/index.md) 等 |
+| [02_pretraining](wiki/01_theory/02_pretraining/index.md) | 预训练侧的优化器、低精度、重计算、参数初始化与训推精度一致性 |
+| [03_sft](wiki/01_theory/03_sft/index.md) | SFT 与低参微调（待建设） |
+| [04_posttraining](wiki/01_theory/04_posttraining/index.md) | 后训练对齐：PPO/GRPO/GSPO 等算法演进、on-policy 蒸馏、staleness 与训推不一致 |
+| [05_inference](wiki/01_theory/05_inference/index.md) | 推理技术（待建设） |
+| [06_distributed_parallelism](wiki/01_theory/06_distributed_parallelism/index.md) | 并行理论本身：集合通信代价模型、DP/TP/SP/CP/PP/EP、ZeRO、Ring Attention |
 
 ### 02 工程
 
-| 二级目录 | 篇数 | 讲什么 |
-|---|---:|---|
-| [01_pytorch](wiki/02_engineering/01_pytorch/index.md) | 148 | PyTorch 本体：[eager 运行时](wiki/02_engineering/01_pytorch/01_eager_runtime/index.md)、[编译栈](wiki/02_engineering/01_pytorch/02_compile_stack/index.md)（Dynamo/AOTAutograd/Inductor/MLIR）、[运行时图](wiki/02_engineering/01_pytorch/03_runtime_graphs/index.md)、export 与分布式原语 |
-| [02_train_frameworks](wiki/02_engineering/02_train_frameworks/index.md) | 76 | 训练框架源码级机制：[Megatron-LM](wiki/02_engineering/02_train_frameworks/megatron-lm/index.md)、[torchtitan](wiki/02_engineering/02_train_frameworks/torchtitan/index.md)、[MindSpeed](wiki/02_engineering/02_train_frameworks/mindspeed/index.md)、[MindFormers](wiki/02_engineering/02_train_frameworks/mindformers/index.md) |
-| [03_infer_frameworks](wiki/02_engineering/03_infer_frameworks/index.md) | 33 | 推理引擎：[vLLM 知识域](wiki/02_engineering/03_infer_frameworks/vllm/index.md)（调度、分页 KV、投机解码、CUDA Graph）与 Mooncake 分离式架构 |
-| [04_posttrain_frameworks](wiki/02_engineering/04_posttrain_frameworks/index.md) | 49 | RL 后训练框架：[verl](wiki/02_engineering/04_posttrain_frameworks/verl/index.md)、[slime](wiki/02_engineering/04_posttrain_frameworks/slime/index.md)，含权重同步、rollout 重分片、控制面 |
-| [05_gpu_kernel](wiki/02_engineering/05_gpu_kernel/index.md) | 17 | Kernel 开发：CUDA GEMM/FlashAttention、[Triton 学习路线](wiki/02_engineering/05_gpu_kernel/triton/index.md)、Ascend 达芬奇执行模型 |
-| [06_auto_parallel](wiki/02_engineering/06_auto_parallel/index.md) | 2 | 自动并行业界综述 |
-| [07_training_reliability](wiki/02_engineering/07_training_reliability/index.md) | 5 | 确定性与数值可靠性、批次不变性、故障容错、训练动力学稳定性 |
+| 二级目录 | 讲什么 |
+|---|---|
+| [01_pytorch](wiki/02_engineering/01_pytorch/index.md) | PyTorch 本体：[eager 运行时](wiki/02_engineering/01_pytorch/01_eager_runtime/index.md)、[编译栈](wiki/02_engineering/01_pytorch/02_compile_stack/index.md)（Dynamo/AOTAutograd/Inductor/MLIR）、[运行时图](wiki/02_engineering/01_pytorch/03_runtime_graphs/index.md)、export 与分布式原语 |
+| [02_train_frameworks](wiki/02_engineering/02_train_frameworks/index.md) | 训练框架源码级机制：[Megatron-LM](wiki/02_engineering/02_train_frameworks/megatron-lm/index.md)、[torchtitan](wiki/02_engineering/02_train_frameworks/torchtitan/index.md)、[MindSpeed](wiki/02_engineering/02_train_frameworks/mindspeed/index.md)、[MindFormers](wiki/02_engineering/02_train_frameworks/mindformers/index.md) |
+| [03_infer_frameworks](wiki/02_engineering/03_infer_frameworks/index.md) | 推理引擎：[vLLM 知识域](wiki/02_engineering/03_infer_frameworks/vllm/index.md)（调度、分页 KV、投机解码、CUDA Graph）与 Mooncake 分离式架构 |
+| [04_posttrain_frameworks](wiki/02_engineering/04_posttrain_frameworks/index.md) | RL 后训练框架：[verl](wiki/02_engineering/04_posttrain_frameworks/verl/index.md)、[slime](wiki/02_engineering/04_posttrain_frameworks/slime/index.md)，含权重同步、rollout 重分片、控制面 |
+| [05_gpu_kernel](wiki/02_engineering/05_gpu_kernel/index.md) | Kernel 开发：CUDA GEMM/FlashAttention、[Triton 学习路线](wiki/02_engineering/05_gpu_kernel/triton/index.md)、Ascend 达芬奇执行模型 |
+| [06_auto_parallel](wiki/02_engineering/06_auto_parallel/index.md) | 自动并行业界综述 |
+| [07_training_reliability](wiki/02_engineering/07_training_reliability/index.md) | 确定性与数值可靠性、批次不变性、故障容错、训练动力学稳定性 |
 
 ### 跨域导读
 
@@ -92,7 +92,7 @@ tools/          # 维护工具：check_links/check_math/check_markdown/check_ass
 | [GPU Kernel 开发](wiki/02_engineering/05_gpu_kernel/01_gpu_kernel_guide.md) | Kernel 域入口：访存、Tiling、FlashAttention |
 | [确定性与数值可靠性](wiki/02_engineering/07_training_reliability/10_determinism_and_numerical_reliability_analysis.md) | 浮点非确定性 · batch 不变性 · 低精度累加 · SDC |
 
-完整页面清单见 [wiki/index.md](wiki/index.md)；各域内部导航见对应 `index.md`。
+完整页面清单与各域页面数见 [wiki/index.md](wiki/index.md)；各域内部导航见对应 `index.md`。
 
 ## 本地文档站点
 
