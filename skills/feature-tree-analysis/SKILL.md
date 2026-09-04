@@ -78,7 +78,7 @@ Per `skills/README.md`, every rule states how it is verified:
 |---|---|
 | Manifest is well-formed and cannot zero on a vacuum: strict key whitelist, 40-hex commit, non-empty `nodes`/`leaves`, every include glob hits ≥1 file, non-empty scope, every exclusion has a reason | `check_feature_tree.py` X1 (schema, short-circuits everything else) and V0 (scope) |
 | The tree is complete data: every node has a name and responsibility, every node/leaf parent chain resolves, no empty node, ids unique | T1 / T2 / D1 |
-| Ownership ↔ frozen commit: files, flags (`Class.field` identity, ambiguous bare names rejected), symbol-level entries all claimed or excluded; no phantom ownership; stable entry-anchor files real | F1–F4 / G1–G3 / E1–E2 / F3 |
+| Ownership ↔ frozen commit: files, flags (`Class.field` identity, ambiguous bare names rejected), symbol-level entries all claimed or excluded; no phantom ownership; every leaf's `path::symbol` entry anchor resolves to a real file and a real symbol at the frozen commit (AST for Python, identifier match otherwise) | F1–F4 / G1–G3 / E1–E2 / F3 |
 | Status is backed by artifacts: `spec'd`/`verified` leaves have a real page with a leaf-id heading; `verified` leaves have a PASS review row; delivery only when all leaves are verified | S1 / S3 / V1 / V2 (`--phase spec`, `--phase delivery`) |
 | Overview leaf-row table agrees with the manifest | S2 |
 | Spec evidence is real at the frozen baseline | Reviewer samples stable source anchors per rubric R1; run `check_locators.py` only for changed pages that retain legacy `path:line` citations |

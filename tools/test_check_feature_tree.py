@@ -63,12 +63,12 @@ def base_manifest(r, commit):
         "leaves": [
             {
                 "id": "core/run", "name": "run", "definition": "builds the config and runs",
-                "entry": "pkg/a.py:12", "status": "planned",
+                "entry": "pkg/a.py::main", "status": "planned",
                 "owns": {"files": ["pkg/a.py"], "flags": ["alpha", "beta"],
                          "entries": ["pkg/a.py::main"]},
             },
             {
-                "id": "core/help", "name": "helper", "entry": "pkg/b.py:1", "status": "planned",
+                "id": "core/help", "name": "helper", "entry": "pkg/b.py::helper", "status": "planned",
                 "owns": {"files": ["pkg/b.py"]},
             },
         ],
@@ -425,6 +425,90 @@ def test_delivery_phase_implies_strict(repo, tmp_path):
 
 
 # ---------------------------------------------------------------- misc
+
+def test_symbol_entry_must_exist_at_the_frozen_commit(repo, tmp_path):
+    r, commit = repo
+    m = base_manifest(r, commit)
+    m["leaves"][0]["entry"] = "pkg/a.py::Cfg.alpha"   # class attribute, qualified
+    m["leaves"][1]["entry"] = "pkg/b.py::helper"
+    assert cft.audit(write_manifest(tmp_path, m))["F3"] == []
+    m["leaves"][0]["entry"] = "pkg/a.py::nope"        # file exists, symbol does not
+    m["leaves"][1]["entry"] = "pkg/nope.py::helper"   # file does not exist
+    report = cft.audit(write_manifest(tmp_path, m))
+    assert report["F3"] == ["core/run -> pkg/a.py::nope", "core/help -> pkg/nope.py::helper"]
+
+
+def _mini_repo(tmp_path, name, files):
+    r = tmp_path / name
+    r.mkdir()
+
+    def git(*args):
+        subprocess.run(["git", "-C", str(r)] + list(args), check=True, capture_output=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    for rel, text in files.items():
+        p = r / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "init")
+    commit = subprocess.run(
+        ["git", "-C", str(r), "rev-parse", "HEAD"], check=True, capture_output=True
+    ).stdout.decode().strip()
+    return r, commit
+
+
+def test_main_guard_pseudo_symbol_is_accepted_only_where_the_guard_exists(tmp_path):
+    r, commit = _mini_repo(tmp_path, "m", {
+        "demo.py": "print('x')\n\nif __name__ == \"__main__\":\n    print('run')\n",
+        "lib.py": "X = 1\n",
+    })
+    m = {
+        "domain": "m", "checkout": str(r), "commit": commit,
+        "surfaces": {"files": {"include": ["*.py"]}},
+        "nodes": [{"id": "demo", "name": "demo", "responsibility": "runs", "parent": None}],
+        "leaves": [
+            {"id": "demo/run", "name": "run", "entry": "demo.py::__main__", "owns": {"files": ["demo.py"]}},
+            {"id": "demo/lib", "name": "lib", "entry": "lib.py::__main__", "owns": {"files": ["lib.py"]}},
+        ],
+    }
+    assert cft.audit(write_manifest(tmp_path, m))["F3"] == ["demo/lib -> lib.py::__main__"]
+
+
+def test_legacy_line_anchor_is_a_warning(repo, tmp_path):
+    r, commit = repo
+    m = base_manifest(r, commit)
+    m["leaves"][0]["entry"] = "pkg/a.py:12"
+    m["leaves"][1]["entry"] = "pkg/b.py:1"
+    report = cft.audit(write_manifest(tmp_path, m))
+    assert report["F3"] == []
+    assert report["F5"] == ["core/run -> pkg/a.py:12", "core/help -> pkg/b.py:1"]
+    assert cft.counts(report) == (0, 2)
+
+
+def test_optional_branch_and_date_are_allowed(repo, tmp_path):
+    r, commit = repo
+    m = base_manifest(r, commit)
+    m["branch"] = "main"
+    m["date"] = "2026-09-02"
+    assert cft.audit(write_manifest(tmp_path, m))["X1"] == []
+
+
+def test_symbol_entry_in_non_python_file_uses_identifier_match(tmp_path):
+    r, commit = _mini_repo(tmp_path, "js", {"cli.mjs": "export function render(x) { return x }\n"})
+    m = {
+        "domain": "js", "checkout": str(r), "commit": commit,
+        "surfaces": {"files": {"include": ["*.mjs"]}},
+        "nodes": [{"id": "cli", "name": "cli", "responsibility": "render", "parent": None}],
+        "leaves": [{"id": "cli/render", "name": "render", "entry": "cli.mjs::render",
+                    "owns": {"files": ["cli.mjs"]}}],
+    }
+    assert cft.audit(write_manifest(tmp_path, m))["F3"] == []
+    m["leaves"][0]["entry"] = "cli.mjs::renderer"
+    assert cft.audit(write_manifest(tmp_path, m))["F3"] == ["cli/render -> cli.mjs::renderer"]
+
 
 def test_glob_semantics():
     assert cft.glob_match("tools/**", "tools/a/b.py")

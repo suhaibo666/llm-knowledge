@@ -14,8 +14,11 @@ feature-tree-analysis 技能的机械门禁。manifest（宿主为本 wiki 时�
     V0 scope             每个 include 必须在冻结 commit 下命中 ≥1 文件；范围不能为空            error
     F1 unowned_file      范围内文件无叶子认领且未被排除                                        warning
     F2 phantom_file      叶子认领的文件/glob 在冻结 commit 下不存在                             error
-    F3 bad_entry_anchor  叶子入口 path::qualified.symbol 文件不存在，或可选 path:line 越界       error
+    F3 bad_entry_anchor  叶子入口 path::qualified.symbol 的文件或符号在冻结 commit 下不存在
+                         （.py 按 AST 限定名，其余按标识符词边界）；遗留 path:line 校验行号范围    error
     F4 stale_exclusion   排除 glob 在范围内命中零文件                                          warning
+    F5 legacy_anchor     叶子入口仍是遗留 path:line（应迁移为 path::symbol；`path::__main__`
+                         表示仅有 `if __name__ == "__main__"` 入口的脚本）                    warning
     G1 flag_gap          AST 枚举的字段（Class.field）无叶子认领且未排除                       warning
     G2 unknown_flag      认领/排除了枚举面里没有的字段                                        error
     G3 ambiguous_flag    裸字段名在多个类中出现，须写 Class.field                              error
@@ -36,6 +39,7 @@ feature-tree-analysis 技能的机械门禁。manifest（宿主为本 wiki 时�
 
 用法：
     python tools/check_feature_tree.py <manifest.yaml> [--phase proposal|spec|delivery] [--strict] [--examples N]
+    （--examples 0 = 不截断，建树迭代时用）
 """
 from __future__ import annotations
 
@@ -43,6 +47,7 @@ import argparse
 import datetime as _dt
 import io
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -53,7 +58,7 @@ from check_locators import GitView, load_watchlist
 SEVERITY = {
     "X1": "error",
     "V0": "error",
-    "F1": "warning", "F2": "error", "F3": "error", "F4": "warning",
+    "F1": "warning", "F2": "error", "F3": "error", "F4": "warning", "F5": "warning",
     "G1": "warning", "G2": "error", "G3": "error",
     "E1": "warning", "E2": "error",
     "T1": "error", "T2": "error",
@@ -64,6 +69,7 @@ SEVERITY = {
 LABELS = {
     "X1": "schema", "V0": "scope",
     "F1": "unowned_file", "F2": "phantom_file", "F3": "bad_entry_anchor", "F4": "stale_exclusion",
+    "F5": "legacy_anchor",
     "G1": "flag_gap", "G2": "unknown_flag", "G3": "ambiguous_flag",
     "E1": "entry_gap", "E2": "unknown_entry",
     "T1": "parent_chain", "T2": "empty_node",
@@ -84,8 +90,9 @@ LINE_ENTRY_RE = re.compile(r"(.+?):(\d+)(?:-(\d+))?")
 ROW_ID_RE = re.compile(r"^`([^`]+)`$")
 HEADING_RE = re.compile(r"^#{1,6}\s+(.*)$")
 
-TOP_KEYS = {"domain", "repo", "checkout", "commit", "overview", "spec_dir",
+TOP_KEYS = {"domain", "repo", "checkout", "commit", "branch", "date", "overview", "spec_dir",
             "surfaces", "nodes", "leaves", "exclusions", "reviews"}
+MAIN_GUARD_RE = re.compile(r"__name__\s*==\s*['\"]__main__['\"]")
 SURFACE_KEYS = {"files", "flags", "entries"}
 FILES_KEYS = {"include"}
 FLAG_SRC_KEYS = {"file", "class"}
@@ -183,6 +190,65 @@ def _parent_of(node_id: str):
     return node_id.rsplit("/", 1)[0] if "/" in node_id else None
 
 
+_TEXT_CACHE: dict = {}
+IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _file_text(checkout, commit: str, path: str):
+    """冻结 commit 下的文件文本（git show），缓存；不存在返回 None。"""
+    key = (str(checkout), commit, path)
+    if key not in _TEXT_CACHE:
+        r = subprocess.run(
+            ["git", "-C", str(checkout), "show", f"{commit}:{path}"],
+            capture_output=True, timeout=120,
+        )
+        _TEXT_CACHE[key] = r.stdout.decode("utf-8", "replace") if r.returncode == 0 else None
+    return _TEXT_CACHE[key]
+
+
+def _python_symbols(text: str):
+    """模块内可锚定的限定名：函数、类、类属性（AnnAssign/Assign）、嵌套定义（A.b.c）。"""
+    import ast
+
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return None
+    names = set()
+
+    def walk(body, prefix):
+        for node in body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(prefix + node.name)
+                walk(node.body, prefix + node.name + ".")
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                names.add(prefix + node.target.id)
+            elif isinstance(node, ast.Assign):
+                for t in node.targets:
+                    if isinstance(t, ast.Name):
+                        names.add(prefix + t.id)
+
+    walk(tree.body, "")
+    return names
+
+
+def symbol_exists(checkout, commit: str, path: str, symbol: str) -> bool:
+    """`path::symbol` 在冻结 commit 下真实：.py 按 AST 限定名，其余按最后一段标识符的词边界匹配。"""
+    text = _file_text(checkout, commit, path)
+    if text is None:
+        return False
+    if symbol == "__main__":
+        return path.endswith(".py") and MAIN_GUARD_RE.search(text) is not None
+    if path.endswith(".py"):
+        names = _python_symbols(text)
+        if names is not None:
+            return symbol in names
+    m = IDENT_RE.match(symbol.rsplit(".", 1)[-1])
+    if not m:
+        return False
+    return re.search(rf"(?<![A-Za-z0-9_]){re.escape(m.group(0))}(?![A-Za-z0-9_])", text) is not None
+
+
 # ---------------------------------------------------------------------------- X1 schema
 
 def _str_list(v, where: str, errs: list, allow_empty: bool = False) -> bool:
@@ -210,9 +276,11 @@ def validate_schema(cfg, phase: str) -> list:
     commit = cfg.get("commit")
     if not (isinstance(commit, str) and COMMIT_RE.fullmatch(commit)):
         errs.append("commit: must be the frozen 40-hex commit (not HEAD, a branch, or a short hash)")
-    for k in ("overview", "spec_dir"):
+    for k in ("overview", "spec_dir", "branch"):
         if k in cfg and not _is_str(cfg[k]):
             errs.append(f"{k}: must be a non-empty string")
+    if "date" in cfg and not _is_text_or_date(cfg["date"]):
+        errs.append("date: must be a date or a non-empty string")
     if phase in ("spec", "delivery") and not _is_str(cfg.get("spec_dir")):
         errs.append(f"spec_dir: required in phase {phase}")
 
@@ -413,18 +481,20 @@ def audit(manifest_path, phase: str = "proposal") -> dict:
         if p not in claimed and p not in excluded:
             report["F1"].append(p)
 
-    # F3 —— 默认验证稳定 path::symbol 的文件；遗留 path:line 继续兼容并校验范围
+    # F3 —— 默认验证稳定 path::symbol：文件在冻结 commit 下存在且符号真实；遗留 path:line 校验范围
     for leaf in leaves:
         entry = leaf["entry"]
         symbol = SYMBOL_ENTRY_RE.fullmatch(entry)
         line_ref = LINE_ENTRY_RE.fullmatch(entry)
         if symbol:
-            if symbol.group(1) not in tree_paths:
+            path, name = symbol.group(1), symbol.group(2)
+            if path not in tree_paths or not symbol_exists(checkout, commit, path, name):
                 report["F3"].append(f"{leaf['id']} -> {entry}")
             continue
         if not line_ref:
             report["F3"].append(f"{leaf['id']} -> {entry}")
             continue
+        report["F5"].append(f"{leaf['id']} -> {entry}")
         n = gv.nlines(checkout, commit, line_ref.group(1))
         line = int(line_ref.group(2))
         if n is None or line < 1 or line > n:
@@ -566,7 +636,7 @@ def main(argv=None) -> int:
     ap.add_argument("--phase", choices=PHASES, default="proposal",
                     help="proposal (default) | spec | delivery (implies --strict)")
     ap.add_argument("--strict", action="store_true", help="warnings also fail")
-    ap.add_argument("--examples", type=int, default=15)
+    ap.add_argument("--examples", type=int, default=50, help="rows shown per check; 0 = all")
     args = ap.parse_args(argv)
     strict = args.strict or args.phase == "delivery"
     path = Path(args.manifest)
@@ -583,11 +653,12 @@ def main(argv=None) -> int:
         print(f"phase={args.phase} manifest rejected by schema")
     for code in SEVERITY:
         rows = report[code]
+        limit = args.examples if args.examples > 0 else len(rows)
         print(f"{code} {LABELS[code]} ({SEVERITY[code]}): {len(rows)}")
-        for r in rows[: args.examples]:
+        for r in rows[:limit]:
             print(f"    {r}")
-        if len(rows) > args.examples:
-            print(f"    … 另 {len(rows) - args.examples} 条")
+        if len(rows) > limit:
+            print(f"    … 另 {len(rows) - limit} 条")
     errors, warnings = counts(report)
     print(f"\nerrors={errors} warnings={warnings}")
     return 1 if errors or (strict and warnings) else 0

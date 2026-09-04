@@ -59,6 +59,19 @@ the checker's F1/E1 gaps for the new files turned into candidate leaves (placed 
 reasoned exclusions before any status advances; the delta ∩ `owns.files` affected-leaf list
 produced; the manifest commit replaced last; `docs/radar/watchlist.yaml` `kb_baseline` untouched.
 
+## S4 — Large repository, tree phase (must PASS)
+
+Target: NVIDIA/Megatron-LM at the wiki domain's frozen commit (`megatron/**`, `tools/**`,
+`pretrain_*.py`; ~700 files, 14 config classes / 596 fields with 6 cross-class name collisions).
+Run as small persistent steps, not one coordinator burst: one surface sub-agent per area writing
+`surfaces/<area>.md` immediately, then one assembler building `nodes`/`leaves`/`surfaces.entries`
+from the saved reports.
+
+Pass criteria: every area report anchored with `path::symbol`; the assembled manifest passes
+`--phase proposal --strict` at zero with every colliding field claimed as `Class.field`; a
+proposal package with judgment calls and a disposition for the domain's existing overview pages;
+the run stops at the approval gate with nothing persisted into `wiki/` or `docs/feature-tree/`.
+
 ## Run log
 
 | date | scenario | skill version | result | notes |
@@ -68,3 +81,4 @@ produced; the manifest commit replaced last; `docs/radar/watchlist.yaml` `kb_bas
 | 2026-09-02 | S2 | pre-contract draft | PASS | evidence fully verified; exposed a false claim in the template example (fixed) |
 | 2026-09-02 | S2 | v2 (manifest + spec-writer contract + five fields) | PASS | 2 leaves, 431 lines, source evidence re-verified, behaviors reproduced by sandbox runs; RETURN separated drift / 4 unowned candidates / 1 tree-cut finding (shared rule engine) without acting; coordinator spot-check 2/2 anchors, R2 clean |
 | 2026-09-02 | S1 | v2 (manifest + expanded surfaces + checker) | PASS | tools/** at af1278db: 5 surface reports + root gates enumerated at symbol level (303 entries, 73 flag fields); 7 modules / 57 leaves; checker 10/10 zero (278 files = 262 claimed + 16 excluded); zero stated as a floor; 11 judgment calls with leanings; stopped at gate, nothing persisted into the host; coordinator re-ran the checker: errors=0 warnings=0 |
+| 2026-09-03 | S3 | v3 (nodes + phases + symbol anchors) | PASS | root tools at 8408308 → af1278db: old manifest zero with a negative control; delta ∩ owns.files was EMPTY while re-enumeration surfaced 4 unowned files + 36 entry gaps (check_coverage/check_locators) → 2 new nodes, 4 candidate leaves, 2 reasoned exclusions, 7 judgment calls; kb_baseline untouched (sha1 unchanged); working copy replaced last (mtimes). 15 skill-text findings → `path::__main__`, F5 legacy-anchor warning, branch/date keys, `--examples 0`, §1 entry vocabulary, §7 rewrite |

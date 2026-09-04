@@ -20,7 +20,12 @@ repository actually has, **at symbol level**, and record where the evidence live
 
 Use the rows this repository has; do not pad with empty ones. A repository usually has 1–3
 dominant surfaces, but the long tail (a registry, a signal handler, a checkpoint format) is
-exactly where trees lose leaves. Everything enumerated here goes into the manifest's `surfaces`
+exactly where trees lose leaves. Name entries with a stable vocabulary so a baseline bump does not
+turn renames into spurious gaps: code symbols as `path::qualified.symbol` (`path::__main__` for a
+script whose only entry is its `if __name__ == "__main__"` guard); CLI flags as
+`path::--flag-name`; everything that is not a code symbol with a kind prefix — `registry:<name>`,
+`hook:<name>`, `signal:<name>`, `env:<VAR>`, `format:<what>`, `verdict:<tool>/<category>`,
+`endpoint:<method path>`. Everything enumerated here goes into the manifest's `surfaces`
 and is what §4 reconciles against. Symbol level matters: a file claimed by one leaf may still
 carry a second, unclaimed behavior, and only a per-symbol / per-field / per-registration list
 makes that visible.
@@ -109,6 +114,8 @@ domain: <name>
 repo: <docs/radar/watchlist.yaml name>      # host = this wiki: checkout resolved via the watchlist
 checkout: ../path/to/checkout               # or an explicit checkout (relative to this file)
 commit: <full 40-hex frozen commit>          # HEAD / branch / short hash are rejected
+branch: dev                                  # optional declarations (the baseline header of a standalone deliverable)
+date: 2026-09-01
 overview: ../../wiki/.../NN_x_feature_tree_analysis.md   # optional: leaf-row table cross-checked (S2)
 spec_dir: ../../wiki/.../                    # required from phase spec on: spec pages live here (S1/S3)
 surfaces:
@@ -127,7 +134,7 @@ leaves:
   - id: train/memory/recompute               # slug path; parent = id minus last segment must be a node (T1)
     name: activation recompute
     definition: "drop selected activations in forward and recompute them in backward"   # optional one-liner (leaf-row view)
-    entry: src/transformer/block.py::TransformerBlock.forward  # stable path::symbol; F3 verifies the file
+    entry: src/transformer/block.py::TransformerBlock.forward  # stable path::symbol; F3 verifies file AND symbol at the commit
     spec: 22_memory_analysis#train-memory-recompute   # page basename[#anchor]; required once spec'd
     status: planned                            # planned | spec'd | verified
     owns:
@@ -153,7 +160,14 @@ Rules the checker enforces on this file:
   and exists; every leaf's parent is a declared node; a node without children is an error (T1,
   T2); node and leaf ids share one namespace (D1). Ids are lowercase slug paths.
 - **Flags** — identity is `Class.field`; `owns.flags` and `exclusions.flags` accept a qualified
-  name, or a bare name only when it is unique across all enumerated classes (G3 otherwise).
+  name, or a bare name only when it is unique across all enumerated classes (G3 otherwise). Only
+  the classes listed under `surfaces.flags` are enumerated — a new config class must be added
+  there by hand.
+- **Entry anchors** — `path::symbol` is verified for file and symbol (F3); a legacy `path:line`
+  is still accepted but reported as F5 (a warning, so `--strict` drives the migration).
+- **Multiple claims** — several leaves may claim the same file (files are coarse); an entry or
+  flag claimed by several leaves is not an error either, but the reviewer treats it as a
+  granularity question (rubric R2/R6) and the proposal should list it as a judgment call.
 - **Spec anchor** — the spec page named by `spec` must contain a heading whose text contains the
   leaf id (S3); the template's `### <ID> <name>` heading satisfies this.
 - **Phases** — `--phase proposal` (default) checks the tree and the reconciliation;
@@ -202,15 +216,24 @@ its host location. Submit, then **stop** and wait for user approval.
 A delta-to-leaf mapping only sees code that already has an owner. New files, flags, endpoints,
 registrations, and triggers appear as unowned items only if you re-enumerate. Procedure:
 
-1. Copy the manifest and set `commit` to the new hash; keep the old manifest until step 5.
-2. Re-enumerate §1 at the new commit: files and flags are re-enumerated by the checker
-   automatically; **re-list `surfaces.entries` yourself** — new subcommands, endpoints,
-   registrations, and triggers do not enumerate themselves.
-3. Run the checker in phase `proposal`. F1/G1/E1 gaps are candidate new leaves or scope changes →
-   tree change → approval gate when material; F2/F3/G3 mean existing ownership drifted or became
-   ambiguous → fix `owns` / `entry`.
-4. `git diff --name-only <old>..<new>` ∩ each leaf's `owns.files` → affected leaves → re-verify
-   their specs (source anchors, boundaries, scope) → a new review row → status `verified`, or back to
-   `spec'd` when the contract changed.
-5. Only when the checker is at zero and every affected leaf is re-verified, replace the manifest.
-   Then apply the host `kb_baseline` rule from `SKILL.md` — a subdomain tree never advances it.
+1. Make a **working copy** of the manifest with `commit` set to the new hash; the authoritative
+   manifest keeps the old commit until step 5.
+2. Re-enumerate §1 at the new commit: files are re-enumerated by the checker automatically, and so
+   are the fields of the classes already listed under `surfaces.flags` — **add new config classes
+   and re-list `surfaces.entries` yourself**; new subcommands, endpoints, registrations, and
+   triggers do not enumerate themselves.
+3. Run the checker in phase `proposal` with `--examples 0` and **keep this pre-fix output** — it is
+   the evidence of what the bump surfaced. F1/G1/E1 gaps are candidate new leaves or scope
+   changes; F2/F3/G3 mean existing ownership drifted or became ambiguous → fix `owns` / `entry`.
+   New leaves, splits, merges, or moved ownership are material → back through the approval gate
+   before any status advances; reasoned exclusions and anchor fixes are not.
+4. Affected leaves: take `git diff --name-only <old>..<new>`, keep the paths that match the
+   manifest's include globs (the checker's glob semantics, not git's pathspec), and intersect with
+   each leaf's `owns.files`; also intersect the delta with excluded test globs to find leaves whose
+   **test anchors** changed. An empty intersection is a legitimate result — record it explicitly;
+   `planned` leaves need no re-verification. For every affected `spec'd`/`verified` leaf re-verify
+   the spec (source anchors, boundaries, scope, test anchors) → a new review row → `verified`, or
+   back to `spec'd` when the contract changed.
+5. Only when the checker is at zero and every affected leaf is re-verified, replace the
+   authoritative manifest with the working copy. Then apply the host `kb_baseline` rule from
+   `SKILL.md` — a subdomain tree never advances it.
