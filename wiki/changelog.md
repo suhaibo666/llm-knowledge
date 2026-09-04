@@ -12,6 +12,36 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-04：Megatron 特性页 10 / 11 / 13 补齐原理图与算法复现
+
+按更新后的 `feature-analysis` 文档档案新增的「Algorithmic implementation and principle figure」触发条件返工：三页此前用文字堆砌解释切分、打包、路由这类算法机制，缺少原理图，明显偏离已校准的范文 [[12_megatron_tp_analysis]]。新规则明确类图、所有权清单、ASCII 调用树、代码块、纯文字与表格都不能满足该门禁，`drawing-wiki-figures` 为不可豁免的必需子技能。
+
+- 三页各记录 `figure-trigger` 并补出两张外链 SVG，全部走既有管线：生成脚本 → `wiki/<域>/assets/*.svg` → 标准图片语法，样式 class 与色值沿用 `tools/figs/svg/megatron_tp_figures.mjs`，强调色不超过两个。图上每个数字都由冻结的 `CFG` 推导，配回归测试锁定；测试同时 grep 页面正文，使图与正文无法各自漂移。
+- [[13_megatron_cp_analysis]]（`transform, layout, coupled-planes`）：`megatron_cp_sequence_partition.svg` 用两张 16×16 因果掩码格子对出 zigzag 的 34/34/34/34 与连续切的 10/26/42/58（5.8× 失衡，两者同为 S(S+1)/2=136），并画出 Megatron 自有的 `cp_partition_mode` 对照；`megatron_cp_comm_schedules.svg` 把四种 `cp_comm_type` 在同一例子上分成四条可独立追踪的泳道，逐条给出本地计算、上线数据、重构与反向、增量代价（本地掩码格数 288 / 512 / 272 / 288，其中 a2a 恰好触到因果下界 a·S(S+1)/2/c=272）。只有 all_gather 以「Megatron 可证」样式绘制，另三条带 TE 边界标记且列为 ghost——该对比即本页论点。
+- [[11_megatron_dataset_analysis]]（`transform, layout, coupled-planes`）：`megatron_dataset_sample_index.svg` 复现三级索引把一个下标翻成跨文档 token 切片，四段长度合计 1025 = S+ε，并画出 `tokens`/`labels` 是同一缓冲区上错开一格的两个重叠视图（此前已在正文更正的事实）；`megatron_dataset_packing_paths.svg` 让同一组文档走两条打包路径，把真实取舍摆在一起：隐式切断 2 篇文档、显式死槽 384/2560 = 15.0%。
+- [[10_megatron_model_structure_analysis]]（`transform, layout`）：`megatron_model_spec_slot_topology.svg` 画同一个 `TransformerLayer` 类在 local 与 TE 两份 spec 下的插槽拓扑（6 vs 4 个非哨兵槽，norm 被融进后继 linear），两条线收敛到同一份 canonical checkpoint 键——这是整套 spec 机制成立的不变量；`megatron_moe_router_routing.svg` 复现一个 token 的打分 → 专家偏置 → 分组 → top-k → `routing_map`，点出 `topk_routing_with_score_function` 在 `scores + expert_bias` 上取 top-k、却用 `torch.gather` 回到**未加 bias** 的 `scores` 这一不对称：偏置只改选择、不改权重。图止于 `(probs, routing_map)`，dispatch 仍归 [[14_megatron_ep_analysis]]，并由测试机械断言。
+- 三页 §2 同步改写为算法复现：从具名的输入身份与形状出发，逐个决定性中间状态走到合并/输出，且每条 live 数据面都用同一个例子分别走一遍。页 13 的归属边界随之调整——本页接管四种 `cp_comm_type` 的 Megatron 实例化复现，通用推导与通信量代数仍归 [[01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]。
+- 刻意不画的一处：三条 TE 泳道没有时间线/重叠甘特图。Megatron 源码只能证明配置字符串与共享 `cp_stream` 被交出去，画出 ring 的重叠时序等于凭空造证据，因此 `figure-trigger` 不含 `timing`，图上只给步数与块数并将该区域置灰。
+
+## 2026-09-04：Megatron 特性页 10 / 11 / 13 按 feature-analysis 重构
+
+- 三页统一改用 [[12_megatron_tp_analysis]] 已调校的特性页契约：特性概览（问题背景 / 解决方法 / 收益开销约束 / 符号约定）→ 详细方案（最小原语 → primitive-to-system → 开销结算）→ 代码实现分析（类与所有权图 + ASCII 调用树 + 源码阅读路线）→ 配套机制 → 约束适用趋势 → 配置契约。页头改为「源码基线 / 核心源码 / 中心结论 / 适用范围 / 最近更新」五行，旧的「重定基线」「叙事顺序」「配套阅读」行归入本日志。
+- [[10_megatron_model_structure_analysis]] 以「spec 驱动的模型装配」为特性主线重写：`build_module` 的单槽实例化作最小原语，插槽表到 `TransformerLayer`/`TransformerBlock`/`GPTModel` 的装配链作系统面，attention 家族、MoE router、MTP、SSM/Mamba 混合改写为带选择条件与代价的活变体。纠正六处旧结论——12 个槽里只有 5 个真正走 `build_module`；`fuse_layernorm_and_linear` 改变的是槽拓扑（TE 4 个非哨兵槽 vs local 6 个）而不只是算子选择；GPT 路径用的是 `partial(MoELayer, ...)` 填 `mlp` 槽而非 `MoETransformerLayer`；层符号表补回 `K` 与 `+`；router 打分函数还有第三个 `sqrtsoftplus`；`tid2eid` 轮询是源码自陈的占位实现而非出厂配方。
+- [[11_megatron_dataset_analysis]] 以「变长语料 → 定长或打包样本」为特性主线重写，隐式 EOD 拼接与显式 packed/varlen 两条路径作为活变体对照，补出 doc→token→sample→packed-batch 的表示形变账。纠正六处旧结论，其中 `--dataloader-inter-document-masking` 在纯 GPT 入口并未接进 `GPTDatasetConfig`，旧页描述的 `cu_seqlens` 分支在该路径不可达。
+- [[13_megatron_cp_analysis]] 以「CP 接入面」为特性主线重写，补齐旧页完全缺失的代码实现分析一节，并逐项标出 Megatron 源码能证明与不能证明（TE 内核内部）的边界。新发现若干上游事实：`heads_k_stride` 写死为 1 是正确性前提而非调优旋钮（`backward` 用 `outs[i]` 取保存张量，stride 大于 1 会读错并越界）；`Attention.forward` 改写整个 block 共享的 `pg_collection.cp` 但恢复不在 `try/finally` 里；`a2a+p2p` 断言注入的 `hcp` 后却写入全局分层组；原生路径在 CP 大于 1 时静默丢弃 softmax sink 与滑窗。
+- 三页的 `path:line` 与裸行号引用从 61+99 / 49+24 / 50+19 全部清零，改为 `path::qualified.symbol` 阅读路线。页 10 旧引用里的 `megatron/core/ssm/gated_delta_net.py:340` 在本基线下并不存在（该路径已是目录），随重写一并消除。
+- 三页由非作者独立复审，四项基础检查与特性页六项否决检查均为 PASS，作者标注的高风险结论逐条回源核对（8/8、6/6、8/8）。复审提出的错误已修正：页 11 的 `text[:-1]`/`text[1:]` 实为共享缓冲区的重叠视图而非两次拷贝；页 10 的 decoder-only 空槽是三个而非两个（`pre_cross_attn_layernorm` 同样被无条件调用），`non_homogeneous_layers=False` 的强制回改只在 `singleton_local_shards` 元数据下发生。
+- 配置面对账：本次重写一度使 `mtp_standalone`、`csa_compress_ratios`、`csa_compress_rotary_base`、`csa_dense_mode`、`moe_router_force_load_balancing`、`moe_router_force_biased` 六个字段在全库失去提及，而 `check_coverage` 未能报出——`tools/check_coverage.py` 的 C2 stale_owner 只校验**人工** owner，`auto: true` 行跳过提及复验。六项已补回页 10 的配置契约表；该盲区待后续修补检查器。
+
+## 2026-09-04：Megatron 特性页 14–16 按 feature-analysis 重构
+
+- [[14_megatron_ep_analysis]] 从“MoE 机制总表”收敛为 route → preprocess → dispatch → local expert → combine → postprocess 的 token ownership 闭环，并补出 loss 回传、collective 逆映射和 local expert gradient-ready 的训练终点；再以 $T=4,E=4,k=2,e=2$ 的同一算例新增两张 SVG，逐条画出 8 条 route edge、4 条跨 rank edge、weighted combine、backward，以及 AllGather/AllToAll/Flex 的 buffer、恢复与成本差异。旧页无法由 MCore 接口证明的 DeepEP internode 协议/性能断言及三张旧图退出活动正文。
+- [[15_megatron_pp_schedulers_analysis]] 以两-stage 最小例子和 microbatch 生命周期重写，统一解释 no-pipeline、non-interleaved 1F1B、VPP interleaved 1F1B 三条 live 选择，以及 P2P request/handle/wait、combined-1F1B 和 loss → finalizer 的完成边界；主调度 SVG 增补 PP=1 控制流并明确不与 PP=4 共用壁钟，另新增 combined-1F1B 层内 node/stream 图，逐步复演相邻 microbatch 的前反向如何为 EP A2A 暴露计算窗口。
+- [[16_megatron_distributed_optimizer_analysis]] 以 flat buffer ownership → bucket readiness → AR/RS → range-owned update → parameter AG visibility 为主链，区分论文 ZeRO 语义与 native DistributedOptimizer 的持久 buffer 实现，并把 Torch FSDP2、Megatron-FSDP、HSDP 限定在实现选择边界；新增三张 SVG，分别复演 $N=16,d=4,p=[2,7)$ 的四套 range、同步/重叠 RS→update→AG 生命周期，以及 native DistOpt/Torch FSDP2/Megatron-FSDP 的常驻与临时 owner。交叉审阅发现并修正了一处虚构的直接调用边：`finish_grad_sync` 与 `optimizer.step()` 由 `training.py::train_step` 的顺序生命周期连接，而非前者直接调用后者。
+- `source-faithful-analysis` 将“算法实现必须有基础原理图”固化为 feature、mechanism 与 software-architecture 三类文档的硬触发条件：PP/TP/CP/EP、packing、routing、scheduling、reduction 等非恒等变换必须以同一具名实例展示输入、局部计算、所有权/布局或时序变化、通信/同步、重构、前反向差异与增量成本；CRUD、参数校验和一对一薄转发仍可记录 `figure-trigger: none`。基础 review rubric 从四项增为五项，明确 class/ownership 图、caller tree、代码、纯文字和表格都不能冒充 principle figure，并新增正反 eval 与回归测试。
+- 三页均移除易漂移的 `path:line` 引用，改用完整 `path::symbol` 阅读路线；活动页指向旧章节号的反向引用同步改为语义链接，Dynamic CP、MoE Parallel Folding 组构造、precision-aware optimizer 分别回到 29、17、23/26 号 owner 页。14、15、16 由非作者逐页复审，五项基础检查（含 algorithm replay）、feature 否决项、beat 2、真实调用 hop、删代码复读与三点源码抽查最终均为 PASS。第一次复审曾以 Important 拒绝 16 号页把 Megatron-FSDP 三种 strategy 折叠成一个框；修复后图中 `optim`、`optim_grads`、`optim_grads_params` 已分别闭合 persistent HBM → F/B 参数可见性 → gradient RS/owner → local update → parameter AG 或保留 shard → next-forward visibility，二次复审无 Critical/Important/Minor。
+- 最终门禁：算法图与调度仿真测试 13/13、Skill/Profile 回归 42/42；links 446 页的 broken/ambiguous/bare-index/stale-section/orphan 全为 0；changed math/Markdown/assets 为 0 error、0 warning；Megatron coverage `flags=590 pages=35`、C1=C2=C3=0；changed locator 为 0 error（其余 50 条为既有宽区间、短路径歧义或无基线 warning）；changed-scope 文档站构建 20 页且 broken link/missing anchor/missing asset/missing legacy route 全为 0，Chrome 实渲 14–16 共 190 个公式通过。
+
 ## 2026-09-03：Megatron TP 训练闭环与 SP 实现补全
 
 - [[12_megatron_tp_analysis]] 将整网分析补成 token ids → VocabParallelEmbedding → Transformer → 分片 LM head → VocabParallelCrossEntropy → embedding wgrad 的前反向闭环；分别给出词表入口、词表出口和 loss 的切分维、选择原因、公式、通信代价与融合边界。

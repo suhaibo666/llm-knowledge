@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 768" width="100%" role="img" aria-label="chunkwise、headwise 与 MambaContextParallel 三条非标准 attention CP 数据面在同一个例子上的对照">
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .cell0{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .cell1{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .cellx{fill:#F5F7FA;stroke:#fff;stroke-width:.8}
+</style>
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<rect class="card" x="0.5" y="0.5" width="1479" height="767" rx="14"/>
+<text class="ti" x="28" y="36" text-anchor="start">非标准 attention 的三条 CP 数据面：cp_comm_type 一个字也管不到</text>
+<text class="su" x="28" y="57" text-anchor="start">沿用图 2 的五列语法与同一个例子：c=4 · S=16 · t=4 · 每 rank 4 token；linear_num_key_heads=16、mamba_num_heads=32 取字段默认值</text>
+<rect class="panel" x="20" y="76" width="1440" height="50" rx="12"/>
+<text class="tx" x="40" y="98" text-anchor="start">同一份工作量的两种摆法：chunkwise 是 4 token × 4 头 = 16 k head-row，headwise 是 16 token × 1 头 = 16 k head-row —— 相等，差别只在轴与递推状态的形状。</text>
+<text class="su" x="40" y="116" text-anchor="start">虚线右侧＝外部内核内部。三条 lane 的内核数学都在外部库里，但只有 chunkwise 把 CP 语义本身也交了出去；另外两条把 CP 收敛成 head 并行后交给一个 CP 无关的本地内核。</text>
+<rect class="panel" x="20" y="138" width="1440" height="178" rx="12"/>
+<text class="pt" x="36" y="168" text-anchor="start">① chunkwise</text>
+<text class="sm" x="36" y="188" text-anchor="start">linear_cp_mode 默认值</text>
+<rect class="ghost" x="34" y="198" width="148" height="24" rx="6"/>
+<text class="sm" x="108" y="214" text-anchor="middle">FLA cp_context</text>
+<text class="sm" x="36" y="244" text-anchor="start">GDN / KDA</text>
+<rect class="neutral" x="196" y="158" width="252" height="135" rx="8"/>
+<text class="tx" x="208" y="179" text-anchor="start">Megatron 侧装配</text>
+<path class="edge" d="M 208 187 L 436 187"/>
+<text class="sm" x="208" y="205" text-anchor="start">linear_cp_mode = "chunkwise"</text>
+<text class="costtx" x="208" y="221" text-anchor="start">没有 CLI flag，只能改 config</text>
+<text class="sm" x="208" y="237" text-anchor="start">cp_group_chunkwise = 整个 CP 组</text>
+<text class="sm" x="208" y="253" text-anchor="start">入口把布局转成 contiguous</text>
+<text class="sm" x="208" y="269" text-anchor="start">build_cp_context(cu_seqlens, 组, K=4)</text>
+<rect class="ghost" x="470" y="158" width="240" height="135" rx="8"/>
+<text class="tx" x="482" y="179" text-anchor="start">本地计算</text>
+<path class="edge" d="M 482 187 L 698 187"/>
+<text class="sm" x="482" y="205" text-anchor="start">序列仍分片：本 rank 4 个 token</text>
+<text class="sm" x="482" y="221" text-anchor="start">保留全部 4 个 k 头 / 8 个 v 头</text>
+<text class="dim" x="482" y="237" text-anchor="start">本地 4×4 = 16 k head-row</text>
+<text class="sm" x="482" y="253" text-anchor="start">chunk_gated_delta_rule + conv1d</text>
+<text class="sm" x="482" y="269" text-anchor="start">状态只存在 chunk 边界（FLA 内）</text>
+<rect class="ghost" x="718" y="158" width="240" height="135" rx="8"/>
+<text class="tx" x="730" y="179" text-anchor="start">上线的数据</text>
+<path class="edge" d="M 730 187 L 946 187"/>
+<text class="sm" x="730" y="205" text-anchor="start">入口 1 次布局 A2A：zigzag→contiguous</text>
+<text class="sm" x="730" y="221" text-anchor="start">出口 1 次转回</text>
+<text class="costtx" x="730" y="237" text-anchor="start">conv 每段还要 K-1 = 3 行左邻上下文</text>
+<text class="sm" x="730" y="253" text-anchor="start">跨 rank 的状态与 halo 交换在 FLA 内</text>
+<text class="sm" x="730" y="269" text-anchor="start">Megatron 只证明传了什么进去</text>
+<rect class="ghost" x="966" y="158" width="240" height="135" rx="8"/>
+<text class="tx" x="978" y="179" text-anchor="start">重构与反向</text>
+<path class="edge" d="M 978 187 L 1194 187"/>
+<text class="sm" x="978" y="205" text-anchor="start">back_to_input_converter 转回原布局</text>
+<text class="sm" x="978" y="221" text-anchor="start">两次转换都是 A2A，反向自带转置</text>
+<text class="sm" x="978" y="237" text-anchor="start">没有手写 backward</text>
+<text class="sm" x="978" y="253" text-anchor="start">链上状态的梯度归 FLA</text>
+<text class="sm" x="978" y="269" text-anchor="start">recompute_gdn 可整段重算换显存</text>
+<rect class="ghost" x="1214" y="158" width="232" height="135" rx="8"/>
+<text class="tx" x="1226" y="179" text-anchor="start">增量代价</text>
+<path class="edge" d="M 1226 187 L 1434 187"/>
+<text class="sm" x="1226" y="205" text-anchor="start">不要求 head 数被 c=4 整除</text>
+<text class="costtx" x="1226" y="221" text-anchor="start">SBHD 且 batch&gt;1 直接 ValueError</text>
+<text class="sm" x="1226" y="237" text-anchor="start">与 gdn_conv_pad_alignment 互斥</text>
+<text class="sm" x="1226" y="253" text-anchor="start">contiguous 全局配置下这两次归零</text>
+<text class="sm" x="1226" y="269" text-anchor="start">代价换来的是不物化全序列状态</text>
+<text class="sm" x="1446" y="308" text-anchor="end">↑ 这四列全在 FLA 内核里，Megatron 源码不可证</text>
+<path class="edge" d="M 457 168 L 457 293"/>
+<rect class="acc2" x="431" y="142" width="52" height="22" rx="6"/>
+<text class="sm" x="457" y="157" text-anchor="middle">FLA</text>
+<path class="main" d="M 182 225 L 196 225"/>
+<rect class="panel" x="20" y="326" width="1440" height="178" rx="12"/>
+<text class="pt" x="36" y="356" text-anchor="start">② headwise</text>
+<text class="sm" x="36" y="376" text-anchor="start">linear_cp_mode 另一取值</text>
+<rect class="acc1" x="34" y="386" width="148" height="24" rx="6"/>
+<text class="sm" x="108" y="402" text-anchor="middle">Megatron 可证</text>
+<text class="sm" x="36" y="432" text-anchor="start">Ulysses 式换轴</text>
+<rect class="acc1" x="196" y="346" width="252" height="135" rx="8"/>
+<text class="tx" x="208" y="367" text-anchor="start">Megatron 侧装配</text>
+<path class="edge" d="M 208 375 L 436 375"/>
+<text class="sm" x="208" y="393" text-anchor="start">linear_cp_mode = "headwise"</text>
+<text class="sm" x="208" y="409" text-anchor="start">cp_group_headwise = 整个 CP 组</text>
+<text class="costtx" x="208" y="425" text-anchor="start">非 zigzag 入口直接 ValueError</text>
+<text class="sm" x="208" y="441" text-anchor="start">与 cp_partition_mode=contiguous 互斥</text>
+<text class="sm" x="208" y="457" text-anchor="start">复用 mamba_context_parallel 的原语</text>
+<rect class="neutral" x="470" y="346" width="240" height="135" rx="8"/>
+<text class="tx" x="482" y="367" text-anchor="start">本地计算</text>
+<path class="edge" d="M 482 375 L 698 375"/>
+<text class="sm" x="482" y="393" text-anchor="start">换轴后持全序列 16 个 token</text>
+<text class="sm" x="482" y="409" text-anchor="start">每 rank 只留 1 个 k 头 / 2 个 v 头</text>
+<text class="dim" x="482" y="425" text-anchor="start">本地 16×1 = 16 k head-row，与 ① 相同</text>
+<text class="sm" x="482" y="441" text-anchor="start">内核当成单卡问题跑，不知道 CP 存在</text>
+<text class="costtx" x="482" y="457" text-anchor="start">docstring 自评 memory-heavy</text>
+<rect class="neutral" x="718" y="346" width="240" height="135" rx="8"/>
+<text class="tx" x="730" y="367" text-anchor="start">上线的数据</text>
+<path class="edge" d="M 730 375 L 946 375"/>
+<text class="sm" x="730" y="393" text-anchor="start">进场 1 次不分段 A2A</text>
+<text class="sm" x="730" y="409" text-anchor="start">先按 split_sections 预置换 head 维</text>
+<text class="sm" x="730" y="425" text-anchor="start">再 _undo_attention_load_balancing</text>
+<text class="sm" x="730" y="441" text-anchor="start">出场 1 次对称 A2A</text>
+<text class="costtx" x="730" y="457" text-anchor="start">每次搬本地的 (c-1)/c = 3/4</text>
+<rect class="neutral" x="966" y="346" width="240" height="135" rx="8"/>
+<text class="tx" x="978" y="367" text-anchor="start">重构与反向</text>
+<path class="edge" d="M 978 375 L 1194 375"/>
+<text class="sm" x="978" y="393" text-anchor="start">a2a_hp_to_cp 换回 [4, B, ·]</text>
+<text class="sm" x="978" y="409" text-anchor="start">THD 路径用 thd_cp_a2a_inv 逆置换</text>
+<text class="sm" x="978" y="425" text-anchor="start">_AllToAll 自带反向（转置 A2A）</text>
+<text class="sm" x="978" y="441" text-anchor="start">参数按 CP rank 切片，梯度经 dp_cp</text>
+<text class="sm" x="978" y="457" text-anchor="start">没有手写 backward</text>
+<rect class="neutral" x="1214" y="346" width="232" height="135" rx="8"/>
+<text class="tx" x="1226" y="367" text-anchor="start">增量代价</text>
+<path class="edge" d="M 1226 375 L 1434 375"/>
+<text class="sm" x="1226" y="393" text-anchor="start">linear_num_key_heads % (t·c) == 0</text>
+<text class="dim" x="1226" y="409" text-anchor="start">本例 16 % 16 = 0，每 rank 1 个 k 头</text>
+<text class="sm" x="1226" y="425" text-anchor="start">构造期另断言静态 cp 能整除</text>
+<text class="costtx" x="1226" y="441" text-anchor="start">全序列递推状态是它的主要代价</text>
+<text class="sm" x="1226" y="457" text-anchor="start">所以默认值不是它</text>
+<path class="edge" d="M 457 356 L 457 481"/>
+<rect class="acc1" x="415" y="330" width="84" height="22" rx="6"/>
+<text class="sm" x="457" y="345" text-anchor="middle">无 CP 边界</text>
+<path class="main" d="M 182 413 L 196 413"/>
+<rect class="panel" x="20" y="514" width="1440" height="178" rx="12"/>
+<text class="pt" x="36" y="544" text-anchor="start">③ Mamba CP</text>
+<text class="sm" x="36" y="564" text-anchor="start">MambaContextParallel</text>
+<rect class="acc1" x="34" y="574" width="148" height="24" rx="6"/>
+<text class="sm" x="108" y="590" text-anchor="middle">Megatron 可证</text>
+<text class="sm" x="36" y="620" text-anchor="start">没有模式字符串</text>
+<rect class="acc1" x="196" y="534" width="252" height="135" rx="8"/>
+<text class="tx" x="208" y="555" text-anchor="start">Megatron 侧装配</text>
+<path class="edge" d="M 208 563 L 436 563"/>
+<text class="sm" x="208" y="581" text-anchor="start">MambaMixer.__init__ 无条件构造</text>
+<text class="sm" x="208" y="597" text-anchor="start">cp_size == 1 时整条链恒等</text>
+<text class="sm" x="208" y="613" text-anchor="start">Dynamic CP: set_context_parallel_group</text>
+<text class="costtx" x="208" y="629" text-anchor="start">不读 cp_partition_mode，假定 zigzag</text>
+<text class="sm" x="208" y="645" text-anchor="start">选择由层型决定，不由配置决定</text>
+<rect class="neutral" x="470" y="534" width="240" height="135" rx="8"/>
+<text class="tx" x="482" y="555" text-anchor="start">本地计算</text>
+<path class="edge" d="M 482 563 L 698 563"/>
+<text class="sm" x="482" y="581" text-anchor="start">换轴后持全序列 16 个 token</text>
+<text class="sm" x="482" y="597" text-anchor="start">每 rank 2/8 个 SSM head</text>
+<text class="dim" x="482" y="613" text-anchor="start">conv 通道 128+2×1×128 = 384</text>
+<text class="sm" x="482" y="629" text-anchor="start">mamba_split_conv1d_scan_combined</text>
+<text class="sm" x="482" y="645" text-anchor="start">内核同样完全不知道 CP 存在</text>
+<rect class="neutral" x="718" y="534" width="240" height="135" rx="8"/>
+<text class="tx" x="730" y="555" text-anchor="start">上线的数据</text>
+<path class="edge" d="M 730 563 L 946 563"/>
+<text class="sm" x="730" y="581" text-anchor="start">pre_conv_ssm 5 次 A2A（z x B C dt）</text>
+<text class="sm" x="730" y="597" text-anchor="start">post_conv_ssm 1 次换回</text>
+<text class="costtx" x="730" y="613" text-anchor="start">合计 7704 通道-行 / 6 次</text>
+<text class="sm" x="730" y="629" text-anchor="start">每次同样搬本地的 3/4</text>
+<text class="sm" x="730" y="645" text-anchor="start">五段宽度不同，不能合成一次</text>
+<rect class="neutral" x="966" y="534" width="240" height="135" rx="8"/>
+<text class="tx" x="978" y="555" text-anchor="start">重构与反向</text>
+<path class="edge" d="M 978 563 L 1194 563"/>
+<text class="sm" x="978" y="581" text-anchor="start">_redo_attention_load_balancing 复原</text>
+<text class="sm" x="978" y="597" text-anchor="start">与 undo 严格互逆（已验算）</text>
+<text class="sm" x="978" y="613" text-anchor="start">全程由 autograd 原语组合而成</text>
+<text class="sm" x="978" y="629" text-anchor="start">参数在前向切片，梯度回整份参数</text>
+<text class="sm" x="978" y="645" text-anchor="start">没有手写 backward</text>
+<rect class="neutral" x="1214" y="534" width="232" height="135" rx="8"/>
+<text class="tx" x="1226" y="555" text-anchor="start">增量代价</text>
+<path class="edge" d="M 1226 563 L 1434 563"/>
+<text class="costtx" x="1226" y="581" text-anchor="start">组状态复制 1544 → 2056 通道</text>
+<text class="sm" x="1226" y="597" text-anchor="start">这是全路径上唯一的数据膨胀</text>
+<text class="sm" x="1226" y="613" text-anchor="start">nheads/t 与 ngroups/t 各一条整除断言</text>
+<text class="sm" x="1226" y="629" text-anchor="start">有单测：test_mamba_context_parallel</text>
+<text class="sm" x="1226" y="645" text-anchor="start">非 mem-eff 路径多两次 post_conv_ssm</text>
+<path class="edge" d="M 457 544 L 457 669"/>
+<rect class="acc1" x="415" y="518" width="84" height="22" rx="6"/>
+<text class="sm" x="457" y="533" text-anchor="middle">无 CP 边界</text>
+<path class="main" d="M 182 601 L 196 601"/>
+<text class="cap" x="28" y="726" text-anchor="start">三条 lane 都要先做图 3 那次还原：headwise 与 Mamba 用 _undo_attention_load_balancing 收成全局原序，chunkwise 用 cp_partition_mode 转成 contiguous 但仍保持分片。</text>
+<text class="cap" x="28" y="746" text-anchor="start">cp_comm_type 的四条 lane 见图 2；那四条与这三条的取值互不影响，混合模型必须两个轴同时配。</text>
+</svg>

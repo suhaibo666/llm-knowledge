@@ -1,0 +1,315 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 1170" width="100%" role="img" aria-label="MoE router 把一个 token 的 logits 经打分 专家偏置 分组 top-k 变成 probs 与 routing map">
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .cell0{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .cell1{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+</style>
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<rect class="card" x="0.5" y="0.5" width="1479" height="1169" rx="14"/>
+<text class="ti" x="28" y="36" text-anchor="start">MoE router：一个 token 从 logits 到 (probs, routing_map)</text>
+<text class="su" x="28" y="57" text-anchor="start">示例：num_moe_experts=8 · moe_router_topk=2 · moe_router_num_groups=4 · moe_router_group_topk=2 · score_function=sigmoid · 开启 moe_router_enable_expert_bias</text>
+<rect class="panel" x="20" y="84" width="1440" height="176" rx="12"/>
+<text class="pt" x="40" y="112" text-anchor="start">① 打分：Router.gating 的线性投影结果过 score function</text>
+<text class="rank" x="40" y="146" text-anchor="start">logits(t0)</text>
+<rect class="neutral" x="148" y="130" width="86" height="34" rx="5"/>
+<text class="sm" x="191" y="145" text-anchor="middle">e0</text>
+<text class="sm" x="191" y="158" text-anchor="middle">2.000</text>
+<rect class="neutral" x="238" y="130" width="86" height="34" rx="5"/>
+<text class="sm" x="281" y="145" text-anchor="middle">e1</text>
+<text class="sm" x="281" y="158" text-anchor="middle">-1.000</text>
+<rect class="neutral" x="328" y="130" width="86" height="34" rx="5"/>
+<text class="sm" x="371" y="145" text-anchor="middle">e2</text>
+<text class="sm" x="371" y="158" text-anchor="middle">1.200</text>
+<rect class="neutral" x="418" y="130" width="86" height="34" rx="5"/>
+<text class="sm" x="461" y="145" text-anchor="middle">e3</text>
+<text class="sm" x="461" y="158" text-anchor="middle">-0.500</text>
+<rect class="neutral" x="508" y="130" width="86" height="34" rx="5"/>
+<text class="sm" x="551" y="145" text-anchor="middle">e4</text>
+<text class="sm" x="551" y="158" text-anchor="middle">1.000</text>
+<rect class="neutral" x="598" y="130" width="86" height="34" rx="5"/>
+<text class="sm" x="641" y="145" text-anchor="middle">e5</text>
+<text class="sm" x="641" y="158" text-anchor="middle">0.300</text>
+<rect class="neutral" x="688" y="130" width="86" height="34" rx="5"/>
+<text class="sm" x="731" y="145" text-anchor="middle">e6</text>
+<text class="sm" x="731" y="158" text-anchor="middle">-2.000</text>
+<rect class="neutral" x="778" y="130" width="86" height="34" rx="5"/>
+<text class="sm" x="821" y="145" text-anchor="middle">e7</text>
+<text class="sm" x="821" y="158" text-anchor="middle">-1.500</text>
+<path class="main" d="M 506 164 L 506 186"/>
+<text class="sm" x="518" y="180" text-anchor="start">scores = sigmoid(logits.float())</text>
+<text class="rank" x="40" y="208" text-anchor="start">scores</text>
+<rect class="neutral" x="148" y="192" width="86" height="34" rx="5"/>
+<text class="sm" x="191" y="207" text-anchor="middle">e0</text>
+<text class="sm" x="191" y="220" text-anchor="middle">0.881</text>
+<rect class="neutral" x="238" y="192" width="86" height="34" rx="5"/>
+<text class="sm" x="281" y="207" text-anchor="middle">e1</text>
+<text class="sm" x="281" y="220" text-anchor="middle">0.269</text>
+<rect class="neutral" x="328" y="192" width="86" height="34" rx="5"/>
+<text class="sm" x="371" y="207" text-anchor="middle">e2</text>
+<text class="sm" x="371" y="220" text-anchor="middle">0.769</text>
+<rect class="neutral" x="418" y="192" width="86" height="34" rx="5"/>
+<text class="sm" x="461" y="207" text-anchor="middle">e3</text>
+<text class="sm" x="461" y="220" text-anchor="middle">0.378</text>
+<rect class="neutral" x="508" y="192" width="86" height="34" rx="5"/>
+<text class="sm" x="551" y="207" text-anchor="middle">e4</text>
+<text class="sm" x="551" y="220" text-anchor="middle">0.731</text>
+<rect class="neutral" x="598" y="192" width="86" height="34" rx="5"/>
+<text class="sm" x="641" y="207" text-anchor="middle">e5</text>
+<text class="sm" x="641" y="220" text-anchor="middle">0.574</text>
+<rect class="neutral" x="688" y="192" width="86" height="34" rx="5"/>
+<text class="sm" x="731" y="207" text-anchor="middle">e6</text>
+<text class="sm" x="731" y="220" text-anchor="middle">0.119</text>
+<rect class="neutral" x="778" y="192" width="86" height="34" rx="5"/>
+<text class="sm" x="821" y="207" text-anchor="middle">e7</text>
+<text class="sm" x="821" y="220" text-anchor="middle">0.182</text>
+<rect class="neutral" x="896" y="130" width="544" height="96" rx="8"/>
+<text class="tx" x="912" y="152" text-anchor="start">Router.gating</text>
+<text class="sm" x="912" y="172" text-anchor="start">weight 是一个 [num_moe_experts, hidden_size] 的 fp32 参数</text>
+<text class="sm" x="912" y="190" text-anchor="start">moe_router_dtype 可把这一段计算抬到 fp32 / fp64</text>
+<text class="sm" x="912" y="208" text-anchor="start">logits 进 routing 后 view 成 [num_tokens, 8]；本例 num_tokens=3</text>
+<rect class="panel" x="20" y="276" width="1440" height="370" rx="12"/>
+<text class="pt" x="40" y="304" text-anchor="start">② 选择：expert bias 只在这一段生效</text>
+<text class="rank" x="40" y="338" text-anchor="start">expert_bias</text>
+<rect class="neutral" x="148" y="322" width="86" height="34" rx="5"/>
+<text class="sm" x="191" y="337" text-anchor="middle">e0</text>
+<text class="sm" x="191" y="350" text-anchor="middle">0.00</text>
+<rect class="neutral" x="238" y="322" width="86" height="34" rx="5"/>
+<text class="sm" x="281" y="337" text-anchor="middle">e1</text>
+<text class="sm" x="281" y="350" text-anchor="middle">0.00</text>
+<rect class="acc1" x="328" y="322" width="86" height="34" rx="5"/>
+<text class="sm" x="371" y="337" text-anchor="middle">e2</text>
+<text class="dim" x="371" y="350" text-anchor="middle">-0.20</text>
+<rect class="neutral" x="418" y="322" width="86" height="34" rx="5"/>
+<text class="sm" x="461" y="337" text-anchor="middle">e3</text>
+<text class="sm" x="461" y="350" text-anchor="middle">0.00</text>
+<rect class="acc1" x="508" y="322" width="86" height="34" rx="5"/>
+<text class="sm" x="551" y="337" text-anchor="middle">e4</text>
+<text class="dim" x="551" y="350" text-anchor="middle">+0.30</text>
+<rect class="neutral" x="598" y="322" width="86" height="34" rx="5"/>
+<text class="sm" x="641" y="337" text-anchor="middle">e5</text>
+<text class="sm" x="641" y="350" text-anchor="middle">0.00</text>
+<rect class="neutral" x="688" y="322" width="86" height="34" rx="5"/>
+<text class="sm" x="731" y="337" text-anchor="middle">e6</text>
+<text class="sm" x="731" y="350" text-anchor="middle">0.00</text>
+<rect class="neutral" x="778" y="322" width="86" height="34" rx="5"/>
+<text class="sm" x="821" y="337" text-anchor="middle">e7</text>
+<text class="sm" x="821" y="350" text-anchor="middle">0.00</text>
+<path class="main" d="M 506 356 L 506 378"/>
+<text class="sm" x="518" y="372" text-anchor="start">scores_for_routing = scores + expert_bias.float()</text>
+<text class="rank" x="40" y="400" text-anchor="start">scores_for_routing</text>
+<rect class="acc1" x="148" y="384" width="86" height="34" rx="5"/>
+<text class="sm" x="191" y="399" text-anchor="middle">e0</text>
+<text class="dim" x="191" y="412" text-anchor="middle">0.881</text>
+<rect class="neutral" x="238" y="384" width="86" height="34" rx="5"/>
+<text class="sm" x="281" y="399" text-anchor="middle">e1</text>
+<text class="sm" x="281" y="412" text-anchor="middle">0.269</text>
+<rect class="neutral" x="328" y="384" width="86" height="34" rx="5"/>
+<text class="sm" x="371" y="399" text-anchor="middle">e2</text>
+<text class="sm" x="371" y="412" text-anchor="middle">0.569</text>
+<rect class="neutral" x="418" y="384" width="86" height="34" rx="5"/>
+<text class="sm" x="461" y="399" text-anchor="middle">e3</text>
+<text class="sm" x="461" y="412" text-anchor="middle">0.378</text>
+<rect class="acc1" x="508" y="384" width="86" height="34" rx="5"/>
+<text class="sm" x="551" y="399" text-anchor="middle">e4</text>
+<text class="dim" x="551" y="412" text-anchor="middle">1.031</text>
+<rect class="neutral" x="598" y="384" width="86" height="34" rx="5"/>
+<text class="sm" x="641" y="399" text-anchor="middle">e5</text>
+<text class="sm" x="641" y="412" text-anchor="middle">0.574</text>
+<rect class="neutral" x="688" y="384" width="86" height="34" rx="5"/>
+<text class="sm" x="731" y="399" text-anchor="middle">e6</text>
+<text class="sm" x="731" y="412" text-anchor="middle">0.119</text>
+<rect class="neutral" x="778" y="384" width="86" height="34" rx="5"/>
+<text class="sm" x="821" y="399" text-anchor="middle">e7</text>
+<text class="sm" x="821" y="412" text-anchor="middle">0.182</text>
+<path class="main" d="M 506 418 L 506 440"/>
+<text class="sm" x="518" y="434" text-anchor="start">组分 = 每组 top-1 之和；取分数最高的 group_topk=2 组</text>
+<text class="rank" x="40" y="466" text-anchor="start">group_limited_topk</text>
+<rect class="acc1" x="148" y="446" width="176" height="38" rx="5"/>
+<text class="sm" x="236" y="462" text-anchor="middle">group 0 = {e0, e1}</text>
+<text class="dim" x="236" y="477" text-anchor="middle">组分 0.881  ✓选中</text>
+<rect class="ghost" x="328" y="446" width="176" height="38" rx="5"/>
+<text class="sm" x="416" y="462" text-anchor="middle">group 1 = {e2, e3}</text>
+<text class="sm" x="416" y="477" text-anchor="middle">组分 0.569</text>
+<rect class="acc1" x="508" y="446" width="176" height="38" rx="5"/>
+<text class="sm" x="596" y="462" text-anchor="middle">group 2 = {e4, e5}</text>
+<text class="dim" x="596" y="477" text-anchor="middle">组分 1.031  ✓选中</text>
+<rect class="ghost" x="688" y="446" width="176" height="38" rx="5"/>
+<text class="sm" x="776" y="462" text-anchor="middle">group 3 = {e6, e7}</text>
+<text class="sm" x="776" y="477" text-anchor="middle">组分 0.182</text>
+<path class="main" d="M 506 484 L 506 506"/>
+<text class="sm" x="518" y="500" text-anchor="start">未选中组 masked_fill(-inf)，再在候选里 torch.topk</text>
+<text class="rank" x="40" y="530" text-anchor="start">masked</text>
+<rect class="acc1" x="148" y="514" width="86" height="34" rx="5"/>
+<text class="sm" x="191" y="529" text-anchor="middle">e0</text>
+<text class="dim" x="191" y="542" text-anchor="middle">0.881</text>
+<rect class="neutral" x="238" y="514" width="86" height="34" rx="5"/>
+<text class="sm" x="281" y="529" text-anchor="middle">e1</text>
+<text class="sm" x="281" y="542" text-anchor="middle">0.269</text>
+<rect class="ghost" x="328" y="514" width="86" height="34" rx="5"/>
+<text class="sm" x="371" y="529" text-anchor="middle">e2</text>
+<text class="sm" x="371" y="542" text-anchor="middle">−inf</text>
+<rect class="ghost" x="418" y="514" width="86" height="34" rx="5"/>
+<text class="sm" x="461" y="529" text-anchor="middle">e3</text>
+<text class="sm" x="461" y="542" text-anchor="middle">−inf</text>
+<rect class="acc1" x="508" y="514" width="86" height="34" rx="5"/>
+<text class="sm" x="551" y="529" text-anchor="middle">e4</text>
+<text class="dim" x="551" y="542" text-anchor="middle">1.031</text>
+<rect class="neutral" x="598" y="514" width="86" height="34" rx="5"/>
+<text class="sm" x="641" y="529" text-anchor="middle">e5</text>
+<text class="sm" x="641" y="542" text-anchor="middle">0.574</text>
+<rect class="ghost" x="688" y="514" width="86" height="34" rx="5"/>
+<text class="sm" x="731" y="529" text-anchor="middle">e6</text>
+<text class="sm" x="731" y="542" text-anchor="middle">−inf</text>
+<rect class="ghost" x="778" y="514" width="86" height="34" rx="5"/>
+<text class="sm" x="821" y="529" text-anchor="middle">e7</text>
+<text class="sm" x="821" y="542" text-anchor="middle">−inf</text>
+<rect class="acc1" x="148" y="564" width="716" height="66" rx="8"/>
+<text class="tx" x="164" y="586" text-anchor="start">top_indices = [4, 0]</text>
+<text class="sm" x="164" y="605" text-anchor="start">即专家 e4 与 e0（torch.topk 按分数降序返回）</text>
+<text class="sm" x="164" y="622" text-anchor="start">② 到此结束：它只回答了「选了谁」，还没有回答「权重是多少」——那是 ③ 的事</text>
+<rect class="ghost" x="896" y="322" width="544" height="308" rx="10"/>
+<text class="rank" x="912" y="348" text-anchor="start">反事实对照：同一个 t0，expert_bias 全零</text>
+<text class="sm" x="912" y="374" text-anchor="start">组分排序随之改变 → 选中 group 0, 1（而不是 0, 2）</text>
+<text class="sm" x="912" y="394" text-anchor="start">top_indices = [0, 2]，即 e0 与 e2</text>
+<text class="dim" x="912" y="426" text-anchor="start">e4 因 +0.30 从落选升为首选</text>
+<text class="dim" x="912" y="446" text-anchor="start">e2 因 -0.20 连同整个 group 1 被挤出候选</text>
+<text class="sm" x="912" y="478" text-anchor="start">偏置同时改变了「选哪一组」和「选哪个专家」——</text>
+<text class="sm" x="912" y="498" text-anchor="start">它是 aux-loss-free 负载均衡的唯一杠杆。</text>
+<text class="sm" x="912" y="530" text-anchor="start">但它本身在 torch.no_grad 下更新，不进 loss，</text>
+<text class="sm" x="912" y="550" text-anchor="start">因此无法靠反向传播自我修正——只能靠 ④ 的计数回路。</text>
+<text class="cap" x="912" y="582" text-anchor="start">灰底 = 本图不走的路径；对照只为证明偏置真的在改变选择。</text>
+<rect class="panel" x="20" y="662" width="716" height="340" rx="12"/>
+<text class="pt" x="40" y="690" text-anchor="start">③ 加权：gather 回到没有 bias 的 scores</text>
+<rect class="acc1" x="40" y="710" width="320" height="58" rx="8"/>
+<text class="tx" x="56" y="732" text-anchor="start">scores（无 bias）</text>
+<text class="dim" x="56" y="754" text-anchor="start">e4: 0.731    e0: 0.881</text>
+<rect class="ghost" x="392" y="710" width="324" height="58" rx="8"/>
+<text class="tx" x="408" y="732" text-anchor="start">scores_for_routing（含 bias）</text>
+<text class="sm" x="408" y="754" text-anchor="start">e4: 1.031    e0: 0.881</text>
+<path class="main" d="M 200 768 L 200 804"/>
+<text class="costtx" x="392" y="790" text-anchor="start">gather 不读这一行 —— 否则 bias 会进权重</text>
+<rect class="acc1" x="40" y="804" width="676" height="52" rx="8"/>
+<text class="tx" x="56" y="826" text-anchor="start">torch.gather(scores, 1, top_indices)</text>
+<text class="dim" x="56" y="846" text-anchor="start">= [0.731, 0.881]</text>
+<path class="main" d="M 378 856 L 378 876"/>
+<rect class="neutral" x="40" y="876" width="676" height="56" rx="8"/>
+<text class="tx" x="56" y="898" text-anchor="start">probs = scores / (scores.sum(dim=-1) + 1e-20) = [0.454, 0.546]</text>
+<text class="sm" x="56" y="918" text-anchor="start">分母 1.612；topk=2 &gt; 1 才做这一步归一化</text>
+<text class="dim" x="40" y="960" text-anchor="start">不变量：e4 的权重取 0.731 而非 1.031——偏置进选择、出权重。</text>
+<text class="sm" x="40" y="980" text-anchor="start">因此负载均衡改变的是 token 的去向，不改变被选中专家在前向里的加权函数。</text>
+<rect class="panel" x="752" y="662" width="708" height="340" rx="12"/>
+<text class="pt" x="772" y="690" text-anchor="start">④ 输出：scatter 成两个稠密 [num_tokens, num_experts]</text>
+<text class="su" x="772" y="709" text-anchor="start">着色 = routing_map（bool）；格内数值 = routing_probs 的非零项</text>
+<text class="sm" x="889" y="736" text-anchor="middle">e0</text>
+<text class="sm" x="958" y="736" text-anchor="middle">e1</text>
+<text class="sm" x="1027" y="736" text-anchor="middle">e2</text>
+<text class="sm" x="1096" y="736" text-anchor="middle">e3</text>
+<text class="sm" x="1165" y="736" text-anchor="middle">e4</text>
+<text class="sm" x="1234" y="736" text-anchor="middle">e5</text>
+<text class="sm" x="1303" y="736" text-anchor="middle">e6</text>
+<text class="sm" x="1372" y="736" text-anchor="middle">e7</text>
+<text class="rank" x="772" y="761" text-anchor="start">t0</text>
+<rect class="acc1" x="856" y="744" width="66" height="26" rx="4"/>
+<text class="dim" x="889" y="761" text-anchor="middle">0.546</text>
+<rect class="ghost" x="925" y="744" width="66" height="26" rx="4"/>
+<text class="sm" x="958" y="761" text-anchor="middle">·</text>
+<rect class="ghost" x="994" y="744" width="66" height="26" rx="4"/>
+<text class="sm" x="1027" y="761" text-anchor="middle">·</text>
+<rect class="ghost" x="1063" y="744" width="66" height="26" rx="4"/>
+<text class="sm" x="1096" y="761" text-anchor="middle">·</text>
+<rect class="acc1" x="1132" y="744" width="66" height="26" rx="4"/>
+<text class="dim" x="1165" y="761" text-anchor="middle">0.454</text>
+<rect class="ghost" x="1201" y="744" width="66" height="26" rx="4"/>
+<text class="sm" x="1234" y="761" text-anchor="middle">·</text>
+<rect class="ghost" x="1270" y="744" width="66" height="26" rx="4"/>
+<text class="sm" x="1303" y="761" text-anchor="middle">·</text>
+<rect class="ghost" x="1339" y="744" width="66" height="26" rx="4"/>
+<text class="sm" x="1372" y="761" text-anchor="middle">·</text>
+<text class="sm" x="772" y="791" text-anchor="start">t1</text>
+<rect class="ghost" x="856" y="774" width="66" height="26" rx="4"/>
+<text class="sm" x="889" y="791" text-anchor="middle">·</text>
+<rect class="acc1" x="925" y="774" width="66" height="26" rx="4"/>
+<text class="dim" x="958" y="791" text-anchor="middle">0.598</text>
+<rect class="ghost" x="994" y="774" width="66" height="26" rx="4"/>
+<text class="sm" x="1027" y="791" text-anchor="middle">·</text>
+<rect class="ghost" x="1063" y="774" width="66" height="26" rx="4"/>
+<text class="sm" x="1096" y="791" text-anchor="middle">·</text>
+<rect class="acc1" x="1132" y="774" width="66" height="26" rx="4"/>
+<text class="dim" x="1165" y="791" text-anchor="middle">0.402</text>
+<rect class="ghost" x="1201" y="774" width="66" height="26" rx="4"/>
+<text class="sm" x="1234" y="791" text-anchor="middle">·</text>
+<rect class="ghost" x="1270" y="774" width="66" height="26" rx="4"/>
+<text class="sm" x="1303" y="791" text-anchor="middle">·</text>
+<rect class="ghost" x="1339" y="774" width="66" height="26" rx="4"/>
+<text class="sm" x="1372" y="791" text-anchor="middle">·</text>
+<text class="sm" x="772" y="821" text-anchor="start">t2</text>
+<rect class="ghost" x="856" y="804" width="66" height="26" rx="4"/>
+<text class="sm" x="889" y="821" text-anchor="middle">·</text>
+<rect class="ghost" x="925" y="804" width="66" height="26" rx="4"/>
+<text class="sm" x="958" y="821" text-anchor="middle">·</text>
+<rect class="ghost" x="994" y="804" width="66" height="26" rx="4"/>
+<text class="sm" x="1027" y="821" text-anchor="middle">·</text>
+<rect class="acc1" x="1063" y="804" width="66" height="26" rx="4"/>
+<text class="dim" x="1096" y="821" text-anchor="middle">0.486</text>
+<rect class="ghost" x="1132" y="804" width="66" height="26" rx="4"/>
+<text class="sm" x="1165" y="821" text-anchor="middle">·</text>
+<rect class="ghost" x="1201" y="804" width="66" height="26" rx="4"/>
+<text class="sm" x="1234" y="821" text-anchor="middle">·</text>
+<rect class="acc1" x="1270" y="804" width="66" height="26" rx="4"/>
+<text class="dim" x="1303" y="821" text-anchor="middle">0.514</text>
+<rect class="ghost" x="1339" y="804" width="66" height="26" rx="4"/>
+<text class="sm" x="1372" y="821" text-anchor="middle">·</text>
+<text class="sm" x="772" y="857" text-anchor="start">Σ dim=0</text>
+<rect class="neutral" x="856" y="840" width="66" height="26" rx="4"/>
+<text class="sm" x="889" y="857" text-anchor="middle">1</text>
+<rect class="neutral" x="925" y="840" width="66" height="26" rx="4"/>
+<text class="sm" x="958" y="857" text-anchor="middle">1</text>
+<rect class="neutral" x="994" y="840" width="66" height="26" rx="4"/>
+<text class="sm" x="1027" y="857" text-anchor="middle">0</text>
+<rect class="neutral" x="1063" y="840" width="66" height="26" rx="4"/>
+<text class="sm" x="1096" y="857" text-anchor="middle">1</text>
+<rect class="neutral" x="1132" y="840" width="66" height="26" rx="4"/>
+<text class="sm" x="1165" y="857" text-anchor="middle">2</text>
+<rect class="neutral" x="1201" y="840" width="66" height="26" rx="4"/>
+<text class="sm" x="1234" y="857" text-anchor="middle">0</text>
+<rect class="neutral" x="1270" y="840" width="66" height="26" rx="4"/>
+<text class="sm" x="1303" y="857" text-anchor="middle">1</text>
+<rect class="neutral" x="1339" y="840" width="66" height="26" rx="4"/>
+<text class="sm" x="1372" y="857" text-anchor="middle">0</text>
+<text class="sm" x="772" y="892" text-anchor="start">local_tokens_per_expert += routing_map.sum(dim=0)   （torch.no_grad）</text>
+<path class="aux" d="M 1106 898 L 1106 914"/>
+<rect class="ghost" x="772" y="914" width="668" height="28" rx="6"/>
+<text class="sm" x="788" y="933" text-anchor="start">下一步据此更新 expert_bias → 回到 ②：全图唯一的反馈边</text>
+<rect class="neutral" x="772" y="952" width="668" height="50" rx="8"/>
+<text class="tx" x="788" y="974" text-anchor="start">交接：(probs, routing_map)</text>
+<text class="sm" x="788" y="993" text-anchor="start">dispatch / expert / combine 属于 EP 专题页，本图到此为止</text>
+<rect class="acc2" x="20" y="1018" width="1440" height="62" rx="10"/>
+<text class="costtx" x="40" y="1042" text-anchor="start">代价</text>
+<text class="sm" x="88" y="1042" text-anchor="start">两个输出都是稠密 [num_tokens, 8]：每 token 只有 2 个非零，其余 6 格是为下游 dispatcher 的固定形状付的显存与带宽。</text>
+<text class="sm" x="88" y="1062" text-anchor="start">expert_bias 的更新是训练期副作用：它不进 loss，也因此不能靠反向传播自我修正，只能靠上面那条计数回路。</text>
+<text class="cap" x="28" y="1108" text-anchor="start">group-limited routing 的意义：被 -inf 掉的不是「差专家」，而是「本 token 这一步不去访问的那些组」——组数常取为 EP 组数或节点数，用于压住跨节点扇出。</text>
+<text class="cap" x="28" y="1128" text-anchor="start">蓝色：本图机制（偏置、被选中的组与专家、无偏置的权重来源）；橙色：代价；灰底：反事实对照与未选中项。</text>
+<text class="cap" x="28" y="1148" text-anchor="start">所有数值由 CFG2 的 logits 与 expert_bias 现算：改一个 logit，组分、top_indices、probs 与列和一起重算。</text>
+</svg>

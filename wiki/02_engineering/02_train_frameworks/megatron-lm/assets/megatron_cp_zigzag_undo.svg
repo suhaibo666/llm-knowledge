@@ -1,0 +1,295 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 1000" width="100%" role="img" aria-label="非标准 attention 数据面共用的第一步：把 zigzag 还原成全局原序，以及 CP 到 head 并行的轴切换">
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .cell0{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .cell1{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .cellx{fill:#F5F7FA;stroke:#fff;stroke-width:.8}
+</style>
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<rect class="card" x="0.5" y="0.5" width="1439" height="999" rx="14"/>
+<text class="ti" x="28" y="36" text-anchor="start">递推层拿到 CP 分片的第一件事：把 zigzag 拆回原序</text>
+<text class="su" x="28" y="57" text-anchor="start">沿用图 1 与图 2 的例子：c=4 · S=16 · 2c=8 块 · 每块 2 token · t=4；蓝色为还原后的原序，橙色为必须还原的理由与唯一的数据膨胀</text>
+<rect class="panel" x="20" y="78" width="1400" height="384" rx="12"/>
+<text class="pt" x="40" y="106" text-anchor="start">① 置换：缓冲块序 → 全局原序，order 由 cp_size 现算</text>
+<text class="su" x="40" y="126" text-anchor="start">megatron/core/ssm/mamba_context_parallel.py::_undo_attention_load_balancing，被 MambaContextParallel.pre_conv_ssm 与 GDN 的 tensor_a2a_cp2hp 共用</text>
+<text class="sm" x="195" y="150" text-anchor="middle">块 0</text>
+<text class="sm" x="275" y="150" text-anchor="middle">块 1</text>
+<text class="sm" x="355" y="150" text-anchor="middle">块 2</text>
+<text class="sm" x="435" y="150" text-anchor="middle">块 3</text>
+<text class="sm" x="515" y="150" text-anchor="middle">块 4</text>
+<text class="sm" x="595" y="150" text-anchor="middle">块 5</text>
+<text class="sm" x="675" y="150" text-anchor="middle">块 6</text>
+<text class="sm" x="755" y="150" text-anchor="middle">块 7</text>
+<text class="rank" x="148" y="178" text-anchor="end">全局原序</text>
+<rect class="ghost" x="156" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="175" y="177" text-anchor="middle">0</text>
+<rect class="ghost" x="196" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="215" y="177" text-anchor="middle">1</text>
+<rect class="ghost" x="236" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="255" y="177" text-anchor="middle">2</text>
+<rect class="ghost" x="276" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="295" y="177" text-anchor="middle">3</text>
+<rect class="ghost" x="316" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="335" y="177" text-anchor="middle">4</text>
+<rect class="ghost" x="356" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="375" y="177" text-anchor="middle">5</text>
+<rect class="ghost" x="396" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="415" y="177" text-anchor="middle">6</text>
+<rect class="ghost" x="436" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="455" y="177" text-anchor="middle">7</text>
+<rect class="ghost" x="476" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="495" y="177" text-anchor="middle">8</text>
+<rect class="ghost" x="516" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="535" y="177" text-anchor="middle">9</text>
+<rect class="ghost" x="556" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="575" y="177" text-anchor="middle">10</text>
+<rect class="ghost" x="596" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="615" y="177" text-anchor="middle">11</text>
+<rect class="ghost" x="636" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="655" y="177" text-anchor="middle">12</text>
+<rect class="ghost" x="676" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="695" y="177" text-anchor="middle">13</text>
+<rect class="ghost" x="716" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="735" y="177" text-anchor="middle">14</text>
+<rect class="ghost" x="756" y="158" width="38" height="30" rx="4"/>
+<text class="sm" x="775" y="177" text-anchor="middle">15</text>
+<text class="sm" x="235" y="234" text-anchor="middle">rank 0：块 0,7</text>
+<text class="sm" x="395" y="234" text-anchor="middle">rank 1：块 1,6</text>
+<text class="sm" x="555" y="234" text-anchor="middle">rank 2：块 2,5</text>
+<text class="sm" x="715" y="234" text-anchor="middle">rank 3：块 3,4</text>
+<text class="rank" x="148" y="262" text-anchor="end">A2A 后缓冲</text>
+<rect class="neutral" x="156" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="175" y="261" text-anchor="middle">0</text>
+<rect class="neutral" x="196" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="215" y="261" text-anchor="middle">1</text>
+<rect class="neutral" x="236" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="255" y="261" text-anchor="middle">14</text>
+<rect class="neutral" x="276" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="295" y="261" text-anchor="middle">15</text>
+<rect class="neutral" x="316" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="335" y="261" text-anchor="middle">2</text>
+<rect class="neutral" x="356" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="375" y="261" text-anchor="middle">3</text>
+<rect class="neutral" x="396" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="415" y="261" text-anchor="middle">12</text>
+<rect class="neutral" x="436" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="455" y="261" text-anchor="middle">13</text>
+<rect class="neutral" x="476" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="495" y="261" text-anchor="middle">4</text>
+<rect class="neutral" x="516" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="535" y="261" text-anchor="middle">5</text>
+<rect class="neutral" x="556" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="575" y="261" text-anchor="middle">10</text>
+<rect class="neutral" x="596" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="615" y="261" text-anchor="middle">11</text>
+<rect class="neutral" x="636" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="655" y="261" text-anchor="middle">6</text>
+<rect class="neutral" x="676" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="695" y="261" text-anchor="middle">7</text>
+<rect class="neutral" x="716" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="735" y="261" text-anchor="middle">8</text>
+<rect class="neutral" x="756" y="242" width="38" height="30" rx="4"/>
+<text class="sm" x="775" y="261" text-anchor="middle">9</text>
+<path class="edge" d="M 154 240 L 154 276"/>
+<path class="edge" d="M 314 240 L 314 276"/>
+<path class="edge" d="M 474 240 L 474 276"/>
+<path class="edge" d="M 634 240 L 634 276"/>
+<path class="edge" d="M 794 240 L 794 276"/>
+<path class="main" d="M 195 280 L 195 336"/>
+<path class="main" d="M 355 280 L 275 336"/>
+<path class="main" d="M 515 280 L 355 336"/>
+<path class="main" d="M 675 280 L 435 336"/>
+<path class="aux" d="M 755 280 L 515 336"/>
+<path class="aux" d="M 595 280 L 595 336"/>
+<path class="aux" d="M 435 280 L 675 336"/>
+<path class="aux" d="M 275 280 L 755 336"/>
+<text class="rank" x="148" y="364" text-anchor="end">还原后</text>
+<rect class="acc1" x="156" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="175" y="363" text-anchor="middle">0</text>
+<rect class="acc1" x="196" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="215" y="363" text-anchor="middle">1</text>
+<rect class="acc1" x="236" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="255" y="363" text-anchor="middle">2</text>
+<rect class="acc1" x="276" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="295" y="363" text-anchor="middle">3</text>
+<rect class="acc1" x="316" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="335" y="363" text-anchor="middle">4</text>
+<rect class="acc1" x="356" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="375" y="363" text-anchor="middle">5</text>
+<rect class="acc1" x="396" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="415" y="363" text-anchor="middle">6</text>
+<rect class="acc1" x="436" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="455" y="363" text-anchor="middle">7</text>
+<rect class="acc1" x="476" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="495" y="363" text-anchor="middle">8</text>
+<rect class="acc1" x="516" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="535" y="363" text-anchor="middle">9</text>
+<rect class="acc1" x="556" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="575" y="363" text-anchor="middle">10</text>
+<rect class="acc1" x="596" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="615" y="363" text-anchor="middle">11</text>
+<rect class="acc1" x="636" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="655" y="363" text-anchor="middle">12</text>
+<rect class="acc1" x="676" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="695" y="363" text-anchor="middle">13</text>
+<rect class="acc1" x="716" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="735" y="363" text-anchor="middle">14</text>
+<rect class="acc1" x="756" y="344" width="38" height="30" rx="4"/>
+<text class="dim" x="775" y="363" text-anchor="middle">15</text>
+<text class="cap" x="40" y="404" text-anchor="start">order = {0,2,4,6,7,5,3,1}：前 c 项取偶数位、后 c 项取奇数位倒序，恰好把 {0,7,1,6,2,5,3,4} 拉直成 {0,1,2,3,4,5,6,7}。</text>
+<text class="cap" x="40" y="424" text-anchor="start">token 层面：0,1,14,15,2,3,12,13,… → 0,1,2,…,15。THD 打包时这一步换成 tex.thd_get_partitioned_indices 逐 rank 取下标，语义相同。</text>
+<rect class="neutral" x="826" y="148" width="288" height="146" rx="8"/>
+<text class="tx" x="838" y="169" text-anchor="start">order 怎么算出来</text>
+<path class="edge" d="M 838 177 L 1102 177"/>
+<text class="sm" x="838" y="195" text-anchor="start">num_chunks_div_2 = cp_size = 4</text>
+<text class="sm" x="838" y="211" text-anchor="start">num_chunks = 8，torch.chunk 沿 dim 0</text>
+<text class="sm" x="838" y="227" text-anchor="start">前半 2i → {0,2,4,6}</text>
+<text class="sm" x="838" y="243" text-anchor="start">后半 8-2i-1 → {7,5,3,1}</text>
+<text class="sm" x="838" y="259" text-anchor="start">图上每根箭头都由这条式子画出</text>
+<rect class="acc2" x="1130" y="148" width="290" height="146" rx="8"/>
+<text class="tx" x="1142" y="169" text-anchor="start">为什么非还原不可</text>
+<path class="edge" d="M 1142 177 L 1408 177"/>
+<text class="sm" x="1142" y="195" text-anchor="start">conv 与 SSM 都是递推：第 t 步</text>
+<text class="sm" x="1142" y="211" text-anchor="start">吃第 t-1 步的状态</text>
+<text class="sm" x="1142" y="227" text-anchor="start">缓冲里 1 之后直接跳到 14</text>
+<text class="sm" x="1142" y="243" text-anchor="start">attention 不在乎顺序，递推在乎</text>
+<text class="sm" x="1142" y="259" text-anchor="start">zigzag 的均衡收益在这里作废</text>
+<rect class="ghost" x="826" y="306" width="288" height="146" rx="8"/>
+<text class="tx" x="838" y="327" text-anchor="start">docstring 的 cp_size=3 例子</text>
+<path class="edge" d="M 838 335 L 1102 335"/>
+<text class="sm" x="838" y="353" text-anchor="start">源码原话：converts 162534</text>
+<text class="sm" x="838" y="369" text-anchor="start">to 123456</text>
+<text class="sm" x="838" y="385" text-anchor="start">本图用同一段代码复算 cp_size=3</text>
+<text class="sm" x="838" y="401" text-anchor="start">得到 162534 → 123456，与之一致</text>
+<text class="sm" x="838" y="417" text-anchor="start">本例 c=4 的结果就是上面那条</text>
+<rect class="neutral" x="1130" y="306" width="290" height="146" rx="8"/>
+<text class="tx" x="1142" y="327" text-anchor="start">回程严格互逆</text>
+<path class="edge" d="M 1142 335 L 1408 335"/>
+<text class="sm" x="1142" y="353" text-anchor="start">_redo_attention_load_balancing</text>
+<text class="sm" x="1142" y="369" text-anchor="start">order = {0,7,1,6,2,5,3,4}</text>
+<text class="sm" x="1142" y="385" text-anchor="start">正好等于 A2A 缓冲的块序</text>
+<text class="sm" x="1142" y="401" text-anchor="start">两个置换复合后是恒等，已在生成器里验算</text>
+<text class="sm" x="1142" y="417" text-anchor="start">post_conv_ssm 用它把输出摆回去</text>
+<rect class="panel" x="20" y="474" width="1400" height="330" rx="12"/>
+<text class="pt" x="40" y="502" text-anchor="start">② 轴切换：CP 分片 → head / 通道分片，面积不变</text>
+<text class="su" x="40" y="522" text-anchor="start">MambaContextParallel.pre_conv_ssm 的五段 torch.split（z / x / B / C / dt）各走一次 _all_to_all_cp2hp；行=token，列=本 rank 的通道</text>
+<rect class="neutral" x="60" y="560" width="81.92" height="48"/>
+<rect class="neutral" x="141.92000000000002" y="560" width="81.92" height="48"/>
+<rect class="acc2" x="223.84" y="560" width="40.96" height="48"/>
+<rect class="acc2" x="264.8" y="560" width="40.96" height="48"/>
+<rect class="ghost" x="305.76" y="560" width="1.28" height="48"/>
+<path class="gl" d="M 60 572 L 307.04 572"/>
+<path class="gl" d="M 60 584 L 307.04 584"/>
+<path class="gl" d="M 60 596 L 307.04 596"/>
+<text class="sm" x="60" y="550" text-anchor="start">in_proj 输出（本地）</text>
+<text class="dim" x="60" y="626" text-anchor="start">[4, B, 1544]</text>
+<text class="sm" x="60" y="642" text-anchor="start">z 512 · x 512 · B 256 · C 256 · dt 8</text>
+<path class="cost" d="M 317.04 584 L 353.04 584"/>
+<text class="costtx" x="335.04" y="574" text-anchor="middle">repeat ×2</text>
+<rect class="neutral" x="365.04" y="560" width="81.92" height="48"/>
+<rect class="neutral" x="446.96000000000004" y="560" width="81.92" height="48"/>
+<rect class="acc2" x="528.88" y="560" width="81.92" height="48"/>
+<rect class="acc2" x="610.8" y="560" width="81.92" height="48"/>
+<rect class="ghost" x="692.72" y="560" width="1.28" height="48"/>
+<path class="gl" d="M 365.04 572 L 694 572"/>
+<path class="gl" d="M 365.04 584 L 694 584"/>
+<path class="gl" d="M 365.04 596 L 694 596"/>
+<text class="sm" x="365.04" y="550" text-anchor="start">组状态复制之后</text>
+<text class="costtx" x="365.04" y="626" text-anchor="start">[4, B, 2056]</text>
+<text class="sm" x="365.04" y="642" text-anchor="start">B 与 C 各由 256 撑到 512</text>
+<path class="main" d="M 704 584 L 740 584"/>
+<text class="dim" x="722" y="574" text-anchor="middle">5 次 A2A</text>
+<rect class="neutral" x="752" y="560" width="20.48" height="192"/>
+<rect class="neutral" x="772.48" y="560" width="20.48" height="192"/>
+<rect class="acc2" x="792.96" y="560" width="20.48" height="192"/>
+<rect class="acc2" x="813.44" y="560" width="20.48" height="192"/>
+<rect class="ghost" x="833.92" y="560" width="0.32" height="192"/>
+<path class="gl" d="M 752 572 L 834.24 572"/>
+<path class="gl" d="M 752 584 L 834.24 584"/>
+<path class="gl" d="M 752 596 L 834.24 596"/>
+<path class="gl" d="M 752 608 L 834.24 608"/>
+<path class="gl" d="M 752 620 L 834.24 620"/>
+<path class="gl" d="M 752 632 L 834.24 632"/>
+<path class="gl" d="M 752 644 L 834.24 644"/>
+<path class="gl" d="M 752 656 L 834.24 656"/>
+<path class="gl" d="M 752 668 L 834.24 668"/>
+<path class="gl" d="M 752 680 L 834.24 680"/>
+<path class="gl" d="M 752 692 L 834.24 692"/>
+<path class="gl" d="M 752 704 L 834.24 704"/>
+<path class="gl" d="M 752 716 L 834.24 716"/>
+<path class="gl" d="M 752 728 L 834.24 728"/>
+<path class="gl" d="M 752 740 L 834.24 740"/>
+<rect x="749" y="557" width="88.24" height="198" fill="none" stroke="#2563EB" stroke-width="1.6" rx="3"/>
+<text class="sm" x="749" y="550" text-anchor="start">换轴之后</text>
+<text class="dim" x="749" y="770" text-anchor="start">[16, B, 514]</text>
+<rect class="acc1" x="880" y="546" width="260" height="118" rx="8"/>
+<text class="tx" x="892" y="567" text-anchor="start">面积不变 = 只搬不增</text>
+<path class="edge" d="M 892 575 L 1128 575"/>
+<text class="sm" x="892" y="593" text-anchor="start">4×2056 = 16×514 = 8224</text>
+<text class="sm" x="892" y="609" text-anchor="start">all-to-all 换轴不复制元素</text>
+<text class="sm" x="892" y="625" text-anchor="start">序列 ×4，通道 ÷4</text>
+<text class="sm" x="892" y="641" text-anchor="start">这一步之后内核不知道 CP 存在</text>
+<rect class="acc2" x="1156" y="546" width="264" height="118" rx="8"/>
+<text class="tx" x="1168" y="567" text-anchor="start">唯一的膨胀：组状态复制</text>
+<path class="edge" d="M 1168 575 L 1408 575"/>
+<text class="sm" x="1168" y="593" text-anchor="start">ngroups/t = 2 &lt; c = 4</text>
+<text class="sm" x="1168" y="609" text-anchor="start">→ 复制 2 份，ngroups per rank = 1</text>
+<text class="sm" x="1168" y="625" text-anchor="start">通道 1544 → 2056，+33.2%</text>
+<text class="sm" x="1168" y="641" text-anchor="start">ngroups/t ≥ c 时 repeat 为 1，不膨胀</text>
+<rect class="neutral" x="60" y="686" width="640" height="100" rx="8"/>
+<text class="tx" x="72" y="707" text-anchor="start">为什么是五次 A2A 而不是一次</text>
+<path class="edge" d="M 72 715 L 688 715"/>
+<text class="sm" x="72" y="733" text-anchor="start">all_to_all_sp2hp 沿最后一维等分 4 份，切点必须落在每一段自己的 head 边界上</text>
+<text class="sm" x="72" y="749" text-anchor="start">五段宽度并不相同（512 / 512 / 512 / 512 / 8），整体一次 A2A 的切点会横切段边界</text>
+<text class="sm" x="72" y="765" text-anchor="start">GDN 换了个做法：先按 split_sections 预置换 head 维，一次不分段 A2A 就等价于逐段 A2A</text>
+<rect class="neutral" x="880" y="676" width="540" height="110" rx="8"/>
+<text class="tx" x="892" y="697" text-anchor="start">参数不通信：在前向里按 CP rank 切片，梯度自己回到整份参数</text>
+<path class="edge" d="M 892 705 L 1408 705"/>
+<text class="sm" x="892" y="723" text-anchor="start">dt_bias / A_log：[8] → [2]；conv1d 权重 [1024, 1, 4] → [384, 1, 4]</text>
+<text class="sm" x="892" y="739" text-anchor="start">conv1d_channels() = d_inner/tpcp + 2·ngroups_tpcp·d_state = 128 + 2×1×128 = 384</text>
+<text class="sm" x="892" y="755" text-anchor="start">组状态被复制时 B / C 的参数切片在 CP rank 间重叠：起点是 (cp_rank // 2) × 128</text>
+<text class="cap" x="40" y="794" text-anchor="start">本例取 t=4、mamba_num_heads=32、mamba_num_groups=8、mamba_head_dim=64、mamba_state_dim=128（后三项是字段默认值）。</text>
+<rect class="panel" x="20" y="816" width="1400" height="124" rx="12"/>
+<text class="pt" x="40" y="842" text-anchor="start">③ 这条路自己的守卫（MambaContextParallel._set_cp_params，三条 assert）</text>
+<rect class="neutral" x="40" y="852" width="440" height="76" rx="8"/>
+<text class="tx" x="52" y="873" text-anchor="start">nheads/t 必须被 c 整除</text>
+<path class="edge" d="M 52 881 L 468 881"/>
+<text class="sm" x="52" y="899" text-anchor="start">本例 8 % 4 = 0，每 rank 2 个 head</text>
+<text class="sm" x="52" y="915" text-anchor="start">源码注释：cp_size 的上界就是 nheads // tp_size</text>
+<rect class="acc2" x="496" y="852" width="440" height="76" rx="8"/>
+<text class="tx" x="508" y="873" text-anchor="start">ngroups/t 与 c 必须一方整除另一方</text>
+<path class="edge" d="M 508 881 L 924 881"/>
+<text class="sm" x="508" y="899" text-anchor="start">本例 2 &lt; 4 且 4 % 2 = 0 → 走复制分支</text>
+<text class="sm" x="508" y="915" text-anchor="start">另一支要求 ngroups/t 能被 c 整除，此时不复制</text>
+<rect class="neutral" x="952" y="852" width="448" height="76" rx="8"/>
+<text class="tx" x="964" y="873" text-anchor="start">没有布局守卫</text>
+<path class="edge" d="M 964 881 L 1388 881"/>
+<text class="sm" x="964" y="899" text-anchor="start">这条路无条件假定输入是 zigzag，不读 cp_partition_mode</text>
+<text class="sm" x="964" y="915" text-anchor="start">GDN headwise 相反：非 zigzag 直接 ValueError</text>
+<text class="cap" x="28" y="962" text-anchor="start">不变量：还原后的 token 轴必须是全局原序 0..15；A2A 前后元素数恒为 8224；undo 与 redo 的置换复合为恒等。</text>
+<text class="cap" x="28" y="982" text-anchor="start">本图只画 Megatron 自己执行的置换与换轴；conv / SSM 内核本身（mamba_ssm 与 FLA 的 Triton kernel）不在本页可证范围内。</text>
+</svg>

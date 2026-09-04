@@ -1,0 +1,808 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1420 964" width="100%" role="img" aria-label="上下文并行如何切序列：zigzag 首尾配对与连续切在因果掩码下的负载对照">
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .cell0{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .cell1{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .cellx{fill:#F5F7FA;stroke:#fff;stroke-width:.8}
+</style>
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<rect class="card" x="0.5" y="0.5" width="1419" height="963" rx="14"/>
+<text class="ti" x="28" y="36" text-anchor="start">CP 怎么切序列：2c 块首尾配对，让每个 rank 的因果代价相等</text>
+<text class="su" x="28" y="57" text-anchor="start">示例：c=4 · S=16 · 2c=8 块 · 每块 2 token · 每 rank 本地 S/c=4 token；蓝色为本 rank 拥有，橙色为不均衡代价</text>
+<rect class="panel" x="20" y="78" width="1380" height="250" rx="12"/>
+<text class="pt" x="40" y="106" text-anchor="start">① 切法：rank r 取第 r 块与第 7-r 块</text>
+<text class="su" x="40" y="126" text-anchor="start">megatron/core/utils.py::_get_batch_on_this_cp_rank_per_sequence_balancing 用 index_select 取 [cp_rank, 2·cp_size-cp_rank-1] 两块</text>
+<text class="sm" x="126" y="152" text-anchor="middle">块 0</text>
+<path class="edge" d="M 94 158 L 94 300"/>
+<text class="sm" x="188" y="152" text-anchor="middle">块 1</text>
+<path class="edge" d="M 156 158 L 156 300"/>
+<text class="sm" x="250" y="152" text-anchor="middle">块 2</text>
+<path class="edge" d="M 218 158 L 218 300"/>
+<text class="sm" x="312" y="152" text-anchor="middle">块 3</text>
+<path class="edge" d="M 280 158 L 280 300"/>
+<text class="sm" x="374" y="152" text-anchor="middle">块 4</text>
+<path class="edge" d="M 342 158 L 342 300"/>
+<text class="sm" x="436" y="152" text-anchor="middle">块 5</text>
+<path class="edge" d="M 404 158 L 404 300"/>
+<text class="sm" x="498" y="152" text-anchor="middle">块 6</text>
+<path class="edge" d="M 466 158 L 466 300"/>
+<text class="sm" x="560" y="152" text-anchor="middle">块 7</text>
+<path class="edge" d="M 528 158 L 528 300"/>
+<path class="edge" d="M 590 158 L 590 300"/>
+<text class="rank" x="84" y="182" text-anchor="end">rank 0</text>
+<rect class="acc1" x="96" y="162" width="29" height="28" rx="4"/>
+<text class="dim" x="110.5" y="180" text-anchor="middle">0</text>
+<rect class="acc1" x="127" y="162" width="29" height="28" rx="4"/>
+<text class="dim" x="141.5" y="180" text-anchor="middle">1</text>
+<rect class="ghost" x="158" y="162" width="29" height="28" rx="4"/>
+<rect class="ghost" x="189" y="162" width="29" height="28" rx="4"/>
+<rect class="ghost" x="220" y="162" width="29" height="28" rx="4"/>
+<rect class="ghost" x="251" y="162" width="29" height="28" rx="4"/>
+<rect class="ghost" x="282" y="162" width="29" height="28" rx="4"/>
+<rect class="ghost" x="313" y="162" width="29" height="28" rx="4"/>
+<rect class="ghost" x="344" y="162" width="29" height="28" rx="4"/>
+<rect class="ghost" x="375" y="162" width="29" height="28" rx="4"/>
+<rect class="ghost" x="406" y="162" width="29" height="28" rx="4"/>
+<rect class="ghost" x="437" y="162" width="29" height="28" rx="4"/>
+<rect class="ghost" x="468" y="162" width="29" height="28" rx="4"/>
+<rect class="ghost" x="499" y="162" width="29" height="28" rx="4"/>
+<rect class="acc1" x="530" y="162" width="29" height="28" rx="4"/>
+<text class="dim" x="544.5" y="180" text-anchor="middle">14</text>
+<rect class="acc1" x="561" y="162" width="29" height="28" rx="4"/>
+<text class="dim" x="575.5" y="180" text-anchor="middle">15</text>
+<text class="dim" x="606" y="182" text-anchor="start">块 0 + 块 7 → 本地 4 token</text>
+<text class="rank" x="84" y="216" text-anchor="end">rank 1</text>
+<rect class="ghost" x="96" y="196" width="29" height="28" rx="4"/>
+<rect class="ghost" x="127" y="196" width="29" height="28" rx="4"/>
+<rect class="acc1" x="158" y="196" width="29" height="28" rx="4"/>
+<text class="dim" x="172.5" y="214" text-anchor="middle">2</text>
+<rect class="acc1" x="189" y="196" width="29" height="28" rx="4"/>
+<text class="dim" x="203.5" y="214" text-anchor="middle">3</text>
+<rect class="ghost" x="220" y="196" width="29" height="28" rx="4"/>
+<rect class="ghost" x="251" y="196" width="29" height="28" rx="4"/>
+<rect class="ghost" x="282" y="196" width="29" height="28" rx="4"/>
+<rect class="ghost" x="313" y="196" width="29" height="28" rx="4"/>
+<rect class="ghost" x="344" y="196" width="29" height="28" rx="4"/>
+<rect class="ghost" x="375" y="196" width="29" height="28" rx="4"/>
+<rect class="ghost" x="406" y="196" width="29" height="28" rx="4"/>
+<rect class="ghost" x="437" y="196" width="29" height="28" rx="4"/>
+<rect class="acc1" x="468" y="196" width="29" height="28" rx="4"/>
+<text class="dim" x="482.5" y="214" text-anchor="middle">12</text>
+<rect class="acc1" x="499" y="196" width="29" height="28" rx="4"/>
+<text class="dim" x="513.5" y="214" text-anchor="middle">13</text>
+<rect class="ghost" x="530" y="196" width="29" height="28" rx="4"/>
+<rect class="ghost" x="561" y="196" width="29" height="28" rx="4"/>
+<text class="dim" x="606" y="216" text-anchor="start">块 1 + 块 6 → 本地 4 token</text>
+<text class="rank" x="84" y="250" text-anchor="end">rank 2</text>
+<rect class="ghost" x="96" y="230" width="29" height="28" rx="4"/>
+<rect class="ghost" x="127" y="230" width="29" height="28" rx="4"/>
+<rect class="ghost" x="158" y="230" width="29" height="28" rx="4"/>
+<rect class="ghost" x="189" y="230" width="29" height="28" rx="4"/>
+<rect class="acc1" x="220" y="230" width="29" height="28" rx="4"/>
+<text class="dim" x="234.5" y="248" text-anchor="middle">4</text>
+<rect class="acc1" x="251" y="230" width="29" height="28" rx="4"/>
+<text class="dim" x="265.5" y="248" text-anchor="middle">5</text>
+<rect class="ghost" x="282" y="230" width="29" height="28" rx="4"/>
+<rect class="ghost" x="313" y="230" width="29" height="28" rx="4"/>
+<rect class="ghost" x="344" y="230" width="29" height="28" rx="4"/>
+<rect class="ghost" x="375" y="230" width="29" height="28" rx="4"/>
+<rect class="acc1" x="406" y="230" width="29" height="28" rx="4"/>
+<text class="dim" x="420.5" y="248" text-anchor="middle">10</text>
+<rect class="acc1" x="437" y="230" width="29" height="28" rx="4"/>
+<text class="dim" x="451.5" y="248" text-anchor="middle">11</text>
+<rect class="ghost" x="468" y="230" width="29" height="28" rx="4"/>
+<rect class="ghost" x="499" y="230" width="29" height="28" rx="4"/>
+<rect class="ghost" x="530" y="230" width="29" height="28" rx="4"/>
+<rect class="ghost" x="561" y="230" width="29" height="28" rx="4"/>
+<text class="dim" x="606" y="250" text-anchor="start">块 2 + 块 5 → 本地 4 token</text>
+<text class="rank" x="84" y="284" text-anchor="end">rank 3</text>
+<rect class="ghost" x="96" y="264" width="29" height="28" rx="4"/>
+<rect class="ghost" x="127" y="264" width="29" height="28" rx="4"/>
+<rect class="ghost" x="158" y="264" width="29" height="28" rx="4"/>
+<rect class="ghost" x="189" y="264" width="29" height="28" rx="4"/>
+<rect class="ghost" x="220" y="264" width="29" height="28" rx="4"/>
+<rect class="ghost" x="251" y="264" width="29" height="28" rx="4"/>
+<rect class="acc1" x="282" y="264" width="29" height="28" rx="4"/>
+<text class="dim" x="296.5" y="282" text-anchor="middle">6</text>
+<rect class="acc1" x="313" y="264" width="29" height="28" rx="4"/>
+<text class="dim" x="327.5" y="282" text-anchor="middle">7</text>
+<rect class="acc1" x="344" y="264" width="29" height="28" rx="4"/>
+<text class="dim" x="358.5" y="282" text-anchor="middle">8</text>
+<rect class="acc1" x="375" y="264" width="29" height="28" rx="4"/>
+<text class="dim" x="389.5" y="282" text-anchor="middle">9</text>
+<rect class="ghost" x="406" y="264" width="29" height="28" rx="4"/>
+<rect class="ghost" x="437" y="264" width="29" height="28" rx="4"/>
+<rect class="ghost" x="468" y="264" width="29" height="28" rx="4"/>
+<rect class="ghost" x="499" y="264" width="29" height="28" rx="4"/>
+<rect class="ghost" x="530" y="264" width="29" height="28" rx="4"/>
+<rect class="ghost" x="561" y="264" width="29" height="28" rx="4"/>
+<text class="dim" x="606" y="284" text-anchor="start">块 3 + 块 4 → 本地 4 token</text>
+<rect class="acc1" x="888" y="156" width="256" height="152" rx="8"/>
+<text class="tx" x="900" y="177" text-anchor="start">为什么一早一晚配对</text>
+<path class="edge" d="M 900 185 L 1132 185"/>
+<text class="sm" x="900" y="203" text-anchor="start">第 r 块行号小、因果列少（便宜）</text>
+<text class="sm" x="900" y="219" text-anchor="start">第 7-r 块行号大、因果列多（贵）</text>
+<text class="sm" x="900" y="235" text-anchor="start">一便宜配一贵，和与 r 无关</text>
+<text class="sm" x="900" y="251" text-anchor="start">并集重建完整 S=16，无重叠</text>
+<rect class="neutral" x="1156" y="156" width="244" height="152" rx="8"/>
+<text class="tx" x="1168" y="177" text-anchor="start">硬约束</text>
+<path class="edge" d="M 1168 185 L 1388 185"/>
+<text class="sm" x="1168" y="203" text-anchor="start">seq_length 必须被 2c=8 整除</text>
+<text class="sm" x="1168" y="219" text-anchor="start">validate_args 里是 assert</text>
+<text class="sm" x="1168" y="235" text-anchor="start">没有自动 padding 兜底</text>
+<text class="sm" x="1168" y="251" text-anchor="start">attention_mask 沿 dim 2 同切</text>
+<rect class="panel" x="20" y="344" width="680" height="424" rx="12"/>
+<text class="pt" x="40" y="374" text-anchor="start">② 连续切：因果代价按 rank 递增</text>
+<text class="su" x="40" y="394" text-anchor="start">rank r 取 [r·S/c, (r+1)·S/c)；最贵/最便宜 = 58/10 = 5.8×</text>
+<text class="sm" x="40" y="418" text-anchor="start">query ↓</text>
+<text class="sm" x="82" y="418" text-anchor="start">key → （0..15）</text>
+<rect class="neutral" x="52" y="428" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="441" text-anchor="middle">r0</text>
+<rect class="neutral" x="52" y="446" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="459" text-anchor="middle">r0</text>
+<rect class="neutral" x="52" y="464" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="477" text-anchor="middle">r0</text>
+<rect class="neutral" x="52" y="482" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="495" text-anchor="middle">r0</text>
+<rect class="neutral" x="52" y="500" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="513" text-anchor="middle">r1</text>
+<rect class="neutral" x="52" y="518" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="531" text-anchor="middle">r1</text>
+<rect class="neutral" x="52" y="536" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="549" text-anchor="middle">r1</text>
+<rect class="neutral" x="52" y="554" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="567" text-anchor="middle">r1</text>
+<rect class="neutral" x="52" y="572" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="585" text-anchor="middle">r2</text>
+<rect class="neutral" x="52" y="590" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="603" text-anchor="middle">r2</text>
+<rect class="neutral" x="52" y="608" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="621" text-anchor="middle">r2</text>
+<rect class="neutral" x="52" y="626" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="639" text-anchor="middle">r2</text>
+<rect class="neutral" x="52" y="644" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="657" text-anchor="middle">r3</text>
+<rect class="neutral" x="52" y="662" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="675" text-anchor="middle">r3</text>
+<rect class="neutral" x="52" y="680" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="693" text-anchor="middle">r3</text>
+<rect class="neutral" x="52" y="698" width="26" height="18" rx="0"/>
+<text class="sm" x="65" y="711" text-anchor="middle">r3</text>
+<rect class="cell1" x="82" y="428" width="18" height="18"/>
+<rect class="cellx" x="100" y="428" width="18" height="18"/>
+<rect class="cellx" x="118" y="428" width="18" height="18"/>
+<rect class="cellx" x="136" y="428" width="18" height="18"/>
+<rect class="cellx" x="154" y="428" width="18" height="18"/>
+<rect class="cellx" x="172" y="428" width="18" height="18"/>
+<rect class="cellx" x="190" y="428" width="18" height="18"/>
+<rect class="cellx" x="208" y="428" width="18" height="18"/>
+<rect class="cellx" x="226" y="428" width="18" height="18"/>
+<rect class="cellx" x="244" y="428" width="18" height="18"/>
+<rect class="cellx" x="262" y="428" width="18" height="18"/>
+<rect class="cellx" x="280" y="428" width="18" height="18"/>
+<rect class="cellx" x="298" y="428" width="18" height="18"/>
+<rect class="cellx" x="316" y="428" width="18" height="18"/>
+<rect class="cellx" x="334" y="428" width="18" height="18"/>
+<rect class="cellx" x="352" y="428" width="18" height="18"/>
+<rect class="cell1" x="82" y="446" width="18" height="18"/>
+<rect class="cell1" x="100" y="446" width="18" height="18"/>
+<rect class="cellx" x="118" y="446" width="18" height="18"/>
+<rect class="cellx" x="136" y="446" width="18" height="18"/>
+<rect class="cellx" x="154" y="446" width="18" height="18"/>
+<rect class="cellx" x="172" y="446" width="18" height="18"/>
+<rect class="cellx" x="190" y="446" width="18" height="18"/>
+<rect class="cellx" x="208" y="446" width="18" height="18"/>
+<rect class="cellx" x="226" y="446" width="18" height="18"/>
+<rect class="cellx" x="244" y="446" width="18" height="18"/>
+<rect class="cellx" x="262" y="446" width="18" height="18"/>
+<rect class="cellx" x="280" y="446" width="18" height="18"/>
+<rect class="cellx" x="298" y="446" width="18" height="18"/>
+<rect class="cellx" x="316" y="446" width="18" height="18"/>
+<rect class="cellx" x="334" y="446" width="18" height="18"/>
+<rect class="cellx" x="352" y="446" width="18" height="18"/>
+<rect class="cell1" x="82" y="464" width="18" height="18"/>
+<rect class="cell1" x="100" y="464" width="18" height="18"/>
+<rect class="cell1" x="118" y="464" width="18" height="18"/>
+<rect class="cellx" x="136" y="464" width="18" height="18"/>
+<rect class="cellx" x="154" y="464" width="18" height="18"/>
+<rect class="cellx" x="172" y="464" width="18" height="18"/>
+<rect class="cellx" x="190" y="464" width="18" height="18"/>
+<rect class="cellx" x="208" y="464" width="18" height="18"/>
+<rect class="cellx" x="226" y="464" width="18" height="18"/>
+<rect class="cellx" x="244" y="464" width="18" height="18"/>
+<rect class="cellx" x="262" y="464" width="18" height="18"/>
+<rect class="cellx" x="280" y="464" width="18" height="18"/>
+<rect class="cellx" x="298" y="464" width="18" height="18"/>
+<rect class="cellx" x="316" y="464" width="18" height="18"/>
+<rect class="cellx" x="334" y="464" width="18" height="18"/>
+<rect class="cellx" x="352" y="464" width="18" height="18"/>
+<rect class="cell1" x="82" y="482" width="18" height="18"/>
+<rect class="cell1" x="100" y="482" width="18" height="18"/>
+<rect class="cell1" x="118" y="482" width="18" height="18"/>
+<rect class="cell1" x="136" y="482" width="18" height="18"/>
+<rect class="cellx" x="154" y="482" width="18" height="18"/>
+<rect class="cellx" x="172" y="482" width="18" height="18"/>
+<rect class="cellx" x="190" y="482" width="18" height="18"/>
+<rect class="cellx" x="208" y="482" width="18" height="18"/>
+<rect class="cellx" x="226" y="482" width="18" height="18"/>
+<rect class="cellx" x="244" y="482" width="18" height="18"/>
+<rect class="cellx" x="262" y="482" width="18" height="18"/>
+<rect class="cellx" x="280" y="482" width="18" height="18"/>
+<rect class="cellx" x="298" y="482" width="18" height="18"/>
+<rect class="cellx" x="316" y="482" width="18" height="18"/>
+<rect class="cellx" x="334" y="482" width="18" height="18"/>
+<rect class="cellx" x="352" y="482" width="18" height="18"/>
+<rect class="cell0" x="82" y="500" width="18" height="18"/>
+<rect class="cell0" x="100" y="500" width="18" height="18"/>
+<rect class="cell0" x="118" y="500" width="18" height="18"/>
+<rect class="cell0" x="136" y="500" width="18" height="18"/>
+<rect class="cell1" x="154" y="500" width="18" height="18"/>
+<rect class="cellx" x="172" y="500" width="18" height="18"/>
+<rect class="cellx" x="190" y="500" width="18" height="18"/>
+<rect class="cellx" x="208" y="500" width="18" height="18"/>
+<rect class="cellx" x="226" y="500" width="18" height="18"/>
+<rect class="cellx" x="244" y="500" width="18" height="18"/>
+<rect class="cellx" x="262" y="500" width="18" height="18"/>
+<rect class="cellx" x="280" y="500" width="18" height="18"/>
+<rect class="cellx" x="298" y="500" width="18" height="18"/>
+<rect class="cellx" x="316" y="500" width="18" height="18"/>
+<rect class="cellx" x="334" y="500" width="18" height="18"/>
+<rect class="cellx" x="352" y="500" width="18" height="18"/>
+<rect class="cell0" x="82" y="518" width="18" height="18"/>
+<rect class="cell0" x="100" y="518" width="18" height="18"/>
+<rect class="cell0" x="118" y="518" width="18" height="18"/>
+<rect class="cell0" x="136" y="518" width="18" height="18"/>
+<rect class="cell1" x="154" y="518" width="18" height="18"/>
+<rect class="cell1" x="172" y="518" width="18" height="18"/>
+<rect class="cellx" x="190" y="518" width="18" height="18"/>
+<rect class="cellx" x="208" y="518" width="18" height="18"/>
+<rect class="cellx" x="226" y="518" width="18" height="18"/>
+<rect class="cellx" x="244" y="518" width="18" height="18"/>
+<rect class="cellx" x="262" y="518" width="18" height="18"/>
+<rect class="cellx" x="280" y="518" width="18" height="18"/>
+<rect class="cellx" x="298" y="518" width="18" height="18"/>
+<rect class="cellx" x="316" y="518" width="18" height="18"/>
+<rect class="cellx" x="334" y="518" width="18" height="18"/>
+<rect class="cellx" x="352" y="518" width="18" height="18"/>
+<rect class="cell0" x="82" y="536" width="18" height="18"/>
+<rect class="cell0" x="100" y="536" width="18" height="18"/>
+<rect class="cell0" x="118" y="536" width="18" height="18"/>
+<rect class="cell0" x="136" y="536" width="18" height="18"/>
+<rect class="cell1" x="154" y="536" width="18" height="18"/>
+<rect class="cell1" x="172" y="536" width="18" height="18"/>
+<rect class="cell1" x="190" y="536" width="18" height="18"/>
+<rect class="cellx" x="208" y="536" width="18" height="18"/>
+<rect class="cellx" x="226" y="536" width="18" height="18"/>
+<rect class="cellx" x="244" y="536" width="18" height="18"/>
+<rect class="cellx" x="262" y="536" width="18" height="18"/>
+<rect class="cellx" x="280" y="536" width="18" height="18"/>
+<rect class="cellx" x="298" y="536" width="18" height="18"/>
+<rect class="cellx" x="316" y="536" width="18" height="18"/>
+<rect class="cellx" x="334" y="536" width="18" height="18"/>
+<rect class="cellx" x="352" y="536" width="18" height="18"/>
+<rect class="cell0" x="82" y="554" width="18" height="18"/>
+<rect class="cell0" x="100" y="554" width="18" height="18"/>
+<rect class="cell0" x="118" y="554" width="18" height="18"/>
+<rect class="cell0" x="136" y="554" width="18" height="18"/>
+<rect class="cell1" x="154" y="554" width="18" height="18"/>
+<rect class="cell1" x="172" y="554" width="18" height="18"/>
+<rect class="cell1" x="190" y="554" width="18" height="18"/>
+<rect class="cell1" x="208" y="554" width="18" height="18"/>
+<rect class="cellx" x="226" y="554" width="18" height="18"/>
+<rect class="cellx" x="244" y="554" width="18" height="18"/>
+<rect class="cellx" x="262" y="554" width="18" height="18"/>
+<rect class="cellx" x="280" y="554" width="18" height="18"/>
+<rect class="cellx" x="298" y="554" width="18" height="18"/>
+<rect class="cellx" x="316" y="554" width="18" height="18"/>
+<rect class="cellx" x="334" y="554" width="18" height="18"/>
+<rect class="cellx" x="352" y="554" width="18" height="18"/>
+<rect class="cell0" x="82" y="572" width="18" height="18"/>
+<rect class="cell0" x="100" y="572" width="18" height="18"/>
+<rect class="cell0" x="118" y="572" width="18" height="18"/>
+<rect class="cell0" x="136" y="572" width="18" height="18"/>
+<rect class="cell0" x="154" y="572" width="18" height="18"/>
+<rect class="cell0" x="172" y="572" width="18" height="18"/>
+<rect class="cell0" x="190" y="572" width="18" height="18"/>
+<rect class="cell0" x="208" y="572" width="18" height="18"/>
+<rect class="cell1" x="226" y="572" width="18" height="18"/>
+<rect class="cellx" x="244" y="572" width="18" height="18"/>
+<rect class="cellx" x="262" y="572" width="18" height="18"/>
+<rect class="cellx" x="280" y="572" width="18" height="18"/>
+<rect class="cellx" x="298" y="572" width="18" height="18"/>
+<rect class="cellx" x="316" y="572" width="18" height="18"/>
+<rect class="cellx" x="334" y="572" width="18" height="18"/>
+<rect class="cellx" x="352" y="572" width="18" height="18"/>
+<rect class="cell0" x="82" y="590" width="18" height="18"/>
+<rect class="cell0" x="100" y="590" width="18" height="18"/>
+<rect class="cell0" x="118" y="590" width="18" height="18"/>
+<rect class="cell0" x="136" y="590" width="18" height="18"/>
+<rect class="cell0" x="154" y="590" width="18" height="18"/>
+<rect class="cell0" x="172" y="590" width="18" height="18"/>
+<rect class="cell0" x="190" y="590" width="18" height="18"/>
+<rect class="cell0" x="208" y="590" width="18" height="18"/>
+<rect class="cell1" x="226" y="590" width="18" height="18"/>
+<rect class="cell1" x="244" y="590" width="18" height="18"/>
+<rect class="cellx" x="262" y="590" width="18" height="18"/>
+<rect class="cellx" x="280" y="590" width="18" height="18"/>
+<rect class="cellx" x="298" y="590" width="18" height="18"/>
+<rect class="cellx" x="316" y="590" width="18" height="18"/>
+<rect class="cellx" x="334" y="590" width="18" height="18"/>
+<rect class="cellx" x="352" y="590" width="18" height="18"/>
+<rect class="cell0" x="82" y="608" width="18" height="18"/>
+<rect class="cell0" x="100" y="608" width="18" height="18"/>
+<rect class="cell0" x="118" y="608" width="18" height="18"/>
+<rect class="cell0" x="136" y="608" width="18" height="18"/>
+<rect class="cell0" x="154" y="608" width="18" height="18"/>
+<rect class="cell0" x="172" y="608" width="18" height="18"/>
+<rect class="cell0" x="190" y="608" width="18" height="18"/>
+<rect class="cell0" x="208" y="608" width="18" height="18"/>
+<rect class="cell1" x="226" y="608" width="18" height="18"/>
+<rect class="cell1" x="244" y="608" width="18" height="18"/>
+<rect class="cell1" x="262" y="608" width="18" height="18"/>
+<rect class="cellx" x="280" y="608" width="18" height="18"/>
+<rect class="cellx" x="298" y="608" width="18" height="18"/>
+<rect class="cellx" x="316" y="608" width="18" height="18"/>
+<rect class="cellx" x="334" y="608" width="18" height="18"/>
+<rect class="cellx" x="352" y="608" width="18" height="18"/>
+<rect class="cell0" x="82" y="626" width="18" height="18"/>
+<rect class="cell0" x="100" y="626" width="18" height="18"/>
+<rect class="cell0" x="118" y="626" width="18" height="18"/>
+<rect class="cell0" x="136" y="626" width="18" height="18"/>
+<rect class="cell0" x="154" y="626" width="18" height="18"/>
+<rect class="cell0" x="172" y="626" width="18" height="18"/>
+<rect class="cell0" x="190" y="626" width="18" height="18"/>
+<rect class="cell0" x="208" y="626" width="18" height="18"/>
+<rect class="cell1" x="226" y="626" width="18" height="18"/>
+<rect class="cell1" x="244" y="626" width="18" height="18"/>
+<rect class="cell1" x="262" y="626" width="18" height="18"/>
+<rect class="cell1" x="280" y="626" width="18" height="18"/>
+<rect class="cellx" x="298" y="626" width="18" height="18"/>
+<rect class="cellx" x="316" y="626" width="18" height="18"/>
+<rect class="cellx" x="334" y="626" width="18" height="18"/>
+<rect class="cellx" x="352" y="626" width="18" height="18"/>
+<rect class="cell0" x="82" y="644" width="18" height="18"/>
+<rect class="cell0" x="100" y="644" width="18" height="18"/>
+<rect class="cell0" x="118" y="644" width="18" height="18"/>
+<rect class="cell0" x="136" y="644" width="18" height="18"/>
+<rect class="cell0" x="154" y="644" width="18" height="18"/>
+<rect class="cell0" x="172" y="644" width="18" height="18"/>
+<rect class="cell0" x="190" y="644" width="18" height="18"/>
+<rect class="cell0" x="208" y="644" width="18" height="18"/>
+<rect class="cell0" x="226" y="644" width="18" height="18"/>
+<rect class="cell0" x="244" y="644" width="18" height="18"/>
+<rect class="cell0" x="262" y="644" width="18" height="18"/>
+<rect class="cell0" x="280" y="644" width="18" height="18"/>
+<rect class="cell1" x="298" y="644" width="18" height="18"/>
+<rect class="cellx" x="316" y="644" width="18" height="18"/>
+<rect class="cellx" x="334" y="644" width="18" height="18"/>
+<rect class="cellx" x="352" y="644" width="18" height="18"/>
+<rect class="cell0" x="82" y="662" width="18" height="18"/>
+<rect class="cell0" x="100" y="662" width="18" height="18"/>
+<rect class="cell0" x="118" y="662" width="18" height="18"/>
+<rect class="cell0" x="136" y="662" width="18" height="18"/>
+<rect class="cell0" x="154" y="662" width="18" height="18"/>
+<rect class="cell0" x="172" y="662" width="18" height="18"/>
+<rect class="cell0" x="190" y="662" width="18" height="18"/>
+<rect class="cell0" x="208" y="662" width="18" height="18"/>
+<rect class="cell0" x="226" y="662" width="18" height="18"/>
+<rect class="cell0" x="244" y="662" width="18" height="18"/>
+<rect class="cell0" x="262" y="662" width="18" height="18"/>
+<rect class="cell0" x="280" y="662" width="18" height="18"/>
+<rect class="cell1" x="298" y="662" width="18" height="18"/>
+<rect class="cell1" x="316" y="662" width="18" height="18"/>
+<rect class="cellx" x="334" y="662" width="18" height="18"/>
+<rect class="cellx" x="352" y="662" width="18" height="18"/>
+<rect class="cell0" x="82" y="680" width="18" height="18"/>
+<rect class="cell0" x="100" y="680" width="18" height="18"/>
+<rect class="cell0" x="118" y="680" width="18" height="18"/>
+<rect class="cell0" x="136" y="680" width="18" height="18"/>
+<rect class="cell0" x="154" y="680" width="18" height="18"/>
+<rect class="cell0" x="172" y="680" width="18" height="18"/>
+<rect class="cell0" x="190" y="680" width="18" height="18"/>
+<rect class="cell0" x="208" y="680" width="18" height="18"/>
+<rect class="cell0" x="226" y="680" width="18" height="18"/>
+<rect class="cell0" x="244" y="680" width="18" height="18"/>
+<rect class="cell0" x="262" y="680" width="18" height="18"/>
+<rect class="cell0" x="280" y="680" width="18" height="18"/>
+<rect class="cell1" x="298" y="680" width="18" height="18"/>
+<rect class="cell1" x="316" y="680" width="18" height="18"/>
+<rect class="cell1" x="334" y="680" width="18" height="18"/>
+<rect class="cellx" x="352" y="680" width="18" height="18"/>
+<rect class="cell0" x="82" y="698" width="18" height="18"/>
+<rect class="cell0" x="100" y="698" width="18" height="18"/>
+<rect class="cell0" x="118" y="698" width="18" height="18"/>
+<rect class="cell0" x="136" y="698" width="18" height="18"/>
+<rect class="cell0" x="154" y="698" width="18" height="18"/>
+<rect class="cell0" x="172" y="698" width="18" height="18"/>
+<rect class="cell0" x="190" y="698" width="18" height="18"/>
+<rect class="cell0" x="208" y="698" width="18" height="18"/>
+<rect class="cell0" x="226" y="698" width="18" height="18"/>
+<rect class="cell0" x="244" y="698" width="18" height="18"/>
+<rect class="cell0" x="262" y="698" width="18" height="18"/>
+<rect class="cell0" x="280" y="698" width="18" height="18"/>
+<rect class="cell1" x="298" y="698" width="18" height="18"/>
+<rect class="cell1" x="316" y="698" width="18" height="18"/>
+<rect class="cell1" x="334" y="698" width="18" height="18"/>
+<rect class="cell1" x="352" y="698" width="18" height="18"/>
+<rect x="81.5" y="427.5" width="289" height="289" fill="none" stroke="#AEB6C2" stroke-width="1.2"/>
+<text class="rank" x="442" y="449" text-anchor="end">rank 0</text>
+<rect class="acc2" x="450" y="432" width="33" height="24" rx="5"/>
+<text class="costtx" x="493" y="449" text-anchor="start">10 格</text>
+<text class="rank" x="442" y="483" text-anchor="end">rank 1</text>
+<rect class="acc2" x="450" y="466" width="85" height="24" rx="5"/>
+<text class="costtx" x="545" y="483" text-anchor="start">26 格</text>
+<text class="rank" x="442" y="517" text-anchor="end">rank 2</text>
+<rect class="acc2" x="450" y="500" width="138" height="24" rx="5"/>
+<text class="costtx" x="598" y="517" text-anchor="start">42 格</text>
+<text class="rank" x="442" y="551" text-anchor="end">rank 3</text>
+<rect class="acc2" x="450" y="534" width="190" height="24" rx="5"/>
+<text class="costtx" x="650" y="551" text-anchor="start">58 格</text>
+<rect class="acc2" x="386" y="580" width="294" height="136" rx="8"/>
+<text class="tx" x="398" y="601" text-anchor="start">读数</text>
+<path class="edge" d="M 398 609 L 668 609"/>
+<text class="sm" x="398" y="627" text-anchor="start">rank 3 一个人扛下 58/136 的因果格</text>
+<text class="sm" x="398" y="643" text-anchor="start">rank 0 只有 10 格，算完只能等</text>
+<text class="sm" x="398" y="659" text-anchor="start">整层被最慢的那张卡定速</text>
+<text class="sm" x="398" y="675" text-anchor="start">CP 度越大，5.8× 这个比值越离谱</text>
+<text class="sm" x="398" y="691" text-anchor="start">这就是 zigzag 要解决的问题</text>
+<text class="cap" x="40" y="742" text-anchor="start">深蓝＝同 rank 的 query/key，浅蓝＝跨 rank 的因果格，灰＝被掩掉；合计 136 格</text>
+<rect class="panel" x="720" y="344" width="680" height="424" rx="12"/>
+<text class="pt" x="740" y="374" text-anchor="start">③ zigzag 切：每 rank 恰好 136/4 = 34</text>
+<text class="su" x="740" y="394" text-anchor="start">rank r 取第 r 块与第 7-r 块；四个 rank 的条形等长，这就是本图要证的结论</text>
+<text class="sm" x="740" y="418" text-anchor="start">query ↓</text>
+<text class="sm" x="782" y="418" text-anchor="start">key → （0..15）</text>
+<rect class="neutral" x="752" y="428" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="441" text-anchor="middle">r0</text>
+<rect class="neutral" x="752" y="446" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="459" text-anchor="middle">r0</text>
+<rect class="neutral" x="752" y="464" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="477" text-anchor="middle">r1</text>
+<rect class="neutral" x="752" y="482" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="495" text-anchor="middle">r1</text>
+<rect class="neutral" x="752" y="500" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="513" text-anchor="middle">r2</text>
+<rect class="neutral" x="752" y="518" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="531" text-anchor="middle">r2</text>
+<rect class="neutral" x="752" y="536" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="549" text-anchor="middle">r3</text>
+<rect class="neutral" x="752" y="554" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="567" text-anchor="middle">r3</text>
+<rect class="neutral" x="752" y="572" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="585" text-anchor="middle">r3</text>
+<rect class="neutral" x="752" y="590" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="603" text-anchor="middle">r3</text>
+<rect class="neutral" x="752" y="608" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="621" text-anchor="middle">r2</text>
+<rect class="neutral" x="752" y="626" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="639" text-anchor="middle">r2</text>
+<rect class="neutral" x="752" y="644" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="657" text-anchor="middle">r1</text>
+<rect class="neutral" x="752" y="662" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="675" text-anchor="middle">r1</text>
+<rect class="neutral" x="752" y="680" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="693" text-anchor="middle">r0</text>
+<rect class="neutral" x="752" y="698" width="26" height="18" rx="0"/>
+<text class="sm" x="765" y="711" text-anchor="middle">r0</text>
+<rect class="cell1" x="782" y="428" width="18" height="18"/>
+<rect class="cellx" x="800" y="428" width="18" height="18"/>
+<rect class="cellx" x="818" y="428" width="18" height="18"/>
+<rect class="cellx" x="836" y="428" width="18" height="18"/>
+<rect class="cellx" x="854" y="428" width="18" height="18"/>
+<rect class="cellx" x="872" y="428" width="18" height="18"/>
+<rect class="cellx" x="890" y="428" width="18" height="18"/>
+<rect class="cellx" x="908" y="428" width="18" height="18"/>
+<rect class="cellx" x="926" y="428" width="18" height="18"/>
+<rect class="cellx" x="944" y="428" width="18" height="18"/>
+<rect class="cellx" x="962" y="428" width="18" height="18"/>
+<rect class="cellx" x="980" y="428" width="18" height="18"/>
+<rect class="cellx" x="998" y="428" width="18" height="18"/>
+<rect class="cellx" x="1016" y="428" width="18" height="18"/>
+<rect class="cellx" x="1034" y="428" width="18" height="18"/>
+<rect class="cellx" x="1052" y="428" width="18" height="18"/>
+<rect class="cell1" x="782" y="446" width="18" height="18"/>
+<rect class="cell1" x="800" y="446" width="18" height="18"/>
+<rect class="cellx" x="818" y="446" width="18" height="18"/>
+<rect class="cellx" x="836" y="446" width="18" height="18"/>
+<rect class="cellx" x="854" y="446" width="18" height="18"/>
+<rect class="cellx" x="872" y="446" width="18" height="18"/>
+<rect class="cellx" x="890" y="446" width="18" height="18"/>
+<rect class="cellx" x="908" y="446" width="18" height="18"/>
+<rect class="cellx" x="926" y="446" width="18" height="18"/>
+<rect class="cellx" x="944" y="446" width="18" height="18"/>
+<rect class="cellx" x="962" y="446" width="18" height="18"/>
+<rect class="cellx" x="980" y="446" width="18" height="18"/>
+<rect class="cellx" x="998" y="446" width="18" height="18"/>
+<rect class="cellx" x="1016" y="446" width="18" height="18"/>
+<rect class="cellx" x="1034" y="446" width="18" height="18"/>
+<rect class="cellx" x="1052" y="446" width="18" height="18"/>
+<rect class="cell0" x="782" y="464" width="18" height="18"/>
+<rect class="cell0" x="800" y="464" width="18" height="18"/>
+<rect class="cell1" x="818" y="464" width="18" height="18"/>
+<rect class="cellx" x="836" y="464" width="18" height="18"/>
+<rect class="cellx" x="854" y="464" width="18" height="18"/>
+<rect class="cellx" x="872" y="464" width="18" height="18"/>
+<rect class="cellx" x="890" y="464" width="18" height="18"/>
+<rect class="cellx" x="908" y="464" width="18" height="18"/>
+<rect class="cellx" x="926" y="464" width="18" height="18"/>
+<rect class="cellx" x="944" y="464" width="18" height="18"/>
+<rect class="cellx" x="962" y="464" width="18" height="18"/>
+<rect class="cellx" x="980" y="464" width="18" height="18"/>
+<rect class="cellx" x="998" y="464" width="18" height="18"/>
+<rect class="cellx" x="1016" y="464" width="18" height="18"/>
+<rect class="cellx" x="1034" y="464" width="18" height="18"/>
+<rect class="cellx" x="1052" y="464" width="18" height="18"/>
+<rect class="cell0" x="782" y="482" width="18" height="18"/>
+<rect class="cell0" x="800" y="482" width="18" height="18"/>
+<rect class="cell1" x="818" y="482" width="18" height="18"/>
+<rect class="cell1" x="836" y="482" width="18" height="18"/>
+<rect class="cellx" x="854" y="482" width="18" height="18"/>
+<rect class="cellx" x="872" y="482" width="18" height="18"/>
+<rect class="cellx" x="890" y="482" width="18" height="18"/>
+<rect class="cellx" x="908" y="482" width="18" height="18"/>
+<rect class="cellx" x="926" y="482" width="18" height="18"/>
+<rect class="cellx" x="944" y="482" width="18" height="18"/>
+<rect class="cellx" x="962" y="482" width="18" height="18"/>
+<rect class="cellx" x="980" y="482" width="18" height="18"/>
+<rect class="cellx" x="998" y="482" width="18" height="18"/>
+<rect class="cellx" x="1016" y="482" width="18" height="18"/>
+<rect class="cellx" x="1034" y="482" width="18" height="18"/>
+<rect class="cellx" x="1052" y="482" width="18" height="18"/>
+<rect class="cell0" x="782" y="500" width="18" height="18"/>
+<rect class="cell0" x="800" y="500" width="18" height="18"/>
+<rect class="cell0" x="818" y="500" width="18" height="18"/>
+<rect class="cell0" x="836" y="500" width="18" height="18"/>
+<rect class="cell1" x="854" y="500" width="18" height="18"/>
+<rect class="cellx" x="872" y="500" width="18" height="18"/>
+<rect class="cellx" x="890" y="500" width="18" height="18"/>
+<rect class="cellx" x="908" y="500" width="18" height="18"/>
+<rect class="cellx" x="926" y="500" width="18" height="18"/>
+<rect class="cellx" x="944" y="500" width="18" height="18"/>
+<rect class="cellx" x="962" y="500" width="18" height="18"/>
+<rect class="cellx" x="980" y="500" width="18" height="18"/>
+<rect class="cellx" x="998" y="500" width="18" height="18"/>
+<rect class="cellx" x="1016" y="500" width="18" height="18"/>
+<rect class="cellx" x="1034" y="500" width="18" height="18"/>
+<rect class="cellx" x="1052" y="500" width="18" height="18"/>
+<rect class="cell0" x="782" y="518" width="18" height="18"/>
+<rect class="cell0" x="800" y="518" width="18" height="18"/>
+<rect class="cell0" x="818" y="518" width="18" height="18"/>
+<rect class="cell0" x="836" y="518" width="18" height="18"/>
+<rect class="cell1" x="854" y="518" width="18" height="18"/>
+<rect class="cell1" x="872" y="518" width="18" height="18"/>
+<rect class="cellx" x="890" y="518" width="18" height="18"/>
+<rect class="cellx" x="908" y="518" width="18" height="18"/>
+<rect class="cellx" x="926" y="518" width="18" height="18"/>
+<rect class="cellx" x="944" y="518" width="18" height="18"/>
+<rect class="cellx" x="962" y="518" width="18" height="18"/>
+<rect class="cellx" x="980" y="518" width="18" height="18"/>
+<rect class="cellx" x="998" y="518" width="18" height="18"/>
+<rect class="cellx" x="1016" y="518" width="18" height="18"/>
+<rect class="cellx" x="1034" y="518" width="18" height="18"/>
+<rect class="cellx" x="1052" y="518" width="18" height="18"/>
+<rect class="cell0" x="782" y="536" width="18" height="18"/>
+<rect class="cell0" x="800" y="536" width="18" height="18"/>
+<rect class="cell0" x="818" y="536" width="18" height="18"/>
+<rect class="cell0" x="836" y="536" width="18" height="18"/>
+<rect class="cell0" x="854" y="536" width="18" height="18"/>
+<rect class="cell0" x="872" y="536" width="18" height="18"/>
+<rect class="cell1" x="890" y="536" width="18" height="18"/>
+<rect class="cellx" x="908" y="536" width="18" height="18"/>
+<rect class="cellx" x="926" y="536" width="18" height="18"/>
+<rect class="cellx" x="944" y="536" width="18" height="18"/>
+<rect class="cellx" x="962" y="536" width="18" height="18"/>
+<rect class="cellx" x="980" y="536" width="18" height="18"/>
+<rect class="cellx" x="998" y="536" width="18" height="18"/>
+<rect class="cellx" x="1016" y="536" width="18" height="18"/>
+<rect class="cellx" x="1034" y="536" width="18" height="18"/>
+<rect class="cellx" x="1052" y="536" width="18" height="18"/>
+<rect class="cell0" x="782" y="554" width="18" height="18"/>
+<rect class="cell0" x="800" y="554" width="18" height="18"/>
+<rect class="cell0" x="818" y="554" width="18" height="18"/>
+<rect class="cell0" x="836" y="554" width="18" height="18"/>
+<rect class="cell0" x="854" y="554" width="18" height="18"/>
+<rect class="cell0" x="872" y="554" width="18" height="18"/>
+<rect class="cell1" x="890" y="554" width="18" height="18"/>
+<rect class="cell1" x="908" y="554" width="18" height="18"/>
+<rect class="cellx" x="926" y="554" width="18" height="18"/>
+<rect class="cellx" x="944" y="554" width="18" height="18"/>
+<rect class="cellx" x="962" y="554" width="18" height="18"/>
+<rect class="cellx" x="980" y="554" width="18" height="18"/>
+<rect class="cellx" x="998" y="554" width="18" height="18"/>
+<rect class="cellx" x="1016" y="554" width="18" height="18"/>
+<rect class="cellx" x="1034" y="554" width="18" height="18"/>
+<rect class="cellx" x="1052" y="554" width="18" height="18"/>
+<rect class="cell0" x="782" y="572" width="18" height="18"/>
+<rect class="cell0" x="800" y="572" width="18" height="18"/>
+<rect class="cell0" x="818" y="572" width="18" height="18"/>
+<rect class="cell0" x="836" y="572" width="18" height="18"/>
+<rect class="cell0" x="854" y="572" width="18" height="18"/>
+<rect class="cell0" x="872" y="572" width="18" height="18"/>
+<rect class="cell1" x="890" y="572" width="18" height="18"/>
+<rect class="cell1" x="908" y="572" width="18" height="18"/>
+<rect class="cell1" x="926" y="572" width="18" height="18"/>
+<rect class="cellx" x="944" y="572" width="18" height="18"/>
+<rect class="cellx" x="962" y="572" width="18" height="18"/>
+<rect class="cellx" x="980" y="572" width="18" height="18"/>
+<rect class="cellx" x="998" y="572" width="18" height="18"/>
+<rect class="cellx" x="1016" y="572" width="18" height="18"/>
+<rect class="cellx" x="1034" y="572" width="18" height="18"/>
+<rect class="cellx" x="1052" y="572" width="18" height="18"/>
+<rect class="cell0" x="782" y="590" width="18" height="18"/>
+<rect class="cell0" x="800" y="590" width="18" height="18"/>
+<rect class="cell0" x="818" y="590" width="18" height="18"/>
+<rect class="cell0" x="836" y="590" width="18" height="18"/>
+<rect class="cell0" x="854" y="590" width="18" height="18"/>
+<rect class="cell0" x="872" y="590" width="18" height="18"/>
+<rect class="cell1" x="890" y="590" width="18" height="18"/>
+<rect class="cell1" x="908" y="590" width="18" height="18"/>
+<rect class="cell1" x="926" y="590" width="18" height="18"/>
+<rect class="cell1" x="944" y="590" width="18" height="18"/>
+<rect class="cellx" x="962" y="590" width="18" height="18"/>
+<rect class="cellx" x="980" y="590" width="18" height="18"/>
+<rect class="cellx" x="998" y="590" width="18" height="18"/>
+<rect class="cellx" x="1016" y="590" width="18" height="18"/>
+<rect class="cellx" x="1034" y="590" width="18" height="18"/>
+<rect class="cellx" x="1052" y="590" width="18" height="18"/>
+<rect class="cell0" x="782" y="608" width="18" height="18"/>
+<rect class="cell0" x="800" y="608" width="18" height="18"/>
+<rect class="cell0" x="818" y="608" width="18" height="18"/>
+<rect class="cell0" x="836" y="608" width="18" height="18"/>
+<rect class="cell1" x="854" y="608" width="18" height="18"/>
+<rect class="cell1" x="872" y="608" width="18" height="18"/>
+<rect class="cell0" x="890" y="608" width="18" height="18"/>
+<rect class="cell0" x="908" y="608" width="18" height="18"/>
+<rect class="cell0" x="926" y="608" width="18" height="18"/>
+<rect class="cell0" x="944" y="608" width="18" height="18"/>
+<rect class="cell1" x="962" y="608" width="18" height="18"/>
+<rect class="cellx" x="980" y="608" width="18" height="18"/>
+<rect class="cellx" x="998" y="608" width="18" height="18"/>
+<rect class="cellx" x="1016" y="608" width="18" height="18"/>
+<rect class="cellx" x="1034" y="608" width="18" height="18"/>
+<rect class="cellx" x="1052" y="608" width="18" height="18"/>
+<rect class="cell0" x="782" y="626" width="18" height="18"/>
+<rect class="cell0" x="800" y="626" width="18" height="18"/>
+<rect class="cell0" x="818" y="626" width="18" height="18"/>
+<rect class="cell0" x="836" y="626" width="18" height="18"/>
+<rect class="cell1" x="854" y="626" width="18" height="18"/>
+<rect class="cell1" x="872" y="626" width="18" height="18"/>
+<rect class="cell0" x="890" y="626" width="18" height="18"/>
+<rect class="cell0" x="908" y="626" width="18" height="18"/>
+<rect class="cell0" x="926" y="626" width="18" height="18"/>
+<rect class="cell0" x="944" y="626" width="18" height="18"/>
+<rect class="cell1" x="962" y="626" width="18" height="18"/>
+<rect class="cell1" x="980" y="626" width="18" height="18"/>
+<rect class="cellx" x="998" y="626" width="18" height="18"/>
+<rect class="cellx" x="1016" y="626" width="18" height="18"/>
+<rect class="cellx" x="1034" y="626" width="18" height="18"/>
+<rect class="cellx" x="1052" y="626" width="18" height="18"/>
+<rect class="cell0" x="782" y="644" width="18" height="18"/>
+<rect class="cell0" x="800" y="644" width="18" height="18"/>
+<rect class="cell1" x="818" y="644" width="18" height="18"/>
+<rect class="cell1" x="836" y="644" width="18" height="18"/>
+<rect class="cell0" x="854" y="644" width="18" height="18"/>
+<rect class="cell0" x="872" y="644" width="18" height="18"/>
+<rect class="cell0" x="890" y="644" width="18" height="18"/>
+<rect class="cell0" x="908" y="644" width="18" height="18"/>
+<rect class="cell0" x="926" y="644" width="18" height="18"/>
+<rect class="cell0" x="944" y="644" width="18" height="18"/>
+<rect class="cell0" x="962" y="644" width="18" height="18"/>
+<rect class="cell0" x="980" y="644" width="18" height="18"/>
+<rect class="cell1" x="998" y="644" width="18" height="18"/>
+<rect class="cellx" x="1016" y="644" width="18" height="18"/>
+<rect class="cellx" x="1034" y="644" width="18" height="18"/>
+<rect class="cellx" x="1052" y="644" width="18" height="18"/>
+<rect class="cell0" x="782" y="662" width="18" height="18"/>
+<rect class="cell0" x="800" y="662" width="18" height="18"/>
+<rect class="cell1" x="818" y="662" width="18" height="18"/>
+<rect class="cell1" x="836" y="662" width="18" height="18"/>
+<rect class="cell0" x="854" y="662" width="18" height="18"/>
+<rect class="cell0" x="872" y="662" width="18" height="18"/>
+<rect class="cell0" x="890" y="662" width="18" height="18"/>
+<rect class="cell0" x="908" y="662" width="18" height="18"/>
+<rect class="cell0" x="926" y="662" width="18" height="18"/>
+<rect class="cell0" x="944" y="662" width="18" height="18"/>
+<rect class="cell0" x="962" y="662" width="18" height="18"/>
+<rect class="cell0" x="980" y="662" width="18" height="18"/>
+<rect class="cell1" x="998" y="662" width="18" height="18"/>
+<rect class="cell1" x="1016" y="662" width="18" height="18"/>
+<rect class="cellx" x="1034" y="662" width="18" height="18"/>
+<rect class="cellx" x="1052" y="662" width="18" height="18"/>
+<rect class="cell1" x="782" y="680" width="18" height="18"/>
+<rect class="cell1" x="800" y="680" width="18" height="18"/>
+<rect class="cell0" x="818" y="680" width="18" height="18"/>
+<rect class="cell0" x="836" y="680" width="18" height="18"/>
+<rect class="cell0" x="854" y="680" width="18" height="18"/>
+<rect class="cell0" x="872" y="680" width="18" height="18"/>
+<rect class="cell0" x="890" y="680" width="18" height="18"/>
+<rect class="cell0" x="908" y="680" width="18" height="18"/>
+<rect class="cell0" x="926" y="680" width="18" height="18"/>
+<rect class="cell0" x="944" y="680" width="18" height="18"/>
+<rect class="cell0" x="962" y="680" width="18" height="18"/>
+<rect class="cell0" x="980" y="680" width="18" height="18"/>
+<rect class="cell0" x="998" y="680" width="18" height="18"/>
+<rect class="cell0" x="1016" y="680" width="18" height="18"/>
+<rect class="cell1" x="1034" y="680" width="18" height="18"/>
+<rect class="cellx" x="1052" y="680" width="18" height="18"/>
+<rect class="cell1" x="782" y="698" width="18" height="18"/>
+<rect class="cell1" x="800" y="698" width="18" height="18"/>
+<rect class="cell0" x="818" y="698" width="18" height="18"/>
+<rect class="cell0" x="836" y="698" width="18" height="18"/>
+<rect class="cell0" x="854" y="698" width="18" height="18"/>
+<rect class="cell0" x="872" y="698" width="18" height="18"/>
+<rect class="cell0" x="890" y="698" width="18" height="18"/>
+<rect class="cell0" x="908" y="698" width="18" height="18"/>
+<rect class="cell0" x="926" y="698" width="18" height="18"/>
+<rect class="cell0" x="944" y="698" width="18" height="18"/>
+<rect class="cell0" x="962" y="698" width="18" height="18"/>
+<rect class="cell0" x="980" y="698" width="18" height="18"/>
+<rect class="cell0" x="998" y="698" width="18" height="18"/>
+<rect class="cell0" x="1016" y="698" width="18" height="18"/>
+<rect class="cell1" x="1034" y="698" width="18" height="18"/>
+<rect class="cell1" x="1052" y="698" width="18" height="18"/>
+<rect x="781.5" y="427.5" width="289" height="289" fill="none" stroke="#AEB6C2" stroke-width="1.2"/>
+<text class="rank" x="1142" y="449" text-anchor="end">rank 0</text>
+<rect class="acc1" x="1150" y="432" width="111" height="24" rx="5"/>
+<text class="dim" x="1271" y="449" text-anchor="start">34 格</text>
+<text class="rank" x="1142" y="483" text-anchor="end">rank 1</text>
+<rect class="acc1" x="1150" y="466" width="111" height="24" rx="5"/>
+<text class="dim" x="1271" y="483" text-anchor="start">34 格</text>
+<text class="rank" x="1142" y="517" text-anchor="end">rank 2</text>
+<rect class="acc1" x="1150" y="500" width="111" height="24" rx="5"/>
+<text class="dim" x="1271" y="517" text-anchor="start">34 格</text>
+<text class="rank" x="1142" y="551" text-anchor="end">rank 3</text>
+<rect class="acc1" x="1150" y="534" width="111" height="24" rx="5"/>
+<text class="dim" x="1271" y="551" text-anchor="start">34 格</text>
+<rect class="acc1" x="1086" y="580" width="294" height="136" rx="8"/>
+<text class="tx" x="1098" y="601" text-anchor="start">读数</text>
+<path class="edge" d="M 1098 609 L 1368 609"/>
+<text class="sm" x="1098" y="627" text-anchor="start">块级裁剪后每 rank 9/16 个 2×2 块</text>
+<text class="sm" x="1098" y="643" text-anchor="start">即 36 格，其中 34 格因果有效</text>
+<text class="sm" x="1098" y="659" text-anchor="start">4 个 rank 的块数同样相等</text>
+<text class="sm" x="1098" y="675" text-anchor="start">多出的 2 格是对角块的粒度浪费</text>
+<text class="sm" x="1098" y="691" text-anchor="start">2×2 块变大，这个浪费才显著</text>
+<text class="cap" x="740" y="742" text-anchor="start">深蓝＝同 rank 的 query/key，浅蓝＝跨 rank 的因果格，灰＝被掩掉；合计 136 格</text>
+<rect class="panel" x="20" y="782" width="1380" height="122" rx="12"/>
+<text class="pt" x="40" y="810" text-anchor="start">④ Megatron 里这两种切法的真实身份：cp_partition_mode</text>
+<rect class="acc1" x="40" y="822" width="420" height="70" rx="8"/>
+<text class="tx" x="52" y="843" text-anchor="start">zigzag（默认，③ 的切法）</text>
+<path class="edge" d="M 52 851 L 448 851"/>
+<text class="sm" x="52" y="869" text-anchor="start">标准 attention 与 MLA 只接受这一种</text>
+<text class="sm" x="52" y="885" text-anchor="start">Attention.forward 入口把输入转到 zigzag</text>
+<rect class="ghost" x="480" y="822" width="420" height="70" rx="8"/>
+<text class="tx" x="492" y="843" text-anchor="start">contiguous（② 的区间划分）</text>
+<path class="edge" d="M 492 851 L 888 851"/>
+<text class="sm" x="492" y="869" text-anchor="start">不是作为负载均衡选项提供的</text>
+<text class="sm" x="492" y="885" text-anchor="start">为 DSv4 CSA 这类变体的布局要求而存在</text>
+<rect class="neutral" x="920" y="822" width="460" height="70" rx="8"/>
+<text class="tx" x="932" y="843" text-anchor="start">三重门控（TransformerConfig.__post_init__）</text>
+<path class="edge" d="M 932 851 L 1368 851"/>
+<text class="sm" x="932" y="869" text-anchor="start">需要 THD + packing scheduler；variant 限 dsv4_hybrid / gdn / kda</text>
+<text class="sm" x="932" y="885" text-anchor="start">反向地 zigzag + dsv4_hybrid 同样被 ValueError 拒</text>
+<path class="cost" d="M 900 857 L 920 857"/>
+<text class="cap" x="28" y="930" text-anchor="start">不变量：每 rank 持有 S/c=4 个 token；c 个 rank 的并集无重无漏地重建 S=16；zigzag 下每 rank 的因果格数恒为 34。</text>
+<text class="cap" x="28" y="950" text-anchor="start">因果负载均衡与块级裁剪的通用推导归理论页；本图只画 Megatron 实际执行的那次 index_select 与它的两种 cp_partition_mode。</text>
+</svg>

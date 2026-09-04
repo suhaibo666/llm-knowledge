@@ -1,0 +1,175 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 1112" width="100%" role="img" aria-label="同一组文档在隐式打包与显式打包两条数据面上的切断代价与 padding 代价对照">
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .zoom{fill:#FBFCFE;stroke:#AEB6C2;stroke-width:1.2;stroke-dasharray:4 3}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .cut{fill:none;stroke:#2563EB;stroke-width:2}
+  .cutcost{fill:none;stroke:#C3651F;stroke-width:1.6;stroke-dasharray:4 3}
+  .lead{fill:none;stroke:#AEB6C2;stroke-width:1.1}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .cell0{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .cell1{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+</style>
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<rect class="card" x="0.5" y="0.5" width="1479" height="1111" rx="14"/>
+<text class="ti" x="28" y="36" text-anchor="start">同一组文档、同一个 S：隐式打包与显式打包的两条数据面</text>
+<text class="su" x="28" y="57" text-anchor="start">S=1024 · ε=1 · cp=4 · sp(tp)=8 → g=64 · C=512 · 尾部对齐 64 · 两条 lane 同一比例尺 0.6 px/token</text>
+<rect class="panel" x="20" y="82" width="1440" height="116" rx="12"/>
+<text class="pt" x="40" y="110" text-anchor="start">⓪ 共同输入：同一组文档（长度已含预处理追加的末尾 EOD）</text>
+<rect class="neutral" x="60" y="128" width="386.97" height="42" rx="5"/>
+<text class="sm" x="253.49" y="148" text-anchor="middle">document_index[2]</text>
+<text class="sm" x="253.49" y="162" text-anchor="middle">740 token</text>
+<rect class="neutral" x="446.97" y="128" width="135.96" height="42" rx="5"/>
+<text class="sm" x="514.95" y="148" text-anchor="middle">document_index[3]</text>
+<text class="sm" x="514.95" y="162" text-anchor="middle">260 token</text>
+<rect class="neutral" x="582.94" y="128" width="156.88" height="42" rx="5"/>
+<text class="sm" x="661.38" y="148" text-anchor="middle">document_index[4]</text>
+<text class="sm" x="661.38" y="162" text-anchor="middle">300 token</text>
+<rect class="neutral" x="739.82" y="128" width="460.18" height="42" rx="5"/>
+<text class="sm" x="969.91" y="148" text-anchor="middle">document_index[5]</text>
+<text class="sm" x="969.91" y="162" text-anchor="middle">880 token</text>
+<text class="dim" x="1216" y="154" text-anchor="start">Σ = 2180 token</text>
+<text class="sm" x="40" y="190" text-anchor="start">下面两条 lane 用的就是这 4 篇，S 也相同；差别只在"谁决定一条训练样本的边界"。</text>
+<rect class="panel" x="20" y="210" width="1440" height="396" rx="12"/>
+<text class="pt" x="40" y="240" text-anchor="start">① 隐式打包（GPTDataset）：token 流每 S 个切一刀</text>
+<rect class="ghost" x="64" y="272" width="180" height="54" rx="5"/>
+<text class="costtx" x="154" y="262" text-anchor="middle">document_index[2] 的前 300 个 → 样本 j−1</text>
+<rect class="ghost" x="858.4" y="272" width="513.6" height="54" rx="5"/>
+<text class="costtx" x="1115.2" y="262" text-anchor="middle">document_index[5] 的后 856 个 → 样本 j+1</text>
+<text class="rank" x="551.2" y="262" text-anchor="middle">样本 j：1024 行</text>
+<rect class="acc1" x="244" y="272" width="264" height="54" rx="4"/>
+<text class="sm" x="376" y="296" text-anchor="middle">document_index[2]</text>
+<text class="sm" x="376" y="312" text-anchor="middle">440</text>
+<rect class="acc1" x="508" y="272" width="156" height="54" rx="4"/>
+<text class="sm" x="586" y="296" text-anchor="middle">document_index[3]</text>
+<text class="sm" x="586" y="312" text-anchor="middle">260</text>
+<path class="lead" d="M 508 272 L 508 326"/>
+<rect class="acc1" x="664" y="272" width="180" height="54" rx="4"/>
+<text class="sm" x="754" y="296" text-anchor="middle">document_index[4]</text>
+<text class="sm" x="754" y="312" text-anchor="middle">300</text>
+<path class="lead" d="M 664 272 L 664 326"/>
+<rect class="acc1" x="844" y="272" width="14.4" height="54" rx="4"/>
+<path class="lead" d="M 844 272 L 844 326"/>
+<path class="cut" d="M 508 266 L 508 344"/>
+<text class="dim" x="508" y="358" text-anchor="middle">EOD@439</text>
+<path class="cut" d="M 664 266 L 664 344"/>
+<text class="dim" x="664" y="358" text-anchor="middle">EOD@699</text>
+<path class="cut" d="M 844 266 L 844 344"/>
+<text class="dim" x="844" y="358" text-anchor="middle">EOD@999</text>
+<path class="cutcost" d="M 244 250 L 244 334"/>
+<path class="cutcost" d="M 858.4 250 L 858.4 334"/>
+<text class="rank" x="64" y="394" text-anchor="start">position_ids</text>
+<rect class="ghost" x="244" y="368" width="264" height="38" rx="4"/>
+<text class="sm" x="376" y="392" text-anchor="middle">0 … 439</text>
+<rect class="ghost" x="508" y="368" width="156" height="38" rx="4"/>
+<text class="sm" x="586" y="392" text-anchor="middle">0 … 259</text>
+<rect class="ghost" x="664" y="368" width="180" height="38" rx="4"/>
+<text class="sm" x="754" y="392" text-anchor="middle">0 … 299</text>
+<rect class="ghost" x="844" y="368" width="14.4" height="38" rx="4"/>
+<text class="sm" x="64" y="430" text-anchor="start">reset_position_ids=True：每遇 EOD 重新计数，4 段各自从 0 开始。被切断的那半篇文档在这里成了独立的一段。</text>
+<path class="lead" d="M 851.2 326 L 900 386"/>
+<rect class="zoom" x="900" y="340" width="340" height="92" rx="10"/>
+<text class="tx" x="914" y="361.5" text-anchor="start">段 4：document_index[5][0:24)</text>
+<text class="sm" x="914" y="380.5" text-anchor="start">24 行，position_ids 0 … 23</text>
+<text class="sm" x="914" y="399.5" text-anchor="start">段内没有 EOD：这篇文档在这里被切断，</text>
+<text class="sm" x="914" y="418.5" text-anchor="start">剩下的 token 要到样本 j+1 才继续。</text>
+<rect class="ghost" x="1266" y="340" width="116" height="116" rx="3"/>
+<rect class="cell1" x="1266" y="340" width="49.84" height="49.84"/>
+<rect class="cell1" x="1315.84" y="389.84" width="29.45" height="29.45"/>
+<rect class="cell1" x="1345.3" y="419.3" width="33.98" height="33.98"/>
+<rect class="cell1" x="1379.28" y="453.28" width="2.72" height="2.72"/>
+<text class="dim" x="1266" y="472" text-anchor="start">attention_mask [1,1024,1024]</text>
+<text class="sm" x="1266" y="486" text-anchor="start">reset_attention_mask 清左下块</text>
+<rect class="acc2" x="64" y="510" width="430" height="76" rx="8"/>
+<text class="tx" x="279" y="536" text-anchor="middle">代价：2 篇文档被切断</text>
+<text class="sm" x="279" y="552" text-anchor="middle">document_index[2] 的前 300 个 token 在样本 j−1</text>
+<text class="sm" x="279" y="568" text-anchor="middle">document_index[5] 的后 856 个在样本 j+1</text>
+<rect class="acc1" x="520" y="510" width="430" height="76" rx="8"/>
+<text class="tx" x="735" y="536" text-anchor="middle">收益：样本内 padding = 0</text>
+<text class="sm" x="735" y="552" text-anchor="middle">1024 / 1024 行都是真实 token</text>
+<text class="sm" x="735" y="568" text-anchor="middle">语料尾巴之外没有任何死槽</text>
+<rect class="neutral" x="976" y="510" width="444" height="76" rx="8"/>
+<text class="tx" x="1198" y="536" text-anchor="middle">隔离靠 EOD，不靠边界数组</text>
+<text class="sm" x="1198" y="552" text-anchor="middle">create_attention_mask=True 时物化 1024×1024 bool</text>
+<text class="sm" x="1198" y="568" text-anchor="middle">任一 reset 开关打开都让 mask 缓存捷径失效</text>
+<rect class="panel" x="20" y="618" width="1440" height="418" rx="12"/>
+<text class="pt" x="40" y="648" text-anchor="start">② 显式打包（VarlenDataset + DpBalancedScheduler）：整条样本不切断，改付两级 padding</text>
+<text class="rank" x="64" y="680" text-anchor="start">microbatch 0 · 1536 行</text>
+<rect class="acc1" x="64" y="690" width="443.4" height="54" rx="4"/>
+<rect class="acc2" x="507.4" y="690" width="17.4" height="54" rx="0"/>
+<text class="sm" x="285.7" y="714" text-anchor="middle">document_index[2]</text>
+<text class="sm" x="285.7" y="730" text-anchor="middle">739 有效</text>
+<rect class="acc1" x="524.8" y="690" width="155.4" height="54" rx="4"/>
+<rect class="acc2" x="680.2" y="690" width="36.6" height="54" rx="0"/>
+<text class="sm" x="602.5" y="714" text-anchor="middle">document_index[3]</text>
+<text class="sm" x="602.5" y="730" text-anchor="middle">259 有效</text>
+<rect class="acc1" x="716.8" y="690" width="179.4" height="54" rx="4"/>
+<rect class="acc2" x="896.2" y="690" width="12.6" height="54" rx="0"/>
+<text class="sm" x="806.5" y="714" text-anchor="middle">document_index[4]</text>
+<text class="sm" x="806.5" y="730" text-anchor="middle">299 有效</text>
+<rect class="acc2" x="908.8" y="690" width="76.8" height="54" rx="4"/>
+<text class="costtx" x="947.2" y="717" text-anchor="middle">尾 128</text>
+<text class="dim" x="64" y="766" text-anchor="start">cu_seqlens = [0, 739, 998, 1297, 1425]</text>
+<text class="dim" x="64" y="782" text-anchor="start">cu_seqlens_padded = [0, 768, 1088, 1408, 1536] · max_seqlen = 768</text>
+<text class="rank" x="64" y="802" text-anchor="start">microbatch 1 · 1024 行</text>
+<rect class="acc1" x="64" y="812" width="527.4" height="54" rx="4"/>
+<rect class="acc2" x="591.4" y="812" width="10.2" height="54" rx="0"/>
+<text class="sm" x="327.7" y="836" text-anchor="middle">document_index[5]</text>
+<text class="sm" x="327.7" y="852" text-anchor="middle">879 有效</text>
+<rect class="acc2" x="601.6" y="812" width="76.8" height="54" rx="4"/>
+<text class="costtx" x="640" y="839" text-anchor="middle">尾 128</text>
+<text class="dim" x="64" y="888" text-anchor="start">cu_seqlens = [0, 879, 1007]</text>
+<text class="dim" x="64" y="904" text-anchor="start">cu_seqlens_padded = [0, 896, 1024] · max_seqlen = 896</text>
+<rect class="zoom" x="1000" y="676" width="420" height="138" rx="10"/>
+<text class="tx" x="1014" y="701.5" text-anchor="start">第一级：逐样本对齐到 g=64</text>
+<text class="sm" x="1014" y="720.5" text-anchor="start">document_index[2]：739 → 768（+29）</text>
+<text class="sm" x="1014" y="739.5" text-anchor="start">document_index[3]：259 → 320（+61）</text>
+<text class="sm" x="1014" y="758.5" text-anchor="start">document_index[4]：299 → 320（+21）</text>
+<text class="sm" x="1014" y="777.5" text-anchor="start">document_index[5]：879 → 896（+17）</text>
+<text class="sm" x="1014" y="796.5" text-anchor="start">合计 +128 行</text>
+<rect class="zoom" x="1000" y="828" width="420" height="110" rx="10"/>
+<text class="tx" x="1014" y="858.5" text-anchor="start">第二级：逐 microbatch 尾部对齐 64</text>
+<text class="sm" x="1014" y="877.5" text-anchor="start">mb 0：CP 本地 352 → 384，全局 1408 → 1536（+128）</text>
+<text class="sm" x="1014" y="896.5" text-anchor="start">mb 1：CP 本地 224 → 256，全局 896 → 1024（+128）</text>
+<text class="sm" x="1014" y="915.5" text-anchor="start">合计 +256 行，各自作为一条 dummy 序列记进 cu_seqlens</text>
+<rect class="zoom" x="700" y="818" width="286" height="104" rx="10"/>
+<text class="tx" x="714" y="845.5" text-anchor="start">贪心装桶：上限 C×cp = 2048</text>
+<text class="sm" x="714" y="864.5" text-anchor="start">768 + 320 + 320 = 1408 ≤ 2048</text>
+<text class="sm" x="714" y="883.5" text-anchor="start">再加 896 → 2304 &gt; 2048，另起 microbatch</text>
+<text class="sm" x="714" y="902.5" text-anchor="start">超限样本自成一组，整条样本从不拆开</text>
+<rect class="acc2" x="64" y="948" width="430" height="76" rx="8"/>
+<text class="tx" x="279" y="974" text-anchor="middle">代价：死槽 384 / 2560 = 15.0%</text>
+<text class="sm" x="279" y="990" text-anchor="middle">逐样本 128 行 + 逐 microbatch 尾部 256 行</text>
+<text class="sm" x="279" y="1006" text-anchor="middle">padding_mask 标 True 的物理行</text>
+<rect class="acc1" x="520" y="948" width="430" height="76" rx="8"/>
+<text class="tx" x="735" y="974" text-anchor="middle">收益：0 篇文档被切断</text>
+<text class="sm" x="735" y="990" text-anchor="middle">4 条样本整条留在 cu_seqlens 里</text>
+<text class="sm" x="735" y="1006" text-anchor="middle">attention_mask 恒为 None，边界下推给 kernel</text>
+<rect class="neutral" x="976" y="948" width="444" height="76" rx="8"/>
+<text class="tx" x="1198" y="974" text-anchor="middle">两套边界坐标缺一不可</text>
+<text class="sm" x="1198" y="990" text-anchor="middle">cu_seqlens 末项 1425 把尾部 dummy 记成"有效"</text>
+<text class="sm" x="1198" y="1006" text-anchor="middle">死槽只由 padding_mask 承担，两者不能合并</text>
+<text class="cap" x="28" y="1060" text-anchor="start">这张图要证的那笔交易：同一组 2180 token 的语料，隐式路径切断 2 篇文档换来样本内 0 padding；显式路径一篇不切，换来 384/2560 = 15.0% 的死槽。</text>
+<text class="cap" x="28" y="1080" text-anchor="start">蓝色是有效 token 与机制路径，橙色是必须付掉的代价；灰色是本条 lane 之外的邻居样本。两条 lane 的横向长度按同一比例尺画，可直接目测。</text>
+<text class="cap" x="28" y="1100" text-anchor="start">g=64 由 cp_pad=8 乘 tp_pad=8 得出；装桶上限 2048 = C×cp；尾部 dummy 长度必须能被 2×cp=8 整除。</text>
+</svg>

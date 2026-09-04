@@ -1,0 +1,244 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 956" width="100%" role="img" aria-label="四种 cp_comm_type 在同一个例子上的本地计算、通信、重构与代价对照">
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .cell0{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .cell1{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .cellx{fill:#F5F7FA;stroke:#fff;stroke-width:.8}
+</style>
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<rect class="card" x="0.5" y="0.5" width="1479" height="955" rx="14"/>
+<text class="ti" x="28" y="36" text-anchor="start">四种 cp_comm_type：同一个例子，四条各自可追的路径</text>
+<text class="su" x="28" y="57" text-anchor="start">沿用图 1 的例子：c=4 · S=16 · 每 rank 4 token（块 r 与块 7-r）· TP 后 a=8 个 query head · B=1</text>
+<rect class="panel" x="20" y="76" width="1440" height="50" rx="12"/>
+<text class="tx" x="40" y="98" text-anchor="start">每 rank 每层要算的 mask 格数：p2p 288 · all_gather 512 · a2a 272 · a2a+p2p 288；理论下界 a·S(S+1)/2/c = 272</text>
+<text class="su" x="40" y="116" text-anchor="start">虚线右侧＝TransformerEngine 内核内部，Megatron 源码不可证；只有 all_gather 一条 lane 五列全部由 Megatron 源码证明。</text>
+<rect class="panel" x="20" y="138" width="1440" height="178" rx="12"/>
+<text class="pt" x="36" y="168" text-anchor="start">① p2p</text>
+<text class="sm" x="36" y="188" text-anchor="start">ring · KV 环传</text>
+<rect class="ghost" x="34" y="198" width="148" height="24" rx="6"/>
+<text class="sm" x="108" y="214" text-anchor="middle">TransformerEngine</text>
+<text class="sm" x="36" y="244" text-anchor="start">CLI 默认值</text>
+<rect class="neutral" x="196" y="158" width="252" height="135" rx="8"/>
+<text class="tx" x="208" y="179" text-anchor="start">Megatron 侧装配</text>
+<path class="edge" d="M 208 187 L 436 187"/>
+<text class="sm" x="208" y="205" text-anchor="start">extra_kwargs 写入 "p2p"</text>
+<text class="sm" x="208" y="221" text-anchor="start">cp_group = 4 rank 的普通 CP 组</text>
+<text class="sm" x="208" y="237" text-anchor="start">cp_global_ranks + 进程级 cp_stream</text>
+<text class="sm" x="208" y="253" text-anchor="start">TE ≥ 1.10.0 才写入这一项</text>
+<text class="costtx" x="208" y="269" text-anchor="start">低于该版本静默丢弃，无告警</text>
+<rect class="ghost" x="470" y="158" width="240" height="135" rx="8"/>
+<text class="tx" x="482" y="179" text-anchor="start">本地计算</text>
+<path class="edge" d="M 482 187 L 698 187"/>
+<text class="sm" x="482" y="205" text-anchor="start">Q 不动：本 rank 4 行 query</text>
+<text class="sm" x="482" y="221" text-anchor="start">第 i 步吃 rank (r-i) mod 4 的 KV</text>
+<text class="sm" x="482" y="237" text-anchor="start">共 4 步，每步一个 4×4 分块</text>
+<text class="dim" x="482" y="253" text-anchor="start">块级裁剪 9/16 → 288 格</text>
+<text class="sm" x="482" y="269" text-anchor="start">跳掉的 7 块全是纯掩码块</text>
+<rect class="ghost" x="718" y="158" width="240" height="135" rx="8"/>
+<text class="tx" x="730" y="179" text-anchor="start">上线的数据</text>
+<path class="edge" d="M 730 187 L 946 187"/>
+<text class="sm" x="730" y="205" text-anchor="start">每步 P2P 送一份 K/V 块给右邻</text>
+<text class="sm" x="730" y="221" text-anchor="start">块大小 4 行 × 8 head</text>
+<text class="costtx" x="730" y="237" text-anchor="start">3 次交换 ×2 = 192 head-row</text>
+<text class="sm" x="730" y="253" text-anchor="start">异步，可与分块计算重叠</text>
+<text class="sm" x="730" y="269" text-anchor="start">docstring 只承诺到"可重叠"</text>
+<rect class="ghost" x="966" y="158" width="240" height="135" rx="8"/>
+<text class="tx" x="978" y="179" text-anchor="start">重构与反向</text>
+<path class="edge" d="M 978 187 L 1194 187"/>
+<text class="sm" x="978" y="205" text-anchor="start">online-softmax 合并 m / ℓ / out</text>
+<text class="sm" x="978" y="221" text-anchor="start">4 步累加成 4 行本地输出</text>
+<text class="sm" x="978" y="237" text-anchor="start">不需要物化全序列 KV</text>
+<text class="sm" x="978" y="253" text-anchor="start">反向多一根梯度环回传 dK/dV</text>
+<text class="sm" x="978" y="269" text-anchor="start">dQ 留本地，dK/dV 沿环累加</text>
+<rect class="ghost" x="1214" y="158" width="232" height="135" rx="8"/>
+<text class="tx" x="1226" y="179" text-anchor="start">增量代价</text>
+<path class="edge" d="M 1226 187 L 1434 187"/>
+<text class="sm" x="1226" y="205" text-anchor="start">4 个同步点</text>
+<text class="sm" x="1226" y="221" text-anchor="start">峰值 probs 一个 4×4 分块</text>
+<text class="sm" x="1226" y="237" text-anchor="start">每 head 4 个 LSE</text>
+<text class="sm" x="1226" y="253" text-anchor="start">不物化 4×16 概率矩阵</text>
+<text class="sm" x="1226" y="269" text-anchor="start">收益全在内核内的重叠</text>
+<text class="sm" x="1446" y="308" text-anchor="end">↑ 这四列全在 TE 内核里，Megatron 源码不可证</text>
+<path class="edge" d="M 457 168 L 457 293"/>
+<rect class="acc2" x="437" y="142" width="40" height="22" rx="6"/>
+<text class="sm" x="457" y="157" text-anchor="middle">TE</text>
+<path class="main" d="M 182 225 L 196 225"/>
+<rect class="panel" x="20" y="326" width="1440" height="178" rx="12"/>
+<text class="pt" x="36" y="356" text-anchor="start">② all_gather</text>
+<text class="sm" x="36" y="376" text-anchor="start">Megatron 原生 eager</text>
+<rect class="acc1" x="34" y="386" width="148" height="24" rx="6"/>
+<text class="sm" x="108" y="402" text-anchor="middle">Megatron 可证</text>
+<text class="sm" x="36" y="432" text-anchor="start">原生路径被锁死为它</text>
+<rect class="acc1" x="196" y="346" width="252" height="135" rx="8"/>
+<text class="tx" x="208" y="367" text-anchor="start">Megatron 侧装配</text>
+<path class="edge" d="M 208 375 L 436 375"/>
+<text class="sm" x="208" y="393" text-anchor="start">DotProductAttention.forward 分支</text>
+<text class="sm" x="208" y="409" text-anchor="start">AttentionFuncionWithContextParallel</text>
+<text class="sm" x="208" y="425" text-anchor="start">heads_k_stride 写死为 1</text>
+<text class="costtx" x="208" y="441" text-anchor="start">取全局静态组，不看注入组</text>
+<text class="sm" x="208" y="457" text-anchor="start">cp_comm_type 收下即丢弃</text>
+<rect class="neutral" x="470" y="346" width="240" height="135" rx="8"/>
+<text class="tx" x="482" y="367" text-anchor="start">本地计算</text>
+<path class="edge" d="M 482 375 L 698 375"/>
+<text class="sm" x="482" y="393" text-anchor="start">to_zz_mask_attn_bias 重排 key 轴</text>
+<text class="sm" x="482" y="409" text-anchor="start">本 rank 4 行 q × 全序列 16 行 k</text>
+<text class="sm" x="482" y="425" text-anchor="start">eager_attn_fwd 一次整块 softmax</text>
+<text class="costtx" x="482" y="441" text-anchor="start">无裁剪：8×4×16 = 512 格</text>
+<text class="sm" x="482" y="457" text-anchor="start">是下界 272 的 1.9 倍</text>
+<rect class="neutral" x="718" y="346" width="240" height="135" rx="8"/>
+<text class="tx" x="730" y="367" text-anchor="start">上线的数据</text>
+<path class="edge" d="M 730 375 L 946 375"/>
+<text class="sm" x="730" y="393" text-anchor="start">逐 head 两次 all_gather_into_tensor</text>
+<text class="sm" x="730" y="409" text-anchor="start">每次收 (c-1)/c·S = 12 行</text>
+<text class="costtx" x="730" y="425" text-anchor="start">16 次 AG = 192 head-row</text>
+<text class="sm" x="730" y="441" text-anchor="start">async_op=True，head 间可预取</text>
+<text class="sm" x="730" y="457" text-anchor="start">GQA 已 repeat_interleave，省不下</text>
+<rect class="neutral" x="966" y="346" width="240" height="135" rx="8"/>
+<text class="tx" x="978" y="367" text-anchor="start">重构与反向</text>
+<path class="edge" d="M 978 375 L 1194 375"/>
+<text class="sm" x="978" y="393" text-anchor="start">不需要 online softmax</text>
+<text class="sm" x="978" y="409" text-anchor="start">逐 head cat 成 [4, B, 8, d_h]</text>
+<text class="sm" x="978" y="425" text-anchor="start">反向逐 head reduce_scatter_tensor</text>
+<text class="costtx" x="978" y="441" text-anchor="start">RS 同步发起，无 async_op</text>
+<text class="sm" x="978" y="457" text-anchor="start">RS 与前向 AG 的 rank 序互逆</text>
+<rect class="neutral" x="1214" y="346" width="232" height="135" rx="8"/>
+<text class="tx" x="1226" y="367" text-anchor="start">增量代价</text>
+<path class="edge" d="M 1226 375 L 1434 375"/>
+<text class="costtx" x="1226" y="393" text-anchor="start">probs 全量保存 512 格/层</text>
+<text class="sm" x="1226" y="409" text-anchor="start">KV 物化回 16 行，本地只有 4 行</text>
+<text class="sm" x="1226" y="425" text-anchor="start">静默丢弃 softmax sink 与滑窗</text>
+<text class="sm" x="1226" y="441" text-anchor="start">不支持 packed seq 与 Dynamic CP</text>
+<text class="sm" x="1226" y="457" text-anchor="start">定位是特性缺口时的回退</text>
+<path class="edge" d="M 457 356 L 457 481"/>
+<rect class="acc1" x="423" y="330" width="68" height="22" rx="6"/>
+<text class="sm" x="457" y="345" text-anchor="middle">无 TE 边界</text>
+<path class="main" d="M 182 413 L 196 413"/>
+<rect class="panel" x="20" y="514" width="1440" height="178" rx="12"/>
+<text class="pt" x="36" y="544" text-anchor="start">③ a2a</text>
+<text class="sm" x="36" y="564" text-anchor="start">Ulysses · 换 head 轴</text>
+<rect class="ghost" x="34" y="574" width="148" height="24" rx="6"/>
+<text class="sm" x="108" y="590" text-anchor="middle">TransformerEngine</text>
+<text class="sm" x="36" y="620" text-anchor="start">Megatron 侧无整除断言</text>
+<rect class="neutral" x="196" y="534" width="252" height="135" rx="8"/>
+<text class="tx" x="208" y="555" text-anchor="start">Megatron 侧装配</text>
+<path class="edge" d="M 208 563 L 436 563"/>
+<text class="sm" x="208" y="581" text-anchor="start">extra_kwargs 写入 "a2a"</text>
+<text class="sm" x="208" y="597" text-anchor="start">cp_group 仍是普通 CP 组</text>
+<text class="sm" x="208" y="613" text-anchor="start">分层组不参与</text>
+<text class="costtx" x="208" y="629" text-anchor="start">Megatron 侧没有 head 整除断言</text>
+<text class="sm" x="208" y="645" text-anchor="start">head 不够分时行为由 TE 决定</text>
+<rect class="ghost" x="470" y="534" width="240" height="135" rx="8"/>
+<text class="tx" x="482" y="555" text-anchor="start">本地计算</text>
+<path class="edge" d="M 482 563 L 698 563"/>
+<text class="sm" x="482" y="581" text-anchor="start">换轴后持全序列 16 行</text>
+<text class="sm" x="482" y="597" text-anchor="start">每 rank 只留 a/c = 2 个 head</text>
+<text class="sm" x="482" y="613" text-anchor="start">对本地 head 做一次完整 attention</text>
+<text class="dim" x="482" y="629" text-anchor="start">2×136 = 272 格</text>
+<text class="sm" x="482" y="645" text-anchor="start">正好落在下界 272，无块级浪费</text>
+<rect class="ghost" x="718" y="534" width="240" height="135" rx="8"/>
+<text class="tx" x="730" y="555" text-anchor="start">上线的数据</text>
+<path class="edge" d="M 730 563 L 946 563"/>
+<text class="sm" x="730" y="581" text-anchor="start">Q / K / V 进场各一次换轴</text>
+<text class="sm" x="730" y="597" text-anchor="start">O 出场再一次，共 4 次 A2A</text>
+<text class="sm" x="730" y="613" text-anchor="start">每次发本地的 (c-1)/c</text>
+<text class="costtx" x="730" y="629" text-anchor="start">4×24 = 96 head-row</text>
+<text class="sm" x="730" y="645" text-anchor="start">是 ring 的 0.5 倍（MHA、c=4）</text>
+<rect class="ghost" x="966" y="534" width="240" height="135" rx="8"/>
+<text class="tx" x="978" y="555" text-anchor="start">重构与反向</text>
+<path class="edge" d="M 978 563 L 1194 563"/>
+<text class="sm" x="978" y="581" text-anchor="start">本地直接得到 [16, B, 2, d_h]</text>
+<text class="sm" x="978" y="597" text-anchor="start">出场 A2A 换回 [4, B, 8, d_h]</text>
+<text class="sm" x="978" y="613" text-anchor="start">不需要 online softmax</text>
+<text class="sm" x="978" y="629" text-anchor="start">反向把 scatter/gather 轴对调</text>
+<text class="sm" x="978" y="645" text-anchor="start">再做一次对称的 A2A</text>
+<rect class="ghost" x="1214" y="534" width="232" height="135" rx="8"/>
+<text class="tx" x="1226" y="555" text-anchor="start">增量代价</text>
+<path class="edge" d="M 1226 563 L 1434 563"/>
+<text class="sm" x="1226" y="581" text-anchor="start">4 次全连接换轴，都是同步点</text>
+<text class="sm" x="1226" y="597" text-anchor="start">本地要放下完整 16 行的 QKV</text>
+<text class="sm" x="1226" y="613" text-anchor="start">要求 a 能被 c=4 整除</text>
+<text class="sm" x="1226" y="629" text-anchor="start">GQA 下通信跟 a 走不跟 a_kv 走</text>
+<text class="sm" x="1226" y="645" text-anchor="start">A2A 适合 NVLink 域内</text>
+<text class="sm" x="1446" y="684" text-anchor="end">↑ 这四列全在 TE 内核里，Megatron 源码不可证</text>
+<path class="edge" d="M 457 544 L 457 669"/>
+<rect class="acc2" x="437" y="518" width="40" height="22" rx="6"/>
+<text class="sm" x="457" y="533" text-anchor="middle">TE</text>
+<path class="main" d="M 182 601 L 196 601"/>
+<rect class="panel" x="20" y="702" width="1440" height="178" rx="12"/>
+<text class="pt" x="36" y="732" text-anchor="start">④ a2a+p2p</text>
+<text class="sm" x="36" y="752" text-anchor="start">低层 A2A × 高层 P2P</text>
+<rect class="ghost" x="34" y="762" width="148" height="24" rx="6"/>
+<text class="sm" x="108" y="778" text-anchor="middle">TransformerEngine</text>
+<text class="sm" x="36" y="808" text-anchor="start">要 TE ≥ 1.12.0</text>
+<rect class="neutral" x="196" y="722" width="252" height="135" rx="8"/>
+<text class="tx" x="208" y="743" text-anchor="start">Megatron 侧装配</text>
+<path class="edge" d="M 208 751 L 436 751"/>
+<text class="sm" x="208" y="769" text-anchor="start">hierarchical sizes = [2, 2]</text>
+<text class="sm" x="208" y="785" text-anchor="start">低层组 {0,1} {2,3}</text>
+<text class="sm" x="208" y="801" text-anchor="start">高层组 {0,2} {1,3}</text>
+<text class="sm" x="208" y="817" text-anchor="start">cp_group 换成分层组列表</text>
+<text class="costtx" x="208" y="833" text-anchor="start">读全局 getter，忽略注入组</text>
+<rect class="ghost" x="470" y="722" width="240" height="135" rx="8"/>
+<text class="tx" x="482" y="743" text-anchor="start">本地计算</text>
+<path class="edge" d="M 482 751 L 698 751"/>
+<text class="sm" x="482" y="769" text-anchor="start">低层 A2A 后持 8 行 × 4 head</text>
+<text class="sm" x="482" y="785" text-anchor="start">高层环 2 步补齐另外 8 行 KV</text>
+<text class="sm" x="482" y="801" text-anchor="start">块级裁剪 18/32 块</text>
+<text class="dim" x="482" y="817" text-anchor="start">4×18×4 = 288 格</text>
+<text class="sm" x="482" y="833" text-anchor="start">2 个低层组的块数都是 18</text>
+<rect class="ghost" x="718" y="722" width="240" height="135" rx="8"/>
+<text class="tx" x="730" y="743" text-anchor="start">上线的数据</text>
+<path class="edge" d="M 730 751 L 946 751"/>
+<text class="sm" x="730" y="769" text-anchor="start">低层 4 次 A2A = 64 head-row</text>
+<text class="sm" x="730" y="785" text-anchor="start">高层 1 次环形交换 ×2</text>
+<text class="costtx" x="730" y="801" text-anchor="start">= 64 head-row 走跨节点</text>
+<text class="sm" x="730" y="817" text-anchor="start">把大流量压进高带宽域</text>
+<text class="sm" x="730" y="833" text-anchor="start">两级各走各的物理链路</text>
+<rect class="ghost" x="966" y="722" width="240" height="135" rx="8"/>
+<text class="tx" x="978" y="743" text-anchor="start">重构与反向</text>
+<path class="edge" d="M 978 751 L 1194 751"/>
+<text class="sm" x="978" y="769" text-anchor="start">高层环内 online-softmax 合并</text>
+<text class="sm" x="978" y="785" text-anchor="start">得到 [8, B, 4, d_h]</text>
+<text class="sm" x="978" y="801" text-anchor="start">低层 A2A 换回 [4, B, 8, d_h]</text>
+<text class="sm" x="978" y="817" text-anchor="start">两级各自的反向叠加</text>
+<text class="sm" x="978" y="833" text-anchor="start">合并细节 Megatron 不可证</text>
+<rect class="ghost" x="1214" y="722" width="232" height="135" rx="8"/>
+<text class="tx" x="1226" y="743" text-anchor="start">增量代价</text>
+<path class="edge" d="M 1226 751 L 1434 751"/>
+<text class="sm" x="1226" y="769" text-anchor="start">每 CP 组多 4 个子 communicator</text>
+<text class="sm" x="1226" y="785" text-anchor="start">乘积必须等于 CP size</text>
+<text class="sm" x="1226" y="801" text-anchor="start">要 TE ≥ 1.12.0</text>
+<text class="sm" x="1226" y="817" text-anchor="start">配错分层尺寸直接 assert 失败</text>
+<text class="sm" x="1226" y="833" text-anchor="start">四条里可观测性最差的一条</text>
+<text class="sm" x="1446" y="872" text-anchor="end">↑ 这四列全在 TE 内核里，Megatron 源码不可证</text>
+<path class="edge" d="M 457 732 L 457 857"/>
+<rect class="acc2" x="437" y="706" width="40" height="22" rx="6"/>
+<text class="sm" x="457" y="721" text-anchor="middle">TE</text>
+<path class="main" d="M 182 789 L 196 789"/>
+<text class="cap" x="28" y="914" text-anchor="start">同一份 KV 流量：p2p 的 3 次环形交换与 all_gather 的 16 次 AG 在本例都是 192 head-row，差别在调度与显存，不在字节数。</text>
+<text class="cap" x="28" y="934" text-anchor="start">TE 三条 lane 的步数与块数是按 cp_comm_type docstring 描述的分工在本例上的推算，不是 Megatron 源码事实；通信量代数归理论页。</text>
+</svg>

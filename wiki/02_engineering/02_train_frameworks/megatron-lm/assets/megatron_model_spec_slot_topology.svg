@@ -1,0 +1,233 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 1337" width="100%" role="img" aria-label="local 与 transformer engine 两份 spec 装出的插槽表拓扑对照及其共同的 checkpoint 键">
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .cell0{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .cell1{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+</style>
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<rect class="card" x="0.5" y="0.5" width="1479" height="1336" rx="14"/>
+<text class="ti" x="28" y="36" text-anchor="start">同一个 TransformerLayer 类，两份后端 spec：改变的是槽的拓扑，不只是算子</text>
+<text class="su" x="28" y="57" text-anchor="start">dense · 非 MLA · 无 hyper-connection：非哨兵槽 local=6、transformer_engine=4，差的正是被融进后继 linear 的两个 norm 槽</text>
+<rect class="panel" x="20" y="84" width="708" height="911" rx="12"/>
+<text class="pt" x="40" y="114" text-anchor="start">① transformer_impl = "local"</text>
+<rect class="neutral" x="40" y="130" width="668" height="58" rx="8"/>
+<text class="tx" x="374" y="147" text-anchor="middle">config</text>
+<text class="sm" x="374" y="163" text-anchor="middle">transformer_impl = "local"</text>
+<text class="sm" x="374" y="179" text-anchor="middle">num_experts=None · qk_layernorm=False</text>
+<path class="main" d="M 374 188 L 374 202"/>
+<rect class="neutral" x="40" y="202" width="668" height="34" rx="8"/>
+<text class="tx" x="374" y="223" text-anchor="middle">get_backend(transformer_impl)</text>
+<path class="main" d="M 374 236 L 374 250"/>
+<rect class="neutral" x="40" y="250" width="668" height="66" rx="8"/>
+<text class="tx" x="374" y="271" text-anchor="middle">LocalSpecProvider</text>
+<text class="sm" x="374" y="287" text-anchor="middle">fuse_layernorm_and_linear() → False</text>
+<text class="sm" x="374" y="303" text-anchor="middle">linear_fc1 = backend.column_parallel_linear()</text>
+<path class="main" d="M 374 316 L 374 330"/>
+<text class="tx" x="40" y="348" text-anchor="start">TransformerLayerSubmodules —— 12 个模块槽 + 1 张 sharded_state_dict_keys_map</text>
+<rect class="neutral" x="576" y="334" width="132" height="22" rx="6"/>
+<text class="sm" x="642" y="349" text-anchor="middle">非哨兵槽 6 / 12</text>
+<text class="tx" x="38" y="387" text-anchor="start">input_layernorm</text>
+<rect class="acc1" x="206" y="366" width="476" height="34" rx="8"/>
+<text class="dim" x="220" y="387" text-anchor="start">LNImpl</text>
+<text class="sm" x="38" y="426" text-anchor="start">self_attention_hyper_connection</text>
+<rect class="ghost" x="206" y="405" width="476" height="34" rx="8"/>
+<text class="sm" x="220" y="426" text-anchor="start">IdentityOp（哨兵：此槽未填）</text>
+<text class="tx" x="38" y="464" text-anchor="start">self_attention</text>
+<rect class="acc1" x="206" y="444" width="476" height="118" rx="8"/>
+<text class="tx" x="220" y="460" text-anchor="start">ModuleSpec(module=SelfAttention)</text>
+<text class="sm" x="220" y="477" text-anchor="start">SelfAttentionSubmodules（嵌套第二张插槽表）</text>
+<text class="sm" x="220" y="499" text-anchor="start">linear_qkv</text>
+<rect class="neutral" x="324" y="486" width="42" height="18" rx="4"/>
+<text class="sm" x="345" y="498.5" text-anchor="middle">GEMM</text>
+<text class="dim" x="374" y="499" text-anchor="start">ColumnParallelLinear</text>
+<text class="sm" x="220" y="524" text-anchor="start">core_attention</text>
+<rect class="neutral" x="324" y="511" width="42" height="18" rx="4"/>
+<text class="sm" x="345" y="523.5" text-anchor="middle">GEMM</text>
+<text class="dim" x="374" y="524" text-anchor="start">DotProductAttention</text>
+<text class="sm" x="220" y="549" text-anchor="start">linear_proj</text>
+<rect class="neutral" x="324" y="536" width="42" height="18" rx="4"/>
+<text class="sm" x="345" y="548.5" text-anchor="middle">GEMM</text>
+<text class="dim" x="374" y="549" text-anchor="start">RowParallelLinear</text>
+<text class="tx" x="38" y="588" text-anchor="start">self_attn_bda</text>
+<rect class="acc1" x="206" y="567" width="476" height="34" rx="8"/>
+<text class="dim" x="220" y="588" text-anchor="start">get_bias_dropout_add</text>
+<text class="sm" x="38" y="627" text-anchor="start">pre_cross_attn_layernorm</text>
+<rect class="ghost" x="206" y="606" width="476" height="34" rx="8"/>
+<text class="sm" x="220" y="627" text-anchor="start">IdentityOp（哨兵：此槽未填）</text>
+<rect class="acc2" x="696" y="610" width="10" height="26" rx="3"/>
+<text class="sm" x="38" y="666" text-anchor="start">cross_attention_hyper_connection</text>
+<rect class="ghost" x="206" y="645" width="476" height="34" rx="8"/>
+<text class="sm" x="220" y="666" text-anchor="start">IdentityOp（哨兵：此槽未填）</text>
+<text class="sm" x="38" y="705" text-anchor="start">cross_attention</text>
+<rect class="ghost" x="206" y="684" width="476" height="34" rx="8"/>
+<text class="sm" x="220" y="705" text-anchor="start">IdentityOp（哨兵：此槽未填）</text>
+<rect class="acc2" x="696" y="688" width="10" height="26" rx="3"/>
+<text class="sm" x="38" y="744" text-anchor="start">cross_attn_bda</text>
+<rect class="ghost" x="206" y="723" width="476" height="34" rx="8"/>
+<text class="sm" x="220" y="744" text-anchor="start">IdentityFuncOp（哨兵：此槽未填）</text>
+<rect class="acc2" x="696" y="727" width="10" height="26" rx="3"/>
+<text class="tx" x="38" y="783" text-anchor="start">pre_mlp_layernorm</text>
+<rect class="acc1" x="206" y="762" width="476" height="34" rx="8"/>
+<text class="dim" x="220" y="783" text-anchor="start">LNImpl</text>
+<text class="sm" x="38" y="822" text-anchor="start">mlp_hyper_connection</text>
+<rect class="ghost" x="206" y="801" width="476" height="34" rx="8"/>
+<text class="sm" x="220" y="822" text-anchor="start">IdentityOp（哨兵：此槽未填）</text>
+<text class="tx" x="38" y="860" text-anchor="start">mlp</text>
+<rect class="acc1" x="206" y="840" width="476" height="94" rx="8"/>
+<text class="tx" x="220" y="856" text-anchor="start">partial(MLP.as_mlp_submodule)</text>
+<text class="sm" x="220" y="873" text-anchor="start">MLPSubmodules（嵌套第二张插槽表）</text>
+<text class="sm" x="220" y="895" text-anchor="start">linear_fc1</text>
+<rect class="neutral" x="324" y="882" width="42" height="18" rx="4"/>
+<text class="sm" x="345" y="894.5" text-anchor="middle">GEMM</text>
+<text class="dim" x="374" y="895" text-anchor="start">ColumnParallelLinear</text>
+<text class="sm" x="220" y="920" text-anchor="start">linear_fc2</text>
+<rect class="neutral" x="324" y="907" width="42" height="18" rx="4"/>
+<text class="sm" x="345" y="919.5" text-anchor="middle">GEMM</text>
+<text class="dim" x="374" y="920" text-anchor="start">RowParallelLinear</text>
+<text class="tx" x="38" y="960" text-anchor="start">mlp_bda</text>
+<rect class="acc1" x="206" y="939" width="476" height="34" rx="8"/>
+<text class="dim" x="220" y="960" text-anchor="start">get_bias_dropout_add</text>
+<rect class="panel" x="752" y="84" width="708" height="911" rx="12"/>
+<text class="pt" x="772" y="114" text-anchor="start">② transformer_impl = "transformer_engine"</text>
+<rect class="neutral" x="772" y="130" width="668" height="58" rx="8"/>
+<text class="tx" x="1106" y="147" text-anchor="middle">config</text>
+<text class="sm" x="1106" y="163" text-anchor="middle">transformer_impl = "transformer_engine"</text>
+<text class="sm" x="1106" y="179" text-anchor="middle">num_experts=None · qk_layernorm=False</text>
+<path class="main" d="M 1106 188 L 1106 202"/>
+<rect class="neutral" x="772" y="202" width="668" height="34" rx="8"/>
+<text class="tx" x="1106" y="223" text-anchor="middle">get_backend(transformer_impl)</text>
+<path class="main" d="M 1106 236 L 1106 250"/>
+<rect class="acc1" x="772" y="250" width="668" height="66" rx="8"/>
+<text class="tx" x="1106" y="271" text-anchor="middle">TESpecProvider</text>
+<text class="sm" x="1106" y="287" text-anchor="middle">fuse_layernorm_and_linear() → True</text>
+<text class="sm" x="1106" y="303" text-anchor="middle">linear_fc1 = backend.column_parallel_layer_norm_linear()</text>
+<path class="main" d="M 1106 316 L 1106 330"/>
+<text class="tx" x="772" y="348" text-anchor="start">TransformerLayerSubmodules —— 12 个模块槽 + 1 张 sharded_state_dict_keys_map</text>
+<rect class="acc1" x="1308" y="334" width="132" height="22" rx="6"/>
+<text class="sm" x="1374" y="349" text-anchor="middle">非哨兵槽 4 / 12</text>
+<text class="sm" x="770" y="387" text-anchor="start">input_layernorm</text>
+<rect class="ghost" x="938" y="366" width="476" height="34" rx="8"/>
+<text class="dim" x="952" y="387" text-anchor="start">IdentityOp（哨兵）—— norm 已融进 self_attention.linear_qkv</text>
+<text class="sm" x="770" y="426" text-anchor="start">self_attention_hyper_connection</text>
+<rect class="ghost" x="938" y="405" width="476" height="34" rx="8"/>
+<text class="sm" x="952" y="426" text-anchor="start">IdentityOp（哨兵：此槽未填）</text>
+<text class="tx" x="770" y="464" text-anchor="start">self_attention</text>
+<rect class="acc1" x="938" y="444" width="476" height="118" rx="8"/>
+<text class="tx" x="952" y="460" text-anchor="start">ModuleSpec(module=SelfAttention)</text>
+<text class="sm" x="952" y="477" text-anchor="start">SelfAttentionSubmodules（嵌套第二张插槽表）</text>
+<text class="sm" x="952" y="499" text-anchor="start">linear_qkv</text>
+<rect class="acc1" x="1056" y="486" width="30" height="18" rx="4"/>
+<text class="sm" x="1071" y="498.5" text-anchor="middle">LN</text>
+<rect class="neutral" x="1089" y="486" width="42" height="18" rx="4"/>
+<text class="sm" x="1110" y="498.5" text-anchor="middle">GEMM</text>
+<text class="dim" x="1139" y="499" text-anchor="start">TELayerNormColumnParallelLinear</text>
+<text class="sm" x="952" y="524" text-anchor="start">core_attention</text>
+<rect class="neutral" x="1056" y="511" width="42" height="18" rx="4"/>
+<text class="sm" x="1077" y="523.5" text-anchor="middle">GEMM</text>
+<text class="dim" x="1106" y="524" text-anchor="start">TEDotProductAttention</text>
+<text class="sm" x="952" y="549" text-anchor="start">linear_proj</text>
+<rect class="neutral" x="1056" y="536" width="42" height="18" rx="4"/>
+<text class="sm" x="1077" y="548.5" text-anchor="middle">GEMM</text>
+<text class="dim" x="1106" y="549" text-anchor="start">TERowParallelLinear</text>
+<text class="dim" x="1400" y="477" text-anchor="end">norm 已在框内</text>
+<text class="tx" x="770" y="588" text-anchor="start">self_attn_bda</text>
+<rect class="acc1" x="938" y="567" width="476" height="34" rx="8"/>
+<text class="dim" x="952" y="588" text-anchor="start">get_bias_dropout_add</text>
+<text class="sm" x="770" y="627" text-anchor="start">pre_cross_attn_layernorm</text>
+<rect class="ghost" x="938" y="606" width="476" height="34" rx="8"/>
+<text class="sm" x="952" y="627" text-anchor="start">IdentityOp（哨兵：此槽未填）</text>
+<rect class="acc2" x="1428" y="610" width="10" height="26" rx="3"/>
+<text class="sm" x="770" y="666" text-anchor="start">cross_attention_hyper_connection</text>
+<rect class="ghost" x="938" y="645" width="476" height="34" rx="8"/>
+<text class="sm" x="952" y="666" text-anchor="start">IdentityOp（哨兵：此槽未填）</text>
+<text class="sm" x="770" y="705" text-anchor="start">cross_attention</text>
+<rect class="ghost" x="938" y="684" width="476" height="34" rx="8"/>
+<text class="sm" x="952" y="705" text-anchor="start">IdentityOp（哨兵：此槽未填）</text>
+<rect class="acc2" x="1428" y="688" width="10" height="26" rx="3"/>
+<text class="sm" x="770" y="744" text-anchor="start">cross_attn_bda</text>
+<rect class="ghost" x="938" y="723" width="476" height="34" rx="8"/>
+<text class="sm" x="952" y="744" text-anchor="start">IdentityFuncOp（哨兵：此槽未填）</text>
+<rect class="acc2" x="1428" y="727" width="10" height="26" rx="3"/>
+<text class="sm" x="770" y="783" text-anchor="start">pre_mlp_layernorm</text>
+<rect class="ghost" x="938" y="762" width="476" height="34" rx="8"/>
+<text class="dim" x="952" y="783" text-anchor="start">IdentityOp（哨兵）—— norm 已融进 mlp.linear_fc1</text>
+<text class="sm" x="770" y="822" text-anchor="start">mlp_hyper_connection</text>
+<rect class="ghost" x="938" y="801" width="476" height="34" rx="8"/>
+<text class="sm" x="952" y="822" text-anchor="start">IdentityOp（哨兵：此槽未填）</text>
+<text class="tx" x="770" y="860" text-anchor="start">mlp</text>
+<rect class="acc1" x="938" y="840" width="476" height="94" rx="8"/>
+<text class="tx" x="952" y="856" text-anchor="start">partial(MLP.as_mlp_submodule)</text>
+<text class="sm" x="952" y="873" text-anchor="start">MLPSubmodules（嵌套第二张插槽表）</text>
+<text class="sm" x="952" y="895" text-anchor="start">linear_fc1</text>
+<rect class="acc1" x="1056" y="882" width="30" height="18" rx="4"/>
+<text class="sm" x="1071" y="894.5" text-anchor="middle">LN</text>
+<rect class="neutral" x="1089" y="882" width="42" height="18" rx="4"/>
+<text class="sm" x="1110" y="894.5" text-anchor="middle">GEMM</text>
+<text class="dim" x="1139" y="895" text-anchor="start">TELayerNormColumnParallelLinear</text>
+<text class="sm" x="952" y="920" text-anchor="start">linear_fc2</text>
+<rect class="neutral" x="1056" y="907" width="42" height="18" rx="4"/>
+<text class="sm" x="1077" y="919.5" text-anchor="middle">GEMM</text>
+<text class="dim" x="1106" y="920" text-anchor="start">TERowParallelLinear</text>
+<text class="dim" x="1400" y="873" text-anchor="end">norm 已在框内</text>
+<text class="tx" x="770" y="960" text-anchor="start">mlp_bda</text>
+<rect class="acc1" x="938" y="939" width="476" height="34" rx="8"/>
+<text class="dim" x="952" y="960" text-anchor="start">get_bias_dropout_add</text>
+<rect class="panel" x="20" y="1015" width="1440" height="198" rx="12"/>
+<text class="pt" x="40" y="1043" text-anchor="start">③ 治理不变量：两条泳道模块树不同形，却写出同一份 checkpoint 键</text>
+<text class="su" x="40" y="1062" text-anchor="start">TransformerLayerSubmodules 的第 13 个字段 sharded_state_dict_keys_map 在 TransformerLayer.sharded_state_dict 里经 apply_prefix_mapping 就地改键</text>
+<rect class="neutral" x="40" y="1077" width="360" height="56" rx="6"/>
+<text class="sm" x="54" y="1097" text-anchor="start">local 原始键（模块树路径）</text>
+<text class="dim" x="54" y="1117" text-anchor="start">input_layernorm.weight</text>
+<path class="aux" d="M 400 1105 L 468 1105"/>
+<text class="sm" x="434" y="1098" text-anchor="middle">重命名</text>
+<rect class="acc1" x="470" y="1077" width="540" height="56" rx="6"/>
+<text class="sm" x="484" y="1095" text-anchor="start">规范键（写盘即规范名）</text>
+<text class="dim" x="484" y="1111" text-anchor="start">self_attention.linear_qkv.layer_norm_weight</text>
+<text class="sm" x="484" y="1127" text-anchor="start">map: "input_layernorm." → "self_attention.linear_qkv.layer_norm_"</text>
+<path class="aux" d="M 1078 1105 L 1012 1105"/>
+<text class="sm" x="1045" y="1098" text-anchor="middle">无需映射</text>
+<rect class="neutral" x="1080" y="1077" width="360" height="56" rx="6"/>
+<text class="sm" x="1094" y="1097" text-anchor="start">transformer_engine 原生键</text>
+<text class="dim" x="1094" y="1117" text-anchor="start">self_attention.linear_qkv.layer_norm_weight</text>
+<rect class="neutral" x="40" y="1143" width="360" height="56" rx="6"/>
+<text class="sm" x="54" y="1163" text-anchor="start">local 原始键（模块树路径）</text>
+<text class="dim" x="54" y="1183" text-anchor="start">pre_mlp_layernorm.weight</text>
+<path class="aux" d="M 400 1171 L 468 1171"/>
+<text class="sm" x="434" y="1164" text-anchor="middle">重命名</text>
+<rect class="acc1" x="470" y="1143" width="540" height="56" rx="6"/>
+<text class="sm" x="484" y="1161" text-anchor="start">规范键（写盘即规范名）</text>
+<text class="dim" x="484" y="1177" text-anchor="start">mlp.linear_fc1.layer_norm_weight</text>
+<text class="sm" x="484" y="1193" text-anchor="start">map: "pre_mlp_layernorm." → "mlp.linear_fc1.layer_norm_"</text>
+<path class="aux" d="M 1078 1171 L 1012 1171"/>
+<text class="sm" x="1045" y="1164" text-anchor="middle">无需映射</text>
+<rect class="neutral" x="1080" y="1143" width="360" height="56" rx="6"/>
+<text class="sm" x="1094" y="1163" text-anchor="start">transformer_engine 原生键</text>
+<text class="dim" x="1094" y="1183" text-anchor="start">mlp.linear_fc1.layer_norm_weight</text>
+<rect class="acc2" x="20" y="1229" width="1440" height="56" rx="10"/>
+<text class="costtx" x="40" y="1252" text-anchor="start">代价：3 个恒空槽被无条件调用</text>
+<text class="sm" x="40" y="1271" text-anchor="start">decoder-only 下 pre_cross_attn_layernorm / cross_attention / cross_attn_bda 在两条泳道上都是哨兵（右侧橙条），_forward_attention 仍每层每次前向调用它们</text>
+<text class="cap" x="28" y="1311" text-anchor="start">蓝色：本图机制（被填的槽、被融进 linear 的 norm、规范键）；橙色：代价；灰底：哨兵与不参与本图立论的部分。</text>
+<text class="cap" x="28" y="1329" text-anchor="start">两条泳道的 12 行按 dataclass 声明顺序逐行对齐——同一行的差异就是「一个布尔量改变了槽的拓扑」。</text>
+</svg>
