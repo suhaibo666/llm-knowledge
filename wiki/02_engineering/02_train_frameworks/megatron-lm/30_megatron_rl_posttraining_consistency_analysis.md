@@ -8,11 +8,11 @@ title: "Megatron-LM RL 后训练适配与训推一致性深度解析"
 > **重定基线**:2026-09-01 由 `71092579`(2026-08-27)推进,跨 7 个提交;本轮增量只触及 `megatron/` 下 20 个文件,其中与本页相关的只有 `megatron/core/transformer/transformer_config.py`(后移 11 行 / 17 行,分段不同)与 `megatron/core/transformer/moe/moe_layer.py`(后移 13 行),受影响的 7 处 `path:line` 引用已逐条在新基线下打开核对并改写行号。**机制正文一字未改**:`inference_optimized` 的六条 MoE 硬拒绝、`transformer_impl` 三选枚举、`InferenceMode` 分流点在新基线下**逐字一致**,仅位置平移;`megatron/core/resharding/`、`megatron/core/inference/`、`megatron/rl/` 三处本页主战场在本轮 7 个提交里**完全未被触碰**——本页 §5~§8 那几条仍写「行号已重核至基线 `71092579`」的 `[!update]` 批注,其 locator 全部落在这三处,故在 `85902ef5` 下依旧命中,未逐条改写标注。
 > **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心:`megatron/core/resharding/`(refit)、`inference/`(推理引擎)、`inference/quantization/`(MXFP8)、`post_training/modelopt/`、`megatron/core/transformer/transformer_config.py`(`transformer_impl='inference_optimized'`)
-> 配套阅读:`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §5(refit 基础)、`17_megatron_parallelism_orchestration_analysis.md`、`14_megatron_ep_analysis.md`
+> 配套阅读:[[19_megatron_dist_checkpointing_analysis]]（落盘恢复边界）、[[17_megatron_parallelism_orchestration_analysis]]、[[14_megatron_ep_analysis]]
 > 定位:系统性专题。前面文档讲预训练;本文讲 **RL 后训练**(RLHF / GRPO / PPO)对 Megatron 提出的特殊需求,以及核心难题 **训推一致性(train-inference consistency)**。
-> **三方分工**:本文是 Megatron 训练侧的 refit / 训推一致性实现(逐项收敛 gap);三平面机制视角(weight publish 协议、跨框架不变量)见 [[01_posttraining_infra_mechanism_analysis]] 第 6 节;verl 在 Megatron+vLLM 场景下的具体同步调用链见 [[33_megatron_vllm_weight_sync_analysis]]。
+> **三方分工**:本文是 Megatron 训练侧的 refit / 训推一致性实现(逐项收敛 gap);三平面机制视角(weight publish 协议、跨框架不变量)见 [[01_posttraining_infra_mechanism_analysis]] 第 6 节;verl 当前 full / `delta_sharded` 发布机制及已退役 SPMD 链的演进对照见 [[21_verl_weight_publication_analysis]]。
 > **叙事顺序**:本页按五拍组织——背景 → 为什么这么设计(含被否掉的替代)→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**:2026-09-01。仅按新基线重钉页头与 7 处引用行号;章节顺序与机制正文未改。
+> **最近更新**:2026-09-03。接管旧补遗页的 Resharding/Refit owner 职责，并补入 TP planner、1D swizzled scale 与 transform 扩展边界。
 
 ---
 
@@ -103,7 +103,7 @@ README 把流程写成五步:各 rank 抽元数据 → `dist.gather_object()` �
 
 ## 2. 解法①:Refit 消除"权重陈旧"
 
-`resharding/`(详见 `27_megatron_tp_fsdp_resharding_supplements_analysis.md` §5)。每个 RL 迭代结束,`swap_model_weights(train_model, infer_model)` 把训练模型的**最新权重**搬进推理模型。
+`resharding/` 是本页负责解释的 refit 实现。每个 RL 迭代结束,`swap_model_weights(train_model, infer_model)` 把训练模型的**最新权重**搬进推理模型。
 
 ```python
 from megatron.core.resharding import prepare_swap_model_weights, swap_model_weights
@@ -114,11 +114,22 @@ swap_model_weights(train_model, infer_model, refit_method="nccl")
 
 意义:rollout 用的永远是**刚更新过的** policy,不存在"用三步前的旧权重采样"的陈旧偏差。`r` 偏离 1 的第一大来源被直接消除。
 
+### 2.1 从公开 API 到目标权重可见
+
+一次 refit 不是“生成计划后权重自然就到了”，完整执行跳是：
+
+1. `swap_model_weights` 先把后端名解析成 `CopyService`（或接收已构造的 service），未显式传 transform 时从缓存 plan 取出 transform，然后调用 `reshard_model_weights`（`megatron/core/resharding/refit.py:321-373`）。
+2. `reshard_model_weights` 解包两侧 core，调用 `_build_or_get_plan` 取得/构建 plan，统一持久 buffer dtype，再进入 `execute_reshard_plan`（`megatron/core/resharding/refit.py:426-456`）。plan 如何由 rank 0 生成并分发见 §3.1。
+3. 执行器把模型参数和持久 buffer 建成名字索引；遍历 `plan.send_ops`，按需走 `transform.prepare_send` 后 `service.submit_send`；再遍历 `plan.recv_ops`，按需走 `transform.prepare_recv` 后 `service.submit_recv`，并把后续动作登记为 direct / transform / copy 三类 writeback（`megatron/core/resharding/execution.py:58-87,119-193`）。
+4. 全部 op 提交后才调用 `service.run()`，随后 CUDA synchronize 与 group barrier；通信完成后依次执行 direct no-op、`transform.finalize_recv` 或 slice `copy_()`，需要整权重量化的 MXFP8 目标最后统一 `quantize_()`，再做第二次 synchronize 才返回调用者（`megatron/core/resharding/execution.py:195-245`）。
+
+因此可复核的主链是 `swap_model_weights → reshard_model_weights → _build_or_get_plan → execute_reshard_plan → submit_send/submit_recv → service.run/barrier → finalize_recv/copy/quantize → return`；planner、transport 与 transform 是同一条调用链的三个阶段，不是三套平行机制。
+
 ---
 
 ## 3. 解法②:Refit 的布局/格式保真
 
-光"搬过去"不够,**搬得要精确** —— 否则布局/格式转换本身又引入差异。`resharding/` 在两处下了功夫。
+光"搬过去"不够：**布局映射必须精确，格式转换必须遵守目标量化格式的契约**。前者不应额外改变数值；后者从 BF16 到 MXFP8 本来就是有损量化，不能合称“零误差”。`resharding/` 分别处理这两个问题。
 
 ### 3.1 并行布局重映射(`megatron/core/resharding/planner.py`)
 
@@ -138,7 +149,7 @@ swap_model_weights(train_model, infer_model, refit_method="nccl")
 
 而且转换直接 `copy_()` 写进**持久 MXFP8Tensor buffer**(其设备指针被 CUDA Graph 捕获),保证多次 refit 后 CUDA Graph 仍有效。
 
-意义:推理模型拿到的是训练权重**忠实的 MXFP8 量化版本**,而不是"重新量化的近似" —— 把"精度不同"这一项差异收敛成单纯的"BF16 vs MXFP8 数值精度差",干净、可量化。
+意义：代码保证切片按正确的 scale 布局汇合、写进既有持久 buffer；它通过 `MXFP8Tensor.from_bf16(...)` 产生目标表示（`megatron/core/resharding/transforms.py:179-185,262-274`），所以仍存在预期的 BF16→MXFP8 量化误差。保证的是**布局与写回契约正确**，不是格式转换数值无损；剩余差异就是后文需要测量和修正的精度 gap。
 
 ---
 
@@ -180,7 +191,7 @@ RL 训练里的标准做法:**不信任 rollout 的 logprob,在训练相用训�
 即便做完①~④,`μ_rollout`(MXFP8 推理路径)与 `π_train`(BF16 训练路径)仍有**不可消除的小差异**。Megatron 不假装它为零,而是:
 
 - 把这个 gap 收敛成**小、稳定、可量化**的量(靠①②③④)。
-- 真正的数学修正交给上层 RL 框架:把 rollout 策略 `μ` 与训练策略 `π` 当作**确实不同**的两个分布,用 **importance sampling 比值** `π/μ`(及截断 IS / TIS 等变体)让 policy 梯度在 `μ ≠ π` 下仍**无偏**。
+- 真正的数学修正交给上层 RL 框架：把 rollout 策略 `μ` 与训练策略 `π` 当作**确实不同**的两个分布。满足支持集等条件、使用精确 `π/μ` 时可构造无偏估计；截断/裁剪 IS（TIS 等）则通常以引入偏差为代价压低方差，不能与 exact IS 一并称为“无偏”。
 
 也就是说,Megatron 的职责是"**把不一致做小、做白盒**",让 RL 框架的 IS 修正能在一个良性的小 gap 上工作 —— 而不是在一个失控的大 gap 上硬修。
 
@@ -243,7 +254,13 @@ README 把时序写死:「Call `prepare_swap_model_weights` once during initiali
 **⑤ 缓存必须在销毁进程组之前显式清理。**
 「Call `clear_all_caches()` **before destroying distributed process groups** to avoid stale references. This also finalizes NVSHMEM resources.」(`megatron/core/resharding/README.md:126-127`;API 位置见 §7 的 `[!update]`)。
 
-**⑥ `inference_optimized` 的 MoE 路径有六条硬拒绝,全部是构造期 `ValueError`。**(`megatron/core/transformer/transformer_config.py:2035-2064`)
+**⑥ 当前 TP planner 只接受一个名为 `tp` 的 descriptor。**
+`_plan_tp` 在 descriptor 为空时返回空计划；除此之外，只要 descriptor 数量不是 1，或唯一 descriptor 的名字不是 `tp`，就直接抛 `NotImplementedError`（`megatron/core/resharding/planner.py:195-210`）。因此 §3.1 的 LCM / block-interleaved 规划不能被理解为任意多维 descriptor 的通用笛卡尔积规划器。
+
+**⑦ 1D swizzled scale 不支持 sender-side MXFP8 转换。**
+当 `convert_on_send=True` 且目标持久 buffer 的 `scale.ndim == 1` 时，`MXFP8ReshardTransform.prepare_recv` 明确抛 `NotImplementedError`，要求改用 `convert_on_send=False`：线上传 BF16，在接收端汇齐完整权重后量化（`megatron/core/resharding/transforms.py:196-205`）。这正是 §3.2 中“1D scale 必须等齐”的硬边界，而非性能建议。
+
+**⑧ `inference_optimized` 的 MoE 路径有六条硬拒绝,全部是构造期 `ValueError`。**(`megatron/core/transformer/transformer_config.py:2035-2064`)
 - expert TP > 1 → 「Inference-optimized MoE layers does not support expert tensor parallelism.」(`:2036-2038`)
 - 设了 `moe_expert_capacity_factor` → 「only support **dropless** MoE」(`:2040-2041`)
 - `moe_router_padding_for_quantization` → 「do not support padded routing map for quantization.」(`:2042-2046`)
@@ -251,10 +268,10 @@ README 把时序写死:「Call `prepare_swap_model_weights` once during initiali
 - **`gated_linear_unit`(SwiGLU/GeGLU)→「does not yet support gated linear units」**(`:2053-2056`)——这条限制面很大,主流 MoE 模型基本都用 SwiGLU。
 - `fp8 == "mxfp8"` 但未开 `fp8_param` → 要求 `--fp8-param-gather`(`:2059-2064`)。
 
-**⑦ 边界的精确说法:RL 环不在 `megatron/core`,但同仓 `megatron/rl/` 里有。**
+**⑨ 边界的精确说法:RL 环不在 `megatron/core`,但同仓 `megatron/rl/` 里有。**
 §0 的边界声明针对的是 `megatron/core`,基线下仍然成立。需要补一句的是:同一个仓库的 `megatron/rl/` 已经带了 GRPO 侧的实现(如 `calculate_grpo_advantages`,`megatron/rl/rl_utils.py:853`),但它自陈**尚不可外部使用**:「it is **not yet usable by external users** because not all required code has been released. The available code and examples **may change** as development progresses」(`megatron/rl/README.md:4`),并且「It is **not** intended as an enterprise framework」,企业级能力仍指向 NeMo-RL(`:17`)。
 
-**⑧ Megatron-RL 反向依赖 core 的推理改动。** README 明说「**Significant modifications have been made to the Megatron Core inference code**」(`megatron/rl/README.md:10`)——即 §8 那些 `megatron/rl/*` 的改动与 [[31_megatron_inference_engine_analysis]] 的引擎是耦合演进的,不能只升一侧。
+**⑩ Megatron-RL 反向依赖 core 的推理改动。** README 明说「**Significant modifications have been made to the Megatron Core inference code**」(`megatron/rl/README.md:10`)——即 §8 那些 `megatron/rl/*` 的改动与 [[31_megatron_inference_engine_analysis]] 的引擎是耦合演进的,不能只升一侧。
 
 ---
 
@@ -272,6 +289,8 @@ README 把时序写死:「Call `prepare_swap_model_weights` once during initiali
 **③ 推理侧计划把 refit 包成一等公民 API。**
 `megatron/core/inference/README.md:67` 的 roadmap 明列「**Weight update APIs.** `suspend_for_refit()`, `update_weights_from_collective()`, `resume_after_refit()` **wrapping the existing resharding/refit primitives** for RL workflows where weights swap between rollout steps.」——即 §2 的 `swap_model_weights` 与 §7 的 suspend/resume 会被收进引擎门面(详见 [[31_megatron_inference_engine_analysis]] §11)。
 
+当前扩展接缝已经收敛为 `ReshardTransform` 的三段 hook：`prepare_send` 产出线上 tensor，`prepare_recv` 分配对应接收 buffer，`finalize_recv` 把结果写回最终目的地（`megatron/core/resharding/transforms.py:38-62`）；`MXFP8ReshardTransform` 是现有实现。这里能确认的是**当前 API 边界**，源码没有承诺下一种格式或具体 roadmap。
+
 **④ rollout 输出解析还没接完。** §8 的 `--rl-inference-parsers` 已接通,但消费侧仍挂着「TODO: Handle **tool calls and reasoning** in `LLMChatMessage`」(`megatron/rl/inference/megatron.py:76`)。→ 推断:结构化 rollout(思维链、工具调用)目前只解析到端点层,还没进 RL 侧的消息对象。
 
 **⑤ Megatron-RL 自陈仍在开发中,并给出了公开 roadmap。** 「Megatron-RL is **actively under development** … For a current roadmap of planned Megatron-RL features please see #1776」(`megatron/rl/README.md:4`)。→ 本页 §8 的两条 `[!update]` 都属于这条线上的增量,后续还会变。
@@ -284,7 +303,7 @@ README 把时序写死:「Call `prepare_swap_model_weights` once during initiali
 - **训推一致性问题**:rollout 引擎与训练引擎对同一 token 算出的 logprob 不等 → PPO/GRPO 的 importance ratio 偏离 1 → 梯度有偏。来源:权重陈旧、布局不同、精度不同、kernel 不同、批处理数值路径。
 - **Megatron 的解法是"逐项收敛、把 gap 做小做白盒"**:
   - ① **Refit 每迭代**消除权重陈旧;
-  - ② Refit 的 **LCM tiling + MXFP8Transform** 保证布局/格式转换零误差、忠实量化;
+  - ② Refit 的 **LCM tiling** 保证目标拿到正确权重切片；**MXFP8Transform** 遵守目标 scale/持久 buffer 契约，但 BF16→MXFP8 仍是有损量化;
   - ③ **`inference_optimized`** 把推理路径做成显式独立、可审计的实现;
   - ④ 训练相**重算 logprob**,让 policy 梯度走自洽的训练 kernel。
 - **残差**(MXFP8 vs BF16 等不可消除的小差)交给上层 RL 框架的 **importance sampling 修正**(`π/μ` 比值 / 截断 IS)—— Megatron 负责让这个 gap 小到 IS 修正能良性工作。
@@ -292,11 +311,14 @@ README 把时序写死:「Call `prepare_swap_model_weights` once during initiali
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准。完整 RL 训练环(GRPO/PPO loss、advantage、KL)位于上层 RL 框架(如 NeMo-RL),不在 `megatron/core`。配套文档:`27_megatron_tp_fsdp_resharding_supplements_analysis.md`、`17_megatron_parallelism_orchestration_analysis.md`、`14_megatron_ep_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准。完整 RL 训练环(GRPO/PPO loss、advantage、KL)位于上层 RL 框架(如 NeMo-RL),不在 `megatron/core`。配套文档:[[19_megatron_dist_checkpointing_analysis]]、[[17_megatron_parallelism_orchestration_analysis]]、[[14_megatron_ep_analysis]]。*
 
 ## Related Pages
 
-- [[27_megatron_tp_fsdp_resharding_supplements_analysis]] · [[31_megatron_inference_engine_analysis]] · [[14_megatron_ep_analysis]] · [[17_megatron_parallelism_orchestration_analysis]]
-- [[33_megatron_vllm_weight_sync_analysis]] — verl 在 Megatron+vLLM 场景下的权重同步实现(本文的下游消费者之一)
+- [[19_megatron_dist_checkpointing_analysis]] — 落盘 checkpoint、加载与恢复；本页负责不落盘的在线跨布局权重搬运。
+- [[31_megatron_inference_engine_analysis]] — refit 的目标引擎、CUDA Graph 指针稳定性与未来 weight-update API。
+- [[14_megatron_ep_analysis]] — expert / expert-TP 布局，以及 refit 必须携带的 EP 进程组。
+- [[17_megatron_parallelism_orchestration_analysis]] — TP/PP/EP/DP 进程组的构造与生命周期。
+- [[21_verl_weight_publication_analysis]] — verl 当前的 full / `delta_sharded` 权重发布 owner，并保留已退役 SPMD 直连链的演进对照
 - [[01_posttraining_infra_mechanism_analysis]] — 第 6 节「Weight publish 协议」,三平面机制视角(框架无关)
-- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] — 返回全部 35 篇内容页的主题索引。

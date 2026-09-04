@@ -7,7 +7,9 @@ title: "Megatron-LM MoE 训练优化：围绕四种所有权的机制地图"
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
 > **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
 > **维度**：Overview / Mechanism Map。本页解释 MoE 优化之间的因果关系和选型顺序；EP、通信重叠、显存、精度与融合的实现细节由对应专题页负责。
-> **定位**：先读 [[01_megatron_architecture_analysis]] 建立训练状态机，再用本页判断 MoE 的瓶颈属于 token、专家参数、激活还是执行窗口。
+> **学习前置**：先读 [[01_megatron_architecture_analysis]] 和 [[14_megatron_ep_analysis]]；本页是机制之后的工程选型总纲。
+> **回答的问题**：MoE 的瓶颈属于 token、专家参数、激活/优化器状态还是执行窗口，以及四种所有权怎样约束组合顺序。
+> **不覆盖**：dispatcher 与 EP 进程组的实现细节归 [[14_megatron_ep_analysis]]，跨轴重叠归 [[20_megatron_comm_overlap_analysis]]。
 > **最近更新**：2026-08-29。删除固定规模配方、重复代码与配置目录，改写为四种所有权的机制分析；保留当前基线下可验证的互斥条件和演进证据。
 
 ---
@@ -159,7 +161,6 @@ DDP 侧也不是逐参数自由组合。`_ParamAndGradBuffer` 先把参数和梯
 | Paged stash 与 CPU/offload 模块互斥 | 多个机制不能同时拥有相同专家激活 | `megatron/core/transformer/transformer_config.py:2574-2587` |
 | DDP bucket 粒度受约束 | `bucket_size` 与 `num_buckets` 不能同时指定 | `megatron/core/distributed/distributed_data_parallel_config.py:60-74`、`:313-315` |
 | 有效 token 总量不能由组大小反推 | THD padding 与动态 CP 下各 rank 数量可不同 | `megatron/core/transformer/moe/router.py:610-636` |
-
 | whole-MoE CUDA Graph 要求六项同时成立 | 图捕获整个 MoE 模块时，静态形状不是"尽力而为"而是准入条件 | `megatron/core/transformer/cuda_graph_config.py:49-55`（判定 scope 见 `:25`） |
 | GroupedTensor 路径与 grouped GEMM 绑定 | 分组权重/偏置的存储形态不能独立于分组 GEMM 选择 | `megatron/core/transformer/transformer_config.py:1651-1652`、`:2149-2150` |
 
@@ -189,6 +190,6 @@ DDP 侧也不是逐参数自由组合。`_ParamAndGradBuffer` 先把参数和梯
 - [[14_megatron_ep_analysis]] — 深入 router、dispatch/combine、MoE Parallel Folding 与各 EP backend。
 - [[16_megatron_distributed_optimizer_analysis]] — 解释参数、梯度和 optimizer state 在 DP 域内的所有权。
 - [[17_megatron_parallelism_orchestration_analysis]] — 解释 TP/PP/CP/EP/DP 与组合进程组怎样生成。
-- [[20_megatron_comm_overlap_analysis]] — 展开各通信维度真正可用的计算窗口、等待点和显存代价。
+- [[20_megatron_comm_overlap_analysis]] — 解释多个并行轴同时开启后的窗口组合、资源竞争与显存代价。
 - [[22_megatron_memory_optimization_analysis]] — 展开 paged stash、offload、buffer 复用与峰值测量。
 - [[23_megatron_precision_cudagraph_fusion_analysis]] — 深入低精度、CUDA Graph 与融合执行的 shape/硬件边界。

@@ -399,7 +399,9 @@ README 把两条失效路径拆得很细(`megatron/core/inference/README.md:77-8
 
 ## Related Pages
 
-- [[30_megatron_rl_posttraining_consistency_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]] · [[14_megatron_ep_analysis]] · [[10_megatron_model_structure_analysis]]
-- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
-
+- [[10_megatron_model_structure_analysis]] — 提供推理引擎所装载模型与 attention 变体的结构前置。
+- [[23_megatron_precision_cudagraph_fusion_analysis]] — 展开低精度与 CUDA Graph 对推理执行面的约束。
+- [[30_megatron_rl_posttraining_consistency_analysis]] — 说明 rollout 推理与训练模型之间的 logprob、reshard 与 refit 边界。
+- [[33_megatron_rl_runtime_analysis]] — 展开推理引擎在 RL rollout runtime 中的调用位置。
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] — 返回全部 35 篇内容页的主题索引。
 

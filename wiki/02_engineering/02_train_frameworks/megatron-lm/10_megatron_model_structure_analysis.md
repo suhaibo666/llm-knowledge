@@ -5,13 +5,12 @@ title: "Megatron-LM 模型结构深度解析(Model Structure)"
 # Megatron-LM 模型结构深度解析(Model Structure)
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。原「正文以 `ee3f1ff` 为准、`[!update]` 段以 `232c478d4` 为准」的两套行号口径就此合一——全页只剩 `71092579` 一套。
+> **基线说明**：本页活动引用已统一重核到上述冻结提交；旧基线推进记录归 [[changelog]]，不再叠放在学习页页头。
 > 核心文件:`megatron/core/transformer/spec_utils.py`、`megatron/core/transformer/transformer_layer.py`、`megatron/core/transformer/transformer_block.py`、`megatron/core/transformer/attention.py`、`megatron/core/transformer/multi_latent_attention.py`、`megatron/core/transformer/mlp.py`、`megatron/core/transformer/moe/router.py`、`megatron/core/transformer/multi_token_prediction.py`、`ssm/`、`models/`
 > 配套阅读:`14_megatron_ep_analysis.md`(MoE dispatcher)、`13_megatron_cp_analysis.md`、`12_megatron_tp_analysis.md`、`18_megatron_recompute_analysis.md`
 > 定位:之前 17 份文档都讲"**怎么把模型大规模训起来/服务起来**"(并行、显存、稳定性、推理、数据);本文讲"**模型本身长什么样**" —— 一个 transformer 模型由什么构成。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
+> **最近更新**：2026-09-03。承接 DSv4 案例页的通用初始化方法与 attention dropout 配置契约。
 
 ---
 
@@ -166,7 +165,7 @@ def forward(self, *args, **kwargs):
 - **GQA(分组查询注意力)**:`num_query_groups < num_attention_heads` —— 多个 Q 头**共享**一组 K/V 头。KV 头变少 → **KV cache 变小、推理 decode 带宽压力降**(`31_megatron_inference_engine_analysis.md` §1.2 的瓶颈)。
 - **MQA**:`num_query_groups = 1` —— 所有 Q 头共享 1 组 K/V,GQA 的极端。
 
-TP 下 QKV 投影是 ColumnParallel(按头切)、输出投影 RowParallel(见 `12_megatron_tp_analysis.md` §6.2)。
+TP 下 QKV 投影是 ColumnParallel(按头切)、输出投影 RowParallel(见 [[12_megatron_tp_analysis]] §2.2)。
 
 > [!update] 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。注意力输出门控。`attention_output_gate`(整 `head_dim` 门)与新增的 **`head_wise_attn_gate`**(每头一个标量 sigmoid 门,Step-3.5-Flash,#4841,`megatron/core/transformer/attention.py:1448`)二选一、不可同开。门权重并入 `linear_qkv` 一并产出,对 `core_attn_out` **逐头乘 `sigmoid(gate)`**;head-wise 门仅自注意力(`attention_type != "cross"`),且要求 `num_attention_heads` / `num_query_groups` 满足整除约束(`megatron/core/transformer/transformer_config.py:1594`,具体两条整除断言在 `:1603`/`:1611`)。
 
@@ -300,7 +299,7 @@ HybridModel 的层 pattern 字符串(见 §9)新增四个 MLA 系注意力符号
 - **`MambaContextParallel`**:Mamba 的 CP 支持。
 - **混合模型**:把 **Mamba 层 + attention 层 + MLP 层**按某种 pattern 交错(`models/hybrid/`、`hybrid_layer_allocation`)—— 兼顾 SSM 的长序列效率与 attention 的精确检索能力。`megatron/core/ssm/mlp_layer.py` 的 `MLPLayer` 就是 `TransformerLayer` 的纯 MLP 子类,供混合模型排布。
 
-Mamba 的"KV"是固定大小循环状态,推理时由 `MambaSlotAllocator` 分配(见 `31_megatron_inference_engine_analysis.md` §5.2);打包用 `PackedSeqParams.seq_idx`(见 `11_megatron_dataset_analysis.md` §5.2)。
+Mamba 的"KV"是固定大小循环状态,推理时由 `MambaSlotAllocator` 分配(见 `31_megatron_inference_engine_analysis.md` §5.2);打包用 `PackedSeqParams.seq_idx`(见 `11_megatron_dataset_analysis.md` §6.2)。
 
 > [!update] 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。Mamba / GDN 增量
 >
@@ -389,7 +388,7 @@ PP 下,`GPTModel` 按 PP rank 只实例化本 stage 的层(首 stage 带 embeddi
 
 **下表的类型、默认值与说明直接取自 `megatron/core/transformer/transformer_config.py` 的类体**（行号为该文件内行号），与 [[41_megatron_config_surface_analysis]] §2 的 `ArgumentGroupFactory` 生成 CLI 所用的是同一份声明，因此不会与实际 flag 漂移。
 
-字段量大，按源码里的分段读最快：**注意力形状与变体**（`num_attention_heads` 家族、`window_size`、`qk_*`、`softmax_*`）、**DSA 索引器**（`dsa_indexer_*` 十项，对应 §5.4）、**linear attention / GDN**（`linear_*`、`kda_*`，对应 §9）、**Mamba**（`mamba_*`，同 §9）、**Hyper-Connection**（`mhc_*`、`num_residual_streams`）、**归一化与初始化**（`normalization`、`layernorm_*`、`init_method_std` 一组）、**MTP**（`mtp_*`）。
+字段量大，按源码里的分段读最快：**注意力形状与变体**（`num_attention_heads` 家族、`window_size`、`qk_*`、`softmax_*`、`attention_dropout`）、**DSA 索引器**（`dsa_indexer_*` 十项，对应 §5.4）、**linear attention / GDN**（`linear_*`、`kda_*`，对应 §9）、**Mamba**（`mamba_*`，同 §9）、**Hyper-Connection**（`mhc_*`、`num_residual_streams`）、**归一化与初始化**（`normalization`、`layernorm_*`、`init_method`、`output_layer_init_method`、`init_method_std`）、**MTP**（`mtp_*`）。
 
 
 ### `ModelParallelConfig`（`megatron/core/model_parallel_config.py`，2 项）
@@ -399,11 +398,11 @@ PP 下,`GPTModel` 按 PP rank 只实例化本 stage 的层(首 stage 带 embeddi
 | `perform_initialization` | `bool` | `field(default=True, metadata={'argpar…` | Controls weights initialization. This option can be useful when you know you are going to load values from a checkpoint. | `:149` |
 | `use_cpu_initialization` | `bool` | `field(default=False, metadata={'argpa…` | When set to False, we initialize the weights directly on the GPU. CPU initialization is the same regardless of tensor model parallelism, but GPU initializati… | `:156` |
 
-> 该类共 74 个字段，本表收 2 项；其余 72 项已在别处归属：主要归 [[15_megatron_pp_schedulers_analysis]] 16 项、[[12_megatron_tp_analysis]] 10 项、[[20_megatron_comm_overlap_analysis]] 10 项、[[22_megatron_memory_optimization_analysis]] 6 项，另散见 14 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+> 该类共 74 个字段，本表收 2 项；其余字段的唯一机制 owner 见 `docs/coverage/megatron-lm.yaml`。
 
 
 
-### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，68 项）
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，71 项）
 
 | 字段 | 类型 | 默认 | 契约 | 行 |
 |---|---|---|---|---|
@@ -419,6 +418,7 @@ PP 下,`GPTModel` 按 PP rank 只实例化本 stage 的层(首 stage 带 embeddi
 | `softmax_type` | `Literal['vanilla', 'off-by-one', 'learnable']` | `'vanilla'` | Applies modified softmax from https://www.evanmiller.org/attention-is-off-by-one.html. Supports both TE FusedAttention and local unfused attention. Supports … | `:159` |
 | `kv_channels` | `Optional[int]` | `None` | Projection weights dimension in multi-head attention. This is set to hidden_size // num_attention_heads if not provided. | `:173` |
 | `hidden_dropout` | `float` | `0.1` | Dropout probability for transformer hidden state. | `:177` |
+| `attention_dropout` | `float` | `0.1` | Post-attention dropout probability. Certain native CP paths impose a stricter zero-dropout boundary; that path-specific guard does not change this field's model-structure ownership. | `:180` |
 | `fp32_residual_connection` | `bool` | `False` | If true, move residual connections to fp32. | `:183` |
 | `apply_residual_connection_post_layernorm` | `bool` | `False` | If True, uses the original BERT residule connection ordering. | `:187` |
 | `layernorm_epsilon` | `float` | `field(default=1e-05, metadata={'argpa…` | Epsilon value for any LayerNorm/RMSNorm operations. | `:190` |
@@ -456,6 +456,8 @@ PP 下,`GPTModel` 按 PP rank 只实例化本 stage 的层(首 stage 带 embeddi
 | `linear_num_value_heads` | `Optional[int]` | `32` | Number of value and gate heads for the gated delta net. | `:439` |
 | `kda_safe_gate` | `bool` | `False` | Whether the KDA kernel should use bounded gate values. | `:442` |
 | `kda_lower_bound` | `Optional[float]` | `None` | Optional lower bound for KDA's bounded gate values. | `:445` |
+| `init_method` | `Optional[Callable]` | `None` | 通用权重初始化 callable；为 None 时由 `init_method_std` 构造零均值正态初始化。bias 始终置零。 | `:459-463` |
+| `output_layer_init_method` | `Optional[Callable]` | `None` | Attention/MLP 输出层初始化 callable；类体 docstring 给出非 hybrid 的 `std/sqrt(2L)` 默认值，但 `__post_init__` 对 hybrid model 把 multiplier 从 2 改为 1（非 MuP 时为 `std/sqrt(L)`；MuP 另叠 width scaling）。不控制 vocab readout/unembedding。 | `:465-469`、`:2959-2973` |
 | `init_method_std` | `float` | `0.02` | Standard deviation of the zero mean normal for the default initialization method, not used if init_method and output_layer_init_method are provided. | `:471` |
 | `embedding_init_method` | `Optional[Callable]` | `None` | Method to initialize weights of the embedding layer. If None, will be set as described in init_method above. | `:475` |
 | `embedding_init_method_std` | `Optional[float]` | `None` | Standard deviation of the zero mean normal for the default initialization method for the embedding layer. If None, will be set to init_method_std. Setting th… | `:481` |
@@ -476,13 +478,14 @@ PP 下,`GPTModel` 按 PP rank 只实例化本 stage 的层(首 stage 带 embeddi
 | `mlp_chunks_for_training` | `int` | `1` | The number of chunks along the sequence dimension to use for MLP computation during training. | `:1431` |
 | `heterogeneous_block_specs` | `bool` | `False` | Whether to use heterogeneous block specs (nemotron-nas architecture). | `:1435` |
 
-> 该类共 266 个字段，本表收 68 项；其余 198 项已在别处归属：主要归 [[14_megatron_ep_analysis]] 38 项、[[23_megatron_precision_cudagraph_fusion_analysis]] 38 项、[[21_megatron_fusion_operators_analysis]] 26 项、本页他处 24 项，另散见 20 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+> 该类共 266 个字段，本表收 71 项；其余字段的唯一机制 owner 见 `docs/coverage/megatron-lm.yaml`。
 
 > **一处编号提醒**：`num_layers_in_first_pipeline_stage` / `num_layers_in_last_pipeline_stage` 与`account_for_*_in_pipeline_split` 虽在 `# model architecture` 段里，但语义属流水线切分，机制见 [[15_megatron_pp_schedulers_analysis]]；本页只登记它们的契约。
 
 ## Related Pages
 
-- [[14_megatron_ep_analysis]] · [[13_megatron_cp_analysis]] · [[12_megatron_tp_analysis]] · [[18_megatron_recompute_analysis]] · [[31_megatron_inference_engine_analysis]]
-- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
-
-
+- [[12_megatron_tp_analysis]] — 展开本页线性层与 attention 投影怎样沿 TP 切分。
+- [[13_megatron_cp_analysis]] — 展开 attention 的序列维切分与 CP 通信接口。
+- [[14_megatron_ep_analysis]] — 展开本页 MoE block 的 route、dispatch、expert compute 与 combine。
+- [[18_megatron_recompute_analysis]] — 说明模型层与 attention 激活怎样进入重计算策略。
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] — 返回全部 35 篇内容页的主题索引。

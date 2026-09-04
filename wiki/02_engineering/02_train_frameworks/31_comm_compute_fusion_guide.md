@@ -361,7 +361,7 @@ CP        | 半自动（Ring AG） | FlexAttention 融合   | 序列维度通算
 - [[26_flex_attention_analysis]] — Context Parallel 中的 FlexAttention + WaveEP 集成
 - [[10_mlir_core_concepts]] — MLIR Mesh Dialect 基础
 - [[32_post_grad_passes_guide]] — `micro_pipeline_tp_pass`、`fuse_ddp_communication`、`bucket_*` passes
-- [[20_megatron_comm_overlap_analysis]] — Megatron-LM 各并行维度通算重叠详细实现
-- [[02_megatron_moe_training_optimization_analysis]] — DeepEP/HybridEP 在 Megatron-LM 中的集成
+- [[20_megatron_comm_overlap_analysis]] — Megatron-LM 多并行轴同时重叠时的时间线、资源竞争与诊断
+- [[39_megatron_moe_training_optimization_analysis]] — DeepEP/HybridEP 在 Megatron-LM 中的集成
 - [[12_deepseek_v3_analysis]] — DualPipe PP 通算重叠设计
 - [[13_deepseek_v4_analysis]] — WaveEP 细粒度 EP 重叠（wave-based expert scheduling）

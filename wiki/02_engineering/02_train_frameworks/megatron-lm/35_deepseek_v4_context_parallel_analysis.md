@@ -1,768 +1,132 @@
 ---
-title: "DeepSeek-V4 Context Parallelism 实现深度解析"
+title: "DeepSeek-V4 Context Parallel 两阶段实现案例"
 ---
 
-# DeepSeek-V4 Context Parallelism 实现深度解析
+# DeepSeek-V4 Context Parallel 两阶段实现案例
 
-*基于 Megatron-LM dev 分支源码 · CP 进程组 · 通信类型 · TE 融合 · DSv4 适配 · 通信量分析*
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）。
+> **本页定位**：本页不是第二份 CP 教程，只解释 DSv4 Hybrid Attention 在 Megatron 中怎样用“左边界 P2P + 压缩状态 AllGather”补齐本地 CSA/HCA 计算，以及它对 THD、contiguous partition 和 Dynamic CP 的特殊要求。
+> **先修**：CP group、`cp_comm_type` 与 hierarchical CP 见 [[13_megatron_cp_analysis]]；packed sequence 与 Dynamic CP 调度见 [[29_megatron_packed_dataset_dynamic_cp_analysis]]。
+> **最近更新**：2026-09-03。以当前已落地的 `_forward_thd_cp` 为主线，删除旧基线“尚未实现/不支持 Dynamic CP”的失效长篇审计。
 
-> **源码基线**: `NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）· DSv4 源码 `megatron/core/transformer/experimental_attention_variant/{deepseek_v4_hybrid_attention,csa}.py`、`megatron/core/parallel_state.py`、`megatron/core/transformer/dot_product_attention_context_parallel.py` 等。
-> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
-> **⚠ 本轮重核推翻了本页两条核心结论**：附录 A 判定「CSA/HCA 的两阶段 CP 尚未实现」与 §5.3/§8.3 判定「Dynamic CP 不支持 MLA/DSv4」，在基线 `71092579` 下**均已不成立**——前者由 PR #5087 实现、后者由 PR #4226 解除。相关段落保留原文并加 `[!contradiction]` 标注，见 §5.2、§5.3、附录 A、§6.4、§8.3、§十一。
-> **基线沿革**：本页曾声明 `232c478d4`、实际正文命中 `ee3f1ffa…`，2026-08-27 改钉后者；2026-08-28 统一推进到 `71092579`。2026-06-25 的移库抽查是在 `232c478d4` 上做的，那套行号已被本轮重核取代，仅作历史留存。
-> **维度**: 工程实现（框架层）。**审计/移库**: 2026-06-25（自 `02_train_frameworks/` 移入 `megatron-lm/`）。
-> **与模型页的分工**: 论文级 CP *算法*（两阶段压缩感知 CP、可见性控制）见模型页 [[23_deepseek_v4_cp_analysis]]（§3.4.3）；本页讲 Megatron 的 *实现* 与 *代码↔论文 gap*（见附录 A、§十一 特征 5）。
-> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。**注意**：本页原核心贡献（CSA/HCA 两阶段 CP「尚未实现」的 gap 审计）在基线 `71092579` 下已整体失效；该审计原样保留在**附录 A**，作为一次真实且当时正确的记录，正文不再以它为主线。
-> **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改，原 §5.5 整节（含其全部 callout）平移为附录 A。
-> **划界声明**: CP/Ring Attention 通用机制（p2p/all_gather/a2a/a2a+p2p 四种通信调度的算法本体、因果 zigzag 裁剪、通信量代数、分层 CP 的 N 级分组构造）已归一到 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]——本页的 Native CP 源码 walkthrough（§三）与分层分组构造代码（§1.2）正是该理论页对应章节的骨架来源。**本页只保留 DeepSeek-V4/MLA/CSA/HCA 特有内容**：MLA 对 CP 通信量降低 ~128 倍的推导、CSA/HCA 压缩注意力与 CP 交互的论文↔代码 gap 审计（原核心贡献，现降为附录 A 的历史记录）、RoPE 的 CP 感知、Dynamic CP 对 MLA 的不支持、CP 与 EP 的带宽竞争、TE CP 的 cp_stream 双缓冲机制（四页中仅此一页覆盖）。
+---
 
-> 本报告基于 Megatron-LM dev 分支中 DeepSeek-V4 的实际源码实现，系统分析其 Context Parallelism（CP）机制。涵盖 CP 进程组拓扑、四种通信类型（p2p/all_gather/a2a/a2a+p2p）的实现差异、TransformerEngine 的 fused flash attention + CP 路径、Native CP 的 autograd 实现、以及 DSv4（MLA + CSA/HCA）架构对 CP 的特殊适配与限制。
+## 1. 当前主线：两类依赖、两种通信
 
-**目录**
+DSv4 的压缩稀疏注意力不能只拿本 rank 的 token 直接算完。冻结基线把跨 rank 依赖拆成两段：
 
--   背景与设计取舍
--   CP 进程组与拓扑结构
--   CP 通信类型：p2p / all_gather / a2a / a2a+p2p
--   四种 CP 方法的 QKV 交互图示
--   Native CP 实现：dot_product_attention_context_parallel
--   TransformerEngine 中的 CP 支持
--   DSv4 的 CP 适配与限制
--   CP 通信量统一分析
--   CP 通信掩盖与重叠方案
--   Dynamic CP：动态序列长度适配
--   约束：CP 路径上的前提与失效条件
--   发展趋势
--   结论与配置建议
--   附录 A：CSA/HCA CP 的论文↔代码 gap 审计（旧基线，结论已被推翻）
+| 阶段 | 搬什么 | 通信方式 | 为什么不能合成一句“做一次 CP gather” |
+|---|---|---|---|
+| Stage 1 | 相邻 rank 的固定左边界 hidden rows；反向把对应梯度送回 owner | 邻接 P2P，当前实现发起后立即 wait | 压缩窗口跨过 contiguous rank 边界，需要的是邻居尾部，不是完整全局序列 |
+| Stage 2 | 各 rank 产生的 compressed Indexer-K 与 compressed attention-KV | CP group AllGather；有 Indexer 时异步发起，并与本地 Q/weight projection 重叠 | 稀疏选择和 attention 要看到跨 rank 的压缩块；搬的是压缩状态，不是原始完整 KV |
 
-## 〇 背景与设计取舍
+> [!note] 分析重建，不是源码自陈动机
+> 两阶段的执行事实、payload、`global_start` 计算与 contiguous guards 来自下列 locators；“为什么不能合成一次 gather”以及 §5 对 contiguous 取舍的解释，是本页根据数据依赖与 guard 重建的 rationale，不是源码作者写下的完整设计动机。
 
-### 0.1 背景：序列是 V4 唯一还能切的轴，而 CSA 恰恰不肯被切开
+入口 `CompressedSparseAttention.forward` 在 CP>1 且 THD 时分派到 `_forward_thd_cp`（`megatron/core/transformer/experimental_attention_variant/csa.py:2094-2120`）。这条调用链已经闭合，因此当前页面不再把两阶段 CP 描述成论文与代码之间的 gap。
 
-**问题**。V4 的目标序列长度是 1M。attention 的激活随 $S$ 增长，KV 也随 $S$ 增长，单卡放不下。四条并行轴里：TP 在 V4 被构造期断言锁死为 1（`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:90-92`，详见姊妹页 [[34_deepseek_v4_tensor_parallel_analysis]] §二），PP 切的是层、DP 切的是批，都动不了序列维。**能切序列的只剩 CP**。
+## 2. Stage 1：左边界交换及其反向所有权
 
-**难点**。标准 attention 切序列只需要把 KV 轮转一圈（Ring）或聚合一次（AllGather）。但 V4 的 CSA/HCA 是**压缩**注意力，它对序列切分有两处天然冲突：
+`exchange_cp_boundary_hidden` 先把 hidden state 展平，再计算：
 
-1.  **压缩要看左邻**。`Compressor` 把连续 `ratio` 个 token 压成 1 个；CP 把序列切开后，每个 rank 的第 0 组缺少它左边那几行——那些行属于上一个 rank。
-2.  **注意力要看全局压缩 KV**。HCA 模式下所有压缩位置都可见，本地那 `S_local / ratio` 个压缩 token 不够。
+- 当 `compress_ratio == 4` 时，压缩依赖宽度 `d_comp=8`；
+- 其他 `compress_ratio>1` 时，`d_comp=compress_ratio`；
+- 最终 `d_window=max(csa_window_size, d_comp)`。
 
-这两条正是 V4 论文所说的**两阶段 CP**（Stage 1 P2P 边界 + Stage 2 压缩 KV AllGather）要解决的问题。
+该规则与 reshape 位于 `megatron/core/transformer/experimental_attention_variant/csa_utils/cp_utils.py:191-202`。自定义 autograd function 的数据所有权很明确（`megatron/core/transformer/experimental_attention_variant/csa_utils/cp_utils.py:124-188`）：
 
-### 0.2 本页的事实起点（基线 `71092579`）
+1. 非首 rank 从左邻居接收 `d_window` 行；
+2. 非末 rank 把自己的尾部 `d_window` 行发给右邻居；
+3. `batch_isend_irecv` 返回的 request 逐个 `wait` 后才返回 boundary；
+4. backward 反向发送 `grad_boundary`，右邻居贡献的梯度累加回本 rank 尾部 owner。
 
-本页 2026-06 的版本论证「两阶段 CP 在代码里尚未实现」。**那份审计在旧基线 `ee3f1ffa…` 上是正确的，在本基线下已整体失效。** 先把现在的事实钉住，再往下读：
+因此 Stage 1 是一个带 autograd 所有权的同步边界修补，不是可与整段 attention 自由重排的全局 Ring。当前实现还要求 `local_rows >= d_window`；否则在通信之前直接抛 `RuntimeError`（同文件 `:135-139`）。
 
-| 事实 | 引入 | locator |
+## 3. Stage 2：先发 compressed gather，再做本地投影
+
+`_forward_thd_cp` 先构造本地与 boundary 共同参与的 compressor 输入，然后为每个完整 `compress_ratio` token group 产生一条 compressed row；每条序列不足一个完整 group 的尾部用 floor 规则丢弃（`megatron/core/transformer/experimental_attention_variant/csa.py:2537-2605`）。
+
+有 Indexer 时，执行顺序是：
+
+1. 产生本地 compressed Indexer-K，并先异步发起它的 CP AllGather（`megatron/core/transformer/experimental_attention_variant/csa.py:2639-2653`）；
+2. 产生本地 compressed attention-KV，再异步发起第二个 AllGather（`megatron/core/transformer/experimental_attention_variant/csa.py:2655-2680`）；
+3. 两个 collective 在所有 rank 上保持相同入队次序；其飞行期间执行本地 Indexer Q 与 weight projection，并应用 CP-aware RoPE（`megatron/core/transformer/experimental_attention_variant/csa.py:2682-2720`）；
+4. top-k 前等待 Indexer-K gather；attention 取 compressed KV 前再等待第二个 gather（`megatron/core/transformer/experimental_attention_variant/csa.py:2722-2751`）。
+
+如果没有 Indexer，compressed KV 改走同步 `gather_from_sequence_parallel_region`（`megatron/core/transformer/experimental_attention_variant/csa.py:2752-2755`）。所以“Stage 2 一定异步”也不准确：异步 overlap 是有 Indexer 的分支行为。
+
+## 4. Dynamic CP：每个 microbatch 选组，返回前恢复
+
+当前 DSv4 Hybrid forward 会先保存静态 CP group。若 `packed_seq_params.local_cp_size` 不为空，它要求同时提供 `packed_seq_params.cp_group`，把本次 microbatch 的 group 写入 `pg_collection.cp`；完成输出投影后恢复原 group（`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:256-281`、`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:470-480`）。
+
+CSA 内层也保存并恢复收到的 group，并按这个动态 group 的 size 决定是否进入 `_forward_thd_cp`（`megatron/core/transformer/experimental_attention_variant/csa.py:2094-2120`）。因此冻结基线的准确结论是：
+
+- DSv4 **支持**由 `PackedSeqParams` 携带的 Dynamic CP group；
+- 它不负责如何为样本挑选 group，调度与 packing owner 是 [[29_megatron_packed_dataset_dynamic_cp_analysis]]；
+- group 选择必须在进入 attention 前完成，且所有 participating ranks 必须得到一致 collective 顺序。
+
+## 5. contiguous partition 与 CP-aware RoPE
+
+DSv4 CP 假定每个 rank 持有全局序列的一段连续区间。`_forward_thd_cp` 用 `global_start = cp_rank * l_local` 建立本地行到全局位置的映射（`megatron/core/transformer/experimental_attention_variant/csa.py:2552-2569`），本地 Indexer Q 的 fused/unfused RoPE 都显式接收这个 `global_start`（`megatron/core/transformer/experimental_attention_variant/csa.py:2690-2716`）。
+
+这解释了为什么入口不是只检查 `qkv_format='thd'`，还要求 `cp_partition_mode='contiguous'`：边界交换、compressed block 映射和 RoPE 位置三者共用连续 rank-major 布局。一般 CP 的 zigzag/contiguous 选择及转换职责归 [[13_megatron_cp_analysis]]；本页只记录 DSv4 为什么锁定后者。
+
+## 6. 通信与 overlap 账本
+
+| 阶段 | payload 随什么增长 | 当前重叠窗口 | 明确不能推出的结论 |
+|---|---|---|---|
+| 左边界 P2P | `d_window × hidden`；`d_window` 由窗口与压缩比共同决定，不随本 rank 整段长度线性增长 | forward/backward 都在返回前 wait | 不能写成完全被计算隐藏 |
+| Indexer-K AllGather | 各 rank 的 compressed K rows | 与 attention compressor、本地 Indexer Q/weight projection 重叠 | 不能从压缩比直接推出固定端到端加速 |
+| attention-KV AllGather | 各 rank 的 compressed KV rows | 与本地 Indexer Q/weight projection 重叠 | 不能写成“搬完整 KV”，也不能承诺固定 128× 通信缩减 |
+| 无 Indexer 分支 | compressed KV rows | 同步 gather | 不能套用有 Indexer 分支的异步时间线 |
+
+这张表是 DSv4 路径的局部数据依赖。多轴同时抢 stream、SM 和显存时如何判断实际 overlap，归 [[20_megatron_comm_overlap_analysis]]；通用 CP Ring/AllGather/A2A 的通信代数归 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]。
+
+## 7. 硬边界与回退
+
+先区分 live path：`_forward_thd_cp` 会为 Indexer 与 attention compressor 显式传入 `compressed_group_ids`（`megatron/core/transformer/experimental_attention_variant/csa.py:2611-2620`、`:2631-2637`、`:2655-2662`）。因此下游 `_forward_thd` 进入 `pre_grouped=True` 分支并直接走 eager compressor，根本不会尝试 fused helper（`megatron/core/transformer/experimental_attention_variant/csa.py:1237`、`:1270-1325`）。下面的 fused envelope 只约束**非 pre-grouped THD** 路径，不能解读成“CP 路径满足 SM100 等条件即可 fused”。
+
+| 前提 | 源码落点 | 失败或回退 |
 |---|---|---|
-| Stage 1 P2P 边界交换**已实现** | `bfa33263c`（#5087，2026-07-03，"[dev] [DeepSeek-v4] Context Parallel support"） | `megatron/core/transformer/experimental_attention_variant/csa_utils/cp_utils.py:124-188`（`_LeftBoundaryExchange`），入口 `:191-202`，调用点 `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:274-281` |
-| Stage 2 压缩 KV **AllGather 已实现** | 同上 | `megatron/core/transformer/experimental_attention_variant/csa.py:2650-2652`（indexer-K）、`:2677-2679`（attention 压缩 KV） |
-| 两次 AllGather **已异步化并与本地投影重叠** | `04fa3cee7`（#5691，**2026-08-21**，"[dev] Overlap CP communication for indexer and compressed KV"） | 发起 `:2650-2652` / `:2677-2679`，中间插入 indexer Q/W 本地投影 `:2684-2720`，等待 `:2723` / `:2750`；新增的 `async_gather_from_sequence_parallel_region` 在 `megatron/core/tensor_parallel/mappings.py` |
-| CP helper 已从 `csa.py` 拆进独立子目录 | `1c44a5709`（#6372，2026-08-10，"Refactor CSA structure: Move CSA implementation helpers into csa_utils dir"） | `megatron/core/transformer/experimental_attention_variant/csa_utils/` |
-| Dynamic CP **支持** MLA/DSv4 | `959a542a1`（#4226，2026-06-08，"Minor improvements for Dynamic-cp"） | `megatron/core/transformer/multi_latent_attention.py:378-381`、`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:259-272` |
-| 目录规模 | — | `git ls-tree -r 71092579 megatron/core/transformer/experimental_attention_variant/`：**25 个 `.py`**（含新子目录 `csa_utils/` 6 个、`ops/` 9 个）；同一路径在 `ee3f1ffa` 下只有 **4 个** |
+| CP>1 必须为 THD | `megatron/core/transformer/experimental_attention_variant/csa.py:2101-2104` | `ValueError` |
+| CP>1 必须 contiguous | `megatron/core/transformer/experimental_attention_variant/csa.py:2105-2109` | `ValueError`；partition 转换明确由 CSA 外部负责 |
+| contiguous CP 必须来自 sequence-packing scheduler | `megatron/core/transformer/transformer_config.py:1654-1665` | 配置校验期 `ValueError` |
+| DSv4+CP 拒绝 zigzag | `megatron/core/transformer/transformer_config.py:1678-1708` | 配置校验期 `ValueError` |
+| 本地 token 行数必须不少于 `d_window` | `megatron/core/transformer/experimental_attention_variant/csa_utils/cp_utils.py:128-139` | 边界通信前 `RuntimeError` |
+| THD CP 当前只支持 self-attention，且 boundary hidden/KV 必须齐全 | `megatron/core/transformer/experimental_attention_variant/csa.py:2557-2574` | `RuntimeError` |
+| compressed row 只来自完整 ratio group | `megatron/core/transformer/experimental_attention_variant/csa.py:2594-2605` | 每序列尾部不足 ratio 的部分不生成 compressed row |
+| 非 pre-grouped THD 的 fused compressor fast path 必须同时通过 enable/CUDA、SM100 + frontend、ratio/coff（ratio 128 另限 head dim 128/512）、BF16 KV/score + FP32 APE、非 deterministic/compile、shape/capacity/32-bit offset 等 gate | `megatron/core/transformer/experimental_attention_variant/csa_utils/fused_compressor.py:140-162`、`megatron/core/transformer/experimental_attention_variant/csa_utils/fused_compressor.py:221-284` | 任一 gate 未通过时 helper 返回 None、由调用者保留 eager；支持设备缺 frontend 时会 warning 一次，并非所有回退都静默 |
+| DSv4 Hybrid inference 当前不支持 | `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:240-254` | forward assert |
 
-原来的 gap 审计**没有被删除**——它原样保留在**附录 A**，包括当时的取证方法（`git grep -n -E 'isend|irecv|all_gather'` 的零命中）与四条 Gap。它记录了一次真实且在其基线上正确的审计；本页正文不再以它为主线。
+另有一条组合约束：contiguous CP 与 `MTP + TP>1 + sequence_parallel` 的 token-side padding mask 存在已知 bug，配置层暂时拒绝该组合（`megatron/core/transformer/transformer_config.py:1666-1676`）。它不是 CSA 数学限制，排障时应区分。
 
-### 0.3 为什么这么设计：一次固定窗口的单向 P2P + 一次全局 AllGather
+## 8. 已纠正的历史结论
 
-**① 边界交换是"只向左要一个固定长度的窗口"的单向 P2P，而不是 Ring 式 KV 轮转。**
-`_LeftBoundaryExchange` 的 docstring 一句话概括了它做什么：「Exchange **fixed left-boundary windows** and scatter gradients back to senders」（`megatron/core/transformer/experimental_attention_variant/csa_utils/cp_utils.py:124-125`）。forward 里 rank `r` **只**从 `r-1` `irecv`、**只**向 `r+1` `isend`（`:142-155`），窗口高度由 `exchange_cp_boundary_hidden` 算出：`d_comp = 8 if compress_ratio == 4 else compress_ratio if compress_ratio > 1 else 0`，`d_window = max(int(csa_window_size), d_comp)`（`:198-199`）。
-→ 判据（本页重建）：CSA 的压缩窗口与 window attention 都只需要**左侧固定长度**的上下文，不需要整条 KV 走一圈。因此这一阶段的通信量是 `O(d_window × H)` 的**常数**，与 `S_local` 无关——附录 A 的 Gap 4 当年估的 ~56 KB 量级，正是这个数量级。
+旧页以更早源码审计得出“两阶段 CP 尚未实现”和“Dynamic CP 不支持 MLA/DSv4”。这两个结论在当前冻结基线都已失效：
 
-**② 它被做成 `torch.autograd.Function`，因为边界行的梯度必须回送。**
-docstring 的后半句就是这件事：「**scatter gradients back to senders**」（`:124`）；backward 把 `grad_boundary` 送回 `r-1`、从 `r+1` 收（`:161-188`），并且**只**把收到的梯度写回本地张量的尾部 `grad_input[-d_window:] = recv_grad`（`:186-187`）——因为发出去的正是 `tensor[-d_window:]`（`:150`）。
-→ 判据（本页重建）：边界行是**上一个 rank 拥有的激活**，普通通信 helper 不会把梯度送回去，那条通路就断了。做成 autograd Function 是让它自动闭合的最小手术。
+- `CompressedSparseAttention.forward → _forward_thd_cp` 已有明确分派；
+- Stage 1 boundary autograd 与 Stage 2 compressed gather 都有可达实现；
+- DSv4 outer attention 与 CSA inner attention 都读取、使用并恢复 dynamic CP group。
 
-**③ Stage 1 同步、Stage 2 异步——两阶段被区别对待。**
-Stage 1 用 `dist.batch_isend_irecv(ops)` 后**立刻** `req.wait()`（`:156-157`，backward 同形 `:184-185`），没有任何掩盖。Stage 2 相反：两次 `async_gather_from_sequence_parallel_region` 先后发起（`megatron/core/transformer/experimental_attention_variant/csa.py:2650-2652`、`:2677-2679`），把 indexer 的 Q/W 本地投影插在中间执行（`:2684-2720`），最后才分别 `wait()`（`:2723`、`:2750`）。
-**而且这个异步不是一开始就有的**：#5087（`bfa33263c`，2026-07-03）先把功能落地，两次 AllGather 的异步化与 `async_gather_from_sequence_parallel_region` 本身，由 #5691（`04fa3cee7`，2026-08-21）才补上。
-→ 判据（本页重建）：两阶段的数据量差着量级——固定窗口 vs 全局压缩 KV。附录 A Gap 4 当年给出的工程判断（"P2P 掩盖收益有限，真正要掩盖的是 Stage 2 AllGather"）与源码后来的选择一致，那条 `[!update]` 已记在附录里。
+本轮不再把被推翻的代码摘录保留成 100 多行附录，以免读者先记住错误再读勘误。历史审计“当时的结论及后来为何失效”只在 [[changelog]] 留档；当前机制页只陈述冻结基线事实。
 
-**④ CSA + CP 只吃 THD 且分区必须 contiguous，其余情况直接拒绝。**
-两条 `raise ValueError` 把入口收窄：「CompressedSparseAttention with CP requires `qkv_format='thd'`.」（`megatron/core/transformer/experimental_attention_variant/csa.py:2103-2104`）与「CompressedSparseAttention requires `cp_partition_mode='contiguous'`. **CP partition conversion must be handled before entering CSA.**」（`:2105-2109`）。第二条的后半句是源码明说的**分工**：分区形态的转换是 CSA 之外的事。
-→ 判据（本页重建）：①里"左邻居就是 rank `r-1`"这个前提只在 contiguous 分区下成立；因果均衡常用的 zigzag 分片会把序列切成交错的两半，邻接关系不再是线性的，单向 P2P 立刻失效。
+## 9. 通用机制与配置所有权
 
-**⑤ 被否掉的替代写在代码里：`fill_value` 填充。**
-旧方案 `_overlap_transform` 对 rank > 0 的第 0 组用 `fill_value` 填补缺失的左邻数据（KV 用 `0`、score 用 `-inf`），`megatron/core/transformer/experimental_attention_variant/csa.py:1109-1122`。这段代码**今天仍逐字存在**，但它只服务非 CP 的 SBHD 路径；CP 路径改走 `_overlap_transform_thd`（`:1124`，调用点 `:1317-1318`），用 Stage 1 换来的**真实** boundary 行填充。附录 A 的 Gap 1 记录的正是这条被替掉的方案。
+旧页各部分已经按内容类型归位：
 
-> [!note] 推断
-> **源码陈述的是事实**：`_LeftBoundaryExchange` 的 docstring 与其单向 P2P、`d_window` 的算法、backward 的梯度回送、Stage 1 的同步 wait 与 Stage 2 的异步 gather、两条 `raise ValueError`（含"分区转换应在进入 CSA 之前完成"这句分工）、以及 `_overlap_transform` / `_overlap_transform_thd` 的分工。
-> **把这些读成"因此不需要 Ring 轮转"、"因此 zigzag 分片不可用"、"因此两阶段该被区别掩盖"这三条判据，是本页的重建**——源码没有任何注释、commit message 或设计文档陈述这些取舍。要引用这几条判断，请回到 `megatron/core/transformer/experimental_attention_variant/csa_utils/cp_utils.py:124-125`、`:142-157`、`:161-188`、`:198-199`、`megatron/core/transformer/experimental_attention_variant/csa.py:1109-1122`、`:1124`、`:2103-2109`、`:2650-2652`、`:2677-2679` 这几个 locator，不要引用本段推断。
+- **DSv4-specific，留在本页**：两阶段 CSA/HCA CP、boundary autograd、compressed gather、CP-aware RoPE、THD contiguous 约束、Dynamic CP 接入。
+- **generic unique delta，迁到 owner**：`hierarchical_context_parallel_sizes` 的 N 级进程组构造迁入 [[13_megatron_cp_analysis]]。
+- **generic duplicate，删除并指向 owner**：四种 `cp_comm_type`、Native/TE CP 基础归 13；packing/Dynamic CP 调度归 29；跨轴资源竞争归 20。
+- **obsolete，删除正文**：旧基线 gap 审计、Dynamic CP 不支持结论、固定 “128×/5%/CP=8 最优” 数字和无当前证据的趋势段。
 
----
+字段 `hierarchical_context_parallel_sizes` 与 `cp_partition_mode` 现由 13 的配置契约拥有；`attention_dropout` 归 [[10_megatron_model_structure_analysis]]。本页只保留这些字段改变 DSv4 路径时的必要交界。
 
-## 一 CP 进程组与拓扑结构
+## Related Pages
 
-### 1.1 进程组创建
-
-CP 进程组在 `megatron/core/parallel_state.py` 的 `initialize_model_parallel` 函数中创建，通过 `decoder_rank_generator.get_ranks('cp')` 生成 CP 组内的 rank 列表：
-
-```
-# parallel_state.py:972-981
-for ranks in decoder_rank_generator.get_ranks('cp'):
-    group = create_group(
-        ranks,
-        timeout=timeout,
-        pg_options=get_nccl_options("cp", nccl_comm_cfgs),
-        group_desc="CONTEXT_PARALLEL_GROUP",
-    )
-    if rank in ranks:
-        _CONTEXT_PARALLEL_GROUP = group
-        _CONTEXT_PARALLEL_GLOBAL_RANKS = ranks
-```
-
-来源：megatron/core/parallel_state.py:972-981
-
-CP 组与 TP 组、PP 组、EP 组正交。一个典型的 4D 并行拓扑中，CP 组通常在同一节点内的 GPU 上建立（便于 NVLink 通信），或跨节点建立（用于超大规模序列）。
-
-### 1.2 Hierarchical CP：NVLink + IBLink 分层
-
-Megatron-LM 支持 **Hierarchical Context Parallelism**，通过 `hierarchical_context_parallel_sizes` 参数创建多层级的 CP 子组，以匹配集群的物理拓扑（CP size=16、`[2,2,4]` 三级分组示例；`create_hierarchical_groups` 用 einops `rearrange` 做张量维度分解生成各级子组，避免手动枚举）——这套 N 级分层分组构造是本页对通用机制页的独家贡献，完整代码与算例已整体迁移收录到 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]] §8.2（来源：`megatron/core/parallel_state.py:982-995`）。低层通信走 NVLink（~600GB/s）、高层走 IB（~50GB/s），与 `a2a+p2p` 通信类型配合实现物理拓扑感知的通信调度——这一分层机制在 MindSpeed 的二级 Hybrid（内 Ulysses、外 Ring）中有另一具体实例，见理论页 §8.3。
-
-### 1.3 CP 与其他并行维度的关系
-
-| 并行维度 | 通信组 | 物理链路 | 与 CP 的交互 |
-| --- | --- | --- | --- |
-| TP | tp_group | NVLink | CP 切分 seq，TP 切分 head；CP 在 TP 之后执行 |
-| DP | dp_group (with_cp=True) | IB / NVLink | 梯度同步包含 CP 组内所有 rank |
-| PP | pp_group | P2P Send/Recv | CP 在 stage 内完成，PP 在 stage 边界 |
-| EP | ep_group | IB All-to-All | CP 与 EP 正交，但在 MoE 层可能并发 |
-| CP | cp_group | NVLink / IB | 序列维度切分，KV 通信 |
-
-## 二 CP 通信类型：p2p / all_gather / a2a / a2a+p2p
-
-### 2.1 四种通信类型的定义
-
-Megatron-LM 在 `megatron/core/transformer/transformer_config.py` 中定义了四种 CP 通信类型，每种适用于不同的硬件拓扑和序列长度场景：
-
-```
-cp_comm_type: Optional[Union[str, List[str]]] = None
-"""Inter-gpu communication type for context parallelism.
-cp_comm_type of each layer can be "p2p" or "all_gather" or "a2a" or "a2a+p2p".
-"p2p": Exchange KV chunks with P2P communications in ring topology.
-       P2P is async and can be overlapped with attention compute.
-"all_gather": All-gather to get full sequence of KV before attention.
-              The all-gather is not async, and cannot be overlapped.
-"a2a": Like DeepSpeed Ulysses, scatter attention heads across the CP group,
-       and gather to get full sequence of QKV.
-"a2a+p2p": A hierarchical implementation of context parallelism to attention.
-           It uses A2A communications in low-level CP groups (e.g., via NVLink),
-           and P2P communications in high-level CP groups (e.g., via IBLink).
-"""
-```
-
-来源：megatron/core/transformer/transformer_config.py:1101-1117（基线 `71092579` 下 docstring 另增两行，说明该项只管标准注意力层、线性注意力层改用 `linear_cp_mode`）
-
-| 通信类型 | 机制 | 可重叠性 | 适用场景 | TE 版本要求 |
-| --- | --- | --- | --- | --- |
-| `p2p` | Ring P2P 交换 KV chunk | ✅ 异步，可与计算重叠 | 中小规模 CP（≤8），同节点 | ≥1.0.0 |
-| `all_gather` | 先 AllGather 完整 KV | ❌ 同步，不可重叠 | fallback、eager attention | ≥1.0.0 |
-| `a2a` | All-to-All 交换 QKV（Ulysses） | ⚠️ 部分可重叠 | 大规模 CP，跨节点 | ≥1.0.0 |
-| `a2a+p2p` | 分层：A2A（NVLink）+ P2P（IB） | ✅ 分层重叠 | 超大规模 CP（≥16），分层拓扑 | ≥1.12.0 |
-
-### 2.2 通信类型的配置与校验
-
-`cp_comm_type` 支持按层配置（`List[str]`）或全局配置（str）。当使用 `fallback_to_eager_attn` 或 `transformer_impl="local"` 时，只允许 `all_gather`：
-
-```
-if self.fallback_to_eager_attn or self.transformer_impl == "local":
-    if self.context_parallel_size > 1 and self.cp_comm_type is not None:
-        all_cp_comm_types_are_all_gather = (
-            all(item == "all_gather" for item in self.cp_comm_type)
-            if isinstance(self.cp_comm_type, list)
-            else self.cp_comm_type == "all_gather"
-        )
-        if not all_cp_comm_types_are_all_gather:
-            raise ValueError(
-                f"fallback_to_eager_attn only supports all_gather communication type "
-                f"for context parallelism, but got {self.cp_comm_type=} instead."
-            )
-```
-
-来源：megatron/core/transformer/transformer_config.py:3810-3821
-
-> **关键限制**：Native CP 实现（`DotProductAttention` 的 eager 路径）只支持 `all_gather` 通信类型。若启用 `p2p`、`a2a` 或 `a2a+p2p`，必须使用 TransformerEngine 的 fused flash attention 路径（`transformer_impl="transformer_engine"`）。
-
-### 2.3 TransformerLayer 中的按层配置
-
-在 `TransformerLayer.__init__` 中，`cp_comm_type` 被逐层传递给 attention 模块：
-
-```
-attention_optional_kwargs = {}
-if config.context_parallel_size > 1 and config.cp_comm_type is not None:
-    if isinstance(config.cp_comm_type, list):
-        # layer_number is 1-indexed
-        attention_optional_kwargs["cp_comm_type"] = config.cp_comm_type[
-            self.layer_number - 1
-        ]
-    else:
-        attention_optional_kwargs["cp_comm_type"] = config.cp_comm_type
-
-self.self_attention = build_module(
-    submodules.self_attention,
-    config=self.config,
-    layer_number=self.layer_number,
-    **attention_optional_kwargs,
-)
-```
-
-来源：megatron/core/transformer/transformer_layer.py:373-395
-
-> **按层配置的应用场景**：V4 的混合架构中，不同层使用不同的 attention 机制（CSA 层 vs HCA 层 vs 标准 MLA 层）。按层配置 `cp_comm_type` 允许对 CSA 层使用 `p2p`（压缩后 KV 短，P2P 数据量小），对 HCA 层使用 `a2a`（长序列，需要更大的通信带宽），实现细粒度的通信策略优化。
-
-## 二·附 四种 CP 方法的 QKV 交互图示
-
-以下图示展示每种 CP 通信类型下 Q/K/V 如何在 CP rank 之间流动；每种模式的通用机制（谁通信、通信量、backward 的对应集合通信）已归一到理论页对应章节（p2p→§5、all_gather→§6、a2a→§7、a2a+p2p→§8），此处只保留图示本身与速查表，不再重复文字总结。
-
-### 2.4.1 p2p：Ring Attention — Q 固定，K/V 轮转
-
-![图 3：p2p Ring Attention 的 QKV 交互（Q 固定，K/V 轮转，4 步覆盖全部 KV）](assets/deepseek_v4_context_parallel_analysis_fig1.png)
-
-*图 3：p2p Ring Attention 的 QKV 交互（Q 固定，K/V 轮转，4 步覆盖全部 KV）——机制见理论页 §5*
-
-### 2.4.2 all_gather：先聚合完整 KV，再计算
-
-![图 4：all_gather 模式的 QKV 交互（先 AllGather K/V，再用本地 Q 计算）](assets/deepseek_v4_context_parallel_analysis_fig2.png)
-
-*图 4：all_gather 模式的 QKV 交互（先 AllGather K/V，再用本地 Q 计算）——机制见理论页 §6*
-
-### 2.4.3 a2a：Ulysses 风格 — 交换序列与 Head 维度
-
-![图 5：a2a（Ulysses）模式的 QKV 交互（All-to-All 交换序列/Head 维度，计算后换回来）](assets/deepseek_v4_context_parallel_analysis_fig3.png)
-
-*图 5：a2a（Ulysses）模式的 QKV 交互（All-to-All 交换序列/Head 维度，计算后换回来）——机制见理论页 §7；本模式合计通信量 ≈ 8 × (C-1)/C × B × S × H × D（forward QKV A2A + backward O A2A 合计口径，与理论页 §9 统一对比表一致）*
-
-### 2.4.4 a2a+p2p：分层通信 — 低层 A2A + 高层 P2P
-
-![图 6：a2a+p2p 分层模式的 QKV 交互（低层 NVLink A2A + 高层 IB P2P Ring）](assets/deepseek_v4_context_parallel_analysis_fig4.png)
-
-*图 6：a2a+p2p 分层模式的 QKV 交互（低层 NVLink A2A + 高层 IB P2P Ring）——分组构造见 §1.2 → 理论页 §8.2*
-
-> **四种方法对比速查表**：
-> 
-> | 方法 | 通信对象 | 收发内容 | Q 是否通信 | 计算时的数据布局 | Backward 通信 |
-> | --- | --- | --- | --- | --- | --- |
-> | `p2p` | 相邻 Rank（Ring） | 发送 Kᵢ,Vᵢ；接收 Kⱼ,Vⱼ | ❌ 不通信 | Q 本地 + 轮转 KV | dQ 等价 AllGather；dK/dV ReduceScatter |
-> | `all_gather` | 全部 Rank（集合） | AllGather K, AllGather V | ❌ 不通信 | Q 本地 + 完整 KV | ReduceScatter(dK, dV) |
-> | `a2a` | 全部 Rank（集合） | A2A(Q), A2A(K), A2A(V) | ✅ 参与 A2A | 完整 Seq + 局部 Heads | Output A2A + dQKV A2A |
-> | `a2a+p2p` | 低层 A2A + 高层 P2P | 低层 A2A(Q,K,V)；高层 P2P(K,V) | ✅ 参与低层 A2A | 低层完整 Seq + 高层轮转 KV | 分层反向通信（A2A + P2P） |
-
-## 三 Native CP 实现：dot_product_attention_context_parallel
-
-> **划界**：`AttentionFuncionWithContextParallel` 的完整 forward/backward 源码 walkthrough（head-stride 双缓冲 AllGather、ReduceScatter 梯度、通信量公式）与 zig-zag mask 机制已整体迁移收录到理论页 §6（本页正是骨架来源）。本节只保留索引式摘要，避免与理论页正文重复；DSv4 特有的下游适配见 §五。
-
-当 `transformer_impl="local"`（即不使用 TransformerEngine）时，CP 通过 `AttentionFuncionWithContextParallel`（`torch.autograd.Function`，`megatron/core/transformer/dot_product_attention_context_parallel.py:150-165`，行号在新基线下未变）实现:forward 按 head stride 迭代 AllGather KV(理论页 §6.1)，backward 用 ReduceScatter 分片 dK/dV(理论页 §6.3)，attention mask 用 zig-zag pattern 匹配 AllGather 后的 KV 顺序(理论页 §3.3)。通信量公式见理论页 §6.2 / §9。
-
-<!-- 原 3.2-3.4(AllGather 双缓冲代码、ReduceScatter 代码、zig-zag mask 代码、通信量公式)已整体并入理论页 §6，不在本页重复；索引式摘要见上。 -->
-
-## 四 TransformerEngine 中的 CP 支持
-
-### 4.1 TE CP 的初始化
-
-当 `transformer_impl="transformer_engine"` 时，`TEDotProductAttention` 在初始化时接收 CP 相关参数：
-
-```
-if self.config.context_parallel_size > 1:
-    assert is_te_min_version("1.0.0"), (
-        "Only Transformer-Engine version >= 1.0.0 supports context parallelism!"
-    )
-    if getattr(TEDotProductAttention, "cp_stream") is None:
-        TEDotProductAttention.cp_stream = torch.cuda.Stream()
-    extra_kwargs["cp_group"] = pg_collection.cp
-    extra_kwargs["cp_global_ranks"] = torch.distributed.get_process_group_ranks(
-        pg_collection.cp
-    )
-    extra_kwargs["cp_stream"] = TEDotProductAttention.cp_stream
-
-    if is_te_min_version("1.10.0"):
-        if cp_comm_type is None:
-            extra_kwargs["cp_comm_type"] = "p2p"
-        elif cp_comm_type == "a2a+p2p":
-            assert is_te_min_version("1.12.0"), (
-                "TE must be >= 1.12.0 to support hierarchical cp communication."
-            )
-            extra_kwargs["cp_comm_type"] = "a2a+p2p"
-            extra_kwargs["cp_group"] = get_hierarchical_context_parallel_groups(
-                check_initialized=False
-            )
-        else:
-            extra_kwargs["cp_comm_type"] = cp_comm_type
-```
-
-来源：megatron/core/extensions/transformer_engine.py:1677-1701
-
-### 4.2 TE CP 的核心机制
-
-TE 的 CP 实现基于 **fused flash attention**，其核心优势在于：
-
-1.  **通信与计算融合**：P2P 通信在独立的 `cp_stream` 上执行，与 attention 计算的 CUDA stream 并行
-2.  **Ring Attention 算法**：KV chunk 在 CP 组内按 ring 拓扑传递，每个 rank 在接收到一个 chunk 后立即开始计算局部 attention，无需等待所有 chunk 到达
-3.  **Online Softmax 稳定化**：跨 chunk 的 softmax 分母通过 online softmax 算法增量更新，避免数值溢出
-
-> **TE CP 的通信量（p2p 模式）**：
-> 
-> -   **Forward**：每 rank 发送和接收 (cp-1) 个 KV chunk = 2 × (cp-1) × b × (S/cp) × h_k × d
-> -   **Backward**：dQ 需要 AllGather（或等效 P2P），dK/dV 需要 ReduceScatter
-> -   **Total per layer**：≈ 4 × (cp-1)/cp × b × S × h_k × d（与 Native CP 相同，但 P2P 可与计算重叠，实际 wall-time 更低）
-
-### 4.3 CP Stream 的双缓冲机制
-
-TE 使用独立的 `cp_stream` 处理 P2P 通信，实现 **communication-computation overlap**：
-
-```
-# cp_stream 是类级别的单例
-if getattr(TEDotProductAttention, "cp_stream") is None:
-    TEDotProductAttention.cp_stream = torch.cuda.Stream()
-```
-
-> **双缓冲 overlap 原理**：
-> 
-> 1.  Computation stream 在计算 chunk i 的 attention
-> 2.  CP stream 在后台发送 chunk i 的 KV 到下一个 rank，同时接收 chunk i+1 的 KV
-> 3.  当 computation stream 完成 chunk i 后，chunk i+1 的 KV 已经通过 P2P 到达
-> 4.  两个 stream 通过 `cudaEventRecord/cudaStreamWaitEvent` 同步
-> 
-> 这种 pipeline 式的 overlap 使得 P2P 通信的延迟被计算时间隐藏。
-
-## 五 DSv4 的 CP 适配与限制
-
-### 5.1 RoPE 的 CP 感知
-
-DSv4 的 RoPE 实现明确接收 `cp_group`，并在 `fused_mla_rope_inplace` 中传递 `cp_rank` 和 `cp_size`：
-
-```
-self.rotary_pos_emb = RotaryEmbedding(
-    self.config.qk_pos_emb_head_dim,
-    rotary_percent=self.config.rotary_percent,
-    rotary_base=rope_base,
-    cp_group=self.pg_collection.cp,   # deepseek_v4_hybrid_attention.py:136
-)
-
-# 在 forward 中
-if self.config.apply_rope_fusion:
-    cp_rank = cp_group.rank()                # deepseek_v4_hybrid_attention.py:757
-    cp_size = cp_group.size()                # deepseek_v4_hybrid_attention.py:728
-    query = fused_mla_rope_inplace(
-        q, rotary_pos_cos, rotary_pos_sin,
-        self.config.qk_head_dim, self.config.qk_pos_emb_head_dim,
-        cu_seqlens_q, cp_rank, cp_size,
-        remove_interleaving=True,
-    )
-```
-
-来源：megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:132-784（基线 `71092579` 下 forward 改从局部变量 `cp_group` 取 rank/size，以支持 dynamic-CP 的逐 microbatch 组切换，见 `:261-272`）
-
-> **RoPE 在 CP 下的行为**：每个 CP rank 只持有总序列的 `S/cp_size` 部分，但 position embedding 需要基于全局位置索引计算。`cp_rank` 和 `cp_size` 传递给 fused kernel，确保每个 rank 上的 token 获得正确的全局位置编码。
-
-### 5.2 CSA 压缩与 CP 的交互
-
-`CompressedSparseAttention` 默认使用 `cp_comm_type="p2p"`，其 `Compressor` 中的 RoPE 也接收 `cp_group`：
-
-```
-class CompressedSparseAttention:
-    def __init__(...,
-        cp_comm_type: str = "p2p",   # csa.py:1726
-        ...
-    ):
-        # Compressor 的 RoPE 使用 cp_group
-        self.compressor = build_module(
-            submodules.compressor,
-            config=config, compress_ratio=self.compress_ratio,
-            head_dim=config.v_head_dim,
-            rotary_pos_emb=rotary_pos_emb,
-            pg_collection=pg_collection,
-        )
-
-# Compressor.forward 中
-kv = _apply_rope(
-    kv, self.head_dim - self.qk_pos_emb_head_dim, self.qk_pos_emb_head_dim,
-    self.rotary_pos_emb, self.config, n_compressed,
-    ratio=ratio, cp_group=self.pg_collection.cp,   # csa.py:1188
-)
-```
-
-来源：megatron/core/transformer/experimental_attention_variant/csa.py:1726, 1188
-
-> [!contradiction] 该判定在基线 `71092579` 下已不成立。CSA+CP 的两阶段通信**均已实现**：Stage 1 的 P2P 边界交换是 `megatron/core/transformer/experimental_attention_variant/csa_utils/cp_utils.py:124-188` 的 `_LeftBoundaryExchange`（forward `dist.batch_isend_irecv` 于 `:156`，backward 把边界梯度送回原 rank 于 `:184`），公开入口 `exchange_cp_boundary_hidden`（`:191-202`）由 `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:274-281` 调用；Stage 2 的压缩 KV AllGather 是 `megatron/core/transformer/experimental_attention_variant/csa.py:2650-2652`（indexer-K）与 `:2677-2679`（attention 压缩 KV）的 `async_gather_from_sequence_parallel_region`，等待点在 `:2722-2724` / `:2749-2751`，无 indexer 时走同步的 `gather_from_sequence_parallel_region`（`:2753-2755`）。由 PR #5087「[dev] [DeepSeek-v4] Context Parallel support」引入，helper 后由 PR #6372 迁入 `csa_utils/`。以下四条对应旧基线 `ee3f1ffa…`，保留原文。
-
-> **CSA + CP 的特殊性（当前代码为功能降级版）**：
-> 
-> -   Compressor 对输入 `x`（完整 local sequence）执行压缩，压缩后 KV 长度为 `S_local / compress_ratio`
-> -   论文设计要求两阶段通信（P2P 解决边界 + AllGather 收集跨 rank 压缩 KV），但当前代码均未实现（详见附录 A）
-> -   当前实现中，压缩 KV 只参与本地 attention，每个 rank 只能看到本地的 `S_local / compress_ratio` 个压缩 token，而非论文要求的全局 `S / compress_ratio` 个
-> -   CSA 的边界压缩组（rank > 0 的第 0 组）使用 fill_value 填充而非真实 token，压缩质量有所下降
-
-### 5.3 Dynamic CP 不支持 MLA/DSv4
-
-这是当前实现的一个重要限制：
-
-> [!deprecated] 该断言在基线 `71092579` 下已不存在。`"dynamic_context_parallel is not supported with MLA yet"` 在全仓已搜不到（`git grep` 于 `71092579` 零命中；在 `ee3f1ffa` 下位于 `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:502` 与 `megatron/core/transformer/multi_latent_attention.py:668`）。它被 PR #4226「Minor improvements for Dynamic-cp」（`959a542a1`，2026-06-08）替换为**真正的 dynamic-CP 支持**：两处现改为按 `packed_seq_params.local_cp_size` 把 `pg_collection.cp` 临时切到该 microbatch 的 `packed_seq_params.cp_group`，返回前恢复（`megatron/core/transformer/multi_latent_attention.py:378-381`、`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:259-272`）。以下断言与限制原因分析对应旧基线 `ee3f1ffa…`，保留原文。
-
-```
-if packed_seq_params is not None:
-    assert (
-        packed_seq_params.local_cp_size is None
-    ), "dynamic_context_parallel is not supported with MLA yet and is planned for future. \
-    Please disable dynamic_context_parallel."
-```
-
-来源（旧基线 `ee3f1ffa…`）：megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:500-503  
-来源（旧基线 `ee3f1ffa…`）：megatron/core/transformer/multi_latent_attention.py:667-669
-
-> **限制原因分析**：Dynamic CP 允许在 training 过程中动态调整 CP size（通过 `packed_seq_params.cp_group` 在 forward 时传入不同的进程组）。但 MLA 的 KV 压缩结构（`kv_compressed` = `hidden_states` 经过 down/up projection）使得 KV 的 shape 和 memory layout 与标准 MHA 不同。Dynamic CP 需要重新计算 `cu_seqlens` 和 KV 的分片边界，而 MLA 的压缩投影层（尤其是 `q_down_proj` 和 `kv_proj`）的输入输出维度不匹配，导致动态重分片的实现复杂度显著增加。
-
-### 5.4 DotProductAttention 的 CP 限制
-
-Native CP 路径不支持 attention dropout：
-
-```
-if self.config.context_parallel_size > 1:
-    assert attention_dropout is None and self.config.attention_dropout == 0.0, (
-        f'DotProductAttention with context parallelism does not support attention dropout,'
-        f' but got {self.config.context_parallel_size=},'
-        f' {attention_dropout=}, and {self.config.attention_dropout=}.'
-    )
-```
-
-来源：megatron/core/transformer/dot_product_attention.py:60-65（行号在新基线下未变）
-
-> **原因**：CP 下的 attention dropout 需要在 AllGather 后的完整 attention probs 上执行，而 Native CP 的 head-stride 迭代计算使得 dropout mask 的随机性难以在 CP 组间保持一致。TE 的 fused kernel 通过定制的 CUDA kernel 解决了这个问题，但 Native 实现选择直接禁用。
-
-## 六 CP 通信量统一分析
-
-### 6.1 符号定义
-
-| 符号 | 含义 | V4-Pro 取值 |
-| --- | --- | --- |
-| $S$ | 总序列长度 | 1M (max) |
-| $B$ | batch size (per DP rank) | varies |
-| $H$ | hidden size | 7168 |
-| $C$ | CP size | 4 or 8 (typical) |
-| $h$ | num attention heads | 128 |
-| $d$ | head dim (v_head_dim) | 64 or 128 |
-| $S_{\mathrm{local}}$ | 每 CP rank 的序列长度 = S/C | 250K (S=1M, C=4) |
-
-### 6.2 Standard Attention 的 CP 通信量
-
-TE p2p / TE a2a(Ulysses) / Native all_gather 三种模式的通信量公式（`4×(C-1)/C×B×S×hk×d`、`8×(C-1)/C×B×S×h×d`、`4×(C-1)/C×B×S×hk×d`）与 MindSpeed 侧显式含 $/TP$ 因子的公式对照，已统一收录到理论页 §9（含两套公式统计口径差异的说明）。下面 §6.3/§6.4 的 MLA/CSA 通信量分析均以标准 attention 的这套公式为基线展开。
-
-### 6.3 MLA + CP 的通信量
-
-MLA 的 KV 压缩减少了 CP 的通信量，因为 `kv_proj` 的输出维度是 `v_head_dim`（不是 `num_attention_heads * v_head_dim`）：
-
-> **MLA CP 通信量（per layer）:**  
-> KV 通信量（压缩后）: 4 × (C-1)/C × B × S × 1 × dv  
-> 其中 hk = 1（MLA 低秩潜变量压缩效果，通信量等效于 MQA），dv = v_head_dim  
->   
-> **对比 Standard MHA:**  
-> MHA: 4 × (C-1)/C × B × S × hk × d  
-> MLA: 4 × (C-1)/C × B × S × 1 × dv  
-> **MLA 通信量 ≈ MHA 通信量 × (1/hk) × (dv/d)**  
->   
-> 对于 V4（hk\=128, d=64, dv\=64）：  
-> **MLA 通信量 ≈ MHA 通信量 × 1/128**  
-> 这是 MLA 相比 MHA 在长序列场景下的巨大优势——CP 通信量与 head 数解耦。
-
-### 6.4 CSA + CP 的通信量
-
-CSA 层的 CP 通信量需要额外考虑压缩 KV 的处理：
-
-> **CSA CP 通信量（per layer）— 论文设计目标，当前代码未完全实现：**  
-> 本地 KV（未压缩）: 4 × (C-1)/C × B × S × 1 × dv  
-> 压缩 KV（compress_ratio=m=4，论文 Stage 2 AllGather）:  
-> \- 每个 rank 本地压缩，产生 Slocal/m 个压缩 token  
-> \- 若 attention 需要跨 rank 的压缩 KV（HCA 模式），需额外 AllGather  
-> \- 额外通信: 2 × (C-1)/C × B × (S/m) × dv  
->   
-> **论文设计总通信量 ≈ 4 × (C-1)/C × B × S × dv × (1 + 1/(2m))**  
-> 当 m=4 时，压缩 KV 的额外通信仅占 ~12.5%，开销可控。  
-> ⚠️ **当前代码实际通信量**：仅含本地 KV 通信，压缩 KV 的 AllGather 尚未实现，CSA 层无跨 rank 压缩 KV 同步。
-
-> [!contradiction] 上面这条 ⚠️ 对应旧基线 `ee3f1ffa…`。基线 `71092579` 下压缩 KV 的 AllGather 已实现（见附录 A 顶部），CSA 层的实际 CP 通信量因此接近本节「论文设计总通信量」一行，而非 0。本页未在新基线上重做通信量实测，公式仅按论文口径给出。
-
-> **关键结论**：借助 MLA 的 KV 压缩，V4 在 CP 场景下的通信量比标准 MHA 低两个数量级（~1/128）。这是 V4 能够支持超长序列（1M+）训练的核心原因之一：即使 CP size = 8，每层的 CP 通信量也仅为 `~4 × 7/8 × B × 1M × 64 bytes ≈ 224 MB × B`，在 NVLink 上可于毫秒级内完成。
-
-## 七 CP 通信掩盖与重叠方案
-
-### 7.1 TE P2P Overlap 机制
-
-TE 的 `p2p` 模式通过独立的 `cp_stream` 实现通信与计算的异步并行：
-
-![图 7：TE P2P CP 的通信计算重叠时间线](assets/deepseek_v4_context_parallel_analysis_fig5.png)
-
-*图 7：TE P2P CP 的通信计算重叠时间线*
-
-### 7.2 Native CP 的 AllGather 不可重叠
-
-Native CP 的"伪并行"局限（异步发起但 `wait()` 在计算前阻塞,只能 overlap 相邻 chunk）已在理论页 §6.2 概述;这里补充 `AllGatherComm` 的具体类实现作为源码级证据:
-
-```
-class AllGatherComm:
-    def all_gather(self, output_tensor, input_tensor):
-        if self.group is None:
-            output_tensor.copy_(input_tensor)
-        else:
-            handle = torch.distributed.all_gather_into_tensor(
-                output_tensor, input_tensor, group=self.group, async_op=True
-            )
-            self.handles.append(handle)
-
-    def wait(self):
-        if self.group is not None:
-            for handle in self.handles:
-                handle.wait()
-            self.handles = []
-```
-
-来源：megatron/core/transformer/dot_product_attention_context_parallel.py:108-132（行号在新基线下未变）
-
-> **Native CP 的局限性**：虽然 AllGather 是异步发起的，但 `wait()` 在 attention 计算前必须完成，因此通信与计算是**伪并行**（double-buffering 只能 overlap 下一个 chunk 的通信与当前 chunk 的计算）。相比之下，TE 的 P2P 模式是真正的 stream-level overlap（cp_stream vs computation stream），效率更高。
-
-### 7.3 CP 与 EP 的通信竞争
-
-在 MoE 层，CP 的 P2P 通信可能与 EP 的 All-to-All 通信并发：
-
-> **竞争场景**：
-> 
-> -   CP P2P 使用 NVLink（同节点内），EP Dispatch A2A 使用 IB（跨节点）→ **物理隔离，不竞争**
-> -   CP P2P 和 EP 的节点内阶段（ intra-node A2A）都使用 NVLink → **可能竞争 NVLink 带宽**
-> -   mitigation：通过 CUDA stream priority 或 NCCL 调度器自动协调
-
-## 八 Dynamic CP：动态序列长度适配
-
-### 8.1-8.2 Dynamic CP 的通用机制(配置 + forward 期 cp_group 切换/恢复)
-
-Dynamic CP 允许在 training 过程中根据输入序列长度动态调整 CP size(`dynamic_context_parallel`/`sequence_packing_scheduler='default_dynamic_cp'` 配置校验、Attention forward 中 `packed_seq_params.cp_group` 临时替换 `pg_collection.cp` 且结束后恢复的完整代码)是 Megatron 通用机制,非 DSv4 特有,已整体归一到理论页 §10(该节正是以本页 `megatron/core/transformer/attention.py:1363-1366` 的 save/restore 代码为骨架之一,并与 `13_megatron_cp_analysis.md` §4 的 `PackedSeqParams`/`resolve_cp_group` 源码合并)。DSv4 对该机制的下游限制见 §8.3。
-
-### 8.3 Dynamic CP 对 DSv4 的限制
-
-> [!contradiction] 该限制在基线 `71092579` 下已解除，见 §5.3 的 `[!deprecated]`：两处断言被 PR #4226（`959a542a1`）替换为逐 microbatch 切换 `pg_collection.cp` 的真实支持（`megatron/core/transformer/multi_latent_attention.py:378-381`、`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:259-272`）。以下三条原因分析对应旧基线 `ee3f1ffa…`，保留原文。
-
-> **当前限制**：DSv4 Hybrid Attention 和 MLA 均不支持 Dynamic CP（旧基线 `ee3f1ffa…`：`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:502-503`，`megatron/core/transformer/multi_latent_attention.py:667-669`）。原因是：
-> 
-> -   MLA 的 KV 压缩结构使得 KV 的 shape 在 CP 重分片时需要重新计算 `cu_seqlens`
-> -   `q_down_proj` 和 `kv_proj` 的输入输出维度不匹配，动态调整 CP size 需要重新分配压缩后的 KV buffer
-> -   CSA 的 `Compressor` 压缩后的序列长度 `S/m` 可能不是 CP size 的整数倍，导致分片不均匀
-
-## 九 约束：CP 路径上的前提、代价与失效条件
-
-前八节讲的是"CP 怎么跑通"。这一节把前提、代价与失效条件集中列出，每条带 locator。
-
-**① 边界交换给 CP size 设了一个上界：`S_local` 必须 ≥ `d_window`。**
-`_LeftBoundaryExchange.forward` 第一件事就是检查本地行数：`if tensor.shape[0] < d_window: raise RuntimeError("DSv4 CP boundary exchange requires local rows >= D_window: ...")`（`megatron/core/transformer/experimental_attention_variant/csa_utils/cp_utils.py:135-139`）。而 `d_window = max(int(csa_window_size), d_comp)`（`:198-199`）。
-→ 后果：CP size 越大 `S_local` 越小、`csa_window_size` 越大 `d_window` 越大，两者一起把"CP 能开多大"钉死。这是 §八 Dynamic CP 场景下最容易踩的一条——短序列 microbatch 配大 CP 会直接 `RuntimeError`。
-
-**② CSA + CP 的两条格式硬拒绝。** `qkv_format` 必须是 `'thd'`（`megatron/core/transformer/experimental_attention_variant/csa.py:2103-2104`）、`cp_partition_mode` 必须是 `'contiguous'`（`:2105-2109`）；DSv4 Hybrid 外层有同款前置校验（`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:268`、`:271`）。任何需要 zigzag / 非连续分区的因果均衡方案，在进入 CSA 之前必须自行转换。
-
-**③ Dynamic CP 下 `cp_group` 必须显式给出。** 一旦 `packed_seq_params.local_cp_size` 非空，`packed_seq_params.cp_group` 就必须非空——`assert packed_seq_params.cp_group is not None, "cp_group must be set in dynamic-cp mode"`（`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:262`、`megatron/core/transformer/multi_latent_attention.py:380`）。切换后必须在返回前恢复原组，源码的注释即「Restored before every return」（`megatron/core/transformer/multi_latent_attention.py:375-378`）。
-
-**④ Native / eager 路径只支持 `all_gather` 一种 `cp_comm_type`。** `fallback_to_eager_attn` 或 `transformer_impl == "local"` 时，任何非 `all_gather` 的 `cp_comm_type` 直接 `raise ValueError`（`megatron/core/transformer/transformer_config.py:3810-3821`）。§二 那四种通信类型只有走 TE 才全部可用。
-
-**⑤ Native CP 不支持 attention dropout。** 见 §5.4（`megatron/core/transformer/dot_product_attention.py:60-65`）。
-
-**⑥ 压缩自身的两条静默降级仍然成立。** `sq < ratio` 时 `Compressor` 直接 `return None`，该层退化为纯 window attention（`megatron/core/transformer/experimental_attention_variant/csa.py:1156-1157`）；`sq % ratio != 0` 时尾部被截断、不参与压缩。这两条**不报错**，只是悄悄少了压缩路径——附录 A 的 Gap 3 前两行至今有效。
-
-**⑦ 融合 compressor 的快路径只在特定硬件与特定 (ratio, coff) 上生效。** `_SUPPORTED_COMPUTE_CAPABILITY = (10, 0)`（`megatron/core/transformer/experimental_attention_variant/csa_utils/fused_compressor.py:74`）、`_SUPPORTED_RATIOS = frozenset({4, 128})`、`_SUPPORTED_COFF = frozenset({1, 2})`（`:81-82`）。注释说明这个门是**跟着 kernel 而不是跟着前端推导**走的，为的是「a future overlap-policy change keeps the fast path instead of **silently falling back to eager**」（`:76-80`）——反过来说，不满足时就是静默回退到 eager。
-
-**⑧ Stage 1 目前完全没有掩盖，代价随 CP size 累加。** `batch_isend_irecv` 后立刻 `req.wait()`（`megatron/core/transformer/experimental_attention_variant/csa_utils/cp_utils.py:156-157`；backward 同形 `:184-185`）。数据量虽小（①），但每个 CP rank 每层前向、反向各一次同步往返。
-
-**⑨ DSv4 Hybrid Attention 完全不支持推理。** `assert inference_context is None and inference_params is None, "Inference is not supported for DSv4HybridAttention."`（`megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:252-254`，`DSv4HybridSelfAttention` 侧 `:607-609`）。→ 本页所有 CP 结论**只适用于训练路径**。
-
-**⑩ 本页未在新基线上重做通信量实测。** §6.4 的 `[!contradiction]` 已说明：CSA 层的 CP 通信量公式仍按论文口径给出，未与 `71092579` 的实现对表。
-
----
-
-## 十 发展趋势
-
-每条都锚在基线源码或提交历史上；**方向解读是本页的推断，不是作者自陈**。
-
-**① 这是全仓演进最快的区域之一，本页 locator 的半衰期很短。**
-`csa_utils/` 目录三个提交的时间线：`1c44a5709`（#6372，2026-08-10，把 CSA helper 拆进独立目录）→ `608545cfc`（#6349，2026-08-11，修 fused CSA indexer loss 归一化与索引压紧）→ `04fa3cee7`（#5691，**2026-08-21**，重叠 indexer 与压缩 KV 的 CP 通信）。**最后一次改动距基线日期 2026-08-27 只有 6 天。** → 推断：CSA CP 仍在密集迭代，本页 §0.2 的事实表应按"随时会变"来读。
-
-**② CSA 正在从"一个大文件"长成一个子系统。** 同一路径下的 `.py` 从 `ee3f1ffa` 的 **4 个**涨到 `71092579` 的 **25 个**，其中 `csa_utils/` 6 个、`ops/` 9 个（多为 tilelang / cuDNN kernel 绑定）。→ 推断：CSA 的实现正在从"研究性单文件"沉淀成有明确分层（frontend / utils / ops）的组件。
-
-**③ 下一个掩盖对象大概率是 Stage 1。** #5691 只把 Stage 2 的两次 AllGather 异步化了；Stage 1 至今是同步的（§九 ⑧）。→ 推断：这是掩盖工作里唯一还明着摆在那里的口子。
-
-**④ 源码里留着几处显式的"以后再说"。**
-- `megatron/core/transformer/experimental_attention_variant/csa_utils/fused_sparse_attention.py:1082`：「This function is not used now, but it is kept for **potential future use**.」（`sparse_indexer_score_recompute_wrapper` 的封装）
-- `megatron/core/transformer/experimental_attention_variant/csa_utils/fused_compressor.py:76-80`：门控刻意跟 kernel 走，为的是「a **future overlap-policy change** keeps the fast path」
-- `megatron/core/transformer/experimental_attention_variant/dsa_masking.py:467`：`assert attn_mask_type == AttnMaskType.causal, "Only causal mask is supported **for now**"`
-- `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:302`：「TODO: Currently, TE can only accept contiguous tensors for MLA」
-
-**⑤ 附录 A 的方法论仍然有效，结论不再有效。** 那次审计用的是"读接口声明 + 对目录做 `git grep -n -E 'isend|irecv|all_gather'` 取证"，方法本身没问题；失效的原因是**基线前进了 578 个提交**。→ 推断：对实验性子系统（`experimental_attention_variant/` 这类）的 gap 审计，其结论应当被视为**有保质期的**，重读时先核基线再核结论。
-
----
-
-## 十一 结论与配置建议
-
-### 11.1 V4 CP 的核心特征
-
-> **特征 1：MLA 极大降低了 CP 通信量** — MLA 的 MQA 结构（hk\=1）使得 CP 的 KV 通信量相比标准 MHA 降低约 128 倍。这是 V4 支持 1M+ 序列长度训练的核心工程基础。
-
-> **特征 2：TE P2P 是默认且最优的 CP 模式** — `cp_comm_type="p2p"` 通过独立的 `cp_stream` 实现 Ring Attention 的通信计算重叠，wall-time 开销最小。需要 TE >= 1.0.0。
-
-> **特征 3：Hierarchical CP 匹配物理拓扑** — `a2a+p2p` 模式（TE >= 1.12.0）结合 `hierarchical_context_parallel_sizes`，使低层通信走 NVLink、高层走 IB，最大化硬件带宽利用率。
-
-> **特征 4：Dynamic CP 暂不支持 MLA/DSv4** — 当前实现中，MLA 和 DSv4 Hybrid Attention 需要固定 CP size，无法根据序列长度动态调整。这是未来版本的重要优化方向。
-
-> [!contradiction] 特征 4 在基线 `71092579` 下已不成立（PR #4226 解除，见 §5.3 / §8.3）。
-
-> **特征 5：CSA 压缩与 CP 的兼容尚未完整实现** — 论文设计中 CSA+CP 通过两阶段通信（P2P 边界 + AllGather 压缩 KV）可将额外通信量控制在 ~12.5%（m=4 时）。但当前 Megatron-LM 代码尚未实现该设计（压缩 KV AllGather 缺失、边界组使用 fill_value 填充），CSA 层实际 CP 通信量为 0 但功能不完整。完整实现是未来的重要工作项。
-
-> [!contradiction] 特征 5 在基线 `71092579` 下已不成立：两阶段通信均已由 PR #5087 实现（见附录 A 顶部的 locator 表）。这个「未来的重要工作项」在 `ee3f1ffa…`→`71092579` 的 578 个提交里被完成了。
-
-### 11.2 配置决策树
-
-![图 8：DeepSeek-V4 CP 配置决策树](assets/deepseek_v4_context_parallel_analysis_fig6.png)
-
-*图 8：DeepSeek-V4 CP 配置决策树*
-
-### 11.3 一句话总结
-
-> [!contradiction] 本段「当前限制」中的 **Dynamic CP 不支持 MLA/DSv4** 一条在基线 `71092579` 下已不成立（见 §5.3）；另两条（Native CP 只支持 all_gather、Native 路径 CP 下不支持 attention dropout）经重核仍然成立（`megatron/core/transformer/transformer_config.py:3810-3821`、`megatron/core/transformer/dot_product_attention.py:60-65`）。
-
-> **总结**：DeepSeek-V4 的 Context Parallelism 实现充分利用了 MLA 的 KV 压缩优势（CP 通信量降低 128 倍），通过 TE 的 P2P Ring Attention 实现通信计算重叠，并支持 Hierarchical CP 匹配物理拓扑。当前限制包括：Native CP 只支持 all_gather、Dynamic CP 不支持 MLA/DSv4、CP 下不支持 attention dropout（Native 路径）。在 1M 序列长度的训练场景下，CP=8 + a2a+p2p 是推荐配置，可将 Attention 显存降低 8 倍，CP 通信开销控制在总时间的 5% 以内。
-
----
-
-## 附录 A CSA/HCA CP：论文设计与代码实现的 Gap（旧基线 `ee3f1ffa…` 的审计记录，核心结论已被推翻）
-
-DeepSeek-V4 论文中提到，CSA/HCA 的 CP 需要**两阶段通信**：
-
-1.  **第一阶段 P2P**：将被 CP 截断的边界 token 发送到下一个临近卡，用于计算压缩 KV
-2.  **第二阶段 AllGather**：聚合所有 rank 的压缩 KV，使每个 rank 获得完整的压缩 KV 序列，供注意力计算使用
-
-> [!contradiction] **本附录（原 §5.5 全节，含 Gap 1–4、影响评估、结论）的核心判定在基线 `71092579` 下已被推翻。** 论文要求的两阶段通信均已落地，由 PR #5087「[dev] [DeepSeek-v4] Context Parallel support」引入（helper 后经 PR #6372 迁入 `csa_utils/`）：
->
-> | 论文阶段 | 新基线 `71092579` 下的实现 | locator |
-> |---|---|---|
-> | Stage 1 · P2P 边界 | `_LeftBoundaryExchange`（`torch.autograd.Function`，forward `dist.batch_isend_irecv`、backward 把边界梯度送回发送方） | `megatron/core/transformer/experimental_attention_variant/csa_utils/cp_utils.py:124-188`（`:156` / `:184`） |
-> | Stage 1 入口 | `exchange_cp_boundary_hidden`，取 `D_window = max(csa_window_size, d_comp)` 行 | `megatron/core/transformer/experimental_attention_variant/csa_utils/cp_utils.py:191-202`，调用点 `megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py:274-281` |
-> | Stage 2 · 压缩 KV AllGather | `async_gather_from_sequence_parallel_region`（indexer-K 与 attention 压缩 KV 各一次，异步发起、错开等待以与本地投影重叠） | `megatron/core/transformer/experimental_attention_variant/csa.py:2650-2652`、`:2677-2679`；等待 `:2722-2724`、`:2749-2751`；无 indexer 时同步版 `:2753-2755` |
-> | CP 主路径 | `_forward_thd_cp`，要求 `qkv_format='thd'` 且 `cp_partition_mode='contiguous'` | `megatron/core/transformer/experimental_attention_variant/csa.py:2537-2896`，分派于 `:2113-2115`，前置校验 `:2103-2109` |
->
-> 「审计范围内未发现 isend/irecv/all_gather」这一取证结论也随之失效：在 `71092579` 上对同一目录做 `git grep -n -E 'isend|irecv|all_gather'` 会命中 `csa_utils/cp_utils.py:146/153/156/174/181/184`、`dsa.py:257`、`dsa_layout.py:216`。
->
-> 以下 Gap 1–4、影响评估与结论对应旧基线 `ee3f1ffa…`，保留原文；其中仍然成立的部分已在各 Gap 下单独标注。
-
-但在当前 Megatron-LM dev 分支的代码中，这一设计**尚未实现**。具体证据如下：
-
-```
-# csa.py:1726 - cp_comm_type 参数声明
-class CompressedSparseAttention:
-    def __init__(..., cp_comm_type: str = "p2p", ...):
-        ...
-
-    def forward(self, query, key, value, ...):
-        # forward 中完全没有读取或使用 self.cp_comm_type
-        ...
-```
-
-审计范围：csa.py, dsa.py, deepseek_v4_hybrid_attention.py —— 均未发现 isend/irecv/all_gather 调用
-
-#### Gap 1：_overlap_transform 的跨 rank 依赖未解决
-
-`Compressor._overlap_transform`（用于 `compress_ratio=4`）存在明确的跨组依赖：
-
-```
-def _overlap_transform(self, tensor, fill_value=0):
-    new_tensor = tensor.new_full((n_groups, 2*ratio, b, d), fill_value)
-    new_tensor[:, ratio:] = tensor[:, :, :, d:]       # 当前组后半段
-    new_tensor[1:, :ratio] = tensor[:-1, :, :, :d]    # 前一组前半段 ← 跨组依赖
-    return new_tensor
-```
-
-来源：megatron/core/transformer/experimental_attention_variant/csa.py:1109-1122
-
-> [!contradiction] `_overlap_transform` 本身在新基线下仍是这段逐字代码（`fill_value` 填充第 0 组），但它已**不再是 CP 下的路径**：`71092579` 要求 CSA+CP 必须走 `qkv_format='thd'`（否则 `csa.py:2103-2104` 直接 `raise ValueError`），而 THD 路径用的是 `_overlap_transform_thd`（`megatron/core/transformer/experimental_attention_variant/csa.py:1124-…`）并以 Stage 1 换来的真实 boundary 行填充。因此「rank > 0 的第 0 组用 fill_value」这一 Gap 已由 本附录顶部所述的边界交换关闭；本节保留的是旧基线 `ee3f1ffa…` 的 SBHD 形态。
-
-在 CP 切分下，每个 rank 的序列被切成 `n_groups = S_local / ratio` 组。对于 **rank > 0 的第 0 组**，其前 `ratio` 个位置需要前一个 rank 的最后一组数据。当前代码的处理方式是：
-
-> **当前代码的边界处理**：用 `fill_value` 填充缺失数据——KV 用 `fill_value=0`，score/softmax 用 `fill_value=float("-inf")`。  
->   
-> 这意味着 rank > 0 的第 0 组压缩 KV 的前半段是**全零或负无穷**，而非真实 token 数据。CP size 越大，受影响的边界组越多（每 rank 1 组），压缩质量下降越明显。
-
-#### Gap 2：压缩 KV 的跨 rank AllGather 缺失
-
-论文第二阶段要求 AllGather 所有 rank 的压缩 KV。当前代码中：
-
-```
-# csa.py:1821-1825（现已收敛进 _build_kv_full）
-if self.compressor is not None and self.compress_ratio > 1:
-    compressed_kv = self.compressor(x)  # 仅本地压缩
-    if compressed_kv is not None:
-        kv_full = torch.cat([kv, compressed_kv], dim=0)  # 仅本地 KV
-        n_compressed = compressed_kv.size(0)
-```
-
-来源：megatron/core/transformer/experimental_attention_variant/csa.py:1811-1834
-
-> [!contradiction] 这段「仅本地压缩」的代码在新基线下仍逐字存在，但它只服务 **非 CP 的 SBHD 路径**。CP 打开时 `forward` 在 `megatron/core/transformer/experimental_attention_variant/csa.py:2113-2115` 分派到 `_forward_thd_cp`，压缩 KV 经 本附录顶部所列的 AllGather 变成 rank-major 全局张量（`compressed_kv_rank_major`），因此「每个 rank 只能看到本地 S_local/128 个压缩 token」在 `71092579` 下已不成立。
-
-每个 rank 的 `kv_full` 只包含**本地压缩 KV**。在 HCA 模式下（`compress_ratio=128`，Indexer 不参与，所有压缩位置都可见），注意力需要看到**全局所有压缩位置**。当前实现下，每个 rank 只能看到本地产生的 `S_local / 128` 个压缩 token，而非全局的 `S / 128` 个。
-
-#### Gap 3：短序列与截断的边界处理
-
-当前代码通过两层机制处理序列长度不规整的情况：
-
-| 场景 | 代码处理 | 结果 |
-| --- | --- | --- |
-| `sq < ratio` | `return None`（`megatron/core/transformer/experimental_attention_variant/csa.py:1156-1157`） | 不做压缩，退化为纯 window attention |
-| `sq % ratio != 0` | `cutoff = (sq//ratio)*ratio`，截断尾部 | 末尾 token 不参与压缩 |
-| CP 切分后 rank > 0 的第 0 组 | `fill_value` 填充 | 边界压缩质量下降 |
-
-论文中的 P2P 第一阶段正是为了解决第三种情况：通过将前一个 rank 的边界 token 发送到下一个 rank，确保所有组的压缩都有完整的数据。
-
-> [!contradiction] 第三行（CP 切分后 rank > 0 的第 0 组用 `fill_value`）在基线 `71092579` 下已被上述 Stage 1 边界交换取代；前两行（`sq < ratio` 返回 `None`、`sq % ratio != 0` 截断尾部）仍然成立，行号见上。
-
-#### Gap 4：P2P 与计算的掩盖可行性
-
-论文中的 P2P 第一阶段本质上是一个**小数据量的邻居通信**：
-
-> **P2P 数据量（per boundary）**：  
-> ratio × dim_per_token（dim 取决于 Compressor 的输入维度）  
-> \- 若 Compressor 接收原始 hidden states（dim=7168）：ratio=4 时，约 4×7168 = 28K elements ≈ 56 KB fp16  
-> \- 若 Compressor 接收 MLA 投影后的 KV（dim = n_kv_heads × head_dim，远小于 7168）：数据量更小  
-> ⚠️ 准确值需确认代码中 Compressor 输入 `x` 的实际维度  
->   
-> **掩盖策略**：  
-> 1\. 在计算本 rank 第 1~n 组压缩的同时，异步 `irecv` 前一个 rank 的边界 token  
-> 2\. 收到边界数据后，再计算第 0 组压缩  
-> 3\. 同时 `isend` 本 rank 的边界 token 给下一个 rank  
->   
-> **没有通信时的处理**：  
-> \- 最后一个 rank：不需要 send，不需要等待 recv（用 fill_value 即可，或 recv 自己发给自己）  
-> \- 序列过短导致 `sq < ratio`：compressor 返回 None，整个 P2P 阶段跳过  
-> \- CP size=1：无通信，无掩盖需求
-
-> **工程建议**：由于 P2P 边界数据量极小（~56 KB），即使不掩盖，通信延迟也远低于压缩计算时间（线性层 + softmax + pooling）。因此 P2P 第一阶段的掩盖收益有限，其核心价值在于**保证压缩质量**而非性能优化。真正需要关注的是第二阶段 AllGather 的掩盖，因为它涉及所有压缩 KV 的全局聚合。
-
-> [!update] 这条工程判断被新基线的实现选择印证了：`71092579` 下 Stage 1 的 `_LeftBoundaryExchange` 用的是**同步** `batch_isend_irecv` + 立即 `req.wait()`（`megatron/core/transformer/experimental_attention_variant/csa_utils/cp_utils.py:156`），未做任何掩盖；而 Stage 2 的两次 AllGather 恰恰被显式异步化——先后发起 indexer-K 与 attention-KV 的 `async_gather_from_sequence_parallel_region`，把 indexer 的 Q/W 本地投影插在两者之间执行，最后才分别 `wait()`（`megatron/core/transformer/experimental_attention_variant/csa.py:2650-2652`、`:2677-2679`、`:2684-2720`、`:2722-2724`、`:2749-2751`）。
-
-#### 影响评估
-
-| 指标 | 论文设计（理想） | 当前代码（实际） | 偏差 |
-| --- | --- | --- | --- |
-| 边界压缩质量 | 100%（P2P 传真实 token） | 下降（fill_value 填充） | rank 0 不受影响，rank > 0 的第 0 组偏差 |
-| 压缩 KV 可见范围 | 全局 S/128 | 本地 S_local/128 | HCA 模式下注意力视野受限 |
-| CP 通信量 | P2P(边界) + AllGather(压缩KV) | 0（CSA 层无通信） | 当前 CSA 层 CP 通信为 0，但功能不完整 |
-| 与标准 Attention CP 的兼容性 | 独立两阶段，可叠加 | CSA 层不参与 CP 通信 | CSA 层的 CP 仅起到序列切分作用 |
-
-> **结论**：当前代码中的 CSA CP 是一个**功能降级版**——它通过序列切分减少了每 rank 的计算量，但没有实现论文要求的跨 rank 压缩协同。对于 `compress_ratio=128` 的 HCA 层，这一 gap 的影响较小（压缩粒度粗，本地 token 已覆盖大部分信息）；但对于 `compress_ratio=4` 的 CSA 层，边界填充会导致约 `1 / (S_local/4)` 比例的压缩 token 质量下降。
-
----
-
-## 相关页面
-
-**通用机制（理论层）**：
-- [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]] — CP/Ring Attention 通用机制(p2p/all_gather/a2a/a2a+p2p 四种调度、因果裁剪、通信量代数、分层分组构造);本页 §三、§1.2、§6.2 的骨架来源页
-
-**模型侧（论文级，01_theory）** — 本页讲实现，下列讲算法/架构：
-- [[23_deepseek_v4_cp_analysis]] — V4 CP 的**论文算法**（§3.4.3 两阶段压缩感知 CP、packed sequences、三层可见性控制）。与本页对照阅读：论文设计 ↔ Megatron 实现 gap（见本页附录 A、§十一 特征 5）。
-- [[13_deepseek_v4_analysis]] — V4 整体架构　· [[26_deepseek_v4_technical_deepdive]] — CSA/HCA/DSA/MLA 机制　· [[25_mhc_analysis]] — 流形约束超连接　· [[30_deepseek_v4_audit_analysis]] — V4 wiki 对正式版审计
-
-**框架侧（Megatron-LM，本目录）**：
-- [[34_deepseek_v4_tensor_parallel_analysis]] — V4 TP=1 切分实现（姊妹页）
-- [[13_megatron_cp_analysis]] — Megatron CP 框架实现差异(`cp_comm_type` 配置接口)　· [[29_megatron_packed_dataset_dynamic_cp_analysis]] — Dynamic CP / packed dataset　· [[14_megatron_ep_analysis]] — 专家并行　· [[20_megatron_comm_overlap_analysis]] — 通信掩盖
-- [[13_torchtitan_cp_analysis]] · [[20_mindspeed_context_parallel_analysis]] — 其它框架的 CP 实现差异
+- [[13_megatron_cp_analysis]] —— Megatron CP group、四种通信类型、hierarchical group 与 `cp_partition_mode` 配置 owner。
+- [[29_megatron_packed_dataset_dynamic_cp_analysis]] —— THD packing、Dynamic CP group 选择和 scheduler owner。
+- [[34_deepseek_v4_tensor_parallel_analysis]] —— 同一 DSv4 Hybrid Attention 的 TP=1、duplicated 参数与 MoE 交界。
+- [[20_megatron_comm_overlap_analysis]] —— 多并行轴的 stream/SM/显存竞争与 profiler 诊断。
+- [[../../../01_theory/01_models/deepseek/23_deepseek_v4_cp_analysis|23_deepseek_v4_cp_analysis]] —— DSv4 两阶段 CP 的模型/算法视角。
+- [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]] —— 通用 CP 与 Ring Attention 理论。
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] —— 返回本域索引。

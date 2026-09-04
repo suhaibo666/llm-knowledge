@@ -7,11 +7,11 @@ title: "Megatron-FSDP 深度解析"
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
 > **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；该增量只触及 20 个 `megatron/` 文件，本页 `path:line` 引用所涉源文件均不在其中，故无行号漂移，无需逐条重核。
 > 核心文件:`megatron/core/distributed/fsdp/src/megatron_fsdp/`(16 个 `.py`、11321 行;其中 `param_and_grad_buffer.py` 5332 行、`megatron_fsdp.py` 1544 行),接入层 `megatron/core/distributed/fsdp/mcore_fsdp_adapter.py`(654 行),仓内文档 `docs/user-guide/features/megatron_fsdp.md`(619 行)
-> 配套阅读:`16_megatron_distributed_optimizer_analysis.md` §18(三方对比)、`22_megatron_memory_optimization_analysis.md`、`20_megatron_comm_overlap_analysis.md`、`19_megatron_dist_checkpointing_analysis.md`
+> 配套阅读：[[16_megatron_distributed_optimizer_analysis]] §11（三方对比）、[[22_megatron_memory_optimization_analysis]]、[[20_megatron_comm_overlap_analysis]]、[[19_megatron_dist_checkpointing_analysis]]。
 > 适用读者:已了解 ZeRO 分级与 Megatron DDP,要读懂、调参或移植 Megatron-FSDP 这台机器的工程师。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **合并来源**：2026-08-28 新建,吸收并取代 [[16_megatron_distributed_optimizer_analysis]] §18.2「MegatronFSDP 详细分析」与 §18.6「FSDP 与并行拓扑的关系」、[[27_megatron_tp_fsdp_resharding_supplements_analysis]] §3「Megatron-FSDP 内部实现」;三套分片方案的**横向对比**(DistributedOptimizer / TorchFullyShardedDataParallel / MegatronFSDP)仍是 16 号页 §18 的职责,本页不重复。
-> **最近更新**：2026-08-28。新建页,并按 Merge over coexist 完成合并——16 号页 §18.2/§18.6 与 27 号页 §3 的独有增量已吸收进本页(§2 ④、§3、§4.3、§5.1、§7.1、§9),两页对应小节改为指向本页的指引;**三方对比(DistributedOptimizer / TorchFSDP2 / MegatronFSDP)按约定留在 [[16_megatron_distributed_optimizer_analysis]]**。
+> **合并来源**：2026-08-28 新建,吸收并取代 [[16_megatron_distributed_optimizer_analysis]] §11.2「MegatronFSDP 详细分析」与 §11.6「FSDP 与并行拓扑的关系」、旧 `27_megatron_tp_fsdp_resharding_supplements_analysis` §3「Megatron-FSDP 内部实现」;三套分片方案的**横向对比**仍是 16 号页 §11 的职责,本页不重复。
+> **最近更新**：2026-09-03。完成旧补遗页的最终归并：补入参数 gather 粒度开关；16 号页仍以 §11.2/§11.6 保留 owner link，三方对比（DistributedOptimizer / TorchFSDP2 / MegatronFSDP）仍留在那里。
 
 ---
 
@@ -111,16 +111,21 @@ title: "Megatron-FSDP 深度解析"
 **从哪开始读源码**(主类 `MegatronFSDP(torch.nn.Module)` 定义在 `megatron_fsdp.py:94`):
 
 ```
-fully_shard_model                       fully_shard.py:63     # 参数校验 + 建 DeviceMesh
-  └─ MegatronFSDP.__init__              megatron_fsdp.py:198
-       ├─ _check_module_parameter_types           :351        # 有没有 expert 参数
-       ├─ _init_fsdp_param_and_grad_buffer        :365
-       │    ├─ ParamAndGradBuffer         param_and_grad_buffer.py:2098
-       │    │    └─ _get_parameter_groups                  :1831   # 四步分组(§4)
-       │    ├─ GradReducePipeline                          :3957   # RS 流水线(§6)
-       │    └─ AllGatherPipeline                           :4417   # AG 流水线(§6)
-       └─ _register_fsdp_hooks           megatron_fsdp.py:509      # 四类 hook(§6)
+fully_shard_model                                      fully_shard.py:63
+  ├─ DistributedDataParallelConfig                    :384-402
+  ├─ FSDPDistributedIndex(device_mesh, shard dims)    :405-426
+  └─ MegatronFSDP(...) 构造调用                       :429-442
+       └─ MegatronFSDP.__init__              megatron_fsdp.py:198
+            ├─ _check_module_parameter_types                 :351  # 有没有 expert 参数
+            ├─ _init_fsdp_param_and_grad_buffer              :365
+            │    ├─ ParamAndGradBuffer       param_and_grad_buffer.py:2098
+            │    │    └─ _get_parameter_groups                :1831 # 四步分组(§4)
+            │    ├─ GradReducePipeline                        :3957 # RS 流水线(§6)
+            │    └─ AllGatherPipeline                         :4417 # AG 流水线(§6)
+            └─ _register_fsdp_hooks         megatron_fsdp.py:509    # 四类 hook(§6)
 ```
+
+关键调用点在 `fully_shard_model` 的函数体，而不是类定义本身：入口先把 API 参数落成 DDP config 与 `FSDPDistributedIndex`，然后才在 `megatron/core/distributed/fsdp/src/megatron_fsdp/fully_shard.py:429-442` 实际调用 `MegatronFSDP(...)`。因此按上图可直接进入构造器，不需要再搜索谁实例化主类。
 
 一次训练迭代里 Megatron 侧真正碰到的 FSDP API,就是接入层转发出来的那 8 个(`mcore_fsdp_adapter.py:254-261`):`zero_grad_buffer` → forward/backward(参数的 gather 与释放全靠 hook,训练循环看不见)→ `finish_grad_sync` → `optimizer.step()`。独立包路径下多一层:`fully_shard_optimizer` 把 `optimizer.step()` 换成包装器,在 base step 前后分别补 `finish_grad_sync()` 与 `install_optimized_model_weights()`(`fully_shard.py:536-556`)。
 
@@ -232,6 +237,8 @@ fully_shard_model                       fully_shard.py:63     # 参数校验 + �
 - **`AllGatherPipeline`**(`param_and_grad_buffer.py:4417`):逐 bucket group all-gather 参数。预取由 `PrefetchOrder`(`:4404-4414`)选方向,实现就是 `next_bucket_id` 在 bucket id 上 **±1**(`:4587-4608`)—— 前向找下一个更大的 id、反向找下一个更小的 id。
 - **`GradReducePipeline`**(`:3957`):逐桶把梯度 reduce-scatter 成分片。它用 `bucket_grad_ready_params` 计数(`:3979`),集齐一个桶的参数才发 collective。
 
+默认的参数 gather 粒度是 **FSDP unit**：一次共同 unshard 该 unit 下的全部子模块。`enable_fine_grained_param_gather=True` 会改成 **per-Module** 粒度，默认值为 `False`（`megatron/core/distributed/fsdp/src/README.md:134-135`）。这个开关改变的是参数 materialize 的窗口与粒度，不改变 §5 的分片语义。
+
 每个桶有四态 `BucketStatus`(`:3940-3954`):`EMPTY` / `PRESERVED` / `COMMUNICATING` / `READY_TO_USE`。
 
 ```
@@ -256,25 +263,25 @@ optim_grads_params 一层的前向:
 
 ## 7. 机制④：与 EP / TP / HSDP·HFSDP 的叠加
 
-### 7.1 FSDP 永远切在最后一层
+### 7.1 “最后切”是状态变换顺序，不是 rank 集合互斥
 
-文档把规则说死:「When sharding model states across multiple dimensions in the device topology, _**FSDP sharding is always performed last**_, because FSDP collectives un-shard and re-shard parameters and gradients immediately before and after computation」(`docs/user-guide/features/megatron_fsdp.md:494`)。也就是说 FSDP 的分片建在 TP/EP 已经切完的 strided shard 之上,**它的 shard group 与 TP/EP/CP/PP group 不相交**。
+文档规定：跨多维拓扑切模型状态时，FSDP **最后执行**，因为它在计算前后立即 unshard/reshard；因此 FSDP 操作的是已经被 TP/EP 切过的 strided shard（`docs/user-guide/features/megatron_fsdp.md:492-500`）。这里的“最后”描述**张量状态的变换顺序**，不意味着 FSDP、TP、EP、PP 的 process-group rank 集合两两不相交；对包含当前 rank 的正交 mesh 维度，两组在规则矩形 mesh 中通常至少以该 rank 为交点。
 
-落到进程组上就是一句话:**FSDP 的 shard 只发生在 DP 轴**,即 `world_size / (TP × CP × PP × EP)` 剩下的那一维;FSDP shard group 与 TP / EP / PP group 的交集为空 —— 那几维已经各自切过参数或激活,FSDP 只负责消除 DP 维度的冗余。
+实现把这种正交性表达为**独立 DeviceMesh 维度**。standalone API 的 `dp_shard_dim` 可以指向纯 DP 子 mesh，也明确支持展平的 DP-CP 子 mesh，此时参数、梯度、optimizer state 同时沿 DP 与 CP ranks 分片（`megatron/core/distributed/fsdp/src/megatron_fsdp/fully_shard.py:112-129`）。Megatron adapter 的 dense mesh 则明确命名为 `["dp_cp", "tp"]`，并固定传 `dp_shard_dim="dp_cp"`、`tp_dim="tp"`（`megatron/core/distributed/fsdp/mcore_fsdp_adapter.py:472-485`）；HSDP 再增加独立的 `outer_fsdp_dp` 维（`:442-459`）。PP 不在这个单 stage 的 DeviceMesh 里。
+
+令 dense 拓扑的纯 DP、CP、TP、PP 大小分别为 `D、C、T、P`，则两种合法口径要分开：
 
 ```
-TP=4、EP=8、PP=P、world=256 时:
-  TP group   = 4 ranks   (同 PP stage、同 EP rank)
-  EP group   = 8 ranks   (跨 expert)
-  PP group   = P ranks   (跨层)
-  剩下 256 / (4 × 8 × P) = DP size ← FSDP 的 AG/RS 只在这一维内发生
+standalone 选择纯 DP shard dim:       |G_fsdp| = D = world / (T × P × C)
+Megatron adapter 选择 dp_cp shard dim: |G_fsdp| = D × C = world / (T × P)
 
-  不变量: FSDP group ∩ TP group = ∅
-          FSDP group ∩ EP group = ∅
-          FSDP group ∩ PP group = ∅
+例：world=64、T=4、P=2、C=2
+    D = 64 / (4 × 2 × 2) = 4
+    adapter 的 dense FSDP shard group 大小 = D × C = 8
+    每次 AG/RS 处理的是当前 PP stage 上、已经按 TP 切过的 local shard
 ```
 
-`dp_shard_dim` 通常是 **DP 与 CP 展平后的子 mesh**(`fully_shard.py:116-119`;README `:103-104` 补充理由:反向里参数在 DP-CP 上都是复制的,所以两轴的梯度同时规约、按 DP-CP world size 归一)。
+所以准确的不变量是：FSDP 通信沿 `dp_shard_dim` 改变 rank 坐标，同时固定 TP（以及当前 PP stage）坐标；不能写成 `FSDP group ∩ TP/EP/PP group = ∅`，也不能在 adapter 路径把 CP 从 shard size 中除掉。EP 使用另一张 expert mesh，见 §7.2。
 
 ### 7.2 EP:两个 DeviceMesh,自动识别
 
@@ -318,7 +325,7 @@ HFSDP 的收益写在 `docs/user-guide/features/megatron_fsdp.md:468-472`:优化
 
 | # | 前提 / 代价 | 源码落点 | 破坏后的表现 |
 |---|---|---|---|
-| 1 | **`CUDA_DEVICE_MAX_CONNECTIONS` 不能是 `1`** | `megatron/training/arguments.py:1252-1254` 硬 assert:「FSDP requires CUDA_DEVICE_MAX_CONNECTIONS > 1 or unset」 | 直接启动失败。而 TP 的异步通信重叠**依赖**该变量为 1(`megatron/core/tensor_parallel/layers.py:761-775`,那边只是 `warnings.warn`)——文档承认这是取舍:「May slightly affect TP and CP performance though」(`docs/user-guide/features/megatron_fsdp.md:159-160`)。**不是正确性问题,是 TP/CP 侧丢重叠**(详见 [[12_megatron_tp_analysis]] §2) |
+| 1 | **`CUDA_DEVICE_MAX_CONNECTIONS` 不能是 `1`** | `megatron/training/arguments.py:1252-1254` 硬 assert:「FSDP requires CUDA_DEVICE_MAX_CONNECTIONS > 1 or unset」 | 直接启动失败。而 TP 的异步通信重叠**依赖**该变量为 1(`megatron/core/tensor_parallel/layers.py:761-775`,那边只是 `warnings.warn`)——文档承认这是取舍:「May slightly affect TP and CP performance though」(`docs/user-guide/features/megatron_fsdp.md:159-160`)。**不是正确性问题,是 TP/CP 侧丢重叠**(详见 [[12_megatron_tp_analysis]] §3.2) |
 | 2 | 只能配 `--ckpt-format fsdp_dtensor` | `arguments.py:1256-1258` | assert 失败;与 [[19_megatron_dist_checkpointing_analysis]] 的 `torch_dist` 不通用,跨格式要走 `checkpoint_inspector.py` 转换(`docs/user-guide/features/megatron_fsdp.md:260-285`) |
 | 3 | 优化器只支持 `sgd` / `adam` | `arguments.py:1233-1236` | assert 失败 |
 | 4 | 不支持 `moe_single_grouped_weight` / `moe_single_grouped_bias` | `arguments.py:1221-1231`,`ValueError` 报文自陈:TE `GroupedTensor` 参数需要重映射 grouped 底层存储,「DDP has a separate GroupedTensor-aware path」 | 只能退回 DDP/DistributedOptimizer 路径 |
@@ -375,18 +382,27 @@ HFSDP 的收益写在 `docs/user-guide/features/megatron_fsdp.md:468-472`:优化
 | ZeRO 阶梯怎么实现 | 三个布尔量(model/main weight、grad 切不切) | §5.1 |
 | 通信怎么不掉速 | 两条流水线 + `bucket_id ± 1` 预取 + 独立 AG 进程组 | §6.3、§5.3 |
 | 最容易踩的坑 | `CUDA_DEVICE_MAX_CONNECTIONS` 与 TP 冲突;非均匀 DTensor 上跑对称集合通信会挂死 | §9 约束 1、16 |
-| 三套方案怎么选 | 见 [[16_megatron_distributed_optimizer_analysis]] §18.4 选型矩阵 | — |
+| 三套方案怎么选 | 见 [[16_megatron_distributed_optimizer_analysis]] §11.4 选型矩阵 | — |
 
 ---
 
 *生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准。历史结论取自 `d165a8548`(2025-02-26)与 `af28b5a55`(2025-08-21)两个提交的 message 与文件变更。*
 
+## 配置契约：FSDP 实现选择
+
+| 字段 | 来源 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `use_megatron_fsdp` | `DistributedInitConfig` | `False` | 启用 Megatron-FSDP；不能与 Torch FSDP2 同开。 | `megatron/training/config/common_config.py:95-96` |
+| `use_torch_fsdp2` | `DistributedInitConfig` | `False` | 启用 Torch FSDP2；当前不支持 PP，且源码声明尚非稳定发布阶段。 | `megatron/training/config/common_config.py:98-101` |
+
+这两个字段决定模型采用哪套全分片实现，因此 owner 在本页；16 只保留三方案的横向选择，[[26_megatron_optimizer_step_internals_deepdive]] 只解释选定实现进入 step 后的状态变化。
+
 ## Related Pages
 
-- [[16_megatron_distributed_optimizer_analysis]] — ZeRO 0-3 四阶段的概念层与三套分片方案的横向对比(§18);本页是其中 MegatronFSDP 一栏的实现权威页。
-- [[27_megatron_tp_fsdp_resharding_supplements_analysis]] — 同域补遗页,Nonuniform TP(§4)与 Resharding/Refit(§5)仍在那里;它的 Megatron-FSDP 一节已并入本页。
+- [[16_megatron_distributed_optimizer_analysis]] — ZeRO 0-3 四阶段的概念层与三套分片方案的横向对比（§11）；本页是其中 MegatronFSDP 一栏的实现权威页。
+- [[30_megatron_rl_posttraining_consistency_analysis]] — 跨并行配置的 Resharding/Refit owner；旧补遗中的权重搬运内容已归并到该页。
 - [[12_megatron_tp_analysis]] — TP 的异步重叠依赖 `CUDA_DEVICE_MAX_CONNECTIONS=1`,与本页 §9 约束 1 正面冲突,配置时必须一起看。
 - [[19_megatron_dist_checkpointing_analysis]] — `fsdp_dtensor` 与 `torch_dist` 两套存档格式的分工。
 - [[20_megatron_comm_overlap_analysis]] — delayed wgrad / A2A overlap 把 EP 通信与本页的 AG/RS 流水线拼在一起。
 - [[22_megatron_memory_optimization_analysis]] — 激活侧的显存手段,与本页只管模型态的边界互补。
-- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] — 返回全部 35 篇内容页的主题索引。

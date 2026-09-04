@@ -455,7 +455,7 @@ Example (query at global position 20, k=8):
 - [[14_deepseek_r1_analysis]] — GRPO 推理训练
 
 **框架实现（Megatron-LM 源码级，与本页论文算法对照）**：
-- [[35_deepseek_v4_context_parallel_analysis]] — **V4 CP 的 Megatron 实现**：进程组拓扑、四种通信类型、Native/TE CP、以及本页论文设计在代码中的 gap（如压缩 KV all-gather 尚未实现）
-- [[34_deepseek_v4_tensor_parallel_analysis]] — V4 TP=1 切分实现（CSA/HCA/mHC/MoE 的切分约束）
+- [[35_deepseek_v4_context_parallel_analysis]] — **V4 CP 的 Megatron 实现**：左边界 hidden rows 的 autograd P2P（接收后本地投影 boundary KV）、压缩 Indexer-K/KV gather、CP-aware RoPE、Dynamic CP group 切换与 fused/eager 约束
+- [[34_deepseek_v4_tensor_parallel_analysis]] — V4 当前 TP=1 硬边界与运行时 guard，以及 CSA/HCA/mHC/MoE 中仍复制而未切分的投影
 - [[02_engineering/02_train_frameworks/megatron-lm/17_megatron_parallelism_orchestration_analysis]] — Megatron-LM 5D 并行编排与进程组构造（含标准 CP）
 - [[02_engineering/02_train_frameworks/megatron-lm/20_megatron_comm_overlap_analysis]] — 通信重叠分析

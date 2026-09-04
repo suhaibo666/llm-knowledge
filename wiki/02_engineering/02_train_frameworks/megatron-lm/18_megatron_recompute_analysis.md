@@ -305,6 +305,7 @@ selective 下有**两种**底层机制(README MoE §Fine-grained Recomputation �
 
 ## Related Pages
 
-- [[23_megatron_precision_cudagraph_fusion_analysis]] · [[15_megatron_pp_schedulers_analysis]]
-- [[22_megatron_memory_optimization_analysis]]
-- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+- [[15_megatron_pp_schedulers_analysis]] — 说明 recompute 区域怎样进入 pipeline microbatch 调度。
+- [[22_megatron_memory_optimization_analysis]] — 对照激活重计算与 offload、paged stash 等其它显存手段。
+- [[23_megatron_precision_cudagraph_fusion_analysis]] — 查看 FP8 与 CUDA Graph 对 recompute 组合的约束。
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] — 返回全部 35 篇内容页的主题索引。

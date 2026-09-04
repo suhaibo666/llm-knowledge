@@ -7,7 +7,7 @@ title: "Megatron-LM 作业韧性：进程还在不在、通信域还通不通"
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
 > **维度**：功能树模块 N 的**作业侧**。[[28_megatron_training_stability_observability_analysis]] 覆盖的是**数值层面**的稳定性（loss 可不可信、SDC 怎么归因、哪张卡慢）；本页覆盖的是**作业层面**的韧性——进程还在不在、通信域还通不通、硬件还好不好、出事了怎么原地恢复而不是重排队。
 > **核心文件**：`megatron/training/{ft_integration,inprocess_restart,dist_signal_handler,determinism,gpu_sniff_test,activation_logging,dgrad_logging}.py`
-> **最近更新**：2026-09-02 首建。
+> **最近更新**：2026-09-03。由 43 号迁至 27 号，进入“优化与可靠性”学习段；机制与源码基线不变，并强化与 [[28_megatron_training_stability_observability_analysis]] 的作业/数值边界。
 
 ---
 
@@ -33,7 +33,10 @@ title: "Megatron-LM 作业韧性：进程还在不在、通信域还通不通"
 
 `setup()`（`:76`）拿到 rank monitor client 后，训练循环在六个位置打点：`on_training_step_start` / `on_training_step_end`（`:121`/`:136`）、`on_eval_step_start` / `on_eval_step_end`（`:146`/`:159`）、`on_checkpointing_start` / `on_checkpointing_end`（`:169`/`:176`），另有 `on_checkpoint_loaded`（`:193`）与 `shutdown`（`:207`）。
 
-这些点位不是随手撒的，它们对应**四段耗时特征完全不同的区间**：训练步（毫秒到秒级、高度规律）、评估步（较长但也规律）、存档（秒到分钟级、且异步存档还有一条尾巴）、其余（初始化、数据加载等）。分开计时才能给每段配不同的超时阈值——这正是下一节的前提。
+这些 hook 成对包住训练、评估与 checkpoint 区间，而不是只在整个训练循环外打一对全局心跳（`ft_integration.py:121-207`）。
+
+> [!note] 取舍（分析重建）
+> 分段布点让超时学习能区分耗时分布不同的区间；若只观测一个全局脉冲，正常的慢 checkpoint 与卡死的训练步会落进同一阈值。源码证明了 hook 的分段与 §2.2 的分段超时更新，未直接陈述这一选择理由；判据是**故障检测必须保留“当前处于哪类工作”这一上下文**。
 
 ### 2.2 为什么超时要自己算
 
@@ -49,6 +52,8 @@ title: "Megatron-LM 作业韧性：进程还在不在、通信域还通不通"
 
 这是**容错路径自身的测试手段**：容错代码的特点是平时不执行，真出事时才第一次跑——如果那时才发现它有 bug，损失是双份的。注意它与 `megatron/core/fault_injector.py` 分属两层：那个是 core 侧的通用注入器（由 [[28_megatron_training_stability_observability_analysis]] 覆盖），这个是训练侧针对 NVRx 心跳链路的注入。
 
+**取舍**：故障延迟和 `SIGSTOP`/`SIGKILL` 在 daemon 后台线程里执行，而不是在训练主路径里 `sleep` 后直接注入（`ft_integration.py:354-369`）。源码只写“for FT testing only”（`:300-305`）；将其读成“测试夹具不改写正常训练控制流，让故障在训练继续运行时异步到达”是本页的分析重建。判据是**被测路径应尽量保持真实控制流**，而不是先把主线程变成人工等待程序。
+
 ---
 
 ## 3. 进程内重启：不重排队的恢复
@@ -57,9 +62,15 @@ title: "Megatron-LM 作业韧性：进程还在不在、通信域还通不通"
 
 ### 3.1 它和"重排队"的区别
 
-常规的故障恢复是：作业挂掉 → 调度器重新排队 → 重新申请节点 → 重新初始化 → 从 checkpoint 恢复。进程内重启把中间三步全部省掉：**进程不退出**，在同一批已经持有的节点上销毁分布式状态、重建通信域、从内存或本地 checkpoint 继续。
+常规恢复通常要让作业退出并由调度器重新拉起；`--inprocess-restart` 的接线目标是在现有作业进程内把 `pretrain` 交给 NVRx wrapper 管理。Megatron 仓内可完整追到的调用链是：
 
-省掉的排队时间就是它的全部价值。代价是**清理必须彻底**——进程还活着，任何没清干净的状态都会污染下一轮。
+1. `maybe_wrap_for_inprocess_restart` 先解析最小参数；开关启用时调用 `inprocess_restart(pretrain, args)`，随后建立独立 `TCPStore`，最后返回包装后的 callable 与 store（`megatron/training/inprocess_restart.py:130-149`）。
+2. `inprocess_restart` 动态导入 `nvidia_resiliency_ext.inprocess`；依赖缺失就告警并原样返回 `train`（`:18-36`）。存在时，Megatron 只负责组装 rank-assignment layers、initialize/abort/finalize callbacks、CUDA health check 与各类 timeout，再执行 `inprocess.Wrapper(...)(train)`（`:46-125`）。
+3. Megatron 提供给 wrapper 的清理端是 `AbortTransformerEngine`、`AbortTorchDistributed`、异步 checkpoint worker reset，以及 finalize 中的 `destroy_state`（`:25-29,69-98`）。
+
+**边界**：故障如何被监测、reserve rank 如何重新分配、包装器何时重新进入 `train`，都由外部 `nvidia_resiliency_ext.inprocess` 实现；冻结的 Megatron 仓只证明上述接线，不能据此声称恢复“从内存或本地 checkpoint 继续”。要确认恢复载荷和重新入场语义，必须另钉 NVRx 版本与源码。
+
+这条路线意在避免整份作业重新排队；它在 Megatron 侧显露出的代价是**交给 wrapper 的清理 callback 必须彻底**——任何没清干净的全局状态都可能污染下一次进入训练函数。
 
 ### 3.2 清理什么
 
@@ -67,7 +78,7 @@ title: "Megatron-LM 作业韧性：进程还在不在、通信域还通不通"
 
 清理被包在 `inprocess.finalize.ThreadedFinalize(timeout=timedelta(seconds=10), fn=destroy_state)`（`:70`）里——**带超时**。这正是 §1 说的那个张力：清理动作自己也可能挂住，所以清理也要有 deadline。
 
-中止链是组合出来的（`:93-95`）：`inprocess.Compose(inprocess.abort.AbortTransformerEngine(), inprocess.abort.AbortTorchDistributed(), ...)`，另有一个自定义的 `AbortCheckpoint`（`:85`）。**顺序有意义**：TE 的中止要在 torch.distributed 之前，因为 TE 持有的通信资源建立在后者之上。
+中止链按 `AbortTransformerEngine`、`AbortTorchDistributed`、自定义 `AbortCheckpoint` 的顺序传给 `inprocess.Compose`（`megatron/training/inprocess_restart.py:85,93-98`）。本仓只证明了**构造参数的排列**；`Compose` 的执行语义在外部 NVRx 包中，因此仅凭冻结的 Megatron 源码不能断言“必须先 TE 后 torch.distributed”，也不能把“TE 资源建立在后者之上”写成已证实因果。把它理解为从上层扩展向底层通信清理是合理推断，但使用前仍需对照实际安装的 NVRx 版本。
 
 ### 3.3 一处非直觉的前置：强制初始化 NCCL
 
@@ -91,7 +102,7 @@ title: "Megatron-LM 作业韧性：进程还在不在、通信域还通不通"
 
 于是"是否退出"变成一个所有 rank 都能算出相同答案的集体判断。`checkpoint_and_decide_exit` 里用的是 `any(signal_handler.signals_received())`（`megatron/training/training.py:4093`）——**任一 rank 收到即全体退出**。
 
-**被否掉的替代**：让 rank 0 广播决定。那需要一次额外的 broadcast，且 rank 0 自己挂掉时整个机制失效；all-gather 的对称写法没有单点。
+**与 rank 0 广播的区别**：当前 all-gather 是对称协议——没有特权决策 rank，每个参与者都拿到同一份 signal 向量并自行计算 `any(...)`（`dist_signal_handler.py:28-46,54-58`）。这不等于容忍 dead rank：all-gather 和 broadcast 都要求通信组成员参与，任意 rank（包括 rank 0）已经失联时都可能无法完成。源码能证明的是“无特权决策者”，不能证明“没有存活性单点”；选择判据若无提交说明，只能到此为止。
 
 ---
 
@@ -174,9 +185,11 @@ sniff test 是**主动探测**：它跑一组固定的合成负载——`bench_g
 | `--save-tokens-per-expert-interval` | MoE 逐专家 token 数 | 同文件 `:326` `enable_tokens_per_expert_logging` |
 | `--save-dgrads-interval` | 逐层数据梯度 | `megatron/training/dgrad_logging.py:119` `enable_dgrad_logging` / `:134` `save_dgrads` |
 
-三者共用同一套 hook 安装机制（`activation_logging.py:102` 的 `_register_hooks`，按模块类型过滤）。一处工程细节：`_discover_te_types()`（`:24`）与 `dgrad_logging.py:17` 的 `_get_linear_types()` **在运行时发现 TE 的类型**而不是硬编码 import——TransformerEngine 是可选依赖且版本间类名会变，硬编码会让转储功能在 TE 缺失或升级时直接崩掉。
+三者共用同一套 hook 安装机制（`activation_logging.py:102-127` 的 `_register_hooks`，按模块类型过滤）。
 
-`_parse_tpe_module_name`（`activation_logging.py:83`）把模块名解析成 `(名字, 层号, 索引)` 三元组，让落盘文件能按层对齐——**跨两次运行比对时，能对上号才有意义**。
+**取舍一：运行时发现 TE 类型，而不是把 TE 变成日志模块的强制导入依赖。** `_discover_te_types()` 与 dgrad 的 `_get_linear_types()` 都把 TE imports 放在 `try/except ImportError` 内，缺失时保留原生 PyTorch/Megatron 类型集合（`activation_logging.py:24-80`；`dgrad_logging.py:17-55`）。源码事实是“可缺省”；判据由本页重建：**诊断功能不应让未安装 TE 的基础训练连模块导入都失败**。代价是新增 TE layer 类型时必须同步发现列表。
+
+**取舍二：TPE 记录使用规范化语义键，而不是把原始模块名直接当结果格式。** `_parse_tpe_module_name` 只接受 decoder 与 MTP 两种明确模式，归一成 `(block, mtp_idx, layer)`；无法解析就告警并跳过 hook（`activation_logging.py:83-99,203-241`）。保存侧按 rank 写 JSONL，每条显式带 `iter/block/layer`，MTP 再带 `mtp_idx`（`:248-288`）。判据是**跨运行比对必须有稳定、无歧义的层身份**；代价是新模块命名不会被“猜着记”，必须先扩 parser。
 
 > [!note] 待展开
 > 三个 logger 的**落盘格式与文件布局**（张量以什么形式写、怎么分片、跨 rank 如何区分）本页未展开，只覆盖了触发面与 hook 机制。逐格式走查需要单独一轮。
@@ -187,7 +200,9 @@ sniff test 是**主动探测**：它跑一组固定的合成负载——`bench_g
 
 `megatron/training/one_logger_utils.py`（462 行）由 `--enable-one-logger` 打开，把作业级事件（训练开始、存档开始/成功/结束、应用标签、配置 flag）上报到 NVIDIA 内部的 one-logger 后端。
 
-它与 §2 的 NVRx 是**互补的两层**：NVRx 关心"这个作业现在还活着吗"，one-logger 关心"这批作业跨天跨次的端到端指标是什么"。前者是实时控制回路，后者是离线分析面。
+它与 §2 的 NVRx 是**互补的两层**：NVRx 的 heartbeat/timeout 进入作业存活控制；one-logger 维护训练起点、累计耗时、样本、checkpoint 次数等 E2E 指标并上报（`one_logger_utils.py:18-76,76-120`），当前代码没有把这些指标反馈成重启决策。
+
+**取舍：遥测不兼任恢复控制器。** one-logger 的每个入口先取 `get_one_logger()`，对象不存在就不记录（例如 `one_logger_utils.py:34-38,87-90`），而 NVRx 走独立适配层。源码证明两条路径分离且 logger 可缺省；“避免遥测后端的缺失或延迟污染作业恢复”是本页重建的判据。被否掉的不是事后分析，而是**拿可选 logger 的送达状态直接决定进程生死**。
 
 > [!note] 待展开
 > 本页只给了 one_logger 的定位与触发面。它的指标语义（`_produce_e2e_metrics` 具体产出哪些量、如何跨重启累计）未展开。
@@ -257,6 +272,6 @@ sniff test 是**主动探测**：它跑一组固定的合成负载——`bench_g
 
 - [[28_megatron_training_stability_observability_analysis]] — 数值层面的稳定性（RerunStateMachine、SDC 归因、StragglerDetector）；与本页的作业层面互补，§7.1 专门辨析了两者的分工
 - [[40_megatron_feature_tree_analysis]] — 功能树总览；本页覆盖的是它 §4 仪表盘里"作业韧性与张量转储"那一行的七个文件
-- [[41_megatron_config_surface_analysis]] — 本页各开关所属的 `RerunStateMachineConfig`/`StragglerDetectionConfig`/`FaultInjectorConfig` 三个参数组由那里的工厂自动生成
+- [[41_megatron_config_surface_analysis]] — 解释 config dataclass 如何生成 CLI；本页拥有 `TrainingConfig`/`ValidationConfig`，28 拥有 Rerun/Straggler 配置契约与 FaultInjector 机制，而 FaultInjector 的 9 个字段保持在 590 枚举外
 - [[19_megatron_dist_checkpointing_analysis]] — §5 退出策略里每一路都要落一次档，存档机制本身在那里
 - [[02_engineering/02_train_frameworks/33_fault_recovery_relink_comparison]] — 跨框架的快恢与"重新建链"对比，把本页的 Megatron+NVRx 路线放进横向坐标

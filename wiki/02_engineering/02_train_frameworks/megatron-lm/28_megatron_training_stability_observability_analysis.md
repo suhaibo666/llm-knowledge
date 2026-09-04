@@ -8,10 +8,10 @@ title: "Megatron-LM 训练稳定性与可观测性深度解析"
 > **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
 > **重定基线**:2026-08-28 由 `ee3f1ffa…`(2026-05-19)推进,跨 578 个提交;本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/rerun_state_machine.py`、`megatron/core/fault_injector.py`、`megatron/core/energy_monitor.py`、`megatron/core/timers.py`、`megatron/core/optimizer/qk_clip.py`、`megatron/core/optimizer/grad_scaler.py`、`megatron/core/optimizer/clip_grads.py`、`megatron/core/transformer/moe/moe_logging.py`、`megatron/core/transformer/moe/router_replay.py`;训练循环日志在 `megatron/training/training.py`
-> 配套阅读:`16_megatron_distributed_optimizer_analysis.md`、五份并行分析、`27_megatron_tp_fsdp_resharding_supplements_analysis.md`
+> 配套阅读:[[16_megatron_distributed_optimizer_analysis]]、五份并行分析、[[25_megatron_nonuniform_tp_analysis]]、[[27_megatron_job_resilience_analysis]]
 > 定位:系统性专题。前面所有文档讲"怎么把模型并行训起来、训得快";本文讲**怎么让它训得稳、出问题怎么发现、看哪些指标判断健康**。
 > **叙事顺序**:本页按五拍组织——背景 → 为什么这么设计(含被否掉的替代)→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**:2026-08-28。按五拍重排章节顺序;机制正文与既有引用未改。
+> **最近更新**:2026-09-03。明确数值稳定性与作业韧性的双 owner 边界，并修正 NTP 为冷重启后的预定义异构布局能力。
 
 > [!update] 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。
 > 本页已对齐 `ee3f1ff..HEAD` 的稳定性/可观测性增量。新增机制:**梯度范数超阈跳步**(§1.2)、**MTP 训练稳定性套件**(detach / 隔离 / 独立缩放 / 独立裁剪,新增 §1.8)、**MoE aux/z-loss 在 TP>1 下的梯度缩放修正**与 **DSA indexer loss 跨 micro-batch 平均**(§1.7)。可观测性侧补充 RerunStateMachine 去 stat 系统调用(§1.4)、MoE logging 的 `record/report` 生命周期(§2.2)、seqlen 统计保真与混合模型显式进程组(§2.5)。各处以特性引入日期 `[!update]` 标注;2026-08-28 重定基线后,全页行号(含这些小节)统一以 `71092579` 为准。重核发现一处结论已不成立,以 `[!contradiction]` 标在 §1.7(aux/z-loss 的 TP 缩放修正被 #5542 改写)。
@@ -67,7 +67,7 @@ Megatron 对应有三套机制,本文依次拆解:
 
 ### 1.1 数值溢出防护:loss scaling + inf/nan 跳步
 
-(详见 `16_megatron_distributed_optimizer_analysis.md` §13–§14,此处定位为"稳定性"视角)
+（详见 [[26_megatron_optimizer_step_internals_deepdive]] §§5–6；此处定位为“稳定性”视角。）
 
 fp16 训练里梯度可能**下溢成 0** 或**上溢成 inf**。两道防线:
 - **Loss scaling**:loss 乘 `S`,把小梯度抬出下溢区;`DynamicGradScaler` 自适应 `S`(`megatron/core/optimizer/grad_scaler.py:64`)。
@@ -137,7 +137,7 @@ fp16 训练里梯度可能**下溢成 0** 或**上溢成 inf**。两道防线:
 
 ### 1.6 容错:NTP 与故障注入
 
-- **NTP(Nonuniform TP)**:TP 组留备用 rank,核心 rank 故障时重分片续训,免整体重启 —— 详见 `27_megatron_tp_fsdp_resharding_supplements_analysis.md` §4。
+- **NTP(Nonuniform TP)**：它不做在线故障检测、参数搬运或原地续训；spare rank 在预定义布局中退出，剩余 rank 以 reduced TP 构模，训练期只重共享梯度。完整机制与“更适合冷重启而非在线故障恢复”的边界见 [[25_megatron_nonuniform_tp_analysis]]。
 - **`megatron/core/fault_injector.py`**(233 行):**主动注入故障**用于测试容错路径 —— 验证 RerunStateMachine、NTP 等机制是否真能正确响应。是"测试稳定性机制本身"的工具。
 
 ### 1.7 MoE 稳定性
@@ -505,7 +505,7 @@ Caveats(2)的结尾原话:「**We're planning to add the capability to re-run mu
 | `straggler_minmax_count` | `int` | `1` | Number of ranks to report with high/low estimated throughput | `:42` |
 | `disable_straggler_on_startup` | `bool` | `False` | If set, StragglerDetector is disabled on startup. | `:45` |
 
-> **跨页接缝**：`LoggerConfig` 里指向 one-logger 的字段、以及张量转储那几个 `--save-*-interval`，其实现属**作业侧**，见 [[43_megatron_job_resilience_analysis]] §8、§9。本页拥有它们的配置契约，那页解释机制。
+> **跨页接缝**：`LoggerConfig` 里指向 one-logger 的字段、以及张量转储那几个 `--save-*-interval`，其实现属**作业侧**，见 [[27_megatron_job_resilience_analysis]] §8、§9。本页拥有它们的配置契约，那页解释机制。
 
 ---
 
@@ -521,7 +521,7 @@ Caveats(2)的结尾原话:「**We're planning to add the capability to re-run mu
 |---|---|---|---|---|
 | `barrier_with_L1_time` | `bool` | `field(default=True, metadata={'argpar…` | Controls barrier with level 1 time measurements. It is up to the user to make sure calling barrier with their timers will not result in hangs. This can happe… | `:483` |
 
-> 该类共 74 个字段，本表收 1 项；其余 73 项已在别处归属：主要归 [[15_megatron_pp_schedulers_analysis]] 16 项、[[12_megatron_tp_analysis]] 10 项、[[20_megatron_comm_overlap_analysis]] 10 项、[[22_megatron_memory_optimization_analysis]] 6 项，另散见 14 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+> 该类共 74 个字段，本表收 1 项；其余字段的唯一机制 owner 见 `docs/coverage/megatron-lm.yaml`。
 
 
 
@@ -536,7 +536,7 @@ Caveats(2)的结尾原话:「**We're planning to add the capability to re-run mu
 
 ## Related Pages
 
-- [[16_megatron_distributed_optimizer_analysis]] · [[27_megatron_tp_fsdp_resharding_supplements_analysis]] · [[30_megatron_rl_posttraining_consistency_analysis]]
-- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
-
-
+- [[16_megatron_distributed_optimizer_analysis]] — 梯度归约、step 与数值检查进入优化器的边界。
+- [[25_megatron_nonuniform_tp_analysis]] — 混合 TP 布局及梯度重共享；不承担在线故障检测与原地恢复。
+- [[27_megatron_job_resilience_analysis]] — 进程存活、通信域清理、NVRx 与进程内重启；与本页的数值/观测 owner 互补。
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] — 返回全部 35 篇内容页的主题索引。

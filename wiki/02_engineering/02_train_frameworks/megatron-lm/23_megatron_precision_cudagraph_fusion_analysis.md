@@ -5,12 +5,11 @@ title: "Megatron-LM FP8 精度 · CUDA Graph · 算子融合 深度解析"
 # Megatron-LM FP8 精度 · CUDA Graph · 算子融合 深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
-> **重定基线**：2026-08-28 由 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
+> **基线说明**：本页活动引用已统一重核到上述冻结提交；旧基线推进记录归 [[changelog]]，不再叠放在学习页页头。
 > 核心文件:`megatron/core/fp8_utils.py`、`megatron/core/fp4_utils.py`、`megatron/core/enums.py`、`megatron/core/transformer/cuda_graphs.py`、`megatron/core/full_cuda_graph.py`、`fusions/`、`megatron/core/num_microbatches_calculator.py`
 > 配套阅读:五份并行文档 + `18_megatron_recompute_analysis.md` + `16_megatron_distributed_optimizer_analysis.md`
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
+> **最近更新**：2026-09-03。承接模型参数初始化 dtype（`params_dtype`）配置契约。
 > 定位:"第二层补遗"第③份。这三块是与并行轴正交的**性能基建** —— 不改变并行策略,而是在精度、内核调度、内核形态三个层面榨吞吐与显存。
 
 ---
@@ -320,28 +319,32 @@ hybrid 模型里 attention-only 层与随后的 partial-MoE-capture 层被允许
 
 本页正文讲三块基建的**机制**（FP8/FP4 四 recipe、CUDA Graph 三 impl、算子融合）。本节给它们的**配置面**。
 
-**下表直接取自 `megatron/core/transformer/transformer_config.py` 的类体**。三组读法：**FP8 一组**（`fp8_*`、`num_layers_at_start/end_in_bf16`、`tp_only_amax_red`、`use_kitchen*`）——注意 amax 相关几项决定 delayed scaling 的历史窗口，与 recipe 选择耦合；**FP4 与量化一组**（`fp4_*`、`quant_recipe`）；**CUDA Graph 一组**（`enable_cuda_graph`、`cuda_graph_*`、`external_cuda_graph`）——其中 `cuda_graph_dynamic_microbatches` 与本页 §9.2 讲的静态形状约束直接相关。
+**下表分别取自 `ModelParallelConfig` 与 `TransformerConfig` 类体**。四组读法：**训练与参数基准 dtype**（`fp16`、`bf16`、`params_dtype`）；**FP8 一组**（`fp8_param`、`fp8_*`、`num_layers_at_start/end_in_bf16`、`tp_only_amax_red`、`use_kitchen*`）；**FP4 与量化一组**（`fp4_*`、`quant_recipe`）；**CUDA Graph 一组**（`enable_cuda_graph`、`cuda_graph_*`、`external_cuda_graph`）。optimizer 如何消费模型梯度并回拷主参数归 [[26_megatron_optimizer_step_internals_deepdive]]，不改变这些字段的精度所有权。
 
 
-### `ModelParallelConfig`（`megatron/core/model_parallel_config.py`，3 项）
+### `ModelParallelConfig`（`megatron/core/model_parallel_config.py`，6 项）
 
 | 字段 | 类型 | 默认 | 契约 | 行 |
 |---|---|---|---|---|
+| `fp16` | `bool` | `False` | 使用 fp16 mixed-precision training。 | `:167` |
+| `bf16` | `bool` | `False` | 使用 bf16 mixed-precision training。 | `:170` |
+| `params_dtype` | `torch.dtype` | `torch.float32` | 初始化模型权重时使用的 dtype；具体模块可在独立精度上下文中覆盖其构建路径。 | `:173-174` |
 | `moe_grad_scale_func` | `Optional[Callable]` | `None` | If using loss scaling for MoE auxiliary losses, this function should return the scale tensor for MoE aux loss. If None, falls back to grad_scale_func. | `:190` |
 | `enable_autocast` | `bool` | `False` | If true runs the forward step function inside torch.autocast context. | `:223` |
 | `autocast_dtype` | `Optional[torch.dtype]` | `None` | dtype to pass to torch.amp.autocast when enabled. If None, is set to pipeline_dtype. | `:226` |
 
-> 该类共 74 个字段，本表收 3 项；其余 71 项已在别处归属：主要归 [[15_megatron_pp_schedulers_analysis]] 16 项、[[12_megatron_tp_analysis]] 10 项、[[20_megatron_comm_overlap_analysis]] 10 项、[[22_megatron_memory_optimization_analysis]] 6 项，另散见 14 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+> 该类共 74 个字段，本表收 6 项；其余 68 项已在别处归属（完整归属见 `docs/coverage/megatron-lm.yaml`）。
 
 
 
-### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，26 项）
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，27 项）
 
 | 字段 | 类型 | 默认 | 契约 | 行 |
 |---|---|---|---|---|
 | `apply_query_key_layer_scaling` | `bool` | `False` | If true, scale Q * K^T by 1 / layer-number. This improve numeric stability when training with fp16. Also sets `attention_softmax_in_fp32` to True. | `:552` |
 | `attention_softmax_in_fp32` | `bool` | `True` | If True, run attention masking and softmax in fp32. This should be True if apply_query_key_layer_scaling is True. | `:556` |
 | `disable_bf16_reduced_precision_matmul` | `bool` | `False` | If True, sets torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction=False to prevent matmul from using reduced precision accumulation when using … | `:560` |
+| `fp8_param` | `bool` | `False` | 以 FP8 保存主要 GEMM 权重；必须同时启用 FP8 mode，bias 等参数不会被转换。 | `:674` |
 | `fp8_margin` | `int` | `0` | Margin for the scaling factor computation. | `:685` |
 | `fp8_interval` | `int` | `1` | DEPRECATED from TransformerEngine v1.8.0. This flag is ignored. Controls how often the scaling factor is recomputed. | `:688` |
 | `fp8_amax_history_len` | `int` | `1` | The length of the amax history window used for scaling factor computation. | `:693` |
@@ -366,15 +369,16 @@ hybrid 模型里 attention-only 层与随后的 partial-MoE-capture 层被允许
 | `cuda_graph_dynamic_microbatches` | `bool` | `False` | Allow CUDA graph replay when runtime microbatch count varies across iterations. This option is only meaningful for cuda_graph_impl=transformer_engine. For TH… | `:1245` |
 | `quant_recipe` | `Optional[RecipeConfig]` | `None` | Configuration of any per-module quantization settings to be applied to the model | `:1444` |
 
-> 该类共 266 个字段，本表收 26 项；其余 240 项已在别处归属：主要归 [[10_megatron_model_structure_analysis]] 92 项、[[14_megatron_ep_analysis]] 38 项、[[21_megatron_fusion_operators_analysis]] 26 项、本页他处 12 项，另散见 20 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+> 该类共 266 个字段，本表收 27 项；其余 239 项已在别处归属（完整归属见 `docs/coverage/megatron-lm.yaml`）。
 
 > **与 40 号页对账的接缝**：`transformer_impl` 等已由本页其他章节提及的字段不在表内（它们已有归属）；本表只收此前**全域零提及**的部分，这正是 [[40_megatron_feature_tree_analysis]] §3.2 要清零的那批。
 
 ## Related Pages
 
-- [[14_megatron_ep_analysis]] · [[18_megatron_recompute_analysis]] · [[16_megatron_distributed_optimizer_analysis]]
-- [[21_megatron_fusion_operators_analysis]]
-- [[10_pytorch_cuda_graphs_complete_guide]] — CUDA Graph 通用机制权威页（capture/replay、地址不变式、失败与回退；本页 §4 是训练框架侧的具体应用）
-- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
-
-
+- [[16_megatron_distributed_optimizer_analysis]] —— 解释 FP8 parameter gather 所依赖的 DDP/ZeRO 参数同步边界。
+- [[26_megatron_optimizer_step_internals_deepdive]] —— 解释 fp16/bf16 梯度进入 master-param step 后的 unscale、overflow 与 copy-back。
+- [[21_megatron_fusion_operators_analysis]] —— 深入各类融合 operator；本页只保留与精度/graph 的交界。
+- [[14_megatron_ep_analysis]] —— 解释 FP8 token dispatch 与 MoE communicator 的精度约束。
+- [[18_megatron_recompute_analysis]] —— 对照低精度与激活重计算的组合边界。
+- [[10_pytorch_cuda_graphs_complete_guide]] —— CUDA Graph 通用机制权威页；本页 §4 是 Megatron 侧应用。
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] —— 返回本域索引。

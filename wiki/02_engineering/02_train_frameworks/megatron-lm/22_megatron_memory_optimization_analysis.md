@@ -434,7 +434,7 @@ Layer 4（显著开销，降速 10-30%）：
 | `cpu_offloading_double_buffering` | `bool` | `False` | If True, enables double buffering across layers while reloading activations from CPU. | `:472` |
 | `cpu_offloading_retain_pinned_cpu_buffers` | `bool` | `False` | If True, the pinned CPU buffers are retained after offloading and reused for the next iteration. It is useful for cuda graphs capture. | `:475` |
 
-> 该类共 74 个字段，本表收 5 项；其余 69 项已在别处归属：主要归 [[15_megatron_pp_schedulers_analysis]] 16 项、[[12_megatron_tp_analysis]] 10 项、[[20_megatron_comm_overlap_analysis]] 10 项、[[13_megatron_cp_analysis]] 5 项，另散见 14 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+> 该类共 74 个字段，本表收 5 项；其余字段的唯一机制 owner 见 `docs/coverage/megatron-lm.yaml`。
 
 
 
@@ -448,12 +448,10 @@ Layer 4（显著开销，降速 10-30%）：
 
 ## Related Pages
 
-- [[16_megatron_distributed_optimizer_analysis]]
-- [[21_megatron_fusion_operators_analysis]]
-- [[20_megatron_comm_overlap_analysis]]
-- [[12_activation_checkpointing_analysis]]
-- [[18_megatron_recompute_analysis]]
-- [[13_low_precision_training_analysis]]
-- [[17_megatron_parallelism_orchestration_analysis]]
-
-
+- [[16_megatron_distributed_optimizer_analysis]] — 提供参数、梯度与 optimizer state 的分片显存账本。
+- [[18_megatron_recompute_analysis]] — 深入 activation recompute 的选择与额外计算代价。
+- [[21_megatron_fusion_operators_analysis]] — 对照 fusion workspace、buffer reuse 与中间张量消除。
+- [[20_megatron_comm_overlap_analysis]] — 说明 overlap 为何会以额外 buffer 和显存峰值换时间。
+- [[12_activation_checkpointing_analysis]] — 提供跨框架 activation checkpointing 的理论与实现对照。
+- [[13_low_precision_training_analysis]] — 提供低精度参数、激活与通信的通用内存口径。
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] — 返回全部 35 篇内容页的主题索引。

@@ -58,7 +58,7 @@ flags:
   rule: 轴原生
 - name: hierarchical_context_parallel_sizes
   from: ModelParallelConfig
-  owner: 35_deepseek_v4_context_parallel_analysis
+  owner: 13_megatron_cp_analysis
   auto: true
 - name: max_seqlen_per_dp_cp_rank
   from: ModelParallelConfig
@@ -106,15 +106,15 @@ flags:
   rule: 契约段（2026-09-02）
 - name: fp16
   from: ModelParallelConfig
-  owner: 16_megatron_distributed_optimizer_analysis
-  rule: 混精主参数归分布式优化器
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 训练数值格式归精度页；optimizer step 消费边界见 26
 - name: bf16
   from: ModelParallelConfig
-  owner: 16_megatron_distributed_optimizer_analysis
-  rule: 混精主参数归分布式优化器
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 训练数值格式归精度页；optimizer step 消费边界见 26
 - name: params_dtype
   from: ModelParallelConfig
-  owner: 34_deepseek_v4_tensor_parallel_analysis
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
   auto: true
 - name: timers
   from: ModelParallelConfig
@@ -143,7 +143,7 @@ flags:
 - name: grad_sync_func
   from: ModelParallelConfig
   owner: 20_megatron_comm_overlap_analysis
-  auto: true
+  rule: 跨轴协调:PP schedule 调用 DP 异步梯度同步
 - name: param_sync_func
   from: ModelParallelConfig
   owner: 16_megatron_distributed_optimizer_analysis
@@ -174,28 +174,28 @@ flags:
   rule: 契约段（2026-09-02）
 - name: tp_comm_overlap
   from: ModelParallelConfig
-  owner: 20_megatron_comm_overlap_analysis
-  rule: 规则6:纯重叠开关,20 独有 TP overlap 深挖
+  owner: 12_megatron_tp_analysis
+  rule: 轴原生:TP linear/TE user-buffer 重叠总开关
 - name: tp_comm_bulk_wgrad
   from: ModelParallelConfig
-  owner: 20_megatron_comm_overlap_analysis
-  auto: true
+  owner: 12_megatron_tp_analysis
+  rule: 轴原生:TP 反向 bulk overlap
 - name: tp_comm_bulk_dgrad
   from: ModelParallelConfig
-  owner: 20_megatron_comm_overlap_analysis
-  auto: true
+  owner: 12_megatron_tp_analysis
+  rule: 轴原生:TP 反向 bulk overlap
 - name: tp_comm_overlap_ag
   from: ModelParallelConfig
-  owner: 20_megatron_comm_overlap_analysis
-  auto: true
+  owner: 12_megatron_tp_analysis
+  rule: 轴原生:TP pipelined AllGather
 - name: tp_comm_overlap_rs
   from: ModelParallelConfig
-  owner: 20_megatron_comm_overlap_analysis
-  auto: true
+  owner: 12_megatron_tp_analysis
+  rule: 轴原生:TP pipelined ReduceScatter
 - name: tp_comm_overlap_rs_dgrad
   from: ModelParallelConfig
-  owner: 20_megatron_comm_overlap_analysis
-  rule: 契约段（2026-09-02）
+  owner: 12_megatron_tp_analysis
+  rule: 轴原生:TP DGRAD pipelined ReduceScatter
 - name: tp_comm_split_ag
   from: ModelParallelConfig
   owner: 12_megatron_tp_analysis
@@ -230,24 +230,24 @@ flags:
   auto: true
 - name: tp_comm_bootstrap_backend
   from: ModelParallelConfig
-  owner: 20_megatron_comm_overlap_analysis
-  auto: true
+  owner: 12_megatron_tp_analysis
+  rule: 轴原生:TP user-buffer bootstrap
 - name: overlap_moe_expert_parallel_comm
   from: ModelParallelConfig
   owner: 15_megatron_pp_schedulers_analysis
   rule: 定义者:它选择 combined-1F1B 调度
 - name: delay_wgrad_compute
   from: ModelParallelConfig
-  owner: 20_megatron_comm_overlap_analysis
-  rule: 规则6:纯重叠/延迟机制
+  owner: 15_megatron_pp_schedulers_analysis
+  rule: 定义者:combined-1F1B 的延迟 wgrad 节点
 - name: overlap_dispatch_backward_with_experts_wgrad
   from: ModelParallelConfig
   owner: 14_megatron_ep_analysis
   rule: 轴原生:EP 专属
 - name: ep_overlap_early_attn_memory_release
   from: ModelParallelConfig
-  owner: 20_megatron_comm_overlap_analysis
-  rule: 规则6:纯重叠
+  owner: 15_megatron_pp_schedulers_analysis
+  rule: 定义者:combined-1F1B 的 attention backward 顺序
 - name: pipeline_dtype
   from: ModelParallelConfig
   owner: 15_megatron_pp_schedulers_analysis
@@ -411,7 +411,7 @@ flags:
   rule: 契约段（2026-09-02）
 - name: attention_dropout
   from: TransformerConfig
-  owner: 35_deepseek_v4_context_parallel_analysis
+  owner: 10_megatron_model_structure_analysis
   auto: true
 - name: fp32_residual_connection
   from: TransformerConfig
@@ -519,7 +519,7 @@ flags:
   auto: true
 - name: test_mode
   from: TransformerConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: calculate_per_token_loss
   from: TransformerConfig
@@ -539,7 +539,7 @@ flags:
   rule: 模型结构
 - name: cp_partition_mode
   from: TransformerConfig
-  owner: 35_deepseek_v4_context_parallel_analysis
+  owner: 13_megatron_cp_analysis
   auto: true
 - name: experimental_attention_variant_loss_scale_func
   from: TransformerConfig
@@ -671,11 +671,11 @@ flags:
   auto: true
 - name: init_method
   from: TransformerConfig
-  owner: 34_deepseek_v4_tensor_parallel_analysis
+  owner: 10_megatron_model_structure_analysis
   auto: true
 - name: output_layer_init_method
   from: TransformerConfig
-  owner: 34_deepseek_v4_tensor_parallel_analysis
+  owner: 10_megatron_model_structure_analysis
   auto: true
 - name: init_method_std
   from: TransformerConfig
@@ -695,31 +695,31 @@ flags:
   auto: true
 - name: use_mup
   from: TransformerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: mup_width_mult
   from: TransformerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: mup_base_hidden_size
   from: TransformerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: mup_embedding_mult
   from: TransformerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: mup_output_mult
   from: TransformerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: mup_base_head_dim
   from: TransformerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: mup_attn_scale_power
   from: TransformerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: apply_query_key_layer_scaling
   from: TransformerConfig
@@ -803,8 +803,8 @@ flags:
   rule: 精度
 - name: fp8_param
   from: TransformerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
-  rule: 候选中无 23;参数精度归分布式优化器
+  owner: 23_megatron_precision_cudagraph_fusion_analysis
+  rule: 参数存储精度归精度页；optimizer copy-back 边界见 26
 - name: fp8_quantizer_factory
   from: TransformerConfig
   owner: 23_megatron_precision_cudagraph_fusion_analysis
@@ -887,11 +887,11 @@ flags:
   rule: 契约段（2026-09-02）
 - name: high_priority_a2a_comm_stream
   from: TransformerConfig
-  owner: 20_megatron_comm_overlap_analysis
-  rule: 规则6:纯通信流优先级
+  owner: 14_megatron_ep_analysis
+  rule: 轴原生:EP A2A communication stream 优先级
 - name: moe_shared_expert_intermediate_size
   from: TransformerConfig
-  owner: 34_deepseek_v4_tensor_parallel_analysis
+  owner: 14_megatron_ep_analysis
   auto: true
 - name: moe_shared_expert_gate
   from: TransformerConfig
@@ -1063,7 +1063,7 @@ flags:
   rule: 轴原生:EP 容量
 - name: moe_expert_rank_capacity_factor
   from: TransformerConfig
-  owner: 02_megatron_moe_training_optimization_analysis
+  owner: 39_megatron_moe_training_optimization_analysis
   rule: 定义者:MoE 机制地图的容量所有权
 - name: moe_pad_expert_input_to_capacity
   from: TransformerConfig
@@ -1460,7 +1460,7 @@ flags:
 - name: align_grad_reduce
   from: DistributedInitConfig
   owner: 20_megatron_comm_overlap_analysis
-  auto: true
+  rule: 跨轴协调:在 PP stages 之间对齐 DP gradient reduce
 - name: local_rank
   from: DistributedInitConfig
   owner: 17_megatron_parallelism_orchestration_analysis
@@ -1475,7 +1475,7 @@ flags:
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: use_torch_fsdp2
   from: DistributedInitConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 36_megatron_fsdp_analysis
   auto: true
 - name: nccl_communicator_config_path
   from: DistributedInitConfig
@@ -1535,27 +1535,27 @@ flags:
   auto: true
 - name: micro_batch_size
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: global_batch_size
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: rampup_batch_size
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: step_batch_size_schedule
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: decrease_batch_size_if_needed
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: empty_unused_memory_level
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: check_weight_hash_across_dp_replicas_interval
   from: TrainingConfig
@@ -1563,43 +1563,43 @@ flags:
   auto: true
 - name: gpu_sniff_test_interval
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: train_sync_interval
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: train_iters
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: train_samples
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: exit_interval
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: exit_duration_in_mins
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: exit_signal_handler
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: exit_signal
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: exit_signal_handler_for_dataloader
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: exit_signal_handler_for_training
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: manual_gc
   from: TrainingConfig
@@ -1607,131 +1607,131 @@ flags:
   auto: true
 - name: manual_gc_interval
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: manual_gc_eval
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: iterations_to_skip
   from: TrainingConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: eval_iters
   from: ValidationConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: eval_interval
   from: ValidationConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: start_eval_at_iter
   from: ValidationConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: eval_global_batch_size
   from: ValidationConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: eval_micro_batch_size
   from: ValidationConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: skip_train
   from: ValidationConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: full_validation
   from: ValidationConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: multiple_validation_sets
   from: ValidationConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: validation_set_names
   from: ValidationConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: 契约段（2026-09-02）
 - name: lr_decay_style
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   auto: true
 - name: lr_wsd_decay_style
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: lr_decay_iters
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: lr_decay_samples
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: lr_wsd_decay_iters
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: lr_wsd_decay_samples
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: lr_warmup_fraction
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: lr_warmup_iters
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: lr_warmup_samples
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: lr_warmup_init
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   auto: true
 - name: lr_decay_steps
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: lr_warmup_steps
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   auto: true
 - name: override_opt_param_scheduler
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   auto: true
 - name: use_checkpoint_opt_param_scheduler
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: start_weight_decay
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: end_weight_decay
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: weight_decay_incr_style
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: no_weight_decay_cond_type
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: wd_incr_steps
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   rule: 契约段（2026-09-02）
 - name: wsd_decay_steps
   from: SchedulerConfig
-  owner: 16_megatron_distributed_optimizer_analysis
+  owner: 26_megatron_optimizer_step_internals_deepdive
   auto: true
 - name: log_interval
   from: LoggerConfig
@@ -1899,11 +1899,11 @@ flags:
   rule: 契约段（2026-09-02）
 - name: save_activations_interval
   from: CheckpointConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: save_tokens_per_expert_interval
   from: CheckpointConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: save_wgrads_interval
   from: CheckpointConfig
@@ -1911,7 +1911,7 @@ flags:
   rule: 契约段（2026-09-02）
 - name: save_dgrads_interval
   from: CheckpointConfig
-  owner: 43_megatron_job_resilience_analysis
+  owner: 27_megatron_job_resilience_analysis
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: save_retain_interval
   from: CheckpointConfig
@@ -2107,83 +2107,83 @@ flags:
   auto: true
 - name: vocab_size
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: padded_vocab_size
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: pad_vocab_size
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: vocab_file
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: merge_file
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: vocab_extra_ids
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: tokenizer_type
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: tokenizer_model
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: metadata_path
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: special_tokens
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: tiktoken_pattern
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: tiktoken_num_special_tokens
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: tokenizer_sentencepiece_legacy
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: tokenizer_sentencepiece_ignore_extra_whitespaces
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: tokenizer_hf_no_use_fast
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: tokenizer_hf_no_include_special_tokens
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: trust_remote_code
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: null_tokenizer_eod_id
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: null_tokenizer_pad_id
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: 契约段（2026-09-02）
 - name: chat_template
   from: TokenizerConfig
-  owner: 44_megatron_tokenizer_and_export_analysis
+  owner: 11_megatron_dataset_analysis
   rule: config 类契约归属页 / 机制定义者（2026-09-02）
 - name: inference_batch_times_seqlen_threshold
   from: InferenceSetupConfig

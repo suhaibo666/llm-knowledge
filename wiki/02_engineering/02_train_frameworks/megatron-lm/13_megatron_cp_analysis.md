@@ -5,14 +5,13 @@ title: "Megatron-LM 上下文并行(Context Parallelism)深度解析"
 # Megatron-LM 上下文并行(Context Parallelism)深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；落在本轮改动文件（`transformer_config.py` / `transformer_engine.py` / `transformer_layer.py` / `cuda_graphs.py`）上的引用已逐条重核，全部断言仍成立，仅行号漂移。
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
+> **基线说明**：本页活动引用已统一重核到上述冻结提交；旧基线推进记录归 [[changelog]]，不再叠放在学习页页头。
 > 核心:`megatron/core/transformer/dot_product_attention_context_parallel.py`(原生 all-gather 实现)、
 > `megatron/core/transformer/transformer_config.py:1101`(`cp_comm_type`)、`megatron/core/transformer/attention.py`(CP 接入点)
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`
 > 适用读者:已了解 transformer 训练与 TP/PP/DP,想吃透 Megatron 上下文并行实现的工程师。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
+> **最近更新**：2026-09-03。吸收 DSv4 旧案例页独有的 hierarchical CP 组构造，并接管 `hierarchical_context_parallel_sizes` 与 `cp_partition_mode` 配置契约。
 >
 > **划界声明**:CP 通用机制(序列切分、因果负载均衡、因果块裁剪、Ring/All-gather/Ulysses/分层混合四种通信调度、通信量代数、与 TP/PP/DP/EP 的组合关系)已归一到 [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]]。**本页只保留 Megatron-LM 的框架实现差异**:`cp_comm_type` 配置接口与按层配置、TE 透传架构、原生 all_gather 回退实现的配置约束、选型决策树,以及 Dynamic CP 的 Megatron 特有源码细节。
 
@@ -24,7 +23,7 @@ title: "Megatron-LM 上下文并行(Context Parallelism)深度解析"
 
 序列切开只是第一步。切完之后每张卡只持有 `s/cp` 段 Q/K/V,而 attention 要求每个 query 看到它之前的**全部** K/V —— 所以 K/V 必须在 CP 组内搬运,**搬法**才是 Megatron 侧真正的实现分歧点(序列切分本身与因果负载均衡是通用机制,见理论页)。
 
-朴素做法是写死一种搬法。但源码把四种搬法并列进同一个字段的 docstring,并逐条标出它们**互斥的性质**:`p2p` 是「P2P is async and can be overlapped with attention compute」、`all_gather` 是「The all-gather is not async, and cannot be overlapped」、`a2a` 换的是 head 轴而非序列轴、`a2a+p2p` 则「uses A2A communications in low-level CP groups (e.g., via NVLink), and P2P communications in high-level CP groups (e.g., via IBLink)」(`megatron/core/transformer/transformer_config.py:1108-1116`)。**能不能与计算重叠、走哪条物理链路、head 够不够分**这三件事随集群拓扑与模型形状变化 —— 写死任何一种,换个拓扑就会变成瓶颈。这就是 `cp_comm_type` 这个字段存在的理由。
+朴素做法是写死一种搬法。但源码把四种搬法并列进同一个字段的 docstring,并逐条标出它们**互斥的性质**:`p2p` 是「P2P is async and can be overlapped with attention compute」、`all_gather` 被写成「The all-gather is not async, and cannot be overlapped」、`a2a` 换的是 head 轴而非序列轴、`a2a+p2p` 则「uses A2A communications in low-level CP groups (e.g., via NVLink), and P2P communications in high-level CP groups (e.g., via IBLink)」(`megatron/core/transformer/transformer_config.py:1108-1116`)。**能不能与计算重叠、走哪条物理链路、head 够不够分**这三件事随集群拓扑与模型形状变化 —— 写死任何一种,换个拓扑就会变成瓶颈。需要注意：这句 `all_gather` 描述不能代表后来加入的 eager fallback；后者确实以 `async_op=True` 做了 head 粒度双缓冲（§3.3）。这就是 `cp_comm_type` 这个字段存在的理由。
 
 ### 1.2 CP 是什么
 
@@ -83,7 +82,17 @@ Megatron 把序列切分(通用机制,见理论页 §3)与因果掩码处理(理
 机制见理论页 §6(原生实现代码即以本页 `megatron/core/transformer/dot_product_attention_context_parallel.py` 为骨架抽取)。Megatron 特有的配置约束:
 
 - `megatron/core/transformer/transformer_config.py:3810` 显示某些场景(如 `fallback_to_eager_attn` 或 `transformer_impl="local"`)**强制要求** `all_gather`——Native CP(`DotProductAttention` 的 eager 路径)只支持这一种通信类型,若要用 `p2p`/`a2a`/`a2a+p2p` 必须走 TE 的 fused flash attention 路径。
-- 不推荐用于大 CP / 跨节点超长序列——同步 all-gather 的暴露会拖垮吞吐。
+- 不推荐用于大 CP / 跨节点超长序列——每个 rank 都要 materialize 全量 KV，即使 head 间能部分并发，带宽和缓冲峰值仍会随 CP 放大。
+
+**原生 eager 路径的真实执行跳转。** `AllGatherComm` 只封装两个动作：`all_gather()` 用 `all_gather_into_tensor(..., async_op=True)` 发起并保存 handle，`wait()` 才逐个等待（`megatron/core/transformer/dot_product_attention_context_parallel.py:108-132`）。`AttentionFuncionWithContextParallel.forward` 的跳转顺序是：
+
+1. 分配 `kv_buffer` 与 `kv_buffer_copy` 两份缓冲（`:173-179`）；
+2. 先为第一个 KV-head slice 发起 K/V 两次 AG（`:181-185`）；
+3. 每轮等上一份缓冲、交换两个 buffer，立即为下一个 slice 发起 AG（`:195-207`）；
+4. 用已就绪的 buffer 跑当前 `eager_attn_fwd`（`:209-224`），于是“下一个 head 的 AG”可与“当前 head 的 attention”并行。
+
+> [!contradiction] 配置 docstring 与原生实现不能混成一个结论
+> `cp_comm_type` 的 docstring 仍将 `all_gather` 写成“not async, and cannot be overlapped”（`megatron/core/transformer/transformer_config.py:1108-1111`），但上述原生 eager 实现在冻结基线中明确使用 `async_op=True` 和双缓冲。因此该 docstring **不能用于描述当前 eager fallback**；它究竟是陈旧说明，还是只描述其他实现，单凭本仓源码无法判定。这条路的粒度又被 `heads_k_stride = 1` 写死（`megatron/core/transformer/dot_product_attention_context_parallel.py:168`，未完成的 configurable TODO 在 `:234`）；它是窄的 fallback，不等于 TE ring/a2a 的内核内调度。
 
 ### 3.4 `a2a`(DeepSpeed Ulysses)—— Megatron 侧配置
 
@@ -91,7 +100,15 @@ Megatron 把序列切分(通用机制,见理论页 §3)与因果掩码处理(理
 
 ### 3.5 `a2a+p2p`(分层混合)—— Megatron 侧配置
 
-机制(N 级分层分组构造)见理论页 §8.2,该构造代码实际收录在 [[35_deepseek_v4_context_parallel_analysis]] §1.2(源码级最完整版本)。Megatron 侧配置:`megatron/core/transformer/transformer_config.py:1114` 描述"低层 CP 组用 A2A(如经 NVLink)、高层 CP 组用 P2P(如经 IBLink)"。**推荐**:跨多节点的超长上下文(128K、1M)训练首选;单节点则 `a2a` 或 `p2p` 足够。
+通用算法见理论页 §8.2；Megatron 侧真正独有的是**如何把一个 CP rank 列表机械拆成 N 级 process group**。
+
+`create_hierarchical_groups` 以 CP size 16、层级大小 `[2,2,4]` 为例，先列出每一级应有的交错子组，再用 `einops.rearrange("(l s u) -> (l u) s")` 对 rank 数组重排；每一级只把“包含当前 rank”的 group 追加到返回列表，并断言当前 rank 最终恰好拥有每级一个 group（`megatron/core/parallel_state.py:359-418`）。创建普通 CP group 后，初始化代码还要求各级大小的乘积等于 `context_parallel_size`，再调用上述函数保存 `_HIERARCHICAL_CONTEXT_PARALLEL_GROUPS`（`megatron/core/parallel_state.py:968-995`）。
+
+TE 接线只在 `cp_comm_type == "a2a+p2p"` 时读取这组层级 group，并要求 Transformer Engine ≥1.12.0（`megatron/core/extensions/transformer_engine.py:1688-1701`）。所以 `hierarchical_context_parallel_sizes` 不是一张拓扑建议表，而是一个有三层硬契约的配置：
+
+1. 列表各项乘积必须等于 CP size；
+2. 列表顺序决定低到高层的 group 分解；
+3. 只有 `a2a+p2p` 路径把这些 group 交给 TE。
 
 ---
 
@@ -138,10 +155,12 @@ CP 在 Megatron 侧不是"设一个 `--context-parallel-size` 就成立"的自�
 | 8 | 原生实现的 `heads_k_stride` 写死为 1 | `heads_k_stride = 1`(`megatron/core/transformer/dot_product_attention_context_parallel.py:168`),配套 `assert nheads % nheads_k == 0 and nheads_k % heads_k_stride == 0`(`:169`) | KV 双缓冲一次只预取一个 KV head,重叠粒度不可调(源码自带 `# TODO make it configurable`,`:234`) |
 | 9 | 原生路径开 CP 时 attention dropout 必须为 0 | `assert`(`megatron/core/transformer/dot_product_attention.py:60-65`) | dropout 非 0 直接 assert 失败 |
 | 10 | Dynamic CP 要求 `dp-cp` 组内 rank 数为偶数 | `assert`(`megatron/core/parallel_state.py:925-927`,「Dynamic context parallel requires an even number of ranks」) | 奇数 rank 数下动态 CP 建不出组 |
+| 11 | `hierarchical_context_parallel_sizes` 的乘积必须等于 `context_parallel_size` | `assert`（`megatron/core/parallel_state.py:982-995`） | hierarchical group 初始化失败 |
+| 12 | `cp_partition_mode='contiguous'` 只定义在 THD 上，启用 CP/Dynamic CP 时必须有 sequence-packing scheduler | `megatron/core/transformer/transformer_config.py:1654-1665` | 配置校验期 `ValueError` |
 
 **代价**:§3.1 那条"透传"是拿**可观测性**换来的 —— `p2p` / `a2a` / `a2a+p2p` 的真实通信行为、重叠效果与失败模式全部发生在 TE 内部,Megatron 侧能看到的只有一个字符串和一组版本断言(`megatron/core/extensions/transformer_engine.py:1678-1701`)。调不动的时候,能改的旋钮只剩"换调度类型"或"换 TE 版本"。
 
-**故意不做的事**:原生 all-gather 路径**不参与** THD / Dynamic CP。`DotProductAttention.forward` 开头就 `assert packed_seq_params is None`(`megatron/core/transformer/dot_product_attention.py:159-162`),`attention_bias` 同样不支持(`:163`);走到 CP 分支时它取的是全局的 `parallel_state.get_context_parallel_group()`(`:191`),而**不是** §4.1 里那个 `packed_seq_params.cp_group`。也就是说 §4 的 Dynamic CP 只存在于 TE 路径上。
+**故意不做的事**:原生 eager all-gather 路径**不参与** THD / Dynamic CP。`DotProductAttention.forward` 开头就 `assert packed_seq_params is None`（`megatron/core/transformer/dot_product_attention.py:159-162`），`attention_bias` 同样不支持（`megatron/core/transformer/dot_product_attention.py:163`）；走到 CP 分支时它取的是全局静态 group（`megatron/core/transformer/dot_product_attention.py:191`）。这条限制只描述该 fallback；Dynamic CP 还存在于 TE 路径以及 [[35_deepseek_v4_context_parallel_analysis]] 已核实的 DSv4 专用路径，不能再概括成“只覆盖 TE”。
 
 ---
 
@@ -172,7 +191,7 @@ CP 在 Megatron 侧不是"设一个 `--context-parallel-size` 就成立"的自�
           │   └─ 是 ──► p2p(ring attention,P2P 异步可重叠,通用默认)
           │
           └─ 要实现简单 / 小 CP / 特性强制?
-              └─ 是 ──► all_gather(全收 KV,逻辑最简,通信不可重叠)
+              └─ 是 ──► all_gather(全收 KV；原生 eager 回退按 KV head 双缓冲，TE 路径语义以 TE 为准)
 
 并行组合(README Guideline 5):
   - CP 与 TP/PP/DP/EP 正交,可任意叠加
@@ -195,7 +214,7 @@ CP 在 Megatron 侧不是"设一个 `--context-parallel-size` 就成立"的自�
 
 **二、新 attention 变体接入 CP 的第一步都是 `all_gather`。** DSAttention 在基线下的 CP 支持被硬限制成「DSAttention context parallelism currently supports cp_comm_type=allgather only.」(`megatron/core/transformer/transformer_config.py:1862-1875`),该约束由 `da482cf5c`(「[split 4/4] Enable DSA CP and THD hooks」,#5246)带入;eager attention 的 CP 支持(#1859)落地时是同一形状(见 §2③)。**由此可推断**:`all_gather` 在 Megatron 里的定位不只是"小 CP 的简单实现",更是**新特性接入 CP 的最低成本入口** —— 它不要求内核内部做分块合并。看到某个新 attention 变体"支持 CP"时,应先查它到底支持哪几种 `cp_comm_type`。
 
-**三、Dynamic CP 仍在补边角,且只覆盖 TE 路径。** 除 §4 已核过的 PR 链(#4226 建 `resolve_cp_group`、#5215 修 CP 组泄漏、#5123 加基准脚本、#4359 补 THD 的 CUDA Graph 捕获)之外,源码里还挂着两条未决项:`megatron/core/parallel_state.py:922` 的「TODO: Are gloo groups needed for Dynamic CP?」,以及混合 CP 调度器里的「TODO[pmannan]: PP not yet supported. Add PP scheduling.」(`megatron/core/pipeline_parallel/hybrid_cp_schedule.py:190`);再叠加 §5"故意不做"那条(原生路径完全不参与 Dynamic CP)。**由此可推断**:Dynamic CP 目前是"TE 路径 + 无 PP"这个组合下才成立的特性,要把它与 PP 或原生 attention 一起打开,须先回源码确认这两条 TODO 是否已经关闭。
+**三、Dynamic CP 仍在补边角，而且不是所有 attention backend 都接入。** 除 §4 已核过的 PR 链（#4226 建 `resolve_cp_group`、#5215 修 CP 组泄漏、#5123 加基准脚本、#4359 补 THD CUDA Graph）之外，源码仍有 gloo dynamic-group 与 hybrid CP schedule 的 PP 待办（`megatron/core/parallel_state.py:922`、`megatron/core/pipeline_parallel/hybrid_cp_schedule.py:190`）。冻结基线已确认 TE 和 DSv4 专用路径可以切换/恢复 dynamic group，而原生 eager fallback 不可以。**由此可推断**：启用前应按具体 attention backend 核对接入，不能从全局开关外推所有层都支持。
 
 ---
 
@@ -203,26 +222,34 @@ CP 在 Megatron 侧不是"设一个 `--context-parallel-size` 就成立"的自�
 
 ---
 
-## 配置契约：CP 的两个补充字段
+## 配置契约：CP 的四个补充字段
 
-本页正文覆盖了 `cp_comm_type` 等主干开关。本节补 `# Model parallelism` 段里两个此前零提及的字段。**下表直接取自 `megatron/core/model_parallel_config.py` 的类体**。
+本页正文覆盖了 `cp_comm_type` 等主干开关。本节集中登记三个 `ModelParallelConfig` 字段与一个决定 THD rank 布局的 `TransformerConfig` 字段。
 
 
 
-### `ModelParallelConfig`（`megatron/core/model_parallel_config.py`，2 项）
+### `ModelParallelConfig`（`megatron/core/model_parallel_config.py`，3 项）
 
 | 字段 | 类型 | 默认 | 契约 | 行 |
 |---|---|---|---|---|
+| `hierarchical_context_parallel_sizes` | `Optional[list[int]]` | `None` | 按低到高层给出 hierarchical CP group 大小；`a2a+p2p` 下首项对应 A2A 低层组、次项对应 P2P 高层组，所有项乘积必须等于 CP size。 | `:66-72` |
 | `min_dynamic_context_parallel_size` | `int` | `1` | Minimum CP group size for dynamic context parallel. Default 1 (no CP). The maximum is dp_size * context_parallel_size (the full DPxCP group). | `:91` |
 | `hybrid_context_parallel` | `bool` | `False` | Deprecated. Use `dynamic_context_parallel` instead. | `:95` |
 
-> 该类共 74 个字段，本表收 2 项；其余 72 项已在别处归属：主要归 [[15_megatron_pp_schedulers_analysis]] 16 项、[[12_megatron_tp_analysis]] 10 项、[[20_megatron_comm_overlap_analysis]] 10 项、[[22_megatron_memory_optimization_analysis]] 6 项，另散见 14 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+> 该类共 74 个字段，本表收 3 项；其余字段的唯一 owner 见 `docs/coverage/megatron-lm.yaml`。
+
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，1 项）
+
+| 字段 | 类型 | 默认 | 契约 | 行 |
+|---|---|---|---|---|
+| `cp_partition_mode` | `Literal["zigzag", "contiguous"]` | `"zigzag"` | THD token rows 在 CP ranks 间的布局；contiguous 只定义于 THD。**静态 `context_parallel_size > 1` 时**，variant guard 将其支持范围限于 DSv4 hybrid、GDN、KDA；scheduler/MTP 组合守卫同时覆盖静态 CP 与 Dynamic CP。 | `:327-332`、`:1654-1708` |
+
+> 该类共 266 个字段，本表收 1 项；其余字段的唯一 owner 见 `docs/coverage/megatron-lm.yaml`。
 
 ## Related Pages
 
 - [[../../../01_theory/06_distributed_parallelism/20_ring_attention_and_context_parallel_analysis|20_ring_attention_and_context_parallel_analysis]] —— CP/Ring Attention 通用机制(序列切分、因果裁剪、四种通信调度、通信量代数、并行组合关系)
-- [[15_megatron_pp_schedulers_analysis]] · [[14_megatron_ep_analysis]] · [[12_megatron_tp_analysis]] · [[29_megatron_packed_dataset_dynamic_cp_analysis]]
+- [[12_megatron_tp_analysis]] —— 对照 CP 序列切分与 TP/SP 头数、隐藏维切分。
+- [[29_megatron_packed_dataset_dynamic_cp_analysis]] —— Dynamic CP group 的 packing 与调度 owner。
 - [[35_deepseek_v4_context_parallel_analysis]] —— DeepSeek-V4 在同一套 Megatron CP 基础设施上的模型特有适配(MLA/CSA/HCA)
-- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
-
-
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] —— 返回全部 35 篇内容页的主题索引。

@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 930" width="100%" role="img" aria-label="Sequence Parallelism 沿序列维分片时 Column Row 区域的前反向布局和通信">
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .cell0{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .cell1{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+</style>
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<rect class="card" x="0.5" y="0.5" width="1479" height="929" rx="14"/>
+<text class="ti" x="28" y="36" text-anchor="start">Sequence Parallelism：在 TP linear 区域之外切 token 维</text>
+<text class="su" x="28" y="57" text-anchor="start">示例：S=8 · H=8 · tp=2；每 rank 保存 S/t=4 个 token，linear 仍按 hidden/output 维 TP 切权重</text>
+<rect class="panel" x="20" y="82" width="1440" height="142" rx="12"/>
+<text class="pt" x="40" y="112" text-anchor="start">① 为什么切序列维</text>
+<text class="rank" x="50" y="151" text-anchor="start">rank 0</text>
+<rect class="acc1" x="112" y="130" width="34" height="30" rx="5"/>
+<text class="sm" x="129" y="150" text-anchor="middle">s0</text>
+<rect class="acc1" x="150" y="130" width="34" height="30" rx="5"/>
+<text class="sm" x="167" y="150" text-anchor="middle">s1</text>
+<rect class="acc1" x="188" y="130" width="34" height="30" rx="5"/>
+<text class="sm" x="205" y="150" text-anchor="middle">s2</text>
+<rect class="acc1" x="226" y="130" width="34" height="30" rx="5"/>
+<text class="sm" x="243" y="150" text-anchor="middle">s3</text>
+<text class="dim" x="276" y="151" text-anchor="start">rank local：4×B×8</text>
+<text class="rank" x="50" y="198" text-anchor="start">rank 1</text>
+<rect class="ghost" x="112" y="177" width="34" height="30" rx="5"/>
+<text class="sm" x="129" y="197" text-anchor="middle">s4</text>
+<rect class="ghost" x="150" y="177" width="34" height="30" rx="5"/>
+<text class="sm" x="167" y="197" text-anchor="middle">s5</text>
+<rect class="ghost" x="188" y="177" width="34" height="30" rx="5"/>
+<text class="sm" x="205" y="197" text-anchor="middle">s6</text>
+<rect class="ghost" x="226" y="177" width="34" height="30" rx="5"/>
+<text class="sm" x="243" y="197" text-anchor="middle">s7</text>
+<text class="dim" x="276" y="198" text-anchor="start">rank local：4×B×8</text>
+<rect class="acc1" x="640" y="126" width="360" height="72" rx="8"/>
+<text class="tx" x="820" y="150" text-anchor="middle">选 token/序列维</text>
+<text class="sm" x="820" y="166" text-anchor="middle">LayerNorm、dropout、residual 按 token 独立</text>
+<text class="sm" x="820" y="182" text-anchor="middle">每份仍保留完整 H</text>
+<rect class="ghost" x="1044" y="126" width="360" height="72" rx="8"/>
+<text class="tx" x="1224" y="150" text-anchor="middle">不选 hidden 维</text>
+<text class="sm" x="1224" y="166" text-anchor="middle">LayerNorm mean/variance 会跨 rank</text>
+<text class="sm" x="1224" y="182" text-anchor="middle">非 GEMM 区域需额外规约</text>
+<rect class="panel" x="20" y="246" width="1440" height="208" rx="12"/>
+<text class="pt" x="40" y="276" text-anchor="start">② 前向：区域外分片，区域内恢复全 token 维</text>
+<rect class="acc1" x="40" y="316" width="178" height="78" rx="8"/>
+<text class="tx" x="129" y="351" text-anchor="middle">rank local：4×B×8</text>
+<text class="sm" x="129" y="367" text-anchor="middle">LN / dropout / residual</text>
+<rect class="acc2" x="238" y="316" width="158" height="78" rx="8"/>
+<text class="tx" x="317" y="351" text-anchor="middle">AG → 8×B×8</text>
+<text class="sm" x="317" y="367" text-anchor="middle">恢复 token 维</text>
+<rect class="acc1" x="416" y="316" width="178" height="78" rx="8"/>
+<text class="tx" x="505" y="351" text-anchor="middle">Column Parallel</text>
+<text class="sm" x="505" y="367" text-anchor="middle">本 rank 权重分片</text>
+<rect class="neutral" x="614" y="316" width="168" height="78" rx="8"/>
+<text class="tx" x="698" y="351" text-anchor="middle">rank-local compute</text>
+<text class="sm" x="698" y="367" text-anchor="middle">head 或 FFN channels</text>
+<rect class="acc1" x="802" y="316" width="178" height="78" rx="8"/>
+<text class="tx" x="891" y="351" text-anchor="middle">Row Parallel</text>
+<text class="sm" x="891" y="367" text-anchor="middle">产生 N×H partial</text>
+<rect class="acc2" x="1000" y="316" width="158" height="78" rx="8"/>
+<text class="tx" x="1079" y="351" text-anchor="middle">RS → 4×B×8</text>
+<text class="sm" x="1079" y="367" text-anchor="middle">求和 + 分 token</text>
+<rect class="acc1" x="1178" y="316" width="222" height="78" rx="8"/>
+<text class="tx" x="1289" y="351" text-anchor="middle">rank local：4×B×8</text>
+<text class="sm" x="1289" y="367" text-anchor="middle">BDA / next norm</text>
+<path class="main" d="M 218 355 L 238 355"/>
+<path class="main" d="M 396 355 L 416 355"/>
+<path class="main" d="M 594 355 L 614 355"/>
+<path class="main" d="M 782 355 L 802 355"/>
+<path class="main" d="M 980 355 L 1000 355"/>
+<path class="main" d="M 1158 355 L 1178 355"/>
+<text class="cap" x="40" y="428" text-anchor="start">本地 GEMM 仍看到 S×B 个 token：SP 不再切 GEMM 计算，它切的是区域外需保存的非 GEMM 激活。</text>
+<rect class="panel" x="20" y="478" width="1440" height="264" rx="12"/>
+<text class="pt" x="40" y="508" text-anchor="start">③ 反向：右向左恢复梯度，Column wgrad 另需 saved input</text>
+<rect class="acc1" x="40" y="548" width="178" height="78" rx="8"/>
+<text class="tx" x="129" y="583" text-anchor="middle">rank-local input grad</text>
+<text class="sm" x="129" y="599" text-anchor="middle">4×B×8</text>
+<rect class="acc2" x="238" y="548" width="158" height="78" rx="8"/>
+<text class="tx" x="317" y="583" text-anchor="middle">dgrad RS</text>
+<text class="sm" x="317" y="599" text-anchor="middle">RS → 4×B×8</text>
+<rect class="acc1" x="416" y="548" width="178" height="78" rx="8"/>
+<text class="tx" x="505" y="583" text-anchor="middle">Column dgrad GEMM</text>
+<text class="sm" x="505" y="599" text-anchor="middle">各 rank 一份贡献</text>
+<rect class="neutral" x="614" y="548" width="168" height="78" rx="8"/>
+<text class="tx" x="698" y="583" text-anchor="middle">rank-local backward</text>
+<text class="sm" x="698" y="599" text-anchor="middle">activation / attention</text>
+<rect class="acc1" x="802" y="548" width="178" height="78" rx="8"/>
+<text class="tx" x="891" y="583" text-anchor="middle">Row dgrad GEMM</text>
+<text class="sm" x="891" y="599" text-anchor="middle">返回 hidden shard</text>
+<rect class="acc2" x="1000" y="548" width="178" height="78" rx="8"/>
+<text class="tx" x="1089" y="583" text-anchor="middle">Row mapping AG</text>
+<text class="sm" x="1089" y="599" text-anchor="middle">4×BH → 8×BH</text>
+<rect class="ghost" x="1198" y="548" width="202" height="78" rx="8"/>
+<text class="tx" x="1299" y="583" text-anchor="middle">rank-local output grad</text>
+<text class="sm" x="1299" y="599" text-anchor="middle">4×B×8</text>
+<path class="main" d="M 238 587 L 218 587"/>
+<path class="main" d="M 416 587 L 396 587"/>
+<path class="main" d="M 614 587 L 594 587"/>
+<path class="main" d="M 802 587 L 782 587"/>
+<path class="main" d="M 1000 587 L 980 587"/>
+<path class="main" d="M 1198 587 L 1178 587"/>
+<rect class="acc2" x="350" y="654" width="300" height="58" rx="8"/>
+<text class="tx" x="500" y="679" text-anchor="middle">Column wgrad 支路</text>
+<text class="sm" x="500" y="695" text-anchor="middle">saved-input AG：4×BH → 8×BH</text>
+<path class="aux" d="M 650 683 L 710 683"/>
+<rect class="neutral" x="710" y="654" width="260" height="58" rx="8"/>
+<text class="tx" x="840" y="679" text-anchor="middle">wgrad GEMM</text>
+<text class="sm" x="840" y="695" text-anchor="middle">与 dgrad RS 可重叠</text>
+<text class="cap" x="994" y="684" text-anchor="start">saved-input AG 先 wait，才能消费完整 input 计算 wgrad</text>
+<rect class="panel" x="20" y="766" width="1440" height="118" rx="12"/>
+<text class="pt" x="40" y="796" text-anchor="start">④ 收益与代价</text>
+<rect class="acc1" x="52" y="812" width="390" height="56" rx="8"/>
+<text class="tx" x="247" y="828" text-anchor="middle">显存</text>
+<text class="sm" x="247" y="844" text-anchor="middle">非 GEMM 激活约 ÷tp</text>
+<text class="sm" x="247" y="860" text-anchor="middle">权重分片由 TP 本身提供</text>
+<rect class="neutral" x="524" y="812" width="390" height="56" rx="8"/>
+<text class="tx" x="719" y="828" text-anchor="middle">计算</text>
+<text class="sm" x="719" y="844" text-anchor="middle">linear GEMM 不再 ÷tp</text>
+<text class="sm" x="719" y="860" text-anchor="middle">AG 后仍处理全 token 维</text>
+<rect class="acc2" x="996" y="812" width="390" height="56" rx="8"/>
+<text class="tx" x="1191" y="828" text-anchor="middle">通信 / 同步</text>
+<text class="sm" x="1191" y="844" text-anchor="middle">每对前向 AG+RS；反向 AG+AG+RS</text>
+<text class="sm" x="1191" y="860" text-anchor="middle">更多 launch 与等待点</text>
+<text class="cap" x="28" y="911" text-anchor="start">实线是布局闭环；虚线是 Column wgrad 的 saved-input 支路。AG/RS 都在同一 TP group 内沿第一维执行。</text>
+</svg>

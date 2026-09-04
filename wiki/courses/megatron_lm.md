@@ -4,126 +4,97 @@ title: "Megatron-LM 阅读路径"
 
 # Megatron-LM 阅读路径
 
-> **这是一张路线图,不是一篇分析。** 每条只给"读它要先会什么、读完能回答什么",机制一律在目标页里。
-> 目标域:[[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]](34 篇内容页)。
-> 全域统一基线 `NVIDIA/Megatron-LM@85902ef59`(`dev`,2026-09-01),各页页头自带。
+> 目标域：[[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]。事实与源码证据以目标页为准。
+> 源码基线：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）。
 
-**这条路径解决什么**:域里 34 篇页按主题编号,但主题目录回答不了"我该按什么顺序读、读到哪一篇时该已经会了什么"。
-下面按**理解的依赖顺序**排,不按编号顺序——个别地方会明确让你**提前读**某一篇。
+默认读者理解 Transformer 与朴素数据并行，不要求预先掌握 Megatron 的进程组、TP、PP、CP、EP 或 ZeRO。
 
-**读者假设**:懂 Transformer 结构与朴素数据并行;不假设你了解 TP/PP/ZeRO。
+## 30–60 分钟入门
 
----
-
-## 站 0 · 先建立坐标(两篇,后面全部依赖它)
-
-| # | 页 | 读它要先会什么 · 读完能回答什么 |
+| 页面 | 前置 | 学习产出 |
 |---|---|---|
-| 1 | [[01_megatron_architecture_analysis]] | 无前置。读完能回答:一次训练从命令行走到参数提交经过哪五层、状态按什么顺序固化——**后面每一篇都是在给这条主链的某一环补细节** |
-| 2 | [[40_megatron_feature_tree_analysis]] | 无前置。**不必通读**,当地图用:想确认"Megatron 到底有没有 X 能力、归哪页管"时回来查 |
+| [[01_megatron_architecture_analysis]] | 无 | 能把一次训练从任务入口映射到配置、并行执行、模型组合、后端原语与参数提交。 |
+| [[02_megatron_training_quickstart]] | 01 | 能沿官方两卡脚本走通初始化、forward-backward、梯度完成、更新和 checkpoint 回读。 |
+| [[03_megatron_parallelism_geometry_quickstart]] | 02 | 能由 world size 与 TP/PP/CP/EP 推导 DP，并判断 rank 的进程组归属与配置合法性。 |
 
----
+## Dense 模型核心路径
 
-## 站 1 · 单卡上的模型与数据
+本段七页与三页入门合计十页；完成后应能阅读一份常规 Megatron 训练配置。
 
-| # | 页 | 读它要先会什么 · 读完能回答什么 |
+| 页面 | 前置 | 学习产出 |
 |---|---|---|
-| 3 | [[10_megatron_model_structure_analysis]] | 前置:站 0。读完能回答:模型怎么由 Spec 装配出来、注意力家族(MHA/GQA/MLA)与 MoE Router 各是什么 |
-| 4 | [[11_megatron_dataset_analysis]] | 前置:无。读完能回答:语料怎么变成按 rank 对齐的 batch、`.bin`/`.idx` 三级索引怎么工作 |
+| [[10_megatron_model_structure_analysis]] | 01 | 能定位 GPTModel、ModuleSpec、attention、MLP 与输出层的装配边界。 |
+| [[11_megatron_dataset_analysis]] | 02 | 能从 tokenizer 与词表 padding 追到 IndexedDataset、GPT 取样和 packed batch。 |
+| [[12_megatron_tp_analysis]] | 03、10 | 能解释线性层切分、sequence parallel 与 TP overlap 的触发边界。 |
+| [[15_megatron_pp_schedulers_analysis]] | 02、03 | 能解释 microbatch、1F1B、VPP 与 pipeline bubble；首次阅读可停在标准/交错 1F1B。 |
+| [[16_megatron_distributed_optimizer_analysis]] | 03 | 能推导 DDP buffer、ZeRO 0–3、HSDP 与参数/梯度/optimizer state 的所有权。 |
+| [[17_megatron_parallelism_orchestration_analysis]] | 12、15、16 | 能从 RankGenerator 走到真实 ProcessGroup 与显式组注入。 |
+| [[19_megatron_dist_checkpointing_analysis]] | 16、17 | 能解释 sharded state 如何跨并行配置保存、加载与重分片。 |
 
----
+## 分支一：长上下文与变长序列
 
-## 站 2 · 切开:**先有几何,再有轴**
-
-> ⚠ **这里有一个反直觉的顺序建议**:[[17_megatron_parallelism_orchestration_analysis]] 在域里定位为"收口文档",
-> 按编号排在并行轴之后。但每条轴都默认"每张卡已经知道自己在各维度上的身份"——那正是 17 号页讲的。
-> **第一次读建议先扫一遍 17 的 §1-§2 建立几何直觉,再回来逐轴细读**,轴读完再回 17 补完。
-
-| # | 页 | 读它要先会什么 · 读完能回答什么 |
+| 页面 | 前置 | 学习产出 |
 |---|---|---|
-| 5 | [[17_megatron_parallelism_orchestration_analysis]] | 前置:站 0。读完能回答:`world_size` 个裸 GPU 怎么被切成 TP/PP/CP/EP/DP 各维度的进程组 |
-| 6 | [[12_megatron_tp_analysis]] | 前置:站 1 的模型结构。读完能回答:单层的四个大矩阵乘怎么切、`f`/`g` 共轭算子与序列并行 |
-| 7 | [[13_megatron_cp_analysis]] | 前置:12。读完能回答:序列维怎么切、`cp_comm_type` 四种通信方式怎么选 |
-| 8 | [[14_megatron_ep_analysis]] | 前置:10 的 MoE Router 一节。读完能回答:三种 token dispatcher、MoE Parallel Folding、通信量账本 |
-| 9 | [[02_megatron_moe_training_optimization_analysis]] | 前置:14。读完能回答:MoE 的各项优化按"谁拥有什么"怎么归类、选型边界在哪——**它是 MoE 的总纲,放在 14 之后读才有参照** |
-| 10 | [[15_megatron_pp_schedulers_analysis]] | 前置:站 0 的训练主链。读完能回答:五种流水线调度器、气泡从哪来、怎么被 VPP 与 combined-1F1B 压小 |
+| [[13_megatron_cp_analysis]] | 03、12 | 能比较 P2P、AllGather、A2A 与 hierarchical CP 的适用边界。 |
+| [[29_megatron_packed_dataset_dynamic_cp_analysis]] | 11、13 | 能解释 packed sequence 怎样进入调度器，以及怎样按 batch 改变 CP 度。 |
+| [[35_deepseek_v4_context_parallel_analysis]] | 13、29 | 能沿 boundary hidden P2P、compressed gather 与本地投影追完 DSv4 CP live path。 |
 
----
+## 分支二：MoE
 
-## 站 3 · 谁持有参数、梯度与优化器状态
-
-| # | 页 | 读它要先会什么 · 读完能回答什么 |
+| 页面 | 前置 | 学习产出 |
 |---|---|---|
-| 11 | [[16_megatron_distributed_optimizer_analysis]] | 前置:站 2(尤其 17 的 DP 组)。**本域最长的一页**,可分两次读:§1-§10 是 DP/ZeRO 四阶段,§11-§16 是优化器 step 内部 |
-| 12 | [[36_megatron_fsdp_analysis]] | 前置:16 的 ZeRO 阶梯。读完能回答:Megatron-FSDP 为什么把分片切在扁平桶而不是切参数、与 EP/TP 怎么叠 |
+| [[14_megatron_ep_analysis]] | 03、10 | 能追踪 route、dispatch、expert compute 与 combine，并识别 EP 硬约束。 |
+| [[39_megatron_moe_training_optimization_analysis]] | 14 | 能按 token、专家参数、激活/optimizer state 与时间窗口做 MoE 工程选型。 |
 
----
+## 分支三：性能与内存
 
-## 站 4 · 跑快:性能基建
-
-> 这一站六篇彼此独立,**可按需挑读**;若通读,建议按"先省显存、再省时间"的顺序。
-
-| # | 页 | 读它要先会什么 · 读完能回答什么 |
+| 页面 | 前置 | 学习产出 |
 |---|---|---|
-| 13 | [[18_megatron_recompute_analysis]] | 前置:站 1。读完能回答:full 与 selective 重计算各省什么、代价是什么 |
-| 14 | [[22_megatron_memory_optimization_analysis]] | 前置:18。读完能回答:显存手段全景——NCCL 池、Paged Stash、激活 offload、buffer 复用 |
-| 15 | [[20_megatron_comm_overlap_analysis]] | 前置:站 2 全部。读完能回答:六个维度的通信怎么藏进计算空隙、各自的前提是什么 |
-| 16 | [[21_megatron_fusion_operators_analysis]] | 前置:站 1。读完能回答:融合算子全目录与各自的触发条件 |
-| 17 | [[23_megatron_precision_cudagraph_fusion_analysis]] | 前置:21。读完能回答:FP8/FP4 四种 recipe、CUDA Graph 三种 impl 的边界 |
-| 18 | [[24_megatron_linear_cross_entropy_analysis]] | 前置:12(词表并行)。读完能回答:LM-head 的 logits 怎么做到从不物化 |
+| [[18_megatron_recompute_analysis]] | 10 | 能比较 full/selective recompute 的显存与计算代价。 |
+| [[20_megatron_comm_overlap_analysis]] | 按配置选读 12–16 | 能画出跨轴 dispatch/wait 时间线，并诊断资源竞争与静默无收益。 |
+| [[21_megatron_fusion_operators_analysis]] | 20 | 能按触发条件、后端与回退路径检索融合算子。 |
+| [[22_megatron_memory_optimization_analysis]] | 18、20、21 | 能定位 offload、paged stash、buffer reuse 与通信池的状态所有权。 |
+| [[23_megatron_precision_cudagraph_fusion_analysis]] | 21 | 能比较 FP8/FP4 recipe、CUDA Graph 与 fusion 的组合边界。 |
+| [[24_megatron_linear_cross_entropy_analysis]] | 12 | 能解释 LM head 与 cross-entropy 怎样避免完整 logits 物化。 |
+| [[26_megatron_optimizer_step_internals_deepdive]] | 16、23 | 能走通 optimizer factory、混合精度 step、LR/WD、CPU offload 与 Muon/μP。 |
+| [[32_megatron_tflops_analysis]] | 10、14 | 能核对 dense/MoE FLOPs、吞吐与 MFU 的统计口径。 |
+| [[36_megatron_fsdp_analysis]] | 16 | 能追踪 MegatronFSDP buffer、hook、mesh 与预取流水线。 |
 
----
+## 分支四：可靠性
 
-## 站 5 · 跑完、跑对:存档与可靠性
-
-| # | 页 | 读它要先会什么 · 读完能回答什么 |
+| 页面 | 前置 | 学习产出 |
 |---|---|---|
-| 19 | [[19_megatron_dist_checkpointing_analysis]] | 前置:站 2、站 3。读完能回答:并行无关的分片存档怎么做到换并行度也能加载 |
-| 20 | [[28_megatron_training_stability_observability_analysis]] | 前置:站 3。读完能回答:**数值层面**——loss 可不可信、SDC 怎么归因、哪张卡慢 |
-| 21 | [[43_megatron_job_resilience_analysis]] | 前置:20。读完能回答:**作业层面**——进程挂了怎么原地恢复而不重排队。与 20 是同一主题的两半 |
-| 22 | [[25_megatron_nonuniform_tp_analysis]] | 前置:12、站 3。读完能回答:TP 组少了 rank 还怎么训(冷重启容错) |
-| 23 | [[29_megatron_packed_dataset_dynamic_cp_analysis]] | 前置:11、13。读完能回答:变长序列怎么打包、动态 CP 怎么按 batch 调整 |
+| [[28_megatron_training_stability_observability_analysis]] | 16 | 能区分 loss、NaN、SDC 与 straggler 的数值和观测边界。 |
+| [[27_megatron_job_resilience_analysis]] | 28 | 能解释进程内重启、退出策略、GPU sniff test 与 tensor dump。 |
+| [[25_megatron_nonuniform_tp_analysis]] | 12、16 | 能理解预定义混合 TP 布局、梯度重共享与冷重启边界。 |
 
----
+## 分支五：推理与权重导出
 
-## 站 6 · 训练之外:推理、RL、权重交付
-
-| # | 页 | 读它要先会什么 · 读完能回答什么 |
+| 页面 | 前置 | 学习产出 |
 |---|---|---|
-| 24 | [[31_megatron_inference_engine_analysis]] | 前置:站 1、站 2。读完能回答:同一份权重怎么当推理引擎用——KV cache、连续批处理、chunked prefill |
-| 25 | [[42_megatron_rl_runtime_analysis]] | 前置:24。读完能回答:GRPO 全链路的**实现层**——rollout 粒度、Agent 协议、损失、训推态切换 |
-| 26 | [[30_megatron_rl_posttraining_consistency_analysis]] | 前置:25。读完能回答:训练与推理算出的 logprob 为什么不一致、怎么修——**与 25 是同一主题的两半**(25 讲实现,26 讲算法正确性) |
-| 27 | [[33_megatron_vllm_weight_sync_analysis]] | 前置:26。读完能回答:verl 怎么把 Megatron 权重同步给 vLLM(**跨仓页**,钉 verl 基线) |
-| 28 | [[44_megatron_tokenizer_and_export_analysis]] | 前置:11(分词侧)、站 2(导出侧)。读完能回答:分词器怎么装配、训练权重怎么导给 TRT-LLM |
+| [[31_megatron_inference_engine_analysis]] | 10、17 | 能解释 KV cache、连续批处理、prefix caching 与 chunked prefill。 |
+| [[37_megatron_trtllm_export_analysis]] | 11、19、31 | 能把 checkpoint state dict 转成逐 rank TRT-LLM weights/config，并接到 engine build。 |
 
----
+## 分支六：RL 与训推一致性
 
-## 站 7 · 参考层与案例(按需查阅,不必通读)
-
-| # | 页 | 什么时候来看 |
+| 页面 | 前置 | 学习产出 |
 |---|---|---|
-| 29 | [[41_megatron_config_surface_analysis]] | 想知道某个 flag 从哪来、YAML 与 CLI 怎么保持一致时 |
-| 30 | [[32_megatron_tflops_analysis]] | 要算 MFU / 吞吐,或想知道 FLOPs 数字怎么来的时 |
-| 31 | [[27_megatron_tp_fsdp_resharding_supplements_analysis]] | 补遗页,三块内容的锚点与指针 |
-| 32 | [[34_deepseek_v4_tensor_parallel_analysis]] | 案例:DSv4 为什么强制 TP=1 |
-| 33 | [[35_deepseek_v4_context_parallel_analysis]] | 案例:MLA 怎么把 CP 通信量降两个数量级 |
-| 34 | [[45_megatron_logits_distillation_analysis]] | 专题:离线蒸馏——教师前向怎么从「每步一次」变成「整数据集一次」 |
+| [[31_megatron_inference_engine_analysis]] | Dense 核心路径 | 能建立 rollout 推理侧的请求、批处理与 KV 状态模型。 |
+| [[30_megatron_rl_posttraining_consistency_analysis]] | 31 | 能解释 logprob 一致性、importance sampling 与 reshard/refit 权重搬运。 |
+| [[33_megatron_rl_runtime_analysis]] | 30 | 能追踪 rollout 粒度、Agent 协议、GRPO loss 与训推态切换。 |
 
----
+## 分支七：特殊训练、案例与参考
 
-## 三条读法建议
-
-1. **第一遍别读全**。站 0 → 站 2 → 站 3 是主干(约 12 篇),读完就能看懂一份真实的 Megatron 训练脚本在配什么。站 4 之后按遇到的问题挑读。
-2. **遇到"这个开关是什么"就查 [[41_megatron_config_surface_analysis]] 或各页的「配置契约」小节**,不要在主线里追 flag。
-3. **遇到"Megatron 有没有 X"就查 [[40_megatron_feature_tree_analysis]] 的覆盖仪表盘**,它会告诉你归哪页管、或者本库确实没写。
-
-## 已知空白
-
-- 各页内以 `[!note] 待展开` 标注的部分(`validate_args` 校验网、μP 机制、张量转储落盘格式等)。
+| 页面 | 前置 | 学习产出 |
+|---|---|---|
+| [[38_megatron_logits_distillation_analysis]] | 11、12 | 能区分离线 top-K 缓存的 producer、未接线 writer、consumer 与 TP-aware sparse KL。 |
+| [[34_deepseek_v4_tensor_parallel_analysis]] | 12、14 | 能区分 DSv4 TP=1 硬边界、duplicated 参数与仅保留 TP 接口的投影。 |
+| [[40_megatron_feature_tree_analysis]] | 完成任一机制分支 | 能确认仓库能力是否被页面覆盖，以及 A–Q 模块各归谁负责。 |
+| [[41_megatron_config_surface_analysis]] | 40 | 能从 config dataclass 追到 CLI/YAML 入口与机制 owner。 |
 
 ## Related Pages
 
-- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] — 本路径的目标域,按主题组织的完整目录
-- [[02_engineering/02_train_frameworks/index|训练框架]] — Megatron 在四个训练框架里的定位与覆盖度对比
-- [[01_theory/06_distributed_parallelism/index|分布式并行原理]] — 各并行维度**为什么成立**的理论侧;本路径讲的是工程实现
-- [[02_engineering/02_train_frameworks/torchtitan/index|TorchTitan]] — PyTorch-native 的另一条路线,与 Megatron 手工并行形成对照
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] —— 按编号和主题检索全部 35 篇内容页。
+- [[02_engineering/02_train_frameworks/index|训练框架]] —— 对照 Megatron、TorchTitan、MindSpeed 与跨框架专题。
+- [[01_theory/06_distributed_parallelism/index|分布式并行原理]] —— 补齐 TP、PP、CP、EP 与 collective 的理论前置。
+- [[changelog]] —— 查询页面迁移、历史结论与基线纠正记录。

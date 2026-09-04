@@ -8,9 +8,9 @@ title: "Megatron-LM 分布式 Checkpoint 深度解析(Distributed Checkpointing)
 > **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；该增量只触及 20 个 `megatron/` 文件，本页 `path:line` 引用所涉源文件均不在其中，故无行号漂移，无需逐条重核。
 > **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/dist_checkpointing/` 下 `megatron/core/dist_checkpointing/mapping.py`(`ShardedTensor`)、`megatron/core/dist_checkpointing/serialization.py`(`save`/`load`)、`megatron/core/dist_checkpointing/strategies/`、`megatron/core/dist_checkpointing/validation.py`
-> 配套阅读:`17_megatron_parallelism_orchestration_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §5(resharding)
+> 配套阅读:[[17_megatron_parallelism_orchestration_analysis]]、[[16_megatron_distributed_optimizer_analysis]]、[[30_megatron_rl_posttraining_consistency_analysis]]（运行中模型间的 Resharding/Refit）
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
+> **最近更新**：2026-09-03。旧补遗删除后，将“落盘 checkpoint”与“运行中 refit”的边界统一指向 30 号 owner 页。
 > 定位:模型/优化器状态如何**存盘与读取**。
 
 ---
@@ -21,7 +21,7 @@ title: "Megatron-LM 分布式 Checkpoint 深度解析(Distributed Checkpointing)
 
 两者都处理"并行布局不同",但:
 
-| | **dist_checkpointing**(本文) | **resharding / refit**(`27_megatron_tp_fsdp_resharding_supplements_analysis.md` §5) |
+| | **dist_checkpointing**(本文) | **resharding / refit**([[30_megatron_rl_posttraining_consistency_analysis]]) |
 |--|------------------------------|--------------------------------|
 | 干什么 | 模型/优化器状态**存盘 / 从盘读取** | 两个**运行中**的模型之间**实时**搬权重 |
 | 介质 | 磁盘 | GPU↔GPU(NCCL/NVSHMEM/Gloo) |
@@ -162,7 +162,7 @@ save(sharded_state_dict, checkpoint_dir, ...):
 
 `async` 与 `fully-parallel` 是两个关键性能特性:前者把存档延迟**藏进计算**,后者把存档 I/O **摊到所有卡**。大模型 checkpoint 动辄 TB 级,这两者让"每隔 N 步存一次"不至于拖垮吞吐。
 
-> Megatron-FSDP 另用 `fsdp_dtensor` 格式(基于 DTensor,见 [[36_megatron_fsdp_analysis]]——原 `27_megatron_tp_fsdp_resharding_supplements_analysis.md` §3 已于 2026-08-28 归一到该页)。
+> Megatron-FSDP 另用 `fsdp_dtensor` 格式(基于 DTensor,见 [[36_megatron_fsdp_analysis]]——旧 `27_megatron_tp_fsdp_resharding_supplements_analysis` §3 已于 2026-08-28 归一到该页)。
 
 ---
 
@@ -240,7 +240,7 @@ save(sharded_state_dict, checkpoint_dir, ...):
 
 ---
 
-*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准；2026-08-28 由 `ee3f1ff` 重定基线。配套文档:`17_megatron_parallelism_orchestration_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`、`27_megatron_tp_fsdp_resharding_supplements_analysis.md`。*
+*生成依据:`Megatron-LM` `dev` 分支 `85902ef599ea4eb06ada7567a479c524b605767a`(2026-09-01;由 `71092579` 重定基线而来,更早一次为 2026-08-28 由 `ee3f1ff` 推进)。源码行号以该 commit 为准；2026-08-28 由 `ee3f1ff` 重定基线。配套文档:[[17_megatron_parallelism_orchestration_analysis]]、[[16_megatron_distributed_optimizer_analysis]]、[[30_megatron_rl_posttraining_consistency_analysis]]。*
 
 ---
 
@@ -301,7 +301,7 @@ save(sharded_state_dict, checkpoint_dir, ...):
 | `replication_jump` | `int \| None` | `None` | Specifies `J`, the spacing between ranks storing replicas of a given rank's data. Replicas for rank `n` may be on ranks `n+J`, `n+2J`, ..., or `n-J`, `n-2J`,… | `:652` |
 | `replication_factor` | `int` | `2` | Number of machines storing the replica of a given rank's data. | `:657` |
 
-> 该类共 55 个字段，本表收 45 项；其余 10 项已在别处归属：主要归 本页他处 7 项、[[43_megatron_job_resilience_analysis]] 3 项（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+> 该类共 55 个字段，本表收 45 项；其余 10 项已在别处归属：主要归 本页他处 7 项、[[27_megatron_job_resilience_analysis]] 3 项（完整归属见 `docs/coverage/megatron-lm.yaml`）。
 
 > **与正文的接缝**：`ckpt_fully_parallel_save` / `ckpt_fully_parallel_load` 对应本页讲的 `FullyParallelSave/LoadStrategyWrapper`；`async_save` 对应异步策略与 finalize 流程；non-persistent 那一组则是本页 core 机制之外、由训练侧编排的一层（详见 [[40_megatron_feature_tree_analysis]] §4 标记的「训练侧存档编排」待补项）。
 
@@ -325,7 +325,7 @@ save(sharded_state_dict, checkpoint_dir, ...):
 
 ## Related Pages
 
-- [[17_megatron_parallelism_orchestration_analysis]] · [[16_megatron_distributed_optimizer_analysis]] · [[27_megatron_tp_fsdp_resharding_supplements_analysis]]
-- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
-
-
+- [[17_megatron_parallelism_orchestration_analysis]] — checkpoint 分片元数据依赖的并行组与 rank 几何。
+- [[16_megatron_distributed_optimizer_analysis]] — 需要保存和恢复的分片优化器状态。
+- [[30_megatron_rl_posttraining_consistency_analysis]] — 不落盘、运行中模型之间的跨布局 Resharding/Refit；与本页边界互补。
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] — 返回全部 35 篇内容页的主题索引。

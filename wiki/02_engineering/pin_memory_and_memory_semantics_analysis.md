@@ -422,7 +422,7 @@ SHIFT 是一个用户态 RDMA 层，它观察到主流训练框架（如 NCCL）
 - [[02_engineering/02_train_frameworks/31_comm_compute_fusion_guide]] — 通算融合（含 DeepEP/HybridEP 通信融合分析）
 - [[03_infer_frameworks/mooncake_analysis]] — Mooncake 分离式推理架构与 RDMA KV Cache 传输
 - [[02_train_frameworks/32_distributed_optimizer_deepdive]] — 分布式优化器（含 ZeRO/DeepSpeed Offload 机制）
-- [[02_engineering/02_train_frameworks/megatron-lm/20_megatron_comm_overlap_analysis]] — Megatron-LM 计算通信重叠（含 NCCL/RDMA 通信优化）
+- [[02_engineering/02_train_frameworks/megatron-lm/20_megatron_comm_overlap_analysis]] — Megatron-LM 多并行轴通信重叠时的资源竞争、显存代价与诊断
 - [[../01_theory/01_models/deepseek/13_deepseek_v4_analysis]] — DeepSeek-V4（含 DeepEP、3FS 架构背景）
 - [[02_engineering/index|工程实现]] — 工程实现领域索引
 - [[../changelog]] — 变更日志

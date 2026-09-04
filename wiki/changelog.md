@@ -12,6 +12,108 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-03：Megatron TP 训练闭环与 SP 实现补全
+
+- [[12_megatron_tp_analysis]] 将整网分析补成 token ids → VocabParallelEmbedding → Transformer → 分片 LM head → VocabParallelCrossEntropy → embedding wgrad 的前反向闭环；分别给出词表入口、词表出口和 loss 的切分维、选择原因、公式、通信代价与融合边界。
+- 原整层 SVG 重绘为含 loss 和 backward 的训练闭环图，另新增 `megatron_tp_sequence_parallel.svg`，解释 SP 为什么切 token 维、Column 入口 AG / Row 出口 RS 的前向布局、反向两次 AG + 一次 RS 的来源，以及显存收益不等于 GEMM 计算继续缩小。
+- 类关系图和源码阅读路线同步加入 `GPTModel`、`LanguageModelEmbedding`、`LinearCrossEntropyModule` 与 `_VocabParallelCrossEntropy`；三张 SVG 继续由同一数据生成器与契约测试维护。
+- 独立源码复审后补齐两条条件分支：交叉熵公式显式区分默认无 smoothing 与 `label_smoothing>0`；SP 下未配对的 LM head 分开记录普通 Column backward 的 saved-input AG + dgrad RS，以及 fused linear-CE 的 hidden-gradient AR + local slice。
+- §3.2 的函数调用关系改为三段等宽 ASCII：整网训练调用树、单层 Attention/MLP 调用树，以及普通 TP / SP 的 native backward 调度；条件分支和 collective 直接落在对应 caller 下，替代原先需要跨泳道追踪的 Mermaid 时序图。
+
+## 2026-09-03：Megatron TP 主实现章节重构
+
+- [[12_megatron_tp_analysis]] 按“特性概览 → 详细方案 → 代码实现”重排：概览固定为单段问题背景、切分方法、收益/开销/约束和符号表；详细方案用一个矩阵乘解释 Column/Row 两种切分，再沿 embedding、Attention、MLP、LM head 与词表交叉熵给出整网布局和通信账。
+- 新增数据驱动 SVG `megatron_tp_matrix_partition.svg`、`megatron_tp_transformer_layer.svg`，以及类关系、前向调用、native backward 调度三张 Mermaid 图；图示参数由 `tools/figs/svg/megatron_tp_figures.mjs` 统一推导，并由 `megatron_tp_figures.test.mjs` 锁定。
+- 依据冻结基线的 `LinearWithGradAccumulationAndAsyncCommunication.backward` 和 `SelfAttention.get_query_key_value_tensors` 收窄通信结论：分别给出非 SP、SP 与 `num_query_groups < tp` GQA 的前反向账本，保留非 GEMM 激活约降为 $1/t$ 的 SP 收益，但不再把它概括为“通信量不变、几乎免费”。
+
+## 2026-09-03：Megatron-LM 学习结构重构 Wave E
+
+- [[courses/megatron_lm|Megatron-LM 阅读路径]] 已收敛为三页入门、七页 Dense 续读（与入门合计十页）和七个问题分支；表格统一只保留“页面 / 前置 / 一句学习产出”。全域 35 篇内容页均可达，31 号推理页因同时是“推理导出”和“RL 训推一致性”的前置，在两条分支各出现一次。
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] 删除历史与机制长文，只保留五个内容段和 35 行一页一行清单；父域与总索引按文件机械复算为 Megatron-LM 35 篇内容页 + index（36 页）、训练框架递归 76 页。
+- [[40_megatron_feature_tree_analysis]] 与 [[41_megatron_config_surface_analysis]] 完成最终对账：A–Q 仍覆盖 600 个 `.py`；Q 明确区分 producer→pending buffer、仓内未接线 writer 与已闭合 reader/loss；P 为进树 19/25、另 6 个胶水文件显式排除。配置面保持批准的 14 sources / 590 字段，并显式区分 13 个 `ArgumentGroupFactory` 调用、枚举外 `FaultInjectorConfig` 与手写 inference bridge。
+- 35 篇内容页现各有且仅有一个底部 `## Related Pages`，每页 3–7 条逐条解释的单链接；七个退役 basename 的活动 wikilink 为零。顺带补齐 Verl quickstart 到自身域 index 的导航，清除了 Wave 0 登记的 docs smoke 基线失败。
+- 最终机械门禁：coverage `flags=590 pages=35`、C1=C2=C3=0；links `pages=446` 全 0；changed math 53 files、0/0；Megatron locator `pages=36 citations=1572 pass=1512`、errors=14、warnings=46，相对 Wave 0 无新增 finding；`python -m pytest tools/` 为 388 passed；`npm run docs:test` PASS；`git diff --check` 为 0。
+
+## 2026-09-03：Megatron-LM 学习结构重构 Wave D
+
+- [[34_deepseek_v4_tensor_parallel_analysis]] 从“DSv4 + 通用 TP 教材”收缩为边界案例：只保留构造器的 `TP=1` 硬断言、投影参数所有权、Compressor/Indexer duplicated、mHC 同步标记、MoE/ETP 交界和可定位的失败方式。通用 Column/Row Parallel、bulk/pipelined overlap 归 [[12_megatron_tp_analysis]]，跨轴资源竞争归 [[20_megatron_comm_overlap_analysis]]。
+- [[35_deepseek_v4_context_parallel_analysis]] 改为当前已落地的两阶段执行链：左边界 hidden P2P（含反向梯度回送）→ compressed Indexer-K/KV AllGather → 本地 Q/weight projection overlap。旧页“两阶段尚未实现”“Dynamic CP 不支持 MLA/DSv4”的结论以及固定 `128×/5%/CP=8` 数字退出活动正文；历史纠正结果只在本日志保留。
+- 通用独有增量 `create_hierarchical_groups` 迁入 [[13_megatron_cp_analysis]]，连同列表乘积、逐级 group、TE `a2a+p2p` 消费边界形成闭环。7 个配置 owner 同步归位：`init_method` / `output_layer_init_method` / `attention_dropout` → 10，`hierarchical_context_parallel_sizes` / `cp_partition_mode` → 13，`moe_shared_expert_intermediate_size` → 14，`params_dtype` → 23。
+
+旧 34 主章节分类：
+
+| 原章节 | 分类 | Wave D 处置 |
+|---|---|---|
+| 一 背景 | DSv4-specific | 压缩进新 §1–§2 |
+| 二 为什么 TP=1 | 混合：当前事实 + 旧推测 | 硬断言保留；无法由源码证明的架构动机删除 |
+| 三 Attention TP 接口 | DSv4-specific | 保留为投影所有权账本 |
+| 四 Compressor/Indexer | DSv4-specific | 保留 duplicated 证据 |
+| 五 mHC | DSv4-specific 交界 | 保留普通参数 + sequence-parallel 同步标记 |
+| 六 MoE | DSv4-specific 交界 | 保留 attention TP 与 ETP 分账；通用机制链接 14 |
+| 七 通信量 | 混合 | 只保留当前通信账本；删除无当前证据的固定公式 |
+| 八 TP overlap | generic duplicate | 删除，owner 为 12；跨轴竞争 owner 为 20 |
+| 九 约束 | DSv4-specific | 保留并改成“前提→locator→失败方式” |
+| 十 发展趋势 | obsolete/speculative | 删除 |
+| 十一 结论 | DSv4-specific | 压缩进结论、约束与所有权段 |
+
+旧 35 主章节分类：
+
+| 原章节 | 分类 | Wave D 处置 |
+|---|---|---|
+| 〇 背景/取舍 | DSv4-specific | 改写为两阶段当前主线 |
+| 一 CP 组/拓扑 | generic unique + duplicate | hierarchical 构造迁 13；普通 CP 组说明删除 |
+| 二 通信类型 | generic duplicate | 删除，owner 为 13/CP 理论页 |
+| 二·附 QKV 图 | generic duplicate | 删除，owner 为 CP 理论页 |
+| 三 Native CP | generic duplicate | 删除，owner 为 13 |
+| 四 TransformerEngine CP | generic duplicate | 删除，owner 为 13 |
+| 五 DSv4 适配 | DSv4-specific | 保留 RoPE、CSA/HCA、Dynamic CP 当前边界 |
+| 六 通信量 | 混合 | 保留 stage payload/依赖；删除固定缩减与“最优 CP”数字 |
+| 七 overlap | generic duplicate + DSv4 delta | 通用部分链接 20；DSv4 async gather 时间线保留 |
+| 八 Dynamic CP | generic duplicate + DSv4 delta | 调度归 29；DSv4 group 切换/恢复保留 |
+| 九 约束 | DSv4-specific | 保留并补 fused/eager、self-attention、tail floor |
+| 十 发展趋势 | obsolete/speculative | 删除 |
+| 十一 结论 | DSv4-specific | 重写为当前 owner 边界 |
+| 附录 A 旧 gap 审计 | obsolete baseline audit | 从活动页删除，本日志仅保留纠正结果 |
+
+## 2026-09-03：Megatron-LM 学习结构重构 Wave C3
+
+- 删除把“输入端 tokenizer”和“输出端 export”并置的原 44 合并页。Tokenizer 的统一工厂、library/model 两段分派、词表 padding、parser/视觉边界及 `TokenizerConfig` **全部 20 字段**归入 [[11_megatron_dataset_analysis]]，形成文本 → token → dataset → packed sequence 的连续学习链。
+- 新建 [[37_megatron_trtllm_export_analysis]]，独立拥有 `megatron/core/export/**` 的 17 文件：明确单设备重切分与 distributed on-device 两条路径，并补齐调用者配对逐 rank weights/config → helper wrapper → 外部 TensorRT-LLM model/build/save 的完整 hop。同步纠正旧页的 tokenizer 分派描述：显式 `tokenizer_type` 先选构造分支和默认 library；若提供 `tokenizer_metadata`，metadata 内的 `library` 会覆盖默认值，源码不校验两者一致。
+- 离线 logits 蒸馏页由 45 迁入 [[38_megatron_logits_distillation_analysis]]。独立复审进一步纠正原页结论：17 位索引的原始 payload 相对 `int32` 约省 25% 而非 45%；样本哈希只覆盖声明且 blend 只取 basename/权重，并非内容哈希；ghost token 只保留尾部总质量；教师侧零 LM loss 仍保留反向图边；TP/DP 可变也不代表 CP 与 micro-batch 可变。最重要的是，冻结树只闭合 producer hook → pending buffer，`take_pending_data` / tar writer 没有仓内调用点，故不能宣称保存→加载全链已闭合；student reader/KL 链则已逐 hop 核实。课程、域 index、功能树、配置说明与所有入链同步；20 个 tokenizer coverage owner 迁到 11，export/distillation 因不在所枚举的 training dataclass 配置面中保持 zero owner。
+
+## 2026-09-03：Megatron-LM 学习结构重构 Wave C2
+
+- 删除历史页 `33_megatron_vllm_weight_sync_analysis`：它记录的是 `volcengine/verl@ab0705220a95952219111409d8f971872002c193` 的已退役 SPMD 直连实现，不再占用 Megatron 当前主题编号。仍有解释力的 `rollout_mode → per_tensor_generator → update_weights → model.load_weights` 演进对照已归入 [[21_verl_weight_publication_analysis]] §8.1；旧页关于固定内存倍数、全 rank 完整副本和全程阻塞的结论未迁入当前机制正文。
+- [[33_megatron_rl_runtime_analysis]] 由 42 号迁入 Runtime/工程集成段，继续拥有 `megatron/rl` 的 Agent、rollout 粒度、GRPO、序列打包、训推态切换与服务面；[[30_megatron_rl_posttraining_consistency_analysis]] 仍拥有 refit 与训推一致性正确性。
+- 课程、Megatron 域 index、功能树、配置页及跨框架 weight-publish 导航已同步；Verl 当前发布机制仍以 `volcengine/verl@254a23edc62f25ebfae626e3932ae285d6f86009` 为准，历史小节显式钉在旧基线，避免把删除路径写成当前行为。
+
+## 2026-09-03：Megatron-LM 学习结构重构 Wave C1
+
+- 删除旧 `27_megatron_tp_fsdp_resharding_supplements_analysis`：NTP 机制归 [[25_megatron_nonuniform_tp_analysis]]，Resharding/Refit 归 [[30_megatron_rl_posttraining_consistency_analysis]]，Megatron-FSDP 归 [[36_megatron_fsdp_analysis]]，不再保留三主题补遗页。
+- 旧补遗保留价值中的当前增量已并入 owner：36 补 `enable_fine_grained_param_gather` 的 per-Module 粒度；30 补 `_plan_tp` 的单 TP-descriptor 边界、1D swizzled scale 禁用 sender-side 转换、`ReshardTransform` 三段 hook，以及 `swap_model_weights → planner/execution → CopyService → writeback` 的完整 hop-walk。
+- [[27_megatron_job_resilience_analysis]] 由 43 号迁至 27 号，进入优化与可靠性段；与 [[28_megatron_training_stability_observability_analysis]] 明确分工为“作业存活/恢复”与“数值正确/观测”。课程、域 index、功能树、配置 owner 和覆盖矩阵同步迁移。
+
+## 2026-09-03：Megatron-LM 学习结构重构 Wave B2
+
+- [[20_megatron_comm_overlap_analysis]] 由五轴机制大全收缩为跨轴组合 owner：只保留全局时间线、PP×DP 对齐、资源/显存竞争、静默无收益边界与诊断梯子，删除逐轴代码摘录和重复配置表。
+- 轴内独有增量归位：[[12_megatron_tp_analysis]] 接收 TE user-buffer/bulk/pipelined overlap 及全部 `tp_comm_*` owner；[[13_megatron_cp_analysis]] 接收原生 eager all-gather 双缓冲并显式记录配置 docstring 与实现的矛盾；[[14_megatron_ep_analysis]] 接收 A2A high-priority stream；[[16_megatron_distributed_optimizer_analysis]] 接收 fp32-accumulation RS 的前驱 bucket 排空。
+- [[14_megatron_ep_analysis]] 与 [[15_megatron_pp_schedulers_analysis]] 已在页头标明首读/进阶边界，不因页长拆分；`delay_wgrad_compute` 与 `ep_overlap_early_attn_memory_release` 归 combined-1F1B owner 15，只留 `align_grad_reduce` / `grad_sync_func` 两个跨 PP×DP 接口由 20 拥有。
+- 课程与域 index 已同步新的阅读合同与所有权边界。
+
+## 2026-09-03：Megatron-LM 学习结构重构 Wave B1
+
+- [[16_megatron_distributed_optimizer_analysis]] 收缩为 DDP buffer、ZeRO 0–3、HSDP 与三种分片实现的 owner；删除同页 optimizer-step 重复职责。
+- 新增 [[26_megatron_optimizer_step_internals_deepdive]]：承接 optimizer factory、fp32 master、unscale/overflow/clip/update/copy-back、LR/WD、CPU offload、LayerWise/Muon，并补齐 μP 的模型配置→param-group 执行链。
+- 配置 owner 同步迁移：Scheduler 与 μP→26，`fp16`/`bf16`/`fp8_param`→23，`use_torch_fsdp2`→36；`param_sync_func` 保持在 16。
+- 课程、域 index、功能树与当前机制页的章节入链已同步；旧 changelog 条目仍按写入当时状态保留。
+
+## 2026-09-03：Megatron-LM 学习结构重构 Wave A
+
+- 新增 [[02_megatron_training_quickstart]]：以官方 `examples/run_simple_mcore_train_loop.py` 为唯一主线，从 `torchrun` 初始化走到五次更新和 distributed checkpoint 回读。
+- 新增 [[03_megatron_parallelism_geometry_quickstart]]：接管 rank 坐标、`order`、dense/expert 两套分解的入门解释；[[17_megatron_parallelism_orchestration_analysis]] 收缩为进程组生成和所有权传递的实现权威页。
+- `02_megatron_moe_training_optimization_analysis.md` 改名为 [[39_megatron_moe_training_optimization_analysis]]，使编号与“先读 EP、后做 MoE 工程选型”的真实依赖一致；全部活动入链和配置 owner 已同步。
+- [[courses/megatron_lm|Megatron-LM 阅读路径]] 改为三页入门、十页 Dense 核心路径和七个问题分支，不再要求先跳读 17 再返回。
+
 ## 2026-09-02（四）：Megatron-LM 补阅读路径与离线蒸馏页
 
 **Type**：新增 1 个 course 页 + 1 篇内容页（模块 Q）+ 索引改写
@@ -21,15 +123,15 @@ All source ingestions and significant wiki updates are logged here.
 **[[courses/megatron_lm|Megatron-LM 阅读路径]]**：按**理解的依赖**而非编号排 7 站，每条给"读它要先会什么、读完能回答什么"。它明确了几处编号顺序表达不出来的关系：
 
 - **[[17_megatron_parallelism_orchestration_analysis]] 建议提前读**。它在域里定位为"收口文档"、编号排在并行轴之后，但每条轴都默认"每张卡已知道自己在各维度的身份"——那正是 17 讲的。路径页建议先扫 §1-§2 建立几何直觉，轴读完再回来补完。
-- **[[02_megatron_moe_training_optimization_analysis]] 放在 [[14_megatron_ep_analysis]] 之后**。02 编号更靠前（段 0 capstone），但它是 MoE 的**选型总纲**，没有 14 的机制垫底读不出所以然。
+- **[[39_megatron_moe_training_optimization_analysis]] 放在 [[14_megatron_ep_analysis]] 之后**。它是 MoE 的**选型总纲**，没有 14 的机制垫底读不出所以然。
 - **三对"同一主题的两半"**：20/43（数值稳定 vs 作业韧性）、42/30（RL 实现层 vs 算法正确性）、44 的分词半边接 11、导出半边接站 2。此前它们分散在不同段位，读者不会知道要配对读。
 
 域索引开场改为指向路径页，并说清两者分工：索引是查询用的主题目录，路径页是学习用的顺序。
 
-**[[45_megatron_logits_distillation_analysis]]（模块 Q）**：`megatron/training/distillation/` 1906 行，此前**全域零覆盖**——它是 [[40_megatron_feature_tree_analysis]] 仪表盘上唯一无页可落的模块。离线蒸馏把教师前向从"每步一次"变成"整数据集一次"，代价是三件事：
+**[[38_megatron_logits_distillation_analysis]]（写入时为 45，模块 Q）**：`megatron/training/distillation/` 1906 行，此前**全域零覆盖**——它是 [[40_megatron_feature_tree_analysis]] 仪表盘上唯一无页可落的模块。离线蒸馏把教师前向从"每步一次"变成"整数据集一次"，代价是三件事：
 
-- **落盘量**：完整 logits 是 `[tokens × vocab]`，不可行；只存 top-K，索引按 **17 位打包**（低 16 位 `uint16` + 第 17 位 `bool`，`utils_logits.py:233-242`），比 `int32` 省约 45%。
-- **样本流一致性**：教师与学生是两次独立进程，中间只有文件。`compute_dataset_hash`（`:187`）给"样本流身份"算哈希，docstring 明确纳入的字段"exactly those that determine the global sample stream"——**刻意不含模型结构与并行度**，否则学生换个并行度就得重跑教师。
+- **缓存量**：完整 logits 是 `[tokens × vocab]`，不可行；只存 top-K，索引拆成低 16 位 `uint16` + 第 17 位 `bool`（`utils_logits.py:233-242`）。按未计容器/对齐/压缩的 tensor payload 是 3 byte/index，相对 `int32` 的 4 byte/index 约省 **25%**；冻结树只证明 hook 写到 pending buffer，tar flush 的调用接线未闭合。
+- **样本流声明一致性**：`compute_dataset_hash`（`:187-210`）纳入 seed、序列长度、训练样本数与 blend，但 `_blend_identifiers`（`:164-184`）只取 basename/权重，不校验底层数据内容；这是必要的声明检查，不是内容完整性证明。
 - **DP 升降配重映射**（`cached_logits_loss.py:139-161`）：落盘是确定的轮转顺序，升配按步长跨取、降配交错重建全局顺序。**正确性判据不是"读到了数据"而是"重建出的顺序与教师一致"**——顺序错了哈希校验也查不出来。
 
 **它长期不可见的原因本身值得记**：蒸馏的开关是 `arguments.py` 里**手写的 argparse 组**（`_add_logits_distillation_args`，`:5375`），不在被枚举的 14 个 config dataclass 内。配置面对账看不见它，文件面虽标了 🟡 却因无 flag 牵引一直没人认领——正是 40 号页那句"没有 flag 盯着的地方，正是页面容易漏的地方"的实例。
@@ -58,14 +160,14 @@ All source ingestions and significant wiki updates are logged here.
 - [[15_megatron_pp_schedulers_analysis]] 一处区间少收一行。
 
 **二、实质内容错误（4 处，更要紧）：**
-- **[[15_megatron_pp_schedulers_analysis]] 的 `16 · Ψ` 与它自己的拆解算式（2+4+4+4+4 = **18**）打架。** `16` 是 ZeRO 论文的 fp16 假设；Megatron 在 bf16 下**强制 fp32 梯度累加**（`megatron/training/arguments.py:1331-1333`），梯度是 4 字节。[[16_megatron_distributed_optimizer_analysis]] §12.2 早已按 18 立论，本页未同步。
-- **[[27_megatron_tp_fsdp_resharding_supplements_analysis]] §4 的 NTP 机制模型与源码相反。** 三条实证：spare rank 在 `nonuniform_tp.py:556-558` **直接 `sys.exit(0)`** 而非"待命"；NTP **全程不搬参数**，两次 A2A 搬的是**梯度**（`README_NONUNIFORM_TP.md:205-208`）；[[25_megatron_nonuniform_tp_analysis]] 把它定位为**冷重启**容错。已按 merge-over-coexist 把 §4 收缩为定位 + 指针，并保留三条被推翻记录。
-- **[[16_megatron_distributed_optimizer_analysis]] §18.5 标题与页面自身结论冲突**：原题「为什么 FSDP2 在 MoE 训练中重要」，但四条里前三条讲的是 MegatronFSDP。复核确证 `torch_fully_sharded_data_parallel.py` 全文 165 行、`expert` **零命中**，而 `fsdp/mcore_fsdp_adapter.py:63`/`:122-127` 确有。已改题并补三方对比与真实 locator。
+- **[[15_megatron_pp_schedulers_analysis]] 的 `16 · Ψ` 与它自己的拆解算式（2+4+4+4+4 = **18**）打架。** `16` 是 ZeRO 论文的 fp16 假设；Megatron 在 bf16 下**强制 fp32 梯度累加**（`megatron/training/arguments.py:1331-1333`），梯度是 4 字节。该机制现见 [[26_megatron_optimizer_step_internals_deepdive]] §4.2（当时在 16 §12.2），本页未同步。
+- **旧 `27_megatron_tp_fsdp_resharding_supplements_analysis` §4 的 NTP 机制模型与源码相反。** 三条实证：spare rank 在 `nonuniform_tp.py:556-558` **直接 `sys.exit(0)`** 而非"待命"；NTP **全程不搬参数**，两次 A2A 搬的是**梯度**（`README_NONUNIFORM_TP.md:205-208`）；[[25_megatron_nonuniform_tp_analysis]] 把它定位为**冷重启**容错。已按 merge-over-coexist 把 §4 收缩为定位 + 指针，并保留三条被推翻记录。
+- **[[16_megatron_distributed_optimizer_analysis]] §11.5（当时 §18.5）标题与页面自身结论冲突**：原题「为什么 FSDP2 在 MoE 训练中重要」，但四条里前三条讲的是 MegatronFSDP。复核确证 `torch_fully_sharded_data_parallel.py` 全文 165 行、`expert` **零命中**，而 `fsdp/mcore_fsdp_adapter.py:63`/`:122-127` 确有。已改题并补三方对比与真实 locator。
 - **[[21_megatron_fusion_operators_analysis]] §4.3「三个融合算子」与其下 5 行表（列头即「算子」）矛盾**：实测三个文件、**六个**算子类，表还漏了 `WeightedSquaredReLUFunction`。原文是**文件数与算子数两个口径混用**。
 
 **三、beat-2 补强（2 处）：**
 - [[20_megatron_comm_overlap_analysis]] §7 讲 CP 掩盖却从没说**为何选 AllGather 而不是 Ring P2P**（而 §1 的表自己列了两条路）。已补：`cp_comm_type` 实为**四选一且可逐层不同**；Ring P2P 省带宽但要**把环的步序编进 attention 的计算结构**，AllGather 用多一份 KV 换 attention **完全不必知道 CP 存在**——实现之薄可佐证（`_AllGatherComm` 只有发起与 wait 两件事）。判据标为本页重建。
-- [[33_megatron_vllm_weight_sync_analysis]] §5 原本只有一句"优先考虑兼容性而非性能"，正是规则点名的失败模式。已改写为「为什么走 Gather-Broadcast-Load 而不是 P2P」，判据是**拓扑耦合**（P2P 要求两侧拓扑可互推，而 verl 要接任意配置组合），并把 `TP × PP` 膨胀倍数标注为推算而非实测。
+- 历史页 `33_megatron_vllm_weight_sync_analysis` §5 原本只有一句"优先考虑兼容性而非性能"，正是规则点名的失败模式。已改写为「为什么走 Gather-Broadcast-Load 而不是 P2P」，判据是**拓扑耦合**（P2P 要求两侧拓扑可互推，而 verl 要接任意配置组合），并把 `TP × PP` 膨胀倍数标注为推算而非实测。该页已在 2026-09-03 Wave C2 退役，保留价值归 [[21_verl_weight_publication_analysis]] §8.1。
 
 **四、另修一个我自己的 bug**：配置契约脚注被插在"下一个 `###` 之前"，导致最后一个类的脚注落到下一小节甚至 `## Related Pages` 之后（4 页）。已改为**紧跟该类表格末行**，并对遗漏项过多者（如 `TransformerConfig` 266 字段）改为**归属分布摘要**而非逐一列 265 个名字。
 
@@ -84,7 +186,7 @@ All source ingestions and significant wiki updates are logged here.
 **做法不是逐条写散文，而是机械生成契约表。** 每个 config 类的字段名、类型、默认值与**字段级 docstring** 由 AST 直接从类体抽取——与 [[41_megatron_config_surface_analysis]] §2 讲的 `ArgumentGroupFactory` 生成 CLI 用的是**同一份声明、同一种抽法**（含那个二宽滑动窗口配对 `AnnAssign` 与裸字符串的技巧）。因此表格不可能与实际 flag 漂移；漂移了说明源码变了，下次重生成即可。表格之外的框架性说明按页手写，交代这批字段该怎么分组读、与该页正文机制的接缝在哪。
 
 **落点按内聚性划**：
-- **训练侧**按 config 类各归一页——`CheckpointConfig`（45 项）→ [[19_megatron_dist_checkpointing_analysis]]、`InferenceSetupConfig`（37）→ [[31_megatron_inference_engine_analysis]]、`LoggerConfig`+`ProfilingConfig`+两个 resilience 类（54）→ [[28_megatron_training_stability_observability_analysis]]、`TokenizerConfig`（16）→ [[44_megatron_tokenizer_and_export_analysis]]、`TrainingConfig`+`ValidationConfig`（22）→ [[43_megatron_job_resilience_analysis]]、`DistributedInitConfig`+`RNGConfig`（18）→ [[17_megatron_parallelism_orchestration_analysis]]、`SchedulerConfig`（14）→ [[16_megatron_distributed_optimizer_analysis]]。
+- **训练侧**按 config 类各归一页——`CheckpointConfig`（45 项）→ [[19_megatron_dist_checkpointing_analysis]]、`InferenceSetupConfig`（37）→ [[31_megatron_inference_engine_analysis]]、`LoggerConfig`+`ProfilingConfig`+两个 resilience 类（54）→ [[28_megatron_training_stability_observability_analysis]]、`TokenizerConfig`（写入时表列 16 项，当前完整 20 字段）→ [[11_megatron_dataset_analysis]]、`TrainingConfig`+`ValidationConfig`（22）→ [[27_megatron_job_resilience_analysis]]、`DistributedInitConfig`+`RNGConfig`（18）→ [[17_megatron_parallelism_orchestration_analysis]]、`SchedulerConfig`（14）→ [[16_megatron_distributed_optimizer_analysis]]。
 - **核心侧**按**源码段**路由到对应机制页：模型结构 70 条 → [[10_megatron_model_structure_analysis]]、精度与 CUDA Graph 29 条 → [[23_megatron_precision_cudagraph_fusion_analysis]]、MoE 长尾 21 条 → [[14_megatron_ep_analysis]]，其余分散到 16/21/22/31/13/28/17/20/12/19。
 
 **那 8 条「无既有页可落」的处置**：μP 一族 7 条落到 [[16_megatron_distributed_optimizer_analysis]]——它改变的不是模型**结构**而是**各参数组的学习率与初始化缩放**，作用点在 optimizer 的 param group 组织上（`get_mup_config_overrides` 与 `get_standard_config_overrides` 并列，由 `check_config_overrides_consistency` 校验）。该页同时标了一处**已知空白**：契约已登记，但机制未展开——这是目前该页最大的一处缺口，如实标注而非假装覆盖。`heterogeneous_block_specs` 归 10。
@@ -112,9 +214,9 @@ All source ingestions and significant wiki updates are logged here.
 **段 4 不做"一模块一页"**。实测显示 **150/158** 条未归属配置项能落进既有页的契约段——既有 28 页主题覆盖是全的、缺的是契约粒度，再开 17 页会大面积并行。只开总览页 + 实测零覆盖的 4 篇：
 
 - **[[41_megatron_config_surface_analysis]]** — 配置面的单一真相：`ArgumentGroupFactory` 用 **AST 滑动窗口**抽 dataclass 的字段级 docstring 当 help（那种 docstring 在运行时不可见，只能读源码）、bool 字段按默认值生成 `--no-*`/`--disable-*` 双名、`argparse_meta` 覆盖优先级；配置容器的 `_target_` 递归实例化与 `TargetAllowlist` 的 RCE 防护（默认只放行 5 个前缀）；**两条并存的 YAML 路径**语义不同（legacy `--yaml-cfg` 绕过 `validate_args`）。
-- **[[42_megatron_rl_runtime_analysis]]** — `megatron/rl` 实现层。核心是 rollout **提交/消费粒度**这个 off-policy 旋钮：`R/G/B` 三档配 `ReleaseState`，并发槽位由 `lag+1` 乘 `prompts_per_step` 再乘 `group_size` **推导而非配置**；GRPO 损失四项逐项对到源码（KL 用 $k_3$ 估计量而非直接 $d$，因为后者可正可负）；IS 权重修正的是**训练引擎与推理引擎算出的 logprob 不一致**——这在"同一批 GPU 扮演两个角色"的架构下不可避免。记下一处**真实的抽象泄漏**：RL 序列打包会按实际长度重算微批数，逼得 `training.py:4603-4612` 为它跳过"微批数只增不减"的断言。
-- **[[43_megatron_job_resilience_analysis]]** — 作业级韧性，与页28 的**数值级**稳定性互补。核心张力是"**要恢复就得先清理干净，但清理本身也可能挂住**"：清理带 10 秒超时；进程内重启前要用一次无用的 `all_reduce` **强制初始化 NCCL**，否则 `destroy_process_group` 终止不了在飞的 kernel（注释明写）。确定性模式必须在 argparse 阶段 setdefault 环境变量，因为 NCCL/cuBLAS/TE **只在首次使用时读一遍**——晚一步是**静默失效**。GPU sniff test 用**中位数与 MAD** 而非均值标准差判离群（离群点会把均值和标准差一起拉走），且阈值带下界。
-- **[[44_megatron_tokenizer_and_export_analysis]]** — 训练管线的两个端点，合计 50 文件此前一字未提，且**在配置面上不可见**——只有文件对账能暴露，这是功能树相对 config-coverage 轴的独立价值最好的例证。分词器的 `libraries × models` 两级正交分类（替代了会组合爆炸的一维展开）；导出的两条路径判据（分布式路径**不做重切分**，断言 `export_config` 必须为 None）。
+- **[[33_megatron_rl_runtime_analysis]]**（写入当时为 42 号）— `megatron/rl` 实现层。`rl_generation_lag` 控制 rollout 最多落后多少个 trainer batch；`R/G/B` 三档与 `ReleaseState` 只把 `lag+1` 个 batch slots 换算成 group/rollout capacity，并决定槽位在哪个完成状态归还。GRPO 损失四项逐项对到源码（KL 用非负的 $k_3$ 形式而非可正可负的逐样本 $d$）；训练与推理实现算出的 logprob **可能**不同，启用 IS 后可按两者比值修正，源码不保证差异必然出现。另记下一处**真实的抽象泄漏**：RL 序列打包会按实际长度重算微批数，逼得 `training.py:4598-4612` 为它跳过"微批数只增不减"的断言。
+- **[[27_megatron_job_resilience_analysis]]** — 作业级韧性，与页28 的**数值级**稳定性互补。核心张力是"**要恢复就得先清理干净，但清理本身也可能挂住**"：清理带 10 秒超时；进程内重启前要用一次无用的 `all_reduce` **强制初始化 NCCL**，否则 `destroy_process_group` 终止不了在飞的 kernel（注释明写）。确定性模式必须在 argparse 阶段 setdefault 环境变量，因为 NCCL/cuBLAS/TE **只在首次使用时读一遍**——晚一步是**静默失效**。GPU sniff test 用**中位数与 MAD** 而非均值标准差判离群（离群点会把均值和标准差一起拉走），且阈值带下界。
+- **[[11_megatron_dataset_analysis]] 与 [[37_megatron_trtllm_export_analysis]]**（写入时合为 44）— 训练管线的输入与输出边界，合计 50 文件此前一字未提；分词器的 library/model 两维分派现归 11，导出的两条路径判据与 engine-build 全链现归 37。
 
 **工具修复**：`check_coverage.py` 的 C2 与 `--generate` 匹配口径不一致——前者用下划线裸子串、后者认 CLI 的 kebab 形式，只写 `--tensor-model-parallel-size` 的页会被误判 stale_owner。已统一为同一匹配器（先补 `test_c2_uses_same_matcher_as_generate` 再改）。另按归属规则阶梯定夺了 81 条多页提及的 flag，C2/C3 归零。
 
@@ -141,7 +243,7 @@ All source ingestions and significant wiki updates are logged here.
 - **[[21_megatron_fusion_operators_analysis]] §8.10**：`moe_use_grouped_tensor` 把"可被 CUDA Graph 捕获的分组 GEMM"从 TE op-fuser **解耦**（#6847）。op-fuser 仍蕴含它，但现在可单开。"device-initiated"的落点是 `_apply_packed_bias` 不回读 host 上的 token 计数——**没有 host 同步才是能进图的硬前提**。
 - **[[23_megatron_precision_cudagraph_fusion_analysis]] §8.5/§8.6**：`CudaGraphModule.moe` 的能力边界由"drop-and-pad only"扩到"drop-and-pad **或 sync-free HybridEP**"（#6022），代价是 `validate_moe_cuda_graph_support` 的**六项与条件**；已捕获的 TE whole-MoE 图**溢出即硬失败、不支持动态回退**。另记 hybrid MTP 的跨层分组捕获（#6583）。
 - **[[22_megatron_memory_optimization_analysis]]**：paged stash 由"省显存的可选项"变成 whole-MoE 图的**必要条件**；§6.1 原写"容量因子给小了只是多跑一遍 forward-backward"在图打开时**不成立**。另修正 `paged_stash_reset` 三态段——它不是纯漂移，#6022 把状态推进与缓冲准备拆成了两步。
-- **[[02_megatron_moe_training_optimization_analysis]]**：硬边界表补两行，并点出本轮的结构性变化——**时间窗口所有权开始反向约束前三种所有权**：图捕获不再是最后叠加的一层加速，而是会回头钉死 token/专家参数/激活所有权选型的决定。
+- **[[39_megatron_moe_training_optimization_analysis]]**：硬边界表补两行，并点出本轮的结构性变化——**时间窗口所有权开始反向约束前三种所有权**：图捕获不再是最后叠加的一层加速，而是会回头钉死 token/专家参数/激活所有权选型的决定。
 - **[[10_megatron_model_structure_analysis]]**：Hash MoE 层阈值可显式传入（#6704）——`moe_n_hash_layers` 数的是"前几个 MoE 层"而 router 只有"第几层"，hybrid 模型下两者不重合。另记 hybrid MTP 分组捕获。
 - **[[14_megatron_ep_analysis]]**：whole-MoE 图一旦打开，§11.2 的 dispatcher 选型树**只剩 flex/HybridEP 一条路**。
 - **[[18_megatron_recompute_analysis]]**：hybrid recompute 的 kwarg 收窄改用显式能力标志 `supports_hybrid_recompute_kwargs`，注释明写动因是**避免导入 `hybrid_block` 造成循环导入**。
@@ -276,7 +378,7 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 
 **新增并重写 [[01_megatron_architecture_analysis]]**：基于 `NVIDIA/Megatron-LM@71092579…`（`dev`，2026-08-27），先用“任务入口 → 训练生命周期 → 并行执行 → 模型组合 → 计算通信原语”五层静态结构回答整个系统由什么搭成，逐层说明核心能力、输入产出、责任边界和层间契约；再用状态生命周期回答它怎样运行：用户意图依次变成配置、进程组、rank-local 资源与可恢复数据进度，schedule 完成 global batch 的分布式执行，optimizer step 才提交训练状态。页面补入 typed config、ModelBuilder、ProcessGroupCollection 与 pipeline 迁入 core 的提交历史。分层编排方法参考 vLLM 官方架构概览，但所有 Megatron-LM 层次和 locator 均从固定源码基线重新核对。
 
-**编号与 MoE 内容调整**：原 `01_megatron_moe_training_optimization_analysis.md` 改为 [[02_megatron_moe_training_optimization_analysis]]。第二轮不再保留原 1091 行技术目录：删除无可靠基线的固定规模配置、“Overlap 是免费的午餐”等无约束结论，以及重复的代码/ASCII/配置清单；新页沿 `route → dispatch → expert compute → combine` 解释 token 状态转移，并用 token、专家参数、激活/优化器状态、时间窗口四种所有权连接现有专题。全库入链已改指新文件名；历史 changelog 中记录旧文件名的反引号文本保留，活动 wikilink 改到 02。
+**编号与 MoE 内容调整**：原 `01_megatron_moe_training_optimization_analysis.md` 曾改为 `02_megatron_moe_training_optimization_analysis.md`，当前权威页为 [[39_megatron_moe_training_optimization_analysis]]。第二轮不再保留原 1091 行技术目录：删除无可靠基线的固定规模配置、“Overlap 是免费的午餐”等无约束结论，以及重复的代码/ASCII/配置清单；新页沿 `route → dispatch → expert compute → combine` 解释 token 状态转移，并用 token、专家参数、激活/优化器状态、时间窗口四种所有权连接现有专题。
 
 **写法调整**：代码只作为结论的证据，不再作为正文骨架；折叠代码块后仍可从“状态由谁拥有、为什么按此顺序变化、替代方案输在哪里、代价和边界是什么”理解机制。文件长度不作为拆分判据，是否拆分由中心论点、概念所有权与阅读连续性决定。
 
@@ -345,7 +447,7 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 
 **Type**: 新增 1 页 + 合并去重 2 页 + 域索引
 
-**为什么要提**：`megatron/core/distributed/fsdp/src/megatron_fsdp/` 在源码里是个 **11321 行、16 个文件的独立子系统**，wiki 里却只是「[[16_megatron_distributed_optimizer_analysis]] 的一节」加「[[27_megatron_tp_fsdp_resharding_supplements_analysis]] 的一节」。按「一个概念一页、宁拆勿合」提为独立权威页 [[36_megatron_fsdp_analysis]]，基线 `NVIDIA/Megatron-LM@71092579…`（`dev`，2026-08-27）。
+**为什么要提**：`megatron/core/distributed/fsdp/src/megatron_fsdp/` 在源码里是个 **11321 行、16 个文件的独立子系统**，wiki 里却只是「[[16_megatron_distributed_optimizer_analysis]] 的一节」加「旧 `27_megatron_tp_fsdp_resharding_supplements_analysis` 的一节」。按「一个概念一页、宁拆勿合」提为独立权威页 [[36_megatron_fsdp_analysis]]，基线 `NVIDIA/Megatron-LM@71092579…`（`dev`，2026-08-27）。
 
 **页号 36 的由来**：段 1（10–19）与段 2（20–29）已排满——26 号是 2026-08-01 PP 三页合并空出的号、域索引明写「不重新分配」，复用会让旧引用产生歧义。按 `CLAUDE.md`「某段超出容量时占用相邻空段，并在该目录 index.md 的段位表里注明」取段 3 首个空号，理由已写进索引段位说明。
 
@@ -360,7 +462,7 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 
 - **吸收的独有增量**：`no_shard`（ZeRO-0）的收敛性陷阱（梯度统计只能在 `model_parallel_group` 上规约，否则 grad norm 虚高）、HSDP 缺省组合（不传 `ddp_config` 即 `optim_grads_params` 内层 + `no_shard` 外层）、grouped-expert 分桶的 #5013 归属、以及与激活重计算的协同（整层重算时参数只 all-gather 一次、重算与反向共用，`megatron_fsdp.py:116-119`）。吸收时发现新页的 locator **比原页更准**（用 `:250-264`／`:1068-1075` 而非原来的 `:250-255`／`:1071`），按新页为准。
 - **入链**：全库扫描确认除新页页头外**没有任何外部引用**指向被并的三处小节，无需改指。
-- **替换**：[[16_megatron_distributed_optimizer_analysis]] §18.2、§18.6 与 [[27_megatron_tp_fsdp_resharding_supplements_analysis]] §3 的正文换成指向新页的一行指引（标题保留作占位，避免同页后续编号连锁变动）。16 号页 −68 行、27 号页 −49 行。
+- **替换**：[[16_megatron_distributed_optimizer_analysis]] §11.2、§11.6（当时 §18.2、§18.6）与旧 `27_megatron_tp_fsdp_resharding_supplements_analysis` §3 的正文换成指向新页的一行指引（标题保留作占位，避免同页后续编号连锁变动）。16 号页 −68 行、27 号页 −49 行。
 - **对比分析按约定全部保留**：§18 三方对比框架、§18.1 概览表、§18.3 TorchFSDP2 详析、§18.4 选型矩阵、§18.5「为什么 FSDP2 在 MoE 训练中重要」一律留在 16 号页原地。
 
 **顺带确认的一条事实**：`TorchFullyShardedDataParallel`（FSDP2 路径）在新基线下 `expert|Expert` **整体零命中**，没有任何 EP 专门处理；MegatronFSDP 侧的对应实现在 `megatron_fsdp.py:296`/`:351`。
@@ -405,22 +507,22 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 
 1. **[[35_deepseek_v4_context_parallel_analysis]] 自称的"核心贡献"整体反转。** 该页的卖点是「CSA/HCA 两阶段 CP 在代码里尚未实现，审计未发现 isend/irecv/all_gather」。新基线下 `experimental_attention_variant/` 从 10 个文件涨到 **45 个**，多出 `csa_utils/` 子包；两阶段 CP 由 **#5087** 实现：`_LeftBoundaryExchange`（`csa_utils/cp_utils.py:124`）用 `dist.batch_isend_irecv` 做前反向边界交换（`:156`/`:184`），入口 `exchange_cp_boundary_hidden`（`:201`）。§5.5 四条 gap、§8.3、§九 特征 4 随之作废。
 2. **[[18_megatron_recompute_analysis]] 的「历史更正」自己过期了，且会误导配置。** 该页曾正确指出 `gdn_norm_out` 全仓已不存在（`ee3f1ff` 下确为 0 命中）；**#6088 把它加了回来**（新基线 8 处命中），现在 `gdn` 与 `gdn_norm_out` 并存且互斥，照旧说法配置会失败。
-3. **MoE aux/z-loss 的 `× tp_cp_group.size()` 预乘被上游判定为不正确并改掉**（#5542/#4359）。源码注释原话：THD padding 或动态 CP 下各 rank 有效 token 数不同，`local_num_tokens * group_size is not generally correct`。现改为沿 `aux_loss_scale_reduce_groups` 逐组 all_reduce 后再乘（`router.py:598-624`）。影响 [[02_megatron_moe_training_optimization_analysis]] 与 [[28_megatron_training_stability_observability_analysis]]。
+3. **MoE aux/z-loss 的 `× tp_cp_group.size()` 预乘被上游判定为不正确并改掉**（#5542/#4359）。源码注释原话：THD padding 或动态 CP 下各 rank 有效 token 数不同，`local_num_tokens * group_size is not generally correct`。现改为沿 `aux_loss_scale_reduce_groups` 逐组 all_reduce 后再乘（`router.py:598-624`）。影响 [[39_megatron_moe_training_optimization_analysis]] 与 [[28_megatron_training_stability_observability_analysis]]。
 4. **flex dispatcher 多了第四个后端 `ncclep`**（`transformer_config.py:972`、`_NCCLEPManager` @ `token_dispatcher.py:1637`），带 `moe_ncclep_static_shape`（固定接收缓冲、无 D2H 同步）使 MoE 的 all-to-all **可被 CUDA Graph 捕获**。[[14_megatron_ep_analysis]] 的「三种 dispatcher」对比表与选型树枚举过时。
 5. **两处上游自己回退/复活**：#5170 移除的 checkpoint 期显存回收 workaround 被 **#5366 整体 revert**，代码原样活着（影响 [[22_megatron_memory_optimization_analysis]]）；GDN 的「单次统一 A2A」被回退的结论也反转了，它现在是默认路径（影响 [[21_megatron_fusion_operators_analysis]]）。
 6. **HybridEP 的 THD 自动补齐被 #5668 取消**，现在只认显式开关 `moe_hybridep_pad_variable_tokens`。
 
-**机制被删除**：`broadcast_to_pp_group`（#4226，`ee3f1ff` 下 3 处命中 → 新基线 0；[[29_megatron_packed_dataset_dynamic_cp_analysis]] 的九步流水线第⑦步与 [[11_megatron_dataset_analysis]] §3.3 受影响，**且这次删除发生在 `232c478d4` 之前，上一轮重定基线时就该抓到、漏了**）、`TensorReusePool`（#5451，改引用计数）、`"dynamic_context_parallel is not supported with MLA yet"` 断言（#4226）、`optimizer_state_offloader.py`（#6244，改名 `chunked_optimizer_state_offload.py`）、`ssm/gated_delta_net.py`（#6088，拆成包）。
+**机制被删除**：`broadcast_to_pp_group`（#4226，`ee3f1ff` 下 3 处命中 → 新基线 0；[[29_megatron_packed_dataset_dynamic_cp_analysis]] 的九步流水线第⑦步与 [[11_megatron_dataset_analysis]] §6.3 受影响，**且这次删除发生在 `232c478d4` 之前，上一轮重定基线时就该抓到、漏了**）、`TensorReusePool`（#5451，改引用计数）、`"dynamic_context_parallel is not supported with MLA yet"` 断言（#4226）、`optimizer_state_offloader.py`（#6244，改名 `chunked_optimizer_state_offload.py`）、`ssm/gated_delta_net.py`（#6088，拆成包）。
 
 **揪出的原始撰写错误（不是漂移，是从来就错）**
 
 - **[[20_megatron_comm_overlap_analysis]] §5.4.1 的代码片段是编造的**：`self.output_grads`、`delay_grads_release`、`manual_release_grads`、`untyped_storage().resize_(0)` 四处在 `71092579`／`232c478d4`／`ee3f1ff` **三个基线下全域零命中**。真实的 `backward_impl` 只做 `default_backward_func(...)` 后 `return grads`，`backward_dw` 只切流加 nvtx。"dX/dW 分离、dW 延后"这半句成立，"手工保存梯度再手工释放显存"那半句不成立。
-- **[[16_megatron_distributed_optimizer_analysis]] §13.1** 把 `_check_module_parameter_types` 算作 `TorchFullyShardedDataParallel` 的 EP 处理手段——该符号在那个文件里**新旧基线都不存在**，它是 `MegatronFSDP` 的方法；新基线下该文件 `expert|Expert` 整体零命中，FSDP2 路径根本没有 EP 专门处理。
+- **[[16_megatron_distributed_optimizer_analysis]] §11.3（当时 §13.1）** 把 `_check_module_parameter_types` 算作 `TorchFullyShardedDataParallel` 的 EP 处理手段——该符号在那个文件里**新旧基线都不存在**，它是 `MegatronFSDP` 的方法；新基线下该文件 `expert|Expert` 整体零命中，FSDP2 路径根本没有 EP 专门处理。
 - **`paged_stash.py:1247-1267` 从来越界**：该文件在 `232c478d4` 与新基线下都只有 1240 行。
 - **[[13_megatron_cp_analysis]] 的「`full_iteration` 与 `cu_seqlens` 互斥」两层都不成立**：被引的两处守卫分别是关于 `--no-check-for-nan-in-loss-and-grad` 与 `--cuda-graph-modules`，整段里 `cu_seqlens` 出现 0 次——这是 2026-08-27（十三）那一轮补 locator 时引错的，当时只核了"行存在"没核"它证明什么"；而且 #4359 已给 THD 变长训练加上 CUDA Graph 支持，该论断本身也过期了。
 - 另有若干旧基线下就指错文件的（`batch_p2p_comm` 一直写成 `transformer_config.py`、实为 `model_parallel_config.py`；`drain_embedding_wgrad_compute` 指的是调用点非定义处；`validate_access_integrity` 是开关参数不是函数）。
 
-**[[33_megatron_vllm_weight_sync_analysis]] 定出了基线**：它分析的是 `volcengine/verl`，不适用 Megatron 基线。沿本机 verl 检出历史回溯，钉为 `volcengine/verl@ab0705220a95952219111409d8f971872002c193`（`main`，2025-12-04）——这是**本页每一处引用都仍能解析的最新 commit**，紧随其后的 `fd893c78` 就删掉了 `vllm_rollout_spmd.py`。全页约 25 条引用据此补齐行号，并标注该调用链在 verl 当前 HEAD 已不存在。
+**历史页 `33_megatron_vllm_weight_sync_analysis` 定出了基线**：它分析的是 `volcengine/verl`，不适用 Megatron 基线。沿本机 verl 检出历史回溯，钉为 `volcengine/verl@ab0705220a95952219111409d8f971872002c193`（`main`，2025-12-04）——这是**该页每一处引用都仍能解析的最新 commit**，紧随其后的 `fd893c78` 就删掉了 `vllm_rollout_spmd.py`。全页约 25 条引用据此补齐行号，并标注该调用链在 verl 当前 HEAD 已不存在。该页后于 Wave C2 退役，演进对照归 [[21_verl_weight_publication_analysis]] §8.1。
 
 **索引与 radar**：域索引改写为"全域统一基线 `71092579`"，并说明被推翻的结论是就地标注而非删除。`docs/radar/watchlist.yaml` 的 `kb_baseline` 同步推进。
 
@@ -446,11 +548,11 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 
 | 页 | 页头基线 | 原行号 | 实际 | 处理 |
 |---|---|---|---|---|
-| [[02_megatron_moe_training_optimization_analysis]] | B | NVFP4 `:946` | B 下是 class docstring | 改 `:1020-1045`（`# NVFP4 uses a dual-buffer layout…` → `_compute_nvfp4_packed_layout`） |
+| [[39_megatron_moe_training_optimization_analysis]] | B | NVFP4 `:946` | B 下是 class docstring | 改 `:1020-1045`（`# NVFP4 uses a dual-buffer layout…` → `_compute_nvfp4_packed_layout`） |
 | 同上 | B | MXFP8 `:1097` | **B 下正确** | 未改 |
 | [[16_megatron_distributed_optimizer_analysis]] | A | NVFP4 `:946-963` / MXFP8 `:1097-1113` | 后者正是 **B** 的 MXFP8 区间 | 改 A 的真实区间 `:964-989` / `:1036-1055` |
 
-其余已修：[[22_megatron_memory_optimization_analysis]] 三处（`paged_stash.py:587`→`:632`+`:1125-1128`、`param_and_grad_buffer.py:1097-1113`→`:1036-1055`、`fp8_utils.py:594`→`:513-529`，后者 `:594` 实为 `return fp8_recipe`），并顺带修了同节另外三处（`:946-963`→`:964-989`、`:357`→`:393-401`、`training.py:~2855`→`:2775-2781`）；[[16_megatron_distributed_optimizer_analysis]] 的 fsdp `:1404`→`:1407`、`optimizer/__init__.py:776`→`:777-780`；[[20_megatron_comm_overlap_analysis]] 的 `fused_a2a.py:135`→`:92-97`（判定该段描述 A 的形态，依据是紧邻代码块自标 `:69-138` 与 A 吻合）；[[02_megatron_moe_training_optimization_analysis]] 的 `:418`→`:352`（`start_param_sync` 才是入口）、`:357`→`:413-420`；[[10_megatron_model_structure_analysis]] 的 `training.py:576`→`:516-529`；两页的 `megatron_fsdp.py:105`→`:106`（105 是空行）。
+其余已修：[[22_megatron_memory_optimization_analysis]] 三处（`paged_stash.py:587`→`:632`+`:1125-1128`、`param_and_grad_buffer.py:1097-1113`→`:1036-1055`、`fp8_utils.py:594`→`:513-529`，后者 `:594` 实为 `return fp8_recipe`），并顺带修了同节另外三处（`:946-963`→`:964-989`、`:357`→`:393-401`、`training.py:~2855`→`:2775-2781`）；[[16_megatron_distributed_optimizer_analysis]] 的 fsdp `:1404`→`:1407`、`optimizer/__init__.py:776`→`:777-780`；[[20_megatron_comm_overlap_analysis]] 的 `fused_a2a.py:135`→`:92-97`（判定该段描述 A 的形态，依据是紧邻代码块自标 `:69-138` 与 A 吻合）；[[39_megatron_moe_training_optimization_analysis]] 的 `:418`→`:352`（`start_param_sync` 才是入口）、`:357`→`:413-420`；[[10_megatron_model_structure_analysis]] 的 `training.py:576`→`:516-529`；两页的 `megatron_fsdp.py:105`→`:106`（105 是空行）。
 
 **④ 一处消歧成功**：[[23_megatron_precision_cudagraph_fusion_analysis]] 的 `quantization/utils.py` 上一轮因"两个候选都不含 fp4"而无法判定。本轮改搜页面真正的承重符号 `get_quant_config_or_none`，在两个基线下都唯一解析到 `megatron/core/quantization/utils.py:9`，另一候选是 MXFP8 GEMM 派发、与本页无关。
 
@@ -504,13 +606,13 @@ DeepSeek 专属 MLA/MoE 叙事、语法表、机械函数索引与超大交互�
 
 - 原写 `ee3f1ff` / `232c478d4` 的：机械扩成 40 位。
 - **无基线的 7 篇**：取 3–11 条带行号的引用，分别在 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（A，2026-05-19）与 `232c478d43ce2f8b4c8db3507d3623fa82f55823`（B，2026-06-16）下 `git show` 逐条核对——
-  - [[02_megatron_moe_training_optimization_analysis]] → **B**（5/5 只在 B 命中：`transformer_config.py:881` 的 `moe_flex_dispatcher_backend`、`token_dispatcher.py:1470` 的 `_DeepepV2Manager`、`fused_a2a.py:90` 的 `get_elastic_buffer` 等，在 A 处均为空行或无关代码）
+  - [[39_megatron_moe_training_optimization_analysis]] → **B**（5/5 只在 B 命中：`transformer_config.py:881` 的 `moe_flex_dispatcher_backend`、`token_dispatcher.py:1470` 的 `_DeepepV2Manager`、`fused_a2a.py:90` 的 `get_elastic_buffer` 等，在 A 处均为空行或无关代码）
   - [[20_megatron_comm_overlap_analysis]] → **A**（11 处里 8 处只在 A 命中，如 `model_parallel_config.py:196` 在 A 是 `tp_comm_overlap`、在 B 是 `--te-rng-tracker`）
   - [[21_megatron_fusion_operators_analysis]] → **A**（13 处引用在 A/B 逐字节相同、不具区分度，改用 `git diff A..B -- core/fusions/`：只有 `fused_mhc_kernels.py` 变化 964→3397 行，而本页描述的是 A 的形态）
   - [[22_megatron_memory_optimization_analysis]] → **A**（`paged_stash.py:129` 在 A 是 Triton kernel，B 处该文件已被 #5003 迁走）
   - [[25_megatron_nonuniform_tp_analysis]] → **A，但证据不具区分度**：9 处引用在 A 与 B 完全一致，取 A 的理由（同批一致 + frontmatter 日期）**已如实写进页头**
   - [[32_megatron_tflops_analysis]] → **A**（`num_floating_point_operations` 在 A 是双参签名、B 已改四参；页内伪代码逐 token 形式只在 A 成立）
-  - [[33_megatron_vllm_weight_sync_analysis]] → **未确定**：它分析的是 `volcengine/verl`，locator 全是 `verl/...` 且无行号；本机 verl 检出 `8a694930` 下其中两个文件已不存在，无法反推。页头如实写「仓库=volcengine/verl、基线未确定」，**未硬钉 Megatron 基线**。
+  - 历史页 `33_megatron_vllm_weight_sync_analysis` → **未确定**：它分析的是 `volcengine/verl`，locator 全是 `verl/...` 且无行号；本机 verl 检出 `8a694930` 下其中两个文件已不存在，无法反推。页头如实写「仓库=volcengine/verl、基线未确定」，**未硬钉 Megatron 基线**。后续已补钉旧 Verl 基线，并于 Wave C2 退役。
 
 **两处矛盾，由协调者复核后处理**
 

@@ -8,8 +8,9 @@ title: "Megatron-LM 并行编排与进程组构造深度解析(Capstone)"
 > **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；该增量只触及 20 个 `megatron/` 文件，未改动本页主线的 `parallel_state.py` / `process_groups_config.py` / `hyper_comm_grid.py`，本页落在改动文件（`training.py`，因 DSA FLOPs PR #6753 前插 184 行）上的引用已在新基线下逐条打开重核，均为纯行号漂移。
 > **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
 > 核心文件:`megatron/core/parallel_state.py`(2266 行)、`megatron/core/process_groups_config.py`(718 行)、`megatron/core/hyper_comm_grid.py`(443 行)
-> 配套阅读:`15_megatron_pp_schedulers_analysis.md`、`14_megatron_ep_analysis.md`、`12_megatron_tp_analysis.md`、`13_megatron_cp_analysis.md`、`16_megatron_distributed_optimizer_analysis.md`
-> 定位:**这是收口文档**。前五份各讲一个并行轴,都默认了"每张 GPU 同时属于 TP/PP/CP/EP/DP 的某个组"。本文讲清楚这套**几何**是怎么从 `world_size` 个裸 GPU 构造出来的。
+> **学习前置**：先读 [[03_megatron_parallelism_geometry_quickstart]]，再按需要阅读 TP/CP/EP/PP/DP 轴页面。
+> **回答的问题**：Megatron 如何用一个正交分组求解器构造进程组，并在 `parallel_state`、`ProcessGroupCollection` 和 `HyperCommGrid` 三种抽象中传递所有权？
+> **不覆盖**：rank 坐标的首次心算归 03；各并行轴的数据/通信机制归 12–16。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
 > **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
 
@@ -21,7 +22,7 @@ title: "Megatron-LM 并行编排与进程组构造深度解析(Capstone)"
 
 前五份文档反复出现一个隐含前提:某张卡"在 TP 组里"、"在 PP 组里"、"在 EP 组里"……但**一张物理 GPU 怎么会同时属于 5 个组?这些组的成员是谁?谁来构造?** —— 这就是"并行编排"。
 
-一张 GPU 的全局编号 `global_rank ∈ [0, world_size)`。编排层的工作:把这个一维编号**解释成一个 5 维坐标** `(tp_rank, cp_rank, ep_rank, dp_rank, pp_rank)`,再据此为每个轴建立 `torch.distributed.ProcessGroup`。前五份文档里所有 `tp_group` / `pp_group` / `ep_group` / `dp_cp_group` / `pg_collection` 全部源于此。
+一张 GPU 的全局编号 `global_rank ∈ [0, world_size)`。编排层不会把 dense 与 expert 强塞进一个五维坐标，而是维护两套因子分解：attention/dense 侧是 `(tp_rank, cp_rank, dp_rank, pp_rank)`，expert 侧是 `(etp_rank, ep_rank, edp_rank, pp_rank)`；两侧共享同一段 global ranks，并要求 PP groups 对齐（`megatron/core/parallel_state.py:769-811`）。前五份文档里的 `tp_group` / `pp_group` / `ep_group` / `dp_cp_group` / `pg_collection` 都由这两套分解物化而来；坐标心算由 [[03_megatron_parallelism_geometry_quickstart]] 负责。
 
 ### 1.2 三层抽象(历史演进)
 
@@ -35,56 +36,9 @@ Megatron 的进程组管理有三套实现,层层递进:
 
 三者并存,语义等价(`HyperCommGrid` 的 docstring 明确给出与 `initialize_model_parallel` 的等价示例)。
 
-### 1.3 记号约定
+### 1.3 本页从哪里开始
 
-| 符号 | 含义 |
-|------|------|
-| `world_size` | 总 GPU 数 |
-| `tp/cp/ep/dp/pp` | 五个并行轴的并行度 |
-| `order` | 轴布局字符串,默认 `"tp-cp-ep-dp-pp"` |
-| `global_rank` | GPU 的全局一维编号 |
-| stride | 某轴在 `global_rank` 分解式里的步长(prefix product) |
-
-### 1.4 一张卡的 5 维坐标
-
-`world_size` 个 GPU 要同时承载 5 个正交的并行轴。把它们看成一个 5 维超长方体(hyperrectangle):
-
-```
-world_size = tp · cp · ep · dp · pp
-每张 GPU ←→ 5 维坐标 (tp_rank, cp_rank, ep_rank, dp_rank, pp_rank)
-```
-
-"正交"的含义:沿任一轴移动,其余 4 维坐标不变。于是:
-- **TP 组** = 固定 `(cp,ep,dp,pp)`、遍历 `tp_rank` 的那组卡。
-- **DP 组** = 固定 `(tp,cp,ep,pp)`、遍历 `dp_rank` 的那组卡。
-- ……每个轴一组,共 5 类组(及各种组合组,如 `dp_cp`、`tp_ep`)。
-
-### 1.5 `order` 字符串:决定物理布局
-
-5 维坐标怎么映射回一维 `global_rank`?由 `order` 字符串决定。默认 `order = "tp-cp-ep-dp-pp"`,含义是:
-
-```
-global_rank = tp_rank·s_tp + cp_rank·s_cp + ep_rank·s_ep + dp_rank·s_dp + pp_rank·s_pp
-
-其中步长 s 是 order 各轴大小的"前缀积":
-  s_tp = 1                          ← order 第一个轴,步长最小
-  s_cp = tp
-  s_ep = tp·cp
-  s_dp = tp·cp·ep
-  s_pp = tp·cp·ep·dp                ← order 最后一个轴,步长最大
-```
-
-**这就是一切"TP 留机内、PP 跨机"建议的量化根源**:
-- `order` 的**第一个轴(TP)步长 = 1** → 同一 TP 组的卡 `global_rank` **相邻** → 落在**同一节点**(NVLink 域)。
-- `order` 的**最后一个轴(PP)步长最大** → 同一 PP 组的卡 `global_rank` 隔得最远 → **跨节点**(IB)。
-
-```
-order = "tp-cp-ep-dp-pp"
-物理邻近度:  TP(最近,NVLink) → CP → EP → DP → PP(最远,IB)
-              └─ 通信最密集的放最近 ──┘   └─ 通信最稀疏/可重叠的放最远 ─┘
-```
-
-通信越频繁、越在关键路径上的轴(TP)放 `order` 越靠前;通信越稀疏、越能重叠的轴(PP)放越靠后。这是 `order` 的设计原则。
+`global_rank` 如何展开成坐标、`order` 如何影响 stride，以及 dense 与 expert 为什么要分开算，统一由 [[03_megatron_parallelism_geometry_quickstart]] 负责。本页从“坐标模型已经成立”开始，只分析 Megatron 怎样生成、创建并传递真实 `ProcessGroup`。
 
 ---
 
@@ -243,6 +197,8 @@ tp_group = parallel_state.get_tensor_model_parallel_group()    # 全局取,无�
 ```
 
 `megatron/core/parallel_state.py` 提供几十个 `get_*` / `is_*` / `get_*_rank` / `get_*_world_size`,以及 PP 专用的 `is_pipeline_first/last_stage`、`get_pipeline_model_parallel_next/prev_rank`(PP 文档 P2P 通信的环形邻居就来自这里)。
+
+这里的“建好”有一条可逐行追踪的物化链。以 `dp-cp` 为例，`decoder_rank_generator.get_ranks('dp-cp')` 先枚举成员名单；初始化循环把每份名单传给 `create_group(...)`；命中当前 global rank 时，再把返回 handle、Gloo handle 和 rank 列表写入 `_DATA_PARALLEL_GROUP_WITH_CP*` 模块全局（`megatron/core/parallel_state.py:844-863`）。`get_data_parallel_group(with_context_parallel=True)` 随后断言该全局 handle 已初始化并原样返回（`:1482-1493`）；`ProcessGroupCollection.use_mpu_process_groups()` 再把字段名映射到这些 `parallel_state.get_*_group()` getter，实际调用 getter 构造 `init_dict`，最后返回 `cls(**init_dict)`（`megatron/core/process_groups_config.py:169-260`）。因此完整 hop 是 `get_ranks → create_group → 当前 rank 的全局 handle → getter → ProcessGroupCollection 字段`，不是“算出 rank 列表”就已经完成依赖注入。
 
 - **优点**:简单,任意深度的代码不必层层传参。
 - **缺点**:全局可变状态;一个进程只能有一套并行配置;多模型/测试不友好。
@@ -436,7 +392,7 @@ MoE 侧:
 | `flight_recorder_include_only_active` | `bool` | `True` | Include only active operations in flight recorder dumps (TORCH_INCLUDE_ONLY_ACTIVE). | `:151` |
 | `flight_recorder_extra_dump_on_exec` | `bool` | `True` | Enable extra flight recorder dump on execution (TORCH_NCCL_EXTRA_DUMP_ON_EXEC). | `:154` |
 
-> 该类共 21 个字段，本表收 15 项；其余 6 项已在别处归属：`align_grad_reduce` → [[20_megatron_comm_overlap_analysis]]；`local_rank`、`high_priority_stream_groups` → 本页他处；`use_megatron_fsdp` → [[36_megatron_fsdp_analysis]]；`use_torch_fsdp2` → [[16_megatron_distributed_optimizer_analysis]]；`disable_jit_fuser` → [[21_megatron_fusion_operators_analysis]]。
+> 该类共 21 个字段，本表收 15 项；其余 6 项已在别处归属：`align_grad_reduce` → [[20_megatron_comm_overlap_analysis]]；`local_rank`、`high_priority_stream_groups` → 本页他处；`use_megatron_fsdp`、`use_torch_fsdp2` → [[36_megatron_fsdp_analysis]]；`disable_jit_fuser` → [[21_megatron_fusion_operators_analysis]]。
 
 
 
@@ -450,7 +406,7 @@ MoE 侧:
 
 > 该类共 4 个字段，本表收 3 项；其余 1 项已在别处归属：`te_rng_tracker` → [[23_megatron_precision_cudagraph_fusion_analysis]]。
 
-> **接缝**：`nccl_communicator_config_path` 指向的 YAML 由本页 §正文讲的 `get_nccl_options` 消费，是「按进程组分别配 NCCL」的入口；`distributed_timeout_minutes` 则与 [[43_megatron_job_resilience_analysis]] §2.2 的自适应超时是两套独立的超时机制——前者是 torch.distributed 的建链超时，后者是 NVRx 的心跳超时。
+> **接缝**：`nccl_communicator_config_path` 指向的 YAML 由本页 §正文讲的 `get_nccl_options` 消费，是「按进程组分别配 NCCL」的入口；`distributed_timeout_minutes` 则与 [[27_megatron_job_resilience_analysis]] §2.2 的自适应超时是两套独立的超时机制——前者是 torch.distributed 的建链超时，后者是 NVRx 的心跳超时。
 
 ---
 
@@ -468,7 +424,7 @@ MoE 侧:
 |---|---|---|---|---|
 | `use_te_rng_tracker` | `bool` | `field(default=False, metadata={'argpa…` | If true, uses RNG state tracker in TransformerEngine if exists. Required for CUDA graphs support. | `:248` |
 
-> 该类共 74 个字段，本表收 1 项；其余 73 项已在别处归属：主要归 [[15_megatron_pp_schedulers_analysis]] 16 项、[[12_megatron_tp_analysis]] 10 项、[[20_megatron_comm_overlap_analysis]] 10 项、[[22_megatron_memory_optimization_analysis]] 6 项，另散见 13 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+> 该类共 74 个字段，本表收 1 项；其余字段的唯一机制 owner 见 `docs/coverage/megatron-lm.yaml`。
 
 
 
@@ -482,7 +438,10 @@ MoE 侧:
 
 ## Related Pages
 
-- [[15_megatron_pp_schedulers_analysis]] · [[14_megatron_ep_analysis]] · [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[16_megatron_distributed_optimizer_analysis]]
-- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
-
-
+- [[03_megatron_parallelism_geometry_quickstart]] —— 本页实现机制所依赖的 rank 坐标与组归属入门。
+- [[12_megatron_tp_analysis]] —— TP group 被张量切分和 collective 消费的方式。
+- [[13_megatron_cp_analysis]] —— CP 与组合 `dp-cp` group 的语义。
+- [[14_megatron_ep_analysis]] —— 两套 RankGenerator 在 MoE folding 中承担的角色。
+- [[15_megatron_pp_schedulers_analysis]] —— PP group 怎样被流水线调度器消费。
+- [[16_megatron_distributed_optimizer_analysis]] —— DP group 怎样驱动梯度和参数分片同步。
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 索引]] —— 回到本域按主题检索页面。

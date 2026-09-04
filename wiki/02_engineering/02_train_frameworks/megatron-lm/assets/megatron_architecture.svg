@@ -1,0 +1,204 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 980" width="100%" role="img" aria-label="Megatron-LM 静态软件分层与能力框图">
+  <style>
+    text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+    .canvas{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+    .title{font-size:24px;font-weight:700;fill:#1F2430}
+    .subtitle{font-size:13px;fill:#7A808A}
+    .layer{fill:#F8FAFC;stroke:#CBD5E1;stroke-width:1.2}
+    .layer-head{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.4}
+    .layer-title{font-size:14px;font-weight:700;fill:#173F87}
+    .layer-summary{font-size:10.5px;fill:#506784}
+    .cap-box{fill:#fff;stroke:#C7CCD3;stroke-width:1.1}
+    .cap-title{font-size:12.5px;font-weight:700;fill:#2A313B}
+    .cap-code{font-size:9.5px;fill:#707986;font-family:"Cascadia Mono",Consolas,"Microsoft YaHei",monospace}
+    .side-panel{fill:#F8FAFC;stroke:#94A3B8;stroke-width:1.2}
+    .side-panel.external{fill:#FFF9F3;stroke:#C3651F}
+    .side-title{font-size:14px;font-weight:700;fill:#2A313B}
+    .side-sub{font-size:10.5px;fill:#7A808A}
+    .side-foot{font-size:9.8px;fill:#7A808A}
+    .integration{fill:#fff;stroke:#D9B18A;stroke-width:1.1}
+    .integration-title{font-size:12px;font-weight:700;fill:#8A4A11}
+    .integration-target{font-size:10px;fill:#8A6A4A}
+    .arrow{fill:none;stroke:#2563EB;stroke-width:1.8}
+    .arrow.dashed{stroke:#94A3B8;stroke-width:1.4;stroke-dasharray:5 4}
+    .legend{font-size:10.5px;fill:#6B7280}
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748B"/>
+    </marker>
+  </defs>
+  <rect class="canvas" x="0.6" y="0.6" width="1598.8" height="978.8" rx="16"/>
+  <text class="title" x="30" y="38">Megatron-LM 静态软件分层与能力框图</text>
+  <text class="subtitle" x="30" y="62">同一划分轴：由用户意图向设备执行逐层下降；层内方框表示代码能力，侧栏表示非主层级的适配关系。</text>
+  <g data-layer-index="1">
+    <rect class="layer" x="30" y="88" width="1150" height="88" rx="12"/>
+    <rect class="layer-head" x="30" y="88" width="220" height="88" rx="12"/>
+  <text class="layer-title" x="46" y="116" text-anchor="start">01 场景入口层</text>
+  <text class="layer-summary" x="46" y="137" text-anchor="start">root scripts · examples · tools</text>
+  <rect class="cap-box" x="264" y="100" width="174" height="64" rx="9"/>
+  <text class="cap-title" x="351" y="128" text-anchor="middle">预训练与基础模型实验</text>
+  <text class="cap-code" x="351" y="148" text-anchor="middle">pretrain_*.py</text>
+  <rect class="cap-box" x="446" y="100" width="174" height="64" rx="9"/>
+  <text class="cap-title" x="533" y="128" text-anchor="middle">自定义 MCore 框架</text>
+  <text class="cap-code" x="533" y="148" text-anchor="middle">examples/simple MCore loop</text>
+  <rect class="cap-box" x="628" y="100" width="174" height="64" rx="9"/>
+  <text class="cap-title" x="715" y="128" text-anchor="middle">推理与在线服务</text>
+  <text class="cap-code" x="715" y="148" text-anchor="middle">examples/inference</text>
+  <rect class="cap-box" x="810" y="100" width="174" height="64" rx="9"/>
+  <text class="cap-title" x="897" y="128" text-anchor="middle">后训练与 RL</text>
+  <text class="cap-code" x="897" y="148" text-anchor="middle">post_training · train_rl.py</text>
+  <rect class="cap-box" x="992" y="100" width="174" height="64" rx="9"/>
+  <text class="cap-title" x="1079" y="128" text-anchor="middle">数据、转换与诊断</text>
+  <text class="cap-code" x="1079" y="148" text-anchor="middle">tools</text>
+  </g>
+  <line class="arrow" x1="45" y1="178" x2="45" y2="184" marker-end="url(#arrow)"/>
+  <g data-layer-index="2">
+    <rect class="layer" x="30" y="186" width="1150" height="105" rx="12"/>
+    <rect class="layer-head" x="30" y="186" width="220" height="105" rx="12"/>
+  <text class="layer-title" x="46" y="214" text-anchor="start">02 应用编排层</text>
+  <text class="layer-summary" x="46" y="235" text-anchor="start">生命周期、完成语义与场景策略</text>
+  <rect class="cap-box" x="264" y="198" width="174" height="81" rx="9"/>
+  <text class="cap-title" x="351" y="234.5" text-anchor="middle">训练控制</text>
+  <text class="cap-code" x="351" y="254.5" text-anchor="middle">megatron/training</text>
+  <rect class="cap-box" x="446" y="198" width="174" height="81" rx="9"/>
+  <text class="cap-title" x="533" y="234.5" text-anchor="middle">推理控制</text>
+  <text class="cap-code" x="533" y="254.5" text-anchor="middle">megatron/inference</text>
+  <rect class="cap-box" x="628" y="198" width="174" height="81" rx="9"/>
+  <text class="cap-title" x="715" y="234.5" text-anchor="middle">后训练控制</text>
+  <text class="cap-code" x="715" y="254.5" text-anchor="middle">megatron/post_training</text>
+  <rect class="cap-box" x="810" y="198" width="174" height="81" rx="9"/>
+  <text class="cap-title" x="897" y="234.5" text-anchor="middle">RL 控制</text>
+  <text class="cap-code" x="897" y="254.5" text-anchor="middle">megatron/rl</text>
+  <rect class="cap-box" x="992" y="198" width="174" height="81" rx="9"/>
+  <text class="cap-title" x="1079" y="234.5" text-anchor="middle">弹性训练</text>
+  <text class="cap-code" x="1079" y="254.5" text-anchor="middle">megatron/elastification</text>
+  </g>
+  <line class="arrow" x1="45" y1="293" x2="45" y2="299" marker-end="url(#arrow)"/>
+  <g data-layer-index="3">
+    <rect class="layer" x="30" y="301" width="1150" height="118" rx="12"/>
+    <rect class="layer-head" x="30" y="301" width="220" height="118" rx="12"/>
+  <text class="layer-title" x="46" y="329" text-anchor="start">03 MCore 可组合组件层</text>
+  <text class="layer-summary" x="46" y="350" text-anchor="start">models · transformer · ssm</text>
+  <text class="layer-summary" x="46" y="368" text-anchor="start">datasets · tokenizers · inference</text>
+  <rect class="cap-box" x="264" y="313" width="219.5" height="94" rx="9"/>
+  <text class="cap-title" x="373.75" y="356" text-anchor="middle">配置与规格</text>
+  <text class="cap-code" x="373.75" y="376" text-anchor="middle">config · ModuleSpec</text>
+  <rect class="cap-box" x="491.5" y="313" width="219.5" height="94" rx="9"/>
+  <text class="cap-title" x="601.25" y="356" text-anchor="middle">模型结构</text>
+  <text class="cap-code" x="601.25" y="376" text-anchor="middle">models · transformer · ssm</text>
+  <rect class="cap-box" x="719" y="313" width="219.5" height="94" rx="9"/>
+  <text class="cap-title" x="828.75" y="356" text-anchor="middle">数据与 tokenizer</text>
+  <text class="cap-code" x="828.75" y="376" text-anchor="middle">datasets · tokenizers</text>
+  <rect class="cap-box" x="946.5" y="313" width="219.5" height="94" rx="9"/>
+  <text class="cap-title" x="1056.25" y="356" text-anchor="middle">推理与导出组件</text>
+  <text class="cap-code" x="1056.25" y="376" text-anchor="middle">inference · export · post_training</text>
+  </g>
+  <line class="arrow" x1="45" y1="421" x2="45" y2="427" marker-end="url(#arrow)"/>
+  <g data-layer-index="4">
+    <rect class="layer" x="30" y="429" width="1150" height="132" rx="12"/>
+    <rect class="layer-head" x="30" y="429" width="220" height="132" rx="12"/>
+  <text class="layer-title" x="46" y="457" text-anchor="start">04 MCore 分布式执行层</text>
+  <text class="layer-summary" x="46" y="478" text-anchor="start">parallel_state · TP · PP · CP · EP</text>
+  <text class="layer-summary" x="46" y="496" text-anchor="start">distributed · optimizer · dist-ckpt</text>
+  <rect class="cap-box" x="264" y="441" width="219.5" height="108" rx="9"/>
+  <text class="cap-title" x="373.75" y="491" text-anchor="middle">拓扑与通信域</text>
+  <text class="cap-code" x="373.75" y="511" text-anchor="middle">parallel_state · process groups</text>
+  <rect class="cap-box" x="491.5" y="441" width="219.5" height="108" rx="9"/>
+  <text class="cap-title" x="601.25" y="491" text-anchor="middle">并行算子、时序与重叠</text>
+  <text class="cap-code" x="601.25" y="511" text-anchor="middle">tensor · pipeline · context</text>
+  <rect class="cap-box" x="719" y="441" width="219.5" height="108" rx="9"/>
+  <text class="cap-title" x="828.75" y="491" text-anchor="middle">参数执行、提交与迁移</text>
+  <text class="cap-code" x="828.75" y="511" text-anchor="middle">distributed · optimizer</text>
+  <rect class="cap-box" x="946.5" y="441" width="219.5" height="108" rx="9"/>
+  <text class="cap-title" x="1056.25" y="491" text-anchor="middle">状态与恢复</text>
+  <text class="cap-code" x="1056.25" y="511" text-anchor="middle">dist_checkpointing · rerun state</text>
+  </g>
+  <line class="arrow" x1="45" y1="563" x2="45" y2="569" marker-end="url(#arrow)"/>
+  <g data-layer-index="5">
+    <rect class="layer" x="30" y="571" width="1150" height="96" rx="12"/>
+    <rect class="layer-head" x="30" y="571" width="220" height="96" rx="12"/>
+  <text class="layer-title" x="46" y="599" text-anchor="start">05 加速适配层</text>
+  <text class="layer-summary" x="46" y="620" text-anchor="start">extensions · fusions · quantization</text>
+  <rect class="cap-box" x="264" y="583" width="219.5" height="72" rx="9"/>
+  <text class="cap-title" x="373.75" y="615" text-anchor="middle">后端适配</text>
+  <text class="cap-code" x="373.75" y="635" text-anchor="middle">Transformer Engine · local</text>
+  <rect class="cap-box" x="491.5" y="583" width="219.5" height="72" rx="9"/>
+  <text class="cap-title" x="601.25" y="615" text-anchor="middle">融合算子</text>
+  <text class="cap-code" x="601.25" y="635" text-anchor="middle">fusions</text>
+  <rect class="cap-box" x="719" y="583" width="219.5" height="72" rx="9"/>
+  <text class="cap-title" x="828.75" y="615" text-anchor="middle">低精度与量化</text>
+  <text class="cap-code" x="828.75" y="635" text-anchor="middle">FP8 · FP4 · quantization</text>
+  <rect class="cap-box" x="946.5" y="583" width="219.5" height="72" rx="9"/>
+  <text class="cap-title" x="1056.25" y="615" text-anchor="middle">图与运行时适配</text>
+  <text class="cap-code" x="1056.25" y="635" text-anchor="middle">CUDA Graph · backend hooks</text>
+  </g>
+  <line class="arrow" x1="45" y1="669" x2="45" y2="675" marker-end="url(#arrow)"/>
+  <g data-layer-index="6">
+    <rect class="layer" x="30" y="677" width="1150" height="70" rx="12"/>
+    <rect class="layer-head" x="30" y="677" width="220" height="70" rx="12"/>
+  <text class="layer-title" x="46" y="705" text-anchor="start">06 基础框架层</text>
+  <text class="layer-summary" x="46" y="726" text-anchor="start">PyTorch · torch.distributed</text>
+  <rect class="cap-box" x="264" y="689" width="447" height="46" rx="9"/>
+  <text class="cap-title" x="487.5" y="708" text-anchor="middle">张量与自动微分</text>
+  <text class="cap-code" x="487.5" y="728" text-anchor="middle">PyTorch</text>
+  <rect class="cap-box" x="719" y="689" width="447" height="46" rx="9"/>
+  <text class="cap-title" x="942.5" y="708" text-anchor="middle">进程组与 collective</text>
+  <text class="cap-code" x="942.5" y="728" text-anchor="middle">torch.distributed</text>
+  </g>
+  <line class="arrow" x1="45" y1="749" x2="45" y2="755" marker-end="url(#arrow)"/>
+  <g data-layer-index="7">
+    <rect class="layer" x="30" y="757" width="1150" height="70" rx="12"/>
+    <rect class="layer-head" x="30" y="757" width="220" height="70" rx="12"/>
+  <text class="layer-title" x="46" y="785" text-anchor="start">07 设备与通信基础设施层</text>
+  <text class="layer-summary" x="46" y="806" text-anchor="start">CUDA · NCCL · NVIDIA GPU</text>
+  <rect class="cap-box" x="264" y="769" width="447" height="46" rx="9"/>
+  <text class="cap-title" x="487.5" y="788" text-anchor="middle">设备执行</text>
+  <text class="cap-code" x="487.5" y="808" text-anchor="middle">CUDA · NVIDIA GPU</text>
+  <rect class="cap-box" x="719" y="769" width="447" height="46" rx="9"/>
+  <text class="cap-title" x="942.5" y="788" text-anchor="middle">跨卡与跨机通信</text>
+  <text class="cap-code" x="942.5" y="808" text-anchor="middle">NCCL · NVLink · InfiniBand</text>
+  </g>
+  <rect class="side-panel external" x="1205" y="88" width="365" height="318" rx="14"/>
+  <text class="side-title" x="1223" y="118" text-anchor="start">外部生态适配</text>
+  <text class="side-sub" x="1223" y="138" text-anchor="start">非主层级 · 在明确接口处接入</text>
+  <rect class="integration" x="1223" y="157" width="329" height="42" rx="8"/>
+  <text class="integration-title" x="1239" y="175" text-anchor="start">Energon</text>
+  <text class="integration-target" x="1536" y="175" text-anchor="end">→ 数据组件</text>
+  <rect class="integration" x="1223" y="209" width="329" height="42" rx="8"/>
+  <text class="integration-title" x="1239" y="227" text-anchor="start">ModelOpt</text>
+  <text class="integration-target" x="1536" y="227" text-anchor="end">→ 后训练与模型规格</text>
+  <rect class="integration" x="1223" y="261" width="329" height="42" rx="8"/>
+  <text class="integration-title" x="1239" y="279" text-anchor="start">TRT-LLM</text>
+  <text class="integration-target" x="1536" y="279" text-anchor="end">→ 导出组件</text>
+  <rect class="integration" x="1223" y="313" width="329" height="42" rx="8"/>
+  <text class="integration-title" x="1239" y="331" text-anchor="start">NVRx</text>
+  <text class="integration-target" x="1536" y="331" text-anchor="end">→ 可靠性与重启</text>
+  <text class="side-foot" x="1387.5" y="386" text-anchor="middle">Energon · ModelOpt · TRT-LLM · NVRx</text>
+  <rect class="side-panel" x="1205" y="426" width="365" height="401" rx="14"/>
+  <text class="side-title" x="1223" y="456" text-anchor="start">Megatron Lite 独立实验纵切</text>
+  <text class="side-sub" x="1223" y="476" text-anchor="start">不是 megatron.training 的下层模块</text>
+  <rect class="cap-box" x="1223" y="493" width="329" height="54" rx="9"/>
+  <text class="cap-title" x="1387.5" y="516" text-anchor="middle">公开 API</text>
+  <text class="cap-code" x="1387.5" y="536" text-anchor="middle">megatron.lite</text>
+  <line class="arrow" x1="1387.5" y1="549" x2="1387.5" y2="558" marker-end="url(#arrow)"/>
+  <rect class="cap-box" x="1223" y="560" width="329" height="54" rx="9"/>
+  <text class="cap-title" x="1387.5" y="583" text-anchor="middle">Runtime contracts</text>
+  <text class="cap-code" x="1387.5" y="603" text-anchor="middle">create_runtime · ModelHandle</text>
+  <line class="arrow" x1="1387.5" y1="616" x2="1387.5" y2="625" marker-end="url(#arrow)"/>
+  <rect class="cap-box" x="1223" y="627" width="329" height="54" rx="9"/>
+  <text class="cap-title" x="1387.5" y="650" text-anchor="middle">Native models</text>
+  <text class="cap-code" x="1387.5" y="670" text-anchor="middle">model protocols</text>
+  <line class="arrow" x1="1387.5" y1="683" x2="1387.5" y2="692" marker-end="url(#arrow)"/>
+  <rect class="cap-box" x="1223" y="694" width="329" height="54" rx="9"/>
+  <text class="cap-title" x="1387.5" y="717" text-anchor="middle">Training primitives</text>
+  <text class="cap-code" x="1387.5" y="737" text-anchor="middle">parallel · optimizer · checkpoint</text>
+  <text class="side-foot" x="1387.5" y="782" text-anchor="middle">native models · runtime · primitives</text>
+  <text class="side-foot" x="1387.5" y="803" text-anchor="middle">虚线连接 MCore parallel / optimizer primitives</text>
+  <path class="arrow dashed" d="M 1223 721 H 1187 V 495" marker-end="url(#arrow)"/>
+  <line class="arrow" x1="38" y1="851" x2="88" y2="851" marker-end="url(#arrow)"/>
+  <text class="legend" x="98" y="855">实线：主依赖</text>
+  <line class="arrow dashed" x1="206" y1="851" x2="256" y2="851" marker-end="url(#arrow)"/>
+  <text class="legend" x="266" y="855">虚线：共享或适配</text>
+  <text class="legend" x="435" y="855">每个能力块第二行给出代表代码归属；时序和状态完成边界见后续动态图。</text>
+</svg>

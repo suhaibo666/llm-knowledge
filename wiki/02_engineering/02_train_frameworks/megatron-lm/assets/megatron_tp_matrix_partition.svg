@@ -1,0 +1,316 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 760" width="100%" role="img" aria-label="tp 等于 2 时列并行与行并行矩阵乘的分片和通信对照">
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .cell0{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .cell1{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+</style>
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<rect class="card" x="0.5" y="0.5" width="1319" height="759" rx="14"/>
+<text class="ti" x="28" y="36" text-anchor="start">同一个矩阵乘：列并行切输出维，行并行切输入维</text>
+<text class="su" x="28" y="57" text-anchor="start">示例参数：H=8 · O=12 · tp=2；蓝色为 rank 本地分片，橙色为不可省的规约</text>
+<rect class="panel" x="20" y="82" width="1280" height="286" rx="12"/>
+<text class="pt" x="40" y="112" text-anchor="start">① Column Parallel：复制输入，保留输出分片</text>
+<text class="su" x="40" y="132" text-anchor="start">W = [W₀ | W₁]；每个 rank 独立得到输出列分片，默认不 all-gather。</text>
+<rect class="cell0" x="61" y="164" width="7.25" height="7.25"/>
+<rect class="cell0" x="68.25" y="164" width="7.25" height="7.25"/>
+<rect class="cell0" x="75.5" y="164" width="7.25" height="7.25"/>
+<rect class="cell0" x="82.75" y="164" width="7.25" height="7.25"/>
+<rect class="cell0" x="90" y="164" width="7.25" height="7.25"/>
+<rect class="cell0" x="97.25" y="164" width="7.25" height="7.25"/>
+<rect class="cell1" x="104.5" y="164" width="7.25" height="7.25"/>
+<rect class="cell1" x="111.75" y="164" width="7.25" height="7.25"/>
+<rect class="cell1" x="119" y="164" width="7.25" height="7.25"/>
+<rect class="cell1" x="126.25" y="164" width="7.25" height="7.25"/>
+<rect class="cell1" x="133.5" y="164" width="7.25" height="7.25"/>
+<rect class="cell1" x="140.75" y="164" width="7.25" height="7.25"/>
+<rect class="cell0" x="61" y="171.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="68.25" y="171.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="75.5" y="171.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="82.75" y="171.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="90" y="171.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="97.25" y="171.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="104.5" y="171.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="111.75" y="171.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="119" y="171.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="126.25" y="171.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="133.5" y="171.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="140.75" y="171.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="61" y="178.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="68.25" y="178.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="75.5" y="178.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="82.75" y="178.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="90" y="178.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="97.25" y="178.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="104.5" y="178.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="111.75" y="178.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="119" y="178.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="126.25" y="178.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="133.5" y="178.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="140.75" y="178.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="61" y="185.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="68.25" y="185.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="75.5" y="185.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="82.75" y="185.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="90" y="185.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="97.25" y="185.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="104.5" y="185.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="111.75" y="185.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="119" y="185.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="126.25" y="185.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="133.5" y="185.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="140.75" y="185.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="61" y="193" width="7.25" height="7.25"/>
+<rect class="cell0" x="68.25" y="193" width="7.25" height="7.25"/>
+<rect class="cell0" x="75.5" y="193" width="7.25" height="7.25"/>
+<rect class="cell0" x="82.75" y="193" width="7.25" height="7.25"/>
+<rect class="cell0" x="90" y="193" width="7.25" height="7.25"/>
+<rect class="cell0" x="97.25" y="193" width="7.25" height="7.25"/>
+<rect class="cell1" x="104.5" y="193" width="7.25" height="7.25"/>
+<rect class="cell1" x="111.75" y="193" width="7.25" height="7.25"/>
+<rect class="cell1" x="119" y="193" width="7.25" height="7.25"/>
+<rect class="cell1" x="126.25" y="193" width="7.25" height="7.25"/>
+<rect class="cell1" x="133.5" y="193" width="7.25" height="7.25"/>
+<rect class="cell1" x="140.75" y="193" width="7.25" height="7.25"/>
+<rect class="cell0" x="61" y="200.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="68.25" y="200.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="75.5" y="200.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="82.75" y="200.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="90" y="200.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="97.25" y="200.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="104.5" y="200.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="111.75" y="200.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="119" y="200.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="126.25" y="200.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="133.5" y="200.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="140.75" y="200.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="61" y="207.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="68.25" y="207.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="75.5" y="207.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="82.75" y="207.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="90" y="207.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="97.25" y="207.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="104.5" y="207.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="111.75" y="207.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="119" y="207.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="126.25" y="207.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="133.5" y="207.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="140.75" y="207.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="61" y="214.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="68.25" y="214.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="75.5" y="214.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="82.75" y="214.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="90" y="214.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="97.25" y="214.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="104.5" y="214.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="111.75" y="214.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="119" y="214.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="126.25" y="214.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="133.5" y="214.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="140.75" y="214.75" width="7.25" height="7.25"/>
+<text class="sm" x="104.5" y="240" text-anchor="middle">逻辑权重 W: 8×12</text>
+<text class="rank" x="186" y="206" text-anchor="start">rank 0</text>
+<rect class="ghost" x="235" y="160" width="150" height="40" rx="8"/>
+<text class="tx" x="310" y="176" text-anchor="middle">X: N×8</text>
+<text class="sm" x="310" y="192" text-anchor="middle">完整副本</text>
+<rect class="acc1" x="235" y="204" width="150" height="40" rx="8"/>
+<text class="tx" x="310" y="220" text-anchor="middle">W₀: 8×6</text>
+<text class="sm" x="310" y="236" text-anchor="middle">输出维分片</text>
+<path class="main" d="M 385 180 L 420 191"/>
+<path class="main" d="M 385 224 L 420 213"/>
+<g data-role="gemm"><rect class="neutral" x="420" y="177" width="96" height="50" rx="8"/>
+<text class="tx" x="468" y="206" text-anchor="middle">GEMM</text></g>
+<path class="main" d="M 516 202 L 558 202"/>
+<rect class="acc1" x="558" y="170" width="170" height="64" rx="8"/>
+<text class="tx" x="643" y="198" text-anchor="middle">Y₀: N×6</text>
+<text class="sm" x="643" y="214" text-anchor="middle">保持分片</text>
+<text class="rank" x="186" y="304" text-anchor="start">rank 1</text>
+<rect class="ghost" x="235" y="258" width="150" height="40" rx="8"/>
+<text class="tx" x="310" y="274" text-anchor="middle">X: N×8</text>
+<text class="sm" x="310" y="290" text-anchor="middle">完整副本</text>
+<rect class="acc1" x="235" y="302" width="150" height="40" rx="8"/>
+<text class="tx" x="310" y="318" text-anchor="middle">W₁: 8×6</text>
+<text class="sm" x="310" y="334" text-anchor="middle">输出维分片</text>
+<path class="main" d="M 385 278 L 420 289"/>
+<path class="main" d="M 385 322 L 420 311"/>
+<g data-role="gemm"><rect class="neutral" x="420" y="275" width="96" height="50" rx="8"/>
+<text class="tx" x="468" y="304" text-anchor="middle">GEMM</text></g>
+<path class="main" d="M 516 300 L 558 300"/>
+<rect class="acc1" x="558" y="268" width="170" height="64" rx="8"/>
+<text class="tx" x="643" y="296" text-anchor="middle">Y₁: N×6</text>
+<text class="sm" x="643" y="312" text-anchor="middle">保持分片</text>
+<path class="main" d="M 728 202 L 820 208"/>
+<path class="main" d="M 728 300 L 820 208"/>
+<g data-role="column-default"><rect class="acc1" x="820" y="170" width="240" height="76" rx="8"/>
+<text class="tx" x="940" y="196" text-anchor="middle">默认：不 concat</text>
+<text class="sm" x="940" y="212" text-anchor="middle">Yᵣ 留在各自 rank</text>
+<text class="sm" x="940" y="228" text-anchor="middle">直接交给 Row Parallel</text></g>
+<path class="aux" d="M 1060 208 L 1090 208"/>
+<g data-role="column-optional"><rect class="ghost" x="1090" y="170" width="190" height="76" rx="8"/>
+<text class="tx" x="1185" y="196" text-anchor="middle">可选兼容出口</text>
+<text class="sm" x="1185" y="212" text-anchor="middle">gather_output = true</text>
+<text class="sm" x="1185" y="228" text-anchor="middle">AG → concat 完整 Y</text></g>
+<rect class="panel" x="20" y="402" width="1280" height="286" rx="12"/>
+<text class="pt" x="40" y="432" text-anchor="start">② Row Parallel：切分输入，求和 partial output</text>
+<text class="su" x="40" y="452" text-anchor="start">W 按输入行切；每个 rank 先得到完整形状的 partial output，再 all-reduce 求和。</text>
+<rect class="cell0" x="61" y="484" width="7.25" height="7.25"/>
+<rect class="cell0" x="68.25" y="484" width="7.25" height="7.25"/>
+<rect class="cell0" x="75.5" y="484" width="7.25" height="7.25"/>
+<rect class="cell0" x="82.75" y="484" width="7.25" height="7.25"/>
+<rect class="cell0" x="90" y="484" width="7.25" height="7.25"/>
+<rect class="cell0" x="97.25" y="484" width="7.25" height="7.25"/>
+<rect class="cell0" x="104.5" y="484" width="7.25" height="7.25"/>
+<rect class="cell0" x="111.75" y="484" width="7.25" height="7.25"/>
+<rect class="cell0" x="119" y="484" width="7.25" height="7.25"/>
+<rect class="cell0" x="126.25" y="484" width="7.25" height="7.25"/>
+<rect class="cell0" x="133.5" y="484" width="7.25" height="7.25"/>
+<rect class="cell0" x="140.75" y="484" width="7.25" height="7.25"/>
+<rect class="cell0" x="61" y="491.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="68.25" y="491.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="75.5" y="491.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="82.75" y="491.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="90" y="491.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="97.25" y="491.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="104.5" y="491.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="111.75" y="491.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="119" y="491.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="126.25" y="491.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="133.5" y="491.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="140.75" y="491.25" width="7.25" height="7.25"/>
+<rect class="cell0" x="61" y="498.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="68.25" y="498.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="75.5" y="498.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="82.75" y="498.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="90" y="498.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="97.25" y="498.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="104.5" y="498.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="111.75" y="498.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="119" y="498.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="126.25" y="498.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="133.5" y="498.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="140.75" y="498.5" width="7.25" height="7.25"/>
+<rect class="cell0" x="61" y="505.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="68.25" y="505.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="75.5" y="505.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="82.75" y="505.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="90" y="505.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="97.25" y="505.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="104.5" y="505.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="111.75" y="505.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="119" y="505.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="126.25" y="505.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="133.5" y="505.75" width="7.25" height="7.25"/>
+<rect class="cell0" x="140.75" y="505.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="61" y="513" width="7.25" height="7.25"/>
+<rect class="cell1" x="68.25" y="513" width="7.25" height="7.25"/>
+<rect class="cell1" x="75.5" y="513" width="7.25" height="7.25"/>
+<rect class="cell1" x="82.75" y="513" width="7.25" height="7.25"/>
+<rect class="cell1" x="90" y="513" width="7.25" height="7.25"/>
+<rect class="cell1" x="97.25" y="513" width="7.25" height="7.25"/>
+<rect class="cell1" x="104.5" y="513" width="7.25" height="7.25"/>
+<rect class="cell1" x="111.75" y="513" width="7.25" height="7.25"/>
+<rect class="cell1" x="119" y="513" width="7.25" height="7.25"/>
+<rect class="cell1" x="126.25" y="513" width="7.25" height="7.25"/>
+<rect class="cell1" x="133.5" y="513" width="7.25" height="7.25"/>
+<rect class="cell1" x="140.75" y="513" width="7.25" height="7.25"/>
+<rect class="cell1" x="61" y="520.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="68.25" y="520.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="75.5" y="520.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="82.75" y="520.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="90" y="520.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="97.25" y="520.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="104.5" y="520.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="111.75" y="520.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="119" y="520.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="126.25" y="520.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="133.5" y="520.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="140.75" y="520.25" width="7.25" height="7.25"/>
+<rect class="cell1" x="61" y="527.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="68.25" y="527.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="75.5" y="527.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="82.75" y="527.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="90" y="527.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="97.25" y="527.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="104.5" y="527.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="111.75" y="527.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="119" y="527.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="126.25" y="527.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="133.5" y="527.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="140.75" y="527.5" width="7.25" height="7.25"/>
+<rect class="cell1" x="61" y="534.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="68.25" y="534.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="75.5" y="534.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="82.75" y="534.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="90" y="534.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="97.25" y="534.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="104.5" y="534.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="111.75" y="534.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="119" y="534.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="126.25" y="534.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="133.5" y="534.75" width="7.25" height="7.25"/>
+<rect class="cell1" x="140.75" y="534.75" width="7.25" height="7.25"/>
+<text class="sm" x="104.5" y="560" text-anchor="middle">逻辑权重 W: 8×12</text>
+<text class="rank" x="186" y="526" text-anchor="start">rank 0</text>
+<rect class="acc1" x="235" y="480" width="150" height="40" rx="8"/>
+<text class="tx" x="310" y="496" text-anchor="middle">X₀: N×4</text>
+<text class="sm" x="310" y="512" text-anchor="middle">输入维分片</text>
+<rect class="acc1" x="235" y="524" width="150" height="40" rx="8"/>
+<text class="tx" x="310" y="540" text-anchor="middle">W₀: 4×12</text>
+<text class="sm" x="310" y="556" text-anchor="middle">输入维分片</text>
+<path class="main" d="M 385 500 L 420 511"/>
+<path class="main" d="M 385 544 L 420 533"/>
+<g data-role="gemm"><rect class="neutral" x="420" y="497" width="96" height="50" rx="8"/>
+<text class="tx" x="468" y="526" text-anchor="middle">GEMM</text></g>
+<path class="main" d="M 516 522 L 558 522"/>
+<rect class="neutral" x="558" y="490" width="170" height="64" rx="8"/>
+<text class="tx" x="643" y="518" text-anchor="middle">Z₀: N×12</text>
+<text class="sm" x="643" y="534" text-anchor="middle">partial output</text>
+<text class="rank" x="186" y="624" text-anchor="start">rank 1</text>
+<rect class="acc1" x="235" y="578" width="150" height="40" rx="8"/>
+<text class="tx" x="310" y="594" text-anchor="middle">X₁: N×4</text>
+<text class="sm" x="310" y="610" text-anchor="middle">输入维分片</text>
+<rect class="acc1" x="235" y="622" width="150" height="40" rx="8"/>
+<text class="tx" x="310" y="638" text-anchor="middle">W₁: 4×12</text>
+<text class="sm" x="310" y="654" text-anchor="middle">输入维分片</text>
+<path class="main" d="M 385 598 L 420 609"/>
+<path class="main" d="M 385 642 L 420 631"/>
+<g data-role="gemm"><rect class="neutral" x="420" y="595" width="96" height="50" rx="8"/>
+<text class="tx" x="468" y="624" text-anchor="middle">GEMM</text></g>
+<path class="main" d="M 516 620 L 558 620"/>
+<rect class="neutral" x="558" y="588" width="170" height="64" rx="8"/>
+<text class="tx" x="643" y="616" text-anchor="middle">Z₁: N×12</text>
+<text class="sm" x="643" y="632" text-anchor="middle">partial output</text>
+<path class="cost" d="M 728 522 L 820 528"/>
+<path class="cost" d="M 728 620 L 820 528"/>
+<rect class="acc2" x="820" y="490" width="240" height="76" rx="8"/>
+<text class="tx" x="940" y="524" text-anchor="middle">Y = Σ Zᵣ: N×12</text>
+<text class="sm" x="940" y="540" text-anchor="middle">TP group 内 all-reduce</text>
+<rect class="neutral" x="1090" y="490" width="190" height="76" rx="8"/>
+<text class="tx" x="1185" y="516" text-anchor="middle">为什么必须求和</text>
+<text class="sm" x="1185" y="532" text-anchor="middle">XW = X₀W₀ + X₁W₁</text>
+<text class="sm" x="1185" y="548" text-anchor="middle">各 rank 只算到一项</text>
+<path class="aux" d="M 1060 528 L 1090 528"/>
+<text class="cap" x="28" y="720" text-anchor="start">逻辑公式使用 W 为 H×O；PyTorch 参数实际按 O×H 存储，因此 ColumnParallelLinear 在 dim 0 分片、RowParallelLinear 在 dim 1 分片。</text>
+<text class="cap" x="28" y="739" text-anchor="start">Column → 逐元素或按 head 的局部计算 → Row：中间分片不拼回，只在 Row 的区域出口规约。</text>
+</svg>

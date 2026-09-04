@@ -10,7 +10,9 @@ title: "Megatron-LM 流水线并行(Pipeline Parallelism)调度器深度解析"
 > 核心文件:`megatron/core/pipeline_parallel/schedules.py`(2653 行)、`megatron/core/pipeline_parallel/combined_1f1b.py`、`megatron/core/models/common/model_chunk_schedule_plan.py`
 > 适用读者:已了解 transformer 训练、TP/DP/PP 基本概念,想吃透 Megatron PP 调度实现的工程师。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-29。§③.3 / §④.3 各补一张渲染图（外链 SVG，由仿真脚本生成，见 `tools/figs/svg/`）；机制正文与既有引用未改。
+> **首次阅读边界**：Dense 主线首读 §1–§5 和 §11.1–§11.3，掌握 microbatch、标准 1F1B、VPP 和 bubble 即可；§6–§10、§11.4 与 §12 是 P2P overlap、MoE combined-1F1B、多模块与研究边界的进阶路径。两条路径共用同一张 PP 调度表，因此不拆页。
+> **所有权边界**：本页拥有 PP P2P 和 combined-1F1B 的本地触发/等待机制；多个并行轴同时开启后的全局时间线与竞争归 [[20_megatron_comm_overlap_analysis]]。
+> **最近更新**：2026-09-03。标明首读/进阶边界，并接收 combined-1F1B 的 `delay_wgrad_compute` 与显存顺序开关 owner。
 
 ---
 
@@ -231,7 +233,7 @@ Device 0 | F0 B0  F1 B1  F2 B2  F3 B3 |  → DP all-reduce
 > `16` 来自 ZeRO 论文的 fp16 假设（梯度按 2 字节算）；Megatron 在 bf16 下**强制 fp32 梯度累加**，梯度是 4 字节——
 > `megatron/training/arguments.py:1331-1333` 在未显式关闭时把 `accumulate_allreduce_grads_in_fp32` 置真，
 > 并打印 "accumulate and all-reduce gradients in fp32 for bfloat16 data type."。
-> [[16_megatron_distributed_optimizer_analysis]] §12.2 早已按 18 立论（该页 2026-05-22 已更正过同一处错误），本页此前未同步。
+> [[26_megatron_optimizer_step_internals_deepdive]] §4.2 按 18 立论（该机制在 2026-09-03 从 16 拆出），本页此前未同步。
 
 ### ①.5 适用场景及原因
 
@@ -667,16 +669,16 @@ output_tensor, input_tensor_grad = forward_backward_helper_wrapper(
 
 ### ⑤.1 动机与解决的问题
 
-**问题**:MoE 模型用专家并行(EP),每个 MoE 层要做两次 **all-to-all**(token `dispatch` 把 token 发到对应专家所在卡、`combine` 收回结果)。这两次 A2A 在 MoE 层耗时里占比可达 **20%~40%**,且 A2A 是**阻塞式**的 —— 计算流必须等它完成。前面的 PP 调度器都无法掩盖这块开销。
+**问题**:MoE 模型用专家并行(EP),每个 MoE 层要做两次 **all-to-all**(token `dispatch` 把 token 发到对应专家所在卡、`combine` 收回结果)。消费 dispatched token 的专家计算与消费 combined output 的残差路径都对 A2A 结果有数据依赖；若不重排，等待就会暴露在关键路径。combined-1F1B 将 dispatch/combine 放到 communication stream，再用另一微批中不依赖该结果的计算掩盖这段窗口（`megatron/core/models/common/model_chunk_schedule_plan.py:330-334`、`:505-514`；`megatron/core/pipeline_parallel/utils.py:292-314`）。
 
 **combined-1F1B 的动机**:在**层粒度**上,把 microbatch `i+1` 的**前向**和 microbatch `i` 的**反向**配对、共同调度。利用一个简单事实 —— **前向的 A2A 通信** 可以和 **反向的计算** 在 GPU 上并行,反之亦然。于是:
 > 前向的 dispatch/combine A2A 被反向的 attention/MLP 计算掩盖;反向的 A2A 被前向计算掩盖。
 
-它还配合 `delay_wgrad_compute`(`megatron/core/transformer/transformer_config.py:3712`):把反向拆成 **dgrad**(算输入梯度,在关键路径上)和 **wgrad**(算权重梯度,可延后),让 wgrad 去填 P2P 通信的缝隙 —— 这正是 "zero-bubble" 系工作的核心拆分思想(见第 7 节)。
+它还配合 `delay_wgrad_compute`(`megatron/core/transformer/transformer_config.py:3712`):把反向拆成 **dgrad**(算输入梯度,在关键路径上)和 **wgrad**(算权重梯度,可延后)。`mlp_bwd_dw` 被排在 `dispatch_bwd` / `combine_fwd` 的 A2A 调度链里，主要用来填 A2A 通信缝隙；只有最后处理的 `attn_dw` 另被延后去配合 P2P（`megatron/core/models/common/model_chunk_schedule_plan.py:559-572`、`:593-596`）。这种拆分借用了 "zero-bubble" 系工作的核心思想，但本页 §9 会说明它并不是完整的 Zero-Bubble 调度。
 
 ### ⑤.2 源码与流程
 
-**双 CUDA 流设计**:`set_streams`(`megatron/core/pipeline_parallel/combined_1f1b.py:67`)建立 `comp_stream`(计算流)和 `comm_stream`(通信流);MoE 的 `dispatch`/`combine` 节点跑在 `comm_stream`,`attn`/`mlp` 跑在 `comp_stream`(`megatron/core/models/common/model_chunk_schedule_plan.py:330-337`)。
+**双 CUDA 流设计**:`set_streams`(`megatron/core/pipeline_parallel/combined_1f1b.py:67`)创建并保存 `comm_stream`；`get_comp_stream()` 则直接返回调用处的当前 CUDA stream（`megatron/core/pipeline_parallel/utils.py:350-367`）。MoE 的 `dispatch`/`combine` 节点跑在前者，`attn`/`mlp` 跑在当前计算流（`megatron/core/models/common/model_chunk_schedule_plan.py:330-337`）。
 
 **三层调度结构**:
 
@@ -743,7 +745,7 @@ TransformerLayerSchedulePlan.run(f_layer, b_layer)
 
 **④ 角色化节点 + 双流 + event 同步**(承 §⑤.2):一层拆成 `attn / moe_dispatch / mlp / moe_combine` 四个 `ScheduleNode`,A2A 节点绑 `comm_stream`、计算节点绑 `comp_stream`;跨流靠 CUDA event(`record_current_stream`/`wait_current_stream`,`megatron/core/models/common/model_chunk_schedule_plan.py:827-835`)保证依赖正确。于是 forward 层的 A2A 与配对 backward 层的计算在不同 stream 上真并行,而 autograd 正确性不受影响(forward 仍建图、backward 仍真反向)。
 
-> 不变量:不支持 `checkpoint_activations_microbatch`(`megatron/core/pipeline_parallel/combined_1f1b.py:343` assert);VPP>1 + Megatron-FSDP 显式不支持;FSDP `optim_grads_params` 下因绕过 `TransformerLayer.forward` 的 hook,要给每层显式挂 reshard 回调(`megatron/core/pipeline_parallel/combined_1f1b.py:416-423`,见 [[16_megatron_distributed_optimizer_analysis]] / [[20_megatron_comm_overlap_analysis]] §6.7);FP8 仅 `delayed` recipe 支持 —— `use_outer_fp8_context = config.fp8 and config.fp8_recipe == Fp8Recipe.delayed` 为真时,整个 combined step 被包在外层 `get_fp8_context(config)` 里(`megatron/core/pipeline_parallel/combined_1f1b.py:465-469`),否则退化为 `nullcontext()`。
+> 不变量:不支持 `checkpoint_activations_microbatch`(`megatron/core/pipeline_parallel/combined_1f1b.py:343` assert);VPP>1 + Megatron-FSDP 显式不支持;FSDP `optim_grads_params` 下因绕过 `TransformerLayer.forward` 的 hook,要给每层显式挂 reshard 回调(`megatron/core/pipeline_parallel/combined_1f1b.py:416-423`,见 [[16_megatron_distributed_optimizer_analysis]] / [[20_megatron_comm_overlap_analysis]] §3.3)。FP8 不是只支持 `delayed` recipe：delayed scaling 需要整个 combined pass 的 outer FP8 context，其他 recipe 则在逐层/逐节点循环内进入 context，以便细粒度决定 FP8 或 BF16（`megatron/core/pipeline_parallel/combined_1f1b.py:459-465`；`megatron/core/models/common/model_chunk_schedule_plan.py:549-583`）。只有 **full recompute + delayed-scaling FP8** 这项组合被 §⑤.4 所述配置守卫拒绝。
 
 > [!update] combined-1F1B 的三处增量(MTP 排序 / 显存释放 / 死代码清理)——该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
 >
@@ -793,28 +795,30 @@ Device 0 | [ f0 ]  [ b0 ‖ f1 ]  [ b1 ‖ f2 ]  [ b2 ‖ f3 ]  [ b3 ]
 每个融合步内,`TransformerLayerSchedulePlan.run`(`megatron/core/models/common/model_chunk_schedule_plan.py:505`)把 F、B 的子模块在两条 CUDA 流上交错:
 
 ```
-不开 overlap(A2A 阻塞计算):
+未做跨微批重排(A2A 结果依赖暴露):
 comp |attn_f|       |mlp_f|         |attn_b|       |mlp_b|
 comm        |disp_f|       |comb_f|        |comb_b|      |disp_b|
-            └阻塞┘         └阻塞┘          └阻塞┘        └阻塞┘
-            ↑ 每次 A2A,计算流都干等
+            └等待┘         └等待┘          └等待┘        └等待┘
+            ↑ 消费 A2A 结果的节点在依赖满足前不能继续
 
 开 overlap_moe_expert_parallel_comm:
-comp |attn_f|mlp_b|mlp_b_dw|mlp_f|attn_b|     ← 计算流几乎不间断
-comm |comb_b|  disp_f | disp_b | comb_f |     ← A2A 全程被对侧计算掩盖
+comp |attn_f|mlp_b|mlp_b_dw|mlp_f|attn_b|     ← 提供连续计算候选区间
+comm |comb_b|  disp_f | disp_b | comb_f |     ← A2A 可被对侧无依赖计算部分掩盖
 ```
+
+这张图只表示合法的排队顺序与并发窗口，不按真实 duration 缩放；若独立计算短于 A2A，通信头尾仍会暴露，不能从图形重合推导“全程掩盖”。
 
 ### ⑤.4 开销分析
 
 | 维度 | 取值 / 影响 |
 |------|------------|
 | **PP 气泡** | **不改变**,继承宿主调度:PP=1 → 0;VPP → `(pp-1)/(m·vp)`。注意 VPP 形态下 warmup **+1**(`megatron/core/pipeline_parallel/schedules.py:918`) |
-| **有效 `t_f` / `t_b`** | **显著下降**:MoE A2A(占层时 20%~40%)被掩盖,单步计算密度提高,等效缩短 `t_f`、`t_b` |
+| **有效 `t_f` / `t_b`** | 下降幅度取决于有多少 exposed A2A 能被另一微批的独立计算覆盖；源码没有给固定百分比，必须由目标作业 trace 测量 |
 | **峰值激活显存** | **升高**:F 与 B 两个 microbatch 的激活同时在世;额外持有 `schedule_plan` 对象;`delay_wgrad_compute` 需多存 wgrad 所需输入 |
-| **A2A 通信量** | 不变,只是被隐藏;`high_priority_a2a_comm_stream`(`megatron/core/transformer/transformer_config.py:766`)可把通信流设为 CUDA 高优先级 |
+| **A2A 通信量** | 不变,只是被隐藏;`high_priority_a2a_comm_stream`(`megatron/core/transformer/transformer_config.py:766`)可把通信流设为 CUDA 高优先级，资源旋钮详见 [[14_megatron_ep_analysis]] §8.4 |
 | **PP 通信量** | 与宿主调度相同 |
 
-**约束**(`megatron/core/transformer/transformer_config.py:3583-3740`):需 torch ≥ 2.6.0;仅支持 EP + `alltoall`/`flex` dispatcher;必须关闭 full recompute 与 moe recompute;仅 bf16/fp16;`delay_wgrad_compute` 必须与本特性同开;VPP 形态下不支持 Megatron-FSDP。
+**约束**(`megatron/core/transformer/transformer_config.py:3583-3740`):需 torch ≥ 2.6.0;仅支持 EP + `alltoall`/`flex` dispatcher;仅 bf16/fp16;`delay_wgrad_compute` 必须与本特性同开;VPP 形态下不支持 Megatron-FSDP。**full recompute 已支持但不是无条件支持**：必须关闭 `distribute_saved_activations`，MTP + uniform 时 `recompute_num_layers==1`，attention/hidden dropout 都为 0，并禁止 delayed-scaling FP8（`:3602-3647`）；非 full 路径要求 `recompute_method` / `recompute_num_layers` 为 `None`，且所有路径都禁止 `recompute_modules` 包含 `moe`（`:3648-3658`）。
 
 ### ⑤.5 适用场景及原因
 
@@ -957,7 +961,7 @@ def get_total_workload(self, seq_length, cp_size):
 | ② 标准 1F1B | `(pp-1)/m` | `pp·A` | `2m(pp-1)` | 模型态 `/pp`,显存最省 | 气泡随 `pp/m` 上升 |
 | ③ 交错 VPP | `(pp-1)/(m·vp)` | `≈(1+1/vp)pp·A` | `≈2mv(pp-1)`(×vp) | 气泡 `/vp` | 通信 ×vp,显存略增 |
 | ④ P2P-overlap | `(pp-1)/(m·vp)` | VPP + recv buffer | 同 VPP(被隐藏) | 通信移出关键路径 | 额外缓冲;须 `batch_p2p_comm=False` |
-| ⑤ combined-1F1B | 继承宿主 | 宿主 + 1 个 microbatch + plan | 同宿主 | 掩盖 MoE A2A(省 20-40% 层时) | 激活峰值升高;仅限 MoE+EP |
+| ⑤ combined-1F1B | 继承宿主 | 宿主 + 1 个 microbatch + plan | 同宿主 | 掩盖可被另一微批独立计算覆盖的 MoE A2A | 激活峰值升高;仅限 MoE+EP |
 
 ### 11.2 选型决策树
 
@@ -1003,6 +1007,8 @@ def get_total_workload(self, seq_length, cp_size):
 | `pipeline_dtype` | 与模型一致 | `pp>1` 时必填 |
 | `defer_embedding_wgrad_compute` | 大 vocab 时 `True` | §1.5 |
 | `overlap_moe_expert_parallel_comm` | `True`(MoE 模型) | 调度器⑤ combined-1F1B |
+| `delay_wgrad_compute` | 与上行同开 | 将 wgrad 延后为可填充的计算节点；单独开启会被配置校验拒绝（`megatron/core/transformer/transformer_config.py:3712-3721`） |
+| `ep_overlap_early_attn_memory_release` | 显存峰值过高时试验 | 将 attention backward 提前以早释放激活，代价是部分 MoE 通信重新暴露（`megatron/core/model_parallel_config.py:355-366`）；要求上行的 combined overlap（`megatron/core/transformer/transformer_config.py:3736-3740`） |
 | `num_microbatches_with_partial_activation_checkpoints` | 按显存压力设窗口 | §②.2 Partial Checkpointing |
 | `--offload-modules` / fine-grained offloading | 显存墙严重时开 | 见 §1.4 与 `22_megatron_memory_optimization_analysis.md` §3.3 |
 
@@ -1024,7 +1030,10 @@ def get_total_workload(self, seq_length, cp_size):
 
 ## Related Pages
 
-- [[14_megatron_ep_analysis]] · [[12_megatron_tp_analysis]] · [[13_megatron_cp_analysis]] · [[16_megatron_distributed_optimizer_analysis]]
-- [[17_megatron_parallelism_orchestration_analysis]] · [[29_megatron_packed_dataset_dynamic_cp_analysis]](混合 CP 动态调度的集成入口)
-- [[20_megatron_comm_overlap_analysis]] · [[22_megatron_memory_optimization_analysis]](细粒度激活换出权威页,§3.3)
-- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
+- [[12_megatron_tp_analysis]] — 说明每个 pipeline stage 内部的 TP/SP 执行与通信。
+- [[13_megatron_cp_analysis]] — 说明 CP attention 通信怎样进入 microbatch 时间线。
+- [[14_megatron_ep_analysis]] — 提供 MoE A2A 与 delayed wgrad 的轴内机制。
+- [[17_megatron_parallelism_orchestration_analysis]] — 展开 PP/VPP rank、stage 与 ProcessGroup 构造。
+- [[20_megatron_comm_overlap_analysis]] — 把 PP schedule 与 DP/TP/CP/EP overlap 合并到同一时间线。
+- [[29_megatron_packed_dataset_dynamic_cp_analysis]] — 查看 packed microbatch 与 Dynamic CP 的调度入口。
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] — 返回全部 35 篇内容页的主题索引。

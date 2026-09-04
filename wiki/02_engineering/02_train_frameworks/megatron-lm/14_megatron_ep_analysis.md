@@ -5,13 +5,13 @@ title: "Megatron-LM 专家并行(Expert Parallelism / MoE)深度解析"
 # Megatron-LM 专家并行(Expert Parallelism / MoE)深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在改动文件（`moe_layer.py` / `token_dispatcher.py` / `experts.py` / `moe_utils.py` / `transformer_config.py`）上的 69 处引用已在新基线下逐条打开重核，含承接前文路径的裸续引 `:NNN`；全部断言仍成立，仅行号漂移。
-> **重定基线**：2026-08-28 由 `ee3f1ffa2acd18131ab67cabab4cec45283512ab`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
+> **基线说明**：本页活动引用已统一重核到上述冻结提交；旧基线推进记录归 [[changelog]]，不再叠放在学习页页头。
 > 核心目录:`megatron/core/transformer/moe/`(`megatron/core/transformer/moe/moe_layer.py` 901 行、`megatron/core/transformer/moe/token_dispatcher.py` 2105 行、`megatron/core/transformer/moe/router.py`、`megatron/core/transformer/moe/experts.py`)
 > 配套阅读:`15_megatron_pp_schedulers_analysis.md`(EP A2A 重叠 = 该文档的调度器⑤ combined-1F1B)
 > 适用读者:已了解 transformer 训练与 TP/DP/PP,想吃透 Megatron MoE 专家并行实现的工程师。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
+> **首次阅读边界**：首读建议读 §1–§5、§7、§10 和 §11，先建立 route→dispatch→expert→combine 主线，并在选型前读完硬约束；§6（Flex/DeepEP/HybridEP/NCCLEP）、§8（重叠）、§9（folding）和配置契约属于进阶阅读，§12 是可选展望。页面不拆分，因为两条路径共用同一个 token 所有权不变量。
+> **最近更新**：2026-09-03。标明首读/进阶边界，收回 A2A stream priority，并承接 shared-expert intermediate-size 配置契约。
 
 ---
 
@@ -400,7 +400,7 @@ T2 = prob(E0)·out0[T2] + prob(E3)·out3[T2]
 …（每 token 由其 topk 个专家的输出加权求和）
 ```
 
-> 一句话:**token 按专家归属"精确投递",参数零复制、激活零广播**——通信量 `∝ topk`、显存 `÷ EP`,与 AllGather 的"收全量"形成对比(§②.4 / [[02_megatron_moe_training_optimization_analysis]] §3.4.1 给出精确公式 `2·S·B·H·K·(E-1)/E²`)。
+> 一句话:**token 按专家归属"精确投递",参数零复制、激活零广播**——通信量 `∝ topk`、显存 `÷ EP`,与 AllGather 的"收全量"形成对比(本页 §②.4 给出精确公式 `2·S·B·H·K·(E-1)/E²`;跨机制选型见 [[39_megatron_moe_training_optimization_analysis]])。
 
 ### ②.4 开销分析
 
@@ -538,7 +538,7 @@ $$
 \boxed{\ \text{IB 加速比}=\dfrac{k/P}{\,1-(1-1/P)^k\,}\ }
 $$
 
-dispatch 与 combine 对称(`fused_combine` 凭 `handle` 反向),前向 ×2、含反向 ×2 → 总系数 4,与 §②.4 / [[02_megatron_moe_training_optimization_analysis]] §3.4.1 标准 A2A 的 `4·S·B·H·K·(E−1)/E²` 同构,差别在把"按专家"换成"按远端 node"。
+dispatch 与 combine 对称(`fused_combine` 凭 `handle` 反向),前向 ×2、含反向 ×2 → 总系数 4,与本页 §②.4 标准 A2A 的 `4·S·B·H·K·(E−1)/E²` 同构,差别在把"按专家"换成"按远端 node";跨机制选型见 [[39_megatron_moe_training_optimization_analysis]]。
 
 #### ③.3.3 数值走查(2 node × 2 GPU,8 专家,EP=4,topk=4)
 
@@ -616,7 +616,7 @@ $R(X)=\{B\}$,$g_B(X)=2$(GPU2、GPU3),$g_s(X)=1$(GPU1)。
 >
 > 4. **新增 `moe_hybridep_pad_variable_tokens` 开关**(#5048,`megatron/core/transformer/transformer_config.py:992`)。把上条的"补齐到组内最大 token 数"从"仅当启用 `sequence_packing_scheduler`"解耦:当前端自供本地 packed THD(不走 Megatron-Core 的 sequence packing 调度器)、但各 rank token 数仍不齐时,可单独打开此开关触发同样 padding。
 >
-> 5. **新增 `moe_hybridep_num_sms_preprocessing`(默认 108)**(#4694,`megatron/core/transformer/transformer_config.py:1070`)。HybridEP 元数据扫描(preprocessing / metadata scan)kernel 占用的 SM 数,透传到 `init_hybrid_ep_buffer` / `hybrid_ep_dispatch`。与 `high_priority_a2a_comm_stream`(见 [[20_megatron_comm_overlap_analysis]] §6.7)配合,细调 A2A 与计算抢 SM 的平衡。
+> 5. **新增 `moe_hybridep_num_sms_preprocessing`(默认 108)**(#4694,`megatron/core/transformer/transformer_config.py:1070`)。HybridEP 元数据扫描(preprocessing / metadata scan)kernel 占用的 SM 数,透传到 `init_hybrid_ep_buffer` / `hybrid_ep_dispatch`。与 `high_priority_a2a_comm_stream`(见本页 §8.4)配合,细调 A2A 与计算抢 SM 的平衡。
 >
 > 6. **移除 HybridEP IB 硬件上限的 Python 侧守卫**(#4846 移除;此前 #4719 添加、#4718 又 revert 过早期版本)。dev 一度在 `megatron/core/transformer/moe/fused_a2a.py` 加过 `_validate_hybrid_ep_ib_tx_depth`,多节点(走 RDMA)且 per-rank token 过大时提前报"IB dispatch QP depth 超 65535 硬件上限"。**HEAD(dev@232c478d4)已彻底删除该检查**,不再有 Python 侧 IB token 上限校验(交底层库)。若多节点 HybridEP 报 QP depth 错误,需自行降 per-rank token(减 seq/micro-batch 或增 TP/CP)。
 >
@@ -687,6 +687,12 @@ dispatch/combine 的 A2A **默认在关键路径上**:计算流必须等 token �
 
 - `--delay-wgrad-compute`:把专家反向拆成 `dgrad`(输入梯度,在关键路径)和 `wgrad`(权重梯度,可延后),用 `wgrad` 去填 A2A 的缝(借鉴 Zero-Bubble 的 B/W 拆分,见 PP 文档 §9)。是 combined-1F1B 的必备搭档。
 - `overlap_dispatch_backward_with_experts_wgrad`(`megatron/core/transformer/moe/moe_layer.py:459`、`540`):用专用 `_delayed_wgrad_stream` 把专家 wgrad 与 dispatch 的反向 A2A 重叠。与 `delay_wgrad_compute` 互斥(`megatron/core/transformer/transformer_config.py:3731`)。
+
+### 8.4 A2A stream 优先级与 SM 预算
+
+`high_priority_a2a_comm_stream` 是 EP 通信的本地资源旋钮，不是新的调度器。combined-1F1B 的两个宿主都把它传给 `set_streams`（`megatron/core/pipeline_parallel/combined_1f1b.py:67`、`:203`）；`set_streams(high_priority=True)` 取 `torch.cuda.Stream.priority_range()` 的 high 端创建 communication stream（`megatron/core/pipeline_parallel/utils.py:350-362`）。它改变的是 dispatch/combine kernel 和计算 kernel 同时 ready 时的排队优先级，**不改变 A2A 数据量、前后依赖或 F/B 配对**。
+
+HybridEP 还有 `moe_hybridep_num_sms_preprocessing`这个 metadata-scan SM 预算（§6 增量第 5 条）。两个旋钮必须分开读：前者是 stream 优先级，后者是某个 HybridEP kernel 的资源额度。它们不保证吞吐必然上升；与 TP/DP/PP/CP 同时开启后的全局竞争和 profiler 判读归 [[20_megatron_comm_overlap_analysis]]。
 
 ---
 
@@ -821,7 +827,7 @@ dispatch/combine 的 A2A **默认在关键路径上**:计算流必须等 token �
 
 **二、MoE 的 A2A 正在被推向"静态形状 + 可捕获"。** 三个锚点指同一个方向:① AllToAll preprocess 里那次把 `input_splits`/`output_splits` 拷回主机的 DtoH 同步(`megatron/core/transformer/moe/token_dispatcher.py:955-968`)挂着「TODO: use MemcpyBatchAsync instead.」(`:960`),而它正是 `moe_preprocess` 进不了 CUDA Graph 的原因(`megatron/core/transformer/transformer_config.py:3430-3437`);② `permute` 的 docstring 已把 `drop_and_pad` 明写成「This function exploits this feature to use ops that support cuda graph」(`megatron/core/transformer/moe/moe_utils.py:344-345`);③ §6 末尾 `[!contradiction]` 已核过的 `moe_ncclep_static_shape` 就是拿定长接收缓冲去掉这次同步,而它关掉时的告警原话是重叠收益「loses the overlap benefit」(`megatron/core/transformer/transformer_config.py:3675-3685`)。**由此可推断**:"动态形状 + DtoH 同步"是 MoE 路径上被系统清理的对象,§5(AllToAll)那套靠 `splits` 回主机驱动通信的机制是这轮改造的直接目标;评估新后端时,应把"能否静态形状"看作和通信量同权重的指标。
 
-**三、进程组正从全局 `parallel_state` 迁成调用方传入的 `pg_collection`。** 锚点是五处成组的 TODO:`megatron/core/transformer/moe/moe_layer.py:249`、`megatron/core/transformer/moe/moe_utils.py:1199`、`:1495` 的「TODO(Hepteract): delete the usage of the global parallel_state.」,以及 `megatron/core/transformer/moe/experts.py:179`、`:1360` 的「TODO(M4): breaking api, switched from pass in tp_group to pass in pg_collection.」。基线下 `MoETokenDispatcher.__init__` 已经完全从 `pg_collection` 取 ep / expt_tp / tp_ep 三个组(`megatron/core/transformer/moe/token_dispatcher.py:82-85`)。**由此可推断**:§3.1 那套 EP/ETP/EDP 进程组的**语义**稳定,但**取法**还会变(与 [[12_megatron_tp_analysis]] §10 记录的 TP 组同一方向);读引用进程组的 MoE 代码时,应默认它来自传入的 `pg_collection` 而不是全局单例。
+**三、进程组正从全局 `parallel_state` 迁成调用方传入的 `pg_collection`。** 锚点是五处成组的 TODO:`megatron/core/transformer/moe/moe_layer.py:249`、`megatron/core/transformer/moe/moe_utils.py:1199`、`:1495` 的「TODO(Hepteract): delete the usage of the global parallel_state.」,以及 `megatron/core/transformer/moe/experts.py:179`、`:1360` 的「TODO(M4): breaking api, switched from pass in tp_group to pass in pg_collection.」。基线下 `MoETokenDispatcher.__init__` 已经完全从 `pg_collection` 取 ep / expt_tp / tp_ep 三个组(`megatron/core/transformer/moe/token_dispatcher.py:82-85`)。**由此可推断**:§3.1 那套 EP/ETP/EDP 进程组的**语义**稳定,但**取法**还会变(与 [[12_megatron_tp_analysis]] §5.3 记录的 TP 组同一方向);读引用进程组的 MoE 代码时,应默认它来自传入的 `pg_collection` 而不是全局单例。
 
 **四、MoE 的指标聚合正在从全局函数迁到 tracker 对象。** `megatron/core/transformer/moe/moe_utils.py` 上挂着五个 `@deprecated`:`save_to_aux_losses_tracker`(`:991-993`)、`clear_aux_losses_tracker`(`:1027`)、`reduce_aux_losses_tracker_across_ranks`(`:1109-1111`)、`get_moe_layer_wise_logging_tracker`(`:1128`)、`track_moe_metrics`(`:1142-1144`),alternative 一律指向 `get_moe_metrics_tracker()` 的对应方法,移除版本标到 0.17 / 0.18。**由此可推断**:§7.1 里靠 `aux_loss` 观察负载不均衡的那条路,读数入口会换;写监控代码时应直接用 tracker,不要再调这五个函数。
 
@@ -838,10 +844,12 @@ dispatch/combine 的 A2A **默认在关键路径上**:计算流必须等 token �
 **下表直接取自 `megatron/core/transformer/transformer_config.py` 的类体**。按作用分三类：**路由算法细节**（`moe_router_score_function`、`moe_router_pre_softmax`、`moe_router_group_topk`、`moe_router_topk_scaling_factor`、`moe_router_bias_update_rate` 等，机制见 [[10_megatron_model_structure_analysis]] §6）、**丢弃与容量策略**（`moe_token_dropping`、`moe_token_drop_policy`）、**后端与融合细节**（`moe_hybridep_num_blocks_*`、`moe_permute_fusion_into_hybridep`、`moe_ncclep_use_symm_mem`、`dense_grouped_gemm`）。
 
 
-### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，21 项）
+### `TransformerConfig`（`megatron/core/transformer/transformer_config.py`，23 项）
 
 | 字段 | 类型 | 默认 | 契约 | 行 |
 |---|---|---|---|---|
+| `high_priority_a2a_comm_stream` | `bool` | `False` | 为 combined-1F1B A2A overlap 的 communication stream 使用 CUDA 高优先级。 | `:766-768` |
+| `moe_shared_expert_intermediate_size` | `Optional[int]` | `None` | Shared expert 的总 FFN hidden size；多 shared experts 时应等于数量乘单 expert FFN size，None 表示禁用。启用 shared-expert overlap 会改变 router/shared 分支梯度相加顺序，产生轻微数值差异。 | `:773-783` |
 | `moe_shared_expert_gate` | `bool` | `False` | Enable gate for shared expert. Only effective when moe-shared-expert-intermediate-size is set. | `:785` |
 | `use_grouped_gemm_for_shared_expert` | `bool` | `False` | Use GroupedLinear(num_groups=1) for the shared expert MLP to trigger the Transformer Engine grouped SwiGLU fusion path. Only effective when moe-shared-expert… | `:795` |
 | `moe_shared_expert_glu_interleave_size` | `Optional[int]` | `None` | When set, GLU activations in the shared expert MLP will use a block interleaved format. This is only effective when use_grouped_gemm_for_shared_expert is set. | `:801` |
@@ -864,12 +872,14 @@ dispatch/combine 的 A2A **默认在关键路径上**:计算流必须等 token �
 | `moe_hybridep_num_blocks_unpermute` | `Optional[int]` | `None` | Number of CUDA thread blocks for the unpermute part in HybridEP. When permute_fusion_into_hybridep is True, this sets the number of SMs for the unpermute par… | `:1065` |
 | `moe_ncclep_use_symm_mem` | `bool` | `False` | For the 'ncclep' flex dispatcher: use the NCCL symmetric-memory zero-copy IO path (ep_bootstrap zero_copy + symm-mem-backed receive/combine buffers) instead … | `:1084` |
 
-> 该类共 266 个字段，本表收 21 项；其余 245 项已在别处归属：主要归 [[10_megatron_model_structure_analysis]] 92 项、[[23_megatron_precision_cudagraph_fusion_analysis]] 38 项、[[21_megatron_fusion_operators_analysis]] 26 项、本页他处 17 项，另散见 20 页（完整归属见 `docs/coverage/megatron-lm.yaml`）。
+> 该类共 266 个字段，本表收 23 项；其余字段的唯一 owner 见 `docs/coverage/megatron-lm.yaml`。
 
 ## Related Pages
 
-- [[15_megatron_pp_schedulers_analysis]] · [[10_megatron_model_structure_analysis]] · [[17_megatron_parallelism_orchestration_analysis]] · [[23_megatron_precision_cudagraph_fusion_analysis]]
-- [[14_megatron_ep_analysis]] · [[02_megatron_moe_training_optimization_analysis]] · [[20_megatron_comm_overlap_analysis]] · [[13_megatron_cp_analysis]]
-- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]]
-
-
+- [[10_megatron_model_structure_analysis]] — 提供 MoE layer、router 与 expert module 的装配前置。
+- [[13_megatron_cp_analysis]] — 说明 CP 在 MoE parallel folding 中怎样与 EP 分域。
+- [[15_megatron_pp_schedulers_analysis]] — 展开 MoE 层所在 pipeline stage 的调度与 delayed wgrad。
+- [[17_megatron_parallelism_orchestration_analysis]] — 展开 EP/ETP/EDP process groups 的构造与注入。
+- [[20_megatron_comm_overlap_analysis]] — 将 A2A 与其它并行轴的 stream、带宽和显存竞争合并诊断。
+- [[39_megatron_moe_training_optimization_analysis]] — 在本页机制基础上按四种所有权做 MoE 工程选型。
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] — 返回全部 35 篇内容页的主题索引。

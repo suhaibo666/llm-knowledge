@@ -7,7 +7,7 @@ title: "Megatron-LM 配置面：从 dataclass 到 CLI 与 YAML 的单一真相"
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
 > **维度**：功能树模块 O「训练任务编排与入口」的配置子面（O1）。本页讲**配置怎么被声明、被解析、被校验、被实例化**，不讲任何一个具体 flag 控制的机制——那些在各机制页。
 > **核心文件**：`megatron/training/argument_utils.py`（760 行）、`megatron/training/config/`（9 文件）、`megatron/training/arguments.py`、`megatron/training/yaml_arguments.py`
-> **最近更新**：2026-09-02 首建。
+> **最近更新**：2026-09-03。Wave E 对账确认 14 个 dataclass 的 590 个字段在 35 篇内容页中 C1/C2/C3 全清零；export 与 distillation 仍在 dataclass 配置枚举面之外。
 
 ---
 
@@ -75,7 +75,11 @@ Megatron 的解法是**让 dataclass 成为唯一真相**：字段的类型标�
 
 `exclude` 参数的用途在 docstring 里写明：省略内部字段、计算属性，或应当经其他途径配置的属性（`:88-92`）。三处用到它——说明"dataclass 字段"与"用户该配的 flag"不完全重合，需要人工划一道线。
 
-**这份清单对知识库有直接后果**：`docs/coverage/megatron-lm.yaml` 的配置枚举面必须覆盖这 13 个类，否则枚举轴看不见的字段就是页面容易漏的字段。这正是 2026-09-02 把 `megatron/training/config/` 的 12 个类补进 `sources:` 的原因，详见 [[40_megatron_feature_tree_analysis]] §3.2。
+**工厂调用清单与 coverage 枚举面不是同一个集合**。当前 `docs/coverage/megatron-lm.yaml` 固定为 **14 sources / 590 字段**：`ModelParallelConfig` + `TransformerConfig` + `megatron/training/config/` 下 12 个类。上表中的 `FaultInjectorConfig` 有 9 个自动 CLI 字段，但不在这次 590 字段枚举范围；反过来，`InferenceSetupConfig` 在 coverage 中，却由手写 `_add_inference_args` / inference bridge 消费，而不是上表 13 个 `ArgumentGroupFactory` 调用之一。这是批准口径的显式边界；若要覆盖所有 CLI dataclass，应另行扩展 scope，不能把 590 静默改成 599。枚举面补全过程见 [[40_megatron_feature_tree_analysis]] §3.2。
+
+其中 `TokenizerConfig` 的 20 字段现统一归 [[11_megatron_dataset_analysis]] §3.6，因为分词是文本进入 dataset 前的同一输入链。与之相对，[[37_megatron_trtllm_export_analysis]] 的 `ExportConfig` 不属于这 13 处 training dataclass 工厂调用，[[38_megatron_logits_distillation_analysis]] 的开关则来自手写 argparse；两者在配置 coverage 中保持 zero owner 是枚举边界的结果，不是遗漏。
+
+Wave D 又把案例页中的七个通用字段归还机制 owner：`attention_dropout`、`init_method`、`output_layer_init_method` → [[10_megatron_model_structure_analysis]]，`hierarchical_context_parallel_sizes`、`cp_partition_mode` → [[13_megatron_cp_analysis]]，`moe_shared_expert_intermediate_size` → [[14_megatron_ep_analysis]]，`params_dtype` → [[23_megatron_precision_cudagraph_fusion_analysis]]。[[34_deepseek_v4_tensor_parallel_analysis]] 与 [[35_deepseek_v4_context_parallel_analysis]] 因而保持 zero owner，只承担 DSv4 案例解释；这改变的是知识库归属，不改变源码的配置生成路径。
 
 ---
 
@@ -104,7 +108,7 @@ CLI 之外还有 YAML。这里有一个容易踩空的事实：**Megatron 现在
 
 白名单可以扩（`add_prefix` 要求前缀以 `.` 结尾，`:77-82`）也可以关，但**关闭时会打一条 WARNING**："Target allowlist has been disabled. Arbitrary _target_ values will be permitted."（`:93-96`）。
 
-> 这个设计与 [[42_megatron_rl_runtime_analysis]] 里 `megatron/rl/agent/registry.py` 的 agent 白名单是**同一类防护的两个实例**：配置文件里能指定"用哪个类"的地方，都要有一道白名单。两处独立实现，说明这是 Megatron 里一条被反复应用的约束，而不是某一处的偶然。
+> 这个设计与 [[33_megatron_rl_runtime_analysis]] 里 `megatron/rl/agent/registry.py` 的 agent 白名单是**同一类防护的两个实例**：配置文件里能指定"用哪个类"的地方，都要有一道白名单。两处独立实现，说明这是 Megatron 里一条被反复应用的约束，而不是某一处的偶然。
 
 **严格度两档**：`InstantiationMode`（`:25`）分 `STRICT` 与 `LENIENT`。差别在于 YAML 里出现 dataclass 没有的多余键时——STRICT 报错、LENIENT 丢弃。**但 `_target_` 解析失败在两档下都会传播**（`:145` 注释明写 "Errors resolving a ``_target_`` propagate in both modes"）：多余的键可以宽容，指错了类不能。
 
@@ -176,6 +180,6 @@ CLI 解析出来的是一个扁平的 `argparse.Namespace`，而程序内部要�
 
 - [[40_megatron_feature_tree_analysis]] — 功能树总览；本页是它 §3.2「枚举轴补全」那条更新背后的机制，也是模块 O 的配置子面
 - [[01_megatron_architecture_analysis]] — 五层架构里"配置固化"是第一层状态；本页展开那一层的实现
-- [[42_megatron_rl_runtime_analysis]] — RL 侧 agent registry 的白名单与本页 §3.2 的 `TargetAllowlist` 是同一类防护的两个实例
-- [[43_megatron_job_resilience_analysis]] — `RerunStateMachineConfig`、`StragglerDetectionConfig`、`FaultInjectorConfig` 三个由本页工厂生成的参数组，其语义在那里
+- [[33_megatron_rl_runtime_analysis]] — RL 侧 agent registry 的白名单与本页 §3.2 的 `TargetAllowlist` 是同一类防护的两个实例
+- [[28_megatron_training_stability_observability_analysis]] — `RerunStateMachineConfig`/`StragglerDetectionConfig` 的配置契约与 `FaultInjectorConfig` 的注错机制在那里；FaultInjector 的 9 个字段仍属于本页 §2.4 声明的 590 枚举外边界
 - [[19_megatron_dist_checkpointing_analysis]] — `CheckpointConfig`（55 字段）是本页 §2.4 表中最大的一个 config 类，它控制的存档机制在那里

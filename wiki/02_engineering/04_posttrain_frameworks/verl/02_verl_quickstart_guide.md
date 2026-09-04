@@ -174,8 +174,8 @@ bash examples/grpo_trainer/run_qwen3_4b_fsdp.sh \
 
 - [[01_verl_architecture_overview_analysis]] —— 当前四平面架构
 - [[10_verl_end_to_end_iteration_analysis]] —— 默认 V1 sync 的完整调用链
-- [[16_verl_v1_transfer_queue_analysis]] —— TQ key/meta/field 数据面
 - [[17_verl_v1_async_trainer_analysis]] —— 两种稳定 async mode 的额外约束
 - [[18_verl_agent_loop_reward_runtime_analysis]] —— 生成与奖励运行时
 - [[23_verl_training_checkpoint_recovery_analysis]] —— 保存与恢复检查
+- [[verl/index|verl 索引]] —— 当前版本、阅读顺序与全部机制页入口
 - [[02_engineering/04_posttrain_frameworks/index|后训练框架]] —— 父目录

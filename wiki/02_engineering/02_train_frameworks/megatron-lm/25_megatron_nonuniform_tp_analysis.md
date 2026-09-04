@@ -9,7 +9,7 @@ title: "Megatron Nonuniform Tensor Parallelism (NTP) 深度分析"
 > **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。NTP 是本轮最稳定的一页——`megatron/core/distributed/nonuniform_tp.py` 在这 578 个提交里几乎未动：`git diff ee3f1ffa..71092579` 只有一处 3 删 1 增（`:946-952`，`get_data_and_context_parallel_group(with_context_parallel=True)` 收敛为 `get_data_parallel_group(with_context_parallel=True)`），文件长度 1463 → 1461 行。因此 `:946` 之前的引用行号**全部原样命中**，只有其后的反向 hook 整体上移 2 行。
 > **基线沿革**：本页原仅声明分支/未声明基线；2026-08-27 经核对 9 处引用行号在 `ee3f1ffa…` 命中后补钉（该文件在 `232c478d4` 处内容亦完全一致，两基线均命中）；2026-08-28 统一推进到 `71092579`。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
+> **最近更新**：2026-09-03。接管旧补遗页的 NTP owner 职责；机制边界不变，并改写跨配置权重搬运与作业恢复接缝。
 
 **Date**: 2026-05-20
 **Status**: Complete
@@ -68,7 +68,7 @@ NTP **不是性能优化特性**，而是**容错特性**。目标不是"跑得�
 **⑤ 为什么"只弥合梯度"这条路在数学上成立。**
 
 > [!note] 推断
-> 源码陈述的是**做法**：两次 all-to-all 的时机（`README_NONUNIFORM_TP.md:205-208`）、`ntp_map` 只写元数据（`megatron/core/distributed/nonuniform_tp.py:662-663`）、core / extra / spare 三类 rank 谁参与 DP sync（`:149-164`）。**它从没解释"为什么梯度层弥合就够了"**——即"同一份逻辑权重在 TP=6 与 TP=8 两种切法下，只要梯度按 shard 对齐规约就等价"这一步，源码与 README 里都没有任何注释陈述；§3.2 的 `sync_partitions` / `comp_2_sync` 算法（`megatron/core/distributed/nonuniform_tp.py:624-640`）只是把这条等价性**实现**了出来。要引用这层判断，请回到 `megatron/core/distributed/nonuniform_tp.py:624-663` 与 `README_NONUNIFORM_TP.md:205-208`，不要引用本段推断。
+> 源码陈述的是**做法**：两次 all-to-all 的时机（`README_NONUNIFORM_TP.md:205-208`）、`ntp_map` 只写元数据（`megatron/core/distributed/nonuniform_tp.py:662-663`）、reduced active / healthy core / healthy extra 三类活跃 rank 谁参与 DP sync（`:149-164`）；reduced 副本里被排除的 non-active spare 已在建组时退出（`:554-559`）。**它从没解释"为什么梯度层弥合就够了"**——即"同一份逻辑权重在 TP=6 与 TP=8 两种切法下，只要梯度按 shard 对齐规约就等价"这一步，源码与 README 里都没有任何注释陈述；§3.2 的 `sync_partitions` / `comp_2_sync` 算法（`megatron/core/distributed/nonuniform_tp.py:624-640`）只是把这条等价性**实现**了出来。要引用这层判断，请回到 `megatron/core/distributed/nonuniform_tp.py:624-663` 与 `README_NONUNIFORM_TP.md:205-208`，不要引用本段推断。
 
 ## 3. 怎么做的？
 
@@ -107,7 +107,7 @@ ntp_map(module, ntp_config, num_shards)  # num_shards = num_attention_heads 或 
 
 核心算法（`megatron/core/distributed/nonuniform_tp.py:626-663`）：
 1. 将 `num_shards` 均匀分给 `reduced_tp_size` 个 rank（`sync_partitions`）
-2. Spare rank 的 shards 被逐个从 reduced TP ranks 的尾部"借"走（`comp_2_sync` 映射）
+2. healthy full-TP 副本中多出的 extra shards 被逐个映射到可与 reduced 副本配对的 core ranks（`comp_2_sync` 映射）
 3. 计算 `send_splits[i][j]`（rank i → rank j 的梯度元素数）和 `recv_splits`（转置）
 
 `ntp_map` **只设置元数据，不动参数数据**：
@@ -124,35 +124,37 @@ Reduced（unhealthy）rank 跳过 ntp_map——它们直接按新的 reduced TP 
 
 ```mermaid
 sequenceDiagram
-    participant Spare as Spare Rank<br/>(tp ≥ reduced_tp)
-    participant Core as Core Rank<br/>(tp < reduced_tp)
-    participant Extra as Extra Rank<br/>(healthy, tp ≥ reduced_tp)
+    participant HE as Healthy Extra<br/>full TP high rank
+    participant HC as Healthy Core<br/>full TP low rank
+    participant RA as Reduced Active<br/>reduced TP replica
     participant DP as DP Group
 
-    Note over Spare,Extra: Step 1: Backward Hook — Spare→Core all-to-all
-    Spare->>Core: main_grad 按 send_splits 发给对应 core rank
-    Core->>Core: 接收梯度写入 side_grad buffer
+    Note over HE,HC: Step 1 pre-sync gradient reshard
+    HE->>HC: main_grad via all-to-all
+    HC->>HC: received gradient enters side_grad
 
-    Note over Spare,Extra: Step 2: DP 梯度同步
-    Core->>DP: main_grad + side_grad 参与 all-reduce
-    Spare->>Spare: 不参与 DP sync
-    Extra->>DP: main_grad 参与 all-reduce
+    Note over HC,RA: Step 2 data-parallel gradient sync
+    HC->>DP: main_grad plus side_grad
+    RA->>DP: main_grad
+    DP-->>HC: reduced gradients
+    DP-->>RA: reduced gradients
+    Note over HE,HC: Healthy Extra skips DP sync
 
-    Note over Spare,Extra: Step 3: Post-Sync Reshard — Core→Extra all-to-all
-    Core->>Extra: reduced side_grad 按 recv_splits 发回 extra rank
-    Extra->>Extra: 接收属于自己的梯度
+    Note over HE,HC: Step 3 post-sync gradient reshard
+    HC->>HE: reduced side_grad via all-to-all
+    HE->>HE: receive owned gradient shard
 ```
 
 **Step 1** 在 backward hook 中触发（`megatron/core/distributed/nonuniform_tp.py:1384-1459`，即 `def ntp_hook` 整体；较旧基线上移 2 行）：
-- Core rank：接收 spare rank 的梯度 → 写入 `side_grad`
-- Spare rank：将 `main_grad` 按 `send_splits` 发给对应 core rank
+- Healthy core rank：接收 healthy extra rank 的梯度 → 写入 `side_grad`
+- Healthy extra rank：将 `main_grad` 按 `send_splits` 发给对应 healthy core rank
 - 使用 `_ntp_all_to_all`（封装 `dist.all_to_all`，处理非连续 tensor）
 
 **Step 2** DP 梯度同步（`NonuniformTPParamAndGradBucketGroup`）：
 - `_ntp_current_rank_should_dp_sync`（`megatron/core/distributed/nonuniform_tp.py:149-164`）控制谁参与 DP sync
 - Reduced 副本：所有 active ranks 正常参与
 - Healthy 副本：只有 core ranks（`tp_rank < reduced_tp_size`）参与 DP sync；extra ranks 不参与
-- Spare rank 已经被折叠，不存在
+- Reduced 副本的 non-active spare 已在建组时退出，不出现在这条同步链；实现局部注释把 healthy full-TP 的 high-rank 发送者简称为“Spare GPU”（`:1428-1432`），语义上应读作 healthy extra rank
 
 **Step 3** Post-sync reshard（`megatron/core/distributed/nonuniform_tp.py:694-744`）：
 - `_ntp_start_post_sync_grad_reshard` 将 DP 同步后的 side_grad 发回 healthy extra ranks
@@ -161,7 +163,7 @@ sequenceDiagram
 ### 3.4 Buffer 与 Bucket 适配
 
 `NonuniformTPParamAndGradBuffer`（`megatron/core/distributed/nonuniform_tp.py:891-936`）：
-- Core rank 额外分配 `side_grad` 空间（大小 ≈ `recv_splits` 中 spare 贡献的总和）
+- Healthy core rank 额外分配 `side_grad` 空间（大小 ≈ `recv_splits` 中 healthy extra 贡献的总和）
 - `_ntp_side_grad_index_map` 追踪 side_grad 在 buffer 中的偏移
 - 主 grad（`main_grad`）对优化器保持连续可见，side_grad 是附加的
 
@@ -235,7 +237,7 @@ Reduced 副本 GPU 计算量更大，会成为 DP all-reduce 的尾延迟。缓�
 | 4 | helper 假设 global rank 按**连续的 nominal DP 副本**排布 | `README_NONUNIFORM_TP.md:89-96`（`dp_rank = global_rank // dp_replica_size`、`local_tp_rank = global_rank % tp_base`） | 真正"打包"的异构布局（TP2 + TP4 共 6 张卡）不能用这个 helper，README 明说要在训练脚本里显式建组（`:113-115`），并给出该布局应有的 TP / DP 组（`:118-119`） |
 | 5 | NTP 不负责 rank → 物理 GPU 的映射 | `README_NONUNIFORM_TP.md:135-137`：「NTP does not assign global ranks to physical GPUs. It only observes the global rank after `torch.distributed.init_process_group()`. The launcher must create the desired mapping from global rank to node and GPU.」 | 拓扑摆错 NTP 不会报错，只会慢；README 因此要求先打印 rank/host/GPU 表核对（`:180-196`），并写明「Check this printed table before trusting an NTP run.」（`:198`） |
 | 6 | 传入的 `pg_collection` 必须同时带 `tp` 与 `dp_cp` | `megatron/core/distributed/nonuniform_tp.py:952`（`assert hasattr(pg_collection, 'tp') and hasattr(pg_collection, 'dp_cp')`） | assert 失败 |
-| 7 | NTP buffer 仍沿用 DDP 那对相反的长度约束 | `:993`（用 distopt 时 `numel % data_parallel_world_size == 0`）、`:997`（不用 distopt 时 `numel == numel_unpadded`） | 与 [[16_megatron_distributed_optimizer_analysis]] §20.1 第 1/2 条同款，NTP 的 buffer 子类没有放宽它 |
+| 7 | NTP buffer 仍沿用 DDP 那对相反的长度约束 | `:993`（用 distopt 时 `numel % data_parallel_world_size == 0`）、`:997`（不用 distopt 时 `numel == numel_unpadded`） | 与 [[16_megatron_distributed_optimizer_analysis]] §12.1 第 1/2 条同款，NTP 的 buffer 子类没有放宽它 |
 | 8 | TE userbuffer 的 TP domains 必须非空、无重复、互不重叠 | `megatron/core/extensions/nonuniform_tp_transformer_engine.py:23`、`:25`、`:28`、`:33`，四处均抛 `ValueError` | 直接抛错。domains 还会按首 rank 排序，理由写在 docstring 里——「Every rank must create those groups in the same order, so callers may pass domains in any order and this helper normalizes them by first rank」（`:11-16`）；若某 rank 落不进任何 domain 则 `RuntimeError`（`:116`） |
 | 9 | `tp_spares=0` 时整套 helper 退化为 no-op | `README_NONUNIFORM_TP.md:79`：「Set `tp_spares=0` to make the NTP helpers a no-op.」 | 不报错，只是什么都不做——配错了会静默跑成普通 uniform TP |
 
@@ -257,7 +259,7 @@ Reduced 副本 GPU 计算量更大，会成为 DP all-reduce 的尾延迟。缓�
 README 已经给出了这条分叉：`initialize_nonuniform_tp_process_groups()` 的 helper 只支持"连续 nominal DP 副本"这一种排布（`README_NONUNIFORM_TP.md:89-96`），真正打包的异构布局（TP2 + TP4）「should be built with explicit process groups in the opt-in training script rather than with the contiguous nominal-replica helper」（`:113-115`），并要求把结果 `ProcessGroupCollection` 同时传给模型与 NTP DDP（`:128-131`）。**由此可推断**：NTP 的方向与编排层的整体演进一致——见 [[17_megatron_parallelism_orchestration_analysis]] §8 的"注入点下沉"与 `HyperCommGrid` named views；异构 TP domain 在 grid 一侧已有对象化表达（同页 §5③），NTP 那套自建组的 helper 更像过渡形态。源码没有给出迁移计划。
 
 **三、闭环缺的那一段是 checkpoint 工具链，而不是 NTP 本身。**
-§5.3 的表格已经把缺口写死：从 uniform TP checkpoint 恢复时，参数与优化器状态都需要外部工具合并 spare shard；`megatron/training/checkpointing.py`、`tools/checkpoint/`、`megatron/core/optimizer/distrib_optimizer.py` 三处对 NTP 均为零引用（§4）。**由此可推断**：NTP 想从"异构部署"扩到"在线故障恢复"，下一步必然落在 checkpoint 侧的 resharding 能力上（该侧现状见 [[19_megatron_dist_checkpointing_analysis]]，跨配置权重搬运见 [[27_megatron_tp_fsdp_resharding_supplements_analysis]] §5）——而不是继续加厚梯度层的 shim。
+§5.3 的表格已经把缺口写死：从 uniform TP checkpoint 恢复时，参数与优化器状态都需要外部工具合并 spare shard；`megatron/training/checkpointing.py`、`tools/checkpoint/`、`megatron/core/optimizer/distrib_optimizer.py` 三处对 NTP 均为零引用（§4）。**由此可推断**：NTP 想从"异构部署"扩到"在线故障恢复"，下一步必然落在 checkpoint 侧的 resharding 能力上（落盘恢复现状见 [[19_megatron_dist_checkpointing_analysis]]，RL 训推间的在线跨配置权重搬运见 [[30_megatron_rl_posttraining_consistency_analysis]]）——而不是继续加厚梯度层的 shim。后者是可借鉴的能力边界，不等于当前已经支持 NTP checkpoint 转换。
 
 **四、TE 适配层的存在本身是一条待消化的欠账。**
 `megatron/core/extensions/nonuniform_tp_transformer_engine.py` 用上下文管理器临时替换 `dist.new_group` / `dist.new_subgroups_by_enumeration`（`:119-120`，退出还原 `:124-125`），只为让 TE 在混合 size 的 TP domain 上建出正确的 userbuffer 组；`normalize_tp_domains` 的 docstring 说明了这层的硬要求——「Transformer Engine userbuffer initialization creates one process group per TP domain. Every rank must create those groups in the same order」（`:11-16`）。**由此可推断**：一旦 TE 自身支持按显式 domain 列表初始化 userbuffer，这 157 行适配层就会整体消失；在此之前它是 NTP 与 TE 版本耦合最紧的一处。
@@ -267,7 +269,7 @@ README 已经给出了这条分叉：`initialize_nonuniform_tp_process_groups()`
 NTP 是一个**梯度级 DDP shim**，在 DDP 梯度同步的前后插入两次 all-to-all 来弥合不同 TP size 的差异。它只做三件事：
 
 1. **重建通信组**：spare rank 退出，reduced 副本用更小的 TP group
-2. **梯度收集（Spare→Core）**：backward hook 中将 spare rank 的梯度收集到 core rank 的 side_grad
+2. **梯度收集（Healthy Extra→Healthy Core）**：backward hook 中将 healthy full-TP 副本 extra rank 的梯度收集到同一副本 core rank 的 side_grad
 3. **梯度归还（Core→Extra）**：DP sync 后将 reduced 梯度归还给 healthy extra ranks
 
 不做的事情同样重要：不碰参数数据、不碰优化器状态、不碰 checkpoint、不做在线故障检测。
@@ -277,5 +279,7 @@ NTP 是一个**梯度级 DDP shim**，在 DDP 梯度同步的前后插入两次 
 - [[20_megatron_comm_overlap_analysis]] — 多维通算重叠分析（NTP post-sync reshard 利用了相同的 overlap 机制）
 - [[16_megatron_distributed_optimizer_analysis]] — 分布式优化器分析（NTP 对其无感知）
 - [[22_megatron_memory_optimization_analysis]] — 显存优化全景（NTP side_grad 的额外显存开销）
-- [[34_deepseek_v4_tensor_parallel_analysis]] — DSv4 TP 分析（TP=1 的架构选择 vs NTP 的 TP 容错）
+- [[27_megatron_job_resilience_analysis]] — 进程内重启、NVRx 与作业级故障恢复；本页的 NTP 只负责预先定义的混合 TP 布局和梯度重共享。
+- [[30_megatron_rl_posttraining_consistency_analysis]] — 现有 Resharding/Refit 的 owner，用于辨清“在线权重搬运”与“NTP checkpoint 转换”之间仍缺的能力。
+- [[34_deepseek_v4_tensor_parallel_analysis]] — DSv4 当前 TP=1 硬边界/运行时 guard，与 NTP 对预定义混合 TP 布局的容错能力形成边界对照
 - [[15_megatron_pp_schedulers_analysis]] — LLM 并行计算依赖分析

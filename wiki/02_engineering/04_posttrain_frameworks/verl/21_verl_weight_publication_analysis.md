@@ -4,8 +4,8 @@ title: "verl 权重发布深潜 —— 从 full 广播到 shard-local delta"
 
 # verl 权重发布深潜 —— 从 full 广播到 shard-local delta
 
-> **代码基准**：volcengine/verl `main` @ `254a23edc62f25ebfae626e3932ae285d6f86009`
-> **最后更新**：2026-08-31
+> **代码基准**：`volcengine/verl@254a23edc62f25ebfae626e3932ae285d6f86009`（`main`）
+> **最后更新**：2026-09-03
 > **定位**：本页是 verl 的 **full / delta_sharded 权重发布唯一机制 owner**。训练 Engine 的常规计算边界见 [[13_verl_workers_engine_analysis]]，rollout server 与 PD 架构见 [[14_verl_rollout_runtime_analysis]]，性能选择见 [[30_verl_optimization_analysis]]；这些页面只保留入口与链接，不再复述本页状态机。Trainer 的持久化与跨重启恢复属于 [[23_verl_training_checkpoint_recovery_analysis]]，不能因类名 `CheckpointEngine` 而并入本页。
 
 > [!important] 一条主线
@@ -185,10 +185,31 @@ backend import 失败也不是静默降级。registry 记录 optional transport 
 
 这里的判断是由 owner 边界推出的运维约束，不是代码提供的自动恢复协议。尤其 `_shard_seeded` 是 CE 实例内状态，而 snapshot 在 Engine 内；两者没有共同 commit record，所以无法通过单个标志证明 rollout、transport 与 trainer snapshot 已原子前进（`verl/checkpoint_engine/delta_checkpoint_engine.py:596`、`verl/checkpoint_engine/delta_checkpoint_engine.py:601`）。
 
-## 8. 两个容易写错的历史纠正
+## 8. 历史演进与两个容易写错的纠正
+
+### 8.1 已退役的 SPMD 直连链
+
+> [!history] 历史基线，不是当前实现
+> 本小节只用于解释架构演进，源码定位固定在 `volcengine/verl@ab0705220a95952219111409d8f971872002c193`（2025-12-04）。该基线之后 `vllm_rollout_spmd.py` 被删除；当前行为只能以上文 `volcengine/verl@254a23edc62f25ebfae626e3932ae285d6f86009` 的 Engine / CheckpointEngine / rollout loader 契约为准。
+
+旧 SPMD 路径把角色切换、语义重组和推理模型写入串在一条直接调用链上：`generate_sequences()` 先进入 `rollout_mode()`；后者从 bridge 或 `per_tensor_generator()` 得到 generator，随后直接调用 rollout 的 `update_weights()`；旧 vLLM adapter 最终调用模型的 `load_weights()`（历史 `verl/workers/megatron_workers.py:663-694,768-793`；历史 `verl/workers/rollout/vllm_rollout/vllm_rollout_spmd.py:559-585`）。这证明的是旧调用关系，不代表这些对象仍存在于当前版本。
+
+`per_tensor_generator()` 当时同时知道三类知识：先在 PP 组发现参数 owner 并广播名称和 tensor，再按 EP/ETP、TP gather，最后做 HF 命名与 QKV/gate-up 等重组（历史 `verl/utils/megatron_utils.py:749-830,894-1035`）。与当前实现对照，所有权变化如下：
+
+| 关注点 | 旧 SPMD 直连链 | 当前 owner |
+|---|---|---|
+| 训练布局转 HF 语义 | 集中在 `per_tensor_generator()`，与 Megatron PP/EP/TP 细节绑定 | 各训练 Engine 的 full/shard/delta export 契约 |
+| 跨角色传输与会话 | worker 在角色切换中把 generator 直接交给 rollout | CheckpointEngine 与 Manager 管 prepare、wire、finalize 和服务暂停/恢复 |
+| 推理模型应用 | vLLM SPMD adapter 直接调用 `model.load_weights()` | rollout loader/adapter 按 vLLM、SGLang 和 wire format 分别实现 |
+
+两代实现共享的稳定目标是：先把训练布局翻译成接收端认识的参数语义，再安装到 live rollout；当前架构则把“语义转换、传输会话、模型写入”从一个直连链拆成三个 owner。旧页曾用“拓扑解耦”解释 Gather-Broadcast-Load：这可以作为对上述操作的分析重建——恢复接收端语义后，rollout 无须反推训练侧 TP/PP/EP 切法——但旧源码没有声明这是作者设计意图，也不能据此推出固定的显存膨胀倍数、全 rank 完整副本或全程阻塞。
+
+### 8.2 plain `delta` 已删除
 
 > [!contradiction] plain `delta` 已删除
 > 当前 registry 没有 `delta` backend，只有 `delta_sharded`。所谓 plain delta 是被淘汰的 rank-0 full snapshot 路线；不要把 full、delta、delta_sharded 写成三个仍可并列选择的当前模式（`docs/advance/delta_weight_sync.md:26`、`verl/checkpoint_engine/__init__.py:78`）。
+
+### 8.3 MindSpeed 不是整体删除
 
 > [!contradiction] MindSpeed 不是整体删除
 > 删除的是独立 MindSpeedLLM engine/config 路线；当前 `mindspeed` 包仍把 LM/value model 以 `backend="megatron", device="npu"` 注册，作为 NPU Megatron patch 层存在（`verl/workers/engine/mindspeed/transformer_impl.py:56`、`verl/workers/engine/mindspeed/transformer_impl.py:90`）。它没有独立 delta transport；不能因目录仍在就把已删除的 `mindspeed_megatron` strategy 写回配置矩阵。

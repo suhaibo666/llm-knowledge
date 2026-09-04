@@ -345,5 +345,8 @@ Megatron-LM 的 TFLOPS 报告器是一个**静态估算器**，而非动态分�
 
 ## Related Pages
 
-- [[02_engineering/02_train_frameworks/megatron-lm/index]]
-- [[17_megatron_parallelism_orchestration_analysis]]
+- [[10_megatron_model_structure_analysis]] — 提供 dense attention、MLP 与输出层的结构口径。
+- [[14_megatron_ep_analysis]] — 提供 MoE router、expert 与 token dispatch 的计算边界。
+- [[17_megatron_parallelism_orchestration_analysis]] — 说明统计值所处的并行组与 rank 布局。
+- [[20_megatron_comm_overlap_analysis]] — 区分理论 FLOPs、实际吞吐与通信暴露造成的利用率差异。
+- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] — 返回全部 35 篇内容页的主题索引。

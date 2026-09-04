@@ -153,7 +153,7 @@ def newtonschulz5(G, steps=5):
 
 ### 6.3 Muon 对分布式训练的系统性影响
 
-> **影响 1：flat buffer shard 不再自由** — Adam 时代 flat buffer 可按字节均分，Muon 要求 shard 边界对齐 layer boundary（不能切断 weight matrix）。Megatron 的具体解法（`LayerWiseDistributedOptimizer` 的 shard-aligned bucket + LPT 贪心装箱）见 [[16_megatron_distributed_optimizer_analysis]] §19.1。
+> **影响 1：flat buffer shard 不再自由** — Adam 时代 flat buffer 可按字节均分，Muon 要求 shard 边界对齐 layer boundary（不能切断 weight matrix）。Megatron 的具体解法（`LayerWiseDistributedOptimizer` 的 shard-aligned bucket + LPT 贪心装箱）见 [[26_megatron_optimizer_step_internals_deepdive]] §10.1。
 
 > **影响 2：梯度累积推向 ZeRO-1** — NS 是非线性操作：NS(G₁)+NS(G₂) ≠ NS(G₁+G₂)。必须先在 full buffer 上累积所有 micro-batch 的 grad，做一次 NS，再 RS。
 
@@ -181,7 +181,8 @@ def newtonschulz5(G, steps=5):
 
 ## Related Pages
 
-- [[16_megatron_distributed_optimizer_analysis]] — Megatron-LM ZeRO 0-3 四阶段源码级机制、优化器内部（fp32 master/step 流程）、三种 FSDP 实现对比、Layer-Wise/Muon 集成（§19）
+- [[16_megatron_distributed_optimizer_analysis]] — Megatron-LM DDP/ZeRO 0–3、HSDP 与三种分片实现的选择。
+- [[26_megatron_optimizer_step_internals_deepdive]] — fp32 master/step 流程、scheduler、CPU offload 与 LayerWise/Muon 集成。
 - [[11_torchtitan_fsdp_analysis]] — torchtitan/PyTorch FSDP2 机制标杆篇（切分/预取/掩盖/异步四问）
 - [[21_torchtitan_hsdp_backward_overlap_analysis]] — torchtitan HSDP 反向双流掩盖
 - [[11_mindspeed_comm_overlap_analysis]] — MindSpeed 计算通信掩盖（含 DP 侧 async-log-allreduce）
