@@ -46,10 +46,10 @@
       "kind": "parallel-training-feature",
       "source_packs": ["codebase"],
       "document_profile": "feature-analysis",
-      "conditional_depth": ["training", "parallel-distributed"],
+      "conditional_depth": ["training", "parallel-distributed", "algorithmic-visual"],
       "forbidden_depth": ["companion-without-evidence"],
       "prompt": "分析训练框架里的张量并行特性：既要讲清单个矩阵乘法如何切分，也要讲清整个模型中的实现、配套机制、完整训练路径与整体开销。",
-      "expected_output": "先用最小矩阵例子解释分片轴、局部计算、聚合语义、选择原因和代价，再扩展到模型各承重模块；逐模块闭合怎么做、为什么、输出/完成、开销和约束。训练路径必须覆盖前向、目标/Loss、反向及梯度交付，配套机制仅在正确性、容量或性能确有依赖时按同等深度解释，最后统一核算计算、通信、显存与同步点。"
+      "expected_output": "先用最小矩阵例子解释分片轴、局部计算、聚合语义、选择原因和代价，并用至少一张基础原理图复演该实例的输入布局、各 rank 局部 GEMM、通信重构以及不同的前反向变换；再扩展到模型各承重模块。逐模块闭合怎么做、为什么、输出/完成、开销和约束。训练路径必须覆盖前向、目标/Loss、反向及梯度交付，配套机制仅在正确性、容量或性能确有依赖时按同等深度解释，最后统一核算计算、通信、显存与同步点。"
     },
     {
       "id": 6,
@@ -60,6 +60,26 @@
       "forbidden_depth": ["fixed-cost-dimensions", "empty-conditional-sections", "companion-without-evidence"],
       "prompt": "写一个软件特性的源码分析时，是否必须把所有可能组合的配套能力和固定的 CPU、网络、显存指标都各写一节？",
       "expected_output": "不套固定领域模板：只展开实际存在的协作机制，并说明组合原因、职责边界、数据/状态交接和增量代价；总成本从延迟、吞吐、CPU/加速器、内存、存储、网络/I/O、同步竞争、兼容性、实现与运维中选择有源码或测量依据的维度。不存在的触发条件不创建空章节。"
+    },
+    {
+      "id": 7,
+      "kind": "algorithmic-implementation-visual-gate",
+      "source_packs": ["codebase"],
+      "document_profile": "feature-analysis",
+      "conditional_depth": ["algorithmic-visual", "parallel-distributed"],
+      "forbidden_depth": ["prose-only-algorithm", "caller-tree-as-principle-figure"],
+      "prompt": "评审一篇 EP 特性实现页：它有 token 到 expert 的表格、AllGather/AllToAll/Flex 的文字说明、调用树、定性成本表和前反向文字，但没有原理图，也没有把同一个 token 实例逐方案演算。它能否通过？同一规则是否覆盖 PP、TP、CP 和 packed dataset？",
+      "expected_output": "不能通过。算法实现页至少需要一张基础原理解析图，以可复演实例展示输入、关键变换或时序、所有权/布局变化、局部计算、通信或同步以及输出恢复；不同数据面的 live variant 必须复用同一实例分别解释计算、通信、前反向差异和增量开销，可合并为路径清晰的多泳道对比图。调用树、类图、纯文字或表格不能冒充原理图。普通无算法变换的 CRUD、参数校验或一比一薄转发不触发该要求。"
+    },
+    {
+      "id": 8,
+      "kind": "algorithmic-nondistributed-visual-gate",
+      "source_packs": ["codebase"],
+      "document_profile": "feature-analysis",
+      "conditional_depth": ["algorithmic-visual"],
+      "forbidden_depth": ["parallel-distributed", "prose-only-algorithm"],
+      "prompt": "分析一个单进程 packed-dataset 算法：把不同长度的逻辑样本放入固定容量的物理 token buffer，并同步维护样本边界、offset 和 padding；实现不含 rank 或 collective。是否必须画原理图？",
+      "expected_output": "必须画原理图，因为 packing、边界映射和 padding 是非恒等算法变换，算法图触发不依赖分布式执行。图应使用具名样本和长度，从逻辑样本经过放置决策、物理 offset、边界元数据与 padding 推演到 packed buffer，并标出容量不变量和浪费成本；不得虚构 rank、collective 或 parallel-distributed 章节。"
     }
   ]
 }

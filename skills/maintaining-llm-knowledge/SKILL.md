@@ -100,6 +100,39 @@ When a new source is added to `raw/`, follow this sequence:
 - 条件验收：只有当改动页仍含显式 `path:line` 时，才对受影响目录运行
   `python tools/check_locators.py --dir <affected-domain>`。它验证遗留引用，不要求新内容生成行号。
 
+### 分析页的房子形状（House Page Shape）
+
+分析方法归 [`source-faithful-analysis`](../source-faithful-analysis/SKILL.md)，那份契约刻意
+只管**语义顺序**、不管标题模板，好让它能被移植到 wiki 以外。**本库自己的外形约定写在这里**，
+免得每次都要靠"去读一篇范文"才能对齐——范文会被改、会漂移，约定不会。
+
+页头是一个引用块，按此顺序，缺省不写空行：
+
+```
+> **源码基线**：`owner/repo@<hex>`（`branch`，YYYY-MM-DD）
+> **核心源码**：本页真正展开的路径，逗号分隔
+> **中心结论**：一到三句话的主论点——这一页要证明什么
+> **适用范围**：本页拥有什么、把什么交给谁（带 wikilink）
+> **最近更新**：YYYY-MM-DD。这次改了什么
+```
+
+基线推进史、旧基线说明、叙事顺序声明**不留在页头**，归 [[changelog]]。
+
+正文里反复出现、值得照抄的三种表：
+
+| 用途 | 列 |
+|---|---|
+| 收益与代价对照（放特性概览） | 维度 \| 直接收益 \| 必付成本或边界 |
+| 硬约束与失败边界（放约束一节） | 前提 \| 源码边界 \| 破坏后的行为 |
+| 配置契约（放最后一节） | 字段 \| 类型 \| 默认 \| 契约 |
+
+- **硬约束表的每一行都要点名真实的 assert / raise / warning 位置**，否则它只是复述文档。
+- **配置契约表按 config 类分小节**，节末用一行注明该类共多少字段、本表收几项、其余字段的
+  owner 见 `docs/coverage/megatron-lm.yaml` 这类覆盖清单。文件路径写在节末那行，不写进标题。
+- 改写既有页时，覆盖清单指派给本页的字段名**一个都不能少**——参见
+  `source-faithful-analysis` 的改写守恒条款。注意 `tools/check_coverage.py` 的 C2 只复验
+  **人工** owner，`auto: true` 的行不复验提及，因此这一条**门禁挡不住**，只能靠人/流程守。
+
 ### MCP Tools
 
 Two MCP servers are configured in `.mcp.json`:

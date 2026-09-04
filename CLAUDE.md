@@ -136,7 +136,7 @@ fixtures and cannot be broken by a content edit. Do not run them for one.
 
 | Touched | Gate | Cost |
 |---|---|---|
-| `skills/` | `pytest tools/test_math_skill.py tools/test_planning_codebase_analysis_skill.py tools/test_source_faithful_analysis_skill.py tools/test_source_faithful_architecture_profile.py -q` | 19s |
+| `skills/` | `pytest tools/test_math_skill.py tools/test_planning_codebase_analysis_skill.py tools/test_source_faithful_analysis_skill.py tools/test_source_faithful_architecture_profile.py tools/test_host_authoring_skills.py -q` | 19s |
 | `tools/check_*.py`, `tools/radar.py` | `pytest tools/test_check_*.py tools/test_radar.py -q` | 25s |
 | `tools/mkdocs_site/`, `tools/mkdocs-site/`, `mkdocs.yml` | `npm run docs:mkdocs:test` | 8m30s |
 | `tools/labs_torch_compile/` | `pytest tools/labs_torch_compile -q` | 145s |

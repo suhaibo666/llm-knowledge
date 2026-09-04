@@ -201,14 +201,125 @@ def test_feature_profile_keeps_domain_depth_conditional_and_review_separate():
     assert "retry/idempotency" not in conditional
     assert "## feature-page completion review" not in raw.lower()
     review = _text(FEATURE_REVIEW)
-    assert len([line for line in review.splitlines() if line.startswith("-")]) == 6
+    assert len([line for line in review.splitlines() if line.startswith("-")]) == 11
+
+
+def test_variant_set_needs_an_enumeration_basis_and_sibling_axis_check():
+    """A page organized around one controlling field inherits that field's blind spot:
+    the four cp_comm_type values were replayed while linear_cp_mode and MambaContextParallel
+    — sibling axes for other layer types — went unmentioned."""
+    feature = _squash(_text(FEATURE)).lower()
+    for phrase in ("enumeration basis", "sibling selection axes", "selection sites"):
+        assert phrase in feature, f"feature profile lost variant enumeration rule {phrase!r}"
+    # Variants must carry motivation and limit, not only cost accounting.
+    assert "pressure it answers and the resource that caps it" in feature
+
+    review = _squash(_text(FEATURE_REVIEW)).lower()
+    assert "enumeration basis" in review
+    assert "sibling selection axis" in review
+
+
+def test_dependency_boundary_is_an_evidence_boundary():
+    """Third-party internals may be reported as published contract, never narrated as read."""
+    kernel = _squash(_text(SOURCE_FIDELITY)).lower()
+    assert "dependency boundary" in kernel
+    for phrase in ("what the analyzed source", "published contract", "never narrated as if read"):
+        assert phrase in kernel, f"shared kernel lost dependency-boundary rule {phrase!r}"
+
+    review = _squash(_text(FEATURE_REVIEW)).lower()
+    assert "third-party dependency is narrated as verified execution" in review
+
+
+def test_restructuring_an_existing_unit_must_conserve_what_it_owned():
+    """Six coverage-owned config names once left the wiki entirely during a rewrite,
+    and the host gate could not see it. Conservation is a method rule, not a gate rule."""
+    kernel = _squash(_text(SOURCE_FIDELITY)).lower()
+    assert "restructuring an existing unit is a conservation problem" in kernel
+    for phrase in ("kept, corrected", "rehomed", "silent loss"):
+        assert phrase in kernel, f"shared kernel lost conservation rule {phrase!r}"
+
+    review = _squash(_text(FEATURE_REVIEW)).lower()
+    assert "nor rehomed to a named owner" in review
+
+
+def test_algorithmic_units_require_a_replayable_principle_figure_without_forcing_plain_crud():
+    profiles = {
+        "feature": _squash(_text(FEATURE)).lower(),
+        "mechanism": _squash(_text(MECHANISM)).lower(),
+    }
+
+    for name, profile in profiles.items():
+        for phrase in (
+            "algorithmic implementation",
+            "at least one principle figure",
+            "drawing-wiki-figures",
+            "partitioning",
+            "routing",
+            "packing",
+            "scheduling",
+            "ordinary crud",
+        ):
+            assert phrase in profile, f"{name} profile lost algorithmic visual contract {phrase!r}"
+
+    for name, profile in profiles.items():
+        for phrase in (
+            "local compute",
+            "data/state/ownership movement",
+            "communication",
+            "synchronization",
+            "forward/backward differences",
+            "incremental cost",
+        ):
+            assert phrase in profile, f"{name} profile lost variant closure {phrase!r}"
+
+    assert "outside figure-medium rules" in profiles["feature"]
+
+
+def test_algorithmic_review_gate_rejects_missing_or_non_replayable_figures():
+    base = _squash(_text(PAGE_REVIEW)).lower()
+    feature = _squash(_text(FEATURE_REVIEW)).lower()
+
+    for phrase in (
+        "algorithm replay",
+        "figure-trigger",
+        "rendered figure",
+        "smallest example",
+        "stranger-reader line",
+        "class diagram",
+        "caller tree",
+        "ownership inventory",
+        "code excerpt",
+        "prose",
+        "table",
+        "no trigger",
+        "selected document profile",
+        "local compute",
+        "data/state/ownership movement",
+        "communication",
+        "synchronization",
+        "forward/backward differences",
+        "incremental cost",
+    ):
+        assert phrase in base, f"base review lost algorithmic visual gate {phrase!r}"
+
+    assert "## the five checks" in base
+
+    for phrase in (
+        "same concrete example",
+        "distinct live variant",
+        "data plane",
+        "local compute",
+        "communication",
+        "incremental cost",
+    ):
+        assert phrase in feature, f"feature review lost variant replay gate {phrase!r}"
 
 
 def test_source_analysis_evals_encode_source_profile_and_depth_as_separate_axes():
     payload = json.loads(_text(EVALS))
     assert payload["skill_name"] == "source-faithful-analysis"
     by_id = {item["id"]: item for item in payload["evals"]}
-    assert set(by_id) == {1, 2, 3, 4, 5, 6}
+    assert set(by_id) == {1, 2, 3, 4, 5, 6, 7, 8}
     assert all(item["prompt"] and item["expected_output"] for item in payload["evals"])
 
     expected_routing = {
@@ -216,8 +327,10 @@ def test_source_analysis_evals_encode_source_profile_and_depth_as_separate_axes(
         2: ("async-distributed-trace", {"codebase"}, "mechanism-analysis", {"async-concurrent"}, set()),
         3: ("data-lifecycle", {"codebase"}, "mechanism-analysis", {"data-representation"}, set()),
         4: ("ordinary-software-feature", {"codebase"}, "feature-analysis", set(), {"training", "parallel-distributed", "companion-without-evidence"}),
-        5: ("parallel-training-feature", {"codebase"}, "feature-analysis", {"training", "parallel-distributed"}, {"companion-without-evidence"}),
+        5: ("parallel-training-feature", {"codebase"}, "feature-analysis", {"training", "parallel-distributed", "algorithmic-visual"}, {"companion-without-evidence"}),
         6: ("conditional-depth-routing", {"codebase"}, "feature-analysis", set(), {"fixed-cost-dimensions", "empty-conditional-sections", "companion-without-evidence"}),
+        7: ("algorithmic-implementation-visual-gate", {"codebase"}, "feature-analysis", {"algorithmic-visual", "parallel-distributed"}, {"prose-only-algorithm", "caller-tree-as-principle-figure"}),
+        8: ("algorithmic-nondistributed-visual-gate", {"codebase"}, "feature-analysis", {"algorithmic-visual"}, {"parallel-distributed", "prose-only-algorithm"}),
     }
     for scenario_id, (kind, packs, profile, depth, forbidden) in expected_routing.items():
         scenario = by_id[scenario_id]
@@ -229,6 +342,9 @@ def test_source_analysis_evals_encode_source_profile_and_depth_as_separate_axes(
         assert "active_profiles" not in scenario
         assert "forbidden_profiles" not in scenario
 
+    assert "原理图" in by_id[5]["expected_output"]
+    assert "原理图" in by_id[8]["expected_output"]
+
 
 def test_feature_profile_has_reproducible_live_behavior_scenarios():
     scenarios = _text(LIVE_EVALS)
@@ -236,18 +352,33 @@ def test_feature_profile_has_reproducible_live_behavior_scenarios():
         "## S1 — Parallel training feature",
         "## S2 — Ordinary software feature",
         "## S3 — Asynchronous stateful feature",
+        "## S4 — Algorithmic implementation visual gate",
         "## Run log",
     )
     offsets = [scenarios.index(heading) for heading in headings]
     assert offsets == sorted(offsets)
-    for index in range(3):
+    for index in range(4):
         section = scenarios[offsets[index] : offsets[index + 1]]
         assert "Prompt:" in section
         assert "Green result:" in section
 
     run_log = scenarios[offsets[-1] :]
-    for run in ("S1 baseline", "S2 baseline", "S3 baseline", "S1 green", "S2 green", "S3 green"):
+    for run in (
+        "S1 baseline",
+        "S2 baseline",
+        "S3 baseline",
+        "S4 baseline",
+        "S1 green",
+        "S2 green",
+        "S3 green",
+        "S4 green",
+    ):
         assert run in run_log
+
+    s4 = scenarios[offsets[3] : offsets[4]].lower()
+    for family in ("pp", "tp", "cp", "ep", "packed-dataset"):
+        assert family in s4
+    assert "s1 visual rerun" in run_log.lower()
 
 
 def test_source_type_packs_instantiate_evidence_without_redefining_page_profiles():

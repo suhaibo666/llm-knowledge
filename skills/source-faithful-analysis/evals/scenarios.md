@@ -24,8 +24,9 @@ implementation relationships, and total cost.
 Green result: the plan moves from one real primitive to every load-bearing system module; closes
 forward through objective/loss, backward, and gradient handoff; expands only evidenced companion
 mechanisms at equal depth; reconciles component costs; and includes an ASCII caller tree consistent
-with the stable-symbol route. Rank/data/sequence visuals remain separate when they answer a
-different question.
+with the stable-symbol route. Because tensor partition is an algorithmic implementation, the plan
+also requires a principle figure that replays the smallest matrix example through partition, local
+compute, communication, reconstruction, and the different backward transformation.
 
 ## S2 — Ordinary software feature
 
@@ -46,6 +47,22 @@ Green result: the feature profile shapes the page and ASCII caller view, while `
 the sole owner of async completion, retry/settling/rollback, data-lifecycle, and per-hop evidence
 semantics. The plan neither duplicates those contracts nor forces training-specific sections.
 
+## S4 — Algorithmic implementation visual gate
+
+Prompt: review a proposed EP feature page that has a token-to-expert table, prose for AllGather,
+AllToAll, and Flex, an ASCII caller tree, a qualitative cost table, and forward/backward prose, but
+no principle figure and no replay of the same token example through each distinct data plane. Then
+state whether the same rule applies to PP scheduling, TP/CP partitioning, and packed-dataset layout,
+and whether it forces a diagram onto a direct synchronous cache invalidation feature.
+
+Green result: the algorithmic pages fail until at least one rendered principle figure replays a
+concrete example from input through the decisive transformation to output. Distinct live data planes
+reuse the same example and expose local compute, data/ownership movement, reconstruction, backward
+differences where applicable, and incremental cost; one clearly separated comparison figure may
+cover several variants. A caller tree, class diagram, prose, or table alone does not satisfy this
+gate. The direct cache invalidation control has no algorithmic transformation trigger and does not
+gain an empty figure requirement.
+
 ## Run log
 
 | date | run | result | observation |
@@ -53,6 +70,9 @@ semantics. The plan neither duplicates those contracts nor forces training-speci
 | 2026-09-04 | S1 baseline | expected gap | Source fidelity passed; six page-shaping decisions were left to evaluator judgment. |
 | 2026-09-04 | S2 baseline | control PASS | It avoided parallel-only content, but the feature-page shape and ASCII choice were evaluator judgment rather than a contract. |
 | 2026-09-04 | S3 baseline | control PASS | Async semantics were complete under `codebase.md`; page shape and visual separation were evaluator judgment. |
-| 2026-09-04 | S1 green | PASS | Primitive→system, training closure, conditional companion depth, total cost, and ASCII tree became explicit. |
+| 2026-09-04 | S1 green | historical PASS | Pre-visual-contract run: primitive→system, training closure, conditional companion depth, total cost, and ASCII tree became explicit; it did not yet test a required principle figure. |
 | 2026-09-04 | S2 green | PASS | No parallel/training-only content or empty conditional sections appeared. |
 | 2026-09-04 | S3 green | PASS | Page shape improved while async/data trace ownership stayed with `codebase.md`. |
+| 2026-09-04 | S4 baseline | expected gap | Three read-only evaluators confirmed that current prose/table coverage can pass without a principle figure or same-example variant replay; the ordinary non-algorithmic control should remain exempt. |
+| 2026-09-04 | S4 green | PASS | Fresh evaluators rejected the prose-only EP variants, required principle figures for PP/TP/CP/EP/packed algorithms, and preserved `figure-trigger: none` for the ordinary CRUD control. |
+| 2026-09-04 | S1 visual rerun | PASS | A fresh evaluator required TP's matrix-layout figure, local GEMM, reconstruction communication, forward/backward differences, and cost; prose and caller tree alone failed. |

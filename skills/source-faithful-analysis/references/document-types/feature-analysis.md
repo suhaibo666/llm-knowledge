@@ -38,8 +38,23 @@ explanatory order while adapting titles to the feature and host.
      constraint?
   3. How does state, data, or control move through it, including the output/completion semantics?
   4. What guard, direct cost, system cost, unsupported case, or failure boundary does it introduce?
-- Explain live variants and selection conditions where they exist. Do not turn class and function
-  catalogs into fake implementation depth.
+- **Establish the variant set before explaining any variant.** Derive it from the source's own
+  selection sites—the dispatch branch, the accepted values of the controlling field, the registry or
+  factory—and state that enumeration basis in the page. Then check for **sibling selection axes**:
+  another field, layer type, or entry point that answers the same concern for a different entity
+  class. A page organized around one controlling field will silently inherit that field's blind
+  spot, and readers cannot tell an absent variant from a nonexistent one. If a variant is out of
+  scope, say it exists and name its owner; do not leave it unmentioned.
+- Explain live variants and selection conditions where they exist. When variants implement distinct
+  algorithms or data planes, replay the same concrete example through each one and expose the
+  **pressure it answers and the resource that caps it**, its local work, boundary crossings,
+  reconstruction, and incremental cost. Cost accounting alone does not explain why a variant exists
+  or when it stops being the right choice. A shared comparison is allowed only when every variant
+  remains independently traceable. Do not turn class and function catalogs into fake implementation
+  depth.
+- When evidence availability differs across variants—one is local, another lives behind a
+  dependency—**say so where the asymmetry shows** instead of letting depth vary silently. See the
+  dependency-boundary rule in `../source-fidelity.md`.
 
 ### 3. Close the feature as a whole
 
@@ -54,16 +69,19 @@ explanatory order while adapting titles to the feature and host.
 
 ## Implementation presentation
 
-Use prose as the explanation and views as verification aids:
+Use prose and views together. Prose owns the causal argument; views own spatial, temporal, and
+transformational relationships that prose alone makes hard to reconstruct:
 
 - Add a **class / ownership view** when multiple classes, processes, or state-bearing objects
   cooperate. It shows responsibility, dependency, and state ownership—not every inheritance edge.
 - For a real multi-hop function path, add a fenced **ASCII caller tree** from live entry/selection
   to completion or visibility. Render the path selected under `../codebase.md`'s execution-trace
-  contract rather than defining a second hop-selection, elision, or annotation policy here.
-- Use an additional data-layout, state, or sequence figure only when it answers a different question.
-  Delegate medium and house style to the active figure skill. A **call graph does not replace** the
-  state model, per-hop execution semantics, design reasons, or failure analysis.
+  contract rather than defining a second hop-selection, elision, or annotation policy here. This is
+  a compact textual source-reading index, not a published figure: it is outside figure-medium rules
+  and cannot satisfy the principle-figure gate below.
+- For a non-algorithmic unit, add a data-layout, state, or sequence figure when it answers a question
+  that prose, the ownership view, and the caller tree do not answer. A **call graph does not replace**
+  the state model, per-hop execution semantics, design reasons, or failure analysis.
 - Keep the ASCII caller tree consistent with the compact source-reading route owned by
   `../codebase.md`.
 
@@ -81,6 +99,30 @@ public_entry(request)
 
 **Apply only when the trigger is present.** These rows deepen the universal contract; they are not
 mandatory headings. **Do not create empty sections** to prove that an absent trigger was considered.
+
+### Algorithmic implementation and principle figure
+
+An analysis unit is an **algorithmic implementation** when its core correctness, capacity, or
+performance result depends on a non-identity transformation or ordered rule such as partitioning,
+placement, routing, grouping, packing, masking, permutation, scheduling, reduction, optimization,
+or iterative state transition. Ordinary CRUD, direct field assignment, parameter validation, and
+one-to-one forwarding do not trigger this rule unless the page actually explains such an algorithm.
+
+When this trigger is present:
+
+- Replay the smallest meaningful example from named input identities and shapes through every
+  decisive step, intermediate layout/state/owner, and merge or output. A reader must be able to
+  reconstruct the result rather than merely recognize API names.
+- Include **at least one principle figure** that shows input → decisive transformation or schedule →
+  output, including the invariant, constraint, or cost that explains why the algorithm works. A
+  class diagram, ownership inventory, caller tree, code excerpt, or prose/table alone does not count.
+- **REQUIRED SUB-SKILL:** Use `drawing-wiki-figures` for the medium, figure specification, rendered
+  artifact, and stranger-reader check. This profile has already decided that the figure is required;
+  optional figure-pruning guidance cannot waive it.
+- Give every distinct live algorithm or data plane a separately traceable lane or figure using the
+  same concrete example. Show local compute, data/state/ownership movement, synchronization or
+  communication, reconstruction, applicable forward/backward differences, and incremental cost.
+  One comparison figure may cover several variants only when none of those paths is collapsed.
 
 | Trigger | Required closure |
 |---|---|

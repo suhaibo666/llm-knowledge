@@ -5,7 +5,7 @@
 - The reviewer is never the writer. The reviewer reports findings and does not edit the page.
 - Input is the finished architecture page, its approved page contract, and read access to the frozen
   source checkout.
-- First apply the four base checks in `../page-review-rubric.md`; then apply all eight checks below.
+- First apply the five base checks in `../page-review-rubric.md`; then apply all eight checks below.
 - A failed item names the smallest section/scenario and returns to the writer. Material ownership
   drift returns to `planning-codebase-analysis` instead of being repaired during review.
 
@@ -34,6 +34,6 @@
 
 ## Verdict
 
-Record the four base-check results, `architecture: pass` or
+Record the five base-check results, `architecture: pass` or
 `architecture: FAIL <smallest item/scenario>`, the three spot-checked anchors/commands, and one
 overall `PASS` or `REJECT`. Any failed base or architecture check rejects the page.

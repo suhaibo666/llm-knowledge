@@ -85,6 +85,22 @@ Give every module established in the static view a basic design subsection with 
 Do not rename or regroup modules here. A discovered boundary mismatch is blueprint drift and returns
 to `planning-codebase-analysis`.
 
+### Algorithmic modules still require a principle figure
+
+If a module or usage scenario explains an **algorithmic implementation**—a non-identity
+partitioning, routing, packing, scheduling, reduction, optimization, placement, masking,
+permutation, or iterative state transition—replay its smallest named input through the decisive
+intermediate layout/state/owner to output. Include **at least one principle figure** that makes the
+transformation, invariant, constraint, and cost reconstructable. The architecture static view,
+ownership inventory, caller tree, code excerpt, prose, or table cannot substitute for that figure.
+
+Distinct live algorithms or data planes must reuse the **same concrete example** and remain
+separately traceable through local work, data/state/ownership movement, communication or
+synchronization, reconstruction, applicable forward/backward differences, and incremental cost.
+Use `drawing-wiki-figures` for medium choice, the rendered artifact, and stranger-reader review.
+Ordinary CRUD, direct assignment, validation, and one-to-one forwarding remain exempt unless the
+unit actually contains an algorithmic transformation.
+
 ## 4. Make source call relationships exact
 
 Put every function-call relationship in a **fenced `text` ASCII caller tree**, never as an inline

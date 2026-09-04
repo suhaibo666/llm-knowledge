@@ -35,6 +35,27 @@ For code, use the Execution trace contract in `../codebase.md`; do not restate i
 incident, protocol, or paper, identify the corresponding state transition, evidence locator, and
 completion/observation boundary in its native terms.
 
+## Algorithmic implementation and principle figure
+
+An analysis unit is an **algorithmic implementation** when its result depends on a non-identity
+transformation or ordered rule such as partitioning, placement, routing, grouping, packing, masking,
+permutation, scheduling, reduction, optimization, or iterative state transition. Ordinary CRUD,
+direct field assignment, parameter validation, and one-to-one forwarding do not trigger this rule
+unless the unit actually explains such an algorithm.
+
+When triggered, start with named input identities and shapes and replay the smallest example through
+the decisive intermediate state/layout/owner to its output. Include **at least one principle figure**
+that makes this derivation reconstructable and marks the invariant, constraint, or cost that makes
+the algorithm work. A class diagram, caller tree, code excerpt, or prose/table alone does not count.
+For distinct live algorithms or data planes, reuse the same concrete example and give each path a
+separately traceable lane or figure through local compute, data/state/ownership movement,
+communication or synchronization, reconstruction, applicable forward/backward differences, and
+incremental cost.
+
+**REQUIRED SUB-SKILL:** Use `drawing-wiki-figures` for medium choice, the written figure spec, the
+rendered artifact, and the stranger-reader check. The algorithmic trigger has already established
+that a figure is required; optional figure-pruning guidance cannot waive it.
+
 ## Evidence-shaped output
 
 - **Code mechanism:** thesis and baseline → bottleneck/constraints → state/model → design versus
@@ -43,8 +64,10 @@ completion/observation boundary in its native terms.
 - **Paper/general analysis:** motivation → mechanism/model → evidence with its baseline → rejected
   alternative or comparison → limits.
 
-Code excerpts, quotes, tables, and figures are evidence. The prose must remain intelligible if they
-are removed; signatures and source order are not headings.
+Code excerpts, quotes, tables, and figures are evidence. Prose must carry the causal argument without
+code excerpts or quotes; when the algorithmic trigger fires, prose and the required principle figure
+must agree and each must make its assigned part of the explanation intelligible. Signatures and
+source order are not headings.
 
 ## Completion gate
 

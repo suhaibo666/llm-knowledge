@@ -22,6 +22,13 @@ this contract.
   “what happens now”; a published contract still matters when describing a public promise.
 - **The source beats folklore.** Surface corrections when the frozen source contradicts memory,
   marketing, an older version, or an existing page.
+- **Dependency boundary.** When a load-bearing path leaves the analyzed source into a third-party
+  library, kernel, service, or vendored runtime, that boundary is an evidence boundary. State the
+  **handoff** (what is passed across, and any version gate on it), what the analyzed source
+  **proves**, and what it **cannot**. Behavior inside the dependency may be reported only as its
+  published contract, docstring, or specification, labelled as such—never narrated as if read. A
+  documented design is legitimate content; presenting it as verified execution is not. Where a
+  figure or table spans both sides, the boundary must be visible in the artifact too.
 
 ## Approved boundary and baseline
 
@@ -79,6 +86,15 @@ remaining explanation or contract fields should still be intelligible and verifi
 - Use tables, traces, and figures only where the owning contract calls for them.
 - Do not broaden scope to make collected evidence convenient.
 
+**Restructuring an existing unit is a conservation problem.** A rewrite is judged against what the
+unit held before, not only against the new contract. Before replacing it, enumerate what it owned—
+concepts, evidenced claims, corrections, registered configuration or interface names, and the
+cross-links others rely on. Afterwards, account for **every** item as kept, corrected with the
+evidence that overturned it, or explicitly rehomed to a named owner. Silent loss is the failure
+mode: compression reads as tightening, and host gates may not detect an item that has left the
+document system entirely. If an item's new owner does not exist yet, keep it and report the gap
+rather than dropping it.
+
 ### Phase 4 — Integrate and verify
 
 - Reconcile new evidence with existing claims; preserve contradictions explicitly.
@@ -94,6 +110,9 @@ authoritative unit. Do not answer a newly exposed source question from memory.
 
 - Every non-trivial claim is grounded in evidence actually opened at the declared baseline.
 - Inference, conflict, legacy behavior, and unsupported cases are labelled rather than flattened.
+- Dependency boundaries are stated with what the source proves and what it cannot; no third-party
+  internal is narrated as if read.
+- A restructured unit accounts for everything it previously owned as kept, corrected, or rehomed.
 - Cross-references point to authoritative owners; duplicated explanations do not create a second
   source of truth.
 - The owning evidence, output, review/approval, and host contracts all pass.

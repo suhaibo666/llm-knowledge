@@ -154,6 +154,23 @@ def test_architecture_review_has_eight_independent_checks_and_base_review():
         assert phrase in flat
 
 
+def test_architecture_algorithmic_modules_inherit_the_principle_figure_gate():
+    contract = _squash(_text(ARCHITECTURE)).lower()
+    review = _squash(_text(REVIEW)).lower()
+
+    for phrase in (
+        "algorithmic implementation",
+        "at least one principle figure",
+        "drawing-wiki-figures",
+        "same concrete example",
+        "ordinary crud",
+    ):
+        assert phrase in contract
+
+    assert "five base checks" in review
+    assert "five base-check results" in review
+
+
 def test_architecture_profile_has_three_cross_domain_regression_evals():
     payload = json.loads(_text(EVALS))
     assert payload["skill_name"] == "source-faithful-analysis/software-architecture"
