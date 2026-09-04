@@ -12,8 +12,8 @@ not repeated here.
   a separately-invoked reviewer applies it before a page is declared done.
 - Input: the finished page, its approved page contract (thesis / owned concepts / exclusions /
   completion test), and read access to the frozen checkout at the page's pinned commit.
-- Output: one verdict row per page (see format below). A rejected page returns to Phase 2 of
-  `source-faithful-analysis` with the failing check named; the reviewer does not rewrite the page.
+- Output: one verdict row per page (see format below). A rejected page returns to Phase 2 in
+  `source-fidelity.md` with the failing check named; the reviewer does not rewrite the page.
 
 ## The four checks
 

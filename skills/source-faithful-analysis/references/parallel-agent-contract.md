@@ -1,9 +1,9 @@
 # Parallel writer-agent contract
 
-Read this only when delegation is authorized and several analysis units can be written independently.
-The coordinator owns page boundaries, the shared baseline, cross-page coverage, and final integration;
-each writer owns one file. This contract is deliberately self-contained at the handoff boundary, but
-it does not redefine the core method.
+Read this only when delegation is authorized and several approved analysis units can be written
+independently. The coordinator owns page boundaries, shared baseline, profile selection, cross-page
+coverage, and final integration; each writer owns one file. This handoff applies the routed method
+without redefining it.
 
 ## Contract template
 
@@ -15,44 +15,45 @@ You are writing ONE source-faithful analysis unit. Treat the source as read-only
 SOURCE
 - Frozen baseline: <project @ commit | document id+version | snapshot/window>
 - Source location: <repo root | page-markered text | dataset/log/API location>
-- Required pack: <codebase | paper | general>
+- Required source pack: <codebase.md | paper.md | general.md | mixed list>
+- Required document profile: <mechanism-analysis.md | feature-analysis.md | software-architecture.md>
 - Evidence slice and entry points: <files/symbols | pages/tables | clauses/fields/windows>
 
 OWNED OUTPUT
 - Write only: <absolute output path>
-- Thesis/question: <one main pressure and design choice>
+- Thesis/question: <one main reader question and answer>
 - Owned concepts: <list>
 - Explicit exclusions and sibling owners: <list>
 - Completion test: <what a reader must be able to explain or trace>
 
-ANALYSIS CONTRACT
-1. Open the supporting source before using it; ground every non-trivial claim in evidence you read.
-   For code, consolidate stable `path::qualified.symbol` anchors into a compact source-reading route; do not attach `file:line` to every claim or semantic hop.
-2. Explain the problem and constraints, why this design beat the obvious alternative, the mechanism
-   and evidence, and the costs/failure boundary. Mark analyst inference and source conflicts.
-3. Organize by design question and state/model, not by source-file, API, or function order.
-4. Reproduce only load-bearing evidence. Quotes, code, tables, and figures do not replace the causal
-   explanation.
+METHOD
+1. Read the shared source-fidelity contract, required source pack(s), and selected document profile
+   completely. The selected document profile determines explanatory order and required views.
+2. Open the supporting source before using it; ground every non-trivial claim in evidence read at
+   the frozen baseline. Mark analyst inference and visible conflicts.
+3. For code, consolidate stable `path::qualified.symbol` anchors into a compact source-reading route;
+   do not attach `file:line` to every claim or semantic hop.
+4. Reproduce only load-bearing evidence. Quotes, code, tables, trees, and figures do not replace the
+   explanation required by the profile.
 
-TYPE-SPECIFIC PROOF
-- Code: trace the live selection/entry point, state owners and a minimal real execution path. For
-  each semantic hop identify the crossing object, state transition, execution semantics, and
-  completion or visibility boundary; include guards, tests and partial-failure behavior.
-- Paper: pair each contribution with its problem passage, rejected alternative, mechanism, and
-  result/ablation table including the baseline column; state the evaluated regime and limitations.
-- General: define the source's atomic locator and snapshot, then ground each claim in the relevant
-  clause, row/cell, endpoint/field, event, screenshot, or report table.
+SOURCE-SPECIFIC PROOF
+- Code: trace live selection/entry, state owners, and the real path to completion or visibility;
+  record crossing objects, state transitions, execution semantics, guards, tests, and partial
+  failure where the codebase pack triggers them.
+- Paper: pair claims with exact sections/tables/equations and baselines; state the evaluated regime,
+  limitations, and implementation status.
+- General: define the atomic locator and snapshot, then ground claims in the relevant clause,
+  row/cell, endpoint/field, event, screenshot, or report table.
 
 HOST INTEGRATION
 - Follow the coordinator's page names and links; do not redesign ownership or directories.
-- Use the active house figure skill and any supplied figure specification. Do not invent a rendering
-  pipeline or copy figure-format rules into this page.
-- If source evidence requires a material boundary or baseline change, stop that part and report it.
+- Use the active house figure skill and supplied visual specification. Do not invent a rendering
+  pipeline or copy figure-format rules into the page.
+- If evidence requires a material boundary or baseline change, stop that part and report it.
 
 RETURN TO COORDINATOR
-After writing the file, return:
-1. title and 3–5 sentence thesis;
-2. 6–10 deduplicated load-bearing source anchors you personally opened;
+1. title and a 3–5 sentence thesis;
+2. 6–10 deduplicated load-bearing source anchors personally opened;
 3. source conflicts, inference, unsupported paths, and material drift;
 4. suggested owner-aware cross-links;
 5. uncovered findings another page or gap should own;
@@ -61,9 +62,9 @@ After writing the file, return:
 
 ## Coordinator checks
 
-- Freeze names, ownership, exclusions, and baseline before dispatch.
+- Freeze names, ownership, exclusions, baseline, and selected profile before dispatch.
 - Calibrate one real page first when style or figures are expensive to redo.
-- Spot-check 2–3 returned anchors and one negative/failure boundary per page.
-- Reject pages that open with class/function order, flatten inference into fact, or confuse submission
-  with business completion.
-- Reconcile coverage and conflicts, update the host spine, and run the host quality gates centrally.
+- Spot-check returned anchors and one negative/failure boundary per page.
+- Reject work that follows source-file order, flattens inference into fact, or stops before the
+  selected profile's completion or visibility boundary.
+- Reconcile coverage and conflicts, apply the routed independent review, and run host gates centrally.

@@ -6,10 +6,10 @@ description: >-
   point (inputs/outputs, processing logic, boundary constraints, supported scope), or when
   re-verifying such a tree after a baseline bump. Triggers: 梳理功能树 / 功能点清单 / 功能点定义 /
   feature inventory / function-point spec / capability breakdown / "list everything this repo
-  provides with per-feature I/O and constraints". Not for mechanism-level why-design analysis:
-  a focused mechanism goes to source-faithful-analysis alone, a whole codebase to
-  planning-codebase-analysis then source-faithful-analysis; this skill owns the exhaustive
-  what-and-contract view.
+  provides with per-feature I/O and constraints". Not for why-design analysis: a focused mechanism
+  goes to source-faithful-analysis alone; a whole codebase goes to planning-codebase-analysis first,
+  then approved architecture, feature, and mechanism pages use the matching document profile under
+  source-faithful-analysis. This skill owns the exhaustive what-and-contract view.
 ---
 
 # Feature-Tree Analysis
@@ -36,15 +36,16 @@ reviewer judgment (rubric R2) and user sampling sit on top of it.
   wave-based spec writing under a dedicated writer contract, independent review, the delivery
   gate, and re-reconciliation after baseline bumps.
 - **Not owned — route away**:
-  - Mechanism-level causal analysis (why a design exists, state models, execution traces): a
-    focused mechanism → `source-faithful-analysis` on its own; a whole codebase or unplanned
-    multi-page domain → `planning-codebase-analysis` first, then `source-faithful-analysis` per
-    approved unit. Spec pages and mechanism pages **cross-link, never substitute**: a spec page
-    links to mechanism pages for the "why"; a mechanism page links to spec pages for the full
-    contract.
+  - Why-design analysis: a focused mechanism → `source-faithful-analysis` on its own; a whole
+    codebase or unplanned multi-page domain → `planning-codebase-analysis` first. After approval,
+    an architecture page → `source-faithful-analysis` / `software-architecture`; a concrete feature
+    page → `source-faithful-analysis` / `feature-analysis`; a mechanism page →
+    `source-faithful-analysis` / `mechanism-analysis`. Spec pages and analysis pages **cross-link,
+    never substitute**: a spec page links to the owning analysis page for the "why"; an analysis
+    page links to spec pages for the full contract.
   - Source-fidelity discipline (verified source anchors / frozen baseline / fact vs inference / visible
-    conflicts) → execute the **Source fidelity** section of `source-faithful-analysis` directly;
-    this skill does not copy its text.
+    conflicts) → read `../source-faithful-analysis/references/source-fidelity.md` directly; this
+    skill imports that shared kernel but does not enter a prose document profile or copy its text.
   - Wiki page operations when the host is this wiki (page types, numbering, cross-links,
     changelog) → `maintaining-llm-knowledge`.
 

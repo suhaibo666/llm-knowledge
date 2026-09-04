@@ -1,10 +1,14 @@
 # Spec-writer contract — dispatching one function-point spec wave
 
 Use this — and only this — to dispatch parallel writers for function-point specs. Do **not**
-reuse `source-faithful-analysis` `references/parallel-agent-contract.md`: its analysis beats
-(rejected alternative, causal mechanism, execution-trace ledger) are exactly what a spec must not
-contain. The coordinator owns the tree, the manifest, the baseline, and integration; each writer
+reuse `../../source-faithful-analysis/references/parallel-agent-contract.md`: it dispatches a prose
+analysis under a selected document profile, while a spec must follow the fixed contract fields
+below. The coordinator owns the tree, the manifest, the baseline, and integration; each writer
 owns one output file and only the leaves assigned to it.
+
+Every writer still follows the shared evidence rules in
+`../../source-faithful-analysis/references/source-fidelity.md`. Import that evidence kernel only;
+do not load a prose document profile for function-point specs.
 
 ## Contract template
 
@@ -27,17 +31,17 @@ OWNED OUTPUT
   semantics (inputs, outputs, processing logic, boundary constraints, supported scope).
 
 SPEC CONTRACT
-1. Open and read the supporting source at the frozen commit before making a claim. Name symbols in
-   the fields and add one deduplicated `path::qualified.symbol` source-reading route per leaf;
-   line numbers are optional for exact excerpts, never a per-entry requirement.
+1. Apply the shared source-fidelity contract. Name opened symbols in the fields and add one
+   deduplicated `path::qualified.symbol` source-reading route per leaf; line numbers are optional
+   for exact excerpts, never a per-entry requirement.
 2. No causal argument, no design rationale, no rejected alternatives, no execution-trace prose —
    link to the owning mechanism page instead.
 3. Field semantics are fixed: boundary = constraints that exist in code and their consequences
    ("no validation" is a finding; cover the conditional dimensions only where their trigger
    exists); supported scope = supported / unsupported / defaults per dimension, each with
    evidence; claims without evidence are not written.
-4. Evidence priority for current behavior: code > tests > docs > comments; conflicts are shown
-   side by side with both source anchors. Mark analyst inference explicitly.
+4. Apply the shared kernel's source-fact, analyst-inference, and visible-conflict rules without
+   restating or weakening them.
 5. Cannot finish reading a leaf's implementation → leave it `planned` and say so; never fill
    fields from a skim.
 

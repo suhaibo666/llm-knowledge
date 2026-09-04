@@ -16,7 +16,7 @@ before doing anything; open a skill only when you are about to do the thing it c
 | Add or change a figure on a page — medium choice, house visual spec | [`drawing-wiki-figures`](skills/drawing-wiki-figures/SKILL.md) |
 | Draw or change a Mermaid diagram (parser traps) | [`writing-mermaid-diagrams`](skills/writing-mermaid-diagrams/SKILL.md) |
 | Discover and plan a new whole codebase or unplanned multi-page codebase domain, propose the document blueprint, wait for approval, then coordinate implementation | [`planning-codebase-analysis`](skills/planning-codebase-analysis/SKILL.md) |
-| Write an approved/focused codebase unit, or analyze a paper, spec, dataset, incident, report, or other non-code artifact at any scale | [`source-faithful-analysis`](skills/source-faithful-analysis/SKILL.md) |
+| Write or review an approved/boundary-defined software architecture or concrete feature, write an approved/focused codebase mechanism, or analyze a paper, spec, dataset, incident, report, or other non-code artifact at any scale; load its document profile on demand | [`source-faithful-analysis`](skills/source-faithful-analysis/SKILL.md) |
 | Inventory a repository as a feature tree down to leaf function points, each with a contract-style spec (I/O, processing logic, boundary constraints, supported scope); reconcile and re-verify it after baseline bumps | [`feature-tree-analysis`](skills/feature-tree-analysis/SKILL.md) |
 
 There is exactly one copy of these skills, in `skills/`. `.claude/skills` is a symlink to it, so

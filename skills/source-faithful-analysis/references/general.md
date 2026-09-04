@@ -2,8 +2,9 @@
 
 For sources that aren't code or a paper: a **spec/RFC/standard/contract**, a **dataset/schema**,
 **API/SDK/protocol docs**, a **running system / incident / logs / metrics**, a **business / financial
-/ market report**, a **product / competitor teardown** — or something not listed. Read alongside the
-SKILL.md core.
+/ market report**, a **product / competitor teardown** — or something not listed. Read after
+`source-fidelity.md` and alongside the selected document profile. This pack owns evidence handling,
+not page shape.
 
 ## The one rule that generalizes everything
 Whatever the artifact, before you analyze it answer three questions — they instantiate the two
@@ -12,8 +13,8 @@ principles for *this* source:
 2. **What's the baseline/snapshot** that makes a claim time-true? (version / date / window / build)
 3. **What's the essence** worth hunting — the mechanism / the why / the decision, not the surface?
 
-Then run Phase 0–5 exactly as in the core: ingest into a citeable form, map the shape, locate → read
-the spot → cite, (fan out if big), integrate + verify.
+Then run the evidence workflow in `source-fidelity.md`: ingest into a citeable form, map the shape,
+locate → read the spot → cite, optionally delegate when authorized, then integrate and verify.
 
 ## Per-kind cheatsheet
 
@@ -26,11 +27,12 @@ the spot → cite, (fan out if big), integrate + verify.
 | **Business / financial / market report** | page / figure / table № (+ title, date, publisher) | report date + publisher | the thesis/claim, the load-bearing numbers **with their basis/comparison**, the methodology & assumptions, spin vs substance | cite the page; cross-check against primary sources where possible; flag where the number's basis is undisclosed. |
 | **Product / competitor teardown** | screenshot + timestamp / version / build | product version + date | how it *actually behaves* (observed), the design choices & tradeoffs, the gaps | drive it / observe directly; separate **observed vs assumed**; a claim from marketing copy ≠ observed behavior. |
 
-## Applying the core contract
+## Applying the selected document profile
 
-Organize by the artifact's natural aspects. For a spec or incident, the design-choice question is
-usually “why this rule?” or “why did this fail?”, while the boundary is the under-specified or
-unobserved part. Preserve those source-specific answers without redefining the core's section order.
+Organize by the artifact's natural aspects while satisfying the routed profile. For a spec or
+incident, the design-choice question is usually “why this rule?” or “why did this fail?”, while the
+boundary is the under-specified or unobserved part. Preserve those source-specific answers without
+redefining the profile's explanatory order.
 
 ## Type-specific red flags
 | If you catch yourself… | Do this instead |

@@ -10,13 +10,13 @@
     {
       "id": 2,
       "prompt": "目录和页面职责已经确认。现在只分析 scheduler 的请求状态机、抢占和提交边界，完成 scheduler_analysis.md。",
-      "expected_output": "不重新规划整个代码库；将该页面视为一个分析单元，调用 source-faithful-analysis 跨文件核验状态、调用链、设计理由和边界。",
+      "expected_output": "不重新规划整个代码库；将该页面视为一个分析单元，调用 source-faithful-analysis 并选择 mechanism-analysis 文档 profile，跨文件核验状态、调用链、设计理由和边界。",
       "files": []
     },
     {
       "id": 3,
       "prompt": "按已经批准的蓝图实施 architecture_overview.md：该页拥有静态职责分层与端到端生命周期，不展开 scheduler 和 cache 的内部算法。",
-      "expected_output": "遵守已确认的页面所有权和不包含内容，进入单篇 source-faithful-analysis；不修改目录，不把 scheduler/cache 深挖复制进概览。",
+      "expected_output": "遵守已确认的页面所有权和不包含内容，进入 source-faithful-analysis 并选择 software-architecture 文档 profile，复用共享源代码证据合同；不修改目录，不把 scheduler/cache 深挖复制进概览。",
       "files": []
     },
     {
@@ -35,6 +35,12 @@
       "id": 6,
       "prompt": "这是一个包含数千个文件和几十个后端的大仓库。请确保每个目录都有对应分析页，越完整越好，并让每篇文档的源码与讲解比例固定为 1:1。",
       "expected_output": "先按能力和高内聚子域缩小范围，选择代表性生命周期与核心机制；不按目录逐一建页，不使用页数、行数或固定源码/讲解比例作为覆盖、质量或完成标准。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "蓝图已经批准，现在写缓存失效这个具体特性页：需要从最小实例讲到系统集成、成本和边界。",
+      "expected_output": "不重新规划目录；通过 source-faithful-analysis 选择 feature-analysis 文档 profile，从 smallest primitive 展开到系统位置、逐组件职责与设计原因、真实完成边界、总成本和支持范围。",
       "files": []
     }
   ]

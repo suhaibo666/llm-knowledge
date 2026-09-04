@@ -6,6 +6,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLANNER = REPO_ROOT / "skills/planning-codebase-analysis"
+ARCHITECTURE_REFERENCE = "../source-faithful-analysis/SKILL.md"
+ARCHITECTURE_CONTRACT = PLANNER / ARCHITECTURE_REFERENCE
 
 
 def _squash(text):
@@ -52,10 +54,10 @@ def test_planner_blocks_every_persisted_mutation_before_approval():
     assert "Workflow persistence begins only after approval" in hard_gate
 
 
-def test_planner_has_six_routing_and_behavior_evals():
+def test_planner_has_seven_routing_and_behavior_evals():
     payload = json.loads((PLANNER / "evals/evals.json").read_text(encoding="utf-8"))
     assert payload["skill_name"] == "planning-codebase-analysis"
-    assert {item["id"] for item in payload["evals"]} == {1, 2, 3, 4, 5, 6}
+    assert {item["id"] for item in payload["evals"]} == {1, 2, 3, 4, 5, 6, 7}
     assert all(item["prompt"] and item["expected_output"] for item in payload["evals"])
 
     joined = [f'{item["prompt"]}\n{item["expected_output"]}' for item in payload["evals"]]
@@ -66,11 +68,25 @@ def test_planner_has_six_routing_and_behavior_evals():
         "directory-mirroring pressure": ("五个一级目录", "拒绝", "跨目录"),
         "material ownership drift": ("不可拆分", "具体修订页面边界", "普通措辞"),
         "scale and ratio pressure": ("数千个文件", "1:1", "固定源码/讲解比例"),
+        "concrete feature routing": ("具体特性", "feature-analysis", "primitive"),
     }
     for category, fragments in scenario_categories.items():
         assert any(all(fragment in scenario for fragment in fragments) for scenario in joined), (
             f"missing eval scenario category: {category}"
         )
+
+    approved_architecture = next(item for item in payload["evals"] if item["id"] == 3)
+    expected = approved_architecture["expected_output"]
+    assert "source-faithful-analysis" in expected
+    assert "software-architecture" in expected
+    assert "analyzing-software-architecture" not in expected
+
+    mechanism = next(item for item in payload["evals"] if item["id"] == 2)["expected_output"]
+    assert "mechanism-analysis" in mechanism
+
+    feature = next(item for item in payload["evals"] if item["id"] == 7)["expected_output"]
+    assert "source-faithful-analysis" in feature
+    assert "feature-analysis" in feature
 
 
 def test_planner_rejects_fixed_source_code_ratio_quotas():
@@ -79,6 +95,16 @@ def test_planner_rejects_fixed_source_code_ratio_quotas():
         "Do not use a fixed source-code or code-to-explanation ratio as a quality "
         "or completion constraint."
     ) in text
+
+
+def test_planner_routes_repository_architecture_pages_to_the_document_profile():
+    raw = (PLANNER / "SKILL.md").read_text(encoding="utf-8")
+    text = _squash(raw).lower()
+
+    assert f"`{ARCHITECTURE_REFERENCE}`" in raw
+    assert "repository architecture page" in text
+    assert "software-architecture" in text
+    assert ARCHITECTURE_CONTRACT.resolve().is_file()
 
 
 ROUTE_DOCS = (
@@ -105,7 +131,7 @@ def test_route_rows_preserve_codebase_planner_and_all_scale_source_meanings():
         if path.name == "README.md":
             planner_fragments = ("代码库", "多页", "蓝图", "确认")
             source_fragments = (
-                "已批准/聚焦代码库",
+                "已批准/聚焦代码库机制",
                 "论文",
                 "规范",
                 "数据集",
@@ -117,7 +143,7 @@ def test_route_rows_preserve_codebase_planner_and_all_scale_source_meanings():
         else:
             planner_fragments = ("codebase", "multi-page", "blueprint", "approval")
             source_fragments = (
-                "approved/focused codebase",
+                "approved/focused codebase mechanism",
                 "paper",
                 "spec",
                 "dataset",
@@ -135,38 +161,40 @@ def test_route_rows_preserve_codebase_planner_and_all_scale_source_meanings():
 def test_source_analysis_delegates_unplanned_whole_codebases():
     core = SOURCE_SKILL.read_text(encoding="utf-8")
     pack = CODEBASE_PACK.read_text(encoding="utf-8")
+    fidelity = (SOURCE_SKILL.parent / "references/source-fidelity.md").read_text(encoding="utf-8")
     assert "planning-codebase-analysis" in core
-    assert "approved blueprint" in core
+    assert "approved codebase page" in fidelity
     assert "one analysis unit/page" in pack
     assert "not one source file" in pack
 
 
 def test_approved_codebase_pages_inherit_and_freeze_planner_baseline():
     planner = (PLANNER / "SKILL.md").read_text(encoding="utf-8")
-    core = _squash(SOURCE_SKILL.read_text(encoding="utf-8"))
+    fidelity = _squash(
+        (SOURCE_SKILL.parent / "references/source-fidelity.md").read_text(encoding="utf-8")
+    ).lower()
     pack = _squash(CODEBASE_PACK.read_text(encoding="utf-8")).lower()
     assert "approved repository commit" in planner
-    assert "inherit the approved repository commit" in core
-    assert "verify that the checkout is at that exact commit" in core
-    assert "inherit the approved repository commit" in pack
+    assert "repository commit" in fidelity
+    assert "verify the selected source is at that exact baseline" in fidelity
+    assert "inherit the blueprint's thesis and repository commit" in fidelity
     for operation in ("fetch", "pull", "fast-forward", "switch", "checkout", "reset", "move"):
         assert operation in pack, f"approved baseline movement rule omits {operation!r}"
-    assert "do not fetch, pull, fast-forward, switch, checkout, reset, or move it" in pack
-    assert "return to `planning-codebase-analysis`" in pack
+    assert "do not fetch, pull, fast-forward, switch, checkout, reset, or move the checkout" in pack
+    assert "report the mismatch to the owning workflow" in pack
     assert "focused code analysis with no approved blueprint" in pack
 
 
 def test_approved_page_may_organize_sections_but_not_decompose_documents():
-    core = SOURCE_SKILL.read_text(encoding="utf-8")
-    assert core.count("### Phase 1") == 1
-    after_phase_one = core.split("### Phase 1", 1)[1]
-    assert "### Phase 2" in after_phase_one
-    phase_one = _squash(after_phase_one.split("### Phase 2", 1)[0])
-    assert "non-code sources or unplanned focused analysis" in phase_one
-    assert "approved codebase page may organize sections" in phase_one
-    assert "must not rename, split, or reassign pages locally" in phase_one
-    assert "required page split is material drift" in phase_one
-    assert "return it to `planning-codebase-analysis`" in phase_one
+    fidelity = REPO_ROOT / "skills/source-faithful-analysis/references/source-fidelity.md"
+    text = _squash(fidelity.read_text(encoding="utf-8"))
+    assert "non-code sources or unplanned focused analysis" in text
+    assert "the page may organize sections" in text.lower()
+    assert "must not rename, split, or reassign pages locally" in text
+    assert "material ownership, scope, or baseline change" in text
+    assert "owning approval workflow" in text
+    assert "`planning-codebase-analysis`" in text
+    assert "`feature-tree-analysis` approval gate" in text
 
 
 def test_replanning_is_limited_to_authoritative_boundary_or_coverage_changes():
@@ -180,7 +208,10 @@ def test_replanning_is_limited_to_authoritative_boundary_or_coverage_changes():
 def test_planner_names_only_tracked_routed_downstream_skills():
     text = (PLANNER / "SKILL.md").read_text(encoding="utf-8")
     workflow = text.split("## Workflow", 1)[1].split("## Blueprint contract", 1)[0]
-    named_skills = set(re.findall(r"`([a-z][a-z0-9-]+)`", workflow))
+    routed_names = set(re.findall(r"`([a-z][a-z0-9-]+)`", workflow))
+    profile_names = {"software-architecture", "feature-analysis", "mechanism-analysis"}
+    assert profile_names <= routed_names
+    named_skills = routed_names - profile_names
     assert named_skills == {
         "source-faithful-analysis",
         "maintaining-llm-knowledge",

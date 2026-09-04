@@ -13,7 +13,8 @@ description: >-
 ## Responsibility boundary
 - Own whole-codebase reconnaissance, content selection, page ownership, user approval, and coverage.
 - Treat one page as one analysis unit, not one source file.
-- Route focused or approved units to `source-faithful-analysis`.
+- Route approved architecture, concrete-feature, and mechanism pages to
+  `source-faithful-analysis` with the matching document profile.
 - Route exhaustive feature-tree/function-point inventories (contract specs, not mechanism pages) to `feature-tree-analysis`.
 
 ## Hard gate
@@ -28,19 +29,24 @@ existing-Wiki inspection is allowed before approval. Workflow persistence begins
 3. Convert the discovery map into the blueprint contract below.
 4. Present the blueprint and stop for explicit user approval.
 5. Persist an approved multi-page blueprint under the git-ignored, local-only `docs/superpowers/specs/` when it must survive multiple pages or sessions. Never force-add that directory to Git.
-6. Dispatch one approved page contract at a time to `source-faithful-analysis`; invoke
+6. Dispatch one approved page contract at a time through `source-faithful-analysis`, naming its
+   document profile (`software-architecture`, `feature-analysis`, or `mechanism-analysis`); invoke
    `maintaining-llm-knowledge`, `writing-obsidian-math`, and `writing-mermaid-diagrams` only when
    their concrete work appears. For concrete figure work, invoke an available figure skill routed
    by the project.
 7. Close each wave with the wave gate before marking matrix rows covered: an independent reviewer
-   (never a writer) applies `source-faithful-analysis` 的 `references/page-review-rubric.md` to
-   every page in the wave; the always-on mechanical gates pass; when a changed page retains legacy
+   (never a writer) applies the owning analysis skill's review rubric to every page in the wave;
+   the always-on mechanical gates pass; when a changed page retains legacy
    `path:line` citations, validate those citations with `tools/check_locators.py`; the enumeration-
    axis reconciliation is re-run. Then update the coverage matrix, and reopen approval only for
    material drift.
 
 ## Blueprint contract
 - Record a capability map, static architecture, and representative dynamic lifecycle evidence before assigning pages.
+- When the blueprint contains a **repository architecture page**, read
+  `../source-faithful-analysis/SKILL.md`, select the `software-architecture` profile, and assign
+  its contract either to that page or to explicit linked owner pages in the coverage matrix; the
+  writer must not make that split locally.
 - Repository baseline, audience, Wiki placement, system thesis, live/legacy boundary, unresolved evidence gaps.
 - Capability map, static responsibility/state-ownership map, and one or more representative dynamic lifecycles.
 - Per-page table: path/title, page type, thesis, reader question, owned concepts, explicit exclusions,

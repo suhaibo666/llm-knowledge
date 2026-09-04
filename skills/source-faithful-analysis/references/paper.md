@@ -1,8 +1,8 @@
 # Source-type pack — Research paper (arXiv / PDF)
 
-The concrete edge of source-faithful analysis when the source is a **paper**. Read alongside the
-SKILL.md core. The ground truth here is a passage/table in the paper — and, for an open-weights
-model/system paper, the released artifact.
+The evidence-acquisition pack for a **paper**. Read it after `source-fidelity.md` and alongside the
+selected document profile. The ground truth here is a passage/table in the paper — and, for an
+open-weights model/system paper, the released artifact. This pack does not define page shape.
 
 ## Locator & baseline
 - **Locator = `§N.M` / `pX` / `Table K` / `Fig. J` / `Eq. (n)`.** You **open the paper to that spot
@@ -79,17 +79,18 @@ omits exact dims.
 
 ## Paper-specific mechanism evidence
 
-Apply the core analysis contract once per contribution. For a paper, the load-bearing evidence is:
+Apply the selected document profile once per owned contribution. For a paper, the load-bearing
+evidence is:
 
 - the section that states the bottleneck or gap;
 - the rejected alternative and the criterion or ablation that selected this design;
 - the mechanism expressed as math or a diagram, plus the result table **with its baseline column**;
 - assumptions, costs, dataset/scale regime, caption conditions, and the Limitations section;
 - for model papers, a complete structure view and exact hyperparameters derived from the released
-  artifact rather than rounded prose.
+artifact rather than rounded prose.
 
 Pull the deltas that argue; do not transcribe every cell. An outlook remains optional and needs the
-anchored future-work/version evidence required by the core.
+anchored future-work/version evidence required by the selected profile.
 
 ## Type-specific red flags
 | If you catch yourself… | Do this instead |

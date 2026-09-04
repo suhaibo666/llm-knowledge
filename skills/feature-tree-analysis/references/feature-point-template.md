@@ -3,10 +3,11 @@
 One function point = seven blocks: a position block, the **five core fields** (inputs, outputs,
 processing logic, boundary constraints, supported scope), and a tests-and-links block. The
 semantics of the five core fields are **fixed** — do not repurpose them. Each field comes with an
-evidence recipe: where in the code to mine it. Source fidelity follows the Source fidelity section
-of `source-faithful-analysis`: **open and read the source before making the claim**. In the page,
-deduplicate evidence as stable `path::qualified.symbol` anchors at the frozen baseline; line
-numbers are optional for exact excerpts, not a per-field or per-step quota.
+evidence recipe: where in the code to mine it. Source fidelity follows the shared
+`../../source-faithful-analysis/references/source-fidelity.md` contract: **open and read the source
+before making the claim**. In the page, deduplicate evidence as stable
+`path::qualified.symbol` anchors at the frozen baseline; line numbers are optional for exact
+excerpts, not a per-field or per-step quota.
 
 ## Template
 
@@ -41,9 +42,8 @@ numbers are optional for exact excerpts, not a per-field or per-step quota.
   concurrency and ordering (locks, races, ordering assumptions) · resource capacity (memory,
   handles, queue bounds, backpressure) · completion and visibility (when an effect is durable or
   observable; submission vs completion) · retry and idempotency · partial side effects on
-  failure · cleanup and rollback. These are the same trigger classes as the conditional depth
-  profiles of the `source-faithful-analysis` codebase pack; here they yield evidenced constraint
-  lines, not mechanism prose.
+  failure · cleanup and rollback. These implementation conditions often require deeper evidence in
+  an analysis page; here they yield contract constraint lines, not mechanism prose.
 - **Supported scope** ≠ background, ≠ quality bars. Only "supported / unsupported / defaults per
   dimension", each with evidence — positive claims need anchors too, not just negatives.
 - **Processing logic** walks the main path: pure forwarding helpers collapse into one step; an
@@ -61,9 +61,8 @@ numbers are optional for exact excerpts, not a per-field or per-step quota.
 | Supported scope | NotImplementedError, platform/version guards, `pytest.mark.skipif` (high-confidence), build dependency declarations, doc support matrices | never write a positive or negative claim without evidence |
 | Test anchors | same-name/same-topic files under tests/ and their assertions | tests are evidence of protected behavior |
 
-**Evidence priority (for current behavior)**: code > tests > docs > comments. When a documented
-promise conflicts with code behavior, present both with their own source anchors — never silently pick
-one (the same visible-conflict rule as `source-faithful-analysis`).
+Apply the fact/inference and visible-conflict rules from the shared source-fidelity contract. This
+template does not redefine evidence priority.
 
 ## Writing rules
 

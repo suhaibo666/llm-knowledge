@@ -1,75 +1,45 @@
 # Source-type pack — Codebase / framework / library
 
-Read this with the core `SKILL.md` whenever current behavior, architecture, or design must be
-derived from code. This pack executes **one analysis unit/page or one focused mechanism, not one source file**.
-Follow the mechanism across entry points, state owners, helpers, backends, tests, and
-history as far as the causal argument requires.
+Read this with the shared source-fidelity contract whenever evidence comes from code. This pack
+supports **one analysis unit/page or one focused mechanism, not one source file**. Follow evidence
+across entries, selection, state owners, helpers, backends, tests, and history as far as the selected
+document profile requires.
 
-## Routing and baseline
+## Code locator and checkout evidence
 
-When an approved blueprint exists, inherit the page thesis, owned concepts, exclusions, evidence
-entry points, completion test, and **inherit the approved repository commit**. Do not redesign the
-page tree from inside the page task.
+The shared kernel owns baseline and boundary policy. This pack adds only the code/Git-specific
+locator format and safe checkout handling.
 
 - **Default anchor:** repository-relative **path + qualified symbol**, such as
   `src/scheduler.py::Scheduler.submit` or `tests/test_scheduler.py::test_cancel_after_submit`.
   A bare path is only for module-level behavior; open the symbol before using it.
 - **Line numbers are optional.** Use a tight range for an exact excerpt/diff or unnamed/ambiguous
   code, never by default for ordinary control flow, state transitions, or each claim/hop.
-- **Baseline:** commit + branch/tag + commit date. Every current-behavior page states it.
-- **Approved page:** verify the inherited checkout and keep it frozen. Do not fetch, pull,
-  fast-forward, switch, checkout, reset, or move it. If the commit is unavailable or must change,
-  return to `planning-codebase-analysis` with the proposed revision and reason.
+- **Code snapshot identity:** commit + branch/tag + commit date.
+- **Frozen-checkout safeguard:** after the owning workflow selects the commit, verify it and do not
+  fetch, pull, fast-forward, switch, checkout, reset, or move the checkout during evidence
+  collection. If unavailable, report the mismatch to the owning workflow; do not pick a substitute.
 - **Focused code analysis with no approved blueprint:** establish a safe baseline. If a sibling
   checkout is clean, on the expected branch, and updating it is in scope, fast-forward it before
   evidence collection and record the old→new commit delta. Never overwrite dirty or diverged work.
 
-Once evidence collection starts, freeze the checkout. A baseline migration requires revalidating
-the affected claims and anchors; changing only the header commit is not an update.
+Any approved baseline migration is implemented by revalidating affected claims and anchors;
+changing only the header commit is not code evidence.
 
-## Map the owned mechanism
+## Build the code evidence map
 
 1. Inspect the directory shape to roughly two levels; exclude generated/vendor/build artifacts.
 2. Find construction and selection sites before treating a class as live. Separate current,
    compatibility, fallback, experimental, and removed paths.
 3. Locate the orchestrator, state-bearing structures, registries, admission/resource managers,
    protocol boundaries, negative paths, and tests.
-4. Build a compact design map: pressure → state owner/invariants → choice vs alternative → actual
-   call path → cost/failure boundary → evidence.
+4. Build a compact evidence map: live entry/selection → state owner/invariants → actual call path →
+   completion/visibility → guards/tests/history.
 
-The source tree tells you where code lives; it does not determine the explanatory order.
+The source tree tells you where evidence lives; it does not determine the explanatory order or
+software-layer classification.
 
-## Architecture overview contract
-
-Build the overview in two passes:
-
-1. **Static responsibility map:** derive layers/components from responsibility, dependency
-   direction, state ownership, and contracts—not from directories or a fixed taxonomy.
-2. **Dynamic lifecycle:** trace one real request/job/batch through those boundaries and identify
-   when state becomes valid, changes owner, completes, and becomes externally visible.
-
-For each real layer answer: why it exists; what capability and input→output contract it provides;
-what state, invariants, policy, and failure boundary it owns; what it delegates; and which verified
-entry symbols prove the boundary. A lifecycle is motion, not a substitute for the static map.
-
-## Code mechanism contract
-
-Instantiate the core’s canonical beats without repeating them as a second template:
-
-- **What:** locate the mechanism in the system; state its capability, input/output contract, owned
-  state, invariants, and explicit non-responsibilities.
-- **Why:** name the pressure and the obvious alternative, then support the selection criterion with
-  design comments, history, tests, or clearly marked analyst inference.
-- **How:** explain the state model first, then prove it with load-bearing structures and the
-  smallest real execution trace that exposes state mutation, authority transfer, scheduling, or
-  invariant enforcement.
-- **Boundary:** cover guards, unsupported combinations, fallback, cost, failure, observability, and
-  the tests that protect those conditions.
-
-Code excerpts never replace the model. Do not mirror a function body statement by statement or use
-signatures as headings. The prose must survive deleting every code block.
-
-### Execution trace contract
+## Execution trace evidence contract
 
 For every load-bearing path, record enough of this ledger that a reader can continue in source:
 
@@ -84,7 +54,8 @@ For every load-bearing path, record enough of this ledger that a reader can cont
 | Evidence | Named symbols actually opened; map unique `path::qualified.symbol` anchors to the semantic hops in one compact source-reading route |
 
 Trace only hops that change state/owner, cross an execution boundary, enforce an invariant, or define
-completion/visibility. **Collapse pure forwarding helpers**; exhaustive call graphs hide the design.
+completion/visibility. **Collapse pure forwarding helpers** only in non-direct summaries; an exact
+caller tree retains them when omission creates a false edge, or marks the edge `transitive/elided`.
 
 ### Evidence presentation
 
@@ -93,8 +64,7 @@ test, and history spot needed; scratch notes may be detailed. In the page, name 
 symbols in prose and add one deduplicated **compact source-reading route** per mechanism: entry /
 selection → state owner → state-changing worker → completion/visibility → negative test. Add an
 anchor only for a distinct boundary or design decision; never append `file:line` to every sentence
-or ledger row. The narrative still explains objects, transitions, synchronization, completion, and
-failure; the route makes it findable without becoming a volatile line-number index.
+or ledger row.
 
 Use the completion ladder as a diagnostic, not a mandatory set of headings:
 
@@ -102,9 +72,9 @@ Use the completion ladder as a diagnostic, not a mandatory set of headings:
 created → submitted → accepted → running → local-complete → published/visible → consumed/settled
 ```
 
-Name only the stages the mechanism actually has, and identify which API event proves each stage.
+Name only the stages the code actually has, and identify which API event proves each stage.
 
-### Conditional depth profiles
+## Conditional evidence depth
 
 Apply a profile **only when the trigger is present**. These are investigation prompts, not sections
 that every page must contain.
@@ -116,33 +86,13 @@ that every page must contain.
 | **Asynchronous, concurrent**, distributed, stateful, or externally effectful work | Separate scheduling from completion; inspect partial success, sibling cancellation/settling, cleanup, retry, idempotency, and rollback |
 | Executable or observable behavior | Provide a **runtime verification** route through tests, assertions, logs, metrics, traces, a minimal reproduction, or another observable contract |
 
-If a trigger is absent, say so only when that absence closes a likely misunderstanding; do not pad
-the page with empty matrices.
+Deepen the evidence **only when the trigger is present**. If absent, omit the profile unless that
+absence closes a likely misunderstanding; do not add empty matrices.
 
-## Evidence roles
+## Evidence completion check
 
-Keep evidence roles distinct when they disagree:
-
-| Evidence | What it establishes |
-|---|---|
-| Current implementation | What the frozen commit actually does |
-| Tests | Which behavior and negative boundaries are protected |
-| Public/design docs | Intended model and supported contract |
-| Comments, issues, commits, PRs | Local or historical rationale; useful but not authoritative alone |
-| Analyst inference | A reconstruction that must be labelled and argued from evidence |
-
-For current behavior, implementation plus executable tests normally wins. For public promises, the
-published contract remains relevant even when implementation diverges. Describe the mismatch rather
-than silently selecting one account.
-
-## Completion check
-
-- The reader can identify the mechanism’s position, capability, state owner, and non-responsibility.
-- The design choice is compared with the obvious alternative under a concrete constraint.
-- One real execution path is traceable from its live selection/entry point through its business
-  completion or visibility boundary.
-- Data and completion semantics are deepened only where their conditional triggers apply.
-- Guards, costs, unsupported paths, fallback, partial failure, and verification evidence are not
-  hidden behind a happy-path call graph.
-- Every load-bearing claim and hop is grounded in code actually opened in the frozen checkout; the
-  page exposes a deduplicated stable-symbol route for the load-bearing implementation and tests.
+- Live construction/selection and current versus legacy paths are distinguished.
+- One real path is traceable through the selected document profile's completion boundary.
+- Conditional data, concurrency, failure, and runtime evidence is collected only where triggered.
+- Every load-bearing claim and hop is grounded in code actually opened at the frozen baseline; the
+  page exposes a deduplicated stable-symbol route for the implementation and tests.

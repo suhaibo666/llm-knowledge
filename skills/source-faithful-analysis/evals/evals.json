@@ -3,23 +3,63 @@
   "evals": [
     {
       "id": 1,
+      "kind": "generic-code-mechanism",
+      "source_packs": ["codebase"],
+      "document_profile": "mechanism-analysis",
+      "conditional_depth": [],
+      "forbidden_depth": [],
       "prompt": "请分析这个框架的执行模块。不要只列类和函数，我希望读完能理解模块是什么、怎么做、为什么这样设计，并能继续沿源码阅读。",
       "expected_output": "围绕一个中心论点回答是什么、怎么做、为什么：说明定位、能力、状态 owner 和非职责；解释设计压力、替代方案与取舍；用正文中的限定符号和去重后的 path::qualified.symbol 源码导读串起最小真实执行路径，不要求逐论断或逐跳点行号，并补足约束和失败边界。"
     },
     {
       "id": 2,
+      "kind": "async-distributed-trace",
+      "source_packs": ["codebase"],
+      "document_profile": "mechanism-analysis",
+      "conditional_depth": ["async-concurrent"],
+      "forbidden_depth": [],
       "prompt": "梳理这条异步分布式调用链。重点解释 RPC 返回、Future、后台任务完成、权重发布和下一批请求看到结果分别发生在什么时候。",
       "expected_output": "逐跳记录 caller/callee、跨界对象、前后状态和 local/remote、sync/async、blocking/non-blocking 语义；明确区分提交、执行完成和下游可见，指出第一次真实等待、业务完成信号、部分副作用、清理和 rollback 能力。"
     },
     {
       "id": 3,
+      "kind": "data-lifecycle",
+      "source_packs": ["codebase"],
+      "document_profile": "mechanism-analysis",
+      "conditional_depth": ["data-representation"],
+      "forbidden_depth": [],
       "prompt": "分析训练批次从数据集进入控制器、切分到 worker、再写回结果的全过程，尤其关注容器和字段怎么变化。",
       "expected_output": "除控制流外建立数据生命周期：跟踪对象身份、容器类型、tensor shape 或 schema、padding/chunk/concat/reorder、原地修改与复制/共享、owner 变化、存储位置和延迟写回；只展开实际存在的转换。"
     },
     {
       "id": 4,
-      "prompt": "重写这个代码仓的架构概览。现有页面只有模块列表和一张调用图，读者不知道各层为什么存在，也不知道一次请求真正怎么穿过去。",
-      "expected_output": "先给出静态责任图和动态生命周期：静态视图解释每层能力、input/output、状态 owner、不变量和边界；动态视图选择一个真实请求，跟踪状态何时有效、转移、完成和可见。调用图不能代替架构，深层机制链接到唯一 owner 页面。"
+      "kind": "ordinary-software-feature",
+      "source_packs": ["codebase"],
+      "document_profile": "feature-analysis",
+      "conditional_depth": [],
+      "forbidden_depth": ["training", "parallel-distributed", "companion-without-evidence"],
+      "prompt": "把一个普通软件框架的缓存失效功能写成具体特性源码分析。读者需要理解它为什么存在、实现如何工作以及如何继续读源码，不要写成函数清单。",
+      "expected_output": "按具体特性 profile 从一个紧凑问题段落进入解决思路、收益/代价/约束；用最小例子扩展到完整系统位置，逐个关键组件解释职责、选择原因、状态/数据/控制变化、完成语义和边界；仅核算适用的延迟、内存、I/O、兼容性或运维等成本，不引入并行训练专属内容，并以 ASCII 调用树和稳定符号阅读路线收束真实多跳路径。"
+    },
+    {
+      "id": 5,
+      "kind": "parallel-training-feature",
+      "source_packs": ["codebase"],
+      "document_profile": "feature-analysis",
+      "conditional_depth": ["training", "parallel-distributed"],
+      "forbidden_depth": ["companion-without-evidence"],
+      "prompt": "分析训练框架里的张量并行特性：既要讲清单个矩阵乘法如何切分，也要讲清整个模型中的实现、配套机制、完整训练路径与整体开销。",
+      "expected_output": "先用最小矩阵例子解释分片轴、局部计算、聚合语义、选择原因和代价，再扩展到模型各承重模块；逐模块闭合怎么做、为什么、输出/完成、开销和约束。训练路径必须覆盖前向、目标/Loss、反向及梯度交付，配套机制仅在正确性、容量或性能确有依赖时按同等深度解释，最后统一核算计算、通信、显存与同步点。"
+    },
+    {
+      "id": 6,
+      "kind": "conditional-depth-routing",
+      "source_packs": ["codebase"],
+      "document_profile": "feature-analysis",
+      "conditional_depth": [],
+      "forbidden_depth": ["fixed-cost-dimensions", "empty-conditional-sections", "companion-without-evidence"],
+      "prompt": "写一个软件特性的源码分析时，是否必须把所有可能组合的配套能力和固定的 CPU、网络、显存指标都各写一节？",
+      "expected_output": "不套固定领域模板：只展开实际存在的协作机制，并说明组合原因、职责边界、数据/状态交接和增量代价；总成本从延迟、吞吐、CPU/加速器、内存、存储、网络/I/O、同步竞争、兼容性、实现与运维中选择有源码或测量依据的维度。不存在的触发条件不创建空章节。"
     }
   ]
 }
