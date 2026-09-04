@@ -16,7 +16,7 @@ const repoRoot = path.resolve(toolDir, "..", "..")
 const nodeModules = path.join(toolDir, "node_modules")
 const puppeteerPackage = path.join(nodeModules, "puppeteer-core", "package.json")
 const articlePath = "/02_engineering/02_train_frameworks/megatron-lm/13_megatron_cp_analysis.html"
-const articleTitle = "Megatron-LM 上下文并行(Context Parallelism)深度解析"
+const articleTitle = "Megatron-LM 上下文并行(Context Parallelism)接入面深度解析"
 
 export function rootMermaidSvgs(block) {
   return [...block.querySelectorAll("svg")].filter((svg) => {
@@ -599,7 +599,7 @@ async function assertArticleContracts(page, origin) {
 }
 
 async function assertSearch(page, origin) {
-  await searchFor(page, origin, "跨多节点超长序列", articlePath)
+  await searchFor(page, origin, "跨多节点的超长序列", articlePath)
   await assertSearchMiss(page, origin, "__kb_no_matching_document_7f9c__", articlePath)
   await searchFor(page, origin, "13_megatron_cp_analysis", articlePath)
 }
