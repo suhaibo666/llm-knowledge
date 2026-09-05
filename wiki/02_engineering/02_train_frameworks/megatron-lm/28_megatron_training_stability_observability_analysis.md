@@ -144,7 +144,7 @@ fp16 训练里梯度可能**下溢成 0** 或**上溢成 inf**。两道防线:
 
 MoE 有独有的不稳定源 —— 路由:
 - **router fp32**:`--moe-router-dtype fp32` —— 路由 logit 保持 fp32(README 强调:高专家数下 bf16 路由精度不足,专家输出按路由分加权累加会放大误差)。
-- **负载均衡损失**:`aux_loss` 等防止专家路由坍塌(`14_megatron_ep_analysis.md` §7)。
+- **负载均衡损失**:`aux_loss` 等防止专家路由坍塌([[14_megatron_ep_analysis|EP 成本、容量与运行包络]])。
 - **`megatron/core/transformer/moe/router_replay.py`**(208 行):记录/重放路由决策 —— 用于复现和调试路由相关的不确定性。
 
 > [!update] aux_loss / z_loss 在 TP>1 下的梯度缩放修正(#5047) — 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。
@@ -221,7 +221,7 @@ MTP(Multi-Token Prediction,详见 GPT/DeepSeek 系列)在主模型之外挂若�
 
 `megatron/core/transformer/moe/moe_logging.py`(745 行)有两个全局 tracker:
 - **`MoEMetricsTracker`**:逐层收集 MoE 指标(各层 aux loss、z-loss 等),`--moe-per-layer-logging` 开启。能看出**哪一层**路由出问题,而不只是全局平均。
-- **`MoEOverloadFactorTracker`**(`:95`):跟踪**专家过载因子**(overload factor)——`max_expert_load / mean_load`,即 `14_megatron_ep_analysis.md` §7.1 的负载不均衡因子 `f`。`--log-moe-overload-factor` 开启;跨 `tp_ep` 与 `expt_dp` 组做 MAX 规约,反映最坏专家的过载程度。
+- **`MoEOverloadFactorTracker`**(`:95`):跟踪**专家过载因子**(overload factor)——`max_expert_load / mean_load`,对应 [[14_megatron_ep_analysis|EP 成本账]]中的 expert straggler 维度。`--log-moe-overload-factor` 开启;跨 `tp_ep` 与 `expt_dp` 组做 MAX 规约,反映最坏专家的过载程度。
 
 > [!update] MoE logging 的 record/report 生命周期(#3431) — 该特性自 `dev@232c478d4`(2026-06-16)引入,行号已重核至基线 `71092579`。
 > `megatron/core/transformer/moe/moe_logging.py` 在 `ee3f1ff..HEAD` 间**内容无净变化**(仍 745 行),上述两个 tracker 描述在 `dev@232c478d4` 依然准确。补充其 #3431 重构后的标准用法,便于对照源码:

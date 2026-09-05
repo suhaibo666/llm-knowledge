@@ -2394,6 +2394,118 @@ flags:
   owner: 28_megatron_training_stability_observability_analysis
   rule: 契约段（2026-09-02）
 variant_axes:
+- owner: 14_megatron_ep_analysis
+  selector: moe_token_dispatcher_type
+  source: megatron/core/transformer/transformer_config.py::TransformerConfig.moe_token_dispatcher_type
+  variants:
+  - name: allgather
+    page_terms: [MoEAllGatherTokenDispatcher]
+    figures: [assets/megatron_ep_dispatcher_variants.svg]
+    figure_terms: [AllGather]
+  - name: alltoall
+    page_terms: [MoEAlltoAllTokenDispatcher]
+    figures: [assets/megatron_ep_dispatcher_variants.svg]
+    figure_terms: [AllToAll]
+  - name: flex
+    page_terms: [MoEFlexTokenDispatcher]
+    figures: [assets/megatron_ep_dispatcher_variants.svg]
+    figure_terms: [Flex]
+- owner: 14_megatron_ep_analysis
+  selector: moe_flex_dispatcher_backend
+  source: megatron/core/transformer/moe/token_dispatcher.py::MoEFlexTokenDispatcher.__init__
+  variants:
+  - name: deepep
+    page_terms: [_DeepepManager]
+    figures: [assets/megatron_ep_flex_backends.svg]
+    figure_terms: [DeepEP]
+  - name: deepepv2
+    page_terms: [_DeepepV2Manager]
+    figures: [assets/megatron_ep_flex_backends.svg]
+    figure_terms: [DeepEPv2]
+  - name: hybridep
+    page_terms: [_HybridEPManager]
+    figures: [assets/megatron_ep_flex_backends.svg]
+    figure_terms: [HybridEP]
+  - name: ncclep
+    page_terms: [_NCCLEPManager]
+    figures: [assets/megatron_ep_flex_backends.svg]
+    figure_terms: [NCCL-EP]
+- owner: 14_megatron_ep_analysis
+  selector: inference_moe_token_dispatcher_type
+  source: megatron/core/transformer/moe/moe_layer.py::MoELayer._setup_inference_mode
+  variants:
+  - name: nccl-inference-dispatcher
+    page_terms: [NCCLAllGatherDispatcher, InferenceMode.is_active]
+    figures: [assets/megatron_ep_dispatcher_variants.svg]
+    figure_terms: [NCCLAllGatherDispatcher, InferenceMode.is_active]
+  - name: nvls-inference-dispatcher
+    page_terms: [NVLSAllGatherVDispatcher, InferenceMode.is_active]
+    figures: [assets/megatron_ep_dispatcher_variants.svg]
+    figure_terms: [NVLSAllGatherVDispatcher, InferenceMode.is_active]
+- owner: 15_megatron_pp_schedulers_analysis
+  selector: get_forward_backward_func
+  source: megatron/core/pipeline_parallel/schedules.py::get_forward_backward_func
+  variants:
+  - name: no-pipeline
+    page_terms: [forward_backward_no_pipelining]
+    figures: [assets/megatron_pp_vpp_vs_1f1b.svg]
+    figure_terms: [no-pipeline]
+  - name: non-interleaved-1f1b
+    page_terms: [forward_backward_pipelining_without_interleaving]
+    figures: [assets/megatron_pp_vpp_vs_1f1b.svg]
+    figure_terms: [non-interleaved]
+  - name: interleaved-1f1b
+    page_terms: [forward_backward_pipelining_with_interleaving]
+    figures: [assets/megatron_pp_vpp_vs_1f1b.svg]
+    figure_terms: [VPP]
+  - name: multi-module-bridge
+    page_terms: [MultiModuleProcessGroupCollection, BridgeCommunicator]
+    figures: [assets/megatron_pp_multimodule_bridge.svg]
+    figure_terms: [MultiModuleProcessGroupCollection, BridgeCommunicator]
+- owner: 15_megatron_pp_schedulers_analysis
+  selector: overlap_moe_expert_parallel_comm
+  source: megatron/core/pipeline_parallel/combined_1f1b.py::combined_1f1b_schedule_for_interleaved_pipelining
+  variants:
+  - name: combined-1f1b
+    page_terms: [combined_1f1b_schedule_for_interleaved_pipelining]
+    figures: [assets/megatron_pp_combined_1f1b.svg]
+    figure_terms: [combined-1F1B]
+- owner: 15_megatron_pp_schedulers_analysis
+  selector: P2PCommunicator._communicate
+  source: megatron/core/pipeline_parallel/p2p_communication.py::P2PCommunicator._communicate
+  variants:
+  - name: ring-exchange
+    page_terms: [ring_exchange]
+    figures: [assets/megatron_pp_p2p_transports.svg]
+    figure_terms: [ring_exchange]
+  - name: batched-p2p
+    page_terms: [batch_isend_irecv]
+    figures: [assets/megatron_pp_p2p_transports.svg]
+    figure_terms: [batch_isend_irecv]
+  - name: individual-p2p
+    page_terms: [isend, irecv]
+    figures: [assets/megatron_pp_p2p_transports.svg]
+    figure_terms: [isend, irecv]
+- owner: 15_megatron_pp_schedulers_analysis
+  selector: pipeline_model_parallel_comm_backend
+  source: megatron/core/parallel_state.py::initialize_model_parallel
+  variants:
+  - name: nccl
+    page_terms: [NCCL]
+    figures: [assets/megatron_pp_p2p_transports.svg]
+    figure_terms: [NCCL]
+  - name: ucc
+    page_terms: [UCC]
+    figures: [assets/megatron_pp_p2p_transports.svg]
+    figure_terms: [UCC]
+- owner: 15_megatron_pp_schedulers_analysis
+  selector: get_tensor_shapes
+  source: megatron/core/pipeline_parallel/schedules.py::get_tensor_shapes
+  variants:
+  - name: hyper-connections-boundary
+    page_terms: [Hyper Connections, num_residual_streams, flexible VPP]
+    figures: [assets/megatron_pp_p2p_overlap.svg]
+    figure_terms: [Hyper Connections, num_residual_streams, flexible VPP]
 - owner: 16_megatron_distributed_optimizer_analysis
   selector: use_distributed_optimizer
   source: megatron/core/distributed/param_and_grad_buffer.py::_ParamAndGradBucketGroup.start_grad_sync

@@ -69,6 +69,17 @@ All source ingestions and significant wiki updates are logged here.
 
 站点验证：changed-scope 构建21页，broken link/missing anchor/missing asset/missing legacy route 全为0；三篇实页共138个 MathJax 公式通过。类与所有权 Mermaid 另用站点随附运行时实渲；16的过宽图拆成选择与核心状态两幅，继承及辅助类关系保留在同节文字中。
 
+## 2026-09-05：Megatron 特性页 14–16 变体穷举、原理数据面与可执行门禁复审
+
+本条覆盖并取代 2026-09-04 同题条目对 14–16 的最终 PASS 结论；旧条目作为当时状态保留，不回写历史。复查确认旧稿虽然已有算法图，仍遗漏 live sibling，且若干关键所有权、容量与完成边界不准确。
+
+- `source-faithful-analysis` 的 feature/mechanism/architecture 档案继续把 PP、TP、CP、EP、packing、routing、scheduling、reduction 等非恒等算法的基础原理图设为硬门禁：同一具名实例必须逐 live data plane 展示输入、局部计算、所有权/布局/时序变化、通信或同步、重构、前反向与增量成本，类图、调用树、纯文字和表格不能替代。执行层新增 `variant_axes`、C4 `variant_gap` 与 C5 `variant_error`；每个登记变体必须声明实际嵌入的 SVG 和可见 `figure_terms`，只在正文提及、只写资产路径、只把关键词藏入 metadata/aria 均不能通过。
+- [[14_megatron_ep_analysis]] 用 $T_{\mathrm{global}}=4$、每 rank $T_{\mathrm{local}}=2$、$E=4$、top-$k=2$ 的同一例子闭合 route → dispatch → weighted expert compute → combine → backward；三张图分别覆盖 AllGather/AllToAll/Flex、DeepEP/DeepEPv2/HybridEP/NCCL-EP 和正交推理 `{nccl,nvls}` sibling。修正 capacity 口径、DeepEP 权重消费位置、HybridEP `drop→over_budget→`常规整步 dropless rerun、captured TE whole-MoE graph 的拒绝边界、TE 模块函数 API，以及 HybridEP/NCCL-EP 均直接返回 expert-major 的事实。
+- [[15_megatron_pp_schedulers_analysis]] 的五张图穷举 no-pipeline、non-interleaved 1F1B、VPP、combined-1F1B、Multi-Module Bridge、ring/batched/individual P2P 与 NCCL/UCC；Bridge 纠正为 source `group[-1]`、destination `group[0]`，并同时复演 per-peer 与 grouped per-sample split。P2P 图新增 Hyper Connections 的 `hidden_size → hidden_size * num_residual_streams → hidden_size` 边界形状与 flexible-VPP TODO，仿真测试更新到冻结基线 `85902ef…`。
+- [[16_megatron_distributed_optimizer_analysis]] 的四张图覆盖 ordinary AR、standard RS、custom FP32 accumulation RS、multi-instance HSDP，native DistributedOptimizer、Torch FSDP2、Megatron-FSDP 三种 wrapper，以及 LayerWise decoupled/layout 两条 optimizer sibling。修正参数 AG 的 unaligned/aligned/optimizer-step 三个真实 dispatch owner，禁止把 `zero_grad` 当发射入口；HSDP stream 改为 dense/expert collection 各自共享；`force_all_reduce+k>1` 明确只把 local shard 跨 instance 全局化。LayerWise 以 `q(2),p(5),r(6)` 复演 compact AR → whole-param owner → variable-size `allgather_params`，以及 `13→256` padded layout 的 RS → whole-param owner → buffer AG，ordinary full update 收窄为 plain non-LayerWise optimizer。
+- 三页采用轮换 reviewer。每页在首次及扩展复审中都曾因 Important finding 被 REJECT；补齐正文、生成器、实际 SVG 与负向回归后，最终三位非作者 reviewer 均给出 `remaining findings: none / PASS`。12 张 SVG 均由生成器重建并经真实 Chrome 渲染与文字 bbox 检查，无裁切或重叠。
+- 最终门禁：算法图/调度仿真 **35/35**；coverage、Skill/Profile 与 host-authoring 回归 **47/47**；Megatron coverage `flags=590 pages=35`、`C1=C2=C3=C4=C5=0`；links 446 页全 0；changed math/Markdown/assets 18 页均 0 error、0 warning；changed-scope 站点构建 17 页且 broken link/missing anchor/missing asset/missing legacy route 全为 0；三篇实页共 **262** 个 MathJax 公式通过。
+
 ## 2026-09-04：Megatron 特性页 10 / 11 / 13 补齐原理图与算法复现
 
 按更新后的 `feature-analysis` 文档档案新增的「Algorithmic implementation and principle figure」触发条件返工：三页此前用文字堆砌解释切分、打包、路由这类算法机制，缺少原理图，明显偏离已校准的范文 [[12_megatron_tp_analysis]]。新规则明确类图、所有权清单、ASCII 调用树、代码块、纯文字与表格都不能满足该门禁，`drawing-wiki-figures` 为不可豁免的必需子技能。
