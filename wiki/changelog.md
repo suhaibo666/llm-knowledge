@@ -12,6 +12,12 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-05：Megatron 14–15 按基础方案到优化方案重组叙述
+
+- [[14_megatron_ep_analysis]] 用同一组四 token、四专家路线，依次讲完 AllGather、AllToAll、DeepEP、HybridEP 的动机、输入排列、专家计算、回送与反向，再说明 DeepEPv2 和 NCCL-EP 的分支取舍。组件、选择入口与并行轴接线移到源码章节；修正专家归属由建模固定、AllGather 仍需 CPU 计数，以及两 rank 算例不能直接证明 AllToAll 节省 hidden 通信量。
+- [[15_megatron_pp_schedulers_analysis]] 补充 GPipe 教学基线及与 1F1B 的同尺度时序图，主线依次解决激活保留量、VPP 气泡和 P2P 等待；combined-1F1B 与多模块作为独立需求展开。GPipe 依据 `arXiv:1811.06965v5` §2.2–§2.3，明确不属于冻结 Megatron 的可选调度。图中时长、记录峰值与消息量由依赖模拟计算。
+- 源码基线与字段归属保持不变，重写中英文混杂和生硬直译，调整入链与图示回归的章节定位。
+
 ## 2026-09-05：Megatron 特性页 16–18 按当前特性分析契约重构
 
 本次固定在 `NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`，不变更内容归属或源码基线。三页按问题与取舍、同例算法复演、系统闭环、类与所有权、实际调用树、稳定源码路线及配置契约组织；历史基线迁移仍查本日志，不再占用活动页开头。

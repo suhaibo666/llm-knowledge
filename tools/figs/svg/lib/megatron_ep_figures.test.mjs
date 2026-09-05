@@ -109,7 +109,7 @@ test('Markdown 与 SVG 共享同一 token/variant 契约', async () => {
     'K=T_{\\mathrm{global}}\\cdot k=4\\cdot2=8',
     'K_{\\mathrm{remote}}=4',
     'input_splits=[2,2]',
-    'rank 0 的 non-expanded 收件是 $[t_0,t_1,t_3]$',
+    'rank 0 的未按专家展开的收件是 $[t_0,t_1,t_3]$',
     'rank 1 是 $[t_0,t_1,t_2]$',
     '各收 3 token',
     '本 rank 四条有效 edge（全组八条）',
@@ -122,30 +122,30 @@ test('Markdown 与 SVG 共享同一 token/variant 契约', async () => {
     assert.ok(markdown.includes(bodyFact), `正文同例事实漂移：${bodyFact}`);
   }
 
-  const capacity = section(markdown, '### 2.7', '## 3. 代码实现分析');
+  const capacity = section(markdown, '### 2.9', '## 3. 代码实现分析');
   for (const capacityFact of [
     'f_{\\mathrm{cap}}=0.5',
     'C=\\left\\lceil(2\\cdot2/4)\\cdot0.5\\right\\rceil=1',
     '一条也不丢',
     'f_{\\mathrm{cap}}=1.5',
     'C=\\left\\lceil(2\\cdot2/4)\\cdot1.5\\right\\rceil=2',
-    '每个本地 expert',
+    '每个本地专家',
     '**2 真 + 2 零**',
   ]) {
     assert.ok(capacity.includes(capacityFact), `容量同例事实漂移：${capacityFact}`);
   }
 
-  const deepEP = section(markdown, '#### 2.5.1 DeepEP', '#### 2.5.2 DeepEPv2');
-  const deepEPv2 = section(markdown, '#### 2.5.2 DeepEPv2', '#### 2.5.3 HybridEP');
-  const hybridEP = section(markdown, '#### 2.5.3 HybridEP', '#### 2.5.4 NCCL-EP');
-  const ncclEP = section(markdown, '#### 2.5.4 NCCL-EP', '### 2.6');
+  const deepEP = section(markdown, '### 2.4 DeepEP', '### 2.5 HybridEP');
+  const deepEPv2 = section(markdown, '### 2.6 DeepEPv2', '### 2.7 NCCL-EP');
+  const hybridEP = section(markdown, '### 2.5 HybridEP', '### 2.6 DeepEPv2');
+  const ncclEP = section(markdown, '### 2.7 NCCL-EP', '### 2.8');
   for (const [name, lane] of Object.entries({ DeepEP: deepEP, DeepEPv2: deepEPv2, HybridEP: hybridEP, 'NCCL-EP': ncclEP })) {
-    for (const stage of ['router', 'expert-major', 'MLP', 'combine', 'backward']) {
+    for (const stage of ['路由器', 'expert-major', 'MLP', 'combine', '反向']) {
       assert.match(lane, new RegExp(stage, 'i'), `${name} lane 缺 ${stage}`);
     }
   }
   assert.match(deepEP, /MCore ↔ DeepEP@af9a040 依赖边界/);
-  assert.match(deepEP, /host-visible 同步/);
+  assert.match(deepEP, /使 CPU 取得计数的同步/);
   assert.match(deepEP, /最大 160/);
   assert.match(deepEP, /routed_experts_compute → TEGroupedMLP\.forward\/SequentialMLP\.forward/);
   assert.match(deepEP, /Buffer\.combine\(x, handle=handle, \.\.\.\)/);
@@ -154,17 +154,17 @@ test('Markdown 与 SVG 共享同一 token/variant 契约', async () => {
   assert.match(deepEPv2, /do_expand=False/);
   assert.match(deepEPv2, /do_cpu_sync=True/);
   assert.match(deepEPv2, /ranks≤1024、experts≤2048、experts\/rank≤256/);
-  assert.match(hybridEP, /MCore ↔ HybridEP dependency 边界/);
+  assert.match(hybridEP, /MCore ↔ HybridEP 依赖边界/);
   assert.match(hybridEP, /DtoH/);
   assert.match(hybridEP, /64 对齐/);
-  assert.match(hybridEP, /依赖内被 drop/);
+  assert.match(hybridEP, /依赖内被丢弃/);
   assert.match(hybridEP, /累计进 `over_budget`/);
-  assert.match(hybridEP, /整步 dropless rerun/);
-  assert.match(hybridEP, /whole-MoE CUDA graph 已经完成 capture/);
+  assert.match(hybridEP, /不丢弃路由边的整步重算/);
+  assert.match(hybridEP, /整个 MoE 层的 CUDA Graph 已经完成捕获/);
   assert.match(hybridEP, /才抛 `RuntimeError`/);
   assert.match(ncclEP, /MCore ↔ Transformer Engine 依赖边界/);
   assert.match(ncclEP, /SM100\+/);
-  assert.match(ncclEP, /overflow 是硬错误/);
+  assert.match(ncclEP, /溢出会直接报错/);
   assert.match(ncclEP, /transformer_engine\.pytorch\.ep\.ep_dispatch\(buffer,/);
   assert.match(ncclEP, /transformer_engine\.pytorch\.ep\.ep_combine\(buffer,/);
   assert.doesNotMatch(ncclEP, /EpBuffer\.ep_(?:dispatch|combine)/);
@@ -235,18 +235,18 @@ test('推理 sibling 是训练 dispatcher 的正交选择轴，并在正文与 d
       `dispatcher 图必须把 ${choice} 画成从配置选择点分出的独立分支`,
     );
   }
-  assert.match(markdown, /正交的\*\*推理 sibling 轴\*\*/);
+  assert.match(markdown, /正交的\*\*推理分支轴\*\*/);
   assert.match(markdown, /不能把它误并入 `\{allgather, alltoall, flex\}`/);
 });
 
 test('HybridEP 与 NCCL-EP 都直接产出 expert-major，禁止声称 HybridEP 唯一跳过本地重排', async () => {
   const markdown = await readFile(page, 'utf8');
   const flexSvg = await readFile(join(assetDir, 'megatron_ep_flex_backends.svg'), 'utf8');
-  const hybridEP = section(markdown, '#### 2.5.3 HybridEP', '#### 2.5.4 NCCL-EP');
-  const ncclEP = section(markdown, '#### 2.5.4 NCCL-EP', '### 2.6');
+  const hybridEP = section(markdown, '### 2.5 HybridEP', '### 2.6 DeepEPv2');
+  const ncclEP = section(markdown, '### 2.7 NCCL-EP', '### 2.8');
 
-  assert.match(hybridEP, /直接[^\n]*expert-major[^\n]*不调用 MCore 二次 local permute/);
-  assert.match(ncclEP, /直接[^\n]*expert-major[^\n]*不调用 MCore 二次 local permute/);
+  assert.match(hybridEP, /直接[^\n]*expert-major[^\n]*不调用 MCore 二次本地重排/);
+  assert.match(ncclEP, /直接[^\n]*expert-major[^\n]*不调用 MCore 二次本地重排/);
   for (const artifact of [markdown, flexSvg]) {
     assert.doesNotMatch(
       artifact,

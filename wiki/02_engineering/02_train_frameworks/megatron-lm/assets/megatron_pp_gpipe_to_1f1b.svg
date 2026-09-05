@@ -1,0 +1,333 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 510" role="img" aria-label="GPipe 与 1F1B：四个阶段、八条 microbatch 的前向到 loss、反向回传时序；总时长相同，峰值待反向记录不同">
+<style>text{font-family:'Microsoft YaHei','Segoe UI',sans-serif;fill:#344054;font-size:12px}.title{font-size:19px;font-weight:700}.heading{font-size:15px;font-weight:700}.small{font-size:11px}.cell{fill:#fff;stroke:#cbd0d7}.bwd{fill:#f2f4f7;stroke:#cbd0d7}.focus{stroke:#2563eb;stroke-width:2}.bubble{fill:#fafafa;stroke:#eee}.note{fill:#fff7ed;stroke:#c3651f}.blue{fill:#2563eb}.label{text-anchor:middle;font-size:10px}</style>
+<rect width="1100" height="510" fill="white"/>
+<text class="title" x="24" y="30">GPipe → 1F1B：先减少激活保留量，气泡并未缩短</text>
+<text x="24" y="53">P=4，m=8；F/B 各占 1 格。忽略通信与重计算耗时；每个 batch 只在全部反向后更新参数。</text>
+<text class="heading" x="24" y="83">GPipe：先全部前向，再全部反向（教学对照）</text>
+<text x="24" y="118">rank 0</text>
+<rect class="cell focus" x="88" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="102.5" y="116">F0</text>
+<rect class="cell" x="119" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="133.5" y="116">F1</text>
+<rect class="cell" x="150" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="164.5" y="116">F2</text>
+<rect class="cell" x="181" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="195.5" y="116">F3</text>
+<rect class="cell" x="212" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="226.5" y="116">F4</text>
+<rect class="cell" x="243" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="257.5" y="116">F5</text>
+<rect class="cell" x="274" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="288.5" y="116">F6</text>
+<rect class="cell" x="305" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="319.5" y="116">F7</text>
+<rect class="bubble" x="336" y="99" width="29" height="26" rx="2"/>
+<rect class="bubble" x="367" y="99" width="29" height="26" rx="2"/>
+<rect class="bubble" x="398" y="99" width="29" height="26" rx="2"/>
+<rect class="bubble" x="429" y="99" width="29" height="26" rx="2"/>
+<rect class="bubble" x="460" y="99" width="29" height="26" rx="2"/>
+<rect class="bubble" x="491" y="99" width="29" height="26" rx="2"/>
+<rect class="bwd focus" x="522" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="536.5" y="116">B0</text>
+<rect class="bwd" x="553" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="567.5" y="116">B1</text>
+<rect class="bwd" x="584" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="598.5" y="116">B2</text>
+<rect class="bwd" x="615" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="629.5" y="116">B3</text>
+<rect class="bwd" x="646" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="660.5" y="116">B4</text>
+<rect class="bwd" x="677" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="691.5" y="116">B5</text>
+<rect class="bwd" x="708" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="722.5" y="116">B6</text>
+<rect class="bwd" x="739" y="99" width="29" height="26" rx="2"/>
+<text class="label" x="753.5" y="116">B7</text>
+<text x="24" y="148">rank 1</text>
+<rect class="bubble" x="88" y="129" width="29" height="26" rx="2"/>
+<rect class="cell focus" x="119" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="133.5" y="146">F0</text>
+<rect class="cell" x="150" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="164.5" y="146">F1</text>
+<rect class="cell" x="181" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="195.5" y="146">F2</text>
+<rect class="cell" x="212" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="226.5" y="146">F3</text>
+<rect class="cell" x="243" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="257.5" y="146">F4</text>
+<rect class="cell" x="274" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="288.5" y="146">F5</text>
+<rect class="cell" x="305" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="319.5" y="146">F6</text>
+<rect class="cell" x="336" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="350.5" y="146">F7</text>
+<rect class="bubble" x="367" y="129" width="29" height="26" rx="2"/>
+<rect class="bubble" x="398" y="129" width="29" height="26" rx="2"/>
+<rect class="bubble" x="429" y="129" width="29" height="26" rx="2"/>
+<rect class="bubble" x="460" y="129" width="29" height="26" rx="2"/>
+<rect class="bwd focus" x="491" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="505.5" y="146">B0</text>
+<rect class="bwd" x="522" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="536.5" y="146">B1</text>
+<rect class="bwd" x="553" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="567.5" y="146">B2</text>
+<rect class="bwd" x="584" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="598.5" y="146">B3</text>
+<rect class="bwd" x="615" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="629.5" y="146">B4</text>
+<rect class="bwd" x="646" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="660.5" y="146">B5</text>
+<rect class="bwd" x="677" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="691.5" y="146">B6</text>
+<rect class="bwd" x="708" y="129" width="29" height="26" rx="2"/>
+<text class="label" x="722.5" y="146">B7</text>
+<rect class="bubble" x="739" y="129" width="29" height="26" rx="2"/>
+<text x="24" y="178">rank 2</text>
+<rect class="bubble" x="88" y="159" width="29" height="26" rx="2"/>
+<rect class="bubble" x="119" y="159" width="29" height="26" rx="2"/>
+<rect class="cell focus" x="150" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="164.5" y="176">F0</text>
+<rect class="cell" x="181" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="195.5" y="176">F1</text>
+<rect class="cell" x="212" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="226.5" y="176">F2</text>
+<rect class="cell" x="243" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="257.5" y="176">F3</text>
+<rect class="cell" x="274" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="288.5" y="176">F4</text>
+<rect class="cell" x="305" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="319.5" y="176">F5</text>
+<rect class="cell" x="336" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="350.5" y="176">F6</text>
+<rect class="cell" x="367" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="381.5" y="176">F7</text>
+<rect class="bubble" x="398" y="159" width="29" height="26" rx="2"/>
+<rect class="bubble" x="429" y="159" width="29" height="26" rx="2"/>
+<rect class="bwd focus" x="460" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="474.5" y="176">B0</text>
+<rect class="bwd" x="491" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="505.5" y="176">B1</text>
+<rect class="bwd" x="522" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="536.5" y="176">B2</text>
+<rect class="bwd" x="553" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="567.5" y="176">B3</text>
+<rect class="bwd" x="584" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="598.5" y="176">B4</text>
+<rect class="bwd" x="615" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="629.5" y="176">B5</text>
+<rect class="bwd" x="646" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="660.5" y="176">B6</text>
+<rect class="bwd" x="677" y="159" width="29" height="26" rx="2"/>
+<text class="label" x="691.5" y="176">B7</text>
+<rect class="bubble" x="708" y="159" width="29" height="26" rx="2"/>
+<rect class="bubble" x="739" y="159" width="29" height="26" rx="2"/>
+<text x="24" y="208">rank 3</text>
+<rect class="bubble" x="88" y="189" width="29" height="26" rx="2"/>
+<rect class="bubble" x="119" y="189" width="29" height="26" rx="2"/>
+<rect class="bubble" x="150" y="189" width="29" height="26" rx="2"/>
+<rect class="cell focus" x="181" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="195.5" y="206">F0</text>
+<rect class="cell" x="212" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="226.5" y="206">F1</text>
+<rect class="cell" x="243" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="257.5" y="206">F2</text>
+<rect class="cell" x="274" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="288.5" y="206">F3</text>
+<rect class="cell" x="305" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="319.5" y="206">F4</text>
+<rect class="cell" x="336" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="350.5" y="206">F5</text>
+<rect class="cell" x="367" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="381.5" y="206">F6</text>
+<rect class="cell" x="398" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="412.5" y="206">F7</text>
+<rect class="bwd focus" x="429" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="443.5" y="206">B0</text>
+<rect class="bwd" x="460" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="474.5" y="206">B1</text>
+<rect class="bwd" x="491" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="505.5" y="206">B2</text>
+<rect class="bwd" x="522" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="536.5" y="206">B3</text>
+<rect class="bwd" x="553" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="567.5" y="206">B4</text>
+<rect class="bwd" x="584" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="598.5" y="206">B5</text>
+<rect class="bwd" x="615" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="629.5" y="206">B6</text>
+<rect class="bwd" x="646" y="189" width="29" height="26" rx="2"/>
+<text class="label" x="660.5" y="206">B7</text>
+<rect class="bubble" x="677" y="189" width="29" height="26" rx="2"/>
+<rect class="bubble" x="708" y="189" width="29" height="26" rx="2"/>
+<rect class="bubble" x="739" y="189" width="29" height="26" rx="2"/>
+<text x="88" y="234">0</text><text x="746" y="234">22 t_f</text>
+<rect class="note" x="797" y="105" width="276" height="104" rx="6"/>
+<text x="811" y="129">峰值待反向记录：[8,8,8,8]</text>
+<text x="811" y="153">每 rank：计算 16 格，空转 6 格</text>
+<text x="811" y="177">总时长 22 t_f；边界消息 48 条</text>
+<text class="small" x="811" y="197">记录数是依赖计数，不等于激活字节数。</text>
+<text class="heading" x="24" y="279">1F1B：预热后前后向交替，最后排空</text>
+<text x="24" y="314">rank 0</text>
+<rect class="cell focus" x="88" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="102.5" y="312">F0</text>
+<rect class="cell" x="119" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="133.5" y="312">F1</text>
+<rect class="cell" x="150" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="164.5" y="312">F2</text>
+<rect class="cell" x="181" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="195.5" y="312">F3</text>
+<rect class="bubble" x="212" y="295" width="29" height="26" rx="2"/>
+<rect class="bubble" x="243" y="295" width="29" height="26" rx="2"/>
+<rect class="bubble" x="274" y="295" width="29" height="26" rx="2"/>
+<rect class="bwd focus" x="305" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="319.5" y="312">B0</text>
+<rect class="cell" x="336" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="350.5" y="312">F4</text>
+<rect class="bwd" x="367" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="381.5" y="312">B1</text>
+<rect class="cell" x="398" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="412.5" y="312">F5</text>
+<rect class="bwd" x="429" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="443.5" y="312">B2</text>
+<rect class="cell" x="460" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="474.5" y="312">F6</text>
+<rect class="bwd" x="491" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="505.5" y="312">B3</text>
+<rect class="cell" x="522" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="536.5" y="312">F7</text>
+<rect class="bwd" x="553" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="567.5" y="312">B4</text>
+<rect class="bubble" x="584" y="295" width="29" height="26" rx="2"/>
+<rect class="bwd" x="615" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="629.5" y="312">B5</text>
+<rect class="bubble" x="646" y="295" width="29" height="26" rx="2"/>
+<rect class="bwd" x="677" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="691.5" y="312">B6</text>
+<rect class="bubble" x="708" y="295" width="29" height="26" rx="2"/>
+<rect class="bwd" x="739" y="295" width="29" height="26" rx="2"/>
+<text class="label" x="753.5" y="312">B7</text>
+<text x="24" y="344">rank 1</text>
+<rect class="bubble" x="88" y="325" width="29" height="26" rx="2"/>
+<rect class="cell focus" x="119" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="133.5" y="342">F0</text>
+<rect class="cell" x="150" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="164.5" y="342">F1</text>
+<rect class="cell" x="181" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="195.5" y="342">F2</text>
+<rect class="bubble" x="212" y="325" width="29" height="26" rx="2"/>
+<rect class="bubble" x="243" y="325" width="29" height="26" rx="2"/>
+<rect class="bwd focus" x="274" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="288.5" y="342">B0</text>
+<rect class="cell" x="305" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="319.5" y="342">F3</text>
+<rect class="bwd" x="336" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="350.5" y="342">B1</text>
+<rect class="cell" x="367" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="381.5" y="342">F4</text>
+<rect class="bwd" x="398" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="412.5" y="342">B2</text>
+<rect class="cell" x="429" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="443.5" y="342">F5</text>
+<rect class="bwd" x="460" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="474.5" y="342">B3</text>
+<rect class="cell" x="491" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="505.5" y="342">F6</text>
+<rect class="bwd" x="522" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="536.5" y="342">B4</text>
+<rect class="cell" x="553" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="567.5" y="342">F7</text>
+<rect class="bwd" x="584" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="598.5" y="342">B5</text>
+<rect class="bubble" x="615" y="325" width="29" height="26" rx="2"/>
+<rect class="bwd" x="646" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="660.5" y="342">B6</text>
+<rect class="bubble" x="677" y="325" width="29" height="26" rx="2"/>
+<rect class="bwd" x="708" y="325" width="29" height="26" rx="2"/>
+<text class="label" x="722.5" y="342">B7</text>
+<rect class="bubble" x="739" y="325" width="29" height="26" rx="2"/>
+<text x="24" y="374">rank 2</text>
+<rect class="bubble" x="88" y="355" width="29" height="26" rx="2"/>
+<rect class="bubble" x="119" y="355" width="29" height="26" rx="2"/>
+<rect class="cell focus" x="150" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="164.5" y="372">F0</text>
+<rect class="cell" x="181" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="195.5" y="372">F1</text>
+<rect class="bubble" x="212" y="355" width="29" height="26" rx="2"/>
+<rect class="bwd focus" x="243" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="257.5" y="372">B0</text>
+<rect class="cell" x="274" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="288.5" y="372">F2</text>
+<rect class="bwd" x="305" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="319.5" y="372">B1</text>
+<rect class="cell" x="336" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="350.5" y="372">F3</text>
+<rect class="bwd" x="367" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="381.5" y="372">B2</text>
+<rect class="cell" x="398" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="412.5" y="372">F4</text>
+<rect class="bwd" x="429" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="443.5" y="372">B3</text>
+<rect class="cell" x="460" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="474.5" y="372">F5</text>
+<rect class="bwd" x="491" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="505.5" y="372">B4</text>
+<rect class="cell" x="522" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="536.5" y="372">F6</text>
+<rect class="bwd" x="553" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="567.5" y="372">B5</text>
+<rect class="cell" x="584" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="598.5" y="372">F7</text>
+<rect class="bwd" x="615" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="629.5" y="372">B6</text>
+<rect class="bubble" x="646" y="355" width="29" height="26" rx="2"/>
+<rect class="bwd" x="677" y="355" width="29" height="26" rx="2"/>
+<text class="label" x="691.5" y="372">B7</text>
+<rect class="bubble" x="708" y="355" width="29" height="26" rx="2"/>
+<rect class="bubble" x="739" y="355" width="29" height="26" rx="2"/>
+<text x="24" y="404">rank 3</text>
+<rect class="bubble" x="88" y="385" width="29" height="26" rx="2"/>
+<rect class="bubble" x="119" y="385" width="29" height="26" rx="2"/>
+<rect class="bubble" x="150" y="385" width="29" height="26" rx="2"/>
+<rect class="cell focus" x="181" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="195.5" y="402">F0</text>
+<rect class="bwd focus" x="212" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="226.5" y="402">B0</text>
+<rect class="cell" x="243" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="257.5" y="402">F1</text>
+<rect class="bwd" x="274" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="288.5" y="402">B1</text>
+<rect class="cell" x="305" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="319.5" y="402">F2</text>
+<rect class="bwd" x="336" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="350.5" y="402">B2</text>
+<rect class="cell" x="367" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="381.5" y="402">F3</text>
+<rect class="bwd" x="398" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="412.5" y="402">B3</text>
+<rect class="cell" x="429" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="443.5" y="402">F4</text>
+<rect class="bwd" x="460" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="474.5" y="402">B4</text>
+<rect class="cell" x="491" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="505.5" y="402">F5</text>
+<rect class="bwd" x="522" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="536.5" y="402">B5</text>
+<rect class="cell" x="553" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="567.5" y="402">F6</text>
+<rect class="bwd" x="584" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="598.5" y="402">B6</text>
+<rect class="cell" x="615" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="629.5" y="402">F7</text>
+<rect class="bwd" x="646" y="385" width="29" height="26" rx="2"/>
+<text class="label" x="660.5" y="402">B7</text>
+<rect class="bubble" x="677" y="385" width="29" height="26" rx="2"/>
+<rect class="bubble" x="708" y="385" width="29" height="26" rx="2"/>
+<rect class="bubble" x="739" y="385" width="29" height="26" rx="2"/>
+<text x="88" y="430">0</text><text x="746" y="430">22 t_f</text>
+<rect class="note" x="797" y="301" width="276" height="104" rx="6"/>
+<text x="811" y="325">峰值待反向记录：[4,3,2,1]</text>
+<text x="811" y="349">每 rank：计算 16 格，空转 6 格</text>
+<text x="811" y="373">总时长 22 t_f；边界消息 48 条</text>
+<text class="small" x="811" y="393">记录数是依赖计数，不等于激活字节数。</text>
+<text class="blue" x="24" y="468">蓝框追踪 m0：F0 沿 rank 0→3 到达 loss，B0 沿 rank 3→0 回传梯度。</text>
+<text x="24" y="491">空白格表示等待依赖；灰色 B 格表示反向。GPipe 保留全部 8 条记录，1F1B 及时消费最早的记录。</text></svg>

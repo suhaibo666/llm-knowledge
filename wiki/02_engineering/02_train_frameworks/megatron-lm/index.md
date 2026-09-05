@@ -29,8 +29,8 @@ title: "Megatron-LM 知识地图"
 | 11 | [[11_megatron_dataset_analysis]] | tokenizer、IndexedDataset、GPT 取样与 sequence packing 数据入口。 |
 | 12 | [[12_megatron_tp_analysis]] | tensor/sequence parallel 的切分、collective 与 overlap。 |
 | 13 | [[13_megatron_cp_analysis]] | context parallel 的通信模式、分层组与 Dynamic CP 接口。 |
-| 14 | [[14_megatron_ep_analysis]] | MoE route、dispatch、expert compute、combine 与 EP 硬约束。 |
-| 15 | [[15_megatron_pp_schedulers_analysis]] | microbatch、1F1B、VPP 与高级 pipeline scheduler。 |
+| 14 | [[14_megatron_ep_analysis]] | 从 AllGather、AllToAll 到 DeepEP、HybridEP 的分发方案与训练闭环。 |
+| 15 | [[15_megatron_pp_schedulers_analysis]] | 从 GPipe、1F1B 到 VPP 与通信重叠，兼述 MoE 和多模块调度。 |
 | 16 | [[16_megatron_distributed_optimizer_analysis]] | 连续 range 与整参 owner、梯度规约、更新及参数可见性闭环。 |
 | 17 | [[17_megatron_parallelism_orchestration_analysis]] | dense/expert 分组、进程组生命周期与显式组注入。 |
 | 18 | [[18_megatron_recompute_analysis]] | 激活与 RNG 回放、full/selective 及调度器重计算的数据路径。 |

@@ -73,14 +73,14 @@ function validatePageAgainstFigures(page, svgByAsset) {
   assert.equal(transports.shape_words, '3');
   assert.equal(transports.shape_bytes_per_direction, '24');
   assert.ok(page.includes('3 个 int64，即 24 B'), 'Markdown 与 shape metadata 契约漂移');
-  assert.ok(page.includes('host-side device sync') && page.includes('request'), 'Markdown 缺少 wait/sync 成本');
+  assert.ok(page.includes('CPU 发起的全设备同步') && page.includes('request'), 'Markdown 缺少 wait/sync 成本');
 
   assert.ok(page.includes(`src DP=${bridge.fanin_src_dp} → dst DP=${bridge.fanin_dst_dp}`), 'Markdown 与 fan-in contract 漂移');
   assert.ok(page.includes(`src DP=${bridge.fanout_src_dp} → dst DP=${bridge.fanout_dst_dp}`), 'Markdown 与 fan-out contract 漂移');
   assert.ok(page.includes('split [2,2]') && page.includes('`cat`'), 'Markdown 缺少 batch split/cat');
   assert.ok(page.includes('destination leader') && page.includes('broadcast'), 'Markdown 缺少 leader/broadcast');
-  assert.ok(page.includes(`加权最长路径恰有 $P=${bridge.host_P}$`) && page.includes(`峰值 record \`[${bridge.host_live}]\``), 'Markdown 与 Multi-Module host schedule 漂移');
-  assert.ok(page.includes('陌生读者线'), '图与页面必须给出陌生读者线');
+  assert.ok(page.includes(`加权最长路径恰有 $P=${bridge.host_P}$`) && page.includes(`峰值记录 \`[${bridge.host_live}]\``), 'Markdown 与 Multi-Module host schedule 漂移');
+  assert.ok(page.includes('读图时'), '图与页面必须给出陌生读者线');
 }
 
 function validateBridgeReviewContract(page, svg) {
