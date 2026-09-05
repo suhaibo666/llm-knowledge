@@ -1,328 +1,239 @@
 ---
-title: "Megatron-LM 融合线性交叉熵(Fused Linear Cross-Entropy / \"chunk loss\")源码级分析"
+title: "Megatron-LM 融合线性交叉熵：从词表交叉熵到分块重计算"
 ---
 
-# Megatron-LM 融合线性交叉熵(Fused Linear Cross-Entropy / "chunk loss")源码级分析
+# Megatron-LM 融合线性交叉熵：从词表交叉熵到分块重计算
 
-> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
-> **重定基线**：2026-08-28 由 `232c478d43ce2f8b4c8db3507d3623fa82f55823`（2026-06-16）推进，跨 280 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。
-> **维度**: 深挖(机制级 + 具体源码实现)
-> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-08-28。按五拍重排章节顺序；机制正文与既有引用未改。
-> 本页回答:Megatron 里"chunk loss"(不物化全量词表 logits 的省显存损失)到底怎么实现?它对应配置 `cross_entropy_fusion_impl='linear'` 的**融合线性交叉熵**——把 LM-head 矩阵乘**融进**交叉熵核、logits 从不作为张量存在。对照另两档 `native`/`te`(仍物化 logits)与 MindSpeed 的 `chunk_loss`(见文末)。每条非平凡结论带 `file:line`,行号均经实际打开核对。
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01），本页路径默认相对该仓库。
+> **核心源码**：`megatron/core/tensor_parallel/cross_entropy.py`、`megatron/core/fusions/fused_cross_entropy.py`、`megatron/core/transformer/linear_cross_entropy.py`、`megatron/core/fusions/linear_cross_entropy/blackwell/entry.py`。
+> **核心结论**：以下以有标签且未启用配置日志的训练路径为主。只融合交叉熵可以减少逐元素操作和归约启动，却仍需完整的本地词表 logits；linear 将输出投影也纳入融合，前向保存统计量，反向按词表块重算，以额外矩阵乘和缓冲换掉大矩阵的留存。
+> **范围与关联**：本文负责 LM head 到 loss、再到 hidden/weight 梯度的完整路径；融合算子全景见 [[21_megatron_fusion_operators_analysis]]，重计算设计见 [[18_megatron_recompute_analysis]]，其他显存手段见 [[22_megatron_memory_optimization_analysis]]，低精度与图捕获边界见 [[23_megatron_precision_cudagraph_fusion_analysis]]。属 [[megatron-lm/index]] 系列。
+> **最近更新**：2026-09-05。按普通 CE → CE 内部融合 → 线性与 CE 联合分块重组，重新核算前反向显存与 TP/SP 通信。
 
----
+## 1. 为什么最后一个线性层需要单独优化
 
-## 1. 背景:logits 显存墙与三档融合
+语言模型把每个 token 的 hidden 投影到整个词表，再用目标 token 计算交叉熵。词表远大于 hidden 维度时，输出 logits 会成为很大的激活：$N=8192,V=152064$ 的 BF16 logits 为 **2376 MiB，约 2.49 GB**，而交叉熵最终每个 token 只输出一个数。只压缩 loss 本身没有意义，设计必须追问：能否在得到这一个数、并正确计算梯度的同时，避免保存整张词表矩阵？Megatron 的 linear 路径将这一边界前移到 LM head，先按词表块计算归一化统计量，再在反向重算局部概率。收益是移除完整 logits/softmax 的长期留存，代价是额外计算、分块缓冲和并行通信；冻结基线只实现了算力主版本为 10 的 Blackwell 后端。
 
-语言模型的最后一步是 LM head:`hidden[N, d] @ Wᵀ[d, V] → logits[N, V]`,再对 `logits` 求交叉熵。问题在 **V(词表,常 ~15 万)远大于 d(hidden,~6–8K)**,`logits[N, V]` 这块张量是整个前向里最大的激活之一,且默认要为反向保留。
+这里有两个不同问题：**已有 logits 后如何更快地算 CE，以及能否一开始就不生成完整 logits**。`ModelParallelConfig.cross_entropy_loss_fusion` 和 `cross_entropy_fusion_impl` 明确给出关闭融合、native、te、linear 四条选路。前两种融合实现解决第一个问题，linear 解决第二个；te 是依赖实现的替代分支，不是 native 之后必然更优的一代，且当前训练入口因稳定性问题禁止它。另一条输出层选择轴是 MXFP8 LM head，本文在 §3.1 交代其交界，精度机制由 23 号页负责。
 
-> 例:`N=8192`(一个 micro-batch 的 token 数)、`V=152064`、bf16 → `logits` ≈ **2.49 GB**;加上 softmax 中间量,LM-head 一处就能吃掉数 GB,还得为反向常驻。
+| 符号 | 含义 |
+|---|---|
+| $N,d,V$ | 本次 loss 覆盖的 token 数、hidden 维度、完整词表大小；$N$ 不包括其他 DP 副本的样本 |
+| $p,V_p$ | TP 度数和每个 rank 的等长词表分片，$V_p=V/p$ |
+| $C_f,C_b,K_f$ | 前向词表块宽、反向块宽、前向块数 $K_f=\lceil V_p/C_f\rceil$ |
+| $X,W,Z,y$ | hidden、按词表行排列的权重、logits、全局词表编号的标签 |
+| $m,a,q,g$ | 每 token 的归一化参考值、缩放后的指数和、目标 logit、上游 loss 梯度 |
 
-Megatron 用一个**总开关 + 三档实现**来融合这步(`megatron/core/model_parallel_config.py`):
+## 2. 从完整词表到只保留可重建的信息
 
-```python
-# megatron/core/model_parallel_config.py:310,315
-cross_entropy_loss_fusion: bool = False                               # 总开关
-cross_entropy_fusion_impl: Literal['native', 'te', 'linear'] = 'native'
-```
+### 2.1 最小例子：输出是一个数，反向却需要整行概率
 
-| impl | 入口 | 融合范围 | 是否物化 `logits[N,V]` |
-|---|---|---|---|
-| `native`(默认) | `fused_vocab_parallel_cross_entropy(logits,…)` | 只融 softmax+NLL | **是** |
-| `te` | `te_parallel_cross_entropy(logits,…)` | 只融 softmax+NLL(TE 核) | **是** |
-| **`linear`** | **`LinearCrossEntropyModule` → 融合核** | **matmul + softmax + NLL 全融** | **否** ← 这才是 "chunk loss" |
+取两个 token，$X_0=(1,0)$、$X_1=(0,1)$，八个词表项。令权重第 $j$ 行为 $W_j=(\ln(j+1),\ln(8-j))$，$j=0,\ldots,7$；标签分别为 $y_0=6$、$y_1=1$。因此两行 logits 分别是 $\ln(1,2,3,4,5,6,7,8)$ 和它的逆序。两行指数和都是 36，目标项都是 7，逐 token loss 都是 **1.637609**。这是便于手算的数学例子，形状不满足后文 GPU 核的对齐要求，不是可直接发射的配置。
 
-**一条主线**:`native`/`te` 接收的是**已经算好的 `logits`**,只是把"softmax→取标签项→求和"融成一个核;省的是几个逐元素 kernel,不省 logits 显存。`linear` 不同——它把 **LM-head 的矩阵乘也吸进 CE 核**,在核内**按词表分块(chunk)**地算 `hidden@Wᵀ` 并做 online-softmax,**完整 `logits[N,V]` 从不落显存**;反向再按块重算。这就是 Megatron 版"chunk loss"。
-
-```mermaid
-flowchart LR
-    H["hidden N×d"]
-    W["weight d×V"]
-    subgraph NA["native / te：仍物化 logits"]
-      L["logits N×V<br/>整块落显存"] --> CE1["fused CE：softmax + NLL"] --> LOSS1["loss N"]
-    end
-    subgraph LIN["linear：融合线性 CE = chunk loss"]
-      K["融合核：按 vocab 分 num_splits 块<br/>逐块 GEMM + online-softmax"] --> ST["只回传 max N / sum-exp N"] --> LOSS2["loss N"]
-    end
-    H --> L
-    W --> L
-    H --> K
-    W --> K
-    LIN -.->|logits 从不作为张量存在| X["无 N×V 激活"]
-```
-
----
-
-## 2. 为什么这么设计:把融合塞进输出层这个类,而不是塞进一个 loss 辅助函数
-
-要做到"logits 从不落显存",可插手的地方只有两个:**在算 loss 的地方拦一手**,或者**让输出层自己不吐 logits**。Megatron 一开始选了前者,后来整段推翻改成后者。下面四条,前两条有源码/提交自陈,后两条其中一条源码沉默、已单独标注。
-
-**① 被否掉的替代直接写在历史里:曾经是 `LanguageModule` 上的一个辅助方法,被整段删除。**
-`1f08cebac`(2025-12-05,「[Dev] Feature: linear cross entropy fusion (#2256)」)最初把融合线性 CE 做成 `LanguageModule.compute_output_layer_and_language_model_loss(hidden, labels, weight, column_parallel_linear=…, col_linear_kwargs=…)` —— 一个**把输出层模块当参数传进来**的辅助方法,内部按 `cross_entropy_fusion_impl == 'linear'` 分流。`13ad65379`(2026-02-03,commit message 即「[Dev] Fix Linear-Cross-Entropy Convergence Issue (#2739)」)把这个方法**从 `megatron/core/models/common/language_module/language_module.py` 里整段删掉**(-65 行),同时新建 `megatron/core/transformer/linear_cross_entropy.py`(+134 行)并把 `GPTModel.output_layer` 的类从 `tensor_parallel.ColumnParallelLinear` 换成 `LinearCrossEntropyModule`。这次改动还经历了一轮反复:`b8b866227`(2026-02-02,#3218)先 revert,`8a29fd575`(2026-02-04,#3226,「Reapply fix Linear CE Fusion」)再重新落地。
-→ 判据可以从两版调用点的差异读出来:旧版辅助方法在融合分支里用的权重是 `self.shared_embedding_or_output_weight()`,而非融合分支用的是 `col_linear_kwargs['weight'] = output_weight`(见 `13ad65379` 对 `megatron/core/models/gpt/gpt_model.py` 的 diff);新版把两条路径收进同一个模块的 `forward`,权重统一取 `weight if weight is not None else self.weight`(`megatron/core/transformer/linear_cross_entropy.py:28-41`,即本页 §4 引的那段)。
-
-> [!note] 推断
-> commit message 只说"修 Linear-Cross-Entropy 收敛问题",**没有**写明收敛问题的根因是权重取法不一致。"把融合做成输出层的子类,是为了让融合路径与普通路径共用同一份权重与同一套 `ColumnParallelLinear` 语义"这条解释由本页承担。要引用这条判断,请回到 `megatron/core/transformer/linear_cross_entropy.py:28-41` 与 `megatron/core/models/gpt/gpt_model.py:269-274` 这两个 locator,以及 `13ad65379` 的实际 diff,不要引用本段推断。
-
-**② 第二条被否掉的替代:反向的 `d_hidden` 曾用 bf16 就地 `addmm` 跨块累加,被改成 fp32 累加。**
-`linear` 反向要把 `num_splits` 个词表块的偏梯度累加成一个 `d_hidden`。同一个提交 `13ad65379` 把原先的
-`torch.addmm(input=d_hidden.view(-1, dim), mat1=valid_d_logits, mat2=weight[...], beta=(split_idx != 0), out=d_hidden.view(-1, dim))`
-删掉,换成"每块先 `torch.mm(..., out_dtype=torch.float32)`,再 `copy_`/`add_` 进一个 fp32 的 `d_hidden`",并在函数末尾转回原 dtype。当前基线里这三处清清楚楚:`# Allocate d_hidden in float32 for better numerical stability`(`megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:348`)、`out_dtype=torch.float32` 与 `d_hidden.copy_/add_`(`:442`、`:445`、`:447`)、`# convert d_hidden to the original dtype`(`:471`)。
-→ 判据:词表被切成 `num_splits`(§6 的 `ceil(V_local / 512)`,大词表下是几百块)块,低精度的**跨块串行累加**会把舍入误差放大数百次。这正是"按块重算"这套省显存做法必须自付的代价——用一份 fp32 的 `d_hidden` 换回数值稳定。
-
-**③ 为什么切词表维而不是切序列维。**
-输出层是 `ColumnParallelLinear`,TP 本来就沿**输出维(词表)**切权重(§4 的类继承关系)。于是"按词表分块"与 TP 的分片方向一致:每个 rank 只在**本地词表**上分 `num_splits` 块(`megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:147-151` 的 `ceil(V_local / _vocab_per_split)`),跨 rank 只需对 `max` 做一次 `ReduceOp.MAX`、对本地 NLL 贡献做一次 `ReduceOp.SUM`(`:246`、`:253`),**不需要 gather logits**。GEMM 主循环的 `cta_tiler` 列维直接就是 `vocab_per_split=512`(`megatron/core/fusions/linear_cross_entropy/blackwell/fwd_mainloop.py:40-53`)。
-→ 判据:切词表让"分块"与"TP 分片"和"GEMM 的 N 维 tile"三者对齐,一次切分同时服务三个目的;切序列维则要另外处理跨 rank 的词表归约。对照 MindSpeed 选了序列维(§8),取舍差异也正在这里。
-
-**④ 为什么架构门控做成一个惰性绑定的 `Platform` 单例。**
-`forward_func` / `backward_func` 不是模块级函数,而是在 `Platform.__init__` 里按 `torch.cuda.get_device_capability()` 惰性绑定,非 Blackwell 直接 `raise ValueError(f"Unsupported architecture: {cc[0]}")`(`megatron/core/fusions/fused_linear_cross_entropy.py:26-42`,`@lru_cache(maxsize=1)` 的 `_get_platform` 在 `:45-46`)。
-→ 判据:CuTe DSL 写的核只能在 Blackwell 上编译/运行,把绑定推迟到第一次真正用到时,才不至于让"导入这个模块"在其它卡上就失败;而 `else: raise` 而非静默回退,保证使用者不会以为自己在跑 chunk loss、实际却在物化 logits。
-
----
-
-## 3. 配置选路:GPT 模型如何挑到 `linear`
-
-`GPTModel.__init__` 把"是否用融合线性 CE"算成一个布尔位(`megatron/core/models/gpt/gpt_model.py`):
-
-```python
-# megatron/core/models/gpt/gpt_model.py:159-162
-self.fuse_linear_cross_entropy = (
-    self.config.cross_entropy_loss_fusion
-    and self.config.cross_entropy_fusion_impl == "linear"
-)
-```
-
-命中时,**输出层的类被换掉**——不再是普通 `ColumnParallelLinear`,而是 `LinearCrossEntropyModule`(`megatron/core/models/gpt/gpt_model.py:272`,`from ...linear_cross_entropy import LinearCrossEntropyModule` @ `:31`)。前向算 loss 时走专门分支:
-
-```python
-# megatron/core/models/gpt/gpt_model.py:864-872
-output_layer_kwargs = dict(input_=hidden_states, weight=output_weight, ...)
-if self.fuse_linear_cross_entropy:
-    loss = self.output_layer(
-        output_cross_entropy_loss=self.fuse_linear_cross_entropy,   # ← 让输出层直接吐 loss
-        labels=labels,
-        **output_layer_kwargs,
-    )
-else:
-    ...                                                              # 普通路径:先出 logits
-```
-
-而 `native`/`te` 两档不换输出层类——它们在 `LanguageModule.compute_language_model_loss` 里**拿到 `logits` 之后**才融合(`megatron/core/models/common/language_module/language_module.py`):
-
-```python
-# megatron/core/models/common/language_module/language_module.py:157,180  —— 注意两者的入参都是 logits（总开关判定在 `:156`）
-if self.config.cross_entropy_fusion_impl == 'te':
-    loss = te_parallel_cross_entropy(logits, labels, self.pg_collection.tp, is_cg_capturable)  # :175-177
-elif self.config.cross_entropy_fusion_impl == 'native':
-    loss = fused_vocab_parallel_cross_entropy(logits, labels, self.pg_collection.tp)            # :181
-```
-
-> 选路里还有约束:`cross_entropy_loss_fusion + impl=='te'` 与某些配置不兼容,在 `megatron/core/model_parallel_config.py:569-573` 与 `megatron/training/arguments.py:1828` 处断言拦截。MTP 也支持 `linear`(`megatron/core/transformer/multi_token_prediction.py:1784`)。
-
----
-
-## 4. `LinearCrossEntropyModule`:短路掉 logits
-
-它是 `ColumnParallelLinear` 的子类(LM head 本身),`output_cross_entropy_loss=True` 时**不返回 logits、直接返回 loss**(`megatron/core/transformer/linear_cross_entropy.py`):
-
-```python
-# megatron/core/transformer/linear_cross_entropy.py:11,28-41
-class LinearCrossEntropyModule(tensor_parallel.ColumnParallelLinear):
-    def forward(self, input_, weight=None, ..., output_cross_entropy_loss=False, labels=None, ...):
-        if output_cross_entropy_loss:
-            assert labels is not None
-            return self._compute_linear_and_cross_entropy_loss(           # ← 短路:不出 logits
-                hidden=input_, weight=weight if weight is not None else self.weight,
-                labels=labels, reduction=reduction, ignore_index=ignore_index)
-        return super().forward(input_, weight, runtime_gather_output)     # 否则退回普通线性层
-```
-
-```python
-# megatron/core/transformer/linear_cross_entropy.py:43-70  —— 校验开关 + 调融合核
-def _compute_linear_and_cross_entropy_loss(self, hidden, weight, labels, ...):
-    assert self.config.cross_entropy_loss_fusion
-    assert self.config.cross_entropy_fusion_impl == "linear"
-    labels = labels.transpose(0, 1).contiguous()                          # [b s] → [s b]
-    loss = linear_cross_entropy(                                          # ← 进 autograd Function
-        hidden, weight, labels,
-        sequence_parallel=self.sequence_parallel, reduction=reduction,
-        ignore_index=ignore_index, tp_group=self.tp_group)
-    ...
-```
-
----
-
-## 5. autograd 核心:省显存的本质在 `save_for_backward`
-
-省显存的关键**不在前向算法,而在反向要存什么**。自定义 autograd `LinearCrossEntropy`(`megatron/core/fusions/fused_linear_cross_entropy.py:53`)前向**只保存逐 token 的 softmax 统计量,不保存 logits**:
-
-```python
-# megatron/core/fusions/fused_linear_cross_entropy.py:161-181  前向
-with torch.cuda.nvtx.range("LinearCrossEntropy-forward"):
-    (logprobs, _maximum, _acc, _num_valid_tokens,
-     tp_rank, tp_world_size, global_hidden) = _get_platform().forward_func(
-        hidden, weight, labels, tp_group, reduction, ignore_index, sequence_parallel)
-    ctx.save_for_backward(global_hidden, weight, labels, _maximum, _acc, _num_valid_tokens)
-    #                     └ hidden/weight  └ 每 token 的 max 与 sum-exp(各 O(N))
-    #                     ✗ 完整 logits[N,V] 从不进入 ctx
-```
-
-反向**从 hidden/weight + (max, sum-exp) 逐块重算 logits 求梯度**:
-
-```python
-# megatron/core/fusions/fused_linear_cross_entropy.py:197-223  反向
-(global_hidden, weight, labels, _maximum, _accu, _num_valid_tokens) = ctx.saved_tensors
-d_hidden, d_weight = _get_platform().backward_func(
-    dlogprobs, global_hidden, weight, labels, _maximum, _accu, _num_valid_tokens,
-    reduction, ignore_index, tp_group, tp_rank, tp_world_size, sequence_parallel)
-return d_hidden, d_weight, None, None, None, None, None
-```
-
-**为什么只存 max + sum-exp 就够**:交叉熵 `loss = logsumexp(z) − z_label`,其中 `z = hidden@Wᵀ`。`logsumexp` 完全由**逐 token 的最大值 `max` 与 `Σexp(z−max)`(即 `sum-exp`)** 决定;反向 `∂loss/∂z = softmax(z) − onehot(label)`,而 `softmax(z) = exp(z−max)/sum-exp` 同样只需 `(max, sum-exp)` + 重算一遍 `z`。于是把 `O(N·V)` 的 logits 换成 `O(N)` 的两个统计量 + 反向重算——这是 **online-softmax + 重计算**的经典组合(同 Flash-Attention 不物化 `S×S` 一脉)。
-
-**显存账**:
+普通方案先做 $Z=XW^\top$，再为每行计算：
 
 $$
 \begin{aligned}
-M_{\text{loss-act}}:\quad \underbrace{O(N\cdot V)}_{\text{native/te 存 logits}} \;
-&\longrightarrow\; \underbrace{O(N\cdot d)}_{\text{存 hidden}} + \underbrace{O(N)}_{\max,\ \text{sum-exp}}
+m_i&=\max_j Z_{ij}, & a_i&=\sum_j\exp(Z_{ij}-m_i),\\
+\ell_i&=m_i+\ln a_i-Z_{i,y_i}, & P_{ij}&=\exp(Z_{ij}-m_i)/a_i.
 \end{aligned}
 $$
 
-因 `V(~15万) ≫ d(~6–8K)`,上面那块 GB 级的 logits 激活直接消失(`global_hidden` 本就是上游激活,统计量仅几十 KB)。
+本例 $m=\ln8$、$a=4.5$，第一行概率为 $(1,2,3,4,5,6,7,8)/36$。反向收到逐 token 梯度 $g_i$ 后，先求 $D_{ij}=g_i(P_{ij}-\mathbf1_{j=y_i})$，再求 $dX=DW$、$dW=D^\top X$。所以前向虽然只输出两个 loss，反向却要用到全部 16 个概率。保存 softmax 最直接，但也把大词表的容量压力一直带到了反向。
 
----
+![同一组 hidden、词表和标签经过普通 CE、native、TE 与 linear 的前反向；分块统计量可合并，完整概率可重算](assets/megatron_lce_mechanism.svg)
 
-## 6. Blackwell 融合核:按词表分块的具体实现(含硬件门控)
+图中 sum 目标取 $g_0=g_1=1$；mean 时两行梯度各乘 $1/2$。蓝色标可重建的统计量，橙色标需要支付的存储或重算；TE 框只表示 Megatron 可见的调用边界。
 
-`forward_func`/`backward_func` 由 `Platform` 单例按 GPU 架构惰性绑定——**当前只实现了 Blackwell(算力 10.x)**:
+### 2.2 普通词表并行 CE：先避免聚合完整词表
 
-```python
-# megatron/core/fusions/fused_linear_cross_entropy.py:34-40
-if cc[0] == 10:
-    from .linear_cross_entropy.blackwell import entry as gpu_entry
-    self.forward_func = gpu_entry.forward
-    self.backward_func = gpu_entry.backward
-else:
-    raise ValueError(f"Unsupported architecture: {cc[0]}")     # 非 Blackwell 直接报错
-```
+最朴素的分布式做法是先把 logits 聚合成完整词表，再调用普通 CE，但归一化实际只需要最大值、指数和、目标项。Megatron 关闭融合时已经使用 `tensor_parallel.cross_entropy._VocabParallelCrossEntropy`：每个 TP rank 只处理自己的连续词表区间，通过标量统计量归约恢复全局 loss，无需聚合 logits。**词表并行本身已经消除了 logits 的跨卡聚合，不能再将这一收益归给 linear。**
 
-> [!warning] 重要前提:`linear` 路径**目前绑定 Blackwell**。在非 Blackwell GPU 上构造该核会 `raise ValueError`,只能退回 `native`/`te`(都物化 logits)。所以"Megatron 的 chunk loss"现状 = **仅 Blackwell 可用**的融合线性 CE。
+沿用两 token 例子，TP=2，rank 0 保存词表 0–3，rank 1 保存 4–7，每卡得到 $[2,4]$ logits。先各求两行局部最大值，做一次长度 2 的 MAX all-reduce；所有卡减去相同参考值。标签落在本卡时提取目标项，否则贡献零，再对目标项和指数和分别做长度 2 的 SUM all-reduce。第一行两个 rank 的指数和贡献为 $10/8=1.25$、$26/8=3.25$，合成 4.5；第二行贡献互换。两卡重建相同的两个 loss，反向各自产出本地 $[2,4]$ 的 $D$。CE 反向本身无需通信，输出线性层随后把各词表分片对 $dX$ 的贡献合并，$dW$ 留在对应词表 owner。
 
-核内**按词表分块**(`megatron/core/fusions/linear_cross_entropy/blackwell/entry.py`):
+源码会将本地 logits 转为 FP32，再原地减最大值、求指数、归一化，最后将该 FP32 softmax 保存到 autograd；并非额外保存互相独立的 logits、exp 和 softmax 三份 FP32 矩阵。主要留存量是 $4NV_p$ 字节，进入 CE 时已有的低精度 logits 还可能与它短时共存。前向三次归约的逻辑 payload 分别为 $N,N,N$ 个 FP32 元素。这样解决了跨卡大矩阵搬运，却没有解决每卡的大矩阵留存，下一步才是 CE 内部融合。
 
-```python
-# megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:147-151  —— 把【本地】词表切成 num_splits 块（`maximum`/`accumulate` 的分配在同文件 `:137-138`；`_vocab_per_split` 现经 `_get_fwd_config()` 取，见 `:35`/`:46`）
-num_splits = (vocab_size + _vocab_per_split - 1) // _vocab_per_split      # ceil(V_local / 512)
-_max  = torch.empty((num_tokens, num_splits), device=hidden.device, dtype=torch.float32)
-_accu = torch.empty((num_tokens, num_splits), device=hidden.device, dtype=torch.float32)
-maximum    = torch.empty((num_tokens,), ..., dtype=torch.float32)         # 跨块归约后的最终 max
-accumulate = torch.empty_like(maximum)                                    # 最终 sum-exp
-```
+### 2.3 native 与 te：优化已有 logits 的处理过程
 
-CuTe DSL 写的 GEMM 主循环(`megatron/core/fusions/linear_cross_entropy/blackwell/fwd_mainloop.py`)以 `vocab_per_split=512` 为列块大小,逐块算 `hidden@Wᵀ` 的一段并做 online-softmax,产出每块的偏 `_max`/`_accu`:
+native 接收同样的两卡 $[2,4]$ logits，用 `fused_cross_entropy.py` 中经 `jit_fuser` 包装的计算段复用普通 CE 的数学步骤。关键通信变化是把目标项和指数和拼接成一个张量：一次 MAX 归约 2 个元素，一次 SUM 归约 4 个元素，合并后拆开，两卡仍恢复相同的 **1.637609**。推广到 $N$，通信启动从三次降到两次，逻辑元素总量仍是 $3N$，不能据此声称传输字节减半。
 
-```python
-# megatron/core/fusions/linear_cross_entropy/blackwell/fwd_mainloop.py:40-53
-mma_tiler_mn=(128, 256); vocab_per_split=512
-self.mma_tiler = (*mma_tiler_mn, 1)
-self.cta_tiler = (self.mma_tiler[0], vocab_per_split, self.mma_tiler[2])  # 列维 = vocab_per_split → 分块
-```
+前向减少逐元素算子边界并保留 FP32 softmax，反向在该 softmax 上减去标签项、乘上游梯度，返回本地 $D$；本基线 `calculate_gradients` 还显式将返回值转成 BF16。因而不能把 native 写成任意 dtype 都等价的优化，也不能把 `jit_fuser` 包装等同于跨通信的一个 GPU 核。它仍做完整 LM-head 投影并留存 $O(NV_p)$ 概率矩阵；当瓶颈主要是大矩阵容量时，仅合并 CE 步骤不足以改变数量级。
 
-随后一个 Triton 归约核把 `num_splits` 个偏统计量合成逐 token 的 `maximum`/`accumulate`(`megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:222-243` 的 `triton_kernels.forward_dp_epilogue`；TP 分片路径另有 `:263-279`)。**张量并行(词表切在 TP 上)** 只需两次集合通信,不需要 gather logits:
+te 也从同一个 $[2,4]$ logits、两个全局标签和 TP group 出发，经 `LanguageModule.compute_language_model_loss` 调用 `te_parallel_cross_entropy`，由依赖返回 loss 并通过 autograd 回传 logits 梯度，然后交给输出层求 $dX,dW$。这说明它仍支付完整 logits 的物化成本。**本页未展开 Transformer Engine 的独立源码基线，因此不承诺其内部保留哪些张量、发出几次 collective 或具体融合成几个核。** 预期目标仍是本例两份 loss；数值是否满足容差必须由依赖版本与运行验证决定。
 
-```python
-# megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:246,253  —— 词表分片跨 TP 的归约
-dist.all_reduce(_max,      op=dist.ReduceOp.MAX, group=tp_group)   # 跨分片取全局 max
-...
-dist.all_reduce(_logprobs, op=dist.ReduceOp.SUM, group=tp_group)   # 跨分片求和本地 NLL 贡献
-```
+这个替代方案的使用边界就在选择处：`megatron/training/arguments.py::validate_args` 拒绝总开关与 te 同开，直接构造 MCore 配置只发 `UserWarning`，之后还需 TE CE 符号存在。`full_iteration` 图捕获会传入 `is_cg_capturable`=True，该入口额外要求 TE ≥2.7.0。它不是当前训练 CLI 可正常启用的后备方案。对容量问题，两个 CE 内部融合分支都把边界放得太晚：接到 logits 时，矩阵已经生成。
 
-反向 `megatron/core/fusions/linear_cross_entropy/blackwell/bwd_partial_dlogits.py` 同样**按 vocab tile 重算偏 dlogits**(`vocab_per_split` + `cute.ceil_div(self.vocab_per_split, cta_tiler[1])`,`:77-78`),再算 `d_hidden`/`d_weight`——全程不重建完整 `logits[N,V]`。序列并行(SP)下 `hidden` 按序列维分片,前向/反向各 rank 处理本地 token 块(`megatron/core/fusions/fused_linear_cross_entropy.py:111-159` 的 DP/TP/SP 三态文档)。
+### 2.4 linear 前向：让投影直接产出归一化统计量
 
----
+要移除完整 logits，输出层就必须直接接收 hidden、权重和标签，产出 loss。`blackwell.entry.forward` 把每个 rank 的词表切成 $K_f$ 块，CuTe `FwdMainLoop` 在矩阵乘主循环中计算块内统计量；HBM 接收每块的最大值与指数和，以及每 token 的目标 logit 贡献。它不输出 $[N,V_p]$ 的完整 logits 张量。
 
-## 7. 与 `native`/`te` 的对照:为什么只有 `linear` 是真·chunk loss
+设块 $k$ 的统计量为 $(m_k,a_k)$。任意两个块可以这样合并：
 
-| | `native` | `te` | **`linear`** |
-|---|---|---|---|
-| 融合范围 | softmax+NLL | softmax+NLL(TE 核) | **matmul+softmax+NLL** |
-| 入参 | `logits`(已物化) | `logits`(已物化) | **`hidden, weight`** |
-| logits 显存 | `O(N·V)` | `O(N·V)` | **0** |
-| 反向存什么 | 取决于实现(通常含 logits/softmax) | TE 内部 | **只存 hidden + max + sum-exp** |
-| 硬件 | 通用 | 需 TransformerEngine | **仅 Blackwell(算力 10.x)** |
-| 源 | `megatron/core/models/common/language_module/language_module.py:181` | `megatron/core/models/common/language_module/language_module.py:157-177` | `megatron/core/models/gpt/gpt_model.py:272` + 融合核 |
+$$
+m'=\max(m_1,m_2),\qquad
+a'=a_1e^{m_1-m'}+a_2e^{m_2-m'}.
+$$
 
-`native`/`te` 的价值在**减少 logits 上的逐元素 kernel + 不 gather 跨 TP 的 logits**(vocab-parallel CE),但 `logits[N,V]` 这块大激活仍在;`linear` 把矩阵乘吸进核、靠 online-softmax + 重算彻底消掉它。
+因为 $e^{m'}a'=e^{m_1}a_1+e^{m_2}a_2$，合并保留了完整指数和，只改变了它的缩放表示。第一行按两个词表项一块，四块的 $m_k$ 分别为 $\ln2,\ln4,\ln6,\ln8$，$a_k$ 为 $3/2,7/4,11/6,15/8$；依次合并仍得到 $m=\ln8,a=4.5$。标签 6 的 logit $\ln7$ 只由包含该项的块贡献，loss 因而不变。第二行把相同步骤用于逆序 logits，仍得到同一结果。
 
----
+这也说明“online softmax”不意味着 Python 只持有一对标量串行遍历全词表。当前实现先生成 $[N,K_f]$ 的 `_max`、`_accu`，再由 Triton epilogue 合并；其前向临时统计存储为 $8NK_f$ 字节，最终保存的 maximum、accumulate 才是 $8N$ 字节。epilogue 的参考最大值从零开始，负 logits 情形得到的参考值可能为零而非严格行最大值；只要指数和与参考值一致，重建关系仍成立。这里证明的是实数运算恒等式，极端值下的有限精度稳定性仍要测试。
 
-## 8. 对照 MindSpeed `chunk_loss`(跨框架)
+实际默认块宽是 **$C_f=3072$**：`FwdConfig` 从 `LCE_FWD_VOCAB_SPLIT_SIZE` 读取，默认 512*6，并传给主循环。类构造器内的 512 不是实际入口默认值。减小块宽会增加统计量、块调度和合并成本；增大块宽受核布局与片上资源约束，不能任取一个正整数就假定可用。前向避开了完整概率的保存，留下的关键问题是：没有它，反向怎么得到全部梯度？
 
-两者都为"不物化全量词表 logits",但机制与适用面不同:
+### 2.5 linear 反向：重建一块概率，立即消费一块梯度
 
-| | MindSpeed `chunk_loss`(见 [[12_mindspeed_memory_optimization_analysis]] §8) | Megatron `linear` |
+`LinearCrossEntropy.forward` 保存的是 `global_hidden`、weight、labels、maximum、accumulate、`num_valid_tokens`。保存引用通常不复制 hidden 和 weight，但会延长其生命周期；SP 下的 `global_hidden` 是本路径新聚合的完整 hidden，不能视为免费。反向恢复这些对象，对词表块重新计算 $Z_k=XW_k^\top$，用已保存的 $m,a$ 恢复 $P_k$，生成 $D_k$ 后立即用于：
+
+$$
+dX\mathrel{+}=D_kW_k,\qquad dW_k=D_k^\top X.
+$$
+
+本例 sum 目标的第一行 $D=(1,2,3,4,5,6,-29,8)/36$，第二行 $D=(8,-29,6,5,4,3,2,1)/36$。一次只生成其中两个词表列，再分别累计 $dX$、写入对应 $dW$ 行；累积全部块后与完整矩阵求导一致。反向无需保存整行 $D$，但当前实现**确实分配 HBM 张量 `_d_logits[N,C_b]`**，不是“logits 相关显存为零”，也不是全套反向都留在一个融合核内。
+
+`BwdPartialDlogits` 负责重算 logits 和生成块梯度，随后 Python 循环调用 `torch.mm` 求本块 `_delta_hidden`、调用 `torch.matmul` 写入 `d_weight` 的词表切片。`d_hidden` 和 `_delta_hidden` 都是 FP32，最终才把 `d_hidden` 转回输入 dtype；权重梯度按权重 dtype 分配。源码明确将 FP32 累加用于数值稳定性，代价是两类 $4Nd$ 缓冲，而不是仅多两个逐 token 标量。反向块宽由独立的 `LCE_BWD_VOCAB_SPLIT_SIZE` 控制，默认也为 **3072**，不必与前向相同。
+
+若一次矩阵乘按 $2NV_pd$ FLOPs 计，普通输出头前向、$dX$、$dW$ 合计约 $6NV_pd$；分块重算多付一次投影，约 $8NV_pd$，即**输出头矩阵乘量增加约 1/3**。这不是整个训练步变慢 1/3：更少的 HBM 流量可能抵消部分成本，而小块 GEMM 效率、启动开销与其他层所占比例都会影响结果。本页给出计算账，不报告未经测量的速度收益。
+
+忽略标签和 loss 归约也在同一个梯度契约内：`ignore_index` 对应的逐 token loss 为零，并屏蔽其 $D$；none 接收每 token 的 $g_i$，sum 使用同一个上游标量，mean 再除以有效 token 数。将本例第二个标签改成 -100，有效数变成 1，mean 的 loss 仍是 **1.637609**，第二个 token 的梯度归零，第一行无需再除以 2。**全被忽略时，mean 路径没有零分母保护**；不能承诺返回零 loss/零梯度，调用方应保证有效数非零或明确处理这一情形。
+
+### 2.6 把分块放回 TP/SP：统计量小，hidden 通信仍然存在
+
+词表分块与 TP 沿相同维度划分权重，使每卡只需自己的 $W_p$；这是选择该切分方向的结构性理由，属于根据实现的解释，不是与序列分块全面比较后的性能结论。需要补齐的是，各卡如何得到同一归一化结果，以及每卡只算一部分词表后如何恢复 hidden 梯度。
+
+![同一两 token 例子在无 TP、TP 和 TP 加 SP 下的 owner、三次前向归约以及反向 hidden 归约和切片](assets/megatron_lce_parallel.svg)
+
+**无 TP（包括某个 DP 副本内部）。** 两行 hidden 与完整权重在本卡，四个教学词表块由 `forward_dp_epilogue` 合并；反向累计全部块，直接返回完整 $dX,dW$。这里的“DP”不表示 loss 核会通信所有 DP 副本，参数梯度的 DP 同步在外层完成。
+
+**TP=2、不开 SP。** 两卡持有相同两行 hidden 和标签、各四行权重，各自产生两个块。实际前向不是先各自压成一对最终标量再归约，而是先备份本地 `_max[2,2]`，对它做 MAX all-reduce：第一行按相同块编号合成参考值 $(\ln6,\ln8)$。这两块在不同 rank 代表不同词表区间，但按块编号分组后再取全局参考值，不影响最终指数和。各卡用**原始本地最大值**重标定自己的 `_accu`，第一行合并出的本地贡献仍为 1.25、3.25。
+
+然后有两次 SUM：一份是 `_logprobs[N]` 的目标 logit 贡献，另一份是 accumulate[N] 的指数和。前者在专用流执行，后者在当前流执行；事件让专用流等输入就绪，再让最终 loss 更新等待目标项归约结束。因此**总共三次前向 all-reduce**，逻辑 payload 是 $NK_f,N,N$ 个 FP32 元素；MAX 归约作用于块统计表，不能当成只有 $N$ 个元素。本例 loss 在两卡复制，上游 $g$ 也必须一致。反向各 rank 累加自己的词表块后，对完整 FP32 $dX[2,2]$ 做 SUM all-reduce，$dW_p[4,2]$ 则留在本卡。
+
+**TP=2、开启 SP。** 入口 rank 0 只有 $X_0$，rank 1 只有 $X_1$，标签仍是完整两项。前向 `all_gather_into_tensor` 先让两卡各有完整 $[2,2]$ hidden，再执行上述 TP 路径并保存这个 `global_hidden`。反向同样对完整 $dX$ 做 all-reduce，然后 rank 0 取第一行、rank 1 取第二行并 clone，转回输入 dtype。源码使用的是 **all-reduce 后切片，不是 reduce-scatter**。SP 节省了周边层的本地 token 存储，并不让这个 loss 核全程只计算本地 token；其额外聚合、完整 hidden 留存、完整 FP32 梯度通信都必须进入容量与带宽预算。
+
+## 3. 如何成为 GPT 模型真正使用的 loss
+
+### 3.1 同一输出层对象，按需求返回 logits 或 loss
+
+机制需要同时拥有投影权重和标签，所以入口放在输出层。`GPTModel.__init__` 通常构造 `LinearCrossEntropyModule`，它继承 `ColumnParallelLinear`，并不因关闭融合而换回另一个类。`forward(output_cross_entropy_loss=False)` 调用父类，返回普通 logits；请求直接 loss 时，使用外部传入的 weight，否则使用 self.weight。这样 tied/untied 权重都经过同一个明确的取值边界。
+
+| 对象 | 持有或负责什么 | 为什么在这里划界 |
 |---|---|---|
-| 切分维 | **序列维**(沿 `dim=1` 分 chunk) | **词表维**(`vocab_per_split=512`) |
-| 实现层 | 框架层 `torch.func.grad_and_value`,**前向即出梯度** | **kernel 层** CuTe/CUTLASS 融合核 + online-softmax + 反向重算 |
-| 反向存 | 预分配的 `grad_inputs`/`grad_weight` | `hidden` + `max` + `sum-exp` |
-| 硬件 | 纯 PyTorch,**任意硬件(含 NPU)** | **仅 Blackwell** |
-| 取舍 | 可移植、串行分块 | 效率高、绑硬件 |
+| GPTModel / MTP loss 路径 | 选择 loss 形式、提供 hidden/标签/共享输出权重 | 有标签才能绕过 logits；需要 logits 的推理与观测仍走普通输出 |
+| `LinearCrossEntropyModule` | 输出权重、TP/SP 配置；将 [b,s] 标签转为连续 [s,b] | 让融合与普通输出共用权重语义，同时适配模型布局 |
+| `LinearCrossEntropy` autograd | 保存 hidden/weight/标签/统计量，配对前向和反向 | 输出 loss 后仍能恢复梯度，保存对象直到反向消费 |
+| `Platform` 与 Blackwell entry | 惰性架构选择、缓存编译核、临时缓冲与通信流/事件 | GPU 相关依赖推迟到实际调用，并集中管理执行资源 |
+| CuTe 主循环、Triton epilogue、PyTorch GEMM | 块内投影、统计合并、块梯度及最终矩阵梯度 | 每层只承担对应计算，不能把它们合称一个全融合核 |
 
-一句话:MindSpeed 走"**框架层序列分块 autograd**"求可移植;Megatron `linear` 走"**kernel 层词表分块融合**"求极致效率但绑 Blackwell。两者与 Flash-Attention 同属"online-softmax + 不物化大矩阵 + 反向重算"的家族。
+GPT 仅在总开关开启且 impl='linear' 时直接向输出层要 loss。若没有标签，模型返回 logits；因此该特性不是推理时获取完整词表分布的替代品。普通非 linear 训练分支则先获取 logits，再交给 `LanguageModule.compute_language_model_loss` 选择普通、native 或 TE CE。 **这里不生成完整 logits 的前提是有标签且未启用配置日志。** `GPTModel._postprocess` 在 `has_config_logger_enabled(self.config)` 为真时，会先调用普通输出层生成 logits、交给日志 payload，再执行 linear 的直接 loss 路径。因此开启 `config_logger_dir` 会重新支付完整 logits 和额外一次投影，不能沿用下文默认路径的容量结论。
 
----
+还要区分 `fp8_output_proj` 激活时的兄弟分支：`is_mxfp8_output_proj_active` 会选择 `TELMHeadColumnParallelLinear`，其 forward 没有 `output_cross_entropy_loss` 和 labels 形参；现有配置检查只限制 FP8 模式与 MXFP8 recipe，未检查它与 linear 的组合。**静态调用推导**是两者同开会在直接 loss 调用处出现不支持关键字参数的错误，本页未在 GPU 上运行该组合。不能因两者都优化输出头就假定可叠加。
 
-## 9. 约束
+### 3.2 一次训练调用如何走到梯度就绪
 
-§6 的 `[!warning]` 已经点出最硬的一条(仅 Blackwell)。本节把前提、代价、不变量与失效条件补齐,每条带 locator。
+```text
+GPTModel.forward → _postprocess（有 labels，fusion=True，impl=linear）
+└─ output_layer.forward(output_cross_entropy_loss=True, weight=output_weight)
+   └─ LinearCrossEntropyModule._compute_linear_and_cross_entropy_loss
+      ├─ labels [b,s] → contiguous [s,b]；采用模块默认 reduction=none
+      └─ linear_cross_entropy → LinearCrossEntropy.apply
+         ├─ forward → _get_platform → blackwell.entry.forward
+         │  ├─ SP: all-gather hidden → global_hidden
+         │  ├─ FwdMainLoop → 块统计与目标项
+         │  └─ DP/TP epilogue → loss；ctx 保存反向所需对象
+         └─ backward → blackwell.entry.backward
+            ├─ 每块 BwdPartialDlogits → d_logits → d_hidden / d_weight
+            ├─ TP: all-reduce d_hidden；SP: 切回本地并 clone
+            └─ 转回 hidden dtype → 上游层梯度 / 权重梯度累积
+```
 
-### 9.1 前提
+模块把 none 的 loss 恢复为 [b,s]，外层训练逻辑应用 loss mask、归一化和相应缩放，再触发 autograd；不能把直接函数的默认 mean 和模块的默认 none 混为一谈。loss 核完成时，模型权重还没有更新：hidden 梯度继续回传 Transformer，输出权重梯度进入外层梯度累积与同步，之后才由优化器消费。DP 同步、共享 embedding 梯度同步及优化器状态不是本核的通信工作，具体生命周期见 [[16_megatron_distributed_optimizer_analysis]]、[[26_megatron_optimizer_step_internals_deepdive]]。
 
-- **硬件**:`linear` 只在算力 `10.x`(Blackwell)上可用,其它架构在 `Platform` 构造期即 `raise ValueError(f"Unsupported architecture: {cc[0]}")`(`megatron/core/fusions/fused_linear_cross_entropy.py:26-42`)。
-- **双开关同时成立**:`_compute_linear_and_cross_entropy_loss` 入口连着两个 assert —— `self.config.cross_entropy_loss_fusion` 与 `self.config.cross_entropy_fusion_impl == "linear"`(`megatron/core/transformer/linear_cross_entropy.py:43-70`)。
-- **必须有 labels**:`output_cross_entropy_loss=True` 时 `assert labels is not None`(`megatron/core/transformer/linear_cross_entropy.py:28-41`)。
-- **`te` 一档在训练入口已被硬关**:`megatron/training/arguments.py:1828-1831` 的 `assert not (args.cross_entropy_loss_fusion and args.cross_entropy_fusion_impl == 'te')`,文案是「Transformer Engine cross entropy loss fusion is disabled due to stability issues. Use --cross-entropy-fusion-impl native, or omit --cross-entropy-loss-fusion.」;MCore 侧对应位置降级为 `UserWarning`(「…has known stability issues. Megatron-LM training args validation rejects this combination by default.」,`megatron/core/model_parallel_config.py:569-576`)。**即 §7 对照表里的 `te` 一列在当前基线的 `megatron/training` 训练路径上不可达**,只有直接用 MCore 才能强行走到并吃一条警告。该拦截由 `168cb15d7`(2026-06-03,「Disable TE cross entropy loss fusion (#5115)」)引入。
+MTP 的 `process_mtp_loss` 对移位后的每层标签复用同一输出层和权重，得到逐 token loss 后应用该层 mask 与缩放。因 linear 不返回 logits，该分支将 `mtp_logits`=None，不能据此计算 MTP acceptance counts；这项可观测性成本与主模型的显存收益同时存在，MTP 模型装配见 [[10_megatron_model_structure_analysis]]。
 
-### 9.2 代价
+### 3.3 为什么保留这些实现边界
 
-- **反向的 `d_hidden` 以 fp32 分配**:形状与 `global_hidden` 相同、dtype 强制 fp32(`megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:348`),函数末尾才转回原 dtype(`:471`)。对 bf16 训练这意味着反向期间多一份 `2 × O(N·d)` 的临时显存 —— 它是 §2② 那条数值稳定性决定的直接账单。
-- **反向要重算一遍 `hidden@Wᵀ`**:§5 的省显存本质就是"用重算换存储",FLOPs 上多付一遍 LM-head GEMM。
-- **labels 需要转置并 `contiguous()`**:`labels.transpose(0, 1).contiguous()`(`megatron/core/transformer/linear_cross_entropy.py:43-70`),多一次 `[b s] → [s b]` 的拷贝。
-- **两次集合通信仍在关键路径上**:跨 TP 的 `all_reduce(MAX)` 与 `all_reduce(SUM)`(`megatron/core/fusions/linear_cross_entropy/blackwell/entry.py:246`、`:253`)。省掉的是 gather logits,不是全部通信。
+历史能解释两项当前设计，但不应打断算法主线。`1f08cebac` 最初加入辅助方法 `LanguageModule.compute_output_layer_and_language_model_loss`；`13ad65379` 的差异把调用收进 `LinearCrossEntropyModule`，统一从传入权重或模块权重取值，并把反向低精度 addmm 累加改为 FP32 `_delta_hidden` 加 FP32 `d_hidden`。后者的数值稳定性意图有源码注释支持；“前者有助于融合与普通路径使用相同权重”是由调用变化得出的解释，不能直接认定它就是收敛故障的唯一根因。
 
-### 9.3 不变量
+相关历史还包含 `b8b866227` 的 revert 与 `8a29fd575` 的 reapply。提交展示日期并不构成这组修复的可靠线性时间轴，本页以冻结树中的最终实现为准。`168cb15d7` 则引入了 TE CE 的训练入口禁用。原稿据构造器常量推测“块宽未来可能参数化”，在本基线已经不成立：前后向环境变量均已存在。`BackwardMethodEnum` 虽列出 `kTwoKernels`、`kDlogitsSplitN`、`kFused`，entry 只实现 `kDlogitsSplitN`，其余分支抛 `NotImplementedError`；这些名字和 kernel 内 FIXME 是待实现点，不能写成已支持算法或已承诺路线图。
 
-- **输出层的类与是否开融合无关**:`GPTModel` 里 `output_layer_cls` 只在 `is_mxfp8_output_proj_active(config)` 与否之间二选一,默认分支恒为 `LinearCrossEntropyModule`(`megatron/core/models/gpt/gpt_model.py:269-274`)。不开融合时它走 `super().forward(...)` 退回普通 `ColumnParallelLinear` 语义(`megatron/core/transformer/linear_cross_entropy.py:28-41`)——所以"换类"是无条件的,"短路 logits"才是有条件的。
-- **只保存 `O(N)` 统计量**:`ctx.save_for_backward(global_hidden, weight, labels, _maximum, _acc, _num_valid_tokens)`(`megatron/core/fusions/fused_linear_cross_entropy.py:161-181`),完整 `logits[N,V]` 永不进 `ctx`——这是本页所有省显存论断的唯一依据。
+## 4. 把收益、成本和可用范围放到一张账上
 
-### 9.4 失效条件
+### 4.1 同一个模型尺寸下，显存究竟省在哪里
 
-- **非 Blackwell**:构造期报错,只能退回 `native`(见 §9.1)。
-- **MTP 路径**:MTP 也走 `linear`(`megatron/core/transformer/multi_token_prediction.py:1784`,§3 已注),因此上述所有约束对 MTP 同样成立。
+沿用开头的 $N=8192,V=152064$，再取 $d=8192,p=8$、BF16 hidden/weight、$C_f=C_b=3072$。每卡词表 **19008** 项、前向 **7** 块。以下针对有标签、未启用配置日志的直接 loss 训练路径。下面按实际张量形状计算，$1\ \mathrm{MiB}=2^{20}$ 字节；它是**对象账，不是同时存活对象全部相加的精确 allocator 峰值**。
 
-> [!note] 推断
-> **`linear` 与 MXFP8 LM-head(`fp8_output_proj`)看起来互斥,但源码没有为此加校验。**可核验的事实是:`fp8_output_proj` 激活时 `output_layer_cls` 会变成 `TELMHeadColumnParallelLinear` 而非 `LinearCrossEntropyModule`(`megatron/core/models/gpt/gpt_model.py:269-274`),而 `fp8_output_proj` 的校验只检查 fp8 与 recipe(`megatron/core/transformer/transformer_config.py:2006-2013`),没有检查 `cross_entropy_fusion_impl`。"二者同开会走到一个没有 `output_cross_entropy_loss` 形参的输出层"这层推论由本页承担,未经实际运行验证。要引用请回到上面两个 locator,不要引用本段推断。
+| 对象 | 每 rank 字节模型 | 本例 | 对应生命周期或收益 |
+|---|---|---|---|
+| 普通输出头完整本地 BF16 logits | $2NV_p$ | **297 MiB** | linear 不物化；未 TP 的同一项是开头的 2376 MiB |
+| 普通/native 留存的 FP32 softmax | $4NV_p$ | **594 MiB** | linear 的 ctx 不保存该完整矩阵；不能推定 TE 内部同样保存 |
+| 完整 BF16 hidden | $2Nd$ | **128 MiB** | 保存引用直到反向；SP 原始每卡仅 16 MiB，本路径聚合后保存完整量 |
+| 最终最大值与指数和 | $8N$ | **0.0625 MiB** | 前向到反向留存，另有标签及有效 token 数 |
+| 前向两张块统计表 | $8NK_f$ | **0.4375 MiB** | 临时；TP 另有 `_max_backup` **0.21875 MiB**，并有逐 token 临时向量 |
+| 反向 `_d_logits` 块 | $2NC_b$ | **48 MiB** | 在全部词表块间复用；尾块只消费有效列 |
+| FP32 `d_hidden` | $4Nd$ | **256 MiB** | 累加后做 TP 归约，SP 再切片，末尾转 dtype |
+| FP32 `_delta_hidden` | $4Nd$ | **256 MiB** | 每块矩阵乘结果；Python 赋值时旧结果与新分配可能短时共存 |
+| BF16 `d_weight` | $2V_pd$ | **297 MiB** | 完整本地权重梯度，由各词表块写入，后续交给梯度累积 |
 
----
+因此，“两个统计量只有 64 KiB”不是完整的省显存论证。linear 减掉长期的 $NV_p$ 级概率留存，却仍有 $Nd$ 级 hidden/FP32 梯度、$NC_b$ 块和 $V_pd$ 权重梯度；SP 还把 hidden 从局部份额重新扩展为完整量。实际峰值必须考虑与上游激活、梯度返回时的 cast/clone、临时对象和 CUDA allocator 的重叠。尤其当 TP 已把 $V_p$ 降得接近或小于 $d$，不能用全局 $V\gg d$ 直接推出每卡显存一定大幅下降。
 
-## 10. 发展趋势
+| 路径 | 主要支付项 | 可以据源码确定的收益/边界 |
+|---|---|---|
+| 普通词表并行 CE | 完整本地 logits/FP32 softmax，三个统计量归约 | 已避免 gather 完整词表；实现直接，容量仍随 $NV_p$ 增长 |
+| native | 相同量级的矩阵留存、FP32 计算，返回 BF16 logits 梯度 | 目标项与指数和合并归约，三次启动减至两次；不等于字节减半 |
+| te | 已生成的 logits，以及 TE 依赖内部成本 | Megatron 可见边界不消除 logits；训练入口禁用，内部细节未在此验证 |
+| linear | 额外一次投影、分块调度、表中缓冲、JIT 首次编译 | 默认直接 loss 路径不物化完整本地 logits/softmax；配置日志会另生成 logits，速度与峰值需实测 |
+| linear 加 TP/SP | 前向 $4N(K_f+2)$ 字节逻辑归约 payload；反向 $4Nd$ 字节 all-reduce payload；SP 另聚合 hidden | 无 logits 聚合，但复制 loss/hidden 的一致性与梯度完成边界不可省略 |
 
-> [!note] 推断
-> 本节锚定于当前基线里的 `FIXME` 注释、架构门控的 `else: raise` 分支,以及 §2 引用的提交历史;方向判断属本页推断,不是源码自陈的路线图。
+表中的 collective payload 是 API 输入张量大小，**不是每 rank 实际上网字节或时延**；后者还依赖 collective 算法、拓扑和并发。前向专用流可能重叠目标项 SUM 与当前流上的工作，但最终 epilogue 必须等待依赖完成，不能将三次通信从关键路径预算中全部删去。
 
-- **Blackwell 核本身仍在施工**。`megatron/core/fusions/linear_cross_entropy/blackwell/` 下留着成组的 `FIXME`:`entry.py:353`(「implement different backward methods」)、`fwd_mainloop.py:168`/`:227`/`:252` 与 `bwd_partial_dlogits.py:157`/`:160`/`:219`(block swizzling、2-CTA 分支),`triton.py:50` 还标着 `num_splits` 「maybe this could be a constexpr」。→ §6 描述的分块与归约实现尚未定型,`vocab_per_split=512` 这类常量有被参数化的余地。
-- **架构分发框架已就位,只差别的架构**。`Platform` 用 `cc[0] == 10` 单分支绑定、`else: raise`(`megatron/core/fusions/fused_linear_cross_entropy.py:34-42`),这是一个**为多架构预留的形状**而当前只填了一格。→ 一旦 Hopper 或后续架构补上对应 kernel,§7 表里"仅 Blackwell"这一行就会改写;在此之前 chunk loss 在 Megatron 里始终是单硬件特性。
-- **三档实际只剩两档**。`te` 因稳定性被 `168cb15d7`(#5115)在训练入口关停(§9.1),`native` 仍物化 logits。→ 中短期内"要省 logits 显存"在 Megatron 里没有第二条路,这反过来会加大给 `linear` 补其它架构的压力。
-- **这条路径的数值稳定性刚经历过一轮反复**:#2739 落地 → #3218 revert → #3226 reapply(§2①),而修复内容正是 fp32 累加与权重取法(§2②)。→ 涉及 `linear` 的收敛性改动值得持续关注对应 commit,而不是只看配置文档。
+### 4.2 配置、输入契约与失败位置
 
----
+| 配置/接口 | 默认或取值 | 如何生效及约束 |
+|---|---|---|
+| `ModelParallelConfig.cross_entropy_loss_fusion` | False | CLI --cross-entropy-loss-fusion；开启才读取融合实现 |
+| `ModelParallelConfig.cross_entropy_fusion_impl` | native；native/te/linear | CLI --cross-entropy-fusion-impl；linear 在 GPT 输出层选路，另外两档在已有 logits 后选路 |
+| `LCE_FWD_VOCAB_SPLIT_SIZE` | 3072 | `FwdConfig` 读取并缓存，影响块统计规模与 CuTe 布局；在导入 Blackwell entry 前设置（类体定义时读取） |
+| `LCE_BWD_VOCAB_SPLIT_SIZE` | 3072 | `BwdConfig` 在导入 Blackwell entry 时独立读取默认值，实例随后缓存，控制 `_d_logits` 和循环次数；不保证任意整数满足 kernel 条件 |
+| reduction | 函数默认 mean，模块默认 none；另有 sum | none 返回逐 token loss，另两种返回标量；非法字符串抛 `ValueError` |
+| `ignore_index` | -100 | 跳过相应标签，mean 使用有效数；全忽略没有零分母保护 |
+| `tp_group`、`sequence_parallel` | 函数默认 None、False | 模块传入自己的 TP group/SP 设置；TP 权重等长连续分片，标签保持全局编号 |
+| `output_cross_entropy_loss`、labels、weight | 模块默认 False、None、None | 请求 loss 必须有标签和可用权重；外部 weight 优先，否则 self.weight；普通路径仍可返回 logits |
+
+入口要求 hidden/weight/labels 是同一 CUDA 设备上的连续张量，hidden 为二维或三维、weight 为二维，标签维数与 hidden 匹配，hidden 末维等于权重末维。SP 需满足本地 token 数乘 TP 度数等于标签总数；非 SP 则 token 数相等。TP 各 rank 的非 SP hidden、完整标签和上游 loss 梯度必须一致。标签除忽略值外应落在完整词表范围内；不能依赖 kernel 替调用方完成所有语义校验。
+
+CuTe 主循环还检查 hidden/weight dtype 一致以及矩阵乘维度的字节对齐；现有单元测试覆盖 BF16、FP16，而不是任意 torch dtype。`Platform` 在首次实际调用时检查 CUDA 和 `get_device_capability`()，只有 cc[0]==10 才绑定 Blackwell entry；其他主版本报错。该 entry 依赖 CUDA bindings、CUTLASS/CuTe、Triton 等导入，缺依赖时只记录入口不可用，并没有自动改走 native 的执行路径。选型时应显式选择受支持实现，不能把惰性导入理解为自动兼容或静默回退。
+
+数学上具有同一目标不等于工程接口完全相同。普通词表 CE 暴露 `label_smoothing`，本 linear 函数没有该形参；需要完整 logits 的额外目标或诊断也不能仅靠两个统计量恢复。新目标应先推导它额外需要保存或重算什么，再扩充接口与测试，而不是仅把 loss 函数名替换为 `linear_cross_entropy`。
+
+### 4.3 换一个分块方向，会得到另一套梯度生命周期
+
+作为有边界的跨框架对照，`MindSpeed-LLM@0c16322d0c5182d58aa602a0cba991e08f14ab12` 的 `mindspeed_llm/core/models/common/chunk_loss.py::ChunkLoss` 沿 [b,s,d] 的序列维切块，前向对每个序列块执行 `torch.func.grad_and_value`(`loss_forward`, ...)，立即计算并保存 `grad_inputs`、累计 `grad_weight`，最终返回标量 loss；反向只按上游标量缩放这些已存梯度。它不会像本文的 linear 那样等到反向再重算词表块。
+
+在两 token 例子中，以单 token 为序列块，先算 $X_0$ 的完整词表 CE 和梯度并丢弃该块 logits，再算 $X_1$，累计得到同一 sum loss；反向缩放已算梯度。它的 logits 临时量由序列块宽控制，代价是前向提前算梯度、保存完整 hidden/weight 梯度并串行处理块；具体设备与并行能力还取决于传入的 `loss_forward` 和运行栈，不能由 Python 写法推出“任意硬件可用”。这条方案完整机制归 [[12_mindspeed_memory_optimization_analysis]] §8，本页只用于辨认两种“chunk loss”的接口差异：**共同点是缩短大矩阵生命周期，不能统一称为 online softmax 加反向重算。**
+
+### 4.4 继续使用与迭代时，按什么顺序核验
+
+先判断瓶颈是 CE 小算子/通信启动，还是完整词表激活容量：前者可从 native 与普通路径比较，后者才需要评估 linear 的整张对象账。在受支持设备上，先固定相同 hidden、weight、labels，比较 loss、$dX$、$dW$，再打开 TP 和 SP 核对复制/分片契约，最后观察完整训练步的峰值与吞吐；把首次 JIT 和稳态分开。改变块宽、累加精度或 collective 形式时，这几层验证都直接对应前文的代价与不变量。
+
+| 源码阅读锚点 | 对应要验证的问题 |
+|---|---|
+| `megatron/core/model_parallel_config.py::ModelParallelConfig`；`megatron/training/arguments.py::validate_args` | 配置集合、默认值、TE 警告与训练拦截 |
+| `megatron/core/models/gpt/gpt_model.py::GPTModel.__init__ / _postprocess`；`megatron/core/models/common/language_module/language_module.py::LanguageModule.compute_language_model_loss` | 输出层类型、直接 loss 与已有 logits 两处选路 |
+| `megatron/core/config_logger.py::has_config_logger_enabled` | 配置日志是否触发额外 logits 投影 |
+| `megatron/core/transformer/linear_cross_entropy.py::LinearCrossEntropyModule` | 权重来源、标签转置、reduction 默认值与输出形状 |
+| `megatron/core/tensor_parallel/cross_entropy.py::_VocabParallelCrossEntropy`；`megatron/core/fusions/fused_cross_entropy.py::_VocabParallelCrossEntropy` | 普通/native 的保存对象、归约次数、返回梯度 dtype |
+| `megatron/core/fusions/fused_linear_cross_entropy.py::Platform / LinearCrossEntropy` | 架构门控、autograd 保存对象和前反向契约 |
+| `megatron/core/fusions/linear_cross_entropy/blackwell/entry.py::FwdConfig / BwdConfig / forward / backward` | 真正块宽、内存对象、三次 TP 前向归约、SP 聚合及梯度切片 |
+| `megatron/core/fusions/linear_cross_entropy/blackwell/fwd_mainloop.py::FwdMainLoop`；`megatron/core/fusions/linear_cross_entropy/blackwell/bwd_partial_dlogits.py::BwdPartialDlogits` | 块内计算、dtype/对齐条件、忽略标签与梯度缩放 |
+| `megatron/core/fusions/linear_cross_entropy/blackwell/triton.py::forward_dp_epilogue / forward_tp_epilogue / forward_tp_epilogue_update_logprobs` | 统计合并、参考值初始化、有效 token 数与 mean 的零分母边界 |
+| `megatron/core/transformer/multi_token_prediction.py::process_mtp_loss`；`megatron/core/extensions/transformer_engine.py::TELMHeadColumnParallelLinear.forward` | MTP loss/观测边界、MXFP8 输出头不接收直接 loss 参数 |
+| `tests/unit_tests/fusions/test_fused_linear_cross_entropy.py` 的 DP/TP/SP `test_correctness`、`test_performance`、`test_storage` | 上游提供的核级验证入口；GPT 集成测试类在本基线带无条件 skip，不能当成已验证的组合矩阵 |
+
+本文两张图由 `tools/figs/svg/megatron_lce_figures.mjs` 从同一数学例子生成；配套测试读取正文，检查块统计合并、TP/SP 所有权、有限差分梯度和上述字节数。它们验证解释与算式一致，不替代 Blackwell/多卡的数值与性能测试。若继续开发 reduce-scatter 反向、其他架构或新的反向算法，首先要守住本文已经明确的 loss 一致性、梯度 owner 和内存完成边界，再比较新增实现的收益。
 
 ## Related Pages
 
-- [[21_megatron_fusion_operators_analysis]] —— Megatron 融合算子总览(本页是其 Linear+CrossEntropy 一项的深挖)
-- [[22_megatron_memory_optimization_analysis]] —— Megatron 省显存手段(重计算/卸载等),本页是损失侧的一块
-- [[12_mindspeed_memory_optimization_analysis]] —— MindSpeed `chunk_loss`(序列分块版),§8 对照
-- [[megatron-lm/index]] —— Megatron-LM 知识地图
+- [[21_megatron_fusion_operators_analysis]] —— 将输出头融合放回 Megatron 的融合算子选择体系。
+- [[18_megatron_recompute_analysis]] —— 从反向所需信息理解其他激活重计算方案的存储与计算取舍。
+- [[23_megatron_precision_cudagraph_fusion_analysis]] —— 核对低精度输出投影和图捕获的组合边界。
+- [[12_mindspeed_memory_optimization_analysis]] —— 对照序列分块、前向预计算梯度的另一种 chunk loss。

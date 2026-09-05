@@ -38,8 +38,8 @@ title: "Megatron-LM 知识地图"
 | 20 | [[20_megatron_comm_overlap_analysis]] | 跨 TP/CP/EP/PP/DP 的时间线、资源竞争与诊断。 |
 | 21 | [[21_megatron_fusion_operators_analysis]] | 从逐点 JIT 融合到 GEMM 链与通信融合的四级阶梯，及各级的后端选择与失败边界。 |
 | 22 | [[22_megatron_memory_optimization_analysis]] | 从整层换出、子模块换出到分页暂存与分块优化器换出，及常驻通信池的反向取舍。 |
-| 23 | [[23_megatron_precision_cudagraph_fusion_analysis]] | FP8/FP4、CUDA Graph 与算子融合的组合边界。 |
-| 24 | [[24_megatron_linear_cross_entropy_analysis]] | 不物化完整 logits 的 fused linear cross-entropy。 |
+| 23 | [[23_megatron_precision_cudagraph_fusion_analysis]] | 从同一 GEMM 推导 FP8/FP4、算子融合与图重放的收益、状态及组合边界。 |
+| 24 | [[24_megatron_linear_cross_entropy_analysis]] | 从普通词表 CE 递进到 linear 分块重计算，核算前反向显存与 TP/SP 通信。 |
 | 25 | [[25_megatron_nonuniform_tp_analysis]] | 预定义混合 TP 布局、梯度重共享与冷重启边界。 |
 | 26 | [[26_megatron_optimizer_step_internals_deepdive]] | optimizer factory、混合精度 step、LR/WD、offload 与 Muon/μP。 |
 | 27 | [[27_megatron_job_resilience_analysis]] | 进程内重启、退出策略、GPU 检测与 tensor dump。 |

@@ -12,6 +12,12 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-05：Megatron 23–24 从基本方案递进解释精度、图与分块损失
+
+- [[23_megatron_precision_cudagraph_fusion_analysis]] 用同一次 GEMM 串起 FP8/FP4 表示、融合中间流量与 CUDA Graph 提交成本，保留完整 recipe、graph 与配置选择，补充固定缓冲、前反向完成及微批槽位图；明确 TE 依赖边界、GeLU 近似差异和旧 rampup 参数的当前行为。
+- [[24_megatron_linear_cross_entropy_analysis]] 从普通词表 CE、native/TE 递进到 linear 的块统计合并与反向重算，用同一两 token 例子贯穿 TP/SP，重新核算块宽 3072、三次前向归约、SP 聚合及 all-reduce 后切片、FP32 梯度缓冲与完整对象显存账；修正旧稿中“零 logits 显存”“SP 只算本地 token”等失实概括。
+- 新增六张脚本生成 SVG，数值回归读取真实正文并校验载荷、梯度、统计合并及对象字节数；图与公式按站点实际渲染检查。同步修复索引、受影响章节引用和 MindSpeed 对照中的梯度生命周期表述。源码仍固定在 85902ef599ea4eb06ada7567a479c524b605767a。
+
 ## 2026-09-05：Megatron 19–20 按特性分析契约重写，补齐原理图与跨轴证据
 
 - [[19_megatron_dist_checkpointing_analysis]] 以"纯元数据描述子替代数据搬运"为主线重组：同一张 `[8,4]` 权重 `TP4×DP2` 存、`TP2×DP1` 载走完全程，再依次解释访问计数校验、fully-parallel save 的四键贪心、load 的三条 exchange 数据面与异步存档的六级完成阶梯。把"策略表"换成三条**正交轴**（格式后端 / 并行化 wrapper / 异步 caller）加两条同级选择轴，枚举依据取自源码自己的分发点。五张图由 `tools/figs/svg/megatron_dist_checkpointing_figures.mjs` 从同一组配置算出。
@@ -322,7 +328,7 @@ All source ingestions and significant wiki updates are logged here.
 **内容增量**（8 页，均带 `[!update] 2026-09-01`）：
 - **[[32_megatron_tflops_analysis]]**：DSA top-k 稀疏与 indexer 成本计入 FLOPs（#6753）。含稀疏 core 缩放的近似口径（在长度加权均值处求值、等长批精确、ragged 批偏向长序列）、indexer 打分为 `O(L^2)` 哪怕 attention 稀疏、跨层索引共享下只有部分层付费，以及 **indexer 不吃全局 3 倍因子**的三种情形（loss 关 1x / 投影读 detach 输入付 2x / 打分 GEMM 两个激活操作数付 3x）。
 - **[[21_megatron_fusion_operators_analysis]] §8.10**：`moe_use_grouped_tensor` 把"可被 CUDA Graph 捕获的分组 GEMM"从 TE op-fuser **解耦**（#6847）。op-fuser 仍蕴含它，但现在可单开。"device-initiated"的落点是 `_apply_packed_bias` 不回读 host 上的 token 计数——**没有 host 同步才是能进图的硬前提**。
-- **[[23_megatron_precision_cudagraph_fusion_analysis]] §8.5/§8.6**：`CudaGraphModule.moe` 的能力边界由"drop-and-pad only"扩到"drop-and-pad **或 sync-free HybridEP**"（#6022），代价是 `validate_moe_cuda_graph_support` 的**六项与条件**；已捕获的 TE whole-MoE 图**溢出即硬失败、不支持动态回退**。另记 hybrid MTP 的跨层分组捕获（#6583）。
+- **[[23_megatron_precision_cudagraph_fusion_analysis]] 的 whole-MoE 与 hybrid MTP 分析**：`CudaGraphModule.moe` 的能力边界由"drop-and-pad only"扩到"drop-and-pad **或 sync-free HybridEP**"（#6022），代价是 `validate_moe_cuda_graph_support` 的**六项与条件**；已捕获的 TE whole-MoE 图**溢出即硬失败、不支持动态回退**。另记 hybrid MTP 的跨层分组捕获（#6583）。
 - **[[22_megatron_memory_optimization_analysis]]**：paged stash 由"省显存的可选项"变成 whole-MoE 图的**必要条件**；§6.1 原写"容量因子给小了只是多跑一遍 forward-backward"在图打开时**不成立**。另修正 `paged_stash_reset` 三态段——它不是纯漂移，#6022 把状态推进与缓冲准备拆成了两步。
 - **[[39_megatron_moe_training_optimization_analysis]]**：硬边界表补两行，并点出本轮的结构性变化——**时间窗口所有权开始反向约束前三种所有权**：图捕获不再是最后叠加的一层加速，而是会回头钉死 token/专家参数/激活所有权选型的决定。
 - **[[10_megatron_model_structure_analysis]]**：Hash MoE 层阈值可显式传入（#6704）——`moe_n_hash_layers` 数的是"前几个 MoE 层"而 router 只有"第几层"，hybrid 模型下两者不重合。另记 hybrid MTP 分组捕获。

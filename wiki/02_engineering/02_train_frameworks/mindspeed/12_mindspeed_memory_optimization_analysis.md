@@ -439,7 +439,7 @@ HBM 峰值: B·S·V·sizeof                        HBM 峰值: chunk·V·sizeof
 > $$
 > 关键在 `torch.func.grad_and_value`:它在前向就**一次性**算出对 hidden 与 head_weight 的梯度(`:66-68`),把梯度写进预分配缓冲后该块 logits 立即可回收,反向只做一次上游标量缩放(`:92-97`)、不再触碰 logits。代价:分块串行 + 重复进出 head 线性层,换来词表 logits 峰值线性可控——大词表(V≈128K+)下这块往往比模型本体激活还大,收益显著。
 
-> **跨框架对照** [[24_megatron_linear_cross_entropy_analysis]]:Megatron 的等价物是 `cross_entropy_fusion_impl='linear'` 融合线性 CE——同样"不物化全量 logits",但走**词表维 kernel 分块**(CuTe 融合核 + online-softmax + 反向重算,仅 Blackwell)而非这里的**序列维框架层 autograd 分块**(纯 PyTorch、可移植 NPU)。两者与 Flash-Attention 同属"online-softmax + 不物化大矩阵 + 反向重算"家族。
+> **跨框架对照** [[24_megatron_linear_cross_entropy_analysis]]:Megatron 的等价物是 `cross_entropy_fusion_impl='linear'` 融合线性 CE——同样"不物化全量 logits",但走**词表维 kernel 分块**(CuTe 融合核 + online-softmax + 反向重算,仅 Blackwell)而非这里的**序列维框架层 autograd 分块**(纯 PyTorch、可移植 NPU)。两者共同缩短了大 logits 矩阵的生命周期，但此处在前向预先算好梯度，Megatron linear 在反向重算词表块，不能统一归为 online-softmax 加反向重算。
 
 > 对比 [[32_distributed_optimizer_deepdive]]:reuse-fp32-param / swap-optimizer / virtual-optimizer 都作用在分布式优化器的 master 与态布局上,理解它们前先读懂 Megatron 分布式优化器如何分片 P/G/O 最有效。
 
