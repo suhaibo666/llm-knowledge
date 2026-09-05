@@ -48,7 +48,7 @@ README(MoE)把 MoE 训练的瓶颈归为三堵墙:**显存墙、通信墙、计�
 
 **⑤ 融合是"能融就融，不能就显式失败"，门控写在构造期而非运行期。**
 `FusedLayerNorm` 先按 hidden size 白名单决定能否走 persist kernel（`megatron/core/fusions/fused_layer_norm.py:73`、`:100-101`），再看有没有 Apex 的融合实现；两条路都不通时**直接拒绝构造**：`raise ValueError('Apex must be installed to use FusedLayerNorm.')`（`:103-105`），旁边还留着一行 `# TODO: Add pytorch only layer norm`（`:104`）。
-→ 判据：融合 kernel 的正确性绑在具体后端与形状上，框架不做"悄悄降级到手写实现"，而是把"不可用"变成一次显式失败。逐个融合算子自身的设计取舍见 [[21_megatron_fusion_operators_analysis]] §2。
+→ 判据：融合 kernel 的正确性绑在具体后端与形状上，框架不做"悄悄降级到手写实现"，而是把"不可用"变成一次显式失败。逐个融合算子自身的设计取舍与失败边界见 [[21_megatron_fusion_operators_analysis]] §2.6。
 
 > [!note] 推断
 > 上面五处各自的理由都有源码或提交自陈；**"三块基建共享同一条原则——框架只管编排、kernel 交给 TE / Apex / PyTorch"这层归纳由本页承担**。依据是三处委托点：FP8 GEMM 在 TE（`megatron/core/fp8_utils.py:799-856` 只负责建量化上下文）、graph capture 走 `torch.cuda.graph` 与 TE 的 `make_graphed_callables`（`megatron/core/transformer/cuda_graphs.py:47-63` 的条件导入，失败即 `HAVE_TE_GRAPHS = False`）、融合 kernel 来自 Apex / TE / Triton（`megatron/core/fusions/fused_layer_norm.py:15-27` 的条件导入）。要引用这条判断，请回到这三个 locator，不要引用本段推断。
@@ -235,7 +235,7 @@ num_microbatches = global_batch_size / (micro_batch_size · data_parallel_size)
 ### 8.4 与融合页的交叉补充
 
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。
-> §5 算子融合的增量(TE op-fuser 把 grouped MLP 的 GEMM+激活+GEMM 整链融合、ScaledSReLU/Clamped-SwiGLU、`TEFusedDenseMLP` 在 SM100+/MXFP8 触发 CuTe GEMM-SwiGLU 融合、mHC 多后端重写、DSv4 稀疏注意力融合 kernel、TE 版本依赖)详见 [[21_megatron_fusion_operators_analysis]] §8。这些融合与本页 FP8/MXFP8 精度强相关(多数融合 kernel 的收益正建立在 MXFP8 量化 epilogue 上)。
+> §5 算子融合的增量(TE op-fuser 把 grouped MLP 的 GEMM+激活+GEMM 整链融合、ScaledSReLU/Clamped-SwiGLU、`TEFusedDenseMLP` 在 SM100+/MXFP8 触发 CuTe GEMM-SwiGLU 融合、mHC 多后端重写、DSv4 稀疏注意力融合 kernel、TE 版本依赖)详见 [[21_megatron_fusion_operators_analysis]] §2.4 与 §2.6。这些融合与本页 FP8/MXFP8 精度强相关(多数融合 kernel 的收益正建立在 MXFP8 量化 epilogue 上)。
 
 ### 8.5 whole-MoE CUDA Graph：能力边界从 drop-and-pad 扩到 sync-free HybridEP（2026-09-01 增量）
 
@@ -243,7 +243,7 @@ num_microbatches = global_batch_size / (micro_batch_size · data_parallel_size)
 
 **边界扩张写在枚举注释里**。`CudaGraphModule.moe` 的注释由旧基线的 "Captures MoE layers (drop-and-pad MoE layers only)" 改成 "Captures drop-and-pad or **sync-free HybridEP** MoE layers"（`megatron/core/transformer/enums.py:70`）。这一句是本轮 MoE × CUDA Graph 关系变化的总纲。
 
-**为什么原来只能 drop-and-pad，现在 HybridEP 也行**。CUDA Graph 要求捕获期与重放期的张量形状、地址全部静态。drop-and-pad 天然满足：每专家收到的 token 数被容量因子钉死。HybridEP 的 sync-free 路径靠另一条路达到同样效果——`moe_expert_rank_capacity_factor` 给出**逐 rank** 的容量上界，paged stash 提供固定的分页缓冲，TE op-fuser 的 GroupedTensor 路径用 padded expert segment + CUDA split metadata 表达分组 GEMM（见 [[21_megatron_fusion_operators_analysis]] §8.10）。三者合起来让"变长"在 kernel 之外被吸收，图里看到的仍是静态形状。
+**为什么原来只能 drop-and-pad，现在 HybridEP 也行**。CUDA Graph 要求捕获期与重放期的张量形状、地址全部静态。drop-and-pad 天然满足：每专家收到的 token 数被容量因子钉死。HybridEP 的 sync-free 路径靠另一条路达到同样效果——`moe_expert_rank_capacity_factor` 给出**逐 rank** 的容量上界，paged stash 提供固定的分页缓冲，TE op-fuser 的 GroupedTensor 路径用 padded expert segment + CUDA split metadata 表达分组 GEMM（见 [[21_megatron_fusion_operators_analysis]] §2.4）。三者合起来让"变长"在 kernel 之外被吸收，图里看到的仍是静态形状。
 
 **代价是一条很长的与条件**。新增的 `validate_moe_cuda_graph_support(config)`（`megatron/core/transformer/cuda_graph_config.py:35`）在捕获含整个 MoE 模块时断言六项同时成立（`:49-55`）：`cuda_graph_impl == "transformer_engine"`、`moe_token_dispatcher_type == "flex"`、`moe_flex_dispatcher_backend == "hybridep"`、`moe_expert_rank_capacity_factor is not None`、`moe_paged_stash`、`use_transformer_engine_op_fuser`。任一缺失即报 "moe cuda graph is only supported with drop-padding MoE or transformer_engine sync-free HybridEP with rank capacity and paged stash."。它在配置校验期（`megatron/core/transformer/transformer_config.py:3429`）与图捕获期（`megatron/core/transformer/cuda_graphs.py:2717`）各调一次。
 

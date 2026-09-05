@@ -164,7 +164,7 @@ DDP 侧也不是逐参数自由组合。`_ParamAndGradBuffer` 先把参数和梯
 | whole-MoE CUDA Graph 要求六项同时成立 | 图捕获整个 MoE 模块时，静态形状不是"尽力而为"而是准入条件 | `megatron/core/transformer/cuda_graph_config.py:49-55`（判定 scope 见 `:25`） |
 | GroupedTensor 路径与 grouped GEMM 绑定 | 分组权重/偏置的存储形态不能独立于分组 GEMM 选择 | `megatron/core/transformer/transformer_config.py:1651-1652`、`:2149-2150` |
 
-> [!update] 2026-09-01（基线 `85902ef59`）：新增的后两行来自本轮增量，它们把"所有权"这条主线推进了一步——**时间窗口所有权开始反向约束前面三种所有权**。whole-MoE CUDA Graph（#6022）一旦打开，就同时要求 token 所有权走 flex/HybridEP、激活所有权交给 paged stash、专家参数所有权采用 GroupedTensor 的 padded segment 形态（六项与条件见 `megatron/core/transformer/cuda_graph_config.py:49-55`）。换句话说，图捕获不再是"最后加上去的一层加速"，而是一个会回头钉死前三层选型的决定。同一轮里 `moe_use_grouped_tensor`（`megatron/core/transformer/transformer_config.py:942`）把"可被图捕获的分组 GEMM"从 TE op-fuser 解耦出来，正是为了让这六项能被逐项满足而不必整体接受 op-fuser。机制详见 [[21_megatron_fusion_operators_analysis]] §8.10 与 [[23_megatron_precision_cudagraph_fusion_analysis]] §8.5。
+> [!update] 2026-09-01（基线 `85902ef59`）：新增的后两行来自本轮增量，它们把"所有权"这条主线推进了一步——**时间窗口所有权开始反向约束前面三种所有权**。whole-MoE CUDA Graph（#6022）一旦打开，就同时要求 token 所有权走 flex/HybridEP、激活所有权交给 paged stash、专家参数所有权采用 GroupedTensor 的 padded segment 形态（六项与条件见 `megatron/core/transformer/cuda_graph_config.py:49-55`）。换句话说，图捕获不再是"最后加上去的一层加速"，而是一个会回头钉死前三层选型的决定。同一轮里 `moe_use_grouped_tensor`（`megatron/core/transformer/transformer_config.py:942`）把"可被图捕获的分组 GEMM"从 TE op-fuser 解耦出来，正是为了让这六项能被逐项满足而不必整体接受 op-fuser。机制详见 [[21_megatron_fusion_operators_analysis]] §2.4 与 [[23_megatron_precision_cudagraph_fusion_analysis]] §4.4。
 
 这些边界比一张“所有技术均可叠加”的矩阵更接近真实系统：优化组合首先是所有权和不变量是否相容，其次才是性能收益。
 

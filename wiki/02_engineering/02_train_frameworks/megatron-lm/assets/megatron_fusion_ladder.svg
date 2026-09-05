@@ -1,0 +1,176 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 824" width="1240" height="824" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　同一块 FC1 输出 y[T=4, 2H=8] bf16 走过四级激活融合，第四级把它折进 GEMM 链</text>
+<text class="su" x="28" y="52" text-anchor="start">每上一级只改一件事：物化的中间张量、为反向保存的字节、或折进区域的乘法；数字全部按 T/H/dtype 算出。</text>
+<text class="rank" x="238" y="78" text-anchor="middle">输入</text>
+<text class="rank" x="469" y="78" text-anchor="middle">kernel / 编译区域</text>
+<text class="rank" x="700" y="78" text-anchor="middle">输出</text>
+<text class="rank" x="891" y="78" text-anchor="middle">为反向保存</text>
+<text class="rank" x="1112" y="78" text-anchor="middle">本级付出</text>
+<rect class="panel" x="28" y="92" width="1184" height="108" rx="10"/>
+<text class="pt" x="40" y="116" text-anchor="start">0  eager</text>
+<text class="sm" x="40" y="134" text-anchor="start">mlp.py else 分支</text>
+<rect class="ghost" x="168" y="102" width="140" height="88" rx="8"/>
+<text class="tx" x="178" y="121" text-anchor="start">y[T,2H] 64 B</text>
+<text class="sm" x="178" y="138" text-anchor="start">bias[2H] 16 B</text>
+<rect class="neutral" x="324" y="102" width="290" height="88" rx="8"/>
+<text class="tx" x="334" y="121" text-anchor="start">3 个逐算子 kernel</text>
+<text class="sm" x="334" y="138" text-anchor="start">k1  tmp1 = y + bias  → HBM</text>
+<text class="sm" x="334" y="153" text-anchor="start">k2  g = gelu(x_glu)   → HBM</text>
+<text class="sm" x="334" y="168" text-anchor="start">k3  out = g * x_linear</text>
+<text class="sm" x="334" y="183" text-anchor="start">HBM 读 176 B / 写 128 B</text>
+<rect class="ghost" x="630" y="102" width="140" height="88" rx="8"/>
+<text class="tx" x="640" y="121" text-anchor="start">out[T,H] 32 B</text>
+<text class="sm" x="640" y="138" text-anchor="start">物化中间张量 96 B</text>
+<rect class="acc2" x="786" y="102" width="210" height="88" rx="8"/>
+<text class="tx" x="796" y="121" text-anchor="start">≈ 96 B</text>
+<text class="sm" x="796" y="138" text-anchor="start">tmp1 整块 + gelu 输出</text>
+<text class="sm" x="796" y="153" text-anchor="start">（PyTorch 逐算子保存，依赖侧契约）</text>
+<rect class="acc2" x="1012" y="102" width="200" height="88" rx="8"/>
+<text class="tx" x="1022" y="121" text-anchor="start">两次 HBM 往返</text>
+<text class="sm" x="1022" y="138" text-anchor="start">中间张量各写一次读一次</text>
+<text class="sm" x="1022" y="153" text-anchor="start">3 次 launch</text>
+<path class="main" d="M 308 146 L 322 146"/>
+<path class="main" d="M 614 146 L 628 146"/>
+<path class="aux" d="M 770 146 L 784 146"/>
+<rect class="panel" x="28" y="210" width="1184" height="108" rx="10"/>
+<text class="pt" x="40" y="234" text-anchor="start">1  @jit_fuser</text>
+<text class="sm" x="40" y="252" text-anchor="start">BiasGeGLUFunction</text>
+<rect class="ghost" x="168" y="220" width="140" height="88" rx="8"/>
+<text class="tx" x="178" y="239" text-anchor="start">y[T,2H] 64 B</text>
+<text class="sm" x="178" y="256" text-anchor="start">bias[2H] 16 B</text>
+<rect class="acc1" x="324" y="220" width="290" height="88" rx="8"/>
+<text class="tx" x="334" y="239" text-anchor="start">1 个编译区域（bias_geglu）</text>
+<text class="sm" x="334" y="256" text-anchor="start">bias + chunk + gelu + 乘门 同一区域</text>
+<text class="sm" x="334" y="271" text-anchor="start">反向 bias_geglu_back 也是一个区域</text>
+<text class="sm" x="334" y="286" text-anchor="start">Megatron 侧 HBM 读 80 B / 写 32 B</text>
+<rect class="ghost" x="630" y="220" width="140" height="88" rx="8"/>
+<text class="tx" x="640" y="239" text-anchor="start">out[T,H] 32 B</text>
+<text class="sm" x="640" y="256" text-anchor="start">物化中间张量 0 B</text>
+<rect class="acc1" x="786" y="220" width="210" height="88" rx="8"/>
+<text class="tx" x="796" y="239" text-anchor="start">80 B</text>
+<text class="sm" x="796" y="256" text-anchor="start">save_for_backward(input, bias)</text>
+<text class="sm" x="796" y="271" text-anchor="start">反向重算 gelu，不存中间量</text>
+<rect class="acc2" x="1012" y="220" width="200" height="88" rx="8"/>
+<text class="tx" x="1022" y="239" text-anchor="start">后端由 torch 决定</text>
+<text class="sm" x="1022" y="256" text-anchor="start">nvFuser → Inductor 随版本换</text>
+<text class="sm" x="1022" y="271" text-anchor="start">编译后端可能挂死 → 需总开关</text>
+<path class="main" d="M 308 264 L 322 264"/>
+<path class="main" d="M 614 264 L 628 264"/>
+<path class="aux" d="M 770 264 L 784 264"/>
+<rect class="panel" x="28" y="328" width="1184" height="108" rx="10"/>
+<text class="pt" x="40" y="352" text-anchor="start">2  fp8 存储</text>
+<text class="sm" x="40" y="370" text-anchor="start">fp8_input_store</text>
+<rect class="ghost" x="168" y="338" width="140" height="88" rx="8"/>
+<text class="tx" x="178" y="357" text-anchor="start">同上</text>
+<text class="sm" x="178" y="374" text-anchor="start">仅 SwiGLU 放行</text>
+<rect class="neutral" x="324" y="338" width="290" height="88" rx="8"/>
+<text class="tx" x="334" y="357" text-anchor="start">区域不变，只改保存</text>
+<text class="sm" x="334" y="374" text-anchor="start">input.to(float8_e4m3fn) 后再保存</text>
+<text class="sm" x="334" y="389" text-anchor="start">反向先 .to(ori_input_dtype) 还原</text>
+<rect class="ghost" x="630" y="338" width="140" height="88" rx="8"/>
+<text class="tx" x="640" y="357" text-anchor="start">out[T,H] 32 B</text>
+<text class="sm" x="640" y="374" text-anchor="start">反向输入已量化</text>
+<rect class="acc1" x="786" y="338" width="210" height="88" rx="8"/>
+<text class="tx" x="796" y="357" text-anchor="start">48 B</text>
+<text class="sm" x="796" y="374" text-anchor="start">input 32 B（1 B/元素）+ bias 16 B</text>
+<text class="sm" x="796" y="389" text-anchor="start">比第 1 级少 32 B</text>
+<rect class="acc2" x="1012" y="338" width="200" height="88" rx="8"/>
+<text class="tx" x="1022" y="357" text-anchor="start">精度换显存</text>
+<text class="sm" x="1022" y="374" text-anchor="start">反向看到的是 e4m3 量化后的输入</text>
+<text class="sm" x="1022" y="389" text-anchor="start">构造期只放行 SwiGLU</text>
+<path class="main" d="M 308 382 L 322 382"/>
+<path class="main" d="M 614 382 L 628 382"/>
+<path class="aux" d="M 770 382 L 784 382"/>
+<rect class="panel" x="28" y="446" width="1184" height="108" rx="10"/>
+<text class="pt" x="40" y="470" text-anchor="start">3  weighted_*</text>
+<text class="sm" x="40" y="488" text-anchor="start">MoE 路由权重</text>
+<rect class="ghost" x="168" y="456" width="140" height="88" rx="8"/>
+<text class="tx" x="178" y="475" text-anchor="start">同上</text>
+<text class="sm" x="178" y="492" text-anchor="start">w[T,1] fp32 16 B</text>
+<rect class="acc1" x="324" y="456" width="290" height="88" rx="8"/>
+<text class="tx" x="334" y="475" text-anchor="start">乘权重折进同一区域</text>
+<text class="sm" x="334" y="492" text-anchor="start">out = act(y) * weights</text>
+<text class="sm" x="334" y="507" text-anchor="start">对照：区域外单独乘 = 多 1 个 kernel</text>
+<text class="sm" x="334" y="522" text-anchor="start">（读 48 B / 写 32 B）</text>
+<rect class="ghost" x="630" y="456" width="140" height="88" rx="8"/>
+<text class="tx" x="640" y="475" text-anchor="start">out[T,H] 32 B</text>
+<text class="sm" x="640" y="492" text-anchor="start">权重梯度归约成 [T,1]</text>
+<rect class="acc2" x="786" y="456" width="210" height="88" rx="8"/>
+<text class="tx" x="796" y="475" text-anchor="start">96 B（bf16）</text>
+<text class="sm" x="796" y="492" text-anchor="start">多存 weights 16 B</text>
+<text class="sm" x="796" y="507" text-anchor="start">叠加 fp8 后 64 B</text>
+<rect class="acc2" x="1012" y="456" width="200" height="88" rx="8"/>
+<text class="tx" x="1022" y="475" text-anchor="start">只服务 MoE</text>
+<text class="sm" x="1022" y="492" text-anchor="start">要求 per-token probs 已置换</text>
+<text class="sm" x="1022" y="507" text-anchor="start">与 op-fuser 路径二选一</text>
+<path class="main" d="M 308 500 L 322 500"/>
+<path class="main" d="M 614 500 L 628 500"/>
+<path class="aux" d="M 770 500 L 784 500"/>
+<rect class="panel" x="28" y="564" width="1184" height="108" rx="10"/>
+<text class="pt" x="40" y="588" text-anchor="start">4  TE op-fuser</text>
+<text class="sm" x="40" y="606" text-anchor="start">TEGroupedMLP 融合路径</text>
+<rect class="ghost" x="168" y="574" width="140" height="88" rx="8"/>
+<text class="tx" x="178" y="593" text-anchor="start">permuted_hidden</text>
+<text class="sm" x="178" y="610" text-anchor="start">计数留在 device</text>
+<rect class="ghost" x="324" y="574" width="290" height="88" rx="8"/>
+<text class="tx" x="334" y="593" text-anchor="start">一条 te.pytorch.ops.Sequential 链</text>
+<text class="sm" x="334" y="610" text-anchor="start">GroupedLinear → Scaled 激活 → GroupedLinear</text>
+<text class="sm" x="334" y="625" text-anchor="start">Scaled 激活消费 permuted_probs</text>
+<text class="sm" x="334" y="640" text-anchor="start">y 是否落 HBM 由 TE 决定（依赖边界）</text>
+<rect class="ghost" x="630" y="574" width="140" height="88" rx="8"/>
+<text class="tx" x="640" y="593" text-anchor="start">专家输出</text>
+<text class="sm" x="640" y="610" text-anchor="start">对齐段再 unpad</text>
+<rect class="ghost" x="786" y="574" width="210" height="88" rx="8"/>
+<text class="tx" x="796" y="593" text-anchor="start">TE 内部</text>
+<text class="sm" x="796" y="610" text-anchor="start">Megatron 只证明链与参数共享</text>
+<text class="sm" x="796" y="625" text-anchor="start">不叙述 TE 的保存策略</text>
+<rect class="acc2" x="1012" y="574" width="200" height="88" rx="8"/>
+<text class="tx" x="1022" y="593" text-anchor="start">前置最多</text>
+<text class="sm" x="1022" y="610" text-anchor="start">TE 2.14、专家 TP=1、环境变量</text>
+<text class="sm" x="1022" y="625" text-anchor="start">无 GroupedTensor 则报错</text>
+<path class="main" d="M 308 618 L 322 618"/>
+<path class="main" d="M 614 618 L 628 618"/>
+<path class="aux" d="M 770 618 L 784 618"/>
+<rect class="panel" x="28" y="690" width="1184" height="96" rx="10"/>
+<text class="pt" x="40" y="714" text-anchor="start">C  交叉熵通信融合</text>
+<text class="sm" x="40" y="732" text-anchor="start">fused_cross_entropy.py</text>
+<rect class="ghost" x="168" y="700" width="470" height="76" rx="8"/>
+<text class="tx" x="178" y="719" text-anchor="start">非融合：3 次 all-reduce</text>
+<text class="sm" x="178" y="736" text-anchor="start">MAX(logits_max) → SUM(predicted_logits) → SUM(sum_exp_logits)</text>
+<text class="sm" x="178" y="751" text-anchor="start">每次都是一条独立的 TP 集合通信</text>
+<path class="main" d="M 638 738 L 660 738"/>
+<rect class="acc1" x="662" y="700" width="340" height="76" rx="8"/>
+<text class="tx" x="672" y="719" text-anchor="start">融合：2 次 all-reduce</text>
+<text class="sm" x="672" y="736" text-anchor="start">MAX(logits_max) 不变</text>
+<text class="sm" x="672" y="751" text-anchor="start">cat(predicted, sum_exp) → 一个 [8] 张量一次 SUM</text>
+<rect class="acc2" x="1024" y="700" width="188" height="76" rx="8"/>
+<text class="tx" x="1034" y="719" text-anchor="start">省的是一次集合通信的延迟</text>
+<text class="sm" x="1034" y="736" text-anchor="start">数学结果不变；结果 split 回两半</text>
+<text class="sm" x="1034" y="751" text-anchor="start">@jit_fuser 只包住本地算术</text>
+<text class="cap" x="28" y="808" text-anchor="start">T=4, H=4, bf16=2 B/元素, fp8=1 B/元素；蓝框=本级新省下的部分，橙框=本级新付出的部分。</text>
+</svg>

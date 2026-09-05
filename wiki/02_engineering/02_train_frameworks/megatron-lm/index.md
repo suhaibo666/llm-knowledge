@@ -36,8 +36,8 @@ title: "Megatron-LM 知识地图"
 | 18 | [[18_megatron_recompute_analysis]] | 从激活留存推导 full/selective，量化分组回放峰值并连接 Megatron 配置与调度。 |
 | 19 | [[19_megatron_dist_checkpointing_analysis]] | sharded state、并行无关保存、加载与重分片。 |
 | 20 | [[20_megatron_comm_overlap_analysis]] | 跨 TP/CP/EP/PP/DP 的时间线、资源竞争与诊断。 |
-| 21 | [[21_megatron_fusion_operators_analysis]] | 融合算子的触发条件、后端实现与回退目录。 |
-| 22 | [[22_megatron_memory_optimization_analysis]] | offload、paged stash、buffer reuse 与通信内存池。 |
+| 21 | [[21_megatron_fusion_operators_analysis]] | 从逐点 JIT 融合到 GEMM 链与通信融合的四级阶梯，及各级的后端选择与失败边界。 |
+| 22 | [[22_megatron_memory_optimization_analysis]] | 从整层换出、子模块换出到分页暂存与分块优化器换出，及常驻通信池的反向取舍。 |
 | 23 | [[23_megatron_precision_cudagraph_fusion_analysis]] | FP8/FP4、CUDA Graph 与算子融合的组合边界。 |
 | 24 | [[24_megatron_linear_cross_entropy_analysis]] | 不物化完整 logits 的 fused linear cross-entropy。 |
 | 25 | [[25_megatron_nonuniform_tp_analysis]] | 预定义混合 TP 布局、梯度重共享与冷重启边界。 |

@@ -52,8 +52,8 @@ title: "Megatron-LM 阅读路径"
 |---|---|---|
 | [[18_megatron_recompute_analysis]] | 10 | 能比较 full/selective recompute 的显存与计算代价。 |
 | [[20_megatron_comm_overlap_analysis]] | 按配置选读 12–16 | 能画出跨轴 dispatch/wait 时间线，并诊断资源竞争与静默无收益。 |
-| [[21_megatron_fusion_operators_analysis]] | 20 | 能按触发条件、后端与回退路径检索融合算子。 |
-| [[22_megatron_memory_optimization_analysis]] | 18、20、21 | 能定位 offload、paged stash、buffer reuse 与通信池的状态所有权。 |
+| [[21_megatron_fusion_operators_analysis]] | 20 | 能说出每一级融合吃掉的是哪条 kernel 边界、付出什么、不可用时在哪一层失败。 |
+| [[22_megatron_memory_optimization_analysis]] | 18、20、21 | 能画出一块激活或优化器状态在整层换出、子模块换出、分页暂存与分块换出下的搬运时序与等待点。 |
 | [[23_megatron_precision_cudagraph_fusion_analysis]] | 21 | 能比较 FP8/FP4 recipe、CUDA Graph 与 fusion 的组合边界。 |
 | [[24_megatron_linear_cross_entropy_analysis]] | 12 | 能解释 LM head 与 cross-entropy 怎样避免完整 logits 物化。 |
 | [[26_megatron_optimizer_step_internals_deepdive]] | 16、23 | 能走通 optimizer factory、混合精度 step、LR/WD、CPU offload 与 Muon/μP。 |

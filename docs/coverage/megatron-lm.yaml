@@ -2638,3 +2638,51 @@ variant_axes:
     page_terms: [full_iteration, warmup]
     figures: [assets/megatron_recompute_mhc.svg]
     figure_terms: [full_iteration, captured lifecycle]
+- owner: 21_megatron_fusion_operators_analysis
+  selector: bias_activation_fusion
+  source: megatron/core/transformer/mlp.py::MLP.forward
+  variants:
+  - name: eager
+    page_terms: [else 分支]
+    figures: [assets/megatron_fusion_ladder.svg]
+    figure_terms: [eager]
+  - name: jit-fused
+    page_terms: [BiasGeGLUFunction, bias_swiglu_impl]
+    figures: [assets/megatron_fusion_ladder.svg]
+    figure_terms: [jit_fuser]
+  - name: fp8-input-store
+    page_terms: [fp8_input_store]
+    figures: [assets/megatron_fusion_ladder.svg]
+    figure_terms: [fp8 存储]
+  - name: weighted
+    page_terms: [weighted_bias_swiglu_impl, weighted_bias_quick_geglu_impl]
+    figures: [assets/megatron_fusion_ladder.svg]
+    figure_terms: [weighted_*]
+  - name: te-op-fuser
+    page_terms: [_fused_forward, _is_fused_impl_supported]
+    figures: [assets/megatron_fusion_ladder.svg]
+    figure_terms: [TE op-fuser]
+- owner: 22_megatron_memory_optimization_analysis
+  selector: offload_modules
+  source: megatron/core/transformer/transformer_layer.py::TransformerLayer._set_offload_modules
+  variants:
+  - name: core_attn
+    page_terms: [core_attn]
+    figures: [assets/megatron_memory_offload_timeline.svg]
+    figure_terms: [core_attn]
+  - name: expert_fc1
+    page_terms: [expert_fc1]
+    figures: [assets/megatron_memory_offload_timeline.svg]
+    figure_terms: [expert_fc1]
+- owner: 22_megatron_memory_optimization_analysis
+  selector: moe_paged_stash_buffer_size_factor_cpu
+  source: megatron/core/transformer/moe/ops/paged_stash.py::paged_stash_copy_kernel
+  variants:
+  - name: cuda-only
+    page_terms: [overflow]
+    figures: [assets/megatron_memory_paged_stash.svg]
+    figure_terms: [cpu factor 0]
+  - name: host-spill
+    page_terms: [host_spill]
+    figures: [assets/megatron_memory_paged_stash.svg]
+    figure_terms: [cpu factor 0.5]

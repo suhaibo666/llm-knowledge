@@ -26,6 +26,12 @@ All source ingestions and significant wiki updates are logged here.
 - [[18_megatron_recompute_analysis]] 保持特性分析骨架，从反向所需张量推导逐层 full、uniform 分组、block 部分层、selective 与输出丢弃；每种方案就地解释保存/回放、容量收益及计算通信代价，再接入模型、并行、调度和融合边界。保留已有十个模块、兄弟入口、配置契约和源码纠错。
 - 新增普通 MHA/GELU 层的独立存储账本与矩阵乘 FLOPs 推导，明确教学假设和后端边界；使用同一 24 层、四份待反向记录的事件模型，说明 uniform 分组减少边界留存却可能抬高回放峰值。容量图由脚本计算，回归同时核对正文、存储释放与图产物；解析结果不作为 GPU 实测。
 
+## 2026-09-05：Megatron 21–22 按融合阶梯与显存搬运阶梯重组叙述
+
+- [[21_megatron_fusion_operators_analysis]] 用同一块 FC1 输出 y[T=4, 2H=8] 依次讲完 eager、`@jit_fuser` 区域、fp8 存储、加权变体与 TE op-fuser 链，再讲带归约的手写 kernel、GroupedTensor 与交叉熵通信融合，最后把各级的后端选择与失败边界列成一张表。修正两处旧说法：`--disable-jit-fuser` 只改写模块变量，对已 import 并装饰的函数无效（含 #2058 自己改的 `_apply_output_gate`，按导入链与装饰器语义推出）；融合交叉熵是 3 次 all-reduce 变 2 次，不是"减半"。旧页第 8 节的各增量条目按机制并入对应级，`[!update]` 时间线归本日志。
+- [[22_megatron_memory_optimization_analysis]] 按整层换出、子模块换出、分页暂存、分块优化器换出重写主线，用 3 层 × 2 组的仿真给出 margin=2、预取距离等于 margin、峰值 672 MB 降到 224 MB，用 3 个专家层的算例给出 480 行、528 行、9 页的预定与两步的页分配、溢写与 overflow。FP8/FP4 参数、序列并行、CUDA Graph 缓冲引用计数、rerun 状态机分别改归 23、12、23、28 号页；resharding 双缓冲不再单列。旧页的 `[!deprecated]`、`[!contradiction]` 历史（TensorReusePool 删除、optimizer_state_offloader 重写、#5170/#5366 往复）保留为趋势锚点。
+- 两页配置 owner 字段一个不少（21：26 项 TransformerConfig、`deterministic_mode`、`disable_jit_fuser`；22：12 项 TransformerConfig、6 项 ModelParallelConfig）。新增 `tools/figs/svg/megatron_fusion_figures.mjs` 与 `megatron_memory_figures.mjs` 及其 node 测试，图上数字全部由脚本算出并与正文逐个对齐；23、39 号页的旧章节号入链、域 index 与课程页定位同步修正。
+
 ## 2026-09-05：Megatron 14–15 按基础方案到优化方案重组叙述
 
 - [[14_megatron_ep_analysis]] 用同一组四 token、四专家路线，依次讲完 AllGather、AllToAll、DeepEP、HybridEP 的动机、输入排列、专家计算、回送与反向，再说明 DeepEPv2 和 NCCL-EP 的分支取舍。组件、选择入口与并行轴接线移到源码章节；修正专家归属由建模固定、AllGather 仍需 CPU 计数，以及两 rank 算例不能直接证明 AllToAll 节省 hidden 通信量。

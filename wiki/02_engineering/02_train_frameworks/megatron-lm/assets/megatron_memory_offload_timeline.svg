@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 358" width="1240" height="358" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .fcell{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .bcell{fill:#F6DFC8;stroke:#fff;stroke-width:.8}
+  .copy{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .keep{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.2}
+  .bub{fill:#F1F3F7;stroke:#fff;stroke-width:.8}
+  .page{fill:#fff;stroke:#AEB6C2;stroke-width:1}
+  .pagec{fill:#DCE9FB;stroke:#2563EB;stroke-width:1}
+  .pageh{fill:#F6DFC8;stroke:#C3651F;stroke-width:1}
+  .pagex{fill:#F1F3F7;stroke:#C3651F;stroke-width:1.2;stroke-dasharray:3 2}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　子模块级 offload：组提交触发 D2H，反向起点提前一组预取 H2D，margin 组不出 GPU</text>
+<text class="su" x="28" y="52" text-anchor="start">PP=1、1 个 microbatch、3 层 × 2 组；前向每组 10、反向每组 20 单位；PCIe 16 MB/单位。所有格子由仿真算出。</text>
+<text class="rank" x="138" y="121" text-anchor="end">主流（计算）</text>
+<rect class="ghost" x="150" y="100" width="840" height="34" rx="4"/>
+<text class="rank" x="138" y="171" text-anchor="end">d2h_stream</text>
+<rect class="ghost" x="150" y="150" width="840" height="34" rx="4"/>
+<text class="rank" x="138" y="221" text-anchor="end">h2d_stream</text>
+<rect class="ghost" x="150" y="200" width="840" height="34" rx="4"/>
+<path class="gl" d="M 150 94 L 150 238"/>
+<text class="sm" x="150" y="90" text-anchor="middle">0</text>
+<path class="gl" d="M 243.33333333333334 94 L 243.33333333333334 238"/>
+<text class="sm" x="243.33333333333334" y="90" text-anchor="middle">20</text>
+<path class="gl" d="M 336.6666666666667 94 L 336.6666666666667 238"/>
+<text class="sm" x="336.6666666666667" y="90" text-anchor="middle">40</text>
+<path class="gl" d="M 430 94 L 430 238"/>
+<text class="sm" x="430" y="90" text-anchor="middle">60</text>
+<path class="gl" d="M 523.3333333333334 94 L 523.3333333333334 238"/>
+<text class="sm" x="523.3333333333334" y="90" text-anchor="middle">80</text>
+<path class="gl" d="M 616.6666666666667 94 L 616.6666666666667 238"/>
+<text class="sm" x="616.6666666666667" y="90" text-anchor="middle">100</text>
+<path class="gl" d="M 710 94 L 710 238"/>
+<text class="sm" x="710" y="90" text-anchor="middle">120</text>
+<path class="gl" d="M 803.3333333333334 94 L 803.3333333333334 238"/>
+<text class="sm" x="803.3333333333334" y="90" text-anchor="middle">140</text>
+<path class="gl" d="M 896.6666666666667 94 L 896.6666666666667 238"/>
+<text class="sm" x="896.6666666666667" y="90" text-anchor="middle">160</text>
+<path class="gl" d="M 990 94 L 990 238"/>
+<text class="sm" x="990" y="90" text-anchor="middle">180</text>
+<rect class="fcell" x="151" y="103" width="44.666666666666686" height="28" rx="3"/>
+<text class="sm" x="173.33333333333334" y="121" text-anchor="middle">F1a</text>
+<rect class="bcell" x="897.6666666666667" y="103" width="91.33333333333326" height="28" rx="3"/>
+<text class="sm" x="943.3333333333334" y="121" text-anchor="middle">B1a</text>
+<rect class="copy" x="197.66666666666669" y="153" width="26" height="28" rx="3"/>
+<text class="sm" x="210.66666666666669" y="171" text-anchor="middle">96</text>
+<path class="aux" d="M 196.66666666666669 134 L 197.66666666666669 150"/>
+<rect class="copy" x="804.3333333333334" y="203" width="26" height="28" rx="3"/>
+<text class="sm" x="817.3333333333334" y="221" text-anchor="middle">96</text>
+<path class="main" d="M 830.3333333333334 200 L 897.6666666666667 134"/>
+<rect class="fcell" x="197.66666666666669" y="103" width="44.66666666666666" height="28" rx="3"/>
+<text class="sm" x="220" y="121" text-anchor="middle">F1f</text>
+<rect class="bcell" x="804.3333333333334" y="103" width="91.33333333333337" height="28" rx="3"/>
+<text class="sm" x="850" y="121" text-anchor="middle">B1f</text>
+<rect class="copy" x="244.33333333333334" y="153" width="35.33333333333334" height="28" rx="3"/>
+<text class="sm" x="262" y="171" text-anchor="middle">128</text>
+<path class="aux" d="M 243.33333333333334 134 L 244.33333333333334 150"/>
+<rect class="copy" x="711" y="203" width="35.33333333333337" height="28" rx="3"/>
+<text class="sm" x="728.6666666666667" y="221" text-anchor="middle">128</text>
+<path class="main" d="M 746.3333333333334 200 L 804.3333333333334 134"/>
+<rect class="fcell" x="244.33333333333334" y="103" width="44.66666666666666" height="28" rx="3"/>
+<text class="sm" x="266.6666666666667" y="121" text-anchor="middle">F2a</text>
+<rect class="bcell" x="711" y="103" width="91.33333333333337" height="28" rx="3"/>
+<text class="sm" x="756.6666666666667" y="121" text-anchor="middle">B2a</text>
+<rect class="copy" x="291" y="153" width="26" height="28" rx="3"/>
+<text class="sm" x="304" y="171" text-anchor="middle">96</text>
+<path class="aux" d="M 290 134 L 291 150"/>
+<rect class="copy" x="617.6666666666667" y="203" width="26" height="28" rx="3"/>
+<text class="sm" x="630.6666666666667" y="221" text-anchor="middle">96</text>
+<path class="main" d="M 643.6666666666667 200 L 711 134"/>
+<rect class="fcell" x="291" y="103" width="44.666666666666686" height="28" rx="3"/>
+<text class="sm" x="313.33333333333337" y="121" text-anchor="middle">F2f</text>
+<rect class="bcell" x="617.6666666666667" y="103" width="91.33333333333326" height="28" rx="3"/>
+<text class="sm" x="663.3333333333334" y="121" text-anchor="middle">B2f</text>
+<rect class="copy" x="337.6666666666667" y="153" width="35.333333333333314" height="28" rx="3"/>
+<text class="sm" x="355.33333333333337" y="171" text-anchor="middle">128</text>
+<path class="aux" d="M 336.6666666666667 134 L 337.6666666666667 150"/>
+<rect class="copy" x="524.3333333333334" y="203" width="35.33333333333337" height="28" rx="3"/>
+<text class="sm" x="542" y="221" text-anchor="middle">128</text>
+<path class="main" d="M 559.6666666666667 200 L 617.6666666666667 134"/>
+<rect class="fcell" x="337.6666666666667" y="103" width="44.666666666666686" height="28" rx="3"/>
+<text class="sm" x="360" y="121" text-anchor="middle">F3a</text>
+<rect class="keep" x="524.3333333333334" y="103" width="91.33333333333337" height="28" rx="3"/>
+<text class="sm" x="570" y="121" text-anchor="middle">B3a</text>
+<rect class="fcell" x="384.33333333333337" y="103" width="44.66666666666663" height="28" rx="3"/>
+<text class="sm" x="406.6666666666667" y="121" text-anchor="middle">F3f</text>
+<rect class="keep" x="431" y="103" width="91.33333333333337" height="28" rx="3"/>
+<text class="sm" x="476.6666666666667" y="121" text-anchor="middle">B3f</text>
+<path class="cost" d="M 430 94 L 430 238"/>
+<text class="costtx" x="434" y="250" text-anchor="start">前向结束 → 反向开始</text>
+<text class="rank" x="138" y="274" text-anchor="end">GPU 常驻激活</text>
+<rect class="ghost" x="150" y="262" width="840" height="40" rx="4"/>
+<rect class="copy" x="196.66666666666669" y="284.57142857142856" width="28" height="15.428571428571427"/>
+<rect class="copy" x="243.33333333333334" y="279.42857142857144" width="37.33333333333334" height="20.57142857142857"/>
+<rect class="copy" x="290" y="284.57142857142856" width="28" height="15.428571428571427"/>
+<rect class="copy" x="336.6666666666667" y="279.42857142857144" width="37.333333333333314" height="20.57142857142857"/>
+<rect class="copy" x="383.33333333333337" y="284.57142857142856" width="46.66666666666663" height="15.428571428571427"/>
+<rect class="copy" x="430" y="264" width="93.33333333333337" height="36"/>
+<rect class="copy" x="523.3333333333334" y="284.57142857142856" width="93.33333333333337" height="15.428571428571427"/>
+<text class="costtx" x="998" y="276" text-anchor="start">峰值 224 MB（有 offload）</text>
+<text class="sm" x="998" y="292" text-anchor="start">对照 672 MB（全留 GPU，条高按 224 MB 满格）</text>
+<rect class="acc1" x="998" y="98" width="214" height="62" rx="8"/>
+<text class="tx" x="1008" y="117" text-anchor="start">margin = 2 组</text>
+<text class="sm" x="1008" y="134" text-anchor="start">组名去重数；L3 两组不 offload</text>
+<text class="sm" x="1008" y="149" text-anchor="start">反向前两组因此无需等待</text>
+<rect class="acc2" x="998" y="188" width="214" height="62" rx="8"/>
+<text class="tx" x="1008" y="207" text-anchor="start">本例阻塞 0 单位</text>
+<text class="sm" x="1008" y="224" text-anchor="start">margin=0 时暴露 14 单位</text>
+<text class="sm" x="1008" y="239" text-anchor="start">最后两组只能在 tensor_pop 同步拷回</text>
+<text class="cap" x="28" y="328" text-anchor="start">F/B = 前向/反向，1a = 第 1 层 core_attn，1f = 第 1 层 expert_fc1；橙=须先等 reload 事件的反向，蓝边=margin 组的反向；拷贝条上的数字是组的 MB 数。</text>
+<text class="cap" x="28" y="344" text-anchor="start">D2H 在 group_offload 之后由 d2h_stream 串行发起；H2D 由前一个反向组的 start 函数触发，因此预取距离 = margin。</text>
+</svg>

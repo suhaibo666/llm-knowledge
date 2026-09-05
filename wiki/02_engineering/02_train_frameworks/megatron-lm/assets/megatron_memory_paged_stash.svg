@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 540" width="1240" height="540" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .fcell{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .bcell{fill:#F6DFC8;stroke:#fff;stroke-width:.8}
+  .copy{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .keep{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.2}
+  .bub{fill:#F1F3F7;stroke:#fff;stroke-width:.8}
+  .page{fill:#fff;stroke:#AEB6C2;stroke-width:1}
+  .pagec{fill:#DCE9FB;stroke:#2563EB;stroke-width:1}
+  .pageh{fill:#F6DFC8;stroke:#C3651F;stroke-width:1}
+  .pagex{fill:#F1F3F7;stroke:#C3651F;stroke-width:1.2;stroke-dasharray:3 2}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 2　paged stash：按 capture 迭代的平均 token 数预定页数，复制 kernel 按 free list 余量三选一</text>
+<text class="su" x="28" y="52" text-anchor="start">3 个 MoE 层、page=64、每层 permuted 缓冲 256 行、容量因子 1.6 → avg=160；三层同时在存 → 480 行；cuda factor 1.1 → 528 行 → 9 页。</text>
+<rect class="panel" x="28" y="92" width="400" height="236" rx="10"/>
+<text class="pt" x="40" y="114" text-anchor="start">PagedStashBuffer[dtype][hidden]</text>
+<text class="sm" x="40" y="132" text-anchor="start">cuda_buffer [9 页 × 64, H]，free list 环形：head/tail</text>
+<rect class="page" x="40" y="142" width="36" height="28" rx="3"/>
+<text class="sm" x="58" y="160" text-anchor="middle">p0</text>
+<rect class="page" x="80" y="142" width="36" height="28" rx="3"/>
+<text class="sm" x="98" y="160" text-anchor="middle">p1</text>
+<rect class="page" x="120" y="142" width="36" height="28" rx="3"/>
+<text class="sm" x="138" y="160" text-anchor="middle">p2</text>
+<rect class="page" x="160" y="142" width="36" height="28" rx="3"/>
+<text class="sm" x="178" y="160" text-anchor="middle">p3</text>
+<rect class="page" x="200" y="142" width="36" height="28" rx="3"/>
+<text class="sm" x="218" y="160" text-anchor="middle">p4</text>
+<rect class="page" x="240" y="142" width="36" height="28" rx="3"/>
+<text class="sm" x="258" y="160" text-anchor="middle">p5</text>
+<rect class="page" x="280" y="142" width="36" height="28" rx="3"/>
+<text class="sm" x="298" y="160" text-anchor="middle">p6</text>
+<rect class="page" x="320" y="142" width="36" height="28" rx="3"/>
+<text class="sm" x="338" y="160" text-anchor="middle">p7</text>
+<rect class="page" x="360" y="142" width="36" height="28" rx="3"/>
+<text class="sm" x="378" y="160" text-anchor="middle">p8</text>
+<text class="sm" x="40" y="192" text-anchor="start">host_buffer（cpu factor 0.5 时）[4 页]，factor 0 时不分配</text>
+<rect class="page" x="40" y="202" width="36" height="28" rx="3"/>
+<text class="sm" x="58" y="220" text-anchor="middle">h0</text>
+<rect class="page" x="80" y="202" width="36" height="28" rx="3"/>
+<text class="sm" x="98" y="220" text-anchor="middle">h1</text>
+<rect class="page" x="120" y="202" width="36" height="28" rx="3"/>
+<text class="sm" x="138" y="220" text-anchor="middle">h2</text>
+<rect class="page" x="160" y="202" width="36" height="28" rx="3"/>
+<text class="sm" x="178" y="220" text-anchor="middle">h3</text>
+<text class="sm" x="40" y="254" text-anchor="start">free_list_head/tail/capacity: shape (2,) = [cuda, host]，全在 device</text>
+<text class="sm" x="40" y="270" text-anchor="start">每个 PagedTensor 只留 page_record[max_pages] 与 spilled_to_host 标志</text>
+<text class="sm" x="40" y="286" text-anchor="start">状态推进：begin → capture（记 max tokens，不用 graph）→ captured</text>
+<text class="dim" x="40" y="302" text-anchor="start">预定：int(480 × 1.1) = 528 行 → ceil/64 = 9 页 = 576 行</text>
+<text class="sm" x="40" y="318" text-anchor="start">页是定长的：碎片只发生在每层最后一页内</text>
+<rect class="panel" x="450" y="92" width="392" height="128" rx="10"/>
+<text class="pt" x="462" y="114" text-anchor="start">步 A 实际 [150, 190, 120]：全部命中 CUDA 页</text>
+<text class="sm" x="462" y="132" text-anchor="start">需求 8 页 vs CUDA 9 页</text>
+<rect class="pagec" x="462" y="144" width="26" height="18" rx="3"/>
+<text class="sm" x="496" y="158" text-anchor="start">L1: 150 tokens → 3 页 → CUDA 页 p0–p2</text>
+<rect class="pagec" x="462" y="166" width="26" height="18" rx="3"/>
+<text class="sm" x="496" y="180" text-anchor="start">L2: 190 tokens → 3 页 → CUDA 页 p3–p5</text>
+<rect class="pagec" x="462" y="188" width="26" height="18" rx="3"/>
+<text class="sm" x="496" y="202" text-anchor="start">L3: 120 tokens → 2 页 → CUDA 页 p6–p7</text>
+<rect class="panel" x="450" y="230" width="392" height="128" rx="10"/>
+<text class="pt" x="462" y="252" text-anchor="start">步 B 偏斜 [150, 250, 220]，cpu factor 0</text>
+<text class="sm" x="462" y="270" text-anchor="start">需求 11 页 vs CUDA 9 页</text>
+<rect class="pagec" x="462" y="282" width="26" height="18" rx="3"/>
+<text class="sm" x="496" y="296" text-anchor="start">L1: 150 tokens → 3 页 → CUDA 页 p0–p2</text>
+<rect class="pagec" x="462" y="304" width="26" height="18" rx="3"/>
+<text class="sm" x="496" y="318" text-anchor="start">L2: 250 tokens → 4 页 → CUDA 页 p3–p6</text>
+<rect class="pagex" x="462" y="326" width="26" height="18" rx="3"/>
+<text class="sm" x="496" y="340" text-anchor="start">L3: 220 tokens → 4 页 → CUDA 不够且无宿主页 → overflow=1</text>
+<rect class="panel" x="450" y="368" width="392" height="128" rx="10"/>
+<text class="pt" x="462" y="390" text-anchor="start">步 B 偏斜，cpu factor 0.5（4 宿主页）</text>
+<text class="sm" x="462" y="408" text-anchor="start">需求 11 页 vs CUDA 9 页</text>
+<rect class="pagec" x="462" y="420" width="26" height="18" rx="3"/>
+<text class="sm" x="496" y="434" text-anchor="start">L1: 150 tokens → 3 页 → CUDA 页 p0–p2</text>
+<rect class="pagec" x="462" y="442" width="26" height="18" rx="3"/>
+<text class="sm" x="496" y="456" text-anchor="start">L2: 250 tokens → 4 页 → CUDA 页 p3–p6</text>
+<rect class="pageh" x="462" y="464" width="26" height="18" rx="3"/>
+<text class="sm" x="496" y="478" text-anchor="start">L3: 220 tokens → 4 页 → 溢写宿主页 h0–h3，host_spill=1</text>
+<rect class="neutral" x="852" y="92" width="360" height="96" rx="8"/>
+<text class="tx" x="862" y="111" text-anchor="start">PagedStashRunner.__call__</text>
+<text class="sm" x="862" y="128" text-anchor="start">每次尝试：跑完 forward-backward</text>
+<text class="sm" x="862" y="143" text-anchor="start">stack(stash_overflow, over_budget, host_spill)</text>
+<text class="sm" x="862" y="158" text-anchor="start">一次 all_reduce(SUM) 跨全 rank 汇总</text>
+<text class="sm" x="862" y="173" text-anchor="start">assert num_tries &lt; 2</text>
+<path class="main" d="M 1032 188 L 1032 204"/>
+<rect class="acc1" x="852" y="206" width="360" height="78" rx="8"/>
+<text class="tx" x="862" y="225" text-anchor="start">仅 host_spill &gt; 0</text>
+<text class="sm" x="862" y="242" text-anchor="start">成功的回退：只打日志</text>
+<text class="sm" x="862" y="257" text-anchor="start">建议调大 factor_cuda</text>
+<text class="sm" x="862" y="272" text-anchor="start">不重跑</text>
+<path class="cost" d="M 1032 284 L 1032 300"/>
+<rect class="acc2" x="852" y="302" width="360" height="96" rx="8"/>
+<text class="tx" x="862" y="321" text-anchor="start">stash_overflow 或 over_budget &gt; 0</text>
+<text class="sm" x="862" y="338" text-anchor="start">prepare_for_rerun：清容量因子、关 paged stash</text>
+<text class="sm" x="862" y="353" text-anchor="start">zero_grad、重置 full CUDA graph、释放页缓冲</text>
+<text class="sm" x="862" y="368" text-anchor="start">同一批 microbatch 整步重跑一次</text>
+<path class="cost" d="M 1032 398 L 1032 414"/>
+<rect class="acc2" x="852" y="416" width="360" height="62" rx="8"/>
+<text class="tx" x="862" y="435" text-anchor="start">TE whole-MoE graph 已捕获</text>
+<text class="sm" x="862" y="452" text-anchor="start">不允许动态回退 → RuntimeError</text>
+<text class="sm" x="862" y="467" text-anchor="start">调大容量因子后重启</text>
+<text class="cap" x="28" y="524" text-anchor="start">蓝=命中 CUDA 页，橙=溢写宿主页或 overflow。同一步 B，宿主页把"重跑一次"变成"只记 host_spill"；重跑上限 1 次。</text>
+</svg>
