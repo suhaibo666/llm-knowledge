@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 850" width="100%" role="img" aria-label="EP token 路由训练闭环：全局四个 token、每 rank 两个本地 token，展开为八条专家边，在本地专家路径消费权重后回到原 token，反向按相反所有权链传播">
+<metadata id="megatron-ep-figure-contract">{"tokensGlobal":4,"tokensLocalPerRank":2,"experts":4,"topk":2,"ep":2,"tp":1,"edges":8,"remoteEdges":4,"remoteUniqueRankCopies":3,"capacityAtHalf":1,"droppedEdgesAtHalf":0,"capacityAtOnePointFive":2,"slotsPerOwnedExpertAfterA2A":4,"realSlotsPerOwnedExpert":2,"zeroSlotsPerOwnedExpert":2,"backends":["DeepEP","DeepEPv2","HybridEP","NCCL-EP"],"inferenceSibling":{"field":"inference_moe_token_dispatcher_type","values":["nccl","nvls"],"classes":["NCCLAllGatherDispatcher","NVLSAllGatherVDispatcher"],"selector":"InferenceMode.is_active","owners":["30_megatron_rl_posttraining_consistency_analysis","31_megatron_inference_engine_analysis"]}}</metadata>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+</style>
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<rect class="card" x="0.5" y="0.5" width="1439" height="849" rx="14"/>
+<text class="ti" x="28" y="38" text-anchor="start">EP 的最小原语：token 所有权只在专家计算期间改变</text>
+<text class="su" x="28" y="60" text-anchor="start">T_global=4 · T_local=2/rank · E=4 · top-k=2 · EP=2 · TP=1；r0=[t0,t1]，r1=[t2,t3]</text>
+<rect class="panel" x="24" y="88" width="236" height="552" rx="12"/>
+<text class="pt" x="40" y="118" text-anchor="start">① 原 token owner</text>
+<text class="su" x="40" y="138" text-anchor="start">每 rank 的序列/样本局部布局</text>
+<rect class="panel" x="284" y="88" width="300" height="552" rx="12"/>
+<text class="pt" x="300" y="118" text-anchor="start">② router 展开 route edge</text>
+<text class="su" x="300" y="138" text-anchor="start">8 条 route edge，其中 4 条跨 rank</text>
+<rect class="panel" x="608" y="88" width="404" height="552" rx="12"/>
+<text class="pt" x="624" y="118" text-anchor="start">③ expert owner 本地计算</text>
+<text class="su" x="624" y="138" text-anchor="start">按本地 expert 连续分段，最忙段决定尾部</text>
+<rect class="panel" x="1036" y="88" width="380" height="552" rx="12"/>
+<text class="pt" x="1052" y="118" text-anchor="start">④ combine 回原位置</text>
+<text class="su" x="1052" y="138" text-anchor="start">逆通信 + 反置换 + 累计已加权 edge</text>
+<rect class="acc1" x="48" y="174" width="188" height="92" rx="8"/>
+<text class="tx" x="142" y="215.5" text-anchor="middle">EP rank 0</text>
+<text class="sm" x="142" y="232.5" text-anchor="middle">原布局：[t0, t1]</text>
+<rect class="acc1" x="48" y="338" width="188" height="92" rx="8"/>
+<text class="tx" x="142" y="379.5" text-anchor="middle">EP rank 1</text>
+<text class="sm" x="142" y="396.5" text-anchor="middle">原布局：[t2, t3]</text>
+<text class="rank" x="48" y="474" text-anchor="start">正确性不变量</text>
+<text class="sm" x="48" y="495" text-anchor="start">输出与 dX 必须回到</text>
+<text class="sm" x="48" y="512" text-anchor="start">这两个初始 token owner。</text>
+<rect class="neutral" x="312" y="164" width="244" height="82" rx="8"/>
+<text class="tx" x="434" y="192" text-anchor="middle">t0 → e0 (p0,0)</text>
+<text class="sm" x="434" y="209" text-anchor="middle">t0 → e3 (p0,3)</text>
+<text class="sm" x="434" y="226" text-anchor="middle">origin = rank0</text>
+<rect class="neutral" x="312" y="272" width="244" height="82" rx="8"/>
+<text class="tx" x="434" y="300" text-anchor="middle">t1 → e1 (p1,1)</text>
+<text class="sm" x="434" y="317" text-anchor="middle">t1 → e2 (p1,2)</text>
+<text class="sm" x="434" y="334" text-anchor="middle">origin = rank0</text>
+<rect class="ghost" x="312" y="380" width="244" height="82" rx="8"/>
+<text class="tx" x="434" y="408" text-anchor="middle">t2 → e2 (p2,2)</text>
+<text class="sm" x="434" y="425" text-anchor="middle">t2 → e3 (p2,3)</text>
+<text class="sm" x="434" y="442" text-anchor="middle">origin = rank1</text>
+<rect class="ghost" x="312" y="488" width="244" height="82" rx="8"/>
+<text class="tx" x="434" y="516" text-anchor="middle">t3 → e0 (p3,0)</text>
+<text class="sm" x="434" y="533" text-anchor="middle">t3 → e1 (p3,1)</text>
+<text class="sm" x="434" y="550" text-anchor="middle">origin = rank1</text>
+<rect class="acc1" x="630" y="164" width="360" height="202" rx="10"/>
+<text class="pt" x="650" y="192" text-anchor="start">EP rank 0：experts 0, 1</text>
+<rect class="ghost" x="650" y="212" width="320" height="62" rx="8"/>
+<text class="tx" x="810" y="230" text-anchor="middle">expert 0: [t0, t3]</text>
+<text class="sm" x="810" y="247" text-anchor="middle">local MLP 消费 p → [p·f0(t0), p·f0(t3)]</text>
+<text class="sm" x="810" y="264" text-anchor="middle">tokens_per_expert = 2</text>
+<rect class="neutral" x="650" y="284" width="320" height="62" rx="8"/>
+<text class="tx" x="810" y="302" text-anchor="middle">expert 1: [t1, t3]</text>
+<text class="sm" x="810" y="319" text-anchor="middle">local MLP 消费 p → [p·f1(t1), p·f1(t3)]</text>
+<text class="sm" x="810" y="336" text-anchor="middle">tokens_per_expert = 2</text>
+<rect class="neutral" x="630" y="394" width="360" height="202" rx="10"/>
+<text class="pt" x="650" y="422" text-anchor="start">EP rank 1：experts 2, 3</text>
+<rect class="ghost" x="650" y="442" width="320" height="62" rx="8"/>
+<text class="tx" x="810" y="460" text-anchor="middle">expert 2: [t1, t2]</text>
+<text class="sm" x="810" y="477" text-anchor="middle">local MLP 消费 p → [p·f2(t1), p·f2(t2)]</text>
+<text class="sm" x="810" y="494" text-anchor="middle">tokens_per_expert = 2</text>
+<rect class="neutral" x="650" y="514" width="320" height="62" rx="8"/>
+<text class="tx" x="810" y="532" text-anchor="middle">expert 3: [t0, t2]</text>
+<text class="sm" x="810" y="549" text-anchor="middle">local MLP 消费 p → [p·f3(t0), p·f3(t2)]</text>
+<text class="sm" x="810" y="566" text-anchor="middle">tokens_per_expert = 2</text>
+<rect class="acc1" x="1064" y="172" width="160" height="72" rx="8"/>
+<text class="tx" x="1144" y="203.5" text-anchor="middle">rank0 输出布局</text>
+<text class="sm" x="1144" y="220.5" text-anchor="middle">y0, y1</text>
+<rect class="acc1" x="1064" y="332" width="160" height="72" rx="8"/>
+<text class="tx" x="1144" y="363.5" text-anchor="middle">rank1 输出布局</text>
+<text class="sm" x="1144" y="380.5" text-anchor="middle">y2, y3</text>
+<rect class="neutral" x="1244" y="236" width="148" height="116" rx="8"/>
+<text class="tx" x="1318" y="281" text-anchor="middle">每个 token 的语义</text>
+<text class="sm" x="1318" y="298" text-anchor="middle">y_i = Σ_e p_i,e f_e(t_i)</text>
+<text class="sm" x="1318" y="315" text-anchor="middle">combine 不再重复乘 p</text>
+<rect class="acc2" x="1064" y="438" width="328" height="144" rx="8"/>
+<text class="tx" x="1228" y="471.5" text-anchor="middle">本例 route / capacity 可核算</text>
+<text class="sm" x="1228" y="488.5" text-anchor="middle">8 条 edge；4 条跨 rank</text>
+<text class="sm" x="1228" y="505.5" text-anchor="middle">f=.5 → C=1；丢 0 条真 edge</text>
+<text class="sm" x="1228" y="522.5" text-anchor="middle">f=1.5 → C=2</text>
+<text class="sm" x="1228" y="539.5" text-anchor="middle">A2A 后每本地 expert 4 slots</text>
+<text class="sm" x="1228" y="556.5" text-anchor="middle">= 2 真 + 2 零</text>
+<path class="main" d="M 236 220 L 312 205"/>
+<path class="main" d="M 236 384 L 312 421"/>
+<path class="main" d="M 556 300 L 630 266"/>
+<path class="main" d="M 556 408 L 630 496"/>
+<path class="main" d="M 990 266 L 1064 208"/>
+<path class="main" d="M 990 496 L 1064 368"/>
+<rect class="panel" x="24" y="664" width="1392" height="134" rx="12"/>
+<text class="pt" x="44" y="694" text-anchor="start">⑤ backward：同一 ownership 图反向走，不是“本地 MLP 算完就结束”</text>
+<text class="dim" x="44" y="716" text-anchor="start">dY → combine⁻¹ → expert backward（穿过 p）→ dispatch⁻¹ → dX</text>
+<text class="sm" x="1384" y="716" text-anchor="end">local expert dW 随后才交给 EDP / optimizer</text>
+<rect class="acc1" x="54" y="731" width="146" height="48" rx="8"/>
+<text class="tx" x="127" y="750.5" text-anchor="middle">dY</text>
+<text class="sm" x="127" y="767.5" text-anchor="middle">原 token owner</text>
+<path class="main" d="M 200 755 L 276 755"/>
+<rect class="neutral" x="276" y="725" width="210" height="60" rx="8"/>
+<text class="tx" x="381" y="750.5" text-anchor="middle">combine⁻¹</text>
+<text class="sm" x="381" y="767.5" text-anchor="middle">grad 发回 expert owner</text>
+<path class="main" d="M 486 755 L 562 755"/>
+<rect class="neutral" x="562" y="725" width="210" height="60" rx="8"/>
+<text class="tx" x="667" y="750.5" text-anchor="middle">expert backward</text>
+<text class="sm" x="667" y="767.5" text-anchor="middle">local dW + route dX</text>
+<path class="main" d="M 772 755 L 848 755"/>
+<rect class="neutral" x="848" y="725" width="210" height="60" rx="8"/>
+<text class="tx" x="953" y="750.5" text-anchor="middle">dispatch⁻¹</text>
+<text class="sm" x="953" y="767.5" text-anchor="middle">grad 回原 token owner</text>
+<path class="main" d="M 1058 755 L 1134 755"/>
+<rect class="acc1" x="1134" y="731" width="146" height="48" rx="8"/>
+<text class="tx" x="1207" y="750.5" text-anchor="middle">dX</text>
+<text class="sm" x="1207" y="767.5" text-anchor="middle">恢复初始布局</text>
+<text class="cap" x="28" y="826" text-anchor="start">读图结论：EP 分 expert 参数；route weight 在本地 expert 路径消费，combine 回送并累计已加权结果，最终恢复初始 token owner。</text>
+</svg>

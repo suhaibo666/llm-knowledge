@@ -1,0 +1,240 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1560 1030" width="100%" role="img"
+ data-contract="P=4;m=8;v=2;N=4;extra_warmup=1;span=38;bubble=6;messages=112;live=12,10,8,6"
+ aria-label="combined-1F1B 在 P=4 m=8 VPP=2 上额外 warmup 一格，峰值 live record 增加到 12 10 8 6；层内将相邻 microbatch 的 backward 和 forward 拆成 compute 与 EP A2A 节点，但 payload 不消失。">
+<style>text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}.card{fill:#fff;stroke:#dfe3e8}.panel{fill:#fafbfc;stroke:#dfe3e8}.title{font-size:19px;font-weight:700;fill:#202630}.sub{font-size:11px;fill:#737b87}.pt{font-size:14px;font-weight:700;fill:#303844}.neutral{fill:#fff;stroke:#b6bdc7}.blue{fill:#eaf1fd;stroke:#2563eb;stroke-width:1.5}.orange{fill:#fcf0e6;stroke:#c3651f;stroke-width:1.5}.f{fill:#2563eb}.fl{fill:#7ca8ef}.b{fill:#c3651f}.bl{fill:#df9c65}.bubble{fill:url(#hatch);stroke:#d5d9de}.cell{font-size:8.5px;font-weight:700;fill:#fff;text-anchor:middle}.bt{font-size:12px;font-weight:700;fill:#303844}.sm{font-size:10.5px;fill:#5f6976}.lane{font-size:10.5px;fill:#596270;text-anchor:end}.arr{fill:none;stroke:#2563eb;stroke-width:1.8;marker-end:url(#ab)}.dep{fill:none;stroke:#8c949f;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#ag)}.cost{font-size:10.5px;font-weight:700;fill:#8a4a11}.foot{font-size:10.5px;fill:#5f6976}</style>
+<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f4f5f6"/><rect width="2" height="6" fill="#dfe2e6"/></pattern><marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2563eb"/></marker><marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8c949f"/></marker></defs>
+<rect class="card" x=".5" y=".5" width="1559" height="1029" rx="14"/>
+<text class="title" x="28" y="38">combined-1F1B：改变 EP A2A 的暴露窗口，不改变 PP 拓扑或 payload</text>
+<text class="sub" x="28" y="60">统一示例 P=4,m=8,v=2,N=4；蓝=forward/compute，橙=backward/EP communication。上图是可计数 host schedule，下图是源码 node 顺序。</text>
+<rect class="panel" x="20" y="80" width="1520" height="286" rx="11"/>
+<text class="pt" x="42" y="110">① VPP host schedule：combined 令每 rank extra warmup = 1</text>
+<text class="lane" x="92" y="149">rank 0</text>
+<rect class="f" x="105" y="132" width="18" height="25" rx="3"/><text class="cell" x="114" y="149">f0</text>
+<rect class="f" x="125" y="132" width="18" height="25" rx="3"/><text class="cell" x="134" y="149">f1</text>
+<rect class="f" x="145" y="132" width="18" height="25" rx="3"/><text class="cell" x="154" y="149">f2</text>
+<rect class="f" x="165" y="132" width="18" height="25" rx="3"/><text class="cell" x="174" y="149">f3</text>
+<rect class="fl" x="185" y="132" width="18" height="25" rx="3"/><text class="cell" x="194" y="149">F0</text>
+<rect class="fl" x="205" y="132" width="18" height="25" rx="3"/><text class="cell" x="214" y="149">F1</text>
+<rect class="fl" x="225" y="132" width="18" height="25" rx="3"/><text class="cell" x="234" y="149">F2</text>
+<rect class="fl" x="245" y="132" width="18" height="25" rx="3"/><text class="cell" x="254" y="149">F3</text>
+<rect class="f" x="265" y="132" width="18" height="25" rx="3"/><text class="cell" x="274" y="149">f4</text>
+<rect class="f" x="285" y="132" width="18" height="25" rx="3"/><text class="cell" x="294" y="149">f5</text>
+<rect class="f" x="305" y="132" width="18" height="25" rx="3"/><text class="cell" x="314" y="149">f6</text>
+<rect class="f" x="325" y="132" width="18" height="25" rx="3"/><text class="cell" x="334" y="149">f7</text>
+<rect class="bl" x="345" y="132" width="18" height="25" rx="3"/><text class="cell" x="354" y="149">B0</text>
+<rect class="bubble" x="365" y="132" width="18" height="25" rx="3"/>
+<rect class="bubble" x="385" y="132" width="18" height="25" rx="3"/>
+<rect class="fl" x="405" y="132" width="18" height="25" rx="3"/><text class="cell" x="414" y="149">F4</text>
+<rect class="bl" x="425" y="132" width="18" height="25" rx="3"/><text class="cell" x="434" y="149">B1</text>
+<rect class="fl" x="445" y="132" width="18" height="25" rx="3"/><text class="cell" x="454" y="149">F5</text>
+<rect class="bl" x="465" y="132" width="18" height="25" rx="3"/><text class="cell" x="474" y="149">B2</text>
+<rect class="fl" x="485" y="132" width="18" height="25" rx="3"/><text class="cell" x="494" y="149">F6</text>
+<rect class="bl" x="505" y="132" width="18" height="25" rx="3"/><text class="cell" x="514" y="149">B3</text>
+<rect class="fl" x="525" y="132" width="18" height="25" rx="3"/><text class="cell" x="534" y="149">F7</text>
+<rect class="b" x="545" y="132" width="18" height="25" rx="3"/><text class="cell" x="554" y="149">b0</text>
+<rect class="b" x="565" y="132" width="18" height="25" rx="3"/><text class="cell" x="574" y="149">b1</text>
+<rect class="b" x="585" y="132" width="18" height="25" rx="3"/><text class="cell" x="594" y="149">b2</text>
+<rect class="bubble" x="605" y="132" width="18" height="25" rx="3"/>
+<rect class="b" x="625" y="132" width="18" height="25" rx="3"/><text class="cell" x="634" y="149">b3</text>
+<rect class="bubble" x="645" y="132" width="18" height="25" rx="3"/>
+<rect class="bl" x="665" y="132" width="18" height="25" rx="3"/><text class="cell" x="674" y="149">B4</text>
+<rect class="bubble" x="685" y="132" width="18" height="25" rx="3"/>
+<rect class="bl" x="705" y="132" width="18" height="25" rx="3"/><text class="cell" x="714" y="149">B5</text>
+<rect class="bubble" x="725" y="132" width="18" height="25" rx="3"/>
+<rect class="bl" x="745" y="132" width="18" height="25" rx="3"/><text class="cell" x="754" y="149">B6</text>
+<rect class="bl" x="765" y="132" width="18" height="25" rx="3"/><text class="cell" x="774" y="149">B7</text>
+<rect class="b" x="785" y="132" width="18" height="25" rx="3"/><text class="cell" x="794" y="149">b4</text>
+<rect class="b" x="805" y="132" width="18" height="25" rx="3"/><text class="cell" x="814" y="149">b5</text>
+<rect class="b" x="825" y="132" width="18" height="25" rx="3"/><text class="cell" x="834" y="149">b6</text>
+<rect class="b" x="845" y="132" width="18" height="25" rx="3"/><text class="cell" x="854" y="149">b7</text>
+<text class="lane" x="92" y="180">rank 1</text>
+<rect class="bubble" x="105" y="163" width="18" height="25" rx="3"/>
+<rect class="f" x="125" y="163" width="18" height="25" rx="3"/><text class="cell" x="134" y="180">f0</text>
+<rect class="f" x="145" y="163" width="18" height="25" rx="3"/><text class="cell" x="154" y="180">f1</text>
+<rect class="f" x="165" y="163" width="18" height="25" rx="3"/><text class="cell" x="174" y="180">f2</text>
+<rect class="f" x="185" y="163" width="18" height="25" rx="3"/><text class="cell" x="194" y="180">f3</text>
+<rect class="fl" x="205" y="163" width="18" height="25" rx="3"/><text class="cell" x="214" y="180">F0</text>
+<rect class="fl" x="225" y="163" width="18" height="25" rx="3"/><text class="cell" x="234" y="180">F1</text>
+<rect class="fl" x="245" y="163" width="18" height="25" rx="3"/><text class="cell" x="254" y="180">F2</text>
+<rect class="fl" x="265" y="163" width="18" height="25" rx="3"/><text class="cell" x="274" y="180">F3</text>
+<rect class="f" x="285" y="163" width="18" height="25" rx="3"/><text class="cell" x="294" y="180">f4</text>
+<rect class="f" x="305" y="163" width="18" height="25" rx="3"/><text class="cell" x="314" y="180">f5</text>
+<rect class="bl" x="325" y="163" width="18" height="25" rx="3"/><text class="cell" x="334" y="180">B0</text>
+<rect class="f" x="345" y="163" width="18" height="25" rx="3"/><text class="cell" x="354" y="180">f6</text>
+<rect class="bl" x="365" y="163" width="18" height="25" rx="3"/><text class="cell" x="374" y="180">B1</text>
+<rect class="f" x="385" y="163" width="18" height="25" rx="3"/><text class="cell" x="394" y="180">f7</text>
+<rect class="bl" x="405" y="163" width="18" height="25" rx="3"/><text class="cell" x="414" y="180">B2</text>
+<rect class="fl" x="425" y="163" width="18" height="25" rx="3"/><text class="cell" x="434" y="180">F4</text>
+<rect class="bl" x="445" y="163" width="18" height="25" rx="3"/><text class="cell" x="454" y="180">B3</text>
+<rect class="fl" x="465" y="163" width="18" height="25" rx="3"/><text class="cell" x="474" y="180">F5</text>
+<rect class="b" x="485" y="163" width="18" height="25" rx="3"/><text class="cell" x="494" y="180">b0</text>
+<rect class="fl" x="505" y="163" width="18" height="25" rx="3"/><text class="cell" x="514" y="180">F6</text>
+<rect class="b" x="525" y="163" width="18" height="25" rx="3"/><text class="cell" x="534" y="180">b1</text>
+<rect class="fl" x="545" y="163" width="18" height="25" rx="3"/><text class="cell" x="554" y="180">F7</text>
+<rect class="b" x="565" y="163" width="18" height="25" rx="3"/><text class="cell" x="574" y="180">b2</text>
+<rect class="bubble" x="585" y="163" width="18" height="25" rx="3"/>
+<rect class="b" x="605" y="163" width="18" height="25" rx="3"/><text class="cell" x="614" y="180">b3</text>
+<rect class="bubble" x="625" y="163" width="18" height="25" rx="3"/>
+<rect class="bl" x="645" y="163" width="18" height="25" rx="3"/><text class="cell" x="654" y="180">B4</text>
+<rect class="bubble" x="665" y="163" width="18" height="25" rx="3"/>
+<rect class="bl" x="685" y="163" width="18" height="25" rx="3"/><text class="cell" x="694" y="180">B5</text>
+<rect class="bubble" x="705" y="163" width="18" height="25" rx="3"/>
+<rect class="bl" x="725" y="163" width="18" height="25" rx="3"/><text class="cell" x="734" y="180">B6</text>
+<rect class="bl" x="745" y="163" width="18" height="25" rx="3"/><text class="cell" x="754" y="180">B7</text>
+<rect class="b" x="765" y="163" width="18" height="25" rx="3"/><text class="cell" x="774" y="180">b4</text>
+<rect class="b" x="785" y="163" width="18" height="25" rx="3"/><text class="cell" x="794" y="180">b5</text>
+<rect class="b" x="805" y="163" width="18" height="25" rx="3"/><text class="cell" x="814" y="180">b6</text>
+<rect class="b" x="825" y="163" width="18" height="25" rx="3"/><text class="cell" x="834" y="180">b7</text>
+<rect class="bubble" x="845" y="163" width="18" height="25" rx="3"/>
+<text class="lane" x="92" y="211">rank 2</text>
+<rect class="bubble" x="105" y="194" width="18" height="25" rx="3"/>
+<rect class="bubble" x="125" y="194" width="18" height="25" rx="3"/>
+<rect class="f" x="145" y="194" width="18" height="25" rx="3"/><text class="cell" x="154" y="211">f0</text>
+<rect class="f" x="165" y="194" width="18" height="25" rx="3"/><text class="cell" x="174" y="211">f1</text>
+<rect class="f" x="185" y="194" width="18" height="25" rx="3"/><text class="cell" x="194" y="211">f2</text>
+<rect class="f" x="205" y="194" width="18" height="25" rx="3"/><text class="cell" x="214" y="211">f3</text>
+<rect class="fl" x="225" y="194" width="18" height="25" rx="3"/><text class="cell" x="234" y="211">F0</text>
+<rect class="fl" x="245" y="194" width="18" height="25" rx="3"/><text class="cell" x="254" y="211">F1</text>
+<rect class="fl" x="265" y="194" width="18" height="25" rx="3"/><text class="cell" x="274" y="211">F2</text>
+<rect class="fl" x="285" y="194" width="18" height="25" rx="3"/><text class="cell" x="294" y="211">F3</text>
+<rect class="bl" x="305" y="194" width="18" height="25" rx="3"/><text class="cell" x="314" y="211">B0</text>
+<rect class="f" x="325" y="194" width="18" height="25" rx="3"/><text class="cell" x="334" y="211">f4</text>
+<rect class="bl" x="345" y="194" width="18" height="25" rx="3"/><text class="cell" x="354" y="211">B1</text>
+<rect class="f" x="365" y="194" width="18" height="25" rx="3"/><text class="cell" x="374" y="211">f5</text>
+<rect class="bl" x="385" y="194" width="18" height="25" rx="3"/><text class="cell" x="394" y="211">B2</text>
+<rect class="f" x="405" y="194" width="18" height="25" rx="3"/><text class="cell" x="414" y="211">f6</text>
+<rect class="bl" x="425" y="194" width="18" height="25" rx="3"/><text class="cell" x="434" y="211">B3</text>
+<rect class="f" x="445" y="194" width="18" height="25" rx="3"/><text class="cell" x="454" y="211">f7</text>
+<rect class="b" x="465" y="194" width="18" height="25" rx="3"/><text class="cell" x="474" y="211">b0</text>
+<rect class="fl" x="485" y="194" width="18" height="25" rx="3"/><text class="cell" x="494" y="211">F4</text>
+<rect class="b" x="505" y="194" width="18" height="25" rx="3"/><text class="cell" x="514" y="211">b1</text>
+<rect class="fl" x="525" y="194" width="18" height="25" rx="3"/><text class="cell" x="534" y="211">F5</text>
+<rect class="b" x="545" y="194" width="18" height="25" rx="3"/><text class="cell" x="554" y="211">b2</text>
+<rect class="fl" x="565" y="194" width="18" height="25" rx="3"/><text class="cell" x="574" y="211">F6</text>
+<rect class="b" x="585" y="194" width="18" height="25" rx="3"/><text class="cell" x="594" y="211">b3</text>
+<rect class="fl" x="605" y="194" width="18" height="25" rx="3"/><text class="cell" x="614" y="211">F7</text>
+<rect class="bl" x="625" y="194" width="18" height="25" rx="3"/><text class="cell" x="634" y="211">B4</text>
+<rect class="bubble" x="645" y="194" width="18" height="25" rx="3"/>
+<rect class="bl" x="665" y="194" width="18" height="25" rx="3"/><text class="cell" x="674" y="211">B5</text>
+<rect class="bubble" x="685" y="194" width="18" height="25" rx="3"/>
+<rect class="bl" x="705" y="194" width="18" height="25" rx="3"/><text class="cell" x="714" y="211">B6</text>
+<rect class="bl" x="725" y="194" width="18" height="25" rx="3"/><text class="cell" x="734" y="211">B7</text>
+<rect class="b" x="745" y="194" width="18" height="25" rx="3"/><text class="cell" x="754" y="211">b4</text>
+<rect class="b" x="765" y="194" width="18" height="25" rx="3"/><text class="cell" x="774" y="211">b5</text>
+<rect class="b" x="785" y="194" width="18" height="25" rx="3"/><text class="cell" x="794" y="211">b6</text>
+<rect class="b" x="805" y="194" width="18" height="25" rx="3"/><text class="cell" x="814" y="211">b7</text>
+<rect class="bubble" x="825" y="194" width="18" height="25" rx="3"/>
+<rect class="bubble" x="845" y="194" width="18" height="25" rx="3"/>
+<text class="lane" x="92" y="242">rank 3</text>
+<rect class="bubble" x="105" y="225" width="18" height="25" rx="3"/>
+<rect class="bubble" x="125" y="225" width="18" height="25" rx="3"/>
+<rect class="bubble" x="145" y="225" width="18" height="25" rx="3"/>
+<rect class="f" x="165" y="225" width="18" height="25" rx="3"/><text class="cell" x="174" y="242">f0</text>
+<rect class="f" x="185" y="225" width="18" height="25" rx="3"/><text class="cell" x="194" y="242">f1</text>
+<rect class="f" x="205" y="225" width="18" height="25" rx="3"/><text class="cell" x="214" y="242">f2</text>
+<rect class="f" x="225" y="225" width="18" height="25" rx="3"/><text class="cell" x="234" y="242">f3</text>
+<rect class="fl" x="245" y="225" width="18" height="25" rx="3"/><text class="cell" x="254" y="242">F0</text>
+<rect class="fl" x="265" y="225" width="18" height="25" rx="3"/><text class="cell" x="274" y="242">F1</text>
+<rect class="bl" x="285" y="225" width="18" height="25" rx="3"/><text class="cell" x="294" y="242">B0</text>
+<rect class="fl" x="305" y="225" width="18" height="25" rx="3"/><text class="cell" x="314" y="242">F2</text>
+<rect class="bl" x="325" y="225" width="18" height="25" rx="3"/><text class="cell" x="334" y="242">B1</text>
+<rect class="fl" x="345" y="225" width="18" height="25" rx="3"/><text class="cell" x="354" y="242">F3</text>
+<rect class="bl" x="365" y="225" width="18" height="25" rx="3"/><text class="cell" x="374" y="242">B2</text>
+<rect class="f" x="385" y="225" width="18" height="25" rx="3"/><text class="cell" x="394" y="242">f4</text>
+<rect class="bl" x="405" y="225" width="18" height="25" rx="3"/><text class="cell" x="414" y="242">B3</text>
+<rect class="f" x="425" y="225" width="18" height="25" rx="3"/><text class="cell" x="434" y="242">f5</text>
+<rect class="b" x="445" y="225" width="18" height="25" rx="3"/><text class="cell" x="454" y="242">b0</text>
+<rect class="f" x="465" y="225" width="18" height="25" rx="3"/><text class="cell" x="474" y="242">f6</text>
+<rect class="b" x="485" y="225" width="18" height="25" rx="3"/><text class="cell" x="494" y="242">b1</text>
+<rect class="f" x="505" y="225" width="18" height="25" rx="3"/><text class="cell" x="514" y="242">f7</text>
+<rect class="b" x="525" y="225" width="18" height="25" rx="3"/><text class="cell" x="534" y="242">b2</text>
+<rect class="fl" x="545" y="225" width="18" height="25" rx="3"/><text class="cell" x="554" y="242">F4</text>
+<rect class="b" x="565" y="225" width="18" height="25" rx="3"/><text class="cell" x="574" y="242">b3</text>
+<rect class="fl" x="585" y="225" width="18" height="25" rx="3"/><text class="cell" x="594" y="242">F5</text>
+<rect class="bl" x="605" y="225" width="18" height="25" rx="3"/><text class="cell" x="614" y="242">B4</text>
+<rect class="fl" x="625" y="225" width="18" height="25" rx="3"/><text class="cell" x="634" y="242">F6</text>
+<rect class="bl" x="645" y="225" width="18" height="25" rx="3"/><text class="cell" x="654" y="242">B5</text>
+<rect class="fl" x="665" y="225" width="18" height="25" rx="3"/><text class="cell" x="674" y="242">F7</text>
+<rect class="bl" x="685" y="225" width="18" height="25" rx="3"/><text class="cell" x="694" y="242">B6</text>
+<rect class="bl" x="705" y="225" width="18" height="25" rx="3"/><text class="cell" x="714" y="242">B7</text>
+<rect class="b" x="725" y="225" width="18" height="25" rx="3"/><text class="cell" x="734" y="242">b4</text>
+<rect class="b" x="745" y="225" width="18" height="25" rx="3"/><text class="cell" x="754" y="242">b5</text>
+<rect class="b" x="765" y="225" width="18" height="25" rx="3"/><text class="cell" x="774" y="242">b6</text>
+<rect class="b" x="785" y="225" width="18" height="25" rx="3"/><text class="cell" x="794" y="242">b7</text>
+<rect class="bubble" x="805" y="225" width="18" height="25" rx="3"/>
+<rect class="bubble" x="825" y="225" width="18" height="25" rx="3"/>
+<rect class="bubble" x="845" y="225" width="18" height="25" rx="3"/>
+<rect class="orange" x="900" y="128" width="610" height="128" rx="9"/>
+<text class="bt" x="913" y="151">由模拟计算的账本</text>
+<text class="sm" x="913" y="172" text-anchor="start"><tspan x="913" dy="0">warmup / rank = [11, 9, 7, 5]（普通 VPP 为 [10, 8, 6, 4]）</tspan><tspan x="913" dy="16">makespan = 38 chunk-op = 19t_f；bubble = 6/32，与普通 VPP 相同</tspan><tspan x="913" dy="16">峰值 live forward record = [12, 10, 8, 6]，比普通 VPP 每 rank +1</tspan><tspan x="913" dy="16">PP boundary data messages = 112，combined 不会消除这些字节</tspan></text>
+<text class="foot" x="42" y="282">外层配对（m=8）：Phase 0：F(m0) → Phase 1：B(m0) ∥ F(m1) → Phase 2 … → Phase 4：B(m3) ∥ F(m4) → … → Phase 8：B(m7)。</text>
+<text class="foot" x="42" y="304">每一对仍沿 PP lane 完成：new F → sink loss；old B 从 loss-node gradient 起步 → 向 prev stage handoff input gradient。</text>
+<text class="cost" x="42" y="340">额外 warmup = 1 的付款点是另一份可配对 forward state；它只移动时序，不是固定加速比。</text>
+<rect class="panel" x="20" y="384" width="1520" height="376" rx="11"/>
+<text class="pt" x="42" y="414">② TransformerLayerSchedulePlan.run：同一对 B(m0) ∥ F(m1) 的层内双 stream</text>
+<text class="sub" x="42" y="434">条宽只表示节点窗，不表示实测时长；依赖 event 决定某段 A2A 能否与不消费其结果的 compute 同时推进。</text>
+<text class="lane" x="158" y="500">comm stream</text><text class="lane" x="158" y="582">compute stream</text>
+<rect class="orange" x="172" y="464" width="246" height="58" rx="9"/>
+<text class="bt" x="185" y="487">combine_bwd(m0)</text>
+<text class="sm" x="185" y="508" text-anchor="start"><tspan x="185" dy="0">EP A2A</tspan></text>
+<rect class="blue" x="172" y="546" width="246" height="58" rx="9"/>
+<text class="bt" x="185" y="569">attn_fwd(m1)</text>
+<text class="sm" x="185" y="590" text-anchor="start"><tspan x="185" dy="0">attention/MLP compute</tspan></text>
+<path class="dep" d="M 418 493 H 430"/>
+<path class="dep" d="M 418 575 H 430"/>
+<rect class="orange" x="430" y="464" width="246" height="58" rx="9"/>
+<text class="bt" x="443" y="487">dispatch_fwd(m1)</text>
+<text class="sm" x="443" y="508" text-anchor="start"><tspan x="443" dy="0">EP A2A</tspan></text>
+<rect class="blue" x="430" y="546" width="246" height="58" rx="9"/>
+<text class="bt" x="443" y="569">mlp_bwd(m0)</text>
+<text class="sm" x="443" y="590" text-anchor="start"><tspan x="443" dy="0">attention/MLP compute</tspan></text>
+<path class="dep" d="M 676 493 H 688"/>
+<path class="dep" d="M 676 575 H 688"/>
+<rect class="orange" x="688" y="464" width="246" height="58" rx="9"/>
+<text class="bt" x="701" y="487">dispatch_bwd(m0)</text>
+<text class="sm" x="701" y="508" text-anchor="start"><tspan x="701" dy="0">EP A2A</tspan></text>
+<rect class="blue" x="688" y="546" width="246" height="58" rx="9"/>
+<text class="bt" x="701" y="569">mlp_bwd_dw(m0)</text>
+<text class="sm" x="701" y="590" text-anchor="start"><tspan x="701" dy="0">wgrad compute</tspan></text>
+<path class="dep" d="M 934 493 H 946"/>
+<path class="dep" d="M 934 575 H 946"/>
+<rect class="neutral" x="946" y="464" width="246" height="58" rx="9"/>
+<text class="bt" x="959" y="487">event handoff</text>
+<text class="sm" x="959" y="508" text-anchor="start"><tspan x="959" dy="0">dependency only</tspan></text>
+<rect class="blue" x="946" y="546" width="246" height="58" rx="9"/>
+<text class="bt" x="959" y="569">mlp_fwd(m1)</text>
+<text class="sm" x="959" y="590" text-anchor="start"><tspan x="959" dy="0">attention/MLP compute</tspan></text>
+<path class="dep" d="M 1192 493 H 1204"/>
+<path class="dep" d="M 1192 575 H 1204"/>
+<rect class="orange" x="1204" y="464" width="246" height="58" rx="9"/>
+<text class="bt" x="1217" y="487">combine_fwd(m1)</text>
+<text class="sm" x="1217" y="508" text-anchor="start"><tspan x="1217" dy="0">EP A2A</tspan></text>
+<rect class="blue" x="1204" y="546" width="246" height="58" rx="9"/>
+<text class="bt" x="1217" y="569">attn_bwd(m0)</text>
+<text class="sm" x="1217" y="590" text-anchor="start"><tspan x="1217" dy="0">attention/MLP compute</tspan></text>
+<rect class="blue" x="42" y="632" width="450" height="94" rx="9"/>
+<text class="bt" x="55" y="655">forward 交接</text>
+<text class="sm" x="55" y="676" text-anchor="start"><tspan x="55" dy="0">dispatch_fwd → expert MLP → combine_fwd</tspan><tspan x="55" dy="16">最终得到 m1 layer output，再沿 PP send_forward</tspan></text>
+<rect class="orange" x="554" y="632" width="450" height="94" rx="9"/>
+<text class="bt" x="567" y="655">backward 交接</text>
+<text class="sm" x="567" y="676" text-anchor="start"><tspan x="567" dy="0">combine_bwd → expert dgrad/wgrad → dispatch_bwd</tspan><tspan x="567" dy="16">最终得到 m0 layer input-grad，再沿 PP send_backward</tspan></text>
+<rect class="neutral" x="1066" y="632" width="452" height="94" rx="9"/>
+<text class="bt" x="1079" y="655">没有消失的成本</text>
+<text class="sm" x="1079" y="676" text-anchor="start"><tspan x="1079" dy="0">A2A payload、event、两个 plan state 仍存在</tspan><tspan x="1079" dy="16">exposed = max(0, A2A − independent compute)</tspan></text>
+<text class="foot" x="42" y="746">delay_wgrad_compute 可推迟 wgrad node；ep_overlap_early_attn_memory_release 提前 attention backward，却可能重新暴露 combine_fwd / dispatch_bwd。</text>
+<rect class="panel" x="20" y="778" width="1520" height="214" rx="11"/>
+<text class="pt" x="42" y="808">③ guards 与选择线</text>
+<rect class="blue" x="42" y="828" width="350" height="122" rx="9"/>
+<text class="bt" x="55" y="851">入口</text>
+<text class="sm" x="55" y="872" text-anchor="start"><tspan x="55" dy="0">no-pipeline 或 VPP/interleaved 宿主</tspan><tspan x="55" dy="16">forward_only 不进入 combined</tspan><tspan x="55" dy="16">最终 unwrap 必须是 GPTModel</tspan></text>
+<rect class="neutral" x="414" y="828" width="350" height="122" rx="9"/>
+<text class="bt" x="427" y="851">计划契约</text>
+<text class="sm" x="427" y="872" text-anchor="start"><tspan x="427" dy="0">forward 返回 AbstractSchedulePlan</tspan><tspan x="427" dy="16">output 暂存 plan + loss_func</tspan><tspan x="427" dy="16">对应 backward 必须消费同一 plan</tspan></text>
+<rect class="orange" x="786" y="828" width="350" height="122" rx="9"/>
+<text class="bt" x="799" y="851">拒绝组合</text>
+<text class="sm" x="799" y="872" text-anchor="start"><tspan x="799" dy="0">checkpoint_activations_microbatch = None</tspan><tspan x="799" dy="16">VPP + Megatron-FSDP 未支持</tspan><tspan x="799" dy="16">部分 full-recompute/FSDP hooks 未支持</tspan></text>
+<rect class="neutral" x="1158" y="828" width="360" height="122" rx="9"/>
+<text class="bt" x="1171" y="851">决策</text>
+<text class="sm" x="1171" y="872" text-anchor="start"><tspan x="1171" dy="0">只有 EP A2A 暴露且存在独立 compute 才尝试</tspan><tspan x="1171" dy="16">profiler 验证剩余 wait、SM/链路竞争与显存</tspan><tspan x="1171" dy="16">MoE 数学与 A2A ownership 在 EP 页</tspan></text>
+<text class="foot" x="42" y="1010">陌生读者线：先看上图确认额外存活记录与 PP 消息没少，再沿 comm/compute 两 lane 找真正无依赖的覆盖窗；若 A2A 长于可独立计算，尾部仍在关键路径。</text>
+</svg>

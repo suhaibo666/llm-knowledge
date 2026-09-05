@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1580 1060" width="100%" role="img"
+ data-contract="host_P=4;host_m=8;host_span=22;host_bubble=6;host_live=4,3,2,1;batch=8;fanin_src_dp=4;fanin_dst_dp=2;fanin_src_shard=2;fanin_dst_shard=4;fanout_src_dp=2;fanout_dst_dp=4;fanout_src_shard=4;fanout_dst_shard=2;bridge_backend=NCCL;bridge_cp=1;split_peer_form=direct;split_sample_form=grouped;split_sample_input=0,3,1,2;split_sample_peers=2;split_sample_output=3,3;split_sum_rule=batch_dim;source_leader=group[-1];destination_leader=group[0]"
+ aria-label="MultiModuleProcessGroupCollection 选择 non-interleaved 调度；模块 DAG 内用 P2PCommunicator，跨模块用 BridgeCommunicator。图示 source group[-1] 与 destination group[0] 的非对称 leader 选举、DP fan-in/fan-out、per-peer 与 grouped per-sample batch split metadata、边界 broadcast，以及 backward 的逆向交接。">
+<style>text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}.card{fill:#fff;stroke:#dfe3e8}.panel{fill:#fafbfc;stroke:#dfe3e8}.title{font-size:19px;font-weight:700;fill:#202630}.sub{font-size:11px;fill:#737b87}.pt{font-size:14px;font-weight:700;fill:#303844}.neutral{fill:#fff;stroke:#b6bdc7}.blue{fill:#eaf1fd;stroke:#2563eb;stroke-width:1.5}.orange{fill:#fcf0e6;stroke:#c3651f;stroke-width:1.5}.bt{font-size:12px;font-weight:700;fill:#303844}.sm{font-size:10.5px;fill:#5f6976}.arr{fill:none;stroke:#2563eb;stroke-width:2;marker-end:url(#ab)}.back{fill:none;stroke:#c3651f;stroke-width:2;marker-end:url(#ao)}.dash{fill:none;stroke:#2563eb;stroke-width:1.6;stroke-dasharray:5 4;marker-end:url(#ab)}.lab{font-size:10.5px;font-weight:700;fill:#173f87}.cost{font-size:10.5px;font-weight:700;fill:#8a4a11}.foot{font-size:10.5px;fill:#5f6976}</style>
+<defs><marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2563eb"/></marker><marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#c3651f"/></marker></defs>
+<rect class="card" x=".5" y=".5" width="1579" height="1059" rx="14"/>
+<text class="title" x="28" y="38">Multi-Module Pipeline：module 内 P2P，module 边界 Bridge</text>
+<text class="sub" x="28" y="60">蓝 = forward / activation，橙 = backward / gradient。split/cat 只重分同一 DAG edge 的 DP shards；多个 incoming module edge 保持独立 dict key。</text>
+<rect class="panel" x="20" y="80" width="1540" height="194" rx="11"/>
+<text class="pt" x="42" y="110">① 选择点与 module DAG：每个有向 edge 各自拥有 BridgeCommunicator</text>
+<rect class="blue" x="42" y="132" width="335" height="112" rx="9"/>
+<text class="bt" x="55" y="155">MultiModuleProcessGroupCollection</text>
+<text class="sm" x="55" y="176" text-anchor="start"><tspan x="55" dy="0">per-rank: module name → ProcessGroupCollection</tspan><tspan x="55" dy="16">可另标 language_model_module_name</tspan><tspan x="55" dy="16">get_forward_backward_func → non-interleaved</tspan></text>
+<rect class="neutral" x="472" y="144" width="184" height="66" rx="9"/>
+<text class="bt" x="485" y="167">vision</text>
+<text class="sm" x="485" y="188" text-anchor="start"><tspan x="485" dy="0">V0 → V1（module 内 P2P）</tspan></text>
+<rect class="neutral" x="472" y="220" width="184" height="42" rx="9"/>
+<text class="bt" x="485" y="243">audio: A0</text>
+<text class="sm" x="485" y="264" text-anchor="start"></text>
+<rect class="blue" x="830" y="166" width="224" height="78" rx="9"/>
+<text class="bt" x="843" y="189">language_model</text>
+<text class="sm" x="843" y="210" text-anchor="start"><tspan x="843" dy="0">L0 → L1（module 内 P2P）</tspan><tspan x="843" dy="16">recv dict: vision, audio</tspan></text>
+<rect class="neutral" x="1210" y="166" width="190" height="78" rx="9"/>
+<text class="bt" x="1223" y="189">heads</text>
+<text class="sm" x="1223" y="210" text-anchor="start"><tspan x="1223" dy="0">text / auxiliary</tspan><tspan x="1223" dy="16">各 outgoing edge</tspan></text>
+<path class="arr" d="M 656 174 L 830 184"/>
+<path class="arr" d="M 656 242 L 830 222"/>
+<path class="arr" d="M 1054 205 L 1210 205"/>
+<text class="lab" x="700" y="157">bridge edge #1</text><text class="lab" x="700" y="246">bridge edge #2</text>
+<text class="cost" x="1420" y="194">DAG 必须无环</text><text class="sm" x="1420" y="214">total_stages = 加权最长路径</text>
+<rect class="panel" x="20" y="292" width="1540" height="224" rx="11"/>
+<text class="pt" x="42" y="322">② 一条 edge 的 forward → loss → backward 交接（module A → module B）</text>
+<rect class="neutral" x="42" y="346" width="250" height="100" rx="9"/>
+<text class="bt" x="55" y="369">A: internal stage 0</text>
+<text class="sm" x="55" y="390" text-anchor="start"><tspan x="55" dy="0">recv_forward → forward_step</tspan><tspan x="55" dy="16">P2PCommunicator.send_forward</tspan></text>
+<rect class="blue" x="350" y="346" width="250" height="100" rx="9"/>
+<text class="bt" x="363" y="369">A: last PP stage</text>
+<text class="sm" x="363" y="390" text-anchor="start"><tspan x="363" dy="0">forward output A_edge</tspan><tspan x="363" dy="16">source leader 位于此 boundary</tspan></text>
+<rect class="orange" x="682" y="346" width="250" height="100" rx="9"/>
+<text class="bt" x="695" y="369">BridgeCommunicator</text>
+<text class="sm" x="695" y="390" text-anchor="start"><tspan x="695" dy="0">leader-to-leader send/recv</tspan><tspan x="695" dy="16">shape → payload → boundary broadcast</tspan></text>
+<rect class="blue" x="1014" y="346" width="250" height="100" rx="9"/>
+<text class="bt" x="1027" y="369">B: first PP stage</text>
+<text class="sm" x="1027" y="390" text-anchor="start"><tspan x="1027" dy="0">recv_forward 返回 {A: tensor}</tspan><tspan x="1027" dy="16">downstream model 决定如何融合</tspan></text>
+<rect class="neutral" x="1322" y="346" width="196" height="100" rx="9"/>
+<text class="bt" x="1335" y="369">B: sink / loss</text>
+<text class="sm" x="1335" y="390" text-anchor="start"><tspan x="1335" dy="0">loss.backward()</tspan><tspan x="1335" dy="16">产生 edge gradient</tspan></text>
+<path class="arr" d="M 292 380 L 350 380"/>
+<path class="arr" d="M 600 380 L 682 380"/>
+<path class="arr" d="M 932 380 L 1014 380"/>
+<path class="arr" d="M 1264 380 L 1322 380"/>
+<path class="back" d="M 1322 420 L 1264 420"/>
+<path class="back" d="M 1014 420 L 932 420"/>
+<path class="back" d="M 682 420 L 600 420"/>
+<path class="back" d="M 350 420 L 292 420"/>
+<text class="lab" x="700" y="475">forward：module output dict 沿 DAG edge 向下游</text>
+<text class="cost" x="700" y="495">backward：backward_step_multimodule 独立 autograd，再把 input-grad dict 逆 edge 送回</text>
+<rect class="panel" x="20" y="534" width="1540" height="306" rx="11"/>
+<text class="pt" x="42" y="564">③ leader、fan-in / fan-out 与 batch 维重分布（统一 global batch B=8）</text>
+<rect class="neutral" x="42" y="586" width="450" height="76" rx="9"/>
+<text class="bt" x="55" y="609">leader 选举（每个 DP replica）</text>
+<text class="sm" x="55" y="630" text-anchor="start"><tspan x="55" dy="0">src：module A 的 last PP boundary，per-DP group[-1]</tspan><tspan x="55" dy="16">dst：module B 的 first PP boundary，per-DP group[0]</tspan></text>
+<rect class="orange" x="520" y="586" width="480" height="76" rx="9"/>
+<text class="bt" x="533" y="609">bridge / broadcast groups</text>
+<text class="sm" x="533" y="630" text-anchor="start"><tspan x="533" dy="0">bridge_pg 只含 src/dst leaders，硬编码 NCCL</tspan><tspan x="533" dy="16">dst leader 完成 cat 后向该 DP replica 的 TP×CP boundary broadcast</tspan></text>
+<rect class="blue" x="1028" y="586" width="490" height="76" rx="9"/>
+<text class="bt" x="1041" y="609">边界成员</text>
+<text class="sm" x="1041" y="630" text-anchor="start"><tspan x="1041" dy="0">非 leader 不参加跨-module send/recv，只参加 shape+tensor broadcast</tspan><tspan x="1041" dy="16">Bridge 要求两侧 CP=1；TP 可不同</tspan></text>
+<rect class="blue" x="42" y="688" width="700" height="118" rx="9"/>
+<text class="bt" x="55" y="711">fan-in：src DP=4 → dst DP=2</text>
+<text class="sm" x="55" y="732" text-anchor="start"><tspan x="55" dy="0">forward：每个 src leader 持 B/4=2；dst recv 两份 → cat(batch) = B/2=4</tspan><tspan x="55" dy="16">backward：dst 把 grad B/2 split [2,2]，每个 src 收 B/4，再 boundary broadcast</tspan><tspan x="55" dy="16">metadata：len=peers 直接作 per-peer split sizes</tspan><tspan x="55" dy="16">逐样本：[0,3,1,2] / 2 peers → 连续分组求和 [3,3]</tspan><tspan x="55" dy="16">长度不合法或 sum ≠ batch dim → ValueError</tspan></text>
+<rect class="orange" x="778" y="688" width="740" height="118" rx="9"/>
+<text class="bt" x="791" y="711">fan-out：src DP=2 → dst DP=4</text>
+<text class="sm" x="791" y="732" text-anchor="start"><tspan x="791" dy="0">forward：每个 src 的 B/2=4 split [2,2]，两个 dst 各收 B/4=2，再 boundary broadcast</tspan><tspan x="791" dy="16">backward：两个 dst grad 各 B/4；src leader recv 两份 → cat(batch) = B/2=4</tspan><tspan x="791" dy="16">leader 数必须整除；不整除在 build_comm_map 处拒绝</tspan></text>
+<text class="foot" x="42" y="826">注意：上面的 cat 合并的是同一 module edge 的 DP shards；vision 与 audio 两条 incoming edge 仍是 {vision: tensor, audio: tensor}，由 B 的 forward 代码决定 concat/add/其它融合。</text>
+<rect class="panel" x="20" y="858" width="1540" height="166" rx="11"/>
+<text class="pt" x="42" y="888">④ 付款点与拒绝线</text>
+<rect class="orange" x="42" y="906" width="350" height="88" rx="9"/>
+<text class="bt" x="55" y="929">通信增量</text>
+<text class="sm" x="55" y="950" text-anchor="start"><tspan x="55" dy="0">每条 DAG edge：shape exchange + leader P2P</tspan><tspan x="55" dy="16">+ boundary shape/data broadcast；fan-in/out 多 peer</tspan></text>
+<rect class="neutral" x="414" y="906" width="350" height="88" rx="9"/>
+<text class="bt" x="427" y="929">内存 / 同步</text>
+<text class="sm" x="427" y="950" text-anchor="start"><tspan x="427" dy="0">split 产 contiguous shards，cat 产新 tensor</tspan><tspan x="427" dy="16">paired API batch_isend_irecv 后等待；init 全局 barrier</tspan></text>
+<rect class="blue" x="786" y="906" width="350" height="88" rx="9"/>
+<text class="bt" x="799" y="929">形状 / 调度边界</text>
+<text class="sm" x="799" y="950" text-anchor="start"><tspan x="799" dy="0">Bridge 原生 2D/3D；module 内 2D 临时升 3D</tspan><tspan x="799" dy="16">MultiModule 强制 variable_seq_lengths；不进入 VPP</tspan></text>
+<rect class="neutral" x="1158" y="906" width="360" height="88" rx="9"/>
+<text class="bt" x="1171" y="929">实现 caveat</text>
+<text class="sm" x="1171" y="950" text-anchor="start"><tspan x="1171" dy="0">current_stage 取 first local module（源码 TODO）</tspan><tspan x="1171" dy="16">跨模块 group 构造属 orchestration owner</tspan></text>
+<text class="foot" x="42" y="1017">Host 账（P=4,m=8，加权最长路径=4）：22t_f、bubble=6、live=[4,3,2,1]；Bridge 的 shape/leader/split-cat/broadcast 是增量，不会消掉这些 bubble。</text>
+<text class="foot" x="42" y="1042">陌生读者线：先找“这是 module 内还是 module edge？”；edge 再问 DP leader 比例是否整除、batch split/cat 后由谁 broadcast，最后沿橙色箭头确认 gradient 能回到原 source module。</text>
+</svg>

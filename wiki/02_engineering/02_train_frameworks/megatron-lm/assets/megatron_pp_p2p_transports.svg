@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1560 970" width="100%" role="img"
+ data-contract="tensor=A[S,B,H];gradient=G[S,B,H];shape_words=3;shape_bytes_per_direction=24;transports=ring_exchange,batch_isend_irecv,isend/irecv;backends=NCCL,UCC"
+ aria-label="同一 A[S,B,H] activation 与 G[S,B,H] gradient 经 ring_exchange、batch_isend_irecv、独立 isend/irecv 的数据和控制流，并逐项比较等待、host device 同步、launch、SM 与 NCCL UCC 选择。">
+<style>text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}.card{fill:#fff;stroke:#dfe3e8}.panel{fill:#fafbfc;stroke:#dfe3e8}.title{font-size:19px;font-weight:700;fill:#202630}.sub{font-size:11px;fill:#737b87}.pt{font-size:14px;font-weight:700;fill:#303844}.neutral{fill:#fff;stroke:#b6bdc7}.blue{fill:#eaf1fd;stroke:#2563eb;stroke-width:1.4}.orange{fill:#fcf0e6;stroke:#c3651f;stroke-width:1.4}.bt{font-size:12px;font-weight:700;fill:#303844}.tx{font-size:11px;fill:#46505d}.sm{font-size:10.5px;fill:#606a76}.arr{fill:none;stroke:#2563eb;stroke-width:2;marker-end:url(#ab)}.grad-arr{fill:none;stroke:#c3651f;stroke-width:2;marker-end:url(#ao)}.hdr{font-size:10.5px;font-weight:700;fill:#606a76;text-anchor:middle}.foot{font-size:10.5px;fill:#606a76}</style>
+<defs><marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2563eb"/></marker><marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#c3651f"/></marker></defs>
+<rect class="card" x=".5" y=".5" width="1559" height="969" rx="14"/>
+<text class="title" x="28" y="38">P2P transport × backend：相同 payload，不同提交与完成语义</text>
+<text class="sub" x="28" y="60">统一例子：rank r 发送 activation A[S,B,H] 到 r+1；反向时 r+1 发送同形 gradient G[S,B,H] 回 r。蓝=forward data，橙=backward data。</text>
+<rect class="panel" x="20" y="80" width="1520" height="116" rx="11"/>
+<rect class="blue" x="42" y="105" width="280" height="64" rx="9"/>
+<text class="bt" x="56" y="128">rank r</text>
+<text class="sm" x="56" y="150" text-anchor="start"><tspan x="56" dy="0">持有 A；为 G 分配 recv buffer</tspan></text>
+<rect class="neutral" x="640" y="105" width="280" height="64" rx="9"/>
+<text class="bt" x="654" y="128">链路 / PP ProcessGroup</text>
+<text class="sm" x="654" y="150" text-anchor="start"><tspan x="654" dy="0">wire payload 每方向 Θ(S·B·H)</tspan></text>
+<rect class="orange" x="1238" y="105" width="280" height="64" rx="9"/>
+<text class="bt" x="1252" y="128">rank r+1</text>
+<text class="sm" x="1252" y="150" text-anchor="start"><tspan x="1252" dy="0">为 A 分配 recv；持有 G</tspan></text>
+<path class="arr" d="M 322 125 H 640"/>
+<path class="arr" d="M 920 125 H 1238"/>
+<path class="arr" d="M 1238 153 H 920"/>
+<path class="arr" d="M 640 153 H 322"/>
+<rect class="panel" x="20" y="214" width="1520" height="414" rx="11"/>
+<text class="pt" x="42" y="244">① 三条 transport：每行都搬同一个 A/G；差别在 CPU 提交、request 所有权和 wait</text>
+<text class="hdr" x="172" y="272">transport / 提交</text>
+<text class="hdr" x="480" y="272">控制与数据流</text>
+<text class="hdr" x="810" y="272">wait / 完成边界</text>
+<text class="hdr" x="1105" y="272">host ↔ device sync</text>
+<text class="hdr" x="1380" y="272">成本与适用</text>
+<rect class="blue" x="42" y="286" width="260" height="84" rx="9"/>
+<text class="bt" x="56" y="309">ring_exchange</text>
+<text class="sm" x="56" y="331" text-anchor="start"><tspan x="56" dy="0">单次 API</tspan><tspan x="56" dy="17">四方向组合</tspan></text>
+<rect class="neutral" x="330" y="286" width="305" height="84" rx="9"/>
+<text class="bt" x="344" y="309">data/control</text>
+<text class="sm" x="344" y="331" text-anchor="start"><tspan x="344" dy="0">A/G 在同一调用表达</tspan><tspan x="344" dy="17">send/recv prev/next</tspan></text>
+<rect class="neutral" x="665" y="286" width="300" height="84" rx="9"/>
+<text class="bt" x="679" y="309">completion</text>
+<text class="sm" x="679" y="331" text-anchor="start"><tspan x="679" dy="0">wrapper 返回 []；Megatron</tspan><tspan x="679" dy="17">没有 request handle 可延后 wait</tspan></text>
+<rect class="neutral" x="995" y="286" width="225" height="84" rx="9"/>
+<text class="bt" x="1009" y="309">sync</text>
+<text class="sm" x="1009" y="331" text-anchor="start"><tspan x="1009" dy="0">不走 batch_p2p_sync；立即消费的</tspan><tspan x="1009" dy="17">完成保证属于 PyTorch/backend 边界</tspan></text>
+<rect class="neutral" x="1250" y="286" width="268" height="84" rx="9"/>
+<text class="bt" x="1264" y="309">trade-off</text>
+<text class="sm" x="1264" y="331" text-anchor="start"><tspan x="1264" dy="0">1 个高层调用；wire Θ(n)</tspan><tspan x="1264" dy="17">要求 build 提供 ring_exchange</tspan></text>
+<rect class="orange" x="42" y="392" width="260" height="84" rx="9"/>
+<text class="bt" x="56" y="415">batch_isend_irecv</text>
+<text class="sm" x="56" y="437" text-anchor="start"><tspan x="56" dy="0">最多 4 个 P2POp</tspan><tspan x="56" dy="17">一次 batch call</tspan></text>
+<rect class="neutral" x="330" y="392" width="305" height="84" rx="9"/>
+<text class="bt" x="344" y="415">data/control</text>
+<text class="sm" x="344" y="437" text-anchor="start"><tspan x="344" dy="0">A/G 共用 P2POp list</tspan><tspan x="344" dy="17">由 list 顺序描述方向</tspan></text>
+<rect class="neutral" x="665" y="392" width="300" height="84" rx="9"/>
+<text class="bt" x="679" y="415">completion</text>
+<text class="sm" x="679" y="437" text-anchor="start"><tspan x="679" dy="0">_communicate 断言 wait_on_reqs</tspan><tspan x="679" dy="17">逐个 req.wait() 后才返回</tspan></text>
+<rect class="neutral" x="995" y="392" width="225" height="84" rx="9"/>
+<text class="bt" x="1009" y="415">sync</text>
+<text class="sm" x="1009" y="437" text-anchor="start"><tspan x="1009" dy="0">batch_p2p_sync=true 且非 capture：</tspan><tspan x="1009" dy="17">额外 torch.cuda.synchronize()</tspan></text>
+<rect class="neutral" x="1250" y="392" width="268" height="84" rx="9"/>
+<text class="bt" x="1264" y="415">trade-off</text>
+<text class="sm" x="1264" y="437" text-anchor="start"><tspan x="1264" dy="0">1 个 batch launch + ≤4 waits</tspan><tspan x="1264" dy="17">简单同步路径；不能供 VPP overlap</tspan></text>
+<rect class="blue" x="42" y="498" width="260" height="84" rx="9"/>
+<text class="bt" x="56" y="521">isend/irecv（独立）</text>
+<text class="sm" x="56" y="543" text-anchor="start"><tspan x="56" dy="0">最多 4 次调用</tspan><tspan x="56" dy="17">命名 request</tspan></text>
+<rect class="neutral" x="330" y="498" width="305" height="84" rx="9"/>
+<text class="bt" x="344" y="521">data/control</text>
+<text class="sm" x="344" y="543" text-anchor="start"><tspan x="344" dy="0">偶/奇 rank 反转提交顺序</tspan><tspan x="344" dy="17">使 send/recv 与对端匹配</tspan></text>
+<rect class="neutral" x="665" y="498" width="300" height="84" rx="9"/>
+<text class="bt" x="679" y="521">completion</text>
+<text class="sm" x="679" y="543" text-anchor="start"><tspan x="679" dy="0">wait_on_reqs=true：本调用等待</tspan><tspan x="679" dy="17">false：返回命名 handle 字典</tspan></text>
+<rect class="neutral" x="995" y="498" width="225" height="84" rx="9"/>
+<text class="bt" x="1009" y="521">sync</text>
+<text class="sm" x="1009" y="543" text-anchor="start"><tspan x="1009" dy="0">无 batch_p2p_sync 的全设备同步；</tspan><tspan x="1009" dy="17">消费 recv / 复用 send 前局部 wait</tspan></text>
+<rect class="neutral" x="1250" y="498" width="268" height="84" rx="9"/>
+<text class="bt" x="1264" y="521">trade-off</text>
+<text class="sm" x="1264" y="543" text-anchor="start"><tspan x="1264" dy="0">launch/handle 最多 4；管理复杂</tspan><tspan x="1264" dy="17">唯一支持 overlap_p2p_comm 的路径</tspan></text>
+<rect class="panel" x="20" y="646" width="1520" height="134" rx="11"/>
+<text class="pt" x="42" y="676">② variable sequence shape：先走控制面，再分配 A/G 数据面</text>
+<rect class="blue" x="42" y="696" width="300" height="60" rx="9"/>
+<text class="bt" x="56" y="719">shape producer</text>
+<text class="sm" x="56" y="741" text-anchor="start"><tspan x="56" dy="0">每个方向 3 × int64 = 24 B</tspan></text>
+<rect class="neutral" x="390" y="696" width="350" height="60" rx="9"/>
+<text class="bt" x="404" y="719">_communicate_shapes</text>
+<text class="sm" x="404" y="741" text-anchor="start"><tspan x="404" dy="0">ring_exchange 或 batch_isend_irecv</tspan></text>
+<rect class="orange" x="788" y="696" width="350" height="60" rx="9"/>
+<text class="bt" x="802" y="719">完成与主机可见</text>
+<text class="sm" x="802" y="741" text-anchor="start"><tspan x="802" dy="0">batch: wait + cuda.synchronize；再 .tolist()</tspan></text>
+<rect class="blue" x="1186" y="696" width="332" height="60" rx="9"/>
+<text class="bt" x="1200" y="719">allocate + data P2P</text>
+<text class="sm" x="1200" y="741" text-anchor="start"><tspan x="1200" dy="0">按收到的 [S,B,H] 创建 recv buffer</tspan></text>
+<path class="arr" d="M 342 726 H 390"/>
+<path class="arr" d="M 740 726 H 788"/>
+<path class="arr" d="M 1138 726 H 1186"/>
+<rect class="panel" x="20" y="798" width="1520" height="132" rx="11"/>
+<text class="pt" x="42" y="828">③ backend：transport API 之下的 PP ProcessGroup</text>
+<rect class="blue" x="42" y="846" width="650" height="68" rx="9"/>
+<text class="bt" x="56" y="869">NCCL</text>
+<text class="sm" x="56" y="891" text-anchor="start"><tspan x="56" dy="0">默认 GPU backend；PP-size=2 的 independent 特例可借 WORLD 分开方向</tspan><tspan x="56" dy="17">通信仍使用 GPU backend/SM；沿用现有 NCCL options</tspan></text>
+<rect class="orange" x="720" y="846" width="798" height="68" rx="9"/>
+<text class="bt" x="734" y="869">UCC</text>
+<text class="sm" x="734" y="891" text-anchor="start"><tspan x="734" dy="0">源码以 IB 带宽 / zero-SM 为意图；拒绝 CUDA_DEVICE_MAX_CONNECTIONS=1</tspan><tspan x="734" dy="17">WORLD 是 NCCL，size=2 仍留 UCC group；需验证 UCC/UCX 环境与版本</tspan></text>
+<text class="foot" x="42" y="951">选择线：要 request overlap → independent isend/irecv；要同步且聚合提交 → batch_isend_irecv；只有在已验证 backend contract/build 时选 ring_exchange。暴露 PP/关键 stage 且需释放 SM 时再评估 UCC，否则以 NCCL 为基线。</text>
+</svg>

@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 1300" width="100%" role="img" aria-label="同一组全局四 token、每 rank 两 token 的路由在 AllGather、AllToAll 与 Flex 训练 dispatcher 中的数据布局、通信、恢复、反向对偶与成本对照，并单列 nccl 与 nvls 的正交推理 sibling 选择边界">
+<metadata id="megatron-ep-figure-contract">{"tokensGlobal":4,"tokensLocalPerRank":2,"experts":4,"topk":2,"ep":2,"tp":1,"edges":8,"remoteEdges":4,"remoteUniqueRankCopies":3,"capacityAtHalf":1,"droppedEdgesAtHalf":0,"capacityAtOnePointFive":2,"slotsPerOwnedExpertAfterA2A":4,"realSlotsPerOwnedExpert":2,"zeroSlotsPerOwnedExpert":2,"backends":["DeepEP","DeepEPv2","HybridEP","NCCL-EP"],"inferenceSibling":{"field":"inference_moe_token_dispatcher_type","values":["nccl","nvls"],"classes":["NCCLAllGatherDispatcher","NVLSAllGatherVDispatcher"],"selector":"InferenceMode.is_active","owners":["30_megatron_rl_posttraining_consistency_analysis","31_megatron_inference_engine_analysis"]}}</metadata>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+</style>
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<rect class="card" x="0.5" y="0.5" width="1499" height="1299" rx="14"/>
+<text class="ti" x="28" y="38" text-anchor="start">三种 dispatcher：模型语义相同，发送 buffer 与通信账不同</text>
+<text class="su" x="28" y="60" text-anchor="start">T_global=4 · T_local=2/rank；r0=[t0,t1]，r1=[t2,t3]；top-2 共 8 edge、4 remote edge；TP=1</text>
+<rect class="panel" x="22" y="84" width="1456" height="260" rx="12"/>
+<text class="pt" x="42" y="114" text-anchor="start">① AllGather：先复制所有原 token 与整张路线表，再在每个 rank 筛本地专家</text>
+<text class="su" x="42" y="134" text-anchor="start">不计算逐目的地 split；用 TP×EP collective 的全局可见性换简单控制面。</text>
+<rect class="ghost" x="42" y="162" width="244" height="98" rx="8"/>
+<text class="tx" x="164" y="198" text-anchor="middle">原 owner buffer</text>
+<text class="sm" x="164" y="215" text-anchor="middle">r0:[t0,t1] · r1:[t2,t3]</text>
+<text class="sm" x="164" y="232" text-anchor="middle">每 rank map/probs: [2,4]</text>
+<path class="cost" d="M 286 211 L 320 211"/>
+<rect class="acc2" x="320" y="162" width="244" height="98" rx="8"/>
+<text class="tx" x="442" y="198" text-anchor="middle">AG hidden + map + probs</text>
+<text class="sm" x="442" y="215" text-anchor="middle">每 rank 看见 [t0,t1,t2,t3]</text>
+<text class="sm" x="442" y="232" text-anchor="middle">聚合 map/probs: [4,4]</text>
+<path class="main" d="M 564 211 L 608 211"/>
+<rect class="acc1" x="608" y="162" width="244" height="98" rx="8"/>
+<text class="tx" x="730" y="198" text-anchor="middle">筛本地 expert edge</text>
+<text class="sm" x="730" y="215" text-anchor="middle">r0: e0[t0,t3], e1[t1,t3]</text>
+<text class="sm" x="730" y="232" text-anchor="middle">r1: e2[t1,t2], e3[t0,t2]</text>
+<path class="main" d="M 852 211 L 896 211"/>
+<rect class="neutral" x="896" y="162" width="244" height="98" rx="8"/>
+<text class="tx" x="1018" y="198" text-anchor="middle">local MLP → unpermute</text>
+<text class="sm" x="1018" y="215" text-anchor="middle">RS 累加并切回 origin</text>
+<text class="sm" x="1018" y="232" text-anchor="middle">r0:[y0,y1] · r1:[y2,y3]</text>
+<rect class="acc2" x="1184" y="160" width="270" height="102" rx="8"/>
+<text class="tx" x="1319" y="181" text-anchor="middle">增量成本</text>
+<text class="sm" x="1319" y="198" text-anchor="middle">每 rank 从 T_local=2</text>
+<text class="sm" x="1319" y="215" text-anchor="middle">物化 T_global=4</text>
+<text class="sm" x="1319" y="232" text-anchor="middle">并携带全局 map/probs</text>
+<text class="sm" x="1319" y="249" text-anchor="middle">无 input/output splits</text>
+<text class="dim" x="42" y="291" text-anchor="start">Backward 对偶：dispatch AGᵀ = RS；combine RSᵀ = AG；mapping 反向回收 top-k edge。</text>
+<text class="sm" x="42" y="313" text-anchor="start">适用性是 README 的小 EP / 大 top-k 包络，不是通用性能保证；variable sequence lengths 与 packing 有 guard。</text>
+<rect class="panel" x="22" y="358" width="1456" height="260" rx="12"/>
+<text class="pt" x="42" y="388" text-anchor="start">② AllToAll：发送前展开 route copy，只把每条 edge 送给 expert owner</text>
+<text class="su" x="42" y="408" text-anchor="start">通信量贴近实际 route；代价是变长 split、DtoH/sync 与两层排列。</text>
+<rect class="ghost" x="42" y="436" width="244" height="98" rx="8"/>
+<text class="tx" x="164" y="472" text-anchor="middle">permute 后发送 buffer</text>
+<text class="sm" x="164" y="489" text-anchor="middle">每 rank 4 条 route copy</text>
+<text class="sm" x="164" y="506" text-anchor="middle">全局 K = 4·2 = 8</text>
+<path class="cost" d="M 286 485 L 320 485"/>
+<rect class="acc2" x="320" y="436" width="244" height="98" rx="8"/>
+<text class="tx" x="442" y="472" text-anchor="middle">EP variable-size A2A</text>
+<text class="sm" x="442" y="489" text-anchor="middle">input_splits = [2, 2]</text>
+<text class="sm" x="442" y="506" text-anchor="middle">本例跨 rank edge = 4</text>
+<path class="main" d="M 564 485 L 608 485"/>
+<rect class="acc1" x="608" y="436" width="244" height="98" rx="8"/>
+<text class="tx" x="730" y="472" text-anchor="middle">收件 + 本地二次排列</text>
+<text class="sm" x="730" y="489" text-anchor="middle">按 e0/e1 或 e2/e3 连续</text>
+<text class="sm" x="730" y="506" text-anchor="middle">tokens_per_expert=[2,2]</text>
+<path class="main" d="M 852 485 L 896 485"/>
+<rect class="neutral" x="896" y="436" width="244" height="98" rx="8"/>
+<text class="tx" x="1018" y="472" text-anchor="middle">local MLP 消费 route weight</text>
+<text class="sm" x="1018" y="489" text-anchor="middle">reverse A2A 交换 splits</text>
+<text class="sm" x="1018" y="506" text-anchor="middle">unpermute 累计已加权 edge</text>
+<rect class="acc2" x="1184" y="434" width="270" height="102" rx="8"/>
+<text class="tx" x="1319" y="463.5" text-anchor="middle">增量成本</text>
+<text class="sm" x="1319" y="480.5" text-anchor="middle">4 条 remote route payload/方向</text>
+<text class="sm" x="1319" y="497.5" text-anchor="middle">split materialize + sync</text>
+<text class="sm" x="1319" y="514.5" text-anchor="middle">permute + local re-sort</text>
+<text class="dim" x="42" y="565" text-anchor="start">Backward 对偶：combine A2A 把 dY 送回 expert；dispatch A2A 再把 route dX 送回 token owner。</text>
+<text class="sm" x="42" y="587" text-anchor="start">这里的 [2,2] 只是平衡算例；实际 split 随 routing_map 变化，最大收件量同时决定网络与 expert compute 尾部。</text>
+<rect class="panel" x="22" y="632" width="1456" height="260" rx="12"/>
+<text class="pt" x="42" y="662" text-anchor="start">③ Flex：manager 融合数据面，但仍须满足同一个 ownership contract</text>
+<text class="su" x="42" y="682" text-anchor="start">MCore 二级选择 DeepEP / DeepEPv2 / HybridEP / NCCL-EP；四条独立 lane 见下一图。</text>
+<rect class="ghost" x="42" y="710" width="244" height="98" rx="8"/>
+<text class="tx" x="164" y="746" text-anchor="middle">route metadata</text>
+<text class="sm" x="164" y="763" text-anchor="middle">[T_local,world,E_local]</text>
+<text class="sm" x="164" y="780" text-anchor="middle">本例 [2,2,2] 视图</text>
+<path class="cost" d="M 286 759 L 320 759"/>
+<rect class="acc2" x="320" y="710" width="244" height="98" rx="8"/>
+<text class="tx" x="442" y="746" text-anchor="middle">manager.dispatch</text>
+<text class="sm" x="442" y="763" text-anchor="middle">不是 backend-defined 单一路径</text>
+<text class="sm" x="442" y="780" text-anchor="middle">四个 manager 各自成 lane</text>
+<path class="main" d="M 564 759 L 608 759"/>
+<rect class="acc1" x="608" y="710" width="244" height="98" rx="8"/>
+<text class="tx" x="730" y="746" text-anchor="middle">per-expert local segment</text>
+<text class="sm" x="730" y="763" text-anchor="middle">本例仍是每 expert 2 条</text>
+<text class="sm" x="730" y="780" text-anchor="middle">local expert compute</text>
+<path class="main" d="M 852 759 L 896 759"/>
+<rect class="neutral" x="896" y="710" width="244" height="98" rx="8"/>
+<text class="tx" x="1018" y="746" text-anchor="middle">local MLP 先消费 p</text>
+<text class="sm" x="1018" y="763" text-anchor="middle">manager.combine 逆向搬运</text>
+<text class="sm" x="1018" y="780" text-anchor="middle">累计后恢复 [T_local,H]</text>
+<rect class="acc2" x="1184" y="708" width="270" height="102" rx="8"/>
+<text class="tx" x="1319" y="737.5" text-anchor="middle">增量成本</text>
+<text class="sm" x="1319" y="754.5" text-anchor="middle">workspace / sync 按 manager 分账</text>
+<text class="sm" x="1319" y="771.5" text-anchor="middle">仍受 route skew 约束</text>
+<text class="sm" x="1319" y="788.5" text-anchor="middle">无固定加速比声明</text>
+<text class="dim" x="42" y="839" text-anchor="start">Backward 契约：manager autograd 必须完成 combine⁻¹ 与 dispatch⁻¹；融合名称不缩短正确性边界。</text>
+<text class="sm" x="42" y="861" text-anchor="start">backend、TP×EP、capacity/padding 与安装版本由配置 guard 决定；本图只承诺 MCore 可观察的输入输出。</text>
+<rect class="panel" x="22" y="906" width="1456" height="264" rx="12"/>
+<text class="pt" x="42" y="936" text-anchor="start">④ 正交推理 sibling 轴：不是训练 dispatcher 的第四值</text>
+<text class="su" x="42" y="958" text-anchor="start">仅在 transformer_impl=inference_optimized 且 EP&gt;1 时构造；inference_moe_token_dispatcher_type ∈ {nccl,nvls}；训练 dispatcher 同时保留。</text>
+<rect class="ghost" x="42" y="994" width="250" height="64" rx="8"/>
+<text class="tx" x="167" y="1021.5" text-anchor="middle">MoELayer.forward</text>
+<text class="sm" x="167" y="1038.5" text-anchor="middle">InferenceMode.is_active()</text>
+<path class="main" d="M 292 1026 L 324 1026"/>
+<rect class="acc2" x="324" y="994" width="370" height="64" rx="8"/>
+<text class="tx" x="509" y="1021.5" text-anchor="middle">inference_moe_token_dispatcher_type</text>
+<text class="sm" x="509" y="1038.5" text-anchor="middle">∈ {nccl,nvls}</text>
+<path data-inference-branch="nccl" class="main" d="M 694 1026 H 750 V 1004 H 800"/>
+<path data-inference-branch="nvls" class="main" d="M 694 1026 H 750 V 1076 H 800"/>
+<rect class="acc1" x="800" y="976" width="500" height="56" rx="8"/>
+<text class="tx" x="1050" y="999.5" text-anchor="middle">nccl</text>
+<text class="sm" x="1050" y="1016.5" text-anchor="middle">NCCLAllGatherDispatcher</text>
+<rect class="acc1" x="800" y="1048" width="500" height="56" rx="8"/>
+<text class="tx" x="1050" y="1071.5" text-anchor="middle">nvls</text>
+<text class="sm" x="1050" y="1088.5" text-anchor="middle">NVLSAllGatherVDispatcher</text>
+<text class="dim" x="42" y="1128" text-anchor="start">选择边界：active=false → 训练 {allgather,alltoall,flex}；active=true → 推理实例。不是训练 dispatcher 的第四值。</text>
+<text class="sm" x="42" y="1150" text-anchor="start">机制深挖 rehome → 30_megatron_rl_posttraining_consistency_analysis；InferenceMode 生命周期 → 31_megatron_inference_engine_analysis</text>
+<rect class="neutral" x="22" y="1186" width="1456" height="92" rx="10"/>
+<text class="dim" x="42" y="1214" text-anchor="start">共同不变量：T_global=4，每 rank T_local=2；8 edge、每 expert 2 条真 edge，输出回原 owner。</text>
+<text class="cap" x="42" y="1237" text-anchor="start">本地 capacity：f=.5 → C=1/不丢边；f=1.5 + pad → C=2，A2A 后每本地 expert 4 slots=2 真+2 零。</text>
+<text class="cap" x="42" y="1258" text-anchor="start">变化的是复制、split、同步与 workspace；图中为逻辑元素数而非物理链路字节或实测时延。</text>
+</svg>

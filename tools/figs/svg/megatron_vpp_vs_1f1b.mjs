@@ -1,139 +1,109 @@
-// 图：标准 1F1B vs 交错 1F1B(VPP) —— 气泡率 ÷ vp，代价是 P2P ×vp
-// 用于 wiki/02_engineering/02_train_frameworks/megatron-lm/15_megatron_pp_schedulers_analysis.md §③.3
-//
-// ---- spec（先写 spec 再画，见 skills/drawing-wiki-figures/SKILL.md §4）----
-// 要讲清楚：VPP 把每卡的连续层段拆成 vp 个不连续 chunk，单个「设备-块」的耗时降为 t_f/vp，
-// 填充/排空随之缩短 vp 倍 → 气泡率 (pp-1)/m → (pp-1)/(m·vp)。代价：一个 microbatch 要在
-// 设备间往返 vp 趟 → P2P 次数 ×vp。
-//
-// 布局（上下两面板，共用一条按真实耗时刻度的时间轴，这是全图的立论所在）：
-//   上 标准 1F1B：4 行 × 22 格，每格宽 2 单位（一格 = t_f）
-//   下 VPP      ：4 行 × 38 格，每格宽 1 单位（一格 = t_f/vp）
-//   轴总长 44 单位；1F1B 铺满 44，VPP 只到 38 —— 「更快」是量出来的，不是写出来的
-//   每面板下方一条 makespan 尺规，标 22 t_f / 19 t_f
-// 配色：前向=蓝族、反向=绿族；chunk0 浅档、chunk1 深档（1F1B 无 chunk 概念，用深档）；气泡=中性斜纹
-// 强调（每图至多两个）：1F1B 右侧 acc2（代价色）标空泡比 6/16；VPP 右侧 acc1（收益色）标 6/32
-// 额外一处：VPP 面板里把 mb0 的 8 个前向格描 acc1 边框 + 旁注「往返 vp=2 趟 → P2P ×vp」
-//   —— 同一处标注同时解释收益与代价，避免再开一张图
-//
-// 数据来源：lib/megatron_pp_sim.mjs 的离散事件仿真（算法照 Megatron@71092579 的 schedules.py），
-// 已由 lib/megatron_pp_sim.test.mjs 锁定与页面 ASCII 表逐格一致。图上每个数字都是算出来的。
-//
-// 用法: node tools/figs/svg/megatron_vpp_vs_1f1b.mjs > <页面目录>/assets/megatron_pp_vpp_vs_1f1b.svg
+// P=4,m=8：no-pipeline、non-interleaved 1F1B 与 VPP/interleaved 1F1B。
+// 时间格与数字全部由 lib/megatron_pp_sim.mjs 计算。
+// Usage: node tools/figs/svg/megatron_vpp_vs_1f1b.mjs > .../assets/megatron_pp_vpp_vs_1f1b.svg
 
 import { seq1f1b, seqVpp, simulate } from './lib/megatron_pp_sim.mjs';
 
-const PP = 4, M = 8, VP = 2, N = 4;
-const A = simulate(seq1f1b({ pp: PP, m: M }), { pp: PP, vp: 1 });          // 标准 1F1B
-const B = simulate(seqVpp({ pp: PP, m: M, vp: VP, N }), { pp: PP, vp: VP }); // VPP
+const P = 4, M = 8, V = 2, N = 4;
+const standard = simulate(seq1f1b({ pp: P, m: M }), { pp: P, vp: 1 });
+const vpp = simulate(seqVpp({ pp: P, m: M, vp: V, N }), { pp: P, vp: V });
 
-/* ---------- 几何：U = 一个 chunk-op 的宽度，1F1B 一格 = VP×U ---------- */
-const U = 20, CH = 22, ROWG = 3, PAD = 20, LAB = 64, NOTE = 172, INSET = 1.5;
-const axisU = Math.max(A.span * VP, B.span);            // 44 vs 38 → 44
-const gridW = axisU * U;
-const W = PAD + LAB + gridW + 14 + NOTE + PAD;
-const panelH = PP * (CH + ROWG) - ROWG;
-
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const body = [];
-const put = (s) => body.push(s);
-
-/** 一个面板。cellU = 每格占多少个 U（1F1B=VP，VPP=1）。 */
-function panel(y, title, sub, sim, cellU, { tone, note, highlight }) {
-  put(`  <text class="pt" x="${PAD}" y="${y}">${esc(title)}</text>`);
-  put(`  <text class="ps" x="${PAD}" y="${y + 17}">${esc(sub)}</text>`);
-  const top = y + 30, cw = cellU * U;
-  sim.rows.forEach((row, r) => {
-    const ry = top + r * (CH + ROWG);
-    put(`  <text class="lab" x="${PAD + LAB - 10}" y="${ry + CH / 2 + 4}">Dev${r}</text>`);
-    row.forEach((op, t) => {
-      const x = PAD + LAB + t * cw;
-      if (op === null) {
-        put(`  <rect class="bub" x="${x + INSET}" y="${ry}" width="${cw - 2 * INSET}" height="${CH}" rx="3"/>`);
-        return;
-      }
-      const kind = (op.f ? 'f' : 'b') + (op.c === 0 ? '0' : '1');
-      put(`  <rect class="${kind}" x="${x + INSET}" y="${ry}" width="${cw - 2 * INSET}" height="${CH}" rx="3"/>`);
-      const tag = (op.c === 0 ? (op.f ? 'f' : 'b') : (op.f ? 'F' : 'B')) + op.mb;
-      put(`  <text class="cl" x="${x + cw / 2}" y="${ry + CH / 2 + 3.5}">${tag}</text>`);
-    });
+function peakLive(sim) {
+  return sim.rows.map((row) => {
+    let live = 0, peak = 0;
+    for (const op of row) {
+      if (!op) continue;
+      live += op.f ? 1 : -1;
+      peak = Math.max(peak, live);
+    }
+    return peak;
   });
-  // 高亮 mb0 的前向路径：chunk0 走完 pp 个 stage，再回到 Dev0 起 chunk1
-  if (highlight) {
-    sim.rows.forEach((row, r) => {
-      const ry = top + r * (CH + ROWG);
-      row.forEach((op, t) => {
-        if (op && op.f && op.mb === 0) {
-          put(`  <rect class="hl" x="${PAD + LAB + t * cw + INSET}" y="${ry}" width="${cw - 2 * INSET}" height="${CH}" rx="3"/>`);
-        }
-      });
-    });
-  }
-  // makespan 尺规：长度按真实耗时刻度，两条一比就是结论
-  const my = top + panelH + 10, len = sim.span * cw;
-  put(`  <line class="rule" x1="${PAD + LAB}" y1="${my}" x2="${PAD + LAB + len}" y2="${my}"/>`);
-  put(`  <line class="tick" x1="${PAD + LAB + len}" y1="${my - 5}" x2="${PAD + LAB + len}" y2="${my + 5}"/>`);
-  put(`  <text class="mk" x="${PAD + LAB + len / 2}" y="${my + 14}">makespan = ${sim.span * cellU / VP} t_f</text>`);
-  // 右侧唯一的强调框
-  const bx = PAD + LAB + gridW + 14, by = top + panelH / 2 - 26;
-  put(`  <rect class="box-${tone}" x="${bx}" y="${by}" width="${NOTE}" height="52" rx="8"/>`);
-  note.forEach((ln, i) => put(`  <text class="txt-${tone}" x="${bx + 11}" y="${by + 18 + i * 15}">${esc(ln)}</text>`));
-  return my + 26;
 }
 
-let y = PAD + 60;
-y = panel(y, '① 标准 1F1B（调度器②）—— 每卡一段连续层',
-  `一格 = t_f（一个 microbatch 走完本 stage 整段层）`, A, VP,
-  { tone: 'cost', note: ['空泡 / 计算 = 6 / 16', `= (pp−1)/m = 3/8 = 37.5%`] });
-y += 16;
-y = panel(y, '② 交错 1F1B / VPP（调度器③）—— 每卡 vp=2 个不连续 chunk',
-  `一格 = t_f/vp（只走 1 个 chunk）· f/b = chunk0，F/B = chunk1`, B, 1,
-  { tone: 'gain', highlight: true, note: ['空泡 / 计算 = 6 / 32', `= (pp−1)/(m·vp) = 3/16 = 18.75%`] });
+const standardLive = peakLive(standard);
+const vppLive = peakLive(vpp);
+const standardTransfers = 2 * M * (P - 1);
+const vppTransfers = 2 * M * (P * V - 1);
+const transferRatio = `${P * V - 1}/${P - 1}`;
 
-const H = y + 62;
+const W = 1480, H = 850, X0 = 112, U = 21, ROW_H = 24, ROW_GAP = 4;
+const axisUnits = standard.span * V; // 44 chunk-time units; standard cell is V units.
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const out = [];
+const put = (s) => out.push(s);
+const label = (op) => `${op.c ? (op.f ? 'F' : 'B') : (op.f ? 'f' : 'b')}${op.mb}`;
 
-const head = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%" role="img"
-     aria-label="标准 1F1B 与 VPP 交错调度的同轴对照：VPP 把每格耗时降为 t_f/vp，空泡比从 3/8 降到 3/16，makespan 从 22 t_f 降到 19 t_f，代价是每个 microbatch 往返 vp 趟、P2P 次数乘以 vp">
-  <style>
-    text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
-    .card{fill:#fff;stroke:#E4E7EC}
-    .ti{font-size:15px;font-weight:700;fill:#1F2430}
-    .su{font-size:11.5px;fill:#8A8F98}
-    .pt{font-size:13px;font-weight:700;fill:#2A313B}
-    .ps{font-size:11px;fill:#8A8F98}
-    .lab{font-size:11px;fill:#5B6470;text-anchor:end}
-    .cl{font-size:9.5px;font-weight:700;fill:#fff;text-anchor:middle}
-    .f0{fill:#9CC2F3}   /* 前向 chunk0：蓝族浅档 */
-    .f1{fill:#3E7BD0}   /* 前向 chunk1：蓝族深档 */
-    .b0{fill:#A5D6BC}   /* 反向 chunk0：绿族浅档 */
-    .b1{fill:#3E9970}   /* 反向 chunk1：绿族深档 */
-    .bub{fill:url(#hatch);stroke:#E0DCD2}
-    .hl{fill:none;stroke:#2563EB;stroke-width:2}
-    .hlt{font-size:10.5px;font-weight:600;fill:#173F87}
-    .rule{stroke:#C7CCD3;stroke-dasharray:3 3}
-    .tick{stroke:#9AA1AC;stroke-width:1.5}
-    .mk{font-size:10px;fill:#9AA1AC;text-anchor:middle}
-    .box-cost{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.4}
-    .txt-cost{font-size:10.5px;font-weight:600;fill:#8A4A11}
-    .box-gain{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.4}
-    .txt-gain{font-size:10.5px;font-weight:600;fill:#173F87}
-    .cap{font-size:11px;fill:#7A808A}
-    .lg{font-size:10.5px;fill:#7A808A}
-  </style>
-  <defs>
-    <pattern id="hatch" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-      <rect width="6" height="6" fill="#F3F1EB"/>
-      <rect width="3" height="6" fill="#E4E0D6"/>
-    </pattern>
-  </defs>
-  <rect class="card" x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="14"/>
-  <text class="ti" x="${PAD}" y="${PAD + 14}">交错 1F1B(VPP)：气泡率 ÷ vp，代价是 P2P ×vp</text>
-  <text class="su" x="${PAD}" y="${PAD + 32}">pp=4, m=8, vp=2, N=4 · 上下两面板共用同一条按真实耗时刻度的时间轴（每格宽度 ∝ 该格耗时）· 斜纹 = 空泡</text>
-  <text class="su" x="${PAD}" y="${PAD + 48}">蓝 = 前向，绿 = 反向；浅档 = chunk0，深档 = chunk1</text>`;
+function multiline(x, y, lines, cls = 'sm', gap = 16, anchor = 'start') {
+  put(`<text class="${cls}" x="${x}" y="${y}" text-anchor="${anchor}">${lines.map((line, i) => `<tspan x="${x}" dy="${i ? gap : 0}">${esc(line)}</tspan>`).join('')}</text>`);
+}
 
-const tail = `  <text class="cap" x="${PAD}" y="${y + 8}">同一条轴上量：makespan 从 ${A.span} t_f 降到 ${B.span / VP} t_f；空泡/计算从 ${A.bubble}/${A.ops} = (pp−1)/m 降到 ${B.bubble}/${B.ops} = (pp−1)/(m·vp)，正好 ÷vp。</text>
-  <text class="cap" x="${PAD}" y="${y + 24}"><tspan fill="#173F87" font-weight="700">蓝框</tspan> = mb0 的前向路径：chunk0 走完 4 个 stage 后回到 Dev0 才起 chunk1 —— 一个 microbatch 往返 vp=2 趟，这正是收益的来源，也是代价的来源。</text>
-  <text class="cap" x="${PAD}" y="${y + 40}">代价：P2P 次数 ×vp；峰值激活 ≈ (1+1/vp)·pp·A（略高于 1F1B）。跨机时须配 overlap_p2p_comm（调度器④）把这 vp× 通信藏起来。</text>
-</svg>`;
+function schedulePanel(y, title, subtitle, sim, cellUnits, live, metrics) {
+  put(`<text class="pt" x="28" y="${y}">${esc(title)}</text>`);
+  put(`<text class="sub" x="28" y="${y + 20}">${esc(subtitle)}</text>`);
+  const top = y + 36;
+  sim.rows.forEach((row, rank) => {
+    const ry = top + rank * (ROW_H + ROW_GAP);
+    put(`<text class="lane" x="${X0 - 12}" y="${ry + 16}">rank ${rank}</text>`);
+    row.forEach((op, t) => {
+      const x = X0 + t * cellUnits * U;
+      const width = cellUnits * U - 2;
+      if (!op) {
+        put(`<rect class="bubble" x="${x + 1}" y="${ry}" width="${width}" height="${ROW_H}" rx="3"/>`);
+      } else {
+        const cls = op.f ? (op.c ? 'f-light' : 'f') : (op.c ? 'b-light' : 'b');
+        const focus = op.mb === 0 ? ' focus' : '';
+        put(`<rect class="${cls}${focus}" x="${x + 1}" y="${ry}" width="${width}" height="${ROW_H}" rx="3"/>`);
+        put(`<text class="cell" x="${x + cellUnits * U / 2}" y="${ry + 16}">${label(op)}</text>`);
+      }
+    });
+  });
+  const rulerY = top + 4 * (ROW_H + ROW_GAP) + 4;
+  const len = sim.span * cellUnits * U;
+  put(`<path class="ruler" d="M ${X0} ${rulerY} H ${X0 + len} M ${X0} ${rulerY - 5} V ${rulerY + 5} M ${X0 + len} ${rulerY - 5} V ${rulerY + 5}"/>`);
+  put(`<text class="ruler-t" x="${X0 + len / 2}" y="${rulerY + 18}">${esc(metrics)}</text>`);
+  const bx = 1080;
+  put(`<rect class="metric" x="${bx}" y="${top - 4}" width="370" height="112" rx="10"/>`);
+  multiline(bx + 16, top + 20, [
+    `峰值 live forward record / rank = [${live.join(', ')}]`,
+    `边界 data messages = ${cellUnits === V ? standardTransfers : vppTransfers}`,
+    cellUnits === V ? '每条 microbatch：F → loss@rank3 → B → grad@rank0' : `相对标准 = ${transferRatio} = ${(vppTransfers / standardTransfers).toFixed(2)}×（不是恰好 ${V}×）`,
+    '斜纹格 = 因依赖未就绪产生的 bubble',
+  ], 'metric-t', 22);
+  return rulerY + 36;
+}
 
-console.log([head, ...body, tail].join('\n'));
+put(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%" role="img"
+  data-contract="P=4;m=8;v=2;N=4;standard_span=22;vpp_span=38;standard_bubble=6;vpp_bubble=6;standard_messages=48;vpp_messages=112;standard_live=4,3,2,1;vpp_live=11,9,7,5"
+  aria-label="P=4 m=8 的无流水、普通 1F1B 与 VPP 调度。每个 rank 都可沿 microbatch 0 从 forward、末级 loss、backward 追到首级 gradient；图中同时给出气泡、激活记录和边界消息增量。">`);
+put(`<style>
+ text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}.card{fill:#fff;stroke:#dfe3e8}.panel{fill:#fafbfc;stroke:#dfe3e8}.title{font-size:19px;font-weight:700;fill:#202630}.sub{font-size:11px;fill:#737b87}.pt{font-size:14px;font-weight:700;fill:#303844}.lane{font-size:10px;fill:#596270;text-anchor:end}.cell{font-size:9px;font-weight:700;fill:#fff;text-anchor:middle}.f{fill:#2563eb}.f-light{fill:#7ca8ef}.b{fill:#c3651f}.b-light{fill:#df9c65}.focus{stroke:#172033;stroke-width:1.7}.bubble{fill:url(#hatch);stroke:#d6d9de}.ruler{fill:none;stroke:#9ba3ad}.ruler-t{font-size:10px;fill:#68717d;text-anchor:middle}.metric{fill:#fff;stroke:#b7bec8}.metric-t{font-size:11px;fill:#47515e}.tag{font-size:11px;font-weight:700;fill:#173f87}.footer{font-size:11px;fill:#606a76}
+</style>`);
+put(`<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f4f5f6"/><rect width="2" height="6" fill="#dfe2e6"/></pattern></defs>`);
+put(`<rect class="card" x=".5" y=".5" width="${W - 1}" height="${H - 1}" rx="14"/>`);
+put(`<text class="title" x="28" y="38">同一训练闭环：no-pipeline、non-interleaved 1F1B、VPP/interleaved</text>`);
+put(`<text class="sub" x="28" y="60">蓝 = forward，橙 = backward；小写 = chunk 0，大写 = chunk 1；黑边沿 microbatch 0。下两图共用真实时间比例：标准一格 = t_f，VPP 一格 = t_f/2。</text>`);
+
+put(`<rect class="panel" x="20" y="80" width="1440" height="108" rx="11"/>`);
+put(`<text class="pt" x="38" y="108">⓪ PP=1 / no-pipeline 控制流（m=8）</text>`);
+put(`<text class="sub" x="38" y="130">控制流参考，不与下方 t_f 共用壁钟：F0 → B0 → F1 → B1 → …；每个 F 在整模型末端产生 loss，每个 B 再产生首端 gradient；stage P2P = 0。</text>`);
+for (let mb = 0; mb < M; mb++) {
+  const x = 38 + mb * 128;
+  put(`<rect class="f" x="${x}" y="146" width="51" height="24" rx="4"/><text class="cell" x="${x + 25.5}" y="162">F${mb}</text>`);
+  put(`<rect class="b" x="${x + 55}" y="146" width="51" height="24" rx="4"/><text class="cell" x="${x + 80.5}" y="162">B${mb}</text>`);
+}
+put(`<text class="tag" x="1080" y="162">峰值：当前 microbatch 1 份 forward state</text>`);
+
+put(`<rect class="panel" x="20" y="204" width="1440" height="248" rx="11"/>`);
+schedulePanel(232, '① 普通 non-interleaved 1F1B', 'P=4,m=8；一格 = 一个 physical stage 的 t_f；warmup / steady / cooldown 来自离散依赖解算。', standard, V, standardLive,
+  `makespan = ${standard.span} t_f；bubble/compute = ${standard.bubble}/${standard.ops} = ${(100 * standard.bubble / standard.ops).toFixed(1)}%`);
+
+put(`<rect class="panel" x="20" y="470" width="1440" height="248" rx="11"/>`);
+schedulePanel(498, '② VPP / interleaved 1F1B', 'P=4,m=8,v=2,N=4；f/b=chunk0，F/B=chunk1；一格 = t_f/v。', vpp, 1, vppLive,
+  `makespan = ${vpp.span}/${V} = ${vpp.span / V} t_f；bubble/compute = ${vpp.bubble}/${vpp.ops} = ${(100 * vpp.bubble / vpp.ops).toFixed(2)}%`);
+
+put(`<text class="footer" x="28" y="754">量化结论：等时 chunk 模型中 22t_f → 19t_f；bubble/compute 从 3/8 → 3/16。消息按 logical stage boundary 计，VPP 是 112/48=7/3×；真实壁钟还取决于层异构、网络和 overlap。</text>`);
+put(`<text class="footer" x="28" y="776">激活数字是“已 forward、尚未 backward”的记录数，不等价于字节；chunk 大小、重计算、offload 和输出伪释放会改变字节账本。</text>`);
+put(`<text class="footer" x="28" y="812">决策线：显存/通信受限且 m 足够时先用普通 1F1B；bubble 主导且能承担 7/3× 边界消息与更多 live record 时再用 VPP。</text>`);
+put(`</svg>`);
+
+console.log(out.join('\n'));

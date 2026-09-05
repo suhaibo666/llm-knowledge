@@ -1,8 +1,9 @@
-// 锁住仿真器与页面的一致性：期望值直接取自
-// wiki/02_engineering/02_train_frameworks/megatron-lm/15_megatron_pp_schedulers_analysis.md
-// 的 §③.3 / §⑤.3(a) 两张 ASCII 调度表（该页基线 Megatron@71092579）。
+// 锁住仿真器、页面与外部 SVG 的调度语义：冻结源码基线是
+// Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a；稳定源码锚点为
+// schedules.py::get_schedule_table、get_pp_rank_microbatches 与
+// forward_backward_pipelining_with_interleaving，页面锚点为 VPP / combined-1F1B 两张生成图。
 //
-// 这两张表是独立于本模块手工推演出来的，因此逐格相等构成互相印证：
+// 期望 lane 独立于本模块按上述源码推演，因此逐格相等构成互相印证：
 // 一旦源码基线推进导致调度变化，这里会先红，提醒同时更新页面、图与基线声明。
 //
 // 运行: node --test tools/figs/svg/lib/megatron_pp_sim.test.mjs
@@ -16,7 +17,7 @@ const CFG = { pp: 4, m: 8, vp: 2, N: 4 };
 const label = (op) => (op === null ? '..' : (op.c === 0 ? (op.f ? 'f' : 'b') : (op.f ? 'F' : 'B')) + op.mb);
 const render = (rows) => rows.map((r) => r.map(label).join(' '));
 
-test('get_schedule_table 与页面 §③.3 的调度表一致', () => {
+test('get_schedule_table 与 VPP 生成图的 schedule contract 一致', () => {
   const T = scheduleTable(CFG.m, CFG.vp, CFG.N);
   assert.equal(T.map((x) => x[0]).join(' '), '0 1 2 3 0 1 2 3 4 5 6 7 4 5 6 7');
   assert.equal(T.map((x) => x[1]).join(' '), '0 0 0 0 1 1 1 1 0 0 0 0 1 1 1 1');
@@ -30,7 +31,7 @@ test('combined-1F1B 宿主 warmup 各 +1（schedules.py:918-919）', () => {
   assert.deepEqual(seqVpp({ ...CFG, extraWarmup: 1 }).map((r) => r.warmup), [11, 9, 7, 5]);
 });
 
-test('纯 VPP 空间-时间图逐格复现页面 §③.3', () => {
+test('纯 VPP 空间-时间 lane 逐格复现 VPP 生成图', () => {
   const sim = simulate(seqVpp(CFG), CFG);
   assert.equal(sim.span, 38);
   assert.equal(sim.ops, 32);
@@ -43,7 +44,7 @@ test('纯 VPP 空间-时间图逐格复现页面 §③.3', () => {
   ]);
 });
 
-test('combined-1F1B 宿主形态逐格复现页面 §⑤.3(a)', () => {
+test('combined-1F1B 宿主 lane 逐格复现 combined 生成图', () => {
   const sim = simulate(seqVpp({ ...CFG, extraWarmup: 1 }), CFG);
   assert.equal(sim.span, 38);          // 阶梯右移一格，makespan 与空泡数不变
   assert.equal(sim.bubble, 6);
@@ -55,7 +56,7 @@ test('combined-1F1B 宿主形态逐格复现页面 §⑤.3(a)', () => {
 
 test('标准 1F1B（调度器②）：makespan 22 stage-op，每设备 16 op + 6 空泡', () => {
   const sim = simulate(seq1f1b(CFG), { pp: CFG.pp, vp: 1 });
-  assert.equal(sim.span, 22);          // 页面 §②.3
+  assert.equal(sim.span, 22);          // non-interleaved 1F1B 生成图的固定算例
   assert.equal(sim.ops, 16);
   assert.equal(sim.bubble, 6);
 });
