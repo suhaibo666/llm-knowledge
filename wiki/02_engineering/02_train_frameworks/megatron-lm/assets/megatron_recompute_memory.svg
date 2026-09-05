@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 560" role="img" aria-label="uniform 保存边界与回放激活的容量变化：k 等于 1、2、4 的模型峰值为 2048、1792、2432 MiB">
+<style>text{font:12px 'Microsoft YaHei','Segoe UI',sans-serif;fill:#344054}.title{font-size:20px;font-weight:700}.heading{font-size:16px;font-weight:700}.small{font-size:11px}.grid{stroke:#e5e7eb}.saved{fill:#e4e7ec;stroke:#98a2b3}.replay{fill:#fff0dd;stroke:#c3651f}.peak{fill:none;stroke:#2563eb;stroke-width:2}.blue{fill:#2563eb}</style>
+<rect width="1100" height="560" fill="white"/>
+<text class="title" x="24" y="30">检查点更少，回放峰值却可能更高</text>
+<text x="24" y="54">同一教学账本：L=24，w=4，层输入 H=16 MiB，内部 I=496 MiB；仅统计已列激活存储。</text>
+<rect class="saved" x="24" y="72" width="18" height="12"/><text x="49" y="83">保留的组首输入</text>
+<rect class="replay" x="198" y="72" width="18" height="12"/><text x="223" y="83">回放内部、组内输入及新输出</text>
+<text class="blue" x="499" y="83">蓝框：本模型峰值时刻</text>
+<text class="heading" x="56" y="113">k=1：24 组 / microbatch</text>
+<line class="grid" x1="51" y1="385" x2="340" y2="385"/><text class="small" text-anchor="end" x="46" y="389">0</text>
+<line class="grid" x1="51" y1="285" x2="340" y2="285"/><text class="small" text-anchor="end" x="46" y="289">1000</text>
+<line class="grid" x1="51" y1="185" x2="340" y2="185"/><text class="small" text-anchor="end" x="46" y="189">2000</text>
+<rect class="saved" x="56" y="231.39999999999998" width="47" height="153.60000000000002"/>
+<rect class="replay" x="56" y="231.39999999999998" width="47" height="0"/>
+<text text-anchor="middle" x="79.5" y="223.39999999999998">1536</text>
+<text class="small" text-anchor="middle" x="79.5" y="410">原前向结束</text>
+<rect class="saved" x="129" y="231.39999999999998" width="47" height="153.60000000000002"/>
+<rect class="replay" x="129" y="180.2" width="47" height="51.2"/>
+<text text-anchor="middle" x="152.5" y="172.2">2048</text>
+<text class="small" text-anchor="middle" x="152.5" y="410">首组回放后</text>
+<rect class="peak" x="126" y="177.2" width="53" height="210.8"/>
+<rect class="saved" x="202" y="233" width="47" height="152"/>
+<rect class="replay" x="202" y="233" width="47" height="0"/>
+<text text-anchor="middle" x="225.5" y="225">1520</text>
+<text class="small" text-anchor="middle" x="225.5" y="410">首组反向后</text>
+<rect class="saved" x="275" y="385" width="47" height="0"/>
+<rect class="replay" x="275" y="385" width="47" height="0"/>
+<text text-anchor="middle" x="298.5" y="377">0</text>
+<text class="small" text-anchor="middle" x="298.5" y="410">全部消费</text>
+<text x="56" y="440">首次回放新增：512 MiB</text>
+<text class="blue" x="56" y="462">模型峰值：2048 MiB</text>
+<text class="heading" x="411" y="113">k=2：12 组 / microbatch</text>
+<line class="grid" x1="406" y1="385" x2="695" y2="385"/><text class="small" text-anchor="end" x="401" y="389">0</text>
+<line class="grid" x1="406" y1="285" x2="695" y2="285"/><text class="small" text-anchor="end" x="401" y="289">1000</text>
+<line class="grid" x1="406" y1="185" x2="695" y2="185"/><text class="small" text-anchor="end" x="401" y="189">2000</text>
+<rect class="saved" x="411" y="308.2" width="47" height="76.80000000000001"/>
+<rect class="replay" x="411" y="308.2" width="47" height="0"/>
+<text text-anchor="middle" x="434.5" y="300.2">768</text>
+<text class="small" text-anchor="middle" x="434.5" y="410">原前向结束</text>
+<rect class="saved" x="484" y="308.2" width="47" height="76.80000000000001"/>
+<rect class="replay" x="484" y="205.79999999999998" width="47" height="102.4"/>
+<text text-anchor="middle" x="507.5" y="197.79999999999998">1792</text>
+<text class="small" text-anchor="middle" x="507.5" y="410">首组回放后</text>
+<rect class="peak" x="481" y="202.79999999999998" width="53" height="185.20000000000002"/>
+<rect class="saved" x="557" y="309.8" width="47" height="75.2"/>
+<rect class="replay" x="557" y="309.8" width="47" height="0"/>
+<text text-anchor="middle" x="580.5" y="301.8">752</text>
+<text class="small" text-anchor="middle" x="580.5" y="410">首组反向后</text>
+<rect class="saved" x="630" y="385" width="47" height="0"/>
+<rect class="replay" x="630" y="385" width="47" height="0"/>
+<text text-anchor="middle" x="653.5" y="377">0</text>
+<text class="small" text-anchor="middle" x="653.5" y="410">全部消费</text>
+<text x="411" y="440">首次回放新增：1024 MiB</text>
+<text class="blue" x="411" y="462">模型峰值：1792 MiB</text>
+<text class="heading" x="766" y="113">k=4：6 组 / microbatch</text>
+<line class="grid" x1="761" y1="385" x2="1050" y2="385"/><text class="small" text-anchor="end" x="756" y="389">0</text>
+<line class="grid" x1="761" y1="285" x2="1050" y2="285"/><text class="small" text-anchor="end" x="756" y="289">1000</text>
+<line class="grid" x1="761" y1="185" x2="1050" y2="185"/><text class="small" text-anchor="end" x="756" y="189">2000</text>
+<rect class="saved" x="766" y="346.6" width="47" height="38.400000000000006"/>
+<rect class="replay" x="766" y="346.6" width="47" height="0"/>
+<text text-anchor="middle" x="789.5" y="338.6">384</text>
+<text class="small" text-anchor="middle" x="789.5" y="410">原前向结束</text>
+<rect class="saved" x="839" y="346.6" width="47" height="38.400000000000006"/>
+<rect class="replay" x="839" y="141.8" width="47" height="204.8"/>
+<text text-anchor="middle" x="862.5" y="133.8">2432</text>
+<text class="small" text-anchor="middle" x="862.5" y="410">首组回放后</text>
+<rect class="peak" x="836" y="138.8" width="53" height="249.20000000000002"/>
+<rect class="saved" x="912" y="348.2" width="47" height="36.800000000000004"/>
+<rect class="replay" x="912" y="348.2" width="47" height="0"/>
+<text text-anchor="middle" x="935.5" y="340.2">368</text>
+<text class="small" text-anchor="middle" x="935.5" y="410">首组反向后</text>
+<rect class="saved" x="985" y="385" width="47" height="0"/>
+<rect class="replay" x="985" y="385" width="47" height="0"/>
+<text text-anchor="middle" x="1008.5" y="377">0</text>
+<text class="small" text-anchor="middle" x="1008.5" y="410">全部消费</text>
+<text x="766" y="440">首次回放新增：2048 MiB</text>
+<text class="blue" x="766" y="462">模型峰值：2432 MiB</text>
+<text x="24" y="498">纵轴：MiB；横轴：事件先后，不表示等长时间。先保留四份前向，再串行回放并反向消费至零。</text>
+<text x="24" y="522">k 增大：边界更少，但一次重建的层更多。组首输入不重复计入；回放新输出另占 H。</text>
+<text class="small" x="24" y="545">不含模型状态、激活梯度、算子/通信缓冲及 allocator 容量；真实峰值需按实际 PP/VPP 时间线测量。</text></svg>

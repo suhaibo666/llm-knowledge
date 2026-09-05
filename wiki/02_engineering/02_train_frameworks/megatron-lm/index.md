@@ -33,7 +33,7 @@ title: "Megatron-LM 知识地图"
 | 15 | [[15_megatron_pp_schedulers_analysis]] | 从 GPipe、1F1B 到 VPP 与通信重叠，兼述 MoE 和多模块调度。 |
 | 16 | [[16_megatron_distributed_optimizer_analysis]] | 连续 range 与整参 owner、梯度规约、更新及参数可见性闭环。 |
 | 17 | [[17_megatron_parallelism_orchestration_analysis]] | dense/expert 分组、进程组生命周期与显式组注入。 |
-| 18 | [[18_megatron_recompute_analysis]] | 激活与 RNG 回放、full/selective 及调度器重计算的数据路径。 |
+| 18 | [[18_megatron_recompute_analysis]] | 从激活留存推导 full/selective，量化分组回放峰值并连接 Megatron 配置与调度。 |
 | 19 | [[19_megatron_dist_checkpointing_analysis]] | sharded state、并行无关保存、加载与重分片。 |
 | 20 | [[20_megatron_comm_overlap_analysis]] | 跨 TP/CP/EP/PP/DP 的时间线、资源竞争与诊断。 |
 | 21 | [[21_megatron_fusion_operators_analysis]] | 融合算子的触发条件、后端实现与回退目录。 |

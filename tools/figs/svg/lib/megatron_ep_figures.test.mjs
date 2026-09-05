@@ -179,7 +179,8 @@ test('生成器、tracked SVG 与 Markdown contract 不允许单边漂移', asyn
     for (const name of assetNames) {
       const generated = await readFile(join(outputDir, name), 'utf8');
       const tracked = await readFile(join(assetDir, name), 'utf8');
-      assert.equal(tracked, generated, `${name} 与生成器不一致`);
+      // Git may check out CRLF on Windows; compare every other byte unchanged.
+      assert.equal(tracked.replaceAll('\r\n', '\n'), generated.replaceAll('\r\n', '\n'), `${name} 与生成器不一致`);
       assert.deepEqual(svgContract(generated), EXPECTED_CONTRACT, `${name} contract 漂移`);
     }
   } finally {

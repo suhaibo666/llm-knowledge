@@ -12,6 +12,11 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-05：Megatron 18 从激活账本递进解释重计算设计
+
+- [[18_megatron_recompute_analysis]] 保持特性分析骨架，从反向所需张量推导逐层 full、uniform 分组、block 部分层、selective 与输出丢弃；每种方案就地解释保存/回放、容量收益及计算通信代价，再接入模型、并行、调度和融合边界。保留已有十个模块、兄弟入口、配置契约和源码纠错。
+- 新增普通 MHA/GELU 层的独立存储账本与矩阵乘 FLOPs 推导，明确教学假设和后端边界；使用同一 24 层、四份待反向记录的事件模型，说明 uniform 分组减少边界留存却可能抬高回放峰值。容量图由脚本计算，回归同时核对正文、存储释放与图产物；解析结果不作为 GPU 实测。
+
 ## 2026-09-05：Megatron 14–15 按基础方案到优化方案重组叙述
 
 - [[14_megatron_ep_analysis]] 用同一组四 token、四专家路线，依次讲完 AllGather、AllToAll、DeepEP、HybridEP 的动机、输入排列、专家计算、回送与反向，再说明 DeepEPv2 和 NCCL-EP 的分支取舍。组件、选择入口与并行轴接线移到源码章节；修正专家归属由建模固定、AllGather 仍需 CPU 计数，以及两 rank 算例不能直接证明 AllToAll 节省 hidden 通信量。
