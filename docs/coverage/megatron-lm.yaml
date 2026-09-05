@@ -2393,3 +2393,248 @@ flags:
   from: StragglerDetectionConfig
   owner: 28_megatron_training_stability_observability_analysis
   rule: 契约段（2026-09-02）
+variant_axes:
+- owner: 16_megatron_distributed_optimizer_analysis
+  selector: use_distributed_optimizer
+  source: megatron/core/distributed/param_and_grad_buffer.py::_ParamAndGradBucketGroup.start_grad_sync
+  variants:
+  - name: all-reduce
+    page_terms: [all-reduce]
+    figures: [assets/megatron_distopt_fp32_rs_hsdp.svg]
+    figure_terms: [all-reduce]
+  - name: reduce-scatter
+    page_terms: [reduce-scatter]
+    figures: [assets/megatron_distopt_fp32_rs_hsdp.svg]
+    figure_terms: [reduce-scatter]
+  - name: fp32-accumulation-rs
+    page_terms: [reduce_scatter_with_fp32_accumulation, all_to_all_single]
+    figures: [assets/megatron_distopt_fp32_rs_hsdp.svg]
+    figure_terms: [FP32 accumulation, all_to_all_single]
+  - name: multi-instance-hsdp
+    page_terms: [num_distributed_optimizer_instances, HSDP]
+    figures: [assets/megatron_distopt_fp32_rs_hsdp.svg]
+    figure_terms: [HSDP, instance]
+- owner: 16_megatron_distributed_optimizer_analysis
+  selector: use_torch_fsdp2
+  source: megatron/training/models/dist_utils.py::_ddp_wrap
+  variants:
+  - name: native-distributed-optimizer
+    page_terms: [DistributedOptimizer]
+    figures: [assets/megatron_distopt_live_paths.svg]
+    figure_terms: [native DistributedOptimizer]
+  - name: torch-fsdp2
+    page_terms: [Torch FSDP2]
+    figures: [assets/megatron_distopt_live_paths.svg]
+    figure_terms: [Torch FSDP2]
+  - name: megatron-fsdp
+    page_terms: [Megatron-FSDP]
+    figures: [assets/megatron_distopt_live_paths.svg]
+    figure_terms: [Megatron-FSDP]
+- owner: 16_megatron_distributed_optimizer_analysis
+  selector: get_megatron_optimizer
+  source: megatron/core/optimizer/__init__.py::get_megatron_optimizer
+  variants:
+  - name: layer-wise-decoupled
+    page_terms: [LayerWiseDistributedOptimizer, allgather_params, 26_megatron_optimizer_step_internals_deepdive]
+    figures: [assets/megatron_distopt_live_paths.svg]
+    figure_terms: [LayerWise, decoupled, variable-size]
+  - name: layer-wise-layout
+    page_terms: [LayerWiseDistributedOptimizer, compute_full_param_layout, 26_megatron_optimizer_step_internals_deepdive]
+    figures: [assets/megatron_distopt_live_paths.svg]
+    figure_terms: [LayerWise, layout, buffer AG]
+- owner: 17_megatron_parallelism_orchestration_analysis
+  selector: use_tp_pp_dp_mapping
+  source: megatron/training/initialize.py::_initialize_distributed
+  variants:
+  - name: default-order
+    page_terms: [tp-cp-ep-dp-pp]
+    figures: [assets/megatron_orchestration_ranks.svg]
+    figure_terms: [tp-cp-ep-dp-pp]
+  - name: alternative-order
+    page_terms: [tp-cp-ep-pp-dp]
+    figures: [assets/megatron_orchestration_ranks.svg]
+    figure_terms: [tp-cp-ep-pp-dp]
+- owner: 17_megatron_parallelism_orchestration_analysis
+  selector: RankGenerator
+  source: megatron/core/parallel_state.py::initialize_model_parallel
+  variants:
+  - name: dense-decomposition
+    page_terms: [dense, 'ep=1', dp-cp]
+    figures: [assets/megatron_orchestration_ranks.svg]
+    figure_terms: [default · dense, alternative · dense]
+  - name: expert-decomposition
+    page_terms: [expert, 'cp=1', ETP, EDP]
+    figures: [assets/megatron_orchestration_ranks.svg]
+    figure_terms: [default · expert, alternative · expert]
+- owner: 17_megatron_parallelism_orchestration_analysis
+  selector: initialize_model_parallel
+  source: megatron/core/parallel_state.py::initialize_model_parallel
+  variants:
+  - name: hierarchical-cp
+    page_terms: [create_hierarchical_groups, hierarchical CP]
+    figures: [assets/megatron_orchestration_derived.svg]
+    figure_terms: [hierarchical CP]
+  - name: dynamic-dp-cp
+    page_terms: [create_dynamic_dp_cp_groups, dynamic DP×CP]
+    figures: [assets/megatron_orchestration_derived.svg]
+    figure_terms: [dynamic DP×CP]
+  - name: partial-dp
+    page_terms: [num_distributed_optimizer_instances, partial DP]
+    figures: [assets/megatron_orchestration_derived.svg]
+    figure_terms: [partial DP]
+  - name: partial-expert-dp-and-shared-inter
+    page_terms: [partial expert DP, get_inter_distributed_optimizer_instance_group, intra_expt_dp]
+    figures: [assets/megatron_orchestration_derived.svg]
+    figure_terms: [partial expert DP, inter]
+- owner: 17_megatron_parallelism_orchestration_analysis
+  selector: HyperCommGrid.create_pg
+  source: megatron/core/hyper_comm_grid.py::HyperCommGrid.create_pg
+  variants:
+  - name: base-view
+    page_terms: [base, dp_cp, moveaxis]
+    figures: [assets/megatron_orchestration_grid.svg]
+    figure_terms: [base view, PGC.dp_cp]
+  - name: expert-view
+    page_terms: [expert, shared_dims, moveaxis]
+    figures: [assets/megatron_orchestration_grid.svg]
+    figure_terms: [expert view, PGC.ep]
+  - name: shared-dimension-handle
+    page_terms: [shared_dims, KeyError]
+    figures: [assets/megatron_orchestration_grid.svg]
+    figure_terms: [shared_dims = pp, '一个 _pgs[pp] handle']
+- owner: 18_megatron_recompute_analysis
+  selector: recompute_method
+  source: megatron/core/transformer/transformer_block.py::TransformerBlock._checkpointed_forward
+  variants:
+  - name: full-uniform
+    page_terms: [uniform, recompute_num_layers]
+    figures: [assets/megatron_recompute_full.svg]
+    figure_terms: [full / uniform, 4 次层前向回放]
+  - name: full-block
+    page_terms: [block, recompute_skip_num_layers]
+    figures: [assets/megatron_recompute_full.svg]
+    figure_terms: [full / block, 2 次层前向回放]
+- owner: 18_megatron_recompute_analysis
+  selector: distribute_saved_activations
+  source: megatron/core/tensor_parallel/random.py::CheckpointFunction.forward
+  variants:
+  - name: ordinary-retained-input
+    page_terms: [CheckpointFunction.forward, save_for_backward]
+    figures: [assets/megatron_recompute_primitive.svg]
+    figure_terms: [ordinary, 保存 X + 原前向 RNG]
+  - name: split-first-input-and-gather-before-replay
+    page_terms: ['args[0]', gather_split_1d_tensor]
+    figures: [assets/megatron_recompute_primitive.svg]
+    figure_terms: [distribute_saved, _activations, TP all-gather]
+- owner: 18_megatron_recompute_analysis
+  selector: recompute_modules
+  source: megatron/core/transformer/transformer_config.py::TransformerConfig.__post_init__
+  variants:
+  - name: core_attn
+    page_terms: [core_attn]
+    figures: [assets/megatron_recompute_selective_normal.svg]
+    figure_terms: [core_attn]
+  - name: mlp
+    page_terms: [mlp]
+    figures: [assets/megatron_recompute_selective_normal.svg]
+    figure_terms: [mlp, dense only]
+  - name: moe
+    page_terms: [moe]
+    figures: [assets/megatron_recompute_selective_normal.svg]
+    figure_terms: [moe, full MoE region]
+  - name: shared_experts
+    page_terms: [shared_experts]
+    figures: [assets/megatron_recompute_selective_normal.svg]
+    figure_terms: [shared_experts]
+  - name: gdn
+    page_terms: [gdn, KDA]
+    figures: [assets/megatron_recompute_selective_normal.svg]
+    figure_terms: [gdn, GDN / KDA]
+  - name: layernorm
+    page_terms: [layernorm, CheckpointWithoutOutput]
+    figures: [assets/megatron_recompute_selective_discard.svg]
+    figure_terms: [layernorm]
+  - name: moe_act
+    page_terms: [moe_act, CheckpointWithoutOutput]
+    figures: [assets/megatron_recompute_selective_discard.svg]
+    figure_terms: [moe_act, non-fused]
+  - name: mla_up_proj
+    page_terms: [mla_up_proj]
+    figures: [assets/megatron_recompute_selective_discard.svg]
+    figure_terms: [mla_up_proj]
+  - name: gdn_norm_out
+    page_terms: [gdn_norm_out]
+    figures: [assets/megatron_recompute_selective_discard.svg]
+    figure_terms: [gdn_norm_out]
+  - name: mhc
+    page_terms: [mhc, MHCCheckpointManager]
+    figures: [assets/megatron_recompute_selective_discard.svg, assets/megatron_recompute_mhc.svg]
+    figure_terms: [mhc, grouped CWO, eager group]
+- owner: 18_megatron_recompute_analysis
+  selector: overlap_moe_expert_parallel_comm
+  source: megatron/core/models/common/model_chunk_schedule_plan.py::TransformerModelChunkSchedulePlan._build_recompute_segments
+  variants:
+  - name: ordinary-gpt-and-hybrid
+    page_terms: [TransformerBlock, HybridStack, supports_hybrid_recompute_kwargs]
+    figures: [assets/megatron_recompute_full.svg]
+    figure_terms: [GPT / Hybrid, recompute.py]
+  - name: ordinary-mtp
+    page_terms: [MultiTokenPredictionLayer, _proj_and_transformer_layer]
+    figures: [assets/megatron_recompute_full.svg]
+    figure_terms: [ordinary MTP, 'ordinary block: warn/skip']
+  - name: hybrid-mtp
+    page_terms: [mtp_layer_pattern, HybridStack]
+    figures: [assets/megatron_recompute_full.svg]
+    figure_terms: [Hybrid MTP, 'Hybrid: 内部 stack replay']
+  - name: ep-overlap-full
+    page_terms: [RecomputeSegment, mhc_grad_carrier, release_input]
+    figures: [assets/megatron_recompute_full.svg]
+    figure_terms: [EP overlap full, '+MTP = 5 段', '+MTP = 3 段', 新 bridge leaf 接旧梯度]
+- owner: 18_megatron_recompute_analysis
+  selector: te_checkpoint
+  source: megatron/core/extensions/transformer_engine.py::te_checkpoint
+  variants:
+  - name: megatron-checkpoint
+    page_terms: [tensor_parallel.checkpoint]
+    figures: [assets/megatron_recompute_primitive.svg]
+    figure_terms: [ordinary, checkpoint]
+  - name: te-quantized-checkpoint
+    page_terms: [te_checkpoint, fp8, fp4]
+    figures: [assets/megatron_recompute_primitive.svg]
+    figure_terms: [FP8 / FP4, TE checkpoint, Megatron → TE 边界]
+- owner: 18_megatron_recompute_analysis
+  selector: TEGroupedMLP
+  source: megatron/core/transformer/moe/experts.py::TEGroupedMLP._make_fused_ops
+  variants:
+  - name: non-fused-moe-activation
+    page_terms: [moe_act, CheckpointWithoutOutput]
+    figures: [assets/megatron_recompute_selective_discard.svg]
+    figure_terms: [non-fused, FC2 输出 hook]
+  - name: te-fused-moe-activation
+    page_terms: [activation_recompute_in_mlp, inspect.signature]
+    figures: [assets/megatron_recompute_selective_discard.svg]
+    figure_terms: [TE fused sibling, activation_recompute_in_mlp]
+- owner: 18_megatron_recompute_analysis
+  selector: MHCCheckpointManager
+  source: megatron/core/tensor_parallel/random.py::MHCCheckpointManager
+  variants:
+  - name: eager-group
+    page_terms: [recompute_now]
+    figures: [assets/megatron_recompute_mhc.svg]
+    figure_terms: [eager group, recompute_now]
+  - name: post-bda-sibling
+    page_terms: [h_post, dropout]
+    figures: [assets/megatron_recompute_mhc.svg]
+    figure_terms: [post BDA, '互斥 A: dropout=0 或 eval', '互斥 B: dropout>0 且 train', 只选 A 或 B 包入 CWO]
+  - name: explicit-schedule-barrier
+    page_terms: [recompute_until, BEFORE_COMBINE_BWD]
+    figures: [assets/megatron_recompute_mhc.svg]
+    figure_terms: [explicit barrier, BEFORE_COMBINE_BWD]
+  - name: te-fixed-address-arena
+    page_terms: [MHCRecomputeArenaSlot, writer]
+    figures: [assets/megatron_recompute_mhc.svg]
+    figure_terms: [TE attention split, fixed-address, arena]
+  - name: full-iteration-graph
+    page_terms: [full_iteration, warmup]
+    figures: [assets/megatron_recompute_mhc.svg]
+    figure_terms: [full_iteration, captured lifecycle]

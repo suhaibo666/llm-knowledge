@@ -15,15 +15,26 @@ planning-codebase-analysis 的 coverage matrix 只能覆盖「发现图里有的
         auto: true                       # owner 由 --generate 依「域内唯一提及」自动建议
         candidates: [...]                # 多页提及、无法自动定夺时列出
         excluded: <理由>                 # 显式排除（例如纯调试开关）
+    variant_axes:
+      - owner: <页面 basename>
+        selector: <选择字段/工厂/分支>
+        source: <path::qualified.symbol>
+        variants:
+          - name: <live variant>
+            page_terms: [<页面必须出现的独立标识>]
+            figures: [assets/<principle.svg>]  # owner 页必须用 ![](...) 真实嵌入
+            figure_terms: [<图中必须出现的 lane 标识>]
 
 模式：
     --generate   从冻结 commit AST 枚举字段（git show，不动工作区），grep 域内页面自动建议
                  owner。**承载人工决定的行保留不动**——定了 owner（非 auto）或写了 excluded；
                  `owner: null` + candidates 只是机器建议的快照，会随当前页面内容一并刷新。
-    默认         三查：
+    默认         配置三查 + 特性变体两查：
                  C1 gap            flag 无 owner 且未 excluded          （warning；--strict 计入）
                  C2 stale_owner    人工 owner 页面并未提及该 flag        （warning）
                  C3 unknown_page   owner/candidates 指向域内不存在的页    （error）
+                 C4 variant_gap    live variant 未同时进入 owner 页/指定图 （warning）
+                 C5 variant_error  variant owner/图路径无效                  （error）
                  另列出「域内无任何 flag 归属的页」（info——概念页可以合法拥有零个 flag）。
 
 用法：
@@ -38,6 +49,7 @@ import io
 import re
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -180,6 +192,74 @@ def check(cfg_path, strict, examples):
             gaps.append(f["name"] + ("（多页提及待定）" if f.get("candidates") else "（全域未提及）"))
     silent = sorted(pages - owned_pages)
 
+    # 配置字段只能证明「有开关」，不能证明页面已穷举开关下的 live
+    # algorithms/data planes。variant_axes 是在冻结基线上从 selector/factory
+    # 审定的变体账本；每个变体必须同时进入 owner 页和指定原理图。
+    variant_gaps, variant_errors = [], []
+    wiki_root = ROOT / cfg["wiki_dir"]
+    for axis in cfg.get("variant_axes") or []:
+        owner = axis.get("owner")
+        selector = axis.get("selector")
+        page = wiki_root / f"{owner}.md" if owner else None
+        if not owner or owner not in pages or page is None or not page.exists():
+            variant_errors.append(f"{selector or '<unnamed selector>'}: unknown owner {owner}")
+            continue
+
+        page_text = io.open(page, encoding="utf-8", errors="replace").read()
+        if selector and selector.casefold() not in page_text.casefold():
+            variant_gaps.append(f"{owner}: selector {selector}")
+
+        for variant in axis.get("variants") or []:
+            name = variant.get("name", "<unnamed variant>")
+            for term in variant.get("page_terms") or [name]:
+                if str(term).casefold() not in page_text.casefold():
+                    variant_gaps.append(f"{owner}: {selector}/{name} page term {term}")
+
+            figures = variant.get("figures") or []
+            figure_terms = variant.get("figure_terms") or []
+            # variant_axes is the executable inventory for live algorithm/data-plane
+            # variants.  Omitting the figure contract used to let a prose-only sibling
+            # pass merely because some unrelated figure existed elsewhere on the page.
+            if not figures:
+                variant_errors.append(f"{owner}: {selector}/{name} has no figures contract")
+                continue
+            if not figure_terms:
+                variant_errors.append(f"{owner}: {selector}/{name} has no figure_terms contract")
+            figure_text = ""
+            for rel in figures:
+                rel = str(rel).replace("\\", "/")
+                # A prose/code mention of an asset path is not a rendered principle figure.
+                # Require the repository's standard direct Markdown image syntax.
+                image_embed = re.compile(
+                    r"!\[[^\]\n]*\]\(\s*<?"
+                    + re.escape(rel)
+                    + r">?(?:\s+(?:\"[^\"]*\"|'[^']*'))?\s*\)",
+                    re.IGNORECASE,
+                )
+                if not image_embed.search(page_text):
+                    variant_gaps.append(f"{owner}: {selector}/{name} page does not embed {rel}")
+                asset = wiki_root / rel
+                if not asset.exists():
+                    variant_errors.append(f"{owner}: {selector}/{name} missing figure {rel}")
+                    continue
+                try:
+                    root = ET.parse(asset).getroot()
+                except ET.ParseError as exc:
+                    variant_errors.append(
+                        f"{owner}: {selector}/{name} invalid SVG {rel}: {exc}"
+                    )
+                    continue
+                # Only rendered text nodes count.  Metadata, aria-labels, comments,
+                # data-contract attributes, and generator source are not visible lanes.
+                visible_text = []
+                for element in root.iter():
+                    if str(element.tag).rsplit("}", 1)[-1] == "text":
+                        visible_text.append("".join(element.itertext()))
+                figure_text += "\n" + "\n".join(visible_text)
+            for term in figure_terms:
+                if str(term).casefold() not in figure_text.casefold():
+                    variant_gaps.append(f"{owner}: {selector}/{name} figure term {term}")
+
     print(f"flags={len(cfg.get('flags') or [])}  pages={len(pages)}")
     for label, rows in [("C1 gap（无归属且未排除）", gaps), ("C2 stale_owner", stale), ("C3 unknown_page", unknown)]:
         print(f"{label}: {len(rows)}")
@@ -190,8 +270,14 @@ def check(cfg_path, strict, examples):
     print(f"info 无 flag 归属的页（概念页可合法为零）: {len(silent)}")
     for r in silent[:examples]:
         print(f"    {r}")
-    errors = len(unknown)
-    warnings = len(gaps) + len(stale)
+    for label, rows in [("C4 variant_gap", variant_gaps), ("C5 variant_error", variant_errors)]:
+        print(f"{label}: {len(rows)}")
+        for r in rows[:examples]:
+            print(f"    {r}")
+        if len(rows) > examples:
+            print(f"    … 另 {len(rows) - examples} 条")
+    errors = len(unknown) + len(variant_errors)
+    warnings = len(gaps) + len(stale) + len(variant_gaps)
     print(f"\nerrors={errors} warnings={warnings}")
     return 1 if errors or (strict and warnings) else 0
 

@@ -87,7 +87,7 @@ Megatron 中这些轴如何组合成正交进程组、又如何注入模型与�
 
 ### 2.2 与 MoE 的组合:CP 折叠进 EP
 
-对 MoE 模型,CP 对**专家层无意义**(token 独立处理,无需跨序列)。Megatron 的 MoE Parallel Folding 正是利用这一点:attention 用 $TP\times CP\times DP$,MoE 把 $CP$ **折叠进 $EP$**($ETP\times EP\times EDP$)。详见 [[../../02_engineering/02_train_frameworks/megatron-lm/14_megatron_ep_analysis|14_megatron_ep_analysis]] §9(框架实现细节,本页不展开)。
+对 MoE 模型,CP 对**专家层无意义**(token 独立处理,无需跨序列)。Megatron 的 MoE Parallel Folding 正是利用这一点:attention 用 $TP\times CP\times DP$,MoE 把 $CP$ **折叠进 $EP$**($ETP\times EP\times EDP$)。双 `RankGenerator` 的构造见 [[02_engineering/02_train_frameworks/megatron-lm/17_megatron_parallelism_orchestration_analysis|Megatron 并行组编排]],EP/ETP/EDP 的运行时所有权见 [[02_engineering/02_train_frameworks/megatron-lm/14_megatron_ep_analysis|Megatron EP 闭环]]。
 
 ### 2.3 正交叠加原则
 

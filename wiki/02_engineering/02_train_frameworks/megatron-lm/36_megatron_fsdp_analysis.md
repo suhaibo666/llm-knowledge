@@ -7,11 +7,11 @@ title: "Megatron-FSDP 深度解析"
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
 > **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；该增量只触及 20 个 `megatron/` 文件，本页 `path:line` 引用所涉源文件均不在其中，故无行号漂移，无需逐条重核。
 > 核心文件:`megatron/core/distributed/fsdp/src/megatron_fsdp/`(16 个 `.py`、11321 行;其中 `param_and_grad_buffer.py` 5332 行、`megatron_fsdp.py` 1544 行),接入层 `megatron/core/distributed/fsdp/mcore_fsdp_adapter.py`(654 行),仓内文档 `docs/user-guide/features/megatron_fsdp.md`(619 行)
-> 配套阅读：[[16_megatron_distributed_optimizer_analysis]] §11（三方对比）、[[22_megatron_memory_optimization_analysis]]、[[20_megatron_comm_overlap_analysis]]、[[19_megatron_dist_checkpointing_analysis]]。
+> 配套阅读：[[16_megatron_distributed_optimizer_analysis|ZeRO/HSDP 所有权与三条实现路径对比]]、[[22_megatron_memory_optimization_analysis]]、[[20_megatron_comm_overlap_analysis]]、[[19_megatron_dist_checkpointing_analysis]]。
 > 适用读者:已了解 ZeRO 分级与 Megatron DDP,要读懂、调参或移植 Megatron-FSDP 这台机器的工程师。
 > **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **合并来源**：2026-08-28 新建,吸收并取代 [[16_megatron_distributed_optimizer_analysis]] §11.2「MegatronFSDP 详细分析」与 §11.6「FSDP 与并行拓扑的关系」、旧 `27_megatron_tp_fsdp_resharding_supplements_analysis` §3「Megatron-FSDP 内部实现」;三套分片方案的**横向对比**仍是 16 号页 §11 的职责,本页不重复。
-> **最近更新**：2026-09-03。完成旧补遗页的最终归并：补入参数 gather 粒度开关；16 号页仍以 §11.2/§11.6 保留 owner link，三方对比（DistributedOptimizer / TorchFSDP2 / MegatronFSDP）仍留在那里。
+> **合并来源**：2026-08-28 新建,吸收并取代当时 [[16_megatron_distributed_optimizer_analysis|16 号页]]的 §11.2「MegatronFSDP 详细分析」与 §11.6「FSDP 与并行拓扑的关系」、旧 `27_megatron_tp_fsdp_resharding_supplements_analysis` §3「Megatron-FSDP 内部实现」;三套分片方案的**横向对比**仍由 16 号页负责,本页不重复。
+> **最近更新**：2026-09-04。内部实现正文不变；16 号页重构后，三方对比继续归 16，本页反向导航改为语义链接，不再依赖旧 §11.2/§11.6 编号。
 
 ---
 
@@ -54,7 +54,7 @@ title: "Megatron-FSDP 深度解析"
 | `package_info.py` | 27 | 版本与发行元数据 |
 
 > [!warning] 同名文件不是同一个东西
-> `megatron/core/distributed/param_and_grad_buffer.py` 是 **DDP / DistributedOptimizer** 的缓冲区实现(见 [[16_megatron_distributed_optimizer_analysis]] §3.7);本页讲的是 `megatron/core/distributed/fsdp/src/megatron_fsdp/param_and_grad_buffer.py`。两者同名、职责相近、代码不共享。引用行号时必须带全路径。
+> `megatron/core/distributed/param_and_grad_buffer.py` 是 **DDP / DistributedOptimizer** 的缓冲区实现(见 [[16_megatron_distributed_optimizer_analysis|flat buffer、bucket 与 gradient-ready 闭环]]);本页讲的是 `megatron/core/distributed/fsdp/src/megatron_fsdp/param_and_grad_buffer.py`。两者同名、职责相近、代码不共享。引用行号时必须带全路径。
 
 ### 1.4 记号与命名约定
 
@@ -382,7 +382,7 @@ HFSDP 的收益写在 `docs/user-guide/features/megatron_fsdp.md:468-472`:优化
 | ZeRO 阶梯怎么实现 | 三个布尔量(model/main weight、grad 切不切) | §5.1 |
 | 通信怎么不掉速 | 两条流水线 + `bucket_id ± 1` 预取 + 独立 AG 进程组 | §6.3、§5.3 |
 | 最容易踩的坑 | `CUDA_DEVICE_MAX_CONNECTIONS` 与 TP 冲突;非均匀 DTensor 上跑对称集合通信会挂死 | §9 约束 1、16 |
-| 三套方案怎么选 | 见 [[16_megatron_distributed_optimizer_analysis]] §11.4 选型矩阵 | — |
+| 三套方案怎么选 | 见 [[16_megatron_distributed_optimizer_analysis|三条 live implementation path 的选择边界]] | — |
 
 ---
 
@@ -399,7 +399,7 @@ HFSDP 的收益写在 `docs/user-guide/features/megatron_fsdp.md:468-472`:优化
 
 ## Related Pages
 
-- [[16_megatron_distributed_optimizer_analysis]] — ZeRO 0-3 四阶段的概念层与三套分片方案的横向对比（§11）；本页是其中 MegatronFSDP 一栏的实现权威页。
+- [[16_megatron_distributed_optimizer_analysis]] — ZeRO/HSDP 的所有权概念层与三条分片实现路径的横向对比；本页是其中 MegatronFSDP 一栏的实现权威页。
 - [[30_megatron_rl_posttraining_consistency_analysis]] — 跨并行配置的 Resharding/Refit owner；旧补遗中的权重搬运内容已归并到该页。
 - [[12_megatron_tp_analysis]] — TP 的异步重叠依赖 `CUDA_DEVICE_MAX_CONNECTIONS=1`,与本页 §9 约束 1 正面冲突,配置时必须一起看。
 - [[19_megatron_dist_checkpointing_analysis]] — `fsdp_dtensor` 与 `torch_dist` 两套存档格式的分工。

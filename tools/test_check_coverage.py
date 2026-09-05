@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""check_coverage 的单测：AST 字段枚举、词边界提及匹配、三查分类。"""
+"""check_coverage 的单测：AST 字段枚举、词边界提及匹配、配置三查与变体门禁。"""
 import subprocess
 import textwrap
 
@@ -172,6 +172,155 @@ def test_c2_uses_same_matcher_as_generate(tmp_path, wiki):
     assert cc.pages_mentioning(wiki, "beta_mode") == ["10_a_analysis", "20_b_analysis"]
     rc = cc.check(cfgp, strict=True, examples=10)
     assert rc == 0, "kebab 形式的提及不应被判成 stale_owner"
+
+
+def test_strict_rejects_nested_live_variant_missing_from_page_and_principle_figure(tmp_path, wiki):
+    """二级 selector 不能被上层 umbrella 名称吞掉。
+
+    回归用例：页面和图只写了 Flex/DeepEP，但冻结基线的 backend selector
+    还有 HybridEP。旧 gate 忽略 variant_axes，会错误返回 0。
+    """
+    import yaml
+
+    page = tmp_path / wiki / "10_a_analysis.md"
+    page.write_text(
+        "# Demo\n\n`moe_flex_dispatcher_backend` 选择 Flex 的 DeepEP。\n\n"
+        "![dispatcher](assets/dispatcher.svg)\n",
+        encoding="utf-8",
+    )
+    assets = page.parent / "assets"
+    assets.mkdir()
+    (assets / "dispatcher.svg").write_text(
+        "<svg xmlns='http://www.w3.org/2000/svg'><text>Flex DeepEP</text></svg>",
+        encoding="utf-8",
+    )
+
+    cfgp = tmp_path / "cov.yaml"
+    cfgp.write_text(yaml.safe_dump({
+        "domain": "demo", "wiki_dir": wiki, "repo": "n/a", "commit": "0" * 40,
+        "sources": [], "flags": [],
+        "variant_axes": [{
+            "owner": "10_a_analysis",
+            "selector": "moe_flex_dispatcher_backend",
+            "source": "cfg.py::DemoConfig.moe_flex_dispatcher_backend",
+            "variants": [
+                {"name": "deepep", "page_terms": ["DeepEP"],
+                 "figure_terms": ["DeepEP"], "figures": ["assets/dispatcher.svg"]},
+                {"name": "hybridep", "page_terms": ["HybridEP"],
+                 "figure_terms": ["HybridEP"], "figures": ["assets/dispatcher.svg"]},
+            ],
+        }],
+    }, allow_unicode=True), encoding="utf-8")
+
+    assert cc.check(cfgp, strict=True, examples=10) == 1
+
+    # 只补页面名称仍不够：算法 data plane 还没有进入可视化 lane。
+    page.write_text(page.read_text(encoding="utf-8") + "\nHybridEP 是另一条 live backend。\n", encoding="utf-8")
+    assert cc.check(cfgp, strict=True, examples=10) == 1
+
+    # 页面与它嵌入的原理图同时覆盖后才能通过。
+    (assets / "dispatcher.svg").write_text(
+        "<svg xmlns='http://www.w3.org/2000/svg'><text>Flex DeepEP HybridEP</text></svg>",
+        encoding="utf-8",
+    )
+    assert cc.check(cfgp, strict=True, examples=10) == 0
+
+
+def test_variant_figure_path_in_prose_does_not_count_as_an_embed(tmp_path, wiki):
+    """A named asset is not evidence that readers can actually see the figure."""
+    import yaml
+
+    page = tmp_path / wiki / "10_a_analysis.md"
+    page.write_text(
+        "# Demo\n\n`backend` supports DeepEP and HybridEP. "
+        "The asset lives at `assets/dispatcher.svg`, but is not embedded.\n",
+        encoding="utf-8",
+    )
+    assets = page.parent / "assets"
+    assets.mkdir()
+    (assets / "dispatcher.svg").write_text(
+        "<svg xmlns='http://www.w3.org/2000/svg'><text>DeepEP HybridEP</text></svg>",
+        encoding="utf-8",
+    )
+    cfgp = tmp_path / "cov.yaml"
+    cfgp.write_text(yaml.safe_dump({
+        "domain": "demo", "wiki_dir": wiki, "repo": "n/a", "commit": "0" * 40,
+        "sources": [], "flags": [],
+        "variant_axes": [{
+            "owner": "10_a_analysis", "selector": "backend", "source": "cfg.py::backend",
+            "variants": [{
+                "name": "hybridep", "page_terms": ["HybridEP"],
+                "figure_terms": ["HybridEP"], "figures": ["assets/dispatcher.svg"],
+            }],
+        }],
+    }, allow_unicode=True), encoding="utf-8")
+
+    assert cc.check(cfgp, strict=True, examples=10) == 1
+
+
+def test_variant_axis_cannot_omit_its_figure_contract(tmp_path, wiki):
+    """A live algorithm variant must not pass merely because only page_terms were declared.
+
+    Reviewers found this exact blind spot for inference EP, Hyper Connections, and
+    LayerWise DistOpt: the prose named the sibling while another unrelated figure
+    made the page look illustrated.  Every variant-axis entry must therefore name
+    the rendered asset and the visible terms that prove that variant reached it.
+    """
+    import yaml
+
+    page = tmp_path / wiki / "10_a_analysis.md"
+    page.write_text(
+        "# Demo\n\n`get_optimizer` selects LayerWiseDistributedOptimizer as a live sibling.\n",
+        encoding="utf-8",
+    )
+    cfgp = tmp_path / "cov.yaml"
+    cfgp.write_text(yaml.safe_dump({
+        "domain": "demo", "wiki_dir": wiki, "repo": "n/a", "commit": "0" * 40,
+        "sources": [], "flags": [],
+        "variant_axes": [{
+            "owner": "10_a_analysis",
+            "selector": "get_optimizer",
+            "source": "optimizer.py::get_optimizer",
+            "variants": [{
+                "name": "layer-wise",
+                "page_terms": ["LayerWiseDistributedOptimizer"],
+            }],
+        }],
+    }, allow_unicode=True), encoding="utf-8")
+
+    assert cc.check(cfgp, strict=True, examples=10) == 1
+
+
+def test_variant_term_hidden_in_svg_metadata_is_not_visible_figure_evidence(tmp_path, wiki):
+    """figure_terms must be reader-visible SVG text, not metadata or aria-label only."""
+    import yaml
+
+    page = tmp_path / wiki / "10_a_analysis.md"
+    page.write_text(
+        "# Demo\n\n`backend` supports HybridEP.\n\n![dispatcher](assets/dispatcher.svg)\n",
+        encoding="utf-8",
+    )
+    assets = page.parent / "assets"
+    assets.mkdir()
+    (assets / "dispatcher.svg").write_text(
+        "<svg xmlns='http://www.w3.org/2000/svg' aria-label='HybridEP'>"
+        "<metadata>HybridEP</metadata><text>generic Flex lane</text></svg>",
+        encoding="utf-8",
+    )
+    cfgp = tmp_path / "cov.yaml"
+    cfgp.write_text(yaml.safe_dump({
+        "domain": "demo", "wiki_dir": wiki, "repo": "n/a", "commit": "0" * 40,
+        "sources": [], "flags": [],
+        "variant_axes": [{
+            "owner": "10_a_analysis", "selector": "backend", "source": "cfg.py::backend",
+            "variants": [{
+                "name": "hybridep", "page_terms": ["HybridEP"],
+                "figure_terms": ["HybridEP"], "figures": ["assets/dispatcher.svg"],
+            }],
+        }],
+    }, allow_unicode=True), encoding="utf-8")
+
+    assert cc.check(cfgp, strict=True, examples=10) == 1
 
 
 def test_help_survives_a_legacy_codepage_console():

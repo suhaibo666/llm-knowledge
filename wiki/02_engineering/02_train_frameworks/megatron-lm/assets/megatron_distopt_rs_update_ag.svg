@@ -1,0 +1,189 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 1254" width="100%" role="img" aria-label="Distributed Optimizer 从反向梯度 ready，经 reduce-scatter 和本地更新，再 all-gather 到下一次 forward 可见参数的完整生命周期">
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .cellq{fill:#EEF1F5;stroke:#fff}
+  .cellp{fill:#9CC2F3;stroke:#fff}
+  .cellr{fill:#DCE9FB;stroke:#fff}
+  .cellpad{fill:#F1E2D2;stroke:#fff}
+</style>
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<rect class="card" x="0.5" y="0.5" width="1499" height="1253" rx="14"/>
+<text class="ti" x="28" y="38" text-anchor="start">一个 bucket 的训练闭环：RS 只交付 update shard，AG 才交付 next-forward 参数</text>
+<text class="su" x="28" y="60" text-anchor="start">N=16、d=4 等分原语示例，省略native 64/128对齐；蓝=可消费，橙=等待；dispatch 不等于完成</text>
+<rect class="panel" x="22" y="88" width="1456" height="326" rx="12"/>
+<text class="pt" x="42" y="120" text-anchor="start">① forward / backward：从 full parameter 到 local reduced gradient shard</text>
+<rect class="neutral" x="42" y="150" width="184" height="84" rx="8"/>
+<text class="tx" x="134" y="179" text-anchor="middle">full P → forward → loss</text>
+<text class="sm" x="134" y="196" text-anchor="middle">backward autograd hook</text>
+<text class="sm" x="134" y="213" text-anchor="middle">grad → main_grad view</text>
+<path class="main" d="M 226 192 L 258 192"/>
+<rect class="neutral" x="258" y="150" width="194" height="84" rx="8"/>
+<text class="tx" x="355" y="179" text-anchor="middle">ready-count gate</text>
+<text class="sm" x="355" y="196" text-anchor="middle">最终 microbatch</text>
+<text class="sm" x="355" y="213" text-anchor="middle">bucket 全参数 ready</text>
+<path class="main" d="M 452 192 L 484 192"/>
+<rect class="acc2" x="484" y="150" width="200" height="84" rx="8"/>
+<text class="tx" x="584" y="179" text-anchor="middle">start_grad_sync</text>
+<text class="sm" x="584" y="196" text-anchor="middle">reduce-scatter (RS)</text>
+<text class="sm" x="584" y="213" text-anchor="middle">可异步 dispatch</text>
+<path class="main" d="M 684 192 L 716 192"/>
+<rect class="ghost" x="716" y="150" width="194" height="84" rx="8"/>
+<text class="tx" x="813" y="179" text-anchor="middle">反向继续算</text>
+<text class="sm" x="813" y="196" text-anchor="middle">RS handle 可能 in flight</text>
+<text class="sm" x="813" y="213" text-anchor="middle">不能交给 optimizer</text>
+<path class="main" d="M 910 192 L 942 192"/>
+<rect class="acc2" x="942" y="150" width="206" height="84" rx="8"/>
+<text class="tx" x="1045" y="179" text-anchor="middle">finish_grad_sync</text>
+<text class="sm" x="1045" y="196" text-anchor="middle">finalizer wait handle</text>
+<text class="sm" x="1045" y="213" text-anchor="middle">补齐 copy-back</text>
+<path class="main" d="M 1148 192 L 1180 192"/>
+<rect class="acc1" x="1180" y="150" width="250" height="84" rx="8"/>
+<text class="tx" x="1305" y="179" text-anchor="middle">可消费 local shard</text>
+<text class="sm" x="1305" y="196" text-anchor="middle">rank r 只更新其中真实参数</text>
+<text class="sm" x="1305" y="213" text-anchor="middle">每 rank 接收4槽，pad不更新</text>
+<text class="sm" x="42" y="270" text-anchor="start">普通 DDP 对照：相同 gate 后执行 all-reduce，完成时每 rank 都有完整已规约 gradient；DistOpt 的 RS 改变 update input 的 owner。</text>
+<text class="sm" x="42" y="294" text-anchor="start">若 num_distributed_optimizer_instances &gt; 1：先在 intra-instance RS，再跨 instance 对等价 local range AR；两段都完成才可更新。</text>
+<rect class="acc1" x="42" y="326" width="420" height="66" rx="8"/>
+<text class="tx" x="252" y="346" text-anchor="middle">完成信号</text>
+<text class="sm" x="252" y="363" text-anchor="middle">start_grad_sync = 已发射</text>
+<text class="sm" x="252" y="380" text-anchor="middle">finish_grad_sync = local shard 可消费</text>
+<rect class="acc2" x="484" y="326" width="452" height="66" rx="8"/>
+<text class="tx" x="710" y="346" text-anchor="middle">失败边界</text>
+<text class="sm" x="710" y="363" text-anchor="middle">少一个 ready parameter / 错误 no_sync 边界</text>
+<text class="sm" x="710" y="380" text-anchor="middle">会在完成检查或 handle 状态上暴露</text>
+<rect class="neutral" x="958" y="326" width="472" height="66" rx="8"/>
+<text class="tx" x="1194" y="346" text-anchor="middle">重叠收益</text>
+<text class="sm" x="1194" y="363" text-anchor="middle">只可能隐藏 RS 等待</text>
+<text class="sm" x="1194" y="380" text-anchor="middle">不减少 collective 的逻辑 payload</text>
+<rect class="panel" x="22" y="438" width="1456" height="166" rx="12"/>
+<text class="pt" x="42" y="470" text-anchor="start">② optimizer handoff：只更新 range owner，再把新 model shard 写回 param buffer</text>
+<rect class="acc1" x="54" y="498" width="222" height="84" rx="8"/>
+<text class="tx" x="165" y="527" text-anchor="middle">training schedule 返回</text>
+<text class="sm" x="165" y="544" text-anchor="middle">finalize_model_grads 已完成</text>
+<text class="sm" x="165" y="561" text-anchor="middle">local grad shard ready</text>
+<path class="main" d="M 276 540 L 326 540"/>
+<rect class="neutral" x="326" y="498" width="218" height="84" rx="8"/>
+<text class="tx" x="435" y="527" text-anchor="middle">optimizer.step</text>
+<text class="sm" x="435" y="544" text-anchor="middle">local update</text>
+<text class="sm" x="435" y="561" text-anchor="middle">main/state 只处理 owned range</text>
+<path class="main" d="M 544 540 L 594 540"/>
+<rect class="neutral" x="594" y="498" width="224" height="84" rx="8"/>
+<text class="tx" x="706" y="527" text-anchor="middle">main → model shard</text>
+<text class="sm" x="706" y="544" text-anchor="middle">dtype/copy 细节由 page 26</text>
+<text class="sm" x="706" y="561" text-anchor="middle">这里只跟踪可见性</text>
+<path class="main" d="M 818 540 L 868 540"/>
+<rect class="acc2" x="868" y="498" width="234" height="84" rx="8"/>
+<text class="tx" x="985" y="527" text-anchor="middle">新参数仍只有 local shard</text>
+<text class="sm" x="985" y="544" text-anchor="middle">不能宣称所有 module 可见</text>
+<text class="sm" x="985" y="561" text-anchor="middle">下一步必须同步</text>
+<path class="main" d="M 1102 540 L 1152 540"/>
+<rect class="acc1" x="1152" y="498" width="260" height="84" rx="8"/>
+<text class="tx" x="1282" y="527" text-anchor="middle">选择 parameter AG 时机</text>
+<text class="sm" x="1282" y="544" text-anchor="middle">同步：step 后</text>
+<text class="sm" x="1282" y="561" text-anchor="middle">重叠：下一轮按 bucket</text>
+<rect class="panel" x="22" y="628" width="1456" height="558" rx="12"/>
+<text class="pt" x="42" y="660" text-anchor="start">③ parameter AG：四条 dispatch / wait 路径必须分清 owner</text>
+<text class="su" x="42" y="680" text-anchor="start">每行都从更新后的 local model shard 出发；dispatch 只产生 in-flight 工作，consumer-visible 仍以 finish/wait 为界。</text>
+<rect class="acc1" x="42" y="696" width="300" height="76" rx="8"/>
+<text class="tx" x="192" y="721" text-anchor="middle">SYNC（无 overlap）</text>
+<text class="sm" x="192" y="738" text-anchor="middle">local model shard 已更新</text>
+<text class="sm" x="192" y="755" text-anchor="middle">parameter AG 尚未发生</text>
+<path class="main" d="M 342 734 L 404 734"/>
+<rect class="neutral" x="404" y="696" width="300" height="76" rx="8"/>
+<text class="tx" x="554" y="721" text-anchor="middle">step_with_ready_grads</text>
+<text class="sm" x="554" y="738" text-anchor="middle">overlap_param_gather=False</text>
+<text class="sm" x="554" y="755" text-anchor="middle">调用 start_param_sync</text>
+<path class="main" d="M 704 734 L 766 734"/>
+<rect class="acc2" x="766" y="696" width="300" height="76" rx="8"/>
+<text class="tx" x="916" y="721" text-anchor="middle">同步参数 AG</text>
+<text class="sm" x="916" y="738" text-anchor="middle">all-gather (AG)</text>
+<text class="sm" x="916" y="755" text-anchor="middle">调用返回时完成</text>
+<path class="main" d="M 1066 734 L 1128 734"/>
+<rect class="acc1" x="1128" y="696" width="300" height="76" rx="8"/>
+<text class="tx" x="1278" y="721" text-anchor="middle">full param_data</text>
+<text class="sm" x="1278" y="738" text-anchor="middle">next forward 可直接读取</text>
+<text class="sm" x="1278" y="755" text-anchor="middle">consumer-visible</text>
+<rect class="acc1" x="42" y="808" width="300" height="76" rx="8"/>
+<text class="tx" x="192" y="833" text-anchor="middle">UNALIGNED OVERLAP</text>
+<text class="sm" x="192" y="850" text-anchor="middle">step 返回；没有发 AG</text>
+<text class="sm" x="192" y="867" text-anchor="middle">align_param_gather=False</text>
+<path class="main" d="M 342 846 L 404 846"/>
+<rect class="neutral" x="404" y="808" width="300" height="76" rx="8"/>
+<text class="tx" x="554" y="833" text-anchor="middle">next-forward pre-hook</text>
+<text class="sm" x="554" y="850" text-anchor="middle">_finish_param_sync_for_bucket_group</text>
+<text class="sm" x="554" y="867" text-anchor="middle">consumer 请求当前 bucket</text>
+<path class="main" d="M 704 846 L 766 846"/>
+<rect class="acc2" x="766" y="808" width="300" height="76" rx="8"/>
+<text class="tx" x="916" y="833" text-anchor="middle">finish_param_sync</text>
+<text class="sm" x="916" y="850" text-anchor="middle">lazy dispatch current AG</text>
+<text class="sm" x="916" y="867" text-anchor="middle">随后 wait 当前 handle</text>
+<path class="main" d="M 1066 846 L 1128 846"/>
+<rect class="acc1" x="1128" y="808" width="300" height="76" rx="8"/>
+<text class="tx" x="1278" y="833" text-anchor="middle">module 读取 full params</text>
+<text class="sm" x="1278" y="850" text-anchor="middle">可再 dispatch next bucket</text>
+<text class="sm" x="1278" y="867" text-anchor="middle">compute(B0) ∥ AG(B1)</text>
+<rect class="acc1" x="42" y="920" width="300" height="76" rx="8"/>
+<text class="tx" x="192" y="945" text-anchor="middle">ALIGNED OVERLAP</text>
+<text class="sm" x="192" y="962" text-anchor="middle">pipeline schedule 拥有节拍</text>
+<text class="sm" x="192" y="979" text-anchor="middle">align_param_gather=True</text>
+<path class="main" d="M 342 958 L 404 958"/>
+<rect class="neutral" x="404" y="920" width="300" height="76" rx="8"/>
+<text class="tx" x="554" y="945" text-anchor="middle">param_sync_func</text>
+<text class="sm" x="554" y="962" text-anchor="middle">调用 chunk.start_param_sync</text>
+<text class="sm" x="554" y="979" text-anchor="middle">在目标 model chunk 之前</text>
+<path class="main" d="M 704 958 L 766 958"/>
+<rect class="acc2" x="766" y="920" width="300" height="76" rx="8"/>
+<text class="tx" x="916" y="945" text-anchor="middle">early async AG dispatch</text>
+<text class="sm" x="916" y="962" text-anchor="middle">handle in flight</text>
+<text class="sm" x="916" y="979" text-anchor="middle">不隐式 dispatch next bucket</text>
+<path class="main" d="M 1066 958 L 1128 958"/>
+<rect class="acc1" x="1128" y="920" width="300" height="76" rx="8"/>
+<text class="tx" x="1278" y="945" text-anchor="middle">forward pre-hook</text>
+<text class="sm" x="1278" y="962" text-anchor="middle">finish_param_sync wait</text>
+<text class="sm" x="1278" y="979" text-anchor="middle">随后 module 读取 full P</text>
+<rect class="acc1" x="42" y="1032" width="300" height="76" rx="8"/>
+<text class="tx" x="192" y="1057" text-anchor="middle">OPTIMIZER-STEP OVERLAP</text>
+<text class="sm" x="192" y="1074" text-anchor="middle">ChainedOptimizer._step</text>
+<text class="sm" x="192" y="1091" text-anchor="middle">child 0 step 成功</text>
+<path class="main" d="M 342 1070 L 404 1070"/>
+<rect class="acc2" x="404" y="1032" width="300" height="76" rx="8"/>
+<text class="tx" x="554" y="1057" text-anchor="middle">start_param_sync</text>
+<text class="sm" x="554" y="1074" text-anchor="middle">force_dispatch=True</text>
+<text class="sm" x="554" y="1091" text-anchor="middle">强制发起首个 AG</text>
+<path class="main" d="M 704 1070 L 766 1070"/>
+<rect class="neutral" x="766" y="1032" width="300" height="76" rx="8"/>
+<text class="tx" x="916" y="1057" text-anchor="middle">later child step compute</text>
+<text class="sm" x="916" y="1074" text-anchor="middle">可覆盖 in-flight AG</text>
+<text class="sm" x="916" y="1091" text-anchor="middle">dispatch ≠ visibility</text>
+<path class="main" d="M 1066 1070 L 1128 1070"/>
+<rect class="acc1" x="1128" y="1032" width="300" height="76" rx="8"/>
+<text class="tx" x="1278" y="1057" text-anchor="middle">forward pre-hook waits</text>
+<text class="sm" x="1278" y="1074" text-anchor="middle">finish_param_sync</text>
+<text class="sm" x="1278" y="1091" text-anchor="middle">随后 full P 可见</text>
+<text class="costtx" x="42" y="1136" text-anchor="start">zero_grad_buffer / optimizer.zero_grad 只清 gradient，不是 parameter AG dispatch owner。</text>
+<text class="sm" x="42" y="1159" text-anchor="start">收益取决于 pre-hook 前的覆盖窗口；任何异步分支都没有减少 collective payload。</text>
+<text class="cap" x="28" y="1216" text-anchor="start">全链完成信号：local reduced grad ready → local update 完成 → 对应 parameter AG 完成 → module view 才看见新权重。</text>
+<text class="cap" x="28" y="1238" text-anchor="start">reset_param_sync_dispatch_state 会拒绝旧 AG 仍 in flight 的状态；不存在把已发 collective 回滚的事务语义。</text>
+</svg>

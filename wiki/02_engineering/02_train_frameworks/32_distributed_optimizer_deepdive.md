@@ -20,7 +20,7 @@ title: "分布式优化器深度解析"
 
 ## 一 ZeRO 分片体系：通信量与内存统一分析
 
-所有 ZeRO 优化的起点是恒等式 **all-reduce(grad) = reduce-scatter(grad) + all-gather(grad)**(通信量 **2P** = **P** + **P**)——ZeRO-1 把这个恒等式拆成"反向后 RS + 更新后 AG"，用 AG(param) 替换 AG(grad)，通信总量不变，却把优化器状态切成了 `1/dp`。完整的因果链推导（为什么切 optimizer state 就够、RS/AG 各自对应哪一步）与源码级验证见 [[16_megatron_distributed_optimizer_analysis]] §阶段②——本页往下直接进入三框架的**横向对比**（下同）。
+所有 ZeRO 优化的起点是恒等式 **all-reduce(grad) = reduce-scatter(grad) + all-gather(grad)**(通信量 **2P** = **P** + **P**)——ZeRO-1 把这个恒等式拆成"反向后 RS + 更新后 AG"，用 AG(param) 替换 AG(grad)，通信总量不变，却把优化器状态切成了 `1/dp`。完整的因果链推导（为什么切 optimizer state 就够、RS/AG 各自对应哪一步）与源码级验证见 [[16_megatron_distributed_optimizer_analysis|Megatron 的 ZeRO/HSDP 所有权与更新—可见性闭环]]——本页往下直接进入三框架的**横向对比**（下同）。
 
 ![图 1：ZeRO 各 stage 通信原语与通信量对比](assets/distributed_optimizer_deep_dive_fig1.png)
 

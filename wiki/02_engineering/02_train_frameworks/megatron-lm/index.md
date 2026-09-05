@@ -31,9 +31,9 @@ title: "Megatron-LM 知识地图"
 | 13 | [[13_megatron_cp_analysis]] | context parallel 的通信模式、分层组与 Dynamic CP 接口。 |
 | 14 | [[14_megatron_ep_analysis]] | MoE route、dispatch、expert compute、combine 与 EP 硬约束。 |
 | 15 | [[15_megatron_pp_schedulers_analysis]] | microbatch、1F1B、VPP 与高级 pipeline scheduler。 |
-| 16 | [[16_megatron_distributed_optimizer_analysis]] | DDP buffer、ZeRO 0–3、HSDP 与三种分片实现。 |
-| 17 | [[17_megatron_parallelism_orchestration_analysis]] | RankGenerator、ProcessGroup 构造与显式组注入。 |
-| 18 | [[18_megatron_recompute_analysis]] | full/selective recompute 的计算—显存取舍。 |
+| 16 | [[16_megatron_distributed_optimizer_analysis]] | 连续 range 与整参 owner、梯度规约、更新及参数可见性闭环。 |
+| 17 | [[17_megatron_parallelism_orchestration_analysis]] | dense/expert 分组、进程组生命周期与显式组注入。 |
+| 18 | [[18_megatron_recompute_analysis]] | 激活与 RNG 回放、full/selective 及调度器重计算的数据路径。 |
 | 19 | [[19_megatron_dist_checkpointing_analysis]] | sharded state、并行无关保存、加载与重分片。 |
 | 20 | [[20_megatron_comm_overlap_analysis]] | 跨 TP/CP/EP/PP/DP 的时间线、资源竞争与诊断。 |
 | 21 | [[21_megatron_fusion_operators_analysis]] | 融合算子的触发条件、后端实现与回退目录。 |

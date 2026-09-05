@@ -395,7 +395,7 @@ Layer 4（显著开销，降速 10-30%）：
 
 ### 6.5 全局互斥面
 
-- `cpu_offloading` 与 **PP > 1** 互斥（`megatron/core/transformer/transformer_config.py:2288-2291`），与**任何**激活重计算互斥（`:2293-2296`，见 [[18_megatron_recompute_analysis]] §7.3）。
+- `cpu_offloading` 与 **PP > 1** 互斥（`megatron/core/transformer/transformer_config.py:2288-2291`），与**任何**激活重计算互斥（`:2293-2296`，见 [[18_megatron_recompute_analysis|激活重计算的组合约束]]）。
 - §5 那张按模型规模的推荐表里，"Optimizer State Offloading + 全量 Overlap"这一格需要先过 §6.4 的 CUDA Graph 限制；表本身不含这些前置校验。
 
 ## 7. 发展趋势

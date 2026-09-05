@@ -1,0 +1,243 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 1660" width="100%" role="img" aria-label="同一组参数在 native DistributedOptimizer、Torch FSDP2、Megatron-FSDP 与 LayerWise 两种 layout 中的常驻所有权、梯度归属、更新交接与参数重建对照">
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .cellq{fill:#EEF1F5;stroke:#fff}
+  .cellp{fill:#9CC2F3;stroke:#fff}
+  .cellr{fill:#DCE9FB;stroke:#fff}
+  .cellpad{fill:#F1E2D2;stroke:#fff}
+</style>
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<metadata id="markdown-contract" data-contract-sha256="ee0d5d662bf4f02204f5fc6211ad5e9b0a159d5c14a45e26d40b382be429093a">16_megatron_distributed_optimizer_analysis.md::distopt-figure-contract</metadata>
+<rect class="card" x="0.5" y="0.5" width="1499" height="1659" rx="14"/>
+<text class="ti" x="28" y="38" text-anchor="start">live paths：range-sharded families + LayerWise 的两种 whole-parameter layout</text>
+<text class="su" x="28" y="60" text-anchor="start">沿用 d=4 与同一 q(2), p(5), r(6)；各 path 会重新决定 buffer padding 与 owner，不能只看 use_distributed_optimizer 布尔值</text>
+<rect class="panel" x="22" y="84" width="1456" height="220" rx="12"/>
+<text class="pt" x="42" y="114" text-anchor="start">① native DistributedOptimizer：persistent full parameter，state/update 按 range 分片</text>
+<text class="su" x="42" y="134" text-anchor="start">连续 DDP param/grad buffer 是 storage owner；bucket group 是 RS/AG communication owner。</text>
+<rect class="acc1" x="42" y="160" width="246" height="92" rx="8"/>
+<text class="tx" x="165" y="193" text-anchor="middle">常驻 model parameter</text>
+<text class="sm" x="165" y="210" text-anchor="middle">[p0 | p1 | p2 | p3]</text>
+<text class="sm" x="165" y="227" text-anchor="middle">每 DP rank forward 可见完整</text>
+<path class="main" d="M 288 206 L 326 206"/>
+<rect class="neutral" x="326" y="160" width="246" height="92" rx="8"/>
+<text class="tx" x="449" y="193" text-anchor="middle">backward RS</text>
+<text class="sm" x="449" y="210" text-anchor="middle">local grad shard g_r</text>
+<text class="sm" x="449" y="227" text-anchor="middle">optimizer state/update owner = r</text>
+<path class="cost" d="M 572 206 L 614 206"/>
+<rect class="neutral" x="614" y="160" width="246" height="92" rx="8"/>
+<text class="tx" x="737" y="193" text-anchor="middle">local update + copy</text>
+<text class="sm" x="737" y="210" text-anchor="middle">只改本 rank range</text>
+<text class="sm" x="737" y="227" text-anchor="middle">其他 range 此刻仍旧</text>
+<path class="main" d="M 860 206 L 902 206"/>
+<rect class="acc2" x="902" y="160" width="246" height="92" rx="8"/>
+<text class="tx" x="1025" y="193" text-anchor="middle">bucket parameter AG</text>
+<text class="sm" x="1025" y="210" text-anchor="middle">同步或 next-forward overlap</text>
+<text class="sm" x="1025" y="227" text-anchor="middle">恢复完整新 param view</text>
+<rect class="acc2" x="1190" y="158" width="264" height="96" rx="8"/>
+<text class="tx" x="1322" y="184.5" text-anchor="middle">HBM / 通信</text>
+<text class="sm" x="1322" y="201.5" text-anchor="middle">model param 保持完整副本</text>
+<text class="sm" x="1322" y="218.5" text-anchor="middle">main/state 约按 d 分摊</text>
+<text class="sm" x="1322" y="235.5" text-anchor="middle">每轮 RS + AG 同阶 payload</text>
+<text class="sm" x="42" y="280" text-anchor="start">N=16 为等分原语示例，省略 native builder 的64/128对齐；padding只通信、不更新；真实layout须另算。</text>
+<rect class="panel" x="22" y="318" width="1456" height="220" rx="12"/>
+<text class="pt" x="42" y="348" text-anchor="start">② Torch FSDP2：PyTorch fully_shard 管理 module 的 transient full unit</text>
+<text class="su" x="42" y="368" text-anchor="start">依赖API契约对照，未核验PyTorch内核：Megatron只证明module选择、DeviceMesh与reshard_after_forward handoff。</text>
+<rect class="acc1" x="42" y="394" width="246" height="92" rx="8"/>
+<text class="tx" x="165" y="427" text-anchor="middle">persistent parameter shards</text>
+<text class="sm" x="165" y="444" text-anchor="middle">[p0 | p1 | p2 | p3]</text>
+<text class="sm" x="165" y="461" text-anchor="middle">rank r 常驻 pr</text>
+<path class="main" d="M 288 440 L 326 440"/>
+<rect class="acc2" x="326" y="394" width="246" height="92" rx="8"/>
+<text class="tx" x="449" y="427" text-anchor="middle">forward AG / unshard</text>
+<text class="sm" x="449" y="444" text-anchor="middle">F on transient full unit</text>
+<text class="sm" x="449" y="461" text-anchor="middle">按策略保留或 reshard</text>
+<path class="cost" d="M 572 440 L 614 440"/>
+<rect class="acc2" x="614" y="394" width="246" height="92" rx="8"/>
+<text class="tx" x="737" y="427" text-anchor="middle">pre-backward AG / unshard</text>
+<text class="sm" x="737" y="444" text-anchor="middle">若 forward 后已 reshard</text>
+<text class="sm" x="737" y="461" text-anchor="middle">B → gradient reduce-scatter</text>
+<path class="main" d="M 860 440 L 902 440"/>
+<rect class="acc1" x="902" y="394" width="246" height="92" rx="8"/>
+<text class="tx" x="1025" y="427" text-anchor="middle">sharded grad → local optimizer</text>
+<text class="sm" x="1025" y="444" text-anchor="middle">update rank-r parameter/state</text>
+<text class="sm" x="1025" y="461" text-anchor="middle">updated parameter shard</text>
+<rect class="acc2" x="1190" y="392" width="264" height="96" rx="8"/>
+<text class="tx" x="1322" y="418.5" text-anchor="middle">HBM / 通信</text>
+<text class="sm" x="1322" y="435.5" text-anchor="middle">persistent param 约按 d 分片</text>
+<text class="sm" x="1322" y="452.5" text-anchor="middle">F/B 各自可能需要 AG</text>
+<text class="sm" x="1322" y="469.5" text-anchor="middle">gradient RS + transient unit</text>
+<text class="sm" x="42" y="514" text-anchor="start">完成：sharded gradient 被 optimizer 消费并产出 updated shard；下次 forward 再从该 owner 集合 unshard。实现 owner 是 PyTorch FSDP2。</text>
+<rect class="panel" x="22" y="552" width="1456" height="438" rx="12"/>
+<text class="pt" x="42" y="582" text-anchor="start">③ Megatron-FSDP：三种 strategy 必须分别走到 next-forward visibility</text>
+<text class="su" x="42" y="604" text-anchor="start">邻页契约对照：no_shard复制P/G/O；下列三种策略分片程度来自config声明，内部hook/完成时序的证据owner是page 36。</text>
+<text class="rank" x="165" y="630" text-anchor="middle">常驻 owner / HBM</text>
+<text class="rank" x="441" y="630" text-anchor="middle">compute 时参数可见性</text>
+<text class="rank" x="717" y="630" text-anchor="middle">gradient sync / owner</text>
+<text class="rank" x="993" y="630" text-anchor="middle">optimizer handoff / update</text>
+<text class="rank" x="1269" y="630" text-anchor="middle">next-forward visibility</text>
+<g data-strategy="optim">
+<rect class="acc1" x="42" y="642" width="246" height="88" rx="8"/>
+<text class="tx" x="165" y="673" text-anchor="middle">optim</text>
+<text class="sm" x="165" y="690" text-anchor="middle">P,G buffer full</text>
+<text class="sm" x="165" y="707" text-anchor="middle">main/O ≈ 1/d</text>
+<path class="main" d="M 288 686 L 318 686"/>
+<rect class="neutral" x="318" y="642" width="246" height="88" rx="8"/>
+<text class="tx" x="441" y="681.5" text-anchor="middle">F/B: full P</text>
+<text class="sm" x="441" y="698.5" text-anchor="middle">no compute-time param AG</text>
+<path class="main" d="M 564 686 L 594 686"/>
+<rect class="acc2" x="594" y="642" width="246" height="88" rx="8"/>
+<text class="tx" x="717" y="673" text-anchor="middle">gradient RS</text>
+<text class="sm" x="717" y="690" text-anchor="middle">local g_r</text>
+<text class="sm" x="717" y="707" text-anchor="middle">其余 G buffer 位非全规约值</text>
+<path class="main" d="M 840 686 L 870 686"/>
+<rect class="neutral" x="870" y="642" width="246" height="88" rx="8"/>
+<text class="tx" x="993" y="673" text-anchor="middle">local main update</text>
+<text class="sm" x="993" y="690" text-anchor="middle">parameter AG</text>
+<text class="sm" x="993" y="707" text-anchor="middle">main shards → full model P</text>
+<path class="main" d="M 1116 686 L 1146 686"/>
+<rect class="acc1" x="1146" y="642" width="246" height="88" rx="8"/>
+<text class="tx" x="1269" y="681.5" text-anchor="middle">next-F: full updated P</text>
+<text class="sm" x="1269" y="698.5" text-anchor="middle">每 rank 直接消费</text>
+</g>
+<g data-strategy="optim_grads">
+<rect class="acc1" x="42" y="744" width="246" height="88" rx="8"/>
+<text class="tx" x="165" y="775" text-anchor="middle">optim_grads</text>
+<text class="sm" x="165" y="792" text-anchor="middle">P full</text>
+<text class="sm" x="165" y="809" text-anchor="middle">G,main/O ≈ 1/d</text>
+<path class="main" d="M 288 788 L 318 788"/>
+<rect class="neutral" x="318" y="744" width="246" height="88" rx="8"/>
+<text class="tx" x="441" y="783.5" text-anchor="middle">F/B: full P</text>
+<text class="sm" x="441" y="800.5" text-anchor="middle">no compute-time param AG</text>
+<path class="main" d="M 564 788 L 594 788"/>
+<rect class="acc2" x="594" y="744" width="246" height="88" rx="8"/>
+<text class="tx" x="717" y="775" text-anchor="middle">gradient RS</text>
+<text class="sm" x="717" y="792" text-anchor="middle">persistent g_r</text>
+<text class="sm" x="717" y="809" text-anchor="middle">rank r 是 grad owner</text>
+<path class="main" d="M 840 788 L 870 788"/>
+<rect class="neutral" x="870" y="744" width="246" height="88" rx="8"/>
+<text class="tx" x="993" y="775" text-anchor="middle">local main update</text>
+<text class="sm" x="993" y="792" text-anchor="middle">parameter AG</text>
+<text class="sm" x="993" y="809" text-anchor="middle">main shards → full model P</text>
+<path class="main" d="M 1116 788 L 1146 788"/>
+<rect class="acc1" x="1146" y="744" width="246" height="88" rx="8"/>
+<text class="tx" x="1269" y="783.5" text-anchor="middle">next-F: full updated P</text>
+<text class="sm" x="1269" y="800.5" text-anchor="middle">每 rank 直接消费</text>
+</g>
+<g data-strategy="optim_grads_params">
+<rect class="acc1" x="42" y="846" width="246" height="104" rx="8"/>
+<text class="tx" x="165" y="885" text-anchor="middle">optim_grads_params</text>
+<text class="sm" x="165" y="902" text-anchor="middle">P,G,main/O ≈ 1/d</text>
+<text class="sm" x="165" y="919" text-anchor="middle">+ transient full unit</text>
+<path class="main" d="M 288 898 L 318 898"/>
+<rect class="acc2" x="318" y="846" width="246" height="104" rx="8"/>
+<text class="tx" x="441" y="885" text-anchor="middle">forward AG → F</text>
+<text class="sm" x="441" y="902" text-anchor="middle">post-F reshard</text>
+<text class="sm" x="441" y="919" text-anchor="middle">只留 p_r</text>
+<path class="main" d="M 564 898 L 594 898"/>
+<rect class="acc2" x="594" y="846" width="246" height="104" rx="8"/>
+<text class="tx" x="717" y="885" text-anchor="middle">pre-backward AG → B</text>
+<text class="sm" x="717" y="902" text-anchor="middle">gradient RS</text>
+<text class="sm" x="717" y="919" text-anchor="middle">得到 g_r</text>
+<path class="main" d="M 840 898 L 870 898"/>
+<rect class="neutral" x="870" y="846" width="246" height="104" rx="8"/>
+<text class="tx" x="993" y="885" text-anchor="middle">local update keeps p_r</text>
+<text class="sm" x="993" y="902" text-anchor="middle">updated owner shard</text>
+<text class="sm" x="993" y="919" text-anchor="middle">无 post-step full P 常驻</text>
+<path class="main" d="M 1116 898 L 1146 898"/>
+<rect class="acc1" x="1146" y="846" width="246" height="104" rx="8"/>
+<text class="tx" x="1269" y="885" text-anchor="middle">next-F AG</text>
+<text class="sm" x="1269" y="902" text-anchor="middle">full updated unit</text>
+<text class="sm" x="1269" y="919" text-anchor="middle">再进入 compute</text>
+</g>
+<text class="sm" x="42" y="974" text-anchor="start">成本口径：optim/optim_grads 每周期都以 RS 交付 local g_r，并以参数 AG 把 main shards 写成完整 model P；optim_grads_params 另在 unit 的 F/B 使用边界物化 full P。</text>
+<rect class="panel" x="22" y="1010" width="1456" height="518" rx="12"/>
+<text class="pt" x="42" y="1040" text-anchor="start">④ LayerWiseDistributedOptimizer：同一 logical parameters，两种 live layout 不能并入 ordinary non-DistOpt</text>
+<text class="su" x="42" y="1062" text-anchor="start">q/p/r 都由一个 rank 以 whole tensor 更新；差异在 gradient collective、persistent padding 与 parameter reconstruction transport。</text>
+<g data-plane="layerwise-decoupled">
+<text class="dim" x="42" y="1090" text-anchor="start">LayerWise decoupled / variable-size path（默认）</text>
+<rect class="acc1" x="42" y="1104" width="250" height="94" rx="8"/>
+<text class="tx" x="167" y="1138" text-anchor="middle">same q(2), p(5), r(6)</text>
+<text class="sm" x="167" y="1155" text-anchor="middle">compact grad buffer Nraw=13</text>
+<text class="sm" x="167" y="1172" text-anchor="middle">no equal-shard padding</text>
+<path class="main" d="M 292 1151 L 336 1151"/>
+<rect class="acc2" x="336" y="1104" width="250" height="94" rx="8"/>
+<text class="tx" x="461" y="1129.5" text-anchor="middle">F on full logical model P</text>
+<text class="sm" x="461" y="1146.5" text-anchor="middle">B writes compact gbuf G</text>
+<text class="sm" x="461" y="1163.5" text-anchor="middle">effective use_distributed_optimizer=False</text>
+<text class="sm" x="461" y="1180.5" text-anchor="middle">gradient all-reduce ≈ 39 B/rank</text>
+<path class="main" d="M 586 1151 L 630 1151"/>
+<rect class="neutral" x="630" y="1104" width="250" height="94" rx="8"/>
+<text class="tx" x="755" y="1138" text-anchor="middle">ping-pong whole-param owner</text>
+<text class="sm" x="755" y="1155" text-anchor="middle">r0:q(2) · r1:p(5)</text>
+<text class="sm" x="755" y="1172" text-anchor="middle">r2:r(6) · r3:∅</text>
+<path class="main" d="M 880 1151 L 924 1151"/>
+<rect class="neutral" x="924" y="1104" width="250" height="94" rx="8"/>
+<text class="tx" x="1049" y="1138" text-anchor="middle">whole-param owner update</text>
+<text class="sm" x="1049" y="1155" text-anchor="middle">main/state only for owned tensors</text>
+<text class="sm" x="1049" y="1172" text-anchor="middle">non-owner copies are stale</text>
+<path class="main" d="M 1174 1151 L 1218 1151"/>
+<rect class="acc2" x="1218" y="1104" width="250" height="94" rx="8"/>
+<text class="tx" x="1343" y="1138" text-anchor="middle">variable-size allgather_params</text>
+<text class="sm" x="1343" y="1155" text-anchor="middle">owned sizes [2,5,6,0]</text>
+<text class="sm" x="1343" y="1172" text-anchor="middle">sync return / pre-hook consumer wait</text>
+<text class="sm" x="42" y="1220" text-anchor="start">HBM: full logical model P + full compact grad_data；optimizer main/state 按 whole params 分配；同步 gather 暂存 logical payload，overlap path 复用 idle grad_data。</text>
+<text class="cap" x="42" y="1242" text-anchor="start">约束/选择：num_distributed_optimizer_instances = 1；默认避开 persistent padding，并可走受限 FP8 gather；代价是 full-gradient AR、uneven AG 与 copy-back。</text>
+</g>
+<g data-plane="layerwise-layout">
+<text class="dim" x="42" y="1282" text-anchor="start">LayerWise layout / buffer AG path（显式 opt-in）</text>
+<rect class="acc1" x="42" y="1296" width="250" height="100" rx="8"/>
+<text class="tx" x="167" y="1324.5" text-anchor="middle">same q(2), p(5), r(6)</text>
+<text class="sm" x="167" y="1341.5" text-anchor="middle">LPT keeps every tensor whole</text>
+<text class="sm" x="167" y="1358.5" text-anchor="middle">r0:r(6) · r1:p(5)</text>
+<text class="sm" x="167" y="1375.5" text-anchor="middle">r2:q(2) · r3:∅</text>
+<path class="main" d="M 292 1346 L 336 1346"/>
+<rect class="acc2" x="336" y="1296" width="250" height="100" rx="8"/>
+<text class="tx" x="461" y="1333" text-anchor="middle">padded equal-shard layout</text>
+<text class="sm" x="461" y="1350" text-anchor="middle">64 slots/rank → Nlayout=256</text>
+<text class="sm" x="461" y="1367" text-anchor="middle">padding=243 over raw 13</text>
+<path class="main" d="M 586 1346 L 630 1346"/>
+<rect class="acc2" x="630" y="1296" width="250" height="100" rx="8"/>
+<text class="tx" x="755" y="1333" text-anchor="middle">effective use_distributed_optimizer=True</text>
+<text class="sm" x="755" y="1350" text-anchor="middle">gradient reduce-scatter (not AR)</text>
+<text class="sm" x="755" y="1367" text-anchor="middle">bf16 example ≈ 384 B/rank</text>
+<path class="main" d="M 880 1346 L 924 1346"/>
+<rect class="neutral" x="924" y="1296" width="250" height="100" rx="8"/>
+<text class="tx" x="1049" y="1333" text-anchor="middle">whole-param owner update</text>
+<text class="sm" x="1049" y="1350" text-anchor="middle">rank receives one 64-slot shard</text>
+<text class="sm" x="1049" y="1367" text-anchor="middle">only resident whole tensors step</text>
+<path class="main" d="M 1174 1346 L 1218 1346"/>
+<rect class="acc1" x="1218" y="1296" width="250" height="100" rx="8"/>
+<text class="tx" x="1343" y="1333" text-anchor="middle">buffer AG</text>
+<text class="sm" x="1343" y="1350" text-anchor="middle">buffer all-gather reconstruction</text>
+<text class="sm" x="1343" y="1367" text-anchor="middle">all_gather_into_tensor ≈ 384 B/rank</text>
+<text class="sm" x="42" y="1418" text-anchor="start">HBM: param_data 与 grad_data 各多 243 slots（dtype 各自计）；固定等长 RS+AG=768 B/rank in this bf16 toy。</text>
+<text class="cap" x="42" y="1440" text-anchor="start">约束/选择：num_distributed_optimizer_instances = 1；FP8/FP4 param gather 与 optimizer-step overlap 不支持；只在接受 padding 且需要固定 buffer collective 时评估。</text>
+<text class="cap" x="42" y="1462" text-anchor="start">padding 来源：64-element param-start alignment；shard divisor=lcm(64, lcm(d,128)/d)=64；high-busbw flag 还会纳入 2^16。</text>
+</g>
+<rect class="neutral" x="22" y="1548" width="1456" height="68" rx="10"/>
+<text class="dim" x="42" y="1576" text-anchor="start">HSDP：只把 d 换成 inner shard group；outer group 复制等价 local shard，并增加跨 instance 对齐，不是新的 ZeRO stage。</text>
+<text class="cap" x="42" y="1600" text-anchor="start">图给算法所有权与逻辑 collective；实际字节、峰值和吞吐取决于 unit/bucket、dtype、拓扑、prefetch 与覆盖窗口，所有路径均无固定加速比。</text>
+<text class="costtx" x="1450" y="1644" text-anchor="end">无固定加速比</text>
+</svg>

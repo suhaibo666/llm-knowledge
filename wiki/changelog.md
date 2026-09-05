@@ -12,6 +12,31 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-05：Megatron 特性页 16–18 按当前特性分析契约重构
+
+本次固定在 `NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`，不变更内容归属或源码基线。三页按问题与取舍、同例算法复演、系统闭环、类与所有权、实际调用树、稳定源码路线及配置契约组织；历史基线迁移仍查本日志，不再占用活动页开头。
+
+- [[16_megatron_distributed_optimizer_analysis]] 从具名 `q(2),p(5),r(6)` 与等分原语展开 ordinary AR、standard RS、custom FP32 accumulation RS、HSDP，以及 LayerWise compact/padded 两条整参 owner 数据面。明确 range 计量单位为元素、演示 padding 与真实 64/128 对齐不同、padding 不拥有更新状态，native main shard 按参数交集 clone/cast；CUDA Graph wgrad event、finalizer 和参数 AG 的发射/消费边界闭合。Torch FSDP2、Megatron-FSDP 在 wrapper 层分支，不经过 native bucket selector；依赖内部只按契约对照，完整机制归36。共享 inter-instance 组由 expert 层级建组提供，dense 侧只创建 intra。
+- [[17_megatron_parallelism_orchestration_analysis]] 用 `R0…R15/R5` 同例独立复演默认/替代 order、dense/expert 双分解、层级 CP、dynamic DP×CP、dense partial DP 与 expert partial DP，以及 Grid base/expert/shared view。纠正三种抽象的替代叙事、自动物理网络亲和和 RNG 同异种子的概括，补全 PGC 到模型/优化器的持组、返回/同步及销毁边界。独立 AG helper 固定默认 order/零 offset；其真实消费端是 FSDP adapter 的 `_init_dist_index`，不能归到 native DistributedOptimizer。
+- [[18_megatron_recompute_analysis]] 用同一四 token、四层输入复演普通 checkpoint、输出丢弃、首输入 TP 分存、full uniform/block、十个 selective 模块、GPT/Hybrid/MTP 与 EP overlap 手写分段回放。补齐 StorageImpl/view 身份、每 checkpoint RNG、mHC 统一恢复/固定地址 slot 与梯度桥；明确 EP+MTP 的合法 uniform n=1 为5段、block n=2为3段。TE checkpoint/fused activation 止于依赖接口；CPU offload、dropout、FP8 recipe、CUDA Graph 与微批 partial 请求逐入口列限制。保留并核实普通 GPT full-block 的 padding-mask 缺口、普通 full 未验证正层数、deprecated `moe_layer_recompute` 转写晚于多数验证等现存边界。
+- 保留全部 **29 个配置 owner 字段**（含 `auto: true`，补回18的 `moe_layer_recompute`）及旧页面链接。领域页数仍为35；域 index 与6处活动邻页的旧章节号导航同步修正，16保留历史 §11 入口以兼容只追加日志。coverage 增加17/18的11条变体轴，当前16–18共14条轴、47个登记变体；旧16的 wrapper 选择锚点改为真实 `_ddp_wrap`。
+- 四张16原理图重构，17新增三张，18新增五张；生成器、真实 Markdown 数字/选择项和实际 SVG 互相校验。算法与图回归 **22/22**、无 skip，12图经真实 Chromium 的文字 bbox 检查和人工目验。这里的数值与 CPU 复演不等同于 CUDA/TE 多 rank 训练通过。
+- 新增相邻页待补深度：MiMo `get_mimo_optimizer` 的 per-module optimizer 路径已在16/17识别并交由26号页拥有，但26尚未完整展开；本次不扩写该页机制。
+
+非作者复审记录如下；各页 feature-analysis 专项否决检查也均通过。17首次因 partial-DP 的 expert sibling/构造来源及 AG 消费者归属被退回，18首次因 EP+MTP 公共 guard 与 post-BDA 图的分支表达被退回，均由各自作者修正后复核。
+
+| page | beat2 | hop-walk | delete-code | figure-trigger | algorithm-replay | spot-check | verdict | note |
+|---|---|---|---|---|---|---|---|---|
+| 16_megatron_distributed_optimizer_analysis | pass | pass | pass | transform, layout, timing, coupled-planes | pass | 3/3 | PASS | 协调器非作者复审；wrapper、range、事件及共享 inter 边界已回源 |
+| 17_megatron_parallelism_orchestration_analysis | pass | pass | pass | transform, layout | pass | 3/3 | PASS | 16页作者独审；组名单、PGC、资源生命周期闭合 |
+| 18_megatron_recompute_analysis | pass | pass | pass | transform, layout, timing, coupled-planes | pass | 3/3 | PASS | 17页作者独审；输入/RNG/storage、回放与梯度交付闭合 |
+
+抽查锚点：16为 `distrib_optimizer.py::DistributedOptimizer._build_model_gbuf_param_range_map`、`reduce_scatter_with_fp32_accumulation.py::_ReduceScatterWithFP32AccumulationWorkHandle.wait`、`common_config.py::DistributedInitConfig.use_torch_fsdp2`；17为 `parallel_state.py::initialize_model_parallel/get_inter_distributed_optimizer_instance_group`、`hyper_comm_grid.py::HyperCommGrid.register_view/create_pg/destroy`、`test_hyper_comm_grid.py::TestHyperCommGrid.test_shared_view_dim_reuses_base_process_group/test_destroy_skips_non_members`；18为 `tensor_parallel/random.py::CheckpointFunction/CheckpointWithoutOutput`、`model_chunk_schedule_plan.py::RecomputeSegment`、`transformer_config.py::TransformerConfig.__post_init__`。
+
+机械审计：links 446 页的 broken/ambiguous/bare-index/stale-section/orphan 全为0；changed math/Markdown/assets 22页均为0 error、0 warning；Megatron coverage `flags=590 pages=35`、`C1=C2=C3=C4=C5=0`。三篇旧式 `path:line` 已清零；changed locator 审计0 error，另有51条来自其它既有修改页的宽区间、短路径歧义或基线声明 warning，本次不扩改这些页面。
+
+站点验证：changed-scope 构建21页，broken link/missing anchor/missing asset/missing legacy route 全为0；三篇实页共138个 MathJax 公式通过。类与所有权 Mermaid 另用站点随附运行时实渲；16的过宽图拆成选择与核心状态两幅，继承及辅助类关系保留在同节文字中。
+
 ## 2026-09-04：Megatron 特性页 10 / 11 / 13 补齐原理图与算法复现
 
 按更新后的 `feature-analysis` 文档档案新增的「Algorithmic implementation and principle figure」触发条件返工：三页此前用文字堆砌解释切分、打包、路由这类算法机制，缺少原理图，明显偏离已校准的范文 [[12_megatron_tp_analysis]]。新规则明确类图、所有权清单、ASCII 调用树、代码块、纯文字与表格都不能满足该门禁，`drawing-wiki-figures` 为不可豁免的必需子技能。

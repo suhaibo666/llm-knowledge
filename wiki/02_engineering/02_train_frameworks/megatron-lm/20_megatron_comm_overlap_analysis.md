@@ -28,9 +28,9 @@ title: "Megatron-LM 跨轴通信掩盖：时间线、资源竞争与诊断"
 |---|---|---|
 | TP | TE user buffer 在 linear/GEMM 内做 pipelined 或 bulk AG/RS，依赖结果前收口 | [[12_megatron_tp_analysis]] §4.2 |
 | CP | TE 内核按 attention 块调度；原生 eager fallback 按 KV head 双缓冲 | [[13_megatron_cp_analysis]] §3 |
-| EP | dispatcher 负责 token A2A；共享专家与 A2A stream 旋钮也属 EP | [[14_megatron_ep_analysis]] §5–§8 |
-| PP | VPP 调度槽中延迟 P2P handle 的 `wait`；combined-1F1B 调度跨 microbatch 的 F/B | [[15_megatron_pp_schedulers_analysis]] §6–§7 |
-| DP | backward hook 在 bucket ready 时发梯度 RS/AR，forward pre-hook 等当前参数 AG 并预取下一桶 | [[16_megatron_distributed_optimizer_analysis]] §3.2–§3.7 |
+| EP | dispatcher 负责 token A2A；共享专家与 A2A stream 旋钮也属 EP | [[14_megatron_ep_analysis|EP dispatcher、shared expert 与训练闭环]] |
+| PP | VPP 调度槽中延迟 P2P handle 的 `wait`；combined-1F1B 调度跨 microbatch 的 F/B | [[15_megatron_pp_schedulers_analysis|VPP/P2P overlap 与 combined-1F1B]] |
+| DP | backward hook 在 bucket ready 时发梯度 RS/AR，forward pre-hook 等当前参数 AG 并预取下一桶 | [[16_megatron_distributed_optimizer_analysis|bucket readiness 与参数可见性闭环]] |
 
 本表是导航，不是第六份机制说明。以下只讨论它们的交界面。
 
@@ -111,7 +111,7 @@ TE 桥接在 `is_expert` 时显式将 user-buffer pipelined AG/RS 关闭（`mega
 
 1. PP 调度器两处注释都说“asynchronous communication tends to slow down compute”，并以跨 PP stage 同时派发来降低不匹配空等（`megatron/core/pipeline_parallel/schedules.py:1438-1455`、`:1540-1557`）。
 2. DDP 在 `CUDA_DEVICE_MAX_CONNECTIONS=1` 下会合并连续的小 bucket，注释给出的原因是多个 back-to-back communication kernels 会阻碍与 compute kernel 的重叠（`megatron/core/distributed/param_and_grad_buffer.py:1811-1818`）。
-3. EP 允许将 A2A communication stream 设为 CUDA 高优先级：combined schedule 在两个宿主中透传字段（`megatron/core/pipeline_parallel/combined_1f1b.py:67`、`:203`），`set_streams` 以 `torch.cuda.Stream.priority_range()` 创建该流（`megatron/core/pipeline_parallel/utils.py:350-362`）。完整旋钮归 [[14_megatron_ep_analysis]] §8.4。
+3. EP 允许将 A2A communication stream 设为 CUDA 高优先级：combined schedule 在两个宿主中透传字段（`megatron/core/pipeline_parallel/combined_1f1b.py:67`、`:203`），`set_streams` 以 `torch.cuda.Stream.priority_range()` 创建该流（`megatron/core/pipeline_parallel/utils.py:350-362`）。完整旋钮归 [[14_megatron_ep_analysis|EP 配置与约束]]。
 
 > [!note] 运行时推断
 > 上述代码能证明“异步通信可拖慢计算”、“连续通信 kernel 可破坏 overlap”与“A2A 可提高 stream priority”。由此可推得：进程组不同或 CUDA stream 不同，只表示调度队列可独立推进，不表示它们拥有独立 NIC/NVLink/SM。具体争用哪项硬件必须以目标机器的 profiler trace 为准，源码没有对任意拓扑做这个保证。
@@ -124,11 +124,11 @@ TE 桥接在 `is_expert` 时显式将 user-buffer pipelined AG/RS 关闭（`mega
 | kernel 过碎 | 大量小 collective 背靠背，中间没有计算 kernel 取得进展 | DP 的 bucket/`num_buckets`、PP 的 P2P 粒度、是否在单连接顺序下造成通信连发 |
 | 在飞缓冲过多 | 吞吐略升或不变，但峰值显存上升/OOM | PP recv buffer、TP user buffer、CP KV 双缓冲、EP 跨 microbatch 激活与 DP RS/AG 中间状态是否在同一时刻存活 |
 
-DP 已给出一个可复用的治理模式：fp32-accumulation RS 在派发新 bucket 前排空已发起的前驱 bucket，从而给中间 all-to-all 输出的在飞数量设上界（`megatron/core/distributed/distributed_data_parallel.py:350-365`；`megatron/core/distributed/param_and_grad_buffer.py:665-680`）。完整机制归 [[16_megatron_distributed_optimizer_analysis]] §3.7。
+DP 已给出一个可复用的治理模式：fp32-accumulation RS 在派发新 bucket 前排空已发起的前驱 bucket，从而给中间 all-to-all 输出的在飞数量设上界（`megatron/core/distributed/distributed_data_parallel.py:350-365`；`megatron/core/distributed/param_and_grad_buffer.py:665-680`）。完整机制归 [[16_megatron_distributed_optimizer_analysis|bucket readiness、RS 与在飞工作边界]]。
 
 ### 4.3 显存与暴露通信是同一个旋钮的两面
 
-`ep_overlap_early_attn_memory_release` 的 docstring 直接写明这笔交易：EP overlap 可在前向 module 分配多于反向 module 释放的显存时抬高峰值；把 attention backward 提前能更早释放激活，但会使 `moe_combine_fwd` 与 `moe_dispatch_bwd` 重新暴露（`megatron/core/model_parallel_config.py:355-366`）。该开关的调度 owner 是 [[15_megatron_pp_schedulers_analysis]] §7；本页只用它说明全局优化目标必须同时包含 wall-clock 和 peak memory。
+`ep_overlap_early_attn_memory_release` 的 docstring 直接写明这笔交易：EP overlap 可在前向 module 分配多于反向 module 释放的显存时抬高峰值；把 attention backward 提前能更早释放激活，但会使 `moe_combine_fwd` 与 `moe_dispatch_bwd` 重新暴露（`megatron/core/model_parallel_config.py:355-366`）。该开关的调度 owner 是 [[15_megatron_pp_schedulers_analysis|combined-1F1B 调度]]；本页只用它说明全局优化目标必须同时包含 wall-clock 和 peak memory。
 
 ---
 

@@ -274,5 +274,5 @@ PPO ratio 的上下界命中被显式返回（`truncated_from_above` / `truncate
 - [[40_megatron_feature_tree_analysis]] — 功能树总览；本页接管它 §4 仪表盘中重构前规模最大的一块零覆盖（模块 P）
 - [[41_megatron_config_surface_analysis]] — §3.2 的 agent 白名单与那里的 `TargetAllowlist` 是同一类防护的两个独立实例
 - [[31_megatron_inference_engine_analysis]] — §7 的 `MegatronLocal` 包装的推理引擎本体在那里
-- [[17_megatron_parallelism_orchestration_analysis]] — §6 推理侧独立并行度用的 `HyperCommGrid` 与进程组机制
+- [[17_megatron_parallelism_orchestration_analysis]] — 推理侧独立并行度使用的 `HyperCommGrid` 与进程组机制。
 - [[29_megatron_packed_dataset_dynamic_cp_analysis]] — core 侧的序列打包调度器；与本页 §5 的 RL 侧打包是两套实现

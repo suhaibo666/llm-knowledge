@@ -118,6 +118,7 @@ python tools/check_assets.py --changed --strict   # images and local resources r
 | Change hits | Add | Cost |
 |---|---|---|
 | a page still carrying explicit `path:line` citations | `python tools/check_locators.py --changed` | ~10s |
+| `wiki/02_engineering/02_train_frameworks/megatron-lm/**` or `docs/coverage/megatron-lm.yaml` | `python tools/check_coverage.py docs/coverage/megatron-lm.yaml --strict` | ~20s |
 | `wiki/02_engineering/01_pytorch/**` or `wiki/courses/**` | `pytest tools/labs_torch_compile/test_volume_demo_contract.py -q` | 33s |
 | you need built-page proof (assets, anchors, formula rendering) | `python -m tools.mkdocs_site.cli build --changed` then `node tools/mkdocs-site/mathjax-corpus.mjs --pages <changed>` | 73s + ~5s |
 

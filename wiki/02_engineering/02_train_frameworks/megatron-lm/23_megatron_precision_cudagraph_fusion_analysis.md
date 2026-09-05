@@ -99,7 +99,7 @@ FP8 不是孤立特性,它**贯穿前面所有文档**:
 - **TP**:`ColumnParallel`/`RowParallel` 的 GEMM 走 FP8;`megatron/core/fp8_utils.py` 有 `is_column_parallel_linear`/`is_row_parallel_linear` 判定。
 - **EP**:dispatch 的 A2A 用 FP8,通信量砍半(`14_megatron_ep_analysis.md`);`combined_1f1b` 的 fp8 上下文(`15_megatron_pp_schedulers_analysis.md` 调度器⑤)。
 - **DP/ZeRO**:`--fp8-param-gather` 让参数 all-gather 走 FP8(`quantize_param_shard`、`post_all_gather_processing`,`megatron/core/fp8_utils.py:659/674`)。
-- **重计算**:fp8 下用 `te_checkpoint`(`18_megatron_recompute_analysis.md` §4.4);delayed scaling 与某些 selective 重计算互斥。
+- **重计算**:fp8 下用 `te_checkpoint`（见 [[18_megatron_recompute_analysis|激活重计算的 TE 交接与精度边界]]）;delayed scaling 与某些 selective 重计算互斥。
 - **首尾层**:`is_first_last_bf16_layer`(`:698`)—— 首尾层常保留 bf16(对精度最敏感)。
 
 FP4(`megatron/core/fp4_utils.py`、`Fp4Recipe`)同理,更激进,Blackwell 专属。

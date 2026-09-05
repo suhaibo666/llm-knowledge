@@ -30,7 +30,7 @@ MegatronOptimizer (ABC, :134)              抽象基类:clip_grad_norm / get_los
    │
    ├── MixedPrecisionOptimizer (:717)      混合精度:fp32 master 副本 + grad scaler
    │      ├── Float16OptimizerWithFloat16Params (:929)   fp16/bf16 模型参数的具体实现
-   │      └── DistributedOptimizer          ← ZeRO-1,见 [[16_megatron_distributed_optimizer_analysis]] §5 阶段②
+   │      └── DistributedOptimizer          ← ZeRO-1-like ownership,见 [[16_megatron_distributed_optimizer_analysis|ZeRO/HSDP 所有权映射]]
    │
    ├── FP32Optimizer (:1286)               纯 fp32,无 scaling、无 master 副本
    │
@@ -106,7 +106,7 @@ emerging optimizer 则由入口 `:1025-1031` 转入 `_get_megatron_emerging_opti
 
 ### 4.2 这就是"18 bytes/param"的来源
 
-`MixedPrecisionOptimizer` 持有的东西,正是 [[16_megatron_distributed_optimizer_analysis]] §§1.4、9.1 ZeRO 显存表里的 `18Ψ`:
+`MixedPrecisionOptimizer` 持有的 `18Ψ` 明细如下；[[16_megatron_distributed_optimizer_analysis|ZeRO/HSDP 成本与所有权账本]]说明其中哪些状态会按 DP range 分片，而逐项字节核算由本页负责：
 
 | 张量 | 精度 | bytes/param | 谁持有 |
 |------|------|-------------|--------|
@@ -117,21 +117,21 @@ emerging optimizer 则由入口 `:1025-1031` 转入 `_get_megatron_emerging_opti
 | **Adam 方差 v** | fp32 | 4 | **优化器** |
 | | | **合计 18** | |
 
-> 梯度为 **fp32(4 字节)** 而非 bf16(2 字节):bf16 尾数仅 7 位,跨 microbatch 累加会丢精度,Megatron 对 bf16 训练强制 fp32 梯度累积(`megatron/training/arguments.py:1319-1333`,见 [[16_megatron_distributed_optimizer_analysis]] §3.5)。仅 `--grad-reduce-in-bf16` 时梯度为 2 字节、合计 16。
+> 梯度为 **fp32(4 字节)** 而非 bf16(2 字节):bf16 尾数仅 7 位,跨 microbatch 累加会丢精度,Megatron 对 bf16 训练强制 fp32 梯度累积(`megatron/training/arguments.py:1319-1333`;全局精度配置边界见 [[23_megatron_precision_cudagraph_fusion_analysis]])。仅 `--grad-reduce-in-bf16` 时梯度为 2 字节、合计 16。
 
-[[16_megatron_distributed_optimizer_analysis]] §§1.4、5 阶段②说 ZeRO-1 把"优化器状态 `12Ψ`"切成 `1/dp` —— 切的就是这里的 master + m + v。
+[[16_megatron_distributed_optimizer_analysis|ZeRO/HSDP 所有权映射]]所说 ZeRO-1 将 optimizer/main-update ownership 按 DP range 切分，落到这里就是 master + m + v 这 `12Ψ` 状态。
 
 `FP32Optimizer` 则相反:模型本身就是 fp32,无需 master 副本、无需 scaler。
 
 ### 4.3 精度感知优化器:decoupled_grad
 
-见 [[16_megatron_distributed_optimizer_analysis]] §3.11——`use_precision_aware_optimizer: True` 时,master 权重、exp_avg、exp_avg_sq 可采用不同的低精度格式,用 `.decoupled_grad` 解耦模型参数 dtype 和优化器 state dtype,而非本节默认的固定 fp32 master。
+`use_precision_aware_optimizer: True` 时,master 权重、exp_avg、exp_avg_sq 可采用不同的低精度格式,用 `.decoupled_grad` 解耦模型参数 dtype 和优化器 state dtype,而非本节默认的固定 fp32 master。该 optimizer-step 细节由本节负责；模型精度与 recipe 的上游配置见 [[23_megatron_precision_cudagraph_fusion_analysis]]。
 
 ---
 
 ## 5. `optimizer.step()` 流程
 
-在展开 `optimizer.step()` 内部五步之前,先看它在**整个训练迭代**里的位置（补充，2026-07-31 由原 16 §3.5 并入）——这条流程串起了 [[16_megatron_distributed_optimizer_analysis]] §3(DP 通信)与本节(优化器内部):
+在展开 `optimizer.step()` 内部五步之前,先看它在**整个训练迭代**里的位置（补充，2026-07-31 由旧版 16 §3.5 并入）——这条流程串起了 [[16_megatron_distributed_optimizer_analysis|DP gradient-ready → update → parameter-visible 闭环]]与本节(优化器内部):
 
 ```
 Forward（参数 AG 可 overlap）
@@ -151,7 +151,7 @@ Forward（参数 AG 可 overlap）
           → 下一轮迭代
 ```
 
-这里两个 copy 都是 `optimizer.step()` 的内部子调用：`prepare_grads()` 在 `megatron/core/optimizer/optimizer.py:807-849` 做 model-grad→main-grad，`step_with_ready_grads()` 在 `:852-892` 做更新与 main-param 回写，`step()` 本身在 `:895-926` 串起它们。DistributedOptimizer 再在 override `megatron/core/optimizer/distrib_optimizer.py:3251-3283` 中处理参数同步。DP 通信的前后边界见 [[16_megatron_distributed_optimizer_analysis]] §3。
+这里两个 copy 都是 `optimizer.step()` 的内部子调用：`prepare_grads()` 在 `megatron/core/optimizer/optimizer.py:807-849` 做 model-grad→main-grad，`step_with_ready_grads()` 在 `:852-892` 做更新与 main-param 回写，`step()` 本身在 `:895-926` 串起它们。DistributedOptimizer 再在 override `megatron/core/optimizer/distrib_optimizer.py:3251-3283` 中处理参数同步。DP 通信的前后边界见 [[16_megatron_distributed_optimizer_analysis|optimizer handoff 与下一次 forward 的可见性]]。
 
 `MixedPrecisionOptimizer.step()`(`megatron/core/optimizer/optimizer.py:895`;`prepare_grads` 在 `:807`、`step_with_ready_grads` 在 `:852`):
 
@@ -191,7 +191,7 @@ def step(self):
 关键:**inf/nan 检查在最前面**。一旦发现非有限梯度,整步丢弃(参数不动),交给 dynamic scaler 调整(§6)。这是 fp16 训练能稳住的安全阀。
 
 > [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。 — `count_zeros` 兼容解耦梯度 / Megatron-FSDP(#4802,`megatron/core/optimizer/clip_grads.py:199` `count_zeros_fp32`,新基线下行号未变)
-> 第 ③ 步 `count_zeros`(统计零梯度)原来固定读 `param.grad`。但两种新路径下梯度不在 `.grad`:① **precision-aware / 解耦优化器**(`use_decoupled_grad=True`)梯度在 `param.decoupled_grad`(见 §4.3 与 [[16_megatron_distributed_optimizer_analysis]] §3.11);② **Megatron-FSDP** 管理的参数梯度是 FSDP 分片后的 DTensor,需取 `._local_tensor`。修复后 `count_zeros_fp32` 先按 `use_decoupled_grad` 选 `decoupled_grad`/`grad` 属性,再对 `__fsdp_param__` 参数取 local shard,避免漏统计或读到 `None`。
+> 第 ③ 步 `count_zeros`(统计零梯度)原来固定读 `param.grad`。但两种新路径下梯度不在 `.grad`:① **precision-aware / 解耦优化器**(`use_decoupled_grad=True`)梯度在 `param.decoupled_grad`(见 §4.3 与 [[23_megatron_precision_cudagraph_fusion_analysis]]);② **Megatron-FSDP** 管理的参数梯度是 FSDP 分片后的 DTensor,需取 `._local_tensor`。修复后 `count_zeros_fp32` 先按 `use_decoupled_grad` 选 `decoupled_grad`/`grad` 属性,再对 `__fsdp_param__` 参数取 local shard,避免漏统计或读到 `None`。
 
 ---
 
@@ -264,7 +264,7 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 
 ---
 
-## 9. CPU Offloading 机制(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §4 并入)
+## 9. CPU Offloading 机制(补充,2026-07-31 · 由旧版 `16_megatron_distributed_optimizer_analysis.md` §4 并入)
 
 ### 9.1 HybridDeviceOptimizer
 
@@ -275,7 +275,7 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 - 支持 `param_update_in_fp32`:CPU 上做 FP32 更新
 - 通过 step hooks 自动化参数回拷
 
-名字里的 "Hybrid":一部分参数的优化器状态/更新在 GPU、一部分在 CPU,按显存压力混合 —— 用 PCIe 带宽 + CPU 算力换 GPU 显存(类比激活 offload 的思路,见 `18_megatron_recompute_analysis.md` §1.2)。
+名字里的 "Hybrid":一部分参数的优化器状态/更新在 GPU、一部分在 CPU,按显存压力混合 —— 用 PCIe 带宽 + CPU 算力换 GPU 显存（类比 [[18_megatron_recompute_analysis|重计算与激活 offload 的取舍]]）。
 
 ### 9.2 ChunkedOptimizerStateOffloader：CPU canonical state，逐块回到 GPU 更新
 
@@ -313,9 +313,9 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 >
 > 这组 PR 实质性改写了 layer-wise 的实现,并**修正了上文"普通 distributed optimizer 难以优雅支持 per-parameter optimizer 切换"的暗示** —— 现在两者是**链式协作**,而非二选一:
 >
-> **① LayerWise 不再用独立 ping-pong 路径,而是建在 DDP 的 grad/param buffer 之上**(#4509)。它预计算一个 shard-aligned 的 `FullParamLayout`/`PerBufferParamLayout`(`megatron/core/optimizer/param_layout.py`),把参数按 backprop 顺序装进**对齐到 shard 边界**的 bucket,使任何参数都不跨 shard 边界,从而能直接复用 DDP 的 reduce-scatter(`use_distributed_optimizer=True` 时,见 [[16_megatron_distributed_optimizer_analysis]] §3)/ all-gather 通信与 `overlap_grad_reduce`/`overlap_param_gather` 重叠语义(见 [[16_megatron_distributed_optimizer_analysis]] §3.2/[[16_megatron_distributed_optimizer_analysis]] §3.3)。装箱算法在 #4771 中从"同尺寸配对(size-matching)"换成 **LPT 贪心装箱**(按 numel 降序塞进当前负载最小的 shard),在保证 bucket 连续 backprop 区间的同时让各 shard 尽量均衡。
+> **① LayerWise 不再用独立 ping-pong 路径,而是建在 DDP 的 grad/param buffer 之上**(#4509)。它预计算一个 shard-aligned 的 `FullParamLayout`/`PerBufferParamLayout`(`megatron/core/optimizer/param_layout.py`),把参数按 backprop 顺序装进**对齐到 shard 边界**的 bucket,使任何参数都不跨 shard 边界,从而能直接复用 DDP 的 reduce-scatter/all-gather 通信与 `overlap_grad_reduce`/`overlap_param_gather` 重叠语义([[16_megatron_distributed_optimizer_analysis|flat buffer、bucket readiness 与参数 AG 可见性闭环]])。装箱算法在 #4771 中从"同尺寸配对(size-matching)"换成 **LPT 贪心装箱**(按 numel 降序塞进当前负载最小的 shard),在保证 bucket 连续 backprop 区间的同时让各 shard 尽量均衡。
 >
-> **② 非-Muon 参数改由独立的 `DistributedOptimizer` 按字节级分片管理**(#4771)。新增 `is_managed_by_layer_wise_optimizer(param)`(`megatron/core/optimizer/layer_wise_optimizer.py:43`):2D 矩阵权重且非 embedding/output → Muon/LayerWise 接管;embedding、bias、LayerNorm 等 → **路由到一个独立的 `DistributedOptimizer`**(真正的 ZeRO 字节级分片,见 [[16_megatron_distributed_optimizer_analysis]] §5 阶段②)。`BufferKey` 增加 `is_managed_by_layer_wise_optimizer` 维度(新基线上 `BufferKey` 已移出 `param_and_grad_buffer.py`,现为 `megatron/core/optimizer/param_layout.py:46`,该字段在 `:66`;`param_and_grad_buffer.py` 侧改为在 `group_params_for_buffers` 里 `from ..optimizer.param_layout import BufferKey` 导入,`megatron/core/distributed/param_and_grad_buffer.py:938-964`),让两类参数落进不同 buffer;`DistributedOptimizer.start_param_sync_for_bucket_group_subset()`(`megatron/core/optimizer/distrib_optimizer.py:3223`)只同步自己那批 bucket group,避免与 sibling LayerWise 重复 all-gather。最终 `LayerWiseDistributedOptimizer`(Muon)+ `DistributedOptimizer`(Adam)由 `ChainedOptimizer`(§2.1)串成一个。
+> **② 非-Muon 参数改由独立的 `DistributedOptimizer` 按字节级分片管理**(#4771)。新增 `is_managed_by_layer_wise_optimizer(param)`(`megatron/core/optimizer/layer_wise_optimizer.py:43`):2D 矩阵权重且非 embedding/output → Muon/LayerWise 接管;embedding、bias、LayerNorm 等 → **路由到一个独立的 `DistributedOptimizer`**(range-owned optimizer state/update 与参数 AG 语义见 [[16_megatron_distributed_optimizer_analysis|native DistributedOptimizer 路径]])。`BufferKey` 增加 `is_managed_by_layer_wise_optimizer` 维度(新基线上 `BufferKey` 已移出 `param_and_grad_buffer.py`,现为 `megatron/core/optimizer/param_layout.py:46`,该字段在 `:66`;`param_and_grad_buffer.py` 侧改为在 `group_params_for_buffers` 里 `from ..optimizer.param_layout import BufferKey` 导入,`megatron/core/distributed/param_and_grad_buffer.py:938-964`),让两类参数落进不同 buffer;`DistributedOptimizer.start_param_sync_for_bucket_group_subset()`(`megatron/core/optimizer/distrib_optimizer.py:3223`)只同步自己那批 bucket group,避免与 sibling LayerWise 重复 all-gather。最终 `LayerWiseDistributedOptimizer`(Muon)+ `DistributedOptimizer`(Adam)由 `ChainedOptimizer`(§2.1)串成一个。
 >
 > **结论(对上文 Muon/ZeRO 框架的修正)**:Muon 现在**可以与 ZeRO 分片共存**。Muon 管的矩阵权重经 LayerWise 走 shard-aligned 的 reduce-scatter/all-gather(等效 ZeRO-1/2 沿 DP 分片优化器状态与梯度),非-Muon 参数走标准 `DistributedOptimizer`。早期"Muon 对 ZeRO 切分的根本性挑战"指的是 Newton-Schulz 正交化需要**整块矩阵**、无法像 Adam 那样按字节随意切;LayerWise 的解法正是 **shard-aligned bucket + 按层/按整参数分配**,让每个矩阵整体落在某个 shard 内,从而既正交化又分片(跨框架的 Muon/ZeRO 张力综述见 [[32_distributed_optimizer_deepdive]] §六)。
 >
@@ -346,12 +346,12 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 
 ## 11. 约束
 
-本页只列 optimizer-step、offload、precision-aware 与 emerging-optimizer 的边界；DDP/ZeRO/FSDP 约束见 [[16_megatron_distributed_optimizer_analysis]] §12。
+本页只列 optimizer-step、offload、precision-aware 与 emerging-optimizer 的边界；DDP/ZeRO/HSDP 的通用 guards 与实现选择见 [[16_megatron_distributed_optimizer_analysis]],Megatron-FSDP 的完整支持矩阵见 [[36_megatron_fsdp_analysis]]。
 
 | # | 前提 / 不变量 | 源码落点 | 破坏后的表现 |
 |---|---|---|---|
-| 6 | `overlap_param_gather_with_optimizer_step` 与 `reuse_grad_buf_for_mxfp8_param_ag`（[[16_megatron_distributed_optimizer_analysis]] §3.10）互斥 | `megatron/core/optimizer/optimizer_config.py:513-517`,抛 `ValueError` | 构造期直接失败 —— 共享 buffer 一旦复用,参数 AG 就不能再提前塞进 step |
-| 7 | 精度感知优化器（[[16_megatron_distributed_optimizer_analysis]] §3.11 / 本页 §4.3）只支持 `adam`,且必须同时开 distributed optimizer | `megatron/core/optimizer/optimizer_config.py:519-525` | assert 失败 |
+| 6 | `overlap_param_gather_with_optimizer_step` 与 `reuse_grad_buf_for_mxfp8_param_ag`（本页 §5 的 step/AG 边界）互斥 | `megatron/core/optimizer/optimizer_config.py:513-517`,抛 `ValueError` | 构造期直接失败 —— 共享 buffer 一旦复用,参数 AG 就不能再提前塞进 step |
+| 7 | 精度感知优化器（本页 §4.3）只支持 `adam`,且必须同时开 distributed optimizer | `megatron/core/optimizer/optimizer_config.py:519-525` | assert 失败 |
 | 8 | chunked optimizer-state offload(§9)限 Adam/Muon、与 `optimizer_cpu_offload` 互斥、且不支持 optimizer CUDA graph | `megatron/core/optimizer/optimizer_config.py:445-448`、`:450-452`、`:453-455` | assert 失败 —— §9.1 的 `HybridDeviceOptimizer` 与 chunked offload 是两条不能同开的路 |
 | 9 | emerging 优化器(Muon 等,§10)不能配 `overlap_param_gather_with_optimizer_step`,也不支持 fp16 | `megatron/core/optimizer/__init__.py:761-766`、`:769-770` | 前者 assert 失败,断言文本自己给了理由 ——「the emerging-optimizer path does not split model_chunks into (first, rest) groups, so the per-chunk param-gather dispatch never fires」;后者 `ValueError` |
 
@@ -368,7 +368,7 @@ fp16 动态范围窄(最小正规数 ~6e-5)。反向里很多梯度比这还小 
 §9.2 展开的 `ChunkedOptimizerStateOffloader` 已是当前机制；`megatron/core/optimizer/cpu_offloading/` 在基线下只保留 `__init__.py`、`README.md`、`hybrid_optimizer.py` 与 `chunked_optimizer_state_offload.py`，后者由提交 `9050d4c5f`（commit message「[dev] Add chunked optimizer-state and master-weight offload (#6244)」）引入，并被 `MegatronOptimizer` 直接持有（`megatron/core/optimizer/optimizer.py:52,149,172-207`）。配置侧 `offload_optimizer_states` 只是 `chunked_optimizer_state_offload` 的 deprecated alias（`megatron/core/optimizer/optimizer_config.py:385-386`），`__post_init__` 会发 `FutureWarning` 并改写为新开关（`:418-429`）。**由此可推断**：后续调优的有效旋钮是 chunk 大小、offload fraction 与预取重叠，而不是已经不存在的旧类或整块 reload 生命周期。
 
 **二、参数 layout 正在从 DDP buffer 里独立出去,成为多个优化器共享的第三方描述。**
-§10.1 已经记录:`BufferKey` 不再定义在 `param_and_grad_buffer.py`,而是搬去 `megatron/core/optimizer/param_layout.py:46`,再由 `group_params_for_buffers` 反向导入(`megatron/core/distributed/param_and_grad_buffer.py:938-964`);[[16_megatron_distributed_optimizer_analysis]] §3.7 那条更正里的 bucket 末端对齐 divisor 同样集中到了 `megatron/core/optimizer/param_layout.py:29`。**由此可推断**:"谁决定参数怎么装桶"正在从 DDP 侧移到优化器侧 —— 因为 LayerWise(Muon)与 `DistributedOptimizer` 必须对同一份 layout 达成一致(§10.1);后续读分桶代码,应先看 `param_layout.py` 再看 `param_and_grad_buffer.py`。
+§10.1 已经记录:`BufferKey` 不再定义在 `param_and_grad_buffer.py`,而是搬去 `megatron/core/optimizer/param_layout.py:46`,再由 `group_params_for_buffers` 反向导入(`megatron/core/distributed/param_and_grad_buffer.py:938-964`);[[16_megatron_distributed_optimizer_analysis|flat buffer 的 shard 对齐不变量]]所需的 bucket 末端对齐 divisor 同样集中到了 `megatron/core/optimizer/param_layout.py:29`。**由此可推断**:"谁决定参数怎么装桶"正在从 DDP 侧移到优化器侧 —— 因为 LayerWise(Muon)与 `DistributedOptimizer` 必须对同一份 layout 达成一致(§10.1);后续读分桶代码,应先看 `param_layout.py` 再看 `param_and_grad_buffer.py`。
 
 **三、进程组正在从全局单例改成显式传入,而优化器这一层还没走完。**
 `get_megatron_optimizer` 仍在 `pg_collection` 缺 `tp` 时回落到 `parallel_state.get_tensor_model_parallel_group()`,并用 `setattr` 把 tp_group 挂到优化器实例上,旁边写着「TODO(M4): plumb tp_group through optimizer constructors so this setattr disappears」(`megatron/core/optimizer/__init__.py:688-692`);工厂入口另有一条「TODO: the standard and emerging optimizer paths handle pg_collection differently; unify them so both use a single pg_collection-based flow」(`:1023-1024`)。**由此可推断**:§2 的类层次短期内不会变,但"优化器从哪里拿 DP/TP 组"会变;跨版本对照优化器代码时,通信组的来源是最容易漂移的一处(编排侧的同向变化见 [[17_megatron_parallelism_orchestration_analysis]])。

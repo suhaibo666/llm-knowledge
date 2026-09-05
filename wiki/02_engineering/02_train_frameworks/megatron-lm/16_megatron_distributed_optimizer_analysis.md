@@ -1,751 +1,628 @@
 ---
-title: "Megatron-LM DDP、ZeRO 与分片实现深度解析"
+title: "Megatron-LM 分布式优化器与 DP 状态分片深度解析"
 ---
 
-# Megatron-LM DDP、ZeRO 与分片实现深度解析
+# Megatron-LM 分布式优化器与 DP 状态分片深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **学习前置**：[[03_megatron_parallelism_geometry_quickstart]]；若只想跑通训练，先读 [[02_megatron_training_quickstart]]。
-> **回答的问题**：Megatron 怎样沿 DP 轴组织 DDP buffer，并在 ZeRO-0/1/2/3、HSDP、Torch FSDP2 与 Megatron-FSDP 之间分配参数、梯度和 optimizer state 的所有权？
-> **不覆盖**：单次 optimizer step、loss scaling、LR/WD、CPU optimizer offload、Muon 与 μP 归 [[26_megatron_optimizer_step_internals_deepdive]]；低精度 recipe 归 [[23_megatron_precision_cudagraph_fusion_analysis]]。
-> **叙事顺序**：背景 → 为什么按扁平 buffer 分片 → DDP/ZeRO 实现 → 选型 → 约束 → 趋势。
-> **最后复核**：2026-09-03。
+> **核心源码**：`megatron/core/distributed/distributed_data_parallel.py`、`param_and_grad_buffer.py`、`reduce_scatter_with_fp32_accumulation.py`、`finalize_model_grads.py`，以及 `megatron/core/optimizer/distrib_optimizer.py`、`layer_wise_optimizer.py`、`param_layout.py`
+> **中心结论**：复制模型可以把 optimizer state 与更新权交给 buffer range 的 owner：backward 后规约 owner 所需梯度，owner 更新本地片段，再发布完整参数供下一轮 forward 使用。native DistributedOptimizer 按连续元素 range 切分，LayerWise 按整个 parameter 切分；普通 AR、标准 RS、custom FP32 accumulation RS 与多 instance HSDP 的区别，必须连同梯度完成和参数可见性一起解释。
+> **适用范围**：本页拥有 native DDP 的 gradient communication、flat-buffer ownership、四套 range 坐标、RS→step→AG handoff、`finalize_model_grads` 的跨域收尾，以及这些机制与多个 DistOpt instance 的组合。精度 recipe 归 [[23_megatron_precision_cudagraph_fusion_analysis]]；CPU/offload 与 optimizer 算法归 [[22_megatron_memory_optimization_analysis]]、[[26_megatron_optimizer_step_internals_deepdive]]；Torch FSDP2 与 Megatron-FSDP 内部状态机归 [[36_megatron_fsdp_analysis]]；Nonuniform TP subclass 归 [[25_megatron_nonuniform_tp_analysis]]。本页只核验它们的选择点与交接契约，不复述它们的内部实现。
+> **最近更新**：2026-09-05。按最新特性页契约，从最小所有权实例展开真实选型与六条数据面，补齐 loss/backward、异步完成、布局成本和依赖边界；保留既有四图及其源码纠正。
 
 ---
 
-## 1. 背景：DP 只切 batch,模型态在每张卡上原样复制一份 `18Ψ`
+## 1. 特性概览
 
-### 1.1 DP / DDP / 分布式优化器是什么
+数据并行的每个 replica 都需要完整模型来计算各自 batch，但不必各保存一份相同的 Adam main weight 和 moment，再重复做同一次更新。bf16 模型下，这些 fp32 状态约为模型参数本身的六倍；它们先于参数本身耗尽显存时，把 batch 或 bucket 切小也不能消除这份常驻重复。分布式优化器因此引入更新 owner：梯度通信把全局贡献交给 owner，owner 只更新自己的片段，参数通信再把新值发布给所有 replica；复制的 forward/backward 计算保持原有模型语义。
 
-**数据并行(Data Parallelism,DP)**:把 global batch 切成 `dp` 份,`dp` 张卡各持**一份完整模型副本**,各算各的 microbatch,反向后把梯度**跨卡求平均**(all-reduce),保证 `dp` 个副本始终一致。DP 不省模型显存,只分摊 batch、提高吞吐 —— 它是其他所有并行轴(TP/PP/CP/EP)之上**最外层**的并行。
+native 路径用连续 buffer 的等长 range 作为 owner 单位，以 reduce-scatter 交付梯度、以 all-gather 发布参数。需要整矩阵更新的 LayerWise 则保留 whole-parameter 所有权，并在 compact AR/uneven AG 与 padded RS/buffer AG 之间选布局。收益首先是减少 main/state 和重复 update；梯度传输与参数发布的总字节并不因此消失。
 
-**DDP(`DistributedDataParallel`)**:Megatron 的 DP 实现。它做两件超出"朴素 all-reduce"的事:① 把梯度塞进**连续扁平缓冲区(flat buffer)**并分**桶(bucket)**,让梯度通信能**异步、与反向计算重叠**;② 支持梯度以高于参数的精度(fp32)累加。
+| 维度 | 直接收益 | 必付成本或边界 |
+|---|---|---|
+| optimizer state 与 main weight | 每参数常驻从约 $18$ bytes 降到约 $6+12/d$ bytes（bf16 param、fp32 grad、fp32 main、两份 fp32 Adam state 的简化账本） | 只分片 main/state；forward-facing `param_data` 与 `grad_data` 的 6 bytes 仍是完整 buffer，不随 $d$ 缩小 |
+| update 计算 | 每 rank 只更新落在 owner range 内的参数片段 | 一个逻辑 `Parameter` 可由多个 rank 分段更新；clip 统计须正确计数，checkpoint 须支持重分片，见 [[26_megatron_optimizer_step_internals_deepdive]] |
+| 通信 | 理想算法字节上 RS+AG 与一次 ring AR 同阶 | collective 从 1 个变成 2 个；等待点从 backward 末尾延伸到下一轮 forward 的第一个 consumer |
+| 可见性 | parameter AG 可与下一轮 forward 重叠 | “已发射”不等于 consumer 可见，必须由 forward pre-hook 的 `finish_param_sync()` 收口；没有撤销 in-flight collective 的 rollback |
+| 布局 | 连续 flat buffer 让一次 collective 覆盖整段，且 bucket 可按反向就绪顺序分批发射 | 64-element 的 param-start 对齐与 $\operatorname{lcm}(d,128)$ 的 bucket-end 对齐是纯 HBM 开销，`pad_buckets_for_high_nccl_busbw` 还会把 divisor 抬到含 $2^{16}$ |
+| 组合 | 可与 $k>1$ 的 HSDP、custom FP32 accumulation RS、LayerWise sibling 共存 | 这些开关之间有大量硬互斥（§5.1），不是任意开关的笛卡尔积 |
 
-**分布式优化器(Distributed Optimizer)**:朴素 DP 的痛点是**每卡都存一份完整优化器状态**(fp32 master 权重 + Adam 动量 + 方差,共 12 字节/参数),纯冗余。分布式优化器把这些状态**沿 DP 组切成 `1/dp`**,每卡只更新自己那 `1/dp` 的参数 —— 这就是 **ZeRO**(Zero Redundancy Optimizer)的思想。Megatron 的 `--use-distributed-optimizer` ≈ **ZeRO-1**;配合 Megatron-FSDP 还能做到 ZeRO-2/3。这与 ZeRO-1(优化器状态分片)等价;配合 Grad Buffer 的 Reduce-Scatter 替代 All-Reduce,额外实现了 ZeRO-2(梯度分片)的效果。
-
-### 1.2 DP 在并行体系中的位置
-
-| 并行轴 | 切什么 | 峰值激活 | 权重 | 梯度 | 优化器状态 | 通信特征 |
-|--------|--------|---------|------|------|-----------|---------|
-| TP | 单层权重矩阵 | 1/tp | 1/tp | 1/tp | 1/tp | 高频、关键路径 |
-| EP | 专家 | ~1 | MoE 层 1/ep | 1/ep | 1/ep | 中 |
-| PP | 层 | 1(VPP>1) | 1/pp | 1/pp | 1/pp | 中,点对点 |
-| CP | 序列 | 1/cp | 1 | 1 | 1/cp | 中,仅 attention |
-| **DP(DDP)** | **批次** | **1** | **1** | **1** | **1** | **低,每步一次,可重叠** |
-| **DP(ZeRO-1)** | 批次 | 1 | 1 | 1 | **1/dp** | 低,= DDP |
-| **DP(ZeRO-3)** | 批次 | 1 | **1/dp** | **1/dp** | **1/dp** | 低,但 1.5× DDP |
-
-关键:**朴素 DP 完全不省模型显存**;分布式优化器(ZeRO)在 DP 之上把模型态(参数/梯度/优化器)逐级切分,是"用 DP 通信换显存"的关键基建。
-
-### 1.3 四个 ZeRO 阶段一览
-
-`data_parallel_sharding_strategy`(`megatron/core/distributed/distributed_data_parallel_config.py:112`)取 4 值,对应 ZeRO 4 个阶段:
-
-| # | 策略 | ZeRO 阶段 | 切分对象 | 触发 |
-|---|------|-----------|---------|------|
-| ① | `no_shard` | ZeRO-0 | 都不切(朴素 DDP) | 默认 |
-| ② | `optim` | ZeRO-1 | 优化器状态 | `--use-distributed-optimizer` |
-| ③ | `optim_grads` | ZeRO-2 | 优化器状态 + 梯度 | Megatron-FSDP |
-| ④ | `optim_grads_params` | ZeRO-3 | 优化器状态 + 梯度 + 参数 | Megatron-FSDP / FSDP2 |
-
-本文把这 4 个阶段当作 PP 文档"5 调度器"的对应物逐个解读(§4-§7,阶段①-④)。
-
-### 1.4 记号约定
+后文复用的记号如下；range 下标均以元素计，字节量再乘实际 dtype 大小。
 
 | 符号 | 含义 |
-|------|------|
-| `dp` | DP 度(DP 组大小,= world_size / (tp·pp·cp·ep)) |
-| `Ψ` | 模型参数量(个数) |
-| 混合精度 Adam(标准 bf16 训练) | bf16 权重 `2Ψ` + **fp32 梯度 `4Ψ`** + fp32 master `4Ψ` + Adam m `4Ψ` + Adam v `4Ψ` = **`18Ψ` 字节** |
-| "优化器状态" | fp32 master + m + v = `12Ψ` 字节(ZeRO 术语) |
-| bucket | 梯度桶,DDP 通信的最小单位 |
-| `P` | 模型参数总量(元素个数,§3.9/§3.10/§8 通信组/通信量描述中沿用原文记号,与 `Ψ` 等价) |
-
-> **为什么梯度是 fp32(4 字节)而非 bf16(2 字节)**:`megatron/training/arguments.py:1319-1333`,`if args.bf16:` 分支注释明写 *"bfloat16 requires gradient accumulation and all-reduce to be done in fp32"* —— bf16 尾数仅 7 位,跨 microbatch 累加会灾难性丢精度。除非显式 `--grad-reduce-in-bf16`,Megatron 对 bf16 训练强制 `accumulate_allreduce_grads_in_fp32 = True`,梯度 buffer dtype 为 `torch.float`(`megatron/core/distributed/param_and_grad_buffer.py:976`)。仅当 `--grad-reduce-in-bf16` 时梯度才是 `2Ψ`、合计 `16Ψ`(即 ZeRO 论文的教科书值)。本文按 Megatron **默认**口径取 `18Ψ`。
-
-### 1.5 朴素数据并行与它的浪费
-
-最朴素的 DP:`dp` 卡各持完整模型,反向后对梯度做一次 all-reduce 求平均,各卡用相同梯度跑相同的 optimizer step → `dp` 个副本永远一致。问题有二:
-
-1. **模型态完全冗余**:每卡都存一份 `18Ψ` 的模型态(参数+梯度+优化器)。`dp=64` 就是 64 份完全相同的优化器状态 —— 纯浪费。
-2. **梯度通信暴露**:反向算完后,一次性 all-reduce 整个梯度 buffer(`4Ψ` 字节),这段通信卡在关键路径上。
-
-### 1.6 Megatron DDP 的两项改进(动机)
-
-- **针对暴露**:把梯度分**桶**,反向每算完一个桶的梯度就**异步**发起该桶的 all-reduce,与后续层的反向计算**重叠** → 通信延迟被算力掩盖。
-- **针对冗余**:分布式优化器把 `12Ψ` 优化器状态沿 DP 组切成 `1/dp`(ZeRO-1),再往上还能切梯度(ZeRO-2)、切参数(ZeRO-3)。
-
-### 1.7 DP 的收益与定位
-
-- **收益**:线性提升吞吐(更多 batch);配合 ZeRO 后,模型态显存按阶段逐级 `÷dp`。
-- **定位**:DP 是**最外层**并行。通信量最低、每步一次、可重叠 —— 所以总是优先把并行度给 DP(README Guideline 1:"Minimize model parallelism, maximize data parallelism")。
+|---|---|
+| $N$ | 一个 bucket 内 flat buffer 的元素数 |
+| $D$ | 完整复制域大小，即 DP×CP（expert buffer 上为 expert-DP） |
+| $k$ | `num_distributed_optimizer_instances`，DistOpt 实例数 |
+| $s=D/k$ | 单个 DistOpt instance 的大小 |
+| $d$ | 一次 full-shard 的实际 group size：DistOpt 下为 $s$，普通 AR 路径下为 $D$ |
+| $M$ | 一个 bucket 在线上的 payload 字节数（按通信 dtype 计） |
+| $P$ | 模型可训练参数总量 |
+| $G^{(s)}$ | DP source rank $s$ 在本轮产生的完整梯度贡献 |
+| AR、RS、AG、A2A | all-reduce、reduce-scatter、all-gather、all-to-all |
+| LPT | Longest-Processing-Time 贪心装箱，LayerWise padded layout 的分配规则 |
 
 ---
 
-## 2. 为什么这么设计：分片切在"扁平梯度缓冲区的字节"上,而不是切参数、也不复用 PyTorch 原生 DDP
+## 2. 分布式优化器详细方案
 
-朴素做法有两条现成的路:① 直接用 PyTorch 自带的 `torch.nn.parallel.DistributedDataParallel` —— 它本来就会分桶、会把 all-reduce 与反向重叠;② 让分布式优化器**按参数**分片 —— 每个参数整体归某一个 DP rank 管,边界干净。Megatron 两条都写过,两条都删掉了。源码陈述了其中三条理由;第四条源码沉默,由本页重建并标为推断。
+### 2.1 最小示例：同一个具名 flat buffer 的四套 range 坐标
 
-**① 分片对象是"梯度缓冲区的字节区间",不是参数 —— 这条写在 docstring 里。**
-`_build_model_gbuf_param_range_map`(`megatron/core/optimizer/distrib_optimizer.py:134`)的 docstring 说:每块梯度 buffer(「padded to be an even multiple of DP-world-size」)被「conceptually divided into DP-world-size contiguous regions, where each DP rank 'owns' a contiguous region」(`:144-146`),而且「This conceptual partitioning of the grad buffer does **NOT** respect parameter boundaries ... it is easiest to think of each DP rank as operating (i.e., reducing, gathering) purely on views into the grad buffer, for all model-to-main & main-to-model operations」(`:151-156`)。
-→ 决定取舍的判据是**让 reduce-scatter / all-gather 退化成"把一整块连续显存等分"**:通信侧不必知道参数边界,也不会因为参数大小参差而出现分片负载不均。代价是一个参数可能被两个 rank 各持一半(§3.8),以及必须为此额外生成四组 range 映射(`:158-162`)。
+先把已排好的一个 bucket 作为输入：$N=16$、$d=4$，布局为 `q=[0,2)`、`p=[2,7)`、`r=[7,13)`、`pad=[13,16)`。这是隔离 range 映射的缩尺例：它保留分片、交集与发布语义，**不是当前 native layout builder 对三个小参数的实际产物**；真实 builder 还施加 64/128 对齐，见 §2.6。四条 range lane 复用此输入，LayerWise 则从同一组 logical `q(2),p(5),r(6)` 重新计算真实布局。
 
-**被否掉的替代①:按 param group 拼接、优化器自己另开 shard。**
-提交 `cb6f96b68`(2022-02-15,commit message 即「wip; switching to grad-buffer-centric design」)之前,`Float16DistributedOptimizer.__init__` 走的正是这条路:先给每个 `param_group` 建一张 `{param: {start, end}}` 偏移表(`cb6f96b68^:megatron/optimizer/optimizer.py:734-752`),按该 group 的拼接长度算 `max_world_shard_size = ceil(model_param_size / dp_world_size)` 并逐 rank 记进 `world_shard_infos`(`:775-781`),再用 `allocate_shard = lambda shard_size, dtype: torch.empty(...)`(`:763-767`)**另开**一块张量装 main param 及其 grad(`:882-883`)。也就是说:分片曾经建在"参数组的虚拟拼接 + 优化器自己的独立分配"上,与 DDP 那块扁平 grad buffer 无关。紧随其后的 `a3f3c3ad7`(commit message「todo; align shards with model's contiguous buffer」)把方向钉死;今天 `docs/user-guide/features/dist_optimizer.md:22` 的一句「This distributed optimizer uses contiguous buffers for parameters and main gradients」就是这次转向的结论。
+每个 receive/owner range 长 $N/d=4$，但只有与真实参数相交的位置进入 optimizer；padding 会参加 collective，不获得 main/state 或更新权。
 
-**② 梯度先落进连续扁平 buffer 再分桶异步发,而不是逐参数各发一次通信。**
-`DistributedDataParallel` 的类 docstring 把三件事并列写清楚:「stores grads in contiguous buffers」、「has option of overlapping communication with backprop computation by breaking up full model's gradients into smaller buckets and running all-reduce / reduce-scatter on each bucket asynchronously」、「provides the option to do the gradient accumulation in a type other than the param type (e.g., fp32 for a bf16 model)」(`megatron/core/distributed/distributed_data_parallel.py:58-62`)。桶该开多大也有陈述:「larger DP sizes need larger buckets to ensure collectives do not become latency-bound」(`megatron/core/distributed/distributed_data_parallel_config.py:60-63`),构造期注释补上机理 ——「chunks used in NCCL ring-reduce implementations are large enough to remain bandwidth-bound rather than latency-bound」(`megatron/core/distributed/distributed_data_parallel.py:92-93`)。
+| rank | world range | 与参数 `p` 的交集 | parameter-local range |
+|---|---|---|---|
+| 0 | $[0,4)$ | $[2,4)$ | `p[0,2)` |
+| 1 | $[4,8)$ | $[4,7)$ | `p[2,5)`；同一 shard 的最后一项是 `r[0]` |
+| 2 | $[8,12)$ | 空 | 空 |
+| 3 | $[12,16)$ | 空 | 空 |
 
-**被否掉的替代②:PyTorch 原生 DDP(`--DDP-impl torch`)。**
-Megatron 曾经让用户在两套 DDP 之间二选一 —— `group.add_argument('--DDP-impl', default='local', choices=['local', 'torch'], ...)`(`3fb3e95ec^:megatron/arguments.py:1018-1021`);提交 `3fb3e95ec`(2023-08-31,commit message 即「Deprecate torchDDP and get rid of args.DDP_impl」)把 `torch` 这一支连同 `schedules.py` 里为 torchDDP 特设的 `no_sync` 分支一起删除。**判据就写在被删掉的那几行断言里**:「If we do accumulation and all-reduces in fp32, we need to have local DDP.」→ `assert args.DDP_impl == 'local'`(`3fb3e95ec^:megatron/arguments.py:174-176`);「If we use the distributed optimizer, we need to use local DDP.」→ 同样的断言(`:182-184`);更早的版本里还有一行 `if args.DDP_impl == 'torch': args.use_contiguous_buffers_in_local_ddp = False`(`b0df10cf0^:megatron/arguments.py:190-191`)。即:**fp32 梯度累加(§3.5)与分布式优化器(§5)都建在"自己那块连续 buffer"上,而 torchDDP 拿不到它** —— 当这两项成为常规配置后,原生 DDP 那一支已无处可用。
+![长度 16 的连续 buffer 在 DP=4 下的等分，以及参数 p 跨 shard 时的四套 range 映射](assets/megatron_distopt_flat_buffer_ranges.svg)
 
-**被否掉的替代③:把"连续 buffer"与"重叠"留成开关。**
-`b0df10cf0`(2023-08-18,commit message「Remove old LocalDDP wrapper and replace with new OverlappingLocalDDP」)删掉了旧的 `DistributedDataParallel`(`b0df10cf0^:megatron/model/distributed.py:378`;它的 docstring 只声称「has the potential to reduce memory fragmentation」`:381`,并把连续 buffer 做成构造参数 `use_contiguous_buffers`,`:390-396`)与命令行开关 `--no-contiguous-buffers-in-local-ddp`(`b0df10cf0^:megatron/arguments.py:1031`),把 `OverlappingDistributedDataParallel`(`b0df10cf0^:megatron/model/distributed.py:225`)直接改名顶上。结论:**"扁平 buffer + 分桶"从一项可关闭的优化变成唯一实现** —— §3.1 那块连续显存不再是可选特性,而是 ZeRO 分片、`overlap_grad_reduce`、`overlap_param_gather` 共同的地基。
+`DistributedOptimizer._build_model_gbuf_param_range_map` 保存四套坐标。rank 0 对 `p` 是 `gbuf_world=[2,4)`、`gbuf_world_in_bucket=[2,4)`、`gbuf_local=[2,4)`、`param=[0,2)`；rank 1 是 `[4,7)`、`[4,7)`、`[0,3)`、`[2,5)`。前三者回答 full buffer、bucket 和 receive shard 中的位置，最后一个才是逻辑 parameter 内的位置。本例 bucket offset 为 0，前两者恰好相同；换成后续 bucket，`gbuf_world_in_bucket` 必须减去 bucket offset。optimizer 据此切出 `p[2:5]`，把它的梯度交给对应 main shard，并在更新后写回 full parameter 的同一位置。
 
-**③ 优化器状态沿 DP 组切、不再每卡复制一份 —— 出处直接写着 ZeRO。**
-`docs/user-guide/features/dist_optimizer.md:12` 一句话给全:「The distributed optimizer saves memory by sharding optimizer state across data parallel ranks **instead of replicating it on every rank**, as described in the [ZeRO paper](https://arxiv.org/abs/1910.02054)」;同一文件的字节表把「`bf16` parameters, `fp32` gradients」这一行写成 `18` → `6 + 12/d`(`:16-19`),与本页 §1.4 / §9.1 的口径一致。
+**为什么选 range。** 相比按整个 `Parameter` 指派 owner，等长 range 可以直接作为固定大小 RS/AG 的输入输出 view，避免 uneven collective 或最大整参造成的负载倾斜；代价是 `p` 被 rank 0 更新前 2 项、rank 1 更新后 3 项。这个取舍是从布局和消费者推导的设计理由。它不意味着所有 main/state 合成了一块连续存储：`_build_model_and_main_param_groups` 仍按 parameter 交集分别建 model shard、clone/cast main shard 并重写 optimizer param groups。若数学必须看完整矩阵，切开 `p` 就不再合法，§2.5 的 LayerWise 为此改用 whole-parameter owner。
 
-**④ 为什么默认只切到 ZeRO-1,而不是一上来就切参数。**
+### 2.2 从真实选型点建立数据面清单
 
-> [!note] 推断
-> 源码陈述的只有三件事:`data_parallel_sharding_strategy` 的四个取值、语义与**默认值 `'no_shard'`**(`megatron/core/distributed/distributed_data_parallel_config.py:112-114`);开不开 `use_distributed_optimizer` 只改变 buffer 的规约算子 —— `reduction_collective = "reduce-scatter" if self.ddp_config.use_distributed_optimizer else "all-reduce"`,并把这句判断直接打成 INFO 日志(`megatron/core/distributed/param_and_grad_buffer.py:278-286`);以及 ZeRO-2/3 由 Megatron-FSDP 承担(§11)。**"因为 `all-reduce = reduce-scatter + all-gather`,所以 ZeRO-1 通信零增量、应当先切优化器状态"这层判断由本页承担,源码没有这样表态**,也没有任何注释比较过四个阶段的通信代价。要引用这条判断,请回到 `megatron/core/distributed/param_and_grad_buffer.py:278-286`、`megatron/core/distributed/distributed_data_parallel_config.py:112-114` 与 `docs/user-guide/features/dist_optimizer.md:12-19` 这三个 locator,不要引用本段推断。
+本页从三个真实选择点枚举变体：`megatron/training/models/dist_utils.py::_ddp_wrap` 选择 model wrapper，`megatron/core/optimizer/__init__.py::get_megatron_optimizer` 选择更新 owner，**仅进入 native DDP 的 buffer** 再由 `_ParamAndGradBucketGroup.start_grad_sync` 选择梯度 collective。FSDP wrapper 不进入这第三个选择点，其独立数据面归 [[36_megatron_fsdp_analysis]]。因而下面先固定 native primitive 的系统位置，再解释它实际可达的变体。
 
----
+`_ddp_wrap` 先选 model wrapper，再在 native DDP 分支选 parameter layout。因而 native DDP、Torch FSDP2、Megatron-FSDP 只是这个 wrapper gate 的三个分支，不是整个仓库的“完整三实现全集”。
 
-## 3. DDP 核心机制
-
-`DistributedDataParallel`,`megatron/core/distributed/distributed_data_parallel.py:56`(新基线上它已继承自 `_BaseDataParallel`)。
-
-> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。 — 行号基线刷新(机制未变)
-> `megatron/core/distributed/distributed_data_parallel.py` 自 `ee3f1ff` 起因 layer-wise 整合等改动大幅增长,本节锚点在新基线 `71092579` 下为:`_make_backward_post_hook` `:500`(旧 `:431`)、`no_sync` `:532`(旧 `:461`)、`start_param_sync` `:562`(旧 `:474`)、`start_grad_sync` `:597`(旧 `:532`)、`finish_grad_sync` `:609`(旧 `:544`);`_start_bucket_group_param_sync` 在 `:544`(见 §5 阶段②)。其它文件:`megatron/core/optimizer/distrib_optimizer.py` 的 `DistributedOptimizer` `:113`(旧 `:103`);`megatron/core/distributed/distributed_data_parallel_config.py` 的 `data_parallel_sharding_strategy` `:112`(旧 `:93`)、`outer_dp_sharding_strategy` `:182`(旧 `:153`);bf16 强制 fp32 累加的 `megatron/training/arguments.py` 分支 `:1319-1333`(旧 `:1296-1310`),梯度 dtype `grad_dtype = torch.float if grad_reduce_in_fp32 else param.dtype` 现在 `megatron/core/distributed/param_and_grad_buffer.py:976`(旧 `:812`)。
-
-### 3.1 连续扁平缓冲区 + 分桶
-
-`_ParamAndGradBuffer`(`megatron/core/distributed/param_and_grad_buffer.py`)把一组参数的梯度打包进**一块连续显存**,每个参数的 `.main_grad` 是这块大 buffer 的一个视图。好处:① 梯度通信可以整桶发,不必逐参数发(减少 kernel/通信启动开销);② 便于与分布式优化器的分片对齐。
-
-buffer 再切成若干 **bucket**。bucket 是 DDP 通信的最小单位 —— 一个 bucket 内所有参数的梯度都就绪后,这个 bucket 立刻发起 all-reduce / reduce-scatter。
-
-### 3.2 overlap_grad_reduce —— 反向 post-hook 驱动的重叠
-
-每个参数注册一个 backward post-hook(`_make_backward_post_hook`,`megatron/core/distributed/distributed_data_parallel.py:500`):
-
-```python
-def hook(*unused):
-    if param in self.param_to_bucket_group:
-        if param.grad is not None and not param.grad_added_to_main_grad:
-            param.main_grad.add_(param.grad.data)        # 梯度累加进扁平 buffer
-        param.grad = None
-        if self.ddp_config.overlap_grad_reduce:
-            self.param_to_bucket_group[param].register_grad_ready(param, self.force_all_reduce)
-            # ↑ 该桶所有参数就绪后,立即异步发起 all-reduce / reduce-scatter
-```
-
-效果:**反向算到哪,梯度通信就发到哪**。深层的梯度先算完先发,与浅层的反向计算并行。
-
-```
-反向计算流:  [layer L 反向]─[layer L-1 反向]─[layer L-2 反向]─ … ─[layer 0 反向]
-通信流:              └ bucket3 异步 RS ┘  └ bucket2 异步 RS ┘  …   └ bucket0 RS ┘
-                      ↑ 桶满即发,与后续反向计算重叠;只有最后一个桶的通信尾巴露在关键路径
-```
-
-`finish_grad_sync`(`megatron/core/distributed/distributed_data_parallel.py:609`)在反向结束后 `wait` 所有桶的通信句柄。
-
-### 3.3 overlap_param_gather —— 前向的参数 all-gather 重叠
-
-用分布式优化器时,优化器只更新了 `1/dp` 参数,需要 all-gather 才能拿到全量参数做前向。`start_param_sync`(`megatron/core/distributed/distributed_data_parallel.py:562`)按桶异步发起参数 all-gather,与前向计算重叠(`--overlap-param-gather`)。
-
-### 3.4 no_sync —— 梯度累加
-
-`no_sync()` 上下文(`megatron/core/distributed/distributed_data_parallel.py:532`)把 `is_last_microbatch` 置 False,让前 `m-1` 个 microbatch(`m` = microbatch 数)**只把梯度累加进 buffer、不触发通信**,最后一个 microbatch 才同步。这与 PP 文档里 `forward_backward_no_pipelining` 的 `no_sync` 是同一机制。
-
-### 3.5 梯度精度:bf16 训练默认 fp32 累加
-
-`grad_reduce_in_fp32`(DDP config)/ `--accumulate-allreduce-grads-in-fp32`(训练参数):梯度用 fp32 缓冲区累加与规约。
-
-**关键:对 bf16 训练这是默认行为,不是可选项**。`megatron/training/arguments.py:1319-1333` 的 `if args.bf16:` 分支:除非用户显式 `--grad-reduce-in-bf16`,否则 `accumulate_allreduce_grads_in_fp32` 被置 True,并打印 *"accumulate and all-reduce gradients in fp32 for bfloat16 data type"*。`megatron/core/distributed/param_and_grad_buffer.py:976` 据此把梯度 buffer dtype 设为 `torch.float`。
-
-- 默认(bf16 训练):梯度 buffer = fp32 → **`4Ψ` 字节**,模型态合计 `18Ψ`。
-- `--grad-reduce-in-bf16`:梯度 buffer = bf16 → `2Ψ` 字节,模型态合计 `16Ψ`(省 2Ψ,但大 DP 下累加精度下降)。
-
-### 3.6 finalize_model_grads
-
-`megatron/core/distributed/finalize_model_grads.py` 在反向后做跨并行轴的梯度收尾:DP 梯度规约、PP 首尾 stage 共享 embedding 的梯度 all-reduce、SP 下 LayerNorm 梯度的 all-reduce。是 DDP 与 TP/PP 协同的拼接点。
-
-### 3.7 bucketing 算法与 overlap 调度(机制细节)
-
-> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。 — §3.1/3.2/3.3 的机制级补全:分桶**怎么切**、双向 overlap **怎么被 hook 驱动**、bucket_size **怎么调**
-
-§3.1–§3.3 给了"桶是通信单位、post-hook 发 RS、`start_param_sync` 做 AG"的轮廓。本节补到源码层。文件简称:PGB = `megatron/core/distributed/param_and_grad_buffer.py`、DDP = `megatron/core/distributed/distributed_data_parallel.py`、cfg = `megatron/core/distributed/distributed_data_parallel_config.py`。
-
-#### 三级结构
-
-| 层级 | 类 / 位置 | 角色 |
+| 选择点 | 实际对象/数据面 | 本页 owner 边界 |
 |---|---|---|
-| Buffer | `_ParamAndGradBuffer`(PGB`:1066`) | 每 (dtype, DP 组) 一块连续扁平缓冲(param 一块、grad 一块) |
-| Bucket | `_ParamAndGradBucket`(PGB`:103`) | buffer 的连续切片,通信寻址单位 |
-| BucketGroup | `_ParamAndGradBucketGroup`(PGB`:220`;`partition_buckets` 定义于 PGB`:1803`、在 DDP`:310` 被调用切分) | **一次 NCCL collective 的粒度**,组内多桶由 `_coalescing_manager` 合并成一次调用 |
+| `use_megatron_fsdp=True` | `FullyShardedDataParallel`；若同时启用 Torch FSDP2 立即 `raise ValueError` | 仅列 gate 与 `data_parallel_sharding_strategy` 的取值；unit/buffer/hook/strategy 状态机归 [[36_megatron_fsdp_analysis]] |
+| 否则 `use_torch_fsdp2=True` | `TorchFullyShardedDataParallel`，内部交给 PyTorch `fully_shard`/DTensor | 仅列 wrapper contract；PyTorch 内部是第三方依赖边界，见 §2.7 |
+| 两者都为 false | native `DistributedDataParallel` | 本页主路径 |
+| native 且 `use_layer_wise_distributed_optimizer=True` | 强制 `ddp_config.use_distributed_optimizer=True`，并把 layout 计算换成 `LayerWiseDistributedOptimizer.compute_full_param_layout` | 是 optimizer/layout 兄弟路径，不是第四个 wrapper；更新算法归 [[26_megatron_optimizer_step_internals_deepdive]] |
+| 显式构造 `NonuniformTPDistributedDataParallel` | subclass 改写 nonuniform-TP 的 buffer/group 行为 | **不由上述三分支穷举**：它是同一并发轴上的第四类实体，归 [[25_megatron_nonuniform_tp_analysis]] |
 
-#### 分桶算法:逆序贪心(`_compute_default_per_buffer_param_layout`,PGB`:1015-1063`)
+`get_megatron_optimizer` 再选择普通 `DistributedOptimizer`、`LayerWiseDistributedOptimizer`、Megatron-FSDP 特例或其他 optimizer；它是第二条轴，不能与 wrapper gate 合并成“共五种 wrapper”。
 
-参数按 **`params[::-1]` 逆序**(PGB`:1041`,即 backprop 顺序)遍历,贪心累加 numel,当 `当前桶累计 ≥ bucket_size`(PGB`:1047`)即封桶、`bucket_id += 1`(PGB`:1048-1052`);不足一桶的尾巴归最后一桶(PGB`:1055-1057`)。每参数落 `(start, end, bucket_id)` 入 `param_index_map`(PGB`:1044`);`bucket_size=None` 则单桶。
+这条轴还要检查实体类型：`get_megatron_optimizer` 在普通/emerging 分支之前识别 `MimoModel`，断言只有一个 model chunk，再交给 `get_mimo_optimizer`。这是异构多模块模型的独立入口，装配归 [[10_megatron_model_structure_analysis]]，逐模块 optimizer 编排归 [[26_megatron_optimizer_step_internals_deepdive]]；本文的六条 native lane 不声称穷举它的模块级组合。对已进入 native DDP 的参数，`BufferKey` 还按 param dtype、grad dtype、expert/non-expert 和 LayerWise-managed 标记分流：dense 使用 DP-CP，expert 使用 expert-DP，不能拿 dense 的 owner rank/group 直接套到 expert buffer。group 构造归 [[17_megatron_parallelism_orchestration_analysis]]，量化存储/传输形态归 [[23_megatron_precision_cudagraph_fusion_analysis]]。
 
-**逆序是 overlap 的前置设计**:反向时末层梯度最先就绪,逆序使末层落 bucket 0 → bucket 0 最先填满最先发 RS。
+在 native bucket 层，`_ParamAndGradBucketGroup.start_grad_sync` 的真实数据面清单如下。表中的 $d$ 是一次 full-shard 的 group size，$k$ 是 `num_distributed_optimizer_instances`。
 
-#### bucket_size 默认与约束
-
-- 默认 `max(40_000_000, 1_000_000 × dp_size)`(DDP`:100-103`);`overlap_grad_reduce=False` 时置 `None`(单桶,DDP`:104-106`)。
-- 理由(cfg`:60-63`):*"larger DP sizes need larger buckets to ensure collectives do not become latency-bound"* —— ring 算法每 rank 实际报文 = `bucket_size / dp_size`(cfg`:73`),DP 越大报文越小,桶须放大才吃满带宽。可改用 `num_buckets`(cfg`:65-68`,与 bucket_size 二选一)。
-- distopt 约束:整块 buffer 须可分片,`assert self.numel % self.data_parallel_world_size == 0`(PGB`:1220-1221`);非 distopt 则不允许 padding,`assert self.numel == self.numel_unpadded`(PGB`:1224-1225`)。`pad_buckets_for_high_nccl_busbw` 把桶凑到 `2^16` 倍数拉高 NCCL busbw(cfg`:70-74`)。
-
-> [!note] 补充(2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §2.3.5 并入)该更正自 `dev@232c478d4`（2026-06-16）起适用,行号已重核至基线 `71092579` — bucket 对齐/尺寸的两处更正
-> **① 65536 对齐是条件性的,不是恒定的**:bucket 末端对齐 divisor 现集中在 `megatron/core/optimizer/param_layout.py:29` `bucket_end_divisor()`,只有 `pad_buckets_for_high_nccl_busbw=True` 时才是 `lcm(dp, 128, 2**16)`;否则只对齐到 `lcm(dp, 128)`。即上文的 `65536` 项是"高 NCCL busbw"开关下的产物,默认未必启用。
-> **② 默认 `bucket_size` 公式改由 pg_collection 计算**(#5006,`megatron/training/models/dist_utils.py:329`):`max(40000000, 1000000 * pg_collection.dp_cp.size())` —— 数值口径与原 `1000000 * dp_size` 一致,但来源从全局 `mpu.get_data_parallel_world_size()` 换成显式 `pg_collection.dp_cp.size()`(同时 `pp_rank`、`expert_data_parallel_world_size` 等也都改走 pg_collection)。`pg_collection` 现在对 Megatron-FSDP 与 DistributedOptimizer **两条路径都会传入**(原仅 FSDP 传)。
-
-#### 反向 overlap:grad RS 的就绪触发(承接 §3.2)
-
-backward post-hook(`_make_backward_post_hook`,DDP`:500-529`)里其实是**两步,别混为一谈**:① **填数据** `param.main_grad.add_(param.grad.data)`(DDP`:518-521`)—— `main_grad` 是扁平 grad buffer 的**视图**,梯度**原地**累加进该参数在桶里的固定区段,没有"搬进桶"这个动作(用融合 wgrad 时 `grad_added_to_main_grad=True`,连这次 `add_` 都省);② **记账** `register_grad_ready(param)`(DDP`:524-527` → PGB`:913`)**不碰数据**,只把计数器 +1(`per_param_grad_ready_counts[param] += 1`,PGB`:930`)。
-
-所以**"桶满"不是攒够字节**(桶的大小与成员在初始化时已由逆序贪心定死),而是**该 bucket group 所有成员的梯度都算齐**:当 `per_param_grad_ready_counts == golden_per_param_grad_ready_counts`(PGB`:933`)才 `start_grad_sync()` 发一次 coalesced 异步 RS(PGB`:651` → `dist_reduce_scatter_func` 实际调用在 PGB`:769`)。两个细节:
-
-- **golden count 不一定是 1**:参数若在前向被用多次(tied embedding / 多算子消费),其梯度会多次就绪;第一个 batch 记录每个参数"应有的就绪次数"为 golden(PGB`:300-307` 注释与初始化、PGB`:336-340` 在 `reset()` 里落 golden),之后必须集齐该次数才算 ready。
-- 仅 `is_last_microbatch` 计数(PGB`:926`),故梯度累积下前 m−1 个 microbatch 不发通信(与 §3.4 `no_sync` 一致)。逆序分桶使末层最先集齐 → bucket 0 最先发 RS,与前面层反向计算重叠。
-
-#### 前向 overlap:param AG 的预取流水(承接 §3.3)
-
-需求驱动 + 预取下一桶,是"计算 overlap 掉参数通信"的核心:
-
-1. `start_param_sync`(PGB`:448`)对一个 bucket group 发异步 all-gather:`_coalescing_manager` 合并组内各桶的 `all_gather_into_tensor`,每 rank 贡献自己的 shard(PGB`:583-599`),句柄存 `param_gather_handle`(PGB`:601`)。
-2. 每个 module 注册 **forward pre-hook**(`_make_forward_pre_hook`,DDP`:468`;挂载 `:443-446`)。module 前向前,对它用到的每个参数调其 bucket group 的 `finish_param_sync` —— 新基线上这一步经由 `_finish_param_sync_for_bucket_group`(DDP`:489` → DDP`:493-498`)转发。
-3. `finish_param_sync`(PGB`:611`):先 **wait** 本组 AG 完成(PGB`:633-635`,保证这层参数齐),再**立刻派发下一组** `next_param_gather_bucket_group.start_param_sync()`(PGB`:646`)—— 这就是预取:本 module 用刚 gather 好的参数算时,后台已在 gather 下一组。
-4. `next_param_gather_bucket_group` 链按前向序在 DDP`:337-348` 串好(注释说明按桶逆序串,因 all-gather 按桶逆序发生);链首(第一组)AG 由 PP schedule 经 `config.param_sync_func` 先发(`megatron/core/pipeline_parallel/schedules.py:1321-1322`、`:1443-1455`;该回调在 `megatron/training/training.py:4384` 绑成 `model_chunk.start_param_sync`),或被 `finish_param_sync` 懒发(PGB`:630-631`)。
-5. 若下一组 AG 已被提前派发 → PGB`:638-644` 警告 *"mismatch between the order of parameter registration and forward pass execution, which will hurt the communication-computation overlap performance"* —— **预取假设 module 前向序 == 参数注册序**。
-
-#### fp32 累加 RS：派发新桶前排空前驱桶
-
-`reduce_scatter_with_fp32_accumulation` 的中间 all-to-all 输出会一直被句柄持有到 `.wait()`。如果所有桶都只在 step 尾统一收尾，这些中间张量会同时存活，放大显存峰值。因此 DDP 只在 `overlap_grad_reduce=True` + fp32-accumulation RS + 单 distributed-optimizer instance 时，把 `bucket_groups[i-1]` 记为 `bucket_groups[i]` 的 `previous_grad_reduce_bucket_group`（`megatron/core/distributed/distributed_data_parallel.py:350-365`）。
-
-每个 bucket group 进入 `start_grad_sync` 时，先检查前驱是否已派发；若是，在为当前桶分配新的 RS 中间状态之前调 `finish_grad_sync`（`megatron/core/distributed/param_and_grad_buffer.py:651-680`）。这是**有界的在飞缓冲策略**：它不改变桶序、collective 数量或反向触发条件，只避免上一个 fp32-accumulation RS 的中间输出跨越多个后续桶。普通 DP 与 expert-DP 的 bucket-group 列表都建立这条链（DDP `:363-365`）。与其他轴同时在飞时的全局显存/吞吐取舍见 [[20_megatron_comm_overlap_analysis]]。
-
-时间线(理想):
-
-```
-forward :  [算 g0]      [算 g1]      [算 g2]   ...
-AG 流  : AG_g0(头)│ AG_g1 ──┘ AG_g2 ──┘ AG_g3 ──┘     每组在上一组被消费时后台 gather
-           ↑首组暴露(可塞进 optimizer step)         ↑尾组无计算可盖则暴露
-backward:  ...[算 g2][算 g1][算 g0]
-RS 流  :          └RS_g0┘ └RS_g1┘ … └RS_last┘        逆序桶,首组(末层)最先发
-                                       ↑末桶 RS 尾巴,finish_grad_sync 收尾
-```
-
-#### 调节点
-
-| 旋钮 | 太小 / 错 | 太大 / 错 | 甜点 |
+| gradient 数据面 | 选择条件 | 通信与输出 owner | 完成边界 |
 |---|---|---|---|
-| **bucket_size**(主) | 桶多→collective 太小→latency-bound、ring 报文 `bucket_size/dp` 吃不满带宽 | 桶大→粒度粗:反向迟发首桶、前向首桶 gather 阻塞起步;单桶 = 零重叠 | 大到 BW-bound 又有多桶 → 默认 `max(40M,1M·dp)` + `pad_…_busbw` |
-| **桶序 = 执行序** | 注册序 ≠ 前向序 → PGB`:638-644` 警告、overlap 退化 | — | 反向逆序入桶、前向顺序预取 |
-| **align_param_gather**(cfg`:24`) | 不开时各 PP stage 自行发 AG 可能互抢 | — | 开启由 `megatron/core/pipeline_parallel/schedules.py` 统一调度跨 stage 对齐(pre-hook 路径上的 `skip_next_bucket_dispatch`,DDP`:493-498`) |
-| **暴露的头尾** | — | — | 头(首桶 gather)可经 `overlap_param_gather_with_optimizer_step` 塞进 step;尾(末桶 RS)由 `finish_grad_sync` 收 |
+| 普通 all-reduce | **plain non-LayerWise optimizer** 的 `use_distributed_optimizer=False`；或 DistOpt 被 `force_all_reduce=True` 覆盖 | plain 路径在完整 DP group 规约 full bucket，并由每个 replica 做 full update；DistOpt override 只在 intra-instance group 规约 full bucket 且仍只更新 local range。$k=1$ 时 gradient 全局完整；$k>1$ 时只是 instance-partial full gradient，随后仅 local shard 跨 instance AR | 只有 plain non-LayerWise 路径可直接完成 replica-full update 且无需 post-step AG；DistOpt 仍以 parameter AG 重建 |
+| 标准 reduce-scatter | DistOpt、未强制 AR、`reduce_scatter_with_fp32_accumulation=False` | intra-instance group 做 RS；rank $r$ 只得到自己的等长 local view | `finish_grad_sync()` 后 local shard 才可交给 optimizer |
+| custom FP32 accumulation RS | DistOpt、未强制 AR、custom flag 为 true | lower-precision `all_to_all_single` 收集各 source 对 owner $r$ 的 chunk，本地 FP32 求和，再 downcast/copy 到 local view | 同步路径内部 `wait()`；overlap 路径由 custom handle 的 `wait()` 完成通信与本地求和 |
+| 多 instance / HSDP | DistOpt 且 $k>1$ | intra-instance RS，再对相同 local slot 的 inter-instance group 做 local-shard all-reduce；state/update owner 在每个 instance 复制一份 | 无普通 async handle；overlap 时 dense bucket-group collection 共用一条 communication stream，expert collection 另共用一条，`finish_grad_sync()` 令 compute stream 等对应 stream |
+| LayerWise decoupled | `use_layer_wise_distributed_optimizer=True` 且默认 `use_layer_wise_param_layout=False`；仅 LayerWise-managed buffer 的 effective `use_distributed_optimizer=False` | compact full gradient all-reduce；ping-pong 分配 whole-parameter owner；owner update 后 variable-size `allgather_params` 重建 | 同步 gather 返回，或 overlap 时 forward pre-hook 的 `finish_param_sync()` wait/copy-back 后，参数才可消费 |
+| LayerWise padded layout | `use_layer_wise_param_layout=True`；LayerWise-managed buffer 的 effective `use_distributed_optimizer=True` | LPT 把 whole parameter 放进等长 padded shard；gradient reduce-scatter 后 owner 更新整参，再做固定大小 buffer AG | `finish_grad_sync()` 交付 owner shard；同步或 pre-hook wait 后 full padded `param_data` 才可消费 |
 
-**一句话**:bucket 把整块 DP 通信切成 N 段并按执行序排好,hook 让"算第 i 段"自动等齐第 i 段并预取第 i+1 段;bucket_size 定 N —— 太小没东西可重叠、太大每段通信低效,默认 `max(40M, 1M·dp_size)` 在"够大到带宽受限"与"够多到首段早发、仅末段尾巴暴露"间取平衡。通信调度与 1F1B 重叠的全局视角见 [[20_megatron_comm_overlap_analysis]]。
+`use_distributed_optimizer=False` 不是“所有 rank 都做 full update”的充分条件：LayerWise decoupled 会在 `_ParamAndGradBuffer` 内把专属 buffer 的 effective flag 置 false 来选 AR，但 optimizer param group 仍只保留本 rank 拥有的 whole parameters。`training.train_step` 在保存 wgrad 的路径还可传入 `force_all_reduce=True`；这解释了为什么“配置了 DistOpt”也不能机械推出每个 bucket 一定走 RS。多 instance 分支仍会执行后续 inter-instance local-shard AR：以 $D=8,k=2$ 为例，$I_0/I_1$ 内的 full-bucket AR 只分别得到四个 source 的 partial sum，随后 rank 1/5 才在同槽位 group 上把 `[4,8)` 规约成八个 source 的 global shard。其余位置仍是各 instance 的 partial sum，**所有 DP rank 都不持有全局 full gradient**；optimizer 只消费已全局规约的 local range。
 
-### 3.8 分片边界与参数视图:不按参数对齐(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §2.2 并入)
+`_ParamAndGradBuffer` 是 **storage owner**：DistOpt 时创建 `param_data` 与 `grad_data`，parameter `.data`/`.main_grad` 映射为 view。`_ParamAndGradBucketGroup` 是 **communication owner**：它管理 ready count、collective、handle/stream 和本轮完成状态。两者不能互换——把通信状态挂到 buffer 上，就无法让一个 group 跨多个 buffer 合并 collective（`partition_buckets` 正是这么做的）。
 
-`megatron/core/optimizer/distrib_optimizer.py:134`(`param_local_*` 的计算在 `:176-181`)核心映射 `_build_model_gbuf_param_range_map`:
+### 2.3 从 forward 到 optimizer handoff 的完整时序
 
-```python
-# 一个参数可能被多个 DP rank 分片持有
-param_local_start = max(0, param_world_start - gbuf_world_range.start)
-param_local_end = min(gbuf_world_range.size, param_world_end - gbuf_world_range.start)
-```
+完整时序不是“backward 一结束就 step”：
 
-分片边界可能"切"在参数的中间。一个参数的不同部分由不同 DP rank 维护优化器状态。这意味着每个 rank 上的参数只是一个 view/shard,不是完整的参数——这是 §3.1 连续扁平缓冲区在 DistributedOptimizer(ZeRO-1)层面的具体切法:buffer 按 `dp_world_size` 等大块切分(与桶边界无关),每个 rank "拥有"对应块上的参数子集,负责① reduce-scatter 归约到自己分片、② 仅为自己分片存 Adam state、③ all-gather 把更新后参数广播回全体。
+1. full parameter view 进入 forward；`schedules.forward_step` 调用户 `forward_step_func` 得到模型输出与 `loss_func`，`forward_step_calc_loss` 在末级调用该 loss callback。`backward_step` 再由 loss（非末级则由下游传回的 output gradient）进入 autograd，产生每个 DP source 的 $G^{(s)}$。DP 不在 forward 里分片算子；它处理的是 backward 之后这些 replica 梯度的汇合。
+2. `DistributedDataParallel._make_backward_post_hook` 仅在 `param.grad` 尚未被融合路径加进 `main_grad`、或 `zero_out_wgrad` 要求时执行累加，然后清空 `param.grad`；只有 `overlap_grad_reduce=True` 时注册 ready。CUDA Graph replay 可用 `_cudagraph_wgrad_ready_event` 交付异步 wgrad，`start_grad_sync` 在读取/缩放 buffer 前等待该 event；不能一概要求 Python hook 看见非空 `param.grad`。
+3. `no_sync()` 令较早 microbatch 只累加、不通信，最后一个 microbatch 才增加 ready count。首批尚无 golden count，`finish_grad_sync` 发射通信，下一轮 `reset()` 把观测到的每参数次数固化；此后 `_ParamAndGradBucketGroup.register_grad_ready` 在整组 count 等于 golden count 时提前 dispatch。这允许同一 parameter 被使用多次，又避免只按“见过一次”判断过早规约。
+4. schedule 的 finalizer 调 `finalize_model_grads()`；其第一步逐 chunk 调 `finish_grad_sync()`，等待 handle/stream 并完成必要 copy-back。
+5. `forward_backward_func` 返回后，`training.train_step` 才调 `optimizer.step()`；`DistributedOptimizer` 只消费本 rank range。**这两者之间没有调用边**：把它们连起来的是 `train_step` 函数体的顺序，不是 `finish_grad_sync` 调用了 `optimizer.step()`。
+6. local main/model shard 更新后，parameter all-gather 重建 full `param_data`；同步模式在 step 后完成。overlap 模式有三种真实 dispatch owner：未对齐时由下一轮 consumer pre-hook 懒发，对齐时由 schedule 的 `param_sync_func` 提前发，可选 step-overlap 时由 `ChainedOptimizer._step` 在首个 child step 后强制发；三者都由 forward pre-hook 在 consumer 使用前完成 wait。
 
-### 3.9 通信组定义(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §2.3.1 并入)
+![一个 bucket 从 forward、loss、反向梯度 ready、reduce-scatter、本地更新到参数 all-gather 和下一轮 forward 可见性的完整闭环](assets/megatron_distopt_rs_update_ag.svg)
 
-| 通信组 | 获取函数 | 组成员 | 通信操作 |
-|--------|---------|--------|---------|
-| **DP Group** | `get_data_parallel_group()` | 所有数据并行的 rank | AllReduce(标准DP)/ ReduceScatter + AllGather(DistOpt) |
-| **Intra-Instance DP** | DP Group 的子组 | `num_distributed_optimizer_instances` 划分的子组 | ReduceScatter(梯度分片) |
-| **Inter-Instance DP** | DP Group / Intra-Instance | 跨 instance 的 rank | AllReduce(梯度去重, HSDP only) |
-| **EP DP Group** | `get_expert_data_parallel_group()` | Expert 数据并行的 rank | AllReduce(expert 梯度) |
+`start_grad_sync()` 只表示“已经发射”；`finish_grad_sync()` 才表示 gradient shard 可消费。parameter AG 的三条 overlap 路径不能合并成一句“step 后异步发射”：
 
-**通信组定义**(`megatron/core/parallel_state.py:1482, 2000`):
-```python
-# DP Group: 跨所有 TP/PP/EP 的相同位置 rank 组成
-get_data_parallel_group(with_context_parallel=True)
+这里的完成是**后续 CUDA consumer 所在 stream 已建立正确依赖**，不承诺 CPU 返回时所有 GPU kernel 已执行完。尤其 HSDP 的 `wait_stream` 只把依赖排进 compute stream；custom handle 除等待 A2A，还在当前 stream 排入 FP32 sum/copy。Megatron 能证明这些提交与依赖顺序；NCCL 的内部算法、网络传输调度和物理完成时刻不在本页证据范围内。
 
-# EP DP Group: Expert 的 DP 组(EP 隔离专家参数后形成)
-get_expert_data_parallel_group()
-```
+| parameter AG 路径 | 真正 dispatch owner | consumer 完成边界 |
+|---|---|---|
+| unaligned：`overlap_param_gather=True`、`align_param_gather=False`，且未开 step-overlap | optimizer step 只更新/copy model shard，不发 AG。下一轮首次使用该 bucket 的 forward pre-hook 调 `finish_param_sync()`；若 `param_gather_dispatched=False`，它先懒 dispatch 当前 bucket 的 `start_param_sync()`，等待完成后才可选发下一 bucket | 同一个 pre-hook 完成当前 handle wait；随后 module 才读取 full `param_data`。后续 bucket 可与前面 module compute overlap |
+| aligned：`align_param_gather=True` | `training.py` 将 `model_chunk.start_param_sync` 注入 `ModelParallelConfig.param_sync_func`；pipeline schedule 在目标 model chunk 之前提前 dispatch | pre-hook 调 `finish_param_sync()` 等当前 handle；`align_param_gather` 令它跳过隐式 next-bucket dispatch，发射节拍由 schedule 拥有 |
+| optimizer-step overlap：`overlap_param_gather_with_optimizer_step=True` | `ChainedOptimizer._step` 在第一个 child optimizer 成功 step 后调用 `start_param_sync(force_dispatch=True)`，让 AG 与后续 child step 形成窗口；`force_dispatch=True` 绕过 DDP 对普通重复发射的抑制 | pre-hook wait；该模式同样跳过隐式 next-bucket dispatch，不能把“已发射”当作 consumer-visible |
 
-Intra-Instance / Inter-Instance 两组是 §8 HSDP 的通信基础;EP DP Group 是 EP 场景下专家参数独立于稠密参数的分片域(见 §11.5)。
+冻结源码存在一处注释/实现冲突：`DistributedOptimizer.step_with_ready_grads` 的注释仍称首个异步 AG 由下一次 `optimizer.zero_grad()` 发起，但 `DistributedOptimizer.zero_grad` 与 `ChainedOptimizer.zero_grad` 的可执行实现都只清 gradient。本文以执行分支为准：`zero_grad_buffer` / `optimizer.zero_grad` **不 dispatch parameter AG**。`reset_param_sync_dispatch_state()` 会拒绝旧 AG 仍在 flight 的状态，没有“撤销已发 collective”的 rollback。
 
-### 3.10 FP8/FP4 参数对通信量与实现的影响(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §2.3.4+§3.4 并入)
+### 2.4 四条 range 数据面：同例逐项回放
 
-| 参数精度 | AllGather 通信量 | ReduceScatter 通信量 | 总通信节省 |
-|---------|-----------------|---------------------|-----------|
-| BF16 (基准) | P × 2 bytes | P × 2 bytes | 0% |
-| FP8 E4M3 (`fp8_param_gather=True`) | P × 1 byte | P × 2 bytes (grad 仍为 BF16) | 25% |
-| MXFP8 (`fp8_param_gather` + `reuse_grad_buf`) | 共享 buffer → 0 | P × 2 bytes (仅 grad) | ~33% |
-| NVFP4 (`fp4_param_gather=True`) | P × 0.5 byte | P × 2 bytes (grad 仍为 BF16) | 37.5% |
+![同一个 N=16 flat buffer 的普通 all-reduce、标准 reduce-scatter、custom FP32 accumulation RS 与多 instance HSDP 四条数据面](assets/megatron_distopt_fp32_rs_hsdp.svg)
 
-> 注:梯度 ReduceScatter 始终在 BF16/FP32 精度下执行,因为梯度累积需要全精度。
+<!-- distopt-figure-contract:start -->
+> **图示同例契约（由生成器读取）**：`N=16; d=4; shard=4; q=[0,2); p=[2,7); r=[7,13); pad=[13,16); rank1=[4,8)=p[2,5)+r[0]; bf16 M=32 B; ordinary AR=plain non-LayerWise only; all-reduce=48 B; reduce-scatter=24 B; parameter all-gather=24 B; custom FP32 accumulation/all_to_all_single temp=32 B lower-precision+16 B FP32=48 B; HSDP D=8,k=2,s=4; HSDP bytes=24+8+24=56 B; force_all_reduce+k>1 bytes=48+8+24=80 B; LayerWise same logical params=q(2),p(5),r(6),raw=13; LayerWise decoupled=AR→whole-param owner update→variable-size allgather_params; decoupled owners=[q],[p],[r],[]; LayerWise layout=RS→whole-param owner update→padded buffer AG; layout owners=[r],[p],[q],[]; shard divisor=64; padded layout=4*64=256; padding=243; bf16 layout RS+AG=384+384=768 B/rank`。
+<!-- distopt-figure-contract:end -->
 
-**实现细节**(`megatron/core/optimizer/distrib_optimizer.py`/`megatron/core/distributed/param_and_grad_buffer.py`):
+四条 lane 都从 `q|p|r|pad` 的 full forward 和各 source 的 $G^{(s)}$ 出发，都把 rank-1 owner 的 $[4,8)=p[2,5)+r[0]$ 作为检查点。图中的通信字节是指定 bf16 toy setting（$M=32$ bytes）下的理想 ring 算法口径，不是 NCCL 实测值。§2.5 的两条 LayerWise lane 沿用同一组具名 logical parameters，但按各自规则重新布局，代价形状与本节不可比，不要并进同一张字节表。
 
-- **FP8 参数 All-Gather**(收集器 `_get_fp8_params_and_shard_fp32_from_fp8` 在 `megatron/core/optimizer/distrib_optimizer.py:2687`、NVFP4 版在 `:2739`;量化调用在 `:2886-2909`):参数在 FP8 格式下做 All-Gather,传输量减半;FP32 主权重通过 `quantize_param_shard()` 量化回 FP8。
-- **NVFP4 双 Buffer 布局**(`megatron/core/distributed/param_and_grad_buffer.py:1159-1186`;打包布局的计算在 `_compute_nvfp4_packed_layout`,`:1582`):参数 Buffer 每字节 2 个 FP4 值(numel/2);梯度 Buffer 全精度 BF16(numel);需要两套索引映射。
-- **MXFP8 共享 Buffer**(`megatron/core/distributed/param_and_grad_buffer.py:1302-1321`):参数 All-Gather 和梯度 Reduce-Scatter 共享同一块显存,开关字段 `reuse_grad_buf_for_mxfp8_param_ag`(`megatron/core/distributed/distributed_data_parallel_config.py:98`)。注:新基线上共享 buffer 的分配条件已抽成局部变量 `shared_param_grad_buffer`(`megatron/core/distributed/param_and_grad_buffer.py:1231-1233`,判据是 `use_distributed_optimizer` 且 buffer 内含 MXFP8 张量),`reuse_grad_buf_for_mxfp8_param_ag` 则在 all-gather 侧决定是否复用(`:374`、`:1407`)。
+#### 2.4.1 普通 all-reduce
 
-> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。 — 精度/MXFP8 相关行号与门控
-> - **行号漂移**:解耦梯度赋值 `shard_main_param.decoupled_grad = shard_model_grad`(见 [[26_megatron_optimizer_step_internals_deepdive]] §4.3)在新基线为 `megatron/core/optimizer/distrib_optimizer.py:2842`(`ee3f1ff` 时 `:2568`、`232c478d4` 时 `:2728`);`shard_main_param.grad = shard_model_grad.float()` 现 `:2844`(旧 `:2570` / `:2730`)。语义未变。
-> - **MXFP8 共享 buffer 的 all-gather 后处理被抽函数**(#4771,`megatron/core/distributed/distributed_data_parallel.py:544` `_start_bucket_group_param_sync`):原内联在 `start_param_sync` 里的"把 all-gather 出的 MXFP8 参数从共享 buffer 拷回 `param.data` 并清零 buffer 供梯度累加"逻辑被抽成单 bucket-group 方法,便于 LayerWise+DistOpt 链式各自只同步自己的 bucket。
-> - **ChainedOptimizer 的 MXFP8 defer-sync 改为探测 DDP config**(#4982,`megatron/core/optimizer/optimizer.py:1806`):`_should_defer_mxfp8_param_sync` 不再信 `OptimizerConfig.overlap_param_gather`,而是逐个探测子 `DistributedOptimizer.ddp_config.overlap_param_gather`(详见 [[26_megatron_optimizer_step_internals_deepdive]] §2.1 的 2026-06-16 更新)。
+**它回答的压力与上限。** 这条 lane 回答的是“完全不做状态分片时最简单的正确实现是什么”，它的上限资源是**单卡 HBM**：每个 rank 都要放下完整的 main weight 与 optimizer state，$P$ 一大就直接 OOM。它之所以还活着，是因为它是唯一不需要 post-step 参数重建的路径。
 
-### 3.11 精度感知优化器:decoupled_grad(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §3.3 并入)
+**本地计算。** 四个 rank 各自持有完整的 $G^{(s)}$，AR 后每个 rank 都拿到长度 16 的 group-full 结果，随后**在 plain non-LayerWise optimizer 下**对 `q/p/r` 的全部 13 个真实参数元素做同一次 update；3 个 padding slot 只参加通信。这条 lane 保留缩尺输入的 padding 以比较 collective，普通 DDP 实际 builder 会生成无 padding 的 compact layout。这个“全 rank 同 update”的结论只对 plain non-LayerWise optimizer 成立：forced-AR DistOpt 即使 $k=1$ 也仍只更新其 local range 并以 AG 重建；LayerWise decoupled 即使 buffer 的 effective `use_distributed_optimizer=False`，也只更新本 rank 拥有的 whole parameters 并以 variable-size AG 重建。
 
-**标准混合精度**:模型 BF16 → 主权重 FP32 → 梯度从 BF16 转 FP32
-```python
-# megatron/core/optimizer/distrib_optimizer.py:2844
-shard_main_param.grad = shard_model_grad.float()
-```
+**上线的数据。** 若 full bucket 的 lower-precision payload 为 $M$ bytes，理想 ring 每 rank 约为
 
-**精度感知优化器** (`use_precision_aware_optimizer: True`):主权重、exp_avg、exp_avg_sq 可采用不同的低精度格式;使用 `.decoupled_grad` 解耦模型参数 dtype 和优化器 state dtype:
-```python
-# megatron/core/optimizer/distrib_optimizer.py:2842
-shard_main_param.decoupled_grad = shard_model_grad
-```
+$$
+B_{\mathrm{AR}}=2\frac{d-1}{d}M=\frac{3}{2}M,
+$$
 
-这与 [[26_megatron_optimizer_step_internals_deepdive]] §4(混合精度优化器:fp32 master 副本)是同一套"18 bytes/param"体系在精度可配置场景下的变体——`decoupled_grad` 让梯度/master/m/v 各自可选不同精度,而非固定 fp32,详见 [[26_megatron_optimizer_step_internals_deepdive]] §4.3。
+本例即 48 bytes/rank。
 
----
+**重建。** plain 路径没有重建：AR 的输出本身就是每个 rank 都可直接消费的完整梯度，update 结束参数即可见，无 parameter AG。
 
-## 4. 阶段① — `no_shard`(ZeRO-0,朴素 DDP)
+**反向差异。** 这条 lane 与 backward 的耦合最松：hook 只需累加 `main_grad`，bucket ready 后一次 AR 收工，没有第二段 collective 需要等到 step 之后。
 
-### ①.1 机制
+**增量成本与 forced-AR 的例外。** `force_all_reduce=True` 并不会在 $k>1$ 时把这条 AR 扩到全部 $D$ 个 rank：`start_grad_sync` 先选定 intra-instance communication group，才在 RS/AR 分支间切换；随后 inter-instance collective 始终只读取本 rank 的 cached local shard view。同例中 intra AR 是 48 bytes/rank，inter local-shard AR 是 8 bytes/rank，parameter AG 是 24 bytes/rank，共 80 bytes/rank；代价高于正常 HSDP 的 56 bytes/rank，而且任一 rank 的 non-local 区域都仍只是 instance partial sum。
 
-不切任何模型态。每卡完整持有 `18Ψ`。反向后梯度做 **all-reduce** 求平均,每卡各自跑完整 optimizer step。
+#### 2.4.2 标准 reduce-scatter
 
-```
-各 rank:全量梯度 ──all-reduce(求平均)──→ 各 rank 得全量平均梯度
-        ──→ 各 rank 用全量优化器状态(每卡一份 12Ψ,完全冗余)各自更新全量参数
-```
+**它回答的压力与上限。** 这条 lane 用 owner update 避免全副本 main/state 与重复计算。相较 full AR 后每 rank 仍只取一段，RS 直接交付要消费的 shard；但它仍保留 full model/grad buffer，参数本身放不下时就越过了它的容量边界。等长 collective 是另一条硬条件：`shard_buffer` 断言 `buffer.numel() % world_size == 0`，`pad_bucket_end` 为此补齐长度。
 
-### ①.2 开销
+**本地计算。** rank 1 只收到 $\sum_s G^{(s)}[4:8)$，也就是 `p[2,5)` 加上 `r[0]`；它的 optimizer 只对这 4 个位置持有 main weight 与 Adam state，只做 4 个位置的 update。`_build_model_and_main_param_groups` 与 `_copy_model_grads_to_main_grads` 都按同一 local range 切。
 
-| 维度 | no_shard |
-|------|----------|
-| 模型态显存/卡 | **`18Ψ` 字节**(完全不省) |
-| 梯度通信/步 | all-reduce 整个梯度 buffer(基准 1×) |
-| 通信暴露 | 低 —— `overlap_grad_reduce` 把桶通信藏进反向 |
+**上线的数据。** 分成两段，各约
 
-### ①.3 适用场景
+$$
+B_{\mathrm{RS}}=B_{\mathrm{AG}}=\frac{d-1}{d}M=\frac{3}{4}M,
+$$
 
-- 模型态单卡放得下、且不缺显存时:最简单,无 all-gather 开销。
-- 小模型、调试。
-- 一旦显存吃紧 → 上 ZeRO-1。
+即 24 + 24 bytes/rank。理想总字节与 AR 同阶，但 owner、等待位置和 HBM state ownership 都不同。
 
-> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。 — Megatron-FSDP `no_shard` 收敛性修复(#3835/#3754,`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:1289-1290`、`megatron/core/optimizer/__init__.py:1071`)
-> `no_shard`(ZeRO-0)下,梯度经 all-reduce 后在各 DP rank 上是**复制**的。原实现仍把梯度统计/范数在 dist-opt(DP)组上规约一遍 → grad norm **虚高**、梯度裁剪过度 → **不收敛**。修复:`no_shard` 时把 grad-stats 规约组从 DP 组改为只用 `model_parallel_group`(TP/PP)(`effective_intra_dist_opt_group = mp_group if no_shard else intra_dist_opt_group`);同时 `start_param_sync` 对 `no_shard` 直接 return(参数已复制,无需 all-gather),并禁止 `no_shard` 配 meta-device 初始化。此修复仅针对 Megatron-FSDP 的 `no_shard` 路径;与 [[26_megatron_optimizer_step_internals_deepdive]] §7 梯度范数"需跨 TP×PP all-reduce"的论述一致 —— 关键是 **DP 维度此时不能再 reduce**。
+**重建。** 本地 update 后必须用 parameter all-gather 把四个新 shard 拼回完整 `param_data`，否则下一轮 forward 的 `param.data` view 里有四分之三是旧值。**RS 后不能把 `grad_data` 的非 local 区域当作完整已规约梯度**——那里留下的是本 rank 自己的贡献，不是全局和。
 
----
+**反向差异。** 与 AR lane 相比，这条 lane 把一个 collective 拆成横跨 step 的两个：RS 在 backward 尾部，AG 在 step 之后甚至下一轮 forward 里。因此它多出一个“参数可见性”概念，也多出 §2.3 那三种 dispatch owner。
 
-## 5. 阶段② — `optim`(ZeRO-1,DistributedOptimizer)
+**增量成本。** 每轮多一次 collective 发射与一次等待；`param_data` 与 `grad_data` 仍是全长 buffer，省下的只是 main/state 的 12 bytes/param 中的 $(d-1)/d$。
 
-`DistributedOptimizer`,`megatron/core/optimizer/distrib_optimizer.py:113`。类注释开门见山:"Optimizer that shards state across data-parallel ranks ... by distributing optimizer states (like momentum and variance buffers) across GPUs in the data-parallel group."
+#### 2.4.3 custom FP32 accumulation RS
 
-### ②.1 动机与解决的问题
+**它回答的压力与上限。** 它回答的是“低精度线上传输会让规约本身损失精度”这一压力，上限资源是**临时 HBM**：为了在 owner 侧做 FP32 求和，必须先把各 source 的 chunk 原样收进本地。
 
-朴素 DDP 里 `dp` 卡存 `dp` 份**完全相同**的 `12Ψ` 优化器状态 —— 这是最大块的纯冗余。ZeRO-1 的洞察:**优化器状态只在 optimizer step 那一刻用到**,可以让每卡只持有、只更新 `1/dp` 的参数对应的优化器状态。
+`megatron/core/distributed/reduce_scatter_with_fp32_accumulation.py::reduce_scatter_with_fp32_accumulation` 不调用标准 RS。以 owner rank 1 为例，source $s$ 提供
 
-### ②.2 机制:all-reduce → reduce-scatter + all-gather
+$$
+C_{s\to1}=G^{(s)}[4:8),\qquad
+A_1=[C_{0\to1}\mid C_{1\to1}\mid C_{2\to1}\mid C_{3\to1}].
+$$
 
-```
-ZeRO-1 一步:
-  ① 反向:各 rank 得全量梯度
-  ② reduce-scatter:每 rank 只收到自己负责的 1/dp 梯度分片(求和已在 RS 中完成)
-  ③ optimizer step:每 rank 只更新自己那 1/dp 参数(只需存 1/dp 的 fp32 master + m + v)
-  ④ all-gather:各 rank 把更新后的参数分片 all-gather,拿回全量参数供下一步前向
-```
+**上线的数据。** `all_to_all_single` 以 input dtype 传输，把 $A_1$ 收进一个与 full input 同形状的 lower-precision 临时 tensor。DDP config 的说明明确把“低精度传输、FP32 累加、与标准 ring 同阶通信开销”作为目标；相较先把整个 gradient 升为 FP32 再做 RS，这个实现保住了低精度 payload，付出的资源是 A2A 接收暂存与 owner 求和。这里没有展开 PyTorch/NCCL 的 A2A 内部算法。
 
-关键恒等式:**`all-reduce = reduce-scatter + all-gather`**。所以 ZeRO-1 把 DDP 的一次 all-reduce 拆成"反向后 RS + 更新后 AG",**通信总量不变**,却把 `12Ψ` 优化器状态切成了 `1/dp`。这是"几乎免费"的显存节省 —— 也是 README 把 `--use-distributed-optimizer` 列为通用性能项的原因(跨框架视角下"用 AG(param) 替换 AG(grad)"这一表述见 [[32_distributed_optimizer_deepdive]] §一)。
+**本地计算与重建。** custom handle 的 `wait()` 将临时 tensor view 为 $4\times4$，执行
 
-### ②.3 开销
+$$
+\widehat g_1=\operatorname{cast}_{\mathrm{wire}}\left(
+\sum_{s=0}^{3}\operatorname{fp32}(C_{s\to1})
+\right),
+$$
 
-| 维度 | optim(ZeRO-1) |
-|------|----------------|
-| 模型态显存/卡 | 参数 `2Ψ` + 梯度 `4Ψ` + 优化器 **`12Ψ/dp`** = `6Ψ + 12Ψ/dp` |
-| 通信/步 | reduce-scatter + all-gather(**与 DDP 相同**) |
-| 通信暴露 | 低 —— RS 藏进反向(`overlap_grad_reduce`)、AG 藏进前向(`overlap_param_gather`) |
+再 copy 到既有 local output view `[4,8)`。于是“线上的 lower precision”和“求和时的 FP32 accumulation”同时成立；最终 local shard 仍回到 output dtype，并继续普通 local update→parameter AG——**重建段与 §2.4.2 完全相同**，这条 lane 只替换了 RS 的实现。
 
-### ②.4 适用场景
+**反向差异。** 与标准 RS 相同：backward hook 与 ready-count 逻辑不变，唯一区别是 overlap 时 `grad_reduce_handle.wait()` 同时完成 A2A、FP32 sum 和 downcast/copy，故不能只等底层 NCCL handle。
 
-- **几乎所有多卡训练的默认项**:通信量与 DDP 相同,白拿 `12Ψ→12Ψ/dp` 的优化器显存节省。
-- README General Tips 直接把 `--use-distributed-optimizer` 列为通用开关。
+**增量成本。** 除已有 input/output view 外，每个 rank 暂持一个 $N$ 元素 lower-precision `all_to_all_output_tensor`，并在 `wait()` 产生一个 $N/d$ 元素 FP32 sum。本例 wire 为 bf16 时 $M=32$ bytes，额外临时量是 $32+4\times4=48$ bytes；其中 full-size 32 bytes 会一直活到 `wait()`。
 
-> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。 — LayerWise(Muon)现在复用本节的 DDP buffer + DistOpt 分片(#4509/#4771)
-> `LayerWiseDistributedOptimizer` 已整合进本文的 DDP grad/param buffer 基建:它预计算 shard-aligned 的参数 layout,让每个矩阵整体落在某个 shard 内,从而复用本节的 reduce-scatter/all-gather 与 `overlap_grad_reduce`/`overlap_param_gather`。配 `--optimizer muon --use-distributed-optimizer` 时,Muon 管的 2D 矩阵权重走 LayerWise(等效 ZeRO-1/2 沿 DP 分片),其余 embedding/bias/LayerNorm 等**非-Muon 参数则路由到一个独立的标准 `DistributedOptimizer`**(本节的字节级 ZeRO),二者由 `ChainedOptimizer` 串起。新增 `_start_bucket_group_param_sync`(`megatron/core/distributed/distributed_data_parallel.py:544`)让两个 sibling 优化器各自只同步自己那批 bucket group,不重复 all-gather。详见 [[26_megatron_optimizer_step_internals_deepdive]] §10 的 2026-06-16 更新。
+| custom hard constraint | 源码行为 |
+|---|---|
+| only SUM | reducer 入口断言 `op == ReduceOp.SUM`；所以 `average_in_collective=True` 会把 op 改为 AVG，并在运行时冲突 |
+| 整除 | `input_tensor.numel() % world_size == 0`；本例 $16\bmod4=0$ |
+| overlap 时一个 bucket / bucket group | async custom handle 不受 `_coalescing_manager` 正确等待，`start_grad_sync` 在 `async_op` 分支断言本 group 的 `len(buckets)==1`；`partition_buckets` 也避免 FP8 merge。同步 custom reducer 在调用内完成 wait，不经过这条断言；它更不是“整个模型只能一个 bucket” |
+| $k=1$ | `_ParamAndGradBucketGroup.__init__` 拒绝 custom 与多个 DistOpt instance 同时启用 |
+| 前驱 drain | successor dispatch 前若 predecessor 已有 handle，先调 predecessor `finish_grad_sync()`；这让前一 full-size A2A 临时 buffer 在后一条分配前释放/可释放 |
 
----
+实现和单元测试都覆盖 `async_op=True/False`；函数 docstring 中“Only False”是过时说明，本文以可执行分支及 `tests/unit_tests/distributed/test_reduce_scatter_with_fp32_accumulation.py::TestReduceScatterWithFP32Accumulation.test_reduce_scatter_with_fp32_accumulation` 为准。
 
-## 6. 阶段③ — `optim_grads`(ZeRO-2)
+#### 2.4.4 多 instance / HSDP
 
-### ③.1 动机
+**它回答的压力与上限。** 它回答的是“$D$ 很大时，跨慢域做整段 RS/AG 不划算”，上限资源是**单卡 HBM 与慢域带宽的取舍**：instance 越少省显存、越多省跨域流量。
 
-ZeRO-1 之后,每卡仍存全量梯度 `4Ψ`(反向累加需要)。ZeRO-2 进一步:既然 reduce-scatter 后每卡只用 `1/dp` 梯度做 step,那**梯度也只需保留 `1/dp`** —— RS 之后即可丢弃非本分片的梯度。
+仍用 $N=16$，把总复制域改为 $D=8$、`num_distributed_optimizer_instances` $k=2$，则每个 intra instance 大小 $s=D/k=4$：
 
-### ③.2 机制
+- $I_0=\{0,1,2,3\}$，$I_1=\{4,5,6,7\}$ 做各自的 intra-instance reduce-scatter。
+- inter-instance groups 连接相同 local slot：$\{0,4\}$、$\{1,5\}$、$\{2,6\}$、$\{3,7\}$。
+- **本地计算**：rank 1 与 rank 5 都先拿到各自 instance 对 `[4,8)` 的 partial sum，再在 group $\{1,5\}$ 上对这个 local shard 做 all-reduce；两者最终都有八个 source 的全局 sum，并各自做同一次 4 元素 update。
+- **重建**：main parameter、optimizer state 与 update ownership 在两个 instance 各复制一份；parameter AG 只在各自 $s=4$ 的 instance 内重建 full `q|p|r|pad`，不跨 instance。
 
-与 ZeRO-1 相同的 RS+AG 通信结构,但梯度 buffer 在 reduce-scatter 后只保留本 rank 的 `1/dp` 分片。由 Megatron-FSDP 的 `data_parallel_sharding_strategy = 'optim_grads'` 实现。
+这些名单是 collective 的复演输入，实际构造不能外推为 dense/expert 各建一套 inter 组：`initialize_model_parallel` 对 dense DP×CP 只切 intra 组，对 expert DP 用 `create_hierarchical_groups` 建 intra/inter；`get_inter_distributed_optimizer_instance_group` 返回这一个 expert inter 组，供 attention/dense 与 expert 共享。两类 intra 大小可以不同，具体组来源与同 rank 对照见 [[17_megatron_parallelism_orchestration_analysis]] §2.3。
 
-### ③.3 开销
+**上线的数据。** 在 bf16 $M=32$ bytes 的同例里，每 rank 的理想算法字节为：intra RS $3M/4=24$ bytes，inter local-shard AR $2(k-1)(M/s)/k=8$ bytes，intra parameter AG $3M/4=24$ bytes，总计 56 bytes。单一 $D=8$ shard domain 的 RS+AG 也是 $28+28=56$ bytes；**HSDP 改变的是流量落在哪层网络与两段 collective 的 latency/排序，不保证减少总算法字节**。
 
-| 维度 | optim_grads(ZeRO-2) |
-|------|---------------------|
-| 模型态显存/卡 | 参数 `2Ψ` + 梯度 **`4Ψ/dp`** + 优化器 `12Ψ/dp` = `2Ψ + 16Ψ/dp` |
-| 通信/步 | `≈` 与 DDP 相同 |
+**反向差异。** backward 侧多出一段串行：同一个 bucket group 的 intra RS 与 inter AR 依次排队，`register_grad_ready` 触发的是这一对而不是单个 collective。
 
-### ③.4 适用场景
+**增量成本。** HBM 反向变化：state/main shard 从单 instance 的约 $P/D$ 变为 $P/s$，本例是两倍；收益是跨 instance 的慢域只传 $M/s=8$ bytes 的 local shard payload，而非 full $M$。这是从分组和 payload 推导的选型结论，不是源码给出的吞吐保证：当 instance 内链路快、instance 间链路慢，或需要保留一层 state replica 时值得评估；同域网络、模型很小或 launch latency 主导时，两阶段同步可能更差。
 
-- ZeRO-1 仍不够、但还不想付 ZeRO-3 的额外通信时的中间档。
+`overlap_grad_reduce=True` 时，这条路径把 intra RS 与 inter AR 依次放到 collection-level `communication_stream`：`DistributedDataParallel.__init__` 对 dense `bucket_groups` 集合创建一条 stream、对 `expert_parallel_bucket_groups` 集合另创建一条，再把同一对象赋给集合内所有 bucket group，**不是每个 bucket group 独占一条 stream**。对应 stream 先等 compute stream；collective 本身使用 `async_op=False`，所以同一 collection 的 bucket groups 与每组内部 RS→AR 都按该 stream 排队。`finish_grad_sync()` 再令当前 compute stream `wait_stream()`。未开 overlap 时两段就在当前 stream 同步执行。
 
----
+#### 2.4.5 四条 lane 在同一例子上的账
 
-## 7. 阶段④ — `optim_grads_params`(ZeRO-3 / 完全分片 FSDP)
-
-### ④.1 动机
-
-ZeRO-2 之后只剩参数 `2Ψ` 没切。ZeRO-3 把**参数本身**也沿 DP 组切成 `1/dp`:每卡只常驻 `1/dp` 参数,**用到某层时才 all-gather 出该层的完整参数,用完立刻释放**。模型态显存彻底降到 `18Ψ/dp`。
-
-这就是 **FSDP(Fully Sharded Data Parallel)**。Megatron 有两套实现:Megatron-FSDP(`--use-megatron-fsdp`)与 FSDP2(`--use-torch-fsdp2`),完整对比见 §11。
-
-### ④.2 机制
-
-```
-ZeRO-3:参数也只存 1/dp
-  前向:逐层 all-gather 出本层完整参数 → 算 → 立刻释放(只留 1/dp)
-  反向:再次 all-gather 本层参数 → 算梯度 → reduce-scatter 梯度 → 释放参数
-  ⇒ 参数在前向、反向各被 all-gather 一次
-```
-
-### ④.3 开销
-
-| 维度 | optim_grads_params(ZeRO-3) |
-|------|----------------------------|
-| 模型态显存/卡 | **`18Ψ/dp`**(参数/梯度/优化器全切) |
-| 通信/步 | 前向 AG + 反向 AG + 梯度 RS = **3 趟** ≈ **1.5× DDP** |
-| 通信暴露 | 较高 —— 参数 AG 必须靠 prefetch / 计算重叠掩盖,否则拖慢 |
-
-**关键代价**:ZeRO-3 的通信是 DDP 的 **1.5 倍**(参数要在前向、反向各 gather 一次),且 AG 与逐层计算强耦合,重叠不好就掉吞吐。
-
-### ④.4 适用场景
-
-- 模型态实在塞不下、又不想/不能再加 TP/PP 时的终极手段。
-- 与 EP 组合(README v0.15:"Support FSDP with EP for MoE models")。
-- 不推荐当 ZeRO-1 + TP/PP 已能装下时使用 —— 多付 50% 通信不划算。
-
-> [!update] 该特性自 `dev@232c478d4`（2026-06-16）引入，行号已重核至基线 `71092579`。 — Megatron-FSDP 的 A2A Overlap(ZeRO-3 + MoE 的通信重叠)(#3797,`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py`、`megatron/core/distributed/fsdp/mcore_fsdp_adapter.py`、`megatron/core/pipeline_parallel/combined_1f1b.py`)
-> ZeRO-3 与 MoE 叠加时,**两层通信**同时存在:FSDP 的逐层参数 all-gather / 梯度 reduce-scatter(DP 轴)与 MoE 的 dispatch/combine **All-to-All**(EP 轴)。#3797 让二者**重叠**:把 FSDP 的 `post_forward_release_module` / `post_backward_release_module` 等 hook 暴露出来交给 1F1B overlap pipeline 手动调度,并新增 `enable_fine_grained_param_gather_backward_hook` 支持 backward 侧细粒度参数 gather;配合 `delayed_wgrad`(expert 权重梯度延迟到 dispatch-backward 后再 reduce-scatter,见 §11.2)最大化 EP-A2A 与 DP-梯度同步的重叠。
-> 这是对 §7 ④.3"参数 AG 必须靠 prefetch/计算重叠掩盖"的 FSDP-内部强化。通信调度/1F1B 重叠角度详见 [[20_megatron_comm_overlap_analysis]]。
-
----
-
-## 8. HSDP —— 混合分片数据并行
-
-`outer_dp_sharding_strategy`(`megatron/core/distributed/distributed_data_parallel_config.py:182`)+ `num_distributed_optimizer_instances`。
-
-**动机**:ZeRO 的分片域越大,all-gather/reduce-scatter 的参与方越多、跨节点流量越重。HSDP 把 DP 组拆成**两层**:
-- **内层(节点内,NVLink)**:做 ZeRO 分片(`optim` / `optim_grads_params`)。
-- **外层(节点间,IB)**:只做**副本**(`no_shard`)—— 即普通 DP all-reduce。
-
-```
-HSDP:DP 组 = 外层(跨节点,replicate)× 内层(节点内,shard)
-
-  节点0 内层分片组              节点1 内层分片组
-  [r0 r1 r2 r3]  ◄─外层 all-reduce─►  [r4 r5 r6 r7]
-   └ZeRO 分片┘                          └ZeRO 分片┘
-```
-
-效果:分片只在节点内(高带宽 NVLink)发生,跨节点只走轻量的副本同步 —— 兼顾 ZeRO 的省显存与跨节点通信效率。类比 CP 的 `a2a+p2p` 分层思想。
-
-### 8.1 通信量视角(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §2.3.2/§2.3.3/§3.2 并入)
-
-用 §3.9 的通信组记号,设 `num_distributed_optimizer_instances = K`,`D` 为 DP 世界大小、`P` 为参数总量(元素个数,= `Ψ`):
-
-```
-Intra-instance(组内 D/K 个 rank,对应 §3.9 的 Intra-Instance DP):
-  Forward:  1× AllGather(param) = P/K bytes(组内共享完整参数)
-  Backward: 1× ReduceScatter(grad) = P/K bytes(组内梯度分片)
-Inter-instance(跨 K 个 instance,对应 §3.9 的 Inter-Instance DP):
-  Backward: 1× AllReduce = 2P/D × (K-1) bytes(组间去重)
-  总: 2P/K + 2P/D×(K-1) bytes
-```
-
-`num_distributed_optimizer_instances > 1` 时,DP 域划分为组内(intra-instance)和组间(inter-instance)——组内做 Reduce-Scatter 分片 + 组间做 All-Reduce 去重,参见 `megatron/core/distributed/param_and_grad_buffer.py:785-810`(`start_grad_sync` 内的 inter-instance all-reduce 分支)。这与上面 ASCII 图的"内层分片、外层副本"是同一机制的公式化表达。
-
----
-
-## 9. 开销分析汇总
-
-### 9.1 模型态显存阶梯(标准 bf16 + Adam,`dp` = DP 度,单位:字节×Ψ)
-
-| 阶段 | 参数 | 梯度 | 优化器 | 合计/卡 | `dp=64` 时 |
-|------|------|------|--------|---------|-----------|
-| ① no_shard(ZeRO-0) | `2Ψ` | `4Ψ` | `12Ψ` | **`18Ψ`** | `18Ψ` |
-| ② optim(ZeRO-1) | `2Ψ` | `4Ψ` | `12Ψ/dp` | `6Ψ + 12Ψ/dp` | `≈6.19Ψ` |
-| ③ optim_grads(ZeRO-2) | `2Ψ` | `4Ψ/dp` | `12Ψ/dp` | `2Ψ + 16Ψ/dp` | `≈2.25Ψ` |
-| ④ optim_grads_params(ZeRO-3) | `2Ψ/dp` | `4Ψ/dp` | `12Ψ/dp` | **`18Ψ/dp`** | `≈0.28Ψ` |
-
-```
-模型态/卡:  18Ψ ──ZeRO-1──→ 6Ψ+12Ψ/dp ──ZeRO-2──→ 2Ψ+16Ψ/dp ──ZeRO-3──→ 18Ψ/dp
-            └ 优化器冗余最大(12Ψ),先切它最划算(ZeRO-1 几乎免费)      └ 参数也切,但通信 ×1.5
-```
-
-> 若用 `--grad-reduce-in-bf16`(梯度 bf16):上表梯度列 `4Ψ→2Ψ`,ZeRO-0 合计 `16Ψ`,ZeRO-1 `4Ψ+12Ψ/dp`,ZeRO-2 `2Ψ+14Ψ/dp`,ZeRO-3 `16Ψ/dp`。
-
-### 9.2 通信量
-
-| 阶段 | 梯度通信 | 参数通信 | 趟数合计 | 相对 DDP |
-|------|---------|---------|---------|----------|
-| ① no_shard | all-reduce(1 趟) | —— | 1 趟 all-reduce | 1× |
-| ② optim | reduce-scatter | all-gather | RS + AG | **1×** |
-| ③ optim_grads | reduce-scatter | all-gather | RS + AG | **1×** |
-| ④ optim_grads_params | reduce-scatter | 前向 AG + 反向 AG | RS + 2×AG | **1.5×** |
-
-要点:**ZeRO-1/2 与 DDP 通信量完全相同**(`all-reduce = RS + AG`)—— 这是 ZeRO-1 被视为"免费"的根本原因;**ZeRO-3 才多付 50%**(参数前向、反向各 gather 一次)。FP8/FP4 参数精度对这张表的影响(通信量再降 25%-37.5%)见 §3.10。
-
-### 9.3 DP 的"等效气泡"
-
-DP 无流水线气泡。低效来源是**通信暴露**:
-- 梯度 RS/all-reduce → `overlap_grad_reduce` 分桶藏进反向,只剩最后一个桶的尾巴。
-- 参数 AG → `overlap_param_gather` 藏进前向 / optimizer step。
-- ZeRO-3 的逐层参数 AG → 靠 prefetch(`suggested_communication_unit_size`)与逐层计算重叠,重叠不好就是吞吐损失。
-
----
-
-## 10. 适用场景及选型
-
-### 10.1 选型决策树(按 ZeRO 阶段)
-
-```
-多卡训练?
-└─ 是 ──► DP 是最外层并行,选 ZeRO 阶段:
-          │
-          ├─ 模型态单卡放得下,且不缺显存?
-          │   └─ 是 ──► ① no_shard(最简单,无 AG 开销)
-          │
-          ├─ 想省显存但不想多付通信?(绝大多数情况)
-          │   └─ 是 ──► ② optim / --use-distributed-optimizer(ZeRO-1)
-          │             通信与 DDP 相同,白拿 12Ψ→12Ψ/dp,几乎必开
-          │
-          ├─ ZeRO-1 还不够,梯度也想切?
-          │   └─ 是 ──► ③ optim_grads(ZeRO-2,Megatron-FSDP)
-          │
-          └─ 模型态实在塞不下,且不想再加 TP/PP?
-              └─ 是 ──► ④ optim_grads_params(ZeRO-3 / FSDP,通信 ×1.5)
-                        跨节点训练 → 配 HSDP,把分片压在节点内 NVLink
-
-通用建议(README Guidelines):
-  - 优先把并行度给 DP(通信最低、可重叠);TP/PP/EP 能小则小
-  - --use-distributed-optimizer 几乎必开(ZeRO-1 免费省显存)
-  - 配 --overlap-grad-reduce + --overlap-param-gather 把 DP 通信藏进计算
-  - 显存够时优先 ZeRO-1 + 适度 TP/PP,而非直接上 ZeRO-3
-```
-
-### 10.2 一句话总结
-
-- **DP 的本质**:最外层并行,切 batch 不切模型;朴素 DP 每卡冗余存 `18Ψ` 模型态。
-- **DDP 的工程**:扁平梯度 buffer + 分桶 + 反向 post-hook,让梯度通信异步重叠进反向。
-- **模型态 `18Ψ`**:标准 bf16 训练 = bf16 权重 `2Ψ` + **fp32 梯度 `4Ψ`** + fp32 master `4Ψ` + Adam m `4Ψ` + v `4Ψ`。梯度是 fp32 因为 bf16 跨 microbatch 累加必丢精度(Megatron 强制)。
-- **ZeRO 四阶段**:逐级切分模型态 —— ZeRO-1 切优化器(`18Ψ→6Ψ+12Ψ/dp`,**通信不变,几乎免费**)、ZeRO-2 再切梯度、ZeRO-3 连参数也切(`18Ψ/dp`,**通信 ×1.5**)。
-- **关键恒等式**:`all-reduce = reduce-scatter + all-gather` —— ZeRO-1/2 只是把 DDP 的一次 all-reduce 拆两半,所以通信零增量。
-- **HSDP**:分片压在节点内 NVLink、跨节点只做副本,兼顾省显存与跨节点效率。
-
-### 10.3 按规模的具体配置(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §5 并入)
-
-| 场景 | 推荐配置 |
-|------|---------|
-| 单机 8 GPU,<10B 模型 | `use_distributed_optimizer=True`, 无需特殊设置 |
-| 多机 32 GPU,70B 模型 | `use_distributed_optimizer=True`, `overlap_param_gather=True` |
-| 多机 128 GPU,200B+ MoE | `use_distributed_optimizer=True`, `overlap_param_gather=True`, `overlap_grad_reduce=True`, 考虑 `fp8_param=True` |
-| 极端规模(H100/Blackwell) | 全开 overlap, `fp4`/`fp8_param`, 复用 `reuse_grad_buf_for_mxfp8_param_ag` |
-| 显存仍然不足 | 启用 `optimizer_cpu_offload` 或 `offload_optimizer_states`([[26_megatron_optimizer_step_internals_deepdive]] §9) |
-
-### 10.4 何时适用 checklist(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` §6 并入)
-
-- ✓ 任何使用 Adam/AdamW 的场景
-- ✓ 模型越大收益越高(优化器状态占比随参数量线性增长)
-- ✓ DP 世界大小 ≥ 2
-- ✓ 可与 TP、PP、EP 叠加(正交优化)
-- ✗ DP=1 时无收益(无分片对象)
-- ✗ SGD 无状态优化器收益有限(SGD 只有 momentum buffer)
-
----
-
-## 11. 三种梯度/参数分片实现方案对比:DistributedOptimizer / TorchFullyShardedDataParallel / MegatronFSDP
-
-(补充,2026-07-31 · 由原 `16_megatron_distributed_optimizer_analysis.md` 附录 A 并入,提升为正式章节)Megatron-LM 现有 **三套** 并行梯度/参数分片方案,适用于不同场景:
-
-### 11.1 三套方案概览
-
-| 维度 | DistributedOptimizer | TorchFullyShardedDataParallel | MegatronFSDP |
-|------|---------------------|------------------------------|-------------|
-| **文件** | `megatron/core/optimizer/distrib_optimizer.py:113` | `megatron/core/distributed/torch_fully_sharded_data_parallel.py:28` | `megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:94` |
-| **分片粒度** | 参数级别(连续 buffer 切分) | Module 级别(FSDP Unit) | Module 级别(FSDP Unit) |
-| **分片策略** | ZeRO-1/2(状态+梯度分片) | PyTorch FSDP2(参数+梯度+状态) | ZeRO-1/2/3 可配置 |
-| **依赖** | 无外部依赖 | PyTorch >= 2.4, DTensor | 自研(不依赖 PyTorch FSDP) |
-| **与 EP 协同** | 通过 `expert_parallel_buffers` 隔离 | **无 EP 专门处理**(FSDP2 路径不识别 expert 参数) | 通过 `has_expert_parameters` 自动检测 |
-| **通信 Overlap** | `overlap_param_gather` + `overlap_grad_reduce` | PyTorch FSDP2 自动 | `overlap_param_gather` + `overlap_grad_reduce` 默认开启 |
-| **CUDA Graph** | 兼容 | 不兼容(PyTorch FSDP2 限制) | 兼容 |
-| **NCCL UB** | 不支持 | 不支持 | 支持(`nccl_ub` 减少 SM 占用) |
-
-> [!contradiction] 上表「与 EP 协同」一行对 **TorchFullyShardedDataParallel** 的归因有误,且在新基线 `71092579` 下核实为**不成立**:`_check_module_parameter_types` 并不在 `megatron/core/distributed/torch_fully_sharded_data_parallel.py` 里,而是 MegatronFSDP 的方法,`has_expert_parameters = self._check_module_parameter_types()` 在 `megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:296`。也就是说该列本该写的两格其实是同一个机制,且都属于 MegatronFSDP。新基线上 `torch_fully_sharded_data_parallel.py` 全文 `grep -n 'expert|Expert'` **零命中**,即这条 FSDP2 路径没有任何专门的 EP 处理。补记:此错并非本轮基线漂移造成——在旧基线 `ee3f1ffa…` 下 `_check_module_parameter_types` 同样不在该文件中,是原稿的归因错误。
-
-`data_parallel_sharding_strategy = 'optim_grads'`(§6 阶段③,ZeRO-2)与 `'optim_grads_params'`(§7 阶段④,ZeRO-3)均由 Megatron-FSDP 实现;DistributedOptimizer(§5 阶段②)是 ZeRO-1 的原生实现。
-
-### 11.2 MegatronFSDP 详细分析
-
-> MegatronFSDP 的内部实现(FSDP unit 分组、四类 buffer、hook 状态机与双流水线、桶分配器、与 EP/TP/HSDP 的叠加、接入层)已归一到 [[36_megatron_fsdp_analysis]]。
-> 本页只保留**三方对比**:概览见 §11.1,选型矩阵见 §11.4,MoE 场景定位见 §11.5。
-
-### 11.3 TorchFullyShardedDataParallel 详细分析 (`megatron/core/distributed/torch_fully_sharded_data_parallel.py`)
-
-对接 PyTorch FSDP2 `torch.distributed.fsdp.fully_shard` API:
-
-**Sub-module 级别的 `fully_shard` 包装**(`megatron/core/distributed/torch_fully_sharded_data_parallel.py:60-64, 126-134`):
-```python
-sub_modules_to_wrap = {
-    TransformerLayer,           # 所有 Transformer 层
-    LanguageModelEmbedding,     # 初始嵌入层
-    RotaryEmbedding,            # 初始 RoPE
-    ColumnParallelLinear,       # 最终输出层
-}
-# 每个 sub-module 独立 fully_shard → 逐层 AllGather/释放参数
-fully_shard(sub_module, mesh=device_mesh, reshard_after_forward=True)
-```
-
-**FP8 权重转置缓存处理**(`megatron/core/distributed/torch_fully_sharded_data_parallel.py:93-98`):
-PyTorch FSDP2 无法感知 micro-batch 边界,会缓存 FP8 权重的转置版本。Megatron 通过 `save_custom_attrs` / `restore_custom_attrs` 机制在每次 `fully_shard` 前后保存/恢复参数的 FP8 属性,避免不必要的显存占用。
-
-**与 Activation Checkpointing 的 Backward Prefetch 协调**(`megatron/core/distributed/torch_fully_sharded_data_parallel.py:136-141`):
-```python
-if config.recompute_granularity is not None:
-    sub_module.set_modules_to_backward_prefetch(
-        [prev_module] if prev_module else []
-    )
-```
-显式设置 backward prefetch schedule,防止 Activation Checkpointing 的重复计算破坏 FSDP2 自动生成的 prefetch 顺序。
-
-### 11.4 三套方案选型矩阵
-
-| 场景 | 推荐方案 | 理由 |
-|------|---------|------|
-| 标准训练(无特殊需求) | `DistributedOptimizer` | 最成熟、与所有 MCore 特性深度集成 |
-| PyTorch >= 2.4 + 新项目 | `TorchFullyShardedDataParallel` | 对接 PyTorch 原生 API,社区支持好 |
-| 需要 CUDA Graph + FSDP | `MegatronFSDP` | TorchFSDP2 不支持 CUDA Graph |
-| 需要 NCCL UB 优化 | `MegatronFSDP` | 独有的 NCCL UserBuffer 支持 |
-| 需要 ZeRO-3 全分片 | `MegatronFSDP` | `optim_grads_params` 策略 |
-| MoE(与 EP 深度耦合) | `MegatronFSDP` | 自动检测 EP 参数 + Delayed Wgrad Overlap |
-| HSDP 分层分片 | `MegatronFSDP` | 组内 ZeRO-3 + 组间复制的分层策略 |
-
-### 11.5 全分片(ZeRO-3)在 MoE 场景的选型判据
-
-> [!update] 2026-09-02 · 本节已改写
-> 原标题为「为什么 FSDP2 在 MoE 训练中重要」，但四条里前三条讲的其实是 **MegatronFSDP** 的能力，
-> 只有第四条是 TorchFSDP2。这与本页 §11.1 的 `[!contradiction]` 与 §12.3 的结论直接冲突——
-> **FSDP2 路径没有任何 EP 相关处理**：`megatron/core/distributed/torch_fully_sharded_data_parallel.py`
-> 全文 165 行，`expert` 零命中。原写法会让读者把「与 EP 的层级协同」读成 FSDP2 的能力。
-
-**为什么 MoE 场景值得考虑全分片**：expert 数量增长（64 → 256+）后，EP 不能无限扩展——EP 度越大
-All-to-All 的跨节点通信量越重（见 [[14_megatron_ep_analysis]] §11.1）。当 EP 已经顶到通信预算上限、
-参数仍放不下时，剩下的办法是在 **DP 维度**继续切 expert 参数。这就是 ZeRO-3 档相对
-DistributedOptimizer（ZeRO-1，只切优化器状态）的价值所在：它把参数本身也切了。
-
-**这条路由哪个实现承担，本页的三方对比给了明确答案**：
-
-| | DistributedOptimizer | **MegatronFSDP** | TorchFSDP2 |
-|---|---|---|---|
-| 分片档位 | ZeRO-1 | ZeRO-2/3 | ZeRO-3 |
-| **EP 相关处理** | — | **有** | **无** |
-
-MegatronFSDP 侧的证据：`megatron/core/distributed/fsdp/mcore_fsdp_adapter.py:63` 的
-`_get_default_fsdp_unit_modules(overlap_moe_expert_parallel_comm)` 按该开关决定默认 FSDP unit 组成，
-`:122-127` 在开启 MoE EP 通信重叠时把 `TEGroupedMLP` 与 `SharedExpertMLP` 纳入 unit——
-**即"把 expert 当作独立 FSDP unit、用时 AllGather、用完释放"这件事是 MegatronFSDP 做的**，
-机制详见 [[36_megatron_fsdp_analysis]] §7。
-
-**TorchFSDP2 在这里的定位是另一回事**：它的价值不在 MoE，而在**跟随上游**——
-`TorchFullyShardedDataParallel` 让 Megatron 直接复用 PyTorch 的 `fully_shard`
-（per-param FSDP、DTensor 集成），降低自维护成本。代价就是上面那一格：**它不认识 expert**。
-所以选型判据很直接——**MoE + 需要 ZeRO-3 → MegatronFSDP；稠密模型 + 想吃上游红利 → TorchFSDP2**。
-
-### 11.6 FSDP 与并行拓扑的关系
-
-> 已归一到 [[36_megatron_fsdp_analysis]] §7「与 EP / TP / HSDP·HFSDP 的叠加」：FSDP 最后作用于已按 TP/EP 切过的 shard，正交性由独立 DeviceMesh 维表达，**不是**包含当前 rank 的进程组彼此空交；该节同时解释 EP 双 mesh 与 HSDP/HFSDP 两档外层策略。
-
-## 12. 约束
-
-本页只保留 DDP、ZeRO/HSDP 与三种分片实现的约束；optimizer step、offload 和 emerging optimizer 的边界归 [[26_megatron_optimizer_step_internals_deepdive]] §11。文件简称沿用 §3.7：PGB = `megatron/core/distributed/param_and_grad_buffer.py`。
-
-### 12.1 前提与不变量
-
-| # | 前提 / 不变量 | 源码落点 | 破坏后的表现 |
-|---|---|---|---|
-| 1 | 开 distributed optimizer 时,整块 buffer 的 `numel` 必须被 DP 世界大小整除 | PGB`:1220-1223`(`assert self.numel % self.data_parallel_world_size == 0`;有 NVFP4 参数时打包 numel 另有同款断言) | 直接 assert 失败 —— 这正是 buffer 必须 padding 的原因,也是 §3.7 逆序贪心分桶之后还要补一次对齐的原因 |
-| 2 | **不**开 distributed optimizer 时反过来**不允许** padding | PGB`:1224-1225`(`assert self.numel == self.numel_unpadded`) | 两条路径对 buffer 长度的要求相反,同一份 layout 不能混用 |
-| 3 | 参数 all-gather 的预取假设"module 前向序 == 参数注册序" | PGB`:638-644`,只 `warnings.warn` | **不报错**,只是下一组 AG 已被提前派发、overlap 退化;§3.7 那张时间线图随之失效 |
-| 4 | `reduce_scatter_with_fp32_accumulation` 与 `num_distributed_optimizer_instances > 1`(HSDP,§8)互斥 | PGB`:271-276` | assert 失败 —— "线上传低精度、本地 FP32 累加"的那条 RS 实现进不了 HSDP |
-| 5 | `nccl_ub=True` 时不能再开 grad/param buffer 的 CPU backup | PGB`:1245-1252` | assert 失败;NCCL UserBuffer(§11.1)与"buffer 可换出到 CPU"二选一 |
-
-### 12.2 代价
-
-- **"分片不认参数边界"的账单在 checkpoint 侧。** 因为一个参数可能被两个 rank 各持一段(§3.8),优化器状态无法按参数直接存取,`_build_model_gbuf_param_range_map` 必须一次生成 `gbuf_world` / `gbuf_world_in_bucket` / `gbuf_local` / `param` 四组 range(`megatron/core/optimizer/distrib_optimizer.py:158-162`),重分片时还要跨这四层换算。§5 说 ZeRO-1"几乎免费",指的是显存与通信量,不包含这层复杂度。
-- **重叠是拿"通信提前派发"换来的。** `finish_param_sync` 在 wait 完本组之后立刻派发下一组(§3.7 第 3 步),所以任何打乱前向序的改动(重排 module、动态跳层、非均匀 stage 切分)都会踩到上表第 3 条那个 warning —— 而它**只警告不报错**,退化是静默的。
-- **ZeRO-3 多付 50% 通信**(§9.2),且参数 AG 与逐层计算强耦合。这条代价是 §11.4 选型矩阵把 ZeRO-3 放在最后一档、以及 §8 HSDP 存在的直接原因。
-- **`no_shard` 下梯度已在 DP 维复制,再规约一次就错。** §4 的 2026-06-16 更新记录的正是这笔账:grad-stats 只能在 `model_parallel_group` 上规约,否则 grad norm 虚高、裁剪过度、不收敛。
-
-### 12.3 故意不做的事
-
-- **FSDP2 路径不处理 EP。** 新基线下 `megatron/core/distributed/torch_fully_sharded_data_parallel.py` 全文对 `expert|Expert` 零命中;expert 参数的自动识别只存在于 MegatronFSDP —— `has_expert_parameters = self._check_module_parameter_types()`(`megatron/core/distributed/fsdp/src/megatron_fsdp/megatron_fsdp.py:296`,方法体 `:351`)。这不是行号漂移,而是这条路径**没有**这项功能(见 §11.1 表格与其后的 `[!contradiction]`)。
-- **Megatron-FSDP 下不走 MXFP8 的 param-buffer 直拷,也只认一种 checkpoint 分片格式。** `_copy_main_params_to_param_buffer` 一发现 `ddp_config.use_megatron_fsdp` 就 `raise NotImplementedError`(`megatron/core/optimizer/distrib_optimizer.py:2957-2960`);`sharded_state_dict` 在 Megatron-FSDP 下只接受 `sharding_type == "fsdp_dtensor"`,其余一律 `NotImplementedError`(`:1576-1579`)。
-
----
-
-## 13. 发展趋势
-
-> [!note] 推断：以下方向判断锚定冻结基线中的弃用标记与当前实现，不是源码给出的交付承诺。optimizer/offload 侧趋势见 [[26_megatron_optimizer_step_internals_deepdive]] §12。
-
-**四、DistributedOptimizer 的 checkpoint 格式在向 model-space 收敛,两条旧格式已挂弃用告警。**
-`sharded_state_dict` 的 `sharding_type` 形参本身被标注「is deprecated and will be removed. Use `metadata["distrib_optim_sharding_type"]` instead」(`megatron/core/optimizer/distrib_optimizer.py:1562-1569`),默认值现在是 `'fully_sharded_model_space'`(`:1570-1573`);`fully_sharded_bucket_space` 另有一条「deprecated and will be removed in the future. Please switch to `full_sharded_model_space`」(`:1585-1592`);类内 `checkpoint_fully_reshardable_formats` 只列 `fully_reshardable` / `fully_sharded_model_space` / `fsdp_dtensor` 三种(`:127-131`)。**由此可推断**:与 buffer 布局绑定的 bucket-space 格式正在退场 —— 这正是 §12.2 第一条那笔"分片不认参数边界的 checkpoint 账单"被推着还的方向(检查点侧的全貌见 [[19_megatron_dist_checkpointing_analysis]])。
-
-**五、`use_custom_fsdp` 已弃用,§11 的三套实现正在收敛成两极。**
-`megatron/core/distributed/distributed_data_parallel_config.py:105-110` 明写「The flag `use_custom_fsdp` is deprecated and will be removed in future versions. Please use `use_megatron_fsdp` instead, as all functionality will be migrated there」。同时 FSDP2 那条路径在基线下对 `expert|Expert` 零命中(§12.3),而 MoE 相关的新工作(delayed wgrad、A2A overlap、grouped-expert 分桶)全部落在 Megatron-FSDP 侧(§11.2)。**由此可推断**:§11.4 的选型矩阵会继续朝"标准训练用 DistributedOptimizer、需要全分片就用 Megatron-FSDP"两极收敛,`TorchFullyShardedDataParallel` 更像跟随 PyTorch 上游 API 的对接层,而不是 MoE 的主路径 —— 对这一点源码本身没有表态。
-
----
-
-## 14. 小结
-
-- DDP 用连续扁平 buffer、反向 post-hook 和分桶，把梯度规约重叠进反向；`param_sync_func` 则把参数同步回调交给调度层。
-- ZeRO-0/1/2/3 逐级切梯度、优化器状态与参数；`all-reduce = reduce-scatter + all-gather` 是通信分解的核心。
-- HSDP 把分片限制在高速域、在域间保留副本；三种实现的选择取决于全分片、EP、CUDA Graph 与上游 PyTorch 接口。
-- 一次更新内部如何 unscale、检查溢出、裁剪、更新 master 参数，以及 LR/WD 与 μP 如何落到 param group，见 [[26_megatron_optimizer_step_internals_deepdive]]。
-
----
-
-## 配置契约：参数同步回调
-
-| 字段 | 来源 | 类型 | 默认 | 契约 | 行 |
+| lane | 每 rank 上线字节（bf16, $M=32$） | update 覆盖 | 需要 parameter AG | 额外临时 HBM | 关键上限 |
 |---|---|---|---|---|---|
-| `param_sync_func` | `ModelParallelConfig` | `Optional[Callable]` | `None` | 发起异步参数同步（例如 distributed optimizer parameter all-gather）的回调；接收待同步参数迭代器。 | `megatron/core/model_parallel_config.py:213-216` |
+| 普通 all-reduce（plain non-LayerWise） | 48 | 全部 13 个真实参数元素 | 否 | 无 | 单卡放得下完整 main/state |
+| 普通 all-reduce（forced-AR DistOpt，$k=2$） | 48 + 8 + 24 = 80 | 仅 local range | 是 | 无 | 非 local 区域仍是 instance partial sum |
+| 标准 reduce-scatter | 24 + 24 = 48 | 仅 local range | 是 | 无 | bucket 长度必须被 $d$ 整除 |
+| custom FP32 accumulation RS | 同标准 RS 同阶 | 仅 local range | 是 | +48（32 full-size A2A + 16 FP32 sum） | only SUM、$k=1$；overlap 时每 group 一个 bucket |
+| 多 instance HSDP（$D=8,k=2$） | 24 + 8 + 24 = 56 | 仅 local range，每 instance 各一份 | 是（instance 内） | 无 | state 常驻从 $P/D$ 抬到 $P/s$ |
 
-其余数值精度字段归 [[23_megatron_precision_cudagraph_fusion_analysis]]，FSDP 实现开关归 [[36_megatron_fsdp_analysis]]，scheduler 与 μP 字段归 [[26_megatron_optimizer_step_internals_deepdive]]。
+两条可以直接读出来的结论：**其一**，RS+AG 与 AR 的理想算法字节同阶，DistOpt 省的是 HBM 与冗余 update，不是通信量；**其二**，四条 lane 里只有第一条不需要参数重建，其余三条都必须把“可见性”当成一个独立的完成边界来管理——这正是 §2.3 三种 dispatch owner 的由来。
+
+### 2.5 两条 LayerWise whole-parameter 数据面
+
+LayerWise 是 `get_megatron_optimizer` 的 live sibling，不是 ordinary non-DistOpt 的别名。命令行对 emerging optimizer 会把全局 `use_distributed_optimizer` 改写为 false 并打开 `use_layer_wise_distributed_optimizer`；随后 `_ddp_wrap` 又把 native DDP config 置 true，以便 non-LayerWise sibling buffers 继续走连续元素分片的 DistOpt，并调用 `LayerWiseDistributedOptimizer.compute_full_param_layout`。最终 collective 由**每个 buffer 的 effective config** 决定。
+
+**它们回答的压力与上限。** 两条 lane 回答的是同一件 §2.1 里被 range 切法牺牲掉的事：Muon 这类算法要对**整个矩阵**做正交化，只持有半个参数不足以完成整矩阵操作。因此它们首先受 **whole-parameter 不可分割**约束；两条 lane 的分歧是如何在完整梯度、通信形状和 padding 成本之间取舍。此处只跟踪 Megatron 给 child optimizer 的 whole-tensor contract，emerging-optimizers 内部计算归 [[26_megatron_optimizer_step_internals_deepdive]]。
+
+继续使用同一组具名参数 `q(2),p(5),r(6)`；先移除常规 range-shard 为整除而加的 synthetic `pad[13,16)`，所以 raw logical size 为 13。
+
+#### 2.5.1 decoupled（默认，`use_layer_wise_param_layout=False`）
+
+**本地计算与 gradient handoff。** 每 rank 保留 full logical model parameters；只有 `grad_data` 是 compact 13-element contiguous buffer。LayerWise buffer 的 effective `use_distributed_optimizer=False`，backward-ready 后对 full compact gradient 做 all-reduce。bf16 toy 的 payload 是 26 B，理想 ring AR 是 39 B/rank。
+
+**whole-param owner 与 step。** `_shard_params_ping_pong` 先按 `(numel, canonical identity)` 排序，再 ping-pong 分配：rank0 拥有 `q(2)`、rank1 `p(5)`、rank2 `r(6)`、rank3 为空；只有 owner 持有相应 main/state，并对整个 tensor update。
+
+**重建。** 无 overlap 时 `step_with_ready_grads()` 后调用 variable-size `allgather_params`；各 source 的 input size 为 `[2,5,6,0]` elements（bf16 `[4,10,12,0]` B），unflatten/copy 后每 rank 重建 13-element logical `P`。overlap 时 bucket `start_param_sync` 做同形状 uneven AG，forward pre-hook `finish_param_sync()` wait 后 copy-back。
+
+**反向差异。** 它默认在 backward 侧走 full-size AR，且 forward 不需要临时 unshard；通信结束后每个 whole owner 能直接从完整梯度中取出整参。相比 padded RS，它用 full-gradient AR 换掉 equal-shard padding；这并非通信原语只剩 AR 可选，而是冻结实现的 compact-layout 取舍。forced-AR DistOpt 也可走 full AR，区别在于后者仍只更新任意 range。
+
+**增量成本与选择条件。** 无 equal-shard persistent padding；同步 `allgather_params` 会创建约一个 logical payload 的 receive/flatten 临时量，overlap 分支复用 backward 后 idle 的 `grad_data` 作 receive buffer。后者在 `_finalize_layerwise_param_sync` 完成 unflatten/copy 后必须清零 `grad_data`，否则下一轮 `main_grad` 累加会从参数值起算；只 wait 通信而不 copy/zero 还不算参数发布完成。选它来避开 padded HBM，且这是受限 FP8 param gather 的可用 LayerWise 形态；代价是 full-gradient AR、uneven AG/copy 与 owner 负载不均（本例 rank3 完全空闲）。`validate_args` 另要求该布局下 `num_distributed_optimizer_instances == 1`——非 DistOpt 的 LayerWise buffer 只在单个 instance 内 AR，$k>1$ 会让 Muon 梯度跨 DP 域欠规约。Megatron 在此能证明各 rank 的 tensor sizes、`torch.distributed.all_gather` 调用和 copy-back；uneven gather 在 NCCL 内部怎样拆消息只是源码注释描述的依赖契约，本页未核验其内部实现。
+
+#### 2.5.2 padded layout（显式 `use_layer_wise_param_layout=True`）
+
+**本地计算与 gradient handoff。** `_compute_per_buffer_param_layout` 以 LPT 把整参放进 shard：rank0=`r(6)`、rank1=`p(5)`、rank2=`q(2)`、rank3=空；每 shard 再对齐到 `_shard_divisor` 给出的 64 elements（$\operatorname{lcm}(64,\operatorname{lcm}(d,128)/d)$，$d=4$ 时为 64），所以本例 `N_layout=4×64=256`。effective `use_distributed_optimizer=True`，gradient 走 reduce-scatter，**不是 AR**。
+
+**whole-param owner 与 step。** RS 后每 rank 收到一个 64-slot shard，但其中只有完整 tensor 是 optimizer param；owner 更新整参，padding 不进入 optimizer state。
+
+**重建。** `use_buffer_param_sync=True`；`start_param_sync_for_bucket_group_subset` 只触发 LayerWise-managed groups，底层 `all_gather_into_tensor` 把四个更新 shard 重建为 full padded `param_data`。bf16 toy 的 RS 与 buffer AG 各 384 B/rank。
+
+**反向差异。** 与 §2.4.2 的标准 RS 结构相同——backward 尾部一次等长 RS、step 之后一次等长 AG；差别只在 shard 内容是若干完整 tensor 而不是任意连续元素 range。
+
+**增量成本与选择条件。** 每个 `param_data` 和 `grad_data` 各多 243 slots，按各自 dtype 计 HBM；同步返回或 consumer pre-hook wait 才可读。只有接受 64-start / bucket-end padding 且需要 fixed-size buffer RS/AG 时才评估；`pad_buckets_for_high_nccl_busbw` 还会放大 divisor。
+
+LPT 的瓶颈是不可切分的大参数：一个 shard 至少要容纳 chunk 中最大的 tensor，其他 shard 必须补到同长。源码因此不只看 `bucket_size`，还把收桶阈值抬到 `max(bucket_size, int(d * chunk_max_param * 0.9))`，尝试多收整参以填满其他 shard；最后一个 chunk、shared embedding 隔离桶和 64 对齐仍可产生大比例 padding，所以这不是“padding 保证低于 11%”。本例 `q/p/r` 的 13→256 正展示小参数/空 owner 时该启发式无法消除的固定对齐成本。
+
+#### 2.5.3 两条 lane 的共同边界
+
+两条路径的 LayerWise-managed tensors 都只由一个 rank 以 whole shape 更新；non-LayerWise embeddings/bias/layernorm buffers 仍由 sibling `DistributedOptimizer` 做元素 range 的 RS→update→AG，`partition_buckets` 会按 effective flag 拆开 AR/RS groups——一个 bucket group 内不允许混用两种 effective `use_distributed_optimizer`。当前 factory split path 断言 `num_distributed_optimizer_instances=1`，LayerWise 与 `overlap_param_gather_with_optimizer_step` 由 `_get_megatron_emerging_optimizer` 的一条 `assert` 判为不兼容；padded layout 还拒绝 FP8/FP4 param gather，decoupled 则只接受 mxfp8/blockwise 的 fp8 gather。因而选型不是“AR 或 RS 哪个字节少”单轴，而是 compact full-gradient/uneven reconstruction 与 padded equal-shard collectives 之间的 HBM、copy、负载与 latency 权衡。
+
+### 2.6 bucket、padding 与精度开关不是装饰项
+
+#### 2.6.1 bucket 数量与 group 数量
+
+| 配置/机制 | 活跃行为 | 边界 |
+|---|---|---|
+| `bucket_size=None` | 未显式给值时 `_ddp_wrap` 取 `max(40_000_000, 1_000_000 * dp_cp_size)`；`overlap_grad_reduce=False` 时又置回 `None`，DDP 在非首 PP stage 或 `disable_bucketing=True` 时再置回 `None` | `None` 使一个 buffer 不按阈值拆分；不等于“不通信” |
+| `num_buckets=n` | `_ddp_wrap` 以全模型 `num_parameters // n` 写回 `bucket_size` | 是粗略目标；参数不能任意切成 bucket，padding 也改变最终长度，因此实际 bucket 数不保证恰好为 $n$ |
+| 二者互斥 | config `__post_init__` 断言不能同时指定，且 `num_buckets>0` | 启动期 hard error |
+| reverse layout | `DistributedOptimizer._compute_per_buffer_param_layout` 按反向参数顺序装 bucket；shared embedding 单独结束 bucket | 让后向先 ready 的尾层更早通信；不是运行时动态重排 |
+| bucket group | 无 FP8 时通常一 bucket 一 group；FP8 可把 non-FP8 buckets 合到最后一个 FP8 group；disable-bucketing 可跨 buffer 合组 | group 必须共享同一种 effective `use_distributed_optimizer`；LayerWise 混合路径会拆开 AR/RS |
+
+`bucket_size` 越小越早 ready、越容易覆盖 backward，但 launch/latency 与 metadata 增多；越大越接近带宽效率，却把 dispatch 推迟。源码默认值只编码“较大 DP 需要较大 chunk”的启发式，不是模型无关最优值。
+
+#### 2.6.2 padding 的两层约束
+
+`megatron/core/optimizer/param_layout.py::pad_param_start` 把每个 parameter start 对齐到 64 elements。`pad_bucket_end` 把 bucket end 对齐到
+
+$$
+\operatorname{lcm}(d,128)
+$$
+
+的倍数；`pad_buckets_for_high_nccl_busbw=True` 时再把 $2^{16}$ 纳入 LCM。前者给 parameter placement，后者保证 shard divisibility 并可为大 DP 的 NCCL chunk 对齐付出额外 HBM。`_ParamAndGradBuffer._new_bucket` 再断言 DistOpt bucket 的 start/end 都能被 DP size 整除；非 DistOpt 默认 layout 则不应凭空带 DistOpt padding。
+
+#### 2.6.3 三种“FP32”要分开
+
+| 开关 | 本地累加 | wire/collective | 额外存储与约束 |
+|---|---|---|---|
+| `grad_reduce_in_fp32=True` | `main_grad` buffer 本身是 FP32 | 整个 AR/RS buffer 以 FP32 通信 | 更高持久 gradient HBM 与网络 payload；详细精度取舍归 [[23_megatron_precision_cudagraph_fusion_analysis]] |
+| `param_name_patterns_for_fp32_local_accumulation` | 匹配 `fnmatch`（或特殊值 `all`）的 parameter 获得独立 FP32 `main_grad` | collective 前 copy 到原通信 buffer，完成后 copy-back | 每个匹配参数多一份 FP32 tensor；若 `grad_reduce_in_fp32` 已 true，config 直接断言 |
+| `reduce_scatter_with_fp32_accumulation=True` | 不改变前面 microbatch 的本地累加 dtype | lower-precision A2A，owner 本地 FP32 sum，再 downcast | full-size A2A 临时 buffer、local FP32 sum；SUM、$k=1$，overlap 时每 group 一个 bucket，见 §2.4.3 |
+
+`average_in_collective=False` 时 dense/expert gradient 预先按 $1/\lvert DP\!\times\!CP\rvert$ 缩放，再做 SUM；为 true 时 dense 用 AVG，expert 先按 $\lvert EDP\rvert/\lvert DP\!\times\!CP\rvert$ 缩放再在 EDP 做 AVG。`calculate_per_token_loss=True` 则 scaling factor 为 1，并禁止 collective AVG，最后由全局 token count 统一缩放。
+
+### 2.7 开销结算与 RS→step→AG 的所有权闭环
+
+在常见的 bf16 model parameter（2 bytes）、fp32 gradient（4）、fp32 main parameter（4）和两份 fp32 Adam state（8）的简化账本里，普通复制约为每参数 18 bytes，native DistOpt 约为 $6+12/d$ bytes：forward-facing model parameter 与 grad buffer 的 6 bytes 仍完整，main/state 的 12 bytes 随 owner range 分片。它不是所有 dtype/optimizer 的常数；padding、per-parameter FP32 local accumulation 和 custom A2A 临时量都要另加。
+
+汇总到一次迭代，需一起支付：完整 model/gradient buffers、owner main/state、layout padding、custom A2A 或 LayerWise gather 暂存，以及 RS/AR→update→AG 的 launch 与等待。§2.4 的字节表刻意统一 gradient/parameter wire dtype；真实配置可能不同，理想 ring 的标准路径应分别计 $B_{\mathrm{RS+AG}}=(d-1)(M_{\mathrm{grad}}+M_{\mathrm{param}})/d$，不能把 fp32 gradient 与 bf16 parameter 都套成同一个 $M$。吞吐还取决于 ready 时间、网络分层、owner 负载和等待能否被计算覆盖，本页没有硬件实测保证。
+
+`DistributedOptimizer._build_model_and_main_param_groups` 只把本 rank range 对应的 model/main shard 交给基础 optimizer；`_copy_model_grads_to_main_grads` 同样切 local range。具体 unscale、clip、Adam/SGD/Muon、master weight 和 offload 属于 [[26_megatron_optimizer_step_internals_deepdive]] 与 [[22_megatron_memory_optimization_analysis]]，这里的唯一必要事实是 update 只修改 owner shard。
+
+`DistributedOptimizer.step_with_ready_grads` 随后把更新后的 main shard copy 回 model shard。未启用 `overlap_param_gather` 时立即同步 all-gather；启用后按 §2.3 的三种 owner 把 AG 流水到下一轮。unaligned 链是 `forward pre-hook → finish_param_sync 懒 dispatch/wait AG(B0) → compute(B0) ∥ AG(B1)`；aligned 链由 schedule 的 `param_sync_func` 提前 dispatch；optimizer-step overlap 链由 `ChainedOptimizer._step → start_param_sync(force_dispatch=True)` 发起。payload 没有消失，只是 dispatch/wait 的 owner 与等待位置改变。
+
+当 `overlap_param_gather` 与 `align_param_gather` 同时开启时，`megatron/training/training.py` 把各 model chunk 的 `start_param_sync` 装入 `ModelParallelConfig.param_sync_func`。pipeline schedule 以“待同步 parameter iterable”为参数调用它：interleaved/VPP 路径先给前两个 chunk 发起 AG，并按 virtual-microbatch 位置提前 dispatch 后续 chunk，使 PP peers 尽量在相近时刻占用通信资源。这个 callback 只注入“何时开始”；它不替代 bucket 的 forward pre-hook/`finish_param_sync`，也不把 in-flight parameter 变成 consumer-visible。forward-only 与首次安全启用阶段还会暂时把 callback 置空，避免误发同步。
+
+![同一组参数在 native DistributedOptimizer、Torch FSDP2、Megatron-FSDP 与 LayerWise 两种 layout 中的常驻、梯度、whole-owner update 与参数重建对照](assets/megatron_distopt_live_paths.svg)
+
+这张边界图把三种 wrapper contract 与两个 LayerWise optimizer/layout sibling 放在同一张图，但两条选择轴仍不能混为“共五种 wrapper”：
+
+- native DistributedOptimizer：persistent full model parameter，gradient RS 交付 local update range，step 后/next-forward parameter AG 恢复完整 view。**本页源码可逐步证明这一条的全程。**
+- Torch FSDP2：persistent parameter shard；wrapper 只负责选择包装哪些 module，并把 forward/pre-backward unshard、reshard 与 DTensor 生命周期交给 PyTorch。`pre-backward AG / unshard → gradient reduce-scatter → sharded grad → local optimizer` 是 PyTorch `fully_shard` 的**已发布契约**，不是本页读过的执行路径；Megatron 侧能证明的只有 wrapper 选择与交出去的 module 集合，内部 owner 归 [[36_megatron_fsdp_analysis]]。
+- Megatron-FSDP 的 `data_parallel_sharding_strategy` 有 `no_shard`、`optim`、`optim_grads`、`optim_grads_params` 四个合法取值；`optim` 每 rank 常驻完整 $P$ 与 full-size gradient buffer、main/state 分片，`optim_grads` 额外把 $G$ 分片，`optim_grads_params` 把三者都分片并在 forward/backward 前各做一次 AG。**这四个取值与它们声明的分片程度是配置字段事实**；hook 触发点、reshard/prefetch 时机与内部状态机不在本页证据范围内，归 [[36_megatron_fsdp_analysis]]。
+- `LayerWiseDistributedOptimizer` decoupled：compact full-buffer AR → ping-pong whole-param owner update → non-overlap `allgather_params` 或 overlap variable-size bucket AG/copy-back；不能由“effective DistOpt=false”推成 replica-full update。
+- `LayerWiseDistributedOptimizer` padded layout：`compute_full_param_layout` 的 LPT whole-param placement → padded buffer RS → whole-param owner update → buffer AG；本例 padding 与等待边界见 §2.5。它与普通 DistOpt sibling buffers 可同存，optimizer 数学与适用 emerging optimizer 归 [[26_megatron_optimizer_step_internals_deepdive]]。
+
+ZeRO-0/1/2/3 只适合作为复制程度的语义标签。native DistOpt 最接近 optimizer-state sharding，但其 full `param_data`/`grad_data` 生命周期不能被一句“就是 ZeRO-2”覆盖；Megatron-FSDP 的四个 strategy 才是显式字段。HSDP 又是在 inner shard domain 外保留 replica，不是第五个 ZeRO stage。
+
+---
+
+## 3. 代码实现分析
+
+### 3.1 类与所有权
+
+先读选择视图：`_ddp_wrap` 与 `get_megatron_optimizer` 是两个模块级 factory 函数，实线表示选择结果；虚线只限定本页继续展开的 native 范围，不代表 DDP 调用了 optimizer factory。Torch FSDP2 与 Megatron-FSDP 的内部所有权归36，不进入下一张 native 视图。
+
+```mermaid
+flowchart TB
+    W["factory<br/>_ddp_wrap"]
+    W -->|native| D["DistributedDataParallel"]
+    W -->|use_torch_fsdp2| T["TorchFullyShardedDataParallel<br/>内部归36"]
+    W -->|use_megatron_fsdp| F["FullyShardedDataParallel<br/>内部归36"]
+    D -.->|本页展开范围| O["factory<br/>get_megatron_optimizer"]
+    O -->|range owner| R["DistributedOptimizer"]
+    O -->|plain mixed precision| P["Float16Optimizer<br/>WithFloat16Params"]
+    O -->|whole-param owner| L["LayerWise<br/>DistributedOptimizer"]
+```
+
+再读 native 所有权视图。`Buffer`、`Bucket`、`BucketGroup`、`Custom RS WorkHandle` 分别是 `_ParamAndGradBuffer`、`_ParamAndGradBucket`、`_ParamAndGradBucketGroup`、`_ReduceScatterWithFP32AccumulationWorkHandle` 的图中简称；每条边只表示标出的布局输入或持有关系，不表示完整调用顺序。连续 storage、通信完成状态与 optimizer owner 是三个不同责任。
+
+```mermaid
+flowchart TB
+    D["DistributedDataParallel"]
+    R["DistributedOptimizer<br/>local main与state"]
+    L["LayerWiseDistributedOptimizer<br/>whole-param owner"]
+    R -->|四套坐标| Q["Range"]
+    R -->|元素range布局| F["FullParamLayout<br/>每dtype buffer一份子布局"]
+    L -->|启用padded layout时LPT布局| F
+    F -->|预计算布局| B["Buffer<br/>连续param_data与grad_data"]
+    D -->|持有storage| B
+    D -->|持有dense与expert集合| G["BucketGroup<br/>ready、handle、stream"]
+    B -->|持有连续范围| K["Bucket<br/>参数与梯度view"]
+    G -->|组织通信| K
+    G -->|custom RS分支| H["Custom RS WorkHandle<br/>wait完成sum与copy"]
+```
+
+图外仍保留这些类型与连接事实：`MixedPrecisionOptimizer`、`ChainedOptimizer` 都继承 `MegatronOptimizer`；`DistributedOptimizer` 与 `Float16OptimizerWithFloat16Params` 继承前者，`LayerWiseDistributedOptimizer` 继承后者；`NonuniformTPDistributedDataParallel` 继承 `DistributedDataParallel`。`FullParamLayout` 持有每个 dtype buffer 的 `PerBufferParamLayout`。LayerWise 组织 `Float16OptimizerWithFloat16Params` child，`ChainedOptimizer` 可持有 sibling `DistributedOptimizer`。
+
+`_ddp_wrap` 会改写 `DistributedDataParallelConfig` 的 bucket/layout 字段，buffer 再计算自己的 effective flags。`DistributedOptimizer` 把 local range 映射到 buffer view；它和 LayerWise 分别按自己的 bucket 子集触发 parameter sync。模块级函数 `finalize_model_grads` 先调用 DDP 的 `finish_grad_sync`，再做跨域补规约；它不是类，也不持有本轮通信状态。具体责任仍按下表阅读。
+
+| 层次 | 责任 | 不负责什么 |
+|---|---|---|
+| `_ddp_wrap` / `get_megatron_optimizer` | 两条选择轴：决定 wrapper、parameter layout 计算器与 optimizer 类；DDP 初始化有 side-stream 依赖，随机 DP 初始化还可 broadcast 参数 | 不拥有每轮 ready/handle；选择结果须交给 buffer 和 bucket group 才成为训练数据面 |
+| `DistributedDataParallelConfig` | 声明精度、bucket、instance 数与 layout 开关，并在 `__post_init__` 做互斥校验 | 不知道谁是 owner；per-buffer effective flag 由 buffer 自己算 |
+| `_ParamAndGradBuffer` | **storage owner**：连续 `param_data`/`grad_data`、两层 padding、参数 view、per-buffer effective `use_distributed_optimizer` | 不管理 handle、stream 或本轮完成状态 |
+| `_ParamAndGradBucketGroup` | **communication owner**：ready count、AR/RS/A2A 分支、group 内 local-rank shard view、inter-instance AR、handle/stream、parameter AG 的 dispatch 与 wait | 不把 range 解释为参数级 main/state，也不做 optimizer 数学 |
+| `param_layout.py` 的 `pad_param_start` / `pad_bucket_end` / `FullParamLayout` | 把“参数从哪开始、bucket 到哪结束”固化成可被 DDP 与 optimizer 共享的布局 | 不选择 bucket 数量策略，也不决定 shard owner |
+| `DistributedOptimizer` | 四套 range 坐标、local main/state 分配、`_copy_model_grads_to_main_grads`、step 后 copy-back 与 parameter AG 触发 | 不实现 Adam/Muon 本身，不实现 clip/unscale 的数值细节 |
+| `LayerWiseDistributedOptimizer` | whole-parameter owner 分配（ping-pong 或 LPT）、LayerWise buffer 的 param sync 子集、`allgather_params` | 不接管 non-LayerWise buffer；那些仍归 sibling `DistributedOptimizer` |
+| `finalize_model_grads` | step 前把所有跨 stage / 跨域的补规约做完，并按 token 数缩放 | 不做 DP shard 内的 update，也不负责参数可见性 |
+
+### 3.2 调用流程
+
+**一次迭代的 gradient 路径。** 取 `PP=1`、native bf16 DistOpt、普通 eager autograd 且无梯度 buffer 复用作为可逐符号跟读的主路径；`forward_backward_func` 在此绑定 `forward_backward_no_pipelining`。PP/VPP 的外层排程归 [[15_megatron_pp_schedulers_analysis]]，同样经 finalizer 交出梯度。方括号是条件，`transitive` 明示省略的引擎跳；schedule 与 `optimizer.step()` 只有 `train_step` 函数体内的顺序关系。
+
+```text
+megatron/training/training.py::train_step
+|
++-- model_chunk.zero_grad_buffer()                      (清 grad_data，不发 parameter AG)
++-- optimizer.zero_grad()                               (清 main/model grad，不发 parameter AG)
+|
++-- forward_backward_func = forward_backward_no_pipelining
+|   +-- forward_step
+|   |   +-- forward_step_func(...)                     (用户 callback 调模型)
+|   |   `-- forward_step_calc_loss -> loss_func(output_tensor)
+|   +-- backward_step
+|   |   `-- torch.autograd.backward -> [transitive: autograd engine] DDP backward hook
+|   |       +-- [尚未累加] param.main_grad.add_(param.grad.data)
+|   |       `-- [overlap_grad_reduce] _ParamAndGradBucketGroup.register_grad_ready
+|   |           `-- [ready count 达标 且 is_last_microbatch] start_grad_sync
+|   |               +-- [predecessor 有 handle] previous_grad_reduce_bucket_group.finish_grad_sync
+|   |               +-- [DistOpt 且 not force_all_reduce] dist_reduce_scatter_func
+|   |               |   +-- [custom flag] reduce_scatter_with_fp32_accumulation
+|   |               |   `-- [否则]        torch.distributed.reduce_scatter_tensor
+|   |               +-- [否则]            torch.distributed.all_reduce   (full bucket)
+|   |               `-- [k > 1] torch.distributed.all_reduce(local_data_view, inter-instance)
+|   |
+|   `-- config.finalize_model_grads_func(...)           (schedule 末尾)
+|       `-- finalize_model_grads.py::finalize_model_grads
+|           +-- model_chunk.finish_grad_sync(force_all_reduce)
+|           |   `-- _ParamAndGradBucketGroup.finish_grad_sync
+|           |       +-- [non-overlap / overlap首批] start_grad_sync
+|           |       +-- [overlap且k > 1] current_stream.wait_stream(communication_stream)
+|           |       +-- [overlap且k = 1] grad_reduce_handle.wait()
+|           |       `-- _copy_back_extra_main_grads()
+|           `-- 跨域补规约与 token 缩放                  (逐项见 §4.1)
+|
+`-- optimizer.step()
+    `-- MixedPrecisionOptimizer.step
+        +-- MixedPrecisionOptimizer.prepare_grads
+        |   +-- DistributedOptimizer._copy_model_grads_to_main_grads()   (只切 local range)
+        |   `-- [有grad_scaler] unscale / inf check                   (归 26 号页)
+        +-- [无inf] clip / count zeros                               (归 26 号页)
+        `-- DistributedOptimizer.step_with_ready_grads
+            +-- MixedPrecisionOptimizer.step_with_ready_grads        (super调用)
+            |   +-- inner optimizer.step()
+            |   `-- DistributedOptimizer._copy_main_params_to_model_params()
+            `-- [not overlap_param_gather] start_param_sync_for_bucket_group_subset()
+                `-- DDP._start_bucket_group_param_sync
+                    +-- _ParamAndGradBucketGroup.start_param_sync
+                    |   `-- dist_all_gather_func = torch.distributed.all_gather_into_tensor
+                    `-- _ParamAndGradBucketGroup._post_param_sync
+```
+
+**参数可见性路径。** 上一棵树的最后一步在 overlap 模式下并不发生在 step 里。三个 dispatch owner 各走一条，但都收口到同一个 `finish_param_sync`：
+
+```text
+parameter AG 的三个独立 dispatch 入口（不是同一 caller 的三个子调用）
+|
++-- [unaligned overlap] DistributedDataParallel._make_forward_pre_hook
+|   `-- _finish_param_sync_for_bucket_group
+|       `-- _ParamAndGradBucketGroup.finish_param_sync
+|           +-- [param_gather_dispatched == False] start_param_sync()      (懒 dispatch)
+|           +-- param_gather_handle.wait()
+|           +-- [not skip_next_bucket_dispatch] next_param_gather_bucket_group.start_param_sync()
+|           `-- _finalize_layerwise_param_sync() / _post_param_sync()      (copy-back、view 修复)
+|
++-- [aligned overlap] ModelParallelConfig.param_sync_func
+|   `-- model_chunk.start_param_sync                                       (schedule 提前发射)
+|       `-- ... 仍由上面的 finish_param_sync 完成 wait，但跳过隐式 next-bucket dispatch
+|
+`-- [optimizer-step overlap] ChainedOptimizer._step
+    `-- DistributedDataParallel.start_param_sync(force_dispatch=True)
+        `-- ... 同样跳过隐式 next-bucket dispatch，wait 仍由 forward pre-hook 完成
+```
+
+### 3.3 稳定源码阅读路线
+
+以下为本次在冻结 commit 亲自打开的 `path::qualified.symbol` 路线：
+
+1. `megatron/training/models/dist_utils.py::_ddp_wrap`：wrapper、LayerWise layout 与 `num_buckets` 的入口 gate。
+2. `megatron/core/distributed/distributed_data_parallel_config.py::DistributedDataParallelConfig.__post_init__`：精度、bucket 和互斥约束。
+3. `megatron/core/distributed/distributed_data_parallel.py::DistributedDataParallel.__init__`、`DistributedDataParallel._make_forward_pre_hook`、`DistributedDataParallel._make_backward_post_hook`、`DistributedDataParallel.start_param_sync`：buffer/group、collection-level stream、parameter consumer wait 与 ready handoff。
+4. `megatron/core/distributed/param_and_grad_buffer.py::_ParamAndGradBucketGroup.start_grad_sync`、`finish_grad_sync`：四条 gradient 数据面的真正分叉与完成信号。
+5. `megatron/core/distributed/reduce_scatter_with_fp32_accumulation.py::reduce_scatter_with_fp32_accumulation`、`_ReduceScatterWithFP32AccumulationWorkHandle.wait`：A2A→FP32 sum→copy。
+6. `megatron/core/distributed/param_and_grad_buffer.py::_ParamAndGradBuffer.__init__`、`_ParamAndGradBucketGroup.start_param_sync`、`finish_param_sync`、`partition_buckets`：flat storage、per-buffer LayerWise effective flag、variable-size/buffer AG 与 AR/RS group 隔离。
+7. `megatron/core/optimizer/param_layout.py::pad_param_start`、`pad_bucket_end`、`bucket_end_divisor`，`megatron/core/optimizer/distrib_optimizer.py::DistributedOptimizer._build_model_gbuf_param_range_map`，以及 `megatron/core/optimizer/layer_wise_optimizer.py::LayerWiseDistributedOptimizer.compute_full_param_layout`、`_compute_per_buffer_param_layout`、`_shard_divisor`：range 与 whole-param LPT 两套 padding/owner 规则。
+8. `megatron/core/optimizer/distrib_optimizer.py::DistributedOptimizer.step_with_ready_grads`、`DistributedOptimizer.zero_grad`、`_copy_main_params_to_model_params`，`megatron/core/optimizer/layer_wise_optimizer.py::LayerWiseDistributedOptimizer._shard_params_ping_pong`、`allgather_params`、`step_with_ready_grads`，`megatron/core/optimizer/optimizer.py::ChainedOptimizer._step`，以及 `megatron/core/model_parallel_config.py::ModelParallelConfig.param_sync_func`：range/whole-param update 后的 reconstruction、三种 AG dispatch owner、非 owner 的 zero-grad 与 consumer wait。
+9. `megatron/core/optimizer/__init__.py::get_megatron_optimizer`、`_get_megatron_emerging_optimizer`、`_get_megatron_optimizer_based_on_param_groups`：第二条选择轴、MimoModel 提前转交、LayerWise/DistOpt split path 的断言。
+10. `megatron/core/parallel_state.py::initialize_model_parallel`、`create_hierarchical_groups`、`get_inter_distributed_optimizer_instance_group`：dense/expert intra 与共享 expert inter 的组来源。
+11. `megatron/core/distributed/finalize_model_grads.py::finalize_model_grads` 与 `megatron/core/transformer/moe/moe_utils.py::get_updated_expert_bias`：step 前的跨域闭合。
+12. 边界验证：`tests/unit_tests/distributed/test_reduce_scatter_with_fp32_accumulation.py::TestReduceScatterWithFP32Accumulation.test_reduce_scatter_with_fp32_accumulation`。
+13. `megatron/training/training.py::train`、`train_step`，`megatron/core/pipeline_parallel/schedules.py::forward_backward_no_pipelining`、`forward_step`、`forward_step_calc_loss`、`backward_step`：callback 注入、loss/backward 与 optimizer 的顺序闭合；`megatron/core/optimizer/optimizer.py::MixedPrecisionOptimizer.prepare_grads`、`step`、`step_with_ready_grads` 是树中的真实中间跳。
+14. `megatron/training/arguments.py::validate_args`，`megatron/core/distributed/torch_fully_sharded_data_parallel.py::TorchFullyShardedDataParallel.__init__`：LayerWise 组合 guard 与 PyTorch FSDP2 的 module/mesh/reshard handoff；依赖内核不由该入口证明。
+
+---
+
+## 4. 配套机制
+
+### 4.1 `finalize_model_grads`：optimizer 前的完整闭合
+
+DP shard 内的 RS/AR 只保证“同一份参数在 DP 轴上被规约过”。但一个 parameter 可能同时被 PP 的多个 VPP chunk 持有、被 TP 复制、或者由首尾 PP stage 共享；这些副本的梯度在 DP 规约后仍然各自为政。因此 `megatron/core/distributed/finalize_model_grads.py::finalize_model_grads` 是 schedule 到 optimizer 的 global-batch handoff，**它与 §2.4 的数据面是同一必要性的两半**：没有它，optimizer 拿到的 local range 在非 DP 轴上仍不是全局梯度。冻结基线的执行顺序如下；没有命中条件的步骤是 no-op。
+
+| 顺序 | helper / 条件 | 收尾的数据域与结果 |
+|---|---|---|
+| 1 | 每个 model chunk 的 `finish_grad_sync(force_all_reduce)` | 完成 native DP/DP-CP 或 expert-DP bucket 的 AR/RS/custom/HSDP；此后 local optimizer gradient 才 ready |
+| 2 | `_allreduce_conditional_embedding_grads`：PP>1 且 `has_cond_embedder` | 对标记 `pipeline_parallel` 的同名参数先把本 rank 多个 VPP chunk 累到第一份，再 flatten 后跨 PP AR，最后 copy 回其他 VPP chunk |
+| 3 | `_allreduce_router_grads`：`flextron=True` | 对标记 `flextron_router_pp_sync` 的同名 router grad 做相同的 VPP 聚合、PP AR、回写 |
+| 4 | `_allreduce_non_tensor_model_parallel_grads`：TP>1 | `average_gradients_across_tp_domain` 用 AVG；sequence-parallel 参数以及 q/k layernorm 参数用 SUM；flatten 后跨 TP AR |
+| 5 | `_allreduce_word_embedding_grads` | shared input/output embedding 或 MTP shared weight 在 embedding group（通常首/尾 PP stage）AR |
+| 6 | `_allreduce_position_embedding_grads` | encoder/decoder 共享 position embedding 在 position-embedding group AR |
+| 7 | `_update_router_expert_bias`：expert-bias enabled | 收集训练中且未 frozen 的 token counts/bias；`get_updated_expert_bias` 在 TP×DP×CP AR counts 后更新并 copy 回 bias |
+| 8 | `reset_model_temporary_tensors` | 清零 `local_tokens_per_expert`；需要时重置 global auxiliary-loss tracker |
+| 9 | `num_tokens is not None` | 从最后 PP rank broadcast token count，再跨 DP-CP AR；clamp 至至少 1，以其倒数缩放所有 model chunks 的 gradient buffers |
+
+为什么不能把这些补规约推到 step 后？DP collective 只沿自己的 replica 轴求和，例如同名 conditional embedder 在本 rank 两个 VPP chunk 上的贡献是 $a,b$，另一个 PP rank 是 $c,d$：各 rank 先在第一份局部梯度累出 $a+b$、$c+d$，跨 PP AR 得到 $a+b+c+d$，再 copy 回同名副本。提前 update 会让同一个共享参数用不同梯度改变；事后 AG 无法补算漏掉的梯度。TP SUM/AVG 和 embedding group 采用的参与域不同，因此也不能并入一个盲目的“全 world AR”。这些 helper 必须按参数复制语义选择，具体 TP/PP 模型拆分归相邻并行页。
+
+**增量成本。** 第 2–6 步对命中的梯度做聚合/AR/回写，其中 shared embedding 的 payload 可以很大，不能笼统视为小 collective；第 7 步走 `stack` token counts/bias、AR counts、局部更新、copy-back。附加网络与暂存量由命中参数、参与域和专家计数总元素决定，未在本页测量。它们按 finalizer 顺序建立 step 前依赖，可能与别处已经排队的工作并行，但没有本页证明的专属 overlap 窗口。第 9 步遍历各 chunk 的 gradient buffer 做全量 scale，须按含 padding 的 buffer 长度计；不能只用 logical $P$ 估带宽。
+
+本页拥有的是“哪些跨 stage/domain 的补规约必须在 step 前完成”。helper 为 DTensor/Megatron-FSDP 选择 local grad、unshard/reshard 的内部精度和存储语义归 [[36_megatron_fsdp_analysis]] 与 [[23_megatron_precision_cudagraph_fusion_analysis]]；offload wrapper 归 [[22_megatron_memory_optimization_analysis]] 与 [[26_megatron_optimizer_step_internals_deepdive]]；nonuniform subclass 的 group 变换归 [[25_megatron_nonuniform_tp_analysis]]。
+
+---
+
+## 5. 约束、适用场景与趋势
+
+### 5.1 硬约束与失败边界
+
+| 前提 | 源码边界 | 破坏后的行为 |
+|---|---|---|
+| DistOpt bucket 的 start/end 能被 DP size 整除 | `param_and_grad_buffer.py::_ParamAndGradBuffer._new_bucket` 两条 assert；`shard_buffer` 另断言 `numel % world_size == 0` | `assert` 失败；`pad_bucket_end` 就是为满足它而存在，不会在运行期自动补齐 |
+| `bucket_size` 与 `num_buckets` 不可同时指定 | `DistributedDataParallelConfig.__post_init__` | `assert` 失败，且 `num_buckets` 必须大于 0 |
+| `param_name_patterns_for_fp32_local_accumulation` 与 `grad_reduce_in_fp32` 互斥 | `DistributedDataParallelConfig.__post_init__` | `assert` 失败（已是 FP32 就不需要逐参数指定） |
+| custom FP32 RS 只接受 SUM | `reduce_scatter_with_fp32_accumulation` 入口断言 | `assert` 失败；`average_in_collective=True` 会把 op 改成 AVG 而触发它 |
+| overlap custom FP32 RS 的 bucket group 只能有一个 bucket | `_ParamAndGradBucketGroup.start_grad_sync` 的 `async_op` 分支中 `len(self.buckets) == 1` | `assert` 失败；根因是 `_coalescing_manager` 不会正确等待自定义 handle，同步 reducer 不经过这条分支 |
+| custom FP32 RS 与 $k>1$ 互斥 | `_ParamAndGradBucketGroup.__init__` | `assert` 失败 |
+| 一个 bucket group 内的 effective `use_distributed_optimizer` 必须唯一 | `param_and_grad_buffer.py::partition_buckets` 的 `_merged_use_distributed_optimizer` | `assert` 失败；LayerWise decoupled 混合路径靠它把 AR 与 RS group 拆开 |
+| 同一次 grad sync 不能有两个在途 collective | `_ParamAndGradBucketGroup.start_grad_sync` 的 `grad_reduce_handle is None` | `assert` 失败；`finish_grad_sync` 反向断言 handle 非空 |
+| `finish_param_sync` 只在 overlap 模式下合法 | `_ParamAndGradBucketGroup.finish_param_sync` 的 `overlap_param_gather` 断言 | `assert` 失败 |
+| `start_param_sync` 需要 DistOpt 或 overlap 之一 | `_ParamAndGradBucketGroup.start_param_sync` | `assert` 失败；LayerWise 正是靠“overlap 但非 DistOpt”这一支进入 |
+| 下一 bucket 的 AG 不得重复发射 | `finish_param_sync` 对 `next_param_gather_bucket_group.param_gather_dispatched` 的检查 | 只 `warnings.warn`，不报错：结果仍正确，但参数注册顺序与 forward 顺序不匹配会损失重叠 |
+| LayerWise 与 `overlap_param_gather_with_optimizer_step` 互斥 | `megatron/core/optimizer/__init__.py` 的 `assert not (use_layer_wise and ...)` | `assert` 失败；emerging-optimizer 路径不拆 `(first, rest)` chunk 组，per-chunk dispatch 永不触发 |
+| LayerWise + DistOpt split path 要求 $k=1$ | 同文件对 `ddp_config.num_distributed_optimizer_instances == 1` 的断言 | `assert` 失败；该路径把 `distributed_optimizer_instance_id` 写死为 0 |
+| LayerWise decoupled 也要求 $k=1$ | `megatron/training/arguments.py::validate_args` 的 `use_layer_wise_distributed_optimizer` 分支 | `assert` 失败；非 DistOpt 的 LayerWise buffer 只在单 instance 内 AR，$k>1$ 会欠规约 Muon 梯度 |
+| LayerWise padded layout 拒绝 FP8/FP4 param gather | 同一分支的 `else` 侧断言 | `assert` 失败；decoupled 侧则只接受 `fp8_recipe` 为 `mxfp8`/`blockwise`，mxfp8 还要求 `reuse_grad_buf_for_mxfp8_param_ag` |
+| Megatron-FSDP 与 Torch FSDP2 不可同时启用 | `_ddp_wrap` | `raise ValueError` |
+| Torch FSDP2 需要 torch ≥ 2.4.0 | `_ddp_wrap` 的 `HAVE_FSDP2` 断言 | `assert` 失败 |
+| overlap 且无 `_cudagraph_wgrad_ready_event` 时 `param.grad` 不得为 `None` | `DistributedDataParallel._make_backward_post_hook` | `assert` 失败；有 replay event 时改由 `start_grad_sync` 等 event 后读 buffer，CUDA Graph 内部归 [[23_megatron_precision_cudagraph_fusion_analysis]] |
+
+### 5.2 排查顺序
+
+失败不是事务回滚。`start_grad_sync` 可能已经 copy/scale 通信 buffer 或发起 collective；后续 assert/通信异常没有恢复这些原值的分支。overlap 下 `finish_grad_sync` 以 `grad_reduce_finished` 保证同轮前驱 drain 与末尾 finalizer 不双 wait，非 overlap 则每次调用都会再次 dispatch/scale，不能当作通用重试 API。`MixedPrecisionOptimizer.step` 在 `prepare_grads` 报 inf 时会跳过 update；这属于数值门控，不能据此推论已执行的 collective 可取消。参数同步的 pending handle 可由 force-sync 或 `free_overlap_buffers` 排空，LayerWise 仍须完成 copy-back/zero；没有跨 rank rollback。
+
+| 现象/组合 | 先检查 | 源码锚点 |
+|---|---|---|
+| RS shape/assert | bucket start/end 与 input numel 是否能被 effective intra group size 整除 | `param_and_grad_buffer.py::_ParamAndGradBuffer._new_bucket`；custom reducer 入口 |
+| custom + AVG | `average_in_collective` 是否把 op 改成 AVG | `reduce_scatter_with_fp32_accumulation.py::reduce_scatter_with_fp32_accumulation` 的 only-SUM assert |
+| custom + $k>1$ | 不能组合；改回单 instance 或标准 RS | `param_and_grad_buffer.py::_ParamAndGradBucketGroup.__init__` |
+| overlap 卡住 | 是否最终 microbatch、所有参数是否达到 golden ready-count、`no_sync` 是否正确退出 | `_ParamAndGradBucketGroup.register_grad_ready` / `finish_grad_sync` |
+| step 后仍读旧参数 | 对应 AG 是否 dispatch，consumer 的 forward pre-hook 是否完成 wait | `_ParamAndGradBucketGroup.start_param_sync` / `finish_param_sync` |
+| HSDP 没有重叠 | 不要寻找 async work handle；检查 dense/expert bucket-group collection 各自共享的 communication stream、同 collection 排队与 compute-stream wait | `DistributedDataParallel.__init__`；`_ParamAndGradBucketGroup.start_grad_sync` / `finish_grad_sync` |
+| bucket 数/显存异常 | `num_buckets→bucket_size`、PP stage disable、64-element start padding、LCM bucket-end padding、FP8 group merge | `_ddp_wrap`、`DistributedDataParallel.__init__`、`param_layout.py`、`partition_buckets` |
+| LayerWise 用了 AR 却只有部分参数更新 | 先看 `use_layer_wise_param_layout`：默认 decoupled 的 AR 是为了复制 full gradient，optimizer 仍按 ping-pong whole-param owner 过滤 param groups；必须继续 `allgather_params` / uneven bucket AG | `LayerWiseDistributedOptimizer._shard_params_ping_pong`、`step_with_ready_grads`；`_ParamAndGradBucketGroup.start_param_sync` |
+| LayerWise layout HBM/通信激增 | 对照 raw numel、LPT shard load、64-element param-start alignment、`dp_size * padded_shard_size` 与 high-busbw divisor；不要按 raw tensor size 估 RS/AG | `LayerWiseDistributedOptimizer._compute_per_buffer_param_layout`、`param_layout.py::bucket_end_divisor` |
+
+### 5.3 何时选哪条数据面
+
+| 场景 | 建议 | 原因 |
+|---|---|---|
+| 单卡放得下完整 main/state，且 DP 度很小 | 不开 DistOpt | 省掉第二段 collective 与整套可见性管理；plain 路径 update 后参数即可见 |
+| main/state 是显存主项 | 开 `use_distributed_optimizer` | 每参数常驻从约 18 bytes 降到约 $6+12/d$；理想通信字节与 AR 同阶 |
+| DP 域跨越明显不同速的两层网络 | 评估 $k>1$ 的 HSDP | 跨慢域只传 $M/s$ 的 local shard；代价是 state 常驻从 $P/D$ 抬到 $P/s$，见 §2.4.4 |
+| 低精度通信导致规约精度不足 | 评估 `reduce_scatter_with_fp32_accumulation` | 线上仍是低精度、owner 侧 FP32 求和；只接受 SUM、$k=1$，overlap 时每 group 一个 bucket |
+| 需要保存 wgrad 或调试逐参数梯度 | `force_all_reduce=True` | 让 `grad_data` 内出现完整规约值；$k>1$ 时仍只有 local shard 是全局值 |
+| optimizer 必须看到整个矩阵（Muon 等） | LayerWise，先用默认 decoupled | range 切法会把矩阵切开；padded layout 只在需要 fixed-size collective 且能接受 243/13 这类 padding 比时才评估 |
+| 参数本身放不下 | DistOpt 救不了 | 它不分片 forward-facing `param_data`；该走 Megatron-FSDP 的 `optim_grads_params` 或 TP/PP，见 [[36_megatron_fsdp_analysis]] |
+
+### 5.4 当前演进方向
+
+- **所有权粒度正在分裂成两套并存的规则。** 同一个 `param_layout.py` 现在同时服务 `DistributedOptimizer.compute_full_param_layout`（连续元素 range）与 `LayerWiseDistributedOptimizer.compute_full_param_layout`（whole parameter + LPT），并且两套 layout 可以在同一个模型里按 buffer 共存、由 `partition_buckets` 隔离 collective。由此可推断：再读到“DistOpt 就是按 rank 等分”的说法时，要先确认说的是哪一个 buffer。
+- **通信实现正在从“选一个 torch collective”变成“选一个可替换 reducer”。** `dist_reduce_scatter_func` 是模块级可替换符号，custom FP32 accumulation 就是通过它接进来的，并自带一个不满足 `_coalescing_manager` 约定的 work handle。由此可推断：新的通信变体大概率继续沿这条缝隙加入，而每加一条就要重新核对 handle 语义与 bucket-group 约束。
+- **可见性正在从隐式约定变成显式 owner。** `param_gather_dispatched`、`skip_next_bucket_dispatch`、`force_dispatch` 三个字段合起来才描述清楚一次 parameter AG 归谁发；源码里那条“由下一次 `zero_grad()` 发起”的注释是已经失效的旧约定。由此可推断：读任何与参数可见性有关的代码前，先确认当前是哪一种 overlap 模式。
+
+---
+
+## 6. 配置契约
+
+### `ModelParallelConfig`
+
+| 字段 | 类型 | 默认 | 契约 |
+|---|---|---|---|
+| `param_sync_func` | `Optional[Callable]` | `None` | `align_param_gather` 与 `overlap_param_gather` 同时开启时，`megatron/training/training.py` 把各 model chunk 的 `start_param_sync` 装进这个 callback，由 pipeline schedule 在目标 chunk 之前提前调用，使各 PP peer 在相近时刻发起 parameter AG。它只决定**何时发射**：consumer 侧的 wait 仍由 bucket 的 forward pre-hook `finish_param_sync()` 完成，且此模式下会跳过隐式的 next-bucket dispatch。forward-only 与首次安全启用阶段会被暂时置空 |
+
+该类在冻结基线共 74 字段，本表收 1 项；其余字段 owner 见 `docs/coverage/megatron-lm.yaml`。
+
+### `DistributedDataParallelConfig`
+
+本页机制真正响应的开关集中在这一类；它们不由覆盖清单指派给本页，但读者要在这里查到它们对本页数据面的影响。
+
+| 字段 | 类型 | 默认 | 契约 |
+|---|---|---|---|
+| `use_distributed_optimizer` | `bool` | `False` | 选择 RS 而不是 AR，并让 buffer 创建 `param_data`；**per buffer 可被 LayerWise 改写**，不是全局唯一事实（§2.2） |
+| `overlap_grad_reduce` | `bool` | `False` | 允许 backward hook 在 bucket ready 时异步发射；为 false 时 `_ddp_wrap` 会把 `bucket_size` 置回 `None` |
+| `overlap_param_gather` | `bool` | `False` | 把 parameter AG 推迟到下一轮 forward，由 pre-hook 收口 |
+| `align_param_gather` | `bool` | `False` | 把发射节拍交给 schedule 的 `param_sync_func`，并跳过隐式 next-bucket dispatch |
+| `num_distributed_optimizer_instances` | `int` | `1` | $k>1$ 即 HSDP：intra RS + inter local-shard AR，state 在每 instance 复制一份（§2.4.4） |
+| `use_layer_wise_param_layout` | `bool` | `False` | LayerWise-managed buffer 用 padded equal-shard layout（RS/buffer AG）而不是默认 compact decoupled layout（AR/variable-size AG） |
+| `bucket_size` | `Optional[int]` | `None` | 每 bucket 的目标元素数；与 `num_buckets` 互斥 |
+| `num_buckets` | `Optional[int]` | `None` | 以 `num_parameters // num_buckets` 反推 `bucket_size`；必须大于 0 |
+| `pad_buckets_for_high_nccl_busbw` | `bool` | `False` | 把 $2^{16}$ 纳入 bucket-end LCM，以 HBM 换大 DP 下的 NCCL busbw |
+| `grad_reduce_in_fp32` | `bool` | `False` | `main_grad` 与整个 collective buffer 都是 FP32 |
+| `param_name_patterns_for_fp32_local_accumulation` | `Tuple[str, ...]` | `()` | 匹配的参数获得独立 FP32 `main_grad`，collective 前后 copy；与 `grad_reduce_in_fp32` 互斥 |
+| `reduce_scatter_with_fp32_accumulation` | `bool` | `False` | 换用 A2A + owner 侧 FP32 求和的 reducer；只接受 SUM、$k=1$，overlap 时每 group 一个 bucket |
+| `average_in_collective` | `bool` | `False` | collective 直接用 AVG 而不是先缩放再 SUM；与 custom reducer 冲突 |
+| `use_megatron_fsdp` | `bool` | `False` | Megatron-FSDP 的 DDP 配置标记；与训练入口的 Torch FSDP2 开关同开时 `_ddp_wrap` 抛 `ValueError`，内部实现归 [[36_megatron_fsdp_analysis]] |
+| `data_parallel_sharding_strategy` | `str` | `'no_shard'` | Megatron-FSDP 的分片程度，合法取值 `no_shard` / `optim` / `optim_grads` / `optim_grads_params`；本页只核验取值与声明的分片程度 |
+
+该类在冻结基线共 44 字段，本表收 15 项；其余字段的唯一 owner 见 `docs/coverage/megatron-lm.yaml`。
+
+`use_torch_fsdp2: bool = False` 实际声明在 `megatron/training/config/common_config.py::DistributedInitConfig`，不属于 `DistributedDataParallelConfig`；它进入 `_ddp_wrap` 的独立函数参数。该字段的配置 owner 为 [[36_megatron_fsdp_analysis]]，本页只说明其与 native 路径的选择边界。
+
+四张 SVG 由 `tools/figs/svg/megatron_distributed_optimizer_figures.mjs` 从同一组 `q/p/r` 数据生成；专属 `tools/figs/svg/lib/megatron_distopt_figures.test.mjs` 同时读取 Markdown、重生成 SVG，并校验结构化同例契约摘要、四条 range lane、两条 LayerWise lane、关键数字与 tracked asset。同例契约或图单边变化都会失败，无关措辞不进入摘要。
+
+## 11. FSDP 对照与历史入口
+
+历史入链中的 §11 指向 Torch FSDP2、Megatron-FSDP 和 native DistOpt 的横向边界：当前对照集中在 §2.2 与 §2.7，FSDP unit、hook、reshard/prefetch 的内部分析由 [[36_megatron_fsdp_analysis]] 负责。此入口保留旧引用的可达性；三种 wrapper 与 LayerWise optimizer/layout 两轴仍按当前选型解释。
 
 ## Related Pages
 
-- [[26_megatron_optimizer_step_internals_deepdive]] —— 承接 optimizer factory、mixed-precision step、scheduler、CPU offload 与 Muon/μP。
-- [[17_megatron_parallelism_orchestration_analysis]] —— 提供本页 DDP/optimizer 消费的 DP、DP-CP 与 expert-DP 进程组。
-- [[20_megatron_comm_overlap_analysis]] —— 组合 DP 参数/梯度同步与其他并行轴的通信窗口。
-- [[36_megatron_fsdp_analysis]] —— 深入 Megatron-FSDP 的 unit、buffer、hook 与全分片状态机。
-- [[23_megatron_precision_cudagraph_fusion_analysis]] —— 解释 bf16/fp16/FP8 参数精度和 CUDA Graph 边界。
-- [[19_megatron_dist_checkpointing_analysis]] —— 解释 distributed optimizer/FSDP 状态如何持久化与重分片。
-- [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] —— 返回本域索引。
+- [[17_megatron_parallelism_orchestration_analysis]] — DP/DP-CP/expert-DP/HSDP group 的坐标与构造 owner。
+- [[20_megatron_comm_overlap_analysis]] — 把本页 RS/AR/AG wait 放入跨并行轴资源时间线。
+- [[22_megatron_memory_optimization_analysis]] — 参数、gradient 与 optimizer state offload 的生命周期 owner。
+- [[23_megatron_precision_cudagraph_fusion_analysis]] — gradient dtype、loss scaling、FP8 与 CUDA Graph 精度/捕获边界。
+- [[25_megatron_nonuniform_tp_analysis]] — `NonuniformTPDistributedDataParallel` 的 group/buffer subclass owner。
+- [[26_megatron_optimizer_step_internals_deepdive]] — local shard 的 unscale、clip、update、LayerWise/Muon 与 optimizer factory。
+- [[36_megatron_fsdp_analysis]] — Torch FSDP2 与 Megatron-FSDP unit、hook、reshard/prefetch 的唯一内部 owner。

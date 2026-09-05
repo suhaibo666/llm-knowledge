@@ -65,7 +65,7 @@ rank 1 在上例中同时属于 TP `[0,1]`、DP `[1,3]` 和 PP `[1,5]`。这是�
 
 expert 侧必须独立做一次整除检查：未显式设置 ETP 时先令 `ETP=TP`，随后计算 `expert_model_size = ETP × EP × PP` 和 `EDP = world_size / expert_model_size`；若 world size 不能被该乘积整除，初始化直接抛 `RuntimeError`（`megatron/core/parallel_state.py:780-789`）。expert generator 固定 `CP=1`（`:791-800`）。此外，两套分解不仅要各自整除，还必须枚举出完全相同的 PP groups；当 `order` 不以 `pp` 结尾且 PP>1 时，源码还要求 `EDP=DP`（`:802-811`）。因此一个配置通过 dense 侧的 `TP × PP × CP` 检查，并不代表它也通过 expert 侧检查。
 
-所以“每张卡有一个简单的五维坐标”只能作为入门直觉，不能拿来推导 MoE folding 的真实 DP/EP 关系。进入 MoE 时，应分别问：dense 路径的 DP/CP 坐标是什么，expert 路径的 EDP/EP 坐标是什么，以及二者在哪个 PP stage 对齐。完整实现见 [[17_megatron_parallelism_orchestration_analysis]] §4。
+所以“每张卡有一个简单的五维坐标”只能作为入门直觉，不能拿来推导 MoE folding 的真实 DP/EP 关系。进入 MoE 时，应分别问：dense 路径的 DP/CP 坐标是什么，expert 路径的 EDP/EP 坐标是什么，以及二者在哪个 PP stage 对齐。完整实现见 [[17_megatron_parallelism_orchestration_analysis|并行编排中的 dense/expert 分组与 PP 对齐]]。
 
 ## 6. 配置前的三步心算
 
