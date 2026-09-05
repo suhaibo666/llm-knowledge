@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 470" width="1180" height="470" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .cell0{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .cell1{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .cellx{fill:#F5F7FA;stroke:#fff;stroke-width:.8}
+  .cellw{fill:#F6DFC8;stroke:#fff;stroke-width:.8}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 2　访问计数校验：检的是 chunk 网格，不是元素</text>
+<text class="su" x="28" y="52" text-anchor="start">计数张量形状 = axis_fragmentations = (4,1)，下标 = global_offset ÷ local_shape；只有 is_main_replica 的分片计数。判据是"每格恰好 1"。</text>
+<rect class="panel" x="20" y="70" width="800" height="316" rx="8"/>
+<text class="pt" x="40" y="100" text-anchor="start">① 正确：4 个 main replica 各命中一格</text>
+<rect class="acc1" x="40" y="114" width="46" height="46" rx="6"/>
+<text class="dim" x="63" y="143" text-anchor="middle">1</text>
+<text class="sm" x="63" y="175" text-anchor="middle">chunk 0</text>
+<rect class="acc1" x="94" y="114" width="46" height="46" rx="6"/>
+<text class="dim" x="117" y="143" text-anchor="middle">1</text>
+<text class="sm" x="117" y="175" text-anchor="middle">chunk 1</text>
+<rect class="acc1" x="148" y="114" width="46" height="46" rx="6"/>
+<text class="dim" x="171" y="143" text-anchor="middle">1</text>
+<text class="sm" x="171" y="175" text-anchor="middle">chunk 2</text>
+<rect class="acc1" x="202" y="114" width="46" height="46" rx="6"/>
+<text class="dim" x="225" y="143" text-anchor="middle">1</text>
+<text class="sm" x="225" y="175" text-anchor="middle">chunk 3</text>
+<text class="dim" x="40" y="200" text-anchor="start">torch.all(cnt == 1) 成立 → 通过</text>
+<text class="sm" x="40" y="218" text-anchor="start">4 份 DP 副本 replica_id=1 不计数；全局 8 行被无缺口、无重叠地覆盖一次。</text>
+<text class="pt" x="40" y="234" text-anchor="start">② 缺口：chunk 2 的两个 rank 都没标成 main</text>
+<rect class="acc1" x="40" y="248" width="46" height="46" rx="6"/>
+<text class="dim" x="63" y="277" text-anchor="middle">1</text>
+<text class="sm" x="63" y="309" text-anchor="middle">chunk 0</text>
+<rect class="acc1" x="94" y="248" width="46" height="46" rx="6"/>
+<text class="dim" x="117" y="277" text-anchor="middle">1</text>
+<text class="sm" x="117" y="309" text-anchor="middle">chunk 1</text>
+<rect class="acc2" x="148" y="248" width="46" height="46" rx="6"/>
+<text class="costtx" x="171" y="277" text-anchor="middle">0</text>
+<text class="sm" x="171" y="309" text-anchor="middle">chunk 2</text>
+<rect class="acc1" x="202" y="248" width="46" height="46" rx="6"/>
+<text class="dim" x="225" y="277" text-anchor="middle">1</text>
+<text class="sm" x="225" y="309" text-anchor="middle">chunk 3</text>
+<text class="costtx" x="40" y="334" text-anchor="start">cnt[2]=0 → CheckpointingException</text>
+<text class="sm" x="40" y="352" text-anchor="start">checkpoint 会缺全局行 4–5。</text>
+<text class="sm" x="40" y="368" text-anchor="start">挡的是"算错 replica_id / 漏声明"。</text>
+<text class="pt" x="436" y="234" text-anchor="start">③ 重叠：chunk 1 的 DP 副本也自认 main</text>
+<rect class="acc1" x="436" y="248" width="46" height="46" rx="6"/>
+<text class="dim" x="459" y="277" text-anchor="middle">1</text>
+<text class="sm" x="459" y="309" text-anchor="middle">chunk 0</text>
+<rect class="acc2" x="490" y="248" width="46" height="46" rx="6"/>
+<text class="costtx" x="513" y="277" text-anchor="middle">2</text>
+<text class="sm" x="513" y="309" text-anchor="middle">chunk 1</text>
+<rect class="acc1" x="544" y="248" width="46" height="46" rx="6"/>
+<text class="dim" x="567" y="277" text-anchor="middle">1</text>
+<text class="sm" x="567" y="309" text-anchor="middle">chunk 2</text>
+<rect class="acc1" x="598" y="248" width="46" height="46" rx="6"/>
+<text class="dim" x="621" y="277" text-anchor="middle">1</text>
+<text class="sm" x="621" y="309" text-anchor="middle">chunk 3</text>
+<text class="costtx" x="436" y="334" text-anchor="start">cnt[1]=2 → 同一条异常</text>
+<text class="sm" x="436" y="352" text-anchor="start">两个 rank 写同一段，谁后写谁赢。</text>
+<text class="sm" x="436" y="368" text-anchor="start">挡的是"分配被绕开或算重"。</text>
+<rect class="acc2" x="840" y="70" width="316" height="142" rx="8"/>
+<text class="tx" x="852" y="91" text-anchor="start">校验自己的代价</text>
+<path class="edge" d="M 852 99 L 1144 99"/>
+<text class="sm" x="852" y="117" text-anchor="start">determine_global_metadata 用 all_gather_object</text>
+<text class="sm" x="852" y="133" text-anchor="start">把每个 rank 的**全部**分片元数据收齐 ——</text>
+<text class="sm" x="852" y="149" text-anchor="start">元数据量随 world size 线性增长；</text>
+<text class="sm" x="852" y="165" text-anchor="start">随后 `if get_rank() != 0: return`，</text>
+<text class="sm" x="852" y="181" text-anchor="start">整个检查只在 global rank 0 上串行跑。</text>
+<rect class="ghost" x="840" y="224" width="316" height="146" rx="8"/>
+<text class="tx" x="852" y="245" text-anchor="start">两个不走这条规则的口子</text>
+<path class="edge" d="M 852 253 L 1144 253"/>
+<text class="sm" x="852" y="271" text-anchor="start">ShardedObject 走 _validate_objects_for_key：</text>
+<text class="sm" x="852" y="287" text-anchor="start">unique_key 不许重复，且数量必须等于</text>
+<text class="sm" x="852" y="303" text-anchor="start">prod(global_shape)。common_state 正是靠</text>
+<text class="sm" x="852" y="319" text-anchor="start">replica_id=get_rank() 让 rank 0 成为唯一 main。</text>
+<text class="sm" x="852" y="335" text-anchor="start"></text>
+<text class="sm" x="852" y="351" text-anchor="start">has_regular_grid=False（axis_fragmentations</text>
+<text class="sm" x="852" y="367" text-anchor="start">为 None）时函数直接 return —— 不均匀分片的</text>
+<text class="sm" x="852" y="383" text-anchor="start">校验被让给 DCP，本页这条网格判据不适用。</text>
+<text class="cap" x="28" y="428" text-anchor="start">save 与 load 都会跑这一步：save 侧由 save_preprocess 调用，fully-parallel save 在第一次算完分配后再跑一次（cached_distribution 为 None 时）。</text>
+<text class="cap" x="28" y="448" text-anchor="start">它证明的是"分片声明自洽"，不是"盘上数据正确"。要校验落盘字节需要另一条开关：save/load 的 verify_integrity 会对全部文件多做一遍 SHA-256。</text>
+</svg>

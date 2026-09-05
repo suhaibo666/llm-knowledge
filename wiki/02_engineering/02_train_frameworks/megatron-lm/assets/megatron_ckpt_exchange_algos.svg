@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 810" width="1240" height="810" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .cell0{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .cell1{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .cellx{fill:#F5F7FA;stroke:#fff;stroke-width:.8}
+  .cellw{fill:#F6DFC8;stroke:#fff;stroke-width:.8}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 4　fully-parallel load 的三条 exchange 数据面</text>
+<text class="su" x="28" y="52" text-anchor="start">沿用图 3 的分配结果：6 个分片需要交换，0 个 coverage=1 的分片整条跳过。三条 lane 用同一个例子。</text>
+<rect class="panel" x="20" y="70" width="1200" height="98" rx="8"/>
+<text class="pt" x="36" y="94" text-anchor="start">三条 lane 共用的第一条规则：coverage == 1 就不交换</text>
+<text class="sm" x="36" y="112" text-anchor="start">if len(all_ranks_for_shard[shard_id]) == 1: continue —— 只有加载它的那个 rank 需要它，直接留在本地。</text>
+<text class="sm" x="36" y="128" text-anchor="start">源码同处留着 TODO：coverage &gt; 1 时也可以改成 P2P 交换，"Currently handling this case saves most of the work though"。</text>
+<text class="sm" x="36" y="150" text-anchor="start">本例 没有 coverage=1 的分片，六个全部进入交换；余下 6 个按下面三种方式散开。</text>
+<text class="pt" x="28" y="206" text-anchor="start">① broadcast（默认）</text>
+<rect class="ghost" x="28" y="214" width="212" height="160" rx="8"/>
+<text class="tx" x="40" y="235" text-anchor="start">选择条件</text>
+<path class="edge" d="M 40 243 L 228 243"/>
+<text class="sm" x="40" y="261" text-anchor="start">ckpt_fully_parallel_load_</text>
+<text class="sm" x="40" y="277" text-anchor="start">  exchange_algo="broadcast"</text>
+<text class="sm" x="40" y="293" text-anchor="start"></text>
+<text class="sm" x="40" y="309" text-anchor="start">FullyParallelLoadStrategy</text>
+<text class="sm" x="40" y="325" text-anchor="start">Wrapper 的构造默认值。</text>
+<rect class="neutral" x="250" y="214" width="212" height="160" rx="8"/>
+<text class="tx" x="262" y="235" text-anchor="start">报文构造</text>
+<path class="edge" d="M 262 243 L 450 243"/>
+<text class="sm" x="262" y="261" text-anchor="start">遍历 main_rank_for_shard，</text>
+<text class="sm" x="262" y="277" text-anchor="start">每个待交换分片一条 broadcast，</text>
+<text class="sm" x="262" y="293" text-anchor="start">src = 加载它的那个 rank。</text>
+<text class="sm" x="262" y="309" text-anchor="start">本地是 CPU 张量时不能 async_op</text>
+<text class="sm" x="262" y="325" text-anchor="start">要等拷回 CPU 才继续。</text>
+<rect class="neutral" x="472" y="214" width="280" height="160" rx="8"/>
+<text class="tx" x="484" y="235" text-anchor="start">本例的报文序列</text>
+<path class="edge" d="M 484 243 L 740 243"/>
+<text class="sm" x="484" y="261" text-anchor="start">6 条 broadcast，报文大小逐条不同：</text>
+<text class="sm" x="484" y="277" text-anchor="start">6144B←r0  8192B←r1  8192B←r2</text>
+<text class="sm" x="484" y="293" text-anchor="start">4096B←r3  4096B←r3  2048B←r0</text>
+<text class="sm" x="484" y="309" text-anchor="start"></text>
+<text class="sm" x="484" y="325" text-anchor="start">每条都精确等于该分片的大小 ——</text>
+<text class="sm" x="484" y="341" text-anchor="start">没有为了对齐而补的空位。</text>
+<rect class="neutral" x="762" y="214" width="220" height="160" rx="8"/>
+<text class="tx" x="774" y="235" text-anchor="start">空载与浪费</text>
+<path class="edge" d="M 774 243 L 970 243"/>
+<text class="sm" x="774" y="261" text-anchor="start">0 条空载。</text>
+<text class="sm" x="774" y="277" text-anchor="start"></text>
+<text class="sm" x="774" y="293" text-anchor="start">代价换到了报文条数上：</text>
+<text class="sm" x="774" y="309" text-anchor="start">6 次 collective 启动，</text>
+<text class="sm" x="774" y="325" text-anchor="start">每次都要全组同步一次。</text>
+<rect class="acc1" x="992" y="214" width="220" height="160" rx="8"/>
+<text class="tx" x="1004" y="235" text-anchor="start">增量代价</text>
+<path class="edge" d="M 1004 243 L 1200 243"/>
+<text class="sm" x="1004" y="261" text-anchor="start">上线 32768 B</text>
+<text class="sm" x="1004" y="277" text-anchor="start">分 6 条报文</text>
+<text class="sm" x="1004" y="293" text-anchor="start"></text>
+<text class="sm" x="1004" y="309" text-anchor="start">docstring 自陈：</text>
+<text class="sm" x="1004" y="325" text-anchor="start">"A reasonable tradeoff in terms</text>
+<text class="sm" x="1004" y="341" text-anchor="start"> of performance and simplicity."</text>
+<text class="pt" x="28" y="390" text-anchor="start">② gather_rounds</text>
+<rect class="ghost" x="28" y="398" width="212" height="160" rx="8"/>
+<text class="tx" x="40" y="419" text-anchor="start">选择条件</text>
+<path class="edge" d="M 40 427 L 228 427"/>
+<text class="sm" x="40" y="445" text-anchor="start">exchange_algo="gather_rounds"</text>
+<text class="sm" x="40" y="461" text-anchor="start"></text>
+<text class="sm" x="40" y="477" text-anchor="start">先按 dtype 分组，组内把</text>
+<text class="sm" x="40" y="493" text-anchor="start">shards_by_rank 转置成轮 ——</text>
+<text class="sm" x="40" y="509" text-anchor="start">每轮一次 all_gather。</text>
+<rect class="neutral" x="250" y="398" width="212" height="160" rx="8"/>
+<text class="tx" x="262" y="419" text-anchor="start">报文构造</text>
+<path class="edge" d="M 262 427 L 450 427"/>
+<text class="sm" x="262" y="445" text-anchor="start">zip_longest(*shards_by_rank,</text>
+<text class="sm" x="262" y="461" text-anchor="start">  fillvalue=None)</text>
+<text class="sm" x="262" y="477" text-anchor="start"></text>
+<text class="sm" x="262" y="493" text-anchor="start">轮数 = 单个 rank 最多加载的</text>
+<text class="sm" x="262" y="509" text-anchor="start">分片数，本例 2 轮。</text>
+<rect class="neutral" x="472" y="398" width="280" height="160" rx="8"/>
+<text class="tx" x="484" y="419" text-anchor="start">本例的报文序列</text>
+<path class="edge" d="M 484 427 L 740 427"/>
+<text class="sm" x="484" y="445" text-anchor="start">2 次 all_gather（本例只有一种 dtype）：</text>
+<text class="sm" x="484" y="461" text-anchor="start">第 1 轮：6144B / 8192B / 8192B / 4096B</text>
+<text class="sm" x="484" y="477" text-anchor="start">第 2 轮：2048B / 空 / 空 / 4096B</text>
+<text class="sm" x="484" y="493" text-anchor="start"></text>
+<text class="sm" x="484" y="509" text-anchor="start">每轮各 rank 各出一份，同时到齐。</text>
+<rect class="neutral" x="762" y="398" width="220" height="160" rx="8"/>
+<text class="tx" x="774" y="419" text-anchor="start">空载与浪费</text>
+<path class="edge" d="M 774 427 L 970 427"/>
+<text class="sm" x="774" y="445" text-anchor="start">8 个槽位里 2 个是空张量</text>
+<text class="sm" x="774" y="461" text-anchor="start">（torch.empty(0)），空载率 25%。</text>
+<text class="sm" x="774" y="477" text-anchor="start"></text>
+<text class="sm" x="774" y="493" text-anchor="start">分配按字节数摊平，不按分片**条数**</text>
+<text class="sm" x="774" y="509" text-anchor="start">摊平 —— 空载正是这个错配的产物。</text>
+<rect class="acc2" x="992" y="398" width="220" height="160" rx="8"/>
+<text class="tx" x="1004" y="419" text-anchor="start">增量代价</text>
+<path class="edge" d="M 1004 427 L 1200 427"/>
+<text class="sm" x="1004" y="445" text-anchor="start">2 次 collective 启动</text>
+<text class="sm" x="1004" y="461" text-anchor="start">（少于 ①）</text>
+<text class="sm" x="1004" y="477" text-anchor="start"></text>
+<text class="sm" x="1004" y="493" text-anchor="start">docstring 自陈这条短板：</text>
+<text class="sm" x="1004" y="509" text-anchor="start">"might result in a lot of</text>
+<text class="sm" x="1004" y="525" text-anchor="start"> almost empty all_gathers"</text>
+<text class="pt" x="28" y="574" text-anchor="start">③ gather_object</text>
+<rect class="ghost" x="28" y="582" width="212" height="160" rx="8"/>
+<text class="tx" x="40" y="603" text-anchor="start">选择条件</text>
+<path class="edge" d="M 40 611 L 228 611"/>
+<text class="sm" x="40" y="629" text-anchor="start">exchange_algo="gather_object"</text>
+<text class="sm" x="40" y="645" text-anchor="start"></text>
+<text class="sm" x="40" y="661" text-anchor="start">一次 all_gather_object 把</text>
+<text class="sm" x="40" y="677" text-anchor="start">整个 loaded_tensors 字典发出去，</text>
+<text class="sm" x="40" y="693" text-anchor="start">再 reduce 合并成一份。</text>
+<rect class="neutral" x="250" y="582" width="212" height="160" rx="8"/>
+<text class="tx" x="262" y="603" text-anchor="start">报文构造</text>
+<path class="edge" d="M 262 611 L 450 611"/>
+<text class="sm" x="262" y="629" text-anchor="start">张量随 Python 对象一起 pickle，</text>
+<text class="sm" x="262" y="645" text-anchor="start">走 host 内存，不是设备侧</text>
+<text class="sm" x="262" y="661" text-anchor="start">collective。</text>
+<text class="sm" x="262" y="677" text-anchor="start"></text>
+<text class="sm" x="262" y="693" text-anchor="start">合并后校验条数：对不上即报</text>
+<text class="sm" x="262" y="709" text-anchor="start">"Duplicate shard ids"。</text>
+<rect class="neutral" x="472" y="582" width="280" height="160" rx="8"/>
+<text class="tx" x="484" y="603" text-anchor="start">本例的报文序列</text>
+<path class="edge" d="M 484 611 L 740 611"/>
+<text class="sm" x="484" y="629" text-anchor="start">1 次 all_gather_object。</text>
+<text class="sm" x="484" y="645" text-anchor="start">载荷 = 全部 32768 B 加 pickle 开销。</text>
+<text class="sm" x="484" y="661" text-anchor="start"></text>
+<text class="sm" x="484" y="677" text-anchor="start">报文条数最少，但每个字节都要</text>
+<text class="sm" x="484" y="693" text-anchor="start">经过一次序列化与一次反序列化。</text>
+<rect class="neutral" x="762" y="582" width="220" height="160" rx="8"/>
+<text class="tx" x="774" y="603" text-anchor="start">空载与浪费</text>
+<path class="edge" d="M 774 611 L 970 611"/>
+<text class="sm" x="774" y="629" text-anchor="start">无空载槽位，</text>
+<text class="sm" x="774" y="645" text-anchor="start">浪费换到了 CPU 与 host 内存上。</text>
+<rect class="ghost" x="992" y="582" width="220" height="160" rx="8"/>
+<text class="tx" x="1004" y="603" text-anchor="start">增量代价</text>
+<path class="edge" d="M 1004 611 L 1200 611"/>
+<text class="sm" x="1004" y="629" text-anchor="start">docstring 明说用途：</text>
+<text class="sm" x="1004" y="645" text-anchor="start">"can be used for debugging</text>
+<text class="sm" x="1004" y="661" text-anchor="start"> purposes do to its simplistic</text>
+<text class="sm" x="1004" y="677" text-anchor="start"> implementation. Shouldn't be</text>
+<text class="sm" x="1004" y="693" text-anchor="start"> used if performance is</text>
+<text class="sm" x="1004" y="709" text-anchor="start"> important."</text>
+<text class="cap" x="28" y="768" text-anchor="start">三条路的结果完全相同（同一份 all_loaded_tensors），差别只在报文条数、空载与走不走 host。选型判据是组大小与分片条数分布，不是正确性。</text>
+<text class="cap" x="28" y="788" text-anchor="start">交换之后 fill_in_deferred_sharded_tensors 才把张量填回 state dict；缺任何一个 shard_id 都直接抛 "Missing shards after fully parallel loading"。</text>
+</svg>

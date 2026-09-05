@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 700" width="1180" height="700" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .cell0{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .cell1{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .cellx{fill:#F5F7FA;stroke:#fff;stroke-width:.8}
+  .cellw{fill:#F6DFC8;stroke:#fff;stroke-width:.8}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 3　fully-parallel save：四条排序键把写盘摊平</text>
+<text class="su" x="28" y="52" text-anchor="start">并行化组 4 个 rank、6 个分片、合计 32768 B。分配只交换元数据，不搬一个字节的数据。</text>
+<rect class="panel" x="20" y="70" width="1140" height="118" rx="8"/>
+<text class="pt" x="36" y="94" text-anchor="start">① 输入：每个分片的大小，以及它在组内被哪些 rank 持有（coverage）</text>
+<rect class="neutral" x="36" y="106" width="176" height="64" rx="8"/>
+<text class="rank" x="46" y="124" text-anchor="start">L0.mlp.fc1</text>
+<text class="dim" x="46" y="142" text-anchor="start">8192 B</text>
+<text class="sm" x="46" y="160" text-anchor="start">coverage 4：{0,1,2,3}</text>
+<rect class="neutral" x="222" y="106" width="176" height="64" rx="8"/>
+<text class="rank" x="232" y="124" text-anchor="start">L0.mlp.fc2</text>
+<text class="dim" x="232" y="142" text-anchor="start">8192 B</text>
+<text class="sm" x="232" y="160" text-anchor="start">coverage 4：{0,1,2,3}</text>
+<rect class="neutral" x="408" y="106" width="176" height="64" rx="8"/>
+<text class="rank" x="418" y="124" text-anchor="start">L0.self_attn.qkv</text>
+<text class="dim" x="418" y="142" text-anchor="start">4096 B</text>
+<text class="sm" x="418" y="160" text-anchor="start">coverage 4：{0,1,2,3}</text>
+<rect class="neutral" x="594" y="106" width="176" height="64" rx="8"/>
+<text class="rank" x="604" y="124" text-anchor="start">L1.self_attn.qkv</text>
+<text class="dim" x="604" y="142" text-anchor="start">4096 B</text>
+<text class="sm" x="604" y="160" text-anchor="start">coverage 4：{0,1,2,3}</text>
+<rect class="acc2" x="780" y="106" width="176" height="64" rx="8"/>
+<text class="rank" x="790" y="124" text-anchor="start">L0.mlp.experts.w1</text>
+<text class="costtx" x="790" y="142" text-anchor="start">6144 B</text>
+<text class="sm" x="790" y="160" text-anchor="start">coverage 2：{0,1}</text>
+<rect class="neutral" x="966" y="106" width="176" height="64" rx="8"/>
+<text class="rank" x="976" y="124" text-anchor="start">embedding.word_embeddings</text>
+<text class="dim" x="976" y="142" text-anchor="start">2048 B</text>
+<text class="sm" x="976" y="160" text-anchor="start">coverage 4：{0,1,2,3}</text>
+<rect class="panel" x="20" y="202" width="1140" height="150" rx="8"/>
+<text class="pt" x="36" y="226" text-anchor="start">② 排序键 (跨组, coverage, −size, shard_id)，从左到右依次比较</text>
+<text class="sm" x="36" y="244" text-anchor="start">coverage 低的先分（可选 rank 少，先占住），同 coverage 里大的先分（大块先摆才填得平），shard_id 兜底保证各 rank 算出同一个顺序。</text>
+<rect class="acc2" x="36" y="260" width="176" height="72" rx="8"/>
+<text class="rank" x="46" y="278" text-anchor="start">第 1 个</text>
+<text class="sm" x="46" y="296" text-anchor="start">L0.mlp.experts.w1</text>
+<text class="dim" x="46" y="314" text-anchor="start">6144 B · cov 2</text>
+<text class="sm" x="46" y="328" text-anchor="start">键②：coverage 最低</text>
+<rect class="neutral" x="222" y="260" width="176" height="72" rx="8"/>
+<text class="rank" x="232" y="278" text-anchor="start">第 2 个</text>
+<text class="sm" x="232" y="296" text-anchor="start">L0.mlp.fc1</text>
+<text class="dim" x="232" y="314" text-anchor="start">8192 B · cov 4</text>
+<text class="sm" x="232" y="328" text-anchor="start">键③：size 降序</text>
+<rect class="neutral" x="408" y="260" width="176" height="72" rx="8"/>
+<text class="rank" x="418" y="278" text-anchor="start">第 3 个</text>
+<text class="sm" x="418" y="296" text-anchor="start">L0.mlp.fc2</text>
+<text class="dim" x="418" y="314" text-anchor="start">8192 B · cov 4</text>
+<text class="sm" x="418" y="328" text-anchor="start">键④：shard_id 兜底</text>
+<rect class="neutral" x="594" y="260" width="176" height="72" rx="8"/>
+<text class="rank" x="604" y="278" text-anchor="start">第 4 个</text>
+<text class="sm" x="604" y="296" text-anchor="start">L0.self_attn.qkv</text>
+<text class="dim" x="604" y="314" text-anchor="start">4096 B · cov 4</text>
+<text class="sm" x="604" y="328" text-anchor="start">键③：size 降序</text>
+<rect class="neutral" x="780" y="260" width="176" height="72" rx="8"/>
+<text class="rank" x="790" y="278" text-anchor="start">第 5 个</text>
+<text class="sm" x="790" y="296" text-anchor="start">L1.self_attn.qkv</text>
+<text class="dim" x="790" y="314" text-anchor="start">4096 B · cov 4</text>
+<text class="sm" x="790" y="328" text-anchor="start">键④：shard_id 兜底</text>
+<rect class="neutral" x="966" y="260" width="176" height="72" rx="8"/>
+<text class="rank" x="976" y="278" text-anchor="start">第 6 个</text>
+<text class="sm" x="976" y="296" text-anchor="start">embedding.word_embeddings</text>
+<text class="dim" x="976" y="314" text-anchor="start">2048 B · cov 4</text>
+<text class="sm" x="976" y="328" text-anchor="start">键③：size 降序</text>
+<rect class="panel" x="20" y="366" width="704" height="244" rx="8"/>
+<text class="pt" x="36" y="390" text-anchor="start">③ 贪心：每步给"该分片可选 rank 里累计最少的那个"</text>
+<text class="sm" x="36" y="408" text-anchor="start">取 min((size, rank))，size 相同时 rank 号小的赢 —— 顺序在所有 rank 上一致，无需再通信。</text>
+<text class="rank" x="44" y="434" text-anchor="start">分配的分片</text>
+<text class="rank" x="320" y="434" text-anchor="middle">rank 0</text>
+<text class="rank" x="404" y="434" text-anchor="middle">rank 1</text>
+<text class="rank" x="488" y="434" text-anchor="middle">rank 2</text>
+<text class="rank" x="572" y="434" text-anchor="middle">rank 3</text>
+<text class="rank" x="656" y="434" text-anchor="start">落到</text>
+<path class="gl" d="M 44 457 L 700 457"/>
+<text class="sm" x="44" y="452" text-anchor="start">L0.mlp.experts.w1</text>
+<text class="dim" x="320" y="452" text-anchor="middle">6144</text>
+<text class="sm" x="404" y="452" text-anchor="middle">0</text>
+<text class="sm" x="488" y="452" text-anchor="middle">0</text>
+<text class="sm" x="572" y="452" text-anchor="middle">0</text>
+<text class="dim" x="656" y="452" text-anchor="start">rank 0</text>
+<path class="gl" d="M 44 482 L 700 482"/>
+<text class="sm" x="44" y="477" text-anchor="start">L0.mlp.fc1</text>
+<text class="sm" x="320" y="477" text-anchor="middle">6144</text>
+<text class="dim" x="404" y="477" text-anchor="middle">8192</text>
+<text class="sm" x="488" y="477" text-anchor="middle">0</text>
+<text class="sm" x="572" y="477" text-anchor="middle">0</text>
+<text class="dim" x="656" y="477" text-anchor="start">rank 1</text>
+<path class="gl" d="M 44 507 L 700 507"/>
+<text class="sm" x="44" y="502" text-anchor="start">L0.mlp.fc2</text>
+<text class="sm" x="320" y="502" text-anchor="middle">6144</text>
+<text class="sm" x="404" y="502" text-anchor="middle">8192</text>
+<text class="dim" x="488" y="502" text-anchor="middle">8192</text>
+<text class="sm" x="572" y="502" text-anchor="middle">0</text>
+<text class="dim" x="656" y="502" text-anchor="start">rank 2</text>
+<path class="gl" d="M 44 532 L 700 532"/>
+<text class="sm" x="44" y="527" text-anchor="start">L0.self_attn.qkv</text>
+<text class="sm" x="320" y="527" text-anchor="middle">6144</text>
+<text class="sm" x="404" y="527" text-anchor="middle">8192</text>
+<text class="sm" x="488" y="527" text-anchor="middle">8192</text>
+<text class="dim" x="572" y="527" text-anchor="middle">4096</text>
+<text class="dim" x="656" y="527" text-anchor="start">rank 3</text>
+<path class="gl" d="M 44 557 L 700 557"/>
+<text class="sm" x="44" y="552" text-anchor="start">L1.self_attn.qkv</text>
+<text class="sm" x="320" y="552" text-anchor="middle">6144</text>
+<text class="sm" x="404" y="552" text-anchor="middle">8192</text>
+<text class="sm" x="488" y="552" text-anchor="middle">8192</text>
+<text class="dim" x="572" y="552" text-anchor="middle">8192</text>
+<text class="dim" x="656" y="552" text-anchor="start">rank 3</text>
+<path class="gl" d="M 44 582 L 700 582"/>
+<text class="sm" x="44" y="577" text-anchor="start">embedding.word_embeddings</text>
+<text class="dim" x="320" y="577" text-anchor="middle">8192</text>
+<text class="sm" x="404" y="577" text-anchor="middle">8192</text>
+<text class="sm" x="488" y="577" text-anchor="middle">8192</text>
+<text class="sm" x="572" y="577" text-anchor="middle">8192</text>
+<text class="dim" x="656" y="577" text-anchor="start">rank 0</text>
+<rect class="panel" x="740" y="366" width="420" height="258" rx="8"/>
+<text class="pt" x="756" y="390" text-anchor="start">④ 结果：同一把标尺下的写盘量</text>
+<text class="sm" x="756" y="410" text-anchor="start">无 wrapper（底层策略只让 main replica 写）</text>
+<text class="rank" x="822" y="429" text-anchor="end">rank 0</text>
+<rect class="acc2" x="830" y="416" width="250" height="18" rx="5"/>
+<text class="costtx" x="1088" y="429" text-anchor="start">32768 B</text>
+<text class="rank" x="822" y="453" text-anchor="end">rank 1</text>
+<rect class="ghost" x="830" y="440" width="2" height="18" rx="5"/>
+<text class="dim" x="840" y="453" text-anchor="start">0 B</text>
+<text class="rank" x="822" y="477" text-anchor="end">rank 2</text>
+<rect class="ghost" x="830" y="464" width="2" height="18" rx="5"/>
+<text class="dim" x="840" y="477" text-anchor="start">0 B</text>
+<text class="rank" x="822" y="501" text-anchor="end">rank 3</text>
+<rect class="ghost" x="830" y="488" width="2" height="18" rx="5"/>
+<text class="dim" x="840" y="501" text-anchor="start">0 B</text>
+<text class="sm" x="756" y="526" text-anchor="start">有 wrapper（贪心分配后）</text>
+<text class="rank" x="822" y="543" text-anchor="end">rank 0</text>
+<rect class="acc1" x="830" y="532" width="63" height="16" rx="5"/>
+<text class="dim" x="901" y="543" text-anchor="start">8192 B</text>
+<text class="rank" x="822" y="563" text-anchor="end">rank 1</text>
+<rect class="acc1" x="830" y="552" width="63" height="16" rx="5"/>
+<text class="dim" x="901" y="563" text-anchor="start">8192 B</text>
+<text class="rank" x="822" y="583" text-anchor="end">rank 2</text>
+<rect class="acc1" x="830" y="572" width="63" height="16" rx="5"/>
+<text class="dim" x="901" y="583" text-anchor="start">8192 B</text>
+<text class="rank" x="822" y="603" text-anchor="end">rank 3</text>
+<rect class="acc1" x="830" y="592" width="63" height="16" rx="5"/>
+<text class="dim" x="901" y="603" text-anchor="start">8192 B</text>
+<text class="cap" x="28" y="638" text-anchor="start">本例的关键路径从 32768 B 降到 8192 B，即 4.0× —— 上限就是组大小 4，因为写盘时间由最慢的那个 rank 决定。</text>
+<text class="cap" x="28" y="658" text-anchor="start">在纯 DP 组里所有分片 coverage 相等，键② 不起作用、只剩键③ 在填平；coverage 出现差异要靠把组换成 ep_dp 这类跨内容的组。</text>
+<text class="cap" x="28" y="678" text-anchor="start">代价：一次 all_gather_object 收全组元数据。do_cache_distribution 可以把它省成一次，但前提是每次调用的 state dict 结构完全相同。</text>
+</svg>

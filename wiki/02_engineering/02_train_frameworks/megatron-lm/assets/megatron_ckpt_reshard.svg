@@ -1,0 +1,180 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 690" width="1180" height="690" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .cell0{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .cell1{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .cellx{fill:#F5F7FA;stroke:#fff;stroke-width:.8}
+  .cellw{fill:#F6DFC8;stroke:#fff;stroke-width:.8}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　同一张权重：TP4×DP2 存、TP2×DP1 载</text>
+<text class="su" x="28" y="52" text-anchor="start">layer0.mlp.fc1.weight 全局 [8, 4] bf16 = 64 B。描述子只说"我是全局的哪一块"，两端都不知道对方的并行度。</text>
+<rect class="panel" x="20" y="70" width="1140" height="208" rx="8"/>
+<text class="pt" x="36" y="94" text-anchor="start">① 存端：8 个 rank 各交一份纯元数据的描述子</text>
+<text class="sm" x="36" y="112" text-anchor="start">同一 TP 位置的两个 DP rank 描述子逐字段相同，只有 replica_id 不同 —— 去冗余的全部依据就是这一个字段。</text>
+<rect class="acc1" x="36" y="126" width="186" height="66" rx="8"/>
+<text class="rank" x="46" y="144" text-anchor="start">rank 0  (tp=0, dp=0)</text>
+<text class="sm" x="46" y="161" text-anchor="start">off=(0,0)  shape=(2,4)</text>
+<text class="dim" x="46" y="178" text-anchor="start">frag=(4,1)  replica_id=0</text>
+<rect class="acc1" x="232" y="126" width="186" height="66" rx="8"/>
+<text class="rank" x="242" y="144" text-anchor="start">rank 1  (tp=1, dp=0)</text>
+<text class="sm" x="242" y="161" text-anchor="start">off=(2,0)  shape=(2,4)</text>
+<text class="dim" x="242" y="178" text-anchor="start">frag=(4,1)  replica_id=0</text>
+<rect class="acc1" x="428" y="126" width="186" height="66" rx="8"/>
+<text class="rank" x="438" y="144" text-anchor="start">rank 2  (tp=2, dp=0)</text>
+<text class="sm" x="438" y="161" text-anchor="start">off=(4,0)  shape=(2,4)</text>
+<text class="dim" x="438" y="178" text-anchor="start">frag=(4,1)  replica_id=0</text>
+<rect class="acc1" x="624" y="126" width="186" height="66" rx="8"/>
+<text class="rank" x="634" y="144" text-anchor="start">rank 3  (tp=3, dp=0)</text>
+<text class="sm" x="634" y="161" text-anchor="start">off=(6,0)  shape=(2,4)</text>
+<text class="dim" x="634" y="178" text-anchor="start">frag=(4,1)  replica_id=0</text>
+<rect class="acc2" x="36" y="200" width="186" height="66" rx="8"/>
+<text class="rank" x="46" y="218" text-anchor="start">rank 4  (tp=0, dp=1)</text>
+<text class="sm" x="46" y="235" text-anchor="start">off=(0,0)  shape=(2,4)</text>
+<text class="costtx" x="46" y="252" text-anchor="start">frag=(4,1)  replica_id=1</text>
+<rect class="acc2" x="232" y="200" width="186" height="66" rx="8"/>
+<text class="rank" x="242" y="218" text-anchor="start">rank 5  (tp=1, dp=1)</text>
+<text class="sm" x="242" y="235" text-anchor="start">off=(2,0)  shape=(2,4)</text>
+<text class="costtx" x="242" y="252" text-anchor="start">frag=(4,1)  replica_id=1</text>
+<rect class="acc2" x="428" y="200" width="186" height="66" rx="8"/>
+<text class="rank" x="438" y="218" text-anchor="start">rank 6  (tp=2, dp=1)</text>
+<text class="sm" x="438" y="235" text-anchor="start">off=(4,0)  shape=(2,4)</text>
+<text class="costtx" x="438" y="252" text-anchor="start">frag=(4,1)  replica_id=1</text>
+<rect class="acc2" x="624" y="200" width="186" height="66" rx="8"/>
+<text class="rank" x="634" y="218" text-anchor="start">rank 7  (tp=3, dp=1)</text>
+<text class="sm" x="634" y="235" text-anchor="start">off=(6,0)  shape=(2,4)</text>
+<text class="costtx" x="634" y="252" text-anchor="start">frag=(4,1)  replica_id=1</text>
+<text class="tx" x="816" y="140" text-anchor="start">全局张量与 chunk 网格</text>
+<rect class="cell0" x="820" y="150" width="12" height="12"/>
+<rect class="cell0" x="832" y="150" width="12" height="12"/>
+<rect class="cell0" x="844" y="150" width="12" height="12"/>
+<rect class="cell0" x="856" y="150" width="12" height="12"/>
+<rect class="cell0" x="820" y="162" width="12" height="12"/>
+<rect class="cell0" x="832" y="162" width="12" height="12"/>
+<rect class="cell0" x="844" y="162" width="12" height="12"/>
+<rect class="cell0" x="856" y="162" width="12" height="12"/>
+<rect class="cell1" x="820" y="174" width="12" height="12"/>
+<rect class="cell1" x="832" y="174" width="12" height="12"/>
+<rect class="cell1" x="844" y="174" width="12" height="12"/>
+<rect class="cell1" x="856" y="174" width="12" height="12"/>
+<rect class="cell1" x="820" y="186" width="12" height="12"/>
+<rect class="cell1" x="832" y="186" width="12" height="12"/>
+<rect class="cell1" x="844" y="186" width="12" height="12"/>
+<rect class="cell1" x="856" y="186" width="12" height="12"/>
+<rect class="cell0" x="820" y="198" width="12" height="12"/>
+<rect class="cell0" x="832" y="198" width="12" height="12"/>
+<rect class="cell0" x="844" y="198" width="12" height="12"/>
+<rect class="cell0" x="856" y="198" width="12" height="12"/>
+<rect class="cell0" x="820" y="210" width="12" height="12"/>
+<rect class="cell0" x="832" y="210" width="12" height="12"/>
+<rect class="cell0" x="844" y="210" width="12" height="12"/>
+<rect class="cell0" x="856" y="210" width="12" height="12"/>
+<rect class="cell1" x="820" y="222" width="12" height="12"/>
+<rect class="cell1" x="832" y="222" width="12" height="12"/>
+<rect class="cell1" x="844" y="222" width="12" height="12"/>
+<rect class="cell1" x="856" y="222" width="12" height="12"/>
+<rect class="cell1" x="820" y="234" width="12" height="12"/>
+<rect class="cell1" x="832" y="234" width="12" height="12"/>
+<rect class="cell1" x="844" y="234" width="12" height="12"/>
+<rect class="cell1" x="856" y="234" width="12" height="12"/>
+<path class="gl" d="M 820 150 L 868 150"/>
+<path class="gl" d="M 820 162 L 868 162"/>
+<path class="gl" d="M 820 174 L 868 174"/>
+<path class="gl" d="M 820 186 L 868 186"/>
+<path class="gl" d="M 820 198 L 868 198"/>
+<path class="gl" d="M 820 210 L 868 210"/>
+<path class="gl" d="M 820 222 L 868 222"/>
+<path class="gl" d="M 820 234 L 868 234"/>
+<path class="gl" d="M 820 246 L 868 246"/>
+<path class="gl" d="M 820 150 L 820 246"/>
+<path class="gl" d="M 832 150 L 832 246"/>
+<path class="gl" d="M 844 150 L 844 246"/>
+<path class="gl" d="M 856 150 L 856 246"/>
+<path class="gl" d="M 868 150 L 868 246"/>
+<text class="sm" x="878" y="166" text-anchor="start">chunk 0 = 行 0–1</text>
+<text class="sm" x="878" y="190" text-anchor="start">chunk 1 = 行 2–3</text>
+<text class="sm" x="878" y="214" text-anchor="start">chunk 2 = 行 4–5</text>
+<text class="sm" x="878" y="238" text-anchor="start">chunk 3 = 行 6–7</text>
+<text class="sm" x="816" y="262" text-anchor="start">axis_fragmentations=(4,1)：网格被切成 4×1 个 chunk</text>
+<rect class="panel" x="20" y="292" width="1140" height="122" rx="8"/>
+<text class="pt" x="36" y="316" text-anchor="start">② 盘上：只有 4 个 main replica 进入写盘计划</text>
+<text class="sm" x="36" y="334" text-anchor="start">keep_only_main_replica 默认 True：写盘量 64 B 而不是 128 B，省掉的正是 4 份 DP 副本。</text>
+<rect class="acc1" x="36" y="346" width="186" height="56" rx="8"/>
+<text class="rank" x="46" y="366" text-anchor="start">chunk 0 ← rank 0</text>
+<text class="sm" x="46" y="385" text-anchor="start">offset=(0,0) size=(2,4) 16 B</text>
+<rect class="acc1" x="232" y="346" width="186" height="56" rx="8"/>
+<text class="rank" x="242" y="366" text-anchor="start">chunk 1 ← rank 1</text>
+<text class="sm" x="242" y="385" text-anchor="start">offset=(2,0) size=(2,4) 16 B</text>
+<rect class="acc1" x="428" y="346" width="186" height="56" rx="8"/>
+<text class="rank" x="438" y="366" text-anchor="start">chunk 2 ← rank 2</text>
+<text class="sm" x="438" y="385" text-anchor="start">offset=(4,0) size=(2,4) 16 B</text>
+<rect class="acc1" x="624" y="346" width="186" height="56" rx="8"/>
+<text class="rank" x="634" y="366" text-anchor="start">chunk 3 ← rank 3</text>
+<text class="sm" x="634" y="385" text-anchor="start">offset=(6,0) size=(2,4) 16 B</text>
+<rect class="acc2" x="824" y="346" width="320" height="56" rx="8"/>
+<text class="rank" x="834" y="366" text-anchor="start">丢弃：rank 4, 5, 6, 7（replica_id=1）</text>
+<text class="costtx" x="834" y="385" text-anchor="start">省下 64 B 写盘与同等的 I/O 时间</text>
+<rect class="panel" x="20" y="428" width="1140" height="200" rx="8"/>
+<text class="pt" x="36" y="452" text-anchor="start">③ 载端：换成 TP=2，两个 rank 各要 [4,4]</text>
+<text class="sm" x="36" y="470" text-anchor="start">载端描述子里没有任何"上次存的是 TP4"的信息；它只声明自己想要哪一块，求交由 DCP 完成。</text>
+<rect class="acc1" x="36" y="486" width="250" height="56" rx="8"/>
+<text class="rank" x="46" y="506" text-anchor="start">rank 0  (tp=0)</text>
+<text class="dim" x="46" y="525" text-anchor="start">off=(0,0) shape=(4,4) frag=(2,1)</text>
+<rect class="neutral" x="400" y="486" width="204" height="56" rx="8"/>
+<text class="rank" x="410" y="506" text-anchor="start">ReadItem 0：chunk 0</text>
+<text class="sm" x="410" y="525" text-anchor="start">全局行 0–1，16 B</text>
+<path class="main" d="M 286 514 L 394 514"/>
+<rect class="neutral" x="614" y="486" width="204" height="56" rx="8"/>
+<text class="rank" x="624" y="506" text-anchor="start">ReadItem 1：chunk 1</text>
+<text class="sm" x="624" y="525" text-anchor="start">全局行 2–3，16 B</text>
+<path class="main" d="M 286 514 L 394 514"/>
+<text class="dim" x="836" y="519" text-anchor="start">2 条 ReadItem 拼出 4×4 = 32 B</text>
+<rect class="acc1" x="36" y="552" width="250" height="56" rx="8"/>
+<text class="rank" x="46" y="572" text-anchor="start">rank 1  (tp=1)</text>
+<text class="dim" x="46" y="591" text-anchor="start">off=(4,0) shape=(4,4) frag=(2,1)</text>
+<rect class="neutral" x="400" y="552" width="204" height="56" rx="8"/>
+<text class="rank" x="410" y="572" text-anchor="start">ReadItem 0：chunk 2</text>
+<text class="sm" x="410" y="591" text-anchor="start">全局行 4–5，16 B</text>
+<path class="main" d="M 286 580 L 394 580"/>
+<rect class="neutral" x="614" y="552" width="204" height="56" rx="8"/>
+<text class="rank" x="624" y="572" text-anchor="start">ReadItem 1：chunk 3</text>
+<text class="sm" x="624" y="591" text-anchor="start">全局行 6–7，16 B</text>
+<path class="main" d="M 286 580 L 394 580"/>
+<text class="dim" x="836" y="585" text-anchor="start">2 条 ReadItem 拼出 4×4 = 32 B</text>
+<rect class="ghost" x="1024" y="486" width="132" height="122" rx="8"/>
+<rect class="acc2" x="1030" y="480" width="120" height="22" rx="6"/>
+<text class="sm" x="1090" y="495" text-anchor="middle">PyTorch DCP</text>
+<text class="sm" x="1034" y="522" text-anchor="start">求交在这里：</text>
+<text class="sm" x="1034" y="538" text-anchor="start">create_read_items_</text>
+<text class="sm" x="1034" y="552" text-anchor="start">  for_chunk_list</text>
+<text class="sm" x="1034" y="570" text-anchor="start">Megatron 只递</text>
+<text class="sm" x="1034" y="584" text-anchor="start">chunk 清单，</text>
+<text class="sm" x="1034" y="598" text-anchor="start">不做这一步</text>
+<text class="cap" x="28" y="648" text-anchor="start">成立的两条前置：len(local_shape)+prepend_axis_num == len(global_shape)，且每个轴上 global_offset % local_shape == 0（validate_metadata_integrity）。第二条就是"规则网格"的落点。</text>
+<text class="cap" x="28" y="668" text-anchor="start">注意存端与载端的 global_shape 必须一致（[8, 4]）：MCoreLoadPlanner._validate_global_shapes 不匹配就抛 CheckpointingException，除非该张量声明 allow_shape_mismatch。</text>
+</svg>

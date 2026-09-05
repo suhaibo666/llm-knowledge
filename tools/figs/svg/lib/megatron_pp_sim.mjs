@@ -1,8 +1,10 @@
 // Megatron-LM PP 调度的离散事件仿真器。
 //
-// 算法逐条照抄自 NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a
-// （与 wiki/02_engineering/02_train_frameworks/megatron-lm/15_megatron_pp_schedulers_analysis.md
-//  的页头基线一致），每个函数标出对应的 file:line。
+// 算法逐条照抄自 NVIDIA/Megatron-LM@71092579522a12522d9f323ae180c9825d01928a，
+// 并于 2026-09-05 在基线 85902ef599ea4eb06ada7567a479c524b605767a 上复核：
+// `git diff 71092579 85902ef5 -- megatron/core/pipeline_parallel/schedules.py` 为空，
+// warmup / 稳态 / cooldown 的计算未变，故本模块在新基线下仍然成立。
+// 消费方（15 与 20 两页）的页头基线是 85902ef5；每个函数标出对应的 file:line。
 //
 // 存在的意义：配图的格子由它解算，**图不可能和调度对不上**。
 // 校验：本模块的输出已与该页 §③.3 / §⑤.3(a) 两张手工 ASCII 表逐格比对一致

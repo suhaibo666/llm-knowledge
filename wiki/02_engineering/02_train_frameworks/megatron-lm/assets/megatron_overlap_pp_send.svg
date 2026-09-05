@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 402" width="1300" height="402" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .fcell{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .fcell2{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .bcell{fill:#F6DFC8;stroke:#fff;stroke-width:.8}
+  .bcell2{fill:#E8B887;stroke:#fff;stroke-width:.8}
+  .bub{fill:#F1F3F7;stroke:#fff;stroke-width:.8}
+  .mark{fill:none;stroke:#2563EB;stroke-width:2.2}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 3　同一个 overlap_p2p_comm，前向与反向掩盖的东西不一样</text>
+<text class="su" x="28" y="52" text-anchor="start">两个槽的代码结构几乎相同，差别只在一句 wait 的位置——而它由一个显存开关决定，不由 overlap 开关决定。</text>
+<text class="pt" x="28" y="98" text-anchor="start">前向槽</text>
+<text class="sm" x="28" y="116" text-anchor="start">pp_post_forward</text>
+<text class="sm" x="28" y="131" text-anchor="start">发完就等</text>
+<path class="gl" d="M 192 83 L 788 83"/>
+<path class="gl" d="M 192 175 L 788 175"/>
+<text class="rank" x="184" y="103" text-anchor="end">send</text>
+<rect class="acc2" x="227.76" y="86" width="119.20000000000005" height="26" rx="5"/>
+<text class="sm" x="287.36" y="103" text-anchor="middle">isend(激活)</text>
+<text class="rank" x="184" y="133" text-anchor="end">recv</text>
+<rect class="acc1" x="239.68" y="116" width="309.9199999999999" height="26" rx="5"/>
+<text class="sm" x="394.64" y="133" text-anchor="middle">irecv(下一槽输入)</text>
+<text class="rank" x="184" y="163" text-anchor="end">计算</text>
+<rect class="neutral" x="382.72" y="146" width="357.6" height="26" rx="5"/>
+<text class="sm" x="561.52" y="163" text-anchor="middle">第 k+1 槽的计算</text>
+<path class="edge" d="M 358.88 83 L 358.88 180"/>
+<text class="costtx" x="358.88" y="194" text-anchor="middle">send_next_wait_handle.wait() ← 当场</text>
+<rect class="acc1" x="800" y="84" width="472" height="84" rx="8"/>
+<text class="tx" x="812" y="105" text-anchor="start">前向 send 被同步化：能掩盖的只剩 irecv</text>
+<path class="edge" d="M 812 113 L 1260 113"/>
+<text class="sm" x="812" y="131" text-anchor="start">原因写在注释里：isend 是异步拷贝，源存储要被 deallocate_output_tensor 释放</text>
+<text class="sm" x="812" y="147" text-anchor="start">触发条件 deallocate_pipeline_outputs：core 默认 False，训练入口无条件设 True</text>
+<text class="sm" x="812" y="163" text-anchor="start">代价：省下前向激活的显存，换来 send 这一段重新暴露在关键路径上</text>
+<text class="pt" x="28" y="228" text-anchor="start">反向槽</text>
+<text class="sm" x="28" y="246" text-anchor="start">pp_post_backward</text>
+<text class="sm" x="28" y="261" text-anchor="start">留到下一槽</text>
+<path class="gl" d="M 192 213 L 788 213"/>
+<path class="gl" d="M 192 305 L 788 305"/>
+<text class="rank" x="184" y="233" text-anchor="end">send</text>
+<rect class="acc1" x="227.76" y="216" width="143.03999999999996" height="26" rx="5"/>
+<text class="sm" x="299.28" y="233" text-anchor="middle">isend(梯度)</text>
+<text class="rank" x="184" y="263" text-anchor="end">recv</text>
+<rect class="acc1" x="239.68" y="246" width="309.9199999999999" height="26" rx="5"/>
+<text class="sm" x="394.64" y="263" text-anchor="middle">irecv(下一槽梯度)</text>
+<text class="rank" x="184" y="293" text-anchor="end">计算</text>
+<rect class="neutral" x="382.72" y="276" width="357.6" height="26" rx="5"/>
+<text class="sm" x="561.52" y="293" text-anchor="middle">第 k+1 槽的计算</text>
+<path class="edge" d="M 752.24 213 L 752.24 310"/>
+<text class="costtx" x="752.24" y="324" text-anchor="middle">本槽不收口</text>
+<rect class="acc1" x="800" y="214" width="472" height="84" rx="8"/>
+<text class="tx" x="812" y="235" text-anchor="start">反向 send 保持异步：两条都被下一槽的计算掩盖</text>
+<path class="edge" d="M 812 243 L 1260 243"/>
+<text class="sm" x="812" y="261" text-anchor="start">同一个函数结构，唯独少了那一句「当场 wait」——因为梯度张量不走 deallocate</text>
+<text class="sm" x="812" y="277" text-anchor="start">send_prev_wait_handle 一直活到下一次 post_backward 才收口</text>
+<text class="sm" x="812" y="293" text-anchor="start">结论：overlap_p2p_comm=True 时，前向与反向掩盖的东西并不一样多</text>
+<text class="cap" x="28" y="362" text-anchor="start">这解释了一个常见困惑：把 overlap_p2p_comm 打开、trace 里却仍看到前向 send 挡在关键路径上。它不是开关没生效，而是 deallocate_pipeline_outputs 主动把它换回了同步。</text>
+<text class="cap" x="28" y="382" text-anchor="start">两个开关的 owner 不同：overlap_p2p_comm 归 PP 调度器，deallocate_pipeline_outputs 归显存；它们在这一句 wait 上相交，而源码没有任何一处把这层耦合写出来（本页归纳）。</text>
+</svg>

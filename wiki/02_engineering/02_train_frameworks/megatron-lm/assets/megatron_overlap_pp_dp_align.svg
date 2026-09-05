@@ -1,0 +1,366 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 640" width="1240" height="640" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .fcell{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .fcell2{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .bcell{fill:#F6DFC8;stroke:#fff;stroke-width:.8}
+  .bcell2{fill:#E8B887;stroke:#fff;stroke-width:.8}
+  .bub{fill:#F1F3F7;stroke:#fff;stroke-width:.8}
+  .mark{fill:none;stroke:#2563EB;stroke-width:2.2}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 2　align_grad_reduce：把 DP 梯度同步钉在 PP 时间表上</text>
+<text class="su" x="28" y="52" text-anchor="start">pp=4, vp=2, m=8, N=4；网格由 lib/megatron_pp_sim.mjs 解算，makespan=38，每 rank 32 个 op、6 个空泡。</text>
+<rect class="panel" x="20" y="70" width="1200" height="300" rx="8"/>
+<text class="pt" x="36" y="94" text-anchor="start">① 触发条件 grad_sync_vmb = virtual_microbatch_id − pipeline_parallel_rank，命中即发</text>
+<text class="sm" x="36" y="110" text-anchor="start">格子＝一个 forward(F)/backward(B) 槽，标注是 (microbatch, chunk)；■ 是该 rank 真正调用 grad_sync_func 的那一次反向。</text>
+<text class="rank" x="122" y="133" text-anchor="end">rank 0</text>
+<rect class="fcell" x="132" y="116" width="20" height="22"/>
+<text class="sm" x="142" y="133" text-anchor="middle">F0</text>
+<rect class="fcell" x="154" y="116" width="20" height="22"/>
+<text class="sm" x="164" y="133" text-anchor="middle">F1</text>
+<rect class="fcell" x="176" y="116" width="20" height="22"/>
+<text class="sm" x="186" y="133" text-anchor="middle">F2</text>
+<rect class="fcell" x="198" y="116" width="20" height="22"/>
+<text class="sm" x="208" y="133" text-anchor="middle">F3</text>
+<rect class="fcell2" x="220" y="116" width="20" height="22"/>
+<text class="sm" x="230" y="133" text-anchor="middle">F0</text>
+<rect class="fcell2" x="242" y="116" width="20" height="22"/>
+<text class="sm" x="252" y="133" text-anchor="middle">F1</text>
+<rect class="fcell2" x="264" y="116" width="20" height="22"/>
+<text class="sm" x="274" y="133" text-anchor="middle">F2</text>
+<rect class="fcell2" x="286" y="116" width="20" height="22"/>
+<text class="sm" x="296" y="133" text-anchor="middle">F3</text>
+<rect class="fcell" x="308" y="116" width="20" height="22"/>
+<text class="sm" x="318" y="133" text-anchor="middle">F4</text>
+<rect class="fcell" x="330" y="116" width="20" height="22"/>
+<text class="sm" x="340" y="133" text-anchor="middle">F5</text>
+<rect class="fcell" x="352" y="116" width="20" height="22"/>
+<text class="sm" x="362" y="133" text-anchor="middle">F6</text>
+<rect class="bcell2" x="374" y="116" width="20" height="22"/>
+<text class="sm" x="384" y="133" text-anchor="middle">B0</text>
+<rect class="fcell" x="396" y="116" width="20" height="22"/>
+<text class="sm" x="406" y="133" text-anchor="middle">F7</text>
+<rect class="bcell2" x="418" y="116" width="20" height="22"/>
+<text class="sm" x="428" y="133" text-anchor="middle">B1</text>
+<rect class="bub" x="440" y="116" width="20" height="22"/>
+<rect class="bub" x="462" y="116" width="20" height="22"/>
+<rect class="fcell2" x="484" y="116" width="20" height="22"/>
+<text class="sm" x="494" y="133" text-anchor="middle">F4</text>
+<rect class="bcell2" x="506" y="116" width="20" height="22"/>
+<text class="sm" x="516" y="133" text-anchor="middle">B2</text>
+<rect class="fcell2" x="528" y="116" width="20" height="22"/>
+<text class="sm" x="538" y="133" text-anchor="middle">F5</text>
+<rect class="bcell2" x="550" y="116" width="20" height="22"/>
+<text class="sm" x="560" y="133" text-anchor="middle">B3</text>
+<rect class="fcell2" x="572" y="116" width="20" height="22"/>
+<text class="sm" x="582" y="133" text-anchor="middle">F6</text>
+<rect class="bcell" x="594" y="116" width="20" height="22"/>
+<text class="sm" x="604" y="133" text-anchor="middle">B0</text>
+<rect class="fcell2" x="616" y="116" width="20" height="22"/>
+<text class="sm" x="626" y="133" text-anchor="middle">F7</text>
+<rect class="bcell" x="638" y="116" width="20" height="22"/>
+<text class="sm" x="648" y="133" text-anchor="middle">B1</text>
+<rect class="bcell" x="660" y="116" width="20" height="22"/>
+<text class="sm" x="670" y="133" text-anchor="middle">B2</text>
+<rect class="bcell" x="682" y="116" width="20" height="22"/>
+<text class="sm" x="692" y="133" text-anchor="middle">B3</text>
+<rect class="bub" x="704" y="116" width="20" height="22"/>
+<rect class="bcell2" x="726" y="116" width="20" height="22"/>
+<text class="sm" x="736" y="133" text-anchor="middle">B4</text>
+<rect class="bub" x="748" y="116" width="20" height="22"/>
+<rect class="bcell2" x="770" y="116" width="20" height="22"/>
+<text class="sm" x="780" y="133" text-anchor="middle">B5</text>
+<rect class="bub" x="792" y="116" width="20" height="22"/>
+<rect class="bcell2" x="814" y="116" width="20" height="22"/>
+<text class="sm" x="824" y="133" text-anchor="middle">B6</text>
+<rect class="bub" x="836" y="116" width="20" height="22"/>
+<rect class="bcell2" x="858" y="116" width="20" height="22"/>
+<rect class="mark" x="856.5" y="114.5" width="23" height="25" rx="3"/>
+<text class="dim" x="868" y="133" text-anchor="middle">B7</text>
+<rect class="bcell" x="880" y="116" width="20" height="22"/>
+<text class="sm" x="890" y="133" text-anchor="middle">B4</text>
+<rect class="bcell" x="902" y="116" width="20" height="22"/>
+<text class="sm" x="912" y="133" text-anchor="middle">B5</text>
+<rect class="bcell" x="924" y="116" width="20" height="22"/>
+<text class="sm" x="934" y="133" text-anchor="middle">B6</text>
+<rect class="bcell" x="946" y="116" width="20" height="22"/>
+<rect class="mark" x="944.5" y="114.5" width="23" height="25" rx="3"/>
+<text class="dim" x="956" y="133" text-anchor="middle">B7</text>
+<text class="dim" x="980" y="133" text-anchor="start">发出：chunk 1、chunk 0</text>
+<text class="rank" x="122" y="161" text-anchor="end">rank 1</text>
+<rect class="bub" x="132" y="144" width="20" height="22"/>
+<rect class="fcell" x="154" y="144" width="20" height="22"/>
+<text class="sm" x="164" y="161" text-anchor="middle">F0</text>
+<rect class="fcell" x="176" y="144" width="20" height="22"/>
+<text class="sm" x="186" y="161" text-anchor="middle">F1</text>
+<rect class="fcell" x="198" y="144" width="20" height="22"/>
+<text class="sm" x="208" y="161" text-anchor="middle">F2</text>
+<rect class="fcell" x="220" y="144" width="20" height="22"/>
+<text class="sm" x="230" y="161" text-anchor="middle">F3</text>
+<rect class="fcell2" x="242" y="144" width="20" height="22"/>
+<text class="sm" x="252" y="161" text-anchor="middle">F0</text>
+<rect class="fcell2" x="264" y="144" width="20" height="22"/>
+<text class="sm" x="274" y="161" text-anchor="middle">F1</text>
+<rect class="fcell2" x="286" y="144" width="20" height="22"/>
+<text class="sm" x="296" y="161" text-anchor="middle">F2</text>
+<rect class="fcell2" x="308" y="144" width="20" height="22"/>
+<text class="sm" x="318" y="161" text-anchor="middle">F3</text>
+<rect class="fcell" x="330" y="144" width="20" height="22"/>
+<text class="sm" x="340" y="161" text-anchor="middle">F4</text>
+<rect class="bcell2" x="352" y="144" width="20" height="22"/>
+<text class="sm" x="362" y="161" text-anchor="middle">B0</text>
+<rect class="fcell" x="374" y="144" width="20" height="22"/>
+<text class="sm" x="384" y="161" text-anchor="middle">F5</text>
+<rect class="bcell2" x="396" y="144" width="20" height="22"/>
+<text class="sm" x="406" y="161" text-anchor="middle">B1</text>
+<rect class="fcell" x="418" y="144" width="20" height="22"/>
+<text class="sm" x="428" y="161" text-anchor="middle">F6</text>
+<rect class="bcell2" x="440" y="144" width="20" height="22"/>
+<text class="sm" x="450" y="161" text-anchor="middle">B2</text>
+<rect class="fcell" x="462" y="144" width="20" height="22"/>
+<text class="sm" x="472" y="161" text-anchor="middle">F7</text>
+<rect class="bcell2" x="484" y="144" width="20" height="22"/>
+<text class="sm" x="494" y="161" text-anchor="middle">B3</text>
+<rect class="fcell2" x="506" y="144" width="20" height="22"/>
+<text class="sm" x="516" y="161" text-anchor="middle">F4</text>
+<rect class="bcell" x="528" y="144" width="20" height="22"/>
+<text class="sm" x="538" y="161" text-anchor="middle">B0</text>
+<rect class="fcell2" x="550" y="144" width="20" height="22"/>
+<text class="sm" x="560" y="161" text-anchor="middle">F5</text>
+<rect class="bcell" x="572" y="144" width="20" height="22"/>
+<text class="sm" x="582" y="161" text-anchor="middle">B1</text>
+<rect class="fcell2" x="594" y="144" width="20" height="22"/>
+<text class="sm" x="604" y="161" text-anchor="middle">F6</text>
+<rect class="bcell" x="616" y="144" width="20" height="22"/>
+<text class="sm" x="626" y="161" text-anchor="middle">B2</text>
+<rect class="fcell2" x="638" y="144" width="20" height="22"/>
+<text class="sm" x="648" y="161" text-anchor="middle">F7</text>
+<rect class="bcell" x="660" y="144" width="20" height="22"/>
+<text class="sm" x="670" y="161" text-anchor="middle">B3</text>
+<rect class="bub" x="682" y="144" width="20" height="22"/>
+<rect class="bcell2" x="704" y="144" width="20" height="22"/>
+<text class="sm" x="714" y="161" text-anchor="middle">B4</text>
+<rect class="bub" x="726" y="144" width="20" height="22"/>
+<rect class="bcell2" x="748" y="144" width="20" height="22"/>
+<text class="sm" x="758" y="161" text-anchor="middle">B5</text>
+<rect class="bub" x="770" y="144" width="20" height="22"/>
+<rect class="bcell2" x="792" y="144" width="20" height="22"/>
+<text class="sm" x="802" y="161" text-anchor="middle">B6</text>
+<rect class="bub" x="814" y="144" width="20" height="22"/>
+<rect class="bcell2" x="836" y="144" width="20" height="22"/>
+<text class="sm" x="846" y="161" text-anchor="middle">B7</text>
+<rect class="bcell" x="858" y="144" width="20" height="22"/>
+<rect class="mark" x="856.5" y="142.5" width="23" height="25" rx="3"/>
+<text class="dim" x="868" y="161" text-anchor="middle">B4</text>
+<rect class="bcell" x="880" y="144" width="20" height="22"/>
+<text class="sm" x="890" y="161" text-anchor="middle">B5</text>
+<rect class="bcell" x="902" y="144" width="20" height="22"/>
+<text class="sm" x="912" y="161" text-anchor="middle">B6</text>
+<rect class="bcell" x="924" y="144" width="20" height="22"/>
+<text class="sm" x="934" y="161" text-anchor="middle">B7</text>
+<rect class="bub" x="946" y="144" width="20" height="22"/>
+<text class="dim" x="980" y="161" text-anchor="start">发出：chunk 1</text>
+<text class="rank" x="122" y="189" text-anchor="end">rank 2</text>
+<rect class="bub" x="132" y="172" width="20" height="22"/>
+<rect class="bub" x="154" y="172" width="20" height="22"/>
+<rect class="fcell" x="176" y="172" width="20" height="22"/>
+<text class="sm" x="186" y="189" text-anchor="middle">F0</text>
+<rect class="fcell" x="198" y="172" width="20" height="22"/>
+<text class="sm" x="208" y="189" text-anchor="middle">F1</text>
+<rect class="fcell" x="220" y="172" width="20" height="22"/>
+<text class="sm" x="230" y="189" text-anchor="middle">F2</text>
+<rect class="fcell" x="242" y="172" width="20" height="22"/>
+<text class="sm" x="252" y="189" text-anchor="middle">F3</text>
+<rect class="fcell2" x="264" y="172" width="20" height="22"/>
+<text class="sm" x="274" y="189" text-anchor="middle">F0</text>
+<rect class="fcell2" x="286" y="172" width="20" height="22"/>
+<text class="sm" x="296" y="189" text-anchor="middle">F1</text>
+<rect class="fcell2" x="308" y="172" width="20" height="22"/>
+<text class="sm" x="318" y="189" text-anchor="middle">F2</text>
+<rect class="bcell2" x="330" y="172" width="20" height="22"/>
+<text class="sm" x="340" y="189" text-anchor="middle">B0</text>
+<rect class="fcell2" x="352" y="172" width="20" height="22"/>
+<text class="sm" x="362" y="189" text-anchor="middle">F3</text>
+<rect class="bcell2" x="374" y="172" width="20" height="22"/>
+<text class="sm" x="384" y="189" text-anchor="middle">B1</text>
+<rect class="fcell" x="396" y="172" width="20" height="22"/>
+<text class="sm" x="406" y="189" text-anchor="middle">F4</text>
+<rect class="bcell2" x="418" y="172" width="20" height="22"/>
+<text class="sm" x="428" y="189" text-anchor="middle">B2</text>
+<rect class="fcell" x="440" y="172" width="20" height="22"/>
+<text class="sm" x="450" y="189" text-anchor="middle">F5</text>
+<rect class="bcell2" x="462" y="172" width="20" height="22"/>
+<text class="sm" x="472" y="189" text-anchor="middle">B3</text>
+<rect class="fcell" x="484" y="172" width="20" height="22"/>
+<text class="sm" x="494" y="189" text-anchor="middle">F6</text>
+<rect class="bcell" x="506" y="172" width="20" height="22"/>
+<text class="sm" x="516" y="189" text-anchor="middle">B0</text>
+<rect class="fcell" x="528" y="172" width="20" height="22"/>
+<text class="sm" x="538" y="189" text-anchor="middle">F7</text>
+<rect class="bcell" x="550" y="172" width="20" height="22"/>
+<text class="sm" x="560" y="189" text-anchor="middle">B1</text>
+<rect class="fcell2" x="572" y="172" width="20" height="22"/>
+<text class="sm" x="582" y="189" text-anchor="middle">F4</text>
+<rect class="bcell" x="594" y="172" width="20" height="22"/>
+<text class="sm" x="604" y="189" text-anchor="middle">B2</text>
+<rect class="fcell2" x="616" y="172" width="20" height="22"/>
+<text class="sm" x="626" y="189" text-anchor="middle">F5</text>
+<rect class="bcell" x="638" y="172" width="20" height="22"/>
+<text class="sm" x="648" y="189" text-anchor="middle">B3</text>
+<rect class="fcell2" x="660" y="172" width="20" height="22"/>
+<text class="sm" x="670" y="189" text-anchor="middle">F6</text>
+<rect class="bcell2" x="682" y="172" width="20" height="22"/>
+<text class="sm" x="692" y="189" text-anchor="middle">B4</text>
+<rect class="fcell2" x="704" y="172" width="20" height="22"/>
+<text class="sm" x="714" y="189" text-anchor="middle">F7</text>
+<rect class="bcell2" x="726" y="172" width="20" height="22"/>
+<text class="sm" x="736" y="189" text-anchor="middle">B5</text>
+<rect class="bub" x="748" y="172" width="20" height="22"/>
+<rect class="bcell2" x="770" y="172" width="20" height="22"/>
+<text class="sm" x="780" y="189" text-anchor="middle">B6</text>
+<rect class="bub" x="792" y="172" width="20" height="22"/>
+<rect class="bcell2" x="814" y="172" width="20" height="22"/>
+<text class="sm" x="824" y="189" text-anchor="middle">B7</text>
+<rect class="bcell" x="836" y="172" width="20" height="22"/>
+<text class="sm" x="846" y="189" text-anchor="middle">B4</text>
+<rect class="bcell" x="858" y="172" width="20" height="22"/>
+<rect class="mark" x="856.5" y="170.5" width="23" height="25" rx="3"/>
+<text class="dim" x="868" y="189" text-anchor="middle">B5</text>
+<rect class="bcell" x="880" y="172" width="20" height="22"/>
+<text class="sm" x="890" y="189" text-anchor="middle">B6</text>
+<rect class="bcell" x="902" y="172" width="20" height="22"/>
+<text class="sm" x="912" y="189" text-anchor="middle">B7</text>
+<rect class="bub" x="924" y="172" width="20" height="22"/>
+<rect class="bub" x="946" y="172" width="20" height="22"/>
+<text class="dim" x="980" y="189" text-anchor="start">发出：chunk 1</text>
+<text class="rank" x="122" y="217" text-anchor="end">rank 3</text>
+<rect class="bub" x="132" y="200" width="20" height="22"/>
+<rect class="bub" x="154" y="200" width="20" height="22"/>
+<rect class="bub" x="176" y="200" width="20" height="22"/>
+<rect class="fcell" x="198" y="200" width="20" height="22"/>
+<text class="sm" x="208" y="217" text-anchor="middle">F0</text>
+<rect class="fcell" x="220" y="200" width="20" height="22"/>
+<text class="sm" x="230" y="217" text-anchor="middle">F1</text>
+<rect class="fcell" x="242" y="200" width="20" height="22"/>
+<text class="sm" x="252" y="217" text-anchor="middle">F2</text>
+<rect class="fcell" x="264" y="200" width="20" height="22"/>
+<text class="sm" x="274" y="217" text-anchor="middle">F3</text>
+<rect class="fcell2" x="286" y="200" width="20" height="22"/>
+<text class="sm" x="296" y="217" text-anchor="middle">F0</text>
+<rect class="bcell2" x="308" y="200" width="20" height="22"/>
+<text class="sm" x="318" y="217" text-anchor="middle">B0</text>
+<rect class="fcell2" x="330" y="200" width="20" height="22"/>
+<text class="sm" x="340" y="217" text-anchor="middle">F1</text>
+<rect class="bcell2" x="352" y="200" width="20" height="22"/>
+<text class="sm" x="362" y="217" text-anchor="middle">B1</text>
+<rect class="fcell2" x="374" y="200" width="20" height="22"/>
+<text class="sm" x="384" y="217" text-anchor="middle">F2</text>
+<rect class="bcell2" x="396" y="200" width="20" height="22"/>
+<text class="sm" x="406" y="217" text-anchor="middle">B2</text>
+<rect class="fcell2" x="418" y="200" width="20" height="22"/>
+<text class="sm" x="428" y="217" text-anchor="middle">F3</text>
+<rect class="bcell2" x="440" y="200" width="20" height="22"/>
+<text class="sm" x="450" y="217" text-anchor="middle">B3</text>
+<rect class="fcell" x="462" y="200" width="20" height="22"/>
+<text class="sm" x="472" y="217" text-anchor="middle">F4</text>
+<rect class="bcell" x="484" y="200" width="20" height="22"/>
+<text class="sm" x="494" y="217" text-anchor="middle">B0</text>
+<rect class="fcell" x="506" y="200" width="20" height="22"/>
+<text class="sm" x="516" y="217" text-anchor="middle">F5</text>
+<rect class="bcell" x="528" y="200" width="20" height="22"/>
+<text class="sm" x="538" y="217" text-anchor="middle">B1</text>
+<rect class="fcell" x="550" y="200" width="20" height="22"/>
+<text class="sm" x="560" y="217" text-anchor="middle">F6</text>
+<rect class="bcell" x="572" y="200" width="20" height="22"/>
+<text class="sm" x="582" y="217" text-anchor="middle">B2</text>
+<rect class="fcell" x="594" y="200" width="20" height="22"/>
+<text class="sm" x="604" y="217" text-anchor="middle">F7</text>
+<rect class="bcell" x="616" y="200" width="20" height="22"/>
+<text class="sm" x="626" y="217" text-anchor="middle">B3</text>
+<rect class="fcell2" x="638" y="200" width="20" height="22"/>
+<text class="sm" x="648" y="217" text-anchor="middle">F4</text>
+<rect class="bcell2" x="660" y="200" width="20" height="22"/>
+<text class="sm" x="670" y="217" text-anchor="middle">B4</text>
+<rect class="fcell2" x="682" y="200" width="20" height="22"/>
+<text class="sm" x="692" y="217" text-anchor="middle">F5</text>
+<rect class="bcell2" x="704" y="200" width="20" height="22"/>
+<text class="sm" x="714" y="217" text-anchor="middle">B5</text>
+<rect class="fcell2" x="726" y="200" width="20" height="22"/>
+<text class="sm" x="736" y="217" text-anchor="middle">F6</text>
+<rect class="bcell2" x="748" y="200" width="20" height="22"/>
+<text class="sm" x="758" y="217" text-anchor="middle">B6</text>
+<rect class="fcell2" x="770" y="200" width="20" height="22"/>
+<text class="sm" x="780" y="217" text-anchor="middle">F7</text>
+<rect class="bcell2" x="792" y="200" width="20" height="22"/>
+<text class="sm" x="802" y="217" text-anchor="middle">B7</text>
+<rect class="bcell" x="814" y="200" width="20" height="22"/>
+<text class="sm" x="824" y="217" text-anchor="middle">B4</text>
+<rect class="bcell" x="836" y="200" width="20" height="22"/>
+<text class="sm" x="846" y="217" text-anchor="middle">B5</text>
+<rect class="bcell" x="858" y="200" width="20" height="22"/>
+<rect class="mark" x="856.5" y="198.5" width="23" height="25" rx="3"/>
+<text class="dim" x="868" y="217" text-anchor="middle">B6</text>
+<rect class="bcell" x="880" y="200" width="20" height="22"/>
+<text class="sm" x="890" y="217" text-anchor="middle">B7</text>
+<rect class="bub" x="902" y="200" width="20" height="22"/>
+<rect class="bub" x="924" y="200" width="20" height="22"/>
+<rect class="bub" x="946" y="200" width="20" height="22"/>
+<text class="dim" x="980" y="217" text-anchor="start">发出：chunk 1</text>
+<text class="sm" x="36" y="250" text-anchor="start">四个 rank 的命中列各自后移一格 —— 这正是 −pipeline_parallel_rank 的作用：把 DP reduce 摊在相邻的墙钟槽上，而不是四个 stage 同时挤进同一条链路。</text>
+<text class="sm" x="36" y="268" text-anchor="start">参数侧对称地取 +pipeline_parallel_rank（forward_step_helper_preprocess），所以预取比消费更早、reduce 比产出更晚。</text>
+<rect class="panel" x="20" y="384" width="596" height="148" rx="8"/>
+<text class="pt" x="36" y="408" text-anchor="start">② 这条规则漏掉了什么</text>
+<text class="rank" x="36" y="438" text-anchor="start">rank 0</text>
+<text class="dim" x="96" y="438" text-anchor="start">全部 chunk 都在对齐槽发出</text>
+<text class="rank" x="36" y="460" text-anchor="start">rank 1</text>
+<text class="costtx" x="96" y="460" text-anchor="start">chunk 0 未被调度器同步 → 进 cooldown 收尾循环</text>
+<text class="rank" x="36" y="482" text-anchor="start">rank 2</text>
+<text class="costtx" x="96" y="482" text-anchor="start">chunk 0 未被调度器同步 → 进 cooldown 收尾循环</text>
+<text class="rank" x="36" y="504" text-anchor="start">rank 3</text>
+<text class="costtx" x="96" y="504" text-anchor="start">chunk 0 未被调度器同步 → 进 cooldown 收尾循环</text>
+<text class="sm" x="36" y="518" text-anchor="start">因为 vmb−rank 必须落在 [0, 16) 内：rank r 能命中的最大 grad_sync_vmb 是 15−r。</text>
+<rect class="panel" x="632" y="384" width="588" height="148" rx="8"/>
+<text class="pt" x="648" y="408" text-anchor="start">③ 参数侧的门比梯度侧窄一格：1 &lt; chunk+1 &lt; num_model_chunks</text>
+<text class="sm" x="648" y="426" text-anchor="start">chunk 0 与 chunk 1 永远不会被调度器预取；它们只能走 finish_param_sync 的按需链。</text>
+<rect class="acc2" x="648" y="440" width="176" height="74" rx="8"/>
+<text class="rank" x="660" y="460" text-anchor="start">vp = 2</text>
+<text class="costtx" x="660" y="480" text-anchor="start">调度器一次都不预取</text>
+<text class="sm" x="660" y="500" text-anchor="start">窗口 1&lt;c&lt;2 为空</text>
+<rect class="acc1" x="838" y="440" width="176" height="74" rx="8"/>
+<text class="rank" x="850" y="460" text-anchor="start">vp = 3</text>
+<text class="dim" x="850" y="480" text-anchor="start">预取 chunk 2</text>
+<text class="sm" x="850" y="500" text-anchor="start">窗口 1&lt;c&lt;3</text>
+<rect class="acc1" x="1028" y="440" width="176" height="74" rx="8"/>
+<text class="rank" x="1040" y="460" text-anchor="start">vp = 4</text>
+<text class="dim" x="1040" y="480" text-anchor="start">预取 chunk 2、3</text>
+<text class="sm" x="1040" y="500" text-anchor="start">窗口 1&lt;c&lt;4</text>
+<text class="cap" x="28" y="578" text-anchor="start">所以"开了 align_param_gather 但 trace 里看不到预取"在 vp=2 下是**预期行为**，不是配置没生效 —— 排查应先看 vp，再看 bucket。</text>
+<text class="cap" x="28" y="598" text-anchor="start">cooldown 末尾的「Launch any remaining grad reductions.」把 ② 里漏下的 chunk 逐个补发；这一段没有计算可掩盖，是本页 §1 "头尾上限"的具体落点。</text>
+<text class="cap" x="28" y="618" text-anchor="start">字段 docstring 与执行接线方向相反（见正文的 contradiction 块）：只有 align_grad_reduce=True 才注入 grad_sync_func，本图画的正是 True 的那一支。</text>
+</svg>

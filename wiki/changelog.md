@@ -12,6 +12,15 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-05：Megatron 19–20 按特性分析契约重写，补齐原理图与跨轴证据
+
+- [[19_megatron_dist_checkpointing_analysis]] 以"纯元数据描述子替代数据搬运"为主线重组：同一张 `[8,4]` 权重 `TP4×DP2` 存、`TP2×DP1` 载走完全程，再依次解释访问计数校验、fully-parallel save 的四键贪心、load 的三条 exchange 数据面与异步存档的六级完成阶梯。把"策略表"换成三条**正交轴**（格式后端 / 并行化 wrapper / 异步 caller）加两条同级选择轴，枚举依据取自源码自己的分发点。五张图由 `tools/figs/svg/megatron_dist_checkpointing_figures.mjs` 从同一组配置算出。
+- 逐条重核后修正五条已漂移的旧结论：`common.pt` 的迁移**已经完成**（旧页把它列为"发展趋势"，写入端现在是 `ShardedObject("common_state")`）；`strategies/base.py` 与策略注册表已删除，`torch_dist` 是唯一后端；异步默认已是 `nvrx` 且缺包**直接抛错而非回退**；`flattened_range` 在裸 `ShardedTensor` 上被禁用后，分片优化器改用 1-D `axis_fragmentations=None` 或 unflatten 两种表达——**前者同时绕开了访问计数校验**；`dist_ckpt_save_pre_mcore_014` 是一面无读取点的死旗。另记三处源码自身已与实现不符的 docstring。
+- [[20_megatron_comm_overlap_analysis]] 正题从"窗口在哪一层"改成**具体谁掩盖谁**：逐轴给出 TP/CP/EP/PP/DP/FSDP 六条掩盖对，每条含掩盖物、收口点、失效条件与代价——TP 用 dgrad 盖 AG、用 wgrad 盖 RS；CP 用第 $i$ 个 head 的 attention 盖第 $i+1$ 个 head 的 AG；EP 用另一个 microbatch 的 attention/MLP 盖本 microbatch 的 A2A；PP 用当前槽的计算盖下一槽的 irecv；DP 用 bucket $i$ 的 forward 盖 bucket $i+1$ 的 AG；FSDP 同形但预取到额度用尽。**六条里五条的掩盖物都是本轴自己流水线上的相邻工作单元**，只有 EP 横向借另一个 microbatch，代价是两份激活同时驻留。配图改成"掩盖双方各占一条管线"的甘特：一张六面板总图、一张 TP 列并行/行并行两套路径图、一张 PP send 不对称图。三处新发现：**`deallocate_pipeline_outputs` 让前向 P2P send 实际是同步的**（训练入口无条件设 `True`，`overlap_p2p_comm` 在前向只掩盖住 recv）、`tp_comm_bulk_wgrad` 与 `tp_comm_bulk_dgrad` 的**名字与 docstring 互换**、`TELinear` 根本不接收 `ub_bulk_*` 故两种层激活的不是同一组机制。前一轮已补的四处交界证据保留：`CUDA_DEVICE_MAX_CONNECTIONS` 三方仲裁、EP schedule 主动推迟 `attn_dw` 掩盖 PP P2P、combined-1F1B 头尾各一次无对手、`vp=2` 时参数预取窗口 `1<c<2` 为空故一次都不触发。
+- PP×DP 对齐图的每一格与每个触发列由 `lib/megatron_pp_sim.mjs` 的离散事件仿真加复刻的 `schedules.py` 触发条件解算（`pp=4, vp=2, m=8, N=4`，makespan 38）：算出 rank 1–3 的 chunk 0 梯度归约**未被调度器发出**、只能落进 cooldown 的串行补发。同批修正两处旧表述（非交错 schedule 连带关闭 `align_param_gather` 且 PP=1 时静默；expert 层 UB 关闭**无任何 warning**），并把 `overlap_p2p_comm_warmup_flush` 明确路由回 15 号页。
+- 两页正文的行号引用清零：`path.py:NNN` 由 28+46 降到 0（由测试锁住），裸 `:NNN` 由 77+8 降到 46+2、且余下的全部是配置契约表「行」列这一既定格式；改用 `path::symbol` 稳定锚点。八张图各配回归测试，测试**读页面 markdown 本体**逐个断言图上算出的量在正文出现。图生成器新增文字包围盒断言：既查图元互相压字，也查**字形右/下端出画布**——后者当场揪出三处锚点在画布内、字却漏出去的缺陷。
+- 站点验证：changed-scope 构建 8 页，broken link / missing anchor / missing asset / missing legacy route 全为 0；两页 48 个 MathJax 公式通过；两幅 Mermaid 用站点随附的 mermaid 11.17.2 实解析通过。
+
 ## 2026-09-05：Megatron 18 从激活账本递进解释重计算设计
 
 - [[18_megatron_recompute_analysis]] 保持特性分析骨架，从反向所需张量推导逐层 full、uniform 分组、block 部分层、selective 与输出丢弃；每种方案就地解释保存/回放、容量收益及计算通信代价，再接入模型、并行、调度和融合边界。保留已有十个模块、兄弟入口、配置契约和源码纠错。

@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 532" width="1300" height="532" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .fcell{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .fcell2{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .bcell{fill:#F6DFC8;stroke:#fff;stroke-width:.8}
+  .bcell2{fill:#E8B887;stroke:#fff;stroke-width:.8}
+  .bub{fill:#F1F3F7;stroke:#fff;stroke-width:.8}
+  .mark{fill:none;stroke:#2563EB;stroke-width:2.2}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 2　TP 的掩盖对按层类型分成两套，不是一个开关</text>
+<text class="su" x="28" y="52" text-anchor="start">tp_comm_overlap 是总闸，但列并行与行并行走的是不同的 collective、不同的掩盖物、甚至不同的 TE 类。所有这些交叠都发生在 TE 内部——Megatron 树里只有 kwarg。</text>
+<text class="pt" x="28" y="98" text-anchor="start">列并行</text>
+<text class="sm" x="28" y="116" text-anchor="start">qkv / fc1</text>
+<text class="sm" x="28" y="131" text-anchor="start">TELayerNorm</text>
+<text class="sm" x="28" y="146" text-anchor="start">ColumnParallelLinear</text>
+<path class="gl" d="M 192 83 L 788 83"/>
+<path class="gl" d="M 192 145 L 788 145"/>
+<path class="edge" d="M 448.28 83 L 448.28 145"/>
+<text class="sm" x="448.28" y="78" text-anchor="middle">反向</text>
+<text class="rank" x="184" y="103" text-anchor="end">通信</text>
+<rect class="acc1" x="192" y="86" width="202.64" height="26" rx="5"/>
+<text class="sm" x="293.32" y="103" text-anchor="middle">AG(SP 输入)　ub_overlap_ag</text>
+<rect class="acc1" x="466.16" y="86" width="154.95999999999998" height="26" rx="5"/>
+<text class="sm" x="543.64" y="103" text-anchor="middle">bulk AG(输入)</text>
+<rect class="acc2" x="644.96" y="86" width="131.12" height="26" rx="5"/>
+<text class="sm" x="710.52" y="103" text-anchor="middle">bulk RS(dgrad 输出)</text>
+<text class="rank" x="184" y="133" text-anchor="end">计算</text>
+<rect class="neutral" x="227.76" y="116" width="202.64" height="26" rx="5"/>
+<text class="sm" x="329.08" y="133" text-anchor="middle">fprop GEMM 的其余 chunk</text>
+<rect class="neutral" x="490" y="116" width="154.96000000000004" height="26" rx="5"/>
+<text class="sm" x="567.48" y="133" text-anchor="middle">dgrad GEMM</text>
+<rect class="neutral" x="668.8" y="116" width="107.28000000000009" height="26" rx="5"/>
+<text class="sm" x="722.44" y="133" text-anchor="middle">wgrad GEMM</text>
+<rect class="acc1" x="800" y="84" width="472" height="84" rx="8"/>
+<text class="tx" x="812" y="105" text-anchor="start">前向 AG 与 GEMM 分块流水；反向两次 bulk 各配一段 GEMM</text>
+<path class="edge" d="M 812 113 L 1260 113"/>
+<text class="sm" x="812" y="131" text-anchor="start">前向输出不做 RS——列并行的输出本来就按列切，所以这里没有 ub_overlap_rs</text>
+<text class="sm" x="812" y="147" text-anchor="start">反向可改走 pipelined：ub_overlap_rs_dgrad 把 RS 与 dgrad 切块流水（默认关）</text>
+<text class="sm" x="812" y="163" text-anchor="start">tp_comm_overlap_disable_qkv / _disable_fc1 可单独关掉这一层的前向 AG</text>
+<text class="pt" x="28" y="198" text-anchor="start">行并行</text>
+<text class="sm" x="28" y="216" text-anchor="start">proj / fc2</text>
+<text class="sm" x="28" y="231" text-anchor="start">TELinear</text>
+<path class="gl" d="M 192 183 L 788 183"/>
+<path class="gl" d="M 192 245 L 788 245"/>
+<path class="edge" d="M 466.16 183 L 466.16 245"/>
+<text class="sm" x="466.16" y="178" text-anchor="middle">反向</text>
+<text class="rank" x="184" y="203" text-anchor="end">通信</text>
+<rect class="acc1" x="192" y="186" width="202.64" height="26" rx="5"/>
+<text class="sm" x="293.32" y="203" text-anchor="middle">RS(输出)　ub_overlap_rs</text>
+<rect class="acc1" x="501.92" y="186" width="238.40000000000003" height="26" rx="5"/>
+<text class="sm" x="621.12" y="203" text-anchor="middle">AG(grad_output)　ub_overlap_ag</text>
+<text class="rank" x="184" y="233" text-anchor="end">计算</text>
+<rect class="neutral" x="227.76" y="216" width="202.64" height="26" rx="5"/>
+<text class="sm" x="329.08" y="233" text-anchor="middle">fprop GEMM 的其余 chunk</text>
+<rect class="neutral" x="525.76" y="216" width="238.39999999999998" height="26" rx="5"/>
+<text class="sm" x="644.96" y="233" text-anchor="middle">dgrad GEMM</text>
+<rect class="acc1" x="800" y="184" width="472" height="84" rx="8"/>
+<text class="tx" x="812" y="205" text-anchor="start">行并行拿到的是完整输入、产出要 RS，方向与列并行正好相反</text>
+<path class="edge" d="M 812 213 L 1260 213"/>
+<text class="sm" x="812" y="231" text-anchor="start">这条路径上没有 bulk 开关：TELinear 根本不接收 ub_bulk_wgrad / ub_bulk_dgrad</text>
+<text class="sm" x="812" y="247" text-anchor="start">所以「TP overlap 开了」在两种层上激活的不是同一组机制</text>
+<text class="sm" x="812" y="263" text-anchor="start">is_expert=True 时四个 ub_* 全被写成 False —— 无 warning，静默降级</text>
+<rect class="ghost" x="28" y="292" width="400" height="180" rx="8"/>
+<text class="tx" x="40" y="313" text-anchor="start">依赖边界：本页能证明什么</text>
+<path class="edge" d="M 40 321 L 416 321"/>
+<text class="sm" x="40" y="339" text-anchor="start">Megatron 侧只做两件事：initialize_ub() 注册缓冲、</text>
+<text class="sm" x="40" y="355" text-anchor="start">给 te.Linear 传 ub_* kwarg。</text>
+<text class="sm" x="40" y="371" text-anchor="start">megatron/ 全树在 UB 路径上没有 handle、</text>
+<text class="sm" x="40" y="387" text-anchor="start">没有 event、没有 .wait()。</text>
+<text class="sm" x="40" y="403" text-anchor="start"></text>
+<text class="sm" x="40" y="419" text-anchor="start">能证明：形状契约、开关条件、哪个开关挂哪个类。</text>
+<text class="sm" x="40" y="435" text-anchor="start">不能证明：交叠确实发生、省下了多少墙钟时间。</text>
+<text class="sm" x="40" y="451" text-anchor="start"></text>
+<text class="sm" x="40" y="467" text-anchor="start">TE 内部如何切块、切几块，本页不做陈述。</text>
+<rect class="acc2" x="292" y="281" width="132" height="22" rx="6"/>
+<text class="sm" x="358" y="296" text-anchor="middle">TransformerEngine</text>
+<rect class="acc2" x="440" y="292" width="400" height="180" rx="8"/>
+<text class="tx" x="452" y="313" text-anchor="start">矛盾：两个 bulk 开关的名字与自述互换</text>
+<path class="edge" d="M 452 321 L 828 321"/>
+<text class="sm" x="452" y="339" text-anchor="start">tp_comm_bulk_wgrad 的 docstring：</text>
+<text class="sm" x="452" y="355" text-anchor="start">  “All-Gather overlap with Bprop activation</text>
+<text class="sm" x="452" y="371" text-anchor="start">   gradient GEMM” —— 即 AG ↔ dgrad。</text>
+<text class="sm" x="452" y="387" text-anchor="start">tp_comm_bulk_dgrad 的 docstring：</text>
+<text class="sm" x="452" y="403" text-anchor="start">  “Reduce-Scatter overlap with Bprop weight</text>
+<text class="sm" x="452" y="419" text-anchor="start">   gradient GEMM” —— 即 RS ↔ wgrad。</text>
+<text class="sm" x="452" y="435" text-anchor="start"></text>
+<text class="sm" x="452" y="451" text-anchor="start">dgrad 是激活梯度、wgrad 是权重梯度：</text>
+<text class="sm" x="452" y="467" text-anchor="start">名字与描述正好对调，两者必有一处是错的。</text>
+<rect class="acc2" x="852" y="292" width="420" height="180" rx="8"/>
+<text class="tx" x="864" y="313" text-anchor="start">静默降级的三条路</text>
+<path class="edge" d="M 864 321 L 1260 321"/>
+<text class="sm" x="864" y="339" text-anchor="start">① buffer name 不在 {qkv, proj, fc1, fc2} →</text>
+<text class="sm" x="864" y="355" text-anchor="start">   整层 tp_comm_overlap 置 False，有 warning。</text>
+<text class="sm" x="864" y="371" text-anchor="start">② is_expert=True → ub_overlap_ag 与</text>
+<text class="sm" x="864" y="387" text-anchor="start">   ub_overlap_rs 置 False，无 warning。</text>
+<text class="sm" x="864" y="403" text-anchor="start">③ parallel_mode == "duplicated" →</text>
+<text class="sm" x="864" y="419" text-anchor="start">   整段 ub_* 注入被跳过。</text>
+<text class="sm" x="864" y="435" text-anchor="start"></text>
+<text class="sm" x="864" y="451" text-anchor="start">②③ 都不打印任何东西：trace 里看不到 UB 并发，</text>
+<text class="sm" x="864" y="467" text-anchor="start">不代表开关没生效。</text>
+<text class="cap" x="28" y="498" text-anchor="start">所以「TP overlap 收益不及预期」的第一个检查点不是网络，而是这一层到底走了哪条路径：列并行还是行并行、是不是 expert、buffer name 有没有落在支持集合里。</text>
+<text class="cap" x="28" y="518" text-anchor="start">依赖边界声明：本图右侧三条都取自 megatron/ 树内的分支与 docstring；TE 内部如何切块、切几块，本页不做陈述。</text>
+</svg>

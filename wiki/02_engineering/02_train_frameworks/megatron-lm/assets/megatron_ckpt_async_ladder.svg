@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 620" width="1240" height="620" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .cell0{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .cell1{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .cellx{fill:#F5F7FA;stroke:#fff;stroke-width:.8}
+  .cellw{fill:#F6DFC8;stroke:#fff;stroke-width:.8}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 5　异步存档的完成阶梯：训练进程到底在哪一级被挡住</text>
+<text class="su" x="28" y="52" text-anchor="start">"异步"省掉的是写盘那一段，不是 D2H。六级完成语义各由一个符号证明，只有第二级真的阻塞训练进程。</text>
+<rect class="acc1" x="28" y="84" width="292" height="62" rx="8"/>
+<text class="rank" x="40" y="106" text-anchor="start">1. created</text>
+<text class="dim" x="40" y="126" text-anchor="start">训练进程不等待</text>
+<rect class="neutral" x="336" y="84" width="386" height="62" rx="8"/>
+<text class="sm" x="348" y="106" text-anchor="start">由谁证明</text>
+<text class="tx" x="348" y="126" text-anchor="start">TorchDistSaveShardedStrategy.async_save 返回 AsyncRequest</text>
+<rect class="ghost" x="738" y="84" width="178" height="62" rx="8"/>
+<text class="sm" x="750" y="106" text-anchor="start">执行者</text>
+<text class="sm" x="750" y="126" text-anchor="start">训练进程</text>
+<path class="aux" d="M 174 147 L 174 151"/>
+<rect class="acc2" x="28" y="152" width="292" height="62" rx="8"/>
+<text class="rank" x="40" y="174" text-anchor="start">2. staged（D2H 完成）</text>
+<text class="costtx" x="40" y="194" text-anchor="start">训练进程在此等待</text>
+<rect class="neutral" x="336" y="152" width="386" height="62" rx="8"/>
+<text class="sm" x="348" y="174" text-anchor="start">由谁证明</text>
+<text class="tx" x="348" y="194" text-anchor="start">preload_fn = FileSystemWriterAsync.preload_tensors</text>
+<rect class="ghost" x="738" y="152" width="178" height="62" rx="8"/>
+<text class="sm" x="750" y="174" text-anchor="start">执行者</text>
+<text class="sm" x="750" y="194" text-anchor="start">两种 caller 都挡住训练</text>
+<path class="aux" d="M 174 215 L 174 219"/>
+<rect class="acc1" x="28" y="220" width="292" height="62" rx="8"/>
+<text class="rank" x="40" y="242" text-anchor="start">3. submitted</text>
+<text class="dim" x="40" y="262" text-anchor="start">训练进程不等待</text>
+<rect class="neutral" x="336" y="220" width="386" height="62" rx="8"/>
+<text class="sm" x="348" y="242" text-anchor="start">由谁证明</text>
+<text class="tx" x="348" y="262" text-anchor="start">fork 出进程 / 把请求放进常驻 worker 的队列</text>
+<rect class="ghost" x="738" y="220" width="178" height="62" rx="8"/>
+<text class="sm" x="750" y="242" text-anchor="start">执行者</text>
+<text class="sm" x="750" y="262" text-anchor="start">训练进程</text>
+<path class="aux" d="M 174 283 L 174 287"/>
+<rect class="acc1" x="28" y="288" width="292" height="62" rx="8"/>
+<text class="rank" x="40" y="310" text-anchor="start">4. written（本 rank 的字节落盘）</text>
+<text class="dim" x="40" y="330" text-anchor="start">训练进程不等待</text>
+<rect class="neutral" x="336" y="288" width="386" height="62" rx="8"/>
+<text class="sm" x="348" y="310" text-anchor="start">由谁证明</text>
+<text class="tx" x="348" y="330" text-anchor="start">write_preloaded_data_multithread</text>
+<rect class="ghost" x="738" y="288" width="178" height="62" rx="8"/>
+<text class="sm" x="750" y="310" text-anchor="start">执行者</text>
+<text class="sm" x="750" y="330" text-anchor="start">worker 内的多个线程</text>
+<path class="aux" d="M 174 351 L 174 355"/>
+<rect class="acc1" x="28" y="356" width="292" height="62" rx="8"/>
+<text class="rank" x="40" y="378" text-anchor="start">5. finalized（全局元数据成文）</text>
+<text class="dim" x="40" y="398" text-anchor="start">训练进程不等待</text>
+<rect class="neutral" x="336" y="356" width="386" height="62" rx="8"/>
+<text class="sm" x="348" y="378" text-anchor="start">由谁证明</text>
+<text class="tx" x="348" y="398" text-anchor="start">save_state_dict_async_finalize + metadata_finalize_fn</text>
+<rect class="ghost" x="738" y="356" width="178" height="62" rx="8"/>
+<text class="sm" x="750" y="378" text-anchor="start">执行者</text>
+<text class="sm" x="750" y="398" text-anchor="start">训练进程（下次迭代循环头）</text>
+<path class="aux" d="M 174 419 L 174 423"/>
+<rect class="acc1" x="28" y="424" width="292" height="62" rx="8"/>
+<text class="rank" x="40" y="446" text-anchor="start">6. visible（可被续训选中）</text>
+<text class="dim" x="40" y="466" text-anchor="start">训练进程不等待</text>
+<rect class="neutral" x="336" y="424" width="386" height="62" rx="8"/>
+<text class="sm" x="348" y="446" text-anchor="start">由谁证明</text>
+<text class="tx" x="348" y="466" text-anchor="start">iter_finalize_fn 写 tracker 文件</text>
+<rect class="ghost" x="738" y="424" width="178" height="62" rx="8"/>
+<text class="sm" x="750" y="446" text-anchor="start">执行者</text>
+<text class="sm" x="750" y="466" text-anchor="start">rank 0</text>
+<rect class="neutral" x="932" y="84" width="280" height="196" rx="8"/>
+<text class="tx" x="944" y="105" text-anchor="start">两种 caller 的差别不在"挡不挡"</text>
+<path class="edge" d="M 944 113 L 1200 113"/>
+<text class="sm" x="944" y="131" text-anchor="start">Temporal：每次存档 fork 一个进程，</text>
+<text class="sm" x="944" y="147" text-anchor="start">D2H 在训练进程内联；轮询用一次</text>
+<text class="sm" x="944" y="163" text-anchor="start">单整数 all-reduce（注释自陈"与</text>
+<text class="sm" x="944" y="179" text-anchor="start">barrier 同等开销"）。</text>
+<text class="sm" x="944" y="195" text-anchor="start"></text>
+<text class="sm" x="944" y="211" text-anchor="start">Persistent：一个常驻 daemon worker，</text>
+<text class="sm" x="944" y="227" text-anchor="start">D2H 移到 worker 里做 —— 但训练进程</text>
+<text class="sm" x="944" y="243" text-anchor="start">仍要 join 等它完成。省掉的是 fork，</text>
+<text class="sm" x="944" y="259" text-anchor="start">不是那次同步。</text>
+<rect class="ghost" x="932" y="292" width="280" height="196" rx="8"/>
+<text class="tx" x="944" y="313" text-anchor="start">同步存档走同一条路</text>
+<path class="edge" d="M 944 321 L 1200 321"/>
+<text class="sm" x="944" y="339" text-anchor="start">TorchDistSaveShardedStrategy.save 就是</text>
+<text class="sm" x="944" y="355" text-anchor="start">async_save(async_strategy="mcore") 后</text>
+<text class="sm" x="944" y="371" text-anchor="start">立刻 execute_sync()：替换 preload 结果、</text>
+<text class="sm" x="944" y="387" text-anchor="start">跑 async_fn、再 torch.distributed.barrier()</text>
+<text class="sm" x="944" y="403" text-anchor="start">（注释："This utility implements a sync</text>
+<text class="sm" x="944" y="419" text-anchor="start"> cp save. Hence the barrier."）。</text>
+<text class="sm" x="944" y="435" text-anchor="start"></text>
+<text class="sm" x="944" y="451" text-anchor="start">所以同步与异步的差别只是 finalize 何时</text>
+<text class="sm" x="944" y="467" text-anchor="start">发生，不是两套写盘实现。</text>
+<text class="cap" x="28" y="558" text-anchor="start">触发第 5 级的只有三个调用点：训练迭代循环头的 maybe_finalize_async_save(blocking=False)，以及 train() / pretrain() 结尾各一次 blocking=True。</text>
+<text class="cap" x="28" y="578" text-anchor="start">推论（本页归纳）：如果一个作业在两次存档之间迭代很少，第 5 级可能被下一次存档追上；源码用 assert 挡住这种错配 —— 全体 rank 的 call_idx 必须一致。</text>
+<text class="cap" x="28" y="598" text-anchor="start">第 2 级是 async_save 唯一没能省掉的同步点，也是 use_persistent_ckpt_worker 与 async_ckpt_use_cpu_shm 这两个旋钮真正作用的地方。</text>
+</svg>

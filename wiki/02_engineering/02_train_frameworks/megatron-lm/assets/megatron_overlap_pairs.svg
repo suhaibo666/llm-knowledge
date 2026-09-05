@@ -1,0 +1,208 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 736" width="1300" height="736" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .fcell{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .fcell2{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .bcell{fill:#F6DFC8;stroke:#fff;stroke-width:.8}
+  .bcell2{fill:#E8B887;stroke:#fff;stroke-width:.8}
+  .bub{fill:#F1F3F7;stroke:#fff;stroke-width:.8}
+  .mark{fill:none;stroke:#2563EB;stroke-width:2.2}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　谁掩盖谁：六条轴的掩盖对</text>
+<text class="su" x="28" y="52" text-anchor="start">每条轴两条管线——上面是被掩盖的通信，下面是掩盖它的计算。竖虚线是第一个真正阻塞的收口点；块的长短只表达先后与交叠，不表达绝对时长。</text>
+<text class="pt" x="28" y="98" text-anchor="start">TP</text>
+<text class="sm" x="28" y="116" text-anchor="start">粒度：整块</text>
+<text class="sm" x="28" y="131" text-anchor="start">sequence_parallel 反向</text>
+<path class="gl" d="M 192 83 L 788 83"/>
+<path class="gl" d="M 192 145 L 788 145"/>
+<text class="rank" x="184" y="103" text-anchor="end">通信</text>
+<rect class="acc1" x="192" y="86" width="178.79999999999995" height="26" rx="5"/>
+<text class="sm" x="281.4" y="103" text-anchor="middle">AG(input) → total_input</text>
+<rect class="acc1" x="442.32" y="86" width="214.56" height="26" rx="5"/>
+<text class="sm" x="549.6" y="103" text-anchor="middle">RS(grad_input) / AR</text>
+<text class="rank" x="184" y="133" text-anchor="end">计算</text>
+<rect class="neutral" x="215.84" y="116" width="190.72" height="26" rx="5"/>
+<text class="sm" x="311.2" y="133" text-anchor="middle">dgrad = grad_output @ weight</text>
+<rect class="neutral" x="466.16" y="116" width="226.47999999999996" height="26" rx="5"/>
+<text class="sm" x="579.4" y="133" text-anchor="middle">wgrad GEMM ＋ grad_bias</text>
+<path class="edge" d="M 412.52 83 L 412.52 150"/>
+<text class="costtx" x="412.52" y="164" text-anchor="middle">handle.wait()</text>
+<path class="edge" d="M 716.48 83 L 716.48 150"/>
+<text class="costtx" x="716.48" y="164" text-anchor="middle">handle.wait() → return</text>
+<rect class="acc1" x="800" y="84" width="472" height="84" rx="8"/>
+<text class="tx" x="812" y="105" text-anchor="start">掩盖对　AG ↔ dgrad；RS/AR ↔ wgrad</text>
+<path class="edge" d="M 812 113 L 1260 113"/>
+<text class="sm" x="812" y="131" text-anchor="start">两次异步都由 backward 自己发起、自己收口，掩盖物是它本身的下一段 GEMM</text>
+<text class="sm" x="812" y="147" text-anchor="start">前提：注释三处都写 rely on CUDA_DEVICE_MAX_CONNECTIONS=1 保证下发顺序</text>
+<text class="sm" x="812" y="163" text-anchor="start">不成立：wgrad_deferral_limit 命中时不算 wgrad，AG 压根不发</text>
+<text class="pt" x="28" y="198" text-anchor="start">CP</text>
+<text class="sm" x="28" y="216" text-anchor="start">粒度：一个 KV head</text>
+<text class="sm" x="28" y="231" text-anchor="start">原生 eager fallback</text>
+<path class="gl" d="M 192 183 L 788 183"/>
+<path class="gl" d="M 192 245 L 788 245"/>
+<text class="rank" x="184" y="203" text-anchor="end">通信</text>
+<rect class="acc1" x="192" y="186" width="95.36000000000001" height="26" rx="5"/>
+<text class="sm" x="239.68" y="203" text-anchor="middle">AG(K,V head 0)</text>
+<rect class="acc1" x="311.2" y="186" width="107.28000000000003" height="26" rx="5"/>
+<text class="sm" x="364.84000000000003" y="203" text-anchor="middle">AG(head 1)</text>
+<rect class="acc1" x="478.08" y="186" width="107.28000000000003" height="26" rx="5"/>
+<text class="sm" x="531.72" y="203" text-anchor="middle">AG(head 2)</text>
+<text class="rank" x="184" y="233" text-anchor="end">计算</text>
+<rect class="neutral" x="311.2" y="216" width="154.96000000000004" height="26" rx="5"/>
+<text class="sm" x="388.68" y="233" text-anchor="middle">attn_fwd(head 0)</text>
+<rect class="neutral" x="478.08" y="216" width="154.95999999999998" height="26" rx="5"/>
+<text class="sm" x="555.56" y="233" text-anchor="middle">attn_fwd(head 1)</text>
+<rect class="neutral" x="644.96" y="216" width="119.19999999999993" height="26" rx="5"/>
+<text class="sm" x="704.56" y="233" text-anchor="middle">attn_fwd(head 2)</text>
+<path class="edge" d="M 299.28 183 L 299.28 250"/>
+<text class="costtx" x="299.28" y="264" text-anchor="middle">comm.wait()</text>
+<path class="edge" d="M 466.16 183 L 466.16 250"/>
+<text class="costtx" x="466.16" y="264" text-anchor="middle">comm.wait()</text>
+<path class="edge" d="M 633.04 183 L 633.04 250"/>
+<text class="costtx" x="633.04" y="264" text-anchor="middle">comm.wait()</text>
+<rect class="acc1" x="800" y="184" width="472" height="84" rx="8"/>
+<text class="tx" x="812" y="205" text-anchor="start">掩盖对　AG(KV head i+1) ↔ 第 i 个 head 的 attention</text>
+<path class="edge" d="M 812 213 L 1260 213"/>
+<text class="sm" x="812" y="231" text-anchor="start">循环体固定三步：comm.wait() → swap 双缓冲 → 发下一 head 的 AG → 算当前 head</text>
+<text class="sm" x="812" y="247" text-anchor="start">窗口不可调：heads_k_stride 写死为 1，旁边留着 TODO make it configurable</text>
+<text class="sm" x="812" y="263" text-anchor="start">不成立：最后一个 head 没有下一轮可预取；prologue 那次 AG 也全暴露</text>
+<text class="pt" x="28" y="298" text-anchor="start">EP</text>
+<text class="sm" x="28" y="316" text-anchor="start">粒度：一对 microbatch</text>
+<text class="sm" x="28" y="331" text-anchor="start">combined-1F1B</text>
+<path class="gl" d="M 192 283 L 788 283"/>
+<path class="gl" d="M 192 345 L 788 345"/>
+<text class="rank" x="184" y="303" text-anchor="end">通信</text>
+<rect class="acc1" x="192" y="286" width="107.27999999999997" height="26" rx="5"/>
+<text class="sm" x="245.64" y="303" text-anchor="middle">combine_bwd</text>
+<rect class="acc1" x="323.12" y="286" width="226.4799999999999" height="26" rx="5"/>
+<text class="sm" x="436.35999999999996" y="303" text-anchor="middle">dispatch_fwd → dispatch_bwd</text>
+<rect class="acc1" x="573.44" y="286" width="119.19999999999993" height="26" rx="5"/>
+<text class="sm" x="633.04" y="303" text-anchor="middle">combine_fwd</text>
+<text class="rank" x="184" y="333" text-anchor="end">计算</text>
+<rect class="neutral" x="192" y="316" width="107.27999999999997" height="26" rx="5"/>
+<text class="sm" x="245.64" y="333" text-anchor="middle">attn_fwd</text>
+<rect class="neutral" x="323.12" y="316" width="226.4799999999999" height="26" rx="5"/>
+<text class="sm" x="436.35999999999996" y="333" text-anchor="middle">mlp_bwd → mlp_bwd_dw → mlp_fwd</text>
+<rect class="neutral" x="573.44" y="316" width="131.1199999999999" height="26" rx="5"/>
+<text class="sm" x="639" y="333" text-anchor="middle">attn_bwd</text>
+<text class="costtx" x="192" y="364" text-anchor="start">无 handle：comm_stream 与 comp_stream 靠每个 microbatch 一个 torch.cuda.Event 定序</text>
+<rect class="acc1" x="800" y="284" width="472" height="84" rx="8"/>
+<text class="tx" x="812" y="305" text-anchor="start">掩盖对　六个节点两两配对，源码 docstring 自己画了这张甘特</text>
+<path class="edge" d="M 812 313 L 1260 313"/>
+<text class="sm" x="812" y="331" text-anchor="start">comm_stream: combine_bwd | dispatch_fwd-&gt;dispatch_bwd | combine_fwd</text>
+<text class="sm" x="812" y="347" text-anchor="start">comp_stream: attn_fwd    | mlp_bwd-&gt;mlp_bwd_dw-&gt;mlp_fwd | attn_bwd</text>
+<text class="sm" x="812" y="363" text-anchor="start">唯一用「另一个 microbatch」的计算掩盖本 microbatch 通信的轴；首尾各一次无对手</text>
+<text class="pt" x="28" y="398" text-anchor="start">PP</text>
+<text class="sm" x="28" y="416" text-anchor="start">粒度：一个调度槽</text>
+<text class="sm" x="28" y="431" text-anchor="start">interleaved / VPP</text>
+<path class="gl" d="M 192 383 L 788 383"/>
+<path class="gl" d="M 192 445 L 788 445"/>
+<text class="rank" x="184" y="403" text-anchor="end">通信</text>
+<rect class="acc1" x="239.68" y="386" width="297.99999999999994" height="26" rx="5"/>
+<text class="sm" x="388.67999999999995" y="403" text-anchor="middle">irecv(下一槽要吃的张量)</text>
+<text class="rank" x="184" y="433" text-anchor="end">计算</text>
+<rect class="neutral" x="192" y="416" width="178.79999999999995" height="26" rx="5"/>
+<text class="sm" x="281.4" y="433" text-anchor="middle">第 k 槽的 forward / backward</text>
+<rect class="neutral" x="549.5999999999999" y="416" width="190.72000000000014" height="26" rx="5"/>
+<text class="sm" x="644.96" y="433" text-anchor="middle">第 k+1 槽的 forward / backward</text>
+<path class="edge" d="M 537.68 383 L 537.68 450"/>
+<text class="costtx" x="537.68" y="464" text-anchor="middle">recv_prev_wait_handles.pop(0).wait()</text>
+<rect class="acc1" x="800" y="384" width="472" height="84" rx="8"/>
+<text class="tx" x="812" y="405" text-anchor="start">掩盖对　irecv(下一槽输入) ↔ 当前槽的计算</text>
+<path class="edge" d="M 812 413 L 1260 413"/>
+<text class="sm" x="812" y="431" text-anchor="start">handle 不当场等：塞进 FIFO，到真正消费它的那个槽才 pop 出来 wait</text>
+<text class="sm" x="812" y="447" text-anchor="start">send 侧并不对称——前向 send 被同步化，反向 send 才真异步，见图 3</text>
+<text class="sm" x="812" y="463" text-anchor="start">不成立：warmup 与 cooldown 的槽没有对手，两端阶梯全暴露</text>
+<text class="pt" x="28" y="498" text-anchor="start">DP</text>
+<text class="sm" x="28" y="516" text-anchor="start">粒度：一个 bucket</text>
+<text class="sm" x="28" y="531" text-anchor="start">DDP 的 bucket 链</text>
+<path class="gl" d="M 192 483 L 788 483"/>
+<path class="gl" d="M 192 545 L 788 545"/>
+<path class="edge" d="M 579.4000000000001 483 L 579.4000000000001 545"/>
+<text class="sm" x="579.4000000000001" y="478" text-anchor="middle">loss</text>
+<text class="rank" x="184" y="503" text-anchor="end">通信</text>
+<rect class="ghost" x="192" y="486" width="41.72" height="26" rx="5"/>
+<text class="sm" x="212.86" y="503" text-anchor="middle">…</text>
+<rect class="acc1" x="239.68" y="486" width="154.95999999999998" height="26" rx="5"/>
+<text class="sm" x="317.15999999999997" y="503" text-anchor="middle">AG(bucket i+1)</text>
+<rect class="acc1" x="418.48" y="486" width="131.1199999999999" height="26" rx="5"/>
+<text class="sm" x="484.03999999999996" y="503" text-anchor="middle">AG(bucket i+2)</text>
+<rect class="acc1" x="633.04" y="486" width="131.12" height="26" rx="5"/>
+<text class="sm" x="698.5999999999999" y="503" text-anchor="middle">RS(bucket j 的梯度)</text>
+<text class="rank" x="184" y="533" text-anchor="end">计算</text>
+<rect class="neutral" x="239.68" y="516" width="154.95999999999998" height="26" rx="5"/>
+<text class="sm" x="317.15999999999997" y="533" text-anchor="middle">fwd(bucket i)</text>
+<rect class="neutral" x="418.48" y="516" width="131.1199999999999" height="26" rx="5"/>
+<text class="sm" x="484.03999999999996" y="533" text-anchor="middle">fwd(bucket i+1)</text>
+<rect class="neutral" x="609.2" y="516" width="154.95999999999992" height="26" rx="5"/>
+<text class="sm" x="686.6800000000001" y="533" text-anchor="middle">bwd(其余层)</text>
+<path class="edge" d="M 233.72 483 L 233.72 550"/>
+<text class="costtx" x="233.72" y="564" text-anchor="middle">wait AG(i) → 立刻发 AG(i+1)</text>
+<path class="edge" d="M 412.52 483 L 412.52 550"/>
+<text class="costtx" x="412.52" y="564" text-anchor="middle">wait AG(i+1) → 发 AG(i+2)</text>
+<rect class="acc1" x="800" y="484" width="472" height="84" rx="8"/>
+<text class="tx" x="812" y="505" text-anchor="start">掩盖对　AG(bucket i+1) ↔ fwd(bucket i)；RS(bucket j) ↔ 其余层反向</text>
+<path class="edge" d="M 812 513 L 1260 513"/>
+<text class="sm" x="812" y="531" text-anchor="start">finish_param_sync 一句话做两件事：等当前桶，然后立刻派发下一桶</text>
+<text class="sm" x="812" y="547" text-anchor="start">注册序 ≠ 前向序时下一桶已被别人派发，源码打 warning 说这会伤害 overlap</text>
+<text class="sm" x="812" y="563" text-anchor="start">不成立：最后一个 bucket 的 RS 没有后继反向，finish_grad_sync 处全暴露</text>
+<text class="pt" x="28" y="598" text-anchor="start">FSDP</text>
+<text class="sm" x="28" y="616" text-anchor="start">粒度：一个 unit</text>
+<text class="sm" x="28" y="631" text-anchor="start">Megatron-FSDP</text>
+<path class="gl" d="M 192 583 L 788 583"/>
+<path class="gl" d="M 192 645 L 788 645"/>
+<text class="rank" x="184" y="603" text-anchor="end">通信</text>
+<rect class="acc1" x="227.76" y="586" width="143.03999999999996" height="26" rx="5"/>
+<text class="sm" x="299.28" y="603" text-anchor="middle">AG(unit i+1)</text>
+<rect class="acc1" x="382.72" y="586" width="131.12" height="26" rx="5"/>
+<text class="sm" x="448.28000000000003" y="603" text-anchor="middle">AG(unit i+2)</text>
+<rect class="acc1" x="525.76" y="586" width="190.72000000000003" height="26" rx="5"/>
+<text class="sm" x="621.12" y="603" text-anchor="middle">AG(unit i+3) … 直到额度用尽</text>
+<text class="rank" x="184" y="633" text-anchor="end">计算</text>
+<rect class="neutral" x="227.76" y="616" width="154.96000000000004" height="26" rx="5"/>
+<text class="sm" x="305.24" y="633" text-anchor="middle">fwd(unit i)</text>
+<rect class="neutral" x="394.64" y="616" width="143.03999999999996" height="26" rx="5"/>
+<text class="sm" x="466.15999999999997" y="633" text-anchor="middle">fwd(unit i+1)</text>
+<rect class="neutral" x="549.5999999999999" y="616" width="154.96000000000004" height="26" rx="5"/>
+<text class="sm" x="627.0799999999999" y="633" text-anchor="middle">fwd(unit i+2)</text>
+<path class="edge" d="M 221.8 583 L 221.8 650"/>
+<text class="costtx" x="221.8" y="664" text-anchor="middle">wait_bucket_ready(i)</text>
+<path class="edge" d="M 388.68 583 L 388.68 650"/>
+<text class="costtx" x="388.68" y="664" text-anchor="middle">…(i+1)</text>
+<path class="edge" d="M 543.64 583 L 543.64 650"/>
+<text class="costtx" x="543.64" y="664" text-anchor="middle">…(i+2)</text>
+<rect class="acc1" x="800" y="584" width="472" height="84" rx="8"/>
+<text class="tx" x="812" y="605" text-anchor="start">掩盖对　AG(后续若干 unit) ↔ 当前 unit 的 forward</text>
+<path class="edge" d="M 812 613 L 1260 613"/>
+<text class="sm" x="812" y="631" text-anchor="start">与 DP 的差别：一次预取到额度上限，不是只预取一个桶</text>
+<text class="sm" x="812" y="647" text-anchor="start">额度 suggested_AG_prefetch_size = suggested_communication_unit_size // 2</text>
+<text class="sm" x="812" y="663" text-anchor="start">只 wait 当前 bucket，后面几个继续在飞——在飞份数就是这里的显存代价</text>
+<text class="cap" x="28" y="702" text-anchor="start">六条轴的掩盖物都是「同一条计算流上的相邻工作单元」——下一个 GEMM、下一个 head、下一个槽、下一个 bucket。只有 EP 例外：它让 forward 与 backward 同时在场，用另一个 microbatch 的计算去掩盖本 microbatch 的 A2A。</text>
+<text class="cap" x="28" y="722" text-anchor="start">推论（本页归纳，源码未自述）：掩盖窗口的大小由各自 owner 的粒度决定，跨轴开关不叠加；EP 那条例外的代价是两个 microbatch 的激活必须同时活着，这正是 §5.3 那个显存旋钮存在的原因。</text>
+</svg>

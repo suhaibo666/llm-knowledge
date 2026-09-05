@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 660" width="1240" height="660" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .fcell{fill:#DCE9FB;stroke:#fff;stroke-width:.8}
+  .fcell2{fill:#9CC2F3;stroke:#fff;stroke-width:.8}
+  .bcell{fill:#F6DFC8;stroke:#fff;stroke-width:.8}
+  .bcell2{fill:#E8B887;stroke:#fff;stroke-width:.8}
+  .bub{fill:#F1F3F7;stroke:#fff;stroke-width:.8}
+  .mark{fill:none;stroke:#2563EB;stroke-width:2.2}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 3　CUDA_DEVICE_MAX_CONNECTIONS：一个进程级标量，三方要不同的值</text>
+<text class="su" x="28" y="52" text-anchor="start">这是源码里最锋利的一处跨轴资源冲突：它不是显存、不是带宽，而是一个必须在启动前定死、且全进程共享的整数。</text>
+<rect class="acc1" x="28" y="76" width="580" height="196" rx="8"/>
+<text class="tx" x="40" y="97" text-anchor="start">设成 1 买到什么：kernel 按调用顺序下发</text>
+<path class="edge" d="M 40 105 L 596 105"/>
+<text class="sm" x="40" y="123" text-anchor="start">linear_with_grad_accumulation_and_async_allreduce 的 docstring 说得最完整：</text>
+<text class="sm" x="40" y="139" text-anchor="start">"…that should be scheduled before compute kernels to overlap the communication</text>
+<text class="sm" x="40" y="155" text-anchor="start"> with the computation, which is necessary for a speedup but not for correctness</text>
+<text class="sm" x="40" y="171" text-anchor="start"> so that ordering isn't imposed by the scheduler."</text>
+<text class="sm" x="40" y="187" text-anchor="start"></text>
+<text class="sm" x="40" y="203" text-anchor="start">三处依赖这条顺序的注释（都在 LinearWithGradAccumulationAndAsyncCommunication）：</text>
+<text class="sm" x="40" y="219" text-anchor="start">· all-gather 排在 input gradient 计算之前</text>
+<text class="sm" x="40" y="235" text-anchor="start">· all-reduce 排在 weight gradient 计算之前</text>
+<text class="sm" x="40" y="251" text-anchor="start">· reduce-scatter 排在 weight gradient 计算之前</text>
+<rect class="acc2" x="632" y="76" width="580" height="196" rx="8"/>
+<text class="tx" x="644" y="97" text-anchor="start">设成 1 的代价：连续通信 kernel 会挤掉计算</text>
+<path class="edge" d="M 644 105 L 1200 105"/>
+<text class="sm" x="644" y="123" text-anchor="start">partition_buckets 的 docstring 给出反向理由：</text>
+<text class="sm" x="644" y="139" text-anchor="start">"…which doubles the number of communication kernels, and because of the use of</text>
+<text class="sm" x="644" y="155" text-anchor="start"> CUDA_DEVICE_MAX_CONNECTIONS=1, having multiple back-to-back communications will</text>
+<text class="sm" x="644" y="171" text-anchor="start"> prevent the overlap of communication kernels with computation kernels."</text>
+<text class="sm" x="644" y="187" text-anchor="start"></text>
+<text class="sm" x="644" y="203" text-anchor="start">于是 DDP 反过来合并连续的小 bucket —— 同一个标量，在 TP 侧是收益来源，</text>
+<text class="sm" x="644" y="219" text-anchor="start">在 DP 侧变成必须绕开的约束。EP dispatcher 里另有四处注释按它的取值</text>
+<text class="sm" x="644" y="235" text-anchor="start">重排 shared-expert GEMM 与 A2A 的下发顺序。</text>
+<rect class="panel" x="20" y="292" width="1200" height="268" rx="8"/>
+<text class="pt" x="36" y="316" text-anchor="start">仲裁：validate_args 里的一段三分支</text>
+<text class="sm" x="36" y="334" text-anchor="start">入口条件：(tensor_model_parallel_size &gt; 1 or context_parallel_size &gt; 1) and get_device_arch_version() &lt; 10</text>
+<rect class="neutral" x="36" y="348" width="250" height="60" rx="8"/>
+<text class="rank" x="48" y="370" text-anchor="start">arch ≥ 10（Blackwell）</text>
+<text class="dim" x="48" y="390" text-anchor="start">整段跳过：注释说要求已消失</text>
+<rect class="neutral" x="36" y="418" width="250" height="124" rx="8"/>
+<text class="rank" x="48" y="440" text-anchor="start">arch &lt; 10 且 TP&gt;1 或 CP&gt;1</text>
+<text class="sm" x="48" y="460" text-anchor="start">按下面三支依次判定，</text>
+<text class="sm" x="48" y="476" text-anchor="start">三支互斥，先命中先返回。</text>
+<text class="sm" x="48" y="500" text-anchor="start">注意：这里判的是 TP/CP，</text>
+<text class="sm" x="48" y="516" text-anchor="start">不是"谁真的需要 overlap"。</text>
+<rect class="acc2" x="330" y="348" width="276" height="152" rx="8"/>
+<text class="tx" x="342" y="369" text-anchor="start">① 同时开了 FSDP</text>
+<path class="edge" d="M 342 377 L 594 377"/>
+<text class="sm" x="342" y="395" text-anchor="start">warn_rank_0：TP/CP 要 =1，</text>
+<text class="sm" x="342" y="411" text-anchor="start">Torch-FSDP2 / Megatron-FSDP 要</text>
+<text class="sm" x="342" y="427" text-anchor="start">"not setting CUDA_DEVICE_MAX_</text>
+<text class="sm" x="342" y="443" text-anchor="start">CONNECTIONS=1 for better</text>
+<text class="sm" x="342" y="459" text-anchor="start">parallelization"。</text>
+<text class="sm" x="342" y="475" text-anchor="start">只是警告 —— 环境变量维持原样。</text>
+<path class="aux" d="M 292 478 L 324 400"/>
+<rect class="acc2" x="626" y="348" width="276" height="152" rx="8"/>
+<text class="tx" x="638" y="369" text-anchor="start">② 同时开了 EP combined overlap</text>
+<path class="edge" d="M 638 377 L 890 377"/>
+<text class="sm" x="638" y="395" text-anchor="start">warn_rank_0，并直接给出取舍：</text>
+<text class="sm" x="638" y="411" text-anchor="start">"you can set CUDA_DEVICE_MAX_</text>
+<text class="sm" x="638" y="427" text-anchor="start">CONNECTIONS to 1 or 32, which</text>
+<text class="sm" x="638" y="443" text-anchor="start">depends on which parallelization</text>
+<text class="sm" x="638" y="459" text-anchor="start">you want to prioritize."</text>
+<text class="sm" x="638" y="475" text-anchor="start">同样只是警告。</text>
+<path class="aux" d="M 292 478 L 620 424"/>
+<rect class="acc1" x="922" y="348" width="276" height="152" rx="8"/>
+<text class="tx" x="934" y="369" text-anchor="start">③ 都没开</text>
+<path class="edge" d="M 934 377 L 1186 377"/>
+<text class="sm" x="934" y="395" text-anchor="start">assert os.environ.get(...) == "1"</text>
+<text class="sm" x="934" y="411" text-anchor="start"></text>
+<text class="sm" x="934" y="427" text-anchor="start">硬失败，进程起不来。</text>
+<text class="sm" x="934" y="443" text-anchor="start"></text>
+<text class="sm" x="934" y="459" text-anchor="start">yaml_arguments 走另一条路：</text>
+<text class="sm" x="934" y="475" text-anchor="start">SP 未设 1 直接 RuntimeError。</text>
+<path class="aux" d="M 292 478 L 916 448"/>
+<text class="rank" x="330" y="522" text-anchor="start">反方向的两条硬门（与上面的 assert 直接对立）：</text>
+<text class="sm" x="330" y="540" text-anchor="start">use_torch_fsdp2 → "FSDP always requires CUDA_DEVICE_MAX_CONNECTIONS value large than one"（原文如此）</text>
+<text class="sm" x="330" y="556" text-anchor="start">Megatron-FSDP → "requires CUDA_DEVICE_MAX_CONNECTIONS &gt; 1 or unset"；走 YAML 配置那条路更严：SP 未设 1 直接 RuntimeError。</text>
+<text class="cap" x="28" y="598" text-anchor="start">本图要证的结论：进程组不同、CUDA stream 不同，都不代表两条通信互不干扰 —— 它们连"能同时下发几条"这个额度都共用一个进程级标量。</text>
+<text class="cap" x="28" y="618" text-anchor="start">诊断次序因此固定：先确认这个标量的取值与本作业开启的轴是否自洽，再去看 trace。取值错了，任何 stream priority 或 bucket 调参都只是换个等待位置。</text>
+<text class="cap" x="28" y="638" text-anchor="start">源码只陈述了各方的诉求与仲裁分支，没有给出任何拓扑下的最优值；"1 还是 32"必须在目标机器上量。</text>
+</svg>
