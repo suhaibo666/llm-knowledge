@@ -195,7 +195,7 @@ $f$ 即 `OUTLIER_MIN_DEVIATION_FRAC = 0.10`；$\lvert v_i-\mathrm{med}\rvert>\ta
 本页的模块大多是函数式的模块级单例，只有三个真正的类；连线表示调用或持有。
 
 ```mermaid
-flowchart TB
+flowchart LR
   subgraph J["作业面（本页）"]
     FT["ft_integration<br/>模块级状态 + 8 个 hook"]
     IPR["inprocess_restart<br/>组装 wrapper 参数"]
