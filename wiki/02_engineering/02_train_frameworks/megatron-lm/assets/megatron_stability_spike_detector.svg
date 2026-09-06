@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 500" width="1272" height="500" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .maxline{fill:none;stroke:#2563EB;stroke-width:2}
+  .trigline{fill:none;stroke:#C3651F;stroke-width:2;stroke-dasharray:7 4}
+  .refline{fill:none;stroke:#C8CFDA;stroke-width:1;stroke-dasharray:3 4}
+  .band{fill:#F5F7FA;stroke:none}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　尖峰判据：前若干步只用来估最大值，之后才开始判</text>
+<text class="su" x="28" y="52" text-anchor="start">is_unexpectedly_large(threshold=10)；图示窗口取 8 个样本，源码默认 num_samples=100；纵轴对数</text>
+<rect class="band" x="92" y="100" width="318" height="258"/>
+<text class="sm" x="251" y="90" text-anchor="middle">采样窗口：只累计 max，不判定（8 步）</text>
+<text class="dim" x="418" y="90" text-anchor="start">armed：开始按 max × threshold 判定</text>
+<rect class="ghost" x="99.155" y="318.1201553901737" width="25.44" height="39.87984460982631" rx="3"/>
+<text class="sm" x="111.875" y="312.1201553901737" text-anchor="middle">2.1</text>
+<rect class="ghost" x="138.905" y="319.41542192349635" width="25.44" height="38.58457807650365" rx="3"/>
+<rect class="ghost" x="178.655" y="320.2078337208677" width="25.44" height="37.79216627913229" rx="3"/>
+<rect class="ghost" x="218.405" y="321.28288875889905" width="25.44" height="36.71711124110095" rx="3"/>
+<rect class="ghost" x="258.155" y="322.1035300441585" width="25.44" height="35.896469955841496" rx="3"/>
+<rect class="ghost" x="297.905" y="322.6576685613005" width="25.44" height="35.34233143869949" rx="3"/>
+<rect class="ghost" x="337.655" y="323.49973737727845" width="25.44" height="34.50026262272155" rx="3"/>
+<rect class="ghost" x="377.405" y="324.06853591362915" width="25.44" height="33.93146408637085" rx="3"/>
+<rect class="neutral" x="417.155" y="324.64341797215206" width="25.44" height="33.356582027847935" rx="3"/>
+<rect class="neutral" x="456.905" y="325.22451509226437" width="25.44" height="32.77548490773563" rx="3"/>
+<rect class="acc2" x="496.655" y="190.64556285825606" width="25.44" height="167.35443714174394" rx="3"/>
+<text class="costtx" x="509.375" y="184.64556285825606" text-anchor="middle">22.5</text>
+<rect class="neutral" x="536.405" y="325.51743658066135" width="25.44" height="32.482563419338646" rx="3"/>
+<rect class="neutral" x="576.155" y="284.8462036016507" width="25.44" height="73.1537963983493" rx="3"/>
+<text class="sm" x="588.875" y="278.8462036016507" text-anchor="middle">3.9</text>
+<rect class="neutral" x="615.905" y="326.1081124159545" width="25.44" height="31.89188758404549" rx="3"/>
+<rect class="neutral" x="655.655" y="326.7053514503884" width="25.44" height="31.294648549611622" rx="3"/>
+<rect class="neutral" x="695.405" y="327.0064780648291" width="25.44" height="30.993521935170918" rx="3"/>
+<path class="maxline" d="M 111.875 318.1201553901737 L 151.625 318.1201553901737 L 191.375 318.1201553901737 L 231.125 318.1201553901737 L 270.875 318.1201553901737 L 310.625 318.1201553901737 L 350.375 318.1201553901737 L 390.125 318.1201553901737 L 429.875 318.1201553901737 L 469.625 318.1201553901737 L 509.375 318.1201553901737 L 549.125 318.1201553901737 L 588.875 318.1201553901737 L 628.625 318.1201553901737 L 668.375 318.1201553901737 L 708.125 318.1201553901737"/>
+<text class="dim" x="734" y="322.1201553901737" text-anchor="start">max=2.1</text>
+<path class="trigline" d="M 410 194.35399594041735 L 728 194.35399594041735"/>
+<text class="costtx" x="734" y="198.35399594041735" text-anchor="start">触发 21</text>
+<path class="gl" d="M 92 358 L 728 358"/>
+<text class="sm" x="111.875" y="376" text-anchor="middle">0</text>
+<text class="sm" x="191.375" y="376" text-anchor="middle">2</text>
+<text class="sm" x="270.875" y="376" text-anchor="middle">4</text>
+<text class="sm" x="350.375" y="376" text-anchor="middle">6</text>
+<text class="sm" x="429.875" y="376" text-anchor="middle">8</text>
+<text class="sm" x="509.375" y="376" text-anchor="middle">10</text>
+<text class="sm" x="588.875" y="376" text-anchor="middle">12</text>
+<text class="sm" x="668.375" y="376" text-anchor="middle">14</text>
+<text class="rank" x="410" y="396" text-anchor="middle">第 k 次 validate_result 调用</text>
+<text class="rank" x="84" y="112" text-anchor="end">|loss|（log）</text>
+<rect class="acc2" x="812" y="92" width="432" height="140" rx="8"/>
+<text class="tx" x="824" y="113" text-anchor="start">失效路径 (a)：窗口里混进一次尖峰，判据就废了</text>
+<path class="edge" d="M 824 121 L 1232 121"/>
+<text class="sm" x="824" y="139" text-anchor="start">把第 3 个样本换成 9（窗口内的一次尖峰）：</text>
+<text class="sm" x="824" y="155" text-anchor="start">max 由 2.1 抬到 9，触发线由 21 抬到 90。</text>
+<text class="sm" x="824" y="171" text-anchor="start">同一条序列后面那次 22.5 的真尖峰，命中数从 1 变成 0。</text>
+<text class="sm" x="824" y="187" text-anchor="start">判据是相对量，而参照物本身来自训练最开始那几步。</text>
+<rect class="neutral" x="812" y="246" width="432" height="156" rx="8"/>
+<text class="tx" x="824" y="267" text-anchor="start">失效路径 (b)：触发线不随训练推进下移</text>
+<path class="edge" d="M 824 275 L 1232 275"/>
+<text class="sm" x="824" y="293" text-anchor="start">除非调用方显式传 resample=True，max 在窗口结束后永不重估。</text>
+<text class="sm" x="824" y="309" text-anchor="start">训练后期 loss 降到 0.5 时，触发线仍停在 21 ——</text>
+<text class="sm" x="824" y="325" text-anchor="start">此时需要一次 42× 于当前 loss 的尖峰才会被判出。</text>
+<text class="sm" x="824" y="341" text-anchor="start">也就是说：越到后期，这条判据越迟钝。</text>
+<text class="sm" x="824" y="357" text-anchor="start">它挡的是「早期尺度上的数量级异常」，不是「相对当前水平的异常」。</text>
+<rect class="ghost" x="812" y="410" width="432" height="92" rx="8"/>
+<text class="tx" x="824" y="431" text-anchor="start">NaN / Inf 走另一条路</text>
+<path class="edge" d="M 824 439 L 1232 439"/>
+<text class="sm" x="824" y="457" text-anchor="start">源码在这里显式 return False，注释是 They should be checked separately：</text>
+<text class="sm" x="824" y="473" text-anchor="start">非有限值由 --check-for-nan-in-loss-and-grad 与优化器的溢出闸门负责，</text>
+<text class="sm" x="824" y="489" text-anchor="start">本判据只处理「有限但异常大」。</text>
+</svg>

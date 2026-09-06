@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 512" width="1272" height="512" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .maxline{fill:none;stroke:#2563EB;stroke-width:2}
+  .trigline{fill:none;stroke:#C3651F;stroke-width:2;stroke-dasharray:7 4}
+  .refline{fill:none;stroke:#C8CFDA;stroke-width:1;stroke-dasharray:3 4}
+  .band{fill:#F5F7FA;stroke:none}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 2　同一条梯度范数轴上串了三道闸与一条旁路，各自的结局并不相同</text>
+<text class="su" x="28" y="52" text-anchor="start">算例：clip_grad=1，grad_norm_skip_threshold=10（默认 inf，即关闭）；横轴按 ‖g‖ 取对数</text>
+<rect class="acc2" x="28" y="124" width="236" height="52" rx="6"/>
+<text class="tx" x="146" y="144" text-anchor="middle">非有限（inf / nan）</text>
+<text class="sm" x="146" y="162" text-anchor="middle">闸①：整步丢弃，scaler 降档</text>
+<text class="rank" x="276" y="154" text-anchor="middle">⋯</text>
+<path class="gl" d="M 300 150 L 1020 150"/>
+<path class="gl" d="M 300 140 L 300 160"/>
+<text class="dim" x="300" y="132" text-anchor="middle">0.1</text>
+<path class="gl" d="M 576.7038432624867 140 L 576.7038432624867 160"/>
+<text class="dim" x="576.7038432624867" y="132" text-anchor="middle">clip_grad=1</text>
+<path class="gl" d="M 853.4076865249733 140 L 853.4076865249733 160"/>
+<text class="dim" x="853.4076865249733" y="132" text-anchor="middle">skip=10</text>
+<text class="rank" x="1020" y="132" text-anchor="end">‖g‖</text>
+<rect class="ghost" x="302" y="172" width="272.70384326248666" height="56" rx="5"/>
+<text class="sm" x="438.35192163124333" y="194" text-anchor="middle">照常更新</text>
+<text class="sm" x="438.35192163124333" y="212" text-anchor="middle">不触任何闸</text>
+<rect class="acc1" x="578.7038432624867" y="172" width="272.70384326248666" height="56" rx="5"/>
+<text class="sm" x="715.0557648937299" y="194" text-anchor="middle">闸②：等比缩到 clip_grad 后更新</text>
+<text class="sm" x="715.0557648937299" y="212" text-anchor="middle">g ← g·clip/‖g‖</text>
+<rect class="acc2" x="855.4076865249733" y="172" width="162.59231347502669" height="56" rx="5"/>
+<text class="sm" x="936.7038432624867" y="194" text-anchor="middle">闸③：整步丢弃，参数不动</text>
+<text class="sm" x="936.7038432624867" y="212" text-anchor="middle">should_skip_update=True</text>
+<path class="trigline" d="M 723.7661022210631 172 L 723.7661022210631 246"/>
+<text class="costtx" x="723.7661022210631" y="262" text-anchor="middle">主组 ‖g‖=3.4 → 裁剪后更新</text>
+<rect class="neutral" x="300" y="298" width="720" height="56" rx="6"/>
+<text class="tx" x="312" y="320" text-anchor="start">独立范数组 'mtp'：自己算范数、自己按同一个 clip_grad 裁剪</text>
+<text class="sm" x="312" y="340" text-anchor="start">本例 ‖g_mtp‖=18.6 &gt; skip=10，但它不参与闸③ 的判定 —— 整步不会被丢</text>
+<text class="rank" x="28" y="320" text-anchor="start">旁路</text>
+<text class="sm" x="28" y="340" text-anchor="start">（mtp_detach_heads=True 时）</text>
+<rect class="neutral" x="28" y="374" width="600" height="120" rx="8"/>
+<text class="tx" x="40" y="395" text-anchor="start">三道闸挡的不是同一类问题</text>
+<path class="edge" d="M 40 403 L 616 403"/>
+<text class="sm" x="40" y="421" text-anchor="start">闸①（非有限）：数值已经坏了，任何依赖 ‖g‖ 的计算都失去意义，必须先判。</text>
+<text class="sm" x="40" y="437" text-anchor="start">闸②（裁剪）：范数有限但偏大，缩放后这一步仍然有用 —— 不浪费前反向。</text>
+<text class="sm" x="40" y="453" text-anchor="start">闸③（超阈跳步）：范数有限却大到「缩放也不敢信」，宁可整步作废。</text>
+<text class="sm" x="40" y="469" text-anchor="start">判据差别在于「这一步的梯度还值不值得用」，而不是数值大小本身。</text>
+<rect class="acc2" x="648" y="374" width="596" height="120" rx="8"/>
+<text class="tx" x="660" y="395" text-anchor="start">两条容易读错的边界</text>
+<path class="edge" d="M 660 403 L 1232 403"/>
+<text class="sm" x="660" y="421" text-anchor="start">grad_norm_skip_threshold 默认 float('inf')，只有配置项、没有 CLI 开关，</text>
+<text class="sm" x="660" y="437" text-anchor="start">且只在 ChainedOptimizer.step 这条路径上生效。</text>
+<text class="sm" x="660" y="453" text-anchor="start">启用 'mtp' 组后，日志里的 grad norm 只反映主组 —— 跨版本对比曲线时</text>
+<text class="sm" x="660" y="469" text-anchor="start">这是一次口径变化，不是模型变稳了。</text>
+</svg>
