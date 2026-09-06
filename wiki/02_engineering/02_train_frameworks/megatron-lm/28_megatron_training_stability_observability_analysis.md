@@ -505,7 +505,7 @@ Caveats(2)的结尾原话:「**We're planning to add the capability to re-run mu
 | `straggler_minmax_count` | `int` | `1` | Number of ranks to report with high/low estimated throughput | `:42` |
 | `disable_straggler_on_startup` | `bool` | `False` | If set, StragglerDetector is disabled on startup. | `:45` |
 
-> **跨页接缝**：`LoggerConfig` 里指向 one-logger 的字段、以及张量转储那几个 `--save-*-interval`，其实现属**作业侧**，见 [[27_megatron_job_resilience_analysis]] §8、§9。本页拥有它们的配置契约，那页解释机制。
+> **跨页接缝**：`LoggerConfig` 里指向 one-logger 的字段、以及张量转储那几个 `--save-*-interval`，其实现属**作业侧**，见 [[27_megatron_job_resilience_analysis]] §2.7、§4.2。本页拥有它们的配置契约，那页解释机制。
 
 ---
 

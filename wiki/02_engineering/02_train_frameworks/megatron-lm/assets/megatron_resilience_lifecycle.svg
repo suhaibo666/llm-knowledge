@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 460" width="1272" height="460" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .medline{fill:none;stroke:#2563EB;stroke-width:1.8}
+  .band{fill:#EAF1FD;stroke:none;opacity:.55}
+  .band2{fill:#F1F3F7;stroke:none}
+  .refline{fill:none;stroke:#C8CFDA;stroke-width:1;stroke-dasharray:3 4}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　「跑不动了」这一类故障要走完的五段，以及每段的 deadline</text>
+<text class="su" x="28" y="52" text-anchor="start">同一次异常在两个平面上走不同流程：作业面（本页）问「还活着吗」，数值面（28 号页）问「算得对吗」</text>
+<rect class="acc1" x="28" y="74" width="1216" height="30" rx="6"/>
+<text class="tx" x="42" y="94" text-anchor="start">作业面：进程 / 通信域 / 硬件 —— 本页</text>
+<rect class="neutral" x="28" y="116" width="236" height="132" rx="8"/>
+<text class="tx" x="42" y="140" text-anchor="start">① 观测</text>
+<text class="dim" x="42" y="158" text-anchor="start">ft_integration 心跳分段</text>
+<path class="edge" d="M 42 166 L 250 166"/>
+<text class="sm" x="42" y="184" text-anchor="start">setup / step / checkpointing</text>
+<text class="sm" x="42" y="199" text-anchor="start">三段各自记时长</text>
+<text class="costtx" x="42" y="236" text-anchor="start">deadline：阈值由 NVRx 从观测反推</text>
+<path class="main" d="M 265 182 L 277 182"/>
+<text class="sm" x="42" y="278" text-anchor="start">阈值失准 → 误报或迟报</text>
+<rect class="neutral" x="279" y="116" width="236" height="132" rx="8"/>
+<text class="tx" x="293" y="140" text-anchor="start">② 判定</text>
+<text class="dim" x="293" y="158" text-anchor="start">NVRx rank monitor</text>
+<path class="edge" d="M 293 166 L 501 166"/>
+<text class="sm" x="293" y="184" text-anchor="start">段内超时即判故障</text>
+<text class="sm" x="293" y="199" text-anchor="start">判定在依赖内部完成</text>
+<text class="costtx" x="293" y="236" text-anchor="start">deadline：section_timeouts</text>
+<path class="main" d="M 516 182 L 528 182"/>
+<text class="sm" x="293" y="278" text-anchor="start">依赖缺失则整条不可用</text>
+<rect class="neutral" x="530" y="116" width="236" height="132" rx="8"/>
+<text class="tx" x="544" y="140" text-anchor="start">③ 中止</text>
+<text class="dim" x="544" y="158" text-anchor="start">inprocess.Compose</text>
+<path class="edge" d="M 544 166 L 752 166"/>
+<text class="sm" x="544" y="184" text-anchor="start">AbortTransformerEngine</text>
+<text class="sm" x="544" y="199" text-anchor="start">AbortTorchDistributed</text>
+<text class="sm" x="544" y="214" text-anchor="start">AbortCheckpoint</text>
+<text class="costtx" x="544" y="236" text-anchor="start">deadline：各 abort 自带超时</text>
+<path class="main" d="M 767 182 L 779 182"/>
+<text class="sm" x="544" y="278" text-anchor="start">通信域销毁本身可能挂住</text>
+<rect class="acc2" x="781" y="116" width="236" height="132" rx="8"/>
+<text class="tx" x="795" y="140" text-anchor="start">④ 清理</text>
+<text class="dim" x="795" y="158" text-anchor="start">ThreadedFinalize</text>
+<path class="edge" d="M 795 166 L 1003 166"/>
+<text class="sm" x="795" y="184" text-anchor="start">destroy_global_state</text>
+<text class="sm" x="795" y="199" text-anchor="start">destroy_rerun_state_machine</text>
+<text class="costtx" x="795" y="236" text-anchor="start">deadline：timeout = 10 s</text>
+<path class="main" d="M 1018 182 L 1030 182"/>
+<text class="sm" x="795" y="278" text-anchor="start">超时即放弃清理</text>
+<rect class="neutral" x="1032" y="116" width="236" height="132" rx="8"/>
+<text class="tx" x="1046" y="140" text-anchor="start">⑤ 重入</text>
+<text class="dim" x="1046" y="158" text-anchor="start">nvidia_resiliency_ext</text>
+<path class="edge" d="M 1046 166 L 1254 166"/>
+<text class="sm" x="1046" y="184" text-anchor="start">rank 重分配后再进 train</text>
+<text class="sm" x="1046" y="199" text-anchor="start">载荷语义在依赖内部</text>
+<text class="costtx" x="1046" y="236" text-anchor="start">deadline：wrapper 自有 timeout</text>
+<text class="sm" x="1046" y="278" text-anchor="start">残留全局状态污染下一轮</text>
+<text class="rank" x="28" y="262" text-anchor="start">这一段失败会怎样</text>
+<rect class="ghost" x="28" y="306" width="1216" height="30" rx="6"/>
+<text class="sm" x="42" y="326" text-anchor="start">数值面：loss 可不可信 / SDC 归因 / 慢卡 —— 28 号页，本页不覆盖</text>
+<rect class="neutral" x="28" y="350" width="608" height="92" rx="8"/>
+<text class="tx" x="40" y="371" text-anchor="start">本页反复出现的同一条张力</text>
+<path class="edge" d="M 40 379 L 624 379"/>
+<text class="sm" x="40" y="397" text-anchor="start">要恢复就得先把坏掉的东西清理干净，而清理动作自己也可能挂住 ——</text>
+<text class="sm" x="40" y="413" text-anchor="start">销毁一个已经卡死的 NCCL 通信域就是最典型的一例。</text>
+<text class="sm" x="40" y="429" text-anchor="start">于是每一段都必须自带 deadline，第 ④ 段甚至允许「放弃清理」。</text>
+<rect class="acc1" x="656" y="350" width="588" height="92" rx="8"/>
+<text class="tx" x="668" y="371" text-anchor="start">为了能清理干净，先做一件多余的事</text>
+<path class="edge" d="M 668 379 L 1232 379"/>
+<text class="sm" x="668" y="397" text-anchor="start">maybe_force_nccl_backend_init 用一次无用的 all_reduce 逼 NCCL 走完惰性初始化。</text>
+<text class="sm" x="668" y="413" text-anchor="start">否则 destroy_process_group 终止不了已经在飞的 kernel，第 ④ 段就是假清理。</text>
+<text class="sm" x="668" y="429" text-anchor="start">同一模式还出现在自适应超时的样本下限与退出决定的集体通信上。</text>
+</svg>

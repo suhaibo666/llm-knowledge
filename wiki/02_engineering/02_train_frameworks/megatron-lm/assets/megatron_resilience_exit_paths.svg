@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 452" width="1272" height="452" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .medline{fill:none;stroke:#2563EB;stroke-width:1.8}
+  .band{fill:#EAF1FD;stroke:none;opacity:.55}
+  .band2{fill:#F1F3F7;stroke:none}
+  .refline{fill:none;stroke:#C8CFDA;stroke-width:1;stroke-dasharray:3 4}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 4　一次迭代里的五条存档 / 退出路径，以及 saved_checkpoint 去重</text>
+<text class="su" x="28" y="52" text-anchor="start">算例：save_interval=500、non_persistent=100、exit_interval=1000，扫描前 1000 次迭代</text>
+<rect class="neutral" x="28" y="86" width="720" height="52" rx="6"/>
+<text class="tx" x="42" y="107" text-anchor="start">① 信号</text>
+<text class="dim" x="188" y="107" text-anchor="start">any(signals_received()) —— all-gather 后全体一致</text>
+<text class="sm" x="42" y="127" text-anchor="start">存档后立即退出，不置 saved_checkpoint</text>
+<path class="aux" d="M 388 139 L 388 147"/>
+<rect class="neutral" x="28" y="148" width="720" height="52" rx="6"/>
+<text class="tx" x="42" y="169" text-anchor="start">② 周期存档</text>
+<text class="dim" x="188" y="169" text-anchor="start">iteration % save_interval == 0</text>
+<text class="sm" x="42" y="189" text-anchor="start">置 saved_checkpoint，不退出</text>
+<path class="aux" d="M 388 201 L 388 209"/>
+<rect class="neutral" x="28" y="210" width="720" height="52" rx="6"/>
+<text class="tx" x="42" y="231" text-anchor="start">②′ 非持久存档</text>
+<text class="dim" x="188" y="231" text-anchor="start">elif iteration % non_persistent_save_interval == 0</text>
+<text class="sm" x="42" y="251" text-anchor="start">与 ② 互斥；同样置 saved_checkpoint</text>
+<path class="aux" d="M 388 263 L 388 271"/>
+<rect class="acc1" x="28" y="272" width="720" height="52" rx="6"/>
+<text class="tx" x="42" y="293" text-anchor="start">③ 时长</text>
+<text class="dim" x="188" y="293" text-anchor="start">train_time &gt; exit_duration_in_mins，经 MAX all-reduce</text>
+<text class="sm" x="42" y="313" text-anchor="start">if save and not saved_checkpoint 才存</text>
+<path class="aux" d="M 388 325 L 388 333"/>
+<rect class="acc1" x="28" y="334" width="720" height="52" rx="6"/>
+<text class="tx" x="42" y="355" text-anchor="start">④ 迭代 / 阶段切换</text>
+<text class="dim" x="188" y="355" text-anchor="start">iteration % exit_interval == 0 或命中 phase_transition</text>
+<text class="sm" x="42" y="375" text-anchor="start">同上，去重后退出</text>
+<rect class="acc2" x="776" y="86" width="470" height="148" rx="8"/>
+<text class="tx" x="788" y="107" text-anchor="start">碰撞点：第 1000 次迭代</text>
+<path class="edge" d="M 788 115 L 1234 115"/>
+<text class="sm" x="788" y="133" text-anchor="start">1000 % 500 == 0 → ② 命中，saved_checkpoint = True</text>
+<text class="sm" x="788" y="149" text-anchor="start">1000 % 1000 == 0 → ④ 也命中</text>
+<text class="sm" x="788" y="165" text-anchor="start">有去重：这一步存 1 次；无去重：存 2 次</text>
+<text class="sm" x="788" y="181" text-anchor="start">扫描 1000 次迭代，合计 10 次 vs 11 次</text>
+<text class="sm" x="788" y="197" text-anchor="start">万卡尺度下一次全量存档是分钟级集体操作，重复即实打实的浪费</text>
+<rect class="neutral" x="776" y="250" width="470" height="144" rx="8"/>
+<text class="tx" x="788" y="271" text-anchor="start">为什么 ③ 要走一次 all-reduce</text>
+<path class="edge" d="M 788 279 L 1234 279"/>
+<text class="sm" x="788" y="297" text-anchor="start">各 rank 的墙钟不完全一致，train_time 的比较结果因此可能不同。</text>
+<text class="sm" x="788" y="313" text-anchor="start">把布尔量放进 CUDA 张量做 MAX all-reduce，退出决定才是集体一致的。</text>
+<text class="sm" x="788" y="329" text-anchor="start">与 ① 的信号 all-gather 同一道理：判据必须由所有参与者算出同一答案，</text>
+<text class="sm" x="788" y="345" text-anchor="start">否则会出现「一部分 rank 已退出、另一部分还阻塞在集合通信上」的挂死。</text>
+</svg>

@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 520" width="1272" height="520" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .medline{fill:none;stroke:#2563EB;stroke-width:1.8}
+  .band{fill:#EAF1FD;stroke:none;opacity:.55}
+  .band2{fill:#F1F3F7;stroke:none}
+  .refline{fill:none;stroke:#C8CFDA;stroke-width:1;stroke-dasharray:3 4}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 2　NVRx 只记三个 section；「现在能不能更新阈值」由四道闸门决定</text>
+<text class="su" x="28" y="52" text-anchor="start">warmup 期（前 5 次迭代）根本不开 section，阈值也就不会被一次性开销带偏</text>
+<text class="rank" x="28" y="110" text-anchor="start">setup</text>
+<rect class="acc1" x="150" y="92" width="160" height="26" rx="5"/>
+<text class="sm" x="230" y="109" text-anchor="middle">start_section("setup")</text>
+<text class="rank" x="28" y="146" text-anchor="start">step</text>
+<rect class="ghost" x="310" y="128" width="180" height="26" rx="5"/>
+<text class="sm" x="400" y="145" text-anchor="middle">warmup ×5：不开 section</text>
+<rect class="acc1" x="490" y="128" width="120" height="26" rx="5"/>
+<text class="sm" x="550" y="145" text-anchor="middle">step</text>
+<rect class="acc1" x="630" y="128" width="120" height="26" rx="5"/>
+<text class="sm" x="690" y="145" text-anchor="middle">step</text>
+<rect class="acc1" x="770" y="128" width="60" height="26" rx="5"/>
+<text class="sm" x="800" y="145" text-anchor="middle">step</text>
+<rect class="acc1" x="950" y="128" width="160" height="26" rx="5"/>
+<text class="sm" x="1030" y="145" text-anchor="middle">step（eval 也记这里）</text>
+<text class="rank" x="28" y="182" text-anchor="start">checkpointing</text>
+<rect class="acc2" x="830" y="164" width="100" height="26" rx="5"/>
+<text class="sm" x="880" y="181" text-anchor="middle">checkpointing</text>
+<path class="gl" d="M 150 206 L 1150 206"/>
+<text class="sm" x="150" y="224" text-anchor="start">进程启动</text>
+<text class="sm" x="310" y="224" text-anchor="middle">setup 结束 / 首次训练步</text>
+<text class="sm" x="1150" y="224" text-anchor="end">训练时间</text>
+<text class="dim" x="310" y="82" text-anchor="middle">on_training_step_start 关掉 setup 段</text>
+<text class="pt" x="28" y="242" text-anchor="start">阈值更新闸门（复刻 _maybe_update_timeouts）</text>
+<text class="rank" x="298.6" y="266" text-anchor="middle">刚起步</text>
+<text class="rank" x="487.79999999999995" y="266" text-anchor="middle">稳态 + 同步存档</text>
+<text class="rank" x="677" y="266" text-anchor="middle">稳态 + 异步存档</text>
+<text class="rank" x="866.1999999999999" y="266" text-anchor="middle">从本地快照恢复</text>
+<text class="rank" x="1055.3999999999999" y="266" text-anchor="middle">收尾（shutdown）</text>
+<text class="dim" x="28" y="299" text-anchor="start">setup</text>
+<rect class="acc1" x="208" y="278" width="181.2" height="28" rx="5"/>
+<text class="sm" x="298.6" y="297" text-anchor="middle">更新</text>
+<rect class="acc1" x="397.2" y="278" width="181.2" height="28" rx="5"/>
+<text class="sm" x="487.79999999999995" y="297" text-anchor="middle">更新</text>
+<rect class="acc1" x="586.4" y="278" width="181.2" height="28" rx="5"/>
+<text class="sm" x="677" y="297" text-anchor="middle">更新</text>
+<rect class="ghost" x="775.5999999999999" y="278" width="181.2" height="28" rx="5"/>
+<text class="sm" x="866.1999999999999" y="297" text-anchor="middle">不更新</text>
+<rect class="acc1" x="964.8" y="278" width="181.2" height="28" rx="5"/>
+<text class="sm" x="1055.3999999999999" y="297" text-anchor="middle">更新</text>
+<text class="dim" x="28" y="333" text-anchor="start">step</text>
+<rect class="ghost" x="208" y="312" width="181.2" height="28" rx="5"/>
+<text class="sm" x="298.6" y="331" text-anchor="middle">不更新</text>
+<rect class="acc1" x="397.2" y="312" width="181.2" height="28" rx="5"/>
+<text class="sm" x="487.79999999999995" y="331" text-anchor="middle">更新</text>
+<rect class="acc1" x="586.4" y="312" width="181.2" height="28" rx="5"/>
+<text class="sm" x="677" y="331" text-anchor="middle">更新</text>
+<rect class="acc1" x="775.5999999999999" y="312" width="181.2" height="28" rx="5"/>
+<text class="sm" x="866.1999999999999" y="331" text-anchor="middle">更新</text>
+<rect class="acc1" x="964.8" y="312" width="181.2" height="28" rx="5"/>
+<text class="sm" x="1055.3999999999999" y="331" text-anchor="middle">更新</text>
+<text class="dim" x="28" y="367" text-anchor="start">checkpointing</text>
+<rect class="ghost" x="208" y="346" width="181.2" height="28" rx="5"/>
+<text class="sm" x="298.6" y="365" text-anchor="middle">不更新</text>
+<rect class="acc1" x="397.2" y="346" width="181.2" height="28" rx="5"/>
+<text class="sm" x="487.79999999999995" y="365" text-anchor="middle">更新</text>
+<rect class="ghost" x="586.4" y="346" width="181.2" height="28" rx="5"/>
+<text class="sm" x="677" y="365" text-anchor="middle">不更新</text>
+<rect class="acc1" x="775.5999999999999" y="346" width="181.2" height="28" rx="5"/>
+<text class="sm" x="866.1999999999999" y="365" text-anchor="middle">更新</text>
+<rect class="ghost" x="964.8" y="346" width="181.2" height="28" rx="5"/>
+<text class="sm" x="1055.3999999999999" y="365" text-anchor="middle">不更新</text>
+<text class="dim" x="28" y="401" text-anchor="start">out-of-section</text>
+<rect class="ghost" x="208" y="380" width="181.2" height="28" rx="5"/>
+<text class="sm" x="298.6" y="399" text-anchor="middle">不更新</text>
+<rect class="ghost" x="397.2" y="380" width="181.2" height="28" rx="5"/>
+<text class="sm" x="487.79999999999995" y="399" text-anchor="middle">不更新</text>
+<rect class="ghost" x="586.4" y="380" width="181.2" height="28" rx="5"/>
+<text class="sm" x="677" y="399" text-anchor="middle">不更新</text>
+<rect class="ghost" x="775.5999999999999" y="380" width="181.2" height="28" rx="5"/>
+<text class="sm" x="866.1999999999999" y="399" text-anchor="middle">不更新</text>
+<rect class="acc1" x="964.8" y="380" width="181.2" height="28" rx="5"/>
+<text class="sm" x="1055.3999999999999" y="399" text-anchor="middle">更新</text>
+<rect class="neutral" x="28" y="424" width="600" height="86" rx="8"/>
+<text class="tx" x="40" y="445" text-anchor="start">每道闸门挡住的是一种把阈值算歪的方式</text>
+<path class="edge" d="M 40 453 L 616 453"/>
+<text class="sm" x="40" y="471" text-anchor="start">step：样本 &lt; 16 次迭代就不动阈值，头几步的一次性开销会把它抬得离谱。</text>
+<text class="sm" x="40" y="487" text-anchor="start">setup：只有加载过持久 checkpoint 才算数 —— 内存里的本地快照读得太快，会低估 setup。</text>
+<text class="sm" x="40" y="503" text-anchor="start">checkpointing：异步存档下跨 run 波动过大，源码直接放弃更新这一段。</text>
+<rect class="ghost" x="648" y="424" width="596" height="86" rx="8"/>
+<text class="tx" x="660" y="445" text-anchor="start">依赖边界：阈值到底怎么算，不在本仓</text>
+<path class="edge" d="M 660 453 L 1232 453"/>
+<text class="sm" x="660" y="471" text-anchor="start">Megatron 只决定「哪些 section 现在有资格更新」，然后调用</text>
+<text class="sm" x="660" y="487" text-anchor="start">rmon_cli.calculate_and_set_section_timeouts(...)，并把结果 json 落盘。</text>
+<text class="sm" x="660" y="503" text-anchor="start">反推公式、分位数、安全裕度都在 nvidia_resiliency_ext 内部，本页不作陈述。</text>
+</svg>
