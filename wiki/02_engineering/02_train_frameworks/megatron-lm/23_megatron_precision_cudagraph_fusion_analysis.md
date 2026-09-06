@@ -5,10 +5,9 @@ title: "Megatron-LM 算子性能优化：低精度、算子融合与 CUDA Graph"
 # Megatron-LM 算子性能优化：低精度、算子融合与 CUDA Graph
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **核心源码**：`megatron/core/fp8_utils.py`、`megatron/core/fp4_utils.py`、`megatron/core/transformer/cuda_graphs.py`、`megatron/core/full_cuda_graph.py`、`megatron/core/transformer/mlp.py`、`megatron/core/fusions/fused_bias_gelu.py`
-> **中心结论**：低精度提高受支持的矩阵计算吞吐并压缩部分数据，融合减少中间张量读写，CUDA Graph 减少重复提交暴露的等待。三者分别作用于计算、数据移动和任务提交；只有命中当前瓶颈且节省超过附加成本，才能缩短训练迭代。
-> **适用范围**：本页拥有精度选择、图捕获与融合交界，以及微批数如何约束图复用；单个融合算子的完整实现归 [[21_megatron_fusion_operators_analysis]]，参数分片通信归 [[16_megatron_distributed_optimizer_analysis]]。
-> **最近更新**：2026-09-06。从同一 GEMM 的数值与成本推导出三种方案，再追踪模块装配、前后向与状态复用。
+> **主题**：低精度、算子融合与 CUDA Graph 分别作用在计算、数据搬运和任务提交上。本页从同一段 GEMM 出发推导这三种机制各自省下什么、要付什么（数值误差与量化成本、中间张量读写、执行结构复用），再把它们组合成完整一层，看收益能不能进整步账本；随后追踪配置如何决定构造、精度从参数构造走到本次梯度再走到下次权重消费、融合如何先选前向表达式再保存反向依赖、Graph 如何选捕获所有者并追踪固定地址；最后讲量化参数同步、RNG 与重计算的状态恢复、微批总数变化时槽位何时可复用，以及 MoE 与推理各自的分档。
+> **适用范围**：精度选择、图捕获与融合三者的交界，以及微批数如何约束图复用；单个融合算子的完整实现见 [[21_megatron_fusion_operators_analysis]]，参数分片通信见 [[16_megatron_distributed_optimizer_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ## 1. 为什么算子性能需要三种优化
 

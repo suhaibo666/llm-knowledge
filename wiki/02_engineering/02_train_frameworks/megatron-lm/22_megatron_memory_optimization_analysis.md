@@ -5,10 +5,9 @@ title: "Megatron-LM 显存优化：从整层换出到分页暂存与常驻通信
 # Megatron-LM 显存优化：从整层换出到分页暂存与常驻通信池
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **核心源码**：`megatron/core/model_parallel_config.py`；`megatron/core/transformer/{transformer_block.py,transformer_layer.py,transformer_config.py,attention.py}`；`megatron/core/pipeline_parallel/fine_grained_activation_offload.py`；`megatron/core/transformer/moe/{paged_stash.py,ops/paged_stash.py,experts.py}`；`megatron/core/optimizer/cpu_offloading/{chunked_optimizer_state_offload.py,hybrid_optimizer.py,README.md}`；`megatron/core/optimizer/optimizer.py`；`megatron/core/nccl_allocator.py`；`megatron/core/distributed/{param_and_grad_buffer.py,distributed_data_parallel_config.py}`；`megatron/training/training.py`
-> **中心结论**：本页的每个机制都在回答同一个问题：一块张量在它不被用的那段时间该放在哪。整层换出把激活整层送去 CPU，粒度粗、约束硬；子模块级换出把粒度降到 offload 组，用两条拷贝流、warmup 校准与一组提前的预取把 PCIe 拷贝藏在计算后面；MoE 专家激活形状动态、不适合走 PCIe，分页暂存于是把它留在 GPU 的定长页里，用容量因子预定尺寸，溢出时整步重跑；优化器状态则按块在 CPU 与 GPU 之间流转，把临时峰值钉在两个 staging 槽内。反方向的取舍也在本页：NCCL user buffer 用常驻显存换通信少占 SM，参数与梯度缓冲互相复用换掉一整份 buffer。
-> **适用范围**：本页拥有整层 CPU offload 的接线、细粒度激活 offload、MoE paged stash、分块优化器状态 offload 的生命周期与约束、NCCL 内存池与 DDP 缓冲复用，以及训练循环里的显存回收点。参数与梯度分片归 [[16_megatron_distributed_optimizer_analysis]]，重计算归 [[18_megatron_recompute_analysis]]，FP8/FP4 参数与 CUDA Graph 缓冲引用计数归 [[23_megatron_precision_cudagraph_fusion_analysis]]，序列并行的激活切分归 [[12_megatron_tp_analysis]]，混合 CPU 优化器的 step 内部归 [[26_megatron_optimizer_step_internals_deepdive]]，Megatron-FSDP 的持久缓冲池归 [[36_megatron_fsdp_analysis]]。
-> **最近更新**：2026-09-05。按整层换出、子模块换出、分页暂存、分块优化器换出的递进重写主线，同一算例贯穿 offload 时序与 paged stash 页分配；补齐 warmup 校准、预取距离、复制 kernel 三路判定与 runner 重跑协议；把 FP8/FP4、序列并行、CUDA Graph 缓冲、rerun 状态机等非本页机制改归各自 owner。
+> **主题**：一块张量在它不被用的那段时间该放在哪。本页用同一个算例按粒度递进走四级搬运：整层激活换出交给 Transformer Engine、子模块级换出用两条拷贝流加 warmup 校准与提前预取把 PCIe 拷贝藏到计算后面、形状动态的 MoE 专家激活改成留在 GPU 定长页里的分页暂存、优化器状态按块在 CPU 与 GPU 之间流转；再讲反方向的两处取舍——NCCL user buffer 用常驻显存换通信少占 SM、参数与梯度缓冲互相复用换掉一整份 buffer，最后结算端到端闭环与训练循环里的显存回收点。核心代码在 `megatron/core/pipeline_parallel/fine_grained_activation_offload.py` 与 `megatron/core/optimizer/cpu_offloading/`。
+> **适用范围**：整层与细粒度激活 offload、MoE paged stash、分块优化器状态 offload 的生命周期与约束、NCCL 内存池与 DDP 缓冲复用；参数与梯度分片见 [[16_megatron_distributed_optimizer_analysis]]，重计算见 [[18_megatron_recompute_analysis]]，FP8/FP4 参数与 CUDA Graph 缓冲见 [[23_megatron_precision_cudagraph_fusion_analysis]]，序列并行的激活切分见 [[12_megatron_tp_analysis]]，混合 CPU 优化器的 step 内部见 [[26_megatron_optimizer_step_internals_deepdive]]，Megatron-FSDP 的持久缓冲池见 [[36_megatron_fsdp_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

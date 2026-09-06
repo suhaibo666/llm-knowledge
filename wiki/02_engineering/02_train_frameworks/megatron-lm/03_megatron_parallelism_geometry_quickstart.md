@@ -5,10 +5,9 @@ title: "Megatron-LM 并行几何快速入门：从 global rank 到进程组"
 # Megatron-LM 并行几何快速入门：从 global rank 到进程组
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **学习前置**：先走通 [[02_megatron_training_quickstart]]；只要求理解 `torchrun` 会启动多个 rank。
-> **回答的问题**：给定 world size 和 TP/PP/CP/EP 配置，怎样判断配置是否合法，并读懂一个 rank 属于哪些组？
-> **不覆盖**：本页不解释分组算法、全局状态或 MoE folding；这些属于 [[17_megatron_parallelism_orchestration_analysis]]。
-> **最后复核**：2026-09-03。
+> **主题**：给定 world size 和一组 TP/PP/CP/EP，怎样判断配置合法并读出一个 rank 属于哪些组。先把一维 `global_rank` 按各轴大小和 `order` 改写成坐标，再走两道检查——并行度能否整除 world size、`order` 决定哪一维变化最快（附一个可手算的 8-rank 例子），然后说明一张卡同时属于多个组只是持有多个 `ProcessGroup` handle，以及 MoE 为什么必须在 expert 侧另做一次整除检查；末节给出配置前的三步心算。
+> **适用范围**：先走通 [[02_megatron_training_quickstart]]；本页只做坐标推导与合法性心算，分组算法、全局状态与 MoE folding 见 [[17_megatron_parallelism_orchestration_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

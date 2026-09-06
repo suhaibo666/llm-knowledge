@@ -5,11 +5,9 @@ title: "Megatron Nonuniform Tensor Parallelism (NTP) 深度分析"
 # Megatron Nonuniform Tensor Parallelism (NTP) 深度分析
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；该增量只触及 20 个 `megatron/` 文件，本页 `path:line` 引用所涉源文件均不在其中，故无行号漂移，无需逐条重核。
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。NTP 是本轮最稳定的一页——`megatron/core/distributed/nonuniform_tp.py` 在这 578 个提交里几乎未动：`git diff ee3f1ffa..71092579` 只有一处 3 删 1 增（`:946-952`，`get_data_and_context_parallel_group(with_context_parallel=True)` 收敛为 `get_data_parallel_group(with_context_parallel=True)`），文件长度 1463 → 1461 行。因此 `:946` 之前的引用行号**全部原样命中**，只有其后的反向 hook 整体上移 2 行。
-> **基线沿革**：本页原仅声明分支/未声明基线；2026-08-27 经核对 9 处引用行号在 `ee3f1ffa…` 命中后补钉（该文件在 `232c478d4` 处内容亦完全一致，两基线均命中）；2026-08-28 统一推进到 `71092579`。
-> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-09-03。接管旧补遗页的 NTP owner 职责；机制边界不变，并改写跨配置权重搬运与作业恢复接缝。
+> **主题**：非均匀 TP（NTP）让一部分 rank 用更小的 TP 度继续参与训练，使坏几张卡之后不必全停重启、也不必全量降级。本页先比较故障场景下的几种备选方案，再说明为什么把它做成梯度层的一层 DDP shim——既不改主干、也不搬参数，然后展开实现：冷重启时的通信组重配置、`ntp_map` 参数切分元数据、两次 all-to-all 的梯度同步、buffer 与 bucket 适配、Transformer Engine 适配；最后是它与主流程的关系，以及不做 resharding、不做优化器状态转换、不做 checkpoint 转换等约束。核心代码在 `megatron/core/distributed/nonuniform_tp.py`。
+> **适用范围**：NTP 机制本体与冷重启边界；进程组构造见 [[17_megatron_parallelism_orchestration_analysis]]，跨配置权重搬运与 refit 见 [[30_megatron_rl_posttraining_consistency_analysis]]，分片方案对比见 [[16_megatron_distributed_optimizer_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 **Date**: 2026-05-20
 **Status**: Complete

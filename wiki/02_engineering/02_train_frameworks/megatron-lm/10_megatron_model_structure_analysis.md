@@ -5,10 +5,9 @@ title: "Megatron-LM 模型结构深度解析(Model Structure)"
 # Megatron-LM 模型结构深度解析(Model Structure)
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **核心源码**：`megatron/core/transformer/spec_utils.py`、`megatron/core/transformer/transformer_layer.py`、`megatron/core/transformer/transformer_block.py`、`megatron/core/models/backends.py`、`megatron/core/models/gpt/gpt_layer_specs.py`、`megatron/core/models/gpt/gpt_model.py`、`megatron/core/transformer/attention.py`、`megatron/core/transformer/mlp.py`、`megatron/core/transformer/moe/router.py`、`megatron/core/transformer/multi_token_prediction.py`、`megatron/core/models/hybrid/hybrid_block.py`、`gpt_builders.py`（仓库根目录）
-> **中心结论**：Megatron 的模型不是一个固定的 `nn.Module`，而是**先把「后端差异」和「结构差异」一起压进一张插槽表，再在构造期按表实例化**。`BackendSpecProvider` 回答的不只是「用哪个算子」，还包括「layernorm 与 linear 是否合成一个模块」这种改变插槽拓扑的问题；`TransformerLayerSubmodules` 的 12 个槽以 `IdentityOp` 为默认哨兵，使同一个 `TransformerLayer.forward` 能无条件跑过所有槽；`build_module` 与新一代 builder Protocol 负责把槽变成活模块。代价是这些结构约束不再由类型系统保证，而散在构造期的断言、白名单与 pattern 校验里。
-> **适用范围**：本页拥有 spec 机制本身（`ModuleSpec` / `build_module` / builder Protocol / 插槽表 / spec provider 选路）、装配链（层 → block → 模型）、结构变体目录（attention 家族、MoE router 算法、MLP 与归一化与位置编码、MTP、SSM 混合、`models/` 具体装配），以及 spec 与 checkpoint 键空间的耦合。装配出来的模块**如何被切分和通信**不属于本页：TP 切分见 [[12_megatron_tp_analysis]]，CP 见 [[13_megatron_cp_analysis]]，MoE dispatcher 与 EP 见 [[14_megatron_ep_analysis]]，重计算策略见 [[18_megatron_recompute_analysis]]，DSv4 的并行案例见 [[34_deepseek_v4_tensor_parallel_analysis]]，融合算子见 [[21_megatron_fusion_operators_analysis]]。
-> **最近更新**：2026-09-04。全页在冻结基线上重核：删除全部 `path:line` 引用，改为 §3.2 的稳定符号阅读路线；把叙事从「组件清单」改写为「spec 系统的构造期契约 + 变体的选择条件与代价」；纠正三处已漂移的旧结论（并非所有槽都走 `build_module`、GPT MoE 路径用的是普通 `TransformerLayer` 而非 `MoETransformerLayer`、层符号表漏了 `K` 与 `+`）；新增 builder Protocol 迁移、MLA 构造期类白名单、Kitchen provider 在公共树里只有桩、spec 与 checkpoint 键空间耦合四条源码事实。另于同日按算法重放要求改写 §2：§2.1 从一份具名 config 完整重放到活模块树，§2.3.1 把同一份 config 在三个 provider 上各跑一遍并结算增量代价，§2.3.3 用一个具体 token 重放 MoE router 的打分、专家偏置、分组 top-k 与 `routing_map` 构造；新增两张由 `tools/figs/svg/megatron_model_structure_figures.mjs` 生成、并由回归测试锁死数值的原理图。
+> **主题**：Megatron 的模型不是一个写死的 `nn.Module`，而是构造期按一张插槽表实例化出来的。本页讲这套 spec 机制本身（`ModuleSpec`、`build_module`、builder Protocol、插槽表与 spec provider 选路）、从一个槽到层、block、整模型的装配链，以及 attention 家族、MoE router、MLP 与归一化与位置编码、MTP、SSM 混合这些结构变体各自的选择条件和代价，最后说明 spec 与 checkpoint 键空间的耦合。核心代码在 `megatron/core/transformer/` 与 `megatron/core/models/`。
+> **适用范围**：模型如何被装配出来；装配好的模块如何被切分和通信不属于本页——TP 见 [[12_megatron_tp_analysis]]，CP 见 [[13_megatron_cp_analysis]]，MoE dispatcher 与 EP 见 [[14_megatron_ep_analysis]]，重计算见 [[18_megatron_recompute_analysis]]，融合算子见 [[21_megatron_fusion_operators_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

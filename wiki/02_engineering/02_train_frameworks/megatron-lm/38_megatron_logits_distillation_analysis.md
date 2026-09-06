@@ -5,10 +5,9 @@ title: "Megatron-LM 离线 logits 蒸馏：top-K 缓存协议与稀疏 KL"
 # Megatron-LM 离线 logits 蒸馏：top-K 缓存协议与稀疏 KL
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **维度**：功能树模块 Q。`megatron/training/distillation/`（3 个文件、1906 行），此前**全域零覆盖**。
-> **核心文件**：`logits_saver.py`（588 行）· `cached_logits_loss.py`（867 行）· `utils_logits.py`（451 行）
-> **阅读位置**：运行时与交付专题中的离线教师产物路径；先读 [[11_megatron_dataset_analysis]] 的样本流，再读本页的保存、重映射与稀疏 KL。
-> **最近更新**：2026-09-03。由 45 重排到 38；按冻结源码补出 CP/microbatch 复用边界、student loss 全链，并标明 producer 的 tar flush 接线尚未闭合。
+> **主题**：离线 logits 蒸馏怎样把「教师全程陪跑」的成本换成一次性的缓存。本页讲 producer 把 top-K 写进 pending buffer 的协议与那条尚未闭合的 tar flush 接线、两次运行必须看到同一个样本流这条一致性前提、教师与学生 DP 度不同时的重映射、学生侧的流式加载与 TP 感知的稀疏 KL，最后给出配置契约与 CP/microbatch 复用边界。核心代码在 `megatron/training/distillation/`。
+> **适用范围**：功能树模块 Q 的离线教师产物路径；样本流本身见 [[11_megatron_dataset_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

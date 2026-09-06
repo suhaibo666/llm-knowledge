@@ -12,6 +12,19 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-06：Megatron-LM 全域页头统一为四行主题式
+
+- 本域 35 篇内容页的页头此前有七种形状——分析页的 **核心源码 + 中心结论**、quickstart 的 **学习前置 / 回答的问题 / 不覆盖**、参考页的 **维度 / 核心文件**、案例页的 **本页定位 / 先修**、若干页还挂着 **重定基线 / 基线沿革 / 叙事顺序 / 合并来源**。这次按 [[12_megatron_tp_analysis]] 立下的新房子形状统一改写为四行：**源码基线**、**主题**、**适用范围**、**最近更新**。**主题** 按正文小节顺序说明这一页讲什么、核心代码落在哪个目录，不再预演论点；**适用范围** 收成一行「本页管什么、不管的交给谁」。26–30 已在同日前一波换过，本次覆盖其余 29 页。
+- **核心源码** 那串路径清单不再回写页头：各页的源码阅读路线与代码实现分析本来就带着这些路径（已逐页确认 [[31_megatron_inference_engine_analysis]]、[[33_megatron_rl_runtime_analysis]]、[[36_megatron_fsdp_analysis]]、[[38_megatron_logits_distillation_analysis]] 原页头点名的文件都在正文里）。[[14_megatron_ep_analysis]] 保留 Megatron 与 DeepEP 两行 **源码基线**——一页多仓，每仓一行。[[15_megatron_pp_schedulers_analysis]] 的 **原理对照** 行删除：GPipe 的 `arXiv:1811.06965v5` §2.2–§2.3 出处写在 §2.2 正文里。
+- 五页的 **叙事顺序** 行（「按五拍组织——背景 → 为什么这么设计 → 实现思路与细节 → 约束 → 发展趋势」）按宪法归档到本条目，页头不再声明叙事顺序。
+
+### 从页头迁出的基线推进史
+
+- [[25_megatron_nonuniform_tp_analysis]]：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；该增量只触及 20 个 `megatron/` 文件，本页 `path:line` 引用所涉源文件均不在其中，故无行号漂移。2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交，全部 `path:line` 引用已逐条重核（代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内，已知漏网处已于 2026-08-28 单独更正）；NTP 是那一轮最稳定的一页——`megatron/core/distributed/nonuniform_tp.py` 在 578 个提交里只有一处 3 删 1 增（`:946-952`，`get_data_and_context_parallel_group(with_context_parallel=True)` 收敛为 `get_data_parallel_group(with_context_parallel=True)`），文件 1463 → 1461 行，`:946` 之前的行号全部原样命中，其后的反向 hook 整体上移 2 行。基线沿革：本页原仅声明分支未声明基线，2026-08-27 经核对 9 处引用行号在 `ee3f1ffa…` 命中后补钉（该文件在 `232c478d4` 处内容亦完全一致），2026-08-28 统一推进到 `71092579`。
+- [[31_megatron_inference_engine_analysis]] 与 [[39_megatron_moe_training_optimization_analysis]]：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。31 号页另有 2026-08-28 由 `ee3f1ffa…` 推进的那一轮逐条重核，口径同上。
+- [[32_megatron_tflops_analysis]]：2026-09-01 由 `71092579` 推进，跨 7 个提交（#6753 / #6847 / #6022 / #6704 / #6583 / #6397 / #6946）。`megatron/training/training.py` 本轮净增 184 行且改动正落在 FLOPs 计算区，本页落在该文件上的引用已逐条打开新基线核对并重定行号——**全部为行号漂移，无一条断言在新基线下失效**；标注历史基线 `ee3f1ffa` 的旧行号按原样保留。实质增量是 DSA top-k 稀疏与 indexer 成本被正式计入公式（#6753），见 §3.2。2026-08-28 由 `ee3f1ffa…` 推进的那一轮里，原文钉的 3 处引用均已移位且函数签名同时改变：① `num_floating_point_operations` 由双参 `(args, batch_size)`（旧 `megatron/training/training.py:299`）改为四参 `(args, batch_size, seqlen_squared_sum_in_batch=None, total_real_tokens_in_batch=None)`（现基线 `megatron/training/training.py:609-611`）；② `routed_flops` 的 token 因子由 `batch_size * seq_len`（旧 `:316-326`）改为单一 `total_tokens`（现基线 `:661-668`）；③ `hybrid_flops` 形参由 `batch_size, seq_len`（旧 `:412-414`）改为 `total_tokens, seqlen_squared_sum`（现基线 `:858-860`）。
+- [[36_megatron_fsdp_analysis]]：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；该增量只触及 20 个 `megatron/` 文件，本页 `path:line` 引用所涉源文件均不在其中，无需逐条重核。合并来源：2026-08-28 新建，吸收并取代当时 [[16_megatron_distributed_optimizer_analysis|16 号页]] 的 §11.2「MegatronFSDP 详细分析」与 §11.6「FSDP 与并行拓扑的关系」、旧 `27_megatron_tp_fsdp_resharding_supplements_analysis` §3「Megatron-FSDP 内部实现」；三套分片方案的横向对比仍由 16 号页负责。
+
 ## 2026-09-06：Megatron 26–30 按范文 12 重组为问题、方案、源码与边界
 
 - [[26_megatron_optimizer_step_internals_deepdive]] 以「更新量比权重的最低有效位还小」为主线重写：用同一个 bf16 权重贯穿五步顺序与四条 wrapper，说明闸门为什么必须先于任何依赖梯度范数的计算。原理图用真实 IEEE 舍入复演 18 步——bf16 master 一次都没动，fp32 master 第 14 步跨过半个 bf16 ulp 才让模型权重跳一档。另补 `SEPARATE_GRAD_NORM_GROUPS` 的 MTP 独立裁剪组；更正 `DynamicGradScaler` 的 hysteresis 计数器只在攒够一整个 `growth_interval` 干净步后才复位（不是「连续 N 次溢出」），以及默认 bf16 路径下「拷贝模型梯度」其实是别名重绑、不产生拷贝。

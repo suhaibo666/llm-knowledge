@@ -5,10 +5,9 @@ title: "Megatron-LM 融合线性交叉熵：从词表交叉熵到分块重计算
 # Megatron-LM 融合线性交叉熵：从词表交叉熵到分块重计算
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01），本页路径默认相对该仓库。
-> **核心源码**：`megatron/core/tensor_parallel/cross_entropy.py`、`megatron/core/fusions/fused_cross_entropy.py`、`megatron/core/transformer/linear_cross_entropy.py`、`megatron/core/fusions/linear_cross_entropy/blackwell/entry.py`。
-> **核心结论**：以下以有标签且未启用配置日志的训练路径为主。只融合交叉熵可以减少逐元素操作和归约启动，却仍需完整的本地词表 logits；linear 将输出投影也纳入融合，前向保存统计量，反向按词表块重算，以额外矩阵乘和缓冲换掉大矩阵的留存。
-> **范围与关联**：本文负责 LM head 到 loss、再到 hidden/weight 梯度的完整路径；融合算子全景见 [[21_megatron_fusion_operators_analysis]]，重计算设计见 [[18_megatron_recompute_analysis]]，其他显存手段见 [[22_megatron_memory_optimization_analysis]]，低精度与图捕获边界见 [[23_megatron_precision_cudagraph_fusion_analysis]]。属 [[megatron-lm/index]] 系列。
-> **最近更新**：2026-09-05。按普通 CE → CE 内部融合 → 线性与 CE 联合分块重组，重新核算前反向显存与 TP/SP 通信。
+> **主题**：模型最后那个线性层加交叉熵为什么值得单独优化，三条实现路径又差在哪。本页从「输出是一个数、反向却需要整行概率」这个最小例子出发，依次走普通词表并行 CE、native 与 te 两种只优化已有 logits 的 CE 内部融合、把输出投影也纳入的 linear 融合（前向直接产出归一化统计量、反向按词表块重建概率并立即消费梯度），再把分块放回 TP/SP 看通信怎么变，最后核算同一模型尺寸下显存究竟省在哪里、配置与输入契约、失败位置与核验顺序。核心代码在 `megatron/core/transformer/linear_cross_entropy.py` 与 `megatron/core/tensor_parallel/cross_entropy.py`。
+> **适用范围**：LM head 到 loss、再到 hidden/weight 梯度的完整路径；融合算子全景见 [[21_megatron_fusion_operators_analysis]]，重计算设计见 [[18_megatron_recompute_analysis]]，其他显存手段见 [[22_megatron_memory_optimization_analysis]]，低精度与图捕获边界见 [[23_megatron_precision_cudagraph_fusion_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ## 1. 为什么最后一个线性层需要单独优化
 

@@ -5,9 +5,9 @@ title: "Megatron-LM 配置面：从 dataclass 到 CLI 与 YAML 的单一真相"
 # Megatron-LM 配置面：从 dataclass 到 CLI 与 YAML 的单一真相
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **维度**：功能树模块 O「训练任务编排与入口」的配置子面（O1）。本页讲**配置怎么被声明、被解析、被校验、被实例化**，不讲任何一个具体 flag 控制的机制——那些在各机制页。
-> **核心文件**：`megatron/training/argument_utils.py`（760 行）、`megatron/training/config/`（9 文件）、`megatron/training/arguments.py`、`megatron/training/yaml_arguments.py`
-> **最近更新**：2026-09-03。Wave E 对账确认 14 个 dataclass 的 590 个字段在 35 篇内容页中 C1/C2/C3 全清零；export 与 distillation 仍在 dataclass 配置枚举面之外。
+> **主题**：一个 flag 要在声明、解析、校验、实例化几处同时保持一致，Megatron 靠什么做到。本页讲 `ArgumentGroupFactory` 如何从 dataclass 生成 argparse 组、YAML 那条并行的配置容器路径、args 到配置对象的桥接层、`validate_args` 的规模本身说明了什么，最后是这套设计的边界。核心代码在 `megatron/training/argument_utils.py` 与 `megatron/training/config/`。
+> **适用范围**：功能树模块 O「训练任务编排与入口」的配置子面 O1——配置怎么被声明、解析、校验、实例化；任何一个 flag 控制的机制本身见各机制页，功能树与页面覆盖对账见 [[40_megatron_feature_tree_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

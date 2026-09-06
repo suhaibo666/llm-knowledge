@@ -5,9 +5,9 @@ title: "Megatron-LM 软件架构分析：设计目标、模块分层与使用场
 # Megatron-LM 软件架构分析：设计目标、模块分层与使用场景
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **分析范围**：Overview。本文覆盖冻结仓库的整体能力、静态模块、层间数据流、代码目录映射和顶层使用场景；各并行轴、模型、优化器与 checkpoint 的算法细节交给专题页。
-> **核心证据入口**：`README.md::Project Structure`、`docs/get-started/overview.md`、`pretrain_gpt.py::__main__`、`megatron/training/training.py::pretrain`、`megatron/core`、`megatron/inference`、`megatron/post_training`、`megatron/rl`、`megatron/elastification`、`experimental/lite`
-> **最近更新**：2026-09-03。按“背景与原理 → 静态架构 → 模块概要设计 → 代码目录 → 全部顶层场景”重建全文，并统一补充 ASCII 函数调用树与场景执行命令。
+> **主题**：Megatron-LM 整体是怎么搭起来的。先给出它面对的规模问题和由此定下的设计原理，再把系统拆成场景入口、应用编排、MCore 可组合组件、MCore 分布式执行、加速适配、基础框架、设备与通信七层，说明一次预训练如何穿过这七层、各层模块分别负责什么、它们对应到哪些代码目录，最后逐个走一遍嵌入自定义框架、预训练、数据预处理、后训练、推理、RL rollout、checkpoint、TRT-LLM 导出、弹性重启等顶层场景。核心代码在 `megatron/core/` 与 `megatron/training/`。
+> **适用范围**：整体能力、模块边界与场景路径；各并行轴、模型装配、优化器与 checkpoint 的算法细节交给专题页。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

@@ -6,10 +6,9 @@ title: "Megatron-LM 专家并行(Expert Parallelism)深度解析"
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
 > **源码基线**：`deepseek-ai/DeepEP@af9a0403188392824fc3057452822235873e0612`（`main`，2026-06-15）——只覆盖 DeepEP v1 `Buffer` 与 v2 `ElasticBuffer`；HybridEP 分支与 Transformer Engine 不在已冻结的依赖检出中，见 §3.6 的依赖边界表
-> **核心源码**：`megatron/core/transformer/moe/{moe_layer.py,token_dispatcher.py,router.py,experts.py,moe_utils.py,fused_a2a.py,shared_experts.py,paged_stash.py,token_dispatcher_inference.py}`；`megatron/core/transformer/{transformer_config.py,cuda_graph_config.py}`；`megatron/core/tensor_parallel/mappings.py`
-> **中心结论**：EP 不把一个 token 永久切给一张卡，而是把路由器的“token→专家”关系短暂改写为“token 副本→持有该专家的 rank”。路由权重由本地专家路径消费，combine 只回送并累计已经加权的专家输出。`MoELayer` 将这一闭环固定为 route/preprocess/dispatch/local-expert/combine/postprocess；分发器只替换中间搬运与布局恢复，不替换模型语义。
-> **适用范围**：训练态 MCore MoE 的专家分布、六条训练 token 分发器数据面（三种一级取值，其中 flex 再分四个二级后端）与其前后向边界，以及只为满足本页目标而必需的配套机制（共享专家、两条 overlap、整个 MoE 层的 CUDA Graph 的静态形状出口）。模型装配归 [[10_megatron_model_structure_analysis]]，进程组构造归 [[17_megatron_parallelism_orchestration_analysis]]，PP 的 combined-1F1B 调度归 [[15_megatron_pp_schedulers_analysis]]，跨轴资源竞争与工程选型归 [[20_megatron_comm_overlap_analysis]]、[[39_megatron_moe_training_optimization_analysis]]。
-> **最近更新**：2026-09-05。按 AllGather、AllToAll、DeepEP、HybridEP 的优化动机重写机制主线，分别补足输入、专家计算、结果回送与反向；单列 DeepEPv2 和 NCCL-EP 分支，修正专家归属与 CPU 同步表述。
+> **主题**：专家并行怎样把 MoE 的专家摊到多张卡上，token 又怎样被送到持有它的专家的那个 rank、算完再送回来。本页用同一个四 token 算例依次走 AllGather、AllToAll、DeepEP、HybridEP、DeepEPv2、NCCL-EP 六条训练态分发器数据面，逐条对照输入收集、专家计算、结果回送与反向，再把它们接回 `MoELayer` 的 route/preprocess/dispatch/local-expert/combine/postprocess 闭环并结算容量、丢弃与开销；配套讲共享专家、MoE 层内两条互斥 overlap，以及整层 CUDA Graph 的两个静态形状出口。核心代码在 `megatron/core/transformer/moe/`。
+> **适用范围**：训练态 MCore MoE 的专家分布与六条分发器数据面及其前后向边界；模型装配见 [[10_megatron_model_structure_analysis]]，进程组构造见 [[17_megatron_parallelism_orchestration_analysis]]，combined-1F1B 调度见 [[15_megatron_pp_schedulers_analysis]]，跨轴资源竞争与工程选型见 [[20_megatron_comm_overlap_analysis]]、[[39_megatron_moe_training_optimization_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

@@ -5,9 +5,9 @@ title: "Megatron-LM RL 运行时：GRPO 全链路的实现层"
 # Megatron-LM RL 运行时：GRPO 全链路的实现层
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **维度**：功能树模块 P。[[30_megatron_rl_posttraining_consistency_analysis]] 覆盖的是**训推一致性的算法层**（refit、`inference_optimized`、logprob 重算的正确性论证）；本页覆盖 `megatron/rl` 的**实现层**——25 个文件里有 20 个此前无任何页面引用。
-> **核心文件**：`megatron/rl/{rl_utils,rollout_granularity,sequence_packing_utils,parallel_utils,rl_profiling}.py`、`megatron/rl/agent/**`、`megatron/rl/server/**`、`megatron/rl/inference/**`
-> **最近更新**：2026-09-03。由参考段 42 号迁入 Runtime/工程集成段 33 号；内容 owner 不变。
+> **主题**：`megatron/rl` 这套 RL 运行时在实现层长什么样。本页从 RL 后训练与预训练的结构差别讲起，展开 rollout 的提交与消费粒度（两个轴五种取值、并发槽位怎么算出来、流水线与闸门、从训练入口到全 rank 可见的 live hop）、Agent 协议的能力继承与注册表白名单、GRPO 的组内标准化与四项损失、把变长生成塞回规整 batch 的序列打包、训推态切换的显存腾挪，最后是服务面、可观测性与约束。核心代码在 `megatron/rl/`。
+> **适用范围**：功能树模块 P 的实现层；训推一致性的算法层（refit、`inference_optimized`、logprob 重算的正确性论证）见 [[30_megatron_rl_posttraining_consistency_analysis]]，推理引擎内部见 [[31_megatron_inference_engine_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

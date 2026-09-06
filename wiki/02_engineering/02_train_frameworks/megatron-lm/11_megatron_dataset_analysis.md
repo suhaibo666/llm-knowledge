@@ -5,10 +5,9 @@ title: "Megatron-LM 数据入口深度解析：从变长语料到定长与打包
 # Megatron-LM 数据入口深度解析：从变长语料到定长与打包样本
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **核心源码**：`megatron/core/datasets/gpt_dataset.py`、`megatron/core/datasets/indexed_dataset.py`、`megatron/core/datasets/blended_dataset.py`、`megatron/core/datasets/blended_megatron_dataset_builder.py`、`megatron/core/datasets/data_schedule.py`、`megatron/core/datasets/data_schedule_utils.py`、`megatron/core/packed_seq_params.py`、`megatron/core/tokenizers/megatron_tokenizer.py`、`megatron/core/tokenizers/utils/build_tokenizer.py`、`megatron/training/datasets/varlen_dataset.py`、`megatron/training/datasets/data_samplers.py`、`megatron/training/config/training_config.py`、`tools/preprocess_data.py`、`pretrain_gpt.py`
-> **中心结论**：语料是变长文档、模型要的是定长 token 行，Megatron 没有把这一步焊死在数据集里，而是拆成「一个只负责 $O(1)$ 随机读的 `.bin`/`.idx` 底座」加「一层可替换的装填策略」。预训练走**隐式打包**：三级索引把文档首尾相接的 token 流每 $S$ 个切一刀，靠 EOD 与 `reset_*` 做样本内隔离，代价是文档会被切断；SFT 与变长数据走**显式打包**：整条样本不切断，靠 `cu_seqlens` + THD 把序列边界下推给 attention kernel，代价是每条样本与每个 microbatch 都要付对齐 padding，并多出一轮跨 DP×CP 的在线重排。两条路径共享同一个 tokenizer 工厂、同一个 builder 和同一个索引底座，分歧只发生在「谁决定一条训练样本的边界」这一步。
-> **适用范围**：本页负责 LLM（GPT / SFT / 变长）数据入口的完整链路——统一 tokenizer 工厂与词表 padding、离线预处理、`IndexedDataset` 索引底座、`GPTDataset` 三级索引与取样、EOD 与 position/attention-mask reset、多源混合、显式序列打包与 `PackedSeqParams`，直到 `get_batch` 交给模型的那组张量。打包调度器内部与按 microbatch 变 CP 度由 [[29_megatron_packed_dataset_dynamic_cp_analysis]] 负责，CP 序列切分由 [[13_megatron_cp_analysis]] 负责，PP microbatch 调度由 [[15_megatron_pp_schedulers_analysis]] 负责，模型侧如何消费这些张量由 [[10_megatron_model_structure_analysis]] 负责。BERT / T5 / 多模态数据集本体不展开，也不逐个比较第三方分词算法。
-> **最近更新**：2026-09-04。按特性页契约整体重写：以 `GPTDataset.__getitem__` 取一条样本为最小例子重排全篇，补齐 doc → token → sample → packed batch 的表示形变账（拷贝/共享/对齐/拼接），把原先 49 处 `path:line` 引用换成 §3.2 的稳定符号阅读路线，并更正 `--dataloader-inter-document-masking` 的实际接线与 0.80 阈值注释的出处。同日补齐算法回放与两张原理图（`tools/figs/svg/megatron_dataset_figures.mjs` 生成、`tools/figs/svg/lib/megatron_dataset_figures.test.mjs` 锁定）：§2.1 把三级索引逐跳走到 `get_batch` 并补出"相邻样本重叠恰好 $\varepsilon$ 个 token"这条由 `build_sample_idx` 循环推出的不变量，§2.3.1 用同一组文档把两条打包路径各回放一遍。
+> **主题**：一条文本从语料走到模型输入要经过哪些环节。本页按取一条样本的顺序讲统一 tokenizer 工厂与词表 padding、离线预处理与只负责随机读的 `.bin`/`.idx` 索引底座、`GPTDataset` 的三级索引取样与 EOD、position/attention-mask reset、多源混合，再对照隐式打包与显式打包（`cu_seqlens` + `PackedSeqParams`）两条路径的形态、选择条件与语义差别，直到 `get_batch` 交给模型的那组张量。核心代码在 `megatron/core/datasets/`。
+> **适用范围**：LLM（GPT / SFT / 变长）数据入口的完整链路；打包调度器内部与按 microbatch 变 CP 度见 [[29_megatron_packed_dataset_dynamic_cp_analysis]]，CP 序列切分见 [[13_megatron_cp_analysis]]，PP microbatch 调度见 [[15_megatron_pp_schedulers_analysis]]，模型侧如何消费这些张量见 [[10_megatron_model_structure_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

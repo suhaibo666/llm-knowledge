@@ -5,10 +5,9 @@ title: "Megatron-LM 分布式优化器与 DP 状态分片深度解析"
 # Megatron-LM 分布式优化器与 DP 状态分片深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **核心源码**：`megatron/core/distributed/distributed_data_parallel.py`、`param_and_grad_buffer.py`、`reduce_scatter_with_fp32_accumulation.py`、`finalize_model_grads.py`，以及 `megatron/core/optimizer/distrib_optimizer.py`、`layer_wise_optimizer.py`、`param_layout.py`
-> **中心结论**：复制模型可以把 optimizer state 与更新权交给 buffer range 的 owner：backward 后规约 owner 所需梯度，owner 更新本地片段，再发布完整参数供下一轮 forward 使用。native DistributedOptimizer 按连续元素 range 切分，LayerWise 按整个 parameter 切分；普通 AR、标准 RS、custom FP32 accumulation RS 与多 instance HSDP 的区别，必须连同梯度完成和参数可见性一起解释。
-> **适用范围**：本页拥有 native DDP 的 gradient communication、flat-buffer ownership、四套 range 坐标、RS→step→AG handoff、`finalize_model_grads` 的跨域收尾，以及这些机制与多个 DistOpt instance 的组合。精度 recipe 归 [[23_megatron_precision_cudagraph_fusion_analysis]]；CPU/offload 与 optimizer 算法归 [[22_megatron_memory_optimization_analysis]]、[[26_megatron_optimizer_step_internals_deepdive]]；Torch FSDP2 与 Megatron-FSDP 内部状态机归 [[36_megatron_fsdp_analysis]]；Nonuniform TP subclass 归 [[25_megatron_nonuniform_tp_analysis]]。本页只核验它们的选择点与交接契约，不复述它们的内部实现。
-> **最近更新**：2026-09-05。按最新特性页契约，从最小所有权实例展开真实选型与六条数据面，补齐 loss/backward、异步完成、布局成本和依赖边界；保留既有四图及其源码纠正。
+> **主题**：数据并行下把 optimizer state 和参数更新权交给某个 owner 之后，一步训练要怎么走完。本页从同一个具名 flat buffer 的四套 range 坐标出发，列出真实选型点，按 forward → backward → 梯度规约 → owner 更新 → 参数发布的时序回放四条按元素 range 切分的数据面和两条 LayerWise 整参切分的数据面，说明普通 AllReduce、标准 ReduceScatter、custom FP32 accumulation RS 与多 instance HSDP 的差别，再算上 bucket、padding、精度开关的代价，最后讲 `finalize_model_grads` 的跨域收尾。核心代码在 `megatron/core/distributed/` 与 `megatron/core/optimizer/`。
+> **适用范围**：native DDP 的梯度通信、flat-buffer 所有权、RS→step→AG 交接及其与多个 DistOpt instance 的组合；精度 recipe 见 [[23_megatron_precision_cudagraph_fusion_analysis]]，offload 与 optimizer 算法见 [[22_megatron_memory_optimization_analysis]]、[[26_megatron_optimizer_step_internals_deepdive]]，Megatron-FSDP 见 [[36_megatron_fsdp_analysis]]，非均匀 TP 见 [[25_megatron_nonuniform_tp_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

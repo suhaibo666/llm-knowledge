@@ -4,10 +4,10 @@ title: "DeepSeek-V4 Context Parallel 两阶段实现案例"
 
 # DeepSeek-V4 Context Parallel 两阶段实现案例
 
-> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）。
-> **本页定位**：本页不是第二份 CP 教程，只解释 DSv4 Hybrid Attention 在 Megatron 中怎样用“左边界 P2P + 压缩状态 AllGather”补齐本地 CSA/HCA 计算，以及它对 THD、contiguous partition 和 Dynamic CP 的特殊要求。
-> **先修**：CP group、`cp_comm_type` 与 hierarchical CP 见 [[13_megatron_cp_analysis]]；packed sequence 与 Dynamic CP 调度见 [[29_megatron_packed_dataset_dynamic_cp_analysis]]。
-> **最近更新**：2026-09-03。以当前已落地的 `_forward_thd_cp` 为主线，删除旧基线“尚未实现/不支持 Dynamic CP”的失效长篇审计。
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
+> **主题**：DSv4 Hybrid Attention 在 CP 下怎样补齐本地 CSA/HCA 计算缺的两类依赖：Stage 1 交换左边界 hidden 的 P2P（含反向所有权），Stage 2 先发 compressed state 的 gather 再做本地投影。本页还讲 Dynamic CP 下每个 microbatch 选组、返回前恢复的做法，contiguous partition 与 CP-aware RoPE 的特殊要求，以及通信与 overlap 账本、硬边界与回退。
+> **适用范围**：DSv4 的 CP 数据面与配置所有权；CP group、`cp_comm_type` 与 hierarchical CP 见 [[13_megatron_cp_analysis]]，packed sequence 与 Dynamic CP 调度见 [[29_megatron_packed_dataset_dynamic_cp_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

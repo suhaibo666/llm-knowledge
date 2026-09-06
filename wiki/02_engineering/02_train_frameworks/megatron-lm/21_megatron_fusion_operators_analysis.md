@@ -5,10 +5,9 @@ title: "Megatron-LM 融合算子：从逐点 JIT 融合到跨 GEMM 与跨通信�
 # Megatron-LM 融合算子：从逐点 JIT 融合到跨 GEMM 与跨通信的融合阶梯
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **核心源码**：`megatron/core/jit.py`；`megatron/core/fusions/{fused_bias_gelu.py,fused_bias_geglu.py,fused_bias_swiglu.py,fused_bias_dropout.py,fused_weighted_squared_relu.py,fused_layer_norm.py,fused_softmax.py,fused_cross_entropy.py,fused_mrope.py,fused_mhc_kernels.py,fused_pre_gated_delta_rule.py}`；`megatron/core/transformer/{mlp.py,transformer_config.py}`；`megatron/core/transformer/moe/experts.py`；`megatron/core/extensions/transformer_engine.py`；`megatron/core/models/common/embeddings/rope_utils.py`
-> **中心结论**：融合的对象是 kernel 之间的边界。Megatron 把这些边界分四级逐步吃掉：逐点算子链交给一个可整体替换的 `@jit_fuser` 编译区域；带归约的算子换成手写或供应商 kernel，用形状白名单换掉中间张量；GEMM 与激活之间的边界交给 Transformer Engine 的 op-fuser 链，并把分组 GEMM 的元数据留在 device 上，以便进 CUDA Graph；跨 rank 的通信边界则靠拼接张量减少集合通信次数。每一级都不改数学语义，改变的只是谁生成 kernel、以及在哪一层拒绝不可用的组合。
-> **适用范围**：本页拥有训练态 MCore 的激活融合、归一化与 softmax 融合、RoPE 融合、TE op-fuser 与 GroupedTensor 路径、交叉熵通信融合，以及贯穿各级的后端选择与失败边界。MoE 分发器内的 permute 与 all-to-all 融合归 [[14_megatron_ep_analysis]]，线性层与交叉熵的整体融合归 [[24_megatron_linear_cross_entropy_analysis]]，FP8/FP4 recipe 与 CUDA Graph 主体归 [[23_megatron_precision_cudagraph_fusion_analysis]]，GDN 的 CP 到 HP 单次 all-to-all 归 [[13_megatron_cp_analysis]]。
-> **最近更新**：2026-09-05。按四级融合阶梯重写机制主线，用同一块 FC1 输出贯穿 eager、jit、fp8 存储与加权变体；补齐 op-fuser 与 GroupedTensor 的选择条件、交叉熵的通信次数；修正 `--disable-jit-fuser` 的生效边界与"交叉熵通信减半"的旧说法。
+> **主题**：算子融合吃掉的是 kernel 之间的边界。本页用同一块 FC1 输出走完四级阶梯：逐点算子链交给一个可整体替换的 `@jit_fuser` 编译区域、带归约的算子换成有形状门槛的手写或供应商 kernel、GEMM 与激活之间的边界交给 Transformer Engine 的 op-fuser 链并把分组 GEMM 的元数据留在 device 上、跨 rank 的通信边界靠拼接张量减少集合通信次数；再贯穿讲各级的后端选择与失败边界，并结算每一级的收益与开销。核心代码在 `megatron/core/fusions/` 与 `megatron/core/jit.py`。
+> **适用范围**：训练态 MCore 的激活融合、归一化与 softmax 融合、RoPE 融合、TE op-fuser 与 GroupedTensor 路径、交叉熵通信融合；MoE 分发器内的 permute 与 all-to-all 融合见 [[14_megatron_ep_analysis]]，线性层与交叉熵的整体融合见 [[24_megatron_linear_cross_entropy_analysis]]，FP8/FP4 recipe 与 CUDA Graph 主体见 [[23_megatron_precision_cudagraph_fusion_analysis]]，GDN 的 CP 到 HP 单次 all-to-all 见 [[13_megatron_cp_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

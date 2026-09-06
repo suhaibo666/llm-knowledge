@@ -4,10 +4,10 @@ title: "DeepSeek-V4 Tensor Parallel 边界案例"
 
 # DeepSeek-V4 Tensor Parallel 边界案例
 
-> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）。
-> **本页定位**：本页不是第二份 TP 教程，只回答 DeepSeek-V4 Hybrid Attention 接入 Megatron 后，哪些模块实际被 TP 切分、哪些只是保留了 TP 接口，以及为什么当前实现强制 `TP=1`。
-> **先修**：先读 [[12_megatron_tp_analysis]] 理解 Column/Row Parallel，再读 [[10_megatron_model_structure_analysis]] 理解 spec 装配；MoE 的 EP/ETP 语义见 [[14_megatron_ep_analysis]]。
-> **最近更新**：2026-09-03。删除通用 TP/overlap 重复教材和过期迁移叙事，保留 DSv4 专有实现边界。
+> **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
+> **主题**：DeepSeek-V4 Hybrid Attention 接进 Megatron 之后，哪些模块真的被 TP 切了、哪些只是保留了 TP 接口。本页从 spec 走到构造器看硬边界在哪一步生效，逐项列出 attention 的参数所有权账本，说明 compressor 与 indexer 为什么在源码里明确选 duplicated、mHC 为什么用同步标记补非 TP-aware 参数而不是偷偷切权重、attention TP 与 expert TP 为什么必须分账，最后结算通信账本、硬边界与失败方式。
+> **适用范围**：DSv4 专有的 TP 实现边界与配置所有权；Column/Row Parallel 的通用机制见 [[12_megatron_tp_analysis]]，spec 装配见 [[10_megatron_model_structure_analysis]]，MoE 的 EP/ETP 语义见 [[14_megatron_ep_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

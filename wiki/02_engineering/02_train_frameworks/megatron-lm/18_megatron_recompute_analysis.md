@@ -5,10 +5,9 @@ title: "Megatron-LM 激活重计算：输入留存、反向回放与系统边界
 # Megatron-LM 激活重计算：输入留存、反向回放与系统边界
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **核心源码**：`megatron/core/tensor_parallel/random.py`、`megatron/core/recompute.py`、`megatron/core/transformer/transformer_block.py`、`megatron/core/transformer/transformer_config.py`、`megatron/core/models/common/model_chunk_schedule_plan.py`
-> **中心结论**：重计算用可恢复的边界输入替代长期保留的内部激活；选择范围时，要同时计算保留量、回放峰值和额外执行成本。Megatron 用 full/selective 决定重做什么，再由 checkpoint、输出丢弃与调度器分段回放保证反向所需的数据及时恢复。
-> **适用范围**：拥有两类 checkpoint、full/selective、TP 分存、Hybrid/MTP 和 EP overlap 的重计算入口及其量化边界；模型结构见 [[10_megatron_model_structure_analysis]]，PP 时序见 [[15_megatron_pp_schedulers_analysis]]，offload 见 [[22_megatron_memory_optimization_analysis]]，CUDA Graph 主体见 [[23_megatron_precision_cudagraph_fusion_analysis]]。
-> **最近更新**：2026-09-06。按问题、方案、总体取舍、源码装配、系统组合递进；补充统一容量窗口选型与 MLA 展开存储实例。
+> **主题**：反向到底需要哪些张量，哪些可以扔掉再算回来。本页先说明不重算时反向为什么留着这些激活，再按逐层完整重算、uniform 分组、block 部分层、selective 层内选区、输出丢弃、TP 分存的顺序展开每种方案，把长期保留量、回放峰值与额外耗时合成一张总账并代入显存预算做选型；随后对照源码看谁选择区域、谁保存状态、谁触发恢复（含 full、selective、CWO 的装配与 MLA 展开的实例），最后讲并行布局、Hybrid/MTP、EP overlap、mHC、融合量化与 PP 在途窗口如何改变这些收益。核心代码在 `megatron/core/recompute.py` 与 `megatron/core/tensor_parallel/random.py`。
+> **适用范围**：两类 checkpoint、full/selective、TP 分存、Hybrid/MTP 与 EP overlap 的重计算入口及其量化边界；模型结构见 [[10_megatron_model_structure_analysis]]，PP 时序见 [[15_megatron_pp_schedulers_analysis]]，offload 见 [[22_megatron_memory_optimization_analysis]]，CUDA Graph 主体见 [[23_megatron_precision_cudagraph_fusion_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ## 1. 激活为什么需要换一种保存方式
 

@@ -5,9 +5,9 @@ title: "Megatron-LM TensorRT-LLM 导出：从训练权重到可加载引擎"
 # Megatron-LM TensorRT-LLM 导出：从训练权重到可加载引擎
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **功能树归属**：模块 M 的离线 TensorRT-LLM 权重导出；`megatron/core/export/**` 共 17 个 `.py`。
-> **核心入口**：`TRTLLMHelper.get_trtllm_pretrained_config_and_model_weights` 与 `TRTLLMHelper.build_and_save_engine`。
-> **最近更新**：2026-09-03。从原 44 合并页拆出，并补齐 conversion → engine build 的调用、配对与外部依赖边界。
+> **主题**：训练态 state dict 怎样变成 TensorRT-LLM 能装载的逐 rank 权重与 config，再变成一个 engine。本页讲对外的两个独立 API（转换与建引擎）、`ExportConfig` 描述的是目标推理拓扑而不是训练拓扑、转换入口如何先提取量化 scale 再按 state dict 形态选路、conversion 的 list 终点如何接到 engine build，最后是 engine build 的容量参数、外部依赖边界与排障判据。核心代码在 `megatron/core/export/`。
+> **适用范围**：功能树模块 M 的离线 TensorRT-LLM 权重导出；分布式 checkpoint 本身见 [[19_megatron_dist_checkpointing_analysis]]，在线推理引擎见 [[31_megatron_inference_engine_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

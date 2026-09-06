@@ -5,11 +5,9 @@ title: "Megatron-LM 流水线并行调度器深度解析"
 # Megatron-LM 流水线并行调度器深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **原理对照**：GPipe，`arXiv:1811.06965v5`（2019-07-25），§2.2–§2.3；作为教学基线，非本版 Megatron 可选调度器。
-> **核心源码**：`megatron/core/pipeline_parallel/{schedules,p2p_communication,combined_1f1b,multimodule_communicator,bridge_communicator}.py`、`megatron/core/models/common/model_chunk_schedule_plan.py`、`megatron/core/{model_parallel_config,parallel_state,process_groups_config,utils}.py`
-> **中心结论**：PP 调度器不切模型，只编排已经切好的 model chunk——它让每个 rank 用同一套静态依赖规则执行 microbatch 前向、末级 loss、反向、边界梯度与最终 grad handoff。普通 1F1B 用 FIFO 把在途激活压到 $O(P)$；VPP 用更多 virtual 边界消息换更小 bubble；combined-1F1B 与异步 P2P 只改变成本暴露的位置，不改变依赖图；Multi-Module 复用 non-interleaved 控制面，用 module 内 P2P 加跨 module Bridge 两种数据面执行一张 DAG。
-> **适用范围**：本页拥有 PP schedule 选择与三段生命周期、相邻 stage P2P 的三条通信方式与两种后端、VPP schedule table、P2P request overlap、combined-1F1B 的 PP 侧接线、Multi-Module bridge 数据面，以及 scheduler 收尾到 `finalize_model_grads_func` 的交接。rank/ProcessGroup 构造归 [[17_megatron_parallelism_orchestration_analysis]]，MoE 路由与 A2A 数学归 [[14_megatron_ep_analysis]]，多轴资源竞争归 [[20_megatron_comm_overlap_analysis]]，激活 offload 归 [[22_megatron_memory_optimization_analysis]]，packed/dynamic CP 的形状来源归 [[29_megatron_packed_dataset_dynamic_cp_analysis]]。
-> **最近更新**：2026-09-05。按 GPipe → 1F1B → VPP → P2P 重叠重写方案主线，补充同例 GPipe 时序图；分别展开 combined-1F1B 与多模块分支，区分气泡比例、激活记录和通信等待，并调整中文表述。
+> **主题**：流水线调度器怎样编排已经切好的 model chunk。本页用同一个四 stage、八 microbatch 的算例按 GPipe → 1F1B → VPP → VPP 加 P2P 重叠的顺序推进，每一步都结算它省下什么、又新增什么（总时长、气泡比例、激活记录峰值、消息条数），再分出三条分支：不切 stage 的 no-pipeline、为 MoE 遮蔽 EP 通信的 combined-1F1B、子模型布局不一致时的 Multi-Module bridge；随后讲 P2P 的三种提交与等待方式、公共前反向原语，以及调度收尾到 `finalize_model_grads_func` 的梯度交接。核心代码在 `megatron/core/pipeline_parallel/`。
+> **适用范围**：PP 调度选择与三段生命周期、相邻 stage 的 P2P 数据面与梯度交接；rank 与进程组构造见 [[17_megatron_parallelism_orchestration_analysis]]，MoE 路由与 A2A 见 [[14_megatron_ep_analysis]]，多轴资源竞争见 [[20_megatron_comm_overlap_analysis]]，激活 offload 见 [[22_megatron_memory_optimization_analysis]]，packed/dynamic CP 的形状来源见 [[29_megatron_packed_dataset_dynamic_cp_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

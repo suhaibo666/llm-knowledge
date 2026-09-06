@@ -5,10 +5,9 @@ title: "Megatron-LM TFLOPS 计算实现分析：原理与 MoE 场景准确性探
 # Megatron-LM TFLOPS 计算实现分析：原理与 MoE 场景准确性探讨
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **重定基线**：2026-09-01 由 `71092579` 推进，跨 7 个提交（#6753 / #6847 / #6022 / #6704 / #6583 / #6397 / #6946）。`megatron/training/training.py` 本轮净增 184 行、且改动正落在 FLOPs 计算区，因此本页落在该文件上的引用已逐条打开新基线核对并重定行号——**全部为行号漂移，无一条断言在新基线下失效**；标注为历史基线 `ee3f1ffa` 的旧行号按原样保留。本轮的实质增量是 DSA top-k 稀疏与 indexer 成本被正式计入公式（#6753），见新增的 §3.2；§7.7、§8 同步更新。
-> **重定基线**：2026-08-28 由 `ee3f1ffa…`（2026-05-19）推进，跨 578 个提交；本页全部 `path:line` 形式的引用已在新基线下逐条重核;**代码块内被点名的符号与不带行号的裸路径不在该次扫描口径内**,已知漏网处已于 2026-08-28 单独更正。原文钉的 3 处引用在新基线下均已移位、且函数签名同时改变（下列「现基线」行号随 2026-09-01 重定基线刷新）：① `num_floating_point_operations` 由双参 `(args, batch_size)`（旧 `megatron/training/training.py:299`）改为四参 `(args, batch_size, seqlen_squared_sum_in_batch=None, total_real_tokens_in_batch=None)`（现基线 `megatron/training/training.py:609-611`）；② `routed_flops` 的 token 因子由 `batch_size * seq_len`（旧 `megatron/training/training.py:316-326`）改为单一 `total_tokens`（现基线 `megatron/training/training.py:661-668`）；③ `hybrid_flops` 形参由 `batch_size, seq_len`（旧 `megatron/training/training.py:412-414`）改为 `total_tokens, seqlen_squared_sum`（现基线 `megatron/training/training.py:858-860`）。
-> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **最近更新**：2026-09-01。重定基线至 `85902ef59`；新增 §3.2「DSA 稀疏注意力如何进入闭式估算」。
+> **主题**：训练循环里那个每步都能算、还能跨作业相加的 FLOPs 数是怎么来的。本页讲它为什么被写成模型超参的闭式函数而不是硬件测量值、三个倍率各自的来历、THD 变长为什么用两个标量统计量而不是按样本循环，再走一遍计算逻辑与运行时调用链（含 DSA 稀疏注意力与 indexer 成本如何进入闭式估算），比较 MoE dropless 与 token drop 两种场景，最后逐条列出这个口径的约束：只数 GEMM、重计算不进公式、分母是 `world_size`、跨作业累计必须同口径。核心代码在 `megatron/training/training.py`。
+> **适用范围**：FLOPs 闭式公式、吞吐与 MFU 的统计口径及其硬性拒绝的组合；各机制本身的实现见对应专题页，MoE 分发见 [[14_megatron_ep_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 在大规模模型训练中，**TFLOPS（每秒万亿次浮点运算）**是衡量硬件利用率和训练效率的关键指标。本文分析 Megatron-LM 计算 TFLOPS 的方法，通过流程图展示计算逻辑，并重点讨论混合专家模型（MoE）在无丢弃（Dropless）和有丢弃（Dropout）模式下的估算准确性。
 

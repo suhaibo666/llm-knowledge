@@ -5,10 +5,9 @@ title: "Megatron-LM 最小训练：从 torchrun 到 checkpoint"
 # Megatron-LM 最小训练：从 torchrun 到 checkpoint
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **学习前置**：先读 [[01_megatron_architecture_analysis]]，并完成仓库官方安装步骤。
-> **回答的问题**：一轮最小 Megatron 训练怎样从进程组初始化走到梯度同步、参数更新和分布式 checkpoint 回读？
-> **不覆盖**：本页只验证最小闭环；真实数据、并行算法和生产调优分别由 [[11_megatron_dataset_analysis]]、[[03_megatron_parallelism_geometry_quickstart]] 与专题页负责。
-> **最后复核**：2026-09-03。
+> **主题**：用官方两卡脚本 `examples/run_simple_mcore_train_loop.py` 跑通一轮最小训练。给出运行命令与判断成功的两类输出，把一次真实执行拆成从分布式初始化到 checkpoint 回读的七个状态边界，再沿源码解释四条依赖顺序——先建进程组再建依赖它的状态、调度器选择与 DDP wrapper 是两个边界、梯度 ready 后才允许更新参数、save 成功不等于 load 已验证；末节把常见报错归到这几段之一。
+> **适用范围**：先读 [[01_megatron_architecture_analysis]] 并完成官方安装步骤；本页只验证最小闭环，真实数据、并行几何与生产调优分别见 [[11_megatron_dataset_analysis]]、[[03_megatron_parallelism_geometry_quickstart]] 与各专题页。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

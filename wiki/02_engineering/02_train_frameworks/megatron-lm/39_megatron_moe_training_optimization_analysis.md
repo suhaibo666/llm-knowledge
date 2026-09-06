@@ -5,12 +5,9 @@ title: "Megatron-LM MoE 训练优化：围绕四种所有权的机制地图"
 # Megatron-LM MoE 训练优化：围绕四种所有权的机制地图
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；本页落在本轮改动文件上的引用已按 difflib 逐行对齐重定位（含裸续引 `:NNN`），指向历史基线（`ee3f1ff` / `232c478d4`）的引用按原样冻结、未参与重定位。
-> **维度**：Overview / Mechanism Map。本页解释 MoE 优化之间的因果关系和选型顺序；EP、通信重叠、显存、精度与融合的实现细节由对应专题页负责。
-> **学习前置**：先读 [[01_megatron_architecture_analysis]] 和 [[14_megatron_ep_analysis]]；本页是机制之后的工程选型总纲。
-> **回答的问题**：MoE 的瓶颈属于 token、专家参数、激活/优化器状态还是执行窗口，以及四种所有权怎样约束组合顺序。
-> **不覆盖**：dispatcher 与 EP 进程组的实现细节归 [[14_megatron_ep_analysis]]，跨轴重叠归 [[20_megatron_comm_overlap_analysis]]。
-> **最近更新**：2026-08-29。删除固定规模配方、重复代码与配置目录，改写为四种所有权的机制分析；保留当前基线下可验证的互斥条件和演进证据。
+> **主题**：MoE 的工程优化按四种所有权组织——token 所有权、专家参数所有权、激活与优化器状态所有权、时间窗口所有权。本页不先背配置项，而是先追一条 token，再逐种所有权说明它决定什么、哪些机制在抢同一个对象、组合顺序被谁约束，然后给出「先定位所有权、再选机制」的选型顺序，最后是当前基线的硬边界与演进方向。
+> **适用范围**：MoE 各项优化之间的因果关系与选型顺序（Overview / Mechanism Map）；先读 [[01_megatron_architecture_analysis]] 与 [[14_megatron_ep_analysis]]，dispatcher 与 EP 进程组的实现细节见 [[14_megatron_ep_analysis]]，跨轴重叠见 [[20_megatron_comm_overlap_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

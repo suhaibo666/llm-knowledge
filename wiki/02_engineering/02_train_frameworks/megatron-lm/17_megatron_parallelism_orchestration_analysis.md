@@ -5,10 +5,9 @@ title: "Megatron-LM 并行编排与进程组构造深度解析(Capstone)"
 # Megatron-LM 并行编排与进程组构造深度解析(Capstone)
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **核心源码**：`megatron/core/parallel_state.py`、`megatron/core/process_groups_config.py`、`megatron/core/hyper_comm_grid.py`、`megatron/training/initialize.py`、`examples/mimo/training/topology.py`
-> **中心结论**：并行编排把 dense 与 expert 的布局约束变成真实进程组，再把这些组交给同一 rank 上的模型、DDP、优化器与调度器。正交枚举解决“成员是谁”，建组解决“通信域是否可用”，显式传递解决“这次计算属于哪个模块”；三者是不同责任。
-> **适用范围**：本页拥有正交分组、dense/expert 双分解、进程组创建与生命周期、显式组注入和 HyperCommGrid 的实际使用范围；坐标入门归 [[03_megatron_parallelism_geometry_quickstart]]，各轴 collective 本体归12–16，非均匀 TP 归 [[25_megatron_nonuniform_tp_analysis]]，FSDP 归 [[36_megatron_fsdp_analysis]]。
-> **最近更新**：2026-09-05。按特性分析重构，以同一 rank 实例贯通枚举、物化、所有权、消费与销毁，纠正拓扑映射、注入和 RNG 的过度概括。
+> **主题**：一组并行度怎样变成同一 rank 上真实可用的进程组，又交给谁。本页跟着一个 rank 的实例走完四步：正交枚举把 dense 与 expert 两套坐标合起来算出组成员（含替代 `order` 与 expert sibling 的独立复演、同一父组再派生）、全局初始化把名单物化成 `ProcessGroup` 并规定发布边界、每种组分别交给模型/DDP/优化器/调度器的哪一侧、HyperCommGrid 用轴移动管理 rank 段与 view，最后是组的生命周期、失败边界与总代价。核心代码在 `megatron/core/parallel_state.py` 与 `megatron/core/process_groups_config.py`。
+> **适用范围**：正交分组、dense/expert 双分解、进程组创建与生命周期、显式组注入与 HyperCommGrid 的实际入口；坐标入门见 [[03_megatron_parallelism_geometry_quickstart]]，各轴 collective 本体见 12–16 各页，非均匀 TP 见 [[25_megatron_nonuniform_tp_analysis]]，FSDP 见 [[36_megatron_fsdp_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ## 1. 特性概览：让每个模块拿到正确的通信域
 

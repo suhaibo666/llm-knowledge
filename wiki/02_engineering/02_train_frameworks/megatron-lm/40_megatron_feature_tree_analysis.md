@@ -5,9 +5,9 @@ title: "Megatron-LM 代码仓功能树与覆盖对账"
 # Megatron-LM 代码仓功能树与覆盖对账
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **维度**：Inventory。本页回答"这个仓库到底提供哪些功能、每块归谁管、还有哪些没人管"，**不解释任何机制为什么这么设计**——那是各机制页的事。
-> **范围**：`megatron/core` + `megatron/training` + `megatron/rl`，共 600 个 `.py`。
-> **最近更新**：2026-09-03。Wave E 对账确认本域 35 篇内容页；tokenizer、TRT-LLM export、离线 distillation 的 owner 分别为 11、37、38，A–Q 与 600 文件口径不变。
+> **主题**：这个仓库到底提供哪些功能、每块归谁管、还有哪些没人管。本页把 `megatron/core`、`megatron/training`、`megatron/rl` 共 600 个 `.py` 归成十七个顶层模块（A–Q），做功能树与页面的双向对账，给出覆盖度仪表盘，并为仍是空白的能力编排最终 owner。
+> **适用范围**：功能清单与覆盖对账；本页不解释任何机制为什么这么设计，那是各机制页的事，配置字段的 owner 追踪见 [[41_megatron_config_surface_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

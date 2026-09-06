@@ -5,13 +5,9 @@ title: "Megatron-FSDP 深度解析"
 # Megatron-FSDP 深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **重定基线**：2026-09-01 由 `71092579`（2026-08-27）推进，跨 7 个提交；该增量只触及 20 个 `megatron/` 文件，本页 `path:line` 引用所涉源文件均不在其中，故无行号漂移，无需逐条重核。
-> 核心文件:`megatron/core/distributed/fsdp/src/megatron_fsdp/`(16 个 `.py`、11321 行;其中 `param_and_grad_buffer.py` 5332 行、`megatron_fsdp.py` 1544 行),接入层 `megatron/core/distributed/fsdp/mcore_fsdp_adapter.py`(654 行),仓内文档 `docs/user-guide/features/megatron_fsdp.md`(619 行)
-> 配套阅读：[[16_megatron_distributed_optimizer_analysis|ZeRO/HSDP 所有权与三条实现路径对比]]、[[22_megatron_memory_optimization_analysis]]、[[20_megatron_comm_overlap_analysis]]、[[19_megatron_dist_checkpointing_analysis]]。
-> 适用读者:已了解 ZeRO 分级与 Megatron DDP,要读懂、调参或移植 Megatron-FSDP 这台机器的工程师。
-> **叙事顺序**：本页按五拍组织——背景 → 为什么这么设计（含被否掉的替代）→ 实现思路与细节 → 约束 → 发展趋势。
-> **合并来源**：2026-08-28 新建,吸收并取代当时 [[16_megatron_distributed_optimizer_analysis|16 号页]]的 §11.2「MegatronFSDP 详细分析」与 §11.6「FSDP 与并行拓扑的关系」、旧 `27_megatron_tp_fsdp_resharding_supplements_analysis` §3「Megatron-FSDP 内部实现」;三套分片方案的**横向对比**仍由 16 号页负责,本页不重复。
-> **最近更新**：2026-09-04。内部实现正文不变；16 号页重构后，三方对比继续归 16，本页反向导航改为语义链接，不再依赖旧 §11.2/§11.6 编号。
+> **主题**：Megatron-FSDP 这台机器内部是怎么造的。本页先讲它为什么把分片切在 FSDP unit 的扁平桶上而不是切在参数上（为了零 `COPY`），再按五个机制展开：module 到 bucket 的四步分组与 DP-LCM 分片网格、四类 buffer 与「ZeRO 四档其实就是三个布尔量」、hook 状态机的四个训练状态与两条预取流水线、与 EP/TP/HSDP·HFSDP 的叠加顺序，以及接入层 `mcore_fsdp_adapter.py` 做了什么；最后是约束与发展趋势。核心代码在 `megatron/core/distributed/fsdp/`。
+> **适用范围**：写给已了解 ZeRO 分级与 Megatron DDP、要读懂或调参 Megatron-FSDP 的读者，覆盖其内部实现与 FSDP 实现选择的配置契约；三套分片方案的横向对比见 [[16_megatron_distributed_optimizer_analysis]]，显存手段见 [[22_megatron_memory_optimization_analysis]]，通信重叠见 [[20_megatron_comm_overlap_analysis]]，`fsdp_dtensor` 存档见 [[19_megatron_dist_checkpointing_analysis]]。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

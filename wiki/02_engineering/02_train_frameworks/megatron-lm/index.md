@@ -22,20 +22,20 @@ title: "Megatron-LM 知识地图"
 
 | 编号 | 页面 | 一行定位 |
 |---:|---|---|
-| 01 | [[01_megatron_architecture_analysis]] | 从任务入口到一次参数提交的五层系统架构。 |
+| 01 | [[01_megatron_architecture_analysis]] | 七层系统架构：一次预训练怎样穿过它们，以及十一个顶层场景。 |
 | 02 | [[02_megatron_training_quickstart]] | 用官方两卡脚本走通最小训练与 checkpoint 回读。 |
 | 03 | [[03_megatron_parallelism_geometry_quickstart]] | 从 world size 推导 TP/PP/CP/EP/DP 坐标与进程组。 |
 | 10 | [[10_megatron_model_structure_analysis]] | GPTModel、ModuleSpec、attention、MLP 与输出层的装配边界。 |
 | 11 | [[11_megatron_dataset_analysis]] | tokenizer、IndexedDataset、GPT 取样与 sequence packing 数据入口。 |
 | 12 | [[12_megatron_tp_analysis]] | tensor/sequence parallel 的切分、collective 与 overlap。 |
-| 13 | [[13_megatron_cp_analysis]] | context parallel 的通信模式、分层组与 Dynamic CP 接口。 |
+| 13 | [[13_megatron_cp_analysis]] | 标准 attention 的 `cp_comm_type` 接入面，线性 attention 与 Mamba 两条非标准 CP 数据面，分层组与 Dynamic CP。 |
 | 14 | [[14_megatron_ep_analysis]] | 从 AllGather、AllToAll 到 DeepEP、HybridEP 的分发方案与训练闭环。 |
 | 15 | [[15_megatron_pp_schedulers_analysis]] | 从 GPipe、1F1B 到 VPP 与通信重叠，兼述 MoE 和多模块调度。 |
 | 16 | [[16_megatron_distributed_optimizer_analysis]] | 连续 range 与整参 owner、梯度规约、更新及参数可见性闭环。 |
 | 17 | [[17_megatron_parallelism_orchestration_analysis]] | dense/expert 分组、进程组生命周期与显式组注入。 |
 | 18 | [[18_megatron_recompute_analysis]] | 从反向依赖推导 full/selective 与输出丢弃，按容量预算选型，再解读源码装配和系统组合。 |
-| 19 | [[19_megatron_dist_checkpointing_analysis]] | sharded state、并行无关保存、加载与重分片。 |
-| 20 | [[20_megatron_comm_overlap_analysis]] | 跨 TP/CP/EP/PP/DP 的时间线、资源竞争与诊断。 |
+| 19 | [[19_megatron_dist_checkpointing_analysis]] | 描述子、访问校验与并行无关的存取：存时 TP4、载时 TP2 也能对上。 |
+| 20 | [[20_megatron_comm_overlap_analysis]] | TP/CP/EP/PP/DP/FSDP 六条掩盖对、跨轴时间线、资源竞争与诊断梯子。 |
 | 21 | [[21_megatron_fusion_operators_analysis]] | 从逐点 JIT 融合到 GEMM 链与通信融合的四级阶梯，及各级的后端选择与失败边界。 |
 | 22 | [[22_megatron_memory_optimization_analysis]] | 从整层换出、子模块换出到分页暂存与分块优化器换出，及常驻通信池的反向取舍。 |
 | 23 | [[23_megatron_precision_cudagraph_fusion_analysis]] | 从计算、访存与提交瓶颈推导低精度、融合和 CUDA Graph，再展开整层收益、源码前后向及使用约束。 |
