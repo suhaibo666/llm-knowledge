@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 460" width="1272" height="460" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .s0{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.1}
+  .s1{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.1}
+  .s2{fill:#EAF7EE;stroke:#2E8B57;stroke-width:1.1}
+  .s3{fill:#F3EEFB;stroke:#6D4AAF;stroke-width:1.1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　LCM tiling：训练 TP 与推理 TP 不同时，每一段权重去哪里</text>
+<text class="su" x="28" y="52" text-anchor="start">算例：TP 维全长 24，训练侧 TP=4（每片 6），推理侧 TP=3（每片 8）</text>
+<text class="rank" x="28" y="124" text-anchor="start">训练侧分片</text>
+<rect class="s0" x="132" y="104" width="175" height="32" rx="4"/>
+<text class="sm" x="219.5" y="125" text-anchor="middle">src 0</text>
+<rect class="s1" x="307" y="104" width="175" height="32" rx="4"/>
+<text class="sm" x="394.5" y="125" text-anchor="middle">src 1</text>
+<rect class="s2" x="482" y="104" width="175" height="32" rx="4"/>
+<text class="sm" x="569.5" y="125" text-anchor="middle">src 2</text>
+<rect class="s3" x="657" y="104" width="175" height="32" rx="4"/>
+<text class="sm" x="744.5" y="125" text-anchor="middle">src 3</text>
+<text class="rank" x="28" y="190" text-anchor="start">LCM 微块 ×12</text>
+<text class="sm" x="28" y="206" text-anchor="start">每块 2 个元素</text>
+<rect class="s0" x="132" y="172" width="56.833333333333336" height="28" rx="3"/>
+<rect class="s0" x="190.33333333333334" y="172" width="56.833333333333336" height="28" rx="3"/>
+<rect class="s0" x="248.66666666666669" y="172" width="56.833333333333336" height="28" rx="3"/>
+<rect class="s1" x="307" y="172" width="56.833333333333336" height="28" rx="3"/>
+<rect class="s1" x="365.33333333333337" y="172" width="56.833333333333336" height="28" rx="3"/>
+<rect class="s1" x="423.6666666666667" y="172" width="56.833333333333336" height="28" rx="3"/>
+<rect class="s2" x="482" y="172" width="56.833333333333336" height="28" rx="3"/>
+<rect class="s2" x="540.3333333333334" y="172" width="56.833333333333336" height="28" rx="3"/>
+<rect class="s2" x="598.6666666666667" y="172" width="56.833333333333336" height="28" rx="3"/>
+<rect class="s3" x="657" y="172" width="56.833333333333336" height="28" rx="3"/>
+<rect class="s3" x="715.3333333333334" y="172" width="56.833333333333336" height="28" rx="3"/>
+<rect class="s3" x="773.6666666666667" y="172" width="56.833333333333336" height="28" rx="3"/>
+<text class="rank" x="28" y="260" text-anchor="start">推理侧分片</text>
+<rect class="ghost" x="132" y="240" width="233.33333333333334" height="32" rx="4"/>
+<text class="sm" x="248.66666666666669" y="261" text-anchor="middle">dst 0</text>
+<text class="dim" x="161.16666666666666" y="288" text-anchor="middle">s0+0</text>
+<text class="dim" x="219.5" y="288" text-anchor="middle">s0+2</text>
+<text class="dim" x="277.83333333333337" y="288" text-anchor="middle">s0+4</text>
+<text class="dim" x="336.1666666666667" y="288" text-anchor="middle">s1+0</text>
+<rect class="ghost" x="365.33333333333337" y="240" width="233.33333333333334" height="32" rx="4"/>
+<text class="sm" x="482.00000000000006" y="261" text-anchor="middle">dst 1</text>
+<text class="dim" x="394.50000000000006" y="288" text-anchor="middle">s1+2</text>
+<text class="dim" x="452.83333333333337" y="288" text-anchor="middle">s1+4</text>
+<text class="dim" x="511.1666666666667" y="288" text-anchor="middle">s2+0</text>
+<text class="dim" x="569.5" y="288" text-anchor="middle">s2+2</text>
+<rect class="ghost" x="598.6666666666667" y="240" width="233.33333333333334" height="32" rx="4"/>
+<text class="sm" x="715.3333333333334" y="261" text-anchor="middle">dst 2</text>
+<text class="dim" x="627.8333333333334" y="288" text-anchor="middle">s2+4</text>
+<text class="dim" x="686.1666666666666" y="288" text-anchor="middle">s3+0</text>
+<text class="dim" x="744.5" y="288" text-anchor="middle">s3+2</text>
+<text class="dim" x="802.8333333333334" y="288" text-anchor="middle">s3+4</text>
+<text class="rank" x="28" y="288" text-anchor="start">取自</text>
+<path class="gl" d="M 132 302 L 832 302"/>
+<text class="sm" x="132" y="318" text-anchor="middle">0</text>
+<text class="sm" x="248.66666666666669" y="318" text-anchor="middle">4</text>
+<text class="sm" x="365.33333333333337" y="318" text-anchor="middle">8</text>
+<text class="sm" x="482" y="318" text-anchor="middle">12</text>
+<text class="sm" x="598.6666666666667" y="318" text-anchor="middle">16</text>
+<text class="sm" x="715.3333333333334" y="318" text-anchor="middle">20</text>
+<text class="sm" x="832" y="318" text-anchor="middle">24</text>
+<text class="rank" x="482" y="336" text-anchor="middle">TP 维上的全局下标</text>
+<rect class="neutral" x="872" y="96" width="372" height="172" rx="8"/>
+<text class="tx" x="884" y="117" text-anchor="start">六个量决定整张图</text>
+<path class="edge" d="M 884 125 L 1232 125"/>
+<text class="sm" x="884" y="143" text-anchor="start">Ns = src_world × src_stride = 4</text>
+<text class="sm" x="884" y="159" text-anchor="start">Nd = dst_world × dst_stride = 3</text>
+<text class="sm" x="884" y="175" text-anchor="start">L = lcm(Ns, Nd) = 12；unit = 全长 / L = 2</text>
+<text class="sm" x="884" y="191" text-anchor="start">cps = L / Ns = 3（一个源分片含几个微块）</text>
+<text class="sm" x="884" y="207" text-anchor="start">cpd = L / Nd = 4（一个目标分片含几个微块）</text>
+<text class="sm" x="884" y="223" text-anchor="start">全长必须被 L 整除，否则直接 RuntimeError</text>
+<rect class="acc1" x="872" y="284" width="372" height="160" rx="8"/>
+<text class="tx" x="884" y="305" text-anchor="start">取 LCM 就是为了这条不变量</text>
+<path class="edge" d="M 884 313 L 1232 313"/>
+<text class="sm" x="884" y="331" text-anchor="start">每个微块完整落在恰好一个源分片、也恰好一个目标分片里，</text>
+<text class="sm" x="884" y="347" text-anchor="start">于是每段搬运都是「整块 slice → 整块 slice」，不必跨分片拼接。</text>
+<text class="sm" x="884" y="363" text-anchor="start">本例每个推理分片从 2 / 2 / 2 个训练分片取数。</text>
+<text class="sm" x="884" y="379" text-anchor="start">布局重映射本身是恒等的：搬完之后每个全局下标上的值不变，</text>
+<text class="sm" x="884" y="395" text-anchor="start">所以这一步不引入数值误差 —— 误差来自后面的量化（图 3）。</text>
+</svg>

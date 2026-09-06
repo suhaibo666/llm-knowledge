@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 480" width="1272" height="480" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .s0{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.1}
+  .s1{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.1}
+  .s2{fill:#EAF7EE;stroke:#2E8B57;stroke-width:1.1}
+  .s3{fill:#F3EEFB;stroke:#6D4AAF;stroke-width:1.1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 2　一次 refit：从公开 API 到目标权重可见</text>
+<text class="su" x="28" y="52" text-anchor="start">planner、transport 与 transform 是同一条调用链的三个阶段，不是三套平行机制</text>
+<rect class="neutral" x="28" y="96" width="780" height="34" rx="5"/>
+<text class="dim" x="40" y="118" text-anchor="start">swap_model_weights</text>
+<text class="sm" x="224" y="118" text-anchor="start">解析后端名 → CopyService；未给 transform 时从缓存 plan 取</text>
+<path class="aux" d="M 36 130 L 36 135"/>
+<rect class="neutral" x="28" y="136" width="780" height="34" rx="5"/>
+<text class="dim" x="40" y="158" text-anchor="start">reshard_model_weights</text>
+<text class="sm" x="224" y="158" text-anchor="start">解包两侧 core，统一持久 buffer 的 dtype</text>
+<text class="costtx" x="616" y="158" text-anchor="start">dtype 严格：不齐会静默损坏</text>
+<path class="aux" d="M 36 170 L 36 175"/>
+<rect class="neutral" x="28" y="176" width="780" height="34" rx="5"/>
+<text class="dim" x="40" y="198" text-anchor="start">_build_or_get_plan</text>
+<text class="sm" x="224" y="198" text-anchor="start">命中缓存则跳过抽元数据 / gather / rank 0 规划 / scatter</text>
+<text class="costtx" x="616" y="198" text-anchor="start">缓存键含 rank offset</text>
+<path class="aux" d="M 36 210 L 36 215"/>
+<rect class="neutral" x="28" y="216" width="780" height="34" rx="5"/>
+<text class="dim" x="40" y="238" text-anchor="start">execute_reshard_plan</text>
+<text class="sm" x="224" y="238" text-anchor="start">按名字索引参数与持久 buffer</text>
+<path class="aux" d="M 36 250 L 36 255"/>
+<rect class="neutral" x="28" y="256" width="780" height="34" rx="5"/>
+<text class="dim" x="40" y="278" text-anchor="start">submit_send ×N</text>
+<text class="sm" x="224" y="278" text-anchor="start">需要时先 transform.prepare_send</text>
+<path class="aux" d="M 36 290 L 36 295"/>
+<rect class="neutral" x="28" y="296" width="780" height="34" rx="5"/>
+<text class="dim" x="40" y="318" text-anchor="start">submit_recv ×N</text>
+<text class="sm" x="224" y="318" text-anchor="start">需要时先 transform.prepare_recv，并登记 writeback 类别</text>
+<text class="costtx" x="616" y="318" text-anchor="start">direct / transform / copy</text>
+<path class="aux" d="M 36 330 L 36 335"/>
+<rect class="acc1" x="28" y="336" width="780" height="34" rx="5"/>
+<text class="dim" x="40" y="358" text-anchor="start">service.run()</text>
+<text class="sm" x="224" y="358" text-anchor="start">全部 op 提交之后才发起真正的传输</text>
+<text class="costtx" x="616" y="358" text-anchor="start">第 1 次 synchronize + barrier</text>
+<path class="aux" d="M 36 370 L 36 375"/>
+<rect class="neutral" x="28" y="376" width="780" height="34" rx="5"/>
+<text class="dim" x="40" y="398" text-anchor="start">writeback</text>
+<text class="sm" x="224" y="398" text-anchor="start">direct 空操作 / finalize_recv / slice copy_()</text>
+<path class="aux" d="M 36 410 L 36 415"/>
+<rect class="acc1" x="28" y="416" width="780" height="34" rx="5"/>
+<text class="dim" x="40" y="438" text-anchor="start">quantize_()</text>
+<text class="sm" x="224" y="438" text-anchor="start">需要整权重量化的 MXFP8 目标最后统一做一次</text>
+<text class="costtx" x="616" y="438" text-anchor="start">第 2 次 synchronize</text>
+<rect class="neutral" x="832" y="96" width="412" height="168" rx="8"/>
+<text class="tx" x="844" y="117" text-anchor="start">三类 writeback</text>
+<path class="edge" d="M 844 125 L 1232 125"/>
+<text class="sm" x="844" y="143" text-anchor="start">direct：接收 buffer 就是目标本身，空操作。</text>
+<text class="sm" x="844" y="159" text-anchor="start">transform：交给 transform.finalize_recv（MXFP8 走这条，见图 3）。</text>
+<text class="sm" x="844" y="175" text-anchor="start">copy：把接收 buffer 按 dst_slice 拷进目标张量。</text>
+<text class="sm" x="844" y="191" text-anchor="start">三类都在 service.run() 之后统一执行，而不是收到一片处理一片 ——</text>
+<text class="sm" x="844" y="207" text-anchor="start">因为所有 send/recv 必须先全部提交，集合通信才能成对匹配。</text>
+<rect class="acc2" x="832" y="280" width="412" height="168" rx="8"/>
+<text class="tx" x="844" y="301" text-anchor="start">为什么必须写进持久 buffer</text>
+<path class="edge" d="M 844 309 L 1232 309"/>
+<text class="sm" x="844" y="327" text-anchor="start">MXFP8 变换用 .copy_() 直接写既有的持久 MXFP8Tensor buffer，</text>
+<text class="sm" x="844" y="343" text-anchor="start">目的是让 CUDA Graph 捕获的设备指针在多次 refit 之后仍然有效。</text>
+<text class="sm" x="844" y="359" text-anchor="start">这条约束顺带堵死了「落盘 checkpoint 再由推理侧重载」这条路：</text>
+<text class="sm" x="844" y="375" text-anchor="start">重建模型会换掉设备指针，而 RL 主循环每迭代都要 refit 一次。</text>
+<text class="sm" x="844" y="391" text-anchor="start">代价是 prepare_swap_model_weights 必须趁目标参数仍是 BF16 时调一次。</text>
+</svg>

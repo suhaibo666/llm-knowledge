@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 428" width="1272" height="428" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .s0{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.1}
+  .s1{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.1}
+  .s2{fill:#EAF7EE;stroke:#2E8B57;stroke-width:1.1}
+  .s3{fill:#F3EEFB;stroke:#6D4AAF;stroke-width:1.1}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 3　MXFP8 的 scale 布局决定写回路径：逐片量化，还是攒齐再量化</text>
+<text class="su" x="28" y="52" text-anchor="start">算例：一个权重分 3 片到达接收端；2D scale 每行独立，1D swizzled scale 跨整张交织编码</text>
+<text class="tx" x="28" y="88" text-anchor="start">2D scale：量化 3 次</text>
+<text class="sm" x="28" y="106" text-anchor="start">每行 scale 只覆盖一行数据，逐行更新互不影响</text>
+<rect class="acc1" x="28" y="132" width="596" height="32" rx="5"/>
+<text class="rank" x="40" y="153" text-anchor="start">第 1 片到达</text>
+<text class="sm" x="136" y="153" text-anchor="start">立即量化，写回 data/scale 的对应行</text>
+<path class="aux" d="M 42 164 L 42 169"/>
+<rect class="acc1" x="28" y="172" width="596" height="32" rx="5"/>
+<text class="rank" x="40" y="193" text-anchor="start">第 2 片到达</text>
+<text class="sm" x="136" y="193" text-anchor="start">立即量化，写回 data/scale 的对应行</text>
+<path class="aux" d="M 42 204 L 42 209"/>
+<rect class="acc1" x="28" y="212" width="596" height="32" rx="5"/>
+<text class="rank" x="40" y="233" text-anchor="start">第 3 片到达</text>
+<text class="sm" x="136" y="233" text-anchor="start">立即量化，写回 data/scale 的对应行</text>
+<text class="tx" x="652" y="88" text-anchor="start">1D swizzled scale：量化 1 次</text>
+<text class="sm" x="652" y="106" text-anchor="start">scale 跨整张权重交织，部分更新会破坏布局</text>
+<rect class="ghost" x="652" y="132" width="592" height="32" rx="5"/>
+<text class="rank" x="664" y="153" text-anchor="start">第 1 片到达</text>
+<text class="sm" x="760" y="153" text-anchor="start">copy 进 BF16 累积 buffer，先不量化</text>
+<path class="aux" d="M 666 164 L 666 169"/>
+<rect class="ghost" x="652" y="172" width="592" height="32" rx="5"/>
+<text class="rank" x="664" y="193" text-anchor="start">第 2 片到达</text>
+<text class="sm" x="760" y="193" text-anchor="start">copy 进 BF16 累积 buffer，先不量化</text>
+<path class="aux" d="M 666 204 L 666 209"/>
+<rect class="acc2" x="652" y="212" width="592" height="32" rx="5"/>
+<text class="rank" x="664" y="233" text-anchor="start">第 3 片到达</text>
+<text class="sm" x="760" y="233" text-anchor="start">攒齐 → 整张 from_bf16，一次写回 data + scale</text>
+<rect class="neutral" x="28" y="264" width="596" height="104" rx="8"/>
+<text class="tx" x="40" y="285" text-anchor="start">1D 那条路多付了什么</text>
+<path class="edge" d="M 40 293 L 612 293"/>
+<text class="sm" x="40" y="311" text-anchor="start">一个与整张权重同大的 BF16 累积 buffer，直到攒齐才释放。</text>
+<text class="sm" x="40" y="327" text-anchor="start">实现上让 prepare_recv 直接把接收 buffer 指到累积 buffer 的对应视图，</text>
+<text class="sm" x="40" y="343" text-anchor="start">省掉一次整参数量级的 BF16 分配 —— 只在切片非连续时才退回独立 buffer。</text>
+<text class="sm" x="40" y="359" text-anchor="start">攒齐的判据是累计元素数等于目标 numel，多一片少一片都直接 AssertionError。</text>
+<rect class="acc2" x="652" y="264" width="592" height="104" rx="8"/>
+<text class="tx" x="664" y="285" text-anchor="start">一条硬拒绝：1D scale 不支持发送端量化</text>
+<path class="edge" d="M 664 293 L 1232 293"/>
+<text class="sm" x="664" y="311" text-anchor="start">convert_on_send=True 时线上传的是已量化的 data + scale 两个张量；</text>
+<text class="sm" x="664" y="327" text-anchor="start">但 1D swizzled scale 无法由「发送端各自量化的切片」拼回来，</text>
+<text class="sm" x="664" y="343" text-anchor="start">prepare_recv 因此在 buf.scale.ndim == 1 时直接 NotImplementedError，</text>
+<text class="sm" x="664" y="359" text-anchor="start">并要求改用 convert_on_send=False：传 BF16、在接收端汇齐后量化。</text>
+</svg>
