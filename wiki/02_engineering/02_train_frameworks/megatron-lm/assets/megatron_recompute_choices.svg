@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 570" role="img" aria-label="同一在途窗口下的重计算方案、峰值与额外工作">
+<style>text{font:14px 'Microsoft YaHei','Segoe UI',sans-serif;fill:#344054}.title{font-size:21px;font-weight:700}.small{font-size:12px}.peak{fill:#c3651f}</style>
+<rect width="1100" height="570" fill="white"/>
+<text class="title" x="24" y="34">先看何时释放，再比较容量预算</text>
+<text x="24" y="62">L=24，w=4；先完成四份前向，再逆序反向。F 为一层前向矩阵乘工作，不是时间。</text>
+<text x="24" y="94">方案</text><text x="200" y="94">灰条：原前向后留存　橙线：事件峰值（GiB）</text>
+<text x="815" y="94">留存 → 峰值</text><text x="976" y="94">额外工作 / 份</text>
+<text x="24" y="138">不重算</text><rect x="200" y="119" width="530" height="28" fill="#e4e7ec"/>
+<line x1="730" x2="730" y1="115" y2="151" stroke="#c3651f" stroke-width="3"/>
+<text x="815" y="138">48 → 48</text><text x="976" y="138">0</text>
+<text x="24" y="194">core_attn</text><rect x="200" y="175" width="265" height="28" fill="#e4e7ec"/>
+<line x1="466.03515625" x2="466.03515625" y1="171" y2="207" stroke="#c3651f" stroke-width="3"/>
+<text x="815" y="194">24 → 24.09375</text><text x="976" y="194">24 / 13 F</text>
+<text x="24" y="250">block n=12</text><rect x="200" y="231" width="273.28125" height="28" fill="#e4e7ec"/>
+<line x1="473.28125" x2="473.28125" y1="227" y2="263" stroke="#c3651f" stroke-width="3"/>
+<text x="815" y="250">24.75 → 24.75</text><text x="976" y="250">12 F</text>
+<text x="24" y="306">block n=15</text><rect x="200" y="287" width="209.1015625" height="28" fill="#e4e7ec"/>
+<line x1="409.1015625" x2="409.1015625" y1="283" y2="319" stroke="#c3651f" stroke-width="3"/>
+<text x="815" y="306">18.9375 → 18.9375</text><text x="976" y="306">15 F</text>
+<text x="24" y="362">uniform k=2</text><rect x="200" y="343" width="8.28125" height="28" fill="#e4e7ec"/>
+<line x1="219.32291666666666" x2="219.32291666666666" y1="339" y2="375" stroke="#c3651f" stroke-width="3"/>
+<text x="815" y="362">0.75 → 1.75</text><text x="976" y="362">24 F</text>
+<text class="small" x="200" y="420">0</text><text class="small" x="720" y="420">48 GiB</text>
+<text x="24" y="452">block：未重算尾层先释放；首层回放时，不能再加上已经消费的尾层。</text>
+<text x="24" y="479">core：先释放 B/A/Vₘ/R/C 共 176 MiB，再重建 P 与新 C 共 272 MiB；首次峰值比留存多 96 MiB。</text>
+<text x="24" y="506">uniform：原留存很小，但一次重建两层；峰值出现在嵌套反向消费之前。</text>
+<text class="small" x="24" y="542">解析生命周期模型；释放点按最后消费者约定。未计项与其它保留引用会改变实际 GPU 峰值，必须测量。</text></svg>

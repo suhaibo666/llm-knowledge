@@ -64,6 +64,90 @@ export function comparison(account=ledger(),layers=24) {
   ].map(([name,saved])=>({name,saved,saving:layers*A-saved}));
 }
 
+// Same declared window as simulate(). No activation gradients or temporary
+// kernels are counted. Listed saved tensors die after their last consumer.
+export function simulateChoice({strategy='none',selected=12,layers=24,pending=4,account=ledger()}={}) {
+  if(!['none','block','core'].includes(strategy)) throw Error('unknown strategy');
+  for(const v of [layers,pending]) if(!Number.isInteger(v)||v<1) throw Error('invalid window');
+  if(strategy==='block'&&(!Number.isInteger(selected)||selected<0||selected>layers)) throw Error('invalid block count');
+  const live=new Map(),events=[];
+  const add=(id,bytes,kind='saved')=>{if(live.has(id))throw Error('duplicate storage');live.set(id,{bytes,kind});};
+  const remove=id=>{if(!live.delete(id))throw Error(`missing ${id}`);};
+  const record=phase=>{
+    let saved=0,replay=0;
+    for(const v of live.values())if(v.kind==='saved')saved+=v.bytes;else replay+=v.bytes;
+    events.push({phase,saved,replay,total:saved+replay,count:live.size});
+  };
+  const names=(l)=>strategy==='block'&&l<selected?['X']:Object.keys(account.tensors).filter(k=>strategy!=='core'||k!=='P');
+  for(let m=0;m<pending;m++)for(let l=0;l<layers;l++)for(const k of names(l))add(`${m}:${l}:${k}`,account.tensors[k]);
+  record('forward-end');
+  for(let m=pending-1;m>=0;m--)for(let l=layers-1;l>=0;l--){
+    const key=k=>`${m}:${l}:${k}`;
+    if(strategy==='block'&&l<selected){
+      add(key('replay'),account.internal+account.boundary,'replay');record('layer-replayed');
+      remove(key('replay'));remove(key('X'));record('layer-consumed');
+    }else if(strategy==='core'){
+      // FC2 -> activation -> FC1 -> norm2 -> attention output projection.
+      for(const k of ['B','A','Vm','R','C']){remove(key(k));record(`consumer-${k}`);}
+      // Fresh checkpoint output is held for nested backward; old C is gone.
+      add(key('new-P'),account.tensors.P,'replay');
+      add(key('new-C'),account.tensors.C,'replay');record('core-replayed');
+      remove(key('new-P'));remove(key('new-C'));
+      for(const k of ['QKV','U','X'])remove(key(k));record('layer-consumed');
+    }else{
+      for(const k of names(l))remove(key(k));record('layer-consumed');
+    }
+  }
+  return {events,initial:events[0].total,peak:Math.max(...events.map(x=>x.total))};
+}
+
+export function choiceModels(){
+  return [
+    {name:'不重算',work:'0',...simulateChoice()},
+    {name:'core_attn',work:'24 / 13 F',...simulateChoice({strategy:'core'})},
+    {name:'block n=12',work:'12 F',...simulateChoice({strategy:'block'})},
+    {name:'block n=15',work:'15 F',...simulateChoice({strategy:'block',selected:15})},
+    {name:'uniform k=2',work:'24 F',...simulate({group:2})},
+  ];
+}
+
+export function mlaExample({tokens=4,heads=2,qRank=2,kvRank=2,key=2,rope=2,value=2,bytes=2}={}){
+  return {
+    retained:tokens*(qRank+kvRank+rope)*bytes,
+    query:tokens*heads*(key+rope)*bytes,
+    key:tokens*heads*(key+rope)*bytes,
+    value:tokens*heads*value*bytes,
+    replayFlops:2*tokens*(qRank*heads*(key+rope)+kvRank*heads*(key+value)),
+  };
+}
+
+export function renderChoices(){
+  // Figure spec: one common 0..48 GiB axis compares the same pending window.
+  // Gray shows post-forward retention; orange marks the event-derived peak.
+  // Last-consumer release explains the core/block difference; work is separate
+  // from capacity and explicitly measured in layer-forward FLOPs, not seconds.
+  const rows=choiceModels(),gib=2**30,scale=530/48;
+  const out=[`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 570" role="img" aria-label="同一在途窗口下的重计算方案、峰值与额外工作">
+<style>text{font:14px 'Microsoft YaHei','Segoe UI',sans-serif;fill:#344054}.title{font-size:21px;font-weight:700}.small{font-size:12px}.peak{fill:#c3651f}</style>
+<rect width="1100" height="570" fill="white"/>
+<text class="title" x="24" y="34">先看何时释放，再比较容量预算</text>
+<text x="24" y="62">L=24，w=4；先完成四份前向，再逆序反向。F 为一层前向矩阵乘工作，不是时间。</text>
+<text x="24" y="94">方案</text><text x="200" y="94">灰条：原前向后留存　橙线：事件峰值（GiB）</text>
+<text x="815" y="94">留存 → 峰值</text><text x="976" y="94">额外工作 / 份</text>`];
+  rows.forEach((r,i)=>{
+    const y=119+i*56,v=r.initial/gib,p=r.peak/gib,x=200;
+    out.push(`<text x="24" y="${y+19}">${r.name}</text><rect x="${x}" y="${y}" width="${v*scale}" height="28" fill="#e4e7ec"/>
+<line x1="${x+p*scale}" x2="${x+p*scale}" y1="${y-4}" y2="${y+32}" stroke="#c3651f" stroke-width="3"/>
+<text x="815" y="${y+19}">${v} → ${p}</text><text x="976" y="${y+19}">${r.work}</text>`);
+  });
+  out.push(`<text class="small" x="200" y="420">0</text><text class="small" x="720" y="420">48 GiB</text>
+<text x="24" y="452">block：未重算尾层先释放；首层回放时，不能再加上已经消费的尾层。</text>
+<text x="24" y="479">core：先释放 B/A/Vₘ/R/C 共 176 MiB，再重建 P 与新 C 共 272 MiB；首次峰值比留存多 96 MiB。</text>
+<text x="24" y="506">uniform：原留存很小，但一次重建两层；峰值出现在嵌套反向消费之前。</text>
+<text class="small" x="24" y="542">解析生命周期模型；释放点按最后消费者约定。未计项与其它保留引用会改变实际 GPU 峰值，必须测量。</text></svg>`);
+  return out.join('\n');
+}
+
 export function render() {
   const groups=[1,2,4],models=groups.map(group=>simulate({group}));
   const max=2600,base=385,scale=260/max;

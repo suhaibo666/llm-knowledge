@@ -878,7 +878,7 @@ sharded_state_dict_keys_map={
 - [[14_megatron_ep_analysis]] — 接住本页 router 产出的 `routing_map` 与 `probs`，展开 dispatch、expert compute 与 combine。
 - [[18_megatron_recompute_analysis]] — 查看 `IdentityOp` 哨兵如何被 selective recompute 读回，以及层内各段的计算与显存取舍。
 - [[19_megatron_dist_checkpointing_analysis]] — 展开 §4 提到的 sharded state、并行无关保存与重分片机制本身。
-- [[23_megatron_precision_cudagraph_fusion_analysis]] — 查看 bda 融合算子的触发条件，以及 §6 登记的 mHC CUDA Graph 切分字段对应的机制。
+- [[23_megatron_precision_cudagraph_fusion_analysis]] — 查看 bda 融合算子的触发条件，以及 §4.4 解释的 mHC CUDA Graph 分组捕获与切分边界。
 - [[41_megatron_config_surface_analysis]] — 从 §6 的配置字段反查它的 CLI/YAML 入口与声明位置。
 - [[40_megatron_feature_tree_analysis]] — 从代码仓功能树反查本页覆盖了哪些 spec 与模型装配功能点。
 - [[02_engineering/02_train_frameworks/megatron-lm/index|Megatron-LM 知识地图]] — 返回本域全部页面的主题索引。

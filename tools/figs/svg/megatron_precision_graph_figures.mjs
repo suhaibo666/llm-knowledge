@@ -19,13 +19,94 @@ export function model() {
     values.push(live.size); peak=Math.max(peak,live.size);
   }
   if(live.size)throw Error('undrained schedule');
-  return {m,k,n,elements,flops:2*m*k*n,bf16:elements*16/8/1024,fp8:elements*8/8/1024,fp4:elements*4/8/1024,roundtrip:elements*16/8/1024*2,order,values,intervals,peak,submissions:[['GEMM','bias','GeLU'],['GEMM','bias + GeLU'],['graph.replay']]};
+  const bf16=elements*16/8/1024,fp8=elements*8/8/1024,flops=2*m*k*n;
+  const costs={baselineKiB:3*bf16,lowKiB:2*fp8+bf16,intensity:flops/(3*bf16*1024),unfusedKiB:4*bf16,fusedKiB:2*bf16,f:0.4,s:2,c:0.05};
+  costs.payloadRatio=costs.baselineKiB/costs.lowKiB;costs.speedup=1/(1-costs.f+costs.f/costs.s+costs.c);
+  return {m,k,n,elements,flops,bf16,fp8,fp4:elements*4/8/1024,roundtrip:bf16*2,costs,order,values,intervals,peak,submissions:[['GEMM','bias','GeLU'],['GEMM','bias + GeLU'],['graph.replay']]};
+}
+// Numerical figure specification: replay the SAME four nonzero X values and W
+// column through an explicitly pedagogical integer codebook, never a TE/FP8
+// emulator. Each lane exposes statistic -> scales -> codes -> reconstruction ->
+// scalar GEMM output/error. Two-element groups illustrate granularity, not a
+// hardware block size. All labels with numeric meaning come from this model.
+export function quantizationExample() {
+ const x=[0.25,0.5,3,6],w=[1,-1,1,1],dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0);
+ const roundAway=v=>Math.sign(v)*Math.floor(Math.abs(v)+0.5);
+ const exact=dot(x,w),amax=Math.max(...x.map(Math.abs));
+ const specs=[
+  {name:'当前共享',maxCode:3,groups:[[0,1,2,3]],stats:[amax]},
+  {name:'历史共享',maxCode:3,groups:[[0,1,2,3]],stats:[3]},
+  {name:'当前分组',maxCode:3,groups:[[0,1],[2,3]],stats:[0.5,amax]},
+  {name:'二幂尺度',maxCode:3,groups:[[0,1],[2,3]],stats:[0.5,amax],powerOfTwo:true},
+  {name:'更少码值',maxCode:1,groups:[[0,1],[2,3]],stats:[0.5,amax]},
+ ];
+ const rows=specs.map(spec=>{
+  const scales=spec.stats.map(a=>spec.powerOfTwo?2**Math.ceil(Math.log2(a/spec.maxCode)):a/spec.maxCode);
+  const q=[],reconstructed=[],weightScale=1/spec.maxCode,qw=w.map(v=>v/weightScale);
+  spec.groups.forEach((g,b)=>g.forEach(i=>{q[i]=Math.max(-spec.maxCode,Math.min(spec.maxCode,roundAway(x[i]/scales[b])));reconstructed[i]=scales[b]*q[i];}));
+  const blockDots=spec.groups.map(g=>g.reduce((s,i)=>s+q[i]*qw[i],0));
+  const output=blockDots.reduce((s,v,b)=>s+scales[b]*weightScale*v,0);
+  return {...spec,scales,q,reconstructed,weightScale,qw,blockDots,output,error:Math.abs(output-exact)};
+ });
+ return {x,w,exact,amax,rows};
+}
+export const fmt=v=>Number(v.toFixed(3)).toString();
+export const vec=values=>'['+values.map(fmt).join(', ')+']';
+// Real FP8 normal-number encodings, independently enumerated on CPU from the
+// interchange-format definition (Micikevicius et al., Table 1). No quantization
+// kernel, rounding mode, subnormal conversion or TE accumulation is simulated.
+export function fp8NormalExample(){
+ const d=quantizationExample();
+ const formats=[{name:'E4M3',ebits:4,mbits:3,bias:7},{name:'E5M2',ebits:5,mbits:2,bias:15}].map(f=>{
+  const codebook=[];
+  for(let sign=0;sign<2;sign++)for(let exponent=1;exponent<2**f.ebits;exponent++)for(let fraction=0;fraction<2**f.mbits;fraction++){
+   if(f.name==='E5M2'&&exponent===31)continue;
+   if(f.name==='E4M3'&&exponent===15&&fraction===7)continue;
+   const value=(-1)**sign*2**(exponent-f.bias)*(1+fraction/2**f.mbits);
+   const bits=[sign,exponent.toString(2).padStart(f.ebits,'0'),fraction.toString(2).padStart(f.mbits,'0')].join(' ');
+   codebook.push({value,bits});
+  }
+  const encoded=d.x.map(x=>codebook.find(c=>c.value===x));
+  const encodedW=d.w.map(w=>codebook.find(c=>c.value===w));
+  if([...encoded,...encodedW].some(v=>!v))throw Error('sample is not exactly representable');
+  const positive=codebook.filter(c=>c.value>0).sort((a,b)=>a.value-b.value);
+  const next=positive.find(c=>c.value>6).value;
+  return {...f,codebook,encoded,output:encoded.reduce((s,v,i)=>s+v.value*encodedW[i].value,0),spacing:next-6,max:positive.at(-1).value};
+ });
+ return {x:d.x,formats};
+}
+export function fp8NormalTable(d=fp8NormalExample()){
+ return d.x.map((v,i)=>`| ${fmt(v)} | \`${d.formats[0].encoded[i].bits}\` | ${fmt(d.formats[0].encoded[i].value)} | \`${d.formats[1].encoded[i].bits}\` | ${fmt(d.formats[1].encoded[i].value)} |`).join('\n');
+}
+export function denseLayerModel(){
+ const batch=1,sequence=128,hidden=128,ffn=128,tokens=batch*sequence;
+ const terms=[6*tokens*hidden**2,2*tokens*hidden**2,2*tokens*hidden*ffn,2*tokens*ffn*hidden,2*batch*sequence**2*hidden,2*batch*sequence**2*hidden];
+ const forward=terms.reduce((a,b)=>a+b,0),backward=2*forward;
+ return {batch,sequence,hidden,ffn,tokens,terms,forward,backward,total:forward+backward};
+}
+export function quantizationExampleTable(d=quantizationExample()) {
+ return d.rows.map(r=>`| ${r.name} | ${r.maxCode} | \`${vec(r.stats)}\` | \`${vec(r.scales)}\` | \`${vec(r.q)}\` | \`${vec(r.reconstructed)}\` | ${fmt(r.output)} | ${fmt(r.error)} |`).join('\n');
 }
 const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 const txt=(x,y,s,cls='')=>`<text x="${x}" y="${y}" class="${cls}">${esc(s)}</text>`;
 const rect=(x,y,w,h,cls='neutral')=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" class="${cls}"/>`;
 const line=(x,y,x2,y2,cls='aux')=>`<path d="M${x},${y} L${x2},${y2}" class="arrow ${cls}" marker-end="url(#head)"/>`;
 function svg(w,h,title,body){return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img"><title>${esc(title)}</title><style>text{font-family:'Microsoft YaHei','Segoe UI',sans-serif;font-size:15px;fill:#2A313B}.title{font-size:23px;font-weight:700}.small{font-size:13px;fill:#626B77}.bold{font-weight:700}.neutral{fill:#fff;stroke:#C7CCD3}.ghost{fill:#F7F6F3;stroke:#DDD9D2}.acc1{fill:#EAF1FD;stroke:#2563EB}.acc2{fill:#FCF1E6;stroke:#C3651F}.arrow{fill:none;stroke:#98A1AD;stroke-width:1.3}.main{stroke:#2563EB;stroke-width:2}.dash{fill:none;stroke:#C3651F;stroke-dasharray:5 4}</style><defs><marker id="head" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="none" stroke="#98A1AD"/></marker></defs><rect width="100%" height="100%" fill="#fff"/>${txt(26,37,title,'title')}${body}</svg>\n`;}
+export function quantizationNumerics(d=quantizationExample()) {
+ let b=txt(26,69,`同一 X 的非零片段 ${vec(d.x)}；同一 W 列 ${vec(d.w)}；未量化 Z₀₀ = ${fmt(d.exact)}`,'bold');
+ b+=txt(26,96,'教学整数码本：q = clip(round(x / s), −Q, Q)，x̂ = s q；恰好半格远离零舍入。不是 TE 内核或 FP8/FP4 格式模拟。','small');
+ const cols=[26,196,416,611,893];
+ ['策略 / Q','统计 amax → 尺度 s','量化码 q','重建 x̂','重建 GEMM / 误差'].forEach((s,i)=>b+=txt(cols[i]+9,135,s,'bold'));
+ d.rows.forEach((r,i)=>{const y=153+i*100;b+=rect(26,y,1070,84,i===1?'acc2':'ghost');
+  b+=txt(36,y+30,r.name,'bold')+txt(36,y+59,`Q = ${r.maxCode}`,'small');
+  b+=txt(205,y+29,vec(r.stats))+txt(205,y+56,'→ '+vec(r.scales),'bold');
+  b+=txt(425,y+44,vec(r.q),'bold')+txt(620,y+44,vec(r.reconstructed),'bold');
+  b+=txt(902,y+29,`Ẑ₀₀ = ${fmt(r.output)}`,'bold')+txt(902,y+57,`|Ẑ − Z| = ${fmt(r.error)}`,'small');
+ });
+ b+=txt(26,681,`W 在每条路径恰好重建；每组整数点积再乘 sX × sW 后求和。历史行用 ${d.rows[1].stats[0]}，本轮记录 ${d.amax} 供下次使用。`,'small');
+ b+=txt(26,707,'分组只用两个元素以便手算；二幂尺度与更少码值仅演示设计约束，不指定 MXFP8 / NVFP4 的实际块、码本或舍入。','small');
+ return svg(1122,735,'从同一组数复演：统计、尺度、量化与 GEMM 重建',b);
+}
 export function quantization(d=model()){
  const lanes=[['delayed','历史 amax → delayed scale','历史与规约状态'],['tensorwise','当前整张量 → current scale','当前统计成本'],['blockwise','分块缩放 → block recipe','尺度 + 方向布局'],['mxfp8','微缩放 → MX recipe','对齐 + 列向表示'],['FP8 custom','工厂 → CustomRecipe','数值/保存由工厂定义'],['nvfp4','NVFP4 recipe → packed bytes','scale/amax 不随 bytes 消失'],['FP4 custom','工厂 → CustomRecipe','实际位宽/算法另验']];
  let b=txt(26,65,`每条 lane：X[${d.m},${d.k}]、W[${d.k},${d.n}] → 同一 GEMM → Z[${d.m},${d.n}]`,'small');
@@ -41,11 +122,17 @@ export function launch(d=model()){
  let b=txt(26,66,`X → GEMM → Z → bias → U → GeLU → A。U 为 BF16 ${d.bf16} KiB；横向仅表顺序，不表耗时；纯融合对照须对齐 GeLU 近似。`,'small');
  const lane=[['eager 基础',['GEMM','bias','GeLU'],`${d.submissions[0].length} 次操作提交`,true],['eager + 融合',['GEMM','bias + GeLU'],`${d.submissions[1].length} 次操作提交`,false],['Graph + 融合',['GEMM','bias + GeLU'],`${d.submissions[2].length} 次图提交`,false]];
  lane.forEach(([name,ops,count,intermediate],i)=>{let y=108+i*97;b+=txt(26,y+26,name,'bold')+txt(26,y+51,count,'small');if(i===2)b+=rect(219,y-10,601,66,'acc1');ops.forEach((op,j)=>{let x=230+j*207;b+=rect(x,y,178,45)+txt(x+15,y+28,op);if(j<ops.length-1)b+=line(x+181,y+22,x+202,y+22,'main');});b+=txt(853,y+23,intermediate?`U 写 + 读 = ${d.roundtrip} KiB`:'免去独立 U 往返',intermediate?'bold':'small')+txt(853,y+45,i===2?'图内设备工作仍存在':'反向仍保存所需输入','small');});
- b+=txt(26,419,'捕获边界扩展：同一 attention → router → experts/通信 → 合并输出','bold');
+ b+=txt(26,419,'图上提交数是教学模型，非测量 kernel 数；三种机制组合后仍需核对整步成本与数值。','small');
+ return svg(1220,445,'融合减少中间流量，Graph 减少主机提交',b);
+}
+// Region figure spec: retain the former lower panel beside the MoE discussion;
+// each row traces the same token route through a different graph boundary.
+export function regions(){
+ let b=txt(26,68,'同一 attention → router → experts/通信 → 合并输出；边界决定哪里保留动态处理，哪里支付静态容量。','small');
  const scopes=[['partial',['图内','图内','eager','eager'],'BWD 沿边界返回'],['drop-and-pad',['图内','图内','固定专家容量','图内'],'丢弃 / padding 成本'],['HybridEP whole',['TE 图内','TE 图内','rank 容量 + stash','TE 图内'],'溢出硬失败；固定调度'],['full_iteration',['整步图','整步图','须可捕获','整步图'],'整步 F/B；optimizer 图外']];
- scopes.forEach(([name,parts,note],i)=>{let y=444+i*70;b+=txt(26,y+27,name,'bold');parts.forEach((p,j)=>{let x=218+j*164;b+=rect(x,y,151,46,p==='eager'?'ghost':'neutral')+txt(x+9,y+27,p,'small');if(j<parts.length-1)b+=line(x+152,y+22,x+161,y+22);});b+=txt(892,y+18,note,'small')+txt(892,y+39,'输出 → loss → backward','small');});
- b+=txt(26,755,'图上提交数是教学模型，非测量 kernel 数；TE 内部的量化/融合/捕获由依赖实现，不能由此换算加速比。','small');
- return svg(1220,780,'融合减少中间流量，Graph 减少主机提交',b);
+ scopes.forEach(([name,parts,note],i)=>{let y=94+i*70;b+=txt(26,y+27,name,'bold');parts.forEach((p,j)=>{let x=218+j*164;b+=rect(x,y,151,46,p==='eager'?'ghost':'neutral')+txt(x+9,y+27,p,'small');if(j<parts.length-1)b+=line(x+152,y+22,x+161,y+22);});b+=txt(892,y+18,note,'small')+txt(892,y+39,'输出 → loss → backward','small');});
+ b+=txt(26,403,'TE 内部的量化/融合/捕获由依赖实现；静态容量或捕获区域都不能直接换算加速比。','small');
+ return svg(1220,430,'同一 token 路线的部分图与整段图',b);
 }
 export function slots(d=model()){
  let b=txt(26,65,'冻结源码 PP2 测试顺序；同槽下一次前向必须晚于上次反向完成。不是实际时间比例。','small');
@@ -88,7 +175,7 @@ export function lifecycle(d=model()) {
  return svg(w,735,'同一输入如何走到可消费的梯度',b);
 }
 
-export const renderers={megatron_precision_quantization:quantization,megatron_precision_launch:launch,megatron_precision_graph_slots:slots,megatron_precision_graph_lifecycle:lifecycle};
+export const renderers={megatron_precision_quantization_example:quantizationNumerics,megatron_precision_quantization:quantization,megatron_precision_launch:launch,megatron_precision_graph_regions:regions,megatron_precision_graph_slots:slots,megatron_precision_graph_lifecycle:lifecycle};
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  await mkdir(assetDir,{recursive:true});
  for(const [name,render] of Object.entries(renderers))if(!process.argv[2]||process.argv[2]===name) await writeFile(resolve(assetDir,name+'.svg'),render());

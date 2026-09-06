@@ -6,11 +6,12 @@ import { homedir,tmpdir } from 'node:os';
 import { resolve,join,dirname } from 'node:path';
 import { fileURLToPath,pathToFileURL } from 'node:url';
 import { solveExample,buildFigures } from '../megatron_recompute_figures.mjs';
+import { render,renderChoices } from '../megatron_recompute_memory.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../../../..');
 const pageDir=join(root,'wiki/02_engineering/02_train_frameworks/megatron-lm');
 const pagePath=join(pageDir,'18_megatron_recompute_analysis.md');
-const figures=buildFigures();
+const figures={...buildFigures(),'megatron_recompute_memory.svg':render(),'megatron_recompute_choices.svg':renderChoices()};
 
 test('same input arithmetic and finite-difference parameter gradients',()=>{
  const e=solveExample();
@@ -56,7 +57,7 @@ test('Markdown numbers and selectors agree with computed example, no one-sided d
  assert.ok(!retained.includes('dropout&gt;0'),'不得把互斥分支 B 误画成 A 的下一生命周期阶段');
  for(const [name,expected] of Object.entries(figures)){
   assert.ok(p.includes(`assets/${name}`),`正文未引用 ${name}`);
-  assert.equal(normalizeEol(await readFile(join(pageDir,'assets',name),'utf8')),normalizeEol(expected),`图/生成器漂移 ${name}`);
+  assert.equal(normalizeEol(await readFile(join(pageDir,'assets',name),'utf8')).trimEnd(),normalizeEol(expected).trimEnd(),`图/生成器漂移 ${name}`);
  }
 });
 

@@ -12,6 +12,17 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-06：Megatron 18、23 对照 TP 范文重组为问题、方案与源码递进
+
+- [[18_megatron_recompute_analysis]] 将基础原理、方案总账与容量选择前置，再分别展开 full、selective 和输出丢弃的装配及反向链；Hybrid/MTP、EP overlap、mHC、量化和 PP 窗口后置。补充同一 L=24、w=4 存活窗口下 core/block/uniform 的峰值与 26/20/3 GiB 预算选择，以及 MLA 压缩输入、展开存储和回放 FLOPs 的具体例子。
+- [[23_megatron_precision_cudagraph_fusion_analysis]] 按背景、原理与整层成本、源码装配、配套机制、应用约束、配置与阅读路线六节重组。用同一输入复演缩放统计、分组、量化重建与输出误差，明确教学整数码本不模拟 FP8/FP4 或 TE；分别补齐精度、融合和 Graph 的前向/反向调用路径及类职责图。
+- 新图和扩展的数值回归同时核对生成器、实际正文与 SVG，解析容量和性能比例不作为 GPU 实测；保留已有配置、依赖边界、源码纠错与邻页链接，同步调整索引及三处章节导航。源码基线保持 85902ef599ea4eb06ada7567a479c524b605767a。
+
+## 2026-09-06：Megatron 23 补齐三种算子优化的性能因果链
+
+- [[23_megatron_precision_cudagraph_fusion_analysis]] 重组为特性背景、原理、系统集成、效果与约束四节；以同一 MLP 片段区分计算吞吐、HBM 读写和提交等待，解释量化误差与转换摊销、融合中间值的片上消费、图捕获和重放的静态契约。
+- 补充最低载荷、局部读写、整步加速与启动摊销模型，明确分析假设及未做 GPU 实测的边界；给出场景选择和可比性能实验口径。保留全部 recipe、图实现、训练/推理生命周期、配置契约与四张机制图，同步修复索引和三处现行章节引用。源码基线不变。
+
 ## 2026-09-05：Megatron 23–24 从基本方案递进解释精度、图与分块损失
 
 - [[23_megatron_precision_cudagraph_fusion_analysis]] 用同一次 GEMM 串起 FP8/FP4 表示、融合中间流量与 CUDA Graph 提交成本，保留完整 recipe、graph 与配置选择，补充固定缓冲、前反向完成及微批槽位图；明确 TE 依赖边界、GeLU 近似差异和旧 rampup 参数的当前行为。
