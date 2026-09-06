@@ -12,6 +12,15 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-06：Megatron 26–30 按范文 12 重组为问题、方案、源码与边界
+
+- [[26_megatron_optimizer_step_internals_deepdive]] 以「更新量比权重的最低有效位还小」为主线重写：用同一个 bf16 权重贯穿五步顺序与四条 wrapper，说明闸门为什么必须先于任何依赖梯度范数的计算。原理图用真实 IEEE 舍入复演 18 步——bf16 master 一次都没动，fp32 master 第 14 步跨过半个 bf16 ulp 才让模型权重跳一档。另补 `SEPARATE_GRAD_NORM_GROUPS` 的 MTP 独立裁剪组；更正 `DynamicGradScaler` 的 hysteresis 计数器只在攒够一整个 `growth_interval` 干净步后才复位（不是「连续 N 次溢出」），以及默认 bf16 路径下「拷贝模型梯度」其实是别名重绑、不产生拷贝。
+- [[27_megatron_job_resilience_analysis]] 按观测、判定、中止、清理、重入五段重写，主线是「每一段都自带 deadline，第四段甚至允许放弃清理」。原理图复演 sniff test 的离群判据：同一组带宽读数上，中位数+MAD+下界抓到两张坏卡，均值±2σ 一张都抓不到——离群点把 σ 自己撑开了。补齐 `_maybe_update_timeouts` 的四道闸门（从本地快照恢复的作业永远不更新 setup 超时、异步存档下 checkpointing 段整段不更新）、warmup 期根本不开 section、非持久存档这条被漏掉的第五条退出路径，以及确定性模式对 `cross_entropy_loss_fusion` / `tp_comm_overlap` 的强制校验。另记两处源码内部不一致：`OUTLIER_MIN_DEVIATION_FRAC` 的注释写「of mean」而实现取 median；`determinism.py` 的模块 docstring 仍说会 flip args，函数注释写的是 verification-only。
+- [[28_megatron_training_stability_observability_analysis]] 把按三个历史基线组织的 `[!update]` / `[!contradiction]` 全部改写成当前基线正文，只保留 aux/z-loss 那一处真正影响跨版本读曲线的口径断点。新主线是「每条判据都带一个明写的失效条件」。补齐此前完全未覆盖的 `is_unexpectedly_large`——它才是尖峰检查的实际拒绝函数，原理图量化了它的两条失效路径（采样窗口被污染后真尖峰不再触发；触发线永不重估，后期需要 42 倍于当前 loss 才判得出）。另补 `RerunErrorInjector`、`RerunValidationStatus` 追踪文件、首个迭代不校验的理由，并记录 `--check-for-spiky-loss` 只被 elastification 入口消费、标准 GPT 预训练路径打开它不会判出任何尖峰。
+- [[29_megatron_packed_dataset_dynamic_cp_analysis]] 去掉新旧两套步号并列的写法，改为当前基线的九步一套。原理图把同一批 8 条变长样本喂给两个调度器逐 rank 算出工作量：固定 CP 的 first-fit 对样本顺序敏感，最坏一格 16× 不均；动态 CP 先按长度降序，降到 2×。写复演时又发现两条必须限定的结论并写进正文：它优化的是关键路径而非每格不均比（换一批分布时后者反而从 5.82× 升到 8×），以及「最高那条按最小 CP 开组」是写死的规则不是搜索——把 `--min-dynamic-context-parallel-size` 顶到整组，本例关键路径反而从 10.49M 降到 8.39M。另记 `HybridCPDataLoaderWrapper` 在基线下无任何调用点。
+- [[30_megatron_rl_posttraining_consistency_analysis]] 把五条不一致来源与收敛它们的五环一一对上。原理图复刻 `_emit_lcm_block_ops`，在 TP4→TP3 上逐微块算出源 rank 与本地偏移，并由测试断言这一步是恒等映射、每个微块完整落在一个源分片与一个目标分片内——这正是取 LCM 的原因。补齐 block-interleaved 只是同一套 LCM 运算的多块版本、1D swizzled scale 的全量 BF16 累积 buffer 与那条 `NotImplementedError`，并按源码报错原文更正 `inference_optimized` 强制 fp32 router 的动机是 decode 期转换开销而非精度。
+- 五页共新增 17 张脚本生成 SVG 与 5 套回归测试；测试一律 `readFile` 页面本体，只改正文不改图会红。页头同步换成四行主题式。源码基线不变，仍为 `85902ef599ea4eb06ada7567a479c524b605767a`。
+
 ## 2026-09-06：分析页页头改为四行主题式
 
 - `maintaining-llm-knowledge` 的房子形状页头由五行改为四行：源码基线、主题、适用范围、最近更新。去掉 **核心源码** 与 **中心结论**，页头只说明这页讲什么，论点与源码路径分别归正文和阅读路线。旧页改动时顺手换新式，不批量重写。

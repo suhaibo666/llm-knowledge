@@ -5,10 +5,9 @@ title: "Megatron-LM 作业韧性：进程还在不在、通信域还通不通"
 # Megatron-LM 作业韧性：进程还在不在、通信域还通不通
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **核心源码**：`megatron/training/{ft_integration.py,inprocess_restart.py,dist_signal_handler.py,determinism.py,gpu_sniff_test.py,activation_logging.py,dgrad_logging.py,one_logger_utils.py}`；`megatron/training/training.py::checkpoint_and_decide_exit`
-> **中心结论**：作业韧性的核心矛盾是「要恢复就得先把坏掉的东西清理干净，而清理动作本身也可能挂住」——销毁一个已经卡死的 NCCL 通信域就是最典型的一例。整条链因此被拆成观测、判定、中止、清理、重入五段，**每一段都自带 deadline**，第四段甚至允许放弃清理。同一模式反复出现：自适应超时给出样本下限而不是拍一个常数，退出决定走集体通信而不是各 rank 各判，离群判据用中位数与 MAD 而不是均值与标准差，甚至为了能清理干净先做一次毫无用处的 `all_reduce`。
-> **适用范围**：本页拥有作业**层面**的韧性——NVRx 心跳与自适应超时的接线、进程内重启的清理契约、信号与时长的一致退出、确定性模式的时机窗口、GPU sniff test 的主动探测、三类张量转储的触发面、one_logger 的定位，以及 `TrainingConfig`/`ValidationConfig` 配置契约。数值**层面**的稳定性（RerunStateMachine、SDC 归因、QK-clip、Timer、MoE 逐层指标、StragglerDetector 本体、`megatron/core/fault_injector.py`）归 [[28_megatron_training_stability_observability_analysis]]；checkpoint 存取机制本体归 [[19_megatron_dist_checkpointing_analysis]]；跨框架快恢对照归 [[02_engineering/02_train_frameworks/33_fault_recovery_relink_comparison]]。
-> **最近更新**：2026-09-06。按「问题 → 五段方案 → 源码 → 配套 → 边界」重写，用一次 NCCL 挂死贯穿全链；新增故障生命周期图、NVRx section 闸门图、离群判据原理图与退出路径图；补齐 `_maybe_update_timeouts` 的四道闸门、非持久存档这条被漏掉的路径、确定性模式对两个 arg 的强制校验，并更正 sniff test 的分组说法。
+> **主题**：作业层面的韧性——进程还在不在、通信域还通不通。按观测、判定、中止、清理、重入五段讲 NVRx 心跳与自适应超时、进程内重启的清理契约、信号与时长的一致退出、确定性模式的时机窗口、GPU sniff test 的主动探测与三类张量转储。核心代码在 `megatron/training/`。
+> **适用范围**：作业侧韧性与 `TrainingConfig`/`ValidationConfig` 配置契约；数值层面的稳定性归 [[28_megatron_training_stability_observability_analysis]]，checkpoint 存取机制归 [[19_megatron_dist_checkpointing_analysis]]，跨框架快恢对照归 [[02_engineering/02_train_frameworks/33_fault_recovery_relink_comparison]]。
+> **最近更新**：2026-09-06。按房子形状重写，新增四张生成图与判据回归测试。
 
 ---
 

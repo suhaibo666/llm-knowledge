@@ -41,11 +41,11 @@ title: "Megatron-LM 知识地图"
 | 23 | [[23_megatron_precision_cudagraph_fusion_analysis]] | 从计算、访存与提交瓶颈推导低精度、融合和 CUDA Graph，再展开整层收益、源码前后向及使用约束。 |
 | 24 | [[24_megatron_linear_cross_entropy_analysis]] | 从普通词表 CE 递进到 linear 分块重计算，核算前反向显存与 TP/SP 通信。 |
 | 25 | [[25_megatron_nonuniform_tp_analysis]] | 预定义混合 TP 布局、梯度重共享与冷重启边界。 |
-| 26 | [[26_megatron_optimizer_step_internals_deepdive]] | optimizer factory、混合精度 step、LR/WD、offload 与 Muon/μP。 |
-| 27 | [[27_megatron_job_resilience_analysis]] | 进程内重启、退出策略、GPU 检测与 tensor dump。 |
-| 28 | [[28_megatron_training_stability_observability_analysis]] | loss、NaN、SDC、straggler 与观测控制面。 |
-| 29 | [[29_megatron_packed_dataset_dynamic_cp_analysis]] | packing scheduler 与按 microbatch 改变 CP 度的流水线。 |
-| 30 | [[30_megatron_rl_posttraining_consistency_analysis]] | RL logprob 一致性、importance sampling 与 reshard/refit。 |
+| 26 | [[26_megatron_optimizer_step_internals_deepdive]] | fp32 master 换来什么、五步固定顺序与闸门位置，四条 wrapper 的字节账。 |
+| 27 | [[27_megatron_job_resilience_analysis]] | 故障五段各自的 deadline：心跳闸门、清理超时、一致退出与主动探测。 |
+| 28 | [[28_megatron_training_stability_observability_analysis]] | 每条判据连同它的失效条件：梯度三闸、尖峰判据、SDC 归因与观测面。 |
+| 29 | [[29_megatron_packed_dataset_dynamic_cp_analysis]] | 一条九步流水线加一个可换的分组步：固定 CP 与按长度定 CP 的同批对照。 |
+| 30 | [[30_megatron_rl_posttraining_consistency_analysis]] | 训推一致性的五条来源与五环收敛，残差交给 importance sampling。 |
 | 31 | [[31_megatron_inference_engine_analysis]] | continuous batching、KV cache、prefix caching 与 chunked prefill。 |
 | 32 | [[32_megatron_tflops_analysis]] | dense/MoE FLOPs、吞吐与 MFU 的统计口径。 |
 | 33 | [[33_megatron_rl_runtime_analysis]] | Agent 协议、rollout 粒度、GRPO 与训推态切换。 |

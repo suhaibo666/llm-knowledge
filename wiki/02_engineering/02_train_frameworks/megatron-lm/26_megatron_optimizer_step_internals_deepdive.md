@@ -5,10 +5,9 @@ title: "Megatron-LM Optimizer Step 内部机制深度解析"
 # Megatron-LM Optimizer Step 内部机制深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **核心源码**：`megatron/core/optimizer/{optimizer.py,__init__.py,clip_grads.py,grad_scaler.py,optimizer_config.py,layer_wise_optimizer.py,param_layout.py,emerging_optimizers.py}`；`megatron/core/optimizer/cpu_offloading/{hybrid_optimizer.py,chunked_optimizer_state_offload.py}`；`megatron/core/optimizer_param_scheduler.py`；`megatron/core/transformer/transformer_config.py`；`megatron/training/training.py`
-> **中心结论**：一次参数更新真正要解决的是「更新量比权重的最低有效位还小」。Megatron 的答案是一份 fp32 master 副本：模型仍是 bf16，累积换到一个 ulp 小 65536 倍的副本上，跨过半个 bf16 ulp 才回写一次可见变化。围绕这份副本长出五个固定顺序的步骤——搬梯度并 unscale、溢出闸门、全局裁剪、base optimizer 更新、回拷；顺序不是风格问题，闸门必须先于任何依赖梯度范数的计算。四条 wrapper（Float16 / Distributed / FP32 / Chained）复用同一顺序，差别只在 master 放在哪、范数在哪个组上规约。
-> **适用范围**：本页拥有 optimizer factory 的两段式分流、mixed-precision step 的五步内部、loss scaling、全局梯度裁剪与独立范数组、LR/WD 调度的完成链、μP 的 param-group 落点、两条 CPU offload 与 LayerWise/Muon 集成。参数、梯度与优化器状态沿 DP 的分片与通信归 [[16_megatron_distributed_optimizer_analysis]]，参数精度 recipe 与 CUDA Graph 归 [[23_megatron_precision_cudagraph_fusion_analysis]]，Muon 本身的 Newton–Schulz 数学归 [[11_muon_analysis]]，Megatron-FSDP 支持矩阵归 [[36_megatron_fsdp_analysis]]。
-> **最近更新**：2026-09-06。按「问题 → 方案 → 变体 → 源码 → 配套 → 边界」重写，用同一个 bf16 权重贯穿五步与四条 wrapper；新增 fp32 master 的数值复演图、字节账本图与 offload 时序图；补齐 `SEPARATE_GRAD_NORM_GROUPS` 独立范数组，修正 `DynamicGradScaler` 的 hysteresis 语义与「梯度拷贝」的实际开销。
+> **主题**：一次 `optimizer.step()` 内部发生什么——参数怎样分组并选中 wrapper，混合精度 step 如何依次完成搬梯度与 unscale、溢出闸门、全局裁剪、base optimizer 更新与回拷，以及 loss scaling、LR/WD 调度、μP、两条 CPU offload 与 LayerWise/Muon 集成。核心代码在 `megatron/core/optimizer/`。
+> **适用范围**：optimizer step 边界内的状态变化与配套开关；参数、梯度与优化器状态沿 DP 的分片归 [[16_megatron_distributed_optimizer_analysis]]，参数精度 recipe 与 CUDA Graph 归 [[23_megatron_precision_cudagraph_fusion_analysis]]，Muon 的 Newton–Schulz 数学归 [[11_muon_analysis]]，Megatron-FSDP 支持矩阵归 [[36_megatron_fsdp_analysis]]。
+> **最近更新**：2026-09-06。按房子形状重写，新增四张生成图与数值回归测试。
 
 ---
 

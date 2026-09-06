@@ -5,10 +5,9 @@ title: "Megatron-LM RL 后训练适配与训推一致性深度解析"
 # Megatron-LM RL 后训练适配与训推一致性深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **核心源码**：`megatron/core/resharding/`（`refit.py`、`planner.py`、`execution.py`、`transforms.py`、`copy_services/`、`README.md`）；`megatron/core/transformer/transformer_config.py`（`transformer_impl='inference_optimized'`）；`megatron/core/inference/utils.py`（`InferenceMode`）；`megatron/core/inference/`（引擎与量化）；`megatron/rl/`；`megatron/core/post_training/modelopt/`
-> **中心结论**：RL 后训练的头号系统难题是**训推一致性**——同一个 (prompt, token)，rollout 引擎与训练引擎算出的 logprob 不相等，于是 PPO/GRPO 的 importance ratio $r=\pi_{\text{train}}/\mu_{\text{rollout}}$ 在策略没变时也偏离 1。Megatron 的做法不是消灭全部差异（做不到），而是**把差异逐项收敛到可控、可量化，残差交给上层 RL 框架的 importance sampling**。收敛链有五环：每迭代 refit 消除权重陈旧、LCM tiling 让布局重映射恒等、MXFP8 变换遵守 scale 与持久 buffer 契约、`inference_optimized` 把推理路径做成显式独立可审计的实现、训练相重算 logprob 让策略梯度自洽。剩下的 gap 被 Megatron 自己算成一组 $\pi/\mu$ 比值指标上报——**做小但不为零的差异，只有在可观测时才是工程上可接受的**。
-> **适用范围**：本页拥有 Megatron 训练侧的 **refit / resharding 机制**（plan 构建、执行链、传输后端、MXFP8 变换）、`inference_optimized` 的边界、`InferenceMode` 分流点、训推一致性各环的收敛与残差指标，以及 RL 部署形态。落盘 checkpoint 的存取与恢复归 [[19_megatron_dist_checkpointing_analysis]]；推理引擎本体与 CUDA Graph 归 [[31_megatron_inference_engine_analysis]]；EP/expert-TP 布局归 [[14_megatron_ep_analysis]]；进程组构造归 [[17_megatron_parallelism_orchestration_analysis]]。**完整的 RL 训练环（GRPO/PPO 的 advantage、loss、KL）不在 `megatron/core` 里**——三平面机制视角见 [[01_posttraining_infra_mechanism_analysis]] §6，verl 的权重发布对照见 [[21_verl_weight_publication_analysis]]。
-> **最近更新**：2026-09-06。按「问题 → 五环收敛 → 源码 → 部署 → 边界」重写；新增 LCM tiling 原理图、refit 执行链图与 MXFP8 scale 写回图；把旧版按历史基线组织的 `[!update]` / `[!deprecated]` 改写为当前基线的正文，并补齐 `_emit_lcm_block_ops` 的完整推导与整除守卫、1D scale 的累积 buffer 与 `NotImplementedError` 边界。
+> **主题**：RL 后训练的训推一致性——五条不一致来源各自被哪一环收敛：每迭代 refit、LCM tiling 的布局重映射、MXFP8 的两条写回路径、`inference_optimized` 与 `InferenceMode` 的显式分流、训练相重算 logprob，以及残差的 π/μ 指标与部署形态。核心代码在 `megatron/core/resharding/`。
+> **适用范围**：Megatron 训练侧的 refit/resharding 与一致性收敛链；落盘 checkpoint 归 [[19_megatron_dist_checkpointing_analysis]]，推理引擎本体归 [[31_megatron_inference_engine_analysis]]，完整 RL 环不在 `megatron/core`（见 [[01_posttraining_infra_mechanism_analysis]] §6 与 [[21_verl_weight_publication_analysis]]）。
+> **最近更新**：2026-09-06。按房子形状重写，新增三张生成图与 LCM tiling 的复刻回归。
 
 ---
 
@@ -94,7 +93,7 @@ $$
 
 取 LCM 就是为了这条不变量：**每个微块完整落在恰好一个源分片、也恰好一个目标分片里**，于是每段搬运都是「整块 slice → 整块 slice」，不必跨分片拼接。全长必须被 $L$ 整除，否则 `_emit_lcm_block_ops` 直接 `RuntimeError`，不做静默 padding。
 
-Mamba `in_proj` 这类**分区参数**（一个张量里并排放着几段语义不同的子权重）走同一段代码的多块版本：`_tp_block_layout` 先按 `partition_sizes` 把张量切成若干块并逐块校验 `src_sizes[i]*src_world == dst_sizes[i]*dst_world`，然后对每一块跑同一套 LCM 微块math。也就是说 block-interleaved 不是另一套算法，plain TP 是它的单块特例。
+Mamba `in_proj` 这类**分区参数**（一个张量里并排放着几段语义不同的子权重）走同一段代码的多块版本：`_tp_block_layout` 先按 `partition_sizes` 把张量切成若干块并逐块校验 `src_sizes[i]*src_world == dst_sizes[i]*dst_world`，然后对每一块跑同一套 LCM 微块运算。也就是说 block-interleaved 不是另一套算法，plain TP 是它的单块特例。
 
 **这一步不引入数值误差。** 搬完之后每个全局下标上的值不变——布局重映射是恒等的。误差来自下一环的量化。
 

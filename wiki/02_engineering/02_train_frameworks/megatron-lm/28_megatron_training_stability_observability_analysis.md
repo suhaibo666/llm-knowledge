@@ -5,10 +5,9 @@ title: "Megatron-LM 训练稳定性与可观测性深度解析"
 # Megatron-LM 训练稳定性与可观测性深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **核心源码**：`megatron/core/rerun_state_machine.py`、`megatron/core/{fault_injector.py,energy_monitor.py,timers.py}`、`megatron/core/optimizer/{qk_clip.py,optimizer.py,clip_grads.py,grad_scaler.py}`、`megatron/core/transformer/moe/{router.py,moe_logging.py,router_replay.py}`、`megatron/core/transformer/multi_token_prediction.py`、`megatron/core/distributed/param_and_grad_buffer.py`；训练循环日志在 `megatron/training/training.py`
-> **中心结论**：数值稳定性做的全是同一件事——**给「这一步还值不值得用」定一个判据，并接受判据本身会出错**。三道梯度闸按「坏了 / 偏大 / 大到不敢信」分层处理同一个范数；尖峰判据用早期若干步估出的最大值当参照物，因此窗口被污染或训练推进后都会失灵；SDC 归因用「重跑三次、带容差比对」而不是逐位比对，因为源码明确不要求计算确定、只要求控制流确定。可观测性同理：Timer 的 barrier 让跨 rank 可比，也引入真实同步点与挂死风险。每条判据都带一个明写的失效条件，本页的主线就是把它们逐条摆出来。
-> **适用范围**：本页拥有**数值层面**的稳定性与可观测性——梯度三闸与独立范数组、loss scaling 的稳定性视角、`RerunStateMachine` 的 SDC 归因与错误注入、QK-clip、MoE 路由稳定性与辅助损失的跨 rank 归一、MTP 解耦套件、Timer / MoE 逐层指标 / 能耗监控、指标目录与判读，以及 `LoggerConfig` / `ProfilingConfig` / `RerunStateMachineConfig` / `StragglerDetectionConfig` 配置契约。**作业层面**的韧性（进程存活、通信域清理、NVRx、进程内重启、GPU sniff test、张量转储、one_logger 机制）归 [[27_megatron_job_resilience_analysis]]；optimizer step 内部归 [[26_megatron_optimizer_step_internals_deepdive]]；NTP 布局归 [[25_megatron_nonuniform_tp_analysis]]。
-> **最近更新**：2026-09-06。按「问题 → 判据 → 归因 → 源码 → 观测 → 边界」重写，用一次 loss 尖峰贯穿全链；新增尖峰判据原理图、梯度三闸图与 aux-loss 归一图，并把 RerunStateMachine 的六个状态画成状态图。补齐此前完全未覆盖的 `is_unexpectedly_large` 判据及其两条失效路径、`RerunErrorInjector`、`RerunValidationStatus` 追踪文件、首个迭代不校验的边界，以及 `--check-for-spiky-loss` 只在 elastification 入口接线这一事实；把旧版按历史基线组织的 `[!update]` 全部改写为当前基线的正文。
+> **主题**：数值层面的稳定性与可观测性——梯度范数上的三道闸与独立范数组、尖峰判据、`RerunStateMachine` 的 SDC 归因与错误注入、QK-clip、MoE 路由稳定性与辅助损失的跨 rank 归一、MTP 解耦套件，以及 Timer、MoE 逐层指标、能耗监控与指标判读。核心代码在 `megatron/core/rerun_state_machine.py` 与 `megatron/core/optimizer/`、`megatron/core/transformer/moe/`。
+> **适用范围**：数值面的判据与观测面，含四个训练侧 config 类的契约；作业层面的韧性归 [[27_megatron_job_resilience_analysis]]，optimizer step 内部归 [[26_megatron_optimizer_step_internals_deepdive]]，NTP 布局归 [[25_megatron_nonuniform_tp_analysis]]。
+> **最近更新**：2026-09-06。按房子形状重写，新增三张生成图与一张状态图。
 
 ---
 

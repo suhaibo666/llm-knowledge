@@ -5,10 +5,9 @@ title: "Megatron-LM 序列打包与动态 CP 的统一流水线深度解析"
 # Megatron-LM 序列打包与动态 CP 的统一流水线深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **核心源码**：`megatron/core/datasets/data_schedule.py`、`megatron/core/datasets/data_schedule_utils.py`、`megatron/core/packed_seq_params.py`、`megatron/core/utils.py`（`get_batch_on_this_tp_rank` / `get_thd_batch_on_this_cp_rank`）、`megatron/core/pipeline_parallel/hybrid_cp_schedule.py`
-> **中心结论**：打包与动态 CP 在代码里不是两个协作的特性，而是**一条继承链**——`BasePackingScheduler → DpBalancedScheduler → DefaultDynamicCPScheduler`，子类只重写九步 `run()` 里的**第 ④ 步**。所以正确的心智模型是「序列打包是框架，动态 CP 是这个框架的 `is_dynamic_cp=True` 档」。这一步要解的问题是：样本变长、而每个 DP×CP rank 的算力等量；固定 CP 走按原顺序的贪心 first-fit，动态 CP 按 `seq²/cp` 把工作量摊到每个 rank 并让 CP 度随长度变化。本页的算例里，同一批 8 条样本在两条路上分别得到 16× 与 2× 的最坏 rank 不均。
-> **适用范围**：本页拥有打包/动态 CP 的**统一调度流水线**——九步 `run()`、两种分组算法、reroute 的通信形态、`PackedSeqParams` 汇合点与 CP 切片，以及这条链的约束与失效条件。packed sample 的数据入口归 [[11_megatron_dataset_analysis]]，attention 侧对 CP 的消费归 [[13_megatron_cp_analysis]]，microbatch 进入 PP 之后的调度边界归 [[15_megatron_pp_schedulers_analysis]]。
-> **最近更新**：2026-09-06。按「问题 → 一条流水线 → 两种分组 → 源码 → 上下游 → 边界」重写；新增两个调度器的同批复演原理图、九步流水线图与 reroute 通信图；把旧版按历史基线组织的 `[!update]` / `[!contradiction]` 改写为当前基线的正文，并补齐 `next_hdp_group_packing_aware` 的完整选择规则、`_DYNAMIC_CP_WORKLOAD_CAP_DELTA` 上限与整组 CP 兜底路径。
+> **主题**：序列打包与动态 CP 共享的一条调度流水线——九步 `run()`、两种分组算法（固定 CP 的贪心 first-fit 与按长度定 CP 的工作量均衡）、reroute 的通信形态、`PackedSeqParams` 汇合点与 THD 的 CP 切片。核心代码在 `megatron/core/datasets/data_schedule.py` 与 `data_schedule_utils.py`。
+> **适用范围**：这条统一调度链及其失效条件；packed sample 的数据入口归 [[11_megatron_dataset_analysis]]，attention 侧对 CP 的消费归 [[13_megatron_cp_analysis]]，microbatch 进入 PP 之后的调度归 [[15_megatron_pp_schedulers_analysis]]。
+> **最近更新**：2026-09-06。按房子形状重写，新增三张生成图与两套分组算法的复刻回归。
 
 ---
 
