@@ -12,6 +12,11 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-06：分析页页头改为四行主题式
+
+- `maintaining-llm-knowledge` 的房子形状页头由五行改为四行：源码基线、主题、适用范围、最近更新。去掉 **核心源码** 与 **中心结论**，页头只说明这页讲什么，论点与源码路径分别归正文和阅读路线。旧页改动时顺手换新式，不批量重写。
+- [[12_megatron_tp_analysis]] 作为首个换用新页头的页面；`tools/test_host_authoring_skills.py` 同步校验新字段。
+
 ## 2026-09-06：Megatron 18、23 对照 TP 范文重组为问题、方案与源码递进
 
 - [[18_megatron_recompute_analysis]] 将基础原理、方案总账与容量选择前置，再分别展开 full、selective 和输出丢弃的装配及反向链；Hybrid/MTP、EP overlap、mHC、量化和 PP 窗口后置。补充同一 L=24、w=4 存活窗口下 core/block/uniform 的峰值与 26/20/3 GiB 预算选择，以及 MLA 压缩输入、展开存储和回放 FLOPs 的具体例子。

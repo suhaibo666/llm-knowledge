@@ -5,10 +5,9 @@ title: "Megatron-LM 张量并行(Tensor Parallelism)深度解析"
 # Megatron-LM 张量并行(Tensor Parallelism)深度解析
 
 > **源码基线**：`NVIDIA/Megatron-LM@85902ef599ea4eb06ada7567a479c524b605767a`（`dev`，2026-09-01）
-> **核心源码**：`megatron/core/tensor_parallel/layers.py`、`megatron/core/tensor_parallel/mappings.py`、`megatron/core/tensor_parallel/cross_entropy.py`、`megatron/core/models/gpt/gpt_model.py`、`megatron/core/models/common/embeddings/language_model_embedding.py`、`megatron/core/transformer/attention.py`、`megatron/core/transformer/mlp.py`
-> **中心结论**：Megatron TP 不是孤立地把权重除以若干份，而是用 `Column Parallel → rank-local compute → Row Parallel` 构造通信闭合区；在非 SP 的 MHA 或 `num_query_groups >= t` GQA 基准路径中，中间分片留在本 rank，只在 Row 出口恢复下一段计算需要的布局；SP 与小 KV-group GQA 的 AG/RS 是明确例外。
-> **适用范围**：本页解释标准 dense GPT 层、词表边界、Sequence Parallelism 和 TP communication overlap；MLA、MoE expert TP 与非均匀 TP 由相关专题页负责。
-> **最近更新**：2026-09-03。补全从 embedding 到 loss 再返回参数分片的训练闭环，逐项解释词表入口、LM head、分布式交叉熵的切分原因与代价；新增 SP 前反向实现图，并将函数调用关系改为可逐层阅读的 ASCII 调用树。
+> **主题**：张量并行如何把一层 Transformer 内部的矩阵乘切到多张卡上：Column/Row 两种切法怎样成对使用、切分后一层前反向各在哪里通信、词表与 loss 边界如何处理，以及 Sequence Parallelism 和 TP 通信重叠这两项配套机制。核心代码在 `megatron/core/tensor_parallel/`。
+> **适用范围**：标准 dense GPT 层；MLA、MoE expert TP 与非均匀 TP 见各自专题页。
+> **最近更新**：2026-09-06。页头精简为主题说明。
 
 ---
 

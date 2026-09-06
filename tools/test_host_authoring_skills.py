@@ -49,8 +49,11 @@ def test_house_page_shape_is_written_down_not_carried_by_an_exemplar():
     maintain = _text(MAINTAIN)
     assert "### 分析页的房子形状" in maintain
     squashed = _squash(maintain)
-    for field in ("**源码基线**", "**核心源码**", "**中心结论**", "**适用范围**", "**最近更新**"):
+    for field in ("**源码基线**", "**主题**", "**适用范围**", "**最近更新**"):
         assert field in squashed, f"house header lost {field}"
+    # The header states the page subject, never previews its thesis: the old 中心结论 line
+    # made readers digest exceptions and qualifiers before reading a single section.
+    assert "不预演论点" in squashed
     # The three recurring table shapes that prose alone kept getting wrong.
     for column in ("必付成本或边界", "破坏后的行为", "字段 \\| 类型 \\| 默认 \\| 契约"):
         assert column in squashed, f"house table shape lost {column}"
