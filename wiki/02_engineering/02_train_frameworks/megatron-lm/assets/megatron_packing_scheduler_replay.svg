@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 560" width="1272" height="560" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .refline{fill:none;stroke:#C8CFDA;stroke-width:1;stroke-dasharray:3 4}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　同一批变长样本，两个调度器排出来的样子</text>
+<text class="su" x="28" y="52" text-anchor="start">DP=2 × CP=2（4 个 DCP rank），max_seqlen_per_dp_cp_rank=2048；样本长度按数据集原始顺序 [1024, 4096, 2048, 1024, 2048, 1024, 2048, 1024]；条长 = 该 rank 的 Σ seq²/cp</text>
+<text class="tx" x="28" y="82" text-anchor="start">DpBalancedScheduler：固定 CP=2，按原顺序贪心 first-fit</text>
+<text class="sm" x="28" y="100" text-anchor="start">一个打包 microbatch 的容量 = 2048 × 2 = 4096</text>
+<text class="rank" x="28" y="142" text-anchor="start">mb 0</text>
+<rect class="ghost" x="90" y="130" width="21.625" height="15" rx="3"/>
+<text class="sm" x="84" y="143" text-anchor="end">r0</text>
+<text class="sm" x="117.625" y="143" text-anchor="start">0.52M</text>
+<rect class="ghost" x="90" y="152" width="21.625" height="15" rx="3"/>
+<text class="sm" x="84" y="165" text-anchor="end">r1</text>
+<text class="sm" x="117.625" y="165" text-anchor="start">0.52M</text>
+<rect class="acc2" x="90" y="174" width="346" height="15" rx="3"/>
+<text class="sm" x="84" y="187" text-anchor="end">r2</text>
+<text class="costtx" x="442" y="187" text-anchor="start">8.39M</text>
+<rect class="acc2" x="90" y="196" width="346" height="15" rx="3"/>
+<text class="sm" x="84" y="209" text-anchor="end">r3</text>
+<text class="costtx" x="442" y="209" text-anchor="start">8.39M</text>
+<text class="dim" x="616" y="143" text-anchor="end">max/min = 16×</text>
+<text class="rank" x="28" y="250" text-anchor="start">mb 1</text>
+<rect class="acc2" x="90" y="238" width="108.125" height="15" rx="3"/>
+<text class="sm" x="84" y="251" text-anchor="end">r0</text>
+<text class="costtx" x="204.125" y="251" text-anchor="start">2.62M</text>
+<rect class="acc2" x="90" y="260" width="108.125" height="15" rx="3"/>
+<text class="sm" x="84" y="273" text-anchor="end">r1</text>
+<text class="costtx" x="204.125" y="273" text-anchor="start">2.62M</text>
+<rect class="acc2" x="90" y="282" width="108.125" height="15" rx="3"/>
+<text class="sm" x="84" y="295" text-anchor="end">r2</text>
+<text class="costtx" x="204.125" y="295" text-anchor="start">2.62M</text>
+<rect class="acc2" x="90" y="304" width="108.125" height="15" rx="3"/>
+<text class="sm" x="84" y="317" text-anchor="end">r3</text>
+<text class="costtx" x="204.125" y="317" text-anchor="start">2.62M</text>
+<text class="dim" x="616" y="251" text-anchor="end">max/min = 1×</text>
+<text class="rank" x="28" y="358" text-anchor="start">mb 2</text>
+<rect class="acc2" x="90" y="346" width="86.5" height="15" rx="3"/>
+<text class="sm" x="84" y="359" text-anchor="end">r0</text>
+<text class="costtx" x="182.5" y="359" text-anchor="start">2.10M</text>
+<rect class="acc2" x="90" y="368" width="86.5" height="15" rx="3"/>
+<text class="sm" x="84" y="381" text-anchor="end">r1</text>
+<text class="costtx" x="182.5" y="381" text-anchor="start">2.10M</text>
+<rect class="ghost" x="90" y="390" width="21.625" height="15" rx="3"/>
+<text class="sm" x="84" y="403" text-anchor="end">r2</text>
+<text class="sm" x="117.625" y="403" text-anchor="start">0.52M</text>
+<rect class="ghost" x="90" y="412" width="21.625" height="15" rx="3"/>
+<text class="sm" x="84" y="425" text-anchor="end">r3</text>
+<text class="sm" x="117.625" y="425" text-anchor="start">0.52M</text>
+<text class="dim" x="616" y="359" text-anchor="end">max/min = 4×</text>
+<text class="tx" x="652" y="82" text-anchor="start">DefaultDynamicCPScheduler：按长度定 CP，工作量均衡</text>
+<text class="sm" x="652" y="100" text-anchor="start">dcp_gpus_needed 向上取 2 的幂；候选上限 tall × 2048 × 1.05</text>
+<text class="rank" x="652" y="142" text-anchor="start">mb 0</text>
+<rect class="acc2" x="714" y="130" width="342" height="15" rx="3"/>
+<text class="sm" x="708" y="143" text-anchor="end">r0</text>
+<text class="costtx" x="1062" y="143" text-anchor="start">8.39M</text>
+<rect class="acc2" x="714" y="152" width="342" height="15" rx="3"/>
+<text class="sm" x="708" y="165" text-anchor="end">r1</text>
+<text class="costtx" x="1062" y="165" text-anchor="start">8.39M</text>
+<rect class="ghost" x="714" y="174" width="171" height="15" rx="3"/>
+<text class="sm" x="708" y="187" text-anchor="end">r2</text>
+<text class="sm" x="891" y="187" text-anchor="start">4.19M</text>
+<rect class="ghost" x="714" y="196" width="171" height="15" rx="3"/>
+<text class="sm" x="708" y="209" text-anchor="end">r3</text>
+<text class="sm" x="891" y="209" text-anchor="start">4.19M</text>
+<text class="dim" x="1236" y="143" text-anchor="end">max/min = 2×</text>
+<text class="sm" x="1236" y="161" text-anchor="end">剩 5 条留给下一轮</text>
+<text class="rank" x="652" y="250" text-anchor="start">mb 1</text>
+<rect class="acc2" x="714" y="238" width="85.5" height="15" rx="3"/>
+<text class="sm" x="708" y="251" text-anchor="end">r0</text>
+<text class="costtx" x="805.5" y="251" text-anchor="start">2.10M</text>
+<rect class="acc2" x="714" y="260" width="85.5" height="15" rx="3"/>
+<text class="sm" x="708" y="273" text-anchor="end">r1</text>
+<text class="costtx" x="805.5" y="273" text-anchor="start">2.10M</text>
+<rect class="acc2" x="714" y="282" width="85.5" height="15" rx="3"/>
+<text class="sm" x="708" y="295" text-anchor="end">r2</text>
+<text class="costtx" x="805.5" y="295" text-anchor="start">2.10M</text>
+<rect class="acc2" x="714" y="304" width="85.5" height="15" rx="3"/>
+<text class="sm" x="708" y="317" text-anchor="end">r3</text>
+<text class="costtx" x="805.5" y="317" text-anchor="start">2.10M</text>
+<text class="dim" x="1236" y="251" text-anchor="end">max/min = 1×</text>
+<rect class="neutral" x="28" y="456" width="596" height="104" rx="8"/>
+<text class="tx" x="40" y="477" text-anchor="start">关键路径合计 13.11M，最坏一格不均 16×</text>
+<path class="edge" d="M 40 485 L 612 485"/>
+<text class="sm" x="40" y="503" text-anchor="start">first-fit 按数据集给出的原始顺序装箱，不重排 —— 于是同一批样本换个顺序</text>
+<text class="sm" x="40" y="519" text-anchor="start">就会得到完全不同的分组。一个长样本落在哪个 microbatch 全看它排第几。</text>
+<text class="sm" x="40" y="535" text-anchor="start">本例最差的一格里，最忙 rank 是最闲 rank 的 16 倍；</text>
+<text class="sm" x="40" y="551" text-anchor="start">同一 microbatch 内所有 rank 必须等最忙的那个。</text>
+<rect class="acc1" x="652" y="456" width="592" height="104" rx="8"/>
+<text class="tx" x="664" y="477" text-anchor="start">关键路径合计 10.49M，最坏一格不均 2×</text>
+<path class="edge" d="M 664 485 L 1232 485"/>
+<text class="sm" x="664" y="503" text-anchor="start">先按长度降序，最高的那条按它的最小 CP 数开组；其余样本在</text>
+<text class="sm" x="664" y="519" text-anchor="start">「加入已有同 CP 组 / 用空闲 rank 开新组」之间选让关键路径最低的那个，</text>
+<text class="sm" x="664" y="535" text-anchor="start">CP 候选按 2 的幂逐级放大 —— 短样本也可能用更大的 CP 组。</text>
+<text class="sm" x="664" y="551" text-anchor="start">装不进本轮的留到下一轮，所以 microbatch 数可能比固定 CP 多。</text>
+</svg>

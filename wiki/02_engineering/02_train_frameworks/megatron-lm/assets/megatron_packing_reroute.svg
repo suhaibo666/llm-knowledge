@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 440" width="1272" height="440" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .refline{fill:none;stroke:#C8CFDA;stroke-width:1;stroke-dasharray:3 4}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 3　reroute：load 它的 rank 与算它的 rank 通常不是同一个</text>
+<text class="su" x="28" y="52" text-anchor="start">DP=2 × CP=2；CP 兄弟 rank 持有完全相同的输入，这是换成 DP 组 all-gather 的前提</text>
+<text class="rank" x="28" y="140" text-anchor="start">loader 给谁</text>
+<text class="sm" x="28" y="156" text-anchor="start">（按 DP 分）</text>
+<text class="rank" x="28" y="260" text-anchor="start">调度说谁算</text>
+<text class="sm" x="28" y="276" text-anchor="start">（第 ④ 步的结果）</text>
+<rect class="ghost" x="124" y="116" width="132" height="62" rx="6"/>
+<text class="rank" x="190" y="136" text-anchor="middle">DCP rank 0</text>
+<text class="sm" x="190" y="154" text-anchor="middle">dp=0 cp=0</text>
+<text class="sm" x="190" y="170" text-anchor="middle">样本组 D0（与兄弟同）</text>
+<rect class="ghost" x="278" y="116" width="132" height="62" rx="6"/>
+<text class="rank" x="344" y="136" text-anchor="middle">DCP rank 1</text>
+<text class="sm" x="344" y="154" text-anchor="middle">dp=0 cp=1</text>
+<text class="sm" x="344" y="170" text-anchor="middle">样本组 D0（与兄弟同）</text>
+<rect class="ghost" x="432" y="116" width="132" height="62" rx="6"/>
+<text class="rank" x="498" y="136" text-anchor="middle">DCP rank 2</text>
+<text class="sm" x="498" y="154" text-anchor="middle">dp=1 cp=0</text>
+<text class="sm" x="498" y="170" text-anchor="middle">样本组 D1（与兄弟同）</text>
+<rect class="ghost" x="586" y="116" width="132" height="62" rx="6"/>
+<text class="rank" x="652" y="136" text-anchor="middle">DCP rank 3</text>
+<text class="sm" x="652" y="154" text-anchor="middle">dp=1 cp=1</text>
+<text class="sm" x="652" y="170" text-anchor="middle">样本组 D1（与兄弟同）</text>
+<rect class="acc1" x="124" y="236" width="132" height="62" rx="6"/>
+<text class="rank" x="190" y="256" text-anchor="middle">DCP rank 0</text>
+<text class="dim" x="190" y="274" text-anchor="middle">样本 1</text>
+<text class="sm" x="190" y="290" text-anchor="middle">Σ seq²/cp = 8.39M</text>
+<path class="main" d="M 190 180 L 190 234"/>
+<rect class="acc1" x="278" y="236" width="132" height="62" rx="6"/>
+<text class="rank" x="344" y="256" text-anchor="middle">DCP rank 1</text>
+<text class="dim" x="344" y="274" text-anchor="middle">样本 1</text>
+<text class="sm" x="344" y="290" text-anchor="middle">Σ seq²/cp = 8.39M</text>
+<path class="main" d="M 344 180 L 344 234"/>
+<rect class="acc1" x="432" y="236" width="132" height="62" rx="6"/>
+<text class="rank" x="498" y="256" text-anchor="middle">DCP rank 2</text>
+<text class="dim" x="498" y="274" text-anchor="middle">样本 2</text>
+<text class="sm" x="498" y="290" text-anchor="middle">Σ seq²/cp = 4.19M</text>
+<path class="main" d="M 498 180 L 498 234"/>
+<rect class="acc1" x="586" y="236" width="132" height="62" rx="6"/>
+<text class="rank" x="652" y="256" text-anchor="middle">DCP rank 3</text>
+<text class="dim" x="652" y="274" text-anchor="middle">样本 4</text>
+<text class="sm" x="652" y="290" text-anchor="middle">Σ seq²/cp = 4.19M</text>
+<path class="main" d="M 652 180 L 652 234"/>
+<text class="dim" x="198" y="212" text-anchor="start">reroute：在各 CP lane 的 dp_group 内 all-gather，再只留本 rank 该算的那几条</text>
+<rect class="acc2" x="28" y="320" width="600" height="108" rx="8"/>
+<text class="tx" x="40" y="341" text-anchor="start">被否掉的替代：NCCL all-to-all（16 对连接）</text>
+<path class="edge" d="M 40 349 L 616 349"/>
+<text class="sm" x="40" y="367" text-anchor="start">all-to-all 在 4 个 DCP rank 之间建全连接 P2P 传输，本例 16 对；</text>
+<text class="sm" x="40" y="383" text-anchor="start">按 CP lane 在 dp_group 内 gather 只需 2 × 2² = 8 对。</text>
+<text class="sm" x="40" y="399" text-anchor="start">更关键的是：CP 兄弟持有的输入逐字节相同，让每个 CP rank 各收一份纯属重复。</text>
+<text class="sm" x="40" y="415" text-anchor="start">docstring 两条理由都写出来了：避免重复收件，避免全连接 P2P。</text>
+<rect class="neutral" x="648" y="320" width="624" height="108" rx="8"/>
+<text class="tx" x="660" y="341" text-anchor="start">为什么逐 key 发起，而不是一次收齐</text>
+<path class="edge" d="M 660 349 L 1260 349"/>
+<text class="sm" x="660" y="367" text-anchor="start">gather 按 data key 一个一个发：每个 key 付一次固定的集合通信延迟，</text>
+<text class="sm" x="660" y="383" text-anchor="start">换来「同一时刻只有一个全局字段驻留」的临时显存上界；</text>
+<text class="sm" x="660" y="399" text-anchor="start">选出的切片先 clone 再进下一个 key，好让整块 gather 缓冲被释放。</text>
+<text class="sm" x="660" y="415" text-anchor="start">这是源码自陈的取舍（延迟换显存），不是实现疏漏。</text>
+</svg>

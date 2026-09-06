@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 520" width="1272" height="520" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .refline{fill:none;stroke:#C8CFDA;stroke-width:1;stroke-dasharray:3 4}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 2　两个调度器共享的 run() 九步；只有第 ④ 步不同</text>
+<text class="su" x="28" y="52" text-anchor="start">BasePackingScheduler → DpBalancedScheduler → DefaultDynamicCPScheduler：子类只重写第 ④ 步与 __init__</text>
+<text class="rank" x="72" y="80" text-anchor="start">做什么</text>
+<text class="rank" x="384" y="80" text-anchor="start">集合通信</text>
+<text class="rank" x="568" y="80" text-anchor="start">这一步保证了什么</text>
+<rect class="neutral" x="28" y="92" width="760" height="34" rx="5"/>
+<text class="rank" x="40" y="114" text-anchor="start">①</text>
+<text class="sm" x="72" y="114" text-anchor="start">get_batch_and_global_seqlens</text>
+<text class="sm" x="384" y="114" text-anchor="start">跨 DP all-gather 全局长度</text>
+<text class="sm" x="568" y="114" text-anchor="start">分组是一次全局决策</text>
+<path class="aux" d="M 34 126 L 34 131"/>
+<rect class="neutral" x="28" y="132" width="760" height="34" rx="5"/>
+<text class="rank" x="40" y="154" text-anchor="start">②</text>
+<text class="sm" x="72" y="154" text-anchor="start">校验 required sample keys</text>
+<text class="sm" x="384" y="154" text-anchor="start">无</text>
+<text class="sm" x="568" y="154" text-anchor="start">缺一个 key 即 assert</text>
+<path class="aux" d="M 34 166 L 34 171"/>
+<rect class="neutral" x="28" y="172" width="760" height="34" rx="5"/>
+<text class="rank" x="40" y="194" text-anchor="start">③</text>
+<text class="sm" x="72" y="194" text-anchor="start">按本 PP stage 裁掉用不到的字段</text>
+<text class="sm" x="384" y="194" text-anchor="start">无</text>
+<text class="sm" x="568" y="194" text-anchor="start">减少后面 reroute 的搬运量</text>
+<path class="aux" d="M 34 206 L 34 211"/>
+<rect class="acc1" x="28" y="212" width="760" height="34" rx="5"/>
+<text class="rank" x="40" y="234" text-anchor="start">④</text>
+<text class="dim" x="72" y="234" text-anchor="start">get_groups_and_subsamples</text>
+<text class="sm" x="384" y="234" text-anchor="start">无</text>
+<text class="sm" x="568" y="234" text-anchor="start">★ 两个调度器唯一分叉的地方</text>
+<path class="aux" d="M 34 246 L 34 251"/>
+<rect class="neutral" x="28" y="252" width="760" height="34" rx="5"/>
+<text class="rank" x="40" y="274" text-anchor="start">⑤</text>
+<text class="sm" x="72" y="274" text-anchor="start">reroute_samples_to_dcp_ranks</text>
+<text class="sm" x="384" y="274" text-anchor="start">DP 组 all-gather，逐 key</text>
+<text class="sm" x="568" y="274" text-anchor="start">把样本搬到「该算它的 rank」</text>
+<path class="aux" d="M 34 286 L 34 291"/>
+<rect class="neutral" x="28" y="292" width="760" height="34" rx="5"/>
+<text class="rank" x="40" y="314" text-anchor="start">⑥</text>
+<text class="sm" x="72" y="314" text-anchor="start">build_packed_microbatches</text>
+<text class="sm" x="384" y="314" text-anchor="start">无</text>
+<text class="sm" x="568" y="314" text-anchor="start">拼 THD buffer，产出 PackedSeqParams</text>
+<path class="aux" d="M 34 326 L 34 331"/>
+<rect class="neutral" x="28" y="332" width="760" height="34" rx="5"/>
+<text class="rank" x="40" y="354" text-anchor="start">⑦</text>
+<text class="sm" x="72" y="354" text-anchor="start">算 FLOPs 信息 Σseqlen、Σseqlen²</text>
+<text class="sm" x="384" y="354" text-anchor="start">无</text>
+<text class="sm" x="568" y="354" text-anchor="start">喂给吞吐统计</text>
+<path class="aux" d="M 34 366 L 34 371"/>
+<rect class="neutral" x="28" y="372" width="760" height="34" rx="5"/>
+<text class="rank" x="40" y="394" text-anchor="start">⑧</text>
+<text class="sm" x="72" y="394" text-anchor="start">broadcast_scalars</text>
+<text class="sm" x="384" y="394" text-anchor="start">跨 TP 组广播标量</text>
+<text class="sm" x="568" y="394" text-anchor="start">非 TP-0 rank 拿到标量</text>
+<path class="aux" d="M 34 406 L 34 411"/>
+<rect class="neutral" x="28" y="412" width="760" height="34" rx="5"/>
+<text class="rank" x="40" y="434" text-anchor="start">⑨</text>
+<text class="sm" x="72" y="434" text-anchor="start">create_data_iterator</text>
+<text class="sm" x="384" y="434" text-anchor="start">无</text>
+<text class="sm" x="568" y="434" text-anchor="start">VPP 时按 vpp_needs_data 出列表</text>
+<rect class="acc1" x="812" y="92" width="432" height="164" rx="8"/>
+<text class="tx" x="824" y="113" text-anchor="start">第 ④ 步的两种实现</text>
+<path class="edge" d="M 824 121 L 1232 121"/>
+<text class="sm" x="824" y="139" text-anchor="start">DpBalancedScheduler：按原顺序贪心 first-fit，全部样本共用一个 CP；</text>
+<text class="sm" x="824" y="155" text-anchor="start">容量 = max_seqlen_per_dp_cp_rank × cp_size。</text>
+<text class="sm" x="824" y="171" text-anchor="start">DefaultDynamicCPScheduler：dcp_gpus_needed 按长度定 CP，取 2 的幂，</text>
+<text class="sm" x="824" y="187" text-anchor="start">next_hdp_group_packing_aware 按 seq²/cp 均衡到各 DCP rank。</text>
+<text class="sm" x="824" y="203" text-anchor="start">继承关系即结论：动态 CP 是打包调度器的子类，不是它的搭档。</text>
+<rect class="neutral" x="812" y="272" width="432" height="164" rx="8"/>
+<text class="tx" x="824" y="293" text-anchor="start">一处与直觉相反：没有 PP 组广播</text>
+<path class="edge" d="M 824 301 L 1232 301"/>
+<text class="sm" x="824" y="319" text-anchor="start">打包模式下 is_dataset_built_on_rank 对每个 stage 的 TP-0 都返回 True，</text>
+<text class="sm" x="824" y="335" text-anchor="start">所以每个 stage 各自取数、各自算全局 seqlen 统计，不从首/末 stage 广播。</text>
+<text class="sm" x="824" y="351" text-anchor="start">理由写在入口判据处：THD 打包与 SBHD 校验都要每个 stage 有 padding</text>
+<text class="sm" x="824" y="367" text-anchor="start">元数据，好让每个 MoE 层把物理 padding 排除掉。</text>
+<text class="sm" x="824" y="383" text-anchor="start">补偿是第 ③ 步：先裁掉本 stage 用不到的字段，减少搬运量。</text>
+</svg>
