@@ -153,7 +153,7 @@ def newtonschulz5(G, steps=5):
 
 ### 6.3 Muon 对分布式训练的系统性影响
 
-> **影响 1：flat buffer shard 不再自由** — Adam 时代 flat buffer 可按字节均分，Muon 要求 shard 边界对齐 layer boundary（不能切断 weight matrix）。Megatron 的具体解法（`LayerWiseDistributedOptimizer` 的 shard-aligned bucket + LPT 贪心装箱）见 [[26_megatron_optimizer_step_internals_deepdive]] §10.1。
+> **影响 1：flat buffer shard 不再自由** — Adam 时代 flat buffer 可按字节均分，Muon 要求 shard 边界对齐 layer boundary（不能切断 weight matrix）。Megatron 的具体解法（`LayerWiseDistributedOptimizer` 的 shard-aligned bucket + LPT 贪心装箱）见 [[26_megatron_optimizer_step_internals_deepdive]] §4.4。
 
 > **影响 2：梯度累积推向 ZeRO-1** — NS 是非线性操作：NS(G₁)+NS(G₂) ≠ NS(G₁+G₂)。必须先在 full buffer 上累积所有 micro-batch 的 grad，做一次 NS，再 RS。
 

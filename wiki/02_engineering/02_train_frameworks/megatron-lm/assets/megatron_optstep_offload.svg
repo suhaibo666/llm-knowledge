@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 372" width="1272" height="372" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .plotline{fill:none;stroke:#2563EB;stroke-width:2.2}
+  .plotflat{fill:none;stroke:#C3651F;stroke-width:2.2}
+  .plotstep{fill:none;stroke:#5B6470;stroke-width:2;stroke-dasharray:6 4}
+  .refline{fill:none;stroke:#C8CFDA;stroke-width:1;stroke-dasharray:3 4}
+  .dot1{fill:#2563EB}
+  .dot2{fill:#C3651F}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 4　ChunkedOptimizerStateOffloader：CPU 是 canonical，state 逐块短暂回到 GPU</text>
+<text class="su" x="28" y="52" text-anchor="start">chunk_size_bytes 切出 4 块；常驻参数先算，用来覆盖第一块的 H2D</text>
+<text class="rank" x="28" y="111" text-anchor="start">H2D 流</text>
+<rect class="acc1" x="150" y="92" width="190.79999999999995" height="28" rx="5"/>
+<text class="sm" x="245.39999999999998" y="110" text-anchor="middle">master + 块 0</text>
+<rect class="acc1" x="362" y="92" width="190.79999999999995" height="28" rx="5"/>
+<text class="sm" x="457.4" y="110" text-anchor="middle">预取块 1</text>
+<rect class="acc1" x="574" y="92" width="190.79999999999995" height="28" rx="5"/>
+<text class="sm" x="669.4" y="110" text-anchor="middle">预取块 2</text>
+<rect class="acc1" x="786" y="92" width="190.80000000000007" height="28" rx="5"/>
+<text class="sm" x="881.4000000000001" y="110" text-anchor="middle">预取块 3</text>
+<text class="rank" x="28" y="151" text-anchor="start">更新（主流）</text>
+<rect class="ghost" x="181.8" y="132" width="169.59999999999997" height="28" rx="5"/>
+<text class="sm" x="266.6" y="150" text-anchor="middle">常驻参数更新</text>
+<rect class="neutral" x="362" y="132" width="131.44" height="28" rx="5"/>
+<text class="sm" x="427.72" y="150" text-anchor="middle">_step_subset(0)</text>
+<rect class="neutral" x="574" y="132" width="131.44000000000005" height="28" rx="5"/>
+<text class="sm" x="639.72" y="150" text-anchor="middle">_step_subset(1)</text>
+<rect class="neutral" x="786" y="132" width="131.44000000000005" height="28" rx="5"/>
+<text class="sm" x="851.72" y="150" text-anchor="middle">_step_subset(2)</text>
+<rect class="neutral" x="998" y="132" width="131.44000000000005" height="28" rx="5"/>
+<text class="sm" x="1063.72" y="150" text-anchor="middle">_step_subset(3)</text>
+<text class="rank" x="28" y="191" text-anchor="start">D2H 流</text>
+<rect class="acc2" x="493.44" y="172" width="76.32" height="28" rx="5"/>
+<text class="sm" x="531.6" y="190" text-anchor="middle">回写块 0</text>
+<rect class="acc2" x="705.44" y="172" width="76.31999999999994" height="28" rx="5"/>
+<text class="sm" x="743.6" y="190" text-anchor="middle">回写块 1</text>
+<rect class="acc2" x="917.44" y="172" width="76.31999999999982" height="28" rx="5"/>
+<text class="sm" x="955.5999999999999" y="190" text-anchor="middle">回写块 2</text>
+<rect class="acc2" x="1129.44" y="172" width="76.31999999999994" height="28" rx="5"/>
+<text class="sm" x="1167.6" y="190" text-anchor="middle">回写块 3</text>
+<path class="gl" d="M 781.76 84 L 781.76 212"/>
+<text class="costtx" x="789.76" y="78" text-anchor="start">首次懒建 state：drain D2H 一次</text>
+<rect class="neutral" x="28" y="228" width="560" height="120" rx="8"/>
+<text class="tx" x="40" y="249" text-anchor="start">与 HybridDeviceOptimizer 的分工</text>
+<path class="edge" d="M 40 257 L 576 257"/>
+<text class="sm" x="40" y="275" text-anchor="start">Hybrid：一部分参数的更新计算交给 CPU optimizer，用 CPU 算力换显存。</text>
+<text class="sm" x="40" y="291" text-anchor="start">Chunked：更新仍在 GPU，只让 state/master 在非使用期以 CPU 副本为准。</text>
+<text class="sm" x="40" y="307" text-anchor="start">判据不是"哪个更快"，而是要不要把 optimizer kernel 也搬走；</text>
+<text class="sm" x="40" y="323" text-anchor="start">两者由 optimizer_config 断言互斥，不能同开。</text>
+<rect class="acc1" x="608" y="228" width="636" height="120" rx="8"/>
+<text class="tx" x="620" y="249" text-anchor="start">峰值界怎么守住</text>
+<path class="edge" d="M 620 257 L 1232 257"/>
+<text class="sm" x="620" y="275" text-anchor="start">任一时刻 GPU 上最多驻留：常驻参数 + 当前块 + 正在预取的下一块。</text>
+<text class="sm" x="620" y="291" text-anchor="start">chunk 以参数为不可切分原子装箱，超大单参数允许独占超限块。</text>
+<text class="sm" x="620" y="307" text-anchor="start">首次懒建 moment 的那一块不走复用池，必须同步一次再进下一块，</text>
+<text class="sm" x="620" y="323" text-anchor="start">否则两块的临时 state 会同时在场，峰值界失效。</text>
+</svg>

@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 500" width="1272" height="500" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .plotline{fill:none;stroke:#2563EB;stroke-width:2.2}
+  .plotflat{fill:none;stroke:#C3651F;stroke-width:2.2}
+  .plotstep{fill:none;stroke:#5B6470;stroke-width:2;stroke-dasharray:6 4}
+  .refline{fill:none;stroke:#C8CFDA;stroke-width:1;stroke-dasharray:3 4}
+  .dot1{fill:#2563EB}
+  .dot2{fill:#C3651F}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 2　为什么 master 必须是 fp32：同一串更新，两种 master，逐步复演</text>
+<text class="su" x="28" y="52" text-anchor="start">w₀ = 1，每步 Adam 更新 Δ = 3.0e−4（≈ lr）。两个面板同一纵向刻度</text>
+<rect class="ghost" x="208" y="92" width="580" height="118" rx="4"/>
+<text class="tx" x="208" y="82" text-anchor="start">master 也是 bf16（被否掉的替代）</text>
+<rect class="ghost" x="208" y="252" width="580" height="118" rx="4"/>
+<text class="tx" x="208" y="242" text-anchor="start">fp32 master + 每步回拷（当前实现）</text>
+<path class="refline" d="M 208 353.4649681528663 L 788 353.4649681528663"/>
+<text class="sm" x="198" y="357.4649681528663" text-anchor="end">bf16 档位 1</text>
+<path class="refline" d="M 208 315.8853503184712 L 788 315.8853503184712"/>
+<text class="sm" x="198" y="319.8853503184712" text-anchor="end">舍入分界 +½ ulp</text>
+<path class="refline" d="M 208 278.30573248407615 L 788 278.30573248407615"/>
+<text class="sm" x="198" y="282.30573248407615" text-anchor="end">bf16 下一档 1.0078125</text>
+<path class="refline" d="M 208 193.46496815286625 L 788 193.46496815286625"/>
+<text class="sm" x="198" y="197.46496815286625" text-anchor="end">bf16 档位 1</text>
+<path class="plotflat" d="M 208 193.46496815286625 L 240.22222222222223 193.46496815286625 L 272.44444444444446 193.46496815286625 L 304.66666666666663 193.46496815286625 L 336.8888888888889 193.46496815286625 L 369.1111111111111 193.46496815286625 L 401.3333333333333 193.46496815286625 L 433.55555555555554 193.46496815286625 L 465.77777777777777 193.46496815286625 L 498 193.46496815286625 L 530.2222222222222 193.46496815286625 L 562.4444444444445 193.46496815286625 L 594.6666666666666 193.46496815286625 L 626.8888888888889 193.46496815286625 L 659.1111111111111 193.46496815286625 L 691.3333333333334 193.46496815286625 L 723.5555555555555 193.46496815286625 L 755.7777777777777 193.46496815286625 L 788 193.46496815286625"/>
+<circle class="dot2" cx="788" cy="193.46496815286625" r="4.5"/>
+<text class="costtx" x="776" y="181.46496815286625" text-anchor="end">18 次加法之后仍是 w₀ —— 权重一步都没动</text>
+<path class="plotline" d="M 208 353.4649681528663 L 240.22222222222223 350.5783745832504 L 272.44444444444446 347.69178101363457 L 304.66666666666663 344.80518744401866 L 336.8888888888889 341.9185938744028 L 369.1111111111111 339.03200030478695 L 401.3333333333333 336.14540673517115 L 433.55555555555554 333.25881316555524 L 465.77777777777777 330.3722195959394 L 498 327.48562602632353 L 530.2222222222222 324.5990324567077 L 562.4444444444445 321.7124388870918 L 594.6666666666666 318.82584531747597 L 626.8888888888889 315.9392517478601 L 659.1111111111111 313.05265817824426 L 691.3333333333334 310.1660646086284 L 723.5555555555555 307.27947103901255 L 755.7777777777777 304.3928774693967 L 788 301.50628389978084"/>
+<path class="plotstep" d="M 208 353.4649681528663 L 240.22222222222223 353.4649681528663 L 272.44444444444446 353.4649681528663 L 304.66666666666663 353.4649681528663 L 336.8888888888889 353.4649681528663 L 369.1111111111111 353.4649681528663 L 401.3333333333333 353.4649681528663 L 433.55555555555554 353.4649681528663 L 465.77777777777777 353.4649681528663 L 498 353.4649681528663 L 530.2222222222222 353.4649681528663 L 562.4444444444445 353.4649681528663 L 594.6666666666666 353.4649681528663 L 626.8888888888889 353.4649681528663 L 659.1111111111111 353.4649681528663 L 659.1111111111111 278.30573248407615 L 691.3333333333334 278.30573248407615 L 723.5555555555555 278.30573248407615 L 755.7777777777777 278.30573248407615 L 788 278.30573248407615"/>
+<path class="gl" d="M 659.1111111111111 252 L 659.1111111111111 370"/>
+<circle class="dot1" cx="659.1111111111111" cy="278.30573248407615" r="4.5"/>
+<text class="dim" x="649.1111111111111" y="266.30573248407615" text-anchor="end">第 14 步：回拷第一次改变模型权重</text>
+<path class="gl" d="M 208 386 L 788 386"/>
+<text class="sm" x="208" y="404" text-anchor="middle">0</text>
+<text class="sm" x="304.66666666666663" y="404" text-anchor="middle">3</text>
+<text class="sm" x="401.3333333333333" y="404" text-anchor="middle">6</text>
+<text class="sm" x="498" y="404" text-anchor="middle">9</text>
+<text class="sm" x="594.6666666666666" y="404" text-anchor="middle">12</text>
+<text class="sm" x="691.3333333333334" y="404" text-anchor="middle">15</text>
+<text class="sm" x="788" y="404" text-anchor="middle">18</text>
+<text class="rank" x="498" y="424" text-anchor="middle">optimizer step</text>
+<path class="plotflat" d="M 208 444 L 242 444"/>
+<text class="sm" x="252" y="448" text-anchor="start">bf16 master：w ← bf16(w + Δ)</text>
+<path class="plotline" d="M 208 463 L 242 463"/>
+<text class="sm" x="252" y="467" text-anchor="start">fp32 master：m ← fp32(m + Δ)</text>
+<path class="plotstep" d="M 208 482 L 242 482"/>
+<text class="sm" x="252" y="486" text-anchor="start">模型权重 = bf16(m)，每步回拷</text>
+<rect class="neutral" x="820" y="92" width="424" height="156" rx="8"/>
+<text class="tx" x="832" y="113" text-anchor="start">决定这张图的两个数</text>
+<path class="edge" d="M 832 121 L 1232 121"/>
+<text class="sm" x="832" y="139" text-anchor="start">bf16 在 w₀ 附近的 ulp = 2⁻⁷ = 7.813e−3</text>
+<text class="sm" x="832" y="155" text-anchor="start">fp32 在 w₀ 附近的 ulp = 2⁻²³ = 1.192e−7</text>
+<text class="sm" x="832" y="171" text-anchor="start">一步更新 Δ = 3.0e−4，只有 bf16 ulp 的 0.0384 倍</text>
+<text class="sm" x="832" y="187" text-anchor="start">所以 bf16(w₀+Δ) 舍回 w₀：加法整个丢失，训练停滞</text>
+<text class="sm" x="832" y="203" text-anchor="start">fp32 里 Δ 是 ulp 的 2,517 倍，逐步累积</text>
+<rect class="acc1" x="820" y="264" width="424" height="186" rx="8"/>
+<text class="tx" x="832" y="285" text-anchor="start">master 换来的是「累积」，不是「精度」</text>
+<path class="edge" d="M 832 293 L 1232 293"/>
+<text class="sm" x="832" y="311" text-anchor="start">模型权重仍然是 bf16，前反向也仍然在 bf16 上做。</text>
+<text class="sm" x="832" y="327" text-anchor="start">fp32 master 唯一改变的是：更新累积在一个 ulp 小 65,536 倍</text>
+<text class="sm" x="832" y="343" text-anchor="start">的副本上，跨过半个 bf16 ulp 后才回写一次可见的变化。</text>
+<text class="sm" x="832" y="359" text-anchor="start">代价：master + m + v 三份 fp32，共 12 bytes/param（图 3）。</text>
+<text class="sm" x="832" y="375" text-anchor="start">收益边界：Δ 若本来就大于 ½ bf16 ulp，这条链不产生差别；</text>
+<text class="sm" x="832" y="391" text-anchor="start">训练中后期 lr 衰减、更新变小，master 才真正开始决定收敛。</text>
+</svg>

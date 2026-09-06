@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 442" width="1272" height="442" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .plotline{fill:none;stroke:#2563EB;stroke-width:2.2}
+  .plotflat{fill:none;stroke:#C3651F;stroke-width:2.2}
+  .plotstep{fill:none;stroke:#5B6470;stroke-width:2;stroke-dasharray:6 4}
+  .refline{fill:none;stroke:#C8CFDA;stroke-width:1;stroke-dasharray:3 4}
+  .dot1{fill:#2563EB}
+  .dot2{fill:#C3651F}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 3　18 bytes/param 从哪来：四条 wrapper 各自持有哪几段</text>
+<text class="su" x="28" y="52" text-anchor="start">横轴是每个参数的常驻字节数，等比刻度到 18 B；蓝段归优化器，灰段归模型与 DDP buffer</text>
+<path class="refline" d="M 280 94 L 280 316"/>
+<text class="sm" x="280" y="88" text-anchor="middle">0</text>
+<path class="refline" d="M 337.3333333333333 94 L 337.3333333333333 316"/>
+<text class="sm" x="337.3333333333333" y="88" text-anchor="middle">2</text>
+<path class="refline" d="M 394.66666666666663 94 L 394.66666666666663 316"/>
+<text class="sm" x="394.66666666666663" y="88" text-anchor="middle">4</text>
+<path class="refline" d="M 452 94 L 452 316"/>
+<text class="sm" x="452" y="88" text-anchor="middle">6</text>
+<path class="refline" d="M 509.3333333333333 94 L 509.3333333333333 316"/>
+<text class="sm" x="509.3333333333333" y="88" text-anchor="middle">8</text>
+<path class="refline" d="M 566.6666666666667 94 L 566.6666666666667 316"/>
+<text class="sm" x="566.6666666666667" y="88" text-anchor="middle">10</text>
+<path class="refline" d="M 624 94 L 624 316"/>
+<text class="sm" x="624" y="88" text-anchor="middle">12</text>
+<path class="refline" d="M 681.3333333333333 94 L 681.3333333333333 316"/>
+<text class="sm" x="681.3333333333333" y="88" text-anchor="middle">14</text>
+<path class="refline" d="M 738.6666666666666 94 L 738.6666666666666 316"/>
+<text class="sm" x="738.6666666666666" y="88" text-anchor="middle">16</text>
+<path class="refline" d="M 796 94 L 796 316"/>
+<text class="sm" x="796" y="88" text-anchor="middle">18</text>
+<text class="rank" x="538" y="68" text-anchor="middle">bytes / param</text>
+<text class="tx" x="28" y="122" text-anchor="start">Float16OptimizerWithFloat16Params</text>
+<text class="sm" x="28" y="138" text-anchor="start">bf16 训练基准</text>
+<rect class="neutral" x="280" y="108" width="57.33333333333333" height="30" rx="4"/>
+<text class="sm" x="308.6666666666667" y="152" text-anchor="middle">权重 bf16</text>
+<rect class="neutral" x="337.3333333333333" y="108" width="114.66666666666666" height="30" rx="4"/>
+<text class="sm" x="394.66666666666663" y="128" text-anchor="middle">梯度 fp32</text>
+<rect class="acc1" x="452" y="108" width="114.66666666666666" height="30" rx="4"/>
+<text class="sm" x="509.3333333333333" y="128" text-anchor="middle">master fp32</text>
+<rect class="acc1" x="566.6666666666667" y="108" width="114.66666666666666" height="30" rx="4"/>
+<text class="sm" x="624.0000000000001" y="128" text-anchor="middle">m fp32</text>
+<rect class="acc1" x="681.3333333333333" y="108" width="114.66666666666666" height="30" rx="4"/>
+<text class="sm" x="738.6666666666666" y="128" text-anchor="middle">v fp32</text>
+<text class="dim" x="806" y="128" text-anchor="start">合计 18 B</text>
+<text class="sm" x="900" y="122" text-anchor="start">grad-stats 规约组</text>
+<text class="dim" x="900" y="138" text-anchor="start">model_parallel_group</text>
+<text class="tx" x="28" y="176" text-anchor="start">同上 + --grad-reduce-in-bf16</text>
+<text class="sm" x="28" y="192" text-anchor="start">梯度降到 bf16</text>
+<rect class="neutral" x="280" y="162" width="57.33333333333333" height="30" rx="4"/>
+<text class="sm" x="308.6666666666667" y="206" text-anchor="middle">权重 bf16</text>
+<rect class="acc2" x="337.3333333333333" y="162" width="57.33333333333333" height="30" rx="4"/>
+<text class="sm" x="366" y="206" text-anchor="middle">梯度 bf16</text>
+<rect class="acc1" x="394.66666666666663" y="162" width="114.66666666666666" height="30" rx="4"/>
+<text class="sm" x="451.99999999999994" y="182" text-anchor="middle">master fp32</text>
+<rect class="acc1" x="509.3333333333333" y="162" width="114.66666666666666" height="30" rx="4"/>
+<text class="sm" x="566.6666666666666" y="182" text-anchor="middle">m fp32</text>
+<rect class="acc1" x="624" y="162" width="114.66666666666666" height="30" rx="4"/>
+<text class="sm" x="681.3333333333334" y="182" text-anchor="middle">v fp32</text>
+<text class="dim" x="748.6666666666666" y="182" text-anchor="start">合计 16 B</text>
+<text class="sm" x="900" y="176" text-anchor="start">grad-stats 规约组</text>
+<text class="dim" x="900" y="192" text-anchor="start">model_parallel_group</text>
+<text class="tx" x="28" y="230" text-anchor="start">DistributedOptimizer</text>
+<text class="sm" x="28" y="246" text-anchor="start">12 字节按 DP=8 切</text>
+<rect class="neutral" x="280" y="216" width="57.33333333333333" height="30" rx="4"/>
+<text class="sm" x="308.6666666666667" y="260" text-anchor="middle">权重 bf16</text>
+<rect class="neutral" x="337.3333333333333" y="216" width="114.66666666666666" height="30" rx="4"/>
+<text class="sm" x="394.66666666666663" y="236" text-anchor="middle">梯度 fp32</text>
+<rect class="acc1" x="452" y="216" width="43" height="30" rx="4"/>
+<text class="sm" x="473.5" y="260" text-anchor="middle">(master+m+v)/dp</text>
+<text class="dim" x="505" y="236" text-anchor="start">合计 7.5 B</text>
+<text class="sm" x="900" y="230" text-anchor="start">grad-stats 规约组</text>
+<text class="dim" x="900" y="246" text-anchor="start">intra_dist_opt_group</text>
+<text class="tx" x="28" y="284" text-anchor="start">FP32Optimizer</text>
+<text class="sm" x="28" y="300" text-anchor="start">模型本身就是 fp32</text>
+<rect class="neutral" x="280" y="270" width="114.66666666666666" height="30" rx="4"/>
+<text class="sm" x="337.3333333333333" y="290" text-anchor="middle">权重 fp32</text>
+<rect class="neutral" x="394.66666666666663" y="270" width="114.66666666666666" height="30" rx="4"/>
+<text class="sm" x="451.99999999999994" y="290" text-anchor="middle">梯度 fp32</text>
+<rect class="acc1" x="509.3333333333333" y="270" width="114.66666666666666" height="30" rx="4"/>
+<text class="sm" x="566.6666666666666" y="290" text-anchor="middle">m fp32</text>
+<rect class="acc1" x="624" y="270" width="114.66666666666666" height="30" rx="4"/>
+<text class="sm" x="681.3333333333334" y="290" text-anchor="middle">v fp32</text>
+<text class="dim" x="748.6666666666666" y="290" text-anchor="start">合计 16 B</text>
+<text class="sm" x="900" y="284" text-anchor="start">grad-stats 规约组</text>
+<text class="dim" x="900" y="300" text-anchor="start">model_parallel_group</text>
+<rect class="ghost" x="28" y="336" width="600" height="100" rx="8"/>
+<text class="tx" x="40" y="357" text-anchor="start">这张图不覆盖的三段</text>
+<path class="edge" d="M 40 365 L 616 365"/>
+<text class="sm" x="40" y="383" text-anchor="start">激活与重计算、DDP bucket 的通信暂存、TE 的 user buffer 都不在其中。</text>
+<text class="sm" x="40" y="399" text-anchor="start">梯度那一段归 DDP grad buffer，不归优化器：bf16 训练默认强制 fp32 累加，</text>
+<text class="sm" x="40" y="415" text-anchor="start">--grad-reduce-in-bf16 才把它降到 2 B，代价是跨 microbatch 累加损精度。</text>
+<rect class="neutral" x="648" y="336" width="624" height="100" rx="8"/>
+<text class="tx" x="660" y="357" text-anchor="start">为什么分片那一行的规约组不一样</text>
+<path class="edge" d="M 660 365 L 1260 365"/>
+<text class="sm" x="660" y="383" text-anchor="start">DistributedOptimizer 把 master/m/v 按 DP range 切开，本 rank 只持有一段；</text>
+<text class="sm" x="660" y="399" text-anchor="start">范数必须覆盖整个分片域，所以工厂注入 intra_dist_opt_group 而不是模型并行组。</text>
+<text class="sm" x="660" y="415" text-anchor="start">非分片 wrapper 的 DP 梯度同步后各 rank 已相同，只需补模型并行方向。</text>
+</svg>
