@@ -1,0 +1,280 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 640" width="1272" height="640" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .s0{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.1}
+  .s1{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.1}
+  .s2{fill:#EAF7EE;stroke:#2E8B57;stroke-width:1.1}
+  .s3{fill:#F3EEFB;stroke:#6D4AAF;stroke-width:1.1}
+  .shared{fill:#EAF1FD;stroke:#2563EB;stroke-width:2.2}
+  .bar{fill:#F4C9A3;stroke:#C3651F;stroke-width:.8}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 3　CUDA graph 尺寸枚举：指数递减用更少的图换「与规模无关」的 padding 上界</text>
+<text class="su" x="28" y="52" text-anchor="start">算例：tp_size=2，decode 图上界 cuda_graph_max_tokens = max_requests × (num_speculative_tokens+1) = 64；每个尺寸各捕获一张 decode-only 图</text>
+<text class="pt" x="28" y="96" text-anchor="start">EXPONENTIAL（默认）：从 max 逐次减半到 tp_size</text>
+<path class="sep" d="M 28 122 L 604 122"/>
+<path class="sep" d="M 46 116 L 46 128"/>
+<text class="dim" x="46" y="112" text-anchor="middle">2</text>
+<path class="sep" d="M 64 116 L 64 128"/>
+<text class="dim" x="64" y="112" text-anchor="middle">4</text>
+<path class="sep" d="M 100 116 L 100 128"/>
+<text class="dim" x="100" y="112" text-anchor="middle">8</text>
+<path class="sep" d="M 172 116 L 172 128"/>
+<text class="dim" x="172" y="112" text-anchor="middle">16</text>
+<path class="sep" d="M 316 116 L 316 128"/>
+<text class="dim" x="316" y="112" text-anchor="middle">32</text>
+<path class="sep" d="M 604 116 L 604 128"/>
+<text class="dim" x="604" y="112" text-anchor="middle">64</text>
+<text class="sm" x="28" y="142" text-anchor="start">真实 batch n 与它被 padding 到的图（柱高 = 多算的 token）</text>
+<rect class="bar" x="28.5" y="258.5" width="8.0" height="3.5"/>
+<rect class="bar" x="46.5" y="258.5" width="8.0" height="3.5"/>
+<rect class="bar" x="64.5" y="251.4" width="8.0" height="10.6"/>
+<rect class="bar" x="73.5" y="254.9" width="8.0" height="7.1"/>
+<rect class="bar" x="82.5" y="258.5" width="8.0" height="3.5"/>
+<rect class="bar" x="100.5" y="237.2" width="8.0" height="24.8"/>
+<rect class="bar" x="109.5" y="240.7" width="8.0" height="21.3"/>
+<rect class="bar" x="118.5" y="244.3" width="8.0" height="17.7"/>
+<rect class="bar" x="127.5" y="247.8" width="8.0" height="14.2"/>
+<rect class="bar" x="136.5" y="251.4" width="8.0" height="10.6"/>
+<rect class="bar" x="145.5" y="254.9" width="8.0" height="7.1"/>
+<rect class="bar" x="154.5" y="258.5" width="8.0" height="3.5"/>
+<rect class="bar" x="172.5" y="208.8" width="8.0" height="53.2"/>
+<rect class="bar" x="181.5" y="212.3" width="8.0" height="49.7"/>
+<rect class="bar" x="190.5" y="215.9" width="8.0" height="46.1"/>
+<rect class="bar" x="199.5" y="219.4" width="8.0" height="42.6"/>
+<rect class="bar" x="208.5" y="223.0" width="8.0" height="39.0"/>
+<rect class="bar" x="217.5" y="226.5" width="8.0" height="35.5"/>
+<rect class="bar" x="226.5" y="230.1" width="8.0" height="31.9"/>
+<rect class="bar" x="235.5" y="233.6" width="8.0" height="28.4"/>
+<rect class="bar" x="244.5" y="237.2" width="8.0" height="24.8"/>
+<rect class="bar" x="253.5" y="240.7" width="8.0" height="21.3"/>
+<rect class="bar" x="262.5" y="244.3" width="8.0" height="17.7"/>
+<rect class="bar" x="271.5" y="247.8" width="8.0" height="14.2"/>
+<rect class="bar" x="280.5" y="251.4" width="8.0" height="10.6"/>
+<rect class="bar" x="289.5" y="254.9" width="8.0" height="7.1"/>
+<rect class="bar" x="298.5" y="258.5" width="8.0" height="3.5"/>
+<rect class="bar" x="316.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="325.5" y="155.5" width="8.0" height="106.5"/>
+<rect class="bar" x="334.5" y="159.1" width="8.0" height="102.9"/>
+<rect class="bar" x="343.5" y="162.6" width="8.0" height="99.4"/>
+<rect class="bar" x="352.5" y="166.2" width="8.0" height="95.8"/>
+<rect class="bar" x="361.5" y="169.7" width="8.0" height="92.3"/>
+<rect class="bar" x="370.5" y="173.3" width="8.0" height="88.7"/>
+<rect class="bar" x="379.5" y="176.8" width="8.0" height="85.2"/>
+<rect class="bar" x="388.5" y="180.4" width="8.0" height="81.6"/>
+<rect class="bar" x="397.5" y="183.9" width="8.0" height="78.1"/>
+<rect class="bar" x="406.5" y="187.5" width="8.0" height="74.5"/>
+<rect class="bar" x="415.5" y="191.0" width="8.0" height="71.0"/>
+<rect class="bar" x="424.5" y="194.6" width="8.0" height="67.4"/>
+<rect class="bar" x="433.5" y="198.1" width="8.0" height="63.9"/>
+<rect class="bar" x="442.5" y="201.7" width="8.0" height="60.3"/>
+<rect class="bar" x="451.5" y="205.2" width="8.0" height="56.8"/>
+<rect class="bar" x="460.5" y="208.8" width="8.0" height="53.2"/>
+<rect class="bar" x="469.5" y="212.3" width="8.0" height="49.7"/>
+<rect class="bar" x="478.5" y="215.9" width="8.0" height="46.1"/>
+<rect class="bar" x="487.5" y="219.4" width="8.0" height="42.6"/>
+<rect class="bar" x="496.5" y="223.0" width="8.0" height="39.0"/>
+<rect class="bar" x="505.5" y="226.5" width="8.0" height="35.5"/>
+<rect class="bar" x="514.5" y="230.1" width="8.0" height="31.9"/>
+<rect class="bar" x="523.5" y="233.6" width="8.0" height="28.4"/>
+<rect class="bar" x="532.5" y="237.2" width="8.0" height="24.8"/>
+<rect class="bar" x="541.5" y="240.7" width="8.0" height="21.3"/>
+<rect class="bar" x="550.5" y="244.3" width="8.0" height="17.7"/>
+<rect class="bar" x="559.5" y="247.8" width="8.0" height="14.2"/>
+<rect class="bar" x="568.5" y="251.4" width="8.0" height="10.6"/>
+<rect class="bar" x="577.5" y="254.9" width="8.0" height="7.1"/>
+<rect class="bar" x="586.5" y="258.5" width="8.0" height="3.5"/>
+<path class="gl" d="M 28 262 L 604 262"/>
+<text class="sm" x="32.5" y="276" text-anchor="middle">n=1</text>
+<text class="sm" x="167.5" y="276" text-anchor="middle">n=16</text>
+<text class="sm" x="311.5" y="276" text-anchor="middle">n=32</text>
+<text class="sm" x="455.5" y="276" text-anchor="middle">n=48</text>
+<text class="sm" x="599.5" y="276" text-anchor="middle">n=64</text>
+<text class="costtx" x="604" y="148" text-anchor="end">最高柱 = 31 token</text>
+<rect class="acc1" x="28" y="296" width="576" height="118" rx="8"/>
+<text class="tx" x="40" y="317" text-anchor="start">EXPONENTIAL，num_cuda_graphs=16（InferenceSetupConfig 默认）</text>
+<path class="edge" d="M 40 325 L 592 325"/>
+<text class="sm" x="40" y="343" text-anchor="start">枚举尺寸：[64, 32, 16, 8, 4, 2]</text>
+<text class="sm" x="40" y="359" text-anchor="start">图数 6；最坏相对 padding 100%（n=1 被垫到 2）</text>
+<text class="sm" x="40" y="375" text-anchor="start">n=1..64 的平均相对 padding 35%</text>
+<text class="sm" x="40" y="391" text-anchor="start">num_cuda_graphs=-1（自动）时：图数 6，最坏 100%，平均 35%</text>
+<text class="pt" x="656" y="96" text-anchor="start">LINEAR（旧行为）：等步长 max / num_cuda_graphs</text>
+<path class="sep" d="M 656 122 L 1232 122"/>
+<path class="sep" d="M 692 116 L 692 128"/>
+<text class="dim" x="692" y="112" text-anchor="middle">4</text>
+<path class="sep" d="M 728 116 L 728 128"/>
+<text class="dim" x="728" y="112" text-anchor="middle">8</text>
+<path class="sep" d="M 764 116 L 764 128"/>
+<text class="dim" x="764" y="112" text-anchor="middle">12</text>
+<path class="sep" d="M 800 116 L 800 128"/>
+<text class="dim" x="800" y="112" text-anchor="middle">16</text>
+<path class="sep" d="M 836 116 L 836 128"/>
+<text class="dim" x="836" y="112" text-anchor="middle">20</text>
+<path class="sep" d="M 872 116 L 872 128"/>
+<text class="dim" x="872" y="112" text-anchor="middle">24</text>
+<path class="sep" d="M 908 116 L 908 128"/>
+<text class="dim" x="908" y="112" text-anchor="middle">28</text>
+<path class="sep" d="M 944 116 L 944 128"/>
+<text class="dim" x="944" y="112" text-anchor="middle">32</text>
+<path class="sep" d="M 980 116 L 980 128"/>
+<text class="dim" x="980" y="112" text-anchor="middle">36</text>
+<path class="sep" d="M 1016 116 L 1016 128"/>
+<text class="dim" x="1016" y="112" text-anchor="middle">40</text>
+<path class="sep" d="M 1052 116 L 1052 128"/>
+<text class="dim" x="1052" y="112" text-anchor="middle">44</text>
+<path class="sep" d="M 1088 116 L 1088 128"/>
+<text class="dim" x="1088" y="112" text-anchor="middle">48</text>
+<path class="sep" d="M 1124 116 L 1124 128"/>
+<text class="dim" x="1124" y="112" text-anchor="middle">52</text>
+<path class="sep" d="M 1160 116 L 1160 128"/>
+<text class="dim" x="1160" y="112" text-anchor="middle">56</text>
+<path class="sep" d="M 1196 116 L 1196 128"/>
+<text class="dim" x="1196" y="112" text-anchor="middle">60</text>
+<path class="sep" d="M 1232 116 L 1232 128"/>
+<text class="dim" x="1232" y="112" text-anchor="middle">64</text>
+<text class="sm" x="656" y="142" text-anchor="start">真实 batch n 与它被 padding 到的图（柱高 = 多算的 token）</text>
+<rect class="bar" x="656.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="665.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="674.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="692.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="701.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="710.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="728.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="737.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="746.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="764.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="773.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="782.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="800.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="809.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="818.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="836.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="845.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="854.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="872.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="881.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="890.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="908.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="917.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="926.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="944.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="953.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="962.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="980.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="989.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="998.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="1016.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="1025.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="1034.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="1052.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="1061.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="1070.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="1088.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="1097.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="1106.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="1124.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="1133.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="1142.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="1160.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="1169.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="1178.5" y="225.3" width="8.0" height="36.7"/>
+<rect class="bar" x="1196.5" y="152.0" width="8.0" height="110.0"/>
+<rect class="bar" x="1205.5" y="188.7" width="8.0" height="73.3"/>
+<rect class="bar" x="1214.5" y="225.3" width="8.0" height="36.7"/>
+<path class="gl" d="M 656 262 L 1232 262"/>
+<text class="sm" x="660.5" y="276" text-anchor="middle">n=1</text>
+<text class="sm" x="795.5" y="276" text-anchor="middle">n=16</text>
+<text class="sm" x="939.5" y="276" text-anchor="middle">n=32</text>
+<text class="sm" x="1083.5" y="276" text-anchor="middle">n=48</text>
+<text class="sm" x="1227.5" y="276" text-anchor="middle">n=64</text>
+<text class="costtx" x="1232" y="148" text-anchor="end">最高柱 = 3 token</text>
+<rect class="neutral" x="656" y="296" width="576" height="118" rx="8"/>
+<text class="tx" x="668" y="317" text-anchor="start">LINEAR，num_cuda_graphs=16（InferenceSetupConfig 默认）</text>
+<path class="edge" d="M 668 325 L 1220 325"/>
+<text class="sm" x="668" y="343" text-anchor="start">枚举尺寸：[64, 60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 20, 16, 12, 8, 4]</text>
+<text class="sm" x="668" y="359" text-anchor="start">图数 16；最坏相对 padding 300%（n=1 被垫到 4）</text>
+<text class="sm" x="668" y="375" text-anchor="start">n=1..64 的平均相对 padding 13%</text>
+<text class="sm" x="668" y="391" text-anchor="start">num_cuda_graphs=-1（自动）时：图数 10，最坏 100%，平均 16%</text>
+<text class="pt" x="28" y="444" text-anchor="start">同样 num_cuda_graphs=16，把上界放大到 1024（max_requests=1024）</text>
+<text class="dim" x="28" y="474" text-anchor="start">EXPONENTIAL：10 张图，最坏 100%（n=1→2），平均 38%</text>
+<path class="sep" d="M 340 472 L 1244 472"/>
+<path class="sep" d="M 341.765625 466 L 341.765625 478"/>
+<text class="dim" x="341.765625" y="462" text-anchor="middle">2</text>
+<path class="sep" d="M 343.53125 466 L 343.53125 478"/>
+<path class="sep" d="M 347.0625 466 L 347.0625 478"/>
+<path class="sep" d="M 354.125 466 L 354.125 478"/>
+<path class="sep" d="M 368.25 466 L 368.25 478"/>
+<text class="dim" x="368.25" y="462" text-anchor="middle">32</text>
+<path class="sep" d="M 396.5 466 L 396.5 478"/>
+<text class="dim" x="396.5" y="462" text-anchor="middle">64</text>
+<path class="sep" d="M 453 466 L 453 478"/>
+<text class="dim" x="453" y="462" text-anchor="middle">128</text>
+<path class="sep" d="M 566 466 L 566 478"/>
+<text class="dim" x="566" y="462" text-anchor="middle">256</text>
+<path class="sep" d="M 792 466 L 792 478"/>
+<text class="dim" x="792" y="462" text-anchor="middle">512</text>
+<path class="sep" d="M 1244 466 L 1244 478"/>
+<text class="dim" x="1244" y="462" text-anchor="middle">1024</text>
+<text class="costtx" x="28" y="506" text-anchor="start">LINEAR：16 张图，最坏 6300%（n=1→64），平均 32%</text>
+<path class="sep" d="M 340 504 L 1244 504"/>
+<path class="sep" d="M 396.5 498 L 396.5 510"/>
+<text class="dim" x="396.5" y="494" text-anchor="middle">64</text>
+<path class="sep" d="M 453 498 L 453 510"/>
+<text class="dim" x="453" y="494" text-anchor="middle">128</text>
+<path class="sep" d="M 509.5 498 L 509.5 510"/>
+<text class="dim" x="509.5" y="494" text-anchor="middle">192</text>
+<path class="sep" d="M 566 498 L 566 510"/>
+<text class="dim" x="566" y="494" text-anchor="middle">256</text>
+<path class="sep" d="M 622.5 498 L 622.5 510"/>
+<text class="dim" x="622.5" y="494" text-anchor="middle">320</text>
+<path class="sep" d="M 679 498 L 679 510"/>
+<text class="dim" x="679" y="494" text-anchor="middle">384</text>
+<path class="sep" d="M 735.5 498 L 735.5 510"/>
+<text class="dim" x="735.5" y="494" text-anchor="middle">448</text>
+<path class="sep" d="M 792 498 L 792 510"/>
+<text class="dim" x="792" y="494" text-anchor="middle">512</text>
+<path class="sep" d="M 848.5 498 L 848.5 510"/>
+<text class="dim" x="848.5" y="494" text-anchor="middle">576</text>
+<path class="sep" d="M 905 498 L 905 510"/>
+<text class="dim" x="905" y="494" text-anchor="middle">640</text>
+<path class="sep" d="M 961.5 498 L 961.5 510"/>
+<text class="dim" x="961.5" y="494" text-anchor="middle">704</text>
+<path class="sep" d="M 1018 498 L 1018 510"/>
+<text class="dim" x="1018" y="494" text-anchor="middle">768</text>
+<path class="sep" d="M 1074.5 498 L 1074.5 510"/>
+<text class="dim" x="1074.5" y="494" text-anchor="middle">832</text>
+<path class="sep" d="M 1131 498 L 1131 510"/>
+<text class="dim" x="1131" y="494" text-anchor="middle">896</text>
+<path class="sep" d="M 1187.5 498 L 1187.5 510"/>
+<text class="dim" x="1187.5" y="494" text-anchor="middle">960</text>
+<path class="sep" d="M 1244 498 L 1244 510"/>
+<text class="dim" x="1244" y="494" text-anchor="middle">1024</text>
+<text class="cap" x="28" y="534" text-anchor="start">线性步长 = max / num_cuda_graphs 随上界线性变粗，最小图从 4 变成 64；指数分布永远含 tp_size=2 这一档，最坏比只多算 1 倍</text>
+<text class="cap" x="28" y="552" text-anchor="start">运行时按 match_graph_config 选「token_count ≥ 真实 n」的最小图；两种分布由 batch_dimensions_utils.py 的同一函数枚举，只是 sizing_distribution 不同</text>
+</svg>

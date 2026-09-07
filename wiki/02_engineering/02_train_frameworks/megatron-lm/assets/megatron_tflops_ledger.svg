@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 646" width="1272" height="646" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .curve{fill:none;stroke:#2563EB;stroke-width:2}
+  .trigline{fill:none;stroke:#C3651F;stroke-width:2;stroke-dasharray:7 4}
+  .refline{fill:none;stroke:#C8CFDA;stroke-width:1;stroke-dasharray:3 4}
+  .band{fill:#F5F7FA;stroke:none}
+  .bar1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.2}
+  .bar0{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .bar2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.2}
+  .barg{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dot{fill:#C3651F;stroke:none}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　FLOPs 账本：上报值 = 模型定义性 GEMM 的 FMA 次数 × 2 × 3，只乘两个批级统计量</text>
+<text class="su" x="28" y="52" text-anchor="start">算例：h=512、4 层、8 头、SwiGLU ffn=1536、词表 4096；THD batch 四条真实序列 768/512/384/256 → ΣLᵢ=1,920，ΣLᵢ²=1,064,960</text>
+<rect class="band" x="28" y="68" width="1216" height="26" rx="4"/>
+<text class="rank" x="36" y="85" text-anchor="start">模型定义性 GEMM</text>
+<text class="rank" x="196" y="85" text-anchor="start">每 token / 每对 (query,key) 的形状</text>
+<text class="rank" x="540" y="85" text-anchor="start">×2 FMA ×3 → 每层系数</text>
+<text class="rank" x="704" y="85" text-anchor="start">乘的统计量</text>
+<text class="rank" x="790" y="85" text-anchor="start">dense lane（×4 层后 × 统计量）</text>
+<text class="rank" x="1030" y="85" text-anchor="start">MoE lane</text>
+<rect class="card" x="28" y="90" width="1216" height="40" rx="6"/>
+<text class="tx" x="36" y="110" text-anchor="start">QKV 投影</text>
+<text class="sm" x="196" y="110" text-anchor="start">h × (q+k+v) = 512 × 1536</text>
+<text class="dim" x="564" y="110" text-anchor="start">4,718,592</text>
+<text class="dim" x="704" y="110" text-anchor="start">ΣLᵢ</text>
+<text class="tx" x="790" y="110" text-anchor="start">3.624e10</text>
+<text class="sm" x="1030" y="110" text-anchor="start">同左</text>
+<rect class="card" x="28" y="136" width="1216" height="40" rx="6"/>
+<text class="tx" x="36" y="156" text-anchor="start">输出投影</text>
+<text class="sm" x="196" y="156" text-anchor="start">h × h = 512 × 512</text>
+<text class="dim" x="564" y="156" text-anchor="start">1,572,864</text>
+<text class="dim" x="704" y="156" text-anchor="start">ΣLᵢ</text>
+<text class="tx" x="790" y="156" text-anchor="start">1.208e10</text>
+<text class="sm" x="1030" y="156" text-anchor="start">同左</text>
+<rect class="acc1" x="28" y="182" width="1216" height="40" rx="6"/>
+<text class="tx" x="36" y="202" text-anchor="start">core attn：QKᵀ 与 AV</text>
+<text class="sm" x="196" y="202" text-anchor="start">每对 2 × q_proj = 2 × 512，因果 /2</text>
+<text class="dim" x="564" y="202" text-anchor="start">3,072</text>
+<text class="costtx" x="704" y="202" text-anchor="start">ΣLᵢ²</text>
+<text class="tx" x="790" y="202" text-anchor="start">1.309e10</text>
+<text class="sm" x="1030" y="202" text-anchor="start">同左</text>
+<rect class="card" x="28" y="228" width="1216" height="40" rx="6"/>
+<text class="tx" x="36" y="248" text-anchor="start">FFN（唯一分叉）</text>
+<text class="sm" x="196" y="241" text-anchor="start">dense: h×ffn×3 = 512×1536×3</text>
+<text class="sm" x="196" y="257" text-anchor="start">MoE: h×(moe_ffn×topk+shared)×3 = 512×(512×2+512)×3</text>
+<text class="dim" x="564" y="248" text-anchor="start">14,155,776</text>
+<text class="dim" x="704" y="248" text-anchor="start">ΣLᵢ</text>
+<text class="tx" x="790" y="248" text-anchor="start">1.087e11</text>
+<text class="tx" x="1030" y="248" text-anchor="start">1.087e11</text>
+<rect class="card" x="28" y="274" width="1216" height="40" rx="6"/>
+<text class="tx" x="36" y="294" text-anchor="start">logits</text>
+<text class="sm" x="196" y="294" text-anchor="start">h × vocab = 512 × 4096（只算一次）</text>
+<text class="dim" x="564" y="294" text-anchor="start">12,582,912</text>
+<text class="dim" x="704" y="294" text-anchor="start">ΣLᵢ</text>
+<text class="tx" x="790" y="294" text-anchor="start">2.416e10</text>
+<text class="sm" x="1030" y="294" text-anchor="start">同左</text>
+<path class="gl" d="M 28 330 L 1244 330"/>
+<text class="tx" x="36" y="348" text-anchor="start">token-linear 小计（每 token 系数 × ΣLᵢ）</text>
+<text class="dim" x="420" y="348" text-anchor="start">94,371,840 × 1,920</text>
+<text class="tx" x="790" y="348" text-anchor="start">1.812e11</text>
+<text class="tx" x="1030" y="348" text-anchor="start">1.812e11</text>
+<text class="tx" x="36" y="370" text-anchor="start">core 小计（每对系数 × ΣLᵢ²）</text>
+<text class="costtx" x="420" y="370" text-anchor="start">12,288 × 1,064,960</text>
+<text class="tx" x="790" y="370" text-anchor="start">1.309e10</text>
+<text class="tx" x="1030" y="370" text-anchor="start">1.309e10</text>
+<rect class="acc1" x="28" y="392" width="700" height="58" rx="8"/>
+<text class="tx" x="40" y="414" text-anchor="start">num_floating_point_operations = 194,280,161,280 FLOPs（1.943e11）</text>
+<text class="sm" x="40" y="436" text-anchor="start">dense lane 与 MoE lane 相等：活跃 FFN 宽度都是 512×2+512 = 1536；公式只看活跃宽度，看不见 8 个专家里谁被选中</text>
+<rect class="neutral" x="748" y="386" width="496" height="64" rx="8"/>
+<text class="tx" x="760" y="407" text-anchor="start">日志里的那个数</text>
+<path class="edge" d="M 760 415 L 1232 415"/>
+<text class="sm" x="760" y="433" text-anchor="start">throughput per GPU (TFLOP/s/GPU) = 上报值 / (t_iter × world_size × 10¹²)</text>
+<text class="sm" x="760" y="449" text-anchor="start">本例 core 只占 6.7%：h=512 太小，ΣLᵢ² 项在长上下文才会主导</text>
+<rect class="ghost" x="28" y="466" width="1216" height="44" rx="6"/>
+<text class="sm" x="40" y="484" text-anchor="start">从不计入（源码只数矩阵乘）：LayerNorm / RMSNorm、softmax、激活函数、dropout、router 的 top-k 排序、所有集合通信、重计算再跑的那一遍前向</text>
+<text class="sm" x="40" y="501" text-anchor="start">统计量来源：BSHD 默认 batch×seq 与 batch×seq²（本例 2,048 / 2,097,152）；THD 由 cu_seqlens 累加或 sequence_packing_scheduler 直接给出</text>
+</svg>

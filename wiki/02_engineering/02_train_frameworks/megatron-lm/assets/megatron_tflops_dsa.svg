@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 600" width="1272" height="600" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .curve{fill:none;stroke:#2563EB;stroke-width:2}
+  .trigline{fill:none;stroke:#C3651F;stroke-width:2;stroke-dasharray:7 4}
+  .refline{fill:none;stroke:#C8CFDA;stroke-width:1;stroke-dasharray:3 4}
+  .band{fill:#F5F7FA;stroke:none}
+  .bar1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.2}
+  .bar0{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .bar2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.2}
+  .barg{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .dot{fill:#C3651F;stroke:none}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 3　DSA：稀疏 core 的缩放在长度加权均值处求值；indexer 的打分仍是 L²，只是系数小</text>
+<text class="su" x="28" y="52" text-anchor="start">top-k=256；本例 L̄ = ΣLᵢ²/ΣLᵢ = 1,064,960/1,920 = 554.67；MLA q_lora=128 kv_lora=64 qk=48 rope=16 v=64；indexer 4 头 × 32</text>
+<rect class="panel" x="70" y="100" width="430" height="240" rx="4"/>
+<path class="refline" d="M 70 280 L 500 280"/>
+<text class="sm" x="64" y="284" text-anchor="end">0.25</text>
+<path class="refline" d="M 70 220 L 500 220"/>
+<text class="sm" x="64" y="224" text-anchor="end">0.5</text>
+<path class="refline" d="M 70 160 L 500 160"/>
+<text class="sm" x="64" y="164" text-anchor="end">0.75</text>
+<path class="refline" d="M 70 100 L 500 100"/>
+<text class="sm" x="64" y="104" text-anchor="end">1</text>
+<path class="gl" d="M 70 340 L 70 345"/>
+<text class="sm" x="70" y="358" text-anchor="middle">64</text>
+<path class="gl" d="M 192.85714285714283 340 L 192.85714285714283 345"/>
+<text class="sm" x="192.85714285714283" y="358" text-anchor="middle">256</text>
+<path class="gl" d="M 315.71428571428567 340 L 315.71428571428567 345"/>
+<text class="sm" x="315.71428571428567" y="358" text-anchor="middle">1024</text>
+<path class="gl" d="M 438.57142857142856 340 L 438.57142857142856 345"/>
+<text class="sm" x="438.57142857142856" y="358" text-anchor="middle">4096</text>
+<text class="rank" x="285" y="376" text-anchor="middle">L̄（对数轴）</text>
+<text class="rank" x="70" y="92" text-anchor="start">_dsa_sparse_core_scale(L̄)：稀疏 core 对稠密因果 core 的比</text>
+<rect class="band" x="70" y="100" width="122.9" height="240"/>
+<text class="sm" x="74" y="116" text-anchor="start">L̄ ≤ k=256 → 1.0</text>
+<path class="curve" d="M 70.0 100.0 L 77.7 100.0 L 85.4 100.0 L 93.0 100.0 L 100.7 100.0 L 108.4 100.0 L 116.1 100.0 L 123.8 100.0 L 131.4 100.0 L 139.1 100.0 L 146.8 100.0 L 154.5 100.0 L 162.1 100.0 L 169.8 100.0 L 177.5 100.0 L 185.2 100.0 L 192.9 100.0 L 200.5 101.7 L 208.2 106.1 L 215.9 112.6 L 223.6 120.6 L 231.3 129.7 L 238.9 139.4 L 246.6 149.6 L 254.3 160.0 L 262.0 170.4 L 269.6 180.6 L 277.3 190.6 L 285.0 200.3 L 292.7 209.6 L 300.4 218.5 L 308.0 227.0 L 315.7 235.0 L 323.4 242.6 L 331.1 249.7 L 338.8 256.4 L 346.4 262.6 L 354.1 268.5 L 361.8 274.0 L 369.5 279.0 L 377.1 283.8 L 384.8 288.1 L 392.5 292.2 L 400.2 296.0 L 407.9 299.4 L 415.5 302.7 L 423.2 305.6 L 430.9 308.4 L 438.6 310.9 L 446.3 313.3 L 453.9 315.4 L 461.6 317.4 L 469.3 319.3 L 477.0 320.9 L 484.6 322.5 L 492.3 323.9 L 500.0 325.2"/>
+<circle class="dot" cx="261.4" cy="169.6" r="4"/>
+<text class="costtx" x="269.3793147843675" y="161.58579881656806" text-anchor="start">本例 L̄=554.7 → 0.710</text>
+<circle class="dot" cx="438.6" cy="310.9" r="4"/>
+<text class="costtx" x="430.57142857142856" y="300.9375" text-anchor="end">L̄=4096 → 0.121</text>
+<text class="sm" x="70" y="398" text-anchor="start">每 query 参与的 key：稀疏 e(1−e/2L̄)=196.9，稠密 L̄/2=277.3，e=min(k,⌊L̄⌋)=256</text>
+<rect class="panel" x="580" y="100" width="400" height="240" rx="4"/>
+<text class="rank" x="580" y="92" text-anchor="start">每层 L² 系数（都乘 ΣLᵢ²；含 ×2×3 或 indexer 自己的倍率）</text>
+<rect class="barg" x="592" y="146.22222222222223" width="42.66666666666667" height="177.77777777777777" rx="3"/>
+<text class="dim" x="613.3333333333334" y="140.22222222222223" text-anchor="middle">3,072</text>
+<text class="sm" x="613.3333333333334" y="354" text-anchor="middle">plain MLA</text>
+<text class="sm" x="613.3333333333334" y="367" text-anchor="middle">core</text>
+<rect class="barg" x="658.6666666666666" y="124" width="42.66666666666667" height="200" rx="3"/>
+<text class="dim" x="680" y="118" text-anchor="middle">3,456</text>
+<text class="sm" x="680" y="354" text-anchor="middle">absorbed</text>
+<text class="sm" x="680" y="367" text-anchor="middle">稠密</text>
+<rect class="bar1" x="725.3333333333334" y="181.98816568047337" width="42.66666666666667" height="142.01183431952663" rx="3"/>
+<text class="dim" x="746.6666666666667" y="175.98816568047337" text-anchor="middle">2,454</text>
+<text class="sm" x="746.6666666666667" y="354" text-anchor="middle">DSA core</text>
+<text class="sm" x="746.6666666666667" y="367" text-anchor="middle">L̄=555</text>
+<rect class="bar1" x="792" y="299.78125" width="42.66666666666667" height="24.21875" rx="3"/>
+<text class="dim" x="813.3333333333334" y="293.78125" text-anchor="middle">419</text>
+<text class="sm" x="813.3333333333334" y="354" text-anchor="middle">DSA core</text>
+<text class="sm" x="813.3333333333334" y="367" text-anchor="middle">L̄=4096</text>
+<rect class="bar2" x="858.6666666666667" y="316.5925925925926" width="42.66666666666667" height="7.4074074074074066" rx="3"/>
+<text class="dim" x="880.0000000000001" y="310.5925925925926" text-anchor="middle">128</text>
+<text class="sm" x="880.0000000000001" y="354" text-anchor="middle">indexer</text>
+<text class="sm" x="880.0000000000001" y="367" text-anchor="middle">打分 1×</text>
+<rect class="bar2" x="925.3333333333334" y="301.77777777777777" width="42.66666666666667" height="22.22222222222222" rx="3"/>
+<text class="dim" x="946.6666666666667" y="295.77777777777777" text-anchor="middle">384</text>
+<text class="sm" x="946.6666666666667" y="354" text-anchor="middle">indexer</text>
+<text class="sm" x="946.6666666666667" y="367" text-anchor="middle">打分 3×</text>
+<text class="costtx" x="580" y="398" text-anchor="start">阶数没降：打分每对 n×d/2 = 4×32/2，仍乘 ΣLᵢ²；降的只是系数</text>
+<rect class="neutral" x="1010" y="100" width="234" height="240" rx="8"/>
+<text class="tx" x="1022" y="121" text-anchor="start">谁付 indexer 的钱</text>
+<path class="edge" d="M 1022 129 L 1232 129"/>
+<text class="sm" x="1022" y="146" text-anchor="start">8 层，freq=4，offset=1</text>
+<rect class="acc1" x="1024" y="158" width="22.25" height="28" rx="3"/>
+<text class="dim" x="1035.125" y="176" text-anchor="middle">1</text>
+<rect class="ghost" x="1050.25" y="158" width="22.25" height="28" rx="3"/>
+<text class="sm" x="1061.375" y="176" text-anchor="middle">2</text>
+<rect class="ghost" x="1076.5" y="158" width="22.25" height="28" rx="3"/>
+<text class="sm" x="1087.625" y="176" text-anchor="middle">3</text>
+<rect class="ghost" x="1102.75" y="158" width="22.25" height="28" rx="3"/>
+<text class="sm" x="1113.875" y="176" text-anchor="middle">4</text>
+<rect class="acc1" x="1129" y="158" width="22.25" height="28" rx="3"/>
+<text class="dim" x="1140.125" y="176" text-anchor="middle">5</text>
+<rect class="ghost" x="1155.25" y="158" width="22.25" height="28" rx="3"/>
+<text class="sm" x="1166.375" y="176" text-anchor="middle">6</text>
+<rect class="ghost" x="1181.5" y="158" width="22.25" height="28" rx="3"/>
+<text class="sm" x="1192.625" y="176" text-anchor="middle">7</text>
+<rect class="ghost" x="1207.75" y="158" width="22.25" height="28" rx="3"/>
+<text class="sm" x="1218.875" y="176" text-anchor="middle">8</text>
+<text class="dim" x="1022" y="208" text-anchor="start">付费层：1、5 → 2 层</text>
+<text class="sm" x="1022" y="224" text-anchor="start">判据：is_dsa_skip_topk_layer</text>
+<text class="sm" x="1022" y="240" text-anchor="start">(max(l−off,0) % freq) ≠ 0 即复用</text>
+<text class="sm" x="1022" y="256" text-anchor="start">其余层复用最近一次 top-k</text>
+<text class="sm" x="1022" y="272" text-anchor="start">MTP 层编号 layer+num_layers，</text>
+<text class="sm" x="1022" y="288" text-anchor="start">落在同一 1..num_layers 区间内</text>
+<text class="sm" x="1022" y="304" text-anchor="start">本例整批：3.336e11</text>
+<rect class="acc2" x="28" y="420" width="400" height="150" rx="8"/>
+<text class="tx" x="40" y="441" text-anchor="start">indexer 不吃全局 3×</text>
+<path class="edge" d="M 40 449 L 416 449"/>
+<text class="sm" x="40" y="467" text-anchor="start">loss 关（默认 None）：投影 1×，打分 1×</text>
+<text class="sm" x="40" y="483" text-anchor="start">loss 开（coeff&gt;0）：投影 2× = fwd+wgrad，打分 3× = fwd+dq+dk</text>
+<text class="sm" x="40" y="499" text-anchor="start">本例每层投影 69,632 → 139,264</text>
+<text class="sm" x="40" y="515" text-anchor="start">本例每对打分 128 → 384</text>
+<text class="sm" x="40" y="531" text-anchor="start">整批：关 1.671e11 → 开 1.687e11</text>
+<text class="sm" x="40" y="547" text-anchor="start">依据：x/qr 先 detach，整段包在 no_grad 或 enable_grad 里</text>
+<rect class="neutral" x="448" y="420" width="400" height="150" rx="8"/>
+<text class="tx" x="460" y="441" text-anchor="start">近似的三条边界（源码 docstring 自述）</text>
+<path class="edge" d="M 460 449 L 836 449"/>
+<text class="sm" x="460" y="467" text-anchor="start">等长 batch 下精确：L̄ 就是真实长度</text>
+<text class="sm" x="460" y="483" text-anchor="start">（打包 THD 基准测试的常见情形）</text>
+<text class="sm" x="460" y="499" text-anchor="start">ragged batch 偏向长序列：L̄ 是长度加权均值，</text>
+<text class="sm" x="460" y="515" text-anchor="start">权重落在支配 attention 代价的长序列上</text>
+<text class="sm" x="460" y="531" text-anchor="start">L̄ ≤ top-k 坍缩为 1.0；离散精确均值的修正项</text>
+<text class="sm" x="460" y="547" text-anchor="start">应是 e−1 而非 e，差 O(1/L)，低于本估计精度</text>
+<rect class="ghost" x="868" y="420" width="376" height="150" rx="8"/>
+<text class="tx" x="880" y="441" text-anchor="start">同一模型三种读法（本例 THD batch）</text>
+<path class="edge" d="M 880 449 L 1232 449"/>
+<text class="sm" x="880" y="467" text-anchor="start">plain MLA 分支（修复前落点）：1.686e11</text>
+<text class="sm" x="880" y="483" text-anchor="start">DSA 分支，loss 开：1.687e11</text>
+<text class="sm" x="880" y="499" text-anchor="start">DSA 分支，loss 关：1.671e11</text>
+<text class="sm" x="880" y="515" text-anchor="start">L=4096 单序列：稀疏 core 只剩稠密的 12.1%，</text>
+<text class="sm" x="880" y="531" text-anchor="start">二次项由 indexer 打分接管</text>
+</svg>

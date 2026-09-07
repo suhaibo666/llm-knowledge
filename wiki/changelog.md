@@ -12,6 +12,12 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-06：Megatron 31–32 按房子形状重组为问题、方案、源码与边界
+
+- [[31_megatron_inference_engine_analysis]] 以「块级 KV cache 上的连续批处理与背压 + `InferenceMode` 一个进程级开关」为主线重写。三张脚本生成图共用一个算例（`block_size_tokens=4`，四条请求 R0(6→3)/R1(10→2)/R2(3→5)/R3(12→2)，12 块的池）：图 1 复刻 `KVBlockAllocator` 的栈式分配、ref 计数与 `ref_zero`/`lru` 两种驱逐，逐步画出块表与第二波的命中差异，并算出按 `max_sequence_length` 预留的 31% 浪费；图 2 把 legacy static 循环、`schedule_non_chunked_prefill`、`schedule_chunked_prefill` 三条调度规则复刻成离散事件仿真（11/9/6 步，空转 11/33、15/27、4/18 槽·步，R3 分别在 s10/s8/s4 进入）；图 3 复刻 `CUDAGraphBatchDimensionBuilder` 的两种尺寸枚举，指数分布用 6 张图把最坏 padding 钉在 100%，线性分布上界放到 1024 时最坏涨到 6300%。五处按基线更正旧稿：legacy static 引擎不是「padding 到最长再一次 prefill」，而是先 prefill 到批内最短 prompt、再整批每步推进一个位置；`Scheduler` 三池与 `AsyncStream` 只由 legacy static 路径构造，动态引擎用 FIFO deque + futures；`sampling_backend='flashinfer'` 缺包时代码抛 `ImportError`，与 docstring 说的「回退 torch 并告警」不一致；`max_tokens_to_oom` 在基线下无消费者；`TransformerConfig` 按基线重数为 277 项。旧稿的 `[!update]` 时间线（#4617/#5181/#4775/#4855/#4101/#3509/#4764）全部并入当前基线正文，TRT-LLM 桩在 `ca9edbef9` 被删的事实保留（37、40 号页依赖它）。硬约束表扩到 24 行，每行点名 assert/raise/warning 位置。
+- [[32_megatron_tflops_analysis]] 以「上报值是模型定义性 GEMM 的闭式计数 ×2×3，只乘 $\sum L_i$ 与 $\sum L_i^2$ 两个批级统计量」为主线重写，用 h=512、4 层、SwiGLU 1536、THD 768/512/384/256 一个算例贯穿 dense、THD、MoE、DSA 与 hybrid 五条口径。图 1 是逐 GEMM 的账本（上报 194,280,161,280，旧口径 219,043,332,096）；图 2 给出偏差方向（旧 THD 口径 +12.7%、MoE 丢 20% 路由 token +8.1%、全量重计算 −25%、后两者同发 −19%）；图 3 画 `_dsa_sparse_core_scale` 随长度加权均值的曲线（本例 0.710，L=4096 时 0.121）、各分支每层 $L^2$ 系数与 indexer 的 1×/2×/3× 倍率。JS 复刻与从冻结源码 `ast` 抽出的 Python 函数在 14 组配置上逐位相等。按基线更正三处：`update_seqlen_stats_from_cu_seqlens` 只被 `pretrain_hybrid.py` 调用，标准 GPT 入口下的 THD 打包若无 `sequence_packing_scheduler` 会静默退回 BSHD 闭式默认；`training_log` 除的是当前迭代重新算的 FLOPs 配窗口平均时间，累计的 `since_last_log_event` 只喂 straggler 检测；混合 BSHD/THD rank 会挂死（测试 docstring 自陈）。全部 `path:line` 引用清零，改为 `path::symbol` 阅读路线。
+- 两页新增 6 张 SVG 与 2 套 node 回归（`tools/figs/svg/megatron_inference_engine_figures.mjs`、`megatron_tflops_figures.mjs` 及 `lib/` 下同名测试），测试一律 `readFile` 页面本体。非作者复审：两页 beat2 / hop-walk / delete-code / algorithm-replay 均 pass，抽查锚点 3/3（31：`KVBlockAllocator.__init__`、`DynamicInferenceEngine.schedule_chunked_prefill`、`CUDAGraphBatchDimensionBuilder._calculate_cuda_graph_token_counts`；32：`pretrain_hybrid.py::forward_step` 的接线、`DSAttention.forward` 的 `detach()`/`enable_grad`、hybrid 路径的 DSA 断言与 `TestDSAHelperEdgeCases`），六张图经 Chromium 实渲无裁切。取证用的是钉在 `85902ef5` 的独立 worktree（本机 `Megatron-LM` 检出已领先基线 86 个提交，未移动）。域内 51 + 4 个覆盖清单字段一个不少；本日志一条历史条目里紧跟 32 号页的旧节号改写为「当时的 §…」以清 `stale_section`。源码基线不变。
+
 ## 2026-09-06：Megatron-LM 全域页头统一为四行主题式
 
 - 本域 35 篇内容页的页头此前有七种形状——分析页的 **核心源码 + 中心结论**、quickstart 的 **学习前置 / 回答的问题 / 不覆盖**、参考页的 **维度 / 核心文件**、案例页的 **本页定位 / 先修**、若干页还挂着 **重定基线 / 基线沿革 / 叙事顺序 / 合并来源**。这次按 [[12_megatron_tp_analysis]] 立下的新房子形状统一改写为四行：**源码基线**、**主题**、**适用范围**、**最近更新**。**主题** 按正文小节顺序说明这一页讲什么、核心代码落在哪个目录，不再预演论点；**适用范围** 收成一行「本页管什么、不管的交给谁」。26–30 已在同日前一波换过，本次覆盖其余 29 页。
@@ -287,7 +293,7 @@ All source ingestions and significant wiki updates are logged here.
 **结果：8 个 REJECT，全部已修**。四查中**没有一页**出现"散文离开代码即塌"或"链条断裂需自行 grep"——删码测试与 hop-walk 全域通过。失败集中在两类：
 
 **一、行号漂移（7 处，占 REJECT 的绝大多数）。** 根因高度一致：**页面被局部改写时，重定位只覆盖了被改写的小节**。
-- [[32_megatron_tflops_analysis]] §5/§7/§8 整段停在旧基线（`training.py` 本轮净增 186 行，FLOPs 区整体 +111）；
+- [[32_megatron_tflops_analysis]] 当时的 §5/§7/§8 整段停在旧基线（旧稿节号；该页已于 2026-09-06 重组）（`training.py` 本轮净增 186 行，FLOPs 区整体 +111）；
 - [[10_megatron_model_structure_analysis]] §4.1/§4.2 三处（偏移量各不相同，**不是常量偏移**）；
 - [[28_megatron_training_stability_observability_analysis]] §1.7 的 router.py 三处 + §2.5 一处**逆序区间** `3211–3030`；
 - [[23_megatron_precision_cudagraph_fusion_analysis]] `cuda_graphs.py` 一簇 −4 行，且**页内自相矛盾**（同一符号 §4.2 写 `:247`、§4.3 写 `:251`；`:345` 同时被指给 `_CudagraphGlobalRecord` 与 `fwd_buffer_reuse_ref_count`）；

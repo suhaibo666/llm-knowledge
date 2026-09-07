@@ -46,8 +46,8 @@ title: "Megatron-LM 知识地图"
 | 28 | [[28_megatron_training_stability_observability_analysis]] | 每条判据连同它的失效条件：梯度三闸、尖峰判据、SDC 归因与观测面。 |
 | 29 | [[29_megatron_packed_dataset_dynamic_cp_analysis]] | 一条九步流水线加一个可换的分组步：固定 CP 与按长度定 CP 的同批对照。 |
 | 30 | [[30_megatron_rl_posttraining_consistency_analysis]] | 训推一致性的五条来源与五环收敛，残差交给 importance sampling。 |
-| 31 | [[31_megatron_inference_engine_analysis]] | continuous batching、KV cache、prefix caching 与 chunked prefill。 |
-| 32 | [[32_megatron_tflops_analysis]] | dense/MoE FLOPs、吞吐与 MFU 的统计口径。 |
+| 31 | [[31_megatron_inference_engine_analysis]] | 块级 KV cache 上的连续批处理与背压、`InferenceMode` 单一开关，再到 chunked prefill、prefix caching 与图尺寸枚举。 |
+| 32 | [[32_megatron_tflops_analysis]] | 上报 TFLOPS 是 GEMM 的闭式计数乘两个批级统计量：dense/THD/MoE/DSA 各口径偏向哪边、偏多少。 |
 | 33 | [[33_megatron_rl_runtime_analysis]] | Agent 协议、rollout 粒度、GRPO 与训推态切换。 |
 | 34 | [[34_deepseek_v4_tensor_parallel_analysis]] | DSv4 TP=1 硬边界、duplicated 投影与多 rank 证明义务。 |
 | 35 | [[35_deepseek_v4_context_parallel_analysis]] | DSv4 boundary hidden P2P 与 compressed gather 两阶段案例。 |

@@ -1,0 +1,475 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 876" width="1272" height="876" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .s0{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.1}
+  .s1{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.1}
+  .s2{fill:#EAF7EE;stroke:#2E8B57;stroke-width:1.1}
+  .s3{fill:#F3EEFB;stroke:#6D4AAF;stroke-width:1.1}
+  .shared{fill:#EAF1FD;stroke:#2563EB;stroke-width:2.2}
+  .bar{fill:#F4C9A3;stroke:#C3651F;stroke-width:.8}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　块级 KV cache：块按需分配、共享按 ref 计数、没分出去的块就是浪费</text>
+<text class="su" x="28" y="52" text-anchor="start">算例：block_size_tokens=4，池 total_count=12；R0(6→3) R1(10→2) R2(3→5) R3(12→2) 先后提交两波，R0/R1/R3 共享前 4 个 token，R1/R3 再共享 4 个</text>
+<text class="pt" x="28" y="88" text-anchor="start">ref_zero（默认）：ref 归零立即回池，第二波从 s6 起</text>
+<text class="rank" x="156" y="108" text-anchor="middle">s1</text>
+<text class="rank" x="220" y="108" text-anchor="middle">s2</text>
+<text class="rank" x="284" y="108" text-anchor="middle">s3</text>
+<text class="rank" x="348" y="108" text-anchor="middle">s4</text>
+<text class="rank" x="412" y="108" text-anchor="middle">s5</text>
+<text class="rank" x="476" y="108" text-anchor="middle">s6</text>
+<text class="rank" x="540" y="108" text-anchor="middle">s7</text>
+<text class="rank" x="604" y="108" text-anchor="middle">s8</text>
+<text class="rank" x="668" y="108" text-anchor="middle">s9</text>
+<text class="rank" x="732" y="108" text-anchor="middle">s10</text>
+<text class="sm" x="116" y="132" text-anchor="end">块 0</text>
+<rect class="ghost" x="126" y="118" width="60" height="20" rx="3"/>
+<rect class="ghost" x="190" y="118" width="60" height="20" rx="3"/>
+<rect class="ghost" x="254" y="118" width="60" height="20" rx="3"/>
+<rect class="ghost" x="318" y="118" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="118" width="60" height="20" rx="3"/>
+<rect class="ghost" x="446" y="118" width="60" height="20" rx="3"/>
+<rect class="ghost" x="510" y="118" width="60" height="20" rx="3"/>
+<rect class="ghost" x="574" y="118" width="60" height="20" rx="3"/>
+<rect class="ghost" x="638" y="118" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="118" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="156" text-anchor="end">块 1</text>
+<rect class="ghost" x="126" y="142" width="60" height="20" rx="3"/>
+<rect class="ghost" x="190" y="142" width="60" height="20" rx="3"/>
+<rect class="ghost" x="254" y="142" width="60" height="20" rx="3"/>
+<rect class="ghost" x="318" y="142" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="142" width="60" height="20" rx="3"/>
+<rect class="ghost" x="446" y="142" width="60" height="20" rx="3"/>
+<rect class="ghost" x="510" y="142" width="60" height="20" rx="3"/>
+<rect class="ghost" x="574" y="142" width="60" height="20" rx="3"/>
+<rect class="ghost" x="638" y="142" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="142" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="180" text-anchor="end">块 2</text>
+<rect class="ghost" x="126" y="166" width="60" height="20" rx="3"/>
+<rect class="ghost" x="190" y="166" width="60" height="20" rx="3"/>
+<rect class="ghost" x="254" y="166" width="60" height="20" rx="3"/>
+<rect class="ghost" x="318" y="166" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="166" width="60" height="20" rx="3"/>
+<rect class="ghost" x="446" y="166" width="60" height="20" rx="3"/>
+<rect class="ghost" x="510" y="166" width="60" height="20" rx="3"/>
+<rect class="ghost" x="574" y="166" width="60" height="20" rx="3"/>
+<rect class="ghost" x="638" y="166" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="166" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="204" text-anchor="end">块 3</text>
+<rect class="ghost" x="126" y="190" width="60" height="20" rx="3"/>
+<rect class="ghost" x="190" y="190" width="60" height="20" rx="3"/>
+<rect class="ghost" x="254" y="190" width="60" height="20" rx="3"/>
+<rect class="ghost" x="318" y="190" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="190" width="60" height="20" rx="3"/>
+<rect class="ghost" x="446" y="190" width="60" height="20" rx="3"/>
+<rect class="ghost" x="510" y="190" width="60" height="20" rx="3"/>
+<rect class="ghost" x="574" y="190" width="60" height="20" rx="3"/>
+<rect class="ghost" x="638" y="190" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="190" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="228" text-anchor="end">块 4</text>
+<rect class="ghost" x="126" y="214" width="60" height="20" rx="3"/>
+<rect class="ghost" x="190" y="214" width="60" height="20" rx="3"/>
+<rect class="s3" x="254" y="214" width="60" height="20" rx="3"/>
+<text class="sm" x="284" y="228" text-anchor="middle">R3</text>
+<rect class="ghost" x="318" y="214" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="214" width="60" height="20" rx="3"/>
+<rect class="ghost" x="446" y="214" width="60" height="20" rx="3"/>
+<rect class="s1" x="510" y="214" width="60" height="20" rx="3"/>
+<text class="sm" x="540" y="228" text-anchor="middle">R1</text>
+<rect class="s3" x="574" y="214" width="60" height="20" rx="3"/>
+<text class="sm" x="604" y="228" text-anchor="middle">R3</text>
+<rect class="ghost" x="638" y="214" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="214" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="252" text-anchor="end">块 5</text>
+<rect class="ghost" x="126" y="238" width="60" height="20" rx="3"/>
+<rect class="s2" x="190" y="238" width="60" height="20" rx="3"/>
+<text class="sm" x="220" y="252" text-anchor="middle">R2</text>
+<rect class="s2" x="254" y="238" width="60" height="20" rx="3"/>
+<text class="sm" x="284" y="252" text-anchor="middle">R2</text>
+<rect class="s2" x="318" y="238" width="60" height="20" rx="3"/>
+<text class="sm" x="348" y="252" text-anchor="middle">R2</text>
+<rect class="ghost" x="382" y="238" width="60" height="20" rx="3"/>
+<rect class="s0" x="446" y="238" width="60" height="20" rx="3"/>
+<text class="sm" x="476" y="252" text-anchor="middle">R0</text>
+<rect class="s0" x="510" y="238" width="60" height="20" rx="3"/>
+<text class="sm" x="540" y="252" text-anchor="middle">R0</text>
+<rect class="ghost" x="574" y="238" width="60" height="20" rx="3"/>
+<rect class="ghost" x="638" y="238" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="238" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="276" text-anchor="end">块 6</text>
+<rect class="ghost" x="126" y="262" width="60" height="20" rx="3"/>
+<rect class="s1" x="190" y="262" width="60" height="20" rx="3"/>
+<text class="sm" x="220" y="276" text-anchor="middle">R1</text>
+<rect class="s3" x="254" y="262" width="60" height="20" rx="3"/>
+<text class="sm" x="284" y="276" text-anchor="middle">R3</text>
+<rect class="ghost" x="318" y="262" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="262" width="60" height="20" rx="3"/>
+<rect class="ghost" x="446" y="262" width="60" height="20" rx="3"/>
+<rect class="s1" x="510" y="262" width="60" height="20" rx="3"/>
+<text class="sm" x="540" y="276" text-anchor="middle">R1</text>
+<rect class="s3" x="574" y="262" width="60" height="20" rx="3"/>
+<text class="sm" x="604" y="276" text-anchor="middle">R3</text>
+<rect class="ghost" x="638" y="262" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="262" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="300" text-anchor="end">块 7</text>
+<rect class="ghost" x="126" y="286" width="60" height="20" rx="3"/>
+<rect class="s1" x="190" y="286" width="60" height="20" rx="3"/>
+<text class="sm" x="220" y="300" text-anchor="middle">R1</text>
+<rect class="s3" x="254" y="286" width="60" height="20" rx="3"/>
+<text class="sm" x="284" y="300" text-anchor="middle">R3</text>
+<rect class="ghost" x="318" y="286" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="286" width="60" height="20" rx="3"/>
+<rect class="s2" x="446" y="286" width="60" height="20" rx="3"/>
+<text class="sm" x="476" y="300" text-anchor="middle">R2</text>
+<rect class="s2" x="510" y="286" width="60" height="20" rx="3"/>
+<text class="sm" x="540" y="300" text-anchor="middle">R2</text>
+<rect class="s2" x="574" y="286" width="60" height="20" rx="3"/>
+<text class="sm" x="604" y="300" text-anchor="middle">R2</text>
+<rect class="s2" x="638" y="286" width="60" height="20" rx="3"/>
+<text class="sm" x="668" y="300" text-anchor="middle">R2</text>
+<rect class="ghost" x="702" y="286" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="324" text-anchor="end">块 8</text>
+<rect class="s2" x="126" y="310" width="60" height="20" rx="3"/>
+<text class="sm" x="156" y="324" text-anchor="middle">R2</text>
+<rect class="s2" x="190" y="310" width="60" height="20" rx="3"/>
+<text class="sm" x="220" y="324" text-anchor="middle">R2</text>
+<rect class="s2" x="254" y="310" width="60" height="20" rx="3"/>
+<text class="sm" x="284" y="324" text-anchor="middle">R2</text>
+<rect class="s2" x="318" y="310" width="60" height="20" rx="3"/>
+<text class="sm" x="348" y="324" text-anchor="middle">R2</text>
+<rect class="ghost" x="382" y="310" width="60" height="20" rx="3"/>
+<rect class="s0" x="446" y="310" width="60" height="20" rx="3"/>
+<text class="sm" x="476" y="324" text-anchor="middle">R0</text>
+<rect class="shared" x="510" y="310" width="60" height="20" rx="3"/>
+<text class="dim" x="540" y="324" text-anchor="middle">ref 2</text>
+<rect class="s3" x="574" y="310" width="60" height="20" rx="3"/>
+<text class="sm" x="604" y="324" text-anchor="middle">R3</text>
+<rect class="ghost" x="638" y="310" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="310" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="348" text-anchor="end">块 9</text>
+<rect class="s0" x="126" y="334" width="60" height="20" rx="3"/>
+<text class="sm" x="156" y="348" text-anchor="middle">R0</text>
+<rect class="shared" x="190" y="334" width="60" height="20" rx="3"/>
+<text class="dim" x="220" y="348" text-anchor="middle">ref 2</text>
+<rect class="s3" x="254" y="334" width="60" height="20" rx="3"/>
+<text class="sm" x="284" y="348" text-anchor="middle">R3</text>
+<rect class="ghost" x="318" y="334" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="334" width="60" height="20" rx="3"/>
+<rect class="ghost" x="446" y="334" width="60" height="20" rx="3"/>
+<rect class="s2" x="510" y="334" width="60" height="20" rx="3"/>
+<text class="sm" x="540" y="348" text-anchor="middle">R2</text>
+<rect class="s2" x="574" y="334" width="60" height="20" rx="3"/>
+<text class="sm" x="604" y="348" text-anchor="middle">R2</text>
+<rect class="s2" x="638" y="334" width="60" height="20" rx="3"/>
+<text class="sm" x="668" y="348" text-anchor="middle">R2</text>
+<rect class="ghost" x="702" y="334" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="372" text-anchor="end">块 10</text>
+<rect class="s0" x="126" y="358" width="60" height="20" rx="3"/>
+<text class="sm" x="156" y="372" text-anchor="middle">R0</text>
+<rect class="s0" x="190" y="358" width="60" height="20" rx="3"/>
+<text class="sm" x="220" y="372" text-anchor="middle">R0</text>
+<rect class="ghost" x="254" y="358" width="60" height="20" rx="3"/>
+<rect class="ghost" x="318" y="358" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="358" width="60" height="20" rx="3"/>
+<rect class="ghost" x="446" y="358" width="60" height="20" rx="3"/>
+<rect class="ghost" x="510" y="358" width="60" height="20" rx="3"/>
+<rect class="s3" x="574" y="358" width="60" height="20" rx="3"/>
+<text class="sm" x="604" y="372" text-anchor="middle">R3</text>
+<rect class="ghost" x="638" y="358" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="358" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="396" text-anchor="end">块 11·dummy</text>
+<rect class="ghost" x="126" y="382" width="60" height="20" rx="3"/>
+<text class="sm" x="156" y="396" text-anchor="middle">不分配</text>
+<rect class="ghost" x="190" y="382" width="60" height="20" rx="3"/>
+<rect class="ghost" x="254" y="382" width="60" height="20" rx="3"/>
+<rect class="ghost" x="318" y="382" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="382" width="60" height="20" rx="3"/>
+<rect class="ghost" x="446" y="382" width="60" height="20" rx="3"/>
+<rect class="ghost" x="510" y="382" width="60" height="20" rx="3"/>
+<rect class="ghost" x="574" y="382" width="60" height="20" rx="3"/>
+<rect class="ghost" x="638" y="382" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="382" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="420" text-anchor="end">事件</text>
+<text class="sm" x="156" y="420" text-anchor="middle">+0 2</text>
+<text class="costtx" x="156" y="434" text-anchor="middle">~1 3</text>
+<text class="sm" x="220" y="420" text-anchor="middle">+1</text>
+<text class="costtx" x="220" y="434" text-anchor="middle">~3</text>
+<text class="sm" x="284" y="420" text-anchor="middle">+3</text>
+<text class="costtx" x="284" y="434" text-anchor="middle">−0 1</text>
+<text class="sm" x="348" y="420" text-anchor="middle">−3</text>
+<text class="sm" x="412" y="420" text-anchor="middle">−2</text>
+<text class="sm" x="476" y="420" text-anchor="middle">+0 2</text>
+<text class="costtx" x="476" y="434" text-anchor="middle">~1 3</text>
+<text class="sm" x="540" y="420" text-anchor="middle">+1</text>
+<text class="costtx" x="540" y="434" text-anchor="middle">~3</text>
+<text class="sm" x="604" y="420" text-anchor="middle">+3</text>
+<text class="costtx" x="604" y="434" text-anchor="middle">−0 1</text>
+<text class="sm" x="668" y="420" text-anchor="middle">−3</text>
+<text class="sm" x="732" y="420" text-anchor="middle">−2</text>
+<text class="pt" x="28" y="478" text-anchor="start">lru：ref 归零后留在 hash 表里当 cached，第二波从 s6 起</text>
+<text class="rank" x="156" y="498" text-anchor="middle">s1</text>
+<text class="rank" x="220" y="498" text-anchor="middle">s2</text>
+<text class="rank" x="284" y="498" text-anchor="middle">s3</text>
+<text class="rank" x="348" y="498" text-anchor="middle">s4</text>
+<text class="rank" x="412" y="498" text-anchor="middle">s5</text>
+<text class="rank" x="476" y="498" text-anchor="middle">s6</text>
+<text class="rank" x="540" y="498" text-anchor="middle">s7</text>
+<text class="rank" x="604" y="498" text-anchor="middle">s8</text>
+<text class="rank" x="668" y="498" text-anchor="middle">s9</text>
+<text class="rank" x="732" y="498" text-anchor="middle">s10</text>
+<text class="sm" x="116" y="522" text-anchor="end">块 0</text>
+<rect class="ghost" x="126" y="508" width="60" height="20" rx="3"/>
+<rect class="ghost" x="190" y="508" width="60" height="20" rx="3"/>
+<rect class="ghost" x="254" y="508" width="60" height="20" rx="3"/>
+<rect class="ghost" x="318" y="508" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="508" width="60" height="20" rx="3"/>
+<rect class="ghost" x="446" y="508" width="60" height="20" rx="3"/>
+<rect class="ghost" x="510" y="508" width="60" height="20" rx="3"/>
+<rect class="ghost" x="574" y="508" width="60" height="20" rx="3"/>
+<rect class="ghost" x="638" y="508" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="508" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="546" text-anchor="end">块 1</text>
+<rect class="ghost" x="126" y="532" width="60" height="20" rx="3"/>
+<rect class="ghost" x="190" y="532" width="60" height="20" rx="3"/>
+<rect class="ghost" x="254" y="532" width="60" height="20" rx="3"/>
+<rect class="ghost" x="318" y="532" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="532" width="60" height="20" rx="3"/>
+<rect class="ghost" x="446" y="532" width="60" height="20" rx="3"/>
+<rect class="ghost" x="510" y="532" width="60" height="20" rx="3"/>
+<rect class="ghost" x="574" y="532" width="60" height="20" rx="3"/>
+<rect class="ghost" x="638" y="532" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="532" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="570" text-anchor="end">块 2</text>
+<rect class="ghost" x="126" y="556" width="60" height="20" rx="3"/>
+<rect class="ghost" x="190" y="556" width="60" height="20" rx="3"/>
+<rect class="ghost" x="254" y="556" width="60" height="20" rx="3"/>
+<rect class="ghost" x="318" y="556" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="556" width="60" height="20" rx="3"/>
+<rect class="ghost" x="446" y="556" width="60" height="20" rx="3"/>
+<rect class="ghost" x="510" y="556" width="60" height="20" rx="3"/>
+<rect class="ghost" x="574" y="556" width="60" height="20" rx="3"/>
+<rect class="ghost" x="638" y="556" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="556" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="594" text-anchor="end">块 3</text>
+<rect class="ghost" x="126" y="580" width="60" height="20" rx="3"/>
+<rect class="ghost" x="190" y="580" width="60" height="20" rx="3"/>
+<rect class="ghost" x="254" y="580" width="60" height="20" rx="3"/>
+<rect class="ghost" x="318" y="580" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="580" width="60" height="20" rx="3"/>
+<rect class="ghost" x="446" y="580" width="60" height="20" rx="3"/>
+<rect class="ghost" x="510" y="580" width="60" height="20" rx="3"/>
+<rect class="ghost" x="574" y="580" width="60" height="20" rx="3"/>
+<rect class="ghost" x="638" y="580" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="580" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="618" text-anchor="end">块 4</text>
+<rect class="ghost" x="126" y="604" width="60" height="20" rx="3"/>
+<rect class="ghost" x="190" y="604" width="60" height="20" rx="3"/>
+<rect class="s3" x="254" y="604" width="60" height="20" rx="3"/>
+<text class="sm" x="284" y="618" text-anchor="middle">R3</text>
+<rect class="ghost" x="318" y="604" width="60" height="20" rx="3"/>
+<text class="sm" x="348" y="618" text-anchor="middle">cached</text>
+<rect class="ghost" x="382" y="604" width="60" height="20" rx="3"/>
+<text class="sm" x="412" y="618" text-anchor="middle">cached</text>
+<rect class="s3" x="446" y="604" width="60" height="20" rx="3"/>
+<text class="sm" x="476" y="618" text-anchor="middle">R3</text>
+<rect class="ghost" x="510" y="604" width="60" height="20" rx="3"/>
+<text class="sm" x="540" y="618" text-anchor="middle">cached</text>
+<rect class="ghost" x="574" y="604" width="60" height="20" rx="3"/>
+<text class="sm" x="604" y="618" text-anchor="middle">cached</text>
+<rect class="ghost" x="638" y="604" width="60" height="20" rx="3"/>
+<text class="sm" x="668" y="618" text-anchor="middle">cached</text>
+<rect class="ghost" x="702" y="604" width="60" height="20" rx="3"/>
+<text class="sm" x="732" y="618" text-anchor="middle">cached</text>
+<text class="sm" x="116" y="642" text-anchor="end">块 5</text>
+<rect class="ghost" x="126" y="628" width="60" height="20" rx="3"/>
+<rect class="s2" x="190" y="628" width="60" height="20" rx="3"/>
+<text class="sm" x="220" y="642" text-anchor="middle">R2</text>
+<rect class="s2" x="254" y="628" width="60" height="20" rx="3"/>
+<text class="sm" x="284" y="642" text-anchor="middle">R2</text>
+<rect class="s2" x="318" y="628" width="60" height="20" rx="3"/>
+<text class="sm" x="348" y="642" text-anchor="middle">R2</text>
+<rect class="ghost" x="382" y="628" width="60" height="20" rx="3"/>
+<rect class="s0" x="446" y="628" width="60" height="20" rx="3"/>
+<text class="sm" x="476" y="642" text-anchor="middle">R0</text>
+<rect class="s0" x="510" y="628" width="60" height="20" rx="3"/>
+<text class="sm" x="540" y="642" text-anchor="middle">R0</text>
+<rect class="ghost" x="574" y="628" width="60" height="20" rx="3"/>
+<rect class="ghost" x="638" y="628" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="628" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="666" text-anchor="end">块 6</text>
+<rect class="ghost" x="126" y="652" width="60" height="20" rx="3"/>
+<rect class="s1" x="190" y="652" width="60" height="20" rx="3"/>
+<text class="sm" x="220" y="666" text-anchor="middle">R1</text>
+<rect class="s3" x="254" y="652" width="60" height="20" rx="3"/>
+<text class="sm" x="284" y="666" text-anchor="middle">R3</text>
+<rect class="ghost" x="318" y="652" width="60" height="20" rx="3"/>
+<text class="sm" x="348" y="666" text-anchor="middle">cached</text>
+<rect class="ghost" x="382" y="652" width="60" height="20" rx="3"/>
+<text class="sm" x="412" y="666" text-anchor="middle">cached</text>
+<rect class="shared" x="446" y="652" width="60" height="20" rx="3"/>
+<text class="dim" x="476" y="666" text-anchor="middle">ref 2</text>
+<rect class="ghost" x="510" y="652" width="60" height="20" rx="3"/>
+<text class="sm" x="540" y="666" text-anchor="middle">cached</text>
+<rect class="ghost" x="574" y="652" width="60" height="20" rx="3"/>
+<text class="sm" x="604" y="666" text-anchor="middle">cached</text>
+<rect class="ghost" x="638" y="652" width="60" height="20" rx="3"/>
+<text class="sm" x="668" y="666" text-anchor="middle">cached</text>
+<rect class="ghost" x="702" y="652" width="60" height="20" rx="3"/>
+<text class="sm" x="732" y="666" text-anchor="middle">cached</text>
+<text class="sm" x="116" y="690" text-anchor="end">块 7</text>
+<rect class="ghost" x="126" y="676" width="60" height="20" rx="3"/>
+<rect class="s1" x="190" y="676" width="60" height="20" rx="3"/>
+<text class="sm" x="220" y="690" text-anchor="middle">R1</text>
+<rect class="s3" x="254" y="676" width="60" height="20" rx="3"/>
+<text class="sm" x="284" y="690" text-anchor="middle">R3</text>
+<rect class="ghost" x="318" y="676" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="676" width="60" height="20" rx="3"/>
+<rect class="s2" x="446" y="676" width="60" height="20" rx="3"/>
+<text class="sm" x="476" y="690" text-anchor="middle">R2</text>
+<rect class="s2" x="510" y="676" width="60" height="20" rx="3"/>
+<text class="sm" x="540" y="690" text-anchor="middle">R2</text>
+<rect class="s2" x="574" y="676" width="60" height="20" rx="3"/>
+<text class="sm" x="604" y="690" text-anchor="middle">R2</text>
+<rect class="s2" x="638" y="676" width="60" height="20" rx="3"/>
+<text class="sm" x="668" y="690" text-anchor="middle">R2</text>
+<rect class="ghost" x="702" y="676" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="714" text-anchor="end">块 8</text>
+<rect class="s2" x="126" y="700" width="60" height="20" rx="3"/>
+<text class="sm" x="156" y="714" text-anchor="middle">R2</text>
+<rect class="s2" x="190" y="700" width="60" height="20" rx="3"/>
+<text class="sm" x="220" y="714" text-anchor="middle">R2</text>
+<rect class="s2" x="254" y="700" width="60" height="20" rx="3"/>
+<text class="sm" x="284" y="714" text-anchor="middle">R2</text>
+<rect class="s2" x="318" y="700" width="60" height="20" rx="3"/>
+<text class="sm" x="348" y="714" text-anchor="middle">R2</text>
+<rect class="ghost" x="382" y="700" width="60" height="20" rx="3"/>
+<rect class="s1" x="446" y="700" width="60" height="20" rx="3"/>
+<text class="sm" x="476" y="714" text-anchor="middle">R1</text>
+<rect class="s2" x="510" y="700" width="60" height="20" rx="3"/>
+<text class="sm" x="540" y="714" text-anchor="middle">R2</text>
+<rect class="s2" x="574" y="700" width="60" height="20" rx="3"/>
+<text class="sm" x="604" y="714" text-anchor="middle">R2</text>
+<rect class="s2" x="638" y="700" width="60" height="20" rx="3"/>
+<text class="sm" x="668" y="714" text-anchor="middle">R2</text>
+<rect class="ghost" x="702" y="700" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="738" text-anchor="end">块 9</text>
+<rect class="s0" x="126" y="724" width="60" height="20" rx="3"/>
+<text class="sm" x="156" y="738" text-anchor="middle">R0</text>
+<rect class="shared" x="190" y="724" width="60" height="20" rx="3"/>
+<text class="dim" x="220" y="738" text-anchor="middle">ref 2</text>
+<rect class="s3" x="254" y="724" width="60" height="20" rx="3"/>
+<text class="sm" x="284" y="738" text-anchor="middle">R3</text>
+<rect class="ghost" x="318" y="724" width="60" height="20" rx="3"/>
+<text class="sm" x="348" y="738" text-anchor="middle">cached</text>
+<rect class="ghost" x="382" y="724" width="60" height="20" rx="3"/>
+<text class="sm" x="412" y="738" text-anchor="middle">cached</text>
+<rect class="shared" x="446" y="724" width="60" height="20" rx="3"/>
+<text class="dim" x="476" y="738" text-anchor="middle">ref 3</text>
+<rect class="s0" x="510" y="724" width="60" height="20" rx="3"/>
+<text class="sm" x="540" y="738" text-anchor="middle">R0</text>
+<rect class="ghost" x="574" y="724" width="60" height="20" rx="3"/>
+<text class="sm" x="604" y="738" text-anchor="middle">cached</text>
+<rect class="ghost" x="638" y="724" width="60" height="20" rx="3"/>
+<text class="sm" x="668" y="738" text-anchor="middle">cached</text>
+<rect class="ghost" x="702" y="724" width="60" height="20" rx="3"/>
+<text class="sm" x="732" y="738" text-anchor="middle">cached</text>
+<text class="sm" x="116" y="762" text-anchor="end">块 10</text>
+<rect class="s0" x="126" y="748" width="60" height="20" rx="3"/>
+<text class="sm" x="156" y="762" text-anchor="middle">R0</text>
+<rect class="s0" x="190" y="748" width="60" height="20" rx="3"/>
+<text class="sm" x="220" y="762" text-anchor="middle">R0</text>
+<rect class="ghost" x="254" y="748" width="60" height="20" rx="3"/>
+<rect class="ghost" x="318" y="748" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="748" width="60" height="20" rx="3"/>
+<rect class="s3" x="446" y="748" width="60" height="20" rx="3"/>
+<text class="sm" x="476" y="762" text-anchor="middle">R3</text>
+<rect class="ghost" x="510" y="748" width="60" height="20" rx="3"/>
+<rect class="ghost" x="574" y="748" width="60" height="20" rx="3"/>
+<rect class="ghost" x="638" y="748" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="748" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="786" text-anchor="end">块 11·dummy</text>
+<rect class="ghost" x="126" y="772" width="60" height="20" rx="3"/>
+<text class="sm" x="156" y="786" text-anchor="middle">不分配</text>
+<rect class="ghost" x="190" y="772" width="60" height="20" rx="3"/>
+<rect class="ghost" x="254" y="772" width="60" height="20" rx="3"/>
+<rect class="ghost" x="318" y="772" width="60" height="20" rx="3"/>
+<rect class="ghost" x="382" y="772" width="60" height="20" rx="3"/>
+<rect class="ghost" x="446" y="772" width="60" height="20" rx="3"/>
+<rect class="ghost" x="510" y="772" width="60" height="20" rx="3"/>
+<rect class="ghost" x="574" y="772" width="60" height="20" rx="3"/>
+<rect class="ghost" x="638" y="772" width="60" height="20" rx="3"/>
+<rect class="ghost" x="702" y="772" width="60" height="20" rx="3"/>
+<text class="sm" x="116" y="810" text-anchor="end">事件</text>
+<text class="sm" x="156" y="810" text-anchor="middle">+0 2</text>
+<text class="costtx" x="156" y="824" text-anchor="middle">~1 3</text>
+<text class="sm" x="220" y="810" text-anchor="middle">+1</text>
+<text class="costtx" x="220" y="824" text-anchor="middle">~3</text>
+<text class="sm" x="284" y="810" text-anchor="middle">+3</text>
+<text class="costtx" x="284" y="824" text-anchor="middle">−0 1</text>
+<text class="sm" x="348" y="810" text-anchor="middle">−3</text>
+<text class="sm" x="412" y="810" text-anchor="middle">−2</text>
+<text class="sm" x="476" y="810" text-anchor="middle">+0 1 2 3</text>
+<text class="sm" x="540" y="810" text-anchor="middle">−1 3</text>
+<text class="sm" x="604" y="810" text-anchor="middle">−0</text>
+<text class="sm" x="732" y="810" text-anchor="middle">−2</text>
+<text class="cap" x="28" y="860" text-anchor="start">事件行只写请求编号：+ 进入 context　~ 前缀正由同批请求计算、推迟一步　− 完成并释放；ref n = 被 n 条请求共享</text>
+<rect class="neutral" x="792" y="96" width="452" height="150" rx="8"/>
+<text class="tx" x="804" y="117" text-anchor="start">池的不变量（KVBlockAllocator.__init__）</text>
+<path class="edge" d="M 804 125 L 1232 125"/>
+<text class="sm" x="804" y="143" text-anchor="start">total_count=12 → total_avail=11（−1 给 dummy_block_idx=11）</text>
+<text class="sm" x="804" y="159" text-anchor="start">paused_count=2 → active_count=9（assert active_count ≥ 1）</text>
+<text class="sm" x="804" y="175" text-anchor="start">块 id 是一个栈：从 block_bag 顶端弹出，第一批拿到 10、9…</text>
+<text class="sm" x="804" y="191" text-anchor="start">块只在 prompt 进入与末块写满时分配；末块写满 → 先 pause 再在同一步 resume</text>
+<text class="sm" x="804" y="207" text-anchor="start">本算例 4 条并发峰值只占 6 块；请求的块表可跨越不连续的物理块</text>
+<rect class="acc1" x="792" y="262" width="452" height="196" rx="8"/>
+<text class="tx" x="804" y="283" text-anchor="start">两种驱逐策略：同一算例第一波 / 第二波</text>
+<path class="edge" d="M 804 291 L 1232 291"/>
+<text class="sm" x="804" y="309" text-anchor="start">ref_zero 第一波：命中 2 条、匹配 3 块、跳过 12/31 个 prompt token、推迟 3 次</text>
+<text class="sm" x="804" y="325" text-anchor="start">ref_zero 第二波：命中 2 条、匹配 3 块、跳过 12 个、推迟 3 次，与第一波一样</text>
+<text class="sm" x="804" y="341" text-anchor="start">lru 第一波结束时 3 块以 ref=0 留作 cached，不回池</text>
+<text class="dim" x="804" y="357" text-anchor="start">lru 第二波：命中 3 条、匹配 6 块、跳过 20 个、推迟 0 次，四条同一步进入</text>
+<text class="sm" x="804" y="373" text-anchor="start">lru 驱逐 0 次：池够用就不驱逐；不够时按 timestamp 最旧先出</text>
+<text class="sm" x="804" y="389" text-anchor="start">ref_zero 只能靠「同一 step 内已在跑的请求」共享；lru 才跨波次复用</text>
+<text class="sm" x="804" y="405" text-anchor="start">代价：lru 的 free pool 变成两级（free + evictable），分配前要数 evictable</text>
+<text class="sm" x="804" y="421" text-anchor="start">硬规则：前缀正被同批请求计算的请求推迟到下一步（pending hash）</text>
+<rect class="acc2" x="792" y="474" width="452" height="150" rx="8"/>
+<text class="tx" x="804" y="495" text-anchor="start">被否掉的替代：按 max_sequence_length 连续预留</text>
+<path class="edge" d="M 804 503 L 1232 503"/>
+<text class="sm" x="804" y="521" text-anchor="start">max_sequence_length=16 → 每请求预留 4 块，4 条共 16 块</text>
+<text class="sm" x="804" y="537" text-anchor="start">池只有 11 块可用 → 同时最多跑 2 条，其余排队</text>
+<text class="sm" x="804" y="553" text-anchor="start">四条请求真正写入 KV 的块数合计 11，预留量的 31% 被浪费</text>
+<text class="costtx" x="804" y="569" text-anchor="start">还要求每条请求的块物理连续，长请求会因外部碎片进不来</text>
+<text class="sm" x="804" y="585" text-anchor="start">块级方案的代价：块表间接寻址 + 一块永远不可用（dummy）</text>
+<rect class="neutral" x="792" y="640" width="452" height="100" rx="8"/>
+<text class="tx" x="804" y="661" text-anchor="start">本图复刻了什么、简化了什么</text>
+<path class="edge" d="M 804 669 L 1232 669"/>
+<text class="sm" x="804" y="687" text-anchor="start">精确：allocate / release / evict_lru / register_kv_block_hashes</text>
+<text class="sm" x="804" y="703" text-anchor="start">精确：_compute_prefix_match / check_availability / schedule_* / resume</text>
+<text class="sm" x="804" y="719" text-anchor="start">简化：不复刻 paused buffer 溢出驱逐、Mamba、投机解码；每步 1 token</text>
+</svg>
