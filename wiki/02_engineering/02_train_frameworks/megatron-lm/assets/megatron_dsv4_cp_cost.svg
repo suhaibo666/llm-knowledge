@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 476" width="1272" height="476" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .acc1fill{fill:#2563EB;stroke:#2563EB;stroke-width:1}
+  .acc2fill{fill:#C3651F;stroke:#C3651F;stroke-width:1}
+  .s0{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.1}
+  .s1{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.1}
+  .bar{fill:#F4C9A3;stroke:#C3651F;stroke-width:.8}
+  .bar1{fill:#CFE0FA;stroke:#2563EB;stroke-width:.8}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .line1{fill:none;stroke:#2563EB;stroke-width:2}
+  .line2{fill:none;stroke:#C3651F;stroke-width:2;stroke-dasharray:6 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 3　真实配方 THD64K / CP16 下每层每 rank 的通信量：压缩态 gather 对比朴素全量 KV AllGather</text>
+<text class="su" x="28" y="52" text-anchor="start">mxfp8_THD64K_128GPU_TP1PP2EP64CP16.yaml：seq 65536，CP 16 → l_local 4096；hidden 4096，v_head_dim 512，indexer head_dim 128，window 128，bf16</text>
+<text class="pt" x="28" y="92" text-anchor="start">每 rank 接收字节（MiB，log 刻度）：ratio-4 层与 ratio-128 层</text>
+<path class="sep" d="M 68 292 L 668 292"/>
+<path class="gl" d="M 68 292 L 668 292"/>
+<text class="sm" x="64" y="296" text-anchor="end">0.1 MiB</text>
+<path class="gl" d="M 68 238.0072593314399 L 668 238.0072593314399"/>
+<text class="sm" x="64" y="242.0072593314399" text-anchor="end">1 MiB</text>
+<path class="gl" d="M 68 184.01451866287982 L 668 184.01451866287982"/>
+<text class="sm" x="64" y="188.01451866287982" text-anchor="end">10 MiB</text>
+<path class="gl" d="M 68 142 L 668 142"/>
+<text class="sm" x="64" y="146" text-anchor="end">60 MiB</text>
+<rect class="bar1" x="82.0" y="238.0" width="54.5" height="54.0"/>
+<text class="dim" x="109.25" y="232.0072593314399" text-anchor="middle">1.00</text>
+<text class="sm" x="109.25" y="306" text-anchor="middle">边界 P2P</text>
+<rect class="bar1" x="144.5" y="206.8" width="54.5" height="85.2"/>
+<text class="dim" x="171.75" y="200.83125649685542" text-anchor="middle">3.78</text>
+<text class="sm" x="171.75" y="306" text-anchor="middle">Indexer-K AG</text>
+<rect class="bar1" x="207.0" y="174.3" width="54.5" height="117.7"/>
+<text class="dim" x="234.25" y="168.3243875181692" text-anchor="middle">15.12</text>
+<text class="sm" x="234.25" y="306" text-anchor="middle">压缩 KV AG</text>
+<rect class="bar" x="269.5" y="142.0" width="54.5" height="150.0"/>
+<text class="costtx" x="296.75" y="136" text-anchor="middle">60.00</text>
+<text class="sm" x="296.75" y="306" text-anchor="middle">朴素 KV AG</text>
+<text class="rank" x="203" y="322" text-anchor="middle">ratio-4 层（c_cap=1032，gather 16512 行）</text>
+<rect class="bar1" x="372.0" y="238.0" width="54.5" height="54.0"/>
+<text class="dim" x="399.25" y="232.0072593314399" text-anchor="middle">1.00</text>
+<text class="sm" x="399.25" y="306" text-anchor="middle">边界 P2P</text>
+<text class="dim" x="461.75" y="286" text-anchor="middle">无</text>
+<text class="sm" x="461.75" y="306" text-anchor="middle">Indexer-K AG</text>
+<rect class="bar1" x="497.0" y="255.1" width="54.5" height="36.9"/>
+<text class="dim" x="524.25" y="249.05248451469703" text-anchor="middle">0.48</text>
+<text class="sm" x="524.25" y="306" text-anchor="middle">压缩 KV AG</text>
+<rect class="bar" x="559.5" y="142.0" width="54.5" height="150.0"/>
+<text class="costtx" x="586.75" y="136" text-anchor="middle">60.00</text>
+<text class="sm" x="586.75" y="306" text-anchor="middle">朴素 KV AG</text>
+<text class="rank" x="493" y="322" text-anchor="middle">ratio-128 层（c_cap=33，gather 528 行）</text>
+<rect class="neutral" x="28" y="336" width="640" height="116" rx="8"/>
+<text class="tx" x="40" y="357" text-anchor="start">怎么算的</text>
+<path class="edge" d="M 40 365 L 656 365"/>
+<text class="sm" x="40" y="383" text-anchor="start">边界 P2P = d_window × hidden × 2 B = 128 × 4096 × 2 = 1.00 MiB（内部 rank 收 1 发 1，反向再各 1）</text>
+<text class="sm" x="40" y="399" text-anchor="start">AG 接收 = (CP − 1) × c_cap × 行宽 × 2 B；KV 行宽 512、Indexer-K 行宽 128；缓冲 CP × c_cap 行</text>
+<text class="sm" x="40" y="415" text-anchor="start">ratio-4：真实压缩行 16384，缓冲 16512 行，容量补齐 128 行（0.8%）</text>
+<text class="costtx" x="40" y="431" text-anchor="start">朴素 = (CP − 1) × l_local × 512 × 2 B = 60.00 MiB；ratio-4 层压缩态 K+KV 合计 18.90 MiB</text>
+<text class="pt" x="708" y="92" text-anchor="start">同一条 64K 序列，CP 从 2 扫到 128（ratio-4 层）</text>
+<path class="sep" d="M 758 292 L 1234 292"/>
+<path class="gl" d="M 758 122 L 758 292"/>
+<path class="line1" d="M 758.0 211.3 L 837.3 170.8 L 916.7 150.3 L 996.0 139.6 L 1075.3 133.3 L 1154.7 128.3 L 1234.0 122.0"/>
+<path class="line2" d="M 758.0 122.0 L 837.3 207.0 L 916.7 249.5 L 996.0 270.8 L 1075.3 281.4 L 1154.7 286.7 L 1234.0 289.3"/>
+<text class="sm" x="758" y="306" text-anchor="middle">CP 2</text>
+<text class="dim" x="758" y="205.29133858267716" text-anchor="middle">10.01</text>
+<text class="costtx" x="758" y="116" text-anchor="middle">32768</text>
+<text class="sm" x="837.3333333333334" y="306" text-anchor="middle">CP 4</text>
+<text class="dim" x="837.3333333333334" y="164.8188976377953" text-anchor="middle">15.03</text>
+<text class="costtx" x="837.3333333333334" y="221" text-anchor="middle">16384</text>
+<text class="sm" x="916.6666666666666" y="306" text-anchor="middle">CP 8</text>
+<text class="dim" x="916.6666666666666" y="144.3464566929134" text-anchor="middle">17.57</text>
+<text class="costtx" x="916.6666666666666" y="243.5" text-anchor="middle">8192</text>
+<text class="sm" x="996" y="306" text-anchor="middle">CP 16</text>
+<text class="dim" x="996" y="133.63779527559055" text-anchor="middle">18.90</text>
+<text class="costtx" x="996" y="264.75" text-anchor="middle">4096</text>
+<text class="sm" x="1075.3333333333333" y="306" text-anchor="middle">CP 32</text>
+<text class="dim" x="1075.3333333333333" y="127.33858267716536" text-anchor="middle">19.68</text>
+<text class="costtx" x="1075.3333333333333" y="275.375" text-anchor="middle">2048</text>
+<text class="sm" x="1154.6666666666667" y="306" text-anchor="middle">CP 64</text>
+<text class="dim" x="1154.6666666666667" y="122.29921259842519" text-anchor="middle">20.30</text>
+<text class="costtx" x="1154.6666666666667" y="280.6875" text-anchor="middle">1024</text>
+<text class="sm" x="1234" y="306" text-anchor="middle">CP 128</text>
+<text class="dim" x="1234" y="116" text-anchor="middle">21.08</text>
+<text class="costtx" x="1234" y="283.34375" text-anchor="middle">512</text>
+<text class="dim" x="754" y="130" text-anchor="end">接收 MiB</text>
+<text class="costtx" x="754" y="146" text-anchor="end">本地行</text>
+<rect class="neutral" x="708" y="322" width="536" height="116" rx="8"/>
+<text class="tx" x="720" y="343" text-anchor="start">这笔账随 CP 怎么变（脚本算出）</text>
+<path class="edge" d="M 720 351 L 1232 351"/>
+<text class="dim" x="720" y="369" text-anchor="start">gather 接收量随 (CP−1)/CP 饱和：CP2 10.01 → CP16 18.90 → CP128 21.08 MiB</text>
+<text class="costtx" x="720" y="385" text-anchor="start">本地行数 65536/CP：CP2 32768 → CP16 4096 → CP128 512，可重叠的本地投影随之收窄</text>
+<text class="sm" x="720" y="401" text-anchor="start">容量补齐随 CP 增长：CP2 16 行 → CP128 1024 行（每 rank 对齐到 8）</text>
+<text class="sm" x="720" y="417" text-anchor="start">边界 P2P 固定 1.00 MiB / rank；local_rows ≥ d_window 给出 CP ≤ 512 的硬上限</text>
+</svg>

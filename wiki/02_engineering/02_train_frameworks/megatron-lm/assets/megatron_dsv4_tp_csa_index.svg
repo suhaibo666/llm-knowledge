@@ -1,0 +1,569 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 716" width="1272" height="716" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　CSA 一个 query 看哪些行：滑窗行 ∪ indexer 选中的压缩行，拼在 kv_full 的两段上</text>
+<text class="su" x="28" y="52" text-anchor="start">小算例：S=16、window=4、ratio=4、top-k=2；kv_full = [t0..t15 | c0..c3]，压缩行下标 = c + offset，offset = sq = 16；indexer 分数用确定性表</text>
+<text class="sm" x="97" y="102" text-anchor="middle">t0</text>
+<text class="sm" x="123" y="102" text-anchor="middle">t1</text>
+<text class="sm" x="149" y="102" text-anchor="middle">t2</text>
+<text class="sm" x="175" y="102" text-anchor="middle">t3</text>
+<text class="sm" x="201" y="102" text-anchor="middle">t4</text>
+<text class="sm" x="227" y="102" text-anchor="middle">t5</text>
+<text class="sm" x="253" y="102" text-anchor="middle">t6</text>
+<text class="sm" x="279" y="102" text-anchor="middle">t7</text>
+<text class="sm" x="305" y="102" text-anchor="middle">t8</text>
+<text class="sm" x="331" y="102" text-anchor="middle">t9</text>
+<text class="sm" x="357" y="102" text-anchor="middle">t10</text>
+<text class="sm" x="383" y="102" text-anchor="middle">t11</text>
+<text class="sm" x="409" y="102" text-anchor="middle">t12</text>
+<text class="sm" x="435" y="102" text-anchor="middle">t13</text>
+<text class="sm" x="461" y="102" text-anchor="middle">t14</text>
+<text class="sm" x="487" y="102" text-anchor="middle">t15</text>
+<text class="dim" x="513" y="102" text-anchor="middle">c0</text>
+<text class="dim" x="539" y="102" text-anchor="middle">c1</text>
+<text class="dim" x="565" y="102" text-anchor="middle">c2</text>
+<text class="dim" x="591" y="102" text-anchor="middle">c3</text>
+<text class="sm" x="84" y="84" text-anchor="start">kv_full 列 →</text>
+<text class="rank" x="76" y="122" text-anchor="end">q0</text>
+<rect class="acc1" x="85" y="109" width="24" height="18" rx="3"/>
+<text class="dim" x="97" y="122" text-anchor="middle">w</text>
+<rect class="ghost" x="111" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="137" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="163" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="189" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="215" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="241" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="267" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="293" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="319" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="345" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="371" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="397" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="423" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="449" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="475" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="501" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="527" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="553" y="109" width="24" height="18" rx="3"/>
+<rect class="ghost" x="579" y="109" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="142" text-anchor="end">q1</text>
+<rect class="acc1" x="85" y="129" width="24" height="18" rx="3"/>
+<text class="dim" x="97" y="142" text-anchor="middle">w</text>
+<rect class="acc1" x="111" y="129" width="24" height="18" rx="3"/>
+<text class="dim" x="123" y="142" text-anchor="middle">w</text>
+<rect class="ghost" x="137" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="163" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="189" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="215" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="241" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="267" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="293" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="319" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="345" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="371" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="397" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="423" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="449" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="475" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="501" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="527" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="553" y="129" width="24" height="18" rx="3"/>
+<rect class="ghost" x="579" y="129" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="162" text-anchor="end">q2</text>
+<rect class="acc1" x="85" y="149" width="24" height="18" rx="3"/>
+<text class="dim" x="97" y="162" text-anchor="middle">w</text>
+<rect class="acc1" x="111" y="149" width="24" height="18" rx="3"/>
+<text class="dim" x="123" y="162" text-anchor="middle">w</text>
+<rect class="acc1" x="137" y="149" width="24" height="18" rx="3"/>
+<text class="dim" x="149" y="162" text-anchor="middle">w</text>
+<rect class="ghost" x="163" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="189" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="215" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="241" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="267" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="293" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="319" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="345" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="371" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="397" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="423" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="449" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="475" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="501" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="527" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="553" y="149" width="24" height="18" rx="3"/>
+<rect class="ghost" x="579" y="149" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="182" text-anchor="end">q3</text>
+<rect class="acc1" x="85" y="169" width="24" height="18" rx="3"/>
+<text class="dim" x="97" y="182" text-anchor="middle">w</text>
+<rect class="acc1" x="111" y="169" width="24" height="18" rx="3"/>
+<text class="dim" x="123" y="182" text-anchor="middle">w</text>
+<rect class="acc1" x="137" y="169" width="24" height="18" rx="3"/>
+<text class="dim" x="149" y="182" text-anchor="middle">w</text>
+<rect class="acc1" x="163" y="169" width="24" height="18" rx="3"/>
+<text class="dim" x="175" y="182" text-anchor="middle">w</text>
+<rect class="ghost" x="189" y="169" width="24" height="18" rx="3"/>
+<rect class="ghost" x="215" y="169" width="24" height="18" rx="3"/>
+<rect class="ghost" x="241" y="169" width="24" height="18" rx="3"/>
+<rect class="ghost" x="267" y="169" width="24" height="18" rx="3"/>
+<rect class="ghost" x="293" y="169" width="24" height="18" rx="3"/>
+<rect class="ghost" x="319" y="169" width="24" height="18" rx="3"/>
+<rect class="ghost" x="345" y="169" width="24" height="18" rx="3"/>
+<rect class="ghost" x="371" y="169" width="24" height="18" rx="3"/>
+<rect class="ghost" x="397" y="169" width="24" height="18" rx="3"/>
+<rect class="ghost" x="423" y="169" width="24" height="18" rx="3"/>
+<rect class="ghost" x="449" y="169" width="24" height="18" rx="3"/>
+<rect class="ghost" x="475" y="169" width="24" height="18" rx="3"/>
+<rect class="acc1" x="501" y="169" width="24" height="18" rx="3"/>
+<text class="dim" x="513" y="182" text-anchor="middle">k</text>
+<rect class="ghost" x="527" y="169" width="24" height="18" rx="3"/>
+<rect class="ghost" x="553" y="169" width="24" height="18" rx="3"/>
+<rect class="ghost" x="579" y="169" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="202" text-anchor="end">q4</text>
+<rect class="ghost" x="85" y="189" width="24" height="18" rx="3"/>
+<rect class="acc1" x="111" y="189" width="24" height="18" rx="3"/>
+<text class="dim" x="123" y="202" text-anchor="middle">w</text>
+<rect class="acc1" x="137" y="189" width="24" height="18" rx="3"/>
+<text class="dim" x="149" y="202" text-anchor="middle">w</text>
+<rect class="acc1" x="163" y="189" width="24" height="18" rx="3"/>
+<text class="dim" x="175" y="202" text-anchor="middle">w</text>
+<rect class="acc1" x="189" y="189" width="24" height="18" rx="3"/>
+<text class="dim" x="201" y="202" text-anchor="middle">w</text>
+<rect class="ghost" x="215" y="189" width="24" height="18" rx="3"/>
+<rect class="ghost" x="241" y="189" width="24" height="18" rx="3"/>
+<rect class="ghost" x="267" y="189" width="24" height="18" rx="3"/>
+<rect class="ghost" x="293" y="189" width="24" height="18" rx="3"/>
+<rect class="ghost" x="319" y="189" width="24" height="18" rx="3"/>
+<rect class="ghost" x="345" y="189" width="24" height="18" rx="3"/>
+<rect class="ghost" x="371" y="189" width="24" height="18" rx="3"/>
+<rect class="ghost" x="397" y="189" width="24" height="18" rx="3"/>
+<rect class="ghost" x="423" y="189" width="24" height="18" rx="3"/>
+<rect class="ghost" x="449" y="189" width="24" height="18" rx="3"/>
+<rect class="ghost" x="475" y="189" width="24" height="18" rx="3"/>
+<rect class="acc1" x="501" y="189" width="24" height="18" rx="3"/>
+<text class="dim" x="513" y="202" text-anchor="middle">k</text>
+<rect class="ghost" x="527" y="189" width="24" height="18" rx="3"/>
+<rect class="ghost" x="553" y="189" width="24" height="18" rx="3"/>
+<rect class="ghost" x="579" y="189" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="222" text-anchor="end">q5</text>
+<rect class="ghost" x="85" y="209" width="24" height="18" rx="3"/>
+<rect class="ghost" x="111" y="209" width="24" height="18" rx="3"/>
+<rect class="acc1" x="137" y="209" width="24" height="18" rx="3"/>
+<text class="dim" x="149" y="222" text-anchor="middle">w</text>
+<rect class="acc1" x="163" y="209" width="24" height="18" rx="3"/>
+<text class="dim" x="175" y="222" text-anchor="middle">w</text>
+<rect class="acc1" x="189" y="209" width="24" height="18" rx="3"/>
+<text class="dim" x="201" y="222" text-anchor="middle">w</text>
+<rect class="acc1" x="215" y="209" width="24" height="18" rx="3"/>
+<text class="dim" x="227" y="222" text-anchor="middle">w</text>
+<rect class="ghost" x="241" y="209" width="24" height="18" rx="3"/>
+<rect class="ghost" x="267" y="209" width="24" height="18" rx="3"/>
+<rect class="ghost" x="293" y="209" width="24" height="18" rx="3"/>
+<rect class="ghost" x="319" y="209" width="24" height="18" rx="3"/>
+<rect class="ghost" x="345" y="209" width="24" height="18" rx="3"/>
+<rect class="ghost" x="371" y="209" width="24" height="18" rx="3"/>
+<rect class="ghost" x="397" y="209" width="24" height="18" rx="3"/>
+<rect class="ghost" x="423" y="209" width="24" height="18" rx="3"/>
+<rect class="ghost" x="449" y="209" width="24" height="18" rx="3"/>
+<rect class="ghost" x="475" y="209" width="24" height="18" rx="3"/>
+<rect class="acc1" x="501" y="209" width="24" height="18" rx="3"/>
+<text class="dim" x="513" y="222" text-anchor="middle">k</text>
+<rect class="ghost" x="527" y="209" width="24" height="18" rx="3"/>
+<rect class="ghost" x="553" y="209" width="24" height="18" rx="3"/>
+<rect class="ghost" x="579" y="209" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="242" text-anchor="end">q6</text>
+<rect class="ghost" x="85" y="229" width="24" height="18" rx="3"/>
+<rect class="ghost" x="111" y="229" width="24" height="18" rx="3"/>
+<rect class="ghost" x="137" y="229" width="24" height="18" rx="3"/>
+<rect class="acc1" x="163" y="229" width="24" height="18" rx="3"/>
+<text class="dim" x="175" y="242" text-anchor="middle">w</text>
+<rect class="acc1" x="189" y="229" width="24" height="18" rx="3"/>
+<text class="dim" x="201" y="242" text-anchor="middle">w</text>
+<rect class="acc1" x="215" y="229" width="24" height="18" rx="3"/>
+<text class="dim" x="227" y="242" text-anchor="middle">w</text>
+<rect class="acc1" x="241" y="229" width="24" height="18" rx="3"/>
+<text class="dim" x="253" y="242" text-anchor="middle">w</text>
+<rect class="ghost" x="267" y="229" width="24" height="18" rx="3"/>
+<rect class="ghost" x="293" y="229" width="24" height="18" rx="3"/>
+<rect class="ghost" x="319" y="229" width="24" height="18" rx="3"/>
+<rect class="ghost" x="345" y="229" width="24" height="18" rx="3"/>
+<rect class="ghost" x="371" y="229" width="24" height="18" rx="3"/>
+<rect class="ghost" x="397" y="229" width="24" height="18" rx="3"/>
+<rect class="ghost" x="423" y="229" width="24" height="18" rx="3"/>
+<rect class="ghost" x="449" y="229" width="24" height="18" rx="3"/>
+<rect class="ghost" x="475" y="229" width="24" height="18" rx="3"/>
+<rect class="acc1" x="501" y="229" width="24" height="18" rx="3"/>
+<text class="dim" x="513" y="242" text-anchor="middle">k</text>
+<rect class="ghost" x="527" y="229" width="24" height="18" rx="3"/>
+<rect class="ghost" x="553" y="229" width="24" height="18" rx="3"/>
+<rect class="ghost" x="579" y="229" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="262" text-anchor="end">q7</text>
+<rect class="ghost" x="85" y="249" width="24" height="18" rx="3"/>
+<rect class="ghost" x="111" y="249" width="24" height="18" rx="3"/>
+<rect class="ghost" x="137" y="249" width="24" height="18" rx="3"/>
+<rect class="ghost" x="163" y="249" width="24" height="18" rx="3"/>
+<rect class="acc1" x="189" y="249" width="24" height="18" rx="3"/>
+<text class="dim" x="201" y="262" text-anchor="middle">w</text>
+<rect class="acc1" x="215" y="249" width="24" height="18" rx="3"/>
+<text class="dim" x="227" y="262" text-anchor="middle">w</text>
+<rect class="acc1" x="241" y="249" width="24" height="18" rx="3"/>
+<text class="dim" x="253" y="262" text-anchor="middle">w</text>
+<rect class="acc1" x="267" y="249" width="24" height="18" rx="3"/>
+<text class="dim" x="279" y="262" text-anchor="middle">w</text>
+<rect class="ghost" x="293" y="249" width="24" height="18" rx="3"/>
+<rect class="ghost" x="319" y="249" width="24" height="18" rx="3"/>
+<rect class="ghost" x="345" y="249" width="24" height="18" rx="3"/>
+<rect class="ghost" x="371" y="249" width="24" height="18" rx="3"/>
+<rect class="ghost" x="397" y="249" width="24" height="18" rx="3"/>
+<rect class="ghost" x="423" y="249" width="24" height="18" rx="3"/>
+<rect class="ghost" x="449" y="249" width="24" height="18" rx="3"/>
+<rect class="ghost" x="475" y="249" width="24" height="18" rx="3"/>
+<rect class="acc1" x="501" y="249" width="24" height="18" rx="3"/>
+<text class="dim" x="513" y="262" text-anchor="middle">k</text>
+<rect class="acc1" x="527" y="249" width="24" height="18" rx="3"/>
+<text class="dim" x="539" y="262" text-anchor="middle">k</text>
+<rect class="ghost" x="553" y="249" width="24" height="18" rx="3"/>
+<rect class="ghost" x="579" y="249" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="282" text-anchor="end">q8</text>
+<rect class="ghost" x="85" y="269" width="24" height="18" rx="3"/>
+<rect class="ghost" x="111" y="269" width="24" height="18" rx="3"/>
+<rect class="ghost" x="137" y="269" width="24" height="18" rx="3"/>
+<rect class="ghost" x="163" y="269" width="24" height="18" rx="3"/>
+<rect class="ghost" x="189" y="269" width="24" height="18" rx="3"/>
+<rect class="acc1" x="215" y="269" width="24" height="18" rx="3"/>
+<text class="dim" x="227" y="282" text-anchor="middle">w</text>
+<rect class="acc1" x="241" y="269" width="24" height="18" rx="3"/>
+<text class="dim" x="253" y="282" text-anchor="middle">w</text>
+<rect class="acc1" x="267" y="269" width="24" height="18" rx="3"/>
+<text class="dim" x="279" y="282" text-anchor="middle">w</text>
+<rect class="acc1" x="293" y="269" width="24" height="18" rx="3"/>
+<text class="dim" x="305" y="282" text-anchor="middle">w</text>
+<rect class="ghost" x="319" y="269" width="24" height="18" rx="3"/>
+<rect class="ghost" x="345" y="269" width="24" height="18" rx="3"/>
+<rect class="ghost" x="371" y="269" width="24" height="18" rx="3"/>
+<rect class="ghost" x="397" y="269" width="24" height="18" rx="3"/>
+<rect class="ghost" x="423" y="269" width="24" height="18" rx="3"/>
+<rect class="ghost" x="449" y="269" width="24" height="18" rx="3"/>
+<rect class="ghost" x="475" y="269" width="24" height="18" rx="3"/>
+<rect class="acc1" x="501" y="269" width="24" height="18" rx="3"/>
+<text class="dim" x="513" y="282" text-anchor="middle">k</text>
+<rect class="acc1" x="527" y="269" width="24" height="18" rx="3"/>
+<text class="dim" x="539" y="282" text-anchor="middle">k</text>
+<rect class="ghost" x="553" y="269" width="24" height="18" rx="3"/>
+<rect class="ghost" x="579" y="269" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="302" text-anchor="end">q9</text>
+<rect class="ghost" x="85" y="289" width="24" height="18" rx="3"/>
+<rect class="ghost" x="111" y="289" width="24" height="18" rx="3"/>
+<rect class="ghost" x="137" y="289" width="24" height="18" rx="3"/>
+<rect class="ghost" x="163" y="289" width="24" height="18" rx="3"/>
+<rect class="ghost" x="189" y="289" width="24" height="18" rx="3"/>
+<rect class="ghost" x="215" y="289" width="24" height="18" rx="3"/>
+<rect class="acc1" x="241" y="289" width="24" height="18" rx="3"/>
+<text class="dim" x="253" y="302" text-anchor="middle">w</text>
+<rect class="acc1" x="267" y="289" width="24" height="18" rx="3"/>
+<text class="dim" x="279" y="302" text-anchor="middle">w</text>
+<rect class="acc1" x="293" y="289" width="24" height="18" rx="3"/>
+<text class="dim" x="305" y="302" text-anchor="middle">w</text>
+<rect class="acc1" x="319" y="289" width="24" height="18" rx="3"/>
+<text class="dim" x="331" y="302" text-anchor="middle">w</text>
+<rect class="ghost" x="345" y="289" width="24" height="18" rx="3"/>
+<rect class="ghost" x="371" y="289" width="24" height="18" rx="3"/>
+<rect class="ghost" x="397" y="289" width="24" height="18" rx="3"/>
+<rect class="ghost" x="423" y="289" width="24" height="18" rx="3"/>
+<rect class="ghost" x="449" y="289" width="24" height="18" rx="3"/>
+<rect class="ghost" x="475" y="289" width="24" height="18" rx="3"/>
+<rect class="acc1" x="501" y="289" width="24" height="18" rx="3"/>
+<text class="dim" x="513" y="302" text-anchor="middle">k</text>
+<rect class="acc1" x="527" y="289" width="24" height="18" rx="3"/>
+<text class="dim" x="539" y="302" text-anchor="middle">k</text>
+<rect class="ghost" x="553" y="289" width="24" height="18" rx="3"/>
+<rect class="ghost" x="579" y="289" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="322" text-anchor="end">q10</text>
+<rect class="ghost" x="85" y="309" width="24" height="18" rx="3"/>
+<rect class="ghost" x="111" y="309" width="24" height="18" rx="3"/>
+<rect class="ghost" x="137" y="309" width="24" height="18" rx="3"/>
+<rect class="ghost" x="163" y="309" width="24" height="18" rx="3"/>
+<rect class="ghost" x="189" y="309" width="24" height="18" rx="3"/>
+<rect class="ghost" x="215" y="309" width="24" height="18" rx="3"/>
+<rect class="ghost" x="241" y="309" width="24" height="18" rx="3"/>
+<rect class="acc1" x="267" y="309" width="24" height="18" rx="3"/>
+<text class="dim" x="279" y="322" text-anchor="middle">w</text>
+<rect class="acc1" x="293" y="309" width="24" height="18" rx="3"/>
+<text class="dim" x="305" y="322" text-anchor="middle">w</text>
+<rect class="acc1" x="319" y="309" width="24" height="18" rx="3"/>
+<text class="dim" x="331" y="322" text-anchor="middle">w</text>
+<rect class="acc1" x="345" y="309" width="24" height="18" rx="3"/>
+<text class="dim" x="357" y="322" text-anchor="middle">w</text>
+<rect class="ghost" x="371" y="309" width="24" height="18" rx="3"/>
+<rect class="ghost" x="397" y="309" width="24" height="18" rx="3"/>
+<rect class="ghost" x="423" y="309" width="24" height="18" rx="3"/>
+<rect class="ghost" x="449" y="309" width="24" height="18" rx="3"/>
+<rect class="ghost" x="475" y="309" width="24" height="18" rx="3"/>
+<rect class="acc1" x="501" y="309" width="24" height="18" rx="3"/>
+<text class="dim" x="513" y="322" text-anchor="middle">k</text>
+<rect class="acc1" x="527" y="309" width="24" height="18" rx="3"/>
+<text class="dim" x="539" y="322" text-anchor="middle">k</text>
+<rect class="ghost" x="553" y="309" width="24" height="18" rx="3"/>
+<rect class="ghost" x="579" y="309" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="342" text-anchor="end">q11</text>
+<rect class="ghost" x="85" y="329" width="24" height="18" rx="3"/>
+<rect class="ghost" x="111" y="329" width="24" height="18" rx="3"/>
+<rect class="ghost" x="137" y="329" width="24" height="18" rx="3"/>
+<rect class="ghost" x="163" y="329" width="24" height="18" rx="3"/>
+<rect class="ghost" x="189" y="329" width="24" height="18" rx="3"/>
+<rect class="ghost" x="215" y="329" width="24" height="18" rx="3"/>
+<rect class="ghost" x="241" y="329" width="24" height="18" rx="3"/>
+<rect class="ghost" x="267" y="329" width="24" height="18" rx="3"/>
+<rect class="acc1" x="293" y="329" width="24" height="18" rx="3"/>
+<text class="dim" x="305" y="342" text-anchor="middle">w</text>
+<rect class="acc1" x="319" y="329" width="24" height="18" rx="3"/>
+<text class="dim" x="331" y="342" text-anchor="middle">w</text>
+<rect class="acc1" x="345" y="329" width="24" height="18" rx="3"/>
+<text class="dim" x="357" y="342" text-anchor="middle">w</text>
+<rect class="acc1" x="371" y="329" width="24" height="18" rx="3"/>
+<text class="dim" x="383" y="342" text-anchor="middle">w</text>
+<rect class="ghost" x="397" y="329" width="24" height="18" rx="3"/>
+<rect class="ghost" x="423" y="329" width="24" height="18" rx="3"/>
+<rect class="ghost" x="449" y="329" width="24" height="18" rx="3"/>
+<rect class="ghost" x="475" y="329" width="24" height="18" rx="3"/>
+<rect class="acc1" x="501" y="329" width="24" height="18" rx="3"/>
+<text class="dim" x="513" y="342" text-anchor="middle">k</text>
+<rect class="neutral" x="527" y="329" width="24" height="18" rx="3"/>
+<text class="sm" x="539" y="342" text-anchor="middle">·</text>
+<rect class="acc1" x="553" y="329" width="24" height="18" rx="3"/>
+<text class="dim" x="565" y="342" text-anchor="middle">k</text>
+<rect class="ghost" x="579" y="329" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="362" text-anchor="end">q12</text>
+<rect class="ghost" x="85" y="349" width="24" height="18" rx="3"/>
+<rect class="ghost" x="111" y="349" width="24" height="18" rx="3"/>
+<rect class="ghost" x="137" y="349" width="24" height="18" rx="3"/>
+<rect class="ghost" x="163" y="349" width="24" height="18" rx="3"/>
+<rect class="ghost" x="189" y="349" width="24" height="18" rx="3"/>
+<rect class="ghost" x="215" y="349" width="24" height="18" rx="3"/>
+<rect class="ghost" x="241" y="349" width="24" height="18" rx="3"/>
+<rect class="ghost" x="267" y="349" width="24" height="18" rx="3"/>
+<rect class="ghost" x="293" y="349" width="24" height="18" rx="3"/>
+<rect class="acc1" x="319" y="349" width="24" height="18" rx="3"/>
+<text class="dim" x="331" y="362" text-anchor="middle">w</text>
+<rect class="acc1" x="345" y="349" width="24" height="18" rx="3"/>
+<text class="dim" x="357" y="362" text-anchor="middle">w</text>
+<rect class="acc1" x="371" y="349" width="24" height="18" rx="3"/>
+<text class="dim" x="383" y="362" text-anchor="middle">w</text>
+<rect class="acc1" x="397" y="349" width="24" height="18" rx="3"/>
+<text class="dim" x="409" y="362" text-anchor="middle">w</text>
+<rect class="ghost" x="423" y="349" width="24" height="18" rx="3"/>
+<rect class="ghost" x="449" y="349" width="24" height="18" rx="3"/>
+<rect class="ghost" x="475" y="349" width="24" height="18" rx="3"/>
+<rect class="acc1" x="501" y="349" width="24" height="18" rx="3"/>
+<text class="dim" x="513" y="362" text-anchor="middle">k</text>
+<rect class="acc1" x="527" y="349" width="24" height="18" rx="3"/>
+<text class="dim" x="539" y="362" text-anchor="middle">k</text>
+<rect class="neutral" x="553" y="349" width="24" height="18" rx="3"/>
+<text class="sm" x="565" y="362" text-anchor="middle">·</text>
+<rect class="ghost" x="579" y="349" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="382" text-anchor="end">q13</text>
+<rect class="ghost" x="85" y="369" width="24" height="18" rx="3"/>
+<rect class="ghost" x="111" y="369" width="24" height="18" rx="3"/>
+<rect class="ghost" x="137" y="369" width="24" height="18" rx="3"/>
+<rect class="ghost" x="163" y="369" width="24" height="18" rx="3"/>
+<rect class="ghost" x="189" y="369" width="24" height="18" rx="3"/>
+<rect class="ghost" x="215" y="369" width="24" height="18" rx="3"/>
+<rect class="ghost" x="241" y="369" width="24" height="18" rx="3"/>
+<rect class="ghost" x="267" y="369" width="24" height="18" rx="3"/>
+<rect class="ghost" x="293" y="369" width="24" height="18" rx="3"/>
+<rect class="ghost" x="319" y="369" width="24" height="18" rx="3"/>
+<rect class="acc1" x="345" y="369" width="24" height="18" rx="3"/>
+<text class="dim" x="357" y="382" text-anchor="middle">w</text>
+<rect class="acc1" x="371" y="369" width="24" height="18" rx="3"/>
+<text class="dim" x="383" y="382" text-anchor="middle">w</text>
+<rect class="acc1" x="397" y="369" width="24" height="18" rx="3"/>
+<text class="dim" x="409" y="382" text-anchor="middle">w</text>
+<rect class="acc1" x="423" y="369" width="24" height="18" rx="3"/>
+<text class="dim" x="435" y="382" text-anchor="middle">w</text>
+<rect class="ghost" x="449" y="369" width="24" height="18" rx="3"/>
+<rect class="ghost" x="475" y="369" width="24" height="18" rx="3"/>
+<rect class="neutral" x="501" y="369" width="24" height="18" rx="3"/>
+<text class="sm" x="513" y="382" text-anchor="middle">·</text>
+<rect class="acc1" x="527" y="369" width="24" height="18" rx="3"/>
+<text class="dim" x="539" y="382" text-anchor="middle">k</text>
+<rect class="acc1" x="553" y="369" width="24" height="18" rx="3"/>
+<text class="dim" x="565" y="382" text-anchor="middle">k</text>
+<rect class="ghost" x="579" y="369" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="402" text-anchor="end">q14</text>
+<rect class="ghost" x="85" y="389" width="24" height="18" rx="3"/>
+<rect class="ghost" x="111" y="389" width="24" height="18" rx="3"/>
+<rect class="ghost" x="137" y="389" width="24" height="18" rx="3"/>
+<rect class="ghost" x="163" y="389" width="24" height="18" rx="3"/>
+<rect class="ghost" x="189" y="389" width="24" height="18" rx="3"/>
+<rect class="ghost" x="215" y="389" width="24" height="18" rx="3"/>
+<rect class="ghost" x="241" y="389" width="24" height="18" rx="3"/>
+<rect class="ghost" x="267" y="389" width="24" height="18" rx="3"/>
+<rect class="ghost" x="293" y="389" width="24" height="18" rx="3"/>
+<rect class="ghost" x="319" y="389" width="24" height="18" rx="3"/>
+<rect class="ghost" x="345" y="389" width="24" height="18" rx="3"/>
+<rect class="acc1" x="371" y="389" width="24" height="18" rx="3"/>
+<text class="dim" x="383" y="402" text-anchor="middle">w</text>
+<rect class="acc1" x="397" y="389" width="24" height="18" rx="3"/>
+<text class="dim" x="409" y="402" text-anchor="middle">w</text>
+<rect class="acc1" x="423" y="389" width="24" height="18" rx="3"/>
+<text class="dim" x="435" y="402" text-anchor="middle">w</text>
+<rect class="acc1" x="449" y="389" width="24" height="18" rx="3"/>
+<text class="dim" x="461" y="402" text-anchor="middle">w</text>
+<rect class="ghost" x="475" y="389" width="24" height="18" rx="3"/>
+<rect class="acc1" x="501" y="389" width="24" height="18" rx="3"/>
+<text class="dim" x="513" y="402" text-anchor="middle">k</text>
+<rect class="neutral" x="527" y="389" width="24" height="18" rx="3"/>
+<text class="sm" x="539" y="402" text-anchor="middle">·</text>
+<rect class="acc1" x="553" y="389" width="24" height="18" rx="3"/>
+<text class="dim" x="565" y="402" text-anchor="middle">k</text>
+<rect class="ghost" x="579" y="389" width="24" height="18" rx="3"/>
+<text class="rank" x="76" y="422" text-anchor="end">q15</text>
+<rect class="ghost" x="85" y="409" width="24" height="18" rx="3"/>
+<rect class="ghost" x="111" y="409" width="24" height="18" rx="3"/>
+<rect class="ghost" x="137" y="409" width="24" height="18" rx="3"/>
+<rect class="ghost" x="163" y="409" width="24" height="18" rx="3"/>
+<rect class="ghost" x="189" y="409" width="24" height="18" rx="3"/>
+<rect class="ghost" x="215" y="409" width="24" height="18" rx="3"/>
+<rect class="ghost" x="241" y="409" width="24" height="18" rx="3"/>
+<rect class="ghost" x="267" y="409" width="24" height="18" rx="3"/>
+<rect class="ghost" x="293" y="409" width="24" height="18" rx="3"/>
+<rect class="ghost" x="319" y="409" width="24" height="18" rx="3"/>
+<rect class="ghost" x="345" y="409" width="24" height="18" rx="3"/>
+<rect class="ghost" x="371" y="409" width="24" height="18" rx="3"/>
+<rect class="acc1" x="397" y="409" width="24" height="18" rx="3"/>
+<text class="dim" x="409" y="422" text-anchor="middle">w</text>
+<rect class="acc1" x="423" y="409" width="24" height="18" rx="3"/>
+<text class="dim" x="435" y="422" text-anchor="middle">w</text>
+<rect class="acc1" x="449" y="409" width="24" height="18" rx="3"/>
+<text class="dim" x="461" y="422" text-anchor="middle">w</text>
+<rect class="acc1" x="475" y="409" width="24" height="18" rx="3"/>
+<text class="dim" x="487" y="422" text-anchor="middle">w</text>
+<rect class="neutral" x="501" y="409" width="24" height="18" rx="3"/>
+<text class="sm" x="513" y="422" text-anchor="middle">·</text>
+<rect class="acc1" x="527" y="409" width="24" height="18" rx="3"/>
+<text class="dim" x="539" y="422" text-anchor="middle">k</text>
+<rect class="neutral" x="553" y="409" width="24" height="18" rx="3"/>
+<text class="sm" x="565" y="422" text-anchor="middle">·</text>
+<rect class="acc1" x="579" y="409" width="24" height="18" rx="3"/>
+<text class="dim" x="591" y="422" text-anchor="middle">k</text>
+<path class="sep" d="M 500 78 L 500 432"/>
+<text class="costtx" x="504" y="84" text-anchor="start">offset = sq = 16</text>
+<rect class="acc1" x="84" y="434" width="14" height="12" rx="2"/>
+<text class="sm" x="102" y="444" text-anchor="start">w 滑窗行　k top-k 选中的压缩行</text>
+<rect class="neutral" x="310" y="434" width="14" height="12" rx="2"/>
+<text class="sm" x="328" y="444" text-anchor="start">· 因果可见但未选中</text>
+<rect class="ghost" x="462" y="434" width="14" height="12" rx="2"/>
+<text class="sm" x="480" y="444" text-anchor="start">未来位 / 不在集合里</text>
+<text class="tx" x="28" y="474" text-anchor="start">topk_idxs[q1] =</text>
+<text class="tx" x="146" y="474" text-anchor="start">[</text>
+<rect class="acc1" x="156" y="462" width="15.88" height="16" rx="3"/>
+<text class="dim" x="163.94" y="474" text-anchor="middle">0</text>
+<rect class="acc1" x="175.88" y="462" width="15.88" height="16" rx="3"/>
+<text class="dim" x="183.82" y="474" text-anchor="middle">1</text>
+<rect class="acc2" x="195.76" y="462" width="21.76" height="16" rx="3"/>
+<text class="costtx" x="206.64" y="474" text-anchor="middle">-1</text>
+<rect class="acc2" x="221.51999999999998" y="462" width="21.76" height="16" rx="3"/>
+<text class="costtx" x="232.39999999999998" y="474" text-anchor="middle">-1</text>
+<text class="tx" x="249.27999999999997" y="474" text-anchor="start">|</text>
+<rect class="acc2" x="259.28" y="462" width="21.76" height="16" rx="3"/>
+<text class="costtx" x="270.15999999999997" y="474" text-anchor="middle">-1</text>
+<rect class="acc2" x="285.03999999999996" y="462" width="21.76" height="16" rx="3"/>
+<text class="costtx" x="295.91999999999996" y="474" text-anchor="middle">-1</text>
+<text class="tx" x="310.79999999999995" y="474" text-anchor="start">]</text>
+<text class="sm" x="324.79999999999995" y="474" text-anchor="start">可见压缩行 0，有效 2，−1 共 4</text>
+<text class="tx" x="28" y="496" text-anchor="start">topk_idxs[q5] =</text>
+<text class="tx" x="146" y="496" text-anchor="start">[</text>
+<rect class="acc1" x="156" y="484" width="15.88" height="16" rx="3"/>
+<text class="dim" x="163.94" y="496" text-anchor="middle">2</text>
+<rect class="acc1" x="175.88" y="484" width="15.88" height="16" rx="3"/>
+<text class="dim" x="183.82" y="496" text-anchor="middle">3</text>
+<rect class="acc1" x="195.76" y="484" width="15.88" height="16" rx="3"/>
+<text class="dim" x="203.7" y="496" text-anchor="middle">4</text>
+<rect class="acc1" x="215.64" y="484" width="15.88" height="16" rx="3"/>
+<text class="dim" x="223.57999999999998" y="496" text-anchor="middle">5</text>
+<text class="tx" x="237.51999999999998" y="496" text-anchor="start">|</text>
+<rect class="acc1" x="247.51999999999998" y="484" width="21.76" height="16" rx="3"/>
+<text class="dim" x="258.4" y="496" text-anchor="middle">16</text>
+<rect class="acc2" x="273.28" y="484" width="21.76" height="16" rx="3"/>
+<text class="costtx" x="284.15999999999997" y="496" text-anchor="middle">-1</text>
+<text class="tx" x="299.03999999999996" y="496" text-anchor="start">]</text>
+<text class="sm" x="313.03999999999996" y="496" text-anchor="start">可见压缩行 1，有效 5，−1 共 1</text>
+<text class="tx" x="28" y="518" text-anchor="start">topk_idxs[q15] =</text>
+<text class="tx" x="146" y="518" text-anchor="start">[</text>
+<rect class="acc1" x="156" y="506" width="21.76" height="16" rx="3"/>
+<text class="dim" x="166.88" y="518" text-anchor="middle">12</text>
+<rect class="acc1" x="181.76" y="506" width="21.76" height="16" rx="3"/>
+<text class="dim" x="192.64" y="518" text-anchor="middle">13</text>
+<rect class="acc1" x="207.51999999999998" y="506" width="21.76" height="16" rx="3"/>
+<text class="dim" x="218.39999999999998" y="518" text-anchor="middle">14</text>
+<rect class="acc1" x="233.27999999999997" y="506" width="21.76" height="16" rx="3"/>
+<text class="dim" x="244.15999999999997" y="518" text-anchor="middle">15</text>
+<text class="tx" x="261.03999999999996" y="518" text-anchor="start">|</text>
+<rect class="acc1" x="271.03999999999996" y="506" width="21.76" height="16" rx="3"/>
+<text class="dim" x="281.91999999999996" y="518" text-anchor="middle">19</text>
+<rect class="acc1" x="296.79999999999995" y="506" width="21.76" height="16" rx="3"/>
+<text class="dim" x="307.67999999999995" y="518" text-anchor="middle">17</text>
+<text class="tx" x="322.55999999999995" y="518" text-anchor="start">]</text>
+<text class="sm" x="336.55999999999995" y="518" text-anchor="start">可见压缩行 4，有效 6，−1 共 0</text>
+<text class="cap" x="28" y="544" text-anchor="start">−1 在 kernel 里被 mask 成 −inf；全图 16 个 query 共 16 个 −1 槽位</text>
+<text class="cap" x="28" y="560" text-anchor="start">q3 起滑窗填满，q3 起看得见压缩行，q11 起可见压缩行 &gt; top-k、开始真正做选择</text>
+<rect class="neutral" x="656" y="96" width="588" height="150" rx="8"/>
+<text class="tx" x="668" y="117" text-anchor="start">索引规则（复刻 csa.py 的 SBHD 助手）</text>
+<path class="edge" d="M 668 125 L 1232 125"/>
+<text class="sm" x="668" y="143" text-anchor="start">window：clamp(i − W + 1, 0) + j，超过 i 的位置写 −1（_get_window_topk_idxs_cached）</text>
+<text class="sm" x="668" y="159" text-anchor="start">compressed：c + offset，仅当 c &lt; (i+1)//ratio；n_comp = S//ratio = 4（S &lt; ratio → None）</text>
+<text class="sm" x="668" y="175" text-anchor="start">indexer：causal mask → top-k（−inf → −1）→ 校验 (idx ≥ 0) ∧ (idx &lt; (i+1)//ratio) → +offset</text>
+<text class="dim" x="668" y="191" text-anchor="start">拼接顺序固定 [window | compressed]；fused 路径再 local_to_global_flat 成扁平全局 id</text>
+<text class="sm" x="668" y="207" text-anchor="start">ratio 128 与 csa_dense_mode 不建 indexer：压缩行全部进集合（get_compress_topk_idxs）</text>
+<text class="sm" x="668" y="223" text-anchor="start">top-k 只在「可见压缩行 &gt; top-k」时才真的丢行：本例从 q11 起</text>
+<rect class="acc1" x="656" y="262" width="588" height="166" rx="8"/>
+<text class="tx" x="668" y="283" text-anchor="start">规模面板：最后一个 query 最多访问的 KV 行数（window=128，top-k=512）</text>
+<path class="edge" d="M 668 291 L 1232 291"/>
+<text class="sm" x="668" y="309" text-anchor="start">S=4,096：dense 4,096｜W 128｜C 640（压缩行 1,024 &gt; top-k）｜C dense 1,152｜H 160</text>
+<text class="sm" x="668" y="325" text-anchor="start">S=65,536：dense 65,536｜W 128｜C 640（压缩行 16,384）｜C dense 16,512｜H 640</text>
+<text class="dim" x="668" y="341" text-anchor="start">C 层被 window + top-k 钉死在 640 行、与 S 无关；dense 是 65,536 行</text>
+<text class="sm" x="668" y="357" text-anchor="start">H 层不用 indexer：S/128 行本来就少（512 行 @ 65,536），全部看完也比 top-k 便宜</text>
+<text class="costtx" x="668" y="373" text-anchor="start">C dense 让访问量随 S/4 增长（16,512 行 @ 65,536）：csa_dense_mode 的代价</text>
+<text class="sm" x="668" y="389" text-anchor="start">S &lt; ratio 的段没有压缩行：Compressor 返回 None，H 层在 S &lt; 128 时退化成纯滑窗</text>
+<text class="sm" x="668" y="405" text-anchor="start">行数与压缩 KV 的内容都由 Compressor 决定；本图不画门控池化本身</text>
+<rect class="neutral" x="656" y="444" width="588" height="134" rx="8"/>
+<text class="tx" x="668" y="465" text-anchor="start">THD：按段拼接（build_cu_seqlens_kv_full / cat_per_segment）</text>
+<path class="edge" d="M 668 473 L 1232 473"/>
+<text class="sm" x="668" y="491" text-anchor="start">两段 [8, 6]、ratio=4 → 压缩行 [2, 1]；cu_kv=[0, 8, 14]，cu_comp=[0, 2, 3]</text>
+<text class="dim" x="668" y="507" text-anchor="start">cu_kv_full=[0, 10, 17]：行序 t0 t1 t2 t3 t4 t5 t6 t7 c0 c1 | t8 t9 t10 t11 t12 t13 c2</text>
+<text class="sm" x="668" y="523" text-anchor="start">压缩行的局部下标偏移 = 该段 seqlen_kv：段 0 偏移 8、段 1 偏移 6（SBHD 的 offset = sq）</text>
+<text class="sm" x="668" y="539" text-anchor="start">段 0 末 query（pos 7）压缩下标 [8, 9]；段 1（pos 5）[6, -1]</text>
+<text class="sm" x="668" y="555" text-anchor="start">窗口不跨段：段首之前写 −1（get_window_topk_idxs_thd）；CP&gt;1 的边界交换归 35 页</text>
+<rect class="neutral" x="656" y="594" width="588" height="102" rx="8"/>
+<text class="tx" x="668" y="615" text-anchor="start">本图复刻了什么、简化了什么</text>
+<path class="edge" d="M 668 623 L 1232 623"/>
+<text class="sm" x="668" y="641" text-anchor="start">精确：window / compressed 索引、因果可见集、top-k 后的校验与 +offset、THD 的按段拼接</text>
+<text class="sm" x="668" y="657" text-anchor="start">简化：indexer 分数是确定性表，不是 wq_b / weights_proj 算出来的；不画 4x 重叠池化与 RoPE</text>
+<text class="sm" x="668" y="673" text-anchor="start">fused 路径的集合与本图相同，只是索引先扁平化、再按 SM 对齐 pad 到 64 / 128 的倍数</text>
+</svg>

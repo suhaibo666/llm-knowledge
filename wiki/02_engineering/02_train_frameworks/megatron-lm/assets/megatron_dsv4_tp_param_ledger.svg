@@ -1,0 +1,197 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 604" width="1272" height="604" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 2　参数所有权与精度账本：接口像 TP 的只有三个投影，TP group 里却只有一个 rank</text>
+<text class="su" x="28" y="52" text-anchor="start">算例：hidden 512、8 heads、q_lora_rank 192、v_head_dim 16、qk_pos_emb 8、o_groups 8 × o_lora_rank 1024、indexer 64 × 128；一个 ratio-4（C）层，参数量 = 形状连乘</text>
+<rect class="panel" x="20" y="74" width="730" height="430" rx="8"/>
+<text class="rank" x="28" y="92" text-anchor="start">参数张量</text>
+<text class="rank" x="256" y="92" text-anchor="start">形状</text>
+<text class="rank" x="366" y="92" text-anchor="start">参数量</text>
+<text class="rank" x="454" y="92" text-anchor="start">所有权</text>
+<text class="rank" x="564" y="92" text-anchor="start">驻留精度</text>
+<path class="edge" d="M 28 99 L 742 99"/>
+<text class="sm" x="28" y="118" text-anchor="start">linear_q_down_proj</text>
+<text class="sm" x="256" y="118" text-anchor="start">[192, 512]</text>
+<text class="sm" x="366" y="118" text-anchor="start">98,304</text>
+<rect class="ghost" x="454" y="106" width="70.80000000000001" height="16" rx="3"/>
+<text class="sm" x="489.4" y="118" text-anchor="middle">duplicated</text>
+<rect class="neutral" x="564" y="106" width="104.4" height="16" rx="3"/>
+<text class="sm" x="616.2" y="118" text-anchor="middle">随外层 FP8 上下文</text>
+<text class="sm" x="28" y="140" text-anchor="start">q_layernorm</text>
+<text class="sm" x="256" y="140" text-anchor="start">[192]</text>
+<text class="sm" x="366" y="140" text-anchor="start">192</text>
+<rect class="neutral" x="454" y="128" width="82.56000000000003" height="16" rx="3"/>
+<text class="sm" x="495.28000000000003" y="140" text-anchor="middle">nn.Parameter</text>
+<rect class="neutral" x="564" y="128" width="82.56000000000003" height="16" rx="3"/>
+<text class="sm" x="605.28" y="140" text-anchor="middle">params_dtype</text>
+<text class="sm" x="28" y="162" text-anchor="start">linear_q_up_proj</text>
+<text class="sm" x="256" y="162" text-anchor="start">[128, 192]</text>
+<text class="sm" x="366" y="162" text-anchor="start">24,576</text>
+<rect class="acc1" x="454" y="150" width="74.16" height="16" rx="3"/>
+<text class="dim" x="491.08" y="162" text-anchor="middle">Column 接口</text>
+<rect class="neutral" x="564" y="150" width="104.4" height="16" rx="3"/>
+<text class="sm" x="616.2" y="162" text-anchor="middle">随外层 FP8 上下文</text>
+<text class="sm" x="28" y="184" text-anchor="start">linear_kv_proj</text>
+<text class="sm" x="256" y="184" text-anchor="start">[16, 512]</text>
+<text class="sm" x="366" y="184" text-anchor="start">8,192</text>
+<rect class="acc1" x="454" y="172" width="74.16" height="16" rx="3"/>
+<text class="dim" x="491.08" y="184" text-anchor="middle">Column 接口</text>
+<rect class="neutral" x="564" y="172" width="104.4" height="16" rx="3"/>
+<text class="sm" x="616.2" y="184" text-anchor="middle">随外层 FP8 上下文</text>
+<text class="sm" x="28" y="206" text-anchor="start">kv_layernorm</text>
+<text class="sm" x="256" y="206" text-anchor="start">[16]</text>
+<text class="sm" x="366" y="206" text-anchor="start">16</text>
+<rect class="neutral" x="454" y="194" width="82.56000000000003" height="16" rx="3"/>
+<text class="sm" x="495.28000000000003" y="206" text-anchor="middle">nn.Parameter</text>
+<rect class="neutral" x="564" y="194" width="82.56000000000003" height="16" rx="3"/>
+<text class="sm" x="605.28" y="206" text-anchor="middle">params_dtype</text>
+<text class="sm" x="28" y="228" text-anchor="start">linear_o_group_proj</text>
+<text class="sm" x="256" y="228" text-anchor="start">[8192, 16]</text>
+<text class="sm" x="366" y="228" text-anchor="start">131,072</text>
+<rect class="neutral" x="454" y="216" width="82.56000000000003" height="16" rx="3"/>
+<text class="sm" x="495.28000000000003" y="228" text-anchor="middle">nn.Parameter</text>
+<rect class="neutral" x="564" y="216" width="82.56000000000003" height="16" rx="3"/>
+<text class="sm" x="605.28" y="228" text-anchor="middle">params_dtype</text>
+<text class="sm" x="28" y="250" text-anchor="start">linear_proj</text>
+<text class="sm" x="256" y="250" text-anchor="start">[512, 8192]</text>
+<text class="sm" x="366" y="250" text-anchor="start">4,194,304</text>
+<rect class="acc1" x="454" y="238" width="56.52" height="16" rx="3"/>
+<text class="dim" x="482.26" y="250" text-anchor="middle">Row 接口</text>
+<rect class="neutral" x="564" y="238" width="104.4" height="16" rx="3"/>
+<text class="sm" x="616.2" y="250" text-anchor="middle">随外层 FP8 上下文</text>
+<text class="sm" x="28" y="272" text-anchor="start">core.attn_sink</text>
+<text class="sm" x="256" y="272" text-anchor="start">[8]</text>
+<text class="sm" x="366" y="272" text-anchor="start">8</text>
+<rect class="neutral" x="454" y="260" width="82.56000000000003" height="16" rx="3"/>
+<text class="sm" x="495.28000000000003" y="272" text-anchor="middle">nn.Parameter</text>
+<rect class="acc2" x="564" y="260" width="111.96000000000005" height="16" rx="3"/>
+<text class="costtx" x="619.98" y="272" text-anchor="middle">mark_keep_in_fp32</text>
+<text class="sm" x="28" y="294" text-anchor="start">core.compressor.linear_wkv</text>
+<text class="sm" x="256" y="294" text-anchor="start">[32, 512]</text>
+<text class="sm" x="366" y="294" text-anchor="start">16,384</text>
+<rect class="ghost" x="454" y="282" width="70.80000000000001" height="16" rx="3"/>
+<text class="sm" x="489.4" y="294" text-anchor="middle">duplicated</text>
+<rect class="acc2" x="564" y="282" width="123.30000000000004" height="16" rx="3"/>
+<text class="costtx" x="625.65" y="294" text-anchor="middle">FP8 上下文外 · BF16</text>
+<text class="sm" x="28" y="316" text-anchor="start">core.compressor.linear_wgate</text>
+<text class="sm" x="256" y="316" text-anchor="start">[32, 512]</text>
+<text class="sm" x="366" y="316" text-anchor="start">16,384</text>
+<rect class="ghost" x="454" y="304" width="70.80000000000001" height="16" rx="3"/>
+<text class="sm" x="489.4" y="316" text-anchor="middle">duplicated</text>
+<rect class="acc2" x="564" y="304" width="123.30000000000004" height="16" rx="3"/>
+<text class="costtx" x="625.65" y="316" text-anchor="middle">FP8 上下文外 · BF16</text>
+<text class="sm" x="28" y="338" text-anchor="start">core.compressor.ape</text>
+<text class="sm" x="256" y="338" text-anchor="start">[4, 32]</text>
+<text class="sm" x="366" y="338" text-anchor="start">128</text>
+<rect class="neutral" x="454" y="326" width="82.56000000000003" height="16" rx="3"/>
+<text class="sm" x="495.28000000000003" y="338" text-anchor="middle">nn.Parameter</text>
+<rect class="acc2" x="564" y="326" width="111.96000000000005" height="16" rx="3"/>
+<text class="costtx" x="619.98" y="338" text-anchor="middle">mark_keep_in_fp32</text>
+<text class="sm" x="28" y="360" text-anchor="start">core.compressor.norm</text>
+<text class="sm" x="256" y="360" text-anchor="start">[16]</text>
+<text class="sm" x="366" y="360" text-anchor="start">16</text>
+<rect class="neutral" x="454" y="348" width="82.56000000000003" height="16" rx="3"/>
+<text class="sm" x="495.28000000000003" y="360" text-anchor="middle">nn.Parameter</text>
+<rect class="neutral" x="564" y="348" width="82.56000000000003" height="16" rx="3"/>
+<text class="sm" x="605.28" y="360" text-anchor="middle">params_dtype</text>
+<text class="sm" x="28" y="382" text-anchor="start">core.indexer.linear_wq_b</text>
+<text class="sm" x="256" y="382" text-anchor="start">[8192, 192]</text>
+<text class="sm" x="366" y="382" text-anchor="start">1,572,864</text>
+<rect class="ghost" x="454" y="370" width="70.80000000000001" height="16" rx="3"/>
+<text class="sm" x="489.4" y="382" text-anchor="middle">duplicated</text>
+<rect class="neutral" x="564" y="370" width="104.4" height="16" rx="3"/>
+<text class="sm" x="616.2" y="382" text-anchor="middle">随外层 FP8 上下文</text>
+<text class="sm" x="28" y="404" text-anchor="start">core.indexer.linear_weights_proj</text>
+<text class="sm" x="256" y="404" text-anchor="start">[64, 512]</text>
+<text class="sm" x="366" y="404" text-anchor="start">32,768</text>
+<rect class="ghost" x="454" y="392" width="70.80000000000001" height="16" rx="3"/>
+<text class="sm" x="489.4" y="404" text-anchor="middle">duplicated</text>
+<rect class="acc2" x="564" y="392" width="123.30000000000004" height="16" rx="3"/>
+<text class="costtx" x="625.65" y="404" text-anchor="middle">FP8 上下文外 · BF16</text>
+<text class="sm" x="28" y="426" text-anchor="start">core.indexer.compressor.linear_wkv</text>
+<text class="sm" x="256" y="426" text-anchor="start">[256, 512]</text>
+<text class="sm" x="366" y="426" text-anchor="start">131,072</text>
+<rect class="ghost" x="454" y="414" width="70.80000000000001" height="16" rx="3"/>
+<text class="sm" x="489.4" y="426" text-anchor="middle">duplicated</text>
+<rect class="acc2" x="564" y="414" width="123.30000000000004" height="16" rx="3"/>
+<text class="costtx" x="625.65" y="426" text-anchor="middle">FP8 上下文外 · BF16</text>
+<text class="sm" x="28" y="448" text-anchor="start">core.indexer.compressor.linear_wgate</text>
+<text class="sm" x="256" y="448" text-anchor="start">[256, 512]</text>
+<text class="sm" x="366" y="448" text-anchor="start">131,072</text>
+<rect class="ghost" x="454" y="436" width="70.80000000000001" height="16" rx="3"/>
+<text class="sm" x="489.4" y="448" text-anchor="middle">duplicated</text>
+<rect class="acc2" x="564" y="436" width="123.30000000000004" height="16" rx="3"/>
+<text class="costtx" x="625.65" y="448" text-anchor="middle">FP8 上下文外 · BF16</text>
+<text class="sm" x="28" y="470" text-anchor="start">core.indexer.compressor.ape</text>
+<text class="sm" x="256" y="470" text-anchor="start">[4, 256]</text>
+<text class="sm" x="366" y="470" text-anchor="start">1,024</text>
+<rect class="neutral" x="454" y="458" width="82.56000000000003" height="16" rx="3"/>
+<text class="sm" x="495.28000000000003" y="470" text-anchor="middle">nn.Parameter</text>
+<rect class="acc2" x="564" y="458" width="111.96000000000005" height="16" rx="3"/>
+<text class="costtx" x="619.98" y="470" text-anchor="middle">mark_keep_in_fp32</text>
+<text class="sm" x="28" y="492" text-anchor="start">core.indexer.compressor.norm</text>
+<text class="sm" x="256" y="492" text-anchor="start">[128]</text>
+<text class="sm" x="366" y="492" text-anchor="start">128</text>
+<rect class="neutral" x="454" y="480" width="82.56000000000003" height="16" rx="3"/>
+<text class="sm" x="495.28000000000003" y="492" text-anchor="middle">nn.Parameter</text>
+<rect class="neutral" x="564" y="480" width="82.56000000000003" height="16" rx="3"/>
+<text class="sm" x="605.28" y="492" text-anchor="middle">params_dtype</text>
+<text class="cap" x="28" y="528" text-anchor="start">芯片：acc1 = Column/Row 接口（gather_output=False / input_is_parallel=True，tp_group 只有 1 个 rank）</text>
+<text class="cap" x="28" y="544" text-anchor="start">acc2 = 精度例外：FP8 上下文外 BF16、mark_keep_in_fp32；其余随 params_dtype 或外层 FP8 上下文</text>
+<text class="cap" x="28" y="560" text-anchor="start">q_layernorm / kv_layernorm 用 attention_latent_norm_epsilon（默认继承 layernorm_epsilon）</text>
+<text class="cap" x="28" y="576" text-anchor="start">__post_init__ 把 qk_head_dim 与 kv_lora_rank 改写成 v_head_dim − qk_pos_emb_head_dim = 8，配置写的 16 / 64 不生效</text>
+<rect class="neutral" x="766" y="74" width="478" height="118" rx="8"/>
+<text class="tx" x="778" y="95" text-anchor="start">TP group（size 1）：三条源码事实</text>
+<path class="edge" d="M 778 103 L 1232 103"/>
+<text class="sm" x="778" y="121" text-anchor="start">DSv4HybridAttention.__init__ 断言 get_pg_size(pg_collection.tp) == 1</text>
+<text class="sm" x="778" y="137" text-anchor="start">Attention.__init__：heads_per_partition = 8/1 = 8；CSA n_local_heads 不除 TP</text>
+<text class="sm" x="778" y="153" text-anchor="start">TELinear(parallel_mode="duplicated") 断言 tp_group is None</text>
+<text class="dim" x="778" y="169" text-anchor="start">接口保留 Column/Row 形状，但 group 只有一个 rank、没有 AG/RS</text>
+<rect class="acc2" x="766" y="206" width="478" height="118" rx="8"/>
+<text class="tx" x="778" y="227" text-anchor="start">若 TP&gt;1 要证明的四项（分析重建，源码沉默）</text>
+<path class="edge" d="M 778 235 L 1232 235"/>
+<text class="sm" x="778" y="253" text-anchor="start">① 三个接口投影沿哪一维分片，attn_sink 与 indexer 的 head 和怎样跟着分</text>
+<text class="sm" x="778" y="269" text-anchor="start">② 复制的 compressor / indexer 各 rank 算出同一组 top-k 还是各算各的</text>
+<text class="sm" x="778" y="285" text-anchor="start">③ compressed K / KV 的 collective 在 TP 与 CP 两个 group 上按什么顺序发生</text>
+<text class="costtx" x="778" y="301" text-anchor="start">④ duplicated 参数的梯度在哪个 group 归并；fused kernel 只吃扁平 (rows, H, D)</text>
+<rect class="neutral" x="766" y="338" width="478" height="230" rx="8"/>
+<text class="tx" x="778" y="359" text-anchor="start">账本合计</text>
+<path class="edge" d="M 778 367 L 1232 367"/>
+<text class="dim" x="778" y="385" text-anchor="start">C 层 6,358,504 参数，linear_proj 4,194,304（66%）</text>
+<text class="sm" x="778" y="401" text-anchor="start">indexer.linear_wq_b 1,572,864（25%）；duplicated 共 7 个张量 1,998,848</text>
+<text class="sm" x="778" y="417" text-anchor="start">H 层 4,475,112：compressor coff=1，wkv/wgate [16, 512]、ape [128, 16]</text>
+<text class="sm" x="778" y="433" text-anchor="start">W 层 4,456,664；csa_dense_mode 的 C 层 4,489,576（去掉整个 indexer）</text>
+<text class="sm" x="778" y="449" text-anchor="start">接口投影 3 个张量 4,227,072 参数，全部在 size-1 的 TP group 里</text>
+<text class="costtx" x="778" y="465" text-anchor="start">fp32 保持 3 个张量 1,160 参数；FP8 上下文外 BF16 5 个张量 327,680 参数</text>
+<text class="sm" x="778" y="481" text-anchor="start">DSv4-Flash 配方 C 层（hidden 4,096、64 heads、v_head_dim 512）：126,098,624</text>
+<text class="sm" x="778" y="497" text-anchor="start">其中 linear_proj 33,554,432（27%），wq_b 8,388,608，FP8 外 BF16 10,747,904</text>
+<text class="sm" x="778" y="513" text-anchor="start">mHC（n=4）：mapping_proj [24, 2048] = 49,152 参数 + 3 alpha + 24 bias，fp32</text>
+<text class="sm" x="778" y="529" text-anchor="start">linear_proj 在 fp8/fp4 下 set_save_original_input：不存量化副本</text>
+<text class="sm" x="778" y="545" text-anchor="start">delay_wgrad_compute 下 backward_dw 逐个冲刷 TE 线性层（含 compressor/indexer）</text>
+</svg>

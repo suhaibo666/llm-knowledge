@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 560" width="1272" height="560" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 3　同一层走哪条 kernel 路径，以及 mHC 映射几步就近似双随机</text>
+<text class="su" x="28" y="52" text-anchor="start">左：CompressedSparseAttention.forward 的分派（S=4,096，attention_backend=fused）；右：hyper_connection.py::_sinkhorn_iterations 在 n=4 上的收敛（确定性 logits）</text>
+<rect class="panel" x="20" y="74" width="798" height="210" rx="8"/>
+<text class="rank" x="257" y="92" text-anchor="middle">unfused · train</text>
+<text class="rank" x="415" y="92" text-anchor="middle">unfused · eval</text>
+<text class="rank" x="573" y="92" text-anchor="middle">cudnn · train</text>
+<text class="rank" x="731" y="92" text-anchor="middle">cudnn · eval</text>
+<path class="edge" d="M 28 99 L 810 99"/>
+<text class="tx" x="28" y="130" text-anchor="start">W（ratio 0）</text>
+<rect class="ghost" x="181" y="112" width="152" height="38" rx="5"/>
+<text class="sm" x="257" y="126" text-anchor="middle">unfused·A</text>
+<text class="sm" x="257" y="141" text-anchor="middle">window + torch</text>
+<rect class="ghost" x="339" y="112" width="152" height="38" rx="5"/>
+<text class="sm" x="415" y="126" text-anchor="middle">unfused·A</text>
+<text class="sm" x="415" y="141" text-anchor="middle">window + torch</text>
+<rect class="acc1" x="497" y="112" width="152" height="38" rx="5"/>
+<text class="dim" x="573" y="126" text-anchor="middle">A</text>
+<text class="sm" x="573" y="141" text-anchor="middle">window → csa_sparse_attn</text>
+<rect class="acc1" x="655" y="112" width="152" height="38" rx="5"/>
+<text class="dim" x="731" y="126" text-anchor="middle">A</text>
+<text class="sm" x="731" y="141" text-anchor="middle">window → csa_sparse_attn</text>
+<text class="tx" x="28" y="174" text-anchor="start">C（ratio 4）</text>
+<rect class="acc2" x="181" y="156" width="152" height="38" rx="5"/>
+<text class="costtx" x="257" y="170" text-anchor="middle">unfused·B</text>
+<text class="sm" x="257" y="185" text-anchor="middle">DSAIndexerLoss + torch</text>
+<rect class="ghost" x="339" y="156" width="152" height="38" rx="5"/>
+<text class="sm" x="415" y="170" text-anchor="middle">unfused·C</text>
+<text class="sm" x="415" y="185" text-anchor="middle">qk_topk_naive + torch</text>
+<rect class="acc2" x="497" y="156" width="152" height="38" rx="5"/>
+<text class="costtx" x="573" y="170" text-anchor="middle">B</text>
+<text class="sm" x="573" y="185" text-anchor="middle">fused indexer + attn</text>
+<rect class="acc1" x="655" y="156" width="152" height="38" rx="5"/>
+<text class="dim" x="731" y="170" text-anchor="middle">C</text>
+<text class="sm" x="731" y="185" text-anchor="middle">topk → csa_sparse_attn</text>
+<text class="tx" x="28" y="218" text-anchor="start">C + csa_dense_mode</text>
+<rect class="ghost" x="181" y="200" width="152" height="38" rx="5"/>
+<text class="sm" x="257" y="214" text-anchor="middle">unfused·A</text>
+<text class="sm" x="257" y="229" text-anchor="middle">all compressed + torch</text>
+<rect class="ghost" x="339" y="200" width="152" height="38" rx="5"/>
+<text class="sm" x="415" y="214" text-anchor="middle">unfused·A</text>
+<text class="sm" x="415" y="229" text-anchor="middle">all compressed + torch</text>
+<rect class="acc1" x="497" y="200" width="152" height="38" rx="5"/>
+<text class="dim" x="573" y="214" text-anchor="middle">A</text>
+<text class="sm" x="573" y="229" text-anchor="middle">all → csa_sparse_attn</text>
+<rect class="acc1" x="655" y="200" width="152" height="38" rx="5"/>
+<text class="dim" x="731" y="214" text-anchor="middle">A</text>
+<text class="sm" x="731" y="229" text-anchor="middle">all → csa_sparse_attn</text>
+<text class="tx" x="28" y="262" text-anchor="start">H（ratio 128）</text>
+<rect class="ghost" x="181" y="244" width="152" height="38" rx="5"/>
+<text class="sm" x="257" y="258" text-anchor="middle">unfused·A</text>
+<text class="sm" x="257" y="273" text-anchor="middle">all compressed + torch</text>
+<rect class="ghost" x="339" y="244" width="152" height="38" rx="5"/>
+<text class="sm" x="415" y="258" text-anchor="middle">unfused·A</text>
+<text class="sm" x="415" y="273" text-anchor="middle">all compressed + torch</text>
+<rect class="acc1" x="497" y="244" width="152" height="38" rx="5"/>
+<text class="dim" x="573" y="258" text-anchor="middle">A</text>
+<text class="sm" x="573" y="273" text-anchor="middle">all → csa_sparse_attn</text>
+<rect class="acc1" x="655" y="244" width="152" height="38" rx="5"/>
+<text class="dim" x="731" y="258" text-anchor="middle">A</text>
+<text class="sm" x="731" y="273" text-anchor="middle">all → csa_sparse_attn</text>
+<rect class="neutral" x="20" y="304" width="798" height="166" rx="8"/>
+<text class="tx" x="32" y="325" text-anchor="start">读法</text>
+<path class="edge" d="M 32 333 L 806 333"/>
+<text class="sm" x="32" y="351" text-anchor="start">谓词：use_fused = attention_backend ≠ unfused ∧ dsa_kernel_backend ≠ none；has_indexer = ratio &gt; 1 ∧ n_comp &gt; 0 ∧ indexer 已建</text>
+<text class="sm" x="32" y="367" text-anchor="start">indexer 只在 ratio == 4 ∧ ¬csa_dense_mode 时构建；compressor 只在 ratio &gt; 1 时构建（W 层两者都没有）</text>
+<text class="dim" x="32" y="383" text-anchor="start">6 种路径：unfused·A、A、unfused·B、unfused·C、B、C；带 indexer loss 的格子 2 个（acc2）</text>
+<text class="sm" x="32" y="399" text-anchor="start">Path B / C / A 的 kernel：FlashMLA 前向 + cuDNN DSA 反向；B 把 indexer 的 KL 反向提前到前向里算好</text>
+<text class="costtx" x="32" y="415" text-anchor="start">attention_backend=unfused 时即使 dsa_kernel_backend=cudnn 也走 unfused·B（DSAIndexerLoss + torch）</text>
+<text class="sm" x="32" y="431" text-anchor="start">H 层在 S &lt; 128 时 n_compressed = 0：S=64 的 cudnn·train 走 A（window → csa_sparse_attn）</text>
+<text class="sm" x="32" y="447" text-anchor="start">THD 与 SBHD 的分派谓词相同，CP&gt;1 另走 _forward_thd_cp；fused compressor 的 gate 另见正文</text>
+<rect class="panel" x="836" y="74" width="408" height="178" rx="8"/>
+<text class="tx" x="848" y="94" text-anchor="start">Sinkhorn：softmax(行)+ε → 列归一 → (行归一, 列归一)×(k−1)</text>
+<path class="edge" d="M 848 102 L 1232 102"/>
+<text class="rank" x="848" y="120" text-anchor="start">迭代 k</text>
+<text class="rank" x="956" y="120" text-anchor="start">max|行和 − 1|</text>
+<text class="rank" x="1096" y="120" text-anchor="start">max|列和 − 1|</text>
+<text class="sm" x="848" y="140" text-anchor="start">1</text>
+<text class="sm" x="956" y="140" text-anchor="start">3.49e-2</text>
+<text class="sm" x="1096" y="140" text-anchor="start">2.09e-6</text>
+<text class="sm" x="848" y="160" text-anchor="start">2</text>
+<text class="sm" x="956" y="160" text-anchor="start">1.61e-2</text>
+<text class="sm" x="1096" y="160" text-anchor="start">1.02e-6</text>
+<text class="sm" x="848" y="180" text-anchor="start">3</text>
+<text class="sm" x="956" y="180" text-anchor="start">7.45e-3</text>
+<text class="sm" x="1096" y="180" text-anchor="start">1.01e-6</text>
+<text class="sm" x="848" y="200" text-anchor="start">5</text>
+<text class="sm" x="956" y="200" text-anchor="start">1.61e-3</text>
+<text class="sm" x="1096" y="200" text-anchor="start">1.00e-6</text>
+<text class="dim" x="848" y="220" text-anchor="start">20</text>
+<text class="dim" x="956" y="220" text-anchor="start">1.02e-6</text>
+<text class="dim" x="1096" y="220" text-anchor="start">1.00e-6</text>
+<rect class="panel" x="836" y="268" width="408" height="150" rx="8"/>
+<text class="tx" x="848" y="288" text-anchor="start">k=20（配方 mhc_sinkhorn_iterations）后的 H_res（4×4）</text>
+<path class="edge" d="M 848 296 L 1232 296"/>
+<rect class="ghost" x="848" y="296" width="42" height="18" rx="3"/>
+<text class="sm" x="869" y="309" text-anchor="middle">0.04</text>
+<rect class="acc1" x="894" y="296" width="42" height="18" rx="3"/>
+<text class="dim" x="915" y="309" text-anchor="middle">0.72</text>
+<rect class="ghost" x="940" y="296" width="42" height="18" rx="3"/>
+<text class="sm" x="961" y="309" text-anchor="middle">0.12</text>
+<rect class="ghost" x="986" y="296" width="42" height="18" rx="3"/>
+<text class="sm" x="1007" y="309" text-anchor="middle">0.12</text>
+<text class="sm" x="1040" y="309" text-anchor="start">Σ行 = 1.0000</text>
+<rect class="ghost" x="848" y="318" width="42" height="18" rx="3"/>
+<text class="sm" x="869" y="331" text-anchor="middle">0.12</text>
+<rect class="ghost" x="894" y="318" width="42" height="18" rx="3"/>
+<text class="sm" x="915" y="331" text-anchor="middle">0.04</text>
+<rect class="acc1" x="940" y="318" width="42" height="18" rx="3"/>
+<text class="dim" x="961" y="331" text-anchor="middle">0.42</text>
+<rect class="ghost" x="986" y="318" width="42" height="18" rx="3"/>
+<text class="sm" x="1007" y="331" text-anchor="middle">0.42</text>
+<text class="sm" x="1040" y="331" text-anchor="start">Σ行 = 1.0000</text>
+<rect class="acc1" x="848" y="340" width="42" height="18" rx="3"/>
+<text class="dim" x="869" y="353" text-anchor="middle">0.72</text>
+<rect class="ghost" x="894" y="340" width="42" height="18" rx="3"/>
+<text class="sm" x="915" y="353" text-anchor="middle">0.21</text>
+<rect class="ghost" x="940" y="340" width="42" height="18" rx="3"/>
+<text class="sm" x="961" y="353" text-anchor="middle">0.04</text>
+<rect class="ghost" x="986" y="340" width="42" height="18" rx="3"/>
+<text class="sm" x="1007" y="353" text-anchor="middle">0.04</text>
+<text class="sm" x="1040" y="353" text-anchor="start">Σ行 = 1.0000</text>
+<rect class="ghost" x="848" y="362" width="42" height="18" rx="3"/>
+<text class="sm" x="869" y="375" text-anchor="middle">0.12</text>
+<rect class="ghost" x="894" y="362" width="42" height="18" rx="3"/>
+<text class="sm" x="915" y="375" text-anchor="middle">0.04</text>
+<rect class="acc1" x="940" y="362" width="42" height="18" rx="3"/>
+<text class="dim" x="961" y="375" text-anchor="middle">0.42</text>
+<rect class="ghost" x="986" y="362" width="42" height="18" rx="3"/>
+<text class="sm" x="1007" y="375" text-anchor="middle">0.42</text>
+<text class="sm" x="1040" y="375" text-anchor="start">Σ行 = 1.0000</text>
+<text class="sm" x="848" y="400" text-anchor="start">Σ列 = [1.0000, 1.0000, 1.0000, 1.0000]</text>
+<rect class="neutral" x="836" y="434" width="408" height="102" rx="8"/>
+<text class="tx" x="848" y="455" text-anchor="start">mHC 参数怎么算、怎么同步</text>
+<path class="edge" d="M 848 463 L 1232 463"/>
+<text class="sm" x="848" y="481" text-anchor="start">mapping_proj = nn.Linear(n·C → n²+2n)：n=4、C=512 → [24, 2048]</text>
+<text class="sm" x="848" y="497" text-anchor="start">映射在 fp32 里算（权重 mark_keep_in_fp32），H 再转回激活 dtype</text>
+<text class="dim" x="848" y="513" text-anchor="start">sequence_parallel 属性 → finalize_model_grads 按 TP group 求和</text>
+<text class="sm" x="848" y="529" text-anchor="start">Sinkhorn 后端：Triton → cuTile → native；MHC_FORCE_BACKEND 强制</text>
+</svg>

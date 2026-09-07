@@ -1,0 +1,345 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 922" width="1272" height="922" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .acc1fill{fill:#2563EB;stroke:#2563EB;stroke-width:1}
+  .acc2fill{fill:#C3651F;stroke:#C3651F;stroke-width:1}
+  .s0{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.1}
+  .s1{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.1}
+  .bar{fill:#F4C9A3;stroke:#C3651F;stroke-width:.8}
+  .bar1{fill:#CFE0FA;stroke:#2563EB;stroke-width:.8}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .line1{fill:none;stroke:#2563EB;stroke-width:2}
+  .line2{fill:none;stroke:#C3651F;stroke-width:2;stroke-dasharray:6 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 1　DSv4 THD CP 的布局：contiguous 切分、左边界 8 行、定容压紧槽位与 rank-major 压缩行</text>
+<text class="su" x="28" y="52" text-anchor="start">算例：CP=2，全局 32 个 token 打包成 18+14 两条序列；csa_window_size=4，ratio=4（d_comp=8，d_window=8），indexer top-k=2；每 rank 16 行，c_cap=8</text>
+<text class="pt" x="28" y="86" text-anchor="start">A　全局 THD 行与 contiguous 切分</text>
+<path class="sep" d="M 120 100 L 603 100"/>
+<text class="sm" x="361.5" y="96" text-anchor="middle">seq0（18 个 token，4 个压缩组）</text>
+<path class="sep" d="M 606 100 L 981 100"/>
+<text class="sm" x="793.5" y="96" text-anchor="middle">seq1（14 个 token，3 个压缩组）</text>
+<rect class="neutral" x="120" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="132" y="120" text-anchor="middle">0</text>
+<rect class="neutral" x="147" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="159" y="120" text-anchor="middle">1</text>
+<rect class="neutral" x="174" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="186" y="120" text-anchor="middle">2</text>
+<rect class="neutral" x="201" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="213" y="120" text-anchor="middle">3</text>
+<rect class="neutral" x="228" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="240" y="120" text-anchor="middle">4</text>
+<rect class="neutral" x="255" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="267" y="120" text-anchor="middle">5</text>
+<rect class="neutral" x="282" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="294" y="120" text-anchor="middle">6</text>
+<rect class="neutral" x="309" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="321" y="120" text-anchor="middle">7</text>
+<rect class="acc1" x="336" y="106" width="24" height="20" rx="3"/>
+<text class="dim" x="348" y="120" text-anchor="middle">8</text>
+<rect class="acc1" x="363" y="106" width="24" height="20" rx="3"/>
+<text class="dim" x="375" y="120" text-anchor="middle">9</text>
+<rect class="acc1" x="390" y="106" width="24" height="20" rx="3"/>
+<text class="dim" x="402" y="120" text-anchor="middle">10</text>
+<rect class="acc1" x="417" y="106" width="24" height="20" rx="3"/>
+<text class="dim" x="429" y="120" text-anchor="middle">11</text>
+<rect class="acc1" x="444" y="106" width="24" height="20" rx="3"/>
+<text class="dim" x="456" y="120" text-anchor="middle">12</text>
+<rect class="acc1" x="471" y="106" width="24" height="20" rx="3"/>
+<text class="dim" x="483" y="120" text-anchor="middle">13</text>
+<rect class="acc1" x="498" y="106" width="24" height="20" rx="3"/>
+<text class="dim" x="510" y="120" text-anchor="middle">14</text>
+<rect class="acc1" x="525" y="106" width="24" height="20" rx="3"/>
+<text class="dim" x="537" y="120" text-anchor="middle">15</text>
+<rect class="neutral" x="552" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="564" y="120" text-anchor="middle">16</text>
+<rect class="neutral" x="579" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="591" y="120" text-anchor="middle">17</text>
+<rect class="neutral" x="606" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="618" y="120" text-anchor="middle">18</text>
+<rect class="neutral" x="633" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="645" y="120" text-anchor="middle">19</text>
+<rect class="neutral" x="660" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="672" y="120" text-anchor="middle">20</text>
+<rect class="neutral" x="687" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="699" y="120" text-anchor="middle">21</text>
+<rect class="neutral" x="714" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="726" y="120" text-anchor="middle">22</text>
+<rect class="neutral" x="741" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="753" y="120" text-anchor="middle">23</text>
+<rect class="neutral" x="768" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="780" y="120" text-anchor="middle">24</text>
+<rect class="neutral" x="795" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="807" y="120" text-anchor="middle">25</text>
+<rect class="neutral" x="822" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="834" y="120" text-anchor="middle">26</text>
+<rect class="neutral" x="849" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="861" y="120" text-anchor="middle">27</text>
+<rect class="neutral" x="876" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="888" y="120" text-anchor="middle">28</text>
+<rect class="neutral" x="903" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="915" y="120" text-anchor="middle">29</text>
+<rect class="neutral" x="930" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="942" y="120" text-anchor="middle">30</text>
+<rect class="neutral" x="957" y="106" width="24" height="20" rx="3"/>
+<text class="sm" x="969" y="120" text-anchor="middle">31</text>
+<text class="sm" x="114" y="120" text-anchor="end">token</text>
+<text class="sm" x="114" y="146" text-anchor="end">压缩组</text>
+<rect class="neutral" x="120" y="132" width="105" height="20" rx="3"/>
+<text class="sm" x="172.5" y="146" text-anchor="middle">seq0·g0</text>
+<rect class="neutral" x="228" y="132" width="105" height="20" rx="3"/>
+<text class="sm" x="280.5" y="146" text-anchor="middle">seq0·g1</text>
+<rect class="neutral" x="336" y="132" width="105" height="20" rx="3"/>
+<text class="sm" x="388.5" y="146" text-anchor="middle">seq0·g2</text>
+<rect class="neutral" x="444" y="132" width="105" height="20" rx="3"/>
+<text class="sm" x="496.5" y="146" text-anchor="middle">seq0·g3</text>
+<rect class="ghost" x="552" y="132" width="51" height="20" rx="3"/>
+<text class="costtx" x="577.5" y="146" text-anchor="middle">×</text>
+<rect class="neutral" x="606" y="132" width="105" height="20" rx="3"/>
+<text class="sm" x="658.5" y="146" text-anchor="middle">seq1·g0</text>
+<rect class="neutral" x="714" y="132" width="105" height="20" rx="3"/>
+<text class="sm" x="766.5" y="146" text-anchor="middle">seq1·g1</text>
+<rect class="neutral" x="822" y="132" width="105" height="20" rx="3"/>
+<text class="sm" x="874.5" y="146" text-anchor="middle">seq1·g2</text>
+<rect class="ghost" x="930" y="132" width="51" height="20" rx="3"/>
+<text class="costtx" x="955.5" y="146" text-anchor="middle">×</text>
+<text class="sm" x="114" y="174" text-anchor="end">rank</text>
+<rect class="s0" x="120" y="160" width="429" height="20" rx="3"/>
+<text class="sm" x="334.5" y="174" text-anchor="middle">rank0：全局行 [0, 16)，global_start=0</text>
+<rect class="s1" x="552" y="160" width="429" height="20" rx="3"/>
+<text class="sm" x="766.5" y="174" text-anchor="middle">rank1：全局行 [16, 32)，global_start=16</text>
+<text class="cap" x="28" y="196" text-anchor="start">蓝框 = rank1 的左边界 d_window=8 行（全局 8..15，rank0 尾部经 P2P 送达）；× = 不足一个 ratio 组的尾巴，不生成压缩行（共 4 个）；rank0 的边界行全为无效行</text>
+<text class="pt" x="28" y="226" text-anchor="start">B　每个 rank 的 compressor 输入：boundary + local → 定容槽位（每槽 ratio=4 个 token）</text>
+<text class="rank" x="28" y="254" text-anchor="start">rank0</text>
+<rect class="ghost" x="72" y="240" width="84" height="22" rx="3"/>
+<text class="sm" x="114" y="255" text-anchor="middle">boundary 8（无效）</text>
+<rect class="s0" x="160" y="240" width="118" height="22" rx="3"/>
+<text class="sm" x="219" y="255" text-anchor="middle">local 16（0..15）</text>
+<path class="main" d="M 286 251 L 312 251"/>
+<rect class="neutral" x="318" y="240" width="80" height="22" rx="3"/>
+<text class="sm" x="358" y="255" text-anchor="middle">seq0·g0</text>
+<text class="sm" x="358" y="274" text-anchor="middle">s0</text>
+<text class="sm" x="358" y="287" text-anchor="middle">0..3</text>
+<rect class="neutral" x="402" y="240" width="80" height="22" rx="3"/>
+<text class="sm" x="442" y="255" text-anchor="middle">seq0·g1</text>
+<text class="sm" x="442" y="274" text-anchor="middle">s1</text>
+<text class="sm" x="442" y="287" text-anchor="middle">4..7</text>
+<rect class="neutral" x="486" y="240" width="80" height="22" rx="3"/>
+<text class="sm" x="526" y="255" text-anchor="middle">seq0·g2</text>
+<text class="sm" x="526" y="274" text-anchor="middle">s2</text>
+<text class="sm" x="526" y="287" text-anchor="middle">8..11</text>
+<rect class="neutral" x="570" y="240" width="80" height="22" rx="3"/>
+<text class="sm" x="610" y="255" text-anchor="middle">seq0·g3</text>
+<text class="sm" x="610" y="274" text-anchor="middle">s3</text>
+<text class="sm" x="610" y="287" text-anchor="middle">12..15</text>
+<rect class="ghost" x="654" y="240" width="80" height="22" rx="3"/>
+<text class="sm" x="694" y="255" text-anchor="middle">pad</text>
+<text class="sm" x="694" y="274" text-anchor="middle">s4</text>
+<rect class="ghost" x="738" y="240" width="80" height="22" rx="3"/>
+<text class="sm" x="778" y="255" text-anchor="middle">pad</text>
+<text class="sm" x="778" y="274" text-anchor="middle">s5</text>
+<rect class="ghost" x="822" y="240" width="80" height="22" rx="3"/>
+<text class="sm" x="862" y="255" text-anchor="middle">pad</text>
+<text class="sm" x="862" y="274" text-anchor="middle">s6</text>
+<rect class="ghost" x="906" y="240" width="80" height="22" rx="3"/>
+<text class="sm" x="946" y="255" text-anchor="middle">pad</text>
+<text class="sm" x="946" y="274" text-anchor="middle">s7</text>
+<text class="rank" x="28" y="316" text-anchor="start">rank1</text>
+<rect class="acc1" x="72" y="302" width="84" height="22" rx="3"/>
+<text class="dim" x="114" y="317" text-anchor="middle">boundary 8</text>
+<rect class="s1" x="160" y="302" width="118" height="22" rx="3"/>
+<text class="sm" x="219" y="317" text-anchor="middle">local 16（16..31）</text>
+<path class="main" d="M 286 313 L 312 313"/>
+<rect class="acc2" x="318" y="302" width="80" height="22" rx="3"/>
+<text class="costtx" x="358" y="317" text-anchor="middle">seq0·g2</text>
+<text class="sm" x="358" y="336" text-anchor="middle">s0</text>
+<text class="sm" x="358" y="349" text-anchor="middle">8..11·含边界</text>
+<rect class="acc2" x="402" y="302" width="80" height="22" rx="3"/>
+<text class="costtx" x="442" y="317" text-anchor="middle">seq0·g3</text>
+<text class="sm" x="442" y="336" text-anchor="middle">s1</text>
+<text class="sm" x="442" y="349" text-anchor="middle">12..15·含边界</text>
+<rect class="neutral" x="486" y="302" width="80" height="22" rx="3"/>
+<text class="sm" x="526" y="317" text-anchor="middle">seq1·g0</text>
+<text class="sm" x="526" y="336" text-anchor="middle">s2</text>
+<text class="sm" x="526" y="349" text-anchor="middle">18..21</text>
+<rect class="neutral" x="570" y="302" width="80" height="22" rx="3"/>
+<text class="sm" x="610" y="317" text-anchor="middle">seq1·g1</text>
+<text class="sm" x="610" y="336" text-anchor="middle">s3</text>
+<text class="sm" x="610" y="349" text-anchor="middle">22..25</text>
+<rect class="neutral" x="654" y="302" width="80" height="22" rx="3"/>
+<text class="sm" x="694" y="317" text-anchor="middle">seq1·g2</text>
+<text class="sm" x="694" y="336" text-anchor="middle">s4</text>
+<text class="sm" x="694" y="349" text-anchor="middle">26..29</text>
+<rect class="ghost" x="738" y="302" width="80" height="22" rx="3"/>
+<text class="sm" x="778" y="317" text-anchor="middle">pad</text>
+<text class="sm" x="778" y="336" text-anchor="middle">s5</text>
+<rect class="ghost" x="822" y="302" width="80" height="22" rx="3"/>
+<text class="sm" x="862" y="317" text-anchor="middle">pad</text>
+<text class="sm" x="862" y="336" text-anchor="middle">s6</text>
+<rect class="ghost" x="906" y="302" width="80" height="22" rx="3"/>
+<text class="sm" x="946" y="317" text-anchor="middle">pad</text>
+<text class="sm" x="946" y="336" text-anchor="middle">s7</text>
+<text class="cap" x="28" y="368" text-anchor="start">橙框 = 重算但不拥有的组（所有权 = 组末 token 所在 rank；rank1 为 overlap 重算 seq0·g2/g3），共 2 槽；ghost = 容量补齐（c_cap 对齐到 8 的倍数），共 7 槽；comp_id × ratio 是压缩行的 RoPE 位置</text>
+<text class="pt" x="28" y="398" text-anchor="start">C　AllGather 之后的 rank-major 缓冲（两个 gather 共用这张行号表）与 seq_to_rank_row</text>
+<rect class="s0" x="88" y="410" width="60" height="22" rx="3"/>
+<text class="sm" x="118" y="425" text-anchor="middle">seq0·g0</text>
+<text class="sm" x="118" y="444" text-anchor="middle">行 0</text>
+<rect class="s0" x="152" y="410" width="60" height="22" rx="3"/>
+<text class="sm" x="182" y="425" text-anchor="middle">seq0·g1</text>
+<text class="sm" x="182" y="444" text-anchor="middle">行 1</text>
+<rect class="s0" x="216" y="410" width="60" height="22" rx="3"/>
+<text class="sm" x="246" y="425" text-anchor="middle">seq0·g2</text>
+<text class="sm" x="246" y="444" text-anchor="middle">行 2</text>
+<rect class="s0" x="280" y="410" width="60" height="22" rx="3"/>
+<text class="sm" x="310" y="425" text-anchor="middle">seq0·g3</text>
+<text class="sm" x="310" y="444" text-anchor="middle">行 3</text>
+<rect class="ghost" x="344" y="410" width="60" height="22" rx="3"/>
+<text class="sm" x="374" y="425" text-anchor="middle">pad</text>
+<text class="sm" x="374" y="444" text-anchor="middle">行 4</text>
+<rect class="ghost" x="408" y="410" width="60" height="22" rx="3"/>
+<text class="sm" x="438" y="425" text-anchor="middle">pad</text>
+<text class="sm" x="438" y="444" text-anchor="middle">行 5</text>
+<rect class="ghost" x="472" y="410" width="60" height="22" rx="3"/>
+<text class="sm" x="502" y="425" text-anchor="middle">pad</text>
+<text class="sm" x="502" y="444" text-anchor="middle">行 6</text>
+<rect class="ghost" x="536" y="410" width="60" height="22" rx="3"/>
+<text class="sm" x="566" y="425" text-anchor="middle">pad</text>
+<text class="sm" x="566" y="444" text-anchor="middle">行 7</text>
+<rect class="acc2" x="600" y="410" width="60" height="22" rx="3"/>
+<text class="costtx" x="630" y="425" text-anchor="middle">seq0·g2</text>
+<text class="sm" x="630" y="444" text-anchor="middle">行 8</text>
+<rect class="acc2" x="664" y="410" width="60" height="22" rx="3"/>
+<text class="costtx" x="694" y="425" text-anchor="middle">seq0·g3</text>
+<text class="sm" x="694" y="444" text-anchor="middle">行 9</text>
+<rect class="s1" x="728" y="410" width="60" height="22" rx="3"/>
+<text class="sm" x="758" y="425" text-anchor="middle">seq1·g0</text>
+<text class="sm" x="758" y="444" text-anchor="middle">行 10</text>
+<rect class="s1" x="792" y="410" width="60" height="22" rx="3"/>
+<text class="sm" x="822" y="425" text-anchor="middle">seq1·g1</text>
+<text class="sm" x="822" y="444" text-anchor="middle">行 11</text>
+<rect class="s1" x="856" y="410" width="60" height="22" rx="3"/>
+<text class="sm" x="886" y="425" text-anchor="middle">seq1·g2</text>
+<text class="sm" x="886" y="444" text-anchor="middle">行 12</text>
+<rect class="ghost" x="920" y="410" width="60" height="22" rx="3"/>
+<text class="sm" x="950" y="425" text-anchor="middle">pad</text>
+<text class="sm" x="950" y="444" text-anchor="middle">行 13</text>
+<rect class="ghost" x="984" y="410" width="60" height="22" rx="3"/>
+<text class="sm" x="1014" y="425" text-anchor="middle">pad</text>
+<text class="sm" x="1014" y="444" text-anchor="middle">行 14</text>
+<rect class="ghost" x="1048" y="410" width="60" height="22" rx="3"/>
+<text class="sm" x="1078" y="425" text-anchor="middle">pad</text>
+<text class="sm" x="1078" y="444" text-anchor="middle">行 15</text>
+<text class="sm" x="82" y="425" text-anchor="end">rank-major</text>
+<text class="sm" x="82" y="475" text-anchor="end">逻辑行</text>
+<rect class="acc1" x="88" y="460" width="60" height="22" rx="3"/>
+<text class="dim" x="118" y="475" text-anchor="middle">0 → 行 0</text>
+<path class="aux" d="M 118 460 L 118 434"/>
+<rect class="acc1" x="152" y="460" width="60" height="22" rx="3"/>
+<text class="dim" x="182" y="475" text-anchor="middle">1 → 行 1</text>
+<path class="aux" d="M 182 460 L 182 434"/>
+<rect class="acc1" x="216" y="460" width="60" height="22" rx="3"/>
+<text class="dim" x="246" y="475" text-anchor="middle">2 → 行 2</text>
+<path class="aux" d="M 246 460 L 246 434"/>
+<rect class="acc1" x="280" y="460" width="60" height="22" rx="3"/>
+<text class="dim" x="310" y="475" text-anchor="middle">3 → 行 3</text>
+<path class="aux" d="M 310 460 L 310 434"/>
+<rect class="acc1" x="344" y="460" width="60" height="22" rx="3"/>
+<text class="dim" x="374" y="475" text-anchor="middle">4 → 行 10</text>
+<path class="aux" d="M 374 460 L 758 434"/>
+<rect class="acc1" x="408" y="460" width="60" height="22" rx="3"/>
+<text class="dim" x="438" y="475" text-anchor="middle">5 → 行 11</text>
+<path class="aux" d="M 438 460 L 822 434"/>
+<rect class="acc1" x="472" y="460" width="60" height="22" rx="3"/>
+<text class="dim" x="502" y="475" text-anchor="middle">6 → 行 12</text>
+<path class="aux" d="M 502 460 L 886 434"/>
+<rect class="ghost" x="536" y="460" width="60" height="22" rx="3"/>
+<text class="sm" x="566" y="475" text-anchor="middle">7 → −1</text>
+<text class="cap" x="28" y="500" text-anchor="start">seq_to_rank_row = [0, 1, 2, 3, 10, 11, 12, -1]：sequence-major 的 7 条真实压缩行落在 16 行缓冲里；−1 = 超出 cu_seqlens_compressed[-1] 的容量尾巴；重算槽与 pad 槽永远不被引用</text>
+<text class="pt" x="28" y="526" text-anchor="start">D　rank1 三条 query 的索引降级（build_attention_indices，index_mode=0）：window 在前、top-k 压缩块在后，compressed_base = d_window + l_local = 24</text>
+<rect class="panel" x="24" y="538" width="1224" height="106" rx="8"/>
+<text class="rank" x="28" y="556" text-anchor="start">query（全局 / seq·pos）</text>
+<text class="rank" x="178" y="556" text-anchor="start">window 全局行</text>
+<text class="rank" x="348" y="556" text-anchor="start">→ kv_full 下标</text>
+<text class="rank" x="508" y="556" text-anchor="start">可见压缩块</text>
+<text class="rank" x="598" y="556" text-anchor="start">top-2 逻辑块</text>
+<text class="rank" x="718" y="556" text-anchor="start">→ seq-major 行</text>
+<text class="rank" x="838" y="556" text-anchor="start">→ rank-major 行</text>
+<text class="rank" x="968" y="556" text-anchor="start">→ kv_full 下标</text>
+<text class="rank" x="1118" y="556" text-anchor="start">topk_length</text>
+<path class="edge" d="M 28 562 L 1244 562"/>
+<text class="sm" x="28" y="580" text-anchor="start">16（seq0·pos 16）</text>
+<text class="sm" x="178" y="580" text-anchor="start">[13, 14, 15, 16]</text>
+<text class="dim" x="348" y="580" text-anchor="start">[5, 6, 7, 8]</text>
+<text class="sm" x="508" y="580" text-anchor="start">4</text>
+<text class="sm" x="598" y="580" text-anchor="start">[g3, g2]</text>
+<text class="sm" x="718" y="580" text-anchor="start">[3, 2]</text>
+<text class="sm" x="838" y="580" text-anchor="start">[3, 2]</text>
+<text class="dim" x="968" y="580" text-anchor="start">[27, 26]</text>
+<text class="sm" x="1118" y="580" text-anchor="start">6</text>
+<text class="sm" x="28" y="604" text-anchor="start">21（seq1·pos 3）</text>
+<text class="sm" x="178" y="604" text-anchor="start">[18, 19, 20, 21]</text>
+<text class="dim" x="348" y="604" text-anchor="start">[10, 11, 12, 13]</text>
+<text class="sm" x="508" y="604" text-anchor="start">1</text>
+<text class="sm" x="598" y="604" text-anchor="start">[g0]</text>
+<text class="sm" x="718" y="604" text-anchor="start">[4]</text>
+<text class="sm" x="838" y="604" text-anchor="start">[10]</text>
+<text class="dim" x="968" y="604" text-anchor="start">[34]</text>
+<text class="sm" x="1118" y="604" text-anchor="start">5</text>
+<text class="sm" x="28" y="628" text-anchor="start">29（seq1·pos 11）</text>
+<text class="sm" x="178" y="628" text-anchor="start">[26, 27, 28, 29]</text>
+<text class="dim" x="348" y="628" text-anchor="start">[18, 19, 20, 21]</text>
+<text class="sm" x="508" y="628" text-anchor="start">3</text>
+<text class="sm" x="598" y="628" text-anchor="start">[g2, g1]</text>
+<text class="sm" x="718" y="628" text-anchor="start">[6, 5]</text>
+<text class="sm" x="838" y="628" text-anchor="start">[12, 11]</text>
+<text class="dim" x="968" y="628" text-anchor="start">[36, 35]</text>
+<text class="sm" x="1118" y="628" text-anchor="start">6</text>
+<text class="cap" x="28" y="656" text-anchor="start">下标 &lt; 8 读 boundary_kv，[8, 24) 读本地 KV，≥ 24 读 gather 来的压缩 KV；kv_full_thd = cat(boundary_kv, kv_local, compressed_kv_rank_major) 共 40 行</text>
+<rect class="neutral" x="28" y="678" width="600" height="130" rx="8"/>
+<text class="tx" x="40" y="699" text-anchor="start">本图算出的规则</text>
+<path class="edge" d="M 40 707 L 616 707"/>
+<text class="sm" x="40" y="725" text-anchor="start">d_comp = 8（ratio 4 → 8，其余 ratio&gt;1 → ratio）；d_window = max(window, d_comp) = 8</text>
+<text class="sm" x="40" y="741" text-anchor="start">c_cap = align((l_local + d_comp) // ratio, 32 // gcd(32, ratio)) = align(6, 8) = 8</text>
+<text class="sm" x="40" y="757" text-anchor="start">压缩组所有权 = 组末 token 所在 rank；每个 rank 的首个可见逻辑行 =</text>
+<text class="sm" x="40" y="773" text-anchor="start">  cu_comp[seq] + ceil((rank_start − d_comp − seq_start)⁺ / ratio) → [0, 2]</text>
+<text class="sm" x="40" y="789" text-anchor="start">压缩行 RoPE 位置 = comp_id × ratio；本地行位置 = 全局行 − seq_start（越界行 → 0）</text>
+<rect class="acc1" x="644" y="678" width="600" height="130" rx="8"/>
+<text class="tx" x="656" y="699" text-anchor="start">两阶段各搬多少行（本算例）</text>
+<path class="edge" d="M 656 707 L 1232 707"/>
+<text class="sm" x="656" y="725" text-anchor="start">Stage 1：rank1 收 8 行 hidden；rank0 收 0 行（首 rank 不收，只发）</text>
+<text class="sm" x="656" y="741" text-anchor="start">Stage 2：两个 AllGather 各 16 行缓冲（每 rank 贡献 c_cap=8 行）</text>
+<text class="sm" x="656" y="757" text-anchor="start">  其中真实压缩行 7、重算槽 2、容量补齐 7</text>
+<text class="costtx" x="656" y="773" text-anchor="start">朴素全量 KV AllGather：32 行。玩具规模看不出省，宽度与规模的账见图 3</text>
+<text class="sm" x="656" y="789" text-anchor="start">每条本地 query 只读 ≤ 4 行 window（可含边界行）+ ≤ 2 行被选中的压缩行</text>
+<rect class="neutral" x="28" y="820" width="1216" height="82" rx="8"/>
+<text class="tx" x="40" y="841" text-anchor="start">本图复刻了什么、简化了什么</text>
+<path class="edge" d="M 40 849 L 1232 849"/>
+<text class="sm" x="40" y="867" text-anchor="start">精确：exchange_cp_boundary_hidden 的 d_window；compact 内核的组枚举；prepare_cp_compressor_input 的 c_cap 与 seq_to_rank_row；build_attention_indices 三种 index_mode</text>
+<text class="costtx" x="40" y="883" text-anchor="start">简化：top-k 用「最近 k 个可见块」代替 indexer 打分，只为把索引映射画出来；不画 RoPE 数值</text>
+<text class="sm" x="40" y="899" text-anchor="start">不画：MTP、TP、padding mask（q_padding_mask 见正文 §2.7）；Stage 2 的重叠顺序见图 2</text>
+</svg>

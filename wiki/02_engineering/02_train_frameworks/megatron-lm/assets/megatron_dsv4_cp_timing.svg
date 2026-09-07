@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1272 902" width="1272" height="902" role="img">
+
+  <defs>
+    <marker id="arrowMain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowAux" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#AEB6C2"/></marker>
+    <marker id="arrowCost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C3651F"/></marker>
+  </defs>
+<style>
+  text{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .card{fill:#fff;stroke:#E4E7EC;stroke-width:1.2}
+  .panel{fill:#FBFCFE;stroke:#D9DEE7;stroke-width:1.2}
+  .neutral{fill:#fff;stroke:#AEB6C2;stroke-width:1.2}
+  .ghost{fill:#F5F7FA;stroke:#D9DEE7;stroke-width:1.1}
+  .acc1{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.5}
+  .acc2{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.5}
+  .acc1fill{fill:#2563EB;stroke:#2563EB;stroke-width:1}
+  .acc2fill{fill:#C3651F;stroke:#C3651F;stroke-width:1}
+  .s0{fill:#EAF1FD;stroke:#2563EB;stroke-width:1.1}
+  .s1{fill:#FCF1E6;stroke:#C3651F;stroke-width:1.1}
+  .bar{fill:#F4C9A3;stroke:#C3651F;stroke-width:.8}
+  .bar1{fill:#CFE0FA;stroke:#2563EB;stroke-width:.8}
+  .main{fill:none;stroke:#2563EB;stroke-width:2;marker-end:url(#arrowMain)}
+  .aux{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:5 4;marker-end:url(#arrowAux)}
+  .cost{fill:none;stroke:#C3651F;stroke-width:2;marker-end:url(#arrowCost)}
+  .edge{fill:none;stroke:#AEB6C2;stroke-width:1.4;stroke-dasharray:4 4}
+  .line1{fill:none;stroke:#2563EB;stroke-width:2}
+  .line2{fill:none;stroke:#C3651F;stroke-width:2;stroke-dasharray:6 4}
+  .ti{font-size:18px;font-weight:700;fill:#1F2430}
+  .su{font-size:11.5px;fill:#747C88}
+  .pt{font-size:14px;font-weight:700;fill:#2A313B}
+  .tx{font-size:12px;fill:#38414D}
+  .sm{font-size:10.5px;fill:#68717D}
+  .dim{font-size:10.5px;font-weight:600;fill:#173F87}
+  .costtx{font-size:10.5px;font-weight:600;fill:#8A4A11}
+  .rank{font-size:11px;font-weight:700;fill:#5B6470}
+  .cap{font-size:11px;fill:#747C88}
+  .gl{fill:none;stroke:#C8CFDA;stroke-width:.9}
+  .sep{fill:none;stroke:#5B6470;stroke-width:1.6}
+</style>
+<text class="ti" x="28" y="32" text-anchor="start">图 2　Stage 2 的重叠：前向两个异步 AllGather 藏在本地投影后面，反向两个 reduce-scatter 只在消费分支等待</text>
+<text class="su" x="28" y="52" text-anchor="start">块按源码语句序等宽排列，不表示时长；蓝 = 在飞的异步集合通信，橙 = 阻塞点（同步 P2P / 同步 gather / wait）</text>
+<text class="pt" x="28" y="84" text-anchor="start">① 前向·有 indexer 的层（ratio 4）：_forward_thd_cp</text>
+<text class="sm" x="28" y="100" text-anchor="start">每个 rank 都先发 Indexer-K 再发压缩 KV，所以集合通信入队顺序全组一致；两次 wait 各自紧贴第一个消费者</text>
+<text class="rank" x="84" y="131" text-anchor="end">计算流</text>
+<text class="rank" x="84" y="172" text-anchor="end">通信流</text>
+<path class="gl" d="M 90 127 L 1244 127"/>
+<path class="gl" d="M 90 168 L 1244 168"/>
+<rect class="acc2" x="96" y="155" width="100.18181818181819" height="26" rx="4"/>
+<text class="costtx" x="104" y="172" text-anchor="start">1</text>
+<rect class="neutral" x="200.1818181818182" y="114" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="208.1818181818182" y="131" text-anchor="start">2</text>
+<rect class="neutral" x="304.3636363636364" y="114" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="312.3636363636364" y="131" text-anchor="start">3</text>
+<rect class="neutral" x="408.54545454545456" y="114" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="416.54545454545456" y="131" text-anchor="start">4</text>
+<rect class="neutral" x="512.7272727272727" y="114" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="520.7272727272727" y="131" text-anchor="start">5</text>
+<rect class="neutral" x="616.909090909091" y="114" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="624.909090909091" y="131" text-anchor="start">6</text>
+<rect class="acc2" x="721.0909090909091" y="114" width="100.18181818181819" height="26" rx="4"/>
+<text class="costtx" x="729.0909090909091" y="131" text-anchor="start">7</text>
+<rect class="neutral" x="825.2727272727273" y="114" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="833.2727272727273" y="131" text-anchor="start">8</text>
+<rect class="acc2" x="929.4545454545455" y="114" width="100.18181818181819" height="26" rx="4"/>
+<text class="costtx" x="937.4545454545455" y="131" text-anchor="start">9</text>
+<rect class="neutral" x="1033.6363636363637" y="114" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="1041.6363636363637" y="131" text-anchor="start">10</text>
+<rect class="neutral" x="1137.818181818182" y="114" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="1145.818181818182" y="131" text-anchor="start">11</text>
+<rect class="acc1" x="512.7272727272727" y="152" width="204.36363636363637" height="14" rx="3"/>
+<text class="dim" x="518.7272727272727" y="162.5" text-anchor="start">AG-K·在飞</text>
+<rect class="acc1" x="616.909090909091" y="168" width="308.5454545454545" height="14" rx="3"/>
+<text class="dim" x="622.909090909091" y="178.5" text-anchor="start">AG-KV·在飞</text>
+<text class="sm" x="28" y="204" text-anchor="start">1 P2P 左边界 hidden</text>
+<text class="sm" x="433.3333333333333" y="204" text-anchor="start">2 Q / KV 投影 + CP-aware RoPE（含 boundary KV）</text>
+<text class="sm" x="838.6666666666666" y="204" text-anchor="start">3 压紧 hidden_compact</text>
+<text class="sm" x="28" y="218" text-anchor="start">4 Indexer-K compressor</text>
+<text class="sm" x="433.3333333333333" y="218" text-anchor="start">5 attention-KV compressor</text>
+<text class="sm" x="838.6666666666666" y="218" text-anchor="start">6 Indexer Q 投影 + RoPE + weights 投影</text>
+<text class="sm" x="28" y="232" text-anchor="start">7 wait K</text>
+<text class="sm" x="433.3333333333333" y="232" text-anchor="start">8 seq-major 重排 + top-k</text>
+<text class="sm" x="838.6666666666666" y="232" text-anchor="start">9 wait KV</text>
+<text class="sm" x="28" y="246" text-anchor="start">10 cat + build_attention_indices</text>
+<text class="sm" x="433.3333333333333" y="246" text-anchor="start">11 融合稀疏注意力 + indexer loss</text>
+<text class="dim" x="28" y="260" text-anchor="start">AG-K：AG Indexer-K，发起于 4 之后、wait 于 7 之前</text>
+<text class="dim" x="28" y="274" text-anchor="start">AG-KV：AG 压缩 KV，发起于 5 之后、wait 于 9 之前</text>
+<text class="pt" x="28" y="306" text-anchor="start">② 前向·无 indexer 的层（ratio 128）：同一入口，但 gather 是同步的</text>
+<text class="sm" x="28" y="322" text-anchor="start">没有可与之重叠的本地投影，压缩 KV 走 gather_from_sequence_parallel_region，返回前阻塞</text>
+<text class="rank" x="84" y="353" text-anchor="end">计算流</text>
+<text class="rank" x="84" y="389" text-anchor="end">通信流</text>
+<path class="gl" d="M 90 349 L 1244 349"/>
+<path class="gl" d="M 90 385 L 1244 385"/>
+<rect class="acc2" x="96" y="372" width="159.71428571428572" height="26" rx="4"/>
+<text class="costtx" x="104" y="389" text-anchor="start">1</text>
+<rect class="neutral" x="259.7142857142857" y="336" width="159.71428571428572" height="26" rx="4"/>
+<text class="sm" x="267.7142857142857" y="353" text-anchor="start">2</text>
+<rect class="neutral" x="423.42857142857144" y="336" width="159.71428571428572" height="26" rx="4"/>
+<text class="sm" x="431.42857142857144" y="353" text-anchor="start">3</text>
+<rect class="neutral" x="587.1428571428571" y="336" width="159.71428571428572" height="26" rx="4"/>
+<text class="sm" x="595.1428571428571" y="353" text-anchor="start">4</text>
+<rect class="acc2" x="750.8571428571429" y="372" width="159.71428571428572" height="26" rx="4"/>
+<text class="costtx" x="758.8571428571429" y="389" text-anchor="start">5</text>
+<rect class="neutral" x="914.5714285714287" y="336" width="159.71428571428572" height="26" rx="4"/>
+<text class="sm" x="922.5714285714287" y="353" text-anchor="start">6</text>
+<rect class="neutral" x="1078.2857142857142" y="336" width="159.71428571428572" height="26" rx="4"/>
+<text class="sm" x="1086.2857142857142" y="353" text-anchor="start">7</text>
+<text class="sm" x="28" y="416" text-anchor="start">1 P2P 左边界 hidden</text>
+<text class="sm" x="433.3333333333333" y="416" text-anchor="start">2 Q / KV 投影 + CP-aware RoPE</text>
+<text class="sm" x="838.6666666666666" y="416" text-anchor="start">3 压紧 hidden_compact</text>
+<text class="sm" x="28" y="430" text-anchor="start">4 attention-KV compressor</text>
+<text class="sm" x="433.3333333333333" y="430" text-anchor="start">5 同步 AG 压缩 KV</text>
+<text class="sm" x="838.6666666666666" y="430" text-anchor="start">6 build_attention_indices（全部可见块）</text>
+<text class="sm" x="28" y="444" text-anchor="start">7 稀疏注意力</text>
+<text class="pt" x="28" y="476" text-anchor="start">③ 反向·融合 indexer-loss 路径：FusedCSAIndexerSparseAttnFromTopkFunc.backward + 两个延迟 wait</text>
+<text class="sm" x="28" y="492" text-anchor="start">两个 RS 都在稀疏注意力反向之后发起，KV 先于 K；wait 只在各自 compressor 的反向分支上，由 autograd 序号从大到小的调度自然错开</text>
+<text class="rank" x="84" y="523" text-anchor="end">计算流</text>
+<text class="rank" x="84" y="564" text-anchor="end">通信流</text>
+<path class="gl" d="M 90 519 L 1244 519"/>
+<path class="gl" d="M 90 560 L 1244 560"/>
+<rect class="neutral" x="96" y="506" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="104" y="523" text-anchor="start">1</text>
+<rect class="neutral" x="200.1818181818182" y="506" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="208.1818181818182" y="523" text-anchor="start">2</text>
+<rect class="neutral" x="304.3636363636364" y="506" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="312.3636363636364" y="523" text-anchor="start">3</text>
+<rect class="acc2" x="408.54545454545456" y="506" width="100.18181818181819" height="26" rx="4"/>
+<text class="costtx" x="416.54545454545456" y="523" text-anchor="start">4</text>
+<rect class="neutral" x="512.7272727272727" y="506" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="520.7272727272727" y="523" text-anchor="start">5</text>
+<rect class="acc2" x="616.909090909091" y="506" width="100.18181818181819" height="26" rx="4"/>
+<text class="costtx" x="624.909090909091" y="523" text-anchor="start">6</text>
+<rect class="neutral" x="721.0909090909091" y="506" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="729.0909090909091" y="523" text-anchor="start">7</text>
+<rect class="neutral" x="825.2727272727273" y="506" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="833.2727272727273" y="523" text-anchor="start">8</text>
+<rect class="neutral" x="929.4545454545455" y="506" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="937.4545454545455" y="523" text-anchor="start">9</text>
+<rect class="neutral" x="1033.6363636363637" y="506" width="100.18181818181819" height="26" rx="4"/>
+<text class="sm" x="1041.6363636363637" y="523" text-anchor="start">10</text>
+<rect class="acc2" x="1137.818181818182" y="547" width="100.18181818181819" height="26" rx="4"/>
+<text class="costtx" x="1145.818181818182" y="564" text-anchor="start">11</text>
+<rect class="acc1" x="200.1818181818182" y="544" width="204.36363636363637" height="14" rx="3"/>
+<text class="dim" x="206.1818181818182" y="554.5" text-anchor="start">RS-KV·在飞</text>
+<rect class="acc1" x="200.1818181818182" y="560" width="412.7272727272728" height="14" rx="3"/>
+<text class="dim" x="206.1818181818182" y="570.5" text-anchor="start">RS-K·在飞</text>
+<text class="sm" x="28" y="596" text-anchor="start">1 稀疏注意力反向</text>
+<text class="sm" x="433.3333333333333" y="596" text-anchor="start">2 本地 indexer 梯度缩放</text>
+<text class="sm" x="838.6666666666666" y="596" text-anchor="start">3 Indexer Q / weights 投影反向</text>
+<text class="sm" x="28" y="610" text-anchor="start">4 wait RS-KV</text>
+<text class="sm" x="433.3333333333333" y="610" text-anchor="start">5 attention-KV compressor 反向</text>
+<text class="sm" x="838.6666666666666" y="610" text-anchor="start">6 wait RS-K</text>
+<text class="sm" x="28" y="624" text-anchor="start">7 Indexer-K compressor 反向</text>
+<text class="sm" x="433.3333333333333" y="624" text-anchor="start">8 压紧反向：散射到 local + boundary</text>
+<text class="sm" x="838.6666666666666" y="624" text-anchor="start">9 Q 投影反向</text>
+<text class="sm" x="28" y="638" text-anchor="start">10 KV 投影反向（boundary KV → boundary hidden）</text>
+<text class="sm" x="433.3333333333333" y="638" text-anchor="start">11 P2P 边界梯度回送（阻塞）</text>
+<text class="dim" x="28" y="652" text-anchor="start">RS-KV：RS 压缩 KV 发起，发起于 1 之后、wait 于 4 之前</text>
+<text class="dim" x="28" y="666" text-anchor="start">RS-K：RS Indexer-K 发起，发起于 1 之后、wait 于 6 之前</text>
+<rect class="neutral" x="28" y="700" width="600" height="182" rx="8"/>
+<text class="tx" x="40" y="721" text-anchor="start">顺序不变量（脚本算出）</text>
+<path class="edge" d="M 40 729 L 616 729"/>
+<text class="dim" x="40" y="747" text-anchor="start">前向：AG-K 发起 → AG-KV 发起 → 本地 Indexer Q / weights 投影 → wait K → top-k → wait KV</text>
+<text class="sm" x="40" y="763" text-anchor="start">反向 FromTopkFunc 内：sparse_attention_backward → launch_compressed_kv → launch_indexer</text>
+<text class="sm" x="40" y="779" text-anchor="start">反向 autograd（就绪节点里序号大者先执行）：</text>
+<text class="sm" x="40" y="795" text-anchor="start">  fused → q_weight_branch → wait_compressed_kv</text>
+<text class="sm" x="40" y="811" text-anchor="start">  → attention_kv_compressor → wait_indexer → indexer_compressor</text>
+<text class="sm" x="40" y="827" text-anchor="start">每个 wait 只被消费它的分支触发；unfused / 无 loss 的分支不走这条路，退回同步 RS</text>
+<text class="sm" x="40" y="843" text-anchor="start">  （_GatherFromSequenceParallelRegionAsync.backward 保留同步 gather 的 RS 语义）</text>
+<rect class="neutral" x="644" y="700" width="600" height="182" rx="8"/>
+<text class="tx" x="656" y="721" text-anchor="start">锁定这些顺序的测试（冻结基线）</text>
+<path class="edge" d="M 656 729 L 1232 729"/>
+<text class="sm" x="656" y="747" text-anchor="start">test_csa_fused_sparse_attention.py::TestCPCommunicationOverlap::</text>
+<text class="sm" x="656" y="763" text-anchor="start">  test_cp_backward_launches_collectives_in_dependency_order（发起顺序、梯度槽位）</text>
+<text class="sm" x="656" y="779" text-anchor="start">  test_deferred_reduce_scatter_waits_follow_consumer_branch_order（wait 顺序）</text>
+<text class="sm" x="656" y="795" text-anchor="start">  test_deferred_reduce_scatter_wait_requires_published_handle（未发起即消费 → RuntimeError）</text>
+<text class="sm" x="656" y="811" text-anchor="start">  test_deferred_reduce_scatter_wait_is_branch_local（wait 后 handle 置空）</text>
+<text class="sm" x="656" y="827" text-anchor="start">tests/unit_tests/tensor_parallel/test_mappings.py：async gather / reduce-scatter 与同步版等价</text>
+<text class="costtx" x="656" y="843" text-anchor="start">本图不写时长：真实重叠比例取决于 NCCL 带宽与本地投影的 GEMM 规模</text>
+</svg>
