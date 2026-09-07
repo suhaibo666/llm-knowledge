@@ -132,11 +132,13 @@ title: "Kimi K2.5: 视觉 Agent 智能"
 - **冻结子智能体 (Frozen Sub-agents)**：从固定中间策略实例化
 
 **PARL 奖励函数**：
+
 $$
 r_{\text{PARL}}(x,y) = \lambda_1 \cdot r_{\text{parallel}} + \lambda_2 \cdot r_{\text{finish}} + r_{\text{perf}}(x,y)
 $$
 
 **关键步骤定义**：
+
 $$
 \text{CriticalSteps} = \sum_{t=1}^{T} (S_{\text{main}}^{(t)} + \max_i S_{\text{sub},i}^{(t)})
 $$

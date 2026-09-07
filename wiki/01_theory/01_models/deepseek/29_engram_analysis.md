@@ -155,11 +155,14 @@ graph LR
     其中 $E_{\mathrm{lookup}}$ 是查到的原始 Embedding。
 2.  **局部混合 (Local Mixing)**：
     使用 `ShortConv` (mHC) 对加权后的值进行卷积处理，引入局部时序信息：
+
     $$
     V_{\mathrm{mixed}} = V_{\mathrm{weighted}} + \text{ShortConv}(V_{\mathrm{weighted}})
     $$
+
 3.  **残差连接 (Residual Add)**：
     最终结果被加回到主干网络流中：
+
     $$
     H_{\mathrm{output}} = H_{\mathrm{input}} + V_{\mathrm{mixed}}
     $$

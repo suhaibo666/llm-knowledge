@@ -17,13 +17,30 @@ Inline math:
 策略比率为 $r_t=\exp(\log p_t-\log p_{\mathrm{old},t})$。
 ```
 
-Display math, with each delimiter on its own line:
+Display math, with each delimiter on its own line **and a blank line on each side**:
 
 ```markdown
+上一段正文。
+
 $$
 L(\theta)=\mathbb{E}_{x\sim\mathcal D}[\ell_\theta(x)].
 $$
+
+下一段正文。
 ```
+
+The blank lines are not cosmetic. Obsidian renders `$$` wherever it appears; the published
+site runs Python-Markdown, whose arithmatex block processor only fires when the block stands
+alone. Glue the block to the line above or below and the delimiters survive into the HTML as
+literal `$$`, and the LaTeX is re-parsed as **inline** Markdown — which eats `\\` row
+separators and `\{` escapes, so `cases`/`aligned` collapse into one wrong row. MathJax then
+typesets the damaged source, so the page shows a plausible-looking but incorrect formula
+rather than an obvious error. `MATH006` catches this.
+
+The same rule governs indentation: a display block under a list item needs **4 spaces**, not
+the CommonMark list-marker width (`1. ` is 3, `- ` is 2). At 1–3 spaces Python-Markdown drops
+the block out of the list — the equation renders literally *and* the numbered list restarts at
+1. `MATH007` catches this.
 
 Never introduce `\(...\)` or `\[...\]`. Do not put content on the same line as `$$`. These alternatives may work in some MathJax environments, but this vault standardizes on Obsidian's dollar syntax for stable Live Preview and source portability.
 
@@ -133,6 +150,8 @@ something you just introduced.
 | `MATH003` | error | inline `$` not paired on the line | pair it, or escape a literal `\$` |
 | `MATH004` | error | unbalanced braces inside math | balance `{}` |
 | `MATH005` | error | raw `\|` inside table math, or display math in a table | `\mid`, or move the block out of the table |
+| `MATH006` | error | a `$$` block is glued to the line above or below | blank line on each side (bare `>` inside a callout) |
+| `MATH007` | error | a `$$` block is indented 1–3 spaces | indent to a multiple of 4 — list continuation is 4 |
 | `MATH101` | warning | a `$$` shares its line with content | each `$$` gets its own line |
 | `MATH102` | warning | `\_` outside a text-like command | `\texttt{...}` / `\mathrm{...}`, or define a symbol |
 | `MATH103` | warning | word-like subscript left italic | `\mathrm{...}`, or `\text{...}` when it contains spaces |
@@ -202,10 +221,17 @@ the box.
 
 ## Callout blocks
 
-Quote the whole display block consistently — never just one delimiter:
+Quote the whole display block consistently — never just one delimiter — and separate it from
+the surrounding quoted prose with a **bare `>` line**. A truly empty line would end the
+callout; a `>` line is the in-quote blank that Python-Markdown needs to see the block:
 
 ```markdown
+> [!tip] 标题
+> 上一句说明。
+>
 > $$
 > M_{\text{HBM}}^{\text{target}} = \text{device\_max} - \text{reduction\_memory}
 > $$
+>
+> 下一句说明。
 ```

@@ -130,3 +130,60 @@ def test_index_arithmetic_subscripts_stay_italic():
 
     semantic = r'行内 $C_{low} + p_{train-old}$。' + chr(10)
     assert "MATH103" in codes(semantic)
+
+
+def test_display_block_needs_blank_lines_around_it():
+    """`$$` 紧贴正文时 Python-Markdown 不会交给 arithmatex。
+
+    Obsidian 不要求空行，站点这条链要求。缺空行时 `$$` 会以字面文本落进
+    `<p>`，LaTeX 改走行内解析器，`\\\\` 与 `\\{` 会被吃掉——公式在页面上
+    直接算错，而不只是晚一步渲染。
+    """
+
+    canonical = "文字：\n\n$$\ny = W x\n$$\n\n后续。\n"
+    assert check_math.check_text(canonical, "good.md") == []
+
+    missing_before = check_math.check_text(
+        "文字：\n$$\ny = W x\n$$\n\n后续。\n", "note.md"
+    )
+    assert [(item.code, item.line) for item in missing_before] == [("MATH006", 2)]
+
+    missing_after = check_math.check_text(
+        "文字：\n\n$$\ny = W x\n$$\n后续。\n", "note.md"
+    )
+    assert [(item.code, item.line) for item in missing_after] == [("MATH006", 5)]
+
+    assert check_math.check_text("$$\ny = W x\n$$\n", "note.md") == []
+
+
+def test_display_block_blank_line_rule_counts_quote_markers_as_empty():
+    """callout 里的分隔行是 `>`，空行会截断引用块。"""
+
+    quoted = "> 文字：\n>\n> $$\n> y = W x\n> $$\n>\n> 后续。\n"
+    assert check_math.check_text(quoted, "quote.md") == []
+
+    assert {
+        item.code
+        for item in check_math.check_text(
+            "> 文字：\n> $$\n> y = W x\n> $$\n> 后续。\n", "quote.md"
+        )
+    } == {"MATH006"}
+
+
+def test_display_block_under_a_list_item_needs_four_space_indent():
+    """CommonMark 用 list marker 宽度做续行缩进，Python-Markdown 固定要 4。"""
+
+    assert [
+        (item.code, item.line)
+        for item in check_math.check_text(
+            "1. 步骤\n\n   $$\n   S_t = D_t\n   $$\n\n2. 下一步\n", "list.md"
+        )
+    ] == [("MATH007", 3)]
+
+    four_spaces = "1. 步骤\n\n    $$\n    S_t = D_t\n    $$\n\n2. 下一步\n"
+    assert check_math.check_text(four_spaces, "list.md") == []
+
+
+def test_display_block_rules_ignore_fenced_examples():
+    fenced = "```markdown\n文字：\n$$\ny = W x\n$$\n```\n"
+    assert check_math.check_text(fenced, "fence.md") == []

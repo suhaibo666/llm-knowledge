@@ -32,9 +32,11 @@ title: "硬件友好的 LLM 模型设计(NVIDIA 软硬协同指南)— 模型超
 ## 三、线性层定维: 让 GEMM 站进 compute-bound 区
 
 **Roofline 记账**("Role of arithmetic intensity" 节): GEMM $C_{M\times N}=A_{M\times K}B_{K\times N}$,
+
 $$
 \text{FLOPs}=2MNK,\quad \text{Read}=MK\,b_A+NK\,b_B,\quad \text{Write}=MN\,b_C
 $$
+
 transformer 各线性层的映射(Table 1): M = Tokens(并发×序列长),QKV 投影 N=3H/K=H,输出投影 N=K=H,FFN-1 N=H'/K=H,FFN-2 N=H/K=H'。
 
 - **方阵论证**: 当 Tokens=H'=H 时,单 GEMM 做 $2H^3$ FLOPs、只动约 $3H^2$ 个元素,算术强度随 H 增长——**任一维过小,token 维再大也救不回来**。

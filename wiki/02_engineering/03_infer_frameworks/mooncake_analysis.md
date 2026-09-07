@@ -134,6 +134,7 @@ Algorithm: KVCache-centric Scheduling
 ```
 
 **前缀链式哈希**：
+
 $$
 \text{Hash}(block_i) = \text{Hash}(block_i \parallel \text{Hash}(block_{i-1}))
 $$

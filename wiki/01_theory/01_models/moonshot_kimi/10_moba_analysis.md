@@ -35,11 +35,13 @@ MoBA:     每个 Query → 选择性地路由到不同的 KV Block
 ### 2.1 核心公式
 
 标准注意力：
+
 $$
 \text{Attn}(q, K, V) = \text{Softmax}(qK^\top)V
 $$
 
 MoBA 注意力：
+
 $$
 \text{MoBA}(q, K, V) = \text{Softmax}\left(qK[I]^\top\right)V[I]
 $$
@@ -73,11 +75,13 @@ Router: s_i = ⟨q, mean_pool(K[I_i])⟩ → top-k selection
 ### 3.1 门控网络
 
 亲和度分数：
+
 $$
 s_i = \left\langle q, \operatorname{mean\text{-}pool}(K[I_i]) \right\rangle
 $$
 
 Top-K 选择：
+
 $$
 g_i = \begin{cases} 1 & \text{if } s_i \in \text{Top}_k(\{s_j\}, k) \\ 0 & \text{otherwise} \end{cases}
 $$

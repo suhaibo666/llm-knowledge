@@ -108,9 +108,11 @@ HBM 常驻: b·s·4h·sizeof / 层                          HBM 常驻: 0(仅反
 
 > [!tip] 优化点(激活函数重算)
 > GLU 门控下激活函数输入维是 `2·(2h)`、输出 `2h`,这块中间张量是 MLP 段激活的**最大项**。丢掉它,单层省下约
+>
 > $$
 > \Delta M_A \;\approx\; b\cdot s\cdot 4h \cdot \text{sizeof(dtype)}\ \text{字节}
 > $$
+>
 > 而重算代价只是一次**逐元素**激活函数(无 matmul、无 GEMM),故"性价比"远高于整层重算——同样省 `b·s·4h`,整层重算要付一整层 attn+MLP 的前向,激活级只付一个逐元素核。
 
 ### 2.3 Norm 级重算
@@ -128,9 +130,11 @@ HBM 常驻: b·s·h·sizeof × 2(每层 2 个 norm)            HBM 常驻: 0(每
 
 > [!tip] 优化点(norm 重算)
 > norm 输出与其输入**等大**(`[b,s,h]`),每层有 2 个 norm(attn 前、mlp 前),省下
+>
 > $$
 > \Delta M_A \;\approx\; 2\cdot b\cdot s\cdot h \cdot \text{sizeof(dtype)}\ \text{字节 / 层}
 > $$
+>
 > 重算只是一次 RMSNorm/LayerNorm(逐元素 + 一次 reduce)。TE 路径把重算**下推进** `linear_qkv`/`linear_fc1`(`:62-63`、`:121-123`),让 norm 与紧随的融合线性层共用一次重算,省掉单独的 norm 核启动。
 
 ### 2.4 选择哪些层重算:`should_recompute`
@@ -216,12 +220,14 @@ OOM 时: target_memory 每步 -adjust_memory 自动收紧;< tensor_size_filter(2
 
 > [!tip] 优化点(smart-swap)
 > 不像 swap-attention 按固定模块名换,smart-swap 通过**运行时画像 + 策略搜索**把 HBM 压到用户给定目标:
+>
 > $$
 > \begin{aligned}
 > M_{\text{HBM}}^{\text{target}} \;
 > &=\; M_{\mathrm{device,max}} - M_{\mathrm{reduction}}\quad\text{或}\quad M_{\mathrm{target}}
 > \end{aligned}
 > $$
+>
 > OOM 触发时每步再 `-adjust_memory`(默认 300 MiB)自动收紧(`swap_policy_config.py:47-59`)。代价是 WARMUP/SEARCHING 的画像步开销,以及 `BETTER_MEMORY_SAVING` 下连优化器都换带来的 event 等待掉速——故它与 swap-attention / 自适应选择性重计算**互斥**(`smart_swap.py:19-23`),三者都要接管激活生命周期。
 
 ### 3.3 swap-optimizer:优化器态常驻 host,分块换入更新
@@ -243,9 +249,11 @@ HBM 瞬时: 只驻留 1/swap_times 的优化器态
 
 > [!tip] 优化点(swap-optimizer)
 > 优化器态在 HBM 的**瞬时**占用被压到约 `1/swap_optimizer_times`:
+>
 > $$
 > M_O^{\mathrm{peak}} \;\approx\; \frac{M_O^{\mathrm{full}}}{n_{\mathrm{swap}}} \quad(n_{\mathrm{swap}}=16\text{，默认值})
 > $$
+>
 > 对 7B+ 模型 AdamW 态(master+m+v ≈ 12 B/参数,即 `swap_num·12` 字节,见 `:50`),常驻 HBM 从数十 GB 降到 ~1/16。代价是每步把整套态过一遍 PCIe/HCCS:`swap_optimizer_times` 越大越省显存、但流水块越小、带宽利用率越低,是一个显存↔吞吐旋钮。与 `reuse_fp32_param` 互斥(`swap_optimizer_feature.py:21`):两者都重排 master/态的存储布局。
 
 ---
@@ -315,12 +323,14 @@ HBM: ~3·(tokens·h)·sizeof                                 HBM: 专家激活�
 
 > [!tip] 优化点(MoE zero-memory)
 > 专家段三块激活 `inputs / mm1_out / act_out` 各是 `tokens·h` 量级(`tokens` = 路由后本地 token 数,含容量因子放大),全丢后**专家激活峰值 ≈ 0**:
+>
 > $$
 > \begin{aligned}
 > M_A^{\text{expert}} \;:\;
 > &\sim 3\cdot(\text{tokens}\cdot h)\cdot\text{sizeof}\;\longrightarrow\;\approx 0\ (\text{仅反向瞬时重建})
 > \end{aligned}
 > $$
+>
 > level0 比 level1 更激进——连"分发"本身(`permute`+`AllToAll`)都不存、反向重做,故必须与通算重叠路径(`alltoall_overlap_comm`/`fb_overlap`)配合,把重做的 AllToAll 通信掩盖进反向计算才划算。代价:level0 多一次 AllToAll 通信重做(`:139-189`)。
 
 ---
@@ -348,9 +358,11 @@ HBM: |act|                                  HBM: ~compress_ratio·|act|(默认 0
 
 > [!tip] 优化点(compress-dense)
 > 无损压缩把每块激活的 HBM 占用按压缩率缩小:
+>
 > $$
 > M_A^{\mathrm{compressed}} \;\approx\; r_{\mathrm{compress}}\cdot M_A \quad(r_{\mathrm{compress}}=0.5\text{，默认值，即省一半})
 > $$
+>
 > `level1` 再把尾数 `mantissa` 换出到 `empty_with_swapped_memory` 虚拟内存(`:266`),HBM 进一步下探。与重算/swap 的区别:**无损、不重算、不搬全量**——只搬压缩后的字节,且编解码在副流 `hans_stream` 上与 `linear_fc1/fc2` 重叠(`mlp_forward.py:18-51`),算力代价被计算掩盖。代价是编解码算力 + 与"激活函数重算"互斥(二者都改 `MLP.forward`,`compress_dense.py:17-23`)。
 
 ### 6.2 compress-activation / compress-optimizer(通用)
@@ -385,12 +397,14 @@ HBM: 2×|P|×4B                              HBM: max(0, 2|P|×4B − 本 rank �
 
 > [!tip] 优化点(virtual-optimizer)
 > 把 AdamW 两个动量 `exp_avg/exp_avg_sq`(各 `|P|` fp32 = 4B/elem)移进虚拟内存,预算内 HBM 占用归零:
+>
 > $$
 > \begin{aligned}
 > M_O^{\text{HBM}} \;
 > &\approx\; \max\big(0,\ 2\lvert P\rvert\cdot 4 - B_{\mathrm{swap},r_{\mathrm{PP}}}\big)\ \text{字节}
 > \end{aligned}
 > $$
+>
 > `--virtual-optimizer all` 取每 rank 上限 65 GB(`virtual_optimizer.py:18-20`)。相比 swap-optimizer 更轻量——**不写显式 D2H/H2D 流水**,换页交给 PTA/驱动,粒度由硬件缺页决定。代价:缺页换页带宽不可控(无法像 swap-optimizer 那样按块重叠)、依赖新版 PTA、与 fused_ema_adamw 互斥(`virtual_optimizer.py:35-39`)。
 
 ### 7.2 ckpt-acceleration:存盘路径加速
@@ -431,12 +445,14 @@ HBM 峰值: B·S·V·sizeof                        HBM 峰值: chunk·V·sizeof
 
 > [!tip] 优化点(chunk-loss)
 > 把"先物化全量 logits 再算 loss"改成"逐块算梯度即丢",词表 logits 显存峰值从全量降到一个 chunk:
+>
 > $$
 > \begin{aligned}
 > M_A^{\text{logits}} \;:\; O(B\cdot S\cdot V)\;
 > &\longrightarrow\;O(\texttt{chunk}\cdot V)\quad(\texttt{chunk}\text{ 默认 }1024)
 > \end{aligned}
 > $$
+>
 > 关键在 `torch.func.grad_and_value`:它在前向就**一次性**算出对 hidden 与 head_weight 的梯度(`:66-68`),把梯度写进预分配缓冲后该块 logits 立即可回收,反向只做一次上游标量缩放(`:92-97`)、不再触碰 logits。代价:分块串行 + 重复进出 head 线性层,换来词表 logits 峰值线性可控——大词表(V≈128K+)下这块往往比模型本体激活还大,收益显著。
 
 > **跨框架对照** [[24_megatron_linear_cross_entropy_analysis]]:Megatron 的等价物是 `cross_entropy_fusion_impl='linear'` 融合线性 CE——同样"不物化全量 logits",但走**词表维 kernel 分块**(CuTe 融合核 + online-softmax + 反向重算,仅 Blackwell)而非这里的**序列维框架层 autograd 分块**(纯 PyTorch、可移植 NPU)。两者共同缩短了大 logits 矩阵的生命周期，但此处在前向预先算好梯度，Megatron linear 在反向重算词表块，不能统一归为 online-softmax 加反向重算。

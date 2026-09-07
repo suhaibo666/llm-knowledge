@@ -12,6 +12,12 @@ All source ingestions and significant wiki updates are logged here.
 
 ---
 
+## 2026-09-06：修复站点渲染与 Obsidian 的两处方言差，并把它们固化成门禁
+
+- **页头四行摘要在站点上塌成一行**。根因是 Python-Markdown 把单个换行折成空格，Obsidian 当硬换行；`mkdocs.yml` 的 `markdown_extensions` 里没有 `nl2br`。补上 `nl2br` 后全站换行语义与 Obsidian 一致（实测新增 8200 个 `<br />`，427/446 页外观变化，对公式与表格无影响）。
+- **48 个 `$$` 块在站点上没交给 arithmatex**，散落 19 页。两类成因：42 处 `$$` 与上一行或下一行贴在一起（Obsidian 不需要空行），17 个块缩进 1–3 格挂在列表项下（CommonMark 用 marker 宽度 3，Python-Markdown 固定要 4）。落进段落后 LaTeX 改走**行内**解析器，`\\` 与 `\{` 被吃掉——[[10_moba_analysis]] 的 `cases` 两行并成一行、集合花括号消失，页面显示的是一个看起来合理但错误的公式，而不是明显的报错。已按空行/四格缩进逐一修正，另修 3 处 `$` 内侧紧贴空格被 arithmatex 拒收的行内公式（[[10_llm_initiliaze_analysis]] ×2、[[20_qwen3_8_flash_next_architecture_deepdive]] ×1）。
+- **门禁补齐**：`tools/check_math.py` 新增 `MATH006`（`$$` 块缺前后空行，callout 内用裸 `>` 行）与 `MATH007`（`$$` 块缩进非 4 的倍数），两条都是 error；`skills/writing-obsidian-math/SKILL.md` 的规范式、callout 示例与规则表同步更新——旧的 callout 示例本身就是会坏的写法。此前 `check_math` 只看 LaTeX 语法不看块级上下文，`mathjax-corpus.mjs` 又把「裸 `$$` 交给 MathJax 兜底」计为合格 math unit，所以这批问题一直没被拦住。
+
 ## 2026-09-06：Megatron 31–32 按房子形状重组为问题、方案、源码与边界
 
 - [[31_megatron_inference_engine_analysis]] 以「块级 KV cache 上的连续批处理与背压 + `InferenceMode` 一个进程级开关」为主线重写。三张脚本生成图共用一个算例（`block_size_tokens=4`，四条请求 R0(6→3)/R1(10→2)/R2(3→5)/R3(12→2)，12 块的池）：图 1 复刻 `KVBlockAllocator` 的栈式分配、ref 计数与 `ref_zero`/`lru` 两种驱逐，逐步画出块表与第二波的命中差异，并算出按 `max_sequence_length` 预留的 31% 浪费；图 2 把 legacy static 循环、`schedule_non_chunked_prefill`、`schedule_chunked_prefill` 三条调度规则复刻成离散事件仿真（11/9/6 步，空转 11/33、15/27、4/18 槽·步，R3 分别在 s10/s8/s4 进入）；图 3 复刻 `CUDAGraphBatchDimensionBuilder` 的两种尺寸枚举，指数分布用 6 张图把最坏 padding 钉在 100%，线性分布上界放到 1024 时最坏涨到 6300%。五处按基线更正旧稿：legacy static 引擎不是「padding 到最长再一次 prefill」，而是先 prefill 到批内最短 prompt、再整批每步推进一个位置；`Scheduler` 三池与 `AsyncStream` 只由 legacy static 路径构造，动态引擎用 FIFO deque + futures；`sampling_backend='flashinfer'` 缺包时代码抛 `ImportError`，与 docstring 说的「回退 torch 并告警」不一致；`max_tokens_to_oom` 在基线下无消费者；`TransformerConfig` 按基线重数为 277 项。旧稿的 `[!update]` 时间线（#4617/#5181/#4775/#4855/#4101/#3509/#4764）全部并入当前基线正文，TRT-LLM 桩在 `ca9edbef9` 被删的事实保留（37、40 号页依赖它）。硬约束表扩到 24 行，每行点名 assert/raise/warning 位置。

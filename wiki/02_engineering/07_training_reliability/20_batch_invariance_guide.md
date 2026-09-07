@@ -145,11 +145,13 @@ SM-1: [序列 1, 全部 token] → output_1  (累加路径: j=0→1→2→...→
 **关键设计**：Kernel 2 的输出必须与 Kernel 1 **bitwise 相同**。
 
 Kernel 1 的有效累加路径：
+
 $$
 O = (\dots((v_0 w_0 + v_1 w_1) + v_2 w_2) + \dots + v_N w_N)
 $$
 
 Kernel 2 必须保证等效路径：
+
 $$
 O = (\dots((\text{partial}_0 + \text{partial}_1) + \text{partial}_2) + \dots + \text{partial}_K)
 $$

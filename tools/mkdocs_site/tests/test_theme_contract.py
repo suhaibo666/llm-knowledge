@@ -36,6 +36,7 @@ def adaptive_layout():
 ```
 
 > [!note] Blockquoted display math must stay in the corpus gate
+>
 > $$
 > \boldsymbol{\theta} \in \mathbb{R}^{d \times k}, \qquad
 > \mathcal{L}(\boldsymbol{\theta}) = \sum_{i=1}^{n} \left\lVert x_i - \boldsymbol{\theta} \right\rVert_2^2
@@ -421,8 +422,13 @@ def test_mathjax_corpus_discovers_and_renders_blockquoted_display_math(
         (site / "domain/10_article.html").read_text(encoding="utf-8"),
         "html.parser",
     )
-    assert not article.select(".arithmatex")
-    assert "$$" in article.get_text()
+    # A blockquoted block separated by a bare '>' line reaches arithmatex, so no
+    # literal '$$' survives into the HTML. Glueing it to the callout title used to
+    # fall back on MathJax finding the raw delimiters at runtime; nl2br splits the
+    # block with <br> and that fallback is gone, which is why check_math's MATH006
+    # now treats the glued form as an error rather than a style nit.
+    assert article.select(".arithmatex")
+    assert "$$" not in article.get_text()
 
     completed = _run_mathjax_corpus(site.parent)
 

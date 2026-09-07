@@ -44,18 +44,25 @@ title: "Transformer 下 Dense 与 MoE 模型的参数初始化（知乎风格深
 ## 2. 线性层与激活方差传播（逐步推导）
 
 考虑一个简单的线性层（无偏置以便推导）：
+
 $$
 y = W x,\quad W_{ij}\sim\mathcal{N}(0,\sigma_w^2)
 $$
+
 假设输入 $x$ 的元素独立同分布，均值 0，方差 $\operatorname{Var}(x)=\sigma_x^2$。则输出单元的方差：
+
 $$
 \operatorname{Var}(y_i) = \sum_{j=1}^{n_\text{in}} \operatorname{Var}(W_{ij}x_j) = n_\text{in}\,\sigma_w^2\,\sigma_x^2
 $$
+
 为使 $\operatorname{Var}(y)\approx\operatorname{Var}(x)$，需要
+
 $$
 \sigma_w^2 \approx \frac{1}{n_\text{in}}
 $$
+
 这就是 **Xavier（均方保留）** 的基本直觉（对线性或对称激活）。如果后续有 ReLU，会丢失一半能量，He 初始化建议
+
 $$
 \sigma_w^2 \approx \frac{2}{n_\text{in}}
 $$
@@ -69,13 +76,17 @@ $$
 ### 3.1 残差连接的方差累积问题
 
 Transformer block（简化）：
+
 $$
 \text{out} = x + \mathcal{F}(x)
 $$
+
 若 $\operatorname{Var}(x)=\sigma_x^2$ 且 $\operatorname{Var}(\mathcal{F}(x))=\sigma_f^2$，且近似独立（粗略假设），则
+
 $$
 \operatorname{Var}(x+\mathcal{F}(x)) = \sigma_x^2 + \sigma_f^2
 $$
+
 在深层网络中，若每层 $\sigma_f^2$ 大致恒定，随着层数 $L$ 方差会**线性增长**，即约为 $\sigma_x^2 + L\cdot \sigma_f^2$——这导致深度越大越不稳定。解决办法（工程上常见的）：
 
 1. **Pre-LayerNorm（pre-LN）结构**：把 LayerNorm 放到子层输入，能把残差项正规化，使每层进入子层的分布更稳定；这是 Transformer 训练中非常普遍的设计，用来缓解残差累积。
@@ -251,9 +262,11 @@ class SimpleGate(nn.Module):
 
 * 我们用大写 $X$、$W$、$Y$ 表示随机向量/矩阵；小写 $x_i$ 表示分量。
 * 单层线性映射（无偏置）：
-  $$
-  y = W x,\qquad W\in\mathbb{R}^{n_\text{out}\times n_\text{in}}
-  $$
+
+    $$
+    y = W x,\qquad W\in\mathbb{R}^{n_\text{out}\times n_\text{in}}
+    $$
+
 * 假设权重独立同分布（i.i.d.）且均值零：
 
     $$
@@ -261,12 +274,13 @@ class SimpleGate(nn.Module):
     $$
 
 * 输入向量分量 $x_j$ 假设独立同分布，$\mathbb{E}[x_j]=0,\ \operatorname{Var}(x_j)=\sigma_x^2$。
-* 梯度符号：若损失为 $ \mathcal{L}$，前向为 $y=W x$，则反向有
-  $$
-  \delta_y \equiv \frac{\partial\mathcal{L}}{\partial y},\qquad
-  \delta_x = W^\top \delta_y,\qquad
-  \frac{\partial\mathcal{L}}{\partial W_{ij}} = \delta_{y_i}, x_j.
-  $$
+* 梯度符号：若损失为 $\mathcal{L}$，前向为 $y=W x$，则反向有
+
+    $$
+    \delta_y \equiv \frac{\partial\mathcal{L}}{\partial y},\qquad
+    \delta_x = W^\top \delta_y,\qquad
+    \frac{\partial\mathcal{L}}{\partial W_{ij}} = \delta_{y_i}, x_j.
+    $$
 
 下面先做**前向方差传播**的严格推导，再做**反向（梯度）方差传播**推导，最后讨论残差、LayerNorm、注意力缩放、MoE 合并等实际结构的影响。
 
@@ -301,7 +315,7 @@ $$
 
 ---
 
-## 2. 前向—含非线性 $ \phi(\cdot)$ 的层
+## 2. 前向—含非线性 $\phi(\cdot)$ 的层
 
 若有激活 $z=\phi(y)$，则在零均值假设下，近似可用一阶线性化或利用 $\phi$ 关于输入分布的二阶统计量。若 $y$ 近似为均值为 0、方差 $\sigma_y^2$ 的高斯分布，则
 
@@ -325,13 +339,17 @@ $$
 关键结论（将逐步推导）：
 
 * 对于线性层 $y = W x$，反向传播有 $\delta_x = W^\top \delta_y$，因此：
-  $$
-  \operatorname{Var}(\delta_{x_j}) = n_\text{out}\,\sigma_w^2\,\operatorname{Var}(\delta_{y}).
-  $$
+
+    $$
+    \operatorname{Var}(\delta_{x_j}) = n_\text{out}\,\sigma_w^2\,\operatorname{Var}(\delta_{y}).
+    $$
+
 * 对权重梯度 $\nabla_{W_{ij}} = \delta_{y_i}, x_j$，其方差为：
-  $$
-  \operatorname{Var}(\nabla_{W_{ij}}) = \operatorname{Var}(\delta_{y_i})\,\operatorname{Var}(x_j).
-  $$
+
+    $$
+    \operatorname{Var}(\nabla_{W_{ij}}) = \operatorname{Var}(\delta_{y_i})\,\operatorname{Var}(x_j).
+    $$
+
   （在独立性与零均值假设下）
 
 下面是详细推导。

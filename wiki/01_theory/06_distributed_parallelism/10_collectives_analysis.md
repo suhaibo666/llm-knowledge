@@ -77,9 +77,11 @@ $$
 | **P2P（send/recv）** | src 的 $x$ → dst 的 $x$（指定两方） | **PP 相邻 stage 传激活/梯度** |
 
 > **核心恒等式（记住这一个，后面全通）**：
+>
 > $$
 > \textbf{All-Reduce} = \textbf{Reduce-Scatter} + \textbf{All-Gather}
 > $$
+>
 > 先 reduce-scatter 让每卡拿到「求和结果的一片」，再 all-gather 把所有片拼回全量。这不只是数学等式——它是 ring all-reduce 的**实际实现方式**，也是 ZeRO 能把 DP 的 all-reduce「拆开省显存」的根本原因（见 [[12_zero_fsdp_analysis]]）。
 
 ---

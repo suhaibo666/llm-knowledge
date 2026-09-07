@@ -270,12 +270,12 @@ $$
 1. **正文未出现 "IcePop" 一词**——该词仅见于参考文献标题。原文的表述是 **"Following Zhao et al. (2025)"**。
 2. **截断作用于训推比 $\pi_\theta/\mu_\theta$，不是师生比**。即训练策略 $\pi_\theta$ 与采样（推理引擎）策略 $\mu_\theta$ 之比
 
-   $$
-\begin{aligned}
-w_t
-&=\frac{\pi_\theta(y_t\mid x, y_{<t})}{\mu_\theta(y_t\mid x, y_{<t})},\qquad w_t \leftarrow 0 \ \text{ if } w_t\notin[\varepsilon_{\mathrm{low}},\varepsilon_{\mathrm{high}}]
-\end{aligned}
-   $$
+    $$
+ \begin{aligned}
+ w_t
+ &=\frac{\pi_\theta(y_t\mid x, y_{<t})}{\mu_\theta(y_t\mid x, y_{<t})},\qquad w_t \leftarrow 0 \ \text{ if } w_t\notin[\varepsilon_{\mathrm{low}},\varepsilon_{\mathrm{high}}]
+ \end{aligned}
+    $$
 
    落在区间外即置零。这是**训推不一致（train–inference mismatch）修正**，源于训练框架与推理引擎的数值/实现差异，**与 OPD 的师生 KL 是完全不同的两件事**。
 
@@ -526,9 +526,9 @@ OPD 文献大多把教师当作给定输入，很少正面回答"教师本身如
 - **类②的专家训练是当前旗舰后训练算力的主要去向**：DeepSeek-V3.2 原文 "Each specialist is trained with **large-scale Reinforcement Learning (RL) computing**"（arXiv:2512.02556v1 §3）。贵的是用 RL 造专家，便宜的是用 OPD 整合（Nemotron-Cascade 2：MOPD 52 步 vs RLHF 100 步的对比，见 §4.6.2 更正后口径）。这给"RL 创造能力、OPD 搬运能力"补上成本刻度：**创造仍然贵，搬运变得便宜**。
 - **算力模型**（arXiv:2604.00626 §7.4）——off-policy 与 on-policy 的成本差：
 
-  $$
-  C_{\mathrm{off}}\approx N\,(F_{T}+F_{S}+B_{S}),\qquad C_{on}\approx N\,(G_{S}+\rho F_{T}+F_{S}+B_{S})
-  $$
+    $$
+    C_{\mathrm{off}}\approx N\,(F_{T}+F_{S}+B_{S}),\qquad C_{on}\approx N\,(G_{S}+\rho F_{T}+F_{S}+B_{S})
+    $$
 
   其中 $F/B$ 为前向/反向 FLOPs，$G_S$ 为学生自回归生成成本（$G_S\gg F_S$，这是 on-policy 溢价的主体），$\rho\in(0,1]$ 为教师监督刷新率。**注意这个公式里没有教师的训练成本**——它只算蒸馏阶段，这正是"1/10 GPU 时"类数字的隐含边界。
 - **判据层面**，Distillation Scaling Laws（arXiv:2502.08606，ICML'25，⚠️ Apple 归属为通行说法）的结论可直接翻译为教师来源决策：**教师已存在（类①③④）或一位教师蒸多个学生（类②的复用）时蒸馏才划算；为单个学生现训教师通常不如直接训学生**。这解释了为什么类②在 2026 年成为主流——旗舰厂商的专家教师**天然被复用**（一批专家蒸一个通才，且往往跨多个尺寸的学生复用）。

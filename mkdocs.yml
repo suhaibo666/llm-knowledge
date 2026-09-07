@@ -48,6 +48,10 @@ markdown_extensions:
   - admonition
   - attr_list
   - md_in_html
+  # Obsidian renders a single newline as a line break; Python-Markdown folds it
+  # into a space. Without nl2br the four-line subject header collapses into one
+  # run-on paragraph on the published site.
+  - nl2br
   - pymdownx.details
   - pymdownx.superfences:
       custom_fences:

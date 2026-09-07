@@ -85,9 +85,13 @@ $$
 $$
 \mathbf{W}_{qc}^{h} \leftarrow \mathbf{W}_{qc}^{h} \cdot \sqrt{\gamma}, \quad \gamma = \min(1, \tau/S_{\max}^{h})
 $$
+
+
 $$
 \mathbf{W}_{kc}^{h} \leftarrow \mathbf{W}_{kc}^{h} \cdot \sqrt{\gamma}
 $$
+
+
 $$
 \mathbf{W}_{qr}^{h} \leftarrow \mathbf{W}_{qr}^{h} \cdot \gamma
 $$

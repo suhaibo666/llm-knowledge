@@ -80,9 +80,11 @@ $$
 
 1. 先通过指数运算保证正性：$M^{(0)} = \exp(\tilde{H}^{res}_l)$
 2. 交替进行行归一化和列归一化：
-   $$
-   M^{(t)} = \mathcal{T}_r\left( \mathcal{T}_c(M^{(t-1)}) \right)
-   $$
+
+    $$
+    M^{(t)} = \mathcal{T}_r\left( \mathcal{T}_c(M^{(t-1)}) \right)
+    $$
+
 3. 迭代 $t_{\mathrm{max}}=20$ 次后收敛到近似双随机矩阵
 
 反向传播时，通过自定义 backward kernel 在片上重计算 Sinkhorn-Knopp 的中间结果，避免存储大量激活。
@@ -182,9 +184,11 @@ mHC 的激活内存开销较大，因此采用块级重计算策略：
 - 前向时只保存每 $L_r$ 层的第一个输入 $x_{l_0}$
 - 反向时重新执行该块内的 mHC kernel（不含重的层函数 $\mathcal{F}$）
 - 最优块大小由内存最小化目标确定：
-  $$
-  L^*_r \approx \sqrt{\frac{nL}{n+2}}
-  $$
+
+    $$
+    L^*_r \approx \sqrt{\frac{nL}{n+2}}
+    $$
+
 - 在实践中，重计算边界与流水线并行 stage 边界对齐
 
 ### 3. DualPipe 通信-计算重叠

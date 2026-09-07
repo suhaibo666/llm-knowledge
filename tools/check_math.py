@@ -91,6 +91,97 @@ def _is_standalone_display_delimiter(line: str) -> bool:
     return re.fullmatch(r"\s*(?:>\s*)?\$\$\s*", line) is not None
 
 
+DISPLAY_LINE_RE = re.compile(r"^(?P<indent> *)(?P<quote>(?:> ?)*)\$\$\s*$")
+QUOTE_PREFIX_RE = re.compile(r"^ *(?:> ?)*")
+
+
+def _is_context_blank(line: str | None) -> bool:
+    """A line that separates blocks, counting '>' quote markers as empty."""
+
+    if line is None:
+        return True
+    return not QUOTE_PREFIX_RE.sub("", line).strip()
+
+
+def _check_display_blocks(
+    lines: list[str], path: str, diagnostics: list[Diagnostic]
+) -> None:
+    """Flag display blocks Python-Markdown will not hand to arithmatex.
+
+    Obsidian renders ``$$`` wherever it appears. Python-Markdown only runs the
+    arithmatex block processor when the block stands alone: blank-line
+    separated, and starting at an indent it recognises as a block boundary.
+    Otherwise the delimiters survive into the HTML as literal text and the
+    LaTeX passes through the inline parser, which eats ``\\\\`` row separators
+    and ``\\{`` escapes.
+    """
+
+    fence_char: str | None = None
+    fence_length = 0
+    opening: tuple[int, re.Match[str]] | None = None
+
+    for index, raw_line in enumerate(lines):
+        fence = FENCE_RE.match(raw_line)
+        if fence:
+            marker = fence.group("fence")
+            if fence_char is None:
+                fence_char = marker[0]
+                fence_length = len(marker)
+            elif marker[0] == fence_char and len(marker) >= fence_length:
+                fence_char = None
+                fence_length = 0
+            continue
+        if fence_char is not None:
+            continue
+
+        match = DISPLAY_LINE_RE.match(raw_line)
+        if match is None:
+            continue
+        if opening is None:
+            opening = (index, match)
+            continue
+
+        open_index, open_match = opening
+        opening = None
+        indent = len(open_match.group("indent"))
+        if indent % 4:
+            diagnostics.append(
+                Diagnostic(
+                    "error",
+                    "MATH007",
+                    path,
+                    open_index + 1,
+                    f"display block is indented {indent} spaces; Python-Markdown "
+                    "needs a multiple of 4 (list continuation is 4, not the "
+                    "list marker width)",
+                )
+            )
+        before = lines[open_index - 1] if open_index else None
+        if not _is_context_blank(before):
+            diagnostics.append(
+                Diagnostic(
+                    "error",
+                    "MATH006",
+                    path,
+                    open_index + 1,
+                    "display block needs a blank line before it, otherwise "
+                    "Python-Markdown keeps the '$$' as literal text",
+                )
+            )
+        after = lines[index + 1] if index + 1 < len(lines) else None
+        if not _is_context_blank(after):
+            diagnostics.append(
+                Diagnostic(
+                    "error",
+                    "MATH006",
+                    path,
+                    index + 1,
+                    "display block needs a blank line after it, otherwise "
+                    "Python-Markdown keeps the '$$' as literal text",
+                )
+            )
+
+
 def _looks_like_table_row(line: str) -> bool:
     stripped = line.strip()
     return stripped.startswith("|") and stripped.count("|") >= 2
@@ -340,7 +431,10 @@ def check_text(text: str, path: str = "<memory>") -> list[Diagnostic]:
     display_parts: list[str] = []
     display_source = ""
 
-    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+    lines = text.splitlines()
+    _check_display_blocks(lines, path, diagnostics)
+
+    for line_number, raw_line in enumerate(lines, start=1):
         fence = FENCE_RE.match(raw_line)
         if fence:
             marker = fence.group("fence")
